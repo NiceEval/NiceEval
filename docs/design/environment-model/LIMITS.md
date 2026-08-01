@@ -69,13 +69,13 @@ MemoryBench 需要外部记忆状态与复用窗口。
 环境模型只为 state 与 Agent runtime 保留相位,不复制它们的公开类型。
 多容器 case 的主 Sandbox、ready、证据与清理同样留在 Sandbox Feature。
 
-## Verifier 身份先于运行
+## Criteria 身份先于运行
 
-Terminal-Bench 的 hidden verifier 只能在 Agent 结束后出现，但它的内容身份必须在 Attempt 开始前进入携带决策。
+Terminal-Bench 的 hidden criteria 只能在 Agent 结束后出现，但它的内容身份必须在 Attempt 开始前进入携带决策。
 API 因此需要同步、可发现的文件声明，不能只在 `test(t)` 运行期上传。
 
 模块顶层 loader 能满足发现期身份，却把环境登记表变成作者可见副作用。
 同一模块定义多条 Eval 时，它还会把不同条目的文件错误合并成整组身份。
 
-受管 verifier 必须逐 Eval 解析，并在 Agent diff 冻结后上传。
+受管 criteria 必须逐 Eval 解析，只能在 `afterAgent` 冻结 Agent diff 后作为普通上传 source 使用。
 清理是 Sandbox 复用的硬屏障；残留隐藏材料的 Sandbox 不能交给下一条 Agent。

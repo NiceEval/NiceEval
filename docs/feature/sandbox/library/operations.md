@@ -18,6 +18,17 @@
 
 少量内联文本用 `writeFiles`，宿主目录用 `uploadDirectory`，二进制单文件用 `uploadFile`，要把 Sandbox 里一整个目录原样取回宿主机用 `downloadDirectory`。
 
+`afterAgent` context 上仍是同一组方法，只给两个上传方法增加受管 source overload：
+
+```ts
+await after.sandbox.uploadDirectory(after.criteria.tests, "/tests");
+await after.sandbox.uploadFile("/tests/run-tests.sh", after.criteria.runTests);
+```
+
+criteria handle 不是另一套文件 API，也不会隐式选择目标路径。
+Runner 在发现期已经解析 source；运行期若把文件 handle 交给 `uploadDirectory`，或把目录 handle 交给 `uploadFile`，调用会报明确的 source kind 错误。
+完整边界见 [Eval · 判据文件](../../eval/use-case/criteria-files.md)。
+
 `writeFiles` 的 `files` 是 `Record<路径, 文本内容>`，key 相对 `targetDir`（默认 workdir）解析；`uploadFiles` 的 `files` 是 `{ path: string; content: string | Buffer }[]`：
 
 ```ts

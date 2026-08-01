@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-评 coding agent 要回答三件事：起始项目怎么进沙箱、任务完成后怎么验证、以及怎么保证只评 **agent 自己的改动**（而不是 Fixture 或 verifier 的写入）。静态起始文件与隐藏判据分别在 `fixture.files`、`verifier.files` 显式声明；动态 IO 继续通过 `t.sandbox` 或 `setup` 执行。
+评 coding agent 要回答三件事：起始项目怎么进沙箱、任务完成后怎么验证、以及怎么保证只评 **agent 自己的改动**（而不是 Fixture 或 turn 后写入）。静态起始文件写在 `fixture.files`，隐藏判据身份写在 `criteria`；动态 IO 继续通过普通 Sandbox API 执行。
 
 ## 全流程
 
@@ -36,19 +36,20 @@
 
 3. diff 断言读的是 **agent 归因增量**：变更分类账只把 `t.send()` 窗口内的 workspace 变化归给 agent。Fixture 与 verification 写入都不在 `t.sandbox.diff` 里——`fileChanged` 断的是「agent 改了它」，不是「它相对空目录变了」。
 
-4. 隐藏判分写进受管 verifier phase。Runner 关闭 Agent 驱动面并冻结 diff 后才上传文件，此后 `v` 没有 `send`：
+4. 隐藏判分先声明 criteria，再在不可逆的 `afterAgent` 边界内用普通 API 上传和跑测。此后 `after` 没有 `send`：
 
    ```typescript
    export default defineEval({
+     criteria: {
+       buttonTest: { from: new URL("button.test.ts", import.meta.url) },
+     },
      async test(t) {
        await t.send("在 src/components/Button.tsx 导出一个 Button 组件。");
-     },
-     verifier: {
-       files: [{ from: new URL("button.test.ts", import.meta.url), to: "/app/button.test.ts" }],
-       async verify(v) {
-         const test = await v.sandbox.runCommand("npm", ["test"]);
-         v.check(test, commandSucceeded());
-       },
+       await t.afterAgent(async (after) => {
+         await after.sandbox.uploadFile("/app/button.test.ts", after.criteria.buttonTest);
+         const test = await after.sandbox.runCommand("npm", ["test"]);
+         after.check(test, commandSucceeded());
+       });
      },
    });
    ```

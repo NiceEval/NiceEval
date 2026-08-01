@@ -140,8 +140,8 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 必需服务提前退出 → attempt `errored` 附服务状态与日志，不折叠成 Agent `failed`。
   - 成功、部分启动、中断、超时都走整组 finalizer，不留孤儿。
   - 黑名单只拒脱管网络、覆盖受管 workdir、挂载 Docker socket；其余 Compose 字段原样生效。
-  - 泄题门：verifier / private 与全部 build context、相对 bind mount 交叉检查，命中即启动期报错。
-  - 过滤规则进入 BuildKey；verifier 不得在 Agent 阶段挂入可达服务，private 任何阶段都不能挂入。
+  - 泄题门：criteria / private 与全部 build context、相对 bind mount 交叉检查，命中即启动期报错。
+  - 过滤规则进入 BuildKey；criteria 不得在 Agent 阶段挂入可达服务，private 任何阶段都不能挂入。
 
 ## 不这样测
 

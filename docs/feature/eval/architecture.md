@@ -10,7 +10,11 @@
 作用域由**接收者**决定（见下节），词汇本身只有一份定义；同一件事也不提供两个 API。
 
 **显式配置优先于约定。**
-静态起始文件与隐藏判据分别写在 `fixture.files`、`verifier.files`，可见相位在调用点明确。动态 Fixture 使用 `setup` 或普通 Sandbox 操作。传统 prompt 评估的 dataset / golden 表不是一等概念；测试集仍用普通代码构造 eval 数组或 keyed record。
+静态起始文件与隐藏判据身份分别写在 `fixture.files`、`criteria`。动态 Fixture 使用 `setup` 或普通 Sandbox 操作；Agent 永久结束后的工作由 `t.afterAgent(...)` 显式跨过边界。传统 prompt 评估的 dataset / golden 表不是一等概念；测试集仍用普通代码构造 eval 数组或 keyed record。
+
+**模块求值保持纯声明。**
+发现期可以用普通 TypeScript 构造 EvalDef，但运行期 nonce、宿主临时目录和日志收集属于 Sandbox materializer。
+把 `randomBytes()`、`mkdirSync()` 或登记 loader 放在 `defineEval()` 外，会制造没有 Attempt owner 的副作用，也会污染稳定身份。
 
 ## 接收者模型：位置决定作用域
 
@@ -23,13 +27,15 @@
   普通静态起始文件声明在 `fixture.files`，动态或带外部资源收尾的任务素材放 `EvalDef.setup`。
   两者都在分类账锚点之后、第一次 `send` 之前完成。
 - 这两类写入都是 **eval 归因**，永不进入 agent diff——`fileChanged` / `diff` 只反映 agent 在 send 窗口内的改动（归因契约见 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账)）。
-- 隐藏校验材料声明在 `verifier.files`。
-  Runner 在最后一次 Agent turn 后关闭驱动面、冻结 agent diff，再上传文件并调用 `verify(v)`。
+- 隐藏校验材料声明在 `criteria`，它只表达发现期身份，不绑定 Sandbox 目标或执行动作。
+  `t.afterAgent(...)` 在调用点永久关闭驱动面并冻结 agent diff；callback 通过普通 API 上传 criteria handle、运行命令与断言。
   多轮之间写入的文件会被下一轮看到，不能当隐藏材料。
 
 ## 生命周期与不变量
 
-- eval 在 attempt 生命周期里占四个主链阶段：`eval.setup`（任务 Fixture）→ `eval.run`（`test(t)` 与全部 turn）→ `eval.verify`（受管 verifier）→ `scoring.evaluate`（断言 finalize 与判定）。`EvalDef.teardown` 在收尾段执行，只能追加 diagnostic，不改判定。
+- eval 在 attempt 生命周期里占四个主链阶段：`eval.setup` → `eval.run` → `eval.afterAgent` → `scoring.evaluate`。
+  它们依次覆盖任务 Fixture、边界前的 `test(t)` 与全部 turn、可选 callback 的普通操作，以及断言 finalize 与判定。
+  `EvalDef.teardown` 在收尾段执行，只能追加 diagnostic，不改判定。
   阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。
 - 作者写下的每条断言默认要求可评估：证据缺口使 attempt `errored`，显式 `.optional()` 才允许缺席；判定四态互斥（[Severity 与 Verdict](../verdict/architecture.md)）。
 - eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集按位置生成零填充序号 id（`sql/0000`，插删或重排会改变后续 id），keyed record 生成稳定的业务 key id（`swelancer/15193`）。

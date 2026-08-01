@@ -32,10 +32,8 @@ export default defineEval({
     files: Array<{ from: string | URL | FileTree; to: string }>;
   };                                    // Agent 前上传的可见起始文件
 
-  verifier?: {
-    files?: Array<{ from: string | URL | FileTree; to: string }>;
-    async verify(v) { /* turn 后判分,不能再驱动 Agent */ },
-  };
+  criteria?: Record<string, string | URL | FileTree>;
+  //  只声明隐藏输入身份,不自动上传、不指定 Sandbox 目标
   privateFiles?: Array<string | URL | FileTree>; // 永不上传的参考答案等
 
   async setup(sandbox, ctx) { /* 这道题的任务素材 */ },
@@ -46,8 +44,12 @@ export default defineEval({
   //  收尾链的第一段(eval.teardown → agent.teardown → sandbox.teardown)
   //  当且仅当 setup 的时点走到过才执行;setup 抛错、test 抛错都不豁免
 
-  async test(t) { /* 交互 + 断言 */ },
-  //  Agent 交互结束后,Runner 才进入 verifier phase
+  async test(t) {
+    /* 交互 + 断言 */
+    await t.afterAgent(async (after) => {
+      /* Agent 永久结束后的普通上传、命令、读取与断言 */
+    });
+  },
 });
 ```
 
@@ -76,9 +78,12 @@ export default defineEval({
 `fixture.files` 是静态可见 Fixture 的声明面。
 Runner 在 `setup` 后、Agent 前上传并记为 eval 归因；动态 checkout、外部临时资源与运行时生成仍使用 `setup`。
 
-`verifier.files` 是隐藏判据的声明面。
-Runner 在发现期计算判据指纹并执行泄题门，在最后一次 Agent turn 后冻结 agent diff、上传文件、调用 `verify(v)`，再清理受管文件。
-`v` 提供断言、反馈与受限 Sandbox 操作，不提供 `send` 或 session 创建入口。
+`criteria` 是隐藏判据的身份声明面。
+Runner 在发现期计算判据指纹并执行泄题门，但不替作者选择 Sandbox 目标或自动运行验证。
+
+`t.afterAgent(callback)` 是不可逆的生命周期边界。
+进入时 Runner 永久关闭 Agent 驱动面并冻结 agent diff；`after` 不提供 `send` 或 session 创建入口，但上传、命令、读取与断言仍使用普通 API。
+`after.criteria.<key>` 是受管 source handle，可以直接传给普通 `uploadFile` / `uploadDirectory`；Runner 清理这些 handle 的受管上传，清理或 reset 失败时禁止复用 Sandbox。
 
 `privateFiles` 进入判据指纹与泄题门，但在任何相位都不上传。
 文件声明、递归目录、排除规则与错误语义见[判据文件](use-case/criteria-files.md)。
@@ -96,7 +101,7 @@ evals/foo/eval.ts       → eval id "foo"
 ```
 
 `eval.ts` 只是文件夹入口约定,仍默认导出 `defineEval` / `defineScoreEval` 结果,不引入第二套评分或 Experiment 模型。
-目录里可以平铺 Dockerfile、Compose、题面数据、起始 fixture 与 verifier,也可以分子目录;没有入口的目录(如 `_lib/`)是普通共享代码,不会被发现成 eval。
+目录里可以平铺 Dockerfile、Compose、题面数据、起始 fixture 与 criteria,也可以分子目录;没有入口的目录(如 `_lib/`)是普通共享代码,不会被发现成 eval。
 
 共址不等于同一身份域或同一可见时点,三类文件各有归属:
 
@@ -105,13 +110,13 @@ evals/foo/eval.ts       → eval id "foo"
 | Dockerfile、Compose、build context、相对 bind mount | provider 构建 image、启动 Compose 时使用;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
 | 题面数据(经 `loadYaml` / `loadText` 读入) | 宿主发现期读取 | eval 数据指纹 |
 | `fixture.files` | Eval setup 后、Agent setup 前上传 | eval 数据指纹 |
-| `verifier.files` 与 `privateFiles` | verifier 在最后一次 Agent turn 后上传;private 永不上传 | eval 判据指纹 |
+| `criteria` 与 `privateFiles` | criteria 只在 `afterAgent` 中按作者普通调用使用;private 永不上传 | eval 判据指纹 |
 
 普通起始 fixture 由 eval `setup` 或 `test` 在 send 前上传,Agent 本来就应看见,进 eval 归因。
-目录共址只解决组织问题,不把环境、fixture、verifier 三种生命周期合并成一个哈希:改 verifier 只作废判据指纹,不触发镜像重建;改 Dockerfile 只改环境身份。
+目录共址只解决组织问题,不把环境、fixture、criteria 三种身份域合并成一个哈希:改 criteria 只作废判据指纹,不触发镜像重建;改 Dockerfile 只改环境身份。
 
 solution、生成器与参考答案默认不进入可运行 eval 目录;必须共址时放声明 private 的路径,它不得进入任何 build context 或最终镜像。
-发现期把声明的 verifier / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门verifier-与-build-context-的交叉检查)。
+发现期把声明的 criteria / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门criteria-与-build-context-的交叉检查)。
 
 ## defineScoreEval：计分制题型
 

@@ -22,7 +22,7 @@ interface DiffResult {
 3. 这份投影在窗口序列之上派生文件级视图：净状态、触碰窗口、逐窗口 patch。
 
 因此清单里只有 agent 在 send 窗口内改动的文件。
-Fixture、`EvalDef.setup` 准备的素材与受管 verifier 产生的验证材料都不进这份清单。
+Fixture、`EvalDef.setup` 准备的素材与 `afterAgent` 产生的材料都不进这份清单。
 `diff.ignore` / `diff.include` 调整归因排除清单，判断口径与这份投影完全一致。
 
 ## 派生规则

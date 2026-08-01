@@ -37,7 +37,7 @@ export default defineEval({
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
 | `fixture.files` / `setup` / `teardown` | 可见 Fixture 与动态任务准备 | [README](README.md#defineeval-的形状) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
-| `verifier.files` / `verifier.verify(v)` / `privateFiles` | turn 后隐藏判分与永不上传文件 | [判据文件](#受管-eval-文件) | [隐藏测试与参考实现](use-case/criteria-files.md) |
+| `criteria` / `t.afterAgent(callback)` / `privateFiles` | 隐藏输入身份、Agent 结束边界与永不上传文件 | [判据文件](#受管-eval-文件) | [隐藏测试与参考实现](use-case/criteria-files.md) |
 | `t.progress` / `t.diagnostic` / `t.skip` | 运行反馈与明确跳过 | [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 
 ## 受管 Eval 文件
@@ -46,7 +46,7 @@ export default defineEval({
 
 ```typescript
 type FileTree = {
-  readonly root: string | URL;
+  readonly from: string | URL;
   readonly ignore?: readonly string[];
 };
 
@@ -56,8 +56,11 @@ type EvalFileMount = {
 };
 ```
 
-`fixture.files` 在 Agent 前上传，`verifier.files` 在 Agent 后上传，`privateFiles` 永不上传。
+`fixture.files` 在 Agent 前按声明目标上传；`criteria` 是不含目标路径的 keyed source 声明；`privateFiles` 永不上传。
 目录递归展开并按稳定路径排序；`ignore` 使用项目统一 glob 语义。
+
+`t.afterAgent(callback)` 永久关闭 Agent 驱动面并冻结 agent diff。
+callback 通过 `after.criteria.<key>` 取得 source handle，再将它传给普通 `uploadFile` / `uploadDirectory`；命令和断言也继续使用普通 API，不另造 verifier 子框架。
 
 `loadText` / `loadYaml` / `loadJson` 继续服务发现期需要读进定义值的数据。
 静态文件树的完整指纹、泄题门、上传与清理语义见[判据文件用例](use-case/criteria-files.md)。

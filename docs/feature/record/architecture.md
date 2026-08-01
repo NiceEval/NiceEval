@@ -275,7 +275,7 @@ type LifecyclePhase =
   | "eval.run"             // 整段 test(t),含所有 send 与手工命令
   | "agent.run"            // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
   | "workspace.diff"       // 从分类账折叠 agent 归因增量
-  | "eval.verify"          // 上传受管 verifier files、verify(v) 与 cleanup
+  | "eval.afterAgent"      // 不可逆关闭 Agent 后的 callback 与受管 criteria cleanup
   | "scoring.evaluate"     // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
@@ -629,7 +629,7 @@ interface DiagnosticRecord {
 结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
 `children` 是 runner 直接观察到的 activity 树。
-`sandbox.setup` / `sandbox.teardown` 先按 `sandbox.hook` 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff`、`eval.verify` 以及各收尾阶段。
+`sandbox.setup` / `sandbox.teardown` 先按 `sandbox.hook` 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff`、`eval.afterAgent` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
 命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 `sandbox.command` 节点关联。
 成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。

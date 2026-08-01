@@ -54,7 +54,7 @@ interface PhaseTiming {
 | `eval.run` | 整段 `test(t)`,含所有 `send` 与手工命令;`children` 保存手工命令与逐 session/turn 包络 | 从不缺席 |
 | `agent.run` | 嵌套在 `eval.run` 内的 adapter send 窗口;只作错误/诊断归因,不单列计时条目 | (不出现在 `phases`) |
 | `workspace.diff` | 采 `git diff`(`captureGeneratedFiles`) | direct agent / skipped |
-| `eval.verify` | 上传受管 verifier files、执行 `verify(v)` 并清理 | 没声明 verifier |
+| `eval.afterAgent` | `afterAgent` callback 的普通 Sandbox 操作、断言与受管 criteria 清理 | 没调用 `afterAgent` |
 | `scoring.evaluate` | 断言 finalize + 判定,含 judge 调用 | skipped 时为空集但仍记 |
 | `telemetry.collect` | OTLP receiver settle / collect(有固定的落地等待窗口) | 没起 receiver |
 | `eval.teardown` | `EvalDef.teardown` | 未声明 `teardown` |
@@ -82,7 +82,7 @@ interface PhaseTiming {
 - **Hook 链 phase 级合计、时间树逐层展开**:Hook 是匿名用户代码,没有稳定标识,跨实验的聚合与对比只在 phase 层进行——`sandbox.setup` / `sandbox.teardown` 各合计一条。
   `children` 按链序逐 hook(具名函数用函数名,匿名用 `setup#<i>` / `teardown#<i>`),hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续成为 child。
   时间树只回答单 attempt「慢在哪一层」,不做跨 attempt / 跨实验聚合。
-- **所有沙箱命令统一捕获**:Sandbox 创建成功后只包一层中性接口,因此 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff`、`eval.verify` 与收尾阶段都能记录自己发出的公开 command。
+- **所有沙箱命令统一捕获**:Sandbox 创建成功后只包一层中性接口,因此 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff`、`eval.afterAgent` 与收尾阶段都能记录自己发出的公开 command。
   provider 内部 `runCommand`→`runShell` 的实现转调不重复记；Agent CLI 内部工具不经过该接口,仍由 events + OTel 提供。
 - **turn 是 runner 包络,OTel 是轮内细节**:`eval.run.children` 的 turn 用 runner 单调时钟量 `send` 端到端耗时,并保存 session/turn 身份、`traceId` 与归属方式。
   消费方按 `traceId` 从 `trace.json` 临时挂接 agent/model/tool spans；没有 OTel 时 turn 耗时仍可用。

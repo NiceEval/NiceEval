@@ -93,7 +93,8 @@ const environment = composeSandbox({
 
 export default defineEval({
   environment,
-  async test(t) { /* send 后上传同目录 verifier 再判分 */ },
+  criteria: { tests: { from: new URL("tests/", import.meta.url) } },
+  async test(t) { /* send 后在 afterAgent callback 中用普通 API 跑测 */ },
 });
 ```
 
@@ -299,16 +300,17 @@ interface SandboxGroupEntry {
 Group keep 是独立能力:支持者必须能整组 suspend / resume、恢复后重过 ready 门、失败时保留可再次清理的注册项。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
 
-## 泄题门:verifier 与 build context 的交叉检查
+## 泄题门:criteria 与 build context 的交叉检查
 
-folder eval 的 verifier / private 文件与环境输入共址,泄漏面必须在发现期收口:
+folder eval 的 criteria / private 文件与环境输入共址,泄漏面必须在发现期收口:
 
-- 发现期把已登记 verifier / private 路径与每个 Docker build context 的 `.dockerignore` 求值结果做交叉检查;仍会进入 build context 的隐藏文件按配置错误报出,因为一行 `COPY . .` 就足以把它泄给 Agent。
+- 发现期把 EvalDef 声明的 criteria / private 路径与每个 Docker build context 的 `.dockerignore` 求值结果做交叉检查;仍会进入 build context 的隐藏文件按配置错误报出,因为一行 `COPY . .` 就足以把它泄给 Agent。
 - 修法三选一:移出 context、写进 `.dockerignore`、或让 materializer 生成等价的 filtered context;过滤规则自身进入 BuildKey。
-- 检查覆盖 Compose 的全部 build context,不只 mainService;相对 bind mount 按服务可见面检查——verifier 可以在判分阶段挂进 main,但不能在 Agent 阶段挂入任一 Agent 可达服务,private 文件任何阶段都不能挂入。
+- 检查覆盖 Compose 的全部 build context,不只 mainService;相对 bind mount 按服务可见面检查。
+  criteria 可以在 `afterAgent` 阶段通过普通 API 上传到 main,但不能在 Agent 阶段挂入任一 Agent 可达服务;private 文件任何阶段都不能挂入。
 - 只有显式改成普通 fixture 才允许 Agent 可见,没有任何绕过开关。
 
-verifier / private 的登记方式与三类文件的身份归属见 [Eval · 目录入口](../eval/README.md)。
+criteria / private 的声明方式与三类文件的身份归属见 [Eval · 目录入口](../eval/README.md)。
 
 ## Provider 能力矩阵
 

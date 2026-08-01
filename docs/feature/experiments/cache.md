@@ -181,7 +181,7 @@ export default defineEval({
   哈希口径是排序后的「相对路径 × 内容哈希」对,权限位与修改时间不进哈希。
   输入分两类:
   - `loadYaml` / `loadJson` / `loadText` 读入即登记。发现期把内容交给 Eval 定义并哈希进数据指纹。
-  - `fixture.files`、`verifier.files` 与 `privateFiles` 是同步声明。Runner 逐 Eval 递归解析文件树；Fixture 进入数据指纹，verifier/private 进入判据指纹。
+  - `fixture.files`、`criteria` 与 `privateFiles` 是同步声明。Runner 逐 Eval 递归解析文件树；Fixture 进入数据指纹，criteria/private 进入判据指纹。
   完整文件声明与上传相位见[判据文件](../eval/use-case/criteria-files.md)。
 
 两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink 解析过去的那些)、以及动态 `import()`。

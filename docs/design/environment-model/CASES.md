@@ -100,10 +100,10 @@ SandboxSpec 同时配置默认起点、materializer 与可选 profile 覆盖。
 ## C11:逐题自包含的隐藏判分
 
 **输入:**每道 Eval 都在独立 `.eval.ts` 中完整声明题面、环境、超时与判分，不使用批量 loader 或共享 Eval 工厂。
-判分依赖一棵本地 verifier 文件树；Agent 开始前不能看到它，内容变化又必须只作废当前 Eval。
+判分依赖一棵本地 criteria 文件树；Agent 开始前不能看到它，内容变化又必须只作废当前 Eval。
 
-**验收:**EvalDef 内同步声明 verifier files 与 verify callback。
-作者不在模块顶层执行登记副作用，也不在 `test(t)` 中手工协调上传和清理；Runner 在 Agent 结束后上传文件，冻结 agent diff，并在判分后清理。
+**验收:**EvalDef 内同步声明 keyed `criteria`，`test(t)` 用一次不可逆的 `afterAgent` 显式结束 Agent。
+作者不在模块顶层执行登记副作用；callback 通过普通 API 上传文件、运行命令与断言，Runner 负责边界、归因及受管上传清理。
 
 ## 候选覆盖入口
 
