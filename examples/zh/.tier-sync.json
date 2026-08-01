@@ -34,49 +34,49 @@
       "from": "examples/zh/tier1/ai-sdk-v7",
       "to": "examples/zh/tier2/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "106429f3bbaaf1599fdd80b800443edcdbb4b44a"
+      "baseTree": "d00cb578074588a7b65d1872ba2a7357cba87301"
     },
     {
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "e2954f05e642637f47c4dbb9409fbb5774fd31ef"
+      "baseTree": "ddbdafada8839ad642eb009f7b8b5e1d15b06f55"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "2167a066177bae9e1fa92c24b77b520ec48581bc"
+      "baseTree": "c7deac4c6dd952ded8df291fb05035e64ad1b830"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
       "to": "examples/zh/tier3/ai-sdk-v7",
       "contract": "overlay",
-      "baseTree": "e5a98dead70fcca9aedd957b5abe72f062bbfa77"
+      "baseTree": "a05f8f6d487843621d4fb457b52d2a3932618a7b"
     },
     {
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "7df60f08acbdf147d24406cea319882fa3908423"
+      "baseTree": "340d6c1256066c1c1fd1a327504454e88e6fbe4a"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "70dbdbafbae098e84bf49e59ce786736012b4115"
+      "baseTree": "6d507fb2d7bd230e5a7c5d479b6cb50160eb6de9"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "85b817e3e4e21fbd550578b49cdfca84de6fc4c8"
+      "baseTree": "98805eb9e84bbfbe555f85cffd9edd6ebcf940fa"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "c8856e9901eaf2411d856efb5c0c549d044f90f1"
+      "baseTree": "5f2cdcbb05bf50b8de0d58a792b9755df1df8cc2"
     }
   ]
 }
