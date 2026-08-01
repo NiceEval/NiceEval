@@ -161,10 +161,10 @@ Human 展示列只是各阶段的人读投影:
 | `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;direct agent 跳过 |
 | `sandbox.setup` | sandbox setup | 运行 `SandboxSpec.setup()` 环境预置 Hook 链;没有 Hook 就跳过 |
 | `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);direct agent 跳过 |
-| `eval.setup` | eval setup | 运行 `EvalDef.setup`;没有 setup 就跳过 |
+| `eval.setup` | eval setup | 运行 `EvalDefinition.setup`;没有 setup 就跳过 |
 | `agent.setup` | agent setup | 安装 CLI、Skill/plugin、写 agent 配置;没有 `Agent.setup` 就跳过 |
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
-| `eval.run` | running eval | 执行 `EvalDef.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
+| `eval.run` | running eval | 执行 `EvalDefinition.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
 | `workspace.diff` | capturing diff | 读取 Sandbox 工作区变化；Direct / skipped Attempt 跳过 |
 | `scoring.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
@@ -195,7 +195,7 @@ progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与
 
 ### 实验级 Hook 的显示
 
-`ExperimentDef.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。
+`ExperimentDefinition.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。
 起止由 runner 自己发布——一个什么都不调的 setup 也必须可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死:
 
 - **Human(TTY)**:Hook 在跑期间,ACTIVE 区为每个在飞的实验 Hook 显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;Hook 结束行即消失,成功的 Hook 不在 scrollback 留任何永久行。

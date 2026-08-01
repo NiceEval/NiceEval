@@ -180,7 +180,7 @@ interface RunMeta {
 它是「这是一份 niceeval 落盘」的识别符,不是模块名的投影:改动它会让所有历史版本连「这东西是谁写的」都认不出来,从而给不出版本提示——而那正是这个字段永久稳定的全部意义。
 识别符与模块名各自稳定,互不跟随。
 
-`ExperimentRunInfo` 是**解析后运行配置的穷尽可序列化投影**——记录这次运行实际生效的值,不是原始 `ExperimentDef`(函数与 hooks 本来就无法忠实落盘,存「原样」只能存谎):
+`ExperimentRunInfo` 是**解析后运行配置的穷尽可序列化投影**——记录这次运行实际生效的值,不是原始 `ExperimentDefinition`(函数与 hooks 本来就无法忠实落盘,存「原样」只能存谎):
 
 ```typescript
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -189,7 +189,7 @@ interface ExperimentRunInfo {
   description?: string;
   reasoningEffort?: string;
   flags?: Record<string, JsonValue>;
-  /** 报告归类标注（ExperimentDef.labels 原样投影）；不透传运行时，不进 configHash。 */
+  /** 报告归类标注（ExperimentDefinition.labels 原样投影）；不透传运行时，不进 configHash。 */
   labels?: Record<string, string | number>;
   /** 每条 eval 计划尝试几次 —— 落盘目录 `a<n>` 与 AttemptHandle 的同一个词。 */
   attempts: number;
@@ -262,14 +262,14 @@ type LifecyclePhase =
   // 运行级(派发前至多一次,宿主机侧;仅错误归因)
   | "judge.precheck"       // 判分预检;预检失败时是含 judge 断言的 eval 全部 attempt 的错误锚点
   // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
-  | "experiment.setup"     // ExperimentDef.setup;setup 抛错时是本实验所有 attempt 的错误锚点
-  | "experiment.teardown"  // ExperimentDef.teardown;失败只产生运行级 diagnostic
+  | "experiment.setup"     // ExperimentDefinition.setup;setup 抛错时是本实验所有 attempt 的错误锚点
+  | "experiment.teardown"  // ExperimentDefinition.teardown;失败只产生运行级 diagnostic
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create"       // provider 从 image / template / snapshot 启动 Sandbox(共享构建不在这里,它在 Run 级 activity)
   | "sandbox.setup"        // SandboxSpec.setup() 生命周期 Hook 链
   | "workspace.baseline"   // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
-  | "eval.setup"           // EvalDef.setup
+  | "eval.setup"           // EvalDefinition.setup
   | "agent.setup"          // Agent 的 Ensure:检查、缺失时安装、复检(见 Adapters · Agent Ensure)
   | "telemetry.configure"  // tracing 出口配置
   | "eval.run"             // 整段 test(t),含所有 send 与手工命令
@@ -278,7 +278,7 @@ type LifecyclePhase =
   | "scoring.evaluate"     // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
-  | "eval.teardown"        // EvalDef.teardown
+  | "eval.teardown"        // EvalDefinition.teardown
   | "agent.teardown"
   | "sandbox.teardown"     // SandboxSpec.teardown() 生命周期 Hook 链
   | "sandbox.suspend"      // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause);耗时可观(pause 随内存增长),必须可见

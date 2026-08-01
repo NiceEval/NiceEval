@@ -5,7 +5,7 @@
 沙箱 coding 题常在 Agent 返回后上传隐藏测试、参考输出或跑测脚本。
 这些材料需要影响缓存，也不能污染 agent diff，但它们仍只是普通文件。
 
-不要在模块顶层登记，也不要在 EvalDef 增加文件 field。
+不要在模块顶层登记，也不要在 EvalInput 增加文件 field。
 在需要它们的位置直接调用普通 Sandbox API。
 
 ## 完整写法
@@ -70,6 +70,6 @@ agent diff 只折叠 `send` 窗口内的 Sandbox 变化。
 ## 边界
 
 - Agent 一开始就应看到的文件，在第一次 `send` 前普通上传。
-- checkout、凭据派生或外部临时资源可以放 `EvalDef.setup`。
+- checkout、凭据派生或外部临时资源可以放 `EvalDefinition.setup`。
 - 内存生成的内容使用 Buffer 上传；其身份由生成它的源码或已登记数据输入承担。
 - 巨型模型、系统包和运行时归 Environment，不在每条 Eval 中上传。

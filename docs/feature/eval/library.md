@@ -42,7 +42,7 @@ export default defineEval({
 
 ## Eval 文件就是普通 Sandbox 输入
 
-本地文件不在 EvalDef 中重复登记。
+本地文件不在 EvalInput 中重复登记。
 `uploadFile` 接受 `Buffer | URL`，`uploadDirectory` 接受相对路径或 URL；Runner 在实际读取本地 source 时记录 transfer manifest。
 
 上传发生在第一个 `send` 前，文件就对 Agent 可见；发生在某个 `send` 返回后，过去的 turn 看不见；随后再 `send` 时下一轮正常可见。
@@ -63,7 +63,7 @@ eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」�
 - **数组**：位置就是身份。
   按位置生成零填充 4 位的 id：`evals/sql.eval.ts` 导出数组 → `sql/0000`、`sql/0001`……；在中间插入、删除或重排会改变后续 id，并使对应缓存失效。
 - **Keyed record**：业务 key 就是身份。
-  `Record<string, EvalDef>` 的 key 原样接到文件 id 后：`swelancer.eval.ts` 的 key `15193` → `swelancer/15193`。
+  `Record<string, EvalDefinition>` 的 key 原样接到文件 id 后：`swelancer.eval.ts` 的 key `15193` → `swelancer/15193`。
   key 必须是一个非空路径片段——不含 `/`、`\\`，不是 `.` / `..`，不含控制字符。
   发现结果按 key 字典序排列，数据源换行或构造顺序变化不影响运行与展示顺序。
   空 record 合法，表示这份测试集当前没有 case。

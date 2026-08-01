@@ -1,7 +1,7 @@
-# Library 候选
+# Library
 
 本页只定义静态作者契约。
-业务字段继续以 Eval、Experiment、Reports、Sandbox 和 Adapters 的 Feature 契约为单源，本候选只重构字段归属与类型关系。
+业务字段以 Eval、Experiment、Reports、Sandbox 和 Adapters 的功能契约为单源，本页只定义字段归属与类型关系。
 
 ## 三级反馈
 
@@ -459,7 +459,7 @@ parseEvidenceRow: row needs at least one MetricValue field, got only dimensions 
 ## 图表字段按值类别过滤
 
 字段属性不能只用 `string`，也不能接受包含 `refs` 在内的任意 `keyof Row`。
-候选按字段角色导出或内部复用以下键类型：
+按字段角色导出或内部复用以下键类型：
 
 ```ts
 type EvidenceAxisKey<Row> = KeysMatching<
@@ -676,7 +676,7 @@ Remove one template or split the Experiment's Eval selection.
 17 conflicting pairs were found. No Sandbox was created.
 ```
 
-精确 layer、command context 与配对检查表见 [Sandbox Layer](../../feature/sandbox/layers.md)。
+精确 layer、command context 与配对检查表见 [Sandbox Layer](../sandbox/layers.md)。
 
 ## 作者视角的完整走查
 

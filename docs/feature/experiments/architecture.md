@@ -6,14 +6,14 @@ experiment 是**可签入的运行配置**：一个文件钉一个单一配置�
 ## 实体与生命周期
 
 ```text
-ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
+ExperimentDefinition(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
   → resolved config(调度前一次求值:合并 CLI flag / experiment / eval / config 回退,evals 过滤器与 sandbox environments 查表求值)
   → attempt 矩阵(selectedEvalIds × attempts,每 attempt 一个执行 fiber)
   → Run(.niceeval/<experiment>/<timestamp>-<suffix>/,含 ExperimentRunInfo 投影)
 ```
 
 - **id 从路径推导**（`experiments/agents/bub/gpt-5.4.ts` → `agents/bub/gpt-5.4`），路径只表达身份与 CLI 前缀选择，禁止手写 id。
-- **`ExperimentDef` 携带实验级生命周期 Hook 对 `setup` / `teardown`**——整场一次、宿主机侧(语义见下文 [实验级生命周期](#实验级生命周期setup-与-teardown))。
+- **`ExperimentDefinition` 携带实验级生命周期 Hook 对 `setup` / `teardown`**——整场一次、宿主机侧(语义见下文 [实验级生命周期](#实验级生命周期setup-与-teardown))。
   其余生命周期各归各位:沙箱内环境预置挂 `sandbox` 字段的 `SandboxSpec` Hook 链,任务 Fixture 属于 eval,连 agent 属于 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
 - 同一次 `niceeval exp` Invocation 可以同时跑多个实验（文件夹展开），但每个实验各自开 Run 目录，没有跨实验成员关系或聚合落盘。
   Invocation 是瞬时编排边界，不分配持久化 id。
@@ -245,7 +245,7 @@ niceeval 的 `defineExperiment` 只留**纯运行矩阵**：
 | `agent` | `agent` | 保留,但一文件一个 agent | 沿用 agent；报告直接比较当前 Sample 中的 experiments |
 | `model` / `attempts` / `earlyExit` / `evals` / `timeout` / `sandbox` | 同(`timeout`→`timeoutMs`) | 保留 | 运行矩阵的本体 |
 | — | `sandboxReuse` | **加** | 实验作者声明多条 Attempt 可以共用 Sandbox；进入配置哈希 |
-| `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境挂 `sandbox` 字段的 `SandboxSpec.setup()` / `.teardown()`,任务 Fixture 写 `EvalDef.setup` / `test()`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
+| `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境挂 `sandbox` 字段的 `SandboxSpec.setup()` / `.teardown()`,任务 Fixture 写 `EvalDefinition.setup` / `test()`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
 | `validation` | — | **删** | 「怎么算对」是 eval 自己的事(`test()` 里手工跑校验命令),不该由 experiment 决定 |
 | `scripts` | — | **删** | 同上,属于 eval / fixture 的评分,不是运行配置 |
 | `brands` | — | **删** | Vercel 品牌追踪专用,通用 evals 不需要 |

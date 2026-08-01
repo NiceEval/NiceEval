@@ -48,7 +48,7 @@ interface PhaseTiming {
 | `sandbox.create` | provider 起沙箱(`createSandbox`) | direct agent |
 | `sandbox.setup` | `SandboxSpec.setup()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | direct agent / 没挂 Hook |
 | `workspace.baseline` | 变更分类账锚点(runner 私有 git ledger 首笔 commit) | direct agent |
-| `eval.setup` | `EvalDef.setup` | 没定义 |
+| `eval.setup` | `EvalDefinition.setup` | 没定义 |
 | `agent.setup` | `Agent.setup`(装 CLI、写主配置;**安装基准的主角**) | 没定义 |
 | `telemetry.configure` | tracing 出口配置(file-based OTLP) | 没配 tracing |
 | `eval.run` | 整段 `test(t)`,含所有 `send` 与手工命令;`children` 保存手工命令与逐 session/turn 包络 | 从不缺席 |
@@ -56,7 +56,7 @@ interface PhaseTiming {
 | `workspace.diff` | 采 `git diff`(`captureGeneratedFiles`) | direct agent / skipped |
 | `scoring.evaluate` | 断言 finalize + 判定,含 judge 调用 | skipped 时为空集但仍记 |
 | `telemetry.collect` | OTLP receiver settle / collect(有固定的落地等待窗口) | 没起 receiver |
-| `eval.teardown` | `EvalDef.teardown` | 未声明 `teardown` |
+| `eval.teardown` | `EvalDefinition.teardown` | 未声明 `teardown` |
 | `agent.teardown` | `Agent.teardown` | 没定义 |
 | `sandbox.teardown` | `SandboxSpec.teardown()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | direct agent / 没挂 Hook |
 | `sandbox.stop` | provider 销毁沙箱(`sandbox.stop()`) | direct agent |

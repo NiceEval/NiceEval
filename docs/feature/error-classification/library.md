@@ -1,7 +1,7 @@
 # 执行失败分类 —— 库用法
 
 重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。
-作者面的公开 API 有三个,各对应一处知识所在地:空间轴 fatal 错误类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
+作者面的公开 API 有三个,各对应一处知识所在地:空间轴 fatal 错误类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDefinition.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
 
 ## eval / 实验作者:你会看到什么
 

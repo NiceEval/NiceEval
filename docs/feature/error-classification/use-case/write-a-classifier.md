@@ -8,7 +8,7 @@
 - **实验作者**:探活只在 setup 阶段跑。
   实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「probe failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。
   回退看不出这是实验级死因(连接错误千千万),adapter 也不认识(它懂自家 CLI 协议,不懂你的实验拓扑)——知道「这个 host 是全实验共享的隧道」的只有你。
-  挂载点:`ExperimentDef.classifyFailure`。
+  挂载点:`ExperimentDefinition.classifyFailure`。
 - **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。
   回退只能判不可重试,每次撞上都白白 `errored`,批跑里还可能连续复现触发 fail-fast——协议知识在你手里。
   挂载点:`Agent.classifyTurnError`。

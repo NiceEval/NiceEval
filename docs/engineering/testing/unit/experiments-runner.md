@@ -34,7 +34,7 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 
 ## Fixture 规范
 
-Runner fixture 用声明式场景描述 attempt，而不是为每个测试重新拼完整 `EvalDef`、Agent、Sandbox 和 Reporter：
+Runner fixture 用声明式场景描述 attempt，而不是为每个测试重新拼完整 `EvalDefinition`、Agent、Sandbox 和 Reporter：
 
 ```ts
 const scenario = runnerFixture({

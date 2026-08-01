@@ -44,7 +44,7 @@ export interface AttemptFailureInfo {
   readonly cause: unknown;
 }
 
-/** 实验可选分类器,挂载在 ExperimentDef.classifyFailure:识别自家共享基建的死因。 */
+/** 实验可选分类器,挂载在 ExperimentDefinition.classifyFailure:识别自家共享基建的死因。 */
 export type AttemptFailureClassifier = (failure: AttemptFailureInfo) => FailureClass | undefined;
 ```
 
@@ -98,7 +98,7 @@ fatal 错误类只覆盖空间轴的两个非默认档;默认档(`scope: "attemp
    它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。
    `thrown` 形态没有事件可查,由前四道的判据独自把关。
 
-**生命周期阶段失败**(sandbox Hook、`EvalDef.setup`、`test(t)` 体内、per-attempt teardown),三道:
+**生命周期阶段失败**(sandbox Hook、`EvalDefinition.setup`、`test(t)` 体内、per-attempt teardown),三道:
 
 1. **抛出点携带的分类**(`failureClassOf`)。
 2. **实验分类器**。

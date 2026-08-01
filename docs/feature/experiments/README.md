@@ -82,7 +82,7 @@ export default defineExperiment({
 `setup` 的产物写模块级变量,`teardown` 与同文件的 agent / sandbox Hook 从闭包读——runner 不做值的中介。
 四层生命周期(experiment / sandbox / agent / eval)共用「成对 `setup` / `teardown`、闭包传状态」这一种形态,统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它);用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 
-生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDef.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。
+生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDefinition.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。
 哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱 Hook 的链式写法见 [Sandbox · 沙箱生命周期 Hook](../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
 
 `sandbox` 是整个 experiment 的单一固定 spec。

@@ -22,7 +22,7 @@ interface DiffResult {
 3. 这份投影在窗口序列之上派生文件级视图：净状态、触碰窗口、逐窗口 patch。
 
 因此清单里只有 agent 在 send 窗口内改动的文件。
-`EvalDef.setup` 准备的素材与 send 窗口外的普通 Sandbox 写入都不进这份清单。
+`EvalDefinition.setup` 准备的素材与 send 窗口外的普通 Sandbox 写入都不进这份清单。
 `diff.ignore` / `diff.include` 调整归因排除清单，判断口径与这份投影完全一致。
 
 ## 派生规则

@@ -148,13 +148,13 @@ export default defineExperiment({ agent: codexAgent(), sandbox: e2b });
 - `environment` 是非空、不透明的稳定 id，不是一组由 NiceEval 解释的包版本约束。
 - `environments` 是纯数据：键为 profile id，值为该 provider「预制产物槽位」的覆盖参数（docker 的 `image`、e2b 的 `template`、vercel 的 `snapshotId`），字段类型由各内置工厂声明；`defineSandbox` 自定义 spec 没有这张表。详见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。
 - NiceEval 在创建任何沙箱、计算 carry 或选择全局并发前，对每条**选中** eval 完成查表；选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不消耗 provider / Agent 预算。未选中 eval 的 profile 不影响本次运行。
-- 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDef.setup` 继续只负责分类账锚点之后的任务 fixture。Direct Agent 不创建 Sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
+- 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDefinition.setup` 继续只负责分类账锚点之后的任务 fixture。Direct Agent 不创建 Sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
 
 翻译表放在 spec 上而不是 experiment 上，是因为它的真实维度是 **profile × provider**，与具体实验无关：表随 spec 被多个实验共享（模块常量或 `Config.sandbox` 回退），新增环境只改一处，experiment 保持「一行 diff」的形态，一个实验覆盖全集、对比横截面完整。
 
 ## 实验级共享服务:setup 与 teardown
 
-「这个实验的所有 attempt 共享一份、跑在宿主机上」的资源——到内网记忆服务的隧道、每实验专用的 mock server、license 租约——写在 `ExperimentDef.setup` / `teardown` 这对 Hook 里。整场恰好至多一次:`setup` 在本实验第一个真正要派发的 attempt 之前执行,`teardown` 在全部 attempt 收尾后执行(中断也执行),当且仅当 `setup` 的时点走到过;全部结果被 carry 携入时两者都不执行。执行语义与失败语义的完整定义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
+「这个实验的所有 attempt 共享一份、跑在宿主机上」的资源——到内网记忆服务的隧道、每实验专用的 mock server、license 租约——写在 `ExperimentDefinition.setup` / `teardown` 这对 Hook 里。整场恰好至多一次:`setup` 在本实验第一个真正要派发的 attempt 之前执行,`teardown` 在全部 attempt 收尾后执行(中断也执行),当且仅当 `setup` 的时点走到过;全部结果被 carry 携入时两者都不执行。执行语义与失败语义的完整定义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 
 ```typescript
 // experiments/compare/claude--nowledge.ts
@@ -183,7 +183,7 @@ export default defineExperiment({
 
 `teardown` 里资源释放是必达底线,观测类动作(probe、指标上报)是 best-effort:给观测自己的短超时、失败不阻断,且在 `ctx.signal.aborted` 时直接跳过——中断路径上,一次可能挂起的观测不该挡在「拆容器、退租约」前面;无论观测成败,释放必须执行(`try/finally`)。
 
-`setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的环境预置(装二进制、预热)挂 `sandbox` spec 的链式 Hook,任务 Fixture 写 `EvalDef.setup` / `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 agent / sandbox Hook 里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
+`setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的环境预置(装二进制、预热)挂 `sandbox` spec 的链式 Hook,任务 Fixture 写 `EvalDefinition.setup` / `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 agent / sandbox Hook 里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
 
 ### 与沙箱 Hook 在同一个实验文件里协作
 
@@ -222,7 +222,7 @@ export default defineExperiment({
 });
 ```
 
-一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;每沙箱的写入与回存在 `sandbox` 链式 Hook 里,经闭包消费实验级产物;agent 怎么连自己、eval 的任务 Fixture 各在 agent 定义与 `EvalDef` 里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
+一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;每沙箱的写入与回存在 `sandbox` 链式 Hook 里,经闭包消费实验级产物;agent 怎么连自己、eval 的任务 Fixture 各在 agent 定义与 `EvalDefinition` 里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
 
 ### 多个实验共享同一套生命周期代码
 
@@ -362,12 +362,12 @@ interface ScopedFeedback {
 
 | 代码入口 | 反馈入口 | runner 绑定的 phase | 典型内容 |
 |---|---|---|---|
-| `ExperimentDef.setup` / `.teardown` | 各自 Hook 的 `ctx.progress/diagnostic` | `experiment.setup` / `experiment.teardown` | 起/拆每实验一份的宿主机共享服务 |
+| `ExperimentDefinition.setup` / `.teardown` | 各自 Hook 的 `ctx.progress/diagnostic` | `experiment.setup` / `experiment.teardown` | 起/拆每实验一份的宿主机共享服务 |
 | 自定义 `SandboxSpec.create(options)` | `options.feedback` | `sandbox.create` | 分配实例、拉镜像、恢复 snapshot |
 | `sandbox.setup/teardown` | hook `ctx.progress/diagnostic` | `sandbox.setup` / `sandbox.teardown` | 安装环境依赖、预热、回存状态 |
-| `EvalDef.setup` | setup `ctx.progress/diagnostic` | `eval.setup` | 准备这条 eval 的 fixture |
-| `EvalDef.teardown` | teardown `ctx.progress/diagnostic` | `eval.teardown` | 回收这条 eval 的 fixture |
-| `EvalDef.test` | `t.progress/diagnostic` | `eval.run` | eval 自己执行的长步骤 |
+| `EvalDefinition.setup` | setup `ctx.progress/diagnostic` | `eval.setup` | 准备这条 eval 的 fixture |
+| `EvalDefinition.teardown` | teardown `ctx.progress/diagnostic` | `eval.teardown` | 回收这条 eval 的 fixture |
+| `EvalDefinition.test` | `t.progress/diagnostic` | `eval.run` | eval 自己执行的长步骤 |
 | `Agent.setup/send/teardown` | `ctx.progress/diagnostic` | 当前 `agent.*` 阶段 | 安装 CLI、turn/tool 进度、协议诊断 |
 
 同一个方法在不同回调里拿到的是不同的绑定对象,不能保存后跨回调复用。下面三条消息分别属于 sandbox setup、eval run 和 agent run,runner 会把它们投影到正确阶段:
@@ -412,7 +412,7 @@ trace 不能替代 diagnostic/error:沙箱创建可能发生在 telemetry 建立
 
 diagnostic 是有界摘要,不是原始 SDK 日志转储。相同 `dedupeKey` 在同一 attempt 内折叠为一条并累计 `count`;`data` 只放定位所需的结构化小字段,不得放 token、完整 transcript 或无限增长的 stdout/stderr。原始 agent 行为属于 `events.json`,trace 属性属于 `trace.json`。
 
-实验级 Hook(`ExperimentDef.setup` / `teardown`)不属于任何单个 attempt,它的 `diagnostic(...)` 只进运行级永久事件流(人读文本与 `--json` 各追加一条),不落 attempt 的 `result.json`;`setup` 抛错则以每条 attempt 的结构化 `error`(`phase: "experiment.setup"`)落盘,失败照样可回顾。Hook 的起止本身由 runner 直接发布为运行级反馈(Human 的运行级 active 行、`--json` 的起止事件,见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)),不写 `progress` 的 setup 在终端上同样可见。
+实验级 Hook(`ExperimentDefinition.setup` / `teardown`)不属于任何单个 attempt,它的 `diagnostic(...)` 只进运行级永久事件流(人读文本与 `--json` 各追加一条),不落 attempt 的 `result.json`;`setup` 抛错则以每条 attempt 的结构化 `error`(`phase: "experiment.setup"`)落盘,失败照样可回顾。Hook 的起止本身由 runner 直接发布为运行级反馈(Human 的运行级 active 行、`--json` 的起止事件,见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)),不写 `progress` 的 setup 在终端上同样可见。
 
 attempt 在 teardown 链与 sandbox stop 都结束后才封口并原子写 `result.json`,因此收尾 diagnostic 也能随 attempt 保存。teardown diagnostic 默认不反改已经得到的 verdict;如果某个收尾动作是结果正确性的必要条件,它应抛出致命错误并由 runner 明确把 attempt 记为 `errored`,而不是只打一条 diagnostic。
 

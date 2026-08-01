@@ -140,8 +140,8 @@ function numericRunConfig(
 ): NumericAxis;
 ```
 
-- `flag()` 读 `ExperimentDef.flags`，即 agent / eval 可见的运行参数。
-- `label()` 读 `ExperimentDef.labels`，即运行时不可见的报告归类标注。
+- `flag()` 读 `ExperimentDefinition.flags`，即 agent / eval 可见的运行参数。
+- `label()` 读 `ExperimentDefinition.labels`，即运行时不可见的报告归类标注。
 - `runConfig()` 读 Run 的 [`ExperimentRunInfo`](../../record/architecture.md#runjson)投影，外加桥接到顶层的 `model` / `agent`。
 
 labels 的声明语义见[Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)。

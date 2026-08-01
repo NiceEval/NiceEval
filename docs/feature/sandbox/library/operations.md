@@ -25,7 +25,7 @@ await t.sandbox.uploadDirectory(new URL("tests/", import.meta.url), "/tests");
 await t.sandbox.uploadFile("/tests/run-tests.sh", new URL("run-tests.sh", import.meta.url));
 ```
 
-Runner 在实际读取本地 source 时记录 transfer manifest，不要求 EvalDef 另设文件 field。
+Runner 在实际读取本地 source 时记录 transfer manifest，不要求 EvalInput 另设文件 field。
 完整边界见 [Eval · 本地测试文件](../../eval/use-case/criteria-files.md)。
 
 `writeFiles` 的 `files` 是 `Record<路径, 文本内容>`，key 相对 `targetDir`（默认 workdir）解析；`uploadFiles` 的 `files` 是 `{ path: string; content: string | Buffer }[]`：

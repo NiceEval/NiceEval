@@ -421,7 +421,7 @@ defineEval({ reporters: [Braintrust({ project: "weather" })], async test(t) { ..
 
 eval 级 reporter 经作用域包装接入(`scopeReporter`,见 `src/runner/report.ts`):`onEvalComplete` 按 eval id 过滤,`onInvocationComplete` 收到重新计数的子集汇总;同一实例被多个 eval 引用时合并观测集(共享一个目的地,比如同一个 Braintrust 实验),已经挂在全局 `reporters` 里的实例在 eval 上再列一遍也不会重复上报。
 
-`Config.reporters` / `EvalDef.reporters` 挂载的 reporter 默认是 best-effort:抛错折成一条永久 diagnostic,不影响运行完成状态,也不阻断其它 reporter 收尾或在飞的 attempt。
+`Config.reporters` / `EvalDefinition.reporters` 挂载的 reporter 默认是 best-effort:抛错折成一条永久 diagnostic,不影响运行完成状态,也不阻断其它 reporter 收尾或在飞的 attempt。
 CLI 默认自带的 `Artifacts` 与显式指定的 `--json` / `--junit` 是 required——它们是 agent / CI 读结果的唯一权威入口,写失败必须让 [完成状态](runner.md#完成状态)判红(见 [CLI · required reporter](cli.md#required-reporter))。
 
 ## 相关阅读

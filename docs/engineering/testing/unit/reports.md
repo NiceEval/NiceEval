@@ -86,6 +86,8 @@ const scope = reportScopeFixture({
 - **呈现工具箱的导出面**（[公开函数总表](../../../feature/reports/library/presentation.md#公开函数总表)）：总表里的函数从 `niceeval/report` 导出，前四组同时从 `niceeval/report/react` 导出且与内部定义同引用；色板数组、槽位号与取色 helper 不在任一公开面上。
   只需一个代表场景，不为每个函数复制一条。
 - **MetricValue 与缺数据**：字段构成与序列化不丢值；`validateContent` 递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛TypeError；缺 artifact 时返回 null 不猜值。
+- **动态行的解析入口**（[编译期作者契约 · 动态数据](../../../feature/compile-time-contracts/library.md#动态数据经过独立解析函数)）：`parseEvidenceRow` / `parseEvidenceRows` 对 `unknown` 完成 `evidenceRow()` 在类型层完成的同一条证明——至少一个 MetricValue 字段、其余字段是维度可用的标量，失败消息点名字段。
+  区分力场景是「只有维度字段的行」与「MetricValue 结构不完整的行」各自报出自己的字段名,不折成同一句。
 - **站点组件与内建报告**：
   - `standard` / `failures` / `stability` 的构成与具名导出同引用；各一张导航页，pages 里的详情页与 `standardAttemptPage` 同引用。
   - 三张 scope-input page 均相邻放置 `sampleWarnings` 与 `runDiagnostics`。

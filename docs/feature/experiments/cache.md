@@ -177,7 +177,7 @@ export default defineEval({
 - **静态面**:eval 文件字节,加上它的导入图里解析后落在项目根内的每个模块,递归展开。
   判据是模块解析后的真实路径,不是 import 写法——相对路径、`tsconfig` 的 `paths` 别名都算数。
   按项目根相对路径排序后逐个哈希,顺序固定;循环导入按解析后的绝对路径去重。
-- **数据面**:经 loader 读入的数据与 EvalDef 声明的受管文件,内容哈希进引用它的那条 eval——增删文件与改一字节同等作废。
+- **数据面**:经 loader 读入的数据与 EvalDefinition 声明的受管文件,内容哈希进引用它的那条 eval——增删文件与改一字节同等作废。
   哈希口径是排序后的「相对路径 × 内容哈希」对,权限位与修改时间不进哈希。
   输入分两类:
   - `loadYaml` / `loadJson` / `loadText` 读入即登记。发现期把内容交给 Eval 定义并哈希进数据指纹。
@@ -186,7 +186,7 @@ export default defineEval({
 
 两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink 解析过去的那些)、以及动态 `import()`。
 改了这些要重验用 [`--rerun all`](use-case/重新运行/)。
-用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过；数据走 loader，静态判据走 EvalDef 文件声明。
+用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过；数据走 loader，静态判据走 EvalDefinition 文件声明。
 
 **闭包是 1 对 N 的,依赖越集中作废面越大。**
 eval 文件的字节只作废它自己, 而一个被 30 条 eval 引用的 helper 改一行就作废那 30 条,效果接近改一个 `flags` 值。

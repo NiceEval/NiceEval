@@ -83,7 +83,7 @@ export type FailureClass =
 两条轴各有固定的消费点,声明不改变消费点的位置:
 
 - **`retryable`** 只在两处被消费:context 层包住 `agent.send(...)` 的重试执行体(全仓库唯一的 send choke point),与 sandbox provisioning 重试(内部自治)。
-  其余位置(sandbox Hook、`EvalDef.setup`、`test(t)` 体内)的失败无论分类如何都不重试——那里没有重试执行体,分类链在这些位置也不产时间轴。
+  其余位置(sandbox Hook、`EvalDefinition.setup`、`test(t)` 体内)的失败无论分类如何都不重试——那里没有重试执行体,分类链在这些位置也不产时间轴。
 - **`scope`** 在 attempt 封口时被读取:终局失败携带的 scope 决定要不要落闸(eval 闸 / experiment 闸)。
   所有 per-attempt 阶段可达。
 
@@ -124,7 +124,7 @@ export type FailureClass =
 
 - 不改变 `AttemptError.code` 的公开形状或 `errored` 判定语义——重试是 `send()` 内部的自愈,止损只影响「还没跑的」,对外仍然只暴露「这次 attempt 到底 errored 没有」。
 - 空间轴不设 `"invocation"` 档——跨实验共享死因(全局 API key 失效)有真实用例再扩,词表形状留有余地。
-- 不在 `EvalDef` 上挂分类器——「以第三方错误形态浮出、且死因只属于单条 eval」的场景没有真实样本;作者代码能触到的 eval 级死因由抛出点的 `EvalFatalError` 覆盖,有样本再扩。
+- 不在 `EvalInput` 上挂分类器——「以第三方错误形态浮出、且死因只属于单条 eval」的场景没有真实样本;作者代码能触到的 eval 级死因由抛出点的 `EvalFatalError` 覆盖,有样本再扩。
 - 不跨 invocation 记忆止损状态,不提供解除/隔离命令。
 - 不抢占在飞的 attempt——已花的沙箱与 token 成本不可回收。
 - 不复用或修改 sandbox provisioning 重试的实现——那层要处理「远端资源是否已创建」的对账;两层只共享词表、退避形状与槽位接口。

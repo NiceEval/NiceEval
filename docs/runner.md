@@ -311,19 +311,19 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 
 | 层 / 步骤 | 调用点 | 紧邻的前后步 |
 |---|---|---|
-| 实验级 setup | `ExperimentDef.setup` | 第一个可派发 Attempt 之前；全部 Attempt 共用 |
+| 实验级 setup | `ExperimentDefinition.setup` | 第一个可派发 Attempt 之前；全部 Attempt 共用 |
 | Sandbox 创建 | `Sandbox.create` | 实验级 setup 之后，SandboxSpec setup 之前 |
 | 沙箱级 setup | `SandboxSpec.setup` 链 | 创建之后；变更分类账锚点之前 |
-| 变更分类账锚点 | `workspace.baseline` | SandboxSpec setup 之后；EvalDef setup 之前。锚点之后的写入才进入归因视图 |
-| eval 级 setup | `EvalDef.setup` | 锚点之后；Agent setup 之前 |
-| agent 级 setup | `SandboxAgent.setup` | EvalDef setup 之后；`test(t)` 之前 |
+| 变更分类账锚点 | `workspace.baseline` | SandboxSpec setup 之后；EvalDefinition setup 之前。锚点之后的写入才进入归因视图 |
+| eval 级 setup | `EvalDefinition.setup` | 锚点之后；Agent setup 之前 |
+| agent 级 setup | `SandboxAgent.setup` | EvalDefinition setup 之后；`test(t)` 之前 |
 | Eval 主体 | `test(t)` | 作者按普通顺序上传文件、驱动 Agent、运行命令与断言；send 窗口决定归因 |
-| eval 级 teardown | `EvalDef.teardown` | Verdict 定稿后的第一段收尾 |
-| agent 级 teardown | `SandboxAgent.teardown` | EvalDef teardown 之后 |
+| eval 级 teardown | `EvalDefinition.teardown` | Verdict 定稿后的第一段收尾 |
+| agent 级 teardown | `SandboxAgent.teardown` | EvalDefinition teardown 之后 |
 | 沙箱级 teardown | `SandboxSpec.teardown` 链 | Agent teardown 之后；Sandbox 销毁或留存之前 |
-| 实验级 teardown | `ExperimentDef.teardown` | 全部 Attempt 与 Sandbox 收尾之后；中断和强清退出也执行 |
+| 实验级 teardown | `ExperimentDefinition.teardown` | 全部 Attempt 与 Sandbox 收尾之后；中断和强清退出也执行 |
 
-跨层收尾顺序固定为 `EvalDef.teardown → SandboxAgent.teardown → SandboxSpec.teardown`。
+跨层收尾顺序固定为 `EvalDefinition.teardown → SandboxAgent.teardown → SandboxSpec.teardown`。
 这不是跨层 LIFO 声明；只有同一层内注册的多个 Hook 才按 setup 注册序、teardown 逆序执行。
 Sandbox 复用下多个实例怎样交错属于另一问题，见[复用 Sandbox 的并行与生命周期](feature/sandbox/reuse.md#完整生命周期)。
 
@@ -331,10 +331,10 @@ Sandbox 复用下多个实例怎样交错属于另一问题，见[复用 Sandbox
 
 | 层 | 挂载点 | 签名 | 节奏 | 管什么 |
 |---|---|---|---|---|
-| 实验级 | `ExperimentDef.setup` / `.teardown` | `(ctx) => void \| Promise<void>` | 每实验整场至多一次,宿主机侧 | 每实验一份的共享服务:隧道、mock server |
+| 实验级 | `ExperimentDefinition.setup` / `.teardown` | `(ctx) => void \| Promise<void>` | 每实验整场至多一次,宿主机侧 | 每实验一份的共享服务:隧道、mock server |
 | 沙箱级 | `SandboxSpec.setup(fn)` / `.teardown(fn)` 链 | `(sandbox, ctx) => void \| Promise<void>` | 每沙箱一次 | 不知道跑哪个 eval 的环境层:装二进制、预热、载入/回存跨 attempt 状态 |
 | agent 级 | `Agent.setup` / `.teardown` | `(sandbox, ctx) => void \| Promise<void>` | 每 attempt 一次 | 协议层:装 agent CLI、写鉴权 |
-| eval 级 | `EvalDef.setup` / `.teardown` | `(sandbox, ctx) => void \| Promise<void>` | 每 attempt 一次 | 这条 eval 的任务 Fixture |
+| eval 级 | `EvalDefinition.setup` / `.teardown` | `(sandbox, ctx) => void \| Promise<void>` | 每 attempt 一次 | 这条 eval 的任务 Fixture |
 
 成对语义全局一致,三条规则:
 
@@ -468,7 +468,7 @@ fresh attempt 的最终 `locator` 在构造调度计划时就由预先确定的 
 `experiment:complete` 是比 `invocation:summary` 更早、比单个 `eval:complete` 更粗的事件,标记「这一个 Experiment 已经彻底跑完」。
 它让内建 Artifacts 精确地在那一刻封口对应的 Run,而不是等整个 Invocation 结束才一次性封全部 Run。
 
-- **触发时机**:该 Experiment 的 `ExperimentDef.teardown`(若声明)完成之后、`invocation:summary` 之前。
+- **触发时机**:该 Experiment 的 `ExperimentDefinition.teardown`(若声明)完成之后、`invocation:summary` 之前。
 - **谁消费**:内建 `Artifacts` reporter 订阅它,对每个 experimentId 各自调用它自己 Run 的 `snap.finish({ completedAt, diagnostics, name })`(见 [Results · Library](feature/record/library.md))。
 - **`name`**:整次 Invocation 共享的项目名(来自 `config.name`),随每个 Experiment 各自的收尾一并落盘,不必等到 `invocation:summary` 才补写。
 - **`carriedResults`**:该 Experiment 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,随收尾一并落盘。

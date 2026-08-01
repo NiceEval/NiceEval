@@ -1,6 +1,6 @@
 # 准备任务 Fixture
 
-某道 Eval 独有的起始仓库、数据文件或任务依赖，应由 `EvalDef.setup` 或 `test(t)` 准备。
+某道 Eval 独有的起始仓库、数据文件或任务依赖，应由 `EvalDefinition.setup` 或 `test(t)` 准备。
 它们随 Eval 变化，并且属于该题的归因边界。
 
 ```ts

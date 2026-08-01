@@ -10,7 +10,7 @@ import { defineEval } from "niceeval";
 
 export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
-  tags?: string[];        // 供 --tag 与 ExperimentDef.evals 谓词过滤
+  tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
   judge?: JudgeConfig;    // 这道题要多强的裁判
   timeoutMs?: number;     // 这道题跑得完要多久
@@ -65,7 +65,7 @@ export default defineEval({
 要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
 它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
 
-文件传输不设 EvalDef field。
+文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。
 
 本地路径或 URL 进入普通上传 API 时，Runner 自动记录 transfer manifest。

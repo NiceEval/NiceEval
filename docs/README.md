@@ -54,6 +54,7 @@ docs/
 │
 ├── feature/                             已定稿的目标功能契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
+│   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── eval/                            编写 Eval：defineEval
 │   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸

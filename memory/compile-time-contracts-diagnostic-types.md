@@ -1,6 +1,6 @@
-# 编译期作者契约:诊断类型三项裁决
+# 编译期作者契约:四项裁决
 
-裁决日期 2026-08-01。落点 `docs/roadmap/compile-time-contracts/`(README / library / architecture / use-case)。
+裁决日期 2026-08-01。落点 `docs/feature/compile-time-contracts/`(README / library / architecture / use-case)。
 
 ## 裁决 1:禁止字段按「会不会被读回」分两种写法
 
@@ -46,13 +46,21 @@ error TS2345: Argument of type '{ agent: string; }' is not assignable to paramet
 
 定稿分工:字面量写 `evidenceRow()`(编译期证明 + 精确行类型),外部数据写 `parseEvidenceRow()` / `parseEvidenceRows()`(运行时证明 + 统一 `EvidenceRow`)。
 
+## 裁决 4:阶段类型各有其名,`Def` 后缀退出公开类型
+
+采用 `EvalInput` / `ScoreEvalInput` / `ExperimentInput`(作者输入)、`EvalDefinition<Scoring, Context>` / `ExperimentDefinition`(factory 产物)、`DiscoveredEval` / `DiscoveredExperiment`(带 id 的发现结果)。
+
+曾选方案:保留 `EvalDef` / `ExperimentDef` 这两个名字,只把 `id` / `scoring` / `configHash` 搬出去,另给输入起 `EvalInput`。
+
+否决理由有两条。一是 `Def` 今天同时指作者输入、`defineEval` 返回值和 `DiscoveredEval` 的基类(`src/runner/types.ts` 的 `EvalDef` 一个 interface 三处用),名字不携带阶段信息,而拆阶段的动机正是把这三者分开。二是保留名字会让含义悄悄改变:`EvalDef` 从「三合一」变成「factory 产物」,凡是把它当作者输入讲的段落静默变错,读者不会意识到该看新名字。
+
+改动面实测(裁决当时):活文档 24 个文件 45 处提及,`docs/design/PLAN-*/` 里的 61 处历史方案不动,`examples/` 零处,导出面是 `src/index.ts` 两行。这批文档同批扫完,规则是——讲「作者能写什么」用 `*Input`,讲字段与消费用 `*Definition`。
+
+同批的副产品:`defineScoreEval` 的返回类型从宽 `EvalDef` 收窄成 `EvalDefinition<"points", ScoreTestContext>` 之后,`src/define.ts` 里那个用来在运行时找回题型的模块私有 WeakSet(`definedScoreEvals`)不再是类型层丢失信息的补偿。
+
 ## 同批否决:跨定义 template XOR 的静态前移
 
 两条候选都不采用,资源前 linker 保持唯一权威(与 [[sandbox-layer-model-adopted]] 的配对级 XOR 一致):
 
 - **值引用 selector**(`evals` 接受 Eval 定义值,kind 用条件类型互斥):给「选哪些 eval」开了第二种语义,与 CLI Model 的 id 前缀选择相抵。
 - **codegen manifest**(discovery 生成 eval id → kind 的字面量表):引入生成物新鲜度环,与 tsx 直跑、零构建相抵。
-
-## 未定:作者输入的公开名字
-
-`EvalInput` / `ScoreEvalInput` / `ExperimentInput` 新名,还是保留 `EvalDef` / `ExperimentDef` 只搬走派生字段——这条没裁。它决定要改多少篇 Feature 文档与多少处导出,是这份 roadmap 进 `docs/feature/` 的唯一硬门槛。
