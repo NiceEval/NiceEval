@@ -146,7 +146,7 @@ interface SandboxCommandTarget extends SandboxOperations {
 - `Sandbox` 是 Provider / Runner / Sandbox Agent 的完整运行句柄，含生命周期；
 - `EvalSandbox` 是 `t.sandbox`，含宿主传输和归因 diff，但不含 `stop()` 与 provider 元数据；
 - `SandboxCommandTarget` 是 layer callback 的窄视图，不能访问宿主文件系统、停止 Case 或改变拓扑；`putContent()` 只消费先经 `registerSandboxContent()` 登记的 digest-backed 内容。
-- `putContent()` 会把大文件拆成有界写入并在 Sandbox 内原子合并；单次 provider 请求不承载整个大制品，失败也不暴露部分目标文件。
+- `putContent()` 会把大文件拆成有界写入并在 Sandbox 内原子合并；单次 provider 请求不承载整个大文件，失败也不暴露部分目标文件。
 
 能力差异用不同成员表达；同名成员的参数、返回值、退出码与取消语义在三个视图中完全一致。
 
