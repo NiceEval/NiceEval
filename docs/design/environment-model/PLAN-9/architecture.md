@@ -27,6 +27,9 @@ interface ResolvedSandboxStack {
 }
 ```
 
+`OwnedSandboxRecipe` 是 Runner 的内部归一结构，不是公开作者接口。
+公开 `SandboxRecipe` 只约束 `.setup()` / `.teardown()` command stack；具体 factory 解析自己的 options 后，才把 template 放进这份内部结构。这样 E2B 的 `template: string`、Docker 的 `image: string`、Vercel 的 `snapshotId: string` 与 Compose 的资源组参数无需伪装成同一个公共字段类型。
+
 Agent 不提供 template。
 它出现在 ownerOrder 中，是因为 AgentProvisioner 与 Agent setup 作用于同一个主 Sandbox；内部协议不因此降格成 SandboxCommand。
 

@@ -17,7 +17,6 @@ import {
   type Sandbox,
   type SandboxCommand,
   type SandboxRecipe,
-  type SandboxTemplate,
 } from "niceeval/sandbox";
 ```
 
@@ -28,7 +27,6 @@ import {
 
 ```typescript
 interface SandboxRecipe<Self = SandboxRecipe> {
-  readonly template?: SandboxTemplate;
   setup(command: SandboxCommand): Self;
   teardown(command: SandboxCommand): Self;
 }
@@ -42,6 +40,20 @@ type SandboxCommand = (
 Recipe 是不可变声明。
 `.setup()` 按追加顺序执行，`.teardown()` 接受同一种 SandboxCommand，按追加逆序执行；Runner 另外在 owner 之间执行反向 teardown。
 两个 owner 的 command 在能力上没有差别：都只操作已启动的 Sandbox，不合成 image、template 或第二个 Sandbox。owner 仅决定顺序、归因与收尾位置。
+
+共享 `SandboxRecipe` 协议只包含 command stack 方法，不包含 `template` 属性。
+作者通过具体 factory 的 options 选择起点，Runner 才在内部把它归一成 SandboxTemplate：
+
+```text
+composeSandbox({ file, workspaceService }) -> ComposeSandboxTemplate
+dockerfileSandbox({ context, ... })        -> DockerfileSandboxTemplate
+profileSandbox(profile)                    -> ProfileSandboxTemplate
+dockerSandbox({ image })                   -> DockerImageSandboxTemplate fallback
+e2bSandbox({ template })                   -> E2BSandboxTemplate fallback
+vercelSandbox({ snapshotId })              -> VercelSnapshotSandboxTemplate fallback
+```
+
+因此 `e2bSandbox({ template: "mempal-codex-v3" })` 中的 `template` 只是该 factory 的 provider-native option，不要求与其它 factory 共享字段类型。普通作者不能通过 `recipe.template = ...` 或直接构造对象替换 factory 的归一规则。
 
 `SandboxCommandContext` 记录 owner、Attempt、signal、progress、diagnostic 与 facts。
 它不暴露 Provider-native SDK，也不允许新增 service 或替换主 Sandbox。
@@ -111,7 +123,7 @@ interface ComposeSandboxOptions {
 }
 ```
 
-`composeSandbox()` 返回带 Compose SandboxTemplate 的 EvalSandboxRecipe。
+`composeSandbox()` 接受 Compose 起点参数并返回 EvalSandboxRecipe；Compose SandboxTemplate 由 factory 产物在内部携带，不作为共享 Recipe 属性暴露。
 它不选择 Provider；`workspaceService` 对应 Agent、Eval、文件 API、workdir 与 diff 共同使用的主 Sandbox。
 
 ### `dockerfileSandbox()`

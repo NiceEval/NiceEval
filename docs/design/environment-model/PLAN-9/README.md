@@ -9,7 +9,7 @@
 ## 结论
 
 作者侧不再区分 Environment 与 SandboxConfig。
-Eval 与 Experiment 都声明“在同一个 Sandbox 上盖什么”：recipe 可选带 template，剩下的都是在运行中 Sandbox 上顺序执行的 command。每条 Attempt 恰好激活一个 template，template owner 的 command 先执行，另一个 owner 和 Agent 再依次叠加。
+Eval 与 Experiment 都声明“在同一个 Sandbox 上盖什么”：具体 recipe factory 可选声明 template 输入，共享协议只叠加在运行中 Sandbox 上顺序执行的 command。每条 Attempt 恰好激活一个 template，template owner 的 command 先执行，另一个 owner 和 Agent 再依次叠加。
 
 ```text
 one active Sandbox template
@@ -41,7 +41,7 @@ Experiment E2B template
 ## 只保留一个必要区分
 
 作者声明与运行资源不能使用同一个类型。
-`SandboxRecipe` 是可签入、可组合的声明；`Sandbox` 是启动后执行命令和文件操作的句柄。
+`SandboxRecipe` 是可签入、可组合的 command stack 声明；`Sandbox` 是启动后执行命令和文件操作的句柄。
 
 PLAN-9 删除的是 Environment / SandboxConfig 两套作者概念，不是规划值与运行值的类型边界。
 Provider 仍把一个 template 解析成完整 Sandbox Case，Compose 仍保留 service、网络、volume、ready 与整组清理。
@@ -52,16 +52,19 @@ Eval 与 Experiment 都使用 `sandbox` 字段：
 
 ```typescript
 interface SandboxRecipe<Self = SandboxRecipe> {
-  readonly template?: SandboxTemplate;
   setup(command: SandboxCommand): Self;
   teardown(command: SandboxCommand): Self;
 }
 ```
 
-Experiment recipe 额外选择 Provider，并可提供 profile 覆盖与 fallback template。
+共享协议只统一 command stack，不公开一个同形的 `template` 属性。
+template 由具体 factory 的 options 声明。
+`composeSandbox()` / `dockerfileSandbox()` / `profileSandbox()` 声明 Eval 起点；`dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 声明 Provider 与 fallback。Runner 再把这些输入归一成内部 SandboxTemplate。
+
+这避免要求 `e2bSandbox({ template: string })` 的原生参数符合 `SandboxRecipe.template?: SandboxTemplate`，也避免作者绕过 factory 手写一个看似通用、实际缺少 Provider 语义的 template 对象。
 Eval recipe 不能选择 Provider；Agent 的 stack contribution 由 Adapter 内部提供，不进入普通作者配置，也不伪装成 SandboxRecipe。
 
-owner 可以同时提供 template 与 command。
+同一个具体 factory 产物可以同时声明 template 输入与 command。
 “谁有 template 谁先”不表示 template owner 没有运行时检查；预装工具、真实版本、PATH 与权限仍需 command 验证。
 
 layer 只是 command 在 stack 里的位置和归属，不是另一种执行原语，因此 PLAN-9 不公开 Layer 对象或 DSL。

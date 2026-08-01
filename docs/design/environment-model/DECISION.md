@@ -10,6 +10,7 @@
 
 - Eval 与 Experiment 都通过 `sandbox` 字段贡献 SandboxRecipe，不再公开 Environment 与 SandboxConfig 两套作者概念。
 - SandboxRecipe 是声明；Sandbox 是启动后执行命令与文件操作的句柄，两种类型不能互换。
+- 共享 SandboxRecipe 协议只暴露 `.setup()` / `.teardown()` command stack；template 由具体 factory 的 options 声明，再由 Runner 归一成内部 SandboxTemplate，不公开同形 `recipe.template` 字段。
 - 每条 Attempt 恰好激活一个 SandboxTemplate。Eval recipe 有 template 时优先，否则使用 Experiment 或 Provider fallback。
 - SandboxTemplate 是完整 Case 起点的穷尽联合，不把 Compose 资源组压成单实例产物。
 - Experiment Provider recipe 选择 Provider。Provider 是 template 的唯一 planner，并拥有 build、start、ready、证据与资源组 finalizer。
@@ -24,7 +25,7 @@
 - 框架不理解 layer 想满足什么 Requirement；需要利用预装时，作者在同一 command 里手写 check、必要时 install 与 recheck。
 - 第一阶段不公开 Requirement、Base contribution、依赖 DAG、资源图或自动并行。
 - 现场无法按 ownerOrder 组合时复用 `templates[profile]` 提供预制完整 Case,或明确 skip/fail。
-- `composeSandbox()`、`dockerfileSandbox()` 与 `profileSandbox()` 构造带 template 的 Eval recipe。
+- `composeSandbox()`、`dockerfileSandbox()` 与 `profileSandbox()` 通过各自 factory 参数声明 Eval template 起点。
 - `dockerSandbox()`、`e2bSandbox()` 与 `vercelSandbox()` 构造选择 Provider 的 Experiment recipe。
 - 普通 Experiment 不注册 materializer；Provider 内建自己支持的 SandboxTemplate kind。
 - `workspaceService` 指明 Agent、Eval、文件 API、workdir 与 diff 的共同执行空间。
@@ -137,7 +138,7 @@ Terminal-Bench:
 
 ```text
 每题 EvalDef 引用自己的 task package
-  -> composeSandbox() 产生带 template 的 Eval SandboxRecipe
+  -> composeSandbox() 通过 factory 参数声明 Eval template 起点
   -> Docker Provider 内建规划并启动完整 Case
   -> Eval recipe setup
   -> Experiment recipe setup 安装 mempal
@@ -171,9 +172,9 @@ PLAN-9 不承诺运行时合并两个 template。
 
 1. `EvalDef.environment` 改成 `EvalDef.sandbox`，类型为不选择 Provider 的 EvalSandboxRecipe。
 2. `EvalDef.setup` / `teardown` 迁入 Eval SandboxRecipe，不保留双入口。
-3. `dockerSandbox()` 等工厂返回选择 Provider 的 ExperimentSandboxRecipe，并用 `templates[profile]` 提供完整覆盖。
-4. `composeSandbox()` 与 `dockerfileSandbox()` 返回带 SandboxTemplate 的 Eval recipe。
-5. 增加 `profileSandbox()` 与没有 template 的 `defineSandboxRecipe()`。
+3. `dockerSandbox()` 等工厂返回选择 Provider 的 ExperimentSandboxRecipe，用各自的 `image` / `template` / `snapshotId` option 声明 fallback，并用 `templates[profile]` 提供完整覆盖。
+4. `composeSandbox()`、`dockerfileSandbox()` 与 `profileSandbox()` 用各自 options 声明 Eval 起点；factory 产物在 Runner 内部归一成 SandboxTemplate，不给共享 SandboxRecipe 增加 `template` 属性。
+5. 增加只声明 command stack、不声明起点的 `defineSandboxRecipe()`。
 6. `SandboxSource` 内部重命名为 SandboxTemplate 联合；运行中的 Sandbox 类型保持不变。
 7. `mainService` 政名为 `workspaceService`。
 8. Docker Provider 内建 Compose 与 Dockerfile template planner，普通 recipe 删除 `materializers` 注册表。
