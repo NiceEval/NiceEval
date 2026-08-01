@@ -8,7 +8,6 @@ MemoryBench 与 TerminalBench 的工作场景来自真实下游项目；两者�
 
 本文不定义 API、CLI 或数据形状。
 已定稿能力以每组故事链接的 Feature 与 Design 为准；尚未定稿的方向单独放在 Roadmap 故事中。
-文末的 Feature 覆盖表以 `docs/feature/` 的一级目录为清单，确保每组已定稿能力都有真实故事承接。
 
 ## 人物
 
@@ -161,27 +160,6 @@ CodeMate 的一次完整回归需要数小时和真实模型费用。
 - **AUD-8 面向不同受众交付同一结论。** 苏曼青要在终端、浏览器、静态站点和 Harbor 内部产品页中使用同一数据与口径。NiceEval 需要让 text / web 两面消费同一报告结果。验收时，展示形态可以不同，实体身份、数值、范围、下钻目标和警告保持一致。
 
 来源：[Record](feature/record/README.md)、[Sample](feature/sample/README.md)、[Reading](feature/reading/README.md)、[Reports](feature/reports/README.md)、[Report Authoring 决策](design/report-authoring/DECISION.md)。
-
-## Feature 覆盖表
-
-这张表以 `docs/feature/` 的一级功能目录为清单。
-Story 一栏只引用上文已经写清人物、困难、能力与验收的故事，不用抽象角色代替遗漏。
-
-| Feature | 它在真实工作中解决什么 | Story |
-|---|---|---|
-| [Adapters](feature/adapters/README.md) | 用 Agent 正式支持的会话方式评估，并把不同 Agent 安装到最终任务环境 | TB-4、TB-10、TUT-1 |
-| [Eval](feature/eval/README.md) | 描述单轮、多轮、HITL、数据集题目、Fixture、隐藏判据和通过制或计分制 | MB-2、TB-1、TB-5、TUT-1、TUT-3 |
-| [Experiments](feature/experiments/README.md) | 选择 Agent、模型、Eval、预算、并发与生命周期，并决定哪些 Attempt 执行 | MB-1、MB-3、MB-4、REL-1、REL-2、RUN-1 至 RUN-7 |
-| [Sandbox](feature/sandbox/README.md) | 隔离不可信执行，承载异构 Environment，留存现场并安全复用 Sandbox | MB-3 至 MB-5、TB-2 至 TB-5、RUN-5、RUN-6、OPS-1、OPS-4 |
-| [Assertions](feature/assertions/README.md) | 用值、行为、Sandbox、资源和 Judge 证据检查结果，并记录检查依据 | MB-6、TB-6、TUT-2 |
-| [Judge](feature/judge/README.md) | 评价固定规则难以表达的开放式质量，并如实处理端点或证据不可用 | TUT-4、TUT-6 |
-| [Verdict](feature/verdict/README.md) | 把 gate、soft、optional、执行状态与证据缺失折叠成四种互斥终态 | TB-6、TUT-3、TUT-5 |
-| [执行失败分类](feature/error-classification/README.md) | 只重试安全的瞬时故障，并按失败波及范围停止无意义的后续派发 | MB-7、OPS-2、OPS-3 |
-| [Record](feature/record/README.md) | 保存可寻址的运行事实，接收第三方结果，并发布自包含证据目录 | AUD-1、AUD-6 |
-| [Sample](feature/sample/README.md) | 从全部历史中选出明确口径、覆盖与时效的一批可比较 Attempt | AUD-2、AUD-3 |
-| [Reading](feature/reading/README.md) | 让终端、浏览器、静态发布和脚本沿同一事实到呈现管线读取 | AUD-5、AUD-6、AUD-8 |
-| [Reports](feature/reports/README.md) | 计算可追溯指标、调试失败、分析取舍并交付业务报告 | MB-8、REL-4、REL-5、AUD-4、AUD-7、AUD-8 |
-| [跨 Feature 用例](feature/use-case/README.md) | 按最终目标选择结果沿用、重跑、并发、Sandbox 复用或调试现场 | RUN-1 至 RUN-7、REL-5、OPS-4 |
 
 ## 贡献者故事
 
