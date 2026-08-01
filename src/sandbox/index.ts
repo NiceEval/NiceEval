@@ -2,10 +2,22 @@
 // 具体 provider 实现类(DockerSandbox / VercelSandbox / E2BSandbox)是内部实现细节,不在此导出——
 // 需要自定义 provider 时用 defineSandbox(),不需要绕开 resolve.ts 直接 new 内置类。
 
-export { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox, defineSandbox } from "../define.ts";
+// 新 SandboxLayer factory 不与旧 provider spec 工厂做兼容重载。旧实现仍留在 define.ts 供
+// Runner 迁移期间内部使用；无命名冲突的 dockerSandbox/defineSandbox 暂保留原入口。
+export { dockerSandbox, defineSandbox } from "../define.ts";
+export {
+  sandboxLayer,
+  dockerComposeSandbox,
+  dockerfileSandbox,
+  dockerImageSandbox,
+  e2bSandbox,
+  vercelSandbox,
+  localSandbox,
+} from "./layer.ts";
+export { command, shell, defineSandboxCommand } from "./commands.ts";
+export { registerSandboxContent } from "./content.ts";
 export {
   composeSandbox,
-  dockerfileSandbox,
   defineSandboxCase,
   planSandboxCase,
   materializePlannedCase,
@@ -70,6 +82,31 @@ export {
   NICEEVAL_OPENCLAW_DOCKER_IMAGE,
   NICEEVAL_OPENCODE_DOCKER_IMAGE,
 } from "./docker-agent-image.ts";
+
+export type {
+  SandboxLayer,
+  SandboxLayerKind,
+  DockerComposeSandboxOptions,
+  DockerfileSandboxOptions,
+  DockerImageSandboxOptions,
+  E2BSandboxOptions,
+  VercelSandboxOptions,
+  LocalSandboxOptions,
+} from "./layer.ts";
+
+export type {
+  SandboxCommand,
+  SandboxCommandContext,
+  SandboxCommandTarget,
+  SandboxCleanupCommand,
+  SandboxCommandIdentity,
+  SandboxCommandIdentityValue,
+  SandboxCommandOptions,
+  StableSandboxCommand,
+  AttemptRef,
+} from "./commands.ts";
+
+export type { RegisteredSandboxContent } from "./content.ts";
 
 export type {
   Sandbox,
