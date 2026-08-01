@@ -46,11 +46,6 @@ interface BaseMarkProps<Row extends object, AxisKey extends string, DimensionKey
   legend?: boolean;
   locale?: ReportLocale;
   className?: string;
-  /**
-   * Sample 派生默认校验 EvidenceRow / MetricValue。
-   * `true` 只退出证据校验，接受 JSON 标量，不伪造 Attempt 下钻。
-   */
-  external?: boolean;
 }
 
 /**
@@ -66,7 +61,10 @@ type EvidenceMarkProps<Row extends EvidenceRow> = BaseMarkProps<
   Row,
   EvidenceAxisKey<Row>,
   EvidenceDimensionKey<Row>
->;
+> & {
+  /** Sample 派生点必须保留证据；不能声明为 external。 */
+  external?: false;
+};
 type ExternalMarkProps<Row extends object> = BaseMarkProps<
   Row,
   ExternalAxisKey<Row>,

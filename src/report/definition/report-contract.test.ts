@@ -59,11 +59,23 @@ const missingParameterizedLoad: PageDefinition<{ id: string }, Detail> = {
 };
 void missingParameterizedLoad;
 
-// @ts-expect-error 参数化页不能出现在导航里
+// @ts-expect-error 显式 Params 的页不能退回普通页；否则宿主会把 Sample 交给 Detail render。
+const parameterizedPageCannotBePlain: PageDefinition<{ id: string }, Detail> = {
+  id: "plain-detail",
+  title: "Plain detail",
+  render: (detail) => {
+    const id: string = detail.id;
+    void id;
+    return null;
+  },
+};
+void parameterizedPageCannotBePlain;
+
 const navigableParameterizedPage: PageDefinition<{ id: string }, Detail> = {
   id: "navigable-detail",
   title: "Navigable detail",
   params: detailParams,
+  // @ts-expect-error 参数化页不能出现在导航里
   navigation: true,
   load: detailLoad,
   render: () => null,

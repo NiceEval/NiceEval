@@ -13,7 +13,6 @@ import type { Record, Sample } from "../../record/types.ts";
 import { resolveLocator } from "../../record/open.ts";
 import { loadAttemptEvidence } from "../../record/attempt-evidence.ts";
 import type {
-  PageDefinition,
   PageLoadContext,
   ReportDefinition,
   ReportMeta,
@@ -41,7 +40,7 @@ export class UnknownPageError extends Error {
 // ───────────────────────── render 内核 ─────────────────────────
 
 async function runPageRender(
-  page: Pick<PageDefinition<unknown, unknown>, "id" | "render">,
+  page: Pick<ReportPage, "id" | "render">,
   input: PageRenderInput,
   key: string,
   cache?: Map<string, Promise<ReportNode>>,

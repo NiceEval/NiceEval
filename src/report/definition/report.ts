@@ -113,20 +113,25 @@ export interface ParameterizedPageDefinition<Params, Input> extends PageBase<Inp
   load: PageLoad<Params, Input>;
 }
 
-export type PageDefinition<Params = void, Input = Sample> =
-  | PlainPageDefinition<Input>
-  | ParameterizedPageDefinition<Params, Input>;
+export type PageDefinition<Params = void, Input = Sample> = [Params] extends [void]
+  ? PlainPageDefinition<Input>
+  : ParameterizedPageDefinition<Params, Input>;
+
+/**
+ * defineReport 的 pages 可混合两类已完整声明的页。它只用于 factory 的宽泛收集边界；
+ * 作者应使用 PageDefinition<Params, Input>，由 Params 决定可写的分支。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPageDefinition = PlainPageDefinition<any> | ParameterizedPageDefinition<any, any>;
 
 /** 规范化后的 page 类型;装载期只做形状校验,不为具体 Params/Input 收窄类型。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ReportPage = PageDefinition<any, any>;
+export type ReportPage = AnyPageDefinition;
 
 /** 作者向 page 声明的输入形态;装载期规范化 navigation,不执行 render / load。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type PageDefinitionInput = PageDefinition<any, any>;
+export type PageDefinitionInput = AnyPageDefinition;
 
 /** pages 是非空有序数组;单页函数缩写不经此类型。 */
-export type ReportOptions<Pages extends NonEmptyArray<PageDefinitionInput> = NonEmptyArray<PageDefinitionInput>> = ReportShell & {
+export type ReportOptions<Pages extends NonEmptyArray<AnyPageDefinition> = NonEmptyArray<AnyPageDefinition>> = ReportShell & {
   pages: Pages;
 };
 

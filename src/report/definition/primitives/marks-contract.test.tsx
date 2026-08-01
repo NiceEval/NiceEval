@@ -40,4 +40,6 @@ if (false) {
   <Bars points={points} x="agent" y="passRate" sort={{ field: "refs" }} />;
   // @ts-expect-error external 图表不支持 Sample 的下钻目标
   <Scatter external points={externalPoints} x="year" y="score" pointTarget={() => undefined} />;
+  // @ts-expect-error EvidenceRow 图表不能伪装成 external，也不能借此保留下钻目标
+  <Scatter external points={points} x="agent" y="passRate" pointTarget={() => undefined} />;
 }

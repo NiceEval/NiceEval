@@ -4,14 +4,14 @@
 // 永远得到同一个 key。独立成文件是为了打破 page-render.ts(渲染内核)与 resolved-page.ts
 // (resolve 制品)之间原本会出现的循环 import:两边都需要这份纯函数,谁也不拥有它。
 
-import type { PageDefinition, ReportTarget } from "../definition/report.ts";
+import type { ReportPage, ReportTarget } from "../definition/report.ts";
 
 /**
  * `page.params.encode(params)` 的安全求值:page 没有声明 `params`,或 `encode` 抛错,统一
  * 返回 `undefined`——目标不可编码时组件退化成纯文本,不是抛出异常打断整页渲染。
  */
 export function encodeTargetKey(
-  page: Pick<PageDefinition<unknown, unknown>, "params">,
+  page: Pick<ReportPage, "params">,
   params: unknown,
 ): string | undefined {
   if (page.params === undefined) return undefined;
@@ -27,7 +27,7 @@ export function encodeTargetKey(
  * 与旧版 sample page 的缓存键一致);有 `params` 且编码成功时是 `<id>/<encoded>`,与静态导出
  * 目录布局(`<pageId>/<key>.html`)同形。
  */
-export function targetKey(page: Pick<PageDefinition<unknown, unknown>, "id" | "params">, params?: unknown): string {
+export function targetKey(page: Pick<ReportPage, "id" | "params">, params?: unknown): string {
   const encoded = encodeTargetKey(page, params);
   return encoded === undefined ? page.id : `${page.id}/${encoded}`;
 }
@@ -38,7 +38,7 @@ export function targetKey(page: Pick<PageDefinition<unknown, unknown>, "id" | "p
  * 默认实现的核心,也是静态导出决定要不要为一个目标生成文件的依据。
  */
 export function targetHref(
-  pages: readonly Pick<PageDefinition<unknown, unknown>, "id" | "params">[],
+  pages: readonly Pick<ReportPage, "id" | "params">[],
   target: ReportTarget,
 ): string | undefined {
   const page = pages.find((candidate) => candidate.id === target.page);
