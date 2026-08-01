@@ -15,9 +15,8 @@ import {
   extractOpenCodeJsonl,
 } from "../o11y/parsers/opencode.ts";
 import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
-import { createNpmCliProvisioner } from "./npm-staged.ts";
-import { ensureAgent } from "./provisioner.ts";
-import type { Agent, AgentProvisioner, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
+import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
@@ -37,8 +36,6 @@ export interface OpenCodeConfig {
   version?: string;
   /** 装进沙箱的 Skill,落在 `.agents/skills/<name>/`。 */
   skills?: SkillSpec[];
-  /** 整体替换默认 Ensure provisioner。省略时用内置 staged 路径。 */
-  provisioner?: AgentProvisioner;
 }
 
 function resolveApiKey(config?: OpenCodeConfig): string {
@@ -61,9 +58,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
-  const provisioner =
-    config?.provisioner ??
-    createNpmCliProvisioner({
+  const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "opencode",
         version,
@@ -71,13 +66,14 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       },
       packageName: "opencode-ai",
       bin: "opencode",
-    });
+  });
 
   return defineSandboxAgent({
     name: "opencode",
     coverage: completeCoverage,
     spanMapper: mapGenericSpans,
-    provisioner,
+    ensure,
+    installers: [installer],
 
     tracing: {
       protocol: "http/protobuf",
@@ -89,11 +85,6 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, {
-        fact: ctx.fact.bind(ctx),
-        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
-      });
-
       const baseUrl = resolveBaseUrl(config);
       const provider: globalThis.Record<string, unknown> = {};
       if (baseUrl) {

@@ -23,9 +23,7 @@ import type {
 } from "./types.ts";
 import { brandEvalDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
-
-export { defineAgentProvisioner } from "./agents/provisioner.ts";
-export type { AgentProvisioner, AgentProvisionerDef } from "./agents/types.ts";
+import { isSandboxLayer } from "./sandbox/layer.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
@@ -43,7 +41,8 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     name: def.name,
     kind: "sandbox",
     coverage: def.coverage,
-    provisioner: def.provisioner,
+    ensure: def.ensure === undefined ? [] : Array.isArray(def.ensure) ? def.ensure : [def.ensure],
+    installers: def.installers ?? [],
     setup: def.setup,
     tracing: def.tracing,
     spanMapper: def.spanMapper,
@@ -83,9 +82,7 @@ export function defineEval(def: EvalAuthorInput): EvalDefinition<"pass", TestCon
   if (typeof def.test !== "function") {
     throw new Error(t("define.evalTestRequired"));
   }
-  if (typeof def.environment === "string" && def.environment.trim().length === 0) {
-    throw new Error(t("define.evalEnvironmentEmpty"));
-  }
+  assertSandboxLayer(def.sandbox, "defineEval");
   return brandEvalDefinition({ ...def, scoring: "pass" });
 }
 
@@ -109,9 +106,7 @@ export function defineScoreEval(
   if (typeof def.test !== "function") {
     throw new Error(t("define.scoreEvalTestRequired"));
   }
-  if (typeof def.environment === "string" && def.environment.trim().length === 0) {
-    throw new Error(t("define.scoreEvalEnvironmentEmpty"));
-  }
+  assertSandboxLayer(def.sandbox, "defineScoreEval");
   const result = brandEvalDefinition({ ...def, scoring: "points" });
   definedScoreEvals.add(result);
   return result;
@@ -123,6 +118,7 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
     throw new Error(t("define.experimentIdRejected"));
   }
   if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
+  assertSandboxLayer(def.sandbox, "defineExperiment");
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
   if (def.setup !== undefined && typeof def.setup !== "function") {
@@ -151,6 +147,18 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
     }
   }
   return def;
+}
+
+/**
+ * `SandboxLayer` 的品牌只由 `niceeval/sandbox` 工厂写入。动态 TSX/JS 调用绕过静态类型时，
+ * 不接受旧 SandboxSpec 或看似相同的裸对象，以免在 linker 阶段才得到难以定位的错误。
+ */
+function assertSandboxLayer(value: unknown, factory: string): void {
+  if (value !== undefined && !isSandboxLayer(value)) {
+    throw new TypeError(
+      `${factory} sandbox must be a SandboxLayer created by a niceeval/sandbox factory (for example dockerImage(), dockerCompose(), e2bTemplate(), or localSandbox()).`,
+    );
+  }
 }
 
 function isJsonValue(v: unknown): boolean {

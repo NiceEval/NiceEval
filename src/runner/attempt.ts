@@ -17,7 +17,7 @@ import { providerSessionLimitMs, SandboxCommandTimeoutError } from "../sandbox/d
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
-import { agentInstallIdentityInput } from "../agents/provisioner.ts";
+import { agentInstallIdentityInput, runAgentEnsure } from "../agents/provisioner.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -888,7 +888,7 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
-  /** Run 级 Agent artifact prepare 协调器;sandbox setup 经 ensureAgent 注入。 */
+  /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
 
@@ -1039,6 +1039,19 @@ async function runAttemptBody(
           );
         }
       }
+
+      // 两侧作者的环境准备完成后，Runner 统一执行 Agent ensure；adapter setup 只能写运行时
+      // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
+      if (run.agent.kind === "sandbox") {
+        enterPhase("agent.ensure");
+        log("Running agent ensure");
+        await runAgentEnsure(run.agent.ensure ?? [], run.agent.installers ?? [], sandbox, {
+          fact,
+          ...(prepareCoordinator !== undefined ? { coordinator: prepareCoordinator } : {}),
+          signal,
+          progress: feedback.progress,
+        });
+      }
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
@@ -1051,7 +1064,6 @@ async function runAttemptBody(
         ? run.agent.setup(sandbox, {
             ...sandboxAttemptCtx,
             reportSetup: (manifest) => (agentSetup = manifest),
-            ...(prepareCoordinator !== undefined ? { prepareCoordinator } : {}),
           })
         : run.agent.setup(attemptCtx))) as unknown;
       if (typeof returned === "function") {
@@ -1574,8 +1586,8 @@ export function experimentRunInfo(
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
       : {}),
-    ...(run.agent.kind === "sandbox" && run.agent.provisioner !== undefined
-      ? { agentInstall: agentInstallIdentityInput(run.agent.provisioner.identity) }
+    ...(run.agent.kind === "sandbox" && (run.agent.ensure?.length ?? 0) > 0
+      ? { agentInstall: agentInstallIdentityInput(run.agent.ensure![0]!.identity) }
       : {}),
   };
 }

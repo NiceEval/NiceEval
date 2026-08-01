@@ -1,4 +1,4 @@
-// Agent Ensure 协议实现:check → 缺失时 install → recheck。
+// Agent Ensure 协议实现:probe → 缺失时按 identity 配对 installer → install → 同一 probe 复检。
 // 契约单源:docs/feature/adapters/architecture/agent-ensure.md
 //
 // Runner 接线(run.ts / attempt.ts)由串行合流节点完成;本模块导出可调用的 Ensure API、
@@ -9,13 +9,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { t } from "../i18n/index.ts";
 import type { Sandbox } from "../sandbox/types.ts";
+import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
   AgentEnsureOutcome,
+  AgentEnsure,
   AgentIdentity,
-  AgentInstallMode,
-  AgentProvisioner,
-  AgentProvisionerDef,
+  AgentInstaller,
   AgentStagedArtifact,
 } from "./types.ts";
 
@@ -41,12 +42,10 @@ export interface ArtifactPrepareTimingHook {
 export interface EnsureAgentOptions {
   /** 上报 attempt facts(`ctx.fact`)。 */
   fact?(key: string, value: string | number | boolean): void;
-  /** Runner 已在 Run 级准备好的制品;省略时 staged 路径经 coordinator 懒准备。 */
-  prepared?: AgentStagedArtifact;
-  /** 目标平台;省略时从主 Sandbox 探测(不是宿主平台)。 */
-  platform?: AgentArtifactPlatform;
   /** Run 级 prepare 协调器;多 attempt 应共享同一实例。 */
   coordinator?: ArtifactPrepareCoordinator;
+  signal?: AbortSignal;
+  progress?(update: { message: string }): void;
 }
 
 export interface EnsureAgentResult {
@@ -69,33 +68,6 @@ export function assertStableAgentIdentity(identity: AgentIdentity): void {
   if (!identity.revision.trim()) {
     throw new Error(t("agent.ensure.identityMissingRevision", { agent: identity.agent }));
   }
-}
-
-function defaultMode(def: AgentProvisionerDef): AgentInstallMode {
-  if (def.mode !== undefined) return def.mode;
-  return def.prepare ? "staged" : "sandbox-network";
-}
-
-/**
- * 规格化用户 / 内置 provisioner。三种模式失败后不互相降级——mode 是配置,不是回退。
- */
-export function defineAgentProvisioner(def: AgentProvisionerDef): AgentProvisioner {
-  assertStableAgentIdentity(def.identity);
-  const mode = defaultMode(def);
-  if (mode === "staged" && def.prepare === undefined) {
-    throw new Error(t("agent.ensure.stagedNeedsPrepare", { agent: def.identity.agent }));
-  }
-  if (mode === "verifyOnly" && def.prepare !== undefined) {
-    // verifyOnly 不安装;带 prepare 易误导。点名而不是静默丢掉。
-    throw new Error(t("agent.ensure.verifyOnlyHasPrepare", { agent: def.identity.agent }));
-  }
-  return {
-    identity: def.identity,
-    mode,
-    check: def.check,
-    install: def.install,
-    prepare: def.prepare,
-  };
 }
 
 /** identity (+ 可选制品 digest/platform) → 指纹 / configHash 输入投影。 */
@@ -131,10 +103,6 @@ export function platformKey(platform: AgentArtifactPlatform): string {
 
 export function artifactCacheKey(identity: AgentIdentity, platform: AgentArtifactPlatform): string {
   return `${identity.agent}@${identity.version}+r${identity.revision}|${platformKey(platform)}`;
-}
-
-export function hostArtifactPlatform(): AgentArtifactPlatform {
-  return { os: process.platform, arch: process.arch };
 }
 
 /**
@@ -193,22 +161,16 @@ export class ArtifactPrepareCoordinator {
     return this.cache.get(artifactCacheKey(identity, platform));
   }
 
-  async prepare(
-    provisioner: AgentProvisioner,
-    platform: AgentArtifactPlatform = hostArtifactPlatform(),
-  ): Promise<AgentStagedArtifact> {
-    if (provisioner.mode !== "staged") {
+  async prepare(installer: Extract<AgentInstaller, { installMode: "staged" }>, platform: AgentArtifactPlatform): Promise<AgentStagedArtifact> {
+    if (installer.installMode !== "staged") {
       throw new Error(
         t("agent.ensure.prepareWrongMode", {
-          agent: provisioner.identity.agent,
-          mode: provisioner.mode,
+          agent: installer.identity.agent,
+          mode: installer.installMode,
         }),
       );
     }
-    if (provisioner.prepare === undefined) {
-      throw new Error(t("agent.ensure.stagedNeedsPrepare", { agent: provisioner.identity.agent }));
-    }
-    const key = artifactCacheKey(provisioner.identity, platform);
+    const key = artifactCacheKey(installer.identity, platform);
     const hit = this.cache.get(key);
     if (hit) return hit;
 
@@ -216,9 +178,9 @@ export class ArtifactPrepareCoordinator {
     if (pending) return pending;
 
     const runPrepare = async (): Promise<AgentStagedArtifact> => {
-      const artifact = await provisioner.prepare!(platform);
+      const artifact = await installer.prepareArtifact(platform);
       if (!artifact.digest.trim()) {
-        throw new Error(t("agent.ensure.artifactMissingDigest", { agent: provisioner.identity.agent }));
+        throw new Error(t("agent.ensure.artifactMissingDigest", { agent: installer.identity.agent }));
       }
       this.cache.set(key, artifact);
       return artifact;
@@ -228,7 +190,7 @@ export class ArtifactPrepareCoordinator {
       this.timing
         ? this.timing.activity(
             AGENT_ARTIFACT_PREPARE_ACTIVITY,
-            { identity: provisioner.identity, platform, cacheKey: key },
+            { identity: installer.identity, platform, cacheKey: key },
             runPrepare,
           )
         : runPrepare()
@@ -242,80 +204,70 @@ export class ArtifactPrepareCoordinator {
 
 function formatEnsureError(opts: {
   identity: AgentIdentity;
-  phase: "check" | "recheck" | "verifyOnly";
-  result: { actualVersion?: string; detail?: string };
+  phase: "probe" | "recheck" | "verify-only" | "installer";
+  result?: { detail?: string };
 }): string {
   return t("agent.ensure.failed", {
     agent: opts.identity.agent,
     expected: opts.identity.version,
-    actual: opts.result.actualVersion ?? "(none)",
+    actual: "(none)",
     phase: opts.phase,
-    detail: opts.result.detail ?? "",
+    detail: opts.result?.detail ?? "",
     next:
-      opts.phase === "verifyOnly"
+      opts.phase === "verify-only"
         ? t("agent.ensure.nextVerifyOnly")
         : t("agent.ensure.nextRecheck"),
   });
 }
 
 /**
- * Ensure 状态机:官方预装 / 自建预装 / 缺失 / 错版本 / verifyOnly 走同一路径。
+ * Runner 唯一调用的 Ensure 循环。Adapter 只声明 probe，不能在 setup 内自行绕过。
  * 不改题面网络、不按 template 名短路、三种模式失败后不静默降级。
  */
-export async function ensureAgent(
-  provisioner: AgentProvisioner,
+export async function runAgentEnsure(
+  ensures: readonly AgentEnsure[],
+  installers: readonly AgentInstaller[],
   sandbox: Sandbox,
   opts: EnsureAgentOptions = {},
-): Promise<EnsureAgentResult> {
-  assertStableAgentIdentity(provisioner.identity);
-
-  const first = await provisioner.check(sandbox);
-  if (first.ok) {
-    reportFacts(opts.fact, "hit", first.actualVersion);
-    return { outcome: "hit", actualVersion: first.actualVersion, artifact: opts.prepared };
-  }
-
-  if (provisioner.mode === "verifyOnly") {
-    throw new Error(
-      formatEnsureError({
-        identity: provisioner.identity,
-        phase: "verifyOnly",
-        result: first,
-      }),
-    );
-  }
-
-  let artifact = opts.prepared;
-  if (provisioner.mode === "staged") {
-    if (!artifact) {
-      const coordinator = opts.coordinator ?? sharedPrepareCoordinator;
-      // 目标平台从沙箱探测,不是宿主:见 detectSandboxPlatform。
-      const platform = opts.platform ?? (await detectSandboxPlatform(sandbox));
-      artifact = await coordinator.prepare(provisioner, platform);
+): Promise<readonly EnsureAgentResult[]> {
+  const target = createSandboxCommandTarget(sandbox);
+  const signal = opts.signal ?? new AbortController().signal;
+  const results: EnsureAgentResult[] = [];
+  for (const ensure of ensures) {
+    assertStableAgentIdentity(ensure.identity);
+    if (await probeMatches(ensure, target, signal, opts.progress)) {
+      reportFacts(opts.fact, "hit");
+      results.push({ outcome: "hit" });
+      continue;
     }
+    const installer = installers.find((candidate) => sameIdentity(candidate.identity, ensure.identity));
+    if (!installer || installer.installMode === "verify-only") {
+      throw new Error(formatEnsureError({ identity: ensure.identity, phase: installer ? "verify-only" : "installer" }));
+    }
+    const platform = await detectSandboxPlatform(sandbox);
+    if (installer.platforms && !installer.platforms.includes(platformKey(platform))) {
+      throw new Error(`Agent installer for ${ensure.identity.agent}@${ensure.identity.version} does not support ${platformKey(platform)}.`);
+    }
+    let artifact: AgentStagedArtifact | undefined;
+    if (installer.installMode === "staged") {
+      artifact = await (opts.coordinator ?? sharedPrepareCoordinator).prepare(installer, platform);
+      await installer.install(target, { identity: ensure.identity, targetPlatform: platform, artifact, signal, progress: opts.progress ?? (() => {}) });
+    } else {
+      await installer.install(target, { identity: ensure.identity, targetPlatform: platform, signal, progress: opts.progress ?? (() => {}) });
+    }
+    if (!(await probeMatches(ensure, target, signal, opts.progress))) {
+      throw new Error(formatEnsureError({ identity: ensure.identity, phase: "recheck" }));
+    }
+    reportFacts(opts.fact, "installed");
+    results.push({ outcome: "installed", artifact });
   }
-
-  await provisioner.install(sandbox, artifact);
-
-  const recheck = await provisioner.check(sandbox);
-  if (!recheck.ok) {
-    throw new Error(
-      formatEnsureError({
-        identity: provisioner.identity,
-        phase: "recheck",
-        result: recheck,
-      }),
-    );
-  }
-
-  reportFacts(opts.fact, "installed", recheck.actualVersion);
-  return { outcome: "installed", actualVersion: recheck.actualVersion, artifact };
+  return results;
 }
 
 function reportFacts(
   fact: EnsureAgentOptions["fact"],
   outcome: AgentEnsureOutcome,
-  actualVersion: string | undefined,
+  actualVersion?: string,
 ): void {
   if (!fact) return;
   fact(AGENT_ENSURE_FACT, outcome);
@@ -323,11 +275,36 @@ function reportFacts(
 }
 
 /**
- * 进程级默认协调器:在 Runner 尚未注入 Run 级实例时,让 adapter setup 内的 ensure
- * 仍能 single-flight prepare。合流接线后应每 Run 新建 {@link ArtifactPrepareCoordinator}
- * 并经 {@link EnsureAgentOptions.coordinator} 传入。
+ * 进程级默认协调器只服务直接单元调用；Runner 正常执行时每 Run 注入自己的实例。
  */
 export const sharedPrepareCoordinator = new ArtifactPrepareCoordinator();
+
+function sameIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
+  return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
+}
+
+async function probeMatches(
+  ensure: AgentEnsure,
+  sandbox: SandboxCommandTarget,
+  signal: AbortSignal,
+  progress: EnsureAgentOptions["progress"],
+): Promise<boolean> {
+  try {
+    await ensure.probe(sandbox, {
+      phase: "prepare",
+      owner: { kind: "experiment", id: `agent.ensure/${ensure.identity.agent}` },
+      attempt: { id: "agent.ensure", index: 0 },
+      signal,
+      progress: progress ?? (() => {}),
+      diagnostic: () => {},
+      facts: () => {},
+      onCleanup: () => {},
+    } satisfies SandboxCommandContext);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** 计算文件内容 digest(sha256 hex),供 prepare 校验后写入 artifact。 */
 export function sha256Hex(content: Buffer | string): string {

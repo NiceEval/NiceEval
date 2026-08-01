@@ -15,9 +15,8 @@ import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import { createNpmCliProvisioner } from "./npm-staged.ts";
-import { ensureAgent } from "./provisioner.ts";
-import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -108,19 +107,12 @@ export interface ClaudeCodeConfig {
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
   preTeardown?: SandboxHook[];
-  /**
-   * 整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
-   * 省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
-   */
-  provisioner?: AgentProvisioner;
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
-  const provisioner =
-    config?.provisioner ??
-    createNpmCliProvisioner({
+  const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "claude-code",
         version: DEFAULT_CLAUDE_CODE_CLI_VERSION,
@@ -128,14 +120,15 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       },
       packageName: "@anthropic-ai/claude-code",
       bin: "claude",
-    });
+  });
 
   return defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapClaudeCodeSpans,
-    provisioner,
+    ensure,
+    installers: [installer],
 
     // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,
     // 需要 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA 开关。
@@ -153,11 +146,6 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, {
-        fact: ctx.fact.bind(ctx),
-        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
-      });
-
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
       // checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。

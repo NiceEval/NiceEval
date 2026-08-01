@@ -11,10 +11,9 @@ import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
 import { DEFAULT_OPENCLAW_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
-import { createNpmCliProvisioner } from "./npm-staged.ts";
-import { ensureAgent } from "./provisioner.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
 import { randomUUID } from "node:crypto";
-import type { Agent, AgentProvisioner, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
+import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -46,8 +45,6 @@ export interface OpenClawConfig {
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
   skills?: SkillSpec[];
-  /** 整体替换默认 Ensure provisioner。省略时用内置 staged 路径。 */
-  provisioner?: AgentProvisioner;
 }
 
 function resolveApiKey(config?: OpenClawConfig): string {
@@ -76,9 +73,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
-  const provisioner =
-    config?.provisioner ??
-    createNpmCliProvisioner({
+  const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "openclaw",
         version,
@@ -86,7 +81,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       },
       packageName: "openclaw",
       bin: "openclaw",
-    });
+  });
 
   return defineSandboxAgent({
     name: "openclaw",
@@ -96,7 +91,8 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
-    provisioner,
+    ensure,
+    installers: [installer],
 
     tracing: {
       protocol: "http/protobuf",
@@ -108,11 +104,6 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, {
-        fact: ctx.fact.bind(ctx),
-        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
-      });
-
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
         // OpenAI 兼容网关走自定义 provider + openai-completions;

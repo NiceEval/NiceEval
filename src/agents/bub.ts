@@ -258,6 +258,7 @@ export function bubAgent(config?: BubConfig): Agent {
 
   return defineSandboxAgent({
     name: "bub",
+    ensure: [],
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapBubSpans,

@@ -5,6 +5,7 @@
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
+import type { SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 
 /**
@@ -345,10 +346,8 @@ export interface SandboxAgentSetupContext extends SandboxAgentContext {
    */
   reportSetup(manifest: AgentSetupManifest): void;
   /**
-   * Run 级 staged payload 协调器。adapter 调 `ensureAgent` 时应传入,使同 Run 多 attempt
-   * single-flight `agent.artifact.prepare`;省略时 Ensure 回落进程级默认协调器。
+   * 已废弃：Agent Ensure 由 Runner 统一执行，adapter setup 不再接触 staged payload 协调器。
    */
-  prepareCoordinator?: import("./provisioner.ts").ArtifactPrepareCoordinator;
 }
 
 /**
@@ -389,7 +388,7 @@ interface AgentBase {
   classifySendFailure?: SendFailureClassifier;
 }
 
-// ───────────────────────── Agent Ensure / Provisioner ─────────────────────────
+// ───────────────────────── Agent Ensure / Installer ─────────────────────────
 
 /**
  * Agent 安装身份:纯数据,进 configHash 与 `run.json`。
@@ -406,23 +405,12 @@ export interface AgentIdentity {
 }
 
 /**
- * 一次 check 的结构化事实。boolean 会逼 adapter 再探测一遍同样信息才能写 facts。
- */
-export interface AgentCheckResult {
-  readonly ok: boolean;
-  /** 实际探测到的版本;探测不到时省略,不编造。 */
-  readonly actualVersion?: string;
-  /** ok 为 false 时的有界原因(缺命令 / 版本不匹配 / 运行条件缺失)。 */
-  readonly detail?: string;
-}
-
-/**
  * 三种安装模式,全部显式;失败后不允许在模式之间静默降级。
  * - `staged`:制品在题面网络外准备,经文件 API 送入(内置默认)。
  * - `sandbox-network`:显式声明用沙箱内网络安装。
- * - `verifyOnly`:只接受预装命中;检查失败立即 errored。
+ * - `verify-only`:只接受预装命中;探测失败立即 errored。
  */
-export type AgentInstallMode = "staged" | "sandbox-network" | "verifyOnly";
+export type AgentInstallMode = "staged" | "sandbox-network" | "verify-only";
 
 /** staged payload 的目标平台;与 Agent identity 一起构成 prepare cache key。 */
 export interface AgentArtifactPlatform {
@@ -456,47 +444,60 @@ export type AgentArtifactInstallShape =
   | { readonly kind: "npm-tarball" }
   | { readonly kind: "self-contained"; readonly binPath: string };
 
-/** attempt facts 里 `agent.ensure` 的取值:区分检查命中与本次安装。 */
+/** attempt facts 里 `agent.ensure` 的取值:区分 probe 命中与本次安装。 */
 export type AgentEnsureOutcome = "hit" | "installed";
 
 /**
- * `defineAgentProvisioner` / 内置工厂产出的 Ensure 协议对象。
- * identity / check / install 原子替换;prepare 仅 staged 路径需要。
+ * Adapter 声明的纯 Ensure 义务：身份与只读 probe。probe 的非零退出是未命中，不是
+ * Agent 任务失败；Runner 决定是否交给 identity 精确匹配的 installer。
  */
-export interface AgentProvisioner {
+export interface AgentEnsure {
   readonly identity: AgentIdentity;
-  readonly mode: AgentInstallMode;
-  check(sandbox: Sandbox): Promise<AgentCheckResult>;
-  /**
-   * 缺失或错版本时安装。`staged` 模式收到已准备 artifact;`sandbox-network` 自管网络。
-   * `verifyOnly` 不会调到这里。
-   */
-  install(sandbox: Sandbox, artifact?: AgentStagedArtifact): Promise<void>;
-  /**
-   * 题面外准备锁定制品(Run 级、宿主侧、以 identity+platform 为 key 的 single-flight)。
-   * 仅 `staged` 模式需要;省略时 staged ensure 会在缺 artifact 时点名报错。
-   */
-  prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+  readonly probe: StableSandboxCommand;
 }
 
-/** `defineAgentProvisioner` 的入参;`mode` 省略时有 prepare → `staged`,否则 → `sandbox-network`。 */
-export interface AgentProvisionerDef {
-  identity: AgentIdentity;
-  mode?: AgentInstallMode;
-  check(sandbox: Sandbox): Promise<AgentCheckResult>;
-  install(sandbox: Sandbox, artifact?: AgentStagedArtifact): Promise<void>;
-  prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+export interface AgentInstallContext {
+  readonly identity: AgentIdentity;
+  readonly targetPlatform: AgentArtifactPlatform;
+  readonly signal: AbortSignal;
+  progress(update: ProgressUpdate): void;
 }
+
+export interface StagedAgentInstallContext extends AgentInstallContext {
+  readonly artifact: AgentStagedArtifact;
+}
+
+interface AgentInstallerBase {
+  /** 必须与某条 ensure identity 完全相同；Runner 不做近似匹配。 */
+  readonly identity: AgentIdentity;
+  /** 支持的目标平台键(`linux-x64-gnu` 等)；省略表示 installer 自己支持所有平台。 */
+  readonly platforms?: readonly string[];
+}
+
+export type AgentInstaller =
+  | (AgentInstallerBase & {
+      readonly installMode: "staged";
+      prepareArtifact(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+      install(sandbox: SandboxCommandTarget, context: StagedAgentInstallContext): Promise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "sandbox-network";
+      readonly prepareArtifact?: never;
+      install(sandbox: SandboxCommandTarget, context: AgentInstallContext): Promise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "verify-only";
+      readonly prepareArtifact?: never;
+      readonly install?: never;
+    });
 
 /** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
 export interface SandboxAgent extends AgentBase {
   readonly kind: "sandbox";
-  /**
-   * Agent Ensure 的安装身份与协议对象(见 docs/feature/adapters/architecture/agent-ensure.md)。
-   * 只挂在 sandbox 分支:Direct Agent 不背 Ensure。Runner 消费 `identity`(进 configHash)
-   * 与 `prepare`(Run 级 single-flight);`ensure` 由 adapter 在 `setup` 内自行调用。
-   */
-  readonly provisioner?: AgentProvisioner;
+  /** Runner 在 author layers 后、state / setup 前按声明顺序执行。 */
+  readonly ensure?: readonly AgentEnsure[];
+  /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
+  readonly installers?: readonly AgentInstaller[];
   setup?: AgentSetup;
   tracing?: AgentTracing;
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
@@ -521,15 +522,14 @@ export interface SandboxAgentDef {
   name: string;
   /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
   coverage?: EvidenceCoverage;
-  /**
-   * Agent Ensure 协议对象。工厂参数替换口;`ensure` 在 setup 内由 adapter 调用,
-   * Runner 只额外消费 identity 与 prepare(见 agent-ensure.md)。
-   */
-  provisioner?: AgentProvisioner;
+  /** 单条或数组都按声明顺序规范化为 Agent layer。 */
+  ensure?: AgentEnsure | readonly AgentEnsure[];
+  /** 配对安装层；未命中且没有精确 identity 匹配时，Runner 在 agent.ensure 失败。 */
+  installers?: readonly AgentInstaller[];
   /**
    * 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
    * 本轮内不变的东西)。运行器在 Sandbox 备好(上传/基线/eval.setup 之后)、第一次 send 前
-   * 调用一次,不返回值。Ensure 在 setup 内由 adapter 自己执行。
+   * 调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
    */
   setup?: AgentSetup;
   /** OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。 */

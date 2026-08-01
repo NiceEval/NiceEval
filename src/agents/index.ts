@@ -1,11 +1,11 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
-export { defineDirectAgent, defineSandboxAgent, defineAgentProvisioner } from "../define.ts";
+export { defineDirectAgent, defineSandboxAgent } from "../define.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
 export {
-  ensureAgent,
+  runAgentEnsure,
   ArtifactPrepareCoordinator,
   agentInstallIdentityInput,
   assertStableAgentIdentity,
@@ -19,8 +19,8 @@ export type {
   EnsureAgentOptions,
   EnsureAgentResult,
 } from "./provisioner.ts";
-export { createNpmCliProvisioner, agentBin, resolveAgentBin } from "./npm-staged.ts";
-export type { NpmCliProvisionerOptions } from "./npm-staged.ts";
+export { createNpmCliInstaller, agentBin, resolveAgentBin } from "./npm-staged.ts";
+export type { NpmCliInstallerOptions } from "./npm-staged.ts";
 
 // 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeCoverage;
 // 手写映射按实际情况声明(见 docs/feature/adapters/architecture/evidence.md)。
@@ -120,13 +120,14 @@ export type {
   Agent,
   AgentContext,
   AgentIdentity,
-  AgentCheckResult,
   AgentInstallMode,
   AgentArtifactPlatform,
   AgentStagedArtifact,
   AgentEnsureOutcome,
-  AgentProvisioner,
-  AgentProvisionerDef,
+  AgentEnsure,
+  AgentInstaller,
+  AgentInstallContext,
+  StagedAgentInstallContext,
   DirectAgent,
   DirectAgentDef,
   DirectAgentSetup,

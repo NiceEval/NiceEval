@@ -20,9 +20,8 @@ import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import { createNpmCliProvisioner } from "./npm-staged.ts";
-import { ensureAgent } from "./provisioner.ts";
-import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
@@ -119,11 +118,6 @@ export interface CodexConfig {
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
   preTeardown?: SandboxHook[];
-  /**
-   * 整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
-   * 省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
-   */
-  provisioner?: AgentProvisioner;
 }
 
 /**
@@ -154,9 +148,7 @@ function codexPlatformPackage(
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
-  const provisioner =
-    config?.provisioner ??
-    createNpmCliProvisioner({
+  const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "codex",
         version: DEFAULT_CODEX_CLI_VERSION,
@@ -165,21 +157,17 @@ export function codexAgent(config?: CodexConfig): Agent {
       packageName: "@openai/codex",
       bin: "codex",
       platformPackage: codexPlatformPackage,
-    });
+  });
 
   return defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapCodexSpans,
-    provisioner,
+    ensure,
+    installers: [installer],
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, {
-        fact: ctx.fact.bind(ctx),
-        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
-      });
-
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
       let nativeConfig: LoadedNativeConfig | undefined;

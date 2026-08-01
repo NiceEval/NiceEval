@@ -105,6 +105,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
   return defineSandboxAgent({
     name: "hermes",
+    ensure: [],
     coverage: completeCoverage,
     spanMapper: mapGenericSpans,
 

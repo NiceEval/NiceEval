@@ -439,27 +439,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (caseKey !== undefined) a.caseKey = caseKey;
   }
 
-  // Run 级 Agent artifact prepare:有 staged provisioner 时接真 Run timing;可被测试注入覆盖。
+  // Run 级 Agent artifact prepare:由 attempt 内探测到目标 Sandbox 平台后触发 single-flight。
+  // 绝不能在这里按宿主平台 eager prepare：macOS 宿主跑 Linux Sandbox 会拿到错误制品。
   const artifactPrepare =
     opts.artifactPrepare ??
     new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
-  // 可选预 prepare:每个带 staged provisioner 的 sandbox agent 在派发前 single-flight 一次。
-  {
-    const seen = new Set<string>();
-    for (const run of opts.agentRuns) {
-      if (run.agent.kind !== "sandbox" || run.agent.provisioner === undefined) continue;
-      if (run.agent.provisioner.mode !== "staged" || run.agent.provisioner.prepare === undefined) continue;
-      const id = `${run.agent.provisioner.identity.agent}@${run.agent.provisioner.identity.version}+r${run.agent.provisioner.identity.revision}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      try {
-        await artifactPrepare.prepare(run.agent.provisioner);
-      } catch {
-        // 预 prepare 失败不在此扇出:attempt 内 ensureAgent 会再走同一路径并归 agent.setup errored。
-      }
-    }
-  }
-  // 把 coordinator 挂到 opts 上,供 attempt setup 读取(同对象引用)。
+  // 把 coordinator 挂到 opts 上,供 attempt 内 runner-owned ensure 读取(同对象引用)。
   (opts as { artifactPrepare?: ArtifactPrepareCoordinator }).artifactPrepare = artifactPrepare;
 
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:

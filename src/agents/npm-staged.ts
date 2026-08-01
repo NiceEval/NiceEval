@@ -1,4 +1,4 @@
-// 内置 Node coding Agent 的 staged provisioner:
+// 内置 Node coding Agent 的 staged installer:
 // 宿主 npm pack → digest 校验进 cache → 主 Sandbox 文件 API 上传 → 本地 tarball 安装。
 // 不借题面网络;安装目录在 workdir 外的用户前缀(`~/.local`)。
 
@@ -10,16 +10,16 @@ import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import {
   defaultArtifactCacheDir,
-  defineAgentProvisioner,
-  hostArtifactPlatform,
   platformKey,
   sha256Hex,
 } from "./provisioner.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
+import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
-  AgentCheckResult,
+  AgentEnsure,
   AgentIdentity,
-  AgentProvisioner,
+  AgentInstaller,
   AgentStagedArtifact,
 } from "./types.ts";
 
@@ -27,7 +27,7 @@ import type {
 export const AGENT_USER_PREFIX = "$HOME/.local";
 const SANDBOX_TARBALL_DIR = "$HOME/.niceeval-agent-payload";
 
-export interface NpmCliProvisionerOptions {
+export interface NpmCliInstallerOptions {
   identity: AgentIdentity;
   /** npm 包名,如 `@openai/codex`。 */
   packageName: string;
@@ -47,6 +47,12 @@ export interface NpmCliProvisionerOptions {
   cacheDir?: string;
   /** 覆盖 prepare(测试注入 / 离线预置)。 */
   prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+}
+
+interface AgentProbeResult {
+  readonly ok: boolean;
+  readonly actualVersion?: string;
+  readonly detail?: string;
 }
 
 function defaultParseVersion(stdout: string): string | undefined {
@@ -119,9 +125,9 @@ async function npmPackToCache(opts: {
 }
 
 async function checkNpmCli(
-  sandbox: Sandbox,
+  sandbox: SandboxCommandTarget,
   opts: { bin: string; expectedVersion: string; parseVersion: (stdout: string) => string | undefined },
-): Promise<AgentCheckResult> {
+): Promise<AgentProbeResult> {
   // 运行用户身份断言:先看用户前缀,再看 PATH。不以 root 跑出假绿。
   const bin = opts.bin;
   const versionCmd = [
@@ -162,7 +168,7 @@ async function checkNpmCli(
 
 /** 自带运行时的原生包:解压 + 链接,沙箱里不需要 node / npm。 */
 async function installSelfContained(
-  sandbox: Sandbox,
+  sandbox: SandboxCommandTarget,
   opts: { tarball: string; prefix: string; agent: string; bin: string; binPath: string },
 ): Promise<void> {
   const libDir = `${opts.prefix}/lib/${opts.agent}`;
@@ -189,7 +195,7 @@ async function installSelfContained(
 }
 
 async function installFromStaged(
-  sandbox: Sandbox,
+  sandbox: SandboxCommandTarget,
   artifact: AgentStagedArtifact,
   identity: AgentIdentity,
   bin: string,
@@ -209,7 +215,7 @@ async function installFromStaged(
   const tarball = await expandSandboxHomePath(sandbox, remoteTemplate);
   const prefix = await expandSandboxHomePath(sandbox, AGENT_USER_PREFIX);
   await sandbox.runShell(`mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
-  await sandbox.uploadFile(tarball, bytes);
+  await sandbox.writeBytes(tarball, bytes);
 
   if (artifact.install?.kind === "self-contained") {
     await installSelfContained(sandbox, {
@@ -257,7 +263,7 @@ function dirnameOf(path: string): string {
   return idx <= 0 ? "." : path.slice(0, idx);
 }
 
-async function expandSandboxHomePath(sandbox: Sandbox, pathWithHome: string): Promise<string> {
+async function expandSandboxHomePath(sandbox: SandboxCommandTarget, pathWithHome: string): Promise<string> {
   if (!pathWithHome.includes("$HOME") && !pathWithHome.startsWith("~")) {
     return pathWithHome;
   }
@@ -269,23 +275,34 @@ async function expandSandboxHomePath(sandbox: Sandbox, pathWithHome: string): Pr
 }
 
 /**
- * 内置 Node CLI Agent 的默认 staged provisioner。
+ * 内置 Node CLI Agent 的默认 staged ensure + installer 对。
  * 官方 / 自建预装命中同一条 check;缺失或错版本走宿主 pack + 文件 API 安装。
  */
-export function createNpmCliProvisioner(opts: NpmCliProvisionerOptions): AgentProvisioner {
+export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
+  readonly ensure: AgentEnsure;
+  readonly installer: Extract<AgentInstaller, { installMode: "staged" }>;
+} {
   const parseVersion = opts.parseVersion ?? defaultParseVersion;
   const cacheDir = opts.cacheDir ?? defaultArtifactCacheDir();
-
-  return defineAgentProvisioner({
-    identity: opts.identity,
-    mode: "staged",
-    check: (sandbox) =>
-      checkNpmCli(sandbox, {
+  const probe = defineSandboxCommand(
+    {
+      id: `niceeval.agent.probe.${opts.identity.agent}`,
+      revision: opts.identity.revision,
+      inputs: { agent: opts.identity.agent, version: opts.identity.version, bin: opts.bin },
+    },
+    async (sandbox) => {
+      const result = await checkNpmCli(sandbox, {
         bin: opts.bin,
         expectedVersion: opts.identity.version,
         parseVersion,
-      }),
-    prepare:
+      });
+      if (!result.ok) throw new Error(result.detail ?? `missing ${opts.bin}`);
+    },
+  );
+  const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
+    identity: opts.identity,
+    installMode: "staged",
+    prepareArtifact:
       opts.prepare ??
       ((platform) => {
         // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
@@ -301,13 +318,11 @@ export function createNpmCliProvisioner(opts: NpmCliProvisionerOptions): AgentPr
             : {}),
         });
       }),
-    install: async (sandbox, artifact) => {
-      if (!artifact) {
-        throw new Error(t("agent.ensure.stagedMissingArtifact", { agent: opts.identity.agent }));
-      }
-      await installFromStaged(sandbox, artifact, opts.identity, opts.bin);
+    install: async (sandbox, context) => {
+      await installFromStaged(sandbox, context.artifact, opts.identity, opts.bin);
     },
-  });
+  };
+  return { ensure: { identity: opts.identity, probe }, installer };
 }
 
 /**
@@ -329,6 +344,3 @@ export async function resolveAgentBin(sandbox: Sandbox, bin: string): Promise<st
   }
   return path;
 }
-
-/** 给测试 / 诊断用的宿主默认 platform。 */
-export { hostArtifactPlatform };

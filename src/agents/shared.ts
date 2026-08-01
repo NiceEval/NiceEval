@@ -23,10 +23,7 @@ import {
   skillDiscoveryInstruction,
   type InstallSkillsOptions,
 } from "./skills.ts";
-import { ensureAgent as runEnsureAgent } from "./provisioner.ts";
-import type { EnsureAgentOptions, EnsureAgentResult } from "./provisioner.ts";
 import { agentBin, resolveAgentBin } from "./npm-staged.ts";
-import type { AgentProvisioner } from "./types.ts";
 
 /** 每个沙箱里「已经装过的全局包」去重,避免每轮 send 重复 npm i -g。 */
 const installedBySandbox = new WeakMap<Sandbox, Set<string>>();
@@ -190,17 +187,6 @@ function outputTail(s: string, n = 6): string {
  */
 export const shared = {
   ensureInstalled,
-  /**
-   * Agent Ensure 状态机(check → 缺失时 install → recheck)。
-   * adapter 在 setup 开头调用;失败抛错归 `agent.setup` errored。
-   */
-  ensureAgent(
-    provisioner: AgentProvisioner,
-    sandbox: Sandbox,
-    opts?: EnsureAgentOptions,
-  ): Promise<EnsureAgentResult> {
-    return runEnsureAgent(provisioner, sandbox, opts);
-  },
   /** 解析 staged / 预装 CLI 路径(用户前缀优先)。 */
   agentBin,
   /** 解析 CLI 绝对路径,供 runCommand 使用。 */
