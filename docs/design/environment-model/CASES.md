@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [DECISION](DECISION.md)
 
 # 环境模型 Cases
 
@@ -117,3 +117,4 @@ Experiment 同时配置 fallback、Provider Environment 支持与可选 profile 
 | PLAN-6 | [唯一 Environment 起点与双侧 setup](PLAN-6/use-case/README.md) | [Lifecycle](PLAN-6/lifecycle.md) |
 | PLAN-7 | [单一起点与受管 Eval 文件](PLAN-7/use-case/README.md) | [Lifecycle](PLAN-7/lifecycle.md) |
 | PLAN-8 | [Environment 作者面与三层 Sandbox 准备](PLAN-8/use-case/README.md) | [Lifecycle](PLAN-8/lifecycle.md) |
+| PLAN-9 | [单一 Sandbox Recipe 与 template owner 顺序](PLAN-9/use-case/README.md) | [Lifecycle](PLAN-9/lifecycle.md) |

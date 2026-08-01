@@ -1,4 +1,4 @@
-# PLAN-8:唯一 Environment 与三层 Sandbox 准备（推荐）
+# PLAN-8:唯一 Environment 与三层 Sandbox 准备（被 PLAN-9 取代）
 
 **相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
 

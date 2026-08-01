@@ -81,28 +81,28 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Sandbox | Sandbox | Agent 与测试实际执行命令、读写文件的隔离运行空间及其操作句柄 | [Sandbox](feature/sandbox/README.md) |
-| Sandbox 配置 | SandboxConfig | 选择 Provider、声明 fallback/profile Case 并挂载 Experiment setup 的配置值；不是运行中的 Sandbox | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#sandboxconfig) |
+| Sandbox recipe | SandboxRecipe | Eval 或 Experiment 对同一 Sandbox stack 的作者声明；Agent 的内部贡献保留专用协议 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#sandboxrecipe) |
 | Provider | Provider | Sandbox 的具体实现选择,由内置或自定义工厂显式构造 | [Sandbox library](feature/sandbox/library.md) |
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
-| environment profile | environment profile | `eval.environment` 引用的不透明稳定 id,由当前 Provider 解析成 provider-specific sandbox case | [环境模型 PLAN-8](design/environment-model/PLAN-8/architecture.md#唯一起点解析) |
-| Environment 来源 | EnvironmentSource | folder eval 直接声明的 Provider-neutral 环境输入,例如 Compose 文件与 `workspaceService` | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#eval-environment) |
+| sandbox profile | sandbox profile | `profileSandbox()` 引用的不透明稳定 id,由当前 Provider recipe 映射成 provider-specific sandbox case | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#profilesandbox) |
+| Sandbox template | SandboxTemplate | 启动完整 Sandbox Case 的唯一 recipe；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#sandboxtemplate-的边界) |
 | sandbox case | sandbox case | 一份环境声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
-| 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#composeenvironment) |
-| materializer | materializer | Provider 内部把 EnvironmentSource 转成 provider-specific Sandbox Case 的组件；普通 Experiment 不注册 | [环境模型 PLAN-8](design/environment-model/PLAN-8/architecture.md#provider-支持与扩展) |
+| 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#composesandbox) |
+| materializer | materializer | Provider 内部按 SandboxTemplate 构建或启动 provider-specific Sandbox Case 的组件；普通 Experiment 不注册 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#provider-负责构建与启动) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 
-### 环境模型
+### Sandbox stack
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Environment | Environment | EvalDef 携带的题目环境来源,可由作者声明或 adapter 从 task package 派生;由当前 Provider 解析 | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#eval-environment) |
-| defaultEnvironment | defaultEnvironment | Eval 没有 Environment 时使用的 Provider-native fallback；不与 Eval Environment 合并 | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#defaultenvironment) |
-| setup helper | setup helper | 在 SandboxConfig 或 EvalDef setup 层封装准备动作;需要预装命中时可带 identity 与 check/install/recheck | [环境模型 PLAN-8](design/environment-model/PLAN-8/library.md#三层-setup) |
-| Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 Sandbox Case,不让 Eval 与 Experiment 分别拥有 Base | [环境模型 PLAN-8](design/environment-model/PLAN-8/README.md#对只有一个-template的修正) |
-| Ensure | Ensure | AgentProvisioner 或可验证 setup helper 内部的检查、必要时安装、复检路径 | [环境模型 PLAN-8](design/environment-model/PLAN-8/architecture.md#三层不是同一种协议) |
+| template owner | template owner | 为当前 Attempt 提供 active SandboxTemplate 的 Eval 或 Experiment owner | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#active-template-选择) |
+| owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的解析后准备顺序 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#owner-stack) |
+| setup helper | setup helper | 在 SandboxRecipe setup 层封装准备动作;需要预装命中时可带 identity 与 check/install/recheck | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#setup-helper) |
+| Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 SandboxTemplate 与 Sandbox Case | [环境模型 PLAN-9](design/environment-model/PLAN-9/README.md#template-不是单实例产物同义词) |
+| Ensure | Ensure | AgentProvisioner 或可验证 setup helper 内部的检查、必要时安装、复检路径 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#state-与-agent) |
 
 ### Sandbox 复用
 

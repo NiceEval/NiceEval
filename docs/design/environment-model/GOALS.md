@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -37,7 +37,7 @@
 
 - 不定义通用 Requirement/Layer/Addon DSL。
 - 不自动推导 setup 依赖、资源锁或并行调度。
-- 不改变 `sandboxReuse` 的语义与默认值。
+- 不改变 `sandboxReuse` 的显式 opt-in、CaseKey 分组、workdir reset 与活状态边界；候选可以调整 setup 检查频次以保持 owner 顺序。
 - 不定义外部实验状态的 checkpoint、后继和失败提交策略。
 - 不重新定义 Agent runtime。
 - 不重新定义多容器 case 的 ready、证据、清理与 retain/resume 义务。
