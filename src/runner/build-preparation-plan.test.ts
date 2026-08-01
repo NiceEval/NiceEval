@@ -11,14 +11,14 @@ import { planLinkedRuns, type LinkedRunPlan } from "../sandbox/plan.ts";
 import { collectBuildPreparation } from "./build-preparation.ts";
 import type { PreparedRunPair } from "./sandbox-selection.ts";
 
-function planned(layer: SandboxLayer, baseDir: string): Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }> {
+async function planned(layer: SandboxLayer, baseDir: string): Promise<Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>> {
   const [pair] = Effect.runSync(linkSandboxLayers([{
     eval: { id: "task/dockerfile", layer },
     experiment: { id: "compare/codex", layer: sandboxLayer() },
     agent: { kind: "sandbox", name: "codex" },
   }]));
   if (pair === undefined) throw new Error("missing pair");
-  const [result] = Effect.runSync(planLinkedRuns([{
+  const [result] = await Effect.runPromise(planLinkedRuns([{
     pair,
     authorBaseDirs: { eval: baseDir, experiment: "/repo/experiments" },
   }]));
@@ -38,7 +38,7 @@ describe("Run build preparation · PreparedRunPair", () => {
       dockerBuildPlatform: Effect.succeed("linux/amd64"),
       hostPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
     });
-    const plan = planned(factories.dockerfileSandbox({ context: "." }), directory);
+    const plan = await planned(factories.dockerfileSandbox({ context: "." }), directory);
     const prepared = {
       key: "compare/codex|task/dockerfile",
       plan,

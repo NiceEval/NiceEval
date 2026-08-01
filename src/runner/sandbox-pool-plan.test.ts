@@ -1,5 +1,8 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -13,7 +16,13 @@ import { linkSandboxLayers } from "../sandbox/link.ts";
 import { planLinkedRuns, type LinkedRunPlan } from "../sandbox/plan.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 
-function composePlan(): Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }> {
+async function composePlan(): Promise<Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>> {
+  const directory = await mkdtemp(join(tmpdir(), "niceeval-runtime-compose-"));
+  await writeFile(
+    join(directory, "compose.yaml"),
+    `services:\n  client:\n    image: node:24@sha256:${"b".repeat(64)}\n`,
+    "utf8",
+  );
   const factories = createBuiltinSandboxFactories({
     dockerBuildPlatform: Effect.succeed("linux/amd64"),
     hostPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
@@ -27,9 +36,9 @@ function composePlan(): Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }> {
     agent: { kind: "sandbox", name: "codex" },
   }]));
   if (pair === undefined) throw new Error("missing pair");
-  const [planned] = Effect.runSync(planLinkedRuns([{
+  const [planned] = await Effect.runPromise(planLinkedRuns([{
     pair,
-    authorBaseDirs: { eval: "/repo/evals/task/example", experiment: "/repo/experiments" },
+    authorBaseDirs: { eval: directory, experiment: "/repo/experiments" },
   }]));
   if (planned?.plan._tag !== "Sandbox") throw new Error("missing plan");
   return planned.plan;
@@ -77,7 +86,7 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       facts: { projectName: "fixture" },
     }));
     const pool = new ReusableSandboxPool(
-      composePlan(),
+      await composePlan(),
       1,
       { progress: () => {}, diagnostic: () => {} },
       {

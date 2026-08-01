@@ -1,5 +1,8 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineEval, defineSandboxAgent } from "../define.ts";
@@ -40,12 +43,12 @@ const sandboxAgent = defineSandboxAgent({
   },
 });
 
-function evalDef(id: string, sandbox?: SandboxLayer): DiscoveredEval {
-  const sourcePath = `/repo/evals/${id}/eval.ts`;
+function evalDef(id: string, sandbox?: SandboxLayer, baseDir = `/repo/evals/${id}`): DiscoveredEval {
+  const sourcePath = `${baseDir}/eval.ts`;
   const definition = defineEval({ ...(sandbox === undefined ? {} : { sandbox }), test() {} });
   return discoverEval(definition, {
     id,
-    baseDir: `/repo/evals/${id}`,
+    baseDir,
     sourcePath,
     loaderDataPaths: Object.freeze([]),
     criteriaPaths: Object.freeze([]),
@@ -71,11 +74,20 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 
 describe("pair-owned Sandbox planning", () => {
   it("一次性产出 immutable LinkedRunPlan，不向 AgentRun 写 pair cache", async () => {
-    const image = evalDef("image", factories.dockerImageSandbox({ image: "node:24" }));
+    const directory = await mkdtemp(join(tmpdir(), "niceeval-selection-plan-"));
+    const imageDir = join(directory, "image");
+    const composeDir = join(directory, "compose");
+    await Promise.all([mkdir(imageDir), mkdir(composeDir)]);
+    await writeFile(
+      join(composeDir, "compose.yaml"),
+      `services:\n  client:\n    image: node:24@sha256:${"c".repeat(64)}\n`,
+      "utf8",
+    );
+    const image = evalDef("image", factories.dockerImageSandbox({ image: "node:24" }), imageDir);
     const compose = evalDef("compose", factories.dockerComposeSandbox({
       file: "compose.yaml",
       workspaceService: "client",
-    }));
+    }), composeDir);
     const selected = run({ sandbox: sandboxLayer(), selectedEvalIds: ["image", "compose"] });
 
     const prepared = await Effect.runPromise(prepareRunSandboxes([image, compose], [selected]));
