@@ -223,12 +223,12 @@ function tmpUploadPath(): string {
 
 /**
  * 原始字节整文件替换沙箱内 destPath(claude-code:用户级 `~/.claude/settings.json`)。
- * 走 uploadFile + mv 而不是 heredoc:heredoc 会给内容补换行,破坏「原始字节」承诺。
+ * 走 writeBytes + mv 而不是 heredoc:heredoc 会给内容补换行,破坏「原始字节」承诺。
  * destPath 不加引号,以便 shell 展开 `~`(受信内部路径,同 shared.writeFile 的约定)。
  */
 export async function uploadNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfig, destPath: string): Promise<void> {
   const tmp = tmpUploadPath();
-  await sb.uploadFile(tmp, cfg.bytes);
+  await sb.writeBytes(tmp, cfg.bytes);
   const res = await sb.runShell(`mkdir -p $(dirname ${destPath}) && mv ${tmp} ${destPath}`);
   if (res.exitCode !== 0) {
     throw new Error(t("nativeConfig.uploadFailed", { path: cfg.path, dest: destPath, tail: outputTail(res) }));
@@ -242,7 +242,7 @@ export async function uploadNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfi
  */
 export async function appendNativeConfigFile(sb: Sandbox, cfg: LoadedNativeConfig, destPath: string): Promise<void> {
   const tmp = tmpUploadPath();
-  await sb.uploadFile(tmp, cfg.bytes);
+  await sb.writeBytes(tmp, cfg.bytes);
   const res = await sb.runShell(
     `printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath} && rm -f ${tmp}`,
   );

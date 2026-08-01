@@ -14,6 +14,7 @@ import {
   sha256Hex,
 } from "./provisioner.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { SandboxCommandExitError } from "../sandbox/operations.ts";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
@@ -296,31 +297,35 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
         expectedVersion: opts.identity.version,
         parseVersion,
       });
-      if (!result.ok) throw new Error(result.detail ?? `missing ${opts.bin}`);
+      if (!result.ok) {
+        throw new SandboxCommandExitError({
+          stdout: result.actualVersion ?? "",
+          stderr: result.detail ?? `missing ${opts.bin}`,
+          exitCode: 1,
+          command: `${opts.bin} --version`,
+        });
+      }
     },
   );
   const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
     identity: opts.identity,
     installMode: "staged",
-    prepareArtifact:
-      opts.prepare ??
-      ((platform) => {
+    prepareArtifact: ({ targetPlatform }) =>
+      opts.prepare !== undefined ? opts.prepare(targetPlatform) : (() => {
         // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
-        const native = opts.platformPackage?.(platform);
+        const native = opts.platformPackage?.(targetPlatform);
         return npmPackToCache({
           packageName: opts.packageName,
           version: opts.identity.version,
           cacheDir,
-          platform,
+          platform: targetPlatform,
           identity: opts.identity,
           ...(native !== undefined
             ? { spec: native.spec, install: { kind: "self-contained" as const, binPath: native.binPath } }
             : {}),
         });
-      }),
-    install: async (sandbox, context) => {
-      await installFromStaged(sandbox, context.artifact, opts.identity, opts.bin);
-    },
+      })(),
+    install: (sandbox, context) => installFromStaged(sandbox, context.artifact, opts.identity, opts.bin),
   };
   return { ensure: { identity: opts.identity, probe }, installer };
 }

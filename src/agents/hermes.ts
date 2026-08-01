@@ -14,6 +14,7 @@ import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Agent, AgentSetupManifest, EvidenceCoverage, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
 
 // Hermes Agent sandbox adapter。驱动:`hermes chat -q … --yolo`;
 // 行为轨优先 `hermes sessions export`,不足时 sqlite 读 messages。
@@ -66,7 +67,7 @@ async function exportSession(sb: Sandbox, sessionId: string, env: globalThis.Rec
   const res = await hermesShell(sb, ["sessions", "export", outPath, "--session-id", sessionId], env);
   if (res.exitCode !== 0) return undefined;
   try {
-    return await sb.readFile(outPath);
+    return await sb.readText(outPath);
   } catch {
     return undefined;
   }
@@ -102,20 +103,31 @@ for r in rows:
  */
 export function hermesAgent(config?: HermesConfig): Agent {
   const version = config?.version ?? DEFAULT_HERMES_CLI_VERSION;
+  const identity = { agent: "hermes", version, revision: "1" } as const;
+  const probe = defineSandboxCommand(
+    { id: "niceeval.agent.probe.hermes", revision: identity.revision, inputs: identity },
+    async (sandbox) => {
+      await sandbox.runShellOrThrow(
+        `test -x ${HERMES} && ${HERMES} --version 2>&1 | grep -F -- ${shellQuote(version)}`,
+      );
+    },
+  );
 
   return defineSandboxAgent({
     name: "hermes",
-    ensure: [],
+    ensure: { identity, probe },
+    installers: [{
+      identity,
+      installMode: "sandbox-network",
+      install: async (sandbox) => {
+        await sandbox.runShellOrThrow(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
+        await sandbox.runShellOrThrow(`${UV} tool install hermes-agent==${version}`);
+      },
+    }],
     coverage: completeCoverage,
     spanMapper: mapGenericSpans,
 
     async setup(sb, ctx) {
-      // 装到当前沙箱用户 $HOME/.local(Docker 下是 /home/node);显式路径,不靠 PATH。
-      await sb.runShell(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
-      await sb.runShell(
-        `test -x ${HERMES} || ${UV} tool install hermes-agent==${version}`,
-      );
-
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
         // OpenAI 兼容网关:写 custom provider + model.base_url;

@@ -8,17 +8,12 @@ import {
   installedSkillNames,
   skillDiscoveryInstruction,
 } from "./skills.ts";
-import { createCheckpoint, restoreCheckpoint } from "../sandbox/checkpoint.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import type { Agent, AgentContext, AgentSetupManifest, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import type { Agent, AgentSetupManifest, SandboxHook, SkillSpec } from "../types.ts";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
 import { t } from "../i18n/index.ts";
 import {
-  BUB_CHECKPOINT_SUBDIRS,
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_OTEL_PLUGIN,
   DEFAULT_BUB_REQUIREMENT,
@@ -27,6 +22,9 @@ import {
   normalizeBubPackages,
 } from "./bub-install-spec.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { shellQuote } from "../sandbox/shell.ts";
+import { DEFAULT_BUB_VERSION } from "./coding-cli-versions.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // bub 的 agent adapter(沙箱型)。
@@ -121,13 +119,6 @@ function resolvePin(config?: BubConfig): BubInstallPin {
 // 另一个未知版本的 bub 抢先命中。
 const BUB = "$HOME/.local/bin/bub";
 
-// checkpoint 只打 $HOME/.local:uv 装的 python 工具链、bub 的 tool venv 和 bin shim 全在
-// 这里,restore 后即可运行。~/.cache/uv 是 wheel/构建缓存,只在「下一次安装」有用,而
-// restore 场景 bub 已经装好、不会再装——打进去只是把单次 HTTP 传输撑到 100MB+,在 e2b
-// 文件 API 上超时/连接重置概率明显偏高。子目录列表参与 INSTALL_HASH:改它会换缓存文件
-// 名,不会继续复用老的大 checkpoint。
-const CHECKPOINT_SUBDIRS = BUB_CHECKPOINT_SUBDIRS;
-
 /** 规范化 python plugin:去空白、丢空串、去重 —— 安装命令与 checkpoint key 用同一份列表。 */
 function normalizePackages(plugins?: readonly PythonPluginSpec[]): string[] {
   return normalizeBubPackages((plugins ?? []).map((plugin) => plugin.package));
@@ -135,113 +126,6 @@ function normalizePackages(plugins?: readonly PythonPluginSpec[]): string[] {
 
 function installHashOf(packages: readonly string[], pin: BubInstallPin): string {
   return bubInstallHash(packages, pin.requirement, pin.otelPlugin);
-}
-
-function diskCachePath(home: string, installHash: string): string {
-  const homeKey = createHash("md5").update(home).digest("hex").slice(0, 8);
-  return join(homedir(), ".cache", "niceeval", `bub-checkpoint-${homeKey}-${installHash}.bin`);
-}
-
-// in-memory checkpoint + mutex keyed by (sandbox $HOME, 安装规格):
-// $HOME 分开 Docker(/home/node)と Vercel(/home/vercel-sandbox);安装规格分开 python plugin
-// 集合不同的 agent 变体 —— 少了后者,装了 plugin 的变体会静默复用 baseline 变体的环境。
-const memCheckpoints = new Map<string, Buffer>();
-const installsInProgress = new Map<string, Promise<void>>();
-
-async function ensureBub(
-  sb: Sandbox,
-  home: string,
-  log: AgentContext["log"],
-  packages: readonly string[],
-  pin: BubInstallPin,
-): Promise<void> {
-  const installHash = installHashOf(packages, pin);
-  const marker = `${home}/${BUB_INSTALL_MARKER}`;
-  // 只信任带完整安装规格指纹的预制环境。仅 command -v bub 无法证明版本、OTel 插件和
-  // 用户 pythonPlugins 一致；NiceEval 的 E2B Bub 配方和运行时安装都会写这个 marker。
-  if ((await sb.runShell(
-    `test -x ${BUB} && test "$(cat '${marker}' 2>/dev/null)" = '${installHash}'`,
-  )).exitCode === 0) {
-    return;
-  }
-
-  const cacheKey = `${home}::${installHash}`;
-  const withPlugins = packages.map((p) => `--with '${p}'`).join(" ");
-  const checkpointPaths = CHECKPOINT_SUBDIRS.map((d) => `${home}/${d}`);
-  const cachePath = diskCachePath(home, installHash);
-
-  // restore 失败(多为 e2b 文件 API 对大 buffer 的瞬态超时/连接重置)不终结 attempt:
-  // 缓存只是加速手段,落空就往下走全量安装。
-  const mem = memCheckpoints.get(cacheKey);
-  if (mem) {
-    try { await restoreCheckpoint(sb, mem); return; } catch (e) {
-      log(t("bub.checkpointRestoreFailed", { error: e instanceof Error ? e.message : String(e) }));
-    }
-  }
-
-  const disk = await readFile(cachePath).catch(() => undefined);
-  if (disk) {
-    try { await restoreCheckpoint(sb, disk); memCheckpoints.set(cacheKey, disk); return; } catch { /* 损坏,回退 */ }
-  }
-
-  const inflight = installsInProgress.get(cacheKey);
-  if (inflight) {
-    // leader 失败(多为沙箱瞬态网络错)不级联杀 waiter:兜掉后走下面自己的安装路径重试。
-    await inflight.catch(() => {});
-    const after = memCheckpoints.get(cacheKey);
-    if (after) { await restoreCheckpoint(sb, after); return; }
-  }
-
-  let resolveInstall!: () => void;
-  let rejectInstall!: (e: unknown) => void;
-  const installPromise = new Promise<void>((res, rej) => { resolveInstall = res; rejectInstall = rej; });
-  // 失败经由下方 throw e 传播给本 attempt;这把锁可能自始至终没有 waiter,
-  // 不兜住 rejection 会变 unhandledRejection,把整个 runner 进程连同全矩阵杀掉。
-  installPromise.catch(() => {});
-  installsInProgress.set(cacheKey, installPromise);
-
-  try {
-    await sb.runShell(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
-    await sb.runShell(`printf '%s\\n' '${pin.requirement}' > ${BUB_OVERRIDE_FILE}`);
-    let last = { stdout: "", stderr: "" };
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      // python plugin 与 bub 同一条 uv 命令装完:分两条(先装 bub、再 --reinstall 带 --with)
-      // 会让 checkpoint 抓到的环境与 key 描述的环境错位,且第二条命令白白重装一遍 bub。
-      const install = await sb.runShell(
-        `${UV} tool install --reinstall --python 3.12 --prerelease allow 'bub' --overrides ${BUB_OVERRIDE_FILE} --with '${pin.otelPlugin}'${withPlugins ? ` ${withPlugins}` : ""}`,
-      );
-      if (install.exitCode === 0) break;
-      last = install;
-      if (attempt === 3) {
-        throw new Error(t("bub.installFailed", {
-          attempts: 3,
-          tail: (last.stdout + last.stderr).split("\n").slice(-15).join("\n"),
-        }));
-      }
-    }
-    const markerDir = marker.slice(0, marker.lastIndexOf("/"));
-    const mark = await sb.runShell(`mkdir -p '${markerDir}' && printf '%s' '${installHash}' > '${marker}'`);
-    if (mark.exitCode !== 0) {
-      throw new Error(`Failed to write Bub installation marker: ${mark.stderr || mark.stdout}`);
-    }
-    // 到这里 bub 已装进本沙箱,checkpoint 只是给后续沙箱的缓存回填:capture/下载失败
-    // (大 buffer 在 e2b 文件 API 上的瞬态错误)降级为警告,绝不反过来杀掉已就绪的 attempt。
-    try {
-      const cp = await createCheckpoint(sb, checkpointPaths);
-      memCheckpoints.set(cacheKey, cp);
-      await mkdir(dirname(cachePath), { recursive: true }).catch(() => {});
-      await writeFile(cachePath, cp).catch(() => {});
-    } catch (e) {
-      log(t("bub.checkpointCaptureFailed", { error: e instanceof Error ? e.message : String(e) }));
-    }
-    resolveInstall();
-  } catch (e) {
-    rejectInstall(e);
-    throw e;
-  } finally {
-    // 成功/失败都清锁:锁只表达「正在装」,装完后 memCheckpoints 是唯一缓存事实源。
-    installsInProgress.delete(cacheKey);
-  }
 }
 
 function tapePath(workspace: string, sessionId: string, bubHome: string): string {
@@ -253,12 +137,51 @@ function tapePath(workspace: string, sessionId: string, bubHome: string): string
 export function bubAgent(config?: BubConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("BUB_API_KEY");
   const getApiBase = () => config?.apiBase ?? requireEnv("BUB_API_BASE");
+  const packages = normalizePackages(config?.pythonPlugins);
+  const pin = resolvePin(config);
+  const identity = {
+    agent: "bub",
+    version: config?.version ?? DEFAULT_BUB_VERSION,
+    revision: installHashOf(packages, pin),
+  } as const;
+  const marker = `$HOME/${BUB_INSTALL_MARKER}`;
+  const probe = defineSandboxCommand(
+    { id: "niceeval.agent.probe.bub", revision: identity.revision, inputs: identity },
+    async (sandbox) => {
+      await sandbox.runShellOrThrow(
+        `test -x ${BUB} && test "$(cat ${marker} 2>/dev/null)" = ${shellQuote(identity.revision)}`,
+      );
+    },
+  );
   // sandboxId → { home, workspace }; persists values detected in setup() so send() can use them.
   const sessionInfo = new Map<string, { home: string; workspace: string }>();
 
   return defineSandboxAgent({
     name: "bub",
-    ensure: [],
+    ensure: { identity, probe },
+    installers: [{
+      identity,
+      installMode: "sandbox-network",
+      install: async (sandbox) => {
+        await sandbox.runShellOrThrow(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
+        await sandbox.writeText(BUB_OVERRIDE_FILE, `${pin.requirement}\n`);
+        const withPlugins = packages.map((pkg) => `--with ${shellQuote(pkg)}`).join(" ");
+        let last = "";
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          const result = await sandbox.runShell(
+            `${UV} tool install --reinstall --python 3.12 --prerelease allow 'bub' --overrides ${BUB_OVERRIDE_FILE} --with ${shellQuote(pin.otelPlugin)}${withPlugins ? ` ${withPlugins}` : ""}`,
+          );
+          if (result.exitCode === 0) {
+            await sandbox.runShellOrThrow(
+              `mkdir -p "$(dirname ${marker})" && printf '%s' ${shellQuote(identity.revision)} > ${marker}`,
+            );
+            return;
+          }
+          last = (result.stdout + result.stderr).split("\n").slice(-15).join("\n");
+        }
+        throw new Error(t("bub.installFailed", { attempts: 3, tail: last }));
+      },
+    }],
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapBubSpans,
@@ -279,13 +202,9 @@ export function bubAgent(config?: BubConfig): Agent {
       if (!home) throw new Error(t("bub.homeDetectFailed"));
       const workspace = sb.workdir;
       sessionInfo.set(sb.sandboxId, { home, workspace });
-      // ensureBub 的 checkpoint 缓存回填在模块级共享锁(installsInProgress)里,天然可能
-      // 跨多个 attempt 复用同一次安装:警告归属到「触发这次安装的那个 attempt」的 log,
-      // 不追求归属到全部受益 attempt(已裁决口径)。
-      const packages = normalizePackages(config?.pythonPlugins);
-      await ensureBub(sb, home, ctx.log, packages, resolvePin(config));
-
-      if (!(await sb.fileExists(`${workspace}/AGENTS.md`))) {
+      // Agent CLI 已由 runner 的 agent.ensure 循环完成安装与复检。
+      // adapter setup 只写本 Attempt 的 runtime config。
+      if (!(await sb.pathExists(`${workspace}/AGENTS.md`))) {
         await shared.writeFile(
           sb,
           `${workspace}/AGENTS.md`,
@@ -352,7 +271,7 @@ export function bubAgent(config?: BubConfig): Agent {
         { env, stream: true },
       );
 
-      const raw = await sb.readFile(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
+      const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
       const parsed = shared.parseBub(raw);
       const events = [...parsed.events];
       if (res.exitCode !== 0) {

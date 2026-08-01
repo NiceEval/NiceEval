@@ -24,6 +24,7 @@ export const en = {
   "agent.ensure.failed":
     "Agent Ensure failed (agent={{agent}}, phase={{phase}}): expected {{expected}}, actual {{actual}}. {{detail}}\nNext: {{next}}",
   "agent.ensure.nextVerifyOnly": "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner.",
+  "agent.ensure.nextInstallerMissing": "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool().",
   "agent.ensure.nextRecheck": "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task.",
   "agent.ensure.missingBin": "Command {{bin}} not found. {{tail}}",
   "agent.ensure.versionUnparseable": "Could not parse a version from `{{bin}} --version`: {{stdout}}",
@@ -319,6 +320,7 @@ export const en = {
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
   "define.sandboxAgentNameRequired": "defineSandboxAgent requires name.",
+  "define.sandboxAgentEnsureRequired": "defineSandboxAgent requires an ensure declaration.",
   "define.sandboxCreateRequired": "defineSandbox requires a create() function.",
   "define.sandboxNameRequired": "defineSandbox requires name.",
   "docker.commandTimeout": "Command timed out after {{timeoutMs}}ms",

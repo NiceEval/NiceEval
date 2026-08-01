@@ -4,21 +4,6 @@ export { defineDirectAgent, defineSandboxAgent } from "../define.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
-export {
-  runAgentEnsure,
-  ArtifactPrepareCoordinator,
-  agentInstallIdentityInput,
-  assertStableAgentIdentity,
-  sharedPrepareCoordinator,
-  AGENT_ENSURE_FACT,
-  AGENT_VERSION_ACTUAL_FACT,
-  AGENT_ARTIFACT_PREPARE_ACTIVITY,
-} from "./provisioner.ts";
-export type {
-  ArtifactPrepareTimingHook,
-  EnsureAgentOptions,
-  EnsureAgentResult,
-} from "./provisioner.ts";
 export { createNpmCliInstaller, agentBin, resolveAgentBin } from "./npm-staged.ts";
 export type { NpmCliInstallerOptions } from "./npm-staged.ts";
 
@@ -126,6 +111,7 @@ export type {
   AgentEnsureOutcome,
   AgentEnsure,
   AgentInstaller,
+  AgentArtifactContext,
   AgentInstallContext,
   StagedAgentInstallContext,
   DirectAgent,

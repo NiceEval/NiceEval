@@ -37,11 +37,14 @@ export function isDefinedScoreEval(value: object): boolean {
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
 export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   if (!def.name) throw new Error(t("define.sandboxAgentNameRequired"));
+  if (def.ensure === undefined) throw new Error(t("define.sandboxAgentEnsureRequired"));
+  const ensure = Array.isArray(def.ensure) ? def.ensure : [def.ensure];
+  if (ensure.length === 0) throw new Error(t("define.sandboxAgentEnsureRequired"));
   return {
     name: def.name,
     kind: "sandbox",
     coverage: def.coverage,
-    ensure: def.ensure === undefined ? [] : Array.isArray(def.ensure) ? def.ensure : [def.ensure],
+    ensure,
     installers: def.installers ?? [],
     setup: def.setup,
     tracing: def.tracing,

@@ -81,7 +81,7 @@ async function captureLatestJsonl(
     const find = await sandbox.runShell(`node -e '${script}' ${dir}`);
     const path = find.stdout.trim();
     if (!path) return undefined;
-    return await sandbox.readFile(path);
+    return await sandbox.readText(path);
   } catch {
     return undefined;
   }

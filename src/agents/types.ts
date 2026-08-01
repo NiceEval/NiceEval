@@ -5,7 +5,7 @@
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
-import type { SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
+import type { MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 
 /**
@@ -463,6 +463,11 @@ export interface AgentInstallContext {
   progress(update: ProgressUpdate): void;
 }
 
+export interface AgentArtifactContext {
+  readonly targetPlatform: AgentArtifactPlatform;
+  readonly signal: AbortSignal;
+}
+
 export interface StagedAgentInstallContext extends AgentInstallContext {
   readonly artifact: AgentStagedArtifact;
 }
@@ -477,13 +482,13 @@ interface AgentInstallerBase {
 export type AgentInstaller =
   | (AgentInstallerBase & {
       readonly installMode: "staged";
-      prepareArtifact(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
-      install(sandbox: SandboxCommandTarget, context: StagedAgentInstallContext): Promise<void>;
+      prepareArtifact(context: AgentArtifactContext): MaybePromise<AgentStagedArtifact>;
+      install(sandbox: SandboxCommandTarget, context: StagedAgentInstallContext): MaybePromise<void>;
     })
   | (AgentInstallerBase & {
       readonly installMode: "sandbox-network";
       readonly prepareArtifact?: never;
-      install(sandbox: SandboxCommandTarget, context: AgentInstallContext): Promise<void>;
+      install(sandbox: SandboxCommandTarget, context: AgentInstallContext): MaybePromise<void>;
     })
   | (AgentInstallerBase & {
       readonly installMode: "verify-only";
@@ -495,9 +500,9 @@ export type AgentInstaller =
 export interface SandboxAgent extends AgentBase {
   readonly kind: "sandbox";
   /** Runner 在 author layers 后、state / setup 前按声明顺序执行。 */
-  readonly ensure?: readonly AgentEnsure[];
+  readonly ensure: readonly AgentEnsure[];
   /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
-  readonly installers?: readonly AgentInstaller[];
+  readonly installers: readonly AgentInstaller[];
   setup?: AgentSetup;
   tracing?: AgentTracing;
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
@@ -523,7 +528,7 @@ export interface SandboxAgentDef {
   /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
   coverage?: EvidenceCoverage;
   /** 单条或数组都按声明顺序规范化为 Agent layer。 */
-  ensure?: AgentEnsure | readonly AgentEnsure[];
+  ensure: AgentEnsure | readonly AgentEnsure[];
   /** 配对安装层；未命中且没有精确 identity 匹配时，Runner 在 agent.ensure 失败。 */
   installers?: readonly AgentInstaller[];
   /**

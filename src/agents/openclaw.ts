@@ -202,7 +202,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       let raw: string | undefined;
       if (runJson.sessionFile) {
         try {
-          raw = await sb.readFile(runJson.sessionFile);
+          raw = await sb.readText(runJson.sessionFile);
         } catch {
           raw = undefined;
         }

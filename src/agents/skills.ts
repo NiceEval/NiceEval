@@ -68,10 +68,7 @@ async function installLocalSkill(
     }
     const name = spec.name ?? basename(abs);
     const sha256 = hashFiles(files);
-    await sandbox.uploadFiles(
-      files.map((f) => ({ path: f.path, content: f.content })),
-      posix.join(opts.dir, name),
-    );
+    await sandbox.uploadDirectory(abs, posix.join(opts.dir, name));
     return { kind: "local", name, path: spec.path, sha256 };
   }
 
@@ -80,7 +77,7 @@ async function installLocalSkill(
   }
   const content = await readFile(abs, "utf-8");
   const name = spec.name ?? localFileSkillName(abs);
-  await sandbox.writeFiles({ [posix.join(opts.dir, name, "SKILL.md")]: content });
+  await sandbox.writeText(posix.join(opts.dir, name, "SKILL.md"), content);
   return { kind: "local", name, path: spec.path, sha256: hashFiles([{ path: "SKILL.md", content }]) };
 }
 
@@ -284,7 +281,7 @@ export function skillDiscoveryInstruction(dir: string, skills: readonly string[]
  * 排掉会把真实改动一起藏起来;此时追加的这一段会如实出现在 diff 里。
  */
 export async function appendProjectInstruction(sandbox: Sandbox, text: string, file = "AGENTS.md"): Promise<void> {
-  const existed = await sandbox.fileExists(file).catch(() => false);
+  const existed = await sandbox.pathExists(file).catch(() => false);
   const delim = `NICEEVAL_EOF_${Math.random().toString(36).slice(2, 8)}`;
   await sandbox.runShell(`cat >> ${q(file)} <<'${delim}'\n${text}\n${delim}\n`);
   if (!existed) await excludeFromDiff(sandbox, [file]);

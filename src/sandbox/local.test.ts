@@ -24,6 +24,7 @@ import { runAttemptEffect } from "../runner/attempt.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import type { Attempt, AgentRun, RunOptions } from "../runner/types.ts";
 import type { Config, DiscoveredEval } from "../types.ts";
+import { defineSandboxCommand } from "./commands.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -150,7 +151,14 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
       source,
       test: () => {},
     };
-    const agent = defineSandboxAgent({ name: "fake-agent", send: async () => ({ events: [], status: "completed" }) });
+    const agent = defineSandboxAgent({
+      name: "fake-agent",
+      ensure: {
+        identity: { agent: "fake-agent", version: "1.0.0", revision: "1" },
+        probe: defineSandboxCommand({ id: "fake-agent.probe", revision: "1", inputs: {} }, async () => {}),
+      },
+      send: async () => ({ events: [], status: "completed" }),
+    });
     const run: AgentRun = {
       agent,
       flags: {},

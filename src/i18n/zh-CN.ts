@@ -22,6 +22,7 @@ export const zhCN = {
   "agent.ensure.failed":
     "Agent Ensure 失败(agent={{agent}}, phase={{phase}}):期望版本 {{expected}},实际 {{actual}}。{{detail}}\n下一步:{{next}}",
   "agent.ensure.nextVerifyOnly": "预装匹配的 Agent,或改用 staged / sandbox-network provisioner。",
+  "agent.ensure.nextInstallerMissing": "换用预装了该精确 Agent identity 的环境,或在 Experiment layer 中用 installTool() 显式安装。",
   "agent.ensure.nextRecheck": "核对安装目录、PATH 与精确版本后重跑;不要把坏环境交给做题。",
   "agent.ensure.missingBin": "找不到命令 {{bin}}。{{tail}}",
   "agent.ensure.versionUnparseable": "无法从 `{{bin}} --version` 解析版本:{{stdout}}",
@@ -311,6 +312,7 @@ export const zhCN = {
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure 必须是函数((failure) => FailureClass | undefined):它识别以第三方错误形态浮出的失败,认不出的一律返回 undefined 交给后续链路。",
   "define.experimentIdRejected": "defineExperiment 不接受 id —— id 由文件路径推导。",
   "define.sandboxAgentNameRequired": "defineSandboxAgent 需要 name。",
+  "define.sandboxAgentEnsureRequired": "defineSandboxAgent 需要 ensure 声明。",
   "define.sandboxCreateRequired": "defineSandbox 需要一个 create() 函数。",
   "define.sandboxNameRequired": "defineSandbox 需要 name。",
   "docker.commandTimeout": "Command timed out after {{timeoutMs}}ms",
