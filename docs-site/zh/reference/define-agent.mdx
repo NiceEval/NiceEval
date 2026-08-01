@@ -95,13 +95,13 @@ name: string;
 
 agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。
 
-#### `coverage`
+#### `evidenceCoverage`
 
 ```ts
-coverage?: EvidenceCoverage;
+evidenceCoverage: EvidenceCoverage;
 ```
 
-该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。
+该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
 
 #### `setup`
 
@@ -135,13 +135,13 @@ send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
 
 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。
 
-#### `classifyTurnError`
+#### `classifySendFailure`
 
 ```ts
-classifyTurnError?: TurnErrorClassifier;
+classifySendFailure?: SendFailureClassifier;
 ```
 
-可选 turn 失败分类器:见 `Agent.classifyTurnError`。
+可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
 
 #### `teardown`
 
@@ -162,22 +162,30 @@ name: string;
 
 agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。
 
-#### `coverage`
+#### `evidenceCoverage`
 
 ```ts
-coverage?: EvidenceCoverage;
+evidenceCoverage: EvidenceCoverage;
 ```
 
-该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。
+该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。
 
-#### `provisioner`
+#### `ensure`
 
 ```ts
-provisioner?: AgentProvisioner;
+ensure: AgentEnsure | readonly AgentEnsure[];
 ```
 
-Agent Ensure 协议对象。工厂参数替换口;`ensure` 在 setup 内由 adapter 调用,
-Runner 只额外消费 identity 与 prepare(见 agent-ensure.md)。
+单条或数组都按声明顺序规范化为 Agent layer。
+
+#### `installers`
+
+```ts
+installers?: readonly AgentInstaller[];
+```
+
+配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
+`agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
 
 #### `setup`
 
@@ -186,8 +194,8 @@ setup?: AgentSetup;
 ```
 
 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-本轮内不变的东西)。运行器在 Sandbox 备好(上传/基线/eval.setup 之后)、第一次 send 前
-调用一次,不返回值。Ensure 在 setup 内由 adapter 自己执行。
+本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/State load/baseline 之后)、第一次 send 前
+调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
 
 #### `tracing`
 
@@ -213,13 +221,13 @@ send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
 
 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。
 
-#### `classifyTurnError`
+#### `classifySendFailure`
 
 ```ts
-classifyTurnError?: TurnErrorClassifier;
+classifySendFailure?: SendFailureClassifier;
 ```
 
-可选 turn 失败分类器:见 `Agent.classifyTurnError`。
+可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
 
 #### `teardown`
 
@@ -278,9 +286,27 @@ readonly experimentId?: string;
 
 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
 experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
-`SandboxSpec.setup` Hook 按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
-`ctx.experimentId` 分区),或 adapter 按实验切换鉴权 / 路由。与 `flags`(实验条件的
+SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adapter 按实验切换鉴权 / 路由。
+与 `flags`(实验条件的
 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
+
+#### `evalId`
+
+```ts
+readonly evalId?: string;
+```
+
+当前 Attempt 对应的 eval id。NiceEval runner 始终从 discovery 后的 Eval 身份填入；
+第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
+但不能据此绕过 Sandbox 的隐藏判据隔离。
+
+#### `attempt`
+
+```ts
+readonly attempt?: AttemptRef;
+```
+
+Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。
 
 #### `session`
 
@@ -363,72 +389,6 @@ Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄；`
 
 ### `Sandbox`
 
-#### `workdir`
-
-```ts
-readonly workdir: string;
-```
-
-Sandbox 内项目/工作区根目录的绝对路径(agent 命令的默认 cwd,也是 git baseline 提交的位置)。各方法的相对路径都以此为基准解析,省略 `cwd`/`targetDir` 时也落到这里。
-
-#### `runCommand`
-
-```ts
-runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
-```
-
-执行单个命令,`args` 作为独立 argv 传递、不经 shell 解释(无 `&&`、管道、通配符展开)。
-只想跑一个可执行文件、参数来自外部输入、担心注入时优先用它。
-
-#### `runShell`
-
-```ts
-runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
-```
-
-执行一整段脚本,经 shell(bash)解释,支持 `&&`、管道、`$()`、重定向等。
-需要拼多条命令或做条件判断时用它。
-
-#### `readFile`
-
-```ts
-readFile(path: string): Promise<string>;
-```
-
-读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错,不返回空字符串——需要容错请自行 `.catch()`。
-
-#### `fileExists`
-
-```ts
-fileExists(path: string): Promise<boolean>;
-```
-
-检查 Sandbox 内路径是否存在。跨 provider 语义不完全一致:仅保证对普通文件可靠,对目录路径的行为不同 provider 不保证一致。
-
-#### `writeFiles`
-
-```ts
-writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
-```
-
-写入若干文本文件(内容已在内存里的字符串);是 `uploadFiles` 的文本特化,省略 `targetDir` 落到 workdir。
-
-#### `uploadFiles`
-
-```ts
-uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-```
-
-批量写入若干文件,内容可以是文本或二进制 Buffer;省略 `targetDir` 落到 workdir。
-
-#### `uploadDirectory`
-
-```ts
-uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
-```
-
-把本地磁盘上的一个目录整体上传进 Sandbox(递归读取本地文件后按 `uploadFiles` 写入);`opts.ignore` 是排除规则,省略 `targetDir` 落到 workdir。
-
 #### `stop`
 
 ```ts
@@ -465,41 +425,12 @@ appendLog?(line: string): Promise<void>;
 可选:把一行写进容器的「主日志」(PID1 在 tail 它)——于是 `docker logs` /
 Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider 实现,其它可省略。
 
-#### `downloadFile`
-
-```ts
-downloadFile(path: string): Promise<Buffer>;
-```
-
-从 Sandbox 内任意路径读取文件,返回二进制 Buffer。
-对应各 provider:Docker getArchive / Vercel readFileToBuffer / e2b files.read(bytes) / …
-
-#### `uploadFile`
-
-```ts
-uploadFile(path: string, content: Buffer): Promise<void>;
-```
-
-向 Sandbox 内任意路径写入文件(二进制)。
-对应各 provider:Docker putArchive / Vercel fs.writeFile(Buffer) / e2b files.write / …
-
-#### `downloadDirectory`
-
-```ts
-downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
-```
-
-把 Sandbox 内一个目录整体递归下载到本地磁盘,与 `uploadDirectory` 对称:按远端相对路径
-把每个文件字节精确落盘到 `localDir`(自动建目录,不做文本编码转换,不拼接,不返回带便利
-方法的包装类型)。省略 `targetDir` 落到 workdir(Sandbox 侧锚点);`opts.ignore` 与
-`uploadDirectory` 同名同义——按 basename 排除路径,省略即不过滤。
-
 ### `CommandOptions`
 
 #### `env`
 
 ```ts
-env?: globalThis.Record<string, string>;
+readonly env?: Readonly<globalThis.Record<string, string>>;
 ```
 
 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。
@@ -507,7 +438,7 @@ env?: globalThis.Record<string, string>;
 #### `cwd`
 
 ```ts
-cwd?: string;
+readonly cwd?: string;
 ```
 
 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。
@@ -515,7 +446,7 @@ cwd?: string;
 #### `stream`
 
 ```ts
-stream?: boolean;
+readonly stream?: boolean;
 ```
 
 把本命令的输出也送进 Sandbox 的「原生日志流」(于是 `docker logs` / Docker UI 的 Logs
@@ -526,7 +457,7 @@ stream?: boolean;
 #### `onStdout`
 
 ```ts
-onStdout?: (chunk: string) => void | Promise<void>;
+readonly onStdout?: (chunk: string) => void | Promise<void>;
 ```
 
 命令 stdout 每到一块就调用一次。回调只用于运行中的短命反馈；完整 stdout 仍会原样
@@ -536,7 +467,7 @@ stdout 调用一次，不能静默丢掉。
 #### `onStderr`
 
 ```ts
-onStderr?: (chunk: string) => void | Promise<void>;
+readonly onStderr?: (chunk: string) => void | Promise<void>;
 ```
 
 `onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。
@@ -544,7 +475,7 @@ onStderr?: (chunk: string) => void | Promise<void>;
 #### `root`
 
 ```ts
-root?: boolean;
+readonly root?: boolean;
 ```
 
 以 root 跑本命令。默认 `false` —— 命令以 Sandbox 的标准**非 root** 用户跑(agent 的自然环境)。
@@ -555,15 +486,24 @@ root?: boolean;
 本就全程 root 的 provider(如 Modal)视作 no-op;完全无法提权的 provider 可不支持(抛错)—— 但**默认值与
 语义保持一致**,不因 provider 而变。
 
-#### `timeout`
+#### `timeoutMs`
 
 ```ts
-timeout?: number;
+readonly timeoutMs?: number;
 ```
 
 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
 (见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
 显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
+
+#### `signal`
+
+```ts
+readonly signal?: AbortSignal;
+```
+
+取消本次受管命令树。Provider 必须在 Promise settle 前确认命令树已经终止；无法精确
+终止时应退休整个 Sandbox，不能只关闭 transport 后把进程留在后台。
 
 {/* GENERATED:END sandbox-methods */}
 

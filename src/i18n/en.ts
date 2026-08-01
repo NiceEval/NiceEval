@@ -357,6 +357,8 @@ export const en = {
   "feedback.human.trace": "Trace:   niceeval show {{locator}} --execution",
   "feedback.phase.agentSetup": "agent setup",
   "feedback.phase.agentEnsure": "ensuring agent",
+  "feedback.phase.stateLoad": "loading experiment state",
+  "feedback.phase.stateSave": "saving experiment state",
   "feedback.phase.evalRun": "running eval",
   "feedback.phase.sandboxCreate": "creating sandbox",
   "feedback.phase.sandboxQueue": "queued for sandbox",

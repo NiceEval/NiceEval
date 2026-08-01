@@ -12,8 +12,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
+import { Effect } from "effect";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
-import { planExperimentStateOrThrow } from "./state/plan.ts";
+import {
+  declaredState,
+  limitedStateConcurrency,
+  planExperimentStateOrThrow,
+  STATE_ABSENT,
+  STATE_CONCURRENCY_UNBOUNDED,
+  STATE_FRESH,
+  STATE_REUSE,
+} from "./state/plan.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
@@ -37,8 +46,7 @@ import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
 import {
   linkRunSandboxes,
-  prepareRunSandboxes,
-  resolvedSandboxRecommendedConcurrency,
+  recommendedConcurrencyForPreparedPairs,
 } from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
@@ -1043,10 +1051,12 @@ async function main(): Promise<void> {
         sandbox: exp.sandbox,
         sandboxReuse: exp.sandboxReuse,
         state: planExperimentStateOrThrow({
-          state: exp.state,
+          state: exp.state === undefined ? STATE_ABSENT : declaredState(exp.state),
           agent: exp.agent,
-          sandboxReuse: exp.sandboxReuse === true,
-          maxConcurrency: exp.maxConcurrency,
+          sandbox: exp.sandboxReuse === true ? STATE_REUSE : STATE_FRESH,
+          concurrency: exp.maxConcurrency === undefined
+            ? STATE_CONCURRENCY_UNBOUNDED
+            : limitedStateConcurrency(exp.maxConcurrency),
         }),
         judge: exp.judge,
         // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
@@ -1123,13 +1133,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // environments 查表在 dry-run 与真实运行共用的规划边界完成；缺表项在任何沙箱/agent 花费前穷举失败。
-  if (command === "check") linkRunSandboxes(evals, agentRuns);
-  else prepareRunSandboxes(evals, agentRuns);
-
   // check 的边界就是 pure link：不读取 provider 文件、不做网络请求、不算 fingerprint，
-  // 更不会 build / create Sandbox。--dry 与正式运行继续消费上面写入的同一 linked matrix。
+  // 更不会 build / create Sandbox。Effect 必须在这里执行，不能把一次失败留在惰性值里误报成功。
   if (command === "check") {
+    await Effect.runPromise(linkRunSandboxes(evals, agentRuns));
     const pairCount = matchedByRun.reduce((sum, selected) => sum + selected.length, 0);
     process.stdout.write(`Sandbox layers linked: ${pairCount} pair${pairCount === 1 ? "" : "s"}.\n`);
     process.exit(0);
@@ -1161,16 +1168,16 @@ async function main(): Promise<void> {
       }
     }
   }
-  let carryPlan = priorResults?.length
-    ? await planCarry(evals, agentRuns, priorResults, undefined, config.timeoutMs, {
-        rerun: flags.rerun,
-        configJudge: config.judge,
-        keepSandbox: flags.keepSandbox,
-        accept: flags.accept,
-        incompatibleKeys,
-        priorManifests: carryInputs?.manifestsByEvalKey,
-      })
-    : undefined;
+  // 即使没有历史也必须规划：它是 link → physical plan → fingerprint → dispatch 的唯一完成态，
+  // dry 与真实运行都消费同一组不可变 PreparedRunPair。
+  let carryPlan = await planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
+    rerun: flags.rerun,
+    configJudge: config.judge,
+    keepSandbox: flags.keepSandbox,
+    accept: flags.accept,
+    incompatibleKeys,
+    priorManifests: carryInputs?.manifestsByEvalKey,
+  });
 
   // 不带值的 `--accept` 在非 TTY 下是用法错误。报错落在这里而不是解析 argv 时:它要带上
   // 本次计划里真实可授权的原因清单(与 selector 空转报错同一份枚举),那份清单要等携带规划
@@ -1218,7 +1225,7 @@ async function main(): Promise<void> {
       } else {
         process.stderr.write(t("cli.accept.equivalent", { command: equivalentAcceptCommand(acceptCommand, chosen) }));
         flags.accept = chosen;
-        carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], undefined, config.timeoutMs, {
+        carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], config.timeoutMs, {
           rerun: flags.rerun,
           configJudge: config.judge,
           keepSandbox: flags.keepSandbox,
@@ -1321,10 +1328,16 @@ async function main(): Promise<void> {
     .map(failureDetailFromResult)
     .filter((failure) => failure !== undefined);
 
+  if (carryPlan.preparedPairsByKey === undefined) {
+    throw new Error("Internal error: production carry planning did not return prepared Sandbox pairs.");
+  }
+
   // 无全局默认:并发上限由 sandbox provider 的推荐值决定(多个 agentRun 各有 sandbox 时取
   // 最小值,最保守的 provider 决定上限)。同一个值既进 RunFeedbackPlan.shape,也传给 runEvals——
   // 两处必须是同一个数字,dashboard 展示的并发上限不能和真实调度的并发上限对不上。
-  const sandboxDefaultConcurrency = resolvedSandboxRecommendedConcurrency(evals, agentRuns);
+  const sandboxDefaultConcurrency = recommendedConcurrencyForPreparedPairs(
+    [...carryPlan.preparedPairsByKey.values()],
+  );
   const maxConcurrency =
     flags.maxConcurrency ??
     config.maxConcurrency ??

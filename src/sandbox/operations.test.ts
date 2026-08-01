@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/sandbox.md「Sandbox Operations 与传输」
+// cases: docs/engineering/testing/unit/sandbox.md
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -166,6 +166,8 @@ interface RunMeta {
    * 形状见[共享构建的 provenance](#共享构建的-provenancesandboxbuilds)。
    */
   sandboxBuilds?: SandboxBuildRecord[];
+  /** reuse State 的 window 级 load/save provenance;fresh State 的活动只住对应 AttemptRecord。 */
+  stateWindows?: StateWindowRecord[];
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(publish 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
@@ -198,6 +200,12 @@ interface ExperimentRunInfo {
   maxConcurrency?: number;
   /** 是否允许多条 Attempt 共用 Sandbox；进 configHash，省略等价于 false。 */
   sandboxReuse?: boolean;
+  /** State 静态投影;进 configHash。省略表示 Stateless;callback 与动态 checkpoint 不落在这里。 */
+  state?: {
+    identity: JsonValue;
+    consistency: { mode: "pinned"; revision: string } | { mode: "rolling" };
+    saveOn: "after-load" | "attempt-succeeded";
+  };
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**
@@ -209,10 +217,12 @@ interface ExperimentRunInfo {
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
   evalFilterFingerprint?: string;
-  /** Experiment layer 携带 template 时的投影：Provider 名、factory 的 publicConfig() 投影与配置 fingerprint。 */
-  sandbox?: { provider: string; params?: Record<string, JsonValue>; fingerprint?: string };
-  /** 逐 Eval 的 template 解析结果：template owner 为 Eval 的配对各落一项，键为 eval id，值的形状与顶层 sandbox 相同。 */
-  sandboxByEval?: Record<string, { provider: string; params?: Record<string, JsonValue>; fingerprint?: string }>;
+  /** Experiment 作者 layer 的完整纯数据身份；Direct/command-only 同样显式记录。 */
+  sandboxLayer: JsonValue;
+  /** 本次所有 selected Eval 的完整 pair-owned ProviderPlan 身份；Direct 也有显式项。 */
+  sandboxPlansByEval: Record<string, JsonValue>;
+  /** 按声明顺序冻结的 ensure + 精确配对 installer 静态身份；Direct 为显式空数组。 */
+  agentInstalls: JsonValue[];
 }
 ```
 
@@ -221,12 +231,12 @@ interface ExperimentRunInfo {
 - **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。
   `selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
-- **sandbox 参数只经 provider 的 `publicConfig()` 投影落盘**:每个内置 provider 显式实现「哪些参数可发布」的投影(镜像名、模板名、runtime 可以;token、凭据路径永远不可以),`defineSandbox` 自定义 provider 没有提供投影时只落 provider 名。
-  「params 不含 secret」由投影保证,不靠注释承诺。
-- **template 解析结果按 owner 落盘。**
-  Experiment layer 携带 template 时,顶层 `sandbox` 落它的 factory 投影;template owner 为 Eval 的配对逐条落进 `sandboxByEval`,供审计与逐 eval fingerprint 对账。
-  每一项都是该 template-bearing factory 经 `publicConfig()` 的投影:Provider 名、产物 locator(image / template / snapshotId)等可发布参数与配置 fingerprint。
-  未选中的 eval 不写映射项、不伪造解析结果;配对的 template 唯一性与 owner 判定单源在 [Sandbox Layer](../sandbox/layers.md)。
+- **`state` 只投影静态声明。** 实际 checkpoint 与 transfer 结果在 fresh Attempt 或 reuse window 的 provenance 上;rolling head 不是可签入配置,不冒充 configHash 输入。
+- **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
+  `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
+- **ProviderPlan 只含 provider 明确构造的可发布纯数据。** token、凭据值、runtime callback 与私有路径不进入 plan；
+  实际 artifact digest、实际平台和 provider runtime locator 属 Attempt provenance/facts，不反写 configHash/fingerprint。
+- 未选中的 eval 不写映射项；已选中的 eval 不允许缺项。template 唯一性与 owner 判定单源在 [Sandbox Layer](../sandbox/layers.md)。
 - 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。
   **进 [configHash](../experiments/cache.md#指纹两个哈希嵌套) 的字段这条是硬约束**:配置身份的每一个输入都要在 `run.json` 上找得到,顶层或本投影二选一。
   `agent` / `model` 住顶层,其余住这里。
@@ -271,6 +281,7 @@ type LifecyclePhase =
   | "sandbox.prepare.eval"       // 仅错误/诊断归因:细分到 Eval layer 的 prepare 命令,不单列计时条目
   | "sandbox.prepare.experiment" // 仅错误/诊断归因:细分到 Experiment layer 的 prepare 命令,不单列计时条目
   | "agent.ensure"         // ensure 循环:probe、缺失时配对安装层 install、复检(见 Adapters · Agent Ensure)
+  | "state.load"           // State checkpoint 载入;无 State 或 reuse window 中间 Attempt 不产生
   | "workspace.baseline"   // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "agent.setup"          // Agent runtime setup:Adapter 在 CLI 就绪后的逐 Attempt 运行时准备(写鉴权与运行时配置)
   | "telemetry.configure"  // tracing 出口配置
@@ -281,6 +292,7 @@ type LifecyclePhase =
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
+  | "state.save"           // State checkpoint 回存;是否执行服从 saveOn,使用独立收尾 signal
   | "sandbox.cleanup"      // 两层作者 layer 已登记 cleanup 按全局准备顺序逆序执行
   | "sandbox.suspend"      // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause);耗时可观(pause 随内存增长),必须可见
   | "sandbox.stop";        // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
@@ -466,6 +478,12 @@ interface AttemptRecord {
   usage?: Usage;
   /** attempt 作用域生命周期代码经 `ctx.fact()` 上报的运行事实;字段契约见下方 facts 小节。 */
   facts?: Record<string, string | number | boolean>;
+  /** fresh State 的 transfer 活动;reuse 时只写 windowId,活动在 RunMeta.stateWindows。无 State 时省略。 */
+  state?: {
+    windowId: string;
+    load?: StateTransferActivity;
+    save?: StateTransferActivity;
+  };
   estimatedCostUSD?: number;
   /** 使 attempt 无法正常完成的唯一致命执行错误。 */
   error?: AttemptError;

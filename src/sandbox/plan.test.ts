@@ -1,7 +1,10 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 
 import { Effect, Option } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createBuiltinSandboxFactories,
   defineSandboxTemplate,
@@ -15,6 +18,7 @@ import {
 import { linkSandboxLayers, type LinkedSandboxLayerPair } from "./link.ts";
 import {
   linkedRunFingerprintIdentity,
+  linkedRunCarryEligible,
   linkedRunRecordIdentity,
   planLinkedRuns,
   SandboxPhysicalPlanningError,
@@ -32,6 +36,19 @@ const factories = createBuiltinSandboxFactories({
   dockerBuildPlatform: Effect.succeed("linux/amd64"),
   hostPlatform: { _tag: "Darwin", os: "darwin", arch: "arm64" },
 });
+const tempRoots: string[] = [];
+afterEach(async () => Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
+
+async function builtInRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "niceeval-plan-"));
+  tempRoots.push(root);
+  await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"a".repeat(64)}\n`);
+  await writeFile(
+    join(root, "compose.yaml"),
+    `services:\n  client:\n    image: node@sha256:${"b".repeat(64)}\n`,
+  );
+  return root;
+}
 
 function linked(
   evalLayer: SandboxLayer | undefined,
@@ -61,7 +78,17 @@ function planned(pair: LinkedSandboxLayerPair): LinkedRunPlan {
 }
 
 describe("provider-neutral Sandbox planning", () => {
-  it("built-in factory 归一完整 immutable plan，默认值不编码成 undefined", () => {
+  it("physical plan downgrades floating Docker images from carry eligibility", () => {
+    const pinned = planned(linked(factories.dockerImageSandbox({
+      image: `node@sha256:${"f".repeat(64)}`,
+    })));
+    const floating = planned(linked(factories.dockerImageSandbox({ image: "node:24" })));
+    expect(linkedRunCarryEligible(pinned)).toBe(true);
+    expect(linkedRunCarryEligible(floating)).toBe(false);
+  });
+
+  it("built-in factory 归一完整 immutable plan，默认值不编码成 undefined", async () => {
+    const root = await builtInRoot();
     const pairs = [
       linked(factories.dockerComposeSandbox({ file: "compose.yaml", workspaceService: "client" })),
       linked(factories.dockerfileSandbox({ context: "." })),
@@ -70,9 +97,9 @@ describe("provider-neutral Sandbox planning", () => {
       linked(undefined, factories.vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 60_000 })),
       linked(factories.localSandbox({ dir: "workspace" })),
     ];
-    const outputs = Effect.runSync(planLinkedRuns(pairs.map((pair) => ({
+    const outputs = await Effect.runPromise(planLinkedRuns(pairs.map((pair) => ({
       pair,
-      authorBaseDirs: { eval: "/repo/evals/task", experiment: "/repo/experiments" },
+      authorBaseDirs: { eval: root, experiment: root },
     }))));
     const plans = outputs.map(({ plan }) => {
       if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
@@ -94,7 +121,7 @@ describe("provider-neutral Sandbox planning", () => {
       scheduling: { recommendedConcurrency: 10, lane: { key: "docker", limit: 10 } },
     });
     expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[0]!)).input).toMatchObject({
-      file: { _tag: "Path", value: "/repo/evals/task/compose.yaml" },
+      file: { _tag: "Path", value: join(root, "compose.yaml") },
       workspaceService: "client",
       build: "on-demand",
       executionUser: { _tag: "ImageDefault" },
@@ -107,7 +134,7 @@ describe("provider-neutral Sandbox planning", () => {
       scheduling: { admission: { _tag: "Exclusive" } },
     });
     expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[5]!)).input).toEqual({
-      directory: "/repo/evals/task/workspace",
+      directory: join(root, "workspace"),
     });
     expect(Object.isFrozen(outputs)).toBe(true);
     expect(plans.every(Object.isFrozen)).toBe(true);
@@ -220,14 +247,32 @@ describe("provider-neutral Sandbox planning", () => {
     expect(JSON.stringify(identity)).not.toContain("opaque =");
   });
 
-  it("secret env 与私有绝对路径只改变 opaque digest，不进入 plan/record JSON", () => {
-    const makePlan = (secret: string, authorBaseDir: string): LinkedRunPlan => {
+  it("credential env value 不进 identity，revision/语义 env/私有路径进入 opaque digest", async () => {
+    const makeRoot = async (): Promise<string> => {
+      const root = await mkdtemp(join(tmpdir(), "niceeval-secure-plan-"));
+      tempRoots.push(root);
+      await mkdir(join(root, "private"));
+      await writeFile(
+        join(root, "private", "compose.yaml"),
+        `services:\n  client:\n    image: node@sha256:${"c".repeat(64)}\n`,
+      );
+      return root;
+    };
+    const firstRoot = await makeRoot();
+    const secondRoot = await makeRoot();
+    const makePlan = async (
+      secret: string,
+      revision: string,
+      semantic: string,
+      authorBaseDir: string,
+    ): Promise<LinkedRunPlan> => {
       const pair = linked(factories.dockerComposeSandbox({
         file: "private/compose.yaml",
         workspaceService: "client",
-        env: { ACCESS_TOKEN: secret },
+        env: { DATASET: semantic },
+        credentialEnv: { ACCESS_TOKEN: { value: secret, revision } },
       }));
-      const [output] = Effect.runSync(planLinkedRuns([{
+      const [output] = await Effect.runPromise(planLinkedRuns([{
         pair,
         authorBaseDirs: { eval: authorBaseDir, experiment: "/repo/experiments" },
       }]));
@@ -235,19 +280,26 @@ describe("provider-neutral Sandbox planning", () => {
       return output.plan;
     };
 
-    const first = makePlan("secret-red", "/Users/alice/private-evals/task");
-    const changedSecret = makePlan("secret-blue", "/Users/alice/private-evals/task");
-    const changedPath = makePlan("secret-red", "/Volumes/private-checkout/task");
+    const first = await makePlan("secret-red", "tenant-a", "dataset-a", firstRoot);
+    const changedSecret = await makePlan("secret-blue", "tenant-a", "dataset-a", firstRoot);
+    const changedRevision = await makePlan("secret-red", "tenant-b", "dataset-a", firstRoot);
+    const changedSemantic = await makePlan("secret-red", "tenant-a", "dataset-b", firstRoot);
+    const changedPath = await makePlan("secret-red", "tenant-a", "dataset-a", secondRoot);
     if (first._tag !== "Sandbox") throw new Error("expected sandbox plan");
 
     const recordJson = JSON.stringify(linkedRunRecordIdentity(first));
     const wholePlanJson = JSON.stringify(first.providerPlan);
-    for (const forbidden of ["secret-red", "/Users/alice", "private/compose.yaml"]) {
+    for (const forbidden of ["secret-red", firstRoot, "private/compose.yaml"]) {
       expect(recordJson).not.toContain(forbidden);
       expect(wholePlanJson).not.toContain(forbidden);
     }
-    expect(linkedRunFingerprintIdentity(changedSecret)).not.toEqual(linkedRunFingerprintIdentity(first));
+    expect(linkedRunFingerprintIdentity(changedSecret)).toEqual(linkedRunFingerprintIdentity(first));
+    expect(linkedRunFingerprintIdentity(changedRevision)).not.toEqual(linkedRunFingerprintIdentity(first));
+    expect(linkedRunFingerprintIdentity(changedSemantic)).not.toEqual(linkedRunFingerprintIdentity(first));
     expect(linkedRunFingerprintIdentity(changedPath)).not.toEqual(linkedRunFingerprintIdentity(first));
+    expect(Option.getOrThrow(sandboxProviderRuntimeOf(first.providerPlan)).input).toMatchObject({
+      env: { ACCESS_TOKEN: "secret-red", DATASET: "dataset-a" },
+    });
     expect(linkedRunRecordIdentity(first)).toEqual(linkedRunFingerprintIdentity(first));
   });
 });

@@ -10,7 +10,8 @@ import {
 } from "./skills.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import type { Agent, AgentSetupManifest, SandboxHook, SkillSpec } from "../types.ts";
+import type { Agent, AgentSetupManifest, SkillSpec } from "../types.ts";
+import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { t } from "../i18n/index.ts";
 import {
@@ -75,11 +76,11 @@ export interface BubConfig {
    */
   pythonPlugins?: PythonPluginSpec[];
   /**
-   * 安装后按数组顺序运行的用户 Hook(复用 SandboxHook 的窄上下文):在装 bub、装 Skills /
+   * 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在装 bub、装 Skills /
    * Python package、写 manifest 全部完成后执行。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  postSetup?: SandboxHook[];
+  postSetup?: SandboxCommand[];
   /**
    * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
@@ -87,7 +88,7 @@ export interface BubConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  preTeardown?: SandboxHook[];
+  preTeardown?: SandboxCommand[];
 }
 
 const UV = "$HOME/.local/bin/uv";
@@ -238,13 +239,13 @@ export function bubAgent(config?: BubConfig): Agent {
 
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
       // 钩子失败不该丢掉这份证据。
-      await runPostSetupHooks(sb, ctx, config?.postSetup);
+      await runPostSetupHooks(sb, ctx, "bub", config?.postSetup);
     },
 
     async teardown(sb, ctx) {
       // preTeardown 与 postSetup 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
       // bub 目前没有其它收尾步骤,这段就是整个 teardown。
-      await runPreTeardownHooks(sb, ctx, config?.preTeardown);
+      await runPreTeardownHooks(sb, ctx, "bub", config?.preTeardown);
     },
 
     async send(input, ctx) {

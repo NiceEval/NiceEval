@@ -49,6 +49,22 @@ src/
 边界规则一句话:**`agents/` 和 `sandbox/` 之外的任何文件,都不应出现 agent 名字或 sandbox 名字的行为分支。
 ** 核心拿到的是接口,不是名字。
 
+## 程序设计边界：纯函数、完整 ADT 与 Effect
+
+NiceEval 的内部实现只有两类计算。
+不读取外部世界的身份、选择、链接、规划、指纹和结果折叠保持为纯函数；文件、网络、进程、动态 import、并发、取消与资源生命周期进入 `Effect`。
+公共作者 callback 与 Provider SDK 可以按各自契约返回 `Promise`，但只在最外层适配一次，不能让 `Promise`、`try/catch` 或 `Effect.runPromise` 继续穿过内部调用链。
+
+数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
+每个阶段只接收上一个阶段的完整产物，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
+阶段推进只创建新值，不回写前一阶段，也不在下游重新选择、重新链接或猜默认值。
+
+`unknown` 只允许出现在 JavaScript、动态 import、JSON、文件格式、SDK 返回和第三方 throw 这些真实的不可信边界。
+边界用 Effect Schema 或等价的品牌守卫立即解码成领域类型；解码失败进入具名的 typed error channel，解码成功后的内部函数不再接收 `unknown`、手写字段探测或双重类型断言。
+
+资源由 `Effect.Scope` 持有，失败、defect 与 interruption 保持三条通道直到单 Attempt 封口。
+Sandbox acquire、State load、Agent ensure、作者执行和逆序 finalizer 都在同一条结构化生命周期里组合；只有最外层公共 Promise facade 与结果封口运行 Effect，内部模块不得自行启动第二套 runtime。
+
 ## 一个授权面，宽接口与能力守卫
 
 NiceEval 只有一个写 eval 的入口 `defineEval`。

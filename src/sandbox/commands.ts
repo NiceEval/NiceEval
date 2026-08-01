@@ -43,10 +43,11 @@ export type SandboxCleanupCommand = (
 ) => MaybePromise<void>;
 
 export interface SandboxCommandContext {
-  readonly phase: "prepare";
+  readonly phase: "prepare" | "agent.post-setup" | "agent.pre-teardown";
   readonly owner:
     | { readonly kind: "eval"; readonly id: string }
-    | { readonly kind: "experiment"; readonly id: string };
+    | { readonly kind: "experiment"; readonly id: string }
+    | { readonly kind: "agent"; readonly id: string };
   readonly attempt: AttemptRef;
   readonly signal: AbortSignal;
   readonly progress: SandboxProgress;

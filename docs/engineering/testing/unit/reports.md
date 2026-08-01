@@ -419,7 +419,10 @@ const scope = reportScopeFixture({
   用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/分析/终端跨条件归因.md)。
   口径单源见 [Measure Views](../../../feature/reports/components/charts/README.md)。
 
-- **usage 组装与 facts 投影**:usage 行/表的组装口径单源见 [Library · Attempt 详情 · `attemptUsage` 组装口径（单源）](../../../feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自 `Usage`(桶恒互斥,`inputTokens` 即未缓存输入)、token 片段只在 `cacheReadTokens` 在场时标 "uncached in"(fixture 要有「cache 桶缺席」的场景证明不给无拆分的数字贴标注)、`requests` 缺失时片段整段省略(区分「省略」与「显示 0/1」)、合计对含 `—` 的列标不完整;这些判据的断言面是 `attemptUsage`，facts 在单元层只证明读取后的数据投影。
+- **usage 组装与 facts 投影**：口径单源见 [Attempt Usage](../../../feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源)。
+  - turns/toolCalls 来自事件流，token 来自桶互斥的 `Usage`。
+  - 只有 `cacheReadTokens` 在场才显示 "uncached in"；`requests` 缺失时省略整段。
+  - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`，facts 只验收读取后的数据投影。
    attempt 首页 `usage:` / `facts:` 行、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
   - 预览按段截断。

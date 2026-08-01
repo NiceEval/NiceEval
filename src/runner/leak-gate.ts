@@ -244,6 +244,37 @@ export async function buildContextIdentityContribution(spec: BuildContextSpec): 
   };
 }
 
+/** CaseKey 用的普通宿主路径摘要：文件按字节，目录按相对路径 × 文件摘要。 */
+export async function pathContentDigest(path: string): Promise<string> {
+  const root = resolve(path);
+  const info = await stat(root).catch(() => undefined);
+  if (info === undefined) throw new Error(`Compose identity path not found at ${root}`);
+  if (info.isFile()) return streamFileDigest(root);
+  if (!info.isDirectory()) throw new Error(`Compose identity path is not a file or directory: ${root}`);
+  const entries: Array<[string, string]> = [];
+  const walk = async (dir: string): Promise<void> => {
+    const children = await readdir(dir, { withFileTypes: true });
+    for (const child of children.sort((a, b) => a.name.localeCompare(b.name))) {
+      const absolute = join(dir, child.name);
+      if (child.isDirectory()) {
+        await walk(absolute);
+      } else if (child.isFile()) {
+        entries.push([relative(root, absolute).split(sep).join("/"), await streamFileDigest(absolute)]);
+      }
+    }
+  };
+  await walk(root);
+  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+async function streamFileDigest(path: string): Promise<string> {
+  const hasher = createHash("sha256");
+  const stream = createReadStream(path);
+  stream.on("data", (chunk: string | Buffer) => hasher.update(chunk));
+  await finished(stream);
+  return hasher.digest("hex");
+}
+
 async function readDockerignoreLines(path: string): Promise<string[]> {
   const raw = await readFile(path, "utf-8").catch(() => "");
   const out: string[] = [];

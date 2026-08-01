@@ -112,6 +112,16 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 创建期运行标识元数据(host/pid/startedAt;docker label / e2b metadata,与 `niceeval.keep-candidate` / provision token 同通道)、孤儿三条件判定(`classifyRunIdentity`:同宿主+pid 存活→整个排除、同宿主+pid 不存活→orphan、异宿主→unverified) | `src/sandbox/run-identity.ts` |
 | `sandbox list --orphans` / `sandbox prune`(docker 按 label 查本地 daemon、e2b 按 metadata 过滤 SDK 列表,排除留存注册表条目;prune 幂等 + `--force` 语义,单台失败列出继续处理其余) | `src/sandbox/orphans.ts`(判定与销毁)+ `src/sandbox/cli-commands.ts`(`listOrphansCommand` / `pruneCommand` / `orphanReminder` 输出编排) |
 
+## State([feature/state/](feature/state/README.md))
+
+| 行为 | 文件 |
+|---|---|
+| `defineExperimentState(ExperimentStateInput) → ExperimentStateDefinition` 的校验、冻结与私有品牌 | `src/state/define.ts`、公开导出在 `src/index.ts` |
+| `Stateless | Pinned | Rolling` 规划 ADT、组合约束与 cadence | `src/state/plan.ts`;Experiment 解析接线在 `src/runner/run.ts` |
+| checkpoint load/save 执行、fresh / reuse window 活动、独立 save signal 与 typed failure 归一 | `src/state/runtime.ts`;生命周期接线在 `src/runner/attempt.ts` 与复用池 |
+| State 静态投影进入 configHash、rolling 禁 carry、pinned provenance 原样携带 | `src/runner/config-identity.ts`、`src/runner/fingerprint.ts` |
+| `StateCheckpoint` / transfer activity / window provenance 的记录形状与读写 | `src/state/types.ts`、`src/record/types.ts`、`src/record/writer.ts`、`src/record/open.ts` |
+
 ## Assertions / Judge / Verdict
 
 契约分别见 [Assertions](./feature/assertions/README.md)、[Judge](./feature/judge/README.md) 与[Verdict](./feature/verdict/README.md)。

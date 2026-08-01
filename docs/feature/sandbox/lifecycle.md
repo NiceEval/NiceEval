@@ -17,7 +17,7 @@
 | Experiment layer | 可选 template、逐 Attempt 的 SandboxCommand | 实验起点或实验准备 |
 | Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、probe、payload、平台、安装与复检 |
 | Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并清理完整资源组 |
-| State Feature | load、save、临界区与窗口状态 | 外部或跨 Attempt 实验状态 |
+| [State](../state/README.md) | load、save、临界区与窗口状态 | 外部或跨 Attempt 实验状态 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
 Agent layer 只共享排序位置,ensure 循环的协议不降格成普通命令。
@@ -140,7 +140,7 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 | reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
 | 两层作者 prepare commands | 每 Attempt | 每 Attempt 重放 |
 | agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
-| State load / save | 每 Attempt,按 State 契约 | 每 Attempt 或每窗口,按 State 契约 |
+| State load / save | 每 Attempt,按 [State](../state/architecture.md#生命周期与-cadence) 契约 | 每窗口,按 State 契约 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
 | Provider finalizer | 每 Attempt | 每复用窗口 |
@@ -153,6 +153,7 @@ reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
 两层作者 command 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。
 State load 在 Agent CLI 可用后执行;Runner 随后建立本条 Attempt 的 Agent 可归因起点。
+无 State 时不产生空 phase;fresh 每 Attempt load/save,复用时每窗口 load/save,完整 cadence 与 save policy 由 [State Architecture](../state/architecture.md#生命周期与-cadence) 定义。
 
 因此:
 
@@ -218,7 +219,7 @@ reset 失败、cleanup 失败或 State Feature 无法恢复已知边界时退休
 | template owner 的作者 command | Attempt `errored`,归 `sandbox.prepare.<templateOwner>` |
 | 第二作者 layer 的 command | Attempt `errored`,归对应 owner 的 `sandbox.prepare` |
 | agent.ensure 循环的 probe 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
-| State load / save | Attempt `errored`,归独立 state phase |
+| State load / save | Attempt `errored`,归 `state.load` / `state.save`;状态序列无合法后继时停止该 Experiment 后续派发 |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用窗口 |
 | Provider finalizer | 记录 Case cleanup 诊断,不覆盖原始 Attempt 判定 |
 
@@ -228,4 +229,5 @@ reset 失败、cleanup 失败或 State Feature 无法恢复已知边界时退休
 - [Sandbox Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
 - [Sandbox 复用](reuse.md) —— reset、寿命确认与复用污染诊断。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— ensure 声明与 Agent 安装层的协议。
+- [State](../state/README.md) —— checkpoint、一致性、save policy 与窗口 cadence。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— fingerprint 与 configHash 的完整输入清单。

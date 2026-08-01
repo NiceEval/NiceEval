@@ -297,6 +297,29 @@ services:
     );
   });
 
+  it("多阶段 target 是 BuildKey 的一部分", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "ctx"), { recursive: true });
+    await writeFile(
+      join(root, "ctx", "Dockerfile"),
+      `FROM alpine@sha256:${"a".repeat(64)} AS base\nFROM base AS final\n`,
+      "utf-8",
+    );
+    const compose = async (target: string): Promise<string> => {
+      await writeFile(
+        join(root, "compose.yaml"),
+        `services:\n  client:\n    build:\n      context: ./ctx\n      target: ${target}\n`,
+        "utf-8",
+      );
+      return (await collectComposeBuilds({
+        file: join(root, "compose.yaml"),
+        mainService: "client",
+        platform: "linux/amd64",
+      })).buildKeys[0]!;
+    };
+    expect(await compose("base")).not.toBe(await compose("final"));
+  });
+
   it("Compose 显式声明的平台压过探测值,逐服务进各自 BuildKey;多平台声明拒绝", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "ctx"), { recursive: true });

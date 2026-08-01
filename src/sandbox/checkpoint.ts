@@ -11,7 +11,7 @@
 // 这段代码对任意 provider 的 Sandbox 实现无改动即可使用。
 
 import { randomUUID } from "node:crypto";
-import type { Sandbox } from "../types.ts";
+import type { SandboxCommandTarget } from "./commands.ts";
 import { shellQuote } from "./shell.ts";
 import { t } from "../i18n/index.ts";
 
@@ -21,7 +21,9 @@ function tmpTarPath(tag: string): string {
 }
 
 /** 把 paths 列出的目录打成 gzip tar,返回 Buffer。 */
-export async function createCheckpoint(sb: Sandbox, paths: string[]): Promise<Buffer> {
+type CheckpointSandbox = Pick<SandboxCommandTarget, "runShell" | "readBytes" | "writeBytes">;
+
+export async function createCheckpoint(sb: CheckpointSandbox, paths: string[]): Promise<Buffer> {
   if (paths.length === 0) throw new Error(t("checkpoint.emptyTar", { paths: "(none)" }));
   const tmp = tmpTarPath("cp");
   const quoted = paths.map(shellQuote).join(" ");
@@ -43,7 +45,7 @@ export async function createCheckpoint(sb: Sandbox, paths: string[]): Promise<Bu
 }
 
 /** 把 createCheckpoint 返回的 Buffer 还原到沙箱根目录。 */
-export async function restoreCheckpoint(sb: Sandbox, data: Buffer): Promise<void> {
+export async function restoreCheckpoint(sb: CheckpointSandbox, data: Buffer): Promise<void> {
   const tmp = tmpTarPath("rs");
   await sb.writeBytes(tmp, data);
   try {

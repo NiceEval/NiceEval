@@ -99,7 +99,11 @@ describe("SandboxLayer 声明与 command identity", () => {
     const template = dockerImageSandbox({ image: "node:24" }).prepare(opaque);
     expect(sandboxLayerStateOf(template)).toMatchObject({
       kind: "template-bearing",
-      template: { provider: "docker", kind: "image", image: "node:24" },
+      template: {
+        provider: "docker",
+        kind: "image",
+        identity: { publishable: { source: "configured-image" } },
+      },
       commands: [{ kind: "opaque", command: opaque }],
     });
   });
@@ -118,42 +122,45 @@ describe("SandboxLayer 声明与 command identity", () => {
       buildArgs: { NODE_VERSION: "24" },
     });
 
-    expect(sandboxLayerStateOf(compose).template).toEqual({
+    expect(sandboxLayerStateOf(compose).template).toMatchObject({
       provider: "docker",
       kind: "compose",
-      file: { kind: "url", value: "file:///fixtures/compose.yaml" },
-      workspaceService: "client",
-      build: "on-demand",
-      executionUser: "node",
-      env: { NODE_ENV: "test" },
+      identity: {
+        version: 2,
+        publishable: {
+          workspaceService: "client",
+          build: "on-demand",
+          executionUser: { _tag: "Configured" },
+          envKeys: ["NODE_ENV"],
+          credentialEnv: {},
+        },
+      },
+      leakGate: { _tag: "Compose", file: { _tag: "Url", value: "file:///fixtures/compose.yaml" } },
     });
-    expect(sandboxLayerStateOf(dockerfile).template).toEqual({
+    expect(sandboxLayerStateOf(dockerfile).template).toMatchObject({
       provider: "docker",
       kind: "dockerfile",
-      context: { kind: "path", value: "." },
-      dockerfile: "Dockerfile.eval",
-      buildArgs: { NODE_VERSION: "24" },
+      identity: { publishable: { buildArgKeys: ["NODE_VERSION"] } },
+      leakGate: { _tag: "Dockerfile", context: { _tag: "Path", value: "." }, dockerfile: "Dockerfile.eval" },
     });
     expect(sandboxLayerStateOf(dockerImageSandbox({ image: "node:24" })).template).toMatchObject({
       provider: "docker",
       kind: "image",
     });
-    expect(sandboxLayerStateOf(e2bSandbox({ template: "niceeval-codex", lifetimeMs: 60_000 })).template).toEqual({
+    expect(sandboxLayerStateOf(e2bSandbox({ template: "niceeval-codex", lifetimeMs: 60_000 })).template).toMatchObject({
       provider: "e2b",
       kind: "template",
-      template: "niceeval-codex",
-      lifetimeMs: 60_000,
+      identity: { publishable: { lifetime: { _tag: "Configured", milliseconds: 60_000 } } },
     });
-    expect(sandboxLayerStateOf(vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 30_000 })).template).toEqual({
+    expect(sandboxLayerStateOf(vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 30_000 })).template).toMatchObject({
       provider: "vercel",
       kind: "snapshot",
-      snapshotId: "snap_123",
-      lifetimeMs: 30_000,
+      identity: { publishable: { lifetime: { _tag: "Configured", milliseconds: 30_000 } } },
     });
-    expect(sandboxLayerStateOf(localSandbox({ dir: "/workspace" })).template).toEqual({
+    expect(sandboxLayerStateOf(localSandbox({ dir: "/workspace" })).template).toMatchObject({
       provider: "local",
       kind: "directory",
-      dir: "/workspace",
+      identity: { publishable: { directory: { _tag: "Configured" } } },
     });
     expect(Object.isFrozen(sandboxLayerStateOf(compose).template)).toBe(true);
   });

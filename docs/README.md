@@ -23,6 +23,7 @@ Feature 和未归类的产品页描述**已经定稿、希望产品最终满足�
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
 | 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
 | 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
+| 让记忆库或累积笔记跨 Attempt 延续 | [State](feature/state/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 设计或评审公开 API | [API 设计](api-design.md) |
@@ -59,6 +60,7 @@ docs/
 │   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸
 │   ├── sandbox/                         隔离运行环境
+│   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── verdict/                         Severity、严格模式与四态折叠

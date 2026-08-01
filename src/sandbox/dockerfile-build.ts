@@ -7,14 +7,17 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Template } from "e2b";
-import { buildContextIdentityContribution, type BuildContextSpec } from "../runner/leak-gate.ts";
 import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import type { DockerBuildDecl } from "./case-types.ts";
 import type { PlannedSandboxCase } from "./case.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
-import { computeBuildKey, computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
+import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
+import {
+  DOCKERFILE_MATERIALIZER_REVISION,
+  resolveDockerfileBuildIdentity,
+} from "./dockerfile-identity.ts";
 
-export const DOCKERFILE_MATERIALIZER_REVISION = "dockerfile-1";
+export { DOCKERFILE_MATERIALIZER_REVISION } from "./dockerfile-identity.ts";
 
 interface DockerfileBuildDetails {
   readonly provider: "docker" | "e2b";
@@ -48,21 +51,6 @@ export async function collectDockerfileBuildFromPlan(
   if (declaration === undefined) return undefined;
 
   const baseDir = opts?.baseDir ?? process.cwd();
-  const contextDir = isAbsolute(declaration.build.context)
-    ? declaration.build.context
-    : resolvePath(baseDir, declaration.build.context);
-  const dockerfilePath = resolvePath(contextDir, declaration.build.dockerfile ?? "Dockerfile");
-  const dockerfile = await readFile(dockerfilePath, "utf8").catch(() => {
-    throw new Error(`Dockerfile for profile ${JSON.stringify(plan.profile)} not found at ${dockerfilePath}`);
-  });
-  const contextSpec: BuildContextSpec = {
-    contextDir,
-    label: `sandbox profile ${plan.profile}`,
-  };
-  const { contextDigest, contextFilterRules } = await buildContextIdentityContribution(contextSpec);
-  const from = firstFromReference(dockerfile);
-  const resolvedFromDigest = digestFromReference(from);
-  const fromDigest = resolvedFromDigest ?? `unresolved:${from ?? "missing"}`;
   const platform =
     declaration.provider === "e2b"
       ? "linux/amd64"
@@ -71,17 +59,17 @@ export async function collectDockerfileBuildFromPlan(
         : await detectDockerBuildPlatform(
             opts?.dockerPlatformProbe !== undefined ? { probe: opts.dockerPlatformProbe } : undefined,
           );
-  const buildKey = computeBuildKey({
-    builderKind: `${declaration.provider}-dockerfile`,
-    builderRevision: DOCKERFILE_MATERIALIZER_REVISION,
+  const identity = await resolveDockerfileBuildIdentity({
+    provider: declaration.provider,
+    context: declaration.build.context,
+    dockerfile: declaration.build.dockerfile,
+    buildArgs: declaration.build.args,
+    target: declaration.build.target,
     platform,
-    dockerfile,
-    contextDigest,
-    fromDigest,
-    contextFilterRules,
-    ...(declaration.build.args !== undefined ? { buildArgs: declaration.build.args } : {}),
-    ...(declaration.build.target !== undefined ? { target: declaration.build.target } : {}),
+    baseDir,
+    label: `sandbox profile ${plan.profile}`,
   });
+  const { buildKey, contextDir, dockerfilePath, dockerfile, contextFilterRules } = identity;
   const caseKey = caseKeyForDockerfileBuild(plan, buildKey);
   const details: DockerfileBuildDetails = {
     provider: declaration.provider,
@@ -96,7 +84,7 @@ export async function collectDockerfileBuildFromPlan(
     buildKey,
     caseKey,
     details,
-    carryEligible: resolvedFromDigest !== undefined,
+    carryEligible: identity.carryEligible,
     work: {
       buildKey,
       provider: declaration.provider,
@@ -159,18 +147,6 @@ function buildDeclaration(
     };
   }
   return undefined;
-}
-
-function firstFromReference(dockerfile: string): string | undefined {
-  return dockerfile.match(/^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)/im)?.[1];
-}
-
-function digestFromReference(ref: string | undefined): string | undefined {
-  if (ref === undefined) return undefined;
-  const index = ref.indexOf("@sha256:");
-  if (index < 0) return undefined;
-  const digest = ref.slice(index + 1);
-  return /^sha256:[a-f0-9]{64}$/i.test(digest) ? digest : undefined;
 }
 
 interface DockerfileProviderHooks {

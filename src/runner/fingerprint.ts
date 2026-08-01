@@ -6,13 +6,9 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
-import { linkedRunPlanIdentity, liveSandboxPlanningServices, type LinkedRunPlan } from "../sandbox/plan.ts";
-import { isSandboxLayer } from "../sandbox/layer.ts";
-import type { LinkedDirectPair } from "../sandbox/link.ts";
-import { planSandboxCase } from "../sandbox/case.ts";
-import { sandboxRunInfo } from "../sandbox/resolve.ts";
-import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
-import type { AgentRun, SandboxRunInfo } from "./types.ts";
+import { linkedRunCarryEligible, liveSandboxPlanningServices } from "../sandbox/plan.ts";
+import type { DiscoveredEval, EvalResult } from "../types.ts";
+import type { AgentRun } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
   prepareRunSandboxes,
@@ -33,19 +29,9 @@ export function cacheKey(run: AgentRun, evalId: string): string {
   return `${run.experimentId}|${evalId}`;
 }
 
-function isPreparedRunPair(value: PreparedRunPair | AgentRun | DiscoveredEval): value is PreparedRunPair {
-  return typeof value === "object" && value !== null && "run" in value && "evalDef" in value &&
-    "plan" in value && "identity" in value;
-}
-
-export function computeConfigHash(pair: PreparedRunPair): string;
-/** @deprecated 纯数据兼容入口；生产计划必须传 PreparedRunPair。 */
-export function computeConfigHash(run: AgentRun, configSandbox?: SandboxOption): string;
 /** Run 级配置身份。所有会改变结果解释口径的实验配置只在 `configIdentityForRun` 里裁决一次。 */
-export function computeConfigHash(pairOrRun: PreparedRunPair | AgentRun, configSandbox?: SandboxOption): string {
-  return isPreparedRunPair(pairOrRun)
-    ? hashConfigIdentity(configIdentityForRun(pairOrRun.run, pairOrRun.plan))
-    : hashConfigIdentity(configIdentityForRun(pairOrRun, configSandbox));
+export function computeConfigHash(pair: PreparedRunPair): string {
+  return hashConfigIdentity(configIdentityForRun(pair.run, pair.plan));
 }
 
 /** 身份对象 → 配置身份哈希;反事实重算(`--accept`)与正常路径共用同一个序列化口径。 */
@@ -61,46 +47,14 @@ export async function computeFingerprint(
   pair: PreparedRunPair,
   sourceCache?: Map<string, Promise<string>>,
   overrides?: FingerprintOverrides,
-): Promise<string>;
-/** @deprecated 纯数据兼容入口；不会做 provider control-plane 探测。 */
-export async function computeFingerprint(
-  evalDef: DiscoveredEval,
-  run: AgentRun,
-  sourceCache?: Map<string, Promise<string>>,
-  configSandbox?: SandboxOption,
-  overrides?: LegacyFingerprintOverrides,
-): Promise<string>;
-export async function computeFingerprint(
-  pairOrEval: PreparedRunPair | DiscoveredEval,
-  sourceCacheOrRun?: Map<string, Promise<string>> | AgentRun,
-  overridesOrSourceCache?: FingerprintOverrides | Map<string, Promise<string>>,
-  configSandbox?: SandboxOption,
-  legacyOverrides?: LegacyFingerprintOverrides,
 ): Promise<string> {
-  if (isPreparedRunPair(pairOrEval)) {
-    return (await fingerprintWithManifest(
-      pairOrEval,
-      sourceCacheOrRun as Map<string, Promise<string>> | undefined,
-      overridesOrSourceCache as FingerprintOverrides | undefined,
-    )).fingerprint;
-  }
-  return (await fingerprintWithManifest(
-    pairOrEval,
-    sourceCacheOrRun as AgentRun,
-    overridesOrSourceCache as Map<string, Promise<string>> | undefined,
-    configSandbox,
-    legacyOverrides,
-  )).fingerprint;
+  return (await fingerprintWithManifest(pair, sourceCache, overrides)).fingerprint;
 }
 
 interface FingerprintOverrides {
   configHash?: string;
   configIdentity?: ConfigIdentity;
   carryEpoch?: string;
-}
-
-interface LegacyFingerprintOverrides extends FingerprintOverrides {
-  sandbox?: SandboxRunInfo;
 }
 
 /**
@@ -115,44 +69,8 @@ export async function fingerprintWithManifest(
   pair: PreparedRunPair,
   sourceCache?: Map<string, Promise<string>>,
   overrides?: FingerprintOverrides,
-): Promise<{ fingerprint: string; manifest: EvalManifest }>;
-/** @deprecated 纯数据兼容入口；不会做 provider control-plane 探测。 */
-export async function fingerprintWithManifest(
-  evalDef: DiscoveredEval,
-  run: AgentRun,
-  sourceCache?: Map<string, Promise<string>>,
-  configSandbox?: SandboxOption,
-  overrides?: LegacyFingerprintOverrides,
-): Promise<{ fingerprint: string; manifest: EvalManifest }>;
-export async function fingerprintWithManifest(
-  pairOrEval: PreparedRunPair | DiscoveredEval,
-  sourceCacheOrRun?: Map<string, Promise<string>> | AgentRun,
-  overridesOrSourceCache?: FingerprintOverrides | Map<string, Promise<string>>,
-  configSandbox?: SandboxOption,
-  legacyOverrides?: LegacyFingerprintOverrides,
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  if (isPreparedRunPair(pairOrEval)) {
-    return fingerprintPreparedPair(
-      pairOrEval,
-      sourceCacheOrRun as Map<string, Promise<string>> | undefined,
-      overridesOrSourceCache as FingerprintOverrides | undefined,
-    );
-  }
-  const run = sourceCacheOrRun as AgentRun;
-  const direct = legacyDirectPreparedPair(pairOrEval, run, configSandbox);
-  return direct === undefined
-    ? fingerprintLegacy(
-        pairOrEval,
-        run,
-        overridesOrSourceCache as Map<string, Promise<string>> | undefined,
-        configSandbox,
-        legacyOverrides,
-      )
-    : fingerprintPreparedPair(
-        direct,
-        overridesOrSourceCache as Map<string, Promise<string>> | undefined,
-        legacyOverrides,
-      );
+  return fingerprintPreparedPair(pair, sourceCache, overrides);
 }
 
 async function fingerprintPreparedPair(
@@ -196,7 +114,7 @@ async function fingerprintPreparedPair(
       tags: evalDef.tags ?? [],
       metadata: evalDef.metadata ?? {},
     },
-    ...(plan._tag === "Sandbox" && !plan.pair.carryEligible
+    ...(plan._tag === "Sandbox" && !linkedRunCarryEligible(plan)
       ? { sandboxCommandCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
       : {}),
     loaderData,
@@ -214,153 +132,6 @@ async function fingerprintPreparedPair(
   const manifest: EvalManifest = {
     config: Object.fromEntries(configIdentityPaths(identity)),
     plan: pair.identity,
-    source: Object.fromEntries(source.map(([path, content]) => [path, hashText(content)])),
-    data: Object.fromEntries([
-      ...loaderData.map(([path, content]) => [path, hashText(content)]),
-      ...criteria,
-      ...privateFiles,
-    ]),
-  };
-  return { fingerprint: hash(payload), manifest };
-}
-
-function legacyDirectPreparedPair(
-  evalDef: DiscoveredEval,
-  run: AgentRun,
-  configSandbox?: SandboxOption,
-): PreparedRunPair | undefined {
-  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
-    ? run.sandbox as unknown as SandboxOption
-    : undefined;
-  if (run.agent.kind !== "direct" || authored !== undefined || configSandbox !== undefined) return undefined;
-  const pair: LinkedDirectPair = Object.freeze({
-    kind: "direct",
-    evalId: evalDef.id,
-    experimentId: run.experimentId,
-    agentName: run.agent.name,
-  });
-  const plan: LinkedRunPlan = Object.freeze({ _tag: "Direct", pair });
-  return Object.freeze({
-    key: cacheKey(run, evalDef.id),
-    run,
-    evalDef,
-    plan,
-    identity: linkedRunPlanIdentity(plan),
-  });
-}
-
-type LegacyDiscoveredEval = DiscoveredEval & { environment?: unknown; defaultProfileId?: string };
-
-function legacySandboxForEval(
-  run: AgentRun,
-  evalDef: LegacyDiscoveredEval,
-  fallback?: SandboxOption,
-): SandboxOption | undefined {
-  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
-    ? run.sandbox as unknown as SandboxOption
-    : undefined;
-  const spec = authored ?? fallback;
-  if (spec === undefined || typeof evalDef.environment !== "string") return spec;
-  const environments = (spec as { environments?: unknown }).environments;
-  if (typeof environments !== "object" || environments === null) return spec;
-  const override = (environments as globalThis.Record<string, unknown>)[evalDef.environment];
-  return typeof override === "object" && override !== null
-    ? { ...spec, ...override } as SandboxOption
-    : spec;
-}
-
-function legacyEnvironmentIdentity(environment: unknown): JsonValue | undefined {
-  if (environment === undefined) return undefined;
-  if (typeof environment === "string") return environment;
-  if (typeof environment !== "object" || environment === null) return String(environment);
-  const out: globalThis.Record<string, JsonValue> = {};
-  for (const [key, value] of Object.entries(environment)) {
-    if (key === "__brand" || value === undefined) continue;
-    out[key] = value as JsonValue;
-  }
-  return out;
-}
-
-async function legacySandboxCaseIdentity(
-  evalDef: LegacyDiscoveredEval,
-  sandboxSpec: SandboxOption | undefined,
-): Promise<JsonValue | undefined> {
-  if (sandboxSpec === undefined) return undefined;
-  const planned = planSandboxCase({
-    evalId: evalDef.id,
-    environment: evalDef.environment as never,
-    ...(evalDef.defaultProfileId === undefined ? {} : { defaultProfileId: evalDef.defaultProfileId }),
-    spec: sandboxSpec,
-  });
-  if (planned.status !== "ready") return undefined;
-  if (planned.plan.caseKind !== "on-demand-build") {
-    return {
-      caseKey: planned.plan.caseKey,
-      buildKeys: [...planned.plan.buildKeys],
-      identity: planned.plan.identity,
-      carryEligible: planned.plan.carryEligible,
-    };
-  }
-  const { collectDockerfileBuildFromPlan } = await import("../sandbox/dockerfile-build.ts");
-  const collected = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
-  return collected === undefined
-    ? undefined
-    : {
-        caseKey: collected.caseKey,
-        buildKeys: [collected.buildKey],
-        identity: planned.plan.identity,
-        carryEligible: collected.carryEligible,
-      };
-}
-
-/** 存量 SandboxSpec helper 的隔离实现；只读作者文件，不探测/build/create provider。 */
-async function fingerprintLegacy(
-  evalDef: DiscoveredEval,
-  run: AgentRun,
-  sourceCache?: Map<string, Promise<string>>,
-  configSandbox?: SandboxOption,
-  overrides?: LegacyFingerprintOverrides,
-): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  const legacyEval = evalDef as LegacyDiscoveredEval;
-  const sandboxSpec = legacySandboxForEval(run, legacyEval, configSandbox);
-  const identity = overrides?.configIdentity ?? configIdentityForRun(run, sandboxSpec, run.judge);
-  const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
-  const source = await sourceClosure(evalDef, sourceCache);
-  const loaderData = await Promise.all(
-    [...(evalDef.loaderDataPaths ?? [])].sort().map(
-      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedRead(path, sourceCache)],
-    ),
-  );
-  const criteria = await Promise.all(
-    [...(evalDef.criteriaPaths ?? [])].sort().map(
-      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
-    ),
-  );
-  const privateFiles = await Promise.all(
-    [...(evalDef.privatePaths ?? [])].sort().map(
-      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
-    ),
-  );
-  const sandboxCase = await legacySandboxCaseIdentity(legacyEval, sandboxSpec);
-  const plan: JsonValue = {
-    version: 0,
-    mode: "legacy-sandbox-spec",
-    environment: legacyEnvironmentIdentity(legacyEval.environment) ?? null,
-    sandbox: ((overrides?.sandbox ?? sandboxRunInfo(sandboxSpec)) as unknown as JsonValue | undefined) ?? null,
-    case: sandboxCase ?? null,
-  };
-  const payload = {
-    configHash,
-    pairPlan: plan,
-    source,
-    eval: { id: evalDef.id, tags: evalDef.tags ?? [], metadata: evalDef.metadata ?? {} },
-    loaderData,
-    ...(criteria.length === 0 ? {} : { criteria }),
-    ...(privateFiles.length === 0 ? {} : { private: privateFiles }),
-  };
-  const manifest: EvalManifest = {
-    config: Object.fromEntries(configIdentityPaths(identity)),
-    plan,
     source: Object.fromEntries(source.map(([path, content]) => [path, hashText(content)])),
     data: Object.fromEntries([
       ...loaderData.map(([path, content]) => [path, hashText(content)]),
@@ -472,7 +243,7 @@ export interface DispatchGroup {
 
 export interface CarryPlan {
   /** discovery/selector/link/physical planning 的唯一完成态；run/attempt 不再二次选择或重建。 */
-  preparedPairsByKey?: ReadonlyMap<string, PreparedRunPair>;
+  preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
   plannedConfigHashes: Map<string, string>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
@@ -658,40 +429,13 @@ export function carriableAttempts(
  * `resolvedTimeoutMsForCarry`)。省略时按未配置处理,不是当作 0——只有 `run.timeoutMs` /
  * `evalDef.timeoutMs` 都缺席时才轮到它兜底。
  */
-export function planCarry(
-  evals: readonly DiscoveredEval[],
-  agentRuns: readonly AgentRun[],
-  priorResults: EvalResult[] | undefined,
-  configTimeoutMs?: number,
-  options?: CarryPlanOptions,
-): Promise<CarryPlan>;
-/** @deprecated 旧参数位兼容；fallback SandboxSpec 已退出生产规划。 */
-export function planCarry(
-  evals: readonly DiscoveredEval[],
-  agentRuns: readonly AgentRun[],
-  priorResults: EvalResult[] | undefined,
-  legacySandbox: SandboxOption | undefined,
-  configTimeoutMs?: number,
-  options?: CarryPlanOptions,
-): Promise<CarryPlan>;
 export async function planCarry(
   evals: readonly DiscoveredEval[],
   agentRuns: readonly AgentRun[],
   priorResults: EvalResult[] | undefined,
-  timeoutOrLegacySandbox?: number | SandboxOption,
-  optionsOrTimeout?: CarryPlanOptions | number,
-  legacyOptions?: CarryPlanOptions,
+  configTimeoutMs?: number,
+  options: CarryPlanOptions = {},
 ): Promise<CarryPlan> {
-  const usingLegacyArguments = typeof optionsOrTimeout === "number" || legacyOptions !== undefined;
-  if (usingLegacyArguments && timeoutOrLegacySandbox !== undefined && typeof timeoutOrLegacySandbox !== "number") {
-    throw new Error("planCarry no longer accepts a fallback SandboxSpec; declare a SandboxLayer before planning.");
-  }
-  const configTimeoutMs = usingLegacyArguments
-    ? (typeof optionsOrTimeout === "number" ? optionsOrTimeout : undefined)
-    : (typeof timeoutOrLegacySandbox === "number" ? timeoutOrLegacySandbox : undefined);
-  const options = usingLegacyArguments
-    ? (legacyOptions ?? {})
-    : (typeof optionsOrTimeout === "object" ? optionsOrTimeout : {});
   const preparedPairs = await Effect.runPromise(
     prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices()),
   );

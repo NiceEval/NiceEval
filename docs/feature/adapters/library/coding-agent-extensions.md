@@ -78,7 +78,7 @@ const agent = codexAgent({
 });
 ```
 
-`postSetup` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）：拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+`postSetup` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）：拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。`phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。Hook 通过 `onCleanup()` 登记的收尾在 `preTeardown` 之后按全局逆序执行；其中一项失败不会阻断后续收尾，失败最后一并上报。Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 

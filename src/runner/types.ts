@@ -5,10 +5,8 @@ import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from ".
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
-import type { SandboxOption } from "../sandbox/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
-import type { LinkedSandboxLayerPair } from "../sandbox/link.ts";
-import type { SandboxSource } from "../sandbox/case-types.ts";
+import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type {
   AssertionResult,
   DiffArtifact,
@@ -23,6 +21,13 @@ import type { AttemptLocator } from "../record/locator.ts";
 import type { EvalManifest, RunManifests } from "../record/manifest.ts";
 import type { ReportDefinition } from "../report/definition/report.ts";
 import type { ThemeDefinition } from "../report/theme.ts";
+import type {
+  ExperimentStateDefinition,
+  ExperimentStateProjection,
+  StateTransferActivity,
+  StateWindowRecord,
+} from "../state/types.ts";
+import type { PlannedExperimentState } from "../state/plan.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
@@ -35,7 +40,6 @@ export interface ExperimentRunInfo {
   description?: string;
   reasoningEffort?: string;
   flags?: globalThis.Record<string, JsonValue>;
-  configHash?: string;
   /** 报告归类标注(ExperimentDef.labels 原样投影);不透传运行时,不参与可比性配置。 */
   labels?: globalThis.Record<string, string | number>;
   attempts: number;
@@ -47,29 +51,23 @@ export interface ExperimentRunInfo {
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
   evalFilterFingerprint?: string;
-  /** provider 名、provider 的公开参数投影与配置 fingerprint;参数只经投影落盘,token/凭据永不进来。 */
-  sandbox?: SandboxRunInfo;
-  /** Experiment SandboxLayer 的纯数据身份；历史侧据此重建 configHash。 */
-  sandboxLayer?: JsonValue;
-  /** spec 携带 environments 表时:声明了 environment 的选中 eval 各自解析到的产物投影,按 eval id 留审计映射;其余 eval 以 `sandbox` 为准。 */
-  sandboxByEval?: globalThis.Record<string, SandboxRunInfo>;
+  /** Experiment SandboxLayer 的纯数据身份；Direct 也以 command-only 的完整身份记录。 */
+  sandboxLayer: JsonValue;
+  /** 每个已选择 Eval 的完整 pair-owned physical plan；Direct 也有显式投影。 */
+  sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /** Sandbox 是否在同一次 Run 内复用。 */
   sandboxReuse?: boolean;
+  /** State 的静态声明投影；callback 与动态 checkpoint 不落盘。 */
+  state?: ExperimentStateProjection;
   /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
   strict?: boolean;
   /** 解析后的 Judge 执行身份；apiKeyEnv 是凭据选择器，不落盘。 */
   judge?: Pick<JudgeConfig, "model" | "baseUrl" | "timeoutMs">;
   /**
-   * Agent Ensure 安装身份投影(`agentInstallIdentityInput`);与 sandbox case 身份正交。
-   * 有 Agent Ensure 身份时落盘,供历史侧重算 configHash。
+   * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
+   * 实际 artifact digest/platform 属运行 provenance，不进入这里。
    */
-  agentInstall?: {
-    agent: string;
-    version: string;
-    revision: string;
-    artifactDigest?: string;
-    artifactPlatform?: string;
-  };
+  agentInstalls: JsonValue[];
 }
 
 export interface SandboxRunInfo {
@@ -97,6 +95,7 @@ export type LifecyclePhase =
   | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
   | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
   | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
+  | "state.load" // State checkpoint 载入；Stateless 与 reuse window 中间 Attempt 不产生
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "agent.setup" // Adapter runtime 配置 / 凭据 / state setup
   | "telemetry.configure" // tracing 出口配置
@@ -107,6 +106,7 @@ export type LifecyclePhase =
   | "telemetry.collect" // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
+  | "state.save" // State checkpoint 回存；按 saveOn 决定执行或 skip
   | "sandbox.cleanup" // 两层作者 layer 已登记 cleanup 全局 LIFO
   | "sandbox.suspend" // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause)
   | "sandbox.stop"; // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
@@ -388,6 +388,12 @@ export interface EvalResult {
    * docs/feature/record/architecture.md#facts运行事实。
    */
   facts?: globalThis.Record<string, string | number | boolean>;
+  /** fresh State 的 transfer 活动；reuse Attempt 只引用 RunMeta.stateWindows 中的 windowId。 */
+  state?: {
+    windowId: string;
+    load?: StateTransferActivity;
+    save?: StateTransferActivity;
+  };
   /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
   phases?: PhaseTiming[];
   skipReason?: string;
@@ -577,6 +583,8 @@ export type ReporterEvent =
       timings?: readonly TimingActivity[];
       /** 共享构建 provenance;与 timings 经 timingNodeId 关联。省略 = 本 Run 没有查询或构建过 BuildKey。 */
       sandboxBuilds?: readonly SandboxBuildRecord[];
+      /** reuse State window 的 load/save provenance。 */
+      stateWindows?: readonly StateWindowRecord[];
       /** 项目名(来自 config.name),整次 Invocation 内所有 Experiment 共享同一个值。 */
       name?: LocalizedText;
     };
@@ -585,7 +593,7 @@ export type ReporterEvent =
 
 /**
  * 计分粒度题型:`defineEval` 恒 `"pass"`(通过制,一题一分,读通过率),`defineScoreEval` 恒
- * `"points"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDef.scoring` 直接读取,
+ * `"points"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.scoring` 直接读取,
  * 不靠执行 `test()` 推断(见 docs/feature/experiments/score-points.md)。
  */
 export type EvalScoring = "pass" | "points";
@@ -633,7 +641,7 @@ export interface EvalAuthorFields {
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
   timeoutMs?: number;
   /** 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。 */
-  metadata?: globalThis.Record<string, unknown>;
+  metadata?: globalThis.Record<string, JsonValue>;
   /**
    * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
    * gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产物/包管理器缓存;
@@ -644,7 +652,7 @@ export interface EvalAuthorFields {
 }
 
 /** 作者输入：id、scoring、configHash 都由后续阶段拥有。 */
-export type EvalAuthorInput = EvalAuthorFields & {
+export type EvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   scoring?: ScoringComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
@@ -652,15 +660,34 @@ export type EvalAuthorInput = EvalAuthorFields & {
 };
 
 /** 计分制作者输入，只有 test 的上下文不同。 */
-export type ScoreEvalAuthorInput = EvalAuthorFields & {
+export type ScoreEvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   scoring?: ScoringComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
   test(t: ScoreTestContext): Promise<void> | void;
 };
 
+/** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
+export interface EvalDefinitionFields {
+  readonly description?: string;
+  readonly tags: readonly string[];
+  /**
+   * 保留“作者省略”和“作者显式声明空 layer”的来源差异：Direct Agent 只允许前者，
+   * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
+   */
+  readonly sandbox?: SandboxLayer;
+  readonly judge?: JudgeConfig;
+  readonly reporters: readonly Reporter[];
+  readonly timeoutMs?: number;
+  readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly diff: {
+    readonly include: readonly string[];
+    readonly ignore: readonly string[];
+  };
+}
+
 /** Factory 产物保留精确 scoring / context，并带模块私有品牌，不能由对象字面量伪造。 */
-export interface EvalDefinition<Scoring extends EvalScoring, Context> extends EvalAuthorFields {
+export interface EvalDefinition<Scoring extends EvalScoring, Context> extends EvalDefinitionFields {
   readonly scoring: Scoring;
   test(t: Context): Promise<void> | void;
   readonly [EVAL_DEFINITION]: true;
@@ -672,58 +699,61 @@ export type AnyEvalDefinition =
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<Scoring extends EvalScoring, Context>(
-  value: EvalAuthorFields & { scoring: Scoring; test(t: Context): Promise<void> | void },
+  value: EvalDefinitionFields & { scoring: Scoring; test(t: Context): Promise<void> | void },
 ): EvalDefinition<Scoring, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
-  return value as EvalDefinition<Scoring, Context>;
+  return Object.freeze(value) as EvalDefinition<Scoring, Context>;
 }
 
-/** @deprecated 使用 `EvalAuthorInput` 描述 factory 输入，使用 `EvalDefinition` 描述 factory 输出。 */
-export type EvalDef = EvalAuthorInput;
-/** @deprecated 使用 `ScoreEvalAuthorInput`。 */
-export type ScoreEvalDef = ScoreEvalAuthorInput;
-
-/**
- * 发现期运行形状：在 Definition 之后才添加路径与源码；configHash 刻意不在这里，
- * 只能由规划器写入 Planned Run / Attempt。
- */
-export interface DiscoveredEval extends EvalAuthorFields {
-  id: string;
-  scoring?: EvalScoring;
-  /** runner 的运行时 context 同时兑现两种题型能力，实际题型由 scoring 分支决定。 */
-  test(t: TestContext): Promise<void> | void;
-  /** @internal 旧 case 内核的过渡输入；作者面不再暴露。 */
-  environment?: string | SandboxSource;
+/** Definition 之后由 discovery 一次性补齐的不可变事实。 */
+export interface DiscoveredEvalFacts {
+  readonly id: string;
   /** 定义文件所在目录(解析相对 workspace 用)。 */
-  baseDir: string;
+  readonly baseDir: string;
   /** 定义文件绝对路径,用于内容指纹缓存。 */
-  sourcePath: string;
+  readonly sourcePath: string;
   /** 发现期经 loadJson/loadYaml/loadText 读入的项目内数据文件(内容已在内存,指纹哈希内容)。 */
-  loaderDataPaths?: readonly string[];
+  readonly loaderDataPaths: readonly string[];
   /**
    * 发现期经 `loadCriteria` 登记的判据树文件(只登记不读入)。指纹按「项目根相对路径 ×
    * 内容流式哈希」进,与 `loaderDataPaths` 分两格是因为这一格的内容从不进内存。
    */
-  criteriaPaths?: readonly string[];
+  readonly criteriaPaths: readonly string[];
   /**
    * 发现期经 `loadPrivate` 登记的永不上传路径(只登记不读入)。指纹口径与 `criteriaPaths`
    * 相同,分键存放——private 与 verifier 同属判据面,但不与 criteria 混成一张表。
    */
-  privatePaths?: readonly string[];
-  /**
-   * 目录入口 `evals/<dir>/eval.ts` 的默认 profile id(目录相对 `evals/` 的路径)。
-   * 文件入口无此字段;扇出条目共用入口目录的 id,不含扇出后缀。
-   */
-  defaultProfileId?: string;
+  readonly privatePaths: readonly string[];
   /**
    * discovery 时捕获的规范化源码(归一化文本 + 项目相对路径 + SHA-256),见 `eval-source.ts`。
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
    */
-  source: CapturedEvalSource;
+  readonly source: CapturedEvalSource;
+}
+
+/** discovery 保留 factory 的 scoring 判别、私有品牌与对应 test context。 */
+export type DiscoveredEval =
+  | (EvalDefinition<"pass", TestContext> & DiscoveredEvalFacts)
+  | (EvalDefinition<"points", ScoreTestContext> & DiscoveredEvalFacts);
+
+/** @internal discovery 动态边界的品牌守卫；普通对象即使字段同形也不通过。 */
+export function isEvalDefinition(value: unknown): value is AnyEvalDefinition {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { readonly [EVAL_DEFINITION]?: unknown })[EVAL_DEFINITION] === true
+  );
+}
+
+/** @internal discovery 构造唯一的不可变阶段三值，不回写 Definition。 */
+export function discoverEval(definition: AnyEvalDefinition, facts: DiscoveredEvalFacts): DiscoveredEval {
+  const value = { ...definition, ...facts };
+  Object.defineProperty(value, EVAL_DEFINITION, { value: true });
+  return Object.freeze(value) as DiscoveredEval;
 }
 
 /**
- * `ExperimentDef.setup` / `teardown` 拿到的窄上下文。`progress` 更新本实验运行级
+ * `ExperimentDefinition.setup` / `teardown` 拿到的窄上下文。`progress` 更新本实验运行级
  * active 行的次要文本(短命状态,agent/ci profile 不逐条输出),`diagnostic` 进运行级永久
  * 事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的 `result.json`;setup 抛错
  * 以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。钩子的起止本身由 runner 直接发布为
@@ -734,7 +764,7 @@ export interface ExperimentHookContext extends ScopedFeedback {
   /** 本实验解析后实际选中的 eval id 全集(evals 过滤器的求值结果)。 */
   readonly selectedEvalIds: readonly string[];
   /** 用户中断(Ctrl+C / kill)时 abort;长启动的 setup 应观察它提前退出。 */
-  readonly signal?: AbortSignal;
+  readonly signal: AbortSignal;
   /**
    * 第三条反馈通道:上报整场实验的环境观测,与 `completedAt` 同批在快照封口补写进
    * `RunMeta.facts`。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
@@ -754,7 +784,7 @@ export interface ExperimentAuthorFields {
   description?: string;
   /**
    * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineDirectAgent 的产物)。运行配置的
-   * agent 归属完全由这里决定——EvalDef.agent 不参与(见其字段注释)。
+   * agent 归属完全由这里决定——EvalDefinition 不声明 agent。
    */
   agent: Agent;
   /** 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。 */
@@ -800,6 +830,8 @@ export interface ExperimentAuthorFields {
    * 每个配对恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
+  /** defineExperimentState() 的品牌化产物；State 只属于 Experiment。 */
+  state?: ExperimentStateDefinition;
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
   sandboxReuse?: boolean;
   /**
@@ -850,15 +882,37 @@ export type ExperimentInput = ExperimentAuthorFields & {
   id?: ExperimentIdComesFromFilePath;
 };
 
-/** Factory 产物；模块私有品牌使普通对象不能冒充可发现的 Experiment 定义。 */
-export interface ExperimentDefinition extends ExperimentAuthorFields {
+/** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook/State 仍保持作者声明。 */
+export interface ExperimentDefinition {
+  readonly description?: string;
+  readonly agent: Agent;
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+  readonly judge?: JudgeConfig;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly labels: Readonly<globalThis.Record<string, string | number>>;
+  readonly attempts: number;
+  readonly earlyExit: boolean;
+  readonly evals: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
+  readonly timeoutMs?: number;
+  /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
+  readonly sandbox?: SandboxLayer;
+  readonly state?: ExperimentStateDefinition;
+  readonly sandboxReuse: boolean;
+  readonly budget?: number;
+  readonly maxConcurrency?: number;
+  readonly classifyFailure?: AttemptFailureClassifier;
+  readonly setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  readonly teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
   readonly [EXPERIMENT_DEFINITION]: true;
 }
 
 /** @internal 仅 defineExperiment 写入私有品牌。 */
-export function brandExperimentDefinition(value: ExperimentAuthorFields): ExperimentDefinition {
+export function brandExperimentDefinition(
+  value: Omit<ExperimentDefinition, typeof EXPERIMENT_DEFINITION>,
+): ExperimentDefinition {
   Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
-  return value as ExperimentDefinition;
+  return Object.freeze(value) as ExperimentDefinition;
 }
 
 /** @internal discovery 只接受 defineExperiment 的原始产物，不做结构性兼容。 */
@@ -877,7 +931,7 @@ export function discoverExperiment(
 ): DiscoveredExperiment {
   const value = { ...definition, ...source };
   Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
-  return value as DiscoveredExperiment;
+  return Object.freeze(value) as DiscoveredExperiment;
 }
 
 /** 发现期运行形状：Definition 加入路径与来源；规划期 configHash 不在这里。 */
@@ -890,7 +944,7 @@ export interface DiscoveredExperiment extends ExperimentDefinition {
 }
 
 /**
- * 用户谓词(`ExperimentDef.evals`)能看到的唯一形状——发现并扇出后的显式白名单投影,不透传
+ * 用户谓词(`ExperimentDefinition.evals`)能看到的唯一形状——发现并扇出后的显式白名单投影,不透传
  * `DiscoveredEval` 原对象(不暴露 `sourcePath` / `baseDir` / `test` / hooks 等内部路径与执行字段)。
  * `tags` 缺省为冻结空数组;`metadata` 原样引用作者声明的对象(至少浅冻结),供 `tags.includes(...)` /
  * `metadata.<key>` 判断(见 docs/feature/eval/library.md「EvalDescriptor」)。
@@ -901,12 +955,11 @@ export interface EvalDescriptor {
   readonly tags: readonly string[];
   /**
    * 计分粒度题型,`defineEval` → `"pass"`,`defineScoreEval` → `"points"`。定义期事实,
-   * 每条发现出的 eval 上都有确定值(未经这两个定义函数处理的裸对象按 `"pass"` 兜底,不是
-   * `undefined`)。供 `ExperimentDef.evals` 谓词按题型过滤(见
+   * 每条发现出的 eval 上都有确定值。供 `ExperimentDefinition.evals` 谓词按题型过滤(见
    * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
   readonly scoring: EvalScoring;
-  readonly metadata?: Readonly<globalThis.Record<string, unknown>>;
+  readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
 export interface Config {
@@ -986,16 +1039,6 @@ export function runWho(run: { agentName: string; model?: string; experimentId?: 
   return run.model ? `${run.agentName}/${run.model}` : run.agentName;
 }
 
-/**
- * pure link 产物加上旧 provider/case 内核当前消费的窄适配。
- * `linked` 是声明与指纹权威；`sandboxSpec` / `environment` 只负责物理物化，不能重新选 template。
- */
-export interface PlannedSandboxPair {
-  readonly linked: LinkedSandboxLayerPair;
-  readonly sandboxSpec?: SandboxOption;
-  readonly environment?: SandboxSource;
-}
-
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AgentRun {
   agent: Agent;
@@ -1004,17 +1047,13 @@ export interface AgentRun {
   flags: globalThis.Record<string, JsonValue>;
   attempts: number;
   earlyExit: boolean;
-  /** Experiment 的作者 layer；SandboxOption 仅供存量内部测试夹具过渡，不在公开作者面出现。 */
-  sandbox?: SandboxLayer | SandboxOption;
+  /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
+  sandbox?: SandboxLayer;
   sandboxReuse?: boolean;
+  /** 作者输入已完成组合校验后的穷尽 State 规划；运行器不再解释可选 callback。 */
+  state: PlannedExperimentState;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   judge?: JudgeConfig;
-  /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
-  configHash?: string;
-  /** @internal 存量 SandboxSpec/profile 规划缓存；新 Layer 路径不写。 */
-  resolvedSandboxes?: Map<string, SandboxOption>;
-  /** discovery + selector 后一次生成；check / --dry / run 共用，后续阶段禁止重新链接。 */
-  linkedSandboxes?: Map<string, PlannedSandboxPair>;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
@@ -1025,11 +1064,11 @@ export interface AgentRun {
   /** `timeoutMs` 那个值来自哪一层,供超时消息标注出处;省略按 `experiment` 读。 */
   timeoutSource?: "flag" | "experiment";
   budget?: number;
-  experimentId?: string;
+  experimentId: string;
   /** Experiment 定义文件目录；只用于解析 template 中的相对宿主路径。 */
-  experimentBaseDir?: string;
+  experimentBaseDir: string;
   /** Experiment 定义文件路径；link 诊断来源。 */
-  experimentSourcePath?: string;
+  experimentSourcePath: string;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
   description?: string;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
@@ -1059,8 +1098,8 @@ export interface AgentRun {
 
 export interface RunOptions {
   config: Config;
-  evals: DiscoveredEval[];
-  agentRuns: AgentRun[];
+  evals: readonly DiscoveredEval[];
+  agentRuns: readonly AgentRun[];
   /**
    * `--keep-sandbox` 的留存档位:failed 留 failed/errored(含硬超时的 errored),all 全部留;
    * 省略 = 全部销毁(留存永远是显式选择)。留存决策在 verdict 定稿的收尾点按档位提交,
@@ -1133,14 +1172,11 @@ export interface Attempt {
   /** agent+model+evalId,用于首过即停。 */
   key: string;
   fingerprint: string;
-  configHash?: string;
-  /** 规划期按 eval 的 environment 查表派生的具体 spec；attempt 生命周期不再重新查表。 */
-  sandboxSpec?: SandboxOption;
-  /** Layer template 适配进旧 case 内核时使用的中性 source。 */
-  /** Pair-level physical environment；string 仅供存量 environments profile 夹具过渡。 */
-  sandboxEnvironment?: string | SandboxSource;
-  /** 该 pair 的唯一 pure-link 产物；prepare 顺序与 fingerprint 都从这里读取。 */
-  linkedSandbox?: LinkedSandboxLayerPair;
+  configHash: string;
+  /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
+  plan: LinkedRunPlan;
+  /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
+  sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /**
    * Run 级构建协调产出的 BuildKey → locator;on-demand / Compose case 物化前注入。
    * 完全携带、未查询的 key 不在此表。
@@ -1153,7 +1189,7 @@ export interface Attempt {
    * snapshotStartedAt 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
-  locator?: AttemptLocator;
+  locator: AttemptLocator;
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────

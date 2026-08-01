@@ -464,6 +464,8 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.sandboxPrepare");
     case "agent.ensure":
       return t("feedback.phase.agentEnsure");
+    case "state.load":
+      return t("feedback.phase.stateLoad");
     case "workspace.baseline":
       return t("feedback.phase.workspaceBaseline");
     case "agent.setup":
@@ -480,6 +482,7 @@ function phaseLabel(phase: LifecyclePhase): string {
     case "telemetry.collect":
       return t("feedback.phase.telemetryCollect");
     case "agent.teardown":
+    case "state.save":
     case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":

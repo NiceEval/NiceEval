@@ -349,6 +349,8 @@ export const zhCN = {
   "feedback.human.trace": "Trace:   niceeval show {{locator}} --execution",
   "feedback.phase.agentSetup": "agent 预置",
   "feedback.phase.agentEnsure": "确保 agent 可用",
+  "feedback.phase.stateLoad": "载入实验状态",
+  "feedback.phase.stateSave": "回存实验状态",
   "feedback.phase.evalRun": "运行 eval",
   "feedback.phase.sandboxCreate": "创建沙箱",
   "feedback.phase.sandboxQueue": "排队等沙箱",

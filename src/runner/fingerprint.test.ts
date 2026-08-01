@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts";
@@ -143,6 +143,97 @@ describe("按需构建进入指纹", () => {
     const first = await fingerprintFor(evalDef, run);
     await writeFile(join(root, "payload"), "second\n");
     expect(await fingerprintFor(evalDef, run)).not.toBe(first);
+  });
+
+  it("Compose bytes 与各 service BuildKey 在携带前进入 pair identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-fingerprint-compose-"));
+    tempRoots.push(root);
+    await mkdir(join(root, "client"));
+    await writeFile(
+      join(root, "client", "Dockerfile"),
+      `FROM node@sha256:${"b".repeat(64)}\nCOPY payload /payload\n`,
+    );
+    await writeFile(join(root, "client", "payload"), "first\n");
+    await writeFile(
+      join(root, "compose.yaml"),
+      `services:\n  client:\n    build: ./client\n`,
+    );
+    const evalDef = makeEval("compose", {
+      baseDir: root,
+      sandbox: sandboxFactories.dockerComposeSandbox({
+        file: "compose.yaml",
+        workspaceService: "client",
+      }),
+    });
+    const run: AgentRun = {
+      ...makeRun("exp-compose", ["compose"], 1),
+      agent: defineSandboxAgent({
+        name: "sandbox",
+        evidenceCoverage: completeEvidenceCoverage,
+        ensure: {
+          identity: { agent: "sandbox", version: "0.0.0-test", revision: "1" },
+          probe: defineSandboxCommand(
+            { id: "test.sandbox.probe", revision: "1", inputs: {} },
+            async () => {},
+          ),
+        },
+        installers: [],
+        send: async () => ({ events: [], status: "completed" }),
+      }),
+    };
+
+    const first = await fingerprintFor(evalDef, run);
+    await writeFile(join(root, "client", "payload"), "second\n");
+    expect(await fingerprintFor(evalDef, run)).not.toBe(first);
+  });
+
+  it("Compose 外部 bind/env_file/config/secret 内容进入 Case identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-fingerprint-compose-case-"));
+    tempRoots.push(root);
+    await writeFile(join(root, "mounted.txt"), "mounted:first\n");
+    await writeFile(join(root, "runtime.env"), "VALUE=first\n");
+    await writeFile(join(root, "app.conf"), "config:first\n");
+    await writeFile(join(root, "secret.txt"), "secret:first\n");
+    await writeFile(
+      join(root, "compose.yaml"),
+      `services:\n  client:\n    image: node@sha256:${"c".repeat(64)}\n    volumes:\n      - ./mounted.txt:/fixture/mounted.txt:ro\n    env_file: ./runtime.env\n    configs:\n      - app_config\n    secrets:\n      - app_secret\nconfigs:\n  app_config:\n    file: ./app.conf\nsecrets:\n  app_secret:\n    file: ./secret.txt\n`,
+    );
+    const evalDef = makeEval("compose-case", {
+      baseDir: root,
+      sandbox: sandboxFactories.dockerComposeSandbox({
+        file: "compose.yaml",
+        workspaceService: "client",
+      }),
+    });
+    const run: AgentRun = {
+      ...makeRun("exp-compose-case", ["compose-case"], 1),
+      agent: defineSandboxAgent({
+        name: "sandbox",
+        evidenceCoverage: completeEvidenceCoverage,
+        ensure: {
+          identity: { agent: "sandbox", version: "0.0.0-test", revision: "1" },
+          probe: defineSandboxCommand(
+            { id: "test.sandbox.probe", revision: "1", inputs: {} },
+            async () => {},
+          ),
+        },
+        installers: [],
+        send: async () => ({ events: [], status: "completed" }),
+      }),
+    };
+
+    let previous = await fingerprintFor(evalDef, run);
+    for (const [path, content] of [
+      ["mounted.txt", "mounted:second\n"],
+      ["runtime.env", "VALUE=second\n"],
+      ["app.conf", "config:second\n"],
+      ["secret.txt", "secret:second\n"],
+    ] as const) {
+      await writeFile(join(root, path), content);
+      const current = await fingerprintFor(evalDef, run);
+      expect(current).not.toBe(previous);
+      previous = current;
+    }
   });
 });
 

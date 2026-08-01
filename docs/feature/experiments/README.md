@@ -52,6 +52,7 @@ export default defineExperiment({
   timeoutMs?: number;                        // 单次运行超时
   sandbox?: SandboxLayer;                    // 本实验向主 Sandbox 贡献的一层:template-bearing factory 产物,
                                             // 或 sandboxLayer() 的命令链;省略等价于空的 command-only layer
+  state?: ExperimentStateDefinition;          // defineExperimentState() 产物;在 agent.ensure 后 load、Agent teardown 后 save
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
@@ -91,7 +92,7 @@ export default defineExperiment({
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账锚点前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
-- 跨 Attempt 实验状态的载入与回存归 State load / save 相位(见[三方准备时序](../sandbox/lifecycle.md#准备state-与-baseline))。
+- 跨 Attempt 实验状态由 [`defineExperimentState()`](../state/library.md) 声明,归 State load / save 相位(见[三方准备时序](../sandbox/lifecycle.md#准备state-与-baseline))。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
 哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。
@@ -113,6 +114,10 @@ export default defineExperiment({
 需要严格串行时声明 `maxConcurrency: 1`。
 完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
 
+`state` 只接受 `defineExperimentState()` 返回的品牌化定义。
+rolling state 必须配 `maxConcurrency: 1`;与 `sandboxReuse: true` 同用时还必须配 `saveOn: "after-load"`。
+完整 API、fresh / reuse cadence 与携带规则见 [State](../state/README.md)。
+
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
 需要更长 Sandbox 复用寿命时，在 template-bearing factory 的 options 里声明 `lifetimeMs`。
 两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/reuse.md#两种时间不能混用)。
@@ -125,6 +130,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [用例手册](use-case/README.md) —— 规则难懂先查这里:并发怎么配、预置放哪层、flags 还是 labels、选哪些 eval,以及各 CLI 输入面的全流程用例。
 - [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
 - [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
+- [State](../state/README.md) —— 记忆库与 checkpoint 怎样跨 Attempt 延续。
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分)；混合时两种读数各算各的。
 - [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
 - [Architecture](architecture.md) —— 实体、配置解析、生命周期、跨 Invocation 协调与完成状态。

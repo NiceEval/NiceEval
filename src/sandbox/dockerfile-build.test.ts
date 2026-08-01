@@ -84,6 +84,23 @@ describe("单 Dockerfile BuildKey", () => {
     expect(collection?.buildKey).toBeDefined();
   });
 
+  it("多阶段 carry 检查覆盖目标 stage 依赖的全部外部 FROM", async () => {
+    const root = await fixture();
+    await writeFile(
+      join(root, "Dockerfile"),
+      `FROM node@sha256:${"d".repeat(64)} AS base\nFROM ubuntu:latest AS release\n`,
+    );
+    const final = await collectDockerfileBuildFromPlan(readyPlan("docker", root), {
+      dockerPlatform: "linux/amd64",
+    });
+    const base = await collectDockerfileBuildFromPlan(readyPlan("docker", root, "base"), {
+      dockerPlatform: "linux/amd64",
+    });
+    expect(final?.carryEligible).toBe(false);
+    expect(base?.carryEligible).toBe(true);
+    expect(base?.buildKey).not.toBe(final?.buildKey);
+  });
+
   it("folder-local dockerfileSandbox 直接进入 Docker/E2B 内置构建链", async () => {
     const root = await fixture();
     for (const spec of [dockerSandbox(), e2bSandbox()]) {

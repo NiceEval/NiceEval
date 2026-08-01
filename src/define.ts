@@ -5,7 +5,6 @@ import type {
   DirectAgent,
   DirectAgentDef,
   Config,
-  CustomSandboxSpec,
   DockerSandboxSpec,
   E2BSandboxSpec,
   EvalInput,
@@ -28,7 +27,6 @@ import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
   isSandboxLayer,
-  sandboxLayer,
   type CustomProviderSandboxOptions,
   type SandboxLayer,
 } from "./sandbox/layer.ts";
@@ -181,7 +179,6 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     attempts: def.attempts ?? 1,
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
-    sandbox: def.sandbox ?? sandboxLayer(),
     sandboxReuse: def.sandboxReuse === true,
   });
 }
@@ -190,7 +187,7 @@ function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
   return {
     ...(def.description !== undefined ? { description: def.description } : {}),
     tags: Object.freeze([...(def.tags ?? [])]),
-    sandbox: def.sandbox ?? sandboxLayer(),
+    ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
     ...(def.judge !== undefined ? { judge: def.judge } : {}),
     reporters: Object.freeze([...(def.reporters ?? [])]),
     ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
@@ -347,36 +344,8 @@ export function localSandbox(
  * 自定义沙箱 provider:`create` 直接返回一个实现 `Sandbox` 接口的实例,不需要 niceeval 内置支持
  * 这个 provider 名字。用于接入 docker/vercel/e2b 之外的运行环境(自建 VM、Modal、Fly 等)。
  */
-export function defineSandbox(def: {
-  name: string;
-  create: CustomSandboxSpec["create"];
-  recommendedConcurrency?: number;
-  /**
-   * 独占串行声明:该 provider 的所有 attempt 共享同一份不可并发的底层资源(如同一棵真实工作树)时
-   * 声明 `true`——runner 加一道 provider 级串行闸,`--max-concurrency` / 实验级 `maxConcurrency`
-   * 都不解除(内置 `local` provider 即声明它)。省略 = 不独占,照常按并发上限调度。
-   */
-  exclusive?: boolean;
-  /** 与内置 provider 同形的 environment → custom case 映射。 */
-  environments?: CustomSandboxSpec["environments"];
-  /** folder-local source 的物化器表。 */
-  materializers?: CustomSandboxSpec["materializers"];
-  /** 可发布参数的投影(进结果快照);未实现时只落 provider 名。 */
-  publicConfig?: CustomSandboxSpec["publicConfig"];
-}): CustomSandboxSpec {
-  if (!def.name) throw new Error(t("define.sandboxNameRequired"));
-  if (typeof def.create !== "function") throw new Error(t("define.sandboxCreateRequired"));
-  const build = (state: HookState): CustomSandboxSpec => ({
-    provider: def.name,
-    create: def.create,
-    recommendedConcurrency: def.recommendedConcurrency,
-    exclusive: def.exclusive,
-    ...(def.environments !== undefined ? { environments: def.environments } : {}),
-    ...(def.materializers !== undefined ? { materializers: def.materializers } : {}),
-    publicConfig: def.publicConfig,
-    setupHooks: state.setupHooks,
-    teardownHooks: state.teardownHooks,
-    ...hookMethods(state, build),
-  });
-  return build(EMPTY_HOOKS);
+export function defineSandbox(
+  def: CustomProviderSandboxOptions,
+): SandboxLayer<"template-bearing"> {
+  return customProviderSandbox(def);
 }

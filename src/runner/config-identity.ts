@@ -9,10 +9,8 @@
 
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
-import { isSandboxLayer } from "../sandbox/layer.ts";
-import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
-import type { EvalResult, JsonValue, JudgeConfig, SandboxOption } from "../types.ts";
+import type { EvalResult, JsonValue, JudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 import type { ExperimentStateProjection } from "../state/types.ts";
 import { experimentStateProjection } from "../state/definition.ts";
@@ -26,18 +24,35 @@ import { experimentStateProjection } from "../state/definition.ts";
  */
 export interface ConfigIdentity {
   agent: string;
-  model: JsonValue;
-  reasoningEffort: JsonValue;
+  model: DeclaredConfigValue<string>;
+  reasoningEffort: DeclaredConfigValue<string>;
   flags: globalThis.Record<string, JsonValue>;
   sandboxReuse: boolean;
-  state: JsonValue;
+  state: StateConfigIdentity;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   sandboxLayer: JsonValue;
   strict: boolean;
-  judge: JsonValue;
+  judge: JudgeConfigIdentity;
   /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
   agentInstalls: JsonValue[];
 }
+
+export type DeclaredConfigValue<Value> =
+  | { readonly _tag: "Omitted" }
+  | { readonly _tag: "Configured"; readonly value: Value };
+
+export type StateConfigIdentity =
+  | { readonly _tag: "Stateless" }
+  | { readonly _tag: "Stateful"; readonly value: ExperimentStateProjection };
+
+export type JudgeConfigIdentity =
+  | { readonly _tag: "Unconfigured" }
+  | {
+      readonly _tag: "Configured";
+      readonly model: DeclaredConfigValue<string>;
+      readonly baseUrl: DeclaredConfigValue<string>;
+      readonly timeoutMs: DeclaredConfigValue<number>;
+    };
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
 export interface ConfigFieldDelta {
@@ -87,14 +102,14 @@ export function agentInstallPlansForRun(run: AgentRun): JsonValue[] {
   });
 }
 
-function declaredString(value: string | undefined): JsonValue {
+function declaredString(value: string | undefined): DeclaredConfigValue<string> {
   return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
 }
 
-function stateProjectionOf(run: AgentRun): JsonValue {
-  return run.state === undefined || run.state._tag === "Stateless"
+function stateProjectionOf(run: AgentRun): StateConfigIdentity {
+  return run.state._tag === "Stateless"
     ? { _tag: "Stateless" }
-    : { _tag: "Stateful", value: stateProjectionJson(experimentStateProjection(run.state.definition)) };
+    : { _tag: "Stateful", value: experimentStateProjection(run.state.definition) };
 }
 
 function stateProjectionJson(state: ExperimentStateProjection): JsonValue {
@@ -107,46 +122,22 @@ function stateProjectionJson(state: ExperimentStateProjection): JsonValue {
   };
 }
 
-function judgeIdentity(judge: JudgeConfig | undefined): JsonValue {
+function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
   return judge === undefined
     ? { _tag: "Unconfigured" }
     : {
         _tag: "Configured",
         model: declaredString(judge.model),
         baseUrl: declaredString(judge.baseUrl),
-        timeoutMs: judge.timeoutMs === undefined
-          ? { _tag: "Omitted" }
-          : { _tag: "Configured", value: judge.timeoutMs },
+        timeoutMs: judge.timeoutMs === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.timeoutMs },
       };
 }
-
-function isLinkedRunPlan(value: LinkedRunPlan | SandboxOption | undefined): value is LinkedRunPlan {
-  const tag = value === undefined ? undefined : (value as { _tag?: unknown })._tag;
-  return tag === "Direct" || tag === "Sandbox";
-}
-
-export function configIdentityForRun(run: AgentRun, plan: LinkedRunPlan, judge?: JudgeConfig): ConfigIdentity;
-/** @deprecated 纯数据兼容入口；生产必须传 LinkedRunPlan。 */
-export function configIdentityForRun(
-  run: AgentRun,
-  sandboxSpec?: SandboxOption,
-  judge?: JudgeConfig,
-  sandboxLayer?: JsonValue,
-): ConfigIdentity;
 /** 本次解析后配置的身份投影。 */
 export function configIdentityForRun(
   run: AgentRun,
-  planOrSandbox?: LinkedRunPlan | SandboxOption,
+  plan: LinkedRunPlan,
   judge: JudgeConfig | undefined = run.judge,
-  legacySandboxLayer?: JsonValue,
 ): ConfigIdentity {
-  const plan = isLinkedRunPlan(planOrSandbox) ? planOrSandbox : undefined;
-  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
-    ? run.sandbox as unknown as SandboxOption
-    : undefined;
-  const legacySandbox: SandboxOption | undefined = plan === undefined
-    ? (planOrSandbox as SandboxOption | undefined) ?? authored
-    : undefined;
   return {
     agent: run.agent.name,
     model: declaredString(run.model),
@@ -154,11 +145,7 @@ export function configIdentityForRun(
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
     state: stateProjectionOf(run),
-    sandboxLayer: plan === undefined
-      ? legacySandboxLayer ?? (run.agent.kind === "direct" && legacySandbox === undefined
-        ? { kind: "direct" }
-        : { kind: "legacy-sandbox-spec", sandbox: (sandboxRunInfo(legacySandbox) as unknown as JsonValue | undefined) ?? null })
-      : sandboxLayerIdentityFor(plan.pair, "experiment"),
+    sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     strict: run.strict ?? false,
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
@@ -172,13 +159,6 @@ export function configIdentityForRun(
 export function configIdentityFromResult(result: EvalResult): ConfigIdentity | undefined {
   const exp = result.experiment;
   if (exp === undefined) return undefined;
-  const historical = exp as unknown as {
-    sandbox?: unknown;
-    sandboxLayer?: JsonValue;
-    agentInstalls?: JsonValue[];
-    agentInstall?: JsonValue;
-  };
-  const directLegacy = historical.sandboxLayer === undefined && historical.sandbox === undefined;
   return {
     agent: result.agent,
     model: declaredString(result.model),
@@ -187,41 +167,37 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     sandboxReuse: exp.sandboxReuse ?? false,
     state: exp.state === undefined
       ? { _tag: "Stateless" }
-      : { _tag: "Stateful", value: stateProjectionJson(exp.state) },
-    sandboxLayer: historical.sandboxLayer ?? (directLegacy
-      ? { kind: "direct" }
-      : { kind: "legacy-sandbox-spec", sandbox: (historical.sandbox as JsonValue | undefined) ?? null }),
+      : { _tag: "Stateful", value: exp.state },
+    sandboxLayer: exp.sandboxLayer,
     strict: exp.strict ?? false,
     judge: judgeIdentity(exp.judge),
-    agentInstalls: historical.agentInstalls ??
-      (historical.agentInstall === undefined ? [] : [{ _tag: "Legacy", value: historical.agentInstall }]),
+    agentInstalls: exp.agentInstalls,
   };
 }
 
 /**
- * 身份 → 字段路径表。值为 `undefined` 的字段**不进表**:这一侧没有这个键,与「有这个键、值是
- * 别的」是两回事,`flags` 增删键正是靠这条成为一条差异。
+ * 身份 → 字段路径表。可省略配置先归一为完整 ADT，再由 `_tag` 决定是否产生字段路径。
  */
 function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const out = new Map<string, JsonValue>();
   const put = (path: string, value: JsonValue): void => { out.set(path, value); };
-  const putDeclared = (path: string, value: JsonValue): void => {
-    if (typeof value !== "object" || value === null || Array.isArray(value) || value._tag !== "Configured") return;
-    put(path, value.value as JsonValue);
+  const putDeclared = <Value extends JsonValue>(path: string, value: DeclaredConfigValue<Value>): void => {
+    if (value._tag === "Configured") put(path, value.value);
   };
   put("agent", identity.agent);
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
-  put("state", identity.state);
+  put("state", identity.state._tag === "Stateless"
+    ? { _tag: "Stateless" }
+    : { _tag: "Stateful", value: stateProjectionJson(identity.state.value) });
   put("strict", identity.strict);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
-  if (typeof identity.judge === "object" && identity.judge !== null && !Array.isArray(identity.judge) &&
-    identity.judge._tag === "Configured") {
-    putDeclared("judge.model", identity.judge.model as JsonValue);
-    putDeclared("judge.baseUrl", identity.judge.baseUrl as JsonValue);
-    putDeclared("judge.timeoutMs", identity.judge.timeoutMs as JsonValue);
+  if (identity.judge._tag === "Configured") {
+    putDeclared("judge.model", identity.judge.model);
+    putDeclared("judge.baseUrl", identity.judge.baseUrl);
+    putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
   }
   put("agentInstalls", identity.agentInstalls);
   return out;

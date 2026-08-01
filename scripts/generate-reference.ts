@@ -158,6 +158,36 @@ export function extractInterfaceMembers(sourceText: string, fileName: string, in
   }));
 }
 
+/**
+ * 提取具名 type alias 中直接声明的对象字面量成员。alias 可用交叉类型把稳定的公共字段
+ * 接到一个小对象上（如 `EvalInput = EvalAuthorFields & { test(...) }`）；这里只展开对象
+ * 字面量本身，具名引用仍由调用方从其真实声明处提取，避免靠 TypeChecker 隐式改写签名。
+ */
+export function extractTypeLiteralMembers(sourceText: string, fileName: string, typeName: string): Member[] {
+  const sourceFile = parse(sourceText, fileName);
+  const alias = findTypeAlias(sourceFile, typeName);
+  const literals: ts.TypeLiteralNode[] = [];
+  const visit = (node: ts.TypeNode): void => {
+    if (ts.isParenthesizedTypeNode(node)) {
+      visit(node.type);
+      return;
+    }
+    if (ts.isIntersectionTypeNode(node)) {
+      for (const type of node.types) visit(type);
+      return;
+    }
+    if (ts.isTypeLiteralNode(node)) literals.push(node);
+  };
+  visit(alias.type);
+  return literals.flatMap((literal) =>
+    literal.members.map((member) => ({
+      name: memberName(member),
+      signature: dedentContinuationLines(member.getText(sourceFile).trim()),
+      doc: extractDoc(sourceFile, member),
+    })),
+  );
+}
+
 /** 提取一个文件里全部顶层 `export function` 声明(按源码顺序),签名 = 去掉函数体的原文。 */
 export function extractExportedFunctions(sourceText: string, fileName: string): Member[] {
   const sourceFile = parse(sourceText, fileName);
@@ -445,7 +475,18 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       );
     case "defineeval-options":
       return renderMemberList(
-        extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "EvalDef"),
+        [
+          ...extractInterfaceMembers(
+            sources["src/runner/types.ts"],
+            "src/runner/types.ts",
+            "EvalAuthorFields",
+          ),
+          ...extractTypeLiteralMembers(
+            sources["src/runner/types.ts"],
+            "src/runner/types.ts",
+            "EvalInput",
+          ).filter((member) => member.name === "test"),
+        ],
       );
     case "test-context":
       // `t` 的成员分两处声明:两种题型共有的在 BaseTestContext,通过制专属的 require 在

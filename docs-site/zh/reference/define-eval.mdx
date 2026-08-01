@@ -28,14 +28,6 @@ export default defineEval({
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
-#### `id`
-
-```ts
-id?: string;
-```
-
-路径推导,定义里禁止手写。
-
 #### `description`
 
 ```ts
@@ -52,16 +44,14 @@ tags?: string[];
 
 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。
 
-#### `environment`
+#### `sandbox`
 
 ```ts
-environment?: string | import("../sandbox/case-types.ts").SandboxSource;
+sandbox?: SandboxLayer;
 ```
 
-这条评估用例需要的环境:共享 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`),
-或 folder-local `SandboxSource`(`composeSandbox` / `dockerfileSandbox`)。
-字符串由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物;
-对象走 `materializers[source.kind]`(显式表项仍优先)。
+这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
+每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
 
 #### `judge`
 
@@ -70,14 +60,6 @@ judge?: JudgeConfig;
 ```
 
 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。
-
-#### `configHash`
-
-```ts
-configHash?: string;
-```
-
-规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。
 
 #### `reporters`
 
@@ -98,7 +80,7 @@ timeoutMs?: number;
 #### `metadata`
 
 ```ts
-metadata?: globalThis.Record<string, unknown>;
+metadata?: globalThis.Record<string, JsonValue>;
 ```
 
 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。
@@ -114,48 +96,11 @@ gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产
 `ignore` 在默认清单上追加排除;`include` 优先级最高,把匹配路径显式加回。
 合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结。
 
-#### `setup`
-
-```ts
-setup?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
-```
-
-评估用例级预置:拿到 Sandbox(已上传 workspace + git 基线 + 装好依赖前)。
-默认命令以非 root 跑(agent 的自然环境);装系统依赖时给 `runCommand` 传 `{ root: true }`
-(如 `runCommand("apt-get", ["install", …], { root: true })`),跨 provider 语义一致。
-第二个参数是绑定到 `eval.setup` 的窄上下文(`ctx.progress` / `ctx.diagnostic`,
-见 docs/feature/eval/README.md)。setup 不返回值;要把产物传给 teardown,
-以 `sandbox` 实例作键存取(并发 attempt 共享同一模块,普通模块变量会互相覆写)。
-
-#### `teardown`
-
-```ts
-teardown?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
-```
-
-评估用例级收尾:attempt 收尾链的第一段(`eval.teardown` → `agent.teardown` →
-`sandbox.teardown`),Sandbox 此刻还活着。当且仅当 `eval.setup` 时点走到过才执行——
-`setup` / `test` 抛错都不豁免,未声明 `setup` 不影响触发;抛错或超 30s 清理上限
-只记 `teardown-failed` 诊断,不改判定。管 Sandbox 外的临时 Fixture(临时 repo / bucket),
-Sandbox 内的东西随销毁自动回收、不需要它。
-
 #### `test`
 
 ```ts
 test(t: TestContext): Promise<void> | void;
 ```
-
-评估用例主体:拿到 TestContext,驱动对话 / Sandbox 操作并就地断言。
-
-#### `scoring`
-
-```ts
-scoring?: EvalScoring;
-```
-
-题型标记:由 `defineEval`(定死 `"pass"`)/ `defineScoreEval`(定死 `"points"`)写入,
-定义里禁止手写(与 `id` 同规则,两个定义函数都会拒绝显式传入)。省略(未经这两个定义函数
-处理的裸对象)按 `"pass"` 处理(见 `EvalDescriptor.scoring`)。
 
 {/* GENERATED:END defineeval-options */}
 
@@ -320,6 +265,15 @@ check(value: unknown, assertion: ValueAssertion): H;
 打分延迟到评估用例结束后统一 finalize,调用本身同步、不抛错——不通过只是记一条失败断言,
 不会中止后续代码。要「不满足就立即中止评估用例」用 require。
 
+#### `require`
+
+```ts
+require<T>(value: T, assertion: ValueAssertion): Promise<T>;
+```
+
+`t.check(value, assertion).gate().stopOnFailure()` 的值断言简写。立即求值；失败时保留
+AssertionResult 并中止后续 test，成功时透传原 value。两种题型语义相同。
+
 #### `group`
 
 ```ts
@@ -452,10 +406,10 @@ eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => bool
 #### `sandbox`
 
 ```ts
-readonly sandbox: SandboxHandle<H>;
+readonly sandbox: EvalSandbox<H>;
 ```
 
-受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 SandboxHandle)。
+受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 EvalSandbox)。
 
 #### `o11y`
 
@@ -508,18 +462,6 @@ readonly judge: JudgeNamespace<H>;
 ```
 
 可用的 judge 命名空间(t.judge.autoevals.*)。
-
-#### `require`
-
-```ts
-require(value: unknown, assertion: ValueAssertion): Promise<unknown>;
-```
-
-对任意值跑一个 ValueAssertion,立即(await 时)求值;不满足就抛错中止整个评估用例剩余步骤
-(仍会把这条断言计入报告,不影响已记录的其它断言)。跟 check 的区别:check 只记录、
-从不抛错,打分留到最后统一算;require 当场判定、失败即中止,适合「前置条件不满足,
-后面写了也没意义」的场景。计分制的 `t` 上没有它——前置在那边只有一种写法
-`t.check(value, assertion).gate()`,它覆盖 require 的全部能力,还能同时挣分。
 
 {/* GENERATED:END test-context */}
 
@@ -589,14 +531,6 @@ readonly usage?: Usage;
 ```
 
 本轮 token 用量与估算成本(仅上报了 usage 的 agent 才有)。
-
-#### `expectOk`
-
-```ts
-expectOk(): TurnHandle<H>;
-```
-
-上一轮若 failed 则抛(中止后续)。
 
 #### `outputEquals`
 

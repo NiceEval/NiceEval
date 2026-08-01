@@ -7,12 +7,13 @@ import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, join, relative as relativePath, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonValue } from "../shared/types.ts";
 import {
   attachLeakGateHints,
   buildContextIdentityContribution,
+  pathContentDigest,
   type BindMountSpec,
   type BuildContextSpec,
   type LeakGateHints,
@@ -30,13 +31,14 @@ import type {
 } from "./case-types.ts";
 import type { PlannedSandboxCase } from "./case.ts";
 import { DockerSandbox } from "./docker.ts";
-import { computeBuildKey, type BuildKey } from "./identity.ts";
+import { computeBuildKey, digestOf, looksLikeDigestRef, type BuildKey } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
+import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 
 /** materializer / BuildKey 的 builder revision;改 overlay 或黑名单语义时递增。 */
-export const COMPOSE_MATERIALIZER_REVISION = "docker-compose-1";
+export const COMPOSE_MATERIALIZER_REVISION = "docker-compose-2";
 
 const BUILDER_KIND = "docker-compose";
 
@@ -137,6 +139,14 @@ export interface ComposeInspection {
   /** 受管网络名:服务实际加入的非 external 网络;没有任何服务声明网络时是 Compose 的 `default`。 */
   readonly networkNames: readonly string[];
   readonly raw: string;
+  /** Compose case 引用的宿主侧非敏感文件；内容摘要进入 CaseKey，绝对路径不落盘。 */
+  readonly localFiles: readonly ComposeLocalFileRef[];
+}
+
+export interface ComposeLocalFileRef {
+  readonly kind: "env_file" | "config" | "secret";
+  readonly path: string;
+  readonly label: string;
 }
 
 /** 从 Compose 原文抽取 services 的黑名单 / build / volume 面。未知字段忽略。 */
@@ -144,15 +154,19 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
   const doc = parseYamlMapping(raw);
   const servicesNode = doc.services;
   if (servicesNode === undefined || servicesNode === null || typeof servicesNode !== "object" || Array.isArray(servicesNode)) {
-    return { services: [], networkNames: [], raw };
+    return { services: [], networkNames: [], raw, localFiles: topLevelLocalFiles(doc) };
   }
   const services: ComposeServiceInspection[] = [];
+  const localFiles: ComposeLocalFileRef[] = topLevelLocalFiles(doc);
   for (const [name, value] of Object.entries(servicesNode as globalThis.Record<string, unknown>)) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       services.push({ name, volumes: [] });
       continue;
     }
     const svc = value as globalThis.Record<string, unknown>;
+    for (const path of localPathValues(svc.env_file)) {
+      localFiles.push({ kind: "env_file", path, label: `service ${name} env_file` });
+    }
     services.push({
       name,
       ...(parseBuild(svc.build) !== undefined ? { build: parseBuild(svc.build)! } : {}),
@@ -171,7 +185,37 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
       volumes: volumeStrings(svc.volumes),
     });
   }
-  return { services, networkNames: managedNetworkNames(doc, servicesNode as globalThis.Record<string, unknown>), raw };
+  return {
+    services,
+    networkNames: managedNetworkNames(doc, servicesNode as globalThis.Record<string, unknown>),
+    raw,
+    localFiles,
+  };
+}
+
+function topLevelLocalFiles(doc: globalThis.Record<string, YamlNode>): ComposeLocalFileRef[] {
+  const refs: ComposeLocalFileRef[] = [];
+  for (const kind of ["config", "secret"] as const) {
+    const node = doc[`${kind}s`];
+    if (node === null || typeof node !== "object" || Array.isArray(node)) continue;
+    for (const [name, value] of Object.entries(node as globalThis.Record<string, unknown>)) {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+      const file = (value as globalThis.Record<string, unknown>).file;
+      if (typeof file === "string") refs.push({ kind, path: file, label: `${kind} ${name}` });
+    }
+  }
+  return refs;
+}
+
+function localPathValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const path = (entry as globalThis.Record<string, unknown>).path;
+    return typeof path === "string" ? [path] : [];
+  });
 }
 
 /**
@@ -454,6 +498,21 @@ export interface ComposeBuildCollection {
   readonly imageRefs: Readonly<globalThis.Record<string, string>>;
   /** 本次进 BuildKey 的目标平台;构建执行拿同一个值。 */
   readonly platform: string;
+  /** 全部 FROM 与仅 image service 都有稳定 digest 时，才允许跨 Invocation 携带。 */
+  readonly carryEligible: boolean;
+  readonly bindMountDigests: Readonly<globalThis.Record<string, string>>;
+  readonly configContents: Readonly<globalThis.Record<string, string>>;
+}
+
+/** physical planner 与 build collector 共用的安全 Case 输入投影。 */
+export function composeCollectionIdentity(collection: ComposeBuildCollection): JsonValue {
+  return {
+    composeDigest: digestOf(collection.composeBytes),
+    buildKeys: [...collection.buildKeys].sort(),
+    imageRefs: collection.imageRefs,
+    bindMountDigests: collection.bindMountDigests,
+    configContents: collection.configContents,
+  };
 }
 
 /** 从 Compose 声明收集 BuildKey 与协调器 works(仅有 `build:` 的服务)。 */
@@ -481,10 +540,23 @@ export async function collectComposeBuilds(opts: {
   const works: SandboxBuildWork[] = [];
   const buildKeys: BuildKey[] = [];
   const imageRefs: globalThis.Record<string, string> = {};
+  let carryEligible = true;
+  const bindMountDigests: globalThis.Record<string, string> = {};
+  for (const mount of hints.bindMounts ?? []) {
+    const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
+    bindMountDigests[key] = await pathContentDigest(mount.source);
+  }
+  const configContents: globalThis.Record<string, string> = {};
+  for (const ref of inspection.localFiles) {
+    const absolute = resolvePath(composeDir, ref.path);
+    const key = `${ref.kind}:${ref.label}:${relativeIdentityPath(composeDir, absolute)}`;
+    configContents[key] = await pathContentDigest(absolute);
+  }
 
   for (const svc of inspection.services) {
     if (svc.image !== undefined && svc.build === undefined) {
       imageRefs[svc.name] = svc.image;
+      if (!looksLikeDigestRef(svc.image)) carryEligible = false;
       continue;
     }
     if (svc.build === undefined) continue;
@@ -514,16 +586,18 @@ export async function collectComposeBuilds(opts: {
       label: `compose service ${svc.name}`,
     };
     const { contextDigest, contextFilterRules } = await buildContextIdentityContribution(contextSpec);
-    const fromDigest = extractFromDigestHint(dockerfile) ?? `unresolved:${svc.name}`;
+    const base = dockerfileBaseIdentity(dockerfile, svc.build.target);
+    if (!base.carryEligible) carryEligible = false;
     const buildKey = computeBuildKey({
       builderKind: BUILDER_KIND,
       builderRevision: COMPOSE_MATERIALIZER_REVISION,
       platform: workPlatform,
       dockerfile,
       contextDigest,
-      fromDigest,
+      fromDigest: base.fromDigest,
       contextFilterRules,
       ...(svc.build.args !== undefined ? { buildArgs: svc.build.args } : {}),
+      ...(svc.build.target !== undefined ? { target: svc.build.target } : {}),
     });
     buildKeys.push(buildKey);
     works.push({
@@ -538,6 +612,7 @@ export async function collectComposeBuilds(opts: {
         context: svc.build.context,
         ...(svc.build.dockerfile !== undefined ? { dockerfile: svc.build.dockerfile } : {}),
         ...(svc.build.args !== undefined ? { args: svc.build.args } : {}),
+        ...(svc.build.target !== undefined ? { target: svc.build.target } : {}),
         // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
         ...(opts.env !== undefined
           ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() }
@@ -556,7 +631,15 @@ export async function collectComposeBuilds(opts: {
     inspection,
     imageRefs,
     platform,
+    carryEligible,
+    bindMountDigests,
+    configContents,
   };
+}
+
+function relativeIdentityPath(baseDir: string, path: string): string {
+  const relative = relativePath(baseDir, path).split(sep).join("/");
+  return relative === "" ? "." : relative;
 }
 
 /**
@@ -603,14 +686,6 @@ function composeDeclFromPlan(
       ...(d.value.executionUser !== undefined ? { executionUser: d.value.executionUser } : {}),
     };
   }
-  return undefined;
-}
-
-function extractFromDigestHint(dockerfile: string): string | undefined {
-  const m = dockerfile.match(/^\s*FROM\s+(\S+)/im);
-  if (!m) return undefined;
-  const ref = m[1]!;
-  if (/@sha256:[a-f0-9]{64}$/i.test(ref)) return ref.slice(ref.indexOf("@") + 1);
   return undefined;
 }
 

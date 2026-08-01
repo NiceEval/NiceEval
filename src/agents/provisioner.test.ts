@@ -1,3 +1,4 @@
+// cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, it } from "vitest";
 import { Cause, Effect, Option } from "effect";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
@@ -5,10 +6,11 @@ import { SandboxCommandExitError } from "../sandbox/operations.ts";
 import { registerSandboxContent } from "../sandbox/content.ts";
 import type { CommandResult, SandboxOperations } from "../sandbox/types.ts";
 import { AgentEnsureError, ArtifactPrepareCoordinator, runAgentEnsure } from "./provisioner.ts";
-import type { AgentEnsure, AgentInstaller } from "./types.ts";
+import type { AgentArtifactPlatform, AgentEnsure, AgentInstaller } from "./types.ts";
 
 const result = (exitCode = 0, stdout = ""): CommandResult => ({ exitCode, stdout, stderr: "" });
-const stagedArtifact = (platform: { readonly os: string; readonly arch: string; readonly libc?: string }) => ({
+const TEST_PLATFORM = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" } as const;
+const stagedArtifact = (platform: AgentArtifactPlatform) => ({
   platform,
   content: registerSandboxContent(new URL(import.meta.url)),
   targetPath: "$HOME/.niceeval-agent-payload/fixture.tgz",
@@ -40,6 +42,7 @@ const sandbox: SandboxOperations = {
 const context = (coordinator = new ArtifactPrepareCoordinator()) => ({
   fact: () => {},
   coordinator: Option.some(coordinator),
+  targetPlatform: TEST_PLATFORM,
   signal: new AbortController().signal,
   progress: () => {},
 });
@@ -108,10 +111,10 @@ describe("Runner-owned Agent Ensure", () => {
     };
     const artifact = await Effect.runPromise(coordinator.prepare(
       installer,
-      { os: "linux", arch: "arm64", libc: "musl" },
+      { _tag: "Linux", os: "linux", arch: "arm64", libc: "musl" },
       new AbortController().signal,
     ));
-    expect(artifact.platform).toEqual({ os: "linux", arch: "arm64", libc: "musl" });
+    expect(artifact.platform).toEqual({ _tag: "Linux", os: "linux", arch: "arm64", libc: "musl" });
   });
 
   it("staged payload 只接受登记过的文件内容，不把伪造 digest 或宿主路径交给 Attempt", async () => {
@@ -135,7 +138,7 @@ describe("Runner-owned Agent Ensure", () => {
 
     await expect(ensureFailure(new ArtifactPrepareCoordinator().prepare(
       installer,
-      { os: "linux", arch: "x64", libc: "gnu" },
+      { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       new AbortController().signal,
     ))).resolves.toMatchObject({ reason: "artifact-invalid", phase: "installer", identity });
   });
@@ -221,7 +224,7 @@ describe("Runner-owned Agent Ensure", () => {
       async install() {},
     };
     const coordinator = new ArtifactPrepareCoordinator();
-    const platform = { os: "linux", arch: "x64", libc: "gnu" } as const;
+    const platform = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" } as const;
     const signal = new AbortController().signal;
 
     const first = Effect.runPromise(coordinator.prepare(installer, platform, signal));

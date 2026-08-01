@@ -5,7 +5,7 @@
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
-import type { MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
+import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
 import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 
@@ -295,6 +295,14 @@ export interface AgentContext {
    * 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
    */
   readonly experimentId?: string;
+  /**
+   * 当前 Attempt 对应的 eval id。NiceEval runner 始终从 discovery 后的 Eval 身份填入；
+   * 第三方直接构造 AgentContext 时可省略。Adapter 可用它定位与题目同目录的只读宿主资产，
+   * 但不能据此绕过 Sandbox 的隐藏判据隔离。
+   */
+  readonly evalId?: string;
+  /** Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。 */
+  readonly attempt?: AttemptRef;
   readonly session: AgentSession;
   /**
    * 仅当配置了 OTel 接入时有(agent 的 `tracing` 块 / config 的 telemetry 存在):
@@ -413,16 +421,28 @@ export interface AgentIdentity {
  */
 export type AgentInstallMode = "staged" | "sandbox-network" | "verify-only";
 
-/** staged payload 的目标平台;与 Agent identity 一起构成 prepare cache key。 */
-export interface AgentArtifactPlatform {
-  readonly os: string;
-  readonly arch: string;
-  /** 如 `gnu` / `musl`;与安装无关时可省略。 */
-  readonly libc?: string;
-}
+/** staged payload 的完成态目标平台；Linux 的 libc 是身份的一部分，不能留成缺值。 */
+export type AgentArtifactPlatform =
+  | {
+      readonly _tag: "Linux";
+      readonly os: "linux";
+      readonly arch: string;
+      readonly libc: "gnu" | "musl";
+    }
+  | {
+      readonly _tag: "Darwin";
+      readonly os: "darwin";
+      readonly arch: string;
+    }
+  | {
+      readonly _tag: "Windows";
+      readonly os: "windows";
+      readonly arch: string;
+    };
 
 /**
- * Run 级准备好的锁定制品。digest + platform 进入 configHash / `run.json`;
+ * Run 级准备好的锁定制品。digest + 实际 platform 只属于运行 provenance/facts，不进入
+ * configHash 或 Eval fingerprint；静态 installer identity/revision 与 ProviderPlan target 才是配置身份。
  * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
  */
 export interface AgentStagedArtifact {

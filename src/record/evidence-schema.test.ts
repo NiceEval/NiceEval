@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/record.md「schema 14 与覆盖分词」
+// cases: docs/engineering/testing/unit/record.md
 
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

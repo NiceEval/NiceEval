@@ -42,7 +42,8 @@ interface SandboxAgentDef {
 - **probe 用普通 `runCommand` 语义执行,零副作用。**
   `command -v` 只能证明「有一个同名命令」;probe 至少覆盖可执行文件、精确版本与 Adapter 依赖的运行条件。
 - **identity 是纯数据。**
-  至少含 Agent 名与精确版本,进 configHash 与 `run.json`;它同时是配对安装层的选择键。
+  Agent 名、精确版本与 revision 连同精确匹配的 installer identity/revision/installMode 按声明顺序进入
+  configHash 与 `run.json`;它同时是配对安装层的选择键。installer 分发内容变化必须显式提升 revision。
 - **Adapter 在 Sandbox 内的准备义务只有这份声明。**
   安装步骤、staged payload 与平台探测都在安装层;凭据与鉴权归 runtime `setup`(记 `agent.setup`)。
 
@@ -113,7 +114,8 @@ interface StagedAgentInstallContext extends AgentInstallContext {
 }
 ```
 
-安装层拥有 staged payload、目标平台探测、安装模式与 payload digest;凭据与鉴权始终归 Adapter 的 runtime `setup`,不进安装层。
+安装层拥有 staged payload、安装模式与 payload 校验;目标平台由 pair 的 `ProviderPlan` 在创建前确定。
+凭据与鉴权始终归 Adapter 的 runtime `setup`,不进安装层。
 `install` 全部经主 Sandbox 的命令与文件 API 执行;安装只修改主 Sandbox,外层 DinD VM 与 sidecar 不安装 Agent、不向 Agent 暴露文件 API。
 
 官方内置 adapter 出厂自带配对安装层:同一个包发布,identity 里的版本常量同源,与预制环境「命中预装与回退安装装同一版」是同一条规则。
@@ -182,10 +184,14 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 
 内置 coding Agent 的默认安装路径由安装层的 `prepareArtifact()` 按以下契约准备 staged payload:
 
-- 目标 platform / libc 从**主 Sandbox** 探测(`uname -s` / `uname -m` / `ldd`),不是宿主平台:
-  staged payload 要装进沙箱,macOS 宿主起 linux 容器是常态,按宿主取会准备出跑不了的二进制。
-- 以 ensure identity + 目标 platform / libc 为 key,在 Run 级经宿主网络、provider control plane 或随 niceeval npm 包分发的安装文件取得一次;single-flight,多个 attempt 共享。
-- 校验 digest 后进入本地 / 远端共享 cache;staged payload digest 与平台进入 configHash 和 `run.json`。
+- 目标 platform / libc 来自**每个 Eval pair 的 ProviderPlan**，不是宿主平台，也不是创建后才临时决定:
+  同一个 Experiment 可以选择目标平台不同的 Eval，staged payload 因此按计划目标分桶。
+- 主 Sandbox 创建后仍执行 `uname -s` / `uname -m` / `ldd`，但它只验证实际平台与计划目标完全一致；
+  不一致立即以环境错误终止，绝不拿实际结果改写计划或换另一份 staged payload。
+- prepare key 由 ensure identity、installer revision 与计划目标 platform / libc 组成。
+  Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
+- 校验 digest 后进入本地 / 远端共享 cache。实际 artifact digest 与实际平台只作为 runtime provenance/facts 落盘，
+  不进入 configHash 或 fingerprint；可比性由 installer 静态 revision 与 ProviderPlan target 分别承担。
 - 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity)),不占 attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。
   任务镜像由题目决定,不能假设它带 Node / Python 工具链——内置 Node CLI Agent 因此优先取该平台的
@@ -209,12 +215,12 @@ attempt 环境身份由两根正交的轴组成:
 
 ```text
 attempt 环境身份
- = provider sandbox case 身份(CaseKey 等,见 Sandbox Case)
- + Agent ensure identity(ensure 声明 identity、配对安装层 identity、payload digest、平台与安装模式)
+ = pair-owned ProviderPlan 身份(含计划 target platform/libc)
+ + Agent ensure 静态身份(ensure identity、精确配对的 installer identity/revision 与安装模式)
  + 其它解析后配置
 ```
 
-Agent ensure identity 同时进入 Attempt fingerprint 与 Sandbox 复用池键,完整输入清单见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
+Agent ensure 静态身份进入 configHash；pair-owned ProviderPlan 进入逐 Eval fingerprint 与 Sandbox 复用池键，完整输入清单见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
 改任务 Dockerfile 只重建环境、不动 Agent 配置;改 Agent 版本只改变 ensure identity 与 staged payload activity,不重建任务 BuildKey。
 两种变化都触发重跑,但不强制发布二者笛卡尔积的预制产物——同一份任务构建产物可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 probe 或安装。
 
@@ -245,4 +251,4 @@ ensure 循环每条 Attempt 都执行且必须可收敛:复用 Sandbox 第一次
 - [内置 prepare 命令](../../sandbox/prepare-commands.md) —— probe / install / ensure 词族与 `installTool`。
 - [Sandbox Case](../../sandbox/case.md) —— 主 Sandbox 从哪里来、BuildKey / CaseKey 是什么。
 - [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity) —— `agent.artifact.prepare` 与错误归属的落盘形状。
-- [Experiments · 缓存与携带](../../experiments/cache.md) —— identity 与 staged payload digest 怎样进入指纹。
+- [Experiments · 缓存与携带](../../experiments/cache.md) —— installer 静态 identity/revision 与 ProviderPlan target 怎样进入两层身份，runtime digest 为什么不进入。

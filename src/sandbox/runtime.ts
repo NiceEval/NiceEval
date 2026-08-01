@@ -7,7 +7,12 @@ import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 import type { MaterializedSandboxCase, SandboxResourceGroup } from "./case-types.ts";
 import type { PlannedSandboxCase } from "./case.ts";
 import { materializeDockerComposeCase } from "./compose.ts";
-import { collectComposeBuilds, dockerComposeBuildProvider } from "./compose.ts";
+import {
+  collectComposeBuilds,
+  composeCollectionIdentity,
+  dockerComposeBuildProvider,
+  normalizeBuildPlatform,
+} from "./compose.ts";
 import { collectDockerfileBuildFromPlan, dockerfileBuildProvider } from "./dockerfile-build.ts";
 import type { SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
@@ -20,7 +25,7 @@ import {
   type SandboxRuntimePlan,
 } from "./layer.ts";
 import { computeCaseKey, digestOf, type BuildKey, type CaseKey, type SandboxCaseKind } from "./identity.ts";
-import type { LinkedRunPlan } from "./plan.ts";
+import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
 import type { JsonValue, Sandbox, ScopedFeedback } from "../types.ts";
 
 const StringRecord = Schema.Record({ key: Schema.String, value: Schema.String });
@@ -41,11 +46,14 @@ const DockerComposeInput = Schema.Struct({
     Schema.Struct({ _tag: Schema.Literal("Configured"), value: Schema.NonEmptyTrimmedString }),
   ),
   env: StringRecord,
+  plannedBuildKeys: Schema.Array(Schema.NonEmptyTrimmedString),
+  plannedCaseIdentityDigest: Schema.NonEmptyTrimmedString,
 });
 const DockerfileInput = Schema.Struct({
   context: Location,
   dockerfile: Schema.NonEmptyTrimmedString,
   buildArgs: StringRecord,
+  plannedBuildKey: Schema.NonEmptyTrimmedString,
 });
 const DockerImageInput = Schema.Struct({ image: Schema.NonEmptyTrimmedString });
 const E2BInput = Schema.Struct({ template: Schema.NonEmptyTrimmedString, lifetime: Lifetime });
@@ -210,7 +218,7 @@ function wrapSingleSandbox(
     caseKey: caseKey(input.plan),
     buildKeys: [...input.buildLocators.keys()],
     identity: input.plan.providerPlan.identity,
-    carryEligible: input.plan.pair.template.carry._tag === "Eligible",
+    carryEligible: linkedRunCarryEligible(input.plan),
     facts,
   };
 }
@@ -270,7 +278,7 @@ function legacyComposePlan(
     caseKey: caseKey(input.plan),
     buildKeys: [...input.buildLocators.keys()],
     identity: input.plan.providerPlan.identity,
-    carryEligible: input.plan.pair.template.carry._tag === "Eligible",
+    carryEligible: linkedRunCarryEligible(input.plan),
     declaration: {
       form: "source",
       value: source,
@@ -303,7 +311,7 @@ function legacyDockerfilePlan(
     caseKey: caseKey(input.plan),
     buildKeys: [],
     identity: input.plan.providerPlan.identity,
-    carryEligible: input.plan.pair.template.carry._tag === "Eligible",
+    carryEligible: linkedRunCarryEligible(input.plan),
     declaration: { form: "dockerfile", provider: "docker", value: source },
   };
 }
@@ -471,7 +479,7 @@ function materializeCustom(
         caseKey: caseKey(input.plan),
         buildKeys: [...input.buildLocators.keys()],
         identity: input.plan.providerPlan.identity,
-        carryEligible: input.plan.pair.template.carry._tag === "Eligible",
+        carryEligible: linkedRunCarryEligible(input.plan),
         facts: materialized.facts ?? {},
       }, input);
       return normalized;
@@ -510,8 +518,13 @@ export function collectSandboxRuntimeBuildPreparation(
           const collection = await collectComposeBuilds({
             file,
             mainService: decoded.workspaceService,
+            platform: plannedBuildPlatform(plan),
             env: decoded.env,
           });
+          assertSameBuildKeys(decoded.plannedBuildKeys, collection.buildKeys, "Compose");
+          if (decoded.plannedCaseIdentityDigest !== digestOf(composeCollectionIdentity(collection))) {
+            throw new Error("Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.");
+          }
           return Option.some({
             works: collection.works,
             provider: dockerComposeBuildProvider({ env: decoded.env }),
@@ -520,6 +533,9 @@ export function collectSandboxRuntimeBuildPreparation(
               materializerRevision: plan.providerPlan.plannerRevision,
               composeBytes: collection.composeBytes,
               buildKeys: collection.buildKeys,
+              serviceImageDigests: collection.imageRefs,
+              bindMountDigests: collection.bindMountDigests,
+              configContents: collection.configContents,
               caseParams: plan.providerPlan.identity,
             }),
           });
@@ -529,8 +545,11 @@ export function collectSandboxRuntimeBuildPreparation(
     case "niceeval/dockerfile":
       return Effect.flatMap(decode(DockerfileInput, input), (decoded) => Effect.tryPromise({
         try: async () => {
-          const collection = await collectDockerfileBuildFromPlan(legacyDockerfilePlan(input, decoded));
+          const collection = await collectDockerfileBuildFromPlan(legacyDockerfilePlan(input, decoded), {
+            dockerPlatform: plannedBuildPlatform(plan),
+          });
           if (collection === undefined) throw new Error("Dockerfile runtime did not produce a build work item");
+          assertSameBuildKeys([decoded.plannedBuildKey], [collection.buildKey], "Dockerfile");
           return Option.some({
             works: [collection.work],
             provider: dockerfileBuildProvider([collection]),
@@ -542,6 +561,26 @@ export function collectSandboxRuntimeBuildPreparation(
     default:
       return Effect.succeed(Option.none());
   }
+}
+
+function plannedBuildPlatform(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>): string {
+  const platform = plan.providerPlan.target.platform;
+  const arch = platform.arch === "x64" ? "amd64" : platform.arch;
+  return normalizeBuildPlatform(`${platform.os}/${arch}`);
+}
+
+function assertSameBuildKeys(
+  planned: readonly string[],
+  collected: readonly string[],
+  label: string,
+): void {
+  const expected = [...planned].sort();
+  const actual = [...collected].sort();
+  if (expected.length === actual.length && expected.every((key, index) => key === actual[index])) return;
+  throw new Error(
+    `${label} build inputs changed after physical planning; planned ${expected.join(", ") || "none"}, ` +
+      `collected ${actual.join(", ") || "none"}. Restart the Run to plan the new inputs.`,
+  );
 }
 
 /** Runner 的调度/留存只读中性能力，不按 provider 名或 adapter tag 分支。 */

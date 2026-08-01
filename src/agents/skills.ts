@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, posix, relative, resolve, sep } from "node:path";
 import { shellQuote as q } from "../sandbox/shell.ts";
+import type { SandboxOperations } from "../sandbox/types.ts";
 import { t } from "../i18n/index.ts";
 import type { AgentSetupSkill, Sandbox, SkillSpec } from "../types.ts";
 
@@ -280,7 +281,11 @@ export function skillDiscoveryInstruction(dir: string, skills: readonly string[]
  * 文件本来就存在(starter 自带 AGENTS.md)时不排除:那是 agent 也可能改的文件,
  * 排掉会把真实改动一起藏起来;此时追加的这一段会如实出现在 diff 里。
  */
-export async function appendProjectInstruction(sandbox: Sandbox, text: string, file = "AGENTS.md"): Promise<void> {
+export async function appendProjectInstruction(
+  sandbox: Pick<SandboxOperations, "pathExists" | "runShell">,
+  text: string,
+  file = "AGENTS.md",
+): Promise<void> {
   const existed = await sandbox.pathExists(file).catch(() => false);
   const delim = `NICEEVAL_EOF_${Math.random().toString(36).slice(2, 8)}`;
   await sandbox.runShell(`cat >> ${q(file)} <<'${delim}'\n${text}\n${delim}\n`);
@@ -294,7 +299,10 @@ export async function appendProjectInstruction(sandbox: Sandbox, text: string, f
  * diff.json —— 装了 skill 的实验,diff 里凭空多出几十个文件,基于 diff 的断言与展示全被污染。
  * 排除只对未跟踪文件有效,这正是 adapter 自己创建的那一类。
  */
-export async function excludeFromDiff(sandbox: Sandbox, paths: readonly string[]): Promise<void> {
+export async function excludeFromDiff(
+  sandbox: Pick<SandboxOperations, "runShell">,
+  paths: readonly string[],
+): Promise<void> {
   if (!paths.length) return;
   const lines = paths.map((p) => `printf '%s\\n' ${q(p)} >> .git/info/exclude`).join(" && ");
   await sandbox.runShell(`test -d .git && mkdir -p .git/info && ${lines}`).catch(() => undefined);

@@ -45,6 +45,8 @@ export interface AgentEnsureContext {
   fact(key: string, value: string | number | boolean): void;
   /** Run 级 prepare 协调器;多 attempt 应共享同一实例。 */
   readonly coordinator: Option.Option<ArtifactPrepareCoordinator>;
+  /** ProviderPlan 已经确定的目标平台；实际 uname/ldd 只负责验证它，不反向决定制品。 */
+  readonly targetPlatform: AgentArtifactPlatform;
   readonly signal: AbortSignal;
   progress(update: { message: string }): void;
 }
@@ -85,12 +87,54 @@ export class AgentEnsureError extends Data.TaggedError("AgentEnsureError")<{
   readonly message: string;
 }> {}
 
+export class SandboxTargetVerificationError extends Data.TaggedError("SandboxTargetVerificationError")<{
+  readonly planned: AgentArtifactPlatform;
+  readonly actual: AgentArtifactPlatform | { readonly _tag: "Unreadable"; readonly detail: string };
+  readonly message: string;
+}> {}
+
+/** Sandbox create 后的单一平台核验；planning 决定目标，本函数不得反向改写计划。 */
+export function verifySandboxTargetPlatform(
+  sandbox: SandboxOperations,
+  planned: AgentArtifactPlatform,
+): Effect.Effect<AgentArtifactPlatform, SandboxTargetVerificationError> {
+  return Effect.tryPromise({
+    try: () => detectSandboxPlatform(sandbox),
+    catch: (cause) => new SandboxTargetVerificationError({
+      planned,
+      actual: { _tag: "Unreadable", detail: errorMessage(cause) },
+      message: `Cannot verify Sandbox platform against planned target ${platformKey(planned)}: ${errorMessage(cause)}`,
+    }),
+  }).pipe(Effect.flatMap((actual) =>
+    platformKey(actual) === platformKey(planned)
+      ? Effect.succeed(actual)
+      : Effect.fail(new SandboxTargetVerificationError({
+          planned,
+          actual,
+          message: `Sandbox platform ${platformKey(actual)} does not match planned target ${platformKey(planned)}.`,
+        }))
+  ));
+}
+
 const AgentStagedArtifactShape = Schema.Struct({
-  platform: Schema.Struct({
-    os: Schema.NonEmptyTrimmedString,
-    arch: Schema.NonEmptyTrimmedString,
-    libc: Schema.optional(Schema.NonEmptyTrimmedString),
-  }),
+  platform: Schema.Union(
+    Schema.Struct({
+      _tag: Schema.Literal("Linux"),
+      os: Schema.Literal("linux"),
+      arch: Schema.NonEmptyTrimmedString,
+      libc: Schema.Literal("gnu", "musl"),
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Darwin"),
+      os: Schema.Literal("darwin"),
+      arch: Schema.NonEmptyTrimmedString,
+    }),
+    Schema.Struct({
+      _tag: Schema.Literal("Windows"),
+      os: Schema.Literal("windows"),
+      arch: Schema.NonEmptyTrimmedString,
+    }),
+  ),
   content: Schema.Unknown,
   targetPath: Schema.NonEmptyTrimmedString,
   install: Schema.Union(
@@ -180,7 +224,7 @@ export function agentInstallIdentityInput(
 }
 
 export function platformKey(platform: AgentArtifactPlatform): string {
-  return platform.libc
+  return platform.os === "linux" && platform.libc !== undefined
     ? `${platform.os}-${platform.arch}-${platform.libc}`
     : `${platform.os}-${platform.arch}`;
 }
@@ -208,7 +252,7 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
     throw new Error(t("agent.ensure.platformDetectFailed", { tail: (probe.stdout + probe.stderr).trim().slice(0, 200) }));
   }
   const [unameS = "", unameM = "", ldd = ""] = probe.stdout.split("\n").map((line) => line.trim());
-  const os = unameS.toLowerCase() === "darwin" ? "darwin" : unameS.toLowerCase() === "linux" ? "linux" : unameS.toLowerCase();
+  const os = unameS.toLowerCase();
   const arch =
     unameM === "x86_64" || unameM === "amd64"
       ? "x64"
@@ -218,8 +262,12 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
   if (!os || !arch) {
     throw new Error(t("agent.ensure.platformDetectFailed", { tail: probe.stdout.trim().slice(0, 200) }));
   }
-  if (os !== "linux") return { os, arch };
-  return { os, arch, libc: /musl/i.test(ldd) ? "musl" : "gnu" };
+  if (os === "linux") return { _tag: "Linux", os: "linux", arch, libc: /musl/i.test(ldd) ? "musl" : "gnu" };
+  if (os === "darwin") return { _tag: "Darwin", os: "darwin", arch };
+  if (os === "windows" || os.startsWith("mingw") || os.startsWith("msys")) {
+    return { _tag: "Windows", os: "windows", arch };
+  }
+  throw new Error(t("agent.ensure.platformDetectFailed", { tail: probe.stdout.trim().slice(0, 200) }));
 }
 
 /** 默认宿主 cache 根:`~/.cache/niceeval/agent-artifacts`。 */
@@ -379,7 +427,7 @@ export function runAgentEnsure(
           message: formatEnsureError({ identity: ensure.identity, phase: "verify-only" }),
         });
       }
-      const platform = yield* detectSandboxPlatformEffect(sandbox, ensure.identity);
+      const platform = context.targetPlatform;
       if (installer.platforms !== undefined && !installer.platforms.includes(platformKey(platform))) {
         return yield* new AgentEnsureError({
           reason: "platform-unsupported",
@@ -513,21 +561,6 @@ function recheckMissed(identity: AgentIdentity): AgentEnsureError {
     phase: "recheck",
     identity,
     message: formatEnsureError({ identity, phase: "recheck" }),
-  });
-}
-
-function detectSandboxPlatformEffect(
-  sandbox: SandboxOperations,
-  identity: AgentIdentity,
-): Effect.Effect<AgentArtifactPlatform, AgentEnsureError> {
-  return Effect.tryPromise({
-    try: () => detectSandboxPlatform(sandbox),
-    catch: (cause) => new AgentEnsureError({
-      reason: "platform-detect-failed",
-      phase: "installer",
-      identity,
-      message: errorMessage(cause),
-    }),
   });
 }
 

@@ -1,4 +1,4 @@
-// cases: docs/feature/compile-time-contracts/library.md「Definition 阶段分离」
+// cases: docs/engineering/testing/unit/experiments-runner.md
 // Experiment 与 Eval 同样分为作者输入、factory 定义和 discovery 结果。这里钉住作者
 // 不能写路径 id、JS/断言绕过仍被 factory 守卫，以及 Definition 的私有来源品牌。
 

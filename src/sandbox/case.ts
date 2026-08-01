@@ -31,6 +31,11 @@ import type {
   VercelEnvironmentCase,
 } from "./case-types.ts";
 import type { Sandbox, SandboxOption, SandboxSpec } from "./types.ts";
+import {
+  customCaseSandbox,
+  type CustomCaseSandboxOptions,
+  type SandboxLayer,
+} from "./layer.ts";
 
 export type {
   ComposeSandboxSource,
@@ -105,27 +110,10 @@ export function isSandboxSource(value: unknown): value is SandboxSource {
  * 自定义 case:强制纯数据 identity;materialize 必须返回唯一主 Sandbox。
  * 缺稳定身份时 `carryEligible` 为 false——禁止结果携带。
  */
-export function defineSandboxCase(def: {
-  identity: JsonValue;
-  capabilities?: readonly SandboxCapability[];
-  materialize: CustomEnvironmentCase["materialize"];
-  groupKeep?: CustomEnvironmentCase["groupKeep"];
-}): CustomEnvironmentCase {
-  const identity = assertPureDataIdentity(def.identity);
-  if (def.capabilities?.includes("group-keep") && def.groupKeep === undefined) {
-    throw new Error(
-      'sandbox case declared capability "group-keep" but did not provide serializable resources, wake, and destroy',
-    );
-  }
-  if (def.groupKeep !== undefined && !def.capabilities?.includes("group-keep")) {
-    throw new Error("sandbox case provided groupKeep but did not declare capability \"group-keep\"");
-  }
-  return {
-    identity,
-    ...(def.capabilities !== undefined ? { capabilities: def.capabilities } : {}),
-    materialize: def.materialize,
-    ...(def.groupKeep !== undefined ? { groupKeep: def.groupKeep } : {}),
-  };
+export function defineSandboxCase(
+  def: CustomCaseSandboxOptions,
+): SandboxLayer<"template-bearing"> {
+  return customCaseSandbox(def);
 }
 
 /** 规划期选中的 case:尚未物化,已带身份与携带资格。 */

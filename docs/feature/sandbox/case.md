@@ -168,6 +168,12 @@ CaseKey
 Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
 身份解析发生在携带决策之前。
+这一步就是 Provider physical planning:
+
+- Dockerfile factory 读取 `.dockerignore` 求值后的 context，产生单个 BuildKey。
+- Compose factory 读取 Compose bytes，为每个 build service 产生 BuildKey。
+- 安全摘要进 pair plan / fingerprint；context 路径、文件正文与 credential env 值不落盘。
+- 规划后输入若变化，构建收集期会拒绝 key 不一致的 Run，不用新内容冒充旧计划。
 浮动 image tag 若 provider 不能解析成 digest,该环境的旧结果不参与携带;可以运行并记录 tag 与实际事实,但不能假装两次环境可比。
 凭据值不落盘、不进身份:凭据轮换不改变环境语义时只记录引用名;凭据同时选择了不同租户、数据集或权限面时,用户必须提供非敏感 `revision` 进入身份,不靠 secret 值自动推断。
 

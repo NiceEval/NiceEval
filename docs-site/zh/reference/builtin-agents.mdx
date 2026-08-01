@@ -129,10 +129,10 @@ setup 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文�
 #### `postSetup`
 
 ```ts
-postSetup?: SandboxHook[];
+postSetup?: SandboxCommand[];
 ```
 
-安装后按数组顺序运行的用户 Hook(复用 SandboxHook 的窄上下文):在写 settings、挂 MCP、
+安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写 settings、挂 MCP、
 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 setup 脚本这类
 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
@@ -140,7 +140,7 @@ postSetup?: SandboxHook[];
 #### `preTeardown`
 
 ```ts
-preTeardown?: SandboxHook[];
+preTeardown?: SandboxCommand[];
 ```
 
 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
@@ -148,15 +148,6 @@ preTeardown?: SandboxHook[];
 之前),当且仅当 `postSetup` 的时点走到过才触发。抛错按基础设施错误计,由 teardown 段
 按 teardown-failed 诊断收束。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
-
-#### `provisioner`
-
-```ts
-provisioner?: AgentProvisioner;
-```
-
-整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
-省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
 
 ### `CodexConfig`
 
@@ -221,10 +212,10 @@ niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox �
 #### `postSetup`
 
 ```ts
-postSetup?: SandboxHook[];
+postSetup?: SandboxCommand[];
 ```
 
-安装后按数组顺序运行的用户 Hook(复用 SandboxHook 的窄上下文):在写主配置、挂 MCP、
+安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写主配置、挂 MCP、
 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 setup 脚本这类
 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
@@ -232,7 +223,7 @@ postSetup?: SandboxHook[];
 #### `preTeardown`
 
 ```ts
-preTeardown?: SandboxHook[];
+preTeardown?: SandboxCommand[];
 ```
 
 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
@@ -240,15 +231,6 @@ preTeardown?: SandboxHook[];
 之前),当且仅当 `postSetup` 的时点走到过才触发。抛错按基础设施错误计,由 teardown 段
 按 teardown-failed 诊断收束。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
-
-#### `provisioner`
-
-```ts
-provisioner?: AgentProvisioner;
-```
-
-整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
-省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
 
 ### `BubConfig`
 
@@ -311,17 +293,17 @@ pythonPlugins?: PythonPluginSpec[];
 #### `postSetup`
 
 ```ts
-postSetup?: SandboxHook[];
+postSetup?: SandboxCommand[];
 ```
 
-安装后按数组顺序运行的用户 Hook(复用 SandboxHook 的窄上下文):在装 bub、装 Skills /
+安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在装 bub、装 Skills /
 Python package、写 manifest 全部完成后执行。抛错按基础设施错误计(attempt errored)。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
 
 #### `preTeardown`
 
 ```ts
-preTeardown?: SandboxHook[];
+preTeardown?: SandboxCommand[];
 ```
 
 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤

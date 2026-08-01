@@ -958,6 +958,7 @@ async function runAttemptBody(
   const attemptCtx: AgentContext = {
     signal,
     evalId: evalDef.id,
+    attempt: { id: evalDef.id, index: attempt },
     model: run.model,
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,

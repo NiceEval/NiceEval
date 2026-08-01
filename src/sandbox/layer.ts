@@ -13,8 +13,18 @@ import type {
 import type { Sandbox, SandboxRuntime } from "./types.ts";
 import type { SandboxCommand, SandboxCommandDeclaration } from "./commands.ts";
 import { sandboxCommandDeclarationOf } from "./commands.ts";
-import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
-import { digestOf } from "./identity.ts";
+import {
+  collectComposeBuilds,
+  COMPOSE_MATERIALIZER_REVISION,
+  composeCollectionIdentity,
+  detectDockerBuildPlatform,
+  normalizeBuildPlatform,
+} from "./compose.ts";
+import { digestOf, looksLikeDigestRef } from "./identity.ts";
+import {
+  DOCKERFILE_MATERIALIZER_REVISION,
+  resolveDockerfileBuildIdentity,
+} from "./dockerfile-identity.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -36,6 +46,10 @@ export interface DockerComposeSandboxOptions {
   readonly build?: "on-demand" | "prebuilt";
   readonly executionUser?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
+  /** Compose 插值所需凭据；value 只进私有 runtime binding，identity 只认变量名与 revision。 */
+  readonly credentialEnv?: Readonly<
+    globalThis.Record<string, { readonly value: string; readonly revision?: string }>
+  >;
 }
 
 export interface DockerfileSandboxOptions {
@@ -153,6 +167,7 @@ export interface SandboxProviderPlan {
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
   readonly runtimeAdapter: string;
+  readonly carry: SandboxTemplateCarry;
   readonly identity: JsonValue;
 }
 
@@ -163,6 +178,8 @@ export interface SandboxProviderPlanInput {
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
   readonly runtime: SandboxRuntimePlan;
+  /** physical planning 才能裁决的动态携带资格；省略表示可携带。 */
+  readonly carry?: SandboxTemplateCarry;
   /** 可直接出现在 record / manifest 的 provider-owned 纯数据。 */
   readonly publishableIdentity: JsonValue;
   /** 影响 fingerprint 但不得落盘的值；plan 只保存它的稳定摘要。 */
@@ -331,6 +348,9 @@ export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxPro
     adapter: nonEmptyString(input.runtime.adapter, "sandbox provider plan.runtime.adapter"),
     input: freezeJson(input.runtime.input),
   });
+  const carry = input.carry === undefined
+    ? Object.freeze({ _tag: "Eligible" as const })
+    : Object.freeze({ ...input.carry });
   const publishableIdentity = freezeJson(input.publishableIdentity);
   const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
   const identity = freezeJson({
@@ -345,6 +365,7 @@ export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxPro
       admission: { _tag: scheduling.admission._tag },
     },
     runtimeAdapter: runtime.adapter,
+    carry,
     publishable: publishableIdentity,
     privateIdentityDigest,
   });
@@ -355,6 +376,7 @@ export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxPro
     target,
     scheduling,
     runtimeAdapter: runtime.adapter,
+    carry,
     identity,
   });
   SANDBOX_PROVIDER_RUNTIMES.set(plan, runtime);
@@ -427,6 +449,28 @@ function stringRecord(value: unknown, path: string): Readonly<globalThis.Record<
   return Object.freeze(result);
 }
 
+function credentialEnvRecord(
+  value: unknown,
+  path: string,
+): Readonly<globalThis.Record<string, { readonly value: string; readonly revision?: string }>> {
+  if (value === undefined) return Object.freeze({});
+  assertRecord(value, path);
+  const result: globalThis.Record<string, { readonly value: string; readonly revision?: string }> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "") throw new TypeError(`${path} keys must be non-empty strings`);
+    assertRecord(child, `${path}.${key}`);
+    assertOnlyKeys(child, ["value", "revision"], `${path}.${key}`);
+    const credential = {
+      value: nonEmptyString(child.value, `${path}.${key}.value`),
+      ...(child.revision === undefined
+        ? {}
+        : { revision: nonEmptyString(child.revision, `${path}.${key}.revision`) }),
+    };
+    result[key] = Object.freeze(credential);
+  }
+  return Object.freeze(result);
+}
+
 function normalizeArch(arch: string): string {
   return arch === "amd64" || arch === "x86_64" || arch === "x64"
     ? "x64"
@@ -460,6 +504,12 @@ function targetFromDocker(value: string): Effect.Effect<SandboxPlannedTarget, Sa
     ));
   }
   return Effect.succeed(Object.freeze({ platform: freezePlatform(platform), source: "docker-daemon" }));
+}
+
+/** Provider target ADT → Docker builder 使用的 canonical os/arch 字符串。 */
+function plannedTargetPlatform(target: SandboxPlannedTarget): string {
+  const arch = target.platform.arch === "x64" ? "amd64" : target.platform.arch;
+  return normalizeBuildPlatform(`${target.platform.os}/${arch}`);
 }
 
 function providerPlanningError(
@@ -564,7 +614,11 @@ export function createBuiltinSandboxFactories(
   return Object.freeze({
     dockerComposeSandbox(options: DockerComposeSandboxOptions) {
       assertRecord(options, "dockerComposeSandbox options");
-      assertOnlyKeys(options, ["file", "workspaceService", "build", "executionUser", "env"], "dockerComposeSandbox options");
+      assertOnlyKeys(
+        options,
+        ["file", "workspaceService", "build", "executionUser", "env", "credentialEnv"],
+        "dockerComposeSandbox options",
+      );
       if (options.build !== undefined && options.build !== "on-demand" && options.build !== "prebuilt") {
         throw new TypeError('dockerComposeSandbox options.build must be "on-demand" or "prebuilt"');
       }
@@ -575,6 +629,20 @@ export function createBuiltinSandboxFactories(
         ? { _tag: "ImageDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.executionUser, "dockerComposeSandbox options.executionUser") };
       const env = stringRecord(options.env, "dockerComposeSandbox options.env");
+      const credentialEnv = credentialEnvRecord(options.credentialEnv, "dockerComposeSandbox options.credentialEnv");
+      for (const key of Object.keys(credentialEnv)) {
+        if (key in env) throw new TypeError(`dockerComposeSandbox env and credentialEnv both define ${JSON.stringify(key)}`);
+      }
+      const credentialIdentity: globalThis.Record<string, JsonValue> = Object.fromEntries(
+        Object.entries(credentialEnv).map(([name, credential]): readonly [string, JsonValue] => [
+          name,
+          credential.revision === undefined ? {} : { revision: credential.revision },
+        ]),
+      );
+      const runtimeEnv = {
+        ...env,
+        ...Object.fromEntries(Object.entries(credentialEnv).map(([name, credential]) => [name, credential.value])),
+      };
       const identity: JsonValue = {
         provider: "docker",
         kind: "compose",
@@ -583,6 +651,7 @@ export function createBuiltinSandboxFactories(
         build,
         executionUser,
         env: { ...env },
+        credentialEnv: credentialIdentity,
       };
       return defineSandboxTemplate({
         provider: "docker",
@@ -592,21 +661,45 @@ export function createBuiltinSandboxFactories(
           build,
           executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
           envKeys: Object.keys(env).sort(),
+          credentialEnv: credentialIdentity,
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Compose", file, workspaceService },
-        plan: ({ authorBaseDir }) => Effect.map(dockerTarget(), (target) => {
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
+          try: async () => {
           const plannedFile = plannedLocation(file, authorBaseDir);
+          const runtimeBase: JsonValue = {
+            file: plannedFile,
+            workspaceService,
+            build,
+            executionUser,
+            env: runtimeEnv,
+          };
+          const collection = await collectComposeBuilds({
+            file: plannedFile._tag === "Url" ? new URL(plannedFile.value) : plannedFile.value,
+            mainService: workspaceService,
+            platform: plannedTargetPlatform(target),
+            env: runtimeEnv,
+          });
+          const caseIdentity = composeCollectionIdentity(collection);
           const runtimeInput: JsonValue = {
+            ...(runtimeBase as Record<string, JsonValue>),
+            plannedBuildKeys: [...collection.buildKeys].sort(),
+            plannedCaseIdentityDigest: digestOf(caseIdentity),
+          };
+          const identityInput: JsonValue = {
             file: plannedFile,
             workspaceService,
             build,
             executionUser,
             env: { ...env },
+            credentialEnv: credentialIdentity,
+            plannedBuildKeys: [...collection.buildKeys].sort(),
+            plannedCaseIdentityDigest: digestOf(caseIdentity),
           };
           return sandboxProviderPlan({
             provider: "docker",
-            plannerRevision: "docker-compose-1",
+            plannerRevision: COMPOSE_MATERIALIZER_REVISION,
             caseKind: "compose",
             target,
             scheduling: sharedScheduling("docker", 10),
@@ -616,10 +709,31 @@ export function createBuiltinSandboxFactories(
               build,
               executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
               envKeys: Object.keys(env).sort(),
+              credentialEnv: credentialIdentity,
+              ...(caseIdentity as Record<string, JsonValue>),
             },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: {
+              identityInput,
+              caseIdentity,
+            },
+            ...(collection.carryEligible
+              ? {}
+              : {
+                  carry: {
+                    _tag: "Ineligible" as const,
+                    code: "sandbox.image-unresolved",
+                    reason: "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+                  },
+                }),
           });
-        }),
+          },
+          catch: (cause) => providerPlanningError(
+            "sandbox.case-identity-unavailable",
+            "docker",
+            cause instanceof Error ? cause.message : String(cause),
+            ["Make the Compose file and every filtered build context readable during physical planning."],
+          ),
+        })),
       });
     },
 
@@ -646,25 +760,56 @@ export function createBuiltinSandboxFactories(
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
-        plan: ({ authorBaseDir }) => Effect.map(dockerTarget(), (target) => {
-          const runtimeInput: JsonValue = {
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
+          try: async () => {
+          const runtimeBase: JsonValue = {
             context: plannedLocation(context, authorBaseDir),
             dockerfile,
             buildArgs: { ...buildArgs },
           };
+          const plannedContext = runtimeBase.context as SandboxLocation;
+          const build = await resolveDockerfileBuildIdentity({
+            provider: "docker",
+            context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
+            dockerfile,
+            buildArgs,
+            platform: plannedTargetPlatform(target),
+            label: "Dockerfile sandbox",
+          });
+          const runtimeInput: JsonValue = {
+            ...(runtimeBase as Record<string, JsonValue>),
+            plannedBuildKey: build.buildKey,
+          };
           return sandboxProviderPlan({
             provider: "docker",
-            plannerRevision: "dockerfile-1",
+            plannerRevision: DOCKERFILE_MATERIALIZER_REVISION,
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
             runtime: { adapter: "niceeval/dockerfile", input: runtimeInput },
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
+              buildKey: build.buildKey,
             },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: { runtimeInput, buildKey: build.buildKey },
+            ...(build.carryEligible
+              ? {}
+              : {
+                  carry: {
+                    _tag: "Ineligible" as const,
+                    code: "sandbox.base-image-unresolved",
+                    reason: "Dockerfile FROM is not pinned to a sha256 digest.",
+                  },
+                }),
           });
-        }),
+          },
+          catch: (cause) => providerPlanningError(
+            "sandbox.build-identity-unavailable",
+            "docker",
+            cause instanceof Error ? cause.message : String(cause),
+            ["Make the Dockerfile and its filtered build context readable during physical planning."],
+          ),
+        })),
       });
     },
 
@@ -690,6 +835,15 @@ export function createBuiltinSandboxFactories(
             runtime: { adapter: "niceeval/docker-image", input: runtimeInput },
             publishableIdentity: { source: "configured-image" },
             privateFingerprintIdentity: runtimeInput,
+            ...(looksLikeDigestRef(image)
+              ? {}
+              : {
+                  carry: {
+                    _tag: "Ineligible" as const,
+                    code: "sandbox.image-unresolved",
+                    reason: "Docker image is not pinned to a sha256 digest.",
+                  },
+                }),
           });
         }),
       });

@@ -2,21 +2,37 @@
 // 契约见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」:
 // postSetup 在 adapter 全部安装步骤(含 manifest)之后按数组顺序执行;preTeardown 与它成对,
 // 按逆序、先于 agent 自己的 teardown 步骤执行(LIFO 镜像 —— postSetup 跑在 agent 安装之后,
-// preTeardown 跑在 agent 收尾之前)。两者复用 SandboxHook 的窄上下文,不消费钩子返回值。
+// preTeardown 跑在 agent 收尾之前)。两者复用 SandboxCommand 的窄上下文,不消费钩子返回值。
 // 钩子抛错直接传播:postSetup 处于 setup 阶段(attempt errored);preTeardown 处于 teardown
 // 阶段,由 runner 的 teardown 段按 teardown-failed 诊断收束。
 
-import type { Sandbox, SandboxHook, SandboxHookContext } from "../sandbox/types.ts";
+import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import type {
+  SandboxCleanupCommand,
+  SandboxCommand,
+  SandboxCommandContext,
+} from "../sandbox/commands.ts";
+import type { Sandbox } from "../sandbox/types.ts";
 import type { AgentContext } from "./types.ts";
 
-/** 窄上下文与沙箱钩子同款:不把 session / model / telemetry 借给过程钩子。 */
-function narrowHookContext(ctx: AgentContext): SandboxHookContext {
+const registeredCleanups = new WeakMap<Sandbox, SandboxCleanupCommand[]>();
+
+/** 窄上下文与 layer command 同款:不把 session / model / telemetry 借给过程钩子。 */
+function commandContext(
+  ctx: AgentContext,
+  agentName: string,
+  phase: "agent.post-setup" | "agent.pre-teardown",
+  onCleanup: SandboxCommandContext["onCleanup"],
+): SandboxCommandContext {
   return {
-    experimentId: ctx.experimentId,
+    phase,
+    owner: { kind: "agent", id: agentName },
+    attempt: ctx.attempt ?? { id: ctx.evalId ?? "unknown", index: 0 },
     signal: ctx.signal,
     progress: (update) => ctx.progress(update),
     diagnostic: (input) => ctx.diagnostic(input),
-    fact: (key, value) => ctx.fact(key, value),
+    facts: (key, value) => ctx.fact(key, value),
+    onCleanup,
   };
 }
 
@@ -32,12 +48,16 @@ const postSetupPointReached = new WeakSet<Sandbox>();
 export async function runPostSetupHooks(
   sb: Sandbox,
   ctx: AgentContext,
-  hooks: readonly SandboxHook[] | undefined,
+  agentName: string,
+  hooks: readonly SandboxCommand[] | undefined,
 ): Promise<void> {
   postSetupPointReached.add(sb);
   if (!hooks?.length) return;
-  const hookCtx = narrowHookContext(ctx);
-  for (const hook of hooks) await hook(sb, hookCtx);
+  const cleanups = registeredCleanups.get(sb) ?? [];
+  registeredCleanups.set(sb, cleanups);
+  const hookCtx = commandContext(ctx, agentName, "agent.post-setup", (cleanup) => cleanups.push(cleanup));
+  const target = createSandboxCommandTarget(sb);
+  for (const hook of hooks) await hook(target, hookCtx);
 }
 
 /**
@@ -48,10 +68,44 @@ export async function runPostSetupHooks(
 export async function runPreTeardownHooks(
   sb: Sandbox,
   ctx: AgentContext,
-  hooks: readonly SandboxHook[] | undefined,
+  agentName: string,
+  hooks: readonly SandboxCommand[] | undefined,
 ): Promise<void> {
   if (!postSetupPointReached.has(sb)) return;
-  if (!hooks?.length) return;
-  const hookCtx = narrowHookContext(ctx);
-  for (const hook of [...hooks].reverse()) await hook(sb, hookCtx);
+  const target = createSandboxCommandTarget(sb);
+  const nestedCleanups: SandboxCleanupCommand[] = [];
+  const hookCtx = commandContext(ctx, agentName, "agent.pre-teardown", (cleanup) => nestedCleanups.push(cleanup));
+  const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
+    phase: "agent.pre-teardown",
+    owner: { kind: "agent", id: agentName },
+    attempt: hookCtx.attempt,
+    signal: hookCtx.signal,
+    progress: hookCtx.progress,
+    diagnostic: hookCtx.diagnostic,
+    facts: hookCtx.facts,
+  };
+  const failures: unknown[] = [];
+  try {
+    // 收尾链里的单点失败不能剥夺其余 hook 与已登记 cleanup 的执行机会。顺序仍然是
+    // preTeardown 声明的逆序，随后是截至当时所有 onCleanup 的全局逆序。
+    for (const hook of [...(hooks ?? [])].reverse()) {
+      try {
+        await hook(target, hookCtx);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const cleanup of [...(registeredCleanups.get(sb) ?? []), ...nestedCleanups].reverse()) {
+      try {
+        await cleanup(target, cleanupContext);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  } finally {
+    registeredCleanups.delete(sb);
+    postSetupPointReached.delete(sb);
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${agentName} preTeardown failed`);
 }

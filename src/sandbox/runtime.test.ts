@@ -2,6 +2,9 @@
 
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { MaterializedSandboxCase } from "./case-types.ts";
 import {
   createBuiltinSandboxFactories,
@@ -13,7 +16,7 @@ import {
 } from "./layer.ts";
 import { linkSandboxLayers } from "./link.ts";
 import { planLinkedRuns, type LinkedRunPlan } from "./plan.ts";
-import { materializeSandboxRunPlan } from "./runtime.ts";
+import { collectSandboxRuntimeBuildPreparation, materializeSandboxRunPlan } from "./runtime.ts";
 import type { Sandbox } from "./types.ts";
 
 const linux: SandboxTargetPlatform = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" };
@@ -70,6 +73,40 @@ function input(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>, servi
 }
 
 describe("provider-owned Sandbox runtime materialization", () => {
+  it("rejects Dockerfile inputs that change after physical planning", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-"));
+    await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"e".repeat(64)}\nCOPY payload /payload\n`);
+    await writeFile(join(root, "payload"), "planned\n");
+    try {
+      const factories = createBuiltinSandboxFactories({
+        dockerBuildPlatform: Effect.succeed("linux/amd64"),
+        hostPlatform: linux,
+      });
+      const [pair] = Effect.runSync(linkSandboxLayers([{
+        eval: { id: "task/example", layer: factories.dockerfileSandbox({ context: "." }) },
+        experiment: { id: "compare/codex", layer: sandboxLayer() },
+        agent: { kind: "sandbox", name: "codex" },
+      }]));
+      if (pair === undefined) throw new Error("missing linked pair");
+      const [output] = await Effect.runPromise(planLinkedRuns([{
+        pair,
+        authorBaseDirs: { eval: root, experiment: root },
+      }]));
+      if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
+
+      await writeFile(join(root, "payload"), "changed\n");
+      const result = await Effect.runPromise(Effect.either(
+        collectSandboxRuntimeBuildPreparation(output.plan, "task/example"),
+      ));
+      expect(result._tag).toBe("Left");
+      if (result._tag === "Left") {
+        expect(String(result.left.cause)).toContain("changed after physical planning");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("custom provider/case callbacks stay bound to the selected template", async () => {
     const providerCreate = vi.fn(async () => fakeSandbox("custom-provider"));
     const providerPlan = planned(customProviderSandbox({
@@ -105,15 +142,35 @@ describe("provider-owned Sandbox runtime materialization", () => {
   });
 
   it("Compose adapter decodes the completed runtime input before invoking its provider materializer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-compose-"));
+    await writeFile(
+      join(root, "compose.yaml"),
+      `services:\n  client:\n    image: node@sha256:${"d".repeat(64)}\n`,
+    );
+    try {
     const factories = createBuiltinSandboxFactories({
       dockerBuildPlatform: Effect.succeed("linux/amd64"),
       hostPlatform: linux,
     });
-    const plan = planned(factories.dockerComposeSandbox({
+    const [pair] = Effect.runSync(linkSandboxLayers([{
+      eval: {
+        id: "task/example",
+        layer: factories.dockerComposeSandbox({
       file: "compose.yaml",
       workspaceService: "client",
       build: "prebuilt",
-    }));
+        }),
+      },
+      experiment: { id: "compare/codex", layer: sandboxLayer() },
+      agent: { kind: "sandbox", name: "codex" },
+    }]));
+    if (pair === undefined) throw new Error("missing linked pair");
+    const [output] = await Effect.runPromise(planLinkedRuns([{
+      pair,
+      authorBaseDirs: { eval: root, experiment: root },
+    }]));
+    if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
+    const plan = output.plan;
     const stop = vi.fn(async () => {});
     const materializeCompose = vi.fn(async (legacyPlan): Promise<MaterializedSandboxCase> => ({
       sandbox: fakeSandbox("compose-main"),
@@ -141,7 +198,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
         declaration: expect.objectContaining({
           form: "source",
           value: expect.objectContaining({
-            file: "/repo/evals/task/example/compose.yaml",
+            file: join(root, "compose.yaml"),
             mainService: "client",
           }),
         }),
@@ -151,5 +208,8 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(materialized.sandbox.sandboxId).toBe("compose-main");
     await materialized.group.stop();
     expect(stop).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

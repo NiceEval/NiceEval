@@ -94,6 +94,10 @@ export type {
   E2BSandboxOptions,
   VercelSandboxOptions,
   LocalSandboxOptions,
+  CustomProviderSandboxOptions,
+  CustomCaseSandboxOptions,
+  SandboxTargetPlatform,
+  SandboxLeakGate,
 } from "./layer.ts";
 
 export type {

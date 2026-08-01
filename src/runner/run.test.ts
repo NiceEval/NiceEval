@@ -4327,7 +4327,7 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
     const experimentId = "recheck-partial-count-exp";
     const evalId = "recheck-partial-count-eval";
     const agent = makeAgent("agent-recheck-partial-count");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = stableFakeSandboxSpec();
 
     // 先落一条序号 0 的 passed 终态(指纹由生产路径自己算)。
     const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });

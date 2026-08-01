@@ -97,7 +97,8 @@ export interface ComparabilityConfig {
   flags?: globalThis.Record<string, JsonValue>;
   budget?: number;
   timeoutMs?: number;
-  sandbox?: ExperimentRunInfo["sandbox"];
+  sandboxLayer: ExperimentRunInfo["sandboxLayer"];
+  agentInstalls: ExperimentRunInfo["agentInstalls"];
 }
 
 /** 一个快照的可比性配置投影;conditionsByFlag 与 experimentListData 复用同一字段集。 */
@@ -110,7 +111,8 @@ export function comparabilityConfigOf(run: Run): ComparabilityConfig {
     ...(info?.flags !== undefined ? { flags: info.flags } : {}),
     ...(info?.budget !== undefined ? { budget: info.budget } : {}),
     ...(info?.timeoutMs !== undefined ? { timeoutMs: info.timeoutMs } : {}),
-    ...(info?.sandbox !== undefined ? { sandbox: info.sandbox } : {}),
+    sandboxLayer: info?.sandboxLayer ?? { kind: "unrecorded" },
+    agentInstalls: info?.agentInstalls ?? [],
   };
 }
 

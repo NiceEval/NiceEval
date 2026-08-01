@@ -92,6 +92,10 @@ interface DockerComposeSandboxOptions {
   readonly build?: "on-demand" | "prebuilt";
   readonly executionUser?: string;
   readonly env?: Readonly<Record<string, string>>;
+  readonly credentialEnv?: Readonly<Record<string, {
+    readonly value: string;
+    readonly revision?: string;
+  }>>;
 }
 
 interface DockerfileSandboxOptions {
@@ -133,6 +137,11 @@ declare function vercelSandbox(
 declare function sandboxLayer(): SandboxLayer<"command-only">;
 ```
 
+`env` 只放会改变环境语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
+`credentialEnv`：`value` 只交给本次 runtime binding，不进入 plan、record 或 fingerprint；变量名与可选
+`revision` 进入身份。凭据选择了不同租户、数据集或权限面时必须更新 `revision`。同一个变量名不能同时出现在
+`env` 与 `credentialEnv`。
+
 每个 factory 声明完整起点并选择 Provider:
 
 ```text
@@ -166,11 +175,16 @@ interface ExperimentInput {
 }
 ```
 
-省略 `sandbox` 等价于空的 command-only layer,但不会提供隐式 template:
+对 Sandbox Agent 的配对/link 语义，省略 `sandbox` 按空的 command-only layer 参与解析，
+但 Definition 仍保留“省略”这一来源事实，也不会提供隐式 template：
 
 ```typescript
-const omittedSandbox = sandboxLayer();
+const sandboxLinkEquivalent = sandboxLayer();
 ```
+
+上式只说明 Sandbox Agent 配对时的命令/template 效果，不表示两种作者声明在所有拓扑都同一。
+Direct Agent 只允许两侧都省略；作者显式写出 `sandboxLayer()` 仍属于声明了 SandboxLayer，
+会按下文报 `sandbox.unexpected-for-direct-agent`。
 
 作者只在需要 template 或准备命令时写字段。
 字段所在位置决定 owner,不表示创建两份 Sandbox;Runner 把两层与 Agent 的专用贡献放进同一条准备时间线,只创建一个 Sandbox Case。
@@ -331,10 +345,11 @@ interface SandboxCommand {
 }
 
 interface SandboxCommandContext {
-  readonly phase: "prepare";
+  readonly phase: "prepare" | "agent.post-setup" | "agent.pre-teardown";
   readonly owner:
     | { readonly kind: "eval"; readonly id: string }
-    | { readonly kind: "experiment"; readonly id: string };
+    | { readonly kind: "experiment"; readonly id: string }
+    | { readonly kind: "agent"; readonly id: string };
   readonly attempt: AttemptRef;
   readonly signal: AbortSignal;
   readonly progress: SandboxProgress;
