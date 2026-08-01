@@ -27,10 +27,14 @@ export interface SandboxLayerDeclarationSite {
 
 export interface LinkedSandboxLayerDeclarationSite {
   readonly file: string;
-  readonly line: number | null;
-  readonly column: number | null;
-  readonly expression: string | null;
+  readonly line: SandboxDeclaredValue<number>;
+  readonly column: SandboxDeclaredValue<number>;
+  readonly expression: SandboxDeclaredValue<string>;
 }
+
+export type SandboxDeclaredValue<Value> =
+  | { readonly _tag: "Omitted" }
+  | { readonly _tag: "Declared"; readonly value: Value };
 
 export interface SandboxLayerContributionInput {
   readonly id: string;
@@ -72,9 +76,9 @@ export interface SandboxLayerDeclarationView {
   readonly owner: SandboxLayerOwnerRef;
   readonly explicit: boolean;
   readonly kind: SandboxLayerKind;
-  readonly template: SandboxTemplateDeclaration | null;
+  readonly template: SandboxDeclaredValue<SandboxTemplateDeclaration>;
   readonly commands: readonly SandboxCommandFingerprint[];
-  readonly declaredAt: LinkedSandboxLayerDeclarationSite | null;
+  readonly declaredAt: SandboxDeclaredValue<LinkedSandboxLayerDeclarationSite>;
 }
 
 export type SandboxLinkIssueCode =
@@ -117,13 +121,16 @@ function sandboxLayerLinkError(issues: readonly SandboxLinkIssue[]): SandboxLaye
 }
 
 function declarationSummary(view: SandboxLayerDeclarationView): string {
-  const template = view.template;
-  const expression = view.declaredAt?.expression ?? (template === null
-    ? (view.explicit ? "sandboxLayer()" : "<omitted>")
-    : `${template.provider}:${template.kind}`);
-  const location = view.declaredAt === null
+  const expression = view.declaredAt._tag === "Declared" && view.declaredAt.value.expression._tag === "Declared"
+    ? view.declaredAt.value.expression.value
+    : view.template._tag === "Declared"
+      ? `${view.template.value.provider}:${view.template.value.kind}`
+      : view.explicit ? "sandboxLayer()" : "<omitted>";
+  const location = view.declaredAt._tag === "Omitted"
     ? "<unknown source>"
-    : `${view.declaredAt.file}${view.declaredAt.line === null ? "" : `:${view.declaredAt.line}`}`;
+    : `${view.declaredAt.value.file}${
+      view.declaredAt.value.line._tag === "Omitted" ? "" : `:${view.declaredAt.value.line.value}`
+    }`;
   return `${expression} at ${location}`;
 }
 
@@ -150,16 +157,16 @@ export interface LinkedSandboxCommand {
 }
 
 export interface SandboxCarryIneligibility {
-  readonly code: "sandbox.command-opaque";
+  readonly code: string;
   readonly owner: SandboxLayerOwnerRef;
-  readonly commandIndex: number;
+  readonly commandIndex: SandboxDeclaredValue<number>;
   readonly reason: string;
 }
 
 export interface SandboxLayerFingerprintProjection {
   readonly version: 1;
   readonly templateOwner: SandboxLayerOwnerRef;
-  readonly template: SandboxTemplateDeclaration;
+  readonly template: JsonValue;
   readonly commands: readonly SandboxCommandFingerprint[];
 }
 
@@ -209,8 +216,9 @@ export function sandboxLayerIdentityFor(
         }
       : { kind: "opaque" as const, index: entry.index });
   return {
-    kind: ownsTemplate ? "template-bearing" : "command-only",
-    template: ownsTemplate ? sandboxTemplateIdentity(linked.template) : null,
+    layer: ownsTemplate
+      ? { _tag: "Template", value: sandboxTemplateIdentity(linked.template) }
+      : { _tag: "CommandOnly" },
     commands,
   };
 }
@@ -232,14 +240,22 @@ function freezeOwner(kind: SandboxLayerOwnerRef["kind"], id: string): SandboxLay
   return Object.freeze({ kind, id });
 }
 
-function freezeSite(site: SandboxLayerDeclarationSite | undefined): LinkedSandboxLayerDeclarationSite | null {
-  if (site === undefined) return null;
-  return Object.freeze({
+function declaredValue<Value>(value: Value | undefined): SandboxDeclaredValue<Value> {
+  return value === undefined
+    ? Object.freeze({ _tag: "Omitted" })
+    : Object.freeze({ _tag: "Declared", value });
+}
+
+function freezeSite(
+  site: SandboxLayerDeclarationSite | undefined,
+): SandboxDeclaredValue<LinkedSandboxLayerDeclarationSite> {
+  if (site === undefined) return Object.freeze({ _tag: "Omitted" });
+  return Object.freeze({ _tag: "Declared", value: Object.freeze({
     file: site.file,
-    line: site.line ?? null,
-    column: site.column ?? null,
-    expression: site.expression ?? null,
-  });
+    line: declaredValue(site.line),
+    column: declaredValue(site.column),
+    expression: declaredValue(site.expression),
+  }) });
 }
 
 function fingerprintCommand(
@@ -268,11 +284,14 @@ function normalizeContribution(
   const commands = Object.freeze(
     state.commands.map((declaration, index) => fingerprintCommand(owner, index, declaration)),
   );
+  const template: SandboxDeclaredValue<SandboxTemplateDeclaration> = state.kind === "template-bearing"
+    ? declaredValue(state.template)
+    : Object.freeze({ _tag: "Omitted" });
   const view = Object.freeze({
     owner,
     explicit,
     kind: state.kind,
-    template: state.template ?? null,
+    template,
     commands,
     declaredAt: freezeSite(input.declaredAt),
   });
@@ -356,7 +375,7 @@ function linkedCommands(
         reasons.push(Object.freeze({
           code: "sandbox.command-opaque",
           owner: contribution.owner,
-          commandIndex: index,
+          commandIndex: Object.freeze({ _tag: "Declared", value: index }),
           reason:
             `${contribution.owner.kind} "${contribution.owner.id}" prepare command #${index + 1} is an opaque callback; ` +
             "wrap it with defineSandboxCommand({ id, revision, inputs }, run) to enable cross-Run carry.",
@@ -374,11 +393,22 @@ function linkSandboxPair(
 ): LinkedSandboxPair {
   const template = templateOwner.state.template;
   const linked = linkedCommands(templateOwner, otherOwner);
+  const templateReason: SandboxCarryIneligibility | undefined = template.carry._tag === "Ineligible"
+    ? Object.freeze({
+        code: template.carry.code,
+        owner: templateOwner.owner,
+        commandIndex: Object.freeze({ _tag: "Omitted" }),
+        reason: template.carry.reason,
+      })
+    : undefined;
+  const reasons = templateReason === undefined
+    ? linked.reasons
+    : Object.freeze([...linked.reasons, templateReason]);
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
   const fingerprint = Object.freeze({
     version: 1 as const,
     templateOwner: templateOwner.owner,
-    template,
+    template: sandboxTemplateIdentity(template),
     commands: fingerprints,
   });
   return Object.freeze({
@@ -390,8 +420,8 @@ function linkSandboxPair(
     template,
     commands: linked.commands,
     fingerprint,
-    carryEligible: linked.reasons.length === 0,
-    carryIneligibleReasons: linked.reasons,
+    carryEligible: reasons.length === 0,
+    carryIneligibleReasons: reasons,
   });
 }
 

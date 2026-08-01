@@ -95,14 +95,26 @@ describe("pure SandboxLayer linker", () => {
       eval: {
         explicit: true,
         kind: "template-bearing",
-        template: { kind: "image", image: "node:24" },
-        declaredAt: { file: "evals/conflict/eval.ts", line: 4 },
+        template: {
+          _tag: "Declared",
+          value: { kind: "image", identity: { kind: "image", image: "node:24" } },
+        },
+        declaredAt: {
+          _tag: "Declared",
+          value: { file: "evals/conflict/eval.ts", line: { _tag: "Declared", value: 4 } },
+        },
       },
       experiment: {
         explicit: true,
         kind: "template-bearing",
-        template: { kind: "image", image: "node:24" },
-        declaredAt: { file: "experiments/codex.ts", line: 7 },
+        template: {
+          _tag: "Declared",
+          value: { kind: "image", identity: { kind: "image", image: "node:24" } },
+        },
+        declaredAt: {
+          _tag: "Declared",
+          value: { file: "experiments/codex.ts", line: { _tag: "Declared", value: 7 } },
+        },
       },
     });
     expect(error.issues[1]!.actions.join(" ")).toMatch(/does not merge or prioritize templates/);
@@ -153,7 +165,11 @@ describe("pure SandboxLayer linker", () => {
     expect(evalOwned).toMatchObject({
       kind: "sandbox",
       templateOwner: { kind: "eval", id: "eval/task" },
-      template: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      template: {
+        provider: "docker",
+        kind: "image",
+        identity: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      },
       carryEligible: true,
       carryIneligibleReasons: [],
     });
@@ -174,16 +190,17 @@ describe("pure SandboxLayer linker", () => {
       ],
     });
     expect(sandboxLayerIdentityFor(evalOwned, "eval")).toEqual({
-      kind: "template-bearing",
-      template: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      layer: {
+        _tag: "Template",
+        value: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      },
       commands: [
         { kind: "stable", index: 0, id: "eval.first", revision: "1", inputs: { id: "eval.first" } },
         { kind: "stable", index: 1, id: "eval.second", revision: "1", inputs: { id: "eval.second" } },
       ],
     });
     expect(sandboxLayerIdentityFor(evalOwned, "experiment")).toEqual({
-      kind: "command-only",
-      template: null,
+      layer: { _tag: "CommandOnly" },
       commands: [
         { kind: "stable", index: 0, id: "experiment.after", revision: "1", inputs: { id: "experiment.after" } },
       ],
@@ -225,10 +242,16 @@ describe("pure SandboxLayer linker", () => {
       expect.objectContaining({
         code: "sandbox.command-opaque",
         owner: { kind: "experiment", id: "experiment/codex" },
-        commandIndex: 0,
+        commandIndex: { _tag: "Declared", value: 0 },
         reason: expect.stringMatching(/prepare command #1.*defineSandboxCommand/),
       }),
     ]);
+    expect(sandboxLayerIdentityFor(linked, "eval")).toMatchObject({
+      layer: { _tag: "Template", value: { provider: "docker", kind: "image" } },
+    });
+    expect(sandboxLayerIdentityFor(linked, "experiment")).toMatchObject({
+      layer: { _tag: "CommandOnly" },
+    });
   });
 
   it("混合矩阵逐 pair link，不从相邻 Eval 借 template，也不让 Experiment template 覆盖 Eval", () => {

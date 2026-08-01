@@ -1,284 +1,271 @@
-// SandboxLayer 的统一规划边界：discovery + selector 后做一次 pure link，再把 template
-// 窄适配给存量 provider/case 内核。check / --dry / run 都消费 AgentRun.linkedSandboxes，
-// 不在后续阶段重新挑 template。
+// discovery + selector 后的 pair-owned Sandbox 规划。
+// 本模块不修改 AgentRun；check 消费 link 结果，dry/run 消费同一批 immutable prepared pairs。
 
-import { resolve } from "node:path";
-import { Cause, Effect, Exit, Option } from "effect";
-import {
-  dockerSandbox as legacyDockerSandbox,
-  e2bSandbox as legacyE2BSandbox,
-  localSandbox as legacyLocalSandbox,
-  vercelSandbox as legacyVercelSandbox,
-} from "../define.ts";
-import { composeSandbox, dockerfileSandbox, isSandboxSource } from "../sandbox/case.ts";
-import { dockerComposeMaterializer } from "../sandbox/compose.ts";
-import { isSandboxLayer, type SandboxLocation, type SandboxTemplateDeclaration } from "../sandbox/layer.ts";
+import { Data, Effect } from "effect";
+import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
   type LinkedSandboxLayerPair,
-  type LinkedSandboxPair,
+  type SandboxLayerLinkError,
   type SandboxLayerPairInput,
 } from "../sandbox/link.ts";
-import { sandboxRecommendedConcurrency, sandboxRunInfo } from "../sandbox/resolve.ts";
-import type { SandboxOption } from "../sandbox/types.ts";
-import type { AgentRun, DiscoveredEval, PlannedSandboxPair, SandboxRunInfo } from "./types.ts";
+import {
+  linkedRunPlanIdentity,
+  liveSandboxPlanningServices,
+  planLinkedRuns,
+  providerPlanIdentity,
+  type LinkedRunPlan,
+  type SandboxPlanningServices,
+  type SandboxPhysicalPlanningError,
+} from "../sandbox/plan.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
+import type { AgentRun, DiscoveredEval, SandboxRunInfo } from "./types.ts";
+import { isSandboxLayer } from "../sandbox/layer.ts";
 
-/** environments 表是存量 provider spec 的内部数据字段；只服务未迁移测试夹具。 */
-function specEnvironments(spec: SandboxOption): Readonly<globalThis.Record<string, globalThis.Record<string, unknown>>> | undefined {
-  const environments = (spec as { environments?: unknown }).environments;
-  if (typeof environments !== "object" || environments === null) return undefined;
-  return environments as Readonly<globalThis.Record<string, globalThis.Record<string, unknown>>>;
+export interface LinkedRunPair {
+  readonly key: string;
+  readonly run: AgentRun;
+  readonly evalDef: DiscoveredEval;
+  readonly pair: LinkedSandboxLayerPair;
+  readonly authorBaseDirs: {
+    readonly eval: string;
+    readonly experiment: string;
+  };
 }
 
-function deriveSpec(spec: SandboxOption, profile: string): SandboxOption | undefined {
-  const override = specEnvironments(spec)?.[profile];
-  if (override === undefined) return undefined;
-  return { ...spec, ...override } as SandboxOption;
+export interface PreparedRunPair {
+  readonly key: string;
+  readonly run: AgentRun;
+  readonly evalDef: DiscoveredEval;
+  readonly plan: LinkedRunPlan;
+  readonly identity: ReturnType<typeof linkedRunPlanIdentity>;
 }
 
-function missingEnvironmentsError(run: AgentRun, missing: ReadonlyArray<readonly [string, string]>): Error {
-  const entries = missing.map(([id, profile]) => `  ${id} -> ${JSON.stringify(profile)}`).join("\n");
-  return new Error(
-    `sandbox spec for experiment ${JSON.stringify(run.experimentId ?? run.agent.name)} has no environments entry for:\n${entries}`,
-  );
+export class SandboxRunPlanningInvariantError extends Data.TaggedError(
+  "SandboxRunPlanningInvariantError",
+)<{
+  readonly code: "sandbox.run-planning-invariant";
+  readonly message: string;
+}> {}
+
+export type SandboxRunPlanningError =
+  | SandboxLayerLinkError
+  | SandboxPhysicalPlanningError
+  | SandboxRunPlanningInvariantError;
+
+export function runPairKey(run: AgentRun & { readonly experimentId: string }, evalId: string): string {
+  return `${run.experimentId}|${evalId}`;
 }
 
-function isLegacySandboxSpec(value: unknown): value is SandboxOption {
-  return value !== null && typeof value === "object" && !isSandboxLayer(value) && typeof (value as { provider?: unknown }).provider === "string";
+function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
+  return JSON.stringify([pair.experimentId, pair.evalId, pair.agentName]);
 }
 
-function localLocation(location: SandboxLocation, baseDir: string): string | URL {
-  if (location.kind === "url") return new URL(location.value);
-  return resolve(baseDir, location.value);
-}
-
-function physicalPlanForTemplate(
-  linked: LinkedSandboxPair,
-  evalDef: DiscoveredEval,
-  run: AgentRun,
-): PlannedSandboxPair {
-  const baseDir = linked.templateOwner.kind === "eval"
-    ? evalDef.baseDir
-    : (run.experimentBaseDir ?? process.cwd());
-  const template: SandboxTemplateDeclaration = linked.template;
-
-  if (template.provider === "docker" && template.kind === "compose") {
-    const environment = composeSandbox({
-      file: localLocation(template.file, baseDir),
-      mainService: template.workspaceService,
-      ...(template.build !== undefined ? { build: template.build } : {}),
-      ...(template.executionUser !== undefined ? { executionUser: template.executionUser } : {}),
-      ...(template.env !== undefined ? { env: template.env } : {}),
-    });
-    return {
-      linked,
-      sandboxSpec: legacyDockerSandbox({
-        materializers: { compose: dockerComposeMaterializer({ baseDir }) },
-      }),
-      environment,
+/** 纯 link：全矩阵聚合错误，不读 provider 文件，不做网络或资源操作。 */
+export function linkRunSandboxes(
+  evals: readonly DiscoveredEval[],
+  runs: readonly AgentRun[],
+): Effect.Effect<readonly LinkedRunPair[], SandboxLayerLinkError | SandboxRunPlanningInvariantError> {
+  const records: Array<Readonly<{
+    input: SandboxLayerPairInput;
+    ownerKey: string;
+    key: string;
+    run: AgentRun;
+    evalDef: DiscoveredEval;
+    authorBaseDirs: {
+      readonly eval: string;
+      readonly experiment: string;
     };
-  }
-
-  if (template.provider === "docker" && template.kind === "dockerfile") {
-    return {
-      linked,
-      sandboxSpec: legacyDockerSandbox(),
-      environment: dockerfileSandbox({
-        context: localLocation(template.context, baseDir),
-        ...(template.dockerfile !== undefined ? { dockerfile: template.dockerfile } : {}),
-        ...(template.buildArgs !== undefined ? { buildArgs: template.buildArgs } : {}),
-      }),
-    };
-  }
-
-  if (template.provider === "docker" && template.kind === "image") {
-    return { linked, sandboxSpec: legacyDockerSandbox({ image: template.image }) };
-  }
-  if (template.provider === "e2b") {
-    return {
-      linked,
-      sandboxSpec: legacyE2BSandbox({
-        template: template.template,
-        ...(template.lifetimeMs !== undefined ? { lifetimeMs: template.lifetimeMs } : {}),
-      }),
-    };
-  }
-  if (template.provider === "vercel") {
-    return {
-      linked,
-      sandboxSpec: legacyVercelSandbox({
-        snapshotId: template.snapshotId,
-        ...(template.lifetimeMs !== undefined ? { lifetimeMs: template.lifetimeMs } : {}),
-      }),
-    };
-  }
-  if (template.provider === "local") {
-    return {
-      linked,
-      sandboxSpec: legacyLocalSandbox({
-        ...(template.dir !== undefined ? { dir: resolve(baseDir, template.dir) } : {}),
-      }),
-    };
-  }
-  const exhaustive: never = template;
-  throw new Error(`unsupported linked Sandbox template: ${JSON.stringify(exhaustive)}`);
-}
-
-function legacySandboxForEval(run: AgentRun, evalDef: DiscoveredEval, fallback?: SandboxOption): SandboxOption | undefined {
-  const authored = isLegacySandboxSpec(run.sandbox) ? run.sandbox : undefined;
-  const spec = authored ?? fallback;
-  if (spec === undefined || evalDef.environment === undefined) return spec;
-  const cached = run.resolvedSandboxes?.get(evalDef.id);
-  if (cached !== undefined) return cached;
-  if (isSandboxSource(evalDef.environment) || (typeof evalDef.environment === "object" && evalDef.environment !== null)) {
-    const cache = run.resolvedSandboxes ?? new Map<string, SandboxOption>();
-    cache.set(evalDef.id, spec);
-    run.resolvedSandboxes = cache;
-    return spec;
-  }
-  const derived = deriveSpec(spec, evalDef.environment);
-  if (derived === undefined) throw missingEnvironmentsError(run, [[evalDef.id, evalDef.environment]]);
-  const cache = run.resolvedSandboxes ?? new Map<string, SandboxOption>();
-  cache.set(evalDef.id, derived);
-  run.resolvedSandboxes = cache;
-  return derived;
-}
-
-/** 该 Eval x Experiment 配对唯一的物理 spec；选择权威仍是 linked pair。 */
-export function sandboxForEval(run: AgentRun, evalDef: DiscoveredEval, fallback?: SandboxOption): SandboxOption | undefined {
-  const planned = run.linkedSandboxes?.get(evalDef.id);
-  if (planned !== undefined) return planned.sandboxSpec;
-  return legacySandboxForEval(run, evalDef, fallback);
-}
-
-export function sandboxEnvironmentForEval(run: AgentRun, evalDef: DiscoveredEval): DiscoveredEval["environment"] {
-  return run.linkedSandboxes?.get(evalDef.id)?.environment ?? evalDef.environment;
-}
-
-export function linkedSandboxForEval(run: AgentRun, evalDef: DiscoveredEval): LinkedSandboxLayerPair | undefined {
-  return run.linkedSandboxes?.get(evalDef.id)?.linked;
-}
-
-/** 只做 discovery + selector 后的纯 link；check 在这里停止。 */
-export function linkRunSandboxes(evals: DiscoveredEval[], runs: AgentRun[], fallback?: SandboxOption): void {
-  const inputs: SandboxLayerPairInput[] = [];
-  const owners: Array<{ run: AgentRun; evalDef: DiscoveredEval }> = [];
+  }>> = [];
 
   for (const run of runs) {
-    const selected = selectedEvalsForRun(evals, run);
-    const legacy = isLegacySandboxSpec(run.sandbox) || fallback !== undefined;
-    if (legacy) {
-      if (run.agent.kind === "direct") continue;
-      const spec = isLegacySandboxSpec(run.sandbox) ? run.sandbox : fallback;
-      if (spec === undefined) continue;
-      const missing: Array<readonly [string, string]> = [];
-      for (const evalDef of selected) {
-        if (evalDef.environment === undefined || typeof evalDef.environment !== "string") {
-          legacySandboxForEval(run, evalDef, fallback);
-          continue;
-        }
-        if (deriveSpec(spec, evalDef.environment) === undefined) missing.push([evalDef.id, evalDef.environment]);
-        else legacySandboxForEval(run, evalDef, fallback);
-      }
-      if (missing.length > 0) throw missingEnvironmentsError(run, missing);
-      continue;
+    const { experimentId, experimentBaseDir, experimentSourcePath } = run;
+    if (experimentId === undefined || experimentBaseDir === undefined || experimentSourcePath === undefined) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message: "Sandbox planning requires completed Experiment discovery facts: id, baseDir, and sourcePath.",
+      }));
     }
-
-    for (const evalDef of selected) {
-      if (run.linkedSandboxes?.has(evalDef.id)) continue;
-      inputs.push({
+    if (run.sandbox !== undefined && !isSandboxLayer(run.sandbox)) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message: `Experiment ${JSON.stringify(experimentId)} contains a legacy SandboxSpec instead of a SandboxLayer.`,
+      }));
+    }
+    for (const evalDef of selectedEvalsForRun(evals, run)) {
+      const input: SandboxLayerPairInput = {
         eval: {
           id: evalDef.id,
           layer: evalDef.sandbox,
           declaredAt: { file: evalDef.sourcePath },
         },
         experiment: {
-          id: run.experimentId ?? run.agent.name,
-          layer: isSandboxLayer(run.sandbox) ? run.sandbox : undefined,
-          ...(run.experimentSourcePath !== undefined
-            ? { declaredAt: { file: run.experimentSourcePath } }
-            : {}),
+          id: experimentId,
+          layer: run.sandbox,
+          declaredAt: { file: experimentSourcePath },
         },
         agent: { kind: run.agent.kind, name: run.agent.name },
-      });
-      owners.push({ run, evalDef });
+      };
+      records.push(Object.freeze({
+        input,
+        ownerKey: JSON.stringify([experimentId, evalDef.id, run.agent.name]),
+        key: `${experimentId}|${evalDef.id}`,
+        run,
+        evalDef,
+        authorBaseDirs: Object.freeze({ eval: evalDef.baseDir, experiment: experimentBaseDir }),
+      }));
     }
   }
 
-  if (inputs.length === 0) return;
-  const exit = Effect.runSyncExit(linkSandboxLayers(inputs));
-  if (Exit.isFailure(exit)) {
-    const failure = Cause.failureOption(exit.cause);
-    if (Option.isSome(failure)) throw failure.value;
-    throw Cause.squash(exit.cause);
-  }
-  const linked = exit.value;
-  linked.forEach((pair, index) => {
-    const owner = owners[index]!;
-    const map = owner.run.linkedSandboxes ?? new Map<string, PlannedSandboxPair>();
-    map.set(owner.evalDef.id, { linked: pair });
-    owner.run.linkedSandboxes = map;
+  return Effect.flatMap(linkSandboxLayers(records.map(({ input }) => input)), (pairs) => {
+    const ownersByKey = new Map<string, typeof records>();
+    for (const record of records) {
+      const queue = ownersByKey.get(record.ownerKey) ?? [];
+      ownersByKey.set(record.ownerKey, [...queue, record]);
+    }
+    const linked: LinkedRunPair[] = [];
+    for (const pair of pairs) {
+      const ownerKey = linkedOwnerKey(pair);
+      const queue = ownersByKey.get(ownerKey);
+      if (queue === undefined || queue.length === 0) {
+        return Effect.fail(new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: `Sandbox linker returned an unowned pair ${ownerKey}.`,
+        }));
+      }
+      const [owner, ...remaining] = queue;
+      if (owner === undefined) {
+        return Effect.fail(new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: `Sandbox owner queue was empty for ${ownerKey}.`,
+        }));
+      }
+      ownersByKey.set(ownerKey, remaining);
+      linked.push(Object.freeze({
+        key: owner.key,
+        run: owner.run,
+        evalDef: owner.evalDef,
+        pair,
+        authorBaseDirs: owner.authorBaseDirs,
+      }));
+    }
+    const remaining = [...ownersByKey.values()].reduce((count, queue) => count + queue.length, 0);
+    if (remaining !== 0) {
+      return Effect.fail(new SandboxRunPlanningInvariantError({
+        code: "sandbox.run-planning-invariant",
+        message: `Sandbox linker omitted ${remaining} owned pair${remaining === 1 ? "" : "s"}.`,
+      }));
+    }
+    return Effect.succeed(Object.freeze(linked));
   });
 }
 
 /**
- * 所有非 check 入口在同一份 pure-link matrix 上补物理适配。这个阶段不能重新选择 template。
- * fallback 仅保留给存量内部单测；公开 Config 已不再拥有 sandbox。
+ * 唯一 physical planning 入口。每条输出直接持有自己的 LinkedRunPlan；后续 fingerprint、
+ * Attempt 与 reuse 传递这份值，不再回到 AgentRun 查可变 Map。
  */
-export function prepareRunSandboxes(evals: DiscoveredEval[], runs: AgentRun[], fallback?: SandboxOption): void {
-  linkRunSandboxes(evals, runs, fallback);
-  for (const run of runs) {
-    for (const evalDef of selectedEvalsForRun(evals, run)) {
-      const existing = run.linkedSandboxes?.get(evalDef.id);
-      if (existing === undefined || existing.linked.kind === "direct" || existing.sandboxSpec !== undefined) continue;
-      run.linkedSandboxes!.set(
-        evalDef.id,
-        physicalPlanForTemplate(existing.linked, evalDef, run),
-      );
-    }
-  }
+export function prepareRunSandboxes(
+  evals: readonly DiscoveredEval[],
+  runs: readonly AgentRun[],
+  services: SandboxPlanningServices = liveSandboxPlanningServices(),
+): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
+  return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
+    Effect.flatMap(
+      planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs }) => ({
+        pair,
+        authorBaseDirs,
+      })), services),
+      (planned) => {
+        const linkedByPair = new Map(linkedPairs.map((linked) => [linkedOwnerKey(linked.pair), linked]));
+        const prepared: PreparedRunPair[] = [];
+        for (const { pair, plan } of planned) {
+          const linked = linkedByPair.get(linkedOwnerKey(pair));
+          if (linked === undefined) {
+            return Effect.fail(new SandboxRunPlanningInvariantError({
+              code: "sandbox.run-planning-invariant",
+              message: `Physical planner returned an unowned pair ${linkedOwnerKey(pair)}.`,
+            }));
+          }
+          prepared.push(Object.freeze({
+            key: linked.key,
+            run: linked.run,
+            evalDef: linked.evalDef,
+            plan,
+            identity: linkedRunPlanIdentity(plan),
+          }));
+        }
+        if (prepared.length !== linkedPairs.length) {
+          return Effect.fail(new SandboxRunPlanningInvariantError({
+            code: "sandbox.run-planning-invariant",
+            message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
+          }));
+        }
+        return Effect.succeed(Object.freeze(prepared));
+      },
+    ),
+  );
 }
 
-/** 结果记录按 Eval 投影真实 linked template；混合数据集不虚构一个 Experiment 级默认。 */
-export function sandboxProjection(run: AgentRun, fallback?: SandboxOption): {
-  sandbox?: SandboxRunInfo;
-  sandboxByEval?: globalThis.Record<string, SandboxRunInfo>;
-} {
-  if (run.agent.kind !== "sandbox") return {};
-  if (run.linkedSandboxes !== undefined) {
-    const sandboxByEval: globalThis.Record<string, SandboxRunInfo> = {};
-    for (const [evalId, pair] of [...run.linkedSandboxes].sort(([a], [b]) => a.localeCompare(b))) {
-      const info = sandboxRunInfo(pair.sandboxSpec);
-      if (info !== undefined) sandboxByEval[evalId] = info;
-    }
-    return Object.keys(sandboxByEval).length > 0 ? { sandboxByEval } : {};
-  }
-  const authored = isLegacySandboxSpec(run.sandbox) ? run.sandbox : fallback;
-  const sandbox = sandboxRunInfo(authored);
-  const sandboxByEval: globalThis.Record<string, SandboxRunInfo> = {};
-  for (const [evalId, derived] of [...(run.resolvedSandboxes ?? new Map())].sort(([a], [b]) => a.localeCompare(b))) {
-    const info = sandboxRunInfo(derived);
-    if (info !== undefined) sandboxByEval[evalId] = info;
-  }
-  return {
-    ...(sandbox !== undefined ? { sandbox } : {}),
-    ...(Object.keys(sandboxByEval).length > 0 ? { sandboxByEval } : {}),
-  };
+export function preparedPairsByKey(
+  pairs: readonly PreparedRunPair[],
+): ReadonlyMap<string, PreparedRunPair> {
+  return new Map(pairs.map((pair) => [pair.key, pair]));
 }
 
-export function resolvedSandboxRecommendedConcurrency(
-  evals: DiscoveredEval[],
-  runs: AgentRun[],
-  fallback?: SandboxOption,
-): number {
-  prepareRunSandboxes(evals, runs, fallback);
-  const recommendations: number[] = [];
-  for (const run of runs) {
-    if (run.agent.kind !== "sandbox") continue;
-    for (const evalDef of selectedEvalsForRun(evals, run)) {
-      recommendations.push(sandboxRecommendedConcurrency(sandboxForEval(run, evalDef, fallback)));
+/** 结果记录只投影当前 pair 的实际计划，不虚构 Experiment 级默认 Sandbox。 */
+export function sandboxRunInfoForPlan(
+  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+): SandboxRunInfo {
+  const identity = providerPlanIdentity(plan.providerPlan);
+  return Object.freeze({
+    provider: plan.providerPlan.provider,
+    params: { plan: identity },
+    fingerprint: digestOf(identity),
+  });
+}
+
+export interface PreparedSandboxScheduling {
+  readonly recommendedConcurrency: number;
+  readonly exclusive: boolean;
+  readonly lanes: readonly {
+    readonly key: string;
+    readonly limit: number;
+    readonly admission: "Shared" | "Exclusive";
+  }[];
+}
+
+/** 调度器只消费 provider planner 给出的中性 lane/admission 元数据。 */
+export function schedulingForPreparedPairs(
+  pairs: readonly PreparedRunPair[],
+): PreparedSandboxScheduling {
+  const lanes = new Map<string, { key: string; limit: number; admission: "Shared" | "Exclusive" }>();
+  for (const { plan } of pairs) {
+    if (plan._tag === "Direct") continue;
+    const scheduling = plan.providerPlan.scheduling;
+    const admission = scheduling.admission._tag;
+    const current = lanes.get(scheduling.lane.key);
+    if (current === undefined) {
+      lanes.set(scheduling.lane.key, {
+        key: scheduling.lane.key,
+        limit: scheduling.lane.limit,
+        admission,
+      });
+      continue;
     }
+    lanes.set(scheduling.lane.key, {
+      key: current.key,
+      limit: Math.min(current.limit, scheduling.lane.limit),
+      admission: current.admission === "Exclusive" || admission === "Exclusive" ? "Exclusive" : "Shared",
+    });
   }
-  return recommendations.length > 0 ? Math.min(...recommendations) : 10;
+  const values = Object.freeze([...lanes.values()].map((lane) => Object.freeze(lane)));
+  return Object.freeze({
+    recommendedConcurrency: values.length === 0 ? 10 : Math.min(...values.map(({ limit }) => limit)),
+    exclusive: values.some(({ admission }) => admission === "Exclusive"),
+    lanes: values,
+  });
+}
+
+export function recommendedConcurrencyForPreparedPairs(pairs: readonly PreparedRunPair[]): number {
+  return schedulingForPreparedPairs(pairs).recommendedConcurrency;
 }
