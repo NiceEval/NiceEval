@@ -19,8 +19,10 @@ import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
 import type { EvalManifest, RunManifests } from "../record/manifest.ts";
-import type { ReportDefinition } from "../report/definition/report.ts";
-import type { ThemeDefinition } from "../report/theme.ts";
+// report 公共子路径是独立预编译单元；Config 必须引用 host facade 重导出的 dist 品牌，
+// 不能引用 raw src/report/**，否则下游从 "niceeval/report" 构造的值会被 unique symbol
+// 判成另一套类型（同一份源码的 src/dist 物理路径不同，品牌声明身份也不同）。
+import type { ReportDefinition, ThemeDefinition } from "../report/runtime/host.ts";
 import type {
   ExperimentStateDefinition,
   ExperimentStateProjection,

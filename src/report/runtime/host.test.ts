@@ -5,6 +5,9 @@
 // 这里只测 host facade 仍然私有的编排:内建报告分流与 LocalizedText 回退。
 
 import { describe, expect, it } from "vitest";
+import { defineConfig, type Config } from "niceeval";
+import { basalt as publicBasalt } from "niceeval/report";
+import { standard as publicStandard } from "niceeval/report/built-in";
 import { describeReportSource, HostReportError, loadHostReport, localizeText, resolveHostTheme } from "./host.ts";
 // dist-sourced:裸宿主装载的就是这份预编译产物的默认导出(show 与 view 同一条路),
 // raw-src import 会是另一份模块实例,引用等同断言必须对着 dist。
@@ -74,4 +77,10 @@ it("config.theme 也在 source → dist 边界重新证明 factory 品牌", asyn
     /must be the result of defineTheme/,
   );
   await expect(resolveHostTheme(process.cwd(), undefined, undefined, distBasalt)).resolves.toBe(distBasalt);
+});
+
+it("niceeval 主入口的 Config 接受 niceeval/report 公共子路径产出的品牌", () => {
+  const config: Config = defineConfig({ report: publicStandard, theme: publicBasalt });
+  expect(config.report).toBe(publicStandard);
+  expect(config.theme).toBe(publicBasalt);
 });
