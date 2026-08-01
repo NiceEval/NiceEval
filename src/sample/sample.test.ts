@@ -29,6 +29,7 @@ import {
   type Run,
   type RunMeta,
 } from "../record/index.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 
@@ -57,11 +58,19 @@ function meta(over: { experimentId: string; agent: string; startedAt: string } &
     ...over,
     runId: over.runId ?? "00000000-0000-4000-8000-000000000000",
     configHash: over.configHash ?? "fixture-config",
+    experiment: over.experiment ?? {
+      attempts: 1,
+      earlyExit: true,
+      selectedEvalIds: [],
+      sandboxLayer: {},
+      sandboxPlansByEval: {},
+      agentInstalls: [],
+    },
   };
 }
 
 function record(over: { id: string; attempt: number } & globalThis.Record<string, unknown>): EvalResult {
-  return { verdict: "passed", durationMs: 1000, assertions: [], ...over } as unknown as EvalResult;
+  return { verdict: "passed", durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...over } as unknown as EvalResult;
 }
 
 async function writeSnapshot(root: string, expDir: string, snapDirName: string, m: RunMeta): Promise<string> {
@@ -76,6 +85,23 @@ async function writeResultFile(snapDir: string, relAttemptDir: string, r: unknow
   await mkdir(dir, { recursive: true });
   const path = join(dir, "result.json");
   await writeFile(path, JSON.stringify(r, null, 2), "utf-8");
+  // 手写 fixture 也要像当前 runner 一样，把已解析的 eval 集合与 pair plan 投影放在
+  // run.json，而不是留一个会使 currentSample 误判成「没有选题」的空壳。
+  const runPath = join(snapDir, "run.json");
+  const run = JSON.parse(await readFile(runPath, "utf-8")) as {
+    experiment?: { selectedEvalIds?: string[]; sandboxPlansByEval?: globalThis.Record<string, unknown> };
+  };
+  const result = r as { id?: unknown };
+  if (typeof result.id === "string" && run.experiment !== undefined) {
+    const selectedEvalIds = run.experiment.selectedEvalIds ?? [];
+    if (!selectedEvalIds.includes(result.id)) selectedEvalIds.push(result.id);
+    run.experiment.selectedEvalIds = selectedEvalIds;
+    run.experiment.sandboxPlansByEval = {
+      ...(run.experiment.sandboxPlansByEval ?? {}),
+      [result.id]: run.experiment.sandboxPlansByEval?.[result.id] ?? {},
+    };
+    await writeFile(runPath, JSON.stringify(run, null, 2), "utf-8");
+  }
   return path;
 }
 

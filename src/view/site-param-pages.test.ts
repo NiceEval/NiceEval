@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { planSite, readSiteFile, writeSite } from "./site.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {
@@ -38,10 +39,20 @@ async function writeSnapshot(root: string, expDirName: string, experimentId: str
       format: RECORD_FORMAT,
       schemaVersion: RECORD_SCHEMA_VERSION,
       producer: { name: "niceeval", version: "0.4.0" },
+      runId: `${startedAt}-0000-4000-8000-000000000000`,
       experimentId,
       agent: "agent",
       startedAt,
       completedAt: startedAt,
+      configHash: "fixture-config",
+      experiment: {
+        attempts: 1,
+        earlyExit: true,
+        selectedEvalIds: [evalId],
+        sandboxLayer: {},
+        sandboxPlansByEval: {},
+        agentInstalls: [],
+      },
     }),
     "utf-8",
   );
@@ -49,7 +60,7 @@ async function writeSnapshot(root: string, expDirName: string, experimentId: str
   await mkdir(attemptDir, { recursive: true });
   await writeFile(
     join(attemptDir, "result.json"),
-    JSON.stringify({ id: evalId, verdict: "passed", attempt: 0, durationMs: 1000, assertions: [] }),
+    JSON.stringify({ id: evalId, verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage }),
     "utf-8",
   );
 }

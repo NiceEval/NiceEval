@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startViewServer, type ViewServer } from "./server.ts";
 import { buildView } from "./index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 const roots: string[] = [];
 const servers: ViewServer[] = [];
@@ -94,12 +95,20 @@ async function makeFixture(marker = "FIRST", head: { tag: string; children?: str
       startedAt: "2026-07-08T10:00:00.000Z",
       completedAt: "2026-07-08T10:00:00.000Z",
       configHash: "fixture-config",
+      experiment: {
+        attempts: 1,
+        earlyExit: true,
+        selectedEvalIds: ["e1"],
+        sandboxLayer: {},
+        sandboxPlansByEval: {},
+        agentInstalls: [],
+      },
     }),
     "utf-8",
   );
   await writeFile(
     join(dir, "e1", "a0", "result.json"),
-    JSON.stringify({ id: "e1", verdict: "passed", attempt: 0, durationMs: 1000, assertions: [] }),
+    JSON.stringify({ id: "e1", verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage }),
     "utf-8",
   );
   // 日志放进一个提前建好的子目录:它既不在记录根里,也不是闭集文件的所在目录,
@@ -208,7 +217,7 @@ describe("失效分流", () => {
     // 记录变更:重跑管线,不重新装载模块图。
     await fx.reset();
     await writeFile(join(fx.record, "exp_a", "2026-07-08T10-00-00-000Z", "e1", "a0", "result.json"),
-      JSON.stringify({ id: "e1", verdict: "failed", attempt: 0, durationMs: 2000, assertions: [] }), "utf-8");
+      JSON.stringify({ id: "e1", verdict: "failed", attempt: 0, durationMs: 2000, assertions: [], evidenceCoverage: completeEvidenceCoverage }), "utf-8");
     const sub = subscribe(server.url, "first", "en");
     await until(async () => sub.events.some((e) => e.event === "patch"));
     sub.close();
@@ -235,7 +244,7 @@ describe("按订阅渲染", () => {
     await until(async () => sub.events.some((e) => e.event === "ready"));
     await fx.reset();
     await writeFile(join(fx.record, "exp_a", "2026-07-08T10-00-00-000Z", "e1", "a0", "result.json"),
-      JSON.stringify({ id: "e1", verdict: "failed", attempt: 0, durationMs: 3000, assertions: [] }), "utf-8");
+      JSON.stringify({ id: "e1", verdict: "failed", attempt: 0, durationMs: 3000, assertions: [], evidenceCoverage: completeEvidenceCoverage }), "utf-8");
     await until(async () => sub.events.some((e) => e.event === "patch"));
     sub.close();
 

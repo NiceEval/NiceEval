@@ -17,6 +17,7 @@ import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } f
 import { runShow, type ShowFlags } from "./index.ts";
 import type { ShowJson } from "./json.ts";
 import { setConfiguredLocale } from "../i18n/index.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // ───────────────────────── fixture 工具(自成一份,不跨文件耦合) ─────────────────────────
 
@@ -37,11 +38,11 @@ afterAll(() => {
   setConfiguredLocale(undefined);
 });
 
-type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
+type AttemptFixture = Pick<EvalResult, "id" | "verdict" | "evidenceCoverage"> &
   Partial<Pick<EvalResult, "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "startedAt" | "usage" | "phases">>;
 
 function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}): AttemptFixture {
-  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
+  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...extra };
 }
 
 function cleanDirName(id: string): string {
@@ -67,6 +68,14 @@ async function writeSnapshot(root: string, snapDirName: string, opts: SnapshotOp
     startedAt: opts.startedAt,
     configHash: "fixture-config",
     completedAt: opts.startedAt,
+    experiment: {
+      attempts: 1,
+      earlyExit: true,
+      selectedEvalIds: results.map((result) => result.id),
+      sandboxLayer: {},
+      sandboxPlansByEval: {},
+      agentInstalls: [],
+    },
   };
   await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
   for (const r of results) {

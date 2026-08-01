@@ -25,6 +25,7 @@ import { IncompatibleResultsError, ViewInputError, incompatibleHistoryKey, loadC
 import type { AttemptHandle } from "../record/index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 /** scan.attemptsByBase 按 base 建索引;测试按 eval id 找回单个 attempt(该 eval 在本 fixture 里唯一时用)。 */
 function attemptByEvalId(scan: ViewScan, evalId: string): AttemptHandle {
@@ -44,11 +45,11 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
-type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
+type AttemptFixture = Pick<EvalResult, "id" | "verdict" | "evidenceCoverage"> &
   Partial<Pick<EvalResult, "attempt" | "durationMs" | "assertions" | "fingerprint" | "startedAt" | "artifactBase" | "artifacts">>;
 
 function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}): AttemptFixture {
-  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
+  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...extra };
 }
 
 /** 实验目录名的清洗:与 docs/feature/record/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
@@ -86,6 +87,14 @@ async function writeSnapshot(
     ...(opts.model !== undefined ? { model: opts.model } : {}),
     startedAt: opts.startedAt,
     configHash: "fixture-config",
+    experiment: {
+      attempts: 1,
+      earlyExit: true,
+      selectedEvalIds: results.map((result) => result.id),
+      sandboxLayer: {},
+      sandboxPlansByEval: {},
+      agentInstalls: [],
+    },
     ...(opts.completedAt !== undefined ? { completedAt: opts.completedAt } : {}),
   };
   await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
