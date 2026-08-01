@@ -30,7 +30,9 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { judgeProbePlan, judgeProbeTargets, runEvals } from "./run.ts";
-import { defineSandbox, defineSandboxAgent as defineSandboxAgentBase } from "../define.ts";
+import { experimentRunInfo } from "./attempt.ts";
+import { defineEval, defineSandbox, defineSandboxAgent as defineSandboxAgentBase } from "../define.ts";
+import { defineSandboxCase } from "../sandbox/case.ts";
 import { Artifacts } from "./reporters/artifacts.ts";
 import { openRecord } from "../record/open.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
@@ -48,25 +50,26 @@ import {
 import { drainExperimentTeardowns, pendingExperimentTeardownCount } from "./experiment-cleanup-registry.ts";
 import { computeConfigHash, computeFingerprint, fingerprintWithManifest } from "./fingerprint.ts";
 import type { EvalManifest } from "./manifest.ts";
-import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import { locksDirOf, pendingHeldCaseLockCount, type CaseLockRecord } from "./lock.ts";
 import { pendingHeldGateLeaseCount } from "./gate-lease.ts";
 import { slugHashEntryId } from "../shared/entry-file-store.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
-import type { CarryPlan } from "./fingerprint.ts";
+import type { CarryPlan as CoreCarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
-import { dockerImageSandbox } from "../sandbox/layer.ts";
-import { linkSandboxLayers } from "../sandbox/link.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { Effect } from "effect";
-import type { AgentRun, DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
+import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
+import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
+import { STATELESS } from "../state/plan.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { prepareRunSandboxes, preparedPairsByKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import type {
   Agent,
   CommandResult,
   Config,
   DiscoveredEval,
-  EvalResult,
+  EvalResult as CoreEvalResult,
   InvocationShape,
   InvocationSummary,
   JudgeConfig,
@@ -74,11 +77,12 @@ import type {
   ReporterRegistration,
   Sandbox,
   SandboxAgentDef,
+  TestContext,
   Turn,
 } from "../types.ts";
 
 function defineSandboxAgent(
-  def: Omit<SandboxAgentDef, "ensure" | "installers">,
+  def: Omit<SandboxAgentDef, "ensure" | "installers" | "evidenceCoverage">,
 ) {
   const ensure = {
     identity: { agent: def.name, version: "0.0.0-test", revision: "1" },
@@ -87,7 +91,30 @@ function defineSandboxAgent(
       async () => {},
     ),
   };
-  return defineSandboxAgentBase({ ...def, ensure, installers: [] });
+  return defineSandboxAgentBase({ ...def, evidenceCoverage: completeEvidenceCoverage, ensure, installers: [] });
+}
+
+/** 旧场景只描述可观察调度差异；run() 在边界补齐已发现 Experiment 的完成态。 */
+type AgentRun = Omit<CoreAgentRun, "state" | "experimentId" | "experimentBaseDir" | "experimentSourcePath"> &
+  Partial<Pick<CoreAgentRun, "state" | "experimentId" | "experimentBaseDir" | "experimentSourcePath">>;
+type EvalResult = Omit<CoreEvalResult, "evidenceCoverage"> & Partial<Pick<CoreEvalResult, "evidenceCoverage">>;
+type CarryPlan = Omit<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult" | "carriedResults"> &
+  Partial<Pick<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult">> & {
+    carriedResults: EvalResult[];
+  };
+
+function completeAgentRun(run: AgentRun): CoreAgentRun {
+  return {
+    ...run,
+    state: run.state ?? STATELESS,
+    experimentId: run.experimentId ?? "test/experiment",
+    experimentBaseDir: run.experimentBaseDir ?? "/project",
+    experimentSourcePath: run.experimentSourcePath ?? "/project/fake.experiment.ts",
+  };
+}
+
+function completeEvalResult(result: EvalResult): CoreEvalResult {
+  return { ...result, evidenceCoverage: result.evidenceCoverage ?? completeEvidenceCoverage };
 }
 
 // judge 预检的目标收敛:只探测「实际要跑、且源码里出现 judge 字样」的 eval 的生效配置。
@@ -170,7 +197,8 @@ class FakeSandbox implements Partial<Sandbox> {
   readonly otlpHost = null;
   readonly files = new Map<string, string>();
 
-  async runShell(): Promise<CommandResult> {
+  async runShell(script?: string): Promise<CommandResult> {
+    if (script?.includes("uname -s")) return { stdout: "Linux\nx86_64\nglibc\n", stderr: "", exitCode: 0 };
     return { stdout: "", stderr: "", exitCode: 0 };
   }
   async runCommand(): Promise<CommandResult> {
@@ -220,11 +248,90 @@ function makeAgent(name: string): Agent {
 function fakeSandboxSpec() {
   // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider;每次调用给一个
   // 全新实例,并发 attempt 之间不共享可变文件状态。
-  return defineSandbox({ name: "fake-provider", create: async () => asSandbox(new FakeSandbox()) });
+  return defineSandbox({
+    name: "fake-provider",
+    targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+    create: async () => asSandbox(new FakeSandbox()),
+  });
+}
+
+/** 指纹等值测试需要一个可携带的模板；自定义 provider 的 opaque create 按契约每轮加入 epoch。 */
+function stableFakeSandboxSpec() {
+  return defineSandboxCase({
+    identity: { kind: "test-stable-fake", revision: 1 },
+    targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+    materialize: async () => ({
+      sandbox: asSandbox(new FakeSandbox()),
+      group: {
+        primary: { sandboxId: "fake", provider: "custom-case" },
+        resources: { kind: "primary-only", sandboxId: "fake" },
+        async stop() {},
+      },
+    }),
+  });
 }
 
 function makeEval(id: string, test: DiscoveredEval["test"]): DiscoveredEval {
-  return { id, baseDir: "/project", sourcePath, source, test };
+  return discoverEval(defineEval({ test }), {
+    id,
+    baseDir: "/project",
+    sourcePath,
+    loaderDataPaths: Object.freeze([]),
+    criteriaPaths: Object.freeze([]),
+    privatePaths: Object.freeze([]),
+    source,
+  });
+}
+
+async function preparedPair(evalDef: DiscoveredEval, run: AgentRun): Promise<PreparedRunPair> {
+  const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [completeAgentRun(run)]));
+  if (pair === undefined) throw new Error("test fixture did not produce a PreparedRunPair");
+  return pair;
+}
+
+/** 手写携带场景仍须携带完整 pair-owned planning；只允许覆盖其可观察的 carry 结论。 */
+async function completeCarryPlan(
+  evals: readonly DiscoveredEval[],
+  runs: readonly CoreAgentRun[],
+  partial: CarryPlan,
+): Promise<CoreCarryPlan> {
+  const pairs = await Effect.runPromise(prepareRunSandboxes(evals, runs));
+  const plannedConfigHashes = new Map<string, string>();
+  const plannedFingerprints = new Map<string, string>();
+  const acceptableFingerprints = new Map<string, Set<string>>();
+  const manifestsByKey = new Map<string, EvalManifest>();
+  for (const pair of pairs) {
+    const hash = computeConfigHash(pair);
+    const { fingerprint, manifest } = await fingerprintWithManifest(pair);
+    plannedConfigHashes.set(pair.key, hash);
+    plannedFingerprints.set(pair.key, fingerprint);
+    acceptableFingerprints.set(pair.key, new Set([fingerprint]));
+    manifestsByKey.set(pair.key, manifest);
+  }
+  const defaults: CoreCarryPlan = {
+    preparedPairsByKey: preparedPairsByKey(pairs),
+    plannedConfigHashes,
+    plannedFingerprints,
+    acceptableFingerprints,
+    carriedAttemptsByKey: new Map(),
+    carriedResults: [],
+    carriedAcceptingByResult: new Map(),
+    dispatchByKey: new Map(),
+    manifestsByKey,
+    availableDeltas: [],
+  };
+  return Object.assign(defaults, partial, {
+    preparedPairsByKey: new Map([...defaults.preparedPairsByKey, ...(partial.preparedPairsByKey ?? [])]),
+    plannedConfigHashes: new Map([...defaults.plannedConfigHashes, ...(partial.plannedConfigHashes ?? [])]),
+    plannedFingerprints: new Map([...defaults.plannedFingerprints, ...partial.plannedFingerprints]),
+    acceptableFingerprints: new Map([...defaults.acceptableFingerprints, ...partial.acceptableFingerprints]),
+    carriedAcceptingByResult: new Map([
+      ...defaults.carriedAcceptingByResult,
+      ...(partial.carriedAcceptingByResult ?? []),
+    ]),
+    manifestsByKey: new Map([...defaults.manifestsByKey, ...partial.manifestsByKey]),
+    carriedResults: partial.carriedResults.map(completeEvalResult),
+  });
 }
 
 const roots: string[] = [];
@@ -280,10 +387,11 @@ async function run(
     },
   };
   const config: Config = opts.config ?? {};
+  const completedRuns = agentRuns.map(completeAgentRun);
   const runOpts: RunOptions = {
     config,
     evals,
-    agentRuns,
+    agentRuns: completedRuns,
     reporters: [
       { reporter: capture, name: "capture", required: false },
       { reporter: Artifacts(root), name: "artifacts", required: false },
@@ -294,7 +402,7 @@ async function run(
     // 兜底口径),测试进程的 cwd 是仓库根——不隔离到这里传的临时目录,会在真实仓库根写出
     // .niceeval/teardowns/ 之类的测试副作用(见 memory 的 test-must-isolate-niceeval-root)。
     niceevalRoot: root,
-    ...(opts.carryPlan ? { carryPlan: opts.carryPlan } : {}),
+    ...(opts.carryPlan ? { carryPlan: await completeCarryPlan(evals, completedRuns, opts.carryPlan) } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.buildPreparation ? { buildPreparation: opts.buildPreparation } : {}),
   };
@@ -623,7 +731,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
     const evalErrored = makeEval("boom", () => {
       throw new Error("boom");
     });
-    const evalFailed = makeEval("gate-fail", (t) => {
+    const evalFailed = makeEval("gate-fail", (t: TestContext) => {
       t.check("actual", equals("expected"));
     });
     const agentRun: AgentRun = {
@@ -740,6 +848,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
     const evals = ["a", "b", "c"].map((id) => makeEval(id, () => {}));
     const missingTemplate = defineSandbox({
       name: "missing-template",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => {
         throw new Error("404: template 'memory-evals-claude-mempal-deadbeef-0-9-0' not found");
       },
@@ -774,7 +883,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
 
   it("三个 agent turn 都没有成本数据时仍只报一次 budget-unenforceable", async () => {
     const experimentId = "missing-cost-exp";
-    const evals = ["a", "b", "c"].map((id) => makeEval(id, async (t) => {
+    const evals = ["a", "b", "c"].map((id) => makeEval(id, async (t: TestContext) => {
       await t.send("hello");
     }));
     const agentRun: AgentRun = {
@@ -907,7 +1016,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     let calls = 0;
     // 恒定 gate 失败(而不是恒定通过):避免回填的第一次真的跑出 passed 后,靠"这次跑出来的
     // passed"触发 earlyExit 把第二次也提前吞掉——那样测不出"差额是不是真的被调度"这件事本身。
-    const evalDef = makeEval(evalId, (t) => {
+    const evalDef = makeEval(evalId, (t: TestContext) => {
       calls += 1;
       t.check("actual", equals("expected"));
     });
@@ -1744,6 +1853,7 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
+      sandbox: stableFakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: ["fp"],
       experimentId: "fp-exp",
@@ -1751,7 +1861,9 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
     const withHook: AgentRun = { ...base, setup: () => {}, teardown: () => {} };
 
     const { computeFingerprint } = await import("./fingerprint.ts");
-    expect(await computeFingerprint(evalDef, withHook)).toBe(await computeFingerprint(evalDef, base));
+    expect(await computeFingerprint(await preparedPair(evalDef, withHook))).toBe(
+      await computeFingerprint(await preparedPair(evalDef, base)),
+    );
   });
 });
 
@@ -1770,6 +1882,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     let peak = 0;
     const exclusiveSpec = defineSandbox({
       name: "exclusive-fake",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       exclusive: true,
       create: async () => {
         concurrent += 1;
@@ -1803,6 +1916,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     let exclusivePeak = 0;
     const exclusiveSpec = defineSandbox({
       name: "exclusive-fake-2",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       exclusive: true,
       create: async () => {
         exclusiveConcurrent += 1;
@@ -1816,6 +1930,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     let normalPeak = 0;
     const normalSpec = defineSandbox({
       name: "normal-fake",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => {
         normalConcurrent += 1;
         normalPeak = Math.max(normalPeak, normalConcurrent);
@@ -1886,15 +2001,16 @@ describe("runEvals · 退避的槽位持有期差:实验级闸全程持有,全�
       let sandboxCreates = 0;
       const sandboxSpec = defineSandbox({
         name: "fake-retry-serial-sandbox",
+        targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
         create: async () => {
           sandboxCreates += 1;
           return asSandbox(new FakeSandbox());
         },
       });
-      const evalA = makeEval("a", async (t) => {
+      const evalA = makeEval("a", async (t: TestContext) => {
         await t.send("go");
       });
-      const evalB = makeEval("b", async (t) => {
+      const evalB = makeEval("b", async (t: TestContext) => {
         await t.send("go");
       });
       const agentRun: AgentRun = {
@@ -1943,6 +2059,7 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
     let sandboxCreates = 0;
     const sandboxSpec = defineSandbox({
       name: "fake-teardown-barrier-sandbox",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => {
         sandboxCreates += 1;
         return asSandbox(new FakeSandbox());
@@ -2030,13 +2147,13 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
         },
       });
 
-      const evalR = makeEval("r1", async (t) => {
+      const evalR = makeEval("r1", async (t: TestContext) => {
         await t.send("go");
       });
-      const evalW1 = makeEval("w1", async (t) => {
+      const evalW1 = makeEval("w1", async (t: TestContext) => {
         await t.send("go");
       });
-      const evalW2 = makeEval("w2", async (t) => {
+      const evalW2 = makeEval("w2", async (t: TestContext) => {
         await t.send("go");
       });
 
@@ -2143,11 +2260,11 @@ async function runWithPriorResults(
   const runOpts: RunOptions = {
     config,
     evals,
-    agentRuns,
+    agentRuns: agentRuns.map(completeAgentRun),
     reporters: [{ reporter: Artifacts(root), name: "artifacts", required: false }],
     maxConcurrency: opts.maxConcurrency ?? 3,
     niceevalRoot: root,
-    ...(opts.priorResults !== undefined ? { priorResults: opts.priorResults } : {}),
+    ...(opts.priorResults !== undefined ? { priorResults: opts.priorResults.map(completeEvalResult) } : {}),
     ...(opts.accept !== undefined ? { accept: opts.accept } : {}),
     ...(opts.priorManifests !== undefined ? { priorManifests: opts.priorManifests } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
@@ -2249,7 +2366,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: stableFakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2257,7 +2374,8 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     // 指纹依赖 evalDef.sourcePath 的文件内容(makeEval 统一指向本测试文件)与 run 的配置字段,
     // 不依赖 test() 闭包本身 —— 用真实的 computeFingerprint 算,而不是随便编一个字符串,
     // 才能真的驱动到"指纹匹配"这条携带路径。
-    const fingerprint = await computeFingerprint(evalDef, agentRun);
+    const pair = await preparedPair(evalDef, agentRun);
+    const fingerprint = await computeFingerprint(pair);
     const prior: EvalResult = {
       id: evalId,
       experimentId,
@@ -2285,7 +2403,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     const evalDef = makeEval(evalId, async () => {
       throw new Error("carried attempt must not be dispatched");
     });
-    const sandbox = fakeSandboxSpec();
+    const sandbox = stableFakeSandboxSpec();
     const base = {
       agent: makeAgent("agent-carry-restamp"),
       attempts: 1,
@@ -2300,10 +2418,18 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     const oldFlags = { endpoint: "https://old.example" };
     const agentRun: AgentRun = { ...base, flags: {} };
     const oldRun: AgentRun = { ...base, flags: oldFlags };
-    const old = await fingerprintWithManifest(evalDef, oldRun);
+    const oldPair = await preparedPair(evalDef, oldRun);
+    const plannedPair = await preparedPair(evalDef, agentRun);
+    const old = await fingerprintWithManifest(oldPair);
     const oldFingerprint = old.fingerprint;
-    const plannedFingerprint = await computeFingerprint(evalDef, agentRun);
+    const plannedFingerprint = await computeFingerprint(plannedPair);
     expect(oldFingerprint).not.toBe(plannedFingerprint);
+    const oldExperiment = experimentRunInfo(
+      completeAgentRun(oldRun),
+      oldPair.plan,
+      { [evalId]: oldPair.identity },
+    );
+    if (oldExperiment === undefined) throw new Error("test fixture did not produce experiment run info");
 
     const prior: EvalResult = {
       id: evalId,
@@ -2312,14 +2438,8 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       verdict: "passed",
       attempt: 0,
       fingerprint: oldFingerprint,
-      configHash: computeConfigHash(oldRun),
-      experiment: {
-        flags: oldFlags,
-        attempts: 1,
-        earlyExit: false,
-        selectedEvalIds: [evalId],
-        sandbox: sandboxRunInfo(sandbox),
-      },
+      configHash: computeConfigHash(oldPair),
+      experiment: oldExperiment,
       startedAt: new Date().toISOString(),
       durationMs: 1,
       assertions: [],
@@ -2492,7 +2612,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: stableFakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2567,7 +2687,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: stableFakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2861,7 +2981,7 @@ describe("runEvals · 用例锁: 多开分工", () => {
       const secondWave = ["m-3", "m-4"];
       const ids = [...firstWave, ...secondWave];
       const agent = makeAgent("agent-multi-open");
-      const sandbox = fakeSandboxSpec();
+      const sandbox = stableFakeSandboxSpec();
 
       const gateA = makeBarrier();
       const gateB = makeBarrier();
@@ -2934,7 +3054,7 @@ describe("runEvals · 用例锁: 多开分工", () => {
     const gatedId = "c-1";
     const sharedId = "c-2";
     const agent = makeAgent("agent-multi-open-clean");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = stableFakeSandboxSpec();
     const { barrier, release } = makeBarrier();
     const all = newDispatchProbe();
 
@@ -3284,7 +3404,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
     const experimentId = "lock-recheck-exp";
     const evalId = "recheck-eval";
     const agent = makeAgent("agent-lock-recheck");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = stableFakeSandboxSpec();
 
     // 先用一次真实运行落下序号 0 的 passed 终态(指纹由生产路径自己算,不手工拼)。
     const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });
@@ -3350,7 +3470,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
     const gatedId = "p-1";
     const sharedId = "p-2";
     const agent = makeAgent("agent-clean-recheck-partial");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = stableFakeSandboxSpec();
     const { barrier, release } = makeBarrier();
     const all = newDispatchProbe();
     const sideA = newDispatchProbe();
@@ -3633,7 +3753,7 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
       });
       const started: string[] = [];
       const evals = ["c-1", "c-2"].map((id) =>
-        makeEval(id, async (t) => {
+        makeEval(id, async (t: TestContext) => {
           started.push(id);
           await t.send("go");
         }),
@@ -3697,7 +3817,7 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
       });
       const started: string[] = [];
       const evals = ["d-1", "d-2"].map((id) =>
-        makeEval(id, async (t) => {
+        makeEval(id, async (t: TestContext) => {
           started.push(id);
           await t.send("go");
         }),
@@ -4028,23 +4148,15 @@ describe("runEvals · linked prepare 失败", () => {
     );
     const reusableSandbox = defineSandbox({
       name: "fake-linked-prepare",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => asSandbox(new FakeSandbox()),
     });
     const haltedRun = probeRun(makeAgent("agent-lease-fatal"), haltedExp, haltedIds, {
       sandbox: reusableSandbox,
     });
-    const experimentLayer = dockerImageSandbox({ image: "unused-in-test" }).prepare(() => {
+    haltedRun.sandbox = reusableSandbox.prepare(() => {
       throw new ExperimentFatalError(message);
     });
-    haltedRun.linkedSandboxes = new Map(
-      Effect.runSync(linkSandboxLayers(
-        haltedIds.map((evalId) => ({
-          eval: { id: evalId },
-          experiment: { id: haltedExp, layer: experimentLayer },
-          agent: { kind: "sandbox" as const, name: haltedRun.agent.name },
-        })),
-      )).map((linked) => [linked.evalId, { linked, sandboxSpec: reusableSandbox }]),
-    );
     const bystanderRun = probeRun(makeAgent("agent-lease-bystander"), bystanderExp, ["b-1", "b-2"]);
     const plan: RunFeedbackPlan = {
       shape: { evals: 5, configs: 2, totalAttempts: 5, maxConcurrency: 1 },
@@ -4281,7 +4393,15 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     const dir = await makeRoot();
     const path = join(dir, `${id}.eval.ts`);
     await writeFile(path, sourceText, "utf-8");
-    return { id, baseDir: "/project", sourcePath: path, source, test };
+    return discoverEval(defineEval({ test }), {
+      id,
+      baseDir: "/project",
+      sourcePath: path,
+      loaderDataPaths: Object.freeze([]),
+      criteriaPaths: Object.freeze([]),
+      privatePaths: Object.freeze([]),
+      source,
+    });
   }
 
   const JUDGE_SOURCE = 'test("judged", async (t) => { t.judge.closedQA("是否说清了原因?"); });';
@@ -4338,6 +4458,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     });
     const countingSandbox = defineSandbox({
       name: "pair-counting-provider",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => {
         created += 1;
         return asSandbox(new FakeSandbox());
@@ -4398,6 +4519,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     let created = 0;
     const countingSandbox = defineSandbox({
       name: "counting-provider",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       create: async () => {
         created += 1;
         return asSandbox(new FakeSandbox());

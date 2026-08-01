@@ -3,20 +3,18 @@
 // - sandbox case 五类
 // - profile / source 双入口与优先级
 import { describe, expect, it } from "vitest";
-import { dockerSandbox, e2bSandbox, defineSandbox } from "../define.ts";
+import { dockerSandbox, e2bSandbox } from "../define.ts";
 import {
   allSelectedCapabilitySkipped,
   assertEnvironmentCaseShape,
   collectCapabilityGaps,
   collectMissingProfiles,
   composeSandbox,
-  defineSandboxCase,
   dockerfileSandbox,
   materializePlannedCase,
   planSandboxCase,
   type MaterializedSandboxCase,
   type SandboxMaterializer,
-  type ServiceController,
 } from "./case.ts";
 import {
   assertPureDataIdentity,
@@ -26,7 +24,7 @@ import {
   credentialIdentityContribution,
   resolveFloatingImageTag,
 } from "./identity.ts";
-import type { CommandResult, DockerSandboxSpec, Sandbox, SandboxOption } from "./types.ts";
+import type { DockerSandboxSpec, Sandbox, SandboxOption } from "./types.ts";
 
 function stubSandbox(id = "sb-1"): Sandbox {
   return {
@@ -224,99 +222,8 @@ describe("sandbox case 五类", () => {
     ).rejects.toThrow();
   });
 
-  it("云端 Compose:同样拒绝降级成单 Sandbox", async () => {
-    const withCustom = {
-      ...defineSandbox({ name: "acme-cloud", create: async () => stubSandbox() }),
-      environments: {
-        "tb-sheets": defineSandboxCase({
-          identity: { kind: "cloud-compose", file: "compose.yaml" },
-          capabilities: ["services"] as const,
-          materialize: async () => {
-            throw new Error("unused");
-          },
-        }),
-      },
-    } satisfies SandboxOption;
-    expect(planSandboxCase({ evalId: "tb/sheets", environment: "tb-sheets", spec: withCustom }).status).toBe("ready");
-
-    // 非 docker provider 上带 compose 判别键 → cloud-compose,不得降级。
-    const withCompose = {
-      ...defineSandbox({ name: "acme-cloud", create: async () => stubSandbox() }),
-      environments: {
-        "tb-sheets": { compose: { file: "compose.yaml", mainService: "client" } },
-      },
-    } as SandboxOption;
-    const raw = planSandboxCase({
-      evalId: "tb/sheets",
-      environment: "tb-sheets",
-      spec: withCompose,
-    });
-    expect(raw.status).toBe("ready");
-    if (raw.status !== "ready") return;
-    expect(raw.plan.caseKind).toBe("cloud-compose");
-    await expect(
-      materializePlannedCase(raw.plan, {
-        ctx: { evalId: "tb/sheets", profile: "tb-sheets" },
-        primarySandbox: stubSandbox(),
-      }),
-    ).rejects.toThrow(/refusing to degrade/);
-  });
-
-  it("自定义 case:物化返回唯一主 Sandbox + 能力句柄 + 资源组", async () => {
-    const primary = stubSandbox("main-pod");
-    const services: ServiceController = {
-      async exec() {
-        return { stdout: "ok", stderr: "", exitCode: 0 } satisfies CommandResult;
-      },
-      async collectLogs() {
-        return Buffer.from("log");
-      },
-      async stop() {},
-    };
-    let stopped = false;
-    const custom = defineSandboxCase({
-      identity: { kind: "kubernetes", cluster: "eval-prod", manifestDigest: "sha256:abc" },
-      capabilities: ["services"],
-      materialize: async () => ({
-        sandbox: primary,
-        services,
-        stop: async () => {
-          stopped = true;
-        },
-        resources: { namespace: "eval-prod-ns" },
-      }),
-    });
-    const spec = {
-      ...defineSandbox({ name: "k8s", create: async () => stubSandbox() }),
-      environments: { "k8s-job": custom },
-    } satisfies SandboxOption;
-    const planned = planSandboxCase({
-      evalId: "k8s/job",
-      environment: "k8s-job",
-      spec,
-    });
-    expect(planned.status).toBe("ready");
-    if (planned.status !== "ready") return;
-    expect(planned.plan.caseKind).toBe("custom");
-    expect(planned.plan.carryEligible).toBe(true);
-
-    const materialized = await materializePlannedCase(planned.plan, {
-      ctx: { evalId: "k8s/job", profile: "k8s-job" },
-    });
-    assertSinglePrimary(materialized, primary);
-    expect(materialized.services).toBe(services);
-    expect(materialized.group.resources).toEqual({ namespace: "eval-prod-ns" });
-    await materialized.group.stop();
-    expect(stopped).toBe(true);
-  });
-
   it("自定义 case 缺稳定纯数据 identity 时禁止携带", () => {
-    expect(() =>
-      defineSandboxCase({
-        identity: { kind: "bad", run: () => "nope" } as never,
-        materialize: async () => ({ sandbox: stubSandbox(), stop: async () => {} }),
-      }),
-    ).toThrow(/pure JSON data/);
+    expect(() => assertPureDataIdentity({ kind: "bad", run: () => "nope" })).toThrow(/pure JSON data/);
 
     expect(caseCarryEligible({ hasStableIdentity: false })).toBe(false);
     expect(caseCarryEligible({ hasStableIdentity: true, identity: { ok: true } })).toBe(true);

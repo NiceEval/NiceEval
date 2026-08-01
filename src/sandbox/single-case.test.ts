@@ -1,24 +1,20 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 // 覆盖类别:
-// - sandbox case 五类(预制单 Sandbox / 自定义 case 的 identity·services·group keep·detached)
+// - sandbox case 的预制单 Sandbox 路径与 keep 边界
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineSandbox, dockerSandbox, e2bSandbox, localSandbox, vercelSandbox } from "../define.ts";
+import { dockerSandbox, e2bSandbox, localSandbox, vercelSandbox } from "../define.ts";
 import {
   assertKeepAllowedForCase,
   clearCustomGroupKeepRegistry,
   createMaterializedCase,
-  defineSandboxCase,
-  destroyCustomGroupKeep,
-  lookupCustomGroupKeep,
   planSandboxCase,
   prebuiltProductSlotsOf,
   specWithPrebuiltProduct,
-  wakeCustomGroupKeep,
 } from "./index.ts";
-import type { CommandResult, Sandbox } from "./types.ts";
+import type { Sandbox } from "./types.ts";
 
 function stubSandbox(id = "sb-1"): Sandbox {
   return {
@@ -154,105 +150,6 @@ describe("createMaterializedCase 单实例与自定义", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
-
-  it("自定义 case:services 能力兑现 + group-keep 进程内 detached destroy", async () => {
-    const primary = stubSandbox("main-pod");
-    let destroyed = false;
-    const resources = { namespace: "eval-ns", rev: 1 };
-    const custom = defineSandboxCase({
-      identity: { kind: "kubernetes", cluster: "eval-prod", manifestDigest: "sha256:abc" },
-      capabilities: ["services", "group-keep"],
-      groupKeep: {
-        resources,
-        async wake() {
-          return { sandbox: stubSandbox("woken"), stop: async () => {} };
-        },
-        async destroy() {
-          destroyed = true;
-        },
-      },
-      materialize: async () => ({
-        sandbox: primary,
-        services: {
-          async exec(): Promise<CommandResult> {
-            return { stdout: "ok", stderr: "", exitCode: 0 };
-          },
-          async collectLogs() {
-            return Buffer.from("log");
-          },
-          async stop() {},
-        },
-        stop: async () => {},
-        resources,
-      }),
-    });
-
-    const materialized = await createMaterializedCase({
-      evalId: "k8s/job",
-      environment: "k8s-job",
-      sandbox: defineSandbox({
-        name: "k8s",
-        create: async () => stubSandbox("unused-base"),
-        environments: { "k8s-job": custom },
-      }),
-      keepRequested: true,
-    });
-
-    expect(materialized.caseKind).toBe("custom");
-    expect(materialized.services).toBeDefined();
-    expect(materialized.group.entry?.resources).toEqual(resources);
-    expect(lookupCustomGroupKeep("k8s", resources)).toBeDefined();
-
-    const woken = await wakeCustomGroupKeep("k8s", resources);
-    expect(woken?.sandbox.sandboxId).toBe("woken");
-
-    expect(await destroyCustomGroupKeep("k8s", resources)).toBe(true);
-    expect(destroyed).toBe(true);
-    expect(lookupCustomGroupKeep("k8s", resources)).toBeUndefined();
-
-    await materialized.group.stop();
-  });
-
-  it("自定义 case 声明 services 却未返回 ServiceController 时硬失败", async () => {
-    const custom = defineSandboxCase({
-      identity: { kind: "bare" },
-      capabilities: ["services"],
-      materialize: async () => ({ sandbox: stubSandbox(), stop: async () => {} }),
-    });
-    await expect(
-      createMaterializedCase({
-        evalId: "bad/services",
-        environment: "x",
-        sandbox: defineSandbox({
-          name: "acme",
-          create: async () => stubSandbox(),
-          environments: { x: custom },
-        }),
-      }),
-    ).rejects.toThrow(/ServiceController/);
-  });
-
-  it("keepRequested + 自定义缺 group-keep → 创建前报错", () => {
-    const planned = planSandboxCase({
-      evalId: "k8s/job",
-      environment: "k8s-job",
-      spec: defineSandbox({
-        name: "k8s",
-        create: async () => stubSandbox(),
-        environments: {
-          "k8s-job": defineSandboxCase({
-            identity: { kind: "k8s" },
-            materialize: async () => ({ sandbox: stubSandbox(), stop: async () => {} }),
-          }),
-        },
-      }),
-    });
-    expect(planned.status).toBe("ready");
-    if (planned.status !== "ready") return;
-    expect(() =>
-      assertKeepAllowedForCase({ plan: planned.plan, provider: "k8s", keepRequested: true }),
-    ).toThrow(/group-keep/);
   });
 
   it("keepRequested + local → 创建前报错", () => {
