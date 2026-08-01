@@ -1,13 +1,14 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
-import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   command,
   defineSandboxCommand,
+  sandboxCommandDeclarationOf,
   sandboxCommandIdentityJson,
   sandboxCommandIdentityOf,
   shell,
@@ -16,13 +17,14 @@ import {
 import {
   isRegisteredSandboxContent,
   registerSandboxContent,
-  registeredSandboxContentSourceOf,
+  registeredSandboxContentSnapshotOf,
 } from "./content.ts";
 import {
   dockerComposeSandbox,
   dockerfileSandbox,
   dockerImageSandbox,
   e2bSandbox,
+  isSandboxLayer,
   localSandbox,
   sandboxLayer,
   sandboxLayerStateOf,
@@ -54,6 +56,10 @@ function typeContracts(): void {
   dockerComposeSandbox({ workspaceService: "app" });
   // @ts-expect-error E2B template 是必填原生起点参数。
   e2bSandbox({});
+  // @ts-expect-error 字符串宿主路径必须显式给出 Eval 定义文件 URL，不能猜 process.cwd/caller。
+  registerSandboxContent("package.json");
+  registerSandboxContent("package.json", import.meta.url);
+  registerSandboxContent(new URL("../../package.json", import.meta.url));
   void forged;
   void forgedCommand;
 }
@@ -77,6 +83,18 @@ describe("SandboxLayer 声明与 command identity", () => {
     ]);
     expect(Object.isFrozen(two)).toBe(true);
     expect(Object.isFrozen(sandboxLayerStateOf(two).commands)).toBe(true);
+
+    const forgedLayer = {
+      prepare: () => sandboxLayer(),
+    };
+    Object.defineProperties(forgedLayer, {
+      [Symbol.for("niceeval.sandbox.layer")]: { value: "command-only" },
+      [Symbol.for("niceeval.sandbox.layer.state")]: {
+        value: { kind: "command-only", template: undefined, commands: [] },
+      },
+    });
+    expect(isSandboxLayer(forgedLayer)).toBe(false);
+    expect(() => sandboxLayerStateOf(forgedLayer as never)).toThrow(/factory product/);
 
     const template = dockerImageSandbox({ image: "node:24" }).prepare(opaque);
     expect(sandboxLayerStateOf(template)).toMatchObject({
@@ -196,6 +214,16 @@ describe("SandboxLayer 声明与 command identity", () => {
     });
     expect(sandboxCommandIdentityOf(async () => {})).toBeUndefined();
 
+    const forgedStable = async (): Promise<void> => {};
+    Object.defineProperties(forgedStable, {
+      [Symbol.for("niceeval.sandbox.command.stable")]: { value: true },
+      [Symbol.for("niceeval.sandbox.command.identity")]: {
+        value: { id: "forged", revision: "1", inputs: null },
+      },
+    });
+    expect(sandboxCommandDeclarationOf(forgedStable)).toEqual({ kind: "opaque", command: forgedStable });
+    expect(sandboxCommandIdentityOf(forgedStable)).toBeUndefined();
+
     const cyclic: { self?: unknown } = {};
     cyclic.self = cyclic;
     expect(() =>
@@ -206,37 +234,65 @@ describe("SandboxLayer 声明与 command identity", () => {
     ).toThrow(/plain objects/);
   });
 
-  it("registerSandboxContent 按项目根或 file URL 解析，并让文件/目录内容决定 digest", async () => {
-    const projectRelative = registerSandboxContent("package.json");
+  it("registerSandboxContent 以定义文件 URL 锚定字符串，并在 transfer snapshot 前拒绝内容漂移", async () => {
+    expect(() => (registerSandboxContent as unknown as (source: string) => unknown)("package.json")).toThrow(
+      /require the Eval definition URL.*import.meta.url/,
+    );
+    const projectRelative = registerSandboxContent("../../package.json", import.meta.url);
     const projectUrl = registerSandboxContent(new URL("../../package.json", import.meta.url));
     expect(projectRelative).toEqual(projectUrl);
     expect(projectRelative.kind).toBe("file");
     expect(projectRelative.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(registeredSandboxContentSourceOf(projectRelative).path).toBe(realpathSync("package.json"));
+    const projectSnapshot = registeredSandboxContentSnapshotOf(projectRelative);
+    expect(projectSnapshot).toMatchObject({ kind: "file", digest: projectRelative.digest });
+    if (projectSnapshot.kind !== "file") throw new Error("expected file snapshot");
+    expect(Buffer.from(projectSnapshot.contentBase64, "base64").toString("utf8")).toContain('"name": "niceeval"');
     expect(Object.isFrozen(projectRelative)).toBe(true);
     expect(isRegisteredSandboxContent({ kind: "file", digest: projectRelative.digest })).toBe(false);
+    const forgedContent = { kind: "file", digest: projectRelative.digest };
+    Object.defineProperties(forgedContent, {
+      [Symbol.for("niceeval.sandbox.content.registered")]: { value: true },
+      [Symbol.for("niceeval.sandbox.content.source")]: { value: { path: "/tmp/forged" } },
+    });
+    expect(isRegisteredSandboxContent(forgedContent)).toBe(false);
+    expect(() => registeredSandboxContentSnapshotOf(forgedContent as never)).toThrow(
+      /requires a registerSandboxContent\(\) handle/,
+    );
 
     const root = await mkdtemp(join(tmpdir(), "niceeval-sandbox-content-"));
     temporaryDirectories.push(root);
     const file = join(root, "fixture.txt");
     await writeFile(file, "one\n");
-    const before = registerSandboxContent(new URL(`file://${file}`));
+    const before = registerSandboxContent(pathToFileURL(file));
+    const beforeSnapshot = registeredSandboxContentSnapshotOf(before);
+    expect(beforeSnapshot.kind === "file" && Buffer.from(beforeSnapshot.contentBase64, "base64").toString()).toBe("one\n");
     await writeFile(file, "two\n");
-    const after = registerSandboxContent(file);
+    expect(() => registeredSandboxContentSnapshotOf(before)).toThrow(
+      /changed before transfer.*Register the content again after the final write/,
+    );
+    const after = registerSandboxContent(file, import.meta.url);
     expect(after.digest).not.toBe(before.digest);
+    expect(registeredSandboxContentSnapshotOf(after)).toMatchObject({ kind: "file", digest: after.digest });
 
     const directory = join(root, "tree");
     await mkdir(join(directory, "nested"), { recursive: true });
     await writeFile(join(directory, "b.txt"), "b\n");
     await writeFile(join(directory, "nested", "a.txt"), "a\n");
-    const treeBefore = registerSandboxContent(directory);
+    const treeBefore = registerSandboxContent(directory, import.meta.url);
+    const treeSnapshot = registeredSandboxContentSnapshotOf(treeBefore);
+    expect(treeSnapshot.kind === "directory" && treeSnapshot.entries).toEqual([
+      { kind: "file", path: "b.txt", contentBase64: Buffer.from("b\n").toString("base64") },
+      { kind: "directory", path: "nested" },
+      { kind: "file", path: "nested/a.txt", contentBase64: Buffer.from("a\n").toString("base64") },
+    ]);
     await writeFile(join(directory, "nested", "a.txt"), "changed\n");
-    const treeAfter = registerSandboxContent(directory);
+    expect(() => registeredSandboxContentSnapshotOf(treeBefore)).toThrow(/changed before transfer/);
+    const treeAfter = registerSandboxContent(directory, import.meta.url);
     expect(treeBefore.kind).toBe("directory");
     expect(treeAfter.digest).not.toBe(treeBefore.digest);
 
     await symlink(file, join(directory, "fixture-link"));
-    expect(() => registerSandboxContent(directory)).toThrow(
+    expect(() => registerSandboxContent(directory, import.meta.url)).toThrow(
       /directory contains symbolic link.*replace it with regular content or register the resolved target explicitly/,
     );
 

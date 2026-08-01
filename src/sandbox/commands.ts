@@ -111,8 +111,9 @@ export interface SandboxCommandIdentity {
   readonly inputs: SandboxCommandIdentityValue;
 }
 
-const STABLE_SANDBOX_COMMAND: unique symbol = Symbol.for("niceeval.sandbox.command.stable");
-const SANDBOX_COMMAND_IDENTITY: unique symbol = Symbol.for("niceeval.sandbox.command.identity");
+const STABLE_SANDBOX_COMMAND: unique symbol = Symbol("niceeval.sandbox.command.stable");
+const STABLE_SANDBOX_COMMANDS = new WeakSet<object>();
+const SANDBOX_COMMAND_IDENTITIES = new WeakMap<object, SandboxCommandIdentity>();
 
 export interface StableSandboxCommand extends SandboxCommand {
   readonly [STABLE_SANDBOX_COMMAND]: true;
@@ -243,8 +244,9 @@ export function defineSandboxCommand(
   }) as StableSandboxCommand;
   Object.defineProperties(stable, {
     [STABLE_SANDBOX_COMMAND]: { value: true },
-    [SANDBOX_COMMAND_IDENTITY]: { value: normalized },
   });
+  STABLE_SANDBOX_COMMANDS.add(stable);
+  SANDBOX_COMMAND_IDENTITIES.set(stable, normalized);
   return Object.freeze(stable);
 }
 
@@ -292,14 +294,12 @@ export function shell(script: string, options?: SandboxCommandOptions): StableSa
 
 export function sandboxCommandDeclarationOf(command: SandboxCommand): SandboxCommandDeclaration {
   if (typeof command !== "function") throw new TypeError("SandboxLayer.prepare requires a command function");
-  const candidate = command as Partial<StableSandboxCommand> & {
-    readonly [SANDBOX_COMMAND_IDENTITY]?: SandboxCommandIdentity;
-  };
-  if (candidate[STABLE_SANDBOX_COMMAND] === true && candidate[SANDBOX_COMMAND_IDENTITY] !== undefined) {
+  const identity = SANDBOX_COMMAND_IDENTITIES.get(command as object);
+  if (STABLE_SANDBOX_COMMANDS.has(command as object) && identity !== undefined) {
     return Object.freeze({
       kind: "stable" as const,
       command: command as StableSandboxCommand,
-      identity: candidate[SANDBOX_COMMAND_IDENTITY],
+      identity,
     });
   }
   return Object.freeze({ kind: "opaque" as const, command });

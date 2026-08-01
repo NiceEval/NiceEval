@@ -9,8 +9,9 @@ import {
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
-const SANDBOX_LAYER: unique symbol = Symbol.for("niceeval.sandbox.layer");
-const SANDBOX_LAYER_STATE: unique symbol = Symbol.for("niceeval.sandbox.layer.state");
+const SANDBOX_LAYER: unique symbol = Symbol("niceeval.sandbox.layer");
+const SANDBOX_LAYERS = new WeakSet<object>();
+const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
@@ -92,9 +93,7 @@ export interface SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerK
   readonly commands: readonly SandboxCommandDeclaration[];
 }
 
-type SandboxLayerRuntime<Kind extends SandboxLayerKind> = SandboxLayer<Kind> & {
-  readonly [SANDBOX_LAYER_STATE]: SandboxLayerState<Kind>;
-};
+type SandboxLayerRuntime<Kind extends SandboxLayerKind> = SandboxLayer<Kind>;
 
 function assertRecord(value: unknown, path: string): asserts value is globalThis.Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -156,8 +155,9 @@ function createLayer<Kind extends SandboxLayerKind>(
   } as SandboxLayerRuntime<Kind>;
   Object.defineProperties(layer, {
     [SANDBOX_LAYER]: { value: kind },
-    [SANDBOX_LAYER_STATE]: { value: state },
   });
+  SANDBOX_LAYERS.add(layer);
+  SANDBOX_LAYER_STATES.set(layer, state);
   return Object.freeze(layer);
 }
 
@@ -267,9 +267,10 @@ export function localSandbox(options: LocalSandboxOptions = {}): SandboxLayer<"t
 
 export function isSandboxLayer(value: unknown): value is SandboxLayer {
   if (value === null || typeof value !== "object") return false;
+  if (!SANDBOX_LAYERS.has(value)) return false;
   const candidate = value as Partial<SandboxLayerRuntime<SandboxLayerKind>>;
   const kind = candidate[SANDBOX_LAYER];
-  const state = candidate[SANDBOX_LAYER_STATE];
+  const state = SANDBOX_LAYER_STATES.get(value);
   return (
     (kind === "command-only" || kind === "template-bearing") &&
     state?.kind === kind &&
@@ -284,5 +285,7 @@ export function sandboxLayerStateOf<Kind extends SandboxLayerKind>(
   layer: SandboxLayer<Kind>,
 ): SandboxLayerState<Kind> {
   if (!isSandboxLayer(layer)) throw new TypeError("sandbox must be a SandboxLayer factory product");
-  return (layer as SandboxLayerRuntime<Kind>)[SANDBOX_LAYER_STATE];
+  const state = SANDBOX_LAYER_STATES.get(layer as object);
+  if (state === undefined) throw new TypeError("sandbox must be a SandboxLayer factory product");
+  return state as SandboxLayerState<Kind>;
 }
