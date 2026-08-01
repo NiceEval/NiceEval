@@ -50,7 +50,7 @@ export function classifyProvisionErrorFallback(error: unknown): SandboxProvision
     // 连接中途断掉 / 超时:请求可能已被受理。
     if (/^(ECONNRESET|EPIPE|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/i.test(code)) return "ambiguous";
     if (/getaddrinfo|connection refused|certificate|tls handshake/i.test(message)) return "rejected";
-    if (/fetch failed|other side closed|socket hang up|connection (?:reset|closed)|timed? ?out|service unavailable|bad gateway|gateway timeout|\b50[0234]\b/i.test(message)) {
+    if (/fetch failed|other side closed|socket hang up|connection (?:reset|closed)|timed? ?out|service unavailable|bad gateway|gateway timeout|\b50[0234]\b|\b(?:unexpected )?EOF\b/i.test(message)) {
       return "ambiguous";
     }
     if (/too many requests|rate.?limit|\b429\b/i.test(message)) return "rate_limit";

@@ -30,9 +30,10 @@ import type {
   ServiceController,
 } from "./case-types.ts";
 import type { PlannedSandboxCase } from "./case.ts";
-import { DockerSandbox } from "./docker.ts";
+import { classifyProvisionError, DockerSandbox } from "./docker.ts";
 import { computeBuildKey, digestOf, looksLikeDigestRef, type BuildKey } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
+import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
@@ -826,6 +827,8 @@ export interface MaterializeComposeOpts {
   readonly feedback?: ScopedFeedback;
   readonly baseDir?: string;
   readonly platform?: string;
+  /** Runner 持有的 provisioning 并发槽；退避期间临时归还，避免网络抖动拖住整批并发。 */
+  readonly provisionSlot?: ProvisionSlot;
   /** 测试可注入:跳过真实 docker compose,直接返回已构造的主 Sandbox。 */
   readonly _testHooks?: {
     readonly runCompose?: typeof runDockerCompose;
@@ -887,16 +890,17 @@ export async function materializeDockerComposeCase(
   };
   const runCompose = opts._testHooks?.runCompose ?? runDockerCompose;
 
+  const composeDown = () => runCompose(
+    ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "down", "--remove-orphans"],
+    { cwd, env, signal: opts.ctx.signal },
+  );
+
   let finalized = false;
   const finalizer = async () => {
     if (finalized) return;
     finalized = true;
     try {
-      await runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "down", "--remove-orphans"], {
-        cwd,
-        env,
-        signal: opts.ctx.signal,
-      });
+      await composeDown();
     } catch {
       // 尽力清理;最终再删 overlay 目录。
     }
@@ -913,16 +917,32 @@ export async function materializeDockerComposeCase(
     // 且把 BuildKey tag 对齐回本 eval 的 image: 插值名(避免多题共用 provider env 时串镜像)。
     const buildServices = collection.inspection.services.filter((s) => s.build !== undefined).map((s) => s.name);
     if (buildServices.length > 0) {
-      await runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
-        cwd,
-        env,
-        signal: opts.ctx.signal,
-      });
+      await withProvisionRetry(
+        () => runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
+          cwd,
+          env,
+          signal: opts.ctx.signal,
+        }),
+        classifyProvisionError,
+        opts.provisionSlot,
+        opts.feedback,
+        // 构建产物没有计费实例泄漏面；同一 BuildKey 重建本身就是对账。
+        async () => {},
+      );
     }
 
-    await runCompose(
-      ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "up", "--detach", "--wait", "--remove-orphans"],
-      { cwd, env, signal: opts.ctx.signal },
+    await withProvisionRetry(
+      () => runCompose(
+        ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "up", "--detach", "--wait", "--remove-orphans"],
+        { cwd, env, signal: opts.ctx.signal },
+      ),
+      classifyProvisionError,
+      opts.provisionSlot,
+      opts.feedback,
+      // projectName 与 overlay 在整个重试闭包内固定；先清掉半启动组，再收敛同一个 project。
+      async () => {
+        await composeDown();
+      },
     );
 
     const resolveId =

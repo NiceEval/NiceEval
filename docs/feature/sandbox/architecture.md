@@ -234,10 +234,11 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 各内置 provider 的对账通道与重试面:
 
 - **Docker** —— 容器创建时即带 provision token label(与留存候选的 `niceeval.keep-candidate` 标签同一机制),对账 = 按 label 查询本地容器、force remove(容器已不存在视作对账完成)。create 闭包在容器创建后还有 start、基础工具安装、工作区属主一串 exec,这些步骤失败由 kill-on-failure 直接 force remove。拒绝类主要是拉镜像限流(发生在容器创建之前)。
+- **Docker Compose** —— build 与 up 都复用同一套瞬时分类和退避。build 以同一 BuildKey 重建即可收敛；up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行 `compose down --remove-orphans`，清掉半启动服务后再 up。整个 case 最终仍由资源组 finalizer 回收。
 - **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例台账见 memory 的 e2b-provision-429-duplicate-sandbox 条目)——都由重试前对账兜住。
 - **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴;SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
-重试循环本身在 `resolve.ts` 的 `createProvider()`:
+重试循环本身在 `runtime.ts` 的内置 runtime adapter:
 
 - 退避睡眠期间临时归还并发槽位(`retry.ts` 的 `ProvisionSlot`),睡醒后再排队要回来——在退避的 attempt 只是在等,不该攥着 `sandboxSem` 的名额陪跑 `setTimeout`,不然一批 429 会把整批实际并发拖成远低于 `--max-concurrency` 声明值的个位数。
 - 重试全部耗尽后仍按原语义走:`verdict: "errored"`(基建问题,不是 agent 表现);对账中销毁的实例不额外报错,只留 diagnostic。

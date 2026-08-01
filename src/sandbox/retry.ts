@@ -1,5 +1,5 @@
-// provider 无关的 provisioning 退避重试:createProvider()(resolve.ts)对每个内置
-// provider 的 create() 套这一层。只有各 provider 自己的 classifyProvisionError 判为
+// provider 无关的 provisioning 退避重试:runtime adapter 对每个内置 provider 的
+// create/provision 步骤套这一层。只有各 provider 自己的 classifyProvisionError 判为
 // 可重试的错误才会退避重试;其它错误第一次就抛出。防泄漏的两道防线
 // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)中,这里承担
 // 「重试前对账」;kill-on-failure 在各 provider 的 create() 内部。
@@ -18,7 +18,7 @@ function delayFor(attempt: number): number {
 }
 
 /**
- * 调用方(resolve.ts)持有的并发槽位的临时归还/收回。不认调用方用的是不是 Effect —— 只要求
+ * 调用方(runtime.ts)持有的并发槽位的临时归还/收回。不认调用方用的是不是 Effect —— 只要求
  * 两个 async 方法,保持这层 provider 无关。
  */
 export interface ProvisionSlot {

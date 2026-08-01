@@ -2,10 +2,10 @@
 // 覆盖类别:
 // - Compose 主空间、服务 ready、证据、整组清理与泄题门
 //   (黑名单 / 规划与 BuildKey / 泄题门 / overlay / 整组 finalizer;真机 Compose 归 [X] 验收)
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { attachLeakGateHints, assertNoHiddenInputLeaks, getLeakGateHints } from "../runner/leak-gate.ts";
 import {
   assertComposeBlacklist,
@@ -543,5 +543,66 @@ services:
       }),
     ).rejects.toThrow(/Compose environment failed|service db failed/);
     expect(downCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("up 遇到镜像拉取 EOF 时先对账同一 project 再重试", async () => {
+    const root = await makeRoot();
+    try {
+      await writeFile(
+        join(root, "docker-compose.yaml"),
+        `
+services:
+  client:
+    image: postgres:16
+`,
+        "utf-8",
+      );
+      const planned = planSandboxCase({
+        evalId: "tb/transient-pull",
+        environment: "tb-transient-pull",
+        spec: dockerSandbox({
+          environments: {
+            "tb-transient-pull": { compose: { file: join(root, "docker-compose.yaml"), mainService: "client" } },
+          },
+        }),
+      });
+      expect(planned.status).toBe("ready");
+      if (planned.status !== "ready") return;
+
+      vi.useFakeTimers();
+      const order: string[] = [];
+      let upCount = 0;
+      const promise = materializeDockerComposeCase(planned.plan, {
+        ctx: { evalId: "tb/transient-pull", profile: "tb-transient-pull" },
+        _testHooks: {
+          async runCompose(args) {
+            if (args.includes("up")) {
+              upCount += 1;
+              order.push(`up#${upCount}`);
+              if (upCount === 1) throw new Error('Get "https://registry-1.docker.io/v2/": EOF');
+            } else if (args.includes("down")) {
+              order.push("down");
+            }
+            return { stdout: "", stderr: "", exitCode: 0 };
+          },
+          async resolveMainContainerId() {
+            return "compose-after-retry";
+          },
+          async attachMain() {
+            return stubSandbox("compose-after-retry");
+          },
+        },
+      });
+
+      await vi.waitFor(() => expect(upCount).toBe(1));
+      await vi.runAllTimersAsync();
+      const materialized = await promise;
+      expect(order).toEqual(["up#1", "down", "up#2"]);
+      await materialized.group.stop();
+      expect(order).toEqual(["up#1", "down", "up#2", "down"]);
+    } finally {
+      vi.useRealTimers();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

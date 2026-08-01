@@ -338,6 +338,7 @@ function materializeBuiltin(
               },
               ...common,
               feedback: input.feedback,
+              provisionSlot: boundProvisionSlot(input),
             },
           ), input),
           catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
