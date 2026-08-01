@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommandResult, Sandbox, SandboxOperations } from "./types.ts";
+import type { CommandResult, SandboxOperations } from "./types.ts";
+import { noSandboxBackendCapabilities, type SandboxProviderBackend } from "./backend.ts";
 import { registerSandboxContent } from "./content.ts";
 import {
   createSandboxCommandTarget,
@@ -80,10 +81,11 @@ describe("provider-neutral facade", () => {
     it(`${provider} resolves sandbox paths and preserves Uint8Array bytes`, async () => {
       const io: string[] = [];
       const operations = fakeOperations(io);
-      const raw: Sandbox = {
+      const raw: SandboxProviderBackend = {
         ...operations,
         sandboxId: provider,
         otlpHost: null,
+        capabilities: noSandboxBackendCapabilities,
         stop: async () => {},
         uploadFile: async () => {},
         uploadDirectory: async () => {},

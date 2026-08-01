@@ -7,6 +7,8 @@
 // 杀掉」——配置的值不生效,报错还落在离配置最远的地方。
 
 import type { CommandOptions } from "./types.ts";
+import type { Sandbox } from "./types.ts";
+import { sandboxCapabilities } from "./backend.ts";
 
 /** 一条命令这次实际生效的上限,以及它是不是用户显式声明的。 */
 export interface CommandLimit {
@@ -49,9 +51,9 @@ export interface SandboxCommandDeadline {
 }
 
 /** 探到就换线,探不到就什么都不做(provider 没实现 = 它的命令本来就不按 deadline 记账)。 */
-export function applyCommandDeadline(sandbox: unknown, deadlineAt?: number): void {
-  const setter = (sandbox as Partial<SandboxCommandDeadline> | null | undefined)?.setCommandDeadline;
-  if (typeof setter === "function") setter.call(sandbox, deadlineAt);
+export function applyCommandDeadline(sandbox: Sandbox, deadlineAt?: number): void {
+  const capability = sandboxCapabilities(sandbox).setCommandDeadline;
+  if (capability._tag === "Supported") capability.value(deadlineAt);
 }
 
 /**

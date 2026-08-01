@@ -1,9 +1,18 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, it } from "vitest";
 import { normalizeSandboxPaths, resolveLocalPath, resolveSandboxPath } from "./paths.ts";
-import type { Sandbox } from "../types.ts";
+import {
+  noSandboxBackendCapabilities,
+  supportedBackendCapability,
+  type SandboxBackendCapabilities,
+  type SandboxProviderBackend,
+} from "./backend.ts";
+import { suspendSandbox } from "./keep.ts";
+import { sandboxReuseCapability } from "./resolve.ts";
 
-function fakeSandbox(): Sandbox & { calls: string[] } {
+function fakeSandbox(
+  capabilities: SandboxBackendCapabilities = noSandboxBackendCapabilities,
+): SandboxProviderBackend & { calls: string[] } {
   const calls: string[] = [];
   return {
     workdir: "/work",
@@ -17,8 +26,6 @@ function fakeSandbox(): Sandbox & { calls: string[] } {
       calls.push(`shell-cwd:${opts?.cwd ?? ""}`);
       return { stdout: "", stderr: "", exitCode: 0 };
     },
-    runCommandOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
-    runShellOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
     readText: async (path) => {
       calls.push(`read:${path}`);
       return "";
@@ -50,6 +57,7 @@ function fakeSandbox(): Sandbox & { calls: string[] } {
     downloadDirectory: async (sourceDir, targetDir) => {
       calls.push(`download-dir:${sourceDir}:${targetDir.toString()}`);
     },
+    capabilities,
     calls,
   };
 }
@@ -68,7 +76,7 @@ describe("sandbox path helpers", () => {
 
   it("normalizes paths for custom sandbox implementations", async () => {
     const sandbox = fakeSandbox();
-    const normalized = normalizeSandboxPaths(sandbox);
+    const normalized = normalizeSandboxPaths(sandbox, "custom");
 
     await normalized.runCommand("npm", ["test"], { cwd: "packages/api" });
     await normalized.readText("src/app.ts");
@@ -88,45 +96,46 @@ describe("sandbox path helpers", () => {
   });
 
   it("forwards the non-interface suspend() capability when the underlying provider implements it", async () => {
-    const sandbox = fakeSandbox() as Sandbox & { calls: string[]; suspend?: () => Promise<void> };
-    sandbox.suspend = async () => {
-      sandbox.calls.push("suspend");
-    };
-    const normalized = normalizeSandboxPaths(sandbox);
+    const calls: string[] = [];
+    const sandbox = fakeSandbox({
+      ...noSandboxBackendCapabilities,
+      suspend: supportedBackendCapability(async () => {
+        calls.push("suspend");
+      }),
+    });
+    const normalized = normalizeSandboxPaths(sandbox, "custom");
 
-    // 留存路径的 suspendSandbox()(keep.ts)靠属性探测这个非接口成员——包装后必须还在,
-    // 且调用要转发到底层实例(不能只是"存在但不生效"的空转发)。
-    expect(typeof (normalized as unknown as { suspend?: unknown }).suspend).toBe("function");
-    await (normalized as unknown as { suspend(): Promise<void> }).suspend();
+    await suspendSandbox(normalized);
+    sandbox.calls.push(...calls);
     expect(sandbox.calls).toEqual(["suspend"]);
   });
 
   it("omits suspend entirely when the underlying provider does not implement it (no fake capability appears)", () => {
     const sandbox = fakeSandbox(); // no .suspend on this fixture
-    const normalized = normalizeSandboxPaths(sandbox);
-    expect((normalized as unknown as { suspend?: unknown }).suspend).toBeUndefined();
+    const normalized = normalizeSandboxPaths(sandbox, "custom");
+    return expect(suspendSandbox(normalized)).rejects.toThrow(/no suspend capability/);
   });
 
   // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
   it("forwards the non-interface ensureLifetime() capability when the underlying provider implements it", async () => {
-    type Reusable = { ensureLifetime(ms: number): Promise<{ ready: true } | { ready: false; reason: string }> };
-    const sandbox = fakeSandbox() as Sandbox & { calls: string[] } & Partial<Reusable>;
-    sandbox.ensureLifetime = async (ms: number) => {
-      sandbox.calls.push(`ensureLifetime:${ms}`);
-      return { ready: true as const };
-    };
-    const normalized = normalizeSandboxPaths(sandbox);
-
-    // 复用池靠属性探测这个非接口成员:包装丢了它,provider 明明实现了却会被判成"不支持复用"
-    // (与 suspend 同一种丢法,见 memory/keep-sandbox-suspend-silently-broken-for-all-providers.md)。
-    const forwarded = (normalized as unknown as Partial<Reusable>).ensureLifetime;
-    expect(typeof forwarded).toBe("function");
-    await expect(forwarded!(90_000)).resolves.toEqual({ ready: true });
+    const calls: string[] = [];
+    const sandbox = fakeSandbox({
+      ...noSandboxBackendCapabilities,
+      ensureLifetime: supportedBackendCapability(async (ms: number) => {
+        calls.push(`ensureLifetime:${ms}`);
+        return { ready: true as const };
+      }),
+    });
+    const normalized = normalizeSandboxPaths(sandbox, "custom");
+    const forwarded = sandboxReuseCapability(normalized);
+    if (forwarded === undefined) throw new Error("expected reusable capability");
+    await expect(forwarded.ensureLifetime(90_000)).resolves.toEqual({ ready: true });
+    sandbox.calls.push(...calls);
     expect(sandbox.calls).toEqual(["ensureLifetime:90000"]);
   });
 
   it("omits ensureLifetime entirely when the underlying provider does not implement it", () => {
-    const normalized = normalizeSandboxPaths(fakeSandbox());
-    expect((normalized as unknown as { ensureLifetime?: unknown }).ensureLifetime).toBeUndefined();
+    const normalized = normalizeSandboxPaths(fakeSandbox(), "custom");
+    expect(sandboxReuseCapability(normalized)).toBeUndefined();
   });
 });

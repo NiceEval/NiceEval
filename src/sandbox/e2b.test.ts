@@ -8,6 +8,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { E2BSandbox } from "./e2b.ts";
+import { SandboxCommandTimeoutError } from "./deadline.ts";
 
 let roots: string[] = [];
 afterEach(async () => {
@@ -186,5 +187,58 @@ describe("E2BSandbox.ensureLifetime", () => {
 
     expect(result.ready).toBe(false);
     expect(result.ready === false ? result.reason : "").toContain("e2b api unreachable");
+  });
+});
+
+describe("E2BSandbox command interruption", () => {
+  it("signal 取消时退休整台 VM，再以原始取消原因 reject", async () => {
+    const reason = new DOMException("cancelled by test", "AbortError");
+    const controller = new AbortController();
+    let sandboxKills = 0;
+    let commandKills = 0;
+    const sandbox = makeSandbox({
+      commands: {
+        run: async (_script: string, opts: { background?: boolean }) => {
+          expect(opts.background).toBe(true);
+          return {
+            wait: () => new Promise(() => {}),
+            kill: async () => {
+              commandKills += 1;
+              return true;
+            },
+          };
+        },
+      },
+      kill: async () => {
+        sandboxKills += 1;
+        return true;
+      },
+    });
+
+    const running = sandbox.runShell("sh -c 'sleep 60 &'", { signal: controller.signal });
+    controller.abort(reason);
+
+    await expect(running).rejects.toBe(reason);
+    expect(sandboxKills).toBe(1);
+    expect(commandKills).toBe(0);
+  });
+
+  it("SDK command timeout 时退休整台 VM，再抛带归属的 timeout error", async () => {
+    let sandboxKills = 0;
+    const sandbox = makeSandbox({
+      commands: {
+        run: async () => {
+          throw Object.assign(new Error("command timed out"), { name: "TimeoutError" });
+        },
+      },
+      kill: async () => {
+        sandboxKills += 1;
+        return true;
+      },
+    });
+
+    const failure = sandbox.runShell("sleep 60", { timeoutMs: 25 });
+    await expect(failure).rejects.toBeInstanceOf(SandboxCommandTimeoutError);
+    expect(sandboxKills).toBe(1);
   });
 });

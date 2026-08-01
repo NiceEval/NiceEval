@@ -5,22 +5,18 @@
 
 import type { Sandbox } from "../types.ts";
 import { DEFAULT_LEDGER_GIT_DIR } from "./ledger-paths.ts";
-
-/** 有留存能力的 provider 实例都带一个非公开接口成员 suspend()(Sandbox 接口不因留存扩大)。 */
-interface Suspendable {
-  suspend(): Promise<void>;
-}
+import { sandboxCapabilities } from "./backend.ts";
 
 /** provider 是否参与留存(defineSandbox 自定义 provider 不参与,创建前报错)。 */
 export const KEEPABLE_PROVIDERS = new Set(["docker", "e2b", "vercel"]);
 
 /** in-run 的休眠:留存提交成功后由 Sample release 调用(sandbox.suspend 阶段,有界计时)。 */
 export async function suspendSandbox(sandbox: Sandbox): Promise<void> {
-  const suspend = (sandbox as unknown as Partial<Suspendable>).suspend;
-  if (typeof suspend !== "function") {
+  const suspend = sandboxCapabilities(sandbox).suspend;
+  if (suspend._tag === "Unsupported") {
     throw new Error(`sandbox provider has no suspend capability (sandboxId=${sandbox.sandboxId})`);
   }
-  await suspend.call(sandbox);
+  await suspend.value();
 }
 
 /**

@@ -9,7 +9,6 @@ import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitErr
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
-  Sandbox,
   CommandResult,
   CommandOptions,
   SandboxReuseCapability,
@@ -28,6 +27,7 @@ import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
+import { supportedBackendCapability, unsupportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -99,7 +99,7 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
   return classifyProvisionErrorFallback(e);
 }
 
-export class E2BSandbox implements Sandbox, SandboxReuseCapability {
+export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapability {
   readonly workdir = E2B_WORKDIR;
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
@@ -109,6 +109,12 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
   readonly sandboxId: string;
 
   private deadlineAt?: number;
+  readonly capabilities = {
+    appendLog: unsupportedBackendCapability,
+    suspend: supportedBackendCapability(() => this.suspend()),
+    ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
+    setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+  };
 
   private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs?: number, lifetimeMs?: number, deadlineAt?: number) {
     this.sbx = sbx;
@@ -241,26 +247,30 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       };
-      const res = opts.signal === undefined
+      const signal = opts.signal;
+      if (signal?.aborted) {
+        throw signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
+      }
+      const res = signal === undefined
         ? await this.sbx.commands.run(script, commandOptions)
         : await (async () => {
-            // foreground run 的 signal 只会取消 transport；用可 kill 的 handle，确保取消后命令树
-            // 已经终止才让 Promise settle。
+            // E2B 的 CommandHandle.kill() 只承诺 SIGKILL 入口进程，无法证明孙进程也已终止。
+            // 因此取消时退休整台 Sandbox；kill() settle 后才让本次命令 Promise settle。
             const handle = await this.sbx.commands.run(script, { ...commandOptions, background: true });
             const abort = async (): Promise<never> => {
-              await handle.kill();
-              throw opts.signal!.reason ?? new DOMException("sandbox command aborted", "AbortError");
+              await this.sbx.kill();
+              throw signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
             };
-            if (opts.signal!.aborted) return abort();
+            if (signal.aborted) return await abort();
             let onAbort: (() => void) | undefined;
             const aborted = new Promise<never>((_resolve, reject) => {
               onAbort = () => void abort().catch(reject);
-              opts.signal!.addEventListener("abort", onAbort, { once: true });
+              signal.addEventListener("abort", onAbort, { once: true });
             });
             try {
               return await Promise.race([handle.wait(), aborted]);
             } finally {
-              if (onAbort) opts.signal!.removeEventListener("abort", onAbort);
+              if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
             }
           })();
       return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };
@@ -272,6 +282,8 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
       }
       // 撞的是我们给的那条线时,把归属一起抛出去(runner 据此落 error.timeout)。
       if (limit.timeoutMs !== undefined && isTimeoutError(e)) {
+        // SDK timeout 只保证终止入口进程，不能证明命令树已经消失；按公共契约退休整台 VM。
+        await this.sbx.kill();
         throw new SandboxCommandTimeoutError(
           `e2b command timed out after ${limit.timeoutMs}ms`,
           limit.timeoutMs,
@@ -385,16 +397,7 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
    * SDK 版本差异按能力探测(betaPause 是旧名),都没有则如实抛错(现场保持 alive)。
    */
   async suspend(): Promise<void> {
-    const sbx = this.sbx as unknown as { pause?: () => Promise<unknown>; betaPause?: () => Promise<unknown> };
-    if (typeof sbx.pause === "function") {
-      await sbx.pause();
-      return;
-    }
-    if (typeof sbx.betaPause === "function") {
-      await sbx.betaPause();
-      return;
-    }
-    throw new Error("this e2b SDK version has no pause capability; sandbox left running");
+    await this.sbx.pause();
   }
 
 }

@@ -16,12 +16,17 @@ import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { CommandOptions, CommandResult, Sandbox, SuccessfulCommandResult } from "../types.ts";
+import type { CommandOptions, CommandResult, SuccessfulCommandResult } from "../types.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { successfulCommandResult } from "./operations.ts";
+import {
+  supportedBackendCapability,
+  unsupportedBackendCapability,
+  type SandboxProviderBackend,
+} from "./backend.ts";
 import { registerLedgerPaths, unregisterLedgerPaths } from "./ledger-paths.ts";
 import { t } from "../i18n/index.ts";
 
@@ -123,12 +128,14 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf-8");
       stdout += text;
-      if (opts.onStdout) callbackChain = callbackChain.then(() => opts.onStdout!(text));
+      const onStdout = opts.onStdout;
+      if (onStdout !== undefined) callbackChain = callbackChain.then(() => onStdout(text));
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf-8");
       stderr += text;
-      if (opts.onStderr) callbackChain = callbackChain.then(() => opts.onStderr!(text));
+      const onStderr = opts.onStderr;
+      if (onStderr !== undefined) callbackChain = callbackChain.then(() => onStderr(text));
     });
     child.on("error", (err) => {
       if (settled) return;
@@ -168,13 +175,19 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
  * 契约见 docs/feature/sandbox/local.md;实现要点见 docs/feature/sandbox/architecture.md
  * 「Local provider(宿主机,零隔离)」。
  */
-export class LocalSandbox implements Sandbox {
+export class LocalSandbox implements SandboxProviderBackend {
   readonly workdir: string;
   readonly otlpHost = "localhost";
   readonly sandboxId: string;
   private readonly timeout?: number;
   private deadlineAt?: number;
   private readonly ledgerBase: string;
+  readonly capabilities = {
+    appendLog: unsupportedBackendCapability,
+    suspend: unsupportedBackendCapability,
+    ensureLifetime: unsupportedBackendCapability,
+    setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+  };
 
   private constructor(workdir: string, ledgerBase: string, timeout?: number, deadlineAt?: number) {
     this.workdir = workdir;

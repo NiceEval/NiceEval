@@ -6,7 +6,6 @@ import { basename, dirname, join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
 import type {
-  Sandbox,
   CommandResult,
   CommandOptions,
   SandboxReuseCapability,
@@ -28,6 +27,7 @@ import { t } from "../i18n/index.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
+import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -142,7 +142,7 @@ export type DockerSandboxReleaseMode = "destroy" | "detach";
  * Docker 沙箱:为每次运行起一个隔离容器。
  * 实现 ../types.ts 的 Sandbox 接口。
  */
-export class DockerSandbox implements Sandbox, SandboxReuseCapability {
+export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapability {
   readonly workdir: string;
   readonly otlpHost = "host.docker.internal";
   private docker: Docker;
@@ -163,6 +163,12 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   private defaultUser: string = SANDBOX_USER;
   private defaultHome: string = "/home/node";
   private defaultUserName: string = "node";
+  readonly capabilities = {
+    appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
+    suspend: supportedBackendCapability(() => this.suspend()),
+    ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
+    setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+  };
 
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker();
@@ -508,32 +514,36 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         demuxer.push(chunk);
         const stdout = demuxer.stdout().slice(beforeStdout);
         const stderr = demuxer.stderr().slice(beforeStderr);
-        if (stdout && opts.onStdout) callbackChain = callbackChain.then(() => opts.onStdout!(stdout));
-        if (stderr && opts.onStderr) callbackChain = callbackChain.then(() => opts.onStderr!(stderr));
+        const onStdout = opts.onStdout;
+        const onStderr = opts.onStderr;
+        if (stdout && onStdout !== undefined) callbackChain = callbackChain.then(() => onStdout(stdout));
+        if (stderr && onStderr !== undefined) callbackChain = callbackChain.then(() => onStderr(stderr));
       });
 
       // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
       // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
       const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
       let terminating = false;
-      const retireAndReject = (error: unknown): void => {
+      const retireAndReject = (error: Error): void => {
         if (terminating) return;
         terminating = true;
         stream.destroy();
         void this.stop().then(() => reject(error), reject);
       };
-      const timeoutId = limit.timeoutMs === undefined
+      const timeoutMs = limit.timeoutMs;
+      const timeoutId = timeoutMs === undefined
         ? undefined
         : setTimeout(() => {
             retireAndReject(new SandboxCommandTimeoutError(
-              t("docker.commandTimeout", { timeoutMs: limit.timeoutMs! }),
-              limit.timeoutMs!,
+              t("docker.commandTimeout", { timeoutMs }),
+              timeoutMs,
               limit.explicit,
             ));
-          }, limit.timeoutMs);
-      const onAbort = (): void => retireAndReject(
-        opts.signal?.reason ?? new DOMException("sandbox command aborted", "AbortError"),
-      );
+          }, timeoutMs);
+      const onAbort = (): void => {
+        const reason = opts.signal?.reason;
+        retireAndReject(reason instanceof Error ? reason : new DOMException("sandbox command aborted", "AbortError"));
+      };
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       if (opts.signal?.aborted) onAbort();
 

@@ -78,6 +78,8 @@ import {
   wakeDetached,
 } from "./keep.ts";
 import type { Sandbox } from "../types.ts";
+import { noSandboxBackendCapabilities, supportedBackendCapability } from "./backend.ts";
+import { normalizeSandboxPaths } from "./paths.ts";
 
 const CLOUD_ENV_KEYS = ["VERCEL_API_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID", "E2B_API_KEY"] as const;
 let savedEnv: globalThis.Record<string, string | undefined> = {};
@@ -118,34 +120,40 @@ describe("computeExpiresAt", () => {
 });
 
 describe("suspendSandbox", () => {
-  function fakeSandboxWithoutSuspend(): Sandbox {
-    return {
+  function fakeSandboxWithSuspend(suspendSupported: boolean): { sandbox: Sandbox; suspend: ReturnType<typeof vi.fn> } {
+    const suspend = vi.fn().mockResolvedValue(undefined);
+    const backend: import("./backend.ts").SandboxProviderBackend = {
       workdir: "/work",
       sandboxId: "sbx-no-suspend",
       otlpHost: null,
+      capabilities: {
+        ...noSandboxBackendCapabilities,
+        ...(suspendSupported ? { suspend: supportedBackendCapability(suspend) } : {}),
+      },
       runCommand: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
       runShell: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
-      readFile: async () => "",
-      fileExists: async () => true,
-      writeFiles: async () => {},
-      uploadFiles: async () => {},
+      readText: async () => "",
+      writeText: async () => {},
+      readBytes: async () => new Uint8Array(),
+      writeBytes: async () => {},
+      pathExists: async () => true,
       uploadDirectory: async () => {},
       stop: async () => {},
-      downloadFile: async () => Buffer.from(""),
+      downloadFile: async () => {},
       uploadFile: async () => {},
       downloadDirectory: async () => {},
     };
+    return { sandbox: normalizeSandboxPaths(backend, "fake"), suspend };
   }
 
   it("底层实例有 suspend() -> 原样调用", async () => {
-    const suspend = vi.fn().mockResolvedValue(undefined);
-    const sandbox = { ...fakeSandboxWithoutSuspend(), suspend } as Sandbox & { suspend: () => Promise<void> };
+    const { sandbox, suspend } = fakeSandboxWithSuspend(true);
     await suspendSandbox(sandbox);
     expect(suspend).toHaveBeenCalledTimes(1);
   });
 
   it("底层实例没有 suspend() -> 抛出带 sandboxId 的清晰错误(不是静默跳过)", async () => {
-    const sandbox = fakeSandboxWithoutSuspend();
+    const { sandbox } = fakeSandboxWithSuspend(false);
     await expect(suspendSandbox(sandbox)).rejects.toThrow(/no suspend capability.*sbx-no-suspend/);
   });
 });

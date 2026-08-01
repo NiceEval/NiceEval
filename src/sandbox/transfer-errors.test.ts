@@ -10,10 +10,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { isTransferTimeout } from "./transfer-errors.ts";
-import type { Sandbox } from "../types.ts";
+import { noSandboxBackendCapabilities, type SandboxProviderBackend } from "./backend.ts";
 
 /** 传输方法按注入的错误失败,其余方法不参与本文件。 */
-function failingSandbox(error: unknown): Sandbox {
+function failingSandbox(error: unknown): SandboxProviderBackend {
   const fail = async () => {
     throw error;
   };
@@ -21,18 +21,20 @@ function failingSandbox(error: unknown): Sandbox {
     workdir: "/work",
     sandboxId: "fake",
     otlpHost: null,
+    capabilities: noSandboxBackendCapabilities,
     runCommand: fail,
     runShell: fail,
-    readFile: fail,
-    fileExists: fail,
-    writeFiles: fail,
-    uploadFiles: fail,
+    readText: fail,
+    writeText: fail,
+    readBytes: fail,
+    writeBytes: fail,
+    pathExists: fail,
     uploadDirectory: fail,
     downloadDirectory: fail,
     downloadFile: fail,
     uploadFile: fail,
     stop: async () => {},
-  } as unknown as Sandbox;
+  };
 }
 
 const e2bTimeout = () => new Error("The operation was aborted due to timeout");
@@ -42,7 +44,7 @@ async function catchError(run: () => Promise<unknown>): Promise<Error> {
   try {
     await run();
   } catch (error) {
-    return error as Error;
+    return error instanceof Error ? error : new Error(String(error));
   }
   throw new Error("expected the transfer to fail");
 }
@@ -70,9 +72,13 @@ describe("沙箱文件传输超时的报错质量", () => {
   });
 
   it("uploadFile 超时:报错点名 provider、操作、沙箱侧路径与字节数,并说明这不是 attempt 预算", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "niceeval-transfer-file-"));
+    dirs.push(dir);
+    const source = join(dir, "repo.tar");
+    await writeFile(source, Buffer.alloc(3_000));
     const sandbox = normalizeSandboxPaths(failingSandbox(e2bTimeout()), "e2b");
 
-    const error = await catchError(() => sandbox.uploadFile("fixtures/repo.tar", Buffer.alloc(3_000)));
+    const error = await catchError(() => sandbox.uploadFile(source, "fixtures/repo.tar"));
 
     // 三要素:哪个操作(provider + 方法名)/ 对什么对象(路径 + 字节数)/ 这条线是谁的。
     expect(error.message).toContain("e2b");
@@ -82,7 +88,8 @@ describe("沙箱文件传输超时的报错质量", () => {
     expect(error.message).toMatch(/timeoutMs|--timeout/);
     // 原始裸串不做消息(它是三样都缺的那条),但作为证据留在 cause 里。
     expect(error.message).not.toContain("The operation was aborted due to timeout");
-    expect((error.cause as Error).message).toBe("The operation was aborted due to timeout");
+    expect(error.cause).toBeInstanceOf(Error);
+    expect(error.cause instanceof Error ? error.cause.message : "").toBe("The operation was aborted due to timeout");
   });
 
   it("uploadDirectory 超时:字节数在失败路径上现量本地来源,报错同时点名本地目录", async () => {
@@ -104,6 +111,6 @@ describe("沙箱文件传输超时的报错质量", () => {
     const sandbox = normalizeSandboxPaths(failingSandbox(denied), "e2b");
 
     // 区分力:这一格证明包装只改写超时形态,权限 / 不存在这类确定性失败仍是原始对象本身。
-    await expect(sandbox.uploadFile("fixtures/x", Buffer.alloc(1))).rejects.toBe(denied);
+    await expect(sandbox.uploadFile("fixtures/x", "fixtures/x")).rejects.toBe(denied);
   });
 });

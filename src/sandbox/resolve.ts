@@ -45,6 +45,11 @@ import {
   specWithPrebuiltProduct,
 } from "./single-case.ts";
 import { registerCustomGroupKeep } from "./custom-group-keep.ts";
+import {
+  customSandboxBackend,
+  sandboxCapabilities,
+  type SandboxProviderBackend,
+} from "./backend.ts";
 
 export {
   planSandboxCase,
@@ -260,8 +265,8 @@ export async function createSandboxInstance(opts: {
  * 不存在「探不到就兜一个」的分支。
  */
 export function sandboxReuseCapability(sandbox: Sandbox): SandboxReuseCapability | undefined {
-  const ensureLifetime = (sandbox as Partial<SandboxReuseCapability>).ensureLifetime;
-  return typeof ensureLifetime === "function" ? { ensureLifetime: (ms) => ensureLifetime.call(sandbox, ms) } : undefined;
+  const ensureLifetime = sandboxCapabilities(sandbox).ensureLifetime;
+  return ensureLifetime._tag === "Supported" ? { ensureLifetime: ensureLifetime.value } : undefined;
 }
 
 /**
@@ -500,10 +505,12 @@ async function createProvider(
   timeout?: number,
   provisionSlot?: ProvisionSlot,
   deadlineAt?: number,
-): Promise<Sandbox> {
+): Promise<SandboxProviderBackend> {
   // 自定义 provider(defineSandbox):不认 provider 名,直接调用用户给的 create();
   // feedback 已绑定到 sandbox.create 阶段(见 docs/feature/sandbox/library.md)。
-  if (r.create) return r.create({ timeout, deadlineAt, runtime: r.runtime, feedback });
+  if (r.create) {
+    return customSandboxBackend(await r.create({ timeout, deadlineAt, runtime: r.runtime, feedback }));
+  }
   switch (r.provider) {
     case "docker": {
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts").catch(() => {

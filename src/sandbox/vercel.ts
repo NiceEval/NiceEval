@@ -5,7 +5,6 @@ import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
-  Sandbox,
   CommandResult,
   CommandOptions,
   SandboxReuseCapability,
@@ -19,6 +18,7 @@ import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { successfulCommandResult } from "./operations.ts";
+import { supportedBackendCapability, unsupportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
 
 /**
  * vercel SDK 对单次 fetch 的 429 已有内部重试(见 @vercel/sandbox 的 with-retry.js,
@@ -55,7 +55,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-export class VercelSandbox implements Sandbox, SandboxReuseCapability {
+export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapability {
   readonly workdir = VERCEL_WORKDIR;
   readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
@@ -64,6 +64,12 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
   private sessionCreatedAt: number;
   private runtime: string;
   readonly sandboxId: string;
+  readonly capabilities = {
+    appendLog: unsupportedBackendCapability,
+    suspend: supportedBackendCapability(() => this.suspend()),
+    ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
+    setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
+  };
 
   private constructor(
     vsb: InstanceType<typeof VSandbox>,
