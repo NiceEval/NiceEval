@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 import { Cause, Effect, Option } from "effect";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { SandboxCommandExitError } from "../sandbox/operations.ts";
+import { registerSandboxContent } from "../sandbox/content.ts";
 import type { CommandResult, SandboxOperations } from "../sandbox/types.ts";
 import { AgentEnsureError, ArtifactPrepareCoordinator, runAgentEnsure } from "./provisioner.ts";
 import type { AgentEnsure, AgentInstaller } from "./types.ts";
 
 const result = (exitCode = 0, stdout = ""): CommandResult => ({ exitCode, stdout, stderr: "" });
+const stagedArtifact = (platform: { readonly os: string; readonly arch: string; readonly libc?: string }) => ({
+  platform,
+  content: registerSandboxContent(new URL(import.meta.url)),
+  targetPath: "$HOME/.niceeval-agent-payload/fixture.tgz",
+  install: { kind: "npm-tarball" as const },
+});
 const sandbox: SandboxOperations = {
   workdir: "/work",
   async runShell() {
@@ -95,7 +102,7 @@ describe("Runner-owned Agent Ensure", () => {
       identity: { agent: "fixture", version: "1.0.0", revision: "1" },
       installMode: "staged",
       prepareArtifact({ targetPlatform }) {
-        return { digest: "digest", platform: targetPlatform, localPath: "/tmp/payload" };
+        return stagedArtifact(targetPlatform);
       },
       async install() {},
     };
@@ -105,6 +112,32 @@ describe("Runner-owned Agent Ensure", () => {
       new AbortController().signal,
     ));
     expect(artifact.platform).toEqual({ os: "linux", arch: "arm64", libc: "musl" });
+  });
+
+  it("staged payload 只接受登记过的文件内容，不把伪造 digest 或宿主路径交给 Attempt", async () => {
+    const identity = { agent: "fixture", version: "1.0.0", revision: "content" } as const;
+    const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
+      identity,
+      installMode: "staged",
+      prepareArtifact({ targetPlatform }) {
+        return {
+          platform: targetPlatform,
+          content: {
+            kind: "file",
+            digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          } as never,
+          targetPath: "$HOME/.niceeval-agent-payload/fixture.tgz",
+          install: { kind: "npm-tarball" },
+        };
+      },
+      async install() {},
+    };
+
+    await expect(ensureFailure(new ArtifactPrepareCoordinator().prepare(
+      installer,
+      { os: "linux", arch: "x64", libc: "gnu" },
+      new AbortController().signal,
+    ))).resolves.toMatchObject({ reason: "artifact-invalid", phase: "installer", identity });
   });
 
   it("verify-only probe 未命中立即失败，不探平台也不尝试安装", async () => {
@@ -183,7 +216,7 @@ describe("Runner-owned Agent Ensure", () => {
       async prepareArtifact({ targetPlatform }) {
         prepares += 1;
         await gate;
-        return { digest: "same-digest", platform: targetPlatform, localPath: "/tmp/payload" };
+        return stagedArtifact(targetPlatform);
       },
       async install() {},
     };

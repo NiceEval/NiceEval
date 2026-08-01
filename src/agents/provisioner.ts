@@ -4,13 +4,13 @@
 // Runner 接线(run.ts / attempt.ts)由串行合流节点完成;本模块导出可调用的 Ensure API、
 // Run 级 prepare single-flight 协调器,以及给 configHash 用的身份投影。
 
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Data, Effect, Exit, Option } from "effect";
+import { Data, Effect, Exit, Option, Schema } from "effect";
 import { t } from "../i18n/index.ts";
 import type { SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
+import { isRegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
@@ -85,6 +85,59 @@ export class AgentEnsureError extends Data.TaggedError("AgentEnsureError")<{
   readonly message: string;
 }> {}
 
+const AgentStagedArtifactShape = Schema.Struct({
+  platform: Schema.Struct({
+    os: Schema.NonEmptyTrimmedString,
+    arch: Schema.NonEmptyTrimmedString,
+    libc: Schema.optional(Schema.NonEmptyTrimmedString),
+  }),
+  content: Schema.Unknown,
+  targetPath: Schema.NonEmptyTrimmedString,
+  install: Schema.Union(
+    Schema.Struct({ kind: Schema.Literal("npm-tarball") }),
+    Schema.Struct({ kind: Schema.Literal("self-contained"), binPath: Schema.NonEmptyTrimmedString }),
+  ),
+});
+
+function decodePreparedArtifact(
+  value: unknown,
+  identity: AgentIdentity,
+  targetPlatform: AgentArtifactPlatform,
+): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
+  return Schema.decodeUnknown(AgentStagedArtifactShape)(value).pipe(
+    Effect.mapError((cause) => new AgentEnsureError({
+      reason: "artifact-invalid",
+      phase: "installer",
+      identity,
+      message: String(cause),
+    })),
+    Effect.flatMap((decoded) => {
+      if (!isRegisteredSandboxContent(decoded.content) || decoded.content.kind !== "file") {
+        return Effect.fail(new AgentEnsureError({
+          reason: "artifact-invalid",
+          phase: "installer",
+          identity,
+          message: t("agent.ensure.artifactMissingDigest", { agent: identity.agent }),
+        }));
+      }
+      if (platformKey(decoded.platform) !== platformKey(targetPlatform)) {
+        return Effect.fail(new AgentEnsureError({
+          reason: "artifact-invalid",
+          phase: "installer",
+          identity,
+          message: `Prepared artifact platform ${platformKey(decoded.platform)} does not match requested platform ${platformKey(targetPlatform)}.`,
+        }));
+      }
+      return Effect.succeed({
+        platform: decoded.platform,
+        content: decoded.content,
+        targetPath: decoded.targetPath,
+        install: decoded.install,
+      });
+    }),
+  );
+}
+
 /** 拒绝无精确版本的身份;`latest` / 空串启动期报错。 */
 export function assertStableAgentIdentity(identity: AgentIdentity): void {
   const version = identity.version.trim();
@@ -104,7 +157,7 @@ export function assertStableAgentIdentity(identity: AgentIdentity): void {
 /** identity (+ 可选制品 digest/platform) → 指纹 / configHash 输入投影。 */
 export function agentInstallIdentityInput(
   identity: AgentIdentity,
-  artifact?: Pick<AgentStagedArtifact, "digest" | "platform">,
+  artifact?: Pick<AgentStagedArtifact, "content" | "platform">,
 ): {
   agent: string;
   version: string;
@@ -119,7 +172,7 @@ export function agentInstallIdentityInput(
     revision: identity.revision,
     ...(artifact
       ? {
-          artifactDigest: artifact.digest,
+          artifactDigest: artifact.content.digest,
           artifactPlatform: platformKey(artifact.platform),
         }
       : {}),
@@ -208,15 +261,7 @@ export class ArtifactPrepareCoordinator {
       );
     }
 
-    const validate = (artifact: AgentStagedArtifact): Effect.Effect<AgentStagedArtifact, AgentEnsureError> => {
-      if (!artifact.digest.trim()) {
-        return Effect.fail(new AgentEnsureError({
-          reason: "artifact-invalid",
-          phase: "installer",
-          identity: installer.identity,
-          message: t("agent.ensure.artifactMissingDigest", { agent: installer.identity.agent }),
-        }));
-      }
+    const retain = (artifact: AgentStagedArtifact): Effect.Effect<AgentStagedArtifact> => {
       this.cache.set(key, artifact);
       return Effect.succeed(artifact);
     };
@@ -232,7 +277,10 @@ export class ArtifactPrepareCoordinator {
           result: { detail: errorMessage(cause) },
         }),
       }),
-    }).pipe(Effect.flatMap(validate));
+    }).pipe(
+      Effect.flatMap((artifact) => decodePreparedArtifact(artifact, installer.identity, platform)),
+      Effect.flatMap(retain),
+    );
     const measured = this.timing
       ? Effect.tryPromise({
           try: () => this.timing!.activity(
@@ -485,9 +533,4 @@ function detectSandboxPlatformEffect(
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-/** 计算文件内容 digest(sha256 hex),供 prepare 校验后写入 artifact。 */
-export function sha256Hex(content: Buffer | string): string {
-  return createHash("sha256").update(content).digest("hex");
 }

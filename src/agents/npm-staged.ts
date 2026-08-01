@@ -2,18 +2,19 @@
 // 宿主 npm pack → digest 校验进 cache → 主 Sandbox 文件 API 上传 → 本地 tarball 安装。
 // 不借题面网络;安装目录在 workdir 外的用户前缀(`~/.local`)。
 
-import { mkdir, readFile, readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { t } from "../i18n/index.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import {
   defaultArtifactCacheDir,
   platformKey,
-  sha256Hex,
 } from "./provisioner.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { registerSandboxContent } from "../sandbox/content.ts";
 import { SandboxCommandExitError } from "../sandbox/operations.ts";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
@@ -87,7 +88,7 @@ async function npmPackToCache(opts: {
   identity: AgentIdentity;
   /** 覆盖 pack 的 spec(原生平台包);省略时用 `<packageName>@<version>`。 */
   spec?: string;
-  install?: AgentStagedArtifact["install"];
+  install: AgentStagedArtifact["install"];
 }): Promise<AgentStagedArtifact> {
   const dest = join(
     opts.cacheDir,
@@ -107,21 +108,24 @@ async function npmPackToCache(opts: {
       }),
     );
   }
-  const files = (await readdir(dest)).filter((name) => name.endsWith(".tgz"));
-  if (files.length === 0) {
+  const packedName = pack.stdout.trim().split("\n").at(-1)?.trim();
+  const files = await readdir(dest);
+  if (
+    packedName === undefined ||
+    !/^[^/\\]+\.tgz$/.test(packedName) ||
+    !files.includes(packedName)
+  ) {
     throw new Error(
       t("agent.ensure.npmPackEmpty", { packageName: opts.packageName, version: opts.version, dest }),
     );
   }
-  // npm pack 打印文件名;多文件时取最新 mtime 不必要——同目录通常一个 tgz。
-  const localPath = join(dest, files[files.length - 1]!);
-  const bytes = await readFile(localPath);
+  const localPath = join(dest, packedName);
+  const content = registerSandboxContent(pathToFileURL(localPath));
   return {
-    digest: sha256Hex(bytes),
     platform: opts.platform,
-    localPath,
-    sandboxPath: `${SANDBOX_TARBALL_DIR}/${opts.identity.agent}.tgz`,
-    ...(opts.install !== undefined ? { install: opts.install } : {}),
+    content,
+    targetPath: `${SANDBOX_TARBALL_DIR}/${opts.identity.agent}.tgz`,
+    install: opts.install,
   };
 }
 
@@ -201,24 +205,12 @@ async function installFromStaged(
   identity: AgentIdentity,
   bin: string,
 ): Promise<void> {
-  const bytes = await readFile(artifact.localPath);
-  const digest = sha256Hex(bytes);
-  if (digest !== artifact.digest) {
-    throw new Error(
-      t("agent.ensure.digestMismatch", {
-        agent: identity.agent,
-        expected: artifact.digest,
-        actual: digest,
-      }),
-    );
-  }
-  const remoteTemplate = artifact.sandboxPath ?? `${SANDBOX_TARBALL_DIR}/${identity.agent}.tgz`;
-  const tarball = await expandSandboxHomePath(sandbox, remoteTemplate);
+  const tarball = await expandSandboxHomePath(sandbox, artifact.targetPath);
   const prefix = await expandSandboxHomePath(sandbox, AGENT_USER_PREFIX);
   await sandbox.runShell(`mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
-  await sandbox.writeBytes(tarball, bytes);
+  await sandbox.putContent(artifact.content, tarball);
 
-  if (artifact.install?.kind === "self-contained") {
+  if (artifact.install.kind === "self-contained") {
     await installSelfContained(sandbox, {
       tarball,
       prefix,
@@ -320,9 +312,10 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
           cacheDir,
           platform: targetPlatform,
           identity: opts.identity,
-          ...(native !== undefined
-            ? { spec: native.spec, install: { kind: "self-contained" as const, binPath: native.binPath } }
-            : {}),
+          ...(native !== undefined ? { spec: native.spec } : {}),
+          install: native !== undefined
+            ? { kind: "self-contained" as const, binPath: native.binPath }
+            : { kind: "npm-tarball" as const },
         });
       })(),
     install: (sandbox, context) => installFromStaged(sandbox, context.artifact, opts.identity, opts.bin),

@@ -6,6 +6,7 @@ import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
+import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
 
 /**
@@ -286,8 +287,8 @@ export interface AgentContext {
   /**
    * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
    * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
-   * `SandboxSpec.setup` Hook 按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
-   * `ctx.experimentId` 分区),或 adapter 按实验切换鉴权 / 路由。与 `flags`(实验条件的
+   * SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adapter 按实验切换鉴权 / 路由。
+   * 与 `flags`(实验条件的
    * 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
    */
   readonly experimentId?: string;
@@ -345,16 +346,13 @@ export interface SandboxAgentSetupContext extends SandboxAgentContext {
    * artifact。同一次 `setup` 内多次调用后写覆盖先写。
    */
   reportSetup(manifest: AgentSetupManifest): void;
-  /**
-   * 已废弃：Agent Ensure 由 Runner 统一执行，adapter setup 不再接触 staged payload 协调器。
-   */
 }
 
 /**
- * agent 自己的沙箱生命周期(每个沙箱一次,与「每轮 send」分开):
- * `setup` 装 CLI、写配置(model/base/auth 等本轮内不变的东西),`send` 只管把一轮 prompt
+ * agent 自己的沙箱运行时生命周期(每个 Attempt 一次,与「每轮 send」分开):
+ * CLI 安装属于 runner 的 agent.ensure；`setup` 只写 model/base/auth 等本 Attempt 运行配置，`send` 只管把一轮 prompt
  * 跑起来(第一次 fresh / 后续 resume)+ 解析 transcript,`teardown` 清理。
- * 运行器在备好沙箱(上传 / 基线 / eval.setup)后、第一次 send 前调一次 `setup`,不返回值;
+ * 运行器在 layer prepare → agent.ensure → State load → baseline 后、第一次 send 前调一次 `setup`,不返回值;
  * `teardown` 当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免——半初始化
  * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
@@ -425,19 +423,13 @@ export interface AgentArtifactPlatform {
  * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
  */
 export interface AgentStagedArtifact {
-  readonly digest: string;
   readonly platform: AgentArtifactPlatform;
-  /** 宿主侧本地文件路径(协调器 / prepare 产出)。 */
-  readonly localPath: string;
-  /** 沙箱内落点建议(workdir 外的 Agent 自有目录)。 */
-  readonly sandboxPath?: string;
-  /**
-   * 制品怎么装进沙箱。省略 = `npm-tarball`(历史行为,要求沙箱里有 npm)。
-   *
-   * `self-contained`:整包解开即可用,`binPath` 是包内 CLI 的相对路径;
-   * 不需要沙箱里有 node / npm / 任何包管理器——任务镜像是题给的,不能假设它带 Node 工具链。
-   */
-  readonly install?: AgentArtifactInstallShape;
+  /** digest-backed 不可变内容句柄；不向 Attempt 泄露宿主路径。 */
+  readonly content: RegisteredSandboxContent;
+  /** 沙箱内落点，位于 workdir 外的 Agent 自有目录。 */
+  readonly targetPath: string;
+  /** 安装协议必须显式，不从缺失字段推断历史默认。 */
+  readonly install: AgentArtifactInstallShape;
 }
 
 export type AgentArtifactInstallShape =
@@ -529,11 +521,14 @@ export interface SandboxAgentDef {
   coverage?: EvidenceCoverage;
   /** 单条或数组都按声明顺序规范化为 Agent layer。 */
   ensure: AgentEnsure | readonly AgentEnsure[];
-  /** 配对安装层；未命中且没有精确 identity 匹配时，Runner 在 agent.ensure 失败。 */
+  /**
+   * 配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
+   * `agent.ensure` 点名缺失的精确 identity。工厂会把省略规范化成空数组。
+   */
   installers?: readonly AgentInstaller[];
   /**
    * 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-   * 本轮内不变的东西)。运行器在 Sandbox 备好(上传/基线/eval.setup 之后)、第一次 send 前
+   * 本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/State load/baseline 之后)、第一次 send 前
    * 调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
    */
   setup?: AgentSetup;
