@@ -436,7 +436,7 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
   it("eval 写了自己的 judge 而没写 timeoutMs 时取 config 的 timeoutMs,不落默认值", async () => {
     const configJudge: JudgeConfig = { ...endpoint, timeoutMs: 300_000 };
     const evalJudge: JudgeConfig = { model: "eval-model", baseUrl: endpoint.baseUrl };
-    const resolved = resolveJudge(evalJudge, configJudge);
+    const resolved = resolveJudge(undefined, evalJudge, configJudge);
     expect(resolved?.timeoutMs, "timeoutMs 逐字段回落到 config").toBe(300_000);
 
     stubDelayedFetch(240_000); // 若错误地落回默认 180s,这次调用会在 180s 被中断
@@ -446,7 +446,7 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
   });
 
   it("两层都没写 timeoutMs 才落默认 180_000", async () => {
-    const resolved = resolveJudge({ model: "eval-model" }, endpoint);
+    const resolved = resolveJudge(undefined, { model: "eval-model" }, endpoint);
     expect(resolved?.timeoutMs).toBeUndefined();
 
     stubDelayedFetch(240_000);

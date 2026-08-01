@@ -1035,7 +1035,7 @@ async function main(): Promise<void> {
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
         sandbox: exp.sandbox ?? config.sandbox,
         sandboxReuse: exp.sandboxReuse,
-        judge: config.judge,
+        judge: exp.judge,
         // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
         // resolveAttemptTimeout 接上。这里 `?? config.timeoutMs` 会把缺省底提前物化成 run 值,
         // 让 eval 自己声明的上限永久短路(见 runner/timeout.ts 与
@@ -1140,6 +1140,7 @@ async function main(): Promise<void> {
   let carryPlan = priorResults?.length
     ? await planCarry(evals, agentRuns, priorResults, config.sandbox, config.timeoutMs, {
         rerun: flags.rerun,
+        configJudge: config.judge,
         keepSandbox: flags.keepSandbox,
         accept: flags.accept,
         incompatibleKeys,
@@ -1195,6 +1196,7 @@ async function main(): Promise<void> {
         flags.accept = chosen;
         carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], config.sandbox, config.timeoutMs, {
           rerun: flags.rerun,
+          configJudge: config.judge,
           keepSandbox: flags.keepSandbox,
           accept: chosen,
           incompatibleKeys,

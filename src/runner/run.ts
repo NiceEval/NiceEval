@@ -15,10 +15,10 @@ import {
 
   attemptFailureDeclaration,
   experimentRunInfo,
-  resolveJudge,
   runAttemptEffect,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
+import { resolveJudge } from "./judge-config.ts";
 import type {
   DiagnosticRecord,
   EvalResult,
@@ -102,40 +102,50 @@ function feedbackWho(a: Attempt): string {
 
 export type { AgentRun, RunOptions } from "./types.ts";
 
-/** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 eval 的生效
- *  配置(evalDef.judge 与 config.judge 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
+/** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 pair 的生效
+ *  配置(Experiment / Eval / Config 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
  *  model|baseUrl|apiKeyEnv 去重。要跑的 eval 都不用 judge 时返回空 —— 全局配了 judge
  *  也不探测,纯确定性断言的运行不再被 judge key / 端点问题拦下。
  *  源码扫描是启发式:judge 调用藏在 import 的 helper 里时会漏判,漏判只是退回旧行为
  *  (评分时才报 judge 错误,损失 fail fast),不影响正确性。 */
 export function judgeProbeTargets(
-  evals: Array<{ source: string; judge: JudgeConfig | undefined }>,
+  evals: Array<{ source: string; judge: JudgeConfig | undefined; experimentJudge?: JudgeConfig }>,
   configJudge: JudgeConfig | undefined,
 ): JudgeConfig[] {
   return judgeProbePlan(
-    evals.map((e, i) => ({ id: `#${i}`, source: e.source, judge: e.judge })),
+    evals.map((e, i) => ({
+      id: `#${i}`,
+      source: e.source,
+      judge: e.judge,
+      experimentJudge: e.experimentJudge,
+    })),
     configJudge,
   ).targets.map((target) => target.judge);
 }
 
 /** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
- *  归回「哪些 eval 依赖这个端点」。 */
+ *  归回「哪些 Experiment × Eval pair 依赖这个端点」。 */
 function judgeTargetKey(jc: JudgeConfig): string {
   return `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
 }
 
-/** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪条 eval 依赖哪个目标」——
- *  预检失败只作废需要 judge 的那些 eval(见 docs/feature/judge/library.md「派发前预检」),
- *  所以必须能把探测结局按 eval 归因,不能只知道有几个端点要探。 */
+/** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪个 pair 依赖哪个目标」——
+ *  预检失败只作废需要 judge 的那些 pair(见 docs/feature/judge/library.md「派发前预检」),
+ *  所以必须能把探测结局按 pair 归因,不能只知道有几个端点要探。 */
 export function judgeProbePlan(
-  evals: Array<{ id: string; source: string; judge: JudgeConfig | undefined }>,
+  evals: Array<{
+    id: string;
+    source: string;
+    judge: JudgeConfig | undefined;
+    experimentJudge?: JudgeConfig;
+  }>,
   configJudge: JudgeConfig | undefined,
 ): { targets: Array<{ key: string; judge: JudgeConfig }>; evalKeys: Map<string, string> } {
   const targets: Array<{ key: string; judge: JudgeConfig }> = [];
   const evalKeys = new Map<string, string>();
   const seen = new Set<string>();
   for (const e of evals) {
-    const jc = resolveJudge(e.judge, configJudge);
+    const jc = resolveJudge(e.experimentJudge, e.judge, configJudge);
     if (!jc || !/\bjudge\b/.test(e.source)) continue;
     const key = judgeTargetKey(jc);
     evalKeys.set(e.id, key);
@@ -202,6 +212,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     opts.carryPlan ??
     (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs, {
       rerun: opts.rerun,
+      configJudge: opts.config.judge,
       ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
       keepSandbox: opts.keepSandbox,
       accept: opts.accept,
@@ -302,15 +313,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
   // 放在 attempts 展开之后,fail fast 只对会真正触发 judge 的运行生效
   // (目标收集逻辑见 judgeProbeTargets;全部结果携入、attempts 为空时也自然跳过)。
-  // 预检失败的受影响 eval:evalId → 失败原因(带实际探测端点)。这些 eval 的全部 attempt
+  // 预检失败的受影响 pair:experimentId|evalId → 失败原因(带实际探测端点)。同一个 Eval
+  // 可被多个 Experiment 用不同 Judge 跑 A/B，不能让一个端点的失败连坐另一个配对。
   // 不派发、不建沙箱,逐条落成 errored(见下方 judgePrecheckFailures 的消费点);其余 eval
   // 照常派发——一条 judge 配置问题不没收整批与它无关的结果。
   const judgePrecheckFailures = new Map<string, string>();
   {
-    const uniqueEvals = [...new Map(attempts.map((a) => [a.evalDef.id, a.evalDef])).values()];
-    const sources = await Promise.all(uniqueEvals.map((e) => readSource(e.sourcePath)));
+    const uniquePairs = [...new Map(attempts.map((a) => [cacheKey(a.run, a.evalDef.id), a])).entries()];
+    const sources = await Promise.all(uniquePairs.map(([, a]) => readSource(a.evalDef.sourcePath)));
     const { targets, evalKeys } = judgeProbePlan(
-      uniqueEvals.map((e, i) => ({ id: e.id, source: sources[i] ?? "", judge: e.judge })),
+      uniquePairs.map(([id, a], i) => ({
+        id,
+        source: sources[i] ?? "",
+        judge: a.evalDef.judge,
+        experimentJudge: a.run.judge,
+      })),
       opts.config.judge,
     );
     if (targets.length > 0) {
@@ -326,9 +343,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const err = await probeJudge(target.judge, opts.signal);
         if (err) failedByKey.set(target.key, err);
       }
-      for (const [evalId, key] of evalKeys) {
+      for (const [pairKey, key] of evalKeys) {
         const err = failedByKey.get(key);
-        if (err !== undefined) judgePrecheckFailures.set(evalId, err);
+        if (err !== undefined) judgePrecheckFailures.set(pairKey, err);
       }
       reportPrecheck({
         status: failedByKey.size > 0 ? "failed" : "done",
@@ -1372,7 +1389,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           const historical = configIdentityFromResult(r);
           const crossed = historical === undefined
             ? []
-            : configDeltas(historical, configIdentityForRun(a0.run, opts.config.sandbox))
+            : configDeltas(
+                historical,
+                configIdentityForRun(
+                  a0.run,
+                  opts.config.sandbox,
+                  resolveJudge(a0.run.judge, a0.evalDef.judge, opts.config.judge),
+                ),
+              )
                 .filter((delta) => opts.accept!.includes(delta.selector));
           if (crossed.length > 0) {
             carriedAcceptingByResult?.set(r, crossed);
@@ -1903,7 +1927,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 都没跑成的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
             // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
             const expLc = expLifecycles.get(a.run);
-            const precheckFailure = judgePrecheckFailures.get(a.evalDef.id);
+            const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByEval.get(a.evalDef.id);
             const blockedError: AttemptError | undefined = expLc?.setupFailed
               ? { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" }
@@ -1949,7 +1973,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   id: a.evalDef.id,
                   description: a.evalDef.description,
                   experimentId: a.run.experimentId,
-                  experiment: experimentRunInfo(a.run, opts.config),
+                  experiment: experimentRunInfo(a.run, opts.config, a.evalDef.judge, a.configHash),
                   agent: a.run.agent.name,
                   model: a.run.model,
                   verdict: "errored",

@@ -280,6 +280,33 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
    * 快照记下当轮的配置身份(run.json 的落盘面)。差异解释读的就是这份清单。
    */
   const priorManifests = new Map<string, EvalManifest>();
+
+  it("每个 Experiment × Eval pair 用三层解析后的 Judge 身份生成 hash 与 manifest", async () => {
+    const evalDef = {
+      ...makeEval("e"),
+      judge: { model: "eval-model", baseUrl: "https://eval.example/v1" },
+    };
+    const run = runWith({ judge: { model: "experiment-model", timeoutMs: 90_000 } });
+    const plan = await planCarry([evalDef], [run], [], undefined, undefined, {
+      configJudge: { model: "config-model", apiKeyEnv: "SECRET_SELECTOR", timeoutMs: 180_000 },
+    });
+    expect(plan.manifestsByKey.get("exp|e")?.config).toMatchObject({
+      "judge.model": "experiment-model",
+      "judge.baseUrl": "https://eval.example/v1",
+      "judge.timeoutMs": 90_000,
+    });
+    expect(plan.manifestsByKey.get("exp|e")?.config).not.toHaveProperty("judge.apiKeyEnv");
+
+    const other = await planCarry(
+      [evalDef],
+      [runWith({ judge: { model: "other-experiment-model", timeoutMs: 90_000 } })],
+      [],
+      undefined,
+      undefined,
+      { configJudge: { model: "config-model", apiKeyEnv: "SECRET_SELECTOR" } },
+    );
+    expect(other.plannedConfigHashes?.get("exp|e")).not.toBe(plan.plannedConfigHashes?.get("exp|e"));
+  });
   async function priorFrom(evalDef: DiscoveredEval, run: AgentRun, over: Partial<EvalResult> = {}): Promise<EvalResult> {
     const { fingerprint, manifest } = await fingerprintWithManifest(evalDef, run);
     priorManifests.set("exp|e", manifest);
@@ -296,7 +323,9 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         attempts: 1,
         earlyExit: false,
         selectedEvalIds: ["e"],
-        ...(run.judge !== undefined ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl } } : {}),
+        ...(run.judge !== undefined
+          ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl, timeoutMs: run.judge.timeoutMs } }
+          : {}),
       },
       ...over,
     });

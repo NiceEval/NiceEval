@@ -139,7 +139,7 @@ export const en = {
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
-    "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }) or the eval's judge config (there is no built-in default model, and no environment variable for it).\n" +
+    "No judge model configured. Set it in the Experiment, Eval, or defineConfig judge config (there is no built-in default model, and no environment variable for it).\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",

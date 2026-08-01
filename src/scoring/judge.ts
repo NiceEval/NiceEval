@@ -1,7 +1,7 @@
 // LLM-as-judge:用一个与被测 agent 完全分离的裁判模型做结构化 autoevals 评分。
 //
 // 裁判模型走 OpenAI 兼容的 /chat/completions。model 与 base_url 是配置,只从代码来:
-//   model:    judge.model(单次断言 → eval → config),没有内置默认模型
+//   model:    judge.model(单次断言 → Experiment → Eval → Config),没有内置默认模型
 //   base_url: judge.baseUrl  →  官方端点(https://api.openai.com/v1)
 // key 是凭据,只从环境来,且只读一个名字(不跨家族猜 CODEX_/OPENAI_):
 //   judge.apiKeyEnv 指向的环境变量  →  NICEEVAL_JUDGE_KEY

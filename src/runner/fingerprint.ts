@@ -9,6 +9,7 @@ import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import { planSandboxCase } from "../sandbox/case.ts";
 import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
+import { resolveJudge } from "./judge-config.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { manifestDeltas, OPAQUE_SELECTOR, type EvalManifest } from "./manifest.ts";
@@ -45,7 +46,7 @@ export async function computeFingerprint(
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; sandbox?: SandboxRunInfo; carryEpoch?: string },
+  overrides?: { configHash?: string; configIdentity?: ConfigIdentity; sandbox?: SandboxRunInfo; carryEpoch?: string },
 ): Promise<string> {
   return (await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox, overrides)).fingerprint;
 }
@@ -63,9 +64,9 @@ export async function fingerprintWithManifest(
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; sandbox?: SandboxRunInfo; carryEpoch?: string },
+  overrides?: { configHash?: string; configIdentity?: ConfigIdentity; sandbox?: SandboxRunInfo; carryEpoch?: string },
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  const identity = configIdentityForRun(run, configSandbox);
+  const identity = overrides?.configIdentity ?? configIdentityForRun(run, configSandbox);
   const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
   const loaderData = await Promise.all(
@@ -408,6 +409,8 @@ export async function planCarry(
     priorManifests?: ReadonlyMap<string, EvalManifest>;
     /** 有历史但格式不兼容的 `cacheKey`;见 `CarryGateOptions.incompatibleKeys`。 */
     incompatibleKeys?: ReadonlySet<string>;
+    /** 项目级 Judge 默认；与 run(Experiment) / Eval 逐字段解析后进入每个 pair 的身份。 */
+    configJudge?: import("../types.ts").JudgeConfig;
   } = {},
 ): Promise<CarryPlan> {
   prepareRunSandboxes(evals, agentRuns, configSandbox);
@@ -430,7 +433,8 @@ export async function planCarry(
   for (const run of agentRuns) {
     for (const evalDef of selectedEvalsForRun(evals, run)) {
       const key = cacheKey(run, evalDef.id);
-      const identity = configIdentityForRun(run, configSandbox);
+      const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
+      const identity = configIdentityForRun(run, configSandbox, resolvedJudge);
       const configHash = hashConfigIdentity(identity);
       run.configHash = configHash;
       entries.set(key, { run, evalDef, identity });
@@ -438,7 +442,13 @@ export async function planCarry(
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
       jobs.push(
         (async () => {
-          const { fingerprint: fp, manifest } = await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox, { carryEpoch });
+          const { fingerprint: fp, manifest } = await fingerprintWithManifest(
+            evalDef,
+            run,
+            sourceCache,
+            configSandbox,
+            { configHash, configIdentity: identity, carryEpoch },
+          );
           plannedFingerprints.set(key, fp);
           manifestsByKey.set(key, manifest);
           acceptable.set(key, new Set([fp]));

@@ -50,6 +50,8 @@ export interface AssertionBase {
   /** 所属分组路径:外层在前的 t.group 标题数组;无分组省略。纯报告用,不影响判定。 */
   groupPath?: string[];
   severity: Severity;
+  /** 作者链过 `.stopOnFailure()`；仅在本条 failed 时停止后续 test 代码，与 severity 正交。 */
+  stopOnFailure?: true;
   /** 作者用 .optional() 显式允许该断言缺席;只改变 unavailable 的折叠方式(见 Severity 与 Verdict),不改变 severity 语义。 */
   optional?: true;
   /** matcher / judge 摘要,如 `equals(4)`、`closedQA("…")`;与 name 分开,供 show/view 同时展示分组标题与检查方式。 */
@@ -136,6 +138,8 @@ export interface PrimaryAssertionSummary {
  */
 export interface BaseAssertionHandle {
   gate(threshold?: number): BaseAssertionHandle;
+  /** 在调用位置立即结算；failed 时保留结果并中止 test，通过时返回句柄。 */
+  stopOnFailure(): Promise<BaseAssertionHandle>;
   /** 降级为纯记录的软断言:不设线,分数照实落盘、永不使该条 failed。无参数——要设线用 .atLeast(threshold)。 */
   soft(): BaseAssertionHandle;
   /** 允许这条断言证据缺席:unavailable 只保留在记录里,不影响判定(见 Severity 与 Verdict)。 */
@@ -145,8 +149,9 @@ export interface BaseAssertionHandle {
 /** eval 作者拿到的可链式句柄(t.judge.autoevals.closedQA(...).atLeast(0.7))。 */
 export interface AssertionHandle extends BaseAssertionHandle {
   atLeast(threshold: number): AssertionHandle;
-  /** 升级为硬门槛:不过即整条 eval failed(不中止执行,其余断言照常收集为诊断证据)。 */
+  /** 升级为硬门槛:不过即整条 eval failed；是否中止只由 `.stopOnFailure()` 决定。 */
   gate(threshold?: number): AssertionHandle;
+  stopOnFailure(): Promise<AssertionHandle>;
   soft(): AssertionHandle;
   optional(): AssertionHandle;
 }
@@ -164,8 +169,9 @@ export interface ScoreAssertionHandle extends BaseAssertionHandle {
    * 用分数表达了分量,再进质量分就是同一条证据被读两遍。
    */
   points(n: number): ScorePointHandle;
-  /** 前置:这条挂了就地结束 `test()`,后面的给分代码不执行。给了 `x` 就是通过线。 */
+  /** 硬要求:未过会使 Attempt failed；是否中止只由 `.stopOnFailure()` 决定。 */
   gate(threshold?: number): ScoreAssertionHandle;
+  stopOnFailure(): Promise<ScoreAssertionHandle>;
   /**
    * 给观测设通过线:低于 `x` 如实记 failed,**永不影响判定**(计分制的判定面只认前置中止,
    * `--strict` 也不翻)。judge 这类默认没有线的打分断言靠它把「装好了但质量差」显示成 ✗;
@@ -178,8 +184,10 @@ export interface ScoreAssertionHandle extends BaseAssertionHandle {
 
 /** 链过 `.points(n)` 之后的句柄:只能再声明前置与缺席策略。 */
 export interface ScorePointHandle {
-  /** 前置:这条挂了就地结束 `test()`(这一份分也没挣到)。 */
+  /** 把得分点同时声明为硬要求；未过会使 Attempt failed，但不会隐式中止。 */
   gate(threshold?: number): ScorePointHandle;
+  /** 在调用位置立即结算；failed 时保留得分与断言结果并中止 test。 */
+  stopOnFailure(): Promise<ScorePointHandle>;
   optional(): ScorePointHandle;
 }
 
@@ -251,15 +259,16 @@ export interface DiffData {
 export type Verdict = "passed" | "failed" | "errored" | "unreadable";
 
 export interface JudgeConfig {
-  model: string;
+  /** 可由更低优先级层补齐；四层都未解析到时，实际 assertion 记 judge-model-unresolved。 */
+  model?: string;
   /** OpenAI 兼容 base url + key 来源;省略则从 env 探测(见 scoring/judge.ts)。 */
   baseUrl?: string;
   apiKeyEnv?: string;
   /**
    * 单次判分调用的上限,毫秒;两层都没写即 180_000。到点中断这次调用,该条断言记
    * `outcome: "unavailable"` + `reason: "judge-call-failed"`,`evidence` 写明超时秒数
-   * (判分调用不重试)。与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析:eval 的 `judge`
-   * → 项目 config 的 `judge` → 默认值。
+   * (判分调用不重试)。与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析:Experiment
+   * → Eval → 项目 config → 默认值。
    */
   timeoutMs?: number;
 }

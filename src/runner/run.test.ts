@@ -29,7 +29,7 @@ import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { judgeProbeTargets, runEvals } from "./run.ts";
+import { judgeProbePlan, judgeProbeTargets, runEvals } from "./run.ts";
 import { defineSandbox, defineSandboxAgent } from "../define.ts";
 import { Artifacts } from "./reporters/artifacts.ts";
 import { openRecord } from "../record/open.ts";
@@ -100,6 +100,26 @@ describe("judgeProbeTargets", () => {
     const evalJudge: JudgeConfig = { model: "deepseek-v4", baseUrl: "http://localhost:8787/v1" };
     const evals = [{ source: `t.judge.autoevals.factuality("2")`, judge: evalJudge }];
     expect(judgeProbeTargets(evals, configJudge)).toEqual([evalJudge]);
+  });
+
+  it("resolves Experiment fields before Eval and Config", () => {
+    const evals = [{
+      id: "exp-a|judged",
+      source: `t.judge.autoevals.factuality("2")`,
+      judge: { model: "eval-model", baseUrl: "https://eval.example/v1" },
+      experimentJudge: { model: "experiment-model", timeoutMs: 90_000 },
+    }];
+    const plan = judgeProbePlan(evals, { ...configJudge, apiKeyEnv: "CONFIG_KEY", timeoutMs: 180_000 });
+    expect(plan.targets).toEqual([{
+      key: "experiment-model|https://eval.example/v1|CONFIG_KEY",
+      judge: {
+        model: "experiment-model",
+        baseUrl: "https://eval.example/v1",
+        apiKeyEnv: "CONFIG_KEY",
+        timeoutMs: 90_000,
+      },
+    }]);
+    expect(plan.evalKeys.get("exp-a|judged")).toBe(plan.targets[0]?.key);
   });
 
   it("dedupes identical effective configs across evals", () => {
@@ -4275,6 +4295,62 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+
+  it("同一 Eval 的 Experiment Judge A/B 按 pair 隔离预检失败", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request): Promise<Response> => {
+      const url = String(input);
+      return url.includes("bad-judge")
+        ? new Response("denied", { status: 401 })
+        : new Response(JSON.stringify({ data: [] }), { status: 200 });
+    }));
+
+    let ran = 0;
+    let created = 0;
+    const judged = await evalWithSource("shared-judged", JUDGE_SOURCE, () => {
+      ran += 1;
+    });
+    const countingSandbox = defineSandbox({
+      name: "pair-counting-provider",
+      create: async () => {
+        created += 1;
+        return asSandbox(new FakeSandbox());
+      },
+    });
+    const base: Omit<AgentRun, "experimentId" | "judge"> = {
+      agent: makeAgent("agent-a"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: countingSandbox,
+      timeoutMs: 5_000,
+      selectedEvalIds: ["shared-judged"],
+    };
+    const bad: AgentRun = {
+      ...base,
+      experimentId: "judge-bad",
+      judge: { model: "bad", baseUrl: "http://bad-judge.fixture/v1" },
+    };
+    const good: AgentRun = {
+      ...base,
+      experimentId: "judge-good",
+      judge: { model: "good", baseUrl: "http://good-judge.fixture/v1" },
+    };
+
+    const { summary } = await run([judged], [bad, good]);
+    const byExperiment = new Map(summary.results.map((result) => [result.experimentId, result]));
+    expect(byExperiment.get("judge-bad")).toMatchObject({
+      verdict: "errored",
+      error: { code: "judge-precheck-failed" },
+      experiment: { judge: { model: "bad", baseUrl: "http://bad-judge.fixture/v1" } },
+    });
+    expect(byExperiment.get("judge-good")).toMatchObject({
+      verdict: "passed",
+      experiment: { judge: { model: "good", baseUrl: "http://good-judge.fixture/v1" } },
+    });
+    expect(ran).toBe(1);
+    expect(created).toBe(1);
   });
 
   it("含 judge 的 eval 全部 attempt 不派发、不建沙箱、逐条 errored 落盘;不含 judge 的照常跑出 verdict", async () => {

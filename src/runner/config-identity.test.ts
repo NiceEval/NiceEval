@@ -51,6 +51,32 @@ describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
     expect(configIdentityForRun(makeRun())).toMatchObject({ sandboxReuse: false, strict: false });
     expect(computeConfigHash(makeRun())).toBe(computeConfigHash(makeRun({ sandboxReuse: false, strict: false })));
   });
+
+  it("Judge identity 包含解析后的 model/baseUrl/timeoutMs，但不包含凭据选择器", () => {
+    const first = configIdentityForRun(makeRun(), undefined, {
+      model: "judge-a",
+      baseUrl: "https://judge.example/v1",
+      apiKeyEnv: "KEY_A",
+      timeoutMs: 90_000,
+    });
+    const second = configIdentityForRun(makeRun(), undefined, {
+      model: "judge-a",
+      baseUrl: "https://judge.example/v1",
+      apiKeyEnv: "KEY_B",
+      timeoutMs: 90_000,
+    });
+    expect(first.judge).toEqual({
+      model: "judge-a",
+      baseUrl: "https://judge.example/v1",
+      timeoutMs: 90_000,
+    });
+    expect(first).toEqual(second);
+    expect(configDeltas(first, configIdentityForRun(makeRun(), undefined, {
+      model: "judge-a",
+      baseUrl: "https://judge.example/v1",
+      timeoutMs: 120_000,
+    }))).toEqual([{ selector: "config:judge.timeoutMs", from: "90000", to: "120000" }]);
+  });
 });
 
 describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答", () => {

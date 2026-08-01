@@ -52,7 +52,8 @@ export interface ExperimentRunInfo {
   sandboxReuse?: boolean;
   /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
   strict?: boolean;
-  judge?: Pick<JudgeConfig, "model" | "baseUrl">;
+  /** 解析后的 Judge 执行身份；apiKeyEnv 是凭据选择器，不落盘。 */
+  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "timeoutMs">;
   /**
    * Agent Ensure 安装身份投影(`agentInstallIdentityInput`);与 sandbox case 身份正交。
    * 有 provisioner 时落盘,供历史侧重算 configHash。
@@ -720,6 +721,12 @@ export interface ExperimentDef {
   model?: string;
   /** 模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。 */
   reasoningEffort?: string;
+  /**
+   * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
+   * rubric、材料、severity 与 threshold 仍由 Eval assertion 拥有。各字段按
+   * Experiment → Eval → Config 解析。
+   */
+  judge?: JudgeConfig;
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
    *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
@@ -912,7 +919,7 @@ export interface AgentRun {
   earlyExit: boolean;
   sandbox?: SandboxOption;
   sandboxReuse?: boolean;
-  /** 配置身份里的 judge 投影来源；apiKeyEnv 不进入哈希也不落盘。 */
+  /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   judge?: JudgeConfig;
   /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
   configHash?: string;

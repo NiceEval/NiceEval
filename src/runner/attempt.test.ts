@@ -108,6 +108,8 @@ async function runOnce(
     runTimeout?: RunTimeout;
     sandbox?: AgentRun["sandbox"];
     experimentId?: string;
+    /** Experiment 级 Judge 覆盖。 */
+    judge?: AgentRun["judge"];
     /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
     config?: Config;
     /** 复用池借出的实例(调度事实测试用):模拟 run.ts 把 lease 交给 runAttemptEffect。 */
@@ -130,6 +132,7 @@ async function runOnce(
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
     sandbox: opts.sandbox ?? defineSandbox({ name: "fake-provider", create: async () => asSandbox(box) }),
     experimentId: opts.experimentId,
+    judge: opts.judge,
     ...(opts.runTimeout ?? { timeoutMs: opts.timeoutMs ?? 5_000 }),
     selectedEvalIds: [evalDef.id],
   };
@@ -1178,7 +1181,7 @@ describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
   });
 });
 
-// judge 的解析链(eval → config)逐字段合并:eval 写了哪个字段用哪个,没写的字段仍从项目
+// judge 的解析链(Experiment → Eval → Config)逐字段合并:上层写了哪个字段用哪个,没写的字段
 // config 的 judge 取。断言面是判分断言实际请求到的 model 与端点(截获 fetch,不出网络)。
 describe("runAttemptEffect · judge 配置的逐字段解析链", () => {
   const mergeAgent = () =>
@@ -1271,6 +1274,42 @@ describe("runAttemptEffect · judge 配置的逐字段解析链", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]!.model).toBe("eval-model");
     expect(captured[0]!.url).toBe("http://eval.fixture.internal/v1/chat/completions");
+  });
+
+  it("Experiment 只覆盖 model，端点与 key 仍从 Eval / Config 补齐", async () => {
+    vi.stubEnv("CONFIG_JUDGE_KEY", "config-key");
+    const captured = captureJudgeRequests();
+    try {
+      const result = await runOnce(mergeAgent(), new FakeSandbox(), {
+        judge: { model: "experiment-model" },
+        config: {
+          judge: {
+            model: "config-model",
+            baseUrl: "http://config.fixture.internal/v1",
+            apiKeyEnv: "CONFIG_JUDGE_KEY",
+          },
+        },
+        evalDefOverrides: {
+          judge: { model: "eval-model", baseUrl: "http://eval.fixture.internal/v1" },
+          ...judgeEval,
+        },
+      });
+      expect(result.experiment?.judge).toEqual({
+        model: "experiment-model",
+        baseUrl: "http://eval.fixture.internal/v1",
+        timeoutMs: undefined,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      model: "experiment-model",
+      url: "http://eval.fixture.internal/v1/chat/completions",
+      authorization: "Bearer config-key",
+    });
   });
 });
 

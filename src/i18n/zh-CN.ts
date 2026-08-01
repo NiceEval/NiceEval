@@ -136,7 +136,7 @@ export const zhCN = {
   "runner.dispatchHaltedExperiment": "实验已止损(dispatch-halted):{{message}}\n",
   "runner.dispatchHaltedEval": "eval 已止损:{{message}}\n",
   "judge.modelMissing":
-    "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } }) 或 eval 的 judge 配置里指定裁判模型(没有内置默认模型,也没有对应的环境变量)。\n" +
+    "judge 未配置模型:在 Experiment、Eval 或 defineConfig 的 judge 配置里指定裁判模型(没有内置默认模型,也没有对应的环境变量)。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",

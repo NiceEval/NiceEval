@@ -9,7 +9,7 @@
 
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import { agentInstallIdentityInput } from "../agents/provisioner.ts";
-import type { EvalResult, JsonValue, SandboxOption } from "../types.ts";
+import type { EvalResult, JsonValue, JudgeConfig, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
 
 /**
@@ -27,7 +27,7 @@ export interface ConfigIdentity {
   sandboxReuse: boolean;
   sandbox?: SandboxRunInfo;
   strict: boolean;
-  judge?: { model?: string; baseUrl?: string };
+  judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
   /** Agent Ensure 安装身份;与 CaseKey 正交。无 provisioner 时 undefined。 */
   agentInstall?: {
     agent: string;
@@ -54,8 +54,11 @@ function agentInstallOf(run: AgentRun): ConfigIdentity["agentInstall"] {
 }
 
 /** 本次解析后配置的身份投影。 */
-export function configIdentityForRun(run: AgentRun, configSandbox?: SandboxOption): ConfigIdentity {
-  const judge = run.judge;
+export function configIdentityForRun(
+  run: AgentRun,
+  configSandbox?: SandboxOption,
+  judge: JudgeConfig | undefined = run.judge,
+): ConfigIdentity {
   return {
     agent: run.agent.name,
     model: run.model,
@@ -64,7 +67,7 @@ export function configIdentityForRun(run: AgentRun, configSandbox?: SandboxOptio
     sandboxReuse: run.sandboxReuse ?? false,
     sandbox: sandboxRunInfo(run.sandbox ?? configSandbox),
     strict: run.strict ?? false,
-    judge: judge ? { model: judge.model, baseUrl: judge.baseUrl } : undefined,
+    judge: judge ? { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } : undefined,
     agentInstall: agentInstallOf(run),
   };
 }
@@ -84,7 +87,9 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     sandboxReuse: exp.sandboxReuse ?? false,
     sandbox: exp.sandbox,
     strict: exp.strict ?? false,
-    judge: exp.judge ? { model: exp.judge.model, baseUrl: exp.judge.baseUrl } : undefined,
+    judge: exp.judge
+      ? { model: exp.judge.model, baseUrl: exp.judge.baseUrl, timeoutMs: exp.judge.timeoutMs }
+      : undefined,
     agentInstall: exp.agentInstall,
   };
 }
@@ -118,6 +123,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   if (identity.judge !== undefined) {
     put("judge.model", identity.judge.model);
     put("judge.baseUrl", identity.judge.baseUrl);
+    put("judge.timeoutMs", identity.judge.timeoutMs);
   }
   if (identity.agentInstall !== undefined) {
     put("agentInstall.agent", identity.agentInstall.agent);

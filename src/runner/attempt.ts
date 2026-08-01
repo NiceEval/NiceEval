@@ -12,6 +12,7 @@ import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
+import { resolveJudge } from "./judge-config.ts";
 import { providerSessionLimitMs, SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
@@ -152,7 +153,7 @@ export function runAttemptEffect(
     id: evalDef.id,
     description: evalDef.description,
     experimentId: run.experimentId,
-    experiment: experimentRunInfo(run, config),
+    experiment: experimentRunInfo(run, config, evalDef.judge, a.configHash),
     agent: run.agent.name,
     model: run.model,
     verdict: "errored",
@@ -1074,7 +1075,7 @@ async function runAttemptBody(
     // 构造 t,跑 test
     enterPhase("eval.run");
     log(t("runner.driveAgent"));
-    const judge = resolveJudge(evalDef.judge, config.judge);
+    const judge = resolveJudge(run.judge, evalDef.judge, config.judge);
     const { context, state } = createEvalContext({
       agent: run.agent,
       sandbox,
@@ -1278,7 +1279,7 @@ async function runAttemptBody(
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
-      experiment: experimentRunInfo(run, config),
+      experiment: experimentRunInfo(run, config, evalDef.judge, a.configHash),
       agent: run.agent.name,
       model: run.model,
       verdict,
@@ -1544,18 +1545,20 @@ async function collectSources(
 
 /** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/record/architecture.md):
  *  agent/model 只在快照顶层,这里不复制;sandbox 只经 provider 的公开参数投影落盘。
- *  第二个参数收整份项目配置(而不是只收 sandbox):`sandbox` 与 `timeoutMs` 都是「run 值缺席
- *  时落到 config」的字段,记录要落这次运行真正生效的 run 级值。eval 自己声明的那一层不在这
- *  (与 judge 同理,它在该 eval 的源码闭包里)。 */
+ *  第二个参数收整份项目配置(而不是只收 sandbox):`sandbox` 与 `timeoutMs` 记录真正生效的
+ *  run 级值；Judge 则连同 Eval 层逐字段解析并按 pair 落盘，使同一 Eval 的裁判 A/B 可回放。 */
 export function experimentRunInfo(
   run: AgentRun,
-  config?: Pick<Config, "sandbox" | "timeoutMs">,
+  config?: Pick<Config, "sandbox" | "timeoutMs" | "judge">,
+  evalJudge?: JudgeConfig,
+  configHash: string | undefined = run.configHash,
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
+  const judge = resolveJudge(run.judge, evalJudge, config?.judge);
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
-    ...(run.configHash !== undefined ? { configHash: run.configHash } : {}),
+    ...(configHash !== undefined ? { configHash } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
     attempts: run.attempts,
@@ -1568,32 +1571,13 @@ export function experimentRunInfo(
     ...sandboxProjection(run, config?.sandbox),
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.strict ? { strict: true } : {}),
-    ...(run.judge ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl } } : {}),
+    ...(judge
+      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
+      : {}),
     ...(run.agent.kind === "sandbox" && run.agent.provisioner !== undefined
       ? { agentInstall: agentInstallIdentityInput(run.agent.provisioner.identity) }
       : {}),
   };
 }
 
-/** judge 配置逐字段解析:`model` / `baseUrl` / `apiKeyEnv` / `timeoutMs` 各自走 eval 的
- *  `judge` → 项目 config 的 `judge` → 各自默认(见 docs/feature/judge/library.md
- *  「调用预算与执行顺序」)。eval 只声明 `model` 时 `baseUrl` 仍从 config 来,所以这里逐字段
- *  取值而不是展开合并——展开会让 eval 里显式写下的 `undefined` 盖掉 config 的值。 */
-export function resolveJudge(
-  evalJudge: JudgeConfig | undefined,
-  configJudge: JudgeConfig | undefined,
-): JudgeConfig | undefined {
-  if (!evalJudge) return configJudge;
-  if (!configJudge) return evalJudge;
-  return {
-    model: evalJudge.model ?? configJudge.model,
-    ...pick("baseUrl", evalJudge.baseUrl ?? configJudge.baseUrl),
-    ...pick("apiKeyEnv", evalJudge.apiKeyEnv ?? configJudge.apiKeyEnv),
-    ...pick("timeoutMs", evalJudge.timeoutMs ?? configJudge.timeoutMs),
-  };
-}
-
-/** 两层都没写的可选字段整个不出现,而不是落成显式 undefined(下游按「有没有写」判断)。 */
-function pick<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
-  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
-}
+export { resolveJudge } from "./judge-config.ts";
