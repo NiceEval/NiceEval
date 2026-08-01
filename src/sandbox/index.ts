@@ -15,6 +15,7 @@ export {
   localSandbox,
 } from "./layer.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
+export { checkout, installTool } from "./prepare-commands.ts";
 export { SandboxCommandExitError } from "./operations.ts";
 export { registerSandboxContent } from "./content.ts";
 export {
@@ -106,6 +107,8 @@ export type {
   StableSandboxCommand,
   AttemptRef,
 } from "./commands.ts";
+
+export type { CheckoutOptions, InstallToolOptions } from "./prepare-commands.ts";
 
 export type { RegisteredSandboxContent } from "./content.ts";
 
