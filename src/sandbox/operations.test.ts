@@ -133,4 +133,31 @@ describe("SandboxCommandTarget.putContent", () => {
       "writeBytes:fixture/z/b.txt:b",
     ]);
   });
+
+  it("splits large registered files into bounded writes and atomically replaces the target", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-content-large-"));
+    roots.push(root);
+    const path = join(root, "payload.bin");
+    await writeFile(path, Buffer.alloc(8 * 1024 * 1024 + 3, 0x61));
+    const content = registerSandboxContent(new URL(`file://${path}`));
+    const io: string[] = [];
+    const operations = fakeOperations(io);
+    const writes: Array<{ path: string; bytes: number }> = [];
+    operations.writeBytes = async (target, bytes) => {
+      writes.push({ path: target, bytes: bytes.byteLength });
+    };
+
+    await createSandboxCommandTarget(operations).putContent(content, "payload.bin");
+
+    expect(writes).toHaveLength(2);
+    expect(writes.map((write) => write.bytes)).toEqual([8 * 1024 * 1024, 3]);
+    expect(writes.every((write) => write.path.includes("payload.bin.niceeval-parts-"))).toBe(true);
+    expect(io).toEqual([
+      expect.stringMatching(/^command!:rm:-rf,payload\.bin\.niceeval-parts-[a-f0-9]{16},payload\.bin\.niceeval-merge-[a-f0-9]{16}$/),
+      expect.stringMatching(/^command!:mkdir:-p,payload\.bin\.niceeval-parts-[a-f0-9]{16}$/),
+      expect.stringMatching(/^command!:sh:-c,cat \"\$1\"\/part-\* > \"\$2\",niceeval-put-content,payload\.bin\.niceeval-parts-[a-f0-9]{16},payload\.bin\.niceeval-merge-[a-f0-9]{16}$/),
+      expect.stringMatching(/^command!:mv:-f,payload\.bin\.niceeval-merge-[a-f0-9]{16},payload\.bin$/),
+      expect.stringMatching(/^command!:rm:-rf,payload\.bin\.niceeval-parts-[a-f0-9]{16}$/),
+    ]);
+  });
 });

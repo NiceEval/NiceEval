@@ -445,6 +445,7 @@ sandboxLayer()
 
 需要稳定 identity 的 helper 用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
 本地文件或目录先经 `registerSandboxContent()` 取得 digest-backed handle,再放进 `inputs` 并用 `putContent()` 送入 Sandbox。
+`putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
 任一 opaque command 使整条 Attempt `carryEligible = false`,禁止跨 Run 结果沿用;计划与运行记录都显示具体原因。
 
 源码检出与慢工具安装这两类常见昂贵动作有内置命令(`checkout()` / `installTool()`),自带检查、缓存与稳定 identity,见[内置 prepare 命令](prepare-commands.md)。

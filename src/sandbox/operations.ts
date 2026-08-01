@@ -10,6 +10,52 @@ import {
   type RegisteredSandboxContent,
 } from "./content.ts";
 
+// Provider file APIs often impose a much shorter per-request deadline than the
+// Attempt budget. Keep each write comfortably below that boundary, then replace
+// the destination only after every part has arrived.
+const PUT_CONTENT_CHUNK_BYTES = 8 * 1024 * 1024;
+
+async function putContentBytes(
+  sandbox: SandboxOperations,
+  targetPath: string,
+  bytes: Uint8Array,
+  digest: string,
+): Promise<void> {
+  if (bytes.byteLength <= PUT_CONTENT_CHUNK_BYTES) {
+    await sandbox.writeBytes(targetPath, bytes);
+    return;
+  }
+
+  const suffix = digest.replace(/^sha256:/, "").slice(0, 16);
+  const partsDir = `${targetPath}.niceeval-parts-${suffix}`;
+  const mergedPath = `${targetPath}.niceeval-merge-${suffix}`;
+  await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath]);
+  await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir]);
+
+  try {
+    let index = 0;
+    for (let offset = 0; offset < bytes.byteLength; offset += PUT_CONTENT_CHUNK_BYTES) {
+      const part = `${partsDir}/part-${String(index).padStart(6, "0")}`;
+      await sandbox.writeBytes(part, bytes.subarray(offset, offset + PUT_CONTENT_CHUNK_BYTES));
+      index += 1;
+    }
+    await sandbox.runCommandOrThrow("sh", [
+      "-c",
+      'cat "$1"/part-* > "$2"',
+      "niceeval-put-content",
+      partsDir,
+      mergedPath,
+    ]);
+    await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath]);
+    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir]);
+  } catch (error) {
+    // Cleanup is best effort; never replace the provider error that explains
+    // which part failed to transfer.
+    await sandbox.runCommand("rm", ["-rf", partsDir, mergedPath]).catch(() => undefined);
+    throw error;
+  }
+}
+
 /** `run*OrThrow` 的非零退出错误；transport、timeout 与取消错误不会被改写成它。 */
 export class SandboxCommandExitError extends Error {
   readonly code = "command-exit";
@@ -55,7 +101,12 @@ export function createSandboxCommandTarget(
       // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
       const snapshot = registeredSandboxContentSnapshotOf(content);
       if (snapshot.kind === "file") {
-        await sandbox.writeBytes(targetPath, Uint8Array.from(Buffer.from(snapshot.contentBase64, "base64")));
+        await putContentBytes(
+          sandbox,
+          targetPath,
+          Uint8Array.from(Buffer.from(snapshot.contentBase64, "base64")),
+          snapshot.digest,
+        );
         return;
       }
 
@@ -66,7 +117,12 @@ export function createSandboxCommandTarget(
         if (entry.kind === "directory") {
           await sandbox.runCommandOrThrow("mkdir", ["-p", path]);
         } else {
-          await sandbox.writeBytes(path, Uint8Array.from(Buffer.from(entry.contentBase64, "base64")));
+          await putContentBytes(
+            sandbox,
+            path,
+            Uint8Array.from(Buffer.from(entry.contentBase64, "base64")),
+            snapshot.digest,
+          );
         }
       }
     },
