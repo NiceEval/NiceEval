@@ -6,15 +6,25 @@ import { EvalRequirementFailed } from "./control-flow.ts";
 import { deriveDiffData } from "../scoring/diff.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
 import type { Agent, AgentContext, DiffArtifact, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
 // 但 t.check(t.reply, includes("2")) 却失败。
 function calculatorAgent(): Agent {
+  const identity = { agent: "calculator", version: "0.0.0-test", revision: "1" } as const;
   return {
     name: "calculator",
     // 测试注入了真实的 fake sandbox,kind: "sandbox" 让 t.sandbox 过沙箱能力守卫。
     kind: "sandbox",
+    ensure: [{
+      identity,
+      probe: defineSandboxCommand(
+        { id: "test.agent.calculator.probe", revision: "1", inputs: identity },
+        async () => {},
+      ),
+    }],
+    installers: [],
     coverage: completeCoverage,
     async send(_input: TurnInput, ctx: AgentContext): Promise<Turn> {
       ctx.session.capture("sess-1");
@@ -30,8 +40,8 @@ function calculatorAgent(): Agent {
 
 type FakeSandbox = Sandbox & {
   calls: {
-    uploadDirectory: [string, string | undefined][];
-    downloadDirectory: [string, string | undefined][];
+    uploadDirectory: [string | URL, string | undefined][];
+    downloadDirectory: [string, string | URL][];
   };
 };
 
@@ -41,20 +51,23 @@ function fakeSandbox(): FakeSandbox {
     workdir: "/sandbox/work",
     runCommand: async () => { throw new Error("not implemented"); },
     runShell: async () => { throw new Error("not implemented"); },
-    readFile: async () => "",
-    fileExists: async () => false,
-    writeFiles: async () => {},
-    uploadFiles: async () => {},
-    uploadDirectory: async (localDir, targetDir) => {
-      calls.uploadDirectory.push([localDir, targetDir]);
+    runCommandOrThrow: async () => { throw new Error("not implemented"); },
+    runShellOrThrow: async () => { throw new Error("not implemented"); },
+    readText: async () => "",
+    writeText: async () => {},
+    readBytes: async () => new Uint8Array(),
+    writeBytes: async () => {},
+    pathExists: async () => false,
+    uploadDirectory: async (sourceDir, targetDir) => {
+      calls.uploadDirectory.push([sourceDir, targetDir]);
     },
     stop: async () => {},
     sandboxId: "fake",
     otlpHost: null,
-    downloadFile: async () => Buffer.from(""),
+    downloadFile: async () => {},
     uploadFile: async () => {},
-    downloadDirectory: async (localDir, targetDir) => {
-      calls.downloadDirectory.push([localDir, targetDir]);
+    downloadDirectory: async (sourceDir, targetDir) => {
+      calls.downloadDirectory.push([sourceDir, targetDir]);
     },
     calls,
   };
@@ -92,14 +105,11 @@ function tracingSandbox() {
   const commands: { line: string; env?: globalThis.Record<string, string> }[] = [];
   const sandbox = {
     ...fakeSandbox(),
-    async writeFiles(next: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
-      for (const [path, content] of Object.entries(next)) files.set(targetDir ? `${targetDir}/${path}` : path, content);
+    async writeText(path: string, content: string): Promise<void> {
+      files.set(path, content);
     },
-    async uploadFiles(next: { path: string; content: Buffer | string }[], targetDir?: string): Promise<void> {
-      for (const f of next) files.set(targetDir ? `${targetDir}/${f.path}` : f.path, String(f.content));
-    },
-    async uploadFile(path: string, content: Buffer): Promise<void> {
-      files.set(path, content.toString());
+    async writeBytes(path: string, content: Uint8Array): Promise<void> {
+      files.set(path, Buffer.from(content).toString());
     },
     async runShell(script: string, opts?: { env?: globalThis.Record<string, string> }) {
       commands.push({ line: script, ...(opts?.env ? { env: opts.env } : {}) });
@@ -337,10 +347,10 @@ describe("createEvalContext / TestContext live state", () => {
     const sandbox = fakeSandbox();
     const { context } = makeContext(calculatorAgent(), sandbox, "/repo/evals/nested");
 
-    await context.sandbox.downloadDirectory("../out/attempt", "dist");
+    await context.sandbox.downloadDirectory("dist", "../out/attempt");
 
     expect(sandbox.calls.downloadDirectory).toEqual([
-      ["/repo/evals/out/attempt", "dist"],
+      ["dist", "/repo/evals/out/attempt"],
     ]);
   });
 });
@@ -675,7 +685,7 @@ describe("t.sandbox.diff 的内容读取:被省略的内容如实报不可用", 
     const { context } = contextWithDiff();
     expect(() => context.sandbox.diff.get("dist/bundle.wasm")).toThrow(/binary \(after 3145728 bytes\)/);
     expect(() => context.sandbox.diff.get("data/dump.sql")).toThrow(/oversized-text \(before 2097153 bytes, after 4194304 bytes\)/);
-    expect(() => context.sandbox.diff.get("data/dump.sql")).toThrow(/t\.sandbox\.readFile/);
+    expect(() => context.sandbox.diff.get("data/dump.sql")).toThrow(/t\.sandbox\.readText/);
   });
 
   it("matches:命中即 true;没命中但有条目内容被省略时抛错,不静默返回 false", () => {

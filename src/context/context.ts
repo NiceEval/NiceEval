@@ -15,7 +15,7 @@ import type { ConcurrencySlot } from "./send-retry.ts";
 import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
 import { describeElided, diffIsEmpty, diffMatches, elidedContentAt, elidedContentPaths, emptyDiffData } from "../scoring/diff.ts";
 import { t } from "../i18n/index.ts";
-import { resolveLocalPath } from "../sandbox/paths.ts";
+import { resolveEvalLocalPath } from "../sandbox/paths.ts";
 import { brief } from "../util.ts";
 import type {
   Agent,
@@ -351,16 +351,16 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     writeBytes: guardAsync((path, content) => deps.sandbox.writeBytes(path, content)),
     pathExists: guardAsync((path) => deps.sandbox.pathExists(path)),
     uploadFile: guardAsync((source, targetPath) =>
-      deps.sandbox.uploadFile(resolveLocalPath(deps.evalBaseDir, source), targetPath),
+      deps.sandbox.uploadFile(resolveEvalLocalPath(deps.evalBaseDir, source), targetPath),
     ),
     uploadDirectory: guardAsync((sourceDir, targetDir, opts) =>
-      deps.sandbox.uploadDirectory(resolveLocalPath(deps.evalBaseDir, sourceDir), targetDir, opts),
+      deps.sandbox.uploadDirectory(resolveEvalLocalPath(deps.evalBaseDir, sourceDir), targetDir, opts),
     ),
     downloadFile: guardAsync((sourcePath, target) =>
-      deps.sandbox.downloadFile(sourcePath, resolveLocalPath(deps.evalBaseDir, target)),
+      deps.sandbox.downloadFile(sourcePath, resolveEvalLocalPath(deps.evalBaseDir, target)),
     ),
     downloadDirectory: guardAsync((sourceDir, targetDir, opts) =>
-      deps.sandbox.downloadDirectory(sourceDir, resolveLocalPath(deps.evalBaseDir, targetDir), opts),
+      deps.sandbox.downloadDirectory(sourceDir, resolveEvalLocalPath(deps.evalBaseDir, targetDir), opts),
     ),
     ...sandboxAssertions,
   };

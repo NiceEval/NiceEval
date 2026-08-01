@@ -3,7 +3,10 @@
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { SandboxFile } from "../types.ts";
+export interface WorkspaceFile {
+  readonly path: string;
+  readonly content: Uint8Array;
+}
 
 const IGNORE_DIRS = new Set([
   "node_modules",
@@ -16,8 +19,8 @@ const IGNORE_DIRS = new Set([
 ]);
 
 /** 递归收集 workspace 目录下 agent 可见的文件(排除构建产物 / 依赖)。 */
-export async function collectWorkspaceFiles(dir: string): Promise<SandboxFile[]> {
-  const out: SandboxFile[] = [];
+export async function collectWorkspaceFiles(dir: string): Promise<WorkspaceFile[]> {
+  const out: WorkspaceFile[] = [];
   async function walk(current: string): Promise<void> {
     let entries;
     try {

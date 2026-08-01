@@ -17,7 +17,7 @@ import type { CommandResult, Sandbox } from "../types.ts";
 
 const execAsync = promisify(exec);
 
-/** 宿主目录扮演沙箱 workdir;runShell 用真实 shell 跑,downloadFile 读宿主文件(ledger 只用这两个 + env)。 */
+/** 宿主目录扮演沙箱 workdir;runShell 用真实 shell 跑,readBytes 读宿主文件(ledger 只用这两个 + env)。 */
 function hostSandbox(
   workdir: string,
   ledgerDir: string,
@@ -38,7 +38,7 @@ function hostSandbox(
       return { stdout: err.stdout ?? "", stderr: err.stderr ?? "", exitCode: err.code ?? 1 };
     }
   };
-  const downloadFile = async (path: string): Promise<Buffer> => {
+  const readBytes = async (path: string): Promise<Uint8Array> => {
     counters?.downloads?.push(path);
     return Buffer.from(await readFile(patchPath(path)));
   };
@@ -50,13 +50,20 @@ function hostSandbox(
     runCommand: async () => {
       throw new Error("not used");
     },
-    readFile: async () => "",
-    fileExists: async () => false,
-    writeFiles: async () => {},
-    uploadFiles: async () => {},
+    runCommandOrThrow: async () => {
+      throw new Error("not used");
+    },
+    runShellOrThrow: async () => {
+      throw new Error("not used");
+    },
+    readText: async () => "",
+    writeText: async () => {},
+    readBytes,
+    writeBytes: async () => {},
+    pathExists: async () => false,
     uploadDirectory: async () => {},
-    downloadFile,
     uploadFile: async () => {},
+    downloadFile: async () => {},
     downloadDirectory: async () => {
       throw new Error("not used");
     },

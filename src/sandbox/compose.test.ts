@@ -48,18 +48,25 @@ function stubSandbox(id = "compose-main"): Sandbox {
     async runShell() {
       return { stdout: "", stderr: "", exitCode: 0 };
     },
-    async readFile() {
+    async runCommandOrThrow() {
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    async runShellOrThrow() {
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    async readText() {
       return "";
     },
-    async fileExists() {
+    async readBytes() {
+      return new Uint8Array();
+    },
+    async writeText() {},
+    async writeBytes() {},
+    async pathExists() {
       return false;
     },
-    async writeFiles() {},
-    async uploadFiles() {},
     async uploadDirectory() {},
-    async downloadFile() {
-      return Buffer.alloc(0);
-    },
+    async downloadFile() {},
     async uploadFile() {},
     async downloadDirectory() {},
     async stop() {},

@@ -229,8 +229,8 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 async function exportAgentWindows(sandbox: Sandbox, env: globalThis.Record<string, string>, exportDir: string): Promise<DiffArtifact> {
   const result = await sandbox.runShell(buildExportScript(exportDir), { env });
   ensureCommandSucceeded(result, "export agent windows");
-  const payload = await sandbox.downloadFile(`${exportDir}/export.bin`);
-  return parseExportPayload(payload);
+  const payload = await sandbox.readBytes(`${exportDir}/export.bin`);
+  return parseExportPayload(Buffer.from(payload));
 }
 
 function ensureCommandSucceeded(result: { exitCode: number; stderr: string }, operation: string): void {

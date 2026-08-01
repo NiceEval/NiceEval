@@ -27,10 +27,13 @@ function baseSandbox(overrides: Partial<Sandbox>): Sandbox {
     otlpHost: null,
     runCommand: notUsed,
     runShell: notUsed,
-    readFile: notUsed,
-    fileExists: notUsed,
-    writeFiles: async () => {},
-    uploadFiles: notUsed,
+    runCommandOrThrow: notUsed,
+    runShellOrThrow: notUsed,
+    readText: notUsed,
+    writeText: async () => {},
+    readBytes: notUsed,
+    writeBytes: notUsed,
+    pathExists: notUsed,
     uploadDirectory: notUsed,
     downloadDirectory: notUsed,
     downloadFile: notUsed,
@@ -52,8 +55,8 @@ function scriptedSandbox(startOutputs: string[], log = "") {
   const shells: string[] = [];
   const written: string[] = [];
   const sandbox = baseSandbox({
-    writeFiles: async (files: globalThis.Record<string, string>) => {
-      written.push(...Object.keys(files));
+    writeText: async (path: string) => {
+      written.push(path);
     },
     runShell: async (script: string): Promise<CommandResult> => {
       shells.push(script);
@@ -138,12 +141,10 @@ describe("沙箱内 OTLP 采集器启动:真实 /bin/sh 执行", () => {
     }
   });
 
-  /** runShell 真的交给 /bin/sh 跑,writeFiles 真的落盘——生成的脚本语法错误在这里现形。 */
+  /** runShell 真的交给 /bin/sh 跑,writeText 真的落盘——生成的脚本语法错误在这里现形。 */
   function shellSandbox(pathPrefix?: string) {
     return baseSandbox({
-      writeFiles: async (files: globalThis.Record<string, string>) => {
-        for (const [path, content] of Object.entries(files)) await writeFile(path, content);
-      },
+      writeText: (path: string, content: string) => writeFile(path, content),
       runShell: (script: string) =>
         new Promise<CommandResult>((resolve) => {
           const child = spawn("/bin/sh", ["-c", script], {
@@ -212,7 +213,7 @@ describe("沙箱内 OTLP 采集器:系统临时目录不可写按环境缺陷报
   it("上传采集器脚本被拒:点名路径 + 说这是镜像环境缺陷 + 给修法,原始 500 串只留在 cause", async () => {
     const raw = deniedByProvider();
     const sandbox = baseSandbox({
-      writeFiles: async () => {
+      writeText: async () => {
         throw raw;
       },
     });
@@ -233,7 +234,7 @@ describe("沙箱内 OTLP 采集器:系统临时目录不可写按环境缺陷报
     // 对着空日志猜。这一格证明改成了探测写权限后点名路径与修法。
     const { sandbox, shells } = scriptedSandbox(["4242\n", "4243\n"], "");
     const denyingProbe = baseSandbox({
-      writeFiles: sandbox.writeFiles.bind(sandbox),
+      writeText: sandbox.writeText.bind(sandbox),
       runShell: async (script: string): Promise<CommandResult> =>
         script.includes(".niceeval-write-probe-")
           ? { stdout: "denied\n", stderr: "", exitCode: 0 }
