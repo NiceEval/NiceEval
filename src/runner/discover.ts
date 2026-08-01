@@ -18,7 +18,14 @@ import {
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { isDefinedScoreEval } from "../define.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
-import type { DiscoveredEval, DiscoveredExperiment, EvalDef, ExperimentDef } from "../types.ts";
+import type {
+  DiscoveredEval,
+  DiscoveredExperiment,
+  EvalAuthorFields,
+  EvalScoring,
+  ExperimentDef,
+  TestContext,
+} from "../types.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
 
@@ -27,6 +34,12 @@ interface EvalEntry {
   readonly baseId: string;
   readonly kind: "file" | "folder";
 }
+
+/** 动态 import 的运行时输入：factory 品牌只服务作者类型，discovery 需同时兼容旧的裸对象导出。 */
+type ImportedEval = EvalAuthorFields & {
+  scoring?: EvalScoring;
+  test(t: TestContext): Promise<void> | void;
+};
 
 /**
  * 发现阶段的动态 import 会执行被加载文件的**顶层代码**(配置文件里现拉 registry、读 .env、
@@ -118,7 +131,7 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
     const file = entry.file;
     const { value: mod, paths: loaderDataPaths, criteriaPaths, privatePaths } = await captureLoadedFiles(() =>
       importDiscovered<{
-        default?: EvalDef | EvalDef[] | globalThis.Record<string, EvalDef>;
+        default?: ImportedEval | ImportedEval[] | globalThis.Record<string, ImportedEval>;
       }>(file, root, "eval"),
     );
     const def = mod.default;
@@ -129,7 +142,7 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
     // discovery 时读一次、归一化、算 SHA-256:同一文件(数组默认导出多个 eval)只读一次盘,
     // 全部共享同一份 CapturedEvalSource 引用——写入面按哈希去重靠的就是这份内容天然相同。
     const source = await captureEvalSource(file, { root });
-    const pushOne = (d: EvalDef, id: string): void => {
+    const pushOne = (d: ImportedEval, id: string): void => {
       assertScoreEvalOrigin(d, file);
       out.push({
         ...d,
@@ -234,14 +247,14 @@ async function runLeakGateIfNeeded(input: {
   });
 }
 
-function assertScoreEvalOrigin(def: EvalDef, file: string): void {
+function assertScoreEvalOrigin(def: ImportedEval, file: string): void {
   if (def.scoring === "points" && !isDefinedScoreEval(def)) {
     throw new Error(`Invalid points-scoring eval export in ${file}: use defineScoreEval() instead of writing scoring: "points".`);
   }
 }
 
-function isEvalDef(value: EvalDef | globalThis.Record<string, EvalDef>): value is EvalDef {
-  return typeof (value as EvalDef).test === "function";
+function isEvalDef(value: ImportedEval | globalThis.Record<string, ImportedEval>): value is ImportedEval {
+  return typeof (value as ImportedEval).test === "function";
 }
 
 function assertDatasetKey(key: string, file: string): void {

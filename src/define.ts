@@ -8,27 +8,31 @@ import type {
   CustomSandboxSpec,
   DockerSandboxSpec,
   E2BSandboxSpec,
-  EvalDef,
+  EvalAuthorInput,
+  EvalDefinition,
   ExperimentDef,
   LocalSandboxSpec,
   SandboxAgent,
   SandboxAgentDef,
   SandboxHook,
   SandboxHooks,
-  ScoreEvalDef,
+  ScoreEvalAuthorInput,
+  ScoreTestContext,
+  TestContext,
   VercelSandboxSpec,
 } from "./types.ts";
+import { brandEvalDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
 
 export { defineAgentProvisioner } from "./agents/provisioner.ts";
 export type { AgentProvisioner, AgentProvisionerDef } from "./agents/types.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
-// WeakSet 是模块私有来源证明，不污染 EvalDef 的公开结构，也不能被用户对象伪造。
-const definedScoreEvals = new WeakSet<EvalDef>();
+// WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
+const definedScoreEvals = new WeakSet<object>();
 
 /** @internal 仅供 discoverEvals 验证 points 题型来源。 */
-export function isDefinedScoreEval(value: EvalDef): boolean {
+export function isDefinedScoreEval(value: object): boolean {
   return definedScoreEvals.has(value);
 }
 
@@ -66,12 +70,15 @@ export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
 }
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
-export function defineEval(def: EvalDef): EvalDef {
+export function defineEval(def: EvalAuthorInput): EvalDefinition<"pass", TestContext> {
   if ((def as { id?: unknown }).id !== undefined) {
     throw new Error(t("define.evalIdRejected"));
   }
   if ((def as { scoring?: unknown }).scoring !== undefined) {
     throw new Error(t("define.evalScoringRejected"));
+  }
+  if ((def as { configHash?: unknown }).configHash !== undefined) {
+    throw new Error(t("define.evalConfigHashRejected"));
   }
   if (typeof def.test !== "function") {
     throw new Error(t("define.evalTestRequired"));
@@ -79,7 +86,7 @@ export function defineEval(def: EvalDef): EvalDef {
   if (typeof def.environment === "string" && def.environment.trim().length === 0) {
     throw new Error(t("define.evalEnvironmentEmpty"));
   }
-  return { ...def, scoring: "pass" };
+  return brandEvalDefinition({ ...def, scoring: "pass" });
 }
 
 /**
@@ -87,12 +94,17 @@ export function defineEval(def: EvalDef): EvalDef {
  * 通过率。字段与 `defineEval` 完全同形,唯一区别是 `test(t)` 的 `t` 额外提供给分词汇——禁止
  * 提供 id,从路径推导(见 docs/feature/eval/README.md「defineScoreEval:计分制题型」)。
  */
-export function defineScoreEval(def: ScoreEvalDef): EvalDef {
+export function defineScoreEval(
+  def: ScoreEvalAuthorInput,
+): EvalDefinition<"points", ScoreTestContext> {
   if ((def as { id?: unknown }).id !== undefined) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
   if ((def as { scoring?: unknown }).scoring !== undefined) {
     throw new Error(t("define.scoreEvalScoringRejected"));
+  }
+  if ((def as { configHash?: unknown }).configHash !== undefined) {
+    throw new Error(t("define.scoreEvalConfigHashRejected"));
   }
   if (typeof def.test !== "function") {
     throw new Error(t("define.scoreEvalTestRequired"));
@@ -100,10 +112,7 @@ export function defineScoreEval(def: ScoreEvalDef): EvalDef {
   if (typeof def.environment === "string" && def.environment.trim().length === 0) {
     throw new Error(t("define.scoreEvalEnvironmentEmpty"));
   }
-  // 两种题型的 `t` 是两套类型(计分制多 `.points`/`t.score`、少 `.atLeast`/`require`),
-  // 互相不可赋值——这正是类型分离要的效果。运行时 `t` 是同一个对象,题型差异由 collector
-  // 按 `scoring` 处理,所以这里显式收窄成 `EvalDef` 的 `test`。
-  const result: EvalDef = { ...def, scoring: "points", test: def.test as unknown as EvalDef["test"] };
+  const result = brandEvalDefinition({ ...def, scoring: "points" });
   definedScoreEvals.add(result);
   return result;
 }

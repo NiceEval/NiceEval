@@ -583,9 +583,27 @@ export type ReporterEvent =
  */
 export type EvalScoring = "pass" | "points";
 
-export interface EvalDef {
-  /** 路径推导,定义里禁止手写。 */
-  id?: string;
+/**
+ * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。
+ * 这些 symbol 不从包入口导出，因此包外没有可写入的同类值。
+ */
+const EVAL_CONTRACT_DIAGNOSTIC: unique symbol = Symbol("niceeval.evalContractDiagnostic");
+const EVAL_DEFINITION: unique symbol = Symbol("niceeval.evalDefinition");
+
+type IdComesFromFilePath = {
+  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
+};
+
+type ScoringComesFromFactory = {
+  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "scoring comes from defineEval / defineScoreEval";
+};
+
+type ConfigHashComesFromPlanning = {
+  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "configHash comes from run planning";
+};
+
+/** Eval 作者自行选择的字段；不包含路径、factory 和规划期事实。 */
+export interface EvalAuthorFields {
   /** 一句话描述,展示在 `niceeval list` 和 view 里;纯说明,不影响调度或打分。 */
   description?: string;
   /** 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。 */
@@ -599,8 +617,6 @@ export interface EvalDef {
   environment?: string | import("../sandbox/case-types.ts").SandboxSource;
   /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
   judge?: JudgeConfig;
-  /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
-  configHash?: string;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -631,28 +647,57 @@ export interface EvalDef {
    * Sandbox 内的东西随销毁自动回收、不需要它。
    */
   teardown?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
-  /** 评估用例主体:拿到 TestContext,驱动对话 / Sandbox 操作并就地断言。 */
-  test(t: TestContext): Promise<void> | void;
-  /**
-   * 题型标记:由 `defineEval`(定死 `"pass"`)/ `defineScoreEval`(定死 `"points"`)写入,
-   * 定义里禁止手写(与 `id` 同规则,两个定义函数都会拒绝显式传入)。省略(未经这两个定义函数
-   * 处理的裸对象)按 `"pass"` 处理(见 `EvalDescriptor.scoring`)。
-   */
-  scoring?: EvalScoring;
 }
+
+/** 作者输入：id、scoring、configHash 都由后续阶段拥有。 */
+export type EvalAuthorInput = EvalAuthorFields & {
+  id?: IdComesFromFilePath;
+  scoring?: ScoringComesFromFactory;
+  configHash?: ConfigHashComesFromPlanning;
+  test(t: TestContext): Promise<void> | void;
+};
+
+/** 计分制作者输入，只有 test 的上下文不同。 */
+export type ScoreEvalAuthorInput = EvalAuthorFields & {
+  id?: IdComesFromFilePath;
+  scoring?: ScoringComesFromFactory;
+  configHash?: ConfigHashComesFromPlanning;
+  test(t: ScoreTestContext): Promise<void> | void;
+};
+
+/** Factory 产物保留精确 scoring / context，并带模块私有品牌，不能由对象字面量伪造。 */
+export interface EvalDefinition<Scoring extends EvalScoring, Context> extends EvalAuthorFields {
+  readonly scoring: Scoring;
+  test(t: Context): Promise<void> | void;
+  readonly [EVAL_DEFINITION]: true;
+}
+
+export type AnyEvalDefinition =
+  | EvalDefinition<"pass", TestContext>
+  | EvalDefinition<"points", ScoreTestContext>;
+
+/** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
+export function brandEvalDefinition<Scoring extends EvalScoring, Context>(
+  value: EvalAuthorFields & { scoring: Scoring; test(t: Context): Promise<void> | void },
+): EvalDefinition<Scoring, Context> {
+  Object.defineProperty(value, EVAL_DEFINITION, { value: true });
+  return value as EvalDefinition<Scoring, Context>;
+}
+
+/** @deprecated 使用 `EvalAuthorInput` 描述 factory 输入，使用 `EvalDefinition` 描述 factory 输出。 */
+export type EvalDef = EvalAuthorInput;
+/** @deprecated 使用 `ScoreEvalAuthorInput`。 */
+export type ScoreEvalDef = ScoreEvalAuthorInput;
 
 /**
- * `defineScoreEval` 的输入形状:字段与 `EvalDef` 完全同形,唯一区别是 `test(t)` 的 `t`
- * 额外提供给分词汇(见 docs/feature/eval/README.md「defineScoreEval:计分制题型」)。
+ * 发现期运行形状：在 Definition 之后才添加路径与源码；configHash 刻意不在这里，
+ * 只能由规划器写入 Planned Run / Attempt。
  */
-export interface ScoreEvalDef extends Omit<EvalDef, "test" | "scoring"> {
-  /** 评估用例主体:拿到 ScoreTestContext,除 TestContext 全部能力外还能 `.points(n)` / `t.score(label, n)`。 */
-  test(t: ScoreTestContext): Promise<void> | void;
-}
-
-/** 内部:发现后带上 id 的 eval。 */
-export interface DiscoveredEval extends EvalDef {
+export interface DiscoveredEval extends EvalAuthorFields {
   id: string;
+  scoring?: EvalScoring;
+  /** runner 的运行时 context 同时兑现两种题型能力，实际题型由 scoring 分支决定。 */
+  test(t: TestContext): Promise<void> | void;
   /** 定义文件所在目录(解析相对 workspace 用)。 */
   baseDir: string;
   /** 定义文件绝对路径,用于内容指纹缓存。 */

@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { defineEval, defineScoreEval } from "./define.ts";
 import { makeAssertion } from "./expect/index.ts";
-import type { BaseAssertionHandle, BaseTestContext, ScoreTestContext, TestContext } from "./types.ts";
+import type { BaseAssertionHandle, BaseTestContext, EvalDefinition, ScoreTestContext, TestContext } from "./types.ts";
 
 describe("defineEval:通过制", () => {
   it("产物恒 scoring: \"pass\"", () => {
@@ -21,6 +21,10 @@ describe("defineEval:通过制", () => {
 
   it("拒绝显式 scoring(题型由 defineEval/defineScoreEval 定死,不可手写)", () => {
     expect(() => defineEval({ scoring: "points", async test() {} } as never)).toThrow(/scoring/);
+  });
+
+  it("拒绝显式 configHash(configHash 属于运行规划,不是作者输入)", () => {
+    expect(() => defineEval({ configHash: "manual-hash", async test() {} } as never)).toThrow(/configHash/);
   });
 
   it("要求 test 是函数", () => {
@@ -44,6 +48,10 @@ describe("defineScoreEval:计分制", () => {
 
   it("拒绝显式 scoring,报错指名 defineScoreEval(不复用 defineEval 的文案)", () => {
     expect(() => defineScoreEval({ scoring: "pass", async test() {} } as never)).toThrow(/defineScoreEval/);
+  });
+
+  it("拒绝显式 configHash,报错指名 defineScoreEval", () => {
+    expect(() => defineScoreEval({ configHash: "manual-hash", async test() {} } as never)).toThrow(/defineScoreEval/);
   });
 
   it("要求 test 是函数,报错指名 defineScoreEval", () => {
@@ -70,6 +78,28 @@ describe("defineScoreEval:计分制", () => {
 });
 
 describe("类型层:给分词汇只存在于计分制的 t 上", () => {
+  it("factory 输入拒绝派生字段，返回值保留精确 scoring 且 Definition 不能手造(typecheck fixture)", () => {
+    const pass = defineEval({ async test() {} });
+    const points = defineScoreEval({ async test() {} });
+    const passScoring: "pass" = pass.scoring;
+    const pointsScoring: "points" = points.scoring;
+    void passScoring;
+    void pointsScoring;
+
+    if (false) {
+      // @ts-expect-error id 由发现期路径推导，不是作者输入
+      defineEval({ id: "manual", async test() {} });
+      // @ts-expect-error scoring 只能由两个 factory 写入
+      defineEval({ scoring: "pass", async test() {} });
+      // @ts-expect-error configHash 只在规划期存在
+      defineEval({ configHash: "manual", async test() {} });
+      // @ts-expect-error Definition 带模块私有品牌，不能用对象字面量伪造
+      const forged: EvalDefinition<"pass", TestContext> = { scoring: "pass", async test() {} };
+      void forged;
+    }
+    expect(true).toBe(true);
+  });
+
   it("defineScoreEval 的 t 上 .points() / t.score() 类型检查通过(typecheck fixture)", () => {
     defineScoreEval({
       async test(t: ScoreTestContext) {
