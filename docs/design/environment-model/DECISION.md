@@ -18,12 +18,12 @@
 - template owner 仍可拥有 setup。预装产物不能代替实际 identity、版本、PATH、权限与健康检查。
 - Eval 与 Experiment recipe setup 都是逐 Attempt 层；复用窗口 reset 后仍按相同 ownerOrder 重跑。
 - 绑定 Sandbox 窗口寿命的 service、ready、日志与 finalizer 归 Provider Case，不放普通 recipe setup。
-- Agent CLI 与 runtime 继续由 AgentProvisioner 与 Agent setup 拥有，不投影成较弱的通用 Layer。
+- Eval 与 Experiment layer 共用同一 SandboxCommand 协议；owner 只决定顺序、归因与收尾位置。
+- Agent CLI 与 runtime 继续由 AgentProvisioner 与 Agent setup 拥有；其 Sandbox 内副作用虽然也是 command / IO，完整协议不投影成较弱的 SandboxCommand。
 - 外部 state load/save 保持独立 lifecycle：state load 位于 recipe setup 与 Agent CLI Ensure 之后，state save 位于 Agent teardown 之后。
-- 需要预装命中的准备封装成领域 setup helper,在 helper 内 check/install/recheck。
+- 框架不理解 layer 想满足什么 Requirement；需要利用预装时，作者在同一 command 里手写 check、必要时 install 与 recheck。
 - 第一阶段不公开 Requirement、Base contribution、依赖 DAG、资源图或自动并行。
 - 现场无法按 ownerOrder 组合时复用 `templates[profile]` 提供预制完整 Case,或明确 skip/fail。
-- 无 identity 的 plain setup 不参与缓存命中,报告标注对应 owner recipe 身份不可比。
 - `composeSandbox()`、`dockerfileSandbox()` 与 `profileSandbox()` 构造带 template 的 Eval recipe。
 - `dockerSandbox()`、`e2bSandbox()` 与 `vercelSandbox()` 构造选择 Provider 的 Experiment recipe。
 - 普通 Experiment 不注册 materializer；Provider 内建自己支持的 SandboxTemplate kind。
@@ -162,8 +162,8 @@ PLAN-9 不承诺运行时合并两个 template。
 若 mempal 不能按 ownerOrder 装进某条 Compose template,Experiment 必须在 `templates[profile]` 提供预制完整 Case,否则该组合明确 skip/fail。
 
 预制 case 或 template 名不证明工具可用。
-`mempalSetup()` 这类领域 helper 必须检查实际版本与 cache identity,缺失时安装或明确失败;执行安装后必须复检。
-这保留 PLAN-5 最有价值的真实性要求,但不把通用 Requirement 协议暴露给所有作者。
+`mempalSetup()` 这类普通 command 必须自己检查实际版本，缺失时安装或明确失败，执行安装后再复检。
+这保留 PLAN-5 最有价值的真实性要求，但框架不理解这些 shell 分支，也不公开 Requirement 协议。
 
 ## 实现边界
 
@@ -179,17 +179,17 @@ PLAN-9 不承诺运行时合并两个 template。
 8. Docker Provider 内建 Compose 与 Dockerfile template planner，普通 recipe 删除 `materializers` 注册表。
 9. 解析 active template、templateOwner 与 ownerOrder，并让 dry plan 和记录显示同一形状。
 10. Eval 与 Experiment recipe setup 改成逐 Attempt 执行；Provider Case 保留每 Sandbox / 窗口 lifecycle。
-11. State load/save 与 AgentProvisioner 保持独立 phase，不并入通用 SandboxSetup。
+11. State load/save 与 AgentProvisioner 保持独立 phase，不并入通用 SandboxCommand。
 12. 普通上传增加 URL source；carry planner 重算历史 manifest，Provider 记录 Agent 可见 closure并执行泄漏比对。
-13. 记录所选 Case、owner stack、逐 owner setup activity 与 transfer manifest；删除文件专用登记面。
+13. 记录所选 Case、owner stack、逐 owner command activity 与 transfer manifest；删除文件专用登记面。
 
-依赖图、资源锁与跨 helper 自动并行不进入本决策的第一阶段。
+依赖图、资源锁与跨 command 自动并行不进入本决策的第一阶段。
 外部 state API 由对应 Feature 定义；PLAN-9 只固定它在 Agent CLI Ensure 与 Agent runtime setup 之间的相位，不把它回填成 Sandbox recipe。
 
 ## 遗留风险
 
 - 预制 Case 需要携带构建时写入的 Eval SandboxTemplate provenance，规划期才能与当前 template 的内容身份核对。不能从当前 template 动态计算声明值给既有产物背书；在产物元数据与 per-eval fingerprint 拥有同源输入前，不公开 `fulfills` 之类的声明字段。
 - 每题 SandboxTemplate 的 build context 必须排除 solution 与本地测试，并检查 Compose bind mount 泄漏。
-- setup 顺序随 templateOwner 改变。任何 helper 若依赖另一个 owner 先执行，都必须服从 stack 依赖方向，或改用完整预制 Case。
-- 普通 recipe setup 改成逐 Attempt 后，现有按 Sandbox 窗口运行的 Hook 必须迁到 Provider Case lifecycle 或可检查 helper，不能静默改变频次。
+- setup 顺序随 templateOwner 改变。任何 command 若依赖另一个 owner 先执行，都必须服从 stack 依赖方向，或改用完整预制 Case。
+- 普通 recipe setup 改成逐 Attempt 后，现有按 Sandbox 窗口运行的 Hook 必须迁到 Provider Case lifecycle；仍留在 recipe 里的 command 必须可重复执行，不能静默改变频次。
 - 某些工具同时需要安装与跨 Attempt 状态。PLAN-9 把 state 保留为独立 lifecycle；对应 Feature 必须定义 load/save、临界区与失败提交策略。

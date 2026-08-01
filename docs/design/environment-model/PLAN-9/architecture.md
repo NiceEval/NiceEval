@@ -11,8 +11,8 @@ type SandboxStackOwner = SandboxRecipeOwner | "agent";
 interface OwnedSandboxRecipe {
   owner: SandboxRecipeOwner;
   template?: SandboxTemplate;
-  setup: readonly SandboxSetup[];
-  teardown: readonly SandboxTeardown[];
+  setup: readonly SandboxCommand[];
+  teardown: readonly SandboxCommand[];
   identity?: JsonValue;
 }
 
@@ -28,7 +28,7 @@ interface ResolvedSandboxStack {
 ```
 
 Agent 不提供 template。
-它出现在 ownerOrder 中，是因为 AgentProvisioner 与 Agent setup 作用于同一个主 Sandbox；内部协议不因此降格成 SandboxSetup。
+它出现在 ownerOrder 中，是因为 AgentProvisioner 与 Agent setup 作用于同一个主 Sandbox；内部协议不因此降格成 SandboxCommand。
 
 ## SandboxTemplate 的边界
 
@@ -100,6 +100,9 @@ templateOwner = experiment
 每个 owner 内按声明顺序执行 setup。
 teardown 先执行 Agent，再按 ownerOrder 逆序执行 Eval 与 Experiment；每个 owner 内继续按追加逆序。
 
+Eval command 与 Experiment command 共用同一执行协议。
+owner 是排序与记录元数据，不是 command 子类；Runner 不因 owner 改变它能调用的 Sandbox API。
+
 Runner 不按 setup 内容、文件路径或命令字符串猜依赖。
 template owner setup 只能依赖自己的 template；后续 owner 可以依赖前序结果。
 
@@ -132,7 +135,7 @@ Provider 负责把 active template 规划成完整 Case，并拥有 build、star
 - Eval 源码、数据与普通本地 transfer manifest。
 
 template 物理实现相同但 owner 不同时，ownerOrder 可能不同，因此 fingerprint 也必须不同。
-plain setup 没有 identity 时仍执行，但结果标注对应 owner recipe 身份不可比较。
+Runner 指纹和记录 command 的声明源，但不从 shell 内容推导 Requirement 或软件 identity。
 
 ## Setup 频次
 
@@ -148,7 +151,7 @@ Provider Case 的 create、ready 与 finalizer 是每 Sandbox 或复用窗口语
 它不作为 SandboxTemplate 或普通 setup identity 的一部分，也不改变 templateOwner。
 
 AgentProvisioner 保留平台探测、宿主侧 prepare、staged payload、安装模式、check/install/recheck 与 Agent facts。
-PLAN-9 只把它排进 stack 的最后位置，不建立一个丢失这些义务的通用 Layer 协议。
+它对 Sandbox 的最终副作用同样落成 command 和 IO，但完整协议还包含 Sandbox 外的准备与安装事实。PLAN-9 只把它排进 stack 的最后位置，不用一个 SandboxCommand 类型丢掉这些义务。
 
 ## 预制组合
 
@@ -161,7 +164,7 @@ Eval template 与 Experiment 条件无法按 ownerOrder 现场叠加时，Experi
 ## 记录与 dry plan
 
 `--dry` 对每条 Eval 展示 active template、templateOwner、Provider、Case 分支与 ownerOrder。
-运行记录保存同一形状，再附每个 owner setup 的 identity、activity、facts、耗时与失败 phase。
+运行记录保存同一形状，再附每个 owner command 的 activity、facts、耗时与失败 phase。
 
 动态本地上传与 Agent 可见 closure 继续执行泄漏比对。
 首次运行只能事后拒绝泄漏结果；需要保密时仍使用物理隔离或 filtered context。

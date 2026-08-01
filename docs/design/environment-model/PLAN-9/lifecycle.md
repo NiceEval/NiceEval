@@ -94,12 +94,12 @@ template owner setup 是 stack 的第一层，只能依赖 template 已兑现的
 如果需要反向依赖，作者不能通过把 setup 写成重试循环掩盖。
 应把前置条件放入 template、选用 profile 完整 Case，或明确报告该组合不支持。
 
-## Setup helper 与预装
+## Command 与预装
 
-每 Attempt 重跑 setup 不表示每次重装。
-可验证 helper 先 inspect actual identity，命中直接返回；miss 时 prepare/install，再 inspect，安装后仍不匹配则 Attempt `errored`。
+每 Attempt 重跑 command 不表示每次重装。
+command 自己在 shell 里检查实际版本，命中直接返回；缺失时安装再复检，安装后仍不匹配则 Attempt `errored`。Runner 只看到命令、退出码与证据，不理解其中的 Requirement。
 
-多个 helper 按声明顺序执行。
+多个 command 按声明顺序执行。
 本方案没有自动依赖图、资源锁或跨 owner 并行。
 
 ## State
@@ -118,8 +118,8 @@ Agent teardown 完成后执行 state save，再进入 recipe teardown。
 | C1 | Eval compose/dockerfile recipe 激活，Provider 内建规划 |
 | C2 | Experiment fallback 激活，Experiment setup 先执行 |
 | C3 | Eval template 激活，Eval、Experiment、Agent 形成一条 stack |
-| C4 | 同 owner helper 按阅读顺序串行 |
-| C5 | 预装只优化 inspect 命中，不删除 owner setup |
+| C4 | 同 owner command 按阅读顺序串行 |
+| C5 | 预装只让 command 内的 shell 检查提前返回，不删除 owner setup |
 | C6-C7 | State 独立于 recipe stack；复用后每 Attempt 重建相同 ownerOrder |
 | C8 | Experiment template 先，Eval checkout setup 后 |
 | C9 | profile 完整 Case 替换物理 template，templateOwner 仍为 Eval |

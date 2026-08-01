@@ -100,9 +100,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | template owner | template owner | 为当前 Attempt 提供 active SandboxTemplate 的 Eval 或 Experiment owner | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#active-template-选择) |
 | owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的解析后准备顺序 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#owner-stack) |
-| setup helper | setup helper | 在 SandboxRecipe setup 层封装准备动作;需要预装命中时可带 identity 与 check/install/recheck | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#setup-helper) |
+| Sandbox command | SandboxCommand | Eval 与 Experiment recipe 共用的顺序执行单元；对 Sandbox 的效果只通过命令与文件 API 产生 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#command-责任) |
 | Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 SandboxTemplate 与 Sandbox Case | [环境模型 PLAN-9](design/environment-model/PLAN-9/README.md#template-不是单实例产物同义词) |
-| Ensure | Ensure | AgentProvisioner 或可验证 setup helper 内部的检查、必要时安装、复检路径 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#state-与-agent) |
+| Ensure | Ensure | AgentProvisioner 内部的检查、必要时安装、复检路径；普通 SandboxCommand 只能手写同类 shell 逻辑 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#state-与-agent) |
 
 ### Sandbox 复用
 

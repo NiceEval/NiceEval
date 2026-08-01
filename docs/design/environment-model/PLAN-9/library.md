@@ -15,6 +15,7 @@ import {
   e2bSandbox,
   profileSandbox,
   type Sandbox,
+  type SandboxCommand,
   type SandboxRecipe,
   type SandboxTemplate,
 } from "niceeval/sandbox";
@@ -28,29 +29,24 @@ import {
 ```typescript
 interface SandboxRecipe<Self = SandboxRecipe> {
   readonly template?: SandboxTemplate;
-  readonly setupHooks?: readonly SandboxSetup[];
-  readonly teardownHooks?: readonly SandboxTeardown[];
-  setup(fn: SandboxSetup): Self;
-  teardown(fn: SandboxTeardown): Self;
+  setup(command: SandboxCommand): Self;
+  teardown(command: SandboxCommand): Self;
 }
 
-type SandboxSetup = (
+type SandboxCommand = (
   sandbox: Sandbox,
-  context: SandboxSetupContext,
-) => Promise<void> | void;
-
-type SandboxTeardown = (
-  sandbox: Sandbox,
-  context: SandboxSetupContext,
+  context: SandboxCommandContext,
 ) => Promise<void> | void;
 ```
 
 Recipe 是不可变声明。
-`.setup()` 按追加顺序执行，`.teardown()` 按追加逆序执行；Runner 另外在 owner 之间执行反向 teardown。
-每个 setup hook 是一层顺序 layer：它只操作已启动的 Sandbox，不合成 image、template 或第二个 Sandbox。
+`.setup()` 按追加顺序执行，`.teardown()` 接受同一种 SandboxCommand，按追加逆序执行；Runner 另外在 owner 之间执行反向 teardown。
+两个 owner 的 command 在能力上没有差别：都只操作已启动的 Sandbox，不合成 image、template 或第二个 Sandbox。owner 仅决定顺序、归因与收尾位置。
 
-`SandboxSetupContext` 记录 owner、Attempt、identity、signal、progress、diagnostic 与 facts。
+`SandboxCommandContext` 记录 owner、Attempt、signal、progress、diagnostic 与 facts。
 它不暴露 Provider-native SDK，也不允许新增 service 或替换主 Sandbox。
+
+类型使用 callback 而不是直接 shell 字符串，是为了保留 `runCommand` 的 argv 安全语义、命令选项、文件传输与结果检查。运行效果仍然只是在同一 Sandbox 上执行命令和 IO。
 
 ## Eval 与 Experiment
 
@@ -195,13 +191,16 @@ Docker Provider 内建 Compose 与 Dockerfile template 支持。
 自定义 Provider 在自身定义中同点声明支持的 SandboxTemplate kind 与 planner。
 支持能力与实现不能由每个 Experiment 临时拼成注册表。
 
-## Setup helper
+## Command 责任
 
-plain setup function 每 Attempt 执行，不能声称预装命中或参与可比 identity。
-昂贵条件使用领域 helper 封装 target identity、inspect、必要时 install 与 re-inspect。
+普通 SandboxCommand 每 Attempt 执行。
+框架不为它建立 Requirement、inspect 或 install 协议，也不根据预制 template 名猜测某条 command 可以删除。
 
-helper 仍可以执行宿主侧 staged payload 准备，但 Agent 安装继续由 AgentProvisioner 拥有。
-通用 Sandbox setup 不复制 Agent 的安装模式、平台探测、鉴权、会话与逐 Attempt Agent facts。
+昂贵操作由 command 自己手写幂等 shell 逻辑：先检查实际版本，命中则返回，否则安装后复检；任一命令失败则 Attempt `errored`。
+command 的源码与配置进入所属 Eval 或 Experiment recipe 指纹，但 Runner 不解释它想保证的软件 identity。
+
+Agent 安装继续由 AgentProvisioner 拥有。
+通用 SandboxCommand 不复制 Agent 的宿主侧 prepare、staged payload、安装模式、平台探测、鉴权、会话与逐 Attempt Agent facts。
 
 ## 普通文件传输
 

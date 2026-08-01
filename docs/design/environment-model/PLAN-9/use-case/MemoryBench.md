@@ -39,7 +39,7 @@ Experiment E2B template
 ```
 
 Experiment 同时拥有 template 与 setup。
-template 预装 mempal 只让 `mempalSetup` inspect 命中，不删除实际检查。
+template 预装 mempal 只让 `mempalSetup` command 中的版本检查提前返回，不删除这条 command。
 
 若同一批中某条 Eval 自带 Compose recipe，该 Attempt 单独切换为 Eval templateOwner。
 Experiment E2B template 变成未激活 fallback，ownerOrder 变成 `eval → experiment → agent`；dry plan 必须展示这项差异。

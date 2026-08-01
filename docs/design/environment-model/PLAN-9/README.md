@@ -9,7 +9,7 @@
 ## 结论
 
 作者侧不再区分 Environment 与 SandboxConfig。
-Eval 与 Experiment 都声明“在同一个 Sandbox 上盖什么”：recipe 可选带 template，其 setup hooks 就是顺序 layer。每条 Attempt 恰好激活一个 template，template owner 的 layer 先执行，另一个 owner 和 Agent 再依次叠加。
+Eval 与 Experiment 都声明“在同一个 Sandbox 上盖什么”：recipe 可选带 template，剩下的都是在运行中 Sandbox 上顺序执行的 command。每条 Attempt 恰好激活一个 template，template owner 的 command 先执行，另一个 owner 和 Agent 再依次叠加。
 
 ```text
 one active Sandbox template
@@ -51,19 +51,21 @@ Provider 仍把一个 template 解析成完整 Sandbox Case，Compose 仍保留 
 Eval 与 Experiment 都使用 `sandbox` 字段：
 
 ```typescript
-interface SandboxRecipe {
+interface SandboxRecipe<Self = SandboxRecipe> {
   readonly template?: SandboxTemplate;
-  readonly setupHooks?: readonly SandboxSetup[];
-  readonly teardownHooks?: readonly SandboxTeardown[];
+  setup(command: SandboxCommand): Self;
+  teardown(command: SandboxCommand): Self;
 }
 ```
 
 Experiment recipe 额外选择 Provider，并可提供 profile 覆盖与 fallback template。
 Eval recipe 不能选择 Provider；Agent 的 stack contribution 由 Adapter 内部提供，不进入普通作者配置，也不伪装成 SandboxRecipe。
 
-owner 可以同时提供 template 与 setup。
-“谁有 template 谁先”不表示 template owner 没有运行时检查；预装工具、真实版本、PATH 与权限仍需 setup helper 验证。
-这里的 layer 不是 image layer，也不产生新 template；它只能通过运行中的 Sandbox 手动执行命令、上传文件并检查结果。
+owner 可以同时提供 template 与 command。
+“谁有 template 谁先”不表示 template owner 没有运行时检查；预装工具、真实版本、PATH 与权限仍需 command 验证。
+
+layer 只是 command 在 stack 里的位置和归属，不是另一种执行原语，因此 PLAN-9 不公开 Layer 对象或 DSL。
+普通 command 最终只能调用运行中 Sandbox 的 `runCommand` / `runShell` 与文件 API；它不是 image layer，不产生新 template，也不能创建第二个 Sandbox。
 
 ## 作者面
 
@@ -140,6 +142,6 @@ Eval 与 Experiment recipe setup 都是逐 Attempt 层。
 
 - `sandbox` 在定义里表示 SandboxRecipe，在回调里表示运行中的 Sandbox；类型名必须保留差异。
 - setup 相对顺序随 active template owner 改变，`--dry` 必须逐 Eval 展示解析后的 owner stack。
-- 所有普通 recipe setup 每 Attempt 重跑；昂贵安装必须使用可检查 helper 或预制 template。
+- 所有普通 recipe setup 每 Attempt 重跑；昂贵安装必须在 command 里自己检查并保持幂等，或放进预制 template。
 - AgentProvisioner 仍保留 staged payload、平台探测与安装事实，不降格成通用 setup function。
 - 双方不可叠加的 template 仍需完整 profile 覆盖，Runner 不做镜像或拓扑合并。
