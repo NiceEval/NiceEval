@@ -4,22 +4,30 @@
 目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；名称同时表达协议来源与 Turn 返回值：
 
 ```ts
-import { turnFromChatCompletion, turnFromResponses } from "niceeval/adapter";
+import {
+  chatCompletionEvidenceCoverage,
+  defineDirectAgent,
+  turnFromChatCompletion,
+  turnFromResponses,
+} from "niceeval/adapter";
 
 // Chat Completions 形状
-const agent = defineAgent({
-  async send({ message }) {
-    const res = await client.chat.completions.create({ model, messages: [...history, { role: "user", content: message }] });
+const agent = defineDirectAgent({
+  name: "chat-completions-agent",
+  evidenceCoverage: chatCompletionEvidenceCoverage,
+  async send({ text }) {
+    const res = await client.chat.completions.create({ model, messages: [...history, { role: "user", content: text }] });
     return turnFromChatCompletion(res);
   },
 });
 
 // Responses 形状
-return turnFromResponses(await client.responses.create({ model, input: message }));
+return turnFromResponses(await client.responses.create({ model, input: text }));
 ```
 
 两个转换器接受结构化的 `*Like` 类型，不依赖 `openai` 包。
 任何声明自己走这两种协议形状的服务（网关、代理、兼容实现）都能用。
+`chatCompletionEvidenceCoverage` / `responsesEvidenceCoverage` 与转换器同包导出，声明该协议形状本身能证明的通道；Adapter 增加旁路 transcript 时可以在自己的声明里据实升级。
 `tool_calls` / `function_call` 变成 tool `operation.started`，对应结果变成 `operation.finished`；`content` / `output_text` 变成 `message`。
 `usage` 按恒互斥桶落值，cached 子集从输入总量里扣出，口径见 [cost](cost.md)。
 

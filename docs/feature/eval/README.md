@@ -33,7 +33,9 @@ export default defineEval({
 
 `timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。
 项目级配置是没写时的默认来源，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
+`timeoutMs` 可由 experiment 或 `--timeout` 覆盖。`judge` 按单条断言 `{ model }` → experiment → eval → config 逐字段解析，没有 CLI 覆盖层。
+
+Eval 的 `judge` 是这道题对裁判能力的默认要求。Experiment 可以签入另一组执行配置做 A/B；rubric、severity 与 threshold 仍只属于 Eval。见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
 完整解析链见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -110,7 +112,7 @@ export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
     // 前置:失败就地结束,后面的分自然挣不到
-    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("cloned"));
+    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue("cloned"));
     t.sandbox.fileChanged("db-gpt/.env").points(1);   // 检查点通过挣 1 分
     t.score("代码精简", 15);                           // 自己算好条件后直接累加
   },

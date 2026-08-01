@@ -10,26 +10,28 @@ type Agent = SandboxAgent | DirectAgent;
 interface SandboxAgent {
   readonly name: string;
   readonly kind: "sandbox";
-  /** Adapter 常态证据覆盖声明;省略 = 全通道 unknown(保守),官方适配器显式声明(可用 completeCoverage 常量)。见 evidence.md。 */
-  readonly coverage?: EvidenceCoverage;
+  /** Adapter 常态证据覆盖声明；六通道必填，可用 completeEvidenceCoverage。见 evidence.md。 */
+  readonly evidenceCoverage: EvidenceCoverage;
+  /** Agent CLI 与所需运行时是否达到声明 identity；每条 probe 只读、可重复调用。 */
+  readonly ensure: AgentEnsure | readonly AgentEnsure[];
   setup?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
   tracing?: AgentTracing;
   spanMapper?: SpanMapper;
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
-  /** 可选 turn 失败分类器:归类一次 send 失败(返回 FailureClass——时间轴按重试安全性,空间轴只限协议可证明的死因),undefined 回落后续链路(实验分类器、保守回退)。形状与分类链见执行失败分类。 */
-  classifyTurnError?: TurnErrorClassifier;
+  /** 可选 send 执行失败分类器；只补 FailureClass，受理证据门另行决定能否重试。 */
+  classifySendFailure?: SendFailureClassifier;
   teardown?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
 }
 
 interface DirectAgent {
   readonly name: string;
   readonly kind: "direct";
-  readonly coverage?: EvidenceCoverage;
+  readonly evidenceCoverage: EvidenceCoverage;
   setup?(ctx: AgentContext): Promise<void> | void;
   tracing?: Omit<AgentTracing, "configure">;
   spanMapper?: SpanMapper;
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
-  classifyTurnError?: TurnErrorClassifier;
+  classifySendFailure?: SendFailureClassifier;
   teardown?(ctx: AgentContext): Promise<void> | void;
 }
 
@@ -44,12 +46,12 @@ interface Turn {
   readonly data?: unknown;
   readonly status: "completed" | "failed" | "waiting";
   readonly usage?: Usage;
-  /** 相对 Agent.coverage 的本轮降级(只降不升);省略 = 沿用 Agent 默认。字段契约与消费规则见[断言证据与完整性](evidence.md)。 */
-  readonly coverage?: EvidenceCoverage;
+  /** 相对 Agent.evidenceCoverage 的本轮降级(只降不升);省略 = 沿用 Agent 默认。字段契约与消费规则见[断言证据与完整性](evidence.md)。 */
+  readonly evidenceCoverage?: TurnEvidenceCoverage;
 }
 ```
 
-`kind` 由 `defineAgent` / `defineSandboxAgent` 固定写入。
+`kind` 由 `defineDirectAgent` / `defineSandboxAgent` 固定写入。
 `direct` 描述 runner 直接调用 Adapter，不描述目标进程的位置。
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
@@ -57,6 +59,15 @@ interface Turn {
 
 Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不含消息便利字段；core 在把结果交给 eval 作者前，把本轮 assistant `message` 事件的文本按序折叠成便利字段 `turn.message` 补上（作者面字段表见 [Context · 读取结果](../../eval/library/context.md#读取结果)）。
 `thinking`、`compaction`、`context.injected` 不获得同类便利字段，按 `type` 过滤 `events` 读取（见[标准事件模型](events.md#派生事实)）。
+
+`send()` 返回 Turn 还是 reject failure，必须由协议事实决定：
+
+- `completed` / `waiting` 是正常终态；
+- `failed` 是协议已经给出完整、可信、可评分的任务失败，例如 Agent 明确结束并报告无法完成；它不是 transport error，也不自动触发重试；
+- CLI 非零退出、signal、transport 中断、无法解析终态，或协议没有给出可信终态时，`send()` 必须 reject `SendFailure`，不能伪造 `failed` Turn；
+- Eval 若要求任务必须完成，显式写 `await turn.succeeded().stopOnFailure()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
+
+`SendFailure` 必须携带受理事实 `acceptance: "rejected" | "started" | "unknown"`，并尽可能保存 events、usage、进程状态与原始 cause。只有协议能证明输入未被受理时才写 `rejected`；空事件、非零退出或一句 “retry later” 都不能独自证明未受理。完整分类与重试门见[执行失败分类](../../error-classification/architecture.md)。
 
 ## AgentContext
 
@@ -106,15 +117,16 @@ Agent 只配置怎样连接自己；运行条件不固化在 Agent 中。
 ## 能力由构造证明
 
 Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用，HITL 来自 waiting + request + resume，行为断言来自事件，负断言可信度来自完整性证据，Sandbox 能力来自 sandbox kind，trace 来自 telemetry 配置。
-`coverage` 不是能力位的例外——它是完整性证据的载体（诚实义务的声明），core 不据它启用或禁用任何行为，只用它折叠断言可信度。
-`classifyTurnError` 同理——它是分类精度的声明，core 只用它归类一次 send 失败（能否安全重试、波及多远），策略（次数、退避、落闸）对所有 Agent 一致（见[执行失败分类](../../error-classification/architecture.md)）。
+`evidenceCoverage` 不是能力位的例外——它是完整性证据的载体（诚实义务的声明），core 不据它启用或禁用任何行为，只用它折叠断言可信度。
+`classifySendFailure` 同理——它只补充 Adapter 已经 reject 的 `SendFailure` 的分类精度，策略（次数、退避、落闸）对所有 Agent 一致（见[执行失败分类](../../error-classification/architecture.md)）。
 
 只有 Sandbox 设置运行时守卫。
 其它能力缺失时由返回数据自然表现，core 不按 Agent 名字分支。
 
 ## 生命周期不变量
 
-Agent setup 负责连接 Agent 自身，并且每 attempt 只执行一次。
+Sandbox Agent 的 CLI 与所需运行时只由 `ensure` 和 identity 匹配的 Installer 安装。
+`setup` 只连接 runtime、注入鉴权、写运行配置与扩展，并且每 Attempt 只执行一次。
 环境预置属于 Eval / Experiment layer 的 `prepare()`，任务 Fixture 属于 `test(t)`。
 setup 基础设施失败产生 `errored`，Agent 运行结果通过 Turn 表达。
 
@@ -123,4 +135,10 @@ Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Ho
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
 完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
 
-沙箱型 Agent 的 `send()` 返回时，Agent 侧可能写 workdir 的进程必须已退出、或已进入可证明不再写 workspace 的静止态（HITL waiting 挂起等输入即属此类）——`send()` 的返回就是 diff 归因的窗口边界，后台残留写入会落在窗口外、被错记成 eval 归因（见 [Sandbox · 变更归因](../../sandbox/architecture.md#变更归因send-窗口与分类账)）。
+一次逻辑 `send` 的窗口覆盖首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试台账；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
+
+HITL `waiting` 可以保留等待输入的 Agent 状态，但它必须静止。把日志写到 workdir 外，或把路径加入 `diff.ignore`，都不能代替静止证明。
+
+正常命令执行成功后，关闭 transport / PTY / 会话本身不得顺带杀死作者启动的任务服务。反过来，命令 timeout、取消、Attempt interruption 或 Agent runtime cancellation 时，Provider 必须在 Promise settle 前确认**该受管命令树**已终止；若 Provider 无法精确终止命令树，就退休并停止整个 Sandbox。只关闭输出流后宣称取消成功是非法实现。
+
+正常 keep 或 Sandbox 复用不要求清掉任务自己有意保留的服务；Agent teardown 则必须保证 Agent driver 不会继续发模型请求。异常路径优先保证不再执行：无法证明 driver 与命令树已静止时，不能把 Sandbox 作为可安全复用或可交互的成功现场留下（见 [Sandbox 生命周期](../../sandbox/architecture.md)）。

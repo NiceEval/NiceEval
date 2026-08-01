@@ -45,12 +45,13 @@ adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`—�
 
 ```ts
 // agents/<name>.ts
-import { defineAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
 
 const BASE_URL = process.env.<NAME>_URL ?? "http://127.0.0.1:<port>";  // 应用自己的端口,eval 不代管进程
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "<name>",
+  evidenceCoverage: completeEvidenceCoverage,
   // 有 OTel 的应用才需要:spanMapper 把应用私有 span 归一成 canonical,只影响瀑布图。
   // spanMapper: mapCodexSpans,
   async send(input, ctx) {

@@ -60,6 +60,6 @@
 | `.points(n)` / `t.score` / `t.require()` / `.stopOnFailure()` | [计分制](rubric-scoring.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集从输入数组生成多条 eval](dataset-fanout.md) |
 | `loadText` | [本地测试文件](criteria-files.md) |
-| `t.sandbox.writeFiles` / `uploadDirectory` / `downloadDirectory` / `runCommand` / `runShell` | [沙箱 coding 任务](sandbox-coding.md) |
+| `t.sandbox.writeText` / `writeBytes` / `uploadDirectory` / `downloadDirectory` / `runCommand` / `runShell` | [沙箱 coding 任务](sandbox-coding.md) |
 | `t.sandbox.diff` / `file` / `fileChanged` / `fileDeleted` / `notInDiff` | [沙箱 coding 任务](sandbox-coding.md) |
 | `sandbox` + `.prepare()` / `t.progress` / `t.diagnostic` / `t.skip` | [Fixture 与反馈](fixtures-lifecycle.md) |

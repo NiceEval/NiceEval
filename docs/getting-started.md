@@ -42,10 +42,11 @@ export default defineConfig({
 
 ```typescript
 // agents/weather-bot.ts —— 远程 agent,URL 是它的私事
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "weather-bot",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     const r = await fetch(`${process.env.AGENT_URL}/chat`, {
       method: "POST",
@@ -54,7 +55,7 @@ export default defineAgent({
     });
     const body = await r.json();
     // 用 calledTool / messageIncludes 等断言时,必须把响应映射成标准事件流
-    return { events: toStreamEvents(body), data: body.output, status: "completed" };
+    return { events: toStreamEvents(body), data: body.output, status: toTurnStatus(body) };
   },
 });
 ```
@@ -86,13 +87,14 @@ AGENT_URL=https://my-agent.example.com npx niceeval exp local weather
 
 ```typescript
 // agents/classify.ts —— 进程内直调,仅用于纯函数单测场景
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 import { classifyIntent } from "../src/agent.js";   // 你自己的代码
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "classify",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
-    return { data: await classifyIntent(input.text), status: "completed" };
+    return { data: await classifyIntent(input.text), events: [], status: "completed" };
   },
 });
 ```
@@ -153,7 +155,7 @@ export default defineEval({
   description: "实现一个 Button 组件",
   async test(t) {
     // fixture 与依赖在 agent 上场前就位,npm test 不依赖 agent 自己想起来装依赖
-    await t.sandbox.writeFiles({ "package.json": PACKAGE_JSON });
+    await t.sandbox.writeText("package.json", JSON.stringify(PACKAGE_JSON));
     const install = await t.sandbox.runCommand("npm", ["install"]);
     t.require(install, commandSucceeded());
 
@@ -162,7 +164,7 @@ export default defineEval({
     );
 
     // agent 那一轮已经结束,现在才放测试文件、才跑测试
-    await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST });
+    await t.sandbox.writeText("button.test.ts", BUTTON_TEST);
     const test = await t.sandbox.runCommand("npm", ["test"]);
     t.check(test, commandSucceeded());
 

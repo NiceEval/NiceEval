@@ -52,7 +52,7 @@ function scoringContext(overrides: Partial<ScoringContext> = {}): ScoringContext
     scripts: [],
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed",
-    async readFile() {
+    async readText() {
       return undefined;
     },
     ...overrides,
@@ -94,7 +94,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 - **Severity 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）；计分制 attempt 的 `failed` 只由前置中止产生——丢分（含全部得分点挂掉）仍是`passed`，`errored` / `skipped`与通过制同义；gate 与 strict 的正交；无阈值 soft 永不影响判定；`.atLeast`的 strict 四象限与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级；`computePassed`在 gate 省略阈值时的默认通过线是满分（`score >= 1`）——0/1 matcher（如`equals`/`includes`，命中即 1、不命中即 0）不受这条默认线影响，连续打分的 gate 断言（省略阈值的 judge 类）未达满分即 fail、恰好满分才 pass。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级、`+N more failures`的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
-- **judge**：缺模型/缺 key 记 `unavailable`（`judge-model-unresolved`）且非 optional 使 attempt errored、绝不静默消失；默认 soft 与链式提级；模型与端点/凭据的解析优先级逐层可区分且落在捕获请求的 URL 与头上；判卷材料随接收者分层、`{ on }`覆盖；入口封闭。
+- **judge**：缺模型/缺 key 记 `unavailable`（`judge-model-unresolved`）且非 optional 使 attempt errored、绝不静默消失；默认 soft 与链式提级；model 按单条 → Experiment → Eval → config、其余键按 Experiment → Eval → config 逐字段解析并落在捕获请求的 URL 与头上；Experiment 不能改变 rubric / severity / threshold；判卷材料随接收者分层、`{ on }`覆盖；入口封闭。
   真实裁判模型的端到端行为归 E2E。
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条，断言记的是`outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。
   区分力场景：同一条 rubric 在「网关回 400」与「agent 答得完全跑题」两份 fixture 下，落盘记录必须不同——这正是分数面上分不出「裁判失败」和「答错了」的那一格。
@@ -106,8 +106,8 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   fake 时钟 +截获 fetch，不真等。
   - 到点不回的判分调用被中断，记 `outcome: "unavailable"` + `reason: "judge-call-failed"`，`evidence` 写明超时秒数；同一挂起 fixture 在配了更长 `timeoutMs` 时正常拿到分数（区分力一格）。
   - 默认 180_000 的生效路径要真跑到——不配 `timeoutMs` 的调用同样被中断，不是无限等。
-  - 解析逐字段走 eval → config → 默认，与[experiments-runner 同名类别](experiments-runner.md#覆盖规范)是同一契约。
-    「config 的 `judge` 写了 `timeoutMs`、eval 写了自己的 `judge` 但没写」这一格取 config 的值而不是默认——逐字段合并与整体覆盖唯一读数不同的一格，必测。
+  - 解析逐字段走单条断言 `{ model }` → experiment → eval → config，与[experiments-runner 同名类别](experiments-runner.md#覆盖规范)是同一契约。
+    「config 写 `timeoutMs`、Eval 写 `baseUrl`、Experiment 只写 `model`」这一格必须三层各取一个值而不是整对象覆盖——这是逐字段合并与整体覆盖结果不同的一格。
 - **finalize 的 judge 推进回调**：逐条 judge 求值开始前回调一次进度（第几条 / judge 总数 /检查方式摘要，摘要与落盘 `detail` 同源）。
   非 judge 断言不回调，无 judge 断言时零次回调；回调不进 `AssertionResult` 也不落盘。
   runner 侧把回调接到 active 行 detail 的接线归[Experiments Runner](experiments-runner.md#覆盖规范)。

@@ -7,7 +7,7 @@
 export default defineEval({
   sandbox: sandboxLayer().prepare(command("pnpm", ["install"])),
   test: async (t) => {
-    await t.sandbox.writeFiles({ "TASK.md": "修复登录失败" });
+    await t.sandbox.writeText("TASK.md", "修复登录失败");
   },
 });
 ```

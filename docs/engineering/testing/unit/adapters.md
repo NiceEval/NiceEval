@@ -60,7 +60,7 @@ function scriptedInstaller(steps: {
   - 安装退出 0、复检仍未命中 → `agent.ensure` `errored`，附期望版本与下一步，不记成做题 `failed`。
   - probe 未命中且无 identity 匹配的安装层 → `agent.ensure` `errored`，错误信息给出预制环境与 `installTool` 两条出路。
   - 不按 template 名短路；三种安装模式失败后不静默降级到另一种。
-  - `verifyOnly` probe 未命中立即 `errored`，不联网、不改文件系统。
+  - `installMode: "verify-only"` 的 probe 未命中立即 `errored`，不联网、不改文件系统。
 - **Agent identity / artifact identity**：
 
   - `identity`（Agent 名、精确版本）与配对安装层 identity、staged payload digest / 平台正交进入指纹与 `run.json`。

@@ -7,7 +7,7 @@
 
 | 步骤 | Adapter 增量 | 解锁的 eval 行为 |
 |---|---|---|
-| 收发消息 | 返回真实 `status`、`data` 与空事件数组 | 单轮发送、结构化输出、`succeeded` |
+| 收发消息 | 只在取得可信协议终态时返回真实 `status` / `data`；执行异常 reject `SendFailure` | 单轮发送、结构化输出、`succeeded` |
 | 标准事件流 | 完整转换消息、工具、结果与 usage | 消息、工具和事件断言 |
 | 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 连续发送和 `newSession()` |
 | HITL | waiting、`input.requested`、按 request ID 恢复 | `parked`、`requireInputRequest`、`respond` |
@@ -31,6 +31,7 @@ transport ─► reducer ─► session / HITL orchestration ─► Turn
 
 写一个只负责调用对象的函数，传入 `ctx.signal`，返回原始响应、frame cursor 或 transcript。
 URL、鉴权、请求体和 CLI 参数留在这里。
+transport 必须同时保存受理事实与进程终态：能证明 admission 拒绝才写 `acceptance: "rejected"`，已经出现服务端处理或 agent 事件写 `started`，其余写 `unknown`。自然语言、空事件和退出码不能代替这个判定。
 
 ### 2. 选择 reducer
 
@@ -45,6 +46,8 @@ URL、鉴权、请求体和 CLI 参数留在这里。
 
 在 `send` 中使用 `ctx.session` 读取或提交历史、捕获 ID，并在暂停时保存 cursor。
 直接套用 [使用会话与 HITL](sessions-and-hitl.md) 的对应示例。
+
+Reducer 只有在协议给出完整 terminal frame 时构造 `Turn`。`completed` / `waiting` / `failed` 都是可信终态；进程非零、signal、transport 中断或缺 terminal frame 时构造并 reject `SendFailure`，由 core 统一分类和重试。不要把执行异常压成 `Turn.failed`，也不要在 Adapter 内整段重发输入。
 
 需要 trace 时，把 `ctx.telemetry.headers` 传给 transport；不要在 reducer 里从 span 生成行为事件。
 内部数据流见 [Architecture](../architecture.md#数据流)。

@@ -80,8 +80,8 @@ export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 纯前置:失败就地结束,后面自然 0 分——存在性检查用 fileExists(布尔) + isTrue
-    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("db-gpt cloned"));
+    // 纯前置:失败就地结束,后面自然 0 分——存在性检查用 pathExists(布尔) + isTrue
+    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue("db-gpt cloned"));
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     // 值 1 分,且没装依赖后面全白跑——得分点兼前置
     await t.calledTool("shell", { input: { command: /pip install/ } })

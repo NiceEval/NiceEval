@@ -5,7 +5,7 @@
 断言可信度按证据覆盖三值折叠——覆盖声明的形状、Agent 级默认与 Turn 级降级见 [Adapter ·断言证据](../../adapters/architecture/evidence.md)：
 
 - 所需通道 **complete**：正断言找到即通过、没找到 failed；负断言与上限断言正常判定。
-- 所需通道 **partial / unavailable / unknown**（Adapter 未声明按 unknown）：正断言找到匹配仍通过，因为存在的证据就是证据。
+- 所需通道 **partial / unavailable**：正断言找到匹配仍通过，因为存在的证据就是证据。Agent 构造时必须声明全部通道，不存在持久化的 unknown 状态。
   没找到时记 `outcome: "unavailable"`；「没采到」不能算成「Agent 没做」。
   负断言（`notCalledTool`、`usedNoTools`、`notEvent` 等）与上限断言（`maxTokens`、`maxCost`）一律 `unavailable`。
   空流证明不了「没发生」，缺 usage 不能按零聚合。

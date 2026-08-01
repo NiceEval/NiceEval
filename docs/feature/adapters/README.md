@@ -5,7 +5,7 @@ niceeval 不要求被测对象实现统一协议；每个 Adapter 负责驱动�
 
 - **Agent** 是 experiment 引用的被测对象。
 - **Adapter** 是 Agent 的实现，知道怎样发送输入、续接会话以及转换原始事件。
-- **Direct Agent** 通过 `defineAgent` 连接应用或 SDK 服务。
+- **Direct Agent** 通过 `defineDirectAgent` 连接应用或 SDK 服务。
 - **Sandbox Agent** 通过 `defineSandboxAgent` 在 Sandbox 中运行 coding-agent CLI。
 
 两类 Agent 使用相同的 `send(input, ctx) → Turn` 契约。

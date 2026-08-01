@@ -32,7 +32,7 @@ export default defineEval({
 
 ## 本地 source
 
-`uploadFile(path, content)` 的 `content` 接受 `Buffer | URL`。
+内存中的二进制用 `writeBytes(path, content)`；宿主文件传输用 `uploadFile(source, targetPath)`，`source` 接受相对 eval 文件的字符串或 `URL`。两个动作不再共用一个重载。
 `uploadDirectory(localDir, targetDir, options)` 的 `localDir` 接受 Eval 模块相对 URL 或相对路径。
 
 目录按稳定相对路径顺序展开。

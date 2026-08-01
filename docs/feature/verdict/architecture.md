@@ -55,7 +55,7 @@ export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
 
-    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue());
+    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue());
     //  等价于 t.check(...).gate().stopOnFailure()：记硬失败，并停止依赖它的后续代码
 
     t.sandbox.fileChanged("db-gpt/.env").points(1);

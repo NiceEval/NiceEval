@@ -31,7 +31,7 @@ t.judge.autoevals.closedQA("diff 是否只修改目标逻辑?", {
 
 ## 模型与鉴权
 
-模型优先级：单次 `{ model }` → eval judge config → 项目 judge config。没有内置默认模型，也没有环境变量层。
+模型优先级：单次 `{ model }` → Experiment judge config → Eval judge config → 项目 judge config。没有内置默认模型，也没有环境变量层。
 模型和端点是配置，只从代码来（[边界](../../architecture.md#配置从代码来凭据从环境来)）。
 
 ```ts
@@ -60,7 +60,7 @@ Judge 评不出可信分数时，该条断言记录为 `outcome: "unavailable"`�
 
 ## 调用预算与执行顺序
 
-每次判分调用有界：`judge.timeoutMs` 毫秒内拿不到响应就中断这次调用，按 `judge-call-failed` 记 unavailable，`evidence` 写明超时秒数。默认 180_000：判分材料可以是整段长会话，更短的上限会把慢而能用的网关判成评不了，三分钟足以把「慢」与「挂死」分开。`timeoutMs` 与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析：eval 的 `judge` 写了哪个字段用哪个，没写的字段从项目 config 的 `judge` 取，两层都没写才落到默认值。
+每次判分调用有界：`judge.timeoutMs` 毫秒内拿不到响应就中断这次调用，按 `judge-call-failed` 记 unavailable，`evidence` 写明超时秒数。默认 180_000：判分材料可以是整段长会话，更短的上限会把慢而能用的网关判成评不了，三分钟足以把「慢」与「挂死」分开。`timeoutMs` 与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析：Experiment 写了哪个字段就覆盖本次运行，没写的字段继续从 Eval、项目 config 取，都没写才落默认值；只有 model 允许单条断言再覆盖。
 
 ```ts
 // niceeval.config.ts —— 网关慢但确实能用,给它更长预算
@@ -96,7 +96,7 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 一次 `exp` 运行的计划里存在**要真派发、且会执行 judge 断言**的 eval 时，运行器在派发任何 attempt 之前对判分端点做一次最小探测请求，验证连通与鉴权。探测不判分、不产生模型费用。目的只有一个：判分端点不可用要在烧 agent 成本**之前**知道，而不是每条 attempt 跑完十分钟 agent 工作后才在 scoring 阶段撞出一堆 unavailable。
 
-两种情况不预检：项目与 eval 都没配置 judge（运行期按 `judge-model-unresolved` 记录）；计划里含 judge 的 eval 全部命中携带、没有要派发的 attempt。
+两种情况不预检：Experiment、Eval 与项目都没配置 judge（运行期按 `judge-model-unresolved` 记录）；计划里含 judge 的 eval 全部命中携带、没有要派发的 attempt。
 
 **探测预算**：每次探测 20 秒超时；传输失败（超时、连接建立失败、断连）后重试一次，**每次探测各自拥有完整的 20 秒预算**，两次都失败才判预检失败。端点已给出 HTTP 回应（非 2xx）不重试——回应是确定性答案，再探一次不会变。判分调用不重试是因为判分请求非幂等、重放产生第二笔模型费用；探测请求没有判分语义、成本可忽略，重试只为把瞬时网络抖动与真不可用分开，两条规则不冲突。
 

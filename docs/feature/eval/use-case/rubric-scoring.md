@@ -18,9 +18,9 @@ export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来,启动服务并确保健康检查通过。");
 
-    // 纯前置:repo 都没 clone 下来,后面的步骤无从谈起——存在性检查用 fileExists(布尔),
+    // 纯前置:repo 都没 clone 下来,后面的步骤无从谈起——存在性检查用 pathExists(布尔),
     // 不是取内容的 file()(那个留给 t.check 配 matches/includes 这类内容断言)。
-    const cloned = await t.sandbox.fileExists("db-gpt/README.md");
+    const cloned = await t.sandbox.pathExists("db-gpt/README.md");
     t.require(cloned, isTrue("db-gpt cloned"));
 
     // 五个检查点各值 1 分,互相独立:挂一条照记 0 分,不连坐后面

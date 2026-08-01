@@ -199,7 +199,7 @@ case 'tool_result':
 
 ## 采集层:两份 parser 之前,原始数据从哪来
 
-- **Claude Code(纯磁盘旁读):** `captureTranscript()` 把沙箱工作目录的斜杠换成短横线拼出 `~/.claude/projects/{workdir-with-dashes}`,shell 出 `ls -t *.jsonl | head -1` 找最新一份,`sandbox.readFile()` 整份读回来当 `transcript`。
+- **Claude Code(纯磁盘旁读):** `captureTranscript()` 把沙箱工作目录的斜杠换成短横线拼出 `~/.claude/projects/{workdir-with-dashes}`,shell 出 `ls -t *.jsonl | head -1` 找最新一份,`sandbox.readText()` 整份读回来当 `transcript`。
   这份文件是 Claude Code 自己为会话续接（resume）才写的,agent-eval 只是读。
 - **Codex(两条通道,各管各的用途):**
   - **主 transcript:** 直接把 `codex exec --json` 的 `stdout + stderr` 拼起来,`extractTranscriptFromOutput()` 过滤出"看起来像 JSON 对象"的行(`trim().startsWith('{') && endsWith('}')`)当作 transcript——这是 stdout 捕获,不是磁盘读。
@@ -213,7 +213,7 @@ case 'tool_result':
 ```typescript
 const transcript = rawTranscript ? parseTranscript(rawTranscript, agentName, model) : null;
 const context = { o11y: transcript?.summary ?? null };
-await sandbox.writeFiles({ '__agent_eval__/results.json': JSON.stringify(context, null, 2) });
+await sandbox.writeText('__agent_eval__/results.json', JSON.stringify(context, null, 2));
 ```
 
 整个函数包在 `try/catch` 里静默失败("best-effort: don't fail the eval if context injection fails")。

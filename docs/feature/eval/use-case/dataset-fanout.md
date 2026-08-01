@@ -68,7 +68,7 @@
      defineEval({
        description: `审查 ${row.file}`,
        async test(t) {
-         await t.sandbox.writeFiles({ [row.file]: row.content });
+         await t.sandbox.writeText(row.file, row.content);
          await t.send(`审查 ${row.file}`);
        },
      }),

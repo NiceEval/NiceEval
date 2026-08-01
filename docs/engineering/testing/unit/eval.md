@@ -82,7 +82,8 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
   路径、命令与生命周期契约归 [Sandbox](sandbox.md)。
 - **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 覆盖；`diagnostic` 不改变 verdict、scope 不可伪装；`progress` 不进最终输出。
   judge 的评分与模型解析归[Assertions、Judge 与 Verdict](scoring.md)。
-- **turn 瞬时错误与重试**：回退分类器按重试安全性给出可重试/不可重试与内建 reason（rate_limit / network），`thrown` 与 `turn-failed` 两种 `TurnFailure` 形态都要有区分力场景；adapter 分类器的覆盖、自定义 reason 原样透出、返回 `undefined` 与抛错同样按 `undefined` 回落（继续问后续通道，不掩盖原始失败）；受理证据门对带 agent 产出事件的失败 Turn 的否决——文本像限流也不重试；重试只包 `agent.send`、会话记账不重放；被吸收尝试不进入逻辑事件流，但按顺序完整写入 `retryAttempts`（失败形态、分类、events、usage、耗时），顶层 usage / cost 包含这些物理尝试；send 级与 attempt 级两层预算各自封顶——多轮 send 里 send 级预算重置而 attempt 级预算持续扣减必须有区分力场景；耗尽后错误码不变与 message 重试摘要注明耗尽层（未重试的失败无后缀）；退避可被中断干净打断。
+- **send 执行错误与重试**：`Turn{status: "failed"}` 是可信领域终态，只参与 `succeeded()` 等断言、绝不进入重试；CLI 非零、signal、transport 中断与无法解析终态 reject `SendFailure` 并最终落 `agent-send-failed`。`acceptance` 的 `rejected` / `started` / `unknown` 三态都要有区分力场景：只有 `rejected` 且分类为 retryable 才重发；空 events、非零退出和限流文案不能把 unknown 升格。adapter 分类器的自定义 reason 原样透出，返回 `undefined` 与抛错都回落且不掩盖原始失败；重试只包 `agent.send`、会话记账不重放；被吸收尝试不进入逻辑事件流，但按顺序完整写入 `retryAttempts`（acceptance、分类、events、usage、process、耗时），顶层 usage / cost 包含所有物理尝试；send 级与 attempt 级预算各自封顶，多轮 send 时前者重置、后者持续扣减；耗尽后 message 注明耗尽层，退避可被中断干净打断。
+- **send settle 与命令树**：一次逻辑 send 的归因窗口覆盖全部物理尝试；返回或拒绝前，台账已写入且 Agent 命令树终止或静止。命令 timeout、取消、Attempt interruption 与 runtime cancellation 都必须在 Promise settle 前确认受管命令树终止；做不到时停止整个 Sandbox。正常命令结束后关闭 transport 不得误杀作者有意启动的任务服务。
 - **失败分类链的两轴扩展**：
   - 抛出点 fatal 错误类经 `failureClassOf` 结构识别——含 `cause` 链穿透（被包装再抛不丢声明）与不依赖类身份（结构相同的手工对象同样命中）。
   - turn 链的决议序：抛出点 → 实验分类器 → adapter → 回退，先非 `undefined` 定案；实验分类器与 adapter 同时认领同一失败时，实验的 scope 声明胜出要有区分力场景。

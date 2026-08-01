@@ -31,11 +31,15 @@ eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`�
 | 字段 | 解析链 | 默认 |
 |---|---|---|
 | `timeoutMs` | `--timeout` → experiment → eval → config | 无上限 |
-| `judge` | eval → config | 无内置裁判模型；解析不到而用到 judge 断言时报清晰错误 |
+| `judge` | 单条断言 `{ model }` → experiment → eval → config | 无内置裁判模型；解析不到而用到 judge 断言时报清晰错误 |
 
-`judge` 没有 experiment 层也没有 CLI flag——裁判配置是「怎么判分」，不是运行矩阵。
-它逐字段合并而不是整体覆盖：eval 只写 `model` 时 `baseUrl` 仍从 config 来，所以 config 层改一个键会波及那些没有完整声明自己裁判的 eval。
-`model` 与 `baseUrl` 是配置、进 [configHash](cache.md#指纹两个哈希嵌套)；`apiKeyEnv` 指向的 key 是凭据，只从环境来，不进哈希也不落盘。
+`judge` 没有 CLI flag：临时改裁判会让比较条件无法从实验文件复现。
+它有 Experiment 层，因为“同题同 rubric、换裁判执行配置”本身就是需要签入身份的 A/B 运行矩阵。
+
+这条链逐字段合并，而不是整体覆盖。单条断言只写 `model` 时，其余键继续从 Experiment → Eval → config 解析；Experiment 只写 `model` 时，`baseUrl` 仍可由 Eval 或 config 提供。
+
+Eval 仍拥有 rubric、评分材料、severity 与 threshold。Experiment 的 `judge` 只能提供 `JudgeConfig`，不能重定义评分规则。
+`model`、`baseUrl` 与 `timeoutMs` 是裁判执行配置、进 [configHash](cache.md#指纹两个哈希嵌套)；`apiKeyEnv` 只指出凭据从哪个环境变量读，不进哈希也不落盘。
 
 没有 eval 层的多来源字段不进这张表，链在各自的单源页：全局并发上限（`--max-concurrency` → config → provider 推荐值）在[Runner · 调度](../../runner.md#调度有界并发)。
 实验级 `maxConcurrency`不是同一个值的另一来源，而是叠加的第二道闸——两道都过才派发，收全局不解除实验闸。
@@ -68,6 +72,10 @@ export default defineExperiment({
   //  单 attempt 外层超时,四层解析:--timeout → 这里 → eval 字段 → niceeval.config.ts
   //  不进 fingerprint 哈希,改为以携带资格判据参与 carry(见 cache.md)
   //  例外是写在 eval 文件里的那一层:它随该文件的字节进指纹,改了照样作废那一条
+
+  judge: { model: "gpt-5.4-mini" },
+  //  单条断言 {model} → experiment → eval → config；无 CLI 覆盖。
+  //  这里只选择裁判执行配置，rubric / threshold 仍在 Eval。
 
   maxConcurrency: 2,
   sandboxReuse: true,
@@ -240,33 +248,10 @@ export default defineExperiment({
 这是当场编排事实，不写入 Results；需要审计时由 `Json(path)` reporter 写 `InvocationSummary`。
 终端两种输出形态怎么呈现见 [CLI 预期反馈](cli.md)，完成状态的机器形状见 [Runner · 完成状态](../../runner.md#完成状态)。
 
-## 设计参照：从 agent-eval 删除了什么（以及为什么）
-
-agent-eval 的 `ExperimentConfig` 字段一半是它自己业务的耦合或可下放的。
-niceeval 的 `defineExperiment` 只留**纯运行矩阵**：
-
-| agent-eval 字段 | niceeval | 处置 | 理由 |
-|---|---|---|---|
-| `agent` | `agent` | 保留,但一文件一个 agent | 沿用 agent；报告直接比较当前 Sample 中的 experiments |
-| `model` / `attempts` / `earlyExit` / `evals` / `timeout` / `sandbox` | 同(`timeout`→`timeoutMs`) | 保留 | 运行矩阵的本体 |
-| — | `sandboxReuse` | **加** | 实验作者声明多条 Attempt 可以共用 Sandbox；进入配置哈希 |
-| `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境写 `sandbox` layer 的 `prepare()`,题目准备写 Eval layer 的 `prepare()` 或 `test(t)`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
-| `validation` | — | **删** | 「怎么算对」是 eval 自己的事(`test()` 里手工跑校验命令),不该由 experiment 决定 |
-| `scripts` | — | **删** | 同上,属于 eval / fixture 的评分,不是运行配置 |
-| `brands` | — | **删** | Vercel 品牌追踪专用,通用 evals 不需要 |
-| `editPrompt` | — | **删** | 改写 prompt 太 niche,需要时在 agent/eval 里做 |
-| `onRunComplete` | — | **删** | 下游**分析**交给 [reporter](../../observability.md#reporters);实验级**资源回收**由 `teardown` 承担(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown)),不需要独立的完成回调 |
-| `modelPolicy` | — | **删** | 折进「`model` 省略 = 原生默认」 |
-| `copyFiles` | — | **删** | 和 diff 冗余:agent 新建的文件在 agent diff 里就是完整内容,`t.sandbox.diff.get(path)` 直接可读,不必再单独拷一份 |
-| `webResearch` / `agentOptions` | `flags` | **合并** | 一个通用参数袋取代散落的开关,经 `ctx.flags` / `t.flags` 透传 |
-| — | `budget` | **加** | 实验级成本上限,接 [用量与成本](../../observability.md#用量与成本token-计费) |
-
-一句话：**experiment 只管"跑什么、跑几次、花多少"，不碰"怎么算对"。**
-评分细节全在 eval。
-
 ## 相关阅读
 
 - [README](README.md) —— `defineExperiment` 的核心契约。
 - [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id。
 - [CLI 预期反馈](cli.md) —— 人读文本与 `--json` 两种输出形态的契约。
 - [Runner](../../runner.md) —— 调度、carry、完成状态的执行语义。
+- [设计参照](reference/README.md) —— 外部方案只作为来源与取舍证据，不混入目标契约正文。

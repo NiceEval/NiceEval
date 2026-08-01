@@ -27,8 +27,8 @@ provider 覆盖面差异都很大。
   是不翻译:支持 Compose 的 provider 原生消费它
   (见 [DECISION](DECISION.md)),compose 保持单一事实源。
 - **会话残留进程死亡。** agent 前台启动的 server 随 exec
-  会话销毁,判分时服务不在。此条与拓扑无关,契约已单独成篇:
-  [Roadmap · Agent 进程契约](../../roadmap/agent-process-contract/README.md),
+  会话销毁,判分时服务不在。此条与拓扑无关,由
+  [Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)定义正常服务与异常命令树的相反边界，
   三个候选方案都以它为前提。
 
 假 `failed` 比缺功能更贵:它进分母掺水,还按

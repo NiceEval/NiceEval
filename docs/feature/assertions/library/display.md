@@ -293,14 +293,14 @@ Judge 没有解析到模型 / key 时记 `unavailable`。
 
 ## 证据缺口的 unavailable
 
-负断言与上限断言在所需证据通道非 complete（含 unknown）时记 `unavailable`，并给出通道原因。
+负断言与上限断言在所需证据通道非 complete 时记 `unavailable`，并给出通道原因。
 正断言在非 complete 通道上没找到匹配时同样是 `unavailable`，不是 failed，见 [EvidenceCoverage](../../adapters/architecture/evidence.md#覆盖声明evidencecoverage)。
 view 在 Attempt 详情顶部同时显示 coverage 徽标。
 带 `.optional()` 的条目额外标 `optional`，说明它不影响判定：
 
 ```text
 ◌ gate · notCalledTool("bash")
-    reason: coverage:actions=partial (adapter only captures successful actions)
+    reason: evidence-coverage:actions=partial (adapter only captures successful actions)
 ◌ soft · optional · closedQA("文风是否友好?")
     reason: judge-model-unresolved
 ```
@@ -375,7 +375,7 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
 只有没有 `loc` 的得分点与给分记录进入 unmapped，给分记录仍按 `groupPath` 分组。
 视觉细则单点在 [Attempt 详情组件](../../reports/components/primitives/source-view.md#web-面视觉规范) 定义 `AttemptSource` 的视觉规范。
 
-通过制（`scoring` 省略或 `"pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。
+通过制（`scoring: "pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。`scoring` 是 factory 固定的必填事实，不用省略值猜题型。
 
 ## Turn（`t.send()`）的展示
 
@@ -461,7 +461,7 @@ eval.run              26.3s
 ```
 
 **view Attempt 详情**——对话区与 `--execution` 同一分轮卡片语法并挂接 trace；每个 turn 头行可折叠。
-Turn 的 `coverage` 相对 Agent 默认降级时，该轮头部显示证据徽标，与 `unavailable` 断言的 reason 同源：
+Turn 的 `evidenceCoverage` 相对 Agent 默认降级时，该轮头部显示证据徽标，与 `unavailable` 断言的 reason 同源：
 
 ```text
 turn2 · completed · evidence: actions partial — stream reconnected mid-turn

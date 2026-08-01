@@ -70,7 +70,7 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
   本用例补的是预检不覆盖的那段——协议不符、分数取不出来,只有真评一次才暴露。
 - 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable 仍使 Attempt `errored`，不会造出「一条都没评却全绿」的报告。
 - `--strict` 不改变这条路径上的任何判定:unavailable 走 `errored`,与 soft 阈值是两回事(见[`--strict`](../../verdict/use-case/strict-quality-gate.md))。
-- 模型解析不到是另一个 reason(`judge-model-unresolved`),判定后果相同——judge 没有内置默认模型,三层(单次 `{ model }` → eval → config)都没配就是配置错误。
+- 模型解析不到是另一个 reason(`judge-model-unresolved`),判定后果相同——judge 没有内置默认模型,四层(单次 `{ model }` → Experiment → Eval → config)都没配就是配置错误。
 
 ## 相关阅读
 

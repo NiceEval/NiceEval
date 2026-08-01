@@ -139,7 +139,7 @@ Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker
 - **niceeval 自身的版本不参与命名**。库与 image / template 内容无关:发一个 patch 不会让模板里的 Agent 变新,模板换代也不必等库发版。
 - **同一个 Agent 在已发布的 provider 上共用一个版本号**:一个版本号 = 一套基线配方。任一侧的配方变更 bump `-r`,并重建该侧已有 image / template。
 
-版本位与 Adapter 运行时回退安装读的是同一批版本常量,所以"命中预装"和"回退安装"永远装同一版 Agent——走了哪条路径不会改变被测对象。
+版本位、Adapter ensure identity 与配对 Installer 读的是同一批版本常量，所以“命中预装”和“缺失后安装”永远得到同一版 Agent——走了哪条路径不会改变被测对象。
 
 ### 消费:具名常量,不拼版本号
 
@@ -169,7 +169,8 @@ dockerImageSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 
 常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布台账](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布门槛(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的 image / template 不写进 registry。
 
-Adapter 不自动替 experiment 选择 image / template / snapshot:同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel,选择权属于 sandbox spec;反过来,sandbox 也不猜要运行哪个 Agent。预装只是快速路径,各 agent 检测预装与回退安装的具体语义在各自的接入页(上表链接)。
+Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel，选择权属于 template-bearing Sandbox factory；反过来，Sandbox 也不猜要运行哪个 Agent。
+预装只是 ensure probe 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 probe 语义见各自接入页（上表链接）。
 
 ## 新 provider 的预制环境义务
 

@@ -24,8 +24,25 @@ Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff �
 Compose case 里主 Sandbox 是 `workspaceService` 对应的容器。
 云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只承载主容器与伴随服务,不能冒充 Agent 的执行空间。
 
-额外能力不进 `Sandbox` 接口,由 case 在创建时附带能力句柄。
-第一期只有服务能力:
+额外能力不进 `Sandbox` 接口,由 case 在创建时附带穷尽的能力句柄。运行期 materialize 结果为:
+
+```typescript
+interface MaterializedSandboxCase {
+  readonly sandbox: Sandbox;
+  readonly group: SandboxResourceGroup;
+  readonly services?: ServiceController;
+  readonly retention?: SandboxRetention;
+}
+
+interface SandboxResourceGroup {
+  /** 当前进程内整组停止；成功、失败、中断都由 Case finalizer 调用。 */
+  stop(): Promise<void>;
+}
+
+type DetachedSandboxState = "alive" | "dormant" | "partial" | "missing";
+```
+
+服务控制与留存是两个正交能力:
 
 ```typescript
 interface ServiceController {
@@ -33,10 +50,24 @@ interface ServiceController {
   collectLogs(service: string): Promise<Buffer>;
   stop(service: string): Promise<void>;
 }
+
+interface SandboxRetention {
+  /** suspend 成功后写入注册表、可跨进程恢复的资源组定位。 */
+  readonly entry: SandboxGroupEntry;
+  suspend(): Promise<void>;
+}
+
+interface DetachedSandboxRetention {
+  inspect(entry: SandboxGroupEntry): Promise<DetachedSandboxState>;
+  wake(entry: SandboxGroupEntry): Promise<MaterializedSandboxCase>;
+  suspend(entry: SandboxGroupEntry): Promise<void>;
+  destroy(entry: SandboxGroupEntry): Promise<void>;
+}
 ```
 
 Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制时检查 `services` 能力,普通单 Sandbox eval 完全不接触这层。
-以后 GPU、动态网络策略或整组 checkpoint 也按独立能力扩展,不合并成一个「高级 Sandbox」布尔值。
+`retention` 负责本进程把运行中资源组提交为留存现场；`DetachedSandboxRetention` 是 CLI 跨进程 inspect / wake / suspend / destroy 的 provider 通道。`wake` 表示从任意 provider 的 dormant 状态恢复成活动 Case，不暗示原进程对象可原地 `resume()`。
+以后 GPU、动态网络策略或整组 checkpoint 也按独立能力扩展,不合并成一个「高级 Sandbox」布尔值，更不挂 `sandbox.suspend?` 这类隐藏成员。
 
 ## 声明形态:template factory 一次到位
 
@@ -218,11 +249,10 @@ defineSandboxCase({
     cluster: "eval-prod",
     manifestDigest: "sha256:...",
   },
-  capabilities: ["services"],
   materialize: async (ctx) => ({
     sandbox: mainPodSandbox,
+    group: namespaceResourceGroup,
     services: podServiceController,
-    stop: stopNamespace,
   }),
 });
 ```
@@ -231,7 +261,7 @@ defineSandboxCase({
 
 - `identity` 必须可序列化;函数体不参与自动哈希,缺稳定身份时禁止结果携带,不能用函数名或 `toString()` 冒充环境指纹。
 - 声明了某项能力就承担对应完整契约测试。
-- 留存不是默认能力:只有同时提供可序列化定位信息、跨进程恢复与 detached stop,才可以声明 group keep;否则 `--keep-sandbox` 与该 case 的组合在创建前报错。
+- 自定义 case 的公开扩展面当前只允许主 Sandbox、资源组与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 case 在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
 
 ## 错误归属:五类互不冒充
 
@@ -266,7 +296,7 @@ interface SandboxGroupEntry {
 `sandbox enter` 仍进入 `primary`;`sandbox stop` 把整组交回对应 provider 销毁。
 单 Sandbox case 的资源组只有 primary,现有行为是新模型的严格子集;单实例留存的注册表纪律与各 provider 的休眠语义见 [Architecture · 留存与注册表](architecture.md#留存keep与注册表)。
 
-Group keep 是独立能力:支持者必须能整组 suspend / resume、恢复后重过 ready 门、失败时保留可再次清理的注册项。
+Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后重过 ready 门、失败时保留可再次清理的注册项。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
 
 ## 动态泄漏检查:本地上传与 Agent 可见 closure
@@ -293,7 +323,7 @@ folder eval 的测试文件与环境输入共址时，materializer 与普通上�
 | Vercel Sandbox | snapshot | 不声明 | 不声明 |
 | Local | 宿主机即环境,无产物参数 | 不声明 | 不声明 |
 
-云 provider 不因为「是完整 Linux VM」就自动进入云端 Compose case;未通过契约测试就不声明,对应 eval 计划期 `skipped`。
+云 provider 不因为「是完整 Linux VM」就自动进入云端 Compose case;未通过契约测试就不声明。selector 应在运行前排除不支持的配对；若仍选中，physical planning 聚合报错并保持整个 Run 零资源，而不是把配置错误记成 `skipped`。
 没有声明 Compose 能力的 provider 仍完整支持单 Sandbox case;外部编排继续作为 provider 无对应 case 时的用户侧退路(见 [Library · 环境预置放哪](library.md#环境预置放哪))。
 
 ## 相关阅读

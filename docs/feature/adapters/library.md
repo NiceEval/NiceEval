@@ -5,13 +5,14 @@ Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合�
 
 ## Direct Agent
 
-被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
+被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineDirectAgent`：
 
 ```ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "support-bot",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     const response = await fetch(`${process.env.AGENT_URL}/chat`, {
       method: "POST",
@@ -20,7 +21,7 @@ export default defineAgent({
     });
     const body = await response.json();
     if (body.sessionId) ctx.session.capture(body.sessionId);
-    return { status: "completed", data: body.output, events: toStreamEvents(body) };
+    return { status: toTurnStatus(body), data: body.output, events: toStreamEvents(body) };
   },
 });
 ```
@@ -33,8 +34,9 @@ model、reasoning effort 与实验 flags 来自 `ctx`，由 experiment 决定。
 `setup`、`send`、`teardown` 中的 `ctx` 都提供 `progress` 与 `diagnostic`,runner 会把它们绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown`:
 
 ```ts
-export default defineAgent({
+export default defineDirectAgent({
   name: "support-bot",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     ctx.progress({ message: "waiting for upstream model" });
     const response = await callAgent(input, { signal: ctx.signal });
@@ -64,27 +66,41 @@ export default defineAgent({
 ## Sandbox Agent
 
 被测对象是在隔离环境中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
-安装 CLI、写鉴权和安装扩展放在 `setup`，每轮执行与 transcript 采集放在 `send`：
+CLI 身份写在必填 `ensure` 中，由 Runner 负责 probe、配对 Installer、安装与复检。
+`setup` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
 ```ts
-import { defineSandboxAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineSandboxAgent, makeSendFailure } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
 
 export default defineSandboxAgent({
   name: "my-coding-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-coding-agent", version: "1.4.2" },
+    probe: shell('test "$(my-agent --version)" = "1.4.2"'),
+  },
   async setup(sandbox, ctx) {
-    ctx.progress({ message: "installing my-agent" });
-    await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
+    await sandbox.writeText(".my-agent/config.json", credentialsFrom(ctx));
   },
   async send(input, ctx) {
     ctx.progress({ message: "running agent CLI" });
     const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
-    return {
-      status: result.exitCode === 0 ? "completed" : "failed",
-      events: parseTranscript(result.stdout),
-    };
+    const parsed = parseTranscript(result.stdout);
+    if (result.exitCode !== 0 || !parsed.turn) {
+      throw makeSendFailure({
+        acceptance: parsed.acceptance ?? "unknown",
+        message: parsed.error ?? `my-agent exited ${result.exitCode}`,
+        events: parsed.events,
+        process: result,
+      });
+    }
+    return parsed.turn;
   },
 });
 ```
+
+第三方 Adapter 若不随包提供匹配 identity 的 Installer，probe 未命中会明确 `errored`；它不能把安装偷回 `setup`。
 
 内置 coding agents 见 [SDK 与 Agent 索引](sdk/README.md)，扩展配置见 [配置 Coding Agent 扩展](library/coding-agent-extensions.md)。
 
@@ -92,7 +108,7 @@ export default defineSandboxAgent({
 
 | 增量 | Adapter 义务 | 解锁的行为 |
 |---|---|---|
-| 收发消息 | 返回真实 `status` 与 `data` | 单轮发送、输出断言 |
+| 收发消息 | 返回可信 Turn；执行异常 reject `SendFailure` | 单轮发送、输出断言 |
 | 标准事件流 | 完整映射消息与 operation，保持顺序和 operation ID | 工具、消息与事件断言 |
 | 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 多轮与 `newSession()` |
 | HITL | 返回 `waiting`、`input.requested`，按 request ID 恢复 | `parked`、`requireInputRequest`、`respond` |

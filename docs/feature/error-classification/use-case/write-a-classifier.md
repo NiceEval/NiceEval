@@ -11,7 +11,7 @@
   挂载点:`ExperimentDefinition.classifyFailure`。
 - **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。
   回退只能判不可重试,每次撞上都白白 `errored`,批跑里还可能连续复现触发 fail-fast——协议知识在你手里。
-  挂载点:`Agent.classifyTurnError`。
+  挂载点:`Agent.classifySendFailure`；是否未受理先由 Adapter 写入 `SendFailure.acceptance`。
 
 两个挂载点走同一条纪律:**取证 → 裁决可证明性 → 挂分类器 → 验证**。
 
@@ -31,7 +31,7 @@
    写分类器前必须能回答对应的问题,答不上来就停在这里、保持不声明:
 
    - 实验侧(空间轴):**兄弟 attempt 为什么必死?** 「`serverHost` 是本实验共享的隧道」这个私有知识就是证明;host 之外的错误答不出这句,不声明。
-   - adapter 侧(时间轴):**该文案在服务端语义里是否只在受理前出现?** 查服务文档或服务端代码确认 `ACME_QUEUE_FULL` 是入场闸拒绝、此时不会开始任何处理;确认不了,保持不可重试(判据全文见 [README · 分类](../README.md#分类))。
+   - adapter 侧(时间轴):**协议是否给出了可机器验证的受理前拒绝状态?** 查服务文档或服务端代码确认 `ACME_QUEUE_FULL` 对应 admission rejection，并在构造 `SendFailure` 时写 `acceptance: "rejected"`；只有文案、没有协议状态时保持 `unknown`（判据全文见 [README · 分类](../README.md#分类)）。
 
 3. **挂分类器**。
    实验定义上只认自家坐标:
@@ -53,8 +53,8 @@
 adapter factory 上只认协议短语(完整写法与要点见 [Library](../library.md#adapter-作者classifyturnerror)):
 
    ```ts
-   classifyTurnError(failure) {
-     if (failure.type === "turn-failed" && turnErrorText(failure.turn)?.includes("ACME_QUEUE_FULL")) {
+   classifySendFailure(failure) {
+     if (failure.acceptance === "rejected" && sendFailureText(failure).includes("ACME_QUEUE_FULL")) {
        return { retryable: true, reason: "acme_queue_full" };
      }
      return undefined; // 其余交给保守回退
@@ -77,7 +77,7 @@ adapter factory 上只认协议短语(完整写法与要点见 [Library](../libr
 - **快、纯、不抛错。
   ** 分类器抛错按 `undefined` 回落、被吞掉,等于白写;它是旁路,不得用新错误掩盖原始失败。
 - **受理证据门仍在你之上(时间轴)。
-  ** 失败 Turn 里已有 agent 产出事件时,可重试判断会被强制降回不可重试——分类器声明判断,执行体持有否决权;这不是 bug,是「证明未受理」的机器化。
+  ** `acceptance` 为 `started` 或 `unknown` 时,可重试判断会被强制降回不可重试——分类器声明错误类别,执行体持有受理事实的否决权。
 - **空间轴从严(adapter 侧)。
   ** adapter 也可以给 `scope`,但只限协议回执能证明「后续每次调用必死」的场景(凭据失效、账号封禁);说不清波及范围就只给时间轴——误扩 scope 停掉的是用户的整批实验。
 - **时间轴别给要人修的死因(实验侧)。

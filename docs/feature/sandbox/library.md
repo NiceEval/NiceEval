@@ -88,7 +88,7 @@ await t.send(`参考 ${t.sandbox.workdir}/docs/CONVENTIONS.md 里的约定实现
 ## 用户与 root
 
 **默认非 root,按需提 root** ——命令默认以沙箱的标准**非 root** 用户跑(agent 的自然环境:安全,且 Claude Code 等在 root 下会拒绝 `--dangerously-skip-permissions`)。
-需要 root 的命令(setup 装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
+需要 root 的准备命令(安装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
 
 ```typescript
 // eval setup:只有装系统依赖这步提 root;其余(含 agent、验证)默认非 root。
@@ -118,7 +118,7 @@ eval 因此不必感知底下是哪个 provider。
 
 ```typescript
 await sandbox.runShell("pnpm build");                  // 上限 = deadline 剩余量
-await sandbox.runCommand("pnpm", ["test"], { timeout: 60_000 });   // 这条最多 60 秒
+await sandbox.runCommand("pnpm", ["test"], { timeoutMs: 60_000 }); // 这条最多 60 秒
 ```
 
 ## Provider 选择:template 带出,没有默认值
@@ -140,7 +140,7 @@ export default defineExperiment({
 });
 ```
 
-多个 Experiment 共享同一起点时,把 factory 调用抽成普通 TypeScript helper 导出;第一阶段没有 profile registry 或按名字查表。
+多个 Experiment 共享同一起点时,把 factory 调用抽成普通 TypeScript helper 导出；Sandbox 设计不提供 profile registry 或按名字查表。
 
 ## 起点参数与 `lifetimeMs`
 
@@ -297,8 +297,9 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用产物 | provider 的 image/template/snapshot 生命周期管理 |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内环境(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
-| **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
-| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量);要读写 agent 安装产物的后置脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup)(跑在 agent 安装之后) | 随沙箱销毁,无需手工清;要收尾的动作挂成对的 `preTeardown`(逆序,先于 agent teardown) |
+| **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
+| Agent CLI 的精确版本(每 Attempt probe) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 probe、缺失时安装、复检 | 安装失败归 `agent.ensure`；产物随 Sandbox 销毁或题间复用策略处理 |
+| 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装产物的后置脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
 | 跨 Attempt 的外部实验状态(记忆库、累积笔记) | State load / save 相位,见[三方准备时序](lifecycle.md#准备state-与-baseline) | save 在 Agent teardown 后执行;临界区靠 `maxConcurrency: 1` 串行 |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 

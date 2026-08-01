@@ -65,7 +65,8 @@ hook 信任 bypass 与审批 bypass 属同一信任层级：沙箱运行是 head
 
 ## 预制环境
 
-Adapter 的 setup 检测 PATH 上的 `codex`：预装命中即跳过安装，缺失时回退 npm 全局安装——预装只是快速路径，不是正确性前提。
+Adapter 的必填 ensure 用 PATH 上 `codex` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
+`setup` 只写本 Attempt 的鉴权、原生配置与扩展。预装只是快速路径，不是正确性前提。
 E2B 官方 `codex` template 与 NiceEval 公共模板 `correctroads-default-team/niceeval-codex`（CI 钉 release tag）都是可用起点；构建项目自己的镜像/模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
 
 Codex 原生 Plugin 使用 Codex 专属 factory 字段。

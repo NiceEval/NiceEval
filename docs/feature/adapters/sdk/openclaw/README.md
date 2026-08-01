@@ -42,6 +42,6 @@ OpenClaw 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
 ## 预制环境
 
-setup 检测 PATH 上的 `openclaw`：预装命中即跳过安装，缺失时回退 `npm install -g openclaw@<version>`。
+Adapter 的必填 ensure 用 PATH 上 `openclaw` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/openclaw`（`NICEEVAL_OPENCLAW_DOCKER_IMAGE`）把 CLI 烘焙进 `/usr/local/bin`。
-预装只是快速路径，不是正确性前提。
+`setup` 不安装 CLI，只写本 Attempt 的鉴权与运行时配置。预装只是快速路径，不是正确性前提。

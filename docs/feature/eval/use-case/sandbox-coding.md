@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 起始文件在第一次 `send` 前普通上传；少量运行时文本使用 `writeFiles`：
+1. 起始文件在第一次 `send` 前普通写入或传输；少量运行时文本使用 `writeText`：
 
    ```typescript
    // evals/refactor.eval.ts
@@ -38,7 +38,7 @@
    export default defineEval({
      async test(t) {
        await t.send("在 src/components/Button.tsx 导出一个 Button 组件。");
-       await t.sandbox.uploadFile("/app/button.test.ts", new URL("button.test.ts", import.meta.url));
+       await t.sandbox.uploadFile(new URL("button.test.ts", import.meta.url), "/app/button.test.ts");
        const test = await t.sandbox.runCommand("npm", ["test"]);
        t.check(test, commandSucceeded());
      },
@@ -60,7 +60,7 @@ diff 断言评的是这一次跑分内的归因增量，跑完就随沙箱销毁
 ```typescript
 // localDir("./out/attempt-final")相对本 eval 文件所在目录解析,与 uploadDirectory 同一锚点,
 // 不是相对进程 cwd(运行 niceeval 命令时所在的目录)
-await t.sandbox.downloadDirectory("./out/attempt-final", "src");
+await t.sandbox.downloadDirectory("src", new URL("out/attempt-final/", import.meta.url));
 ```
 
 不内置「哪些文件算产出」的判断：下载下来就是宿主机上的普通目录，要筛选、要拼给 judge 用，用 `fs`/`glob` 写普通代码处理——这与 `t.sandbox` 不设带过滤约定的批量读取器是同一条原则（[操作 Sandbox](../../sandbox/library/operations.md#文件)）。

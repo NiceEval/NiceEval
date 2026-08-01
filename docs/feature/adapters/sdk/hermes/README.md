@@ -48,6 +48,6 @@ Hermes 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
 ## 预制环境
 
-setup 检测 `$HOME/.local/bin/hermes`：预装命中即跳过安装，缺失时用 `uv tool install hermes-agent==<version>` 回退安装（路径与 Bub 相同，不依赖沙箱注入的 PATH）。
+Adapter 的必填 ensure 用 `$HOME/.local/bin/hermes` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/hermes`（`NICEEVAL_HERMES_DOCKER_IMAGE`）按同一布局烘焙。
-预装只是快速路径，不是正确性前提。
+具体分发命令属于 Installer，不属于 `setup`。`setup` 只写本 Attempt 的鉴权与运行时配置；预装只是快速路径，不是正确性前提。

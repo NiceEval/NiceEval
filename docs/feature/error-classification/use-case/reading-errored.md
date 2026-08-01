@@ -13,7 +13,7 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
 
 2. **有后缀:重试耗尽的失败**。
    典型是高并发批跑撞限流——`--max-concurrency 12` 时十几个 attempt 同时开 turn,几个撞上入场拒绝(`Concurrency limit exceeded for user, please retry later`)。
-   回退分类器从文本认出限流关键字 → 可重试(reason `rate_limit`),自动退避重试,批跑时 activity 行如实显示:
+   Adapter 从协议 admission 回执写出 `acceptance: "rejected"`，回退分类器再按结构化 429/code 归为可重试(reason `rate_limit`)，自动退避重试,批跑时 activity 行如实显示:
 
    ```text
    ⠸ onboarding/greet#2  turn retry 2/4 (rate_limit) — waiting 8s
@@ -26,8 +26,8 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
    典型是响应中途的流中断 / 连接重置:
 
    ```text
-   This send returned failed (turn status = failed): stream reset mid-response
-   after 3 tool calls
+   agent-send-failed: stream reset mid-response after 3 tool calls
+   acceptance=started
    ```
 
 看起来是基建抖动,框架却没重试——这不是遗漏,按[自愈阶梯](../README.md#自愈阶梯与止损阶梯)逐层读:
@@ -36,7 +36,7 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
      bub 这类没有内层自愈的 agent 断一次浮一次——那是 agent 侧的能力缺口,框架代偿不了:会话现场在 agent 手里,框架没有断点。
    - **框架不整段重发**:流断在响应中途,无法证明 agent 未开始处理——上例里已跑了 3 次工具调用、可能写了 workspace。
      重发同一段 user text 会让 agent 把做过的操作再做一遍,产出被污染的判定,比一次诚实的 `errored` 更糟。
-     即使文案里混着限流字样,失败 Turn 里已有 agent 产出事件时[受理证据门](../architecture.md#分类链)也会拦下重试。
+     即使文案里混着限流字样，envelope 的 `acceptance: "started"` 也会被[受理证据门](../architecture.md#分类链)拦下；空事件则是 `unknown`，同样不能重试。
 
 4. **恢复路径(两分支同一条)**:`errored` 不进指纹缓存,**重跑同一条命令即是续跑**——只补跑失败的 attempt,已 `passed` / `failed` 的照常携带;新 attempt 从干净沙箱起,没有上一次半途现场的污染,这正是「重发 turn」给不了的。
    偶发抖动用一次续跑吸收即可。

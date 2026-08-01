@@ -67,13 +67,13 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - layer 的 `prepare()` 追加序与 kind 品牌不可变:command-only 变不成 template-bearing,template-bearing 追加不了第二起点。
   - `onCleanup()` 只在取得资源后登记、按全局准备顺序逆序执行;创建后被终止属 lifecycle failure 不进 IO 重试。
   - Direct Agent 搭配 SandboxLayer 报 link 错误;command 的窄上下文没有 `stop()` 也没有 Provider-native SDK。
-- **路径规则**：沙箱侧相对/绝对/省略三态解析、`../` 规范化与逃逸拒绝、无 shell 变量展开、本地侧按 eval 定义文件目录解析——适合表驱动，每个 case 指向一条允许或拒绝语义。
-  `normalizeSandboxPaths` 对接口之外的可选能力（`appendLog`、`suspend`）按「实例有就转发、没有就是 undefined」原样传递，不吞掉——留存路径的 `sandbox.suspend`（`keep.ts` 的 `suspendSandbox`）经这层包装后仍能找到底层 provider 实例的 `suspend()`，找不到时抛出的是「没有 suspend 能力」而不是「转发时误吞成 undefined」。
-  `suspendSandbox` 自身两条路径都要证明：底层实例有 `suspend()` 时原样调用、没有时抛出带 `sandboxId` 的清晰错误（不是静默跳过）。
-- **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；非零退出返回 CommandResult 而非抛异常；env 叠加不清空；root 的映射与不支持时报错；命令级超时；可选能力缺席时的 no-op 语义；执行入口永不被隐式重试。
+- **路径规则**：沙箱侧相对/绝对/省略三态解析、`../` 规范化与逃逸拒绝、无 shell 变量展开、本地侧按 eval 定义文件目录解析——适合表驱动，每个 case 指向一条允许或拒绝语义。`Sandbox` wrapper 只转发正式接口与可选 `appendLog`；留存走 `MaterializedSandboxCase.retention`，不得通过接口外 `sandbox.suspend` 动态探测。
+- **三个操作视图一套语义**：完整 `Sandbox`、`EvalSandbox` 与 `SandboxCommandTarget` 的 `runCommand` / `runShell` / 文本 / 字节方法逐个同签名同结果；差异只在宿主传输、diff、Case lifecycle 与登记内容能力是否存在。同名方法在 layer target 非零抛错、在 `t.sandbox` 返回结果的旧分叉必须被区分力场景抓住。
+- **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；`runCommand` / `runShell` 非零返回 CommandResult，`runCommandOrThrow` / `runShellOrThrow` 才抛携带完整结果的 exit error；env 叠加不清空；root 的映射与不支持时报错；`timeoutMs` / signal 合并；执行入口永不被隐式重试。
+- **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
 - **失败命令证据包装**：公开 `runCommand` / `runShell` 最外层调用非零退出时，在把 `CommandResult` 交还调用方前登记一次 `FailedCommandEvidence`，并与同一次 timing command node 共用 id；成功命令不登记输出；provider 内部 `runCommand → runShell` 转调不重复；调用方处理非零结果并继续不撤销证据；stdout/stderr 原换行与首部 EACCES/path 保留，不能先 tail-only 再交 writer。
   fixture 必须让 Eval 随后把错误 `.slice(-500)`，仍能从登记项读到前部根因，证明捕获时点正确。
-- **文件操作与 IO 重试**：只有幂等固定目标操作进默认重试；瞬时/非瞬时错误的分类边界；`fileExists` 遇瞬时错误必须抛出不伪装 false；重试耗尽抛回原始错误链；批量写的重跑等价性；读取 API 的缺失行为与二进制完整性；`downloadDirectory` 与 `uploadDirectory` 对称的 `ignore` 语义(按 basename 排除、命中即整支剪除,不区分文件与目录)与落盘行为(自动建目录、原样二进制字节、不做编码转换、不返回带便利方法的包装类型)——docker(单次 tar 取回后按首段路径剥离归位)与 vercel/e2b(共享的 find 列路径 + 逐文件二进制读取模板)两条实现路径都要证明。
+- **文件操作与 IO 重试**：Sandbox 内部只用 `readText` / `writeText` / `readBytes` / `writeBytes` / `pathExists`，`upload*` / `download*` 只做真实宿主传输；`Uint8Array` 字节完整往返，Buffer 只作结构兼容。只有幂等固定目标操作进默认重试；瞬时/非瞬时边界；`pathExists` 遇瞬时错误必须抛出不伪装 false；重试耗尽抛回原始错误链；目录传输重跑等价；`downloadDirectory` 与 `uploadDirectory` 对称的 `ignore` 和锚点语义。
 - **Provisioning 失败与重试**：原生限流归类、回退瞬时分类器复用、可重试 kind 的退避与确定性错误零重试；退避期间归还并发槽位；有对账通道时先对账再重试、对账失败放弃并抛回原始错误、无通道时歧义类零重试；自定义 provider 不套用这层重试。
   相关裁决与踩坑见 memory 的[sandbox-provision-ratelimit-retry](../../../../memory/sandbox-provision-ratelimit-retry.md)、[e2b-provision-429-duplicate-sandbox](../../../../memory/e2b-provision-429-duplicate-sandbox.md)。
 - **Provisioning 确定性死因的对外 scope 映射**：三档确定性配置死因（凭据缺失、权限不足、模板不存在）从 provider 原生错误形态（含跨 cause 链走查）的识别，以及识别后按[执行失败分类](../../../feature/error-classification/README.md)的结构化契约（`_tag` + `class`）附着到错误对象；按死因的配置解析域定档——凭据缺失、权限不足恒定档 `scope: "experiment"`（与 template owner 无关），模板不存在按 template owner 定档（Eval owner 定 `scope: "eval"`、Experiment owner 定 `scope: "experiment"`）；瞬时失败（拒绝类/歧义类）重试耗尽后不附带 scope，确定性死因未命中三档词表之一时同样不附带 scope。
@@ -85,6 +85,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **template 配对与作者面**：`sandbox` 字段只接受 factory 产物,没有默认值、不自动探测。
 
   - 每个实际配对恰好一方 template-bearing:1×1 报 `sandbox.template-conflict`、0×0 报 `sandbox.template-missing`,全矩阵聚合、零 Provider I/O、零 Sandbox 创建。
+  - 混合数据集：command-only Experiment 同时选择共享 `node24()` helper 的普通 Eval 与自带 Compose 的 Eval 时全部合法、仍是一份 Experiment；给 Experiment 加 template 后对应配对明确 conflict，不允许 Eval override 或静默丢层。
   - 物理身份相同的两份 template 仍是 conflict;三个入口消费同一 linker,要有 `check`、`--dry` 与正常运行对同一非法矩阵给出同一结论的区分力场景。
   - 自定义 provider 连同 factory 直接调用、核心路径无 provider 名分支;`t.sandbox` 的错误反馈带 API 名与 agent 名,经管线不经 stdout。
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
@@ -115,6 +116,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 结果：复用 Attempt 不作结果沿用来源，复用 Experiment 也不消费结果沿用。
 - **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force` 语义与失败退出码。核对与销毁以资源组为单位：Compose case 的伴随容器与网络随主实例整组进 `list --orphans` 与 prune，要有「主实例已消失、只剩网络残留」仍被列出并收回的区分力场景。
 - **留存(keep)登记项的 `expiresAt`**：按 provider 声明的保留期限计算——vercel 写 `keptAt` 加默认 Run 保留期(30 天),e2b(pause 官方契约无自然过期)与 docker(本地停驻,非远端保留期概念)都不写；`niceeval sandbox list` 的过期分支据登记项的 `expiresAt` 展示保留截止时刻。
+- **Case retention 能力**：内置可发现 provider 的 materialize 结果有/无 `retention` 两格；有能力时 `entry` 与整组 suspend 原子提交，无能力时 `--keep-sandbox` 在创建前拒绝。`defineSandboxCase` callback 即使返回同名对象也不能声明 keep，因为缺稳定 provider plugin identity 与 detached 实现。`DetachedSandboxRetention` 的 inspect / wake / suspend / destroy 对单 Sandbox 与 Compose 资源组兑现同一协议。
 - **detached 生命周期路由(`keep.ts`)**：`nativeEnterCommand`/`wakeDetached`/`suspendDetached`/`inspectDetached`/`destroyDetached`/`execInDetached` 三 provider 分支各自的正常路径与失败路径——mock 各自 SDK 模块(`dockerode`/`e2b`/`@vercel/sandbox`),不发真实请求。
   探测抛错必须归 `unknown`，只明确未找到才归 `expired`；vercel 销毁只吞明确 404。
   vercel 分支专门证明:唤醒走 `Sandbox.get({ name, resume: true })`(name 而非 sessionId,与官方 CLI/SDK 按 name 索引一致)、查状态与销毁走 `resume:false` 不产生唤醒副作用、销毁调用 `delete()` 而非 `stop()`(`stop()` 是可恢复的 suspend,不是永久销毁)；`detachedCapabilityGap` 对已知三 provider 返回 undefined、对未知 provider 名返回可展示的原因(供 CLI 报「不支持,原因」而不是逐条 `if (provider === …)`)。

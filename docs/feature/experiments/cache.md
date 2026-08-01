@@ -61,7 +61,7 @@ Agent 安装身份是 [Agent ensure identity](../adapters/architecture/agent-ens
    `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
   换来的是一个字段只裁决一次,不必维护一张「哪个字段对哪类 eval 有效」的表。
 - **凭据不进。**
-  `judge` 进的是 `model` 与 `baseUrl` 两个配置值; `judge.apiKeyEnv` 选的是凭据从哪来,不改变「判定怎么算」,不进哈希也不落盘。
+  `judge` 进的是解析后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
 - **`sandboxReuse` 进。**
   复用改变 Case 创建次数、题间状态边界与 Attempt 是否能被独立沿用,两层 prepare 每条 Attempt 照常重放;省略等价于 `false`。
 
@@ -168,7 +168,7 @@ export default defineEval({
 
   async test(t) {
     await t.send("把 recall 结果写进 out.md");   // 改 prompt → 这一条重跑
-    t.check(await t.sandbox.fileExists("out.md"), isTrue());  // 改断言 → 这一条重跑
+    t.check(await t.sandbox.pathExists("out.md"), isTrue());  // 改断言 → 这一条重跑
 
     t.fact("endpoint", tunnel.url);
     //  改这行代码 → 这一条重跑,因为字节变了

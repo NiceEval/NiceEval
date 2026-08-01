@@ -21,7 +21,7 @@ export default defineExperiment({
 });
 ```
 
-参数驱动的环境差异(比如按 `flags.skill` 往沙箱注入一个 skill 文件)写在 eval 的 `test(t)` 里:`if (t.flags.skill) await t.sandbox.writeFiles({ ".agent/skill.md": loadSkill(t.flags.skill) })`——普通代码,不需要框架 Hook。
+参数驱动的环境差异(比如按 `flags.skill` 往沙箱注入一个 skill 文件)写在 eval 的 `test(t)` 里:`if (t.flags.skill) await t.sandbox.writeText(".agent/skill.md", loadSkill(t.flags.skill))`——普通代码,不需要框架 Hook。
 
 详见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
@@ -382,6 +382,11 @@ export const evalDef = defineEval({
 
 export const agent = defineSandboxAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-agent", version: "1.4.2" },
+    probe: shell('test "$(my-agent --version)" = "1.4.2"'),
+  },
   async send(input, ctx) {
     ctx.progress({ message: "turn 2 · running shell" });
     // ...
@@ -480,7 +485,7 @@ export default defineExperiment({
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
 配置解析以 [Architecture · 配置解析链](architecture.md#配置解析链一次求值处处同源) 为单源。
-`timeoutMs` 与 Judge 支持 Eval 覆盖，按 CLI flag → experiment → eval → config → 内置默认解析；其它字段只经过各自声明的层级。
+`timeoutMs` 按 CLI flag → experiment → eval → config → 内置默认解析；Judge 按单条 `{ model }` → experiment → eval → config 逐字段解析且没有 CLI flag；其它字段只经过各自声明的层级。
 环境变量只承担凭据和终端环境事实，不进入配置覆盖链。
 agent、model、flags 属于 experiment，不由 CLI 覆盖。
 

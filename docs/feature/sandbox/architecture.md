@@ -60,7 +60,7 @@ export default defineEval({
   //  清单在锚点时冻结:agent 或 fixture 事后写 .gitignore 影响不了它
 
   async test(t) {
-    await t.sandbox.writeFiles({ "src/app.ts": SEED });
+    await t.sandbox.writeText("src/app.ts", SEED);
     //  写在 send 之前 → 下一次 t.send() 进入前落一笔 eval 归因
 
     t.sandbox.fileChanged("src/app.ts");
@@ -84,7 +84,7 @@ export default defineEval({
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。尺寸核算先于内容传输;仍然越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 窗口归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐窗口归因的引擎,这是选它的理由,不是历史惯性。
 
-agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
+agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
 
 这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / State save / cleanup / `stop`)在判定口径之外单独记录。
 
@@ -106,7 +106,15 @@ runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP �
 
 attempt 内的一切沙箱时限都从 attempt deadline **派生**,provider 层没有独立默认:实例寿命请求覆盖 deadline 加收尾预留([复用寿命](reuse.md)同一规则),单条命令未显式传 `timeout` 时,上限就是 deadline 的剩余量。
 理由与 [`timeoutMs` 的解析链](../experiments/architecture.md#配置解析链一次求值处处同源)相同:时限多一个链外来源,症状就是「实验声明 20 分钟,命令在整 600 秒被另一层杀掉」——配置的值不生效,报错还落在离配置最远的地方。
-用户代码显式给单条命令传更短的 `timeout` 仍然生效,那是有意声明,不是默认值。
+用户代码显式给单条命令传更短的 `timeoutMs` 仍然生效,那是有意声明,不是默认值。
+
+### 命令树与进程寿命
+
+Sandbox 是资源组的生命周期边界，但不是每个子进程的隐式 owner。正常 `runCommand` / `runShell` 完成后，关闭 transport、PTY 或 provider session 不得顺带杀死命令有意启动的任务服务；这些服务是否跨命令或跨 Attempt 保留，由 Case、reuse 与 keep 契约决定。
+
+异常路径相反：命令 timeout、取消、Attempt interruption 或 Agent runtime cancellation 时，Provider 必须在 Promise settle 前确认本次**受管命令树**已经终止。能按进程组 / job / cgroup 精确终止就只终止该树；无法证明时必须退休并停止整个 Sandbox。只关闭输出流、让孙进程继续运行，是取消失败而不是成功。
+
+一次逻辑 send（含全部物理重试）只有在 Agent driver 与可能写 workdir 的命令树已终止或进入可证明静止态，且 ledger / retryAttempts 已记账后才能 settle。正常 keep 可保留任务服务，但 Agent teardown 必须保证 driver 不能继续发模型请求；异常路径无法证明静止时，不能把 Case 标成可安全复用。
 
 超时把 attempt 转成 `errored` 时,归属必须可见。
 `result.json` 落盘三样:触发的是哪层时限(attempt deadline / 命令显式 `timeout`)、值多少、值从四层来源的哪层解析而来。
@@ -169,8 +177,8 @@ attempt 的最终 `locator` 在调度前已经由 invocation 的 `snapshotStarte
 - **超时** —— 命令到点销毁流并报错;上限按[时限归属](#时限归属attempt-deadline-是唯一默认)从 attempt deadline 派生。
 
 ```typescript
-const sandbox = await createSandbox({ provider: "docker", runtime: "node24", timeout });
-await sandbox.uploadFiles(workspaceFiles);        // targetDir 省略 → workdir
+const sandbox = await createSandbox({ provider: "docker", runtime: "node24", timeoutMs });
+for (const file of workspaceFiles) await sandbox.writeBytes(file.path, file.content);
 await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 ```
 
@@ -180,7 +188,7 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 
 - `VercelSandbox.create({ runtime, timeout })` 起一台微 VM。
 - 处理云沙箱的 session 生命周期,必要时 snapshot + rotate,避免长命令被 session 上限截断。
-- 批量 `writeFiles` 上传。
+- provider 内部可以批量传输，但对外兑现同一组 `writeText` / `writeBytes` 语义，不暴露另一套批量命名。
 
 接口与 Docker 完全一致,所以 Adapter 代码一字不改就能在两种 provider 间切换。
 
@@ -242,9 +250,9 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 ## 已创建 Sandbox 的文件 IO 重试
 
-所有 provider(含 `defineSandbox`)返回的 Sandbox 都经过同一个包装层。包装层只对固定目标的幂等文件操作做默认重试:`readFile`、`fileExists`、`downloadFile`、`writeFiles`、`uploadFiles`、`uploadDirectory`、`uploadFile`、`downloadDirectory`。一次批量写或批量取回即使只完成一部分,重跑仍覆盖同一组目标路径。
+所有 provider(含 `defineSandbox`)返回的 Sandbox 都经过同一个包装层。包装层只对固定目标的幂等文件操作做默认重试:`readText`、`readBytes`、`pathExists`、`writeText`、`writeBytes`、`uploadFile`、`uploadDirectory`、`downloadFile`、`downloadDirectory`。目录传输即使只完成一部分,重跑仍覆盖同一组目标路径。
 
-默认最多 3 次,指数退避并带抖动。只有传输层的瞬时错误进入重试:429、5xx、`fetch failed`、连接重置、临时 DNS / 网络不可达。文件不存在、权限错误、路径错误、取消、Sandbox terminated 都第一次抛出。E2B 的 `fileExists` 必须把瞬时传输错误继续抛出,不能伪装成 `false`。
+默认最多 3 次,指数退避并带抖动。只有传输层的瞬时错误进入重试:429、5xx、`fetch failed`、连接重置、临时 DNS / 网络不可达。文件不存在、权限错误、路径错误、取消、Sandbox terminated 都第一次抛出。`pathExists` 遇瞬时传输错误必须继续抛出,不能伪装成 `false`。
 
 `runCommand`、`runShell`、`appendLog`、`stop` 永远不隐式重试:框架不知道命令在失败前产生了哪些副作用。需要重试命令时由调用者把幂等性写成显式业务策略。IO 重试全部耗尽后抛回原始 error,让 attempt 保存错误链与 partial evidence。
 
@@ -265,9 +273,7 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 不要硬编码 `/workspace`——它不是任何 provider 的真实 workdir,按它写的文件会落在 agent cwd 和变更分类账之外(agent 看不见、diff 采不到)。写法是省略 `targetDir` / `cwd`,需要绝对路径时用 `sandbox.workdir`。
 
-包装或装饰 `Sandbox` 实例(路径归一化、日志代理这类中间层)时,core 声明的接口外能力成员(`suspend` / `resume`、`appendLog` 这类可选内部方法)必须原样保留并转发到被包装实例。
-包装层只认接口方法就会把这些能力静默吃掉:消费方拿到 `undefined` 后按「不支持」降级,假成功没有任何报错。
-每新增一个这类能力成员,包装实现与它的转发测试属于同一次改动。
+包装或装饰 `Sandbox` 实例(路径归一化、日志代理这类中间层)时，只转发正式接口：`SandboxOperations`、宿主传输、`stop()` 与可选 `appendLog()`。留存不藏在 `Sandbox` 的动态成员上，而是 Case materialize 时单独返回 `SandboxRetention`；wrapper 因此不可能把 suspend/wake 能力静默吃掉。
 
 provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传——需要新能力时显式建模成接口成员或 case 能力句柄,不开 `sandbox.native` 逃生口(裁决见 [memory 条目](../../../memory/sandbox-native-escape-hatch-rejected.md))。
 

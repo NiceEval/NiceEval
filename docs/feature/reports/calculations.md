@@ -54,7 +54,7 @@ const p95DurationMs = rollup(
 );
 ```
 
-首版提供 `mean`、`sum`、`min`、`max` 与 `percentile(p)`。
+内置 Reducer 包含 `mean`、`sum`、`min`、`max` 与 `percentile(p)`。
 省略阶段时默认 `mean`；null 在进入 Reducer 前排除，空集合仍为 null。
 
 不提供通用 `count` 与 `countDistinct`：

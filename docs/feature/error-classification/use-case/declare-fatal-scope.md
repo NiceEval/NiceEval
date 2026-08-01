@@ -25,7 +25,7 @@
    import { ExperimentFatalError } from "niceeval";
 
    sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(async (sandbox, context) => {
-     const probe = await sandbox.tryCommand("curl", ["-sf", `${serverUrl}/health`]);
+     const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
      if (probe.exitCode !== 0) {
        throw new ExperimentFatalError(
          `server probe(${serverUrl}) failed — 服务端/隧道已死,修好后更新 .env 重跑`,

@@ -57,7 +57,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 11,
+  "schemaVersion": 14,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -69,7 +69,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `13`。
+当前 `schemaVersion` 是 `14`；本次升版来自持久化字段 `coverage` → `evidenceCoverage` 的破坏性重命名。
 历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -88,8 +88,7 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
 - `schemaVersion` 用整数,只在**破坏兼容读取**时递增。
   新增可选字段、新增 artifact 文件、新增 `StreamEvent` variant 不递增;读取器必须忽略未知字段和未知 artifact 文件。
 - `producer.version` 是写这份结果的 npm package 版本,唯一用途是拼 npx 提示;它不是 schema 判断依据。
-- `format` / `schemaVersion` / `producer` 三个字段永久稳定:任何未来版本都不能移动、重命名或改变类型,否则版本不匹配时连 npx 提示都给不出来。
-  历史版本(≤3)把这三个字段放在 run 级 `summary.json` 顶层,读取器据此识别旧落盘并按下节给出提示——这是版本识别,不是迁移。
+- `format` / `schemaVersion` / `producer` 三个字段是 `run.json` 的稳定识别头:同一格式的未来版本不能移动、重命名或改变类型,否则版本不匹配时连 npx 提示都给不出来。
 - attempt 文件保持原始 JSON object/array。
   `result.json` 是未包装对象,`events.json` 是 `StreamEvent[]`,不为塞版本号改成 `{ schemaVersion, data }` envelope;`jq`/`node` 直接读的体验不被打破。
 - 不要用目录名表达 schema。
@@ -100,7 +99,7 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
 读取器不解析、不迁移、不降级渲染任何版本不同的 Run,行为只分三档:
 
 - **`schemaVersion` 相同**:正常读取渲染。
-- **`format === "niceeval.results"` 但 `schemaVersion` 不同**(不论新旧,含历史版本的 `summary.json`):整份落盘视为不兼容。
+- **`run.json.format === "niceeval.results"` 但 `schemaVersion` 不同**(不论新旧):整份落盘视为不兼容。
   目录扫描时在列表里留一个占位条目,标出目录和 `producer.version`,并提示:
 
   ```text
@@ -110,7 +109,7 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
   ```
 
   单文件模式 `niceeval view <path>` 指向版本不同的元数据文件时输出同样的提示后退出,而不是报「不是 niceeval 结果」。
-- **不能识别**(没有 `format`,也不满足 legacy 的 `results[]` + `startedAt` 启发式):当作无关 JSON 忽略。
+- **不能识别**(缺少可读取的 `run.json` 识别头):当作无关目录或 JSON 忽略；读取器不扫描旧文件名，也不靠业务字段组合猜格式。
 
 实现入口:版本判定只有一份,在 `src/record/format.ts` 的 `classifyRun`(view 经 `openRecord` 消费);目录扫描把 incompatible-version / malformed / incomplete 投影为结构化 `unreadable-run` Issue。
 view 与 CLI 各自的 Notice policy 再产生 banner 或终端错误,包括是否根据 producer 给出版本命令;读取分类层不写 i18n 文案或 action。
@@ -202,10 +201,10 @@ interface ExperimentRunInfo {
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**
-   * Run 级默认的裁判配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
-   * 只落这两个配置值,`apiKeyEnv` 指向的凭据不落。
+   * Experiment 级裁判执行配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
+   * `apiKeyEnv` 只指向凭据变量,不落盘。
    */
-  judge?: { model?: string; baseUrl?: string };
+  judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
   /** 本次运行解析后实际选中的 eval id 全集——evals 过滤器(含函数形式)的求值结果,不存过滤器本身。 */
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
@@ -455,12 +454,12 @@ interface AttemptRecord {
   phases?: PhaseTiming[];
   /** 记录态断言;元素字段契约单独定义在 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。 */
   assertions: AssertionResult[];
-  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.scoring` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的第三方 harness。 */
+  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.scoring` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。官方 writer 必写；通用第三方 producer 若只产 pass/fail 记录可以省略并按 `"pass"` 读取，计分记录必须显式写 `"points"`。 */
   scoring?: "pass" | "points";
   /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。只在 `scoring: "points"` 时出现,省略等价于空数组。 */
   scoreEntries?: ScoreEntry[];
-  /** 证据覆盖聚合:Agent 声明经各 turn 降级后的最差值,字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md);省略 = 全通道 unknown(Adapter 未声明),消费侧按保守处理。 */
-  coverage?: EvidenceCoverage;
+  /** 证据覆盖聚合:必填；Agent 六通道声明经各 turn 降级后的最差值。字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md)。 */
+  evidenceCoverage: EvidenceCoverage;
   /** 自动重试吸收的物理 send 失败,按发生顺序完整保留；最终一次逻辑 Turn 不重复放这里。 */
   retryAttempts?: RetryAttemptRecord[];
   /** 全部物理 send（含 retryAttempts）与其它模型调用的聚合用量。 */
@@ -590,9 +589,12 @@ interface RetryAttemptRecord {
   sendAttempt: number;
   startedAt: string;
   durationMs: number;
-  failure:
-    | { type: "thrown"; error: AttemptError }
-    | { type: "turn-failed"; message: string };
+  failure: {
+    type: "agent-send-failed";
+    acceptance: "rejected";
+    message: string;
+    process?: { exitCode?: number; signal?: string };
+  };
   classification: {
     retryable: true;
     scope: "attempt" | "eval" | "experiment";

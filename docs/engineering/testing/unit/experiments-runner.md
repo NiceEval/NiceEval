@@ -80,8 +80,9 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
   template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
-- **`EvalDescriptor.scoring` 投影与实验同型校验**：`evalDescriptorOf` 对 `defineEval` 产物投影 `scoring: "pass"`、`defineScoreEval` 产物投影 `"points"`，未经这两个定义函数处理的未包装对象（`scoring` 缺失）回退按 `"pass"` 投影，三种情形在同一批候选 eval 里都要各有一条区分力场景；`splitByScoring` 对全通过制、全计分制、混合三种候选集合的分桶结果——只有混合桶两侧都非空。
-  混型启动校验的报错文案（`cli.experiment.mixedScoring`）要能证明关键信息齐全：两侧的 eval id 各自列出、各自计数，以及收窄建议（tags / id 前缀 / `scoring` 字段，或拆成两个实验文件）——直接对 `t("cli.experiment.mixedScoring", …)` 断言，不需要起一个真实 CLI 进程。
+- **`EvalDescriptor.scoring` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 产物投影 `scoring: "pass"`，对 `defineScoreEval` 产物投影 `"points"`。
+  未经两个定义函数处理的未包装对象缺少 scoring 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
+  同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、记录与携带，不能在启动期拒绝或静默删掉一类。报告按 scoring 分列通过率与总分，绝不把两种无共同单位的数相加。
 - **计分制 attempt 落盘**：`runAttemptEffect` 对 `scoring: "points"` 的 eval 把 `.points(n)` 挣分正确写进 `EvalResult.assertions[].points`、把 `t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的产物接上了落盘字段）；前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已记录，不是执行异常）、中止前已经产生的 `scoreEntries` 照实保留、中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）；没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个来源。
 - **调度项优先级**：CLI flag → experiment → config → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与 Run 投影。
   **这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。
@@ -90,12 +91,17 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **含 eval 层的字段解析链（`timeoutMs`）**：`--timeout` → experiment → eval → config → 无上限，五档逐层可区分。
   区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。
   断言面取 attempt 实际生效的 deadline 与超时消息里的来源标注（`from eval` / `from config`…），不是解析函数的中间返回值；同一份解析结果同时喂给 carry 的资格判据（`executionMs` ≤ 当前上限），两处不分叉。
-- **`judge` 的解析链（eval → config）**：两档逐层可区分。
+- **`judge` 的解析链（单条 `{ model }` → experiment → eval → config）**：四档逐层、逐字段可区分。
+
+  没有 CLI judge override。两份只改变 Experiment judge model 的 A/B 必须得到不同配置身份。
+
+  rubric、severity 与 threshold 仍取同一 Eval 定义。
+
   区分力最强的一格必测——**config 写了 `judge`、eval 也写了自己的 `judge` 时取 eval 的值**。
   再加一格证明它**逐字段合并而不是整体覆盖**：eval 只声明 `model` 时 `baseUrl` 仍从 config 来。
-  这条链没有 experiment 层也没有 CLI flag，多出一层就是回归。
+  这条链没有 CLI flag，多出一层就是回归。
   断言面取 judge 断言实际请求到的 model 与端点。
-   `judge` 的 `model` / `baseUrl` 进 configHash、`apiKeyEnv` 不进，归下面的指纹输入类别。
+  `judge` 的 `model` / `baseUrl` 进 configHash、`apiKeyEnv` 不进，归下面的指纹输入类别。
 - **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→ `zh-CN`。
   断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C` / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` / `NICEEVAL_LOCALE`）在场也不参与。
 - **并发**：全局与实验级上限、全局上限的三层解析与 Provider 推荐值、exclusive Provider 强制串行。
@@ -251,7 +257,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
     错误包含等待预算、轮次和采集器日志。
     首轮成功时不重试。
   - 第一层 Fixture 用脚本化 fake Sandbox，观察启动轮数、路径隔离和旧进程终止。
-  - 第二层把 `runShell` 交给真实 `/bin/sh`，并让 `writeFiles` 真实落盘。
+  - 第二层把 `runShell` 交给真实 `/bin/sh`，并让 `writeText` / `writeBytes` 真实落盘。
     它证明脚本语法、端口监听和 POST 200，也证明采集器立即退出时不会耗完整轮等待预算。
 
 相关台账：

@@ -1,14 +1,15 @@
 # Direct Agent
 
-runner 直接调用函数、SDK 或服务端点时，使用 `defineAgent`。
+runner 直接调用函数、SDK 或服务端点时，使用 `defineDirectAgent`。
 目标可以在当前进程，也可以是远程服务； Direct 描述调用拓扑，不描述部署位置。
 Adapter 知道应用协议，NiceEval 不定义通用 URL、鉴权或消息格式。
 
 ```ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, makeSendFailure } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "support-bot",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     const response = await fetch(`${process.env.SUPPORT_BOT_URL}/chat`, {
       method: "POST",
@@ -25,10 +26,18 @@ export default defineAgent({
     });
 
     const body = await response.json();
+    if (!response.ok || !body.terminal) {
+      throw makeSendFailure({
+        acceptance: body.acceptance ?? "unknown",
+        message: `support bot ended without a trustworthy terminal state (HTTP ${response.status})`,
+        events: toStreamEvents(body),
+        cause: new Error(`support bot ended with HTTP ${response.status}`),
+      });
+    }
     ctx.session.capture(body.sessionId);
 
     return {
-      status: body.waiting ? "waiting" : "completed",
+      status: body.status,
       data: body.output,
       events: toStreamEvents(body),
       usage: body.usage,
@@ -60,7 +69,7 @@ export default defineAgent({
 
 ## 进程内调用
 
-进程内函数也可以包在 `defineAgent` 中，但它测到的是函数边界，而非用户真实经过的 HTTP、鉴权、序列化和部署链路。
+进程内函数也可以包在 `defineDirectAgent` 中，但它测到的是函数边界，而非用户真实经过的 HTTP、鉴权、序列化和部署链路。
 只有被测循环本身就是目标边界时才使用这种方式；否则优先走生产协议。
 
 ## 文件输入

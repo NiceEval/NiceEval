@@ -9,7 +9,7 @@
 ### 简述
 
 niceeval 不接管服务:多容器环境继续走[环境预置放哪](../../../feature/sandbox/library.md#环境预置放哪)的「外部编排」行(`docker compose up -d && niceeval exp …`),或写进 `ExperimentDef.setup`。
-niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["services"]` 一类的标签),provider 声明能力,缺项计划期 `skipped`;加上[Agent 进程契约](../../../roadmap/agent-process-contract/README.md)。
+niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["services"]` 一类的标签),provider 声明能力,缺项计划期 `skipped`;命令树与 send 终态沿用[已定稿契约](../../../feature/adapters/architecture/agent-contract.md)。
 赌注是:假 `failed` 的大头来自「环境不对等没被发现」,把它变成显式 `skipped` 就消掉了大部分危害,编排本身留给成熟的外部工具。
 
 ### 优势

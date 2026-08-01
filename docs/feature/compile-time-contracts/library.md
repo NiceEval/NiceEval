@@ -510,78 +510,97 @@ report.tsx(2,25): error TS2322: Type '"refs"' is not assignable to type 'Evidenc
 拼错字段是这一族里最常见的作者错误，`TS2820` 直接给出正确拼写。
 运行时仍验证 JSON 行、字段跨行一致性、有限数字和 MetricValue 结构，因为 `parseEvidenceRows()` 得到的行只带统一的 `EvidenceRow`。
 
-## Custom Sandbox case 推导 group keep
+## Agent evidence coverage 必须穷尽
 
-`group-keep` 由 handlers 的存在推导，不进入作者可填写 capability 集合：
-
-```ts
-type DeclaredSandboxCapability = Exclude<
-  SandboxCapability,
-  "group-keep"
->;
-
-interface CustomEnvironmentCaseInput {
-  identity: JsonValue;
-  capabilities?: readonly DeclaredSandboxCapability[];
-  materialize(ctx: SandboxMaterializeContext):
-    Promise<CustomMaterializeResult>;
-  groupKeep?: GroupKeepHandlers;
-}
-
-type CustomEnvironmentCaseFor<
-  Input extends CustomEnvironmentCaseInput,
-> = Omit<Input, "capabilities"> & (
-  Input extends { groupKeep: GroupKeepHandlers }
-    ? {
-        readonly capabilities: readonly (
-          | DeclaredSandboxCapability
-          | "group-keep"
-        )[];
-      }
-    : {
-        readonly capabilities?: readonly DeclaredSandboxCapability[];
-      }
-);
-
-function defineSandboxCase<
-  const Input extends CustomEnvironmentCaseInput,
->(input: Input): CustomEnvironmentCaseFor<Input>;
-```
-
-`CustomEnvironmentCaseFor<Input>` 在 `groupKeep` 存在时把 `"group-keep"` 加进规范化 capabilities。
-作者仍显式声明 `services`，因为它是 provider 承诺，不由一次 materialize 返回值自动推断。
-
-合法调用：写了 handlers 就得到该 capability，不写就没有。
+`defineDirectAgent()` 与 `defineSandboxAgent()` 都要求完整的 `EvidenceCoverage`。全通道完整时使用常量：
 
 ```ts
-const withKeep = defineSandboxCase({
-  identity: { provider: "fly", app: "bench" },
-  capabilities: ["services"],
-  materialize: startMachine,
-  groupKeep: { serializableResources, wake, destroy },
+defineDirectAgent({
+  name: "support-bot",
+  evidenceCoverage: completeEvidenceCoverage,
+  send,
 });
 ```
 
-被拒绝的调用：手写 `"group-keep"`。
+手写声明必须列出六个通道；partial / unavailable 必须带原因，complete 不能带原因。字段形状与消费语义单源在 [Adapter evidence](../adapters/architecture/evidence.md#覆盖声明evidencecoverage)。
+
+下面两种输入都在调用点失败：
+
+```ts
+defineDirectAgent({
+  name: "support-bot",
+  evidenceCoverage: {
+    events: { status: "partial" }, // 缺 reason
+    // actions / messages / usage / status / data 也缺失
+  },
+  send,
+});
+```
+
+```text
+agent.ts(3,3): error TS2739: Type '{ events: { status: "partial"; }; }' is missing the following properties from type 'EvidenceCoverage': actions, messages, usage, status, data
+```
+
+JavaScript 或类型断言绕过静态入口时，Agent 构造器在 discovery 前检查同一形状；不把缺字段规范化成含糊的 unknown 状态。
+
+## Custom Sandbox case 的产物边界
+
+自定义 case 不填写 capability 字符串；它返回固定形状的运行句柄，能力是否存在由句柄本身表达：
+
+```ts
+interface CustomMaterializeResult {
+  readonly sandbox: Sandbox;
+  readonly group: SandboxResourceGroup;
+  readonly services?: ServiceController;
+  readonly retention?: never;
+}
+
+interface CustomSandboxCaseInput {
+  readonly identity: JsonValue;
+  materialize(
+    ctx: SandboxMaterializeContext,
+  ): Promise<CustomMaterializeResult>;
+}
+
+declare function defineSandboxCase(
+  input: CustomSandboxCaseInput,
+): SandboxLayer<"template-bearing">;
+```
+
+`sandbox` 与 `group` 是每个 case 都必须兑现的基线；`services` 是唯一可选扩展句柄。
+跨进程留存需要可发现的 provider identity 与 detached 实现，不能由一次 callback 临时声明，因此输入与返回值都没有 `retention`、`wake` 或 capability 数组。
+
+合法调用直接返回完整的主执行空间与资源组：
+
+```ts
+defineSandboxCase({
+  identity: { provider: "kubernetes", manifestDigest: "sha256:..." },
+  async materialize(ctx) {
+    return {
+      sandbox: await createMainPod(ctx),
+      group: namespaceResourceGroup,
+      services: podServiceController,
+    };
+  },
+});
+```
+
+被拒绝的调用是在 callback 上拼接留存能力：
 
 ```ts
 defineSandboxCase({
   identity: { provider: "fly" },
-  capabilities: ["group-keep"],
-  materialize: startMachine,
+  async materialize() {
+    return { sandbox, group, retention };
+  },
 });
 ```
 
 ```text
-sandbox.ts(3,17): error TS2322: Type '"group-keep"' is not assignable to type 'DeclaredSandboxCapability'.
+sandbox.ts(4,30): error TS2322: Type 'SandboxRetention' is not assignable to type 'undefined'.
 ```
 
-两个方向的运行时守卫都保留，覆盖 JavaScript 与断言绕过：
-
-```text
-sandbox case declared capability "group-keep" but did not provide serializable resources, wake, and destroy
-sandbox case provided groupKeep but did not declare capability "group-keep"
-```
+运行时仍对 JavaScript 与类型断言绕过检查同一边界：缺 `sandbox` / `group`、出现未知能力字段或用自定义 case 请求 `--keep-sandbox`，都在创建资源前报错。
 
 ## Factory 产物使用私有品牌
 

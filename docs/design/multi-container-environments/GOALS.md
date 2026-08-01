@@ -13,9 +13,9 @@
 并把「环境不对等」从静默假 `failed` 变成显式结果。
 
 范围边界:本决策只管环境的**声明形态**与**谁负责构建与启动**;
-agent 进程的寿命与退出语义是所有候选方案共同的前提,
-在 [Roadmap · Agent 进程契约](../../roadmap/agent-process-contract/README.md)
-单独定稿,不参与本对比。
+agent 的 send 终态、命令树终止与正常任务服务寿命是所有候选方案共同的前提，
+分别由 [Agent 数据契约](../../feature/adapters/architecture/agent-contract.md) 与
+[Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)定义,不参与本对比。
 
 ---
 
@@ -77,8 +77,9 @@ agent 进程的寿命与退出语义是所有候选方案共同的前提,
 
 ## 不是本 doc 的目标
 
-- **agent 进程寿命与非零退出语义** ——
-  [Roadmap · Agent 进程契约](../../roadmap/agent-process-contract/README.md)。
+- **agent send 终态与命令树寿命** ——
+  [Agent 数据契约](../../feature/adapters/architecture/agent-contract.md)与
+  [Sandbox 命令树契约](../../feature/sandbox/architecture.md#命令树与进程寿命)。
 - **egress / 网络出口管控** —— 独立能力,不随本决策定稿。
 - **跨实验共享、寿命长于一次 run 的外部服务** ——
   维持[环境预置放哪](../../feature/sandbox/library.md#环境预置放哪)

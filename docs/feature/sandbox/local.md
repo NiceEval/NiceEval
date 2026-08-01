@@ -1,6 +1,6 @@
 # 本地执行:localSandbox()
 
-`localSandbox()` 让沙箱型 agent 直接在宿主机的一个本地目录上跑:`workdir` 是宿主机上的真实目录,`runCommand` 在那个目录里起进程,`readFile` / `writeFiles` 是本地文件 IO。
+`localSandbox()` 让沙箱型 agent 直接在宿主机的一个本地目录上跑:`workdir` 是宿主机上的真实目录,`runCommand` 在那个目录里起进程,`readText` / `writeText` / `readBytes` / `writeBytes` 是本地文件 IO。
 它是 [`Sandbox` 接口](README.md#provider-统一接口)最小的实现——没有远端控制面、没有 provisioning 重试、没有留存注册表,是内置 provider 里最薄的一个。
 典型场景:手边就一个 git 仓库要评,不想起 Docker、不想装云 sandbox、也不想为「隔离」付任何代价——让 agent 在这个目录上直接跑一遍,把它改了什么收下来打分。
 

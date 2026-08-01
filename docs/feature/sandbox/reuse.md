@@ -30,6 +30,7 @@ export default defineExperiment({
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
+这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。
 
 复用改变可观察行为，因此 `sandboxReuse` 和 `sandbox` Provider 配置进入配置哈希。
 同一个 Experiment 不能由 CLI 临时打开或关闭复用。
@@ -64,7 +65,8 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 Runner 不把任何作者准备提升成每个 Sandbox 一次。
 稳定 Agent CLI 应进入预制环境;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重放成本。
 
-Agent setup 的安装步骤在复用沙箱上按声明收敛，不假设沙箱空白：同名的 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
+Agent CLI 先由 ensure 重新 probe；缺失或 identity 不符时由配对 Installer 安装并复检。
+随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
 「可重复执行」的作者义务只覆盖作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
 
 ## 复用池按完整身份分组
@@ -185,7 +187,8 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 ## 失败与收尾
 
 - prepare 命令失败：当前 Attempt `errored`，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
-- Attempt 超时或失败：照常执行 Agent 与 cleanup 收尾；reset 成功后 Sandbox 可以继续。
+- 领域判定 failed：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
+- Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
 - reset 或寿命确认失败：停止该 Sandbox，后续 Attempt 等待替代 Sandbox。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
 - cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。

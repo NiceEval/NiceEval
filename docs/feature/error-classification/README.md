@@ -10,7 +10,7 @@ turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失�
 两类真实浪费,各暴露一条缺失的决策轴:
 
 1. **瞬时故障被放大成 `errored`**(时间轴)。
-   一次 turn 失败若只展平成不透明的 `AttemptError{code: "turn-failed"}`,限流、连接中断这类「换个时机大概率能过」的失败与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`attempts` + `earlyExit`),粒度太粗;高并发批跑里限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。
+   一次 send 执行失败若只展平成不透明的 `AttemptError{code: "agent-send-failed"}`,受理前拒绝、连接中断与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`attempts` + `earlyExit`),粒度太粗;高并发批跑里可证明的受理前限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。
    真实样本(批跑时多条 attempt 同报):
 
    ```
@@ -42,8 +42,8 @@ export type FailureClass =
 
 **时间轴 `retryable`,判据是重试安全性,不是错误文案的相似度**:只有能证明「这次输入未被 agent 受理」的错误才归可重试——
 
-- `"rate_limit"`(内建 reason):服务端在受理前拒绝(429、限流关键字、明示 "retry later")。
-  上面的样本属于这类:虽经 stream 断开的包装浮出,但本质是入场拒绝。
+- `"rate_limit"`(内建 reason):协议 code 或 transport 阶段证明服务端在受理前拒绝(例如明确的 admission 429)。
+  “retry later” 只是一段诊断文本，不能单独证明请求未受理。
 - `"network"`(内建 reason):连接建立失败(DNS 解析失败、连接被拒、TLS 握手失败、首字节前超时)——请求根本没到 agent。
 - 其余一切不可重试,包括无法证明 agent 未开始处理的流中断、响应中途连接重置。
 
@@ -59,7 +59,7 @@ export type FailureClass =
 - `"experiment"`:全实验的兄弟 attempt 同因必死——实验共享服务死亡、共享凭据失效、实验级配置错误。
   命中即停止派发同 experiment 的全部剩余 attempt。
 
-两轴的误判代价不对称方向不同,把关手段也不同:时间轴误重试赔判定正确性,由[受理证据门](architecture.md#分类链)机器检查;空间轴误扩 scope 赔整批覆盖数据,没有机器门可查,靠判据从严——**唯一有权扩 scope 的是携带作者知识的通道**(抛出点声明、adapter / 实验分类器),保守回退分类器永不扩 scope,「看起来像基建问题」不构成证明。
+两轴的误判代价不对称方向不同,把关手段也不同:时间轴误重试赔判定正确性,由 `SendFailure.acceptance` 的[受理证据门](architecture.md#分类链)机器检查;空间轴误扩 scope 赔整批覆盖数据,没有机器门可查,靠判据从严——**唯一有权扩 scope 的是携带作者知识的通道**(抛出点声明、adapter / 实验分类器),保守回退分类器永不扩 scope,「看起来像基建问题」不构成证明。
 
 **组合规则:时间轴先走,空间轴只对终局失败生效。**
  可重试的失败先被重试执行体吸收,只有重试耗尽或不可重试的失败,才携带 scope 抵达止损闸。
@@ -71,7 +71,7 @@ export type FailureClass =
 
 - **抛出点声明**(作者拥有的错误):包根导出空间轴 fatal 错误类 `ExperimentFatalError` / `EvalFatalError`——作者写下 probe、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
   fatal 错误类只开空间轴,不提供「可重试」的对应类:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试声明是一张永远无法兑现的支票。
-- **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因(隧道 host 拒连以 turn 层连接错误的形态浮出时,adapter 不认识那个 host,只有实验作者认得);adapter 的 `classifyTurnError` 识别自家协议错误(写法见 [Library](library.md#adapter-作者classifyturnerror));保守回退正则识别通用形状(限流关键字 → `"rate_limit"`,连接建立层错误 → `"network"`),只产时间轴。
+- **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因;adapter 的 `classifySendFailure` 识别自家协议 code(写法见 [Library](library.md#adapter-作者classifysendfailure));保守回退只识别结构化的 admission / transport 事实,不从自然语言猜受理状态。
 - **provisioning**:sandbox 层的分类自治(性质 + 后果两维不外泄),向外浮出的确定性配置死因附带按**声明 owner** 定档的 scope。
   凭据缺失 → `"experiment"`;template 不存在时波及范围由携带 template 的 owner(eval / experiment)决定,落 `"eval"` 或 `"experiment"`。
   映射单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
@@ -89,7 +89,7 @@ export type FailureClass =
   所有 per-attempt 阶段可达。
 
 重试只包 send 一次调用,不重放会话记账;变更归因的 send 窗口横跨全部尝试;重试预算两层(单 send 封顶 4 次尝试、attempt 加总封顶 8 次重试)。
-执行体的精确契约见 [Architecture · 重试执行体](architecture.md#重试执行体);重试封顶后的失败照旧走 `expectOk()` → `TurnFailed` → `AttemptError{code: "turn-failed"}` 路径,下游契约不变。
+执行体的精确契约见 [Architecture · 重试执行体](architecture.md#重试执行体);重试封顶或受理状态不安全时,`send()` 直接以 `AttemptError{code: "agent-send-failed"}` 终结 Attempt。合法 `Turn{status: "failed"}` 仍交给断言评分,两类失败不互相转换。
 
 ## 自愈阶梯与止损阶梯
 
@@ -107,7 +107,7 @@ export type FailureClass =
 1. **eval 闸**(`scope: "eval"`):一次命中即停止派发同 eval 剩余 attempt。
 2. **experiment 闸**(`scope: "experiment"`):一次命中即停止派发同实验全部剩余 attempt。
 3. **run 级 fail-fast**(推断回退,见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)):没有任何声明时,同一 eval 内同 code 连续复现的 streak 推断确定性错误、停止派发。
-   声明通道是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;turn 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `turn-failed` 一定是重试耗尽后的最终结果。
+   声明通道是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;send 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `agent-send-failed` 一定是重试耗尽或不满足安全重试门后的最终结果。
 
 ## 止损语义
 
@@ -135,9 +135,9 @@ export type FailureClass =
 ## 相关阅读
 
 - [Architecture](architecture.md) —— 类型形状、分类链、重试执行体、止损执行体与不变量。
-- [Library](library.md) —— fatal 错误类与实验分类器的写法、adapter 作者的 `classifyTurnError`、观察面。
+- [Library](library.md) —— fatal 错误类与实验分类器的写法、adapter 作者的 `classifySendFailure`、观察面。
 - [用例](use-case/README.md) —— 三种姿态的全流程叙事:读懂 errored、抛出点声明死因、写分类器。
 - [Runner](../../runner.md) —— earlyExit、run 级 fail-fast、完成状态与外层超时。
 - [Experiments · 实验级共享服务](../experiments/library.md#实验级共享服务setup-与-teardown) —— 实验级 setup 失败的既有语义。
 - [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试) —— 词表对齐的另一处分类与退避。
-- [Adapter · agent 契约](../adapters/architecture/agent-contract.md) —— `classifyTurnError` 的挂载面。
+- [Adapter · agent 契约](../adapters/architecture/agent-contract.md) —— `classifySendFailure` 的挂载面。

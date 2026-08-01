@@ -23,7 +23,7 @@ prepare order
 template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 template。
 同一 Experiment 可以选中分别使用 Compose、E2B 与 Docker image 的多个 Eval;Runner 为矩阵中的每个合法配对分别得到一个 template,再按物理身份共享构建或分配 Case。
 
-`SandboxLayer` 是逻辑生命周期层,不是 Docker image layer,也不是可以单独构建的镜像增量。
+`SandboxLayer` 是 **Eval / Experiment 对同一 Sandbox 生命周期的声明层**，不是 Docker image layer，也不是可单独构建的镜像增量。保留 `Layer` 这个词，是因为它表达 owner 与有序组合；物理运行句柄始终叫 `Sandbox`，完整环境单位始终叫 `SandboxCase`。
 普通 layer 不能创建第二个 Sandbox、替换 template、增加 sidecar 或停止 Case。
 
 ## 作者只学三个规则
@@ -266,7 +266,28 @@ missing 的配对必须补 template 或修改 selector,不能借相邻配对的 
 
 一个 Experiment 自己带 template 时,它选中的每个 Eval 都必须是 command-only。
 一个 Experiment 是 command-only 时,它选中的每个 Eval 都必须带 template。
-两组 Eval 混在同一个 selector 里时,矩阵必然出现 conflict 或 missing;作者应拆分 selector,或移动 template 所有权。
+两组 Eval 混在同一个 selector 里时，矩阵必然出现 conflict 或 missing；不能靠“Eval 覆盖 Experiment”一类优先级静默丢掉某一方声明。
+
+通常做法是让 Experiment 保持 command-only，每个 Eval 显式拥有自己的 template。通用起点用普通 helper 复用，特殊 Eval 直接使用自己的 Compose / image / template。这样同一个 Experiment 仍可横跨混合数据集，A/B 身份不被拆散。
+
+只有实验本身必须拥有起点时，才拆 selector 或拆 Experiment。
+
+```ts
+// evals/shared/node24.ts
+export const node24 = () => dockerImageSandbox({ image: "node:24@sha256:…" });
+
+// 通用 Eval
+export default defineEval({ sandbox: node24(), async test(t) { /* ... */ } });
+
+// 特殊 Compose Eval
+export default defineEval({
+  sandbox: dockerComposeSandbox({ file: new URL("compose.yaml", import.meta.url), workspaceService: "app" }),
+  async test(t) { /* ... */ },
+});
+
+// 同一个对照实验不带 template，仍可选择两类 Eval
+export default defineExperiment({ agent: codexAgent(), evals: ["generic/", "compose/"] });
+```
 
 ## 顺序与依赖方向
 
@@ -322,34 +343,24 @@ interface SandboxCommandContext {
   onCleanup(command: SandboxCleanupCommand): void;
 }
 
+type SandboxProgress = (update: {
+  readonly message: string;
+  readonly current?: number;
+  readonly total?: number;
+}) => void;
+type SandboxDiagnosticSink = (input: DiagnosticInput) => void;
+type SandboxFactsWriter = (key: string, value: string | number | boolean) => void;
+type SandboxCleanupCommand = (
+  sandbox: SandboxCommandTarget,
+  context: Omit<SandboxCommandContext, "onCleanup">,
+) => MaybePromise<void>;
+
 interface AttemptRef {
   readonly id: string;
   readonly index: number;
 }
 
-interface SandboxCommandTarget {
-  readonly workdir: string;
-  runCommand(
-    command: string,
-    args?: readonly string[],
-    options?: SerializableCommandOptions,
-  ): Promise<SuccessfulCommandResult>;
-  runShell(
-    script: string,
-    options?: SerializableCommandOptions,
-  ): Promise<SuccessfulCommandResult>;
-  tryCommand(
-    command: string,
-    args?: readonly string[],
-    options?: SerializableCommandOptions,
-  ): Promise<CommandResult>;
-  tryShell(
-    script: string,
-    options?: SerializableCommandOptions,
-  ): Promise<CommandResult>;
-  readBytes(path: string): Promise<Uint8Array>;
-  writeBytes(path: string, content: Uint8Array): Promise<void>;
-  pathExists(path: string): Promise<boolean>;
+interface SandboxCommandTarget extends SandboxOperations {
   copyPath(sourcePath: string, targetPath: string): Promise<void>;
   putContent(content: RegisteredSandboxContent, targetPath: string): Promise<void>;
 }
@@ -358,9 +369,9 @@ interface SandboxCommandTarget {
 `SandboxCommandTarget` 是运行中主 Sandbox 的窄视图。
 它没有 `stop()`,不暴露 Provider-native SDK,`copyPath()` 的两端都在 Sandbox 内;命令不能创建 sidecar、修改 Case 拓扑、保存新 template 或替换主 Sandbox。
 
-`runCommand()` / `runShell()` 对非零退出默认抛出携带 `CommandResult` 的 exit error。
-预期非零的探测显式使用 `tryCommand()` / `tryShell()`,其非零证据记为已处理,不进入 failed-command 判据;timeout、cancel 与 transport failure 始终抛错。
-`test(t).sandbox.runCommand()` 继续返回任意 exit code 供断言,不受这条生命周期语义影响。
+同名方法与 `t.sandbox`、完整 `Sandbox` 的语义完全相同。`runCommand()` / `runShell()` 返回任意 exit code；checked 调用显式使用 `runCommandOrThrow()` / `runShellOrThrow()`。
+
+timeout、cancel 与 transport failure 始终 reject。完整签名只在[操作 Sandbox](library/operations.md)定义，不在 layer 再造一套 `SerializableCommandOptions`。
 
 ### 稳定 identity 与 opaque callback
 
@@ -371,15 +382,29 @@ interface SandboxCommandIdentity {
   readonly inputs: SandboxCommandIdentityValue;
 }
 
+/** 可进入稳定 command identity 的 CommandOptions 子集；函数、signal 与运行时回调不在其中。 */
+interface SandboxCommandOptions {
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly root?: boolean;
+  readonly timeoutMs?: number;
+  readonly stdin?: string;
+}
+
+interface RegisteredSandboxContent {
+  readonly digest: string;
+  readonly kind: "file" | "directory";
+}
+
 declare function command(
   executable: string,
   args?: readonly string[],
-  options?: SerializableCommandOptions,
+  options?: SandboxCommandOptions,
 ): StableSandboxCommand;
 
 declare function shell(
   script: string,
-  options?: SerializableCommandOptions,
+  options?: SandboxCommandOptions,
 ): StableSandboxCommand;
 
 declare function defineSandboxCommand(

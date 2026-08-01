@@ -7,4 +7,4 @@
 
 OpenAI 协议没有缓存写入计量,`cacheCreationTokens` 恒缺席。
 
-转换器本身不产成本:走这两种协议形状的网关若在响应里带实测计费,由调用方的 `defineAgent` 显式落进 `Turn.usage.costUSD`(实测优先于估算,见 [Observability · 用量与成本](../../../../observability.md#用量与成本token--计费));否则 `$` 由价格表估算。
+转换器本身不产成本:走这两种协议形状的网关若在响应里带实测计费,由调用方的 `defineDirectAgent` 显式落进 `Turn.usage.costUSD`(实测优先于估算,见 [Observability · 用量与成本](../../../../observability.md#用量与成本token--计费));否则 `$` 由价格表估算。

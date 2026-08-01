@@ -70,12 +70,13 @@ Experiment 走同一条规则：`ExperimentInput` → `ExperimentDefinition` →
 | Aggregate | 把分组键、读数键和 `refs` 的关系约束放到 options | 冲突键在 `aggregate()` 调用处报错 |
 | Evidence row | 输入类型证明至少有一个 `MetricValue` 字段 | 只有维度字段的对象不能编译 |
 | Report charts | `x`、`y`、`series`、`point`、`sort.field` 使用按值类型过滤后的键 | 不存在或不可绘制的静态字段不能编译 |
-| Custom Sandbox case | `groupKeep` 推导 `group-keep`；作者不能重复声明该 capability | 两处声明不一致的组合无法写出 |
+| Agent evidence coverage | 六个通道在 Agent 构造时穷尽声明；partial / unavailable 必须带原因 | 漏通道或无原因的降级无法写出 |
+| Custom Sandbox case | callback 返回主 Sandbox、资源组与可选 services；留存不属于临时 callback | 缺基线句柄或拼接 retention 的形状无法写出 |
 | Theme / Report definition | factory 产物带模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
 | Sandbox layer | template factory 与 Provider 原子绑定；kind 品牌区分 template-bearing 与 command-only | 单个 layer 的非法形状在调用点失败；跨配对的 1×1 / 0×0 在 linker 一次报全 |
 
 精确类型与调用形状见 [Library](library.md)。
-阶段边界、源码落点和验收顺序见 [Architecture](architecture.md)。
+阶段边界、运行时镜像和行为矩阵见 [Architecture](architecture.md)。
 
 ## 编译期的真实边界
 
@@ -133,5 +134,5 @@ NiceEval 处于 beta，宽类型别名不作为保留目标。
 ## 入口
 
 - [Library](library.md) —— 各公共类型的形状与正反调用。
-- [Architecture](architecture.md) —— 阶段所有权、源码落点、验收矩阵。
+- [Architecture](architecture.md) —— 阶段所有权、运行时镜像与行为矩阵。
 - [三级反馈走查](use-case/three-levels.md) —— 一个作者依次撞上类型、装载与 link 三层反馈。

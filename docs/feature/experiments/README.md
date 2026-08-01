@@ -9,7 +9,7 @@ evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test()
 experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over 选定 evals
 ```
 
-> 参考:eve **没有**实验概念(运行配置靠 `defineEvalConfig` + CLI flag,"experiment" 只是 Braintrust 上报名);experiment 这层参考的是 Vercel agent-eval 的 `ExperimentConfig`,但删除了一半字段,见 [Architecture](architecture.md)。
+> 外部方案的来源与取舍单独收在[设计参照](reference/README.md)，不作为目标契约的一部分。
 
 ## 为什么要分开
 
@@ -41,6 +41,7 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
+  judge?: JudgeConfig;                       // 本实验的裁判执行配置；用于可签入的 judge A/B，不定义 rubric / severity / threshold
   flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
                                             // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。
@@ -63,6 +64,8 @@ export default defineExperiment({
 `evals` 可以同时选择通过制与计分制 eval。
 题型由 `EvalDescriptor.scoring` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
+
+`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只覆盖**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。解析链见 [Architecture · 配置解析](architecture.md#配置解析链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
 
 `flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。
 两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。
@@ -124,7 +127,8 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分)；混合时两种读数各算各的。
 - [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
-- [Architecture](architecture.md) —— 对照 agent-eval 的 `ExperimentConfig`,砍了什么、为什么。
+- [Architecture](architecture.md) —— 实体、配置解析、生命周期、跨 Invocation 协调与完成状态。
+- [设计参照](reference/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。
 - [CLI](cli.md) —— `niceeval exp` 命令。
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。
 - [Observability](../../observability.md) —— 跨 agent 的质量×成本对比与 `niceeval view`。

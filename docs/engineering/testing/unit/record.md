@@ -51,11 +51,14 @@ interface AttemptSpec {
   - locator 形态是 `@` + scheme + 12 位 Crockford base32，共 14 字符；由 `{runId, evalId, attempt}` 派生，同元组恒同值。
   - **碰撞两侧**：写入侧登记时命中已存在且身份元组不同，抛 `LocatorCollisionError` 并中止该 attempt，不覆盖也不换值；读取侧 `resolveLocator` 命中多条抛 `AmbiguousLocatorError` 并列出候选，不返回其中任意一条。
     三种失败（`Malformed` / `NotFound` / `Ambiguous`）各自可分辨。
-- **读取分类**：schemaVersion 不匹配（不论新旧）、坏 JSON、缺 run.json、legacy 启发式各归各的 skipped reason 且携带诊断字段；无关 JSON 静默忽略；未知可选字段与未知 artifact 被接受；未收尾 Run 不是 skipped、attempt 照常可读。
+- **读取分类**：`run.json` 的 schemaVersion 不匹配、坏 JSON、缺 run.json 各归各的 skipped reason，并携带诊断字段。
+  无关 JSON / 目录静默忽略；绝不扫描旧文件名或用业务字段组合猜格式。
+  未知可选字段与未知 artifact 被接受；未收尾 Run 不是 skipped，attempt 照常可读。
   每类坏数据用形成该分类的最小文件构造。
 - **身份**：身份键四字段全部可从数据读到（`experimentId` / `evalId` 直达，`attempt` / `startedAt` 在 `attempt.result`）；reader 忠实保留携带产生的重复、不擅自去重；「缺才补」的字段拼合优先级； `ref` 指向条目所在落盘。
   去重算法本身归 [sample.md](sample.md)。
 - **`configHash` 与携带资格**：`configHash` 落在 `run.json` 上、缺失时读取面如实为 `undefined`；`schemaVersion` 不同的历史 Run 不参与携带。
+- **schema 14 与覆盖分词**：writer 必须写完整 `AttemptRecord.evidenceCoverage`，reader 不接受缺字段或旧 `coverage` 冒充它；`sample.coverage` 仍只属于 Sample，不因持久化字段改名而改变。格式头示例与常量均为 14。
   另外三条各自成立：
   - **进 configHash 的每个字段都在 `run.json` 上找得到。**
     `agent` / `model` 在顶层， `reasoningEffort` / `flags` / `strict` / `judge` / 顶层 sandbox 投影在 `ExperimentRunInfo`。

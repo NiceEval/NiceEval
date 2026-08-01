@@ -24,4 +24,4 @@ API → 篇目对照:
 | (无配置面,内建行为的观察面) | [reading-errored](reading-errored.md) |
 | `ExperimentFatalError` / `EvalFatalError` | [declare-fatal-scope](declare-fatal-scope.md) |
 | `ExperimentDefinition.classifyFailure` | [write-a-classifier](write-a-classifier.md) |
-| `Agent.classifyTurnError` / `turnErrorText` | [write-a-classifier](write-a-classifier.md) |
+| `Agent.classifySendFailure` / `sendFailureText` | [write-a-classifier](write-a-classifier.md) |

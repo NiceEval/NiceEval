@@ -185,9 +185,9 @@ export async function defineTerminalBenchEval(entry: string | URL) {
         fileURLToPath(new URL("tests/", root)),
         ".niceeval-verifier/tests",
       );
-      await t.sandbox.writeFiles(
-        { "run-tests.sh": runTests },
-        ".niceeval-verifier",
+      await t.sandbox.writeText(
+        ".niceeval-verifier/run-tests.sh",
+        runTests,
       );
 
       t.check(

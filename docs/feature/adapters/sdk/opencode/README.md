@@ -40,6 +40,6 @@ Skills 落到 `.agents/skills/<name>/`，并写发现指引进 `AGENTS.md`。
 
 ## 预制环境
 
-setup 检测 PATH 上的 `opencode`：预装命中即跳过安装，缺失时回退 `npm install -g opencode-ai@<version>`。
+Adapter 的必填 ensure 用 PATH 上 `opencode` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
  NiceEval 公共镜像 `niceeval/opencode`（`NICEEVAL_OPENCODE_DOCKER_IMAGE`）把 CLI 烘焙进 `/usr/local/bin`。
-预装只是快速路径，不是正确性前提。
+`setup` 不安装 CLI，只写本 Attempt 的鉴权、运行时配置与扩展。预装只是快速路径，不是正确性前提。

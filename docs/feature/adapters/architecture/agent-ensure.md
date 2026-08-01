@@ -39,7 +39,7 @@ interface SandboxAgentDef {
 }
 ```
 
-- **probe 以 try 语义执行,零副作用。**
+- **probe 用普通 `runCommand` 语义执行,零副作用。**
   `command -v` 只能证明「有一个同名命令」;probe 至少覆盖可执行文件、精确版本与 Adapter 依赖的运行条件。
 - **identity 是纯数据。**
   至少含 Agent 名与精确版本,进 configHash 与 `run.json`;它同时是配对安装层的选择键。
@@ -52,6 +52,7 @@ interface SandboxAgentDef {
 ```typescript
 export default defineSandboxAgent({
   name: "my-coding-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   ensure: {
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
@@ -65,20 +66,50 @@ export default defineSandboxAgent({
 ## Agent 安装层:AgentInstaller
 
 ```typescript
-interface AgentInstaller {
+interface AgentInstallerBase {
   /** 与某条 AgentEnsure.identity 精确匹配;版本常量与该声明同源。 */
   readonly identity: SerializableValue;
   /** 支持的目标平台;不支持的平台在安装前报错点名,不猜近似路径。 */
   readonly platforms?: readonly string[];
-  /** 安装模式声明,见下节。 */
-  readonly installMode: string;
-  /** 宿主侧 staged payload 准备;Run 级 single-flight,契约见 staged payload 一节。 */
-  prepare?(context: {
-    readonly targetPlatform: string;
-    readonly signal: AbortSignal;
-  }): MaybePromise<PreparedAgentPayload | undefined>;
-  /** 在主 Sandbox 内执行安装,只经命令与文件 API。 */
-  install(sandbox: SandboxCommandTarget, context: AgentInstallContext): Promise<void>;
+}
+
+type AgentInstaller =
+  | (AgentInstallerBase & {
+      readonly installMode: "staged";
+      prepareArtifact(context: AgentArtifactContext): MaybePromise<PreparedAgentPayload>;
+      install(sandbox: SandboxCommandTarget, context: StagedAgentInstallContext): Promise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "sandbox-network";
+      readonly prepareArtifact?: never;
+      install(sandbox: SandboxCommandTarget, context: AgentInstallContext): Promise<void>;
+    })
+  | (AgentInstallerBase & {
+      readonly installMode: "verify-only";
+      readonly prepareArtifact?: never;
+      readonly install?: never;
+    });
+
+interface AgentArtifactContext {
+  readonly targetPlatform: string;
+  readonly signal: AbortSignal;
+}
+
+interface PreparedAgentPayload {
+  readonly content: RegisteredSandboxContent;
+  readonly digest: string;
+  readonly targetPlatform: string;
+}
+
+interface AgentInstallContext {
+  readonly identity: SerializableValue;
+  readonly targetPlatform: string;
+  readonly signal: AbortSignal;
+  readonly progress: (update: { readonly message: string }) => void;
+}
+
+interface StagedAgentInstallContext extends AgentInstallContext {
+  readonly artifact: PreparedAgentPayload;
 }
 ```
 
@@ -96,8 +127,8 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 
 每条 `AgentEnsure` 按声明顺序走同一条循环:
 
-1. probe 以 try 语义执行,命中即过,记录命中的安装事实。
-2. 未命中时按 identity 精确匹配 `AgentInstaller`,执行宿主侧 `prepare`(有 staged payload 时)与主 Sandbox 内 `install`,再复检同一个 probe。
+1. probe 用 `runCommand` 执行；退出码零命中，非零是正常未命中，记录命中的安装事实。
+2. 未命中时按 identity 精确匹配 `AgentInstaller`：`staged` 先执行宿主侧 `prepareArtifact()` 再在主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。安装后复检同一个 probe。
 3. install 失败或复检仍未命中:Attempt `errored`,归 `agent.ensure`,附 identity、期望版本与下一步,不记成 Agent 做题 `failed`。
 4. probe 未命中且没有 identity 匹配的安装层:同样 `errored`,错误信息给两条出路——换预装该版本的预制环境让 probe 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
 
@@ -111,7 +142,7 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 - **原子性由 identity 精确配对保证。**
   probe 与 install 各自锁定版本时,防漂移的结构是同源版本常量加精确配对:安装层按 ensure 声明的 identity 被选中,改版本只改一处常量,两半同时变。
   identity 对不上时循环拿不到安装层,失败带着两边 identity 的对比大声报出,不会静默装出另一版。
-- **prepare 的节奏与 adapter 其余方法不同。**
+- **`prepareArtifact` 的节奏与 adapter 其余方法不同。**
   `SandboxAgentDef` 的 setup / send / teardown 全是 attempt 级、沙箱内。
   staged payload 准备是 Run 级、宿主侧、以 identity 为 key 的 single-flight(与 `sandbox.build` 对称)。
   安装层给协调器一个稳定的 single-flight 单位。
@@ -143,13 +174,13 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 |---|---|---|
 | `staged` | 内置默认路径:staged payload 在题面网络之外准备,经文件 API 送入安装;题面网络不可用也能装 | 内置安装层的默认值 |
 | `sandbox-network` | 安装层显式声明用沙箱内网络与包管理器安装;网络可用性成为该安装层的支持面 | 自定义安装层 |
-| `verifyOnly` | 只接受预装且 probe 命中的环境;probe 未命中立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计环境的用户 |
+| `verify-only` | 只接受预装且 probe 命中的环境;probe 未命中立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计环境的用户 |
 
 失败后不允许在三种模式之间静默猜测或降级;换模式是配置变更,不是运行时回退。
 
 ## staged payload:题面网络之外的锁定安装文件
 
-内置 coding Agent 的默认安装路径由安装层的 `prepare` 按以下契约准备 staged payload:
+内置 coding Agent 的默认安装路径由安装层的 `prepareArtifact()` 按以下契约准备 staged payload:
 
 - 目标 platform / libc 从**主 Sandbox** 探测(`uname -s` / `uname -m` / `ldd`),不是宿主平台:
   staged payload 要装进沙箱,macOS 宿主起 linux 容器是常态,按宿主取会准备出跑不了的二进制。

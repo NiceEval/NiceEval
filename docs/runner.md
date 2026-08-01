@@ -203,8 +203,8 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
   因一次 errored 停掉其余样本等于放弃重试机会,还会把基建抖动放大成整题无结果。
 - **声明的止损闸与 streak 推断并存、互不替代。**
   声明是作者背书下的第一次即停,streak 是无声明时的保守回退(闸的契约见[执行失败分类](feature/error-classification/README.md#自愈阶梯与止损阶梯))。
-- **turn 层的瞬时故障不进这条判定。**
-  限流、连接建立失败在这之前已被有界重试吸收,streak 看到的 `turn-failed` 是重试耗尽后的最终结果(契约见[执行失败分类](feature/error-classification/README.md))。
+- **send 执行层的瞬时故障不进这条判定。**
+  可证明未受理的限流、连接建立失败在这之前已被有界重试吸收；streak 看到的 `agent-send-failed` 是重试耗尽或受理状态不安全后的最终 Attempt error。可信的 `Turn{status: "failed"}` 是可评分领域结果，不进入执行错误重试或 streak 推断(契约见[执行失败分类](feature/error-classification/README.md))。
 - **earlyExit 不改变派发节奏,只减少已派发的浪费。**
   同一个 eval 的多个 attempt 该不该并发跑,由[有界并发](#调度有界并发)的并发位数决定,与 earlyExit 是否开无关:`attempts: N` 建的 N 个 fiber 一起进等待集,有几个位就并发跑几个,不会等前一个出结果再决定要不要派发下一个。
 - **abort 只作用于还在等待集里的 fiber。**

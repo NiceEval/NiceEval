@@ -4,10 +4,16 @@
 Sandbox provider 由 experiment 选择；Adapter 不绑定 Docker、Vercel 或 E2B。
 
 ```ts
-import { defineSandboxAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineSandboxAgent, makeSendFailure } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
 
 export default defineSandboxAgent({
   name: "my-coding-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-coding-agent", version: "1.4.2" },
+    probe: shell('test "$(my-agent --version)" = "1.4.2"'),
+  },
 
   async setup(sandbox, ctx) {
     ctx.progress({ message: "configuring my-agent" });
@@ -20,8 +26,18 @@ export default defineSandboxAgent({
     const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
     const parsed = parseMyAgent(result.stdout);
 
+    if (result.exitCode !== 0 || !parsed.terminal) {
+      throw makeSendFailure({
+        acceptance: parsed.acceptance ?? "unknown",
+        message: parsed.error ?? `my-agent exited ${result.exitCode}`,
+        events: parsed.events,
+        usage: parsed.usage,
+        process: { exitCode: result.exitCode },
+      });
+    }
+
     return {
-      status: result.exitCode === 0 ? "completed" : "failed",
+      status: parsed.terminal.status,
       events: parsed.events,
       usage: parsed.usage,
     };
@@ -32,8 +48,10 @@ export default defineSandboxAgent({
 ## 生命周期
 
 [Agent Ensure](../architecture/agent-ensure.md)（probe 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在两方作者 prepare command 之后。
-`setup` 只做 Agent runtime 准备：写 Agent 配置和扩展；失败直接抛出并使 attempt errored。
-`send` 只执行一轮任务，多轮时会重复调用。
+`setup` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI，失败直接抛出并使 attempt errored。
+`send` 只执行一轮任务，多轮时会重复调用。只有协议给出完整可信终态才返回 Turn。
+
+CLI 非零、signal、transport 中断或无法解析终态时 reject `SendFailure`。`Turn.status: "failed"` 只保留给协议明确报告的可评分任务失败，不能由 `exitCode !== 0` 直接推导。
 可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
 
 每个回调的 `ctx.progress(...)` 只更新当前 `agent.setup` / `agent.run` / `agent.teardown` 的短期 activity;需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)`。

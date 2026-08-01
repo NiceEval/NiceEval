@@ -25,21 +25,33 @@ export type FailureClass =
   | { readonly retryable: true; readonly reason: string; readonly scope?: FailureScope }
   | { readonly retryable: false; readonly reason?: string; readonly scope?: FailureScope };
 
-/** 一次 send 失败的两种浮出形态。 */
-export type TurnFailure =
-  | { readonly type: "thrown"; readonly error: unknown }      // send() 抛出
-  | { readonly type: "turn-failed"; readonly turn: Turn };    // send() 返回 status: "failed" 的 Turn
+/** send() 无法返回可信 Turn 时 reject 的结构化 envelope。 */
+export interface SendFailure {
+  readonly type: "agent-send-failed";
+  /** 协议对本次输入是否已开始处理的证据；只有 rejected 允许整段重发。 */
+  readonly acceptance: "rejected" | "started" | "unknown";
+  readonly message: string;
+  readonly cause?: unknown;
+  readonly events?: readonly StreamEvent[];
+  readonly usage?: Usage;
+  readonly process?: {
+    readonly exitCode?: number;
+    readonly signal?: string;
+    readonly stdout?: string;
+    readonly stderr?: string;
+  };
+}
 
 /** adapter 可选分类器:返回 undefined 表示「不认识,交给后续链路」。 */
-export type TurnErrorClassifier = (failure: TurnFailure) => FailureClass | undefined;
+export type SendFailureClassifier = (failure: SendFailure) => FailureClass | undefined;
 
-/** 失败 Turn 的错误摘要:与 turn-failed 报错文案、回退分类器读的同一段文本。 */
-export function turnErrorText(turn: Turn): string | undefined;
+/** 与最终 AttemptError 和回退分类器同源的有界、脱敏失败摘要。 */
+export function sendFailureText(failure: SendFailure): string;
 
 /** 实验级分类器的输入:本实验任意 per-attempt 阶段的一次终局失败。 */
 export interface AttemptFailureInfo {
   readonly phase: LifecyclePhase;
-  /** 与报错文案同源的失败文本:thrown 取错误链(含 cause 链)message 串接,turn 失败取 turnErrorText。 */
+  /** 与报错文案同源的失败文本；SendFailure 取 sendFailureText，其它阶段取错误链 message。 */
   readonly text: string;
   readonly cause: unknown;
 }
@@ -77,26 +89,26 @@ fatal 错误类的契约是 `_tag` 与 `class` 两个数据字段,识别一律�
 fatal 错误类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。
 fatal 错误类只覆盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给默认行为发明类型是噪音。
 
-`Agent` 上的挂载面是可选字段 `classifyTurnError?: TurnErrorClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn));`completed` 与 `waiting` 的 Turn 不是失败(HITL 挂起是成功形态),不进分类。
+`Agent` 上的挂载面是可选字段 `classifySendFailure?: SendFailureClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn))。`completed` / `waiting` 是正常形态；`failed` 是可信、可评分的领域失败，三者都不进 send 执行失败分类。
 `kind: "direct"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
 
 ### 分类链
 
 按失败来源分两条链;每条链上,先给出非 `undefined` 结果的一道定分类,后续不再询问。
 
-**turn 失败**(`send()` 抛出,或返回 `failed` Turn),五道:
+**send 执行失败**(`send()` reject `SendFailure`),五道:
 
 1. **抛出点携带的分类**:`failureClassOf` 命中即定——作者知识优先级最高,不再询问任何分类器。
 2. **实验分类器**(可选):识别以协议错误形态浮出的共享基建死因(对自家隧道 host 的拒连)。
    排在 adapter 之前:它按自家坐标(host、路径)过滤,特异性高于协议通用形状;两者同时认领的失败恰是 scope 必须赢的场景——adapter 只有时间轴答案,先问它会把实验级死因留在 `"attempt"` 档,止损闸永远落不下。
 3. **adapter 分类器**(可选):最懂自家协议的错误形状,返回 `FailureClass` 或 `undefined` 回落。
-4. **保守回退分类器**:对失败文本做正则匹配——限流关键字、明示 "retry later" → `{ retryable: true, reason: "rate_limit" }`;连接建立层错误 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。
+4. **保守回退分类器**:只在 envelope 同时带有可验证的协议/transport code 时映射通用形状——受理前 429 → `{ retryable: true, reason: "rate_limit" }`;连接建立失败 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。
    回退永不给出超出 `"attempt"` 的 scope:框架无法从文案证明兄弟必死。
-   失败文本与报错文案同源(`thrown` 取错误链 message 串接,`turn-failed` 取 `turnErrorText(turn)`)——同一段文本既给人读也给分类器看,不出现「报错说 A、分类看 B」。
-5. **受理证据门**(执行体的否决权,只裁时间轴):失败 Turn 的 `events` 里已出现任何 agent 侧产出(message / thinking / `operation.started` / `operation.finished`)即证明 agent 已受理,`retryable` 强制降为 `false`——文本再像限流也不重发。
-   这道门把「只有能证明未受理才重试」从判据文字变成机器不变量,不信任何分类器。
+   失败文本与报错文案都取 `sendFailureText(failure)`，不出现「报错说 A、分类看 B」。文本本身只用于诊断，不能把 `acceptance` 从 `unknown` 猜成 `rejected`。
+5. **受理证据门**(执行体的否决权,只裁时间轴):只有 `failure.acceptance === "rejected"` 才保留 `retryable: true`；`started` 或 `unknown` 一律强制降为 `false`。
+   Adapter 只有在协议终态、服务端 code 或 transport 阶段能证明未受理时才可写 `rejected`。任何 agent 产出事件都要求至少为 `started`；空 `events`、CLI 非零退出、流中断或 “retry later” 文案都只能是 `unknown`，不能作为反证。
    它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。
-   `thrown` 形态没有事件可查,由前四道的判据独自把关。
+   这道门把「只有能证明未受理才重试」变成结构化机器不变量，而不是从事件缺失或自然语言反推。
 
 **生命周期阶段失败**(sandbox prepare command、`test(t)` 体内、per-attempt 收尾),三道:
 
@@ -120,13 +132,13 @@ scope 由止损闸消费,映射与判据单源在 [Sandbox · Provisioning 失�
 
 1. 会话记账(`session.turnCount` 自增、`userEvent` 推入事件流)在进入执行体之前完成,整个重试循环内不重复。
 2. 调 `agent.send(input, ctx)`。
-   返回 `completed` / `waiting` → 原样交回管道,循环结束。
-3. 失败(抛出或 `failed` Turn)→ 走分类链。
-   `retryable: false`,或两层重试预算任一耗尽 → 循环结束,失败携带其 `FailureClass` 向下浮出。
+   返回 `completed` / `waiting` / `failed` Turn → 原样交回管道,循环结束；领域失败 Turn 从不重试。
+3. reject `SendFailure` → 走分类链。
+   `retryable: false`，`acceptance !== "rejected"`，或两层重试预算任一耗尽 → 循环结束，写 `AttemptError{code: "agent-send-failed"}` 并携带其 `FailureClass` 向下浮出。
 4. `retryable: true` → 退避睡眠 → 回到 2,原样重发同一个 `TurnInput`。
 
 `scope` 不影响重试行为:执行体只读时间轴。
-被吸收的失败不进入逻辑会话事件流,避免重发产生的半截消息参与行为断言；但每次物理尝试都追加到 Attempt 的 `retryAttempts`,保留失败形态、分类、events、usage 与耗时。
+被吸收的失败不进入逻辑会话事件流,避免重发产生的半截消息参与行为断言；但每次物理尝试都追加到 Attempt 的 `retryAttempts`,保留 acceptance、分类、events、usage、process 与耗时。
 顶层 usage / cost 汇总所有物理尝试，最终成功不会抹掉前面已经花掉的 token 与钱。
 被吸收的失败仍不到止损闸；它是可观测证据，不是终局失败([组合规则](README.md#分类))。
 
@@ -207,8 +219,8 @@ scope 由止损闸消费,映射与判据单源在 [Sandbox · Provisioning 失�
 
 - 重试只包 `agent.send` 一次调用;会话记账、事件流、send 窗口都以「一次逻辑 send」为单位,重试对它们不可见。
 - 分类链的任何一道都不能制造新失败;浮出的必须是最终一次尝试的原始错误(message 允许追加重试摘要)。
-- `AttemptError.code`、`errored` 判定、结果格式、缓存语义(`errored` 不缓存、下次运行照常重跑)零变化;scope 不改写任何 attempt 级公开形状。
-- 受理证据门只否决时间轴且压过一切分类器;它不触碰空间轴。
+- send 执行错误统一落 `AttemptError.code: "agent-send-failed"`；领域失败 Turn 只参与断言，不使用该 code。`errored` 不缓存、下次运行照常重跑；scope 不改写错误种类。
+- 受理证据门只否决时间轴且压过一切分类器；只有结构化 `acceptance: "rejected"` 能放行重试，它不触碰空间轴。
 - 回退分类器永不给出超出 `"attempt"` 的 scope;扩 scope 的声明只能来自携带作者知识的通道(抛出点、adapter / 实验分类器、provisioning 的可证明配置死因)。
 - 被重试吸收的失败不抵达止损闸;抵达闸的一定是终局失败。
 - 闸只停派发、不抢占在飞;落闸幂等、invocation 内不可逆、不跨 invocation 持久。
@@ -218,7 +230,7 @@ scope 由止损闸消费,映射与判据单源在 [Sandbox · Provisioning 失�
 ## 相关阅读
 
 - [README](README.md) —— 动机、两轴判据、组合规则、声明通道、止损语义与非目标。
-- [Library](library.md) —— fatal 错误类与实验分类器的写法、`classifyTurnError`、观察面。
+- [Library](library.md) —— fatal 错误类与实验分类器的写法、`classifySendFailure`、观察面。
 - [Runner](../../runner.md) —— fail-fast、完成状态、实验域诊断持久化。
 - [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试) —— 词表对齐的另一处分类与退避形状。
 - [Adapter · agent 契约](../adapters/architecture/agent-contract.md) —— `Agent` 完整 interface 与生命周期不变量。
