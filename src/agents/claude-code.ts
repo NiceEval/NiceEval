@@ -18,6 +18,7 @@ import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
 import { createNpmCliProvisioner } from "./npm-staged.ts";
 import { ensureAgent } from "./provisioner.ts";
 import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -258,8 +259,16 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       ctx.session.capture(shared.sessionIdFromClaudeTranscript(raw));
       const parsed = shared.parseClaudeCode(raw);
       const events = [...parsed.events];
-      if (res.exitCode !== 0) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
-      return { events, usage: parsed.usage, status: res.exitCode === 0 ? "completed" : "failed" };
+      if (res.exitCode !== 0) {
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage: parsed.usage,
+          process: res,
+        });
+      }
+      return { events, usage: parsed.usage, status: "completed" };
     },
   });
 }

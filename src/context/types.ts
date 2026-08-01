@@ -10,7 +10,7 @@ import type { CommandOptions, CommandResult, SandboxFile } from "../sandbox/type
 export type SendInput = string | { text: string; files?: readonly import("../agents/types.ts").InputFile[] };
 
 /**
- * t.send() 返回的句柄:从事件流派生便利字段 + expectOk。泛型 `H` 是断言句柄类型——通过制
+ * t.send() 返回的句柄:从事件流派生便利字段。泛型 `H` 是断言句柄类型——通过制
  * `t`(`TestContext`,即 `TurnHandle<AssertionHandle>`)与计分制 `t`(`ScoreTestContext`,即
  * `TurnHandle<ScoreAssertionHandle>`)共用这一份形状,区别只在 `H` 是否带 `.points(n)`
  * (见 docs/feature/experiments/score-points.md)。
@@ -28,8 +28,6 @@ export interface TurnHandle<H extends BaseAssertionHandle = AssertionHandle> {
   readonly data?: unknown;
   /** 本轮 token 用量与估算成本(仅上报了 usage 的 agent 才有)。 */
   readonly usage?: Usage;
-  /** 上一轮若 failed 则抛(中止后续)。 */
-  expectOk(): TurnHandle<H>;
   /** 断言 data 与给定值深度相等。 */
   outputEquals(value: unknown): H;
   /** 断言 data 满足给定 schema(如 zod schema)。 */

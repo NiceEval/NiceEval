@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createAgentSession, SessionManager } from "./session.ts";
 import type { Agent, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import { isSendFailure, makeSendFailure, type SendFailure, type SendFailureClassifier } from "./send-failures.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
 // docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
@@ -49,10 +50,13 @@ function makeManager(turn: Turn) {
   return { manager, lines };
 }
 
-// turn 级重试(见 docs/feature/error-classification):agent 按调用次数依次吐出预设的 Turn
-// 序列,可选挂一个 classifyTurnError 分类器——用来证明重试真的经由 SessionManager 生效,
+// send 重试(见 docs/feature/error-classification):agent 按调用次数依次抛/返回预设结果，
+// 可选挂一个 classifySendFailure 分类器——用来证明重试真的经由 SessionManager 生效,
 // 而不只是 send-retry.ts 单元层的行为。
-function scriptedRetryAgent(turns: Turn[], classifyTurnError?: Agent["classifyTurnError"]): Agent & { calls: TurnInput[] } {
+function scriptedRetryAgent(
+  outcomes: Array<Turn | SendFailure>,
+  classifySendFailure?: SendFailureClassifier,
+): Agent & { calls: TurnInput[] } {
   const calls: TurnInput[] = [];
   let i = 0;
   const agent: Agent = {
@@ -60,11 +64,12 @@ function scriptedRetryAgent(turns: Turn[], classifyTurnError?: Agent["classifyTu
     kind: "direct",
     async send(input: TurnInput): Promise<Turn> {
       calls.push(input);
-      const turn = turns[Math.min(i, turns.length - 1)] as Turn;
+      const outcome = outcomes[Math.min(i, outcomes.length - 1)]!;
       i++;
-      return turn;
+      if (isSendFailure(outcome)) throw outcome;
+      return outcome;
     },
-    classifyTurnError,
+    classifySendFailure,
   };
   return Object.assign(agent, { calls });
 }
@@ -85,11 +90,17 @@ function makeRetryManager(agent: Agent, overrides: Partial<ConstructorParameters
   return { manager, lines };
 }
 
-describe("SessionManager · turn 级重试", () => {
-  const rateLimited: Turn = { status: "failed", events: [{ type: "error", message: "rate limited, please retry later" }] };
+describe("SessionManager · send 执行失败重试", () => {
+  const rateLimited = makeSendFailure({
+    acceptance: "rejected",
+    message: "admission rejected",
+    cause: { status: 429 },
+    events: [{ type: "error", message: "provider busy" }],
+    usage: { inputTokens: 2, outputTokens: 1 },
+  });
   const succeeded: Turn = { status: "completed", events: [{ type: "message", role: "assistant", text: "done" }] };
 
-  it("重试成功后结果零痕迹:只发生一次会话记账,失败尝试的事件不进 allEvents", async () => {
+  it("重试成功后逻辑事件零污染，物理失败进入 retryAttempts 且 usage 聚合", async () => {
     const agent = scriptedRetryAgent([rateLimited, succeeded]);
     const { manager } = makeRetryManager(agent);
 
@@ -100,15 +111,24 @@ describe("SessionManager · turn 级重试", () => {
     expect(manager.primary.turnCount).toBe(1); // 会话记账不因重试翻倍
     expect(manager.allEvents.filter((e) => e.type === "error")).toHaveLength(0); // 失败尝试的事件不落账
     expect(manager.allEvents.filter((e) => e.type === "message" && e.role === "user")).toHaveLength(1); // userEvent 不重放
+    expect(manager.retryAttempts).toMatchObject([{
+      sessionIndex: 1,
+      turnIndex: 1,
+      sendAttempt: 0,
+      failure: { acceptance: "rejected", message: "admission rejected" },
+      classification: { retryable: true, scope: "attempt", reason: "rate_limit" },
+      events: [{ type: "error", message: "provider busy" }],
+      usage: { inputTokens: 2, outputTokens: 1 },
+    }]);
+    expect(manager.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
   });
 
-  it("adapter classifyTurnError 覆盖兜底:兜底本会判不可重试的文案,被 adapter 分类器判为可重试并触发重试", async () => {
-    const queueFull: Turn = { status: "failed", events: [{ type: "error", message: "ACME_QUEUE_FULL: too many concurrent runs" }] };
+  it("adapter classifySendFailure 可识别自家协议 code", async () => {
+    const queueFull = makeSendFailure({ acceptance: "rejected", message: "queue full", cause: { code: "ACME_QUEUE_FULL" } });
     const agent = scriptedRetryAgent([queueFull, succeeded], (failure) =>
-      failure.type === "turn-failed" && failure.turn.events.some((e) => e.type === "error" && e.message.includes("ACME_QUEUE_FULL"))
+      (failure.cause as { code?: string }).code === "ACME_QUEUE_FULL"
         ? { retryable: true, reason: "acme_queue_full" }
-        : undefined,
-    );
+        : undefined);
     const { manager } = makeRetryManager(agent);
 
     const turn = await manager.send(manager.primary, "hi");
@@ -135,21 +155,16 @@ describe("SessionManager · turn 级重试", () => {
     expect(slotCalls).toEqual(["release", "reacquire"]);
   });
 
-  it("受理证据门:失败 Turn 带 agent 产出事件时不重试,原样浮出", async () => {
-    const partialProgress: Turn = {
-      status: "failed",
-      events: [
-        { type: "action.called", callId: "c1", name: "bash", input: {} },
-        { type: "error", message: "rate limited, please retry later" },
-      ],
-    };
-    const agent = scriptedRetryAgent([partialProgress, succeeded]);
+  it("可信 failed Turn 是可评分领域结果，不分类、不重试", async () => {
+    const domainFailure: Turn = { status: "failed", events: [{ type: "error", message: "tests failed" }] };
+    const agent = scriptedRetryAgent([domainFailure, succeeded], () => ({ retryable: true, reason: "must-not-run" }));
     const { manager } = makeRetryManager(agent);
 
     const turn = await manager.send(manager.primary, "hi");
 
     expect(agent.calls).toHaveLength(1); // 没有发生重试
     expect(turn.status).toBe("failed");
+    expect(manager.retryAttempts).toEqual([]);
   });
 });
 

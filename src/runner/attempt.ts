@@ -24,7 +24,8 @@ import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
 import { createAgentSession } from "../context/session.ts";
-import { EvalRequirementFailed, EvalSkipped, TurnFailed } from "../context/control-flow.ts";
+import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
+import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
 import { computeVerdict } from "../scoring/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
@@ -63,6 +64,7 @@ import type {
   Telemetry,
   TraceSpan,
   Usage,
+  RetryAttemptRecord,
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
@@ -229,6 +231,7 @@ export function runAttemptEffect(
   // docs/runner.md「超时:双层保护」超时不丢证据)。
   let liveEvents: (() => readonly StreamEvent[]) | undefined;
   let liveUsage: (() => Usage) | undefined;
+  let liveRetryAttempts: (() => readonly RetryAttemptRecord[]) | undefined;
   let liveLedger: ChangeLedger | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
@@ -247,7 +250,7 @@ export function runAttemptEffect(
    * 终局失败的分类与回执 —— **必须在把错误折成纯数据 `AttemptError` 之前调**:折完之后原错误
    * 对象(连同它携带的 `_tag`/`class` 与 cause 链)就不再是任何人的引用,空间轴声明再也读不出来。
    * 走生命周期链的三道决议(抛出点声明 → 实验分类器 → 缺省不可重试,见
-   * src/shared/failure-class.ts 的 `resolveAttemptFailureClass`);turn 失败的时间轴已由 send 重试
+   * src/shared/failure-class.ts 的 `resolveAttemptFailureClass`);send 失败的时间轴已由 send 重试
    * 执行体在 context 层消费完,浮出到这里的一定是终局失败,这里只读空间轴。
    * 缺省档(`scope` 省略或 `"attempt"`)不回执:那是「死因只属于本次执行」,没有闸可落。
    */
@@ -373,12 +376,16 @@ export function runAttemptEffect(
           timedOut = true;
           const events = liveEvents?.();
           const usage = liveUsage?.();
+          const retryAttempts = liveRetryAttempts?.();
           return {
             ...base,
             durationMs: Date.now() - t0,
             error,
             ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
             ...(usage !== undefined ? { usage: { ...usage } } : {}),
+            ...(retryAttempts !== undefined && retryAttempts.length > 0
+              ? { retryAttempts: retryAttempts.map((attempt) => ({ ...attempt })) }
+              : {}),
             // 超时前已经登记的非零命令证据(见 withCommandTiming)不因中断而丢失——它们在
             // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
             ...(commands.length > 0 ? { commands: [...commands] } : {}),
@@ -632,9 +639,10 @@ export function runAttemptEffect(
           concurrencySlot,
           declareFailure,
           reusedSandbox,
-          registerEvidence: (getEvents, getUsage) => {
+          registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
             liveEvents = getEvents;
             liveUsage = getUsage;
+            liveRetryAttempts = getRetryAttempts;
           },
           registerLedger: (ledger) => {
             liveLedger = ledger;
@@ -759,6 +767,21 @@ export function errorFromThrown(
   phase: LifecyclePhase | undefined,
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
+  if (isSendFailure(e)) {
+    const nestedFailure = isSendFailure(e.cause) ? e.cause : undefined;
+    const detail = e.cause === undefined || nestedFailure ? undefined : describeError(e.cause);
+    return {
+      code: "agent-send-failed",
+      message: sendFailureText(e),
+      origin: attemptOrigin(phase ?? "eval.run"),
+      ...(detail?.stack ? { stack: detail.stack } : {}),
+      ...(nestedFailure
+        ? { cause: { message: sendFailureText(nestedFailure) } }
+        : detail
+          ? { cause: detail.cause ?? { message: detail.message } }
+          : {}),
+    };
+  }
   const { message, stack, cause } = describeError(e);
   // 沙箱命令撞线抛的是带归属的错(见 sandbox/deadline.ts):显式传 timeout 的那条命令归
   // `command-timeout`,没显式传的那条上限本来就是 attempt deadline 派生的,归属如实指回
@@ -857,7 +880,11 @@ interface AttemptResources {
   reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
-  registerEvidence: (getEvents: () => readonly StreamEvent[], getUsage: () => Usage) => void;
+  registerEvidence: (
+    getEvents: () => readonly StreamEvent[],
+    getUsage: () => Usage,
+    getRetryAttempts: () => readonly RetryAttemptRecord[],
+  ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
   /** Run 级 Agent artifact prepare 协调器;sandbox setup 经 ensureAgent 注入。 */
@@ -1064,9 +1091,9 @@ async function runAttemptBody(
       feedback,
       fact,
       concurrencySlot,
-      // 实验分类器:turn 链上排在 adapter 的 classifyTurnError 之前(见
+      // 实验分类器:send 链上排在 adapter 的 classifySendFailure 之前(见
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
-      // 走的生命周期链是同一个函数,两条链的决议序各自单源在 turn-errors.ts / failure-class.ts。
+      // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
       // 题型:计分制下句柄上的 .gate() 是前置(就地求值 + 挂了中止 test()),见 collector。
       scoring: evalDef.scoring ?? "pass",
@@ -1099,7 +1126,11 @@ async function runAttemptBody(
     });
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见
     // registerEvidence 注释、docs/runner.md「超时:双层保护」超时不丢证据)。
-    registerEvidence(() => state.manager.allEvents, () => state.manager.usage);
+    registerEvidence(
+      () => state.manager.allEvents,
+      () => state.manager.usage,
+      () => state.manager.retryAttempts,
+    );
 
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
@@ -1113,14 +1144,6 @@ async function runAttemptBody(
       if (e instanceof EvalSkipped) skipReason = e.reason;
       else if (e instanceof EvalRequirementFailed) {
         /* 断言已记录,非执行错误 */
-      } else if (e instanceof TurnFailed) {
-        // TurnFailed 是 eval 驱动 agent 时的可读失败(message 首行是一层摘要,后续行是
-        // diagnose 的 output tail 等下钻证据,单行面各自取首行);稳定 code
-        // `turn-failed`,不带控制流 stack(那指向 control-flow.ts,对定位无益)。
-        // 分类先读:turn 链决议出的 FailureClass 由 expectOk() 铸造 TurnFailed 时挂在错误上,
-        // 下一行折成纯数据后就读不到了(见 declareFailure)。
-        declareFailure(getPhase() ?? "eval.run", e);
-        error = { code: "turn-failed", message: e.message, origin: attemptOrigin(getPhase() ?? "eval.run") };
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
         // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
@@ -1270,6 +1293,7 @@ async function runAttemptBody(
       // t.score,collector.scoreEntries 恒为空数组,省略即等价于空数组
       // (见 docs/feature/record/architecture.md「result.json」)。
       ...(evalDef.scoring === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
+      ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,
       error,

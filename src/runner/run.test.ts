@@ -55,6 +55,7 @@ import { slugHashEntryId } from "../shared/entry-file-store.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
+import { makeSendFailure } from "../context/send-failures.ts";
 import type { AgentRun, DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import type {
   Agent,
@@ -1819,13 +1820,11 @@ describe("runEvals · exclusive provider 强制串行", () => {
   });
 });
 
-// turn 级重试退避期间只应释放全局并发位,实验级闸(runSem)必须全程持有——两级闸按持有期
-// 分工的语义单点见 docs/runner.md「调度:有界并发」。下面两个 Turn 工厂复用
-// src/context/send-retry.test.ts 已验证过的最小形状:失败 Turn 只带一条 error 事件(没有
-// message/thinking/action 事件,受理证据门不会把它强降为不可重试),成功 Turn 是一条
-// assistant message,消息文案匹配保守兜底分类器的限流关键字。
-function retryableFailureTurn(message: string): Turn {
-  return { status: "failed", events: [{ type: "error", message }] };
+// send 重试退避期间只应释放全局并发位,实验级闸(runSem)必须全程持有——两级闸按持有期
+// 分工的语义单点见 docs/runner.md「调度:有界并发」。失败必须是协议证明未受理的
+// SendFailure；可信 failed Turn 是领域结果，不进入重试。
+function retryableSendFailure(message: string) {
+  return makeSendFailure({ acceptance: "rejected", message, cause: { status: 429 } });
 }
 function okTurn(): Turn {
   return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
@@ -1842,9 +1841,8 @@ describe("runEvals · 退避的槽位持有期差:实验级闸全程持有,全�
         name: "agent-retry-serial",
         send: async () => {
           sendCalls += 1;
-          return sendCalls === 1
-            ? retryableFailureTurn("rate limited, please retry later")
-            : okTurn();
+          if (sendCalls === 1) throw retryableSendFailure("rate limited, please retry later");
+          return okTurn();
         },
       });
       let sandboxCreates = 0;
@@ -1969,7 +1967,7 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
           rSendCalls += 1;
           if (rSendCalls === 1) {
             await rBarrier;
-            return retryableFailureTurn("rate limited, please retry later");
+            throw retryableSendFailure("rate limited, please retry later");
           }
           return okTurn();
         },
@@ -3585,15 +3583,16 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
         name: "agent-halt-absorbed",
         send: async () => {
           sendCalls += 1;
-          // 只有第一次 send 撞限流:退避一次后成功,失败 Turn 从不外泄给 expectOk()。
-          return sendCalls === 1 ? retryableFailureTurn("rate limited, please retry later") : okTurn();
+          // 只有第一次 send 撞 admission 限流:退避一次后成功。
+          if (sendCalls === 1) throw retryableSendFailure("rate limited, please retry later");
+          return okTurn();
         },
       });
       const started: string[] = [];
       const evals = ["c-1", "c-2"].map((id) =>
         makeEval(id, async (t) => {
           started.push(id);
-          (await t.send("go")).expectOk();
+          await t.send("go");
         }),
       );
       const agentRun = probeRun(agent, experimentId, ["c-1", "c-2"], {
@@ -3625,6 +3624,12 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
         expect(summary.results).toHaveLength(2);
         expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
         expect(sendCalls).toBe(3); // c-1 失败 1 次 + 重试成功 1 次,c-2 成功 1 次
+        expect(summary.results.find((r) => r.id === "c-1")?.retryAttempts).toHaveLength(1);
+        expect(summary.results.find((r) => r.id === "c-1")?.retryAttempts?.[0]).toMatchObject({
+          sendAttempt: 0,
+          failure: { type: "agent-send-failed", acceptance: "rejected" },
+          classification: { retryable: true, scope: "experiment", reason: "rate_limit" },
+        });
         expect(coordinator.state.diagnostics.some((d) => d.key.startsWith("dispatch-halted:"))).toBe(false);
         expect(await snapshotHaltDiagnostics(root, experimentId)).toEqual([]);
       });
@@ -3644,14 +3649,14 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
         name: "agent-halt-exhausted",
         send: async () => {
           sendCalls += 1;
-          return retryableFailureTurn("rate limited, please retry later"); // 永远撞限流,重试必耗尽
+          throw retryableSendFailure("rate limited, please retry later"); // 永远撞限流,重试必耗尽
         },
       });
       const started: string[] = [];
       const evals = ["d-1", "d-2"].map((id) =>
         makeEval(id, async (t) => {
           started.push(id);
-          (await t.send("go")).expectOk();
+          await t.send("go");
         }),
       );
       const agentRun = probeRun(agent, experimentId, ["d-1", "d-2"], {
@@ -3683,6 +3688,8 @@ describe("runEvals · 止损闸: 组合(时间轴先走,空间轴只对终局失
         expect(sendCalls).toBe(4);
         expect(summary.results).toHaveLength(1);
         expect(summary.results[0]!.verdict).toBe("errored");
+        expect(summary.results[0]!.error).toMatchObject({ code: "agent-send-failed" });
+        expect(summary.results[0]!.retryAttempts).toHaveLength(3); // 最终失败在 error，不重复进 retryAttempts
         const notice = coordinator.state.diagnostics.find((d) => d.key === experimentHaltKey(experimentId));
         expect(notice).toBeDefined();
         expect(notice!.data?.unstarted).toBe(1);

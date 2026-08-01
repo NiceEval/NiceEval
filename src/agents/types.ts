@@ -5,7 +5,7 @@
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
-import type { TurnErrorClassifier } from "../context/turn-errors.ts";
+import type { SendFailureClassifier } from "../context/send-failures.ts";
 
 /**
  * 本地 stdio 形态的 MCP server:沙箱内起子进程,按 stdio 说 MCP 协议。
@@ -116,7 +116,7 @@ export interface CoverageDeclaration {
 /**
  * 覆盖声明(EvidenceCoverage):完整性不是口头承诺,是随数据走的声明
  * (见 docs/feature/adapters/architecture/evidence.md)。两层:
- * - Agent 级默认(`defineAgent` / `defineSandboxAgent` 的 `coverage`)声明该 Adapter 的常态覆盖;
+ * - Agent 级默认(`defineDirectAgent` / `defineSandboxAgent` 的 `coverage`)声明该 Adapter 的常态覆盖;
  *   官方 SDK 适配器显式声明全通道 complete(用 `completeCoverage` 常量)。
  * - Turn 级降级(`Turn.coverage`)只用于相对 Agent 默认值降级(这一轮流断了 / 拿不到 usage),
  *   不能把 Agent 未声明的通道升格成 complete。
@@ -379,13 +379,14 @@ interface AgentBase {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /**
-   * 可选 turn 失败分类器:归类一次 send 失败(抛出或返回 `status: "failed"` 的 Turn),
+   * 可选 send 执行失败分类器:归类 adapter reject 的 `SendFailure`；可信的 failed Turn
+   * 是领域结果，不进入这条链。
    * 返回 `undefined` 表示不认识、回落保守兜底。链上排在实验的 `classifyFailure` 之后,
    * 实验作者认领过的失败问不到这里。分类器只声明决策轴与诊断词,不影响重试策略(次数、
    * 退避对所有 agent 一致);抛错按 `undefined` 回落并被吞掉,不掩盖原始失败。形状与分类链、
    * 执行体时序见 docs/feature/error-classification/architecture.md。
    */
-  classifyTurnError?: TurnErrorClassifier;
+  classifySendFailure?: SendFailureClassifier;
 }
 
 // ───────────────────────── Agent Ensure / Provisioner ─────────────────────────
@@ -537,14 +538,14 @@ export interface SandboxAgentDef {
   spanMapper?: SpanMapper;
   /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
-  /** 可选 turn 失败分类器:见 `Agent.classifyTurnError`。 */
-  classifyTurnError?: TurnErrorClassifier;
+  /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
+  classifySendFailure?: SendFailureClassifier;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
    * 在 finally 里跑一次。 */
   teardown?: AgentTeardown;
 }
 
-/** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
+/** `defineDirectAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
 export interface DirectAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
@@ -560,8 +561,8 @@ export interface DirectAgentDef {
   spanMapper?: SpanMapper;
   /** 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。 */
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
-  /** 可选 turn 失败分类器:见 `Agent.classifyTurnError`。 */
-  classifyTurnError?: TurnErrorClassifier;
+  /** 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。 */
+  classifySendFailure?: SendFailureClassifier;
   /** 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
    * 在 finally 里跑一次。 */
   teardown?: DirectAgentTeardown;

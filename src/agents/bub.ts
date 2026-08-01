@@ -26,6 +26,7 @@ import {
   bubRequirement,
   normalizeBubPackages,
 } from "./bub-install-spec.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // bub 的 agent adapter(沙箱型)。
@@ -353,8 +354,16 @@ export function bubAgent(config?: BubConfig): Agent {
       const raw = await sb.readFile(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
       const parsed = shared.parseBub(raw);
       const events = [...parsed.events];
-      if (res.exitCode !== 0) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
-      return { events, usage: parsed.usage, status: res.exitCode === 0 ? "completed" : "failed" };
+      if (res.exitCode !== 0) {
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage: parsed.usage,
+          process: res,
+        });
+      }
+      return { events, usage: parsed.usage, status: "completed" };
     },
   });
 }

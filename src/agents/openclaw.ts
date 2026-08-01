@@ -15,6 +15,7 @@ import { createNpmCliProvisioner } from "./npm-staged.ts";
 import { ensureAgent } from "./provisioner.ts";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentProvisioner, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -243,19 +244,27 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         };
       }
 
-      const failed = res.exitCode !== 0 || runJson.failed;
-      if (failed) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
-
       // 用量:transcript 逐消息累加优先;transcript 没报时用封包摘要,都没有就是空对象。
       const usage =
         (parsed.usage.inputTokens ?? 0) > 0 || (parsed.usage.outputTokens ?? 0) > 0
           ? parsed.usage
           : (runJson.usage ?? parsed.usage);
 
+      if (res.exitCode !== 0) {
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage,
+          process: res,
+        });
+      }
+      if (runJson.failed) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
+
       return {
         events,
         usage,
-        status: failed ? "failed" : "completed",
+        status: runJson.failed ? "failed" : "completed",
         ...(turnCoverage ? { coverage: turnCoverage } : {}),
       };
     },

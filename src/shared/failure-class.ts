@@ -1,10 +1,10 @@
-// 执行失败分类的词表、抛出点糖衣类与结构守卫——全仓唯一一份两轴词表,turn 失败、生命周期
+// 执行失败分类的词表、抛出点糖衣类与结构守卫——全仓唯一一份两轴词表,send 失败、生命周期
 // 阶段失败与 sandbox provisioning 失败说同一种语言(判据见
 // docs/feature/error-classification/README.md「分类」)。
 //
 // 本模块刻意零依赖(只 import type):公开面活在 Promise 世界,糖衣类不继承任何 effect 类型,
-// 生成的 .d.ts 零 effect 依赖(见 architecture.md「Effect 边界」)。turn 链的实现在
-// src/context/turn-errors.ts,provisioning 的内部分类在 src/sandbox/,两边各自实现、只共享
+// 生成的 .d.ts 零 effect 依赖(见 architecture.md「Effect 边界」)。send 链的实现在
+// src/context/send-failures.ts,provisioning 的内部分类在 src/sandbox/,两边各自实现、只共享
 // 这份词表。
 
 import type { LifecyclePhase } from "../runner/types.ts";
@@ -28,11 +28,11 @@ export type FailureClass =
  * 实验级分类器的输入:本实验任意 per-attempt 阶段的一次终局失败。
  */
 export interface AttemptFailureInfo {
-  /** 失败发生在哪个生命周期阶段;turn 失败恒为 `"agent.run"`。 */
+  /** 失败发生在哪个生命周期阶段；send 执行失败恒为 `"agent.run"`。 */
   readonly phase: LifecyclePhase;
-  /** 与报错文案同源的失败文本:thrown 取错误链(含 cause 链)message 串接,turn 失败取 `turnErrorText`。 */
+  /** 与报错文案同源的失败文本:SendFailure 取 `sendFailureText`,其它阶段取错误链 message。 */
   readonly text: string;
-  /** 原始失败对象:thrown 形态是抛出的错误,turn 失败形态是那个失败 Turn。 */
+  /** 原始失败对象；send 阶段是结构化 SendFailure，其它阶段是抛出的值。 */
   readonly cause: unknown;
 }
 
@@ -134,9 +134,12 @@ export function errorChainText(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
-    const message = current instanceof Error ? current.message : String(current);
+    const candidate = typeof current === "object" && current !== null
+      ? (current as { message?: unknown }).message
+      : undefined;
+    const message = typeof candidate === "string" ? candidate : current instanceof Error ? current.message : String(current);
     if (message) parts.push(message);
-    current = current instanceof Error ? causeOf(current) : undefined;
+    current = causeOf(current);
   }
   return parts.join(" · ");
 }

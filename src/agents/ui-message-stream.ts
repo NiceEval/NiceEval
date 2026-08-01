@@ -24,7 +24,8 @@
 
 import { randomUUID } from "node:crypto";
 
-import { defineAgent } from "../define.ts";
+import { defineDirectAgent } from "../define.ts";
+import { makeSendFailure } from "../context/send-failures.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 
@@ -247,7 +248,7 @@ const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告�
  * ```
  */
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
-  return defineAgent({
+  return defineDirectAgent({
     name: options.name ?? "ui-message-stream",
     coverage: COVERAGE,
     tracing: options.tracing,
@@ -319,14 +320,18 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
       } catch (err) {
         if (ctx.signal.aborted) throw err;
         const cause = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
-        throw new Error(
-          `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
-        );
+        throw makeSendFailure({
+          acceptance: "unknown",
+          message: `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
+          cause: err,
+        });
       }
       if (!res.ok || !res.body) {
-        throw new Error(
-          `POST ${url} failed: ${res.status} ${await res.text().catch(() => "")}. Confirm the app is running and the endpoint speaks the UI Message Stream protocol (the backend useChat expects).`,
-        );
+        throw makeSendFailure({
+          acceptance: "unknown",
+          message: `POST ${url} failed: ${res.status} ${await res.text().catch(() => "")}. Confirm the app is running and the endpoint speaks the UI Message Stream protocol (the backend useChat expects).`,
+          cause: { status: res.status },
+        });
       }
 
       let sawError: string | undefined;
@@ -339,7 +344,10 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
         finalMessage = msg;
       }
       if (!finalMessage) {
-        throw new Error(`POST ${url} 的流结束了但一条 assistant 消息都没归约出来 —— 端点吐的不是 UI Message Stream 帧?`);
+        throw makeSendFailure({
+          acceptance: "unknown",
+          message: `POST ${url} 的流结束了但一条 assistant 消息都没归约出来 —— 端点吐的不是 UI Message Stream 帧?`,
+        });
       }
 
       // 续跑轮:finalMessage 是同一条消息的完整版,替换末尾半成品;全新轮:追加。

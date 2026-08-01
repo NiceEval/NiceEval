@@ -44,13 +44,13 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     tracing: def.tracing,
     spanMapper: def.spanMapper,
     send: def.send,
-    classifyTurnError: def.classifyTurnError,
+    classifySendFailure: def.classifySendFailure,
     teardown: def.teardown,
   };
 }
 
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
-export function defineAgent(def: DirectAgentDef): DirectAgent {
+export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
   if (!def.name) throw new Error(t("define.agentNameRequired"));
   return {
     name: def.name,
@@ -60,7 +60,7 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
     tracing: def.tracing,
     spanMapper: def.spanMapper,
     send: def.send,
-    classifyTurnError: def.classifyTurnError,
+    classifySendFailure: def.classifySendFailure,
     teardown: def.teardown,
   };
 }

@@ -11,9 +11,11 @@ import {
   sendWithTurnRetry,
   type AttemptRetryBudget,
   type ConcurrencySlot,
+  type SendRetryDeps,
 } from "./send-retry.ts";
-import type { AttemptFailureClassifier, FailureClass } from "../shared/failure-class.ts";
-import type { TurnFailure } from "./turn-errors.ts";
+import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
+import { isSendFailure, sendFailureText } from "./send-failures.ts";
+import type { RetryAttemptRecord } from "../runner/types.ts";
 import { recordFact } from "../shared/facts.ts";
 
 /**
@@ -165,6 +167,8 @@ export class SessionManager {
   readonly agentCoverage: ResolvedCoverage;
   /** attempt 级累计覆盖:各轮解析后覆盖的最差值,随每次 send 折叠。 */
   coverage: ResolvedCoverage;
+  /** 自动重试吸收的物理 send 失败；不混进 allEvents。 */
+  readonly retryAttempts: RetryAttemptRecord[] = [];
 
   /** 归属到本 attempt 的 span(逐轮攒;attempt 末尾连同 sweep 的迟到 span 一起挂 trace)。 */
   readonly otelSpans: TraceSpan[] = [];
@@ -200,17 +204,6 @@ export class SessionManager {
   resolveTurnCoverage(turn: Turn): ResolvedCoverage {
     return downgradeCoverage(this.agentCoverage, turn.coverage);
   }
-
-  /**
-   * 终局失败 Turn 的分类:失败 Turn 本身不是错误(作者不调 `expectOk()` 就不算失败),分类
-   * 因此不能挂在 Turn 上,只在 `expectOk()` 铸造 `TurnFailed` 时随错误浮出——这里按 Turn 身份
-   * 登记,`makeTurnHandle` 取用。被重试吸收的失败 Turn 从不外泄,也就不会被登记。
-   */
-  resolveTurnFailureClass(turn: Turn): FailureClass | undefined {
-    return this.turnFailureClasses.get(turn);
-  }
-
-  private readonly turnFailureClasses = new WeakMap<Turn, FailureClass>();
 
   async send(
     session: RunSession,
@@ -286,13 +279,37 @@ export class SessionManager {
     // docs/feature/error-classification/architecture.md。retryDeps 复用同一个 attempt 级
     // 预算(this.retryBudget)与 ctx.signal(合并了 attempt 超时 / Ctrl+C 中断),退避睡眠
     // 因此能被 Effect interruption 干净打断,不新增超时语义。
-    const retryDeps = {
-      classifier: this.deps.agent.classifyTurnError,
+    const retryDeps: SendRetryDeps = {
+      classifier: this.deps.agent.classifySendFailure,
       experimentClassifier: this.deps.experimentClassifier,
-      // 终局失败的分类落账:thrown 形态由执行体标在错误对象上,turn-failed 形态在这里按 Turn
-      // 身份登记,`expectOk()` 铸造 TurnFailed 时取出随错误浮出(止损闸的消费点在 attempt 封口)。
-      onFinalFailure: (cls: FailureClass, failure: TurnFailure) => {
-        if (failure.type === "turn-failed") this.turnFailureClasses.set(failure.turn, cls);
+      onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
+        const process = failure.process;
+        this.retryAttempts.push({
+          sessionIndex: session.index,
+          turnIndex,
+          sendAttempt,
+          startedAt,
+          durationMs,
+          failure: {
+            type: "agent-send-failed",
+            acceptance: "rejected",
+            message: sendFailureText(failure),
+            ...(process?.exitCode !== undefined || process?.signal !== undefined
+              ? { process: { ...(process.exitCode !== undefined ? { exitCode: process.exitCode } : {}), ...(process.signal !== undefined ? { signal: process.signal } : {}) } }
+              : {}),
+          },
+          classification: {
+            retryable: true,
+            scope: classification.scope ?? "attempt",
+            reason: classification.reason,
+          },
+          events: failure.events ? [...failure.events] : [],
+          ...(failure.usage !== undefined ? { usage: { ...failure.usage } } : {}),
+        });
+        if (failure.usage) {
+          accumulateUsage(this.usage, failure.usage);
+          accumulateUsage(session.usage, failure.usage);
+        }
       },
       budget: this.retryBudget,
       slot: this.deps.concurrencySlot,
@@ -306,7 +323,6 @@ export class SessionManager {
         const otel = this.deps.otel;
         const r = await sendWithTurnRetry(
           () => this.sendWithOtel(otel, { text, files, responses }, ctx),
-          { get: (v) => v.turn, set: (v, t) => ({ ...v, turn: t }) },
           retryDeps,
         );
         turn = r.turn;
@@ -315,11 +331,15 @@ export class SessionManager {
       } else {
         turn = await sendWithTurnRetry(
           () => this.sendAgent({ text, files, responses }, ctx),
-          { get: (v) => v, set: (_v, t) => t },
           retryDeps,
         );
       }
     } catch (e) {
+      // 最终失败的物理尝试没有进入 retryAttempts，但已经真实花掉的 usage 仍计入顶层聚合。
+      if (isSendFailure(e) && e.usage) {
+        accumulateUsage(this.usage, e.usage);
+        accumulateUsage(session.usage, e.usage);
+      }
       this.deps.onTurn?.({
         sessionIndex: session.index,
         turnIndex,
@@ -327,6 +347,7 @@ export class SessionManager {
         durationMs: Date.now() - t0,
         failed: true,
         traceAttribution: sentAttribution,
+        ...(isSendFailure(e) && e.usage !== undefined ? { usage: e.usage } : {}),
       });
       throw e;
     } finally {
@@ -417,7 +438,7 @@ export class SessionManager {
 
 /**
  * 失败轮的进度行原因摘要:取本轮事件流里最后一个 `type: "error"` 事件的 message
- * (与 TurnHandle.expectOk() / src/agents/shared.ts 的 diagnoseFailure 同一口径——
+ * (与 src/agents/shared.ts 的 diagnoseFailure 同一口径——
  * 都认「最后一条 error 事件」为本轮失败的权威原因),压成单行并截断,避免 402/超时
  * 这类关键信息只能事后翻落盘的 result.json 才看得到。提不到时返回 undefined,调用方不补空后缀。
  */

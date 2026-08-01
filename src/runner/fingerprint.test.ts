@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineAgent, defineSandboxAgent, dockerSandbox } from "../define.ts";
+import { defineDirectAgent, defineSandboxAgent, dockerSandbox } from "../define.ts";
 import { computeConfigHash, computeFingerprint, fingerprintWithManifest, planCarry } from "./fingerprint.ts";
 import { manifestDeltas, type EvalManifest } from "./manifest.ts";
 import type { AgentRun, DiscoveredEval } from "./types.ts";
@@ -33,7 +33,7 @@ function makeEval(id: string): DiscoveredEval {
 
 function makeRun(experimentId: string, selectedEvalIds: string[], attempts: number, timeoutMs?: number): AgentRun {
   return {
-    agent: defineAgent({ name: `agent-${experimentId}`, send: async () => ({ events: [], status: "completed" }) }),
+    agent: defineDirectAgent({ name: `agent-${experimentId}`, send: async () => ({ events: [], status: "completed" }) }),
     flags: {},
     attempts,
     earlyExit: false,

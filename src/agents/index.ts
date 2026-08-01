@@ -1,6 +1,6 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
-export { defineAgent, defineSandboxAgent, defineAgentProvisioner } from "../define.ts";
+export { defineDirectAgent, defineSandboxAgent, defineAgentProvisioner } from "../define.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
@@ -27,12 +27,12 @@ export type { NpmCliProvisionerOptions } from "./npm-staged.ts";
 export { completeCoverage } from "../scoring/coverage.ts";
 export type { CoverageStatus, CoverageDeclaration, EvidenceCoverage } from "../types.ts";
 
-// 执行失败分类:`Agent.classifyTurnError` 认的输入/输出形状 + 摘要取值器(与 turn-failed
-// 报错文案同源)。两轴词表(FailureClass / FailureScope)与包根导出的是同一个形状——adapter
+// 执行失败分类:`Agent.classifySendFailure` 认的结构化 envelope 与同源摘要。两轴词表
+// (FailureClass / FailureScope)与包根导出的是同一个形状——adapter
 // 作者与 eval 作者各自的入口拿到同一份类型。判据、分类链与重试执行体见
 // docs/feature/error-classification/architecture.md。
-export { turnErrorText } from "../context/turn-errors.ts";
-export type { TurnErrorClassifier, TurnFailure } from "../context/turn-errors.ts";
+export { makeSendFailure, sendFailureText } from "../context/send-failures.ts";
+export type { SendFailure, SendFailureClassifier } from "../context/send-failures.ts";
 export type { FailureClass, FailureScope } from "../shared/failure-class.ts";
 
 // span → canonical GenAI 归一(只服务瀑布图,不喂断言)。私有埋点写自己的 spanMapper 时用:

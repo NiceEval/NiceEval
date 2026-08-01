@@ -5,7 +5,6 @@ import { commandSucceeded, includes } from "../expect/index.ts";
 import { deriveDiffData } from "../scoring/diff.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
-import { SEND_MAX_ATTEMPTS } from "./send-retry.ts";
 import type { Agent, AgentContext, DiffArtifact, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
@@ -578,60 +577,19 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
   });
 });
 
-// turn 级重试封顶后,agent.send() 最终返回的失败 Turn 照旧走 expectOk() → TurnFailed
-// (docs/feature/error-classification/README.md「挂载点与重试范围」);这里端到端证明
-// send-retry.ts 的耗尽摘要确实经 turnErrorText 同源浮到 TurnFailed 的 message 上。
-describe("t.send(...).expectOk() · turn 级重试耗尽", () => {
-  it("连续撞限流耗尽 send 级预算后,TurnFailed 的 message 带重试摘要", async () => {
-    let calls = 0;
+describe("t.send() · failed Turn 是可评分领域结果", () => {
+  it("原样返回 failed，不被执行错误路径强制抛出", async () => {
     const agent: Agent = {
-      name: "always-rate-limited",
+      name: "task-failed",
       kind: "direct",
       async send(): Promise<Turn> {
-        calls++;
-        return { status: "failed", events: [{ type: "error", message: "rate limited, please retry later" }] };
+        return { status: "failed", events: [{ type: "error", message: "tests failed" }] };
       },
     };
-    const { context } = createEvalContext({
-      agent,
-      sandbox: fakeSandbox(),
-      flags: {},
-      signal: new AbortController().signal,
-      log: () => {},
-      judge: undefined,
-      retryRandom: () => 0,
-      retrySleep: async () => {},
-    });
-
+    const { context } = makeContext(agent);
     const turn = await context.send("do it");
-    expect(calls).toBe(SEND_MAX_ATTEMPTS); // 重试封顶后才浮出,不是第一次失败就返回
-    expect(() => turn.expectOk()).toThrow(/rate_limit/);
-    expect(() => turn.expectOk()).toThrow(/retries exhausted|重试已耗尽/);
-  });
-
-  it("不可重试的失败没有重试摘要后缀(与「诚实的 errored」用例一致)", async () => {
-    let calls = 0;
-    const agent: Agent = {
-      name: "stream-drop",
-      kind: "direct",
-      async send(): Promise<Turn> {
-        calls++;
-        return { status: "failed", events: [{ type: "error", message: "stream reset mid-response after 3 tool calls" }] };
-      },
-    };
-    const { context } = createEvalContext({
-      agent,
-      sandbox: fakeSandbox(),
-      flags: {},
-      signal: new AbortController().signal,
-      log: () => {},
-      judge: undefined,
-    });
-
-    const turn = await context.send("do it");
-    expect(calls).toBe(1); // 没有重试
-    expect(() => turn.expectOk()).toThrow(/stream reset mid-response after 3 tool calls/);
-    expect(() => turn.expectOk()).not.toThrow(/exhausted|耗尽/);
+    expect(turn.status).toBe("failed");
+    turn.succeeded();
   });
 });
 

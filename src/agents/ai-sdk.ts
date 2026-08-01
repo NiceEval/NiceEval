@@ -16,7 +16,8 @@
 import { completeCoverage } from "../scoring/coverage.ts";
 import { randomUUID } from "node:crypto";
 
-import { defineAgent } from "../define.ts";
+import { defineDirectAgent } from "../define.ts";
+import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeToolName as normalizeShared } from "../o11y/tool-names.ts";
 import type { Agent, InputRequest, InputResponse, JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
 
@@ -472,7 +473,7 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
   }
   const sessions = new Map<string, SessionState>();
 
-  return defineAgent({
+  return defineDirectAgent({
     name: options.name ?? "ai-sdk",
     // 官方 SDK 完整 steps/output:全通道 complete(见 adapters/architecture/evidence.md)。
     coverage: completeCoverage,
@@ -520,7 +521,7 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return { status: "failed", events: [{ type: "error", message }] };
+        throw makeSendFailure({ acceptance: "unknown", message, cause: error });
       } finally {
         // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
         await otel?.flush();
@@ -533,7 +534,10 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
       const turn = turnFromAiSdk(result);
       // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
       if (turn.events.length === 0) {
-        return { status: "failed", events: [{ type: "error", message: "AI SDK returned an empty result (no text, no tool calls)" }] };
+        throw makeSendFailure({
+          acceptance: "unknown",
+          message: "AI SDK returned an empty result (no text, no tool calls)",
+        });
       }
       return { ...turn, data: options.data?.(result, turn) };
     },

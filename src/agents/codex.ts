@@ -24,6 +24,7 @@ import { createNpmCliProvisioner } from "./npm-staged.ts";
 import { ensureAgent } from "./provisioner.ts";
 import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -334,8 +335,16 @@ export function codexAgent(config?: CodexConfig): Agent {
       ctx.session.capture(shared.codexThreadId(res.stdout));
       const parsed = shared.parseCodex(raw);
       const events = [...parsed.events];
-      if (res.exitCode !== 0) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
-      return { events, usage: parsed.usage, status: res.exitCode === 0 ? "completed" : "failed" };
+      if (res.exitCode !== 0) {
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage: parsed.usage,
+          process: res,
+        });
+      }
+      return { events, usage: parsed.usage, status: "completed" };
     },
   });
 }

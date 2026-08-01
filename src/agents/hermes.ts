@@ -13,6 +13,7 @@ import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parser
 import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { Agent, AgentSetupManifest, EvidenceCoverage, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // Hermes Agent sandbox adapter。驱动:`hermes chat -q … --yolo`;
 // 行为轨优先 `hermes sessions export`,不足时 sqlite 读 messages。
@@ -218,13 +219,19 @@ print(r[0] if r else "")'`,
       }
 
       if (res.exitCode !== 0) {
-        events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage: parsed.usage,
+          process: res,
+        });
       }
 
       return {
         events,
         usage: parsed.usage,
-        status: res.exitCode === 0 ? "completed" : "failed",
+        status: "completed",
         ...(turnCoverage ? { coverage: turnCoverage } : {}),
       };
     },

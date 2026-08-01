@@ -307,6 +307,29 @@ export interface CarriedAcceptance {
   to?: string;
 }
 
+/** 自动重试吸收的一次物理 send 失败；不进入逻辑会话事件流。 */
+export interface RetryAttemptRecord {
+  sessionIndex: number;
+  turnIndex: number;
+  /** 同一逻辑 send 内从 0 开始；0 是首次发送。 */
+  sendAttempt: number;
+  startedAt: string;
+  durationMs: number;
+  failure: {
+    type: "agent-send-failed";
+    acceptance: "rejected";
+    message: string;
+    process?: { exitCode?: number; signal?: string };
+  };
+  classification: {
+    retryable: true;
+    scope: "attempt" | "eval" | "experiment";
+    reason?: string;
+  };
+  events: StreamEvent[];
+  usage?: Usage;
+}
+
 export interface EvalResult {
   id: string;
   description?: string;
@@ -344,6 +367,8 @@ export interface EvalResult {
    * 与 `assertions[].points` 共同构成分数面(见 docs/feature/experiments/score-points.md)。
    */
   scoreEntries?: ScoreEntry[];
+  /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
+  retryAttempts?: RetryAttemptRecord[];
   usage?: Usage;
   estimatedCostUSD?: number;
   /** 使 attempt 进入 `errored` 的唯一致命执行错误(结构化);默认报告显示 `error.message` 一层原因。 */
@@ -687,7 +712,7 @@ export interface ExperimentDef {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
   description?: string;
   /**
-   * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineAgent 的产物)。运行配置的
+   * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineDirectAgent 的产物)。运行配置的
    * agent 归属完全由这里决定——EvalDef.agent 不参与(见其字段注释)。
    */
   agent: Agent;
@@ -747,7 +772,7 @@ export interface ExperimentDef {
   /**
    * 本实验的失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对自家隧道 host 的拒连
    * 一类),返回 `undefined` 表示「不认识,交给后续链路」。本实验任意 per-attempt 阶段的失败
-   * 都会问到它;turn 失败链上它排在 adapter 的 `classifyTurnError` 之前——按自家坐标过滤的
+   * 都会问到它;send 失败链上它排在 adapter 的 `classifySendFailure` 之前——按自家坐标过滤的
    * 特异性高于协议通用形状,两者同时认领时空间轴才赢得下来。分类器要快、纯、不抛错(抛错按
    * `undefined` 回落并被吞掉);只声明决策轴与 `reason` 词,重试与落闸策略归执行体。
    * 见 docs/feature/error-classification/library.md「实验 / eval 作者:声明死因的波及范围」。

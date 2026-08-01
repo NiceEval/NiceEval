@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { relative } from "node:path";
-import { defineAgent } from "../define.ts";
+import { defineDirectAgent } from "../define.ts";
 import { t } from "../i18n/index.ts";
 import { computeFingerprint } from "../runner/fingerprint.ts";
 import type { AgentRun, DiscoveredEval } from "../runner/types.ts";
@@ -38,7 +38,7 @@ function makeEval(loaderDataPaths: readonly string[]): DiscoveredEval {
 }
 
 const run: AgentRun = {
-  agent: defineAgent({ name: "agent-exp", send: async () => ({ events: [], status: "completed" }) }),
+  agent: defineDirectAgent({ name: "agent-exp", send: async () => ({ events: [], status: "completed" }) }),
   flags: {},
   attempts: 1,
   earlyExit: false,

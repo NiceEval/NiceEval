@@ -4,7 +4,7 @@
 // 判据面是「哪些路径算差异 / 换回历史值之后的身份长什么样」,不是某个中间函数的返回值形状。
 
 import { describe, expect, it } from "vitest";
-import { defineAgent } from "../define.ts";
+import { defineDirectAgent } from "../define.ts";
 import { configDeltas, configIdentityForRun, configIdentityFromResult, rollBackAccepted } from "./config-identity.ts";
 import { computeConfigHash } from "./fingerprint.ts";
 import type { AgentRun } from "./types.ts";
@@ -12,7 +12,7 @@ import type { EvalResult } from "../types.ts";
 
 function makeRun(over: Partial<AgentRun> = {}): AgentRun {
   return {
-    agent: defineAgent({ name: "codex", send: async () => ({ events: [], status: "completed" }) }),
+    agent: defineDirectAgent({ name: "codex", send: async () => ({ events: [], status: "completed" }) }),
     flags: {},
     attempts: 1,
     earlyExit: false,

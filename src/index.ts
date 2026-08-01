@@ -46,6 +46,7 @@ export type {
   Reporter,
   ReporterEvent,
   EvalResult,
+  RetryAttemptRecord,
   InvocationSummary,
   InvocationShape,
   AssertionResult,

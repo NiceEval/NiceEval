@@ -18,6 +18,7 @@ import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./
 import { createNpmCliProvisioner } from "./npm-staged.ts";
 import { ensureAgent } from "./provisioner.ts";
 import type { Agent, AgentProvisioner, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
+import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
 // 行为轨优先 stdout JSONL,不足时 `opencode export <sessionID>`。
@@ -184,14 +185,19 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
 
       const events: StreamEvent[] = [...parsed.events];
       const hasErrorEvent = events.some((e) => e.type === "error");
-      const failed = res.exitCode !== 0 || hasErrorEvent;
       if (res.exitCode !== 0) {
-        events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
+        throw makeSendFailure({
+          acceptance: sendAcceptanceFromEvents(events),
+          message: shared.diagnoseFailure(res, parsed.events, raw),
+          events,
+          usage: parsed.usage,
+          process: res,
+        });
       }
       return {
         events,
         usage: parsed.usage,
-        status: failed ? "failed" : "completed",
+        status: hasErrorEvent ? "failed" : "completed",
       };
     },
   });
