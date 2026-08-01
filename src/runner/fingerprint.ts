@@ -5,37 +5,47 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
-import { sandboxRunInfo } from "../sandbox/resolve.ts";
-import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
+import { Effect } from "effect";
+import { linkedRunPlanIdentity, liveSandboxPlanningServices, type LinkedRunPlan } from "../sandbox/plan.ts";
+import { isSandboxLayer } from "../sandbox/layer.ts";
+import type { LinkedDirectPair } from "../sandbox/link.ts";
 import { planSandboxCase } from "../sandbox/case.ts";
+import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
-  linkedSandboxForEval,
   prepareRunSandboxes,
-  sandboxEnvironmentForEval,
-  sandboxForEval,
+  preparedPairsByKey as indexPreparedPairs,
+  type PreparedRunPair,
 } from "./sandbox-selection.ts";
-import { selectedEvalsForRun } from "./eval-selection.ts";
 import { manifestDeltas, OPAQUE_SELECTOR, type EvalManifest } from "./manifest.ts";
 import {
   configIdentityPaths,
   configIdentityForRun,
   configIdentityFromResult,
-  historicalSandboxForEval,
   rollBackAccepted,
   type ConfigFieldDelta,
   type ConfigIdentity,
 } from "./config-identity.ts";
 
 export function cacheKey(run: AgentRun, evalId: string): string {
-  return `${run.experimentId ?? ""}|${evalId}`;
+  return `${run.experimentId}|${evalId}`;
 }
 
+function isPreparedRunPair(value: PreparedRunPair | AgentRun | DiscoveredEval): value is PreparedRunPair {
+  return typeof value === "object" && value !== null && "run" in value && "evalDef" in value &&
+    "plan" in value && "identity" in value;
+}
+
+export function computeConfigHash(pair: PreparedRunPair): string;
+/** @deprecated 纯数据兼容入口；生产计划必须传 PreparedRunPair。 */
+export function computeConfigHash(run: AgentRun, configSandbox?: SandboxOption): string;
 /** Run 级配置身份。所有会改变结果解释口径的实验配置只在 `configIdentityForRun` 里裁决一次。 */
-export function computeConfigHash(run: AgentRun, configSandbox?: SandboxOption): string {
-  return hashConfigIdentity(configIdentityForRun(run, configSandbox));
+export function computeConfigHash(pairOrRun: PreparedRunPair | AgentRun, configSandbox?: SandboxOption): string {
+  return isPreparedRunPair(pairOrRun)
+    ? hashConfigIdentity(configIdentityForRun(pairOrRun.run, pairOrRun.plan))
+    : hashConfigIdentity(configIdentityForRun(pairOrRun, configSandbox));
 }
 
 /** 身份对象 → 配置身份哈希;反事实重算(`--accept`)与正常路径共用同一个序列化口径。 */
@@ -48,13 +58,49 @@ export function hashConfigIdentity(identity: ConfigIdentity): string {
  * 重算指纹(见 `planCarry`)。正常路径不传。
  */
 export async function computeFingerprint(
+  pair: PreparedRunPair,
+  sourceCache?: Map<string, Promise<string>>,
+  overrides?: FingerprintOverrides,
+): Promise<string>;
+/** @deprecated 纯数据兼容入口；不会做 provider control-plane 探测。 */
+export async function computeFingerprint(
   evalDef: DiscoveredEval,
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; configIdentity?: ConfigIdentity; sandbox?: SandboxRunInfo; carryEpoch?: string },
+  overrides?: LegacyFingerprintOverrides,
+): Promise<string>;
+export async function computeFingerprint(
+  pairOrEval: PreparedRunPair | DiscoveredEval,
+  sourceCacheOrRun?: Map<string, Promise<string>> | AgentRun,
+  overridesOrSourceCache?: FingerprintOverrides | Map<string, Promise<string>>,
+  configSandbox?: SandboxOption,
+  legacyOverrides?: LegacyFingerprintOverrides,
 ): Promise<string> {
-  return (await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox, overrides)).fingerprint;
+  if (isPreparedRunPair(pairOrEval)) {
+    return (await fingerprintWithManifest(
+      pairOrEval,
+      sourceCacheOrRun as Map<string, Promise<string>> | undefined,
+      overridesOrSourceCache as FingerprintOverrides | undefined,
+    )).fingerprint;
+  }
+  return (await fingerprintWithManifest(
+    pairOrEval,
+    sourceCacheOrRun as AgentRun,
+    overridesOrSourceCache as Map<string, Promise<string>> | undefined,
+    configSandbox,
+    legacyOverrides,
+  )).fingerprint;
+}
+
+interface FingerprintOverrides {
+  configHash?: string;
+  configIdentity?: ConfigIdentity;
+  carryEpoch?: string;
+}
+
+interface LegacyFingerprintOverrides extends FingerprintOverrides {
+  sandbox?: SandboxRunInfo;
 }
 
 /**
@@ -66,59 +112,91 @@ export async function computeFingerprint(
  * 一并算出但调用方通常丢弃。
  */
 export async function fingerprintWithManifest(
+  pair: PreparedRunPair,
+  sourceCache?: Map<string, Promise<string>>,
+  overrides?: FingerprintOverrides,
+): Promise<{ fingerprint: string; manifest: EvalManifest }>;
+/** @deprecated 纯数据兼容入口；不会做 provider control-plane 探测。 */
+export async function fingerprintWithManifest(
   evalDef: DiscoveredEval,
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; configIdentity?: ConfigIdentity; sandbox?: SandboxRunInfo; carryEpoch?: string },
+  overrides?: LegacyFingerprintOverrides,
+): Promise<{ fingerprint: string; manifest: EvalManifest }>;
+export async function fingerprintWithManifest(
+  pairOrEval: PreparedRunPair | DiscoveredEval,
+  sourceCacheOrRun?: Map<string, Promise<string>> | AgentRun,
+  overridesOrSourceCache?: FingerprintOverrides | Map<string, Promise<string>>,
+  configSandbox?: SandboxOption,
+  legacyOverrides?: LegacyFingerprintOverrides,
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  const sandboxSpec = sandboxForEval(run, evalDef, configSandbox);
-  const linkedSandbox = linkedSandboxForEval(run, evalDef);
-  const identity = overrides?.configIdentity ?? configIdentityForRun(
-    run,
-    linkedSandbox === undefined ? sandboxSpec : undefined,
-    run.judge,
-    linkedSandbox === undefined ? undefined : sandboxLayerIdentityFor(linkedSandbox, "experiment"),
-  );
+  if (isPreparedRunPair(pairOrEval)) {
+    return fingerprintPreparedPair(
+      pairOrEval,
+      sourceCacheOrRun as Map<string, Promise<string>> | undefined,
+      overridesOrSourceCache as FingerprintOverrides | undefined,
+    );
+  }
+  const run = sourceCacheOrRun as AgentRun;
+  const direct = legacyDirectPreparedPair(pairOrEval, run, configSandbox);
+  return direct === undefined
+    ? fingerprintLegacy(
+        pairOrEval,
+        run,
+        overridesOrSourceCache as Map<string, Promise<string>> | undefined,
+        configSandbox,
+        legacyOverrides,
+      )
+    : fingerprintPreparedPair(
+        direct,
+        overridesOrSourceCache as Map<string, Promise<string>> | undefined,
+        legacyOverrides,
+      );
+}
+
+async function fingerprintPreparedPair(
+  pair: PreparedRunPair,
+  sourceCache?: Map<string, Promise<string>>,
+  overrides?: FingerprintOverrides,
+): Promise<{ fingerprint: string; manifest: EvalManifest }> {
+  const { evalDef, run, plan } = pair;
+  const identity = overrides?.configIdentity ?? configIdentityForRun(run, plan, run.judge);
   const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
   const loaderData = await Promise.all(
-    [...(evalDef.loaderDataPaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedRead(path, sourceCache)]),
+    [...(evalDef.loaderDataPaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> =>
+        [relative(process.cwd(), path), await cachedRead(path, sourceCache)],
+    ),
   );
   // 判据树(loadCriteria 登记)进的是「项目根相对路径 × 内容流式哈希」对:内容从不进内存,
   // 权限位与 mtime 不参与,所以重新 clone 一份工作树不作废。增删文件与改一字节同等作废——
   // 前者改的是这张对表的成员,后者改的是某一项的哈希。
   const criteria = await Promise.all(
-    [...(evalDef.criteriaPaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
+    [...(evalDef.criteriaPaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> =>
+        [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+    ),
   );
   // private 与 criteria 同口径(路径 × 流式内容哈希),分键存放——混进 criteria 会让
   // 「只改 private」与「只改 verifier」在指纹上无法区分,也让存量无 private 的结果一次性作废。
   const privateFiles = await Promise.all(
-    [...(evalDef.privatePaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
+    [...(evalDef.privatePaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> =>
+        [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+    ),
   );
-  const sandboxEnvironment = sandboxEnvironmentForEval(run, evalDef);
-  const caseIdentity = await resolvedSandboxCaseIdentityForEval(evalDef, sandboxSpec, sandboxEnvironment);
   const payload = {
     configHash,
+    pairPlan: pair.identity,
     source,
     eval: {
       id: evalDef.id,
       tags: evalDef.tags ?? [],
-      environment: environmentFingerprintInput(sandboxEnvironment),
       metadata: evalDef.metadata ?? {},
     },
-    sandbox: overrides?.sandbox ?? sandboxRunInfo(sandboxSpec),
-    ...(linkedSandbox?.kind === "sandbox"
-      ? {
-          sandboxLayer: sandboxLayerIdentityFor(linkedSandbox, "eval"),
-          sandboxTemplateOwner: linkedSandbox.templateOwner.kind,
-        }
-      : {}),
-    ...(caseIdentity !== undefined ? { sandboxCase: caseIdentity } : {}),
-    ...(caseIdentity?.carryEligible === false
-      ? { sandboxCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
-      : {}),
-    ...(linkedSandbox?.kind === "sandbox" && !linkedSandbox.carryEligible
+    ...(plan._tag === "Sandbox" && !plan.pair.carryEligible
       ? { sandboxCommandCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
       : {}),
     loaderData,
@@ -135,11 +213,159 @@ export async function fingerprintWithManifest(
   // 清单与哈希同一份原料:源码面把内容换成内容哈希,数据面直接沿用已经算好的哈希/内容。
   const manifest: EvalManifest = {
     config: Object.fromEntries(configIdentityPaths(identity)),
+    plan: pair.identity,
     source: Object.fromEntries(source.map(([path, content]) => [path, hashText(content)])),
     data: Object.fromEntries([
-      ...loaderData.map(([path, content]) => [path!, hashText(content!)] as const),
-      ...criteria.map(([path, contentHash]) => [path!, contentHash!] as const),
-      ...privateFiles.map(([path, contentHash]) => [path!, contentHash!] as const),
+      ...loaderData.map(([path, content]) => [path, hashText(content)]),
+      ...criteria,
+      ...privateFiles,
+    ]),
+  };
+  return { fingerprint: hash(payload), manifest };
+}
+
+function legacyDirectPreparedPair(
+  evalDef: DiscoveredEval,
+  run: AgentRun,
+  configSandbox?: SandboxOption,
+): PreparedRunPair | undefined {
+  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
+    ? run.sandbox as unknown as SandboxOption
+    : undefined;
+  if (run.agent.kind !== "direct" || authored !== undefined || configSandbox !== undefined) return undefined;
+  const pair: LinkedDirectPair = Object.freeze({
+    kind: "direct",
+    evalId: evalDef.id,
+    experimentId: run.experimentId,
+    agentName: run.agent.name,
+  });
+  const plan: LinkedRunPlan = Object.freeze({ _tag: "Direct", pair });
+  return Object.freeze({
+    key: cacheKey(run, evalDef.id),
+    run,
+    evalDef,
+    plan,
+    identity: linkedRunPlanIdentity(plan),
+  });
+}
+
+type LegacyDiscoveredEval = DiscoveredEval & { environment?: unknown; defaultProfileId?: string };
+
+function legacySandboxForEval(
+  run: AgentRun,
+  evalDef: LegacyDiscoveredEval,
+  fallback?: SandboxOption,
+): SandboxOption | undefined {
+  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
+    ? run.sandbox as unknown as SandboxOption
+    : undefined;
+  const spec = authored ?? fallback;
+  if (spec === undefined || typeof evalDef.environment !== "string") return spec;
+  const environments = (spec as { environments?: unknown }).environments;
+  if (typeof environments !== "object" || environments === null) return spec;
+  const override = (environments as globalThis.Record<string, unknown>)[evalDef.environment];
+  return typeof override === "object" && override !== null
+    ? { ...spec, ...override } as SandboxOption
+    : spec;
+}
+
+function legacyEnvironmentIdentity(environment: unknown): JsonValue | undefined {
+  if (environment === undefined) return undefined;
+  if (typeof environment === "string") return environment;
+  if (typeof environment !== "object" || environment === null) return String(environment);
+  const out: globalThis.Record<string, JsonValue> = {};
+  for (const [key, value] of Object.entries(environment)) {
+    if (key === "__brand" || value === undefined) continue;
+    out[key] = value as JsonValue;
+  }
+  return out;
+}
+
+async function legacySandboxCaseIdentity(
+  evalDef: LegacyDiscoveredEval,
+  sandboxSpec: SandboxOption | undefined,
+): Promise<JsonValue | undefined> {
+  if (sandboxSpec === undefined) return undefined;
+  const planned = planSandboxCase({
+    evalId: evalDef.id,
+    environment: evalDef.environment as never,
+    ...(evalDef.defaultProfileId === undefined ? {} : { defaultProfileId: evalDef.defaultProfileId }),
+    spec: sandboxSpec,
+  });
+  if (planned.status !== "ready") return undefined;
+  if (planned.plan.caseKind !== "on-demand-build") {
+    return {
+      caseKey: planned.plan.caseKey,
+      buildKeys: [...planned.plan.buildKeys],
+      identity: planned.plan.identity,
+      carryEligible: planned.plan.carryEligible,
+    };
+  }
+  const { collectDockerfileBuildFromPlan } = await import("../sandbox/dockerfile-build.ts");
+  const collected = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
+  return collected === undefined
+    ? undefined
+    : {
+        caseKey: collected.caseKey,
+        buildKeys: [collected.buildKey],
+        identity: planned.plan.identity,
+        carryEligible: collected.carryEligible,
+      };
+}
+
+/** 存量 SandboxSpec helper 的隔离实现；只读作者文件，不探测/build/create provider。 */
+async function fingerprintLegacy(
+  evalDef: DiscoveredEval,
+  run: AgentRun,
+  sourceCache?: Map<string, Promise<string>>,
+  configSandbox?: SandboxOption,
+  overrides?: LegacyFingerprintOverrides,
+): Promise<{ fingerprint: string; manifest: EvalManifest }> {
+  const legacyEval = evalDef as LegacyDiscoveredEval;
+  const sandboxSpec = legacySandboxForEval(run, legacyEval, configSandbox);
+  const identity = overrides?.configIdentity ?? configIdentityForRun(run, sandboxSpec, run.judge);
+  const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
+  const source = await sourceClosure(evalDef, sourceCache);
+  const loaderData = await Promise.all(
+    [...(evalDef.loaderDataPaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedRead(path, sourceCache)],
+    ),
+  );
+  const criteria = await Promise.all(
+    [...(evalDef.criteriaPaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+    ),
+  );
+  const privateFiles = await Promise.all(
+    [...(evalDef.privatePaths ?? [])].sort().map(
+      async (path): Promise<readonly [string, string]> => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)],
+    ),
+  );
+  const sandboxCase = await legacySandboxCaseIdentity(legacyEval, sandboxSpec);
+  const plan: JsonValue = {
+    version: 0,
+    mode: "legacy-sandbox-spec",
+    environment: legacyEnvironmentIdentity(legacyEval.environment) ?? null,
+    sandbox: ((overrides?.sandbox ?? sandboxRunInfo(sandboxSpec)) as unknown as JsonValue | undefined) ?? null,
+    case: sandboxCase ?? null,
+  };
+  const payload = {
+    configHash,
+    pairPlan: plan,
+    source,
+    eval: { id: evalDef.id, tags: evalDef.tags ?? [], metadata: evalDef.metadata ?? {} },
+    loaderData,
+    ...(criteria.length === 0 ? {} : { criteria }),
+    ...(privateFiles.length === 0 ? {} : { private: privateFiles }),
+  };
+  const manifest: EvalManifest = {
+    config: Object.fromEntries(configIdentityPaths(identity)),
+    plan,
+    source: Object.fromEntries(source.map(([path, content]) => [path, hashText(content)])),
+    data: Object.fromEntries([
+      ...loaderData.map(([path, content]) => [path, hashText(content)]),
+      ...criteria,
+      ...privateFiles,
     ]),
   };
   return { fingerprint: hash(payload), manifest };
@@ -186,7 +412,8 @@ async function sourceClosure(evalDef: DiscoveredEval, cache?: Map<string, Promis
     visited.add(absolute);
     const content = await cachedRead(absolute, cache);
     files.push([relative(root, absolute), content]);
-    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]!);
+    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)]
+      .flatMap((match) => match[1] === undefined ? [] : [match[1]]);
     for (const spec of specs) {
       if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
       const resolved = await resolveModule(dirname(absolute), spec);
@@ -228,6 +455,7 @@ export type DispatchReason =
   | "reused-origin"
   | "rerun"
   | "sandbox-reuse"
+  | "rolling-state"
   | "keep-sandbox"
   | "incompatible"
   | "new";
@@ -243,8 +471,10 @@ export interface DispatchGroup {
 }
 
 export interface CarryPlan {
+  /** discovery/selector/link/physical planning 的唯一完成态；run/attempt 不再二次选择或重建。 */
+  preparedPairsByKey?: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
-  plannedConfigHashes?: Map<string, string>;
+  plannedConfigHashes: Map<string, string>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
   plannedFingerprints: Map<string, string>;
   /**
@@ -265,7 +495,7 @@ export interface CarryPlan {
   /** carriedAttemptsByKey 对应的完整结果对象,供 run.ts 直接并入 summary、cli.ts 直接取 verdict 展示。 */
   carriedResults: EvalResult[];
   /** 仅 `--accept` 授权放行的历史条目 → 它跨过的那几条差异(留痕落到条目的 `carriedAccepting`)。 */
-  carriedAcceptingByResult?: Map<EvalResult, ConfigFieldDelta[]>;
+  carriedAcceptingByResult: Map<EvalResult, ConfigFieldDelta[]>;
   /**
    * `cacheKey(run, evalId)` → 本行要派发的 attempt 按未携带原因分组(升序、同一门聚一组)。
    * 全部携带的行不出现在表里。`--dry` 的逐条作废原因读它。
@@ -317,6 +547,8 @@ export interface CarryGateOptions {
   rerun?: "failed" | "all";
   keepSandbox?: "failed" | "all";
   sandboxReuse?: boolean;
+  /** Rolling State 的 head 会推进，整个 Experiment 禁止跨 Run 携带。 */
+  rollingState?: boolean;
   /** 本次授权的差异 selector(`--accept`);只放松指纹门,其余五道门不受影响。 */
   accept?: readonly string[];
   /**
@@ -325,6 +557,18 @@ export interface CarryGateOptions {
    * 就会跟从没跑过的坐标一样落在 `new` 上——那是句事实错误的话。
    */
   incompatibleKeys?: ReadonlySet<string>;
+}
+
+export interface CarryPlanOptions {
+  rerun?: "failed" | "all";
+  keepSandbox?: "failed" | "all";
+  accept?: readonly string[];
+  /** 历史侧的指纹输入清单；缺席时差异保守落为 opaque。 */
+  priorManifests?: ReadonlyMap<string, EvalManifest>;
+  /** 有历史但格式不兼容的 cache key。 */
+  incompatibleKeys?: ReadonlySet<string>;
+  /** 项目级 Judge 默认；与 Experiment / Eval 逐字段解析。 */
+  configJudge?: import("../types.ts").JudgeConfig;
 }
 
 /**
@@ -363,6 +607,7 @@ export function carryGateFor(
     return { gate: "rerun", reason: "rerun" };
   }
   if (options.sandboxReuse === true) return { gate: "mode", reason: "sandbox-reuse" };
+  if (options.rollingState === true) return { gate: "mode", reason: "rolling-state" };
   if (options.keepSandbox === "all" || (options.keepSandbox === "failed" && r.verdict === "failed")) {
     return { gate: "mode", reason: "keep-sandbox" };
   }
@@ -413,29 +658,44 @@ export function carriableAttempts(
  * `resolvedTimeoutMsForCarry`)。省略时按未配置处理,不是当作 0——只有 `run.timeoutMs` /
  * `evalDef.timeoutMs` 都缺席时才轮到它兜底。
  */
-export async function planCarry(
-  evals: DiscoveredEval[],
-  agentRuns: AgentRun[],
+export function planCarry(
+  evals: readonly DiscoveredEval[],
+  agentRuns: readonly AgentRun[],
   priorResults: EvalResult[] | undefined,
-  configSandbox?: SandboxOption,
   configTimeoutMs?: number,
-  options: {
-    rerun?: "failed" | "all";
-    keepSandbox?: "failed" | "all";
-    accept?: readonly string[];
-    /**
-     * 历史侧的指纹输入清单:`${experimentId}|${evalId}` → 产出该条历史结果那一份 Run 写下的
-     * 清单(见 `view/data.ts` 的 `loadCarryInputs`)。缺席的 key 就是「那一轮没写清单」,
-     * 差异如实标 `opaque:no-manifest`,不拿别处的数据凑一份。
-     */
-    priorManifests?: ReadonlyMap<string, EvalManifest>;
-    /** 有历史但格式不兼容的 `cacheKey`;见 `CarryGateOptions.incompatibleKeys`。 */
-    incompatibleKeys?: ReadonlySet<string>;
-    /** 项目级 Judge 默认；与 run(Experiment) / Eval 逐字段解析后进入每个 pair 的身份。 */
-    configJudge?: import("../types.ts").JudgeConfig;
-  } = {},
+  options?: CarryPlanOptions,
+): Promise<CarryPlan>;
+/** @deprecated 旧参数位兼容；fallback SandboxSpec 已退出生产规划。 */
+export function planCarry(
+  evals: readonly DiscoveredEval[],
+  agentRuns: readonly AgentRun[],
+  priorResults: EvalResult[] | undefined,
+  legacySandbox: SandboxOption | undefined,
+  configTimeoutMs?: number,
+  options?: CarryPlanOptions,
+): Promise<CarryPlan>;
+export async function planCarry(
+  evals: readonly DiscoveredEval[],
+  agentRuns: readonly AgentRun[],
+  priorResults: EvalResult[] | undefined,
+  timeoutOrLegacySandbox?: number | SandboxOption,
+  optionsOrTimeout?: CarryPlanOptions | number,
+  legacyOptions?: CarryPlanOptions,
 ): Promise<CarryPlan> {
-  prepareRunSandboxes(evals, agentRuns, configSandbox);
+  const usingLegacyArguments = typeof optionsOrTimeout === "number" || legacyOptions !== undefined;
+  if (usingLegacyArguments && timeoutOrLegacySandbox !== undefined && typeof timeoutOrLegacySandbox !== "number") {
+    throw new Error("planCarry no longer accepts a fallback SandboxSpec; declare a SandboxLayer before planning.");
+  }
+  const configTimeoutMs = usingLegacyArguments
+    ? (typeof optionsOrTimeout === "number" ? optionsOrTimeout : undefined)
+    : (typeof timeoutOrLegacySandbox === "number" ? timeoutOrLegacySandbox : undefined);
+  const options = usingLegacyArguments
+    ? (legacyOptions ?? {})
+    : (typeof optionsOrTimeout === "object" ? optionsOrTimeout : {});
+  const preparedPairs = await Effect.runPromise(
+    prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices()),
+  );
+  const preparedPairsByKey = indexPreparedPairs(preparedPairs);
   const sourceCache = new Map<string, Promise<string>>();
   const plannedFingerprints = new Map<string, string>();
   const manifestsByKey = new Map<string, EvalManifest>();
@@ -450,31 +710,21 @@ export async function planCarry(
   const carryEpoch = randomUUID();
   // key → 这个组合的 (run, evalDef);下面三趟(反事实重算、携带判定、逐条原因)都按 key 取回
   // 同一对,不再各自 find 一遍。
-  const entries = new Map<string, { run: AgentRun; evalDef: DiscoveredEval; identity: ConfigIdentity }>();
+  const entries = new Map<string, { pair: PreparedRunPair; identity: ConfigIdentity }>();
   const jobs: Promise<void>[] = [];
-  for (const run of agentRuns) {
-    for (const evalDef of selectedEvalsForRun(evals, run)) {
-      const key = cacheKey(run, evalDef.id);
+  for (const pair of preparedPairs) {
+      const { key, run, evalDef } = pair;
       const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
-      const linkedSandbox = linkedSandboxForEval(run, evalDef);
-      const identity = configIdentityForRun(
-        run,
-        linkedSandbox === undefined ? sandboxForEval(run, evalDef, configSandbox) : undefined,
-        resolvedJudge,
-        linkedSandbox === undefined ? undefined : sandboxLayerIdentityFor(linkedSandbox, "experiment"),
-      );
+      const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
       const configHash = hashConfigIdentity(identity);
-      run.configHash = configHash;
-      entries.set(key, { run, evalDef, identity });
+      entries.set(key, { pair, identity });
       plannedConfigHashes.set(key, configHash);
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
       jobs.push(
         (async () => {
           const { fingerprint: fp, manifest } = await fingerprintWithManifest(
-            evalDef,
-            run,
+            pair,
             sourceCache,
-            configSandbox,
             { configHash, configIdentity: identity, carryEpoch },
           );
           plannedFingerprints.set(key, fp);
@@ -482,7 +732,6 @@ export async function planCarry(
           acceptable.set(key, new Set([fp]));
         })(),
       );
-    }
   }
   await Promise.all(jobs);
 
@@ -503,7 +752,10 @@ export async function planCarry(
   const deltasByResult = new Map<EvalResult, ConfigFieldDelta[]>();
   const availableBySelector = new Map<string, ConfigFieldDelta>();
   for (const [key, priors] of priorsByKey) {
-    const current = manifestsByKey.get(key)!;
+    const current = manifestsByKey.get(key);
+    if (current === undefined) {
+      throw new Error(`Missing current manifest for ${JSON.stringify(key)}.`);
+    }
     for (const prior of priors) {
       if (prior.fingerprint !== undefined && prior.fingerprint === plannedFingerprints.get(key)) continue;
       const priorIdentity = configIdentityFromResult(prior);
@@ -538,26 +790,37 @@ export async function planCarry(
       if (crossed.length === 0) continue;
       const pending = deltas.filter((delta) => !accepted.has(delta.selector));
       const key = `${prior.experimentId}|${prior.id}`;
-      const { run, evalDef, identity } = entries.get(key)!;
+      const entry = entries.get(key);
+      if (entry === undefined) {
+        throw new Error(`Missing prepared pair for accepted historical result ${JSON.stringify(key)}.`);
+      }
+      const { pair, identity } = entry;
       const historical = configIdentityFromResult(prior);
       const configOnly =
         crossed.every((delta) => delta.selector.startsWith("config:")) &&
         pending.every((delta) => delta.selector === OPAQUE_SELECTOR);
       if (configOnly && historical !== undefined) {
         const counterfactual = rollBackAccepted(identity, historical, accepted);
-        const sandboxRolledBack = counterfactual.sandbox !== identity.sandbox;
-        const fp = await computeFingerprint(evalDef, run, sourceCache, configSandbox, {
+        const fp = await computeFingerprint(pair, sourceCache, {
           configHash: hashConfigIdentity(counterfactual),
+          configIdentity: counterfactual,
           carryEpoch,
-          ...(sandboxRolledBack ? { sandbox: historicalSandboxForEval(prior, prior.id) } : {}),
         });
-        acceptable.get(key)!.add(fp);
+        const acceptedFingerprints = acceptable.get(key);
+        if (acceptedFingerprints === undefined) {
+          throw new Error(`Missing acceptable fingerprint set for ${JSON.stringify(key)}.`);
+        }
+        acceptedFingerprints.add(fp);
         if (fp === prior.fingerprint) acceptedDeltasByResult.set(prior, crossed);
         continue;
       }
       if (pending.length > 0) continue; // 还有没被授权的差异 → 照常重跑
       if (prior.fingerprint === undefined) continue;
-      acceptable.get(key)!.add(prior.fingerprint);
+      const acceptedFingerprints = acceptable.get(key);
+      if (acceptedFingerprints === undefined) {
+        throw new Error(`Missing acceptable fingerprint set for ${JSON.stringify(key)}.`);
+      }
+      acceptedFingerprints.add(prior.fingerprint);
       acceptedDeltasByResult.set(prior, crossed);
     }
   }
@@ -567,14 +830,14 @@ export async function planCarry(
   const carriedAttemptsByKey = new Map<string, Set<number>>();
   const carriedAcceptingByResult = new Map<EvalResult, ConfigFieldDelta[]>();
   const hit = new Set<EvalResult>();
-  for (const [key, { run }] of entries) {
+  for (const [key, { pair: { run } }] of entries) {
     const carried = carriableAttempts(
       priorResults,
       key,
       plannedConfigHashes.get(key),
       acceptable.get(key),
       plannedTimeoutMs.get(key) ?? Infinity,
-      { ...options, sandboxReuse: run.sandboxReuse },
+      { ...options, sandboxReuse: run.sandboxReuse, rollingState: run.state._tag === "Rolling" },
     );
     if (carried.length === 0) continue;
     const indices = new Set<number>();
@@ -591,7 +854,7 @@ export async function planCarry(
 
   // 逐条未携带原因:计划内每个没被携入的 attempt 序号,已知卡在哪一道门上。
   const dispatchByKey = new Map<string, DispatchGroup[]>();
-  for (const [key, { run }] of entries) {
+  for (const [key, { pair: { run } }] of entries) {
     const carriedIndices = carriedAttemptsByKey.get(key);
     const byAttempt = new Map<number, EvalResult>();
     for (const prior of priorsByKey.get(key) ?? []) {
@@ -609,7 +872,7 @@ export async function planCarry(
             plannedConfigHashes.get(key),
             acceptable.get(key),
             plannedTimeoutMs.get(key) ?? Infinity,
-            { ...options, sandboxReuse: run.sandboxReuse },
+            { ...options, sandboxReuse: run.sandboxReuse, rollingState: run.state._tag === "Rolling" },
           ) ?? { gate: "missing" as const, reason: "new" as const };
       const groupKey = `${blocked.gate}|${blocked.reason}`;
       let group = indexOfGroup.get(groupKey);
@@ -628,6 +891,7 @@ export async function planCarry(
   // 按 priorResults 的原始顺序输出(调用方的展示顺序不因分组而抖动)。
   const carriedResults = (priorResults ?? []).filter((r) => hit.has(r));
   return {
+    preparedPairsByKey,
     plannedConfigHashes,
     plannedFingerprints,
     acceptableFingerprints: acceptable,
@@ -645,75 +909,6 @@ function hash(value: unknown): string {
 }
 
 /** folder-local source 进指纹时只留纯数据面(brand 不参与)。 */
-function environmentFingerprintInput(environment: DiscoveredEval["environment"]): JsonValue | undefined {
-  if (environment === undefined) return undefined;
-  if (typeof environment === "string") return environment;
-  const raw = environment as unknown as globalThis.Record<string, unknown>;
-  const out: globalThis.Record<string, JsonValue> = {};
-  for (const [k, v] of Object.entries(raw)) {
-    if (k === "__brand") continue;
-    if (v === undefined) continue;
-    out[k] = v as JsonValue;
-  }
-  return out;
-}
-
-/**
- * 规划期 CaseKey(+ buildKeys / identity)进指纹。规划失败(缺表项 / 缺能力)时不塞假值——
- * 那种 eval 本来就不会派发,指纹只服务可派发路径。
- */
-export function sandboxCaseIdentityForEval(
-  evalDef: DiscoveredEval,
-  sandboxSpec: SandboxOption | undefined,
-): { caseKey: string; buildKeys: readonly string[]; identity: JsonValue } | undefined {
-  if (sandboxSpec === undefined) return undefined;
-  const planned = planSandboxCase({
-    evalId: evalDef.id,
-    environment: evalDef.environment,
-    ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
-    spec: sandboxSpec,
-  });
-  if (planned.status !== "ready") return undefined;
-  return {
-    caseKey: planned.plan.caseKey,
-    buildKeys: planned.plan.buildKeys,
-    identity: planned.plan.identity,
-  };
-}
-
-/** 指纹路径把按需构建的真实 context/Dockerfile 内容折进 CaseKey；同步 helper 只服务纯规划检查。 */
-async function resolvedSandboxCaseIdentityForEval(
-  evalDef: DiscoveredEval,
-  sandboxSpec: SandboxOption | undefined,
-  environment: DiscoveredEval["environment"] = evalDef.environment,
-): Promise<{ caseKey: string; buildKeys: readonly string[]; identity: JsonValue; carryEligible: boolean } | undefined> {
-  if (sandboxSpec === undefined) return undefined;
-  const planned = planSandboxCase({
-    evalId: evalDef.id,
-    environment,
-    ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
-    spec: sandboxSpec,
-  });
-  if (planned.status !== "ready") return undefined;
-  if (planned.plan.caseKind !== "on-demand-build") {
-    return {
-      caseKey: planned.plan.caseKey,
-      buildKeys: planned.plan.buildKeys,
-      identity: planned.plan.identity,
-      carryEligible: planned.plan.carryEligible,
-    };
-  }
-  const { collectDockerfileBuildFromPlan } = await import("../sandbox/dockerfile-build.ts");
-  const collected = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
-  if (collected === undefined) return undefined;
-  return {
-    caseKey: collected.caseKey,
-    buildKeys: [collected.buildKey],
-    identity: planned.plan.identity,
-    carryEligible: collected.carryEligible,
-  };
-}
-
 /** 文本内容哈希:manifest 的源码面/数据面把「内容」换成「内容哈希」时用的唯一口径。 */
 function hashText(content: string): string {
   return createHash("sha256").update(content).digest("hex");
@@ -721,11 +916,10 @@ function hashText(content: string): string {
 
 /** 键序稳定的 JSON 序列化(对象键排序),保证同一 payload 永远同一指纹。 */
 function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  const obj = value as globalThis.Record<string, unknown>;
-  return `{${Object.keys(obj)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(obj[key])}`)
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
     .join(",")}}`;
 }

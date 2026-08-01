@@ -11,6 +11,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineDirectAgent, defineSandboxAgent, dockerSandbox } from "../define.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { STATELESS } from "../state/plan.ts";
 import { computeConfigHash, computeFingerprint, fingerprintWithManifest, planCarry } from "./fingerprint.ts";
 import { manifestDeltas, type EvalManifest } from "./manifest.ts";
 import type { AgentRun, DiscoveredEval } from "./types.ts";
@@ -24,11 +26,16 @@ import { zhCN } from "../i18n/zh-CN.ts";
 // 内容不重要,指向本测试文件自己,永远存在。
 const sourcePath = fileURLToPath(import.meta.url);
 const source: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
+const DIRECT_RUN_INFO = {
+  sandboxLayer: { kind: "direct" },
+  sandboxPlansByEval: {},
+  agentInstalls: [],
+};
 const tempRoots: string[] = [];
 afterEach(async () => Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 function makeEval(id: string): DiscoveredEval {
-  return { id, baseDir: "/project", sourcePath, source, test: () => {} };
+  return { id, baseDir: "/project", sourcePath, source, test: () => {} } as unknown as DiscoveredEval;
 }
 
 function makeRun(experimentId: string, selectedEvalIds: string[], attempts: number, timeoutMs?: number): AgentRun {
@@ -39,6 +46,9 @@ function makeRun(experimentId: string, selectedEvalIds: string[], attempts: numb
     earlyExit: false,
     selectedEvalIds,
     experimentId,
+    experimentBaseDir: "/project",
+    experimentSourcePath: sourcePath,
+    state: STATELESS,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
 }
@@ -59,11 +69,22 @@ describe("按需构建进入指纹", () => {
     tempRoots.push(root);
     await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"a".repeat(64)}\nCOPY payload /payload\n`);
     await writeFile(join(root, "payload"), "first\n");
-    const evalDef: DiscoveredEval = { ...makeEval("e"), baseDir: root, environment: "built" };
+    const evalDef = { ...makeEval("e"), baseDir: root, environment: "built" } as unknown as DiscoveredEval;
     const run: AgentRun = {
       ...makeRun("exp", ["e"], 1),
-      agent: defineSandboxAgent({ name: "sandbox", ensure: [], installers: [], send: async () => ({ events: [], status: "completed" }) }),
-      sandbox: dockerSandbox({ environments: { built: { build: { context: "." } } } }),
+      agent: defineSandboxAgent({
+        name: "sandbox",
+        ensure: {
+          identity: { agent: "sandbox", version: "0.0.0-test", revision: "1" },
+          probe: defineSandboxCommand(
+            { id: "test.sandbox.probe", revision: "1", inputs: {} },
+            async () => {},
+          ),
+        },
+        installers: [],
+        send: async () => ({ events: [], status: "completed" }),
+      }),
+      sandbox: dockerSandbox({ environments: { built: { build: { context: "." } } } }) as unknown as AgentRun["sandbox"],
     };
 
     const first = await computeFingerprint(evalDef, run);
@@ -296,6 +317,9 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       "judge.timeoutMs": 90_000,
     });
     expect(plan.manifestsByKey.get("exp|e")?.config).not.toHaveProperty("judge.apiKeyEnv");
+    const prepared = plan.preparedPairsByKey?.get("exp|e");
+    expect(prepared).toBeDefined();
+    expect(plan.manifestsByKey.get("exp|e")?.plan).toEqual(prepared?.identity);
 
     const other = await planCarry(
       [evalDef],
@@ -319,6 +343,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       agent: run.agent.name,
       ...(run.model !== undefined ? { model: run.model } : {}),
       experiment: {
+        ...DIRECT_RUN_INFO,
         flags: run.flags,
         attempts: 1,
         earlyExit: false,
@@ -445,6 +470,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       configHash: computeConfigHash(oldRun),
       agent: oldRun.agent.name,
       experiment: {
+        ...DIRECT_RUN_INFO,
         flags: oldRun.flags,
         attempts: 1,
         earlyExit: false,
@@ -494,6 +520,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       configHash: computeConfigHash(oldRun),
       agent: oldRun.agent.name,
       experiment: {
+        ...DIRECT_RUN_INFO,
         flags: oldRun.flags,
         attempts: 1,
         earlyExit: false,
@@ -621,7 +648,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
       fingerprint: old.fingerprint,
       configHash: computeConfigHash(oldRun),
       agent: base.agent.name,
-      experiment: { flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
 
     const plan = await planCarry(evals, [run], [prior], undefined, undefined, {
@@ -684,7 +711,7 @@ describe("非 TTY 下不带值的 --accept:报错列出本次可授权的原因"
       fingerprint: old.fingerprint,
       configHash: computeConfigHash(oldRun),
       agent: base.agent.name,
-      experiment: { flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
 
     const plan = await planCarry(evals, [run], [prior], undefined, undefined, {
@@ -707,6 +734,15 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
   function mutated(manifest: EvalManifest, over: Partial<EvalManifest>): EvalManifest {
     return { ...manifest, ...over };
   }
+
+  it("升级前 manifest 没有 pair plan 时保守报告物理计划差异，不把旧清单丢掉", async () => {
+    const { manifest } = await fingerprintWithManifest(makeEval("e"), makeRun("exp", ["e"], 1));
+    const historical = { ...manifest, plan: undefined };
+    const deltas = manifestDeltas(historical, manifest);
+    expect(deltas.map((delta) => delta.selector)).toEqual(["plan:physical"]);
+    expect(deltas[0]).not.toHaveProperty("from");
+    expect(deltas[0]?.to).toBeDefined();
+  });
 
   it("源码面单文件的内容差异给 source:<路径>,授权它才携带", async () => {
     const evals = [makeEval("e")];

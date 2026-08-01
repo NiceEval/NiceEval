@@ -21,6 +21,11 @@ export const MANIFESTS_FILE = "manifests.json";
  */
 export interface EvalManifest {
   config: globalThis.Record<string, JsonValue>;
+  /**
+   * pair-owned link + provider physical plan 的完整身份；新写入恒存在。
+   * 可选只为读取升级前的 manifests.json：缺失必须在比较时保守地产生 plan 差异。
+   */
+  plan?: JsonValue;
   source: globalThis.Record<string, string>;
   data: globalThis.Record<string, string>;
 }
@@ -41,6 +46,7 @@ export function parseRunManifests(raw: unknown): RunManifests {
     if (typeof entry.config !== "object" || entry.config === null) continue;
     out[evalId] = {
       config: entry.config as globalThis.Record<string, JsonValue>,
+      ...(entry.plan === undefined ? {} : { plan: entry.plan }),
       source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
       data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,
     };

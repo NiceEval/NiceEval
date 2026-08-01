@@ -26,6 +26,15 @@ function summarize(value: JsonValue): string {
   return text.length > 80 ? `${text.slice(0, 79)}…` : text;
 }
 
+function planDelta(historical: EvalManifest, current: EvalManifest): ConfigFieldDelta[] {
+  if (JSON.stringify(historical.plan) === JSON.stringify(current.plan)) return [];
+  return [{
+    selector: "plan:physical",
+    ...(historical.plan === undefined ? {} : { from: summarize(historical.plan) }),
+    ...(current.plan === undefined ? {} : { to: summarize(current.plan) }),
+  }];
+}
+
 /**
  * 两份清单相减,得到带名字的精确差异(selector 原样可复制进 `--accept`)。
  *
@@ -47,6 +56,7 @@ export function manifestDeltas(
   }
   return [
     ...faceDeltas("config", historical.config ?? {}, current.config ?? {}, summarize),
+    ...planDelta(historical, current),
     ...faceDeltas("source", historical.source ?? {}, current.source ?? {}, shortHash),
     ...faceDeltas("data", historical.data ?? {}, current.data ?? {}, shortHash),
   ];

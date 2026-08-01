@@ -7,11 +7,15 @@
 // 历史侧的同名投影从落盘重建(`ExperimentRunInfo` + 结果顶层的 agent/model),这正是
 // 「进 configHash 的字段必须落进 run.json」那条规则存在的理由。
 
-import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import type { LinkedRunPlan } from "../sandbox/plan.ts";
+import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { isSandboxLayer } from "../sandbox/layer.ts";
-import { agentInstallIdentityInput } from "../agents/provisioner.ts";
+import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import type { EvalResult, JsonValue, JudgeConfig, SandboxOption } from "../types.ts";
-import type { AgentRun, SandboxRunInfo } from "./types.ts";
+import type { AgentRun } from "./types.ts";
+import type { ExperimentStateProjection } from "../state/types.ts";
+import { experimentStateProjection } from "../state/definition.ts";
 
 /**
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
@@ -22,22 +26,17 @@ import type { AgentRun, SandboxRunInfo } from "./types.ts";
  */
 export interface ConfigIdentity {
   agent: string;
-  model?: string;
-  reasoningEffort?: string;
+  model: JsonValue;
+  reasoningEffort: JsonValue;
   flags: globalThis.Record<string, JsonValue>;
   sandboxReuse: boolean;
-  sandbox?: SandboxRunInfo;
-  sandboxLayer?: JsonValue;
+  state: JsonValue;
+  /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
+  sandboxLayer: JsonValue;
   strict: boolean;
-  judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
-  /** Agent Ensure 安装身份;与 CaseKey 正交。 */
-  agentInstall?: {
-    agent: string;
-    version: string;
-    revision: string;
-    artifactDigest?: string;
-    artifactPlatform?: string;
-  };
+  judge: JsonValue;
+  /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
+  agentInstalls: JsonValue[];
 }
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
@@ -50,33 +49,119 @@ export interface ConfigFieldDelta {
   to?: string;
 }
 
-function agentInstallOf(run: AgentRun): ConfigIdentity["agentInstall"] {
-  if (run.agent.kind !== "sandbox") return undefined;
-  for (const ensure of run.agent.ensure) return agentInstallIdentityInput(ensure.identity);
-  return undefined;
+function sameAgentIdentity(left: AgentIdentity, right: AgentIdentity): boolean {
+  return left.agent === right.agent && left.version === right.version && left.revision === right.revision;
 }
 
-/** 本次解析后配置的身份投影。 */
+function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
+  if (installer === undefined) return { _tag: "Missing" };
+  return {
+    _tag: "Matched",
+    identity: {
+      agent: installer.identity.agent,
+      version: installer.identity.version,
+      revision: installer.identity.revision,
+    },
+    installMode: installer.installMode,
+    platforms: installer.platforms === undefined
+      ? { _tag: "All" }
+      : { _tag: "Listed", values: [...installer.platforms] },
+  };
+}
+
+/** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
+export function agentInstallPlansForRun(run: AgentRun): JsonValue[] {
+  const agent = run.agent;
+  if (agent.kind === "direct") return [];
+  return agent.ensure.map((ensure, index) => {
+    const installer = agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, ensure.identity));
+    return {
+      order: index,
+      ensure: {
+        agent: ensure.identity.agent,
+        version: ensure.identity.version,
+        revision: ensure.identity.revision,
+      },
+      installer: installerIdentity(installer),
+    };
+  });
+}
+
+function declaredString(value: string | undefined): JsonValue {
+  return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
+}
+
+function stateProjectionOf(run: AgentRun): JsonValue {
+  return run.state === undefined || run.state._tag === "Stateless"
+    ? { _tag: "Stateless" }
+    : { _tag: "Stateful", value: stateProjectionJson(experimentStateProjection(run.state.definition)) };
+}
+
+function stateProjectionJson(state: ExperimentStateProjection): JsonValue {
+  return {
+    identity: state.identity,
+    consistency: state.consistency.mode === "pinned"
+      ? { mode: "pinned", revision: state.consistency.revision }
+      : { mode: "rolling" },
+    saveOn: state.saveOn,
+  };
+}
+
+function judgeIdentity(judge: JudgeConfig | undefined): JsonValue {
+  return judge === undefined
+    ? { _tag: "Unconfigured" }
+    : {
+        _tag: "Configured",
+        model: declaredString(judge.model),
+        baseUrl: declaredString(judge.baseUrl),
+        timeoutMs: judge.timeoutMs === undefined
+          ? { _tag: "Omitted" }
+          : { _tag: "Configured", value: judge.timeoutMs },
+      };
+}
+
+function isLinkedRunPlan(value: LinkedRunPlan | SandboxOption | undefined): value is LinkedRunPlan {
+  const tag = value === undefined ? undefined : (value as { _tag?: unknown })._tag;
+  return tag === "Direct" || tag === "Sandbox";
+}
+
+export function configIdentityForRun(run: AgentRun, plan: LinkedRunPlan, judge?: JudgeConfig): ConfigIdentity;
+/** @deprecated 纯数据兼容入口；生产必须传 LinkedRunPlan。 */
 export function configIdentityForRun(
   run: AgentRun,
   sandboxSpec?: SandboxOption,
-  judge: JudgeConfig | undefined = run.judge,
+  judge?: JudgeConfig,
   sandboxLayer?: JsonValue,
+): ConfigIdentity;
+/** 本次解析后配置的身份投影。 */
+export function configIdentityForRun(
+  run: AgentRun,
+  planOrSandbox?: LinkedRunPlan | SandboxOption,
+  judge: JudgeConfig | undefined = run.judge,
+  legacySandboxLayer?: JsonValue,
 ): ConfigIdentity {
-  const legacyRunSpec = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
-    ? run.sandbox
+  const plan = isLinkedRunPlan(planOrSandbox) ? planOrSandbox : undefined;
+  const authored = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
+    ? run.sandbox as unknown as SandboxOption
+    : undefined;
+  const legacySandbox: SandboxOption | undefined = plan === undefined
+    ? (planOrSandbox as SandboxOption | undefined) ?? authored
     : undefined;
   return {
     agent: run.agent.name,
-    model: run.model,
-    reasoningEffort: run.reasoningEffort,
+    model: declaredString(run.model),
+    reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
-    sandbox: sandboxRunInfo(sandboxSpec ?? legacyRunSpec),
-    sandboxLayer,
+    state: stateProjectionOf(run),
+    sandboxLayer: plan === undefined
+      ? legacySandboxLayer ?? (run.agent.kind === "direct" && legacySandbox === undefined
+        ? { kind: "direct" }
+        : { kind: "legacy-sandbox-spec", sandbox: (sandboxRunInfo(legacySandbox) as unknown as JsonValue | undefined) ?? null })
+      : sandboxLayerIdentityFor(plan.pair, "experiment"),
     strict: run.strict ?? false,
-    judge: judge ? { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } : undefined,
-    agentInstall: agentInstallOf(run),
+    judge: judgeIdentity(judge),
+    agentInstalls: agentInstallPlansForRun(run),
   };
 }
 
@@ -87,26 +172,30 @@ export function configIdentityForRun(
 export function configIdentityFromResult(result: EvalResult): ConfigIdentity | undefined {
   const exp = result.experiment;
   if (exp === undefined) return undefined;
+  const historical = exp as unknown as {
+    sandbox?: unknown;
+    sandboxLayer?: JsonValue;
+    agentInstalls?: JsonValue[];
+    agentInstall?: JsonValue;
+  };
+  const directLegacy = historical.sandboxLayer === undefined && historical.sandbox === undefined;
   return {
     agent: result.agent,
-    model: result.model,
-    reasoningEffort: exp.reasoningEffort,
+    model: declaredString(result.model),
+    reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
     sandboxReuse: exp.sandboxReuse ?? false,
-    sandbox: exp.sandbox,
-    sandboxLayer: exp.sandboxLayer,
+    state: exp.state === undefined
+      ? { _tag: "Stateless" }
+      : { _tag: "Stateful", value: stateProjectionJson(exp.state) },
+    sandboxLayer: historical.sandboxLayer ?? (directLegacy
+      ? { kind: "direct" }
+      : { kind: "legacy-sandbox-spec", sandbox: (historical.sandbox as JsonValue | undefined) ?? null }),
     strict: exp.strict ?? false,
-    judge: exp.judge
-      ? { model: exp.judge.model, baseUrl: exp.judge.baseUrl, timeoutMs: exp.judge.timeoutMs }
-      : undefined,
-    agentInstall: exp.agentInstall,
+    judge: judgeIdentity(exp.judge),
+    agentInstalls: historical.agentInstalls ??
+      (historical.agentInstall === undefined ? [] : [{ _tag: "Legacy", value: historical.agentInstall }]),
   };
-}
-
-/** 该 eval 这一轮实际解析到的沙箱产物(声明了 environment 的走逐 eval 映射表)。 */
-export function historicalSandboxForEval(result: EvalResult, evalId: string): SandboxRunInfo | undefined {
-  const exp = result.experiment;
-  return exp?.sandboxByEval?.[evalId] ?? exp?.sandbox;
 }
 
 /**
@@ -115,33 +204,26 @@ export function historicalSandboxForEval(result: EvalResult, evalId: string): Sa
  */
 function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const out = new Map<string, JsonValue>();
-  const put = (path: string, value: JsonValue | undefined): void => {
-    if (value !== undefined) out.set(path, value);
+  const put = (path: string, value: JsonValue): void => { out.set(path, value); };
+  const putDeclared = (path: string, value: JsonValue): void => {
+    if (typeof value !== "object" || value === null || Array.isArray(value) || value._tag !== "Configured") return;
+    put(path, value.value as JsonValue);
   };
   put("agent", identity.agent);
-  put("model", identity.model);
-  put("reasoningEffort", identity.reasoningEffort);
+  putDeclared("model", identity.model);
+  putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
+  put("state", identity.state);
   put("strict", identity.strict);
-  for (const [key, value] of Object.entries(identity.flags ?? {})) put(`flags.${key}`, value);
-  if (identity.sandbox !== undefined) {
-    put("sandbox.provider", identity.sandbox.provider);
-    put("sandbox.fingerprint", identity.sandbox.fingerprint);
-    for (const [key, value] of Object.entries(identity.sandbox.params ?? {})) put(`sandbox.params.${key}`, value);
-  }
+  for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
-  if (identity.judge !== undefined) {
-    put("judge.model", identity.judge.model);
-    put("judge.baseUrl", identity.judge.baseUrl);
-    put("judge.timeoutMs", identity.judge.timeoutMs);
+  if (typeof identity.judge === "object" && identity.judge !== null && !Array.isArray(identity.judge) &&
+    identity.judge._tag === "Configured") {
+    putDeclared("judge.model", identity.judge.model as JsonValue);
+    putDeclared("judge.baseUrl", identity.judge.baseUrl as JsonValue);
+    putDeclared("judge.timeoutMs", identity.judge.timeoutMs as JsonValue);
   }
-  if (identity.agentInstall !== undefined) {
-    put("agentInstall.agent", identity.agentInstall.agent);
-    put("agentInstall.version", identity.agentInstall.version);
-    put("agentInstall.revision", identity.agentInstall.revision);
-    put("agentInstall.artifactDigest", identity.agentInstall.artifactDigest);
-    put("agentInstall.artifactPlatform", identity.agentInstall.artifactPlatform);
-  }
+  put("agentInstalls", identity.agentInstalls);
   return out;
 }
 
@@ -171,10 +253,14 @@ export function configDeltas(historical: ConfigIdentity, current: ConfigIdentity
     const hasFrom = from.has(path);
     const hasTo = to.has(path);
     if (hasFrom && hasTo && JSON.stringify(from.get(path)) === JSON.stringify(to.get(path))) continue;
+    const fromValue = from.get(path);
+    const toValue = to.get(path);
+    if (hasFrom && fromValue === undefined) throw new Error(`Missing historical config value for ${path}.`);
+    if (hasTo && toValue === undefined) throw new Error(`Missing current config value for ${path}.`);
     out.push({
       selector: `config:${path}`,
-      ...(hasFrom ? { from: summarize(from.get(path)!) } : {}),
-      ...(hasTo ? { to: summarize(to.get(path)!) } : {}),
+      ...(fromValue === undefined ? {} : { from: summarize(fromValue) }),
+      ...(toValue === undefined ? {} : { to: summarize(toValue) }),
     });
   }
   return out;
@@ -201,19 +287,28 @@ export function rollBackAccepted(
   if (accepted.has("config:model")) out.model = historical.model;
   if (accepted.has("config:reasoningEffort")) out.reasoningEffort = historical.reasoningEffort;
   if (accepted.has("config:sandboxReuse")) out.sandboxReuse = historical.sandboxReuse;
+  if (accepted.has("config:state")) out.state = historical.state;
   if (accepted.has("config:strict")) out.strict = historical.strict;
   for (const selector of accepted) {
     if (!selector.startsWith("config:flags.")) continue;
     const key = selector.slice("config:flags.".length);
-    if (Object.hasOwn(historical.flags ?? {}, key)) out.flags[key] = historical.flags[key]!;
-    else delete out.flags[key];
+    if (Object.hasOwn(historical.flags, key)) {
+      const value = historical.flags[key];
+      if (value === undefined) throw new Error(`Missing historical flag value for ${key}.`);
+      out.flags[key] = value;
+    } else delete out.flags[key];
   }
-  for (const group of ["sandbox", "judge", "agentInstall"] as const) {
-    const paths = [...differing].filter((selector) => selector.startsWith(`config:${group}.`));
+  const rollbackGroups: readonly ("sandboxLayer" | "judge" | "agentInstalls")[] = [
+    "sandboxLayer", "judge", "agentInstalls",
+  ];
+  for (const group of rollbackGroups) {
+    const paths = [...differing].filter((selector) =>
+      selector === `config:${group}` || selector.startsWith(`config:${group}.`)
+    );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
-    if (group === "sandbox") out.sandbox = historical.sandbox;
+    if (group === "sandboxLayer") out.sandboxLayer = historical.sandboxLayer;
     else if (group === "judge") out.judge = historical.judge;
-    else out.agentInstall = historical.agentInstall;
+    else out.agentInstalls = historical.agentInstalls;
   }
   return out;
 }

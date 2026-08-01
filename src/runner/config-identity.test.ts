@@ -9,6 +9,13 @@ import { configDeltas, configIdentityForRun, configIdentityFromResult, rollBackA
 import { computeConfigHash } from "./fingerprint.ts";
 import type { AgentRun } from "./types.ts";
 import type { EvalResult } from "../types.ts";
+import { STATELESS } from "../state/plan.ts";
+
+const DIRECT_RUN_INFO = {
+  sandboxLayer: { kind: "direct" },
+  sandboxPlansByEval: {},
+  agentInstalls: [],
+};
 
 function makeRun(over: Partial<AgentRun> = {}): AgentRun {
   return {
@@ -18,6 +25,9 @@ function makeRun(over: Partial<AgentRun> = {}): AgentRun {
     earlyExit: false,
     selectedEvalIds: ["e"],
     experimentId: "exp",
+    experimentBaseDir: "/project",
+    experimentSourcePath: "/project/experiments/exp.ts",
+    state: STATELESS,
     ...over,
   };
 }
@@ -31,7 +41,7 @@ function makeResult(over: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
-    experiment: { attempts: 1, earlyExit: false, selectedEvalIds: ["e"], flags: {} },
+    experiment: { ...DIRECT_RUN_INFO, attempts: 1, earlyExit: false, selectedEvalIds: ["e"], flags: {} },
     ...over,
   };
 }
@@ -66,9 +76,10 @@ describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
       timeoutMs: 90_000,
     });
     expect(first.judge).toEqual({
-      model: "judge-a",
-      baseUrl: "https://judge.example/v1",
-      timeoutMs: 90_000,
+      _tag: "Configured",
+      model: { _tag: "Configured", value: "judge-a" },
+      baseUrl: { _tag: "Configured", value: "https://judge.example/v1" },
+      timeoutMs: { _tag: "Configured", value: 90_000 },
     });
     expect(first).toEqual(second);
     expect(configDeltas(first, configIdentityForRun(makeRun(), undefined, {
@@ -85,6 +96,7 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
       makeResult({
         model: "opus",
         experiment: {
+          ...DIRECT_RUN_INFO,
           attempts: 1,
           earlyExit: false,
           selectedEvalIds: ["e"],
@@ -115,6 +127,7 @@ describe("rollBackAccepted:只动被点名的字段", () => {
     makeResult({
       model: "opus",
       experiment: {
+        ...DIRECT_RUN_INFO,
         attempts: 1,
         earlyExit: false,
         selectedEvalIds: ["e"],
@@ -130,16 +143,31 @@ describe("rollBackAccepted:只动被点名的字段", () => {
   it("授权 config:flags.<key> 把该键换回历史值,没点名的字段保持本次值", () => {
     const rolled = rollBackAccepted(current, historical, new Set(["config:flags.endpoint"]));
     expect(rolled.flags).toEqual({ endpoint: "https://old" });
-    expect(rolled.model).toBe("sonnet");
-    expect(rolled.judge).toEqual({ model: "gpt-5.6-sol", baseUrl: "https://new-gw" });
+    expect(rolled.model).toEqual({ _tag: "Configured", value: "sonnet" });
+    expect(rolled.judge).toEqual({
+      _tag: "Configured",
+      model: { _tag: "Configured", value: "gpt-5.6-sol" },
+      baseUrl: { _tag: "Configured", value: "https://new-gw" },
+      timeoutMs: { _tag: "Omitted" },
+    });
   });
 
   it("整对象进哈希的分组要每条差异都被授权才整体换回,少一条就保持本次值", () => {
     const partial = rollBackAccepted(current, historical, new Set(["config:judge.model"]));
-    expect(partial.judge).toEqual({ model: "gpt-5.6-sol", baseUrl: "https://new-gw" });
+    expect(partial.judge).toEqual({
+      _tag: "Configured",
+      model: { _tag: "Configured", value: "gpt-5.6-sol" },
+      baseUrl: { _tag: "Configured", value: "https://new-gw" },
+      timeoutMs: { _tag: "Omitted" },
+    });
 
     const full = rollBackAccepted(current, historical, new Set(["config:judge.model", "config:judge.baseUrl"]));
-    expect(full.judge).toEqual({ model: "gpt-5.6", baseUrl: "https://old-gw" });
+    expect(full.judge).toEqual({
+      _tag: "Configured",
+      model: { _tag: "Configured", value: "gpt-5.6" },
+      baseUrl: { _tag: "Configured", value: "https://old-gw" },
+      timeoutMs: { _tag: "Omitted" },
+    });
   });
 
   it("全部差异都被授权时,反事实身份与历史身份再无差异——「相等本身就是证明」的那一步", () => {
