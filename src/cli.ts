@@ -13,6 +13,7 @@ import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
+import { planExperimentStateOrThrow } from "./state/plan.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
@@ -1041,6 +1042,12 @@ async function main(): Promise<void> {
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
         sandbox: exp.sandbox,
         sandboxReuse: exp.sandboxReuse,
+        state: planExperimentStateOrThrow({
+          state: exp.state,
+          agent: exp.agent,
+          sandboxReuse: exp.sandboxReuse === true,
+          maxConcurrency: exp.maxConcurrency,
+        }),
         judge: exp.judge,
         // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
         // resolveAttemptTimeout 接上。这里 `?? config.timeoutMs` 会把缺省底提前物化成 run 值,

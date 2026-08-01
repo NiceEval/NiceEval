@@ -25,6 +25,8 @@ import type {
 import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
 import { isSandboxLayer } from "./sandbox/layer.ts";
+import { isExperimentStateDefinition } from "./state/definition.ts";
+import { planExperimentStateOrThrow } from "./state/plan.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
@@ -123,6 +125,15 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   }
   if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
   assertSandboxLayer(def.sandbox, "defineExperiment");
+  if (def.state !== undefined && !isExperimentStateDefinition(def.state)) {
+    throw new TypeError("state.invalid-definition: defineExperiment state must be created by defineExperimentState().");
+  }
+  planExperimentStateOrThrow({
+    state: def.state,
+    agent: def.agent,
+    sandboxReuse: def.sandboxReuse === true,
+    maxConcurrency: def.maxConcurrency,
+  });
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
   if (def.setup !== undefined && typeof def.setup !== "function") {
