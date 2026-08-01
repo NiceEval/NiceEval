@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { defineDirectAgent, defineSandboxAgent } from "./define.ts";
 import { makeSendFailure } from "./context/send-failures.ts";
 import { defineSandboxCommand } from "./sandbox/commands.ts";
+import { completeEvidenceCoverage } from "./scoring/coverage.ts";
 
 const ensure = {
   identity: { agent: "fixture", version: "1.0.0", revision: "1" },
@@ -15,6 +16,7 @@ describe("public Agent factories", () => {
     const classifySendFailure = () => ({ retryable: false as const, reason: "protocol" });
     const agent = defineDirectAgent({
       name: "service",
+      evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
       classifySendFailure,
     });
@@ -27,6 +29,7 @@ describe("public Agent factories", () => {
       failure.acceptance === "rejected" ? { retryable: true as const, reason: "admission" } : undefined;
     const agent = defineSandboxAgent({
       name: "cli",
+      evidenceCoverage: completeEvidenceCoverage,
       ensure,
       send: async () => ({ events: [], status: "completed" }),
       classifySendFailure,
@@ -40,10 +43,12 @@ describe("public Agent factories", () => {
   it("defineSandboxAgent rejects a dynamic definition without required ensure", () => {
     expect(() => defineSandboxAgent({
       name: "cli",
+      evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
     } as never)).toThrow(/defineSandboxAgent.*ensure/);
     expect(() => defineSandboxAgent({
       name: "cli",
+      evidenceCoverage: completeEvidenceCoverage,
       ensure: [],
       send: async () => ({ events: [], status: "completed" }),
     })).toThrow(/defineSandboxAgent.*ensure/);
@@ -52,7 +57,27 @@ describe("public Agent factories", () => {
   it("names defineDirectAgent in construction errors", () => {
     expect(() => defineDirectAgent({
       name: "",
+      evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
     })).toThrow(/defineDirectAgent/);
+  });
+
+  it("requires all six evidence channels for dynamic JavaScript inputs", () => {
+    expect(() => defineDirectAgent({
+      name: "service",
+      evidenceCoverage: { events: { status: "complete" } },
+      send: async () => ({ events: [], status: "completed" }),
+    } as never)).toThrow(/defineDirectAgent requires evidenceCoverage\.actions/);
+  });
+
+  it("requires a non-empty reason for partial and unavailable channels", () => {
+    expect(() => defineDirectAgent({
+      name: "service",
+      evidenceCoverage: {
+        ...completeEvidenceCoverage,
+        actions: { status: "partial", reason: "" },
+      },
+      send: async () => ({ events: [], status: "completed" }),
+    })).toThrow(/evidenceCoverage\.actions requires a non-empty reason/);
   });
 });

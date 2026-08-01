@@ -1,4 +1,4 @@
-import { completeCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -183,7 +183,7 @@ export function bubAgent(config?: BubConfig): Agent {
       },
     }],
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapBubSpans,
 
     tracing: {

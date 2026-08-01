@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { SessionManager, RunSession, lastAssistantText } from "./session.ts";
 import { AssertionCollector, computePassed, unavailable } from "../scoring/collector.ts";
-import type { ResolvedCoverage } from "../scoring/coverage.ts";
+import type { ResolvedEvidenceCoverage } from "../scoring/coverage.ts";
 import { deepEqual, validateSchema } from "../scoring/match.ts";
 import type { Spec } from "../scoring/collector.ts";
 import * as Scoped from "../scoring/scoped.ts";
@@ -166,7 +166,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       scripts: late.scripts,
       usage: manager.usage,
       status: manager.lastStatus,
-      coverage: manager.coverage,
+      evidenceCoverage: manager.evidenceCoverage,
       readFile: async (path) => {
         try {
           return await deps.sandbox.readText(path);
@@ -370,7 +370,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     getEvents: () => readonly StreamEvent[],
     getStatus: () => "completed" | "failed" | "waiting",
     getUsage: () => Usage,
-    getCoverage: () => ResolvedCoverage,
+    getEvidenceCoverage: () => ResolvedEvidenceCoverage,
   ) {
     return collector.record({
       ...spec,
@@ -382,7 +382,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
           facts: deriveRunFacts(events),
           status: getStatus(),
           usage: getUsage(),
-          coverage: getCoverage(),
+          evidenceCoverage: getEvidenceCoverage(),
         });
       },
     });
@@ -405,8 +405,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       const events = session.events.slice();
       const status = session.lastStatus;
       const usage = { ...session.usage };
-      const coverage = session.coverage;
-      return recordScoped(spec, () => events, () => status, () => usage, () => coverage);
+      const evidenceCoverage = session.evidenceCoverage;
+      return recordScoped(spec, () => events, () => status, () => usage, () => evidenceCoverage);
     };
 
     const handle: SessionHandle = {
@@ -414,11 +414,11 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         const text = typeof input === "string" ? input : input.text;
         const files = typeof input === "string" ? undefined : input.files;
         const turn = await send(session, text, files);
-        return makeTurnHandle(turn, collector, deps, text, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, text, manager.resolveTurnEvidenceCoverage(turn));
       },
       sendFile: async (path, text) => {
         const turn = await send(session, text ?? "", [await readInputFile(path)]);
-        return makeTurnHandle(turn, collector, deps, text ?? "", manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, text ?? "", manager.resolveTurnEvidenceCoverage(turn));
       },
       requireInputRequest: (filter) => requireInputRequest(session, filter),
       respond: async (...answers) => {
@@ -426,7 +426,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         const built = buildRespondInput(session, answers);
         session.pendingInputRequests.length = 0;
         const turn = await send(session, built.text, undefined, built.responses);
-        return makeTurnHandle(turn, collector, deps, built.text, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, built.text, manager.resolveTurnEvidenceCoverage(turn));
       },
       respondAll: async (optionId) => {
         if (session.pendingInputRequests.length === 0) {
@@ -441,7 +441,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         session.pendingInputRequests.length = 0;
         const input = requests.map(() => optionId).join("\n");
         const turn = await send(session, input, undefined, responses);
-        return makeTurnHandle(turn, collector, deps, input, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, input, manager.resolveTurnEvidenceCoverage(turn));
       },
       get reply() {
         return session.lastMessage;
@@ -485,7 +485,13 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   // 聚合结果求值(见 docs/feature/assertions/architecture/scopes.md)。newSession 的事件进入这里,
   // 但不进入主 session 的即时 t.reply / t.events 读取视图;t.judge 默认材料仍是主 session 对话。
   const aggregateScoped = (spec: Spec) =>
-    recordScoped(spec, () => manager.allEvents, () => manager.lastStatus, () => manager.usage, () => manager.coverage);
+    recordScoped(
+      spec,
+      () => manager.allEvents,
+      () => manager.lastStatus,
+      () => manager.usage,
+      () => manager.evidenceCoverage,
+    );
 
   // 沙箱能力守卫:非沙箱型 agent(kind !== "sandbox")把文件系统类动作替换成「一调用就报清晰错误」。
   // 其余能力(多轮对话、工具断言……)不再问卷式声明——没接 ctx.session 续接存取器的 agent
@@ -609,7 +615,7 @@ function makeTurnHandle(
   collector: AssertionCollector,
   deps: ContextDeps,
   input: string,
-  coverage: ResolvedCoverage,
+  evidenceCoverage: ResolvedEvidenceCoverage,
 ): TurnHandle {
   const message = lastAssistantText(turn.events) ?? "";
   const facts = deriveRunFacts(turn.events);
@@ -627,7 +633,7 @@ function makeTurnHandle(
           facts,
           status: turn.status,
           usage,
-          coverage,
+          evidenceCoverage,
         }),
     });
 
@@ -645,9 +651,9 @@ function makeTurnHandle(
         evaluate: () => {
           if (deepEqual(turn.data, value)) return 1;
           // 正断言:data 通道非 complete 且这一轮根本没给 data,「没采到」不能算成「没输出」。
-          if (turn.data === undefined && coverage.data.status !== "complete") {
-            const c = coverage.data;
-            return unavailable(`coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+          if (turn.data === undefined && evidenceCoverage.data.status !== "complete") {
+            const c = evidenceCoverage.data;
+            return unavailable(`evidence-coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
           }
           return { score: 0, expected: brief(value, 800), received: brief(turn.data, 800) };
         },
@@ -658,9 +664,9 @@ function makeTurnHandle(
         severity: "gate",
         evaluate: async () => {
           if (await validateSchema(turn.data, schema)) return 1;
-          if (turn.data === undefined && coverage.data.status !== "complete") {
-            const c = coverage.data;
-            return unavailable(`coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+          if (turn.data === undefined && evidenceCoverage.data.status !== "complete") {
+            const c = evidenceCoverage.data;
+            return unavailable(`evidence-coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
           }
           return { score: 0, received: brief(turn.data, 800) };
         },

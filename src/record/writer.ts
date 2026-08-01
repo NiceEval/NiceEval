@@ -6,6 +6,7 @@
 // 不存在「谁的值为准」。布局知识(快照目录独占创建、attempt 路径清洗、大字段拆 artifact、
 // has* 回填、空数据不落文件)全在这里;src/runner/reporters/artifacts.ts 是本文件的薄壳。
 
+import { assertEvidenceCoverage } from "../scoring/coverage.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -255,6 +256,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
   }
 
   async function writeAttemptForImpl(result: EvalResult): Promise<void> {
+    assertEvidenceCoverage(result.evidenceCoverage, "writeAttemptFor()");
     if (!result.experimentId) {
       throw new Error(
         `writeAttemptFor() requires EvalResult.experimentId (results schemaVersion ${RECORD_SCHEMA_VERSION} lays out one directory per experiment); eval "${result.id}" has none.`,
@@ -363,6 +365,7 @@ async function writeAttemptFiles(
   artifacts: AttemptArtifacts | undefined,
   sourceStore: Map<string, Promise<void>>,
 ): Promise<void> {
+  assertEvidenceCoverage(entry.evidenceCoverage, "writeAttempt()");
   const attemptDir = join(snapDir, attemptDirOf(entry));
   await mkdir(attemptDir, { recursive: true });
 

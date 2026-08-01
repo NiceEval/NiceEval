@@ -106,38 +106,41 @@ export interface AgentSetupManifest {
 
 // ───────────────────────── 证据覆盖声明 ─────────────────────────
 
-/** 证据通道的覆盖状态。省略(不声明)= unknown,不是 complete——消费侧与 unavailable 同样保守。 */
-export type CoverageStatus = "complete" | "partial" | "unavailable";
+/** 证据通道的覆盖状态；不存在隐含的 unknown 第四态。 */
+export type EvidenceCoverageStatus = "complete" | "partial" | "unavailable";
 
-/** 单个证据通道的覆盖声明:状态 + 可选的人可读原因(如 "stream reconnected mid-turn")。 */
-export interface CoverageDeclaration {
-  status: CoverageStatus;
-  reason?: string;
-}
+/** 非完整通道必须解释缺口；完整通道不能携带一个自相矛盾的 reason。 */
+export type EvidenceCoverageEntry =
+  | { readonly status: "complete"; readonly reason?: never }
+  | {
+      readonly status: Exclude<EvidenceCoverageStatus, "complete">;
+      readonly reason: string;
+    };
 
 /**
  * 覆盖声明(EvidenceCoverage):完整性不是口头承诺,是随数据走的声明
  * (见 docs/feature/adapters/architecture/evidence.md)。两层:
- * - Agent 级默认(`defineDirectAgent` / `defineSandboxAgent` 的 `coverage`)声明该 Adapter 的常态覆盖;
- *   官方 SDK 适配器显式声明全通道 complete(用 `completeCoverage` 常量)。
- * - Turn 级降级(`Turn.coverage`)只用于相对 Agent 默认值降级(这一轮流断了 / 拿不到 usage),
- *   不能把 Agent 未声明的通道升格成 complete。
- * 整个 Agent 不声明时全部通道视为 unknown。
+ * - Agent 级默认(`defineDirectAgent` / `defineSandboxAgent` 的 `evidenceCoverage`)必须逐一声明
+ *   六个通道；官方 SDK 适配器可使用 `completeEvidenceCoverage`。
+ * - Turn 级降级(`Turn.evidenceCoverage`)只用于相对 Agent 默认值降级。
  */
 export interface EvidenceCoverage {
   /** 完整事件流(event / notEvent / order 的依据)。 */
-  events?: CoverageDeclaration;
+  readonly events: EvidenceCoverageEntry;
   /** action 生命周期(工具正负断言、顺序、失败的依据)。 */
-  actions?: CoverageDeclaration;
+  readonly actions: EvidenceCoverageEntry;
   /** assistant / user message(reply、messageIncludes 的依据)。 */
-  messages?: CoverageDeclaration;
+  readonly messages: EvidenceCoverageEntry;
   /** usage(token / cost 上限断言的依据)。 */
-  usage?: CoverageDeclaration;
+  readonly usage: EvidenceCoverageEntry;
   /** Turn status 的真实性(succeeded / parked 的依据)——恒 completed 的映射必须声明非 complete。 */
-  status?: CoverageDeclaration;
+  readonly status: EvidenceCoverageEntry;
   /** Turn.data(outputEquals / outputMatches 的依据)。 */
-  data?: CoverageDeclaration;
+  readonly data: EvidenceCoverageEntry;
 }
+
+/** 单轮只列相对 Agent 默认值的降级通道；省略的通道沿用 Agent 声明。 */
+export type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
 
 /** 随一轮消息附带的文件(图片等多模态输入)。 */
 export interface InputFile {
@@ -181,7 +184,7 @@ export interface Turn {
    * 本轮相对 Agent 默认覆盖的降级声明(这一轮流断了、拿不到 usage 等);
    * 只能降级,不能把 Agent 未声明的通道升格成 complete(见 EvidenceCoverage)。
    */
-  readonly coverage?: EvidenceCoverage;
+  readonly evidenceCoverage?: TurnEvidenceCoverage;
 }
 
 /**
@@ -371,8 +374,8 @@ export type SpanMapper = (spans: TraceSpan[]) => TraceSpan[];
 
 interface AgentBase {
   readonly name: string;
-  /** 该 Adapter 的常态证据覆盖声明;省略 = 全通道 unknown(见 EvidenceCoverage)。 */
-  coverage?: EvidenceCoverage;
+  /** 该 Adapter 的常态证据覆盖声明；六通道必填。 */
+  readonly evidenceCoverage: EvidenceCoverage;
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /**
@@ -517,8 +520,8 @@ export type Agent = SandboxAgent | DirectAgent;
 export interface SandboxAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
-  /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
-  coverage?: EvidenceCoverage;
+  /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
+  evidenceCoverage: EvidenceCoverage;
   /** 单条或数组都按声明顺序规范化为 Agent layer。 */
   ensure: AgentEnsure | readonly AgentEnsure[];
   /**
@@ -549,8 +552,8 @@ export interface SandboxAgentDef {
 export interface DirectAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
-  /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
-  coverage?: EvidenceCoverage;
+  /** 该 Adapter 的常态证据覆盖声明；完整采集可用 `completeEvidenceCoverage`。 */
+  evidenceCoverage: EvidenceCoverage;
   /**
    * 每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
    */

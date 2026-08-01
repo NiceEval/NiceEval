@@ -42,6 +42,7 @@ import type {
   RunMeta,
 } from "../record/types.ts";
 import { ARTIFACT_KINDS } from "../record/types.ts";
+import { assertEvidenceCoverage } from "../scoring/coverage.ts";
 
 // publish 补记 knownEvalIds 需要「复制时刻该实验的 knownEvalIds」,而 Run 上按定稿
 // 不挂 Experiment 反向指针 —— 用模块级 WeakMap 记归属,只供库内部(copy.ts)取用。
@@ -391,6 +392,7 @@ export async function loadLatestResultsForCase(
     let record: EvalResult;
     try {
       record = JSON.parse(await readFile(join(attemptDir, RESULT_FILE), "utf-8")) as EvalResult;
+      assertEvidenceCoverage(record.evidenceCoverage, "result.json");
     } catch {
       continue; // 缺 result.json / 坏 JSON:如实跳过(与 openRecord 的 unreadable 同一「不拖垮整次读」精神)
     }
@@ -421,6 +423,7 @@ async function readSnapshotDir(dir: string, meta: RunMeta, state: ScanState): Pr
     try {
       const text = await readFile(resultPath, "utf-8");
       record = JSON.parse(text) as EvalResult;
+      assertEvidenceCoverage(record.evidenceCoverage, "result.json");
     } catch (e) {
       state.unreadable.push({ dir: attemptDir, reason: "malformed", detail: `invalid result.json (${e instanceof Error ? e.message : String(e)})` });
       continue;

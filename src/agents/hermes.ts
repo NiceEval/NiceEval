@@ -8,11 +8,11 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
-import { completeCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parsers/hermes.ts";
 import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { Agent, AgentSetupManifest, EvidenceCoverage, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import type { Agent, AgentSetupManifest, Sandbox, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 
@@ -124,7 +124,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
         await sandbox.runShellOrThrow(`${UV} tool install hermes-agent==${version}`);
       },
     }],
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,
 
     async setup(sb, ctx) {
@@ -218,10 +218,10 @@ print(r[0] if r else "")'`,
       const parsed = parseHermesTranscript(raw);
       const events: StreamEvent[] = [...parsed.events];
 
-      let turnCoverage: EvidenceCoverage | undefined;
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
       if (!raw || parsed.events.length === 0) {
         const reason = "hermes session export/state.db unavailable; tool trajectory missing";
-        turnCoverage = {
+        turnEvidenceCoverage = {
           events: { status: "unavailable", reason },
           actions: { status: "unavailable", reason },
           usage: { status: "unavailable", reason },
@@ -245,7 +245,7 @@ print(r[0] if r else "")'`,
         events,
         usage: parsed.usage,
         status: "completed",
-        ...(turnCoverage ? { coverage: turnCoverage } : {}),
+        ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
       };
     },
   });

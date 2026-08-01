@@ -9,11 +9,11 @@ import {
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
-import { completeCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { DEFAULT_OPENCLAW_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
 import { randomUUID } from "node:crypto";
-import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
+import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     name: "openclaw",
     // e2e 已用真实 CLI 证明 session transcript 能给出工具轨 / 消息 / 用量;
     // 采集失败的单轮仍会在 send 里把 coverage 降成 unavailable/partial。
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
@@ -217,10 +217,10 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
 
       // transcript 缺失 / 有解析不了的行:这一轮的工具轨迹不可信,coverage 降级说出来
       // (负断言由此落 unavailable,而不是在空流上假通过),不从最终文本猜工具行为。
-      let turnCoverage: EvidenceCoverage | undefined;
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
       if (raw === undefined || parsed.events.length === 0) {
         const reason = "session transcript unavailable; only the --json final reply was collected";
-        turnCoverage = {
+        turnEvidenceCoverage = {
           events: { status: "unavailable", reason },
           actions: { status: "unavailable", reason },
           usage: { status: "unavailable", reason },
@@ -229,7 +229,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         if (runJson.text) events.push({ type: "message", role: "assistant", text: runJson.text });
       } else if (!parsed.parseSuccess) {
         const reason = "some transcript lines could not be parsed";
-        turnCoverage = {
+        turnEvidenceCoverage = {
           events: { status: "partial", reason },
           actions: { status: "partial", reason },
         };
@@ -256,7 +256,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         events,
         usage,
         status: runJson.failed ? "failed" : "completed",
-        ...(turnCoverage ? { coverage: turnCoverage } : {}),
+        ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
       };
     },
   });

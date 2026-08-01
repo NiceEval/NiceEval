@@ -21,7 +21,7 @@ export interface EvalScore {
 /** evaluate 返回它表示「这条断言评不了」:证据通道不完整 / judge 未解析到模型等。 */
 export interface EvalUnavailable {
   unavailable: true;
-  /** 机器可读原因,如 "judge-model-unresolved"、"coverage:actions=partial"。 */
+  /** 机器可读原因,如 "judge-model-unresolved"、"evidence-coverage:actions=partial"。 */
   reason: string;
   /** 证据通道的状态或异常摘要；没有可用分数时仍保留排障线索。 */
   evidence?: string;

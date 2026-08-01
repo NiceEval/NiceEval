@@ -400,10 +400,9 @@ export interface EvalResult {
   /** 本 attempt 的 agent setup 实际装了什么(Skill / native plugin / MCP / Python plugin);不参与评分。 */
   agentSetup?: AgentSetupManifest;
   /**
-   * attempt 级聚合的证据覆盖(各 turn 的最差值,unknown/unavailable < partial < complete),
-   * 报告据此展示证据覆盖徽标(见 docs/feature/adapters/architecture/evidence.md)。
+   * attempt 级聚合的证据覆盖(各 turn 的最差值,unavailable < partial < complete)；必填。
    */
-  coverage?: import("../scoring/coverage.ts").ResolvedCoverage;
+  evidenceCoverage: import("../agents/types.ts").EvidenceCoverage;
   /**
    * 沙箱型 attempt 的执行环境标识:provider 名与实例 id,用于关联 provider 侧日志与留存现场;
    * remote 型 agent 无此字段。`kept` 表示运行收尾时按 --keep-sandbox 留存了沙箱;之后的存活
@@ -464,9 +463,11 @@ export const RECORD_FORMAT = "niceeval.results";
  * `13` = 两层时间模型:`TimingNode` 封闭 kind 改为开放 key 的 `TimingActivity`;
  * `AttemptError.phase` / `DiagnosticRecord.phase` 改为 `origin: TimingOrigin`;
  * `RunMeta` 新增 `timings` 与 `sandboxBuilds`(见 memory 的 results-schema-version-history)。
+ * `14` = result.json 的证据聚合字段从 `coverage` 破坏性重命名为 `evidenceCoverage`；
+ * 六通道全部必填，不兼容旧 schema，也不做 normalize。
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  */
-export const RECORD_SCHEMA_VERSION = 13;
+export const RECORD_SCHEMA_VERSION = 14;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {

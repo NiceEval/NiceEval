@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssertionCollector } from "./collector.ts";
 import { buildJudge, probeJudge } from "./judge.ts";
 import { computeVerdict } from "./verdict.ts";
-import { resolveAgentCoverage, completeCoverage } from "./coverage.ts";
+import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
 import { resolveJudge } from "../runner/attempt.ts";
@@ -23,7 +23,7 @@ function ctx(): ScoringContext {
     scripts: {},
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed",
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
   };
 }

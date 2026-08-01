@@ -26,7 +26,7 @@ import { randomUUID } from "node:crypto";
 
 import { defineDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
-import { completeCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 
 // UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
@@ -34,7 +34,7 @@ import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse
 // 同等完整——官方 SDK 适配器应声明全通道 complete(docs/feature/adapters/architecture/evidence.md),
 // 这里唯一的例外是协议本身没有的 usage 通道,如实标 unavailable 而不是留成 unknown。
 const COVERAGE: EvidenceCoverage = Object.freeze({
-  ...completeCoverage,
+  ...completeEvidenceCoverage,
   usage: { status: "unavailable" as const, reason: "UI Message Stream frames carry no token usage" },
 });
 
@@ -250,7 +250,7 @@ const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告�
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
   return defineDirectAgent({
     name: options.name ?? "ui-message-stream",
-    coverage: COVERAGE,
+    evidenceCoverage: COVERAGE,
     tracing: options.tracing,
     spanMapper: options.spanMapper,
 

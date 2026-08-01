@@ -7,10 +7,15 @@ export type { Shared } from "./shared.ts";
 export { createNpmCliInstaller, agentBin, resolveAgentBin } from "./npm-staged.ts";
 export type { NpmCliInstallerOptions } from "./npm-staged.ts";
 
-// 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeCoverage;
+// 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeEvidenceCoverage;
 // 手写映射按实际情况声明(见 docs/feature/adapters/architecture/evidence.md)。
-export { completeCoverage } from "../scoring/coverage.ts";
-export type { CoverageStatus, CoverageDeclaration, EvidenceCoverage } from "../types.ts";
+export { completeEvidenceCoverage } from "../scoring/coverage.ts";
+export type {
+  EvidenceCoverageStatus,
+  EvidenceCoverageEntry,
+  EvidenceCoverage,
+  TurnEvidenceCoverage,
+} from "../types.ts";
 
 // 执行失败分类:`Agent.classifySendFailure` 认的结构化 envelope 与同源摘要。两轴词表
 // (FailureClass / FailureScope)与包根导出的是同一个形状——adapter

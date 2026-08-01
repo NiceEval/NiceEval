@@ -5,7 +5,7 @@
 // docs/feature/adapters/architecture/evidence.md。
 
 import { describe, expect, it } from "vitest";
-import { completeCoverage, downgradeCoverage, resolveAgentCoverage, worstCoverage } from "./coverage.ts";
+import { completeEvidenceCoverage, downgradeEvidenceCoverage, worstEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { computeVerdict } from "./verdict.ts";
 import { AssertionCollector } from "./collector.ts";
@@ -23,35 +23,40 @@ function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
     scripts: {},
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed",
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
     ...over,
   };
 }
 
-const UNKNOWN = resolveAgentCoverage(undefined);
+const UNAVAILABLE = {
+  ...completeEvidenceCoverage,
+  actions: { status: "unavailable" as const, reason: "adapter cannot observe actions" },
+  usage: { status: "unavailable" as const, reason: "adapter cannot observe usage" },
+};
 
-describe("coverage 代数", () => {
-  it("未声明 = unknown,不是 complete", () => {
-    expect(UNKNOWN.actions.status).toBe("unknown");
-    expect(UNKNOWN.usage.status).toBe("unknown");
-  });
-
-  it("Turn 只能降级,不能把 Agent 未声明的通道升格成 complete", () => {
-    const upgraded = downgradeCoverage(UNKNOWN, { actions: { status: "complete" } });
-    expect(upgraded.actions.status).toBe("unknown");
-    const downgraded = downgradeCoverage(resolveAgentCoverage(completeCoverage), {
+describe("evidence coverage 代数", () => {
+  it("Turn 只能降级,不能把 Agent unavailable 的通道升格成 complete", () => {
+    const upgraded = downgradeEvidenceCoverage(UNAVAILABLE, { actions: { status: "complete" } });
+    expect(upgraded.actions.status).toBe("unavailable");
+    const downgraded = downgradeEvidenceCoverage(completeEvidenceCoverage, {
       actions: { status: "partial", reason: "stream reconnected" },
     });
     expect(downgraded.actions).toEqual({ status: "partial", reason: "stream reconnected" });
   });
 
-  it("聚合取最差值(unknown/unavailable < partial < complete)", () => {
-    const a = resolveAgentCoverage(completeCoverage);
-    const b = downgradeCoverage(a, { usage: { status: "unavailable" } });
-    const worst = worstCoverage([a, b]);
+  it("聚合取最差值(unavailable < partial < complete)", () => {
+    const a = completeEvidenceCoverage;
+    const b = downgradeEvidenceCoverage(a, { usage: { status: "unavailable", reason: "missing usage" } });
+    const worst = worstEvidenceCoverage([a, b]);
     expect(worst.usage.status).toBe("unavailable");
     expect(worst.events.status).toBe("complete");
+  });
+
+  it("dynamic Turn input cannot declare partial without a reason", () => {
+    expect(() => downgradeEvidenceCoverage(completeEvidenceCoverage, {
+      actions: { status: "partial" },
+    } as never)).toThrow(/Turn\.evidenceCoverage\.actions requires a non-empty reason/);
   });
 });
 
@@ -69,16 +74,16 @@ describe("作用域断言的三值折叠", () => {
   ];
 
   it("正断言:非 complete 通道上找到匹配仍通过(证据存在就是证据)", async () => {
-    const ctx = ctxWith({ events: toolEvents, coverage: UNKNOWN });
+    const ctx = ctxWith({ events: toolEvents, evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.calledTool("shell"), ctx);
     expect(r.outcome).toBe("passed");
   });
 
   it("正断言:非 complete 通道上没找到记 unavailable,不判失败", async () => {
-    const ctx = ctxWith({ coverage: UNKNOWN });
+    const ctx = ctxWith({ evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.calledTool("shell"), ctx);
     expect(r.outcome).toBe("unavailable");
-    expect(r.outcome === "unavailable" && r.reason).toContain("coverage:actions=unknown");
+    expect(r.outcome === "unavailable" && r.reason).toContain("evidence-coverage:actions=unavailable");
   });
 
   it("正断言:complete 通道上没找到才是 failed", async () => {
@@ -87,28 +92,28 @@ describe("作用域断言的三值折叠", () => {
   });
 
   it("负断言:找到反例即 failed(与覆盖无关)", async () => {
-    const ctx = ctxWith({ events: toolEvents, coverage: UNKNOWN });
+    const ctx = ctxWith({ events: toolEvents, evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.notCalledTool("shell"), ctx);
     expect(r.outcome).toBe("failed");
   });
 
   it("负断言:空流 + 非 complete 通道 = unavailable(空流证明不了「没发生」)", async () => {
-    const ctx = ctxWith({ coverage: UNKNOWN });
+    const ctx = ctxWith({ evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.usedNoTools(), ctx);
     expect(r.outcome).toBe("unavailable");
   });
 
   it("上限断言:实测已超限即 failed(partial 只会少采)", async () => {
-    const ctx = ctxWith({ usage: { inputTokens: 900, outputTokens: 200 }, coverage: UNKNOWN });
+    const ctx = ctxWith({ usage: { inputTokens: 900, outputTokens: 200 }, evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.maxTokens(1000), ctx);
     expect(r.outcome).toBe("failed");
   });
 
   it("上限断言:未超限但 usage 通道非 complete = unavailable(不能按零聚合)", async () => {
-    const ctx = ctxWith({ coverage: UNKNOWN });
+    const ctx = ctxWith({ evidenceCoverage: UNAVAILABLE });
     const r = await evaluate(Scoped.maxTokens(1000), ctx);
     expect(r.outcome).toBe("unavailable");
-    expect(r.outcome === "unavailable" && r.reason).toContain("coverage:usage=unknown");
+    expect(r.outcome === "unavailable" && r.reason).toContain("evidence-coverage:usage=unavailable");
   });
 });
 
@@ -129,7 +134,7 @@ describe("判定折叠:非 optional unavailable → errored", () => {
     name: "notCalledTool(bash)",
     severity: "gate",
     outcome: "unavailable",
-    reason: "coverage:actions=partial",
+    reason: "evidence-coverage:actions=partial",
   };
   const passedGate: AssertionResult = { name: "ok", severity: "gate", outcome: "passed", score: 1 };
 

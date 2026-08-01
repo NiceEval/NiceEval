@@ -2,7 +2,7 @@
 // 每个 builder 产一个延迟 Spec,context 负责 record。规则覆盖不到的奇怪断言可直接落 events。
 //
 // 证据覆盖的三值折叠(见 docs/feature/assertions/architecture/evidence.md):
-// - 正断言:找到匹配即通过(证据存在就是证据);没找到且所需通道非 complete(含 unknown)
+// - 正断言:找到匹配即通过(证据存在就是证据);没找到且所需通道非 complete
 //   记 unavailable——「没采到」不能算成「Agent 没做」;complete 通道上没找到才是 failed。
 // - 负断言:找到反例即 failed(反例是确凿证据);没找到反例且通道非 complete 记 unavailable——
 //   空流证明不了「没发生」。
@@ -11,7 +11,7 @@
 
 import { unavailable, type EvalUnavailable, type Spec } from "./collector.ts";
 import { elidedContentPaths } from "./diff.ts";
-import type { CoverageChannel } from "./coverage.ts";
+import type { EvidenceCoverageChannel } from "./coverage.ts";
 import type {
   JsonValue,
   ScoringContext,
@@ -25,10 +25,10 @@ import type {
 // ── 覆盖折叠 ──
 
 /** 所需通道非 complete 时返回 unavailable(带机器可读 reason),complete 返回 undefined。 */
-function coverageGap(ctx: ScoringContext, channel: CoverageChannel): EvalUnavailable | undefined {
-  const c = ctx.coverage[channel];
+function coverageGap(ctx: ScoringContext, channel: EvidenceCoverageChannel): EvalUnavailable | undefined {
+  const c = ctx.evidenceCoverage[channel];
   if (c.status === "complete") return undefined;
-  return unavailable(`coverage:${channel}=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+  return unavailable(`evidence-coverage:${channel}=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
 }
 
 // ── 工具匹配小语言 ──

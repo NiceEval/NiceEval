@@ -4,7 +4,7 @@ import { createEvalContext, type ContextState } from "./context.ts";
 import { commandSucceeded, includes, makeAssertion } from "../expect/index.ts";
 import { EvalRequirementFailed } from "./control-flow.ts";
 import { deriveDiffData } from "../scoring/diff.ts";
-import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import type { Agent, AgentContext, DiffArtifact, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
@@ -25,7 +25,7 @@ function calculatorAgent(): Agent {
       ),
     }],
     installers: [],
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     async send(_input: TurnInput, ctx: AgentContext): Promise<Turn> {
       ctx.session.capture("sess-1");
       const events: StreamEvent[] = [
@@ -94,7 +94,7 @@ function scoringContext(state: ContextState) {
     scripts: state.late.scripts,
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed" as const,
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
   };
 }
@@ -142,7 +142,7 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
-      coverage: resolveAgentCoverage(completeCoverage),
+      evidenceCoverage: completeEvidenceCoverage,
       readFile: async () => undefined,
     });
     expect(result.outcome).toBe("passed");
@@ -200,7 +200,7 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
-      coverage: resolveAgentCoverage(completeCoverage),
+      evidenceCoverage: completeEvidenceCoverage,
       readFile: async () => undefined,
     });
     expect(result.outcome).toBe("failed");
@@ -224,7 +224,7 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
-      coverage: resolveAgentCoverage(completeCoverage),
+      evidenceCoverage: completeEvidenceCoverage,
       readFile: async () => undefined,
     });
     expect(result.outcome).toBe("failed");
@@ -256,7 +256,7 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
-      coverage: resolveAgentCoverage(completeCoverage),
+      evidenceCoverage: completeEvidenceCoverage,
       readFile: async () => undefined,
     });
     if (result.outcome !== "failed") throw new Error("fixture 应判 failed");
@@ -294,7 +294,12 @@ describe("createEvalContext / TestContext live state", () => {
 
   it("direct Agent 的 t.o11y 与 sandbox Agent 同一行为(摘要住宿主侧,与有没有沙箱无关)", async () => {
     const calculator = calculatorAgent();
-    const direct: Agent = { name: calculator.name, kind: "direct", send: calculator.send };
+    const direct: Agent = {
+      name: calculator.name,
+      kind: "direct",
+      evidenceCoverage: completeEvidenceCoverage,
+      send: calculator.send,
+    };
     const { context: sandboxCtx } = makeContext(calculator);
     const { context: directCtx } = makeContext(direct);
 
@@ -363,7 +368,7 @@ function scriptedAgent(turns: Turn[]): Agent & { received: TurnInput[] } {
   const agent: Agent = {
     name: "scripted",
     kind: "direct",
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input: TurnInput) {
       received.push(input);
       const turn = turns[Math.min(i, turns.length - 1)] as Turn;
@@ -518,7 +523,7 @@ function baseScoringContext(state: ContextState) {
     scripts: state.late.scripts,
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed" as const,
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
   };
 }
@@ -645,6 +650,7 @@ describe("t.send() · failed Turn 是可评分领域结果", () => {
     const agent: Agent = {
       name: "task-failed",
       kind: "direct",
+      evidenceCoverage: completeEvidenceCoverage,
       async send(): Promise<Turn> {
         return { status: "failed", events: [{ type: "error", message: "tests failed" }] };
       },

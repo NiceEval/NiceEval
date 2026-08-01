@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { AssertionCollector } from "./collector.ts";
-import { completeCoverage, resolveAgentCoverage } from "./coverage.ts";
+import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { computeVerdict } from "./verdict.ts";
 import { equals, includes, makeAssertion, similarity } from "../expect/index.ts";
@@ -29,7 +29,7 @@ function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
     scripts: {},
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed",
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
     ...over,
   };

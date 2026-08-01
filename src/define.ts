@@ -43,6 +43,7 @@ import {
   STATE_REUSE,
 } from "./state/plan.ts";
 import { Either, Schema } from "effect";
+import { assertEvidenceCoverage } from "./scoring/coverage.ts";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
@@ -56,13 +57,14 @@ export function isDefinedScoreEval(value: object): boolean {
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
 export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   if (!def.name) throw new Error(t("define.sandboxAgentNameRequired"));
+  assertEvidenceCoverage(def.evidenceCoverage, "defineSandboxAgent");
   if (def.ensure === undefined) throw new Error(t("define.sandboxAgentEnsureRequired"));
   const ensure = Array.isArray(def.ensure) ? def.ensure : [def.ensure];
   if (ensure.length === 0) throw new Error(t("define.sandboxAgentEnsureRequired"));
   return {
     name: def.name,
     kind: "sandbox",
-    coverage: def.coverage,
+    evidenceCoverage: def.evidenceCoverage,
     ensure,
     installers: def.installers ?? [],
     setup: def.setup,
@@ -77,10 +79,11 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
 export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
   if (!def.name) throw new Error(t("define.agentNameRequired"));
+  assertEvidenceCoverage(def.evidenceCoverage, "defineDirectAgent");
   return {
     name: def.name,
     kind: "direct",
-    coverage: def.coverage,
+    evidenceCoverage: def.evidenceCoverage,
     setup: def.setup,
     tracing: def.tracing,
     spanMapper: def.spanMapper,

@@ -8,7 +8,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
-import { completeCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import {
   parseOpenCodeTranscript,
   sessionIdFromOpenCodeTranscript,
@@ -70,7 +70,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
 
   return defineSandboxAgent({
     name: "opencode",
-    coverage: completeCoverage,
+    evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapGenericSpans,
     ensure,
     installers: [installer],

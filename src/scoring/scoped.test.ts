@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { AssertionCollector } from "./collector.ts";
-import { completeCoverage, downgradeCoverage, resolveAgentCoverage } from "./coverage.ts";
+import { completeEvidenceCoverage, downgradeEvidenceCoverage } from "./coverage.ts";
 import { deriveDiffData, emptyDiffData } from "./diff.ts";
 import * as Scoped from "./scoped.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
@@ -21,13 +21,13 @@ function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
     scripts: {},
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed",
-    coverage: resolveAgentCoverage(completeCoverage),
+    evidenceCoverage: completeEvidenceCoverage,
     readFile: async () => undefined,
     ...over,
   };
 }
 
-const INCOMPLETE_ACTIONS = downgradeCoverage(resolveAgentCoverage(completeCoverage), {
+const INCOMPLETE_ACTIONS = downgradeEvidenceCoverage(completeEvidenceCoverage, {
   actions: { status: "partial", reason: "stream reconnected" },
 });
 
@@ -173,7 +173,7 @@ describe("calledTool:count 数字精确 vs 谓词", () => {
   it("谓词不满足且通道非 complete:unavailable——谓词 count 从不算「确凿超出」", async () => {
     const r = await evaluate(
       Scoped.calledTool("file_read", { count: (n) => n === 1 }),
-      ctxWith({ events: twoCalls, coverage: INCOMPLETE_ACTIONS }),
+      ctxWith({ events: twoCalls, evidenceCoverage: INCOMPLETE_ACTIONS }),
     );
     expect(r.outcome).toBe("unavailable");
   });
@@ -181,7 +181,7 @@ describe("calledTool:count 数字精确 vs 谓词", () => {
   it("数字精确 count 在实测超出时是确凿失败,即使通道非 complete", async () => {
     const r = await evaluate(
       Scoped.calledTool("file_read", { count: 1 }),
-      ctxWith({ events: twoCalls, coverage: INCOMPLETE_ACTIONS }),
+      ctxWith({ events: twoCalls, evidenceCoverage: INCOMPLETE_ACTIONS }),
     );
     expect(r.outcome).toBe("failed");
   });

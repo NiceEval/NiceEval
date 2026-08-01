@@ -3,7 +3,11 @@
 
 import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SandboxAgentContext, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
-import { downgradeCoverage, resolveAgentCoverage, worstCoverage, type ResolvedCoverage } from "../scoring/coverage.ts";
+import {
+  downgradeEvidenceCoverage,
+  worstEvidenceCoverage,
+  type ResolvedEvidenceCoverage,
+} from "../scoring/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 import {
@@ -93,8 +97,8 @@ export class RunSession implements AgentSession {
   readonly events: StreamEvent[] = [];
   readonly pendingInputRequests: InputRequest[] = [];
   readonly usage: Usage = {};
-  /** 本会话累计的证据覆盖(初值 = Agent 级默认,逐轮按 Turn.coverage 降级折叠)。 */
-  coverage!: ResolvedCoverage;
+  /** 本会话累计的证据覆盖(初值 = Agent 级默认,逐轮按 Turn.evidenceCoverage 降级折叠)。 */
+  evidenceCoverage!: ResolvedEvidenceCoverage;
   /** 本会话内的轮次计数(turn 时间树 / 展示标签 s<session>/t<turn> 用)。 */
   turnCount = 0;
 }
@@ -163,10 +167,10 @@ export class SessionManager {
   readonly allEvents: StreamEvent[] = [];
   readonly usage: Usage = {};
   lastStatus: "completed" | "failed" | "waiting" = "completed";
-  /** Agent 级默认覆盖(全通道解析,未声明 = unknown)。 */
-  readonly agentCoverage: ResolvedCoverage;
+  /** Agent 级默认覆盖(六通道在 factory 构造期已验证)。 */
+  readonly agentEvidenceCoverage: ResolvedEvidenceCoverage;
   /** attempt 级累计覆盖:各轮解析后覆盖的最差值,随每次 send 折叠。 */
-  coverage: ResolvedCoverage;
+  evidenceCoverage: ResolvedEvidenceCoverage;
   /** 自动重试吸收的物理 send 失败；不混进 allEvents。 */
   readonly retryAttempts: RetryAttemptRecord[] = [];
 
@@ -187,22 +191,22 @@ export class SessionManager {
   private readonly retryBudget: AttemptRetryBudget = createAttemptRetryBudget();
 
   constructor(private readonly deps: SessionDeps) {
-    this.agentCoverage = resolveAgentCoverage(deps.agent.coverage);
-    this.coverage = this.agentCoverage;
+    this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
+    this.evidenceCoverage = this.agentEvidenceCoverage;
     this.primary = this.newSession();
   }
 
   newSession(): RunSession {
     const s = new RunSession();
     s.index = ++this.sessionCount;
-    s.coverage = this.agentCoverage;
+    s.evidenceCoverage = this.agentEvidenceCoverage;
     this.sessions.push(s);
     return s;
   }
 
-  /** 一轮的解析后覆盖:Agent 默认按 Turn.coverage 降级(只降不升)。 */
-  resolveTurnCoverage(turn: Turn): ResolvedCoverage {
-    return downgradeCoverage(this.agentCoverage, turn.coverage);
+  /** 一轮的解析后覆盖:Agent 默认按 Turn.evidenceCoverage 降级(只降不升)。 */
+  resolveTurnEvidenceCoverage(turn: Turn): ResolvedEvidenceCoverage {
+    return downgradeEvidenceCoverage(this.agentEvidenceCoverage, turn.evidenceCoverage);
   }
 
   async send(
@@ -379,9 +383,9 @@ export class SessionManager {
       accumulateUsage(session.usage, turn.usage);
     }
     // 证据覆盖:attempt / session 级聚合取各轮最差值(见 scoring/coverage.ts)。
-    const turnCoverage = this.resolveTurnCoverage(turn);
-    this.coverage = worstCoverage([this.coverage, turnCoverage]);
-    session.coverage = worstCoverage([session.coverage, turnCoverage]);
+    const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
+    this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
+    session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
     session.lastStatus = turn.status;
     this.lastStatus = turn.status;
     const reply = lastAssistantText(turn.events);

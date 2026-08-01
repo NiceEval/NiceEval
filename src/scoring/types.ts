@@ -2,14 +2,14 @@
 
 import type { Severity, SourceLoc } from "../shared/types.ts";
 import type { DerivedFacts, StreamEvent, Usage } from "../o11y/types.ts";
-import type { ResolvedCoverage } from "./coverage.ts";
+import type { ResolvedEvidenceCoverage } from "./coverage.ts";
 
 // 覆盖代数(解析 / 降级 / 聚合)住在 coverage.ts;类型经这里进聚合 facade(src/types.ts)。
 export type {
-  CoverageChannel,
-  ResolvedCoverage,
-  ResolvedCoverageChannel,
-  ResolvedCoverageStatus,
+  EvidenceCoverageChannel,
+  ResolvedEvidenceCoverage,
+  ResolvedEvidenceCoverageEntry,
+  ResolvedEvidenceCoverageStatus,
 } from "./coverage.ts";
 
 /** 值断言(expect 匹配器)。纯函数 score + 可链式改严重度 / 阈值 / optional。 */
@@ -86,7 +86,7 @@ export type AssertionResult =
     })
   | (AssertionBase & {
       outcome: "unavailable";
-      /** 机器可读原因,如 "judge-model-unresolved"、"coverage:actions=partial"。 */
+      /** 机器可读原因,如 "judge-model-unresolved"、"evidence-coverage:actions=partial"。 */
       reason: string;
       /** 证据通道的状态或异常摘要；judge 调用失败时用于说明 HTTP 状态或异常。 */
       evidence?: string;
@@ -200,7 +200,7 @@ export interface ScoringContext {
   readonly usage: Usage;
   readonly status: "completed" | "failed" | "waiting";
   /** 当前作用域(turn / session / attempt)解析后的证据覆盖;断言按它做三值折叠(见 scoped.ts)。 */
-  readonly coverage: ResolvedCoverage;
+  readonly evidenceCoverage: ResolvedEvidenceCoverage;
   /** 读沙箱里某文件的最终内容(judge / file 断言用)。 */
   readFile(path: string): Promise<string | undefined>;
 }
