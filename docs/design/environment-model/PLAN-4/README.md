@@ -1,6 +1,6 @@
 # PLAN-4:Requirement、Base Case 与 Ensure(不推荐)
 
-**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [PLAN-1](../PLAN-1/README.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [PLAN-5](../PLAN-5/README.md) · [Lifecycle](lifecycle.md) · [DECISION](../DECISION.md)
+**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [PLAN-1](../PLAN-1/README.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [PLAN-11](../PLAN-11/README.md) · [Lifecycle](lifecycle.md)
 
 **方案正文**:[Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 
@@ -88,7 +88,7 @@ C8、C9 与 C10 的完整调用分别见[实验起点](use-case/实验起点.md)
 ### 和其它方案的关系
 
 - **vs [PLAN-3](../PLAN-3/README.md)**:本方案允许 Experiment 提供 Base,也允许 Eval 只提供可移植 Ensure。
-- **vs [PLAN-5](../PLAN-5/README.md)**:PLAN-5 把普通默认 case 与条件基底分开,并把单数 Requirement 扩成集合。
+- **vs [PLAN-11](../PLAN-11/README.md)**:PLAN-11 把普通默认 case 与条件基底分开,并把单数 Requirement 扩成集合。
 
 ### 落地路线
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560"
      role="img" aria-labelledby="baseTitle baseDesc">
-  <title id="baseTitle">PLAN-5 如何为每条 Eval 选择唯一 Base Case</title>
+  <title id="baseTitle">PLAN-11 如何为每条 Eval 选择唯一 Base Case</title>
   <desc id="baseDesc">Runner 先判断 Eval 是否自带完整环境，再判断 Experiment 是否声明条件基底；四种组合分别选择 SandboxSpec 默认 case、Experiment 条件基底、Eval Base 或精确 profile 的融合 case。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"

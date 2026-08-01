@@ -1,6 +1,6 @@
 # PLAN-10：统一 Sandbox Layer、固定 root-first 顺序与逐配对 root（候选）
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md)
 
 **方案正文**：[Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 

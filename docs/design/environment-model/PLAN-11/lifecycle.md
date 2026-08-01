@@ -1,4 +1,4 @@
-# PLAN-5 —— Lifecycle
+# PLAN-11 —— Lifecycle
 
 **相关文档**:[方案](README.md) · [Library](library.md) · [Architecture](architecture.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
 
@@ -35,7 +35,7 @@ Agent CLI 可以预装在任意一种 Base Case 中。
 
 ## Base 选择
 
-![PLAN-5 为每条 Eval 选择唯一 Base Case](assets/base-selection.svg)
+![PLAN-11 为每条 Eval 选择唯一 Base Case](assets/base-selection.svg)
 
 Agent、Requirement、Hook、Fixture 与状态都不参与这个优先级。
 Base 选择只决定从哪份完整环境启动,不能删除任何 owner 的后续检查。
@@ -177,7 +177,7 @@ reuse state 必须位于 workdir 外;Eval teardown 只能释放自己的 Fixture
 表里的“启动环境”是一份完整 Sandbox Case。
 它可以由 Compose、Dockerfile、image、template 或 snapshot 兑现,不是只能写成 template。
 
-| Case | 输入里有哪些环境起点 | PLAN-5 实际启动哪个环境 | 其它条件怎样进入 |
+| Case | 输入里有哪些环境起点 | PLAN-11 实际启动哪个环境 | 其它条件怎样进入 |
 |---|---|---|---|
 | C1 评估环境较重 | Eval 自带 Compose 或 Dockerfile;SandboxSpec 可以另有默认 case | 当前 profile 有 `environments[profile]` 时用该预制 Eval 环境,否则按 source 构建并启动 Eval 自带环境;默认 case 不启动 | 启动后验证题目条件,再 Ensure 实验与 Agent 条件 |
 | C2 实验环境较重 | Eval 不带 Base;Experiment 只声明可安装条件 | SandboxSpec 默认 case;没有默认配置时用 Provider 中性 case | 每条 fresh Attempt 检查并补齐实验与 Agent 条件 |
@@ -192,6 +192,6 @@ reuse state 必须位于 workdir 外;Eval teardown 只能释放自己的 Fixture
 | C10 混合批次,没有条件基底 | 一部分 Eval 自带 Base,其余没有;SandboxSpec 有默认 case | 自带 Base 的 Eval 启动自己的环境;其余 Eval 启动默认 case | 同一个 SandboxSpec 服务两组 Eval,但运行实例不互用 |
 | C10 混合批次,有条件基底 | 一部分 Eval 自带 Base,其余没有;Experiment 另有条件基底 | 自带 Base 的 Eval 启动对应融合 case;其余 Eval 启动 Experiment 条件基底 | SandboxSpec 默认 case 不制造冲突;缺融合表项时启动前报错 |
 
-这张表也是 PLAN-5 相对 PLAN-4 的核心差异。
+这张表也是 PLAN-11 相对 PLAN-4 的核心差异。
 SandboxSpec 默认 case 只作 fallback。
 只有明确绑定 Experiment Requirement 的条件基底,才会与 Eval Base 触发融合。

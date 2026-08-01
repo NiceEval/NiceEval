@@ -1,6 +1,6 @@
 # PLAN-2:单 template 与统一 Layer(不推荐)
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 
 ## 方案摘要
 
@@ -65,4 +65,4 @@ Eval environment、Experiment 单 template 和按 profile 的 `templates` 表竞
 
 - PLAN-1 按 Environment 与 Provision 分工，并保留有序安装；本方案把来源差异和顺序一并消去。
 - PLAN-3 恢复完整 Sandbox Case，并把普通 Addon 与 AgentProvisioner 分开；这是本方案没有保住的两类领域义务。
-- PLAN-4 与 PLAN-5 先建模 Requirement，再区分 Base Case 与 Ensure；本方案只按声明来自哪一侧分配同一个槽位。
+- PLAN-4 与 PLAN-11 先建模 Requirement，再区分 Base Case 与 Ensure；本方案只按声明来自哪一侧分配同一个槽位。

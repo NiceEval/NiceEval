@@ -4,7 +4,7 @@
 
 **决策主题**:[README](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) ·
 [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [PLAN-4](../PLAN-4/README.md) ·
-[PLAN-5](../PLAN-5/README.md) · [DECISION](../DECISION.md)
+[PLAN-11](../PLAN-11/README.md)
 
 ## 方案定位
 

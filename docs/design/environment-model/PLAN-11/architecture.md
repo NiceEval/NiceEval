@@ -1,4 +1,4 @@
-# PLAN-5 —— Architecture
+# PLAN-11 —— Architecture
 
 **相关文档**:[方案](README.md) · [Library](library.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
 
@@ -327,7 +327,7 @@ BuildKey 构建缓存、prepare single-flight 与活 Sandbox 复用是三套独�
 三方检查和安装在这份实例中完成;SandboxSpec teardown 也逐 Attempt 执行。
 
 Experiment 状态由独立的 ExperimentStateLifecycle 载入和回存,不复用 SandboxSpec Hook 相位。
-PLAN-5 把 load 放在 Eval / Experiment Ensure 与 AgentProvisioner 就位之后,把 save 放在 Agent runtime teardown 与 Eval teardown 之间。
+PLAN-11 把 load 放在 Eval / Experiment Ensure 与 AgentProvisioner 就位之后,把 save 放在 Agent runtime teardown 与 Eval teardown 之间。
 load 可以使用 Agent CLI,但不能依赖尚未执行的 Agent runtime setup。
 状态载入后的三方最终屏障负责发现状态恢复造成的环境破坏。
 fresh state 可以写 workdir,因为 save 在可能清理 turn 前 Fixture 的 Eval teardown 之前读取它。

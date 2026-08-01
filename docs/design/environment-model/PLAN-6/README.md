@@ -1,6 +1,6 @@
 # PLAN-6:唯一 Environment 起点,双方在既有 setup 层准备(被 PLAN-7 取代)
 
-**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
+**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md)
 
 **方案正文**:[Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 
@@ -76,9 +76,9 @@ template 名或 manifest 不能代替实际检查。
 第一期不引入通用依赖 DAG 和资源调度器。
 需要组合多个步骤时使用显式顺序;只有领域 helper 内部知道安全并行时,才由 helper 自己并行。
 
-## 相比 PLAN-5 删除的负担
+## 相比 PLAN-11 删除的负担
 
-PLAN-5 要求作者或实现同时理解这些概念:
+PLAN-11 要求作者或实现同时理解这些概念:
 
 - Requirement 与 Base Case 是“要求”和“兑现方式”。
 - 默认 Base、条件 Base、Eval Base 与融合 case 的分档。

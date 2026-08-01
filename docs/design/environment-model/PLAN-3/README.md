@@ -1,6 +1,6 @@
 # PLAN-3:完整 Sandbox Case 与 Experiment Addon(不推荐)
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 
 ## 方案摘要
 
@@ -83,4 +83,4 @@ Experiment 不提供 Base，只提供 Addon。
 
 - PLAN-2 把三者压成单 template 与统一 Layer；本方案恢复被压掉的 Case 与 Agent 义务。
 - PLAN-4 把 Eval 与 Experiment 都提升成 Requirement、Base Case 与 Ensure；本方案是其中“Eval 总有 Base、Experiment 总是 Ensure”的子集。
-- PLAN-5 再区分普通默认起点与条件基底；本方案只拥有普通默认起点和 Eval Case。
+- PLAN-11 再区分普通默认起点与条件基底；本方案只拥有普通默认起点和 Eval Case。

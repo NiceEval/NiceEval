@@ -1,4 +1,4 @@
-# PLAN-5 用例覆盖
+# PLAN-11 用例覆盖
 
 契约单源始终在[方案](../README.md)、[Library](../library.md)、[Architecture](../architecture.md)与[Lifecycle](../lifecycle.md)。
 本目录只把根 [CASES](../../CASES.md) 的输入逐项代入推荐方案,不复制类型定义。

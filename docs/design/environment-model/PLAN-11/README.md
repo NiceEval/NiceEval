@@ -1,6 +1,6 @@
-# PLAN-5:默认 case、条件基底与 Requirement 集合(不推荐)
+# PLAN-11:默认 case、条件基底与 Requirement 集合(不推荐)
 
-**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [PLAN-1](../PLAN-1/README.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [DECISION](../DECISION.md)
+**相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [PLAN-1](../PLAN-1/README.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [PLAN-4](../PLAN-4/README.md) · [PLAN-6](../PLAN-6/README.md) · [PLAN-7](../PLAN-7/README.md) · [PLAN-8](../PLAN-8/README.md) · [PLAN-9](../PLAN-9/README.md) · [PLAN-10](../PLAN-10/README.md)
 
 **方案正文**:[Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md)
 

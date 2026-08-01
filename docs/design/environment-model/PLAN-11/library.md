@@ -1,4 +1,4 @@
-# PLAN-5 —— Library 候选形状
+# PLAN-11 —— Library 候选形状
 
 **相关文档**:[方案](README.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
 
@@ -144,7 +144,7 @@ AgentProvisioner 没有这两个字段,不能贡献 Base 或融合表项。
 ## Experiment 状态保持独立
 
 外部实验状态既不是 Requirement install,也不是早期 `SandboxSpec.setup()`。
-PLAN-5 为需要在 Agent CLI 就位后载入的状态保留独立相位:
+PLAN-11 为需要在 Agent CLI 就位后载入的状态保留独立相位:
 
 ```typescript
 interface StateCheckpoint {

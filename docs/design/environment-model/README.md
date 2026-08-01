@@ -13,7 +13,7 @@ Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
 本主题保留完整 Sandbox Case 与 Agent Ensure 的领域义务。
 候选必须保留 SandboxTemplate、完整 Sandbox Case 与运行中的 Sandbox 的边界，不要求普通作者学习 materializer 注册或通用 Requirement/Base 组合语言。
 
-十个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture、Lifecycle 与 Use Case。
+十一个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture、Lifecycle 与 Use Case。
 [Cases](CASES.md) 固定共同输入和验收结果;候选用例只说明各自怎样覆盖,不能改写 Case 来降低要求。
 
 **相关文档**:
@@ -24,10 +24,9 @@ Eval、Experiment 与 Agent 都可能需要准备同一个主 Sandbox。
 [PLAN-2](PLAN-2/README.md) ·
 [PLAN-3](PLAN-3/README.md) ·
 [PLAN-4](PLAN-4/README.md) ·
-[PLAN-5](PLAN-5/README.md) ·
 [PLAN-6](PLAN-6/README.md) ·
 [PLAN-7](PLAN-7/README.md) ·
 [PLAN-8](PLAN-8/README.md) ·
 [PLAN-9](PLAN-9/README.md) ·
 [PLAN-10](PLAN-10/README.md) ·
-[DECISION](DECISION.md)
+[PLAN-11](PLAN-11/README.md)
