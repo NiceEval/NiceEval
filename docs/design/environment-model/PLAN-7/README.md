@@ -1,4 +1,4 @@
-# PLAN-7:唯一 Environment 起点与普通文件传输(推荐)
+# PLAN-7:唯一 Environment 起点与普通文件传输(被 PLAN-8 取代)
 
 **相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
 

@@ -1,4 +1,4 @@
-# PLAN-6:唯一 Environment 起点,双方在既有 setup 层准备(推荐)
+# PLAN-6:唯一 Environment 起点,双方在既有 setup 层准备(被 PLAN-7 取代)
 
 **相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
 

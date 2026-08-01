@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -20,25 +20,25 @@ Provider 不能合并两个起点产物,但 `environments[profile]` 可以选择
 EvalDef 可以携带 profile 或 folder-local source。
 该值可以由 Eval 作者声明,也可以由 benchmark adapter 从 task package 派生。
 
-只有当前 SandboxSpec 的 `environments` 表或 materializer 能把它变成 Provider-native case。
+只有当前选中的 Provider 能把它变成 Provider-native Case。
 因此 source 不是 Eval Base,adapter 也不能选择 Provider。
 
 ## Provider 不能合并两个起点
 
-Experiment 默认 template 可能预装昂贵工具,Eval source 可能携带题意。
+Experiment fallback 可能预装昂贵工具,Eval source 可能携带题意。
 Provider 没有通用原语把两份 image、template、snapshot 或 Compose 合并。
 
 可行路径只有三类:
 
 - 按 Eval source 构建并启动 Sandbox Case,再执行 Experiment sandbox setup。
-- Eval 没有 source 时,从默认 case 启动,再执行 EvalDef setup。
+- Eval 没有 source 时,从 Experiment fallback 启动,再执行 EvalDef setup。
 - 现场组合不可行时,在 `environments[profile]` 提供预制完整 case。
 
 第三条复用既有覆盖表,不新建融合表。
 
 ## Setup 有 owner 与顺序
 
-SandboxSpec setup、EvalDef setup 与 Agent setup 已有不同的变化轴、归因与 teardown。
+Experiment sandbox setup、EvalDef setup 与 Agent setup 已有不同的变化轴、归因与 teardown。
 把它们压进通用 Requirement 数组会丢掉这些领域边界。
 
 第一期按固定层次和声明顺序串行。
@@ -55,7 +55,7 @@ plain setup function 可以始终执行,但不能声称拥有预装命中语义�
 
 ## 身份分属两层
 
-SandboxSpec、默认 case、Experiment setup helper 与 Agent 属于 Run 级配置。
+Provider 选择、Experiment fallback、Experiment setup helper 与 Agent 属于 Run 级配置。
 Eval Environment、所选 case 与 Eval setup helper 属于逐 Eval 身份。
 
 函数体不自动参与哈希。

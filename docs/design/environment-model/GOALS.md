@@ -1,10 +1,10 @@
-**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-决定 Eval Environment、Experiment SandboxSpec 与三层 setup 怎样形成最终 Sandbox。
+决定 Eval Environment、Experiment 的 Sandbox 配置与三层 setup 怎样形成最终 Sandbox。
 范围覆盖起点解析、准备动作归属、真实检查、身份与错误记录。
 
 跨 Attempt 状态复用见 [Experiment Speed](../experiment-speed/README.md),多容器运行义务见 [多容器环境](../multi-container-environments/README.md)。
@@ -21,15 +21,15 @@
 
 ## 需求
 
-1. Eval 自带 profile/source 时,SandboxSpec 必须兑现它;默认 template 不能静默替代题目环境。
-2. Eval 不带 Environment 时,SandboxSpec 默认 image/template/snapshot 可以成为起点。
+1. Eval 自带 profile/source 时,当前 Provider 必须兑现它；Experiment fallback 不能静默替代题目环境。
+2. Eval 不带 Environment 时,Experiment 的 Provider-native fallback 可以成为起点。
 3. 外部 benchmark 的 task package 可以通过 adapter 批量迁移,不要求逐题复制环境声明。
-4. Experiment sandbox setup 必须作用于最终选中的主 Sandbox,无论它来自 Eval source 还是默认 case。
-5. EvalDef setup 必须作用于最终选中的主 Sandbox,无论默认 case 由哪个 Experiment 选择。
+4. Experiment sandbox setup 必须作用于最终选中的主 Sandbox,无论它来自 Eval source 还是 fallback。
+5. EvalDef setup 必须作用于最终选中的主 Sandbox,无论 fallback 由哪个 Experiment 选择。
 6. Agent 安装保持独立 owner,在 Environment 与题目准备完成后执行。
-7. 现场无法组合时,SandboxSpec 可以按 profile 提供完整预制 case;Runner 不合并两个起点。
+7. 现场无法组合时,Experiment 可以按 profile 提供完整预制 Case；Runner 不合并两个起点。
 8. setup 的 identity、activity、失败 phase 与可验证 helper 的实际 facts 必须进入正确记录。
-9. 普通作者只需理解 Environment、Experiment sandbox setup、Eval setup 与 Agent setup。
+9. 普通作者只需理解 Environment、Provider 选择、运行中的 Sandbox 与三个有主 setup 层。
 10. 起始文件与测试文件使用同一套普通 Sandbox API；相对 `send` 的顺序决定可见性，Runner 自动记录本地 transfer manifest。
 11. 每题可以完整重复自己的定义，不要求用数据集 adapter 或共享 Eval 工厂消除重复。
 

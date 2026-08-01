@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [DECISION](DECISION.md)
 
 # 环境模型 Cases
 
@@ -9,9 +9,9 @@
 
 下面十一个 Case 都遵守同一组底线:
 
-- Eval、SandboxSpec 与 Agent 三方声明在 Environment 解析前都存在;Agent 不因预装在 template 中而失去独立检查。
-- 每条 Attempt 由 SandboxSpec 解析一个完整 Sandbox Case;Eval source/profile 与 Provider 实现的边界必须明确。
-- SandboxSpec setup、EvalDef setup 与 Agent setup 按 owner 分层执行,任一来源不能覆盖另一个来源。
+- Eval、Experiment Sandbox 配置与 Agent 三方声明在 Environment 解析前都存在;Agent 不因预装在 template 中而失去独立检查。
+- 每条 Attempt 由当前 Provider 解析一个完整 Sandbox Case；Eval source/profile 与 Provider 实现的边界必须明确。
+- Experiment sandbox setup、EvalDef setup 与 Agent setup 按 owner 分层执行,任一来源不能覆盖另一个来源。
 - image、template、snapshot、产物名与受管 manifest 都不能单独代替实际检查。
 - 可预装条件由领域 helper 检查实际状态,并在安装后复检。
 - Agent 安装保留平台探测、宿主侧 payload 准备、安装模式和逐 Attempt 事实,不能被较弱的通用安装接口吞掉。
@@ -47,7 +47,7 @@ Experiment sandbox setup 作用于每道题最终的主 Sandbox;离线 payload �
 **输入:**一个 Experiment 同时需要证书、内部 registry、运行时和工具。
 它们存在语义依赖、共享资源冲突,后安装项还可能破坏先安装项。
 
-**验收:**作者按阅读顺序写 SandboxSpec setup 链。
+**验收:**作者按阅读顺序写 Experiment sandbox setup 链。
 第一期保守串行;只有领域 helper 掌握内部独立性时才自行并行,不要求作者维护依赖图与资源图。
 
 ## C5:预装稳定条件
@@ -71,30 +71,30 @@ state load 在工具和 Agent CLI 就位后运行,并有独立 identity、activi
 **输入:**跨 Attempt 累积状态本身就是实验变量,多条 Attempt 需要在同一复用窗口内观察同一份活状态。
 
 **验收:**复用必须显式开启并限制有序实验的并发。
-每个窗口有独立身份与载入、回存记录;SandboxSpec、EvalDef 与 Agent setup 按各自窗口或 Attempt 语义执行。
+每个窗口有独立身份与载入、回存记录;Experiment sandbox、EvalDef 与 Agent setup 按各自窗口或 Attempt 语义执行。
 
 ## C8:Experiment template 主导起点
 
 **输入:**Experiment 已有一个预制 template,它预期满足实验条件。
 某个 Eval 没有 environment source,但仍要 checkout 仓库或安装项目依赖。
 
-**验收:**该 Attempt 从 SandboxSpec 默认 template 创建 Sandbox,先运行 SandboxSpec setup,再运行 EvalDef setup。
+**验收:**该 Attempt 从 Experiment fallback 创建 Sandbox,先运行 Experiment sandbox setup,再运行 EvalDef setup。
 任一 setup 失败都在 Agent 开始前归入自己的 phase。
 
 ## C9:Eval source 需要预制组合实现
 
-**输入:**Eval 提供题目 source,Experiment 默认 template 预装实验条件,两者不能在运行时直接叠加。
-当前 SandboxSpec 覆盖多个 environment profile。
+**输入:**Eval 提供题目 source,Experiment fallback 预装实验条件,两者不能在运行时直接叠加。
+当前 Experiment Sandbox 配置覆盖多个 environment profile。
 
-**验收:**Runner 不隐式回退到默认 template,也不合并两个起点。
-SandboxSpec 可以按 profile 提供已经组合双方条件的完整 case;缺失实现时明确 skip,启动后仍执行 SandboxSpec 与 EvalDef setup。
+**验收:**Runner 不隐式回退到普通 fallback,也不合并两个起点。
+Experiment 可以按 profile 提供已经组合双方条件的完整 case;缺失实现时明确 skip,启动后仍执行 Experiment sandbox 与 EvalDef setup。
 
 ## C10:混合批次
 
 **输入:**同一批 Eval 中,一部分自带 Compose 或其它 Environment source,另一部分没有。
-SandboxSpec 同时配置默认起点、materializer 与可选 profile 覆盖。
+Experiment 同时配置 fallback、Provider Environment 支持与可选 profile 覆盖。
 
-**验收:**有 Environment 的 Eval 使用 profile 覆盖或 materializer,其余 Eval 使用默认起点。
+**验收:**有 Environment 的 Eval 使用 profile 覆盖或 Provider 规划,其余 Eval 使用 fallback。
 普通默认起点不覆盖题目 source,也不制造额外冲突。
 
 ## C11:逐题自包含的隐藏判分
@@ -116,3 +116,4 @@ SandboxSpec 同时配置默认起点、materializer 与可选 profile 覆盖。
 | PLAN-5 | [默认与条件基底分档](PLAN-5/use-case/README.md) | [Lifecycle](PLAN-5/lifecycle.md) |
 | PLAN-6 | [唯一 Environment 起点与双侧 setup](PLAN-6/use-case/README.md) | [Lifecycle](PLAN-6/lifecycle.md) |
 | PLAN-7 | [单一起点与受管 Eval 文件](PLAN-7/use-case/README.md) | [Lifecycle](PLAN-7/lifecycle.md) |
+| PLAN-8 | [Environment 作者面与三层 Sandbox 准备](PLAN-8/use-case/README.md) | [Lifecycle](PLAN-8/lifecycle.md) |
