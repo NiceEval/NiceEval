@@ -294,7 +294,10 @@ export class StateWindowTransitionFailure extends Data.TaggedError("StateWindowT
 export class ExperimentStateSequenceFailure extends Data.TaggedError("ExperimentStateSequenceFailure")<{
   readonly activity: StateTransferActivity;
   readonly failure: StateFailure;
-}> {}
+}> {
+  /** State 序列失去已知 head 后，剩余 attempt 不能继续从未知状态派发。 */
+  readonly class = Object.freeze({ retryable: false as const, scope: "experiment" as const });
+}
 
 type LoadDecision =
   | { readonly _tag: "Start" }

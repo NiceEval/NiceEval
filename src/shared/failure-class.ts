@@ -47,6 +47,14 @@ export type AttemptFailureClassifier = (failure: AttemptFailureInfo) => FailureC
 const FAILURE_CLASS_TAG = "NiceevalClassifiedError";
 
 /**
+ * 少数框架内部领域错误必须保留自己的 `_tag` 供 typed failure 分支识别，同时携带同一套空间轴。
+ * 这里仍按 `_tag` + `class` 的纯数据形状识别，不依赖类身份；当前只有 State 序列连续性错误。
+ */
+function isClassifiedFailureTag(tag: unknown): boolean {
+  return tag === FAILURE_CLASS_TAG || tag === "ExperimentStateSequenceFailure";
+}
+
+/**
  * 从任意 per-attempt 阶段抛出:全实验剩余 attempt 同因必死,停止派发。
  * 携带 `{ retryable: false, scope: "experiment" }`,message 原样走完反馈流与
  * `dispatch-halted` 诊断——把它写成「现象 + 下一步」的修复提示。
@@ -85,7 +93,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined {
   for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
     if (typeof current === "object") {
       const candidate = current as { _tag?: unknown; class?: unknown };
-      if (candidate._tag === FAILURE_CLASS_TAG && isFailureClass(candidate.class)) return candidate.class;
+      if (isClassifiedFailureTag(candidate._tag) && isFailureClass(candidate.class)) return candidate.class;
     }
     current = causeOf(current);
   }

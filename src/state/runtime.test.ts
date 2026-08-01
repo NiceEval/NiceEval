@@ -2,6 +2,7 @@
 
 import { Cause, Effect, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
+import { attemptFailureDeclaration } from "../runner/attempt.ts";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import type { CommandResult, SuccessfulCommandResult } from "../sandbox/types.ts";
 import { defineExperimentState } from "./definition.ts";
@@ -123,6 +124,20 @@ describe("Experiment State runtime", () => {
     const record = await Effect.runPromise(window.finalize(environment, succeeded));
     expect(saves).toBe(0);
     expect(record.save).toEqual({ outcome: "skipped", reason: "load-failed", durationMs: 0 });
+  });
+
+  it("连续性失败经 runner 分类链关闭本 Experiment，原始 transfer failure 不越级止损", async () => {
+    const window = await Effect.runPromise(ExperimentStateWindow.make(rolling({
+      async load() { throw new Error("state store is unavailable"); },
+      async save() { return { identity: {}, digest: digestUnavailable, facts: {} }; },
+    }), "experiment/fixture", "window-scope"));
+
+    const failure = await sequenceFailure(window.load(environment));
+    expect(attemptFailureDeclaration(undefined, "state.load", failure)).toMatchObject({
+      class: { retryable: false, scope: "experiment" },
+      phase: "state.load",
+    });
+    expect(attemptFailureDeclaration(undefined, "state.load", failure.failure)).toBeUndefined();
   });
 
   it("pinned revision mismatch 保留完整 contract evidence", async () => {
