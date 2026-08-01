@@ -6,6 +6,9 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 本候选把静态可判定的约束前移到调用点。
 运行时校验继续覆盖 JavaScript、类型断言、动态导入和 JSON 往返，不再承担 TypeScript 作者面的第一道反馈。
 
+作者因此按顺序遇到三级反馈：编辑器里的 tsc 诊断、加载文件时的守卫消息、discovery 之后动资源之前的 link 结果。
+三级各自负责哪一类事实见 [Library](library.md#三级反馈)，一次改动依次撞上三级的走查见 [三级反馈走查](use-case/three-levels.md)。
+
 ## 解决的问题
 
 当前目标契约中有四种重复模式：
@@ -36,6 +39,10 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 - **关系泛型**：键冲突、字段存在性和值类别由输入泛型计算。
 - **不可伪造品牌**：只允许 factory 产生的定义带模块私有 `unique symbol`。
 
+排除一个字段有两种写法，选哪种看这个字段会不会被读回。
+`never` 让消费侧读到 `string | undefined`，用于 union 成员的负字段；模块私有诊断类型让错误文本携带原因，用于不会被读回的作者输入字段。
+两种写法的诊断对照见 [Library](library.md#禁止字段的两种写法)。
+
 ## 候选范围
 
 | 契约族 | 候选改动 | 作者得到的反馈 |
@@ -49,7 +56,7 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | Report charts | `x`、`y`、`series`、`point`、`sort.field` 使用按值类型过滤后的键 | 不存在或不可绘制的静态字段不能编译 |
 | Custom Sandbox case | `groupKeep` 推导 `group-keep`；作者不能重复声明该 capability | 不再产生两处声明不一致的组合 |
 | Theme / Report definition | factory 产物增加模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
-| Sandbox recipe | template factory 与 Provider 原子绑定；phase context 精确分型 | 单个 recipe 的非法形状在调用点失败；跨 pair 的 1×1 / 0×0 在 linker 一次报全 |
+| Sandbox layer | template factory 与 Provider 原子绑定；kind 品牌区分 template-bearing 与 command-only | 单个 layer 的非法形状在调用点失败；跨 pair 的 1×1 / 0×0 在 linker 一次报全 |
 
 精确类型与调用形状见 [Library](library.md)。
 阶段边界、源码改动面和验收顺序见 [Architecture](architecture.md)。
@@ -58,14 +65,19 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 
 不能把“TypeScript 没法跨模块证明”当成把错误拖进 Sandbox 的理由，也不能为了让泛型看见整个矩阵，反过来要求 Experiment 静态 import 所有 Eval。
 
-PLAN-9 中一个 Eval 的 `composeSandbox(...)` 与另一个 Experiment 的 `e2bSandbox(...)` 各自在本文件里都合法；是否冲突还取决于 discovery、Experiment selector 与 CLI filter 形成的实际 pair。普通 `tsc` 在两个独立定义的调用点无法证明这条 XOR。
+一个 Eval 的 `dockerComposeSandbox(...)` 与另一个 Experiment 的 `e2bSandbox(...)` 各自在本文件里都合法；是否冲突还取决于 discovery、Experiment selector 与 CLI filter 形成的实际 pair。普通 `tsc` 在两个独立定义的调用点无法证明这条 XOR。
 
 因此边界固定为两层：
 
-- TypeScript 拒绝单个声明内可知的错误：伪造 recipe、非法 factory options、phase context 错配，以及在已有 recipe 上追加 template / Provider。
+- TypeScript 拒绝单个声明内可知的错误：伪造 layer、非法 factory options、kind 品牌错配，以及在已有 layer 上追加 template / Provider。
 - discovery 后的纯 linker 穷举实际 Eval × Experiment pair；Sandbox Agent 的 1×1 是 `sandbox.template-conflict`，0×0 是 `sandbox.template-missing`。`niceeval check` 与正常运行消费同一个 linker，任何 Provider 网络、fingerprint、build 或 Sandbox create 都在它之后。
 
 这仍是 author-time feedback，只是属于项目级 configuration link，而不是单文件 TypeScript inference。真正的生命周期 command 只负责 shell 能否成功，不再承担 template 唯一性检查。
+
+把这条 XOR 前移到 `tsc` 的两种办法都不采用。
+值引用 selector（`evals` 接受 Eval 定义值，kind 用条件类型互斥）给“选哪些 eval”开了第二种语义，与 CLI Model 的 id 前缀选择和逐题自包含相抵。
+codegen manifest（discovery 生成 eval id 到 kind 的字面量表，模板字面量类型对前缀 selector 求值）引入生成物新鲜度环，与 tsx 直跑、零构建的形态相抵。
+资源前 linker 因此是这条约束的唯一权威；只有当 `niceeval check` 的反馈延迟成为真实痛点时才重启裁决。
 
 ## 运行时校验仍是契约
 
@@ -82,6 +94,10 @@ JavaScript、`unknown`、动态 import 和显式类型断言仍可能绕过静�
 
 类型系统不负责证明网络可达、文件存在、请求 option 真实存在、数组元素跨行一致或 `samples <= total`。
 这些事实依赖运行时值，继续由现有边界校验。
+
+静态无法证明的动态数据走显式解析入口，不为宽对象保留 overload。
+JSON、数据库与外部 API 得到的行经 `parseEvidenceRow()` 完成同一条证明，普通的写错对象因此不会顺着宽签名逃回运行时。
+两个入口的分工见 [Library](library.md#动态数据经过独立解析函数)。
 
 ## 迁移纪律
 
@@ -101,11 +117,12 @@ NiceEval 处于 beta，本候选不以保留宽类型别名为默认目标。
 
 ## 待裁决分歧
 
-1. **作者输入的公开名字。** 候选倾向导出 `EvalInput`、`ScoreEvalInput` 与 `ExperimentInput`，让 `EvalDefinition` 和 `ExperimentDefinition` 专指 factory 产物；另一种选择是保留 `EvalDef` / `ExperimentDef` 名字，但彻底移除派生字段。
-2. **动态 TypeScript 数据的显式入口。** 候选倾向让无法静态证明含 `MetricValue` 的对象先经过独立解析函数，再进入 `evidenceRow()`；另一种选择是为宽对象保留 overload，但这会让普通错误对象也逃回运行时。
-3. **关系泛型的错误文本。** 候选倾向使用带冲突键名的诊断辅助类型；若 TypeScript 展示结果过长，则退回 `never` 约束，并由类型测试锁定最小可读反馈。
+**作者输入的公开名字。** 候选倾向导出 `EvalInput`、`ScoreEvalInput` 与 `ExperimentInput`，让 `EvalDefinition` 和 `ExperimentDefinition` 专指 factory 产物。
+另一种选择是保留 `EvalDef` / `ExperimentDef` 名字，只把派生字段移出去。
+这条裁决决定要改多少篇 Feature 文档与多少处导出，本候选进入 `docs/feature/` 之前必须先定。
 
 ## 入口
 
 - [Library](library.md) —— 各公共类型的候选形状与正反调用。
 - [Architecture](architecture.md) —— 阶段所有权、改动落点、兼容边界与验收矩阵。
+- [三级反馈走查](use-case/three-levels.md) —— 一个作者依次撞上类型、装载与 link 三层反馈。

@@ -3,6 +3,53 @@
 本页只定义静态作者契约。
 业务字段继续以 Eval、Experiment、Reports、Sandbox 和 Adapters 的 Feature 契约为单源，本候选只重构字段归属与类型关系。
 
+## 三级反馈
+
+同一条不变量在三个位置说同一句话，区别只是作者什么时候看到它。
+
+| 级别 | 出现时机 | 产出者 | 形态 |
+|---|---|---|---|
+| 类型反馈 | 编辑器里写下这一行；`pnpm run typecheck` | TypeScript | tsc 诊断，光标停在出错属性上 |
+| 装载期反馈 | 加载配置、Eval 与 Experiment 文件时 | `define*` 与 `assert*` 运行时守卫 | 抛出的错误消息，点名字段与下一步 |
+| link 反馈 | discovery 与 selector 完成后，任何 Provider 动作之前 | 跨定义 linker | 按配对聚合的错误码与计数 |
+
+每个契约族下面按同一顺序给三段：合法调用、被拒绝的调用连同它的 tsc 诊断、绕过类型后的运行时反馈。
+诊断文本按 `tsc --noEmit --strict --pretty false` 的输出抄录。
+运行时文本是同一条不变量在守卫处的消息。
+
+## 禁止字段的两种写法
+
+作者不该填写的字段有两种排除方式，按“这个字段会不会被读回”选：
+
+| 场景 | 写法 | 得到的诊断 |
+|---|---|---|
+| 只作输入，字段不会从这个类型上被读回 | 模块私有诊断类型 | `Type 'string' is not assignable to type 'IdComesFromFilePath'.` |
+| union 成员的负字段，消费侧要读同名字段 | `never` | `Type 'string' is not assignable to type 'undefined'.` |
+
+诊断类型把原因写进类型名，读者不必回头查这个属性为什么必须是 `undefined`。
+`never` 换来的是消费侧干净：`server.url` 在 union 上是 `string | undefined`，改用诊断类型会变成 `string | UrlBelongsToHttpTransport | undefined`，把作者面的措辞漏进读取侧。
+
+诊断类型共用一个不导出的 symbol：
+
+```ts
+declare const CONTRACT_DIAGNOSTIC: unique symbol;
+
+type IdComesFromFilePath = {
+  readonly [CONTRACT_DIAGNOSTIC]: "id comes from the file path";
+};
+
+type ScoringComesFromFactory = {
+  readonly [CONTRACT_DIAGNOSTIC]: "scoring comes from defineEval / defineScoreEval";
+};
+
+type ConfigHashComesFromPlanning = {
+  readonly [CONTRACT_DIAGNOSTIC]: "configHash comes from run planning";
+};
+```
+
+symbol 不从包入口导出，因此这些字段在包外没有任何可写入的值。
+字符串字面量属性只服务于阅读类型定义时的解释，不产生运行时字段。
+
 ## Definition 阶段分离
 
 作者输入不携带路径、factory 或规划器生成的字段。
@@ -11,9 +58,9 @@
 
 ```ts
 type EvalAuthorInput<Context> = EvalAuthorFields & {
-  id?: never;
-  scoring?: never;
-  configHash?: never;
+  id?: IdComesFromFilePath;
+  scoring?: ScoringComesFromFactory;
+  configHash?: ConfigHashComesFromPlanning;
   test(t: Context): Promise<void> | void;
 };
 
@@ -45,7 +92,7 @@ Experiment 使用同一条阶段规则：
 
 ```ts
 type ExperimentInput = ExperimentAuthorFields & {
-  id?: never;
+  id?: IdComesFromFilePath;
 };
 
 interface ExperimentDefinition extends ExperimentAuthorFields {}
@@ -57,15 +104,44 @@ interface DiscoveredExperiment extends ExperimentDefinition {
 function defineExperiment(input: ExperimentInput): ExperimentDefinition;
 ```
 
-作者代码中的以下调用必须成为类型错误：
+合法调用：作者只写自己选择的行为，id 由 `evals/weather/eval.ts` 这样的路径给出。
+
+```ts
+// evals/weather/brooklyn.eval.ts → id: weather/brooklyn
+export default defineEval({
+  description: "布鲁克林天气查询",
+  timeoutMs: 120_000,
+  async test(t) {
+    await t.send("布鲁克林今天天气怎么样?");
+    t.succeeded();
+    t.check(t.reply, includes("晴"));
+  },
+});
+```
+
+被拒绝的调用：
 
 ```ts
 defineEval({ id: "weather", test: async () => {} });
 defineEval({ scoring: "points", test: async () => {} });
+defineEval({ configHash: "8f21", test: async () => {} });
 defineExperiment({ id: "codex", agent });
 ```
 
-运行时 factory 继续拒绝这些字段，覆盖 JavaScript 与显式绕过类型的调用。
+```text
+eval.ts(1,14): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
+eval.ts(2,14): error TS2322: Type 'string' is not assignable to type 'ScoringComesFromFactory'.
+eval.ts(3,14): error TS2322: Type 'string' is not assignable to type 'ConfigHashComesFromPlanning'.
+eval.ts(4,20): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
+```
+
+同一批调用写在 `.js` 文件里或经过 `as` 断言时，装载期守卫给出同一结论：
+
+```text
+defineEval 不接受 id —— id 由文件路径推导。
+defineEval 不接受 scoring —— 恒定为 "pass"(通过制)。计分制请用 defineScoreEval。
+defineExperiment 不接受 id —— id 由文件路径推导。
+```
 
 ## PageDefinition 使用依赖字段联合
 
@@ -98,7 +174,43 @@ type PageDefinition<Params = void, Input = Sample> =
 ```
 
 `defineReport()` 保持从 pages 元组推断每页 Params 与 Input。
-运行时规范化仍检查动态导入对象，但 TypeScript 字面量不再等到装载期才发现缺字段。
+这里用 `never` 而不是诊断类型：规范化代码要读 `page.params` 判断分支，负字段必须收窄成 `undefined`。
+
+合法调用：
+
+```ts
+const overview: PageDefinition = {
+  id: "overview",
+  title: "总览",
+  render: (sample) => <Scoreboard points={sample} />,
+};
+
+const evalDetail: PageDefinition<{ evalId: string }, EvalDetail> = {
+  id: "eval-detail",
+  title: "Eval 详情",
+  params: evalDetailParams,
+  navigation: false,
+  load: async (base, params) => loadEvalDetail(base, params.evalId),
+  render: (detail) => <EvalTimeline detail={detail} />,
+};
+```
+
+被拒绝的调用：参数化页缺 load，以及参数化页留在导航里。
+
+```text
+report.ts(3,14): error TS2322: Type '{ id: string; title: string; render: (detail: EvalDetail) => string; params: PageParams<{ evalId: string; }>; navigation: false; }' is not assignable to type 'PageDefinition<{ evalId: string; }, EvalDetail>'.
+  Property 'load' is missing in type '{ id: string; title: string; render: (detail: EvalDetail) => string; params: PageParams<{ evalId: string; }>; navigation: false; }' but required in type 'ParameterizedPageDefinition<{ evalId: string; }, EvalDetail>'.
+report.ts(11,14): error TS2322: Type '{ id: string; ... navigation: true; load: () => Promise<{ evalId: string; }>; }' is not assignable to type 'PageDefinition<{ evalId: string; }, EvalDetail>'.
+  Types of property 'navigation' are incompatible.
+    Type 'true' is not assignable to type 'false'.
+```
+
+装载期反馈保持不变，覆盖动态导入的页对象：
+
+```text
+Report page "eval-detail" declares params but no load — a parametrized page needs load to turn params into its render input. Add load: (base, params, ctx) => ...
+Report page "eval-detail" declares params but not navigation: false — a parametrized page has no content without params, so it must not appear in navigation. Add navigation: false.
+```
 
 ## McpServer 使用互斥结构联合
 
@@ -127,8 +239,36 @@ interface McpHttpServer {
 type McpServer = McpStdioServer | McpHttpServer;
 ```
 
-因此 `{ name, command, url }` 在 agent factory 调用处失败。
-`assertMcpServers()` 继续为无类型配置输出带 server 名的 setup 错误。
+合法调用：两个分支各写各的字段。
+
+```ts
+const servers: McpServer[] = [
+  { name: "memory", command: "npx", args: ["-y", "@mempal/mcp"] },
+  { name: "search", url: "https://search.example.com/mcp/" },
+];
+```
+
+被拒绝的调用：
+
+```ts
+const bad: McpServer = {
+  name: "memory",
+  command: "npx",
+  url: "https://mem.example.com/mcp/",
+};
+```
+
+```text
+agent.ts(1,14): error TS2322: Type '{ name: string; command: string; url: string; }' is not assignable to type 'McpServer'.
+  Types of property 'url' are incompatible.
+    Type 'string' is not assignable to type 'undefined'.
+```
+
+`assertMcpServers()` 继续为无类型配置输出带 server 名的装载期错误：
+
+```text
+MCP server "memory" 同时给出了 command 和 url——二选一:本地 stdio 进程写 command,远程 Streamable HTTP 端点写 url。
+```
 
 ## HITL answer 使用精确 XOR
 
@@ -148,8 +288,30 @@ type InputResponse = {
 } & AnswerValue;
 ```
 
-两个字段都缺或同时出现时不能编译。
-`optionId` 是否属于该请求的动态 options，继续在 `respond()` 运行时校验。
+合法调用：
+
+```ts
+await t.respond({ request, optionId: "approve" });
+await t.respond({ request, text: "改用 pnpm" });
+```
+
+被拒绝的调用：两个字段同时出现，以及两个都不写。
+
+```text
+eval.ts(1,14): error TS2322: Type '{ request: InputRequest; optionId: string; text: string; }' is not assignable to type 'RespondAnswer'.
+  Types of property 'text' are incompatible.
+    Type 'string' is not assignable to type 'undefined'.
+eval.ts(7,14): error TS2322: Type '{ request: InputRequest; }' is not assignable to type 'RespondAnswer'.
+  Type '{ request: InputRequest; }' is not assignable to type '{ readonly request: InputRequest; } & { readonly text: string; readonly optionId?: undefined; }'.
+    Property 'text' is missing in type '{ request: InputRequest; }' but required in type '{ readonly text: string; readonly optionId?: undefined; }'.
+```
+
+`optionId` 是否属于该请求的动态 options，继续在 `respond()` 运行时校验；两个字段都缺同样保留运行时消息：
+
+```text
+t.respond 的对象形式需要 optionId 或 text 二选一(两者都没给)。
+回答 "approve" 不是请求 req-3 的可选项(retry / abort)。
+```
 
 ## Aggregate 在输入处证明键空间
 
@@ -160,10 +322,8 @@ type AggregateKeyConflict<Groups, Values> =
   | Extract<keyof Groups, keyof Values>
   | Extract<keyof Groups | keyof Values, "refs">;
 
-declare const AGGREGATE_KEY_CONFLICT: unique symbol;
-
 type AggregateKeyDiagnostic<Key extends PropertyKey> = {
-  readonly [AGGREGATE_KEY_CONFLICT]:
+  readonly [CONTRACT_DIAGNOSTIC]:
     `aggregate key conflict: ${Extract<Key, string>}`;
 };
 
@@ -184,21 +344,38 @@ function aggregate<
 ): Promise<readonly AggregateRow<Groups, Values>[]>;
 ```
 
-`AggregateKeyDiagnostic` 是只服务错误展示的内部类型。
-它让 TypeScript 的诊断包含冲突键名，不新增运行时字段，也不要求作者填写占位属性。
+诊断类型的实例化参数就是冲突键，因此键名进入 tsc 输出。
+它不新增运行时字段，也不要求作者填写占位属性。
 
-以下两类调用必须失败：
+合法调用：两侧键不相交。
 
 ```ts
-aggregate(sample, {
-  by: { agent },
-  values: { agent: passRate },
+const rows = await aggregate(sample, {
+  by: { agent: byAgent },
+  values: { passRate: passRateOf },
 });
+```
 
-aggregate(sample, {
-  by: { refs: agent },
-  values: { passRate },
-});
+被拒绝的调用：重名键，以及任一侧使用保留键 `refs`。
+
+```ts
+aggregate(sample, { by: { agent }, values: { agent: passRate } });
+aggregate(sample, { by: { refs: agent }, values: { passRate } });
+```
+
+```text
+report.ts(1,26): error TS2345: Argument of type '{ by: { agent: GroupFn; }; values: { agent: CalcFn; }; }' is not assignable to parameter of type '{ by: { readonly agent: GroupFn; }; values: { readonly agent: CalcFn; }; } & AggregateKeyDiagnostic<"agent">'.
+  Property '[CONTRACT_DIAGNOSTIC]' is missing in type '{ by: { agent: GroupFn; }; values: { agent: CalcFn; }; }' but required in type 'AggregateKeyDiagnostic<"agent">'.
+report.ts(2,26): error TS2345: Argument of type '{ by: { refs: GroupFn; }; values: { passRate: CalcFn; }; }' is not assignable to parameter of type '{ by: { readonly refs: GroupFn; }; values: { readonly passRate: CalcFn; }; } & AggregateKeyDiagnostic<"refs">'.
+  Property '[CONTRACT_DIAGNOSTIC]' is missing in type '{ by: { refs: GroupFn; }; values: { passRate: CalcFn; }; }' but required in type 'AggregateKeyDiagnostic<"refs">'.
+```
+
+对应的运行时消息保留键名：
+
+```text
+aggregate key "agent" appears in both by and values
+aggregate by must not use reserved key "refs"
+aggregate values must not use reserved key "refs"
 ```
 
 ## EvidenceRow 证明至少一个读数字段
@@ -210,16 +387,74 @@ type KeysMatching<Row, Value> = {
 
 type MetricKeys<Row> = KeysMatching<Row, MetricValue>;
 
+type EvidenceNeedsMetric = {
+  readonly [CONTRACT_DIAGNOSTIC]:
+    "evidence row needs at least one MetricValue field";
+};
+
 type WithMetricField<Fields extends object> =
-  [MetricKeys<Fields>] extends [never] ? never : Fields;
+  [MetricKeys<Fields>] extends [never] ? EvidenceNeedsMetric : unknown;
 
 function evidenceRow<const Fields extends object>(
-  fields: WithMetricField<Fields>,
+  fields: Fields & WithMetricField<Fields>,
 ): Fields & EvidenceRow;
 ```
 
-`evidenceRow({ agent: "codex" })` 因没有可证明的 MetricValue 字段而失败。
-从 JSON 得到的宽对象先经过运行时解析和收窄，再进入该构造器；不通过宽 overload 绕开证明。
+证明写成交叉项而不是替换整个参数类型。
+参数保持 `Fields`，作者仍能得到字段级补全；缺读数时 tsc 报缺少诊断属性，而不是 `not assignable to parameter of type 'never'`。
+
+合法调用：
+
+```ts
+const row = evidenceRow({
+  agent: "codex",
+  passRate: metricValue({
+    value: 0.82,
+    samples: 41,
+    total: 50,
+    basis: "attempt",
+    evidence: attempts,
+  }),
+});
+```
+
+被拒绝的调用：只有维度字段。
+
+```ts
+evidenceRow({ agent: "codex" });
+```
+
+```text
+report.ts(1,14): error TS2345: Argument of type '{ agent: "codex"; }' is not assignable to parameter of type '{ readonly agent: "codex"; } & EvidenceNeedsMetric'.
+  Property '[CONTRACT_DIAGNOSTIC]' is missing in type '{ agent: "codex"; }' but required in type 'EvidenceNeedsMetric'.
+```
+
+运行时守卫覆盖 JSON 与 JavaScript 调用：
+
+```text
+evidenceRow requires at least one MetricValue field
+```
+
+### 动态数据经过独立解析函数
+
+从 JSON、数据库或外部 API 得到的对象是 `unknown`，静态上没有可证明的 MetricValue 字段。
+这类值走一个显式解析入口，不给 `evidenceRow()` 保留接收宽对象的 overload：
+
+```ts
+function parseEvidenceRow(value: unknown): EvidenceRow;
+function parseEvidenceRows(value: unknown): readonly EvidenceRow[];
+```
+
+`parseEvidenceRow()` 在运行时完成 `evidenceRow()` 的类型证明所做的同一件事：确认对象至少有一个 MetricValue 字段，确认其余字段是维度可用的标量，然后返回带品牌的行。
+它的失败消息点名字段：
+
+```text
+parseEvidenceRow: field "passRate" must be a MetricValue ({ value, unit? }), got string
+parseEvidenceRow: row needs at least one MetricValue field, got only dimensions (agent, model)
+```
+
+两个入口的分工是固定的：字面量写 `evidenceRow()`，得到编译期证明与精确的行类型；外部数据写 `parseEvidenceRow()`，得到运行时证明与统一的 `EvidenceRow`。
+宽对象因此没有一条既跳过类型证明又跳过运行时证明的路径。
 
 ## 图表字段按值类别过滤
 
@@ -243,6 +478,7 @@ interface EvidenceMarkProps<Row extends EvidenceRow> {
   points: readonly Row[];
   x: EvidenceAxisKey<Row>;
   y: EvidenceAxisKey<Row>;
+  color?: EvidenceDimensionKey<Row>;
   series?: EvidenceDimensionKey<Row>;
   point?: EvidenceDimensionKey<Row>;
 }
@@ -252,7 +488,27 @@ external 分支使用 `ExternalAxisKey<Row>`，并继续禁止 `pointTarget`。
 `Bars.sort.field` 使用与该分支可排序值一致的过滤键，而非普通 `string`。
 
 `Scatter`、`Line`、`Bars` 和 `Area` 保持泛型函数组件签名，让 JSX 从 `points` 推断 Row。
-运行时仍验证 JSON 行、字段跨行一致性、有限数字和 MetricValue 结构。
+
+合法调用：
+
+```tsx
+<Scatter points={rows} x="agent" y="passRate" />
+```
+
+被拒绝的调用：字段名写错，以及把 `refs` 当作可绘制字段。
+
+```tsx
+<Scatter points={rows} x="agent" y="passRat" />
+<Scatter points={rows} x="refs" y="passRate" />
+```
+
+```text
+report.tsx(1,25): error TS2820: Type '"passRat"' is not assignable to type 'EvidenceAxisKey<{ readonly agent: "codex"; readonly passRate: MetricValue; } & EvidenceRow>'. Did you mean '"passRate"'?
+report.tsx(2,25): error TS2322: Type '"refs"' is not assignable to type 'EvidenceAxisKey<{ readonly agent: "codex"; readonly passRate: MetricValue; } & EvidenceRow>'.
+```
+
+拼错字段是这一族里最常见的作者错误，`TS2820` 直接给出正确拼写。
+运行时仍验证 JSON 行、字段跨行一致性、有限数字和 MetricValue 结构，因为 `parseEvidenceRows()` 得到的行只带统一的 `EvidenceRow`。
 
 ## Custom Sandbox case 推导 group keep
 
@@ -295,6 +551,38 @@ function defineSandboxCase<
 `CustomEnvironmentCaseFor<Input>` 在 `groupKeep` 存在时把 `"group-keep"` 加进规范化 capabilities。
 作者仍显式声明 `services`，因为它是 provider 承诺，不由一次 materialize 返回值自动推断。
 
+合法调用：写了 handlers 就得到该 capability，不写就没有。
+
+```ts
+const withKeep = defineSandboxCase({
+  identity: { provider: "fly", app: "bench" },
+  capabilities: ["services"],
+  materialize: startMachine,
+  groupKeep: { serializableResources, wake, destroy },
+});
+```
+
+被拒绝的调用：手写 `"group-keep"`。
+
+```ts
+defineSandboxCase({
+  identity: { provider: "fly" },
+  capabilities: ["group-keep"],
+  materialize: startMachine,
+});
+```
+
+```text
+sandbox.ts(3,17): error TS2322: Type '"group-keep"' is not assignable to type 'DeclaredSandboxCapability'.
+```
+
+两个方向的运行时守卫都保留，覆盖 JavaScript 与断言绕过：
+
+```text
+sandbox case declared capability "group-keep" but did not provide serializable resources, wake, and destroy
+sandbox case provided groupKeep but did not declare capability "group-keep"
+```
+
 ## Factory 产物使用私有品牌
 
 Theme 与 Report 的公开定义包含各自模块私有的 symbol 属性。
@@ -317,16 +605,79 @@ interface ReportDefinition {
 ```
 
 `defineTheme()` 与 `defineReport()` 是品牌的唯一构造点。
-运行时 `isThemeDefinition()` / `isReportDefinition()` 使用同一 symbol，继续拒绝无类型普通对象。
 
-## Sandbox recipe 的局部类型与跨定义 link
+品牌承诺的范围要说清楚：它证明类型层面无法伪造，不承诺运行时无法伪造。
+symbol 由 `Symbol.for()` 取得，任何代码都能拿到同一个全局 symbol 并写出结构相同的对象。
+运行时 `isThemeDefinition()` / `isReportDefinition()` 因此只是判别器，用来拒绝普通对象与旧写法，不是安全边界。
 
-PLAN-9 的 SandboxRecipe 同样使用模块私有 kind 品牌。
-`defineSandboxRecipe()` 只能产生 command-only recipe。
-`composeSandbox()`、`dockerImageSandbox()`、`e2bSandbox()` 等具体 factory 原子地产生 template-bearing recipe，并同时带出 Provider。四个 lifecycle 方法保留原 kind，公共调用面不提供 `.template()`、`.provider()` 或 recipe concat。
+被拒绝的调用：手写对象冒充 theme。
 
-这让 TypeScript 能在单个声明内证明：作者不能用对象字面量伪造 recipe，command 链不能突然增加 template，template factory 的原生起点参数必填，Window command 也不能读取 Attempt context。
+```ts
+const theme: ThemeDefinition = {
+  kind: "theme",
+  colors: { accent: "#0f766e" },
+};
+```
 
-Eval 与 Experiment 的 `sandbox` 字段则故意接受同一个 branded SandboxRecipe union。两份定义位于独立模块，实际组合还取决于 selector，因此普通 `tsc` 不能证明 pair 上恰好一份 template。该 XOR 由 discovery 后的 `linkSandboxMatrix()` 证明，并由 `niceeval check`、`--dry` 与正常运行共同消费；它不是等到 Sandbox lifecycle 才执行的宽松后备。
+```text
+report.ts(1,7): error TS2741: Property '[THEME_DEFINITION]' is missing in type '{ kind: "theme"; colors: { accent: string; }; }' but required in type 'ThemeDefinition'.
+```
 
-精确 recipe、phase context 与 linker 形状见 [环境模型 PLAN-9](../../design/environment-model/PLAN-9/library.md)。
+合法调用走 factory，颜色的语法仍由运行时校验：
+
+```ts
+const theme = defineTheme({ colors: { accent: "#0f766e" } });
+```
+
+```text
+defineTheme colors.accent must be an opaque six-digit sRGB hex (#RRGGBB), got "teal".
+```
+
+## Sandbox layer 的局部类型与跨定义 link
+
+SandboxLayer 同样使用模块私有 kind 品牌。
+`sandboxLayer()` 只能产生 command-only layer。
+`dockerComposeSandbox()`、`dockerImageSandbox()`、`e2bSandbox()` 等具体 factory 原子地产生 template-bearing layer，并同时带出 Provider。`prepare()` 链保留原 kind，公共调用面不提供 `.template()`、`.provider()` 或 layer concat。
+
+这让 TypeScript 能在单个声明内证明：作者不能用对象字面量伪造 layer，command 链不能突然增加 template，template factory 的原生起点参数必填。
+
+被拒绝的调用：字面量伪造 layer，以及 factory 缺必填选项。
+
+```ts
+export default defineEval({
+  sandbox: { kind: "template-bearing", prepare: (c) => c },
+  test: async () => {},
+});
+
+dockerComposeSandbox({});
+```
+
+```text
+eval.ts(2,3): error TS2322: Type '{ kind: "template-bearing"; prepare: (c: SandboxCommand) => SandboxCommand; }' is not assignable to type 'SandboxLayer | undefined'.
+  Property '[SANDBOX_LAYER]' is missing in type '{ kind: "template-bearing"; prepare: ... }' but required in type 'TemplateBearingLayer'.
+eval.ts(6,23): error TS2741: Property 'file' is missing in type '{}' but required in type 'DockerComposeSandboxOptions'.
+```
+
+Eval 与 Experiment 的 `sandbox` 字段则故意接受同一个 branded SandboxLayer union。
+两份定义位于独立模块，实际组合还取决于 selector，因此普通 `tsc` 不能证明配对上恰好一份 template。
+
+该 XOR 由 discovery 后的纯 link 步骤证明，并由 `niceeval check`、`--dry` 与正常运行共同消费；它不是等到 Sandbox lifecycle 才执行的宽松后备。
+link 反馈按配对聚合，一次报全：
+
+```text
+sandbox.template-conflict: Experiment "memory/codex" and
+Eval "terminal-bench/play-zork-easy" both declare a template
+
+  eval:       dockerComposeSandbox(...) at evals/.../eval.ts
+  experiment: e2bSandbox({ template: "mempal-codex-v3" }) at experiments/codex.ts
+
+NiceEval starts one Sandbox Case and does not merge or prioritize templates.
+Remove one template or split the Experiment's Eval selection.
+17 conflicting pairs were found. No Sandbox was created.
+```
+
+精确 layer、command context 与配对检查表见 [Sandbox Layer](../../feature/sandbox/layers.md)。
+
+## 作者视角的完整走查
+
+按反馈级别看同一批错误怎么依次出现，见 [三级反馈走查](use-case/three-levels.md)。

@@ -23,7 +23,7 @@ Runner 内部函数按自己真正消费的阶段收参数。
 发现器不再通过给宽 `EvalDef` 或 `ExperimentDef` 补字段来完成转换，规划器也不把 configHash 写回作者定义。
 通过制与计分制定义组成以 scoring 判别的 union；Runner 先收窄分支，再以对应 context 调用 test，不用类型断言抹平两种题型。
 
-Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 ExperimentDefinition 都可以合法携带 template-bearing 或 command-only SandboxRecipe；只有 discovery 与 selector 完成后，Runner 才知道实际 pair。linker 必须先聚合全部 template conflict / missing，再允许任何 Provider I/O 或资源动作。`niceeval check` 在这里停止；正常运行不能绕过同一份 linked matrix。
+Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 ExperimentDefinition 都可以合法携带 template-bearing 或 command-only SandboxLayer；只有 discovery 与 selector 完成后，Runner 才知道实际 pair。linker 必须先聚合全部 template conflict / missing，再允许任何 Provider I/O 或资源动作。`niceeval check` 在这里停止；正常运行不能绕过同一份 linked matrix。
 
 ## 静态约束与运行时镜像
 
@@ -31,16 +31,18 @@ Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 
 
 | 约束 | TypeScript 入口 | 运行时入口 |
 |---|---|---|
-| 禁止作者填写派生字段 | `never` 字段与阶段类型 | `defineEval` / `defineExperiment` 守卫 |
+| 禁止作者填写派生字段 | 阶段类型 + 模块私有诊断类型字段 | `defineEval` / `defineExperiment` 守卫 |
 | page 字段依赖 | PageDefinition union | `defineReport` 规范化 |
 | MCP transport 互斥 | 负字段 union | `assertMcpServers` |
 | HITL answer 二选一 | AnswerValue XOR | `buildRespondInput` 与 adapter 输入校验 |
 | aggregate 键冲突 | options 关系泛型 | `assertNoKeyCollision` |
-| EvidenceRow 至少一个读数 | `WithMetricField` | `evidenceRow` 结构校验 |
+| EvidenceRow 至少一个读数 | `WithMetricField` 交叉诊断类型 | `evidenceRow` 与 `parseEvidenceRow` 结构校验 |
 | chart 字段角色 | 过滤键泛型 | `pointsToDataset` 跨行校验 |
 | custom group keep | 输入排除 + 返回推导 | `defineSandboxCase` 规范化 |
 | factory 产物身份 | 私有 unique symbol | `isThemeDefinition` / `isReportDefinition` |
-| Sandbox template 恰好一份 | recipe kind 私有品牌与 factory option 类型 | discovery 后的全矩阵 linker，早于 Provider 网络与资源 |
+| Sandbox template 恰好一份 | layer kind 私有品牌与 factory option 类型 | discovery 后的全矩阵 linker，早于 Provider 网络与资源 |
+
+`never` 与诊断类型的取舍规则、以及每条约束的实测诊断文本，见 [Library](library.md#三级反馈)。
 
 运行时守卫接收 `unknown` 或宽结构时先检查形状，再进入内部精确类型。
 内部函数不重复使用公共作者输入类型充当规范化结果。
@@ -55,10 +57,11 @@ Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 
 | HITL | `src/context/types.ts`、`src/agents/types.ts`、`src/context/context.ts` | 提取共享 XOR；builder 补充“双字段”拒绝，不再静默优先 |
 | MCP | `src/agents/types.ts`、`src/agents/mcp.ts` | union 增加负字段；保留带 server 名的 setup 守卫 |
 | Report page | `src/report/definition/report.ts` | 把输入页拆成普通页与参数化页；规范化输出保持单一 ReportPage |
-| Aggregate / EvidenceRow | `src/report/model/calculation.ts` | 在输入签名增加键关系与 MetricValue 存在性约束 |
+| 诊断类型 | 一个不从包入口导出的内部模块 | 声明共用的 `CONTRACT_DIAGNOSTIC` symbol 与各条诊断类型 |
+| Aggregate / EvidenceRow | `src/report/model/calculation.ts` | 在输入签名增加键关系与 MetricValue 存在性约束；新增 `parseEvidenceRow` / `parseEvidenceRows` |
 | Charts | `src/report/definition/primitives/marks.tsx`、`points-dataset.ts` | 恢复泛型组件调用签名；字段 props 使用过滤键 |
 | Sandbox case | `src/sandbox/case-types.ts`、`src/sandbox/case.ts`、`single-case.ts` | 从 groupKeep 推导 capability；内部只读规范化结果 |
-| Sandbox recipe link | `src/sandbox/`、`src/runner/discover.ts`、Runner plan 与 CLI check 入口 | 保留 command/template kind 品牌；对实际 Eval × Experiment pair 统一做 XOR link |
+| Sandbox layer link | `src/sandbox/`、`src/runner/discover.ts`、Runner plan 与 CLI check 入口 | 保留 command/template kind 品牌；对实际 Eval × Experiment pair 统一做 XOR link |
 | Theme / Report | `src/report/theme.ts`、`src/report/definition/report.ts` | 把现有运行时 symbol 加入公开接口的私有品牌属性 |
 | 导出与定位 | `src/index.ts`、各子路径 index、`docs/source-map.md` | 导出新的作者输入与 definition 类型；更新契约到实现的定位 |
 
@@ -91,8 +94,11 @@ Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 
 | EvidenceRow | 至少一个必填 MetricValue | 只有维度；只有可选 MetricValue |
 | Charts | points 推断出的可绘制键 | 不存在字段；refs；函数或对象字段 |
 | Sandbox | services；groupKeep；两者组合 | capabilities 手写 group-keep |
-| Sandbox pair | 单侧 template + 单侧 command-only；两侧 phase helper 类型正确 | 1×1 template conflict；0×0 template missing；Window helper 传入 Attempt phase |
+| Sandbox layer | 具体 factory 产生的 template-bearing layer；`sandboxLayer()` 产生的 command-only layer | 对象字面量伪造 layer；factory 缺必填起点选项 |
 | Theme / Report | factory 返回值进入配置与宿主 | 普通对象伪造 kind |
+
+配对上恰好一份 template 不进这张表：它取决于 discovery 与 selector 的实际配对，`tsc` 看不到。
+它由 linker 的单元测试覆盖，断言 1×1 得到 `sandbox.template-conflict`、0×0 得到 `sandbox.template-missing`，且失败时零 Provider I/O。
 
 Vitest 只覆盖运行时可观察行为：无类型输入仍被拒绝、错误点名实际字段、失败发生在副作用之前、合法输入规范化结果不变。
 同一条类型错误不再用运行时测试重复证明，但 JavaScript 后备路径必须各保留一个代表场景。
