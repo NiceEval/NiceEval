@@ -157,6 +157,7 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
         identity: { agent: "fake-agent", version: "1.0.0", revision: "1" },
         probe: defineSandboxCommand({ id: "fake-agent.probe", revision: "1", inputs: {} }, async () => {}),
       },
+      installers: [],
       send: async () => ({ events: [], status: "completed" }),
     });
     const run: AgentRun = {

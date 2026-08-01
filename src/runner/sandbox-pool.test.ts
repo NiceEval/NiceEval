@@ -1,15 +1,41 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 // 覆盖类别「Sandbox 复用」的能力归属与派发前确认。
 //
-// 能力只能由 Provider 自己实现:池探测实例上的 `ensureLifetime`,探不到就在第一条 Attempt
-// 派发前硬失败(见 docs/feature/sandbox/reuse.md「派发前确认」)。这里用 defineSandbox 自定义
-// provider 造两种实例——带能力的与不带能力的——因为「带不带」正是被测的那一格;通用记账层
-// 一旦回来,不带能力的那条会静默变绿。
+// 能力只能由 Provider facade 显式注册:池不探测 public Sandbox 上的同名属性,缺能力就在第一条
+// Attempt 派发前硬失败(见 docs/feature/sandbox/reuse.md「派发前确认」)。测试侧只 mock 实例创建
+// 边界,把 capability backend 注册到 facade 的私有 registry；public Sandbox fixture 始终不带
+// `ensureLifetime` / `setCommandDeadline`,防止旧鸭子类型路径悄悄回来。
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { defineSandbox } from "../define.ts";
+import {
+  noSandboxBackendCapabilities,
+  registerSandboxCapabilities,
+  supportedBackendCapability,
+  type SandboxBackendCapabilities,
+} from "../sandbox/backend.ts";
 import type { CommandResult, Sandbox, SandboxHookContext, SandboxOption } from "../types.ts";
+
+type CapabilityFactory = (sandbox: Sandbox) => SandboxBackendCapabilities;
+const capabilityFactories = vi.hoisted(() => new WeakMap<object, unknown>());
+
+vi.mock("../sandbox/resolve.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sandbox/resolve.ts")>();
+  return {
+    ...actual,
+    createSandboxInstance: async (opts: Parameters<typeof actual.createSandboxInstance>[0]) => {
+      const sandbox = await actual.createSandboxInstance(opts);
+      const factory = capabilityFactories.get(opts.sandbox as object) as CapabilityFactory | undefined;
+      if (factory !== undefined) registerSandboxCapabilities(sandbox, factory(sandbox));
+      return sandbox;
+    },
+  };
+});
+
+function registerProviderCapabilities(spec: SandboxOption, factory: CapabilityFactory): void {
+  capabilityFactories.set(spec, factory);
+}
 
 /** 内存沙箱:shell 恒成功(git ledger 锚点/重置都走它),记下收到的命令。 */
 function fakeSandbox(id: string, commands: string[]): Sandbox {
@@ -24,20 +50,27 @@ function fakeSandbox(id: string, commands: string[]): Sandbox {
     async runCommand(): Promise<CommandResult> {
       return { stdout: "", stderr: "", exitCode: 0 };
     },
-    async readFile() {
+    async runCommandOrThrow() {
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    async runShellOrThrow() {
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    async readText() {
       return "";
     },
-    async fileExists() {
+    async readBytes() {
+      return new Uint8Array();
+    },
+    async writeText() {},
+    async writeBytes() {},
+    async pathExists() {
       return false;
     },
-    async writeFiles() {},
-    async uploadFiles() {},
     async uploadFile() {},
     async uploadDirectory() {},
     async downloadDirectory() {},
-    async downloadFile() {
-      return Buffer.from("");
-    },
+    async downloadFile() {},
     async stop() {},
   };
   return box as Sandbox;
@@ -83,14 +116,17 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
     const asked: number[] = [];
     const spec = defineSandbox({
       name: "with-lifetime",
-      create: async () =>
-        Object.assign(fakeSandbox("sbx-ok", commands), {
-          ensureLifetime: async (minRemainingMs: number) => {
-            asked.push(minRemainingMs);
-            return { ready: true as const, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
-          },
-        }),
+      create: async () => fakeSandbox("sbx-ok", commands),
     });
+    registerProviderCapabilities(spec, () => ({
+      ...noSandboxBackendCapabilities,
+      ensureLifetime: supportedBackendCapability(
+        async (minRemainingMs: number) => {
+          asked.push(minRemainingMs);
+          return { ready: true as const, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+        },
+      ),
+    }));
 
     const pool = poolFor(spec);
     const first = await pool.acquire(60_000);
@@ -116,22 +152,26 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
       create: async () => {
         created += 1;
         const id = `sbx-${created}`;
-        const sandbox = fakeSandbox(id, commands);
-        // 第一台在第二次派发前确认时报不够(创建时的两次确认仍通过),第二台一直够。
-        let asks = 0;
-        return Object.assign(sandbox, {
+        return Object.assign(fakeSandbox(id, commands), {
           stop: async () => {
             stopped.push(id);
           },
-          ensureLifetime: async () => {
-            asks += 1;
-            // 前两次(创建时 setup 前后)通过,第二条 Attempt 派发前报不够。
-            return created === 1 && asks > 2
-              ? { ready: false as const, reason: "expiring provider leaves 5s" }
-              : { ready: true as const };
-          },
         });
       },
+    });
+    registerProviderCapabilities(spec, (sandbox) => {
+      // 第一台在第二次派发前确认时报不够(创建时的两次确认仍通过),第二台一直够。
+      let asks = 0;
+      return {
+        ...noSandboxBackendCapabilities,
+        ensureLifetime: supportedBackendCapability(async () => {
+          asks += 1;
+          // 前两次(创建时 setup 前后)通过,第二条 Attempt 派发前报不够。
+          return sandbox.sandboxId === "sbx-1" && asks > 2
+            ? { ready: false as const, reason: "expiring provider leaves 5s" }
+            : { ready: true as const };
+        }),
+      };
     });
 
     const pool = poolFor(spec);
@@ -153,14 +193,15 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
     const deadlines: Array<number | undefined> = [];
     const spec = defineSandbox({
       name: "deadline-aware",
-      create: async () =>
-        Object.assign(fakeSandbox("sbx-deadline", commands), {
-          ensureLifetime: async () => ({ ready: true as const }),
-          setCommandDeadline: (deadlineAt?: number) => {
-            deadlines.push(deadlineAt);
-          },
-        }),
+      create: async () => fakeSandbox("sbx-deadline", commands),
     });
+    registerProviderCapabilities(spec, () => ({
+      ...noSandboxBackendCapabilities,
+      ensureLifetime: supportedBackendCapability(async () => ({ ready: true as const })),
+      setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => {
+        deadlines.push(deadlineAt);
+      }),
+    }));
 
     const pool = poolFor(spec);
     const before = Date.now();
@@ -183,14 +224,15 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
     const deadlines: Array<number | undefined> = [];
     const spec = defineSandbox({
       name: "no-deadline",
-      create: async () =>
-        Object.assign(fakeSandbox("sbx-no-deadline", commands), {
-          ensureLifetime: async () => ({ ready: true as const }),
-          setCommandDeadline: (deadlineAt?: number) => {
-            deadlines.push(deadlineAt);
-          },
-        }),
+      create: async () => fakeSandbox("sbx-no-deadline", commands),
     });
+    registerProviderCapabilities(spec, () => ({
+      ...noSandboxBackendCapabilities,
+      ensureLifetime: supportedBackendCapability(async () => ({ ready: true as const })),
+      setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => {
+        deadlines.push(deadlineAt);
+      }),
+    }));
 
     const pool = poolFor(spec);
     await (await pool.acquire(undefined)).release(true);
@@ -205,11 +247,15 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
       name: "too-short",
       create: async () => {
         created += 1;
-        return Object.assign(fakeSandbox(`sbx-${created}`, commands), {
-          ensureLifetime: async () => ({ ready: false as const, reason: "plan caps the sandbox at 60s" }),
-        });
+        return fakeSandbox(`sbx-${created}`, commands);
       },
     });
+    registerProviderCapabilities(spec, () => ({
+      ...noSandboxBackendCapabilities,
+      ensureLifetime: supportedBackendCapability(
+        async () => ({ ready: false as const, reason: "plan caps the sandbox at 60s" }),
+      ),
+    }));
 
     await expect(poolFor(spec).acquire(60_000)).rejects.toThrow(/plan caps the sandbox at 60s/);
     expect(created).toBe(1);
