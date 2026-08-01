@@ -91,6 +91,20 @@ Agent 进程正常退出不代表答案正确，环境没有就绪也不代表 A
 
 来源：[Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Agents 与 Adapters](feature/adapters/README.md)、[Assertions](feature/assertions/README.md)、[Sandbox](feature/sandbox/README.md)、[Environment Model 决策](design/environment-model/DECISION.md)、[Agent 安装配方决策](design/agent-install-recipe/DECISION.md)、[多容器环境决策](design/multi-container-environments/DECISION.md)。
 
+### Q1 唐诗涵：评价开放式对话，而不是强行写成字符串匹配
+
+唐诗涵要确认小问能在多轮辅导中给出正确、适龄且不直接泄露答案的解释。
+其中既有“计算结果必须正确”这样的硬要求，也有“讲解是否适合十岁孩子”这样的开放式质量，还可能发生裁判模型不可用。
+
+- **TUT-1 驱动真实会话。** 唐诗涵要测试单轮问答、多轮追问、并行会话和等待教师批准后继续的流程。NiceEval 需要让 Eval 驱动正式 Agent 会话，并让检查绑定到具体 Turn、Session 或整次 Attempt。验收时，每轮输入、回复、人工介入与会话身份完整保存，后续检查不会混用别的会话。
+- **TUT-2 用证据合适的检查。** 唐诗涵要用确定性 matcher 检查答案和 schema，用作用域检查验证工具顺序与禁止行为，用 Sandbox 命令验证产物，再给成本设置上限。NiceEval 需要让这些检查产生统一 AssertionResult，并保存实际值、期望、作用域与证据。验收时，报告能说明哪一条检查失败以及依据是什么。
+- **TUT-3 表达部分完成。** 一道五步教学任务完成三步时，唐诗涵需要得到 3 分，而不是把它伪装成整题通过或完全失败。NiceEval 需要区分通过制 Eval 与计分制 Eval。验收时，独立可运行的学生问题拆成多条 Eval；同一任务内有意义的检查点按分值累积，通过率与总分在报告中分列。
+- **TUT-4 用 Judge 评价开放式质量。** 唐诗涵无法用固定规则判断讲解是否适龄，需要由独立裁判模型评价指定回复、对话或 diff。NiceEval 需要让 Judge 使用独立模型、端点与凭据，并在派发昂贵 Agent 前检查端点连通与鉴权。验收时，裁判调用有超时且不暗中重试；模型、凭据或响应不可用时留下 unavailable 原因，不伪造零分或通过。
+- **TUT-5 分开质量线与发布门禁。** 唐诗涵把“不得给出危险操作”设为 gate，把“语言亲切”保留为 soft 质量分，并允许一个探索性风格 Judge 缺席。NiceEval 需要用 Severity、optional 与 `--strict` 控制这些结果怎样折叠。验收时，gate 未通过得到 failed，执行或必要证据不可用得到 errored，显式跳过得到 skipped，其余才是 passed；`--strict` 只把 soft 质量线收紧为门禁。
+- **TUT-6 预检只影响需要 Judge 的题。** 小问的一批 Eval 同时包含确定性数学题和开放式讲解题。判分端点不可用时，唐诗涵仍要保留不依赖 Judge 的数学结果。验收时，需要 Judge 的计划项在 Agent 派发前记录预检错误；其它 Eval 照常运行，不因共享配置问题整批作废。
+
+来源：[Eval](feature/eval/README.md)、[Assertions](feature/assertions/README.md)、[Judge](feature/judge/README.md)、[Verdict](feature/verdict/README.md)、[Agents 与 Adapters](feature/adapters/README.md)。
+
 ### R1 周芷宁：在发布前选出更合适的 Agent 配置
 
 周芷宁每周要决定 CodeMate 使用哪个 Agent、模型和推理强度。
@@ -103,6 +117,21 @@ Agent 进程正常退出不代表答案正确，环境没有就绪也不代表 A
 - **REL-5 自动进入修复循环。** 周芷宁要让 CI 稳定读取计划、进度、结果和失败证据，再把回归交给 coding agent 修复并复验。NiceEval 需要提供稳定的机器输出和可寻址的证据。验收时，自动化无需解析终端排版，也不会因为输出管道关闭而丢失结果。
 
 来源：[Experiments](feature/experiments/README.md)、[提高评估速度](feature/use-case/提高评估速度/README.md)、[机器输出](feature/experiments/use-case/机器输出/README.md)、[Reports](feature/reports/README.md)。
+
+### R2 周芷宁：修复后只重跑真正需要复验的部分
+
+CodeMate 的一次完整回归需要数小时和真实模型费用。
+周芷宁既不能每次从零开始，也不能因为旧结果更便宜就把已受变化影响的结果带进发布结论。
+
+- **RUN-1 默认沿用未受影响的确定结果。** 周芷宁只修改报告标题或 Experiment label 时，不想重新执行 Agent。NiceEval 需要用 Eval 源码闭包、运行配置、Agent 身份和 Sandbox 身份计算指纹。验收时，指纹未变的 passed 与 failed Attempt 可以沿用；errored、skipped 和缺失序号仍要执行，沿用项保留原始来源。
+- **RUN-2 变化项自动失效。** 周芷宁修改 Eval、公共 helper、模型、Judge、运行 flags、Agent 身份或 Sandbox 环境时，需要只作废真正受影响的结果。验收时，变化进入对应指纹层；只供报告归类的 label 和运行时才知道的实例地址不会误触发整批重跑。
+- **RUN-3 修复产品后只复验旧失败。** CodeMate 发布了修复，但外部部署地址和 Experiment 源码没有变化。周芷宁要主动重新执行历史 failed 项，同时保留历史 passed 项。NiceEval 需要提供一次性的失败项重跑口径。验收时，旧失败产生新的 Attempt，旧通过以结果沿用进入 Sample，errored 与缺失项按默认恢复规则执行。
+- **RUN-4 外部事实变化时全量重验。** 模型供应商静默更新了服务，或一项外部依赖行为改变但本地指纹无法观察。周芷宁需要忽略全部历史结果。NiceEval 需要提供一次性的全量重跑口径。验收时，所有计划 Attempt 真实执行；这次选择不篡改后续运行使用的指纹定义。
+- **RUN-5 区分结果沿用与 Sandbox 复用。** 周芷宁做本地冒烟时，希望十条 Eval 共用一个已经装好依赖的 Sandbox，但每条题仍要真实运行。NiceEval 需要让 `sandboxReuse` 只分摊创建与 SandboxSpec setup。验收时，每条 Attempt 都有新的执行证据和 Verdict，报告不会把它们标成结果沿用。
+- **RUN-6 复用前恢复可接受起点。** 共用 Sandbox 的前一道题可能修改代码、启动进程或写入缓存。NiceEval 需要在 Attempt 之间回到声明的重置点，并按 Environment Case 分开复用。验收时，题目变化不会泄漏到下一条 Attempt；异构环境不会进入同一个复用池，寿命不足的 Sandbox 会在派发前更换。
+- **RUN-7 按问题选择提速方式。** 周芷宁只想确认“至少成功一次”时使用首过即停；要测稳定通过率时跑满所有 Attempt；独立任务才提高并发。验收时，首过即停不伪装成完整通过率，共享状态的 Experiment 可以保持串行，全局容量限制不会改变题目与判分。
+
+来源：[缓存与结果沿用](feature/experiments/cache.md)、[`--rerun` 用例](feature/experiments/use-case/重新运行/README.md)、[Sandbox 复用](feature/sandbox/reuse.md)、[提高评估速度](feature/use-case/提高评估速度/README.md)、[Experiments](feature/experiments/README.md)。
 
 ### O1 孟启航：让长批次运行可恢复、可止损
 
@@ -122,12 +151,37 @@ Agent 进程正常退出不代表答案正确，环境没有就绪也不代表 A
 苏曼青不能只接受“CodeMate 平均通过率提高了 4%”。
 她需要知道这 4%来自哪些题、哪些 Attempt、怎样的运行条件，以及是否排除了未覆盖和基础设施错误。
 
-- **AUD-1 保存完整运行事实。** 苏曼青要复核每个 Attempt 的配置、交互、文件变化、判定、诊断、耗时与用量。NiceEval 需要把这些事实保存为可搬运的 Record。验收时，把结果目录复制到另一台机器后，仍能在不连接原运行服务的情况下读取证据。
-- **AUD-2 先审范围再看指标。** 苏曼青要区分真实执行、结果沿用、跳过、未完成、执行错误和证据不足。NiceEval 需要让 Sample 同时携带选择范围、覆盖事实和警告。验收时，缺失数据不会被静默当作失败、零值或成功。
-- **AUD-3 从汇总追到 Attempt。** 苏曼青要从通过率、成本或耗时读数回到组成它的 Attempt。NiceEval 需要让聚合结果保留分母口径与 Attempt 引用。验收时，每个汇总值都能解释纳入与排除规则，并下钻到原始证据。
-- **AUD-4 面向不同受众交付同一结论。** 苏曼青要在终端复核、浏览器报告、静态交付和内部产品页中使用同一数据与口径。NiceEval 需要让 text / web 两面消费同一报告结果。验收时，展示形态可以不同，实体身份、数值、范围和警告保持一致。
+- **AUD-1 保存完整运行事实。** 苏曼青要复核每个 Attempt 的配置、交互、文件变化、判定、诊断、耗时与用量。NiceEval 需要把这些事实保存为 Record，并为 Attempt 提供稳定定位符。验收时，第三方 harness 可以写入同一格式；读取者能按定位符加载大文件，而不从终端文案反推事实。
+- **AUD-2 先审范围再看指标。** 苏曼青要区分真实执行、结果沿用、跳过、未完成、执行错误和证据不足。NiceEval 需要让 Sample 同时携带选择模式、时效、覆盖事实和结构化 Issue。验收时，配置不可比的 Run 不会被缝成同一 Sample，缺失数据也不会被静默当作失败、零值或成功。
+- **AUD-3 明确选择最新、当前或本次新执行。** 苏曼青复核发布水位时要看每道题的当前结论，调查一次事故时只看最新 Run，检查本次成本时只看 fresh Attempt。NiceEval 需要提供不同 Sample 选择器和只删减的 scope / filter。验收时，选择口径写在返回值里，覆盖与 Issue 跟着删减后的 Sample 一起变化。
+- **AUD-4 从汇总追到 Attempt。** 苏曼青要从通过率、成本或耗时读数回到组成它的 Attempt。NiceEval 需要让聚合结果保留分母口径与 Attempt 引用。验收时，每个汇总值都能解释纳入与排除规则，并下钻到原始证据。
+- **AUD-5 按调查任务读取。** 苏曼青要按 Experiment、Eval 前缀、Run 或记录根收窄结果，并在运行中观察结果逐条出现。NiceEval 需要让 show、view 和脚本读取共享 Record → Sample → Report 管线。验收时，宿主只改变入口与展示，不私自改变选择、指标或证据身份。
+- **AUD-6 发布自包含的结果子集。** 苏曼青向审计委员会交付结果时，只能带选中的 Run 和它们引用的 artifact，不能留下指向内部机器的路径。NiceEval 需要把 Sample 发布成自包含 Record，或导出同一范围的静态站点。验收时，离线目录可以独立打开；删除原记录根不会使已发布证据失效。
+- **AUD-7 构建有业务语义的报告。** 苏曼青要把通过率、成本、风险等级和外部业务分组放进同一份多页报告，并从异常图点下钻到 Attempt。NiceEval 需要让报告作者用普通转换、聚合与组件组织 Sample，同时为非标准算法补齐分母与 refs。验收时，报告可以加入冻结的外部数据，但不能隐藏只对某张图生效的 Sample 过滤。
+- **AUD-8 面向不同受众交付同一结论。** 苏曼青要在终端、浏览器、静态站点和 Harbor 内部产品页中使用同一数据与口径。NiceEval 需要让 text / web 两面消费同一报告结果。验收时，展示形态可以不同，实体身份、数值、范围、下钻目标和警告保持一致。
 
 来源：[Record](feature/record/README.md)、[Sample](feature/sample/README.md)、[Reading](feature/reading/README.md)、[Reports](feature/reports/README.md)、[Report Authoring 决策](design/report-authoring/DECISION.md)。
+
+## Feature 覆盖表
+
+这张表以 `docs/feature/` 的一级功能目录为清单。
+Story 一栏只引用上文已经写清人物、困难、能力与验收的故事，不用抽象角色代替遗漏。
+
+| Feature | 它在真实工作中解决什么 | Story |
+|---|---|---|
+| [Adapters](feature/adapters/README.md) | 用 Agent 正式支持的会话方式评估，并把不同 Agent 安装到最终任务环境 | TB-4、TB-10、TUT-1 |
+| [Eval](feature/eval/README.md) | 描述单轮、多轮、HITL、数据集题目、Fixture、隐藏判据和通过制或计分制 | MB-2、TB-1、TB-5、TUT-1、TUT-3 |
+| [Experiments](feature/experiments/README.md) | 选择 Agent、模型、Eval、预算、并发与生命周期，并决定哪些 Attempt 执行 | MB-1、MB-3、MB-4、REL-1、REL-2、RUN-1 至 RUN-7 |
+| [Sandbox](feature/sandbox/README.md) | 隔离不可信执行，承载异构 Environment，留存现场并安全复用 Sandbox | MB-3 至 MB-5、TB-2 至 TB-5、RUN-5、RUN-6、OPS-1、OPS-4 |
+| [Assertions](feature/assertions/README.md) | 用值、行为、Sandbox、资源和 Judge 证据检查结果，并记录检查依据 | MB-6、TB-6、TUT-2 |
+| [Judge](feature/judge/README.md) | 评价固定规则难以表达的开放式质量，并如实处理端点或证据不可用 | TUT-4、TUT-6 |
+| [Verdict](feature/verdict/README.md) | 把 gate、soft、optional、执行状态与证据缺失折叠成四种互斥终态 | TB-6、TUT-3、TUT-5 |
+| [执行失败分类](feature/error-classification/README.md) | 只重试安全的瞬时故障，并按失败波及范围停止无意义的后续派发 | MB-7、OPS-2、OPS-3 |
+| [Record](feature/record/README.md) | 保存可寻址的运行事实，接收第三方结果，并发布自包含证据目录 | AUD-1、AUD-6 |
+| [Sample](feature/sample/README.md) | 从全部历史中选出明确口径、覆盖与时效的一批可比较 Attempt | AUD-2、AUD-3 |
+| [Reading](feature/reading/README.md) | 让终端、浏览器、静态发布和脚本沿同一事实到呈现管线读取 | AUD-5、AUD-6、AUD-8 |
+| [Reports](feature/reports/README.md) | 计算可追溯指标、调试失败、分析取舍并交付业务报告 | MB-8、REL-4、REL-5、AUD-4、AUD-7、AUD-8 |
+| [跨 Feature 用例](feature/use-case/README.md) | 按最终目标选择结果沿用、重跑、并发、Sandbox 复用或调试现场 | RUN-1 至 RUN-7、REL-5、OPS-4 |
 
 ## 贡献者故事
 
