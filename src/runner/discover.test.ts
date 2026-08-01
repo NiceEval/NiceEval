@@ -6,8 +6,9 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { discoverEvals, makeFilter } from "./discover.ts";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { discoverEvals, discoverExperiments, makeFilter } from "./discover.ts";
 import { captureEvalSource } from "./eval-source.ts";
 
 const roots: string[] = [];
@@ -191,5 +192,45 @@ describe("discoverEvals · 目录入口与重名冲突", () => {
     expect(evals[0]!.id).toBe("compose-task");
     expect(evals[0]!.defaultProfileId).toBe("compose-task");
     expect(evals[0]!.environment).toEqual({ kind: "compose", file: "docker-compose.yaml" });
+  });
+});
+
+describe("discoverExperiments · Definition 边界", () => {
+  it("只发现 defineExperiment 产物，并把路径事实加入 DiscoveredExperiment", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "experiments", "compare"), { recursive: true });
+    const factory = pathToFileURL(resolve(process.cwd(), "src", "define.ts")).href;
+    await writeFile(
+      join(root, "experiments", "compare", "baseline.experiment.ts"),
+      `import { defineExperiment } from ${JSON.stringify(factory)};\n` +
+        'export default defineExperiment({ agent: { name: "fixture" } });\n',
+      "utf-8",
+    );
+
+    const experiments = await discoverExperiments(root);
+    expect(experiments).toHaveLength(1);
+    expect(experiments[0]).toMatchObject({
+      id: "compare/baseline",
+      baseDir: join(root, "experiments", "compare"),
+      sourcePath: join(root, "experiments", "compare", "baseline.experiment.ts"),
+    });
+  });
+
+  it("允许 experiments/shared 下没有 default export 的普通 helper", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "experiments", "shared"), { recursive: true });
+    await writeFile(join(root, "experiments", "shared", "helpers.ts"), "export const answer = 42;\n", "utf-8");
+    await expect(discoverExperiments(root)).resolves.toEqual([]);
+  });
+
+  it("拒绝 plain object 与类型断言绕过，明确要求 defineExperiment", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "experiments"), { recursive: true });
+    await writeFile(
+      join(root, "experiments", "forged.experiment.ts"),
+      'export default ({ agent: { name: "forged" } } as unknown);\n',
+      "utf-8",
+    );
+    await expect(discoverExperiments(root)).rejects.toThrow(/defineExperiment/);
   });
 });

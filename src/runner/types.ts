@@ -595,6 +595,8 @@ export type EvalScoring = "pass" | "points";
  */
 const EVAL_CONTRACT_DIAGNOSTIC: unique symbol = Symbol("niceeval.evalContractDiagnostic");
 const EVAL_DEFINITION: unique symbol = Symbol("niceeval.evalDefinition");
+const EXPERIMENT_CONTRACT_DIAGNOSTIC: unique symbol = Symbol("niceeval.experimentContractDiagnostic");
+const EXPERIMENT_DEFINITION: unique symbol = Symbol("niceeval.experimentDefinition");
 
 type IdComesFromFilePath = {
   readonly [EVAL_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
@@ -606,6 +608,10 @@ type ScoringComesFromFactory = {
 
 type ConfigHashComesFromPlanning = {
   readonly [EVAL_CONTRACT_DIAGNOSTIC]: "configHash comes from run planning";
+};
+
+type ExperimentIdComesFromFilePath = {
+  readonly [EXPERIMENT_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
 };
 
 /** Eval 作者自行选择的字段；不包含路径、factory 和规划期事实。 */
@@ -741,9 +747,8 @@ export interface ExperimentHookContext extends ScopedFeedback {
   fact(key: string, value: string | number | boolean): void;
 }
 
-export interface ExperimentDef {
-  /** 路径推导,定义里禁止手写(defineExperiment 会拒绝显式传入)。 */
-  id?: string;
+/** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
+export interface ExperimentAuthorFields {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
   description?: string;
   /**
@@ -839,12 +844,48 @@ export interface ExperimentDef {
   teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
 }
 
-export interface DiscoveredExperiment extends ExperimentDef {
-  id: string;
+/** 作者输入：id 只能由发现阶段从文件路径推导。 */
+export type ExperimentInput = ExperimentAuthorFields & {
+  id?: ExperimentIdComesFromFilePath;
+};
+
+/** Factory 产物；模块私有品牌使普通对象不能冒充可发现的 Experiment 定义。 */
+export interface ExperimentDefinition extends ExperimentAuthorFields {
+  readonly [EXPERIMENT_DEFINITION]: true;
+}
+
+/** @internal 仅 defineExperiment 写入私有品牌。 */
+export function brandExperimentDefinition(value: ExperimentAuthorFields): ExperimentDefinition {
+  Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
+  return value as ExperimentDefinition;
+}
+
+/** @internal discovery 只接受 defineExperiment 的原始产物，不做结构性兼容。 */
+export function isExperimentDefinition(value: unknown): value is ExperimentDefinition {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { readonly [EXPERIMENT_DEFINITION]?: unknown })[EXPERIMENT_DEFINITION] === true
+  );
+}
+
+/** @internal discovery 构造阶段三的不可变投影；不向 Definition 回写路径事实。 */
+export function discoverExperiment(
+  definition: ExperimentDefinition,
+  source: { readonly id: string; readonly baseDir: string; readonly sourcePath: string },
+): DiscoveredExperiment {
+  const value = { ...definition, ...source };
+  Object.defineProperty(value, EXPERIMENT_DEFINITION, { value: true });
+  return value as DiscoveredExperiment;
+}
+
+/** 发现期运行形状：Definition 加入路径与来源；规划期 configHash 不在这里。 */
+export interface DiscoveredExperiment extends ExperimentDefinition {
+  readonly id: string;
   /** 定义文件所在目录；解析 Experiment layer 中的相对本地路径。 */
-  baseDir?: string;
+  readonly baseDir: string;
   /** 定义文件绝对路径；link 诊断标注声明来源。 */
-  sourcePath?: string;
+  readonly sourcePath: string;
 }
 
 /**

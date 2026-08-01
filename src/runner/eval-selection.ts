@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
-import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentDef } from "./types.ts";
+import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentAuthorFields } from "./types.ts";
 
 /** `DiscoveredEval` → 用户谓词可见的显式白名单投影;不透传内部路径/执行字段。 */
 export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
@@ -23,7 +23,7 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
 
 export interface ResolveExperimentEvalsInput {
   experimentId: string;
-  selector: ExperimentDef["evals"];
+  selector: ExperimentAuthorFields["evals"];
   cliPatterns: readonly string[];
   evals: readonly DiscoveredEval[];
 }
@@ -122,7 +122,7 @@ export function splitByScoring(selectedEvals: readonly DiscoveredEval[]): Scorin
  * `evals` 选择器的审计指纹(数组内容 / 函数体哈希),进 `ExperimentRunInfo.evalFilterFingerprint`,
  * 供「配置没变」判断;不存选择器本身、不参与报告选题(选题权威是 `selectedEvalIds`)。
  */
-export function fingerprintEvalsFilter(evals: ExperimentDef["evals"], patterns: readonly string[]): string {
+export function fingerprintEvalsFilter(evals: ExperimentAuthorFields["evals"], patterns: readonly string[]): string {
   const basis =
     evals === undefined || evals === "*"
       ? "*"

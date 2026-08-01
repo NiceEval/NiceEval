@@ -10,7 +10,8 @@ import type {
   E2BSandboxSpec,
   EvalAuthorInput,
   EvalDefinition,
-  ExperimentDef,
+  ExperimentDefinition,
+  ExperimentInput,
   LocalSandboxSpec,
   SandboxAgent,
   SandboxAgentDef,
@@ -21,7 +22,7 @@ import type {
   TestContext,
   VercelSandboxSpec,
 } from "./types.ts";
-import { brandEvalDefinition } from "./types.ts";
+import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
 import { isSandboxLayer } from "./sandbox/layer.ts";
 
@@ -116,7 +117,7 @@ export function defineScoreEval(
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
-export function defineExperiment(def: ExperimentDef): ExperimentDef {
+export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if ((def as { id?: unknown }).id !== undefined) {
     throw new Error(t("define.experimentIdRejected"));
   }
@@ -149,7 +150,7 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
       if (!ok) throw new Error(t("define.experimentLabelInvalid", { key }));
     }
   }
-  return def;
+  return brandExperimentDefinition(def);
 }
 
 /**

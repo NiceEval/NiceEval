@@ -20,12 +20,12 @@ import { isDefinedScoreEval } from "../define.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
 import { composeSandbox, dockerfileSandbox } from "../sandbox/case.ts";
+import { discoverExperiment, isExperimentDefinition } from "../types.ts";
 import type {
   DiscoveredEval,
   DiscoveredExperiment,
   EvalAuthorFields,
   EvalScoring,
-  ExperimentDef,
   TestContext,
 } from "../types.ts";
 
@@ -307,15 +307,25 @@ export async function discoverExperiments(root: string): Promise<DiscoveredExper
   const files = (await walkFiles(dir, (n) => n.endsWith(".ts") && !n.endsWith(".d.ts"))).sort();
   const out: DiscoveredExperiment[] = [];
   for (const file of files) {
-    const mod = await importDiscovered<{ default?: ExperimentDef }>(file, root, "experiment");
+    const mod = await importDiscovered<{ default?: unknown }>(file, root, "experiment");
     const def = mod.default;
-    if (!def || !def.agent) continue;
+    // `experiments/shared/*.ts` 可以是被 experiment 文件 import 的普通 helper，因此没有
+    // default export 时不构成 Experiment。只要声明了 default，就必须是 factory 产物；不再把
+    // 裸对象、类型断言或历史结构性形状悄悄当成可运行配置。
+    if (def === undefined) continue;
+    if (!isExperimentDefinition(def)) {
+      throw new Error(
+        `Invalid experiment default export in ${relative(root, file)}: ` +
+          "export defineExperiment({...}) instead of a plain object. " +
+          "Experiment discovery only accepts the factory definition.",
+      );
+    }
     const id = relative(dir, file)
       .replace(/\.ts$/, "")
       .replace(/\.experiment$/, "")
       .split(sep)
       .join("/");
-    out.push({ ...def, id, baseDir: dirname(file), sourcePath: file });
+    out.push(discoverExperiment(def, { id, baseDir: dirname(file), sourcePath: file }));
   }
   return out;
 }
