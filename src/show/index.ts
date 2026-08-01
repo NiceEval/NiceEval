@@ -66,7 +66,6 @@ import {
   skippedRunsText,
 } from "./render.ts";
 import type { AttemptEvidence, AttemptHandle, Record, Run, Sample } from "../record/index.ts";
-import type { ReportDefinition } from "../report/runtime/host.ts";
 import type { DeltaData, StabilityMatrixData, UsageTableData } from "../report/model/types.ts";
 
 export interface ShowFlags {
@@ -102,7 +101,8 @@ export interface ShowFlags {
   /** --record:记录根目录(某次 Run 根或 `publish` 产物)。 */
   record?: string;
   report?: string;
-  configReport?: ReportDefinition;
+  /** 来自 config 的动态模块值；host facade 会按 dist factory 品牌验证。 */
+  configReport?: unknown;
   /** --page:多页报告选页;未命中按用法错误退出并列出可用页 id。 */
   page?: string;
   /** --fresh:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行)。 */

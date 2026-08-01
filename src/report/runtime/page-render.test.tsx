@@ -209,7 +209,7 @@ describe("renderTarget:单一分派路径", () => {
             decode: (key: string) => ({ n: Number(key) }),
             enumerate: () => [],
           },
-          load: (_base, params: { n: number }) => ({ doubled: params.n * 2 }),
+          load: (_base: Sample, params: { n: number }) => ({ doubled: params.n * 2 }),
           render: paramsPageRender,
         },
       ],

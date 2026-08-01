@@ -88,6 +88,8 @@ const scope = reportScopeFixture({
 - **MetricValue 与缺数据**：字段构成与序列化不丢值；`validateContent` 递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛TypeError；缺 artifact 时返回 null 不猜值。
 - **动态行的解析入口**（[编译期作者契约 · 动态数据](../../../feature/compile-time-contracts/library.md#动态数据经过独立解析函数)）：`parseEvidenceRow` / `parseEvidenceRows` 对 `unknown` 完成 `evidenceRow()` 在类型层完成的同一条证明——至少一个 MetricValue 字段、其余字段是维度可用的标量，失败消息点名字段。
   区分力场景是「只有维度字段的行」与「MetricValue 结构不完整的行」各自报出自己的字段名,不折成同一句。
+- **报告作者静态契约**（[编译期作者契约](../../../feature/compile-time-contracts/README.md)）：由 `pnpm run typecheck` 运行带 `@ts-expect-error` 的 fixture。普通页与参数化页 union 保住 Params / Input，参数化页缺 `load` 或保留导航、`aggregate()` 的重名 / `refs` 键、只有维度的 `evidenceRow()`、图表的错误字段 / `refs` / 不可排序字段都不能编译；`ReportDefinition` 与 `ThemeDefinition` 只能由各自 factory 构造。
+  动态 config 值跨 source → dist host 边界时不靠类型断言：host 用 factory predicate 重新证明品牌，伪造对象必须得到完整用户反馈。
 - **站点组件与内建报告**：
   - `standard` / `failures` / `stability` 的构成与具名导出同引用；各一张导航页，pages 里的详情页与 `standardAttemptPage` 同引用。
   - 三张 scope-input page 均相邻放置 `sampleWarnings` 与 `runDiagnostics`。

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EvalResult, Verdict } from "../../types.ts";
-import type { AttemptHandle, Run } from "../../record/index.ts";
+import type { AttemptHandle, Run, Sample } from "../../record/index.ts";
 import { encodeAttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import {
@@ -18,10 +18,22 @@ import {
   min,
   model,
   passRate,
+  parseEvidenceRow,
+  parseEvidenceRows,
   percentile,
   rollup,
   sum,
 } from "./calculation.ts";
+
+function assertReportCalculationStaticContracts(sample: Sample): void {
+  // @ts-expect-error 维度字段不能冒充 EvidenceRow，必须至少包含一个 MetricValue
+  evidenceRow({ agent: "codex" });
+  // @ts-expect-error by 与 values 的同名键在 aggregate 调用处拒绝
+  void aggregate(sample, { by: { agent }, values: { agent: passRate } });
+  // @ts-expect-error refs 是行级保留键，不能出现在分组键里
+  void aggregate(sample, { by: { refs: agent }, values: { passRate } });
+}
+void assertReportCalculationStaticContracts;
 
 let seq = 0;
 let runSeq = 0;
@@ -133,7 +145,27 @@ describe("metricValue / evidenceRow", () => {
     const row = evidenceRow({ passRate: mv, label: "x" });
     expect(row.refs).toEqual([locA, locB]);
     expect(row.label).toBe("x");
-    expect(() => evidenceRow({ label: "no-metric" })).toThrow(/MetricValue/);
+    // 无类型 JavaScript 输入仍走运行时护栏；类型作者会在调用处被静态契约拦住。
+    expect(() => evidenceRow({ label: "no-metric" } as never)).toThrow(/MetricValue/);
+  });
+
+  it("parseEvidenceRow(s) 为 unknown 数据逐字段建立同一份证据证明", () => {
+    const metric = {
+      value: 0.8,
+      samples: 4,
+      total: 5,
+      basis: "eval" as const,
+      refs: ["exp@2026-07-01T00:00:00.000Z/e/a0"],
+    };
+    const row = parseEvidenceRow({ agent: "codex", passRate: metric });
+    expect(row.refs).toEqual(metric.refs);
+    expect(parseEvidenceRows([{ agent: "codex", passRate: metric }])).toHaveLength(1);
+    expect(() => parseEvidenceRow({ agent: "codex", model: "gpt" })).toThrow(
+      /only dimensions \(agent, model\)/,
+    );
+    expect(() => parseEvidenceRow({ passRate: { value: "bad" } })).toThrow(/field "passRate"/);
+    expect(() => parseEvidenceRow({ agent: Number.NaN, passRate: metric })).toThrow(/field "agent"/);
+    expect(() => parseEvidenceRows({})).toThrow(/expected an array/);
   });
 });
 
@@ -236,13 +268,13 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
       aggregate(sample, {
         by: { passRate: agent },
         values: { passRate },
-      }),
+      } as never),
     ).rejects.toThrow(/both by and values/);
     await expect(
       aggregate(sample, {
         by: { refs: agent },
         values: { passRate },
-      }),
+      } as never),
     ).rejects.toThrow(/refs/);
   });
 

@@ -5,10 +5,11 @@
 // 这里只测 host facade 仍然私有的编排:内建报告分流与 LocalizedText 回退。
 
 import { describe, expect, it } from "vitest";
-import { describeReportSource, HostReportError, loadHostReport, localizeText } from "./host.ts";
+import { describeReportSource, HostReportError, loadHostReport, localizeText, resolveHostTheme } from "./host.ts";
 // dist-sourced:裸宿主装载的就是这份预编译产物的默认导出(show 与 view 同一条路),
 // raw-src import 会是另一份模块实例,引用等同断言必须对着 dist。
 import distBuiltInReport from "../../../dist/report/built-in/index.js";
+import { basalt as distBasalt } from "../../../dist/report/theme.js";
 
 describe("裸宿主装载内建报告", () => {
   it("缺省(无 --report)装载 niceeval/report/built-in 的默认导出:同引用,页 render 同引用", async () => {
@@ -19,6 +20,13 @@ describe("裸宿主装载内建报告", () => {
     for (let i = 0; i < host.pages.length; i++) {
       expect(host.pages[i]!.render).toBe(builtIn.pages[i]!.render);
     }
+  });
+
+  it("config.report 先作为 unknown 进入 host，再由 dist 的 factory 品牌验证", async () => {
+    await expect(loadHostReport(process.cwd(), undefined, { kind: "report" })).rejects.toThrow(
+      /must be the result of defineReport/,
+    );
+    await expect(loadHostReport(process.cwd(), undefined, distBuiltInReport)).resolves.toBe(distBuiltInReport);
   });
 
   it("--report <文件> 走文件装载;找不到文件时是 HostReportError 同族的可预期错误", async () => {
@@ -59,4 +67,11 @@ describe("LocalizedText 回退:locale → en → 键字典序第一个非空值"
 
 it("HostReportError 是可预期用户错误(与 ReportLoadError 同待遇,不是内部异常)", () => {
   expect(new HostReportError("x")).toBeInstanceOf(Error);
+});
+
+it("config.theme 也在 source → dist 边界重新证明 factory 品牌", async () => {
+  await expect(resolveHostTheme(process.cwd(), undefined, undefined, { kind: "theme" })).rejects.toThrow(
+    /must be the result of defineTheme/,
+  );
+  await expect(resolveHostTheme(process.cwd(), undefined, undefined, distBasalt)).resolves.toBe(distBasalt);
 });

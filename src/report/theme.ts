@@ -28,6 +28,8 @@ export interface ReportTheme {
 
 const THEME_DEFINITION: unique symbol = Symbol.for("niceeval.report.theme");
 export interface ThemeDefinition extends ReportTheme {
+  /** 私有 factory 品牌：只有 defineTheme() 的归一化产物可作为报告主题。 */
+  readonly [THEME_DEFINITION]: true;
   readonly kind: "theme";
 }
 
@@ -76,7 +78,7 @@ export function defineTheme(theme: ReportTheme): ThemeDefinition {
   assertAssets(theme.styles);
   const definition = { ...theme, kind: "theme" as const };
   Object.defineProperty(definition, THEME_DEFINITION, { value: true });
-  return definition;
+  return definition as ThemeDefinition;
 }
 
 export function isThemeDefinition(value: unknown): value is ThemeDefinition {
@@ -121,7 +123,7 @@ function pair(value: ThemeColor | undefined, fallback: ThemeColor): { light: str
   return typeof source === "string" ? { light: source, dark: source } : source;
 }
 export function themeStylesheet(theme: ThemeDefinition): string {
-  const all: ThemeDefinition = { ...basalt, ...theme };
+  const all: ReportTheme = { ...basalt, ...theme };
   const entries = COLORS.map((key) => [cssName(key), pair(all[key], (basalt[key] ?? basalt.accent)!)]);
   const baseSeries = basalt.series!;
   const series = (all.series ?? baseSeries).map((color, i) => [`series-${i + 1}`, pair(color, baseSeries[i]!)]);

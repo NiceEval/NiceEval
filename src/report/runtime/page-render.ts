@@ -127,7 +127,12 @@ export async function renderTarget(
 ): Promise<ResolvedPage> {
   const page = definition.pages.find((candidate) => candidate.id === target.page);
   if (page === undefined) throw new UnknownPageError(target.page);
-  const input = page.load ? await page.load(base, target.params, ctx) : base;
+  const input =
+    page.params !== undefined
+      ? await page.load(base, target.params, ctx)
+      : page.load !== undefined
+        ? await page.load(base, undefined, ctx)
+        : base;
   const key = targetKey(page, target.params);
   const tree = await runPageRender(page, input, key, options?.renderCache);
   return resolvePage(tree, {

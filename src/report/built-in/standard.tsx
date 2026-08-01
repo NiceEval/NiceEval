@@ -3,7 +3,7 @@
 import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
-import type { PageDefinition } from "../definition/report.ts";
+import type { ParameterizedPageDefinition } from "../definition/report.ts";
 import {
   AttemptDetails,
   Callouts,
@@ -98,7 +98,7 @@ export const standardTracesPage = {
  * 与 experiment 详情」)。`params.encode` 是恒等函数——locator 本身就是 URL-safe 的不透明
  * 字符串,不需要额外编码;`load` 经 `ctx.evidence()` 装载证据,不重新实现任何一条聚合规则。
  */
-export const standardAttemptPage: PageDefinition<{ locator: AttemptLocator }, AttemptEvidence> = {
+export const standardAttemptPage: ParameterizedPageDefinition<{ locator: AttemptLocator }, AttemptEvidence> = {
   id: "attempt",
   title: "Attempt",
   navigation: false,
@@ -120,7 +120,7 @@ export const standardAttemptPage: PageDefinition<{ locator: AttemptLocator }, At
  * 是同步契约,`toExperimentRows` 为了算出完整读数字段是异步的,枚举参数不需要这些读数。
  * `load` 只是 Sample 的既有收窄,不重新实现任何一条聚合规则。
  */
-export const standardExperimentPage: PageDefinition<{ experiment: string }, Sample> = {
+export const standardExperimentPage: ParameterizedPageDefinition<{ experiment: string }, Sample> = {
   id: "experiment",
   title: "Experiment",
   navigation: false,

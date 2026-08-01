@@ -2,29 +2,45 @@
 // 内部落到 Dataset + Chart 内核；作者面不暴露 Dataset。
 // 契约见 docs/feature/reports/library.md「图表」、components/charts/README.md。
 
-import { defineComponent } from "../tree.ts";
+import type { ReactNode } from "react";
+import { COMPONENT_FACES, defineComponent, type ReportComponent } from "../tree.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import type { ReportTarget } from "../report.ts";
-import { isMetricValue, type EvidenceRow } from "../../model/calculation.ts";
+import { isMetricValue, type EvidenceRow, type MetricValue } from "../../model/calculation.ts";
 import { Chart, Series, type ChartTargetPoint } from "./chart.tsx";
 import { pointsToDataset, type ExternalPoint } from "./points-dataset.ts";
 
 type Mark = "scatter" | "line" | "bar" | "area";
 
-export interface BarsSort {
-  field: string;
+type KeysMatching<Row, Value> = Extract<
+  {
+    [Key in keyof Row]-?: Row[Key] extends Value ? Key : never;
+  }[keyof Row],
+  string
+>;
+
+/** Sample 证据行可作坐标的字段：读数与字符串 / 布尔维度，排除 refs 与对象。 */
+export type EvidenceAxisKey<Row> = KeysMatching<Row, MetricValue | string | boolean>;
+/** Sample 证据行可标识系列 / 点的维度字段。 */
+export type EvidenceDimensionKey<Row> = KeysMatching<Row, string | number | boolean>;
+/** external 图表只接收 JSON 标量字段。 */
+export type ExternalAxisKey<Row> = KeysMatching<Row, ExternalPoint[keyof ExternalPoint]>;
+type EvidenceSortableKey<Row> = KeysMatching<Row, MetricValue | string | boolean>;
+
+export interface BarsSort<Field extends string = string> {
+  field: Field;
   direction?: "asc" | "desc";
 }
 
-interface BaseMarkProps<Row extends object> {
+interface BaseMarkProps<Row extends object, AxisKey extends string, DimensionKey extends string> {
   points: readonly Row[];
-  x: string;
-  y: string;
+  x: AxisKey;
+  y: AxisKey;
   /** docs: color / series — 拆成可见系列。 */
-  color?: string;
-  series?: string;
+  color?: DimensionKey;
+  series?: DimensionKey;
   /** 点身份键。 */
-  point?: string;
+  point?: DimensionKey;
   connect?: boolean;
   connectNulls?: boolean;
   legend?: boolean;
@@ -46,43 +62,66 @@ interface DrillDownMarkProps {
   pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
 }
 
-export type ScatterProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
-export type ExternalScatterProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
+type EvidenceMarkProps<Row extends EvidenceRow> = BaseMarkProps<
+  Row,
+  EvidenceAxisKey<Row>,
+  EvidenceDimensionKey<Row>
+>;
+type ExternalMarkProps<Row extends object> = BaseMarkProps<
+  Row,
+  ExternalAxisKey<Row>,
+  ExternalAxisKey<Row>
+>;
+
+export type ScatterProps<Row extends EvidenceRow = EvidenceRow> = EvidenceMarkProps<Row> & DrillDownMarkProps;
+export type ExternalScatterProps<Row extends object = ExternalPoint> = ExternalMarkProps<Row> & {
   external: true;
 };
 
-export type LineProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
-export type ExternalLineProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
+export type LineProps<Row extends EvidenceRow = EvidenceRow> = EvidenceMarkProps<Row> & DrillDownMarkProps;
+export type ExternalLineProps<Row extends object = ExternalPoint> = ExternalMarkProps<Row> & {
   external: true;
 };
 
-export type BarsProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> &
+export type BarsProps<Row extends EvidenceRow = EvidenceRow> = EvidenceMarkProps<Row> &
   DrillDownMarkProps & {
     /** 显示排序；在 limit 之前生效，不重新聚合。 */
-    sort?: BarsSort;
+    sort?: BarsSort<EvidenceSortableKey<Row>>;
     /** 排序后只保留前 N 行；不生成“其他”桶。 */
     limit?: number;
     /** web 面柱形方向；text 面始终使用适合终端阅读的横向排行。 */
     layout?: "horizontal" | "vertical";
   };
-export type ExternalBarsProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
+export type ExternalBarsProps<Row extends object = ExternalPoint> = ExternalMarkProps<Row> & {
   external: true;
-  sort?: BarsSort;
+  sort?: BarsSort<ExternalAxisKey<Row>>;
   limit?: number;
   layout?: "horizontal" | "vertical";
 };
 
-export type AreaProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
-export type ExternalAreaProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
+export type AreaProps<Row extends EvidenceRow = EvidenceRow> = EvidenceMarkProps<Row> & DrillDownMarkProps;
+export type ExternalAreaProps<Row extends object = ExternalPoint> = ExternalMarkProps<Row> & {
   external: true;
 };
 
-type AnyMarkProps = BaseMarkProps<object> &
-  DrillDownMarkProps & {
-    sort?: BarsSort;
-    limit?: number;
-    layout?: "horizontal" | "vertical";
-  };
+type AnyMarkProps = {
+  points: readonly object[];
+  x: string;
+  y: string;
+  color?: string;
+  series?: string;
+  point?: string;
+  connect?: boolean;
+  connectNulls?: boolean;
+  legend?: boolean;
+  locale?: ReportLocale;
+  className?: string;
+  external?: boolean;
+  pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
+  sort?: BarsSort;
+  limit?: number;
+  layout?: "horizontal" | "vertical";
+};
 
 function sortValue(raw: unknown, path: string, external: boolean): number | string | null {
   if (isMetricValue(raw)) {
@@ -185,14 +224,33 @@ function markChart(mark: Mark, props: AnyMarkProps) {
   );
 }
 
-export const Scatter = defineComponent<ScatterProps>((props) => markChart("scatter", props));
+type MarkComponentBase = Pick<ReportComponent<AnyMarkProps>, typeof COMPONENT_FACES | "displayName">;
+
+type ScatterComponent = MarkComponentBase & {
+  <Row extends EvidenceRow>(props: ScatterProps<Row>): ReactNode;
+  <Row extends object>(props: ExternalScatterProps<Row>): ReactNode;
+};
+type LineComponent = MarkComponentBase & {
+  <Row extends EvidenceRow>(props: LineProps<Row>): ReactNode;
+  <Row extends object>(props: ExternalLineProps<Row>): ReactNode;
+};
+type BarsComponent = MarkComponentBase & {
+  <Row extends EvidenceRow>(props: BarsProps<Row>): ReactNode;
+  <Row extends object>(props: ExternalBarsProps<Row>): ReactNode;
+};
+type AreaComponent = MarkComponentBase & {
+  <Row extends EvidenceRow>(props: AreaProps<Row>): ReactNode;
+  <Row extends object>(props: ExternalAreaProps<Row>): ReactNode;
+};
+
+export const Scatter = defineComponent<AnyMarkProps>((props) => markChart("scatter", props)) as unknown as ScatterComponent;
 Scatter.displayName = "Scatter";
 
-export const Line = defineComponent<LineProps>((props) => markChart("line", props));
+export const Line = defineComponent<AnyMarkProps>((props) => markChart("line", props)) as unknown as LineComponent;
 Line.displayName = "Line";
 
-export const Bars = defineComponent<BarsProps>((props) => markChart("bar", props));
+export const Bars = defineComponent<AnyMarkProps>((props) => markChart("bar", props)) as unknown as BarsComponent;
 Bars.displayName = "Bars";
 
-export const Area = defineComponent<AreaProps>((props) => markChart("area", props));
+export const Area = defineComponent<AnyMarkProps>((props) => markChart("area", props)) as unknown as AreaComponent;
 Area.displayName = "Area";

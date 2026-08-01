@@ -132,7 +132,7 @@ export function pointsToDataset(
     for (const dim of dimNames) {
       if (dim === fields.x || dim === fields.y) continue;
       const raw = (row as globalThis.Record<string, unknown>)[dim];
-      if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") {
+      if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean" && raw !== null) {
         throw new Error(`${path}.${dim} must be a string/number/boolean dimension value`);
       }
       values[dim] = String(raw);

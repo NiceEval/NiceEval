@@ -660,13 +660,14 @@ async function renderReportSlot(
   // config 每次重建 fresh 装载——不能吃启动时那份已求值的 report 对象,否则改 reports/*.tsx
   // 只会触发 watch/SSE,内容仍是旧定义。
   const loadDefinitions = async (): Promise<LoadedDefinitions> => {
-    let configReport: ReportDefinition | undefined;
-    let configTheme: ThemeDefinition | undefined;
+    // 配置模块由 raw src 执行，host 则消费 dist/report；私有品牌必须在 host 边界重新证明。
+    let configReport: unknown;
+    let configTheme: unknown;
     if (config !== undefined) {
       const { loadConfigFile } = await import("../load-config.ts");
       const loaded = await loadConfigFile(config.cwd, { freshImport: true });
-      configReport = loaded.report as ReportDefinition | undefined;
-      configTheme = loaded.theme as ThemeDefinition | undefined;
+      configReport = loaded.report;
+      configTheme = loaded.theme;
     }
     const loadedReport: ReportDefinition = await loadHostReport(report?.cwd ?? config?.cwd ?? process.cwd(), report?.path, configReport, {
       freshImport: true,
@@ -823,7 +824,12 @@ async function renderReportSlot(
     "zh-CN": string;
     assets: import("../report/extension/types.ts").PageRendererAssets;
   }> => {
-    const input = paramPage.load ? await paramPage.load(selection, params, loadCtx) : selection;
+    const input =
+      paramPage.params !== undefined
+        ? await paramPage.load(selection, params, loadCtx)
+        : paramPage.load !== undefined
+          ? await paramPage.load(selection, undefined, loadCtx)
+          : selection;
     const ctx = {
       scope: selection,
       results,

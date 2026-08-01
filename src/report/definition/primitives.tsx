@@ -1066,6 +1066,9 @@ export type {
   BarsProps,
   ExternalBarsProps,
   BarsSort,
+  EvidenceAxisKey,
+  EvidenceDimensionKey,
+  ExternalAxisKey,
   AreaProps,
   ExternalAreaProps,
 } from "./primitives/marks.tsx";

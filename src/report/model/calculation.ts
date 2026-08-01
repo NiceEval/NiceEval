@@ -93,6 +93,22 @@ export interface EvidenceRow {
   readonly refs: readonly AttemptLocator[];
 }
 
+/** 只用于把作者侧的静态契约错误留在调用点；不会出现在运行时结果里。 */
+const CONTRACT_DIAGNOSTIC: unique symbol = Symbol("niceeval.report.contractDiagnostic");
+
+type KeysMatching<Row, Value> = {
+  [Key in keyof Row]-?: Row[Key] extends Value ? Key : never;
+}[keyof Row];
+
+type MetricKeys<Row> = KeysMatching<Row, MetricValue>;
+
+type EvidenceNeedsMetric = {
+  readonly [CONTRACT_DIAGNOSTIC]: "evidence row needs at least one MetricValue field";
+};
+
+type WithMetricField<Fields extends object> =
+  [MetricKeys<Fields>] extends [never] ? EvidenceNeedsMetric : unknown;
+
 function locatorOfEvidence(item: AttemptHandle | AttemptLocator): AttemptLocator {
   if (typeof item === "string") return item as AttemptLocator;
   if (item.locator) return item.locator;
@@ -149,27 +165,115 @@ export function metricValue(options: {
   };
 }
 
+function isMetricFormat(value: unknown): value is MetricFormat {
+  return (
+    value === "number" ||
+    value === "percent" ||
+    value === "duration" ||
+    value === "currency" ||
+    (typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      (value as { kind?: unknown }).kind === "custom" &&
+      typeof (value as { format?: unknown }).format === "function")
+  );
+}
+
 export function isMetricValue(value: unknown): value is MetricValue {
   if (!value || typeof value !== "object") return false;
   const v = value as MetricValue;
   return (
-    (typeof v.value === "number" || v.value === null) &&
-    typeof v.samples === "number" &&
-    typeof v.total === "number" &&
-    typeof v.basis === "string" &&
-    Array.isArray(v.refs)
+    (v.value === null || (typeof v.value === "number" && Number.isFinite(v.value))) &&
+    Number.isInteger(v.samples) &&
+    Number.isInteger(v.total) &&
+    v.samples >= 0 &&
+    v.total >= 0 &&
+    v.samples <= v.total &&
+    (v.basis === "attempt" || v.basis === "eval" || v.basis === "run" || v.basis === "pair") &&
+    Array.isArray(v.refs) &&
+    v.refs.every((ref) => typeof ref === "string") &&
+    (v.unit === undefined || typeof v.unit === "string") &&
+    (v.format === undefined || isMetricFormat(v.format)) &&
+    (v.better === undefined || v.better === "higher" || v.better === "lower") &&
+    (v.bounds === undefined ||
+      (typeof v.bounds === "object" &&
+        v.bounds !== null &&
+        !Array.isArray(v.bounds) &&
+        (v.bounds.min === undefined || (typeof v.bounds.min === "number" && Number.isFinite(v.bounds.min))) &&
+        (v.bounds.max === undefined || (typeof v.bounds.max === "number" && Number.isFinite(v.bounds.max)))))
   );
 }
 
-export function evidenceRow<const Fields extends object>(
-  fields: Fields,
-): Fields & EvidenceRow {
+function buildEvidenceRow(fields: object): EvidenceRow {
   const metricFields = Object.values(fields).filter(isMetricValue);
   if (metricFields.length === 0) {
     throw new Error("evidenceRow requires at least one MetricValue field");
   }
-  const refs = dedupeLocators(metricFields.flatMap((m) => m.refs));
-  return { ...fields, refs };
+  return { refs: dedupeLocators(metricFields.flatMap((metric) => metric.refs)) };
+}
+
+export function evidenceRow<const Fields extends object>(
+  fields: Fields & WithMetricField<Fields>,
+): Fields & EvidenceRow {
+  return { ...fields, ...buildEvidenceRow(fields) };
+}
+
+function valueDescription(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function isEvidenceDimension(value: unknown): value is string | number | boolean | null {
+  return value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
+}
+
+/**
+ * 外部 JSON / 数据库行的显式运行时入口。字面量仍应使用 evidenceRow()，以保住字段级推断与
+ * “至少一个 MetricValue” 的编译期证明；未知值则在这里逐字段完成同一份结构证明。
+ */
+export function parseEvidenceRow(value: unknown): EvidenceRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`parseEvidenceRow: row must be an object, got ${valueDescription(value)}`);
+  }
+  const fields = value as globalThis.Record<string, unknown>;
+  const metricNames: string[] = [];
+  const dimensionNames: string[] = [];
+
+  for (const [name, field] of Object.entries(fields)) {
+    if (isMetricValue(field)) {
+      metricNames.push(name);
+      continue;
+    }
+    if (isEvidenceDimension(field)) {
+      dimensionNames.push(name);
+      continue;
+    }
+    throw new Error(
+      `parseEvidenceRow: field ${JSON.stringify(name)} must be a MetricValue ({ value, unit? }), got ${valueDescription(field)}`,
+    );
+  }
+
+  if (metricNames.length === 0) {
+    throw new Error(
+      `parseEvidenceRow: row needs at least one MetricValue field, got only dimensions (${dimensionNames.join(", ")})`,
+    );
+  }
+  return { ...fields, ...buildEvidenceRow(fields) };
+}
+
+export function parseEvidenceRows(value: unknown): readonly EvidenceRow[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`parseEvidenceRows: expected an array of rows, got ${valueDescription(value)}`);
+  }
+  return value.map((row, index) => {
+    try {
+      return parseEvidenceRow(row);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`parseEvidenceRows: row ${index}: ${message}`);
+    }
+  });
 }
 
 // ── Calculation / rollup ────────────────────────────────────────────
@@ -436,6 +540,22 @@ async function applyCalculation(
 type GroupFunctions = globalThis.Record<string, GroupFunction>;
 type CalculationFunctions = globalThis.Record<string, Calculation>;
 
+/** 带 string index signature 的动态对象无法在编译期知道实际键；保留运行时校验。 */
+type KnownKeys<T> = string extends keyof T ? never : keyof T;
+
+type AggregateKeyConflict<Groups, Values> =
+  | Extract<KnownKeys<Groups>, KnownKeys<Values>>
+  | Extract<KnownKeys<Groups> | KnownKeys<Values>, "refs">;
+
+type AggregateKeyDiagnostic<Key extends PropertyKey> = {
+  readonly [CONTRACT_DIAGNOSTIC]: `aggregate key conflict: ${Extract<Key, string>}`;
+};
+
+type NoAggregateKeyConflict<Groups, Values> =
+  [AggregateKeyConflict<Groups, Values>] extends [never]
+    ? unknown
+    : AggregateKeyDiagnostic<AggregateKeyConflict<Groups, Values>>;
+
 export type AggregateRow<
   Groups extends GroupFunctions,
   Values extends CalculationFunctions,
@@ -470,7 +590,7 @@ export async function aggregate<
   const Values extends CalculationFunctions,
 >(
   sample: Sample,
-  options: { by: Groups; values: Values },
+  options: { by: Groups; values: Values } & NoAggregateKeyConflict<Groups, Values>,
 ): Promise<readonly AggregateRow<Groups, Values>[]> {
   const { by, values } = options;
   assertNoKeyCollision(by, values);
@@ -531,12 +651,7 @@ export async function aggregate<
     for (const [name, calc] of Object.entries(values)) {
       valueFields[name] = await applyCalculation(calc, group.units);
     }
-    rows.push(
-      evidenceRow({
-        ...group.keys,
-        ...valueFields,
-      }) as AggregateRow<Groups, Values>,
-    );
+    rows.push({ ...group.keys, ...valueFields, ...buildEvidenceRow(valueFields) } as AggregateRow<Groups, Values>);
   }
 
   return rows;

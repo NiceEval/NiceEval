@@ -91,18 +91,31 @@ export type PageLoad<Params, Input> = (
 ) => Input | Promise<Input>;
 
 /**
- * page 只有一种形状,核心不区分实体种类(docs/feature/reports/library.md
- * 「defineReport() 保留静态 page 边界」)。`params` 把一页声明成参数化页:同一张页按参数
- * 产生多个实例,每个实例可被 ReportTarget 寻址;声明 `params` 必须同时声明 `load` 且
- * `navigation: false`(导航项给不出参数),这条规则在 defineReport 装载期校验。
- * attempt 详情、experiment 详情都是这样的参数化页,核心、路由与宿主对它们没有专门分支。
+ * page 由两个互斥分支组成，核心不区分实体种类。参数化页必须同时声明 params、load 与
+ * navigation: false；union 将这一作者错误留在调用处，defineReport 仍为无类型 JavaScript
+ * 保留同一条装载期反馈。attempt 与 experiment 详情只是这类普通参数化页。
  */
-export interface PageDefinition<Params = void, Input = Sample> extends ReportPageBase {
-  navigation?: boolean;
-  params?: PageParams<Params>;
-  load?: PageLoad<Params, Input>;
+interface PageBase<Input> extends ReportPageBase {
   render: PageRender<Input>;
 }
+
+/** 普通页没有 URL 参数；可选 load 只以宿主 Sample 为输入。 */
+export interface PlainPageDefinition<Input = Sample> extends PageBase<Input> {
+  params?: never;
+  navigation?: boolean;
+  load?: PageLoad<void, Input>;
+}
+
+/** 参数化页必须同时给出寻址、装载与不可导航三项声明。 */
+export interface ParameterizedPageDefinition<Params, Input> extends PageBase<Input> {
+  params: PageParams<Params>;
+  navigation: false;
+  load: PageLoad<Params, Input>;
+}
+
+export type PageDefinition<Params = void, Input = Sample> =
+  | PlainPageDefinition<Input>
+  | ParameterizedPageDefinition<Params, Input>;
 
 /** 规范化后的 page 类型;装载期只做形状校验,不为具体 Params/Input 收窄类型。 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,8 +126,8 @@ export type ReportPage = PageDefinition<any, any>;
 export type PageDefinitionInput = PageDefinition<any, any>;
 
 /** pages 是非空有序数组;单页函数缩写不经此类型。 */
-export type ReportOptions = ReportShell & {
-  pages: NonEmptyArray<PageDefinitionInput>;
+export type ReportOptions<Pages extends NonEmptyArray<PageDefinitionInput> = NonEmptyArray<PageDefinitionInput>> = ReportShell & {
+  pages: Pages;
 };
 
 export type ReportDef = ReportOptions;
@@ -127,6 +140,8 @@ const REPORT_DEFINITION: unique symbol = Symbol.for("niceeval.report.definition"
  * 字段是装载规范化后的形态:pages 恒非空,head 恒为数组。
  */
 export interface ReportDefinition {
+  /** 私有 factory 品牌：只有 defineReport() 的归一化产物可进配置或宿主。 */
+  readonly [REPORT_DEFINITION]: true;
   readonly kind: "report";
   readonly title?: LocalizedText;
   readonly theme?: ThemeDefinition;
@@ -351,7 +366,7 @@ function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPa
 }
 
 export function defineReport(render: PageRender<Sample>): ReportDefinition;
-export function defineReport(def: ReportOptions): ReportDefinition;
+export function defineReport<const Pages extends NonEmptyArray<PageDefinitionInput>>(def: ReportOptions<Pages>): ReportDefinition;
 export function defineReport(input: PageRender<Sample> | ReportOptions): ReportDefinition {
   if (typeof input === "function") {
     return defineReportFromDef({
@@ -449,7 +464,7 @@ function defineReportFromDef(def: ReportOptions): ReportDefinition {
     pages: pages as unknown as NonEmptyArray<ReportPage>,
   };
   Object.defineProperty(definition, REPORT_DEFINITION, { value: true });
-  return definition;
+  return definition as unknown as ReportDefinition;
 }
 
 /** 宿主装载报告文件时用:默认导出是不是 defineReport 的产物。 */
