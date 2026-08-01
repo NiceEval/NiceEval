@@ -1,169 +1,71 @@
-// Run 级 BuildKey 自动收集:从 PlannedSandboxCase / composeBuildWorksFromPlan 抽出
-// 仍需 fresh 的 works,供 prepareSandboxBuilds 与 dockerComposeBuildProvider 消费。
+// PreparedRunPair -> Run 级构建工作。provider-specific 解析留在 sandbox/runtime；
+// 本模块只去重 BuildKey、路由 provider，并跳过已经完整携带的 pair。
 
-import { dirname } from "node:path";
-import { planSandboxCase, type PlannedSandboxCase } from "../sandbox/case.ts";
-import { composeBuildWorksFromPlan, dockerComposeBuildProvider } from "../sandbox/compose.ts";
+import { Effect, Option } from "effect";
 import type { SandboxBuildProvider, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
-import {
-  collectDockerfileBuildFromPlan,
-  dockerfileBuildProvider,
-  routeBuildProviders,
-  type DockerfileBuildCollection,
-} from "../sandbox/dockerfile-build.ts";
-import type { BuildKey } from "../sandbox/identity.ts";
-import type { DiscoveredEval, SandboxOption } from "../types.ts";
-import { selectedEvalsForRun } from "./eval-selection.ts";
-import { sandboxEnvironmentForEval, sandboxForEval } from "./sandbox-selection.ts";
-import type { AgentRun, RunOptions } from "./types.ts";
+import { routeBuildProviders } from "../sandbox/dockerfile-build.ts";
+import { digestOf, type BuildKey } from "../sandbox/identity.ts";
+import { collectSandboxRuntimeBuildPreparation } from "../sandbox/runtime.ts";
+import type { PreparedRunPair } from "./sandbox-selection.ts";
+import type { RunOptions } from "./types.ts";
 
 export interface CollectedBuildPreparation {
   readonly works: readonly SandboxBuildWork[];
   readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
   readonly provider: SandboxBuildProvider;
-  /** `${experimentId}|${evalId}` → 规划期 CaseKey。 */
   readonly caseKeys: ReadonlyMap<string, string>;
-  /** `${experimentId}|${evalId}` → 规划好的 case。 */
-  readonly plans: ReadonlyMap<string, PlannedSandboxCase>;
 }
 
 /**
- * 携带规划后,为仍有 fresh attempt 的 eval 收集 Compose / on-demand BuildKey。
- * 完全携带的 (experiment, eval) 不进 works、不造假 provenance。
+ * CarryPlan 完成后收集 fresh pair 所需构建。输入已经是不可变 physical plan；这里不再读取
+ * Eval/Experiment 声明，也不做 template/provider 二次选择。
  */
 export async function collectBuildPreparation(opts: {
-  readonly evals: readonly DiscoveredEval[];
-  readonly agentRuns: readonly AgentRun[];
-  readonly configSandbox?: SandboxOption;
+  readonly preparedPairs: readonly PreparedRunPair[];
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
-  /** 测试可注入假 provider;省略时 Compose works 用 dockerComposeBuildProvider。 */
+  /** 测试可注入单一 provider；生产默认按每条 BuildKey 的 adapter provider 路由。 */
   readonly provider?: SandboxBuildProvider;
-  readonly providerBaseDir?: string;
 }): Promise<CollectedBuildPreparation | undefined> {
   const worksByKey = new Map<BuildKey, SandboxBuildWork>();
+  const providerByKey = new Map<BuildKey, SandboxBuildProvider>();
   const evalBuildKeys = new Map<string, string[]>();
   const caseKeys = new Map<string, string>();
-  const plans = new Map<string, PlannedSandboxCase>();
-  let composeBaseDir: string | undefined;
-  let composeEnv: Readonly<globalThis.Record<string, string>> | undefined;
-  let hasComposeWorks = false;
-  const dockerfileCollections: DockerfileBuildCollection[] = [];
 
-  for (const run of opts.agentRuns) {
-    if (run.agent.kind !== "sandbox") continue;
-    for (const evalDef of selectedEvalsForRun(opts.evals as DiscoveredEval[], run)) {
-      const carryKey = `${run.experimentId ?? ""}|${evalDef.id}`;
-      const carried = opts.carriedAttemptsByKey.get(carryKey);
-      if (carried !== undefined && carried.size >= run.attempts) continue;
+  for (const pair of opts.preparedPairs) {
+    const carried = opts.carriedAttemptsByKey.get(pair.key);
+    if (carried !== undefined && carried.size >= pair.run.attempts) continue;
+    if (pair.plan._tag === "Direct") continue;
 
-      const spec = sandboxForEval(run, evalDef, opts.configSandbox);
-      if (spec === undefined) continue;
-      const planned = planSandboxCase({
-        evalId: evalDef.id,
-        environment: sandboxEnvironmentForEval(run, evalDef),
-        ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
-        spec,
-      });
-      if (planned.status !== "ready") continue;
-
-      plans.set(carryKey, planned.plan);
-      if (planned.plan.caseKind === "on-demand-build") {
-        const collection = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
-        if (collection === undefined) {
-          caseKeys.set(carryKey, planned.plan.caseKey);
-          continue;
-        }
-        dockerfileCollections.push(collection);
-        caseKeys.set(carryKey, collection.caseKey);
-        if (!worksByKey.has(collection.buildKey)) worksByKey.set(collection.buildKey, collection.work);
-        const keys = evalBuildKeys.get(carryKey) ?? [];
-        if (!keys.includes(collection.buildKey)) keys.push(collection.buildKey);
-        evalBuildKeys.set(carryKey, keys);
-        continue;
-      }
-
-      caseKeys.set(carryKey, planned.plan.caseKey);
-      if (planned.plan.caseKind !== "compose" && planned.plan.caseKind !== "cloud-compose") {
-        continue;
-      }
-
-      const collection = await composeBuildWorksFromPlan(planned.plan, {
-        baseDir: evalDef.baseDir,
-      });
-      if (collection === undefined || collection.works.length === 0) continue;
-
-      hasComposeWorks = true;
-      composeBaseDir = evalDef.baseDir;
-      const decl =
-        planned.plan.declaration.form === "docker" && planned.plan.declaration.value.compose
-          ? planned.plan.declaration.value.compose
-          : planned.plan.declaration.form === "source" && planned.plan.declaration.value.kind === "compose"
-            ? planned.plan.declaration.value
-            : undefined;
-      if (decl && "env" in decl && decl.env !== undefined) composeEnv = decl.env;
-
-      const keys = evalBuildKeys.get(carryKey) ?? [];
-      for (const work of collection.works) {
-        if (!worksByKey.has(work.buildKey)) worksByKey.set(work.buildKey, work);
-        if (!keys.includes(work.buildKey)) keys.push(work.buildKey);
-      }
-      evalBuildKeys.set(carryKey, keys);
+    const collection = await Effect.runPromise(
+      collectSandboxRuntimeBuildPreparation(pair.plan, pair.evalDef.id),
+    );
+    if (Option.isNone(collection)) {
+      caseKeys.set(pair.key, digestOf({ version: 1, providerPlan: pair.plan.providerPlan.identity }));
+      continue;
     }
+    const collected = collection.value;
+
+    caseKeys.set(pair.key, collected.caseKey);
+    const keys: string[] = [];
+    for (const work of collected.works) {
+      if (!worksByKey.has(work.buildKey)) worksByKey.set(work.buildKey, work);
+      providerByKey.set(work.buildKey, opts.provider ?? collected.provider);
+      if (!keys.includes(work.buildKey)) keys.push(work.buildKey);
+    }
+    if (keys.length > 0) evalBuildKeys.set(pair.key, keys);
   }
 
-  if (worksByKey.size === 0) {
-    if (caseKeys.size === 0) return undefined;
-    return {
-      works: [],
-      evalBuildKeys: {},
-      provider: opts.provider ?? noopBuildProvider(),
-      caseKeys,
-      plans,
-    };
-  }
-
-  const provider = opts.provider ?? providerForCollectedBuilds({
-    works: [...worksByKey.values()],
-    dockerfileCollections,
-    hasComposeWorks,
-    composeBaseDir: opts.providerBaseDir ?? composeBaseDir ?? process.cwd(),
-    composeEnv,
-  });
-
-  return {
-    works: [...worksByKey.values()],
-    evalBuildKeys: Object.fromEntries(evalBuildKeys),
+  if (worksByKey.size === 0 && caseKeys.size === 0) return undefined;
+  const provider = opts.provider ?? routeBuildProviders(providerByKey);
+  return Object.freeze({
+    works: Object.freeze([...worksByKey.values()]),
+    evalBuildKeys: Object.freeze(Object.fromEntries(evalBuildKeys)),
     provider,
     caseKeys,
-    plans,
-  };
+  });
 }
 
-function providerForCollectedBuilds(opts: {
-  readonly works: readonly SandboxBuildWork[];
-  readonly dockerfileCollections: readonly DockerfileBuildCollection[];
-  readonly hasComposeWorks: boolean;
-  readonly composeBaseDir: string;
-  readonly composeEnv?: Readonly<globalThis.Record<string, string>>;
-}): SandboxBuildProvider {
-  const routes = new Map<BuildKey, SandboxBuildProvider>();
-  if (opts.dockerfileCollections.length > 0) {
-    const provider = dockerfileBuildProvider(opts.dockerfileCollections);
-    for (const collection of opts.dockerfileCollections) routes.set(collection.buildKey, provider);
-  }
-  if (opts.hasComposeWorks) {
-    const provider = dockerComposeBuildProvider({
-      baseDir: opts.composeBaseDir,
-      ...(opts.composeEnv !== undefined ? { env: opts.composeEnv } : {}),
-    });
-    for (const work of opts.works) {
-      if (!routes.has(work.buildKey)) routes.set(work.buildKey, provider);
-    }
-  }
-  return routes.size > 0 ? routeBuildProviders(routes) : noopBuildProvider();
-}
-
-/** 把收集结果压成 RunOptions.buildPreparation(works 为空时仍可只带 caseKeys 经旁路下发)。 */
+/** 把收集结果压成 RunOptions.buildPreparation；无构建时仅保留 caseKeys，不启动协调器。 */
 export function toBuildPreparation(
   collected: CollectedBuildPreparation,
 ): NonNullable<RunOptions["buildPreparation"]> | undefined {
@@ -173,23 +75,4 @@ export function toBuildPreparation(
     evalBuildKeys: collected.evalBuildKeys,
     provider: collected.provider,
   };
-}
-
-function noopBuildProvider(): SandboxBuildProvider {
-  return {
-    async lookup() {
-      return undefined;
-    },
-    async build(work) {
-      throw new Error(
-        `no sandbox build provider for BuildKey ${JSON.stringify(work.buildKey)} — ` +
-          `inject buildPreparation.provider or use a Compose-capable docker sandbox`,
-      );
-    },
-  };
-}
-
-/** 测试辅助:Compose 文件所在目录。 */
-export function composeFileDir(file: string): string {
-  return dirname(file);
 }

@@ -4,20 +4,25 @@
 // adapter 只填「把 agent 跑起来」一段。
 
 import { resolve as resolvePath } from "node:path";
+import { randomUUID } from "node:crypto";
 import { readFile as readSourceFile } from "node:fs/promises";
 import { Effect, Cause, Duration, Either, Option } from "effect";
-import { createMaterializedCase, resolveSandbox } from "../sandbox/resolve.ts";
-import type { MaterializedSandboxCase } from "../sandbox/case.ts";
+import {
+  materializeSandboxRunPlan,
+  liveSandboxRuntimeServices,
+  sandboxRuntimeCapabilities,
+  type SandboxRuntimeDeadline,
+} from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
-import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
-import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { unregisterSandbox } from "../sandbox/registry.ts";
+import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { resolveJudge } from "./judge-config.ts";
-import { providerSessionLimitMs, SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
+import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
-import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
+import { computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
-import { agentInstallIdentityInput, runAgentEnsure } from "../agents/provisioner.ts";
+import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -38,6 +43,7 @@ import { createRemoteSandbox } from "./remote-sandbox.ts";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
+import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
@@ -67,11 +73,14 @@ import type {
   TraceSpan,
   Usage,
   RetryAttemptRecord,
+  ScoreTestContext,
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
 import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
-import { sandboxForEval, sandboxProjection } from "./sandbox-selection.ts";
+import { ExperimentStateWindow, ExperimentStateSequenceFailure } from "../state/runtime.ts";
+import { experimentStateProjection } from "../state/definition.ts";
+import type { ReusableLeaseStateWindow } from "./sandbox-pool.ts";
 import type {
   AgentRun,
   Attempt,
@@ -136,7 +145,13 @@ export interface RunAttemptEffectOptions {
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
   /** 由复用池独占借出的实例；池负责 SandboxSpec 生命周期与最终 stop。 */
-  reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
+  reusedSandbox?: {
+    sandbox: Sandbox;
+    reuseSandbox: number;
+    reuseOrdinal: number;
+    stateWindow?: ReusableLeaseStateWindow;
+    lastPlannedUse?: boolean;
+  };
 }
 
 export function runAttemptEffect(
@@ -154,7 +169,7 @@ export function runAttemptEffect(
     id: evalDef.id,
     description: evalDef.description,
     experimentId: run.experimentId,
-    experiment: experimentRunInfo(run, config, evalDef.judge, a.configHash),
+    experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
     agent: run.agent.name,
     model: run.model,
     verdict: "errored",
@@ -164,6 +179,7 @@ export function runAttemptEffect(
     startedAt: new Date(t0).toISOString(),
     durationMs: 0,
     assertions: [],
+    evidenceCoverage: run.agent.evidenceCoverage,
     scoring: evalDef.scoring ?? "pass",
     // 资源获取/硬超时等在 collector 尚不可用前就可能收束；计分制的异常骨架也保持该字段的
     // 读取面（空数组而非缺失），与正常路径一致。
@@ -181,8 +197,11 @@ export function runAttemptEffect(
   /** 留存提交成功(`--keep-sandbox`)——唯一一个在收尾时点才知道的 sandbox 记录键。 */
   let kept = false;
   if (reusedSandbox && run.agent.kind === "sandbox") {
+    if (a.plan._tag !== "Sandbox") {
+      throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+    }
     sandboxFacts = {
-      provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef)).provider,
+      provider: a.plan.providerPlan.provider,
       sandboxId: reusedSandbox.sandbox.sandboxId,
       reused: true,
       reuseSandbox: reusedSandbox.reuseSandbox,
@@ -399,12 +418,14 @@ export function runAttemptEffect(
 
   return Effect.scoped(
     Effect.gen(function* () {
-      // 规划期按当前 (Experiment, Eval) pair 解析出的同一个 SandboxSpec 起 provider；
-      // 两侧作者的 prepare/cleanup 只消费同一 pair 的 linked SandboxLayer。
-      const sandboxSpec = a.sandboxSpec ?? sandboxForEval(run, evalDef);
+      const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
+      if (run.agent.kind === "sandbox" && sandboxPlan === undefined) {
+        throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+      }
+      const runtimeCapabilities = sandboxPlan === undefined ? undefined : sandboxRuntimeCapabilities(sandboxPlan);
       // 留存 disposition:只在本 attempt 内可变,初始 stop;只有留存提交成功才改成 keep
-      // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。keep 守卫在 createMaterializedCase
-      // 内走 assertKeepAllowedForCase(自定义缺 group-keep / local 等创建前硬失败)。
+      // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
+      // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
       let disposition: "stop" | "keep" = "stop";
       // 退避重试(resolve.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
@@ -416,7 +437,6 @@ export function runAttemptEffect(
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
       // 结果封口(附 phases)发生在 Sample release 完成之后(见下方 Effect.map)。
       let releaseStartedAt = 0;
-      let materializedCase: MaterializedSandboxCase | undefined;
       if (run.agent.kind === "sandbox" && !reusedSandbox) {
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -440,48 +460,41 @@ export function runAttemptEffect(
                   log(t("runner.startSandbox"));
                   // provider 固有的会话上限不能静默充当默认值:deadline 超出它时,attempt
                   // 会跑到一半被平台截断。在派发前就报环境约束,点名 provider 与上限值。
-                  assertDeadlineFitsProvider(sandboxSpec, attemptTimeout?.timeoutMs);
-                  if (sandboxSpec === undefined) {
+                  if (sandboxPlan === undefined || runtimeCapabilities === undefined) {
+                    throw new Error("sandbox plan invariant violated before materialization");
+                  }
+                  assertDeadlineFitsPlan(runtimeCapabilities, attemptTimeout?.timeoutMs);
+                  if (opts.keepSandbox !== undefined && runtimeCapabilities.retention._tag !== "Suspendable") {
                     throw new Error(
-                      `sandbox agent requires one linked SandboxLayer template before createMaterializedCase`,
+                      `--keep-sandbox is unsupported by runtime adapter ${JSON.stringify(sandboxPlan.providerPlan.runtimeAdapter)}`,
                     );
                   }
-                  return yield* Effect.acquireRelease(
-                    Effect.promise(async () => {
-                      const materialized = await createMaterializedCase({
-                        evalId: evalDef.id,
-                        environment: a.sandboxEnvironment ?? evalDef.environment,
-                        ...(evalDef.defaultProfileId !== undefined
-                          ? { defaultProfileId: evalDef.defaultProfileId }
-                          : {}),
-                        sandbox: sandboxSpec,
-                        provisionSlot,
-                        ...(attemptTimeout ? { timeout: attemptTimeout.timeoutMs } : {}),
-                        ...(deadlineAt !== undefined ? { deadlineAt } : {}),
-                        runtime: "node24",
-                        feedback: scopedFeedback,
-                        keepRequested: opts.keepSandbox !== undefined,
-                        ...(a.buildLocators !== undefined ? { buildLocators: a.buildLocators } : {}),
-                        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-                      });
-                      materializedCase = materialized;
-                      return materialized.sandbox;
+                  const runtimeDeadline: SandboxRuntimeDeadline = attemptTimeout === undefined || deadlineAt === undefined
+                    ? { _tag: "Unlimited" }
+                    : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
+                  const materialized = yield* Effect.acquireRelease(
+                    materializeSandboxRunPlan({
+                      plan: sandboxPlan,
+                      evalId: evalDef.id,
+                      deadline: runtimeDeadline,
+                      feedback: scopedFeedback,
+                      signal,
+                      buildLocators: a.buildLocators ?? new Map(),
+                      provisionSlot: { _tag: "Bound", value: provisionSlot },
+                      services: liveSandboxRuntimeServices,
                     }),
                     // Sample release 按 disposition 收尾:stop = 整组销毁(默认);keep = provider
                     // suspend(sandbox.suspend 阶段,有界计时),成功把登记项转 dormant,
                     // 失败保持 alive 并追加 diagnostic——不销毁、不冒充 dormant。
-                    (sb) =>
+                    (owned) =>
                       Effect.promise(async () => {
+                        const sb = owned.sandbox;
                         if (disposition !== "keep") {
-                          if (materializedCase !== undefined) {
-                            await materializedCase.group.stop();
-                          } else {
-                            await stopSandbox(sb);
-                          }
+                          await owned.group.stop();
                           return;
                         }
                         unregisterSandbox(sb);
-                        const providerName = resolveSandbox(sandboxSpec).provider;
+                        const providerName = runtimeCapabilities.provider;
                         const suspendStart = Date.now();
                         try {
                           await suspendSandbox(sb);
@@ -500,13 +513,14 @@ export function runAttemptEffect(
                         }
                       }),
                   );
+                  return materialized.sandbox;
                 }),
               );
             })
           : createRemoteSandbox());
       // 一次性沙箱的租借时刻:实例到手就定归属,后面无论走到哪一步终结都带着它。
       if (run.agent.kind === "sandbox" && !sandboxFacts) {
-        sandboxFacts = { provider: resolveSandbox(sandboxSpec).provider, sandboxId: sandbox.sandboxId };
+        sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
       }
       if (run.agent.kind !== "sandbox") log(t("runner.useRemoteAgent"));
 
@@ -660,8 +674,8 @@ export function runAttemptEffect(
         a.locator !== undefined &&
         (keepMode === "all" || bodyResult.verdict === "failed" || bodyResult.verdict === "errored")
       ) {
-        const providerName = resolveSandbox(sandboxSpec).provider;
-        if (KEEPABLE_PROVIDERS.has(providerName)) {
+        const providerName = runtimeCapabilities!.provider;
+        if (runtimeCapabilities!.retention._tag === "Suspendable") {
           try {
             const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
             const keptAt = new Date().toISOString();
@@ -716,7 +730,7 @@ export function runAttemptEffect(
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
     Effect.catchAllCause((cause) =>
       Cause.isInterrupted(cause)
-        ? Effect.failCause(cause)
+        ? Effect.interrupt
         : Effect.suspend(() => {
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
             // 失败:先读空间轴回执,再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
@@ -818,13 +832,19 @@ function timeoutAttributionOf(
  * 与其让它跑一半赔钱,不如在这里报环境约束——点名 provider 与上限值,并给出两条出路。
  * 全实验同因必死(同一个 provider、同一条 deadline),因此按 experiment 域止损。
  */
-function assertDeadlineFitsProvider(spec: Parameters<typeof resolveSandbox>[0], deadlineMs: number | undefined): void {
+function assertDeadlineFitsPlan(
+  capabilities: ReturnType<typeof sandboxRuntimeCapabilities>,
+  deadlineMs: number | undefined,
+): void {
   if (deadlineMs === undefined) return;
-  const resolved = resolveSandbox(spec);
-  const limit = providerSessionLimitMs(resolved.provider, resolved.lifetimeMs);
+  const limit = capabilities.sessionLimitMs ?? undefined;
   if (limit === undefined || deadlineMs <= limit) return;
   throw new ExperimentFatalError(
-    t("sandbox.deadlineExceedsSession", { provider: resolved.provider, limitMs: limit, timeoutMs: deadlineMs }),
+    t("sandbox.deadlineExceedsSession", {
+      provider: capabilities.provider,
+      limitMs: limit,
+      timeoutMs: deadlineMs,
+    }),
   );
 }
 
@@ -872,7 +892,13 @@ interface AttemptResources {
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
   /** 复用池借出的实例标识，用于结果落盘。 */
-  reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
+  reusedSandbox?: {
+    sandbox: Sandbox;
+    reuseSandbox: number;
+    reuseOrdinal: number;
+    stateWindow?: ReusableLeaseStateWindow;
+    lastPlannedUse?: boolean;
+  };
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (
@@ -931,6 +957,7 @@ async function runAttemptBody(
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
     signal,
+    evalId: evalDef.id,
     model: run.model,
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,
@@ -945,6 +972,25 @@ async function runAttemptBody(
   };
   const sandboxAttemptCtx: SandboxAgentContext = { ...attemptCtx, sandbox };
   const commandTarget = createSandboxCommandTarget(sandbox);
+  const plannedState = run.state;
+  const attemptState = plannedState._tag === "Stateless"
+    ? { _tag: "Stateless" as const }
+    : reusedSandbox === undefined
+      ? {
+          _tag: "Fresh" as const,
+          window: await Effect.runPromise(
+            ExperimentStateWindow.make(plannedState, run.experimentId, randomUUID()),
+          ),
+        }
+      : reusedSandbox.stateWindow?._tag === "Stateful"
+        ? {
+            _tag: "Reused" as const,
+            window: reusedSandbox.stateWindow.window,
+            lastPlannedUse: reusedSandbox.lastPlannedUse === true,
+          }
+        : (() => {
+            throw new Error("Stateful AgentRun received a Stateless reusable Sandbox lease.");
+          })();
   const layerCleanups: Array<{
     command: SandboxCleanupCommand;
     context: Omit<SandboxCommandContext, "onCleanup">;
@@ -952,6 +998,7 @@ async function runAttemptBody(
   }> = [];
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
+  let agentTeardownSucceeded = true;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
@@ -964,8 +1011,8 @@ async function runAttemptBody(
     if (usesSandbox) {
       // Linker 已按「template owner 在前，另一作者在后」排好命令；fresh/reuse 每条 Attempt
       // 都完整重放。owner 子 phase 只做错误与诊断归因，计时仍聚合在 sandbox.prepare。
-      const linked = a.linkedSandbox ?? run.linkedSandboxes?.get(evalDef.id)?.linked;
-      if (linked?.kind === "sandbox" && linked.commands.length > 0) {
+      const linked = a.plan._tag === "Sandbox" ? a.plan.pair : undefined;
+      if (linked !== undefined && linked.commands.length > 0) {
         enterPhase("sandbox.prepare");
         for (const entry of linked.commands) {
           const ownerPhase = entry.owner.kind === "eval"
@@ -982,7 +1029,7 @@ async function runAttemptBody(
           const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
             phase: "prepare",
             owner: entry.owner,
-            attempt: { id: `${run.experimentId ?? "adhoc"}/${evalDef.id}`, index: attempt },
+            attempt: { id: `${run.experimentId}/${evalDef.id}`, index: attempt },
             signal,
             progress: feedback.progress,
             diagnostic: feedback.diagnostic,
@@ -1012,11 +1059,19 @@ async function runAttemptBody(
       // 两侧作者的环境准备完成后，Runner 统一执行 Agent ensure；adapter setup 只能写运行时
       // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
       if (run.agent.kind === "sandbox") {
+        if (a.plan._tag !== "Sandbox") {
+          throw new Error(`sandbox agent ${JSON.stringify(run.agent.name)} received a Direct plan`);
+        }
         enterPhase("agent.ensure");
         log(t("runner.startAgentEnsure"));
+        const verified = await Effect.runPromise(Effect.either(
+          verifySandboxTargetPlatform(sandbox, a.plan.providerPlan.target.platform),
+        ));
+        if (Either.isLeft(verified)) throw verified.left;
         const ensureEffect = runAgentEnsure(run.agent.ensure, run.agent.installers, sandbox, {
           fact,
           coordinator: Option.fromNullable(prepareCoordinator),
+          targetPlatform: a.plan.providerPlan.target.platform,
           signal,
           progress: feedback.progress,
         });
@@ -1024,10 +1079,26 @@ async function runAttemptBody(
         if (Either.isLeft(ensured)) throw ensured.left;
       }
 
-      // 作者准备、Agent ensure（以及未来的 State load）都不属于 Agent diff；Runner 在这些
+      if (
+        attemptState._tag !== "Stateless" &&
+        Effect.runSync(attemptState.window.needsLoad())
+      ) {
+        enterPhase("state.load");
+        const loaded = await Effect.runPromise(Effect.either(attemptState.window.load({
+          sandbox: commandTarget,
+          progress: feedback.progress,
+          diagnostic: (input) => feedback.diagnostic({ ...input, level: "warning" }),
+          fact,
+        })));
+        if (Either.isLeft(loaded)) throw loaded.left;
+      }
+
+      // 作者准备、Agent ensure 与 State load 都不属于 Agent diff；Runner 在这些
       // 基础设施活动完成后建立统一的 Agent 可归因起点。
       enterPhase("workspace.baseline");
-      ledger = await createChangeLedger(sandbox, evalDef.diff);
+      ledger = await createChangeLedger(sandbox, evalDef.diff === undefined
+        ? undefined
+        : { include: [...evalDef.diff.include], ignore: [...evalDef.diff.ignore] });
       registerLedger(ledger);
     }
 
@@ -1125,7 +1196,7 @@ async function runAttemptBody(
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
     try {
-      await withSourceRegistry(sourceRegistry, () => evalDef.test(context));
+      await withSourceRegistry(sourceRegistry, () => evalDef.test(context as ScoreTestContext));
       // test() 正常返回也要结算待决前置:最后一条前置挂了而后面没有 t.* 调用时,
       // 中止信号在这里抛出(判定与写了 await 完全一致)。
       const aborted = await state.collector.settlePrerequisites();
@@ -1198,7 +1269,7 @@ async function runAttemptBody(
       status: state.manager.lastStatus,
       // attempt 级聚合覆盖(各轮最差值);t.* 作用域断言按它折叠,turn/session 作用域在
       // record 时已换成各自的覆盖(见 context.ts 的 recordScoped / makeTurnHandle)。
-      coverage: state.manager.coverage,
+      evidenceCoverage: state.manager.evidenceCoverage,
       readFile: async (path) => {
         try {
           return await sandbox!.readText(path);
@@ -1268,7 +1339,7 @@ async function runAttemptBody(
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
-      experiment: experimentRunInfo(run, config, evalDef.judge, a.configHash),
+      experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
       agent: run.agent.name,
       model: run.model,
       verdict,
@@ -1294,7 +1365,7 @@ async function runAttemptBody(
       trace,
       agentSetup,
       diff: diffWindows,
-      coverage: state.manager.coverage,
+      evidenceCoverage: state.manager.evidenceCoverage,
       // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
       // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
     };
@@ -1334,9 +1405,55 @@ async function runAttemptBody(
               if (teardown) await withCleanupTimeout(() => teardown(attemptCtx));
             }
           } catch (e) {
+            agentTeardownSucceeded = false;
             declareFailure("agent.teardown", e);
             diagnostics.push(teardownDiagnostic("agent.teardown", e));
             throw e;
+          }
+        })
+        .catch(() => {});
+    }
+    const finalizeState =
+      attemptState._tag === "Fresh" ||
+      (attemptState._tag === "Reused" && attemptState.lastPlannedUse);
+    if (attemptState._tag !== "Stateless" && finalizeState) {
+      enterPhase("state.save");
+      await recorder
+        .measureClosing("state.save", async () => {
+          try {
+            const completion = !agentTeardownSucceeded
+              ? {
+                  _tag: "AgentTeardownFailed" as const,
+                  verdict: result?.verdict === "unreadable" ? "errored" : (result?.verdict ?? "errored"),
+                }
+              : result?.verdict === "passed"
+                ? { _tag: "Succeeded" as const }
+                : {
+                    _tag: "VerdictNotPassed" as const,
+                    verdict: result?.verdict === "unreadable" ? "errored" : (result?.verdict ?? "errored"),
+                  };
+            const finalized = await Effect.runPromise(Effect.either(attemptState.window.finalize({
+              sandbox: commandTarget,
+              progress: feedback.progress,
+              diagnostic: (input) => feedback.diagnostic({ ...input, level: "warning" }),
+              fact,
+            }, {
+              completion,
+              budget: { _tag: "Bounded", timeoutMs: CLEANUP_TIMEOUT_MS },
+            })));
+            if (Either.isLeft(finalized)) throw finalized.left;
+          } catch (error) {
+            declareFailure("state.save", error);
+            if (result !== undefined) {
+              result.verdict = "errored";
+              result.error = {
+                ...errorFromThrown(error, "state.save"),
+                code: error instanceof ExperimentStateSequenceFailure && error.activity.outcome === "failed"
+                  ? error.activity.code
+                  : "state.save.failed",
+              };
+            }
+            throw error;
           }
         })
         .catch(() => {});
@@ -1380,6 +1497,12 @@ async function runAttemptBody(
     if (diagnostics.length > 0 && result) result.diagnostics = diagnostics;
     if (Object.keys(facts).length > 0 && result) result.facts = facts;
     if (commands.length > 0 && result) result.commands = commands;
+    if (attemptState._tag !== "Stateless" && result) {
+      const snapshot = Effect.runSync(attemptState.window.snapshot());
+      result.state = plannedState._tag !== "Stateless" && plannedState.cadence === "attempt" && snapshot._tag === "Finalized"
+        ? { windowId: snapshot.record.windowId, load: snapshot.record.load, save: snapshot.record.save }
+        : { windowId: attemptState.window.windowId };
+    }
   }
 }
 
@@ -1528,27 +1651,17 @@ async function collectSources(
  *  run 级值；Judge 则连同 Eval 层逐字段解析并按 pair 落盘，使同一 Eval 的裁判 A/B 可回放。 */
 export function experimentRunInfo(
   run: AgentRun,
+  plan: Attempt["plan"],
+  sandboxPlansByEval: globalThis.Record<string, import("../types.ts").JsonValue>,
   config?: Pick<Config, "timeoutMs" | "judge">,
   evalJudge?: JudgeConfig,
-  configHash: string | undefined = run.configHash,
 ): EvalResult["experiment"] {
+  const plannedState = run.state;
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
   const judge = resolveJudge(run.judge, evalJudge, config?.judge);
-  const firstLinked = run.linkedSandboxes?.values().next().value?.linked;
-  const sandboxLayer = firstLinked === undefined
-    ? undefined
-    : sandboxLayerIdentityFor(firstLinked, "experiment");
-  let agentInstall: ReturnType<typeof agentInstallIdentityInput> | undefined;
-  if (run.agent.kind === "sandbox") {
-    for (const ensure of run.agent.ensure) {
-      agentInstall = agentInstallIdentityInput(ensure.identity);
-      break;
-    }
-  }
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
-    ...(configHash !== undefined ? { configHash } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
     attempts: run.attempts,
@@ -1558,14 +1671,15 @@ export function experimentRunInfo(
     ...(run.maxConcurrency !== undefined ? { maxConcurrency: run.maxConcurrency } : {}),
     selectedEvalIds: [...run.selectedEvalIds],
     ...(run.evalFilterFingerprint !== undefined ? { evalFilterFingerprint: run.evalFilterFingerprint } : {}),
-    ...sandboxProjection(run),
-    ...(sandboxLayer !== undefined ? { sandboxLayer } : {}),
+    sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
+    sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
+    ...(plannedState._tag === "Stateless" ? {} : { state: experimentStateProjection(plannedState.definition) }),
     ...(run.strict ? { strict: true } : {}),
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
       : {}),
-    ...(agentInstall !== undefined ? { agentInstall } : {}),
+    agentInstalls: agentInstallPlansForRun(run),
   };
 }
 

@@ -1,8 +1,23 @@
 import { applyCommandDeadline } from "../sandbox/deadline.ts";
-import { createSandboxInstance, resolveSandbox, sandboxReuseCapability } from "../sandbox/resolve.ts";
-import { stopSandbox } from "../sandbox/registry.ts";
-import type { Sandbox, SandboxHookContext, SandboxOption, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
+import { sandboxReuseCapability } from "../sandbox/resolve.ts";
+import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
+import type { LinkedRunPlan } from "../sandbox/plan.ts";
+import {
+  materializeSandboxRunPlan,
+  liveSandboxRuntimeServices,
+  sandboxRuntimeCapabilities,
+  type SandboxRuntimeDeadline,
+  type SandboxRuntimeServices,
+} from "../sandbox/runtime.ts";
+import type { Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
+import { randomUUID } from "node:crypto";
+import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import { ExperimentStateWindow } from "../state/runtime.ts";
+import type { PlannedExperimentState } from "../state/plan.ts";
+import type { StateWindowRecord } from "../state/types.ts";
+import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { Effect } from "effect";
 
 const CLEANUP_RESERVE_MS = 30_000;
 
@@ -10,11 +25,29 @@ export interface ReusableSandboxLease {
   readonly sandbox: Sandbox;
   readonly reuseSandbox: number;
   readonly reuseOrdinal: number;
+  readonly stateWindow: ReusableLeaseStateWindow;
+  readonly lastPlannedUse: boolean;
   release(reset: boolean): Promise<void>;
 }
 
+export type ReusableLeaseStateWindow =
+  | { readonly _tag: "Stateless" }
+  | { readonly _tag: "Stateful"; readonly window: ExperimentStateWindow };
+
+export type ReusablePoolStatePlan =
+  | { readonly _tag: "Stateless" }
+  | {
+      readonly _tag: "Stateful";
+      readonly plan: Exclude<PlannedExperimentState, { readonly _tag: "Stateless" }>;
+      readonly experimentId: string;
+      readonly plannedUses: number;
+    };
+
+const STATELESS_POOL: ReusablePoolStatePlan = Object.freeze({ _tag: "Stateless" });
+
 interface Entry {
   sandbox: Sandbox;
+  materialized: MaterializedSandboxCase;
   /** provider 自己实现的寿命确认;没有这条能力的实例根本进不来(见 create)。 */
   lifetime: SandboxReuseCapability;
   ledger: ChangeLedger;
@@ -22,9 +55,10 @@ interface Entry {
   ordinal: number;
   busy: boolean;
   dead: boolean;
+  stateWindow: ReusableLeaseStateWindow;
 }
 
-/** 一个解析后的 SandboxSpec 的按需复用池；实例始终独占借给单条 Attempt。 */
+/** 一个 pair-owned physical plan 的按需复用池；实例始终独占借给单条 Attempt。 */
 export class ReusableSandboxPool {
   private readonly entries: Entry[] = [];
   private readonly waiters: Array<() => void> = [];
@@ -32,13 +66,19 @@ export class ReusableSandboxPool {
   private stopped = false;
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
   private created = 0;
+  private remainingPlannedUses: number;
+  private readonly stateRecords: StateWindowRecord[] = [];
 
   constructor(
-    private readonly spec: SandboxOption,
+    private readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
     private readonly capacity: number,
     private readonly feedback: ScopedFeedback,
     private readonly setupContext: SandboxHookContext,
-  ) {}
+    private readonly statePlan: ReusablePoolStatePlan = STATELESS_POOL,
+    private readonly runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
+  ) {
+    this.remainingPlannedUses = statePlan._tag === "Stateful" ? statePlan.plannedUses : 0;
+  }
 
   /**
    * @param attemptDeadlineMs 这条 Attempt 实际生效的超时上限(解析链见 runner/timeout.ts)。
@@ -46,7 +86,10 @@ export class ReusableSandboxPool {
    * 池无从知道它要跑多久,也不替它编一个数。此后实例被 provider 按自己的 `lifetimeMs` 回收
    * 就是「不声明上限」的代价(两种时间的分界见 docs/feature/sandbox/reuse.md)。
    */
-  async acquire(attemptDeadlineMs: number | undefined): Promise<ReusableSandboxLease> {
+  async acquire(
+    attemptDeadlineMs: number | undefined,
+    buildLocators: ReadonlyMap<string, string> = new Map(),
+  ): Promise<ReusableSandboxLease> {
     const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_RESERVE_MS;
     /**
      * 借出期内单条命令的上限从这条线派生(`undefined` = 四层都没声明上限,照旧不发明一条线)。
@@ -71,7 +114,7 @@ export class ReusableSandboxPool {
       if (this.entries.length + this.creating < this.capacity) {
         this.creating += 1;
         try {
-          const entry = await this.create(minRemainingMs, leaseDeadlineAt?.());
+          const entry = await this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators);
           this.entries.push(entry);
           return this.lease(entry, leaseDeadlineAt?.());
         } finally {
@@ -89,53 +132,84 @@ export class ReusableSandboxPool {
     await Promise.allSettled([...this.entries].map((entry) => this.retire(entry)));
   }
 
-  private async create(minRemainingMs: number, deadlineAt: number | undefined): Promise<Entry> {
-    const resolved = resolveSandbox(this.spec);
-    // 创建期跑的也是真命令(SandboxSpec setup 钩子、分类账锚点):不把 deadline 传下去,
-    // 它们就按 provider SDK 的默认上限跑——装依赖那种分钟级的 setup 必挂在 e2b 的 60 秒上。
-    const sandbox = await createSandboxInstance({ sandbox: this.spec, feedback: this.feedback, deadlineAt });
+  stateWindowRecords(): readonly StateWindowRecord[] {
+    return this.stateRecords;
+  }
+
+  private async create(
+    minRemainingMs: number,
+    deadlineAt: number | undefined,
+    buildLocators: ReadonlyMap<string, string>,
+  ): Promise<Entry> {
+    const capabilities = sandboxRuntimeCapabilities(this.plan);
+    if (capabilities.reuse === "Unsupported") {
+      throw new Error(
+        `sandboxReuse is unsupported by runtime adapter ${JSON.stringify(this.plan.providerPlan.runtimeAdapter)}`,
+      );
+    }
+    const deadline: SandboxRuntimeDeadline = deadlineAt === undefined
+      ? { _tag: "Unlimited" }
+      : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_RESERVE_MS), deadlineAt };
+    const materialized = await Effect.runPromise(materializeSandboxRunPlan({
+      plan: this.plan,
+      evalId: this.plan.pair.evalId,
+      deadline,
+      feedback: this.feedback,
+      signal: this.setupContext.signal,
+      buildLocators,
+      provisionSlot: { _tag: "Detached" },
+      services: this.runtimeServices,
+    }));
+    const sandbox = materialized.sandbox;
     // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
     // docs/feature/sandbox/reuse.md「派发前确认」)。
     const lifetime = sandboxReuseCapability(sandbox);
     if (!lifetime) {
-      await stopSandbox(sandbox);
+      await materialized.group.stop();
       throw new Error(
-        `sandboxReuse needs the "${resolved.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
+        `sandboxReuse needs the "${capabilities.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
           "ensureLifetime(minRemainingMs). Only a provider can prove the lifetime is set on its own backend; the runner " +
           "will not keep local books for it. Use a provider that implements it (docker / e2b / vercel), or drop sandboxReuse.",
       );
     }
     const confirmed = await lifetime.ensureLifetime(minRemainingMs);
     if (!confirmed.ready) {
-      await stopSandbox(sandbox);
-      throw new Error(`sandboxReuse cannot prepare the "${resolved.provider}" sandbox: ${confirmed.reason}`);
+      await materialized.group.stop();
+      throw new Error(`sandboxReuse cannot prepare the "${capabilities.provider}" sandbox: ${confirmed.reason}`);
     }
     try {
-      for (const hook of this.spec.setupHooks ?? []) await hook(sandbox, this.setupContext);
       const ledger = await createChangeLedger(sandbox);
-      // SandboxSpec setup 自己会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
+      // 建分类账会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
       // 反复创建同样的替代实例只会反复烧同样的时间(见 reuse.md「派发前确认」)。
       const afterSetup = await lifetime.ensureLifetime(minRemainingMs);
       if (!afterSetup.ready) {
         throw new Error(
-          `sandboxReuse cannot use the "${resolved.provider}" sandbox after its SandboxSpec setup: ${afterSetup.reason}`,
+          `sandboxReuse cannot use the "${capabilities.provider}" sandbox after baseline setup: ${afterSetup.reason}`,
         );
       }
       this.created += 1;
       return {
         sandbox,
+        materialized,
         lifetime,
         ledger,
         reuseSandbox: this.created,
         ordinal: 0,
         busy: false,
         dead: false,
+        stateWindow: this.statePlan._tag === "Stateless"
+          ? { _tag: "Stateless" }
+          : {
+              _tag: "Stateful",
+              window: await Effect.runPromise(ExperimentStateWindow.make(
+                this.statePlan.plan,
+                this.statePlan.experimentId,
+                randomUUID(),
+              )),
+            },
       };
     } catch (error) {
-      for (const hook of [...(this.spec.teardownHooks ?? [])].reverse()) {
-        await Promise.resolve(hook(sandbox, this.setupContext)).catch(() => {});
-      }
-      await stopSandbox(sandbox);
+      await materialized.group.stop();
       throw error;
     }
   }
@@ -144,10 +218,14 @@ export class ReusableSandboxPool {
     entry.busy = true;
     entry.ordinal += 1;
     applyCommandDeadline(entry.sandbox, deadlineAt);
+    if (this.statePlan._tag === "Stateful") this.remainingPlannedUses = Math.max(0, this.remainingPlannedUses - 1);
+    const lastPlannedUse = this.statePlan._tag === "Stateful" && this.remainingPlannedUses === 0;
     return {
       sandbox: entry.sandbox,
       reuseSandbox: entry.reuseSandbox,
       reuseOrdinal: entry.ordinal,
+      stateWindow: entry.stateWindow,
+      lastPlannedUse,
       release: async (reset) => {
         try {
           if (reset && !entry.dead) await entry.ledger.resetToAnchor();
@@ -161,7 +239,7 @@ export class ReusableSandboxPool {
     };
   }
 
-  /** 淘汰一台实例:跑 SandboxSpec teardown、停实例,并移出池——留在池里会占满容量,
+  /** 淘汰一台实例:收束 State、停资源组并移出池——留在池里会占满容量,
    *  让后续 acquire 既等不到空闲实例、也创建不出替代实例(等待者永远醒不来)。 */
   private async retire(entry: Entry): Promise<void> {
     if (entry.dead) return;
@@ -169,11 +247,30 @@ export class ReusableSandboxPool {
     const at = this.entries.indexOf(entry);
     if (at >= 0) this.entries.splice(at, 1);
     try {
-      for (const hook of [...(this.spec.teardownHooks ?? [])].reverse()) {
-        await Promise.resolve(hook(entry.sandbox, this.setupContext)).catch(() => {});
+      if (
+        entry.stateWindow._tag === "Stateful" &&
+        Effect.runSync(entry.stateWindow.window.snapshot())._tag === "Open"
+      ) {
+        await withCleanupTimeout(() => entry.stateWindow._tag === "Stateful"
+          ? Effect.runPromise(entry.stateWindow.window.finalize({
+              sandbox: createSandboxCommandTarget(entry.sandbox),
+              progress: (input) => this.feedback.progress(input),
+              diagnostic: (input) => this.feedback.diagnostic({ ...input, level: "warning" }),
+              fact: this.setupContext.fact,
+            }, {
+              completion: { _tag: "VerdictNotPassed", verdict: "errored" },
+              budget: { _tag: "Bounded", timeoutMs: CLEANUP_RESERVE_MS },
+            }))
+          : Promise.resolve(undefined), CLEANUP_RESERVE_MS).catch(() => {});
+      }
+      if (entry.stateWindow._tag === "Stateful") {
+        const snapshot = Effect.runSync(entry.stateWindow.window.snapshot());
+        if (snapshot._tag === "Finalized" && !this.stateRecords.some((item) => item.windowId === snapshot.record.windowId)) {
+          this.stateRecords.push(snapshot.record);
+        }
       }
     } finally {
-      await stopSandbox(entry.sandbox);
+      await entry.materialized.group.stop();
       this.wake();
     }
   }

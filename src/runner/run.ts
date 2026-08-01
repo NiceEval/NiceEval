@@ -29,7 +29,6 @@ import type {
   Reporter,
   ReporterRegistration,
   SandboxBuildRecord,
-  SandboxOption,
 } from "../types.ts";
 import type {
   AgentRun,
@@ -44,9 +43,8 @@ import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runO
 import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
+import { digestOf } from "../sandbox/identity.ts";
 import { firstLine } from "../util.ts";
-import { resolveSandbox } from "../sandbox/resolve.ts";
-import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
@@ -65,12 +63,7 @@ import {
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
-import {
-  linkedSandboxForEval,
-  prepareRunSandboxes,
-  sandboxEnvironmentForEval,
-  sandboxForEval,
-} from "./sandbox-selection.ts";
+import type { PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
@@ -173,23 +166,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
 
-  prepareRunSandboxes(opts.evals, opts.agentRuns);
-  for (const run of opts.agentRuns) {
-    if (!run.sandboxReuse || run.agent.kind !== "sandbox") continue;
-    if (opts.keepSandbox !== undefined) {
-      throw new Error("sandboxReuse cannot be combined with --keep-sandbox: a final sandbox does not belong to one attempt");
-    }
-    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
-      const spec = sandboxForEval(run, evalDef);
-      const resolved = resolveSandbox(spec);
-      if (resolved.provider === "local") {
-        throw new Error("sandboxReuse cannot be combined with localSandbox(): runner never resets the user's working tree");
-      }
-    }
-    // 其余 provider(含 defineSandbox 自定义)不按名字预筛:能不能复用只由 provider 有没有
-    // 实现 `ensureLifetime` 决定,没实现就在第一条 Attempt 派发前硬失败(见 sandbox-pool.ts)。
-  }
-
   // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
   // 矩阵大时(实验 × eval)规划阶段不做串行重复文件读。
   const sourceCache = new Map<string, Promise<string>>();
@@ -209,6 +185,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
   // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
   const {
+    preparedPairsByKey,
     plannedConfigHashes,
     plannedFingerprints,
     acceptableFingerprints,
@@ -218,13 +195,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     manifestsByKey,
   } =
     opts.carryPlan ??
-    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, undefined, opts.config.timeoutMs, {
+    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.timeoutMs, {
       rerun: opts.rerun,
       configJudge: opts.config.judge,
       ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
       keepSandbox: opts.keepSandbox,
       accept: opts.accept,
     }));
+  if (preparedPairsByKey === undefined) {
+    throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
+  }
 
   /**
    * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对
@@ -236,17 +216,26 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const restampCarried = (r: EvalResult): EvalResult => {
     const key = `${r.experimentId ?? ""}|${r.id}`;
     const fp = plannedFingerprints.get(key);
-    const configHash = plannedConfigHashes?.get(key);
+    const configHash = plannedConfigHashes.get(key);
     return fp === undefined
       ? r
       : {
           ...r,
           fingerprint: fp,
           configHash,
-          ...(carriedAcceptingByResult?.has(r) ? { carriedAccepting: [...carriedAcceptingByResult.get(r)!] } : {}),
+          ...(carriedAcceptingByResult.has(r)
+            ? { carriedAccepting: [...(carriedAcceptingByResult.get(r) ?? [])] }
+            : {}),
         };
   };
   const carriedResults = planCarriedResults.map(restampCarried);
+
+  const preparedPlansByRun = new Map<AgentRun, globalThis.Record<string, JsonValue>>();
+  for (const prepared of preparedPairsByKey.values()) {
+    const plans = preparedPlansByRun.get(prepared.run) ?? {};
+    plans[prepared.evalDef.id] = prepared.identity;
+    preparedPlansByRun.set(prepared.run, plans);
+  }
 
   // 展开 attempts
   // 外层按「round」(run index)迭代,内层按 eval 迭代:同一 key 的第 i+1 次 attempt 排在
@@ -261,42 +250,49 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const evals = selectedEvalsForRun(opts.evals, run);
     for (let i = 0; i < run.attempts; i++) {
       for (const evalDef of evals) {
-        const carryKey = `${run.experimentId ?? ""}|${evalDef.id}`;
+        const carryKey = `${run.experimentId}|${evalDef.id}`;
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
         // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——runs:5 里若只有
         // 序号 1 是上一轮的终态、序号 0 是 errored,这里必须只跳过序号 1、照常调度序号 0。
-        if (run.experimentId && carriedAttemptsByKey.get(carryKey)?.has(i)) continue;
+        if (carriedAttemptsByKey.get(carryKey)?.has(i)) continue;
         // key 标识「同一个运行配置下的同一条 eval」,earlyExit 的跳过/abort 只应作用于
         // 同 key 的重试轮。experimentId 必须进 key:两个实验可以同 agent 同 model、只差
         // flags(feature A/B 正是这种形状),漏掉它会让先过的实验把其它实验的同名 eval
         // 整个跳掉——花了钱还丢结果。
-        const key = `${run.experimentId ?? ""}|${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
+        const key = `${run.experimentId}|${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
+        const prepared = preparedPairsByKey.get(cacheKey(run, evalDef.id));
+        if (prepared === undefined) {
+          throw new Error(`Missing prepared Sandbox plan for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
+        }
+        const configHash = plannedConfigHashes.get(cacheKey(run, evalDef.id));
+        if (configHash === undefined) {
+          throw new Error(`Missing planned config hash for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
+        }
+        const fingerprint = plannedFingerprints.get(cacheKey(run, evalDef.id));
+        if (fingerprint === undefined) {
+          throw new Error(`Missing planned fingerprint for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
+        }
+        const sandboxPlansByEval = preparedPlansByRun.get(run);
+        if (sandboxPlansByEval === undefined) {
+          throw new Error(`Missing Experiment plan map for ${JSON.stringify(run.experimentId)}.`);
+        }
         attempts.push({
           evalDef,
           run,
           attempt: i,
           key,
-          fingerprint: plannedFingerprints.get(cacheKey(run, evalDef.id)) ?? "",
-          configHash: plannedConfigHashes?.get(cacheKey(run, evalDef.id)) ?? "",
-          ...(sandboxForEval(run, evalDef) !== undefined
-            ? { sandboxSpec: sandboxForEval(run, evalDef)! }
-            : {}),
-          ...(sandboxEnvironmentForEval(run, evalDef) !== undefined
-            ? { sandboxEnvironment: sandboxEnvironmentForEval(run, evalDef)! }
-            : {}),
-          ...(linkedSandboxForEval(run, evalDef) !== undefined
-            ? { linkedSandbox: linkedSandboxForEval(run, evalDef)! }
-            : {}),
+          fingerprint,
+          configHash,
+          plan: prepared.plan,
+          sandboxPlansByEval,
           // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
           // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
-          locator: run.experimentId
-            ? encodeAttemptLocator({
-                experimentId: run.experimentId,
-                snapshotStartedAt,
-                evalId: evalDef.id,
-                attempt: i,
-              })
-            : undefined,
+          locator: encodeAttemptLocator({
+            experimentId: run.experimentId,
+            snapshotStartedAt,
+            evalId: evalDef.id,
+            attempt: i,
+          }),
         });
       }
     }
@@ -382,8 +378,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const collected =
     opts.buildPreparation === undefined
       ? await collectBuildPreparation({
-          evals: opts.evals,
-          agentRuns: opts.agentRuns,
+          preparedPairs: [...preparedPairsByKey.values()],
           carriedAttemptsByKey,
         })
       : undefined;
@@ -599,13 +594,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
   // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
-  // 每个解析后的 spec（environment profile 已在 Attempt 上展开）各有一个按需池；不提前创建。
-  const reusePools = new Map<object, ReusableSandboxPool>();
+  // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
+  const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
+  const allReusePools = (): ReusableSandboxPool[] =>
+    [...reusePools.values()].flatMap((bySpec) => [...bySpec.values()]);
   const reusePoolFor = (a: Attempt): ReusableSandboxPool | undefined => {
-    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || !a.sandboxSpec) return undefined;
-    const key = a.sandboxSpec as object;
-    let pool = reusePools.get(key);
+    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
+    const key = digestOf(a.plan.providerPlan.identity);
+    let bySpec = reusePools.get(a.run);
+    if (bySpec === undefined) {
+      bySpec = new Map<string, ReusableSandboxPool>();
+      reusePools.set(a.run, bySpec);
+    }
+    let pool = bySpec.get(key);
     if (!pool) {
+      const plannedState = a.run.state;
       const setupContext = {
         experimentId: a.run.experimentId,
         signal: opts.signal ?? new AbortController().signal,
@@ -614,11 +617,23 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         fact: () => {},
       };
       const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
-      pool = new ReusableSandboxPool(a.sandboxSpec, capacity, {
+      const plannedUses = attempts.filter((candidate) =>
+        candidate.run === a.run &&
+        candidate.plan._tag === "Sandbox" &&
+        digestOf(candidate.plan.providerPlan.identity) === key
+      ).length;
+      pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: () => {},
         diagnostic: () => {},
-      }, setupContext);
-      reusePools.set(key, pool);
+      }, setupContext, plannedState._tag === "Stateless"
+        ? { _tag: "Stateless" }
+        : {
+            _tag: "Stateful",
+            plan: plannedState,
+            experimentId: a.run.experimentId,
+            plannedUses,
+          });
+      bySpec.set(key, pool);
     }
     return pool;
   };
@@ -647,32 +662,31 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // provider 级独占串行闸(见 docs/runner.md「调度:有界并发」):声明了 exclusive 的 provider
   // (如 local——同一棵真实工作树不允许并发写)按 provider 名共享一把 permit=1 的信号量,
   // --max-concurrency / 实验级 maxConcurrency 都不解除。核心不认 provider 名分支:这里只读
-  // resolveSandbox() 折出的中性 `exclusive` 字段;按 provider 字符串分组只是「同一份不可
-  // 并发的底层资源用同一把锁」,不是 `provider === "local"` 的行为分支。
+  // physical plan 的中性 admission/lane 字段；相同 lane 共用一把锁，表示它们竞争同一份
+  // 不可并发底层资源，不是 `provider === "local"` 的行为分支。
   const providerExclusiveSems = new Map<string, Effect.Semaphore>();
   let exclusiveConcurrencyWarned = false;
-  const exclusiveSemFor = (spec: SandboxOption | undefined): Effect.Semaphore | undefined => {
-    if (!spec) return undefined;
-    const resolved = resolveSandbox(spec);
-    if (!resolved.exclusive) return undefined;
-    let sem = providerExclusiveSems.get(resolved.provider);
+  const exclusiveSemFor = (plan: Attempt["plan"]): Effect.Semaphore | undefined => {
+    if (plan._tag === "Direct" || plan.providerPlan.scheduling.admission._tag !== "Exclusive") return undefined;
+    const laneKey = plan.providerPlan.scheduling.lane.key;
+    let sem = providerExclusiveSems.get(laneKey);
     if (!sem) {
       sem = Effect.runSync(Effect.makeSemaphore(1));
-      providerExclusiveSems.set(resolved.provider, sem);
+      providerExclusiveSems.set(laneKey, sem);
     }
     // 如实标注串行事实(一次性,不管命中多少条 attempt):全局上限比 1 高时,这个 provider 的
     // attempt 实际仍然一个一个跑——不管 --max-concurrency 写了多少,这是正确性约束不是调度旋钮。
     if (opts.maxConcurrency > 1 && !exclusiveConcurrencyWarned) {
       exclusiveConcurrencyWarned = true;
       reportDiagnostic({
-        key: `provider-exclusive-serial:${resolved.provider}`,
+        key: `provider-exclusive-serial:${laneKey}`,
         code: "provider-exclusive-serial",
         severity: "warning",
         message: t("runner.providerExclusiveSerial", {
-          provider: resolved.provider,
+          provider: plan.providerPlan.provider,
           concurrency: opts.maxConcurrency,
         }).trimEnd(),
-        data: { provider: resolved.provider, concurrency: opts.maxConcurrency },
+        data: { provider: plan.providerPlan.provider, concurrency: opts.maxConcurrency },
       });
     }
     return sem;
@@ -796,11 +810,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
   const currentHost = hostname();
   const makeExperimentHookContext = (run: AgentRun, phase: LifecyclePhase): ExperimentHookContext => {
-    const experimentId = run.experimentId ?? run.agent.name;
+    const experimentId = run.experimentId;
     return {
-      experimentId: run.experimentId ?? "",
+      experimentId: run.experimentId,
       selectedEvalIds: run.selectedEvalIds,
-      signal: opts.signal,
+      signal: opts.signal ?? new AbortController().signal,
       // progress 是短命状态:只更新本实验运行级行的 detail,不属于任何 attempt 的 active 条目。
       progress: (u) => {
         const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
@@ -1393,14 +1407,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 historical,
                 configIdentityForRun(
                   a0.run,
-                  linkedSandboxForEval(a0.run, a0.evalDef) === undefined
-                    ? sandboxForEval(a0.run, a0.evalDef)
-                    : undefined,
+                  a0.plan,
                   resolveJudge(a0.run.judge, a0.evalDef.judge, opts.config.judge),
-                  (() => {
-                    const linked = linkedSandboxForEval(a0.run, a0.evalDef);
-                    return linked === undefined ? undefined : sandboxLayerIdentityFor(linked, "experiment");
-                  })(),
                 ),
               )
                 .filter((delta) => opts.accept!.includes(delta.selector));
@@ -1957,7 +1965,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   // (单源见 runner/timeout.ts),不在这里重写一遍 `??`。没有上限时如实传
                   // undefined:池只能要求覆盖收尾预留,不替 attempt 编一条 deadline。
                   pool
-                    .acquire(resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs)
+                    .acquire(
+                      resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
+                      a.buildLocators,
+                    )
                     .then(
                       (ok) => ({ ok: true, lease: ok }) as const,
                       (e: unknown) => ({ ok: false, error: e }) as const,
@@ -1979,7 +1990,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   id: a.evalDef.id,
                   description: a.evalDef.description,
                   experimentId: a.run.experimentId,
-                  experiment: experimentRunInfo(a.run, opts.config, a.evalDef.judge, a.configHash),
+                  experiment: experimentRunInfo(
+                    a.run,
+                    a.plan,
+                    a.sandboxPlansByEval,
+                    opts.config,
+                    a.evalDef.judge,
+                  ),
                   agent: a.run.agent.name,
                   model: a.run.model,
                   verdict: "errored",
@@ -1988,6 +2005,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
                   assertions: [],
+                  evidenceCoverage: a.run.agent.evidenceCoverage,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(a, opts, sandboxSem, {
@@ -1999,6 +2017,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                           sandbox: lease.sandbox,
                           reuseSandbox: lease.reuseSandbox,
                           reuseOrdinal: lease.reuseOrdinal,
+                          stateWindow: lease.stateWindow,
+                          lastPlannedUse: lease.lastPlannedUse,
                         },
                       }
                     : {}),
@@ -2127,7 +2147,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // ③ 全局并发位 → ④ 派发时刻试锁 → preflight → 实验级 setup → body。
         // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
         // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
-        const exclusiveSem = exclusiveSemFor(a.sandboxSpec);
+        const exclusiveSem = exclusiveSemFor(a.plan);
         const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
             // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
@@ -2240,7 +2260,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   if (runningBuilds !== undefined) {
     sandboxBuildRecords = [...(await runningBuilds.done).records];
   }
-  await Promise.allSettled([...reusePools.values()].map((pool) => pool.stop()));
+  const pools = allReusePools();
+  await Promise.allSettled(pools.map((pool) => pool.stop()));
+  const stateWindowsByExperiment = new Map<string, import("../state/types.ts").StateWindowRecord[]>();
+  for (const pool of pools) {
+    for (const record of pool.stateWindowRecords()) {
+      const records = stateWindowsByExperiment.get(record.experimentId) ?? [];
+      records.push(record);
+      stateWindowsByExperiment.set(record.experimentId, records);
+    }
+  }
   await opts.otelPool?.close();
 
   // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
@@ -2330,6 +2359,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
       ...(runTimings !== undefined ? { timings: runTimings } : {}),
       ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
+      ...(stateWindowsByExperiment.has(experimentId)
+        ? { stateWindows: stateWindowsByExperiment.get(experimentId)! }
+        : {}),
       name: opts.config.name,
     });
   }

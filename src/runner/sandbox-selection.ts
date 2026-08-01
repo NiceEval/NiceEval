@@ -10,10 +10,10 @@ import {
   type SandboxLayerPairInput,
 } from "../sandbox/link.ts";
 import {
-  linkedRunPlanIdentity,
+  linkedRunRecordIdentity,
   liveSandboxPlanningServices,
   planLinkedRuns,
-  providerPlanIdentity,
+  providerPlanRecordIdentity,
   type LinkedRunPlan,
   type SandboxPlanningServices,
   type SandboxPhysicalPlanningError,
@@ -38,7 +38,7 @@ export interface PreparedRunPair {
   readonly run: AgentRun;
   readonly evalDef: DiscoveredEval;
   readonly plan: LinkedRunPlan;
-  readonly identity: ReturnType<typeof linkedRunPlanIdentity>;
+  readonly identity: ReturnType<typeof linkedRunRecordIdentity>;
 }
 
 export class SandboxRunPlanningInvariantError extends Data.TaggedError(
@@ -191,7 +191,7 @@ export function prepareRunSandboxes(
             run: linked.run,
             evalDef: linked.evalDef,
             plan,
-            identity: linkedRunPlanIdentity(plan),
+            identity: linkedRunRecordIdentity(plan),
           }));
         }
         if (prepared.length !== linkedPairs.length) {
@@ -216,7 +216,7 @@ export function preparedPairsByKey(
 export function sandboxRunInfoForPlan(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
 ): SandboxRunInfo {
-  const identity = providerPlanIdentity(plan.providerPlan);
+  const identity = providerPlanRecordIdentity(plan.providerPlan);
   return Object.freeze({
     provider: plan.providerPlan.provider,
     params: { plan: identity },
