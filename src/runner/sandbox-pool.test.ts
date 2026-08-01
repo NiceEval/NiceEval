@@ -1,263 +1,76 @@
 // cases: docs/engineering/testing/unit/sandbox.md
-// 覆盖类别「Sandbox 复用」的能力归属与派发前确认。
-//
-// 能力只能由 Provider facade 显式注册:池不探测 public Sandbox 上的同名属性,缺能力就在第一条
-// Attempt 派发前硬失败(见 docs/feature/sandbox/reuse.md「派发前确认」)。测试侧只 mock 实例创建
-// 边界,把 capability backend 注册到 facade 的私有 registry；public Sandbox fixture 始终不带
-// `ensureLifetime` / `setCommandDeadline`,防止旧鸭子类型路径悄悄回来。
+// pair-owned plan 的 reuse 门：池只消费物理计划的 runtime capability，不能再从旧 SandboxSpec
+// 或 public Sandbox 鸭子类型猜测 provider 行为。
 
-import { describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
+import { defineEval, defineSandbox, defineSandboxAgent } from "../define.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
+import { shell } from "../sandbox/commands.ts";
+import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
-import { defineSandbox } from "../define.ts";
-import {
-  noSandboxBackendCapabilities,
-  registerSandboxCapabilities,
-  supportedBackendCapability,
-  type SandboxBackendCapabilities,
-} from "../sandbox/backend.ts";
-import type { CommandResult, Sandbox, SandboxHookContext, SandboxOption } from "../types.ts";
+import { discoverEval, type AgentRun } from "./types.ts";
 
-type CapabilityFactory = (sandbox: Sandbox) => SandboxBackendCapabilities;
-const capabilityFactories = vi.hoisted(() => new WeakMap<object, unknown>());
-
-vi.mock("../sandbox/resolve.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../sandbox/resolve.ts")>();
-  return {
-    ...actual,
-    createSandboxInstance: async (opts: Parameters<typeof actual.createSandboxInstance>[0]) => {
-      const sandbox = await actual.createSandboxInstance(opts);
-      const factory = capabilityFactories.get(opts.sandbox as object) as CapabilityFactory | undefined;
-      if (factory !== undefined) registerSandboxCapabilities(sandbox, factory(sandbox));
-      return sandbox;
-    },
-  };
+const agent = defineSandboxAgent({
+  name: "pool-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "pool-agent", version: "1", revision: "1" },
+    probe: shell("true"),
+  },
+  async send() {
+    return { events: [], status: "completed" };
+  },
 });
 
-function registerProviderCapabilities(spec: SandboxOption, factory: CapabilityFactory): void {
-  capabilityFactories.set(spec, factory);
-}
-
-/** 内存沙箱:shell 恒成功(git ledger 锚点/重置都走它),记下收到的命令。 */
-function fakeSandbox(id: string, commands: string[]): Sandbox {
-  const box: Partial<Sandbox> = {
-    workdir: "/workspace",
-    sandboxId: id,
-    otlpHost: null,
-    async runShell(script: string): Promise<CommandResult> {
-      commands.push(script);
-      return { stdout: "", stderr: "", exitCode: 0 };
+async function customProviderPlan() {
+  let creates = 0;
+  const layer = defineSandbox({
+    name: "opaque-test-provider",
+    targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+    async create() {
+      creates += 1;
+      throw new Error("must not materialize an unsupported reusable provider");
     },
-    async runCommand(): Promise<CommandResult> {
-      return { stdout: "", stderr: "", exitCode: 0 };
-    },
-    async runCommandOrThrow() {
-      return { stdout: "", stderr: "", exitCode: 0 };
-    },
-    async runShellOrThrow() {
-      return { stdout: "", stderr: "", exitCode: 0 };
-    },
-    async readText() {
-      return "";
-    },
-    async readBytes() {
-      return new Uint8Array();
-    },
-    async writeText() {},
-    async writeBytes() {},
-    async pathExists() {
-      return false;
-    },
-    async uploadFile() {},
-    async uploadDirectory() {},
-    async downloadDirectory() {},
-    async downloadFile() {},
-    async stop() {},
+  });
+  const evalDef = discoverEval(defineEval({ test() {} }), {
+    id: "pool/eval",
+    baseDir: "/repo/evals/pool",
+    sourcePath: "/repo/evals/pool/eval.ts",
+    loaderDataPaths: Object.freeze([]),
+    criteriaPaths: Object.freeze([]),
+    privatePaths: Object.freeze([]),
+    source: { path: "eval.ts", content: "", sha256: "source" },
+  });
+  const run: AgentRun = {
+    agent,
+    flags: {},
+    attempts: 1,
+    earlyExit: false,
+    sandbox: layer,
+    state: STATELESS,
+    experimentId: "experiments/pool",
+    experimentBaseDir: "/repo/experiments",
+    experimentSourcePath: "/repo/experiments/pool.ts",
+    selectedEvalIds: [evalDef.id],
   };
-  return box as Sandbox;
+  const [prepared] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (prepared === undefined || prepared.plan._tag !== "Sandbox") throw new Error("expected Sandbox plan");
+  return { plan: prepared.plan, creates: () => creates };
 }
 
-const hookContext: SandboxHookContext = {
-  signal: new AbortController().signal,
-  progress: () => {},
-  diagnostic: () => {},
-  fact: () => {},
-};
+describe("ReusableSandboxPool · pair-owned runtime capability", () => {
+  it("opaque custom provider 在物化前明确拒绝 reuse，绝不调用 create", async () => {
+    const fixture = await customProviderPlan();
+    const pool = new ReusableSandboxPool(
+      fixture.plan,
+      1,
+      { progress() {}, diagnostic() {} },
+      { signal: new AbortController().signal, progress() {}, diagnostic() {}, fact() {} },
+    );
 
-const feedback = { progress: () => {}, diagnostic: () => {} };
-
-function poolFor(spec: SandboxOption, capacity = 1): ReusableSandboxPool {
-  return new ReusableSandboxPool(spec, capacity, feedback, hookContext);
-}
-
-describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () => {
-  it("provider 没实现 ensureLifetime 时,第一条 Attempt 派发前就硬失败(没有通用记账兜底)", async () => {
-    const commands: string[] = [];
-    let stopped = 0;
-    const spec = defineSandbox({
-      name: "no-lifetime",
-      create: async () => {
-        const sandbox = fakeSandbox("sbx-no-lifetime", commands);
-        return Object.assign(sandbox, {
-          stop: async () => {
-            stopped += 1;
-          },
-        });
-      },
-    });
-
-    await expect(poolFor(spec).acquire(60_000)).rejects.toThrow(/ensureLifetime/);
-    // 硬失败不留计费实例;也没走到建锚点这一步。
-    expect(stopped).toBe(1);
-    expect(commands).toEqual([]);
-  });
-
-  it("provider 实现了 ensureLifetime 并确认得下来时,正常借出并按请求的寿命窗口提问", async () => {
-    const commands: string[] = [];
-    const asked: number[] = [];
-    const spec = defineSandbox({
-      name: "with-lifetime",
-      create: async () => fakeSandbox("sbx-ok", commands),
-    });
-    registerProviderCapabilities(spec, () => ({
-      ...noSandboxBackendCapabilities,
-      ensureLifetime: supportedBackendCapability(
-        async (minRemainingMs: number) => {
-          asked.push(minRemainingMs);
-          return { ready: true as const, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
-        },
-      ),
-    }));
-
-    const pool = poolFor(spec);
-    const first = await pool.acquire(60_000);
-    expect(first.reuseSandbox).toBe(1);
-    expect(first.reuseOrdinal).toBe(1);
-    await first.release(true);
-    const second = await pool.acquire(60_000);
-    expect(second.reuseSandbox).toBe(1); // 同一实例
-    expect(second.reuseOrdinal).toBe(2); // 承接序号递增
-    await second.release(true);
-    await pool.stop();
-
-    // 每次派发前都按 attempt deadline + 收尾预留确认;新实例在 SandboxSpec setup 前后各确认一次。
-    expect(asked).toEqual([90_000, 90_000, 90_000]);
-  });
-
-  it("provider 报寿命不足时淘汰旧实例、换一台承接(编号不复用,序号从 1 重新起)", async () => {
-    const commands: string[] = [];
-    let created = 0;
-    const stopped: string[] = [];
-    const spec = defineSandbox({
-      name: "expiring",
-      create: async () => {
-        created += 1;
-        const id = `sbx-${created}`;
-        return Object.assign(fakeSandbox(id, commands), {
-          stop: async () => {
-            stopped.push(id);
-          },
-        });
-      },
-    });
-    registerProviderCapabilities(spec, (sandbox) => {
-      // 第一台在第二次派发前确认时报不够(创建时的两次确认仍通过),第二台一直够。
-      let asks = 0;
-      return {
-        ...noSandboxBackendCapabilities,
-        ensureLifetime: supportedBackendCapability(async () => {
-          asks += 1;
-          // 前两次(创建时 setup 前后)通过,第二条 Attempt 派发前报不够。
-          return sandbox.sandboxId === "sbx-1" && asks > 2
-            ? { ready: false as const, reason: "expiring provider leaves 5s" }
-            : { ready: true as const };
-        }),
-      };
-    });
-
-    const pool = poolFor(spec);
-    const first = await pool.acquire(60_000);
-    expect(first.reuseSandbox).toBe(1);
-    await first.release(true);
-
-    const second = await pool.acquire(60_000);
-    expect(second.reuseSandbox).toBe(2);
-    expect(second.reuseOrdinal).toBe(1);
-    expect(stopped).toEqual(["sbx-1"]);
-    await second.release(true);
-    await pool.stop();
-    expect(stopped).toEqual(["sbx-1", "sbx-2"]);
-  });
-
-  it("每次借出都把承接者自己的 attempt deadline 递给实例(不递就落回 provider SDK 的默认上限)", async () => {
-    const commands: string[] = [];
-    const deadlines: Array<number | undefined> = [];
-    const spec = defineSandbox({
-      name: "deadline-aware",
-      create: async () => fakeSandbox("sbx-deadline", commands),
-    });
-    registerProviderCapabilities(spec, () => ({
-      ...noSandboxBackendCapabilities,
-      ensureLifetime: supportedBackendCapability(async () => ({ ready: true as const })),
-      setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => {
-        deadlines.push(deadlineAt);
-      }),
-    }));
-
-    const pool = poolFor(spec);
-    const before = Date.now();
-    const first = await pool.acquire(60_000);
-    await first.release(true);
-    const second = await pool.acquire(60_000);
-    await second.release(true);
-    await pool.stop();
-
-    // 两次借出各设一次线;都落在「现在 + attempt deadline + 收尾预留」的窗口里。
-    expect(deadlines).toHaveLength(2);
-    for (const at of deadlines) {
-      expect(at).toBeGreaterThanOrEqual(before + 90_000);
-      expect(at).toBeLessThanOrEqual(Date.now() + 90_000);
-    }
-  });
-
-  it("四层都没声明上限时不发明一条线:借出时递 undefined", async () => {
-    const commands: string[] = [];
-    const deadlines: Array<number | undefined> = [];
-    const spec = defineSandbox({
-      name: "no-deadline",
-      create: async () => fakeSandbox("sbx-no-deadline", commands),
-    });
-    registerProviderCapabilities(spec, () => ({
-      ...noSandboxBackendCapabilities,
-      ensureLifetime: supportedBackendCapability(async () => ({ ready: true as const })),
-      setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => {
-        deadlines.push(deadlineAt);
-      }),
-    }));
-
-    const pool = poolFor(spec);
-    await (await pool.acquire(undefined)).release(true);
-    await pool.stop();
-    expect(deadlines).toEqual([undefined]);
-  });
-
-  it("新建实例当场就确认不下来寿命时,报错带 provider 给的理由,不反复重建同样的替代实例", async () => {
-    const commands: string[] = [];
-    let created = 0;
-    const spec = defineSandbox({
-      name: "too-short",
-      create: async () => {
-        created += 1;
-        return fakeSandbox(`sbx-${created}`, commands);
-      },
-    });
-    registerProviderCapabilities(spec, () => ({
-      ...noSandboxBackendCapabilities,
-      ensureLifetime: supportedBackendCapability(
-        async () => ({ ready: false as const, reason: "plan caps the sandbox at 60s" }),
-      ),
-    }));
-
-    await expect(poolFor(spec).acquire(60_000)).rejects.toThrow(/plan caps the sandbox at 60s/);
-    expect(created).toBe(1);
+    await expect(pool.acquire(60_000)).rejects.toThrow(/sandboxReuse is unsupported/);
+    expect(fixture.creates()).toBe(0);
   });
 });

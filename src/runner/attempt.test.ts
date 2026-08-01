@@ -26,8 +26,12 @@ import { defineSandboxAgent as defineSandboxAgentBase, defineSandbox } from "../
 import { dockerImageSandbox, sandboxLayer } from "../sandbox/layer.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import { linkSandboxLayers } from "../sandbox/link.ts";
+import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
+import { encodeAttemptLocator } from "../record/locator.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
 import type {
@@ -44,7 +48,7 @@ import type {
 
 /** 这些测试关注 runner 生命周期；probe 恒命中，避免把安装行为混进 fixture。 */
 function defineSandboxAgent(
-  def: Omit<SandboxAgentDef, "ensure" | "installers">,
+  def: Omit<SandboxAgentDef, "ensure" | "installers" | "evidenceCoverage">,
 ) {
   const ensure = {
     identity: { agent: def.name, version: "0.0.0-test", revision: "1" },
@@ -53,7 +57,7 @@ function defineSandboxAgent(
       async () => {},
     ),
   };
-  return defineSandboxAgentBase({ ...def, ensure, installers: [] });
+  return defineSandboxAgentBase({ ...def, evidenceCoverage: completeEvidenceCoverage, ensure, installers: [] });
 }
 
 /** 内存沙箱:writeText/readText 记文件,runShell 恒成功(供 git ledger / diff 采集用)。 */
@@ -65,7 +69,8 @@ class FakeSandbox implements Partial<Sandbox> {
 
   constructor(private readonly stopDelayMs = 0) {}
 
-  async runShell(): Promise<CommandResult> {
+  async runShell(script?: string): Promise<CommandResult> {
+    if (script?.includes("uname -s")) return { stdout: "Linux\nx86_64\nglibc\n", stderr: "", exitCode: 0 };
     return { stdout: "", stderr: "", exitCode: 0 };
   }
   async runCommand(): Promise<CommandResult> {
@@ -105,6 +110,15 @@ class FakeSandbox implements Partial<Sandbox> {
 
 const asSandbox = (box: FakeSandbox): Sandbox => box as unknown as Sandbox;
 
+/** 测试中的 template 既携带可规划 provider 身份，又始终物化内存 Sandbox。 */
+function fakeProviderLayer(box: FakeSandbox, name = "fake-provider"): SandboxLayer<"template-bearing"> {
+  return defineSandbox({
+    name,
+    targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+    create: async () => asSandbox(box),
+  });
+}
+
 const source: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
 
 /** 跑一次 attempt:给定 agent,返回 EvalResult。沙箱用内存 fake,不起容器/不联网。
@@ -137,43 +151,51 @@ async function runOnce(
     reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
   } = {},
 ): Promise<import("../types.ts").EvalResult> {
-  const evalDef: DiscoveredEval = {
+  const evalDef = {
     id: "fake/eval",
     baseDir: "/project",
     sourcePath: "/project/fake.eval.ts",
     source,
     test: () => {},
     ...opts.evalDefOverrides,
-  };
+  } as DiscoveredEval;
   const run: AgentRun = {
     agent,
     flags: {},
     attempts: 1,
     earlyExit: true,
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
-    sandbox: opts.sandbox ?? defineSandbox({ name: "fake-provider", create: async () => asSandbox(box) }),
-    experimentId: opts.experimentId,
+    sandbox: opts.sandbox ?? defineSandbox({
+      name: "fake-provider",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+      create: async () => asSandbox(box),
+    }),
+    state: STATELESS,
+    experimentId: opts.experimentId ?? "fake/experiment",
+    experimentBaseDir: "/project",
+    experimentSourcePath: "/project/fake.experiment.ts",
     judge: opts.judge,
     ...(opts.runTimeout ?? { timeoutMs: opts.timeoutMs ?? 5_000 }),
     selectedEvalIds: [evalDef.id],
   };
-  const linkedSandbox = agent.kind === "sandbox"
-    ? Effect.runSync(linkSandboxLayers([{
-        eval: { id: evalDef.id, layer: evalDef.sandbox },
-        experiment: {
-          id: opts.experimentId ?? "fake/experiment",
-          layer: opts.experimentLayer ?? dockerImageSandbox({ image: "niceeval/fake:test" }),
-        },
-        agent: { kind: "sandbox", name: agent.name },
-      }]))[0]
-    : undefined;
+  if (opts.experimentLayer !== undefined) run.sandbox = opts.experimentLayer;
+  const [prepared] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (prepared === undefined) throw new Error("test fixture did not produce a sandbox plan");
   const attempt: Attempt = {
     evalDef,
     run,
     attempt: 0,
     key: "fake/eval",
     fingerprint: "",
-    ...(linkedSandbox !== undefined ? { linkedSandbox } : {}),
+    configHash: "",
+    plan: prepared.plan,
+    sandboxPlansByEval: { [evalDef.id]: prepared.identity },
+    locator: encodeAttemptLocator({
+      experimentId: run.experimentId,
+      snapshotStartedAt: "2026-08-02T00:00:00.000Z",
+      evalId: evalDef.id,
+      attempt: 0,
+    }),
   };
   const config: Config = opts.config ?? {};
   const runOpts: RunOptions = {
@@ -405,7 +427,7 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       events.push(event);
     };
     const box = new FakeSandbox();
-    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+    const experimentLayer = fakeProviderLayer(box, "fake-provider-order")
       .prepare(async (_sandbox, context) => {
         expect(context.owner).toEqual({ kind: "experiment", id: experimentId });
         record("experiment.prepare:a");
@@ -434,7 +456,7 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
           record("eval.prepare");
           context.onCleanup(async () => record("eval.cleanup"));
         }),
-        test: async (t) => {
+        test: async (t: TestContext) => {
           await t.send("go");
         },
       },
@@ -457,7 +479,7 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
   it("prepare 中途失败时后续命令与 agent 不运行，只清理已登记资源", async () => {
     const events: string[] = [];
     const box = new FakeSandbox();
-    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+    const experimentLayer = fakeProviderLayer(box, "fake-provider-failing-prepare")
       .prepare((_sandbox, context) => {
         events.push("prepare:ok");
         context.onCleanup(async () => { events.push("cleanup:ok"); });
@@ -662,7 +684,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       const resultPromise = runOnce(agent, box, {
         timeoutMs: 5_000,
         evalDefOverrides: {
-          test: async (t) => {
+          test: async (t: TestContext) => {
             await t.send("go");
             await t.send("go again"); // 挂起在这里,直到外层超时打断
           },
@@ -717,7 +739,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       const resultPromise = runOnce(agent, box, {
         timeoutMs: 5_000,
         evalDefOverrides: {
-          test: async (t) => {
+          test: async (t: TestContext) => {
             await t.send("go");
             await t.send("go again");
           },
@@ -752,36 +774,16 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       // sandbox.create() 立即成功(内存 fake),但 Experiment prepare 永远不返回:
       // 超时发生在 workspace.baseline 之前,SessionManager/ledger 都还没建立,
       // liveEvents/liveLedger 从未登记过(registerEvidence/registerLedger 都没被调用)。
-      const sandboxSpec = defineSandbox({ name: "fake-provider-hang-setup", create: async () => asSandbox(box) });
-      const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
-        .prepare(async () => await new Promise<never>(() => {}));
-      const run: AgentRun = {
-        agent,
-        flags: {},
-        attempts: 1,
-        earlyExit: true,
-        sandbox: sandboxSpec,
+      const experimentLayer = defineSandbox({
+        name: "fake-provider-hang-setup",
+        targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+        create: async () => asSandbox(box),
+      }).prepare(async () => await new Promise<never>(() => {}));
+      const resultPromise = runOnce(agent, box, {
         timeoutMs: 5_000,
-        selectedEvalIds: ["fake/eval"],
-      };
-      const evalDef: DiscoveredEval = {
-        id: "fake/eval",
-        baseDir: "/project",
-        sourcePath: "/project/fake.eval.ts",
-        source,
-        test: () => {},
-      };
-      const [linkedSandbox] = Effect.runSync(linkSandboxLayers([{
-        eval: { id: evalDef.id },
-        experiment: { id: "fake/experiment", layer: experimentLayer },
-        agent: { kind: "sandbox", name: agent.name },
-      }]));
-      const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "", linkedSandbox };
-      const config: Config = {};
-      const runOpts: RunOptions = { config, evals: [evalDef], agentRuns: [run], reporters: [], maxConcurrency: 1 };
-      const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
-
-      const resultPromise = Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem, {}));
+        sandbox: experimentLayer,
+        experimentLayer,
+      });
       await vi.advanceTimersByTimeAsync(5_100);
       const result = await resultPromise;
 
@@ -799,7 +801,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
 describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.facts", () => {
   it("两层 prepare/cleanup 与 agent setup·send·teardown 的 fact 落进同一 attempt", async () => {
     const box = new FakeSandbox();
-    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+    const experimentLayer = fakeProviderLayer(box, "fake-provider-facts")
       .prepare(async (_sandbox, ctx) => {
         ctx.facts("experiment.prepare_ran", true);
         ctx.facts("shared.key", "from-experiment-prepare");
@@ -830,7 +832,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
         sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
           ctx.facts("eval.prepare_ran", true);
         }),
-        test: async (t) => { await t.send("go"); },
+        test: async (t: TestContext) => { await t.send("go"); },
       },
     });
 
@@ -918,7 +920,7 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     let observedStderrTail: string | undefined;
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        test: async (t) => {
+        test: async (t: TestContext) => {
           const r = await t.sandbox.runCommand("npm", ["install", "-g", "pnpm"]);
           // 调用方读到真实非零退出(登记不改变 runCommand 的返回语义),处理它并继续——
           // 不抛错、不中止 attempt。事后只把尾部拼进自己的诊断变量(模拟 .slice(-500) 场景)。
@@ -958,7 +960,7 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     });
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        test: async (t) => {
+        test: async (t: TestContext) => {
           await t.sandbox.runCommand("echo", ["ok"]);
         },
       },
@@ -1036,7 +1038,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
       await runOnce(agent, new FakeSandbox(), {
         experimentId: "compare/codex",
         evalDefOverrides: {
-          test: async (t) => {
+          test: async (t: TestContext) => {
             t.diagnostic({
               code: "index-rebuilt",
               level: "warning",
@@ -1433,7 +1435,7 @@ describe("runAttemptEffect · timeoutMs 的四层解析链(--timeout → experim
         runTimeout: opts.runTimeout,
         evalDefOverrides: {
           // 挂在 send 上直到外层超时打断:被打断的时刻就是实际生效的 deadline。
-          test: async (t) => {
+          test: async (t: TestContext) => {
             await t.send("go");
           },
           ...(opts.evalTimeoutMs !== undefined ? { timeoutMs: opts.evalTimeoutMs } : {}),
@@ -1529,7 +1531,7 @@ describe("runAttemptEffect · timeoutMs 的四层解析链(--timeout → experim
       const promise = runOnce(agent, new FakeSandbox(), {
         runTimeout: resolveRunTimeout(undefined, undefined),
         evalDefOverrides: {
-          test: async (t) => {
+          test: async (t: TestContext) => {
             await t.send("go");
           },
         },

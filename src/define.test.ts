@@ -5,6 +5,7 @@
 // defineSandbox() 这四个工厂产出的 spec 对象本身的构造行为。
 import { describe, expect, it } from "vitest";
 import { dockerSandbox, e2bSandbox, vercelSandbox, defineSandbox } from "./define.ts";
+import { defineSandboxCommand } from "./sandbox/commands.ts";
 // 从公开 subpath 取类型，守住下游共享 helper 的正式导入面。
 import type { SandboxHook, SandboxHookContext } from "./sandbox/index.ts";
 
@@ -65,14 +66,23 @@ describe("sandbox factories: .setup()/.teardown() chain", () => {
     expect(e2b.teardownHooks).toEqual([noopTeardown]);
   });
 
-  it("defineSandbox() (custom provider) chains too and keeps create()/name", async () => {
+  it("defineSandbox() creates a template-bearing layer whose prepare chain is immutable", async () => {
     const create = async () => {
       throw new Error("not called in this test");
     };
-    const spec = defineSandbox({ name: "my-provider", create }).setup(noopSetup).setup(noopSetup);
-    expect(spec.provider).toBe("my-provider");
-    expect(spec.create).toBe(create);
-    expect(spec.setupHooks).toHaveLength(2);
+    const command = defineSandboxCommand(
+      { id: "test.custom.prepare", revision: "1", inputs: {} },
+      async () => {},
+    );
+    const layer = defineSandbox({
+      name: "my-provider",
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+      create,
+    });
+    const prepared = layer.prepare(command);
+    expect(prepared).not.toBe(layer);
+    expect(typeof layer.prepare).toBe("function");
+    expect(typeof prepared.prepare).toBe("function");
   });
 
   it("each chain call produces an independent object (no shared mutable state)", () => {

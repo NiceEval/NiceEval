@@ -13,6 +13,8 @@ import {
 } from "../sandbox/layer.ts";
 import { SandboxLayerLinkError } from "../sandbox/link.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
 import {
   linkRunSandboxes,
   prepareRunSandboxes,
@@ -28,6 +30,7 @@ const factories = createBuiltinSandboxFactories({
 
 const sandboxAgent = defineSandboxAgent({
   name: "sandbox-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   ensure: {
     identity: { agent: "sandbox-agent", version: "1", revision: "1" },
     probe: shell("true"),
@@ -57,6 +60,7 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
     flags: {},
     attempts: 1,
     earlyExit: true,
+    state: STATELESS,
     selectedEvalIds: [],
     experimentId: "experiments/run",
     experimentBaseDir: "/repo/experiments",
@@ -75,7 +79,7 @@ describe("pair-owned Sandbox planning", () => {
     const selected = run({ sandbox: sandboxLayer(), selectedEvalIds: ["image", "compose"] });
 
     const prepared = await Effect.runPromise(prepareRunSandboxes([image, compose], [selected]));
-    expect(prepared.map(({ plan }) => plan._tag === "Sandbox" && plan.providerPlan.runtime.adapter)).toEqual([
+    expect(prepared.map(({ plan }) => plan._tag === "Sandbox" && plan.providerPlan.runtimeAdapter)).toEqual([
       "niceeval/docker-image",
       "niceeval/docker-compose",
     ]);
@@ -84,10 +88,7 @@ describe("pair-owned Sandbox planning", () => {
       plan: {
         _tag: "Sandbox",
         providerPlan: {
-          runtime: {
-            adapter: "niceeval/docker-compose",
-            input: { file: { _tag: "Path", value: "/repo/evals/compose/compose.yaml" } },
-          },
+          runtimeAdapter: "niceeval/docker-compose",
         },
       },
     });
@@ -111,13 +112,13 @@ describe("pair-owned Sandbox planning", () => {
       plan: {
         _tag: "Sandbox",
         pair: { templateOwner: { kind: "experiment", id: "experiments/run" } },
-        providerPlan: { provider: "e2b", runtime: { input: { template: "codex-v3" } } },
+        providerPlan: { provider: "e2b", runtimeAdapter: "niceeval/e2b-template" },
       },
     });
     if (prepared?.plan._tag !== "Sandbox") throw new Error("expected Sandbox plan");
     expect(sandboxRunInfoForPlan(prepared.plan)).toMatchObject({
       provider: "e2b",
-      params: { plan: { provider: "e2b", runtime: { adapter: "niceeval/e2b-template" } } },
+      params: { plan: { provider: "e2b", runtimeAdapter: "niceeval/e2b-template" } },
       fingerprint: expect.any(String),
     });
   });
@@ -139,7 +140,8 @@ describe("pair-owned Sandbox planning", () => {
     const shared = defineSandboxTemplate({
       provider: "acme",
       kind: "pod",
-      identity: { provider: "acme", kind: "pod" },
+      publishableIdentity: { provider: "acme", kind: "pod" },
+      privateFingerprintIdentity: { provider: "acme", kind: "pod" },
       leakGate: { _tag: "None" },
       plan: () => Effect.succeed(sandboxProviderPlan({
         provider: "acme",
@@ -155,14 +157,15 @@ describe("pair-owned Sandbox planning", () => {
           admission: { _tag: "Shared" },
         },
         runtime: { adapter: "acme/pod", input: {} },
-        leakGate: { _tag: "None" },
-        physicalIdentity: {},
+        publishableIdentity: {},
+        privateFingerprintIdentity: {},
       })),
     });
     const exclusive = defineSandboxTemplate({
       provider: "worktree",
       kind: "local",
-      identity: { provider: "worktree", kind: "local" },
+      publishableIdentity: { provider: "worktree", kind: "local" },
+      privateFingerprintIdentity: { provider: "worktree", kind: "local" },
       leakGate: { _tag: "None" },
       plan: () => Effect.succeed(sandboxProviderPlan({
         provider: "worktree",
@@ -178,8 +181,8 @@ describe("pair-owned Sandbox planning", () => {
           admission: { _tag: "Exclusive" },
         },
         runtime: { adapter: "worktree/local", input: {} },
-        leakGate: { _tag: "None" },
-        physicalIdentity: {},
+        publishableIdentity: {},
+        privateFingerprintIdentity: {},
       })),
     });
     const pairs = await Effect.runPromise(prepareRunSandboxes([cloudEval], [

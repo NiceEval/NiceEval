@@ -18,13 +18,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { LocalSandbox } from "./local.ts";
-import { localSandbox } from "../define.ts";
-import { defineSandboxAgent } from "../define.ts";
+import { defineEval, defineSandboxAgent } from "../define.ts";
+import { localSandbox as localSandboxLayer } from "./layer.ts";
 import { runAttemptEffect } from "../runner/attempt.ts";
+import { prepareRunSandboxes } from "../runner/sandbox-selection.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import type { Attempt, AgentRun, RunOptions } from "../runner/types.ts";
 import type { Config, DiscoveredEval } from "../types.ts";
 import { defineSandboxCommand } from "./commands.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
+import { discoverEval } from "../runner/types.ts";
+import { encodeAttemptLocator } from "../record/locator.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -144,13 +149,15 @@ describe("LocalSandbox · 不提权", () => {
 describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建前报错", () => {
   it("local + keepSandbox 合成一条 errored 结果,不尝试创建任何沙箱", async () => {
     const source: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
-    const evalDef: DiscoveredEval = {
+    const evalDef = discoverEval(defineEval({ test: () => {} }), {
       id: "fake/eval",
       baseDir: "/project",
       sourcePath: "/project/fake.eval.ts",
+      loaderDataPaths: Object.freeze([]),
+      criteriaPaths: Object.freeze([]),
+      privatePaths: Object.freeze([]),
       source,
-      test: () => {},
-    };
+    });
     const agent = defineSandboxAgent({
       name: "fake-agent",
       ensure: {
@@ -158,6 +165,7 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
         probe: defineSandboxCommand({ id: "fake-agent.probe", revision: "1", inputs: {} }, async () => {}),
       },
       installers: [],
+      evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
     });
     const run: AgentRun = {
@@ -165,11 +173,32 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: localSandbox(),
+      sandbox: localSandboxLayer(),
+      state: STATELESS,
+      experimentId: "fake/experiment",
+      experimentBaseDir: "/project",
+      experimentSourcePath: "/project/fake.experiment.ts",
       timeoutMs: 5_000,
       selectedEvalIds: [evalDef.id],
     };
-    const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
+    const [prepared] = Effect.runSync(prepareRunSandboxes([evalDef], [run]));
+    if (prepared === undefined) throw new Error("expected local prepared plan");
+    const attempt: Attempt = {
+      evalDef,
+      run,
+      attempt: 0,
+      key: "fake/eval",
+      fingerprint: "",
+      configHash: "",
+      plan: prepared.plan,
+      sandboxPlansByEval: { [evalDef.id]: prepared.identity },
+      locator: encodeAttemptLocator({
+        experimentId: run.experimentId,
+        snapshotStartedAt: "2026-08-02T00:00:00.000Z",
+        evalId: evalDef.id,
+        attempt: 0,
+      }),
+    };
     const config: Config = {};
     const runOpts: RunOptions = {
       config,
@@ -182,7 +211,7 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
     const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
     const result = await Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem));
 
-    expect(result.error?.message).toContain("--keep-sandbox is not supported");
+    expect(result.error?.message).toContain("--keep-sandbox is unsupported");
     expect(result.error?.message).toContain("local");
   });
 });

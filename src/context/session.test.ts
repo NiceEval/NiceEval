@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createAgentSession, SessionManager } from "./session.ts";
 import type { Agent, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 import { isSendFailure, makeSendFailure, type SendFailure, type SendFailureClassifier } from "./send-failures.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
 // docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
@@ -35,6 +36,7 @@ function agentReturning(turn: Turn): Agent {
   return {
     name: "fake-agent",
     kind: "direct",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(_input: TurnInput): Promise<Turn> {
       return turn;
     },
@@ -65,6 +67,7 @@ function scriptedRetryAgent(
   const agent: Agent = {
     name: "scripted-retry",
     kind: "direct",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input: TurnInput): Promise<Turn> {
       calls.push(input);
       const outcome = outcomes[Math.min(i, outcomes.length - 1)]!;
@@ -220,6 +223,7 @@ function sequentialAgent(turns: Turn[]): Agent {
   return {
     name: "sequential-agent",
     kind: "direct",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(): Promise<Turn> {
       const turn = turns[Math.min(i, turns.length - 1)] as Turn;
       i++;
