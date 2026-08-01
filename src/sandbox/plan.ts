@@ -180,8 +180,13 @@ export function planLinkedRuns(
   });
 }
 
-/** Provider identity 已由 factory planner 一次构造并冻结，core 不再重新解释 provider 字段。 */
-export function providerPlanIdentity(plan: ProviderPlan): JsonValue {
+/** Provider record projection 已由 factory planner 一次构造并冻结，不含任何私有输入原值。 */
+export function providerPlanRecordIdentity(plan: ProviderPlan): JsonValue {
+  return plan.identity;
+}
+
+/** Fingerprint 认同一份可重算 projection；私有输入只通过 plan 内的稳定摘要贡献身份。 */
+export function providerPlanFingerprintIdentity(plan: ProviderPlan): JsonValue {
   return plan.identity;
 }
 
@@ -202,8 +207,7 @@ function commandFingerprintIdentity(command: SandboxCommandFingerprint): JsonVal
       };
 }
 
-/** Pair-owned plan 的稳定身份；opaque callbacks 与 runtime closures 都不进入 JSON。 */
-export function linkedRunPlanIdentity(plan: LinkedRunPlan): JsonValue {
+function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
   if (plan._tag === "Direct") {
     return {
       version: 1,
@@ -226,6 +230,16 @@ export function linkedRunPlanIdentity(plan: LinkedRunPlan): JsonValue {
     templateOwner: { kind: plan.pair.templateOwner.kind, id: plan.pair.templateOwner.id },
     template: sandboxTemplateIdentity(plan.pair.template),
     commands: plan.pair.fingerprint.commands.map(commandFingerprintIdentity),
-    providerPlan: providerPlanIdentity(plan.providerPlan),
+    providerPlan: providerPlanRecordIdentity(plan.providerPlan),
   };
+}
+
+/** `sandboxPlansByEval` 的唯一落盘投影；整个返回值可安全 JSON 序列化。 */
+export function linkedRunRecordIdentity(plan: LinkedRunPlan): JsonValue {
+  return linkedRunPublishableIdentity(plan);
+}
+
+/** Eval fingerprint 的唯一计划投影；与 record 同构，保证可从磁盘重算。 */
+export function linkedRunFingerprintIdentity(plan: LinkedRunPlan): JsonValue {
+  return linkedRunPublishableIdentity(plan);
 }

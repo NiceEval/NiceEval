@@ -1,19 +1,21 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   createBuiltinSandboxFactories,
   defineSandboxTemplate,
   sandboxLayer,
   sandboxProviderPlan,
+  sandboxProviderRuntimeOf,
   SandboxProviderPlanningError,
   type SandboxLayer,
   type SandboxTargetPlatform,
 } from "./layer.ts";
 import { linkSandboxLayers, type LinkedSandboxLayerPair } from "./link.ts";
 import {
-  linkedRunPlanIdentity,
+  linkedRunFingerprintIdentity,
+  linkedRunRecordIdentity,
   planLinkedRuns,
   SandboxPhysicalPlanningError,
   type LinkedRunPlan,
@@ -77,7 +79,7 @@ describe("provider-neutral Sandbox planning", () => {
       return plan.providerPlan;
     });
 
-    expect(plans.map(({ runtime }) => runtime.adapter)).toEqual([
+    expect(plans.map(({ runtimeAdapter }) => runtimeAdapter)).toEqual([
       "niceeval/docker-compose",
       "niceeval/dockerfile",
       "niceeval/docker-image",
@@ -88,22 +90,24 @@ describe("provider-neutral Sandbox planning", () => {
     expect(plans[0]).toMatchObject({
       provider: "docker",
       caseKind: "compose",
-      runtime: {
-        input: {
-          file: { _tag: "Path", value: "/repo/evals/task/compose.yaml" },
-          workspaceService: "client",
-          build: "on-demand",
-          executionUser: { _tag: "ImageDefault" },
-          env: {},
-        },
-      },
+      runtimeAdapter: "niceeval/docker-compose",
       scheduling: { recommendedConcurrency: 10, lane: { key: "docker", limit: 10 } },
+    });
+    expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[0]!)).input).toMatchObject({
+      file: { _tag: "Path", value: "/repo/evals/task/compose.yaml" },
+      workspaceService: "client",
+      build: "on-demand",
+      executionUser: { _tag: "ImageDefault" },
+      env: {},
     });
     expect(plans[5]).toMatchObject({
       provider: "local",
-      runtime: { input: { directory: "/repo/evals/task/workspace" } },
+      runtimeAdapter: "niceeval/local-directory",
       target: { platform: { _tag: "Darwin", os: "darwin", arch: "arm64" } },
       scheduling: { admission: { _tag: "Exclusive" } },
+    });
+    expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[5]!)).input).toEqual({
+      directory: "/repo/evals/task/workspace",
     });
     expect(Object.isFrozen(outputs)).toBe(true);
     expect(plans.every(Object.isFrozen)).toBe(true);
@@ -115,7 +119,8 @@ describe("provider-neutral Sandbox planning", () => {
     const template = defineSandboxTemplate({
       provider: "acme",
       kind: "pod",
-      identity: { provider: "acme", kind: "pod", manifest: "sha256:abc" },
+      publishableIdentity: { manifestKind: "digest" },
+      privateFingerprintIdentity: { manifest: "sha256:abc" },
       leakGate: { _tag: "None" },
       plan: () => {
         calls += 1;
@@ -130,8 +135,8 @@ describe("provider-neutral Sandbox planning", () => {
             admission: { _tag: "Shared" },
           },
           runtime: { adapter: "acme/pod", input: { manifest: "sha256:abc" } },
-          leakGate: { _tag: "None" },
-          physicalIdentity: { manifest: "sha256:abc" },
+          publishableIdentity: { manifestKind: "digest" },
+          privateFingerprintIdentity: { manifest: "sha256:abc" },
         }));
       },
     });
@@ -151,7 +156,7 @@ describe("provider-neutral Sandbox planning", () => {
       _tag: "Sandbox",
       providerPlan: {
         provider: "acme",
-        runtime: { adapter: "acme/pod" },
+        runtimeAdapter: "acme/pod",
         scheduling: { lane: { key: "acme-account", limit: 4 } },
       },
     });
@@ -163,7 +168,8 @@ describe("provider-neutral Sandbox planning", () => {
     const failing = (name: string) => defineSandboxTemplate({
       provider: name,
       kind: "fixture",
-      identity: { provider: name, kind: "fixture" },
+      publishableIdentity: {},
+      privateFingerprintIdentity: { provider: name, kind: "fixture" },
       leakGate: { _tag: "None" },
       plan: () => {
         plannedCount += 1;
@@ -191,22 +197,57 @@ describe("provider-neutral Sandbox planning", () => {
     expect(createCount).toBe(0);
   });
 
-  it("plan identity 只含 pair/template/physical JSON，不含 callback", () => {
+  it("record 与 fingerprint projection 只含可发布 JSON，不含 callback/runtime locator", () => {
     const opaque = async (): Promise<void> => {};
     const pair = linked(
       factories.dockerImageSandbox({ image: "node:24" }),
       sandboxLayer().prepare(opaque),
     );
-    const identity = linkedRunPlanIdentity(planned(pair));
+    const plan = planned(pair);
+    const identity = linkedRunRecordIdentity(plan);
     expect(identity).toMatchObject({
       mode: "sandbox",
-      template: { provider: "docker", kind: "image", image: "node:24" },
+      template: { provider: "docker", kind: "image", publishable: { source: "configured-image" } },
       commands: [{ kind: "opaque", owner: { kind: "experiment" }, index: 0 }],
       providerPlan: {
         provider: "docker",
-        runtime: { adapter: "niceeval/docker-image", input: { image: "node:24" } },
+        runtimeAdapter: "niceeval/docker-image",
+        publishable: { source: "configured-image" },
       },
     });
+    expect(linkedRunFingerprintIdentity(plan)).toEqual(identity);
+    expect(JSON.stringify(identity)).not.toContain("node:24");
     expect(JSON.stringify(identity)).not.toContain("opaque =");
+  });
+
+  it("secret env 与私有绝对路径只改变 opaque digest，不进入 plan/record JSON", () => {
+    const makePlan = (secret: string, authorBaseDir: string): LinkedRunPlan => {
+      const pair = linked(factories.dockerComposeSandbox({
+        file: "private/compose.yaml",
+        workspaceService: "client",
+        env: { ACCESS_TOKEN: secret },
+      }));
+      const [output] = Effect.runSync(planLinkedRuns([{
+        pair,
+        authorBaseDirs: { eval: authorBaseDir, experiment: "/repo/experiments" },
+      }]));
+      if (output === undefined) throw new Error("missing secure plan fixture");
+      return output.plan;
+    };
+
+    const first = makePlan("secret-red", "/Users/alice/private-evals/task");
+    const changedSecret = makePlan("secret-blue", "/Users/alice/private-evals/task");
+    const changedPath = makePlan("secret-red", "/Volumes/private-checkout/task");
+    if (first._tag !== "Sandbox") throw new Error("expected sandbox plan");
+
+    const recordJson = JSON.stringify(linkedRunRecordIdentity(first));
+    const wholePlanJson = JSON.stringify(first.providerPlan);
+    for (const forbidden of ["secret-red", "/Users/alice", "private/compose.yaml"]) {
+      expect(recordJson).not.toContain(forbidden);
+      expect(wholePlanJson).not.toContain(forbidden);
+    }
+    expect(linkedRunFingerprintIdentity(changedSecret)).not.toEqual(linkedRunFingerprintIdentity(first));
+    expect(linkedRunFingerprintIdentity(changedPath)).not.toEqual(linkedRunFingerprintIdentity(first));
+    expect(linkedRunRecordIdentity(first)).toEqual(linkedRunFingerprintIdentity(first));
   });
 });

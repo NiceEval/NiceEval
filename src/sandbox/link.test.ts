@@ -16,6 +16,17 @@ import {
   SandboxLayerLinkError,
   type SandboxLayerPairInput,
 } from "./link.ts";
+import { digestOf } from "./identity.ts";
+
+function imageTemplateIdentity(image: string) {
+  return {
+    version: 2,
+    provider: "docker",
+    kind: "image",
+    publishable: { source: "configured-image" },
+    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image }),
+  };
+}
 
 function stable(id: string) {
   return defineSandboxCommand({ id, revision: "1", inputs: { id } }, async () => {});
@@ -97,7 +108,7 @@ describe("pure SandboxLayer linker", () => {
         kind: "template-bearing",
         template: {
           _tag: "Declared",
-          value: { kind: "image", identity: { kind: "image", image: "node:24" } },
+          value: { kind: "image", identity: imageTemplateIdentity("node:24") },
         },
         declaredAt: {
           _tag: "Declared",
@@ -109,7 +120,7 @@ describe("pure SandboxLayer linker", () => {
         kind: "template-bearing",
         template: {
           _tag: "Declared",
-          value: { kind: "image", identity: { kind: "image", image: "node:24" } },
+          value: { kind: "image", identity: imageTemplateIdentity("node:24") },
         },
         declaredAt: {
           _tag: "Declared",
@@ -168,7 +179,7 @@ describe("pure SandboxLayer linker", () => {
       template: {
         provider: "docker",
         kind: "image",
-        identity: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+        identity: imageTemplateIdentity("node:24@sha256:abc"),
       },
       carryEligible: true,
       carryIneligibleReasons: [],
@@ -182,7 +193,7 @@ describe("pure SandboxLayer linker", () => {
     expect(evalOwned.fingerprint).toEqual({
       version: 1,
       templateOwner: { kind: "eval", id: "eval/task" },
-      template: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      template: imageTemplateIdentity("node:24@sha256:abc"),
       commands: [
         { kind: "stable", owner: { kind: "eval", id: "eval/task" }, index: 0, id: "eval.first", revision: "1", inputs: { id: "eval.first" } },
         { kind: "stable", owner: { kind: "eval", id: "eval/task" }, index: 1, id: "eval.second", revision: "1", inputs: { id: "eval.second" } },
@@ -192,7 +203,7 @@ describe("pure SandboxLayer linker", () => {
     expect(sandboxLayerIdentityFor(evalOwned, "eval")).toEqual({
       layer: {
         _tag: "Template",
-        value: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+        value: imageTemplateIdentity("node:24@sha256:abc"),
       },
       commands: [
         { kind: "stable", index: 0, id: "eval.first", revision: "1", inputs: { id: "eval.first" } },

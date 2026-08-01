@@ -2,7 +2,7 @@
 // Link 只消费 template 的纯数据 identity；planner callback 保存在 WeakMap 中，不进入声明或指纹。
 
 import { isAbsolute, resolve } from "node:path";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { ScopedFeedback } from "../shared/types.ts";
 import type {
@@ -14,6 +14,7 @@ import type { Sandbox, SandboxRuntime } from "./types.ts";
 import type { SandboxCommand, SandboxCommandDeclaration } from "./commands.ts";
 import { sandboxCommandDeclarationOf } from "./commands.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
+import { digestOf } from "./identity.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -22,6 +23,7 @@ const SANDBOX_LAYERS = new WeakSet<object>();
 const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
 const SANDBOX_TEMPLATE_RUNTIMES = new WeakMap<object, CustomSandboxTemplateRuntime>();
+const SANDBOX_PROVIDER_RUNTIMES = new WeakMap<object, SandboxRuntimePlan>();
 
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
@@ -140,15 +142,17 @@ export interface SandboxRuntimePlan {
   readonly input: JsonValue;
 }
 
-/** physical planning 的唯一完整产物。没有 provider-specific union，也没有可选完成态字段。 */
+/**
+ * physical planning 的唯一完成态。整个对象都可发布、可序列化；provider 私有的 runtime input
+ * 只存在于 plan-keyed runtime binding，不会因调用方误做 `JSON.stringify(plan)` 而落盘。
+ */
 export interface SandboxProviderPlan {
   readonly provider: string;
   readonly plannerRevision: string;
   readonly caseKind: string;
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
-  readonly runtime: SandboxRuntimePlan;
-  readonly leakGate: SandboxLeakGate;
+  readonly runtimeAdapter: string;
   readonly identity: JsonValue;
 }
 
@@ -159,9 +163,10 @@ export interface SandboxProviderPlanInput {
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
   readonly runtime: SandboxRuntimePlan;
-  readonly leakGate: SandboxLeakGate;
-  /** Provider 解析后的物理事实；凭据值不得放进这里。 */
-  readonly physicalIdentity: JsonValue;
+  /** 可直接出现在 record / manifest 的 provider-owned 纯数据。 */
+  readonly publishableIdentity: JsonValue;
+  /** 影响 fingerprint 但不得落盘的值；plan 只保存它的稳定摘要。 */
+  readonly privateFingerprintIdentity: JsonValue;
 }
 
 export class SandboxProviderPlanningError extends Data.TaggedError(
@@ -197,7 +202,10 @@ export type SandboxTemplateCarry =
 export interface SandboxTemplateDefinition {
   readonly provider: string;
   readonly kind: string;
-  readonly identity: JsonValue;
+  /** 可直接进入 pair-owned record projection 的 provider-owned 纯数据。 */
+  readonly publishableIdentity: JsonValue;
+  /** 影响 template identity 但不得直接进入 link / record 的作者输入。 */
+  readonly privateFingerprintIdentity: JsonValue;
   readonly plan: SandboxTemplatePlanner;
   readonly leakGate: SandboxLeakGate;
   readonly runtime?: CustomSandboxTemplateRuntime;
@@ -211,6 +219,9 @@ export type CustomSandboxTemplateRuntime =
 export type CustomSandboxTemplateRuntimeBinding =
   | { readonly _tag: "Unbound" }
   | { readonly _tag: "Bound"; readonly runtime: CustomSandboxTemplateRuntime };
+
+/** Effect Option 明确表达非法伪造 plan 的无绑定状态；合法 planner 产物恒为 Some。 */
+export type SandboxProviderRuntimeBinding = Option.Option<SandboxRuntimePlan>;
 
 export interface BuiltinSandboxPlannerServices {
   /** 只读 control-plane 探测；测试可注入确定值或 typed failure。 */
@@ -309,7 +320,7 @@ function freezeScheduling(scheduling: SandboxProviderScheduling): SandboxProvide
   });
 }
 
-/** Provider planner 统一用本 helper 构造完整、冻结、可直接做身份投影的计划。 */
+/** Provider planner 统一用本 helper 构造完整、冻结、可安全发布的计划。 */
 export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxProviderPlan {
   const provider = nonEmptyString(input.provider, "sandbox provider plan.provider");
   const plannerRevision = nonEmptyString(input.plannerRevision, "sandbox provider plan.plannerRevision");
@@ -320,19 +331,39 @@ export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxPro
     adapter: nonEmptyString(input.runtime.adapter, "sandbox provider plan.runtime.adapter"),
     input: freezeJson(input.runtime.input),
   });
-  const leakGate = freezeLeakGate(input.leakGate);
-  const physicalIdentity = freezeJson(input.physicalIdentity);
+  const publishableIdentity = freezeJson(input.publishableIdentity);
+  const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
   const identity = freezeJson({
-    version: 1,
+    version: 2,
     provider,
     plannerRevision,
     caseKind,
     target: targetIdentity(target),
-    runtime: { adapter: runtime.adapter, input: runtime.input },
-    leakGate,
-    physical: physicalIdentity,
+    scheduling: {
+      recommendedConcurrency: scheduling.recommendedConcurrency,
+      lane: { key: scheduling.lane.key, limit: scheduling.lane.limit },
+      admission: { _tag: scheduling.admission._tag },
+    },
+    runtimeAdapter: runtime.adapter,
+    publishable: publishableIdentity,
+    privateIdentityDigest,
   });
-  return Object.freeze({ provider, plannerRevision, caseKind, target, scheduling, runtime, leakGate, identity });
+  const plan = Object.freeze({
+    provider,
+    plannerRevision,
+    caseKind,
+    target,
+    scheduling,
+    runtimeAdapter: runtime.adapter,
+    identity,
+  });
+  SANDBOX_PROVIDER_RUNTIMES.set(plan, runtime);
+  return plan;
+}
+
+/** @internal materializer 取得 provider 私有 runtime input；完成态 planner 产物恒为 Some。 */
+export function sandboxProviderRuntimeOf(plan: SandboxProviderPlan): SandboxProviderRuntimeBinding {
+  return Option.fromNullable(SANDBOX_PROVIDER_RUNTIMES.get(plan));
 }
 
 function targetIdentity(target: SandboxPlannedTarget): JsonValue {
@@ -478,10 +509,18 @@ export function sandboxLayer(): SandboxLayer<"command-only"> {
 export function defineSandboxTemplate(
   definition: SandboxTemplateDefinition,
 ): SandboxLayer<"template-bearing"> {
+  const provider = nonEmptyString(definition.provider, "sandbox template.provider");
+  const kind = nonEmptyString(definition.kind, "sandbox template.kind");
   const declaration = Object.freeze({
-    provider: nonEmptyString(definition.provider, "sandbox template.provider"),
-    kind: nonEmptyString(definition.kind, "sandbox template.kind"),
-    identity: freezeJson(definition.identity),
+    provider,
+    kind,
+    identity: freezeJson({
+      version: 2,
+      provider,
+      kind,
+      publishable: freezeJson(definition.publishableIdentity),
+      privateIdentityDigest: digestOf(definition.privateFingerprintIdentity),
+    }),
     carry: definition.carry === undefined
       ? Object.freeze({ _tag: "Eligible" as const })
       : Object.freeze({ ...definition.carry }),
@@ -548,7 +587,13 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "docker",
         kind: "compose",
-        identity,
+        publishableIdentity: {
+          workspaceService,
+          build,
+          executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
+          envKeys: Object.keys(env).sort(),
+        },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "Compose", file, workspaceService },
         plan: ({ authorBaseDir }) => Effect.map(dockerTarget(), (target) => {
           const plannedFile = plannedLocation(file, authorBaseDir);
@@ -566,8 +611,13 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             runtime: { adapter: "niceeval/docker-compose", input: runtimeInput },
-            leakGate: { _tag: "Compose", file: plannedFile, workspaceService },
-            physicalIdentity: runtimeInput,
+            publishableIdentity: {
+              workspaceService,
+              build,
+              executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
+              envKeys: Object.keys(env).sort(),
+            },
+            privateFingerprintIdentity: runtimeInput,
           });
         }),
       });
@@ -591,7 +641,10 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "docker",
         kind: "dockerfile",
-        identity,
+        publishableIdentity: {
+          buildArgKeys: Object.keys(buildArgs).sort(),
+        },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
         plan: ({ authorBaseDir }) => Effect.map(dockerTarget(), (target) => {
           const runtimeInput: JsonValue = {
@@ -606,12 +659,10 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             runtime: { adapter: "niceeval/dockerfile", input: runtimeInput },
-            leakGate: {
-              _tag: "Dockerfile",
-              context: plannedLocation(context, authorBaseDir),
-              dockerfile,
+            publishableIdentity: {
+              buildArgKeys: Object.keys(buildArgs).sort(),
             },
-            physicalIdentity: runtimeInput,
+            privateFingerprintIdentity: runtimeInput,
           });
         }),
       });
@@ -625,7 +676,8 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
-        identity,
+        publishableIdentity: { source: "configured-image" },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
           const runtimeInput: JsonValue = { image };
@@ -636,8 +688,8 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             runtime: { adapter: "niceeval/docker-image", input: runtimeInput },
-            leakGate: { _tag: "None" },
-            physicalIdentity: runtimeInput,
+            publishableIdentity: { source: "configured-image" },
+            privateFingerprintIdentity: runtimeInput,
           });
         }),
       });
@@ -652,7 +704,8 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "e2b",
         kind: "template",
-        identity,
+        publishableIdentity: { lifetime: plannedLifetime },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
           const runtimeInput: JsonValue = { template, lifetime: plannedLifetime };
@@ -663,8 +716,8 @@ export function createBuiltinSandboxFactories(
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("e2b", 20),
             runtime: { adapter: "niceeval/e2b-template", input: runtimeInput },
-            leakGate: { _tag: "None" },
-            physicalIdentity: runtimeInput,
+            publishableIdentity: { lifetime: plannedLifetime },
+            privateFingerprintIdentity: runtimeInput,
           }));
         },
       });
@@ -679,7 +732,8 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "vercel",
         kind: "snapshot",
-        identity,
+        publishableIdentity: { lifetime: plannedLifetime },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
           const runtimeInput: JsonValue = { snapshotId, lifetime: plannedLifetime };
@@ -690,8 +744,8 @@ export function createBuiltinSandboxFactories(
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("vercel", 1),
             runtime: { adapter: "niceeval/vercel-snapshot", input: runtimeInput },
-            leakGate: { _tag: "None" },
-            physicalIdentity: runtimeInput,
+            publishableIdentity: { lifetime: plannedLifetime },
+            privateFingerprintIdentity: runtimeInput,
           }));
         },
       });
@@ -710,7 +764,8 @@ export function createBuiltinSandboxFactories(
       return defineSandboxTemplate({
         provider: "local",
         kind: "directory",
-        identity,
+        publishableIdentity: { directory: { _tag: directory._tag } },
+        privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: ({ authorBaseDir }) => {
           const configured = directory._tag === "AuthorBaseDir"
@@ -724,8 +779,8 @@ export function createBuiltinSandboxFactories(
             target: { platform: services.hostPlatform, source: "host" },
             scheduling: exclusiveScheduling("local-worktree"),
             runtime: { adapter: "niceeval/local-directory", input: runtimeInput },
-            leakGate: { _tag: "None" },
-            physicalIdentity: runtimeInput,
+            publishableIdentity: { directory: { _tag: directory._tag } },
+            privateFingerprintIdentity: runtimeInput,
           }));
         },
       });
@@ -794,7 +849,8 @@ export function customProviderSandbox(
   return defineSandboxTemplate({
     provider: name,
     kind: "custom-provider",
-    identity,
+    publishableIdentity: {},
+    privateFingerprintIdentity: identity,
     leakGate: { _tag: "None" },
     carry: Object.freeze({
       _tag: "Ineligible",
@@ -818,8 +874,8 @@ export function customProviderSandbox(
           reuse: { _tag: "Unsupported" },
         },
       },
-      leakGate: { _tag: "None" },
-      physicalIdentity: identity,
+      publishableIdentity: {},
+      privateFingerprintIdentity: identity,
     })),
   });
 }
@@ -849,7 +905,8 @@ export function customCaseSandbox(
   return defineSandboxTemplate({
     provider: "custom-case",
     kind: "custom-case",
-    identity: declarationIdentity,
+    publishableIdentity: {},
+    privateFingerprintIdentity: declarationIdentity,
     leakGate: { _tag: "None" },
     runtime: Object.freeze({ _tag: "CustomCase", materialize: options.materialize }),
     plan: () => Effect.succeed(sandboxProviderPlan({
@@ -867,8 +924,8 @@ export function customCaseSandbox(
           retention: { _tag: "Unsupported" },
         },
       },
-      leakGate: { _tag: "None" },
-      physicalIdentity: declarationIdentity,
+      publishableIdentity: {},
+      privateFingerprintIdentity: declarationIdentity,
     })),
   });
 }
