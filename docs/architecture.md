@@ -96,7 +96,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    ** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
    重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
 6. **准备环境,交给 `test(t)`。
-   ** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上失败 `.setup()`,先跑这些环境层 Hook(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDefinition.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。
+   ** 沙箱型:Provider 按配对唯一的 template 启动 Sandbox Case → 按 owner 顺序执行两层作者 layer 的 `prepare()` 命令(template owner 先、另一 owner 后,装二进制、预热、题目准备;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ agent.ensure 循环安装 Agent CLI(`agent.ensure`:probe、缺失时配对安装层 install、复检)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 跑 agent 的 runtime `SandboxAgent.setup`(写鉴权与运行时配置)。
    之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。
    ** `test(t)` 跑完后从分类账折叠各 send 窗口的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
@@ -107,7 +107,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 10. **首过即停。
     ** 若该 attempt 通过且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 attempt。
 11. **收尾与留存。
-    ** finally 里按 eval cleanup → `SandboxAgent.teardown` → 环境层 `.teardown()`(回存跨 attempt 状态的时机)的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
+    ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
     阶段词表以 [Results 的 `LifecyclePhase` 闭集](feature/record/architecture.md#resultjson)为唯一权威。
 12. **报告。
     ** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判定与 artifact 随之写进该实验 Run 目录(`.niceeval/<experiment>/<run>/<evalId>/aN/result.json`);每个 Run 在该 Experiment 收尾后补 `completedAt` 与 Run 级 diagnostics,全部结束后回调 `onInvocationComplete`。

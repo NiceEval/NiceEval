@@ -115,12 +115,12 @@ Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用�
 ## 生命周期不变量
 
 Agent setup 负责连接 Agent 自身，并且每 attempt 只执行一次。
-环境预置属于 SandboxSpec，任务 Fixture 属于 eval。
+环境预置属于 Eval / Experiment layer 的 `prepare()`，任务 Fixture 属于 `test(t)`。
 setup 基础设施失败产生 `errored`，Agent 运行结果通过 Turn 表达。
 
 `setup` / `teardown` 遵循成对语义：`teardown` 当且仅当本 Attempt 走到过 agent setup 时点才执行，`setup` 抛错不豁免。
 Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Hook 只接收 `ctx`，不创建也不伪造 Sandbox。
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
-完整顺序见 [Runner · 环境预置](../../../runner.md#环境预置不进运行器但按顺序调它)。
+完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
 
 沙箱型 Agent 的 `send()` 返回时，Agent 侧可能写 workdir 的进程必须已退出、或已进入可证明不再写 workspace 的静止态（HITL waiting 挂起等输入即属此类）——`send()` 的返回就是 diff 归因的窗口边界，后台残留写入会落在窗口外、被错记成 eval 归因（见 [Sandbox · 变更归因](../../sandbox/architecture.md#变更归因send-窗口与分类账)）。

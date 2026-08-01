@@ -6,34 +6,30 @@
 
 | provider | 构建产物 | experiment 消费 | 共享边界 | 过期 |
 |---|---|---|---|---|
-| Docker | OCI image | `dockerSandbox({ image })` | 本地或任意 registry | 自管 |
+| Docker | OCI image | `dockerImageSandbox({ image })` | 本地或任意 registry | 自管 |
 | E2B | template | `e2bSandbox({ template })` | team 私有,可公开发布 | 随 E2B 模板生命周期 |
 | Vercel Sandbox | sandbox snapshot | `vercelSandbox({ snapshotId })` | 仅 Team/Project 内 | Run 有效期由 Vercel 定 |
 
-## 按 environment 选预制产物
+## 按 Eval 选预制产物
 
-一个实验里的 eval 不必共享同一个预制产物。eval 用 [`environment`](../../eval/README.md) 声明 provider-neutral 的需求 profile；spec 工厂的 `environments` 表把 profile 翻译成本 provider 的产物——值就是上表「experiment 消费」字段的覆盖：
+一个实验里的 eval 不必共享同一个预制产物。
+每条 Eval 可以自带自己的 template-bearing factory,同一 Experiment 混跑不同起点、不同 Provider 的题目;配对规则见 [Sandbox Layer](../layers.md)。
 
 ```typescript
-// experiments/shared.ts —— 一个 provider 一张表，多个实验共用这个 spec
-export const e2b = e2bSandbox({
-  template: "niceeval-agents",                  // 未声明 environment 的 eval 从它起步
-  environments: {
-    "python-3.9-astropy-4.2": { template: "niceeval-py39-astropy42" },
-  },
-});
+// evals/shared/starters.ts —— 共享起点抽成普通 helper,多条 eval 复用
+export const py39Astropy = () =>
+  e2bSandbox({ template: "niceeval-py39-astropy42" });
 ```
 
-- 表是纯数据：键为 profile id，值是该 provider 的 sandbox case，靠判别键区分（docker `{ image }` / `{ build }` / `{ compose }`、e2b `{ template }` / `{ build }`、vercel `{ snapshotId }`），写错字段名由类型检查拦下。预制产物对应 case 目录里的「预制单 Sandbox」一类；完整 case 目录、materializer 与 folder-local source 的双入口见 [Sandbox Case](../case.md)。
-- 解析发生在调度前。profile 任何表都查不到、eval 又没有 folder-local source 时是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不创建任何沙箱、不消耗预算。
-  声明合法但当前 provider 缺对应 materializer 或能力位时计划期 `skipped`——两类缺失的完整判定见 [Sandbox Case · 两类缺失分开判](../case.md#两类缺失分开判)。
-- `defineSandbox` 自定义 provider 经[自定义 case](../case.md#自定义-case) 开放同形的 environment 映射；没有开放映射时按上一条的能力缺失处理。
-- 查表只替换这条 eval 的起点产物；`.setup()` / `.teardown()` Hook 链与其余 spec 参数对全部 eval 共享。
-- 逐 eval 的解析结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`，见 [Results · run.json](../../record/architecture.md#runjson)。
+- factory 参数是该 provider 的原生纯数据,写错字段名由类型检查拦下。预制产物对应 case 目录里的「预制单 Sandbox」一类;完整 case 目录见 [Sandbox Case](../case.md)。
+- template 检查发生在调度前。配对缺 template 或双 template 在 link 期一次穷举报错,不创建任何沙箱、不消耗预算;判定见 [Sandbox Case · 缺失与不可用分开判](../case.md#缺失与不可用分开判)。
+- `defineSandbox` 自定义 provider 经[自定义 case](../case.md#自定义-case) 提供同等的 template 路径。
+- 换起点只替换这条 eval 的 template;另一侧 layer 的 `prepare()` 命令照常按 owner 顺序执行。
+- 逐 eval 的 template 解析结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`,见 [Results · run.json](../../record/architecture.md#runjson)。
 
 ## 为什么没有跨 provider 构建 DSL
 
-三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界;项目应保留 provider 原生的构建脚本,把产物 ID / 名字写进 typed sandbox spec。`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检(分层判据见 [环境预置放哪](../library.md#环境预置放哪))。
+三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界;项目应保留 provider 原生的构建脚本,把产物 ID / 名字写进 factory 参数。layer 的 `prepare()` 只处理必须按 experiment / eval 变化的小配置、真实检查和 fail-fast 预检(分层判据见 [环境预置放哪](../library.md#环境预置放哪))。
 
 ## 用户怎么写自己的预制环境
 
@@ -44,7 +40,7 @@ export const e2b = e2bSandbox({
 3. **重建只在环境依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有产物。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地覆盖同一个 tag——那会让"同一配置"在不同时间指向不同环境,跑分失去可比性。
 
-进不进预制产物的判据只有一条:**这内容是不是所有 attempt 都相同、且与本次实验的参数无关。** 按实验变化的内容(装不装某二进制、开不开预热)进 [`.setup()` Hook](../library.md#沙箱生命周期-hook-setup-与-teardown);按 eval 变化的任务 Fixture 进 `test(t)`。
+进不进预制产物的判据只有一条:**这内容是不是所有 attempt 都相同、且与本次实验的参数无关。** 按实验变化的内容(装不装某二进制、开不开预热)进 Experiment layer 的 [`prepare()`](../layers.md);按 eval 变化的任务 Fixture 进 `test(t)`。
 
 ### Docker:Dockerfile 派生
 
@@ -164,9 +160,9 @@ import {
   NICEEVAL_OPENCLAW_DOCKER_IMAGE,
 } from "niceeval/sandbox";
 
-e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })      // 跨 Team namespace + 锁定版本
-dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })      // repository + 同一个版本
-dockerSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
+e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })          // 跨 Team namespace + 锁定版本
+dockerImageSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })     // repository + 同一个版本
+dockerImageSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 ```
 
 每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生 image / template 要把起点身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
@@ -179,10 +175,10 @@ Adapter 不自动替 experiment 选择 image / template / snapshot:同一个 Cod
 
 [接一个新 provider](../architecture.md#再接一个-provider)时,预制环境的故事随接口一起交付:
 
-- **spec 上有一个消费字段**,语义是"从这个产物起实例"——对应 Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`。字段名用该服务的原生词汇,不翻译成统一术语。这个字段同时就是 [`environments` 表](#按-environment-选预制产物)的值类型:按 profile 覆盖的正是它。
+- **factory 上有一个消费字段**,语义是"从这个产物起实例"——对应 Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`。字段名用该服务的原生词汇,不翻译成统一术语。
 - **构建留在服务原生工具**:不为新 provider 发明 niceeval 构建命令,也不包一层构建 API;项目保留原生构建脚本,spec 只引用产物。
 - **共享与过期语义如实文档化**:产物是账号私有还是可公开、会不会过期、跨 team 引用要什么 namespace,写进该 provider 的接入文档,不许诺服务给不了的可见性。
-- **服务没有可发布产物原语时不伪造**:spec 不加假字段;该 provider 的用户用 [`.setup()` Hook](../library.md#沙箱生命周期-hook-setup-与-teardown)做运行时安装,或用下面的运行时 checkpoint 缓存安装结果。
+- **服务没有可发布产物原语时不伪造**:factory 不加假字段;该 provider 的用户用 layer 的 [`prepare()`](../layers.md)做运行时安装,或用下面的运行时 checkpoint 缓存安装结果。
 
 ## 运行时 checkpoint:`createCheckpoint` / `restoreCheckpoint`
 
@@ -199,6 +195,6 @@ await restoreCheckpoint(nextSandbox, checkpoint);
 
 ## 相关阅读
 
-- [Library](../library.md) —— spec 工厂、生命周期 Hook、环境预置分层。
+- [Library](../library.md) —— 起点 factory、准备命令、环境预置分层。
 - [Architecture · 性能](../architecture.md#性能预制环境复用与预热) —— 预制环境在性能优先级里的位置。
 - [Architecture · 再接一个 provider](../architecture.md#再接一个-provider) —— provider 接口与接入路径。

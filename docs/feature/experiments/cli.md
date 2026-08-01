@@ -159,16 +159,16 @@ Human 展示列只是各阶段的人读投影:
 |---|---|---|
 | `sandbox.queue` | queued for sandbox | 等待容器创建信号量(并发限流);direct agent 跳过 |
 | `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;direct agent 跳过 |
-| `sandbox.setup` | sandbox setup | 运行 `SandboxSpec.setup()` 环境预置 Hook 链;没有 Hook 就跳过 |
+| `sandbox.prepare` | preparing sandbox | 依次执行两层作者 layer 的 prepare 命令链,template owner 的命令在前;两层都没有命令就跳过 |
+| `agent.ensure` | ensuring agent | Agent layer 的 ensure 循环:probe、缺失时由配对安装层安装并复检 Agent CLI;每 Attempt 重探,命中快速返回 |
 | `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);direct agent 跳过 |
-| `eval.setup` | eval setup | 运行 `EvalDefinition.setup`;没有 setup 就跳过 |
-| `agent.setup` | agent setup | 安装 CLI、Skill/plugin、写 agent 配置;没有 `Agent.setup` 就跳过 |
+| `agent.setup` | agent setup | Agent runtime setup:写 agent 配置、连 agent;没有 `Agent.setup` 就跳过 |
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
 | `eval.run` | running eval | 执行 `EvalDefinition.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
 | `workspace.diff` | capturing diff | 读取 Sandbox 工作区变化；Direct / skipped Attempt 跳过 |
 | `scoring.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
-| `eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` | cleaning up | 收尾段:Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |
+| `agent.teardown` / `sandbox.cleanup` / `sandbox.stop` | cleaning up | 收尾段(Agent teardown 与已登记 cleanup 的逆序执行):Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |
 
 阶段推进只换这一栏的文字,**不影响 active 行的时间列**:那一列恒是「这条 attempt 派发至今多久」,一条 attempt 从建容器到收尾全程单调增长,不在阶段边界归零。
 live 面板不做 spinner 动画,存活性完全靠这一列增长来证明(见[运行中的 live 面板](#运行中的-live-面板)的列序约定);会归零的时间既证明不了存活,也会被读成「这条 eval 重跑了」。**
@@ -182,7 +182,7 @@ detail 是最后一条短预览，不逐帧追加、不过度保留工具输出�
 `waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。
 `passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
 
-每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。
+每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的准备步骤会稳定停在 `preparing sandbox` 或 `agent setup`,而不是继续显示前一阶段。
 detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。
 `running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
 
@@ -409,7 +409,7 @@ live 与结束反馈是「回答成败、指向失败」的地方,不是缓存�
 非致命 diagnostic 使用 warning/error 标记但不冒充 verdict;行首那个稳定词是诊断的 `code`,同一 `dedupeKey` 并发出现时只留一条并显示次数——折叠到多细由 dedupeKey 决定(身份可以编进它),展示与分支用的稳定词法始终是 `code`:
 
 ```text
-! sandbox setup · memory-warmup-degraded (12 attempts)
+! sandbox prepare · memory-warmup-degraded (12 attempts)
   Memory warmup failed; continuing with a cold index
 ```
 
@@ -583,7 +583,7 @@ niceeval exp compare --json
 {"event":"progress","elapsedMs":30000,"total":24,"reused":18,"running":6,"elsewhere":0,"queued":0,"passed":0,"failed":0,"errored":0,"skipped":0}
 {"event":"failure","locator":"@1bwcxxiy","evalId":"memory/swelancer-manager-15193","experimentId":"compare/claude","severity":"gate","assertion":"Issue 15193: selected proposal matches the accepted proposal","matcher":"equals(4)","expected":4,"received":3}
 {"event":"error","locator":"@12h8m4k1","evalId":"memory/agent-029-use-cache","experimentId":"compare/claude-e2b","phase":"sandbox.create","reason":"E2B sandbox allocation failed after 5 attempts"}
-{"event":"warning","code":"dispatch-halted","level":"error","message":"eval halted: fixture server refused the connection; start it and rerun","phase":"eval.setup","experimentId":"compare/claude-e2b","evalId":"memory/agent-041-fixture-server"}
+{"event":"warning","code":"dispatch-halted","level":"error","message":"eval halted: fixture server refused the connection; start it and rerun","phase":"sandbox.prepare.eval","experimentId":"compare/claude-e2b","evalId":"memory/agent-041-fixture-server"}
 {"event":"eval","locator":"@12p9k4mz","evalId":"memory/commit0-cachetool","experimentId":"compare/bub-e2b","verdict":"passed","attempts":3,"passed":2}
 {"event":"result","status":"failed","passed":22,"failed":1,"errored":1,"reused":18,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>",".niceeval/compare/claude/<run>",".niceeval/compare/claude-e2b/<run>"]}
 ```
@@ -994,7 +994,7 @@ eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attem
 
 已经发起 agent turn 的 attempt 没有成本数据时只提示一次。
 人读文本把 warning 永久写入 scrollback,`--json` 追加一条 `warning` 事件;不得每个 attempt 重复同一诊断。
-attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
+attempt 在 `sandbox.create`、`sandbox.prepare` 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
 
 ## 用法错误
 

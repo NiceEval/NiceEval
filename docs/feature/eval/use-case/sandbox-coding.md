@@ -70,7 +70,7 @@ await t.sandbox.downloadDirectory("./out/attempt-final", "src");
 - `t.sandbox` 的前提是 agent 声明了 sandbox capability；非沙箱型 agent 上一调用就报清晰错误。
 - 路径全部用相对路径，解析到 workdir；不要 hardcode 某个 provider 的绝对路径（[路径与 workdir](../../sandbox/library.md#路径与-workdir一个坐标系)）。
 - 第一次 `t.send()` 之前 diff 恒为空，可读不报错。改完又改回的文件净效果是 none，但 `fileChanged` 仍按「触及过」通过。
-- 依赖安装这类每 attempt 一次的任务预置放 `EvalDefinition.setup`，不占 `test(t)` 的篇幅（见[Fixture 与反馈](fixtures-lifecycle.md)）；`stop()` 等生命周期动作由 runner 管，不暴露给 eval 作者。
+- 依赖安装这类逐 attempt 的任务预置放 `sandbox` layer 的 `prepare()`，不占 `test(t)` 的篇幅（见[Fixture 与反馈](fixtures-lifecycle.md)）；`stop()` 等生命周期动作由 runner 管，不暴露给 eval 作者。
 
 ## 相关阅读
 

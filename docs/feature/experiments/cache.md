@@ -35,13 +35,18 @@
 指纹按**每条 eval** 各算一份(`runner/fingerprint.ts`),由两层嵌套构成:
 
 ```text
-configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse, 顶层 sandbox spec, strict, judge)
-fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / metadata,
+configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse,
+                   Experiment sandbox layer 身份, strict, judge)
+fingerprint = hash(configHash, eval 源码闭包, evalId / tags / metadata,
+                   Eval sandbox layer 身份与 template owner,
                    该 eval 解析到的 sandbox case 身份(CaseKey,内含全部 BuildKey),
                    loader 登记的数据文件内容与判据树哈希)
 ```
 
-Agent 安装身份是 [`AgentProvisioner.identity`](../adapters/architecture/agent-ensure.md) 加 staged payload digest 与平台;它与 sandbox case 身份正交进入指纹——改 Agent 版本不重建任务环境,改环境定义不作废 Agent staged payload。
+layer 身份 = template-bearing factory 的纯数据 options,加 `command()` / `shell()` / `defineSandboxCommand()` 的 command identity。
+直接传入的 callback 一律 opaque:该 Attempt `carryEligible = false`,永不跨 Run 携带(词表见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback))。
+
+Agent 安装身份是 [Agent ensure identity](../adapters/architecture/agent-ensure.md) 加 staged payload digest 与平台;它与 sandbox case 身份正交进入指纹——改 Agent 版本不重建任务环境,换 template 不作废 Agent staged payload。
 
 `configHash` 是 Run 级的**配置身份**,同时是跨 Run 可比性的唯一判据, 读取面怎么用它见 [Record · configHash](../record/library.md#confighash配置身份只算一次)。
 两个哈希嵌套而不是并列,于是新增一个公开配置字段只需要裁决一次「进不进 configHash」, 不必分别裁决「进不进指纹」和「算不算可比性配置」。
@@ -58,7 +63,7 @@ Agent 安装身份是 [`AgentProvisioner.identity`](../adapters/architecture/age
 - **凭据不进。**
   `judge` 进的是 `model` 与 `baseUrl` 两个配置值; `judge.apiKeyEnv` 选的是凭据从哪来,不改变「判定怎么算」,不进哈希也不落盘。
 - **`sandboxReuse` 进。**
-  它改变 SandboxSpec Hook 次数、题间状态边界与 Attempt 是否能被独立沿用；省略等价于 `false`。
+  复用改变 Case 创建次数、题间状态边界与 Attempt 是否能被独立沿用,两层 prepare 每条 Attempt 照常重放;省略等价于 `false`。
 
 ### manifest:哈希做索引,清单做解释
 
@@ -115,12 +120,13 @@ export default defineExperiment({
   maxConcurrency: 2,                // 改 → 一条不动
   budget: 50,                       // 改 → 一条不动。这三个是调度参数,不改变结果
 
-  sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async (sandbox) => { await sandbox.runShell("npm i -g some-cli"); }),
-  //  换 template → 36 条全部重跑(起步环境变了,结果不可比)
-  //  改 environments 表里的一行 → 只有声明了那个 profile 的 eval 重跑,其余照常携带
-  //  template 不变,只在 .setup() 里多装一个二进制 → 一条不动,Hook 函数体不进指纹
-  //  template 不变,但重建了同名镜像 → 一条不动,指纹看不见镜像内容
+  sandbox: sandboxLayer().prepare(shell("npm i -g some-cli")),
+  //  这个实验的 layer 是 command-only,起点由各条 eval 自带(见下一块)
+  //  改 shell(...) 的脚本、cwd 或 env → 36 条全部重跑:command()/shell() 的 identity 进配置哈希
+  //  追加或删除一条 prepare 命令 → 36 条全部重跑
+  //  把 prepare 改成直接传 callback → 每条 Attempt 变 opaque,永不跨 Run 携带(见 Sandbox Layer)
+  //  反向配对(实验自带 template-bearing factory、eval 全部 command-only)时,
+  //  换 factory 的任何一个参数 → 36 条全部重跑:起点身份进配置哈希
 
   evals: (e) => e.tags.includes("memory"),
   //  改谓词 → 只改变选中谁。上一轮跑过、这一轮仍被选中的照常携带
@@ -151,7 +157,9 @@ export default defineEval({
   //  ↑ 不是笔误:eval 文件进指纹的是**整份字节**,不是解析出来的字段
 
   tags: ["memory"],                 // 加一个 tag → 这一条重跑
-  environment: "python-3.9",        // 换 profile → 这一条重跑(它映射到的预制产物变了)
+  sandbox: dockerImageSandbox({ image: "ghcr.io/acme/py39-astropy:r1" }),
+  //  换 image、换 factory → 这一条重跑,同实验其余 35 条照常携带:起点身份进它自己的指纹
+  //  同名 image 被原地重建 → 一条不动,指纹看不见镜像内容
   metadata: { source: "swe" },      // 改 → 这一条重跑
 
   timeoutMs: 15 * 60_000,

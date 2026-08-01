@@ -75,6 +75,7 @@ docs/
 │   ├── environment-model/               环境模型：Sandbox 起点与三方准备顺序
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
+│   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
 │   └── user-readable-testing/           测试作者面:用户任务规格与可观察结果
 │

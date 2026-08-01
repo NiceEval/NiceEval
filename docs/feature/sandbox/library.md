@@ -1,7 +1,7 @@
 # Sandbox ——库用法
 
-`t.sandbox`(eval 作者)与 `experiment.sandbox` / `config.sandbox`(选 provider)是这个功能的两个入口。
-本篇讲怎么调用;内部怎么实现见 [Architecture](architecture.md)。
+`t.sandbox`(eval 作者)与 Eval / Experiment 的 `sandbox` layer 声明(选起点与 Provider)是这个功能的两个入口。
+声明面的完整契约见 [Sandbox Layer](layers.md);本篇讲运行中的 Sandbox 怎么调用,内部怎么实现见 [Architecture](architecture.md)。
 
 ## 路径与 workdir:一个坐标系
 
@@ -49,7 +49,7 @@ export default defineEval({
 有坐标系后,同一条 eval:
 
 ```typescript
-// ✅ after:全程零绝对路径,换 dockerSandbox() / e2bSandbox() / vercelSandbox() 零改动切换
+// ✅ after:全程零绝对路径,换 dockerImageSandbox() / e2bSandbox() / vercelSandbox() 零改动切换
 export default defineEval({
   description: "实现 Button 组件",
   async test(t) {
@@ -121,38 +121,51 @@ await sandbox.runShell("pnpm build");                  // 上限 = deadline 剩�
 await sandbox.runCommand("pnpm", ["test"], { timeout: 60_000 });   // 这条最多 60 秒
 ```
 
-## provider 选择:没有默认值,没有按名字选
+## Provider 选择:template 带出,没有默认值
 
-`sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受未包装字符串,也不会自动探测环境替你选一个**。
-沙箱型 agent 必须显式给 `sandbox` 一个工厂函数产出的 spec,写在 experiment 的 `sandbox` 字段,或写在 `niceeval.config.ts` 的 `sandbox` 字段作为全项目默认(`config.sandbox`,experiment 没设时用它)。
-两处都没设、又用了沙箱型 agent 时,`resolveSandbox()` 直接抛错,不会替你猜环境、不会静默回退到某个 provider。
+Provider 由 template-bearing factory 原子带出:factory 声明完整起点,同时选定兑现它的 Provider,**不接受未包装字符串,也不会自动探测环境替你选一个**。
+对 Sandbox Agent,每个实际选中的 Eval × Experiment 配对必须恰好一方带 template;没有游离的 Provider 配置、项目级默认值,也没有 `--sandbox <name>` 这种 CLI 覆盖。
+两方都带 template 报 `sandbox.template-conflict`,两方都没有报 `sandbox.template-missing`;错误在创建任何资源前全矩阵聚合。
 这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。
-也没有 `--sandbox <name>` 这种 CLI 覆盖——provider 选择是 experiment/config 的书面配置,不是运行时临时参数。
+配对规则、factory 目录与错误反馈的完整契约见 [Sandbox Layer](layers.md#每个配对的-link-约束)。
 
 ```typescript
 import { defineExperiment } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
+import { e2bSandbox } from "niceeval/sandbox";
 import { claudeCodeAgent } from "niceeval/adapter";
 
 export default defineExperiment({
   agent: claudeCodeAgent(),
-  sandbox: dockerSandbox(),   // 必填,沙箱型 agent 没有它就报错
+  sandbox: e2bSandbox({ template: "niceeval-agents" }),
 });
 ```
 
-## Sandbox 作为数据结构(带参数)
+多个 Experiment 共享同一起点时,把 factory 调用抽成普通 TypeScript helper 导出;第一阶段没有 profile registry 或按名字查表。
+
+## 起点参数与 `lifetimeMs`
 
 provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱 Run ID"。
-和 [agent](../adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
+和 [agent](../adapters/README.md) 一样,起点用**数据结构**定义:factory(从 `niceeval/sandbox` 导出)产出 template-bearing layer,放进 Eval 或 Experiment 的 `sandbox` 字段。
 
 ```typescript
-import { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox } from "niceeval/sandbox";
+import {
+  dockerComposeSandbox,
+  dockerfileSandbox,
+  dockerImageSandbox,
+  e2bSandbox,
+  localSandbox,
+  vercelSandbox,
+} from "niceeval/sandbox";
 
-dockerSandbox()                                     // docker:用默认镜像
-dockerSandbox({ image: "niceeval-agents:node24" })  // docker:指定镜像
-vercelSandbox({ snapshotId: "snap_xxx" })            // vercel:从沙箱 Run 起
-e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
-localSandbox()                                       // 宿主机本地目录(默认当前 git 仓库根,见 local.md)
+dockerImageSandbox({ image: "niceeval-agents:node24" })  // Docker:从 image 起
+dockerfileSandbox({ context: new URL(".", import.meta.url) })  // Docker:按 Dockerfile 构建
+dockerComposeSandbox({                                   // Docker Compose:完整资源组
+  file: new URL("docker-compose.yaml", import.meta.url),
+  workspaceService: "client",
+})
+e2bSandbox({ template: "niceeval-agents" })              // E2B:指定模板
+vercelSandbox({ snapshotId: "snap_xxx" })                // Vercel:从 snapshot 起
+localSandbox()                                           // 宿主机本地目录(默认当前 git 仓库根,见 local.md)
 ```
 
 云 Provider 和 Docker 还接受 `lifetimeMs`，它声明一个 Sandbox 最长需要存活多久：
@@ -168,127 +181,87 @@ e2bSandbox({
 前者控制一个 Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox 能否覆盖下一条 Attempt。
 完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
 
-`sandbox/resolve.ts` 把 spec 归一化成 `{ provider, image?, snapshotId?, template?, runtime?, lifetimeMs? }`，再按 `provider` 派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**，参数只在对应 provider 的 `create()` 里消费。
+起点参数只在对应 Provider 内部消费——**核心不按 provider 名分支**,Runner 只消费 factory 归一出的 template 与 Provider planner。
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
 ### 可发布预制环境
 
 稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布产物,attempt 从产物起实例:Docker 的 image、E2B 的 template、Vercel 的 snapshot。
-构建归 provider 原生工具,NiceEval 只消费 typed spec 里的产物 ID;`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检。
+构建归 provider 原生工具,NiceEval 只消费 factory 参数里的产物 ID;layer 的 `prepare()` 只处理必须按 experiment / eval 变化的小配置、真实检查和 fail-fast 预检。
 
 各 provider 的构建工作流、官方 coding agent 起点、自己写预制环境的 DX、新 provider 的义务与运行时 checkpoint,见 [预制环境](library/prebuilt-environments.md)。
 
-## 沙箱生命周期 Hook: `.setup()` 与 `.teardown()`
+## 准备命令:layer 的 `prepare()`
 
-`dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 这些工厂产出的 `SandboxSpec` 带两个链式方法:
+跑 agent 前的环境准备写成 layer 的 `prepare()` 命令,每条 Attempt 都执行。
+声明形状、command identity 与 cleanup 契约见 [Sandbox Layer](layers.md);执行时序见 [三方准备时序](lifecycle.md)。
 
-```typescript
-interface SandboxSpec {
-  setup(fn: SandboxHook): SandboxSpec;       // 返回新 spec(不可变),可多次链式追加
-  teardown(fn: SandboxHook): SandboxSpec;    // 同上
-}
-
-type SandboxHook = (
-  sandbox: Sandbox,
-  ctx: SandboxHookContext,
-) => void | Promise<void>;
-```
-
-`SandboxHook` 与 `SandboxHookContext` 都从公开入口 `niceeval/sandbox` 导出。
-需要在共享 helper 上固定签名时直接导入类型，不要从某个 provider spec 的 `.setup` 参数反推：
-
-```typescript
-import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
-```
-
-Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic/fact`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。
-Hook 不返回值;要把 `setup` 里创建的句柄传给 `teardown`,以 `sandbox` 实例作键存取——Hook 每沙箱一次、并发 attempt 共享同一个模块,普通模块变量会互相覆写,而 sandbox 与 attempt 一一对应,是天然的 per-attempt 键(四层统一的成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
-
-```typescript
-import type { Sandbox } from "niceeval/sandbox";
-
-// 并发 attempt 各有自己的 sandbox:句柄按 sandbox 键控,不用普通模块变量
-const forwarders = new WeakMap<Sandbox, { stop(): Promise<void> }>();
-
-const spec = e2bSandbox({ template: "niceeval-agents" })
-  .setup(async (sandbox, ctx) => {
-    forwarders.set(sandbox, await startLogForwarder(sandbox, { signal: ctx.signal }));
-  })
-  .teardown(async (sandbox) => {
-    await forwarders.get(sandbox)?.stop();   // setup 抛错也会进来:get 不到就跳过
-  });
-```
-
-「载入 / 回存」这类收尾不需要 setup→teardown 句柄，状态键是 `ctx.experimentId` 的外部 KV。
-同一 SandboxSpec 内，多次 `.setup()` 按追加顺序执行，多次 `.teardown()` 按追加的逆序执行。
-这个 LIFO 规则只描述同层 Hook 列表，不推导跨层 teardown 顺序。
-`setup` 链中途抛错时，后续 setup 不再执行，teardown 链仍完整走完。
-
-这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。
-** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。
-稳定的大依赖先做进 image/template/snapshot;Hook 是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
+这一层解决的是一类特定问题:**环境内容必须按实验或题目变化,不能在构建期固定**。
+稳定的大依赖先做进 image / template / snapshot;prepare 是运行时的薄层,昂贵动作靠真实检查快速命中,不是每 Attempt 重装工具链和下载大模型的默认位置。
 
 ```typescript
 export default defineExperiment({
   agent: codexAgent({ mcpServers: [mempalMcp] }),
   sandbox: e2bSandbox({ template: "fasteval-agents-mempal" }) // 二进制和模型 cache 已预制
-    .setup(mempalSetup("codex"))       // 预检、写 hook、载入状态
-    .teardown(mempalTeardown("codex")), // 回存状态
-  maxConcurrency: 1,                    // [载入…回存] 是临界区,声明式串行
+    .prepare(installTool({                                    // 真实检查,缺失才装,装后复检
+      tool: "mempal",
+      identity: { version: "0.9.0" },
+      probe: shell("mempal --version | grep -q 0.9.0"),
+      install: shell("curl -fsSL https://get.mempal.dev | sh"),
+    })),
+  maxConcurrency: 1,                                          // [载入…回存] 是临界区,声明式串行
 });
 ```
 
-这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。
-两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,Hook 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
+这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热)走 layer 的 `prepare()`。
+两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,prepare command 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。
-载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。
-[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
+跨 Attempt 的外部实验状态不写进 prepare command。
+它使用独立的 State load / save 相位,位置与失败语义见 [三方准备时序](lifecycle.md#准备state-与-baseline);载入到回存的临界区靠 `maxConcurrency: 1` 串行,不需要框架另设锁。
 
-失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。
-收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与 Hook)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
+prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.prepare.<owner>`。
+清理经 `context.onCleanup()` 在取得资源后就地登记,按全局准备顺序逆序执行;未执行或取得失败的命令不产生虚假 cleanup。
+收尾链上的每个可调用体各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
-Direct Agent(`kind: "direct"`)没有真实 Sandbox，`experiment.sandbox` 对它不参与并直接忽略。
-Sandbox Hook 因而不会执行，不需要额外的 fail-fast 分支。
+Direct Agent(`kind: "direct"`)没有真实 Sandbox。
+任一侧为它声明 SandboxLayer 都是 `sandbox.unexpected-for-direct-agent`,在创建资源前报错,不静默忽略。
 
 ## 向运行反馈进度与诊断
 
-provider 创建和环境 hook 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 lifecycle scope:
+provider 创建和 prepare command 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 lifecycle scope:
 
 ```typescript
-const sandbox = e2bSandbox({ template: "niceeval-agents" })
-  .setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "installing memory helper", current: 1, total: 2 });
+const layer = e2bSandbox({ template: "niceeval-agents" })
+  .prepare(async (sandbox, context) => {
+    context.progress.report("installing memory helper", 1, 2);
     await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
 
-    ctx.progress({ message: "warming memory index", current: 2, total: 2 });
+    context.progress.report("warming memory index", 2, 2);
     try {
       await warmIndex(sandbox);
     } catch (error) {
-      ctx.diagnostic({
+      context.diagnostic.report({
         code: "memory-warmup-degraded",
-        level: "warning",
         message: "Memory warmup failed; continuing with a cold index",
-        data: { reason: String(error) },
-        dedupeKey: "memory-warmup-degraded",
+        details: { reason: String(error) },
       });
     }
   });
 ```
 
-`progress` 只更新当前 sandbox setup 的短期 activity;`diagnostic` 才进入永久输出。
-它们不能指定 `sandbox-setup` 等 phase——runner 从当前 hook 自动得出阶段。
+`progress` 只更新当前 prepare 的短期 activity;`diagnostic` 才进入永久输出。
+它们不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
 诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
 
-第三条通道 `ctx.fact(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。
+第三条通道 `context.facts.set(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。
 它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
-三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`fact` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
+三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`facts` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
 
 ```typescript
-ctx.fact("memory.notes", noteCount);
-ctx.fact("memory.restored", true);
+context.facts.set("memory.notes", noteCount);
+context.facts.set("memory.restored", true);
 ```
 
 自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`:
@@ -317,22 +290,24 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 
 ## 环境预置放哪
 
-要在跑 agent 前准备环境,按职责分摊到五处——**每一处都是普通代码,不是框架编排**:
+要在跑 agent 前准备环境,按职责分摊到下面几处——**每一处都是普通代码,不是框架编排**:
 
 | 要准备的东西 | 放哪 | 怎么清理 |
 |---|---|---|
-| 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;spec 只引用产物 | provider 的 image/template/snapshot 生命周期管理 |
+| 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;template factory 只引用产物 | provider 的 image/template/snapshot 生命周期管理 |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
-| **这次实验**才知道的沙箱内环境(小配置、预检、hook 文件、跨 attempt 状态) | [沙箱生命周期 Hook](#沙箱生命周期-hook-setup-与-teardown):`sandbox.setup()` / `.teardown()`(每沙箱一次) | `teardown` 显式回收(回存状态、清外部资源);沙箱内文件随销毁自动没了 |
-| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量);要读写 agent 安装产物的后置脚本走 factory 的 [`postSetup` Hook](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup)(同一 `SandboxHook` 类型,跑在 agent 安装之后) | 随沙箱销毁,无需手工清;要收尾的动作挂成对的 `preTeardown`(逆序,先于 agent teardown) |
-| **这条 eval** 的任务 Fixture、对跑到它的所有实验都生效的沙箱预置 | `EvalDefinition.setup` 或 `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
+| **这次实验**才知道的沙箱内环境(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
+| **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
+| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量);要读写 agent 安装产物的后置脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup)(跑在 agent 安装之后) | 随沙箱销毁,无需手工清;要收尾的动作挂成对的 `preTeardown`(逆序,先于 agent teardown) |
+| 跨 Attempt 的外部实验状态(记忆库、累积笔记) | State load / save 相位,见[三方准备时序](lifecycle.md#准备state-与-baseline) | save 在 Agent teardown 后执行;临界区靠 `maxConcurrency: 1` 串行 |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
-分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内):宿主机侧、每实验一份的服务进 `ExperimentDefinition.setup`;沙箱内、按实验变的环境(装什么、开不开预热)进沙箱 Hook;任务材料按 eval 变(这条题目需要哪些起始文件)进 `EvalDefinition.setup` / `test(t)`;agent 怎么连自己是 agent 的私事;跨实验、生命周期长于一次 run 的资源交给外部编排。
+分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内):宿主机侧、每实验一份的服务进 `ExperimentDefinition.setup`;沙箱内、按实验变的环境(装什么、开不开预热)进 Experiment layer;题目材料按 eval 变(这条题目需要哪些起始文件)进 Eval layer 或 `test(t)`;agent 怎么连自己是 agent 的私事;跨实验、生命周期长于一次 run 的资源交给外部编排。
 
 ## 自定义 provider:`defineSandbox`
 
-只在自己项目里用、不打算贡献回 niceeval 时,用 `defineSandbox`(`niceeval/sandbox` 导出)——传 `create()` 直接产出一个实现 `Sandbox` 接口的实例,`resolve.ts` 认到 `create` 就直接调用,跳过内置 provider switch,不需要 niceeval 认识这个 provider 的名字:
+只在自己项目里用、不打算贡献回 niceeval 时,用 `defineSandbox`(`niceeval/sandbox` 导出)——传 `create()` 直接产出一个实现 `Sandbox` 接口的实例。
+它构成一个自定义 template-bearing layer;身份、能力与留存义务见 [Sandbox Case · 自定义 case](case.md#自定义-case):
 
 ```typescript
 import { defineSandbox } from "niceeval/sandbox";
@@ -357,6 +332,8 @@ export default defineSandbox({
 ## 相关阅读
 
 - [README](README.md) ——为什么需要沙箱、provider 统一接口。
+- [Sandbox Layer](layers.md) —— `sandbox` 声明:template 配对、准备命令与顺序。
+- [三方准备时序](lifecycle.md) —— link 规划、owner 顺序与 fresh / reuse 次数。
 - [预制环境](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 清理命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。

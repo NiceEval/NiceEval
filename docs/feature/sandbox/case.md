@@ -4,16 +4,16 @@
 本页是 sandbox case 的单一契约入口;provider 的实现要点见 [Architecture](architecture.md),使用侧 API 见 [Library](library.md)。
 
 ```text
-eval.environment(profile 或 folder-local source)
- → 当前 SandboxSpec 的 environments / materializers 两张表
+Eval 或 Experiment 的 template-bearing layer
+ → template 绑定的 Provider planner
  → provider-specific SandboxCase 构建产物并启动运行实例
  → 主 Sandbox + 可选能力句柄 + 资源组
  → 现有 Agent / Eval / scoring 生命周期
  → case 自己采证、留存或整组销毁
 ```
 
-Eval 只选择 environment,不选择 provider;同一个 profile 在不同 provider 可以映射到不同原生实现。
-NiceEval 不承诺同一 profile 自动跨 provider 迁移:项目自己裁定两份实现是否可比,记录里保存实际 case 身份供对账。
+template 由具体 factory 声明并同时选定 Provider;哪一侧带 template 由配对决定,规则见 [Sandbox Layer](layers.md)。
+NiceEval 不承诺同一道题自动跨 Provider 迁移:项目自己裁定两份实现是否可比,记录里保存实际 case 身份供对账。
 
 ## 主 Sandbox 不变量
 
@@ -21,7 +21,7 @@ NiceEval 不承诺同一 profile 自动跨 provider 迁移:项目自己裁定两
 Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff 观察同一个执行空间——这条不变量对所有 case 成立,没有例外。
 
 单容器 case 里主 Sandbox 就是那个容器或微 VM。
-Compose case 里主 Sandbox 是 `mainService` 对应的容器。
+Compose case 里主 Sandbox 是 `workspaceService` 对应的容器。
 云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只承载主容器与伴随服务,不能冒充 Agent 的执行空间。
 
 额外能力不进 `Sandbox` 接口,由 case 在创建时附带能力句柄。
@@ -38,74 +38,44 @@ interface ServiceController {
 Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制时检查 `services` 能力,普通单 Sandbox eval 完全不接触这层。
 以后 GPU、动态网络策略或整组 checkpoint 也按独立能力扩展,不合并成一个「高级 Sandbox」布尔值。
 
-## 配置形态:两张表,一个优先级
+## 声明形态:template factory 一次到位
 
-环境来源有两种同等的一等写法:
+环境声明只有一种一等写法:具体 factory 构造 template-bearing layer,起点、Provider 与主执行空间在同一处声明。
+没有 profile 注册表,也没有按 source kind 登记的表:factory 属于 Provider 包,支持声明与实现不能在两个调用点分离。
 
-1. **共享 profile。**
-   多条 eval 共用一个已命名环境时写字符串 id,由 SandboxSpec 的 `environments` 表按 profile 名映射成完整 case。
-2. **folder-local source。**
-   一道 eval 自己拥有 Dockerfile、Compose 与 fixture 时,在目录入口 `eval.ts` 里直接声明 sandbox source。
-   eval 目录路径同时生成 eval id 与默认 profile id,不要求再去中央表手抄一遍。
-
-两种写法在 SandboxSpec 上各有一个入口。
-`environments` 表按 profile 名映射完整 case;`materializers` 表按 source kind 注册 provider 需要显式提供的 folder-local 实现。
-单 Dockerfile 的输入与输出已经标准化，Docker 与 E2B 直接支持 `dockerfileSandbox()`，不要求作者再登记一层空壳 materializer；Compose 等完整编排仍由 `materializers.compose` 显式声明。
-
-E2B 的原生 Template API 只接收 build context 与 Dockerfile，因此 E2B 的 build 声明只开放这两个字段；Docker provider 额外开放 build args 与 target stage，不在公共类型里承诺 provider 无法兑现的选项。
-同一 profile 两处都命中时,显式 `environments` 表项优先——这就是 provider 用预建产物覆盖按需构建的口子。
-内部都归一成「稳定 profile + provider-specific SandboxCase」,Runner 不按写法分支。
-
-内置 case 的表值是 provider 原生纯数据,靠判别键区分,类型由 spec 工厂的参数类型给出;判别键组合非法(如同时给 `template` 与 `build`)在 spec 构造期报错,一次穷举:
-
-```typescript
-dockerSandbox({
-  environments: {
-    "tb-sheets": {
-      compose: {
-        file: "tasks/simple-sheets-put/docker-compose.yaml",
-        mainService: "client",
-      },
-    },
-  },
-  materializers: { compose: dockerComposeMaterializer() },
-});
-
-e2bSandbox({
-  environments: {
-    "tb-sheets": { template: "acme/tb-sheets-v5" },
-  },
-});
-```
-
-这两项不要求结构同构,只需兑现同一条 eval 依赖的外部行为:任务依赖在场、主 Sandbox 可操作、测试所需服务可达、判分时环境仍活着。
-
-folder-local 的中性 source 声明用 `composeSandbox`:
+一道 eval 自己拥有 Compose 与 fixture 时,在目录入口 `eval.ts` 里直接声明:
 
 ```typescript
 // evals/terminal-bench/debug-long-program/eval.ts
-const environment = composeSandbox({
-  file: new URL("docker-compose.yaml", import.meta.url),
-  mainService: "client",
-  build: "on-demand",
-  executionUser: "image",
-});
-
 export default defineEval({
-  environment,
+  sandbox: dockerComposeSandbox({
+    file: new URL("docker-compose.yaml", import.meta.url),
+    workspaceService: "client",
+    build: "on-demand",
+    executionUser: "image",
+  }),
   async test(t) { /* send 后直接用普通 Sandbox API 上传并跑测 */ },
 });
 ```
 
-`composeSandbox` 只声明 Compose source 与主执行空间,不选择 provider,也不承诺所有 provider 都能消费;能不能构建所需 image 并启动 Compose 由当前 SandboxSpec 有无对应 materializer 决定。
+多条 eval 或多个 Experiment 共用同一起点时,把 factory 调用抽成普通 TypeScript helper:
 
-### 两类缺失分开判
+```typescript
+// evals/shared/tb-sheets.ts
+export const tbSheets = () =>
+  e2bSandbox({ template: "acme/tb-sheets-v5" });
+```
 
-- eval 引用的 profile 键任何表都查不到、自己也没有 folder-local source:这是键名笔误的形状——启动期配置错误,一次穷举列出全部缺项,零 Sandbox 创建。
-- 声明合法、但当前 provider 既无该 profile 的 `environments` 表项、也无该 source kind 的 materializer:这是能力缺失——该组合零成本计划期 `skipped`,skipReason 同时列 eval id、source kind 与可补的映射位置。
-- 选中集合全部 `skipped` 时升级为启动期报错,不产出绿色空跑。
+不同 factory 的产物不要求结构同构,只需兑现同一条 eval 依赖的外部行为:任务依赖在场、主 Sandbox 可操作、测试所需服务可达、判分时环境仍活着。
+factory 参数是 provider 原生纯数据;判别键组合非法(如同时给 `template` 与 `build`)在构造期报错,一次穷举。
+Provider 无法承诺的选项不进公共类型:Docker 的 build args 与 target stage 只出现在 Docker factory 上。
 
-两条路都不自动把 Compose 翻译成近似环境,也不回退到默认单 Sandbox——静默降级跑十分钟得到的假 `failed` 比显式 `skipped` 贵得多。
+### 缺失与不可用分开判
+
+- 配对两方都没有 template,或两方都有:link 期 `sandbox.template-missing` / `sandbox.template-conflict`,全矩阵聚合,零 Sandbox 创建。
+- 声明合法、但目标平台、能力或 locator 在只读 physical planning 不可用:聚合报错,整个 Run 零资源失败;作者用 selector 显式排除该组合,Runner 不自动 `skipped`。
+
+两条路都不自动把 Compose 翻译成近似环境,也不回退到默认单 Sandbox——静默降级跑十分钟得到的假 `failed` 比显式报错贵得多。
 
 ## 完整 case 目录
 
@@ -115,7 +85,7 @@ export default defineEval({
 |---|---|---|---|---|
 | 预制单 Sandbox | provider 起点产物(image / template / snapshot) | 该实例 | 无 | 对应 provider |
 | 按需构建单 Sandbox | Dockerfile / OCI context | 构建产物实例 | 无 | 声明支持构建的 provider |
-| Docker Compose | Compose + overlay | `mainService` 容器 | 同项目 services / network | Docker provider |
+| Docker Compose | Compose + overlay | `workspaceService` 容器 | 同项目 services / network | Docker provider |
 | 云端 Compose | Compose + provider 配置 | main 容器 | DinD、Pod 或原生组网 | 声明支持的云 provider |
 | 自定义 case | 用户纯数据身份 + materializer | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
 
@@ -199,7 +169,7 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 Docker provider 直接把任务 Compose 当原生运行时输入,不先编译成 NiceEval 的 services 词汇。
 NiceEval 只生成必要的 overlay:
 
-- 标记或补出 `mainService`;
+- 标记或补出 `workspaceService`;
 - 注入 attempt 身份、受管目录与凭据引用;
 - 应用资源上限和网络策略;
 - 为清理、孤儿核对与留存写 project label。
@@ -238,7 +208,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 
 ## 自定义 case
 
-自定义 provider 可以开放与内置 provider 同形的 environment 映射。
+自定义 Provider 连同自己的 template factory 与 planner 一起导出。
 每个自定义 case 必须给出纯数据身份与 materializer:
 
 ```typescript
@@ -267,11 +237,11 @@ defineSandboxCase({
 
 | 失败点 | 结果 | 归属 |
 |---|---|---|
-| profile 键查不到 / case 声明非法 | 启动期配置错误 | 一次穷举报错,零 Sandbox 创建 |
-| 声明合法但 provider 缺 materializer 或能力位 | 计划期 `skipped` | skipReason 写明缺项;全 `skipped` 升级启动期报错 |
+| template 缺失、冲突或 case 声明非法 | link 期配置错误 | 一次穷举报错,零 Sandbox 创建 |
+| 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
 | 共享构建失败 | 依赖它的 attempt `errored` | origin 指向 Run 的 `sandbox.build` timing node |
 | Sandbox 启动、ready、服务中途退出 | attempt `errored` | attempt 环境锚点,附服务状态与日志 |
-| Agent Ensure 失败 | attempt `errored` | `agent.setup` 锚点(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
+| Agent Ensure 失败 | attempt `errored` | `agent.ensure` 锚点(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 
 Agent 完成任务但断言未达标才是 `failed`。
 每个 case 至少产出主环境启动日志与本次使用的 image / template / snapshot、容器名等运行事实;声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing。

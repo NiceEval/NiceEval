@@ -33,7 +33,6 @@ interface EvalDescriptor {
   description?: string;
   tags: readonly string[];
   scoring: "pass" | "points";   // 题型:defineEval → "pass",defineScoreEval → "points"
-  environment?: string;
   metadata?: Readonly<Record<string, unknown>>;
 }
 
@@ -50,7 +49,8 @@ export default defineExperiment({
   earlyExit?: boolean;                       // 先过一次即停其余(默认 false,attempts 默认跑满测完整通过率)
   evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean); // 跑哪些 eval(默认 "*")
   timeoutMs?: number;                        // 单次运行超时
-  sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式回退
+  sandbox?: SandboxLayer;                    // 本实验向主 Sandbox 贡献的一层:template-bearing factory 产物,
+                                            // 或 sandboxLayer() 的命令链;省略等价于空的 command-only layer
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
@@ -79,19 +79,31 @@ export default defineExperiment({
 `setup` / `teardown` 是**实验级生命周期 Hook 对**:整场至多一次、跑在宿主机上。
 `setup` 在本实验第一个真正要派发的 attempt 之前执行;`teardown` 在本实验全部 attempt 收尾后执行(失败、中断也执行),当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免,半路失败的现场同样要扫尾;一个 attempt 都不派发时两者都不跑。
 它们管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。
-`setup` 的产物写模块级变量,`teardown` 与同文件的 agent / sandbox Hook 从闭包读——runner 不做值的中介。
-四层生命周期(experiment / sandbox / agent / eval)共用「成对 `setup` / `teardown`、闭包传状态」这一种形态,统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它);用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
+`setup` 的产物写模块级变量,`teardown` 与同文件的 agent 工厂 / prepare command 从闭包读——runner 不做值的中介。
+成对 `setup` / `teardown` 只属于 Experiment 与 Agent 两层;Sandbox 与 Eval 的准备走 layer 的 `prepare()`,闭包传状态对两类入口同样适用(统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
+用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 
-生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDefinition.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。
-哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱 Hook 的链式写法见 [Sandbox · 沙箱生命周期 Hook](../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
+生命周期各层各归各位,`setup` 不替代其它层:
 
-`sandbox` 是整个 experiment 的单一固定 spec。
-一批 eval 需要不同预制环境时，eval 用 `environment` 声明需求 profile，spec 的 `environments` 表把 profile 翻译成该 provider 的具体产物——experiment 仍只有一个 spec、覆盖全部选中 eval，Run 与对比横截面不因此拆分。
-写法见 [Library · 不同 eval 起自不同预制环境](library.md#不同-eval-起自不同预制环境)。
+- 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账锚点前执行。
+- 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
+- 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
+- 跨 Attempt 实验状态的载入与回存归 State load / save 相位(见[三方准备时序](../sandbox/lifecycle.md#准备state-与-baseline))。
+- 跨实验、这次 run 之前就该存在的资源仍用外部编排。
+
+哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。
+
+`sandbox` 字段声明本实验的 `SandboxLayer`。
+具体 Provider factory(如 `e2bSandbox({ template })`)产出携带完整起点的 template-bearing layer;`sandboxLayer()` 产出只执行准备命令的 command-only layer。
+
+每个实际选中的 Eval × Experiment 配对恰好一方带 template。
+双方都带报 `sandbox.template-conflict`,双方都不带报 `sandbox.template-missing`;link 全矩阵聚合,在创建任何资源前报错。
+配对规则见 [Sandbox Layer](../sandbox/layers.md#每个配对的-link-约束)。
+一批 eval 起点不同时,各条 Eval 自带 template-bearing factory,experiment 侧保持 command-only;写法见 [Library · 不同 Eval 自带预制起点](library.md#不同-eval-自带预制起点)。
 
 `sandboxReuse: true` 是实验作者对 Sandbox 生命周期的声明，不是一次运行的提速开关。
-它表示选中的 Eval 可以在题间重置 workdir 后共用 Sandbox。
-SandboxSpec Hook 每个 Sandbox 成对执行一次，Agent 与 Eval Hook 仍逐 Attempt 成对执行。
+它表示选中的 Eval 可以在题间 reset 后共用 Sandbox。
+复用只改变 Case 创建次数:reset 到 Case 就绪点后,每条 Attempt 仍重放两层 layer 的 prepare 命令。
 省略时，每个 Attempt 使用全新 Sandbox。
 
 同时活跃的 Sandbox 数由现有并发限制决定：同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发位共同限制同时运行数。
@@ -99,7 +111,7 @@ SandboxSpec Hook 每个 Sandbox 成对执行一次，Agent 与 Eval Hook 仍逐 
 完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
 
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
-需要更长 Sandbox 复用寿命时，在 `sandbox` Provider 上声明 `lifetimeMs`。
+需要更长 Sandbox 复用寿命时，在 template-bearing factory 的 options 里声明 `lifetimeMs`。
 两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/reuse.md#两种时间不能混用)。
 
 id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。

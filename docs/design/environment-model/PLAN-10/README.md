@@ -1,4 +1,4 @@
-# PLAN-10：统一 Sandbox Layer、固定 root-first 顺序与逐配对 root（候选）
+# PLAN-10：统一 Sandbox Layer、固定 root-first 顺序与逐配对 root（推荐）
 
 **相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md)
 

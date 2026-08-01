@@ -3,6 +3,9 @@
 契约来源：
 
 - [Sandbox](../../../feature/sandbox/README.md)
+- [Sandbox Layer](../../../feature/sandbox/layers.md)
+- [三方准备时序](../../../feature/sandbox/lifecycle.md)
+- [内置 prepare 命令](../../../feature/sandbox/prepare-commands.md)
 - [Architecture](../../../feature/sandbox/architecture.md)
 - [Sandbox Case](../../../feature/sandbox/case.md)
 - [Library](../../../feature/sandbox/library.md)
@@ -57,8 +60,13 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 
 ## 覆盖规范
 
-- **生命周期与资源释放**：attempt 调用链的固定顺序与省略对应 Hook 时跳过；setup 抛错时已成功部分的逆序 cleanup、teardown 与 stop 的 finally 语义；setup 抛错计 errored 而 teardown 报错只记日志；逐段清理超时的诊断收束；`.setup()`/`.teardown()` 的追加序/LIFO 与 spec 不可变；创建后被终止属 lifecycle failure 不进 IO 重试；remote agent 下 spec 整体忽略；hook 的窄上下文。
-  失败与中断路径的清理和成功路径同等重要。
+- **生命周期与资源释放**：失败与中断路径的清理和成功路径同等重要。
+
+  - 调用链固定顺序:template owner 命令先、另一 owner 次、`agent.ensure` 最后;省略 `sandbox` 字段归一成空 command-only layer。
+  - prepare 抛错时已登记 cleanup 逆序执行,finalizer 与 stop 走 finally;prepare 抛错计 errored,cleanup 报错只记诊断,逐段清理超时收束成诊断。
+  - layer 的 `prepare()` 追加序与 kind 品牌不可变:command-only 变不成 template-bearing,template-bearing 追加不了第二起点。
+  - `onCleanup()` 只在取得资源后登记、按全局准备顺序逆序执行;创建后被终止属 lifecycle failure 不进 IO 重试。
+  - Direct Agent 搭配 SandboxLayer 报 link 错误;command 的窄上下文没有 `stop()` 也没有 Provider-native SDK。
 - **路径规则**：沙箱侧相对/绝对/省略三态解析、`../` 规范化与逃逸拒绝、无 shell 变量展开、本地侧按 eval 定义文件目录解析——适合表驱动，每个 case 指向一条允许或拒绝语义。
   `normalizeSandboxPaths` 对接口之外的可选能力（`appendLog`、`suspend`）按「实例有就转发、没有就是 undefined」原样传递，不吞掉——留存路径的 `sandbox.suspend`（`keep.ts` 的 `suspendSandbox`）经这层包装后仍能找到底层 provider 实例的 `suspend()`，找不到时抛出的是「没有 suspend 能力」而不是「转发时误吞成 undefined」。
   `suspendSandbox` 自身两条路径都要证明：底层实例有 `suspend()` 时原样调用、没有时抛出带 `sandboxId` 的清晰错误（不是静默跳过）。
@@ -68,14 +76,17 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **文件操作与 IO 重试**：只有幂等固定目标操作进默认重试；瞬时/非瞬时错误的分类边界；`fileExists` 遇瞬时错误必须抛出不伪装 false；重试耗尽抛回原始错误链；批量写的重跑等价性；读取 API 的缺失行为与二进制完整性；`downloadDirectory` 与 `uploadDirectory` 对称的 `ignore` 语义(按 basename 排除、命中即整支剪除,不区分文件与目录)与落盘行为(自动建目录、原样二进制字节、不做编码转换、不返回带便利方法的包装类型)——docker(单次 tar 取回后按首段路径剥离归位)与 vercel/e2b(共享的 find 列路径 + 逐文件二进制读取模板)两条实现路径都要证明。
 - **Provisioning 失败与重试**：原生限流归类、回退瞬时分类器复用、可重试 kind 的退避与确定性错误零重试；退避期间归还并发槽位；有对账通道时先对账再重试、对账失败放弃并抛回原始错误、无通道时歧义类零重试；自定义 provider 不套用这层重试。
   相关裁决与踩坑见 memory 的[sandbox-provision-ratelimit-retry](../../../../memory/sandbox-provision-ratelimit-retry.md)、[e2b-provision-429-duplicate-sandbox](../../../../memory/e2b-provision-429-duplicate-sandbox.md)。
-- **Provisioning 确定性死因的对外 scope 映射**：三档确定性配置死因（凭据缺失、权限不足、模板不存在）从 provider 原生错误形态（含跨 cause 链走查）的识别，以及识别后按[执行失败分类](../../../feature/error-classification/README.md)的结构化契约（`_tag` + `class`）附着到错误对象；按死因的配置解析域定档——凭据缺失、权限不足恒定档 `scope: "experiment"`（与 spec 是否带 `environments` 表无关），模板不存在按 spec 带不带 `environments` 表二分（带表定档 `scope: "eval"`、不带表定档 `scope: "experiment"`）；瞬时失败（拒绝类/歧义类）重试耗尽后不附带 scope，确定性死因未命中三档词表之一时同样不附带 scope。
+- **Provisioning 确定性死因的对外 scope 映射**：三档确定性配置死因（凭据缺失、权限不足、模板不存在）从 provider 原生错误形态（含跨 cause 链走查）的识别，以及识别后按[执行失败分类](../../../feature/error-classification/README.md)的结构化契约（`_tag` + `class`）附着到错误对象；按死因的配置解析域定档——凭据缺失、权限不足恒定档 `scope: "experiment"`（与 template owner 无关），模板不存在按 template owner 定档（Eval owner 定 `scope: "eval"`、Experiment owner 定 `scope: "experiment"`）；瞬时失败（拒绝类/歧义类）重试耗尽后不附带 scope，确定性死因未命中三档词表之一时同样不附带 scope。
 - **diff 与结果断言**：分类账锚点与 send 窗口归因（环境生命周期 Hook、Eval Fixture、send 后校验写入都不进 Agent diff）；窗口标签与轮标签同枚 token、按等值匹配；默认排除与 ignore/include 的 glob 语义、nested repo 不静默吞改动；`noFailedShellCommands` 只看 Agent 自己的调用；延迟断言 finalize 时对最终 diff 求值。
 - **导出预算与内容省略**：预算只数真正传输的文本字节。
   二进制与超 1 MiB 文本按 `elided` 记字节数、不占预算；编译产物型窗口因此整体放行，这一格在「按尺寸计」的旧口径下会红。
   纯文本传输字节越界仍报执行错误。
   `elided` 往返与派生视图各一格；被省略内容的读取按证据不可用报错，存在性与 `status` 断言照常成立。
-- **provider 选择与作者面**：sandbox 字段不接受 provider 名字符串、没有默认值、不会自动探测。
-  两处皆空时，报错给出下一步；自定义 provider 直接调用、核心路径无 provider 名分支；`t.sandbox` 的错误反馈带 API 名与 agent 名；反馈经管线不经 stdout。
+- **template 配对与作者面**：`sandbox` 字段只接受 factory 产物,没有默认值、不自动探测。
+
+  - 每个实际配对恰好一方 template-bearing:1×1 报 `sandbox.template-conflict`、0×0 报 `sandbox.template-missing`,全矩阵聚合、零 Provider I/O、零 Sandbox 创建。
+  - 物理身份相同的两份 template 仍是 conflict;三个入口消费同一 linker,要有 `check`、`--dry` 与正常运行对同一非法矩阵给出同一结论的区分力场景。
+  - 自定义 provider 连同 factory 直接调用、核心路径无 provider 名分支;`t.sandbox` 的错误反馈带 API 名与 agent 名,经管线不经 stdout。
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。
   不能只测 Agent CLI 可执行——不同官方基线的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。
@@ -89,7 +100,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **Local provider**：仓库根解析与仓库外报错；只观察不还原（用户 git 状态不被触碰、stop 不删工作树）；不提权；与 keep 组合创建前报错。
 - **Sandbox 复用**：
   - 配置：`sandboxReuse: true` 进入配置哈希，省略时每 Attempt 全新 Sandbox。
-  - Hook：SandboxSpec Hook 每个 Sandbox 成对一次；Agent 与 Eval Hook 每 Attempt 成对一次。
+  - 重放：两层作者 `prepare()` 每 Attempt 重放,要有「第二条 Attempt 重新执行且 probe 命中快速返回」的区分力场景;`agent.ensure` 与 Agent runtime 每 Attempt 执行。
   - 重置：题间 reset 尊重排除清单，重置点仍是归因锚点。
   - 调度：覆盖 `maxConcurrency: 1`、并行复用、按需创建和派发前续期。
   - 寿命：覆盖 `lifetimeMs` 不足时更换、reset 失败淘汰和中途消失不静默重跑。
@@ -114,12 +125,14 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 预制单 Sandbox、按需构建单 Sandbox、Docker Compose、云端 Compose、自定义 case 各自给齐主 Sandbox、资源、身份、证据与清理。
   - 每类 case 只返回一个主 `Sandbox`；Agent、Eval、文件 API、workdir、分类账与 diff 观察同一执行空间。
   - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
-- **profile / source 双入口与优先级**：
+- **command identity 与内置 prepare 命令**：
 
-  - `environments` 按 profile 名映射完整 case；`materializers` 按 source kind 注册把 folder-local 声明转成 SandboxCase 的组件。
-  - 同一 profile 两处都命中时，显式 `environments` 表项优先。
-  - profile 键查不到且无 folder-local source → 启动期配置错误（一次穷举、零 Sandbox 创建）。
-  - 声明合法但缺表项与 materializer → 计划期 `skipped`，`skipReason` 列 eval id、source kind 与可补位置。
+  - `command()` / `shell()` 的纯数据 identity 进入 fingerprint;直接传入的 callback 一律 opaque,该 Attempt `carryEligible = false`,对应复用窗口不跨配对、不跨 Invocation 共享。
+  - `defineSandboxCommand()` 的 id / revision / inputs 参与稳定身份;`registerSandboxContent()` 的 digest 折入 inputs。
+  - `checkout()`:镜像按 `(repo, ref)` 键控,同一 Sandbox 第二次执行零网络。
+    区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,且该 Attempt 不参与跨 Run carry。
+  - `installTool()`:probe 命中快速返回、未命中 install 后复检、复检仍未命中计 errored;`tool` / `identity` / probe / install 任一变化使旧命中失效。
+  - `--dry` 复用成本视图:内置命令标检查命中型,普通 command(含作者自建 `defineSandboxCommand()`)标每题重放;fresh 模式不展示该视图。
 - **BuildKey single-flight、失败向所有依赖项传播失败和预算**：
 
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
@@ -136,7 +149,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 完全携带、无需查询的 BuildKey 不触发构建，也不造假 provenance。
 - **Compose 主空间、服务 ready、证据、整组清理与泄题门**：
 
-  - `mainService`（或云端代理进 main）是唯一主 Sandbox；主容器 ready 后才进入 Agent。
+  - `workspaceService`（或云端代理进 main）是唯一主 Sandbox；主容器 ready 后才进入 Agent。
   - 必需服务提前退出 → attempt `errored` 附服务状态与日志，不折叠成 Agent `failed`。
   - 成功、部分启动、中断、超时都走整组 finalizer，不留孤儿。
   - 黑名单只拒脱管网络、覆盖受管 workdir、挂载 Docker socket；其余 Compose 字段原样生效。

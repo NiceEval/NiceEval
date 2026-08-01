@@ -1,6 +1,6 @@
 # Coding Agent 扩展边界
 
-Skills、MCP servers 和原生 Plugins 在 Agent setup 阶段安装。
+Skills、MCP servers 和原生 Plugins 在 `agent.ensure` 相位安装。
 core 只保存安装 manifest，不理解每个 Agent 的配置目录、Marketplace 或包管理器。
 
 ## 类型边界
@@ -10,11 +10,15 @@ core 只保存安装 manifest，不理解每个 Agent 的配置目录、Marketpl
 
 MCP 使用共享 `McpServer` 形状——stdio 形态（`command`/`args`/`env`）与 Streamable HTTP 形态（`url`/`headers`）组成按形状判别的联合，不设 kind 标签：两种形态各有唯一的必填判别字段（`command` / `url`），标签只会重复这个事实。
 Claude Code 与 Codex 都能原生表达两种 transport；Bub 没有该构造字段。
-落位由 Adapter 决定：Claude Code 写用户级 `~/.claude.json`（HTTP 形态带 `type: "http"` 与 `headers`），Codex 写 `[mcp_servers.<name>]` 表（HTTP 形态写 `url`，headers 进 `[mcp_servers.<name>.http_headers]` 子表）。
+
+落位由 Adapter 决定。
+Claude Code 写用户级 `~/.claude.json`，HTTP 形态带 `type: "http"` 与 `headers`；Codex 写 `[mcp_servers.<name>]` 表，HTTP 形态写 `url`，headers 进 `[mcp_servers.<name>.http_headers]` 子表。
 同一个 server 同时给出 `command` 与 `url` 时，setup 报错点名该 server，不做静默取舍。
 
 `postSetup` 是 factory 上的过程 Hook 数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。
-它复用 `SandboxHook` 类型与窄上下文——agent 安装后脚本和沙箱环境预置是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。
+它复用 prepare command 的 `SandboxCommand` 形状与窄上下文（`SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md#command-形状与-identity)）。
+agent 安装后脚本和沙箱准备命令是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。
+
 成对的 `preTeardown` 数组承载收尾:按逆序、先于 agent teardown 执行(LIFO 镜像)。
 它不是配置声明：factory 已有字段能表达的（MCP、Skills、Plugin）不进 Hook，Hook 只承载「安装产物就位后才能跑」的过程动作（如运行插件自带的 setup 脚本）。
 
@@ -28,6 +32,7 @@ core 不定义设置词汇，也不为单个行为需求铸语义字段：新需
 两个字段都是运行 niceeval 的机器上的本地文件路径，不是 Sandbox 内路径。
 项目根固定为启动 niceeval 进程时的 `process.cwd()`，也就是包含 `niceeval.config.ts` 的目录；Eval、Experiment 与 Agent 声明文件的位置不改变解析根。
 路径语法是项目根内的相对路径：允许普通相对路径和 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`；Adapter 解析符号链接后的真实路径也必须位于项目根内。
+
 Adapter 从本地读取原始字节，再上传到 Sandbox 的固定用户配置位置。
 文件是完整用户配置层，不是 patch：Adapter 在隔离的 Agent 配置目录中创建空用户层，再用输入文件的原始字节替换它；不继承宿主机配置，不拼接、deep merge 或重新序列化。
 Adapter 只解析文件以验证官方语法和检查保留键，验证后仍写入原始字节，因此 JSON Schema 标记、TOML 注释和官方编辑器支持都保留。
@@ -58,7 +63,7 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 
 ## 安装收敛：不假设沙箱空白
 
-Agent setup 每条 attempt 执行一次。
+扩展安装每条 attempt 执行一次。
 Sandbox 复用下，沙箱带着上一条 attempt 的 `$HOME` 残留进场（生命周期见 [Sandbox 复用](../../sandbox/reuse.md)）。
 因此安装步骤的语义是**把沙箱状态收敛到声明**，不是在空白沙箱上追加：每一步在「目标已存在、部分存在、来源不同」的沙箱上，都要得到与空白沙箱相同的结果。
 
@@ -93,7 +98,8 @@ Plugin 安装目录每条 attempt 都被重装覆盖：Plugin 运行期要跨 at
 
 ## 失败语义
 
-路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根，原生配置语法错误或含保留键，仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `postSetup` Hook 抛错，都在 setup 阶段抛出并使 attempt errored。
+下列失败都在 `agent.ensure` 相位抛出并使 attempt errored:路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根,以及原生配置语法错误或含保留键。
+仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `postSetup` Hook 抛错,同样归这一相位。
 只有 Agent 已开始执行任务后的行为失败才进入 Turn status。
 
 ## Manifest

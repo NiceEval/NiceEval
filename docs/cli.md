@@ -228,7 +228,7 @@ Effect 在这里买的是两样东西——"资源释放不看退出路径"和"�
 ![Ctrl+C 的三级中断时序](assets/cli-interrupt-sequence.svg)
 
 **强清不是绕过收尾,而是加速它。**
-中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
+中断路径上每一段收尾都要跑:attempt 级收尾链(Agent teardown → 已登记 cleanup 逆序 → Provider finalizer)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
 
 实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**(本实验第一个通过派发许可的 attempt)起登记为可执行入口——setup 挂起、抛错都不影响它可达。
 执行体是 memoized 的一次性 promise:正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转;条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。
@@ -236,7 +236,7 @@ Effect 在这里买的是两样东西——"资源释放不看退出路径"和"�
 `main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套回退再退出。
 attempt 级 Hook 活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户 Hook 会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
 
-**有界性是事件驱动收口的前提**:每个收尾可调用体(eval / agent teardown、sandbox Hook 链里的每个 Hook、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。
+**有界性是事件驱动收口的前提**:每个收尾可调用体(Agent teardown、每条已登记 cleanup、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。
 因此「等全部 settle」有确定上界,不会无限拖住退出。
 四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**——看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),强清上限至少容纳一个满额清理超时。
 强清上限不是第 2 级的语义(settle 才是),它只拦「收尾可调用体绕过了自己的超时」这种失守病态,到点放弃退出——那时的职责与第 3 级相同。

@@ -24,8 +24,8 @@ export default defineExperiment({
 
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
 - `$HOME`、`/tmp`、全局安装、后台进程和外部服务状态可能继续存在；
-- SandboxSpec Hook 每个 Sandbox 成对执行一次；
-- Agent 与 Eval Hook 每 Attempt 成对执行；
+- 两层作者 layer 的 `prepare()` 每条 Attempt 重放,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
+- agent.ensure 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
@@ -45,55 +45,55 @@ export default defineExperiment({
 不同 Sandbox 可以并行；同时执行数仍受全局并发位和 Experiment `maxConcurrency` 限制。
 Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会使用的数量。
 
-### Hook 次数
+### 各阶段次数
 
 | 生命周期阶段 | `sandboxReuse: true` |
 |---|---|
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
-| SandboxSpec `setup` / `teardown` | 每个 Sandbox 成对一次 |
-| Eval `setup` / `teardown` | 每 Attempt 成对一次 |
-| Agent `setup` / `teardown` | 每 Attempt 成对一次 |
+| 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
+| agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
+| Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
 | `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
 
-“成对”沿用四层 Hook 的统一规则：
+成对语义:
 
-- 同层 `teardown` 当且仅当该层已经到达 `setup` 时点；`setup` 抛错仍执行 `teardown`；
-- 同层多个 Hook 按注册顺序执行 `setup`，按相反顺序执行 `teardown`；
-- Attempt 的 Agent 与 Eval 收尾完成后，Sandbox 才能 reset、轮换或停止。
+- cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,按全局准备顺序逆序执行;
+- Attempt 的 Agent 与 cleanup 收尾完成后,Sandbox 才能 reset、轮换或停止。
 
-Runner 不能把 Agent `setup` 提升成每个 Sandbox 一次。
-稳定 Agent CLI 应进入预制环境；随 Experiment 变化、但不随 Eval 变化的准备可以进入 SandboxSpec `setup`。
+Runner 不把任何作者准备提升成每个 Sandbox 一次。
+稳定 Agent CLI 应进入预制环境;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重放成本。
 
 Agent setup 的安装步骤在复用沙箱上按声明收敛，不假设沙箱空白：同名的 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
-「setup 幂等」的作者义务只覆盖作者自己写的 Hook：SandboxSpec `setup`、Eval `setup` 与 Agent factory 的 `postSetup`。
+「可重复执行」的作者义务只覆盖作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
 
-## environment profile
+## 复用池按完整身份分组
 
-一个 Experiment 仍只有一个 SandboxSpec。
-选中的 Eval 可以通过 `environment` 解析到不同预制环境。
+一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
+Runner 按 `(CaseKey, templateOwner, layer identities, Agent ensure identity)` 分组:
 
-Runner 按解析后的 environment profile 分组：
-
-- 同一个 Sandbox 只承接同组 Attempt；
+- 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；
 - Experiment `maxConcurrency` 约束所有组的同时执行总数；
-- 不同组之间不共享 Sandbox，也不共享 SandboxSpec `setup` 产物。
+- 不同组之间不共享 Sandbox,也不共享任何检查命中历史。
+
+含 opaque command 的 layer 没有稳定 layer identity,对应窗口不跨配对、不跨 Invocation 共享;完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
 
 ## 题间重置
 
-SandboxSpec `setup` 完成后，Runner 在分类账上建立 **复用 Sandbox 的题间重置点**。
-每条 Attempt 开始前，workdir 必须处于这个点。
+Sandbox Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点**。
+每条 Attempt 开始前,workdir 必须处于这个点。
 
-上一条 Attempt 的证据折叠完成后，Runner：
+上一条 Attempt 的证据折叠完成后,Runner:
 
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
-3. 重新建立本 Attempt 的归因窗口；
-4. 重新执行 Eval 与 Agent 的 Attempt 生命周期；`Eval.setup` 和 `test(t)` 重新准备本 Attempt 的 Fixture。
+3. 按 owner 顺序重放两层作者 layer 的 `prepare()` 命令；
+4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因窗口;`test(t)` 重新准备本 Attempt 的 Fixture。
 
-reset 失败后，该 Sandbox 不再承接 Attempt。
-后续 Attempt 等待其它 Sandbox，或由 Runner 创建替代 Sandbox。
+reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
+reset 失败后,该 Sandbox 不再承接 Attempt。
+后续 Attempt 等待其它 Sandbox,或由 Runner 创建替代 Sandbox。
 
 ## 两种时间不能混用
 
@@ -110,7 +110,7 @@ reset 失败后，该 Sandbox 不再承接 Attempt。
 内置 Provider 的 `lifetimeMs` 使用同一个名字：
 
 ```ts
-dockerSandbox({ image: "acme/evals:latest", lifetimeMs: 4 * 60 * 60_000 })
+dockerImageSandbox({ image: "acme/evals:latest", lifetimeMs: 4 * 60 * 60_000 })
 e2bSandbox({ template: "acme-evals", lifetimeMs: 60 * 60_000 })
 vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 4 * 60 * 60_000 })
 ```
@@ -146,8 +146,8 @@ Provider 可以在 `ensureLifetime` 内续期，也可以只确认现有时间�
 - `ready: false`：停止旧 Sandbox，创建并准备替代 Sandbox。
 - Provider 没有该能力：Experiment 在第一条 Attempt 派发前报错。
 
-替代 Sandbox 完成 SandboxSpec `setup` 后再次检查。
-如果 setup 已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。
+替代 Sandbox 就绪后再次检查。
+如果替代创建已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。
 
 Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`。
 Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用。
@@ -164,7 +164,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 ## 复用污染的可观察性
 
-「setup 幂等、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
+「prepare 可重复执行、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
 框架必须自己把线索说出来。
 Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
 当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中 `errored` 在同一生命周期阶段时，结束反馈追加一条运行级 diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
@@ -184,11 +184,11 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 ## 失败与收尾
 
-- SandboxSpec `setup` 失败：执行已经注册的 Sandbox 收尾，然后停止该 Sandbox。
-- Attempt 超时或失败：照常执行 Agent 与 Eval 收尾；reset 成功后 Sandbox 可以继续。
+- prepare 命令失败：当前 Attempt `errored`，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
+- Attempt 超时或失败：照常执行 Agent 与 cleanup 收尾；reset 成功后 Sandbox 可以继续。
 - reset 或寿命确认失败：停止该 Sandbox，后续 Attempt 等待替代 Sandbox。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
-- SandboxSpec `teardown` 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。
+- cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。
 
 ## 非目标
 

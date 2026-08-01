@@ -1,4 +1,4 @@
-# PLAN-9:单一 Sandbox Recipe 与 template owner 顺序（推荐）
+# PLAN-9:单一 Sandbox Recipe 与 template owner 顺序（被 PLAN-10 取代）
 
 **相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md)
 

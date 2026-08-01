@@ -1,6 +1,9 @@
 # 修改 Sandbox 环境
 
-更换可识别身份不同的 Sandbox template 或 spec 会改变运行条件并重新执行。
-只重建同名镜像、修改 Hook 函数体或改变镜像内部内容时，指纹未必能观察到变化。
+换 template-bearing factory，或改它任何一个参数（image、template、snapshotId、Compose file），都会改变起点身份。
+起点声明在 Eval 上时只作废这一条，声明在 Experiment 上时作废它选中的全部 Eval；受影响的 Attempt 按指纹不匹配重新执行。
+`command()` / `shell()` / `defineSandboxCommand()` 声明的 prepare 命令改动同样进指纹，按相同范围作废。
+直接传入的 callback 是 opaque command，对应 Attempt 永不跨 Run 携带，每次都真实执行。
 
-当环境行为实际已经改变但身份未变，应使用 [`--rerun all`](../重新运行/全量重验.md) 全量复验；长期需要区分的环境版本应显式进入配置。
+只重建同名镜像或改变镜像内部内容时，起点身份不变，指纹观察不到变化。
+环境行为实际已经改变但身份未变时，用 [`--rerun all`](../重新运行/全量重验.md) 全量复验；长期需要区分的环境版本应带进产物名或 factory 参数。

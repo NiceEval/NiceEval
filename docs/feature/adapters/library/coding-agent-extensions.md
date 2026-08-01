@@ -63,9 +63,9 @@ MCP 只在 factory 构造时传入。需要条件变体时包装 factory 并合�
 插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的配置块登记进 agent 主配置。这类脚本必须在 Adapter 全部安装步骤（写主配置、挂 MCP、装 Skills 与 Plugin、写 manifest）之后执行，否则它写下的配置会被后续步骤覆盖。把它声明成 factory 的 `postSetup` Hook：
 
 ```ts
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 
-const installMemHooks: SandboxHook = async (sandbox) => {
+const installMemHooks: SandboxCommand = async (sandbox) => {
   await sandbox.runShell("python ~/.codex/plugins/nowledge-mem/scripts/install_hooks.py");
 };
 
@@ -78,7 +78,7 @@ const agent = codexAgent({
 });
 ```
 
-`postSetup` 复用沙箱 Hook 的类型与窄上下文（`SandboxHook` / `SandboxHookContext`，见 [Sandbox · 沙箱生命周期 Hook](../../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)）：拿到 sandbox 句柄和 `experimentId`/`signal`/`progress`/`diagnostic`，不借用完整 `AgentContext`。多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发（四层统一的成对语义见 [Runner · 环境预置](../../../runner.md#环境预置不进运行器但按顺序调它)）。Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+`postSetup` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）：拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 
@@ -86,10 +86,10 @@ Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即�
 
 声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。Adapter 在每条 attempt 开始前把扩展安装收敛到声明：上一条 attempt 留在 `$HOME` 里的同名 marketplace 注册与 Plugin 安装，被替换成按声明来源与 ref 的全新安装（规则见[扩展边界](../architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)）。
 
-两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须幂等；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆盖。
+两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须可重复执行；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆盖。
 用例叙事见[插件实验开复用](../../sandbox/use-case/Sandbox复用/插件实验开复用.md)。
 
-它与 `sandbox.setup()` 的分工只看相对 agent 安装的时机：与 agent 配置无关的环境预置进沙箱 Hook（跑在 agent 安装之前）；要读写 agent 安装产物（插件文件、agent 主配置）的脚本进 `postSetup`（跑在 agent 安装之后）。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
+它与作者 sandbox layer 的分工只看相对 agent 安装的时机。与 agent 配置无关的环境预置进 Eval / Experiment layer 的 prepare command，跑在 agent 安装之前；要读写 agent 安装产物（插件文件、agent 主配置）的脚本进 `postSetup`，跑在 agent 安装之后。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
 
 ## 使用官方原生配置文件
 

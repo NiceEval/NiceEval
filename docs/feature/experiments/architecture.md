@@ -7,14 +7,15 @@ experiment 是**可签入的运行配置**：一个文件钉一个单一配置�
 
 ```text
 ExperimentDefinition(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
-  → resolved config(调度前一次求值:合并 CLI flag / experiment / eval / config 回退,evals 过滤器与 sandbox environments 查表求值)
+  → 解析后配置(调度前一次求值:合并 CLI flag / experiment / eval / config 回退,求值 evals 过滤器,link 每条选中配对的 template)
   → attempt 矩阵(selectedEvalIds × attempts,每 attempt 一个执行 fiber)
   → Run(.niceeval/<experiment>/<timestamp>-<suffix>/,含 ExperimentRunInfo 投影)
 ```
 
 - **id 从路径推导**（`experiments/agents/bub/gpt-5.4.ts` → `agents/bub/gpt-5.4`），路径只表达身份与 CLI 前缀选择，禁止手写 id。
 - **`ExperimentDefinition` 携带实验级生命周期 Hook 对 `setup` / `teardown`**——整场一次、宿主机侧(语义见下文 [实验级生命周期](#实验级生命周期setup-与-teardown))。
-  其余生命周期各归各位:沙箱内环境预置挂 `sandbox` 字段的 `SandboxSpec` Hook 链,任务 Fixture 属于 eval,连 agent 属于 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
+  其余生命周期各归各位:沙箱内准备写 Eval / Experiment `sandbox` layer 的 `prepare()` 命令,题目材料属于 Eval layer 与 `test(t)`。
+  装 Agent CLI 归 Adapter 的 Agent layer,连 agent 归 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
 - 同一次 `niceeval exp` Invocation 可以同时跑多个实验（文件夹展开），但每个实验各自开 Run 目录，没有跨实验成员关系或聚合落盘。
   Invocation 是瞬时编排边界，不分配持久化 id。
   多条 Invocation 也可以对同一仓库并行运行：Run 互不覆盖，同一条 `(experiment, eval)` 不被双跑由[用例锁](#并发-invocation用例锁)保证。
@@ -53,13 +54,15 @@ export default defineExperiment({
   //  解析期遍历发现后的 EvalDescriptor 全集(测试集已生成 attempt)求值一次,产出 selectedEvalIds
   //  必须同步返回 boolean;落盘的是求值结果与过滤器指纹,不是函数本身
 
-  sandbox: e2bSandbox({ template: "base", environments: { "python-3.9": { template: "py39" } } }),
-  //  本实验唯一的固定 SandboxSpec。解析期按每条选中 eval 的 environment 查 environments 表,
-  //  folder-local source 则查 materializers 表;同一 profile 两处都命中时显式 environments 表项优先
-  //  profile 任何表都查不到、eval 又无 folder-local source → 启动期配置错误:一次穷举,不创建任何沙箱
-  //  声明合法但缺 materializer / 能力位 → 计划期 skipped;选中集合全部 skipped 升级启动期报错(见 Sandbox Case)
-  //  逐 eval 的解析结果进该 eval 的 fingerprint、provider 并发推荐值与 ExperimentRunInfo.sandboxByEval
-  //  Direct Agent 不创建 Sandbox,不参与查表
+  sandbox: e2bSandbox({ template: "base" })
+    .prepare(installMempal),   // installTool 封装,见内置 prepare 命令
+  //  本实验的 SandboxLayer。link 期对每条实际选中的 Eval × Experiment 边做 template 检查:
+  //  恰好一方 template-bearing;双方都带报 sandbox.template-conflict,双方都不带报 sandbox.template-missing
+  //  任一边非法即全矩阵聚合报错,零 Provider I/O、零构建、零 Sandbox 创建(错误语义见 Sandbox 三方准备时序)
+  //  合法配对交给它绑定的 Provider 做只读 physical / network planning,再算 fingerprint
+  //  niceeval check、--dry 与正常运行消费同一份 linked matrix,不各自重算 template 选择
+  //  逐 eval 的 template 解析结果进该 eval 的 fingerprint、provider 并发推荐值与 ExperimentRunInfo.sandboxByEval
+  //  Direct Agent 没有运行中的 Sandbox;任一侧为它声明 SandboxLayer 报 sandbox.unexpected-for-direct-agent
 
   timeoutMs: 40 * 60_000,
   //  单 attempt 外层超时,四层解析:--timeout → 这里 → eval 字段 → niceeval.config.ts
@@ -81,7 +84,7 @@ export default defineExperiment({
 ```
 
 `maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。
-`sandboxReuse` 决定 SandboxSpec 生命周期是逐 Attempt 还是逐 Sandbox，并进入配置哈希；完整顺序见 [Sandbox 复用](../sandbox/reuse.md)。
+`sandboxReuse` 决定 Sandbox Case 是逐 Attempt 创建还是跨 Attempt 复用,并进入配置哈希;每条 Attempt 都重放两层 prepare,完整顺序见 [Sandbox 复用](../sandbox/reuse.md)。
 `timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
 这些字段的调度语义单点在 [Runner](../../runner.md)。
 `classifyFailure` 的类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型)，写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
@@ -103,7 +106,7 @@ eval 声明按需构建环境时,BuildKey 构建、共享拉取与发布属于 R
 
 ## 实验级生命周期：setup 与 teardown
 
-`setup(ctx)` / `teardown(ctx)` 在**宿主机**上、对每个实验**整场恰好至多一次**执行,与 attempt 生命周期(沙箱内 / 每 attempt 一次)分属两个节奏;成对形态与触发规则和其余三层一致(见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
+`setup(ctx)` / `teardown(ctx)` 在**宿主机**上、对每个实验**整场恰好至多一次**执行,与 attempt 生命周期(沙箱内 / 每 attempt 一次)分属两个节奏;成对形态与触发规则和 Agent 层的 Hook 对一致(见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
 
 ```typescript
 let tunnel: Tunnel | undefined;
@@ -136,10 +139,12 @@ export default defineExperiment({
   experiment 级 Hook 上报的 fact 落进 `RunMeta.facts`(Run 封口补写),记录整场实验的环境观测;语义与形状见 [Results · facts](../record/architecture.md#facts运行事实)。
 - **`setup` 失败不刷屏**:同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
 - **teardown 的触发时点**:本实验最后一个 attempt 收尾后执行;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表回退排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内回退范围,由[强杀后的收尾回退](#强杀后的收尾回退收尾登记与启动自愈)在磁盘上接手。
-  失败语义与 `sandbox.teardown` 一致。
-- **runner 不做运行时值的中介**:`setup` 拿到的 URL / 凭据经模块闭包流给 `teardown` 与同文件里的 agent / sandbox Hook(后两者每 attempt 执行,晚于 `setup`)。
+  失败语义与 `sandbox.cleanup` 一致。
+- **runner 不做运行时值的中介**:`setup` 拿到的 URL / 凭据经模块闭包流给 `teardown` 与同文件里的 agent 工厂 / prepare command(后两者每 attempt 执行,晚于 `setup`)。
   它们是运行时基础设施坐标,不是实验条件——实验条件进 `flags`,一并进指纹;坐标进 `facts`,不参与可比性,轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
-- **不进 fingerprint**:Hook 函数体与 `SandboxSpec` Hook 一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
+- **不进 fingerprint**:实验级 Hook 的函数体不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
+  sandbox layer 的 prepare 命令走另一条规则:`command()` / `shell()` 与 `defineSandboxCommand()` 的 identity 进入 configHash / fingerprint(输入清单见[缓存与携带](cache.md#指纹两个哈希嵌套))。
+  直接传入的 callback 一律 opaque,该 Attempt `carryEligible = false`、禁跨 Run 携带。
 - **两个 Hook 都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
 
 ## 强杀后的收尾回退:收尾登记与启动自愈
@@ -245,7 +250,7 @@ niceeval 的 `defineExperiment` 只留**纯运行矩阵**：
 | `agent` | `agent` | 保留,但一文件一个 agent | 沿用 agent；报告直接比较当前 Sample 中的 experiments |
 | `model` / `attempts` / `earlyExit` / `evals` / `timeout` / `sandbox` | 同(`timeout`→`timeoutMs`) | 保留 | 运行矩阵的本体 |
 | — | `sandboxReuse` | **加** | 实验作者声明多条 Attempt 可以共用 Sandbox；进入配置哈希 |
-| `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境挂 `sandbox` 字段的 `SandboxSpec.setup()` / `.teardown()`,任务 Fixture 写 `EvalDefinition.setup` / `test()`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
+| `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境写 `sandbox` layer 的 `prepare()`,题目准备写 Eval layer 的 `prepare()` 或 `test(t)`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
 | `validation` | — | **删** | 「怎么算对」是 eval 自己的事(`test()` 里手工跑校验命令),不该由 experiment 决定 |
 | `scripts` | — | **删** | 同上,属于 eval / fixture 的评分,不是运行配置 |
 | `brands` | — | **删** | Vercel 品牌追踪专用,通用 evals 不需要 |

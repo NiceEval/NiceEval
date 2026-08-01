@@ -1,5 +1,7 @@
 # 裁决:Ensure 的公开形态是独立 AgentProvisioner 对象,不是 SandboxAgentDef 上的方法
 
+> 2026-08-01 被 [[pure-adapter-official-installer]] 部分替代:check(probe)留在 Adapter 的 ensure 声明,install 拆出为官方 AgentInstaller 按 identity 配对;原子性由 identity 同源保证,不再要求同一值对象。
+
 - **日期**:2026-07-30
 - **裁决**:Agent Ensure 以独立值对象 `AgentProvisioner`(identity / check / install,外加内置默认路径的 prepare)承载,经 sandbox agent 工厂参数替换(`codexAgent({ provisioner })`)。它由 Sandbox Agent 拥有并在 `agent.setup` 内执行;Runner 不新增第四个生命周期参与者,只额外消费 `identity`(进 configHash)与 `prepare`(Run 级 single-flight,记 `agent.artifact.prepare`)。同批裁定 `check` 返回结构化检查事实(含实际版本),不返回 boolean。
 - **曾选方案**:在 `SandboxAgentDef` 上直接加 `identity` / `check` / `install` 几个方法,不引入新对象。论据是概念更少,且 check 依赖的知识(哪个命令、什么版本、什么运行条件)本来就属于 adapter。

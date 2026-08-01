@@ -22,9 +22,9 @@ import { ExperimentFatalError } from "niceeval";
 
 // experiments/compare/codex-nowledge.ts —— id 从路径推导,不手写
 export default defineExperiment({
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(async (sandbox, ctx) => {
+  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(async (sandbox, context) => {
     // 探活实验共享的服务端隧道:失败则本实验每条 attempt 同因必死
-    const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
+    const probe = await sandbox.tryCommand("curl", ["-sf", `${serverUrl}/health`]);
     if (probe.exitCode !== 0) {
       throw new ExperimentFatalError(
         `server probe(${serverUrl}) failed — 服务端/隧道已死,修好后更新 .env 重跑`,
@@ -40,12 +40,13 @@ fixture 级的死因用 `EvalFatalError`,只停本 eval 的剩余 attempt:
 
 ```ts
 import { EvalFatalError } from "niceeval";
+import { sandboxLayer } from "niceeval/sandbox";
 
-setup: async (_sandbox, _ctx) => {
+sandbox: sandboxLayer().prepare(async (_sandbox, _context) => {
   if (!existsSync(fixturePath)) {
     throw new EvalFatalError(`fixture ${fixturePath} 缺失,所有 Attempt 同因必死——先跑 pnpm fixtures:sync`);
   }
-},
+}),
 ```
 
 服务在 run **中途**死掉时,死因会以第三方错误的形态浮出(对隧道 host 的拒连、turn 层连接错误),probe 看不见它;实验分类器认得自家 host:
@@ -70,8 +71,8 @@ export default defineExperiment({
 - **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。
   拿不准就不声明,让它落成单条 attempt 的 `errored`:多烧的是钱,错杀的是整批覆盖数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
 - **识别不靠类身份**:框架用结构守卫(`failureClassOf`)认这些错误,`instanceof` 在依赖树里有第二份 niceeval 时会静默失效——自己代码里如需识别也用守卫。
-- **没有「可重试」错误类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
-  setup 里想容忍抖动,自己 try 一次即可。
+- **没有「可重试」错误类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 prepare / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
+  prepare 里想容忍抖动,自己 try 一次即可。
 - **闸落下后不可逆、不跨运行**:本次 invocation 内不再派发;下次运行从零判断,没有需要解除的状态。
 
 ## adapter 作者:`classifyTurnError`

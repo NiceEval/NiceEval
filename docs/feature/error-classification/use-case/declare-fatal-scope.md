@@ -19,13 +19,13 @@
    声明写在知识所在的那层代码里,任何 per-attempt 阶段可抛。
 
 2. **写声明**。
-   每沙箱探活写在 sandbox 生命周期 Hook 里:
+   每沙箱探活写在 Experiment layer 的 prepare command 里:
 
    ```ts
    import { ExperimentFatalError } from "niceeval";
 
-   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(async (sandbox, ctx) => {
-     const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
+   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(async (sandbox, context) => {
+     const probe = await sandbox.tryCommand("curl", ["-sf", `${serverUrl}/health`]);
      if (probe.exitCode !== 0) {
        throw new ExperimentFatalError(
          `server probe(${serverUrl}) failed — 服务端/隧道已死,修好后更新 .env 重跑`,
@@ -35,18 +35,19 @@
    }),
    ```
 
-   fixture 校验写在 `EvalDefinition.setup` 里:
+   fixture 校验写在 Eval layer 的 `prepare()` 里:
 
    ```ts
    import { EvalFatalError } from "niceeval";
+   import { sandboxLayer } from "niceeval/sandbox";
 
-   setup: async (_sandbox, _ctx) => {
+   sandbox: sandboxLayer().prepare(async (_sandbox, _context) => {
      if (!existsSync(fixturePath)) {
        throw new EvalFatalError(
          `fixture ${fixturePath} 缺失,所有 Attempt 同因必死——先跑 pnpm fixtures:sync`,
        );
      }
-   },
+   }),
    ```
 
    message 会走完反馈流与 `run.json` 诊断的全程,写成「现象 + 下一步」——它是留给修的人(和三天后的你)的字条。

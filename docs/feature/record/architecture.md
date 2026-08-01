@@ -210,9 +210,9 @@ interface ExperimentRunInfo {
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
   evalFilterFingerprint?: string;
-  /** provider 名、provider 的 publicConfig() 投影与配置 fingerprint。 */
+  /** Experiment layer 携带 template 时的投影：Provider 名、factory 的 publicConfig() 投影与配置 fingerprint。 */
   sandbox?: { provider: string; params?: Record<string, JsonValue>; fingerprint?: string };
-  /** spec 携带 environments 表时：声明了 environment 的选中 eval 各自解析到的产物投影；键为 eval id。 */
+  /** 逐 Eval 的 template 解析结果：template owner 为 Eval 的配对各落一项，键为 eval id，值的形状与顶层 sandbox 相同。 */
   sandboxByEval?: Record<string, { provider: string; params?: Record<string, JsonValue>; fingerprint?: string }>;
 }
 ```
@@ -224,9 +224,10 @@ interface ExperimentRunInfo {
   `selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
 - **sandbox 参数只经 provider 的 `publicConfig()` 投影落盘**:每个内置 provider 显式实现「哪些参数可发布」的投影(镜像名、模板名、runtime 可以;token、凭据路径永远不可以),`defineSandbox` 自定义 provider 没有提供投影时只落 provider 名。
   「params 不含 secret」由投影保证,不靠注释承诺。
-- **按 eval 解析预制产物时保存逐 eval 结果。**
-  顶层 `sandbox` 始终是 spec 基础参数的投影；`sandboxByEval` 只记录本 Run 选中且声明了 `environment` 的 eval 各自解析到的产物投影，供审计与逐 eval fingerprint 对账。
-  未声明 environment 的 eval 以顶层 `sandbox` 为准，未选中的 eval 不查表、不伪造映射项；spec 的 `environments` 表不整张落盘——落的是每条 eval 的解析结果。
+- **template 解析结果按 owner 落盘。**
+  Experiment layer 携带 template 时,顶层 `sandbox` 落它的 factory 投影;template owner 为 Eval 的配对逐条落进 `sandboxByEval`,供审计与逐 eval fingerprint 对账。
+  每一项都是该 template-bearing factory 经 `publicConfig()` 的投影:Provider 名、产物 locator(image / template / snapshotId)等可发布参数与配置 fingerprint。
+  未选中的 eval 不写映射项、不伪造解析结果;配对的 template 唯一性与 owner 判定单源在 [Sandbox Layer](../sandbox/layers.md)。
 - 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。
   **进 [configHash](../experiments/cache.md#指纹两个哈希嵌套) 的字段这条是硬约束**:配置身份的每一个输入都要在 `run.json` 上找得到,顶层或本投影二选一。
   `agent` / `model` 住顶层,其余住这里。
@@ -267,10 +268,12 @@ type LifecyclePhase =
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create"       // provider 从 image / template / snapshot 启动 Sandbox(共享构建不在这里,它在 Run 级 activity)
-  | "sandbox.setup"        // SandboxSpec.setup() 生命周期 Hook 链
+  | "sandbox.prepare"      // 两层作者 layer 的 prepare 链:template owner 的命令先执行,另一 owner 随后(见 Sandbox · 三方准备时序)
+  | "sandbox.prepare.eval"       // 仅错误/诊断归因:细分到 Eval layer 的 prepare 命令,不单列计时条目
+  | "sandbox.prepare.experiment" // 仅错误/诊断归因:细分到 Experiment layer 的 prepare 命令,不单列计时条目
+  | "agent.ensure"         // ensure 循环:probe、缺失时配对安装层 install、复检(见 Adapters · Agent Ensure)
   | "workspace.baseline"   // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
-  | "eval.setup"           // EvalDefinition.setup
-  | "agent.setup"          // Agent 的 Ensure:检查、缺失时安装、复检(见 Adapters · Agent Ensure)
+  | "agent.setup"          // Agent runtime setup:Adapter 在 CLI 就绪后的逐 Attempt 运行时准备(写鉴权与运行时配置)
   | "telemetry.configure"  // tracing 出口配置
   | "eval.run"             // 整段 test(t),含所有 send 与手工命令
   | "agent.run"            // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
@@ -278,9 +281,8 @@ type LifecyclePhase =
   | "scoring.evaluate"     // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
-  | "eval.teardown"        // EvalDefinition.teardown
   | "agent.teardown"
-  | "sandbox.teardown"     // SandboxSpec.teardown() 生命周期 Hook 链
+  | "sandbox.cleanup"      // 两层作者 layer 已登记 cleanup 按全局准备顺序逆序执行
   | "sandbox.suspend"      // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause);耗时可观(pause 随内存增长),必须可见
   | "sandbox.stop";        // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
 ```
@@ -345,7 +347,7 @@ interface TimingActivity {
 |---|---|---|
 | `agent.turn` | attempt | 一次 send 的端到端包络;轮标签语法单点见 [Assertions · Turn 的展示](../assertions/architecture/scopes.md) |
 | `sandbox.command` | attempt | 公开 `runCommand` / `runShell` 的最外层调用;非零退出经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
-| `sandbox.hook` | attempt | SandboxSpec Hook 链的逐 Hook 节点;匿名 Hook 的 label 用 `setup#<i>` / `teardown#<i>` |
+| `sandbox.prepare` | attempt | 两层作者 layer 的逐 command 节点,`sandbox.cleanup` 锚点下的已登记 cleanup 节点同用此 key;label 带 owner 与序号,匿名 callback 用 `eval#<i>` / `experiment#<i>` |
 | `provider.*` | 两者皆可 | provider 内部步骤,如 `provider.image.pull`、`provider.build.execute` |
 | `workspace.diff.export` | attempt | 变更分类账的批量导出;label 带有界规模摘要 |
 | `sandbox.build` | Run | 一个 BuildKey 的查询与构建;经 [`sandboxBuilds`](#共享构建的-provenancesandboxbuilds) 关联 provenance |
@@ -482,7 +484,7 @@ interface AttemptRecord {
    * `reuseSandbox` 是本次 Run 内从 1 开始的 Sandbox 编号，
    * `reuseOrdinal` 是该 Sandbox 承接的 Attempt 序号。
    * `provider` / `sandboxId` / `reused` / `reuseSandbox` / `reuseOrdinal` 是调度事实，
-   * 在 Sandbox 租借给该 Attempt 时确定；Attempt 在任何阶段终结（含 setup 失败与超时）
+   * 在 Sandbox 租借给该 Attempt 时确定；Attempt 在任何阶段终结（含 prepare 失败与超时）
    * 都必须带上它们，只有 `kept` 在收尾时点决定。
    * [出身门](../experiments/cache.md#携带要过的门)读取 `reused`，让复用产出永不成为后续命中。
    */
@@ -624,11 +626,11 @@ interface DiagnosticRecord {
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。
 数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。
-`eval.teardown` / `agent.teardown` / `sandbox.teardown` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
+`agent.teardown` / `sandbox.cleanup` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应收尾 diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
 结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
 `children` 是 runner 直接观察到的 activity 树。
-`sandbox.setup` / `sandbox.teardown` 先按 `sandbox.hook` 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
+`sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
 命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 `sandbox.command` 节点关联。
 成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
@@ -719,13 +721,13 @@ interface Usage {
 `facts` 记录生命周期代码主动上报的**运行环境观测**:键值标量,回答「这次实际看到了什么」——记忆库起步有多少条笔记、恢复自哪份 checkpoint、远端服务返回了哪个版本。
 它是运行后的审计证据，不是配置入口，也不是缓存键。
 
-- **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条观察通道(声明见 [Sandbox hooks](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。
+- **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条观察通道(声明见 [Sandbox command](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。
   三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常 observation,`fact` 是中性的环境事实。
-- **归属跟随作用域**:sandbox hook、agent setup/teardown、adapter send 上报的进 `AttemptRecord.facts`;experiment setup/teardown 上报的进 `RunMeta.facts`。
+- **归属跟随作用域**:sandbox command、agent setup/teardown、adapter send 上报的进 `AttemptRecord.facts`;experiment setup/teardown 上报的进 `RunMeta.facts`。
   runner 自动归属,调用方不能指定层级。
 - **形状**:key 匹配 `[a-z0-9._-]{1,64}`,value 是 `string | number | boolean` 标量。
   同一作用域内同 key 后写覆盖先写——fact 是现刻观测,不是追加日志;需要留痕迹的过程用 `diagnostic`。
-- **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。
+- **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment setup 与 sandbox prepare 尚未运行时，runner 已经决定哪些 attempt 可以携带。
   计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--rerun all` 重跑，再用 facts 审计实际状态。
   把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
 - **运行时坐标的家就是这里**:隧道 / 反向代理 URL、服务端实例地址这类「每次跑都可能换、换了不改变 attempt 里发生什么」的连接坐标,是运行起来才存在的观测,报成 fact——写进 `flags` 会让每一次轮换作废全部已完成结果(整袋 `flags` 进指纹,没有逐键豁免)。

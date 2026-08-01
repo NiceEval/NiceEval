@@ -40,8 +40,8 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | AI SDK 结果转换器：`turnFromAiSdk` | `src/agents/ai-sdk.ts`;契约见 `docs/feature/adapters/sdk/ai-sdk/README.md` |
 | 原生配置文件替换(`settingsFile` / `configFile`:项目根内路径校验、上传替换、保留键冲突检测、SHA-256 进 checkpoint key) | `src/agents/native-config.ts`(共享层)+ `src/agents/{claude-code,codex}.ts`(各自保留键表) |
 | Marketplace 注册名回读校验(`marketplace add` 后回读列表,配置名对不上立刻报错) | `src/agents/marketplace.ts`(claude-code / codex 共用,回读命令由 adapter 传入) |
-| `AgentProvisioner` 类型与安装模式(`staged` / `sandbox-network` / `verifyOnly`)、安装事实形状 | `src/agents/types.ts`;经 `src/define.ts` 的 `defineAgentProvisioner` 透传 |
-| Agent Ensure(`AgentProvisioner`:identity / check / install / recheck、staged payload 准备与共享 cache) | `src/agents/provisioner.ts`;内置 Agent 各自的 provisioner 在 `src/agents/{claude-code,codex,bub}.ts`;Run 级 staged payload 准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts`(`agent.setup`) |
+| `AgentEnsure` / `AgentInstaller` 类型与安装模式(`staged` / `sandbox-network` / `verifyOnly`)、安装事实形状 | `src/agents/types.ts` |
+| Agent Ensure(agent.ensure 循环:probe、缺失时配对安装层 install、复检;staged payload 准备与共享 cache) | `src/agents/`(ensure 循环与内置安装层;内置 Agent 的声明在 `src/agents/{claude-code,codex,bub}.ts`);Run 级 staged payload 准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts` |
 
 ## 执行失败分类:时间轴重试与空间轴止损([README](feature/error-classification/README.md) / [架构](feature/error-classification/architecture.md) / [库用法](feature/error-classification/library.md))
 

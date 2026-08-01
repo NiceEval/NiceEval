@@ -92,7 +92,7 @@ const shell = await t.sandbox.runShell("pnpm lint && pnpm test");
 两者只执行并返回结果，非零退出码不抛错也不自动评分，判定交给 `commandSucceeded()` 等 matcher。
 
 `runCommand` 和 `runShell` 不会自动重试。
-命令可能已经产生部分副作用，NiceEval 无法安全判断能否重复执行；只有调用者确认命令幂等时，才应在 eval 或 hook 里显式写重试策略。
+命令可能已经产生部分副作用，NiceEval 无法安全判断能否重复执行；只有调用者确认命令幂等时，才应在 eval 或 prepare 命令里显式写重试策略。
 
 Sandbox stop 和销毁属于 runner 生命周期，不暴露给 eval 作者。
 

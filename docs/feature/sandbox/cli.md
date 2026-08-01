@@ -2,7 +2,7 @@
 
 跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../record/architecture.md))。但有三类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
-- **环境类 `errored` 恰好证据最薄**——setup 链装包失败、agent CLI 起不来时,agent 根本没跑,`events.json` / `trace.json` 不存在,手里只有 error 摘要和 phases 计时;而这正是最需要进环境里手动重跑一遍命令的场景。
+- **环境类 `errored` 恰好证据最薄**——准备链装包失败、agent CLI 起不来时,agent 根本没跑,`events.json` / `trace.json` 不存在,手里只有 error 摘要和 phases 计时;而这正是最需要进环境里手动重跑一遍命令的场景。
 - **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 窗口归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
 - **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设重跑一轮太慢;留下的现场把这个循环压到秒级。
 
@@ -17,10 +17,10 @@ niceeval exp local onboarding/tool-first --keep-sandbox        # = --keep-sandbo
 niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,调环境用
 ```
 
-- 两档语义:`failed`(默认值,单独使用 `--keep-sandbox` 等价)留 verdict 为 `failed` / `errored` 的 attempt——包括被硬超时打断的 `errored`(这是最高价值的现场);`all` 连 `passed` 也留,用于调 setup Hook、核对通过环境的真实状态,不用故意使其失败一条 eval 才能拿到现场。默认(不带 flag)全部销毁——CI、并发与云资源管理不允许无主现场,留存永远是显式选择。
+- 两档语义:`failed`(默认值,单独使用 `--keep-sandbox` 等价)留 verdict 为 `failed` / `errored` 的 attempt——包括被硬超时打断的 `errored`(这是最高价值的现场);`all` 连 `passed` 也留,用于调 prepare 命令、核对通过环境的真实状态,不用故意使其失败一条 eval 才能拿到现场。默认(不带 flag)全部销毁——CI、并发与云资源管理不允许无主现场,留存永远是显式选择。
 - debug 流程的典型形态是「这条失败,重跑这一条」,配合 eval 前缀位置参数收窄范围,天然不会一次留下几十个容器。
 - 符合 CLI 输入模型:位置参数选 experiment 路径与 eval,flag 说怎么跑。
-- 留存只跳过销毁这一步:`teardown` Hook 链照常执行(环境层回存状态不因 debug 被跳过),留下的现场是收尾完成后的状态。对应地,该 attempt 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目——留存提交后现场转入 provider 的休眠形态(docker 停驻容器、e2b pause、vercel stop 后可恢复),不白烧资源;suspend 失败时现场保持运行并记 diagnostic,仍被注册表管理。语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
+- 留存只跳过销毁这一步:Agent teardown、State save 与已登记 cleanup 照常执行(回存跨 Attempt 状态不因 debug 被跳过),留下的现场是收尾完成后的状态。对应地,该 attempt 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目——留存提交后现场转入 provider 的休眠形态(docker 停驻容器、e2b pause、vercel stop 后可恢复),不白烧资源;suspend 失败时现场保持运行并记 diagnostic,仍被注册表管理。语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
 - 被中断的 run 不留存:留存授予发生在 verdict 定稿的收尾点,Ctrl+C 时还没有 verdict 的 attempt 走正常清理;此前已完成并授予留存的沙箱不被中断收回。
 - 留存与[缓存携带](../experiments/cache.md#执行模式划走的两块)不相容:携带条目没有本次沙箱,无从留存。所以 `--keep-sandbox` 运行里,历史终态 verdict 落在**当前留存档内**的 attempt 不参与携带、照常派发重跑拿现场——`failed` 档下上一轮的 `failed` 重跑(`errored` 本就从不缓存)、`passed` 照常携带;`all` 档下全部重跑。要现场就给一次真实执行,不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)——两个 flag 的档位词表同构,`--keep-sandbox` 各档自带对应口径的重跑。
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
@@ -96,7 +96,7 @@ attempt 落盘的 `diff.json` 是折叠后的 agent 归因增量;留存现场里
 ```text
 $ niceeval sandbox history a3f9c2d1
 ╭─ HISTORY · a3f9c2d1 ────────────────────────────── anchor 2026-07-14 15:00:12 ─╮
-│ eval    +3 files            (fixture / setup)                                  │
+│ eval    +3 files            (fixture)                                          │
 │ turn1   agent   M manager_decisions.json                                       │
 │ eval    +1 file             (post-send validation)                             │
 │ turn2   agent   M manager_decisions.json · A notes/decision-log.md             │

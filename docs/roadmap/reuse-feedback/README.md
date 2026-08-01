@@ -35,8 +35,8 @@ Attempt 已记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接�
 | 量 | 口径 |
 |---|---|
 | `active` | 当前可以继续承接 Attempt 的 Sandbox 数 |
-| `created` | 本次 Invocation 成功完成 SandboxSpec setup 的 Sandbox 累计数 |
-| `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 setup 失败或超时仍计入 |
+| `created` | 本次 Invocation 完成 Case 就绪并承接首条 Attempt 的 Sandbox 累计数 |
+| `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 prepare 失败或超时仍计入 |
 | `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出池后，成功建立替代 Sandbox 的累计数 |
 
 live 面板按 Experiment 显示当前值；结束反馈显示最终累计值。
@@ -47,7 +47,7 @@ live 面板按 Experiment 显示当前值；结束反馈显示最终累计值。
 
 1. live 面板只显示非零 `replacements`，还是四项恒定显示。
 2. 机器输出把汇总附在既有 `progress` / `result` 事件，还是使用独立的 `sandbox_reuse` 事件。
-3. `created` 是否需要再拆成成功进入池与 setup 失败两个量；后者已有阶段错误，重复计数可能制造第二套失败口径。
+3. `created` 是否需要再拆成成功进入池与就绪失败两个量；后者已有阶段错误，重复计数可能制造第二套失败口径。
 
 ## 不在本主题里的问题
 

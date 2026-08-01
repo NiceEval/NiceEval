@@ -4,15 +4,15 @@
 Sandbox provider 由 experiment 选择；Adapter 不绑定 Docker、Vercel 或 E2B。
 
 ```ts
-import { defineSandboxAgent, shared } from "niceeval/adapter";
+import { defineSandboxAgent } from "niceeval/adapter";
 
 export default defineSandboxAgent({
   name: "my-coding-agent",
 
   async setup(sandbox, ctx) {
-    ctx.progress({ message: "checking my-agent installation" });
-    await shared.ensureInstalled(sandbox, "my-agent", ["npm", "install", "-g", "my-agent"]);
+    ctx.progress({ message: "configuring my-agent" });
     // 写鉴权、CLI 主配置、skills / plugins；每个 attempt 只执行一次。
+    // 安装与版本探测不写在这里：归 ensure 声明与配对的 Agent 安装层（见下文生命周期）。
   },
 
   async send(input, ctx) {
@@ -31,7 +31,8 @@ export default defineSandboxAgent({
 
 ## 生命周期
 
-`setup` 执行 [Agent Ensure](../architecture/agent-ensure.md)（检查精确身份、缺失时安装、复检），再写 Agent 配置和扩展；失败直接抛出并使 attempt errored。
+[Agent Ensure](../architecture/agent-ensure.md)（probe 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在两方作者 prepare command 之后。
+`setup` 只做 Agent runtime 准备：写 Agent 配置和扩展；失败直接抛出并使 attempt errored。
 `send` 只执行一轮任务，多轮时会重复调用。
 可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
 
@@ -39,8 +40,8 @@ export default defineSandboxAgent({
 不要从 CLI stdout 的每个 frame 转发 progress,也不要直接写宿主进程的 stdout/stderr。
 完整语义见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
-环境级二进制、预热和跨 attempt 资源属于 `SandboxSpec.setup()`；eval 的任务 fixture 属于 eval setup 或 `test(t)`。
-三类 setup 不交换职责。
+环境级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `prepare()` 或预制产物；eval 的任务 Fixture 属于 Eval layer 的 `prepare()` 或 `test(t)`。
+三类准备不交换职责。
 
 ## Transcript 采集
 

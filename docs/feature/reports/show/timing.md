@@ -2,9 +2,9 @@
 
 `--timing` 是 attempt-detail 组件族对应区块的 text 面。
 [首页](attempt.md)的 `timing:` 行给出逐阶段一行的完整摘要（子节点只是折叠成计数，阶段本身不筛选）；`--timing` 是整个 Attempt 的时间分析入口，展开首页折叠掉的子节点。
-它先按 `result.json.phases` 输出 runner 生命周期，再投影各锚点下的 activity 树：setup/teardown hook、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、producer 自己起 key 的语义 activity（如 `workspace.diff.export`），以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
+它先按 `result.json.phases` 输出 runner 生命周期，再投影各锚点下的 activity 树：两层作者 layer 的 prepare command 与已登记 cleanup、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、producer 自己起 key 的语义 activity（如 `workspace.diff.export`），以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
 锚点行的本地化标签只覆盖 `LifecyclePhase` 闭集；activity 一律渲染 producer 写下的 `label`，未知 key 不需要 renderer 认识，也不进锚点标签表。
-某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、hook、operation、命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
+某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、作者 command、operation、沙箱命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
 
 时间分析入口有两档密度，都是这个区块 text 渲染面的选项，不是事实过滤器；`--json` 面恒为完整的树解析产物，等价 `--timing=full` 的节点集合，不受 detail node 预算约束（[切片是组件选择](../architecture.md#show-的切片是组件选择)）：
 
@@ -30,18 +30,19 @@ $ niceeval show @1qrdcfq8 --timing
 ╭─ timing ───────────────────────────────────────────────────────── total 50.0s ─╮
 │ sandbox.queue          0.2s                                                    │
 │ sandbox.create         5.6s                                                    │
-│ sandbox.setup          3.5s                                                    │
-│   ├─ warmModelCache        2.9s                                                │
+│ sandbox.prepare        3.5s                                                    │
+│   ├─ experiment#0 · warmModelCache   2.9s                                      │
 │   │  ├─ shell · mkdir -p ~/.cache/model       0.1s                             │
 │   │  └─ shell · restore-model-cache           2.8s                             │
-│   └─ setup#2               0.6s                                                │
+│   └─ eval#0                0.6s                                                │
 │      └─ shell · pnpm config set store-dir …   0.6s                             │
+│ agent.ensure          12.0s                                                    │
+│   ├─ shell · npm install -g @openai/codex…    10.8s                            │
+│   └─ shell · codex plugin install …            1.2s                            │
 │ workspace.baseline     0.1s                                                    │
 │   └─ shell · git init && git commit …          0.1s                            │
-│ agent.setup           12.1s                                                    │
-│   ├─ shell · npm install -g @openai/codex…    10.8s                            │
-│   ├─ shell · mkdir -p ~/.codex                 0.1s                            │
-│   └─ shell · codex plugin install …            1.2s                            │
+│ agent.setup            0.1s                                                    │
+│   └─ shell · mkdir -p ~/.codex                 0.1s                            │
 │ telemetry.configure    0.1s                                                    │
 │   └─ shell · append ~/.codex/config.toml       0.1s                            │
 │ eval.run              26.3s                                                    │
@@ -57,8 +58,8 @@ $ niceeval show @1qrdcfq8 --timing
 │ telemetry.collect      0.3s                                                    │
 ├─ teardown ────────────────────────────────────────────── not counted in total ─┤
 │ agent.teardown         0.2s                                                    │
-│ sandbox.teardown       0.1s                                                    │
-│   └─ persistCache          0.1s                                                │
+│ sandbox.cleanup        0.1s                                                    │
+│   └─ experiment#0 · persistCache     0.1s                                      │
 │      └─ shell · tar czf …                      0.1s                            │
 │ sandbox.stop           0.5s                                                    │
 ╰──────────────────────────────────────── niceeval show @1qrdcfq8 --timing=full ─╯
@@ -67,7 +68,7 @@ $ niceeval show @1qrdcfq8 --timing
 整棵树是一个 `Section`，按[区域框](../library/layout.md#区域框text-面的框线体裁)套一个外框：总耗时嵌上边框右侧，`--timing=full` 嵌下边框，收尾段作为嵌套 `Section` 降为 `├─ teardown ─┤` 隔条。
 树内每个节点不各自画框——`├─` `└─` 已经表达了层级，逐节点加框只会与它打架。
 
-缩进表达包含关系而不是可相加的账本：hook 包含命令，turn 包含启动 Agent CLI 的命令，OTel span 又可能嵌套或并发；子项不能求和后与父项比较。
+缩进表达包含关系而不是可相加的账本：作者 command 节点包含沙箱命令，turn 包含启动 Agent CLI 的命令，OTel span 又可能嵌套或并发；子项不能求和后与父项比较。
 runner 节点使用本机单调时钟，OTel 节点使用 span 自带时钟，跨进程只按 `traceId` / parent span 关系归属，不按绝对时间硬对齐。
 主链各阶段之和小于等于 `total`，差值是阶段间的粘合代码，不单独列行。
 
@@ -104,7 +105,7 @@ workspace.diff      1.8s
      └─ shell · export ledger window …                            1.8s
 ```
 
-**Case 3：旧 artifact 或自定义 hook 含数千个 child。**
+**Case 3：旧 artifact 或自定义 command 含数千个 child。**
 默认视图保留诊断样本并诚实标出省略；full 模式才逐条展开：
 
 ```text
@@ -153,7 +154,7 @@ sandbox.queue        1.2s
 sandbox.create     2m 6s ✗ failed here (sandbox-rate-limit)
 ```
 
-收尾阶段的 `✗` 独立于判定：一个 passed attempt 也可以带一条失败的 `sandbox.teardown`，对应它的 teardown diagnostic。
+收尾阶段的 `✗` 独立于判定：一个 passed attempt 也可以带一条失败的 `sandbox.cleanup`，对应它的收尾 diagnostic。
 落盘没有 `phases` 时输出 `phase timing unavailable` 并说明该结果不是由带阶段计时的 runner 产出。
 `--timing=<mode>` 只接受 `summary` 与 `full`，单独使用 `--timing` 等价于 `--timing=summary`；其它值按用法错误退出非零，不静默回退。
 

@@ -77,7 +77,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 ## 覆盖规范
 
-- **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈；environment profile 查表的同源消费与缺表项前置报错。
+- **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
+  template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
 - **`EvalDescriptor.scoring` 投影与实验同型校验**：`evalDescriptorOf` 对 `defineEval` 产物投影 `scoring: "pass"`、`defineScoreEval` 产物投影 `"points"`，未经这两个定义函数处理的未包装对象（`scoring` 缺失）回退按 `"pass"` 投影，三种情形在同一批候选 eval 里都要各有一条区分力场景；`splitByScoring` 对全通过制、全计分制、混合三种候选集合的分桶结果——只有混合桶两侧都非空。
   混型启动校验的报错文案（`cli.experiment.mixedScoring`）要能证明关键信息齐全：两侧的 eval id 各自列出、各自计数，以及收窄建议（tags / id 前缀 / `scoring` 字段，或拆成两个实验文件）——直接对 `t("cli.experiment.mixedScoring", …)` 断言，不需要起一个真实 CLI 进程。
@@ -100,7 +101,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **并发**：全局与实验级上限、全局上限的三层解析与 Provider 推荐值、exclusive Provider 强制串行。
   退避睡眠释放全局槽位，实验级闸全程持有。
   `maxConcurrency: 1` 时，前一 Attempt 进入退避窗口，下一 Attempt 不得启动。
-  前一 Attempt 的 `sandbox.teardown` 生命周期 Hook 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.setup`。
+  前一 Attempt 的 `sandbox.cleanup` 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.prepare`。
   用 `TestClock` 与 barrier 观察在飞峰值或分配顺序。
   完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/并发/)。
 - **发现顺序与串行下的执行顺序**：
@@ -235,7 +236,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **生命周期与资源**：成功、失败、中断三条路径下 sandbox 全部 stop、reporter queue 收尾；预热池边界；生命周期阶段闭集与主链耗时封口；diagnostic 去重与不改判定；逐轮进度行的提取规则；分类账导出的常数往返。
   资源泄漏通常出现在失败和中断——三条路径缺一不可。
 - **止损闸（空间轴消费）**：触发——终局失败携带 `scope: "eval"` 只停本 eval 剩余 attempt、`"experiment"` 停全实验且同批其它实验不连坐；组合——可重试失败被重试吸收不落闸、耗尽后的终局失败才读 scope；幂等与不可逆——并发重复声明按 dedupeKey 折叠成一条 `dispatch-halted` 诊断、落闸后在飞 attempt 成功不重开派发；闸只停派发不抢占——在飞 attempt 照常跑完落账、等待集中同闸 attempt 经 interruption 中止；记账——未派发计 `unstarted`、完成状态 `incomplete`、退出码由观察到失败的 `errored` attempt 判红；teardown 边界——实验级 teardown 抛声明降级普通诊断、per-attempt teardown 抛声明照常落闸且不改 verdict；诊断双通路——反馈流通知与 `run.json` 的 `dispatch-halted`（`data.scope` / `data.evalId`）同源互不派生。
-- **派发前资源获取失败的归一化**：`sandboxReuse` 的实例创建、`SandboxSpec` setup Hook 与寿命确认都在复用池内完成。
+- **派发前资源获取失败的归一化**：`sandboxReuse` 的实例创建、Case 就绪与寿命确认都在复用池内完成。
   任一步失败只让这条 attempt 落 `errored`，phase 为 `sandbox.create`、message 保留原始正文。
   同批其它实验照常跑完，整次运行照常收尾出汇总。
   Hook 里抛的 `ExperimentFatalError` 走与 attempt 内抛出同一条空间轴回执链，照常落实验闸。
@@ -271,7 +272,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 不依赖该 key 的 attempt 照常派发；carried attempt 不因查看历史结果触发构建。
 - **全 skipped 启动错误**：
 
-  - 选中集合全部因缺 materializer / 能力位落成计划期 `skipped` 时，升级为启动期用法错误。
+  - 平台、能力或 locator 不可用在只读 physical planning 聚合报错,整个 Run 零资源失败,不落 `skipped`。
   - 此时零 Sandbox 创建，不静默跑完再汇总。
   - 集合里仍有可派发 eval 时，仅缺能力的那些 skipped、其余照常。
   - 「全 skipped 才升级」与「部分 skipped 继续」两面都要有区分力。

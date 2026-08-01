@@ -1,5 +1,7 @@
 # 三份 Requirement、唯一 Base Case 与 Ensure
 
+> 2026-08-01 被 [[sandbox-layer-model-adopted]] 替代:环境模型最终采纳 PLAN-10 的 SandboxLayer 模型,Requirement / Base Case / Ensure 词族不进入公开契约。
+
 ## 裁决
 
 2026-07-31,环境模型采用 PLAN-4:先区分三份 Requirement,再用 Base Case 或 Ensure 兑现。

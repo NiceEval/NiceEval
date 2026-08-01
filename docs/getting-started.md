@@ -32,7 +32,7 @@ export default defineConfig({
   reporters: [JUnit(".niceeval/junit.xml")], // 终端反馈是人读文本,加 `--json` 换机器事件流;都不是 Reporter
   maxConcurrency: 8,
   timeoutMs: 300_000,
-  // 沙箱 provider 不在这里配 —— 它由 experiment 的 sandbox 字段决定
+  // 沙箱起点不在这里配 —— 由 Experiment 或 Eval 的 sandbox 字段声明,factory 带出 Provider
 });
 ```
 
@@ -172,7 +172,8 @@ export default defineEval({
 });
 ```
 
-`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerSandbox()`(从 `niceeval/sandbox` 导入)——沙箱 provider 没有默认值,也没有 `--sandbox` 这种 CLI 覆盖,必须写进 experiment(或 `niceeval.config.ts` 回退)。
+`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerImageSandbox({ image: NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE })`(都从 `niceeval/sandbox` 导入)。
+没有游离的 Provider 配置,也没有 `--sandbox` 这种 CLI 覆盖:起点由 template-bearing factory 声明并同时带出 Provider,写在 Experiment 或 Eval 的 `sandbox` 字段上(配对规则见 [Sandbox Layer](feature/sandbox/layers.md))。
 
 **跑起来:**
 

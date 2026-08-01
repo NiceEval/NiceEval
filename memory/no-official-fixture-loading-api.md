@@ -1,5 +1,7 @@
 # 裁决:不提供官方 fixture 装载 API(cloneRepo 等)
 
+> 2026-08-01 被 [[prepare-commands-adopted]] 部分替代:采纳内置 prepare 命令 `checkout()` / `installTool()`。新事实是复用缓存与稳定 identity(当时未评估);旧判据「不为自设地雷配绕行 API」本身仍然成立并保留在 api-design.md——当年的地雷(沙箱内框架文件)已拆,这次的动机不是绕地雷。`t.sandbox.cloneRepo` 一类 test 期装载 API 仍然不做。
+
 - **裁决**(2026-07-29,用户定案):fixture 怎么进 workdir(git clone、拷贝、生成)留给用户 shell,
   niceeval 不提供 `cloneRepo` 一类官方装载 API。
 - **曾选方案**:公开 `t.sandbox.cloneRepo({ source, ref, ... })`(内部 Skill 安装已有同类实现)。

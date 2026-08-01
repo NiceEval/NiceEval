@@ -23,8 +23,8 @@ Runner 为每个 Sandbox 确认 Sandbox 复用寿命。
 下一条 Attempt 派发前，它请求足以覆盖 Attempt deadline 与收尾的时间。
 
 寿命足够或 Provider 成功续期时，Attempt 进入原 Sandbox。
-Provider 无法满足时，原 Sandbox 停止领取新任务，完成 SandboxSpec `teardown` 并销毁。
-Runner 创建替代 Sandbox，完成 SandboxSpec `setup` 和题间重置点后再派发。
+Provider 无法满足时，原 Sandbox 停止领取新任务并销毁，绑定 Case 的资源由 Provider finalizer 整组关闭。
+Runner 创建替代 Sandbox，Case 就绪、落下题间重置点后再派发；两层 `prepare()` 照常在每条 Attempt 进入前重放。
 
 ```text
 Sandbox reuse: replacing sandbox 1 before memory/commit-18
@@ -38,7 +38,7 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 ## 边界
 
 - 实例在 Attempt 已开始后异常消失时，本条仍记 `errored`，不会静默重跑。
-- reset、续期或替代 Sandbox 的 SandboxSpec `setup` 失败时，该 Sandbox 不再承接 Attempt。
+- reset 或续期失败时，该 Sandbox 不再承接 Attempt；prepare 命令失败只让当前 Attempt `errored`，reset 成功后 Sandbox 继续承接。
 - Provider 没有 `SandboxReuseCapability` 时，实验在创建前报错，并提示去掉 `sandboxReuse`。
 - 复用实验可以进入 CI，但结果不参与沿用；轮换只能管理寿命，不能消除题间污染。
 

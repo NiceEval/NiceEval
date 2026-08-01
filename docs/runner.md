@@ -50,8 +50,8 @@
 | | ① 实验级闸 | ② 全局并发位 |
 |---|---|---|
 | 管什么 | 正确性,以及本实验自己的节奏 | 吞吐 |
-| 什么时候取 | 进入 attempt(先于沙箱创建与 `sandbox.setup` 链) | 真正开始执行时 |
-| 什么时候还 | 收尾完成(`teardown` 链、沙箱销毁)之后 | 执行结束,或进入内部等待时 |
+| 什么时候取 | 进入 attempt(先于沙箱创建与两层作者 layer 的 `sandbox.prepare` 链) | 真正开始执行时 |
+| 什么时候还 | 收尾完成(收尾链、沙箱销毁)之后 | 执行结束,或进入内部等待时 |
 | 内部等待(退避睡眠、等实验级 `setup`) | 不释放 | 让位给别的 attempt |
 | 名额域 | 该实验,跨 Invocation 共享 | 每条 Invocation 自己 |
 | 撞限流时对外的压力 | 不向本实验放行更多 attempt | 让出的位立刻派给排队者,总压力不降 |
@@ -240,16 +240,16 @@ budget 按**域**计,不是全局总闸:
 
 ## Sandbox 预热与 Sandbox 复用:冷启动移出关键路径
 
-沙箱冷启动的优先级排序(先预制环境、再小 setup、最后才是池化)在[Sandbox · 性能](feature/sandbox/architecture.md#性能预制环境复用与预热)。
+沙箱冷启动的优先级排序(先预制环境、再小准备、最后才是池化)在[Sandbox · 性能](feature/sandbox/architecture.md#性能预制环境sandbox-复用与-sandbox-预热)。
 provider 侧提供「创建、重置、销毁」的能力;什么时候预创建、什么时候复用是运行器的调度决策,契约如下:
 
 - **Sandbox 预热**:开启后,运行器在调度开始时按近期可派发量预先创建同 spec Sandbox。
   Attempt 到达 `sandbox.create` 阶段时先领取预创建实例,领到则该阶段只计领取耗时,没有可领取实例时回落到即时创建。
-- **Sandbox 预热不改生命周期 Hook 的调用顺序**:领到的 Sandbox 仍在 Attempt 里按[固定调用链](#环境预置不进运行器但按顺序调它)走一遍 `sandbox.setup` 链与分类账锚点。
+- **Sandbox 预热不改准备链的执行顺序**:领到的 Sandbox 仍在 Attempt 里按[固定调用链](#环境预置不进运行器但按顺序调它)走一遍两层作者 layer 的 prepare 链与分类账锚点。
   预创建实例只在同一次 Run 内存活,Run 结束时未被领用的 Sandbox 一并销毁。
 - **Sandbox 复用(`sandboxReuse: true`)**：Experiment 作者声明多条 Attempt 可以共用 Sandbox。
   每个 Sandbox 内部串行，Sandbox 之间可以并行。
-  SandboxSpec 生命周期每个 Sandbox 一次，Agent 与 Eval 生命周期逐 Attempt 成对执行。
+  Case 创建与 Provider finalizer 每个 Sandbox 成对一次;两层作者 prepare、agent.ensure 循环与 Agent 生命周期逐 Attempt 执行,复用时 reset 后重放。
 - **复用派发**：同时执行数不超过全局并发位和实验并发限制的最小值。
   `maxConcurrency: 1` 时本次 Invocation 同时最多运行一个 Sandbox。
   每次派发前确认 Sandbox 复用寿命覆盖 Attempt deadline 与收尾预留时间；不足时续期,不能续期时停止旧 Sandbox 并创建替代 Sandbox。
@@ -271,7 +271,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 - **运行器外层超时** —— attempt deadline 用 Effect 的 interruption 中断 Scope 里的 verdict-producing 工作 fiber。
   超时折成 `errored` draft:`error.code = "timeout"`,`error.phase` = 中断时已打开的生命周期阶段。
 - **外层 Scope 不关闭。**
-  有界收尾(teardown 链、留存决策)仍在同一个 Scope 的 release 里照常完成,与[Sandbox 的 Scope / finalizer 模型](feature/sandbox/architecture.md#留存keep与注册表)同一套语义:即使 agent 卡死也能强行收尾。
+  有界收尾(收尾链、留存决策)仍在同一个 Scope 的 release 里照常完成,与[Sandbox 的 Scope / finalizer 模型](feature/sandbox/architecture.md#留存keep与注册表)同一套语义:即使 agent 卡死也能强行收尾。
 
 外层是回退,保证一个卡死的 case 不会挂起整批。
 
@@ -292,7 +292,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 | `events.json` | 截至中断时刻已归一化的全部事件。进行中一轮已收到的部分照常保留,不新增事件种类,中断事实由 `error` 表达 |
 | `usage` | 已累计轮次的如实值 |
 | `sources` | 照常 |
-| `diff.json` | 收尾段在 teardown 链之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径) |
+| `diff.json` | 收尾链开始之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径) |
 | `artifacts` | 如实声明实际写出的文件 |
 
 `show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
@@ -306,50 +306,54 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 
 ## 环境预置不进运行器,但按顺序调它
 
-运行器不承载环境预置的内容,只固定各生命周期 Hook 的**调用点与顺序**,Hook 内部做什么全部交给对应的作者决定。
+运行器不承载环境预置的内容,只固定各生命周期步骤的**调用点与顺序**,步骤内部做什么全部交给对应的作者或 Adapter 决定。
 调用点从外到内:
 
 | 层 / 步骤 | 调用点 | 紧邻的前后步 |
 |---|---|---|
-| 实验级 setup | `ExperimentDefinition.setup` | 第一个可派发 Attempt 之前；全部 Attempt 共用 |
-| Sandbox 创建 | `Sandbox.create` | 实验级 setup 之后，SandboxSpec setup 之前 |
-| 沙箱级 setup | `SandboxSpec.setup` 链 | 创建之后；变更分类账锚点之前 |
-| 变更分类账锚点 | `workspace.baseline` | SandboxSpec setup 之后；EvalDefinition setup 之前。锚点之后的写入才进入归因视图 |
-| eval 级 setup | `EvalDefinition.setup` | 锚点之后；Agent setup 之前 |
-| agent 级 setup | `SandboxAgent.setup` | EvalDefinition setup 之后；`test(t)` 之前 |
-| Eval 主体 | `test(t)` | 作者按普通顺序上传文件、驱动 Agent、运行命令与断言；send 窗口决定归因 |
-| eval 级 teardown | `EvalDefinition.teardown` | Verdict 定稿后的第一段收尾 |
-| agent 级 teardown | `SandboxAgent.teardown` | EvalDefinition teardown 之后 |
-| 沙箱级 teardown | `SandboxSpec.teardown` 链 | Agent teardown 之后；Sandbox 销毁或留存之前 |
-| 实验级 teardown | `ExperimentDefinition.teardown` | 全部 Attempt 与 Sandbox 收尾之后；中断和强清退出也执行 |
+| 实验级 setup | `ExperimentDefinition.setup` | 第一个可派发 Attempt 之前;全部 Attempt 共用,宿主机侧 |
+| Sandbox Case 创建 | Provider 按配对唯一的 template 做 build / start / ready | 实验级 setup 之后;复用窗口内的后续 Attempt 改为 reset 到题间重置点 |
+| 两层作者 prepare | Eval 与 Experiment `sandbox` layer 的 `prepare()` 命令 | Case 就绪之后,每条 Attempt 完整重放;template owner 的命令先,另一 owner 随后 |
+| Agent 安装 | agent.ensure 循环(`agent.ensure`) | 两层作者 prepare 之后;probe、缺失时配对安装层 install、复检 |
+| 变更分类账锚点 | `workspace.baseline` | Agent CLI 就绪之后;锚点之后的写入才进入归因视图 |
+| agent runtime setup | `SandboxAgent.setup`(`agent.setup`) | 锚点之后;`test(t)` 之前 |
+| Eval 主体 | `test(t)` | 作者按普通顺序上传文件、驱动 Agent、运行命令与断言;send 窗口决定归因 |
+| agent runtime teardown | `SandboxAgent.teardown` | Verdict 定稿后的第一段收尾 |
+| 已登记 cleanup | 两层作者 layer 经 `context.onCleanup()` 登记的命令 | Agent teardown 之后;按全局准备顺序逆序执行 |
+| Provider finalizer | Provider Case finalizer(整组关闭 service、volume 与日志) | 复用窗口关闭时;fresh Sandbox 每 Attempt 一次 |
+| 实验级 teardown | `ExperimentDefinition.teardown` | 全部 Attempt 与 Sandbox 收尾之后;中断和强清退出也执行 |
 
-跨层收尾顺序固定为 `EvalDefinition.teardown → SandboxAgent.teardown → SandboxSpec.teardown`。
-这不是跨层 LIFO 声明；只有同一层内注册的多个 Hook 才按 setup 注册序、teardown 逆序执行。
-Sandbox 复用下多个实例怎样交错属于另一问题，见[复用 Sandbox 的并行与生命周期](feature/sandbox/reuse.md#完整生命周期)。
+State Feature 的 load 在 Agent CLI 就绪后、分类账锚点之前执行,save 在 Agent teardown 之后、cleanup 之前。
+完整时序、fresh / reuse 次数表与失败归属单源在[三方准备时序](feature/sandbox/lifecycle.md);题间重置点与多实例交错见[Sandbox 复用](feature/sandbox/reuse.md#完整生命周期)。
 
-四层 Hook 共用同一种形态:**成对的 `setup` / `teardown`,`setup` 不返回值**——写过 Vitest / Jest 的人带着 `beforeAll` / `afterAll` 的心智直接就能写。
+跨层收尾顺序固定为 Agent teardown → 已登记 cleanup 逆序 → reset / 退休决策 → 窗口关闭时 Provider finalizer。
+cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,未执行的命令不产生虚假 cleanup。
 
-| 层 | 挂载点 | 签名 | 节奏 | 管什么 |
-|---|---|---|---|---|
-| 实验级 | `ExperimentDefinition.setup` / `.teardown` | `(ctx) => void \| Promise<void>` | 每实验整场至多一次,宿主机侧 | 每实验一份的共享服务:隧道、mock server |
-| 沙箱级 | `SandboxSpec.setup(fn)` / `.teardown(fn)` 链 | `(sandbox, ctx) => void \| Promise<void>` | 每沙箱一次 | 不知道跑哪个 eval 的环境层:装二进制、预热、载入/回存跨 attempt 状态 |
-| agent 级 | `Agent.setup` / `.teardown` | `(sandbox, ctx) => void \| Promise<void>` | 每 attempt 一次 | 协议层:装 agent CLI、写鉴权 |
-| eval 级 | `EvalDefinition.setup` / `.teardown` | `(sandbox, ctx) => void \| Promise<void>` | 每 attempt 一次 | 这条 eval 的任务 Fixture |
+各层的形态并不相同,不能都套 `beforeAll` / `afterAll` 心智:
 
-成对语义全局一致,三条规则:
+| 层 | 挂载点 | 节奏 | 管什么 |
+|---|---|---|---|
+| 实验级 | `ExperimentDefinition.setup` / `.teardown` | 每实验整场成对至多一次,宿主机侧 | 每实验一份的共享服务:隧道、mock server |
+| 两层作者 layer | Eval / Experiment `sandbox` 字段上的 `.prepare(command)` | prepare 每 Attempt 重放,已登记 cleanup 逆序执行 | 实验准备与题目准备:装二进制、预热、checkout 题目仓库 |
+| Agent 安装 | Adapter 的 ensure 声明与配对安装层,Runner 组装的 agent.ensure 循环 | 每 Attempt 重探,命中快速返回 | 装 Agent CLI:payload、平台探测、install 与复检 |
+| agent runtime | `SandboxAgent.setup` / `.teardown` | 每 Attempt 成对一次 | 协议层:写鉴权与运行时配置 |
 
-- **状态经闭包流动,粒度跟层的节奏走。**
-  `teardown` 要用 `setup` 的产物时不经 runner 中介。
-  实验级整场一次,工厂闭包 / 模块级变量即可。
-  每沙箱、每 attempt 的层(sandbox / agent / eval)里,并发 attempt 共享同一个模块,普通模块变量会互相覆写。
-  两条出路:以 `sandbox` 实例为键存取(`WeakMap`,sandbox 与 attempt 一一对应),或先用 `maxConcurrency: 1` 串行、再用普通变量。
-- **`teardown` 当且仅当同层的 setup 时点已走到才执行。**
-  `setup` 抛错不豁免——半初始化的现场同样要扫尾,`teardown` 对可能未赋值的闭包变量做防御(`tunnel?.stop()`)。
-  未声明 `setup` 函数不影响触发(时点走到即算);时点没走到(实验一个 attempt 都没派发、attempt 没进行到该层)则 `teardown` 同样跳过。
-- **同层多个 Hook 按注册序 setup、逆序 teardown(LIFO)。**
-  `setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完。
+三条全局规则:
 
-各层的语义与写法单源在各自的文档:实验级见[Experiments · 实验级生命周期](feature/experiments/architecture.md#实验级生命周期setup-与-teardown)(执行带 30s 清理上限),沙箱级见[Sandbox · 沙箱生命周期 Hook](feature/sandbox/library.md#沙箱生命周期-hook-setup-与-teardown),agent 级见[Agent 契约](feature/adapters/architecture/agent-contract.md#生命周期不变量)。
+- **实验级与 agent runtime 是成对 Hook。**
+  `teardown` 当且仅当同层 setup 时点已走到才执行,`setup` 抛错不豁免——半初始化的现场同样要扫尾。
+- **两层作者 layer 没有成对 teardown。**
+  清理在 command 成功取得资源后经 `context.onCleanup()` 就地登记,Runner 按全局准备顺序逆序执行。
+- **prepare 每条 Attempt 完整重放。**
+  命令不能依赖「上一条 Attempt 已经运行过我」;昂贵动作由真实检查命中,预装 template 只让检查更快,不删除命令。
+
+各层的语义与写法单源在各自的文档:
+
+- 实验级:[Experiments · 实验级生命周期](feature/experiments/architecture.md#实验级生命周期setup-与-teardown),执行带 30s 清理上限。
+- 两层作者 layer:[Sandbox Layer](feature/sandbox/layers.md)与[三方准备时序](feature/sandbox/lifecycle.md)。
+- Agent 安装:[Agent Ensure](feature/adapters/architecture/agent-ensure.md)。
+- agent runtime:[Agent 契约](feature/adapters/architecture/agent-contract.md#生命周期不变量)。
+
 写在哪层容易错位,见[环境预置与收尾怎么放](feature/experiments/use-case/生命周期/)。
 
 跨实验共享、生命周期长于一次 run 的外部服务(共享 DB、公司内网服务本体)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入——这类资源跨进程共享,不属于任何一次 run 的生命周期。

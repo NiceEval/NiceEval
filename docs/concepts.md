@@ -32,7 +32,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 评测用例 | Eval | 一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 | [Eval](feature/eval/README.md) |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
-| Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 `EvalDefinition.setup` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
+| Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 Eval layer `prepare()` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
 | 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动记录 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
 | 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 从输入数组生成多条 eval,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
@@ -72,24 +72,25 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 接入等级 | Integration tier | Tier 1 只接 `send`,Tier 2 再接 OTel,Tier 3 再暴露实验 flags | [Adapters](feature/adapters/README.md) |
 | 无侵入 | Non-intrusive | Tier 1 / Tier 2 不由 eval spawn 应用进程或另开端口;不写 `黑盒` | [Adapters](feature/adapters/README.md) |
 | 人工介入 | HITL(human-in-the-loop) | agent 等待人工输入;`waiting` + `input.requested` 构成能力证据 | [Sessions 与 HITL](feature/adapters/library/sessions-and-hitl.md) |
-| Agent Ensure | Agent Ensure | Adapter 在 `agent.setup` 执行的「检查、缺失时安装、复检」协议 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
-| Agent 安装组件(`AgentProvisioner`) | AgentProvisioner | 拥有 Agent 安装身份、检查与安装的组件;identity 进指纹 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
-| staged payload | staged payload | 题面网络之外准备、经主 Sandbox 文件 API 送入的一组版本锁定安装文件 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md#staged-payload题面网络之外的锁定安装文件) |
+| Agent Ensure | Agent Ensure | Runner 在 `agent.ensure` 相位执行的 ensure 循环:Adapter 的 probe 未命中时由 Agent 安装层 install,装后复检 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
+| Adapter 的 ensure 声明(`AgentEnsure`) | AgentEnsure | Adapter 对自己 CLI 的目标 identity 与只读 probe;纯适配器在 Sandbox 内只保留这一份声明 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
+| Agent 安装层(`AgentInstaller`) | AgentInstaller | 官方按 ensure identity 配对的安装实现;拥有 staged payload、平台探测与安装模式 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
+| staged payload | staged payload | 题面网络之外准备、经主 Sandbox 文件 API 送入的一组版本锁定安装文件;归 Agent 安装层 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
 
 ### Sandbox
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Sandbox | Sandbox | Agent 与测试实际执行命令、读写文件的隔离运行空间及其操作句柄 | [Sandbox](feature/sandbox/README.md) |
-| Sandbox recipe | SandboxRecipe | Eval 或 Experiment 对同一 Sandbox stack 的作者声明；Agent 的内部贡献保留专用协议 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#sandboxrecipe) |
+| Sandbox layer | SandboxLayer | Eval 或 Experiment 对同一主 Sandbox 的作者声明,分 template-bearing 与 command-only 两种形态 | [Sandbox Layer](feature/sandbox/layers.md) |
 | Provider | Provider | Sandbox 的具体实现选择,由内置或自定义工厂显式构造 | [Sandbox library](feature/sandbox/library.md) |
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
-| Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox Case 的唯一 recipe；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#sandboxtemplate-的边界) |
+| Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox Case 的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory) |
 | sandbox case | sandbox case | 一份环境声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
-| 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#composesandbox) |
-| materializer | materializer | Provider 内部按 SandboxTemplate 构建或启动 provider-specific Sandbox Case 的组件；普通 Experiment 不注册 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#provider-负责构建与启动) |
+| 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox Case](feature/sandbox/case.md#主-sandbox-不变量) |
+| materializer | materializer | Provider 内部按 SandboxTemplate 构建或启动 provider-specific Sandbox Case 的组件；普通 Experiment 不注册 | [Sandbox Case](feature/sandbox/case.md#自定义-case) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 
@@ -97,11 +98,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| template owner | template owner | 为当前 Attempt 提供 active SandboxTemplate 的 Eval 或 Experiment owner | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#active-template-选择) |
-| owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的解析后准备顺序 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#owner-stack) |
-| Sandbox command | SandboxCommand | Eval 与 Experiment recipe 共用的顺序执行单元；对 Sandbox 的效果只通过命令与文件 API 产生 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#command-责任) |
-| Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 SandboxTemplate 与 Sandbox Case | [环境模型 PLAN-9](design/environment-model/PLAN-9/README.md#template-不是单实例产物同义词) |
-| Ensure | Ensure | AgentProvisioner 内部的检查、必要时安装、复检路径；普通 SandboxCommand 只能手写同类 shell 逻辑 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#state-与-agent) |
+| template owner | template owner | 为当前配对提供 template 的 Eval 或 Experiment owner;它的 layer 命令先执行 | [Sandbox Layer](feature/sandbox/layers.md#顺序与依赖方向) |
+| owner stack | owner stack | template owner、另一 owner 与 Agent 在同一主 Sandbox 上的固定准备顺序 | [三方准备时序](feature/sandbox/lifecycle.md) |
+| Sandbox command | SandboxCommand | Eval 与 Experiment layer 共用的顺序执行单元；对 Sandbox 的效果只通过命令与文件 API 产生 | [Sandbox Layer](feature/sandbox/layers.md#command-形状与-identity) |
+| Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 SandboxTemplate 与 Sandbox Case | [环境模型 DECISION](design/environment-model/DECISION.md) |
+| probe | probe | 只读探测命令,零副作用;退出码零为命中,非零是未命中而不是失败 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
+| ensure | ensure | 「probe → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
+| 内置 prepare 命令 | —(`checkout` / `installTool`) | 官方提供、自带 probe、缓存与稳定 identity 的 prepare 命令 | [内置 prepare 命令](feature/sandbox/prepare-commands.md) |
 
 ### Sandbox 复用
 
@@ -110,7 +113,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 预制环境 | Prebuilt environment | 预装稳定依赖的 Docker image、E2B template 或 Vercel snapshot,供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
 | Sandbox 预热 | Sandbox prewarming | 计划确定后提前创建即将使用的全新 Sandbox，不改变每 Attempt 的生命周期 | [Runner](runner.md) |
 | Sandbox 复用 | Sandbox reuse | Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox | [Sandbox reuse](feature/sandbox/reuse.md) |
-| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | Eval 与 Experiment 双方 Window setup 完成后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/reuse.md) |
+| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | Sandbox Case 就绪后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里,再重放两层 prepare | [Sandbox reuse](feature/sandbox/reuse.md) |
 | Sandbox 复用寿命 | Sandbox reuse lifetime | Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期 | [Sandbox reuse](feature/sandbox/reuse.md) |
 | 收尾预留时间 | Cleanup reserve | 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间 | [Sandbox reuse](feature/sandbox/reuse.md) |
 
@@ -137,7 +140,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 运行器 | Runner | 负责发现、有界并发、重试、缓存与结果交付的调度引擎 | [Runner](runner.md) |
-| 生命周期 Hook | Hook | 实验、Sandbox、eval、agent 四层共用的成对 `setup` / `teardown` 回调 | [Runner](runner.md) |
+| 生命周期 Hook | Hook | Experiment 与 Agent 层的成对 `setup` / `teardown` 回调;Sandbox 与 Eval 的准备走 layer 的 `prepare()` | [Runner](runner.md) |
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排边界;可调度多个 Experiment,不是持久化实体 | [Runner](runner.md) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
@@ -244,7 +247,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Verdict CLI](./feature/verdict/cli.md) |
-| 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,三个家:eval 内 `t.sandbox.*`、`SandboxAgent.setup`、外部编排 | [Sandbox library](feature/sandbox/library.md) |
+| 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,按职责分层:layer 的 `prepare()`、`test(t)` 普通代码、`SandboxAgent.setup`、外部编排 | [Sandbox library](feature/sandbox/library.md#环境预置放哪) |
 | CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 | [CLI](cli.md) |
 
 ## 禁用写法

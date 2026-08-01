@@ -6,7 +6,8 @@
 
 [`Agent.kind`](../../concepts.md) 只有 `direct` / `sandbox` 两类。
 本地执行是 `sandbox` 型的一个 Provider，不是第三类 Agent。
-Sandbox Eval 的 `t.sandbox` 面不变，切换 `localSandbox()` / `dockerSandbox()` 不需要改 Eval。
+`localSandbox()` 是 template-bearing factory:宿主目录就是它声明的完整起点,同时选定 Local Provider(配对规则见 [Sandbox Layer](layers.md))。
+Sandbox Eval 的 `t.sandbox` 面不变，切换 `localSandbox()` / `dockerImageSandbox()` 不需要改 Eval。
 核心只对着 `Sandbox` 接口说话，不按 Provider 名分支。
 
 ```typescript
@@ -59,13 +60,13 @@ niceeval 不在你的仓库上跑任何 `git reset` / `git clean`——跑完工
 ## 轻,但仍是显式选择
 
 「轻量」指的是低仪式,不是无声默认。
-[provider 选择](library.md#provider-选择没有默认值没有按名字选)的硬规矩——没配 sandbox 又用了沙箱型 agent 就报错,不猜环境、不静默回退——对本地档同样成立,而且理由更硬:**在宿主机上直接跑 agent 生成的任意 shell 命令是有后果的**(它以你的身份、在你的机器上执行),不能因为「你没配 sandbox」就替你悄悄开一个本地档。
+[Provider 选择](library.md#provider-选择template-带出没有默认值)的硬规矩——沙箱型 agent 的配对没有一方带 template 就报 `sandbox.template-missing`,不猜环境、不静默回退——对本地档同样成立,而且理由更硬:**在宿主机上直接跑 agent 生成的任意 shell 命令是有后果的**(它以你的身份、在你的机器上执行),不能因为「你没配 sandbox」就替你悄悄开一个本地档。
 
 也没有 `--local` 这类运行期覆盖:provider 选择是 experiment / config 的书面配置,不是运行时参数。
-experiment 里写了 `dockerSandbox()`、本地想直跑,改的是那一行配置,不是加一个 flag——「在哪跑」直接改变结果的可信度与可比性,把它做成 CLI 开关,签入的实验就失去了「复现时长什么样」的确定性。
+experiment 里写了 `dockerImageSandbox({ image })`、本地想直跑,改的是那一行配置,不是加一个 flag——「在哪跑」直接改变结果的可信度与可比性,把它做成 CLI 开关,签入的实验就失去了「复现时长什么样」的确定性。
 
-本地档买到的低仪式体现在默认值省到极致:`localSandbox()` 不带参数就用当前 git 仓库根,不需要 image / template / snapshot、不需要 `.setup()` 装 CLI(你机器上的 agent CLI 直接用)、不需要云凭据。
-一行 spec 就从「配 Docker」变成「就地开跑」;但你仍然显式说了一次「在本地跑」。
+本地档买到的低仪式体现在默认值省到极致:`localSandbox()` 不带参数就用当前 git 仓库根,不需要 image / template / snapshot、不需要 prepare 命令装 CLI(你机器上的 agent CLI 直接用)、不需要云凭据。
+一行声明就从「配 Docker」变成「就地开跑」;但你仍然显式说了一次「在本地跑」。
 
 ## 接口映射与不参与的面
 

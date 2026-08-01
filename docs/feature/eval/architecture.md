@@ -23,15 +23,15 @@
 
 ## 文件传输与 send 窗口
 
-- 起始文件在第一次 `send` 前通过普通 Sandbox API 上传；动态或带外部资源收尾的任务素材也可以放 `EvalDefinition.setup`。
+- 起始文件在第一次 `send` 前通过普通 Sandbox API 上传；动态或带外部资源收尾的任务素材也可以放 Eval layer 的 `prepare()`，清理经 `context.onCleanup()` 登记。
 - `fileChanged` / `diff` 只反映 Agent 在 send 窗口内的改动。窗口外的上传与命令属于 eval 归因。
 - 测试文件在对应 `send` 返回后普通上传。作者随后再次 `send` 时，新一轮会看见这些文件，这是顺序语义，不是错误。
 
 ## 生命周期与不变量
 
-- eval 在 attempt 生命周期里占三个主链阶段：`eval.setup` → `eval.run` → `scoring.evaluate`。
+- eval 的准备命令记 `sandbox.prepare`（诊断按 owner 细分），主链随后是 `eval.run` → `scoring.evaluate`。
   `eval.run` 按真实顺序覆盖普通文件传输、全部 turn、命令与断言记录。
-  `EvalDefinition.teardown` 在收尾段执行，只能追加 diagnostic，不改判定。
+  已登记 cleanup 在收尾段逆序执行，失败只追加 diagnostic，不改判定。
   阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。
 - 作者写下的每条断言默认要求可评估：证据缺口使 attempt `errored`，显式 `.optional()` 才允许缺席；判定四态互斥（[Severity 与 Verdict](../verdict/architecture.md)）。
 - eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集按位置生成零填充序号 id（`sql/0000`，插删或重排会改变后续 id），keyed record 生成稳定的业务 key id（`swelancer/15193`）。

@@ -33,11 +33,11 @@ export default defineExperiment({
   evals: (e) =>
     e.id.startsWith("coding/") &&
     e.tags.includes("coding") &&
-    e.environment !== "gpu",
+    !e.tags.includes("gpu"),
 });
 ```
 
-上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。参数是发现并生成 attempt后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。测试集生成 attempt已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
+谓词对发现出的每条 eval 求值:上例选中带 `coding` 标签的 `coding/` 题目,跳过带 `gpu` 标签的题目;tag 的声明侧见 [Eval Library](../eval/library.md)。参数是发现并生成 attempt后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。测试集生成 attempt已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
 
 选择结果随 Run 保存，报告不再重跑表达式：
 
@@ -92,7 +92,7 @@ export default defineExperiment({
 
 ## 运行时坐标不进配置:三个家
 
-隧道 / 反向代理 URL、服务端实例地址这类坐标每次跑都可能换,但换了不改变 attempt 里发生什么。它们不属于配置:`flags` 整袋进指纹、**没有逐键豁免**,把轮换值写进去等于每换一次坐标就作废全部已完成结果。它们的本质是**跑起来才存在**的事实——`setup` 起完隧道才有 URL——所以坐标经工厂闭包流给 agent / sandbox Hook(见[多个实验共享同一套生命周期代码](#多个实验共享同一套生命周期代码)),要留在记录里就用 `ctx.fact()` 上报。
+隧道 / 反向代理 URL、服务端实例地址这类坐标每次跑都可能换,但换了不改变 attempt 里发生什么。它们不属于配置:`flags` 整袋进指纹、**没有逐键豁免**,把轮换值写进去等于每换一次坐标就作废全部已完成结果。它们的本质是**跑起来才存在**的事实——`setup` 起完隧道才有 URL——所以坐标经工厂闭包流给 agent 工厂 / sandbox prepare command(见[多个实验共享同一套生命周期代码](#多个实验共享同一套生命周期代码)),要留在记录里就用 `ctx.fact()` 上报。
 
 判据因此是机械的,不需要判断「它会不会改变行为」:
 
@@ -105,16 +105,16 @@ export default defineExperiment({
 | `ctx.fact()` | 生命周期代码运行时上报 | 结构上进不来 | 工厂闭包 | attempt 级 / Run 级 `facts` | 产出它那一轮的值 |
 
 ```typescript
-// experiments/shared/nowledge.ts —— 工厂闭包里那个每沙箱执行的 Hook
-sandboxSetup(): SandboxHook {
-  return async (sandbox, ctx) => {
-    ctx.fact("nowledge.endpoint", env!.url);   // 这条 attempt 实际连的实例,随它的结果落盘
-    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env!.url}\n` });
+// experiments/shared/nowledge.ts —— 工厂闭包里那个逐 Attempt 执行的 prepare command
+writeEnv(): SandboxCommand {
+  return async (sandbox, context) => {
+    context.facts.set("nowledge.endpoint", env!.url);   // 这条 attempt 实际连的实例,随它的结果落盘
+    await sandbox.writeBytes(".nowledge/env", new TextEncoder().encode(`NMEM_URL=${env!.url}\n`));
   };
 }
 ```
 
-- **报在哪个作用域,决定它跟不跟着结果走。** attempt 作用域(sandbox Hook、agent setup / teardown、adapter send)上报的进 `AttemptRecord.facts`,随携带条目**原样携带**——携带来的那条读到的仍是产出它那一轮的地址,报告按它分组不会张冠李戴。experiment 作用域(`setup` / `teardown`)上报的进 `RunMeta.facts`,记的是整场观测。要按它分组、要它跟着单条结果走,就报在 attempt 作用域。
+- **报在哪个作用域,决定它跟不跟着结果走。** attempt 作用域(sandbox prepare command、agent setup / teardown、adapter send)上报的进 `AttemptRecord.facts`,随携带条目**原样携带**——携带来的那条读到的仍是产出它那一轮的地址,报告按它分组不会张冠李戴。experiment 作用域(`setup` / `teardown`)上报的进 `RunMeta.facts`,记的是整场观测。要按它分组、要它跟着单条结果走,就报在 attempt 作用域。
 - **报告按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴**分组,与 `flag()` / `label()` 并列。
 - **同一个事实是条件还是观测,由谁写下决定。** 实验声明「我要 0.10.39」→ `flags`,换版本作废旧结果正是想要的;跑起来问服务端「你现在是哪个版本」→ `ctx.fact()`,那是审计证据。
 - **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../record/architecture.md#facts运行事实))。
@@ -122,35 +122,32 @@ sandboxSetup(): SandboxHook {
 
 文件名与归类自此脱钩:`codex-gpt-5.4--mempal.ts` 的后缀只是给人看的命名习惯,报告不从 experiment id 字符串里猜任何语义,归类只认 `labels` 声明。
 
-## 不同 eval 起自不同预制环境
+## 不同 Eval 自带预制起点
 
-同一 experiment 可以覆盖一批运行时年代不同的真实任务：一条需要 Python 3.9 + astropy 4.2，其余用默认 Node 环境。稳定的大依赖应进 image/template/snapshot（构建工作流见 [Sandbox · 预制环境](../sandbox/library/prebuilt-environments.md)），但具体产物名属于 provider 配置，不能写死在 eval。两边用一个 provider-neutral 的 environment profile 对接：eval 声明需求，sandbox spec 的 `environments` 表把需求翻译成产物：
+同一 experiment 可以覆盖一批运行时年代不同的真实任务:一条需要 Python 3.9 + astropy 4.2,其余起自默认 Node 起点。
+稳定的大依赖进 image / template / snapshot(构建工作流见 [Sandbox · 预制环境](../sandbox/library/prebuilt-environments.md)),起点声明写在需要它的那条 Eval 上:
 
 ```typescript
-// evals/memory/terminal-swe-bench-astropy-1.eval.ts —— 任务声明自己需要什么
+// evals/shared/starters.ts —— 共享起点抽成普通 TypeScript helper,多条 eval 复用
+import { e2bSandbox } from "niceeval/sandbox";
+
+export const py39Astropy = () =>
+  e2bSandbox({ template: "niceeval-py39-astropy42" });
+
+// evals/memory/terminal-swe-bench-astropy-1.eval.ts —— 任务自带起点
 export default defineEval({
-  environment: "python-3.9-astropy-4.2",
+  sandbox: py39Astropy(),
   async test(t) { /* 上传任务、驱动 agent、跑隐藏测试 */ },
 });
 
-// experiments/shared.ts —— 一个 provider 一张翻译表，整组实验复用
-export const e2b = e2bSandbox({
-  template: "niceeval-agents",                 // 未声明 environment 的 eval 从它起步
-  environments: {
-    "python-3.9-astropy-4.2": { template: "niceeval-py39-astropy42" },
-  },
-});
-
-// experiments/compare/codex.ts —— experiment 仍是单一配置，覆盖全部 eval
-export default defineExperiment({ agent: codexAgent(), sandbox: e2b });
+// experiments/compare/codex.ts —— experiment 保持 command-only,覆盖全部 eval
+export default defineExperiment({ agent: codexAgent() });
 ```
 
-- `environment` 是非空、不透明的稳定 id，不是一组由 NiceEval 解释的包版本约束。
-- `environments` 是纯数据：键为 profile id，值为该 provider「预制产物槽位」的覆盖参数（docker 的 `image`、e2b 的 `template`、vercel 的 `snapshotId`），字段类型由各内置工厂声明；`defineSandbox` 自定义 spec 没有这张表。详见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。
-- NiceEval 在创建任何沙箱、计算 carry 或选择全局并发前，对每条**选中** eval 完成查表；选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不消耗 provider / Agent 预算。未选中 eval 的 profile 不影响本次运行。
-- 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDefinition.setup` 继续只负责分类账锚点之后的任务 fixture。Direct Agent 不创建 Sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
-
-翻译表放在 spec 上而不是 experiment 上，是因为它的真实维度是 **profile × provider**，与具体实验无关：表随 spec 被多个实验共享（模块常量或 `Config.sandbox` 回退），新增环境只改一处，experiment 保持「一行 diff」的形态，一个实验覆盖全集、对比横截面完整。
+- 每个实际配对恰好一方带 template:Eval 带起点时,experiment 侧保持 command-only。配对规则与错误反馈见 [Sandbox Layer](../sandbox/layers.md#每个配对的-link-约束)。
+- 同一 Experiment 可以混跑不同起点、不同 Provider 的题目。逐 eval 的起点身份进该 eval 的 fingerprint,换起点只作废那一条(见[缓存与携带](cache.md#指纹两个哈希嵌套))。
+- 共享起点的单位是普通 TypeScript helper,没有 profile registry 或按名字查表。写法与产物构建见 [Sandbox · 按 Eval 选预制产物](../sandbox/library/prebuilt-environments.md#按-eval-选预制产物)。
+- Direct Agent 没有运行中的 Sandbox;任一侧为它声明 SandboxLayer 报 `sandbox.unexpected-for-direct-agent`。
 
 ## 实验级共享服务:setup 与 teardown
 
@@ -161,7 +158,7 @@ export default defineExperiment({ agent: codexAgent(), sandbox: e2b });
 import { defineExperiment } from "niceeval";
 import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
 
-// setup 产出的运行时坐标放模块闭包:teardown 和同文件的 agent / sandbox Hook
+// setup 产出的运行时坐标放模块闭包:teardown 和同文件的 agent 工厂 / prepare command
 // (后两者每 attempt 执行、晚于 setup)直接读它;runner 不做值的中介,这些值也不进 Run。
 let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
 
@@ -183,35 +180,30 @@ export default defineExperiment({
 
 `teardown` 里资源释放是必达底线,观测类动作(probe、指标上报)是 best-effort:给观测自己的短超时、失败不阻断,且在 `ctx.signal.aborted` 时直接跳过——中断路径上,一次可能挂起的观测不该挡在「拆容器、退租约」前面;无论观测成败,释放必须执行(`try/finally`)。
 
-`setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的环境预置(装二进制、预热)挂 `sandbox` spec 的链式 Hook,任务 Fixture 写 `EvalDefinition.setup` / `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 agent / sandbox Hook 里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
+`setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的准备(装二进制、预热)写 `sandbox` layer 的 `prepare()` 命令,题目材料写 Eval layer 的 `prepare()` 或 `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 prepare command 里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
 
-### 与沙箱 Hook 在同一个实验文件里协作
+### 与 prepare command 在同一个实验文件里协作
 
-实验级 Hook 起宿主机侧服务,沙箱 Hook 每沙箱把坐标写进沙箱、收尾回存状态——两层在同一个文件里靠模块闭包衔接,时序由 runner 保证:实验级 `setup` 早于本实验任何沙箱 Hook,沙箱 Hook 读到的闭包值一定已赋好:
+实验级 Hook 起宿主机侧服务,prepare command 逐 Attempt 把坐标写进沙箱——两层在同一个文件里靠模块闭包衔接,时序由 runner 保证:实验级 `setup` 早于本实验任何 prepare command,command 读到的闭包值一定已赋好:
 
 ```typescript
 // experiments/compare/claude--nowledge.ts
 import { defineExperiment } from "niceeval";
 import { e2bSandbox } from "niceeval/sandbox";
 import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
-import { loadMemoryState, saveMemoryState } from "../shared/memory-state.ts";
 
 let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
 
 export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
   evals: ["memory/"],
-  maxConcurrency: 1,          // [载入…回存] 是临界区,声明式串行(见 Sandbox · 沙箱生命周期 Hook)
   sandbox: e2bSandbox({ template: "niceeval-agents" })
-    .setup(async (sandbox, ctx) => {
-      // 每沙箱一次,晚于实验级 setup:把宿主机侧坐标写进沙箱
-      await sandbox.writeFiles({
-        ".nowledge/config.json": JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
-      });
-      await loadMemoryState(sandbox, ctx.experimentId);
-    })
-    .teardown(async (sandbox, ctx) => {
-      await saveMemoryState(sandbox, ctx.experimentId);   // 每沙箱回存跨 attempt 状态
+    .prepare(async (sandbox) => {
+      // 每条 Attempt 一次,晚于实验级 setup:把宿主机侧坐标写进沙箱
+      await sandbox.writeBytes(
+        ".nowledge/config.json",
+        new TextEncoder().encode(JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey })),
+      );
     }),
   async setup(ctx) {
     tunnel = await nowledgeTunnel({ signal: ctx.signal }); // 整场一次,宿主机侧
@@ -222,13 +214,16 @@ export default defineExperiment({
 });
 ```
 
-一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;每沙箱的写入与回存在 `sandbox` 链式 Hook 里,经闭包消费实验级产物;agent 怎么连自己、eval 的任务 Fixture 各在 agent 定义与 `EvalDefinition` 里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
+直接传入的 callback 是 opaque command,该 Attempt `carryEligible = false`、不跨 Run 携带(词表见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback))。
+跨 Attempt 状态的载入与回存不写进 prepare command,归 State load / save 相位(见[三方准备时序](../sandbox/lifecycle.md#准备state-与-baseline));载入到回存的临界区靠 `maxConcurrency: 1` 声明式串行。
+
+一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;逐 Attempt 的沙箱写入在 `sandbox` layer 的 prepare 命令里,经闭包消费实验级产物;agent 怎么连自己、eval 的题目准备各在 agent 定义与 Eval 文件里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
 
 ### 多个实验共享同一套生命周期代码
 
 对比组里常常是几个实验对着同一类基础设施——同一个记忆产品,claude 与 codex 各一格对照,启停机制完全一样。先分清共享的单位是**代码**还是**实例**,写法不同;两种都是普通用户代码,niceeval 不为共享设框架原语。
 
-**共享代码、每实验一份实例(默认)**——启停写成一个**工厂**,返回共享同一闭包的整套件:实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进沙箱的 sandbox Hook。每个实验文件各自实例化,同一套代码、各自的实例与坐标。两条纪律:
+**共享代码、每实验一份实例(默认)**——启停写成一个**工厂**,返回共享同一闭包的整套件:实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进沙箱的 prepare command。每个实验文件各自实例化,同一套代码、各自的实例与坐标。两条纪律:
 
 - **工厂在 import 期只创建闭包,不做 I/O、不读配置**——实验文件在 `niceeval exp` 的发现阶段就会被 import,import 抛错会连累同批无关实验;所有硬失败留给 `setup`。
 - **运行时坐标活在工厂闭包里,不放模块级单例**——同批并行的两个实验各持一份,互不覆写;坐标在 `setup` 之后才存在,不需要「模块态 → 进程 env → 落盘文件」的回退链。
@@ -236,7 +231,7 @@ export default defineExperiment({
 ```typescript
 // experiments/shared/nowledge.ts —— 启停一份代码;实例、坐标每实验一份
 import type { ExperimentHookContext } from "niceeval";
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 
 export function nowledgeLifecycle() {
   let instance: string | undefined;
@@ -266,12 +261,13 @@ export function nowledgeLifecycle() {
       }
     },
 
-    /** 每沙箱一次:把闭包坐标写进沙箱 */
-    sandboxSetup(): SandboxHook {
+    /** 逐 Attempt 执行:把闭包坐标写进沙箱 */
+    writeEnv(): SandboxCommand {
       return async (sandbox) => {
-        await sandbox.writeFiles({
-          ".nowledge/env": `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
-        });
+        await sandbox.writeBytes(
+          ".nowledge/env",
+          new TextEncoder().encode(`NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`),
+        );
       };
     },
   };
@@ -285,7 +281,7 @@ export function nowledgeLifecycle() {
 const nowledge = nowledgeLifecycle();
 export default defineExperiment({
   agent: codexAgent(nowledgeCodexConfig(nowledge.endpoint)),
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(nowledge.sandboxSetup()),
+  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(nowledge.writeEnv()),
   setup: nowledge.setup,
   teardown: nowledge.teardown,
   maxConcurrency: 1,          // 中心化记忆库,attempt 串行累积
@@ -295,7 +291,7 @@ export default defineExperiment({
 const nowledge = nowledgeLifecycle();
 export default defineExperiment({
   agent: claudeCodeAgent(nowledgeClaudeConfig(nowledge.endpoint)),
-  sandbox: e2bSandbox({ template: CLAUDE_TEMPLATE }).setup(nowledge.sandboxSetup()),
+  sandbox: e2bSandbox({ template: CLAUDE_TEMPLATE }).prepare(nowledge.writeEnv()),
   setup: nowledge.setup,
   teardown: nowledge.teardown,
   maxConcurrency: 1,
@@ -333,7 +329,8 @@ export const sharedNowledge = {
 
 ## 生命周期代码怎样向这次运行反馈
 
-真正执行工作的实验级 setup、sandbox provider、sandbox hook、eval 和 Agent Adapter 会从 runner 注入的上下文获得同一套**作用域反馈 API**:
+真正执行工作的实验级 setup、sandbox provider、sandbox prepare command、eval 和 Agent Adapter 会从 runner 注入的上下文获得同一套**作用域反馈通道**:progress 与 diagnostic。
+实验级 Hook、eval 与 Agent 的上下文暴露下面这对方法;prepare command 经 `SandboxCommandContext` 的 `progress` / `diagnostic` 走同一条管线,方法形状见 [Sandbox Layer](../sandbox/layers.md#command-形状与-identity):
 
 ```typescript
 interface ScopedFeedback {
@@ -355,7 +352,7 @@ interface ScopedFeedback {
 
 - `progress(...)` 表达**此刻正在做什么**,例如下载 3/8、恢复缓存或等待 agent 完成一轮。它是短命状态:人读文本的 live 面板更新 active 行的次要文本(attempt 级回调更新该 attempt 的行,实验级 Hook 更新该实验的运行级行,见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)),非 TTY 文本与 `--json` 不逐条打印,也不进入最终结果。
 - `diagnostic(...)` 表达**运行结束后仍应保留的问题**,例如退化到备用缓存、provider 返回异常响应或 transcript 不完整。它进入两种输出形态的永久事件流;`dedupeKey` 用于并发 attempt 产生同一问题时去重。
-- 两个方法都不接受 `phase`、`scope`、颜色、输出流或 ANSI。runner 已经知道当前回调属于 `sandbox.setup`、`eval.run` 还是 `agent.run`,并据此决定 Human active 行显示的正式阶段。
+- 两个方法都不接受 `phase`、`scope`、颜色、输出流或 ANSI。runner 已经知道当前回调属于 `sandbox.prepare`、`eval.run` 还是 `agent.run`,并据此决定 Human active 行显示的正式阶段。
 - 两个方法都不改变执行结论。要让 setup/attempt 进入 `errored`,抛出异常;要让 eval 判定失败,使用 `t.check` / `t.require` / gate 断言。`diagnostic({ level: "error" })` 只表示一条需要永久保留的错误诊断。
 
 各入口拿到的 scope 固定,调用方不能冒充其它生命周期;scope 的取值就是 [Record Format 的 `LifecyclePhase`](../record/architecture.md#resultjson) 闭集成员,与落盘 `phases` / `error.phase` 同一套名字:
@@ -363,19 +360,17 @@ interface ScopedFeedback {
 | 代码入口 | 反馈入口 | runner 绑定的 phase | 典型内容 |
 |---|---|---|---|
 | `ExperimentDefinition.setup` / `.teardown` | 各自 Hook 的 `ctx.progress/diagnostic` | `experiment.setup` / `experiment.teardown` | 起/拆每实验一份的宿主机共享服务 |
-| 自定义 `SandboxSpec.create(options)` | `options.feedback` | `sandbox.create` | 分配实例、拉镜像、恢复 snapshot |
-| `sandbox.setup/teardown` | hook `ctx.progress/diagnostic` | `sandbox.setup` / `sandbox.teardown` | 安装环境依赖、预热、回存状态 |
-| `EvalDefinition.setup` | setup `ctx.progress/diagnostic` | `eval.setup` | 准备这条 eval 的 fixture |
-| `EvalDefinition.teardown` | teardown `ctx.progress/diagnostic` | `eval.teardown` | 回收这条 eval 的 fixture |
+| 自定义 provider(`defineSandbox`)的 `create(options)` | `options.feedback` | `sandbox.create` | 分配实例、拉镜像、恢复 snapshot |
+| 两层作者 layer 的 prepare command | `context.progress/diagnostic` | `sandbox.prepare`(诊断按 owner 细分 `sandbox.prepare.eval` / `sandbox.prepare.experiment`) | 检查与安装环境依赖、预热、写实验配置 |
 | `EvalDefinition.test` | `t.progress/diagnostic` | `eval.run` | eval 自己执行的长步骤 |
-| `Agent.setup/send/teardown` | `ctx.progress/diagnostic` | 当前 `agent.*` 阶段 | 安装 CLI、turn/tool 进度、协议诊断 |
+| `Agent.setup/send/teardown` | `ctx.progress/diagnostic` | 当前 `agent.*` 阶段 | 连 agent、turn/tool 进度、协议诊断 |
 
-同一个方法在不同回调里拿到的是不同的绑定对象,不能保存后跨回调复用。下面三条消息分别属于 sandbox setup、eval run 和 agent run,runner 会把它们投影到正确阶段:
+同一个方法在不同回调里拿到的是不同的绑定对象,不能保存后跨回调复用。下面三条消息分别属于 sandbox prepare、eval run 和 agent run,runner 会把它们投影到正确阶段:
 
 ```typescript
-const sandbox = e2bSandbox({ template: "niceeval-agents" }).setup(async (sandbox, ctx) => {
-  ctx.progress({ message: "restoring memory cache" });
-  await restoreCache(sandbox, ctx.experimentId);
+const experimentLayer = e2bSandbox({ template: "niceeval-agents" }).prepare(async (sandbox, context) => {
+  context.progress.report("restoring memory cache");
+  await restoreCache(sandbox, context.owner.id);
 });
 
 export const evalDef = defineEval({
@@ -414,7 +409,7 @@ diagnostic 是有界摘要,不是原始 SDK 日志转储。相同 `dedupeKey` �
 
 实验级 Hook(`ExperimentDefinition.setup` / `teardown`)不属于任何单个 attempt,它的 `diagnostic(...)` 只进运行级永久事件流(人读文本与 `--json` 各追加一条),不落 attempt 的 `result.json`;`setup` 抛错则以每条 attempt 的结构化 `error`(`phase: "experiment.setup"`)落盘,失败照样可回顾。Hook 的起止本身由 runner 直接发布为运行级反馈(Human 的运行级 active 行、`--json` 的起止事件,见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)),不写 `progress` 的 setup 在终端上同样可见。
 
-attempt 在 teardown 链与 sandbox stop 都结束后才封口并原子写 `result.json`,因此收尾 diagnostic 也能随 attempt 保存。teardown diagnostic 默认不反改已经得到的 verdict;如果某个收尾动作是结果正确性的必要条件,它应抛出致命错误并由 runner 明确把 attempt 记为 `errored`,而不是只打一条 diagnostic。
+attempt 在收尾链(cleanup 与 Agent teardown)与 sandbox stop 都结束后才封口并原子写 `result.json`,因此收尾 diagnostic 也能随 attempt 保存。收尾 diagnostic 默认不反改已经得到的 verdict;如果某个收尾动作是结果正确性的必要条件,它应抛出致命错误并由 runner 明确把 attempt 记为 `errored`,而不是只打一条 diagnostic。
 
 ## 路径只表达身份与选择
 
@@ -481,7 +476,7 @@ export default defineExperiment({
 
 ## 与 config 的关系
 
-- **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`、`sandbox`。`Config.sandbox` 必须是工厂函数产出的显式 `SandboxSpec`（可携带 `environments` 表）；experiment 的 `sandbox` 可以覆盖它。两处都没配置时，沙箱型 Agent 直接报错，不探测环境或选择内置 Provider 默认值。
+- **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`。config 不含 `sandbox` 字段;起点声明只在 Eval 与 Experiment 的 `sandbox` 字段,每个实际配对恰好一方带 template(见 [Sandbox Layer](../sandbox/layers.md))。配对双方都没有 template 时报 `sandbox.template-missing`,不探测环境或选择内置 Provider 默认值。
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
 配置解析以 [Architecture · 配置解析链](architecture.md#配置解析链一次求值处处同源) 为单源。
@@ -494,5 +489,5 @@ agent、model、flags 属于 experiment，不由 CLI 覆盖。
 - [README](README.md) —— `defineExperiment` 的核心契约。
 - [Architecture](architecture.md) —— 对照 agent-eval 砍了什么。
 - [CLI](cli.md) —— `niceeval exp` 命令。
-- [Sandbox](../sandbox/library.md#向运行反馈进度与诊断) —— provider 与环境 hook 的反馈示例。
+- [Sandbox](../sandbox/library.md#向运行反馈进度与诊断) —— provider 与 prepare command 的反馈示例。
 - [Adapters](../adapters/library.md#向运行反馈进度与诊断) —— Agent setup/send/teardown 的反馈示例。

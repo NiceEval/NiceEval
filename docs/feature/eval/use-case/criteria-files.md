@@ -60,7 +60,7 @@ materializer 记录 Agent 启动前实际可见的 build/mount closure。
 ## Solution 与参考实现
 
 Eval 从未读取的 solution 不进入 transfer manifest，也不需要 `privateFiles` 声明。
-它是否被 Dockerfile、Compose bind mount 或 image 暴露，是 Environment package 的隔离责任。
+它是否被 Dockerfile、Compose bind mount 或 image 暴露，是 template 声明一侧的隔离责任。
 
 ## 归因
 
@@ -70,6 +70,6 @@ agent diff 只折叠 `send` 窗口内的 Sandbox 变化。
 ## 边界
 
 - Agent 一开始就应看到的文件，在第一次 `send` 前普通上传。
-- checkout、凭据派生或外部临时资源可以放 `EvalDefinition.setup`。
+- checkout、凭据派生或外部临时资源可以放 Eval layer 的 `prepare()`，清理经 `context.onCleanup()` 登记。
 - 内存生成的内容使用 Buffer 上传；其身份由生成它的源码或已登记数据输入承担。
-- 巨型模型、系统包和运行时归 Environment，不在每条 Eval 中上传。
+- 巨型模型、系统包和运行时归 template，不在每条 Eval 中上传。

@@ -98,14 +98,16 @@ fatal 错误类只覆盖空间轴的两个非默认档;默认档(`scope: "attemp
    它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。
    `thrown` 形态没有事件可查,由前四道的判据独自把关。
 
-**生命周期阶段失败**(sandbox Hook、`EvalDefinition.setup`、`test(t)` 体内、per-attempt teardown),三道:
+**生命周期阶段失败**(sandbox prepare command、`test(t)` 体内、per-attempt 收尾),三道:
 
 1. **抛出点携带的分类**(`failureClassOf`)。
 2. **实验分类器**。
 3. **默认 `{ retryable: false }`**。
    这些位置没有重试执行体,时间轴即使给出也无人消费(消费点的位置性见 [README](README.md#消费点是位置性的)),链上不挂产时间轴的回退正则。
 
-**provisioning 失败**:sandbox 内部的两维分类(性质 + 后果)自治、不外泄;向外浮出的确定性配置死因附带 `FailureClass`,scope 按配置解析域定档(凭据缺失 → `"experiment"`;模板不存在按 spec 是否带 `environments` 表落 `"experiment"` 或 `"eval"`),由止损闸消费——映射与判据单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
+**provisioning 失败**:sandbox 内部的两维分类(性质 + 后果)自治、不外泄。
+向外浮出的确定性配置死因附带 `FailureClass`,scope 按声明 owner 定档:凭据缺失 → `"experiment"`;template 不存在由携带 template 的 owner(eval / experiment)决定波及范围。
+scope 由止损闸消费,映射与判据单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
 内部分类与回退正则的形状同见该篇;两边正则表各自实现,sandbox 的错误模块不外泄到 context 层,重复是模块边界的价格,刻意付。
 
 **分类器纪律**(对 adapter 与实验分类器一致):快、纯、不抛错——分类器抛错按 `undefined` 回落处理、自身错误被吞掉,分类是旁路,不得用新错误掩盖原始失败。

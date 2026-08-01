@@ -42,7 +42,7 @@ type StreamEvent =
    ** 不变量 8 的内部注入仍然是一条 `role:"user"` 的 `message`（只是没有 `loc`）；但有些被测系统的注入根本不构成一条消息——例如 Claude Code 的 SessionStart / UserPromptSubmit hook 在下一轮开始前把额外文本前置进模型上下文，这段文本既不是 assistant 说的也不是 user 说的，硬套进 `message.role` 会污染按 role 或消息数做的断言。
    `context.injected` 只承载**带实际文本内容**的注入；被测系统内部机制里"某个动作执行完毕"这类不携带上下文文本的信号（例如一次注入确认），不构成事件——它对行为断言没有信息量，和「系统元数据行不进事件流」是同一条原则的延伸，不是新例外。
    `source` 是可选的原始来源标记（如 Claude Code 自己的 hook 名 `SessionStart`），adapter 按各自协议原样透传供下钻，不强行归一到一组封闭枚举，不同被测系统的命名不必对齐。
-   **这与 niceeval 自己的[生命周期 Hook](../../../runner.md#环境预置不进运行器但按顺序调它)（`SandboxHook` 的 `setup`/`teardown`）是完全不同的两层机制**：后者是 niceeval 运行器编排沙箱环境的生命周期 Hook，前者是被测 CLI 自己的内部生命周期设施，`context.injected` 只归一后者。
+   **这与 niceeval 自己的 [prepare command](../../sandbox/layers.md#command-形状与-identity)是完全不同的两层机制。**后者是作者声明、运行器编排的沙箱准备命令；前者是被测 CLI 自己的内部生命周期设施，`context.injected` 只归一后者。
 
 ## InputRequest
 

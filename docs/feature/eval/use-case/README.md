@@ -23,7 +23,7 @@
 - [测试集从输入数组生成多条 eval：一套逻辑跑一批 case](dataset-fanout.md)
 - [本地测试文件：普通上传与动态身份](criteria-files.md)
 - [沙箱 coding 任务：从放文件到评 diff](sandbox-coding.md)
-- [Fixture 与反馈：setup / teardown 与长步骤报告](fixtures-lifecycle.md)
+- [Fixture 与反馈：prepare 与长步骤报告](fixtures-lifecycle.md)
 
 ## 通过制还是计分制
 
@@ -62,4 +62,4 @@
 | `loadText` | [本地测试文件](criteria-files.md) |
 | `t.sandbox.writeFiles` / `uploadDirectory` / `downloadDirectory` / `runCommand` / `runShell` | [沙箱 coding 任务](sandbox-coding.md) |
 | `t.sandbox.diff` / `file` / `fileChanged` / `fileDeleted` / `notInDiff` | [沙箱 coding 任务](sandbox-coding.md) |
-| `setup` / `teardown` / `t.progress` / `t.diagnostic` / `t.skip` | [Fixture 与反馈](fixtures-lifecycle.md) |
+| `sandbox` + `.prepare()` / `t.progress` / `t.diagnostic` / `t.skip` | [Fixture 与反馈](fixtures-lifecycle.md) |

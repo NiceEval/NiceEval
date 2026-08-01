@@ -36,7 +36,7 @@ export default defineEval({
 | `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
-| `setup` / `teardown` | 动态任务准备与收尾 | [README](README.md#defineeval-的形状) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
+| `sandbox` + `.prepare(command)` | 题目起点与逐 Attempt 准备命令 | [Sandbox Layer](../sandbox/layers.md) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 | 普通 `t.sandbox.upload*()` | 按源码顺序传入起始文件或测试文件 | [Sandbox 文件操作](../sandbox/library/operations.md) | [本地测试文件](use-case/criteria-files.md) |
 | `t.progress` / `t.diagnostic` / `t.skip` | 运行反馈与明确跳过 | [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 
@@ -50,10 +50,11 @@ export default defineEval({
 
 `loadText` / `loadYaml` / `loadJson` 继续服务发现期需要读进定义值的数据，不承担文件传输登记。
 
-## tags 与 environment：让 experiment 选择
+## tags 与 sandbox：让 experiment 选择
 
 `tags` 是分类标签，供 CLI `--tag` 与 experiment 谓词过滤，未声明时是空数组。
-`environment` 是 provider-neutral 的环境 profile id，experiment 只读取这个 id，具体 image / template 由 sandbox spec 的 `environments` 映射（完整语义见 [README](README.md#defineeval-的形状)）。
+`sandbox` 让 Eval 自带起点：题目环境归题目时，Eval 用 `dockerComposeSandbox()` 这类 template-bearing factory 声明完整起点。
+选中它的 Experiment 保持 command-only，按 id 前缀或 tags 选题，不感知题目用哪个 Provider；配对规则见 [Sandbox Layer](../sandbox/layers.md#每个配对的-link-约束)。
 eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」；对着哪个 agent 跑、跑几次，由 `experiments/` 里的 `defineExperiment` 决定（见 [Experiments](../experiments/README.md)）。
 
 ## 测试集从输入数组生成多条 eval
