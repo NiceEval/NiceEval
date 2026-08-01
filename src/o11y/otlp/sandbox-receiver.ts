@@ -100,7 +100,7 @@ async function startCollector(sandbox: Sandbox): Promise<StartedCollector> {
     // 用户不可写时,e2b 一类 provider 只抛一个 500 原始串,读到它的人无从下手:这里翻译成
     // 「点名路径 + 这是镜像环境缺陷 + 怎么修」,原始错误留在 cause 里做证据,不进消息。
     try {
-      await sandbox.writeFiles({ [collectorPath]: collectorScript(spansPath, portPath) });
+      await sandbox.writeText(collectorPath, collectorScript(spansPath, portPath));
     } catch (error) {
       if (isWriteDeniedError(error)) {
         throw new Error(t("o11y.sandboxTempNotWritable", { path: collectorPath }), { cause: error });
@@ -211,7 +211,7 @@ async function makeInSandboxReceiver(sandbox: Sandbox): Promise<TraceReceiver> {
         )
         .catch(() => {});
       try {
-        const raw = await sandbox.downloadFile(spansPath);
+        const raw = await sandbox.readBytes(spansPath);
         cached = parseSpansFile(raw);
       } catch {
         // 没有 spans 文件(agent 没发任何 trace)→ 保留空数组
@@ -228,9 +228,9 @@ async function makeInSandboxReceiver(sandbox: Sandbox): Promise<TraceReceiver> {
 }
 
 // spans 文件每行一个 { ct: string; b: string(base64) }
-function parseSpansFile(raw: Buffer): TraceSpan[] {
+function parseSpansFile(raw: Uint8Array): TraceSpan[] {
   const spans: TraceSpan[] = [];
-  const text = raw.toString("utf8");
+  const text = Buffer.from(raw).toString("utf8");
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;

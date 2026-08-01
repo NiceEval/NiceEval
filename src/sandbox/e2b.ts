@@ -6,7 +6,15 @@
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import type {
+  Sandbox,
+  CommandResult,
+  CommandOptions,
+  SandboxReuseCapability,
+  SuccessfulCommandResult,
+} from "../types.ts";
 import {
   classifyProvisionErrorFallback,
   isRetryableProvisionError,
@@ -14,11 +22,12 @@ import {
 } from "./errors.ts";
 import { classifySandboxIoError } from "./errors.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
-import { collectLocalFiles } from "./local-files.ts";
+import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
-import { resolveSandboxPath } from "./paths.ts";
+import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
+import { successfulCommandResult } from "./operations.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -214,7 +223,7 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     }
   }
 
-  async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
+  async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     const line = [cmd, ...args.map(shellQuote)].join(" ");
     return this.runShell(line, opts);
   }
@@ -224,14 +233,36 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     try {
-      const res = await this.sbx.commands.run(script, {
+      const commandOptions = {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
         envs: opts.env,
         user: opts.root ? "root" : undefined,
         ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
-      });
+      };
+      const res = opts.signal === undefined
+        ? await this.sbx.commands.run(script, commandOptions)
+        : await (async () => {
+            // foreground run 的 signal 只会取消 transport；用可 kill 的 handle，确保取消后命令树
+            // 已经终止才让 Promise settle。
+            const handle = await this.sbx.commands.run(script, { ...commandOptions, background: true });
+            const abort = async (): Promise<never> => {
+              await handle.kill();
+              throw opts.signal!.reason ?? new DOMException("sandbox command aborted", "AbortError");
+            };
+            if (opts.signal!.aborted) return abort();
+            let onAbort: (() => void) | undefined;
+            const aborted = new Promise<never>((_resolve, reject) => {
+              onAbort = () => void abort().catch(reject);
+              opts.signal!.addEventListener("abort", onAbort, { once: true });
+            });
+            try {
+              return await Promise.race([handle.wait(), aborted]);
+            } finally {
+              if (onAbort) opts.signal!.removeEventListener("abort", onAbort);
+            }
+          })();
       return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };
     } catch (e) {
       // e2b 在退出码非 0 时【抛】CommandExitError;但 Sandbox 契约要求【返回】带 exitCode 的结果
@@ -255,14 +286,25 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     return resolveSandboxPath(this.workdir, path);
   }
 
-  async readFile(path: string): Promise<string> {
+  async runCommandOrThrow(
+    cmd: string,
+    args: readonly string[] = [],
+    opts: CommandOptions = {},
+  ): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+  }
+
+  async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runShell(script, opts));
+  }
+
+  async readText(path: string): Promise<string> {
     return this.sbx.files.read(this.abs(path), { format: "text" });
   }
 
-  async fileExists(path: string): Promise<boolean> {
+  async pathExists(path: string): Promise<boolean> {
     try {
-      await this.sbx.files.read(this.abs(path), { format: "bytes" });
-      return true;
+      return await this.sbx.files.exists(this.abs(path));
     } catch (error) {
       // 不把瞬时网络/服务错误伪装成“不存在”，交给统一 IO 层重试。
       if (classifySandboxIoError(error) !== "unknown") throw error;
@@ -272,39 +314,64 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
   // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
+  private async writeCollectedFiles(files: readonly CollectedLocalFile[], targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
-    const entries = Object.entries(files).map(([p, data]) => ({ path: resolveSandboxPath(base, p), data }));
+    const entries = files.map(({ path, content }) => ({
+      path: resolveSandboxPath(base, path),
+      data: toArrayBuffer(content),
+    }));
     if (entries.length === 0) return;
     await this.sbx.files.write(entries);
   }
 
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
-    if (files.length === 0) return;
-    const base = resolveSandboxPath(this.workdir, targetDir);
-    await this.sbx.files.write(
-      files.map((f) => ({
-        path: resolveSandboxPath(base, f.path),
-        data: Buffer.isBuffer(f.content) ? toArrayBuffer(f.content) : f.content,
-      })),
-    );
+  async writeText(path: string, content: string): Promise<void> {
+    await this.sbx.files.write(this.abs(path), content);
   }
 
-  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    await this.uploadFiles(await collectLocalFiles(localDir, opts.ignore), targetDir);
+  async readBytes(path: string): Promise<Uint8Array> {
+    return this.sbx.files.read(this.abs(path), { format: "bytes" });
+  }
+
+  async writeBytes(path: string, content: Uint8Array): Promise<void> {
+    await this.sbx.files.write(this.abs(path), toArrayBuffer(content));
+  }
+
+  async uploadFile(source: string | URL, targetPath: string): Promise<void> {
+    await this.writeBytes(targetPath, await readFile(resolveLocalPath(undefined, source)));
+  }
+
+  async uploadDirectory(
+    sourceDir: string | URL,
+    targetDir?: string,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    await this.writeCollectedFiles(
+      await collectLocalFiles(resolveLocalPath(undefined, sourceDir), opts.ignore),
+      targetDir,
+    );
   }
 
   /**
    * 递归下载沙箱内一个目录到本地磁盘,与 uploadDirectory 对称:两阶段模板(与 vercel provider
    * 共用)——find 列路径 + 逐文件 files.read(bytes) 独立读取,写回本地磁盘。
    */
-  async downloadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    const remoteDir = resolveSandboxPath(this.workdir, targetDir);
+  async downloadFile(sourcePath: string, target: string | URL): Promise<void> {
+    const destination = resolveLocalPath(undefined, target);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, await this.readBytes(sourcePath));
+  }
+
+  async downloadDirectory(
+    sourceDir: string,
+    targetDir: string | URL,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    const remoteDir = resolveSandboxPath(this.workdir, sourceDir);
     await downloadDirectoryByList({
-      localDir,
+      localDir: resolveLocalPath(undefined, targetDir),
       ignore: opts.ignore ?? [],
       runShell: (script) => this.runShell(script, { cwd: remoteDir }),
-      readOne: (relPath) => this.downloadFile(`${remoteDir}/${relPath}`),
+      readOne: (relPath) => this.readBytes(`${remoteDir}/${relPath}`),
     });
   }
 
@@ -330,19 +397,11 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     throw new Error("this e2b SDK version has no pause capability; sandbox left running");
   }
 
-  async downloadFile(path: string): Promise<Buffer> {
-    const bytes = await this.sbx.files.read(this.abs(path), { format: "bytes" });
-    return Buffer.from(bytes);
-  }
-
-  async uploadFile(path: string, content: Buffer): Promise<void> {
-    await this.sbx.files.write(this.abs(path), toArrayBuffer(content));
-  }
 }
 
-/** Buffer → ArrayBuffer(e2b files.write 接受 string | ArrayBuffer | Blob | ReadableStream)。 */
-function toArrayBuffer(buf: Buffer): ArrayBuffer {
-  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+/** Uint8Array → ArrayBuffer(e2b files.write 接受 string | ArrayBuffer | Blob | ReadableStream)。 */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 /** e2b SDK 的命令超时:SDK 不导出可 instanceof 的类型,按错误名与文案判定(只用于归属标注)。 */

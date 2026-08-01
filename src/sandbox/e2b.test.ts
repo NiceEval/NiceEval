@@ -56,7 +56,7 @@ describe("E2BSandbox.downloadDirectory", () => {
       },
     });
 
-    await sandbox.downloadDirectory(localDir, "out", { ignore: ["node_modules"] });
+    await sandbox.downloadDirectory("out", localDir, { ignore: ["node_modules"] });
 
     expect(capturedCwd).toBe(`${sandbox.workdir}/out`);
     expect(capturedScript).toContain("node_modules");
@@ -64,7 +64,7 @@ describe("E2BSandbox.downloadDirectory", () => {
     expect(await readFile(join(localDir, "nested/b.bin"))).toEqual(Buffer.from([0, 1, 2, 255]));
   });
 
-  it("falls back to workdir when targetDir is omitted", async () => {
+  it("resolves a relative source directory from workdir", async () => {
     let capturedCwd = "";
     const sandbox = makeSandbox({
       commands: {
@@ -76,7 +76,7 @@ describe("E2BSandbox.downloadDirectory", () => {
       files: { read: async () => new Uint8Array() },
     });
 
-    await sandbox.downloadDirectory(await makeLocalDir());
+    await sandbox.downloadDirectory(".", await makeLocalDir());
 
     expect(capturedCwd).toBe(sandbox.workdir);
   });

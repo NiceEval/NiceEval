@@ -75,7 +75,7 @@ export function describeTransferObject(target: Pick<TransferTarget, "path" | "lo
 }
 
 /** 内容字节数合计(文本按 UTF-8 字节算,不按字符数)。 */
-export function totalBytes(contents: readonly (string | Buffer)[]): number {
+export function totalBytes(contents: readonly (string | Uint8Array)[]): number {
   return contents.reduce((sum, c) => sum + (typeof c === "string" ? Buffer.byteLength(c, "utf8") : c.byteLength), 0);
 }
 

@@ -4,7 +4,7 @@
 import type { InputRequest, O11ySummary, StreamEvent, ToolCall, Usage } from "../o11y/types.ts";
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { AssertionHandle, BaseAssertionHandle, ScoreAssertionHandle, ValueAssertion } from "../scoring/types.ts";
-import type { CommandOptions, CommandResult, SandboxFile } from "../sandbox/types.ts";
+import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
 
 /** `t.send()` / `session.send()` 的入参:字符串,或带附件的结构化消息。 */
 export type SendInput = string | { text: string; files?: readonly import("../agents/types.ts").InputFile[] };
@@ -159,31 +159,8 @@ export interface RespondAnswer {
 }
 
 /** 评估用例作者可见的受限 Sandbox 视图:能执行命令 / 文件 IO / 读最终 diff,但不能 stop。 */
-export interface SandboxHandle<H extends BaseAssertionHandle = AssertionHandle> {
-  /** Sandbox 内的工作目录绝对路径。 */
-  readonly workdir: string;
-  /** 在 Sandbox 里执行一条命令(argv 形式,不经 shell)。装系统依赖等需要 root 时传 `{ root: true }`。 */
-  runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
-  /** 在 Sandbox 里执行一段 shell 脚本(经 shell 解释,支持管道 / 重定向)。 */
-  runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
-  /** 读 Sandbox 内某文件此刻的文本内容(实时读,不是 diff 快照)。 */
-  readFile(path: string): Promise<string>;
-  /** Sandbox 内某路径此刻是否存在。 */
-  fileExists(path: string): Promise<boolean>;
-  /** 把一组内容写进 Sandbox(路径相对 targetDir,默认 workdir)。 */
-  writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
-  /** 把一批内存中的文件上传进 Sandbox。 */
-  uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-  /** 把本地目录整体上传进 Sandbox;`opts.ignore` 排除指定路径。 */
-  uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
-  /** 从 Sandbox 下载某文件内容。 */
-  downloadFile(path: string): Promise<Buffer>;
-  /** 把一段内容上传成 Sandbox 里的单个文件。 */
-  uploadFile(path: string, content: Buffer): Promise<void>;
-  /** 把 Sandbox 内一个目录整体递归下载到本地磁盘,与 `uploadDirectory` 对称;`opts.ignore` 按 basename 排除指定路径。 */
-  downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
-  /** Sandbox provider 分配的实例 id,用于排查 / 关联日志。 */
-  readonly sandboxId: string;
+export interface EvalSandbox<H extends BaseAssertionHandle = AssertionHandle>
+  extends SandboxOperations, SandboxTransferOperations {
   /** 相对 git 基线的最终 diff 视图(test() 跑完、finalize 前才落定)。 */
   readonly diff: DiffView;
   /** 取 Sandbox 内某文件的最终内容,占位延迟到 finalize 才真正读取;只能配合 t.check 使用。 */
@@ -376,8 +353,8 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): H;
 
   // 工作区 / 沙箱
-  /** 受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 SandboxHandle)。 */
-  readonly sandbox: SandboxHandle<H>;
+  /** 受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 EvalSandbox)。 */
+  readonly sandbox: EvalSandbox<H>;
 
   // 行为摘要
   /**

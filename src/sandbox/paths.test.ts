@@ -17,33 +17,38 @@ function fakeSandbox(): Sandbox & { calls: string[] } {
       calls.push(`shell-cwd:${opts?.cwd ?? ""}`);
       return { stdout: "", stderr: "", exitCode: 0 };
     },
-    readFile: async (path) => {
+    runCommandOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+    runShellOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+    readText: async (path) => {
       calls.push(`read:${path}`);
       return "";
     },
-    fileExists: async (path) => {
+    readBytes: async (path) => {
+      calls.push(`read-bytes:${path}`);
+      return new Uint8Array();
+    },
+    writeText: async (path) => {
+      calls.push(`write-text:${path}`);
+    },
+    writeBytes: async (path) => {
+      calls.push(`write-bytes:${path}`);
+    },
+    pathExists: async (path) => {
       calls.push(`exists:${path}`);
       return true;
     },
-    writeFiles: async (_files, targetDir) => {
-      calls.push(`write:${targetDir}`);
-    },
-    uploadFiles: async (_files, targetDir) => {
-      calls.push(`upload:${targetDir}`);
-    },
-    uploadDirectory: async (_localDir, targetDir) => {
-      calls.push(`upload-dir:${targetDir}`);
+    uploadDirectory: async (sourceDir, targetDir) => {
+      calls.push(`upload-dir:${sourceDir.toString()}:${targetDir}`);
     },
     stop: async () => {},
-    downloadFile: async (path) => {
-      calls.push(`download:${path}`);
-      return Buffer.from("");
+    downloadFile: async (path, target) => {
+      calls.push(`download:${path}:${target.toString()}`);
     },
-    uploadFile: async (path) => {
-      calls.push(`upload-file:${path}`);
+    uploadFile: async (source, path) => {
+      calls.push(`upload-file:${source.toString()}:${path}`);
     },
-    downloadDirectory: async (_localDir, targetDir) => {
-      calls.push(`download-dir:${targetDir}`);
+    downloadDirectory: async (sourceDir, targetDir) => {
+      calls.push(`download-dir:${sourceDir}:${targetDir.toString()}`);
     },
     calls,
   };
@@ -66,19 +71,19 @@ describe("sandbox path helpers", () => {
     const normalized = normalizeSandboxPaths(sandbox);
 
     await normalized.runCommand("npm", ["test"], { cwd: "packages/api" });
-    await normalized.readFile("src/app.ts");
-    await normalized.uploadFiles([], "fixtures");
+    await normalized.readText("src/app.ts");
+    await normalized.writeBytes("fixtures/a.bin", new Uint8Array([1]));
     await normalized.uploadDirectory("/host/app");
-    await normalized.downloadFile("dist/out.txt");
-    await normalized.downloadDirectory("/host/out", "dist");
+    await normalized.downloadFile("dist/out.txt", "/host/out.txt");
+    await normalized.downloadDirectory("dist", "/host/out");
 
     expect(sandbox.calls).toEqual([
       "cwd:/work/packages/api",
       "read:/work/src/app.ts",
-      "upload:/work/fixtures",
-      "upload-dir:/work",
-      "download:/work/dist/out.txt",
-      "download-dir:/work/dist",
+      "write-bytes:/work/fixtures/a.bin",
+      "upload-dir:/host/app:/work",
+      "download:/work/dist/out.txt:/host/out.txt",
+      "download-dir:/work/dist:/host/out",
     ]);
   });
 

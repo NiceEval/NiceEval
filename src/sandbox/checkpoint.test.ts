@@ -10,14 +10,17 @@ function sandbox(overrides: Partial<Sandbox> = {}): Sandbox {
     otlpHost: null,
     runCommand: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
     runShell: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
-    readFile: async () => "",
-    fileExists: async () => false,
-    writeFiles: async () => {},
-    uploadFiles: async () => {},
+    runCommandOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+    runShellOrThrow: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+    readText: async () => "",
+    writeText: async () => {},
+    readBytes: async () => Buffer.from("archive"),
+    writeBytes: async () => {},
+    pathExists: async () => false,
     uploadDirectory: async () => {},
     stop: async () => {},
-    downloadFile: async () => Buffer.from("archive"),
     uploadFile: async () => {},
+    downloadFile: async () => {},
     downloadDirectory: async () => {},
     ...overrides,
   };
@@ -30,7 +33,7 @@ describe("sandbox checkpoints", () => {
       runShell: async (script) => script.startsWith("tar ")
         ? { stdout: "", stderr: "permission denied", exitCode: 2 }
         : { stdout: "", stderr: "", exitCode: 0 },
-      downloadFile: async () => { downloaded = true; return Buffer.from("bad"); },
+      readBytes: async () => { downloaded = true; return Buffer.from("bad"); },
     });
     await expect(createCheckpoint(sb, ["/cache"])).rejects.toThrow("checkpoint archive failed");
     expect(downloaded).toBe(false);

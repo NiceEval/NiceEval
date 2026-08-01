@@ -2,7 +2,7 @@
 // 这里只描述作者面与供后续 linker/runner 消费的纯数据，不负责调度或生命周期执行。
 
 import type { DiagnosticInput, JsonValue } from "../shared/types.ts";
-import type { CommandResult } from "./types.ts";
+import type { SandboxOperations } from "./types.ts";
 import { isRegisteredSandboxContent, type RegisteredSandboxContent } from "./content.ts";
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -15,44 +15,10 @@ export interface SandboxCommandOptions {
   readonly stdin?: string;
 }
 
-/** Layer callback 可用的完整命令选项；stable helper 只接受其中可序列化的子集。 */
-export interface SandboxCommandRunOptions extends SandboxCommandOptions {
-  readonly stream?: boolean;
-  readonly signal?: AbortSignal;
-  readonly onStdout?: (chunk: string) => void | Promise<void>;
-  readonly onStderr?: (chunk: string) => void | Promise<void>;
-}
-
-export interface SuccessfulCommandResult extends CommandResult {
-  readonly exitCode: 0;
-}
-
 /**
  * prepare callback 取得的窄 Sandbox 视图。它没有 stop、宿主传输或 Provider-native SDK。
- * 当前文件只固定声明面；实际 wrapper 与 provider 适配由 operations 迁移接入。
  */
-export interface SandboxCommandTarget {
-  readonly workdir: string;
-  runCommand(
-    command: string,
-    args?: readonly string[],
-    options?: SandboxCommandRunOptions,
-  ): Promise<CommandResult>;
-  runShell(script: string, options?: SandboxCommandRunOptions): Promise<CommandResult>;
-  runCommandOrThrow(
-    command: string,
-    args?: readonly string[],
-    options?: SandboxCommandRunOptions,
-  ): Promise<SuccessfulCommandResult>;
-  runShellOrThrow(
-    script: string,
-    options?: SandboxCommandRunOptions,
-  ): Promise<SuccessfulCommandResult>;
-  readText(path: string): Promise<string>;
-  writeText(path: string, content: string): Promise<void>;
-  readBytes(path: string): Promise<Uint8Array>;
-  writeBytes(path: string, content: Uint8Array): Promise<void>;
-  pathExists(path: string): Promise<boolean>;
+export interface SandboxCommandTarget extends SandboxOperations {
   copyPath(sourcePath: string, targetPath: string): Promise<void>;
   putContent(content: RegisteredSandboxContent, targetPath: string): Promise<void>;
 }

@@ -61,7 +61,7 @@ export type {
   DiffData,
   DiffView,
   ScriptResult,
-  SandboxHandle,
+  EvalSandbox,
   CommandResult,
   InputRequest,
   InputRequestFilter,

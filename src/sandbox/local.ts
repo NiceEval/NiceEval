@@ -16,11 +16,12 @@ import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { CommandOptions, CommandResult, Sandbox, SandboxFile } from "../types.ts";
-import { resolveSandboxPath } from "./paths.ts";
+import type { CommandOptions, CommandResult, Sandbox, SuccessfulCommandResult } from "../types.ts";
+import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
-import { collectLocalFiles } from "./local-files.ts";
+import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
+import { successfulCommandResult } from "./operations.ts";
 import { registerLedgerPaths, unregisterLedgerPaths } from "./ledger-paths.ts";
 import { t } from "../i18n/index.ts";
 
@@ -79,6 +80,7 @@ interface SpawnOpts {
   explicitTimeout?: boolean;
   onStdout?: CommandOptions["onStdout"];
   onStderr?: CommandOptions["onStderr"];
+  signal?: AbortSignal;
 }
 
 /** argv 直接 spawn(不经 shell)与「bash -c script」共用的执行核心。 */
@@ -94,7 +96,7 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
     let callbackChain = Promise.resolve();
     let settled = false;
 
-    const timer = opts.timeout === undefined ? undefined : setTimeout(() => {
+    const killTree = (): void => {
       if (posix && child.pid !== undefined) {
         try {
           process.kill(-child.pid, "SIGKILL");
@@ -104,7 +106,19 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
       } else {
         child.kill("SIGKILL");
       }
+    };
+    let termination: "timeout" | "abort" | undefined;
+
+    const timer = opts.timeout === undefined ? undefined : setTimeout(() => {
+      termination = "timeout";
+      killTree();
     }, opts.timeout);
+    const onAbort = (): void => {
+      termination = "abort";
+      killTree();
+    };
+    opts.signal?.addEventListener("abort", onAbort, { once: true });
+    if (opts.signal?.aborted) onAbort();
 
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf-8");
@@ -120,15 +134,21 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onAbort);
       reject(err);
     });
     child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onAbort);
       callbackChain
         .then(() => {
-          if (signal === "SIGKILL" && code === null && opts.timeout !== undefined) {
+          if (termination === "abort") {
+            reject(opts.signal?.reason ?? new DOMException("sandbox command aborted", "AbortError"));
+            return;
+          }
+          if (termination === "timeout" && signal === "SIGKILL" && code === null && opts.timeout !== undefined) {
             reject(new SandboxCommandTimeoutError(
               t("local.commandTimeout", { timeoutMs: opts.timeout }),
               opts.timeout,
@@ -183,16 +203,17 @@ export class LocalSandbox implements Sandbox {
     this.deadlineAt = deadlineAt;
   }
 
-  async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
+  async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     if (opts.root) throw new Error(t("local.rootUnsupported"));
     const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
-    return runSpawned(cmd, args, {
+    return runSpawned(cmd, [...args], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: { ...process.env, ...opts.env },
       ...(limit.timeoutMs !== undefined ? { timeout: limit.timeoutMs } : {}),
       explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
+      signal: opts.signal,
     });
   }
 
@@ -206,14 +227,27 @@ export class LocalSandbox implements Sandbox {
       explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
+      signal: opts.signal,
     });
   }
 
-  async readFile(path: string): Promise<string> {
+  async runCommandOrThrow(
+    cmd: string,
+    args: readonly string[] = [],
+    opts: CommandOptions = {},
+  ): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+  }
+
+  async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runShell(script, opts));
+  }
+
+  async readText(path: string): Promise<string> {
     return fsReadFile(resolveSandboxPath(this.workdir, path), "utf-8");
   }
 
-  async fileExists(path: string): Promise<boolean> {
+  async pathExists(path: string): Promise<boolean> {
     try {
       await access(resolveSandboxPath(this.workdir, path));
       return true;
@@ -222,36 +256,46 @@ export class LocalSandbox implements Sandbox {
     }
   }
 
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
-    const sandboxFiles: SandboxFile[] = Object.entries(files).map(([path, content]) => ({
-      path,
-      content: Buffer.from(content, "utf-8"),
-    }));
-    await this.uploadFiles(sandboxFiles, targetDir);
+  async writeText(path: string, content: string): Promise<void> {
+    await this.writeBytes(path, Buffer.from(content, "utf-8"));
   }
 
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
+  private async writeCollectedFiles(files: readonly CollectedLocalFile[], targetDir?: string): Promise<void> {
     const target = resolveSandboxPath(this.workdir, targetDir);
     for (const file of files) {
       const dest = resolveSandboxPath(target, file.path);
       await mkdir(dirname(dest), { recursive: true });
-      await fsWriteFile(dest, typeof file.content === "string" ? Buffer.from(file.content, "utf-8") : file.content);
+      await fsWriteFile(dest, file.content);
     }
   }
 
-  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    const files = await collectLocalFiles(localDir, opts.ignore);
-    await this.uploadFiles(files, targetDir);
-  }
-
-  async downloadFile(path: string): Promise<Buffer> {
+  async readBytes(path: string): Promise<Uint8Array> {
     return fsReadFile(resolveSandboxPath(this.workdir, path));
   }
 
-  async uploadFile(path: string, content: Buffer): Promise<void> {
+  async writeBytes(path: string, content: Uint8Array): Promise<void> {
     const dest = resolveSandboxPath(this.workdir, path);
     await mkdir(dirname(dest), { recursive: true });
     await fsWriteFile(dest, content);
+  }
+
+  async uploadFile(source: string | URL, targetPath: string): Promise<void> {
+    await this.writeBytes(targetPath, await fsReadFile(resolveLocalPath(undefined, source)));
+  }
+
+  async uploadDirectory(
+    sourceDir: string | URL,
+    targetDir?: string,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    const files = await collectLocalFiles(resolveLocalPath(undefined, sourceDir), opts.ignore);
+    await this.writeCollectedFiles(files, targetDir);
+  }
+
+  async downloadFile(sourcePath: string, target: string | URL): Promise<void> {
+    const destination = resolveLocalPath(undefined, target);
+    await mkdir(dirname(destination), { recursive: true });
+    await fsWriteFile(destination, await this.readBytes(sourcePath));
   }
 
   /**
@@ -259,13 +303,17 @@ export class LocalSandbox implements Sandbox {
    * 复用是为了让 ignore 的 basename 剪除语义与落盘行为在三个 provider 间保持逐字节一致,
    * 不是本地档做不了更直接的 fs 递归拷贝——用同一份实现,行为差异这个物种直接不存在。
    */
-  async downloadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    const remoteDir = resolveSandboxPath(this.workdir, targetDir);
+  async downloadDirectory(
+    sourceDir: string,
+    targetDir: string | URL,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    const remoteDir = resolveSandboxPath(this.workdir, sourceDir);
     await downloadDirectoryByList({
-      localDir,
+      localDir: resolveLocalPath(undefined, targetDir),
       ignore: opts.ignore ?? [],
       runShell: (script) => this.runShell(script, { cwd: remoteDir }),
-      readOne: (relPath) => this.downloadFile(`${remoteDir}/${relPath}`),
+      readOne: (relPath) => this.readBytes(`${remoteDir}/${relPath}`),
     });
   }
 

@@ -28,7 +28,7 @@ import type {
   JudgeConfig,
   RespondAnswer,
   Sandbox,
-  SandboxHandle,
+  EvalSandbox,
   ScoringContext,
   ScriptResult,
   SessionHandle,
@@ -169,7 +169,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       coverage: manager.coverage,
       readFile: async (path) => {
         try {
-          return await deps.sandbox.readFile(path);
+          return await deps.sandbox.readText(path);
         } catch {
           return undefined;
         }
@@ -305,7 +305,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         throw new Error(
           `t.sandbox.diff.get(${JSON.stringify(path)}): agent diff content is unavailable — ${describeElided(elided)}. ` +
             `Content is elided from the diff export for binary files and for text over 1 MiB per file. ` +
-            `Assert on the change itself (t.sandbox.fileChanged / fileDeleted), or read the final file with t.sandbox.readFile.`,
+            `Assert on the change itself (t.sandbox.fileChanged / fileDeleted), or read the final file with t.sandbox.readText.`,
         );
       }
       return state.late.diff.get(path);
@@ -318,7 +318,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         throw new Error(
           `t.sandbox.diff.matches(${re}): no match found, but ${elided.length} changed path${elided.length === 1 ? "" : "s"} ` +
             `${elided.length === 1 ? "has" : "have"} no inline content (${elided.slice(0, 3).join(", ")}${elided.length > 3 ? ", …" : ""}), ` +
-            `so "not present" cannot be established. Narrow the regex to paths, or read the final files with t.sandbox.readFile.`,
+            `so "not present" cannot be established. Narrow the regex to paths, or read the final files with t.sandbox.readText.`,
         );
       }
       return false;
@@ -333,12 +333,9 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     noFailedShellCommands: () => collector.record(Scoped.noFailedShellCommands()),
   };
 
-  const sandboxHandle: SandboxHandle = {
+  const sandboxHandle: EvalSandbox = {
     get workdir() {
       return deps.sandbox.workdir;
-    },
-    get sandboxId() {
-      return deps.sandbox.sandboxId;
     },
     get diff() {
       return diffView;
@@ -346,17 +343,24 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     // 沙箱动作都先结算待决 stopOnFailure：上一条没过时后面这些活儿一件都不该干。
     runCommand: guardAsync((cmd, args, opts) => deps.sandbox.runCommand(cmd, args, opts)),
     runShell: guardAsync((script, opts) => deps.sandbox.runShell(script, opts)),
-    readFile: guardAsync((path) => deps.sandbox.readFile(path)),
-    fileExists: guardAsync((path) => deps.sandbox.fileExists(path)),
-    writeFiles: guardAsync((files, targetDir) => deps.sandbox.writeFiles(files, targetDir)),
-    uploadFiles: guardAsync((files, targetDir) => deps.sandbox.uploadFiles(files, targetDir)),
-    uploadDirectory: guardAsync((localDir, targetDir, opts) =>
-      deps.sandbox.uploadDirectory(resolveLocalPath(deps.evalBaseDir, localDir), targetDir, opts),
+    runCommandOrThrow: guardAsync((cmd, args, opts) => deps.sandbox.runCommandOrThrow(cmd, args, opts)),
+    runShellOrThrow: guardAsync((script, opts) => deps.sandbox.runShellOrThrow(script, opts)),
+    readText: guardAsync((path) => deps.sandbox.readText(path)),
+    writeText: guardAsync((path, content) => deps.sandbox.writeText(path, content)),
+    readBytes: guardAsync((path) => deps.sandbox.readBytes(path)),
+    writeBytes: guardAsync((path, content) => deps.sandbox.writeBytes(path, content)),
+    pathExists: guardAsync((path) => deps.sandbox.pathExists(path)),
+    uploadFile: guardAsync((source, targetPath) =>
+      deps.sandbox.uploadFile(resolveLocalPath(deps.evalBaseDir, source), targetPath),
     ),
-    downloadFile: guardAsync((path) => deps.sandbox.downloadFile(path)),
-    uploadFile: guardAsync((path, content) => deps.sandbox.uploadFile(path, content)),
-    downloadDirectory: guardAsync((localDir, targetDir, opts) =>
-      deps.sandbox.downloadDirectory(resolveLocalPath(deps.evalBaseDir, localDir), targetDir, opts),
+    uploadDirectory: guardAsync((sourceDir, targetDir, opts) =>
+      deps.sandbox.uploadDirectory(resolveLocalPath(deps.evalBaseDir, sourceDir), targetDir, opts),
+    ),
+    downloadFile: guardAsync((sourcePath, target) =>
+      deps.sandbox.downloadFile(sourcePath, resolveLocalPath(deps.evalBaseDir, target)),
+    ),
+    downloadDirectory: guardAsync((sourceDir, targetDir, opts) =>
+      deps.sandbox.downloadDirectory(sourceDir, resolveLocalPath(deps.evalBaseDir, targetDir), opts),
     ),
     ...sandboxAssertions,
   };

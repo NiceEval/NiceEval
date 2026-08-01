@@ -1,11 +1,11 @@
 // 沙箱文件系统快照工具——只依赖 Sandbox 接口的最小公约数:
 //   runShell    — 在沙箱里执行 shell 脚本
-//   downloadFile — 从沙箱读任意路径的原始字节 → Buffer
-//   uploadFile   — 向沙箱写任意路径的原始字节 ← Buffer
+//   readBytes  — 从沙箱读任意路径的原始字节
+//   writeBytes — 向沙箱写任意路径的原始字节
 //
 // 原理:
-//   capture: tar czf /tmp/__fe_cp_<uuid>.tar.gz <paths>  →  downloadFile → Buffer
-//   restore: uploadFile → /tmp/__fe_rs_<uuid>.tar.gz  →  tar xzf -C /
+//   capture: tar czf /tmp/__fe_cp_<uuid>.tar.gz <paths>  →  readBytes
+//   restore: writeBytes → /tmp/__fe_rs_<uuid>.tar.gz  →  tar xzf -C /
 //
 // tar / binary file I/O 在所有 Linux sandbox(Docker、Vercel、e2b、Modal…)里都支持,
 // 这段代码对任意 provider 的 Sandbox 实现无改动即可使用。
@@ -34,7 +34,7 @@ export async function createCheckpoint(sb: Sandbox, paths: string[]): Promise<Bu
         detail: (packed.stderr || packed.stdout).trim() || "no output",
       }));
     }
-    const buf = await sb.downloadFile(tmp);
+    const buf = Buffer.from(await sb.readBytes(tmp));
     if (!buf || buf.length === 0) throw new Error(t("checkpoint.emptyTar", { paths: paths.join(", ") }));
     return buf;
   } finally {
@@ -45,7 +45,7 @@ export async function createCheckpoint(sb: Sandbox, paths: string[]): Promise<Bu
 /** 把 createCheckpoint 返回的 Buffer 还原到沙箱根目录。 */
 export async function restoreCheckpoint(sb: Sandbox, data: Buffer): Promise<void> {
   const tmp = tmpTarPath("rs");
-  await sb.uploadFile(tmp, data);
+  await sb.writeBytes(tmp, data);
   try {
     // -C / 解压到根目录并覆盖同路径文件。不能把 rm 拼在同一条脚本末尾，否则 rm 的
     // exit 0 会掩盖 tar 解压失败。

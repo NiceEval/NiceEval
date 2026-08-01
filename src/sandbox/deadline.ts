@@ -23,11 +23,11 @@ export interface CommandLimit {
  * `deadlineAt` 在场时按**剩余量**算——同一台沙箱上的第二条命令不该重新拿到一整份上限。
  */
 export function commandLimit(
-  opts: Pick<CommandOptions, "timeout"> | undefined,
+  opts: Pick<CommandOptions, "timeoutMs"> | undefined,
   base: { commandTimeoutMs?: number; deadlineAt?: number },
   now = Date.now(),
 ): CommandLimit {
-  if (opts?.timeout !== undefined) return { timeoutMs: opts.timeout, explicit: true };
+  if (opts?.timeoutMs !== undefined) return { timeoutMs: opts.timeoutMs, explicit: true };
   if (base.deadlineAt !== undefined) return { timeoutMs: Math.max(1, base.deadlineAt - now), explicit: false };
   if (base.commandTimeoutMs !== undefined) return { timeoutMs: base.commandTimeoutMs, explicit: false };
   return { explicit: false };

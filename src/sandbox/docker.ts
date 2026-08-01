@@ -3,10 +3,16 @@
 //(runShell/runCommand 的 opts 一律是选项对象,不再用位置参数)。
 
 import { basename, dirname, join } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
-import { collectLocalFiles } from "./local-files.ts";
+import type {
+  Sandbox,
+  CommandResult,
+  CommandOptions,
+  SandboxReuseCapability,
+  SuccessfulCommandResult,
+} from "../types.ts";
+import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
 import {
   createExecDemuxer,
@@ -15,8 +21,9 @@ import {
   packFilesToTar,
   readableToBuffer,
 } from "./docker-stream.ts";
-import { resolveSandboxPath } from "./paths.ts";
+import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
+import { successfulCommandResult } from "./operations.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
@@ -391,7 +398,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
    */
   async runCommand(
     cmd: string,
-    args: string[] = [],
+    args: readonly string[] = [],
     opts: CommandOptions = {},
   ): Promise<CommandResult> {
     // stream:把本命令输出也接到容器主日志(PID1 tail 它)→ Docker Logs 看到原始输出。
@@ -403,7 +410,8 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         cwd: opts.cwd,
         stream: true,
         root: opts.root,
-        ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
+        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        signal: opts.signal,
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       });
@@ -423,13 +431,14 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       ...(isRoot ? { npm_config_unsafe_perm: "true" } : {}),
     };
 
-    return this.execCommand(cmd, args, {
+    return this.execCommand(cmd, [...args], {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: isRoot ? ROOT_USER : this.defaultUser,
-      ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
+      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
+      signal: opts.signal,
     });
   }
 
@@ -460,9 +469,10 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       cwd?: string;
       user?: string;
       /** 这条命令的显式上限;省略 = 按 attempt deadline 的剩余量。 */
-      timeout?: number;
+      timeoutMs?: number;
       onStdout?: (chunk: string) => void | Promise<void>;
       onStderr?: (chunk: string) => void | Promise<void>;
+      signal?: AbortSignal;
     } = {},
   ): Promise<CommandResult> {
     if (!this.container) {
@@ -505,19 +515,32 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
       // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
       const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
+      let terminating = false;
+      const retireAndReject = (error: unknown): void => {
+        if (terminating) return;
+        terminating = true;
+        stream.destroy();
+        void this.stop().then(() => reject(error), reject);
+      };
       const timeoutId = limit.timeoutMs === undefined
         ? undefined
         : setTimeout(() => {
-            stream.destroy();
-            reject(new SandboxCommandTimeoutError(
+            retireAndReject(new SandboxCommandTimeoutError(
               t("docker.commandTimeout", { timeoutMs: limit.timeoutMs! }),
               limit.timeoutMs!,
               limit.explicit,
             ));
           }, limit.timeoutMs);
+      const onAbort = (): void => retireAndReject(
+        opts.signal?.reason ?? new DOMException("sandbox command aborted", "AbortError"),
+      );
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+      if (opts.signal?.aborted) onAbort();
 
       stream.on("end", async () => {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
+        opts.signal?.removeEventListener("abort", onAbort);
+        if (terminating) return;
         const stdout = demuxer.stdout();
         const stderr = demuxer.stderr();
 
@@ -536,6 +559,8 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
 
       stream.on("error", (error: Error) => {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
+        opts.signal?.removeEventListener("abort", onAbort);
+        if (terminating) return;
         reject(error);
       });
     });
@@ -550,7 +575,8 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         env: opts.env,
         cwd: opts.cwd,
         root: opts.root,
-        ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
+        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        signal: opts.signal,
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       });
@@ -565,7 +591,19 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   }
 
   /** 读容器里的文件。 */
-  async readFile(path: string): Promise<string> {
+  async runCommandOrThrow(
+    cmd: string,
+    args: readonly string[] = [],
+    opts: CommandOptions = {},
+  ): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+  }
+
+  async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runShell(script, opts));
+  }
+
+  async readText(path: string): Promise<string> {
     const absPath = resolveSandboxPath(this.workdir, path);
     const result = await this.runCommand("cat", [absPath]);
     if (result.exitCode !== 0) {
@@ -575,23 +613,17 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   }
 
   /** 判断容器里某文件是否存在。 */
-  async fileExists(path: string): Promise<boolean> {
-    const result = await this.runCommand("test", ["-f", resolveSandboxPath(this.workdir, path)]);
+  async pathExists(path: string): Promise<boolean> {
+    const result = await this.runCommand("test", ["-e", resolveSandboxPath(this.workdir, path)]);
     return result.exitCode === 0;
   }
 
-  /** 批量写文件(路径 -> 文本内容)。 */
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
-    const sandboxFiles: SandboxFile[] = Object.entries(files).map(([path, content]) => ({
-      path,
-      content: Buffer.from(content, "utf-8"),
-    }));
-
-    await this.uploadFiles(sandboxFiles, targetDir);
+  async writeText(path: string, content: string): Promise<void> {
+    await this.writeBytes(path, Buffer.from(content, "utf-8"));
   }
 
   /** 用 tar 归档把文件灌进容器。 */
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
+  private async writeCollectedFiles(files: readonly CollectedLocalFile[], targetDir?: string): Promise<void> {
     if (!this.container) {
       throw new Error(t("docker.containerNotInitialized"));
     }
@@ -604,7 +636,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     const pack = packFilesToTar(
       files.map((file) => ({
         name: file.path,
-        content: typeof file.content === "string" ? Buffer.from(file.content, "utf-8") : file.content,
+        content: Buffer.from(file.content),
       })),
     );
 
@@ -619,9 +651,17 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     await this.chownToSandboxUser(targetPath);
   }
 
-  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    const files = await collectLocalFiles(localDir, opts.ignore);
-    await this.uploadFiles(files, targetDir);
+  async uploadFile(source: string | URL, targetPath: string): Promise<void> {
+    await this.writeBytes(targetPath, await readFile(resolveLocalPath(undefined, source)));
+  }
+
+  async uploadDirectory(
+    sourceDir: string | URL,
+    targetDir?: string,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    const files = await collectLocalFiles(resolveLocalPath(undefined, sourceDir), opts.ignore);
+    await this.writeCollectedFiles(files, targetDir);
   }
 
   /**
@@ -631,9 +671,14 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
    * 还原成相对 localDir 的路径。ignore 命中的路径(任意深度、按 basename)整支排除——
    * tar 已经整体取回,这里是纯本地过滤,不省网络传输,但语义上等价于「命中即剪除」。
    */
-  async downloadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
+  async downloadDirectory(
+    sourceDir: string,
+    targetDir: string | URL,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
-    const absTargetDir = resolveSandboxPath(this.workdir, targetDir);
+    const localDir = resolveLocalPath(undefined, targetDir);
+    const absTargetDir = resolveSandboxPath(this.workdir, sourceDir);
     const stream = await (this.container as Docker.Container).getArchive({ path: absTargetDir });
     const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
     const files = await extractFilesFromTar(tarBuf);
@@ -654,7 +699,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
    * 从容器任意路径读文件 → Buffer。
    * 用 Docker getArchive API(原生二进制,无 base64 开销);tar 只有一个 entry,直接解包取内容。
    */
-  async downloadFile(path: string): Promise<Buffer> {
+  async readBytes(path: string): Promise<Uint8Array> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const stream = await (this.container as Docker.Container).getArchive({ path: resolveSandboxPath(this.workdir, path) });
     const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
@@ -671,12 +716,19 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
    * `Operation not permitted`(与 uploadFiles() 对整个目标目录 chown 是同一个属主问题,
    * 这里只需精确 chown 这一个文件;真机复现见 memory/docker-uploadfile-tmp-mv-eperm.md)。
    */
-  async uploadFile(destPath: string, content: Buffer): Promise<void> {
+  async writeBytes(destPath: string, content: Uint8Array): Promise<void> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const absPath = resolveSandboxPath(this.workdir, destPath);
-    const pack = packFilesToTar([{ name: basename(absPath), content }]);
+    const pack = packFilesToTar([{ name: basename(absPath), content: Buffer.from(content) }]);
+    await this.runCommandAsRoot("mkdir", ["-p", dirname(absPath)]);
     await (this.container as Docker.Container).putArchive(pack, { path: dirname(absPath) });
     await this.chownToSandboxUser(absPath);
+  }
+
+  async downloadFile(sourcePath: string, target: string | URL): Promise<void> {
+    const destination = resolveLocalPath(undefined, target);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, await this.readBytes(sourcePath));
   }
 
   /**

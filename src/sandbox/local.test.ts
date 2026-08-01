@@ -104,7 +104,7 @@ describe("LocalSandbox · 只观察不还原", () => {
 
     const sandbox = await LocalSandbox.create({ dir: repoRoot });
     // 模拟 agent 在 workdir 里落地一个新文件(未提交、未 add)。
-    await sandbox.writeFiles({ "agent-output.txt": "agent wrote this\n" });
+    await sandbox.writeText("agent-output.txt", "agent wrote this\n");
     expect(await readFile(join(repoRoot, "agent-output.txt"), "utf-8")).toBe("agent wrote this\n");
 
     const ledgerBase = (sandbox as unknown as { ledgerBase: string }).ledgerBase;

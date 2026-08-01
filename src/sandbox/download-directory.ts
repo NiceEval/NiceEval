@@ -15,7 +15,7 @@ export async function downloadDirectoryByList(opts: {
   /** 已绑定远端目录为 cwd 的 shell 执行器;script 只需管 find 本身。 */
   runShell: (script: string) => Promise<CommandResult>;
   /** 按远端目录下的相对路径读取一个文件的二进制内容。 */
-  readOne: (relPath: string) => Promise<Buffer>;
+  readOne: (relPath: string) => Promise<Uint8Array>;
 }): Promise<void> {
   const result = await opts.runShell(buildDownloadFindScript({ ignore: opts.ignore }));
 

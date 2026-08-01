@@ -15,11 +15,6 @@ export interface CommandResult {
   command?: string;
 }
 
-export interface SandboxFile {
-  path: string;
-  content: string | Buffer;
-}
-
 /** 内置 provider 名;不出现在 `sandbox` 字段的类型里(spec 用各自的 `provider` 判别字段区分)。 */
 export type SandboxProvider = "docker" | "vercel" | "e2b" | "local";
 
@@ -197,24 +192,24 @@ export type SandboxOption = SandboxSpec;
 
 export interface CommandOptions {
   /** 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。 */
-  env?: globalThis.Record<string, string>;
+  readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。 */
-  cwd?: string;
+  readonly cwd?: string;
   /**
    * 把本命令的输出也送进 Sandbox 的「原生日志流」(于是 `docker logs` / Docker UI 的 Logs
    * 标签页能实时看到它)。给 agent 命令(codex exec / bub run / claude)开它,就能在容器
    * 日志里看到 agent 的【原始输出】。provider 各自实现(docker:tee 到 PID1 tail 的文件;
    * 不支持的 provider 忽略)—— 日志怎么浮现是 provider 的事,adapter 只声明意图。
    */
-  stream?: boolean;
+  readonly stream?: boolean;
   /**
    * 命令 stdout 每到一块就调用一次。回调只用于运行中的短命反馈；完整 stdout 仍会原样
    * 出现在返回的 `CommandResult` 里。provider 不支持真流时，至少会在命令结束后按完整
    * stdout 调用一次，不能静默丢掉。
    */
-  onStdout?: (chunk: string) => void | Promise<void>;
+  readonly onStdout?: (chunk: string) => void | Promise<void>;
   /** `onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。 */
-  onStderr?: (chunk: string) => void | Promise<void>;
+  readonly onStderr?: (chunk: string) => void | Promise<void>;
   /**
    * 以 root 跑本命令。默认 `false` —— 命令以 Sandbox 的标准**非 root** 用户跑(agent 的自然环境)。
    * 给 setup 阶段装系统依赖用(`apt-get install …`、`pip install --break-system-packages …`)。
@@ -224,38 +219,73 @@ export interface CommandOptions {
    * 本就全程 root 的 provider(如 Modal)视作 no-op;完全无法提权的 provider 可不支持(抛错)—— 但**默认值与
    * 语义保持一致**,不因 provider 而变。
    */
-  root?: boolean;
+  readonly root?: boolean;
   /**
    * 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
    * (见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
    * 显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
    */
-  timeout?: number;
+  readonly timeoutMs?: number;
+  /**
+   * 取消本次受管命令树。Provider 必须在 Promise settle 前确认命令树已经终止；无法精确
+   * 终止时应退休整个 Sandbox，不能只关闭 transport 后把进程留在后台。
+   */
+  readonly signal?: AbortSignal;
 }
 
-export interface Sandbox {
+export interface SuccessfulCommandResult extends CommandResult {
+  readonly exitCode: 0;
+}
+
+/** 三个运行中 Sandbox 视图共用的操作词汇；同名成员在不同视图中不得改变语义。 */
+export interface SandboxOperations {
   /** Sandbox 内项目/工作区根目录的绝对路径(agent 命令的默认 cwd,也是 git baseline 提交的位置)。各方法的相对路径都以此为基准解析,省略 `cwd`/`targetDir` 时也落到这里。 */
   readonly workdir: string;
   /**
    * 执行单个命令,`args` 作为独立 argv 传递、不经 shell 解释(无 `&&`、管道、通配符展开)。
    * 只想跑一个可执行文件、参数来自外部输入、担心注入时优先用它。
    */
-  runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
+  runCommand(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<CommandResult>;
   /**
    * 执行一整段脚本,经 shell(bash)解释,支持 `&&`、管道、`$()`、重定向等。
    * 需要拼多条命令或做条件判断时用它。
    */
   runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
-  /** 读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错,不返回空字符串——需要容错请自行 `.catch()`。 */
-  readFile(path: string): Promise<string>;
-  /** 检查 Sandbox 内路径是否存在。跨 provider 语义不完全一致:仅保证对普通文件可靠,对目录路径的行为不同 provider 不保证一致。 */
-  fileExists(path: string): Promise<boolean>;
-  /** 写入若干文本文件(内容已在内存里的字符串);是 `uploadFiles` 的文本特化,省略 `targetDir` 落到 workdir。 */
-  writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
-  /** 批量写入若干文件,内容可以是文本或二进制 Buffer;省略 `targetDir` 落到 workdir。 */
-  uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-  /** 把本地磁盘上的一个目录整体上传进 Sandbox(递归读取本地文件后按 `uploadFiles` 写入);`opts.ignore` 是排除规则,省略 `targetDir` 落到 workdir。 */
-  uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
+  runCommandOrThrow(
+    cmd: string,
+    args?: readonly string[],
+    opts?: CommandOptions,
+  ): Promise<SuccessfulCommandResult>;
+  runShellOrThrow(script: string, opts?: CommandOptions): Promise<SuccessfulCommandResult>;
+  /** 读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错。 */
+  readText(path: string): Promise<string>;
+  /** 写入 Sandbox 内一个 UTF-8 文本文件；父目录不存在时自动创建。 */
+  writeText(path: string, content: string): Promise<void>;
+  /** 精确读取 Sandbox 内文件字节；公共契约不绑定 Node Buffer。 */
+  readBytes(path: string): Promise<Uint8Array>;
+  /** 精确写入 Sandbox 内文件字节；父目录不存在时自动创建。 */
+  writeBytes(path: string, content: Uint8Array): Promise<void>;
+  /** 检查 Sandbox 内文件或目录路径是否存在。 */
+  pathExists(path: string): Promise<boolean>;
+}
+
+/** 只用于宿主机与 Sandbox 之间真实传输；内存内容读写使用 read/writeText/Bytes。 */
+export interface SandboxTransferOperations {
+  uploadFile(source: string | URL, targetPath: string): Promise<void>;
+  uploadDirectory(
+    sourceDir: string | URL,
+    targetDir?: string,
+    options?: { readonly ignore?: readonly string[] },
+  ): Promise<void>;
+  downloadFile(sourcePath: string, target: string | URL): Promise<void>;
+  downloadDirectory(
+    sourceDir: string,
+    targetDir: string | URL,
+    options?: { readonly ignore?: readonly string[] },
+  ): Promise<void>;
+}
+
+export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
   /** 销毁 Sandbox 占用的计算资源(容器/microVM)。调用后 Sandbox 不可再用;是否可安全重复调用因 provider 而异,不要依赖这一点。 */
   stop(): Promise<void>;
   /** 本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。 */
@@ -274,25 +304,6 @@ export interface Sandbox {
    */
   appendLog?(line: string): Promise<void>;
 
-  /**
-   * 从 Sandbox 内任意路径读取文件,返回二进制 Buffer。
-   * 对应各 provider:Docker getArchive / Vercel readFileToBuffer / e2b files.read(bytes) / …
-   */
-  downloadFile(path: string): Promise<Buffer>;
-
-  /**
-   * 向 Sandbox 内任意路径写入文件(二进制)。
-   * 对应各 provider:Docker putArchive / Vercel fs.writeFile(Buffer) / e2b files.write / …
-   */
-  uploadFile(path: string, content: Buffer): Promise<void>;
-
-  /**
-   * 把 Sandbox 内一个目录整体递归下载到本地磁盘,与 `uploadDirectory` 对称:按远端相对路径
-   * 把每个文件字节精确落盘到 `localDir`(自动建目录,不做文本编码转换,不拼接,不返回带便利
-   * 方法的包装类型)。省略 `targetDir` 落到 workdir(Sandbox 侧锚点);`opts.ignore` 与
-   * `uploadDirectory` 同名同义——按 basename 排除路径,省略即不过滤。
-   */
-  downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
 }
 
 /** 复用调度需要的中立寿命确认能力。 */

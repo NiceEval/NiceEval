@@ -15,6 +15,7 @@ export {
   localSandbox,
 } from "./layer.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
+export { SandboxCommandExitError } from "./operations.ts";
 export { registerSandboxContent } from "./content.ts";
 export {
   composeSandbox,
@@ -110,8 +111,9 @@ export type { RegisteredSandboxContent } from "./content.ts";
 
 export type {
   Sandbox,
-  SandboxHandle,
-  SandboxFile,
+  EvalSandbox,
+  SandboxOperations,
+  SandboxTransferOperations,
   SandboxProvider,
   SandboxOption,
   SandboxSpec,
@@ -125,6 +127,7 @@ export type {
   CustomSandboxSpec,
   CommandResult,
   CommandOptions,
+  SuccessfulCommandResult,
 } from "../types.ts";
 
 export type {

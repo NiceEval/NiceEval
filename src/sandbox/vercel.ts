@@ -2,14 +2,23 @@
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
 import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import type {
+  Sandbox,
+  CommandResult,
+  CommandOptions,
+  SandboxReuseCapability,
+  SuccessfulCommandResult,
+} from "../types.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
-import { collectLocalFiles } from "./local-files.ts";
-import { resolveSandboxPath } from "./paths.ts";
+import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
+import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit } from "./deadline.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
+import { successfulCommandResult } from "./operations.ts";
 
 /**
  * vercel SDK 对单次 fetch 的 429 已有内部重试(见 @vercel/sandbox 的 with-retry.js,
@@ -200,18 +209,19 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
     }
   }
 
-  async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
+  async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     await this.rotateIfNeeded();
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     const finished = await this.vsb.runCommand({
       cmd,
-      args,
+      args: [...args],
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: opts.env,
       sudo: opts.root ?? false,
       // per-command 上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值);
       // 没有 deadline 就不设,provider 层不发明一条自己的线。
       ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
+      signal: opts.signal,
     });
     const stdout = await finished.stdout();
     const stderr = await finished.stderr();
@@ -230,57 +240,96 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
     return this.runCommand("bash", ["-c", script], opts);
   }
 
-  async readFile(path: string): Promise<string> {
+  async runCommandOrThrow(
+    cmd: string,
+    args: readonly string[] = [],
+    opts: CommandOptions = {},
+  ): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+  }
+
+  async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
+    return successfulCommandResult(await this.runShell(script, opts));
+  }
+
+  async readText(path: string): Promise<string> {
     const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
     if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
     return buf.toString("utf8");
   }
 
-  async fileExists(path: string): Promise<boolean> {
+  async pathExists(path: string): Promise<boolean> {
     const absPath = resolveSandboxPath(this.workdir, path);
-    const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    return buf !== null;
+    return this.vsb.fs.exists(absPath);
   }
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
   // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
+  private async writeCollectedFiles(files: readonly CollectedLocalFile[], targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
-    const entries = Object.entries(files).map(([p, content]) => ({
-      path: resolveSandboxPath(base, p),
-      content,
+    const entries = files.map(({ path, content }) => ({
+      path: resolveSandboxPath(base, path),
+      content: Buffer.from(content),
     }));
     if (entries.length === 0) return;
     await this.vsb.writeFiles(entries);
   }
 
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
-    if (files.length === 0) return;
-    const base = resolveSandboxPath(this.workdir, targetDir);
-    await this.vsb.writeFiles(
-      files.map((f) => ({
-        path: resolveSandboxPath(base, f.path),
-        content: f.content,
-      })),
-    );
+  async writeText(path: string, content: string): Promise<void> {
+    await this.vsb.writeFiles([{ path: resolveSandboxPath(this.workdir, path), content }]);
   }
 
-  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    await this.uploadFiles(await collectLocalFiles(localDir, opts.ignore), targetDir);
+  async readBytes(path: string): Promise<Uint8Array> {
+    const absPath = resolveSandboxPath(this.workdir, path);
+    const buf = await this.vsb.readFileToBuffer({ path: absPath });
+    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
+    return buf;
+  }
+
+  async writeBytes(path: string, content: Uint8Array): Promise<void> {
+    await this.vsb.writeFiles([{
+      path: resolveSandboxPath(this.workdir, path),
+      content: Buffer.from(content),
+    }]);
+  }
+
+  async uploadFile(source: string | URL, targetPath: string): Promise<void> {
+    await this.writeBytes(targetPath, await readFile(resolveLocalPath(undefined, source)));
+  }
+
+  async uploadDirectory(
+    sourceDir: string | URL,
+    targetDir?: string,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    await this.writeCollectedFiles(
+      await collectLocalFiles(resolveLocalPath(undefined, sourceDir), opts.ignore),
+      targetDir,
+    );
   }
 
   /**
    * 递归下载沙箱内一个目录到本地磁盘,与 uploadDirectory 对称:两阶段模板(与 e2b provider
    * 共用)——find 列路径 + 逐文件 readFileToBuffer(独立 HTTP GET)读取,写回本地磁盘。
    */
-  async downloadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
-    const remoteDir = resolveSandboxPath(this.workdir, targetDir);
+  async downloadFile(sourcePath: string, target: string | URL): Promise<void> {
+    const destination = resolveLocalPath(undefined, target);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, await this.readBytes(sourcePath));
+  }
+
+  async downloadDirectory(
+    sourceDir: string,
+    targetDir: string | URL,
+    opts: { readonly ignore?: readonly string[] } = {},
+  ): Promise<void> {
+    const remoteDir = resolveSandboxPath(this.workdir, sourceDir);
     await downloadDirectoryByList({
-      localDir,
+      localDir: resolveLocalPath(undefined, targetDir),
       ignore: opts.ignore ?? [],
       runShell: (script) => this.runShell(script, { cwd: remoteDir }),
-      readOne: (relPath) => this.downloadFile(`${remoteDir}/${relPath}`),
+      readOne: (relPath) => this.readBytes(`${remoteDir}/${relPath}`),
     });
   }
 
@@ -296,15 +345,4 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
     await this.vsb.stop();
   }
 
-  async downloadFile(path: string): Promise<Buffer> {
-    const absPath = resolveSandboxPath(this.workdir, path);
-    const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
-    return buf;
-  }
-
-  async uploadFile(path: string, content: Buffer): Promise<void> {
-    const absPath = resolveSandboxPath(this.workdir, path);
-    await this.vsb.writeFiles([{ path: absPath, content }]);
-  }
 }

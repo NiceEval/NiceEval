@@ -54,7 +54,7 @@ describe("DockerSandbox.downloadDirectory", () => {
       return Readable.from(archive);
     });
 
-    await sandbox.downloadDirectory(localDir, "out", { ignore: ["node_modules"] });
+    await sandbox.downloadDirectory("out", localDir, { ignore: ["node_modules"] });
 
     expect(requestedPath).toBe(`${sandbox.workdir}/out`);
     expect((await readFile(join(localDir, "a.txt"))).toString()).toBe("hello");
@@ -66,7 +66,7 @@ describe("DockerSandbox.downloadDirectory", () => {
 
   it("throws instead of silently no-op-ing when the container has not been initialized", async () => {
     const sandbox = new DockerSandbox();
-    await expect(sandbox.downloadDirectory(await makeLocalDir(), "out")).rejects.toThrow();
+    await expect(sandbox.downloadDirectory("out", await makeLocalDir())).rejects.toThrow();
   });
 });
 
