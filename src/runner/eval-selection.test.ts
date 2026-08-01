@@ -4,22 +4,37 @@
 
 import { describe, expect, it } from "vitest";
 import { evalDescriptorOf, resolveExperimentEvals, selectedEvalsForRun, splitByScoring } from "./eval-selection.ts";
-import type { DiscoveredEval } from "./types.ts";
+import { defineEval, defineScoreEval } from "../define.ts";
+import { discoverEval, type DiscoveredEval, type EvalScoring } from "./types.ts";
+import type { JsonValue } from "../shared/types.ts";
 import { interpolate } from "../i18n/core.ts";
 import { en } from "../i18n/en.ts";
 import { zhCN } from "../i18n/zh-CN.ts";
 
 const source = { path: "evals/fake.eval.ts", content: "export default { test() {} };\n", sha256: "fake" };
 
-function makeEval(id: string, overrides: Partial<DiscoveredEval> = {}): DiscoveredEval {
-  return {
+function makeEval(id: string, overrides: {
+  readonly description?: string;
+  readonly tags?: readonly string[];
+  readonly metadata?: Readonly<Record<string, JsonValue>>;
+  readonly scoring?: EvalScoring;
+} = {}): DiscoveredEval {
+  const input = {
+    ...(overrides.description !== undefined ? { description: overrides.description } : {}),
+    ...(overrides.tags !== undefined ? { tags: [...overrides.tags] } : {}),
+    ...(overrides.metadata !== undefined ? { metadata: { ...overrides.metadata } } : {}),
+    test() {},
+  };
+  const definition = overrides.scoring === "points" ? defineScoreEval(input) : defineEval(input);
+  return discoverEval(definition, {
     id,
     baseDir: "/project/evals",
     sourcePath: `/project/evals/${id}.eval.ts`,
     source,
-    test() {},
-    ...overrides,
-  };
+    loaderDataPaths: Object.freeze([]),
+    criteriaPaths: Object.freeze([]),
+    privatePaths: Object.freeze([]),
+  });
 }
 
 describe("evalDescriptorOf", () => {
@@ -204,11 +219,6 @@ describe("evalDescriptorOf: scoring 投影", () => {
     expect(evalDescriptorOf(evalDef).scoring).toBe("points");
   });
 
-  it("未经 defineEval/defineScoreEval 处理的裸对象(scoring 缺失)兜底按 \"pass\" 投影,不是 undefined", () => {
-    const evalDef = makeEval("bare/no-scoring");
-    expect(evalDef.scoring).toBeUndefined(); // fixture 本身没设 scoring,模拟裸对象
-    expect(evalDescriptorOf(evalDef).scoring).toBe("pass");
-  });
 });
 
 describe("splitByScoring", () => {

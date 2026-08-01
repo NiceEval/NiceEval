@@ -8,10 +8,16 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { discoverEvals, discoverExperiments, makeFilter } from "./discover.ts";
+import { DiscoveryError, discoverEvals, discoverExperiments, makeFilter } from "./discover.ts";
 import { captureEvalSource } from "./eval-source.ts";
 
 const roots: string[] = [];
+const defineUrl = pathToFileURL(resolve(process.cwd(), "src", "define.ts")).href;
+const sandboxUrl = pathToFileURL(resolve(process.cwd(), "src", "sandbox", "index.ts")).href;
+
+function evalModule(expression = "defineEval({ test() {} })"): string {
+  return `import { defineEval, defineScoreEval } from ${JSON.stringify(defineUrl)};\nexport default ${expression};\n`;
+}
 async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "niceeval-discover-"));
   roots.push(root);
@@ -34,7 +40,7 @@ describe("discoverEvals · 源码捕获", () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals"), { recursive: true });
     const file = join(root, "evals", "hello.eval.ts");
-    await writeFile(file, 'export default {\n  test() {},\n};\n', "utf-8");
+    await writeFile(file, evalModule(), "utf-8");
 
     const evals = await discoverEvals(root);
     expect(evals).toHaveLength(1);
@@ -49,7 +55,7 @@ describe("discoverEvals · 源码捕获", () => {
     const file = join(root, "evals", "batch.eval.ts");
     await writeFile(
       file,
-      "export default [\n  { test() {} },\n  { test() {} },\n];\n",
+      evalModule("[defineEval({ test() {} }), defineEval({ test() {} })]"),
       "utf-8",
     );
 
@@ -65,7 +71,7 @@ describe("discoverEvals · 源码捕获", () => {
     const file = join(root, "evals", "issues.eval.ts");
     await writeFile(
       file,
-      "export default {\n  '25901': { test() {} },\n  '15193': { test() {} },\n};\n",
+      evalModule("{ '25901': defineEval({ test() {} }), '15193': defineEval({ test() {} }) }"),
       "utf-8",
     );
 
@@ -77,16 +83,31 @@ describe("discoverEvals · 源码捕获", () => {
   it("空 keyed record 合法且不产生 eval", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals"), { recursive: true });
-    await writeFile(join(root, "evals", "empty.eval.ts"), "export default {};\n", "utf-8");
+    await writeFile(join(root, "evals", "empty.eval.ts"), evalModule("{}"), "utf-8");
 
     await expect(discoverEvals(root)).resolves.toEqual([]);
   });
 
-  it("裸对象手写 scoring: points 在发现期拒绝，并指向 defineScoreEval", async () => {
+  it("裸对象即使字段同形也在发现期拒绝，并要求 factory Definition", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals"), { recursive: true });
     await writeFile(join(root, "evals", "bad-score.eval.ts"), 'export default { scoring: "points", test() {} };\n', "utf-8");
-    await expect(discoverEvals(root)).rejects.toThrow(/defineScoreEval/);
+    await expect(discoverEvals(root)).rejects.toThrow(/defineEval\(\).*defineScoreEval\(\)/s);
+  });
+
+  it("整批聚合多个文件的 typed DiscoveryIssue，而不是首错即停", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals"), { recursive: true });
+    await writeFile(join(root, "evals", "a.eval.ts"), "export default { test() {} };\n", "utf-8");
+    await writeFile(join(root, "evals", "b.eval.ts"), "export default { test() {} };\n", "utf-8");
+
+    const error = await discoverEvals(root).then(() => undefined, (cause) => cause);
+    expect(error).toBeInstanceOf(DiscoveryError);
+    expect(error.issues).toHaveLength(2);
+    expect(error.issues.map((entry: { file: string }) => entry.file)).toEqual([
+      "evals/a.eval.ts",
+      "evals/b.eval.ts",
+    ]);
   });
 
   it.each(["", ".", "..", "a/b", "a\\b", "line\nbreak"])(
@@ -96,7 +117,7 @@ describe("discoverEvals · 源码捕获", () => {
       await mkdir(join(root, "evals"), { recursive: true });
       await writeFile(
         join(root, "evals", "bad.eval.ts"),
-        `export default Object.fromEntries([[${JSON.stringify(key)}, { test() {} }]]);\n`,
+        evalModule(`Object.fromEntries([[${JSON.stringify(key)}, defineEval({ test() {} })]])`),
         "utf-8",
       );
 
@@ -104,12 +125,12 @@ describe("discoverEvals · 源码捕获", () => {
     },
   );
 
-  it("keyed record 的每个值都必须是 EvalDef", async () => {
+  it("keyed record 的每个值都必须是品牌化 EvalDefinition", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals"), { recursive: true });
     await writeFile(join(root, "evals", "bad-value.eval.ts"), "export default { issue: {} };\n", "utf-8");
 
-    await expect(discoverEvals(root)).rejects.toThrow(/must map to an EvalDef with test/);
+    await expect(discoverEvals(root)).rejects.toThrow(/EvalDefinition/);
   });
 
   it("CRLF 源码归一化后哈希与 LF 版本一致(discovery 侧与 collectSources/annotated-source 共用归一化)", async () => {
@@ -117,7 +138,7 @@ describe("discoverEvals · 源码捕获", () => {
     const rootCrlf = await makeRoot();
     await mkdir(join(rootLf, "evals"), { recursive: true });
     await mkdir(join(rootCrlf, "evals"), { recursive: true });
-    const body = "export default {\n  test() {},\n};\n";
+    const body = evalModule();
     await writeFile(join(rootLf, "evals", "a.eval.ts"), body, "utf-8");
     await writeFile(join(rootCrlf, "evals", "a.eval.ts"), body.replace(/\n/g, "\r\n"), "utf-8");
 
@@ -129,30 +150,34 @@ describe("discoverEvals · 源码捕获", () => {
 });
 
 describe("discoverEvals · 目录入口与重名冲突", () => {
-  it("发现 evals/foo/eval.ts，id 与 defaultProfileId 均为 foo", async () => {
+  it("发现 evals/foo/eval.ts，只加入路径与完整 capture 事实", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals", "foo"), { recursive: true });
-    await writeFile(join(root, "evals", "foo", "eval.ts"), "export default { test() {} };\n", "utf-8");
+    await writeFile(join(root, "evals", "foo", "eval.ts"), evalModule(), "utf-8");
 
     const evals = await discoverEvals(root);
     expect(evals).toHaveLength(1);
     expect(evals[0]!.id).toBe("foo");
-    expect(evals[0]!.defaultProfileId).toBe("foo");
     expect(evals[0]!.source.path).toBe("evals/foo/eval.ts");
+    expect(evals[0]!.loaderDataPaths).toEqual([]);
+    expect(evals[0]!.criteriaPaths).toEqual([]);
+    expect(evals[0]!.privatePaths).toEqual([]);
+    expect(Object.isFrozen(evals[0])).toBe(true);
+    expect(Object.isFrozen(evals[0]!.loaderDataPaths)).toBe(true);
   });
 
-  it("目录入口扇出时共用入口目录的 defaultProfileId，不含扇出后缀", async () => {
+  it("目录入口扇出时只由位置形成 id，不附加旧 profile 状态", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals", "suite"), { recursive: true });
     await writeFile(
       join(root, "evals", "suite", "eval.ts"),
-      "export default [{ test() {} }, { test() {} }];\n",
+      evalModule("[defineEval({ test() {} }), defineEval({ test() {} })]"),
       "utf-8",
     );
 
     const evals = await discoverEvals(root);
     expect(evals.map((e) => e.id)).toEqual(["suite/0000", "suite/0001"]);
-    expect(evals.every((e) => e.defaultProfileId === "suite")).toBe(true);
+    expect(evals.every((e) => e.scoring === "pass")).toBe(true);
   });
 
   it("无 eval.ts 的目录(_lib)不被发现", async () => {
@@ -160,7 +185,7 @@ describe("discoverEvals · 目录入口与重名冲突", () => {
     await mkdir(join(root, "evals", "_lib"), { recursive: true });
     await writeFile(join(root, "evals", "_lib", "helper.ts"), "export const x = 1;\n", "utf-8");
     await mkdir(join(root, "evals", "real"), { recursive: true });
-    await writeFile(join(root, "evals", "real", "eval.ts"), "export default { test() {} };\n", "utf-8");
+    await writeFile(join(root, "evals", "real", "eval.ts"), evalModule(), "utf-8");
 
     const evals = await discoverEvals(root);
     expect(evals.map((e) => e.id)).toEqual(["real"]);
@@ -169,29 +194,31 @@ describe("discoverEvals · 目录入口与重名冲突", () => {
   it("foo.eval.ts 与 foo/eval.ts 同 id 时报重名，点名两条路径", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals", "foo"), { recursive: true });
-    await writeFile(join(root, "evals", "foo.eval.ts"), "export default { test() {} };\n", "utf-8");
-    await writeFile(join(root, "evals", "foo", "eval.ts"), "export default { test() {} };\n", "utf-8");
+    await writeFile(join(root, "evals", "foo.eval.ts"), evalModule(), "utf-8");
+    await writeFile(join(root, "evals", "foo", "eval.ts"), evalModule(), "utf-8");
 
     await expect(discoverEvals(root)).rejects.toThrow(/Duplicate eval id "foo"/);
     await expect(discoverEvals(root)).rejects.toThrow(/foo\.eval\.ts/);
     await expect(discoverEvals(root)).rejects.toThrow(/foo\/eval\.ts/);
   });
 
-  it("目录入口可携带 folder-local environment 对象，并保留 defaultProfileId", async () => {
+  it("目录入口只携带品牌化 SandboxLayer，不产生 environment/profile 兼容字段", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals", "compose-task"), { recursive: true });
-    // environment 为对象时不经 defineEval.trim;发现器原样保留,供 sandbox 线物化。
     await writeFile(
       join(root, "evals", "compose-task", "eval.ts"),
-      "export default { environment: { kind: 'compose', file: 'docker-compose.yaml' }, test() {} };\n",
+      `import { defineEval } from ${JSON.stringify(defineUrl)};\n` +
+        `import { dockerComposeSandbox } from ${JSON.stringify(sandboxUrl)};\n` +
+        "export default defineEval({ sandbox: dockerComposeSandbox({ file: 'docker-compose.yaml', workspaceService: 'app' }), test() {} });\n",
       "utf-8",
     );
 
     const evals = await discoverEvals(root);
     expect(evals).toHaveLength(1);
     expect(evals[0]!.id).toBe("compose-task");
-    expect(evals[0]!.defaultProfileId).toBe("compose-task");
-    expect(evals[0]!.environment).toEqual({ kind: "compose", file: "docker-compose.yaml" });
+    expect(evals[0]!.sandbox).toBeDefined();
+    expect(evals[0]).not.toHaveProperty("environment");
+    expect(evals[0]).not.toHaveProperty("defaultProfileId");
   });
 });
 
@@ -199,10 +226,9 @@ describe("discoverExperiments · Definition 边界", () => {
   it("只发现 defineExperiment 产物，并把路径事实加入 DiscoveredExperiment", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "experiments", "compare"), { recursive: true });
-    const factory = pathToFileURL(resolve(process.cwd(), "src", "define.ts")).href;
     await writeFile(
       join(root, "experiments", "compare", "baseline.experiment.ts"),
-      `import { defineExperiment } from ${JSON.stringify(factory)};\n` +
+      `import { defineExperiment } from ${JSON.stringify(defineUrl)};\n` +
         'export default defineExperiment({ agent: { name: "fixture" } });\n',
       "utf-8",
     );

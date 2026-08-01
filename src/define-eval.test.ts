@@ -14,6 +14,11 @@ describe("defineEval:通过制", () => {
   it("产物恒 scoring: \"pass\"", () => {
     const def = defineEval({ async test() {} });
     expect(def.scoring).toBe("pass");
+    expect(def.tags).toEqual([]);
+    expect(def.reporters).toEqual([]);
+    expect(def.metadata).toEqual({});
+    expect(def.diff).toEqual({ include: [], ignore: [] });
+    expect(Object.isFrozen(def)).toBe(true);
   });
 
   it("拒绝显式 id(id 由文件路径推导)", () => {

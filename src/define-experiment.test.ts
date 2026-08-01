@@ -12,6 +12,15 @@ describe("defineExperiment", () => {
   it("返回带 factory 私有品牌的 Definition", () => {
     const definition = defineExperiment({ agent, description: "baseline" });
     expect(definition.description).toBe("baseline");
+    expect(definition.flags).toEqual({});
+    expect(definition.labels).toEqual({});
+    expect(definition.attempts).toBe(1);
+    expect(definition.earlyExit).toBe(false);
+    expect(definition.evals).toBe("*");
+    expect(definition.sandboxReuse).toBe(false);
+    expect(Object.isFrozen(definition)).toBe(true);
+    expect(Object.isFrozen(definition.flags)).toBe(true);
+    expect(Object.isFrozen(definition.labels)).toBe(true);
   });
 
   it("运行时拒绝类型断言绕过的路径 id", () => {

@@ -1,35 +1,58 @@
-// 发现:扫 evals/ 找 *.eval.ts / 目录入口 eval.ts(默认导出 EvalDef、数组或 keyed record),
-// 扫 experiments/ 找实验。路径即身份:id 从相对路径推导,排序保证稳定。
-// 同 id 双入口(foo.eval.ts 与 foo/eval.ts)启动期报重名;folder-local source 的默认
-// profile id 与泄题门交叉检查见 docs/feature/eval/README.md、docs/feature/sandbox/case.md。
+// Discovery is the only boundary where executable modules enter the typed runner.
+// Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
 import { readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Data, Effect, Either, Option, Schema } from "effect";
 import { pad4 } from "../util.ts";
 import {
   assertNoHiddenInputLeaks,
   captureEvalSource,
   defaultProfileIdForFolderEntry,
-  getLeakGateHints,
   type HiddenInput,
   type LeakGateHints,
 } from "./eval-source.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
-import { isDefinedScoreEval } from "../define.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
-import { composeSandbox, dockerfileSandbox } from "../sandbox/case.ts";
-import { discoverExperiment, isExperimentDefinition } from "../types.ts";
+import {
+  discoverEval,
+  discoverExperiment,
+  isEvalDefinition,
+  isExperimentDefinition,
+} from "../types.ts";
 import type {
+  AnyEvalDefinition,
   DiscoveredEval,
   DiscoveredExperiment,
-  EvalAuthorFields,
-  EvalScoring,
-  TestContext,
+  ExperimentDefinition,
 } from "../types.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
+
+export type DiscoveryIssueCode =
+  | "discovery.filesystem"
+  | "discovery.duplicate-id"
+  | "discovery.import-failed"
+  | "discovery.invalid-export"
+  | "discovery.invalid-dataset-key"
+  | "discovery.source-capture-failed"
+  | "discovery.leak-gate-failed";
+
+export interface DiscoveryIssue {
+  readonly file: string;
+  readonly code: DiscoveryIssueCode;
+  readonly message: string;
+  readonly actions: readonly string[];
+}
+
+/** Discovery reports the whole invalid batch, rather than stopping at the first bad file. */
+export class DiscoveryError extends Data.TaggedError("DiscoveryError")<{
+  readonly message: string;
+  readonly issues: readonly DiscoveryIssue[];
+}> {}
 
 interface EvalEntry {
   readonly file: string;
@@ -37,51 +60,139 @@ interface EvalEntry {
   readonly kind: "file" | "folder";
 }
 
-/** 动态 import 的运行时输入：factory 品牌只服务作者类型，discovery 需同时兼容旧的裸对象导出。 */
-type ImportedEval = EvalAuthorFields & {
-  scoring?: EvalScoring;
-  test(t: TestContext): Promise<void> | void;
-};
+type EvalModuleExport =
+  | AnyEvalDefinition
+  | readonly AnyEvalDefinition[]
+  | Readonly<globalThis.Record<string, AnyEvalDefinition>>;
 
-/**
- * 发现阶段的动态 import 会执行被加载文件的**顶层代码**(配置文件里现拉 registry、读 .env、
- * 连服务都很常见)。裸抛出去的话用户只看到一个不知从何而来的 `TypeError: fetch failed`——
- * 发现要遍历整棵 `evals/` / `experiments/` 树,一个文件炸了并不会告诉你是哪一个。
- * 这里把文件路径钉进 message,原错误挂 `cause`(`formatThrown` 会展开成 `caused by:` 链)。
- */
-async function importDiscovered<T>(file: string, root: string, kind: "eval" | "experiment"): Promise<T> {
-  try {
-    return (await import(pathToFileURL(file).href)) as T;
-  } catch (e) {
-    throw new Error(
-      `Failed to load ${kind} file ${relative(root, file)}: its top-level code threw while being imported. ` +
-        `Fix the error below, or move the work into the ${kind} body so it only runs when this ${kind} is selected.`,
-      { cause: e },
-    );
-  }
+interface EvalModule {
+  readonly default: EvalModuleExport;
 }
 
-async function walkFiles(dir: string, match: (name: string) => boolean): Promise<string[]> {
-  const out: string[] = [];
-  async function walk(current: string): Promise<void> {
-    let entries;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const full = join(current, e.name);
-      if (e.isDirectory()) {
-        if (SKIP_DIRS.has(e.name)) continue;
-        await walk(full);
-      } else if (e.isFile() && match(e.name)) {
-        out.push(full);
-      }
-    }
-  }
-  await walk(dir);
-  return out;
+interface ExperimentModule {
+  readonly default?: ExperimentDefinition;
+}
+
+const EvalDefinitionSchema = Schema.declare(isEvalDefinition, {
+  identifier: "EvalDefinition",
+  description: "a value returned by defineEval() or defineScoreEval()",
+});
+const EvalModuleSchema: Schema.Schema<EvalModule> = Schema.Struct({
+  default: Schema.Union(
+    EvalDefinitionSchema,
+    Schema.Array(EvalDefinitionSchema),
+    Schema.Record({ key: Schema.String, value: EvalDefinitionSchema }),
+  ),
+});
+const ExperimentDefinitionSchema = Schema.declare(isExperimentDefinition, {
+  identifier: "ExperimentDefinition",
+  description: "a value returned by defineExperiment()",
+});
+const ExperimentModuleSchema: Schema.Schema<ExperimentModule> = Schema.Struct({
+  default: Schema.optional(ExperimentDefinitionSchema),
+});
+
+function discoveryError(issues: readonly DiscoveryIssue[]): DiscoveryError {
+  const frozenIssues = Object.freeze(issues.map((issue) => Object.freeze({
+    ...issue,
+    actions: Object.freeze([...issue.actions]),
+  })));
+  return new DiscoveryError({
+    message: frozenIssues.map((issue) =>
+      `${issue.code} ${issue.file}: ${issue.message} Actions: ${issue.actions.join(" ")}`
+    ).join("\n"),
+    issues: frozenIssues,
+  });
+}
+
+function issue(
+  file: string,
+  code: DiscoveryIssueCode,
+  message: string,
+  actions: readonly string[],
+): DiscoveryError {
+  return discoveryError([{ file, code, message, actions }]);
+}
+
+function causeMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+function importModule(file: string, root: string, kind: "eval" | "experiment"): Effect.Effect<unknown, DiscoveryError> {
+  return Effect.tryPromise({
+    try: () => import(pathToFileURL(file).href),
+    catch: (cause) => issue(
+      relative(root, file),
+      "discovery.import-failed",
+      `Top-level ${kind} module evaluation failed: ${causeMessage(cause)}`,
+      [`Move resource work into the selected ${kind} body.`, "Fix the reported top-level exception."],
+    ),
+  });
+}
+
+function decodeEvalModule(value: unknown, file: string): Effect.Effect<EvalModule, DiscoveryError> {
+  return Schema.decodeUnknown(EvalModuleSchema, { errors: "all" })(value).pipe(
+    Effect.mapError((error) => issue(
+      file,
+      "discovery.invalid-export",
+      String(error),
+      ["Default-export defineEval()/defineScoreEval() output, an array of those outputs, or a keyed record of those outputs."],
+    )),
+  );
+}
+
+function decodeExperimentModule(value: unknown, file: string): Effect.Effect<ExperimentModule, DiscoveryError> {
+  return Schema.decodeUnknown(ExperimentModuleSchema, { errors: "all" })(value).pipe(
+    Effect.mapError((error) => issue(
+      file,
+      "discovery.invalid-export",
+      String(error),
+      ["Default-export defineExperiment({...}) instead of a plain object."],
+    )),
+  );
+}
+
+function collectAll<A>(
+  values: readonly A[],
+  f: (value: A) => Effect.Effect<readonly DiscoveredEval[], DiscoveryError>,
+): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  return Effect.partition(values, f, { concurrency: 1 }).pipe(
+    Effect.flatMap(([errors, groups]) => errors.length > 0
+      ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
+      : Effect.succeed(Object.freeze(groups.flat()))),
+  );
+}
+
+function walkFiles(
+  dir: string,
+  root: string,
+  match: (name: string) => boolean,
+): Effect.Effect<readonly string[], DiscoveryError> {
+  if (!existsSync(dir)) return Effect.succeed(Object.freeze([]));
+  return Effect.tryPromise({
+    try: async () => {
+      const out: string[] = [];
+      const walk = async (current: string): Promise<void> => {
+        const entries = await readdir(current, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = join(current, entry.name);
+          if (entry.isDirectory()) {
+            if (!SKIP_DIRS.has(entry.name)) await walk(full);
+          } else if (entry.isFile() && match(entry.name)) {
+            out.push(full);
+          }
+        }
+      };
+      await walk(dir);
+      return Object.freeze(out.sort());
+    },
+    catch: (cause) => issue(
+      relative(root, dir) || ".",
+      "discovery.filesystem",
+      causeMessage(cause),
+      ["Check that the discovery directory is readable."],
+    ),
+  });
 }
 
 function isFolderEntryName(name: string): boolean {
@@ -92,245 +203,267 @@ function isFileEntryName(name: string): boolean {
   return name.endsWith(".eval.ts") || name.endsWith(".eval.tsx");
 }
 
-/** 收集文件入口与目录入口,同 id 双入口在 import 之前报重名。 */
-async function collectEvalEntries(evalsDir: string, root: string): Promise<EvalEntry[]> {
-  const files = (
-    await walkFiles(evalsDir, (n) => isFileEntryName(n) || isFolderEntryName(n))
-  ).sort();
-  const entries: EvalEntry[] = [];
-  for (const file of files) {
-    const name = basename(file);
-    if (isFolderEntryName(name)) {
-      const relDir = relative(evalsDir, dirname(file)).split(sep).join("/");
-      const baseId = defaultProfileIdForFolderEntry(relDir === "" ? "." : relDir);
-      entries.push({ file, baseId, kind: "folder" });
-    } else {
-      const baseId = relative(evalsDir, file).replace(/\.eval\.tsx?$/, "").split(sep).join("/");
-      entries.push({ file, baseId, kind: "file" });
-    }
-  }
-  const seen = new Map<string, EvalEntry>();
-  for (const entry of entries) {
-    const prev = seen.get(entry.baseId);
-    if (prev) {
-      const a = relative(root, prev.file).split(sep).join("/");
-      const b = relative(root, entry.file).split(sep).join("/");
-      throw new Error(
-        `Duplicate eval id ${JSON.stringify(entry.baseId)}: both ${a} and ${b} map to the same id. ` +
-          `Keep only one entry — either the file form (<id>.eval.ts) or the folder form (<id>/eval.ts).`,
-      );
-    }
-    seen.set(entry.baseId, entry);
-  }
-  return entries;
-}
-
-export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
-  const dir = join(root, "evals");
-  const entries = await collectEvalEntries(dir, root);
-  const out: DiscoveredEval[] = [];
-  for (const entry of entries) {
-    const file = entry.file;
-    const { value: mod, paths: loaderDataPaths, criteriaPaths, privatePaths } = await captureLoadedFiles(() =>
-      importDiscovered<{
-        default?: ImportedEval | ImportedEval[] | globalThis.Record<string, ImportedEval>;
-      }>(file, root, "eval"),
-    );
-    const def = mod.default;
-    if (!def) continue;
-    const baseId = entry.baseId;
-    const baseDir = dirname(file);
-    const defaultProfileId = entry.kind === "folder" ? baseId : undefined;
-    // discovery 时读一次、归一化、算 SHA-256:同一文件(数组默认导出多个 eval)只读一次盘,
-    // 全部共享同一份 CapturedEvalSource 引用——写入面按哈希去重靠的就是这份内容天然相同。
-    const source = await captureEvalSource(file, { root });
-    const pushOne = (d: ImportedEval, id: string): void => {
-      assertScoreEvalOrigin(d, file);
-      out.push({
-        ...d,
-        id,
-        baseDir,
-        sourcePath: file,
-        source,
-        loaderDataPaths,
-        criteriaPaths,
-        ...(privatePaths.length > 0 ? { privatePaths } : {}),
-        ...(defaultProfileId !== undefined ? { defaultProfileId } : {}),
-      });
-    };
-    if (Array.isArray(def)) {
-      def.forEach((d, i) => pushOne(d, `${baseId}/${pad4(i)}`));
-    } else if (!isEvalDef(def)) {
-      const dataset = def;
-      for (const key of Object.keys(dataset).sort()) {
-        assertDatasetKey(key, file);
-        const d = dataset[key];
-        if (!d || typeof d.test !== "function") {
-          throw new Error(
-            `Invalid keyed eval dataset export in ${file}: key ${JSON.stringify(key)} must map to an EvalDef with test().`,
-          );
+function collectEvalEntries(evalsDir: string, root: string): Effect.Effect<readonly EvalEntry[], DiscoveryError> {
+  return walkFiles(evalsDir, root, (name) => isFileEntryName(name) || isFolderEntryName(name)).pipe(
+    Effect.flatMap((files) => {
+      const entries = files.map((file): EvalEntry => {
+        const name = basename(file);
+        if (isFolderEntryName(name)) {
+          const relDir = relative(evalsDir, dirname(file)).split(sep).join("/");
+          return {
+            file,
+            baseId: defaultProfileIdForFolderEntry(relDir === "" ? "." : relDir),
+            kind: "folder",
+          };
         }
-        pushOne(d, `${baseId}/${key}`);
-      }
-    } else {
-      pushOne(def, baseId);
-    }
-
-    const representative = Array.isArray(def)
-      ? def[0]
-      : isEvalDef(def)
-        ? def
-        : Object.values(def)[0];
-    await runLeakGateIfNeeded({
-      evalId: baseId,
-      baseDir,
-      environment: leakGateEnvironmentFor(representative?.sandbox),
-      criteriaPaths,
-      privatePaths,
-    });
-  }
-  return out;
+        return {
+          file,
+          baseId: relative(evalsDir, file).replace(/\.eval\.tsx?$/, "").split(sep).join("/"),
+          kind: "file",
+        };
+      });
+      const byId = new Map<string, EvalEntry[]>();
+      for (const entry of entries) byId.set(entry.baseId, [...(byId.get(entry.baseId) ?? []), entry]);
+      const duplicates = [...byId.entries()].flatMap(([id, owners]) => owners.length < 2 ? [] : [{
+        file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "),
+        code: "discovery.duplicate-id" as const,
+        message: `Duplicate eval id ${JSON.stringify(id)}: multiple entries map to the same id.`,
+        actions: Object.freeze(["Keep either the file entry or the folder entry for this id."]),
+      }]);
+      return duplicates.length > 0
+        ? Effect.fail(discoveryError(duplicates))
+        : Effect.succeed(Object.freeze(entries));
+    }),
+  );
 }
 
-/** Layer 的 template 只在泄题门边界临时投影成存量中性 source；不参与运行期 template 选择。 */
-function leakGateEnvironmentFor(layer: SandboxLayer | undefined): unknown {
-  if (layer === undefined) return undefined;
-  const template = sandboxLayerStateOf(layer).template;
-  if (template?.provider !== "docker") return undefined;
-  const localValue = (location: { kind: "path" | "url"; value: string }): string | URL =>
-    location.kind === "url" ? new URL(location.value) : location.value;
-  if (template.kind === "compose") {
-    return composeSandbox({
-      file: localValue(template.file),
-      mainService: template.workspaceService,
-      ...(template.build !== undefined ? { build: template.build } : {}),
-      ...(template.executionUser !== undefined ? { executionUser: template.executionUser } : {}),
-      ...(template.env !== undefined ? { env: template.env } : {}),
-    });
-  }
-  if (template.kind === "dockerfile") {
-    return dockerfileSandbox({
-      context: localValue(template.context),
-      ...(template.dockerfile !== undefined ? { dockerfile: template.dockerfile } : {}),
-      ...(template.buildArgs !== undefined ? { buildArgs: template.buildArgs } : {}),
-    });
-  }
-  return undefined;
+function validDatasetKey(key: string): boolean {
+  return key.length > 0 && key !== "." && key !== ".." && !key.includes("/") && !key.includes("\\") &&
+    !/[\u0000-\u001f\u007f]/.test(key);
 }
 
-/**
- * 优先用 `attachLeakGateHints` 挂上的提示;否则对 branded dockerfile / compose source
- * 自动构造 buildContexts(与相对 bind mounts)。Compose 结构抽取在 sandbox/compose.ts。
- */
-async function leakGateHintsFor(environment: unknown, baseDir: string): Promise<LeakGateHints | undefined> {
-  const attached = getLeakGateHints(environment);
-  if (attached) return attached;
-  if (environment === null || typeof environment !== "object") return undefined;
-  const env = environment as {
-    kind?: string;
-    context?: string | URL;
-    file?: string | URL;
-    mainService?: string;
-    __brand?: string;
-  };
-  if (env.kind === "dockerfile" && env.__brand === "niceeval.sandboxSource.dockerfile" && env.context !== undefined) {
-    const contextDir =
-      typeof env.context === "string" ? resolve(baseDir, env.context) : fileURLToPath(env.context);
-    return { buildContexts: [{ contextDir, label: "dockerfile" }] };
-  }
-  if (
-    env.kind === "compose" &&
-    env.__brand === "niceeval.sandboxSource.compose" &&
-    env.file !== undefined &&
-    typeof env.mainService === "string"
-  ) {
-    const { leakGateHintsFromComposeFile } = await import("../sandbox/compose.ts");
-    const { hints } = await leakGateHintsFromComposeFile(env.file, {
-      mainService: env.mainService,
-      baseDir,
-    });
-    return hints;
-  }
-  return undefined;
+function isEvalDefinitionArray(
+  exported: EvalModuleExport,
+): exported is readonly AnyEvalDefinition[] {
+  return Array.isArray(exported);
 }
 
-async function runLeakGateIfNeeded(input: {
-  evalId: string;
-  baseDir: string;
-  environment: unknown;
-  criteriaPaths: readonly string[];
-  privatePaths: readonly string[];
-}): Promise<void> {
-  const hints = await leakGateHintsFor(input.environment, input.baseDir);
-  if (!hints) return;
-  const hidden: HiddenInput[] = [
-    ...input.criteriaPaths.map((path) => ({ path, kind: "verifier" as const })),
-    ...input.privatePaths.map((path) => ({ path, kind: "private" as const })),
-  ];
-  if (hidden.length === 0) return;
-  await assertNoHiddenInputLeaks({
-    hidden,
-    buildContexts: hints.buildContexts,
-    bindMounts: hints.bindMounts,
-    evalId: input.evalId,
+function expandEvalExport(
+  exported: EvalModuleExport,
+  entry: EvalEntry,
+  root: string,
+): Effect.Effect<readonly { readonly id: string; readonly definition: AnyEvalDefinition }[], DiscoveryError> {
+  if (isEvalDefinition(exported)) {
+    return Effect.succeed(Object.freeze([{ id: entry.baseId, definition: exported }]));
+  }
+  if (isEvalDefinitionArray(exported)) {
+    return Effect.succeed(Object.freeze(exported.map((definition, index) => ({
+      id: `${entry.baseId}/${pad4(index)}`,
+      definition,
+    }))));
+  }
+  // `Array.isArray` does not narrow readonly arrays; the array branch above has already returned.
+  const dataset = exported;
+  const invalidKeys = Object.keys(dataset).filter((key) => !validDatasetKey(key));
+  if (invalidKeys.length > 0) {
+    return Effect.fail(discoveryError(invalidKeys.map((key) => ({
+      file: relative(root, entry.file),
+      code: "discovery.invalid-dataset-key" as const,
+      message: `Invalid keyed eval dataset key ${JSON.stringify(key)}.`,
+      actions: Object.freeze(["Use a non-empty path segment without slash, backslash, dot segments, or control characters."]),
+    }))));
+  }
+  return Effect.succeed(Object.freeze(Object.keys(dataset).sort().map((key) => ({
+    id: `${entry.baseId}/${key}`,
+    definition: dataset[key]!,
+  }))));
+}
+
+function leakGateHintsForLayer(
+  layer: SandboxLayer | undefined,
+  baseDir: string,
+  file: string,
+): Effect.Effect<Option.Option<LeakGateHints>, DiscoveryError> {
+  if (layer === undefined) return Effect.succeed(Option.none());
+  const state = sandboxLayerStateOf(layer);
+  if (!("template" in state)) return Effect.succeed(Option.none());
+  const leakGate = state.template.leakGate;
+  if (leakGate._tag === "None") return Effect.succeed(Option.none());
+  if (leakGate._tag === "Dockerfile") {
+    const contextDir = leakGate.context._tag === "Url"
+      ? fileURLToPath(leakGate.context.value)
+      : resolve(baseDir, leakGate.context.value);
+    return Effect.succeed(Option.some({ buildContexts: [{ contextDir, label: "dockerfile" }] }));
+  }
+  const composeFile = leakGate.file._tag === "Url" ? new URL(leakGate.file.value) : leakGate.file.value;
+  return Effect.tryPromise({
+    try: async () => {
+      const { leakGateHintsFromComposeFile } = await import("../sandbox/compose.ts");
+      const { hints } = await leakGateHintsFromComposeFile(composeFile, {
+        mainService: leakGate.workspaceService,
+        baseDir,
+      });
+      return Option.some(hints);
+    },
+    catch: (cause) => issue(
+      file,
+      "discovery.leak-gate-failed",
+      causeMessage(cause),
+      ["Fix the Docker Compose declaration used by this eval SandboxLayer."],
+    ),
   });
 }
 
-function assertScoreEvalOrigin(def: ImportedEval, file: string): void {
-  if (def.scoring === "points" && !isDefinedScoreEval(def)) {
-    throw new Error(`Invalid points-scoring eval export in ${file}: use defineScoreEval() instead of writing scoring: "points".`);
-  }
+function runLeakGate(
+  definition: AnyEvalDefinition,
+  input: {
+    readonly evalId: string;
+    readonly file: string;
+    readonly baseDir: string;
+    readonly criteriaPaths: readonly string[];
+    readonly privatePaths: readonly string[];
+  },
+): Effect.Effect<void, DiscoveryError> {
+  const hidden: readonly HiddenInput[] = Object.freeze([
+    ...input.criteriaPaths.map((path) => ({ path, kind: "verifier" as const })),
+    ...input.privatePaths.map((path) => ({ path, kind: "private" as const })),
+  ]);
+  if (hidden.length === 0) return Effect.void;
+  return leakGateHintsForLayer(definition.sandbox, input.baseDir, input.file).pipe(
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.void,
+      onSome: (hints) => Effect.tryPromise({
+        try: () => assertNoHiddenInputLeaks({
+          hidden,
+          buildContexts: hints.buildContexts,
+          bindMounts: hints.bindMounts,
+          evalId: input.evalId,
+        }),
+        catch: (cause) => issue(
+          input.file,
+          "discovery.leak-gate-failed",
+          causeMessage(cause),
+          ["Remove hidden verifier/private inputs from the sandbox build context or bind mounts."],
+        ),
+      }),
+    })),
+  );
 }
 
-function isEvalDef(value: ImportedEval | globalThis.Record<string, ImportedEval>): value is ImportedEval {
-  return typeof (value as ImportedEval).test === "function";
-}
-
-function assertDatasetKey(key: string, file: string): void {
-  if (
-    key.length === 0 ||
-    key === "." ||
-    key === ".." ||
-    key.includes("/") ||
-    key.includes("\\") ||
-    /[\u0000-\u001f\u007f]/.test(key)
-  ) {
-    throw new Error(
-      `Invalid keyed eval dataset key ${JSON.stringify(key)} in ${file}: ` +
-        "keys must be non-empty path segments; '.', '..', '/', '\\', and control characters are not allowed.",
-    );
-  }
-}
-
-export async function discoverExperiments(root: string): Promise<DiscoveredExperiment[]> {
-  const dir = join(root, "experiments");
-  const files = (await walkFiles(dir, (n) => n.endsWith(".ts") && !n.endsWith(".d.ts"))).sort();
-  const out: DiscoveredExperiment[] = [];
-  for (const file of files) {
-    const mod = await importDiscovered<{ default?: unknown }>(file, root, "experiment");
-    const def = mod.default;
-    // `experiments/shared/*.ts` 可以是被 experiment 文件 import 的普通 helper，因此没有
-    // default export 时不构成 Experiment。只要声明了 default，就必须是 factory 产物；不再把
-    // 裸对象、类型断言或历史结构性形状悄悄当成可运行配置。
-    if (def === undefined) continue;
-    if (!isExperimentDefinition(def)) {
-      throw new Error(
-        `Invalid experiment default export in ${relative(root, file)}: ` +
-          "export defineExperiment({...}) instead of a plain object. " +
-          "Experiment discovery only accepts the factory definition.",
-      );
+function discoverEvalEntry(
+  entry: EvalEntry,
+  root: string,
+): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  const fileLabel = relative(root, entry.file).split(sep).join("/");
+  return Effect.gen(function*() {
+    const captured = yield* Effect.tryPromise({
+      try: () => captureLoadedFiles(() => import(pathToFileURL(entry.file).href)),
+      catch: (cause) => issue(
+        fileLabel,
+        "discovery.import-failed",
+        causeMessage(cause),
+        ["Fix module loading and loader declarations."],
+      ),
+    });
+    const module = yield* decodeEvalModule(captured.value, fileLabel);
+    const expanded = yield* expandEvalExport(module.default, entry, root);
+    const source = yield* Effect.tryPromise({
+      try: () => captureEvalSource(entry.file, { root }),
+      catch: (cause) => issue(
+        fileLabel,
+        "discovery.source-capture-failed",
+        causeMessage(cause),
+        ["Make the eval source file readable."],
+      ),
+    });
+    const loaderDataPaths = Object.freeze([...captured.paths]);
+    const criteriaPaths = Object.freeze([...captured.criteriaPaths]);
+    const privatePaths = Object.freeze([...captured.privatePaths]);
+    const baseDir = dirname(entry.file);
+    const [leakErrors] = yield* Effect.partition(expanded, ({ id, definition }) => runLeakGate(definition, {
+      evalId: id,
+      file: fileLabel,
+      baseDir,
+      criteriaPaths,
+      privatePaths,
+    }), { concurrency: 1 });
+    if (leakErrors.length > 0) {
+      return yield* Effect.fail(discoveryError(leakErrors.flatMap((error) => error.issues)));
     }
-    const id = relative(dir, file)
+    return Object.freeze(expanded.map(({ id, definition }) => discoverEval(definition, {
+      id,
+      baseDir,
+      sourcePath: entry.file,
+      source,
+      loaderDataPaths,
+      criteriaPaths,
+      privatePaths,
+    })));
+  });
+}
+
+/** Effect-native discovery core; Promise conversion is restricted to discoverEvals(). */
+export function discoverEvalsEffect(root: string): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
+  const dir = join(root, "evals");
+  return collectEvalEntries(dir, root).pipe(
+    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, root))),
+  );
+}
+
+export function discoverEvals(root: string): Promise<readonly DiscoveredEval[]> {
+  return runDiscoveryPromise(discoverEvalsEffect(root));
+}
+
+function discoverExperimentFile(
+  file: string,
+  root: string,
+  experimentsDir: string,
+): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
+  const fileLabel = relative(root, file).split(sep).join("/");
+  return Effect.gen(function*() {
+    const imported = yield* importModule(file, root, "experiment");
+    const module = yield* decodeExperimentModule(imported, fileLabel);
+    if (module.default === undefined) return Object.freeze([]);
+    const id = relative(experimentsDir, file)
       .replace(/\.ts$/, "")
       .replace(/\.experiment$/, "")
       .split(sep)
       .join("/");
-    out.push(discoverExperiment(def, { id, baseDir: dirname(file), sourcePath: file }));
-  }
-  return out;
+    return Object.freeze([discoverExperiment(module.default, {
+      id,
+      baseDir: dirname(file),
+      sourcePath: file,
+    })]);
+  });
 }
 
-/** eval id 的裸字面前缀过滤；exp / show / view 共用 shared helper，避免路径段语义漂移。 */
+export function discoverExperimentsEffect(
+  root: string,
+): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
+  const dir = join(root, "experiments");
+  return walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
+    Effect.flatMap((files) => Effect.partition(
+      files,
+      (file) => discoverExperimentFile(file, root, dir),
+      { concurrency: 1 },
+    )),
+    Effect.flatMap(([errors, groups]) => errors.length > 0
+      ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
+      : Effect.succeed(Object.freeze(groups.flat()))),
+  );
+}
+
+export function discoverExperiments(root: string): Promise<readonly DiscoveredExperiment[]> {
+  return runDiscoveryPromise(discoverExperimentsEffect(root));
+}
+
+function runDiscoveryPromise<A>(effect: Effect.Effect<A, DiscoveryError>): Promise<A> {
+  return Effect.runPromise(Effect.either(effect)).then((result) =>
+    Either.isLeft(result) ? Promise.reject(result.left) : result.right
+  );
+}
+
+/** eval id 的裸字面前缀过滤；exp / show / view 共用 shared helper。 */
 export function makeFilter(patterns: string[]): (id: string) => boolean {
   return evalPrefixPredicate(patterns.length > 0 ? patterns : undefined);
 }

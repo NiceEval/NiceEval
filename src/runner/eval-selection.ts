@@ -13,12 +13,11 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
     id: evalDef.id,
     ...(evalDef.description !== undefined ? { description: evalDef.description } : {}),
     tags: Object.freeze([...(evalDef.tags ?? [])]),
-    // 题型是定义期事实(defineEval → "pass"、defineScoreEval → "points"),不靠执行 test() 推断;
-    // 省略(未经这两个定义函数处理的裸对象)按 "pass" 兜底,每条发现出的 eval 上都有确定值,
-    // 谓词读不到 undefined(见 docs/feature/experiments/score-points.md)。
     scoring: evalDef.scoring ?? "pass",
-    ...(evalDef.metadata !== undefined ? { metadata: Object.freeze({ ...evalDef.metadata }) } : {}),
-  }) as EvalDescriptor;
+    ...(Object.keys(evalDef.metadata ?? {}).length > 0
+      ? { metadata: Object.freeze({ ...evalDef.metadata }) }
+      : {}),
+  });
 }
 
 export interface ResolveExperimentEvalsInput {

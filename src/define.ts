@@ -8,7 +8,7 @@ import type {
   CustomSandboxSpec,
   DockerSandboxSpec,
   E2BSandboxSpec,
-  EvalAuthorInput,
+  EvalInput,
   EvalDefinition,
   ExperimentDefinition,
   ExperimentInput,
@@ -17,16 +17,32 @@ import type {
   SandboxAgentDef,
   SandboxHook,
   SandboxHooks,
-  ScoreEvalAuthorInput,
+  ScoreEvalInput,
   ScoreTestContext,
   TestContext,
   VercelSandboxSpec,
+  JsonValue,
 } from "./types.ts";
 import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
-import { isSandboxLayer } from "./sandbox/layer.ts";
+import {
+  customProviderSandbox,
+  isSandboxLayer,
+  sandboxLayer,
+  type CustomProviderSandboxOptions,
+  type SandboxLayer,
+} from "./sandbox/layer.ts";
 import { isExperimentStateDefinition } from "./state/definition.ts";
-import { planExperimentStateOrThrow } from "./state/plan.ts";
+import {
+  declaredState,
+  limitedStateConcurrency,
+  planExperimentStateOrThrow,
+  STATE_ABSENT,
+  STATE_CONCURRENCY_UNBOUNDED,
+  STATE_FRESH,
+  STATE_REUSE,
+} from "./state/plan.ts";
+import { Either, Schema } from "effect";
 
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
@@ -75,21 +91,21 @@ export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
 }
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
-export function defineEval(def: EvalAuthorInput): EvalDefinition<"pass", TestContext> {
-  if ((def as { id?: unknown }).id !== undefined) {
+export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> {
+  if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.evalIdRejected"));
   }
-  if ((def as { scoring?: unknown }).scoring !== undefined) {
+  if (Object.hasOwn(def, "scoring")) {
     throw new Error(t("define.evalScoringRejected"));
   }
-  if ((def as { configHash?: unknown }).configHash !== undefined) {
+  if (Object.hasOwn(def, "configHash")) {
     throw new Error(t("define.evalConfigHashRejected"));
   }
   if (typeof def.test !== "function") {
     throw new Error(t("define.evalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineEval");
-  return brandEvalDefinition({ ...def, scoring: "pass" });
+  return brandEvalDefinition({ ...normalizeEvalFields(def), scoring: "pass", test: def.test });
 }
 
 /**
@@ -98,29 +114,29 @@ export function defineEval(def: EvalAuthorInput): EvalDefinition<"pass", TestCon
  * 提供 id,从路径推导(见 docs/feature/eval/README.md「defineScoreEval:计分制题型」)。
  */
 export function defineScoreEval(
-  def: ScoreEvalAuthorInput,
+  def: ScoreEvalInput,
 ): EvalDefinition<"points", ScoreTestContext> {
-  if ((def as { id?: unknown }).id !== undefined) {
+  if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
-  if ((def as { scoring?: unknown }).scoring !== undefined) {
+  if (Object.hasOwn(def, "scoring")) {
     throw new Error(t("define.scoreEvalScoringRejected"));
   }
-  if ((def as { configHash?: unknown }).configHash !== undefined) {
+  if (Object.hasOwn(def, "configHash")) {
     throw new Error(t("define.scoreEvalConfigHashRejected"));
   }
   if (typeof def.test !== "function") {
     throw new Error(t("define.scoreEvalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineScoreEval");
-  const result = brandEvalDefinition({ ...def, scoring: "points" });
+  const result = brandEvalDefinition({ ...normalizeEvalFields(def), scoring: "points", test: def.test });
   definedScoreEvals.add(result);
   return result;
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
 export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
-  if ((def as { id?: unknown }).id !== undefined) {
+  if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.experimentIdRejected"));
   }
   if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
@@ -129,10 +145,12 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
     throw new TypeError("state.invalid-definition: defineExperiment state must be created by defineExperimentState().");
   }
   planExperimentStateOrThrow({
-    state: def.state,
+    state: def.state === undefined ? STATE_ABSENT : declaredState(def.state),
     agent: def.agent,
-    sandboxReuse: def.sandboxReuse === true,
-    maxConcurrency: def.maxConcurrency,
+    sandbox: def.sandboxReuse === true ? STATE_REUSE : STATE_FRESH,
+    concurrency: def.maxConcurrency === undefined
+      ? STATE_CONCURRENCY_UNBOUNDED
+      : limitedStateConcurrency(def.maxConcurrency),
   });
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
@@ -144,15 +162,6 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   if (def.classifyFailure !== undefined && typeof def.classifyFailure !== "function") {
     throw new Error(t("define.experimentClassifyFailureNotFunction"));
   }
-  // flags 必须可 JSON 序列化(进结果快照的 ExperimentRunInfo.flags):解析时即校验,
-  // 非 JSON 值(函数 / undefined / 循环引用 / bigint)直接报错,不等到落盘才炸。
-  if (def.flags !== undefined) {
-    for (const [key, value] of Object.entries(def.flags)) {
-      if (!isJsonValue(value)) {
-        throw new Error(t("define.experimentFlagNotJson", { key }));
-      }
-    }
-  }
   // labels 是报告归类坐标(进 ExperimentRunInfo.labels,不透传 ctx/t):值域 string | number,
   // 解析时即校验,布尔 / 对象 / NaN 直接报错,不等到落盘或报告分组才炸。
   if (def.labels !== undefined) {
@@ -161,7 +170,71 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
       if (!ok) throw new Error(t("define.experimentLabelInvalid", { key }));
     }
   }
-  return brandExperimentDefinition(def);
+  const { id: _derivedId, ...author } = def;
+  return brandExperimentDefinition({
+    ...author,
+    flags: decodeJsonRecord(def.flags ?? {}, "defineExperiment flags"),
+    labels: Object.freeze({ ...(def.labels ?? {}) }),
+    attempts: def.attempts ?? 1,
+    earlyExit: def.earlyExit ?? false,
+    evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
+    sandbox: def.sandbox ?? sandboxLayer(),
+    sandboxReuse: def.sandboxReuse === true,
+  });
+}
+
+function normalizeEvalFields(def: EvalInput | ScoreEvalInput) {
+  return {
+    ...(def.description !== undefined ? { description: def.description } : {}),
+    tags: Object.freeze([...(def.tags ?? [])]),
+    sandbox: def.sandbox ?? sandboxLayer(),
+    ...(def.judge !== undefined ? { judge: def.judge } : {}),
+    reporters: Object.freeze([...(def.reporters ?? [])]),
+    ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
+    metadata: decodeJsonRecord(def.metadata ?? {}, "Eval metadata"),
+    diff: Object.freeze({
+      include: Object.freeze([...(def.diff?.include ?? [])]),
+      ignore: Object.freeze([...(def.diff?.ignore ?? [])]),
+    }),
+  };
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (typeof value !== "object") return false;
+  return Object.values(value).every(isJsonValue);
+}
+
+const JsonValueSchema = Schema.declare<JsonValue>(isJsonValue);
+const JsonRecordSchema = Schema.Record({ key: Schema.String, value: JsonValueSchema });
+
+function deepFreezeJson(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) {
+    const items: JsonValue[] = value.map(deepFreezeJson);
+    Object.freeze(items);
+    return items;
+  }
+  if (value !== null && typeof value === "object") {
+    const record: globalThis.Record<string, JsonValue> = Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, deepFreezeJson(child)]),
+    );
+    Object.freeze(record);
+    return record;
+  }
+  return value;
+}
+
+function decodeJsonRecord(
+  value: Readonly<globalThis.Record<string, JsonValue>>,
+  label: string,
+): Readonly<globalThis.Record<string, JsonValue>> {
+  const decoded = Schema.decodeUnknownEither(JsonRecordSchema, { errors: "all" })(value);
+  if (Either.isLeft(decoded)) throw new TypeError(`${label} must be JSON-compatible: ${String(decoded.left)}`);
+  return Object.freeze(Object.fromEntries(
+    Object.entries(decoded.right).map(([key, child]) => [key, deepFreezeJson(child)]),
+  ));
 }
 
 /**
@@ -174,14 +247,6 @@ function assertSandboxLayer(value: unknown, factory: string): void {
       `${factory} sandbox must be a SandboxLayer created by a niceeval/sandbox factory (for example dockerImage(), dockerCompose(), e2bTemplate(), or localSandbox()).`,
     );
   }
-}
-
-function isJsonValue(v: unknown): boolean {
-  if (v === null || typeof v === "string" || typeof v === "boolean") return true;
-  if (typeof v === "number") return Number.isFinite(v);
-  if (Array.isArray(v)) return v.every(isJsonValue);
-  if (typeof v === "object") return Object.values(v as globalThis.Record<string, unknown>).every(isJsonValue);
-  return false;
 }
 
 /** 项目级配置。 */
