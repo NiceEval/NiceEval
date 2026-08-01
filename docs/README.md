@@ -20,6 +20,7 @@ Feature 和未归类的产品页描述**已经定稿、希望产品最终满足�
 | 现在要做什么 | 从哪里开始 |
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
+| 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
 | 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
 | 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
@@ -45,6 +46,7 @@ docs/
 ├── _template/                           Feature Design Package 与 Design Decision 共用模板
 ├── api-design.md                        公开 API 的调用点、命名与评审契约
 ├── getting-started.md                   新手路径
+├── user-story.md                        从 Epic 到普通用户故事的产品地图
 ├── source-map.md                        目标契约 → 源码落点
 ├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
 ├── writing-rules.json                   句长、段长规则与禁词库，pnpm test:docs 读它
