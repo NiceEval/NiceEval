@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 //
-// ctx.fact() 的作用域归属单测在本文件末尾单独一个 describe 块:sandbox hook / eval.setup /
+// ctx.fact() 的作用域归属单测在本文件末尾单独一个 describe 块:layer prepare/cleanup /
 // agent setup·send·teardown 上报的 fact 是否真的落进同一个 attempt 的 EvalResult.facts、
 // 同 key 后写覆盖先写、非法 key / 非标量 value 是否完整报错(见
 // docs/feature/record/architecture.md#facts运行事实)。
@@ -22,7 +22,11 @@ import { Effect } from "effect";
 import { runAttemptEffect } from "./attempt.ts";
 import { resolveRunTimeout, type RunTimeout } from "./timeout.ts";
 import { activateFeedbackSink, type DiagnosticInput, type FeedbackSink } from "./feedback/sink.ts";
-import { defineSandboxAgent, defineSandbox } from "../define.ts";
+import { defineSandboxAgent as defineSandboxAgentBase, defineSandbox } from "../define.ts";
+import { dockerImageSandbox, sandboxLayer } from "../sandbox/layer.ts";
+import type { SandboxLayer } from "../sandbox/layer.ts";
+import { linkSandboxLayers } from "../sandbox/link.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
@@ -33,12 +37,26 @@ import type {
   Config,
   DiscoveredEval,
   Sandbox,
-  SandboxFile,
+  SandboxAgentDef,
   ScoreTestContext,
   TestContext,
 } from "../types.ts";
 
-/** 内存沙箱:writeFiles/readFile 记文件,runShell 恒成功(供 initGitAndCommit / diff 采集用)。 */
+/** 这些测试关注 runner 生命周期；probe 恒命中，避免把安装行为混进 fixture。 */
+function defineSandboxAgent(
+  def: Omit<SandboxAgentDef, "ensure" | "installers">,
+) {
+  const ensure = {
+    identity: { agent: def.name, version: "0.0.0-test", revision: "1" },
+    probe: defineSandboxCommand(
+      { id: "test.agent.probe", revision: "1", inputs: { agent: def.name, version: "0.0.0-test" } },
+      async () => {},
+    ),
+  };
+  return defineSandboxAgentBase({ ...def, ensure, installers: [] });
+}
+
+/** 内存沙箱:writeText/readText 记文件,runShell 恒成功(供 git ledger / diff 采集用)。 */
 class FakeSandbox implements Partial<Sandbox> {
   readonly workdir = "/workspace";
   readonly sandboxId = "fake";
@@ -53,31 +71,32 @@ class FakeSandbox implements Partial<Sandbox> {
   async runCommand(): Promise<CommandResult> {
     return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
-    for (const [path, content] of Object.entries(files)) {
-      this.files.set(targetDir ? `${targetDir}/${path}` : path, content);
-    }
+  async runCommandOrThrow(): Promise<CommandResult & { exitCode: 0 }> {
+    return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
-    for (const f of files) {
-      this.files.set(targetDir ? `${targetDir}/${f.path}` : f.path, f.content.toString());
-    }
+  async runShellOrThrow(): Promise<CommandResult & { exitCode: 0 }> {
+    return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async uploadFile(path: string, content: Buffer): Promise<void> {
-    this.files.set(path, content.toString());
+  async writeText(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
   }
-  async uploadDirectory(): Promise<void> {}
-  async downloadFile(path: string): Promise<Buffer> {
-    return Buffer.from(this.files.get(path) ?? "");
+  async writeBytes(path: string, content: Uint8Array): Promise<void> {
+    this.files.set(path, Buffer.from(content).toString());
   }
-  async fileExists(path: string): Promise<boolean> {
+  async pathExists(path: string): Promise<boolean> {
     return this.files.has(path);
   }
-  async readFile(path: string): Promise<string> {
+  async readText(path: string): Promise<string> {
     const hit = this.files.get(path);
     if (hit === undefined) throw new Error(`no such file: ${path}`);
     return hit;
   }
+  async readBytes(path: string): Promise<Uint8Array> {
+    return Buffer.from(this.files.get(path) ?? "");
+  }
+  async uploadFile(): Promise<void> {}
+  async uploadDirectory(): Promise<void> {}
+  async downloadFile(): Promise<void> {}
   async downloadDirectory(): Promise<void> {}
   async stop(): Promise<void> {
     if (this.stopDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.stopDelayMs));
@@ -107,6 +126,8 @@ async function runOnce(
      */
     runTimeout?: RunTimeout;
     sandbox?: AgentRun["sandbox"];
+    /** 测试专用：pure-link 的 Experiment layer；物理 fake provider 仍由 sandbox 提供。 */
+    experimentLayer?: SandboxLayer;
     experimentId?: string;
     /** Experiment 级 Judge 覆盖。 */
     judge?: AgentRun["judge"];
@@ -136,7 +157,24 @@ async function runOnce(
     ...(opts.runTimeout ?? { timeoutMs: opts.timeoutMs ?? 5_000 }),
     selectedEvalIds: [evalDef.id],
   };
-  const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
+  const linkedSandbox = agent.kind === "sandbox"
+    ? Effect.runSync(linkSandboxLayers([{
+        eval: { id: evalDef.id, layer: evalDef.sandbox },
+        experiment: {
+          id: opts.experimentId ?? "fake/experiment",
+          layer: opts.experimentLayer ?? dockerImageSandbox({ image: "niceeval/fake:test" }),
+        },
+        agent: { kind: "sandbox", name: agent.name },
+      }]))[0]
+    : undefined;
+  const attempt: Attempt = {
+    evalDef,
+    run,
+    attempt: 0,
+    key: "fake/eval",
+    fingerprint: "",
+    ...(linkedSandbox !== undefined ? { linkedSandbox } : {}),
+  };
   const config: Config = opts.config ?? {};
   const runOpts: RunOptions = {
     config,
@@ -225,7 +263,7 @@ describe("runAttemptEffect · agent-setup 宿主侧转运(ctx.reportSetup → Ev
 // enterPhase 同步触发、顺序是否符合「没有对应 hook/配置的步骤直接跳过」的契约
 //(docs/feature/experiments/cli.md「Attempt 阶段」),而不是只在 run.ts 集成测试里间接验证。
 describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => {
-  it("挂了 eval.setup 与 agent.setup 时,phase 序列包含两者且不产生空阶段", async () => {
+  it("挂了 Eval prepare 与 agent.setup 时,phase 序列包含聚合与 owner 归因", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-with-setup",
       setup: async () => {},
@@ -235,18 +273,19 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     const phases: LifecyclePhase[] = [];
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, {
-      evalDefOverrides: { setup: async () => {} },
+      evalDefOverrides: { sandbox: sandboxLayer().prepare(async () => {}) },
       onPhase: (phase) => phases.push(phase),
     });
 
     expect(result.error).toBeUndefined();
-    // sandbox-setup(没有 SandboxSpec.setup 钩子)与 telemetry-setup(没有 tracing)都该跳过——
-    // 不产生空阶段,序列只含实际执行到的边界,严格按生命周期顺序出现一次。
+    // owner phase 只做归因，但仍通过 onPhase 对外报告；计时层单独保证不形成重复条目。
     expect(phases).toEqual([
       "sandbox.queue",
       "sandbox.create",
+      "sandbox.prepare",
+      "sandbox.prepare.eval",
+      "agent.ensure",
       "workspace.baseline",
-      "eval.setup",
       "agent.setup",
       "eval.run",
       "workspace.diff",
@@ -254,7 +293,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     ]);
   });
 
-  it("没有 eval.setup / agent.setup 时,对应阶段整个不出现(不是出现后立刻跳过的空事件)", async () => {
+  it("没有作者 prepare / agent.setup 时,对应阶段不出现；ensure 屏障仍执行", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-no-setup",
       send: async () => ({ events: [], status: "completed" }),
@@ -264,7 +303,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     const box = new FakeSandbox();
     await runOnce(agent, box, { onPhase: (phase) => phases.push(phase) });
 
-    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
+    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
   });
 
   it("test() 抛出的普通执行错误不设置 skipReason,diff/scoring 仍照常进入", async () => {
@@ -289,7 +328,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     // test() 里的普通异常被 runAttemptBody 内层 try/catch 收作 result.error,不设置
     // skipReason——所以 diff/scoring 的跳过条件(`!skipReason`)不成立,两个阶段仍会进入,
     // 最后落 teardown。这是「running 阶段失败」的真实序列。
-    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
+    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
   });
 
   it("agent.setup 中途抛错时,phase 序列停在 agent-setup 就跳进 teardown(不会假装跑到了 running)", async () => {
@@ -309,127 +348,127 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("agent.setup");
     // 失败发生在 agent-setup:之后不再出现 running/diff/scoring —— run.ts 的 reportFailure()
     // 靠的正是这个真实的「最后已知阶段」,不是硬编码成 running(见 run.ts 的 lastPhase 注释)。
-    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "workspace.baseline", "agent.setup"]);
+    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "agent.setup"]);
   });
 });
 
-// eval.teardown 的触发条件是「eval.setup 时点走到过」,不是「setup 声明且成功」(成对触发规则,
-// 见 docs/runner.md「环境预置不进运行器,但按顺序调它」)。时点在 attempt.ts 里于调用
-// evalDef.setup 之前就置位,所以 setup 抛错、乃至压根没声明 setup,都不豁免 teardown。
-describe("runAttemptEffect · eval.teardown 的触发规则", () => {
-  it("eval.setup 抛错时,eval.teardown 仍被调用(半初始化现场同样要扫尾)", async () => {
+describe("runAttemptEffect · SandboxLayer cleanup 的登记边界", () => {
+  it("prepare 登记 cleanup 后抛错，已取得资源仍被清理", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-eval-setup-throws",
       send: async () => ({ events: [], status: "completed" }),
     });
-    let teardownCalls = 0;
+    let cleanupCalls = 0;
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        setup: async () => {
-          throw new Error("boom-from-eval-setup");
-        },
-        teardown: async () => {
-          teardownCalls += 1;
-        },
+        sandbox: sandboxLayer().prepare(async (_sandbox, context) => {
+          context.onCleanup(async () => {
+            cleanupCalls += 1;
+          });
+          throw new Error("boom-from-eval-prepare");
+        }),
       },
     });
 
-    expect(result.error?.message).toContain("boom-from-eval-setup");
-    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
-    expect(teardownCalls).toBe(1);
+    expect(result.error?.message).toContain("boom-from-eval-prepare");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.prepare.eval");
+    expect(cleanupCalls).toBe(1);
   });
 
-  it("未声明 eval.setup 时,eval.teardown 依然触发(时点走到不依赖 setup 是否声明)", async () => {
+  it("prepare 未登记 cleanup 时不虚构收尾调用", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-no-eval-setup",
       send: async () => ({ events: [], status: "completed" }),
     });
-    let teardownCalls = 0;
+    let cleanupCalls = 0;
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        teardown: async () => {
-          teardownCalls += 1;
-        },
+        sandbox: sandboxLayer().prepare(async () => {
+          cleanupCalls += 0;
+        }),
       },
     });
 
     expect(result.error).toBeUndefined();
-    expect(teardownCalls).toBe(1);
+    expect(cleanupCalls).toBe(0);
   });
 });
 
 // cases: docs/engineering/testing/unit/sandbox.md「生命周期与资源释放」
-describe("runAttemptEffect · sandbox hook 链的执行与失败收尾", () => {
-  it("setup 按追加顺序、teardown 按 LIFO，且各层 ctx.experimentId 取同一运行身份", async () => {
+describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
+  it("template owner 命令先执行，第二作者随后；cleanup 全局 LIFO", async () => {
     const events: string[] = [];
     const experimentId = "order/mock";
-    const record = (event: string, actualExperimentId: string | undefined) => {
-      expect(actualExperimentId).toBe(experimentId);
+    const record = (event: string): void => {
       events.push(event);
     };
     const box = new FakeSandbox();
-    const sandbox = defineSandbox({ name: "fake-provider-hook-order", create: async () => asSandbox(box) })
-      .setup((_sandbox, ctx) => record("sandbox.setup:a", ctx.experimentId))
-      .setup((_sandbox, ctx) => record("sandbox.setup:b", ctx.experimentId))
-      .teardown((_sandbox, ctx) => record("sandbox.teardown:x", ctx.experimentId))
-      .teardown((_sandbox, ctx) => record("sandbox.teardown:y", ctx.experimentId));
+    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+      .prepare(async (_sandbox, context) => {
+        expect(context.owner).toEqual({ kind: "experiment", id: experimentId });
+        record("experiment.prepare:a");
+        context.onCleanup(async () => record("experiment.cleanup:a"));
+      })
+      .prepare(async (_sandbox, context) => {
+        record("experiment.prepare:b");
+        context.onCleanup(async () => record("experiment.cleanup:b"));
+      });
     const agent = defineSandboxAgent({
       name: "fake-agent-hook-order",
-      setup: async (_sandbox, ctx) => record("agent.setup", ctx.experimentId),
-      send: async (_input, ctx) => {
-        record("agent.send", ctx.experimentId);
+      setup: async () => record("agent.setup"),
+      send: async () => {
+        record("agent.send");
         return { events: [], status: "completed" };
       },
-      teardown: async (_sandbox, ctx) => record("agent.teardown", ctx.experimentId),
+      teardown: async () => record("agent.teardown"),
     });
 
     const result = await runOnce(agent, box, {
-      sandbox,
       experimentId,
+      experimentLayer,
       evalDefOverrides: {
-        setup: async (_sandbox, ctx) => record("eval.setup", ctx.experimentId),
+        sandbox: sandboxLayer().prepare(async (_sandbox, context) => {
+          expect(context.owner).toEqual({ kind: "eval", id: "fake/eval" });
+          record("eval.prepare");
+          context.onCleanup(async () => record("eval.cleanup"));
+        }),
         test: async (t) => {
           await t.send("go");
         },
-        teardown: async (_sandbox, ctx) => record("eval.teardown", ctx.experimentId),
       },
     });
 
     expect(result.error).toBeUndefined();
     expect(events).toEqual([
-      "sandbox.setup:a",
-      "sandbox.setup:b",
-      "eval.setup",
+      "experiment.prepare:a",
+      "experiment.prepare:b",
+      "eval.prepare",
       "agent.setup",
       "agent.send",
-      "eval.teardown",
       "agent.teardown",
-      "sandbox.teardown:y",
-      "sandbox.teardown:x",
+      "eval.cleanup",
+      "experiment.cleanup:b",
+      "experiment.cleanup:a",
     ]);
   });
 
-  it("sandbox.setup 中途失败时后续 setup 与 agent 都不运行，但完整 teardown 链仍按 LIFO 扫尾", async () => {
+  it("prepare 中途失败时后续命令与 agent 不运行，只清理已登记资源", async () => {
     const events: string[] = [];
     const box = new FakeSandbox();
-    const sandbox = defineSandbox({ name: "fake-provider-hook-failure", create: async () => asSandbox(box) })
-      .setup(() => {
-        events.push("sandbox.setup:ok");
+    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+      .prepare((_sandbox, context) => {
+        events.push("prepare:ok");
+        context.onCleanup(async () => { events.push("cleanup:ok"); });
       })
-      .setup(() => {
-        events.push("sandbox.setup:boom");
-        throw new Error("boom-from-sandbox-setup");
+      .prepare((_sandbox, context) => {
+        events.push("prepare:boom");
+        context.onCleanup(async () => { events.push("cleanup:boom"); });
+        throw new Error("boom-from-sandbox-prepare");
       })
-      .setup(() => {
-        events.push("sandbox.setup:must-not-run");
-      })
-      .teardown(() => {
-        events.push("sandbox.teardown:first");
-      })
-      .teardown(() => {
-        events.push("sandbox.teardown:last");
+      .prepare(() => {
+        events.push("prepare:must-not-run");
       });
     const agent = defineSandboxAgent({
       name: "fake-agent-must-not-start",
@@ -445,16 +484,16 @@ describe("runAttemptEffect · sandbox hook 链的执行与失败收尾", () => {
       },
     });
 
-    const result = await runOnce(agent, box, { sandbox });
+    const result = await runOnce(agent, box, { experimentLayer });
 
     expect(result.verdict).toBe("errored");
-    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.setup");
-    expect(result.error?.message).toContain("boom-from-sandbox-setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.prepare.experiment");
+    expect(result.error?.message).toContain("boom-from-sandbox-prepare");
     expect(events).toEqual([
-      "sandbox.setup:ok",
-      "sandbox.setup:boom",
-      "sandbox.teardown:last",
-      "sandbox.teardown:first",
+      "prepare:ok",
+      "prepare:boom",
+      "cleanup:boom",
+      "cleanup:ok",
     ]);
   });
 });
@@ -468,9 +507,8 @@ describe("runAttemptEffect · 主链与 Sample 收尾的计时边界", () => {
     const result = await runOnce(agent, new FakeSandbox(40));
     const phases = result.phases ?? [];
     const closing = new Set<LifecyclePhase>([
-      "eval.teardown",
       "agent.teardown",
-      "sandbox.teardown",
+      "sandbox.cleanup",
       "sandbox.suspend",
       "sandbox.stop",
     ]);
@@ -526,22 +564,22 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
     const result = await runOnce(scoringAgent(), new FakeSandbox(), {
       evalDefOverrides: {
         scoring: "points",
-        setup: async () => {
+        sandbox: sandboxLayer().prepare(async () => {
           throw new Error("setup boom");
-        },
+        }),
       },
     });
     expect(result.verdict).toBe("errored");
     expect(result.scoreEntries).toEqual([]);
   });
 
-  it("前置 .gate() 中止后:verdict 为 failed(非 errored),中止前的给分保留、中止后的记录被丢弃", async () => {
+  it(".gate().stopOnFailure() 中止后:verdict 为 failed,中止后的给分被丢弃", async () => {
     const result = await runOnce(scoringAgent(), new FakeSandbox(), {
       evalDefOverrides: {
         scoring: "points",
         test: (async (t: ScoreTestContext) => {
           t.score("早期给分", 5);
-          await t.check("actual", equals("expected")).gate(); // 必然不匹配,就地中止 test()
+          await t.check("actual", equals("expected")).gate().stopOnFailure();
           t.score("永不执行", 100); // 中止之后的给分不进结果
         }) as unknown as DiscoveredEval["test"],
       },
@@ -556,13 +594,13 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
     expect(result.assertions[0]!.outcome).toBe("failed");
   });
 
-  it("前置不写 await 也不漏中止:结论与写了 await 完全一致(中止后的记录被截断)", async () => {
+  it("stopOnFailure 不写 await 也不漏中止:结论与写了 await 完全一致", async () => {
     const result = await runOnce(scoringAgent(), new FakeSandbox(), {
       evalDefOverrides: {
         scoring: "points",
         test: (async (t: ScoreTestContext) => {
           t.score("早期给分", 5);
-          t.check("actual", equals("expected")).gate(); // 没有 await
+          t.check("actual", equals("expected")).gate().stopOnFailure(); // 没有 await
           t.score("永不执行", 100);
         }) as unknown as DiscoveredEval["test"],
       },
@@ -702,7 +740,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
     }
   });
 
-  it("超时发生在 SandboxSpec.setup 钩子挂起时(从未建立 ledger/session):events/usage/diff 如实缺失,不是伪造空值", async () => {
+  it("超时发生在 SandboxLayer prepare 挂起时:events/usage/diff 如实缺失", async () => {
     vi.useFakeTimers();
     try {
       const agent = defineSandboxAgent({
@@ -711,12 +749,12 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       });
 
       const box = new FakeSandbox();
-      // sandbox.create() 立即成功(内存 fake),但 SandboxSpec.setup 钩子永远不返回:
+      // sandbox.create() 立即成功(内存 fake),但 Experiment prepare 永远不返回:
       // 超时发生在 workspace.baseline 之前,SessionManager/ledger 都还没建立,
       // liveEvents/liveLedger 从未登记过(registerEvidence/registerLedger 都没被调用)。
-      const sandboxSpec = defineSandbox({ name: "fake-provider-hang-setup", create: async () => asSandbox(box) }).setup(
-        async () => await new Promise<never>(() => {}),
-      );
+      const sandboxSpec = defineSandbox({ name: "fake-provider-hang-setup", create: async () => asSandbox(box) });
+      const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+        .prepare(async () => await new Promise<never>(() => {}));
       const run: AgentRun = {
         agent,
         flags: {},
@@ -733,7 +771,12 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
         source,
         test: () => {},
       };
-      const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
+      const [linkedSandbox] = Effect.runSync(linkSandboxLayers([{
+        eval: { id: evalDef.id },
+        experiment: { id: "fake/experiment", layer: experimentLayer },
+        agent: { kind: "sandbox", name: agent.name },
+      }]));
+      const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "", linkedSandbox };
       const config: Config = {};
       const runOpts: RunOptions = { config, evals: [evalDef], agentRuns: [run], reporters: [], maxConcurrency: 1 };
       const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
@@ -754,22 +797,22 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
 
 // cases: docs/engineering/testing/unit/experiments-runner.md「ctx.fact() 的作用域归属」
 describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.facts", () => {
-  it("sandbox hook / eval.setup / agent setup·send·teardown 上报的 fact 都落进同一个 attempt 的 facts;同一作用域内同 key 后写覆盖先写", async () => {
+  it("两层 prepare/cleanup 与 agent setup·send·teardown 的 fact 落进同一 attempt", async () => {
     const box = new FakeSandbox();
-    const sandboxSpec = defineSandbox({ name: "fake-provider-facts", create: async () => asSandbox(box) })
-      .setup(async (_sandbox, ctx) => {
-        ctx.fact("sandbox.setup_ran", true);
-        ctx.fact("shared.key", "from-sandbox-hook");
-      })
-      .teardown(async (_sandbox, ctx) => {
-        ctx.fact("sandbox.teardown_ran", true);
+    const experimentLayer = dockerImageSandbox({ image: "niceeval/fake:test" })
+      .prepare(async (_sandbox, ctx) => {
+        ctx.facts("experiment.prepare_ran", true);
+        ctx.facts("shared.key", "from-experiment-prepare");
+        ctx.onCleanup(async (_target, cleanupCtx) => {
+          cleanupCtx.facts("experiment.cleanup_ran", true);
+        });
       });
 
     const agent = defineSandboxAgent({
       name: "fake-agent-facts",
       setup: async (_sandbox, ctx) => {
         ctx.fact("agent.setup_ran", true);
-        ctx.fact("shared.key", "from-agent-setup"); // 覆盖 sandbox hook 写的同 key(同一 attempt 作用域)
+        ctx.fact("shared.key", "from-agent-setup");
       },
       send: async (_input, ctx) => {
         ctx.fact("shared.key", "from-send"); // 再次覆盖:最终值来自最后一次写
@@ -780,53 +823,37 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
       },
     });
 
-    const evalDef: DiscoveredEval = {
-      id: "fake/eval",
-      baseDir: "/project",
-      sourcePath: "/project/fake.eval.ts",
-      source,
-      setup: async (_sandbox, ctx) => {
-        ctx.fact("eval.setup_ran", true);
+    const result = await runOnce(agent, box, {
+      experimentId: "facts/mock",
+      experimentLayer,
+      evalDefOverrides: {
+        sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
+          ctx.facts("eval.prepare_ran", true);
+        }),
+        test: async (t) => { await t.send("go"); },
       },
-      test: async (t) => {
-        await t.send("go");
-      },
-    };
-    const run: AgentRun = {
-      agent,
-      flags: {},
-      attempts: 1,
-      earlyExit: true,
-      sandbox: sandboxSpec,
-      timeoutMs: 5_000,
-      selectedEvalIds: [evalDef.id],
-    };
-    const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
-    const config: Config = {};
-    const runOpts: RunOptions = { config, evals: [evalDef], agentRuns: [run], reporters: [], maxConcurrency: 1 };
-    const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
-
-    const result = await Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem, {}));
+    });
 
     expect(result.error).toBeUndefined();
     expect(result.facts).toEqual({
-      "sandbox.setup_ran": true,
-      "eval.setup_ran": true,
+      "agent.ensure": "hit",
+      "experiment.prepare_ran": true,
+      "eval.prepare_ran": true,
       "agent.setup_ran": true,
       "shared.key": "from-send",
       "agent.teardown_ran": true,
-      "sandbox.teardown_ran": true,
+      "experiment.cleanup_ran": true,
     });
   });
 
-  it("没有任何 ctx.fact() 调用时,EvalResult.facts 整个不出现(不是空对象)", async () => {
+  it("没有任何作者 ctx.fact() 调用时,EvalResult.facts 只保留 Runner 的 ensure 事实", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-no-facts",
       send: async () => ({ events: [], status: "completed" }),
     });
     const result = await runOnce(agent, new FakeSandbox());
     expect(result.error).toBeUndefined();
-    expect(result.facts).toBeUndefined();
+    expect(result.facts).toEqual({ "agent.ensure": "hit" });
   });
 
   it("非法 key(不匹配 [a-z0-9._-]{1,64})抛错:attempt errored,错误信息带上具体 key", async () => {
@@ -837,13 +864,13 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        setup: async (_sandbox, ctx) => {
-          ctx.fact("Not A Valid Key!", "x");
-        },
+        sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
+          ctx.facts("Not A Valid Key!", "x");
+        }),
       },
     });
     expect(result.verdict).toBe("errored");
-    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.prepare.eval");
     expect(result.error?.message).toContain("Not A Valid Key!");
   });
 
@@ -855,13 +882,13 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, {
       evalDefOverrides: {
-        setup: async (_sandbox, ctx) => {
-          ctx.fact("service.config", { nested: true } as unknown as string);
-        },
+        sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
+          ctx.facts("service.config", { nested: true } as unknown as string);
+        }),
       },
     });
     expect(result.verdict).toBe("errored");
-    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.prepare.eval");
     expect(result.error?.message).toContain("object");
   });
 });
@@ -978,13 +1005,13 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
       await runOnce(agent, new FakeSandbox(), {
         experimentId: "compare/codex",
         evalDefOverrides: {
-          setup: async (_sandbox, ctx) => {
+          sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
             ctx.diagnostic({
               code: "memory-warmup-degraded",
               level: "warning",
               message: "Memory warmup failed; continuing with a cold index",
             });
-          },
+          }),
         },
       });
     } finally {
@@ -995,7 +1022,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
     const [forwarded] = seen;
     expect(forwarded!.code).toBe("memory-warmup-degraded");
     expect(forwarded!.key).toBe("memory-warmup-degraded:compare/codex|fake/eval|0");
-    expect(forwarded!.data?.phase).toBe("eval.setup");
+    expect(forwarded!.data?.phase).toBe("sandbox.prepare.eval");
     expect(forwarded!.identity).toEqual({ experimentId: "compare/codex", evalId: "fake/eval", attempt: 0 });
   });
 
@@ -1038,14 +1065,14 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
     try {
       await runOnce(agent, new FakeSandbox(), {
         evalDefOverrides: {
-          setup: async (_sandbox, ctx) => {
+          sandbox: sandboxLayer().prepare(async (_sandbox, ctx) => {
             ctx.diagnostic({
               code: "warmup-degraded",
               level: "warning",
               message: "cold index",
               data: { origin: { scope: "attempt" as const, phase: "scoring.evaluate" }, indexAgeDays: 12 },
             });
-          },
+          }),
         },
       });
     } finally {
@@ -1054,8 +1081,8 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.data).toEqual({
-      phase: "eval.setup",
-      origin: { scope: "attempt" as const, phase: "eval.setup" },
+      phase: "sandbox.prepare.eval",
+      origin: { scope: "attempt" as const, phase: "sandbox.prepare.eval" },
       indexAgeDays: 12,
     });
   });
@@ -1342,19 +1369,19 @@ describe("runAttemptEffect · sandbox 调度事实在租借时刻落记录", () 
     });
   });
 
-  it("Eval setup 抛错(没走到收尾)的 attempt,同样带全归属键", async () => {
+  it("Eval prepare 抛错的 attempt 同样带全归属键", async () => {
     const box = new FakeSandbox();
     const result = await runOnce(quietAgent(), box, {
       reusedSandbox: { sandbox: asSandbox(box), reuseSandbox: 1, reuseOrdinal: 5 },
       evalDefOverrides: {
-        setup: async () => {
+        sandbox: sandboxLayer().prepare(async () => {
           throw new Error("fixture prep failed");
-        },
+        }),
       },
     });
 
     expect(result.verdict).toBe("errored");
-    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.prepare.eval");
     expect(result.sandbox).toEqual({
       provider: "fake-provider",
       sandboxId: "fake",
@@ -1368,9 +1395,9 @@ describe("runAttemptEffect · sandbox 调度事实在租借时刻落记录", () 
     const box = new FakeSandbox();
     const result = await runOnce(quietAgent(), box, {
       evalDefOverrides: {
-        setup: async () => {
+        sandbox: sandboxLayer().prepare(async () => {
           throw new Error("fixture prep failed");
-        },
+        }),
       },
     });
 

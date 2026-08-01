@@ -9,9 +9,8 @@ import type { CommandLimitAttribution, LifecyclePhase, PhaseTiming, TimingActivi
 
 /** 主链成员(enterPhase 推进;进入下一个即关闭上一个)。收尾段用 measureClosing 单独计时。 */
 const CLOSING_PHASES: ReadonlySet<LifecyclePhase> = new Set([
-  "eval.teardown",
   "agent.teardown",
-  "sandbox.teardown",
+  "sandbox.cleanup",
   "sandbox.suspend",
   "sandbox.stop",
 ]);
@@ -193,7 +192,11 @@ export function createTimingRecorder(now: () => number = () => performance.now()
         close();
         return;
       }
-      if (phase === "agent.run") return;
+      if (
+        phase === "agent.run" ||
+        phase === "sandbox.prepare.eval" ||
+        phase === "sandbox.prepare.experiment"
+      ) return;
       close();
       open = { name: phase, startedAt: now(), children: [] };
     },
@@ -295,11 +298,11 @@ export function commandNode(opts: {
 /**
  * 一条命令的时限归属:优先级不在这里重写一遍,直接问 `commandLimit`(时限派生的单源),
  * 只把它的 `explicit` 翻成来源层的词——显式声明归 `command-timeout`,其余归 `attempt-deadline`
- * (未显式传 `timeout` 的命令拿的就是 deadline 剩余量)。两者都没有时返回 `undefined`:
+ * (未显式传 `timeoutMs` 的命令拿的就是 deadline 剩余量)。两者都没有时返回 `undefined`:
  * 没有线就是没有线,不给节点编一条。
  */
 export function commandLimitAttribution(
-  opts: { timeout?: number } | undefined,
+  opts: { timeoutMs?: number } | undefined,
   base: { commandTimeoutMs?: number; deadlineAt?: number },
   now = Date.now(),
 ): CommandLimitAttribution | undefined {
@@ -308,15 +311,15 @@ export function commandLimitAttribution(
   return { source: limit.explicit ? "command-timeout" : "attempt-deadline", limitMs: limit.timeoutMs };
 }
 
-/** key=sandbox.hook 节点的便捷构造。 */
-export function hookActivity(opts: {
+/** key=sandbox.prepare 节点的便捷构造；prepare 与 cleanup 两个锚点共用。 */
+export function sandboxPrepareActivity(opts: {
   label: string;
   startOffsetMs: number;
   durationMs?: number;
   failed?: boolean;
 }): Omit<TimingActivity, "id"> {
   return {
-    key: "sandbox.hook",
+    key: "sandbox.prepare",
     label: opts.label,
     startOffsetMs: opts.startOffsetMs,
     durationMs: opts.durationMs ?? 0,

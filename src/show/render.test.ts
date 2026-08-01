@@ -336,7 +336,7 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
   function commandsEvidence(): AttemptEvidence {
     const phases: PhaseTiming[] = [
       {
-        name: "eval.setup" as PhaseTiming["name"],
+        name: "sandbox.prepare" as PhaseTiming["name"],
         durationMs: 500,
         children: [
           { id: "cmd-node-b", key: "sandbox.command", label: "npm", startOffsetMs: 300, durationMs: 100, command: { display: "npm ci", exitCode: 1 } },
@@ -348,8 +348,8 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
       execution: null,
       result: resultOf({ phases }),
       commands: [
-        { timingNodeId: "cmd-node-b", phase: "eval.setup", display: "npm ci", exitCode: 1, stdout: "", stderr: "npm error EACCES" },
-        { timingNodeId: "cmd-node-a", phase: "eval.setup", display: "git fetch", exitCode: 128, stdout: "", stderr: "fatal: could not read" },
+        { timingNodeId: "cmd-node-b", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "npm error EACCES" },
+        { timingNodeId: "cmd-node-a", phase: "sandbox.prepare.eval", display: "git fetch", exitCode: 128, stdout: "", stderr: "fatal: could not read" },
       ],
     });
   }
@@ -364,7 +364,7 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
   it("命令卡标题带关联 phase 与 timing 节点 duration,正文分 stdout/stderr(空字段整段省略)", () => {
     const evidence = commandsEvidence();
     const { text } = executionText(evidence, OPTS);
-    expect(text).toContain("FAILED COMMAND · eval.setup · exit 128 · 20ms");
+    expect(text).toContain("FAILED COMMAND · sandbox.prepare.eval · exit 128 · 20ms");
     expect(text).toContain("fatal: could not read");
     expect(text).not.toMatch(/stdout\n/); // 两条命令 stdout 都是空串,不出现空 stdout 区块
   });
@@ -388,7 +388,7 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     const phases: PhaseTiming[] = [
       ...twoTurnPhases(),
       {
-        name: "eval.setup" as PhaseTiming["name"],
+        name: "sandbox.prepare" as PhaseTiming["name"],
         durationMs: 100,
         children: [{ id: "cmd-node", key: "sandbox.command", label: "npm", startOffsetMs: 0, durationMs: 50, command: { display: "npm ci", exitCode: 1 } }],
       },
@@ -396,7 +396,7 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     return evidenceOf({
       execution: buildExecutionTree(twoTurnEvents(), []),
       result: resultOf({ phases }),
-      commands: [{ timingNodeId: "cmd-node", phase: "eval.setup", display: "npm ci", exitCode: 1, stdout: "", stderr: "EACCES permission denied" }],
+      commands: [{ timingNodeId: "cmd-node", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "EACCES permission denied" }],
     });
   }
 
@@ -420,8 +420,8 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     const evidence = evidenceWithEventsAndCommands();
     const { matches, text } = executionText(evidence, OPTS, { grep: /EACCES/ });
     expect(matches).toBe(1);
-    expect(text).toContain("FAILED COMMAND · eval.setup");
-    expect(text).toContain(`${LOCATOR} · eval/one · exp/a · eval.setup`);
+    expect(text).toContain("FAILED COMMAND · sandbox.prepare.eval");
+    expect(text).toContain(`${LOCATOR} · eval/one · exp/a · sandbox.prepare.eval`);
   });
 
   it("0 命中返回空文本与 matches: 0,不是报错或整段落空的「no events」文案", () => {
@@ -611,7 +611,7 @@ describe("--timing:命令节点的时限归属", () => {
   function limitPhases(): PhaseTiming[] {
     return [
       {
-        name: "eval.setup" as PhaseTiming["name"],
+        name: "sandbox.prepare" as PhaseTiming["name"],
         durationMs: 94_000,
         children: [
           {

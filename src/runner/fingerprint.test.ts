@@ -62,7 +62,7 @@ describe("按需构建进入指纹", () => {
     const evalDef: DiscoveredEval = { ...makeEval("e"), baseDir: root, environment: "built" };
     const run: AgentRun = {
       ...makeRun("exp", ["e"], 1),
-      agent: defineSandboxAgent({ name: "sandbox", send: async () => ({ events: [], status: "completed" }) }),
+      agent: defineSandboxAgent({ name: "sandbox", ensure: [], installers: [], send: async () => ({ events: [], status: "completed" }) }),
       sandbox: dockerSandbox({ environments: { built: { build: { context: "." } } } }),
     };
 

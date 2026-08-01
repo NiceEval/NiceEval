@@ -6,11 +6,17 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { planSandboxCase } from "../sandbox/case.ts";
 import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
-import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
+import {
+  linkedSandboxForEval,
+  prepareRunSandboxes,
+  sandboxEnvironmentForEval,
+  sandboxForEval,
+} from "./sandbox-selection.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { manifestDeltas, OPAQUE_SELECTOR, type EvalManifest } from "./manifest.ts";
 import {
@@ -66,7 +72,14 @@ export async function fingerprintWithManifest(
   configSandbox?: SandboxOption,
   overrides?: { configHash?: string; configIdentity?: ConfigIdentity; sandbox?: SandboxRunInfo; carryEpoch?: string },
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  const identity = overrides?.configIdentity ?? configIdentityForRun(run, configSandbox);
+  const sandboxSpec = sandboxForEval(run, evalDef, configSandbox);
+  const linkedSandbox = linkedSandboxForEval(run, evalDef);
+  const identity = overrides?.configIdentity ?? configIdentityForRun(
+    run,
+    linkedSandbox === undefined ? sandboxSpec : undefined,
+    run.judge,
+    linkedSandbox === undefined ? undefined : sandboxLayerIdentityFor(linkedSandbox, "experiment"),
+  );
   const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
   const loaderData = await Promise.all(
@@ -83,21 +96,30 @@ export async function fingerprintWithManifest(
   const privateFiles = await Promise.all(
     [...(evalDef.privatePaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
   );
-  const sandboxSpec = sandboxForEval(run, evalDef, configSandbox);
-  const caseIdentity = await resolvedSandboxCaseIdentityForEval(evalDef, sandboxSpec);
+  const sandboxEnvironment = sandboxEnvironmentForEval(run, evalDef);
+  const caseIdentity = await resolvedSandboxCaseIdentityForEval(evalDef, sandboxSpec, sandboxEnvironment);
   const payload = {
     configHash,
     source,
     eval: {
       id: evalDef.id,
       tags: evalDef.tags ?? [],
-      environment: environmentFingerprintInput(evalDef.environment),
+      environment: environmentFingerprintInput(sandboxEnvironment),
       metadata: evalDef.metadata ?? {},
     },
     sandbox: overrides?.sandbox ?? sandboxRunInfo(sandboxSpec),
+    ...(linkedSandbox?.kind === "sandbox"
+      ? {
+          sandboxLayer: sandboxLayerIdentityFor(linkedSandbox, "eval"),
+          sandboxTemplateOwner: linkedSandbox.templateOwner.kind,
+        }
+      : {}),
     ...(caseIdentity !== undefined ? { sandboxCase: caseIdentity } : {}),
     ...(caseIdentity?.carryEligible === false
       ? { sandboxCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
+      : {}),
+    ...(linkedSandbox?.kind === "sandbox" && !linkedSandbox.carryEligible
+      ? { sandboxCommandCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
       : {}),
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
@@ -434,7 +456,13 @@ export async function planCarry(
     for (const evalDef of selectedEvalsForRun(evals, run)) {
       const key = cacheKey(run, evalDef.id);
       const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
-      const identity = configIdentityForRun(run, configSandbox, resolvedJudge);
+      const linkedSandbox = linkedSandboxForEval(run, evalDef);
+      const identity = configIdentityForRun(
+        run,
+        linkedSandbox === undefined ? sandboxForEval(run, evalDef, configSandbox) : undefined,
+        resolvedJudge,
+        linkedSandbox === undefined ? undefined : sandboxLayerIdentityFor(linkedSandbox, "experiment"),
+      );
       const configHash = hashConfigIdentity(identity);
       run.configHash = configHash;
       entries.set(key, { run, evalDef, identity });
@@ -657,11 +685,12 @@ export function sandboxCaseIdentityForEval(
 async function resolvedSandboxCaseIdentityForEval(
   evalDef: DiscoveredEval,
   sandboxSpec: SandboxOption | undefined,
+  environment: DiscoveredEval["environment"] = evalDef.environment,
 ): Promise<{ caseKey: string; buildKeys: readonly string[]; identity: JsonValue; carryEligible: boolean } | undefined> {
   if (sandboxSpec === undefined) return undefined;
   const planned = planSandboxCase({
     evalId: evalDef.id,
-    environment: evalDef.environment,
+    environment,
     ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
     spec: sandboxSpec,
   });

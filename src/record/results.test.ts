@@ -534,7 +534,7 @@ describe("createWriter", () => {
     const evidence = [
       {
         timingNodeId: "n1",
-        phase: "eval.setup" as const,
+        phase: "sandbox.prepare.eval" as const,
         display: "npm install -g pnpm",
         exitCode: 243,
         stdout: "",

@@ -458,12 +458,14 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.sandboxQueue");
     case "sandbox.create":
       return t("feedback.phase.sandboxCreate");
-    case "sandbox.setup":
-      return t("feedback.phase.sandboxSetup");
+    case "sandbox.prepare":
+    case "sandbox.prepare.eval":
+    case "sandbox.prepare.experiment":
+      return t("feedback.phase.sandboxPrepare");
+    case "agent.ensure":
+      return t("feedback.phase.agentEnsure");
     case "workspace.baseline":
       return t("feedback.phase.workspaceBaseline");
-    case "eval.setup":
-      return t("feedback.phase.evalSetup");
     case "agent.setup":
       return t("feedback.phase.agentSetup");
     case "telemetry.configure":
@@ -477,9 +479,8 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.scoring");
     case "telemetry.collect":
       return t("feedback.phase.telemetryCollect");
-    case "eval.teardown":
     case "agent.teardown":
-    case "sandbox.teardown":
+    case "sandbox.cleanup":
     case "sandbox.suspend":
     case "sandbox.stop":
       return t("feedback.phase.teardown");

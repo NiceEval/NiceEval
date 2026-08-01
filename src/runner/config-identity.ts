@@ -8,6 +8,7 @@
 // 「进 configHash 的字段必须落进 run.json」那条规则存在的理由。
 
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import { isSandboxLayer } from "../sandbox/layer.ts";
 import { agentInstallIdentityInput } from "../agents/provisioner.ts";
 import type { EvalResult, JsonValue, JudgeConfig, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
@@ -26,9 +27,10 @@ export interface ConfigIdentity {
   flags: globalThis.Record<string, JsonValue>;
   sandboxReuse: boolean;
   sandbox?: SandboxRunInfo;
+  sandboxLayer?: JsonValue;
   strict: boolean;
   judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
-  /** Agent Ensure 安装身份;与 CaseKey 正交。无 provisioner 时 undefined。 */
+  /** Agent Ensure 安装身份;与 CaseKey 正交。 */
   agentInstall?: {
     agent: string;
     version: string;
@@ -49,23 +51,29 @@ export interface ConfigFieldDelta {
 }
 
 function agentInstallOf(run: AgentRun): ConfigIdentity["agentInstall"] {
-  if (run.agent.kind !== "sandbox" || run.agent.provisioner === undefined) return undefined;
-  return agentInstallIdentityInput(run.agent.provisioner.identity);
+  if (run.agent.kind !== "sandbox") return undefined;
+  for (const ensure of run.agent.ensure) return agentInstallIdentityInput(ensure.identity);
+  return undefined;
 }
 
 /** 本次解析后配置的身份投影。 */
 export function configIdentityForRun(
   run: AgentRun,
-  configSandbox?: SandboxOption,
+  sandboxSpec?: SandboxOption,
   judge: JudgeConfig | undefined = run.judge,
+  sandboxLayer?: JsonValue,
 ): ConfigIdentity {
+  const legacyRunSpec = run.sandbox !== undefined && !isSandboxLayer(run.sandbox)
+    ? run.sandbox
+    : undefined;
   return {
     agent: run.agent.name,
     model: run.model,
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
-    sandbox: sandboxRunInfo(run.sandbox ?? configSandbox),
+    sandbox: sandboxRunInfo(sandboxSpec ?? legacyRunSpec),
+    sandboxLayer,
     strict: run.strict ?? false,
     judge: judge ? { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } : undefined,
     agentInstall: agentInstallOf(run),
@@ -86,6 +94,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     flags: exp.flags ?? {},
     sandboxReuse: exp.sandboxReuse ?? false,
     sandbox: exp.sandbox,
+    sandboxLayer: exp.sandboxLayer,
     strict: exp.strict ?? false,
     judge: exp.judge
       ? { model: exp.judge.model, baseUrl: exp.judge.baseUrl, timeoutMs: exp.judge.timeoutMs }
@@ -120,6 +129,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
     put("sandbox.fingerprint", identity.sandbox.fingerprint);
     for (const [key, value] of Object.entries(identity.sandbox.params ?? {})) put(`sandbox.params.${key}`, value);
   }
+  put("sandboxLayer", identity.sandboxLayer);
   if (identity.judge !== undefined) {
     put("judge.model", identity.judge.model);
     put("judge.baseUrl", identity.judge.baseUrl);

@@ -305,9 +305,9 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
 
 /** 收尾段的阶段名(见 docs/feature/record/architecture.md);两面渲染都把这些单列在主链之后,不计入主链总耗时。 */
 export const TIMELINE_CLOSING_PHASES: ReadonlySet<string> = new Set([
-  "eval.teardown",
   "agent.teardown",
-  "sandbox.teardown",
+  "state.save",
+  "sandbox.cleanup",
   "sandbox.suspend",
   "sandbox.stop",
 ]);

@@ -21,7 +21,9 @@ afterEach(async () => {
 });
 
 function agent(kind: "sandbox" | "remote"): Agent {
-  return { name: `${kind}-agent`, kind } as Agent;
+  return kind === "sandbox"
+    ? { name: "sandbox-agent", kind: "sandbox", ensure: [], installers: [], send: async () => ({ events: [], status: "completed" }) } as Agent
+    : { name: "remote-agent", kind: "direct" } as Agent;
 }
 
 async function evalDef(id: string, environment?: string): Promise<DiscoveredEval> {
@@ -89,8 +91,8 @@ describe("eval-level sandbox selection", () => {
     expect(oldFingerprint).not.toBe(plainFingerprint);
   });
 
-  it("选中 eval 的 profile 缺表项在创建 sandbox 前穷举报错;defineEval 拒绝空 profile", async () => {
-    expect(() => defineEval({ environment: "  ", test() {} })).toThrow(/environment.*non-empty profile id/);
+  it("选中 eval 的旧 profile 缺表项在创建 sandbox 前穷举报错;defineEval 拒绝非 Layer 声明", async () => {
+    expect(() => defineEval({ sandbox: {} as never, test() {} })).toThrow(/SandboxLayer/);
 
     const missingA = await evalDef("astropy/old", "python-3.9-astropy-4.2");
     const missingB = await evalDef("legacy/node", "node-18-legacy");
@@ -105,8 +107,8 @@ describe("eval-level sandbox selection", () => {
       thrown = error as Error;
     }
     expect(thrown?.message).toMatch(/profiles\/run/);
-    expect(thrown?.message).toMatch(/astropy\/old → "python-3\.9-astropy-4\.2"/);
-    expect(thrown?.message).toMatch(/legacy\/node → "node-18-legacy"/);
+    expect(thrown?.message).toMatch(/astropy\/old -> "python-3\.9-astropy-4\.2"/);
+    expect(thrown?.message).toMatch(/legacy\/node -> "node-18-legacy"/);
     expect(thrown?.message).toMatch(/environments/);
   });
 

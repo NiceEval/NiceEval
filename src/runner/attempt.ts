@@ -5,7 +5,7 @@
 
 import { resolve as resolvePath } from "node:path";
 import { readFile as readSourceFile } from "node:fs/promises";
-import { Effect, Cause, Duration } from "effect";
+import { Effect, Cause, Duration, Either, Option } from "effect";
 import { createMaterializedCase, resolveSandbox } from "../sandbox/resolve.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
@@ -34,7 +34,10 @@ import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData, emptyDiffData } from "../scoring/diff.ts";
-import { createRemoteSandbox, withEvalLocalPaths } from "./remote-sandbox.ts";
+import { createRemoteSandbox } from "./remote-sandbox.ts";
+import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
+import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
@@ -55,8 +58,6 @@ import type {
   FailedCommandEvidence,
   JudgeConfig,
   Sandbox,
-  SandboxHook,
-  SandboxHookContext,
   ScopedFeedback,
   ScoringContext,
   ScriptResult,
@@ -69,7 +70,7 @@ import type {
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
-import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, hookActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
+import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import { sandboxForEval, sandboxProjection } from "./sandbox-selection.ts";
 import type {
   AgentRun,
@@ -181,7 +182,7 @@ export function runAttemptEffect(
   let kept = false;
   if (reusedSandbox && run.agent.kind === "sandbox") {
     sandboxFacts = {
-      provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox)).provider,
+      provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef)).provider,
       sandboxId: reusedSandbox.sandbox.sandboxId,
       reused: true,
       reuseSandbox: reusedSandbox.reuseSandbox,
@@ -260,7 +261,7 @@ export function runAttemptEffect(
     const declaration = attemptFailureDeclaration(run.classifyFailure, phase, e);
     if (declaration) onFailureClass(declaration);
   };
-  // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):sandbox hook / eval.setup·teardown /
+  // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):layer prepare/cleanup 与
   // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
   // 收尾时并入结果的 facts 字段(见 finally 末尾,与 diagnostics 同一种「累加器 + finally 并入」模式)。
   const facts: globalThis.Record<string, FactValue> = {};
@@ -398,9 +399,9 @@ export function runAttemptEffect(
 
   return Effect.scoped(
     Effect.gen(function* () {
-      // 规划期按当前 eval 解析出的同一个 SandboxSpec，既用来起 provider，也作为
-      // sandbox.setup / sandbox.teardown 钩子(SandboxSpec.setup()/.teardown() 链式挂的)来源。
-      const sandboxSpec = a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox);
+      // 规划期按当前 (Experiment, Eval) pair 解析出的同一个 SandboxSpec 起 provider；
+      // 两侧作者的 prepare/cleanup 只消费同一 pair 的 linked SandboxLayer。
+      const sandboxSpec = a.sandboxSpec ?? sandboxForEval(run, evalDef);
       // 留存 disposition:只在本 attempt 内可变,初始 stop;只有留存提交成功才改成 keep
       // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。keep 守卫在 createMaterializedCase
       // 内走 assertKeepAllowedForCase(自定义缺 group-keep / local 等创建前硬失败)。
@@ -442,14 +443,14 @@ export function runAttemptEffect(
                   assertDeadlineFitsProvider(sandboxSpec, attemptTimeout?.timeoutMs);
                   if (sandboxSpec === undefined) {
                     throw new Error(
-                      `sandbox agent requires a SandboxSpec (experiment.sandbox or config.sandbox) before createMaterializedCase`,
+                      `sandbox agent requires one linked SandboxLayer template before createMaterializedCase`,
                     );
                   }
                   return yield* Effect.acquireRelease(
                     Effect.promise(async () => {
                       const materialized = await createMaterializedCase({
                         evalId: evalDef.id,
-                        environment: evalDef.environment,
+                        environment: a.sandboxEnvironment ?? evalDef.environment,
                         ...(evalDef.defaultProfileId !== undefined
                           ? { defaultProfileId: evalDef.defaultProfileId }
                           : {}),
@@ -615,9 +616,6 @@ export function runAttemptEffect(
       const bodyResult = yield* Effect.promise((interruptSignal) =>
         runAttemptBody(a, config, t0, base, {
           sandbox,
-          // 复用池在实例创建/销毁时运行 SandboxSpec hooks；Attempt 只跑 Eval 与 Agent 生命周期。
-          sandboxSetupHooks: reusedSandbox ? [] : (sandboxSpec?.setupHooks ?? []),
-          sandboxTeardownHooks: reusedSandbox ? [] : (sandboxSpec?.teardownHooks ?? []),
           receiver,
           telemetry,
           otel: otelChannel,
@@ -836,10 +834,6 @@ interface AttemptResources {
   attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
   /** attempt deadline 的截止**时刻**;命令节点的时限归属按它算剩余量。四层都没声明上限时缺席。 */
   deadlineAt?: number;
-  /** SandboxSpec.setup() 链式挂的钩子,按追加顺序;非沙箱 agent 传空数组(usesSandbox 挡住不会跑)。 */
-  sandboxSetupHooks: readonly SandboxHook[];
-  /** SandboxSpec.teardown() 链式挂的钩子,按追加顺序保存,执行时逆序。 */
-  sandboxTeardownHooks: readonly SandboxHook[];
   receiver?: TraceReceiver;
   telemetry?: Telemetry;
   /** 非沙箱 tracing agent 的共享 OTLP 通道(run 级池持有,不随 attempt 关)。 */
@@ -904,8 +898,6 @@ async function runAttemptBody(
   const { evalDef, run, attempt } = a;
   const {
     sandbox: rawSandbox,
-    sandboxSetupHooks,
-    sandboxTeardownHooks,
     receiver,
     telemetry,
     otel,
@@ -952,91 +944,68 @@ async function runAttemptBody(
     log,
   };
   const sandboxAttemptCtx: SandboxAgentContext = { ...attemptCtx, sandbox };
-  // Sandbox hook / eval.setup 的窄上下文:experimentId + signal + 作用域反馈,不借用完整 AgentContext
-  // (hook 拿不到 session / model / telemetry,见 docs/feature/sandbox/library.md)。
-  const hookCtx: SandboxHookContext = {
-    experimentId: run.experimentId,
-    signal,
-    progress: feedback.progress,
-    diagnostic: feedback.diagnostic,
-    fact,
-  };
+  const commandTarget = createSandboxCommandTarget(sandbox);
+  const layerCleanups: Array<{
+    command: SandboxCleanupCommand;
+    context: Omit<SandboxCommandContext, "onCleanup">;
+    label: string;
+  }> = [];
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
   let agentSetup: AgentSetupManifest | undefined;
-  /** eval.setup 时点已走到(分类账锚点之后;未声明 setup 也置位)——eval.teardown 的触发条件。 */
-  let evalSetupReached = false;
   // 变更分类账(仅沙箱型;workspace.baseline 阶段建立)。
   let ledger: ChangeLedger | undefined;
   // discovery 的 entry 快照加上调用发生时首次读取的 helper 快照；不在 attempt 收尾重读。
   const sourceRegistry = createSourceRegistry(process.cwd());
   try {
     if (usesSandbox) {
-      // 沙箱级生命周期钩子(SandboxSpec.setup):环境预置层,先于 workspace 上传 / git 基线 /
-      // eval.setup 跑——改动进 git 基线,不会被误算进 agent 产出的 diff。按追加顺序依次执行;
-      // 单个抛错走下面的执行错误路径(与 eval.setup / agent.setup 同一条),后续 setup 不再执行,
-      // sandbox.teardown 钩子链仍在 finally 里完整跑(见 catch/finally)——半初始化的沙箱同样要扫尾。
-      if (sandboxSetupHooks.length > 0) {
-        enterPhase("sandbox.setup");
-        log(t("runner.startSandboxSetup"));
-      }
-      for (const [i, hook] of sandboxSetupHooks.entries()) {
-        // hook 先建节点,hook 内经 Sandbox.runCommand/runShell 发出的命令挂成它的 command 子节点。
-        const hookStart = Date.now();
-        const hookNode = recorder.child(hookActivity({
-          label: `setup#${i}`,
-          startOffsetMs: Math.max(0, hookStart - attemptEpoch),
-          durationMs: 0,
-        }));
-        if (hookNode) recorder.pushParent(hookNode);
-        try {
-          // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略——命中即报
-          // 清晰错误(attempt errored),指向成对 teardown 写法。下方 eval.setup / agent.setup 同。
-          const returned = (await hook(sandbox, hookCtx)) as unknown;
-          if (typeof returned === "function") {
-            throw new Error(
-              t("runner.setupReturnedCleanup", {
-                layer: `SandboxSpec.setup() hook #${i}`,
-                hint: "SandboxSpec.teardown(fn)",
-              }).trimEnd(),
-            );
+      // Linker 已按「template owner 在前，另一作者在后」排好命令；fresh/reuse 每条 Attempt
+      // 都完整重放。owner 子 phase 只做错误与诊断归因，计时仍聚合在 sandbox.prepare。
+      const linked = a.linkedSandbox ?? run.linkedSandboxes?.get(evalDef.id)?.linked;
+      if (linked?.kind === "sandbox" && linked.commands.length > 0) {
+        enterPhase("sandbox.prepare");
+        for (const entry of linked.commands) {
+          const ownerPhase = entry.owner.kind === "eval"
+            ? "sandbox.prepare.eval"
+            : "sandbox.prepare.experiment";
+          enterPhase(ownerPhase);
+          const label = `${entry.owner.kind}#${entry.index}`;
+          const startedAt = Date.now();
+          const node = recorder.child(sandboxPrepareActivity({
+            label,
+            startOffsetMs: Math.max(0, startedAt - attemptEpoch),
+          }));
+          if (node) recorder.pushParent(node);
+          const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
+            phase: "prepare",
+            owner: entry.owner,
+            attempt: { id: `${run.experimentId ?? "adhoc"}/${evalDef.id}`, index: attempt },
+            signal,
+            progress: feedback.progress,
+            diagnostic: feedback.diagnostic,
+            facts: fact,
+          };
+          const context: SandboxCommandContext = {
+            ...cleanupContext,
+            onCleanup(command) {
+              if (typeof command !== "function") throw new TypeError("sandbox cleanup must be a function");
+              layerCleanups.push({ command, context: cleanupContext, label });
+            },
+          };
+          try {
+            await entry.command(commandTarget, context);
+          } catch (error) {
+            if (node) node.failed = true;
+            throw error;
+          } finally {
+            if (node) {
+              node.durationMs = Date.now() - startedAt;
+              recorder.popParent();
+            }
           }
-        } catch (e) {
-          if (hookNode) hookNode.failed = true;
-          throw e;
-        } finally {
-          if (hookNode) {
-            hookNode.durationMs = Date.now() - hookStart;
-            recorder.popParent();
-          }
-        }
-      }
-
-      // 变更分类账锚点:私有 git ledger(git 目录在 workdir 外),排除清单在此冻结。
-      enterPhase("workspace.baseline");
-      ledger = await createChangeLedger(sandbox, evalDef.diff);
-      // 登记回外层:超时收尾段折叠 workspace.diff 要用同一份 ledger(见 registerLedger 注释)。
-      registerLedger(ledger);
-
-      // eval 级 setup(starter prep:npm install / 装系统依赖等)。命令默认非 root;
-      // setup 里需要 root 的(apt/pip)自己传 { root: true }。时点在此走到——
-      // teardown 的触发条件是时点,不是「setup 声明且成功」(成对触发规则,见
-      // docs/runner.md「环境预置不进运行器,但按顺序调它」)。
-      evalSetupReached = true;
-      if (evalDef.setup) {
-        enterPhase("eval.setup");
-        log(t("runner.evalSetup"));
-        const returned = (await evalDef.setup(withEvalLocalPaths(sandbox, evalDef.baseDir), hookCtx)) as unknown;
-        if (typeof returned === "function") {
-          throw new Error(
-            t("runner.setupReturnedCleanup", {
-              layer: `EvalDef.setup (${evalDef.id})`,
-              hint: "EvalDef.teardown",
-            }).trimEnd(),
-          );
         }
       }
 
@@ -1044,14 +1013,22 @@ async function runAttemptBody(
       // 配置/凭据，不能自行安装或跳过 probe → install → recheck 循环。
       if (run.agent.kind === "sandbox") {
         enterPhase("agent.ensure");
-        log("Running agent ensure");
-        await runAgentEnsure(run.agent.ensure ?? [], run.agent.installers ?? [], sandbox, {
+        log(t("runner.startAgentEnsure"));
+        const ensureEffect = runAgentEnsure(run.agent.ensure, run.agent.installers, sandbox, {
           fact,
-          ...(prepareCoordinator !== undefined ? { coordinator: prepareCoordinator } : {}),
+          coordinator: Option.fromNullable(prepareCoordinator),
           signal,
           progress: feedback.progress,
         });
+        const ensured = await Effect.runPromise(Effect.either(ensureEffect));
+        if (Either.isLeft(ensured)) throw ensured.left;
       }
+
+      // 作者准备、Agent ensure（以及未来的 State load）都不属于 Agent diff；Runner 在这些
+      // 基础设施活动完成后建立统一的 Agent 可归因起点。
+      enterPhase("workspace.baseline");
+      ledger = await createChangeLedger(sandbox, evalDef.diff);
+      registerLedger(ledger);
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
@@ -1224,7 +1201,7 @@ async function runAttemptBody(
       coverage: state.manager.coverage,
       readFile: async (path) => {
         try {
-          return await sandbox!.readFile(path);
+          return await sandbox!.readText(path);
         } catch {
           return undefined;
         }
@@ -1325,7 +1302,7 @@ async function runAttemptBody(
     return value;
   } catch (e) {
     recorder.failCurrent();
-    // sandbox 钩子 / agent.setup / eval.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
+    // SandboxLayer command / agent.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
     const value: EvalResult = {
@@ -1339,30 +1316,9 @@ async function runAttemptBody(
   } finally {
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
     // (不计入 durationMs 口径,见 docs/feature/record/architecture.md)。执行序与 LifecyclePhase
-    // 闭集声明一致:eval.teardown → agent.teardown → sandbox.teardown;各段可独立标 failed。
+    // 闭集声明一致:agent.teardown → sandbox.cleanup;各段可独立标 failed。
     // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Sample 在本函数返回后回收,
-    // 并经 finalizer 计成 sandbox.stop。触发规则统一是「同层 setup 时点走到过」(setup / test
-    // 抛错不豁免,见 docs/runner.md「环境预置不进运行器,但按顺序调它」);没有对应 teardown
-    // 的段直接跳过,不产生空阶段。
-    if (evalSetupReached && evalDef.teardown) {
-      enterPhase("eval.teardown");
-      await recorder
-        .measureClosing("eval.teardown", async () => {
-          try {
-            // 收尾可调用体一律有界(docs/cli.md「中断:三级响应」的有界性前提):挂起的 teardown
-            // 到点按本段失败语义收束,后续段照常执行,收尾链不能无限拖住退出。下同。
-            await withCleanupTimeout(() => evalDef.teardown!(withEvalLocalPaths(sandbox, evalDef.baseDir), hookCtx));
-          } catch (e) {
-            // 收尾失败只是 diagnostic,不改判定 —— 挂到 attempt.diagnostics(见 finally 末尾并入)。
-            // 但空间轴声明照常落闸:知识就是知识,兄弟 attempt 还在派发中(architecture.md
-            // 「生命周期边界」)。落闸不改 verdict,两件事互不影响。
-            declareFailure("eval.teardown", e);
-            diagnostics.push(teardownDiagnostic("eval.teardown", e));
-            throw e; // 让 measureClosing 把这段标 failed
-          }
-        })
-        .catch(() => {});
-    }
+    // 并经 finalizer 计成 sandbox.stop。没有对应 teardown/cleanup 的段直接跳过，不产生空阶段。
     if (agentSetupReached && run.agent.teardown) {
       enterPhase("agent.teardown");
       await recorder
@@ -1385,24 +1341,35 @@ async function runAttemptBody(
         })
         .catch(() => {});
     }
-    if (usesSandbox && sandboxTeardownHooks.length > 0) {
-      enterPhase("sandbox.teardown");
+    if (usesSandbox && layerCleanups.length > 0) {
+      enterPhase("sandbox.cleanup");
       await recorder
-        .measureClosing("sandbox.teardown", async () => {
+        .measureClosing("sandbox.cleanup", async () => {
           const before = diagnostics.length;
-          // sandbox.teardown 钩子:按追加的逆序执行(LIFO),沙箱销毁前最后一步。setup 链中途
-          // 抛错不影响本链完整走完——半初始化的沙箱同样要扫尾,钩子自己对未初始化状态防御。
-          // 逐钩子有界:一个挂起的钩子不阻塞链上其余钩子拿到执行机会。
-          log(t("runner.startSandboxTeardown"));
-          for (let i = sandboxTeardownHooks.length - 1; i >= 0; i--) {
+          // 只清理本 Attempt 实际登记的资源；全局 LIFO 自然得到「第二作者逆序，再 template
+          // owner 逆序」。每条 cleanup 独立有界，一条失败不剥夺后续 cleanup 的执行机会。
+          for (let i = layerCleanups.length - 1; i >= 0; i--) {
+            const cleanup = layerCleanups[i]!;
+            const startedAt = Date.now();
+            const node = recorder.child(sandboxPrepareActivity({
+              label: `${cleanup.label} cleanup`,
+              startOffsetMs: Math.max(0, startedAt - attemptEpoch),
+            }));
+            if (node) recorder.pushParent(node);
             try {
-              await withCleanupTimeout(() => sandboxTeardownHooks[i](sandbox, hookCtx));
+              await withCleanupTimeout(() => cleanup.command(commandTarget, cleanup.context));
             } catch (e) {
-              declareFailure("sandbox.teardown", e);
-              diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
+              if (node) node.failed = true;
+              declareFailure("sandbox.cleanup", e);
+              diagnostics.push(teardownDiagnostic("sandbox.cleanup", e));
+            } finally {
+              if (node) {
+                node.durationMs = Date.now() - startedAt;
+                recorder.popParent();
+              }
             }
           }
-          if (diagnostics.length > before) throw new Error("sandbox teardown diagnostics");
+          if (diagnostics.length > before) throw new Error("sandbox cleanup diagnostics");
         })
         .catch(() => {});
     }
@@ -1450,7 +1417,7 @@ function withCommandTiming(
     const t0 = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
     // 这一刻**的剩余量——同一台沙箱上的第二条命令拿到的不是一整份上限。
-    const limit = commandLimitAttribution(opts as { timeout?: number } | undefined, { deadlineAt }, t0);
+    const limit = commandLimitAttribution(opts as { timeoutMs?: number } | undefined, { deadlineAt }, t0);
     try {
       const result = await fn();
       const exitCode = (result as { exitCode?: unknown })?.exitCode;
@@ -1561,12 +1528,23 @@ async function collectSources(
  *  run 级值；Judge 则连同 Eval 层逐字段解析并按 pair 落盘，使同一 Eval 的裁判 A/B 可回放。 */
 export function experimentRunInfo(
   run: AgentRun,
-  config?: Pick<Config, "sandbox" | "timeoutMs" | "judge">,
+  config?: Pick<Config, "timeoutMs" | "judge">,
   evalJudge?: JudgeConfig,
   configHash: string | undefined = run.configHash,
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
   const judge = resolveJudge(run.judge, evalJudge, config?.judge);
+  const firstLinked = run.linkedSandboxes?.values().next().value?.linked;
+  const sandboxLayer = firstLinked === undefined
+    ? undefined
+    : sandboxLayerIdentityFor(firstLinked, "experiment");
+  let agentInstall: ReturnType<typeof agentInstallIdentityInput> | undefined;
+  if (run.agent.kind === "sandbox") {
+    for (const ensure of run.agent.ensure) {
+      agentInstall = agentInstallIdentityInput(ensure.identity);
+      break;
+    }
+  }
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
@@ -1580,15 +1558,14 @@ export function experimentRunInfo(
     ...(run.maxConcurrency !== undefined ? { maxConcurrency: run.maxConcurrency } : {}),
     selectedEvalIds: [...run.selectedEvalIds],
     ...(run.evalFilterFingerprint !== undefined ? { evalFilterFingerprint: run.evalFilterFingerprint } : {}),
-    ...sandboxProjection(run, config?.sandbox),
+    ...sandboxProjection(run),
+    ...(sandboxLayer !== undefined ? { sandboxLayer } : {}),
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.strict ? { strict: true } : {}),
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
       : {}),
-    ...(run.agent.kind === "sandbox" && (run.agent.ensure?.length ?? 0) > 0
-      ? { agentInstall: agentInstallIdentityInput(run.agent.ensure![0]!.identity) }
-      : {}),
+    ...(agentInstall !== undefined ? { agentInstall } : {}),
   };
 }
 

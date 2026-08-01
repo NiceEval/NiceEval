@@ -216,7 +216,7 @@ describe("TimingOrigin 的 attempt / run 两支", () => {
         message: "boom",
         origin: attemptOrigin("eval.run", "n-cmd"),
       },
-      diagnostics: [{ code: "teardown-failed", level: "warning", detail: "cleanup hiccup", origin: attemptOrigin("eval.teardown") }],
+      diagnostics: [{ code: "teardown-failed", level: "warning", detail: "cleanup hiccup", origin: attemptOrigin("sandbox.cleanup") }],
     });
     await snap.finish({
       timings: [{ id: buildId, key: "sandbox.build", label: "build", startOffsetMs: 0, durationMs: 12, failed: true }],

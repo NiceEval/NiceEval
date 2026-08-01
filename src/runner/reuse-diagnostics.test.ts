@@ -41,25 +41,25 @@ describe("detectReuseContamination", () => {
   it("首承接正常、后续承接集中 errored 在同一阶段时,点名实例、序号区间与阶段", () => {
     const notices = detectReuseContamination([
       attempt({ id: "a", verdict: "passed", reuseSandbox: 1, reuseOrdinal: 1 }),
-      attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "eval.setup" }),
-      attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 4, phase: "eval.setup" }),
+      attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "sandbox.prepare.eval" }),
+      attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 4, phase: "sandbox.prepare.eval" }),
     ]);
 
     expect(notices).toEqual([
-      { experimentId: "reuse-exp", reuseSandbox: 1, phase: "eval.setup", fromOrdinal: 2, toOrdinal: 4, count: 2 },
+      { experimentId: "reuse-exp", reuseSandbox: 1, phase: "sandbox.prepare.eval", fromOrdinal: 2, toOrdinal: 4, count: 2 },
     ]);
     const message = reuseContaminationMessage(notices[0]!);
     expect(message).toContain("#1");
     expect(message).toContain("2-4");
-    expect(message).toContain("eval.setup");
+    expect(message).toContain("sandbox.prepare.eval");
   });
 
   it("首承接自己就失败时不发:那种失败与上一条 Attempt 的残留无关", () => {
     expect(
       detectReuseContamination([
-        attempt({ id: "a", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 1, phase: "eval.setup" }),
-        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "eval.setup" }),
-        attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, phase: "eval.setup" }),
+        attempt({ id: "a", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 1, phase: "sandbox.prepare.eval" }),
+        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "sandbox.prepare.eval" }),
+        attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, phase: "sandbox.prepare.eval" }),
       ]),
     ).toEqual([]);
   });
@@ -68,7 +68,7 @@ describe("detectReuseContamination", () => {
     expect(
       detectReuseContamination([
         attempt({ id: "a", verdict: "passed", reuseSandbox: 1, reuseOrdinal: 1 }),
-        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "eval.setup" }),
+        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "sandbox.prepare.eval" }),
         attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, phase: "agent.setup" }),
         attempt({ id: "d", verdict: "passed", reuseSandbox: 1, reuseOrdinal: 4 }),
       ]),
@@ -78,11 +78,11 @@ describe("detectReuseContamination", () => {
   it("同一实验的两台实例各自判定,互不串味", () => {
     const notices = detectReuseContamination([
       attempt({ id: "a", verdict: "passed", reuseSandbox: 1, reuseOrdinal: 1 }),
-      attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "eval.setup" }),
+      attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, phase: "sandbox.prepare.eval" }),
       // 2 号实例首承接就失败:它的后续失败不算线索,不能被 1 号的证据带出来。
-      attempt({ id: "c", verdict: "errored", reuseSandbox: 2, reuseOrdinal: 1, phase: "eval.setup" }),
-      attempt({ id: "d", verdict: "errored", reuseSandbox: 2, reuseOrdinal: 2, phase: "eval.setup" }),
-      attempt({ id: "e", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, phase: "eval.setup" }),
+      attempt({ id: "c", verdict: "errored", reuseSandbox: 2, reuseOrdinal: 1, phase: "sandbox.prepare.eval" }),
+      attempt({ id: "d", verdict: "errored", reuseSandbox: 2, reuseOrdinal: 2, phase: "sandbox.prepare.eval" }),
+      attempt({ id: "e", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, phase: "sandbox.prepare.eval" }),
     ]);
 
     expect(notices.map((n) => n.reuseSandbox)).toEqual([1]);
@@ -104,8 +104,8 @@ describe("detectReuseContamination", () => {
     expect(
       detectReuseContamination([
         attempt({ id: "a", verdict: "passed", reuseSandbox: 1, reuseOrdinal: 1, reused: false }),
-        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, reused: false, phase: "eval.setup" }),
-        attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, reused: false, phase: "eval.setup" }),
+        attempt({ id: "b", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 2, reused: false, phase: "sandbox.prepare.eval" }),
+        attempt({ id: "c", verdict: "errored", reuseSandbox: 1, reuseOrdinal: 3, reused: false, phase: "sandbox.prepare.eval" }),
       ]),
     ).toEqual([]);
   });

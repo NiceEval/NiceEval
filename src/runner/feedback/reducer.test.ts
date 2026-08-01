@@ -471,7 +471,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1_000, identity: a, who: "codex", phase: "sandbox.queue" });
     for (const [at, phase] of [
       [3_000, "sandbox.create"],
-      [9_000, "sandbox.setup"],
+      [9_000, "sandbox.prepare"],
       [21_000, "eval.run"],
       [283_000, "workspace.diff"],
     ] as const) {

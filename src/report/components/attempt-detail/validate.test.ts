@@ -243,11 +243,11 @@ describe("validateConversationData — AttemptConversationReply 判别联合", (
     const withCommands = {
       ...valid,
       failedCommands: [
-        { timingNodeId: "n1", phase: "eval.setup", display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" },
+        { timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" },
       ],
     };
     expect(validateConversationData(withCommands)).toBeNull();
-    const missingExitCode = { ...valid, failedCommands: [{ timingNodeId: "n1", phase: "eval.setup", display: "npm ci", stdout: "", stderr: "boom" }] };
+    const missingExitCode = { ...valid, failedCommands: [{ timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", stdout: "", stderr: "boom" }] };
     expect(validateConversationData(missingExitCode)).toMatch(/"failedCommands\[0\]\.exitCode"/);
   });
 });

@@ -18,6 +18,8 @@ import {
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { isDefinedScoreEval } from "../define.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
+import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
+import { composeSandbox, dockerfileSandbox } from "../sandbox/case.ts";
 import type {
   DiscoveredEval,
   DiscoveredExperiment,
@@ -174,19 +176,46 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
       pushOne(def, baseId);
     }
 
+    const representative = Array.isArray(def)
+      ? def[0]
+      : isEvalDef(def)
+        ? def
+        : Object.values(def)[0];
     await runLeakGateIfNeeded({
       evalId: baseId,
       baseDir,
-      environment: Array.isArray(def)
-        ? def[0]?.environment
-        : isEvalDef(def)
-          ? def.environment
-          : Object.values(def)[0]?.environment,
+      environment: leakGateEnvironmentFor(representative?.sandbox),
       criteriaPaths,
       privatePaths,
     });
   }
   return out;
+}
+
+/** Layer 的 template 只在泄题门边界临时投影成存量中性 source；不参与运行期 template 选择。 */
+function leakGateEnvironmentFor(layer: SandboxLayer | undefined): unknown {
+  if (layer === undefined) return undefined;
+  const template = sandboxLayerStateOf(layer).template;
+  if (template?.provider !== "docker") return undefined;
+  const localValue = (location: { kind: "path" | "url"; value: string }): string | URL =>
+    location.kind === "url" ? new URL(location.value) : location.value;
+  if (template.kind === "compose") {
+    return composeSandbox({
+      file: localValue(template.file),
+      mainService: template.workspaceService,
+      ...(template.build !== undefined ? { build: template.build } : {}),
+      ...(template.executionUser !== undefined ? { executionUser: template.executionUser } : {}),
+      ...(template.env !== undefined ? { env: template.env } : {}),
+    });
+  }
+  if (template.kind === "dockerfile") {
+    return dockerfileSandbox({
+      context: localValue(template.context),
+      ...(template.dockerfile !== undefined ? { dockerfile: template.dockerfile } : {}),
+      ...(template.buildArgs !== undefined ? { buildArgs: template.buildArgs } : {}),
+    });
+  }
+  return undefined;
 }
 
 /**
@@ -286,7 +315,7 @@ export async function discoverExperiments(root: string): Promise<DiscoveredExper
       .replace(/\.experiment$/, "")
       .split(sep)
       .join("/");
-    out.push({ ...def, id });
+    out.push({ ...def, id, baseDir: dirname(file), sourcePath: file });
   }
   return out;
 }

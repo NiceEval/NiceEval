@@ -46,6 +46,7 @@ import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { firstLine } from "../util.ts";
 import { resolveSandbox } from "../sandbox/resolve.ts";
+import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
@@ -64,7 +65,12 @@ import {
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
-import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
+import {
+  linkedSandboxForEval,
+  prepareRunSandboxes,
+  sandboxEnvironmentForEval,
+  sandboxForEval,
+} from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
@@ -167,16 +173,18 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
 
-  prepareRunSandboxes(opts.evals, opts.agentRuns, opts.config.sandbox);
+  prepareRunSandboxes(opts.evals, opts.agentRuns);
   for (const run of opts.agentRuns) {
     if (!run.sandboxReuse || run.agent.kind !== "sandbox") continue;
     if (opts.keepSandbox !== undefined) {
       throw new Error("sandboxReuse cannot be combined with --keep-sandbox: a final sandbox does not belong to one attempt");
     }
-    const spec = run.sandbox ?? opts.config.sandbox;
-    const resolved = resolveSandbox(spec);
-    if (resolved.provider === "local") {
-      throw new Error("sandboxReuse cannot be combined with localSandbox(): runner never resets the user's working tree");
+    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
+      const spec = sandboxForEval(run, evalDef);
+      const resolved = resolveSandbox(spec);
+      if (resolved.provider === "local") {
+        throw new Error("sandboxReuse cannot be combined with localSandbox(): runner never resets the user's working tree");
+      }
     }
     // 其余 provider(含 defineSandbox 自定义)不按名字预筛:能不能复用只由 provider 有没有
     // 实现 `ensureLifetime` 决定,没实现就在第一条 Attempt 派发前硬失败(见 sandbox-pool.ts)。
@@ -210,7 +218,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     manifestsByKey,
   } =
     opts.carryPlan ??
-    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs, {
+    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, undefined, opts.config.timeoutMs, {
       rerun: opts.rerun,
       configJudge: opts.config.judge,
       ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
@@ -270,7 +278,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           key,
           fingerprint: plannedFingerprints.get(cacheKey(run, evalDef.id)) ?? "",
           configHash: plannedConfigHashes?.get(cacheKey(run, evalDef.id)) ?? "",
-          sandboxSpec: sandboxForEval(run, evalDef, opts.config.sandbox),
+          ...(sandboxForEval(run, evalDef) !== undefined
+            ? { sandboxSpec: sandboxForEval(run, evalDef)! }
+            : {}),
+          ...(sandboxEnvironmentForEval(run, evalDef) !== undefined
+            ? { sandboxEnvironment: sandboxEnvironmentForEval(run, evalDef)! }
+            : {}),
+          ...(linkedSandboxForEval(run, evalDef) !== undefined
+            ? { linkedSandbox: linkedSandboxForEval(run, evalDef)! }
+            : {}),
           // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
           // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
           locator: run.experimentId
@@ -368,7 +384,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       ? await collectBuildPreparation({
           evals: opts.evals,
           agentRuns: opts.agentRuns,
-          configSandbox: opts.config.sandbox,
           carriedAttemptsByKey,
         })
       : undefined;
@@ -404,10 +419,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // 逐 eval 的放行闸:第一次问到就记下等待,之后同 eval 的其它 attempt 复用同一条。
   const buildWaits = new Map<string, Promise<void>>();
-  const awaitBuildsFor = (evalId: string): Promise<void> => {
-    const keys = buildPrep?.evalBuildKeys[evalId];
+  const awaitBuildsFor = (pairKey: string, legacyEvalId?: string): Promise<void> => {
+    const keys = buildPrep?.evalBuildKeys[pairKey] ?? (legacyEvalId === undefined ? undefined : buildPrep?.evalBuildKeys[legacyEvalId]);
     if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Promise.resolve();
-    let pending = buildWaits.get(evalId);
+    let pending = buildWaits.get(pairKey);
     if (pending !== undefined) return pending;
     pending = (async () => {
       for (const key of keys) await runningBuilds.settled(key);
@@ -416,7 +431,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const failure = runningBuilds.failures.get(key);
         if (failure !== undefined) {
           const originFields = buildFailureOrigin(failure);
-          buildFailureByEval.set(evalId, {
+          buildFailureByEval.set(pairKey, {
             code: originFields.code,
             message: originFields.message,
             origin: runOrigin(originFields.timingNodeId),
@@ -427,15 +442,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const locator = runningBuilds.locators.get(key);
         if (typeof locator === "string") locators.set(key, locator);
       }
-      if (locators.size > 0) buildLocatorsByEval.set(evalId, locators);
+      if (locators.size > 0) buildLocatorsByEval.set(pairKey, locators);
     })();
-    buildWaits.set(evalId, pending);
+    buildWaits.set(pairKey, pending);
     return pending;
   };
 
   // CaseKey 与构建无关,展开后立即灌进 attempts;locators 在各自的 key 结算后补进去。
   for (const a of attempts) {
-    const caseKey = caseKeyByEval.get(a.evalDef.id);
+    const caseKey = caseKeyByEval.get(cacheKey(a.run, a.evalDef.id)) ?? caseKeyByEval.get(a.evalDef.id);
     if (caseKey !== undefined) a.caseKey = caseKey;
   }
 
@@ -1378,8 +1393,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 historical,
                 configIdentityForRun(
                   a0.run,
-                  opts.config.sandbox,
+                  linkedSandboxForEval(a0.run, a0.evalDef) === undefined
+                    ? sandboxForEval(a0.run, a0.evalDef)
+                    : undefined,
                   resolveJudge(a0.run.judge, a0.evalDef.judge, opts.config.judge),
+                  (() => {
+                    const linked = linkedSandboxForEval(a0.run, a0.evalDef);
+                    return linked === undefined ? undefined : sandboxLayerIdentityFor(linked, "experiment");
+                  })(),
                 ),
               )
                 .filter((delta) => opts.accept!.includes(delta.selector));
@@ -1913,7 +1934,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
             const expLc = expLifecycles.get(a.run);
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
-            const buildFailure = buildFailureByEval.get(a.evalDef.id);
+            const buildFailure = buildFailureByEval.get(cacheKey(a.run, a.evalDef.id));
             const blockedError: AttemptError | undefined = expLc?.setupFailed
               ? { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" }
               : precheckFailure !== undefined
@@ -2144,8 +2165,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const pipeline = Effect.gen(function* () {
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
-          yield* Effect.promise(() => awaitBuildsFor(a.evalDef.id));
-          const locators = buildLocatorsByEval.get(a.evalDef.id);
+          const pairKey = cacheKey(a.run, a.evalDef.id);
+          yield* Effect.promise(() => awaitBuildsFor(pairKey, a.evalDef.id));
+          const locators = buildLocatorsByEval.get(pairKey);
           if (locators !== undefined) a.buildLocators = locators;
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。

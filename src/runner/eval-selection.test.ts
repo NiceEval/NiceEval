@@ -27,7 +27,6 @@ describe("evalDescriptorOf", () => {
     const evalDef = makeEval("coding/fix-button", {
       description: "fix the button",
       tags: ["coding", "frontend"],
-      environment: "node-22",
       metadata: { owner: "team-a" },
     });
     const descriptor = evalDescriptorOf(evalDef);
@@ -36,7 +35,6 @@ describe("evalDescriptorOf", () => {
       description: "fix the button",
       tags: ["coding", "frontend"],
       scoring: "pass",
-      environment: "node-22",
       metadata: { owner: "team-a" },
     });
     expect(descriptor).not.toHaveProperty("sourcePath");
@@ -62,14 +60,14 @@ describe("evalDescriptorOf", () => {
 });
 
 describe("resolveExperimentEvals", () => {
-  const codingFixButton = makeEval("coding/fix-button", { tags: ["coding", "frontend"], environment: "node-22" });
-  const researchGpu = makeEval("research/gpu-literature", { tags: ["research"], environment: "gpu" });
+  const codingFixButton = makeEval("coding/fix-button", { tags: ["coding", "frontend"] });
+  const researchGpu = makeEval("research/gpu-literature", { tags: ["research", "gpu"] });
   const evals = [codingFixButton, researchGpu];
 
-  it("谓词同时可读 id / tags / environment / metadata,只命中匹配的 eval", () => {
+  it("谓词同时可读 id / tags / metadata,只命中匹配的 eval", () => {
     const { selectedEvalIds } = resolveExperimentEvals({
       experimentId: "exp/coding-only",
-      selector: (e) => e.id.startsWith("coding/") && e.tags.includes("coding") && e.environment !== "gpu",
+      selector: (e) => e.id.startsWith("coding/") && e.tags.includes("coding") && !e.tags.includes("gpu"),
       cliPatterns: [],
       evals,
     });

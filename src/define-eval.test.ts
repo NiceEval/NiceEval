@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { defineEval, defineScoreEval } from "./define.ts";
 import { makeAssertion } from "./expect/index.ts";
+import { sandboxLayer } from "./sandbox/layer.ts";
 import type { BaseAssertionHandle, BaseTestContext, EvalDefinition, ScoreTestContext, TestContext } from "./types.ts";
 
 describe("defineEval:通过制", () => {
@@ -31,8 +32,8 @@ describe("defineEval:通过制", () => {
     expect(() => defineEval({} as never)).toThrow(/test/);
   });
 
-  it("environment 为空字符串时报错", () => {
-    expect(() => defineEval({ environment: "  ", async test() {} })).toThrow(/environment/);
+  it("sandbox 拒绝普通对象伪造", () => {
+    expect(() => defineEval({ sandbox: {} as never, async test() {} })).toThrow(/SandboxLayer/);
   });
 });
 
@@ -58,21 +59,22 @@ describe("defineScoreEval:计分制", () => {
     expect(() => defineScoreEval({} as never)).toThrow(/defineScoreEval/);
   });
 
-  it("environment 为空字符串时报错,指名 defineScoreEval", () => {
-    expect(() => defineScoreEval({ environment: "  ", async test() {} })).toThrow(/defineScoreEval/);
+  it("sandbox 拒绝普通对象伪造", () => {
+    expect(() => defineScoreEval({ sandbox: {} as never, async test() {} })).toThrow(/SandboxLayer/);
   });
 
-  it("字段与 defineEval 完全同形:description/tags/environment/metadata 原样保留", () => {
+  it("字段与 defineEval 完全同形:description/tags/sandbox/metadata 原样保留", () => {
+    const sandbox = sandboxLayer();
     const def = defineScoreEval({
       description: "rubric task",
       tags: ["coding"],
-      environment: "node-22",
+      sandbox,
       metadata: { owner: "team-a" },
       async test() {},
     });
     expect(def.description).toBe("rubric task");
     expect(def.tags).toEqual(["coding"]);
-    expect(def.environment).toBe("node-22");
+    expect(def.sandbox).toBe(sandbox);
     expect(def.metadata).toEqual({ owner: "team-a" });
   });
 });
@@ -93,6 +95,8 @@ describe("类型层:给分词汇只存在于计分制的 t 上", () => {
       defineEval({ scoring: "pass", async test() {} });
       // @ts-expect-error configHash 只在规划期存在
       defineEval({ configHash: "manual", async test() {} });
+      // @ts-expect-error environment 已由统一 SandboxLayer 字段取代
+      defineEval({ environment: "node-22", async test() {} });
       // @ts-expect-error Definition 带模块私有品牌，不能用对象字面量伪造
       const forged: EvalDefinition<"pass", TestContext> = { scoring: "pass", async test() {} };
       void forged;

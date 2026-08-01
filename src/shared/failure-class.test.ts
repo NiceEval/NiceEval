@@ -86,7 +86,7 @@ describe("attachFailureClass · 框架决议出的分类附着", () => {
 });
 
 describe("resolveAttemptFailureClass · 生命周期阶段的三道链", () => {
-  const info = (error: unknown): AttemptFailureInfo => attemptFailureInfo("eval.setup", error);
+  const info = (error: unknown): AttemptFailureInfo => attemptFailureInfo("sandbox.prepare.eval", error);
 
   it("抛出点携带的分类命中即定,不询问实验分类器", () => {
     const classifier = vi.fn(() => ({ retryable: false as const, scope: "attempt" as const }));
@@ -126,11 +126,11 @@ describe("resolveAttemptFailureClass · 生命周期阶段的三道链", () => {
   it("分类器读到的 text 与报错文案同源:错误链(含 cause)message 串接", () => {
     const error = new Error("eval setup failed", { cause: new Error("connect ECONNREFUSED tunnel.example:443") });
     const seen: AttemptFailureInfo[] = [];
-    resolveAttemptFailureClass(attemptFailureInfo("eval.setup", error), (failure) => {
+    resolveAttemptFailureClass(attemptFailureInfo("sandbox.prepare.eval", error), (failure) => {
       seen.push(failure);
       return undefined;
     });
-    expect(seen[0].phase).toBe("eval.setup");
+    expect(seen[0].phase).toBe("sandbox.prepare.eval");
     expect(seen[0].text).toBe("eval setup failed · connect ECONNREFUSED tunnel.example:443");
     expect(seen[0].cause).toBe(error);
   });

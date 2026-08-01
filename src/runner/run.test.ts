@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { judgeProbePlan, judgeProbeTargets, runEvals } from "./run.ts";
-import { defineSandbox, defineSandboxAgent } from "../define.ts";
+import { defineSandbox, defineSandboxAgent as defineSandboxAgentBase } from "../define.ts";
 import { Artifacts } from "./reporters/artifacts.ts";
 import { openRecord } from "../record/open.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
@@ -56,6 +56,10 @@ import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
+import { dockerImageSandbox } from "../sandbox/layer.ts";
+import { linkSandboxLayers } from "../sandbox/link.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { Effect } from "effect";
 import type { AgentRun, DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import type {
   Agent,
@@ -69,9 +73,22 @@ import type {
   Reporter,
   ReporterRegistration,
   Sandbox,
-  SandboxFile,
+  SandboxAgentDef,
   Turn,
 } from "../types.ts";
+
+function defineSandboxAgent(
+  def: Omit<SandboxAgentDef, "ensure" | "installers">,
+) {
+  const ensure = {
+    identity: { agent: def.name, version: "0.0.0-test", revision: "1" },
+    probe: defineSandboxCommand(
+      { id: "test.agent.probe", revision: "1", inputs: { agent: def.name, version: "0.0.0-test" } },
+      async () => {},
+    ),
+  };
+  return defineSandboxAgentBase({ ...def, ensure, installers: [] });
+}
 
 // judge 预检的目标收敛:只探测「实际要跑、且源码里出现 judge 字样」的 eval 的生效配置。
 // 这是对 memory/judge-config-precheck-hard-fails-without-key 的修复守护——
@@ -159,31 +176,32 @@ class FakeSandbox implements Partial<Sandbox> {
   async runCommand(): Promise<CommandResult> {
     return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
-    for (const [path, content] of Object.entries(files)) {
-      this.files.set(targetDir ? `${targetDir}/${path}` : path, content);
-    }
+  async runCommandOrThrow(): Promise<CommandResult & { exitCode: 0 }> {
+    return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
-    for (const f of files) {
-      this.files.set(targetDir ? `${targetDir}/${f.path}` : f.path, f.content.toString());
-    }
+  async runShellOrThrow(): Promise<CommandResult & { exitCode: 0 }> {
+    return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async uploadFile(path: string, content: Buffer): Promise<void> {
-    this.files.set(path, content.toString());
+  async writeText(path: string, content: string): Promise<void> {
+    this.files.set(path, content);
   }
-  async uploadDirectory(): Promise<void> {}
-  async downloadFile(path: string): Promise<Buffer> {
-    return Buffer.from(this.files.get(path) ?? "");
+  async writeBytes(path: string, content: Uint8Array): Promise<void> {
+    this.files.set(path, Buffer.from(content).toString());
   }
-  async fileExists(path: string): Promise<boolean> {
+  async pathExists(path: string): Promise<boolean> {
     return this.files.has(path);
   }
-  async readFile(path: string): Promise<string> {
+  async readText(path: string): Promise<string> {
     const hit = this.files.get(path);
     if (hit === undefined) throw new Error(`no such file: ${path}`);
     return hit;
   }
+  async readBytes(path: string): Promise<Uint8Array> {
+    return Buffer.from(this.files.get(path) ?? "");
+  }
+  async uploadFile(): Promise<void> {}
+  async uploadDirectory(): Promise<void> {}
+  async downloadFile(): Promise<void> {}
   async downloadDirectory(): Promise<void> {}
   async stop(): Promise<void> {}
 }
@@ -1916,7 +1934,7 @@ describe("runEvals · 退避的槽位持有期差:实验级闸全程持有,全�
 
 // bug: memory/turn-retry-backoff-releases-experiment-serial-lock.md
 describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
-  it("maxConcurrency: 1 下,上一个 attempt 的 sandbox.teardown 钩子未完成时,下一个 attempt 的沙箱不会创建", async () => {
+  it("maxConcurrency: 1 下,上一个 attempt 的 Agent teardown 未完成时,下一个 attempt 的沙箱不会创建", async () => {
     let releaseTeardown!: () => void;
     const barrier = new Promise<void>((resolve) => {
       releaseTeardown = resolve;
@@ -1929,15 +1947,20 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
         sandboxCreates += 1;
         return asSandbox(new FakeSandbox());
       },
-    }).teardown(async () => {
-      teardownEntered = true;
-      await barrier;
+    });
+    const agent = defineSandboxAgent({
+      name: "agent-teardown-barrier",
+      send: async () => ({ events: [], status: "completed" }),
+      teardown: async () => {
+        teardownEntered = true;
+        await barrier;
+      },
     });
 
     const evalA = makeEval("a", () => {});
     const evalB = makeEval("b", () => {});
     const agentRun: AgentRun = {
-      agent: makeAgent("agent-teardown-barrier"),
+      agent,
       flags: {},
       attempts: 1,
       earlyExit: false,
@@ -1950,7 +1973,7 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
 
     const runPromise = run([evalA, evalB], [agentRun], { maxConcurrency: 4 });
 
-    // a 的 sandbox.teardown 钩子挂在 barrier 上:runSem 名额要到沙箱销毁完成才归还,
+    // a 的 Agent teardown 挂在 barrier 上:runSem 名额要到整条 attempt 收尾完成才归还,
     // 所以 b 的沙箱这段时间不该被创建。
     await vi.waitFor(() => expect(teardownEntered).toBe(true));
     expect(sandboxCreates).toBe(1);
@@ -1959,7 +1982,7 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
     const { summary } = await runPromise;
     expect(summary.results).toHaveLength(2);
     expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
-    expect(sandboxCreates).toBe(2); // teardown 放行、a 收尾完成后 b 的沙箱才创建
+    expect(sandboxCreates).toBe(2); // Agent teardown 放行、a 收尾完成后 b 的沙箱才创建
   });
 });
 
@@ -3930,7 +3953,7 @@ describe("runEvals · 止损闸: teardown 边界", () => {
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
 
-  it("per-attempt teardown 抛声明:照常落闸(剩余两条计 unstarted),但 verdict 仍是 passed", async () => {
+  it("Agent teardown 抛声明:照常落闸(剩余两条计 unstarted),但 verdict 仍是 passed", async () => {
     const experimentId = "halt-attempt-teardown";
     const started: string[] = [];
     const ids = ["k-1", "k-2", "k-3"];
@@ -3939,11 +3962,14 @@ describe("runEvals · 止损闸: teardown 边界", () => {
         started.push(id);
       }),
     );
-    // eval.teardown 是 attempt 收尾链的第一段,失败只记诊断、不改判定;空间轴声明照常落闸。
-    evals[0]!.teardown = () => {
-      throw new ExperimentFatalError("shared db handle leaked; restart the stack");
-    };
-    const agentRun = probeRun(makeAgent("agent-halt-attempt-teardown"), experimentId, ids);
+    const agent = defineSandboxAgent({
+      name: "agent-halt-attempt-teardown",
+      send: async () => ({ events: [], status: "completed" }),
+      teardown: () => {
+        throw new ExperimentFatalError("shared db handle leaked; restart the stack");
+      },
+    });
+    const agentRun = probeRun(agent, experimentId, ids);
     const plan: RunFeedbackPlan = {
       shape: { evals: 3, configs: 1, totalAttempts: 3, maxConcurrency: 1 },
       reused: 0,
@@ -3959,41 +3985,31 @@ describe("runEvals · 止损闸: teardown 边界", () => {
       expect(started).toEqual(["k-1"]);
       expect(summary.results).toHaveLength(1);
       expect(summary.results[0]!.verdict).toBe("passed"); // 落闸不改 verdict
-      expect(summary.results[0]!.diagnostics?.some((d) => d.origin?.scope === "attempt" && d.origin.phase === "eval.teardown")).toBe(true);
+      expect(summary.results[0]!.diagnostics?.some((d) => d.origin?.scope === "attempt" && d.origin.phase === "agent.teardown")).toBe(true);
 
       const notice = coordinator.state.diagnostics.find((d) => d.key === experimentHaltKey(experimentId));
       expect(notice).toBeDefined();
       expect(notice!.data?.unstarted).toBe(2);
-      expect(notice!.data?.phase).toBe("eval.teardown"); // 触发失败所在的生命周期阶段
+      expect(notice!.data?.phase).toBe("agent.teardown");
       const persisted = await snapshotHaltDiagnostics(root, experimentId);
       expect(persisted).toHaveLength(1);
-      expect(persisted[0]!.origin?.scope === "attempt" ? persisted[0]!.origin.phase : undefined).toBe("eval.teardown");
+      expect(persisted[0]!.origin?.scope === "attempt" ? persisted[0]!.origin.phase : undefined).toBe("agent.teardown");
       expectCountIdentity(coordinator.state);
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
 });
 
-// ════════════ 派发前资源获取失败的归一化(复用池租借)════════════
-// 覆盖规范:docs/engineering/testing/unit/experiments-runner.md「派发前资源获取失败的归一化」
+// ════════════ linked prepare 失败的归一化与止损闸 ═════════════
 // bug: memory/experiment-fatal-presented-as-user-interrupt.md
 
-/** 带寿命确认能力的 fake 沙箱:复用池只接受能自证寿命的 provider(见 sandbox-pool.ts 的 create)。 */
-class ReusableFakeSandbox extends FakeSandbox {
-  async ensureLifetime(): Promise<{ ready: true }> {
-    return { ready: true };
-  }
-}
-
-describe("runEvals · 复用池租借失败", () => {
+describe("runEvals · linked prepare 失败", () => {
   afterEach(() => {
     expect(activeFeedbackSinkCount()).toBe(0);
     expect(pendingHeldCaseLockCount()).toBe(0);
   });
 
-  // 复用池在实例创建时跑 SandboxSpec setup 钩子,失败原样浮出 acquire():它是这条 attempt 的
-  // 终局失败(errored + 空间轴回执),不是调度缺陷。真机上它曾以 defect 穿过调度器,连坐同批
-  // 其它实验、正文被吞、退出码 130(冒充用户中断)。
-  it("SandboxSpec setup 钩子抛 ExperimentFatalError:本条 errored 且正文可见、落实验闸、同批其它实验照跑、不冒充中断", async () => {
+  // Experiment prepare 失败是本条 attempt 的终局失败(errored + 空间轴回执),不是调度缺陷。
+  it("Experiment SandboxLayer prepare 抛 ExperimentFatalError:本条 errored 且正文可见、落实验闸、同批其它实验照跑、不冒充中断", async () => {
     const haltedExp = "lease-fatal-exp";
     const bystanderExp = "lease-bystander-exp";
     const message = "shared tunnel is down; run `make tunnel` and retry";
@@ -4011,15 +4027,24 @@ describe("runEvals · 复用池租借失败", () => {
       }),
     );
     const reusableSandbox = defineSandbox({
-      name: "fake-reusable",
-      create: async () => asSandbox(new ReusableFakeSandbox()),
-    }).setup(() => {
-      throw new ExperimentFatalError(message);
+      name: "fake-linked-prepare",
+      create: async () => asSandbox(new FakeSandbox()),
     });
     const haltedRun = probeRun(makeAgent("agent-lease-fatal"), haltedExp, haltedIds, {
       sandbox: reusableSandbox,
-      sandboxReuse: true,
     });
+    const experimentLayer = dockerImageSandbox({ image: "unused-in-test" }).prepare(() => {
+      throw new ExperimentFatalError(message);
+    });
+    haltedRun.linkedSandboxes = new Map(
+      Effect.runSync(linkSandboxLayers(
+        haltedIds.map((evalId) => ({
+          eval: { id: evalId },
+          experiment: { id: haltedExp, layer: experimentLayer },
+          agent: { kind: "sandbox" as const, name: haltedRun.agent.name },
+        })),
+      )).map((linked) => [linked.evalId, { linked, sandboxSpec: reusableSandbox }]),
+    );
     const bystanderRun = probeRun(makeAgent("agent-lease-bystander"), bystanderExp, ["b-1", "b-2"]);
     const plan: RunFeedbackPlan = {
       shape: { evals: 5, configs: 2, totalAttempts: 5, maxConcurrency: 1 },
@@ -4033,14 +4058,14 @@ describe("runEvals · 复用池租借失败", () => {
         maxConcurrency: 1,
       });
 
-      // 租借失败发生在 test() 之前:被撞死的那条一次都没进过 test(),但照常落一条 errored。
+      // prepare 失败发生在 test() 之前:被撞死的那条一次都没进过 test(),但照常落一条 errored。
       expect(startedHalted).toEqual([]);
       const halted = summary.results.filter((r) => r.experimentId === haltedExp);
       expect(halted).toHaveLength(1);
       expect(halted[0]!.verdict).toBe("errored");
       // 正文走完全程:作者的修复提示既在结果里,也在两条诊断通路里。
       expect(halted[0]!.error?.message).toContain(message);
-      expect(halted[0]!.error?.origin.scope === "attempt" ? halted[0]!.error.origin.phase : undefined).toBe("sandbox.create");
+      expect(halted[0]!.error?.origin.scope === "attempt" ? halted[0]!.error.origin.phase : undefined).toBe("sandbox.prepare.experiment");
 
       // 不连坐:同批另一个实验的两条全跑完。
       expect([...startedBystander].sort()).toEqual(["b-1", "b-2"]);

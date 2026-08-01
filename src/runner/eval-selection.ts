@@ -17,7 +17,6 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
     // 省略(未经这两个定义函数处理的裸对象)按 "pass" 兜底,每条发现出的 eval 上都有确定值,
     // 谓词读不到 undefined(见 docs/feature/experiments/score-points.md)。
     scoring: evalDef.scoring ?? "pass",
-    ...(evalDef.environment !== undefined ? { environment: evalDef.environment } : {}),
     ...(evalDef.metadata !== undefined ? { metadata: Object.freeze({ ...evalDef.metadata }) } : {}),
   }) as EvalDescriptor;
 }

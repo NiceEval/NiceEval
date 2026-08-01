@@ -757,7 +757,7 @@ describe("诊断行:标题是「阶段标签 · code」,止损闸落闸是一行
         who: "codex",
         verdict: "errored",
         reason: "boom",
-        phase: "sandbox.setup",
+        phase: "sandbox.prepare",
       },
       createInitialRunFeedbackState(),
       { mode: "plain", width: 100 },
@@ -774,7 +774,7 @@ describe("诊断行:标题是「阶段标签 · code」,止损闸落闸是一行
         severity: "warning",
         message: "Memory warmup failed; continuing with a cold index",
         identity: { experimentId: "compare/codex", evalId: "memory/x", attempt: 1 },
-        data: { phase: "sandbox.setup" },
+        data: { phase: "sandbox.prepare" },
       },
       12,
     );

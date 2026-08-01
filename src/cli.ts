@@ -1,5 +1,6 @@
 // niceeval CLI 入口。执行 eval 必须以 experiment 为单位;位置参数只在 exp 后筛 eval id 前缀。
-//   niceeval exp [组|配置] [pattern]  跑实验
+//   niceeval check [组|配置] [pattern]  只做发现、选择与 SandboxLayer pure link
+//   niceeval exp [组|配置] [pattern]    跑实验
 //   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
 //   niceeval list                    只列出发现到的 eval
 //   niceeval clean                   删除 .niceeval/ 历史运行 artifact
@@ -24,6 +25,7 @@ import {
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun, splitByScoring } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
+import { formatSandboxLayerLinkError, SandboxLayerLinkError } from "./sandbox/link.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
 import { drainHeldCaseLocks, isCaseLockStale, readCaseLock } from "./runner/lock.ts";
 import { drainHeldGateLeases } from "./runner/gate-lease.ts";
@@ -32,7 +34,11 @@ import { resolveRunTimeout } from "./runner/timeout.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
-import { prepareRunSandboxes, resolvedSandboxRecommendedConcurrency } from "./runner/sandbox-selection.ts";
+import {
+  linkRunSandboxes,
+  prepareRunSandboxes,
+  resolvedSandboxRecommendedConcurrency,
+} from "./runner/sandbox-selection.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import {
@@ -352,7 +358,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
   }
 
   // 第一个位置参数若是已知命令,则为命令;其余是 eval id 前缀 / view 输入。
-  const commands = new Set(["exp", "show", "list", "view", "clean", "init", "watch", "run", "sandbox"]);
+  const commands = new Set(["check", "exp", "show", "list", "view", "clean", "init", "watch", "run", "sandbox"]);
   let command = "run";
   let positionals = rawPositionals;
   if (rawPositionals[0] && commands.has(rawPositionals[0])) {
@@ -878,7 +884,7 @@ async function main(): Promise<void> {
   let experimentSelection = t("cli.all");
   let availableExperimentPaths = t("cli.none");
 
-  if (command === "exp") {
+  if (command === "exp" || command === "check") {
     if (flags.agent || flags.model) {
       process.stderr.write(t("cli.exp.agentModelFlagUnsupported"));
       process.exit(1);
@@ -1033,7 +1039,7 @@ async function main(): Promise<void> {
         flags: exp.flags ?? {},
         attempts: flags.attempts ?? exp.attempts ?? 1,
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
-        sandbox: exp.sandbox ?? config.sandbox,
+        sandbox: exp.sandbox,
         sandboxReuse: exp.sandboxReuse,
         judge: exp.judge,
         // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
@@ -1044,6 +1050,8 @@ async function main(): Promise<void> {
         budget: flags.budget ?? exp.budget,
         selectedEvalIds,
         experimentId: exp.id,
+        ...(exp.baseDir !== undefined ? { experimentBaseDir: exp.baseDir } : {}),
+        ...(exp.sourcePath !== undefined ? { experimentSourcePath: exp.sourcePath } : {}),
         description: exp.description,
         labels: exp.labels,
         evalFilterFingerprint: fingerprintEvalsFilter(exp.evals, extraPatterns),
@@ -1109,7 +1117,16 @@ async function main(): Promise<void> {
   }
 
   // environments 查表在 dry-run 与真实运行共用的规划边界完成；缺表项在任何沙箱/agent 花费前穷举失败。
-  prepareRunSandboxes(evals, agentRuns, config.sandbox);
+  if (command === "check") linkRunSandboxes(evals, agentRuns);
+  else prepareRunSandboxes(evals, agentRuns);
+
+  // check 的边界就是 pure link：不读取 provider 文件、不做网络请求、不算 fingerprint，
+  // 更不会 build / create Sandbox。--dry 与正式运行继续消费上面写入的同一 linked matrix。
+  if (command === "check") {
+    const pairCount = matchedByRun.reduce((sum, selected) => sum + selected.length, 0);
+    process.stdout.write(`Sandbox layers linked: ${pairCount} pair${pairCount === 1 ? "" : "s"}.\n`);
+    process.exit(0);
+  }
 
   // 提前算好携入计划:coordinator 的 plan 事件与 runEvals 内部实际调度必须共用同一份
   // planCarry() 判断,否则两边各自算一遍,一旦不一致,dashboard/事件流展示的"携入"就会和
@@ -1138,7 +1155,7 @@ async function main(): Promise<void> {
     }
   }
   let carryPlan = priorResults?.length
-    ? await planCarry(evals, agentRuns, priorResults, config.sandbox, config.timeoutMs, {
+    ? await planCarry(evals, agentRuns, priorResults, undefined, config.timeoutMs, {
         rerun: flags.rerun,
         configJudge: config.judge,
         keepSandbox: flags.keepSandbox,
@@ -1194,7 +1211,7 @@ async function main(): Promise<void> {
       } else {
         process.stderr.write(t("cli.accept.equivalent", { command: equivalentAcceptCommand(acceptCommand, chosen) }));
         flags.accept = chosen;
-        carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], config.sandbox, config.timeoutMs, {
+        carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], undefined, config.timeoutMs, {
           rerun: flags.rerun,
           configJudge: config.judge,
           keepSandbox: flags.keepSandbox,
@@ -1300,7 +1317,7 @@ async function main(): Promise<void> {
   // 无全局默认:并发上限由 sandbox provider 的推荐值决定(多个 agentRun 各有 sandbox 时取
   // 最小值,最保守的 provider 决定上限)。同一个值既进 RunFeedbackPlan.shape,也传给 runEvals——
   // 两处必须是同一个数字,dashboard 展示的并发上限不能和真实调度的并发上限对不上。
-  const sandboxDefaultConcurrency = resolvedSandboxRecommendedConcurrency(evals, agentRuns, config.sandbox);
+  const sandboxDefaultConcurrency = resolvedSandboxRecommendedConcurrency(evals, agentRuns);
   const maxConcurrency =
     flags.maxConcurrency ??
     config.maxConcurrency ??
@@ -1481,7 +1498,11 @@ async function main(): Promise<void> {
 }
 
 main().catch(async (e) => {
-  process.stderr.write(t("cli.error", { error: formatThrown(e) }));
+  process.stderr.write(
+    e instanceof SandboxLayerLinkError
+      ? `${formatSandboxLayerLinkError(e)}\n`
+      : t("cli.error", { error: formatThrown(e) }),
+  );
   // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表、用例锁与
   // 实验闸租约,再退。
   await stopAllSandboxes();

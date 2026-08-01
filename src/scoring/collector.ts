@@ -203,7 +203,12 @@ export class AssertionCollector {
           spec.stopOnFailure = true;
           collector.armStopOnFailure(spec, before);
         }
-        return collector.settleStopOnFailure(handle);
+        const settling = collector.settleStopOnFailure(handle);
+        // 作者可以故意不 await，让 Runner 在下一个异步边界或 test() 收尾统一结算。
+        // 先挂一个观察者避免这条受支持路径被宿主报告成 unhandled rejection；返回的原
+        // Promise 仍保持 reject 语义，显式 await 时照常就地抛 EvalRequirementFailed。
+        void settling.catch(() => {});
+        return settling;
       },
       soft() {
         spec.severity = "soft";

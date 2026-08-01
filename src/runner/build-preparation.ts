@@ -14,15 +14,16 @@ import {
 import type { BuildKey } from "../sandbox/identity.ts";
 import type { DiscoveredEval, SandboxOption } from "../types.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
+import { sandboxEnvironmentForEval, sandboxForEval } from "./sandbox-selection.ts";
 import type { AgentRun, RunOptions } from "./types.ts";
 
 export interface CollectedBuildPreparation {
   readonly works: readonly SandboxBuildWork[];
   readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
   readonly provider: SandboxBuildProvider;
-  /** evalId → 规划期 CaseKey(指纹 / attempt 可追溯)。 */
+  /** `${experimentId}|${evalId}` → 规划期 CaseKey。 */
   readonly caseKeys: ReadonlyMap<string, string>;
-  /** evalId → 规划好的 case(物化前可复用)。 */
+  /** `${experimentId}|${evalId}` → 规划好的 case。 */
   readonly plans: ReadonlyMap<string, PlannedSandboxCase>;
 }
 
@@ -50,39 +51,38 @@ export async function collectBuildPreparation(opts: {
 
   for (const run of opts.agentRuns) {
     if (run.agent.kind !== "sandbox") continue;
-    const spec = run.sandbox ?? opts.configSandbox;
-    if (spec === undefined) continue;
-
     for (const evalDef of selectedEvalsForRun(opts.evals as DiscoveredEval[], run)) {
       const carryKey = `${run.experimentId ?? ""}|${evalDef.id}`;
       const carried = opts.carriedAttemptsByKey.get(carryKey);
       if (carried !== undefined && carried.size >= run.attempts) continue;
 
+      const spec = sandboxForEval(run, evalDef, opts.configSandbox);
+      if (spec === undefined) continue;
       const planned = planSandboxCase({
         evalId: evalDef.id,
-        environment: evalDef.environment,
+        environment: sandboxEnvironmentForEval(run, evalDef),
         ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
         spec,
       });
       if (planned.status !== "ready") continue;
 
-      plans.set(evalDef.id, planned.plan);
+      plans.set(carryKey, planned.plan);
       if (planned.plan.caseKind === "on-demand-build") {
         const collection = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
         if (collection === undefined) {
-          caseKeys.set(evalDef.id, planned.plan.caseKey);
+          caseKeys.set(carryKey, planned.plan.caseKey);
           continue;
         }
         dockerfileCollections.push(collection);
-        caseKeys.set(evalDef.id, collection.caseKey);
+        caseKeys.set(carryKey, collection.caseKey);
         if (!worksByKey.has(collection.buildKey)) worksByKey.set(collection.buildKey, collection.work);
-        const keys = evalBuildKeys.get(evalDef.id) ?? [];
+        const keys = evalBuildKeys.get(carryKey) ?? [];
         if (!keys.includes(collection.buildKey)) keys.push(collection.buildKey);
-        evalBuildKeys.set(evalDef.id, keys);
+        evalBuildKeys.set(carryKey, keys);
         continue;
       }
 
-      caseKeys.set(evalDef.id, planned.plan.caseKey);
+      caseKeys.set(carryKey, planned.plan.caseKey);
       if (planned.plan.caseKind !== "compose" && planned.plan.caseKind !== "cloud-compose") {
         continue;
       }
@@ -102,12 +102,12 @@ export async function collectBuildPreparation(opts: {
             : undefined;
       if (decl && "env" in decl && decl.env !== undefined) composeEnv = decl.env;
 
-      const keys = evalBuildKeys.get(evalDef.id) ?? [];
+      const keys = evalBuildKeys.get(carryKey) ?? [];
       for (const work of collection.works) {
         if (!worksByKey.has(work.buildKey)) worksByKey.set(work.buildKey, work);
         if (!keys.includes(work.buildKey)) keys.push(work.buildKey);
       }
-      evalBuildKeys.set(evalDef.id, keys);
+      evalBuildKeys.set(carryKey, keys);
     }
   }
 

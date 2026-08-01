@@ -5,7 +5,10 @@ import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from ".
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
-import type { Sandbox, SandboxHookContext, SandboxOption } from "../sandbox/types.ts";
+import type { SandboxOption } from "../sandbox/types.ts";
+import type { SandboxLayer } from "../sandbox/layer.ts";
+import type { LinkedSandboxLayerPair } from "../sandbox/link.ts";
+import type { SandboxSource } from "../sandbox/case-types.ts";
 import type {
   AssertionResult,
   DiffArtifact,
@@ -46,6 +49,8 @@ export interface ExperimentRunInfo {
   evalFilterFingerprint?: string;
   /** provider 名、provider 的公开参数投影与配置 fingerprint;参数只经投影落盘,token/凭据永不进来。 */
   sandbox?: SandboxRunInfo;
+  /** Experiment SandboxLayer 的纯数据身份；历史侧据此重建 configHash。 */
+  sandboxLayer?: JsonValue;
   /** spec 携带 environments 表时:声明了 environment 的选中 eval 各自解析到的产物投影,按 eval id 留审计映射;其余 eval 以 `sandbox` 为准。 */
   sandboxByEval?: globalThis.Record<string, SandboxRunInfo>;
   /** Sandbox 是否在同一次 Run 内复用。 */
@@ -56,7 +61,7 @@ export interface ExperimentRunInfo {
   judge?: Pick<JudgeConfig, "model" | "baseUrl" | "timeoutMs">;
   /**
    * Agent Ensure 安装身份投影(`agentInstallIdentityInput`);与 sandbox case 身份正交。
-   * 有 provisioner 时落盘,供历史侧重算 configHash。
+   * 有 Agent Ensure 身份时落盘,供历史侧重算 configHash。
    */
   agentInstall?: {
     agent: string;
@@ -88,10 +93,12 @@ export type LifecyclePhase =
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue" // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create" // provider 物化沙箱实例(共享构建不在这里,它在 Run 级 activity)
-  | "sandbox.setup" // SandboxSpec.setup() 生命周期 Hook 链
+  | "sandbox.prepare" // 两层作者 layer 的 prepare 链
+  | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
+  | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
+  | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
-  | "eval.setup" // EvalDef.setup
-  | "agent.setup" // Agent 的 Ensure:检查、缺失时安装、复检
+  | "agent.setup" // Adapter runtime 配置 / 凭据 / state setup
   | "telemetry.configure" // tracing 出口配置
   | "eval.run" // 整段 test(t),含所有 send 与手工命令
   | "agent.run" // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
@@ -99,9 +106,8 @@ export type LifecyclePhase =
   | "scoring.evaluate" // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect" // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
-  | "eval.teardown" // EvalDef.teardown
   | "agent.teardown"
-  | "sandbox.teardown" // SandboxSpec.teardown() 生命周期 Hook 链
+  | "sandbox.cleanup" // 两层作者 layer 已登记 cleanup 全局 LIFO
   | "sandbox.suspend" // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause)
   | "sandbox.stop"; // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
 
@@ -609,12 +615,10 @@ export interface EvalAuthorFields {
   /** 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。 */
   tags?: string[];
   /**
-   * 这条评估用例需要的环境:共享 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`),
-   * 或 folder-local `SandboxSource`(`composeSandbox` / `dockerfileSandbox`)。
-   * 字符串由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物;
-   * 对象走 `materializers[source.kind]`(显式表项仍优先)。
+   * 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
+   * 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
    */
-  environment?: string | import("../sandbox/case-types.ts").SandboxSource;
+  sandbox?: SandboxLayer;
   /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
   judge?: JudgeConfig;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
@@ -630,23 +634,6 @@ export interface EvalAuthorFields {
    * 合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结。
    */
   diff?: { include?: string[]; ignore?: string[] };
-  /**
-   * 评估用例级预置:拿到 Sandbox(已上传 workspace + git 基线 + 装好依赖前)。
-   * 默认命令以非 root 跑(agent 的自然环境);装系统依赖时给 `runCommand` 传 `{ root: true }`
-   * (如 `runCommand("apt-get", ["install", …], { root: true })`),跨 provider 语义一致。
-   * 第二个参数是绑定到 `eval.setup` 的窄上下文(`ctx.progress` / `ctx.diagnostic`,
-   * 见 docs/feature/eval/README.md)。setup 不返回值;要把产物传给 teardown,
-   * 以 `sandbox` 实例作键存取(并发 attempt 共享同一模块,普通模块变量会互相覆写)。
-   */
-  setup?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
-  /**
-   * 评估用例级收尾:attempt 收尾链的第一段(`eval.teardown` → `agent.teardown` →
-   * `sandbox.teardown`),Sandbox 此刻还活着。当且仅当 `eval.setup` 时点走到过才执行——
-   * `setup` / `test` 抛错都不豁免,未声明 `setup` 不影响触发;抛错或超 30s 清理上限
-   * 只记 `teardown-failed` 诊断,不改判定。管 Sandbox 外的临时 Fixture(临时 repo / bucket),
-   * Sandbox 内的东西随销毁自动回收、不需要它。
-   */
-  teardown?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
 }
 
 /** 作者输入：id、scoring、configHash 都由后续阶段拥有。 */
@@ -698,6 +685,8 @@ export interface DiscoveredEval extends EvalAuthorFields {
   scoring?: EvalScoring;
   /** runner 的运行时 context 同时兑现两种题型能力，实际题型由 scoring 分支决定。 */
   test(t: TestContext): Promise<void> | void;
+  /** @internal 旧 case 内核的过渡输入；作者面不再暴露。 */
+  environment?: string | SandboxSource;
   /** 定义文件所在目录(解析相对 workspace 用)。 */
   baseDir: string;
   /** 定义文件绝对路径,用于内容指纹缓存。 */
@@ -801,10 +790,10 @@ export interface ExperimentDef {
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这个实验生效。 */
   timeoutMs?: number;
   /**
-   * 覆盖项目级 Config.sandbox,只对这个实验生效。固定 SandboxSpec 对全部选中 eval 复用;
-   * spec 可携带 `environments` 表,按 eval 的 `environment` profile 换预制产物。
+   * 本实验贡献的 Sandbox 声明层。它与每条选中 Eval 的同名字段逐配对链接；
+   * 每个配对恰好一方提供 template-bearing layer。
    */
-  sandbox?: SandboxOption;
+  sandbox?: SandboxLayer;
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
   sandboxReuse?: boolean;
   /**
@@ -852,13 +841,17 @@ export interface ExperimentDef {
 
 export interface DiscoveredExperiment extends ExperimentDef {
   id: string;
+  /** 定义文件所在目录；解析 Experiment layer 中的相对本地路径。 */
+  baseDir?: string;
+  /** 定义文件绝对路径；link 诊断标注声明来源。 */
+  sourcePath?: string;
 }
 
 /**
  * 用户谓词(`ExperimentDef.evals`)能看到的唯一形状——发现并扇出后的显式白名单投影,不透传
  * `DiscoveredEval` 原对象(不暴露 `sourcePath` / `baseDir` / `test` / hooks 等内部路径与执行字段)。
  * `tags` 缺省为冻结空数组;`metadata` 原样引用作者声明的对象(至少浅冻结),供 `tags.includes(...)` /
- * `environment` / `metadata.<key>` 判断(见 docs/feature/eval/library.md「EvalDescriptor」)。
+ * `metadata.<key>` 判断(见 docs/feature/eval/library.md「EvalDescriptor」)。
  */
 export interface EvalDescriptor {
   readonly id: string;
@@ -871,7 +864,6 @@ export interface EvalDescriptor {
    * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
   readonly scoring: EvalScoring;
-  readonly environment?: string | import("../sandbox/case-types.ts").SandboxSource;
   readonly metadata?: Readonly<globalThis.Record<string, unknown>>;
 }
 
@@ -890,8 +882,6 @@ export interface Config {
    * 省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN`。
    */
   locale?: string;
-  /** 项目级默认 Sandbox provider(docker / vercel / e2b / custom);experiment 可覆盖。 */
-  sandbox?: SandboxOption;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
   workspace?: string;
   /** 项目级默认 judge 配置(model / baseUrl / apiKeyEnv);EvalDef.judge 可按评估用例覆盖。 */
@@ -954,6 +944,16 @@ export function runWho(run: { agentName: string; model?: string; experimentId?: 
   return run.model ? `${run.agentName}/${run.model}` : run.agentName;
 }
 
+/**
+ * pure link 产物加上旧 provider/case 内核当前消费的窄适配。
+ * `linked` 是声明与指纹权威；`sandboxSpec` / `environment` 只负责物理物化，不能重新选 template。
+ */
+export interface PlannedSandboxPair {
+  readonly linked: LinkedSandboxLayerPair;
+  readonly sandboxSpec?: SandboxOption;
+  readonly environment?: SandboxSource;
+}
+
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AgentRun {
   agent: Agent;
@@ -962,14 +962,17 @@ export interface AgentRun {
   flags: globalThis.Record<string, JsonValue>;
   attempts: number;
   earlyExit: boolean;
-  sandbox?: SandboxOption;
+  /** Experiment 的作者 layer；SandboxOption 仅供存量内部测试夹具过渡，不在公开作者面出现。 */
+  sandbox?: SandboxLayer | SandboxOption;
   sandboxReuse?: boolean;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   judge?: JudgeConfig;
   /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
   configHash?: string;
-  /** environments 查表的规划期缓存(只含声明了 environment 的 selected eval);每条只派生一次。 */
+  /** @internal 存量 SandboxSpec/profile 规划缓存；新 Layer 路径不写。 */
   resolvedSandboxes?: Map<string, SandboxOption>;
+  /** discovery + selector 后一次生成；check / --dry / run 共用，后续阶段禁止重新链接。 */
+  linkedSandboxes?: Map<string, PlannedSandboxPair>;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
@@ -981,6 +984,10 @@ export interface AgentRun {
   timeoutSource?: "flag" | "experiment";
   budget?: number;
   experimentId?: string;
+  /** Experiment 定义文件目录；只用于解析 template 中的相对宿主路径。 */
+  experimentBaseDir?: string;
+  /** Experiment 定义文件路径；link 诊断来源。 */
+  experimentSourcePath?: string;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
   description?: string;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
@@ -1063,14 +1070,14 @@ export interface RunOptions {
   buildPreparation?: {
     readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
     readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
-    /** evalId → 该 eval 的 fresh attempt 依赖的 BuildKey;失败时扇出到这些 eval 的全部派发 attempt。 */
+    /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
     readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
     readonly maxConcurrency?: number;
     readonly buildTimeoutMs?: number;
     readonly prepareBudgetMs?: number;
   };
   /**
-   * Run 级 Agent artifact prepare 协调器。省略时 runEvals 为有 staged provisioner 的
+   * Run 级 Agent artifact prepare 协调器。省略时 runEvals 为有 staged installer 的
    * sandbox agent 新建并接真 Run timing recorder;测试可注入。
    */
   artifactPrepare?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
@@ -1087,6 +1094,11 @@ export interface Attempt {
   configHash?: string;
   /** 规划期按 eval 的 environment 查表派生的具体 spec；attempt 生命周期不再重新查表。 */
   sandboxSpec?: SandboxOption;
+  /** Layer template 适配进旧 case 内核时使用的中性 source。 */
+  /** Pair-level physical environment；string 仅供存量 environments profile 夹具过渡。 */
+  sandboxEnvironment?: string | SandboxSource;
+  /** 该 pair 的唯一 pure-link 产物；prepare 顺序与 fingerprint 都从这里读取。 */
+  linkedSandbox?: LinkedSandboxLayerPair;
   /**
    * Run 级构建协调产出的 BuildKey → locator;on-demand / Compose case 物化前注入。
    * 完全携带、未查询的 key 不在此表。
