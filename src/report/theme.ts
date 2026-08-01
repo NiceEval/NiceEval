@@ -28,8 +28,8 @@ export interface ReportTheme {
 
 const THEME_DEFINITION: unique symbol = Symbol.for("niceeval.report.theme");
 export interface ThemeDefinition extends ReportTheme {
-  /** 私有 factory 品牌：只有 defineTheme() 的归一化产物可作为报告主题。 */
-  readonly [THEME_DEFINITION]: true;
+  /** 与 ReportDefinition 同形的不可构造结构品牌；运行时仍由 Symbol.for 标记验证。 */
+  readonly __niceevalThemeDefinition: never;
   readonly kind: "theme";
 }
 

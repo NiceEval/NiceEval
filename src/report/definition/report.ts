@@ -145,8 +145,12 @@ const REPORT_DEFINITION: unique symbol = Symbol.for("niceeval.report.definition"
  * 字段是装载规范化后的形态:pages 恒非空,head 恒为数组。
  */
 export interface ReportDefinition {
-  /** 私有 factory 品牌：只有 defineReport() 的归一化产物可进配置或宿主。 */
-  readonly [REPORT_DEFINITION]: true;
+  /**
+   * 不可构造的结构品牌：源码入口与预编译 `niceeval/report` 会得到两份声明文件，不能用
+   * module-local unique symbol 做公开类型身份；`never` 让两份声明结构兼容，同时仍拒绝裸对象。
+   * 运行时真伪另由 `REPORT_DEFINITION` 的 Symbol.for 标记验证。
+   */
+  readonly __niceevalReportDefinition: never;
   readonly kind: "report";
   readonly title?: LocalizedText;
   readonly theme?: ThemeDefinition;
