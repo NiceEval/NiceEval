@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [PLAN-10](PLAN-10/README.md) · [DECISION](DECISION.md)
 
 # 环境模型 Cases
 
@@ -9,15 +9,15 @@
 
 下面十一个 Case 都遵守同一组底线:
 
-- Eval recipe、Experiment recipe 与 Agent 三方声明在 template link planning 前都存在;Agent 不因预装在 template 中而失去独立检查。
+- Eval、Experiment 与 Agent 三方准备声明在起点 link planning 前都存在；Agent 不因预装在 template 中而失去独立检查。
 - 每条 Attempt 由唯一 template 自带的 Provider 解析一个完整 Sandbox Case；template 声明与 Provider 实现的边界必须明确。
 - 对 Sandbox Agent，每个实际 Eval × Experiment pair 恰好一方声明起点；冲突、缺失与非法 factory 在任何 Provider 网络或 Sandbox 创建前按全矩阵聚合失败。
-- Experiment 与 Eval 的 SandboxCommand 和 Agent setup 按 owner 与 phase 分层执行,任一来源不能覆盖另一个来源。
+- Experiment 与 Eval 的 SandboxCommand 和 Agent 安装按 owner 与候选规定的顺序执行，任一来源不能覆盖另一个来源。
 - image、template、snapshot、产物名与受管 manifest 都不能单独代替实际检查。
 - 可预装条件由领域 helper 检查实际状态,并在安装后复检。
 - Agent 安装保留平台探测、宿主侧 payload 准备、安装模式和逐 Attempt 事实,不能被较弱的通用安装接口吞掉。
-- 复用同一个 Sandbox 时,检查频率跟 owner 语义走:逐 Attempt 语义的准备(Eval recipe beforeEach、Agent setup)每条 Attempt 重新检查目标状态;窗口语义的准备每个窗口检查一次,跨 Attempt 会变化的条件不得放进窗口语义层。
-- SandboxRecipe、command、所选 Case、实际 facts、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
+- 复用同一个 Sandbox 时，候选必须明确哪些准备会逐 Attempt 重检、哪些状态属于窗口；跨 Attempt 会变化的条件不能靠旧 manifest 假装仍然满足。
+- Sandbox 声明、command、所选 Case、实际 facts、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
 
 ## C1:评估环境较重
 
@@ -41,14 +41,14 @@
 部分题目不能访问外网,宿主必须按目标平台准备离线 payload。
 
 **验收:**两条变化轴不展开成逐题乘实验变体的手工预制环境矩阵。
-Experiment recipe command 作用于每道题最终的主 Sandbox;离线 payload 的准备、上传、安装和复检有明确错误归属。
+Experiment 准备 command 作用于每道题最终的主 Sandbox；离线 payload 的准备、上传、安装和复检有明确错误归属。
 
 ## C4:组合多个条件
 
 **输入:**一个 Experiment 同时需要证书、内部 registry、运行时和工具。
 它们存在语义依赖、共享资源冲突,后安装项还可能破坏先安装项。
 
-**验收:**作者按阅读顺序写 Experiment recipe command 链。
+**验收:**作者按阅读顺序写 Experiment 准备 command 链。
 第一期保守串行;只有领域 helper 掌握内部独立性时才自行并行,不要求作者维护依赖图与资源图。
 
 ## C5:预装稳定条件
@@ -72,7 +72,7 @@ state load 在工具和 Agent CLI 就位后运行,并有独立 identity、activi
 **输入:**跨 Attempt 累积状态本身就是实验变量,多条 Attempt 需要在同一复用窗口内观察同一份活状态。
 
 **验收:**复用必须显式开启并限制有序实验的并发。
-每个窗口有独立身份与载入、回存记录;Experiment / Eval recipe command 与 Agent setup 按各自 Window 或 Attempt 语义执行。
+每个窗口有独立身份与载入、回存记录；Experiment / Eval 准备 command 与 Agent 安装按候选声明的频次执行。
 
 ## C8:Experiment template 主导起点
 
@@ -80,7 +80,7 @@ state load 在工具和 Agent CLI 就位后运行,并有独立 identity、activi
 某个 Eval 没有 template,但仍要 checkout 仓库或安装项目依赖。
 
 **验收:**该 Attempt 从 Experiment 显式 template 创建 Sandbox。
-窗口内先运行双方 setup 并建立 reset anchor；每条 Attempt 恢复后再运行 Eval recipe beforeEach 完成 checkout 与依赖准备。
+候选必须明确 Experiment 条件、Eval checkout、reset 与 Agent 安装的相对顺序；每条 Attempt 进入 Agent 前都恢复到已知题目起点。
 任一 command 失败都在 Agent 开始前归入自己的 phase。
 
 ## C9:Eval template 需要融合条件
@@ -122,3 +122,4 @@ Experiment 不声明 template，只选择 Agent、模型与这批 Eval。
 | PLAN-7 | [单一起点与受管 Eval 文件](PLAN-7/use-case/README.md) | [Lifecycle](PLAN-7/lifecycle.md) |
 | PLAN-8 | [Environment 作者面与三层 Sandbox 准备](PLAN-8/use-case/README.md) | [Lifecycle](PLAN-8/lifecycle.md) |
 | PLAN-9 | [单一 Sandbox Recipe 与 template owner 顺序](PLAN-9/use-case/README.md) | [Lifecycle](PLAN-9/lifecycle.md) |
+| PLAN-10 | [统一 Sandbox Layer、固定 root-first 顺序与逐配对 root](PLAN-10/use-case/README.md) | [Lifecycle](PLAN-10/lifecycle.md) |

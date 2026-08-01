@@ -1,10 +1,12 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [PLAN-8](PLAN-8/README.md) · [PLAN-9](PLAN-9/README.md) · [PLAN-10](PLAN-10/README.md)
 
 ---
 
 ## 结论
 
 采纳 [PLAN-9](PLAN-9/README.md):单一 Sandbox Recipe、唯一 active template 与 template owner 顺序。
+
+PLAN-10 是在本次结论之后新增的重新评审候选；在下一次明确裁决前，本页仍记录 PLAN-9 的既有决定，不把 PLAN-10 标成已采纳状态。
 
 ## 关键裁决
 
@@ -139,6 +141,7 @@ PLAN-9 因此保留 PLAN-8 的完整 Case、Provider 内建 planner 与运行时
 | PLAN-7 | PLAN-6 的 owner 加普通上传动态依赖 | 运行时内核成立，公开命名与 materializer 装配仍泄漏 | 被 PLAN-8 取代 |
 | PLAN-8 | EnvironmentSource、SandboxConfig、Sandbox 与三层 setup | 边界准确，但作者仍需在 Environment 与 Sandbox 配置之间分类 | 被 PLAN-9 取代 |
 | PLAN-9 | SandboxRecipe、Provider-bound SandboxTemplate、Sandbox 与双 scope owner stack | 一个字段表达起点和 command；恰好一份 template 决定 Provider 与 owner 顺序 | 采纳 |
+| PLAN-10 | SandboxLayer、固定 root-first 准备链与 pair-local root | Eval / Experiment 同形，Agent 安装进入同一时间线；普通 command 只有逐 Attempt 频次 | 待重新裁决 |
 
 ## 两条迁移路径
 
