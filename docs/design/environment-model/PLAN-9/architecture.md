@@ -10,43 +10,61 @@ type SandboxStackOwner = SandboxRecipeOwner | "agent";
 
 interface OwnedSandboxRecipe {
   owner: SandboxRecipeOwner;
-  template?: SandboxTemplate;
-  setup: readonly SandboxCommand[];
-  teardown: readonly SandboxCommand[];
-  beforeEach: readonly SandboxCommand[];
-  afterEach: readonly SandboxCommand[];
+  templateContribution:
+    | { kind: "none" }
+    | {
+        kind: "explicit";
+        template: SandboxTemplate;
+        factory: string;
+        sourceModule: string;
+      };
+  setup: readonly SandboxCommand<"setup">[];
+  teardown: readonly SandboxCommand<"teardown">[];
+  beforeEach: readonly SandboxCommand<"beforeEach">[];
+  afterEach: readonly SandboxCommand<"afterEach">[];
   caseScopeIdentity: JsonValue;
   attemptScopeIdentity: JsonValue;
 }
 
-interface ResolvedSandboxStack {
+interface LinkedSandboxStack {
   templateOwner: "eval" | "experiment";
   template: SandboxTemplate;
-  provider: string;
-  profile: string;
-  caseKey: string;
-  caseScopeRecipeIdentity: string;
-  poolKey: string;
+  providerFactory: string;
   ownerOrder: readonly ["eval", "experiment", "agent"]
     | readonly ["experiment", "eval", "agent"];
+}
+
+interface PlannedSandboxStack extends LinkedSandboxStack {
+  provider: string;
+  templateIdentity: string;
+  plannedCase: PlannedSandboxCase;
+}
+
+interface FingerprintedSandboxStack extends PlannedSandboxStack {
+  caseKey: string;
+  windowStackIdentity: string;
+  attemptStackIdentity: string;
+  caseScopeRecipeIdentity: string;
+  attemptFingerprint: string;
+  carryEligible: boolean;
+  poolKey: string;
 }
 ```
 
 `OwnedSandboxRecipe` 是 Runner 的内部归一结构，不是公开作者接口。
-公开 `SandboxRecipe` 只约束 `.setup()` / `.teardown()` 与 `.beforeEach()` / `.afterEach()` 两种 scope 的 command stack；具体 factory 解析自己的 options 后，才把 template 放进这份内部结构。这样 E2B 的 `template: string`、Docker 的 `image: string`、Vercel 的 `snapshotId: string` 与 Compose 的资源组参数无需伪装成同一个公共字段类型。
+公开 `SandboxRecipe` 只约束 Window 与 Attempt 两种 scope 的 command stack。具体 factory 读取自己的 options 后，才把 template 与 Provider factory 放进这份内部结构。E2B template ref、Docker image、Vercel snapshot 与 Compose 资源组无需伪装成同一个公共字段类型。
 
-Agent 不提供 template。
+Agent 不提供 template 或 Provider。
 它出现在 ownerOrder 中，是因为 AgentProvisioner 与 Agent setup 作用于同一个主 Sandbox；内部协议不因此降格成 SandboxCommand。
 
 ## SandboxTemplate 的边界
 
-SandboxTemplate 是“启动完整 Sandbox Case 的 recipe”这一封闭联合：
+SandboxTemplate 是“选择 Provider 并启动完整 Sandbox Case 的 recipe”这一封闭联合：
 
 ```typescript
 type SandboxTemplate =
   | ComposeSandboxTemplate
   | DockerfileSandboxTemplate
-  | ProfileSandboxTemplate
   | DockerImageSandboxTemplate
   | E2BSandboxTemplate
   | VercelSnapshotSandboxTemplate
@@ -54,7 +72,7 @@ type SandboxTemplate =
 ```
 
 联合成员不结构同构。
-Compose 成员保留资源组拓扑；E2B 成员可以只是 template ref；Custom 成员必须给出纯数据 identity 与完整 Case planner。
+Compose 成员保留资源组拓扑并选择 Docker Compose Provider；E2B 成员携带 template ref 并选择 E2B Provider；Custom 成员必须给出纯数据 identity、Provider factory 与完整 Case planner。
 
 共同结果是 PlannedSandboxCase，不是共同实现：
 
@@ -72,22 +90,63 @@ SandboxTemplate
 
 ## Active template 选择
 
-每条 Attempt 按下表选择恰好一个 active template：
+每个实际选中的 Eval × Experiment pair 先检查作者显式 template contribution，再解析恰好一个 active template：
 
-| Eval recipe | Experiment Provider recipe | Active template | Owner |
+| Eval 显式 template | Experiment 显式 template | Active template | Owner |
 |---|---|---|---|
-| 有 template | 任意 fallback | Eval template 或 profile 覆盖 | Eval |
-| 无 template | 显式 fallback | Experiment fallback | Experiment |
-| 无 template | 无显式 fallback | Provider 内建 fallback | Experiment |
+| 有 | 有 | 配置冲突，不解析 | 无 |
+| 有 | 无 | Eval template | Eval |
+| 无 | 有 | Experiment template | Experiment |
+| 无 | 无 | 配置缺失，不解析 | 无 |
 
-Experiment fallback 不是第二个 active template。
-它只在 Eval recipe 没有 template 时进入解析，不能覆盖或合并 Eval template。
+`image`、`template`、`snapshotId`、Compose 或 Dockerfile 都是完整 template contribution，同时带出 Provider。它们不能覆盖另一侧 template，也不能被静默忽略；1×1 报 `sandbox.template-conflict`，0×0 报 `sandbox.template-missing`。
 
-folder-local template 的默认 profile 从 Eval 路径稳定推导。
-`templates[profile]` 命中时替换 Provider-native 实现，但不改变 templateOwner。
+concrete factory 的返回类型已经把 template 与 Provider factory 原子绑定，link 不再做第二次 planner 完整性分支。已被 Experiment selector 选中的 pair 若在目标平台、能力或 locator 上不可用，会在只读 physical planning 聚合报错，不会自动 `skipped`；作者必须用 selector 明确排除，否则整个 Run 零资源失败。
 
-纯 profile 未命中是启动期配置错误。
-合法 template 没有当前 Provider planner 时，该组合计划期 `skipped`；全部 skipped 时升级为启动期错误。
+## Discovery 后的 link planning
+
+单个 TypeScript 模块只能检查自己这侧的 factory 与 option 形状。最终配对还取决于独立加载的 Eval、Experiment 的字符串或 predicate selector 与 CLI filter，普通 `tsc` 无法证明 pair 不变量。
+
+Runner 先提供一个纯 link 入口：
+
+```typescript
+linkSandboxMatrix(
+  discoveredEvals,
+  discoveredExperiments,
+): Map<ExperimentId, Map<EvalId, LinkedSandboxStack>>;
+```
+
+它在 discovery 和 Eval selection 后穷举所有实际 pair，聚合 template conflict / missing、Direct Agent 误配与空 selector。只要有一项错误，整个 Run 在 Provider 网络、fingerprint、build 与 Sandbox create 前失败；不能先创建合法 pair，再运行到错误 pair 才停止。
+
+随后才进入 Provider 的只读 physical / network planning：解析本地 Compose / Dockerfile 与 `workspaceService`，检查目标平台和计划能力，再读取 image digest、E2B template 或 snapshot locator。这一步生成 `PlannedSandboxStack` / `PlannedSandboxCase`，可以做 Provider 只读网络请求，但仍不 build、不创建 Sandbox，也不启动模型。所有可并行检查的错误一次列全。
+
+唯一合法阶段顺序是：
+
+```text
+discovery + selection
+  -> pure link
+  -> Provider read-only physical / network planning
+  -> fingerprint
+  -> build / Sandbox create
+```
+
+正常执行与 `--dry` 消费同一份 linked matrix、physical plan 与 fingerprint；`--dry` 在 fingerprint 后停止，不 build、不创建资源。`niceeval check <experiment>` 则只执行到 pure link 并立即返回，零 Provider 文件读取或网络请求。fingerprint、build 与 Attempt 不得各自重算 template 或 Provider 选择，否则 hard constraint 仍可能在不同路径漂移。
+
+人类错误至少给出可直接修改的两处声明：
+
+```text
+sandbox.template-conflict: Experiment "memory/codex" and
+Eval "terminal-bench/play-zork-easy" both declare a template
+
+  eval:       composeSandbox(...) at evals/.../eval.ts
+  experiment: e2bSandbox({ template: "mempal-codex-v3" }) at experiments/codex.ts
+
+NiceEval starts one Sandbox Case and does not merge or prioritize templates.
+Remove one template or split the Experiment's Eval selection.
+17 conflicting pairs were found. No Sandbox was created.
+```
+
+机器诊断保留同样的 experiment id、eval id、双方 owner / factory / kind / identity / source，以及可枚举的修复类别。
 
 ## Owner stack
 
@@ -111,7 +170,7 @@ Window scope 与 Attempt scope 分别使用同一 ownerOrder。
 每个 owner 内按声明顺序执行 setup 与 beforeEach；afterEach 与 teardown 先按 ownerOrder 逆序，再在 owner 内按追加逆序执行。
 
 Eval command 与 Experiment command 共用同一执行协议。
-owner 是排序与记录元数据，不是 command 子类；Runner 不因 owner 改变它能调用的 Sandbox API。
+owner 是排序与记录元数据，不是 command 子类；Runner 不因 owner 改变它能调用的 SandboxCommandTarget。该窄视图没有 `stop()` 或 Provider-native SDK，生命周期 command 不能提前销毁主 Sandbox。
 
 Runner 不按 command 内容、文件路径或命令字符串猜依赖。
 template owner setup 只能依赖自己的 template，后续 owner setup 可以依赖前序结果。进入 Attempt scope 时两方 setup 都已完成；template owner beforeEach 不能依赖尚未执行的第二 owner beforeEach，后续 owner则可以依赖前序的本次结果。
@@ -126,15 +185,16 @@ template owner 仍可能需要检查版本、权限、PATH、动态库、service
 
 ## Provider 负责构建与启动
 
-Experiment Provider recipe 选择 Provider；Eval recipe 不选择。
-Provider 负责把 active template 规划成完整 Case，并拥有 build、start、ready、能力句柄、证据、留存与整组 finalizer。
+active template 的 factory 同时选择 Provider；它可以来自 Eval，也可以来自 Experiment。Provider 负责把这份 template 规划成完整 Case，并拥有 build、start、ready、能力句柄、证据、留存与整组 finalizer。
+
+因此 Terminal-Bench Experiment 不声明 sandbox：Compose Eval 自己带 Docker Compose Provider，E2B Eval 自己带 E2B Provider。MemoryBench 则由 Experiment 的 E2B template 带出 Provider，Eval 不关心运行位置。
 
 普通 recipe command 只取得主 Sandbox。
 它不能新增 sidecar、改变网络或 volume 拓扑，也不能把运行状态保存成一个未声明的新 template。
 
 ## Identity
 
-完整 Attempt identity 包含：
+fingerprint 只能在 Provider 只读 physical / network planning 完成后计算。完整 Attempt identity 包含：
 
 - active SandboxTemplate identity 与 templateOwner；
 - Provider planner revision、BuildKey、CaseKey 与原生产物 locator；
@@ -153,8 +213,34 @@ Provider 负责把 active template 规划成完整 Case，并拥有 build、star
 `caseScopeRecipeIdentity` 覆盖两方 setup/teardown 的声明源、配置与顺序，避免不同窗口条件共享同一个 reset anchor。
 beforeEach/afterEach 的 identity 进入 Attempt fingerprint，但不进入 pool key；因此同一兼容窗口可按当前 Eval 执行不同的 Attempt command。
 
+```text
+windowStackIdentity = hash(owner + phase + ordinal + commandIdentity
+                           for setup and teardown)
+attemptStackIdentity = hash(owner + phase + ordinal + commandIdentity
+                            for beforeEach and afterEach)
+caseScopeRecipeIdentity := windowStackIdentity
+
+attemptFingerprint = hash(template physical identity + templateOwner
+                          + Provider revision + CaseKey + ownerOrder
+                          + windowStackIdentity + attemptStackIdentity
+                          + Eval + Experiment + Agent + input identities)
+```
+
+`caseScopeRecipeIdentity` 不是第三套独立摘要；它必须精确等于 `windowStackIdentity`。Attempt fingerprint 同时包含 Window 与 Attempt 两套 stack identity，不能只记录本次 beforeEach / afterEach 而漏掉建立 reset anchor 的 setup / teardown。
+
+`commandIdentity` 只能来自 `command()` / `shell()` 的纯数据效果投影，或 `defineSandboxCommand()` 显式登记的 helper id / revision / effective inputs。直接传入的 callback 无法证明闭包输入，一律 opaque。teardown 必须进入 pool key，因为已打开窗口只能绑定一套确定的最终收尾；beforeEach / afterEach 只进入 Attempt fingerprint。
+
 template 物理实现相同但 owner 不同时，ownerOrder 可能不同，因此 fingerprint 也必须不同。
-Runner 指纹和记录 command 的声明源，但不从 shell 内容推导 Requirement 或软件 identity。
+Runner 不从 shell 内容推导 Requirement 或软件 identity。任一 phase 出现 opaque command 都令 `carryEligible = false`。
+
+若 opaque command 属于 setup 或 teardown，Runner 还必须注入：
+
+```text
+opaqueWindowSalt = hash(runInvocationId + experimentId + evalId)
+windowStackIdentity = hash(declaredWindowStack + opaqueWindowSalt)
+```
+
+因此 opaque Window 不会跨 invocation 或 Eval × Experiment pair 命中同一 pool key。opaque Attempt command 不改变 pool key，但仍禁用整条 Attempt 的跨 Run carry。两种情况都在 dry plan 与运行记录显示具体原因。
 
 ## 两种 scope 与复用
 
@@ -175,18 +261,20 @@ Provider Case 的 create、ready 与 finalizer 是每 Sandbox 或复用窗口语
 AgentProvisioner 保留平台探测、宿主侧 prepare、staged payload、安装模式、check/install/recheck 与 Agent facts。
 它对 Sandbox 的最终副作用同样落成 command 和 IO，但完整协议还包含 Sandbox 外的准备与安装事实。PLAN-9 只把它排进 stack 的最后位置，不用一个 SandboxCommand 类型丢掉这些义务。
 
-## 预制组合
+## 不合并 template
 
-Eval template 与 Experiment 条件无法按 ownerOrder 现场叠加时，Experiment Provider recipe 在 `templates[profile]` 提供完整预制 Case。
-该表项仍由 Eval template 选择，因此 templateOwner 保持 Eval。
+普通 recipe command 只能在 active template 启动的主 Sandbox 上执行。若 Eval template 与 Experiment command 无法按 ownerOrder 现场组合，该 pair 就不兼容；PLAN-9 不提供第三个 pair override、第二份 base image 或 provider override 来伪装合并。
 
-启动后所有 owner setup 仍在窗口开始时执行真实检查，beforeEach 仍在每条 Attempt 执行。
-预制 Case 只优化安装或解决不可现场组合，不吞掉任何 owner 的条件声明。需要每条 Attempt 验证的条件必须显式使用 beforeEach。
+作者只能让恰好一侧改用已经包含所需条件的完整 template，另一侧保留 command-only recipe，并通过 Experiment selector 形成合法 pair。预装仍不吞掉运行时检查：template owner 与另一 owner 的 setup / beforeEach 都照常执行。
 
 ## 记录与 dry plan
 
-`--dry` 对每条 Eval 展示 active template、templateOwner、Provider、Case 分支、ownerOrder，以及按 Window/Attempt scope 分组的 command 与执行频次。
+`--dry` 对每条 Eval 展示唯一 template 的 factory / identity / source、templateOwner、由它选出的 Provider、Planned Case 分支、ownerOrder，以及按 Window/Attempt scope 分组的 command 与执行频次。
+
 运行记录保存同一形状，再附每个 owner command 的 scope、activity、facts、耗时与失败 phase。
+
+`runCommand` / `runShell` 使用 checked 语义：非零退出的 exit code、stdout / stderr 证据照常落盘，并立即成为当前 phase 的失败。`tryCommand` / `tryShell` 保存同样的执行证据和显式 try 模式，但仅把非零 exit 结果交给 callback 判断，并把证据标为 `accepted` / `handled`，不污染 failed-command 判据。timeout、cancel 与 transport failure 仍然抛出；try 不会隐藏 command、从 identity 中删除它，或吞掉 callback 随后抛出的错误。
+
 Window scope command 的证据和诊断归 RunningSandboxCase / 复用窗口记录，所有借用它的 Attempt 引用该记录；Attempt scope command 则归当前 Attempt。Runner 不把窗口 setup 或窗口末尾 teardown 虚构成某一条 Attempt 的 hook。
 
 动态本地上传与 Agent 可见 closure 继续执行泄漏比对。
@@ -196,8 +284,12 @@ Window scope command 的证据和诊断归 RunningSandboxCase / 复用窗口记�
 
 | 失败点 | 结果 |
 |---|---|
-| profile 缺失、recipe/template 声明非法 | 启动期配置错误，零 Sandbox 创建 |
-| Provider 不支持 template kind | 计划期 `skipped`；全 skipped 升级启动期错误 |
+| 两方都有显式 template | `sandbox.template-conflict`，聚合全部 pair，零 Sandbox 创建 |
+| 两方都无 template | `sandbox.template-missing`，聚合全部 pair，零 Sandbox 创建 |
+| Direct Agent 搭配任一 SandboxRecipe | `sandbox.unexpected-for-direct-agent`，零 Sandbox 创建 |
+| selector 匹配零 Eval | 配置错误；除非显式 `allowEmpty`，零 Sandbox 创建 |
+| Provider 目标平台不可用，或 Planned Case 缺少 Agent 所需 capability | physical planning 聚合错误，Adapter 不得暗换 template，零 Sandbox 创建 |
+| Compose / Dockerfile / workspaceService、image、E2B template 或 snapshot locator 无效 | physical planning 聚合错误，零 Sandbox 创建 |
 | build、start、ready 或资源组失效 | Attempt `errored`，归 Sandbox Case |
 | Eval / Experiment recipe setup | 当前窗口不可用，归 `sandbox.setup.eval` / `sandbox.setup.experiment` |
 | Eval / Experiment recipe beforeEach | 当前 Attempt `errored`，归 `sandbox.beforeEach.eval` / `sandbox.beforeEach.experiment` |

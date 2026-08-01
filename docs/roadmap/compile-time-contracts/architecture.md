@@ -3,12 +3,12 @@
 本候选不建立一套独立的 schema 系统。
 它重排现有公共类型的所有权，并要求 TypeScript 约束与运行时守卫描述同一条不变量。
 
-## 四阶段定义模型
+## 五阶段定义模型
 
 Eval 与 Experiment 依次经过四个边界：
 
 ```text
-Author Input → Definition → Discovered Definition → Planned Run
+Author Input → Definition → Discovered Definition → Linked Configuration → Planned Run
 ```
 
 | 阶段 | 可以拥有的事实 | 不得拥有的事实 |
@@ -16,11 +16,14 @@ Author Input → Definition → Discovered Definition → Planned Run
 | Author Input | 作者选择的行为、配置和 hooks | 路径 id、factory 判别、configHash |
 | Definition | 作者事实 + factory 生成的精确判别 | 路径 id、configHash |
 | Discovered Definition | Definition + id、来源路径 | configHash |
-| Planned Run | 解析后的运行配置、configHash、Sandbox 选择 | 可再次修改的作者输入 |
+| Linked Configuration | selector 形成的实际 pair、唯一 Sandbox template owner、owner order | Provider 网络结果、BuildKey、CaseKey |
+| Planned Run | Provider 只读规划后的运行配置、configHash、BuildKey、CaseKey | 可再次修改的作者输入 |
 
 Runner 内部函数按自己真正消费的阶段收参数。
 发现器不再通过给宽 `EvalDef` 或 `ExperimentDef` 补字段来完成转换，规划器也不把 configHash 写回作者定义。
 通过制与计分制定义组成以 scoring 判别的 union；Runner 先收窄分支，再以对应 context 调用 test，不用类型断言抹平两种题型。
+
+Linked Configuration 是跨文件硬约束的边界。单个 EvalDefinition 与 ExperimentDefinition 都可以合法携带 template-bearing 或 command-only SandboxRecipe；只有 discovery 与 selector 完成后，Runner 才知道实际 pair。linker 必须先聚合全部 template conflict / missing，再允许任何 Provider I/O 或资源动作。`niceeval check` 在这里停止；正常运行不能绕过同一份 linked matrix。
 
 ## 静态约束与运行时镜像
 
@@ -37,6 +40,7 @@ Runner 内部函数按自己真正消费的阶段收参数。
 | chart 字段角色 | 过滤键泛型 | `pointsToDataset` 跨行校验 |
 | custom group keep | 输入排除 + 返回推导 | `defineSandboxCase` 规范化 |
 | factory 产物身份 | 私有 unique symbol | `isThemeDefinition` / `isReportDefinition` |
+| Sandbox template 恰好一份 | recipe kind 私有品牌与 factory option 类型 | discovery 后的全矩阵 linker，早于 Provider 网络与资源 |
 
 运行时守卫接收 `unknown` 或宽结构时先检查形状，再进入内部精确类型。
 内部函数不重复使用公共作者输入类型充当规范化结果。
@@ -54,6 +58,7 @@ Runner 内部函数按自己真正消费的阶段收参数。
 | Aggregate / EvidenceRow | `src/report/model/calculation.ts` | 在输入签名增加键关系与 MetricValue 存在性约束 |
 | Charts | `src/report/definition/primitives/marks.tsx`、`points-dataset.ts` | 恢复泛型组件调用签名；字段 props 使用过滤键 |
 | Sandbox case | `src/sandbox/case-types.ts`、`src/sandbox/case.ts`、`single-case.ts` | 从 groupKeep 推导 capability；内部只读规范化结果 |
+| Sandbox recipe link | `src/sandbox/`、`src/runner/discover.ts`、Runner plan 与 CLI check 入口 | 保留 command/template kind 品牌；对实际 Eval × Experiment pair 统一做 XOR link |
 | Theme / Report | `src/report/theme.ts`、`src/report/definition/report.ts` | 把现有运行时 symbol 加入公开接口的私有品牌属性 |
 | 导出与定位 | `src/index.ts`、各子路径 index、`docs/source-map.md` | 导出新的作者输入与 definition 类型；更新契约到实现的定位 |
 
@@ -86,6 +91,7 @@ Runner 内部函数按自己真正消费的阶段收参数。
 | EvidenceRow | 至少一个必填 MetricValue | 只有维度；只有可选 MetricValue |
 | Charts | points 推断出的可绘制键 | 不存在字段；refs；函数或对象字段 |
 | Sandbox | services；groupKeep；两者组合 | capabilities 手写 group-keep |
+| Sandbox pair | 单侧 template + 单侧 command-only；两侧 phase helper 类型正确 | 1×1 template conflict；0×0 template missing；Window helper 传入 Attempt phase |
 | Theme / Report | factory 返回值进入配置与宿主 | 普通对象伪造 kind |
 
 Vitest 只覆盖运行时可观察行为：无类型输入仍被拒绝、错误点名实际字段、失败发生在副作用之前、合法输入规范化结果不变。

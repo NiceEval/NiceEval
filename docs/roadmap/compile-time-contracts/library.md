@@ -318,3 +318,15 @@ interface ReportDefinition {
 
 `defineTheme()` 与 `defineReport()` 是品牌的唯一构造点。
 运行时 `isThemeDefinition()` / `isReportDefinition()` 使用同一 symbol，继续拒绝无类型普通对象。
+
+## Sandbox recipe 的局部类型与跨定义 link
+
+PLAN-9 的 SandboxRecipe 同样使用模块私有 kind 品牌。
+`defineSandboxRecipe()` 只能产生 command-only recipe。
+`composeSandbox()`、`dockerImageSandbox()`、`e2bSandbox()` 等具体 factory 原子地产生 template-bearing recipe，并同时带出 Provider。四个 lifecycle 方法保留原 kind，公共调用面不提供 `.template()`、`.provider()` 或 recipe concat。
+
+这让 TypeScript 能在单个声明内证明：作者不能用对象字面量伪造 recipe，command 链不能突然增加 template，template factory 的原生起点参数必填，Window command 也不能读取 Attempt context。
+
+Eval 与 Experiment 的 `sandbox` 字段则故意接受同一个 branded SandboxRecipe union。两份定义位于独立模块，实际组合还取决于 selector，因此普通 `tsc` 不能证明 pair 上恰好一份 template。该 XOR 由 discovery 后的 `linkSandboxMatrix()` 证明，并由 `niceeval check`、`--dry` 与正常运行共同消费；它不是等到 Sandbox lifecycle 才执行的宽松后备。
+
+精确 recipe、phase context 与 linker 形状见 [环境模型 PLAN-9](../../design/environment-model/PLAN-9/library.md)。

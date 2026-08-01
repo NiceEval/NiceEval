@@ -7,38 +7,38 @@
 记录环境模型必须服从的 Provider 原语、既有 Feature 契约与 setup 限制。
 目标见 [GOALS](GOALS.md),结论见 [DECISION](DECISION.md)。
 
-## Sandbox 起点不是统一 template
+## SandboxTemplate 不是单实例产物
 
 单实例 Provider 通常从 image、template 或 snapshot 启动。
 Compose case 还包含多个 service、网络、volume、ready 条件、主执行空间与整组清理。
 
-统一不变量是“一条 Attempt 解析到一个完整 Sandbox Case”,不是“只有一个 template 槽位”。
-Provider 不能合并两个起点产物,但 `environments[profile]` 可以选择一个预制完整 case。
+统一不变量是“一条 Attempt 激活一个 logical SandboxTemplate，并解析到一个完整 Sandbox Case”，不是“所有 Provider 都只有同形的单实例产物槽位”。
+Provider 不能合并两个起点产物；PLAN-9 也不提供第二起点覆盖表。
 
-## Eval Environment 不是运行中的 case
+## SandboxRecipe 不是运行中的 case
 
-EvalDef 可以携带 profile 或 folder-local source。
-该值可以由 Eval 作者声明,也可以由 benchmark adapter 从 task package 派生。
+EvalDef 或 Experiment 的 SandboxRecipe 可以由具体 factory 声明 template；command-only recipe 则没有起点。
+该声明可以由 Eval 或 Experiment 作者编写,也可以由 benchmark adapter 从 task package 派生。
 
-只有当前选中的 Provider 能把它变成 Provider-native Case。
-因此 source 不是 Eval Base,adapter 也不能选择 Provider。
+template factory 自带的 Provider planner 把它变成 Provider-native Case。
+因此 recipe 不是运行中的 Case，Eval adapter 也不能在 template 之外再覆盖 Provider。
 
 ## Provider 不能合并两个起点
 
-Experiment fallback 可能预装昂贵工具,Eval source 可能携带题意。
+Experiment 显式 template 可能预装昂贵工具,Eval template 可能携带题意。
 Provider 没有通用原语把两份 image、template、snapshot 或 Compose 合并。
 
 可行路径只有三类:
 
-- 按 Eval source 构建并启动 Sandbox Case,再执行 Experiment sandbox setup。
-- Eval 没有 source 时,从 Experiment fallback 启动,再执行 EvalDef setup。
-- 现场组合不可行时,在 `environments[profile]` 提供预制完整 case。
+- 按 Eval template 自带的 Provider 构建并启动 Sandbox Case,再执行 Experiment command；此时 Experiment 不得再声明 template。
+- Eval 没有 template 时,从 Experiment template 自带的 Provider 启动,再执行 Eval command。
+- 现场组合不可行时,让恰好一侧改用已经融合条件的完整 template，并用 selector 形成合法 pair。
 
-第三条复用既有覆盖表,不新建融合表。
+第三条显式暴露融合后的真实起点，不新建 pair override 表。
 
 ## Setup 有 owner 与顺序
 
-Experiment sandbox setup、EvalDef setup 与 Agent setup 已有不同的变化轴、归因与 teardown。
+Experiment recipe、Eval recipe 与 Agent setup 已有不同的变化轴、归因与 teardown。
 把它们压进通用 Requirement 数组会丢掉这些领域边界。
 
 第一期按固定层次和声明顺序串行。
@@ -55,16 +55,19 @@ plain setup function 可以始终执行,但不能声称拥有预装命中语义�
 
 ## 身份分属两层
 
-Provider 选择、Experiment fallback、Experiment setup helper 与 Agent 属于 Run 级配置。
-Eval Environment、所选 case 与 Eval setup helper 属于逐 Eval 身份。
+Experiment template、Experiment command 与 Agent 属于 Run 级配置；Provider 归唯一 template。
+Eval SandboxRecipe、所选 case 与 Eval command 属于逐 Eval 身份。
 
-函数体不自动参与哈希。
-需要缓存或比较的 custom setup 必须显式声明 identity/revision,不能依赖闭包源码字符串。
+不能用 `Function.prototype.toString()`、函数名或所谓静态 import closure 当 identity。
+这里无法可靠证明 JavaScript callback 是否读取 `process.env`、时间或其他全局状态。
+
+只有 `command()` / `shell()` 的纯数据声明，以及用 `defineSandboxCommand()` 显式登记 identity、revision 与 effective inputs 的 helper，才具有稳定 identity。
+直接传入的 callback 一律标记为 opaque，禁止跨 Run carry；Window command 还必须加入 invocation / pair salt，禁止跨 pair 或 invocation pooling。
 
 ## State 与 Agent runtime 正交
 
 MemoryBench 需要外部记忆状态与复用窗口。
-这些事实约束完整 Attempt 生命周期,但不改变 Environment 怎样解析成 Sandbox Case。
+这些事实约束完整 Attempt 生命周期,但不改变唯一 template 怎样解析成 Sandbox Case。
 
 环境模型只为 state 与 Agent runtime 保留相位,不复制它们的公开类型。
 多容器 case 的主 Sandbox、ready、证据与清理同样留在 Sandbox Feature。
@@ -78,4 +81,4 @@ API 不为了缓存要求作者重复声明路径。
 首次执行记录 transfer manifest；后续携带重算历史 source，源码闭包变化时直接重跑。
 
 动态泄漏检查可以拒绝采信已经泄题的结果，但首次执行不能倒流阻止暴露。
-需要保密时依靠物理目录隔离或 materializer filtered context。
+需要保密时依靠物理目录隔离或 Provider filtered build context。

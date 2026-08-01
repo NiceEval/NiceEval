@@ -27,6 +27,7 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | 路径生成的 id、factory 生成的 scoring、规划生成的 configHash | 发现器、factory、规划器 | 对应阶段构造，不回流到作者输入 |
 | 文件是否存在、URL 是否可达、请求 options 的实际成员 | 运行时资源 | 运行时 |
 | JSON 行的真实结构、跨行一致性和数值关系 | 数据读取边界 | 运行时 |
+| 实际 Eval × Experiment 是否恰好一份 Sandbox template | discovery、selector 与 CLI filter 形成的 pair | 资源前 linker；`niceeval check` 与正常运行共用 |
 
 类型重构使用四种固定工具：
 
@@ -48,9 +49,23 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | Report charts | `x`、`y`、`series`、`point`、`sort.field` 使用按值类型过滤后的键 | 不存在或不可绘制的静态字段不能编译 |
 | Custom Sandbox case | `groupKeep` 推导 `group-keep`；作者不能重复声明该 capability | 不再产生两处声明不一致的组合 |
 | Theme / Report definition | factory 产物增加模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
+| Sandbox recipe | template factory 与 Provider 原子绑定；phase context 精确分型 | 单个 recipe 的非法形状在调用点失败；跨 pair 的 1×1 / 0×0 在 linker 一次报全 |
 
 精确类型与调用形状见 [Library](library.md)。
 阶段边界、源码改动面和验收顺序见 [Architecture](architecture.md)。
+
+## 编译期的真实边界
+
+不能把“TypeScript 没法跨模块证明”当成把错误拖进 Sandbox 的理由，也不能为了让泛型看见整个矩阵，反过来要求 Experiment 静态 import 所有 Eval。
+
+PLAN-9 中一个 Eval 的 `composeSandbox(...)` 与另一个 Experiment 的 `e2bSandbox(...)` 各自在本文件里都合法；是否冲突还取决于 discovery、Experiment selector 与 CLI filter 形成的实际 pair。普通 `tsc` 在两个独立定义的调用点无法证明这条 XOR。
+
+因此边界固定为两层：
+
+- TypeScript 拒绝单个声明内可知的错误：伪造 recipe、非法 factory options、phase context 错配，以及在已有 recipe 上追加 template / Provider。
+- discovery 后的纯 linker 穷举实际 Eval × Experiment pair；Sandbox Agent 的 1×1 是 `sandbox.template-conflict`，0×0 是 `sandbox.template-missing`。`niceeval check` 与正常运行消费同一个 linker，任何 Provider 网络、fingerprint、build 或 Sandbox create 都在它之后。
+
+这仍是 author-time feedback，只是属于项目级 configuration link，而不是单文件 TypeScript inference。真正的生命周期 command 只负责 shell 能否成功，不再承担 template 唯一性检查。
 
 ## 运行时校验仍是契约
 
@@ -62,6 +77,8 @@ JavaScript、`unknown`、动态 import 和显式类型断言仍可能绕过静�
 - 指出配置文件、server、page、字段或冲突键的真实名字。
 - 指出下一步应删除、补充或改写哪个字段。
 - 在写文件、启动进程或渲染输出之前失败。
+
+其中跨定义约束必须在资源前 linker 失败；“运行时后备”不等于允许等到 Agent setup 或第一条 Attempt 才失败。
 
 类型系统不负责证明网络可达、文件存在、请求 option 真实存在、数组元素跨行一致或 `samples <= total`。
 这些事实依赖运行时值，继续由现有边界校验。

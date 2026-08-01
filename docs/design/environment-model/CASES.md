@@ -9,21 +9,22 @@
 
 下面十一个 Case 都遵守同一组底线:
 
-- Eval、Experiment Sandbox 配置与 Agent 三方声明在 Environment 解析前都存在;Agent 不因预装在 template 中而失去独立检查。
-- 每条 Attempt 由当前 Provider 解析一个完整 Sandbox Case；Eval source/profile 与 Provider 实现的边界必须明确。
-- Experiment sandbox setup、EvalDef setup 与 Agent setup 按 owner 分层执行,任一来源不能覆盖另一个来源。
+- Eval recipe、Experiment recipe 与 Agent 三方声明在 template link planning 前都存在;Agent 不因预装在 template 中而失去独立检查。
+- 每条 Attempt 由唯一 template 自带的 Provider 解析一个完整 Sandbox Case；template 声明与 Provider 实现的边界必须明确。
+- 对 Sandbox Agent，每个实际 Eval × Experiment pair 恰好一方声明起点；冲突、缺失与非法 factory 在任何 Provider 网络或 Sandbox 创建前按全矩阵聚合失败。
+- Experiment 与 Eval 的 SandboxCommand 和 Agent setup 按 owner 与 phase 分层执行,任一来源不能覆盖另一个来源。
 - image、template、snapshot、产物名与受管 manifest 都不能单独代替实际检查。
 - 可预装条件由领域 helper 检查实际状态,并在安装后复检。
 - Agent 安装保留平台探测、宿主侧 payload 准备、安装模式和逐 Attempt 事实,不能被较弱的通用安装接口吞掉。
-- 复用同一个 Sandbox 时,检查频率跟 owner 语义走:逐 Attempt 语义的准备(EvalDef setup、Agent setup)每条 Attempt 重新检查目标状态;窗口语义的准备每个窗口检查一次,跨 Attempt 会变化的条件不得放进窗口语义层。
-- Environment、setup helper、所选 case、实际 facts、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
+- 复用同一个 Sandbox 时,检查频率跟 owner 语义走:逐 Attempt 语义的准备(Eval recipe beforeEach、Agent setup)每条 Attempt 重新检查目标状态;窗口语义的准备每个窗口检查一次,跨 Attempt 会变化的条件不得放进窗口语义层。
+- SandboxRecipe、command、所选 Case、实际 facts、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
 
 ## C1:评估环境较重
 
 **输入:**每道 Eval 自带 Dockerfile 或 Compose。
-系统包、服务、ready 条件和主执行位置都是题意的一部分,Experiment 只选择 Sandbox Provider 与 Agent。
+系统包、服务、ready 条件、主执行位置和 Provider 都是题意的一部分,Experiment 只选择 Agent 与模型。
 
-**验收:**Experiment 不枚举题目环境,也不为 Provider 注册逐题转换器。
+**验收:**Experiment 不枚举题目环境、不选择 Provider，也不注册逐题转换器。
 同一构建输入可以复用构建产物;不同环境身份不能共用同一个运行实例。
 
 ## C2:实验环境较重
@@ -40,14 +41,14 @@
 部分题目不能访问外网,宿主必须按目标平台准备离线 payload。
 
 **验收:**两条变化轴不展开成逐题乘实验变体的手工预制环境矩阵。
-Experiment sandbox setup 作用于每道题最终的主 Sandbox;离线 payload 的准备、上传、安装和复检有明确错误归属。
+Experiment recipe command 作用于每道题最终的主 Sandbox;离线 payload 的准备、上传、安装和复检有明确错误归属。
 
 ## C4:组合多个条件
 
 **输入:**一个 Experiment 同时需要证书、内部 registry、运行时和工具。
 它们存在语义依赖、共享资源冲突,后安装项还可能破坏先安装项。
 
-**验收:**作者按阅读顺序写 Experiment sandbox setup 链。
+**验收:**作者按阅读顺序写 Experiment recipe command 链。
 第一期保守串行;只有领域 helper 掌握内部独立性时才自行并行,不要求作者维护依赖图与资源图。
 
 ## C5:预装稳定条件
@@ -71,31 +72,34 @@ state load 在工具和 Agent CLI 就位后运行,并有独立 identity、activi
 **输入:**跨 Attempt 累积状态本身就是实验变量,多条 Attempt 需要在同一复用窗口内观察同一份活状态。
 
 **验收:**复用必须显式开启并限制有序实验的并发。
-每个窗口有独立身份与载入、回存记录;Experiment sandbox、EvalDef 与 Agent setup 按各自窗口或 Attempt 语义执行。
+每个窗口有独立身份与载入、回存记录;Experiment / Eval recipe command 与 Agent setup 按各自 Window 或 Attempt 语义执行。
 
 ## C8:Experiment template 主导起点
 
 **输入:**Experiment 已有一个预制 template,它预期满足实验条件。
-某个 Eval 没有 environment source,但仍要 checkout 仓库或安装项目依赖。
+某个 Eval 没有 template,但仍要 checkout 仓库或安装项目依赖。
 
-**验收:**该 Attempt 从 Experiment fallback 创建 Sandbox,先运行 Experiment sandbox setup,再运行 EvalDef setup。
-任一 setup 失败都在 Agent 开始前归入自己的 phase。
+**验收:**该 Attempt 从 Experiment 显式 template 创建 Sandbox。
+窗口内先运行双方 setup 并建立 reset anchor；每条 Attempt 恢复后再运行 Eval recipe beforeEach 完成 checkout 与依赖准备。
+任一 command 失败都在 Agent 开始前归入自己的 phase。
 
-## C9:Eval source 需要预制组合实现
+## C9:Eval template 需要融合条件
 
-**输入:**Eval 提供题目 source,Experiment fallback 预装实验条件,两者不能在运行时直接叠加。
-当前 Experiment Sandbox 配置覆盖多个 environment profile。
+**输入:**Eval 提供题目 template，Experiment beforeEach command 声明逐 Attempt 的实验条件。
+该条件可能需要 template 不具备的平台能力，但 Runner 不能从任意 shell 内容推断它能否现场安装。
 
-**验收:**Runner 不隐式回退到普通 fallback,也不合并两个起点。
-Experiment 可以按 profile 提供已经组合双方条件的完整 case;缺失实现时明确 skip,启动后仍执行 Experiment sandbox 与 EvalDef setup。
+**验收:**Runner 不合并两个起点，也不允许 Experiment 再声明一份显式 template。
+只有 command 显式声明 capability 要求，template / Provider factory 也暴露对应能力元数据时，Runner 才能在资源创建前报告不兼容。
+否则 Runner 只校验恰好一个 template 的结构约束；启动后执行 Experiment beforeEach，checked command 返回非零时将当前 Attempt 按该 command phase 记为 `errored`。
+作者若已知无法现场组合，必须让恰好一侧改用已融合条件的完整 template，并用 selector 形成合法 pair。
 
 ## C10:混合批次
 
-**输入:**同一批 Eval 中,一部分自带 Compose 或其它 Environment source,另一部分没有。
-Experiment 同时配置 fallback、Provider Environment 支持与可选 profile 覆盖。
+**输入:**同一批 Eval 中既有 Compose 多容器题，也有 E2B 单机题。
+Experiment 不声明 template，只选择 Agent、模型与这批 Eval。
 
-**验收:**有 Environment 的 Eval 使用 profile 覆盖或 Provider 规划,其余 Eval 使用 fallback。
-普通默认起点不覆盖题目 source,也不制造额外冲突。
+**验收:**每条 Eval 自己的 template 同时选择 Provider；同一 Experiment 可以混跑，不按 Docker / E2B 分叉。
+任何缺 template 的 Eval 都是 missing；若 Experiment 改为声明 template，则所有选中 Eval 必须 command-only，否则全矩阵 link planning 报 conflict。
 
 ## C11:逐题自包含的隐藏判分
 

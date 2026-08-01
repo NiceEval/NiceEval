@@ -86,8 +86,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
-| sandbox profile | sandbox profile | `profileSandbox()` 引用的不透明稳定 id,由当前 Provider recipe 映射成 provider-specific sandbox case | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#profilesandbox) |
-| Sandbox template | SandboxTemplate | 启动完整 Sandbox Case 的唯一 recipe；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#sandboxtemplate-的边界) |
+| Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox Case 的唯一 recipe；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#sandboxtemplate-的边界) |
 | sandbox case | sandbox case | 一份环境声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [环境模型 PLAN-9](design/environment-model/PLAN-9/library.md#composesandbox) |
 | materializer | materializer | Provider 内部按 SandboxTemplate 构建或启动 provider-specific Sandbox Case 的组件；普通 Experiment 不注册 | [环境模型 PLAN-9](design/environment-model/PLAN-9/architecture.md#provider-负责构建与启动) |
@@ -111,7 +110,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 预制环境 | Prebuilt environment | 预装稳定依赖的 Docker image、E2B template 或 Vercel snapshot,供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
 | Sandbox 预热 | Sandbox prewarming | 计划确定后提前创建即将使用的全新 Sandbox，不改变每 Attempt 的生命周期 | [Runner](runner.md) |
 | Sandbox 复用 | Sandbox reuse | Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox | [Sandbox reuse](feature/sandbox/reuse.md) |
-| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | SandboxSpec `setup` 后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/reuse.md) |
+| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | Eval 与 Experiment 双方 Window setup 完成后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/reuse.md) |
 | Sandbox 复用寿命 | Sandbox reuse lifetime | Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期 | [Sandbox reuse](feature/sandbox/reuse.md) |
 | 收尾预留时间 | Cleanup reserve | 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间 | [Sandbox reuse](feature/sandbox/reuse.md) |
 

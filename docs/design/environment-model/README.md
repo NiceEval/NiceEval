@@ -2,12 +2,13 @@
 
 Eval 与 Experiment 都声明 Sandbox recipe。
 一次 Attempt 激活唯一 template，由当前 Provider 解析成 Sandbox Case，再按 template owner、另一 owner 与 Agent 的顺序准备主 Sandbox。
+对 Sandbox Agent，每个实际 Eval × Experiment pair 恰好一方声明 template，并由它选择 Provider；Runner 在 discovery 后、任何 Provider 网络、build 或 Sandbox 创建前对全矩阵检查冲突与缺失。
 
 这个决策主题回答三个问题:
 
 - Eval 或 Experiment 谁为这条 Attempt 提供 active template。
 - template owner 怎样决定 Eval 与 Experiment recipe setup 的顺序。
-- 现场安装不可行时,Experiment Provider recipe 怎样按 profile 选择预制的完整 Case。
+- 现场安装不可行时,作者怎样改用一份已经融合条件的完整 template，而不是让 Runner 合并两个起点。
 
 本主题保留完整 Sandbox Case 与 Agent Ensure 的领域义务。
 普通作者使用 SandboxRecipe、SandboxTemplate 与运行中的 Sandbox，不学习 materializer 注册或通用 Requirement/Base 组合语言。

@@ -1,6 +1,6 @@
 # Terminal-Bench:Eval template owner 先准备
 
-契约单源见 [Library · Eval template](../library.md#eval-template)、[Architecture · Owner stack](../architecture.md#owner-stack)与 [Lifecycle · Eval template 路径](../lifecycle.md#eval-template-路径)。
+契约单源见 [Library · Template-bearing recipe](../library.md#template-bearing-recipe)、[Architecture · Owner stack](../architecture.md#owner-stack)与 [Lifecycle · Eval template 路径](../lifecycle.md#eval-template-路径)。
 
 ## Eval recipe
 
@@ -36,57 +36,53 @@ export default defineEval({
 ```
 
 `composeSandbox()` 同时声明 SandboxTemplate 与 Eval recipe。
-它不选择 Provider；Compose service、网络、volume、ready 与 workspace service 在启动前进入完整 Case。
+它同时选择 Docker Compose Provider；Compose service、网络、volume、ready 与 workspace service 在启动前进入完整 Case。
 
 ## Experiment recipe
 
 ```typescript
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
-import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: codexAgent(),
-  sandbox: dockerSandbox().setup(ensureGitForLedger),
   evals: ["terminal-bench/"],
 });
 ```
 
-Docker fallback 因 Eval 已有 template 而不激活。
-Docker Provider 内建 Compose planner；Experiment 不注册 materializer，也不需要检查选中 Eval 的 template kind。
+Experiment 不选择 Provider，也不检查选中 Eval 的 template kind。多容器 Eval 可以用 `composeSandbox(...)`，单机 Eval 可以用 `e2bSandbox({ template })`；同一 Experiment 直接混跑，Provider 由每条 Eval 自己带出。
+
+NiceEval ledger 所需的 Git 由 Runner 自己保证，Codex CLI 由官方 Adapter 安装，benchmark 不复制这两项基础设施责任。
 
 解析后的 stack 是：
 
 ```text
 Eval Compose template
   -> window scope: Eval setup（本题可为空）
-  -> window scope: Experiment ensureGitForLedger
-  -> reset anchor（包含 Git）
+  -> window scope: Experiment setup（本实验可为空）
+  -> reset anchor
   -> attempt scope: Eval beforeEach（本题可为空）
   -> attempt scope: Experiment beforeEach（本实验可为空）
   -> AgentProvisioner and Agent setup
 ```
 
-`ensureGitForLedger` 保持 `.setup()`，因为它建立供整个复用窗口使用的能力。复用时只执行一次，并被 reset anchor 保留；它不是每题 checkout。
+## 无法现场组合
 
-## Profile 完整 Case
-
-某题断网且无法现场加入 Experiment 条件时，Provider recipe 提供完整预制 Case：
+某题断网且无法现场加入 Experiment command 时，Runner 不接受 Experiment 再提供第二份 base image。作者必须让该 Eval 自己改用一份已经融合条件的完整 template，或把它移出这个 Experiment：
 
 ```typescript
-dockerSandbox({
-  templates: {
-    "terminal-bench/play-zork-easy": {
-      image: "acme/play-zork-with-tools@sha256:...",
-    },
-  },
-}).setup(ensureGitForLedger);
+export default defineEval({
+  sandbox: composeSandbox({
+    file: new URL("docker-compose.with-tools.yaml", import.meta.url),
+    workspaceService: "client",
+    build: "prebuilt",
+  }),
+});
 ```
 
-表项替换 Compose template 的物理实现，Eval 仍是 templateOwner。
-因此 ownerOrder 不变，`ensureGitForLedger` 仍在 Eval recipe setup 后检查实际状态；两方 setup 完成后才建立 reset anchor。
+这份 Compose 可以引用已经预装工具的 digest image，同时保留原多容器拓扑；仍只有 Eval 一份 template，Eval 仍是 templateOwner。若它只对某个实验成立，应拆成明确的 Eval / Experiment selector；PLAN-9 不隐藏乘积关系。
 
 ## Runner 证据
 
-dry plan 与运行记录都展示 Eval templateOwner、Docker Provider、CaseKey、Case/Attempt scope 与 `eval → experiment → agent`。
+dry plan 与运行记录逐 Eval 展示 template factory、由它选出的 Docker Compose 或 E2B Provider、CaseKey、Case/Attempt scope 与 `eval → experiment → agent`。
 transfer manifest 和 Agent 可见 closure 在判定封口前比对，发现测试泄漏时拒绝 verdict。
