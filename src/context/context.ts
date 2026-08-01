@@ -95,9 +95,9 @@ export interface ContextDeps {
   /** 仅供确定性单测注入:透传给 SessionManager 的 turn 重试随机数/睡眠(生产路径省略)。 */
   retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
-  /** 题型(默认通过制);计分制下句柄上的 `.gate()` 是前置中止,见 AssertionCollector 的 scoring。 */
+  /** 题型(默认通过制);只改变计分 API 与未链句柄的角色，不改变 gate / stopOnFailure 语义。 */
   scoring?: "pass" | "points";
-  /** 取当前已提交窗口的 agent diff(计分制前置断言就地求值要用;非沙箱型省略)。 */
+  /** 取当前已提交窗口的 agent diff(stopOnFailure 断言就地求值要用;非沙箱型省略)。 */
   liveDiff?: () => Promise<DiffData>;
 }
 
@@ -146,7 +146,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   });
   const late: LateResult = { diff: emptyDiffData(), scripts: {} };
 
-  // 计分制前置断言就地求值时看的实时运行结果。diff 只在 send 之后才会变(agent 只在窗口内动
+  // stopOnFailure 断言就地求值时看的实时运行结果。diff 只在 send 之后才会变(agent 只在窗口内动
   // 工作区),所以按 send 计数缓存一次导出,同一批前置不重复跑 git 导出。
   let liveDiffCache: { at: number; diff: Promise<DiffData> } | undefined;
   const liveContext = async (): Promise<ScoringContext> => {
@@ -183,7 +183,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   });
   const state: ContextState = { collector, manager, late };
 
-  /** 每个 t.* 异步入口先结算待决前置:未过就抛中止信号,后面的代码不再执行。 */
+  /** 每个 t.* 异步入口先结算未 await 的 stopOnFailure：failed 就抛中止信号。 */
   async function settlePrerequisites(): Promise<void> {
     const aborted = await collector.settlePrerequisites();
     if (aborted !== undefined) throw new EvalRequirementFailed(aborted);
@@ -266,6 +266,33 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     return typeof command === "string" && command.length > 0 ? command : undefined;
   }
 
+  /** 值断言的唯一记录路径；check 与 require 共享它，保证记录形状和判定证据逐字段同义。 */
+  function recordValueAssertion(value: unknown, assertion: ValueAssertion) {
+    // evaluate 读 spec 自己的 severity/threshold(而不是捕获记录时的快照)：句柄后链的
+    // .gate()/.atLeast() 必须同时改变即时 stopOnFailure 与最终 finalize 的判定口径。
+    const spec: Spec = {
+      name: assertion.name,
+      severity: assertion.severity,
+      threshold: assertion.threshold,
+      ...(assertion.isOptional ? { optional: true as const } : {}),
+      evaluate: async (sc) => {
+        const resolved = await resolveValue(value, sc);
+        const score = await assertion.score(resolved);
+        const evidence = checkedValueEvidence(resolved);
+        if (computePassed(spec.severity, spec.threshold, score)) {
+          return evidence !== undefined ? { score, evidence } : score;
+        }
+        return {
+          score,
+          expected: assertion.expected,
+          received: previewCheckedValue(resolved),
+          ...(evidence !== undefined ? { evidence } : {}),
+        };
+      },
+    };
+    return collector.record(spec);
+  }
+
   // agent 归因 diff 的只读视图:get = 最后触及窗口的终态;matches 扫触及路径与各窗口内容。
   // 内容被省略的条目(二进制、单文件超限文本)在读的那一刻如实报证据不可用:内容读取抛出
   // 可行动错误,而不是回落成 undefined / false 让内容断言静默判过或判败
@@ -316,7 +343,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     get diff() {
       return diffView;
     },
-    // 沙箱动作都先结算待决前置:前置没过时后面这些活儿一件都不该干(白跑沙箱时间)。
+    // 沙箱动作都先结算待决 stopOnFailure：上一条没过时后面这些活儿一件都不该干。
     runCommand: guardAsync((cmd, args, opts) => deps.sandbox.runCommand(cmd, args, opts)),
     runShell: guardAsync((script, opts) => deps.sandbox.runShell(script, opts)),
     readFile: guardAsync((path) => deps.sandbox.readFile(path)),
@@ -491,31 +518,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       throw new EvalSkipped(reason);
     },
 
-    check: (value: unknown, assertion: ValueAssertion) => {
-      // evaluate 读 spec 自己的 severity/threshold(而不是捕获记录时的快照):
-      // 句柄的 .gate()/.atLeast() 会事后改写 spec,received 判定必须和 finalize 同一口径。
-      const spec: Spec = {
-        name: assertion.name,
-        severity: assertion.severity,
-        threshold: assertion.threshold,
-        ...(assertion.isOptional ? { optional: true as const } : {}),
-        evaluate: async (sc) => {
-          const resolved = await resolveValue(value, sc);
-          const score = await assertion.score(resolved);
-          const evidence = checkedValueEvidence(resolved);
-          if (computePassed(spec.severity, spec.threshold, score)) {
-            return evidence !== undefined ? { score, evidence } : score;
-          }
-          return {
-            score,
-            expected: assertion.expected,
-            received: previewCheckedValue(resolved),
-            ...(evidence !== undefined ? { evidence } : {}),
-          };
-        },
-      };
-      return collector.record(spec);
-    },
+    check: (value: unknown, assertion: ValueAssertion) => recordValueAssertion(value, assertion),
     group: async <T,>(title: string, fn: () => Promise<T> | T) => {
       await settlePrerequisites();
       return collector.withGroup(title, fn);
@@ -523,31 +526,11 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     // 计分制直接给分(仅 ScoreTestContext 类型上暴露;运行时对全部 eval 一视同仁地记录,
     // 不需要按题型守护,见 docs/feature/experiments/score-points.md)。
     score: (label: string, points: number) => collector.score(label, points),
-    require: async (value: unknown, assertion: ValueAssertion) => {
+    require: async <T,>(value: T, assertion: ValueAssertion): Promise<T> => {
       await settlePrerequisites();
-      const v = value instanceof FileRef ? await deps.sandbox.readFile(value.path).catch(() => "") : value;
-      const score = await assertion.score(v);
-      // require 恒为硬门槛(不过即中止 eval),判定口径与 finalize 同一份 computePassed。
-      const passed = computePassed("gate", assertion.threshold, score);
-      const evidence = checkedValueEvidence(v);
-      collector.record({
-        name: assertion.name,
-        severity: "gate",
-        threshold: assertion.threshold,
-        prerequisite: true,
-        evaluate: () =>
-          passed
-            ? evidence !== undefined
-              ? { score, evidence }
-              : score
-            : {
-                score,
-                expected: assertion.expected,
-                received: previewCheckedValue(v),
-                ...(evidence !== undefined ? { evidence } : {}),
-              },
-      });
-      if (!passed) throw new EvalRequirementFailed(assertion.name);
+      // 与文档等式保持同一条实现路径：t.require(value, assertion) =
+      // await t.check(value, assertion).gate().stopOnFailure()，成功后再透传原 value。
+      await recordValueAssertion(value, assertion).gate().stopOnFailure();
       return value;
     },
 

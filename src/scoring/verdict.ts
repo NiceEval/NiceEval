@@ -13,12 +13,7 @@ export function computeVerdict(input: {
   assertions: readonly AssertionResult[];
   skipReason?: string;
   strict?: boolean;
-  /**
-   * 题型(默认通过制)。计分制的 failed 只有一个来源——前置 `.gate()` 中止(它记为 gate 断言)。
-   * 丢分不是失败:得分点与观测都是 soft,`--strict` 在计分制没有「带线 soft」可翻(那套词汇
-   * 在计分制的 `t` 上不存在),因此这里不读 strict。见 score-points.md「Verdict 回答的是
-   * 这次的分数完不完整」。
-   */
+  /** 题型(默认通过制)只影响分数面；Severity 与 `--strict` 在两种题型中同义。 */
   scoring?: "pass" | "points";
 }): Verdict {
   if (input.error !== undefined) return "errored";
@@ -29,7 +24,7 @@ export function computeVerdict(input: {
     if (a.outcome === "unavailable" && !a.optional) return "errored";
   }
 
-  const strict = input.scoring === "points" ? false : input.strict;
+  const strict = input.strict;
   for (const a of input.assertions) {
     if (a.outcome !== "failed") continue;
     if (a.severity === "gate" || strict) return "failed";

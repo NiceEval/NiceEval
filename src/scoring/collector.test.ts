@@ -10,6 +10,7 @@ import { completeCoverage, resolveAgentCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { computeVerdict } from "./verdict.ts";
 import { equals, includes, makeAssertion, similarity } from "../expect/index.ts";
+import { EvalRequirementFailed } from "../context/control-flow.ts";
 import type { AssertionResult, ScoringContext, ValueAssertion } from "../types.ts";
 
 function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
@@ -135,17 +136,21 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
     expect(() => handle.points(Number.POSITIVE_INFINITY)).toThrow();
   });
 
-  it(".points(n).gate() 同时挣分与声明前置,两个字段互不覆盖", async () => {
+  it(".points(n).gate() 同时进入分数面与判定面，但不隐式中止", async () => {
     const collector = new AssertionCollector({ scoring: "points", liveContext: async () => ctxWith() });
-    collector.record(specForAssertion(equals(4), 4)).points(10).gate();
-    expect(await collector.settlePrerequisites()).toBeUndefined(); // 前置过了,不中止
-    const [result] = await collector.finalize(ctxWith());
-    expect(result!.outcome === "unavailable" ? undefined : result!.points).toBe(10);
-    expect(result!.severity).toBe("gate");
+    collector.record(specForAssertion(equals(4), 5)).points(10).gate();
+    collector.record(specForAssertion(equals(4), 4)).points(2);
+    expect(await collector.settlePrerequisites()).toBeUndefined();
+    const results = await collector.finalize(ctxWith());
+    expect(results).toHaveLength(2);
+    expect(results[0]!.outcome === "unavailable" ? undefined : results[0]!.points).toBe(0);
+    expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed" });
+    expect(results[0]).not.toHaveProperty("stopOnFailure");
+    expect(computeVerdict({ assertions: results, scoring: "points" })).toBe("failed");
   });
 });
 
-describe("计分制的角色互斥:severity 只从断言句柄读", () => {
+describe("severity 与 stopOnFailure 正交", () => {
   const points = () => new AssertionCollector({ scoring: "points", liveContext: async () => ctxWith() });
 
   it("matcher 自带的默认 gate 只贡献通过线,不使断言成为前置(回归:否则第一条检查点腰斩整题)", async () => {
@@ -156,60 +161,75 @@ describe("计分制的角色互斥:severity 只从断言句柄读", () => {
     expect(result!.severity).toBe("soft"); // 降级为观测:丢分不参与判定
     expect(result!.outcome).toBe("failed"); // 通过线保留,没做到照记 failed
     expect(result!.outcome === "unavailable" ? undefined : result!.points).toBe(0);
-    expect(computeVerdict({ assertions: [result!], strict: true, scoring: "points" })).toBe("passed");
+    expect(computeVerdict({ assertions: [result!], strict: false, scoring: "points" })).toBe("passed");
+    expect(computeVerdict({ assertions: [result!], strict: true, scoring: "points" })).toBe("failed");
   });
 
-  it("句柄上的 .gate() 未过:就地求值 + 截断到中止点(后面记录的断言与给分一律丢弃)", async () => {
+  it(".gate().stopOnFailure() 未过:保留失败结果并以 EvalRequirementFailed 就地中止", async () => {
     const collector = points();
     collector.score("早期给分", 5);
-    collector.record(specForAssertion(equals(4), 5)).points(1).gate();
-    // 作者没 await:中止之后的同步记录照样进了 collector,由 settle 统一截断回中止点。
-    collector.record(specForAssertion(equals(4), 4)).points(99);
-    collector.score("永不计入", 100);
+    const stopping = collector.record(specForAssertion(equals(4), 5)).points(1).gate();
 
-    expect(await collector.settlePrerequisites()).toBe('equals(4)');
+    await expect(stopping.stopOnFailure()).rejects.toBeInstanceOf(EvalRequirementFailed);
     expect(collector.scoreEntries.map((e) => e.label)).toEqual(["早期给分"]);
     const results = await collector.finalize(ctxWith());
     expect(results).toHaveLength(1);
-    expect(results[0]!.severity).toBe("gate");
-    expect(results[0]!.outcome).toBe("failed");
+    expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed", stopOnFailure: true, points: 0 });
     expect(computeVerdict({ assertions: results, scoring: "points" })).toBe("failed");
   });
 
-  it("前置就地求值:结论定在写下的位置,之后运行结果再变也不改判(finalize 不重新求值)", async () => {
+  it(".atLeast(x).stopOnFailure() 中止控制流，但保持 soft severity", async () => {
+    const collector = points();
+    const stopping = collector.record({ name: "quality", severity: "soft", evaluate: () => 0.4 }).atLeast(0.7);
+
+    await expect(stopping.stopOnFailure()).rejects.toBeInstanceOf(EvalRequirementFailed);
+    const [result] = await collector.finalize(ctxWith());
+    expect(result).toMatchObject({ severity: "soft", threshold: 0.7, outcome: "failed", stopOnFailure: true });
+    expect(computeVerdict({ assertions: [result!], strict: false, scoring: "points" })).toBe("passed");
+    expect(computeVerdict({ assertions: [result!], strict: true, scoring: "points" })).toBe("failed");
+  });
+
+  it("stopOnFailure 就地求值:结论定在链的位置，finalize 不按后续状态重算", async () => {
     let value = 5;
     const collector = points();
-    collector.record({
+    const stopping = collector.record({
       name: "moving target",
       severity: "soft",
       evaluate: async () => (value === 4 ? 1 : 0),
     }).gate();
-    expect(await collector.settlePrerequisites()).toBe("moving target");
-    value = 4; // 前置之后世界变了:结论不跟着变
+    await expect(stopping.stopOnFailure()).rejects.toBeInstanceOf(EvalRequirementFailed);
+    value = 4;
     const [result] = await collector.finalize(ctxWith());
     expect(result!.outcome).toBe("failed");
   });
 
-  it("前置过了就不中止,后续断言与给分照常保留", async () => {
+  it("stopOnFailure 通过时返回原句柄，后续断言与给分照常保留", async () => {
     const collector = points();
-    collector.record(specForAssertion(equals(4), 4)).gate();
+    const stopping = collector.record(specForAssertion(equals(4), 4)).gate();
+    expect(await stopping.stopOnFailure()).toBe(stopping);
     collector.record(specForAssertion(equals(4), 4)).points(2);
     collector.score("后续给分", 7);
-    expect(await collector.settlePrerequisites()).toBeUndefined();
     const results = await collector.finalize(ctxWith());
     expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ severity: "gate", outcome: "passed", stopOnFailure: true });
     expect(collector.scoreEntries).toHaveLength(1);
   });
 
-  it("通过制不受影响:matcher 的默认 gate 照旧是硬门槛,.gate() 不中止执行", async () => {
+  it("通过制同样只有 stopOnFailure 才中止；单独 gate 继续收集", async () => {
     const collector = new AssertionCollector();
-    collector.record(specForAssertion(equals(4), 5));
+    collector.record(specForAssertion(equals(4), 5)).gate();
     collector.record(specForAssertion(equals(4), 4));
     expect(await collector.settlePrerequisites()).toBeUndefined();
     const results = await collector.finalize(ctxWith());
     expect(results).toHaveLength(2); // 不截断
     expect(results[0]!.severity).toBe("gate");
     expect(computeVerdict({ assertions: results })).toBe("failed");
+  });
+
+  it("无线 soft 不能单独 stopOnFailure：报错要求先声明通过线", () => {
+    const collector = points();
+    const handle = collector.record({ name: "observation", severity: "soft", evaluate: () => 0.2 }).soft();
+    expect(() => handle.stopOnFailure()).toThrow(/requires a passing line/);
   });
 });
 

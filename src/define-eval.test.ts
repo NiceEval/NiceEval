@@ -80,13 +80,13 @@ describe("类型层:给分词汇只存在于计分制的 t 上", () => {
     expect(true).toBe(true);
   });
 
-  it("计分制句柄上一条断言只扮演一个角色:.points() 之后只剩 .gate()/.optional()", () => {
+  it("计分制句柄保持给分、严重度、控制流三轴正交", () => {
     defineScoreEval({
       async test(t: ScoreTestContext) {
         const handle = t.check(1, makeAssertion({ name: "x", score: () => 1 }));
-        handle.points(1).gate(); // 得分点兼前置:唯一的合法组合
+        await handle.points(1).gate().stopOnFailure(); // 得分点 + 硬要求 + 中止，三轴显式
         handle.points(1).optional();
-        handle.gate(0.5); // 纯前置(给了通过线)
+        handle.gate(0.5); // 硬要求，不隐式中止
         handle.soft(); // 观测(纯记录)
         handle.atLeast(0.7); // 观测(带通过线:低于线记 failed,不影响判定)
         // @ts-expect-error 得分点已经用分数表达了分量,再进质量分就是同一条证据被读两遍
@@ -117,11 +117,43 @@ describe("类型层:给分词汇只存在于计分制的 t 上", () => {
     expect(true).toBe(true);
   });
 
-  it("计分制的 t 上没有 require:前置只有 t.check(...).gate() 一种写法", () => {
+  it("t.require 两种题型都有，并透传输入类型", () => {
+    defineEval({
+      async test(t: TestContext) {
+        const original = { value: 1 };
+        const returned: typeof original = await t.require(original, makeAssertion({ name: "x", score: () => 1 }));
+        returned.value;
+      },
+    });
     defineScoreEval({
       async test(t: ScoreTestContext) {
-        // @ts-expect-error require 是通过制的前置词,计分制的前置写成 .gate()
-        await t.require(1, makeAssertion({ name: "x", score: () => 1 }));
+        const original = { value: 1 };
+        const returned: typeof original = await t.require(original, makeAssertion({ name: "x", score: () => 1 }));
+        returned.value;
+      },
+    });
+    expect(true).toBe(true);
+  });
+
+  it("值与 t/session/turn 作用域句柄在两种题型都暴露 stopOnFailure", () => {
+    defineEval({
+      async test(t: TestContext) {
+        await t.check(true, makeAssertion({ name: "value", score: () => 1 })).gate().stopOnFailure();
+        await t.calledTool("shell").atLeast(1).stopOnFailure();
+        const session = t.newSession();
+        await session.calledTool("shell").gate().stopOnFailure();
+        const turn = await t.send("hi");
+        await turn.succeeded().stopOnFailure();
+      },
+    });
+    defineScoreEval({
+      async test(t: ScoreTestContext) {
+        await t.check(true, makeAssertion({ name: "value", score: () => 1 })).gate().stopOnFailure();
+        await t.calledTool("shell").atLeast(1).stopOnFailure();
+        const session = t.newSession();
+        await session.calledTool("shell").gate().stopOnFailure();
+        const turn = await t.send("hi");
+        await turn.succeeded().points(1).gate().stopOnFailure();
       },
     });
     expect(true).toBe(true);

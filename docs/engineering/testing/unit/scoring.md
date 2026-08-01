@@ -69,7 +69,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
 
 - **内置 matcher**：每个 matcher 覆盖会改变得分的等价类（命中/未命中/非法类型输入）、默认 severity、niceeval 附加语义（去重、行首识别、深相等、归一化范围）。
   不测试 JavaScript 标准库本身；`makeAssertion`的错误捕获与文本回退（stack 优先、非 Error 值字符串化）单独证明。
-- **值断言入口**：`check` 记录后继续、`require` 失败按 gate 中止且通过时透传原引用、`group`只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据；`CommandResult`失败摘要的构成（首行、尾部段、evidence 取命令行）。
+- **值断言入口**：`check` 记录后继续；两种题型的 `require` 都等价于 `check(...).gate().stopOnFailure()`，失败保留记录并中止、通过透传原引用；`group`只组织报告不改变语义；值断言只评显式传入的值，不隐式读取 scope 证据；`CommandResult`失败摘要的构成（首行、尾部段、evidence 取命令行）。
 - **ToolMatch/SubagentMatch 的 match 小语言**：`calledTool`/`notCalledTool`/`calledSubagent` 的`match` 参数各字段独立形态与命中语义——`input`顶层给对象是深度部分匹配、给 RegExp 是测序列化后的完整输入、给谓词函数是拿原始值自行判断，三种形态互不退化（回归：RegExp 实例误落深比对分支、枚举其自身空可枚举属性、静默匹配一切调用，必须锁死为不匹配）；`output`同样支持深度部分匹配、RegExp（非字符串先序列化再测）、谓词函数与严格相等四种值语义；`count`数字精确匹配与谓词自定义判定两种形态，且只有数字精确形态在实测超出时才是确凿失败，谓词形态不满足时按覆盖折叠走`unavailable`；`remoteUrl` 字符串精确、RegExp、谓词函数三种形态；`status` 按 `ToolMatch` 四态（含`pending`）与 `SubagentMatch` 三态（无 `rejected`）过滤，且不带 `status` 过滤时匹配任意状态。
 - **Scope**：同名断言挂三个接收者时按各自数据范围判定；session 时点 Run 不被后续事件追溯；新 session 事件进`t.*`聚合但不进主 session 即时视图；子序列匹配类断言的顺序语义；互斥断言对（`succeeded`/`parked`）在同一证据上反转；接收者专属能力不下放（类型负例）。
 - **Collector 生命周期**：
@@ -81,17 +81,18 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - `AssertionResult` 判别联合提供有界预览；值为 `undefined` 时也不能崩溃。
   - 无参 `.soft()` 把断言降为纯记录，并清除已有 threshold。
   - `.soft()`、`.gate()` 与 `.atLeast()` 共用一份 `RecordHandle` 契约测试，不按 matcher 重复。
+  - `.stopOnFailure()` 在链的位置立即结算且只对 failed 中止；通过返回原句柄，失败结果带 `stopOnFailure: true` 并以 `EvalRequirementFailed` 退出。值、t、session 与 turn 句柄在两种题型共用这套语义；无线 soft 单独链时报清晰作者错误。
 - **`.soft()` 对判定的影响**：分数照实落盘（`AssertionResult.score`保留原始分，不因降级为 soft 被抹掉）；`outcome` 恒为 `passed`（`computePassed` 对 threshold undefined 的 soft 恒返回 true）；`computeVerdict` 无论 `strict` 是否为真都不会因这条断言判`failed`——`--strict` 只翻转「有阈值的 soft」，无阈值的 soft 没有阈值可比较，不受这个旋钮影响。
 - **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)`把权重挂上 spec，`finalize` 按 `n × score` 写进 `AssertionResult.points`（0/1 断言通过挣`n`、不过挣 0；连续打分断言按比例）；`n <= 0`或非有限数立即抛错（不是记一条失败断言）。
   `AssertionCollector.score(label, n)` 立即记录一条`ScoreEntry`（不像断言那样等 finalize 求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前`t.group` 栈,与断言同一份分组约定。
   未链 `.points()` 的断言 `AssertionResult.points` 省略（不是`0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
-  得分点落盘为 `severity: "soft"` + 有`points`，丢分不改 verdict；`.points()` 之后只能链 `.gate()` / `.optional()`，`.soft()` /`.atLeast()` 在得分点句柄上不存在（类型层证明，见 typecheck fixture）；未链 `.points()` 的`.atLeast(x)` 是观测通过线，低于线记 failed 且 `--strict` 下也不翻 verdict（`computeVerdict`在计分制不读 strict）。
-- **计分制的前置中止（`.gate()`）**：链了 `.gate()` 的断言就地求值（不进延迟队列），未过时后续 `t.*`调用与 `test()` 收尾抛中止信号、其后的断言与 `ScoreEntry`不再出现在结果里，已产生的照实保留；作者写不写 `await` 结论一致（收集器在每个 `t.*`入口先结算待决前置）——两种写法各测一次。
-  `.points(n).gate()`的断言同时挣分与中止，两个字段互不覆盖。
-  matcher 自带的默认 severity（`includes`等默认 gate）与 matcher 上链的 `.gate(x)` 在计分制只贡献`threshold`、不触发中止：中止只由断言句柄上的 `.gate()`声明（这条是回归守护——默认 gate 的 matcher 若触发中止，计分制的第一条检查点就会腰斩整题）；降级保留通过线（gate 省略阈值时留默认满分线），所以没做到的检查点照记`failed` 挣 0 分，`--strict` 下也不翻 verdict。
+  得分点落盘为 `severity: "soft"` + 有`points`，丢分不改 verdict；`.points()` 之后不暴露 `.soft()` /`.atLeast()`，但可链 `.gate().stopOnFailure()`，给分、严重度和控制流三个字段互不覆盖（类型层证明，见 typecheck fixture）。
+- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 ScoringContext 求值，failed 时截断其后断言与 `ScoreEntry`，已产生的记录照实保留；finalize 复用该快照，不因后续事件或文件变化重算。
+  `.gate().stopOnFailure()` 是硬前置，`.atLeast(x).stopOnFailure()` 会中止但仍是 soft；matcher 默认通过线也允许直接 stop。未 await 的调用由下一个异步`t.*`入口与 runner 收尾补做结算。
+  计分制 matcher 自带的默认 gate 仍只贡献观测通过线；句柄显式 `.gate()` 才变成硬要求，但无论哪种 severity 都不会隐式改变控制流。
 - **证据完整性**：负断言与上限断言在「完整且找到 / 完整且确认无 / 不完整」三态矩阵下的结果——不完整时绝不给出可信 passed；正断言缺数据时失败不猜；不用 OTel span 补写行为事件。
   这一族的 fixture 必须让完整性是显式字段。
-- **Severity 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）；计分制 attempt 的 `failed` 只由前置中止产生——丢分（含全部得分点挂掉）仍是`passed`，`errored` / `skipped`与通过制同义；gate 与 strict 的正交；无阈值 soft 永不影响判定；`.atLeast`的 strict 四象限与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级；`computePassed`在 gate 省略阈值时的默认通过线是满分（`score >= 1`）——0/1 matcher（如`equals`/`includes`，命中即 1、不命中即 0）不受这条默认线影响，连续打分的 gate 断言（省略阈值的 judge 类）未达满分即 fail、恰好满分才 pass。
+- **Severity 与 Verdict**：`computeVerdict` 用决策表直接断言冲突输入的最终优先级（errored > failed > skipped > passed）；计分制丢分本身不改 verdict，显式 gate 失败仍产生 failed；`--strict` 在两种题型都把带线 soft 翻为 gate，但不添加 `.stopOnFailure()`；无阈值 soft 永不影响判定；`.atLeast`的 strict 四象限与恰好达标边界；执行异常是 errored 不是 failed；skip 的优先级；`computePassed`在 gate 省略阈值时的默认通过线是满分（`score >= 1`）——0/1 matcher（如`equals`/`includes`，命中即 1、不命中即 0）不受这条默认线影响，连续打分的 gate 断言（省略阈值的 judge 类）未达满分即 fail、恰好满分才 pass。
 - **摘要投影（display）**：控制字节剥离的保留/去除边界、单值收口的折行与上限、宽度预算下的让位优先级、`+N more failures`的独立尾行不变量、作用域前缀规则。
   全部是纯函数字符串语义，输入输出直接断言。
 - **judge**：缺模型/缺 key 记 `unavailable`（`judge-model-unresolved`）且非 optional 使 attempt errored、绝不静默消失；默认 soft 与链式提级；model 按单条 → Experiment → Eval → config、其余键按 Experiment → Eval → config 逐字段解析并落在捕获请求的 URL 与头上；Experiment 不能改变 rubric / severity / threshold；判卷材料随接收者分层、`{ on }`覆盖；入口封闭。

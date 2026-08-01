@@ -262,7 +262,7 @@ export interface SessionHandle<H extends BaseAssertionHandle = AssertionHandle> 
 }
 
 /**
- * 两种题型的 `t` 共有的部分:除各自专属词汇(通过制的 `require`、计分制的 `score`)之外的
+ * 两种题型的 `t` 共有的部分:除计分制专属的 `score` 之外的
  * 全部能力。**跨题型复用的 helper 就标注它**——`function step<H extends BaseAssertionHandle>
  * (t: BaseTestContext<H>)` 同时接受两种 `t`,不需要重载或联合类型。
  *
@@ -332,6 +332,11 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
    * 不会中止后续代码。要「不满足就立即中止评估用例」用 require。
    */
   check(value: unknown, assertion: ValueAssertion): H;
+  /**
+   * `t.check(value, assertion).gate().stopOnFailure()` 的值断言简写。立即求值；失败时保留
+   * AssertionResult 并中止后续 test，成功时透传原 value。两种题型语义相同。
+   */
+  require<T>(value: T, assertion: ValueAssertion): Promise<T>;
   /**
    * 把一组断言归到一个有标题的分组下(对照 vitest 的 test('title', ...))。纯组织/报告用,
    * 不改打分:组里每条断言仍独立计分。可嵌套(标题用 › 连接)。
@@ -405,23 +410,12 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   readonly judge: JudgeNamespace<H>;
 }
 
-/**
- * 通过制(`defineEval`)的 `t`:共有能力 + 前置词 `require`。
- */
-export interface TestContext<H extends BaseAssertionHandle = AssertionHandle> extends BaseTestContext<H> {
-  /**
-   * 对任意值跑一个 ValueAssertion,立即(await 时)求值;不满足就抛错中止整个评估用例剩余步骤
-   * (仍会把这条断言计入报告,不影响已记录的其它断言)。跟 check 的区别:check 只记录、
-   * 从不抛错,打分留到最后统一算;require 当场判定、失败即中止,适合「前置条件不满足,
-   * 后面写了也没意义」的场景。计分制的 `t` 上没有它——前置在那边只有一种写法
-   * `t.check(value, assertion).gate()`,它覆盖 require 的全部能力,还能同时挣分。
-   */
-  require(value: unknown, assertion: ValueAssertion): Promise<unknown>;
-}
+/** 通过制(`defineEval`)的 `t`：使用共有断言词汇，不暴露计分 API。 */
+export interface TestContext<H extends BaseAssertionHandle = AssertionHandle> extends BaseTestContext<H> {}
 
 /**
  * 计分制(`defineScoreEval`)的 `t`:共有能力 + 给分词汇。断言方法全部返回
- * `ScoreAssertionHandle`(可链 `.points(n)` 给分、`.gate(x?)` 声明前置),额外提供
+ * `ScoreAssertionHandle`(可链 `.points(n)` 给分、`.gate(x?)` 声明硬要求),额外提供
  * `t.score(label, n)` 直接给分。通过制 `t` 上没有给分词汇,写下去是类型错误;两边都不
  * 需要运行时守护(见 docs/feature/experiments/score-points.md「计分制:叠加给分,没有
  * 上限声明」)。

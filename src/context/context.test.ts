@@ -1,7 +1,8 @@
 // cases: docs/engineering/testing/unit/eval.md
 import { describe, expect, it } from "vitest";
 import { createEvalContext, type ContextState } from "./context.ts";
-import { commandSucceeded, includes } from "../expect/index.ts";
+import { commandSucceeded, includes, makeAssertion } from "../expect/index.ts";
+import { EvalRequirementFailed } from "./control-flow.ts";
 import { deriveDiffData } from "../scoring/diff.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
@@ -59,7 +60,7 @@ function fakeSandbox(): FakeSandbox {
   };
 }
 
-function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string) {
+function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string, scoring?: "pass" | "points") {
   return createEvalContext({
     agent,
     sandbox,
@@ -68,7 +69,21 @@ function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string
     log: () => {},
     judge: undefined,
     evalBaseDir,
+    scoring,
   });
+}
+
+function scoringContext(state: ContextState) {
+  return {
+    events: [],
+    facts: { toolCalls: [], subagentCalls: [], inputRequests: [], parked: false, messageCount: 0, compactions: 0, contextInjections: 0 },
+    diff: state.late.diff,
+    scripts: state.late.scripts,
+    usage: { inputTokens: 0, outputTokens: 0 },
+    status: "completed" as const,
+    coverage: resolveAgentCoverage(completeCoverage),
+    readFile: async () => undefined,
+  };
 }
 
 /** 记录沙箱侧一切写入与命令 env 的 fake:用来证明「沙箱里零框架痕迹」。 */
@@ -123,6 +138,44 @@ describe("createEvalContext / TestContext live state", () => {
     expect(result.outcome).toBe("passed");
     expect(result.outcome === "passed" ? result.score : -1).toBe(1);
     expect(result.outcome === "passed" ? result.evidence : "?").toBeUndefined();
+  });
+
+  it("t.require 两种题型都透传原引用；失败记录 gate + stopOnFailure 并抛控制流信号", async () => {
+    for (const scoring of ["pass", "points"] as const) {
+      const passed = makeContext(calculatorAgent(), fakeSandbox(), undefined, scoring);
+      const original = { stable: true };
+      const same = await passed.context.require(
+        original,
+        makeAssertion({ name: "same reference", score: (value) => (value === original ? 1 : 0) }),
+      );
+      expect(same).toBe(original);
+      const [passingResult] = await passed.state.collector.finalize(scoringContext(passed.state));
+      expect(passingResult).toMatchObject({ severity: "gate", outcome: "passed", stopOnFailure: true });
+
+      const failed = makeContext(calculatorAgent(), fakeSandbox(), undefined, scoring);
+      await expect(failed.context.require(original, includes("never"))).rejects.toBeInstanceOf(EvalRequirementFailed);
+      const [failingResult] = await failed.state.collector.finalize(scoringContext(failed.state));
+      expect(failingResult).toMatchObject({ severity: "gate", outcome: "failed", stopOnFailure: true });
+      expect(failingResult).toHaveProperty("received");
+    }
+  });
+
+  it("作用域句柄只在 stopOnFailure 链的位置中止；atLeast 失败仍保持 soft", async () => {
+    const { context, state } = makeContext(calculatorAgent());
+    await context.send("1+1=?");
+
+    context.calledTool("missing").gate();
+    context.check(context.reply, includes("2"));
+    await expect(context.calledTool("missing").atLeast(1).stopOnFailure()).rejects.toBeInstanceOf(
+      EvalRequirementFailed,
+    );
+
+    const results = await state.collector.finalize(scoringContext(state));
+    expect(results).toHaveLength(3);
+    expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed" });
+    expect(results[0]).not.toHaveProperty("stopOnFailure");
+    expect(results[1]).toMatchObject({ outcome: "passed" });
+    expect(results[2]).toMatchObject({ severity: "soft", threshold: 1, outcome: "failed", stopOnFailure: true });
   });
 
   it("t.check(...) attaches the actually-checked value as evidence when it fails", async () => {

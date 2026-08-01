@@ -5,6 +5,7 @@ import type { AssertionResult, ScoreEntry, ScoringContext, Severity, SourceLoc }
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 import { formatThrown } from "../util.ts";
+import { EvalRequirementFailed } from "../context/control-flow.ts";
 
 export interface EvalScore {
   score: number;
@@ -40,12 +41,8 @@ export interface Spec {
   name: string;
   severity: Severity;
   threshold?: number;
-  /**
-   * 前置断言:就地立即求值、挂了中止 test()。`t.require`(通过制)记录时直接置位;计分制里
-   * 由句柄上的 `.gate()` 置位。它同时豁免计分制的「matcher 自带严重度只贡献通过线」降级——
-   * 前置是作者在句柄/入口上写下的题目结构声明,不是 matcher 默认值带来的。
-   */
-  prerequisite?: true;
+  /** 作者链过 `.stopOnFailure()`；只控制 test() 是否继续，不改变 severity。 */
+  stopOnFailure?: true;
   /** 作者用 .optional() 显式允许该断言证据缺席;unavailable 只保留在记录里,不影响判定。 */
   optional?: true;
   detail?: string;
@@ -65,8 +62,10 @@ export interface Spec {
    * 的可选字段。
    */
   points?: number;
-  /** 前置断言就地求值的结果快照;finalize 直接用它,不再求值一次(见 armPrerequisite)。 */
-  settled?: number | EvalScore | EvalUnavailable;
+  /** stopOnFailure 断言就地求值的结果快照；finalize 直接复用，不再求值一次。 */
+  settled?:
+    | { kind: "value"; value: number | EvalScore | EvalUnavailable }
+    | { kind: "error"; error: unknown };
   evaluate(ctx: ScoringContext): number | EvalScore | EvalUnavailable | Promise<number | EvalScore | EvalUnavailable>;
 }
 
@@ -74,6 +73,7 @@ export interface Spec {
 export interface RecordHandle {
   atLeast(threshold: number): RecordHandle;
   gate(threshold?: number): RecordHandle;
+  stopOnFailure(): Promise<RecordHandle>;
   /** 降级为纯记录的 soft:不设线,分数照实落盘、永不 fail(judge 的默认严重度就是它)。无参数——要设线用 .atLeast(x)。 */
   soft(): RecordHandle;
   optional(): RecordHandle;
@@ -83,14 +83,13 @@ export interface RecordHandle {
 
 export interface CollectorOptions {
   /**
-   * 题型(默认通过制)。计分制下句柄语义换一套:`.gate()` 是前置(就地求值、挂了中止),
-   * matcher 自带的默认严重度只贡献通过线、不使断言成为前置(否则默认 gate 的 matcher
-   * 会让第一条检查点腰斩整题),见 docs/feature/experiments/score-points.md。
+   * 题型(默认通过制)。计分制下 matcher 自带的默认 gate 只贡献通过线；作者在断言句柄上
+   * 显式链 `.gate()` 才是硬要求。两种题型是否中止都只由 `.stopOnFailure()` 决定。
    */
   scoring?: "pass" | "points";
   /**
-   * 计分制前置断言就地求值时看的实时运行结果(events/diff/沙箱等)。省略时前置退化为
-   * 普通 gate(finalize 时才求值、不中止),仅用于直接构造 collector 的单测。
+   * stopOnFailure 断言就地求值时看的实时运行结果(events/diff/沙箱等)。生产 Context 必传；
+   * 省略时调用 `.stopOnFailure()` 会报内部接线错误。
    */
   liveContext?: () => Promise<ScoringContext>;
 }
@@ -127,7 +126,7 @@ export class AssertionCollector {
   private readonly entries: ScoreEntry[] = [];
   private readonly scoring: "pass" | "points";
   private readonly liveContext: (() => Promise<ScoringContext>) | undefined;
-  /** 待结算的前置求值(按 arm 顺序);settlePrerequisites 依次等它们。 */
+  /** 待结算的 stopOnFailure 求值(按调用顺序)；runner 收尾也会兜底结算未 await 的调用。 */
   private pending: Promise<AbortPoint | undefined>[] = [];
   private aborted: AbortPoint | undefined;
 
@@ -173,11 +172,9 @@ export class AssertionCollector {
       spec.groupPath = this.groupStack.slice();
     }
     if (spec.loc === undefined) spec.loc = captureLoc();
-    // 计分制:角色只从断言句柄读。matcher 自带的默认严重度(includes 等默认 gate)与 matcher
-    // 上链的 .gate(x) 只贡献通过线,记录为观测;成为前置要作者在句柄上写 .gate()。降级时把
-    // gate 的通过线显式留下(省略即默认满分线),这样没做到的检查点照记 failed、挣 0 分,
-    // 只是不参与判定——判定面在计分制只认前置中止(见 computeVerdict 的 scoring 分支)。
-    if (this.scoring === "points" && spec.severity === "gate" && spec.prerequisite !== true) {
+    // 计分制的未链句柄角色是观测：matcher 自带的 gate 只贡献通过线。作者随后在句柄上
+    // 显式 `.gate()` 时会再把 severity 改回 gate；`.stopOnFailure()` 与这里完全正交。
+    if (this.scoring === "points" && spec.severity === "gate") {
       spec.severity = "soft";
       spec.threshold = spec.threshold ?? 1;
     }
@@ -194,11 +191,19 @@ export class AssertionCollector {
       gate(threshold) {
         spec.severity = "gate";
         spec.threshold = threshold;
-        if (collector.scoring === "points") {
-          spec.prerequisite = true;
-          collector.armPrerequisite(spec, before);
-        }
         return handle;
+      },
+      stopOnFailure() {
+        if (spec.severity !== "gate" && spec.threshold === undefined) {
+          throw new Error(
+            ".stopOnFailure() requires a passing line; chain .gate() or .atLeast(threshold), or use an assertion with a default threshold",
+          );
+        }
+        if (spec.stopOnFailure !== true) {
+          spec.stopOnFailure = true;
+          collector.armStopOnFailure(spec, before);
+        }
+        return collector.settleStopOnFailure(handle);
       },
       soft() {
         spec.severity = "soft";
@@ -221,34 +226,43 @@ export class AssertionCollector {
   }
 
   /**
-   * 计分制前置:就地求值(不进延迟队列),结论定在写下的位置——之后发生的事不改变它。
-   * 求值本身是异步的,结果挂进 pending 队列,由下一次 `settlePrerequisites()` 结算。
+   * stopOnFailure 断言在调用位置开始求值，结论冻结在这里；后续事件或文件变化不改判。
+   * pending 既让显式 await 当场收到控制流信号，也让下一个异步 t.* 与 runner 收尾兜底结算。
    */
-  private armPrerequisite(spec: Spec, before: { specCount: number; entryCount: number }): void {
+  private armStopOnFailure(spec: Spec, before: { specCount: number; entryCount: number }): void {
     const live = this.liveContext;
-    if (live === undefined) return; // 无实时上下文(裸 collector 单测):退化为普通 gate,不中止
+    if (live === undefined) {
+      throw new Error(".stopOnFailure() requires an AssertionCollector liveContext");
+    }
+    const severity = spec.severity;
+    const threshold = spec.threshold;
     this.pending.push(
       (async (): Promise<AbortPoint | undefined> => {
-        let raw: number | EvalScore | EvalUnavailable;
         try {
-          raw = await spec.evaluate(await live());
-        } catch {
-          raw = 0; // 求值抛错 = 0 分,与 finalize 的 catch 同口径;详情在 finalize 里落成 detail
-          spec.settled = undefined;
+          const raw = await spec.evaluate(await live());
+          spec.settled = { kind: "value", value: raw };
+          // unavailable 不是 failed；非 optional 会在 Verdict 阶段把 Attempt 判为 errored。
+          if (isUnavailable(raw)) return undefined;
+          const score = typeof raw === "number" ? raw : raw.score;
+          return computePassed(severity, threshold, score) ? undefined : { ...before, name: spec.name };
+        } catch (error) {
+          // 与 finalize 同口径：求值异常落为 score 0 的 failed AssertionResult，并触发停止。
+          spec.settled = { kind: "error", error };
           return { ...before, name: spec.name };
         }
-        spec.settled = raw;
-        // 证据评不了不算「前置未过」:非 optional 的 unavailable 会把整个 attempt 判成 errored,
-        // 那是比中止更强的结论,不需要再中止一次。
-        if (isUnavailable(raw)) return undefined;
-        const score = typeof raw === "number" ? raw : raw.score;
-        return computePassed("gate", spec.threshold, score) ? undefined : { ...before, name: spec.name };
       })(),
     );
   }
 
+  /** 显式 await `.stopOnFailure()` 的路径：通过返回原句柄，失败抛既有非错误控制流信号。 */
+  private async settleStopOnFailure(handle: RecordHandle): Promise<RecordHandle> {
+    const aborted = await this.settlePrerequisites();
+    if (aborted !== undefined) throw new EvalRequirementFailed(aborted);
+    return handle;
+  }
+
   /**
-   * 结算待决前置。返回未过前置的断言名(调用方据此抛中止信号),没有则 undefined。
+   * 结算待决 stopOnFailure。返回首条 failed 断言名(调用方据此抛中止信号),没有则 undefined。
    * 一旦中止过就一直返回同一个名字——后续每个 `t.*` 入口都会再抛一次,直到 test() 退出。
    */
   async settlePrerequisites(): Promise<string | undefined> {
@@ -281,6 +295,7 @@ export class AssertionCollector {
       const base = {
         name: spec.name,
         severity: spec.severity,
+        ...(spec.stopOnFailure ? { stopOnFailure: true as const } : {}),
         ...(spec.optional ? { optional: true as const } : {}),
         ...(spec.detail !== undefined ? { detail: spec.detail } : {}),
         ...(spec.groupPath !== undefined ? { groupPath: spec.groupPath } : {}),
@@ -292,8 +307,9 @@ export class AssertionCollector {
       let received: string | undefined;
       let evidence: string | undefined;
       try {
-        // 前置断言已在写下的位置就地求值过,直接用那份快照——之后发生的事不改变它的结论。
-        const raw = spec.settled ?? (await spec.evaluate(ctx));
+        // stopOnFailure 已在链的位置就地求值过，直接用快照；之后发生的事不改变结论。
+        if (spec.settled?.kind === "error") throw spec.settled.error;
+        const raw = spec.settled?.kind === "value" ? spec.settled.value : await spec.evaluate(ctx);
         if (isUnavailable(raw)) {
           out.push({
             ...base,
