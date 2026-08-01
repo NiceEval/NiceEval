@@ -70,6 +70,42 @@ describe("DockerSandbox.downloadDirectory", () => {
   });
 });
 
+describe("DockerSandbox runner tools", () => {
+  it("probes git and can bootstrap it for attached Compose task images", async () => {
+    const sandbox = new DockerSandbox();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    (sandbox as unknown as {
+      runCommandAsRoot(command: string, args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    }).runCommandAsRoot = async (command, args) => {
+      calls.push({ command, args });
+      return { stdout: "", stderr: "", exitCode: 0 };
+    };
+
+    await sandbox.ensureRunnerTools();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.command).toBe("sh");
+    expect(calls[0]?.args.join("\n")).toContain("command -v git");
+    expect(calls[0]?.args.join("\n")).toContain("apt-get install");
+    expect(calls[0]?.args.join("\n")).toContain("apk add");
+  });
+
+  it("surfaces the installer diagnostic instead of failing later in workspace.baseline", async () => {
+    const sandbox = new DockerSandbox();
+    (sandbox as unknown as {
+      runCommandAsRoot(command: string, args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    }).runCommandAsRoot = async () => ({
+      stdout: "",
+      stderr: "no supported package manager",
+      exitCode: 127,
+    });
+
+    await expect(sandbox.ensureRunnerTools()).rejects.toThrow(
+      /prepare Docker runner tools failed.*no supported package manager/,
+    );
+  });
+});
+
 /** `expiresAtMs` 是 initialize() 把 TTL 烧进 PID1 那一刻定死的私有字段;测试直接注入,
  *  不必起真实容器。 */
 function withExpiry(sandbox: DockerSandbox, expiresAtMs: number): DockerSandbox {

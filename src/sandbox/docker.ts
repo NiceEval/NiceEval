@@ -241,6 +241,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         sandbox.defaultUserName = imageUser.split(":")[0] || imageUser;
       }
     }
+    // Compose template 是题目的镜像，不能假设预装了 runner 私有分类账所需的 git。
+    // 这属于 provider 兑现 Sandbox 契约的初始化，不应让每条 Eval 改自己的 Dockerfile。
+    await sandbox.ensureRunnerTools();
     return sandbox;
   }
 
@@ -334,10 +337,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.container.start();
 
     // slim 镜像可能缺 CA 证书和 git,补装。
-    await this.runCommandAsRoot("bash", [
-      "-c",
-      "apt-get update -qq && apt-get install -y -qq ca-certificates git curl > /dev/null 2>&1",
-    ]);
+    await this.ensureRunnerTools();
 
     // 工作目录交给非 root 用户(node:node)。node 用户(UID 1000)在 slim 镜像里已存在。
     await this.runCommandAsRoot("mkdir", ["-p", this.workdir]);
@@ -366,6 +366,40 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       await this.pullImage(imageName);
       progress(t("docker.imagePullDone", { image: imageName }).trimEnd());
     }
+  }
+
+  /**
+   * 补齐 NiceEval 自身运行所需的最小工具面。单容器默认镜像与 Compose 附着容器走同一条：
+   * 先 probe，命中时零改动；缺失时以 root 使用镜像已有的包管理器安装。题目镜像无法兑现时
+   * 明确报错，不把 `git: command not found` 延后到 workspace.baseline。
+   */
+  async ensureRunnerTools(): Promise<void> {
+    const script = [
+      "set -eu",
+      "command -v git >/dev/null 2>&1 && exit 0",
+      "export DEBIAN_FRONTEND=noninteractive",
+      "if command -v apt-get >/dev/null 2>&1; then",
+      "  apt-get update -qq && apt-get install -y -qq ca-certificates git curl >/dev/null",
+      "elif command -v apk >/dev/null 2>&1; then",
+      "  apk add --no-cache ca-certificates git curl >/dev/null",
+      "elif command -v microdnf >/dev/null 2>&1; then",
+      "  microdnf install -y ca-certificates git curl >/dev/null",
+      "elif command -v dnf >/dev/null 2>&1; then",
+      "  dnf install -y ca-certificates git curl >/dev/null",
+      "elif command -v yum >/dev/null 2>&1; then",
+      "  yum install -y ca-certificates git curl >/dev/null",
+      "else",
+      '  printf "%s\\n" "niceeval Docker runtime requires git for its private change ledger, but the image has no supported package manager (apt-get, apk, microdnf, dnf, or yum)" >&2',
+      "  exit 127",
+      "fi",
+      'command -v git >/dev/null 2>&1 || { printf "%s\\n" "niceeval Docker runtime could not install git for its private change ledger" >&2; exit 127; }',
+    ].join("\n");
+    const result = await this.runCommandAsRoot("sh", ["-c", script]);
+    if (result.exitCode === 0) return;
+    const detail = result.stderr.trim().split("\n").at(-1);
+    throw new Error(
+      `prepare Docker runner tools failed (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`,
+    );
   }
 
   /** 拉取镜像并跟进度。 */
