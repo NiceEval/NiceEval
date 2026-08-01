@@ -1,122 +1,160 @@
 # Library 逐词表说明
 
-`@niceeval/verify`(工作名)的完整断言词表。设计定位与形态裁决见 [README](README.md);逐场景写法见 [Use Cases](use-case/README.md)。
+本目录 adapter 的完整词表。设计定位与边界见 [README](README.md);逐场景写法见 [Use Cases](use-case/README.md)。
 
-库从主入口导出四组能力:命令执行与证据句柄、语义树 Run matcher、容差 golden matcher、点查询。
-浏览器交互词表单独走 `@niceeval/verify/browser` 子路径,把 Playwright 依赖隔离在浏览器场景之外。
-全部是普通函数与 vitest matcher,不带 runner、不带全局状态。
+词分两组,分界是 [PLAN-2 的 User View 规则](../../design/user-readable-testing/PLAN-2/README.md#user-view-设计规则):
+
+- **领域词**——测试正文写的那些:用户对象、动作与稳定身份。
+- **读面内部**——只有 adapter 实现读得到的那些:结构解析、role locator、正则与归一。
+
+一个词属于哪组由它出现的位置决定,不由实现难度决定。
+全部是普通函数与 vitest matcher,不带 runner、不带全局状态,由所属 E2E 仓库自己签入。
 
 ```ts
-import { cli, evidence, term, printTermTree } from "@niceeval/verify";
-import "@niceeval/verify/matchers"; // 注册 toMatchTermSnapshot / toMatchScrubbedFileSnapshot / toMatchAriaSnapshot
+import { cli, world, reportView, expectObserved } from "../verify";
+import "../verify/matchers";
 ```
 
-## 命令执行与证据句柄
+## 领域词
 
 ### `cli(command, options?)`
 
 继承[验收脚本写法](../../engineering/testing/e2e/verification.md)的两条约定:命令以 **shell 原文**出现(可整句复制到终端复现),预期非零退出是一等场景。
 
 ```ts
-const { stdout } = await cli("pnpm exec niceeval show weather --history");        // 默认断言退出 0
+const { stdout } = await cli("pnpm exec niceeval show weather --history");
 const fail = await cli("pnpm exec niceeval exp deliberate-fail --force --json", { expect: "nonzero" });
 fail.stdout; fail.stderr; fail.combined; fail.exit;
 ```
 
 - `expect: 0 | number | "nonzero"`,不符即抛断言错误,消息含命令原文、实际退出码与 stderr 尾部。
-- `cwd`:执行目录,默认仓库根;消费方边界一类的场景用它切到证据清单里的临时项目目录。
-- 每次调用把命令与输出追加到证据日志(供 `e2e.ts` 的基础设施故障分类扫描),路径来自证据清单。
+- `cwd`:执行目录,默认仓库根;消费边界一类的场景用它切到 world 里的临时项目目录。
+- `pipe: true`:stdout 接真实管道而不是文件,验收「输出喂给下游工具」的场景用它。
+- 每次调用把命令与输出追加到证据日志(供 `e2e.ts` 的基础设施故障分类扫描),路径来自 world manifest。
 
-### `evidence()`
+**输出流归属是一等事实,断言要点名读哪一路。**
+[用法错误与无匹配提示写 stderr](../../../memory/cli-usage-errors-go-to-stderr.md) 是公开契约,把两路合起来查子串的写法对这条契约没有区分力:文案回退到 stdout 时断言照样通过。
+所以断文案的 proof 读 `stdout` 或 `stderr` 各自那一份,`combined` 只用于「人读输出整流后保序」这类以顺序为契约的场景。
 
-读取 prepare 阶段产出的证据清单(路径来自环境变量 `NICEEVAL_E2E_EVIDENCE`),返回只读句柄:
+`combined` 必须是单管道捕获——两路在同一个文件描述符上按真实写入顺序合并,不是两份缓冲事后拼接。
+拼接出来的顺序是测试设施自己编的,拿它断[非 TTY 单流保序](../../feature/experiments/cli.md#输出流和落盘节奏),证明的是拼接代码而不是产品行为。
+
+### `world()`
+
+读取 prepare 阶段产出的 world manifest(路径来自环境变量 `NICEEVAL_E2E_WORLD`),返回只读句柄:
 
 ```ts
-const ev = evidence();
-ev.resultsRoot;                 // 本次运行的记录根
-ev.locator("tool-call");        // prepare 提取好的 attempt locator,缺失即抛错并列出可用键
-ev.exportDir("branded");        // 命名导出站目录
-ev.consumerDir("react-jsx");    // prepare 搭好的临时消费方项目目录(消费边界场景)
-ev.logPath;                     // 证据日志(cli() 自动追加的那份)
+const w = world();
+w.recipeId;                     // 本 proof 绑定的 evidenceRecipeId
+w.digest;                       // world 身份摘要;与 proof 声明不符时构造即失败
+w.resultsRoot;                  // 本次运行的记录根,只读
+w.locator("tool-call");         // prepare 提取好的 attempt locator,缺失即抛错并列出可用键
+w.exportDir("branded");         // 命名导出站目录
+w.consumerDir("react-jsx");     // prepare 搭好的临时消费方项目目录
+w.logPath;                      // 证据日志(cli() 自动追加的那份)
 ```
 
-清单的产出方是仓库自己的 `scripts/e2e.ts` prepare 步骤;库只定义清单的形状与读取面,不定义怎么跑实验。
+要改结果的场景不碰共享 world,先取自己的私有 clone:
 
-## 第一层:语义树 Run `toMatchTermSnapshot`
+```ts
+const clone = await w.clone("readback-carry-forward");   // 只有 mutable-clone 模式的 proof 能调
+await clone.run("readback-append");                      // 执行声明过的 mutationActionId
+clone.resultsRoot;                                       // 可写,生命周期随本测试结束
+```
 
-### 结构解析器
+`read-only` 模式的 proof 调用 `w.clone()` 直接报错。
+manifest 的产出方是仓库自己的 `scripts/e2e.ts` prepare 步骤;adapter 只定义 manifest 的形状与读取面,不定义怎么跑实验。
 
-`term(text)` 先 strip ANSI,再把纯文本解析成结构树。节点词表是**通用终端排版概念**,识别规则以 [Library · 排版原语](../../feature/reports/library/layout.md)声明的排版契约为规范——解析器是渲染契约的第二实现,不含 niceeval 组件名:
+### 读面构造
 
-| 节点 | 识别规则 | name 取值 |
+每个媒介一个构造函数,返回同一族领域对象:
+
+```ts
+const report = reportView(stdout);                        // stdout:non-TTY 语义输出
+const screen = await ptyScreen(w, "pnpm exec niceeval show", { columns: 80 });
+const events = ndjsonEvents(stdout);                      // exp --json 的生命周期事件
+const summary = jsonSummary(readFileSync("summary.json", "utf8"));
+const junit = junitReport(readFileSync("fail.xml", "utf8"));
+const doc = await attemptDoc(w, w.locator("te-fail"));    // 导出 HTML,真实 Chromium,禁用 JS
+const ui = await openSite(w.exportDir("site"));           // 浏览器会话,启用 JS
+```
+
+构造函数与 Behavior 声明的 `observations` 一一对应:声明了 `stdout` 却构造 `ptyScreen`,静态守护直接红。
+
+### 托管形态
+
+两个浏览器读面各收一个必填的 `hosting`,声明导出站被暴露成什么形状的 URL:
+
+```ts
+const ui = await openSite(w.exportDir("site"), { hosting: "clean-url-subpath" });
+const doc = await attemptDoc(w, locator, { hosting: "directory-root" });
+```
+
+| 形态 | 索引文档的地址 | 对应的真实托管 |
 |---|---|---|
-| `document` | 整份输出的根 | — |
-| `section` | 框线包围的区块(`╭╮╰╯` / `┌┐└┘` 及框内嵌套) | 框上沿的标题文字 |
-| `heading` | 空行之后、紧邻结构块(table / tree / section)之前的独立文本行 | 该行折叠文本 |
-| `table` | 连续行共享 ≥2 处字符列位对齐,首行为表头 | 表头折叠文本 |
-| `row` | table 内的数据行 | 整行折叠文本 |
-| `tree` | 缩进或 guide 字符(`│ ├ └`)组织的连续行 | 根行折叠文本 |
-| `node` | tree 内的一行(嵌套用缩进表达) | 去掉 guide 后的折叠文本 |
-| `line` | 回退:不属于以上任何结构的文本行 | 该行折叠文本 |
+| `directory-root` | `/` | 本地 server、`--out` 后用静态服务器直开 |
+| `file-url` | `file:///…/index.html` | 双击打开导出目录 |
+| `clean-url-subpath` | `/showcase/memory`,同路径带斜杠形态 308 回无斜杠 | cleanUrls 平台与反向代理 rewrite |
 
-「折叠文本」= 空白折叠(连续空白折成单空格、去首尾)后的行文本;折行续行并回原行——`looseIncludes()` 手工做的事在解析层统一完成。显示宽度口径(CJK 记 2 列)只服务解析,不暴露为断言面。
+这是读面的显式参数,不是它自己挑一个默认值。
+导出站的正确性取决于产物**和**索引文档所在目录两件事,而 server 起在哪个路径由验收方决定——读面替测试作者挑形态,等于替它挑掉一整类观察不到的缺陷。
+理由与两次真实失效见 [html-export 的回归剧本](use-case/html-export.md#回归剧本)。
 
-### 期望语法
+同一份产物在三种形态下的领域断言完全相同:领域词不随托管变,变的只是浏览器解析相对引用时的基底。
+声明哪一种由 Behavior 的 `observations` 写死,`e2e.ts` 按声明起对应形态的服务,测试正文不出现端口、路径与 rewrite 规则。
 
-YAML 子集,逐条照抄 aria-snapshot 的形状:
+### Report 领域词
 
-```yaml
-- section "Attempts":          # "引号" = 折叠后精确匹配
-  - table:
-    - row /tool-call .* passed/   # /…/ = 正则
-    - row /te-fail .* failed/
-- heading /Cost .*× Pass rate/
-- tree:                        # 省略 name = 只匹配节点类别
-  - node /TOOL .* get_weather/:
-    - node /Brooklyn/
-- line: 0 matches in 1 attempt    # `- kind: 文本` = 匹配折叠文本(aria 的 listitem: 形式)
-```
+词的存在前提是对应行为写在 `docs/feature/reports/` 的契约里;寻址一律按公开身份,不按位置:
 
-### 匹配语义
+| 词 | 返回 | 契约来源 |
+|---|---|---|
+| `report.table(标题)` | 表对象;找不到时列出实际表标题 | [Table](../../feature/reports/components/primitives/table.md) |
+| `table.rowIds()` | `Observed<string[]>`,行身份按显示顺序 | Table Content 协议 |
+| `table.row(身份)` | 行对象;身份取首列的稳定标识,不取行号 | 同上 |
+| `table.columnNames()` | `Observed<string[]>`,列集身份 | 同上 |
+| `row.cell(列名)` | `Observed<Cell>`;列不在本表列集时报错并列出实际列集 | 同上 |
+| `row.verdict()` | `Observed<Verdict>`,判定按枚举值读,不按字形读 | [ExperimentTable](../../feature/reports/components/summaries/experiment-table.md) |
+| `report.chart({ x, y })` | 图对象,按两轴的公开维度名寻址 | [Chart](../../feature/reports/components/charts/README.md) |
+| `chart.seriesIds()` | `Observed<string[]>`,系列身份 | 同上 |
+| `chart.axisTicks("x")` | `Observed<string[]>`,刻度标签按位置顺序 | 同上 |
+| `report.history()` | attempt 历史行,每行有 `timestamp` / `verdict` / `locator` | [show --history](../../feature/reports/show/history.md) |
+| `report.stats()` | 判定三态计数 | [show --stats](../../feature/reports/show/stats.md) |
+| `report.attempt(locator)` | attempt 对象,可继续按身份下钻 | [show 的 attempt 面](../../feature/reports/show/attempt.md) |
+| `attempt.executionNodes()` | `Observed<string[]>`,执行树节点身份 | [show --execution](../../feature/reports/show/execution.md) |
+| `attempt.timingGaps()` | `Observed<string[]>`,缺时间注释的节点身份 | 同上 |
 
-与 aria-snapshot 完全一致:
+导出 HTML 与浏览器读面共享这批词;只有各媒介独有的能力单独立词,例如 `doc.disclosure(名称).isExpanded()` 与 `table.visibleRows()`。
 
-- **默认有序子序列**:期望的子节点须按序出现在实际子节点中,多出的实际节点忽略。渲染器新增一行注解、插一个区块,不打红已有断言。
-- **省略即不关心**:不写 name 只查类别;不写子节点不查子树。
-- **显式升级**:`- /children: equal` 令直接子节点精确匹配(个数、顺序、逐个匹配),`deep-equal` 逐层精确。锁「不多不少」的计数与顺序契约用这两档,不用默认档。
-- 文本一律折叠后再比;正则对折叠文本执行。
-
-### 使用与撰写回路
+### 断言:`expectObserved`
 
 ```ts
-await expect(stdout).toMatchTermSnapshot(`
-  - section "Experiments":
-    - table:
-      - row /main .* \\d+%/
-`);
+expectObserved(report.table("Experiments").rowIds()).toShowRows(["main", "rag"]);
+expectObserved(report.attempt(w.locator("te-fail")).verdict()).toEqualValue("failed");
+expectObserved(textRow.cell("Pass rate")).toEqualObserved(webRow.cell("Pass rate"));
 ```
 
-- 期望内联在测试里、**手工撰写**——它是契约的表达,不是录制产物,没有 `-u` 自动重写。
-- 撰写辅助:`printTermTree(stdout)` 打印实际解析树,作者从中挑选要锁定的节点收窄成期望;失败输出也附带实际树(见失败反馈)。
+| matcher | 语义 |
+|---|---|
+| `toEqualValue(v)` | 观察值等于测试声明的字面值 |
+| `toEqualObserved(other)` | 两个观察值相等;失败时同时打印两侧的来源与提取路径 |
+| `toHaveSeries([…])` | 系列身份集合相等,顺序不计 |
+| `toShowRows([…])` | 身份按序出现,允许中间夹着其它行 |
+| `toShowExactRows([…])` | 身份不多不少且同序 |
+| `toBeAbsent()` | 该身份在这一面不存在;失败时列出实际候选 |
 
-### HTML 面:`toMatchAriaSnapshot`
+三条规则:
 
-导出 HTML 的语义结构断言不发明词表,直接采 aria-snapshot 语义的现成实现(Vitest 4.1.4+ / ivya),对文档的**可访问性树**匹配,语法与匹配语义同上(role 词表是 aria 的):
+- **比较口径写在 matcher 名字上。**
+  `toShowRows` 与 `toShowExactRows` 是两个词,不靠选项开关,也不靠期望文本里的内联指令。
+- **matcher 只接受 `Observed<T>`。**
+  传入未包装的原始值直接报错——`expectObserved` 的入参类型就是这条规则的执行点。
+- **跨面关系逐字段书写。**
+  text 与 web 比同一个格子时逐格调 `toEqualObserved`,不提供一次比较整棵树的聚合词。
 
-```ts
-const doc = await loadExportedHtml(ev.exportDir("branded"), "attempt/te-fail.html"); // happy-dom 或 browser mode,取决于 spike 结论
-await expect(doc.body).toMatchAriaSnapshot(`
-  - region "Assertions":
-    - list:
-      - listitem: /equals\\(3\\).*failed/
-`);
-```
+### 逐字比对 `toMatchScrubbedFileSnapshot`
 
-计算样式、几何、点击交互的断言不属于本层——保留现有 Playwright 写法(`getComputedStyle` 结构事实、`getBoundingClientRect` 同行判定、`<details>` 点击展开)。
-
-## 第二层:容差 golden `toMatchScrubbedFileSnapshot`
-
-对「每个字符都是契约」的窄稳表面(`--json` 摘要、JUnit、错误与用法文案)做整段 golden。比对前先过 scrub 归一管线——归一必须在传入 matcher 前完成(vitest 的自定义 serializer 不作用于 file snapshot,见 References):
+只用于[逐字承诺的短文本](README.md#逐字比对的适用面)。比对前先过 scrub 归一管线,归一必须在传入 matcher 前完成(vitest 的自定义 serializer 不作用于 file snapshot,见 References):
 
 ```ts
 await expect(fail.combined).toMatchScrubbedFileSnapshot("golden/deliberate-fail.txt", {
@@ -124,7 +162,7 @@ await expect(fail.combined).toMatchScrubbedFileSnapshot("golden/deliberate-fail.
 });
 ```
 
-内置 scrub 规则表(正则 → 占位符):
+内置 scrub 规则表(正则换成占位符):
 
 | 易变值 | 占位符 |
 |---|---|
@@ -137,52 +175,25 @@ await expect(fail.combined).toMatchScrubbedFileSnapshot("golden/deliberate-fail.
 | ISO 时间戳 | `[TIMESTAMP]` |
 
 - golden 文件签入仓库;更新走 `vitest -u`,diff 即 review 面。
-- scrub 后仍逐字符全等——没有 trycmd 的 `[..]`/`...` 行内通配。需要行级容差的表面说明它不够窄稳,应改用第一层。
-
-## 第三层:点查询 `term()`
-
-结构解析树上的导航与提取,把各 verify 脚本手搓的 helper 升格为库词表。适配器仓库读回的[子串级边界](../../engineering/testing/e2e/README.md#43-cli-读回)只需要这一层:
-
-```ts
-const t = term(stdout);
-
-t.section("Attempts");                    // 按 name 找 section;支持 /re/
-t.section("Attempts").table().rows();     // 行数组,每行有 .text(折叠文本)与 .cell(表头名)
-t.tree().find(/get_weather/);             // 树内查找节点
-t.line(/Brooklyn/);                       // 全文找行;找不到即抛错
-t.has(/timing unavailable/);              // boolean,供反向断言 expect(...).toBe(false)
-```
-
-niceeval 惯用形的提取器属于本层、以 [Show](../../feature/reports/show.md) 的文档声明为规范(不是通用排版概念,单列出来):
-
-```ts
-t.historyRows();   // show --history 的 attempt 行:{ timestamp, verdict, locator, text }
-t.stats();         // ✓/✗/! 计数行:{ passed, failed, errored } —— 断言数值,不断言字形
-```
-
-查询失败的错误信息带结构上下文与下一步,沿用[错误反馈原则](../../error-feedback.md):找不到 section 时列出实际存在的 section 名,找不到行时给出最近似候选。
+- scrub 后逐字符全等,没有行内通配。
+  需要行级容差的表面说明它不够窄稳,换对应读面的结构断言。
 
 ## 浏览器交互词表
 
-浏览器交互不属于三层解析断言:它验收「用户操作可达、状态收敛」,断言对象是真实浏览器里的行为。
-写法规则五条见[README · 浏览器交互](README.md#浏览器交互现成词表加领域词);调研结论「引擎现成、不自建」见[References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)。
-词表从 `@niceeval/verify/browser` 导出,只做两件事:按公开组件契约立词的领域寻址,和步骤轨迹。
-等待、断言、结构匹配全部直接用 Playwright 原生面,不做第二层包装。
+浏览器交互验收「用户操作可达、状态收敛」,断言对象是真实浏览器里的行为。
+写法规则五条见 [README · 浏览器交互](README.md#浏览器交互现成词表加领域词);调研结论「引擎现成、不自建」见 [References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)。
+adapter 只做两件事:按公开组件契约立词的领域寻址,和步骤轨迹。
+等待、重试与结构读取全部直接用 Playwright 原生面,不做第二层包装。
 
 ```ts
-import { openSite } from "@niceeval/verify/browser";
-import { expect } from "@playwright/test";
+const ui = await openSite(w.exportDir("site"));   // 起本地静态 server 与浏览器页
+await ui.goto("Scoreboard");                       // 按导航名切页;页不存在列出实际导航
 
-const ui = await openSite(ev.exportDir("site")); // 起静态 server 与浏览器页
-await ui.goto("Scoreboard");                      // 按导航名切页;页不存在列出实际导航
-
-const table = ui.table("Comparison");             // 领域词返回 Playwright Locator
-await expect(table.visibleRows()).toHaveCount(3); // web-first 断言,自动重试到收敛
+const table = ui.table("Comparison");
+await expect(table.visibleRows()).toHaveCount(3);  // web-first 断言,自动重试到收敛
 await ui.filter().fill("main");
 await expect(table.visibleRows()).toHaveCount(1);
 ```
-
-领域词按公开组件契约立词——一个词能存在的前提是对应行为写在 `docs/feature/reports/` 的组件契约里;内部寻址一律按官方优先序(role → 可见文本 → test id),场景文件里不出现 CSS / class 选择器与 `:visible` 方言:
 
 | 词 | 契约来源 | 行为 |
 |---|---|---|
@@ -190,40 +201,112 @@ await expect(table.visibleRows()).toHaveCount(1);
 | `ui.expectAttemptDoc(locator)` | 导出站 attempt 文档 | 前置断言宿主导出了该详情文档 |
 | `ui.table(标题)` | Table | 表句柄;找不到时列出实际表标题 |
 | `table.visibleRows()` | Table searchable | 可见行 Locator,可见性判定单点实现 |
-| `table.expand(行文本)` | 层级 Table | 指名展开某一行;行不存在即失败并列出实际行 |
+| `table.expand(行身份)` | 层级 Table | 指名展开某一行;行不存在即失败并列出实际行 |
 | `ui.filter()` | Table searchable | 过滤输入框 |
 | `ui.attemptLink(locator)` | locator 下钻 | 按公开 locator 文本寻址下钻链接 |
 | `ui.dialog()` | attempt 详情 modal | dialog Locator |
-| `ui.region(名称)` | 页内命名区块 | 交给 `toMatchAriaSnapshot` 做结构断言 |
+| `ui.chartPoint({ series, x })` | Chart 数据点 | 按系列与横轴身份寻址一个点 |
+| `ui.tooltip()` | Chart 悬停提示 | 提示元素 Locator,断可见与内容 |
+| `ui.region(名称)` | 页内命名区块 | 区块句柄,可继续取领域词 |
 
 三条运行学约定:
 
 - **等待与断言**:直接用 Playwright web-first `expect`(自动重试到收敛),词表不提供固定时长 sleep,不带重试的 `count()` 即时读数不进场景;`expect` 脱离 Playwright runner 的行为是[待裁决分歧](README.md#待裁决分歧)。
-- **结构**:交互后的结构收敛用 `toMatchAriaSnapshot` 表达,与 HTML 面同一套语义,词表不发明第二套结构语法。
-- **步骤轨迹**:每个领域词把自己记入步骤日志;失败消息 = 已执行步骤序列 + 失败步骤 + 该步骤的定位候选(Screenplay 活动轨迹之形,不引其依赖),前置断言失败与交互深处失败因此天然可分。
+- **结构**:交互后的结构收敛用同一批领域词读,与静态 HTML 面同源,词表不发明第二套结构语法。
+- **步骤轨迹**:每个领域词把自己记入步骤日志;失败消息等于已执行步骤序列加失败步骤加该步骤的定位候选(Screenplay 活动轨迹之形,不引其依赖),前置断言失败与交互深处失败因此天然可分。
+
+## 读面内部
+
+以下是 adapter 的实现面。测试正文不出现这一节里的任何名字。
+
+### stdout 结构解析器
+
+`parseTerminal(text)` 先 strip ANSI,再按 [Library · 排版原语](../../feature/reports/library/layout.md)声明的 **non-TTY 形态**识别结构。
+解析器是渲染契约的第二实现,不含 niceeval 组件名:
+
+| 结构 | non-TTY 形态 | 身份取值 |
+|---|---|---|
+| 面板(`Section`) | 标题成行,正文整体缩进两列 | 标题文字 |
+| 表(`Table` / `Grid`) | 连续行按列对齐的纯文本,首行为表头 | 表头折叠文本 |
+| 表行 | 表内数据行,层级由首列缩进表达 | 首列的身份文本 |
+| 同级重复块 | 单独的标题行,正文全宽 | 标题文字 |
+| 逐条流事件 | 无标注,逐行原样 | 行折叠文本 |
+
+框线字符不参与识别。
+[量测与降级](../../feature/reports/library/layout.md#量测与降级)声明 non-TTY 下三种线一起消失、字段与顺序逐字相同、脚本不解析框字符;解析器读框线就等于把 TTY 形态当成 stdout 契约的一部分,而那恰恰是 PTY 读面的对象。
+
+「折叠文本」等于空白折叠(连续空白折成单空格、去首尾)后的行文本;格内折行按 layout.md 的续行缩进规则并回原行。
+显示宽度口径(CJK 记 2 列)只服务解析,不暴露为断言面——它是 PTY 读面的断言对象。
+
+### 匹配口径
+
+领域 matcher 的比较规则整段照抄 aria 结构期望:
+
+- **默认有序子序列**:期望的身份按序出现即通过,多出的实际项忽略。渲染器新增一行注解、插一个区块,不打红已有断言。
+- **省略即不关心**:没被断言的列、格与子树不参与比较。
+- **显式升级**:锁「不多不少」的计数与顺序契约用 `toShowExactRows`,不用默认档。
+- **文本折叠后再比**:身份文本一律折叠,避免间距变化打红。
+
+### PTY 屏幕证据
+
+PTY 读面开真实 PTY 会话,断的是屏幕终态而不是字节流。
+每个 PTY proof 固定记录六项证据:invocation、终态 cell grid、scrollback、raw ANSI、resize 序列与退出信息。
+
+```ts
+screen.columns();                          // 屏幕列数
+screen.rowsOccupiedBy("deliberate-error"); // 该身份占用的屏幕行数,证明折行机制生效
+screen.displayWidthOf("deliberate-error"); // 显示宽度,CJK 记 2 列
+screen.styling();                          // "ansi" | "plain",证明降级形态
+```
+
+宽度、折行、降级与 CJK 显示宽度只在这一层断言;同一个事实不在 stdout 读面再断一遍。
+
+### 机器出口的结构比较
+
+JSON 与 JUnit parse 之后按结构语义比较,不比字符串:
+
+```ts
+expectObserved(summary.evalIds()).toShowExactRows(["tool-call", "te-fail"]);
+expectObserved(summary.fieldNames()).toShowExactRows(["evals", "runId", "totals"]);
+expectObserved(junit.case("deliberate-fail/gate").outcomeTag()).toEqualValue("failure");
+expectObserved(junit.counts()).toEqualValue({ tests: 1, failures: 1, errors: 0 });
+```
+
+`fieldNames()` 加 `toShowExactRows` 承接整段 golden 原本的「不多不少」职责:漂移进来的新字段、丢失的字段一样现形,而序列化顺序与空白不进契约。
+parse 失败按 observe 阶段错误报告,不退回子串探测。
+
+### HTML 可访问性树
+
+导出 HTML 的结构由 Playwright 加真实 Chromium 产生可访问性树,领域词到 role 与 accessible name 的映射写在 adapter 内部。
+每例全新 BrowserContext 与 Page;静态读面禁用 JS 且只准本地网络。
+producer identity(候选包与导出时刻)与 verifier identity(Chromium 版本与本次 Verification Run)分开记录,失败时能分辨「导出站是旧的」与「浏览器版本变了」。
 
 ## 失败反馈
 
-- **语义树失配**:输出第一个失配节点的路径与对位实际内容,并附实际树:
+失败按 [PLAN-2 的失败语义](../../design/user-readable-testing/PLAN-2/README.md#失败语义)输出,adapter 负责其中的 Evidence 与 Observed identities 两段:
 
-  ```text
-  toMatchTermSnapshot 失配
-  路径: section "Attempts" > table > row[2]
-  期望: - row /te-error .* errored/
-  实际(该位置起的兄弟节点): - row "te-fail ✗ failed [DURATION] [COST]"
-  实际完整结构树(printTermTree):
-    - section "Attempts"
-      - table "eval verdict duration cost"
-        - row "tool-call ✓ passed …"
-        …
-  ```
+```text
+Behavior: reports.view.narrow-by-experiment
+Outcome: Experiments 表只剩 main
+Entry: cli / Observations: stdout / Boundaries: real-cli
+Execution: read-only @ report-scoreboard
+World: report-scoreboard@<digest>
+Expected identity: main
+Observed identities: main, rag
+Evidence:
+  stdout: <log>#table[name=Experiments] > row[2]
+  实际行身份: main, rag
+```
 
+- **寻址失败**:列出该层实际存在的候选(实际表标题、最近似行身份),消息模板强制含「哪条契约断了、下一步看哪里」。
 - **golden 失配**:scrub 后的行级 diff;golden 文件不存在时首跑落盘并提示 review。
-- **点查询失败**:命中为空时列出候选(实际 section 名、最近似行),消息模板强制含「哪条契约断了、下一步看哪里」。
+- **阶段可分**:declaration、prepare、invoke、observe、outcome、cleanup 六段各自报告;解析失败不退回宽松匹配,缺 evidence 也不解释成产品结果不符合预期。
 
 ## 与 vitest 的装配
 
-- matcher 经 `expect.extend` 注册,`@niceeval/verify/matchers` 副作用导入一次生效;TS 类型经 module augmentation 提供。
-- 证据清单在 globalSetup 校验存在与形状,缺失时整个 vitest run 快速失败并指向 prepare 步骤。
-- 断言测试文件按验收组组织(`verify/render-structure.test.ts`、`verify/readback.test.ts`…),`describe`/`test` 名即断言分组名,`vitest -t` 按名单条重跑。
+- matcher 经 `expect.extend` 注册,`../verify/matchers` 副作用导入一次生效;TS 类型经 module augmentation 提供。
+- world manifest 在 globalSetup 校验身份与形状,失配时整个 vitest run 快速失败并指向 prepare 步骤。
+- Behavior 文件按用户任务组织(`test/behavior/analyze/compare-experiments.test.ts`),vitest 原生标题统一带 `[Behavior ID]` 前缀。
+- 单例重跑走仓库唯一入口:`pnpm e2e -- verify --world <manifest> --behavior <id>`,底层 `-t` 仍可按稳定 ID 定位同一测试。
 - `e2e.ts` 对 vitest 的退出码按既有规则折叠:非零一律回归,除非证据日志扫描确证外部故障(退 `75`)。
+</content>

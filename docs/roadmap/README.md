@@ -17,5 +17,5 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它等待上游稳定的候选接入
-- [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 等待按测试作者面决策重写的 Report 媒介 adapter 候选
+- [Report 读面 adapter](e2e-acceptance-dsl/README.md) —— 把 stdout、PTY、JSON、HTML 与浏览器变成领域读面的媒介词表与 vitest 装配
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈

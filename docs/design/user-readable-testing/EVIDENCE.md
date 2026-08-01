@@ -63,11 +63,8 @@ Runner 测试文档有 58 个覆盖 bullet。
 [测试总纲](../../engineering/testing/README.md)与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 设为 E2E 的唯一验收面。
 [`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 产物断言。
 
-[E2E Acceptance DSL](../../roadmap/e2e-acceptance-dsl/README.md)提出的 `term()` 依靠框线识别 section。
-但[正式排版契约](../../feature/reports/library/layout.md)规定 non-TTY 输出不依赖框线，脚本也不解析框字符。
-
-同一 Roadmap 规定 prepare 后测试只读，却在 machine export 示例里再次运行实验并写结果。
-它还把共享 npm verifier 视为不影响自治，而 E2E 总纲要求不同仓库不共享测试语义。
+[Report 读面 adapter](../../roadmap/e2e-acceptance-dsl/README.md) 的候选设计要靠同一次裁决定三处边界：结构按哪份声明识别、prepare 之后能否再写共享 evidence、验收器发不发公共包。
+三处各自都有现成的正式契约可依（[排版契约](../../feature/reports/library/layout.md)的 non-TTY 声明、E2E 总纲的仓库自治），缺的是把它们统一应用到测试作者面的那次裁决。
 
 这些冲突说明，媒介 parser 的稳定性只是问题的一部分。
 测试作者面还需要先裁决证明对象、主证明所有者和 evidence 生命周期。
