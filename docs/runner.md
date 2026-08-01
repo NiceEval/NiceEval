@@ -316,10 +316,8 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 | 沙箱级 setup | `SandboxSpec.setup` 链 | 创建之后；变更分类账锚点之前 |
 | 变更分类账锚点 | `workspace.baseline` | SandboxSpec setup 之后；EvalDef setup 之前。锚点之后的写入才进入归因视图 |
 | eval 级 setup | `EvalDef.setup` | 锚点之后；Agent setup 之前 |
-| 可见 Fixture | `EvalDef.fixture.files` | EvalDef setup 之后；Agent setup 之前 |
-| agent 级 setup | `SandboxAgent.setup` | Fixture 上传之后；`test(t)` 之前 |
-| Eval 主体 | `test(t)` | 作者驱动 Agent 与读取结果；可显式调用一次 `t.afterAgent(...)` |
-| Agent 后段 | `t.afterAgent(callback)` | 不可逆关闭 Agent 驱动面并冻结 diff；callback 用普通 API 操作 criteria、运行命令与断言 |
+| agent 级 setup | `SandboxAgent.setup` | EvalDef setup 之后；`test(t)` 之前 |
+| Eval 主体 | `test(t)` | 作者按普通顺序上传文件、驱动 Agent、运行命令与断言；send 窗口决定归因 |
 | eval 级 teardown | `EvalDef.teardown` | Verdict 定稿后的第一段收尾 |
 | agent 级 teardown | `SandboxAgent.teardown` | EvalDef teardown 之后 |
 | 沙箱级 teardown | `SandboxSpec.teardown` 链 | Agent teardown 之后；Sandbox 销毁或留存之前 |

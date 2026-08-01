@@ -16,7 +16,7 @@
 - 准备动作按 Experiment sandbox、Eval、Agent 三个既有 owner 归位,不再建立通用 Environment contribution。
 - 预装产物是优化。需要判断命中时,领域 helper 必须检查实际状态并在安装后复检。
 - 作者看到的顺序就是执行顺序。没有真实需求时不引入依赖 DAG、资源锁与自动并行。
-- build、start、setup、Fixture、hidden criteria、Agent 结束边界与活 Sandbox 复用是不同动作。
+- build、start、setup、普通文件传输、Agent turn 与活 Sandbox 复用是不同动作。
 - 逐题 Eval 保持自包含；生命周期机械动作由字段归属表达，不靠模块顶层登记副作用。
 
 ## 需求
@@ -30,7 +30,7 @@
 7. 现场无法组合时,SandboxSpec 可以按 profile 提供完整预制 case;Runner 不合并两个起点。
 8. setup 的 identity、activity、失败 phase 与可验证 helper 的实际 facts 必须进入正确记录。
 9. 普通作者只需理解 Environment、Experiment sandbox setup、Eval setup 与 Agent setup。
-10. 可见 Fixture 与隐藏 criteria 必须在 EvalDef 内声明；`afterAgent` 显式关闭 Agent 驱动面，callback 继续使用普通 Sandbox API。
+10. 起始文件与测试文件使用同一套普通 Sandbox API；相对 `send` 的顺序决定可见性，Runner 自动记录本地 transfer manifest。
 11. 每题可以完整重复自己的定义，不要求用数据集 adapter 或共享 Eval 工厂消除重复。
 
 ## 不是本 doc 的目标

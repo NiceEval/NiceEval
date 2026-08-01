@@ -17,4 +17,4 @@
 | C8 | MemoryBench 默认 template 后执行 EvalDef setup |
 | C9 | `environments[profile]` 提供预制完整 case |
 | C10 | 有 source 和无 source 的 Eval 各走自己的解析分支 |
-| C11 | Terminal-Bench 每题声明 criteria，并在 `afterAgent` 中用普通 API 跑测 |
+| C11 | Terminal-Bench 每题在 `send` 后直接用普通 Sandbox API 上传并跑测 |

@@ -36,34 +36,19 @@ export default defineEval({
 | `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
-| `fixture.files` / `setup` / `teardown` | 可见 Fixture 与动态任务准备 | [README](README.md#defineeval-的形状) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
-| `criteria` / `t.afterAgent(callback)` / `privateFiles` | 隐藏输入身份、Agent 结束边界与永不上传文件 | [判据文件](#受管-eval-文件) | [隐藏测试与参考实现](use-case/criteria-files.md) |
+| `setup` / `teardown` | 动态任务准备与收尾 | [README](README.md#defineeval-的形状) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
+| 普通 `t.sandbox.upload*()` | 按源码顺序传入起始文件或测试文件 | [Sandbox 文件操作](../sandbox/library/operations.md) | [本地测试文件](use-case/criteria-files.md) |
 | `t.progress` / `t.diagnostic` / `t.skip` | 运行反馈与明确跳过 | [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 
-## 受管 Eval 文件
+## Eval 文件就是普通 Sandbox 输入
 
-静态文件直接在 EvalDef 内声明，不在模块顶层执行登记函数:
+本地文件不在 EvalDef 中重复登记。
+`uploadFile` 接受 `Buffer | URL`，`uploadDirectory` 接受相对路径或 URL；Runner 在实际读取本地 source 时记录 transfer manifest。
 
-```typescript
-type FileTree = {
-  readonly from: string | URL;
-  readonly ignore?: readonly string[];
-};
+上传发生在第一个 `send` 前，文件就对 Agent 可见；发生在某个 `send` 返回后，过去的 turn 看不见；随后再 `send` 时下一轮正常可见。
+完整规则见[本地测试文件](use-case/criteria-files.md)。
 
-type EvalFileMount = {
-  readonly from: string | URL | FileTree;
-  readonly to: string;
-};
-```
-
-`fixture.files` 在 Agent 前按声明目标上传；`criteria` 是不含目标路径的 keyed source 声明；`privateFiles` 永不上传。
-目录递归展开并按稳定路径排序；`ignore` 使用项目统一 glob 语义。
-
-`t.afterAgent(callback)` 永久关闭 Agent 驱动面并冻结 agent diff。
-callback 通过 `after.criteria.<key>` 取得 source handle，再将它传给普通 `uploadFile` / `uploadDirectory`；命令和断言也继续使用普通 API，不另造 verifier 子框架。
-
-`loadText` / `loadYaml` / `loadJson` 继续服务发现期需要读进定义值的数据。
-静态文件树的完整指纹、泄题门、上传与清理语义见[判据文件用例](use-case/criteria-files.md)。
+`loadText` / `loadYaml` / `loadJson` 继续服务发现期需要读进定义值的数据，不承担文件传输登记。
 
 ## tags 与 environment：让 experiment 选择
 

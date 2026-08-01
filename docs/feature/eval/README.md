@@ -28,14 +28,6 @@ export default defineEval({
   reporters?: Reporter[];               // 这个 eval 专用的报告器
   metadata?: Record<string, unknown>;   // 原样落进记录,给报告和事后分析读
 
-  fixture?: {
-    files: Array<{ from: string | URL | FileTree; to: string }>;
-  };                                    // Agent 前上传的可见起始文件
-
-  criteria?: Record<string, string | URL | FileTree>;
-  //  只声明隐藏输入身份,不自动上传、不指定 Sandbox 目标
-  privateFiles?: Array<string | URL | FileTree>; // 永不上传的参考答案等
-
   async setup(sandbox, ctx) { /* 这道题的任务素材 */ },
   //  拿到完整 Sandbox(不是 test 里那个受限的 t.sandbox 视图);写入算 eval 归因,永不进 agent diff
   //  ctx 是绑定到 eval.setup 的窄上下文:ctx.progress(...) 报短期 activity,ctx.diagnostic(...) 报永久 warning/error
@@ -44,12 +36,7 @@ export default defineEval({
   //  收尾链的第一段(eval.teardown → agent.teardown → sandbox.teardown)
   //  当且仅当 setup 的时点走到过才执行;setup 抛错、test 抛错都不豁免
 
-  async test(t) {
-    /* 交互 + 断言 */
-    await t.afterAgent(async (after) => {
-      /* Agent 永久结束后的普通上传、命令、读取与断言 */
-    });
-  },
+  async test(t) { /* 按顺序写普通上传、交互、命令、读取与断言 */ },
 });
 ```
 
@@ -71,22 +58,18 @@ export default defineEval({
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
 两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
+`metadata` 只在 Experiment 谓词或 Reporter 确实消费某个结构化业务维度时使用。
+能从 eval id、tags、description 或 Environment 推导出的值不重复写；没有消费者就省略，不能把它当任意杂物抽屉。
+
 `setup` 在环境层 Hook 与变更分类账锚点之后、`agent.setup` 与 `test(t)` 之前跑,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖)。
 要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
 它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
 
-`fixture.files` 是静态可见 Fixture 的声明面。
-Runner 在 `setup` 后、Agent 前上传并记为 eval 归因；动态 checkout、外部临时资源与运行时生成仍使用 `setup`。
+文件传输不设 EvalDef field。
+第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。
 
-`criteria` 是隐藏判据的身份声明面。
-Runner 在发现期计算判据指纹并执行泄题门，但不替作者选择 Sandbox 目标或自动运行验证。
-
-`t.afterAgent(callback)` 是不可逆的生命周期边界。
-进入时 Runner 永久关闭 Agent 驱动面并冻结 agent diff；`after` 不提供 `send` 或 session 创建入口，但上传、命令、读取与断言仍使用普通 API。
-`after.criteria.<key>` 是受管 source handle，可以直接传给普通 `uploadFile` / `uploadDirectory`；Runner 清理这些 handle 的受管上传，清理或 reset 失败时禁止复用 Sandbox。
-
-`privateFiles` 进入判据指纹与泄题门，但在任何相位都不上传。
-文件声明、递归目录、排除规则与错误语义见[判据文件](use-case/criteria-files.md)。
+本地路径或 URL 进入普通上传 API 时，Runner 自动记录 transfer manifest。
+文件身份、动态泄漏检查与携带规则见[本地测试文件](use-case/criteria-files.md)。
 
 **禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
 改名即改 id,不会腐烂。
@@ -101,7 +84,7 @@ evals/foo/eval.ts       → eval id "foo"
 ```
 
 `eval.ts` 只是文件夹入口约定,仍默认导出 `defineEval` / `defineScoreEval` 结果,不引入第二套评分或 Experiment 模型。
-目录里可以平铺 Dockerfile、Compose、题面数据、起始 fixture 与 criteria,也可以分子目录;没有入口的目录(如 `_lib/`)是普通共享代码,不会被发现成 eval。
+目录里可以平铺 Dockerfile、Compose、题面数据、起始文件与测试文件,也可以分子目录;没有入口的目录(如 `_lib/`)是普通共享代码,不会被发现成 eval。
 
 共址不等于同一身份域或同一可见时点,三类文件各有归属:
 
@@ -109,14 +92,13 @@ evals/foo/eval.ts       → eval id "foo"
 |---|---|---|
 | Dockerfile、Compose、build context、相对 bind mount | provider 构建 image、启动 Compose 时使用;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
 | 题面数据(经 `loadYaml` / `loadText` 读入) | 宿主发现期读取 | eval 数据指纹 |
-| `fixture.files` | Eval setup 后、Agent setup 前上传 | eval 数据指纹 |
-| `criteria` 与 `privateFiles` | criteria 只在 `afterAgent` 中按作者普通调用使用;private 永不上传 | eval 判据指纹 |
+| 普通本地上传 source | 调用发生时上传；相对 `send` 的位置决定 Agent 是否可见 | 首次执行写入 transfer manifest，后续用于携带 |
 
-普通起始 fixture 由 eval `setup` 或 `test` 在 send 前上传,Agent 本来就应看见,进 eval 归因。
-目录共址只解决组织问题,不把环境、fixture、criteria 三种身份域合并成一个哈希:改 criteria 只作废判据指纹,不触发镜像重建;改 Dockerfile 只改环境身份。
+普通起始文件在 send 前上传，Agent 本来就应看见；测试文件在对应 send 返回后上传。
+目录共址只解决组织问题，不把环境构建与运行期文件传输合并成一个哈希。
 
-solution、生成器与参考答案默认不进入可运行 eval 目录;必须共址时放声明 private 的路径,它不得进入任何 build context 或最终镜像。
-发现期把声明的 criteria / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门criteria-与-build-context-的交叉检查)。
+solution、生成器与参考答案不得进入任何 build context 或最终镜像。
+它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；环境包的隔离规则见 [Sandbox Case · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
 
 ## defineScoreEval：计分制题型
 

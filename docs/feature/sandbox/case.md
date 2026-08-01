@@ -93,8 +93,7 @@ const environment = composeSandbox({
 
 export default defineEval({
   environment,
-  criteria: { tests: { from: new URL("tests/", import.meta.url) } },
-  async test(t) { /* send 后在 afterAgent callback 中用普通 API 跑测 */ },
+  async test(t) { /* send 后直接用普通 Sandbox API 上传并跑测 */ },
 });
 ```
 
@@ -300,17 +299,18 @@ interface SandboxGroupEntry {
 Group keep 是独立能力:支持者必须能整组 suspend / resume、恢复后重过 ready 门、失败时保留可再次清理的注册项。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
 
-## 泄题门:criteria 与 build context 的交叉检查
+## 动态泄漏检查:本地上传与 Agent 可见 closure
 
-folder eval 的 criteria / private 文件与环境输入共址,泄漏面必须在发现期收口:
+folder eval 的测试文件与环境输入共址时，materializer 与普通上传共同给出泄漏证据:
 
-- 发现期把 EvalDef 声明的 criteria / private 路径与每个 Docker build context 的 `.dockerignore` 求值结果做交叉检查;仍会进入 build context 的隐藏文件按配置错误报出,因为一行 `COPY . .` 就足以把它泄给 Agent。
-- 修法三选一:移出 context、写进 `.dockerignore`、或让 materializer 生成等价的 filtered context;过滤规则自身进入 BuildKey。
-- 检查覆盖 Compose 的全部 build context,不只 mainService;相对 bind mount 按服务可见面检查。
-  criteria 可以在 `afterAgent` 阶段通过普通 API 上传到 main,但不能在 Agent 阶段挂入任一 Agent 可达服务;private 文件任何阶段都不能挂入。
-- 只有显式改成普通 fixture 才允许 Agent 可见,没有任何绕过开关。
+- materializer 记录全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts。
+- `test(t)` 中的普通本地上传记录 source tree 与内容摘要。
+- 判定封口前交叉比对两份事实；send 窗口外才上传的测试若已在 Agent 可见 closure 中，本次 Attempt `errored`。
+- 后续运行可用历史 transfer manifest 在启动 Agent 前预检；首次运行只能事后拒绝结果，不能宣称阻止了暴露。
+- 修法是移出 context、写进 `.dockerignore`，或让 materializer 生成 filtered context；过滤规则自身进入 BuildKey。
 
-criteria / private 的声明方式与三类文件的身份归属见 [Eval · 目录入口](../eval/README.md)。
+需要保密时必须用物理隔离或 filtered context，不能把动态检查当保密边界。
+完整规则见 [Eval · 本地测试文件](../eval/use-case/criteria-files.md)。
 
 ## Provider 能力矩阵
 

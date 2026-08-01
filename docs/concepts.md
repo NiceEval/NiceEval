@@ -32,9 +32,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 评测用例 | Eval | 一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 | [Eval](feature/eval/README.md) |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
-| Fixture | Fixture | `fixture.files` 上传的可见起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
-| 判据 | criteria | EvalDef 内声明的隐藏输入身份;只在 `afterAgent` 边界后作为普通上传 source 使用,算判据身份且不进 agent diff | [判据文件](feature/eval/use-case/criteria-files.md) |
-| Agent 后段 | after-Agent phase | `t.afterAgent(callback)` 打开的不可逆阶段;Agent 驱动面已关闭,callback 继续使用普通 Sandbox 与断言 API | [判据文件](feature/eval/use-case/criteria-files.md) |
+| Fixture | Fixture | 第一次 `send` 前通过普通 Sandbox API 写入的起始素材,加 `EvalDef.setup` 准备的内容;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
+| 本地传输清单 | transfer manifest | 普通本地上传实际读取的 source tree、内容摘要、Sandbox 目标与 send 区间;由 Runner 自动记录 | [本地测试文件](feature/eval/use-case/criteria-files.md) |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
 | 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 从输入数组生成多条 eval,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
 | 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名 | [Eval](feature/eval/README.md) |

@@ -1,13 +1,12 @@
-# 判据文件:隐藏测试与参考实现
+# 本地测试文件:普通上传与动态身份
 
 ## 解决什么问题
 
-沙箱 coding 题常用一份文件或目录树判分，例如隐藏测试、参考输出与跑测脚本。
-它们的内容变化必须作废当前 Eval 的历史结果，但 Agent 开始前不能看到它们。
+沙箱 coding 题常在 Agent 返回后上传隐藏测试、参考输出或跑测脚本。
+这些材料需要影响缓存，也不能污染 agent diff，但它们仍只是普通文件。
 
-判据文件在 `criteria` 中声明身份。
-需要使用时，Eval 显式进入 `t.afterAgent(...)`，再把 criteria handle 交给普通 Sandbox 上传 API。
-Runner 负责发现期指纹、泄题门、不可逆边界、归因与受管上传清理，不要求模块顶层登记，也不发明 verifier 专用对象。
+不要在模块顶层登记，也不要在 EvalDef 增加文件 field。
+在需要它们的位置直接调用普通 Sandbox API。
 
 ## 完整写法
 
@@ -16,103 +15,61 @@ import { defineEval } from "niceeval";
 import { commandSucceeded } from "niceeval/expect";
 
 export default defineEval({
-  criteria: {
-    tests: {
-      from: new URL("fixtures/sqlite/with-gcov/", import.meta.url),
-      ignore: ["**/__pycache__/**"],
-    },
-  },
-
   async test(t) {
     await t.send("补测试把 gcov 行覆盖率提过线;不许改 tests/ 下的文件。");
 
-    await t.afterAgent(async (after) => {
-      await after.sandbox.uploadDirectory(after.criteria.tests, "/tests");
-      const result = await after.sandbox.runShell("bash /tests/run-tests.sh");
-      after.check(result, commandSucceeded());
+    await t.sandbox.uploadDirectory(new URL("fixtures/sqlite/with-gcov/", import.meta.url), "/tests", {
+      ignore: ["**/__pycache__/**"],
     });
+    const result = await t.sandbox.runShell("bash /tests/run-tests.sh");
+    t.check(result, commandSucceeded());
   },
 });
 ```
 
-调用 `afterAgent` 时，Runner 等待未完成 turn，永久关闭本 Attempt 的 Agent 驱动面并冻结 agent diff。
-callback context 不提供 `send`、`newSession` 或恢复 Agent 的入口；callback 返回后也不能再经原来的 `t` 发送 turn。
+`await t.send()` 返回后才执行上传，因此过去的 Agent turn 不可能通过这次上传看到 `/tests`。
+若作者后面再次 `send`，下一轮能看见 `/tests`，与任何普通 Sandbox 写入一致。
 
-隐藏性来自不可逆 lifecycle boundary。
-上传目录、运行命令和断言本身仍是普通 API，criteria 只是受管 source handle。
+## 本地 source
 
-## 文件 source
+`uploadFile(path, content)` 的 `content` 接受 `Buffer | URL`。
+`uploadDirectory(localDir, targetDir, options)` 的 `localDir` 接受 Eval 模块相对 URL 或相对路径。
 
-`criteria` 的每个 value 接受项目根相对字符串、Eval 模块相对 URL，或带 `ignore` 的文件树:
+目录按稳定相对路径顺序展开。
+`ignore` 使用项目统一 glob 语义，只过滤该 source 下的相对路径。
 
-```typescript
-type EvalFileSource =
-  | string
-  | URL
-  | {
-      readonly from: string | URL;
-      readonly ignore?: readonly string[];
-    };
-```
+source 不存在、穿出项目根、符号链接逃逸或目录展开为空时，上传调用报清晰错误。
 
-criteria declaration 不含 `to`。
-目标文件或目录由 `afterAgent` 中的普通 `uploadFile(remotePath, source)` / `uploadDirectory(source, remotePath)` 调用明确给出。
+## 动态 transfer manifest
 
-目录 source 按稳定相对路径顺序递归计算身份。
-`ignore` 使用项目统一 glob 语义，只过滤该 source 下的相对路径；生成物、系统文件和本地缓存都不隐式排除。
+Runner 在普通上传实际读取本地字节时，同步记录 source tree、内容摘要、Sandbox 目标与它处于哪个 send 区间。
+作者不需要把同一路径再登记一次。
 
-## 指纹
+首次执行产生 manifest。
+后续携带在派发前重算上一份 manifest；内容、文件增删或匹配集变化都会使该 Attempt 重跑。
+Eval 源码闭包变化时，旧依赖集合可能已经不完整，因此直接重跑并产生新 manifest。
 
-Runner 在发现期解析每条 Eval 自己的文件声明。
-内容、相对路径与文件类型进入 Eval 判据指纹；criteria key 用于定义内寻址，但宿主绝对路径与 mtime 不进入身份。
+## 动态泄漏检查
 
-改一字节、增加文件或删除文件都只作废声明它的 Eval。
-同一模块导出多条 Eval 时也按每个 EvalDef 的字段分别计算，不把模块级登记表共享给整组条目。
+materializer 记录 Agent 启动前实际可见的 build/mount closure。
+判定封口前，Runner 把本次 send 窗口外上传的本地 source 与该 closure 比对；同一测试材料若早已对 Agent 可见，本次 Attempt `errored`。
 
-source 不存在、穿出项目根或符号链接逃出项目根时，发现期直接报配置错误。
-静默得到空目录会让判据悄悄变窄，因此不允许。
+首次执行只能在实际走到上传调用后知道动态 source，因此这项检查保证“不采信泄题结果”，不承诺倒流阻止首次暴露。
+需要保密时，把测试材料放在 build context 外，或使用 materializer 的 filtered context。
 
-## 泄题门
+## Solution 与参考实现
 
-`criteria` 与 `privateFiles` 都是隐藏输入。
-发现期把它们与当前 Eval Environment 的全部 Docker build context 和 Agent 可达 bind mount 交叉检查。
+Eval 从未读取的 solution 不进入 transfer manifest，也不需要 `privateFiles` 声明。
+它是否被 Dockerfile、Compose bind mount 或 image 暴露，是 Environment package 的隔离责任。
 
-仍会进入 image、Agent 阶段 mount 或其它 Agent 可达 service 的 criteria 按配置错误拒绝。
-修法是调整 `.dockerignore`、使用过滤后的 build context，或把隐藏文件移出公开 context。
+## 归因
 
-`privateFiles` 用于 solution、生成器与参考答案:
-
-```typescript
-export default defineEval({
-  privateFiles: [
-    new URL("solution.sh", import.meta.url),
-    new URL("references/", import.meta.url),
-  ],
-  async test(t) { /* ... */ },
-});
-```
-
-private files 进入判据指纹和泄题门，但在任何运行相位都不上传。
-
-## after-Agent 归因与清理
-
-`afterAgent` callback 中的上传、命令、测试临时产物与其它写入属于 after-Agent 归因，不进入 agent diff。
-作者不需要用 `diff.ignore` 防止测试 venv、coverage 或 cache 撑大 agent evidence。
-
-Runner 记录 criteria handle 经普通上传 API 写入的目标，并在 callback 结束后清理这些受管上传。
-脚本自行产生的其它文件由 Attempt reset/teardown 屏障处理；Sandbox 复用时，cleanup 或 reset 失败便终止复用窗口。
-
-## 动态判据
-
-判据身份必须在 Attempt 开始前确定。
-需要从远端或生成器取得判据时，先在发现期得到内容寻址、可复现的本地产物，再把它声明为 `criteria`。
-
-运行期临时下载一份未进入指纹的测试会让历史结果无法比较，不提供这种便捷出口。
+agent diff 只折叠 `send` 窗口内的 Sandbox 变化。
+跑测上传、venv、coverage 与 cache 发生在窗口外时属于 eval 归因，不需要 `diff.ignore` 或特殊 verification phase。
 
 ## 边界
 
-- Agent 本来就应看到的起始文件写进 `fixture.files`，不写进 criteria。
-- checkout、凭据派生或外部临时资源等动态题目准备写进 `EvalDef.setup`。
-- Agent 运行后产生的文件是 evidence；边界前通过 `t.sandbox` 读取，边界后通过 `after.sandbox` 读取。
-- `afterAgent` 不等于验证：公开探针、产物采集等任何需要 Agent 永久结束的工作也走同一边界。
-- 巨型模型、系统包和运行时不作为 criteria 上传，归 Environment 或预制 Sandbox Case。
+- Agent 一开始就应看到的文件，在第一次 `send` 前普通上传。
+- checkout、凭据派生或外部临时资源可以放 `EvalDef.setup`。
+- 内存生成的内容使用 Buffer 上传；其身份由生成它的源码或已登记数据输入承担。
+- 巨型模型、系统包和运行时归 Environment，不在每条 Eval 中上传。

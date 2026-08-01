@@ -26,5 +26,5 @@ export default defineEval({
 });
 ```
 
-该 Eval 没有 turn 后操作时，不调用 `afterAgent`。
-PLAN-7 不要求所有 Eval 为了统一形状声明空 `fixture`、空 `criteria` 或空 callback。
+该 Eval 没有文件传输时就不调用上传 API。
+PLAN-7 不要求所有 Eval 为了统一形状声明空文件字段。

@@ -20,9 +20,9 @@
 - `sandboxReuse` 窗口内 SandboxSpec setup 只跑一次,跨 Attempt 会变化的条件禁止放这层。
 - 无 identity 的 plain setup 不参与缓存命中,报告标注 setup 身份不可比。
 - 每道 Eval 保持自包含，不要求数据集 adapter 或共享 Eval 工厂消除重复。
-- 可见 Fixture 写在 `fixture.files`，隐藏判据身份写在 keyed `criteria`。
-- `t.afterAgent(callback)` 是不可逆 Agent 结束边界；callback 用普通 Sandbox 与断言 API，不另造 verifier 子框架。
-- Runner 负责 criteria 的发现期身份、泄题门、边界归因与受管上传清理；正常路径没有模块顶层登记副作用。
+- 起始文件与测试文件都走普通 Sandbox 上传；相对 `send` 的源码顺序决定 Agent 可见性。
+- Runner 从真实本地上传生成 transfer manifest，send 窗口负责 agent diff 归因。
+- 不增加文件专用 EvalDef field、Verifier context 或 Agent 结束状态机；正常路径没有模块顶层登记副作用。
 - Eval 模块保持纯声明；Compose nonce、临时目录与日志收集由 materializer 按 Attempt 管理。
 
 ## 真实仓库证据
@@ -35,7 +35,7 @@
 `TaskPaths` 固定从同一目录取得 `task.yaml`、`docker-compose.yaml`、`run-tests.sh`、`tests/**` 与 solution;harness 把 Compose build/up 后的 `client` 交给 Agent,并在 Agent 结束后才复制测试材料。
 
 这证明 Compose 的 owner 是 task package,不是 Experiment。
-每题 Eval 可以直接引用自己的 task package，并在同一份 EvalDef 中声明 Environment source 与 criteria，再在 `afterAgent` callback 中写普通上传、跑测与断言。
+每题 Eval 可以直接引用自己的 task package，并在同一份 `test(t)` 中按顺序写 send、普通上传、跑测与断言。
 
 真实迁移还揭示了 PLAN-6 的遗漏。
 为了让 verifier 进入指纹，作者不得不在 `defineEval()` 外顶层执行 `loadCriteria`；为了控制可见时机，又要在 `test(t)` 中手工上传、运行和清理同一批文件。
@@ -56,7 +56,7 @@ PLAN-5 把四类不同问题同时暴露给作者:
 1. 起点所有权:Eval Base、默认 Base、条件 Base 与融合 case。
 2. 条件建模:Eval/Experiment Requirement 与 owner 命名域。
 3. 调度建模:`dependsOn`、`resources`、single-flight 与多道验证屏障。
-4. 正交生命周期:state、Agent runtime、Fixture、hidden criteria 与 Agent 结束边界。
+4. 正交生命周期:state、Agent runtime、普通文件传输与 send 窗口。
 
 作者为“在最终 Sandbox 装一个工具”付出了理解整个组合系统的成本。
 而两家真实仓库只要求两个稳定动作:Experiment 给 Sandbox 装实验工具,Eval 给 Sandbox 准备题目依赖。
@@ -75,7 +75,7 @@ PLAN-5 还把 `e2bSandbox({ template })` 与 Eval source 解释成两个 Base �
 | PLAN-4 | Requirement、Base、Ensure | 两方可贡献,但默认 template 被误判成 Base 冲突 | 否决 |
 | PLAN-5 | 两组 Requirement、四档 Base、融合 case、调度图 | 表达力最大,作者面和实现面也最大 | 否决 |
 | PLAN-6 | Environment、SandboxSpec setup、EvalDef setup、Agent setup | 环境 owner 正确，但 hidden verifier 仍靠顶层登记和手工协调 | 被 PLAN-7 取代 |
-| PLAN-7 | PLAN-6 的 owner 加 criteria 身份与 `afterAgent` 边界 | 每题自包含，普通 API 保持正交，Runner 接管身份与边界机械动作 | 采纳 |
+| PLAN-7 | PLAN-6 的 owner 加普通上传动态依赖 | 每题自包含，不新增文件或 Agent 结束 API | 采纳 |
 
 ## 两条迁移路径
 
@@ -87,9 +87,8 @@ Terminal-Bench:
   -> Docker materializer 启动完整 case
   -> Experiment sandbox setup 安装 mempal
   -> Agent setup
-  -> Eval 调用 afterAgent，Runner 永久关闭 Agent 并冻结 diff
-  -> callback 用普通 API 上传 criteria、跑测与断言
-  -> Runner 清理受管上传
+  -> send 返回后 Eval 用普通 API 上传本地测试、跑测与断言
+  -> Runner 记录 transfer manifest，并折叠 send-window diff
 ```
 
 MemoryBench:
@@ -118,11 +117,11 @@ PLAN-7 不承诺运行时合并两个起点。
 1. SandboxSpec setup 确认作用于最终解析出的主 Sandbox,不只作用于默认 case。
 2. EvalDef setup 确认在 workspace baseline 后、Agent setup 前执行。
 3. `defineSandboxSetup()` 为少数重准备 helper 提供 identity、check/install/recheck 与 staged payload。
-4. EvalDef 增加 `fixture.files`、keyed `criteria` 与 `privateFiles`，TestContext 增加一次性的 `afterAgent(callback)`。
-5. 发现期逐 Eval 解析受管文件身份并执行泄题门，不使用模块级共享登记表代替归属。
-6. Runner 增加 `eval.afterAgent` phase，在边界入口冻结 agent diff，并记录 callback 的普通操作与受管清理。
-7. 记录所选 Sandbox Case、三层 setup activity 与受管文件 lifecycle activity。
-8. 删除 `loadCriteria` / `loadPrivate` 公共面，不保留模块级登记与 EvalDef 声明两套入口。
+4. 普通上传增加 URL source，并在读取本地字节时写 transfer manifest。
+5. carry planner 在源码闭包不变时重算历史 manifest；源码变化时重跑。
+6. materializer 记录 Agent 可见 closure，判定封口前与本地上传 source 动态比对。
+7. 记录所选 Sandbox Case、三层 setup activity、普通上传 activity 与 transfer manifest。
+8. 删除 `loadCriteria` / `loadPrivate` 公共面，不增加替代登记 field。
 
 依赖图、资源锁、跨 helper 自动并行与外部 state API 不进入本决策的第一阶段。
 出现独立真实样本后再按对应 Feature 扩展,不回填进 Environment contribution。
@@ -130,5 +129,5 @@ PLAN-7 不承诺运行时合并两个起点。
 ## 遗留风险
 
 - 预制 case 需要携带构建时写入的 Environment source provenance,规划期才能与当前 source 的内容身份核对。不能从当前 source 动态计算声明值给既有产物背书;在产物元数据与 per-eval fingerprint 拥有同源输入前,不公开 `fulfills` 之类的声明字段。
-- 每题 Environment 的 build context 必须排除 solution 与 hidden criteria,并检查 Compose bind mount 泄漏。
+- 每题 Environment 的 build context 必须排除 solution 与本地测试，并检查 Compose bind mount 泄漏。
 - 某些工具同时需要安装与跨 Attempt 状态。PLAN-7 保留现有 setup/teardown 写法;若以后引入独立 state lifecycle,应由对应 Feature 单独迁移。

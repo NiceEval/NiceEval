@@ -146,8 +146,8 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 发现(evals/ 的 *.eval.ts / *.eval.tsx 与目录入口 eval.ts,experiments/ 的实验,路径推导 id;同 id 双入口报重名) | `src/runner/discover.ts` |
-| folder-local sandbox source、默认 profile id、隐藏 criteria/private 与 build context 的泄题门交叉检查(当前实现仍由 loader 登记;PLAN-7 的 EvalDef 字段尚待接线) | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
-| `criteria` keyed handles 与不可逆 `t.afterAgent(callback)`(PLAN-7 目标;当前 loader/context 尚无该公开字段) | 目标接线位置:`src/runner/types.ts`、`src/context/`、`src/runner/attempt.ts` 与 Sandbox 上传包装层;契约见 `docs/feature/eval/use-case/criteria-files.md` |
+| folder-local sandbox source、默认 profile id、当前 loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
+| 普通本地上传的 transfer manifest 与动态泄漏比对(PLAN-7 目标;当前上传包装尚不记录 source identity) | 目标接线位置:`src/sandbox/` 上传包装、`src/runner/attempt.ts`、fingerprint/carry planner 与 materializer closure 记录;契约见 `docs/feature/eval/use-case/criteria-files.md` |
 | 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换、Agent Ensure 调用) | `src/runner/attempt.ts` |
 | 两层时间模型(`PhaseTiming` / `TimingActivity` / `TimingOrigin`:锚点 enter / 失败标记 / 收尾段测量 / hook 与命令子节点;Run 级 `RunMeta.timings` 的双时钟 recorder) | `src/runner/timing.ts`(`TimingRecorder`;attempt 侧接线在 `src/runner/attempt.ts`,Run 侧接线在 `src/runner/run.ts`);类型在 `src/runner/types.ts` / `src/record/types.ts` |
