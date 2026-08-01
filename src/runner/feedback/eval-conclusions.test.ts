@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { evalConclusionRows } from "./eval-conclusions.ts";
 import type { DiagnosticNotice, EvalResult } from "../types.ts";
+import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
 
 function result(id: string, attempt: number, verdict: EvalResult["verdict"], extra: Partial<EvalResult> = {}): EvalResult {
   return {
@@ -15,6 +16,7 @@ function result(id: string, attempt: number, verdict: EvalResult["verdict"], ext
     attempt,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     experimentId: "exp-a",
     locator: `@locator-${id}-${attempt}`,
     ...extra,

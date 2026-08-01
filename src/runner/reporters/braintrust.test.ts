@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { toBraintrustEvent } from "./braintrust.ts";
 import type { EvalResult } from "../../types.ts";
+import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
 
 function baseResult(overrides: Partial<EvalResult> = {}): EvalResult {
   return {
@@ -11,6 +12,7 @@ function baseResult(overrides: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 42_000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...overrides,
   };
 }
@@ -86,7 +88,7 @@ describe("toBraintrustEvent", () => {
         model: "gpt-5.2",
         attempt: 1,
         verdict: "failed",
-        experiment: { flags: { tape: true }, attempts: 1, earlyExit: true, selectedEvalIds: [] },
+        experiment: { flags: { tape: true }, attempts: 1, earlyExit: true, selectedEvalIds: [], sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
         assertions: [{ name: "compiles", severity: "gate", score: 0, outcome: "failed" as const, detail: "tsc failed" }],
       }),
     );

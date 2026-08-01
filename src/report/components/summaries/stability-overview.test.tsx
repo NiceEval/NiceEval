@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EvalResult, Verdict } from "../../../types.ts";
+import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
 import type { AttemptHandle, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
@@ -26,6 +27,7 @@ function res(id: string, verdict: Verdict, attempt = 0): EvalResult {
     startedAt: `2026-07-01T00:00:00.${String(seq).padStart(6, "0")}Z`,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
   };
 }
 

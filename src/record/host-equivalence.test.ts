@@ -23,6 +23,7 @@ import { openRecord } from "./index.ts";
 import type { Sample, SampleIssue } from "./index.ts";
 import { currentSample, latestRunSample, type SampleOptions } from "../sample/index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 
@@ -36,11 +37,11 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
-type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
+type AttemptFixture = Pick<EvalResult, "id" | "verdict" | "evidenceCoverage"> &
   Partial<Pick<EvalResult, "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "usage" | "startedAt" | "artifactBase" | "artifacts">>;
 
 function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}): AttemptFixture {
-  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
+  return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...extra };
 }
 
 /** 实验目录名清洗:与 docs/feature/record/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
@@ -89,6 +90,9 @@ async function writeSnapshot(
           experiment: {
             attempts: 1,
             earlyExit: true,
+            sandboxLayer: {},
+            sandboxPlansByEval: {},
+            agentInstalls: [],
             ...(opts.selectedEvalIds !== undefined ? { selectedEvalIds: opts.selectedEvalIds } : {}),
             ...opts.experiment,
           },

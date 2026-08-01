@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../types.ts";
+import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
 import type { AttemptHandle, Record, Sample, Run } from "../../record/index.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../components/scope.harness.ts";
@@ -81,11 +82,19 @@ function res(id: string, verdict: Verdict, extra: Partial<EvalResult> = {}): Eva
     startedAt: `2026-07-01T00:00:00.${String(seq).padStart(6, "0")}Z`,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...extra,
   };
 }
 
 let runSeq = 0;
+
+function experimentInfo(
+  info: Omit<NonNullable<Run["experiment"]>, "sandboxLayer" | "sandboxPlansByEval" | "agentInstalls"> &
+    Partial<Pick<NonNullable<Run["experiment"]>, "sandboxLayer" | "sandboxPlansByEval" | "agentInstalls">>,
+): NonNullable<Run["experiment"]> {
+  return { sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [], ...info };
+}
 
 function snap(spec: {
   experimentId: string;
@@ -720,7 +729,7 @@ describe("SampleOverview(组合组件)", () => {
   it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时 Series.by=line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const withLine = snap({ experimentId: "series/with-line", results: [res("q", "passed", withCost)] });
-    withLine.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    withLine.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
     const withoutLine = snap({ experimentId: "series/plain", results: [res("q", "passed", withCost)] });
 
     const seriesByOf = (node: unknown): string | undefined => {
@@ -750,9 +759,9 @@ describe("SampleOverview(组合组件)", () => {
   it("connect 缺省跟随 series 解析:默认 line 时同 series 两点连线,默认 agent 时不连线", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const lineA = snap({ experimentId: "connect/a", agent: "codex", results: [res("q", "passed", withCost)] });
-    lineA.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
     const lineB = snap({ experimentId: "connect/b", agent: "codex", results: [res("q", "failed", withCost)] });
-    lineB.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
 
     const connectOf = async (node: unknown): Promise<boolean | undefined> => {
       const charts = collectElementsByType(node, Chart);
@@ -781,9 +790,9 @@ describe("SampleOverview(组合组件)", () => {
 
   it("line 缺省对整个 Sample 生效:混入一个声明 line 的实验后,没声明的实验落 (missing) 而非回退 agent;显式 series 覆盖全部", async () => {
     const lineA = snap({ experimentId: "mem/codex-baseline", agent: "codex", results: [res("q", "passed")] });
-    lineA.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "baseline" } };
+    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "baseline" } });
     const lineB = snap({ experimentId: "mem/codex-mempal", agent: "codex", results: [res("q", "failed")] });
-    lineB.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "mempal" } };
+    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "mempal" } });
     const plain = snap({ experimentId: "dev/one", agent: "codex", results: [res("q", "passed")] });
     const all = [lineA, lineB, plain];
 

@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, AttemptError, EvalResult, O11ySummary, Verdict } from "../../types.ts";
+import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
 import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
 import type { Record } from "../../record/types.ts";
@@ -76,6 +77,7 @@ function res(id: string, verdict: Verdict, extra: Partial<EvalResult> = {}): Eva
     startedAt: `2026-07-01T00:00:00.${String(seq).padStart(6, "0")}Z`,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...extra,
   };
 }
@@ -115,7 +117,19 @@ interface SnapSpec {
   model?: string;
   runStartedAt?: string;
   knownEvalIds?: string[];
-  experiment?: Run["experiment"];
+  experiment?: Omit<NonNullable<Run["experiment"]>, "sandboxLayer" | "sandboxPlansByEval" | "agentInstalls"> &
+    Partial<Pick<NonNullable<Run["experiment"]>, "sandboxLayer" | "sandboxPlansByEval" | "agentInstalls">>;
+}
+
+function experimentInfo(
+  info: NonNullable<SnapSpec["experiment"]>,
+): NonNullable<Run["experiment"]> {
+  return {
+    sandboxLayer: {},
+    sandboxPlansByEval: {},
+    agentInstalls: [],
+    ...info,
+  };
 }
 
 let runSeq = 0;
@@ -131,7 +145,7 @@ function snap(spec: SnapSpec): Run {
     completedAt: startedAt,
     agent: spec.agent ?? "agent-x",
     model: spec.model,
-    experiment: spec.experiment,
+    experiment: spec.experiment === undefined ? undefined : experimentInfo(spec.experiment),
     schemaVersion: 1,
     dir,
     knownEvalIds: spec.knownEvalIds,
@@ -1297,7 +1311,11 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
       results: [res("q1", "passed")],
       experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "on" } },
     });
-    const withoutFlag = snap({ experimentId: "compare/noflag", results: [res("q1", "failed")] });
+    const withoutFlag = snap({
+      experimentId: "compare/noflag",
+      results: [res("q1", "failed")],
+      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: {} },
+    });
     const deltaScope = scopeOf([withFlag, withoutFlag]);
     const delta = await deltaTableData(deltaScope, { by: "experiment", conditions: conditionsByFlag("memory") });
     expect(validateDeltaData(delta)).toBeNull();

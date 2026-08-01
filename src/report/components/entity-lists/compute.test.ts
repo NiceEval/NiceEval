@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { failureSummaryOf } from "./compute.ts";
 import type { EvalResult } from "../../../types.ts";
+import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
 
 function erroredResult(message: string): EvalResult {
   return {
@@ -16,6 +17,7 @@ function erroredResult(message: string): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }

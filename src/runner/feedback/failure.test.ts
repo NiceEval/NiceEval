@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { shared } from "../../agents/shared.ts";
 import { failureDetailFromResult } from "./failure.ts";
 import type { EvalResult } from "../../types.ts";
+import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
 
 const RICH_TAIL = [
   "│ ❱ 205 │   raise APIError(",
@@ -52,6 +53,7 @@ function erroredResult(message: string): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     locator: "@1abc1234",
     error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };

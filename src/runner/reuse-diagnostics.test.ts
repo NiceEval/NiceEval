@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import type { EvalResult, LifecyclePhase } from "./types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 function attempt(opts: {
   id: string;
@@ -26,6 +27,7 @@ function attempt(opts: {
     startedAt: new Date().toISOString(),
     durationMs: 1,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...(opts.phase !== undefined ? { error: { code: "unexpected-error", message: "boom", origin: { scope: "attempt" as const, phase: opts.phase } } } : {}),
     sandbox: {
       provider: "docker",

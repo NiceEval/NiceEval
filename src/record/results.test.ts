@@ -16,7 +16,7 @@ import {
   RECORD_FORMAT,
   RECORD_SCHEMA_VERSION,
   publish,
-  createWriter,
+  createWriter as createRecordWriter,
   dedupeAttempts,
   openRecord,
   resolveLocator,
@@ -26,12 +26,17 @@ import {
   LocatorCollisionError,
   encodeAttemptLocator,
   type AttemptHandle,
+  type AttemptArtifacts,
+  type AttemptEntry,
   type EvalResult,
+  type RunDeclaration,
+  type RunWriter,
   type Writer,
   type Record,
   type Run,
   type RunMeta,
 } from "./index.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 
@@ -47,7 +52,49 @@ afterEach(async () => {
 
 /** 测试便利:封口一个 writer 已声明的全部 Run(finish() 现在是 RunWriter 的方法,
  *  每个 Run 各自只能封一次;多数测试不关心逐个 Run 分别封口,只要「全部封完」)。 */
-async function finishAll(writer: Writer): Promise<void> {
+type FixtureAttemptEntry = Omit<AttemptEntry, "evidenceCoverage"> & {
+  evidenceCoverage?: AttemptEntry["evidenceCoverage"];
+};
+type FixtureEvalResult = Omit<EvalResult, "evidenceCoverage"> & {
+  evidenceCoverage?: EvalResult["evidenceCoverage"];
+};
+type FixtureRunWriter = Omit<RunWriter, "writeAttempt"> & {
+  writeAttempt(entry: FixtureAttemptEntry, artifacts?: AttemptArtifacts): Promise<void>;
+};
+type FixtureWriter = Omit<Writer, "run" | "writeAttemptFor" | "snapshotWriters"> & {
+  run(decl: RunDeclaration): Promise<FixtureRunWriter>;
+  writeAttemptFor(result: FixtureEvalResult): Promise<void>;
+  snapshotWriters(): Promise<{ experimentId: string; writer: FixtureRunWriter }[]>;
+};
+
+const fixtureRunWriterByWriter = new WeakMap<RunWriter, FixtureRunWriter>();
+
+function fixtureRunWriter(writer: RunWriter): FixtureRunWriter {
+  const existing = fixtureRunWriterByWriter.get(writer);
+  if (existing !== undefined) return existing;
+  const fixture: FixtureRunWriter = {
+    ...writer,
+    writeAttempt(entry, artifacts) {
+      return writer.writeAttempt({ ...entry, evidenceCoverage: entry.evidenceCoverage ?? completeEvidenceCoverage }, artifacts);
+    },
+  };
+  fixtureRunWriterByWriter.set(writer, fixture);
+  return fixture;
+}
+
+/** 测试 fixture 也经真实 writer 走一遍，默认声明完整证据覆盖，避免旧格式对象绕过 v14 校验。 */
+function createWriter(...args: Parameters<typeof createRecordWriter>): FixtureWriter {
+  const writer = createRecordWriter(...args);
+  return {
+    ...writer,
+    run: async (decl) => fixtureRunWriter(await writer.run(decl)),
+    writeAttemptFor: (result) => writer.writeAttemptFor({ ...result, evidenceCoverage: result.evidenceCoverage ?? completeEvidenceCoverage }),
+    snapshotWriters: async () =>
+      (await writer.snapshotWriters()).map(({ experimentId, writer: run }) => ({ experimentId, writer: fixtureRunWriter(run) })),
+  };
+}
+
+async function finishAll(writer: Pick<FixtureWriter, "snapshotWriters">): Promise<void> {
   const runs = await writer.snapshotWriters();
   await Promise.all(runs.map(({ writer: snap }) => snap.finish()));
 }
@@ -63,7 +110,7 @@ function meta(over: { experimentId: string; agent: string; startedAt: string } &
 }
 
 function record(over: { id: string; attempt: number } & globalThis.Record<string, unknown>): EvalResult {
-  return { verdict: "passed", durationMs: 1000, assertions: [], ...over } as unknown as EvalResult;
+  return { verdict: "passed", durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...over } as unknown as EvalResult;
 }
 
 async function writeSnapshot(root: string, expDir: string, snapDirName: string, m: RunMeta): Promise<string> {
@@ -778,7 +825,7 @@ describe("createWriter", () => {
     const fresh: EvalResult = {
       id: "algebra/q1",
       experimentId: "compare/bub",
-      experiment: { flags: { style: "concise" }, attempts: 1, earlyExit: true, selectedEvalIds: ["algebra/q1"] },
+      experiment: { flags: { style: "concise" }, attempts: 1, earlyExit: true, selectedEvalIds: ["algebra/q1"], sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
       agent: "bub",
       model: "gpt-5.4",
       verdict: "passed",
@@ -787,6 +834,7 @@ describe("createWriter", () => {
       startedAt: "2026-07-01T08:01:00.000Z",
       durationMs: 1234,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       usage: { inputTokens: 10, outputTokens: 5 },
       estimatedCostUSD: 0.5,
       events: [{ type: "message", role: "assistant", text: "hi" } as never],
@@ -807,6 +855,7 @@ describe("createWriter", () => {
       startedAt: "2026-06-30T08:01:00.000Z",
       durationMs: 99,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       artifactBase: "compare_bub/2026-06-30T08-00-00-000Z-xxxx/algebra/q3/a1",
       artifacts: ["events", "sources"],
     };

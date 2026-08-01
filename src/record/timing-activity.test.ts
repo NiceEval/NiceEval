@@ -20,6 +20,7 @@ import {
   type TimingActivity,
 } from "./index.ts";
 import { attemptOrigin, createRunTimingRecorder, createTimingRecorder, runOrigin } from "../runner/timing.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {
@@ -68,6 +69,7 @@ describe("开放 activity key 往返与未知 key 读取", () => {
       durationMs: 200,
       executionMs: 180,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       phases: [
         {
           name: "sandbox.create",
@@ -150,6 +152,7 @@ describe("Run / attempt 双时钟域", () => {
       durationMs: 50,
       executionMs: 40,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       phases,
     });
     const builds: SandboxBuildRecord[] = [
@@ -187,6 +190,7 @@ describe("TimingOrigin 的 attempt / run 两支", () => {
       verdict: "errored",
       durationMs: 0,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       error: {
         code: "sandbox-build-failed",
         message: "build failed",
@@ -199,6 +203,7 @@ describe("TimingOrigin 的 attempt / run 两支", () => {
       verdict: "errored",
       durationMs: 0,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       error: {
         code: "sandbox-build-failed",
         message: "build failed",
@@ -211,6 +216,7 @@ describe("TimingOrigin 的 attempt / run 两支", () => {
       verdict: "errored",
       durationMs: 5,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       error: {
         code: "unexpected-error",
         message: "boom",
@@ -265,6 +271,7 @@ describe("publish / carry 对 timing 引用的忠实保留", () => {
       verdict: "passed",
       durationMs: 30,
       assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
       phases: [{ name: "eval.run", durationMs: 30, children: [officialTurn()] }],
     });
     await original.finish({
@@ -323,7 +330,7 @@ describe("sandboxBuilds 与 timingNodeId 引用完整性", () => {
       agent: "codex",
       startedAt: "2026-07-30T15:00:00.000Z",
     });
-    await snap.writeAttempt({ id: "q1", attempt: 1, verdict: "passed", durationMs: 1, assertions: [] });
+    await snap.writeAttempt({ id: "q1", attempt: 1, verdict: "passed", durationMs: 1, assertions: [], evidenceCoverage: completeEvidenceCoverage });
     const timings: TimingActivity[] = [
       { id: "t-hit", key: "sandbox.build", label: "query hit", startOffsetMs: 0, durationMs: 2 },
       { id: "t-built", key: "sandbox.build", label: "cold build", startOffsetMs: 2, durationMs: 100 },

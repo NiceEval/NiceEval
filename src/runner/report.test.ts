@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { emitReporterEvent, filterSummary, runReporter, scopeReporter } from "./report.ts";
 import { activateFeedbackSink, activeFeedbackSinkCount } from "./feedback/sink.ts";
 import type { Agent, EvalResult, InvocationShape, InvocationSummary, Reporter, ReporterRegistration } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 function result(id: string, overrides: Partial<EvalResult> = {}): EvalResult {
   return {
@@ -12,6 +13,7 @@ function result(id: string, overrides: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...overrides,
   };
 }

@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { diffText, executionText, runTimingText, timingText, verdictReasonLine } from "./render.ts";
 import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingActivity, SandboxBuildRecord, Verdict } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import type { Run } from "../record/index.ts";
 import { buildExecutionTree } from "../o11y/execution-tree.ts";
 import { encodeAttemptLocator, type AttemptEvidence, type AttemptHandle, type AttemptIdentity } from "../record/index.ts";
@@ -27,6 +28,7 @@ function erroredResult(message: string): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }
@@ -59,6 +61,7 @@ function resultOf(overrides: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...overrides,
   };
 }
@@ -555,6 +558,7 @@ describe("--timing:Run 级 activity 与 sandboxBuild 卡", () => {
         verdict: "errored" as const,
         durationMs: 1,
         assertions: [],
+        evidenceCoverage: completeEvidenceCoverage,
         error: {
           code: "sandbox-build-failed",
           message: "build failed",

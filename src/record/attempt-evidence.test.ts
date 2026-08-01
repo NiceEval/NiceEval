@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DiffArtifact } from "../types.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import {
   createWriter,
   loadAttemptEvidence,
@@ -61,7 +62,7 @@ async function seedAttempt(
   const writer = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
   const snap = await writer.run({ experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
   await snap.writeAttempt(
-    { verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], ...entry },
+    { verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...entry },
     artifacts,
   );
   await snap.finish();

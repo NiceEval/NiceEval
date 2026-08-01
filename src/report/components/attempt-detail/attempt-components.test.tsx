@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, StreamEvent, Verdict } from "../../../types.ts";
+import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
 import type { Record, Sample } from "../../../record/index.ts";
 import { emptyScopeAndResults } from "../scope.harness.ts";
 import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../record/attempt-evidence.ts";
@@ -72,6 +73,7 @@ function resultOf(overrides: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 1000,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     ...overrides,
   };
 }
