@@ -1,6 +1,7 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { defineSandboxCommand, shell } from "./commands.ts";
 import {
   dockerComposeSandbox,
@@ -9,7 +10,9 @@ import {
   sandboxLayer,
 } from "./layer.ts";
 import {
+  formatSandboxLayerLinkError,
   linkSandboxLayers,
+  sandboxLayerIdentityFor,
   SandboxLayerLinkError,
   type SandboxLayerPairInput,
 } from "./link.ts";
@@ -43,13 +46,13 @@ function sandboxPair(input: {
 }
 
 function linkError(pairs: readonly SandboxLayerPairInput[]): SandboxLayerLinkError {
-  try {
-    linkSandboxLayers(pairs);
-  } catch (error) {
-    expect(error).toBeInstanceOf(SandboxLayerLinkError);
-    return error as SandboxLayerLinkError;
-  }
-  throw new Error("expected SandboxLayerLinkError");
+  const error = Effect.runSync(Effect.flip(linkSandboxLayers(pairs)));
+  expect(error).toBeInstanceOf(SandboxLayerLinkError);
+  return error;
+}
+
+function linkOk(pairs: readonly SandboxLayerPairInput[]) {
+  return Effect.runSync(linkSandboxLayers(pairs));
 }
 
 describe("pure SandboxLayer linker", () => {
@@ -108,10 +111,16 @@ describe("pure SandboxLayer linker", () => {
       eval: { explicit: true, kind: "command-only" },
       experiment: { explicit: false },
     });
+
+    const formatted = formatSandboxLayerLinkError(error);
+    expect(formatted).toContain("sandbox.template-conflict");
+    expect(formatted).toContain("dockerImageSandbox(...) at evals/conflict/eval.ts:4");
+    expect(formatted).toContain("dockerImageSandbox(...) at experiments/codex.ts:7");
+    expect(formatted).toContain("3 invalid pairs found. No Sandbox was created.");
   });
 
   it("Direct Agent 两侧都省略 layer 时合法，显式 command-only Experiment 仍报 unexpected", () => {
-    expect(linkSandboxLayers([sandboxPair({ agentKind: "direct" })])).toEqual([
+    expect(linkOk([sandboxPair({ agentKind: "direct" })])).toEqual([
       {
         kind: "direct",
         evalId: "eval/task",
@@ -139,7 +148,7 @@ describe("pure SandboxLayer linker", () => {
       .prepare(stable("eval.first"))
       .prepare(stable("eval.second"));
     const experimentLayer = sandboxLayer().prepare(stable("experiment.after"));
-    const [evalOwned] = linkSandboxLayers([sandboxPair({ evalLayer, experimentLayer })]);
+    const [evalOwned] = linkOk([sandboxPair({ evalLayer, experimentLayer })]);
 
     expect(evalOwned).toMatchObject({
       kind: "sandbox",
@@ -164,8 +173,23 @@ describe("pure SandboxLayer linker", () => {
         { kind: "stable", owner: { kind: "experiment", id: "experiment/codex" }, index: 0, id: "experiment.after", revision: "1", inputs: { id: "experiment.after" } },
       ],
     });
+    expect(sandboxLayerIdentityFor(evalOwned, "eval")).toEqual({
+      kind: "template-bearing",
+      template: { provider: "docker", kind: "image", image: "node:24@sha256:abc" },
+      commands: [
+        { kind: "stable", index: 0, id: "eval.first", revision: "1", inputs: { id: "eval.first" } },
+        { kind: "stable", index: 1, id: "eval.second", revision: "1", inputs: { id: "eval.second" } },
+      ],
+    });
+    expect(sandboxLayerIdentityFor(evalOwned, "experiment")).toEqual({
+      kind: "command-only",
+      template: null,
+      commands: [
+        { kind: "stable", index: 0, id: "experiment.after", revision: "1", inputs: { id: "experiment.after" } },
+      ],
+    });
 
-    const [experimentOwned] = linkSandboxLayers([
+    const [experimentOwned] = linkOk([
       sandboxPair({
         evalLayer: sandboxLayer().prepare(stable("eval.after")),
         experimentLayer: e2bSandbox({ template: "codex-v3" }).prepare(stable("experiment.first")),
@@ -178,7 +202,7 @@ describe("pure SandboxLayer linker", () => {
 
   it("opaque callback 保留执行顺序但关闭 carry，并给出 owner、序号和可行动修法", () => {
     const opaque = async (): Promise<void> => {};
-    const [linked] = linkSandboxLayers([
+    const [linked] = linkOk([
       sandboxPair({
         evalLayer: dockerImageSandbox({ image: "node:24" }).prepare(stable("eval.stable")),
         experimentLayer: sandboxLayer().prepare(opaque).prepare(stable("experiment.stable")),
@@ -209,7 +233,7 @@ describe("pure SandboxLayer linker", () => {
 
   it("混合矩阵逐 pair link，不从相邻 Eval 借 template，也不让 Experiment template 覆盖 Eval", () => {
     const sharedExperiment = sandboxLayer().prepare(stable("experiment.shared"));
-    const linked = linkSandboxLayers([
+    const linked = linkOk([
       sandboxPair({
         evalId: "eval/image",
         evalLayer: dockerImageSandbox({ image: "node:24" }),

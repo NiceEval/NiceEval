@@ -9,17 +9,27 @@ import {
 import {
   sandboxLayer,
   sandboxLayerStateOf,
+  sandboxTemplateIdentity,
   type SandboxLayer,
   type SandboxLayerKind,
+  type SandboxLayerState,
   type SandboxTemplateDeclaration,
 } from "./layer.ts";
 import type { JsonValue } from "../shared/types.ts";
+import { Data, Effect } from "effect";
 
 export interface SandboxLayerDeclarationSite {
   readonly file: string;
   readonly line?: number;
   readonly column?: number;
   readonly expression?: string;
+}
+
+export interface LinkedSandboxLayerDeclarationSite {
+  readonly file: string;
+  readonly line: number | null;
+  readonly column: number | null;
+  readonly expression: string | null;
 }
 
 export interface SandboxLayerContributionInput {
@@ -62,9 +72,9 @@ export interface SandboxLayerDeclarationView {
   readonly owner: SandboxLayerOwnerRef;
   readonly explicit: boolean;
   readonly kind: SandboxLayerKind;
-  readonly template?: SandboxTemplateDeclaration;
+  readonly template: SandboxTemplateDeclaration | null;
   readonly commands: readonly SandboxCommandFingerprint[];
-  readonly declaredAt?: SandboxLayerDeclarationSite;
+  readonly declaredAt: LinkedSandboxLayerDeclarationSite | null;
 }
 
 export type SandboxLinkIssueCode =
@@ -86,21 +96,49 @@ export interface SandboxLinkIssue {
   readonly actions: readonly string[];
 }
 
-export class SandboxLayerLinkError extends Error {
-  readonly code = "sandbox.link-failed" as const;
+export class SandboxLayerLinkError extends Data.TaggedError("SandboxLayerLinkError")<{
+  readonly code: "sandbox.link-failed";
   readonly issues: readonly SandboxLinkIssue[];
+  readonly message: string;
+}> {}
 
-  constructor(issues: readonly SandboxLinkIssue[]) {
-    const counts = new Map<SandboxLinkIssueCode, number>();
-    for (const issue of issues) counts.set(issue.code, (counts.get(issue.code) ?? 0) + 1);
-    const breakdown = [...counts].map(([code, count]) => `${code}=${count}`).join(", ");
-    super(
-      `Sandbox layer linking failed for ${issues.length} pair${issues.length === 1 ? "" : "s"}` +
-        `${breakdown === "" ? "" : ` (${breakdown})`}. No Sandbox was created.`,
-    );
-    this.name = "SandboxLayerLinkError";
-    this.issues = Object.freeze([...issues]);
+function sandboxLayerLinkError(issues: readonly SandboxLinkIssue[]): SandboxLayerLinkError {
+  const frozen = Object.freeze([...issues]);
+  const counts = new Map<SandboxLinkIssueCode, number>();
+  for (const issue of frozen) counts.set(issue.code, (counts.get(issue.code) ?? 0) + 1);
+  const breakdown = [...counts].map(([code, count]) => `${code}=${count}`).join(", ");
+  return new SandboxLayerLinkError({
+    code: "sandbox.link-failed",
+    issues: frozen,
+    message:
+      `Sandbox layer linking failed for ${frozen.length} pair${frozen.length === 1 ? "" : "s"}` +
+      `${breakdown === "" ? "" : ` (${breakdown})`}. No Sandbox was created.`,
+  });
+}
+
+function declarationSummary(view: SandboxLayerDeclarationView): string {
+  const template = view.template;
+  const expression = view.declaredAt?.expression ?? (template === null
+    ? (view.explicit ? "sandboxLayer()" : "<omitted>")
+    : `${template.provider}:${template.kind}`);
+  const location = view.declaredAt === null
+    ? "<unknown source>"
+    : `${view.declaredAt.file}${view.declaredAt.line === null ? "" : `:${view.declaredAt.line}`}`;
+  return `${expression} at ${location}`;
+}
+
+/** CLI 面向作者的聚合错误；不泄漏框架 stack，逐 pair 给出两处声明与可执行修法。 */
+export function formatSandboxLayerLinkError(error: SandboxLayerLinkError): string {
+  const lines: string[] = [];
+  for (const issue of error.issues) {
+    lines.push(`${issue.code}: ${issue.summary}`);
+    lines.push(`  eval:       ${declarationSummary(issue.eval)}`);
+    lines.push(`  experiment: ${declarationSummary(issue.experiment)}`);
+    for (const action of issue.actions) lines.push(`  fix: ${action}`);
+    lines.push("");
   }
+  lines.push(`${error.issues.length} invalid pair${error.issues.length === 1 ? "" : "s"} found. No Sandbox was created.`);
+  return lines.join("\n");
 }
 
 export interface LinkedSandboxCommand {
@@ -148,39 +186,60 @@ export interface LinkedDirectPair {
 
 export type LinkedSandboxLayerPair = LinkedSandboxPair | LinkedDirectPair;
 
+/**
+ * 把 linked pair 按作者重新投影成缓存身份。owner id 不进身份；所在文件的 id/源码分别由
+ * experiment key 与 eval source closure 拥有。Experiment 投影进 configHash，Eval 投影进
+ * 每条 fingerprint，templateOwner 由两者共同可重建。
+ */
+export function sandboxLayerIdentityFor(
+  linked: LinkedSandboxLayerPair,
+  ownerKind: SandboxLayerOwnerRef["kind"],
+): JsonValue {
+  if (linked.kind === "direct") return { kind: "direct" };
+  const ownsTemplate = linked.templateOwner.kind === ownerKind;
+  const commands: JsonValue[] = linked.commands
+    .filter((entry) => entry.owner.kind === ownerKind)
+    .map((entry): JsonValue => entry.fingerprint.kind === "stable"
+      ? {
+          kind: "stable" as const,
+          index: entry.index,
+          id: entry.fingerprint.id,
+          revision: entry.fingerprint.revision,
+          inputs: entry.fingerprint.inputs,
+        }
+      : { kind: "opaque" as const, index: entry.index });
+  return {
+    kind: ownsTemplate ? "template-bearing" : "command-only",
+    template: ownsTemplate ? sandboxTemplateIdentity(linked.template) : null,
+    commands,
+  };
+}
+
 interface NormalizedContribution {
   readonly owner: SandboxLayerOwnerRef;
   readonly explicit: boolean;
-  readonly state: ReturnType<typeof sandboxLayerStateOf>;
+  readonly state: SandboxLayerState;
   readonly view: SandboxLayerDeclarationView;
+}
+
+interface TemplateContribution extends NormalizedContribution {
+  readonly state: SandboxLayerState<"template-bearing">;
 }
 
 const OMITTED_LAYER = sandboxLayer();
 
-function nonEmpty(value: unknown, path: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new TypeError(`${path} must be a non-empty string`);
-  return value;
-}
-
 function freezeOwner(kind: SandboxLayerOwnerRef["kind"], id: string): SandboxLayerOwnerRef {
-  return Object.freeze({ kind, id: nonEmpty(id, `${kind}.id`) });
+  return Object.freeze({ kind, id });
 }
 
-function freezeSite(site: SandboxLayerDeclarationSite | undefined): SandboxLayerDeclarationSite | undefined {
-  if (site === undefined) return undefined;
-  const result = {
-    file: nonEmpty(site.file, "sandbox declaration file"),
-    ...(site.line !== undefined ? { line: site.line } : {}),
-    ...(site.column !== undefined ? { column: site.column } : {}),
-    ...(site.expression !== undefined ? { expression: site.expression } : {}),
-  };
-  if (result.line !== undefined && (!Number.isInteger(result.line) || result.line <= 0)) {
-    throw new TypeError("sandbox declaration line must be a positive integer");
-  }
-  if (result.column !== undefined && (!Number.isInteger(result.column) || result.column <= 0)) {
-    throw new TypeError("sandbox declaration column must be a positive integer");
-  }
-  return Object.freeze(result);
+function freezeSite(site: SandboxLayerDeclarationSite | undefined): LinkedSandboxLayerDeclarationSite | null {
+  if (site === undefined) return null;
+  return Object.freeze({
+    file: site.file,
+    line: site.line ?? null,
+    column: site.column ?? null,
+    expression: site.expression ?? null,
+  });
 }
 
 function fingerprintCommand(
@@ -213,23 +272,26 @@ function normalizeContribution(
     owner,
     explicit,
     kind: state.kind,
-    ...(state.template !== undefined ? { template: state.template } : {}),
+    template: state.template ?? null,
     commands,
-    ...(input.declaredAt !== undefined ? { declaredAt: freezeSite(input.declaredAt) } : {}),
+    declaredAt: freezeSite(input.declaredAt),
   });
   return Object.freeze({ owner, explicit, state, view });
 }
 
 function pairRef(input: SandboxLayerPairInput): SandboxLinkIssue["pair"] {
-  if (input.agent.kind !== "direct" && input.agent.kind !== "sandbox") {
-    throw new TypeError('agent.kind must be "direct" or "sandbox"');
-  }
   return Object.freeze({
-    evalId: nonEmpty(input.eval.id, "eval.id"),
-    experimentId: nonEmpty(input.experiment.id, "experiment.id"),
+    evalId: input.eval.id,
+    experimentId: input.experiment.id,
     agentKind: input.agent.kind,
-    agentName: nonEmpty(input.agent.name, "agent.name"),
+    agentName: input.agent.name,
   });
+}
+
+function isTemplateContribution(
+  contribution: NormalizedContribution,
+): contribution is TemplateContribution {
+  return contribution.state.kind === "template-bearing";
 }
 
 function issue(
@@ -307,14 +369,10 @@ function linkedCommands(
 
 function linkSandboxPair(
   pair: SandboxLinkIssue["pair"],
-  evalContribution: NormalizedContribution,
-  experimentContribution: NormalizedContribution,
+  templateOwner: TemplateContribution,
+  otherOwner: NormalizedContribution,
 ): LinkedSandboxPair {
-  const evalOwnsTemplate = evalContribution.state.kind === "template-bearing";
-  const templateOwner = evalOwnsTemplate ? evalContribution : experimentContribution;
-  const otherOwner = evalOwnsTemplate ? experimentContribution : evalContribution;
   const template = templateOwner.state.template;
-  if (template === undefined) throw new Error("internal SandboxLayer link invariant: legal pair has no template");
   const linked = linkedCommands(templateOwner, otherOwner);
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
   const fingerprint = Object.freeze({
@@ -339,42 +397,49 @@ function linkSandboxPair(
 
 /**
  * 对 discovery/selector 产出的实际 pair 全矩阵做一次纯 link。发现任何问题时遍历完全部输入后
- * 统一抛出 SandboxLayerLinkError；调用方因此可以在任何 Provider I/O 前一次展示全部修法。
+ * 通过 Effect error channel 返回聚合错误；调用方因此可以在任何 Provider I/O 前一次展示全部修法。
  */
-export function linkSandboxLayers(pairs: readonly SandboxLayerPairInput[]): readonly LinkedSandboxLayerPair[] {
-  const linked: LinkedSandboxLayerPair[] = [];
-  const issues: SandboxLinkIssue[] = [];
+export function linkSandboxLayers(
+  pairs: readonly SandboxLayerPairInput[],
+): Effect.Effect<readonly LinkedSandboxLayerPair[], SandboxLayerLinkError> {
+  return Effect.suspend(() => {
+    const linked: LinkedSandboxLayerPair[] = [];
+    const issues: SandboxLinkIssue[] = [];
 
-  for (const input of pairs) {
-    const pair = pairRef(input);
-    const evalContribution = normalizeContribution("eval", input.eval);
-    const experimentContribution = normalizeContribution("experiment", input.experiment);
+    for (const input of pairs) {
+      const pair = pairRef(input);
+      const evalContribution = normalizeContribution("eval", input.eval);
+      const experimentContribution = normalizeContribution("experiment", input.experiment);
 
-    if (pair.agentKind === "direct") {
-      if (evalContribution.explicit || experimentContribution.explicit) {
-        issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
-      } else {
-        linked.push(Object.freeze({
-          kind: "direct",
-          evalId: pair.evalId,
-          experimentId: pair.experimentId,
-          agentName: pair.agentName,
-        }));
+      if (pair.agentKind === "direct") {
+        if (evalContribution.explicit || experimentContribution.explicit) {
+          issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
+        } else {
+          linked.push(Object.freeze({
+            kind: "direct",
+            evalId: pair.evalId,
+            experimentId: pair.experimentId,
+            agentName: pair.agentName,
+          }));
+        }
+        continue;
       }
-      continue;
+
+      const evalTemplate = isTemplateContribution(evalContribution);
+      const experimentTemplate = isTemplateContribution(experimentContribution);
+      if (!evalTemplate && !experimentTemplate) {
+        issues.push(issue("sandbox.template-missing", pair, evalContribution, experimentContribution));
+      } else if (evalTemplate && experimentTemplate) {
+        issues.push(issue("sandbox.template-conflict", pair, evalContribution, experimentContribution));
+      } else if (evalTemplate) {
+        linked.push(linkSandboxPair(pair, evalContribution, experimentContribution));
+      } else if (isTemplateContribution(experimentContribution)) {
+        linked.push(linkSandboxPair(pair, experimentContribution, evalContribution));
+      }
     }
 
-    const templateCount = Number(evalContribution.state.kind === "template-bearing") +
-      Number(experimentContribution.state.kind === "template-bearing");
-    if (templateCount === 0) {
-      issues.push(issue("sandbox.template-missing", pair, evalContribution, experimentContribution));
-    } else if (templateCount === 2) {
-      issues.push(issue("sandbox.template-conflict", pair, evalContribution, experimentContribution));
-    } else {
-      linked.push(linkSandboxPair(pair, evalContribution, experimentContribution));
-    }
-  }
-
-  if (issues.length > 0) throw new SandboxLayerLinkError(issues);
-  return Object.freeze(linked);
+    return issues.length > 0
+      ? Effect.fail(sandboxLayerLinkError(issues))
+      : Effect.succeed(Object.freeze(linked));
+  });
 }

@@ -6,6 +6,7 @@ import {
   type SandboxCommand,
   type SandboxCommandDeclaration,
 } from "./commands.ts";
+import type { JsonValue } from "../shared/types.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -86,6 +87,55 @@ export type SandboxTemplateDeclaration =
       readonly lifetimeMs?: number;
     }
   | { readonly provider: "local"; readonly kind: "directory"; readonly dir?: string };
+
+/**
+ * Template 的唯一稳定身份投影。这里只投影 factory 已验证过的纯数据，不接收动态值，
+ * 也不通过类型断言把对象伪装成 JSON。
+ */
+export function sandboxTemplateIdentity(template: SandboxTemplateDeclaration): JsonValue {
+  switch (template.kind) {
+    case "compose":
+      return {
+        provider: "docker",
+        kind: "compose",
+        file: { kind: template.file.kind, value: template.file.value },
+        workspaceService: template.workspaceService,
+        build: template.build ?? null,
+        executionUser: template.executionUser ?? null,
+        env: template.env === undefined ? null : { ...template.env },
+      };
+    case "dockerfile":
+      return {
+        provider: "docker",
+        kind: "dockerfile",
+        context: { kind: template.context.kind, value: template.context.value },
+        dockerfile: template.dockerfile ?? null,
+        buildArgs: template.buildArgs === undefined ? null : { ...template.buildArgs },
+      };
+    case "image":
+      return { provider: "docker", kind: "image", image: template.image };
+    case "template":
+      return {
+        provider: "e2b",
+        kind: "template",
+        template: template.template,
+        lifetimeMs: template.lifetimeMs ?? null,
+      };
+    case "snapshot":
+      return {
+        provider: "vercel",
+        kind: "snapshot",
+        snapshotId: template.snapshotId,
+        lifetimeMs: template.lifetimeMs ?? null,
+      };
+    case "directory":
+      return {
+        provider: "local",
+        kind: "directory",
+        dir: template.dir ?? null,
+      };
+  }
+}
 
 export interface SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly kind: Kind;
