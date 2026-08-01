@@ -6,6 +6,7 @@ export type {
   ExperimentStateProjection,
   StateCheckpoint,
   StateConsistency,
+  StateDigest,
   StateSavePolicy,
   StateTransferActivity,
   StateWindowRecord,

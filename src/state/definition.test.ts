@@ -4,10 +4,24 @@ import { Cause, Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import type { Agent } from "../agents/types.ts";
 import { defineExperimentState, ExperimentStateDefinitionError, isExperimentStateDefinition } from "./definition.ts";
-import { planExperimentState, planExperimentStateOrThrow, StatePlanningError } from "./plan.ts";
+import {
+  declaredState,
+  limitedStateConcurrency,
+  planExperimentState,
+  planExperimentStateOrThrow,
+  STATE_ABSENT,
+  STATE_CONCURRENCY_UNBOUNDED,
+  STATE_FRESH,
+  STATE_REUSE,
+  StatePlanningError,
+} from "./plan.ts";
 import type { ExperimentStateInput } from "./types.ts";
 
-const checkpoint = { identity: { revision: "rev-1" }, facts: {} } as const;
+const checkpoint = {
+  identity: { revision: "rev-1" },
+  digest: { _tag: "Unavailable" },
+  facts: {},
+} as const;
 
 function input(overrides: Partial<ExperimentStateInput> = {}): ExperimentStateInput {
   return {
@@ -66,24 +80,24 @@ describe("Experiment State definition and planning", () => {
 
   it("把无状态、pinned 和 rolling 规划成穷尽 ADT", () => {
     expect(planExperimentStateOrThrow({
-      state: undefined,
+      state: STATE_ABSENT,
       agent: directAgent,
-      sandboxReuse: false,
-      maxConcurrency: undefined,
+      sandbox: STATE_FRESH,
+      concurrency: STATE_CONCURRENCY_UNBOUNDED,
     })).toEqual({ _tag: "Stateless" });
 
     expect(planExperimentStateOrThrow({
-      state: defineExperimentState(input()),
+      state: declaredState(defineExperimentState(input())),
       agent: sandboxAgent,
-      sandboxReuse: false,
-      maxConcurrency: 4,
+      sandbox: STATE_FRESH,
+      concurrency: limitedStateConcurrency(4),
     })).toMatchObject({ _tag: "Pinned", revision: "rev-1", cadence: "attempt" });
 
     expect(planExperimentStateOrThrow({
-      state: defineExperimentState(input({ consistency: { mode: "rolling" } })),
+      state: declaredState(defineExperimentState(input({ consistency: { mode: "rolling" } }))),
       agent: sandboxAgent,
-      sandboxReuse: true,
-      maxConcurrency: 1,
+      sandbox: STATE_REUSE,
+      concurrency: limitedStateConcurrency(1),
     })).toMatchObject({ _tag: "Rolling", cadence: "window" });
   });
 
@@ -93,13 +107,13 @@ describe("Experiment State definition and planning", () => {
     const afterSuccess = defineExperimentState(input({ saveOn: "attempt-succeeded" }));
 
     expect((await planningFailure(planExperimentState({
-      state: pinned, agent: directAgent, sandboxReuse: false, maxConcurrency: 1,
+      state: declaredState(pinned), agent: directAgent, sandbox: STATE_FRESH, concurrency: limitedStateConcurrency(1),
     }))).code).toBe("state.requires-sandbox-agent");
     expect((await planningFailure(planExperimentState({
-      state: rolling, agent: sandboxAgent, sandboxReuse: false, maxConcurrency: 2,
+      state: declaredState(rolling), agent: sandboxAgent, sandbox: STATE_FRESH, concurrency: limitedStateConcurrency(2),
     }))).code).toBe("state.rolling-requires-serial");
     expect((await planningFailure(planExperimentState({
-      state: afterSuccess, agent: sandboxAgent, sandboxReuse: true, maxConcurrency: 1,
+      state: declaredState(afterSuccess), agent: sandboxAgent, sandbox: STATE_REUSE, concurrency: limitedStateConcurrency(1),
     }))).code).toBe("state.reuse-requires-after-load");
   });
 });

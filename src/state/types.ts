@@ -4,9 +4,14 @@ import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 /** @internal Definition 的来源证明；不从任何公共入口导出。 */
 export const EXPERIMENT_STATE_DEFINITION = Symbol("niceeval.experiment-state-definition");
 
+export type StateDigest =
+  | { readonly _tag: "Unavailable" }
+  | { readonly _tag: "Sha256"; readonly value: string };
+
 export interface StateCheckpoint {
   readonly identity: JsonValue;
-  readonly digest?: string;
+  /** 稳定内容摘要；外部 store 无法提供稳定摘要时显式声明 Unavailable。 */
+  readonly digest: StateDigest;
   readonly facts: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
@@ -56,7 +61,7 @@ export type StateTransferActivity =
   | { readonly outcome: "skipped"; readonly reason: "save-policy" | "load-failed"; readonly durationMs: 0 }
   | {
       readonly outcome: "unavailable";
-      readonly reason: "sandbox-lost" | "provider-unreachable";
+      readonly reason: "sandbox-lost" | "provider-unreachable" | "deadline-exceeded" | "interrupted";
       readonly durationMs: number;
     };
 

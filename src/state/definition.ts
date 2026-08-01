@@ -1,4 +1,4 @@
-import { Data, Effect, Either, Schema } from "effect";
+import { Data, Either, Schema } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import {
   EXPERIMENT_STATE_DEFINITION,
@@ -14,6 +14,16 @@ type DecodedJsonValue =
   | null
   | readonly DecodedJsonValue[]
   | { readonly [key: string]: DecodedJsonValue };
+
+function isDecodedJsonArray(value: DecodedJsonValue): value is readonly DecodedJsonValue[] {
+  return Array.isArray(value);
+}
+
+function isDecodedJsonRecord(
+  value: DecodedJsonValue,
+): value is { readonly [key: string]: DecodedJsonValue } {
+  return typeof value === "object" && value !== null && !isDecodedJsonArray(value);
+}
 
 const StateJsonValue: Schema.Schema<DecodedJsonValue> = Schema.suspend(() =>
   Schema.Union(
@@ -41,52 +51,55 @@ const DEFINITIONS = new WeakSet<object>();
 
 /** @internal Schema 的 readonly decode 形状转成公共 JsonValue；唯一动态边界已由 Schema 验证。 */
 export function stateJsonValueOf(decoded: DecodedJsonValue): JsonValue {
-  if (Array.isArray(decoded)) return decoded.map(stateJsonValueOf);
-  if (typeof decoded === "object" && decoded !== null) {
+  if (isDecodedJsonArray(decoded)) return decoded.map(stateJsonValueOf);
+  if (isDecodedJsonRecord(decoded)) {
     return Object.fromEntries(Object.entries(decoded).map(([key, value]) => [key, stateJsonValueOf(value)]));
   }
-  return decoded as string | number | boolean | null;
+  return decoded;
 }
 
-function decodeIdentity(identity: unknown): Effect.Effect<JsonValue, ExperimentStateDefinitionError> {
-  return Schema.decodeUnknown(StateJsonValue)(identity).pipe(
-    Effect.mapError(() => new ExperimentStateDefinitionError({
-      code: "state.identity-not-json",
-      message: "state.identity-not-json: State identity must be a finite JSON value without undefined, functions, symbols, class instances, or cycles.",
-    })),
-    Effect.flatMap((decoded) => {
-      if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
-        return Effect.fail(new ExperimentStateDefinitionError({
-          code: "state.identity-incomplete",
-          message: "state.identity-incomplete: State identity must be an object with non-empty store and cohort strings and a non-negative integer schema.",
-        }));
-      }
-      const store = decoded.store;
-      const cohort = decoded.cohort;
-      const schema = decoded.schema;
-      if (
-        typeof store !== "string" || store.trim() === "" ||
-        typeof cohort !== "string" || cohort.trim() === "" ||
-        typeof schema !== "number" || !Number.isInteger(schema) || schema < 0
-      ) {
-        return Effect.fail(new ExperimentStateDefinitionError({
-          code: "state.identity-incomplete",
-          message: "state.identity-incomplete: State identity must be an object with non-empty store and cohort strings and a non-negative integer schema.",
-        }));
-      }
-      return Effect.succeed(stateJsonValueOf(decoded));
-    }),
-  );
+function isPlainJsonTree(value: unknown, ancestors: ReadonlySet<object> = new Set()): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (ancestors.has(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
+  const next = new Set(ancestors);
+  next.add(value);
+  return Array.isArray(value)
+    ? value.every((item) => isPlainJsonTree(item, next))
+    : Object.values(value).every((item) => isPlainJsonTree(item, next));
 }
 
 function decodeIdentityOrThrow(identity: JsonValue): JsonValue {
   try {
-    const result = Effect.runSync(Effect.either(decodeIdentity(identity)));
-    if (Either.isLeft(result)) throw result.left;
-    return result.right;
+    if (!isPlainJsonTree(identity)) throw new Error("not a plain JSON tree");
+    const result = Schema.decodeEither(StateJsonValue)(identity);
+    if (Either.isLeft(result)) throw new Error("Schema rejected State identity");
+    const decoded = result.right;
+    if (!isDecodedJsonRecord(decoded)) {
+      throw new ExperimentStateDefinitionError({
+        code: "state.identity-incomplete",
+        message: "state.identity-incomplete: State identity must be an object with non-empty store and cohort strings and a non-negative integer schema.",
+      });
+    }
+    const store = decoded.store;
+    const cohort = decoded.cohort;
+    const schema = decoded.schema;
+    if (
+      typeof store !== "string" || store.trim() === "" ||
+      typeof cohort !== "string" || cohort.trim() === "" ||
+      typeof schema !== "number" || !Number.isInteger(schema) || schema < 0
+    ) {
+      throw new ExperimentStateDefinitionError({
+        code: "state.identity-incomplete",
+        message: "state.identity-incomplete: State identity must be an object with non-empty store and cohort strings and a non-negative integer schema.",
+      });
+    }
+    return stateJsonValueOf(decoded);
   } catch (error) {
     if (error instanceof ExperimentStateDefinitionError) throw error;
-    // Effect Schema 对循环对象可能以 decoder defect 终止；公共动态边界仍收束成同一个领域错误。
     throw new ExperimentStateDefinitionError({
       code: "state.identity-not-json",
       message: "state.identity-not-json: State identity must be a finite JSON value without undefined, functions, symbols, class instances, or cycles.",
@@ -161,6 +174,12 @@ export function experimentStateProjection(definition: ExperimentStateDefinition)
 
 export const StateCheckpointSchema = Schema.Struct({
   identity: StateJsonValue,
-  digest: Schema.optional(Schema.NonEmptyString),
+  digest: Schema.Union(
+    Schema.Struct({ _tag: Schema.Literal("Unavailable") }),
+    Schema.Struct({
+      _tag: Schema.Literal("Sha256"),
+      value: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/)),
+    }),
+  ),
   facts: Schema.Record({ key: Schema.String, value: StateJsonValue }),
 });
