@@ -13,13 +13,32 @@ MemoryBench 与 TerminalBench 的工作场景来自真实下游项目；两者�
 
 | 人物 | 公司与产品 | 职位与日常工作 | 最难解决的问题 |
 |---|---|---|---|
-| 林书雅 | 忆舟科技，开发 coding agent memory 产品 RecallKit | 评测工程师；用 MemoryBench 比较无 memory、RecallKit 与其它 memory 条件 | 证明结果差异来自 memory，而不是任务、模型、环境或运行故障 |
-| 陈砚舟 | 格物智能，开发终端 coding agent PatchPilot | Benchmark 工程师；维护 TerminalBench 的 NiceEval 运行版本 | 在不改变原题、隐藏测试和环境要求的前提下，让不同 Agent 跑同一批题 |
+| 林书雅 | 忆舟科技，开发 coding agent memory 产品 RecallKit | 评测工程师；用 MemoryBench 比较无 memory、RecallKit 与其它 memory 条件 | 让 Experiment 承担 memory 条件与状态，让同一批轻量 Eval 保持不变 |
+| 陈砚舟 | 格物智能，开发终端 coding agent PatchPilot | Benchmark 工程师；维护 TerminalBench 的 NiceEval 运行版本 | 让每道 Eval 拥有原题环境，同时让不同 Agent 跑同一批题 |
 | 周芷宁 | 北辰软件，开发企业 coding agent CodeMate | Agent 产品负责人；决定哪个模型与 Agent 配置可以发布 | 在预算内得到可复验的质量、成本与可靠性对比，而不是一张无法解释的平均分 |
 | 孟启航 | 云栈科技，开发托管评估服务 EvalCloud | 评估基础设施工程师；运行客户的 CI 评估与长批次 Experiment | 隔离不可信 Agent，处理瞬时故障，并避免同一基础设施错误耗尽整批预算 |
 | 苏曼青 | 海岳金融，开发内部开发助手 Harbor | 模型风险负责人；复核评估范围、证据与发布结论 | 确认每个汇总数字来自哪些 Attempt，并识别未覆盖、未完成和执行错误 |
 | 顾云川 | 澄路开源，维护 NiceEval | 开源维护者；修改公开行为并审查贡献 | 用用户可观察结果证明改动没有破坏产品契约 |
 | 方以宁 | 知达服务，开发多 Agent 客服产品 Relay | 评测负责人；评估协调 Agent 与专业 Agent 的分工 | 判断谁完成了动作、何时交接控制权，以及各 Agent 分别花了多少成本 |
+
+## 两种相反的配置重心
+
+“重 Experiment”与“重 Eval 环境”描述配置所有权，不描述哪一边运行得更慢。
+MemoryBench 的变量主要随对比条件变化；TerminalBench 的环境主要随题目变化。
+
+| 配置问题 | MemoryBench | TerminalBench |
+|---|---|---|
+| 主要变化轴 | memory 条件、Agent、模型、状态策略与并发策略 | 每道题的 Compose、Dockerfile、服务、Fixture、隐藏测试与超时 |
+| 配置重心 | Experiment 重；Eval 相对轻 | Eval Environment 重；Experiment 相对薄 |
+| Eval 拥有什么 | 开发任务、固定仓库版本、项目依赖与判分；多数 Eval 不声明 Environment | 数据集 adapter 从 task package 派生 EvalDef、Environment source 与隐藏 Verifier |
+| Experiment 拥有什么 | 默认 E2B template、memory 工具、Sandbox setup / teardown、状态复用与并发限制 | Agent、运行范围，以及能把每题 Environment 解析成完整 Sandbox Case 的 SandboxSpec |
+| 更换对比条件时 | 复用同一批 Eval，只替换 Experiment | 复用每题 Environment，只替换 Agent 或其它 Experiment 条件 |
+| 不支持的组合 | 单条 Eval 有独立 Environment 时，为该 profile 提供完整 case，或明确跳过 | Provider 不能承载题目 Environment 时，提供等价完整 case，或在计划期明确跳过 |
+
+两条路径仍遵守同一条边界：一次 Attempt 只有一个完整 Sandbox Case。
+Runner 不把两个起点在运行时自动合并；Experiment 变化的准备放 SandboxSpec setup，Eval 变化的题目准备放 EvalDef setup，Agent 安装由 Adapter 管理。
+
+配置责任来源：[Environment Model 决策](design/environment-model/DECISION.md)。
 
 ## 已定稿产品故事
 
@@ -31,14 +50,20 @@ MemoryBench 与 TerminalBench 的工作场景来自真实下游项目；两者�
 MemoryBench 还包含跨任务累积状态。
 有的 memory 条件必须顺序运行并在 Attempt 之间载入和回存状态；外部 memory 服务不可用时，失败也不应算成 Agent 能力不足。
 
-- **MB-1 控制变量。** 林书雅要用同一批 Eval、同一个模型、同一个 Agent 和同一判分口径，只切换 memory 条件。NiceEval 需要把每个条件保存成可复现的 Experiment，并记录会影响运行的配置。验收时，她能确认两组结果只有预定变量不同；配置不同的 Run 不会被当成同一对照组。
-- **MB-2 公平判分。** 林书雅要让 Agent 看到任务材料，但不能让它提前看到隐藏判据。NiceEval 需要把任务交互与判分分开，并让不同 memory 条件复用同一个 Eval。验收时，无 memory 与有 memory 的 Attempt 接收相同任务，最后由相同检查产生 Verdict。
-- **MB-3 有状态生命周期。** 林书雅要让累积 memory 在下一道题开始前完成回存，不能让并行 Attempt 相互覆盖。NiceEval 需要提供成对的 Sandbox 生命周期 Hook 和 Experiment 并发限制。验收时，声明串行的条件按固定顺序载入、运行和回存；其它独立条件仍可并行。
-- **MB-4 区分任务失败与基建失败。** 林书雅遇到 memory 服务连接失败时，需要有限重试；共享服务确定不可用时，需要停止该 Experiment 的后续派发。验收时，报告把任务未通过与执行错误分开，并保留恢复、耗尽或停止派发的原因。
-- **MB-5 看见收益与代价。** 林书雅需要同时比较任务完成率、耗时、turn、工具调用、token、成本和重复试错。NiceEval 需要让报告按 memory 条件聚合这些读数，并从异常点下钻到 Attempt 的交互、命令、文件变化和判定证据。
-- **MB-6 只重跑变化部分。** 林书雅调整一条 Eval 或一个 memory 配置后，不想重跑其它未受影响的昂贵任务。NiceEval 需要用 Eval 源码与运行配置的指纹判断历史结果能否沿用。验收时，变化项重新执行，未变化且结论确定的 Attempt 保留来源并进入新的 Sample。
+这里的 Eval 相对轻，并不表示任务简单。
+它只负责准备固定仓库版本、项目依赖、任务说明和判分；默认 Sandbox 起点、memory 工具与状态策略由 Experiment 配置。
 
-来源：[Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[执行失败分类](feature/error-classification/README.md)、[缓存与结果沿用](feature/experiments/cache.md)、[Sandbox](feature/sandbox/README.md)、[Reports](feature/reports/README.md)。
+- **MB-1 用 Experiment 定义对比格。** 林书雅要用同一批 Eval、同一个模型、同一个 Agent 和同一判分口径，只切换 memory 条件。NiceEval 需要把无 memory、RecallKit 与其它条件分别保存成可复现的 Experiment。验收时，两组结果只有预定变量不同；配置不同的 Run 不会被当成同一对照组。
+- **MB-2 让 Eval 保持轻且稳定。** 林书雅要让每条 Eval 只描述开发任务、固定仓库版本、依赖准备与判分，不能引用 RecallKit 或某个 E2B template。验收时，同一条 Eval 原样进入所有 memory Experiment；切换 memory 条件不复制任务，也不改变题目准备。
+- **MB-3 由 Experiment 选择默认环境。** 林书雅要让 baseline 使用公共 Agent template，让 RecallKit 条件使用预装工具的派生 template。NiceEval 需要让无 Environment 的 Eval 从 Experiment SandboxSpec 的默认 case 启动。验收时，template、memory skill 与工具版本随 Experiment 变化，Eval 身份不变。
+- **MB-4 管理有状态生命周期。** 林书雅要在 Agent 开始前检查 memory 工具并载入状态，在 Sandbox 收尾时回存 checkpoint。NiceEval 需要让 SandboxSpec setup / teardown 作用于最终 Sandbox，并用 Experiment 并发限制保护累积状态。验收时，声明串行的条件按固定顺序载入、运行和回存；其它独立条件仍可并行。
+- **MB-5 支持少数重环境 Eval。** 某条 MemoryBench Eval 自己需要 Compose 时，林书雅要让这条题声明 Environment，其它 Eval 仍使用 Experiment 默认 template。NiceEval 需要为该 Environment profile 选择完整 Sandbox Case，不能把两个起点自动合并。验收时，能提供完整 case 的组合照常运行；不能提供的组合在计划期说明原因并跳过。
+- **MB-6 公平判分。** 林书雅要让 Agent 看到任务材料，但不能让它提前看到隐藏判据。NiceEval 需要把任务交互与判分分开，并让不同 memory 条件复用同一个 Eval。验收时，无 memory 与有 memory 的 Attempt 接收相同任务，最后由相同检查产生 Verdict。
+- **MB-7 区分任务失败与基建失败。** 林书雅遇到 memory 服务连接失败时，需要有限重试；共享服务确定不可用时，需要停止该 Experiment 的后续派发。验收时，报告把任务未通过与执行错误分开，并保留恢复、耗尽或停止派发的原因。
+- **MB-8 看见收益与代价。** 林书雅需要同时比较任务完成率、耗时、turn、工具调用、token、成本和重复试错。NiceEval 需要让报告按 memory 条件聚合这些读数，并从异常点下钻到 Attempt 的交互、命令、文件变化和判定证据。
+- **MB-9 只重跑变化部分。** 林书雅调整一条 Eval 或一个 memory 配置后，不想重跑其它未受影响的昂贵任务。NiceEval 需要用 Eval 源码与运行配置的指纹判断历史结果能否沿用。验收时，变化项重新执行，未变化且结论确定的 Attempt 保留来源并进入新的 Sample。
+
+来源：[Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Environment Model 决策](design/environment-model/DECISION.md)、[执行失败分类](feature/error-classification/README.md)、[缓存与结果沿用](feature/experiments/cache.md)、[Sandbox](feature/sandbox/README.md)、[Reports](feature/reports/README.md)。
 
 ### T1 陈砚舟：忠实运行 TerminalBench，而不是重写一套相似题
 
@@ -48,15 +73,21 @@ MemoryBench 还包含跨任务累积状态。
 官方测试必须在 Agent 完成任务后才出现，最终结果由官方 `run-tests.sh` 决定。
 Agent 进程正常退出不代表答案正确，环境没有就绪也不代表 Agent 解题失败。
 
-- **TB-1 保留原题身份。** 陈砚舟要把每道 TerminalBench 题转换成稳定可选择的 Eval，同时保留题面、标签、超时和环境要求。NiceEval 需要支持一份评估意图产生多条稳定案例。验收时，他能按单题、标签或整套题选择范围，结果仍能追溯到原始题目。
-- **TB-2 隔离隐藏测试。** 陈砚舟要先播种题目 Fixture，再让 Agent 工作，最后挂载官方测试并执行 `run-tests.sh`。NiceEval 需要明确任务准备、Agent 交互和判分阶段。验收时，Agent 无法提前读取官方测试，Verifier 的退出结果决定 Verdict，Agent 自身退出码不替代判分。
-- **TB-3 匹配异构环境。** 陈砚舟要让 Python、数据库、多服务等任务得到各自需要的环境，同时把同一个 PatchPilot 安装到这些环境。NiceEval 需要把题目环境要求与 Agent Provision 分开，并等待依赖服务就绪。验收时，更换 Agent 不必复制题目环境；服务未就绪不会开始计 Agent 表现。
-- **TB-4 起跑前发现不支持项。** 陈砚舟不想在第 73 道题才发现某个 Environment profile 没有模板。NiceEval 需要在执行前解析全部环境与 Agent 组合，并提供只查看计划的路径。验收时，计划列出会运行、会跳过和无法运行的题目及原因，不创建 Sandbox 也不消耗模型额度。
-- **TB-5 尊重每题预算。** 陈砚舟要保留每道题自己的超时，并在临时排查时统一设置更小的上限。NiceEval 需要让 Eval 超时作为题目语义，同时允许 Invocation 显式覆盖。验收时，普通运行使用题目预算；统一覆盖只影响这次调用并记录在 Run 中。
-- **TB-6 用 Oracle 验证评测链。** 陈砚舟要先运行官方 `solution.sh`，确认 Fixture、挂载和 Verifier 没有损坏，再花钱测 PatchPilot。NiceEval 需要让 Oracle 与真实 Agent 经过同一环境和判分路径。验收时，Oracle 失败指向评测链问题，不会被包装成 PatchPilot 的能力结论。
-- **TB-7 公平比较 Agent。** 陈砚舟要让 PatchPilot、Codex 和 Claude Code 跑相同题目，并用一致事件、成本与 Verdict 口径查看结果。NiceEval 需要用 Adapter 保留各 Agent 的正式交互方式，再归一化共同观察面。验收时，换 Agent 不改 Eval，报告可以按 Agent 比较并下钻到各自的真实执行记录。
+这里的环境重心在 Eval。
+每个 TerminalBench task package 是环境事实的 owner；Experiment 选择怎样承载这些环境，但不能用自己的默认 template 替换题目的 Compose 或镜像。
 
-来源：[Agents 与 Adapters](feature/adapters/README.md)、[Assertions](feature/assertions/README.md)、[Sandbox](feature/sandbox/README.md)、[Environment Model 决策](design/environment-model/DECISION.md)、[Agent 安装配方决策](design/agent-install-recipe/DECISION.md)、[多容器环境决策](design/multi-container-environments/DECISION.md)。
+- **TB-1 从 task package 派生 Eval。** 陈砚舟要让数据集 adapter 读取每道题的 instruction、标签、超时、Compose、Dockerfile、测试与私有参考，不为数百道题手写重复 wrapper。验收时，每个上游 task id 产生稳定 Eval id，结果能追溯到锁定的数据集版本。
+- **TB-2 让 Eval 拥有 Environment source。** 陈砚舟要让每道题的 Compose、公开 build inputs、主服务和就绪条件随 Eval 一起进入计划。NiceEval 需要让 adapter 产出 provider-neutral Environment source。验收时，更换 Experiment 不改变题目环境身份，更换数据集内容会使受影响环境重新构建。
+- **TB-3 由 Experiment 选择环境承载方式。** 陈砚舟要用 Docker、E2B 或其它 Provider 运行同一批题。NiceEval 需要让 Experiment 的 SandboxSpec 把每题 Environment 解析成一个完整 Sandbox Case。验收时，Provider 不支持某个环境时只能提供等价完整 case 或明确跳过，不能回退到丢失题目要求的默认 template。
+- **TB-4 把 Agent 安装与题目环境分开。** 陈砚舟要把 PatchPilot、Codex 或 Claude Code 安装到最终主 Sandbox，不能为每个 Agent 复制 task package。NiceEval 需要让 Adapter 检查、必要时安装并复检 Agent。验收时，Agent 身份进入可比性记录，安装事实不会改变题目 Environment 身份。
+- **TB-5 隔离隐藏测试与私有参考。** 陈砚舟要先启动题目环境并让 Agent 工作，最后才挂载 `run-tests.sh` 与 `tests/**`；`solution.sh` 永远不能进入 build context 或 Sandbox。验收时，即使 Dockerfile 使用宽泛的 `COPY`，隐藏测试和私有参考也不会被 Agent 或镜像构建读取。
+- **TB-6 保留官方判分。** 陈砚舟要让 Verifier 的退出结果决定 Verdict，不能用 Agent 进程退出码代替。验收时，Agent 正常退出但官方测试失败仍判任务未通过；环境启动失败记录为执行问题，不计入 Agent 解题能力。
+- **TB-7 起跑前发现不支持项。** 陈砚舟不想在第 73 道题才发现某个 Environment profile 没有可用 case。NiceEval 需要在执行前解析全部 Environment、SandboxSpec 与 Agent 组合，并提供只查看计划的路径。验收时，计划列出会运行、会跳过和无法运行的题目及原因，不创建 Sandbox 也不消耗模型额度。
+- **TB-8 尊重每题预算。** 陈砚舟要保留每道题自己的 Agent 与测试超时，并在临时排查时统一设置更小的上限。NiceEval 需要让 Eval 超时作为题目语义，同时允许 Invocation 显式覆盖。验收时，普通运行使用题目预算；统一覆盖只影响这次调用并记录在 Run 中。
+- **TB-9 用 Oracle 验证评测链。** 陈砚舟要先运行官方 `solution.sh`，确认环境、Fixture、挂载和 Verifier 没有损坏，再花钱测 PatchPilot。NiceEval 需要让 Oracle 与真实 Agent 经过同一环境和判分路径。验收时，Oracle 失败指向评测链问题，不会被包装成 PatchPilot 的能力结论。
+- **TB-10 公平比较 Agent。** 陈砚舟要让 PatchPilot、Codex 和 Claude Code 跑相同题目，并用一致事件、成本与 Verdict 口径查看结果。NiceEval 需要用 Adapter 保留各 Agent 的正式交互方式，再归一化共同观察面。验收时，换 Agent 不改 Eval，报告可以按 Agent 比较并下钻到各自的真实执行记录。
+
+来源：[Eval](feature/eval/README.md)、[Experiments](feature/experiments/README.md)、[Agents 与 Adapters](feature/adapters/README.md)、[Assertions](feature/assertions/README.md)、[Sandbox](feature/sandbox/README.md)、[Environment Model 决策](design/environment-model/DECISION.md)、[Agent 安装配方决策](design/agent-install-recipe/DECISION.md)、[多容器环境决策](design/multi-container-environments/DECISION.md)。
 
 ### R1 周芷宁：在发布前选出更合适的 Agent 配置
 
