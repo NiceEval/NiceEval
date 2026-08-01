@@ -215,6 +215,37 @@ async function runOnce(
 }
 
 describe("runAttemptEffect · agent-setup 宿主侧转运(ctx.reportSetup → EvalResult.agentSetup)", () => {
+  it("每轮 send 的 AgentContext 保留当前 experiment/eval/attempt 身份", async () => {
+    let seen: {
+      experimentId?: string;
+      evalId?: string;
+      attempt?: { id: string; index: number };
+    } | undefined;
+    const agent = defineSandboxAgent({
+      name: "fake-agent-attempt-identity",
+      send: async (_input, ctx) => {
+        seen = {
+          experimentId: ctx.experimentId,
+          evalId: ctx.evalId,
+          attempt: ctx.attempt,
+        };
+        return { events: [], status: "completed" };
+      },
+    });
+
+    const result = await runOnce(agent, new FakeSandbox(), {
+      experimentId: "compare/identity",
+      evalDefOverrides: { test: async (t: TestContext) => { await t.send("go"); } },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(seen).toEqual({
+      experimentId: "compare/identity",
+      evalId: "fake/eval",
+      attempt: { id: "fake/eval", index: 0 },
+    });
+  });
+
   it("adapter 交回 manifest 时,原样挂到 EvalResult.agentSetup,且沙箱里不落任何文件", async () => {
     const manifest: AgentSetupManifest = {
       skills: [

@@ -62,6 +62,10 @@ export interface ContextState {
 export interface ContextDeps {
   agent: Agent;
   sandbox: Sandbox;
+  /** 当前 Attempt 的 Eval 身份；经 SessionManager 逐轮透给 AgentContext。 */
+  evalId?: string;
+  /** 当前 Attempt 引用；经 SessionManager 逐轮透给 AgentContext。 */
+  attempt?: import("../types.ts").AgentContext["attempt"];
   model?: string;
   reasoningEffort?: string;
   flags: globalThis.Record<string, unknown>;
@@ -126,6 +130,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   const manager = new SessionManager({
     agent: deps.agent,
     sandbox: deps.sandbox,
+    evalId: deps.evalId,
+    attempt: deps.attempt,
     model: deps.model,
     reasoningEffort: deps.reasoningEffort,
     flags: deps.flags,

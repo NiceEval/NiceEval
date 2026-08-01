@@ -1140,6 +1140,8 @@ async function runAttemptBody(
     const { context, state } = createEvalContext({
       agent: run.agent,
       sandbox,
+      evalId: evalDef.id,
+      attempt: { id: evalDef.id, index: attempt },
       model: run.model,
       reasoningEffort: run.reasoningEffort,
       flags: run.flags,

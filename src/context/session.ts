@@ -106,6 +106,10 @@ export class RunSession implements AgentSession {
 export interface SessionDeps {
   agent: Agent;
   sandbox: Sandbox;
+  /** 当前 Attempt 的 Eval 身份；Runner 路径必填，测试/第三方直构可省略。 */
+  evalId?: string;
+  /** 当前 Attempt 引用；与 setup/teardown 拿到的 AgentContext 保持同一身份。 */
+  attempt?: AgentContext["attempt"];
   model?: string;
   reasoningEffort?: string;
   flags: globalThis.Record<string, unknown>;
@@ -236,6 +240,8 @@ export class SessionManager {
   ): Promise<Turn> {
     const ctx: AgentContext = {
       signal: this.deps.signal,
+      evalId: this.deps.evalId,
+      attempt: this.deps.attempt,
       model: this.deps.model,
       reasoningEffort: this.deps.reasoningEffort,
       flags: this.deps.flags,
