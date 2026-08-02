@@ -116,7 +116,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 
 | 行为 | 文件 |
 |---|---|
-| `defineExperimentState(ExperimentStateInput) → ExperimentStateDefinition` 的校验、冻结与私有品牌 | `src/state/define.ts`、公开导出在 `src/index.ts` |
+| `defineExperimentState(ExperimentStateInput) → ExperimentStateDefinition` 的校验、冻结与私有品牌 | `src/state/definition.ts`、公开导出在 `src/index.ts` |
 | `Stateless | Pinned | Rolling` 规划 ADT、组合约束与 cadence | `src/state/plan.ts`;Experiment 解析接线在 `src/runner/run.ts` |
 | checkpoint load/save 执行、fresh / reuse window 活动、独立 save signal 与 typed failure 归一 | `src/state/runtime.ts`;生命周期接线在 `src/runner/attempt.ts` 与复用池 |
 | State 静态投影进入 configHash、rolling 禁 carry、pinned provenance 原样携带 | `src/runner/config-identity.ts`、`src/runner/fingerprint.ts` |
