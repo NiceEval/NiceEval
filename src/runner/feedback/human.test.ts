@@ -10,6 +10,8 @@ import { createFakeFeedbackIO } from "./testing.ts";
 import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import { stringWidth } from "../../report/model/text-layout.ts";
+import { en } from "../../i18n/en.ts";
+import { zhCN } from "../../i18n/zh-CN.ts";
 import type { DurableFeedbackEvent, InvocationCompletion, InvocationSummary, RunFeedbackPlan, RunFeedbackState } from "../types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 
@@ -191,6 +193,21 @@ describe("renderDurableLines — 面板事件接线到 panel.ts", () => {
 describe("live dashboard — 接线到 panel.ts", () => {
   afterEach(() => {
     // 无需清理:createHumanRenderer 不挂全局状态,只是确保测试之间互不影响的显式记号。
+  });
+
+  it("agent.ensure 的 Human 文案面向结果,不暴露 ensure/probe/install/recheck 内部词", () => {
+    expect(en["feedback.phase.agentEnsure"]).toBe("preparing agent");
+    expect(en["runner.startAgentEnsure"]).toBe("preparing agent...");
+    expect(zhCN["feedback.phase.agentEnsure"]).toBe("正在准备 Agent");
+    expect(zhCN["runner.startAgentEnsure"]).toBe("正在准备 Agent…");
+
+    const visible = [
+      en["feedback.phase.agentEnsure"],
+      en["runner.startAgentEnsure"],
+      zhCN["feedback.phase.agentEnsure"],
+      zhCN["runner.startAgentEnsure"],
+    ].join(" ");
+    expect(visible).not.toMatch(/agent ensure|ensuring agent|probe|install|recheck|探测|安装|复检/);
   });
 
   it("TTY + boxed 能力下,live 面板产生完整框线,ACTIVE 降为横隔而不是独立框", () => {
@@ -903,6 +920,34 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(text).toContain("accept: niceeval accept @1A1B2C3D4E5F");
     expect(text).toContain("prior:  @1E5F6G7H8J9K (failed)");
     expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
+  });
+
+  it("carry-disabled 行显示 linked blocker 的 code/reason,不退化为 details unavailable 或 accept", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "opaque",
+        dispatch: [{
+          reason: "carry-disabled",
+          blockers: [
+            { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
+            { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+          ],
+        }],
+        // 即使上游误带 prior，carry-disabled 也不应生成 stale/accept 详情块。
+        prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available" }],
+      }],
+    });
+
+    expect(text).toContain("carry-disabled: sandbox.command-opaque:");
+    expect(text).toContain("sandbox.lifecycle-opaque:");
+    expect(text).not.toContain("details unavailable");
+    expect(text).not.toContain("stale passed");
+    expect(text).not.toContain("niceeval accept @1A1B2C3D4E5F");
   });
 
   it("同一 selector 的不同旧值各随自己的 locator 输出", () => {

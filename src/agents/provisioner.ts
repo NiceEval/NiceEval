@@ -404,8 +404,14 @@ export function runAgentEnsure(
           message: errorMessage(cause),
         }),
       });
+      if (ensure.progress?.checking !== undefined) {
+        context.progress({ message: ensure.progress.checking });
+      }
       const hit = yield* probeMatches(ensure, target, context, "probe");
       if (hit) {
+        if (ensure.progress?.ready !== undefined) {
+          context.progress({ message: ensure.progress.ready });
+        }
         reportFacts(context.fact, "hit");
         results.push({ outcome: "hit", identity: ensure.identity });
         continue;
@@ -437,6 +443,9 @@ export function runAgentEnsure(
         });
       }
       if (installer.installMode === "staged") {
+        if (installer.progress?.installing !== undefined) {
+          context.progress({ message: installer.progress.installing });
+        }
         const coordinator = yield* Option.match(context.coordinator, {
           onNone: () => Effect.fail(new AgentEnsureError({
             reason: "coordinator-missing",
@@ -457,8 +466,14 @@ export function runAgentEnsure(
             progress: context.progress,
           }),
         );
+        if (ensure.progress?.checking !== undefined) {
+          context.progress({ message: ensure.progress.checking });
+        }
         if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
           return yield* recheckMissed(ensure.identity);
+        }
+        if (ensure.progress?.ready !== undefined) {
+          context.progress({ message: ensure.progress.ready });
         }
         results.push({
           outcome: "installed",
@@ -468,6 +483,9 @@ export function runAgentEnsure(
           artifact,
         });
       } else {
+        if (installer.progress?.installing !== undefined) {
+          context.progress({ message: installer.progress.installing });
+        }
         yield* runInstaller(
           installer,
           () => installer.install(target, {
@@ -477,8 +495,14 @@ export function runAgentEnsure(
             progress: context.progress,
           }),
         );
+        if (ensure.progress?.checking !== undefined) {
+          context.progress({ message: ensure.progress.checking });
+        }
         if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
           return yield* recheckMissed(ensure.identity);
+        }
+        if (ensure.progress?.ready !== undefined) {
+          context.progress({ message: ensure.progress.ready });
         }
         results.push({
           outcome: "installed",

@@ -6,6 +6,14 @@
 两条内置命令都是 `defineSandboxCommand()` 的封装:检查、缺失时执行、执行后复检一次成型,identity 由纯数据参数构成。
 Runner 与 [SandboxLayer](layers.md) 协议不含任何内置命令专属分支;对框架而言它们就是带稳定 identity 的普通 prepare 命令。
 
+## 不用 `prepare()` 安装 Agent CLI
+
+`prepare()` 面向题目或实验自己的环境依赖：安装系统工具、检出 fixture、预热数据或写入这次实验的配置。
+选择 `codexAgent()`、`claudeCodeAgent()` 等内置 Sandbox Agent 时，CLI 的检查与安装由对应 Adapter 自动完成；作者不需要复制官方安装脚本，也不应把它写进题目 fixture。
+
+Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复检方式。这些信息进入 Agent 身份和结果可比性；把安装降成普通 prepare 命令会丢失该绑定，并让用户手工维护两份版本来源。
+需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `installTool()`。完整分工见 [Adapter · Agent Ensure](../adapters/architecture/agent-ensure.md)。
+
 ## 导出入口
 
 ```typescript

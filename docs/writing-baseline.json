@@ -77,7 +77,6 @@
     "docs/feature/adapters/reference/agent-loop-apis.md": 6,
     "docs/feature/adapters/reference/claude-code-otel-telemetry.md": 1,
     "docs/feature/adapters/reference/otel-genai.md": 3,
-    "docs/feature/adapters/sdk/codex-cli/README.md": 1,
     "docs/feature/experiments/README.md": 1,
     "docs/feature/experiments/architecture.md": 3,
     "docs/feature/experiments/cli.md": 2,

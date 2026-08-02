@@ -30,6 +30,11 @@ interface AgentEnsure {
   readonly identity: SerializableValue;
   /** 只读探测:退出码零=命中,非零=未命中(不是失败)。 */
   readonly probe: StableSandboxCommand;
+  /** 可选的 Human live detail;Adapter 自己说明正在检查什么与何时就绪。 */
+  readonly progress?: {
+    readonly checking?: string;
+    readonly ready?: string;
+  };
 }
 
 interface SandboxAgentDef {
@@ -72,6 +77,8 @@ interface AgentInstallerBase {
   readonly identity: SerializableValue;
   /** 支持的目标平台;不支持的平台在安装前报错点名,不猜近似路径。 */
   readonly platforms?: readonly string[];
+  /** 可选的 Human live detail;安装层自己说明正在安装什么。 */
+  readonly progress?: { readonly installing?: string };
 }
 
 type AgentInstaller =
@@ -127,10 +134,14 @@ Adapter 声明 ensure,Runner 由 ensure 声明与配对安装层组装 Agent lay
 Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能带 template;排序与 template 禁令见 [Sandbox · Agent layer](../../sandbox/layers.md#agent-layer)。
 作者面零变化:安装随 experiment 选择的 agent 自动接线,Eval / Experiment 作者不 import 任何安装对象。
 
+`progress` 是 Adapter 面的 Human-only 短期文案，Runner 只在字段存在时转发，不能从 identity、安装模式或内部循环猜一句通用话。Codex 因而可以说清正在检查哪个版本、安装哪份官方发行物；第三方 Adapter 未声明时不显示 detail。它不进 identity、JSON 或结果记录。
+
 每条 `AgentEnsure` 按声明顺序走同一条循环:
 
-1. probe 用 `runCommand` 执行；退出码零命中，非零是正常未命中，记录命中的安装事实。
-2. 未命中时按 identity 精确匹配 `AgentInstaller`：`staged` 先执行宿主侧 `prepareArtifact()` 再在主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。安装后复检同一个 probe。
+1. probe 用 `runCommand` 执行；存在 `progress.checking` 时先投影到 Human active 行。退出码零命中，非零是正常未命中，记录命中的安装事实；命中时投影可选的 `progress.ready`。
+2. 未命中时按 identity 精确匹配 `AgentInstaller`。存在 `progress.installing` 时，先投影到 Human active 行。
+   - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
+   - 安装后复检同一个 probe。复检成功时，投影可选的 `progress.ready`。
 3. install 失败或复检仍未命中:Attempt `errored`,归 `agent.ensure`,附 identity、期望版本与下一步,不记成 Agent 做题 `failed`。
 4. probe 未命中且没有 identity 匹配的安装层:同样 `errored`,错误信息给两条出路——换预装该版本的预制环境让 probe 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
 

@@ -476,6 +476,11 @@ export type AgentEnsureOutcome = "hit" | "installed";
 export interface AgentEnsure {
   readonly identity: AgentIdentity;
   readonly probe: StableSandboxCommand;
+  /** Human-only transient labels; omitted adapters do not add an ensure detail. */
+  readonly progress?: {
+    readonly checking?: string;
+    readonly ready?: string;
+  };
 }
 
 export interface AgentInstallContext {
@@ -499,6 +504,10 @@ interface AgentInstallerBase {
   readonly identity: AgentIdentity;
   /** 支持的目标平台键(`linux-x64-gnu` 等)；省略表示 installer 自己支持所有平台。 */
   readonly platforms?: readonly string[];
+  /** Human-only transient label; omitted installers do not add an install detail. */
+  readonly progress?: {
+    readonly installing?: string;
+  };
 }
 
 export type AgentInstaller =

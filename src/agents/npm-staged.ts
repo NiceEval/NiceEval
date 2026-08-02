@@ -49,6 +49,12 @@ export interface NpmCliInstallerOptions {
   cacheDir?: string;
   /** 覆盖 prepare(测试注入 / 离线预置)。 */
   prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+  /** Human-only transient labels; omitted labels are not synthesized by the Runner. */
+  progress?: {
+    readonly checking?: string;
+    readonly installing?: string;
+    readonly ready?: string;
+  };
 }
 
 interface AgentProbeResult {
@@ -302,6 +308,9 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
   const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
     identity: opts.identity,
     installMode: "staged",
+    ...(opts.progress?.installing !== undefined
+      ? { progress: { installing: opts.progress.installing } }
+      : {}),
     prepareArtifact: ({ targetPlatform }) =>
       opts.prepare !== undefined ? opts.prepare(targetPlatform) : (() => {
         // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
@@ -320,7 +329,21 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       })(),
     install: (sandbox, context) => installFromStaged(sandbox, context.artifact, opts.identity, opts.bin),
   };
-  return { ensure: { identity: opts.identity, probe }, installer };
+  return {
+    ensure: {
+      identity: opts.identity,
+      probe,
+      ...(opts.progress?.checking !== undefined || opts.progress?.ready !== undefined
+        ? {
+            progress: {
+              ...(opts.progress?.checking !== undefined ? { checking: opts.progress.checking } : {}),
+              ...(opts.progress?.ready !== undefined ? { ready: opts.progress.ready } : {}),
+            },
+          }
+        : {}),
+    },
+    installer,
+  };
 }
 
 /**

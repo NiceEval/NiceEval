@@ -189,15 +189,15 @@ spinner 动画本身不能触发重画——静态 `●` 已足以表示 running
 ### Attempt 阶段
 
 Human active 行的最后一栏显示当前生命周期阶段。
-阶段词表全仓只有一套——[Record Format 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson):live 展示、`--json` 事件的 `phase` 字段、落盘 `phases[].name` 与 `error.phase` 用的是同一组字符串,不存在「展示一套名、落盘另一套名」。
-Human 展示列只是各阶段的人读投影:
+阶段词表全仓只有一套——[Record Format 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson):`--json` 事件的 `phase` 字段、落盘 `phases[].name` 与 `error.phase` 用的是同一组字符串。
+Human 展示是面向结果的投影；它不暴露内部循环或改变机器面 phase:
 
 | Phase | Human 展示 | 什么时候出现 |
 |---|---|---|
 | `sandbox.queue` | queued for sandbox | 等待容器创建信号量(并发限流);direct agent 跳过 |
 | `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;direct agent 跳过 |
 | `sandbox.prepare` | preparing sandbox | 依次执行两层作者 layer 的 prepare 命令链,template owner 的命令在前;两层都没有命令就跳过 |
-| `agent.ensure` | ensuring agent | Agent layer 的 ensure 循环:probe、缺失时由配对安装层安装并复检 Agent CLI;每 Attempt 重探,命中快速返回 |
+| `agent.ensure` | preparing agent | 确认选中的 Agent CLI 已就绪。内置 Adapter 缺失时自动准备其锁定的官方发行物并确认安装；每 Attempt 重探，命中快速返回 |
 | `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);direct agent 跳过 |
 | `agent.setup` | agent setup | Agent runtime setup:写 agent 配置、连 agent;没有 `Agent.setup` 就跳过 |
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
@@ -219,8 +219,8 @@ detail 是最后一条短预览，不逐帧追加、不过度保留工具输出�
 `waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。
 `passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
 
-每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的准备步骤会稳定停在 `preparing sandbox` 或 `agent setup`,而不是继续显示前一阶段。
-detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。
+每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的准备步骤会稳定停在 `preparing sandbox`、`preparing agent` 或 `agent setup`,而不是继续显示前一阶段。
+detail 只更新当前行,不成为永久事件。Agent 准备的 detail 必须由 Adapter 或安装层声明，Runner 不从内部循环合成措辞；例如 Codex 显示它正在检查的版本和正在安装的官方发行物。未声明的 Adapter 不显示 detail。带 detail 的另一个长等待段是 `running eval`。
 `running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
 
 `evaluating assertions` 的 detail 是 judge 推进 `judge k/n · <检查方式>`。

@@ -1,6 +1,19 @@
 # Codex CLI
 
-使用 `codexAgent` 在 Sandbox 中安装并运行 Codex CLI。
+使用 `codexAgent` 在 Sandbox 中自动准备并运行 Codex CLI。
+
+## 自动准备官方 Codex CLI
+
+`codexAgent()` 自带官方 Codex CLI 安装层。作者只选择 Agent，不需要在 Eval、Experiment 或题目 fixture 中重复写安装脚本。
+每条 Attempt 进入 Agent 前，Adapter 检查 sandbox 内的 Codex CLI 是否满足锁定版本；缺失时准备并安装与目标平台匹配的 OpenAI 官方发行包，随后确认 CLI 已可用。
+
+这条准备路径不依赖题目网络，也不要求任务镜像自带 Node 或 npm。预制环境中已有相同版本时，检查会直接命中；预装是加速路径，不是正确性的前提。
+
+它不在题目 Sandbox 内执行 `curl -fsSL https://chatgpt.com/codex/install.sh | sh`。评测需要锁定版本、可校验 npm tarball 和不受题面网络影响的安装；Adapter 在宿主准备对应平台的官方 `@openai/codex` 发行包，再上传、解压并链接原生 CLI。
+
+Human live 面板会依次显示 `checking Codex CLI <version>`、`installing official OpenAI Codex CLI <version>` 与 `Codex CLI <version> ready`。这是 Codex Adapter 声明的短期进度，不进入 JSON、结果记录或环境身份。
+
+安装过程属于 Agent 层，而不是 Sandbox layer 的 `prepare()`。后者只放题目或实验自身的环境依赖，例如系统包、数据、预热和内部工具。完整的身份、平台与失败归属契约见 [Agent Ensure](../../architecture/agent-ensure.md)。
 
 ```ts
 import { codexAgent } from "niceeval/adapter";
@@ -72,13 +85,17 @@ Codex Adapter 把 Skills 写到可发现目录并提供稳定发现指引；不�
 ## 执行信任姿态
 
 `codex exec` 一律以 `--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --dangerously-bypass-hook-trust` 运行，首轮与 `codex exec resume` 续轮相同。
-hook 信任 bypass 与审批 bypass 属同一信任层级：沙箱运行是 headless 的，codex 对非 managed 来源 hook 的交互式信任确认永远无人应答，不 bypass 时这些 hook 被静默跳过且零报错——插件依赖的注入/捕获行为整体失效而无任何征兆。
+
+hook 信任 bypass 与审批 bypass 属同一信任层级。沙箱运行是 headless 的，codex 对非 managed 来源 hook 的交互式信任确认永远无人应答。
+
+不 bypass 时，这些 hook 被静默跳过且零报错，插件依赖的注入和捕获行为会整体失效。
+
 沙箱里的每个 hook 来源都由实验配置显式声明（`plugins`、`postSetup`、`configFile`），声明即审计，因此不设开关。
 `bypass_hook_trust` 是 runtime-only 参数，`config.toml` 写不了，只能进 exec 命令行。
 
 ## 预制环境
 
-Adapter 的必填 ensure 用 PATH 上 `codex` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
+`codexAgent` 在 PATH 上检查 `codex` 的精确版本。预装命中会直接进入运行；未命中时，内置安装层自动准备锁定版本的官方发行包并确认安装结果。
 `setup` 只写本 Attempt 的鉴权、原生配置与扩展。预装只是快速路径，不是正确性前提。
 E2B 官方 `codex` template 与 NiceEval 公共模板 `correctroads-default-team/niceeval-codex`（CI 钉 release tag）都是可用起点；构建项目自己的镜像/模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
 

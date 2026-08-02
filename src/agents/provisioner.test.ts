@@ -54,6 +54,58 @@ async function ensureFailure(effect: Effect.Effect<unknown, AgentEnsureError>): 
 }
 
 describe("Runner-owned Agent Ensure", () => {
+  it("只转发 Agent 声明的 UI progress,未声明的 adapter 不产生 detail", async () => {
+    let present = false;
+    const identity = { agent: "fixture", version: "1.0.0", revision: "progress" } as const;
+    const ensure: AgentEnsure = {
+      identity,
+      progress: { checking: "checking Fixture CLI", ready: "Fixture CLI ready" },
+      probe: defineSandboxCommand({ id: "fixture.progress", revision: "1", inputs: identity }, async () => {
+        if (!present) throw new SandboxCommandExitError(result(1));
+      }),
+    };
+    const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
+      identity,
+      installMode: "staged",
+      progress: { installing: "installing Fixture CLI" },
+      prepareArtifact({ targetPlatform }) {
+        return stagedArtifact(targetPlatform);
+      },
+      async install() {
+        present = true;
+      },
+    };
+
+    const progress: string[] = [];
+    await Effect.runPromise(runAgentEnsure([ensure], [installer], sandbox, {
+      ...context(),
+      progress: ({ message }) => progress.push(message),
+    }));
+    expect(progress).toEqual([
+      "checking Fixture CLI",
+      "installing Fixture CLI",
+      "checking Fixture CLI",
+      "Fixture CLI ready",
+    ]);
+
+    const noUiProgress: string[] = [];
+    await Effect.runPromise(runAgentEnsure([{
+      identity,
+      probe: ensure.probe,
+    }], [{
+      identity,
+      installMode: "staged",
+      prepareArtifact({ targetPlatform }) {
+        return stagedArtifact(targetPlatform);
+      },
+      async install() {},
+    }], sandbox, {
+      ...context(),
+      progress: ({ message }) => noUiProgress.push(message),
+    }));
+    expect(noUiProgress).toEqual([]);
+  });
+
   it("probe miss 只由精确 identity installer 安装，并复检同一 probe", async () => {
     let present = false;
     let installs = 0;

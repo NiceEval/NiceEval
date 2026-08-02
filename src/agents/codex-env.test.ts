@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createAgentSession } from "../context/session.ts";
 import type { CommandOptions, CommandResult, Sandbox, SandboxAgentContext } from "../types.ts";
 import { codexAgent, type CodexConfig } from "./codex.ts";
+import { DEFAULT_CODEX_CLI_VERSION } from "./coding-cli-versions.ts";
 
 interface ShellCall {
   readonly script: string;
@@ -42,6 +43,19 @@ function fixture(): {
 }
 
 describe("codexAgent process env", () => {
+  it("工厂声明精确的 Agent Ensure UI progress 文案", () => {
+    const agent = codexAgent();
+    if (agent.kind !== "sandbox") throw new Error("codexAgent must be a sandbox agent");
+
+    expect(agent.ensure[0]?.progress).toEqual({
+      checking: `checking Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
+      ready: `Codex CLI ${DEFAULT_CODEX_CLI_VERSION} ready`,
+    });
+    expect(agent.installers[0]?.progress).toEqual({
+      installing: `installing official OpenAI Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
+    });
+  });
+
   it("首轮与 resume 只经 Sandbox options 注入同一环境，并登记全部潜在敏感值", async () => {
     const apiKey = "synthetic-codex-key";
     const space = "memorybench-nowledge-space-a";

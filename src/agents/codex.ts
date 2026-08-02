@@ -170,6 +170,11 @@ export function codexAgent(config?: CodexConfig): Agent {
       packageName: "@openai/codex",
       bin: "codex",
       platformPackage: codexPlatformPackage,
+      progress: {
+        checking: `checking Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
+        installing: `installing official OpenAI Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
+        ready: `Codex CLI ${DEFAULT_CODEX_CLI_VERSION} ready`,
+      },
   });
 
   return defineSandboxAgent({
