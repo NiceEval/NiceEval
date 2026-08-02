@@ -10,7 +10,7 @@
       "from": "examples/zh/origin/claude-sdk",
       "to": "examples/zh/tier1/claude-sdk",
       "contract": "verbatim",
-      "baseTree": "7b3bfdf1ba4b9dd0ccdeb0480c351010c410a209"
+      "baseTree": "f0cd85fb3fc461f8f9de4f0d9da27ed6d932476c"
     },
     {
       "from": "examples/zh/origin/pi-sdk",
@@ -70,7 +70,7 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "3c5a9791216d1bfbd247056bea550306c421241a"
+      "baseTree": "025e08e8acee5c467dc81a49bee0b93046fea830"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
