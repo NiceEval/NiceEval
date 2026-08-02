@@ -163,29 +163,35 @@ export class ReusableSandboxPool {
         // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
         // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
           const lifetime = yield* externalPromise(() => ready.lifetime.ensureLifetime(minRemainingMs));
-          if (lifetime.ready) return yield* this.lease(ready, leaseDeadlineAt?.());
+          // lifetime 检查是异步 provider I/O；其间 stop() 或另一条 release 可能已经退休这台。
+          // 只有仍是 Idle 的实例才能真正借出，stop 后让下一轮在入口处统一失败。
+          if (lifetime.ready && !this.stopped && ready.lifecycle._tag === "Idle") {
+            return yield* this.lease(ready, leaseDeadlineAt?.());
+          }
+          if (this.stopped || ready.lifecycle._tag !== "Idle") continue;
           yield* this.retire(ready);
           continue;
         }
         if (this.entries.length + this.creating < this.capacity) {
           this.creating += 1;
-          const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators).pipe(
+          return yield* Effect.gen(this, function* () {
+            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators);
+            this.entries.push(created);
+            // stop 可能在物化期间开始。把刚创建的 entry 先纳入池，再由唯一 retire 路径关闭
+            // 它自己的 Scope；绝不能把它借给已停止的池，也不能让 stop 在 creating=0 时漏掉它。
+            if (this.stopped) {
+              yield* this.retire(created);
+              return yield* Effect.fail(new Error("sandbox reuse pool has been stopped"));
+            }
+            return yield* this.lease(created, leaseDeadlineAt?.());
+          }).pipe(
             Effect.ensuring(Effect.sync(() => {
               this.creating -= 1;
               this.wake();
             })),
           );
-          this.entries.push(created);
-          return yield* this.lease(created, leaseDeadlineAt?.());
         }
-        yield* Effect.async<void>((resume) => {
-          const wake = () => resume(Effect.void);
-          this.waiters.push(wake);
-          return Effect.sync(() => {
-            const index = this.waiters.indexOf(wake);
-            if (index >= 0) this.waiters.splice(index, 1);
-          });
-        });
+        yield* this.awaitWake();
       }
     });
   }
@@ -194,6 +200,11 @@ export class ReusableSandboxPool {
     return Effect.gen(this, function* () {
       this.stopped = true;
       this.wake();
+      // 已借出的 lease 仍在执行其 Attempt/cleanup；现在关闭 entry Scope 会把 Sandbox 在
+      // 使用中 teardown。创建中的 entry 尚未进 entries，必须等它落入唯一 retire 路径。
+      while (this.creating > 0 || this.entries.some((entry) => entry.lifecycle._tag === "Leased")) {
+        yield* this.awaitWake();
+      }
       yield* Effect.forEach([...this.entries], (entry) => this.retire(entry), {
         concurrency: "unbounded",
         discard: true,
@@ -408,6 +419,17 @@ export class ReusableSandboxPool {
 
   private wake(): void {
     this.waiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  private awaitWake(): Effect.Effect<void> {
+    return Effect.async<void>((resume) => {
+      const wake = () => resume(Effect.void);
+      this.waiters.push(wake);
+      return Effect.sync(() => {
+        const index = this.waiters.indexOf(wake);
+        if (index >= 0) this.waiters.splice(index, 1);
+      });
+    });
   }
 }
 

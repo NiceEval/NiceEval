@@ -3,7 +3,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Exit, Scope } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
   noSandboxBackendCapabilities,
@@ -45,14 +45,17 @@ async function composePlan(): Promise<Extract<LinkedRunPlan, { readonly _tag: "S
   return planned.plan;
 }
 
-describe("ReusableSandboxPool · pair-owned plan", () => {
-  it("materializes once through the plan runtime and reuses the owned resource group", async () => {
-    const commands: string[] = [];
-    const deadlines: Array<number | undefined> = [];
-    const groupStop = vi.fn(async () => {});
+function runtimeFixture(opts: { readonly beforeMaterialize?: () => Promise<void> } = {}) {
+  const commands: string[] = [];
+  const deadlines: Array<number | undefined> = [];
+  const groupStop = vi.fn(async () => {});
+  let sequence = 0;
+  const materializeCompose = vi.fn(async (legacy): Promise<MaterializedSandboxCase> => {
+    await opts.beforeMaterialize?.();
+    const sandboxId = `compose-${++sequence}`;
     const backend: SandboxProviderBackend = {
       workdir: "/workspace",
-      sandboxId: "compose-main",
+      sandboxId,
       otlpHost: "host.docker.internal",
       capabilities: {
         ...noSandboxBackendCapabilities,
@@ -72,10 +75,10 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       async downloadDirectory() {},
       async stop() {},
     };
-    const materializeCompose = vi.fn(async (legacy): Promise<MaterializedSandboxCase> => ({
+    return {
       sandbox: normalizeSandboxPaths(backend, "docker"),
       group: {
-        primary: { sandboxId: backend.sandboxId, provider: "docker" },
+        primary: { sandboxId, provider: "docker" },
         resources: { projectName: "fixture" },
         stop: groupStop,
       },
@@ -85,7 +88,14 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       identity: legacy.identity,
       carryEligible: true,
       facts: { projectName: "fixture" },
-    }));
+    };
+  });
+  return { commands, deadlines, groupStop, materializeCompose };
+}
+
+describe("ReusableSandboxPool · pair-owned plan", () => {
+  it("materializes once through the plan runtime and reuses the owned resource group", async () => {
+    const { commands, deadlines, groupStop, materializeCompose } = runtimeFixture();
     const pool = new ReusableSandboxPool(
       await composePlan(),
       1,
@@ -115,6 +125,59 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
     expect(second.reuseOrdinal).toBe(2);
     expect(deadlines).toHaveLength(2);
     expect(commands.some((command) => command.includes("git"))).toBe(true);
+    expect(groupStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop 等待活跃 lease 的 Scope 释放，之后只退休一次", async () => {
+    const { groupStop, materializeCompose } = runtimeFixture();
+    const pool = new ReusableSandboxPool(
+      await composePlan(),
+      1,
+      { progress: () => {}, diagnostic: () => {} },
+      { experimentId: "compare/codex", signal: new AbortController().signal, progress: () => {}, diagnostic: () => {}, fact: () => {} },
+      { _tag: "Stateless" },
+      { _tag: "Test", materializeCompose },
+    );
+    const attemptScope = Effect.runSync(Scope.make());
+    await Effect.runPromise(Scope.extend(pool.acquire(60_000), attemptScope));
+
+    let stopSettled = false;
+    const stopping = Effect.runPromise(pool.stop()).finally(() => { stopSettled = true; });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(stopSettled).toBe(false);
+    expect(groupStop).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(attemptScope, Exit.void));
+    await stopping;
+    expect(groupStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop 覆盖物化竞态：创建完成后不借出，并恰好关闭一次", async () => {
+    let allowMaterialize!: () => void;
+    const materializationGate = new Promise<void>((resolve) => { allowMaterialize = resolve; });
+    const { groupStop, materializeCompose } = runtimeFixture({ beforeMaterialize: () => materializationGate });
+    const pool = new ReusableSandboxPool(
+      await composePlan(),
+      1,
+      { progress: () => {}, diagnostic: () => {} },
+      { experimentId: "compare/codex", signal: new AbortController().signal, progress: () => {}, diagnostic: () => {}, fact: () => {} },
+      { _tag: "Stateless" },
+      { _tag: "Test", materializeCompose },
+    );
+    const attemptScope = Effect.runSync(Scope.make());
+    const acquiring = Effect.runPromise(Scope.extend(pool.acquire(60_000), attemptScope));
+    await vi.waitFor(() => expect(materializeCompose).toHaveBeenCalledTimes(1));
+
+    let stopSettled = false;
+    const stopping = Effect.runPromise(pool.stop()).finally(() => { stopSettled = true; });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(stopSettled).toBe(false);
+    expect(groupStop).not.toHaveBeenCalled();
+
+    allowMaterialize();
+    await expect(acquiring).rejects.toThrow("sandbox reuse pool has been stopped");
+    await stopping;
+    await Effect.runPromise(Scope.close(attemptScope, Exit.void));
     expect(groupStop).toHaveBeenCalledTimes(1);
   });
 });
