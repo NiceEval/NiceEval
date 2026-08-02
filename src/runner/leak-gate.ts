@@ -33,7 +33,7 @@ export interface BuildContextSpec {
 }
 
 /** bind mount 对 Agent 可见面的阶段。 */
-export type BindMountPhase = "agent" | "scoring" | "any";
+export type BindMountPhase = "agent" | "assertions" | "any";
 
 export interface BindMountSpec {
   /** 宿主机源路径(绝对;文件或目录)。 */

@@ -2,7 +2,7 @@ import type { JudgeConfig } from "../types.ts";
 
 /**
  * Judge 执行配置逐字段解析。Experiment 是一次可签入的运行变化轴，因此排在 Eval 与
- * 项目默认之前；单条 assertion 的 model 覆盖由 scoring/judge.ts 在调用点处理。
+ * 项目默认之前；单条 assertion 的 model 覆盖由 assertions/judge.ts 在调用点处理。
  */
 export function resolveJudge(
   experimentJudge: JudgeConfig | undefined,

@@ -68,7 +68,7 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
   过滤规则本身可序列化进 BuildKey 输入（与「求值后的 context 内容」并列，供 sandbox identity 消费）；改 `.dockerignore` / 额外过滤规则在内容未变时仍改变规则面。
 - **普通顺序与 send 窗口**：send 前上传对该轮可见；send 返回后上传不进入过去 turn，也不进入 agent diff；上传后再次 send 时下一轮可见。
   不存在 `afterAgent` 状态机或独立 phase，时间树按 `eval.run` 下的真实调用顺序记录。
-- **`defineEval` / `defineScoreEval` 的题型标记**：`defineEval` 产物恒 `scoring: "pass"`，`defineScoreEval` 产物恒 `"points"`——两者字段与校验规则完全同形（拒绝显式 `id`、拒绝显式 `scoring`、拒绝显式 `configHash`、要求 `test` 为函数；`sandbox` 只接受 factory 产物,拒绝普通对象伪造），各自的报错消息各自指名函数名，不复用对方文案。
+- **`defineEval` / `defineScoreEval` 的题型标记**：`defineEval` 产物恒 `evaluationKind: "pass"`，`defineScoreEval` 产物恒 `"points"`——两者字段与校验规则完全同形（拒绝显式 `id`、拒绝显式 `evaluationKind`、拒绝显式 `configHash`、要求 `test` 为函数；`sandbox` 只接受 factory 产物,拒绝普通对象伪造），各自的报错消息各自指名函数名，不复用对方文案。
   `defineScoreEval` 的 `test(t)` 里 `t` 允许调用 `.points(n)` / `t.score(label, n)`；`.points(n)` 后可继续声明 `.gate().stopOnFailure()`，但不能回到 `.soft()` / `.atLeast()`。`t.require` 与值、t、session、turn 断言句柄的 `.stopOnFailure()` 两种题型都有，合法链和返回值由 typecheck fixture 证明；跨题型复用的 helper 标注 `BaseTestContext<H>` 时两种 `t` 都能传入。
 - **send 与 turn**：`send` 的输入形态与不可变 Turn；send 后 `reply`/`events`/`sessionId` 反映本轮结果——直接观察用户会读取的值，只断言 `agent.send` 被调用一次发现不了 Context 暴露旧 Run 的 bug；`turn.status` 三值与 usage 可缺失；**多轮 Usage 累计的诚实口径**——adapter 未报告的字段(`requests`、cache 计数)累计后保持省略,不得以 0/每轮 +1 凑数,fixture 要区分「报了 0」与「没报」两态;轮标签铸造规则（主会话 `turn<N>`、新会话 `session<K>/turn<N>`）；`sendFile` 的 MIME 推断与错误反馈；turn 级断言失败不中断 `test()`。
 - **宿主侧行为摘要 `t.o11y`**：读取时从当前 attempt 已累积事件经 `buildO11ySummary()` 现算；多轮之间反映截至最近一次已返回 `send` 的行为；direct 与 sandbox Agent 同一行为。

@@ -54,7 +54,7 @@ interface PhaseTiming {
 | `eval.run` | 整段 `test(t)`,含所有 `send` 与手工命令;`children` 保存手工命令与逐 session/turn 包络 | 从不缺席 |
 | `agent.run` | 嵌套在 `eval.run` 内的 adapter send 窗口;只作错误/诊断归因,不单列计时条目 | (不出现在 `phases`) |
 | `workspace.diff` | 采 `git diff`(`captureGeneratedFiles`) | direct agent / skipped |
-| `scoring.evaluate` | 断言 finalize + 判定,含 judge 调用 | skipped 时为空集但仍记 |
+| `assertions.evaluate` | 断言 finalize + 判定,含 judge 调用 | skipped 时为空集但仍记 |
 | `telemetry.collect` | OTLP receiver settle / collect(有固定的落地等待窗口) | 没起 receiver |
 | `agent.teardown` | `Agent.teardown` | 没定义 |
 | `sandbox.cleanup` | 两层作者 layer 已登记 cleanup 按全局准备顺序逆序,phase 级合计一条,`children` 逐 command 并继续展开沙箱命令 | direct agent / 没有登记 cleanup |

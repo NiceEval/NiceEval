@@ -358,7 +358,7 @@ export interface StabilityMatrixCell {
   passed: number;
   failed: number;
   errored: number;
-  /** passed + failed + errored 之和;unreadable 不计。 */
+  /** passed + failed + errored 之和;skipped 不计。 */
   executions: number;
 }
 
@@ -390,7 +390,7 @@ export interface VerdictTally {
   passed: number;
   failed: number;
   errored: number;
-  unreadable: number;
+  skipped: number;
 }
 
 /**
@@ -525,7 +525,7 @@ export interface AttemptListItem {
   verdict: Verdict;
   /**
    * 该轮的单行结果摘要,已按 Scoring display 契约折好:failed 取主失败断言摘要,
-   * errored 取结构化 error 的一层摘要(phase · code · message),passed / unreadable 为 null。
+   * errored 取结构化 error 的一层摘要(phase · code · message),passed / skipped 为 null。
    * 渲染面只做宽度截断,不重算摘要。
    */
   failureSummary: string | null;
@@ -552,7 +552,7 @@ export interface AttemptListItem {
 export interface EvalListItem {
   experimentId: string;
   evalId: string;
-  /** 任一轮 passed 即 passed,否则 failed > errored > unreadable。 */
+  /** 任一轮 passed 即 passed,否则 failed > errored > skipped。 */
   verdict: Verdict;
   examScore: MetricValue;
   /** 该题挣分(totalScore 指标,多轮按 perEval mean 折叠);通过制 eval 为 null cell。 */
@@ -765,7 +765,7 @@ export interface AttemptSourceData {
   summary: AnnotatedEvalSourceSummary;
 }
 
-/** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/unreadable 或无可操作失败时 null。 */
+/** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */
 export interface AttemptFixPromptData {
   prompt: string;
 }

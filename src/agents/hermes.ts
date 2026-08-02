@@ -8,7 +8,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parsers/hermes.ts";
 import { DEFAULT_HERMES_CLI_VERSION } from "./coding-cli-versions.ts";
 import { shellQuote } from "../sandbox/shell.ts";

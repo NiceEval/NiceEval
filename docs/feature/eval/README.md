@@ -123,7 +123,7 @@ export default defineScoreEval({
 严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只记录。
 需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
 
-题型是定义期事实，进 `EvalDescriptor.scoring`(`"pass" | "points"`)供报告选择主读数。
+题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "points"`)供报告选择主读数。
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
 计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-scoring.md)。
 

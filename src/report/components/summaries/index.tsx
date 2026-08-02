@@ -64,7 +64,7 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
               passed: tally.passed,
               failed: tally.failed,
               errored: tally.errored,
-              skipped: tally.unreadable,
+              skipped: tally.skipped,
             },
           }}
         />

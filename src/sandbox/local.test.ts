@@ -26,7 +26,7 @@ import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import type { Attempt, AgentRun, RunOptions } from "../runner/types.ts";
 import type { Config, DiscoveredEval } from "../types.ts";
 import { defineSandboxCommand } from "./commands.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import { discoverEval } from "../runner/types.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
@@ -209,7 +209,9 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
       keepSandbox: "failed",
     };
     const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
-    const result = await Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem));
+    const result = await Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem, {
+      buildLocators: new Map(),
+    }));
 
     expect(result.error?.message).toContain("--keep-sandbox is unsupported");
     expect(result.error?.message).toContain("local");

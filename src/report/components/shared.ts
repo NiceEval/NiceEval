@@ -65,10 +65,10 @@ export function isCell(value: unknown): boolean {
   return cellProblem(value, "cell") === null;
 }
 
-/** 四态 tally { passed, failed, errored, unreadable } 的字段路径前缀校验。 */
+/** 四态 tally { passed, failed, errored, skipped } 的字段路径前缀校验。 */
 export function tallyProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a tally { passed, failed, errored, unreadable }`;
-  for (const key of ["passed", "failed", "errored", "unreadable"] as const) {
+  if (!isObject(value)) return `"${path}" must be a tally { passed, failed, errored, skipped }`;
+  for (const key of ["passed", "failed", "errored", "skipped"] as const) {
     if (typeof value[key] !== "number") return `"${path}.${key}" must be a number`;
   }
   return null;

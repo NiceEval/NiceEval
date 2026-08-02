@@ -36,7 +36,7 @@ import {
   type Run,
   type RunMeta,
 } from "./index.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 

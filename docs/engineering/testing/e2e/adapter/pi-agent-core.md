@@ -8,7 +8,7 @@
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 工具执行         | 消息开始/增量/结束与工具执行事件归一进标准事件流，调用与结果配对成立；反例断言未提供的工具 `notCalledTool`                              |
 | 会话             | 客户端历史经 Adapter 私有的 typed slot 读取并整体提交，第二轮能引用首轮事实                                                                    |
-| HITL 暂停恢复    | `beforeToolCall` 暂停时产生 `input.requested`，未消费完的流经 typed slot 保存，回答轮 `take(slot)` 恢复并出现对应 `action.result`               |
+| HITL 暂停恢复    | `beforeToolCall` 暂停时产生 `input.requested`，未消费完的流经 typed slot 保存，回答轮 `take(slot)` 恢复并出现对应 `operation.finished`               |
 | usage 与失败状态 | usage 逐轮进入 `Turn`；失败状态如实归一，不折成普通消息                                                                                 |
 
 ## 仓库验收

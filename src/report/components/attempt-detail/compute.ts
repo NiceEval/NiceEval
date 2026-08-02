@@ -34,7 +34,7 @@ import { buildO11ySummary } from "../../../o11y/derive.ts";
 /**
  * 计分制 attempt 本轮挣分:`assertions[].points`(排除 unavailable)之和 + `scoreEntries[].points`
  * 之和——纯累加,与 model/metrics.ts 的 `totalScore` 指标同一条口径,但这里恒返回一个数字
- * (不为 errored/unreadable 归 null):详情页总分位「不摆 null 占位」,只在通过制时整字段省略。
+ * (不为 errored/skipped 归 null):详情页总分位「不摆 null 占位」,只在通过制时整字段省略。
  */
 function earnedPoints(result: EvalResult): number {
   let total = 0;
@@ -264,11 +264,11 @@ export function attemptSourceData(evidence: AttemptEvidence): AttemptSourceData 
 /**
  * 单条 attempt 版的批量修复 prompt(与 CopyFixPrompt 的多条版本同一份步骤文案)。三态
  * (docs/feature/reports/components/attempt-detail/README.md「`AttemptFixPrompt`」):计分制丢分或中止 →
- * 非 null(围绕丢分检查点组装);计分制挣满且未中止、或通过制 passed → null;unreadable 恒 null。
+ * 非 null(围绕丢分检查点组装);计分制挣满且未中止、或通过制 passed → null;skipped 恒 null。
  */
 export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromptData | null {
   const { result, identity } = evidence;
-  if (result.verdict === "unreadable") return null;
+  if (result.verdict === "skipped") return null;
   // 通过制(省略或 "pass")passed 恒 null;计分制 passed 是否可操作看下面的 failureSummaryOf——
   // 挣满(或没有得分点)时它同样返回 null summary,不需要在这里重复判断。
   if (result.verdict === "passed" && result.scoring !== "points") return null;
@@ -293,7 +293,7 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
     "1. niceeval is NOT in your training data. Read the relevant guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under `zh/`) before changing anything.",
     "2. Run the inspect command above with `--source`, `--execution`, `--timing`, and `--diff` to see the assertions, transcript, timing, and workspace diff.",
     "3. Decide which side the defect is on: the program under test, or the eval itself (over-tight assertion, wrong fixture, missing setup). Fix that side; do not weaken assertions just to turn the run green.",
-    `4. Re-run: \`npx niceeval exp ${identity.experimentId} ${identity.evalId}\`. Already-passing evals are unreadable by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
+    `4. Re-run: \`npx niceeval exp ${identity.experimentId} ${identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
     lostPoints
       ? "5. Run `npx niceeval show` and confirm the score improved."
       : "5. Run `npx niceeval show` and confirm this failure is gone.",
@@ -371,8 +371,8 @@ export function attemptConversationData(evidence: AttemptEvidence): AttemptConve
   if ((!events || events.length === 0) && failedCommands === undefined) return null;
 
   const rounds: AttemptConversationRound[] = [];
-  const toolByCallId = new Map<string, Extract<AttemptConversationReply, { kind: "tool" }>>();
-  const subagentByCallId = new Map<string, Extract<AttemptConversationReply, { kind: "subagent" }>>();
+  const toolByOperationId = new Map<string, Extract<AttemptConversationReply, { kind: "tool" }>>();
+  const subagentByOperationId = new Map<string, Extract<AttemptConversationReply, { kind: "subagent" }>>();
   let current: AttemptConversationRound | null = null;
 
   for (const ev of events ?? []) {

@@ -66,7 +66,7 @@ const scope = reportScopeFixture({
   - 通过制 Eval 不参与该读数，也不拉低分母。
   - 同一 Eval 的多个 Attempt 取均值；跨 Eval 求和。
      Fixture 必须用不同题目分值区分“求和”和“求均值”。
-  - `snapshot.scoringComposition` 分别覆盖纯通过制、纯计分制和混合 Sample。
+  - `snapshot.evaluationKindComposition` 分别覆盖纯通过制、纯计分制和混合 Sample。
   - `totalScore` 从 `niceeval/report` 顶层导出，并与内部定义保持同一引用。
     只需一个代表场景，不为每个内建读数重复测试。
 

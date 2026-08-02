@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { defineDirectAgent, defineSandboxAgent } from "./define.ts";
 import { makeSendFailure } from "./context/send-failures.ts";
 import { defineSandboxCommand } from "./sandbox/commands.ts";
-import { completeEvidenceCoverage } from "./scoring/coverage.ts";
+import { completeEvidenceCoverage } from "./assertions/coverage.ts";
 
 const ensure = {
   identity: { agent: "fixture", version: "1.0.0", revision: "1" },

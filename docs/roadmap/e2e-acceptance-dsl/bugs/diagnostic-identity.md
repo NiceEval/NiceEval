@@ -31,7 +31,7 @@ proof 不解析 code 的冒号，也不从 message 正则提取身份。
 ## 同形反证：最后经过的阶段不是失败原因
 
 fix commit `d3792749` 前，runner 把 teardown 前最后一个 lifecycle phase 当作 failure phase。
-`eval.run` 已抛错的 attempt 后续仍经过 scoring，永久通知便错误显示 `scoring.evaluate`；普通 gate failed 也被伪造一个 phase。
+`eval.run` 已抛错的 attempt 后续仍经过断言求值，永久通知便错误显示 `assertions.evaluate`；普通 gate failed 也被伪造一个 phase。
 
 真正公开事实已经在错误产生时绑定为 `error.origin.phase`。
 修复让 errored 直接使用该 origin，failed 作为断言 outcome 不带 phase。

@@ -8,7 +8,7 @@
 | 协议行为     | Eval 断言（只读事件流）                                                                                         |
 | ------------ | --------------------------------------------------------------------------------------------------------------- |
 | coding tool  | command execution 与文件变更事件进入标准事件流，调用与结果配对成立                                              |
-| MCP 工具调用 | MCP 工具出现在 `action.called`；反例断言未挂载的工具 `notCalledTool`                                            |
+| MCP 工具调用 | MCP 工具出现在 `operation.started`；反例断言未挂载的工具 `notCalledTool`                                            |
 | 会话         | 首轮 `startThread()` 的 thread ID 经 `ctx.session.capture()` 捕获，后续轮 `resumeThread()` 续接并能引用首轮事实 |
 | usage        | reasoning 与 usage 逐轮进入 `Turn`                                                                              |
 | HITL 反例    | Codex SDK 没有公开审批回调——断言事件流从不出现 `input.requested`，证明 adapter 不猜测、不伪造观察不到的 HITL    |

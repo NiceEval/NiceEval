@@ -106,7 +106,7 @@ export const validateScoreboardData: Validator = (data) => {
     });
   });
 };
-const VERDICTS = ["passed", "failed", "errored", "unreadable"];
+const VERDICTS = ["passed", "failed", "errored", "skipped"];
 /** DeltaCell:同 MetricCell 家族但字段不同(verdict/totalScore/attempts/totalTokens/totalCostUSD/historical)。 */
 function deltaCellProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { scoring, verdict, attempts, historical }`;

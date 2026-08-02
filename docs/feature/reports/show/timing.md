@@ -54,7 +54,7 @@ $ niceeval show @1qrdcfq8 --timing
 │ workspace.diff         0.3s                                                    │
 │   └─ operation · export workspace diff · 1 window · 2 files  0.3s              │
 │      └─ shell · export ledger window …                         0.3s            │
-│ scoring.evaluate       1.4s                                                    │
+│ assertions.evaluate       1.4s                                                    │
 │ telemetry.collect      0.3s                                                    │
 ├─ teardown ────────────────────────────────────────────── not counted in total ─┤
 │ agent.teardown         0.2s                                                    │

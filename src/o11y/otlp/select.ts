@@ -69,7 +69,7 @@ export function ioText(v: unknown): string {
  */
 export function enrichTraceWithIO(spans: TraceSpan[], toolCalls: readonly ToolCall[]): TraceSpan[] {
   const byCall = new Map<string, ToolCall>();
-  for (const tc of toolCalls) if (tc.callId) byCall.set(tc.callId, tc);
+  for (const tc of toolCalls) byCall.set(tc.operationId, tc);
   if (byCall.size === 0) return spans;
 
   return spans.map((sp) => {

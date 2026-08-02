@@ -73,7 +73,7 @@ export const ExperimentDetails = defineComponent<ExperimentDetailsProps>(async (
             passed: exp.evalVerdicts.passed,
             failed: exp.evalVerdicts.failed,
             errored: exp.evalVerdicts.errored,
-            skipped: exp.evalVerdicts.unreadable,
+            skipped: exp.evalVerdicts.skipped,
           },
         }}
       />

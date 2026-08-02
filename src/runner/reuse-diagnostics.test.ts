@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import type { EvalResult, LifecyclePhase } from "./types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 function attempt(opts: {
   id: string;

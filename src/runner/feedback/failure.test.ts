@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { shared } from "../../agents/shared.ts";
 import { failureDetailFromResult } from "./failure.ts";
 import type { EvalResult } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 
 const RICH_TAIL = [
   "│ ❱ 205 │   raise APIError(",

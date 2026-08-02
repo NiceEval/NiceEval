@@ -25,7 +25,7 @@ import { IncompatibleResultsError, ViewInputError, incompatibleHistoryKey, loadC
 import type { AttemptHandle } from "../record/index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 /** scan.attemptsByBase 按 base 建索引;测试按 eval id 找回单个 attempt(该 eval 在本 fixture 里唯一时用)。 */
 function attemptByEvalId(scan: ViewScan, evalId: string): AttemptHandle {

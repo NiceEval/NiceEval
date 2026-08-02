@@ -2,7 +2,7 @@
 // 覆盖「缓存」分区新增两行:携带以 attempt 为粒度、未收尾快照是合法来源(见 docs/runner.md
 // 「缓存:指纹去重」)。受控模拟代替真实 `attempts: 5` + `kill -9`——直接构造"跑到一半"的
 // priorResults fixture(部分终态 attempt + 缺失序号),断言 planCarry 只把逐条确实终态匹配的
-// 序号规划为携带,缺失的序号必须留给调度真正派发;errored/unreadable 永不携带,即使同一个 eval
+// 序号规划为携带,缺失的序号必须留给调度真正派发;errored/skipped 永不携带,即使同一个 eval
 // 的其它序号是终态——不能因为"这个 (experiment, eval) 组合有过携带"就把它也捎带进去。
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,7 +31,7 @@ import type { CapturedEvalSource } from "./eval-source.ts";
 import { interpolate } from "../i18n/core.ts";
 import { en } from "../i18n/en.ts";
 import { zhCN } from "../i18n/zh-CN.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 // 判断指纹需要一个真实可读文件(computeFingerprint 无条件 readFile(evalDef.sourcePath));
 // 内容不重要,指向本测试文件自己,永远存在。
@@ -306,12 +306,12 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
     expect(plan.carriedResults.map((r) => r.attempt)).toEqual([0]);
   });
 
-  it("unreadable 判定同样永不携带", async () => {
+  it("skipped 判定同样永不携带", async () => {
     const evals = [makeEval("e")];
     const run = makeRun("exp", ["e"], 2);
     const fingerprint = await fingerprintFor(evals[0]!, run);
 
-    const priorResults: EvalResult[] = [result({ id: "e", attempt: 0, verdict: "unreadable", fingerprint })];
+    const priorResults: EvalResult[] = [result({ id: "e", attempt: 0, verdict: "skipped", fingerprint })];
 
     const plan = await planCarry(evals, [run], priorResults);
 

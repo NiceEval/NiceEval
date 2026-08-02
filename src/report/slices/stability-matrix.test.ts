@@ -1,12 +1,12 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 「show 的范围 × 切片正交」stabilityMatrixData 判据段。
 // stabilityMatrixData(稳定性矩阵):证据面与 --history 相同(跨快照身份键去重、不设可比性门槛)、
-// failed 与 errored 分列不合并、unreadable 不计、neverPassed(零通过且执行数>0)、无执行组合是
+// failed 与 errored 分列不合并、skipped 不计、neverPassed(零通过且执行数>0)、无执行组合是
 // 缺失不是三个 0、行按历史最高通过率升序。
 
 import { describe, expect, it } from "vitest";
 import type { EvalResult, Verdict } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import { stabilityMatrixData } from "./compute.ts";
@@ -73,8 +73,8 @@ describe("stabilityMatrixData", () => {
     expect(cell.executions).toBe(2); // 混列算法会把 failed+errored 揉成一个字段,这里分列各自 1
   });
 
-  it("unreadable 不计入任何列", async () => {
-    const s = snap("exp-a", [res("q", "passed", 0), res("q", "unreadable", 1)]);
+  it("skipped 不计入任何列", async () => {
+    const s = snap("exp-a", [res("q", "passed", 0), res("q", "skipped", 1)]);
     const data = await stabilityMatrixData(scopeOf([s]), { by: "experiment" });
     const cell = cellAt(data, "q", "exp-a")!;
     expect(cell).toEqual({ passed: 1, failed: 0, errored: 0, executions: 1 });
@@ -87,12 +87,12 @@ describe("stabilityMatrixData", () => {
     expect(data.rows.find((r) => r.evalId === "sometimes")!.neverPassed).toBe(false);
   });
 
-  it("无执行组合是缺失不是三个 0:全 unreadable 的 (eval, column) 不生成格子;某 eval 在某 experiment 从未跑过同理", async () => {
-    const skippedOnly = snap("exp-a", [res("only-unreadable", "unreadable")]);
+  it("无执行组合是缺失不是三个 0:全 skipped 的 (eval, column) 不生成格子;某 eval 在某 experiment 从未跑过同理", async () => {
+    const skippedOnly = snap("exp-a", [res("only-skipped", "skipped")]);
     const other = snap("exp-b", [res("other-eval", "passed")]);
     const data = await stabilityMatrixData(scopeOf([skippedOnly, other]), { by: "experiment" });
-    // "only-unreadable" 在 exp-a 下全 unreadable:不生成格子,该 eval 也不出现在 rows 里(没有任何真实历史执行)
-    expect(data.rows.some((r) => r.evalId === "only-unreadable")).toBe(false);
+    // "only-skipped" 在 exp-a 下全 skipped:不生成格子,该 eval 也不出现在 rows 里(没有任何真实历史执行)
+    expect(data.rows.some((r) => r.evalId === "only-skipped")).toBe(false);
     // "other-eval" 只在 exp-b 跑过,exp-a 下这道题从未涉及:该组合缺失
     expect(cellAt(data, "other-eval", "exp-a")).toBeUndefined();
     expect(cellAt(data, "other-eval", "exp-b")).toBeDefined();

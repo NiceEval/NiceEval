@@ -305,7 +305,7 @@ export function formatHistoricalGap(startedAtIso: string, nowIso: string = new D
 
 // ── 实体列表(ExperimentList / EvalList / AttemptList)共用的判定符 ──
 
-/** passed / failed / errored / unreadable 的判定符。 */
+/** passed / failed / errored / skipped 的判定符。 */
 export function verdictMark(verdict: Verdict): string {
   switch (verdict) {
     case "passed":
@@ -314,7 +314,7 @@ export function verdictMark(verdict: Verdict): string {
       return "✗";
     case "errored":
       return "!";
-    case "unreadable":
+    case "skipped":
       return "–";
   }
 }

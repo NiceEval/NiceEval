@@ -18,7 +18,7 @@ import { selectedAttemptsOnly } from "../components/shared-compute.ts";
  * 报告需要同样的切换时也应该调用它,而不是重新读 `attempt.result.scoring` 另写一份等价逻辑。
  *
  * 判据只看题目的定义期事实,不看执行是否发生——一个 eval 一行代码没跑时,它的 `scoring`
- * 依然是已知的,题型构成因此不依赖任何 attempt 结果(`errored` / `unreadable` 的 attempt 不
+ * 依然是已知的,题型构成因此不依赖任何 attempt 结果(`errored` / `skipped` 的 attempt 不
  * 改变所属 eval 的题型归属)。
  *
  * @param input Sample,或手工挑选的快照数组。

@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { evalConclusionRows } from "./eval-conclusions.ts";
 import type { DiagnosticNotice, EvalResult } from "../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 
 function result(id: string, attempt: number, verdict: EvalResult["verdict"], extra: Partial<EvalResult> = {}): EvalResult {
   return {

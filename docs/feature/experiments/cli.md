@@ -166,7 +166,7 @@ Human 展示列只是各阶段的人读投影:
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
 | `eval.run` | running eval | 执行 `EvalDefinition.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
 | `workspace.diff` | capturing diff | 读取 Sandbox 工作区变化；Direct / skipped Attempt 跳过 |
-| `scoring.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
+| `assertions.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
 | `agent.teardown` / `sandbox.cleanup` / `sandbox.stop` | cleaning up | 收尾段(Agent teardown 与已登记 cleanup 的逆序执行):Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |
 
@@ -424,11 +424,11 @@ eval 闸同形,文案是 `✗ eval halted: <message>`:
 `niceeval show @12h8m4k1` 展开结构化错误、cause、stack、发生过的阶段与 diagnostics;有 trace 时再用 `--execution` 看执行树。
 没有 trace 时直接说明 unavailable,不能因此丢失错误详情。
 
-`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt;`passed` / `failed` / `errored` / `skipped` 是本次派发并已了结的 attempt 按 verdict 的划分。
+`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt。`passed` / `failed` / `errored` 是本次派发后已有 Verdict 的对应计数；`skipped` 计数同时容纳两种不冒充失败的结束：已派发的 `t.skip(reason)` 会写出 `verdict: "skipped"`，首过即停与 budget 未派发则没有 Attempt Verdict。
 任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
 
 已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止失败几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。
-四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。
+因此 live 面板的 `skipped` 不是把两种事实抹平：`result.json` 里的 `verdict: "skipped"` 只表示 eval 显式跳过；[首过即停省略的轮次](#attempts-与首过即停怎样展示)和 budget 未派发仅有题目级计数，不伪造 result.json。它们在同一计数格里是为了维持 attempt 总数恒等式，详细原因仍由 JSON 事件区分。
 这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
 
 计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。

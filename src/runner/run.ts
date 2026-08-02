@@ -449,7 +449,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
   const buildFailureByEval = new Map<string, AttemptError>();
   const buildLocatorsByEval = new Map<string, Map<string, string>>();
-  const buildLocatorsByAttempt = new WeakMap<Attempt, ReadonlyMap<string, string>>();
 
   const collected =
     opts.buildPreparation === undefined
@@ -2094,7 +2093,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               evalAc && opts.signal
                 ? AbortSignal.any([opts.signal, evalAc.signal])
                 : (evalAc?.signal ?? opts.signal);
-            const buildLocators = buildLocatorsByAttempt.get(a);
+            // BuildKey / CaseKey 已在 Attempt.plan 的 physical completion state 中确定；
+            // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
+            const buildLocators = buildLocatorsByEval.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<string, string>();
 
             // turn 级重试退避期间释放/收回的并发槽位——两级闸按持有期分工的单点契约见
             // docs/runner.md「调度:有界并发」与 docs/feature/error-classification/
@@ -2226,34 +2227,35 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(
-                  buildLocators === undefined ? a : { ...a, buildLocators },
+                  a,
                   attemptOptions,
                   sandboxSem,
                   {
-                  parentSignal: attemptSignal,
-                  concurrencySlot,
-                  ...(lease
-                    ? {
-                        reusedSandbox: {
-                          sandbox: lease.sandbox,
-                          reuseSandbox: lease.reuseSandbox,
-                          reuseOrdinal: lease.reuseOrdinal,
-                          stateWindow: lease.stateWindow,
-                          decideStateWindow: (result) => {
-                            reconcileReusePlanBeforeFinalizers(a, result);
-                            leaseStateWindow.disposition = lease.decideStateWindow({
-                              cancelledPlannedUses: 0,
-                              retire: reuseResultRequiresRetirement(result),
-                            });
-                            return leaseStateWindow.disposition;
+                    buildLocators,
+                    parentSignal: attemptSignal,
+                    concurrencySlot,
+                    ...(lease
+                      ? {
+                          reusedSandbox: {
+                            sandbox: lease.sandbox,
+                            reuseSandbox: lease.reuseSandbox,
+                            reuseOrdinal: lease.reuseOrdinal,
+                            stateWindow: lease.stateWindow,
+                            decideStateWindow: (result) => {
+                              reconcileReusePlanBeforeFinalizers(a, result);
+                              leaseStateWindow.disposition = lease.decideStateWindow({
+                                cancelledPlannedUses: 0,
+                                retire: reuseResultRequiresRetirement(result),
+                              });
+                              return leaseStateWindow.disposition;
+                            },
                           },
-                        },
-                      }
-                    : {}),
-                  // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
-                  // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
-                  // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
-                  onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                        }
+                      : {}),
+                    // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
+                    // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
+                    // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
+                    onFailureClass: (declaration) => closeHaltGate(a, declaration),
                   },
                 );
             if (lease) {
@@ -2421,8 +2423,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
           yield* Effect.promise(() => awaitBuildsFor(pairKey, a.evalDef.id));
-          const locators = buildLocatorsByEval.get(pairKey);
-          if (locators !== undefined) buildLocatorsByAttempt.set(a, locators);
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);

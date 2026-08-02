@@ -184,7 +184,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
       results: [
         res("a", "passed"),
         res("a", "failed", { attempt: 1 }),
-        res("a", "unreadable", { attempt: 2 }),
+        res("a", "skipped", { attempt: 2 }),
         res("b", "passed"),
       ],
     });
@@ -325,7 +325,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
       results: [
         res("a", "passed"),
         res("a", "failed", { attempt: 1 }),
-        res("a", "unreadable", { attempt: 2 }),
+        res("a", "skipped", { attempt: 2 }),
         res("b", "passed"),
       ],
     });

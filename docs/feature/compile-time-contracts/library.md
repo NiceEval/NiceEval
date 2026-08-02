@@ -123,7 +123,7 @@ export default defineEval({
 
 ```ts
 defineEval({ id: "weather", test: async () => {} });
-defineEval({ scoring: "points", test: async () => {} });
+defineEval({ evaluationKind: "points", test: async () => {} });
 defineEval({ configHash: "8f21", test: async () => {} });
 defineExperiment({ id: "codex", agent });
 ```

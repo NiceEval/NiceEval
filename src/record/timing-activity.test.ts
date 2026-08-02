@@ -20,7 +20,7 @@ import {
   type TimingActivity,
 } from "./index.ts";
 import { attemptOrigin, createRunTimingRecorder, createTimingRecorder, runOrigin } from "../runner/timing.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {

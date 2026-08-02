@@ -51,7 +51,7 @@ const en = {
   "verdict.passed": "passed",
   "verdict.failed": "failed",
   "verdict.errored": "errored",
-  "verdict.unreadable": "unreadable",
+  "verdict.skipped": "skipped",
 
   /** AttemptSummary 的重试序号(0 起的 identity.attempt 显示前 +1)。 */
   "attemptSummary.attempt": "attempt {n}",
@@ -176,8 +176,8 @@ const en = {
   /** ScopeWarnings 聚合层的 chrome:汇总行、kind 徽标、组头与明细折叠标签;message 本体不经字典。 */
   "issues.summary.experiments.one": "{n} experiment flagged",
   "issues.summary.experiments.other": "{n} experiments flagged",
-  "issues.group.unreadableSnapshot.one": "{n} run unreadable",
-  "issues.group.unreadableSnapshot.other": "{n} runs unreadable",
+  "issues.group.unreadableSnapshot.one": "{n} run skipped",
+  "issues.group.unreadableSnapshot.other": "{n} runs skipped",
   "issues.details.one": "{n} warning",
   "issues.details.other": "{n} issues",
   "issues.badge.unfinishedSnapshot": "unfinished",
@@ -247,7 +247,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "verdict.passed": "通过",
   "verdict.failed": "失败",
   "verdict.errored": "错误",
-  "verdict.unreadable": "跳过",
+  "verdict.skipped": "跳过",
 
   "attemptSummary.attempt": "第 {n} 次",
 

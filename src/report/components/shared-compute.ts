@@ -28,7 +28,7 @@ export function selectedAttemptsOnly(attempts: readonly AttemptHandle[]): Attemp
 }
 
 export function tallyOf(): VerdictTally {
-  return { passed: 0, failed: 0, errored: 0, unreadable: 0 };
+  return { passed: 0, failed: 0, errored: 0, skipped: 0 };
 }
 
 /** 一批 Item 的组级统计(experimentListData / scopeSummaryData 共用)。 */
@@ -54,7 +54,7 @@ export function summarizeItems(items: Item[]): {
     experiments: experimentIds.size,
     evals: stats.evals,
     attempts: items.length,
-    verdicts: { passed: stats.passed, failed: stats.failed, errored: stats.errored, unreadable: stats.unreadable },
+    verdicts: { passed: stats.passed, failed: stats.failed, errored: stats.errored, skipped: stats.skipped },
     lastRunAt,
   };
 }

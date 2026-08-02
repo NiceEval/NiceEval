@@ -13,7 +13,7 @@ import type { Run } from "../record/types.ts";
 import type { AgentRun } from "./types.ts";
 import { discoverEval } from "./types.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 
 const fakeAgent = defineDirectAgent({

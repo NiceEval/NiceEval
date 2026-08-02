@@ -375,7 +375,7 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
 只有没有 `loc` 的得分点与给分记录进入 unmapped，给分记录仍按 `groupPath` 分组。
 视觉细则单点在 [Attempt 详情组件](../../reports/components/primitives/source-view.md#web-面视觉规范) 定义 `AttemptSource` 的视觉规范。
 
-通过制（`scoring: "pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。`scoring` 是 factory 固定的必填事实，不用省略值猜题型。
+通过制（`evaluationKind: "pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。`evaluationKind` 是 factory 固定的必填事实，不用省略值猜题型。
 
 ## Turn（`t.send()`）的展示
 

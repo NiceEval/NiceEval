@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Json, JUnit } from "./json.ts";
 import type { InvocationSummary } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 
 const failureState = vi.hoisted(() => ({
   renameError: undefined as Error | undefined,

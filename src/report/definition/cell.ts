@@ -3,7 +3,7 @@
 
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
-import type { Verdict } from "../../scoring/types.ts";
+import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
 import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
 import {
@@ -94,7 +94,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return cell.detail ? `${cell.text}\n  ${cell.detail}` : cell.text;
     case "locator": {
       const stale = cell.staleSinceMs !== undefined ? ` ↩ ${formatStale(cell.staleSinceMs)}` : "";
-      const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict === "skipped" ? "unreadable" : cell.verdict)} ` : "";
+      const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict === "skipped" ? "skipped" : cell.verdict)} ` : "";
       return `${mark}${cell.locator}${stale}`;
     }
     case "summary": {
@@ -108,11 +108,11 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       if (cell.counts) {
         const parts = (["passed", "failed", "errored", "skipped"] as const)
           .filter((k) => cell.counts![k] > 0)
-          .map((k) => `${cell.counts![k]} ${localeText(loc, `verdict.${k === "skipped" ? "unreadable" : k}`)}`);
+          .map((k) => `${cell.counts![k]} ${localeText(loc, `verdict.${k === "skipped" ? "skipped" : k}`)}`);
         return parts.join(" · ") || "—";
       }
       if (cell.verdict !== undefined) {
-        const v = cell.verdict === "skipped" ? "unreadable" : cell.verdict;
+        const v = cell.verdict === "skipped" ? "skipped" : cell.verdict;
         // 判定符与判定词同场,与 locator 格、web 面同一条纪律:单色打印下照样读得出。
         return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}`;
       }

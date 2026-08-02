@@ -5,7 +5,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineEval, defineSandbox, defineSandboxAgent } from "../define.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import { shell } from "../sandbox/commands.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";

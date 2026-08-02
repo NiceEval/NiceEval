@@ -32,7 +32,7 @@ import { createEvalContext } from "../context/context.ts";
 import { createAgentSession } from "../context/session.ts";
 import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
-import { computeVerdict } from "../scoring/verdict.ts";
+import { computeVerdict } from "../shared/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
@@ -131,6 +131,8 @@ export function attemptFailureDeclaration(
 }
 
 export interface RunAttemptEffectOptions {
+  /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
+  readonly buildLocators: ReadonlyMap<string, string>;
   /** 父级调度器的中断信号；测试直调时省略。 */
   parentSignal?: AbortSignal;
   /** 每次跨入一个新 `LifecyclePhase` 边界时同步回调一次(与下面的 `enterPhase` 同一调用点,见
@@ -163,7 +165,7 @@ export function runAttemptEffect(
   a: Attempt,
   opts: RunOptions,
   sandboxSem: Effect.Semaphore,
-  { parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions = {},
+  { buildLocators, parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions,
 ): Effect.Effect<EvalResult> {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
@@ -500,7 +502,7 @@ export function runAttemptEffect(
                       diagnostic: scopedFeedback.diagnostic,
                       fact: (key, value) => recordFact(facts, key, value),
                     },
-                    buildLocators: a.buildLocators ?? new Map(),
+                    buildLocators,
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
                     services: liveSandboxRuntimeServices,
                     // Provider runtime 自己用 acquireRelease 持有 Case；Attempt 只提交显式
@@ -1450,7 +1452,7 @@ async function runAttemptBody(
           // 文本是契约字面量,中英一致,不进 i18n。
           onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
         });
-    const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict, scoring: evalDef.scoring ?? "pass" });
+    const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict });
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);

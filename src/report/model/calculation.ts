@@ -359,7 +359,7 @@ export const passRate = rollup(
       case "failed":
       case "errored":
         return 0;
-      case "unreadable":
+      case "skipped":
         return null;
       default:
         return null;
@@ -376,7 +376,7 @@ export const passRate = rollup(
 
 export const durationMs = rollup(
   (attempt) => {
-    if (attempt.result.verdict === "unreadable") return null;
+    if (attempt.result.verdict === "skipped") return null;
     if (attempt.result.verdict === "errored" && attempt.result.error?.code === "timeout") return null;
     return attempt.result.durationMs ?? null;
   },
@@ -391,7 +391,7 @@ export const durationMs = rollup(
 
 export const tokens = rollup(
   (attempt) => {
-    if (attempt.result.verdict === "unreadable") return null;
+    if (attempt.result.verdict === "skipped") return null;
     const usage = attempt.result.usage;
     if (!usage || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
     return usage.inputTokens + usage.outputTokens;
@@ -407,8 +407,8 @@ export const tokens = rollup(
 
 export const totalScore = rollup(
   (attempt) => {
-    if (attempt.result.scoring !== "points") return null;
-    if (attempt.result.verdict === "errored" || attempt.result.verdict === "unreadable") return null;
+    if (attempt.result.evaluationKind !== "points") return null;
+    if (attempt.result.verdict === "errored" || attempt.result.verdict === "skipped") return null;
     let points = 0;
     for (const assertion of attempt.result.assertions) {
       if (assertion.outcome !== "unavailable" && typeof assertion.points === "number") points += assertion.points;
@@ -425,7 +425,7 @@ export const totalScore = rollup(
 );
 
 export const costUSD = rollup(
-  (attempt) => (attempt.result.verdict === "unreadable" ? null : attemptCostUSD(attempt.result)),
+  (attempt) => (attempt.result.verdict === "skipped" ? null : attemptCostUSD(attempt.result)),
   {
     withinEval: mean,
     acrossEvals: mean,

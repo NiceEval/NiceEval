@@ -1,7 +1,7 @@
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
-import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from "../shared/types.ts";
+import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
@@ -368,12 +368,12 @@ export interface EvalResult {
   assertions: AssertionResult[];
   /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与
-   * `EvalDescriptor.scoring` 同源。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的
+   * `EvalDescriptor.evaluationKind` 同源。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的
    * 第三方 harness(见 docs/feature/record/architecture.md「result.json」)。
    */
-  scoring?: EvalScoring;
+  evaluationKind?: EvaluationKind;
   /**
-   * `t.score(label, n)` 的直接给分记录,只在 `scoring: "points"` 时出现;省略等价于空数组。
+   * `t.score(label, n)` 的直接给分记录,只在 `evaluationKind: "points"` 时出现;省略等价于空数组。
    * 与 `assertions[].points` 共同构成分数面(见 docs/feature/experiments/score-points.md)。
    */
   scoreEntries?: ScoreEntry[];
@@ -689,9 +689,9 @@ export interface EvalDefinitionFields {
   };
 }
 
-/** Factory 产物保留精确 scoring / context，并带模块私有品牌，不能由对象字面量伪造。 */
-export interface EvalDefinition<Scoring extends EvalScoring, Context> extends EvalDefinitionFields {
-  readonly scoring: Scoring;
+/** Factory 产物保留精确 evaluationKind / context，并带模块私有品牌，不能由对象字面量伪造。 */
+export interface EvalDefinition<Kind extends EvaluationKind, Context> extends EvalDefinitionFields {
+  readonly evaluationKind: Kind;
   test(t: Context): Promise<void> | void;
   readonly [EVAL_DEFINITION]: true;
 }
@@ -701,9 +701,9 @@ export type AnyEvalDefinition =
   | EvalDefinition<"points", ScoreTestContext>;
 
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
-export function brandEvalDefinition<Scoring extends EvalScoring, Context>(
-  value: EvalDefinitionFields & { scoring: Scoring; test(t: Context): Promise<void> | void },
-): EvalDefinition<Scoring, Context> {
+export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
+  value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): Promise<void> | void },
+): EvalDefinition<Kind, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
   return Object.freeze(value) as EvalDefinition<Scoring, Context>;
 }
@@ -1180,13 +1180,6 @@ export interface Attempt {
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
   readonly sandboxPlansByEval: Readonly<globalThis.Record<string, JsonValue>>;
-  /**
-   * Run 级构建协调产出的 BuildKey → locator;on-demand / Compose case 物化前注入。
-   * 完全携带、未查询的 key 不在此表。
-   */
-  readonly buildLocators?: ReadonlyMap<string, string>;
-  /** 规划期 CaseKey(与指纹同源);物化后可与 MaterializedSandboxCase.caseKey 对照。 */
-  readonly caseKey?: string;
   /**
    * 构造 fresh attempt plan 时即算好的 Attempt 定位符(不是完成后写回):由 invocation 的
    * snapshotStartedAt 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与

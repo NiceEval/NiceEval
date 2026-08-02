@@ -21,7 +21,7 @@
   │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量
   │    t.sandbox.upload* / runShell         # send 窗口外的普通 eval 归因操作
   → workspace.diff                         # 折叠全部 send 窗口的 agent 归因增量
-  → scoring.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
+  → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → Agent runtime teardown                 # finally:agent 收尾先行
   → State save                             # 回存跨 Attempt 实验状态
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序

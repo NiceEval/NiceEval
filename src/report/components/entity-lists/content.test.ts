@@ -53,7 +53,7 @@ function evalRow(
 ): ExperimentListEvalRow {
   const scoring = overrides.scoring ?? (attempts.some((item) => item.scoring === "points") ? "points" : "pass");
   const passAttempts = scoring === "points" ? [] : attempts.filter((item) => item.scoring === "pass");
-  const readablePassAttempts = passAttempts.filter((item) => item.verdict !== "unreadable");
+  const readablePassAttempts = passAttempts.filter((item) => item.verdict !== "skipped");
   const passRefs = passAttempts.map((item) => item.locator);
   return {
     evalId,
@@ -85,7 +85,7 @@ function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentLi
     experimentId: "exp/x",
     agent: "codex",
     scoring: "pass",
-    evalVerdicts: { passed: 0, failed: 0, errored: 0, unreadable: 0 },
+    evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
     endToEndPassRate: emptyCell,
     totalScore: emptyCell,
     costUSD: emptyCell,

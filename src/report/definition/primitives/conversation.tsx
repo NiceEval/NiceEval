@@ -5,7 +5,7 @@ import { createElement, Fragment, type ReactElement, type ReactNode } from "reac
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { isAttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { ATTEMPT_PAGE_ID } from "../../components/shared.ts";
-import { stripControl, summaryText } from "../../../scoring/display.ts";
+import { stripControl, summaryText } from "../../../assertions/display.ts";
 import {
   dataShapeError,
   isLocalizedText,

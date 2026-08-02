@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EvalResult, Verdict } from "../../../types.ts";
-import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../../assertions/coverage.ts";
 import type { AttemptHandle, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";

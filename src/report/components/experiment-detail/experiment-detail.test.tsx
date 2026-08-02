@@ -108,7 +108,7 @@ describe("ExperimentDetails:六区块投影同一份转换结果", () => {
 
     const data = await experimentDetailsData(scope);
     expect(data.experiment.experimentId).toBe("agents/codex");
-    expect(data.experiment.evalVerdicts).toEqual({ passed: 1, failed: 1, errored: 0, unreadable: 0 });
+    expect(data.experiment.evalVerdicts).toEqual({ passed: 1, failed: 1, errored: 0, skipped: 0 });
     expect(data.experiment.missingEvalIds).toEqual(["q3"]);
     expect(data.catchUpCommand).toBe("niceeval exp agents/codex");
     expect(data.notices).toEqual(await sampleNoticesContent(scope));

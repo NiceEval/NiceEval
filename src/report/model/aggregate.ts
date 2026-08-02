@@ -183,7 +183,7 @@ export function refDisplayKey(value: JsonValue | undefined): [display: string, c
 function refValueOf(ref: DimensionRef, item: Item): JsonValue | undefined {
   if (ref.kind === "flag") return flagValueOf(item.attempt, ref.name);
   if (ref.kind === "label") return labelValueOf(item.attempt, ref.name);
-  return runConfigValueOf(item.attempt, ref.name as Parameters<typeof runConfigValueOf>[1]);
+  return runConfigValueOf(item.attempt, ref.name);
 }
 
 export function dimensionKey(dimension: DimensionInput, item: Item): string {

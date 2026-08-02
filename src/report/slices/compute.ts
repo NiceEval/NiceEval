@@ -923,11 +923,11 @@ export async function stabilityMatrixData(
     if (verdict === "passed") cell.passed += 1;
     else if (verdict === "failed") cell.failed += 1;
     else if (verdict === "errored") cell.errored += 1;
-    else continue; // unreadable 不计入任何列,也不进 refs
+    else continue; // skipped 不计入任何列,也不进 refs
     cell.refs.add(locatorOf(item));
   }
 
-  // 稀疏格子:全 unreadable(没有任何历史执行)的组合不生成格子,不编三个 0 冒充跑过。
+  // 稀疏格子:全 skipped(没有任何历史执行)的组合不生成格子,不编三个 0 冒充跑过。
   const realCells = [...cellsByKey.values()].filter((c) => c.passed + c.failed + c.errored > 0);
 
   const columnsSet = new Set<string>();

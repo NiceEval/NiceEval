@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { toBraintrustEvent } from "./braintrust.ts";
 import type { EvalResult } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 
 function baseResult(overrides: Partial<EvalResult> = {}): EvalResult {
   return {

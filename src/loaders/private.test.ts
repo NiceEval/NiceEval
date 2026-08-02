@@ -12,7 +12,7 @@ import { computeFingerprint } from "../runner/fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadPrivate } from "./index.ts";
 

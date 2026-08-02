@@ -1,4 +1,4 @@
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv } from "../util.ts";
 import { shared } from "./shared.ts";

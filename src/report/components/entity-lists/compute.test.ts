@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { failureSummaryOf } from "./compute.ts";
 import type { EvalResult } from "../../../types.ts";
-import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../../assertions/coverage.ts";
 
 function erroredResult(message: string): EvalResult {
   return {

@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { planSite, readSiteFile, writeSite } from "./site.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {

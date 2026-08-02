@@ -17,7 +17,7 @@ import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } f
 import { runShow, type ShowFlags } from "./index.ts";
 import type { ShowJson } from "./json.ts";
 import { setConfiguredLocale } from "../i18n/index.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 // ───────────────────────── fixture 工具(自成一份,不跨文件耦合) ─────────────────────────
 

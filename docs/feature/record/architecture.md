@@ -288,7 +288,7 @@ type LifecyclePhase =
   | "eval.run"             // 整段 test(t),含所有 send 与手工命令
   | "agent.run"            // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
   | "workspace.diff"       // 从分类账折叠 agent 归因增量
-  | "scoring.evaluate"     // 断言 finalize + 判定,含 judge 调用
+  | "assertions.evaluate"     // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
@@ -466,9 +466,9 @@ interface AttemptRecord {
   phases?: PhaseTiming[];
   /** 记录态断言;元素字段契约单独定义在 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。 */
   assertions: AssertionResult[];
-  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.scoring` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。官方 writer 必写；通用第三方 producer 若只产 pass/fail 记录可以省略并按 `"pass"` 读取，计分记录必须显式写 `"points"`。 */
-  scoring?: "pass" | "points";
-  /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。只在 `scoring: "points"` 时出现,省略等价于空数组。 */
+  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.evaluationKind` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。官方 writer 必写；通用第三方 producer 若只产 pass/fail 记录可以省略并按 `"pass"` 读取，计分记录必须显式写 `"points"`。 */
+  evaluationKind?: "pass" | "points";
+  /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。只在 `evaluationKind: "points"` 时出现,省略等价于空数组。 */
   scoreEntries?: ScoreEntry[];
   /** 证据覆盖聚合:必填；Agent 六通道声明经各 turn 降级后的最差值。字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md)。 */
   evidenceCoverage: EvidenceCoverage;

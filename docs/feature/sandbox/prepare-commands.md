@@ -41,7 +41,7 @@ export default defineEval({
 
 - 目标目录得到 HEAD 指向 `ref` 的 git 检出;`into` 是 workdir 相对路径,省略时检出到 workdir 根。
 - 命令在 workdir 外维护按 `(repo, ref)` 键控的镜像。首条 Attempt 走网络,同一 Sandbox 的后续 Attempt 从镜像写入 workdir,零网络。
-- identity 是 `(repo, ref, into)`,进入 fingerprint 与复用池的现有规则;换 `ref` 使旧命中失效。
+- identity 是 `(repo, ref, into)`，进入 Attempt fingerprint 与命令自己的检查标记；它不进入物理复用池键，因为命令在每条 Attempt 都会重放。换 `ref` 会让旧结果不能携带，并使旧检查标记失效。
 - 凭据走宿主与 Sandbox 的 git 原生机制,不进入 identity,也不落运行记录。
 
 `ref` 应当是不可变引用(commit SHA 或 tag)。

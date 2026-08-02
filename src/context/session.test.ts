@@ -5,7 +5,7 @@ import { createAgentSession, SessionManager } from "./session.ts";
 import { createSessionSlot } from "../agents/index.ts";
 import type { Agent, AgentSession, Sandbox, SessionSlot, StreamEvent, Turn, TurnInput } from "../types.ts";
 import { isSendFailure, makeSendFailure, type SendFailure, type SendFailureClassifier } from "./send-failures.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
 // docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;

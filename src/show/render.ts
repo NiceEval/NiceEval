@@ -11,7 +11,7 @@ import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
-import { summaryText } from "../scoring/display.ts";
+import { summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
 import { diffFilePatchText, diffSummaryText } from "../report/definition/primitives/diff-lines.ts";

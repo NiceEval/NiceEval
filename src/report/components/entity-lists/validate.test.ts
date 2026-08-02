@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./validate.ts";
 
 const validCell = { value: 1, basis: "eval", samples: 1, total: 1, refs: [] };
-const validTally = { passed: 1, failed: 0, errored: 0, unreadable: 0 };
+const validTally = { passed: 1, failed: 0, errored: 0, skipped: 0 };
 
 const validAttemptItem = {
   experimentId: "compare/codex",
@@ -128,7 +128,7 @@ describe("validateExperimentListData", () => {
 
   it("[i].evalVerdicts(四态 tally)缺字段报错", () => {
     const bad = [{ ...valid[0], evalVerdicts: { passed: 1, failed: 0, errored: 0 } }];
-    expect(validateExperimentListData(bad)).toMatch(/"data\[0\]\.evalVerdicts\.unreadable"/);
+    expect(validateExperimentListData(bad)).toMatch(/"data\[0\]\.evalVerdicts\.skipped"/);
   });
 
   it("[i].evalRows[j].attempts[k] 三层嵌套报错精确定位", () => {

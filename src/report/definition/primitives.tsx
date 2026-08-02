@@ -792,7 +792,7 @@ function renderCellWeb(
       const className = verdict === undefined ? "niceeval-locator" : `niceeval-locator niceeval-verdict-${verdict}`;
       const mark = verdict === undefined ? null : (
         <span className="niceeval-locator-mark" aria-hidden="true">
-          {verdictMark(verdict === "skipped" ? "unreadable" : verdict)}
+          {verdictMark(verdict === "skipped" ? "skipped" : verdict)}
         </span>
       );
       const href = ctx.href(cell.locator);
@@ -815,7 +815,7 @@ function renderCellWeb(
           <span className="niceeval-verdict-tally">
             {parts.map((kind) => (
               <span className={`niceeval-verdict-${kind}`} key={kind}>
-                {cell.counts![kind]} {localeText(ctx.locale, `verdict.${kind === "skipped" ? "unreadable" : kind}`)}
+                {cell.counts![kind]} {localeText(ctx.locale, `verdict.${kind === "skipped" ? "skipped" : kind}`)}
               </span>
             ))}
             {parts.length === 0 ? <span className="niceeval-missing">{MISSING_MARK}</span> : null}
@@ -826,8 +826,8 @@ function renderCellWeb(
       // 判定符走 verdictMark 单源,与 locator 格同一张表(errored 是 `!`,不并到 `✗`)。
       return (
         <span className={`niceeval-verdict niceeval-verdict-${verdict}`}>
-          {verdictMark(verdict === "skipped" ? "unreadable" : verdict)}{" "}
-          {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "unreadable" : verdict}`)}
+          {verdictMark(verdict === "skipped" ? "skipped" : verdict)}{" "}
+          {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "skipped" : verdict}`)}
         </span>
       );
     }

@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // niceeval/report 计算层的单元测试:全部用内存 fake(Run / AttemptHandle 按
 // niceeval/record 的读取契约手工构造)。覆盖登记行:两级聚合 vs 平铺、errored=0 口径、
-// unreadable=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
+// skipped=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
 // 身份键去重、现刻水位、自定义指标 where/aggregate、evalGroup 完整父路径、verdict 权威、
 // MetricCell 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
 // scopeSummaryData 两级计票、experimentListData/scopeSummaryData 的 selectedEvalIds 投影、conditionsByFlag、
@@ -222,13 +222,13 @@ describe("两级聚合口径", () => {
     expect(data.endToEndPassRate.value).toBeCloseTo(2 / 7);
   });
 
-  it("unreadable 对内置指标返回 null:不进有效样本但保留在 total,value 不受影响", async () => {
+  it("skipped 对内置指标返回 null:不进有效样本但保留在 total,value 不受影响", async () => {
     const s = snap({
       experimentId: "exp/skip",
-      results: [res("a", "passed"), res("b", "unreadable"), res("c", "failed")],
+      results: [res("a", "passed"), res("b", "skipped"), res("c", "failed")],
     });
     const data = await scopeSummaryData([s]);
-    expect(data.endToEndPassRate.value).toBeCloseTo(0.5); // (1+0)/2,unreadable 不稀释
+    expect(data.endToEndPassRate.value).toBeCloseTo(0.5); // (1+0)/2,skipped 不稀释
     expect(data.endToEndPassRate.samples).toBe(2);
     expect(data.endToEndPassRate.total).toBe(3);
   });
@@ -324,8 +324,8 @@ describe("两级聚合口径", () => {
 describe("MetricCell 诚实契约", () => {
   it("measuredZero / partial / missing 三种格子互不混淆;refs 序列化后不丢", async () => {
     const zero = snap({ experimentId: "exp/zero", results: [res("a", "failed")] });
-    const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "unreadable")] });
-    const missing = snap({ experimentId: "exp/missing", results: [res("a", "unreadable")] });
+    const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "skipped")] });
+    const missing = snap({ experimentId: "exp/missing", results: [res("a", "skipped")] });
     const table = await metricTableData([zero, partial, missing], {
       rows: "experiment",
       columns: [endToEndPassRate],
@@ -556,10 +556,10 @@ describe("实体列表 data", () => {
     },
   });
   const passed = res("list/passed", "passed");
-  const unreadable = res("list/unreadable", "unreadable");
-  const listSnap = () => snap({ experimentId: "exp/list", results: [failed, errored, passed, unreadable] });
+  const skipped = res("list/skipped", "skipped");
+  const listSnap = () => snap({ experimentId: "exp/list", results: [failed, errored, passed, skipped] });
 
-  it("failureSummary 三态:failed 取主失败断言摘要、errored 取 error 一层摘要(phase · code · message)、passed/unreadable 为 null", async () => {
+  it("failureSummary 三态:failed 取主失败断言摘要、errored 取 error 一层摘要(phase · code · message)、passed/skipped 为 null", async () => {
     const items = await attemptListData([listSnap()]);
     const byEval = new Map(items.map((item) => [item.evalId, item]));
     expect(byEval.get("list/failed")!.failureSummary).toContain("equals(42)");
@@ -569,7 +569,7 @@ describe("实体列表 data", () => {
       "sandbox.create · sandbox-create-failed · docker daemon unreachable",
     );
     expect(byEval.get("list/passed")!.failureSummary).toBeNull();
-    expect(byEval.get("list/unreadable")!.failureSummary).toBeNull();
+    expect(byEval.get("list/skipped")!.failureSummary).toBeNull();
   });
 
   it("failureSummary 计分制口径(规则 6):passed 全部得分点挣满为 null,存在丢分得分点时取记录顺序第一条(含挣分尾缀),其余计入 moreFailures;中止 attempt 仍由既有规则 1 选中前置,不受规则 6 影响", async () => {
@@ -632,7 +632,7 @@ describe("实体列表 data", () => {
     const loser = snap({ experimentId: "exp/lose", results: [res("a", "failed"), res("b", "passed")] });
     const items = await experimentListData([loser, winner]);
     expect(items.map((item) => item.experimentId)).toEqual(["exp/win", "exp/lose"]);
-    expect(items[0]!.evalVerdicts).toEqual({ passed: 2, failed: 0, errored: 0, unreadable: 0 });
+    expect(items[0]!.evalVerdicts).toEqual({ passed: 2, failed: 0, errored: 0, skipped: 0 });
     expect(items[0]!.endToEndPassRate.value).toBe(1);
     expect(items[1]!.evals).toBe(2);
   });
@@ -814,17 +814,17 @@ describe("scopeSummaryData", () => {
           res("q3", "passed"),
           res("q4", "failed"),
           res("q5", "errored", { error: erroredWith("x") }),
-          res("q6", "unreadable"),
+          res("q6", "skipped"),
         ],
       });
     const data = await scopeSummaryData([mk("cmp/a"), mk("cmp/b")]);
     expect(data.experiments).toBe(2);
     expect(data.evals).toBe(12);
-    expect(data.evalVerdicts).toEqual({ passed: 6, failed: 2, errored: 2, unreadable: 2 });
+    expect(data.evalVerdicts).toEqual({ passed: 6, failed: 2, errored: 2, skipped: 2 });
     expect(
-      data.evalVerdicts.passed + data.evalVerdicts.failed + data.evalVerdicts.errored + data.evalVerdicts.unreadable,
+      data.evalVerdicts.passed + data.evalVerdicts.failed + data.evalVerdicts.errored + data.evalVerdicts.skipped,
     ).toBe(data.evals);
-    expect(data.attemptVerdicts).toEqual({ passed: 6, failed: 4, errored: 2, unreadable: 2 });
+    expect(data.attemptVerdicts).toEqual({ passed: 6, failed: 4, errored: 2, skipped: 2 });
     expect(data.attemptVerdicts).not.toEqual(data.evalVerdicts);
     expect(data.range.earliestStartedAt).not.toBeNull();
     expect(data.range.latestStartedAt).not.toBeNull();
@@ -1022,7 +1022,7 @@ describe("metricScatterData / metricMatrixData", () => {
   it("metricTableData sort:必须是 columns 中同一实例且声明 better;方向随 better,缺数据沉底", async () => {
     const hi = snap({ experimentId: "s/hi", results: [res("a", "passed")] });
     const lo = snap({ experimentId: "s/lo", results: [res("a", "failed")] });
-    const na = snap({ experimentId: "s/na", results: [res("a", "unreadable")] });
+    const na = snap({ experimentId: "s/na", results: [res("a", "skipped")] });
     const byPass = await metricTableData([lo, hi, na], {
       rows: "experiment",
       columns: [endToEndPassRate],
@@ -1161,10 +1161,10 @@ describe("totalScore", () => {
     expect(cell.samples).toBe(0);
   });
 
-  it("unreadable 记 null", async () => {
+  it("skipped 记 null", async () => {
     const s = snap({
-      experimentId: "score/unreadable",
-      results: [res("skip", "unreadable", { scoring: "points", skipReason: "not applicable" })],
+      experimentId: "score/skipped",
+      results: [res("skip", "skipped", { scoring: "points", skipReason: "not applicable" })],
     });
     const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
     expect(table.rows.find((r) => r.key === "skip")!.cells[totalScore.name]!.value).toBeNull();

@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startViewServer, type ViewServer } from "./server.ts";
 import { buildView } from "./index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 const roots: string[] = [];
 const servers: ViewServer[] = [];

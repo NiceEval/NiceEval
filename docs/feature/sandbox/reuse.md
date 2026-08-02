@@ -82,7 +82,7 @@ Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecyc
 - Experiment `maxConcurrency` 约束所有组的同时执行总数；
 - 不同组之间不共享 Sandbox,也不共享任何检查命中历史。
 
-含 opaque command 的 layer 没有稳定 layer identity,对应窗口不跨配对、不跨 Invocation 共享;完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
+含 opaque command 的 layer 会阻断跨 Invocation 结果携带，但不改变同一 Run 的物理复用池分组：命令在每条 Attempt 领取实例后照常重放。完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
 
 ## 题间重置
 

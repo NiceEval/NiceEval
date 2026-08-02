@@ -18,7 +18,7 @@ import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.t
 import { discoverEval, type AgentRun } from "./types.ts";
 import type { EvalResult } from "../types.ts";
 import type { ConfigFieldDelta, ConfigIdentity } from "./config-identity.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 
 const DIRECT_RUN_INFO = {

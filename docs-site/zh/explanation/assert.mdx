@@ -153,7 +153,7 @@ t.noFailedActions();                       // 没有工具、子 agent 或 skill
 ```ts
 t.event("input.requested", { count: 1 });
 t.notEvent("error");
-t.eventOrder(["action.called", "subagent.called"]);
+t.eventOrder(["operation.started", "operation.finished"]);
 t.eventsSatisfy("read before write", (events) => /* 自定义谓词 */ true);
 ```
 

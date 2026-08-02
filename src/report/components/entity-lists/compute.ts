@@ -40,7 +40,7 @@ import { selectedAttemptsOnly, summarizeItems } from "../shared-compute.ts";
  * 一次 attempt 的单行结果摘要(Scoring display 契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
  * (phase · code · message);计分制(`scoring: "points"`)passed 存在丢分得分点时取首条丢分
- * 摘要(规则 6,含 points 挣分尾缀);其余 passed / unreadable 为 null。
+ * 摘要(规则 6,含 points 挣分尾缀);其余 passed / skipped 为 null。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
   if (result.verdict === "errored" && result.error !== undefined) {
@@ -286,7 +286,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       // SampleCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
       // 纪律下的默认,不是从任何真实数据推断出来的。
       scoring: "pass",
-      evalVerdicts: { passed: 0, failed: 0, errored: 0, unreadable: 0 },
+      evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
       endToEndPassRate: await computeCell(endToEndPassRate, emptyItems),
       totalScore: await computeCell(totalScore, emptyItems),
       costUSD: await computeCell(costUSD, emptyItems),

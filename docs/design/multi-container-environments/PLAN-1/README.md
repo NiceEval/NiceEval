@@ -175,7 +175,7 @@ createEnvironment(provider, profile)
  └─ agent 沙箱创建,入网                    # ← 从这里起完全是现有生命周期链,一步不变
  → sandbox.setup → baseline → eval.setup → agent.setup
  → test(t) → workspace.diff
- → scoring.evaluate                        # ← 服务此刻仍活着
+ → assertions.evaluate                     # ← 服务此刻仍活着
  → eval / agent / sandbox teardown
  → 服务日志采集 → 服务销毁 → 拆网
 ```

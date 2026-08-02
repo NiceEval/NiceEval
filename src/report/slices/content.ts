@@ -26,7 +26,7 @@ export function deltaTableContent(data: DeltaData): TableContent {
       for (const condition of data.conditions) {
         const cell = row.cells[condition];
         cells[`${condition}:verdict`] = cell
-          ? cell.scoring === "points"
+          ? cell.evaluationKind === "points"
             ? {
                 kind: "text",
                 text: cell.totalScore !== undefined ? String(cell.totalScore) : "—",

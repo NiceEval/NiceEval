@@ -4,7 +4,7 @@
 // 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格。
 // 三个通过率指标把「Agent 答错」与「基建没跑起来」拆开,不互相伪装:
 //
-//   指标(name)                                    unreadable  errored          failed  passed        better
+//   指标(name)                                    skipped  errored          failed  passed        better
 //   taskPassRate(task-pass-rate)                   null     null             0       1             higher
 //   executionReliability(execution-reliability)    null     0                1       1             higher
 //   endToEndPassRate(end-to-end-pass-rate)         null     0                0       1             higher
@@ -64,13 +64,13 @@ export const taskPassRate = attemptMetric({
       case "failed":
         return 0;
       default:
-        // errored = 没形成可信判定 → null 不进这个条件指标;unreadable 同为 null。
+        // errored = 没形成可信判定 → null 不进这个条件指标;skipped 同为 null。
         return null;
     }
   },
 });
 
-/** 执行可靠性:跑到可判定(passed / failed)= 1,errored = 0;unreadable → null。 */
+/** 执行可靠性:跑到可判定(passed / failed)= 1,errored = 0;skipped → null。 */
 export const executionReliability = attemptMetric({
   name: "execution-reliability",
   label: { en: "Execution reliability", "zh-CN": "执行可靠性" },
@@ -86,7 +86,7 @@ export const executionReliability = attemptMetric({
       case "errored":
         return 0;
       default:
-        return null; // unreadable
+        return null; // skipped
     }
   },
 });
@@ -103,7 +103,7 @@ export const passRate = attemptMetric({
   unit: "%",
   bounds: { min: 0, max: 1 },
   value: (a) =>
-    a.result.verdict === "unreadable" ? null : a.result.verdict === "passed" ? 1 : 0,
+    a.result.verdict === "skipped" ? null : a.result.verdict === "passed" ? 1 : 0,
 });
 
 /** @internal 供仓库内尚未迁移的实现过渡；不从 niceeval/report 导出。 */
@@ -118,7 +118,7 @@ export const examScore = attemptMetric({
   bounds: { min: 0, max: 1 },
   value(a) {
     const { verdict, assertions } = a.result;
-    if (verdict === "unreadable") return null;
+    if (verdict === "skipped") return null;
     // 先按 verdict 分派,再看断言:errored 的断言是空数组,「gate 全过才得分」的
     // 字面实现会让条件空真成立、崩溃反而得满分 —— 交白卷是 0 分,不是缺数据,更不是满分。
     // failed 同理得 0:--strict 下被翻成 failed 的哪怕 soft 分不低也是 0(报告不重新判卷)。
@@ -138,7 +138,7 @@ export const examScore = attemptMetric({
 /**
  * 计分制(`defineScoreEval`)eval 的挣分:`assertions[].points` 之和加 `scoreEntries[].points`
  * 之和——纯累加,不声明满分(docs/feature/experiments/score-points.md「计分制:叠加给分,
- * 没有上限声明」)。errored 记 null(基础设施得 null,不折成 0);unreadable 同为 null。通过制
+ * 没有上限声明」)。errored 记 null(基础设施得 null,不折成 0);skipped 同为 null。通过制
  * (`scoring !== "points"`,含省略即 "pass")eval 没有分数面,同样返回 null——这样跨题型的
  * Sample 里对 totalScore 求 acrossEvals 和时,通过制 eval 天然不贡献、也不拉低分母(它们不落
  * 进这个指标的样本)。`runs > 1` 时同一 eval 的多个 attempt 取均值(perEval mean,与文档「eval
@@ -152,7 +152,7 @@ export const totalScore = attemptMetric({
   bounds: { min: 0 },
   value(a) {
     if (a.result.scoring !== "points") return null;
-    if (a.result.verdict === "errored" || a.result.verdict === "unreadable") return null;
+    if (a.result.verdict === "errored" || a.result.verdict === "skipped") return null;
     let total = 0;
     for (const assertion of a.result.assertions) {
       if (assertion.outcome !== "unavailable" && typeof assertion.points === "number") total += assertion.points;
@@ -172,7 +172,7 @@ export const durationMs = attemptMetric({
   unit: "ms",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.verdict === "unreadable") return null;
+    if (a.result.verdict === "skipped") return null;
     // 超时删失:线值不是「跑了这么久」,是「被砍在这里」——计入聚合会把截断当实测,
     // 排除又制造幸存者偏差(慢条件因为被截断反而显得快)。唯一诚实做法是 null,
     // 让 MetricCell 的 samples < total 把删失显式呈现出来(docs/feature/reports/library/measures.md「内置指标」)。
@@ -189,7 +189,7 @@ export const tokens = attemptMetric({
   unit: "tokens",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.verdict === "unreadable") return null;
+    if (a.result.verdict === "skipped") return null;
     const usage = a.result.usage;
     // input/output 缺失(协议没提供)→ null,不拿 0 冒充「实测就是 0」
     // (docs/feature/record/architecture.md#usage)。
@@ -207,7 +207,7 @@ export const costUSD = attemptMetric({
   better: "lower",
   unit: "$",
   bounds: { min: 0 },
-  value: (a) => (a.result.verdict === "unreadable" ? null : attemptCostUSD(a.result)),
+  value: (a) => (a.result.verdict === "skipped" ? null : attemptCostUSD(a.result)),
 });
 
 /**
@@ -224,7 +224,7 @@ export const assistantTurns = attemptMetric({
   unit: "turns",
   bounds: { min: 0 },
   async value(a) {
-    if (a.result.verdict === "unreadable") return null;
+    if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();
     return o11y?.totalTurns ?? null;
   },
@@ -233,7 +233,7 @@ export const assistantTurns = attemptMetric({
 /**
  * 同一 attempt 内同一条 shell 命令的重复失败数:每条命令失败 n 次(n > 1)记 n − 1,求和。
  * 成功执行与只失败一次的命令不计。回答 agent 是否在反复撞同一个已知失败的命令。
- * 读 o11y.json;unreadable 与缺 o11y 返回 null(docs/feature/reports/library/measures.md「内置指标」)。
+ * 读 o11y.json;skipped 与缺 o11y 返回 null(docs/feature/reports/library/measures.md「内置指标」)。
  */
 export const repeatedFailedCommands = attemptMetric({
   name: "repeated-failed-commands",
@@ -243,7 +243,7 @@ export const repeatedFailedCommands = attemptMetric({
   unit: "cmds",
   bounds: { min: 0 },
   async value(a) {
-    if (a.result.verdict === "unreadable") return null;
+    if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();
     if (!o11y) return null;
     const failures = new Map<string, number>();

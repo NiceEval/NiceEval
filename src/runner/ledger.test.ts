@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createChangeLedger } from "./ledger.ts";
-import { deriveDiffData, elidedContentAt, elidedContentPaths } from "../scoring/diff.ts";
+import { deriveDiffData, elidedContentAt, elidedContentPaths } from "../assertions/diff.ts";
 import type { CommandResult, Sandbox } from "../types.ts";
 
 const execAsync = promisify(exec);

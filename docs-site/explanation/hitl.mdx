@@ -63,7 +63,7 @@ Like the rest of [NiceEval](https://niceeval.com/)'s capabilities, HITL is not d
 
 ## Rejection is not a failure
 
-A human veto and a tool error are two different things, and the event stream marks them with different statuses: a call a human rejects gets `action.result` with `status: "rejected"`, not `"failed"`. That way `t.noFailedActions()` is not falsely tripped by a legitimate human rejection, and `t.calledTool("deploy", { status: "rejected" })` can precisely assert "the call was made, and a human blocked it" — which is exactly the assertion the rejection-branch eval needs to write.
+A human veto and a tool error are two different things, and the event stream marks them with different statuses: a call a human rejects gets a tool `operation.finished` with `status: "rejected"`, not `"failed"`. That way `t.noFailedActions()` is not falsely tripped by a legitimate human rejection, and `t.calledTool("deploy", { status: "rejected" })` can precisely assert "the call was made, and a human blocked it" — which is exactly the assertion the rejection-branch eval needs to write.
 
 ## Which agents do not need HITL
 

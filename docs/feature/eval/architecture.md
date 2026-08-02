@@ -29,7 +29,7 @@
 
 ## 生命周期与不变量
 
-- eval 的准备命令记 `sandbox.prepare`（诊断按 owner 细分），主链随后是 `eval.run` → `scoring.evaluate`。
+- eval 的准备命令记 `sandbox.prepare`（诊断按 owner 细分），主链随后是 `eval.run` → `assertions.evaluate`。
   `eval.run` 按真实顺序覆盖普通文件传输、全部 turn、命令与断言记录。
   已登记 cleanup 在收尾段逆序执行，失败只追加 diagnostic，不改判定。
   阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。

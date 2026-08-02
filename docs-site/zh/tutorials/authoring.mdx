@@ -181,7 +181,7 @@ export default defineEval({
     { name: "agent.setup", what: "装 Agent CLI、写主配置", times: "每 Attempt" },
     { name: "eval.run", what: "整段 test(t)，含所有 send 与手工命令", times: "每 Attempt" },
     { name: "workspace.diff", what: "折出 Agent 造成的文件改动", times: "每 Attempt" },
-    { name: "scoring.evaluate", what: "断言收口与判定，含 Judge 调用", times: "每 Attempt" },
+    { name: "assertions.evaluate", what: "断言收口与判定，含 Judge 调用", times: "每 Attempt" },
     { name: "eval.teardown", what: "收尾链第一段，Sandbox 还活着", times: "每 Attempt" },
     { name: "sandbox.teardown", what: "Agent 收尾之后，最后销毁 Sandbox", times: "每个 Sandbox 一次" },
   ]}

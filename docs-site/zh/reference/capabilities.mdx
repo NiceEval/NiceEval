@@ -29,7 +29,7 @@ description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明
 
 ### 工具/动作事件完整性
 
-含义：这一轮的每次工具调用是否都以 `action.called` + `action.result` 出现在 events 里（[事件流参考](/zh/reference/events)）。来源只有两个：官方转换器按被测协议的契约保证；手工映射由你的代码决定。OTel span 不是来源——span 只进瀑布图，不进事件流（见 [OTel 接入](/zh/tutorials/connect-otel)）。
+含义：这一轮的每次工具调用是否都以 tool `operation.started` + `operation.finished` 事件对出现在 events 里（[事件流参考](/zh/reference/events)）。来源只有两个：官方转换器按被测协议的契约保证；手工映射由你的代码决定。OTel span 不是来源——span 只进瀑布图，不进事件流（见 [OTel 接入](/zh/tutorials/connect-otel)）。
 
 ### 会话续接
 

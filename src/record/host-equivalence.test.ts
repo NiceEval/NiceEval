@@ -23,7 +23,7 @@ import { openRecord } from "./index.ts";
 import type { Sample, SampleIssue } from "./index.ts";
 import { currentSample, latestRunSample, type SampleOptions } from "../sample/index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 

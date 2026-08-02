@@ -9,7 +9,7 @@ import {
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { DEFAULT_OPENCLAW_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
 import { randomUUID } from "node:crypto";

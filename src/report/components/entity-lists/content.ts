@@ -64,18 +64,18 @@ function measureCell(value: MetricValue): Cell {
 function verdictCell(counts: ExperimentListItem["evalVerdicts"]): Cell {
   return {
     kind: "verdict",
-    counts: { passed: counts.passed, failed: counts.failed, errored: counts.errored, skipped: counts.unreadable },
+    counts: { passed: counts.passed, failed: counts.failed, errored: counts.errored, skipped: counts.skipped },
   };
 }
 
 /** 一组判定 → 计票。experiment 行数题、Eval 行数 attempt,同一形态同一构造。 */
 function tallyVerdicts(verdicts: readonly AttemptListItem["verdict"][]): ExperimentListItem["evalVerdicts"] {
-  const counts = { passed: 0, failed: 0, errored: 0, unreadable: 0 };
+  const counts = { passed: 0, failed: 0, errored: 0, skipped: 0 };
   for (const verdict of verdicts) {
     if (verdict === "passed") counts.passed += 1;
     else if (verdict === "failed") counts.failed += 1;
     else if (verdict === "errored") counts.errored += 1;
-    else counts.unreadable += 1;
+    else counts.skipped += 1;
   }
   return counts;
 }
@@ -194,7 +194,7 @@ function sumCells(cells: readonly MetricValue[]): MetricValue {
 
 /**
  * 组内通过率:与 endToEndPassRate 同口径——attempt 级 passed=1 / failed|errored=0 /
- * unreadable=null,先 perEval mean 再 acrossEvals mean;占位行不进分母。
+ * skipped=null,先 perEval mean 再 acrossEvals mean;占位行不进分母。
  *
  * 注:这里手写聚合而非 computeCell——ExperimentListEvalRow 只有投影后的
  * AttemptListItem,拿不到按 (eval, snapshot) 分桶的原始 Item。metric 定义或分桶

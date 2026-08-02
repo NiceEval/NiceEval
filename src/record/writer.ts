@@ -6,7 +6,7 @@
 // 不存在「谁的值为准」。布局知识(快照目录独占创建、attempt 路径清洗、大字段拆 artifact、
 // has* 回填、空数据不落文件)全在这里;src/runner/reporters/artifacts.ts 是本文件的薄壳。
 
-import { assertEvidenceCoverage } from "../scoring/coverage.ts";
+import { assertEvidenceCoverage } from "../assertions/coverage.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";

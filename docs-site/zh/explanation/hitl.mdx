@@ -65,7 +65,7 @@ HITL 对 Adapter 的全部要求就三件事——前两件发生在停下的那
 
 ## 拒绝不是故障
 
-人否决和工具报错是两回事，事件流里用不同的 `status` 区分：被人拒绝的调用，`action.result` 的 `status` 是 `"rejected"` 而不是 `"failed"`。这样 `t.noFailedActions()` 不会被一次正当的人工否决误伤，而 `t.calledTool("deploy", { status: "rejected" })` 可以精确断言"发起了调用、被人拦下了"——这正是拒绝分支的评估用例要写的断言。
+人否决和工具报错是两回事，事件流里用不同的 `status` 区分：被人拒绝的调用，tool `operation.finished` 的 `status` 是 `"rejected"` 而不是 `"failed"`。这样 `t.noFailedActions()` 不会被一次正当的人工否决误伤，而 `t.calledTool("deploy", { status: "rejected" })` 可以精确断言"发起了调用、被人拦下了"——这正是拒绝分支的评估用例要写的断言。
 
 ## 哪些 agent 用不到 HITL
 

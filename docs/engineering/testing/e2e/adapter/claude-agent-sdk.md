@@ -8,7 +8,7 @@
 | 协议行为      | Eval 断言（只读事件流）                                                                                                                                                                 |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | MCP 工具调用  | 工具以 MCP 命名出现——天气 Eval 连名带参断言 `calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`，`tool_use_id` 配对成立；反例断言未挂载的工具 `notCalledTool` |
-| HITL 拒绝     | `canUseTool` 拒绝的工具带 `rejected` 状态，不产生工具结果；批准路径正常产生 `action.result`                                                                                             |
+| HITL 拒绝     | `canUseTool` 拒绝的工具带 `rejected` 状态，不产生工具结果；批准路径正常产生 `operation.finished`                                                                                             |
 | 会话          | 首轮 `session_id` 经 `ctx.session.capture()` 捕获，后续轮以 resume 续接并能引用首轮事实                                                                                                 |
 | usage 与 cost | result 帧的 usage、cost 与失败状态进入 `Turn`，逐轮非空                                                                                                                                 |
 

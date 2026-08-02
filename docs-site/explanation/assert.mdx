@@ -153,7 +153,7 @@ The `input` argument to `calledTool` and `notCalledTool` supports a small matchi
 ```ts
 t.event("input.requested", { count: 1 });
 t.notEvent("error");
-t.eventOrder(["action.called", "subagent.called"]);
+t.eventOrder(["operation.started", "operation.finished"]);
 t.eventsSatisfy("read before write", (events) => /* custom predicate */ true);
 ```
 

@@ -219,6 +219,7 @@ async function runOnce(
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
   return Effect.runPromise(
     runAttemptEffect(attempt, runOpts, sandboxSem, {
+      buildLocators: new Map(),
       onPhase: opts.onPhase,
       ...(opts.reusedSandbox
         ? {

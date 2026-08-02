@@ -351,7 +351,7 @@ export function resolvedTimeoutMsForCarry(run: AgentRun, evalDef: DiscoveredEval
  * 可以携入(跳过重跑)的 attempt。三条判据逐条 attempt 独立成立才算命中——
  *
  * 1. 该 attempt 自己是终态(`passed` / `failed`)。`errored` 是框架/环境层面的不确定失败,
- *    判定本身不可信;`unreadable` 根本没跑。同一 eval 的别的序号命中不能连带把它捎上
+ *    判定本身不可信;`skipped` 根本没跑。同一 eval 的别的序号命中不能连带把它捎上
  *    (反例与修法见 memory 的 carry-must-be-per-attempt-not-whole-eval-key)。
  * 2. 该 attempt 落盘的 `fingerprint` 落在本次的可携带指纹集合里(`CarryPlan.acceptableFingerprints`
  *    的那一条,通常只有本次规划出的那一个;声明了 provenance flag 时还含「只在这些键上与本次
