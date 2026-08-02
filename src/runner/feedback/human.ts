@@ -891,11 +891,13 @@ export interface HumanDryPlanRow {
   locked?: boolean;
   /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
    *  「`--dry`:计划矩阵与作废原因」);省略或空数组 = 全部携带,行尾标 `carried`。 */
-  dispatch?: readonly { reason: string; deltas?: readonly { selector: string; from?: string; to?: string }[] }[];
-  /** stale 行对应的历史结果；每个 locator 都是一次独立的接受对象。 */
+  dispatch?: readonly { reason: string; deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[] }[];
+  /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
   prior?: readonly {
     locator: string;
-    deltas?: readonly { selector: string; from?: string; to?: string }[];
+    verdict: "passed" | "failed" | "errored" | "skipped";
+    acceptance: "available" | "legacy-locator";
+    deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
   }[];
 }
 
@@ -947,7 +949,7 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
     const suffix = row.locked
       ? t("feedback.human.lockedRowSuffix")
-      : dryPlanReasonSuffix(row.dispatch);
+      : dryPlanReasonSuffix(row.dispatch, row.prior);
     lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
   }
   const staleBlocks = renderStaleDeltaGroups(input);
@@ -963,15 +965,12 @@ function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
     for (const prior of row.prior) {
       const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.deltas?.length);
       const deltas = prior.deltas ?? staleGroup?.deltas;
-      const summary = deltas?.map((delta) => {
-        const change = delta.from !== undefined || delta.to !== undefined
-          ? ` ${delta.from ?? ""} → ${delta.to ?? ""}`.trimEnd()
-          : "";
-        return `${delta.selector}${change}`;
-      }).join(", ");
-      out.push(`${row.experimentId}  ${row.evalId}  stale${summary ? `: ${summary}` : ""}`);
-      out.push(`  prior:  ${prior.locator}`);
-      out.push(`  accept: niceeval accept ${prior.locator}`);
+      const summary = deltas?.map(formatDryDelta).join(", ") ?? "details unavailable";
+      out.push(`${row.experimentId}  ${row.evalId}  stale ${prior.verdict}: ${summary}`);
+      out.push(`  prior:  ${prior.locator} (${prior.verdict})`);
+      out.push(prior.acceptance === "available"
+        ? `  accept: niceeval accept ${prior.locator}`
+        : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");
     }
   }
   return out;
@@ -997,14 +996,32 @@ function foldIds(ids: string[]): string {
 }
 
 /** `stale: config:judge.model · new` —— 同一行的多组原因按门的出现序连排,stale 附差异 selector。 */
-function dryPlanReasonSuffix(dispatch: HumanDryPlanRow["dispatch"]): string {
+function dryPlanReasonSuffix(dispatch: HumanDryPlanRow["dispatch"], prior: HumanDryPlanRow["prior"]): string {
   if (dispatch === undefined || dispatch.length === 0) return "carried";
   return dispatch
     .map((group) => {
-      const selectors = (group.deltas ?? []).map((delta) => delta.selector);
-      return selectors.length > 0 ? `${group.reason}: ${selectors.join(", ")}` : group.reason;
+      const selectors = (group.deltas ?? []).map(formatDryDelta);
+      const staleVerdicts = group.reason === "stale"
+        ? [...new Set((prior ?? []).map((result) => result.verdict))]
+        : [];
+      const reason = staleVerdicts.length > 0 ? `stale ${staleVerdicts.join("/")}` : group.reason;
+      if (selectors.length > 0) return `${reason}: ${selectors.join(", ")}`;
+      return group.reason === "stale" ? `${reason}: details unavailable` : reason;
     })
     .join(" · ");
+}
+
+function formatDryDelta(delta: { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }): string {
+  switch (delta.kind) {
+    case "added": return `${delta.selector} added (${delta.to ?? ""})`;
+    case "removed": return `${delta.selector} removed (was ${delta.from ?? ""})`;
+    case "unknown": return `${delta.selector} changed (details unavailable)`;
+    case "changed":
+    default:
+      return delta.from !== undefined || delta.to !== undefined
+        ? `${delta.selector} changed (${delta.from ?? ""} → ${delta.to ?? ""})`
+        : delta.selector;
+  }
 }
 
 /** `${n} ${unit}` 的单复数投影;zh 的 singular/plural key 值相同(中文不做语法数变化),

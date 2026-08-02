@@ -378,7 +378,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
             {
               gate: "fingerprint",
               attempts: [0],
-              deltas: [{ selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+              deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }],
             },
             { gate: "missing", attempts: [1] },
           ],
@@ -391,11 +391,38 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       {
         gate: "fingerprint",
         attempts: [0],
-        deltas: [{ selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+        deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }],
       },
       { gate: "missing", attempts: [1] },
     ]);
     expect(doc.matrix[1]).not.toHaveProperty("dispatch");
+  });
+
+  it("prior 暴露历史 verdict 与是否可接受，差异保留方向", () => {
+    const doc = JSON.parse(renderJsonPlanDocument({
+      total: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      matrix: [{
+        experimentId: "compare/codex",
+        evalId: "legacy",
+        reused: false,
+        prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
+        dispatch: [{
+          gate: "fingerprint",
+          attempts: [0],
+          deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }],
+        }],
+      }],
+    }));
+
+    expect(doc.matrix[0]).toMatchObject({
+      prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
+      dispatch: [{
+        deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }],
+      }],
+    });
   });
 
   it("reused 是 matrix 逐行 reused 之和(命中数量,不是 attempt 数)", () => {

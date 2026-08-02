@@ -157,26 +157,28 @@ npx niceeval exp compare --dry
 plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
-compare/baseline  01  stale: config:flags.tunnelUrl
-  prior:  @a1b2c3d4  https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com
-  accept: niceeval accept @a1b2c3d4
+compare/baseline  01  stale passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
+  prior:  @1A1B2C3D4E5F (passed)
+  accept: niceeval accept @1A1B2C3D4E5F
 ```
 
-`accept:` 那一行只指向这一条历史结果。先用 locator 打开证据，确认结论仍然成立后直接接受它：
+`stale passed` 说明历史结论是通过的、但当前指纹已变化；它还不能被缓存直接携带。`accept:` 那一行只指向这一条历史结果。先用 locator 打开证据，确认结论仍然成立后直接接受它：
 
 ```bash
-npx niceeval show @a1b2c3d4 --timing
-npx niceeval accept @a1b2c3d4
+npx niceeval show @1A1B2C3D4E5F --timing
+npx niceeval accept @1A1B2C3D4E5F
 ```
 
 ```text
 ╭─ PLAN ──────────────────────────────────────────╮
-│ Accepted @a1b2c3d4 as @d4c3b2a1                 │
+│ Accepted @1A1B2C3D4E5F as @1D4C3B2A1F5E          │
 │ Current fingerprint: 5f3b…                      │
 ╰─────────────────────────────────────────────────╯
 ```
 
 接受会写出一个使用当前指纹的新结果，并记下来源 locator、旧/新指纹和差异摘要。下一次跑同一实验时，这条结果自然命中。一次命令不会因为同一处差异顺带接受其它结果；要接受另一条结果，传入它自己的 locator。
+
+很早的落盘可能带有不符合当前 locator 格式的旧值。此时 `--dry` 会显示 `accept: unavailable (legacy locator …)`，不会给出一个必然失败的命令；重新运行该 eval 即可生成新的可接受 locator。
 
 `passed` 和 `failed` 的历史结果可以接受。`errored`、`skipped`、复用 Sandbox 产生的结果和当前要求真实执行的结果不能接受；命令会说明原因，不会自动改为运行实验。
 

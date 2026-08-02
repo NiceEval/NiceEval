@@ -608,6 +608,8 @@ export function computeExitCode(summary: InvocationSummary, completion: Invocati
 export interface JsonPlanDelta {
   /** 指纹差异词表:`config:<路径>` / `source:<路径>` / `data:<路径>` / `opaque:no-manifest`。 */
   selector: string;
+  /** 差异方向。`unknown` 表示历史 manifest 缺失，无法列出具体值。 */
+  kind: "added" | "removed" | "changed" | "unknown";
   /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
   from?: string;
   to?: string;
@@ -618,7 +620,7 @@ export interface JsonPlanDispatch {
   gate: "fingerprint" | "terminal" | "eligibility" | "origin" | "rerun" | "mode" | "missing";
   /** 这组原因覆盖的 attempt 序号。 */
   attempts: number[];
-  /** 指纹门的差异明细。 */
+  /** 指纹门的差异明细；省略表示本次规划无法给出结构化差异。 */
   deltas?: JsonPlanDelta[];
 }
 
@@ -627,8 +629,12 @@ export interface JsonPlanRow {
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
-  /** stale 历史结果的精确接受对象；每个 locator 都是独立的一次接受。 */
-  prior?: readonly { locator: string }[];
+  /** stale 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */
+  prior?: readonly {
+    locator: string;
+    verdict: "passed" | "failed" | "errored" | "skipped";
+    acceptance: "available" | "legacy-locator";
+  }[];
   /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。 */
   dispatch?: JsonPlanDispatch[];
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(见

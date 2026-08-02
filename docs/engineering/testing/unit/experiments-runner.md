@@ -201,7 +201,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是六道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
-  九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示来源 locator、差异摘要和对应的 `niceeval accept @<locator>`。
+  九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
 - **`incompatible` 与 `new` 的区分**:同一次计划里一条 eval 的历史落在版本不同的快照里、另一条从没跑过,两行的原因词不同。
   把不兼容历史一并算作「没有任何历史」的实现只在这一格会红。
   判定链的另一半在读取面:不兼容的快照只按目录名认坐标(它的文件按格式规则不解析)。

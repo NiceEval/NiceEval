@@ -884,24 +884,24 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(rowOf(text, "memory/mixed")).toContain("errored · new");
   });
 
-  it("stale 行逐条列出旧值、来源 locator 与独立 accept 命令", () => {
-    const delta = { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" };
+  it("stale 行显示历史 verdict、具名差异与独立 accept 命令", () => {
+    const delta = { selector: "config:judge.model", kind: "changed" as const, from: "gpt-5.6", to: "gpt-5.6-sol" };
     const text = renderHumanDryPlan({
       totalAttempts: 3,
       evals: 3,
       configs: 1,
       attempts: 1,
       rows: [
-        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@a1b2c3d4", deltas: [delta] }] },
-        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@e5f6g7h8", deltas: [delta] }] },
+        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", deltas: [delta] }] },
+        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", deltas: [delta] }] },
         { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "sandbox-reuse" }] },
       ],
     });
 
-    expect(text).toContain("compare/codex  baseline01  stale: config:judge.model gpt-5.6 → gpt-5.6-sol");
-    expect(text).toContain("prior:  @a1b2c3d4");
-    expect(text).toContain("accept: niceeval accept @a1b2c3d4");
-    expect(text).toContain("prior:  @e5f6g7h8");
+    expect(text).toContain("compare/codex  baseline01  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)");
+    expect(text).toContain("prior:  @1A1B2C3D4E5F (passed)");
+    expect(text).toContain("accept: niceeval accept @1A1B2C3D4E5F");
+    expect(text).toContain("prior:  @1E5F6G7H8J9K (failed)");
     expect(text).not.toContain("baseline04  stale"); // sandbox-reuse 无 prior,不提供接受入口
   });
 
@@ -917,37 +917,56 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           evalId: "from-old-a",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", from: "old-a", to: "current" }],
+            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-a", to: "current" }],
           }],
-          prior: [{ locator: "@a1b2c3d4" }],
+          prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available" }],
         },
         {
           experimentId: "compare/codex",
           evalId: "from-old-b-1",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
+            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }],
           }],
-          prior: [{ locator: "@e5f6g7h8" }],
+          prior: [{ locator: "@1E5F6G7H8J9K", verdict: "passed", acceptance: "available" }],
         },
         {
           experimentId: "compare/codex",
           evalId: "from-old-b-2",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
+            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }],
           }],
-          prior: [{ locator: "@j9k0l1m2" }],
+          prior: [{ locator: "@1J9K0L1M2N3P", verdict: "passed", acceptance: "available" }],
         },
       ],
     });
 
     // 每条结果既有矩阵行尾的 stale 原因，也有带 prior/accept 的详细行。
-    expect(text.match(/^compare\/codex  from-old-.*stale:/gm)).toHaveLength(6);
-    expect(text).toContain("prior:  @a1b2c3d4");
-    expect(text).toContain("prior:  @e5f6g7h8");
-    expect(text).toContain("prior:  @j9k0l1m2");
+    expect(text.match(/^compare\/codex  from-old-.*stale passed:/gm)).toHaveLength(6);
+    expect(text).toContain("prior:  @1A1B2C3D4E5F");
+    expect(text).toContain("prior:  @1E5F6G7H8J9K");
+    expect(text).toContain("prior:  @1J9K0L1M2N3P");
     expect(text.match(/niceeval accept @/g)).toHaveLength(3);
+  });
+
+  it("旧格式 locator 不给出会失败的 accept 命令", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "legacy",
+        dispatch: [{ reason: "stale", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] }],
+        prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
+      }],
+    });
+
+    expect(text).toContain("stale passed: config:state removed (was {\"_tag\":\"Stateless\"})");
+    expect(text).toContain("accept: unavailable (legacy locator; rerun to create an acceptable result)");
+    expect(text).not.toContain("niceeval accept @1rtu4f1f");
   });
 
   it("没有 stale 行时整块不打印", () => {

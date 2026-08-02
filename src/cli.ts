@@ -19,6 +19,7 @@ import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector 
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import type { FingerprintDelta } from "./runner/manifest.ts";
+import { decodeAttemptLocator } from "./record/locator.ts";
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
@@ -81,6 +82,7 @@ import type {
   ReporterRegistration,
   RunFeedbackPlan,
   RunFeedbackState,
+  Verdict,
 } from "./types.ts";
 
 /**
@@ -439,25 +441,29 @@ function planRowInputs(
   matchedByRun: DiscoveredEval[][],
   carryPlan: CarryPlan | undefined,
   incompatibleKeys: ReadonlySet<string>,
-  priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string }[] = [],
+  priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string; verdict: Verdict }[] = [],
 ): {
   experimentId: string;
   evalId: string;
   reused: boolean;
   dispatch: readonly DispatchGroup[];
-  prior?: readonly { locator: string; deltas?: readonly FingerprintDelta[] }[];
+  prior?: readonly { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
 }[] {
-  const priorByKeyAttempt = new Map<string, { locator: string }>();
+  const priorByKeyAttempt = new Map<string, { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator" }>();
   for (const prior of priorResults) {
     if (prior.locator === undefined) continue;
-    priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, { locator: prior.locator });
+    priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, {
+      locator: prior.locator,
+      verdict: prior.verdict,
+      acceptance: decodeAttemptLocator(prior.locator).valid ? "available" : "legacy-locator",
+    });
   }
   const rows: {
     experimentId: string;
     evalId: string;
     reused: boolean;
     dispatch: readonly DispatchGroup[];
-    prior?: readonly { locator: string; deltas?: readonly FingerprintDelta[] }[];
+    prior?: readonly { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
   }[] = [];
   for (let i = 0; i < agentRuns.length; i++) {
     const run = agentRuns[i]!;
@@ -471,7 +477,7 @@ function planRowInputs(
       const stalePrior = dispatch.flatMap((group) => group.reason === "stale"
         ? group.attempts.flatMap((attempt) => {
             const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
-            return prior === undefined ? [] : [{ locator: prior.locator, ...(group.deltas !== undefined ? { deltas: group.deltas } : {}) }];
+            return prior === undefined ? [] : [{ ...prior, ...(group.deltas !== undefined ? { deltas: group.deltas } : {}) }];
           })
         : []);
       rows.push({
@@ -489,10 +495,10 @@ function planRowInputs(
 /** 内部 ADT tag 不属于 `ExpPlanDelta` 的公开 JSON 契约；边界显式投影，禁止对象展开泄漏。 */
 function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
   switch (delta._tag) {
-    case "Added": return { selector: delta.selector, to: delta.to };
-    case "Removed": return { selector: delta.selector, from: delta.from };
-    case "Changed": return { selector: delta.selector, from: delta.from, to: delta.to };
-    case "Unknown": return { selector: delta.selector };
+    case "Added": return { selector: delta.selector, kind: "added", to: delta.to };
+    case "Removed": return { selector: delta.selector, kind: "removed", from: delta.from };
+    case "Changed": return { selector: delta.selector, kind: "changed", from: delta.from, to: delta.to };
+    case "Unknown": return { selector: delta.selector, kind: "unknown" };
   }
 }
 
@@ -1258,7 +1264,7 @@ async function main(): Promise<void> {
       experimentId: row.experimentId,
       evalId: row.evalId,
       reused: row.reused,
-      ...(row.prior !== undefined ? { prior: row.prior.map((prior) => ({ locator: prior.locator })) } : {}),
+      ...(row.prior !== undefined ? { prior: row.prior.map(({ locator, verdict, acceptance }) => ({ locator, verdict, acceptance })) } : {}),
       ...(lockedFlags[i] ? { locked: true } : {}),
       ...(row.dispatch.length > 0
         ? {
