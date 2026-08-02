@@ -23,6 +23,7 @@ export type {
   TurnEvidenceCoverage,
   TurnInput,
   InputFile,
+  AnswerValue,
   InputResponse,
   RespondAnswer,
   TurnHandle,

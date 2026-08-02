@@ -22,6 +22,9 @@ export interface McpStdioServer {
   args?: string[];
   /** 注入服务器进程的环境变量(可能含 secret,不进 manifest)。 */
   env?: globalThis.Record<string, string>;
+  /** stdio 与 HTTP 是互斥完成态，不能把另一分支的字段混进来。 */
+  url?: never;
+  headers?: never;
 }
 
 /**
@@ -35,6 +38,10 @@ export interface McpHttpServer {
   url: string;
   /** 逐字写进每个请求的 HTTP 头(常用于 Authorization;可能含 secret,不进 manifest)。 */
   headers?: globalThis.Record<string, string>;
+  /** HTTP 与 stdio 是互斥完成态，不能把另一分支的字段混进来。 */
+  command?: never;
+  args?: never;
+  env?: never;
 }
 
 /**
@@ -157,14 +164,14 @@ export interface InputFile {
  * `text` 去猜哪句回答对应哪个请求、算不算批准。见 docs-site/zh/explanation/adapter.mdx
  * 「不同回答的入参」一节的四种典型形态。
  */
-export interface InputResponse {
+export type AnswerValue =
+  | { readonly optionId: string; readonly text?: never }
+  | { readonly text: string; readonly optionId?: never };
+
+export type InputResponse = {
   /** 对应哪条 input.requested 请求;多个请求并停时靠它对位。 */
   readonly requestId: string;
-  /** 与 text 二选一:回答命中了请求 options 里的某个 id(approve / deny…)。 */
-  readonly optionId?: string;
-  /** 与 optionId 二选一:自由文本回答(请求没有选项,或回答不是任何选项)。 */
-  readonly text?: string;
-}
+} & AnswerValue;
 
 export interface TurnInput {
   readonly text: string;

@@ -383,7 +383,7 @@ export const en = {
   "feedback.phase.workspaceBaseline": "preparing workspace",
   "feedback.phase.workspaceDiff": "capturing diff",
   "feedback.rendererError": "  · [feedback] renderer failed while handling {{context}} (ignored): {{message}}\n",
-  "hitl.answerNeedsOptionOrText": "The object form of t.respond needs either optionId or text (neither was given).",
+  "hitl.answerNeedsOptionOrText": "The object form of t.respond needs exactly one of optionId or text.",
   "hitl.invalidOption": "Answer \"{{optionId}}\" is not an option of request {{requestId}} ({{options}}).",
   "hitl.noOptions": "this request has no options",
   "hitl.requestMissingId": "This input.requested request has no stable id, so a response cannot be built — the adapter must give every pending request a stable id.",

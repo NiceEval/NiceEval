@@ -5,6 +5,7 @@ import type { InputRequest, O11ySummary, StreamEvent, ToolCall, Usage } from "..
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { AssertionHandle, BaseAssertionHandle, ScoreAssertionHandle, ValueAssertion } from "../scoring/types.ts";
 import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
+import type { AnswerValue } from "../agents/types.ts";
 
 /** `t.send()` / `session.send()` 的入参:字符串,或带附件的结构化消息。 */
 export type SendInput = string | { text: string; files?: readonly import("../agents/types.ts").InputFile[] };
@@ -152,11 +153,9 @@ export interface InputRequestFilter {
  * 字符串形式做不到)。`optionId` 与 `text` 二选一——`optionId` 必须存在于
  * `request.options` 里,写错直接抛;`text` 是自由文本,不做校验。
  */
-export interface RespondAnswer {
+export type RespondAnswer = {
   readonly request: InputRequest;
-  readonly optionId?: string;
-  readonly text?: string;
-}
+} & AnswerValue;
 
 /** 评估用例作者可见的受限 Sandbox 视图:能执行命令 / 文件 IO / 读最终 diff,但不能 stop。 */
 export interface EvalSandbox<H extends BaseAssertionHandle = AssertionHandle>

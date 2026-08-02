@@ -375,7 +375,7 @@ export const zhCN = {
   "feedback.phase.workspaceBaseline": "准备工作区",
   "feedback.phase.workspaceDiff": "采集 diff",
   "feedback.rendererError": "  · [feedback] renderer 处理 {{context}} 失败(已忽略):{{message}}\n",
-  "hitl.answerNeedsOptionOrText": "t.respond 的对象形式需要 optionId 或 text 二选一(两者都没给)。",
+  "hitl.answerNeedsOptionOrText": "t.respond 的对象形式必须在 optionId 与 text 中恰好选择一项。",
   "hitl.invalidOption": "回答 \"{{optionId}}\" 不是请求 {{requestId}} 的可选项({{options}})。",
   "hitl.noOptions": "该请求没有可选项",
   "hitl.requestMissingId": "该 input.requested 请求没有稳定的 id,无法生成 responses——adapter 侧要给每条待回答请求一个稳定 id。",

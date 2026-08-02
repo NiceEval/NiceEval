@@ -762,6 +762,9 @@ function buildRespondInput(
       responses.push(resolved);
     } else {
       const requestId = requireRequestId(answer.request);
+      if ((answer.optionId === undefined) === (answer.text === undefined)) {
+        throw new Error(t("hitl.answerNeedsOptionOrText"));
+      }
       if (answer.optionId !== undefined) {
         validateOptionId(answer.request, answer.optionId);
         pieces.push(answer.optionId);
@@ -769,8 +772,6 @@ function buildRespondInput(
       } else if (answer.text !== undefined) {
         pieces.push(answer.text);
         responses.push({ requestId, text: answer.text });
-      } else {
-        throw new Error(t("hitl.answerNeedsOptionOrText"));
       }
     }
   }

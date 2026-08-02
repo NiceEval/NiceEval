@@ -7,7 +7,26 @@ import { deriveDiffData } from "../scoring/diff.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
-import type { Agent, AgentContext, DiffArtifact, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import type { Agent, AgentContext, DiffArtifact, InputRequest, InputResponse, RespondAnswer, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+
+function hitlAnswerTypeContract(request: InputRequest): void {
+  const optionAnswer: RespondAnswer = { request, optionId: "approve" };
+  const textAnswer: RespondAnswer = { request, text: "please revise" };
+  const optionResponse: InputResponse = { requestId: "req-1", optionId: "approve" };
+  const textResponse: InputResponse = { requestId: "req-1", text: "please revise" };
+  void [optionAnswer, textAnswer, optionResponse, textResponse];
+
+  // @ts-expect-error optionId 与 text 必须恰好出现一项。
+  const missingAnswer: RespondAnswer = { request };
+  // @ts-expect-error optionId 与 text 不能同时出现。
+  const ambiguousAnswer: RespondAnswer = { request, optionId: "approve", text: "approve" };
+  // @ts-expect-error adapter 收到的 InputResponse 也使用同一个 XOR。
+  const missingResponse: InputResponse = { requestId: "req-1" };
+  // @ts-expect-error adapter 收到的 InputResponse 不能同时携带两种回答。
+  const ambiguousResponse: InputResponse = { requestId: "req-1", optionId: "approve", text: "approve" };
+  void [missingAnswer, ambiguousAnswer, missingResponse, ambiguousResponse];
+}
+void hitlAnswerTypeContract;
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
 // 但 t.check(t.reply, includes("2")) 却失败。
@@ -463,6 +482,19 @@ describe("t.respond() / t.respondAll(): structured InputResponse", () => {
     await expect(context.respond({ request: req, optionId: "yolo" })).rejects.toThrow(/req_1/);
     // 校验先于发送:没有第二次 send 发生。
     expect(agent.received.length).toBe(1);
+  });
+
+  it("dynamic callers cannot omit or combine the two answer branches", async () => {
+    const agent = scriptedAgent([
+      waitingTurn({ id: "req_1", action: "send_email", options: [{ id: "approve" }, { id: "deny" }] }),
+    ]);
+    const { context } = makeContext(agent);
+    await context.send("draft an email");
+    const request = context.requireInputRequest();
+
+    await expect(context.respond({ request } as never)).rejects.toThrow(/恰好|exactly one/);
+    await expect(context.respond({ request, optionId: "approve", text: "approve" } as never)).rejects.toThrow(/恰好|exactly one/);
+    expect(agent.received).toHaveLength(1);
   });
 
   it("respondAll(optionId) answers every pending request and joins input.text with \\n", async () => {
