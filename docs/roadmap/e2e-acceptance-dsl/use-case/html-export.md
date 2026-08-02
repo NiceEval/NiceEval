@@ -30,20 +30,20 @@ const brandLinkRe = /<a href="https:\/\/niceeval\.com\/\?utm_source=report&amp;u
 
 ```ts
 reportBehavior(failedAttemptDocShowsAssertionVerdicts, async () => {
-  const doc = await attemptDoc(w, w.locator("te-fail"));
+  const doc = await targetDoc(w, w.target("te-fail"));
 
   expectObserved(doc.region("Assertions").itemIds()).toShowExactRows(["equals(3)", "contains(rain)"]);
   expectObserved(doc.assertion("equals(3)").verdict()).toEqualValue("failed");
 });
 
 reportBehavior(fixPromptStartsCollapsed, async () => {
-  const doc = await attemptDoc(w, "index");
+  const doc = await siteDoc(w.exportDir("site"), "index");
   expectObserved(doc.disclosure("Fix prompt").isExpanded()).toEqualValue(false);
   expectObserved(doc.disclosure("Fix prompt").itemIds()).toShowExactRows(["te-fail/gate", "te-error/boom"]);
 });
 
 reportBehavior(brandLinkCarriesDeclaredAttribution, async () => {
-  const link = (await attemptDoc(w, "index")).brandLink();
+  const link = (await siteDoc(w.exportDir("site"), "index")).brandLink();
   expectObserved(link.href()).toEqualValue("https://niceeval.com/?utm_source=report&utm_medium=powered-by");
   expectObserved(link.rel()).toEqualValue("noopener");
 });

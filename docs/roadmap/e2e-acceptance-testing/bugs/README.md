@@ -1,13 +1,14 @@
 # 历史缺陷研究与证据账本
 
-这里用已经修复的真实缺陷反推验收设计。
+这里是 [E2E 验收测试方案](../README.md)的历史证据账本，用已经修复的真实缺陷反推 Behavior、分层、recipe 与运行频率。
+具体断言词由 [E2E 验收 DSL](../../e2e-acceptance-dsl/README.md)提供；账本可以要求一种观察能力，但不拥有 matcher API。
 每条结论同时核对 memory、fix commit、fix 前代码与当时已有测试；memory 只负责找到案例，不单独充当证据。
 
 研究只接受用户已经拥有的入口和用法。
 候选 proof 可以生成隔离消费方或故障环境，但不能要求用户修改 Eval、既有测试或产品代码来暴露内部状态。
 无法稳定从公开入口触发的缺陷必须归入单元、结构守护或机制缺口。
 
-最终收敛见[证据驱动综合方案](synthesis.md)与[验收题库](acceptance-bank.md)。
+最终收敛见[证据驱动综合方案](synthesis.md)与[验收题库](acceptance-bank.md)。现行体系为何已有这些局部测试仍会漏回归，见[失效机制审查](../current-system-gaps.md)。
 
 ## 当前轮次
 

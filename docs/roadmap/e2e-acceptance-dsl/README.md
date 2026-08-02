@@ -1,4 +1,4 @@
-# Report 读面 adapter:媒介词表与 vitest 装配
+# E2E 验收 DSL：Report 读面 adapter 与 vitest 装配
 
 还没定为当前契约的候选设计,见 [Roadmap 约定](../README.md)。
 
@@ -7,8 +7,12 @@
 [测试作者面决策](../../design/user-readable-testing/DECISION.md)采纳 [PLAN-2](../../design/user-readable-testing/PLAN-2/README.md):测试正文以 Report 领域对象为入口,断言消费带 evidence、提取路径与对象身份的 `Observed<T>`。
 本目录设计那层领域对象**底下**的 adapter——把 plain stdout、PTY 屏幕、JSON、JUnit、导出 HTML 与浏览器页面变成可观察值,再把它们装配进 vitest。
 
-分工一句话:Behavior 声明、主证明选择与失败格式归 PLAN-2;媒介怎么解析、证据怎么冻结、断言怎么执行归这里。
+分工一句话：Behavior、evidence recipe、分层、运行频率、并发与准入门槛归
+[E2E 验收测试方案](../e2e-acceptance-testing/README.md)；媒介怎么解析、领域对象怎么寻址、断言怎么执行归这里。
 判据落在词表上——测试正文只出现领域词,`section`、`row`、`line`、正则与 DOM locator 只出现在 adapter 内部。
+
+本目录不维护历史 bug 题库，不决定某个 Feature 必须有几条 E2E，也不拥有 `scripts/e2e.ts` 的 prepare / cleanup 流程。
+它只给已经选定的 proof 提供稳定表达能力；没有测试方案绑定的 DSL 词不构成覆盖。
 
 完整词表见 [Library 逐词表说明](library.md)。
 逐场景的「现行断言 → 候选写法 → 回归剧本」对照见 [Use Cases](use-case/README.md)。
@@ -17,7 +21,7 @@
 ## 问题
 
 E2E 验收脚本(约 4,200 行、近 500 条断言)的断言词表停在**字面层**:`includes()` 子串、整句正则、精确 HTML 字符串。
-四类症状:
+两类 DSL 症状:
 
 - **化妆性变更打红测试。**
   断言把措辞、字形、间距当成契约锁定:整句文案正则(`/Cost\(lower is better\) × Pass rate\(higher is better\)/`)、80 列精确 padding、`·` 分隔文案与 `✓/✗/!` 字形。
@@ -27,11 +31,9 @@ E2E 验收脚本(约 4,200 行、近 500 条断言)的断言词表停在**字面
 - **每个脚本手搓解析器。**
   `historyRows()`、`looseIncludes()`、`displayWidth()`(重造 CJK 宽度表)、`extractTemplate()`、`colorAlpha()`——同类结构提取在各 verify 模块里重复发明,没有统一的查询层。
   写脚本的人已经在自救(空白折叠、双面事实互提对比、颜色只比 rendered-to-rendered),但每次都是就地手工。
-- **线性 fail-fast 脚本的运行学。**
-  第一条断言失败即停,看不到失败全貌;单条断言重跑等于整个 verify 重跑(所幸证据可复用,但流程要人肉注释代码);断言无分组命名,失败定位靠逐条手写消息。
-- **证据被验收自己改写。**
-  `verify-readback` 结尾对共享结果根真实追加两次快照,晚一步执行的只读验收域就在 `--page traces` 里查不到原始 locator([踩坑记录](../../../memory/verify-readback-mutation-orders-later-e2e-report-domains.md))。
-  失败落在离病因很远的断言上,而「这一段必须排最后」的约束只写在脚本头注里,没有任何机制强制。
+
+fail-fast、单例重跑、共享 evidence 被改写和“必须排最后”等运行问题由
+[测试方案的生命周期与 evidence world](../e2e-acceptance-testing/README.md#一条-proof-的生命周期)解决，不再作为 DSL 自己的职责。
 
 调研结论(细节见 References 三节):现成生态没有能直接用的方案——「vitest 友好的终端结构断言库」这个生态位是空的。
 两套设计值得整段照抄:**aria 结构期望的匹配语义**(默认有序子序列、省略即不关心、显式升级精确)和 **trycmd 的容差词表**(脱敏变量长在 golden 里)。
@@ -62,20 +64,13 @@ adapter 负责三件事:把媒介原文解析成结构、按领域身份寻址�
 找不到表就报错并列出实际存在的表标题,找不到行就给最近似候选,形状沿用[错误反馈原则](../../error-feedback.md)。
 不支持的观察显式报错,不回退成文本包含或正则。
 
-### 证据生命周期:一次产出,只读消费
+### World 读取接口：消费，不编排
 
-「一次真实运行、大量确定性断言」落成命名且冻结的 evidence world:
+DSL 提供 `world()`、`w.locator()`、`w.target()`、`w.exportDir()`、`w.consumerDir()` 与私有 clone 的类型化读取接口。
+manifest 如何产生、何时冻结、哪些 Behavior 有写权限以及 clone 能否并发，由
+[测试方案的 Evidence world 与衔接](../e2e-acceptance-testing/README.md#evidence-world-与衔接)决定。
 
-- prepare 产出 world manifest,记录 recipe id、结果根、导出站目录与已提取的 locator。
-  每个 E2E proof 显式绑定 `evidenceRecipeId`,不靠目录或执行顺序猜自己读的是哪份证据。
-- 冻结由原子发布、路径守卫、文件权限与前后文件树 digest 共同强制;prepare 之后普通验收只读。
-- 会迁移或追加结果的场景走单例私有 clone 并声明 `mutationActionId`,不碰共享 world。
-- candidate、recipe、producer symbol closure、fixture、外部依赖、producer 环境与 verifier 各自摘要。
-  改 matcher 不让 world 误过期,改 prepare helper 也不能误复用旧证据。
-- `scripts/e2e.ts` 是唯一解析 `verify --world … --behavior …` 的地方。
-  身份不匹配即拒绝旧 world,不静默重跑模型。
-
-这条把上面第四类症状从「靠头注约定顺序」变成结构上不可能:只读验收改不动共享 world,要改结果的场景拿到的是自己的 clone。
+DSL 只执行两条边界：身份或 digest 不匹配时拒绝读取；未授权能力调用时显式失败。它不静默重跑 producer，也不靠进程全局 cwd 猜结果根。
 
 ### 读面按媒介分工
 
@@ -139,7 +134,7 @@ adapter 只补两样:按公开组件契约立词的领域寻址,与步骤轨迹�
 
 ### 落点:验收器留在所属 E2E 仓库
 
-解析器、领域读面与 matcher 与 Behavior 声明一起签入所属 E2E 仓库,不发布公共包。
+解析器、领域读面与 matcher 签入所属 E2E 仓库，由测试方案选出的 Behavior 消费，不发布公共包。
 两条理由:
 
 - **仓库自治优先。**
@@ -150,8 +145,7 @@ adapter 只补两样:按公开组件契约立词的领域寻址,与步骤轨迹�
 
 oracle 独立不靠发布形态保证,靠**不 import 候选包任何代码**:解析对象是公开渲染输出,预期由测试侧独立声明。
 vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 runner。
-`scripts/e2e.ts` 仍是[仓库唯一命令](../../engineering/testing/e2e/README.md#31-唯一命令)的实现——prepare 产出冻结 world,`vitest run` 执行本仓 Behavior,退出码按既有规则折叠(`75` 基础设施,非零回归)。
-这改写[验收脚本写法](../../engineering/testing/e2e/verification.md)的「不引入测试框架」条款,换来失败聚合、断言分组命名与按 Behavior ID 单例重跑。
+`scripts/e2e.ts` 仍是[仓库唯一命令](../../engineering/testing/e2e/README.md#31-唯一命令)的实现，具体 prepare / verify / cleanup 与退出码折叠见[测试方案](../e2e-acceptance-testing/README.md)。
 
 ## 待裁决分歧
 
@@ -160,9 +154,6 @@ vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 r
 2. **PTY 读面的落地批次。**
    PTY 会话与 stdout 解析器能共用多少归一逻辑(显示宽度、折行并回),要等第一批 stdout 断言落地后按真实重复度定。
    在此之前 PTY 只保留「有 ANSI、有面板、到达完成态」这类粗粒度断言。
-3. **mutable-clone 的粒度。**
-   clone 整个结果根,还是只 clone 被改动的 experiment 目录?
-   前者简单但每次追加验收都复制全量证据,后者要定义目录级的隔离边界;按第一个需要 mutation 的场景(读面的 carry-forward 追加)落地时定。
 
 ## 评估过、不采纳的路线
 
@@ -186,6 +177,7 @@ vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 r
 
 - [Library 逐词表说明](library.md) —— 领域词与读面内部两组词的完整语法、匹配语义、API 与失败反馈。
 - [Use Cases](use-case/README.md) —— 真实验收脚本逐场景的「现行断言 → 候选写法 → 回归剧本」对照。
+- [E2E 验收测试方案](../e2e-acceptance-testing/README.md) —— Behavior、evidence world、分层门禁、并发拓扑、题库与 rollout。
 - [测试作者面决策](../../design/user-readable-testing/DECISION.md) —— 作者轴、渲染边界与本目录必须满足的十项边界。
 - [PLAN-2 · 用户任务规格与类型化可观察读面](../../design/user-readable-testing/PLAN-2/README.md) —— Behavior 声明、User View 规则与失败格式;本目录是它的 adapter 层。
 - [验收脚本写法](../../engineering/testing/e2e/verification.md) —— 现行断言约定与 `sh()` 参考实现;本设计定稿后重写的对象。

@@ -69,5 +69,5 @@ for (const scenario of ["no-tsconfig", "classic-jsx", "react-jsx"] as const) {
 
 - **断言了**:公开入口装载不崩、组件被求值、真实事实进入渲染输出、三种配置行为一致。
 - **不断言**:图表任何排版细节——组件渲染的逐项契约在 [render-structure](render-structure.md) 与组件 scenario 文件验收一次,本 case 不重复。
-- 消费方项目的搭建(mkdtemp、写 tsconfig、pnpm link)属于 prepare 步骤,Behavior 正文里不出现——测试只读证据,这就是[证据生命周期](../README.md#证据生命周期一次产出只读消费)的形状。
+- 消费方项目的搭建(mkdtemp、写 tsconfig、安装候选 tarball)属于 prepare 步骤,Behavior 正文里不出现——测试只读证据；生命周期与权限见[测试方案的 Evidence world](../../e2e-acceptance-testing/README.md#evidence-world-与衔接)。
 </content>

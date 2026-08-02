@@ -88,7 +88,8 @@ Feature 契约仍是语义单源；测试只保存契约链接、证明身份与
 ## 现有 E2E Acceptance DSL 的处理
 
 [`docs/roadmap/e2e-acceptance-dsl/`](../../roadmap/e2e-acceptance-dsl/README.md)不再作为全仓测试作者面的候选终态。
-它保留为 Report 可观察读面的适配器设计输入，并需要先修正十项边界：
+它保留为 Report 可观察读面的适配器设计输入；Behavior 组合、evidence recipe、运行频率、并发与准入门槛另由
+[E2E 验收测试方案](../../roadmap/e2e-acceptance-testing/README.md)负责，并需要先修正十项边界：
 
 1. `term()` 明确区分 non-TTY 语义输出与 PTY screen，不靠框线字符推断 plain stdout；PTY evidence 固定为 invocation、终态 cell grid、scrollback、raw ANSI、resize 与退出信息。
 2. JSON 与 JUnit 改为结构语义比较，golden 只留给逐字承诺的短文本。
@@ -162,6 +163,7 @@ Runner 的 Effect 机制测试可以在第二步同时试点 `@effect/vitest`、
 - [Harness](../../engineering/testing/unit/harness.md)：定义 Feature-owned User View 的边界，并允许复杂机械 harness 自测。
 - [E2E 总纲](../../engineering/testing/e2e/README.md)：定义 frozen evidence world、单例重跑与自治 adapter。
 - [Report E2E](../../engineering/testing/e2e/report.md)：按 plain stdout、PTY、JSON、HTML 与 browser 重画观察面。
+- [E2E 验收测试方案](../../roadmap/e2e-acceptance-testing/README.md)：定义 Behavior 组合、recipe、确定性 / 外部 / 生命周期运行档与并发拓扑。
 - [E2E Acceptance DSL](../../roadmap/e2e-acceptance-dsl/README.md)：收敛为 Report typed view 的内部 adapter 设计。
 
 机器守护落到 `test/docs/`，继续由 `pnpm test:docs` 执行。

@@ -15,11 +15,12 @@ fix 在 index head 最前设置目录形态的 base，并避免切 tab 时把 pa
 新增 `site-base.test.ts` 验证 base 计算，但真实浏览器下钻仍应由 hosting matrix 守住：
 
 ```ts
-reportBehavior(cleanUrlSubpathKeepsAttemptAndArtifactsReachable, async () => {
+reportBehavior(cleanUrlSubpathKeepsTargetsAndArtifactsReachable, async () => {
   const ui = await openSite(w.exportDir("site"), { hosting: "clean-url-subpath" });
-  const locator = w.locator("tool-call");
+  const target = w.target("tool-call-attempt");
 
-  await ui.attemptLink(locator).click();
+  await ui.expectTargetDoc(target);
+  await ui.targetLink(target).click();
   await expect(ui.dialog()).toBeVisible();
   await expect(ui.dialog()).toContainText("Brooklyn");
   await expect(ui.dialog().getByText("evals/tool-call.eval.ts")).toBeVisible();
@@ -34,7 +35,7 @@ fix commit `f3dcb393` 处理过相同托管形态下的 source / trace fetch。
 导出目录中文件完整，前端却把 `artifact/<rel>` 解析到父目录，页面误报“部署缺 artifact”。
 
 该 fix 加了 URL 纯函数单测，却没有真实 clean-url 托管。
-上面的一个浏览器 proof 同时覆盖两条旧 bug：dialog 不开时停在 attempt 下钻；dialog 开但 source 缺失时停在 artifact 内容。
+上面的一个浏览器 proof 同时覆盖两条旧 bug：dialog 不开时停在 target 下钻；dialog 开但 source 缺失时停在 artifact 内容。
 这证明 hosting 是 world 形态，不应分别给链接和 fetch 写两个 URL matcher。
 
 ## 六项检查

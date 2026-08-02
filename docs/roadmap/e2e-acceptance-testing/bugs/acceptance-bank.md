@@ -76,15 +76,18 @@ fix parent 或最小逆补丁验证记录。
 - **最早失败**：observe / outcome；消息列领域路径、输入桶、独立推导和两面实际值。
 - **成本**：compute contract 每 PR；一个官方 Report 组合 E2E 每 PR，无模型。
 
-### A8 · 浏览器 producer / enhancement / hosting 闭合
+### A8 · 浏览器 target / enhancement / hosting 闭合
 
-- **覆盖**：tooltip selector rot 与退役列表增强 `d489dfd4`；view import 子图热重载 `06588ff8`；clean-url attempt / artifact 404 `f055aa67`、`f3dcb393`。
-- **fixture**：同一小导出站含稳定 chart point、attempt locator、source artifact；另有私有 mutable clone 与长驻 view service。
-- **动作**：在 `clean-url-subpath` 点击 attempt、读 artifact、hover 数据点；修改 Report 依赖文件并等待公开 DOM 新状态。
-- **公开 oracle**：dialog 打开、source 内容可见、增强 tooltip 可见、热重载后领域值变化；无浏览器 console / request failure。
-- **区分性**：入口 URL 固定为无尾斜杠且模拟 308；DOM 缺失、enhancement 缺失、artifact 404、service 提前退出分别报错。
-- **最早失败**：invoke / observe / outcome；步骤轨迹附入口 URL、最终请求、HTTP、locator 与截图。
-- **成本**：每 PR，真实 Chromium、无公网。
+- **覆盖**：
+  - 参数化页改版后链接存在但文档未产出；attempt 专用验收漏掉 experiment / custom page。
+  - tooltip selector rot 与退役列表增强 `d489dfd4`；view import 子图热重载 `06588ff8`。
+  - clean-url target / artifact 404 `f055aa67`、`f3dcb393`。
+- **fixture**：同一份本地确定性 Record 导出站含 attempt、experiment 与自定义参数化 target、稳定 chart point 和 source artifact；另有私有 mutable clone 与长驻 view service。
+- **动作**：先对最终 page 清单做 target 产物全集 census；再在 `clean-url-subpath` 分别点击三类代表 target、从 experiment dialog 嵌套下钻 attempt、读 artifact、hover 数据点；最后修改 Report 依赖文件并等待公开 DOM 新状态。
+- **公开 oracle**：每个 `{pageId,key}` 都有唯一文档且请求 200；三类 dialog 打开并显示对应身份；嵌套下钻、hash、关闭与焦点状态正确；source 与增强 tooltip 可见；热重载后领域值变化；无浏览器 console / request failure。
+- **区分性**：结构 census 防孤儿链接 / 孤儿文档；入口 URL 固定为无尾斜杠且模拟 308；attempt 正常不能替 experiment / custom target 通过；DOM 缺失、文档 404、enhancement 缺失、artifact 404、service 提前退出分别报错。
+- **最早失败**：prepare / invoke / observe / outcome；步骤轨迹附 pageId、key、入口 URL、最终请求、HTTP、console/request 日志与截图。
+- **成本**：每 PR，真实 CLI、文件、HTTP 与 Chromium；使用 deliberate run，无模型 / 公网 / secret。
 
 ### A9 · 进程结束后资源所有权真正闭合
 
@@ -108,6 +111,7 @@ fix parent 或最小逆补丁验证记录。
 | U6 | Report compute 非对称 fixture | `f98713ae` | 三种错误公式数值互异；error / skip / gate / soft 次序互异；renderer 不出现计算分支 |
 | U7 | runnable public-example census | `runs` / `--reuse-sandbox` `8068d6d6` | 每个公开 key / flag 映射到至少一个真实 consumer case；文档删除能力时同步删除 case |
 | U8 | world / observer 自测 | evidence 污染 `9cbd4f90`、pipe 假观察 | read-only 越权必红；malformed 输出显式 observe error；producer / verifier digest 分离 |
+| U9 | Report target 结构 census | 参数化页改版后链接与导出文档脱节 | 最终 page 清单、`enumerate()` 实例、内部 target 链接与导出文件双向闭合；收窄同源；失败不留半套目录 |
 
 ## 机制题
 

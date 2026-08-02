@@ -49,6 +49,7 @@ w.recipeId;                     // 本 proof 绑定的 evidenceRecipeId
 w.digest;                       // world 身份摘要;与 proof 声明不符时构造即失败
 w.resultsRoot;                  // 本次运行的记录根,只读
 w.locator("tool-call");         // prepare 提取好的 attempt locator,缺失即抛错并列出可用键
+w.target("failed-attempt");     // prepare 命名的 { pageId, key },不把 target 限定为 attempt
 w.exportDir("branded");         // 命名导出站目录
 w.consumerDir("react-jsx");     // prepare 搭好的临时消费方项目目录
 w.logPath;                      // 证据日志(cli() 自动追加的那份)
@@ -75,7 +76,8 @@ const screen = await ptyScreen(w, "pnpm exec niceeval show", { columns: 80 });
 const events = ndjsonEvents(stdout);                      // exp --json 的生命周期事件
 const summary = jsonSummary(readFileSync("summary.json", "utf8"));
 const junit = junitReport(readFileSync("fail.xml", "utf8"));
-const doc = await attemptDoc(w, w.locator("te-fail"));    // 导出 HTML,真实 Chromium,禁用 JS
+const index = await siteDoc(w.exportDir("site"), "index"); // 站点固定文档,真实 Chromium,可选择禁用 JS
+const doc = await targetDoc(w, w.target("failed-attempt")); // 参数化页 HTML,真实 Chromium,禁用 JS
 const ui = await openSite(w.exportDir("site"));           // 浏览器会话,启用 JS
 ```
 
@@ -87,7 +89,7 @@ const ui = await openSite(w.exportDir("site"));           // 浏览器会话,启
 
 ```ts
 const ui = await openSite(w.exportDir("site"), { hosting: "clean-url-subpath" });
-const doc = await attemptDoc(w, locator, { hosting: "directory-root" });
+const doc = await targetDoc(w, target, { hosting: "directory-root" });
 ```
 
 | 形态 | 索引文档的地址 | 对应的真实托管 |
@@ -193,18 +195,23 @@ const table = ui.table("Comparison");
 await expect(table.visibleRows()).toHaveCount(3);  // web-first 断言,自动重试到收敛
 await ui.filter().fill("main");
 await expect(table.visibleRows()).toHaveCount(1);
+
+const target = w.target("failed-attempt");
+await ui.expectTargetDoc(target);                  // 前置：<pageId>/<key>.html 在当前 hosting 下返回 200
+await ui.targetLink(target).click();
+await expect(ui.dialog()).toBeVisible();           // dialog 对 attempt / experiment / 自定义参数页一视同仁
 ```
 
 | 词 | 契约来源 | 行为 |
 |---|---|---|
 | `ui.goto(页名)` | 报告导航 | 切页;页不存在时列出实际导航集合 |
-| `ui.expectAttemptDoc(locator)` | 导出站 attempt 文档 | 前置断言宿主导出了该详情文档 |
+| `ui.expectTargetDoc({ pageId, key })` | 参数化页静态文档 | 前置断言宿主导出并以 HTTP 200 交付该目标文档；失败列最终 URL 与状态 |
 | `ui.table(标题)` | Table | 表句柄;找不到时列出实际表标题 |
 | `table.visibleRows()` | Table searchable | 可见行 Locator,可见性判定单点实现 |
 | `table.expand(行身份)` | 层级 Table | 指名展开某一行;行不存在即失败并列出实际行 |
 | `ui.filter()` | Table searchable | 过滤输入框 |
-| `ui.attemptLink(locator)` | locator 下钻 | 按公开 locator 文本寻址下钻链接 |
-| `ui.dialog()` | attempt 详情 modal | dialog Locator |
+| `ui.targetLink({ pageId, key })` | Report target | 按公开 target 身份寻址下钻链接，不按 DOM 位置或实体种类猜测 |
+| `ui.dialog()` | 参数化页 dialog | 当前 dialog Locator；内容身份仍按 target 的公开 pageId / key 断言 |
 | `ui.chartPoint({ series, x })` | Chart 数据点 | 按系列与横轴身份寻址一个点 |
 | `ui.tooltip()` | Chart 悬停提示 | 提示元素 Locator,断可见与内容 |
 | `ui.region(名称)` | 页内命名区块 | 区块句柄,可继续取领域词 |
@@ -214,6 +221,10 @@ await expect(table.visibleRows()).toHaveCount(1);
 - **等待与断言**:直接用 Playwright web-first `expect`(自动重试到收敛),词表不提供固定时长 sleep,不带重试的 `count()` 即时读数不进场景;`expect` 脱离 Playwright runner 的行为是[待裁决分歧](README.md#待裁决分歧)。
 - **结构**:交互后的结构收敛用同一批领域词读,与静态 HTML 面同源,词表不发明第二套结构语法。
 - **步骤轨迹**:每个领域词把自己记入步骤日志;失败消息等于已执行步骤序列加失败步骤加该步骤的定位候选(Screenplay 活动轨迹之形,不引其依赖),前置断言失败与交互深处失败因此天然可分。
+
+`target` 是唯一跨页下钻身份。attempt locator 只是 `{ pageId: "attempt", key: locator }` 的一种 key；
+experiment 与自定义参数化页不得新增平行的 `experimentLink()` / `customDialog()` 词。全量 target 是否闭合由
+[测试方案的结构 census](../e2e-acceptance-testing/README.md#结构-census)负责，DSL 只负责按一个已声明 target 观察文档、链接与 dialog。
 
 ## 读面内部
 
