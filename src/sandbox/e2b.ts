@@ -6,6 +6,7 @@
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -31,6 +32,152 @@ import { supportedBackendCapability, unsupportedBackendCapability, type SandboxP
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
+
+type E2BCommandOutputChannel = "stdout" | "stderr";
+
+interface E2BCommandOutputState {
+  pending: string;
+  output: string;
+  markerStarted: boolean;
+  complete: boolean;
+  exitCode?: number;
+}
+
+/**
+ * E2B 的 command RPC 把进程终局与 stdout/stderr event stream 绑在一起。shell 已退出、但它
+ * 有意留下的后台服务仍继承管道时，SDK `wait()` 会继续等 event stream EOF。这里给直接 shell
+ * 加一个不改写输出目的地的 supervisor：两路 marker 都由直接 shell 结束后写出；收到后只
+ * disconnect transport，不 kill 后台服务。timeout / cancellation 仍由调用方退休整台 VM。
+ */
+class E2BCommandCompletion {
+  readonly script: string;
+  readonly completion: Promise<number>;
+
+  private readonly prefix: string;
+  private readonly suffix: string;
+  private readonly states: globalThis.Record<E2BCommandOutputChannel, E2BCommandOutputState> = {
+    stdout: { pending: "", output: "", markerStarted: false, complete: false },
+    stderr: { pending: "", output: "", markerStarted: false, complete: false },
+  };
+  private readonly callbacks: Partial<globalThis.Record<E2BCommandOutputChannel, (chunk: string) => void | Promise<void>>>;
+  private readonly resolveCompletion: (exitCode: number) => void;
+  private readonly rejectCompletion: (error: Error) => void;
+
+  constructor(script: string, opts: Pick<CommandOptions, "onStdout" | "onStderr">) {
+    const id = randomUUID().replaceAll("-", "");
+    this.prefix = `__niceeval_e2b_command_${id}_exit_`;
+    this.suffix = `__niceeval_e2b_command_${id}_end__`;
+    this.callbacks = {
+      ...(opts.onStdout ? { stdout: opts.onStdout } : {}),
+      ...(opts.onStderr ? { stderr: opts.onStderr } : {}),
+    };
+    let resolveCompletion!: (exitCode: number) => void;
+    let rejectCompletion!: (error: Error) => void;
+    this.completion = new Promise<number>((resolve, reject) => {
+      resolveCompletion = resolve;
+      rejectCompletion = reject;
+    });
+    this.resolveCompletion = resolveCompletion;
+    this.rejectCompletion = rejectCompletion;
+
+    // 原脚本住在异步 subshell：它继续继承 E2B login shell 的变量、函数、cwd 与 shell option，
+    // `exit` / `exec` / EXIT trap 只结束自己的 shell。外层只 wait 这个直接 shell，不会等它
+    // 有意留下的孙进程；因此能在 `nohup ... &` 之后可靠写出两路终局 marker。
+    this.script = [
+      "(",
+      script,
+      ") &",
+      "__niceeval_e2b_command_pid=$!",
+      "if wait \"$__niceeval_e2b_command_pid\"; then",
+      "  __niceeval_e2b_command_exit=0",
+      "else",
+      "  __niceeval_e2b_command_exit=$?",
+      "fi",
+      `printf '%s%s%s' ${shellQuote(this.prefix)} \"$__niceeval_e2b_command_exit\" ${shellQuote(this.suffix)}`,
+      `printf '%s%s%s' ${shellQuote(this.prefix)} \"$__niceeval_e2b_command_exit\" ${shellQuote(this.suffix)} >&2`,
+      "exit \"$__niceeval_e2b_command_exit\"",
+    ].join("\n");
+  }
+
+  readonly onStdout = async (chunk: string): Promise<void> => this.consume("stdout", chunk);
+  readonly onStderr = async (chunk: string): Promise<void> => this.consume("stderr", chunk);
+
+  result(exitCode: number): CommandResult {
+    return {
+      stdout: this.states.stdout.output,
+      stderr: this.states.stderr.output,
+      exitCode,
+    };
+  }
+
+  /** SDK 在 marker 前先结束时，把为跨 chunk 匹配暂存的普通输出交还调用方。 */
+  async finish(): Promise<void> {
+    for (const channel of ["stdout", "stderr"] as const) {
+      const state = this.states[channel];
+      if (!state.complete && !state.markerStarted && state.pending.length > 0) {
+        const pending = state.pending;
+        state.pending = "";
+        await this.emit(channel, pending);
+      }
+    }
+  }
+
+  private async consume(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
+    const state = this.states[channel];
+    // 直接 shell 已结束后的输出只能来自它留下的后台服务；command transport 到这里已经封口。
+    if (state.complete) return;
+    state.pending += chunk;
+
+    if (!state.markerStarted) {
+      const markerAt = state.pending.indexOf(this.prefix);
+      if (markerAt < 0) {
+        // marker 可能跨 SDK chunk；只保留足以匹配 prefix 的尾巴，其余实时透传。
+        const safeLength = Math.max(0, state.pending.length - this.prefix.length + 1);
+        if (safeLength > 0) {
+          const safe = state.pending.slice(0, safeLength);
+          state.pending = state.pending.slice(safeLength);
+          await this.emit(channel, safe);
+        }
+        return;
+      }
+      const before = state.pending.slice(0, markerAt);
+      state.pending = state.pending.slice(markerAt + this.prefix.length);
+      state.markerStarted = true;
+      await this.emit(channel, before);
+    }
+
+    const markerEnd = state.pending.indexOf(this.suffix);
+    if (markerEnd < 0) return;
+    const encodedExitCode = state.pending.slice(0, markerEnd);
+    if (!/^\d+$/.test(encodedExitCode)) {
+      throw new Error(`e2b command completion marker carried an invalid exit code: ${JSON.stringify(encodedExitCode)}`);
+    }
+    state.exitCode = Number(encodedExitCode);
+    state.complete = true;
+    // suffix 后同一个 chunk 里的字节来自后台服务；它们不属于已经 settle 的直接命令。
+    state.pending = "";
+    this.maybeComplete();
+  }
+
+  private async emit(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
+    if (chunk.length === 0) return;
+    this.states[channel].output += chunk;
+    await this.callbacks[channel]?.(chunk);
+  }
+
+  private maybeComplete(): void {
+    const stdoutExit = this.states.stdout.exitCode;
+    const stderrExit = this.states.stderr.exitCode;
+    if (stdoutExit === undefined || stderrExit === undefined) return;
+    if (stdoutExit !== stderrExit) {
+      this.rejectCompletion(
+        new Error(`e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`),
+      );
+      return;
+    }
+    this.resolveCompletion(stdoutExit);
+  }
+}
 
 /** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 retry.ts 的 withProvisionRetry。 */
 // 对账本身只有一次机会:retry.ts 的 withProvisionRetry 对账失败就直接放弃重试、抛回原始
@@ -133,6 +280,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
 
   private deadlineAt?: number;
   readonly capabilities = {
+    rootCommands: supportedBackendCapability(true as const),
     appendLog: unsupportedBackendCapability,
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
@@ -259,47 +407,55 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // e2b commands.run 经 bash 执行 → 支持 && / 管道 / $()。root 用户映射到 { user: "root" },
     // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+    const completion = new E2BCommandCompletion(script, opts);
+    let onAbort: (() => void) | undefined;
     try {
       const commandOptions = {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
         envs: opts.env,
         user: opts.root ? "root" : undefined,
         ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
-        onStdout: opts.onStdout,
-        onStderr: opts.onStderr,
+        onStdout: completion.onStdout,
+        onStderr: completion.onStderr,
+        background: true as const,
       };
       const signal = opts.signal;
       if (signal?.aborted) {
         throw signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
       }
-      const res = signal === undefined
-        ? await this.sbx.commands.run(script, commandOptions)
-        : await (async () => {
-            // E2B 的 CommandHandle.kill() 只承诺 SIGKILL 入口进程，无法证明孙进程也已终止。
-            // 因此取消时退休整台 Sandbox；kill() settle 后才让本次命令 Promise settle。
-            const handle = await this.sbx.commands.run(script, { ...commandOptions, background: true });
-            const abort = async (): Promise<never> => {
-              await this.sbx.kill();
-              throw signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
-            };
-            if (signal.aborted) return await abort();
-            let onAbort: (() => void) | undefined;
-            const aborted = new Promise<never>((_resolve, reject) => {
-              onAbort = () => void abort().catch(reject);
-              signal.addEventListener("abort", onAbort, { once: true });
-            });
-            try {
-              return await Promise.race([handle.wait(), aborted]);
-            } finally {
-              if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
-            }
-          })();
-      return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode };
+      const handle = await this.sbx.commands.run(completion.script, commandOptions);
+      // E2B 的 CommandHandle.kill() 只承诺 SIGKILL 入口进程，无法证明孙进程也已终止。
+      // 因此取消时退休整台 Sandbox；kill() settle 后才让本次命令 Promise settle。
+      const abort = async (): Promise<never> => {
+        await this.sbx.kill();
+        throw signal?.reason ?? new DOMException("sandbox command aborted", "AbortError");
+      };
+      if (signal?.aborted) return await abort();
+      const aborted = signal === undefined
+        ? undefined
+        : new Promise<never>((_resolve, reject) => {
+            onAbort = () => void abort().catch(reject);
+            signal.addEventListener("abort", onAbort, { once: true });
+          });
+      const outcome = await Promise.race([
+        completion.completion.then((exitCode) => ({ _tag: "DirectShellExited" as const, exitCode })),
+        handle.wait().then((result) => ({ _tag: "SdkStreamEnded" as const, result })),
+        ...(aborted ? [aborted] : []),
+      ]);
+      if (outcome._tag === "DirectShellExited") {
+        // SDK 文档保证 disconnect 只断 event transport、不 kill command。直接 shell 已退出；仍持有
+        // stdout/stderr 的只能是它有意留下的后台服务，正是这条路径要保留的对象。
+        await handle.disconnect();
+        return completion.result(outcome.exitCode);
+      }
+      await completion.finish();
+      return completion.result(outcome.result.exitCode);
     } catch (e) {
       // e2b 在退出码非 0 时【抛】CommandExitError;但 Sandbox 契约要求【返回】带 exitCode 的结果
       // (与 docker / vercel 一致)——否则 agent 命令 / build / 测试一旦非 0 退出就会炸,而不是被判分。
       if (e instanceof CommandExitError) {
-        return { stdout: e.stdout, stderr: e.stderr, exitCode: e.exitCode };
+        await completion.finish();
+        return completion.result(e.exitCode);
       }
       // 撞的是我们给的那条线时,把归属一起抛出去(runner 据此落 error.timeout)。
       if (limit.timeoutMs !== undefined && isTimeoutError(e)) {
@@ -312,6 +468,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         );
       }
       throw e;
+    } finally {
+      if (onAbort !== undefined) opts.signal?.removeEventListener("abort", onAbort);
     }
   }
 

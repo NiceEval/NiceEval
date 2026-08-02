@@ -434,6 +434,19 @@ Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider
 
 ### `CommandOptions`
 
+#### `sensitiveValues`
+
+```ts
+readonly sensitiveValues?: readonly string[];
+```
+
+这条命令已知会处理的敏感明文（例如 API key、token、HTTP header value）。Runner 仍把
+原值交给 provider 执行，但在任何 timing / commands / execution / error 证据落盘前按
+这些值做精确替换；本数组本身不落盘、不进指纹。空字符串被忽略。
+
+这是显式 provenance，不是 secret 扫描器：没有登记的自由文本无法被可靠识别；值若先被
+调用方编码或拆分，应把实际会出现在命令/输出里的编码形态一并登记。
+
 #### `env`
 
 ```ts

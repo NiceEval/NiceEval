@@ -46,6 +46,8 @@ interface SuccessfulCommandResult extends CommandResult {
 }
 
 interface CommandOptions {
+  /** 已知会出现在本命令/输出里的敏感明文；只供 Attempt 证据脱敏，不改变实际执行。 */
+  readonly sensitiveValues?: readonly string[];
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
   readonly root?: boolean;
@@ -72,6 +74,24 @@ if (probe.exitCode !== 0) {
 
 命令不会自动重试。命令可能已产生副作用，只有调用者能证明幂等时，才在自己的 layer 或 eval 逻辑里写显式重试。
 
+### 已知敏感值与记录边界
+
+命令把 API key、token、HTTP header value 或其它凭据拼进 argv / shell heredoc 时，调用者必须在同一次调用的 `sensitiveValues` 中登记**实际会出现在文本里的值**：
+
+```ts
+const authorization = `Bearer ${connection.apiKey}`;
+await sandbox.runShell(
+  `cat > ~/.tool/config.json <<'EOF'\n${JSON.stringify({ authorization })}\nEOF`,
+  { sensitiveValues: [authorization] },
+);
+```
+
+Provider 仍收到原始 script、argv 与 env，运行时 stdout/stderr 也原样交还调用方。
+变化只发生在 Runner 的记录边界：命令摘要先精确替换再截断，失败输出与最终执行证据中的同一已知值也替换成 `<redacted>`。
+敏感值集合只活在当前 Attempt 内存里，不进入 timing、artifact、指纹或 Sandbox identity。
+
+这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容；未登记的自由文本、调用方先行编码/拆分后未一并登记的形态、Provider 自己的原生日志，以及已有旧 artifact 都无法由读取端可靠恢复 provenance。`--timing=full`、`--execution --expand` 与 `--json` 只展开已经脱敏的落盘值，不会还原原文。
+
 ### 命令 timeout 与取消
 
 `timeoutMs` 是单条命令的显式上限；省略时只受 Attempt deadline。`signal` 与外层 signal 合并，任一取消都进入同一命令树终止协议。
@@ -79,6 +99,8 @@ if (probe.exitCode !== 0) {
 Promise 因 timeout、取消、Attempt interruption 或 Agent runtime cancellation settle 前，Provider 必须确认本次受管命令树已终止；若不能精确终止，就退休并停止整个 Sandbox。只关 stdout/stderr 流、PTY 或 transport 不算终止。
 
 正常命令成功结束后，关闭 transport / session 不得顺带杀死命令有意启动的独立任务服务。保留哪些任务服务由 Sandbox Case 与 reuse/keep 契约决定，不由命令客户端连接寿命猜测。
+
+E2B 的 command RPC 会把直接 shell 的完成与 stdout/stderr event stream EOF 绑在一起；后台服务继承输出管道时，后者可以继续打开。E2B provider 因此以直接 shell 的退出码和前台输出作为命令完成信号，随后只断开 event transport，既不等待后台服务关闭管道，也不把它的输出重定向到 `/dev/null`。这条放行只适用于正常完成；timeout、取消和 interruption 仍按上面的命令树终止协议退休整台 VM。
 
 ## 文件：文本、字节与传输分词
 

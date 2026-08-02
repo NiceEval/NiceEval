@@ -183,6 +183,7 @@ export class LocalSandbox implements SandboxProviderBackend {
   private deadlineAt?: number;
   private readonly ledgerBase: string;
   readonly capabilities = {
+    rootCommands: unsupportedBackendCapability,
     appendLog: unsupportedBackendCapability,
     suspend: unsupportedBackendCapability,
     ensureLifetime: unsupportedBackendCapability,

@@ -164,6 +164,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private defaultHome: string = "/home/node";
   private defaultUserName: string = "node";
   readonly capabilities = {
+    rootCommands: supportedBackendCapability(true as const),
     appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),

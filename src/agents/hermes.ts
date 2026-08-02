@@ -55,16 +55,30 @@ async function hermesShell(
   sb: Sandbox,
   args: string[],
   env: globalThis.Record<string, string>,
-  opts?: { stream?: boolean },
+  opts?: { stream?: boolean; sensitiveValues?: readonly string[] },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   // HERMES 变量本身不要 quote,以便 shell 展开 $HOME。
   const script = `${HERMES} ${args.map(shellQuote).join(" ")}`;
-  return sb.runShell(script, { env, stream: opts?.stream });
+  return sb.runShell(script, {
+    env,
+    sensitiveValues: opts?.sensitiveValues,
+    stream: opts?.stream,
+  });
 }
 
-async function exportSession(sb: Sandbox, sessionId: string, env: globalThis.Record<string, string>): Promise<string | undefined> {
+async function exportSession(
+  sb: Sandbox,
+  sessionId: string,
+  env: globalThis.Record<string, string>,
+  sensitiveValues: readonly string[],
+): Promise<string | undefined> {
   const outPath = `/tmp/niceeval-hermes-${sessionId}.jsonl`;
-  const res = await hermesShell(sb, ["sessions", "export", outPath, "--session-id", sessionId], env);
+  const res = await hermesShell(
+    sb,
+    ["sessions", "export", outPath, "--session-id", sessionId],
+    env,
+    { sensitiveValues },
+  );
   if (res.exitCode !== 0) return undefined;
   try {
     return await sb.readText(outPath);
@@ -148,8 +162,8 @@ export function hermesAgent(config?: HermesConfig): Agent {
           `OPENAI_BASE_URL=${baseUrl}`,
           "",
         ].join("\n");
-        await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig);
-        await shared.writeFile(sb, "~/.hermes/.env", hermesEnv);
+        await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig, { sensitiveValues: [apiKey] });
+        await shared.writeFile(sb, "~/.hermes/.env", hermesEnv, { sensitiveValues: [apiKey] });
       }
 
       const manifest: AgentSetupManifest = { skills: [] };
@@ -188,7 +202,8 @@ export function hermesAgent(config?: HermesConfig): Agent {
         env.ANTHROPIC_BASE_URL = baseUrl;
       }
 
-      const res = await hermesShell(sb, args, env, { stream: true });
+      const sensitiveValues = [apiKey];
+      const res = await hermesShell(sb, args, env, { stream: true, sensitiveValues });
       let sessionId =
         sessionIdFromHermesOutput(res.stdout) ??
         sessionIdFromHermesOutput(res.stderr) ??
@@ -211,7 +226,7 @@ print(r[0] if r else "")'`,
 
       let raw: string | undefined;
       if (sessionId) {
-        raw = await exportSession(sb, sessionId, env);
+        raw = await exportSession(sb, sessionId, env, sensitiveValues);
         if (!raw) raw = await dumpMessagesFromDb(sb, sessionId);
       }
 

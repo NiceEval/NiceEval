@@ -12,8 +12,8 @@
 // 怎么办」这段编排逻辑,不是 adapter 侧的 manifest 构造规则(那部分已在 agents/skills.test.ts
 // 覆盖)。
 //
-// cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」——公开 `runCommand` /
-// `runShell` 最外层调用非零退出时,在把 `CommandResult` 交还调用方前登记 `FailedCommandEvidence`
+// cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」——公开 `run*` 最外层调用
+// 非零退出时,在把 `CommandResult` 交还调用方前登记 `FailedCommandEvidence`
 // 并与同一次 timing command 节点共用 id;成功命令不登记;调用方处理非零结果并继续不撤销证据,
 // 即使随后只把 stderr 尾部拼进自己的诊断。见文件末尾专用 describe 块。
 
@@ -1041,6 +1041,104 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     });
     expect(result.error).toBeUndefined();
     expect(result.commands).toBeUndefined();
+  });
+
+  // bug: memory/command-evidence-known-secret-redaction.md
+  it("显式敏感值只交给 provider/调用方原始结果，timing、commands、events 与 AttemptError 封口后均只剩脱敏值", async () => {
+    const sensitive = "synthetic-sensitive-value-for-attempt-test";
+    let providerSawOriginal = false;
+    let callerSawOriginalOutput = false;
+
+    class SensitiveCommandSandbox extends FakeSandbox {
+      override async runCommand(_command?: string, args: readonly string[] = []): Promise<CommandResult> {
+        providerSawOriginal = args.includes(sensitive);
+        return {
+          stdout: `stdout echoed ${sensitive}`,
+          stderr: `stderr rejected ${sensitive}`,
+          exitCode: 17,
+          command: `provider raw command ${sensitive}`,
+        };
+      }
+    }
+
+    const agent = defineSandboxAgent({
+      name: "fake-agent-sensitive-command",
+      send: async (_input, ctx) => {
+        const command = await ctx.sandbox.runCommand("synthetic-cli", ["--token", sensitive], {
+          sensitiveValues: [sensitive],
+        });
+        callerSawOriginalOutput = command.stdout.includes(sensitive);
+        expect(command.command).toBe("synthetic-cli --token <redacted>");
+        return {
+          events: [{ type: "error" as const, message: `agent event echoed ${sensitive}` }],
+          status: "failed" as const,
+        };
+      },
+    });
+
+    const result = await runOnce(agent, new SensitiveCommandSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          await t.send("exercise command evidence redaction");
+          throw new Error(`outer error repeated ${sensitive}`);
+        },
+      },
+    });
+
+    expect(providerSawOriginal).toBe(true);
+    expect(callerSawOriginalOutput).toBe(true);
+    const persistedShowSources = JSON.stringify({
+      phases: result.phases,
+      commands: result.commands,
+      events: result.events,
+      error: result.error,
+    });
+    expect(persistedShowSources).not.toContain(sensitive);
+    expect(persistedShowSources).toContain("<redacted>");
+    expect(result.commands?.[0]).toMatchObject({
+      display: "synthetic-cli --token <redacted>",
+      stdout: "stdout echoed <redacted>",
+      stderr: "stderr rejected <redacted>",
+      exitCode: 17,
+    });
+    expect(result.error?.message).toBe("outer error repeated <redacted>");
+  });
+
+  it("checked run* 抛出的 command-exit 也从错误携带的结果登记脱敏失败证据", async () => {
+    const sensitive = "synthetic-checked-command-value-for-test";
+    class CheckedFailureSandbox extends FakeSandbox {
+      override async runShell(script?: string): Promise<CommandResult> {
+        if (script?.includes("checked-command")) {
+          return {
+            stdout: `checked stdout ${sensitive}`,
+            stderr: `checked stderr ${sensitive}`,
+            exitCode: 19,
+          };
+        }
+        return super.runShell(script);
+      }
+    }
+    const agent = defineSandboxAgent({
+      name: "fake-agent-checked-command",
+      setup: async (sandbox) => {
+        await sandbox.runShellOrThrow(`checked-command ${sensitive}`, {
+          sensitiveValues: [sensitive],
+        });
+      },
+      send: async () => ({ events: [], status: "completed" }),
+    });
+    const result = await runOnce(agent, new CheckedFailureSandbox());
+
+    expect(result.verdict).toBe("errored");
+    expect(result.commands).toEqual([
+      expect.objectContaining({
+        display: "checked-command <redacted>",
+        exitCode: 19,
+        stdout: "checked stdout <redacted>",
+        stderr: "checked stderr <redacted>",
+      }),
+    ]);
+    expect(JSON.stringify({ phases: result.phases, commands: result.commands, error: result.error })).not.toContain(sensitive);
   });
 });
 

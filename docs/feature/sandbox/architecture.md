@@ -51,6 +51,11 @@ Ctrl+C 是可处理的中断，SIGKILL 不是。
 `t.sandbox.diff` / `fileChanged` / `fileDeleted` / `notInDiff` 回答的是「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。归因由 runner 的**变更分类账**(私有 git ledger)提供:
 
 - **分类账在沙箱内、workdir 外。** ledger 的 git 目录放在 runner 控制的私有路径,以 workdir 为 work-tree。workdir 保持素净——agent 看不到 runner 的 `.git`,eval 需要真实 git repo 时自己 `git init`,agent 在 workdir 里的任何 git 操作都碰不到分类账。
+- **受限文件由分类账自己提权读取,不改题目。**
+
+  - Provider 明确支持 root command 时,baseline、窗口 commit、导出与 reset 的 runner 私有 Git 命令以 root 执行。Mode `0311` 这类故意不给 Agent 读权限的文件仍能进入锚点。
+  - 提权不进入 Agent 命令。脚本不对 workdir 做 `chmod` / `chown`,文件 owner 与 mode 保持题目原样。
+  - Provider 不支持 root command 时沿标准用户执行。普通可读 workspace 照常工作；遇到受限文件则明确报告能力缺口并建议换支持提权的 Provider,不能静默忽略该文件或替 Agent 放宽权限。
 下面这条 eval 把每一行写入落到哪本账上标在原地:
 
 ```typescript
@@ -89,13 +94,13 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCom
 
 这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / cleanup / `stop`)在判定口径之外单独记录。
 
-Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/command/turn 下,所以 `sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 与 lifecycle hook 的回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
+Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase/command/turn 下,所以 `sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 与 lifecycle hook 的回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
 
 runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点;例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
 `sandbox.create` 是特殊边界:此时 Sandbox 对象尚不存在,不能靠同一个包装器看到内部步骤。内置 provider 可把真实 SDK 请求、宿主命令或创建子步骤作为 `provider` 节点写入;第三方 provider 没提供细分时只记录 `sandbox.create` 合计,不能为了树好看把 API 调用伪装成 shell 命令。Agent CLI 内部自行执行的工具命令也不经过 Sandbox 包装,它们由标准事件流记录,有 OTel 且 correlation 唯一时才在 turn 下显示耗时。
 
-时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/command”全局值——并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer 写入;展示层不能解析命令文本猜业务分组。这样「沙箱起了多久、prepare 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
+时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/command”全局值——并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value 与 stdout/stderr 不进入 timing；script/argv 先按调用方通过 `CommandOptions.sensitiveValues` 登记的已知值精确替换，再截成 160 字符摘要。敏感值只驻留 Attempt 内存，full/JSON 读面也不能还原；未登记自由文本不靠键名正则猜测。operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer 写入;展示层不能解析命令文本猜业务分组。这样「沙箱起了多久、prepare 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
 
 核心固定的是这条调用链本身:Case 就绪后先按 owner 顺序执行两层 prepare 命令与 agent.ensure 循环,再打分类账锚点；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只折叠 `send` 窗口，窗口外写入属于 eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
@@ -199,6 +204,7 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 
 - `E2BSandbox.create({ template, timeout })` 起一台 [E2B](https://e2b.dev) 微 VM;`template` 由 `e2bSandbox({ template })` 声明,必填(见 [Sandbox Layer](layers.md#template-bearing-factory)),不用 e2b 账号侧的默认模板。
 - 命令经 `commands.run`(走 bash,支持 `&&` / 管道);`{ root: true }` → `{ user: "root" }`。
+- `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。timeout、取消或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作记录。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制环境](library/prebuilt-environments.md))。
 

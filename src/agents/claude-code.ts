@@ -168,22 +168,34 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (config?.mcpServers?.length) {
         assertMcpServers(config.mcpServers);
         const servers: globalThis.Record<string, object> = {};
+        const sensitiveValues: string[] = [];
         for (const s of config.mcpServers) {
-          servers[s.name] = isHttpMcp(s)
-            ? {
+          if (isHttpMcp(s)) {
+            const headers = s.headers;
+            if (headers) sensitiveValues.push(...Object.values(headers));
+            servers[s.name] = {
                 type: "http",
                 url: s.url,
-                ...(s.headers && Object.keys(s.headers).length && { headers: s.headers }),
-              }
-            : {
+                ...(headers && Object.keys(headers).length && { headers }),
+              };
+          } else {
+            const env = s.env;
+            if (env) sensitiveValues.push(...Object.values(env));
+            servers[s.name] = {
                 command: s.command,
                 ...(s.args?.length && { args: s.args }),
-                ...(s.env && { env: s.env }),
+                ...(env && { env }),
               };
+          }
         }
         // 用户级 MCP 配置在 ~/.claude.json(顶层 mcpServers 字段),不是 ~/.claude/claude.json
         // ——后者 claude CLI 根本不读,MCP 静默挂不上(本机 `claude mcp list` 可核对)。
-        await shared.writeFile(sb, "~/.claude.json", JSON.stringify({ mcpServers: servers }, null, 2));
+        await shared.writeFile(
+          sb,
+          "~/.claude.json",
+          JSON.stringify({ mcpServers: servers }, null, 2),
+          { sensitiveValues },
+        );
       }
 
       const manifest: AgentSetupManifest = { skills: [] };
@@ -231,8 +243,9 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (ctx.session.id) args.push("--resume", ctx.session.id);
       args.push(input.text);
 
+      const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
-        ANTHROPIC_API_KEY: getApiKey(),
+        ANTHROPIC_API_KEY: apiKey,
         // Eval runs must not silently change CLI version after the sandbox artifact was built.
         DISABLE_AUTOUPDATER: "1",
         ...ctx.telemetry?.env,
@@ -240,7 +253,11 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
 
-      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "claude"), args, { env, stream: true });
+      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "claude"), args, {
+        env,
+        sensitiveValues: [apiKey],
+        stream: true,
+      });
 
       // 「最新 jsonl」而非按 session id 精确定位:--resume 会 fork 新 session id 的新文件,
       // 精确匹配旧 id 会读到过期 transcript。send 串行,最新的一定是刚跑完的这次。

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { CommandResult, SandboxOperations } from "./types.ts";
 import { noSandboxBackendCapabilities, type SandboxProviderBackend } from "./backend.ts";
 import { registerSandboxContent } from "./content.ts";
@@ -132,6 +132,66 @@ describe("SandboxCommandTarget.putContent", () => {
       "command!:mkdir:-p,fixture/z",
       "writeBytes:fixture/z/b.txt:b",
     ]);
+  });
+
+  // bug: memory/e2b-putcontent-root-owned-nested-directory.md
+  it("recursively realizes registered paths and bytes below a root-owned target", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-content-root-owned-"));
+    roots.push(root);
+    await mkdir(join(root, "setup_files", "deeper"), { recursive: true });
+    await writeFile(join(root, "install.sh"), "#!/bin/sh\n");
+    await writeFile(join(root, "setup_files", "Y3JlZGVudGlhbHM=.b64_content"), "credentials\n");
+    await writeFile(join(root, "setup_files", "deeper", "payload.txt"), "nested payload\n");
+    const content = registerSandboxContent(new URL(`file://${root}/`));
+    const target = "/tmp/niceeval-install-fixture";
+    const directories = new Set([target]);
+    const rootOwned = new Set([target]);
+    const files = new Map<string, string>();
+    const io: string[] = [];
+    const operations = fakeOperations(io);
+
+    operations.runCommandOrThrow = async (command, args, options) => {
+      const path = args?.[1];
+      if (command !== "mkdir" || args?.[0] !== "-p" || path === undefined) {
+        throw new Error(`unexpected command: ${command} ${args?.join(" ") ?? ""}`);
+      }
+      const asRoot = options?.root === true;
+      io.push(`mkdir:${asRoot ? "root" : "user"}:${path}`);
+      if (directories.has(path)) return commandResult() as ReturnType<typeof successfulCommandResult>;
+      if (!asRoot && rootOwned.has(posix.dirname(path))) {
+        throw new SandboxCommandExitError({
+          stdout: "",
+          stderr: `mkdir: cannot create directory '${path}': Permission denied`,
+          exitCode: 1,
+          command: `mkdir -p ${path}`,
+        });
+      }
+      directories.add(path);
+      if (asRoot) rootOwned.add(path);
+      return commandResult() as ReturnType<typeof successfulCommandResult>;
+    };
+    operations.writeBytes = async (path, bytes) => {
+      if (!directories.has(posix.dirname(path))) {
+        throw new Error(`missing parent directory for ${path}`);
+      }
+      files.set(path, Buffer.from(bytes).toString("utf8"));
+    };
+
+    await createSandboxCommandTarget(operations).putContent(content, target);
+
+    expect(directories).toEqual(new Set([
+      target,
+      `${target}/setup_files`,
+      `${target}/setup_files/deeper`,
+    ]));
+    expect(files).toEqual(new Map([
+      [`${target}/install.sh`, "#!/bin/sh\n"],
+      [`${target}/setup_files/deeper/payload.txt`, "nested payload\n"],
+      [`${target}/setup_files/Y3JlZGVudGlhbHM=.b64_content`, "credentials\n"],
+    ]));
+    expect(io).toContain(`mkdir:user:${target}/setup_files`);
+    expect(io).toContain(`mkdir:root:${target}/setup_files`);
+    expect(io).toContain(`mkdir:root:${target}/setup_files/deeper`);
   });
 
   it("splits large registered files into bounded writes and atomically replaces the target", async () => {

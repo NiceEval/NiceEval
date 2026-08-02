@@ -259,8 +259,9 @@ export function bubAgent(config?: BubConfig): Agent {
       const sessionId = ctx.session.id ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
       ctx.session.capture(sessionId);
 
+      const apiKey = getApiKey();
       const env: globalThis.Record<string, string> = {
-        BUB_API_KEY: getApiKey(),
+        BUB_API_KEY: apiKey,
         BUB_API_BASE: getApiBase(),
         BUB_HOME: bubHome,
         ...ctx.telemetry?.env,
@@ -269,7 +270,7 @@ export function bubAgent(config?: BubConfig): Agent {
       if (ctx.model) env.BUB_MODEL = `openai:${ctx.model}`;
       const res = await sb.runShell(
         `${BUB} --workspace ${workspace} run ${shared.shellQuote(input.text)} --session-id ${sessionId}`,
-        { env, stream: true },
+        { env, sensitiveValues: [apiKey], stream: true },
       );
 
       const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);

@@ -72,13 +72,24 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **三个操作视图一套语义**：完整 `Sandbox`、`EvalSandbox` 与 `SandboxCommandTarget` 的 `runCommand` / `runShell` / 文本 / 字节方法逐个同签名同结果；差异只在宿主传输、diff、Case lifecycle 与登记内容能力是否存在。同名方法在 layer target 非零抛错、在 `t.sandbox` 返回结果的旧分叉必须被区分力场景抓住。
 - **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；`runCommand` / `runShell` 非零返回 CommandResult，`runCommandOrThrow` / `runShellOrThrow` 才抛携带完整结果的 exit error；env 叠加不清空；root 的映射与不支持时报错；`timeoutMs` / signal 合并；执行入口永不被隐式重试。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
-- **失败命令证据包装**：公开 `runCommand` / `runShell` 最外层调用非零退出时，在把 `CommandResult` 交还调用方前登记一次 `FailedCommandEvidence`，并与同一次 timing command node 共用 id；成功命令不登记输出；provider 内部 `runCommand → runShell` 转调不重复；调用方处理非零结果并继续不撤销证据；stdout/stderr 原换行与首部 EACCES/path 保留，不能先 tail-only 再交 writer。
+- **失败命令证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `FailedCommandEvidence`，再把结果交还调用方。
+  证据与同一次 timing command node 共用 id；成功命令不登记输出，provider 内部转调不重复。
+  调用方处理非零结果并继续也不撤销证据。stdout/stderr 保留原换行与首部根因，不能先 tail-only 再交 writer。
   fixture 必须让 Eval 随后把错误 `.slice(-500)`，仍能从登记项读到前部根因，证明捕获时点正确。
+- **命令证据的已知敏感值脱敏**：用合成 API key/header/env 值证明 provider 与运行时结果仍拿原值。
+  `CommandResult.command`、timing、commands 输出、events/trace、retryAttempts、diagnostics 与最终 error 只含 `<redacted>`。
+  替换发生在摘要截断前，重叠值最长优先；full、expand 与 JSON 的数据源不得保留原值。
+  另有反例证明只写 `api_key=` 但没有显式 `sensitiveValues` 不触发猜测。
 - **文件操作与 IO 重试**：Sandbox 内部只用 `readText` / `writeText` / `readBytes` / `writeBytes` / `pathExists`，`upload*` / `download*` 只做真实宿主传输；`Uint8Array` 字节完整往返，Buffer 只作结构兼容。只有幂等固定目标操作进默认重试；瞬时/非瞬时边界；`pathExists` 遇瞬时错误必须抛出不伪装 false；重试耗尽抛回原始错误链；目录传输重跑等价；`downloadDirectory` 与 `uploadDirectory` 对称的 `ignore` 和锚点语义。
+
+  `registerSandboxContent()` / `putContent()` 必须逐层兑现登记目录的路径与字节。目标父目录由 root 创建时，非 root 的目录创建被拒绝也不能把嵌套树静默截成顶层文件。
 - **Provisioning 失败与重试**：原生限流归类、回退瞬时分类器复用、可重试 kind 的退避与确定性错误零重试；退避期间归还并发槽位；有对账通道时先对账再重试、对账失败放弃并抛回原始错误、无通道时歧义类零重试；自定义 provider 不套用这层重试。
   相关裁决与踩坑见 memory 的[sandbox-provision-ratelimit-retry](../../../../memory/sandbox-provision-ratelimit-retry.md)、[e2b-provision-429-duplicate-sandbox](../../../../memory/e2b-provision-429-duplicate-sandbox.md)。
 - **Provisioning 确定性死因的对外 scope 映射**：三档确定性配置死因（凭据缺失、权限不足、模板不存在）从 provider 原生错误形态（含跨 cause 链走查）的识别，以及识别后按[执行失败分类](../../../feature/error-classification/README.md)的结构化契约（`_tag` + `class`）附着到错误对象；按死因的配置解析域定档——凭据缺失、权限不足恒定档 `scope: "experiment"`（与 template owner 无关），模板不存在按 template owner 定档（Eval owner 定 `scope: "eval"`、Experiment owner 定 `scope: "experiment"`）；瞬时失败（拒绝类/歧义类）重试耗尽后不附带 scope，确定性死因未命中三档词表之一时同样不附带 scope。
 - **diff 与结果断言**：分类账锚点与 send 窗口归因（环境生命周期 Hook、Eval Fixture、send 后校验写入都不进 Agent diff）；窗口标签与轮标签同枚 token、按等值匹配；默认排除与 ignore/include 的 glob 语义、nested repo 不静默吞改动；`noFailedShellCommands` 只看 Agent 自己的调用；延迟断言 finalize 时对最终 diff 求值。
+
+  - Provider 支持 root command 时,ledger 能读取 mode `0311` 的任务文件建立锚点并导出。全部内部 Git shell 明确带 root 身份,workdir 的 owner / mode 不变。
+  - Provider 不支持时仍能处理普通 workspace。遇到权限拒绝要点明能力边界与原路径,不能建议 `chmod` / `chown` 改掉题目条件。
 - **导出预算与内容省略**：预算只数真正传输的文本字节。
   二进制与超 1 MiB 文本按 `elided` 记字节数、不占预算；编译产物型窗口因此整体放行，这一格在「按尺寸计」的旧口径下会红。
   纯文本传输字节越界仍报执行错误。

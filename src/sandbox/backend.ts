@@ -14,6 +14,8 @@ export type SandboxBackendSupport<T> =
   | { readonly _tag: "Unsupported" };
 
 export interface SandboxBackendCapabilities {
+  /** Provider 能否兑现 CommandOptions.root 的提权语义；runner 私有基础设施按这项能力选择身份。 */
+  readonly rootCommands: SandboxBackendSupport<true>;
   readonly appendLog: SandboxBackendSupport<(line: string) => Promise<void>>;
   readonly suspend: SandboxBackendSupport<() => Promise<void>>;
   readonly ensureLifetime: SandboxBackendSupport<
@@ -42,6 +44,7 @@ export const unsupportedBackendCapability: SandboxBackendSupport<never> = Object
 });
 
 export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.freeze({
+  rootCommands: unsupportedBackendCapability,
   appendLog: unsupportedBackendCapability,
   suspend: unsupportedBackendCapability,
   ensureLifetime: unsupportedBackendCapability,
@@ -111,12 +114,23 @@ export function registerSandboxCapabilities(sandbox: Sandbox, capabilities: Sand
   SANDBOX_CAPABILITIES.set(sandbox, capabilities);
 }
 
+/** 装饰器产生新 Sandbox 对象时显式继承同一份 provider-only 能力，不靠接口外成员探测。 */
+export function inheritSandboxCapabilities(source: Sandbox, target: Sandbox): void {
+  const capabilities = SANDBOX_CAPABILITIES.get(source);
+  if (capabilities !== undefined) SANDBOX_CAPABILITIES.set(target, capabilities);
+}
+
 export function sandboxCapabilities(sandbox: Sandbox): SandboxBackendCapabilities {
   const capabilities = SANDBOX_CAPABILITIES.get(sandbox);
   if (capabilities === undefined) {
     throw new Error(`sandbox ${sandbox.sandboxId} was not constructed by the provider facade`);
   }
   return capabilities;
+}
+
+/** 未经 provider facade 登记的普通自定义 Sandbox 保守视为不支持提权，不做鸭子类型猜测。 */
+export function sandboxSupportsRootCommands(sandbox: Sandbox): boolean {
+  return SANDBOX_CAPABILITIES.get(sandbox)?.rootCommands._tag === "Supported";
 }
 
 /** Provider facade 登记的复用寿命能力；不存在时保持显式 Unsupported，不做鸭子类型探测。 */

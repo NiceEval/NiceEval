@@ -12,6 +12,8 @@
   所有实际存在的 lifecycle phase 与收尾 phase 都必须出现；phase 下的 runner child 与已关联 OTel span 共用 80 个 detail node 的全局预算。
   未超过预算时，它与 full 输出相同；超过预算时，优先保留失败路径、最慢节点及首尾时序样本，并在每棵被截断的子树原位写明省略节点数、其中的失败数和 full 命令。
 - `--timing=full` 逐节点展开 artifact 中全部 runner timing node 与能唯一挂接到 turn 的全部 OTel span，不受 detail node 预算限制。
+
+两档密度都只读取已经封口的 timing 证据。命令调用若通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记 API key、token 或 header value，摘要在落盘前已替换成 `<redacted>`；`full` 与 `--json` 解除的是节点预算，不是脱敏边界，不能恢复原值。未登记的自由文本与修复前产生的旧 artifact 没有可供读取端推断的 provenance，renderer 不按 `token=` 等键名猜测。
   它是审计、脚本取证和检查 renderer 摘要是否诚实的入口；输出很长是允许的。
 
 预算按**节点**而不是终端物理行计算，phase 行与 `… N nodes omitted` 提示不占预算。

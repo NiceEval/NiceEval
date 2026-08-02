@@ -346,7 +346,7 @@ interface TimingActivity {
 | key | 时钟域 | 记什么 |
 |---|---|---|
 | `agent.turn` | attempt | 一次 send 的端到端包络;轮标签语法单点见 [Assertions · Turn 的展示](../assertions/architecture/scopes.md) |
-| `sandbox.command` | attempt | 公开 `runCommand` / `runShell` 的最外层调用;非零退出经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
+| `sandbox.command` | attempt | 四个公开 `run*` 方法的最外层调用;非零退出经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
 | `sandbox.prepare` | attempt | 两层作者 layer 的逐 command 节点,`sandbox.cleanup` 锚点下的已登记 cleanup 节点同用此 key;label 带 owner 与序号,匿名 callback 用 `eval#<i>` / `experiment#<i>` |
 | `provider.*` | 两者皆可 | provider 内部步骤,如 `provider.image.pull`、`provider.build.execute` |
 | `workspace.diff.export` | attempt | 变更分类账的批量导出;label 带有界规模摘要 |
@@ -636,9 +636,12 @@ interface DiagnosticRecord {
 结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
 `children` 是 runner 直接观察到的 activity 树。
-`sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
+`sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经四个公开 `Sandbox.run*()` 方法发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
-命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 `sandbox.command` 节点关联。
+命令摘要先按 `CommandOptions.sensitiveValues` 的显式 provenance 精确替换，再截断；env 只允许保留 key。
+非零退出命令的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。
+
+敏感值集合只驻留当前 Attempt 内存。最终 result 封口再覆盖 timing、events/trace、retryAttempts、diagnostics 与 error，所有 show/JSON 读面共享同一边界。未登记自由文本与旧 artifact 不做键名正则猜测。
 成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
 
 `agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为错误 / 诊断 origin 的归因锚点出现，不在 `phases` 里单列。
@@ -768,8 +771,9 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 
 ### `commands.json`
 
-Runner 对公开 `Sandbox.runCommand()` / `runShell()` 的最外层调用自动记录**非零退出命令**。
-证据在 `CommandResult` 返回调用方之前写入内存，因此 Eval 后续即使只把 `.slice(-500)` 拼进异常，NiceEval 仍保有调用边界看到的原始 stdout/stderr。
+Runner 对四个公开 `Sandbox.run*()` 方法的最外层调用自动记录**非零退出命令**。
+证据在 `CommandResult` 返回调用方之前写入内存。因此 Eval 后续即使只把 `.slice(-500)` 拼进异常，NiceEval 仍保有完整输出。
+`CommandOptions.sensitiveValues` 登记的已知值例外：记录副本在此处替换成 `<redacted>`，运行时返回结果不变。
 文件形状：
 
 ```typescript
@@ -788,7 +792,7 @@ type CommandsArtifact = FailedCommandEvidence[];
 ```
 
 - 只记录 `exitCode !== 0`；成功输出既可能巨大又通常没有诊断价值，不复制进第二份 artifact。
-- stdout / stderr 原样全量落盘：失败输出的起因常在前段，测试 runner 的 summary 惯例在尾部，截哪一端都毁掉另一半诊断。
+- stdout / stderr 不截断、保留原换行落盘；唯一内容变换是替换调用方显式登记的已知敏感值。失败输出的起因常在前段，测试 runner 的 summary 惯例在尾部，截哪一端都毁掉另一半诊断。
   只记非零退出已让体量天然有界，进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
 - 记录不改变 `runCommand` 的返回 / 抛错语义。
   调用方可以处理非零退出并继续，证据仍保留——「被处理」不等于「没发生」。

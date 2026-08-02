@@ -40,7 +40,14 @@ import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData, emptyDiffData } from "../assertions/diff.ts";
 import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
-import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
+import { inheritSandboxCapabilities } from "../sandbox/backend.ts";
+import {
+  commandSensitiveValues,
+  redactSensitiveEvidence,
+  redactSensitiveText,
+  rememberSensitiveValues,
+} from "../sandbox/redaction.ts";
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
@@ -71,6 +78,7 @@ import type {
   SourceArtifact,
   StreamEvent,
   Telemetry,
+  TimingActivity,
   TraceSpan,
   Usage,
   RetryAttemptRecord,
@@ -292,6 +300,9 @@ export function runAttemptEffect(
   // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
   // 调用方之前写入内存」)。
   const commands: FailedCommandEvidence[] = [];
+  // CommandOptions.sensitiveValues 的 Attempt 级内存集合。值只供记录边界精确替换；最终
+  // result 封口后集合随本次调用释放，不进入任何 artifact、指纹或 provider identity。
+  const sensitiveValues = new Set<string>();
   const recordDiagnostic = (input: DiagnosticInput) => {
     const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
     if (input.dedupeKey !== undefined) {
@@ -301,12 +312,16 @@ export function runAttemptEffect(
         return;
       }
     }
+    const message = redactSensitiveText(input.message, sensitiveValues);
+    const context = input.data === undefined
+      ? undefined
+      : redactSensitiveEvidence(input.data, sensitiveValues);
     const record: DiagnosticRecord = {
       code: input.code,
       level: input.level,
-      detail: input.message,
+      detail: message,
       origin: attemptOrigin(phase),
-      ...(input.data !== undefined ? { context: input.data } : {}),
+      ...(context !== undefined ? { context } : {}),
     };
     if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
     diagnostics.push(record);
@@ -314,12 +329,12 @@ export function runAttemptEffect(
     // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
     // 编进去);对外稳定词法始终单独给 `code`,不让消费方从 key 反推(见 sink.ts 的
     // DiagnosticInput.code、docs/feature/experiments/cli.md 的 WarningEvent)。
-    const { origin: _authorOrigin, phase: _authorPhase, ...diagnosticData } = input.data ?? {};
+    const { origin: _authorOrigin, phase: _authorPhase, ...diagnosticData } = context ?? {};
     reportDiagnostic({
       key: input.dedupeKey ?? `${input.code}:${encodeAttemptKey(identity)}`,
       code: input.code,
       severity: input.level,
-      message: input.message,
+      message,
       identity,
       // phase 由运行器给,且**压过**作者 `data` 里的同名字段:`WarningEvent.phase` 是
       // `LifecyclePhase` 闭集,取值只能由「这条诊断报上来时运行器正处在哪一步」决定。
@@ -342,14 +357,15 @@ export function runAttemptEffect(
   // 同时保留最近 20 条进度消息,timeout 时嵌入 error 字段方便定位卡在哪一步。
   const recentLogs: string[] = [];
   const log = (m: string) => {
-    recentLogs.push(m);
+    const detail = redactSensitiveText(m, sensitiveValues);
+    recentLogs.push(detail);
     if (recentLogs.length > 20) recentLogs.shift();
     // 附着在「当前阶段」上的次要文本(见 ActiveAttempt.detail);attempt:start 早于本函数任何
     // 调用点发出(见上),active map 里一定已经有这个 identity 的条目。这是 log() 唯一的出口 ——
     // 没有裸写 stderr 的兜底分支(那是给已删除的 Live reporter 用的旧接线,见
     // docs/feature/experiments/cli.md「一个 run 内只有一个终端协调者」);由当前 renderer 决定
     // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
-    reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail: m });
+    reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail });
   };
 
   /**
@@ -697,6 +713,7 @@ export function runAttemptEffect(
           diagnostics,
           facts,
           commands,
+          sensitiveValues,
           concurrencySlot,
           declareFailure,
           layerCleanups,
@@ -814,15 +831,17 @@ export function runAttemptEffect(
       };
       // 调度事实统一在这里挂:每条出口(正常、body 抛错、超时、Sample 层失败)都经过本 map,
       // 归属因此不随「走到了哪一步」丢失(见 sandboxFacts 的声明)。
-      const withSandbox = sandboxFacts
+      const withSandbox: EvalResult = sandboxFacts
         ? { ...withPhases, sandbox: { ...sandboxFacts, ...(kept ? { kept: true as const } : {}) } }
         : withPhases;
-      if (!timedOut) return withSandbox;
-      return {
-        ...withSandbox,
-        ...(timeoutDiff !== undefined ? { diff: timeoutDiff } : {}),
-        sources: timeoutSources ?? [],
-      };
+      const completed: EvalResult = timedOut
+        ? {
+            ...withSandbox,
+            ...(timeoutDiff !== undefined ? { diff: timeoutDiff } : {}),
+            sources: timeoutSources ?? [],
+          }
+        : withSandbox;
+      return redactEvalResultEvidence(completed, sensitiveValues);
     }),
   );
 }
@@ -952,6 +971,8 @@ interface AttemptResources {
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
   commands: FailedCommandEvidence[];
+  /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
+  sensitiveValues: Set<string>;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
   concurrencySlot?: ConcurrencySlot;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
@@ -1003,6 +1024,7 @@ async function runAttemptBody(
     diagnostics,
     facts,
     commands,
+    sensitiveValues,
     concurrencySlot,
     declareFailure,
     layerCleanups,
@@ -1016,7 +1038,9 @@ async function runAttemptBody(
   const usesSandbox = run.agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
-  const sandbox = usesSandbox ? withCommandTiming(rawSandbox, recorder, getPhase, commands, res.deadlineAt) : rawSandbox;
+  const sandbox = usesSandbox
+    ? withCommandTiming(rawSandbox, recorder, getPhase, commands, sensitiveValues, res.deadlineAt)
+    : rawSandbox;
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
     signal,
@@ -1456,23 +1480,73 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
 }
 
 /**
- * 命令时间树包装:runCommand / runShell 的最外层公开调用各记一个 command 子节点
- * (有界脱敏摘要 + exitCode;env 值与 stdout/stderr 不进入时间树)。Proxy 只拦这两个方法,
+ * Attempt 的持久化证据封口。命令级元数据可能在较晚的 send/teardown 才登记，因此这里对
+ * `show --timing` / `--execution` / 错误页会消费的所有结构再做一次最终扫描，堵住“较早事件
+ * 已写进内存、较晚才得知同一敏感值”的时序洞。源码、diff、facts 不属于命令证据契约；任意
+ * 自由文本里的未知 secret 仍必须由产生它的命令显式登记。
+ */
+function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlySet<string>): EvalResult {
+  if (sensitiveValues.size === 0) return result;
+  const redact = <Value>(value: Value): Value => redactSensitiveEvidence(value, sensitiveValues);
+  return {
+    ...result,
+    ...(result.error !== undefined ? { error: redact(result.error) } : {}),
+    ...(result.diagnostics !== undefined ? { diagnostics: redact(result.diagnostics) } : {}),
+    ...(result.commands !== undefined ? { commands: redact(result.commands) } : {}),
+    ...(result.phases !== undefined ? { phases: redact(result.phases) } : {}),
+    ...(result.events !== undefined ? { events: redact(result.events) } : {}),
+    ...(result.retryAttempts !== undefined ? { retryAttempts: redact(result.retryAttempts) } : {}),
+    ...(result.assertions !== undefined ? { assertions: redact(result.assertions) } : {}),
+    ...(result.trace !== undefined ? { trace: redact(result.trace) } : {}),
+    ...(result.o11y !== undefined ? { o11y: redact(result.o11y) } : {}),
+    ...(result.agentSetup !== undefined ? { agentSetup: redact(result.agentSetup) } : {}),
+    ...(result.skipReason !== undefined ? { skipReason: redact(result.skipReason) } : {}),
+  };
+}
+
+/**
+ * 命令时间树包装:四个公开 run* 方法的最外层调用各记一个 command 子节点
+ * (有界脱敏摘要 + exitCode;env 值不进入时间树)。Proxy 拦截 checked 与 unchecked 两组方法,
  * provider 内部 `this.runCommand(...)` 转调不经过它——不形成重复节点。非零退出的命令额外
- * 把完整 `CommandResult` 登记进 `commands` 累加器,登记发生在把结果交还调用方**之前**
+ * 把已按已知敏感值脱敏的 `CommandResult` 登记进 `commands` 累加器,登记发生在把结果交还
+ * 调用方**之前**
  * (docs/feature/record/architecture.md「commandsjson」);登记不改变 `runCommand` 的
- * 返回/抛错语义,调用方可以处理非零退出并继续,证据仍保留。只记录成功拿到 `CommandResult`
- * 且 `exitCode !== 0` 的情形——`fn()` 本身抛错(如传输失败)不产出 `CommandResult`,不在这
- * 条证据线里,那类失败只落进时间树的 `failed` 标记。
+ * 返回/抛错语义,调用方可以处理非零退出并继续,证据仍保留。checked 方法抛出的
+ * `SandboxCommandExitError` 自带 `CommandResult`,同样登记；没有结果的 transport 错误只落
+ * 时间树 `failed` 标记。
  */
 function withCommandTiming(
   sandbox: Sandbox,
   recorder: TimingRecorder,
   getPhase: () => LifecyclePhase | undefined,
   commands: FailedCommandEvidence[],
+  sensitiveValues: Set<string>,
   deadlineAt: number | undefined,
 ): Sandbox {
-  const wrap = async <T>(display: string, opts: unknown, fn: () => Promise<T>): Promise<T> => {
+  const recordFailedCommand = (
+    node: TimingActivity | undefined,
+    display: string,
+    result: { exitCode: number; stdout?: unknown; stderr?: unknown },
+  ): void => {
+    if (!node || result.exitCode === 0) return;
+    commands.push({
+      timingNodeId: node.id,
+      phase: getPhase() ?? "eval.run",
+      display,
+      exitCode: result.exitCode,
+      stdout: redactSensitiveText(typeof result.stdout === "string" ? result.stdout : "", sensitiveValues),
+      stderr: redactSensitiveText(typeof result.stderr === "string" ? result.stderr : "", sensitiveValues),
+    });
+  };
+
+  const wrap = async <T>(
+    cmd: string,
+    args: readonly string[] | undefined,
+    opts: unknown,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
+    const display = commandDisplay(cmd, args, sensitiveValues);
     const startOffsetMs = recorder.offsetNow();
     const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
@@ -1490,24 +1564,22 @@ function withCommandTiming(
           ...(typeof exitCode === "number" ? { exitCode, failed: exitCode !== 0 } : {}),
         }),
       );
-      if (typeof exitCode === "number" && exitCode !== 0 && node) {
-        const stdout = result as { stdout?: unknown; stderr?: unknown };
-        commands.push({
-          timingNodeId: node.id,
-          phase: getPhase() ?? "eval.run",
-          display,
+      if (typeof exitCode === "number") {
+        recordFailedCommand(node, display, {
           exitCode,
-          stdout: typeof stdout.stdout === "string" ? stdout.stdout : "",
-          stderr: typeof stdout.stderr === "string" ? stdout.stderr : "",
+          ...(result as { stdout?: unknown; stderr?: unknown }),
         });
       }
       // CommandResult.command:最外层公开调用恰好是「eval 实际跑了什么」的定义点,摘要
-      // 与时间树节点同一份;provider 自己填过就不覆盖。
-      if (result !== null && typeof result === "object" && !("command" in result)) {
+      // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
+      // 不能让它从 CommandResult → assertion/error 旁路带出未脱敏文本。
+      if (result !== null && typeof result === "object") {
         return { ...result, command: display } as T;
       }
       return result;
     } catch (e) {
+      const commandResult = e instanceof SandboxCommandExitError ? e.result : undefined;
+      const exitCode = commandResult?.exitCode;
       // 撞线失败的节点带 provider 实际执行的那条线(`SandboxCommandTimeoutError` 自带上限与
       // 「是不是显式声明」),不是这里事前算的那份——两者同源,但 provider 那份是真正掐断它的值。
       const hit =
@@ -1518,32 +1590,44 @@ function withCommandTiming(
               timedOut: true as const,
             }
           : limit;
-      recorder.child(
+      const node = recorder.child(
         commandNode({
           display,
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           failed: true,
+          ...(typeof exitCode === "number" ? { exitCode } : {}),
           ...(hit !== undefined ? { limit: hit } : {}),
         }),
       );
+      if (commandResult !== undefined) recordFailedCommand(node, display, commandResult);
       throw e;
     }
   };
-  return new Proxy(sandbox, {
+  const timed = new Proxy(sandbox, {
     get(target, prop, receiver) {
       if (prop === "runCommand") {
-        return (cmd: string, args?: string[], opts?: unknown) =>
-          wrap(commandDisplay(cmd, args), opts, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+        return (cmd: string, args?: readonly string[], opts?: unknown) =>
+          wrap(cmd, args, opts, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
       }
       if (prop === "runShell") {
         return (script: string, opts?: unknown) =>
-          wrap(commandDisplay(script), opts, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(script, undefined, opts, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+      }
+      if (prop === "runCommandOrThrow") {
+        return (cmd: string, args?: readonly string[], opts?: unknown) =>
+          wrap(cmd, args, opts, () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+      }
+      if (prop === "runShellOrThrow") {
+        return (script: string, opts?: unknown) =>
+          wrap(script, undefined, opts, () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts));
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
     },
   });
+  inheritSandboxCapabilities(sandbox, timed);
+  return timed;
 }
 
 /**

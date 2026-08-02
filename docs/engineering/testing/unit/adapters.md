@@ -70,6 +70,12 @@ function scriptedInstaller(steps: {
   - 改任务 Dockerfile 只重建环境，不动 Agent 配置。
   - 无精确版本的 `latest` 安装不参与可携带结果；ensure 声明无法给出稳定 identity 时启动期报错。
   - 实际版本落 attempt facts，不能反过来替代规划期指纹。
+- **命令证据敏感值 provenance**：官方 Adapter 把已知凭据同步登记到 `CommandOptions.sensitiveValues`。
+  覆盖 MCP HTTP header、stdio env、Hermes/OpenClaw 配置，以及模型 CLI 运行环境里的 API key。
+  fixture 同时断言原执行脚本含合成值、同一次调用 options 登记该值；manifest 仍不得包含这些字段。
+- **官方 Agent 进程环境**：factory 声明的额外环境只经 Sandbox 命令 options 注入，不拼进 shell 文本。
+  Codex 首轮 `exec` 与后续 `exec resume` 必须取得同一份声明；CLI 启动的 lifecycle Hook 与子进程因此继承同一环境。
+  所有声明值按潜在敏感值登记，避免命令输出或失败证据把它们带进 timing、execution 与错误记录。
 - **断网题不改网络**：
 
   - 故障 DNS / `extra_hosts` / 被替换工具在 ensure 循环前后逐字保持。

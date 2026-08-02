@@ -207,7 +207,7 @@ export interface PhaseTiming {
 
 /**
  * `commands.json` 的一条落盘记录(见 docs/feature/record/architecture.md「commandsjson」):
- * 公开 `Sandbox.runCommand()` / `runShell()` 的最外层调用返回非零 `exitCode` 时,Runner 在
+ * 四个公开 `Sandbox.run*()` 方法的最外层调用返回非零 `exitCode` 时,Runner 在
  * `CommandResult` 交还调用方**之前**登记的完整证据——Eval 后续即使只把 `.slice(-N)` 拼进
  * 异常消息,这份证据仍然完整。只记非零退出;成功命令的输出不进第二份 artifact,provider 内部
  * 实现步骤与 Agent 自己调用的 shell 不经过这层包装,不伪装成这里的命令。
@@ -220,9 +220,9 @@ export interface FailedCommandEvidence {
   /** 与该 `TimingActivity.command.display` 同一份有界脱敏命令摘要;不含 env value。 */
   display: string;
   exitCode: number;
-  /** 原样全量落盘:失败输出的起因常在前段、runner 的 summary 惯例在尾部,不做逐值截断。 */
+  /** 不截断落盘；`CommandOptions.sensitiveValues` 命中的已知值已替换为 `<redacted>`。 */
   stdout: string;
-  /** 原样全量落盘,同 `stdout`。 */
+  /** 不截断落盘，同 `stdout` 的已知敏感值边界。 */
   stderr: string;
 }
 

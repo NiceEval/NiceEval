@@ -26,8 +26,21 @@ stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；H
 `marketplace.sparse` 列出 sparse 拉取的路径，每个元素生成一个 `--sparse <path>`（codex 的 `--sparse` 必须带路径参数、可重复），大仓库只拉插件所需路径；省略或空数组即全量 clone。
 它只影响拉取速度，不影响装出来的内容，manifest 不记录它。
 
-接入两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` 环境变量；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。
+鉴权与路由有两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` 环境变量；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。
 模型选择不在这里——它归 experiment 的 `model` 维度。
+
+## Agent 进程环境
+
+`env` 为每次 Codex CLI 进程追加环境变量。首轮 `codex exec` 与后续 `codex exec resume` 使用同一份声明；Codex 启动的 Session Hook、MCP 动态 header 与命令子进程都从该进程继承。
+
+```ts
+const agent = codexAgent({
+  env: { NMEM_SPACE: "memorybench-nowledge" },
+});
+```
+
+环境变量只经 Sandbox 命令 options 注入，不拼进 shell 文本，也不进入安装 manifest。Adapter 把全部声明值按潜在敏感值登记；timing、execution 与错误证据落盘前会脱敏。
+`CODEX_API_KEY` 仍由 `apiKey` 或宿主同名环境变量提供，Adapter 的鉴权值覆盖 `env` 里的同名键。
 
 `configFile` 是运行 niceeval 的机器上的本地路径，不是 Sandbox 内路径；它相对本地项目根解析，指向一份完整的 Codex `config.toml`：
 

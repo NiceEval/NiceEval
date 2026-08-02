@@ -434,6 +434,9 @@ const scope = reportScopeFixture({
   - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`，facts 只验收读取后的数据投影。
    attempt 首页 `usage:` / `facts:` 行、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
+  - timing、失败命令、Agent 事件与 Attempt error 在落盘前按 `CommandOptions.sensitiveValues` 脱敏。
+    summary/full、`--expand`、`--grep` 与 JSON 只能消费 `<redacted>`，不得从其它 artifact 补回。
+    旧 artifact 与未登记自由文本不在 renderer 用 key-name regex 猜测。
   - 预览按段截断。
     普通卡正文、TOOL 的 input/result、失败命令的命令行/stdout/stderr 分别计段。
   - 每段最多三行，并有 1 KiB 的 UTF-8 字节回退。

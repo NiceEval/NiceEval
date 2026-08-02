@@ -63,6 +63,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private runtime: string;
   readonly sandboxId: string;
   readonly capabilities = {
+    rootCommands: supportedBackendCapability(true as const),
     appendLog: unsupportedBackendCapability,
     suspend: supportedBackendCapability(() => this.suspend()),
     ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),

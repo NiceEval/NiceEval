@@ -167,6 +167,18 @@ baseUrl?: string;
 
 OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 CODEX_BASE_URL env。
 
+#### `env`
+
+```ts
+env?: Readonly<globalThis.Record<string, string>>;
+```
+
+注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
+使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
+值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
+潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
+宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
+
 #### `mcpServers`
 
 ```ts

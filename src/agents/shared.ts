@@ -10,7 +10,7 @@ import {
   parseClaudeCodeTranscript,
   parseBubTranscript,
 } from "../o11y/parsers/index.ts";
-import type { AgentSetupManifest, AgentSetupSkill, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import type { AgentSetupManifest, AgentSetupSkill, CommandOptions, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
 import type { SandboxAgentSetupContext } from "./types.ts";
 import { t } from "../i18n/index.ts";
 import { firstLine } from "../util.ts";
@@ -87,11 +87,23 @@ async function captureLatestJsonl(
   }
 }
 
-/** 写一个文件到沙箱任意路径(含 ~ / 绝对路径),用随机定界符的 heredoc,内容不被解释。 */
-async function writeFile(sandbox: Sandbox, path: string, content: string): Promise<void> {
+/**
+ * 写一个文件到沙箱任意路径(含 ~ / 绝对路径),用随机定界符的 heredoc,内容不被解释。
+ * 内容含已知凭据时必须同时传 `sensitiveValues`：原始 heredoc 仍交给 shell，记录面只保留
+ * 脱敏摘要；不把“配置文件通常安全”当成证据边界。
+ */
+async function writeFile(
+  sandbox: Sandbox,
+  path: string,
+  content: string,
+  options: Pick<CommandOptions, "sensitiveValues"> = {},
+): Promise<void> {
   const delim = `FE_EOF_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`;
   // path 不加引号,以便 bash 展开 ~;dirname 也走 $() 不加引号同理。这些是受信内部路径。
-  await sandbox.runShell(`mkdir -p $(dirname ${path}) && cat > ${path} <<'${delim}'\n${content}\n${delim}\n`);
+  await sandbox.runShell(
+    `mkdir -p $(dirname ${path}) && cat > ${path} <<'${delim}'\n${content}\n${delim}\n`,
+    options,
+  );
 }
 
 /**

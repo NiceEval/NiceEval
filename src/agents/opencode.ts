@@ -153,7 +153,8 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }
 
       const opencodeBin = await shared.resolveAgentBin(sb, "opencode");
-      const res = await sb.runCommand(opencodeBin, args, { env, stream: true });
+      const sensitiveValues = [apiKey];
+      const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true });
       let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
       let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
       if (sessionId) ctx.session.capture(sessionId);
@@ -165,7 +166,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const hasMessages = parsed.events.some((e) => e.type === "message");
       if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
         const sid = sessionId ?? ctx.session.id!;
-        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env });
+        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues });
         if (exported.exitCode === 0 && exported.stdout.trim()) {
           raw = exported.stdout;
           parsed = parseOpenCodeTranscript(raw);

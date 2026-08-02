@@ -7,13 +7,18 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { exec } from "node:child_process";
-import { mkdtemp, rm, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createChangeLedger } from "./ledger.ts";
 import { deriveDiffData, elidedContentAt, elidedContentPaths } from "../assertions/diff.ts";
-import type { CommandResult, Sandbox } from "../types.ts";
+import {
+  noSandboxBackendCapabilities,
+  registerSandboxCapabilities,
+  supportedBackendCapability,
+} from "../sandbox/backend.ts";
+import type { CommandOptions, CommandResult, Sandbox } from "../types.ts";
 
 const execAsync = promisify(exec);
 
@@ -21,13 +26,14 @@ const execAsync = promisify(exec);
 function hostSandbox(
   workdir: string,
   ledgerDir: string,
-  counters?: { shells?: string[]; downloads?: string[] },
+  counters?: { shells?: string[]; shellOptions?: CommandOptions[]; downloads?: string[] },
 ): Sandbox {
   // 把 ledger 的固定 /tmp 路径前缀重定向到本测试的私有目录,测试之间互不污染
   // (导出目录 /tmp/.niceeval-ledger-export 共享同一前缀,一条规则同时覆盖)。
   const patchPath = (s: string) => s.replaceAll("/tmp/.niceeval-ledger", ledgerDir);
-  const runShell = async (script: string, opts?: { env?: globalThis.Record<string, string> }): Promise<CommandResult> => {
+  const runShell = async (script: string, opts: CommandOptions = {}): Promise<CommandResult> => {
     counters?.shells?.push(script);
+    counters?.shellOptions?.push(opts);
     const env = { ...process.env, ...opts?.env };
     if (env.GIT_DIR === "/tmp/.niceeval-ledger") env.GIT_DIR = ledgerDir;
     try {
@@ -71,6 +77,34 @@ function hostSandbox(
   } as unknown as Sandbox;
 }
 
+/** 宿主测试进程没有提权能力；短暂放开读位模拟 provider 的 root command，再恢复原 mode。 */
+function rootCapableHostSandbox(
+  workdir: string,
+  ledgerDir: string,
+  restrictedPath: string,
+  counters: { shells: string[]; shellOptions: CommandOptions[]; downloads: string[] },
+): Sandbox {
+  const base = hostSandbox(workdir, ledgerDir, counters);
+  const sandbox = {
+    ...base,
+    async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
+      if (opts.root !== true) return base.runShell(script, opts);
+      const original = await stat(restrictedPath);
+      await chmod(restrictedPath, 0o755);
+      try {
+        return await base.runShell(script, opts);
+      } finally {
+        await chmod(restrictedPath, original.mode & 0o777);
+      }
+    },
+  } as Sandbox;
+  registerSandboxCapabilities(sandbox, {
+    ...noSandboxBackendCapabilities,
+    rootCommands: supportedBackendCapability(true as const),
+  });
+  return sandbox;
+}
+
 let roots: string[] = [];
 async function makeDirs(): Promise<{ workdir: string; ledgerDir: string }> {
   const base = await mkdtemp(join(tmpdir(), "niceeval-ledger-"));
@@ -86,6 +120,46 @@ afterEach(async () => {
 });
 
 describe("createChangeLedger", () => {
+  // bug: memory/ledger-root-read-restricted-workspace-files.md
+  it("root-capable provider 读取 mode 0311 文件建立与导出 ledger，不改变 workdir owner/mode", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    const before = await stat(restrictedPath);
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+    const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
+
+    const ledger = await createChangeLedger(sandbox);
+    await ledger.commitAgentWindow("s1/t1");
+    await expect(ledger.exportWindows()).resolves.toEqual([{ window: "s1/t1", changes: {} }]);
+
+    const after = await stat(restrictedPath);
+    expect(after.uid).toBe(before.uid);
+    expect(after.gid).toBe(before.gid);
+    expect(after.mode & 0o777).toBe(0o311);
+    expect(counters.shellOptions).toHaveLength(3);
+    expect(counters.shellOptions.every((options) => options.root === true)).toBe(true);
+    expect(counters.downloads).toEqual(["/tmp/.niceeval-ledger-export/export.bin"]);
+  });
+
+  it("不支持 root 的 provider 遇受限文件时点明能力边界，不建议改坏题目条件", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const base = hostSandbox(workdir, ledgerDir);
+    const sandbox = {
+      ...base,
+      runShell: async (): Promise<CommandResult> => ({
+        stdout: "",
+        stderr: 'error: open("collect_data.sh"): Permission denied\nfatal: adding files failed\n',
+        exitCode: 128,
+      }),
+    } as Sandbox;
+
+    await expect(createChangeLedger(sandbox)).rejects.toThrow(
+      /collect_data\.sh.*does not support root ledger commands.*instead of chmod\/chowning away the task condition/,
+    );
+  });
+
   it("锚点后 workdir 素净(无 .git);逐窗口归因,eval 侧写入不进 agent diff", async () => {
     const { workdir, ledgerDir } = await makeDirs();
     await writeFile(join(workdir, "start.txt"), "fixture\n");

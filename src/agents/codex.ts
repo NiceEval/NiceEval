@@ -81,6 +81,14 @@ export interface CodexConfig {
   /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
   baseUrl?: string;
   /**
+   * 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
+   * 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
+   * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
+   * 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
+   * 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
+   */
+  env?: Readonly<globalThis.Record<string, string>>;
+  /**
    * 额外 MCP server(每个 Sandbox setup 时追加进 ~/.codex/config.toml)。
    * stdio 形态(command/args/env)写 [mcp_servers.<name>] 的 command 行;
    * Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.<name>.http_headers] 子表。
@@ -149,6 +157,10 @@ function codexPlatformPackage(
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
+  // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
+  const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
+  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
   const { ensure, installer } = createNpmCliInstaller({
       identity: {
         agent: "codex",
@@ -217,6 +229,7 @@ export function codexAgent(config?: CodexConfig): Agent {
 
       if (config?.mcpServers?.length) {
         assertMcpServers(config.mcpServers);
+        const sensitiveValues: string[] = [];
         const mcpToml = config.mcpServers
           .map((s) => {
             // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
@@ -224,22 +237,33 @@ export function codexAgent(config?: CodexConfig): Agent {
             const lines: string[] = [`[mcp_servers.${s.name}]`];
             if (isHttpMcp(s)) {
               lines.push(`url = "${s.url}"`);
-              if (s.headers && Object.keys(s.headers).length) {
+              const headers = s.headers;
+              if (headers && Object.keys(headers).length) {
                 lines.push(`[mcp_servers.${s.name}.http_headers]`);
-                for (const [k, v] of Object.entries(s.headers)) lines.push(`"${k}" = "${v}"`);
+                for (const [k, v] of Object.entries(headers)) {
+                  sensitiveValues.push(v);
+                  lines.push(`"${k}" = "${v}"`);
+                }
               }
             } else {
               lines.push(`command = "${s.command}"`);
               if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
-              if (s.env && Object.keys(s.env).length) {
+              const env = s.env;
+              if (env && Object.keys(env).length) {
                 lines.push(`[mcp_servers.${s.name}.env]`);
-                for (const [k, v] of Object.entries(s.env)) lines.push(`${k} = "${v}"`);
+                for (const [k, v] of Object.entries(env)) {
+                  sensitiveValues.push(v);
+                  lines.push(`${k} = "${v}"`);
+                }
               }
             }
             return lines.join("\n");
           })
           .join("\n\n");
-        await sb.runShell(`cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`);
+        await sb.runShell(
+          `cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`,
+          { sensitiveValues },
+        );
       }
 
       const manifest: AgentSetupManifest = { skills: [] };
@@ -316,8 +340,12 @@ export function codexAgent(config?: CodexConfig): Agent {
       // progress，human dashboard 因而能显示真正的 tool / reasoning / assistant 活动；完整
       // transcript 仍在命令结束后一次解析并落入 events artifact，不能让 live 文案变成第二份结果。
       const onStdout = codexProgressReporter(ctx);
+      const apiKey = getApiKey();
       const res = await sb.runShell(cmd, {
-        env: { CODEX_API_KEY: getApiKey() },
+        // ambient env 由 Codex 进程自然传给 SessionStart/SessionStop hooks、env_http_headers
+        // 与 agent 调起的 nmem 等子进程。鉴权字段最后覆盖，避免 env 形成第二条 key 来源。
+        env: { ...agentEnv, CODEX_API_KEY: apiKey },
+        sensitiveValues: [apiKey, ...agentEnvSensitiveValues],
         stream: true,
         onStdout,
       });

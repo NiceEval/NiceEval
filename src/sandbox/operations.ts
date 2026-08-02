@@ -77,6 +77,24 @@ export function successfulCommandResult(result: CommandResult): SuccessfulComman
   return result as SuccessfulCommandResult;
 }
 
+async function ensureContentDirectory(sandbox: SandboxOperations, path: string): Promise<void> {
+  try {
+    await sandbox.runCommandOrThrow("mkdir", ["-p", path]);
+  } catch (error) {
+    if (
+      !(error instanceof SandboxCommandExitError) ||
+      !/permission denied|operation not permitted/i.test(`${error.result.stdout}\n${error.result.stderr}`)
+    ) {
+      throw error;
+    }
+
+    // putContent is a host transfer primitive. Prefer the sandbox user so normal
+    // workdir fixtures stay editable, but a caller may have prepared the target
+    // parent as root immediately before transfer (for example under /tmp).
+    await sandbox.runCommandOrThrow("mkdir", ["-p", path], { root: true });
+  }
+}
+
 /** Layer callback 的窄视图；不带宿主传输、provider 元数据或生命周期方法。 */
 export function createSandboxCommandTarget(
   sandbox: SandboxOperations,
@@ -110,12 +128,12 @@ export function createSandboxCommandTarget(
         return;
       }
 
-      await sandbox.runCommandOrThrow("mkdir", ["-p", targetPath]);
+      await ensureContentDirectory(sandbox, targetPath);
       // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。
       for (const entry of snapshot.entries) {
         const path = `${targetPath.replace(/\/$/, "")}/${entry.path}`;
         if (entry.kind === "directory") {
-          await sandbox.runCommandOrThrow("mkdir", ["-p", path]);
+          await ensureContentDirectory(sandbox, path);
         } else {
           await putContentBytes(
             sandbox,

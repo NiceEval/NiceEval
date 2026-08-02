@@ -10,6 +10,7 @@
 // - agent 归因增量 = 逐窗口 delta 序列(DiffWindow[]),不做跨窗口压缩。
 
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
+import { sandboxSupportsRootCommands } from "../sandbox/backend.ts";
 import { DEFAULT_LEDGER_GIT_DIR, ledgerPathsFor } from "../sandbox/ledger-paths.ts";
 
 /**
@@ -112,6 +113,9 @@ function buildExportScript(exportDir: string): string {
     '  emit sizes "$D/sizes.txt"',
     '  emit blobs "$D/blobs.bin"',
     'done < "$D/log.txt"',
+    // root ledger commands may create the private export with a restrictive umask. The file is outside
+    // workdir; making only this runner artifact readable lets the provider file channel fetch it.
+    'chmod 0644 "$OUT"',
   ].join("\n");
 }
 
@@ -177,6 +181,10 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const gitDir = paths?.gitDir ?? LEDGER_GIT_DIR;
   const exportDir = paths?.exportDir ?? EXPORT_DIR;
   const env = gitEnv(sandbox, gitDir);
+  const rootCommands = sandboxSupportsRootCommands(sandbox);
+  // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown
+  // workdir，Agent 命令仍沿标准非 root 身份；不支持提权的 provider 保持既有用户态路径。
+  const commandOptions = rootCommands ? { env, root: true as const } : { env };
 
   // add -A -f:绕过项目自己的 .gitignore(项目 ignore 的文件照常记录);排除靠 pathspec
   // (runner 私有清单,agent / fixture 写 .gitignore 影响不了它);include 用第二次 add 打洞加回。
@@ -193,50 +201,67 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const anchor = await sandbox.runShell(
     `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor" && (git rev-parse -q --verify niceeval-reuse-anchor >/dev/null || git tag niceeval-reuse-anchor)`,
     {
-    env,
+      ...commandOptions,
     },
   );
-  ensureCommandSucceeded(anchor, "create change ledger anchor");
+  ensureCommandSucceeded(anchor, "create change ledger anchor", rootCommands);
 
   return {
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
       const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})`, {
-        env,
+        ...commandOptions,
       });
-      ensureCommandSucceeded(result, `commit eval window ${label}`);
+      ensureCommandSucceeded(result, `commit eval window ${label}`, rootCommands);
     },
     async commitAgentWindow(label: string): Promise<void> {
       // 窗口内没有变化时也落一条(--allow-empty),diff.json 里该窗口 changes 为空对象。
-      const result = await sandbox.runShell(`${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}`, { env });
-      ensureCommandSucceeded(result, `commit agent window ${label}`);
+      const result = await sandbox.runShell(`${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}`, commandOptions);
+      ensureCommandSucceeded(result, `commit agent window ${label}`, rootCommands);
     },
     async exportWindows(): Promise<DiffArtifact> {
-      return exportAgentWindows(sandbox, env, exportDir);
+      return exportAgentWindows(sandbox, commandOptions, exportDir, rootCommands);
     },
     async resetToAnchor(): Promise<void> {
       // `git reset --hard` 恢复被分类账追踪的 workdir；随后只清理不在排除清单内的未追踪项。
       // exclude pathspec 与 anchor 使用同一份编译结果，动态依赖/缓存不会被题间重置误删。
       const result = await sandbox.runShell(
         `git reset -q --hard niceeval-reuse-anchor && git clean -fd ${excludes.map((pattern) => `-e ${shellQuote(pattern)}`).join(" ")}`,
-        { env },
+        commandOptions,
       );
-      ensureCommandSucceeded(result, "reset reusable sandbox to anchor");
+      ensureCommandSucceeded(result, "reset reusable sandbox to anchor", rootCommands);
     },
   };
 }
 
-async function exportAgentWindows(sandbox: Sandbox, env: globalThis.Record<string, string>, exportDir: string): Promise<DiffArtifact> {
-  const result = await sandbox.runShell(buildExportScript(exportDir), { env });
-  ensureCommandSucceeded(result, "export agent windows");
+async function exportAgentWindows(
+  sandbox: Sandbox,
+  commandOptions: { readonly env: globalThis.Record<string, string>; readonly root?: true },
+  exportDir: string,
+  rootCommands: boolean,
+): Promise<DiffArtifact> {
+  const result = await sandbox.runShell(buildExportScript(exportDir), commandOptions);
+  ensureCommandSucceeded(result, "export agent windows", rootCommands);
   const payload = await sandbox.readBytes(`${exportDir}/export.bin`);
   return parseExportPayload(Buffer.from(payload));
 }
 
-function ensureCommandSucceeded(result: { exitCode: number; stderr: string }, operation: string): void {
+function ensureCommandSucceeded(
+  result: { exitCode: number; stderr: string },
+  operation: string,
+  rootCommands: boolean,
+): void {
   if (result.exitCode === 0) return;
+  const lines = result.stderr.trim().split("\n").filter(Boolean);
+  const permission = lines.find((line) => /permission denied|operation not permitted/i.test(line));
+  if (permission !== undefined) {
+    const guidance = rootCommands
+      ? "the provider declared root command support, but root ledger execution still could not read the workspace; check its root command mapping"
+      : "this sandbox provider does not support root ledger commands; use a root-capable provider for tasks that intentionally start with unreadable files instead of chmod/chowning away the task condition";
+    throw new Error(`${operation} failed (exit ${result.exitCode}): ${permission}; ${guidance}`);
+  }
   // git 可能先输出 advisory warning，再输出 niceeval 的可操作诊断；最后一行最接近失败根因。
-  const detail = result.stderr.trim().split("\n").at(-1);
+  const detail = lines.at(-1);
   throw new Error(`${operation} failed (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`);
 }
 

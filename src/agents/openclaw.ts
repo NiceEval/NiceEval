@@ -106,6 +106,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     async setup(sb, ctx) {
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
+        const apiKey = resolveApiKey(config);
         // OpenAI 兼容网关走自定义 provider + openai-completions;
         // skipBootstrap 跳过首轮身份仪式,否则 agent 会先问 "Who am I"。
         // workspace 钉沙箱工作目录,文件工具写到 eval 可见的路径。
@@ -121,7 +122,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
             providers: {
               [COMPAT_PROVIDER]: {
                 baseUrl,
-                apiKey: resolveApiKey(config),
+                apiKey,
                 api: "openai-completions",
                 models: [
                   { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
@@ -132,7 +133,12 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
             },
           },
         };
-        await shared.writeFile(sb, "~/.openclaw/openclaw.json", JSON.stringify(openclawConfig, null, 2));
+        await shared.writeFile(
+          sb,
+          "~/.openclaw/openclaw.json",
+          JSON.stringify(openclawConfig, null, 2),
+          { sensitiveValues: [apiKey] },
+        );
         // 预置最小身份文件,避免缺 IDENTITY 时仍触发仪式文案。
         await shared.writeFile(
           sb,
@@ -188,7 +194,11 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "openclaw"), args, { env, stream: true });
+      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "openclaw"), args, {
+        env,
+        sensitiveValues: [apiKey],
+        stream: true,
+      });
 
       const runJson = parseOpenClawRunJson(res.stdout);
       // 封包若带回服务端分配的 session key,后续轮以它为准(capture first-writer-wins,

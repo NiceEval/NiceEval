@@ -48,6 +48,15 @@ export type SandboxHook = (
 ) => void | Promise<void>;
 
 export interface CommandOptions {
+  /**
+   * 这条命令已知会处理的敏感明文（例如 API key、token、HTTP header value）。Runner 仍把
+   * 原值交给 provider 执行，但在任何 timing / commands / execution / error 证据落盘前按
+   * 这些值做精确替换；本数组本身不落盘、不进指纹。空字符串被忽略。
+   *
+   * 这是显式 provenance，不是 secret 扫描器：没有登记的自由文本无法被可靠识别；值若先被
+   * 调用方编码或拆分，应把实际会出现在命令/输出里的编码形态一并登记。
+   */
+  readonly sensitiveValues?: readonly string[];
   /** 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。 */
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。 */

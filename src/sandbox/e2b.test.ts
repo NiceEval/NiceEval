@@ -34,6 +34,36 @@ function makeSandbox(sbx: unknown): E2BSandbox {
   return new Ctor(sbx, "test-sandbox", 5_000, { _tag: "ProviderDefault" });
 }
 
+interface FakeE2BRunOptions {
+  readonly background?: boolean;
+  readonly onStdout?: (chunk: string) => void | Promise<void>;
+  readonly onStderr?: (chunk: string) => void | Promise<void>;
+}
+
+function completionMarkerParts(script: string): { prefix: string; suffix: string } {
+  const markers = [...script.matchAll(/'(__niceeval_e2b_command_[0-9a-f]+_(?:exit_|end__))'/g)]
+    .map((match) => match[1]!)
+    .filter((marker, index, all) => all.indexOf(marker) === index);
+  if (markers.length !== 2) throw new Error(`expected two e2b completion marker parts, received ${markers.length}`);
+  return { prefix: markers[0]!, suffix: markers[1]! };
+}
+
+async function completedCommandHandle(
+  script: string,
+  opts: FakeE2BRunOptions,
+  result: { stdout: string; stderr: string; exitCode: number },
+): Promise<{ wait: () => Promise<never>; disconnect: () => Promise<void> }> {
+  expect(opts.background).toBe(true);
+  const { prefix, suffix } = completionMarkerParts(script);
+  const marker = `${prefix}${result.exitCode}${suffix}`;
+  await opts.onStdout?.(`${result.stdout}${marker}`);
+  await opts.onStderr?.(`${result.stderr}${marker}`);
+  return {
+    wait: () => new Promise<never>(() => {}),
+    disconnect: async () => {},
+  };
+}
+
 describe("E2BSandbox.downloadDirectory", () => {
   it("lists under the resolved remote dir, threads ignore into the find script, and writes exact bytes", async () => {
     const localDir = await makeLocalDir();
@@ -45,11 +75,15 @@ describe("E2BSandbox.downloadDirectory", () => {
     let capturedCwd = "";
     const sandbox = makeSandbox({
       commands: {
-        run: async (script: string, opts: { cwd: string }) => {
+        run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedScript = script;
           capturedCwd = opts.cwd;
           // 不重新实现 find 语义:直接回放已知的(已被剪枝过的)相对路径清单。
-          return { stdout: [...files.keys()].map((p) => `./${p}`).join("\n"), stderr: "", exitCode: 0 };
+          return completedCommandHandle(
+            script,
+            opts,
+            { stdout: [...files.keys()].map((p) => `./${p}`).join("\n"), stderr: "", exitCode: 0 },
+          );
         },
       },
       files: {
@@ -74,9 +108,9 @@ describe("E2BSandbox.downloadDirectory", () => {
     let capturedCwd = "";
     const sandbox = makeSandbox({
       commands: {
-        run: async (_script: string, opts: { cwd: string }) => {
+        run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedCwd = opts.cwd;
-          return { stdout: "", stderr: "", exitCode: 0 };
+          return completedCommandHandle(script, opts, { stdout: "", stderr: "", exitCode: 0 });
         },
       },
       files: { read: async () => new Uint8Array() },
@@ -204,6 +238,71 @@ describe("E2BSandbox.ensureLifetime", () => {
 
     expect(result.ready).toBe(false);
     expect(result.ready === false ? result.reason : "").toContain("e2b api unreachable");
+  });
+});
+
+// bug: memory/e2b-command-stream-waits-for-detached-service.md
+describe("E2BSandbox command completion", () => {
+  it("直接 shell 退出即返回完整前台输出与退出码，只断 transport、不杀仍持有输出管道的任务服务", async () => {
+    let wrappedScript = "";
+    let runOptions: FakeE2BRunOptions | undefined;
+    let notifyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    let disconnects = 0;
+    let sandboxKills = 0;
+    let serviceAlive = true;
+    const sandbox = makeSandbox({
+      commands: {
+        run: async (script: string, opts: FakeE2BRunOptions) => {
+          wrappedScript = script;
+          runOptions = opts;
+          notifyStarted();
+          return {
+            // 模拟 E2B 的真实症状：后台服务继承 stdout/stderr，SDK wait 永远等不到 EOF。
+            wait: () => new Promise<never>(() => {}),
+            disconnect: async () => {
+              disconnects += 1;
+            },
+          };
+        },
+      },
+      kill: async () => {
+        sandboxKills += 1;
+        serviceAlive = false;
+      },
+    });
+    const streamedStdout: string[] = [];
+    const streamedStderr: string[] = [];
+    const source = "printf front; printf warn >&2; nohup task-server &; exit 23";
+
+    const running = sandbox.runShell(source, {
+      onStdout: (chunk) => {
+        streamedStdout.push(chunk);
+      },
+      onStderr: (chunk) => {
+        streamedStderr.push(chunk);
+      },
+    });
+    await started;
+
+    expect(runOptions?.background).toBe(true);
+    expect(wrappedScript).toContain(source);
+    const { prefix, suffix } = completionMarkerParts(wrappedScript);
+    const marker = `${prefix}23${suffix}`;
+    // 两路 marker 都故意跨 chunk；正文尾巴也和 marker prefix 同 chunk，证明过滤不会吞前台输出。
+    await runOptions?.onStdout?.(`front${marker.slice(0, 9)}`);
+    await runOptions?.onStdout?.(marker.slice(9));
+    await runOptions?.onStderr?.(`warn${marker.slice(0, 17)}`);
+    await runOptions?.onStderr?.(marker.slice(17));
+
+    await expect(running).resolves.toEqual({ stdout: "front", stderr: "warn", exitCode: 23 });
+    expect(streamedStdout).toEqual(["front"]);
+    expect(streamedStderr).toEqual(["warn"]);
+    expect(disconnects).toBe(1);
+    expect(sandboxKills).toBe(0);
+    expect(serviceAlive).toBe(true);
   });
 });
 
