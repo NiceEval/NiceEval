@@ -138,7 +138,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
 - **command identity 与内置 prepare 命令**：
 
-  - `command()` / `shell()` 的纯数据 identity 进入 fingerprint;直接传入的 callback 一律 opaque,该 Attempt `carryEligible = false`,对应复用窗口不跨配对、不跨 Invocation 共享。
+  - `command()` / `shell()` 的纯数据 identity 进入 fingerprint；直接传入的 callback 一律 opaque，该 Attempt `carryEligible = false`。prepare command identity 不进入同一 Run 的物理复用池键；要用两个 Eval 声明不同 prepare、但 Provider physical plan / Agent ensure / lifecycle owner 相同的场景，证明它们共用实例且每条命令在各自 Attempt 仍重放。
   - `defineSandboxCommand()` 的 id / revision / inputs 参与稳定身份;`registerSandboxContent()` 的 digest 折入 inputs。
   - `checkout()`:镜像按 `(repo, ref)` 键控,同一 Sandbox 第二次执行零网络。
     区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,且该 Attempt 不参与跨 Run carry。
@@ -146,6 +146,10 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - `--dry` 复用成本视图:内置命令标检查命中型,普通 command(含作者自建 `defineSandboxCommand()`)标每题重放;fresh 模式不展示该视图。
 - **BuildKey single-flight、失败向所有依赖项传播失败和预算**：
 
+  - physical planning 产出的 ProviderPlan 必须已经携带闭合的 `build` 完成态。
+    `None` 与 `Required` 都有确定 `caseKey`，`Required` 另有非空 `buildKeys`；该完成态进入 provider identity。
+    构建收集只能执行并核验这些 key，不返回或重算 `caseKey`。
+    Attempt 不保存 optional locator/case 字段。运行时 locator 是启动 Sandbox 的执行输入；locator key 或 Provider 返回的 Case 不吻合计划时，都走 typed drift failure。
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
   - 瞬时构建失败（拉取限流、传输层中断）按性质分类退避重试、封顶次数；重试耗尽才落确定性止损，确定性失败零重试。
     退避睡眠按注入的时长参数推进，不做真实等待；重试期间 abort 立即收束成 `cancelled`，不睡满封顶次数。

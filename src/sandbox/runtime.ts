@@ -35,7 +35,7 @@ import {
   type SandboxRuntimeDeadlineDeclaration,
   type VercelProviderPlan,
 } from "./layer.ts";
-import { computeCaseKey, digestOf, type BuildKey, type CaseKey } from "./identity.ts";
+import { digestOf, type BuildKey } from "./identity.ts";
 import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
@@ -90,7 +90,6 @@ export interface SandboxRuntimeCapabilities {
 export interface SandboxRuntimeBuildPreparation {
   readonly works: readonly SandboxBuildWork[];
   readonly provider: SandboxBuildProvider;
-  readonly caseKey: CaseKey;
 }
 
 export class SandboxRuntimeMaterializationError extends Data.TaggedError(
@@ -168,15 +167,6 @@ function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): Provisio
   return context.provisionSlot._tag === "Bound" ? context.provisionSlot.value : undefined;
 }
 
-function caseKey(context: SandboxRuntimeMaterializeContext): CaseKey {
-  return computeCaseKey({
-    caseKind: context.plan.providerPlan.caseKind,
-    materializerRevision: context.plan.providerPlan.plannerRevision,
-    buildKeys: [...context.buildLocators.keys()],
-    caseParams: context.plan.providerPlan.identity,
-  });
-}
-
 function wrapSingleSandbox(
   backend: SandboxProviderBackend,
   context: SandboxRuntimeMaterializeContext,
@@ -203,8 +193,8 @@ function wrapSingleSandbox(
     sandbox,
     group,
     caseKind: context.plan.providerPlan.caseKind,
-    caseKey: caseKey(context),
-    buildKeys: Object.freeze([...context.buildLocators.keys()]),
+    caseKey: context.plan.providerPlan.build.caseKey,
+    buildKeys: context.plan.providerPlan.build.buildKeys,
     identity: context.plan.providerPlan.identity,
     carryEligible: linkedRunCarryEligible(context.plan),
     facts,
@@ -260,7 +250,7 @@ export function materializeDockerComposeProviderPlan(
     ...(plan.executionUser._tag === "Configured" ? { executionUser: plan.executionUser.value } : {}),
     env: plan.env,
     collection: plan.collection,
-    caseKey: caseKey(context),
+    caseKey: context.plan.providerPlan.build.caseKey,
     identity: context.plan.providerPlan.identity,
     carryEligible: linkedRunCarryEligible(context.plan),
   }, {
@@ -423,8 +413,8 @@ export function materializeCustomCaseProviderPlan(
     ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
     group: result.group,
     caseKind: "custom",
-    caseKey: caseKey(context),
-    buildKeys: Object.freeze([...context.buildLocators.keys()]),
+    caseKey: context.plan.providerPlan.build.caseKey,
+    buildKeys: context.plan.providerPlan.build.buildKeys,
     identity: context.plan.providerPlan.identity,
     carryEligible: linkedRunCarryEligible(context.plan),
     facts: result.facts,
@@ -452,16 +442,6 @@ export function collectDockerComposeProviderBuildPreparation(
       return Option.some({
         works: collection.works,
         provider: dockerComposeBuildProvider({ env: plan.env }),
-        caseKey: computeCaseKey({
-          caseKind: "compose",
-          materializerRevision: published.plannerRevision,
-          composeBytes: collection.composeBytes,
-          buildKeys: collection.buildKeys,
-          serviceImageDigests: collection.imageRefs,
-          bindMountDigests: collection.bindMountDigests,
-          configContents: collection.configContents,
-          caseParams: published.identity,
-        }),
       });
     },
     catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
@@ -490,7 +470,6 @@ export function collectDockerfileProviderBuildPreparation(
       return Option.some({
         works: [collection.work],
         provider: dockerfileBuildProvider([collection]),
-        caseKey: collection.caseKey,
       });
     },
     catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
@@ -540,6 +519,56 @@ function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: Materialized
   });
 }
 
+function sortedBuildKeys(keys: Iterable<BuildKey>): readonly BuildKey[] {
+  return Object.freeze([...keys].sort());
+}
+
+/** 动态 locator 只负责把已规划 BuildKey 绑定到产物；不能在物化时改写 physical plan。 */
+function verifyBuildLocators(
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<void, SandboxRuntimeMaterializationError> {
+  const planned = sortedBuildKeys(context.plan.providerPlan.build.buildKeys);
+  const provided = sortedBuildKeys(context.buildLocators.keys());
+  const missing = planned.filter((key) => !context.buildLocators.has(key));
+  if (missing.length > 0) {
+    return Effect.fail(runtimeFailure(
+      context,
+      "sandbox.build-locator-missing",
+      new Error(`Missing build locators for planned BuildKey(s): ${missing.join(", ")}`),
+    ));
+  }
+  if (planned.length !== provided.length || planned.some((key, index) => key !== provided[index])) {
+    return Effect.fail(runtimeFailure(
+      context,
+      "sandbox.build-input-drift",
+      new Error("Runtime build locator keys differ from the physical plan."),
+    ));
+  }
+  return Effect.void;
+}
+
+/** Provider 产物是动态边界；出来即核验，不能把新的 CaseKey / BuildKey 带入领域态。 */
+function verifyMaterializedIdentity(
+  context: SandboxRuntimeMaterializeContext,
+  owned: MaterializedSandboxCase,
+): Effect.Effect<void, SandboxRuntimeMaterializationError> {
+  const planned = context.plan.providerPlan.build;
+  const actualKeys = sortedBuildKeys(owned.buildKeys);
+  const plannedKeys = sortedBuildKeys(planned.buildKeys);
+  if (
+    owned.caseKey !== planned.caseKey ||
+    actualKeys.length !== plannedKeys.length ||
+    plannedKeys.some((key, index) => key !== actualKeys[index])
+  ) {
+    return Effect.fail(runtimeFailure(
+      context,
+      "sandbox.build-input-drift",
+      new Error("Materialized CaseKey or BuildKey set differs from the physical plan."),
+    ));
+  }
+  return Effect.void;
+}
+
 /** 完整 plan 的唯一物化入口；Scope 退出恒执行声明的 release，不允许裸资源逃逸。 */
 export function materializeSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
@@ -555,13 +584,19 @@ export function materializeSandboxRunPlan(
     provisionSlot: input.provisionSlot,
     services: input.services,
   };
-  return Effect.acquireRelease(
-    Effect.flatMap(providerBinding(input.plan), (binding) => binding.materialize(context)),
-    (owned) => releaseOwned(input, owned),
-  ).pipe(Effect.tap((owned) => Effect.tryPromise({
-    try: () => runHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext, false),
-    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
-  })));
+  return Effect.zipRight(
+    verifyBuildLocators(context),
+    Effect.acquireRelease(
+      Effect.flatMap(providerBinding(input.plan), (binding) => binding.materialize(context)),
+      (owned) => releaseOwned(input, owned),
+    ).pipe(
+      Effect.tap((owned) => verifyMaterializedIdentity(context, owned)),
+      Effect.tap((owned) => Effect.tryPromise({
+        try: () => runHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext, false),
+        catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+      })),
+    ),
+  );
 }
 
 /** Build preparation 同样只调用 private binding，不按 provider/module id 分支。 */

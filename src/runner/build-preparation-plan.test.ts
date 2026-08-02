@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineEval, defineSandboxAgent } from "../define.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
 import { STATELESS } from "../state/plan.ts";
@@ -68,6 +68,12 @@ describe("Run build preparation · PreparedRunPair", () => {
     });
     await writeFile(join(directory, "eval.ts"), "export default null;\n", "utf8");
     const pair = await prepared(factories.dockerfileSandbox({ context: "." }), directory);
+    if (pair.plan._tag !== "Sandbox") throw new Error("expected Sandbox plan");
+    expect(pair.plan.providerPlan.build).toMatchObject({
+      _tag: "Required",
+      buildKeys: [expect.any(String)],
+      caseKey: expect.any(String),
+    });
 
     const collection = await Effect.runPromise(collectBuildPreparation({
       preparedPairs: [pair],
@@ -77,11 +83,12 @@ describe("Run build preparation · PreparedRunPair", () => {
     expect(collected.works).toHaveLength(1);
     expect(collected.works[0]).toMatchObject({ provider: "docker" });
     expect(collected.evalBuildKeys[pair.key]).toEqual([collected.works[0]?.buildKey]);
-    expect(collected.caseKeys.has(pair.key)).toBe(true);
+    expect(pair.plan.providerPlan.build.buildKeys).toEqual([collected.works[0]?.buildKey]);
+    expect("caseKeys" in collected).toBe(false);
     expect(Option.isSome(toBuildPreparation(collected))).toBe(true);
   });
 
-  it("distinguishes case-only preparation from no fresh work", async () => {
+  it("plans a case key for a no-build provider without creating build preparation", async () => {
     const directory = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-none-"));
     await writeFile(join(directory, "eval.ts"), "export default null;\n", "utf8");
     const factories = createBuiltinSandboxFactories({
@@ -92,14 +99,18 @@ describe("Run build preparation · PreparedRunPair", () => {
       factories.dockerImageSandbox({ image: `node@sha256:${"b".repeat(64)}` }),
       directory,
     );
+    if (pair.plan._tag !== "Sandbox") throw new Error("expected Sandbox plan");
+    expect(pair.plan.providerPlan.build).toMatchObject({
+      _tag: "None",
+      buildKeys: [],
+      caseKey: expect.any(String),
+    });
 
-    const caseOnly = Option.getOrThrow(await Effect.runPromise(collectBuildPreparation({
+    const noBuild = await Effect.runPromise(collectBuildPreparation({
       preparedPairs: [pair],
       carriedAttemptsByKey: new Map(),
-    })));
-    expect(caseOnly.works).toEqual([]);
-    expect(caseOnly.caseKeys.has(pair.key)).toBe(true);
-    expect(Option.isNone(toBuildPreparation(caseOnly))).toBe(true);
+    }));
+    expect(Option.isNone(noBuild)).toBe(true);
 
     const fullyCarried = await Effect.runPromise(collectBuildPreparation({
       preparedPairs: [pair],

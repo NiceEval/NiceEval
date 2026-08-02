@@ -22,7 +22,7 @@ import {
   normalizeBuildPlatform,
   type ComposeBuildCollection,
 } from "./compose.ts";
-import { digestOf, looksLikeDigestRef } from "./identity.ts";
+import { computeCaseKey, digestOf, looksLikeDigestRef, type CaseKey } from "./identity.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
@@ -235,8 +235,17 @@ export interface SandboxProviderPlan {
   readonly scheduling: SandboxProviderScheduling;
   readonly capabilities: SandboxProviderCapabilities;
   readonly carry: SandboxTemplateCarry;
+  readonly build: SandboxProviderBuildPlan;
   readonly identity: JsonValue;
 }
+
+export type SandboxProviderBuildPlan =
+  | { readonly _tag: "None"; readonly caseKey: CaseKey; readonly buildKeys: readonly [] }
+  | {
+      readonly _tag: "Required";
+      readonly caseKey: CaseKey;
+      readonly buildKeys: readonly [BuildKey, ...BuildKey[]];
+    };
 
 export interface SandboxProviderPlanInput<Plan> {
   readonly provider: string;
@@ -246,6 +255,7 @@ export interface SandboxProviderPlanInput<Plan> {
   readonly scheduling: SandboxProviderScheduling;
   readonly module: SandboxProviderModule<Plan>;
   readonly runtimePlan: Plan;
+  readonly build: SandboxProviderBuildPlan;
   /** physical planning 才能裁决的动态携带资格；省略表示可携带。 */
   readonly carry?: SandboxTemplateCarry;
   /** 可直接出现在 record / manifest 的 provider-owned 纯数据。 */
@@ -411,8 +421,15 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     : Object.freeze({ ...input.carry });
   const publishableIdentity = freezeJson(input.publishableIdentity);
   const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
+  const build: SandboxProviderBuildPlan = input.build._tag === "None"
+    ? Object.freeze({ _tag: "None", caseKey: input.build.caseKey, buildKeys: [] as const })
+    : Object.freeze({
+        _tag: "Required",
+        caseKey: input.build.caseKey,
+        buildKeys: freezeSortedNonEmptyBuildKeys(input.build.buildKeys, "sandbox provider plan.build.buildKeys"),
+      });
   const identity = freezeJson({
-    version: 2,
+    version: 3,
     provider,
     plannerRevision,
     caseKind,
@@ -429,6 +446,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
       sessionLimit: capabilities.sessionLimit,
     },
     carry,
+    build: { _tag: build._tag, caseKey: build.caseKey, buildKeys: [...build.buildKeys] },
     publishable: publishableIdentity,
     privateIdentityDigest,
   });
@@ -441,6 +459,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     scheduling,
     capabilities,
     carry,
+    build,
     identity,
   };
   const binding = Object.freeze({
@@ -711,6 +730,37 @@ function standardLinuxTarget(): SandboxPlannedTarget {
     platform: Object.freeze({ _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" }),
     source: "provider-standard",
   });
+}
+
+function providerBuildPlan(
+  input: Parameters<typeof computeCaseKey>[0],
+): SandboxProviderBuildPlan {
+  const buildKeys = [...input.buildKeys].sort();
+  const caseKey = computeCaseKey(input);
+  return buildKeys.length === 0
+    ? Object.freeze({ _tag: "None", caseKey, buildKeys: [] as const })
+    : Object.freeze({
+        _tag: "Required",
+        caseKey,
+        buildKeys: freezeSortedNonEmptyBuildKeys(buildKeys, "provider build collection.buildKeys"),
+      });
+}
+
+/** 将动态 provider 输入收敛为 Required 完成态：非空不变量必须在这里验证，不能靠 tuple 断言伪造。 */
+function freezeSortedNonEmptyBuildKeys(
+  buildKeys: readonly BuildKey[],
+  path: string,
+): readonly [BuildKey, ...BuildKey[]] {
+  const [first, ...rest] = [...buildKeys].sort();
+  if (first === undefined) throw new TypeError(`${path} must contain at least one BuildKey when _tag is Required`);
+  return Object.freeze(nonEmptyBuildKeys(first, rest));
+}
+
+function nonEmptyBuildKeys(
+  first: BuildKey,
+  rest: readonly BuildKey[],
+): [BuildKey, ...BuildKey[]] {
+  return [first, ...rest];
 }
 
 export type SandboxExecutionUser =
@@ -988,6 +1038,16 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             module: dockerComposeProviderModule,
+            build: providerBuildPlan({
+              caseKind: "compose",
+              materializerRevision: COMPOSE_MATERIALIZER_REVISION,
+              composeBytes: collection.composeBytes,
+              buildKeys: collection.buildKeys,
+              serviceImageDigests: collection.imageRefs,
+              bindMountDigests: collection.bindMountDigests,
+              configContents: collection.configContents,
+              caseParams: identityInput,
+            }),
             runtimePlan: Object.freeze({
               file: plannedFile,
               workspaceService,
@@ -1076,6 +1136,12 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             module: dockerfileProviderModule,
+            build: providerBuildPlan({
+              caseKind: "on-demand-build",
+              materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
+              buildKeys: [build.buildKey],
+              caseParams: { provider: "docker", buildKey: build.buildKey },
+            }),
             runtimePlan: Object.freeze({
               context: plannedContext,
               dockerfile,
@@ -1129,6 +1195,12 @@ export function createBuiltinSandboxFactories(
             target,
             scheduling: sharedScheduling("docker", 10),
             module: dockerImageProviderModule,
+            build: providerBuildPlan({
+              caseKind: "prebuilt",
+              materializerRevision: "docker-image-1",
+              buildKeys: [],
+              caseParams: { image },
+            }),
             runtimePlan: Object.freeze({ image }),
             publishableIdentity: { source: "configured-image" },
             privateFingerprintIdentity: { image },
@@ -1166,6 +1238,12 @@ export function createBuiltinSandboxFactories(
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("e2b", 20),
             module: e2bProviderModule,
+            build: providerBuildPlan({
+              caseKind: "prebuilt",
+              materializerRevision: "e2b-template-1",
+              buildKeys: [],
+              caseParams: { template, lifetime: plannedLifetime },
+            }),
             runtimePlan: Object.freeze({ template, lifetime: plannedLifetime }),
             publishableIdentity: { lifetime: plannedLifetime },
             privateFingerprintIdentity: { template, lifetime: plannedLifetime },
@@ -1194,6 +1272,12 @@ export function createBuiltinSandboxFactories(
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("vercel", 1),
             module: vercelProviderModule,
+            build: providerBuildPlan({
+              caseKind: "prebuilt",
+              materializerRevision: "vercel-snapshot-1",
+              buildKeys: [],
+              caseParams: { snapshotId, lifetime: plannedLifetime },
+            }),
             runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime }),
             publishableIdentity: { lifetime: plannedLifetime },
             privateFingerprintIdentity: { snapshotId, lifetime: plannedLifetime },
@@ -1229,6 +1313,12 @@ export function createBuiltinSandboxFactories(
             target: { platform: services.hostPlatform, source: "host" },
             scheduling: exclusiveScheduling("local-worktree"),
             module: localProviderModule,
+            build: providerBuildPlan({
+              caseKind: "prebuilt",
+              materializerRevision: "local-directory-1",
+              buildKeys: [],
+              caseParams: { directory: configured },
+            }),
             runtimePlan: Object.freeze({ directory: configured }),
             publishableIdentity: { directory: { _tag: directory._tag } },
             privateFingerprintIdentity: { directory: configured },
@@ -1318,6 +1408,12 @@ export function customProviderSandbox(
       target: { platform: targetPlatform, source: "provider-defined" },
       scheduling,
       module,
+      build: providerBuildPlan({
+        caseKind: "custom",
+        materializerRevision: "custom-provider-1",
+        buildKeys: [],
+        caseParams: identity,
+      }),
       runtimePlan: Object.freeze({ name }),
       publishableIdentity: {},
       privateFingerprintIdentity: identity,
@@ -1359,6 +1455,12 @@ export function customCaseSandbox(
       target: { platform: targetPlatform, source: "provider-defined" },
       scheduling: sharedScheduling("custom-case", 5),
       module,
+      build: providerBuildPlan({
+        caseKind: "custom",
+        materializerRevision: "custom-case-1",
+        buildKeys: [],
+        caseParams: declarationIdentity,
+      }),
       runtimePlan: Object.freeze({ identity, services }),
       publishableIdentity: {},
       privateFingerprintIdentity: declarationIdentity,

@@ -17,7 +17,7 @@ import {
 } from "../sandbox/layer.ts";
 import { SandboxLayerLinkError } from "../sandbox/link.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import {
   linkRunSandboxes,
@@ -208,6 +208,7 @@ describe("pair-owned Sandbox planning", () => {
           admission: { _tag: "Shared" },
         },
         module: inertProviderModule("acme/pod"),
+        build: { _tag: "None", caseKey: "acme-case", buildKeys: [] },
         runtimePlan: {},
         publishableIdentity: {},
         privateFingerprintIdentity: {},
@@ -233,6 +234,7 @@ describe("pair-owned Sandbox planning", () => {
           admission: { _tag: "Exclusive" },
         },
         module: inertProviderModule("worktree/local"),
+        build: { _tag: "None", caseKey: "worktree-case", buildKeys: [] },
         runtimePlan: {},
         publishableIdentity: {},
         privateFingerprintIdentity: {},

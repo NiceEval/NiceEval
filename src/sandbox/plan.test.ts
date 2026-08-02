@@ -13,6 +13,7 @@ import {
   sandboxProviderPlan,
   SandboxProviderPlanningError,
   type SandboxLayer,
+  type SandboxProviderBuildPlan,
   type SandboxProviderModule,
   type SandboxTargetPlatform,
 } from "./layer.ts";
@@ -25,6 +26,15 @@ import {
   SandboxPhysicalPlanningError,
   type LinkedRunPlan,
 } from "./plan.ts";
+
+if (false) {
+  // @ts-expect-error Required 完成态必须至少含一个 BuildKey。
+  const requiredWithoutBuild: SandboxProviderBuildPlan = { _tag: "Required", caseKey: "case", buildKeys: [] };
+  // @ts-expect-error None 完成态不能携带 BuildKey。
+  const noneWithBuild: SandboxProviderBuildPlan = { _tag: "None", caseKey: "case", buildKeys: ["build"] };
+  void requiredWithoutBuild;
+  void noneWithBuild;
+}
 
 const linux: SandboxTargetPlatform = {
   _tag: "Linux",
@@ -90,6 +100,27 @@ function planned(pair: LinkedSandboxLayerPair): LinkedRunPlan {
 }
 
 describe("provider-neutral Sandbox planning", () => {
+  it("rejects a dynamically forged Required build plan with no BuildKey", () => {
+    const forgedPlan = () => sandboxProviderPlan({
+      provider: "acme",
+      plannerRevision: "1",
+      caseKind: "custom",
+      target: { platform: linux, source: "provider-defined" },
+      scheduling: {
+        recommendedConcurrency: 1,
+        lane: { key: "acme", limit: 1 },
+        admission: { _tag: "Shared" },
+      },
+      module: fixtureModule,
+      build: { _tag: "Required", caseKey: "forged", buildKeys: [] } as never,
+      runtimePlan: Object.freeze({ manifest: "sha256:abc" }),
+      publishableIdentity: {},
+      privateFingerprintIdentity: {},
+    });
+    expect(forgedPlan).toThrow(TypeError);
+    expect(forgedPlan).toThrow(/build\.buildKeys must contain at least one BuildKey/);
+  });
+
   it("physical plan downgrades floating Docker images from carry eligibility", () => {
     const pinned = planned(linked(factories.dockerImageSandbox({
       image: `node@sha256:${"f".repeat(64)}`,
@@ -129,7 +160,14 @@ describe("provider-neutral Sandbox planning", () => {
     expect(plans[0]).toMatchObject({
       provider: "docker",
       caseKind: "compose",
+      build: { _tag: "None", buildKeys: [], caseKey: expect.any(String) },
       scheduling: { recommendedConcurrency: 10, lane: { key: "docker", limit: 10 } },
+    });
+    expect(plans[0]?.identity).toMatchObject({
+      build: plans[0]?.build,
+    });
+    expect(plans[1]).toMatchObject({
+      build: { _tag: "Required", buildKeys: [expect.any(String)], caseKey: expect.any(String) },
     });
     expect(Option.getOrThrow(sandboxProviderBindingOf(plans[0]!))).toMatchObject({
       moduleId: "niceeval/docker-compose",
@@ -170,6 +208,7 @@ describe("provider-neutral Sandbox planning", () => {
             admission: { _tag: "Shared" },
           },
           module: fixtureModule,
+          build: { _tag: "None", caseKey: "test-case", buildKeys: [] },
           runtimePlan: Object.freeze({ manifest: "sha256:abc" }),
           publishableIdentity: { manifestKind: "digest" },
           privateFingerprintIdentity: { manifest: "sha256:abc" },

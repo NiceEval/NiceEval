@@ -173,6 +173,31 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(providerCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects runtime locator keys that were not fixed by physical planning", async () => {
+    const providerCreate = vi.fn(() => Effect.succeed(fakeSandbox("must-not-create")));
+    const plan = planned(customProviderSandbox({
+      name: "acme",
+      targetPlatform: linux,
+      create: providerCreate,
+    }));
+    expect(plan.providerPlan.build).toMatchObject({
+      _tag: "None",
+      buildKeys: [],
+      caseKey: expect.any(String),
+    });
+
+    const result = await Effect.runPromise(Effect.either(Effect.scoped(
+      materializeSandboxRunPlan({
+        ...input(plan, { _tag: "Live" }),
+        buildLocators: new Map([["late-build-key", "late-locator"]]),
+      }),
+    )));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left.code).toBe("sandbox.build-input-drift");
+    expect(providerCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects Dockerfile inputs that change after physical planning", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-"));
     await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"e".repeat(64)}\nCOPY payload /payload\n`);
@@ -202,6 +227,49 @@ describe("provider-owned Sandbox runtime materialization", () => {
       if (result._tag === "Left") {
         expect(String(result.left.cause)).toContain("changed after physical planning");
       }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies no-build Compose inputs without recomputing the planned CaseKey", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-compose-plan-"));
+    const composePath = join(root, "compose.yaml");
+    await writeFile(composePath, `services:\n  client:\n    image: node@sha256:${"d".repeat(64)}\n`);
+    try {
+      const factories = createBuiltinSandboxFactories({
+        dockerBuildPlatform: Effect.succeed("linux/amd64"),
+        hostPlatform: linux,
+      });
+      const [pair] = Effect.runSync(linkSandboxLayers([{
+        eval: {
+          id: "task/example",
+          layer: factories.dockerComposeSandbox({
+            file: "compose.yaml",
+            workspaceService: "client",
+            build: "prebuilt",
+          }),
+        },
+        experiment: { id: "compare/codex", layer: sandboxLayer() },
+        agent: { kind: "sandbox", name: "codex" },
+      }]));
+      if (pair === undefined) throw new Error("missing linked pair");
+      const [output] = await Effect.runPromise(planLinkedRuns([{
+        pair,
+        authorBaseDirs: { eval: root, experiment: root },
+      }]));
+      if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
+      const plannedCaseKey = output.plan.providerPlan.build.caseKey;
+      expect(output.plan.providerPlan.build._tag).toBe("None");
+
+      await writeFile(composePath, `services:\n  client:\n    image: node@sha256:${"c".repeat(64)}\n`);
+      const result = await Effect.runPromise(Effect.either(
+        collectSandboxRuntimeBuildPreparation(output.plan, "task/example"),
+      ));
+
+      expect(output.plan.providerPlan.build.caseKey).toBe(plannedCaseKey);
+      expect(result._tag).toBe("Left");
+      if (result._tag === "Left") expect(result.left.code).toBe("sandbox.build-input-drift");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -323,6 +391,28 @@ describe("provider-owned Sandbox runtime materialization", () => {
     );
     expect(materialized.sandbox.sandboxId).toBe("compose-main");
     expect(stop).toHaveBeenCalledTimes(1);
+
+    const driftStop = vi.fn(async () => {});
+    const drifted = await Effect.runPromise(Effect.either(Effect.scoped(materializeSandboxRunPlan(input(plan, {
+      _tag: "Test",
+      materializeCompose: async (providerPlan) => ({
+        sandbox: fakeSandbox("compose-drift"),
+        group: {
+          primary: { sandboxId: "compose-drift", provider: "docker" },
+          resources: { projectName: "fixture-drift" },
+          stop: driftStop,
+        },
+        caseKind: "compose",
+        caseKey: "runtime-recomputed-case",
+        buildKeys: providerPlan.collection.buildKeys,
+        identity: providerPlan.identity,
+        carryEligible: providerPlan.carryEligible,
+        facts: { projectName: "fixture-drift" },
+      }),
+    })))));
+    expect(drifted._tag).toBe("Left");
+    if (drifted._tag === "Left") expect(drifted.left.code).toBe("sandbox.build-input-drift");
+    expect(driftStop).toHaveBeenCalledTimes(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
