@@ -24,16 +24,6 @@ import {
   type CustomProviderSandboxOptions,
   type SandboxLayer,
 } from "./sandbox/layer.ts";
-import { isExperimentStateDefinition } from "./state/definition.ts";
-import {
-  declaredState,
-  limitedStateConcurrency,
-  planExperimentStateOrThrow,
-  STATE_ABSENT,
-  STATE_CONCURRENCY_UNBOUNDED,
-  STATE_FRESH,
-  STATE_REUSE,
-} from "./state/plan.ts";
 import { Either, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 
@@ -136,17 +126,6 @@ export function defineExperiment(def: ExperimentInput): ExperimentDefinition {
   }
   if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
   assertSandboxLayer(def.sandbox, "defineExperiment");
-  if (def.state !== undefined && !isExperimentStateDefinition(def.state)) {
-    throw new TypeError("state.invalid-definition: defineExperiment state must be created by defineExperimentState().");
-  }
-  planExperimentStateOrThrow({
-    state: def.state === undefined ? STATE_ABSENT : declaredState(def.state),
-    agent: def.agent,
-    sandbox: def.sandboxReuse === true ? STATE_REUSE : STATE_FRESH,
-    concurrency: def.maxConcurrency === undefined
-      ? STATE_CONCURRENCY_UNBOUNDED
-      : limitedStateConcurrency(def.maxConcurrency),
-  });
   // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
   // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
   if (def.setup !== undefined && typeof def.setup !== "function") {

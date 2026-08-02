@@ -10,7 +10,6 @@ import type { CommandLimitAttribution, LifecyclePhase, PhaseTiming, TimingActivi
 /** 主链成员(enterPhase 推进;进入下一个即关闭上一个)。收尾段用 measureClosing 单独计时。 */
 const CLOSING_PHASES: ReadonlySet<LifecyclePhase> = new Set([
   "agent.teardown",
-  "state.save",
   "sandbox.cleanup",
   "sandbox.suspend",
   "sandbox.stop",

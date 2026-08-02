@@ -19,7 +19,6 @@ import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/type
 import type { EvalResult } from "../types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadCriteria, type CriteriaPattern } from "./index.ts";
 
 const source: CapturedEvalSource = { path: "evals/sqlite.eval.ts", content: "", sha256: "0".repeat(64) };
@@ -104,7 +103,6 @@ const run: AgentRun = {
   experimentId: "exp",
   experimentBaseDir: "/project/experiments",
   experimentSourcePath: "/project/experiments/exp.ts",
-  state: STATELESS,
 };
 
 function passed(id: string, fingerprint: string): EvalResult {

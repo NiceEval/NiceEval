@@ -2,7 +2,6 @@
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
 export { defineEval, defineScoreEval, defineConfig, defineExperiment } from "./define.ts";
-export { defineExperimentState } from "./state/definition.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
@@ -87,16 +86,4 @@ export type {
   ExternalCauseLink,
   ExternalCauseScalar,
 } from "./types.ts";
-export type {
-  ExperimentStateContext,
-  ExperimentStateDefinition,
-  ExperimentStateInput,
-  ExperimentStateProjection,
-  StateCheckpoint,
-  StateConsistency,
-  StateSavePolicy,
-  StateTransferActivity,
-  StateWindowRecord,
-} from "./state/types.ts";
-
 export type { ParsedTranscript } from "./o11y/parsers/index.ts";

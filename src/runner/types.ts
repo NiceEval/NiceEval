@@ -24,13 +24,6 @@ import type { EvalManifest, RunManifests } from "../record/manifest.ts";
 // source → host → dist 自举环。
 import type { ReportDefinition } from "../report/definition/report.ts";
 import type { ThemeDefinition } from "../report/theme.ts";
-import type {
-  ExperimentStateDefinition,
-  ExperimentStateProjection,
-  StateTransferActivity,
-  StateWindowRecord,
-} from "../state/types.ts";
-import type { PlannedExperimentState } from "../state/plan.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
@@ -60,8 +53,6 @@ export interface ExperimentRunInfo {
   sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /** Sandbox 是否在同一次 Run 内复用。 */
   sandboxReuse?: boolean;
-  /** State 的静态声明投影；callback 与动态 checkpoint 不落盘。 */
-  state?: ExperimentStateProjection;
   /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
   strict?: boolean;
   /** 解析后的 Judge 执行身份；apiKeyEnv 是凭据选择器，不落盘。 */
@@ -98,7 +89,6 @@ export type LifecyclePhase =
   | "sandbox.prepare.eval" // 仅错误/诊断归因,不单列计时
   | "sandbox.prepare.experiment" // 仅错误/诊断归因,不单列计时
   | "agent.ensure" // Runner 的 probe → 缺失才 install → 同一 probe 复检
-  | "state.load" // State checkpoint 载入；Stateless 与 reuse window 中间 Attempt 不产生
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "agent.setup" // Adapter runtime 配置 / 凭据 / state setup
   | "telemetry.configure" // tracing 出口配置
@@ -109,7 +99,6 @@ export type LifecyclePhase =
   | "telemetry.collect" // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
-  | "state.save" // State checkpoint 回存；按 saveOn 决定执行或 skip
   | "sandbox.cleanup" // 两层作者 layer 已登记 cleanup 全局 LIFO
   | "sandbox.suspend" // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause)
   | "sandbox.stop"; // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
@@ -395,12 +384,6 @@ export interface EvalResult {
    * docs/feature/record/architecture.md#facts运行事实。
    */
   facts?: globalThis.Record<string, string | number | boolean>;
-  /** fresh State 的 transfer 活动；reuse Attempt 只引用 RunMeta.stateWindows 中的 windowId。 */
-  state?: {
-    windowId: string;
-    load?: StateTransferActivity;
-    save?: StateTransferActivity;
-  };
   /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
   phases?: PhaseTiming[];
   skipReason?: string;
@@ -592,8 +575,6 @@ export type ReporterEvent =
       timings?: readonly TimingActivity[];
       /** 共享构建 provenance;与 timings 经 timingNodeId 关联。省略 = 本 Run 没有查询或构建过 BuildKey。 */
       sandboxBuilds?: readonly SandboxBuildRecord[];
-      /** reuse State window 的 load/save provenance。 */
-      stateWindows?: readonly StateWindowRecord[];
       /** 项目名(来自 config.name),整次 Invocation 内所有 Experiment 共享同一个值。 */
       name?: LocalizedText;
     };
@@ -839,8 +820,6 @@ export interface ExperimentAuthorFields {
    * 每个配对恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
-  /** defineExperimentState() 的品牌化产物；State 只属于 Experiment。 */
-  state?: ExperimentStateDefinition;
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
   sandboxReuse?: boolean;
   /**
@@ -891,7 +870,7 @@ export type ExperimentInput = ExperimentAuthorFields & {
   id?: ExperimentIdComesFromFilePath;
 };
 
-/** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook/State 仍保持作者声明。 */
+/** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
 export interface ExperimentDefinition {
   readonly description?: string;
   readonly agent: Agent;
@@ -906,7 +885,6 @@ export interface ExperimentDefinition {
   readonly timeoutMs?: number;
   /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
   readonly sandbox?: SandboxLayer;
-  readonly state?: ExperimentStateDefinition;
   readonly sandboxReuse: boolean;
   readonly budget?: number;
   readonly maxConcurrency?: number;
@@ -1059,8 +1037,6 @@ export interface AgentRun {
   /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
   readonly sandbox?: SandboxLayer;
   readonly sandboxReuse?: boolean;
-  /** 作者输入已完成组合校验后的穷尽 State 规划；运行器不再解释可选 callback。 */
-  readonly state: PlannedExperimentState;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   readonly judge?: JudgeConfig;
   /**

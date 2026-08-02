@@ -70,7 +70,7 @@ import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
-import { ReusableSandboxPool, type ReusableStateWindowDisposition } from "./sandbox-pool.ts";
+import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
@@ -125,11 +125,8 @@ function attemptGroupKey(run: AgentRun, evalId: string): string {
 }
 
 function reuseResultRequiresRetirement(result: EvalResult): boolean {
-  const stateFailed = result.error?.origin.scope === "attempt" &&
-    (result.error.origin.phase === "state.load" || result.error.origin.phase === "state.save");
   return result.error?.code === "timeout" ||
     result.error?.code === "agent-send-failed" ||
-    stateFailed ||
     result.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
 }
 
@@ -691,8 +688,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
   // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
-  const allReusePools = (): ReusableSandboxPool[] =>
-    [...reusePools.values()].flatMap((bySpec) => [...bySpec.values()]);
   type ReusePoolSelection =
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
@@ -718,7 +713,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       return false;
     }
     cancelledReuseAttempts.add(a);
-    existingReusePoolFor(a)?.cancelPlannedUses(1);
     return true;
   };
   const reusePoolFor = (a: Attempt): Effect.Effect<ReusePoolSelection, never, import("effect").Scope.Scope> => {
@@ -733,26 +727,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
     let pool = bySpec.get(key);
     if (!pool) {
-      const plannedState = a.run.state;
       // 物理 Sandbox lifecycle 不属于任一 Attempt；反馈与事实落到所属 Experiment 的 Run。
       const setupContext = makeExperimentHookContext(a.run, "sandbox.create");
       const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
-      const plannedUses = attempts.filter((candidate) =>
-        !cancelledReuseAttempts.has(candidate) &&
-        candidate.run === a.run &&
-        reusePoolKeyOf(candidate) === key
-      ).length;
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext, plannedState._tag === "Stateless"
-        ? { _tag: "Stateless" }
-        : {
-            _tag: "Stateful",
-            plan: plannedState,
-            experimentId: a.run.experimentId,
-            plannedUses,
-          });
+      }, setupContext);
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -1445,30 +1426,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       gate.abort.abort();
     }
     reportHaltNotice(gate);
-  };
-
-  /**
-   * Attempt Scope 关闭前，把本结果已经确定会取消的未来 lease 从 State window 计划中扣掉。
-   * 这样最后一条真实 Attempt 能在自己的 author cleanup 之前保存，而不是拖到 pool.stop。
-   */
-  const reconcileReusePlanBeforeFinalizers = (a: Attempt, result: EvalResult): void => {
-    const poolKey = reusePoolKeyOf(a);
-    if (poolKey === undefined) return;
-    const budget = a.run.budget;
-    const projectedBudgetExhausted = budget !== undefined && result.estimatedCostUSD !== undefined &&
-      budgetState(a.run.experimentId ?? a.run.agent.name).spent + result.estimatedCostUSD >= budget;
-    const resultCode = result.error?.code ?? "unexpected-error";
-    const previousError = lastErrorCode.get(a.key);
-    const projectedFailFast = result.verdict === "errored" &&
-      previousError?.code === resultCode && previousError.streak + 1 >= 2;
-
-    for (const candidate of attempts) {
-      if (candidate === a || reusePoolKeyOf(candidate) !== poolKey || candidate.run !== a.run) continue;
-      const halted = checkDispatchHalt(candidate).halted;
-      const earlyExit = result.verdict === "passed" && a.run.earlyExit && candidate.key === a.key;
-      const failFast = projectedFailFast && candidate.key === a.key;
-      if (halted || earlyExit || failFast || projectedBudgetExhausted) cancelReuseAttempt(candidate);
-    }
   };
 
   /**
@@ -2201,9 +2158,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
             const result = yield* Effect.scoped(Effect.gen(function* () {
-              const leaseStateWindow: { disposition: ReusableStateWindowDisposition } = {
-                disposition: { _tag: "Continue" },
-              };
               const leased = poolSelection._tag === "Reuse"
               ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
@@ -2264,15 +2218,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                             sandbox: lease.sandbox,
                             reuseSandbox: lease.reuseSandbox,
                             reuseOrdinal: lease.reuseOrdinal,
-                            stateWindow: lease.stateWindow,
-                            decideStateWindow: (result) => {
-                              reconcileReusePlanBeforeFinalizers(a, result);
-                              leaseStateWindow.disposition = lease.decideStateWindow({
-                                cancelledPlannedUses: 0,
-                                retire: reuseResultRequiresRetirement(result),
-                              });
-                              return leaseStateWindow.disposition;
-                            },
                           },
                         }
                       : {}),
@@ -2285,8 +2230,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             if (lease) {
               // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
               // 本条结果如实保留，后续派发创建替代实例。
-              const mustRetire = leaseStateWindow.disposition._tag === "Finalize" ||
-                reuseResultRequiresRetirement(evaluated);
+              const mustRetire = reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
             return evaluated;
@@ -2536,35 +2480,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   if (runningBuilds !== undefined) {
     sandboxBuildRecords = [...(await runningBuilds.done).records];
   }
-  const pools = allReusePools();
-  const stateWindowsByExperiment = new Map<string, import("../state/types.ts").StateWindowRecord[]>();
-  for (const pool of pools) {
-    for (const { experimentId, failure } of pool.stateWindowFailures()) {
-      const code = failure._tag === "ExperimentStateSequenceFailure" &&
-          failure.activity.outcome === "failed"
-        ? failure.activity.code
-        : "state.save.failed";
-      reportDiagnostic({
-        key: `state-window-finalize-failed:${experimentId}`,
-        code,
-        severity: "error",
-        message: failure.message,
-        data: { experimentId, phase: "state.save" },
-      });
-      recordExperimentDiagnostic({
-        experimentId,
-        code,
-        level: "error",
-        message: failure.message,
-        phase: "state.save",
-      });
-    }
-    for (const record of pool.stateWindowRecords()) {
-      const records = stateWindowsByExperiment.get(record.experimentId) ?? [];
-      records.push(record);
-      stateWindowsByExperiment.set(record.experimentId, records);
-    }
-  }
   await opts.otelPool?.close();
 
   // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
@@ -2663,9 +2578,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
       ...(runTimings !== undefined ? { timings: runTimings } : {}),
       ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
-      ...(stateWindowsByExperiment.has(experimentId)
-        ? { stateWindows: stateWindowsByExperiment.get(experimentId)! }
-        : {}),
       name: opts.config.name,
     });
   }

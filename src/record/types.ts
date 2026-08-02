@@ -7,7 +7,6 @@
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
 import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
-import type { StateWindowRecord } from "../state/types.ts";
 import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
@@ -68,8 +67,6 @@ export interface RunMeta {
    * 时间只保存在 `timings`,本表经 `timingNodeId` 关联,不复制 duration。
    */
   sandboxBuilds?: SandboxBuildRecord[];
-  /** reuse State window 的 load/save provenance。 */
-  stateWindows?: StateWindowRecord[];
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(publish 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
@@ -159,8 +156,6 @@ export interface Run {
   timings?: TimingActivity[];
   /** 共享构建 provenance(见 RunMeta.sandboxBuilds)。 */
   sandboxBuilds?: SandboxBuildRecord[];
-  /** reuse State window 的 load/save provenance。 */
-  stateWindows?: StateWindowRecord[];
   /** 本快照自己的 agent。 */
   agent: string;
   model?: string;

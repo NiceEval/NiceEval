@@ -30,10 +30,6 @@ import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
-import { defineExperimentState } from "../state/definition.ts";
-import { ExperimentStateWindow } from "../state/runtime.ts";
-import type { ReusableLeaseStateWindow, ReusableStateWindowDisposition } from "./sandbox-pool.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
@@ -148,8 +144,6 @@ async function runOnce(
     experimentId?: string;
     /** Experiment 级 Judge 覆盖。 */
     judge?: AgentRun["judge"];
-    /** 已完成规划的 Experiment State（生命周期顺序测试用）。 */
-    state?: AgentRun["state"];
     /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
     config?: Config;
     /** 复用池借出的实例(调度事实测试用):模拟 run.ts 把 lease 交给 runAttemptEffect。 */
@@ -157,8 +151,6 @@ async function runOnce(
       sandbox: Sandbox;
       reuseSandbox: number;
       reuseOrdinal: number;
-      stateWindow?: ReusableLeaseStateWindow;
-      decideStateWindow?: () => ReusableStateWindowDisposition;
     };
   } = {},
 ): Promise<import("../types.ts").EvalResult> {
@@ -182,7 +174,6 @@ async function runOnce(
     earlyExit: true,
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
     sandbox: selectedSandbox,
-    state: opts.state ?? STATELESS,
     experimentId: opts.experimentId ?? "fake/experiment",
     experimentBaseDir: "/project",
     experimentSourcePath: "/project/fake.experiment.ts",
@@ -222,10 +213,7 @@ async function runOnce(
       onPhase: opts.onPhase,
       ...(opts.reusedSandbox
         ? {
-            reusedSandbox: {
-              ...opts.reusedSandbox,
-              decideStateWindow: opts.reusedSandbox.decideStateWindow ?? (() => ({ _tag: "Continue" as const })),
-            },
+            reusedSandbox: opts.reusedSandbox,
           }
         : {}),
     }),
@@ -523,122 +511,6 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       "experiment.cleanup:b",
       "experiment.cleanup:a",
     ]);
-  });
-
-  it("Reuse State 只在末条 Attempt 保存，且发生在 agent teardown 之后、作者 cleanup 之前", async () => {
-    const events: string[] = [];
-    const identity = { store: "fixture", cohort: "scope-order", schema: 1 } as const;
-    const checkpoint = {
-      identity: { revision: "fixture-r1" },
-      digest: { _tag: "Sha256" as const, value: "a".repeat(64) },
-      facts: {},
-    };
-    const definition = defineExperimentState({
-      identity,
-      consistency: { mode: "pinned", revision: "fixture-r1" },
-      saveOn: "after-load",
-      async load() {
-        events.push("state.load");
-        return checkpoint;
-      },
-      async save() {
-        events.push("state.save");
-        return checkpoint;
-      },
-    });
-    const box = new FakeSandbox();
-    const experimentLayer = fakeProviderLayer(box, "fake-provider-state-order")
-      .prepare(async (_sandbox, context) => {
-        events.push("sandbox.prepare");
-        context.onCleanup(async () => {
-          events.push("sandbox.cleanup");
-        });
-      });
-    let sendOrdinal = 0;
-    const agent = defineSandboxAgent({
-      name: "fake-agent-state-order",
-      setup: async () => {
-        events.push("agent.setup");
-      },
-      send: async () => {
-        sendOrdinal += 1;
-        events.push(`agent.send:${sendOrdinal}`);
-        return { events: [], status: "completed" };
-      },
-      teardown: async () => {
-        events.push("agent.teardown");
-      },
-    });
-
-    const state = {
-      _tag: "Pinned" as const,
-      definition,
-      revision: "fixture-r1",
-      cadence: "window" as const,
-    };
-    const window = await Effect.runPromise(ExperimentStateWindow.make(
-      state,
-      "fake/experiment",
-      "state-order-window",
-    ));
-    const first = await runOnce(agent, box, {
-      experimentLayer,
-      state,
-      reusedSandbox: {
-        sandbox: asSandbox(box),
-        reuseSandbox: 1,
-        reuseOrdinal: 1,
-        stateWindow: { _tag: "Stateful", window },
-        decideStateWindow: () => ({ _tag: "Continue" }),
-      },
-      evalDefOverrides: {
-        test: async (t: TestContext) => {
-          await t.send("first");
-        },
-      },
-    });
-    const result = await runOnce(agent, box, {
-      experimentLayer,
-      state,
-      reusedSandbox: {
-        sandbox: asSandbox(box),
-        reuseSandbox: 1,
-        reuseOrdinal: 2,
-        stateWindow: { _tag: "Stateful", window },
-        decideStateWindow: () => ({ _tag: "Finalize" }),
-      },
-      evalDefOverrides: {
-        test: async (t: TestContext) => {
-          await t.send("second");
-        },
-      },
-    });
-
-    expect(first.error).toBeUndefined();
-    expect(first.state).toEqual({ windowId: "state-order-window" });
-    expect(result.error).toBeUndefined();
-    expect(events).toEqual([
-      "sandbox.prepare",
-      "state.load",
-      "agent.setup",
-      "agent.send:1",
-      "agent.teardown",
-      "sandbox.cleanup",
-      "sandbox.prepare",
-      "agent.setup",
-      "agent.send:2",
-      "agent.teardown",
-      "state.save",
-      "sandbox.cleanup",
-    ]);
-    expect(result.state).toEqual({ windowId: "state-order-window" });
-    expect(await Effect.runPromise(window.snapshot())).toMatchObject({
-      _tag: "Finalized",
-      record: {
-        load: { outcome: "succeeded" },
-        save: { outcome: "succeeded" },
-      },
-    });
   });
 
   it("prepare 中途失败时后续命令与 agent 不运行，只清理已登记资源", async () => {

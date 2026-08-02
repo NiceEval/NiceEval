@@ -14,7 +14,6 @@ import type { AgentRun } from "./types.ts";
 import { discoverEval } from "./types.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 
 const fakeAgent = defineDirectAgent({
   name: "fake",
@@ -44,7 +43,6 @@ function runWith(labels?: globalThis.Record<string, string | number>): AgentRun 
     experimentId: "exp",
     experimentBaseDir: "/project/experiments",
     experimentSourcePath: "/project/experiments/exp.ts",
-    state: STATELESS,
     ...(labels !== undefined ? { labels } : {}),
   };
 }

@@ -19,7 +19,6 @@ import { MANIFESTS_FILE, type RunManifests } from "./manifest.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { truncateEvents, truncateSpans } from "./truncate.ts";
 import type { Producer, RunMeta } from "./types.ts";
-import type { StateWindowRecord } from "../state/types.ts";
 
 export interface WriterOptions {
   /** 谁在写这份结果:niceeval 自己,或第三方 harness(name 如实写,别冒充 "niceeval")。 */
@@ -130,7 +129,6 @@ export interface RunWriter {
     facts?: globalThis.Record<string, string | number | boolean>;
     timings?: TimingActivity[];
     sandboxBuilds?: SandboxBuildRecord[];
-    stateWindows?: StateWindowRecord[];
     name?: LocalizedText;
   }): Promise<void>;
 }
@@ -239,7 +237,6 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
           ...(finishOpts?.facts && Object.keys(finishOpts.facts).length ? { facts: finishOpts.facts } : {}),
           ...(finishOpts?.timings?.length ? { timings: finishOpts.timings } : {}),
           ...(finishOpts?.sandboxBuilds?.length ? { sandboxBuilds: finishOpts.sandboxBuilds } : {}),
-          ...(finishOpts?.stateWindows?.length ? { stateWindows: finishOpts.stateWindows } : {}),
           ...(state.meta.knownEvalIds?.length ? { knownEvalIds: state.meta.knownEvalIds } : {}),
           ...(name !== undefined ? { name } : {}),
         };

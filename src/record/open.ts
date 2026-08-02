@@ -336,7 +336,6 @@ function makeSnapshotShell(dir: string, meta: RunMeta): Run {
     ...(meta.facts && Object.keys(meta.facts).length ? { facts: meta.facts } : {}),
     ...(meta.timings?.length ? { timings: meta.timings } : {}),
     ...(meta.sandboxBuilds?.length ? { sandboxBuilds: meta.sandboxBuilds } : {}),
-    ...(meta.stateWindows?.length ? { stateWindows: meta.stateWindows } : {}),
     agent: meta.agent,
     ...(meta.model !== undefined ? { model: meta.model } : {}),
     ...(meta.experiment !== undefined ? { experiment: meta.experiment } : {}),

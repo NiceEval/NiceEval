@@ -75,7 +75,6 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
         ...(event.facts ? { facts: { ...event.facts } } : {}),
         ...(event.timings?.length ? { timings: [...event.timings] } : {}),
         ...(event.sandboxBuilds?.length ? { sandboxBuilds: [...event.sandboxBuilds] } : {}),
-        ...(event.stateWindows?.length ? { stateWindows: [...event.stateWindows] } : {}),
         name: event.name,
       });
     },

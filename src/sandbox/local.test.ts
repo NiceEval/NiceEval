@@ -27,7 +27,6 @@ import type { Attempt, AgentRun, RunOptions } from "../runner/types.ts";
 import type { Config, DiscoveredEval } from "../types.ts";
 import { defineSandboxCommand } from "./commands.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import { discoverEval } from "../runner/types.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 
@@ -174,7 +173,6 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
       attempts: 1,
       earlyExit: true,
       sandbox: localSandboxLayer(),
-      state: STATELESS,
       experimentId: "fake/experiment",
       experimentBaseDir: "/project",
       experimentSourcePath: "/project/fake.experiment.ts",

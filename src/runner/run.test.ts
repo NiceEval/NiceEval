@@ -78,7 +78,6 @@ import { normalizeSandboxPaths } from "../sandbox/paths.ts";
 import { Effect, Option } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
 import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
-import { STATELESS } from "../state/plan.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { prepareRunSandboxes, preparedPairsByKey, runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import type {
@@ -112,8 +111,8 @@ function defineSandboxAgent(
 }
 
 /** 旧场景只描述可观察调度差异；run() 在边界补齐已发现 Experiment 的完成态。 */
-type AgentRun = Omit<CoreAgentRun, "state" | "experimentId" | "experimentBaseDir" | "experimentSourcePath"> &
-  Partial<Pick<CoreAgentRun, "state" | "experimentId" | "experimentBaseDir" | "experimentSourcePath">>;
+type AgentRun = Omit<CoreAgentRun, "experimentId" | "experimentBaseDir" | "experimentSourcePath"> &
+  Partial<Pick<CoreAgentRun, "experimentId" | "experimentBaseDir" | "experimentSourcePath">>;
 type EvalResult = Omit<CoreEvalResult, "evidenceCoverage"> & Partial<Pick<CoreEvalResult, "evidenceCoverage">>;
 type CarryPlan = Omit<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult" | "carriedResults"> &
   Partial<Pick<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult">> & {
@@ -123,7 +122,6 @@ type CarryPlan = Omit<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes
 function completeAgentRun(run: AgentRun): CoreAgentRun {
   return {
     ...run,
-    state: run.state ?? STATELESS,
     experimentId: run.experimentId ?? "test/experiment",
     experimentBaseDir: run.experimentBaseDir ?? "/project",
     experimentSourcePath: run.experimentSourcePath ?? "/project/fake.experiment.ts",

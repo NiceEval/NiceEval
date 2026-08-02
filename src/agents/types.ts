@@ -370,7 +370,7 @@ export interface SandboxAgentSetupContext extends SandboxAgentContext {
  * agent 自己的沙箱运行时生命周期(每个 Attempt 一次,与「每轮 send」分开):
  * CLI 安装属于 runner 的 agent.ensure；`setup` 只写 model/base/auth 等本 Attempt 运行配置，`send` 只管把一轮 prompt
  * 跑起来(第一次 fresh / 后续 resume)+ 解析 transcript,`teardown` 清理。
- * 运行器在 layer prepare → agent.ensure → State load → baseline 后、第一次 send 前调一次 `setup`,不返回值;
+ * 运行器在 layer prepare → agent.ensure → baseline 后、第一次 send 前调一次 `setup`,不返回值;
  * `teardown` 当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免——半初始化
  * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
@@ -558,7 +558,7 @@ export interface SandboxAgentDef {
   installers?: readonly AgentInstaller[];
   /**
    * 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-   * 本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/State load/baseline 之后)、第一次 send 前
+   * 本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/baseline 之后)、第一次 send 前
    * 调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
    */
   setup?: AgentSetup;

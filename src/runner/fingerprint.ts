@@ -256,7 +256,6 @@ export type DispatchReason =
   | "reused-origin"
   | "rerun"
   | "sandbox-reuse"
-  | "rolling-state"
   | "keep-sandbox"
   | "incompatible"
   | "new";
@@ -366,8 +365,6 @@ export interface CarryGateOptions {
   rerun?: "failed" | "all";
   keepSandbox?: "failed" | "all";
   sandboxReuse?: boolean;
-  /** Rolling State 的 head 会推进，整个 Experiment 禁止跨 Run 携带。 */
-  rollingState?: boolean;
   /** 本次授权的差异 selector(`--accept`);只放松指纹门,其余五道门不受影响。 */
   accept?: readonly string[];
   /**
@@ -427,7 +424,6 @@ export function carryGateFor(
     return carryBlocked("rerun", "rerun");
   }
   if (options.sandboxReuse === true) return carryBlocked("mode", "sandbox-reuse");
-  if (options.rollingState === true) return carryBlocked("mode", "rolling-state");
   if (options.keepSandbox === "all" || (options.keepSandbox === "failed" && r.verdict === "failed")) {
     return carryBlocked("mode", "keep-sandbox");
   }
@@ -651,7 +647,7 @@ async function planCarryPrepared(
       plannedConfigHashes.get(key),
       acceptable.get(key),
       plannedTimeoutMs.get(key) ?? Infinity,
-      { ...options, sandboxReuse: run.sandboxReuse, rollingState: run.state._tag === "Rolling" },
+      { ...options, sandboxReuse: run.sandboxReuse },
     );
     if (carried.length === 0) continue;
     const indices = new Set<number>();
@@ -692,7 +688,7 @@ async function planCarryPrepared(
             plannedConfigHashes.get(key),
             acceptable.get(key),
             plannedTimeoutMs.get(key) ?? Infinity,
-            { ...options, sandboxReuse: run.sandboxReuse, rollingState: run.state._tag === "Rolling" },
+            { ...options, sandboxReuse: run.sandboxReuse },
           );
       if (decision._tag === "Eligible") {
         throw new Error(

@@ -54,10 +54,10 @@ const FAILURE_CLASS_TAG = "NiceevalClassifiedError";
 
 /**
  * 少数框架内部领域错误必须保留自己的 `_tag` 供 typed failure 分支识别，同时携带同一套空间轴。
- * 这里仍按 `_tag` + `class` 的纯数据形状识别，不依赖类身份；当前只有 State 序列连续性错误。
+ * 这里仍按 `_tag` + `class` 的纯数据形状识别，不依赖类身份。
  */
 function isClassifiedFailureTag(tag: unknown): boolean {
-  return tag === FAILURE_CLASS_TAG || tag === "ExperimentStateSequenceFailure";
+  return tag === FAILURE_CLASS_TAG;
 }
 
 /**

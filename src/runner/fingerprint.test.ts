@@ -15,7 +15,6 @@ import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts"
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
 import { SandboxPhysicalPlanningError } from "../sandbox/plan.ts";
-import { STATELESS } from "../state/plan.ts";
 import {
   computeConfigHash,
   computeFingerprint,
@@ -97,7 +96,6 @@ function makeRun(experimentId: string, selectedEvalIds: string[], attempts: numb
     experimentId,
     experimentBaseDir: "/project",
     experimentSourcePath: sourcePath,
-    state: STATELESS,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
 }

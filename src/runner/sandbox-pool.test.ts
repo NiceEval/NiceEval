@@ -6,7 +6,6 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineEval, defineSandbox, defineSandboxAgent } from "../define.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import { shell } from "../sandbox/commands.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
@@ -49,7 +48,6 @@ async function customProviderPlan() {
     attempts: 1,
     earlyExit: false,
     sandbox: layer,
-    state: STATELESS,
     experimentId: "experiments/pool",
     experimentBaseDir: "/repo/experiments",
     experimentSourcePath: "/repo/experiments/pool.ts",

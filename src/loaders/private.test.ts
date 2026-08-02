@@ -13,7 +13,6 @@ import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-sel
 import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadPrivate } from "./index.ts";
 
 const sourcePath = fileURLToPath(import.meta.url);
@@ -63,7 +62,6 @@ const run: AgentRun = {
   experimentId: "exp",
   experimentBaseDir: "/project/experiments",
   experimentSourcePath: "/project/experiments/exp.ts",
-  state: STATELESS,
 };
 
 async function preparedPair(evalDef: DiscoveredEval): Promise<PreparedRunPair> {

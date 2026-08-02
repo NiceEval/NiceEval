@@ -52,16 +52,6 @@ export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): Js
     case "sandboxLayer": return info.sandboxLayer;
     case "sandboxPlansByEval": return info.sandboxPlansByEval;
     case "sandboxReuse": return info.sandboxReuse;
-    case "state":
-      return info.state === undefined
-        ? undefined
-        : {
-            identity: info.state.identity,
-            consistency: info.state.consistency.mode === "pinned"
-              ? { mode: "pinned", revision: info.state.consistency.revision }
-              : { mode: "rolling" },
-            saveOn: info.state.saveOn,
-          };
     case "strict": return info.strict;
     case "judge":
       return info.judge === undefined

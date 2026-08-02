@@ -9,7 +9,6 @@ import { defineEval, defineSandboxAgent } from "../define.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
-import { STATELESS } from "../state/plan.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { discoverEval, type AgentRun } from "./types.ts";
@@ -47,7 +46,6 @@ async function prepared(layer: SandboxLayer, baseDir: string): Promise<PreparedR
     experimentId: "compare/codex",
     experimentBaseDir: baseDir,
     experimentSourcePath: sourcePath,
-    state: STATELESS,
   };
   const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
   if (pair === undefined) throw new Error("missing prepared pair");

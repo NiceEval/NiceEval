@@ -108,7 +108,6 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
         diagnostic: () => {},
         fact: () => {},
       },
-      { _tag: "Stateless" },
       { _tag: "Test", materializeCompose },
     );
 
@@ -136,7 +135,6 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       1,
       { progress: () => {}, diagnostic: () => {} },
       { experimentId: "compare/codex", signal: new AbortController().signal, progress: () => {}, diagnostic: () => {}, fact: () => {} },
-      { _tag: "Stateless" },
       { _tag: "Test", materializeCompose },
     );
     const attemptScope = Effect.runSync(Scope.make());
@@ -162,7 +160,6 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       1,
       { progress: () => {}, diagnostic: () => {} },
       { experimentId: "compare/codex", signal: new AbortController().signal, progress: () => {}, diagnostic: () => {}, fact: () => {} },
-      { _tag: "Stateless" },
       { _tag: "Test", materializeCompose },
     );
     const attemptScope = Effect.runSync(Scope.make());

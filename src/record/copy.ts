@@ -145,7 +145,6 @@ async function planOneSnapshot(
     ...(run.facts && Object.keys(run.facts).length ? { facts: run.facts } : {}),
     ...(run.timings?.length ? { timings: run.timings } : {}),
     ...(run.sandboxBuilds?.length ? { sandboxBuilds: run.sandboxBuilds } : {}),
-    ...(run.stateWindows?.length ? { stateWindows: run.stateWindows } : {}),
     ...(knownEvalIds.length ? { knownEvalIds } : {}),
     ...(run.name !== undefined ? { name: run.name } : {}),
   };

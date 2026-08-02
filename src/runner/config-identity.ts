@@ -12,8 +12,6 @@ import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import type { EvalResult, JsonValue, JudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
-import type { ExperimentStateProjection } from "../state/types.ts";
-import { experimentStateProjection } from "../state/definition.ts";
 
 /**
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
@@ -28,7 +26,6 @@ export interface ConfigIdentity {
   readonly reasoningEffort: DeclaredConfigValue<string>;
   readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   readonly sandboxReuse: boolean;
-  readonly state: StateConfigIdentity;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
   readonly strict: boolean;
@@ -40,10 +37,6 @@ export interface ConfigIdentity {
 export type DeclaredConfigValue<Value> =
   | { readonly _tag: "Omitted" }
   | { readonly _tag: "Configured"; readonly value: Value };
-
-export type StateConfigIdentity =
-  | { readonly _tag: "Stateless" }
-  | { readonly _tag: "Stateful"; readonly value: ExperimentStateProjection };
 
 export type JudgeConfigIdentity =
   | { readonly _tag: "Unconfigured" }
@@ -103,12 +96,6 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
     model: Object.freeze(identity.model),
     reasoningEffort: Object.freeze(identity.reasoningEffort),
     flags: freezeJson({ ...identity.flags }),
-    state: identity.state._tag === "Stateless"
-      ? Object.freeze({ _tag: "Stateless" as const })
-      : Object.freeze({
-          _tag: "Stateful" as const,
-          value: freezeStateProjection(identity.state.value),
-        }),
     sandboxLayer: freezeJson(identity.sandboxLayer),
     judge: identity.judge._tag === "Unconfigured"
       ? Object.freeze({ _tag: "Unconfigured" as const })
@@ -119,16 +106,6 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
           timeoutMs: Object.freeze(identity.judge.timeoutMs),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
-  });
-}
-
-function freezeStateProjection(state: ExperimentStateProjection): ExperimentStateProjection {
-  return Object.freeze({
-    identity: freezeJson(state.identity),
-    consistency: state.consistency.mode === "pinned"
-      ? Object.freeze({ mode: "pinned" as const, revision: state.consistency.revision })
-      : Object.freeze({ mode: "rolling" as const }),
-    saveOn: state.saveOn,
   });
 }
 
@@ -173,22 +150,6 @@ function declaredString(value: string | undefined): DeclaredConfigValue<string> 
   return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
 }
 
-function stateProjectionOf(run: AgentRun): StateConfigIdentity {
-  return run.state._tag === "Stateless"
-    ? { _tag: "Stateless" }
-    : { _tag: "Stateful", value: experimentStateProjection(run.state.definition) };
-}
-
-function stateProjectionJson(state: ExperimentStateProjection): JsonValue {
-  return {
-    identity: state.identity,
-    consistency: state.consistency.mode === "pinned"
-      ? { mode: "pinned", revision: state.consistency.revision }
-      : { mode: "rolling" },
-    saveOn: state.saveOn,
-  };
-}
-
 function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
   return judge === undefined
     ? { _tag: "Unconfigured" }
@@ -211,7 +172,6 @@ export function configIdentityForRun(
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
-    state: stateProjectionOf(run),
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     strict: run.strict ?? false,
     judge: judgeIdentity(judge),
@@ -232,9 +192,6 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
     sandboxReuse: exp.sandboxReuse ?? false,
-    state: exp.state === undefined
-      ? { _tag: "Stateless" }
-      : { _tag: "Stateful", value: exp.state },
     sandboxLayer: exp.sandboxLayer,
     strict: exp.strict ?? false,
     judge: judgeIdentity(exp.judge),
@@ -255,9 +212,6 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
-  put("state", identity.state._tag === "Stateless"
-    ? { _tag: "Stateless" }
-    : { _tag: "Stateful", value: stateProjectionJson(identity.state.value) });
   put("strict", identity.strict);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
@@ -357,7 +311,6 @@ export function counterfactualConfigIdentity(
       : current.reasoningEffort,
     flags,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
-    state: accepted.has("config:state") ? historical.state : current.state,
     sandboxLayer,
     strict: accepted.has("config:strict") ? historical.strict : current.strict,
     judge,

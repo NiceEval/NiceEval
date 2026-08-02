@@ -1096,7 +1096,7 @@ export function diffText(opts: {
 
 // ───────────────────────── 证据切面:--timing(统一时间树) ─────────────────────────
 
-const CLOSING_PHASE_NAMES = new Set(["agent.teardown", "state.save", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"]);
+const CLOSING_PHASE_NAMES = new Set(["agent.teardown", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"]);
 
 const TIMING_DETAIL_NODE_BUDGET = 80;
 

@@ -86,7 +86,7 @@ export function reuseContaminationMessage(notice: ReuseContaminationNotice): str
   return (
     `  · [sandbox] reused sandbox #${notice.reuseSandbox}${where} handled its first attempt cleanly, but ` +
     `${notice.count} later attempts (handoff ${notice.fromOrdinal}-${notice.toOrdinal}) all stopped in ${notice.phase}. ` +
-    "State left outside workdir by an earlier attempt is a likely cause: setup must be idempotent and must not " +
+    "Files left outside workdir by an earlier attempt are a likely cause: setup must be idempotent and must not " +
     "depend on anything the previous attempt left behind. This only points at a suspect; it changes no verdict."
   );
 }

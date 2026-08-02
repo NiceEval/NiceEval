@@ -101,7 +101,7 @@ function stringFact(value: unknown): ExternalCauseFact<string> {
 
 function failureClassFact(value: object): ExternalCauseFact<FailureClass> {
   const tag = field(value, "_tag");
-  if (tag !== "NiceevalClassifiedError" && tag !== "ExperimentStateSequenceFailure") return ABSENT;
+  if (tag !== "NiceevalClassifiedError") return ABSENT;
   const candidate = field(value, "class");
   if (typeof candidate !== "object" || candidate === null) return ABSENT;
   const retryable = field(candidate, "retryable");

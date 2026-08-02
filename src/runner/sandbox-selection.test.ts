@@ -18,7 +18,6 @@ import {
 import { SandboxLayerLinkError } from "../sandbox/link.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import {
   linkRunSandboxes,
   prepareRunSandboxes,
@@ -80,7 +79,6 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
     flags: {},
     attempts: 1,
     earlyExit: true,
-    state: STATELESS,
     selectedEvalIds: [],
     experimentId: "experiments/run",
     experimentBaseDir: "/repo/experiments",
