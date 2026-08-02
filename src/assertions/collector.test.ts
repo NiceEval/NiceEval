@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { AssertionCollector } from "./collector.ts";
+import * as Scoped from "./scoped.ts";
 import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { computeVerdict } from "../shared/verdict.ts";
@@ -404,5 +405,53 @@ describe("finalize 的 judge 推进回调", () => {
     expect(reported).not.toHaveProperty("judge");
     expect(reported).not.toHaveProperty("index");
     expect(reported).not.toHaveProperty("total");
+  });
+});
+
+describe("证据需求快照与 unavailable", () => {
+  it("只把非 optional diff 消费者标成 required，且不把空 collector 误标 required", () => {
+    const empty = new AssertionCollector();
+    expect(empty.evidenceRequirementSnapshot().diff.required).toBe(false);
+
+    const collector = new AssertionCollector();
+    collector.record(Scoped.fileChanged("src/app.ts")).optional();
+    expect(collector.evidenceRequirements().diff).toMatchObject({
+      required: false,
+      requiredConsumers: 0,
+      optionalConsumers: 1,
+    });
+
+    collector.record(Scoped.fileDeleted("src/old.ts"));
+    expect(collector.evidenceRequirements().diff).toMatchObject({
+      required: true,
+      requiredConsumers: 1,
+      optionalConsumers: 1,
+    });
+  });
+
+  it("diff unavailable 直接冻结对应断言；optional 不改变 Verdict", async () => {
+    const collector = new AssertionCollector();
+    collector.record(Scoped.fileChanged("src/required.ts"));
+    collector.record(Scoped.fileChanged("src/optional.ts")).optional();
+    collector.markEvidenceUnavailable("diff", "workspace-diff-unavailable");
+    const results = await collector.finalize(ctxWith());
+
+    expect(results.map((r) => r.outcome)).toEqual(["unavailable", "unavailable"]);
+    expect(computeVerdict({ assertions: results, strict: false })).toBe("errored");
+  });
+
+  it("直接读取 diff 保守登记 required，不猜测任意值流绑定到哪条断言", () => {
+    const collector = new AssertionCollector();
+    collector.requireEvidence("diff");
+    collector.record({
+      name: "unrelated-value",
+      severity: "gate",
+      evaluate: () => 1,
+    });
+    expect(collector.evidenceRequirements().diff).toMatchObject({
+      required: true,
+      directReads: 1,
+      requiredConsumers: 0,
+    });
   });
 });

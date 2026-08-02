@@ -20,7 +20,7 @@ Sandbox 延迟断言在 attempt finalize 时读取结果；值 matcher 与 `requ
 
 证据采集是否能改变 Verdict，只由本 Attempt 已登记的消费者决定，不由 artifact 名、采集阶段或 provider 决定。
 
-- 非 optional 的 Sandbox diff / 最终文件断言把对应通道登记为 **required**。采集失败时，该断言记 `unavailable`，并按上面的统一规则折成 `errored`。
+- 非 optional 的 Sandbox diff 断言把 diff 通道登记为 **required**。采集失败时，该断言记 `unavailable`，并按上面的统一规则折成 `errored`。
 - `.optional()` 断言仍登记自己消费的通道，但只形成 **optional** 依赖。证据缺席时保留 `unavailable` 记录，不改变 Verdict。
 - 没有断言消费的 `diff.json`、trace 与其它报告材料属于 **supplemental**。采集失败只追加 `DiagnosticRecord`，不得制造空证据、不得覆盖已经形成的 AssertionResult 或 Verdict。
 - 作者在普通 TypeScript 表达式里直接读取 `t.sandbox.diff` 后再把值交给 `t.check()` 时，读取动作本身登记 required。框架无法在任意值流里反推后续是否链 `.optional()`，需要可选语义时应使用带证据身份的 Sandbox 断言。

@@ -31,6 +31,23 @@ export interface EvalUnavailable {
   evidence?: string;
 }
 
+/** 目前会影响 Attempt 判定的证据通道。OTLP 只服务可选观测，不登记在这里。 */
+export type EvidenceChannel = "diff";
+
+/** Assertion collector 在采集前给 Runner 的证据需求快照。 */
+export interface EvidenceRequirementSnapshot {
+  readonly diff: {
+    /** 是否存在非 optional 消费者，或作者直接读取了 diff 视图。 */
+    readonly required: boolean;
+    /** 仅 optional 的消费者数；供诊断/测试解释，不决定 verdict。 */
+    readonly optionalConsumers: number;
+    /** 非 optional 的显式 diff 断言数。 */
+    readonly requiredConsumers: number;
+    /** 普通表达式直接读取 `t.sandbox.diff` 的次数。 */
+    readonly directReads: number;
+  };
+}
+
 /** 构造 EvalUnavailable 的便捷工厂(scoped / judge 断言用)。 */
 export function unavailable(reason: string, evidence?: string): EvalUnavailable {
   return { unavailable: true, reason, ...(evidence !== undefined ? { evidence } : {}) };
@@ -59,6 +76,8 @@ export interface Spec {
   groupPath?: string[];
   /** 断言在 eval 源码里的调用点(record 时栈回溯抠出)。 */
   loc?: SourceLoc;
+  /** 该断言消费的证据通道；optional 的最终语义仍由 `optional` 字段决定。 */
+  evidence?: EvidenceChannel;
   /** collector 在 record 时分配的 attempt 级发生顺序。 */
   sourceOrder?: number;
   /**
@@ -139,6 +158,9 @@ export class AssertionCollector {
   /** 待结算的 stopOnFailure 求值(按调用顺序)；runner 收尾也会兜底结算未 await 的调用。 */
   private pending: Promise<AbortPoint | undefined>[] = [];
   private aborted: AbortPoint | undefined;
+  /** 普通表达式读取 `t.sandbox.diff` 时记账；任意值流无法可靠绑定回某条 Spec。 */
+  private directDiffReads = 0;
+  private readonly unavailableEvidence = new Map<EvidenceChannel, string>();
 
   constructor(options: CollectorOptions = {}) {
     this.evaluationKind = options.evaluationKind ?? "pass";
@@ -148,6 +170,39 @@ export class AssertionCollector {
 
   get hasEntries(): boolean {
     return this.specs.length > 0;
+  }
+
+  /** 记录作者直接读取 diff 视图；这类读取无法从任意值流静态反推 optional。 */
+  requireEvidence(channel: EvidenceChannel): void {
+    if (channel === "diff") this.directDiffReads++;
+  }
+
+  /** 采集失败后冻结证据通道的 unavailable 原因，finalize 会为对应 Spec 产出 unavailable。 */
+  markEvidenceUnavailable(channel: EvidenceChannel, reason: string): void {
+    this.unavailableEvidence.set(channel, reason);
+  }
+
+  evidenceRequirementSnapshot(): EvidenceRequirementSnapshot {
+    let requiredConsumers = 0;
+    let optionalConsumers = 0;
+    for (const spec of this.specs) {
+      if (spec.evidence !== "diff") continue;
+      if (spec.optional === true) optionalConsumers++;
+      else requiredConsumers++;
+    }
+    return {
+      diff: {
+        required: this.directDiffReads > 0 || requiredConsumers > 0,
+        optionalConsumers,
+        requiredConsumers,
+        directReads: this.directDiffReads,
+      },
+    };
+  }
+
+  /** 别名供 Runner/测试按“需求快照”语义读取，避免消费方依赖内部字段。 */
+  evidenceRequirements(): EvidenceRequirementSnapshot {
+    return this.evidenceRequirementSnapshot();
   }
 
   /** `t.score(label, n)` 的直接给分:立即记录(不像断言那样要等 finalize 求值),n 必须非负有限数。 */
@@ -329,6 +384,15 @@ export class AssertionCollector {
       let received: string | undefined;
       let evidence: string | undefined;
       try {
+        const unavailableReason = spec.evidence === undefined ? undefined : this.unavailableEvidence.get(spec.evidence);
+        if (unavailableReason !== undefined) {
+          out.push({
+            ...base,
+            outcome: "unavailable",
+            reason: unavailableReason,
+          });
+          continue;
+        }
         // stopOnFailure 已在链的位置就地求值过，直接用快照；之后发生的事不改变结论。
         if (spec.settled?.kind === "error") {
           detail = evaluationErrorDetail(detail, spec.settled.cause);

@@ -447,6 +447,7 @@ export function fileChanged(path: string): Spec {
   return {
     name: `fileChanged(${path})`,
     severity: "gate",
+    evidence: "diff",
     // 断「任一 send 窗口触及」(行为证据):净效果为 none(改完又改回)也算发生过。
     evaluate: (ctx) => {
       const summary = ctx.diff.files[path];
@@ -468,6 +469,7 @@ export function fileDeleted(path: string): Spec {
   return {
     name: `fileDeleted(${path})`,
     severity: "gate",
+    evidence: "diff",
     evaluate: (ctx) =>
       ctx.diff.files[path]?.net === "deleted"
         ? 1
@@ -479,6 +481,7 @@ export function notInDiff(re: RegExp): Spec {
   return {
     name: `notInDiff(${re})`,
     severity: "gate",
+    evidence: "diff",
     evaluate: (ctx) => {
       for (const path of Object.keys(ctx.diff.files)) {
         if (re.test(path)) return { score: 0, received: `matched path ${path}` };

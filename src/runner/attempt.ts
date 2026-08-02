@@ -573,41 +573,62 @@ export function runAttemptEffect(
       const wantsSharedOtel =
         config.telemetry !== undefined || run.agent.tracing?.scope === "run";
       if (run.agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
-        otelChannel = yield* Effect.promise(() => opts.otelPool!.channel(run.agent.name));
-        const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
-        const env = run.agent.tracing?.env?.(endpoint);
-        telemetry = env ? { endpoint, env } : { endpoint };
-        log(t("runner.otlpShared", { endpoint }));
+        enterPhase("telemetry.configure");
+        try {
+          otelChannel = yield* Effect.promise(() => opts.otelPool!.channel(run.agent.name));
+          const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
+          const env = run.agent.tracing?.env?.(endpoint);
+          telemetry = env ? { endpoint, env } : { endpoint };
+          log(t("runner.otlpShared", { endpoint }));
+        } catch (e) {
+          if (isAttemptAborted(signal)) throw e;
+          recordDiagnostic({
+            code: "telemetry-configure-failed",
+            level: "warning",
+            message: `telemetry configure failed; continuing without OTLP trace: ${firstLine(formatThrown(e))}`,
+            data: evidenceDiagnosticData("configure", e),
+          });
+          otelChannel = undefined;
+          telemetry = undefined;
+        }
       } else if (run.agent.tracing !== undefined) {
-        const forcedHost = config.telemetry?.host;
-        if (forcedHost) {
-          // 显式覆盖:走本地接收器,把指定 host 交给 agent
-          receiver = yield* createTraceReceiver();
-          const endpoint = receiver.endpoint(forcedHost);
-          const env = run.agent.tracing?.env?.(endpoint);
-          telemetry = env ? { endpoint, env } : { endpoint };
-          log(t("runner.otlpOverride", { endpoint }));
-        } else if (sandbox.otlpHost !== null) {
-          // 本地/docker 沙箱:宿主开接收器
-          receiver = yield* createTraceReceiver();
-          const endpoint = receiver.endpoint(sandbox.otlpHost);
-          const env = run.agent.tracing?.env?.(endpoint);
-          telemetry = env ? { endpoint, env } : { endpoint };
-          const proto = run.agent.tracing?.protocol;
-          log(t("runner.otlpReceiver", { endpoint, proto: proto ? ` (${proto})` : "" }));
-        } else {
-          // 远程沙箱(e2b / vercel):在沙箱内起 collector,agent 往 localhost 端口发。
-          // 这一步是「创建本次 tracing 出口」(telemetry.configure 的定义,见
-          // docs/feature/experiments/cli.md 的阶段表),而且是唯一一条要往沙箱里传脚本、
-          // 起进程、等端口的 tracing 出口——秒级耗时与失败都归它自己,不能顺着上一个还开着的
-          // 阶段记成 sandbox.create(那样 collector 起不来会伪装成「起沙箱失败」)。
-          enterPhase("telemetry.configure");
-          receiver = yield* createInSandboxTraceReceiver(sandbox);
-          const endpoint = receiver.endpoint("");
-          const env = run.agent.tracing?.env?.(endpoint);
-          telemetry = env ? { endpoint, env } : { endpoint };
-          const proto = run.agent.tracing?.protocol;
-          log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
+        enterPhase("telemetry.configure");
+        try {
+          const forcedHost = config.telemetry?.host;
+          if (forcedHost) {
+            // 显式覆盖:走本地接收器,把指定 host 交给 agent
+            receiver = yield* createTraceReceiver();
+            const endpoint = receiver.endpoint(forcedHost);
+            const env = run.agent.tracing?.env?.(endpoint);
+            telemetry = env ? { endpoint, env } : { endpoint };
+            log(t("runner.otlpOverride", { endpoint }));
+          } else if (sandbox.otlpHost !== null) {
+            // 本地/docker 沙箱:宿主开接收器
+            receiver = yield* createTraceReceiver();
+            const endpoint = receiver.endpoint(sandbox.otlpHost);
+            const env = run.agent.tracing?.env?.(endpoint);
+            telemetry = env ? { endpoint, env } : { endpoint };
+            const proto = run.agent.tracing?.protocol;
+            log(t("runner.otlpReceiver", { endpoint, proto: proto ? ` (${proto})` : "" }));
+          } else {
+            // 远程沙箱(e2b / vercel):在沙箱内起 collector,agent 往 localhost 端口发。
+            receiver = yield* createInSandboxTraceReceiver(sandbox);
+            const endpoint = receiver.endpoint("");
+            const env = run.agent.tracing?.env?.(endpoint);
+            telemetry = env ? { endpoint, env } : { endpoint };
+            const proto = run.agent.tracing?.protocol;
+            log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
+          }
+        } catch (e) {
+          if (isAttemptAborted(signal)) throw e;
+          recordDiagnostic({
+            code: "telemetry-configure-failed",
+            level: "warning",
+            message: `telemetry configure failed; continuing without OTLP trace: ${firstLine(formatThrown(e))}`,
+            data: evidenceDiagnosticData("configure", e, runtimeCapabilities?.provider),
+          });
+          receiver = undefined;
+          telemetry = undefined;
         }
       }
 
@@ -803,7 +824,7 @@ export function runAttemptEffect(
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
     Effect.catchAllCause((cause) =>
-      Cause.isInterrupted(cause)
+      Cause.isInterrupted(cause) || isAttemptAborted(signal)
         ? Effect.interrupt
         : Effect.suspend(() => {
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
@@ -1187,7 +1208,21 @@ async function runAttemptBody(
     if (telemetry && run.agent.kind === "sandbox" && run.agent.tracing?.configure) {
       enterPhase("telemetry.configure");
       log(t("runner.startAgentTracing"));
-      await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
+      try {
+        await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
+      } catch (configureError) {
+        if (isAttemptAborted(signal)) throw configureError;
+        feedback.diagnostic({
+          code: "telemetry-configure-failed",
+          level: "warning",
+          message: `telemetry configure failed; continuing without OTLP trace: ${firstLine(formatThrown(configureError))}`,
+          data: evidenceDiagnosticData(
+            "configure",
+            configureError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
+      }
     }
 
     // 构造 t,跑 test
@@ -1280,7 +1315,12 @@ async function runAttemptBody(
     // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。Direct Agent 没有 workspace。
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
+    let diffArtifactAvailable = true;
     if (!skipReason && usesSandbox && ledger) {
+      // 快照必须在导出前读取：导出失败时是否致命只由已登记消费者决定，
+      // 不能按“发生在评分前”一刀切。optional 断言仍需要 unavailable 记录，
+      // 因此所有失败都会先冻结 collector 的通道状态。
+      const diffRequirements = state.collector.evidenceRequirementSnapshot();
       const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
@@ -1294,9 +1334,30 @@ async function runAttemptBody(
           const files = new Set(diffWindows.flatMap((window) => Object.keys(window.changes))).size;
           operation.label = `export workspace diff · ${diffWindows.length} ${diffWindows.length === 1 ? "window" : "windows"} · ${files} ${files === 1 ? "file" : "files"}`;
         }
-      } catch (error) {
+      } catch (diffError) {
         if (operation) operation.failed = true;
-        throw error;
+        if (isAttemptAborted(signal)) throw diffError;
+        diffArtifactAvailable = false;
+        const reason = `workspace diff export unavailable: ${firstLine(formatThrown(diffError))}`;
+        state.collector.markEvidenceUnavailable("diff", reason);
+        if (diffRequirements.diff.required) {
+          // 显式 diff 断言会在 finalize 中得到 unavailable；若只是无法绑定到某条
+          // Spec 的直接读取，则补一条 AttemptError，至少不能把空 diff 当成 passed/failed。
+          if (diffRequirements.diff.requiredConsumers === 0 && error === undefined) {
+            error = errorFromThrown(diffError, "workspace.diff", res.attemptTimeout);
+          }
+        } else {
+          feedback.diagnostic({
+            code: "workspace-diff-unavailable",
+            level: "warning",
+            message: `workspace diff export failed; continuing with command/event evidence: ${firstLine(formatThrown(diffError))}`,
+            data: evidenceDiagnosticData(
+              "exportWindows",
+              diffError,
+              a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+            ),
+          });
+        }
       } finally {
         if (operation) {
           operation.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
@@ -1306,7 +1367,7 @@ async function runAttemptBody(
     }
     const diff = deriveDiffData(diffWindows);
     state.late.diff = diff;
-    if (!skipReason && usesSandbox) {
+    if (!skipReason && usesSandbox && diffArtifactAvailable) {
       const files = Object.values(diff.files);
       log(t("runner.diffProgress", {
         changed: files.filter((f) => f.net !== "deleted").length,
@@ -1359,27 +1420,51 @@ async function runAttemptBody(
     let trace: TraceSpan[] | undefined;
     if (receiver) {
       enterPhase("telemetry.collect");
-      await receiver.settle(250, 1500);
-      const spans = receiver.collect();
-      if (spans.length) {
-        // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
-        // 对接口分发,不按名字分支:mapper 由 Agent 自己声明,缺省走通用 heuristic。
-        const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
-        trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-        const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
-        log(`trace:${spans.length} span${note}`);
+      try {
+        await receiver.settle(250, 1500);
+        const spans = receiver.collect();
+        if (spans.length) {
+          // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
+          // 对接口分发,不按名字分支:mapper 由 Agent 自己声明,缺省走通用 heuristic。
+          const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
+          trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
+          const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
+          log(`trace:${spans.length} span${note}`);
+        }
+      } catch (collectError) {
+        if (isAttemptAborted(signal)) throw collectError;
+        feedback.diagnostic({
+          code: "telemetry-collect-failed",
+          level: "warning",
+          message: `telemetry collect failed; retaining the existing verdict: ${firstLine(formatThrown(collectError))}`,
+          data: evidenceDiagnosticData(
+            "collect",
+            collectError,
+            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
+          ),
+        });
       }
     } else if (otel) {
       // 共享通道:receiver 不归本 attempt 关,trace 只取归属到本 attempt 的 span
       //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
       enterPhase("telemetry.collect");
-      const late = await otel.sweep(state.manager.otelTraceIds);
-      const spans = [...state.manager.otelSpans, ...late];
-      if (spans.length) {
-        const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
-        trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-        const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
-        log(`trace:${spans.length} span${note}`);
+      try {
+        const late = await otel.sweep(state.manager.otelTraceIds);
+        const spans = [...state.manager.otelSpans, ...late];
+        if (spans.length) {
+          const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
+          trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
+          const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
+          log(`trace:${spans.length} span${note}`);
+        }
+      } catch (collectError) {
+        if (isAttemptAborted(signal)) throw collectError;
+        feedback.diagnostic({
+          code: "telemetry-collect-failed",
+          level: "warning",
+          message: `telemetry collect failed; retaining the existing verdict: ${firstLine(formatThrown(collectError))}`,
+          data: evidenceDiagnosticData("collect", collectError),
+        });
       }
     }
 
@@ -1425,13 +1510,16 @@ async function runAttemptBody(
       o11y,
       trace,
       agentSetup,
-      diff: diffWindows,
+      ...(diffArtifactAvailable ? { diff: diffWindows } : {}),
       evidenceCoverage: state.manager.evidenceCoverage,
       // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
       // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
     };
     return value;
   } catch (e) {
+    // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断
+    // 降成 AttemptError 或 warning。外层 Effect 会负责中止并运行 release/finalizer。
+    if (isAttemptAborted(signal)) throw e;
     recorder.failCurrent();
     // SandboxLayer command / agent.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
@@ -1485,6 +1573,34 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
     level: "warning",
     detail: firstLine(formatThrown(e)),
     origin: attemptOrigin(phase),
+  };
+}
+
+/** telemetry / diff 等 supplemental 采集失败不能吞掉 Attempt 自己的中断。 */
+function isAttemptAborted(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
+/** 诊断只保存有界结构化 cause，不把完整 SDK response 或 stack 灌进结果。 */
+function evidenceDiagnosticData(
+  operation: string,
+  e: unknown,
+  provider?: string,
+): Readonly<globalThis.Record<string, JsonValue>> {
+  const described = describeError(e);
+  const bounded = (value: string): string => firstLine(value).slice(0, 500);
+  const cause = described.cause === undefined
+    ? undefined
+    : {
+        ...(described.cause.name !== undefined ? { name: described.cause.name } : {}),
+        ...(described.cause.code !== undefined ? { code: described.cause.code } : {}),
+        message: bounded(described.cause.message),
+      };
+  return {
+    operation,
+    ...(provider !== undefined ? { provider } : {}),
+    error: bounded(described.message),
+    ...(cause !== undefined ? { cause } : {}),
   };
 }
 

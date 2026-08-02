@@ -726,10 +726,21 @@ describe("t.sandbox.diff 的内容读取:被省略的内容如实报不可用", 
   }
 
   it("内联的文件照常读到终态内容", () => {
-    const { context } = contextWithDiff();
+    const { context, state } = contextWithDiff();
     expect(context.sandbox.diff.get("src/app.ts")).toBe("await x\n");
     expect(context.sandbox.diff.get("never/touched.ts")).toBeUndefined();
     expect(context.sandbox.diff.isEmpty()).toBe(false);
+    expect(state.collector.evidenceRequirements().diff).toMatchObject({
+      required: true,
+      directReads: 3,
+      requiredConsumers: 0,
+    });
+  });
+
+  it("最终文件引用不是 diff 消费者", () => {
+    const { context, state } = contextWithDiff();
+    context.check(context.sandbox.file("src/app.ts"), includes("await"));
+    expect(state.collector.evidenceRequirements().diff.required).toBe(false);
   });
 
   it("内容被省略的文件不回落成 undefined,而是抛出点名原因、字节数与替代做法的错误", () => {

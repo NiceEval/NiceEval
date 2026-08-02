@@ -311,6 +311,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   // (fileChanged / fileDeleted / files 摘要)不受影响,照常成立。
   const diffView: DiffView = {
     get: (path) => {
+      collector.requireEvidence("diff");
       const elided = elidedContentAt(state.late.diff, path);
       if (elided) {
         throw new Error(
@@ -321,8 +322,12 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       }
       return state.late.diff.get(path);
     },
-    isEmpty: () => diffIsEmpty(state.late.diff),
+    isEmpty: () => {
+      collector.requireEvidence("diff");
+      return diffIsEmpty(state.late.diff);
+    },
     matches: (re) => {
+      collector.requireEvidence("diff");
       if (diffMatches(state.late.diff, re)) return true;
       const elided = elidedContentPaths(state.late.diff);
       if (elided.length > 0) {

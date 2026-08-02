@@ -74,7 +74,7 @@ function defineSandboxAgent(
 class FakeSandbox implements Partial<Sandbox> {
   readonly workdir = "/workspace";
   readonly sandboxId = "fake";
-  readonly otlpHost = null;
+  readonly otlpHost: string | null = null;
   readonly files = new Map<string, string>();
 
   constructor(private readonly stopDelayMs = 0) {}
@@ -116,6 +116,21 @@ class FakeSandbox implements Partial<Sandbox> {
   async stop(): Promise<void> {
     if (this.stopDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.stopDelayMs));
   }
+}
+
+/** 只让 workspace.diff 的批量导出失败；ledger anchor / send window 仍可完成。 */
+class DiffExportFailSandbox extends FakeSandbox {
+  override async runShell(script?: string): Promise<CommandResult> {
+    if (script?.includes('git log --reverse --format="%H %s"')) {
+      throw new Error("sandbox disappeared during workspace diff export");
+    }
+    return super.runShell(script);
+  }
+}
+
+/** host receiver 分支用于覆盖 tracing.configure 的 supplemental 失败路径。 */
+class LocalTraceSandbox extends FakeSandbox {
+  override readonly otlpHost = "127.0.0.1";
 }
 
 const asSandbox = (box: FakeSandbox): Sandbox => box as unknown as Sandbox;
@@ -324,6 +339,158 @@ describe("runAttemptEffect · agent-setup 宿主侧转运(ctx.reportSetup → Ev
 
     expect(result.error).toBeUndefined();
     expect(result.agentSetup).toBeUndefined();
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「证据依赖决定采集失败后果」。
+// workspace.diff 是可选 artifact：只有登记了 required diff 消费者才会把导出失败折成 errored；
+// optional 消费者保留 unavailable，但不改命令/事件断言形成的 Verdict。
+describe("runAttemptEffect · workspace.diff 采集失败按证据依赖降级", () => {
+  const agent = defineSandboxAgent({
+    name: "diff-export-failure-agent",
+    send: async () => ({
+      events: [{ type: "message", role: "assistant", text: "done" }],
+      status: "completed" as const,
+    }),
+  });
+
+  it("无 diff 消费者时保留已有 passed Verdict 并记录 warning diagnostic", async () => {
+    const result = await runOnce(agent, new DiffExportFailSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          const turn = await t.send("go");
+          turn.succeeded();
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("passed");
+    expect(result.assertions[0]?.outcome).toBe("passed");
+    expect(result.diff).toBeUndefined();
+    expect(result.diagnostics?.some((d) => d.code === "workspace-diff-unavailable" && d.origin?.scope === "attempt" && d.origin.phase === "workspace.diff")).toBe(true);
+  });
+
+  it("required diff 失败产出 unavailable 并使 Attempt errored，不伪造空 diff", async () => {
+    const result = await runOnce(agent, new DiffExportFailSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          t.sandbox.fileChanged("src/app.ts");
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("errored");
+    expect(result.assertions).toHaveLength(1);
+    expect(result.assertions[0]).toMatchObject({ outcome: "unavailable", name: "fileChanged(src/app.ts)" });
+    expect(result.diff).toBeUndefined();
+  });
+
+  it("只有 optional diff 消费者时保留 unavailable 但不改 Verdict", async () => {
+    const result = await runOnce(agent, new DiffExportFailSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          t.sandbox.fileChanged("src/app.ts").optional();
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("passed");
+    expect(result.assertions[0]).toMatchObject({ outcome: "unavailable", optional: true });
+    expect(result.diagnostics?.some((d) => d.code === "workspace-diff-unavailable")).toBe(true);
+    expect(result.diff).toBeUndefined();
+  });
+
+  it("已有致命错误不被随后 supplemental diff 失败覆盖", async () => {
+    const result = await runOnce(agent, new DiffExportFailSandbox(), {
+      evalDefOverrides: {
+        test: async () => {
+          throw new Error("eval failed before supplemental diff export");
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("errored");
+    expect(result.error?.message).toContain("eval failed before supplemental diff export");
+    expect(result.error?.message).not.toContain("sandbox disappeared");
+    expect(result.diagnostics?.some((d) => d.code === "workspace-diff-unavailable")).toBe(true);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「telemetry 配置或收集失败降级」。
+describe("runAttemptEffect · telemetry supplemental 失败不改 Verdict", () => {
+  it("tracing.configure 抛错时记录 telemetry-configure-failed 并继续 eval", async () => {
+    const agent = defineSandboxAgent({
+      name: "telemetry-configure-failure-agent",
+      tracing: {
+        env: () => ({}),
+        configure: async () => {
+          throw new Error("configuration RPC terminated");
+        },
+      },
+      send: async () => ({
+        events: [{ type: "message", role: "assistant", text: "done" }],
+        status: "completed" as const,
+      }),
+    });
+
+    const result = await runOnce(agent, new LocalTraceSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          (await t.send("go")).succeeded();
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("passed");
+    expect(result.error).toBeUndefined();
+    expect(result.diagnostics?.some((d) => d.code === "telemetry-configure-failed" && d.origin?.scope === "attempt" && d.origin.phase === "telemetry.configure")).toBe(true);
+  });
+
+  it("trace mapper 在 telemetry.collect 抛错时保留已有 Verdict", async () => {
+    const agent = defineSandboxAgent({
+      name: "telemetry-collect-failure-agent",
+      tracing: { env: () => ({}) },
+      spanMapper: () => {
+        throw new Error("span mapping failed");
+      },
+      send: async (_input, ctx) => {
+        const endpoint = ctx.telemetry?.endpoint;
+        if (endpoint === undefined) throw new Error("test receiver endpoint missing");
+        await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            resourceSpans: [{
+              scopeSpans: [{
+                spans: [{
+                  traceId: "0123456789abcdef0123456789abcdef",
+                  spanId: "0123456789abcdef",
+                  name: "test span",
+                  startTimeUnixNano: "1000000",
+                  endTimeUnixNano: "2000000",
+                }],
+              }],
+            }],
+          }),
+        });
+        return {
+          events: [{ type: "message", role: "assistant", text: "done" }],
+          status: "completed" as const,
+        };
+      },
+    });
+
+    const result = await runOnce(agent, new LocalTraceSandbox(), {
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          (await t.send("go")).succeeded();
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("passed");
+    expect(result.error).toBeUndefined();
+    expect(result.diagnostics?.some((d) => d.code === "telemetry-collect-failed" && d.origin?.scope === "attempt" && d.origin.phase === "telemetry.collect")).toBe(true);
   });
 });
 
