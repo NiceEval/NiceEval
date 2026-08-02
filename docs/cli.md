@@ -31,7 +31,7 @@ process.argv
   → command 分派:
       view  → resolveViewInput → startViewServer / buildView(--out)   # 只读路径
       show  → runShow(cwd, positionals, flags)                        # 只读路径
-      clean / init / watch → 各自的一次性动作,直接退出
+      clean / init → 各自的一次性动作,直接退出
       sandbox → 留存沙箱的 list / stop,孤儿核对的 list --orphans / prune(读写 .niceeval/sandboxes/ 逐条目注册表,
                 按条目或运行标识的 provider 名路由 detached 销毁;不读 config、不发现 eval,行为契约见 feature/sandbox/cli.md)
       list  → loadConfig + discoverEvals,打印后退出

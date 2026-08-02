@@ -155,6 +155,7 @@ export const en = {
   "loaders.nonFileUrl":
     "A URL passed to a loader must use the file: protocol, but got {{protocol}} ({{url}}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
+  "cli.command.unknown": "Unknown command \"{{command}}\".\nRun `niceeval --help` for usage.\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
     "Usage:\n" +
@@ -287,7 +288,6 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
-  "cli.unimplemented": "Command \"{{command}}\" is not implemented yet (MVP).\n",
   "cli.view.exportedDir": "Exported static report site: {{out}} (serve the whole directory with any static host; opening index.html via file:// cannot fetch artifacts)\n",
   "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
   "cli.view.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval view`.\n",

@@ -152,6 +152,7 @@ export const zhCN = {
   "loaders.nonFileUrl":
     "loader 的 URL 入参只支持 file: 协议,收到的是 {{protocol}}({{url}})。请改传 new URL(相对路径, import.meta.url),或直接写项目根相对的字符串路径。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
+  "cli.command.unknown": "未知命令 \"{{command}}\"。\n运行 `niceeval --help` 查看用法。\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
     "用法:\n" +
@@ -279,7 +280,6 @@ export const zhCN = {
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "已发现实验:{{experiments}}\n",
-  "cli.unimplemented": "命令 \"{{command}}\" 暂未实现(MVP)。\n",
   "cli.view.exportedDir": "已导出静态查看站:{{out}}(整个目录可直接静态托管;本地打开 {{out}}/index.html 需经 http 服务,file:// 下 artifact fetch 不可用)\n",
   "cli.view.incompatible": "{{dir}}: 由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n运行 `{{command}}` 查看这份报告。\n",
   "cli.view.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval view`。\n",

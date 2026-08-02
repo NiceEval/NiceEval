@@ -185,7 +185,16 @@ function selectionNarrowing(): void {
 }
 
 function cliFlagAndDryContracts(): void {
-  console.log("\n=== 4. public flag errors and --dry output contract ===");
+  console.log("\n=== 4. public command/flag errors and --dry output contract ===");
+
+  const watch = shResult("pnpm --silent exec niceeval watch", 1);
+  assert.equal(watch.stdout, "", "unknown watch command must not print a successful placeholder response");
+  assert.match(watch.stderr, /Unknown command "watch"\./);
+  assert.match(watch.stderr, /Run `niceeval --help` for usage\./);
+  assert.doesNotMatch(watch.combined, /not implemented/i);
+
+  const help = shResult("pnpm --silent exec niceeval --help");
+  assert.doesNotMatch(help.stdout, /^\s*niceeval watch\b/m, "--help must not advertise an unadopted watch command");
 
   for (const command of [
     "pnpm --silent exec niceeval exp --output",

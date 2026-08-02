@@ -275,8 +275,14 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
+const CLI_COMMANDS = ["check", "exp", "show", "list", "view", "clean", "init", "run", "sandbox"] as const;
+type CliCommand = (typeof CLI_COMMANDS)[number];
 
-function parseArgs(argv: string[]): { command: string; positionals: string[]; flags: Flags } {
+function isCliCommand(candidate: string): candidate is CliCommand {
+  return CLI_COMMANDS.some((command) => command === candidate);
+}
+
+function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]; flags: Flags } {
   if (argv[0] === "--") argv = argv.slice(1);
 
   // --diff=<路径> 预扫:diff 本体是布尔(裸 --diff = 文件级摘要),路径只接受 = 连写。
@@ -368,12 +374,18 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     process.exit(1);
   }
 
-  // 第一个位置参数若是已知命令,则为命令;其余是 eval id 前缀 / view 输入。
-  const commands = new Set(["check", "exp", "show", "list", "view", "clean", "init", "watch", "run", "sandbox"]);
-  let command = "run";
+  // 第一个位置参数必须是已知命令;其余是 eval id 前缀 / view 输入。
+  // 裸 eval id 早已不再是运行入口,所以不识别的首 token 应当就地报用法错误,
+  // 不应先装载项目 config / eval 再偶然以其它错误退出。
+  let command: CliCommand = "run";
   let positionals = rawPositionals;
-  if (rawPositionals[0] && commands.has(rawPositionals[0])) {
-    command = rawPositionals[0];
+  if (rawPositionals.length > 0) {
+    const candidate = rawPositionals[0];
+    if (!isCliCommand(candidate)) {
+      process.stderr.write(t("cli.command.unknown", { command: candidate }));
+      process.exit(1);
+    }
+    command = candidate;
     positionals = rawPositionals.slice(1);
   }
 
@@ -883,11 +895,6 @@ async function main(): Promise<void> {
     await initProject(cwd);
     process.stdout.write(t("cli.init.done"));
     if (!hostPrefersEsm(cwd)) process.stdout.write(t("cli.init.esmHint"));
-    process.exit(0);
-  }
-
-  if (command === "watch") {
-    process.stdout.write(t("cli.unimplemented", { command }));
     process.exit(0);
   }
 
