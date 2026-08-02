@@ -72,6 +72,13 @@ import { ReportLoadError } from "../dist/report/runtime/load.js";
 import { runShow } from "./show/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
+import {
+  SessionTracker,
+  listSessions,
+  renderSessionListText,
+  renderSessionShowText,
+  showSession,
+} from "./runner/session.ts";
 import type {
   CompletionStatus,
   Config,
@@ -263,7 +270,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox"] as const;
+const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox", "session"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 function isCliCommand(candidate: string): candidate is CliCommand {
@@ -839,8 +846,10 @@ async function packageVersion(): Promise<string> {
 async function main(): Promise<void> {
   const cwd = process.cwd();
   await loadDotenv(cwd);
-  await applyConfiguredLocale(cwd);
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
+  // Session 查询必须是纯读取路径：连界面 locale 也不从 niceeval.config.ts 装载，
+  // 否则一个有副作用/损坏的 config 会让 `session list` 违背「不加载配置」契约。
+  if (command !== "session") await applyConfiguredLocale(cwd);
 
   // --help / --version 不需要 config,先于一切命令处理。
   if (flags.help) {
@@ -927,6 +936,44 @@ async function main(): Promise<void> {
     process.exit(code);
   }
 
+  if (command === "session") {
+    // Session 查询严格只读：不加载 niceeval.config.ts、不发现 eval/experiment、不触碰
+    // locks、Sandbox 或 agent。记录根固定为当前工作副本的 .niceeval。
+    const niceevalRoot = resolvePath(cwd, ".niceeval");
+    try {
+      const subcommand = positionals[0] ?? "list";
+      if (subcommand === "list") {
+        if (positionals.length > 2) {
+          process.stderr.write("niceeval session list accepts at most one experiment prefix.\n");
+          process.exit(1);
+        }
+        const document = await listSessions(niceevalRoot, {
+          all: flags.all,
+          ...(positionals[1] !== undefined ? { selector: positionals[1] } : {}),
+        });
+        if (flags.json) process.stdout.write(`${JSON.stringify(document)}\n`);
+        else process.stdout.write(renderSessionListText(document, Date.now(), flags.all));
+        process.exit(0);
+      }
+      if (subcommand === "show") {
+        if (positionals.length !== 2 || flags.all) {
+          process.stderr.write("Usage: niceeval session show <sessionId> [--json]\n");
+          process.exit(1);
+        }
+        const document = await showSession(niceevalRoot, positionals[1]!);
+        if (flags.json) process.stdout.write(`${JSON.stringify(document)}\n`);
+        else process.stdout.write(renderSessionShowText(document));
+        process.exit(0);
+      }
+      process.stderr.write("Usage: niceeval session list [--all] [<experiment-prefix>] [--json]\n" +
+        "       niceeval session show <sessionId> [--json]\n");
+      process.exit(1);
+    } catch (e) {
+      process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
+      process.exit(1);
+    }
+  }
+
   if (command === "show") {
     if (flags.theme !== undefined) {
       process.stderr.write("--theme only affects the web view. Use `niceeval view --theme …` instead.\n");
@@ -1009,6 +1056,61 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     const experiments = await discoverExperiments(cwd);
+    // `list` 是 exp 的保留子命令：它只做发现与选择，不进入 link、carry、lock 或
+    // runner，因此绝不会创建 Session。实验 id 含有 `list` 时需给更长的 selector。
+    if (command === "exp" && positionals[0] === "list") {
+      if (positionals.length > 2) {
+        process.stderr.write("niceeval exp list accepts at most one experiment prefix.\n");
+        process.exit(1);
+      }
+      const selector = positionals[1];
+      const ids = experiments.map((experiment) => experiment.id);
+      const selectedIds = selector === undefined
+        ? new Set(ids)
+        : new Set(matchExperimentSelector(ids, selector));
+      const selected = experiments.filter((experiment) => selectedIds.has(experiment.id));
+      if (selected.length === 0) {
+        process.stderr.write(t("cli.experiment.noMatch", {
+          arg: selector ?? "list",
+          experiments: browsableExperimentPaths(ids).join(", ") || t("cli.none"),
+        }));
+        process.exit(1);
+      }
+      const rows = selected.map((experiment) => {
+        const { selectedEvalIds } = resolveExperimentEvals({
+          experimentId: experiment.id,
+          selector: experiment.evals,
+          cliPatterns: [],
+          evals,
+        });
+        return {
+          experimentId: experiment.id,
+          ...(experiment.description !== undefined ? { description: experiment.description } : {}),
+          agent: experiment.agent.name,
+          ...(experiment.model !== undefined ? { model: experiment.model } : {}),
+          attempts: experiment.attempts,
+          evalCount: selectedEvalIds.length,
+          labels: { ...experiment.labels },
+          selectedEvalIds,
+        };
+      });
+      if (flags.json) {
+        process.stdout.write(`${JSON.stringify({ format: "niceeval.experiments", schemaVersion: 1, experiments: rows })}\n`);
+      } else {
+        for (const row of rows) {
+          process.stdout.write([
+            row.experimentId,
+            row.description ?? "—",
+            row.agent,
+            row.model ?? "—",
+            `attempts=${row.attempts}`,
+            `evals=${row.evalCount}`,
+            `labels=${JSON.stringify(row.labels)}`,
+          ].join("\t") + "\n");
+        }
+      }
+      process.exit(0);
+    }
     const expArg = positionals[0];
     const extraPatterns = positionals.slice(1);
     experimentSelection = positionals.join(" ") || t("cli.all");
@@ -1354,7 +1456,13 @@ async function main(): Promise<void> {
   const commandLabel = ["niceeval", command, ...positionals].join(" ").trim();
   const renderer =
     outputForm === "human" ? createHumanRenderer({ io, command: commandLabel }) : createJsonRenderer({ io });
-  const coordinator = createFeedbackCoordinator({ profile: outputForm, renderer, io });
+  const sessionTracker = new SessionTracker(resolvePath(cwd, ".niceeval"));
+  const coordinator = createFeedbackCoordinator({
+    profile: outputForm,
+    renderer,
+    io,
+    onEvent: (event, state) => sessionTracker.onFeedback(event, state),
+  });
   coordinator.start(plan);
 
   // Ctrl+C / kill 的三级响应,核心目标:任何情况下都不留下孤儿沙箱。
@@ -1452,6 +1560,7 @@ async function main(): Promise<void> {
       keepSandbox: flags.keepSandbox,
       rerun: flags.rerun,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
+      session: sessionTracker,
     });
     // 交给强清路径一个可等待的收尾句柄:二次中断/看门狗强清时先有界等它收口,让在飞的
     // teardown 链跑完,而不是 process.exit 把它们连同进程一起杀掉。
@@ -1460,6 +1569,7 @@ async function main(): Promise<void> {
   } catch (e) {
     // 真崩溃前先撤下 dashboard,不让半帧 ANSI 状态和下面 main().catch 打印的错误交织。
     await coordinator.stopDynamic();
+    await sessionTracker.close({ status: "incomplete" }).catch(() => undefined);
     throw e;
   }
 
@@ -1490,6 +1600,14 @@ async function main(): Promise<void> {
     const rel = relative(cwd, dir);
     return rel && !rel.startsWith("..") ? rel : dir;
   });
+
+  const pathsByExperiment = new Map(
+    artifacts.outputDirs().map(({ experimentId, dir }) => {
+      const rel = relative(cwd, dir);
+      return [experimentId, rel && !rel.startsWith("..") ? rel : dir] as const;
+    }),
+  );
+  await sessionTracker.close({ status: completion.status, completion, paths: pathsByExperiment });
 
   await coordinator.finish({ summary, completion, paths, junit: junitPath });
 

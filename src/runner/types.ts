@@ -1128,6 +1128,8 @@ export interface RunOptions {
   priorManifests?: ReadonlyMap<string, EvalManifest>;
   /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
   niceevalRoot?: string;
+  /** CLI 为 `niceeval exp` 提供的持久 Session 索引；只观察调度事件，不参与锁/闸判定。 */
+  session?: import("./session.ts").SessionTracker;
   /** @internal 测试/嵌入式编排可预分配 Run 身份；CLI 省略时 runner 为每个 Experiment 生成 UUID。 */
   runIds?: ReadonlyMap<string, string>;
   /**

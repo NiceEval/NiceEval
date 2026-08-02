@@ -166,6 +166,7 @@ export const zhCN = {
     "niceeval — agent-native evals\n\n" +
     "用法:\n" +
     "  niceeval exp [路径|实验] [eval-id 前缀…]   跑实验\n" +
+    "  niceeval exp list [实验前缀]              列出可运行的实验配置(不派发)\n" +
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval accept @<locator>              接受一条历史结果\n" +
@@ -195,6 +196,8 @@ export const zhCN = {
     "      --fresh   只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);\n" +
     "        被排除的题转成占位行\n" +
     "  niceeval list                            列出发现到的 eval\n" +
+    "  niceeval session list [--all] [实验前缀]  查询 Session(只读)\n" +
+    "  niceeval session show <sessionId>         查看一个 Session(只读)\n" +
     "  niceeval view [eval-id 前缀…] [--out 目录] [--port n] [--no-open]\n" +
     "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
     "      --page <id> 定初始页   --record <目录> 钉死记录根\n" +

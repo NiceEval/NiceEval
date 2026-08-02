@@ -60,6 +60,8 @@ export interface FeedbackCoordinatorOptions {
   io: FeedbackIO;
   /** 覆盖默认 tick 周期;测试/未来某个 profile 需要更粗或更细的节奏时用。 */
   tickIntervalMs?: number;
+  /** 观察同一份 reducer 事实的轻量索引（如 Experiment Session）；观察者不得改变事件。 */
+  onEvent?: (event: RunFeedbackEvent, state: RunFeedbackState) => void;
 }
 
 export interface FeedbackCoordinator extends FeedbackSink {
@@ -110,6 +112,7 @@ type Phase = "idle" | "active" | "dynamicStopped" | "finished";
 
 export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): FeedbackCoordinator {
   const { profile, renderer, io } = options;
+  const onEvent = options.onEvent;
   const tickIntervalMs = options.tickIntervalMs ?? DEFAULT_TICK_INTERVAL_MS;
 
   let phase: Phase = "idle";
@@ -136,6 +139,12 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     // 让「这次投递该不该有动态区域包裹」在入队瞬间就已经确定,不受后续 phase 变化影响。
     const bracket = phase === "active";
     state = reduceRunFeedback(state, event);
+    try {
+      onEvent?.(event, state);
+    } catch (e) {
+      // Session/索引观察者不是反馈主链；观察者故障不能改变运行结果或阻断 renderer。
+      writeStderrLine(`feedback observer error: ${e instanceof Error ? e.message : String(e)}\n`);
+    }
     const run = state;
     switch (event.type) {
       case "attempt:queued":

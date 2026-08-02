@@ -169,6 +169,7 @@ export const en = {
     "niceeval — agent-native evals\n\n" +
     "Usage:\n" +
     "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
+    "  niceeval exp list [experiment-prefix]               list runnable configs (no dispatch)\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
     "  niceeval accept @<locator>                         accept one historical result\n" +
@@ -201,6 +202,8 @@ export const en = {
     "      --fresh   only count freshly executed attempts (excludes carried-over and\n" +
     "        historical stitched-in attempts); excluded evals show up as placeholder rows\n" +
     "  niceeval list                                       list discovered evals\n" +
+    "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
+    "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
     "  niceeval view [eval-id-prefix…] [--out dir] [--port n] [--no-open]\n" +
     "      report pages + evidence rooms; --report <file> swaps in your report\n" +
     "      (same file as show); --page <id> picks the initial page;\n" +

@@ -288,6 +288,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   if (preparedPairsByKey === undefined) {
     throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
   }
+  // Session 文件在首次派发前创建；它只记录 Run 身份与轻量计数，锁和实验闸仍各自维护。
+  await opts.session?.start({
+    runIds,
+    agentRuns: opts.agentRuns,
+    carriedAttemptsByKey,
+    startedAt,
+  });
 
   /**
    * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对

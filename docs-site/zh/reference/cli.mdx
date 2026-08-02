@@ -68,6 +68,18 @@ npx niceeval exp models weather
 
 第一个位置参数只解释为 experiment id、目录路径或文件名前缀；尾随位置参数按评估用例 id 前缀继续收窄。
 
+### `npx niceeval exp list [experiment-prefix]`
+
+只发现并列出可运行的 Experiment 配置，不创建 Session、不取锁、不启动 Agent 或 Sandbox：
+
+```bash
+npx niceeval exp list
+npx niceeval exp list compare/codex
+npx niceeval exp list --json
+```
+
+默认输出每个配置的 `experimentId`、描述、agent、model、attempts、选中的 eval 数和 labels；`--json` 输出单个 `niceeval.experiments` 文档，并在每项附上完整的 `selectedEvalIds`。
+
 ## 常用 flags
 
 下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级 provider 兜底：请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，使用 `niceeval/sandbox` 的 `dockerImageSandbox({ image })`、`dockerComposeSandbox({ file, workspaceService })`、`dockerfileSandbox({ context })`、`vercelSandbox({ snapshotId })`、`e2bSandbox({ template })` 或 `localSandbox()`。
@@ -158,6 +170,18 @@ npx niceeval exp compare --strict --junit .niceeval/junit.xml
 ```
 
 两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)；AI 反馈闭环的完整用法（读事件流、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)；CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
+
+## `session list` / `session show`
+
+每次 `niceeval exp …` 调度会在 `.niceeval/sessions/` 留下一份可查询的 Session；查询本身只读，不加载配置、不发现源码、不启动运行时：
+
+```bash
+npx niceeval session list
+npx niceeval session list --all --json
+npx niceeval session show <sessionId>
+```
+
+默认只列出心跳仍有效的活动 Session；`--all` 追加已封口记录，并把超过 30 秒没有心跳的记录单列为 `stale`。`--json` 输出单个 `niceeval.sessions`（或 `niceeval.session`）文档，不是 `exp --json` 的事件流。
 
 ## `view`
 
