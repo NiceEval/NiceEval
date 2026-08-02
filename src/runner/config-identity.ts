@@ -23,18 +23,18 @@ import { experimentStateProjection } from "../state/definition.ts";
  * 新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
-  agent: string;
-  model: DeclaredConfigValue<string>;
-  reasoningEffort: DeclaredConfigValue<string>;
-  flags: globalThis.Record<string, JsonValue>;
-  sandboxReuse: boolean;
-  state: StateConfigIdentity;
+  readonly agent: string;
+  readonly model: DeclaredConfigValue<string>;
+  readonly reasoningEffort: DeclaredConfigValue<string>;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly sandboxReuse: boolean;
+  readonly state: StateConfigIdentity;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
-  sandboxLayer: JsonValue;
-  strict: boolean;
-  judge: JudgeConfigIdentity;
+  readonly sandboxLayer: JsonValue;
+  readonly strict: boolean;
+  readonly judge: JudgeConfigIdentity;
   /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
-  agentInstalls: JsonValue[];
+  readonly agentInstalls: readonly JsonValue[];
 }
 
 export type DeclaredConfigValue<Value> =
@@ -55,13 +55,81 @@ export type JudgeConfigIdentity =
     };
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
-export interface ConfigFieldDelta {
-  /** `config:<字段路径>`,如 `config:judge.model`、`config:flags.webSearch`。 */
-  selector: string;
-  /** 历史侧的值摘要;该侧没有这个键时省略(键是本次新增的)。 */
-  from?: string;
-  /** 本次侧的值摘要;该侧没有这个键时省略(键被本次删掉了)。 */
-  to?: string;
+export type ConfigFieldDelta =
+  | {
+      readonly _tag: "Added";
+      readonly selector: string;
+      readonly from?: never;
+      readonly to: string;
+    }
+  | {
+      readonly _tag: "Removed";
+      readonly selector: string;
+      readonly from: string;
+      readonly to?: never;
+    }
+  | {
+      readonly _tag: "Changed";
+      readonly selector: string;
+      readonly from: string;
+      readonly to: string;
+    };
+
+export function addedConfigField(selector: string, to: string): ConfigFieldDelta {
+  return Object.freeze({ _tag: "Added", selector, to });
+}
+
+export function removedConfigField(selector: string, from: string): ConfigFieldDelta {
+  return Object.freeze({ _tag: "Removed", selector, from });
+}
+
+export function changedConfigField(selector: string, from: string, to: string): ConfigFieldDelta {
+  return Object.freeze({ _tag: "Changed", selector, from, to });
+}
+
+function freezeJson<Value extends JsonValue>(value: Value): Value {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((entry) => freezeJson(entry))) as Value;
+  }
+  return Object.freeze(Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)]),
+  )) as Value;
+}
+
+function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
+  return Object.freeze({
+    ...identity,
+    model: Object.freeze(identity.model),
+    reasoningEffort: Object.freeze(identity.reasoningEffort),
+    flags: freezeJson({ ...identity.flags }),
+    state: identity.state._tag === "Stateless"
+      ? Object.freeze({ _tag: "Stateless" as const })
+      : Object.freeze({
+          _tag: "Stateful" as const,
+          value: freezeStateProjection(identity.state.value),
+        }),
+    sandboxLayer: freezeJson(identity.sandboxLayer),
+    judge: identity.judge._tag === "Unconfigured"
+      ? Object.freeze({ _tag: "Unconfigured" as const })
+      : Object.freeze({
+          _tag: "Configured" as const,
+          model: Object.freeze(identity.judge.model),
+          baseUrl: Object.freeze(identity.judge.baseUrl),
+          timeoutMs: Object.freeze(identity.judge.timeoutMs),
+        }),
+    agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
+  });
+}
+
+function freezeStateProjection(state: ExperimentStateProjection): ExperimentStateProjection {
+  return Object.freeze({
+    identity: freezeJson(state.identity),
+    consistency: state.consistency.mode === "pinned"
+      ? Object.freeze({ mode: "pinned" as const, revision: state.consistency.revision })
+      : Object.freeze({ mode: "rolling" as const }),
+    saveOn: state.saveOn,
+  });
 }
 
 function sameAgentIdentity(left: AgentIdentity, right: AgentIdentity): boolean {
@@ -85,21 +153,20 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
 }
 
 /** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
-export function agentInstallPlansForRun(run: AgentRun): JsonValue[] {
+export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
   const agent = run.agent;
-  if (agent.kind === "direct") return [];
-  return agent.ensure.map((ensure, index) => {
-    const installer = agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, ensure.identity));
-    return {
-      order: index,
-      ensure: {
-        agent: ensure.identity.agent,
-        version: ensure.identity.version,
-        revision: ensure.identity.revision,
-      },
-      installer: installerIdentity(installer),
-    };
-  });
+  if (agent.kind === "direct") return Object.freeze([]);
+  return Object.freeze(agent.ensure.map((ensure, index) => freezeJson({
+    order: index,
+    ensure: {
+      agent: ensure.identity.agent,
+      version: ensure.identity.version,
+      revision: ensure.identity.revision,
+    },
+    installer: installerIdentity(
+      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, ensure.identity)),
+    ),
+  })));
 }
 
 function declaredString(value: string | undefined): DeclaredConfigValue<string> {
@@ -138,7 +205,7 @@ export function configIdentityForRun(
   plan: LinkedRunPlan,
   judge: JudgeConfig | undefined = run.judge,
 ): ConfigIdentity {
-  return {
+  return freezeConfigIdentity({
     agent: run.agent.name,
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
@@ -149,7 +216,7 @@ export function configIdentityForRun(
     strict: run.strict ?? false,
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
-  };
+  });
 }
 
 /**
@@ -159,7 +226,7 @@ export function configIdentityForRun(
 export function configIdentityFromResult(result: EvalResult): ConfigIdentity | undefined {
   const exp = result.experiment;
   if (exp === undefined) return undefined;
-  return {
+  return freezeConfigIdentity({
     agent: result.agent,
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
@@ -172,7 +239,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     strict: exp.strict ?? false,
     judge: judgeIdentity(exp.judge),
     agentInstalls: exp.agentInstalls,
-  };
+  });
 }
 
 /**
@@ -199,7 +266,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
     putDeclared("judge.baseUrl", identity.judge.baseUrl);
     putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
   }
-  put("agentInstalls", identity.agentInstalls);
+  put("agentInstalls", [...identity.agentInstalls]);
   return out;
 }
 
@@ -233,11 +300,10 @@ export function configDeltas(historical: ConfigIdentity, current: ConfigIdentity
     const toValue = to.get(path);
     if (hasFrom && fromValue === undefined) throw new Error(`Missing historical config value for ${path}.`);
     if (hasTo && toValue === undefined) throw new Error(`Missing current config value for ${path}.`);
-    out.push({
-      selector: `config:${path}`,
-      ...(fromValue === undefined ? {} : { from: summarize(fromValue) }),
-      ...(toValue === undefined ? {} : { to: summarize(toValue) }),
-    });
+    const selector = `config:${path}`;
+    if (!hasFrom) out.push(addedConfigField(selector, summarize(toValue!)));
+    else if (!hasTo) out.push(removedConfigField(selector, summarize(fromValue!)));
+    else out.push(changedConfigField(selector, summarize(fromValue!), summarize(toValue!)));
   }
   return out;
 }
@@ -252,28 +318,25 @@ export function configDeltas(historical: ConfigIdentity, current: ConfigIdentity
  * 不存在的形状。分组内**每一条**差异都被授权才整体换回历史对象,否则保持本次值——那样指纹
  * 自然对不上,条目照常重跑,不会静默跨过没被授权的那半。
  */
-export function rollBackAccepted(
+export function counterfactualConfigIdentity(
   current: ConfigIdentity,
   historical: ConfigIdentity,
   accepted: ReadonlySet<string>,
 ): ConfigIdentity {
   const differing = new Set(configDeltas(historical, current).map((d) => d.selector));
-  const out: ConfigIdentity = { ...current, flags: { ...current.flags } };
-  if (accepted.has("config:agent")) out.agent = historical.agent;
-  if (accepted.has("config:model")) out.model = historical.model;
-  if (accepted.has("config:reasoningEffort")) out.reasoningEffort = historical.reasoningEffort;
-  if (accepted.has("config:sandboxReuse")) out.sandboxReuse = historical.sandboxReuse;
-  if (accepted.has("config:state")) out.state = historical.state;
-  if (accepted.has("config:strict")) out.strict = historical.strict;
+  const flags: globalThis.Record<string, JsonValue> = { ...current.flags };
   for (const selector of accepted) {
     if (!selector.startsWith("config:flags.")) continue;
     const key = selector.slice("config:flags.".length);
     if (Object.hasOwn(historical.flags, key)) {
       const value = historical.flags[key];
       if (value === undefined) throw new Error(`Missing historical flag value for ${key}.`);
-      out.flags[key] = value;
-    } else delete out.flags[key];
+      flags[key] = value;
+    } else delete flags[key];
   }
+  let sandboxLayer = current.sandboxLayer;
+  let judge = current.judge;
+  let agentInstalls = current.agentInstalls;
   const rollbackGroups: readonly ("sandboxLayer" | "judge" | "agentInstalls")[] = [
     "sandboxLayer", "judge", "agentInstalls",
   ];
@@ -282,9 +345,22 @@ export function rollBackAccepted(
       selector === `config:${group}` || selector.startsWith(`config:${group}.`)
     );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
-    if (group === "sandboxLayer") out.sandboxLayer = historical.sandboxLayer;
-    else if (group === "judge") out.judge = historical.judge;
-    else out.agentInstalls = historical.agentInstalls;
+    if (group === "sandboxLayer") sandboxLayer = historical.sandboxLayer;
+    else if (group === "judge") judge = historical.judge;
+    else agentInstalls = historical.agentInstalls;
   }
-  return out;
+  return freezeConfigIdentity({
+    agent: accepted.has("config:agent") ? historical.agent : current.agent,
+    model: accepted.has("config:model") ? historical.model : current.model,
+    reasoningEffort: accepted.has("config:reasoningEffort")
+      ? historical.reasoningEffort
+      : current.reasoningEffort,
+    flags,
+    sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
+    state: accepted.has("config:state") ? historical.state : current.state,
+    sandboxLayer,
+    strict: accepted.has("config:strict") ? historical.strict : current.strict,
+    judge,
+    agentInstalls,
+  });
 }

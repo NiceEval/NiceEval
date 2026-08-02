@@ -3,7 +3,7 @@
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineEval, defineSandboxAgent } from "../define.ts";
 import { shell } from "../sandbox/commands.ts";
@@ -13,6 +13,7 @@ import {
   sandboxLayer,
   sandboxProviderPlan,
   type SandboxLayer,
+  type SandboxProviderModule,
 } from "../sandbox/layer.ts";
 import { SandboxLayerLinkError } from "../sandbox/link.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
@@ -22,14 +23,29 @@ import {
   linkRunSandboxes,
   prepareRunSandboxes,
   preparedPairsByKey,
+  runPairKey,
   sandboxRunInfoForPlan,
   schedulingForPreparedPairs,
+  SandboxRunPairDuplicateError,
 } from "./sandbox-selection.ts";
 
 const factories = createBuiltinSandboxFactories({
   dockerBuildPlatform: Effect.succeed("linux/amd64"),
   hostPlatform: { _tag: "Darwin", os: "darwin", arch: "arm64" },
 });
+
+function inertProviderModule(id: string): SandboxProviderModule<Readonly<Record<string, never>>> {
+  return Object.freeze({
+    id,
+    capabilities: Object.freeze({
+      retention: Object.freeze({ _tag: "DestroyOnly" as const }),
+      reuse: "Unsupported" as const,
+      sessionLimitMs: null,
+    }),
+    materialize: () => Effect.dieMessage("selection tests never materialize provider plans"),
+    collectBuildPreparation: () => Effect.succeed(Option.none()),
+  });
+}
 
 const sandboxAgent = defineSandboxAgent({
   name: "sandbox-agent",
@@ -91,16 +107,16 @@ describe("pair-owned Sandbox planning", () => {
     const selected = run({ sandbox: sandboxLayer(), selectedEvalIds: ["image", "compose"] });
 
     const prepared = await Effect.runPromise(prepareRunSandboxes([image, compose], [selected]));
-    expect(prepared.map(({ plan }) => plan._tag === "Sandbox" && plan.providerPlan.runtimeAdapter)).toEqual([
-      "niceeval/docker-image",
-      "niceeval/docker-compose",
+    expect(prepared.map(({ plan }) => plan._tag === "Sandbox" && plan.providerPlan.provider)).toEqual([
+      "docker",
+      "docker",
     ]);
     expect(prepared[1]).toMatchObject({
-      key: "experiments/run|compose",
+      key: runPairKey("experiments/run", "compose"),
       plan: {
         _tag: "Sandbox",
         providerPlan: {
-          runtimeAdapter: "niceeval/docker-compose",
+          provider: "docker",
         },
       },
     });
@@ -109,7 +125,9 @@ describe("pair-owned Sandbox planning", () => {
     expect("linkedSandboxes" in selected).toBe(false);
     expect("resolvedSandboxes" in selected).toBe(false);
     expect("configHash" in selected).toBe(false);
-    expect(preparedPairsByKey(prepared).get("experiments/run|image")).toBe(prepared[0]);
+    const index = preparedPairsByKey(prepared);
+    expect(index.get(runPairKey("experiments/run", "image"))).toBe(prepared[0]);
+    expect("set" in index).toBe(false);
   });
 
   it("Experiment template 只影响自己的 pair，并按 experiment baseDir 解析", async () => {
@@ -124,13 +142,13 @@ describe("pair-owned Sandbox planning", () => {
       plan: {
         _tag: "Sandbox",
         pair: { templateOwner: { kind: "experiment", id: "experiments/run" } },
-        providerPlan: { provider: "e2b", runtimeAdapter: "niceeval/e2b-template" },
+        providerPlan: { provider: "e2b" },
       },
     });
     if (prepared?.plan._tag !== "Sandbox") throw new Error("expected Sandbox plan");
     expect(sandboxRunInfoForPlan(prepared.plan)).toMatchObject({
       provider: "e2b",
-      params: { plan: { provider: "e2b", runtimeAdapter: "niceeval/e2b-template" } },
+      params: { plan: { provider: "e2b" } },
       fingerprint: expect.any(String),
     });
   });
@@ -147,6 +165,27 @@ describe("pair-owned Sandbox planning", () => {
     expect(failure.issues.map((issue) => issue.code)).toEqual(["sandbox.template-conflict"]);
   });
 
+  it("pair key 不靠分隔符猜边界，重复 pair 在 link 期走 typed failure", () => {
+    expect(runPairKey("a|b", "c")).not.toBe(runPairKey("a", "b|c"));
+
+    const duplicate = run({ selectedEvalIds: ["same"] });
+    const failure = Effect.runSync(Effect.flip(linkRunSandboxes(
+      [evalDef("same", factories.dockerImageSandbox({ image: "node:24" }))],
+      [duplicate, duplicate],
+    )));
+    expect(failure).toBeInstanceOf(SandboxRunPairDuplicateError);
+    if (!(failure instanceof SandboxRunPairDuplicateError)) throw new Error("expected duplicate pair error");
+    expect(failure).toMatchObject({
+      code: "sandbox.duplicate-run-pair",
+      duplicates: [{
+        key: runPairKey("experiments/run", "same"),
+        experimentId: "experiments/run",
+        evalId: "same",
+        occurrences: 2,
+      }],
+    });
+  });
+
   it("推荐并发与 exclusive 只读 planner metadata", async () => {
     const cloudEval = evalDef("cloud", sandboxLayer());
     const shared = defineSandboxTemplate({
@@ -158,7 +197,7 @@ describe("pair-owned Sandbox planning", () => {
       plan: () => Effect.succeed(sandboxProviderPlan({
         provider: "acme",
         plannerRevision: "1",
-        caseKind: "pod",
+        caseKind: "custom",
         target: {
           platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
           source: "provider-defined",
@@ -168,7 +207,8 @@ describe("pair-owned Sandbox planning", () => {
           lane: { key: "acme", limit: 8 },
           admission: { _tag: "Shared" },
         },
-        runtime: { adapter: "acme/pod", input: {} },
+        module: inertProviderModule("acme/pod"),
+        runtimePlan: {},
         publishableIdentity: {},
         privateFingerprintIdentity: {},
       })),
@@ -182,7 +222,7 @@ describe("pair-owned Sandbox planning", () => {
       plan: () => Effect.succeed(sandboxProviderPlan({
         provider: "worktree",
         plannerRevision: "1",
-        caseKind: "local",
+        caseKind: "custom",
         target: {
           platform: { _tag: "Darwin", os: "darwin", arch: "arm64" },
           source: "provider-defined",
@@ -192,7 +232,8 @@ describe("pair-owned Sandbox planning", () => {
           lane: { key: "user-worktree", limit: 1 },
           admission: { _tag: "Exclusive" },
         },
-        runtime: { adapter: "worktree/local", input: {} },
+        module: inertProviderModule("worktree/local"),
+        runtimePlan: {},
         publishableIdentity: {},
         privateFingerprintIdentity: {},
       })),

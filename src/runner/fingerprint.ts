@@ -13,20 +13,29 @@ import { resolveJudge } from "./judge-config.ts";
 import {
   prepareRunSandboxes,
   preparedPairsByKey as indexPreparedPairs,
+  runPairKey,
   type PreparedRunPair,
+  type SandboxRunPlanningError,
 } from "./sandbox-selection.ts";
-import { manifestDeltas, OPAQUE_SELECTOR, type EvalManifest } from "./manifest.ts";
+import {
+  manifestDeltas,
+  OPAQUE_SELECTOR,
+  type EvalManifest,
+  type FingerprintDelta,
+} from "./manifest.ts";
 import {
   configIdentityPaths,
   configIdentityForRun,
   configIdentityFromResult,
-  rollBackAccepted,
-  type ConfigFieldDelta,
+  counterfactualConfigIdentity,
   type ConfigIdentity,
 } from "./config-identity.ts";
 
 export function cacheKey(run: AgentRun, evalId: string): string {
-  return `${run.experimentId}|${evalId}`;
+  if (run.experimentId === undefined) {
+    throw new Error("Carry planning requires a discovered Experiment id.");
+  }
+  return runPairKey(run.experimentId, evalId);
 }
 
 /** Run 级配置身份。所有会改变结果解释口径的实验配置只在 `configIdentityForRun` 里裁决一次。 */
@@ -40,21 +49,42 @@ export function hashConfigIdentity(identity: ConfigIdentity): string {
 }
 
 /**
- * @param overrides 反事实重算入口:`--accept` 授权跨过某条配置差异时,按换回历史值的身份
- * 重算指纹(见 `planCarry`)。正常路径不传。
+ * @param projection 正常重算是 `Current`；`--accept` 按换回历史值的身份重算时显式传
+ * `Counterfactual`。两条路径不能拼一袋互相矛盾的 optional override。
  */
 export async function computeFingerprint(
   pair: PreparedRunPair,
   sourceCache?: Map<string, Promise<string>>,
-  overrides?: FingerprintOverrides,
+  projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Promise<string> {
-  return (await fingerprintWithManifest(pair, sourceCache, overrides)).fingerprint;
+  return (await fingerprintWithManifest(pair, sourceCache, projection)).fingerprint;
 }
 
-interface FingerprintOverrides {
-  configHash?: string;
-  configIdentity?: ConfigIdentity;
-  carryEpoch?: string;
+export type FingerprintProjection =
+  | {
+      readonly _tag: "Current";
+      readonly identity: ConfigIdentity;
+      readonly carryEpoch: string;
+    }
+  | {
+      readonly _tag: "Counterfactual";
+      readonly identity: ConfigIdentity;
+      readonly carryEpoch: string;
+    };
+
+function currentFingerprintProjection(
+  pair: PreparedRunPair,
+  identity: ConfigIdentity = configIdentityForRun(pair.run, pair.plan),
+  carryEpoch: string = randomUUID(),
+): FingerprintProjection {
+  return Object.freeze({ _tag: "Current", identity, carryEpoch });
+}
+
+function counterfactualFingerprintProjection(
+  identity: ConfigIdentity,
+  carryEpoch: string,
+): FingerprintProjection {
+  return Object.freeze({ _tag: "Counterfactual", identity, carryEpoch });
 }
 
 /**
@@ -62,25 +92,25 @@ interface FingerprintOverrides {
  * 而是哈希那一刻手里的原料换一种投影(内容换成内容哈希)。分开算迟早分叉,症状是
  * 「`--dry` 说这个文件变了,指纹却相等」。
  *
- * @param overrides 反事实重算入口,语义见 `computeFingerprint`;这条路径只要指纹,清单照常
- * 一并算出但调用方通常丢弃。
+ * @param projection 语义见 `computeFingerprint`；反事实路径只要指纹，清单照常一并算出，
+ * 但调用方通常丢弃。
  */
 export async function fingerprintWithManifest(
   pair: PreparedRunPair,
   sourceCache?: Map<string, Promise<string>>,
-  overrides?: FingerprintOverrides,
+  projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  return fingerprintPreparedPair(pair, sourceCache, overrides);
+  return fingerprintPreparedPair(pair, sourceCache, projection);
 }
 
 async function fingerprintPreparedPair(
   pair: PreparedRunPair,
   sourceCache?: Map<string, Promise<string>>,
-  overrides?: FingerprintOverrides,
+  projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
   const { evalDef, run, plan } = pair;
-  const identity = overrides?.configIdentity ?? configIdentityForRun(run, plan, run.judge);
-  const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
+  const identity = projection.identity;
+  const configHash = hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
   const loaderData = await Promise.all(
     [...(evalDef.loaderDataPaths ?? [])].sort().map(
@@ -115,7 +145,7 @@ async function fingerprintPreparedPair(
       metadata: evalDef.metadata ?? {},
     },
     ...(plan._tag === "Sandbox" && !linkedRunCarryEligible(plan)
-      ? { sandboxCommandCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
+      ? { sandboxCommandCarryEpoch: projection.carryEpoch }
       : {}),
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
@@ -129,16 +159,16 @@ async function fingerprintPreparedPair(
   // (见 docs/runner.md「缓存:指纹去重」)。
   //
   // 清单与哈希同一份原料:源码面把内容换成内容哈希,数据面直接沿用已经算好的哈希/内容。
-  const manifest: EvalManifest = {
-    config: Object.fromEntries(configIdentityPaths(identity)),
+  const manifest: EvalManifest = Object.freeze({
+    config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
     plan: pair.identity,
-    source: Object.fromEntries(source.map(([path, content]) => [path, hashText(content)])),
-    data: Object.fromEntries([
+    source: Object.freeze(Object.fromEntries(source.map(([path, content]) => [path, hashText(content)]))),
+    data: Object.freeze(Object.fromEntries([
       ...loaderData.map(([path, content]) => [path, hashText(content)]),
       ...criteria,
       ...privateFiles,
-    ]),
-  };
+    ])),
+  });
   return { fingerprint: hash(payload), manifest };
 }
 
@@ -233,28 +263,28 @@ export type DispatchReason =
 
 /** 一条 (experiment, eval) 行里,卡在同一道门上的那些 attempt 序号。 */
 export interface DispatchGroup {
-  gate: CarryGate;
-  reason: DispatchReason;
+  readonly gate: CarryGate;
+  readonly reason: DispatchReason;
   /** 这组原因覆盖的 attempt 序号(0-based,升序)。 */
-  attempts: number[];
+  readonly attempts: readonly number[];
   /** 指纹门的差异明细(manifest 相减);历史侧缺清单时是唯一一条 `opaque:no-manifest`。 */
-  deltas?: ConfigFieldDelta[];
+  readonly deltas?: readonly FingerprintDelta[];
 }
 
 export interface CarryPlan {
   /** discovery/selector/link/physical planning 的唯一完成态；run/attempt 不再二次选择或重建。 */
-  preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
+  readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
-  plannedConfigHashes: Map<string, string>;
+  readonly plannedConfigHashes: ReadonlyMap<string, string>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
-  plannedFingerprints: Map<string, string>;
+  readonly plannedFingerprints: ReadonlyMap<string, string>;
   /**
    * `cacheKey(run, evalId)` → 这条组合**可以携带的全部指纹**:本次规划的那个,加上
    * 「只在 provenance flag 上与本次不同」的历史口径(见 `acceptableFingerprints`)。
    * 没声明 provenance flag 时恒是单元素集合 = `plannedFingerprints` 的那一个。
    * 携带判定一律读这个集合,`plannedFingerprints` 只用来给新跑的 attempt 落盘打戳。
    */
-  acceptableFingerprints: Map<string, Set<string>>;
+  readonly acceptableFingerprints: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * 携带以 attempt 为粒度:命中携入条件(该 attempt 自身 passed/failed 终态 + 指纹匹配)的
    * `${experimentId}|${evalId}` → 该 eval 下具体携入的 attempt 序号集合(0-based)。同一个
@@ -262,29 +292,47 @@ export interface CarryPlan {
    * 序号才在这个集合里,不是"key 命中就整段携入"(反例与修法见 memory 的
    * carry-includes-failed-verdict)。
    */
-  carriedAttemptsByKey: Map<string, Set<number>>;
+  readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
   /** carriedAttemptsByKey 对应的完整结果对象,供 run.ts 直接并入 summary、cli.ts 直接取 verdict 展示。 */
-  carriedResults: EvalResult[];
+  readonly carriedResults: readonly EvalResult[];
   /** 仅 `--accept` 授权放行的历史条目 → 它跨过的那几条差异(留痕落到条目的 `carriedAccepting`)。 */
-  carriedAcceptingByResult: Map<EvalResult, ConfigFieldDelta[]>;
+  readonly carriedAcceptingByResult: ReadonlyMap<EvalResult, readonly FingerprintDelta[]>;
   /**
    * `cacheKey(run, evalId)` → 本行要派发的 attempt 按未携带原因分组(升序、同一门聚一组)。
    * 全部携带的行不出现在表里。`--dry` 的逐条作废原因读它。
    */
-  dispatchByKey: Map<string, DispatchGroup[]>;
+  readonly dispatchByKey: ReadonlyMap<string, readonly DispatchGroup[]>;
   /**
    * `cacheKey(run, evalId)` → 本次算出的指纹输入清单,与指纹同刻、同一份输入
    * (见 `fingerprintWithManifest`)。Run 记录根下的 `manifests.json` 落的就是它,
    * 下一轮的差异解释靠它。
    */
-  manifestsByKey: Map<string, EvalManifest>;
+  readonly manifestsByKey: ReadonlyMap<string, EvalManifest>;
   /**
    * 本次计划里**真实存在**的可授权差异(按 selector 去重)。`--accept` 的空转校验读它:
    * 两侧都没有的 selector 多半是打错了,按启动期用法错误报出并列出这张表。
    * 它与 `--accept` 是否给出无关——授权成功的差异照样在表里,否则「授权一次之后同一条命令
    * 再跑就说这个 selector 空转」。
    */
-  availableDeltas: ConfigFieldDelta[];
+  readonly availableDeltas: readonly FingerprintDelta[];
+}
+
+export type CarryGateDecision =
+  | { readonly _tag: "Eligible" }
+  | {
+      readonly _tag: "Blocked";
+      readonly gate: CarryGate;
+      readonly reason: DispatchReason;
+    };
+
+const CARRY_ELIGIBLE: Extract<CarryGateDecision, { readonly _tag: "Eligible" }> =
+  Object.freeze({ _tag: "Eligible" });
+
+function carryBlocked(
+  gate: CarryGate,
+  reason: DispatchReason,
+): Extract<CarryGateDecision, { readonly _tag: "Blocked" }> {
+  return Object.freeze({ _tag: "Blocked", gate, reason });
 }
 
 /**
@@ -343,7 +391,8 @@ export interface CarryPlanOptions {
 }
 
 /**
- * 一条历史 attempt 卡在**哪一道门**上,没卡住返回 `undefined`。判据的唯一实现——
+ * 一条历史 attempt 的携带判定。成功返回 `Eligible`，失败返回带 gate/reason 的 `Blocked`。
+ * 这是判据的唯一实现——
  * `carriableAttempts`(能不能携带)与 `--dry` 的逐条作废原因(为什么没携带)都读它,
  * 两条路径因此不可能给出不一致的结论:「这条会重跑」与「它是被这道门拦下的」永远同源。
  * 门的顺序就是 docs 那张表的行序,一条 attempt 同时卡在多道门上时报最先那道。
@@ -354,15 +403,15 @@ export function carryGateFor(
   fingerprints: ReadonlySet<string> | undefined,
   timeoutMs: number,
   options: CarryGateOptions = {},
-): { gate: CarryGate; reason: DispatchReason } | undefined {
-  if (r.verdict !== "passed" && r.verdict !== "failed") return { gate: "terminal", reason: "errored" };
+): CarryGateDecision {
+  if (r.verdict !== "passed" && r.verdict !== "failed") return carryBlocked("terminal", "errored");
   if (
     fingerprints === undefined ||
     fingerprints.size === 0 ||
     r.fingerprint === undefined ||
     !fingerprints.has(r.fingerprint) ||
     (r.configHash !== undefined && r.configHash !== configHash && !options.accept?.length)
-  ) return { gate: "fingerprint", reason: "stale" };
+  ) return carryBlocked("fingerprint", "stale");
   // `durationMs` 在 `EvalResult` 上是必填字段,正常落盘不会缺失;这里的 `typeof` 防御只处理
   // 磁盘数据损坏等异常情形——保守地判不可携带,而不是当 0 处理(当 0 会让所有旧记录都通过
   // 判据,把「数据缺失」悄悄伪装成「跑得很快」)。
@@ -372,17 +421,17 @@ export function carryGateFor(
       : typeof r.durationMs === "number" && Number.isFinite(r.durationMs)
         ? r.durationMs
         : undefined;
-  if (executionMs === undefined || executionMs > timeoutMs) return { gate: "eligibility", reason: "exceeds-timeout" };
-  if (r.sandbox?.reused === true) return { gate: "origin", reason: "reused-origin" };
+  if (executionMs === undefined || executionMs > timeoutMs) return carryBlocked("eligibility", "exceeds-timeout");
+  if (r.sandbox?.reused === true) return carryBlocked("origin", "reused-origin");
   if (options.rerun === "all" || (options.rerun === "failed" && r.verdict === "failed")) {
-    return { gate: "rerun", reason: "rerun" };
+    return carryBlocked("rerun", "rerun");
   }
-  if (options.sandboxReuse === true) return { gate: "mode", reason: "sandbox-reuse" };
-  if (options.rollingState === true) return { gate: "mode", reason: "rolling-state" };
+  if (options.sandboxReuse === true) return carryBlocked("mode", "sandbox-reuse");
+  if (options.rollingState === true) return carryBlocked("mode", "rolling-state");
   if (options.keepSandbox === "all" || (options.keepSandbox === "failed" && r.verdict === "failed")) {
-    return { gate: "mode", reason: "keep-sandbox" };
+    return carryBlocked("mode", "keep-sandbox");
   }
-  return undefined;
+  return CARRY_ELIGIBLE;
 }
 
 /**
@@ -390,10 +439,13 @@ export function carryGateFor(
  * `schemaVersion` 读不动是 `incompatible`。两者都是缺历史门(`missing`),`--dry --json` 的
  * gate 词不因此增加成员——分的是给人看的原因,不是新的一道门。
  */
-export function missingReason(key: string, options: CarryGateOptions): { gate: CarryGate; reason: DispatchReason } {
+export function missingReason(
+  key: string,
+  options: CarryGateOptions,
+): Extract<CarryGateDecision, { readonly _tag: "Blocked" }> {
   return options.incompatibleKeys?.has(key)
-    ? { gate: "missing", reason: "incompatible" }
-    : { gate: "missing", reason: "new" };
+    ? carryBlocked("missing", "incompatible")
+    : carryBlocked("missing", "new");
 }
 
 export function carriableAttempts(
@@ -407,8 +459,8 @@ export function carriableAttempts(
   if (!priorResults?.length) return [];
   const out: EvalResult[] = [];
   for (const r of priorResults) {
-    if (!r.experimentId || `${r.experimentId}|${r.id}` !== key) continue;
-    if (carryGateFor(r, configHash, fingerprints, timeoutMs, options) !== undefined) continue;
+    if (!r.experimentId || runPairKey(r.experimentId, r.id) !== key) continue;
+    if (carryGateFor(r, configHash, fingerprints, timeoutMs, options)._tag === "Blocked") continue;
     out.push(r);
   }
   return out;
@@ -429,16 +481,30 @@ export function carriableAttempts(
  * `resolvedTimeoutMsForCarry`)。省略时按未配置处理,不是当作 0——只有 `run.timeoutMs` /
  * `evalDef.timeoutMs` 都缺席时才轮到它兜底。
  */
-export async function planCarry(
+export function planCarry(
   evals: readonly DiscoveredEval[],
   agentRuns: readonly AgentRun[],
   priorResults: EvalResult[] | undefined,
   configTimeoutMs?: number,
   options: CarryPlanOptions = {},
-): Promise<CarryPlan> {
-  const preparedPairs = await Effect.runPromise(
+): Effect.Effect<CarryPlan, SandboxRunPlanningError> {
+  return Effect.flatMap(
     prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices()),
+    (preparedPairs) => Effect.promise(() => planCarryPrepared(
+      preparedPairs,
+      priorResults,
+      configTimeoutMs,
+      options,
+    )),
   );
+}
+
+async function planCarryPrepared(
+  preparedPairs: readonly PreparedRunPair[],
+  priorResults: EvalResult[] | undefined,
+  configTimeoutMs: number | undefined,
+  options: CarryPlanOptions,
+): Promise<CarryPlan> {
   const preparedPairsByKey = indexPreparedPairs(preparedPairs);
   const sourceCache = new Map<string, Promise<string>>();
   const plannedFingerprints = new Map<string, string>();
@@ -469,7 +535,7 @@ export async function planCarry(
           const { fingerprint: fp, manifest } = await fingerprintWithManifest(
             pair,
             sourceCache,
-            { configHash, configIdentity: identity, carryEpoch },
+            currentFingerprintProjection(pair, identity, carryEpoch),
           );
           plannedFingerprints.set(key, fp);
           manifestsByKey.set(key, manifest);
@@ -484,7 +550,7 @@ export async function planCarry(
   const priorsByKey = new Map<string, EvalResult[]>();
   for (const prior of priorResults ?? []) {
     if (!prior.experimentId) continue;
-    const key = `${prior.experimentId}|${prior.id}`;
+    const key = runPairKey(prior.experimentId, prior.id);
     if (!entries.has(key)) continue;
     const list = priorsByKey.get(key) ?? [];
     list.push(prior);
@@ -493,8 +559,8 @@ export async function planCarry(
   // 差异 = 新旧两份 manifest 相减(配置面 / 源码面 / 数据面)。历史侧没有清单时只有源码面与
   // 数据面算不出,合并成一条 `opaque:no-manifest` 由人显式采信;配置面落盘在 `run.json`,
   // 从条目重建后照常给具名差异。
-  const deltasByResult = new Map<EvalResult, ConfigFieldDelta[]>();
-  const availableBySelector = new Map<string, ConfigFieldDelta>();
+  const deltasByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
+  const availableBySelector = new Map<string, FingerprintDelta>();
   for (const [key, priors] of priorsByKey) {
     const current = manifestsByKey.get(key);
     if (current === undefined) {
@@ -527,13 +593,14 @@ export async function planCarry(
   // 缺清单的条目落在两条路径中间:被授权的全是 `config:`、剩下的只有 `opaque:no-manifest` 时
   // 照样走反事实重算——指纹相等本身就证明源码面与数据面没变,那条算不出的差异不必再要人采信。
   const accepted = new Set(options.accept ?? []);
-  const acceptedDeltasByResult = new Map<EvalResult, ConfigFieldDelta[]>();
+  const acceptedDeltasByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
   if (accepted.size > 0) {
     for (const [prior, deltas] of deltasByResult) {
       const crossed = deltas.filter((delta) => accepted.has(delta.selector));
       if (crossed.length === 0) continue;
       const pending = deltas.filter((delta) => !accepted.has(delta.selector));
-      const key = `${prior.experimentId}|${prior.id}`;
+      if (prior.experimentId === undefined) continue;
+      const key = runPairKey(prior.experimentId, prior.id);
       const entry = entries.get(key);
       if (entry === undefined) {
         throw new Error(`Missing prepared pair for accepted historical result ${JSON.stringify(key)}.`);
@@ -544,12 +611,12 @@ export async function planCarry(
         crossed.every((delta) => delta.selector.startsWith("config:")) &&
         pending.every((delta) => delta.selector === OPAQUE_SELECTOR);
       if (configOnly && historical !== undefined) {
-        const counterfactual = rollBackAccepted(identity, historical, accepted);
-        const fp = await computeFingerprint(pair, sourceCache, {
-          configHash: hashConfigIdentity(counterfactual),
-          configIdentity: counterfactual,
-          carryEpoch,
-        });
+        const counterfactual = counterfactualConfigIdentity(identity, historical, accepted);
+        const fp = await computeFingerprint(
+          pair,
+          sourceCache,
+          counterfactualFingerprintProjection(counterfactual, carryEpoch),
+        );
         const acceptedFingerprints = acceptable.get(key);
         if (acceptedFingerprints === undefined) {
           throw new Error(`Missing acceptable fingerprint set for ${JSON.stringify(key)}.`);
@@ -572,7 +639,7 @@ export async function planCarry(
   // 判据本身在 carriableAttempts 里,这里只按 key 逐组调它——静态规划与派发时刻的重查因此
   // 不可能对「哪些携入」得出不同结论。
   const carriedAttemptsByKey = new Map<string, Set<number>>();
-  const carriedAcceptingByResult = new Map<EvalResult, ConfigFieldDelta[]>();
+  const carriedAcceptingByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
   const hit = new Set<EvalResult>();
   for (const [key, { pair: { run } }] of entries) {
     const carried = carriableAttempts(
@@ -597,19 +664,25 @@ export async function planCarry(
   }
 
   // 逐条未携带原因:计划内每个没被携入的 attempt 序号,已知卡在哪一道门上。
-  const dispatchByKey = new Map<string, DispatchGroup[]>();
+  const dispatchByKey = new Map<string, readonly DispatchGroup[]>();
   for (const [key, { pair: { run } }] of entries) {
     const carriedIndices = carriedAttemptsByKey.get(key);
     const byAttempt = new Map<number, EvalResult>();
     for (const prior of priorsByKey.get(key) ?? []) {
       if (!byAttempt.has(prior.attempt)) byAttempt.set(prior.attempt, prior);
     }
-    const groups: DispatchGroup[] = [];
-    const indexOfGroup = new Map<string, DispatchGroup>();
+    type MutableDispatchGroup = {
+      gate: CarryGate;
+      reason: DispatchReason;
+      attempts: number[];
+      deltas?: readonly FingerprintDelta[];
+    };
+    const groups: MutableDispatchGroup[] = [];
+    const indexOfGroup = new Map<string, MutableDispatchGroup>();
     for (let i = 0; i < run.attempts; i++) {
       if (carriedIndices?.has(i)) continue;
       const prior = byAttempt.get(i);
-      const blocked = prior === undefined
+      const decision = prior === undefined
         ? missingReason(key, options)
         : carryGateFor(
             prior,
@@ -617,7 +690,13 @@ export async function planCarry(
             acceptable.get(key),
             plannedTimeoutMs.get(key) ?? Infinity,
             { ...options, sandboxReuse: run.sandboxReuse, rollingState: run.state._tag === "Rolling" },
-          ) ?? { gate: "missing" as const, reason: "new" as const };
+          );
+      if (decision._tag === "Eligible") {
+        throw new Error(
+          `Carry planning classified ${JSON.stringify(key)} attempt ${i} as eligible without carrying it.`,
+        );
+      }
+      const blocked = decision;
       const groupKey = `${blocked.gate}|${blocked.reason}`;
       let group = indexOfGroup.get(groupKey);
       if (group === undefined) {
@@ -629,23 +708,70 @@ export async function planCarry(
       }
       group.attempts.push(i);
     }
-    if (groups.length > 0) dispatchByKey.set(key, groups);
+    if (groups.length > 0) {
+      dispatchByKey.set(key, Object.freeze(groups.map((group) => Object.freeze({
+        ...group,
+        attempts: Object.freeze([...group.attempts]),
+        ...(group.deltas === undefined ? {} : { deltas: Object.freeze([...group.deltas]) }),
+      }))));
+    }
   }
 
   // 按 priorResults 的原始顺序输出(调用方的展示顺序不因分组而抖动)。
   const carriedResults = (priorResults ?? []).filter((r) => hit.has(r));
-  return {
+  return Object.freeze({
     preparedPairsByKey,
-    plannedConfigHashes,
-    plannedFingerprints,
-    acceptableFingerprints: acceptable,
-    carriedAttemptsByKey,
-    carriedResults,
-    carriedAcceptingByResult,
-    dispatchByKey,
-    manifestsByKey,
-    availableDeltas: [...availableBySelector.values()].sort((a, b) => a.selector.localeCompare(b.selector)),
+    plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
+    plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
+    acceptableFingerprints: readonlyMapSnapshot(
+      [...acceptable].map(([key, values]) => [key, readonlySetSnapshot(values)] as const),
+    ),
+    carriedAttemptsByKey: readonlyMapSnapshot(
+      [...carriedAttemptsByKey].map(([key, values]) => [key, readonlySetSnapshot(values)] as const),
+    ),
+    carriedResults: Object.freeze([...carriedResults]),
+    carriedAcceptingByResult: readonlyMapSnapshot(
+      [...carriedAcceptingByResult].map(([result, deltas]) => [result, Object.freeze([...deltas])] as const),
+    ),
+    dispatchByKey: readonlyMapSnapshot(dispatchByKey),
+    manifestsByKey: readonlyMapSnapshot(manifestsByKey),
+    availableDeltas: Object.freeze(
+      [...availableBySelector.values()].sort((a, b) => a.selector.localeCompare(b.selector)),
+    ),
+  });
+}
+
+function readonlyMapSnapshot<Key, Value>(
+  entries: Iterable<readonly [Key, Value]>,
+): ReadonlyMap<Key, Value> {
+  const snapshot = new Map(entries);
+  let view: ReadonlyMap<Key, Value>;
+  view = {
+    get size() { return snapshot.size; },
+    get: (key) => snapshot.get(key),
+    has: (key) => snapshot.has(key),
+    forEach: (callback, thisArg) => snapshot.forEach((value, key) => callback.call(thisArg, value, key, view)),
+    entries: () => snapshot.entries(),
+    keys: () => snapshot.keys(),
+    values: () => snapshot.values(),
+    [Symbol.iterator]: () => snapshot[Symbol.iterator](),
   };
+  return Object.freeze(view);
+}
+
+function readonlySetSnapshot<Value>(values: Iterable<Value>): ReadonlySet<Value> {
+  const snapshot = new Set(values);
+  let view: ReadonlySet<Value>;
+  view = {
+    get size() { return snapshot.size; },
+    has: (value) => snapshot.has(value),
+    forEach: (callback, thisArg) => snapshot.forEach((value) => callback.call(thisArg, value, value, view)),
+    entries: () => snapshot.entries(),
+    keys: () => snapshot.keys(),
+    values: () => snapshot.values(),
+    [Symbol.iterator]: () => snapshot[Symbol.iterator](),
+  };
+  return Object.freeze(view);
 }
 
 function hash(value: unknown): string {

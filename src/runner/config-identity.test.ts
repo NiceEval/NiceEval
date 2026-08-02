@@ -7,12 +7,17 @@ import { Effect } from "effect";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { defineDirectAgent, defineEval } from "../define.ts";
-import { configDeltas, configIdentityForRun, configIdentityFromResult, rollBackAccepted } from "./config-identity.ts";
+import {
+  configDeltas,
+  configIdentityForRun,
+  configIdentityFromResult,
+  counterfactualConfigIdentity,
+} from "./config-identity.ts";
 import { computeConfigHash } from "./fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { discoverEval, type AgentRun } from "./types.ts";
 import type { EvalResult } from "../types.ts";
-import type { ConfigIdentity } from "./config-identity.ts";
+import type { ConfigFieldDelta, ConfigIdentity } from "./config-identity.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 
@@ -65,6 +70,15 @@ const evalDef = discoverEval(defineEval({ test() {} }), {
   privatePaths: [],
   source: { path: "src/runner/config-identity.test.ts", content: "", sha256: "0".repeat(64) },
 });
+
+if (false) {
+  // @ts-expect-error Added 只有新值，不能同时伪造历史值。
+  const contradictoryAdded: ConfigFieldDelta = { _tag: "Added", selector: "config:model", from: "a", to: "b" };
+  // @ts-expect-error Removed 必须带历史值。
+  const incompleteRemoved: ConfigFieldDelta = { _tag: "Removed", selector: "config:model" };
+  void contradictoryAdded;
+  void incompleteRemoved;
+}
 
 async function prepared(run: AgentRun): Promise<PreparedRunPair> {
   const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
@@ -121,7 +135,12 @@ describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
       model: "judge-a",
       baseUrl: "https://judge.example/v1",
       timeoutMs: 120_000,
-    }))).toEqual([{ selector: "config:judge.timeoutMs", from: "90000", to: "120000" }]);
+    }))).toEqual([{
+      _tag: "Changed",
+      selector: "config:judge.timeoutMs",
+      from: "90000",
+      to: "120000",
+    }]);
   });
 });
 
@@ -145,10 +164,10 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
     );
 
     expect(configDeltas(historical, current)).toEqual([
-      { selector: "config:flags.endpoint", from: "https://old" },
-      { selector: "config:flags.region", to: "eu" },
-      { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
-      { selector: "config:model", from: "opus", to: "sonnet" },
+      { _tag: "Removed", selector: "config:flags.endpoint", from: "https://old" },
+      { _tag: "Added", selector: "config:flags.region", to: "eu" },
+      { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
+      { _tag: "Changed", selector: "config:model", from: "opus", to: "sonnet" },
     ]);
   });
 
@@ -157,7 +176,7 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
   });
 });
 
-describe("rollBackAccepted:只动被点名的字段", () => {
+describe("counterfactualConfigIdentity:只动被点名的字段", () => {
   let historical: ConfigIdentity;
   let current: ConfigIdentity;
 
@@ -181,7 +200,7 @@ describe("rollBackAccepted:只动被点名的字段", () => {
   });
 
   it("授权 config:flags.<key> 把该键换回历史值,没点名的字段保持本次值", () => {
-    const rolled = rollBackAccepted(current, historical, new Set(["config:flags.endpoint"]));
+    const rolled = counterfactualConfigIdentity(current, historical, new Set(["config:flags.endpoint"]));
     expect(rolled.flags).toEqual({ endpoint: "https://old" });
     expect(rolled.model).toEqual({ _tag: "Configured", value: "sonnet" });
     expect(rolled.judge).toEqual({
@@ -193,7 +212,7 @@ describe("rollBackAccepted:只动被点名的字段", () => {
   });
 
   it("整对象进哈希的分组要每条差异都被授权才整体换回,少一条就保持本次值", () => {
-    const partial = rollBackAccepted(current, historical, new Set(["config:judge.model"]));
+    const partial = counterfactualConfigIdentity(current, historical, new Set(["config:judge.model"]));
     expect(partial.judge).toEqual({
       _tag: "Configured",
       model: { _tag: "Configured", value: "gpt-5.6-sol" },
@@ -201,7 +220,11 @@ describe("rollBackAccepted:只动被点名的字段", () => {
       timeoutMs: { _tag: "Omitted" },
     });
 
-    const full = rollBackAccepted(current, historical, new Set(["config:judge.model", "config:judge.baseUrl"]));
+    const full = counterfactualConfigIdentity(
+      current,
+      historical,
+      new Set(["config:judge.model", "config:judge.baseUrl"]),
+    );
     expect(full.judge).toEqual({
       _tag: "Configured",
       model: { _tag: "Configured", value: "gpt-5.6" },
@@ -212,6 +235,20 @@ describe("rollBackAccepted:只动被点名的字段", () => {
 
   it("全部差异都被授权时,反事实身份与历史身份再无差异——「相等本身就是证明」的那一步", () => {
     const all = new Set(configDeltas(historical, current).map((delta) => delta.selector));
-    expect(configDeltas(historical, rollBackAccepted(current, historical, all))).toEqual([]);
+    expect(configDeltas(historical, counterfactualConfigIdentity(current, historical, all))).toEqual([]);
+  });
+
+  it("本次、历史与反事实身份都是深冻结快照", () => {
+    const counterfactual = counterfactualConfigIdentity(
+      current,
+      historical,
+      new Set(["config:flags.endpoint"]),
+    );
+    for (const identity of [historical, current, counterfactual]) {
+      expect(Object.isFrozen(identity)).toBe(true);
+      expect(Object.isFrozen(identity.flags)).toBe(true);
+      expect(Object.isFrozen(identity.agentInstalls)).toBe(true);
+      expect(Object.isFrozen(identity.judge)).toBe(true);
+    }
   });
 });

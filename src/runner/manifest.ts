@@ -8,12 +8,30 @@
 
 import type { EvalManifest } from "../record/manifest.ts";
 import type { JsonValue } from "../types.ts";
-import type { ConfigFieldDelta } from "./config-identity.ts";
+import {
+  addedConfigField,
+  changedConfigField,
+  removedConfigField,
+  type ConfigFieldDelta,
+} from "./config-identity.ts";
 
 export { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
 
 /** 历史条目缺清单时源码面与数据面的合并差异:算不出就如实算不出,不按「没差异」放过、也不猜。 */
 export const OPAQUE_SELECTOR = "opaque:no-manifest";
+
+export interface OpaqueManifestDelta {
+  readonly _tag: "Unknown";
+  readonly selector: typeof OPAQUE_SELECTOR;
+  readonly from?: never;
+  readonly to?: never;
+}
+
+export type FingerprintDelta = ConfigFieldDelta | OpaqueManifestDelta;
+
+function opaqueManifestDelta(): OpaqueManifestDelta {
+  return Object.freeze({ _tag: "Unknown", selector: OPAQUE_SELECTOR });
+}
 
 /** 内容哈希的有界摘要:差异明细里印的是「变没变」,64 位十六进制铺满一行没有额外信息量。 */
 export function shortHash(hash: string): string {
@@ -28,11 +46,9 @@ function summarize(value: JsonValue): string {
 
 function planDelta(historical: EvalManifest, current: EvalManifest): ConfigFieldDelta[] {
   if (JSON.stringify(historical.plan) === JSON.stringify(current.plan)) return [];
-  return [{
-    selector: "plan:physical",
-    ...(historical.plan === undefined ? {} : { from: summarize(historical.plan) }),
-    ...(current.plan === undefined ? {} : { to: summarize(current.plan) }),
-  }];
+  if (historical.plan === undefined) return [addedConfigField("plan:physical", summarize(current.plan!))];
+  if (current.plan === undefined) return [removedConfigField("plan:physical", summarize(historical.plan))];
+  return [changedConfigField("plan:physical", summarize(historical.plan), summarize(current.plan))];
 }
 
 /**
@@ -47,11 +63,11 @@ export function manifestDeltas(
   historical: EvalManifest | undefined,
   current: EvalManifest,
   historicalConfig?: globalThis.Record<string, JsonValue>,
-): ConfigFieldDelta[] {
+): FingerprintDelta[] {
   if (historical === undefined) {
     return [
       ...(historicalConfig === undefined ? [] : faceDeltas("config", historicalConfig, current.config ?? {}, summarize)),
-      { selector: OPAQUE_SELECTOR },
+      opaqueManifestDelta(),
     ];
   }
   return [
@@ -78,11 +94,10 @@ function faceDeltas<T extends JsonValue>(
     const hasFrom = Object.hasOwn(from, key);
     const hasTo = Object.hasOwn(to, key);
     if (hasFrom && hasTo && JSON.stringify(from[key]) === JSON.stringify(to[key])) continue;
-    out.push({
-      selector: `${prefix}:${key}`,
-      ...(hasFrom ? { from: render(from[key]!) } : {}),
-      ...(hasTo ? { to: render(to[key]!) } : {}),
-    });
+    const selector = `${prefix}:${key}`;
+    if (!hasFrom) out.push(addedConfigField(selector, render(to[key]!)));
+    else if (!hasTo) out.push(removedConfigField(selector, render(from[key]!)));
+    else out.push(changedConfigField(selector, render(from[key]!), render(to[key]!)));
   }
   return out;
 }

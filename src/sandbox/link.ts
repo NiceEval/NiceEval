@@ -163,6 +163,13 @@ export interface SandboxCarryIneligibility {
   readonly reason: string;
 }
 
+export type SandboxCarryEligibility =
+  | { readonly _tag: "Eligible" }
+  | {
+      readonly _tag: "Blocked";
+      readonly reasons: readonly [SandboxCarryIneligibility, ...SandboxCarryIneligibility[]];
+    };
+
 export interface SandboxLayerFingerprintProjection {
   readonly version: 1;
   readonly templateOwner: SandboxLayerOwnerRef;
@@ -180,8 +187,8 @@ export interface LinkedSandboxPair {
   /** template owner 的 commands 在前，另一作者的 commands 在后。 */
   readonly commands: readonly LinkedSandboxCommand[];
   readonly fingerprint: SandboxLayerFingerprintProjection;
-  readonly carryEligible: boolean;
-  readonly carryIneligibleReasons: readonly SandboxCarryIneligibility[];
+  /** 携带资格与原因是一个穷尽状态，不存在 `true + reasons` 或 `false + []`。 */
+  readonly carry: SandboxCarryEligibility;
 }
 
 export interface LinkedDirectPair {
@@ -411,6 +418,12 @@ function linkSandboxPair(
     template: sandboxTemplateIdentity(template),
     commands: fingerprints,
   });
+  const carry: SandboxCarryEligibility = reasons.length === 0
+    ? Object.freeze({ _tag: "Eligible" as const })
+    : Object.freeze({
+        _tag: "Blocked" as const,
+        reasons: reasons as readonly [SandboxCarryIneligibility, ...SandboxCarryIneligibility[]],
+      });
   return Object.freeze({
     kind: "sandbox",
     evalId: pair.evalId,
@@ -420,8 +433,7 @@ function linkSandboxPair(
     template,
     commands: linked.commands,
     fingerprint,
-    carryEligible: reasons.length === 0,
-    carryIneligibleReasons: reasons,
+    carry,
   });
 }
 

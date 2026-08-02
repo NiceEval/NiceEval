@@ -15,7 +15,14 @@ import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts"
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
 import { STATELESS } from "../state/plan.ts";
-import { computeConfigHash, computeFingerprint, fingerprintWithManifest, planCarry } from "./fingerprint.ts";
+import {
+  computeConfigHash,
+  computeFingerprint,
+  carryGateFor,
+  fingerprintWithManifest,
+  planCarry as planCarryEffect,
+  type CarryPlan,
+} from "./fingerprint.ts";
 import { manifestDeltas, type EvalManifest } from "./manifest.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
@@ -40,6 +47,16 @@ const DIRECT_RUN_INFO = {
   agentInstalls: [],
 };
 const tempRoots: string[] = [];
+
+function planCarry(...args: Parameters<typeof planCarryEffect>) {
+  return Effect.runPromise(planCarryEffect(...args));
+}
+
+if (false) {
+  const plan = undefined as unknown as CarryPlan;
+  // @ts-expect-error CarryPlan 只暴露 ReadonlyMap，派发期不能反向改规划。
+  plan.plannedFingerprints.set("pair", "fingerprint");
+}
 afterEach(async () => Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 interface EvalFixtureOptions {
@@ -238,6 +255,17 @@ describe("按需构建进入指纹", () => {
 });
 
 describe("planCarry · 携带以 attempt 为粒度", () => {
+  it("携带门用 Eligible | Blocked 穷尽表达，不以 undefined 代表成功", () => {
+    const passed = result({ id: "e", attempt: 0, verdict: "passed", fingerprint: "fp" });
+    expect(carryGateFor(passed, undefined, new Set(["fp"]), Infinity)).toEqual({ _tag: "Eligible" });
+    expect(carryGateFor(
+      { ...passed, verdict: "errored" },
+      undefined,
+      new Set(["fp"]),
+      Infinity,
+    )).toEqual({ _tag: "Blocked", gate: "terminal", reason: "errored" });
+  });
+
   it("attempts: 5、上一轮只落盘 3 条终态 attempt(序号 1/2/4):只把这 3 个具体序号规划为携带,缺失的 0/3 必须真正派发", async () => {
     const evals = [makeEval("e")];
     const run = makeRun("exp", ["e"], 5);
@@ -252,10 +280,13 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
 
     const plan = await planCarry(evals, [run], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([1, 2, 4]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([1, 2, 4]);
     expect(plan.carriedResults.map((r) => r.attempt).sort()).toEqual([1, 2, 4]);
     // 分母 = 携带(3) + 新跑(缺失的 0、3,共 2 个)= 5,与 attempts: 5 请求的总量一致。
     expect(plan.carriedResults.length + 2).toBe(5);
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect("set" in plan.plannedFingerprints).toBe(false);
+    expect("add" in plan.carriedAttemptsByKey.get("exp|e")!).toBe(false);
   });
 
   it("同一个 eval 里,errored 的那个具体 attempt 永不携带,即使另一个序号是终态且指纹匹配", async () => {
@@ -271,7 +302,7 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
     const plan = await planCarry(evals, [run], priorResults);
 
     // 只有序号 0 被携带;序号 1(errored)不能因为序号 0 命中就被连带携带进去。
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedResults.map((r) => r.attempt)).toEqual([0]);
   });
 
@@ -315,7 +346,7 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
 
     const plan = await planCarry(evals, [run], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedResults).toHaveLength(1);
   });
 });
@@ -346,7 +377,7 @@ describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () =
 
     const plan = await planCarry(evals, [newRun], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedResults).toHaveLength(1);
   });
 
@@ -380,7 +411,7 @@ describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () =
 
     const plan = await planCarry(evals, [newRun], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedResults).toHaveLength(1);
   });
 
@@ -395,7 +426,7 @@ describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () =
 
     const plan = await planCarry(evals, [run], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });
 
   it("项目级 Config.timeoutMs 兜底生效:run/evalDef 都未设时按 configTimeoutMs 判定", async () => {
@@ -413,7 +444,7 @@ describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () =
 
     // configTimeoutMs = 40m,高于 19m:照常携带。
     const planHigh = await planCarry(evals, [run], priorResults, 2_400_000);
-    expect(planHigh.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(planHigh.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });
 
   it("旧记录 durationMs 缺失(磁盘数据损坏)时保守判不可携带,不当作 0 处理", async () => {
@@ -509,10 +540,10 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       accept: ["config:flags.endpoint"],
       priorManifests,
     });
-    expect(withAccept.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(withAccept.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     // 留痕带上跨过的那条差异与旧值新值(新侧没有这个键,只有 from)。
     expect(withAccept.carriedAcceptingByResult!.get(prior)).toEqual([
-      { selector: "config:flags.endpoint", from: "https://old.example" },
+      { _tag: "Removed", selector: "config:flags.endpoint", from: "https://old.example" },
     ]);
   });
 
@@ -524,7 +555,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
 
     const plan = await planCarry(evals, [run], [restamped], undefined, { priorManifests });
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedAcceptingByResult!.size).toBe(0);
   });
 
@@ -554,9 +585,9 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       accept: ["config:judge.model"],
       priorManifests,
     });
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedAcceptingByResult!.get(prior)).toEqual([
-      { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
+      { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
     ]);
   });
 
@@ -588,14 +619,16 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
       accept: ["config:flags.endpoint"],
     });
     expect(named.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
-    expect(named.availableDeltas).toEqual([{ selector: "opaque:no-manifest" }]);
+    expect(named.availableDeltas).toEqual([{ _tag: "Unknown", selector: "opaque:no-manifest" }]);
 
     // 明知旧结果仍然成立的人显式采信这条不透明差异 → 携带,并留下同一条留痕。
     const opaque = await planCarry(evals, [run], [prior], undefined, {
       accept: ["opaque:no-manifest"],
     });
-    expect(opaque.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
-    expect(opaque.carriedAcceptingByResult!.get(prior)).toEqual([{ selector: "opaque:no-manifest" }]);
+    expect([...(opaque.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
+    expect(opaque.carriedAcceptingByResult!.get(prior)).toEqual([
+      { _tag: "Unknown", selector: "opaque:no-manifest" },
+    ]);
   });
 
   it("缺清单但有 run.json 时配置面照常给具名差异,opaque 只盖源码面与数据面", async () => {
@@ -628,8 +661,8 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         reason: "stale",
         attempts: [0],
         deltas: [
-          { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
-          { selector: "opaque:no-manifest" },
+          { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
+          { _tag: "Unknown", selector: "opaque:no-manifest" },
         ],
       },
     ]);
@@ -639,9 +672,9 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     const plan = await planCarry(evals, [run], [prior], undefined, {
       accept: ["config:judge.model"],
     });
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.carriedAcceptingByResult!.get(prior)).toEqual([
-      { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
+      { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
     ]);
   });
 
@@ -678,7 +711,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     const both = await planCarry(evals, [run], [prior], undefined, {
       accept: ["config:judge.model", "opaque:no-manifest"],
     });
-    expect(both.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(both.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(both.carriedAcceptingByResult!.get(prior)!.map((d) => d.selector)).toEqual([
       "config:judge.model",
       "opaque:no-manifest",
@@ -733,8 +766,8 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     })).carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
     // 同一份 fixture 在没有这些门的情况下确实会被授权携入(证明上面四条不是恒不携带)。
-    expect((await planCarry(evals, [runWith({ flags: NEW_FLAGS })], [fine], undefined, accept))
-      .carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...((await planCarry(evals, [runWith({ flags: NEW_FLAGS })], [fine], undefined, accept))
+      .carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });
 });
 
@@ -753,11 +786,16 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
 
     const plan = await planCarry(evals, [run], priorResults);
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.dispatchByKey.get("exp|e")).toEqual([
       { gate: "terminal", reason: "errored", attempts: [1] },
       // 这条 fixture 没有历史清单(手写的落盘),差异如实算不出。
-      { gate: "fingerprint", reason: "stale", attempts: [2], deltas: [{ selector: "opaque:no-manifest" }] },
+      {
+        gate: "fingerprint",
+        reason: "stale",
+        attempts: [2],
+        deltas: [{ _tag: "Unknown", selector: "opaque:no-manifest" }],
+      },
       { gate: "missing", reason: "new", attempts: [3] },
     ]);
   });
@@ -799,7 +837,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
         gate: "fingerprint",
         reason: "stale",
         attempts: [0],
-        deltas: [{ selector: "config:flags.endpoint", from: "https://old.example" }],
+        deltas: [{ _tag: "Removed", selector: "config:flags.endpoint", from: "https://old.example" }],
       },
     ]);
   });
@@ -830,7 +868,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
       { rerun: "failed" },
     );
 
-    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(plan.dispatchByKey.get("exp|e")).toEqual([{ gate: "rerun", reason: "rerun", attempts: [1] }]);
   });
 });
@@ -895,7 +933,12 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
 
     const plan = await planCarry(evals, [run], [prior], undefined, { priorManifests });
     expect(plan.availableDeltas).toEqual([
-      { selector: `source:${path}`, from: "aaaaaaaaaaaa", to: manifest.source[path!]!.slice(0, 12) },
+      {
+        _tag: "Changed",
+        selector: `source:${path}`,
+        from: "aaaaaaaaaaaa",
+        to: manifest.source[path!]!.slice(0, 12),
+      },
     ]);
     expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
@@ -903,7 +946,7 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
       priorManifests,
       accept: [`source:${path}`],
     });
-    expect(accepted.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(accepted.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
     expect(accepted.carriedAcceptingByResult!.get(prior)!.map((d) => d.selector)).toEqual([`source:${path}`]);
   });
 
@@ -923,7 +966,11 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
     ]);
 
     const plan = await planCarry(evals, [run], [prior], undefined, { priorManifests });
-    expect(plan.availableDeltas).toEqual([{ selector: "data:evals/data/cases.yaml", from: "bbbbbbbbbbbb" }]);
+    expect(plan.availableDeltas).toEqual([{
+      _tag: "Removed",
+      selector: "data:evals/data/cases.yaml",
+      from: "bbbbbbbbbbbb",
+    }]);
 
     // 只授权一条(这里 fixture 只有一条,所以授权它就携带);换成不相干的 selector 则照旧重跑。
     const partial = await planCarry(evals, [run], [prior], undefined, {
@@ -936,7 +983,7 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
       priorManifests,
       accept: ["data:evals/data/cases.yaml"],
     });
-    expect(accepted.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect([...(accepted.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });
 
   it("清单与指纹同一份输入:源码面逐文件给出「路径 × 内容哈希」", async () => {

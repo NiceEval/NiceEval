@@ -87,6 +87,8 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 每个实际配对恰好一方 template-bearing:1×1 报 `sandbox.template-conflict`、0×0 报 `sandbox.template-missing`,全矩阵聚合、零 Provider I/O、零 Sandbox 创建。
   - 混合数据集：command-only Experiment 同时选择共享 `node24()` helper 的普通 Eval 与自带 Compose 的 Eval 时全部合法、仍是一份 Experiment；给 Experiment 加 template 后对应配对明确 conflict，不允许 Eval override 或静默丢层。
   - 物理身份相同的两份 template 仍是 conflict;三个入口消费同一 linker,要有 `check`、`--dry` 与正常运行对同一非法矩阵给出同一结论的区分力场景。
+  - pair key 用 tuple 编码并覆盖 id 自带分隔符的反例；同一 `(Experiment, Eval)` 重复出现走 typed failure，不能静默覆盖。
+    linked pair 的 carry 只允许 `Eligible` 或带非空 reasons 的 `Blocked`，没有 boolean 与可选数组的矛盾组合。
   - 自定义 provider 连同 factory 直接调用、核心路径无 provider 名分支;`t.sandbox` 的错误反馈带 API 名与 agent 名,经管线不经 stdout。
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。

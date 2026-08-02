@@ -448,6 +448,7 @@ sandboxLayer()
 
 `putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
 任一 opaque command 使整条 Attempt `carryEligible = false`,禁止跨 Run 结果沿用;计划与运行记录都显示具体原因。
+Linked pair 内部把它保存为 `Eligible | Blocked`；只有 `Blocked` 携带非空原因列表，不并存可互相矛盾的 boolean 与可选 reasons。
 
 源码检出与慢工具安装这两类常见昂贵动作有内置命令(`checkout()` / `installTool()`),自带检查、缓存与稳定 identity,见[内置 prepare 命令](prepare-commands.md)。
 

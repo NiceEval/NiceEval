@@ -20,7 +20,6 @@ import {
 } from "../sandbox/plan.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import type { AgentRun, DiscoveredEval, SandboxRunInfo } from "./types.ts";
-import { isSandboxLayer } from "../sandbox/layer.ts";
 
 export interface LinkedRunPair {
   readonly key: string;
@@ -48,13 +47,32 @@ export class SandboxRunPlanningInvariantError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
+export interface DuplicateSandboxRunPair {
+  readonly key: string;
+  readonly experimentId: string;
+  readonly evalId: string;
+  readonly occurrences: number;
+}
+
+export class SandboxRunPairDuplicateError extends Data.TaggedError(
+  "SandboxRunPairDuplicateError",
+)<{
+  readonly code: "sandbox.duplicate-run-pair";
+  readonly duplicates: readonly DuplicateSandboxRunPair[];
+  readonly message: string;
+}> {}
+
 export type SandboxRunPlanningError =
   | SandboxLayerLinkError
   | SandboxPhysicalPlanningError
-  | SandboxRunPlanningInvariantError;
+  | SandboxRunPlanningInvariantError
+  | SandboxRunPairDuplicateError;
 
-export function runPairKey(run: AgentRun & { readonly experimentId: string }, evalId: string): string {
-  return `${run.experimentId}|${evalId}`;
+/** Injective tuple encoding keeps `(a|b,c)` distinct from `(a,b|c)` without forbidding characters in either id. */
+export function runPairKey(experimentId: string, evalId: string): string {
+  return experimentId.includes("|") || evalId.includes("|")
+    ? JSON.stringify([experimentId, evalId])
+    : `${experimentId}|${evalId}`;
 }
 
 function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
@@ -65,7 +83,10 @@ function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
 export function linkRunSandboxes(
   evals: readonly DiscoveredEval[],
   runs: readonly AgentRun[],
-): Effect.Effect<readonly LinkedRunPair[], SandboxLayerLinkError | SandboxRunPlanningInvariantError> {
+): Effect.Effect<
+  readonly LinkedRunPair[],
+  SandboxLayerLinkError | SandboxRunPlanningInvariantError | SandboxRunPairDuplicateError
+> {
   const records: Array<Readonly<{
     input: SandboxLayerPairInput;
     ownerKey: string;
@@ -86,12 +107,6 @@ export function linkRunSandboxes(
         message: "Sandbox planning requires completed Experiment discovery facts: id, baseDir, and sourcePath.",
       }));
     }
-    if (run.sandbox !== undefined && !isSandboxLayer(run.sandbox)) {
-      return Effect.fail(new SandboxRunPlanningInvariantError({
-        code: "sandbox.run-planning-invariant",
-        message: `Experiment ${JSON.stringify(experimentId)} contains a legacy SandboxSpec instead of a SandboxLayer.`,
-      }));
-    }
     for (const evalDef of selectedEvalsForRun(evals, run)) {
       const input: SandboxLayerPairInput = {
         eval: {
@@ -109,12 +124,39 @@ export function linkRunSandboxes(
       records.push(Object.freeze({
         input,
         ownerKey: JSON.stringify([experimentId, evalDef.id, run.agent.name]),
-        key: `${experimentId}|${evalDef.id}`,
+        key: runPairKey(experimentId, evalDef.id),
         run,
         evalDef,
         authorBaseDirs: Object.freeze({ eval: evalDef.baseDir, experiment: experimentBaseDir }),
       }));
     }
+  }
+
+  const occurrences = new Map<string, { experimentId: string; evalId: string; count: number }>();
+  for (const { key, input } of records) {
+    const previous = occurrences.get(key);
+    occurrences.set(key, {
+      experimentId: input.experiment.id,
+      evalId: input.eval.id,
+      count: (previous?.count ?? 0) + 1,
+    });
+  }
+  const duplicates = [...occurrences.entries()]
+    .filter(([, entry]) => entry.count > 1)
+    .map(([key, entry]) => Object.freeze({
+      key,
+      experimentId: entry.experimentId,
+      evalId: entry.evalId,
+      occurrences: entry.count,
+    }));
+  if (duplicates.length > 0) {
+    return Effect.fail(new SandboxRunPairDuplicateError({
+      code: "sandbox.duplicate-run-pair",
+      duplicates: Object.freeze(duplicates),
+      message:
+        `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pair` +
+        `${duplicates.length === 1 ? "" : "s"}. Every discovered pair must have one owner.`,
+    }));
   }
 
   return Effect.flatMap(linkSandboxLayers(records.map(({ input }) => input)), (pairs) => {
@@ -209,7 +251,22 @@ export function prepareRunSandboxes(
 export function preparedPairsByKey(
   pairs: readonly PreparedRunPair[],
 ): ReadonlyMap<string, PreparedRunPair> {
-  return new Map(pairs.map((pair) => [pair.key, pair]));
+  const snapshot = new Map(pairs.map((pair) => [pair.key, pair]));
+  let view: ReadonlyMap<string, PreparedRunPair>;
+  view = {
+    get size() { return snapshot.size; },
+    get: (key: string) => snapshot.get(key),
+    has: (key: string) => snapshot.has(key),
+    forEach: (
+      callback: (value: PreparedRunPair, key: string, map: ReadonlyMap<string, PreparedRunPair>) => void,
+      thisArg?: unknown,
+    ) => snapshot.forEach((value, key) => callback.call(thisArg, value, key, view)),
+    entries: () => snapshot.entries(),
+    keys: () => snapshot.keys(),
+    values: () => snapshot.values(),
+    [Symbol.iterator]: () => snapshot[Symbol.iterator](),
+  };
+  return Object.freeze(view);
 }
 
 /** 结果记录只投影当前 pair 的实际计划，不虚构 Experiment 级默认 Sandbox。 */

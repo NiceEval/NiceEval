@@ -193,7 +193,7 @@ export function providerPlanFingerprintIdentity(plan: ProviderPlan): JsonValue {
 /** Link 的静态资格与 physical planner 的动态资格同时满足才允许跨 Invocation 携带。 */
 export function linkedRunCarryEligible(plan: LinkedRunPlan): boolean {
   return plan._tag === "Direct" ||
-    (plan.pair.carryEligible && plan.providerPlan.carry._tag === "Eligible");
+    (plan.pair.carry._tag === "Eligible" && plan.providerPlan.carry._tag === "Eligible");
 }
 
 function commandFingerprintIdentity(command: SandboxCommandFingerprint): JsonValue {

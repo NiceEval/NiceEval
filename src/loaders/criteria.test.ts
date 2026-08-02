@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineDirectAgent, defineEval } from "../define.ts";
 import { t } from "../i18n/index.ts";
-import { computeFingerprint, planCarry } from "../runner/fingerprint.ts";
+import { computeFingerprint, planCarry as planCarryEffect } from "../runner/fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { EvalResult } from "../types.ts";
@@ -27,6 +27,10 @@ const PATTERNS = ["evals/fixtures/tests/**", "!**/__pycache__/**"] as const;
 
 const repoCwd = process.cwd();
 const roots: string[] = [];
+
+function planCarry(...args: Parameters<typeof planCarryEffect>) {
+  return Effect.runPromise(planCarryEffect(...args));
+}
 
 afterEach(async () => {
   process.chdir(repoCwd);

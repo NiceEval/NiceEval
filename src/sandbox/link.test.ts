@@ -17,6 +17,13 @@ import {
   type SandboxLayerPairInput,
 } from "./link.ts";
 import { digestOf } from "./identity.ts";
+import type { SandboxCarryEligibility } from "./link.ts";
+
+if (false) {
+  // @ts-expect-error Blocked 必须有至少一条原因，不能表达 `blocked + []`。
+  const contradictoryCarry: SandboxCarryEligibility = { _tag: "Blocked", reasons: [] };
+  void contradictoryCarry;
+}
 
 function imageTemplateIdentity(image: string) {
   return {
@@ -181,8 +188,7 @@ describe("pure SandboxLayer linker", () => {
         kind: "image",
         identity: imageTemplateIdentity("node:24@sha256:abc"),
       },
-      carryEligible: true,
-      carryIneligibleReasons: [],
+      carry: { _tag: "Eligible" },
     });
     if (evalOwned?.kind !== "sandbox") throw new Error("expected linked sandbox pair");
     expect(evalOwned.commands.map((entry) => [entry.owner.kind, entry.index, entry.fingerprint.kind === "stable" ? entry.fingerprint.id : "opaque"])).toEqual([
@@ -248,15 +254,17 @@ describe("pure SandboxLayer linker", () => {
       { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, index: 0 },
       expect.objectContaining({ kind: "stable", owner: { kind: "experiment", id: "experiment/codex" }, id: "experiment.stable" }),
     ]);
-    expect(linked.carryEligible).toBe(false);
-    expect(linked.carryIneligibleReasons).toEqual([
-      expect.objectContaining({
-        code: "sandbox.command-opaque",
-        owner: { kind: "experiment", id: "experiment/codex" },
-        commandIndex: { _tag: "Declared", value: 0 },
-        reason: expect.stringMatching(/prepare command #1.*defineSandboxCommand/),
-      }),
-    ]);
+    expect(linked.carry).toEqual({
+      _tag: "Blocked",
+      reasons: [
+        expect.objectContaining({
+          code: "sandbox.command-opaque",
+          owner: { kind: "experiment", id: "experiment/codex" },
+          commandIndex: { _tag: "Declared", value: 0 },
+          reason: expect.stringMatching(/prepare command #1.*defineSandboxCommand/),
+        }),
+      ],
+    });
     expect(sandboxLayerIdentityFor(linked, "eval")).toMatchObject({
       layer: { _tag: "Template", value: { provider: "docker", kind: "image" } },
     });
