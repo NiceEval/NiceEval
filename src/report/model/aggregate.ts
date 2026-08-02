@@ -24,6 +24,7 @@ import { flagValueOf, labelValueOf, runConfigValueOf } from "./flag.ts";
 import { metricDisplay } from "./format.ts";
 import { localeText, type LocalizedText } from "./locale.ts";
 import { evalPrefixPredicate } from "../../shared/aggregate.ts";
+import type { JsonValue } from "../../shared/types.ts";
 
 // 复合键分隔符:NUL 不会出现在 eval id / experimentId / ISO 时间里,拼接键不会串味
 const KEY_SEP = "\u0000";
@@ -160,11 +161,11 @@ function isDimensionRef(dimension: DimensionInput): dimension is DimensionRef {
 export const MISSING_GROUP_KEY = localeText("en", "cell.missingValue");
 
 /** 对象键递归排序后的稳定 JSON(分组显示键与冲突检测共用)。 */
-function canonicalJson(value: unknown): string {
+function canonicalJson(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (typeof value === "object" && value !== null) {
-    const keys = Object.keys(value as globalThis.Record<string, unknown>).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as globalThis.Record<string, unknown>)[k])}`).join(",")}}`;
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k]!)}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -173,13 +174,13 @@ function canonicalJson(value: unknown): string {
  * flag / runConfig 声明值 → 分组显示键(稳定 JSON 规则):字符串直接显示,其它值用对象键
  * 递归排序后的 JSON,缺失值显示内置文案 `(missing)`。返回 [显示键, 冲突检测用的规范形]。
  */
-export function refDisplayKey(value: unknown): [display: string, canonical: string] {
+export function refDisplayKey(value: JsonValue | undefined): [display: string, canonical: string] {
   if (value === undefined) return [MISSING_GROUP_KEY, "undefined"];
   if (typeof value === "string") return [value, `string:${value}`];
   return [canonicalJson(value), `json:${canonicalJson(value)}`];
 }
 
-function refValueOf(ref: DimensionRef, item: Item): unknown {
+function refValueOf(ref: DimensionRef, item: Item): JsonValue | undefined {
   if (ref.kind === "flag") return flagValueOf(item.attempt, ref.name);
   if (ref.kind === "label") return labelValueOf(item.attempt, ref.name);
   return runConfigValueOf(item.attempt, ref.name as Parameters<typeof runConfigValueOf>[1]);

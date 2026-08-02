@@ -5,6 +5,7 @@
 // 这类顶层运行配置不在 flags 里,用 runConfig() 读快照的 ExperimentRunInfo 投影。
 
 import type { AttemptHandle } from "../../record/types.ts";
+import type { JsonValue } from "../../shared/types.ts";
 import type {
   DimensionOptions,
   DimensionRef,
@@ -15,13 +16,13 @@ import type {
 } from "./types.ts";
 
 /** experiment 声明的 flags(快照级投影优先;第三方落盘只拼在条目上时回退 result.experiment)。 */
-export function flagValueOf(attempt: AttemptHandle, name: string): unknown {
+export function flagValueOf(attempt: AttemptHandle, name: string): JsonValue | undefined {
   const info = attempt.run?.experiment ?? attempt.result.experiment;
   return info?.flags?.[name];
 }
 
 /** experiment 声明的报告归类标注 labels(同 flags 的读取回退链;值域 string | number)。 */
-export function labelValueOf(attempt: AttemptHandle, name: string): unknown {
+export function labelValueOf(attempt: AttemptHandle, name: string): string | number | undefined {
   const info = attempt.run?.experiment ?? attempt.result.experiment;
   return info?.labels?.[name];
 }
@@ -31,12 +32,47 @@ export function labelValueOf(attempt: AttemptHandle, name: string): unknown {
  * `model` / `agent` 两个键(与 "model" / "agent" 内置维度同一读法,不另造第二套口径)。
  * 未投影 → undefined。
  */
-export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): unknown {
+export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): JsonValue | undefined {
   if (name === "model") return attempt.result.model ?? attempt.run?.model;
   if (name === "agent") return attempt.result.agent || attempt.run?.agent;
   const info = attempt.run?.experiment ?? attempt.result.experiment;
-  // ExperimentRunInfo 是穷尽可序列化投影;按字段名取值,新增投影字段无需改这里
-  return (info as globalThis.Record<string, unknown> | undefined)?.[name];
+  if (info === undefined) return undefined;
+  switch (name) {
+    case "description": return info.description;
+    case "reasoningEffort": return info.reasoningEffort;
+    case "flags": return info.flags;
+    case "labels": return info.labels;
+    case "attempts": return info.attempts;
+    case "earlyExit": return info.earlyExit;
+    case "timeoutMs": return info.timeoutMs;
+    case "budget": return info.budget;
+    case "maxConcurrency": return info.maxConcurrency;
+    case "selectedEvalIds": return info.selectedEvalIds;
+    case "evalFilterFingerprint": return info.evalFilterFingerprint;
+    case "sandboxLayer": return info.sandboxLayer;
+    case "sandboxPlansByEval": return info.sandboxPlansByEval;
+    case "sandboxReuse": return info.sandboxReuse;
+    case "state":
+      return info.state === undefined
+        ? undefined
+        : {
+            identity: info.state.identity,
+            consistency: info.state.consistency.mode === "pinned"
+              ? { mode: "pinned", revision: info.state.consistency.revision }
+              : { mode: "rolling" },
+            saveOn: info.state.saveOn,
+          };
+    case "strict": return info.strict;
+    case "judge":
+      return info.judge === undefined
+        ? undefined
+        : {
+            ...(info.judge.model !== undefined ? { model: info.judge.model } : {}),
+            ...(info.judge.baseUrl !== undefined ? { baseUrl: info.judge.baseUrl } : {}),
+            ...(info.judge.timeoutMs !== undefined ? { timeoutMs: info.judge.timeoutMs } : {}),
+          };
+    case "agentInstalls": return info.agentInstalls;
+  }
 }
 
 function assertName(name: unknown, fn: string, hint: string): asserts name is string {

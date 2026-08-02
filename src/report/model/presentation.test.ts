@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import * as report from "../index.ts";
 import * as reportReact from "../react/index.tsx";
-import { formatCellText } from "../definition/cell.ts";
+import { formatCellText, type Cell } from "../definition/cell.ts";
 import { isCalculation } from "./calculation.ts";
 import { formatAxisTick, formatInstant, formatMetricValue, missingText } from "./format.ts";
 
@@ -57,6 +57,10 @@ describe("formatAxisTick", () => {
 });
 
 describe("missingText / formatCellText", () => {
+  // @ts-expect-error missing 完成态只携带 code，不开放未归一的任意 data。
+  const invalidMissingCell: Cell = { kind: "missing", code: "noSamples", data: { reason: "opaque" } };
+  void invalidMissingCell;
+
   it("三个内建 code 在 en / zh-CN 各有文案;未命中原样露出", () => {
     expect(missingText("noSamples", "en")).toBe("no data");
     expect(missingText("noSamples", "zh-CN")).toBe("无数据");

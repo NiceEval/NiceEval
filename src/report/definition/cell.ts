@@ -49,7 +49,7 @@ export type Cell =
     }
   | { readonly kind: "text"; readonly text: string; readonly detail?: string }
   | { readonly kind: "notApplicable" }
-  | { readonly kind: "missing"; readonly code: string; readonly data?: unknown };
+  | { readonly kind: "missing"; readonly code: string };
 
 export interface ColumnSpec {
   readonly key: string;
