@@ -55,6 +55,16 @@ linked pair
 planner 只做只读文件与网络读取,不 build、不创建资源。
 不同配对的 template 可以由不同 Provider 承接;相同物理输入按 BuildKey 共享构建工作。
 
+planner 与启动器由同一个 `ProviderModule<Plan>` 保持静态类型联系。
+planning 产出的 provider 私有 `Plan` 被闭包捕获。
+build preparation 与 materialize 都消费这一个值。
+core 不把计划降成 JSON 后再 Schema decode，也不把新 plan 逆向拼回旧 Case。
+
+启动函数返回带 `Scope.Scope` 要求的 Effect。
+fresh Case 默认在 Scope 退出时整组 stop。
+留存路径必须通过显式 release disposition 完成 suspend。
+资源不能直接离开 Scope，再依赖调用约定手工清理。
+
 ## Eval template 路径
 
 ```text

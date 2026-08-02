@@ -6,6 +6,7 @@ import { Data, Effect, Option } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import type { ScopedFeedback } from "../shared/types.ts";
 import type {
+  MaterializedSandboxCase,
   SandboxMaterializeContext,
   SandboxResourceGroup,
   ServiceController,
@@ -19,12 +20,20 @@ import {
   composeCollectionIdentity,
   detectDockerBuildPlatform,
   normalizeBuildPlatform,
+  type ComposeBuildCollection,
 } from "./compose.ts";
 import { digestOf, looksLikeDigestRef } from "./identity.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
+  type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
+import type { BuildKey, SandboxCaseKind } from "./identity.ts";
+import type {
+  SandboxRuntimeBuildPreparation,
+  SandboxRuntimeMaterializationError,
+  SandboxRuntimeMaterializeContext,
+} from "./runtime.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -32,8 +41,8 @@ const SANDBOX_LAYER: unique symbol = Symbol("niceeval.sandbox.layer");
 const SANDBOX_LAYERS = new WeakSet<object>();
 const SANDBOX_LAYER_STATES = new WeakMap<object, SandboxLayerState>();
 const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
-const SANDBOX_TEMPLATE_RUNTIMES = new WeakMap<object, CustomSandboxTemplateRuntime>();
-const SANDBOX_PROVIDER_RUNTIMES = new WeakMap<object, SandboxRuntimePlan>();
+const SANDBOX_PROVIDER_BINDINGS = new WeakMap<object, SandboxProviderBinding>();
+const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-plan");
 
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
@@ -81,25 +90,40 @@ export interface CustomProviderSandboxOptions {
   readonly targetPlatform: SandboxTargetPlatform;
   readonly recommendedConcurrency?: number;
   readonly exclusive?: boolean;
-  readonly create: (options: {
-    readonly timeout?: number;
-    readonly deadlineAt?: number;
-    readonly runtime?: SandboxRuntime;
-    readonly feedback: ScopedFeedback;
-  }) => Promise<Sandbox>;
+  readonly create: (
+    context: CustomProviderMaterializeContext,
+  ) => Effect.Effect<Sandbox, CustomSandboxMaterializationError>;
+}
+
+export class CustomSandboxMaterializationError extends Data.TaggedError(
+  "CustomSandboxMaterializationError",
+)<{
+  readonly code: string;
+  readonly message: string;
+  readonly cause: Error;
+}> {}
+
+export interface CustomProviderMaterializeContext {
+  readonly deadline: SandboxRuntimeDeadlineDeclaration;
+  readonly runtime: SandboxRuntime;
+  readonly feedback: ScopedFeedback;
 }
 
 export interface CustomCaseSandboxOptions {
   readonly identity: JsonValue;
   readonly targetPlatform: SandboxTargetPlatform;
-  readonly services?: boolean;
-  readonly materialize: (context: SandboxMaterializeContext) => Promise<{
+  readonly services: { readonly _tag: "Supported" } | { readonly _tag: "Unsupported" };
+  readonly materialize: (context: SandboxMaterializeContext) => Effect.Effect<{
     readonly sandbox: Sandbox;
     readonly group: SandboxResourceGroup;
-    readonly services?: ServiceController;
-    readonly facts?: JsonValue;
-  }>;
+    readonly services: { readonly _tag: "None" } | { readonly _tag: "Available"; readonly value: ServiceController };
+    readonly facts: JsonValue;
+  }, CustomSandboxMaterializationError>;
 }
+
+export type SandboxRuntimeDeadlineDeclaration =
+  | { readonly _tag: "Unlimited" }
+  | { readonly _tag: "Bounded"; readonly timeoutMs: number; readonly deadlineAt: number };
 
 export type SandboxLocation =
   | { readonly _tag: "Path"; readonly value: string }
@@ -147,13 +171,53 @@ export interface SandboxProviderScheduling {
   readonly admission: SandboxAdmission;
 }
 
+export type SandboxRuntimeRetention =
+  | { readonly _tag: "DestroyOnly" }
+  | { readonly _tag: "Suspendable" };
+
+export type SandboxRuntimeReuse =
+  | { readonly _tag: "Supported" }
+  | { readonly _tag: "Unsupported"; readonly reason: string };
+
+export type SandboxRuntimeSessionLimit =
+  | { readonly _tag: "Unlimited" }
+  | { readonly _tag: "Bounded"; readonly milliseconds: number };
+
+/** Provider 在 physical planning 时一并冻结的运行能力；core 不从 provider 名反推。 */
+export interface SandboxProviderCapabilities {
+  readonly retention: SandboxRuntimeRetention;
+  readonly reuse: SandboxRuntimeReuse;
+  readonly sessionLimit: SandboxRuntimeSessionLimit;
+}
+
 /**
- * Provider-owned runtime adapter 的中性定位数据。Runner 不解析 input，也不按 provider 名分支；
- * 物化边界把 adapter + input 原样交回注册该 adapter 的 provider 模块。
+ * Provider 私有的类型联系。`Plan` 只在 factory 与本模块内部存在；绑定到公开 plan 后被闭包捕获，
+ * core 只看见已消去泛型的 `SandboxProviderBinding`，从不接触 `unknown` 或 JSON runtime input。
  */
-export interface SandboxRuntimePlan {
-  readonly adapter: string;
-  readonly input: JsonValue;
+export interface SandboxProviderModule<Plan> {
+  readonly id: string;
+  readonly capabilities: SandboxProviderCapabilities;
+  readonly materialize: (
+    plan: Plan,
+    context: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError>;
+  readonly collectBuildPreparation: (
+    plan: Plan,
+    published: SandboxProviderPlan,
+    evalId: string,
+  ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
+}
+
+/** 泛型已经由闭包消去的 provider binding；只有合法 constructor 产物存在于 WeakMap 中。 */
+export interface SandboxProviderBinding {
+  readonly moduleId: string;
+  readonly capabilities: SandboxProviderCapabilities;
+  readonly materialize: (
+    context: SandboxRuntimeMaterializeContext,
+  ) => Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError>;
+  readonly collectBuildPreparation: (
+    evalId: string,
+  ) => Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError>;
 }
 
 /**
@@ -161,23 +225,25 @@ export interface SandboxRuntimePlan {
  * 只存在于 plan-keyed runtime binding，不会因调用方误做 `JSON.stringify(plan)` 而落盘。
  */
 export interface SandboxProviderPlan {
+  readonly [SANDBOX_PROVIDER_PLAN]: true;
   readonly provider: string;
   readonly plannerRevision: string;
-  readonly caseKind: string;
+  readonly caseKind: SandboxCaseKind;
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
-  readonly runtimeAdapter: string;
+  readonly capabilities: SandboxProviderCapabilities;
   readonly carry: SandboxTemplateCarry;
   readonly identity: JsonValue;
 }
 
-export interface SandboxProviderPlanInput {
+export interface SandboxProviderPlanInput<Plan> {
   readonly provider: string;
   readonly plannerRevision: string;
-  readonly caseKind: string;
+  readonly caseKind: SandboxCaseKind;
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
-  readonly runtime: SandboxRuntimePlan;
+  readonly module: SandboxProviderModule<Plan>;
+  readonly runtimePlan: Plan;
   /** physical planning 才能裁决的动态携带资格；省略表示可携带。 */
   readonly carry?: SandboxTemplateCarry;
   /** 可直接出现在 record / manifest 的 provider-owned 纯数据。 */
@@ -225,20 +291,8 @@ export interface SandboxTemplateDefinition {
   readonly privateFingerprintIdentity: JsonValue;
   readonly plan: SandboxTemplatePlanner;
   readonly leakGate: SandboxLeakGate;
-  readonly runtime?: CustomSandboxTemplateRuntime;
   readonly carry?: SandboxTemplateCarry;
 }
-
-export type CustomSandboxTemplateRuntime =
-  | { readonly _tag: "CustomProvider"; readonly create: CustomProviderSandboxOptions["create"] }
-  | { readonly _tag: "CustomCase"; readonly materialize: CustomCaseSandboxOptions["materialize"] };
-
-export type CustomSandboxTemplateRuntimeBinding =
-  | { readonly _tag: "Unbound" }
-  | { readonly _tag: "Bound"; readonly runtime: CustomSandboxTemplateRuntime };
-
-/** Effect Option 明确表达非法伪造 plan 的无绑定状态；合法 planner 产物恒为 Some。 */
-export type SandboxProviderRuntimeBinding = Option.Option<SandboxRuntimePlan>;
 
 export interface BuiltinSandboxPlannerServices {
   /** 只读 control-plane 探测；测试可注入确定值或 typed failure。 */
@@ -338,16 +392,14 @@ function freezeScheduling(scheduling: SandboxProviderScheduling): SandboxProvide
 }
 
 /** Provider planner 统一用本 helper 构造完整、冻结、可安全发布的计划。 */
-export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxProviderPlan {
+export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>): SandboxProviderPlan {
   const provider = nonEmptyString(input.provider, "sandbox provider plan.provider");
   const plannerRevision = nonEmptyString(input.plannerRevision, "sandbox provider plan.plannerRevision");
-  const caseKind = nonEmptyString(input.caseKind, "sandbox provider plan.caseKind");
+  const caseKind = input.caseKind;
   const target = freezeTarget(input.target);
   const scheduling = freezeScheduling(input.scheduling);
-  const runtime = Object.freeze({
-    adapter: nonEmptyString(input.runtime.adapter, "sandbox provider plan.runtime.adapter"),
-    input: freezeJson(input.runtime.input),
-  });
+  const moduleId = nonEmptyString(input.module.id, "sandbox provider module.id");
+  const capabilities = freezeProviderCapabilities(input.module.capabilities);
   const carry = input.carry === undefined
     ? Object.freeze({ _tag: "Eligible" as const })
     : Object.freeze({ ...input.carry });
@@ -364,28 +416,64 @@ export function sandboxProviderPlan(input: SandboxProviderPlanInput): SandboxPro
       lane: { key: scheduling.lane.key, limit: scheduling.lane.limit },
       admission: { _tag: scheduling.admission._tag },
     },
-    runtimeAdapter: runtime.adapter,
+    providerModule: moduleId,
+    capabilities: {
+      retention: { _tag: capabilities.retention._tag },
+      reuse: capabilities.reuse,
+      sessionLimit: capabilities.sessionLimit,
+    },
     carry,
     publishable: publishableIdentity,
     privateIdentityDigest,
   });
-  const plan = Object.freeze({
+  const plan: SandboxProviderPlan = {
+    [SANDBOX_PROVIDER_PLAN]: true,
     provider,
     plannerRevision,
     caseKind,
     target,
     scheduling,
-    runtimeAdapter: runtime.adapter,
+    capabilities,
     carry,
     identity,
-  });
-  SANDBOX_PROVIDER_RUNTIMES.set(plan, runtime);
-  return plan;
+  };
+  const binding = Object.freeze({
+    moduleId,
+    capabilities,
+    materialize: (context) => input.module.materialize(input.runtimePlan, context),
+    collectBuildPreparation: (evalId) => input.module.collectBuildPreparation(input.runtimePlan, plan, evalId),
+  } satisfies SandboxProviderBinding);
+  SANDBOX_PROVIDER_BINDINGS.set(plan, binding);
+  return Object.freeze(plan);
 }
 
-/** @internal materializer 取得 provider 私有 runtime input；完成态 planner 产物恒为 Some。 */
-export function sandboxProviderRuntimeOf(plan: SandboxProviderPlan): SandboxProviderRuntimeBinding {
-  return Option.fromNullable(SANDBOX_PROVIDER_RUNTIMES.get(plan));
+/** @internal core 只取得已经消去泛型的闭包；合法 planner 产物恒为 Some。 */
+export function sandboxProviderBindingOf(plan: SandboxProviderPlan): Option.Option<SandboxProviderBinding> {
+  return Option.fromNullable(SANDBOX_PROVIDER_BINDINGS.get(plan));
+}
+
+function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): SandboxProviderCapabilities {
+  if (
+    capabilities.sessionLimit._tag === "Bounded" &&
+    (!Number.isFinite(capabilities.sessionLimit.milliseconds) || capabilities.sessionLimit.milliseconds <= 0)
+  ) {
+    throw new TypeError("sandbox provider bounded session limit must be a positive finite number");
+  }
+  return Object.freeze({
+    retention: Object.freeze({ _tag: capabilities.retention._tag }),
+    reuse: capabilities.reuse._tag === "Supported"
+      ? Object.freeze({ _tag: "Supported" as const })
+      : Object.freeze({
+          _tag: "Unsupported" as const,
+          reason: nonEmptyString(capabilities.reuse.reason, "sandbox provider capabilities.reuse.reason"),
+        }),
+    sessionLimit: capabilities.sessionLimit._tag === "Unlimited"
+      ? Object.freeze({ _tag: "Unlimited" as const })
+      : Object.freeze({
+          _tag: "Bounded" as const,
+          milliseconds: capabilities.sessionLimit.milliseconds,
+        }),
+  });
 }
 
 function targetIdentity(target: SandboxPlannedTarget): JsonValue {
@@ -429,7 +517,7 @@ function plannedLocation(location: SandboxLocation, authorBaseDir: string): Sand
     : Object.freeze({ _tag: "Path", value: resolve(authorBaseDir, location.value) });
 }
 
-function lifetime(value: unknown, path: string): JsonValue {
+function lifetime(value: unknown, path: string): SandboxProviderLifetime {
   if (value === undefined) return Object.freeze({ _tag: "ProviderDefault" });
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new TypeError(`${path} must be a positive finite number`);
@@ -577,7 +665,6 @@ export function defineSandboxTemplate(
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
-  if (definition.runtime !== undefined) SANDBOX_TEMPLATE_RUNTIMES.set(declaration, definition.runtime);
   return createLayer({ kind: "template-bearing", template: declaration, commands: [] });
 }
 
@@ -604,6 +691,193 @@ function standardLinuxTarget(): SandboxPlannedTarget {
   });
 }
 
+export type SandboxExecutionUser =
+  | { readonly _tag: "ImageDefault" }
+  | { readonly _tag: "Configured"; readonly value: string };
+
+export type SandboxProviderLifetime =
+  | { readonly _tag: "ProviderDefault" }
+  | { readonly _tag: "Configured"; readonly milliseconds: number };
+
+export interface DockerComposeProviderPlan {
+  readonly file: SandboxLocation;
+  readonly workspaceService: string;
+  readonly build: "on-demand" | "prebuilt";
+  readonly executionUser: SandboxExecutionUser;
+  readonly env: Readonly<Record<string, string>>;
+  readonly collection: ComposeBuildCollection;
+}
+
+export interface DockerfileProviderPlan {
+  readonly context: SandboxLocation;
+  readonly dockerfile: string;
+  readonly buildArgs: Readonly<Record<string, string>>;
+  readonly build: DockerfileBuildIdentity;
+  readonly buildKey: BuildKey;
+  readonly platform: string;
+}
+
+export interface DockerImageProviderPlan {
+  readonly image: string;
+}
+
+export interface E2BProviderPlan {
+  readonly template: string;
+  readonly lifetime: SandboxProviderLifetime;
+}
+
+export interface VercelProviderPlan {
+  readonly snapshotId: string;
+  readonly lifetime: SandboxProviderLifetime;
+}
+
+export interface LocalProviderPlan {
+  readonly directory: string;
+}
+
+export interface CustomProviderPlan {
+  readonly name: string;
+}
+
+export interface CustomCaseProviderPlan {
+  readonly identity: JsonValue;
+  readonly services: { readonly _tag: "Supported" } | { readonly _tag: "Unsupported" };
+}
+
+function loadProviderRuntime() {
+  return Effect.promise(() => import("./runtime.ts"));
+}
+
+const noBuildPreparation = (): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>> =>
+  Effect.succeed(Option.none());
+
+const dockerComposeProviderModule = Object.freeze({
+  id: "niceeval/docker-compose",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "DestroyOnly" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeDockerComposeProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: (plan, published, evalId) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.collectDockerComposeProviderBuildPreparation(plan, published, evalId),
+  ),
+} satisfies SandboxProviderModule<DockerComposeProviderPlan>);
+
+const dockerfileProviderModule = Object.freeze({
+  id: "niceeval/dockerfile",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "Suspendable" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeDockerfileProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: (plan, published, evalId) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.collectDockerfileProviderBuildPreparation(plan, published, evalId),
+  ),
+} satisfies SandboxProviderModule<DockerfileProviderPlan>);
+
+const dockerImageProviderModule = Object.freeze({
+  id: "niceeval/docker-image",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "Suspendable" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeDockerImageProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: noBuildPreparation,
+} satisfies SandboxProviderModule<DockerImageProviderPlan>);
+
+const e2bProviderModule = Object.freeze({
+  id: "niceeval/e2b-template",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "Suspendable" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Bounded", milliseconds: 1_800_000 }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeE2BProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: noBuildPreparation,
+} satisfies SandboxProviderModule<E2BProviderPlan>);
+
+const vercelProviderModule = Object.freeze({
+  id: "niceeval/vercel-snapshot",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "Suspendable" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Bounded", milliseconds: 1_200_000 }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeVercelProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: noBuildPreparation,
+} satisfies SandboxProviderModule<VercelProviderPlan>);
+
+const localProviderModule = Object.freeze({
+  id: "niceeval/local-directory",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "DestroyOnly" }),
+    reuse: Object.freeze({ _tag: "Unsupported", reason: "local sandbox state is shared with the host" }),
+    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+  }),
+  materialize: (plan, context) => Effect.flatMap(
+    loadProviderRuntime(),
+    (runtime) => runtime.materializeLocalProviderPlan(plan, context),
+  ),
+  collectBuildPreparation: noBuildPreparation,
+} satisfies SandboxProviderModule<LocalProviderPlan>);
+
+function customProviderModule(
+  name: string,
+  create: CustomProviderSandboxOptions["create"],
+): SandboxProviderModule<CustomProviderPlan> {
+  return Object.freeze({
+    id: `custom-provider:${name}`,
+    capabilities: Object.freeze({
+      retention: Object.freeze({ _tag: "DestroyOnly" }),
+      reuse: Object.freeze({ _tag: "Unsupported", reason: "custom provider has no reset contract" }),
+      sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+    }),
+    materialize: (plan, context) => Effect.flatMap(
+      loadProviderRuntime(),
+      (runtime) => runtime.materializeCustomProviderPlan(plan, context, create),
+    ),
+    collectBuildPreparation: noBuildPreparation,
+  } satisfies SandboxProviderModule<CustomProviderPlan>);
+}
+
+function customCaseProviderModule(
+  materialize: CustomCaseSandboxOptions["materialize"],
+): SandboxProviderModule<CustomCaseProviderPlan> {
+  return Object.freeze({
+    id: "custom-case",
+    capabilities: Object.freeze({
+      retention: Object.freeze({ _tag: "DestroyOnly" }),
+      reuse: Object.freeze({ _tag: "Unsupported", reason: "custom case has no reset contract" }),
+      sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+    }),
+    materialize: (plan, context) => Effect.flatMap(
+      loadProviderRuntime(),
+      (runtime) => runtime.materializeCustomCaseProviderPlan(plan, context, materialize),
+    ),
+    collectBuildPreparation: noBuildPreparation,
+  } satisfies SandboxProviderModule<CustomCaseProviderPlan>);
+}
+
 /** Built-in factory 集合只属于 provider 侧；测试通过 services 注入，不改全局状态。 */
 export function createBuiltinSandboxFactories(
   services: BuiltinSandboxPlannerServices,
@@ -625,7 +899,7 @@ export function createBuiltinSandboxFactories(
       const file = location(options.file, "dockerComposeSandbox options.file");
       const workspaceService = nonEmptyString(options.workspaceService, "dockerComposeSandbox options.workspaceService");
       const build = options.build === undefined ? "on-demand" : options.build;
-      const executionUser: JsonValue = options.executionUser === undefined
+      const executionUser: SandboxExecutionUser = options.executionUser === undefined
         ? { _tag: "ImageDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.executionUser, "dockerComposeSandbox options.executionUser") };
       const env = stringRecord(options.env, "dockerComposeSandbox options.env");
@@ -668,13 +942,6 @@ export function createBuiltinSandboxFactories(
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
           try: async () => {
           const plannedFile = plannedLocation(file, authorBaseDir);
-          const runtimeBase: JsonValue = {
-            file: plannedFile,
-            workspaceService,
-            build,
-            executionUser,
-            env: runtimeEnv,
-          };
           const collection = await collectComposeBuilds({
             file: plannedFile._tag === "Url" ? new URL(plannedFile.value) : plannedFile.value,
             mainService: workspaceService,
@@ -682,11 +949,6 @@ export function createBuiltinSandboxFactories(
             env: runtimeEnv,
           });
           const caseIdentity = composeCollectionIdentity(collection);
-          const runtimeInput: JsonValue = {
-            ...(runtimeBase as Record<string, JsonValue>),
-            plannedBuildKeys: [...collection.buildKeys].sort(),
-            plannedCaseIdentityDigest: digestOf(caseIdentity),
-          };
           const identityInput: JsonValue = {
             file: plannedFile,
             workspaceService,
@@ -703,7 +965,15 @@ export function createBuiltinSandboxFactories(
             caseKind: "compose",
             target,
             scheduling: sharedScheduling("docker", 10),
-            runtime: { adapter: "niceeval/docker-compose", input: runtimeInput },
+            module: dockerComposeProviderModule,
+            runtimePlan: Object.freeze({
+              file: plannedFile,
+              workspaceService,
+              build,
+              executionUser: Object.freeze({ ...executionUser }),
+              env: Object.freeze({ ...runtimeEnv }),
+              collection,
+            }),
             publishableIdentity: {
               workspaceService,
               build,
@@ -762,12 +1032,7 @@ export function createBuiltinSandboxFactories(
         leakGate: { _tag: "Dockerfile", context, dockerfile },
         plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
           try: async () => {
-          const runtimeBase: JsonValue = {
-            context: plannedLocation(context, authorBaseDir),
-            dockerfile,
-            buildArgs: { ...buildArgs },
-          };
-          const plannedContext = runtimeBase.context as SandboxLocation;
+          const plannedContext = plannedLocation(context, authorBaseDir);
           const build = await resolveDockerfileBuildIdentity({
             provider: "docker",
             context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
@@ -776,8 +1041,10 @@ export function createBuiltinSandboxFactories(
             platform: plannedTargetPlatform(target),
             label: "Dockerfile sandbox",
           });
-          const runtimeInput: JsonValue = {
-            ...(runtimeBase as Record<string, JsonValue>),
+          const runtimeIdentity: JsonValue = {
+            context: plannedContext,
+            dockerfile,
+            buildArgs: { ...buildArgs },
             plannedBuildKey: build.buildKey,
           };
           return sandboxProviderPlan({
@@ -786,12 +1053,20 @@ export function createBuiltinSandboxFactories(
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            runtime: { adapter: "niceeval/dockerfile", input: runtimeInput },
+            module: dockerfileProviderModule,
+            runtimePlan: Object.freeze({
+              context: plannedContext,
+              dockerfile,
+              buildArgs,
+              build,
+              buildKey: build.buildKey,
+              platform: plannedTargetPlatform(target),
+            }),
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
               buildKey: build.buildKey,
             },
-            privateFingerprintIdentity: { runtimeInput, buildKey: build.buildKey },
+            privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey },
             ...(build.carryEligible
               ? {}
               : {
@@ -825,16 +1100,16 @@ export function createBuiltinSandboxFactories(
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
-          const runtimeInput: JsonValue = { image };
           return sandboxProviderPlan({
             provider: "docker",
             plannerRevision: "docker-image-1",
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            runtime: { adapter: "niceeval/docker-image", input: runtimeInput },
+            module: dockerImageProviderModule,
+            runtimePlan: Object.freeze({ image }),
             publishableIdentity: { source: "configured-image" },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: { image },
             ...(looksLikeDigestRef(image)
               ? {}
               : {
@@ -862,16 +1137,16 @@ export function createBuiltinSandboxFactories(
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
-          const runtimeInput: JsonValue = { template, lifetime: plannedLifetime };
           return Effect.succeed(sandboxProviderPlan({
             provider: "e2b",
             plannerRevision: "e2b-template-1",
             caseKind: "prebuilt",
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("e2b", 20),
-            runtime: { adapter: "niceeval/e2b-template", input: runtimeInput },
+            module: e2bProviderModule,
+            runtimePlan: Object.freeze({ template, lifetime: plannedLifetime }),
             publishableIdentity: { lifetime: plannedLifetime },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: { template, lifetime: plannedLifetime },
           }));
         },
       });
@@ -890,16 +1165,16 @@ export function createBuiltinSandboxFactories(
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
-          const runtimeInput: JsonValue = { snapshotId, lifetime: plannedLifetime };
           return Effect.succeed(sandboxProviderPlan({
             provider: "vercel",
             plannerRevision: "vercel-snapshot-1",
             caseKind: "prebuilt",
             target: standardLinuxTarget(),
             scheduling: sharedScheduling("vercel", 1),
-            runtime: { adapter: "niceeval/vercel-snapshot", input: runtimeInput },
+            module: vercelProviderModule,
+            runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime }),
             publishableIdentity: { lifetime: plannedLifetime },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: { snapshotId, lifetime: plannedLifetime },
           }));
         },
       });
@@ -925,16 +1200,16 @@ export function createBuiltinSandboxFactories(
           const configured = directory._tag === "AuthorBaseDir"
             ? authorBaseDir
             : resolve(authorBaseDir, directory.value);
-          const runtimeInput: JsonValue = { directory: configured };
           return Effect.succeed(sandboxProviderPlan({
             provider: "local",
             plannerRevision: "local-directory-1",
             caseKind: "prebuilt",
             target: { platform: services.hostPlatform, source: "host" },
             scheduling: exclusiveScheduling("local-worktree"),
-            runtime: { adapter: "niceeval/local-directory", input: runtimeInput },
+            module: localProviderModule,
+            runtimePlan: Object.freeze({ directory: configured }),
             publishableIdentity: { directory: { _tag: directory._tag } },
-            privateFingerprintIdentity: runtimeInput,
+            privateFingerprintIdentity: { directory: configured },
           }));
         },
       });
@@ -987,6 +1262,7 @@ export function customProviderSandbox(
   const scheduling = options.exclusive === true
     ? exclusiveScheduling(name)
     : sharedScheduling(name, recommendedConcurrency);
+  const module = customProviderModule(name, options.create);
   const identity: JsonValue = {
     provider: name,
     kind: "custom-provider",
@@ -1013,21 +1289,14 @@ export function customProviderSandbox(
         `custom provider ${JSON.stringify(name)} owns an opaque create callback; ` +
         "use defineSandboxCase({ identity, materialize }) for cross-Run carry.",
     }),
-    runtime: Object.freeze({ _tag: "CustomProvider", create: options.create }),
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: name,
       plannerRevision: "custom-provider-1",
-      caseKind: "custom-provider",
+      caseKind: "custom",
       target: { platform: targetPlatform, source: "provider-defined" },
       scheduling,
-      runtime: {
-        adapter: "niceeval/custom-provider",
-        input: {
-          name,
-          retention: { _tag: "Unsupported" },
-          reuse: { _tag: "Unsupported" },
-        },
-      },
+      module,
+      runtimePlan: Object.freeze({ name }),
       publishableIdentity: {},
       privateFingerprintIdentity: identity,
     })),
@@ -1043,10 +1312,9 @@ export function customCaseSandbox(
     throw new TypeError("defineSandboxCase options.materialize must be a function");
   }
   const targetPlatform = freezePlatform(options.targetPlatform);
-  const services = options.services === true
-    ? Object.freeze({ _tag: "Supported" })
-    : Object.freeze({ _tag: "Unsupported" });
+  const services = Object.freeze({ _tag: options.services._tag });
   const identity = freezeJson(options.identity);
+  const module = customCaseProviderModule(options.materialize);
   const declarationIdentity: JsonValue = {
     provider: "custom-case",
     kind: "custom-case",
@@ -1062,22 +1330,14 @@ export function customCaseSandbox(
     publishableIdentity: {},
     privateFingerprintIdentity: declarationIdentity,
     leakGate: { _tag: "None" },
-    runtime: Object.freeze({ _tag: "CustomCase", materialize: options.materialize }),
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: "custom-case",
       plannerRevision: "custom-case-1",
       caseKind: "custom",
       target: { platform: targetPlatform, source: "provider-defined" },
       scheduling: sharedScheduling("custom-case", 5),
-      runtime: {
-        adapter: "niceeval/custom-case",
-        input: {
-          identity,
-          services: { _tag: services._tag },
-          group: { _tag: "Required" },
-          retention: { _tag: "Unsupported" },
-        },
-      },
+      module,
+      runtimePlan: Object.freeze({ identity, services }),
       publishableIdentity: {},
       privateFingerprintIdentity: declarationIdentity,
     })),
@@ -1110,16 +1370,6 @@ export function planSandboxTemplate(
         ["Construct templates through their provider factory."],
       ))
     : planner(input);
-}
-
-/** @internal scoped materializer 根据 link 选定的 template 取得私有 callback；identity 永不含函数。 */
-export function customSandboxTemplateRuntimeOf(
-  template: SandboxTemplateDeclaration,
-): CustomSandboxTemplateRuntimeBinding {
-  const runtime = SANDBOX_TEMPLATE_RUNTIMES.get(template);
-  return runtime === undefined
-    ? Object.freeze({ _tag: "Unbound" })
-    : Object.freeze({ _tag: "Bound", runtime });
 }
 
 export function isSandboxLayer(value: unknown): value is SandboxLayer {

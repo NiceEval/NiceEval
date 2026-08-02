@@ -15,7 +15,9 @@ import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
+  type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
+import type { SandboxLocation } from "./layer.ts";
 
 export { DOCKERFILE_MATERIALIZER_REVISION } from "./dockerfile-identity.ts";
 
@@ -101,6 +103,64 @@ export async function collectDockerfileBuildFromPlan(
       },
     },
   };
+}
+
+/** ProviderModule 的 typed Dockerfile 收集入口；不需要逆向构造 PlannedSandboxCase。 */
+export async function collectDockerfileBuildFromIdentity(input: {
+  readonly provider: "docker" | "e2b";
+  readonly profile: string;
+  readonly context: SandboxLocation;
+  readonly dockerfile: string;
+  readonly buildArgs: Readonly<Record<string, string>>;
+  readonly platform: string;
+  readonly expected: DockerfileBuildIdentity;
+}): Promise<DockerfileBuildCollection> {
+  const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
+  const identity = await resolveDockerfileBuildIdentity({
+    provider: input.provider,
+    context,
+    dockerfile: input.dockerfile,
+    buildArgs: input.buildArgs,
+    platform: input.platform,
+    label: `sandbox profile ${input.profile}`,
+  });
+  if (identity.buildKey !== input.expected.buildKey) {
+    throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
+  }
+  const caseKey = computeCaseKey({
+    caseKind: "on-demand-build",
+    materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
+    buildKeys: [identity.buildKey],
+    caseParams: { provider: input.provider, profile: input.profile, buildKey: identity.buildKey },
+  });
+  const details: DockerfileBuildDetails = {
+    provider: input.provider,
+    contextDir: identity.contextDir,
+    dockerfilePath: identity.dockerfilePath,
+    dockerfile: identity.dockerfile,
+    buildArgs: input.buildArgs,
+    platform: input.platform,
+  };
+  return Object.freeze({
+    buildKey: identity.buildKey,
+    caseKey,
+    details,
+    carryEligible: identity.carryEligible,
+    work: Object.freeze({
+      buildKey: identity.buildKey,
+      provider: input.provider,
+      label: `${input.provider}:dockerfile:${input.profile}`,
+      inputs: Object.freeze({
+        kind: "dockerfile",
+        profile: input.profile,
+        platform: input.platform,
+        context: identity.contextDir,
+        dockerfile: identity.dockerfilePath,
+        contextFilterRules: identity.contextFilterRules,
+        args: input.buildArgs,
+      }),
+    }),
+  });
 }
 
 /** 收集期与 attempt 物化期共用，保证 result.json 的 CaseKey 与携带规划看到的是同一个。 */

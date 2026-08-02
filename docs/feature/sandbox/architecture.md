@@ -238,7 +238,8 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 - **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例台账见 memory 的 e2b-provision-429-duplicate-sandbox 条目)——都由重试前对账兜住。
 - **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴;SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
-重试循环本身在 `runtime.ts` 的内置 runtime adapter:
+重试循环由各内置 `ProviderModule<Plan>` 自己拥有。
+`runtime.ts` 只调用 plan 私绑的闭包，不维护 adapter registry:
 
 - 退避睡眠期间临时归还并发槽位(`retry.ts` 的 `ProvisionSlot`),睡醒后再排队要回来——在退避的 attempt 只是在等,不该攥着 `sandboxSem` 的名额陪跑 `setTimeout`,不然一批 429 会把整批实际并发拖成远低于 `--max-concurrency` 声明值的个位数。
 - 重试全部耗尽后仍按原语义走:`verdict: "errored"`(基建问题,不是 agent 表现);对账中销毁的实例不额外报错,只留 diagnostic。
@@ -261,7 +262,13 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 两条路,取决于新 provider 是不是打算贡献回 niceeval:
 
-- **贡献进 niceeval**(像 docker/vercel/e2b 那样内置):实现 `Sandbox` 接口的一个类(`create()` + `workdir` + run/read/write/stop/up-down-load;路径解析直接用 `src/sandbox/paths.ts`,不要自己再写一份),并交付该 Provider 的 template-bearing factory 与只读 planner。factory 以 provider 原生纯数据声明完整起点、同时选定 Provider;planner 把起点翻译成 `PlannedSandboxCase`,只做只读文件与网络读取。case 义务清单见 [Sandbox Case](case.md)。
+- **贡献进 niceeval**(像 docker/vercel/e2b 那样内置):实现 `Sandbox` 接口的一个类。
+  接口包含 `create()`、`workdir`、run/read/write/stop/up-down-load。
+  路径解析直接用 `src/sandbox/paths.ts`，不要自己再写一份。
+  同时交付 template-bearing factory 与只读 `ProviderModule<Plan>`。
+  factory 以 provider 原生纯数据声明完整起点，同时选定 Provider。
+  planner 产出 provider 私有 typed Plan；module 的 build/materialize 闭包消费同一 Plan。
+  case 义务清单见 [Sandbox Case](case.md)。
 - **只在自己项目里用,不改 niceeval**:用 [`defineSandbox`](library.md#自定义-providerdefinesandbox),身份与留存义务见 [Sandbox Case · 自定义 case](case.md#自定义-case)。
 
 **核心定义接口, provider 各自实现**,两条路都不改核心其余部分。niceeval 的沙箱抽象刻意保持小(只需 run/read/write/stop),让接一个新 provider 的成本最低。

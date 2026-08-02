@@ -8,11 +8,12 @@ import { join } from "node:path";
 import {
   createBuiltinSandboxFactories,
   defineSandboxTemplate,
+  sandboxProviderBindingOf,
   sandboxLayer,
   sandboxProviderPlan,
-  sandboxProviderRuntimeOf,
   SandboxProviderPlanningError,
   type SandboxLayer,
+  type SandboxProviderModule,
   type SandboxTargetPlatform,
 } from "./layer.ts";
 import { linkSandboxLayers, type LinkedSandboxLayerPair } from "./link.ts";
@@ -31,6 +32,17 @@ const linux: SandboxTargetPlatform = {
   arch: "x64",
   libc: "gnu",
 };
+
+const fixtureModule: SandboxProviderModule<{ readonly manifest: string }> = Object.freeze({
+  id: "acme/pod",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "DestroyOnly" }),
+    reuse: Object.freeze({ _tag: "Unsupported", reason: "fixture does not reset" }),
+    sessionLimit: Object.freeze({ _tag: "Unlimited" }),
+  }),
+  materialize: () => Effect.dieMessage("fixture module must not materialize"),
+  collectBuildPreparation: () => Effect.succeed(Option.none()),
+});
 
 const factories = createBuiltinSandboxFactories({
   dockerBuildPlatform: Effect.succeed("linux/amd64"),
@@ -106,7 +118,7 @@ describe("provider-neutral Sandbox planning", () => {
       return plan.providerPlan;
     });
 
-    expect(plans.map(({ runtimeAdapter }) => runtimeAdapter)).toEqual([
+    expect(plans.map((plan) => Option.getOrThrow(sandboxProviderBindingOf(plan)).moduleId)).toEqual([
       "niceeval/docker-compose",
       "niceeval/dockerfile",
       "niceeval/docker-image",
@@ -117,24 +129,20 @@ describe("provider-neutral Sandbox planning", () => {
     expect(plans[0]).toMatchObject({
       provider: "docker",
       caseKind: "compose",
-      runtimeAdapter: "niceeval/docker-compose",
       scheduling: { recommendedConcurrency: 10, lane: { key: "docker", limit: 10 } },
     });
-    expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[0]!)).input).toMatchObject({
-      file: { _tag: "Path", value: join(root, "compose.yaml") },
-      workspaceService: "client",
-      build: "on-demand",
-      executionUser: { _tag: "ImageDefault" },
-      env: {},
+    expect(Option.getOrThrow(sandboxProviderBindingOf(plans[0]!))).toMatchObject({
+      moduleId: "niceeval/docker-compose",
+      capabilities: { retention: { _tag: "DestroyOnly" }, reuse: { _tag: "Supported" } },
     });
     expect(plans[5]).toMatchObject({
       provider: "local",
-      runtimeAdapter: "niceeval/local-directory",
       target: { platform: { _tag: "Darwin", os: "darwin", arch: "arm64" } },
       scheduling: { admission: { _tag: "Exclusive" } },
     });
-    expect(Option.getOrThrow(sandboxProviderRuntimeOf(plans[5]!)).input).toEqual({
-      directory: join(root, "workspace"),
+    expect(Option.getOrThrow(sandboxProviderBindingOf(plans[5]!))).toMatchObject({
+      moduleId: "niceeval/local-directory",
+      capabilities: { reuse: { _tag: "Unsupported" } },
     });
     expect(Object.isFrozen(outputs)).toBe(true);
     expect(plans.every(Object.isFrozen)).toBe(true);
@@ -154,14 +162,15 @@ describe("provider-neutral Sandbox planning", () => {
         return Effect.succeed(sandboxProviderPlan({
           provider: "acme",
           plannerRevision: "1",
-          caseKind: "pod",
+          caseKind: "custom",
           target: { platform: linux, source: "provider-defined" },
           scheduling: {
             recommendedConcurrency: 4,
             lane: { key: "acme-account", limit: 4 },
             admission: { _tag: "Shared" },
           },
-          runtime: { adapter: "acme/pod", input: { manifest: "sha256:abc" } },
+          module: fixtureModule,
+          runtimePlan: Object.freeze({ manifest: "sha256:abc" }),
           publishableIdentity: { manifestKind: "digest" },
           privateFingerprintIdentity: { manifest: "sha256:abc" },
         }));
@@ -183,7 +192,6 @@ describe("provider-neutral Sandbox planning", () => {
       _tag: "Sandbox",
       providerPlan: {
         provider: "acme",
-        runtimeAdapter: "acme/pod",
         scheduling: { lane: { key: "acme-account", limit: 4 } },
       },
     });
@@ -238,7 +246,6 @@ describe("provider-neutral Sandbox planning", () => {
       commands: [{ kind: "opaque", owner: { kind: "experiment" }, index: 0 }],
       providerPlan: {
         provider: "docker",
-        runtimeAdapter: "niceeval/docker-image",
         publishable: { source: "configured-image" },
       },
     });
@@ -297,9 +304,7 @@ describe("provider-neutral Sandbox planning", () => {
     expect(linkedRunFingerprintIdentity(changedRevision)).not.toEqual(linkedRunFingerprintIdentity(first));
     expect(linkedRunFingerprintIdentity(changedSemantic)).not.toEqual(linkedRunFingerprintIdentity(first));
     expect(linkedRunFingerprintIdentity(changedPath)).not.toEqual(linkedRunFingerprintIdentity(first));
-    expect(Option.getOrThrow(sandboxProviderRuntimeOf(first.providerPlan)).input).toMatchObject({
-      env: { ACCESS_TOKEN: "secret-red", DATASET: "dataset-a" },
-    });
+    expect(Option.getOrThrow(sandboxProviderBindingOf(first.providerPlan)).moduleId).toBe("niceeval/docker-compose");
     expect(linkedRunRecordIdentity(first)).toEqual(linkedRunFingerprintIdentity(first));
   });
 });

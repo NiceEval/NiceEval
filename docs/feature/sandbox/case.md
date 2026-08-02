@@ -249,16 +249,20 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 每个自定义 case 必须给出纯数据身份与 materializer:
 
 ```typescript
+import { Effect } from "effect";
+
 defineSandboxCase({
   identity: {
     kind: "kubernetes",
     cluster: "eval-prod",
     manifestDigest: "sha256:...",
   },
-  materialize: async (ctx) => ({
+  services: { _tag: "Supported" },
+  materialize: (ctx) => Effect.succeed({
     sandbox: mainPodSandbox,
     group: namespaceResourceGroup,
-    services: podServiceController,
+    services: { _tag: "Available", value: podServiceController },
+    facts: { namespace: "eval-prod" },
   }),
 });
 ```
@@ -266,6 +270,8 @@ defineSandboxCase({
 约束:
 
 - `identity` 必须可序列化;函数体不参与自动哈希,缺稳定身份时禁止结果携带,不能用函数名或 `toString()` 冒充环境指纹。
+- `services`、`materialize` 结果中的 services 与 facts 都是完整 ADT/必填值。
+  不用 optional 字段表示领域状态；`materialize` 返回 typed Effect。
 - 声明了某项能力就承担对应完整契约测试。
 - 自定义 case 的公开扩展面当前只允许主 Sandbox、资源组与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 case 在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
 

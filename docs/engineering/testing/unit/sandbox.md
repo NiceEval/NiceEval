@@ -90,6 +90,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - pair key 用 tuple 编码并覆盖 id 自带分隔符的反例；同一 `(Experiment, Eval)` 重复出现走 typed failure，不能静默覆盖。
     linked pair 的 carry 只允许 `Eligible` 或带非空 reasons 的 `Blocked`，没有 boolean 与可选数组的矛盾组合。
   - 自定义 provider 连同 factory 直接调用、核心路径无 provider 名分支;`t.sandbox` 的错误反馈带 API 名与 agent 名,经管线不经 stdout。
+  - ProviderModule binding：公开 plan 无私有 runtime input；伪造 plan 得到 typed binding error。
+    build/materialize 均调用 factory 私绑的同一 typed Plan。
+    core 中出现 adapter switch 或 runtime Schema decode 时测试必须失败。
+  - Scope ownership：fresh materialization 的 Scope 在成功、失败和 interruption 三条路径都恰好释放一次。
+    Managed release 与默认 stop 互斥，不得 double-stop。
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。
   不能只测 Agent CLI 可执行——不同官方基线的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。

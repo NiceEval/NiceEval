@@ -69,10 +69,32 @@ function input(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>, servi
     buildLocators: new Map<string, string>(),
     provisionSlot: { _tag: "Detached" as const },
     services,
+    release: { _tag: "Stop" as const },
   };
 }
 
 describe("provider-owned Sandbox runtime materialization", () => {
+  it("rejects a serialized plan without its private ProviderModule binding", async () => {
+    const providerCreate = vi.fn(() => Effect.succeed(fakeSandbox("must-not-create")));
+    const original = planned(customProviderSandbox({
+      name: "acme",
+      targetPlatform: linux,
+      create: providerCreate,
+    }));
+    const detached: typeof original = Object.freeze({
+      ...original,
+      providerPlan: structuredClone(original.providerPlan),
+    });
+
+    const result = await Effect.runPromise(Effect.either(Effect.scoped(
+      materializeSandboxRunPlan(input(detached, { _tag: "Live" })),
+    )));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left.code).toBe("sandbox.provider-binding-missing");
+    expect(providerCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects Dockerfile inputs that change after physical planning", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-"));
     await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"e".repeat(64)}\nCOPY payload /payload\n`);
@@ -108,37 +130,59 @@ describe("provider-owned Sandbox runtime materialization", () => {
   });
 
   it("custom provider/case callbacks stay bound to the selected template", async () => {
-    const providerCreate = vi.fn(async () => fakeSandbox("custom-provider"));
+    const providerCreate = vi.fn(() => Effect.succeed(fakeSandbox("custom-provider")));
     const providerPlan = planned(customProviderSandbox({
       name: "acme",
       targetPlatform: linux,
       create: providerCreate,
     }));
-    const provider = await Effect.runPromise(materializeSandboxRunPlan(input(providerPlan, { _tag: "Live" })));
+    const provider = await Effect.runPromise(Effect.scoped(
+      materializeSandboxRunPlan(input(providerPlan, { _tag: "Live" })),
+    ));
     expect(providerCreate).toHaveBeenCalledTimes(1);
     expect(provider.sandbox.sandboxId).toBe("custom-provider");
-    await provider.group.stop();
 
     const groupStop = vi.fn(async () => {});
-    const caseMaterialize = vi.fn(async () => ({
+    const caseMaterialize = vi.fn(() => Effect.succeed({
       sandbox: fakeSandbox("custom-case"),
       group: {
         primary: { sandboxId: "custom-case", provider: "acme-case" },
         resources: { namespace: "fixture" },
         stop: groupStop,
       },
+      services: { _tag: "None" as const },
       facts: { namespace: "fixture" },
     }));
     const casePlan = planned(customCaseSandbox({
       identity: { revision: "v1" },
       targetPlatform: linux,
+      services: { _tag: "Unsupported" },
       materialize: caseMaterialize,
     }));
-    const customCase = await Effect.runPromise(materializeSandboxRunPlan(input(casePlan, { _tag: "Live" })));
+    const customCase = await Effect.runPromise(Effect.scoped(
+      materializeSandboxRunPlan(input(casePlan, { _tag: "Live" })),
+    ));
     expect(caseMaterialize).toHaveBeenCalledWith(expect.objectContaining({ evalId: "task/example" }));
     expect(customCase.caseKind).toBe("custom");
-    await customCase.group.stop();
     expect(groupStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("Scope runs exactly one selected release disposition", async () => {
+    const sandboxStop = vi.fn(async () => {});
+    const managedRelease = vi.fn(() => Effect.void);
+    const providerPlan = planned(customProviderSandbox({
+      name: "acme",
+      targetPlatform: linux,
+      create: () => Effect.succeed({ ...fakeSandbox("managed"), stop: sandboxStop }),
+    }));
+
+    await Effect.runPromise(Effect.scoped(materializeSandboxRunPlan({
+      ...input(providerPlan, { _tag: "Live" }),
+      release: { _tag: "Managed", run: managedRelease },
+    })));
+
+    expect(managedRelease).toHaveBeenCalledTimes(1);
+    expect(sandboxStop).not.toHaveBeenCalled();
   });
 
   it("Compose adapter decodes the completed runtime input before invoking its provider materializer", async () => {
@@ -172,7 +216,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
     if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
     const plan = output.plan;
     const stop = vi.fn(async () => {});
-    const materializeCompose = vi.fn(async (legacyPlan): Promise<MaterializedSandboxCase> => ({
+    const materializeCompose = vi.fn(async (providerPlan): Promise<MaterializedSandboxCase> => ({
       sandbox: fakeSandbox("compose-main"),
       group: {
         primary: { sandboxId: "compose-main", provider: "docker" },
@@ -180,33 +224,26 @@ describe("provider-owned Sandbox runtime materialization", () => {
         stop,
       },
       caseKind: "compose",
-      caseKey: legacyPlan.caseKey,
-      buildKeys: legacyPlan.buildKeys,
-      identity: legacyPlan.identity,
-      carryEligible: legacyPlan.carryEligible,
+      caseKey: providerPlan.caseKey,
+      buildKeys: providerPlan.collection.buildKeys,
+      identity: providerPlan.identity,
+      carryEligible: providerPlan.carryEligible,
       facts: { projectName: "fixture" },
     }));
 
-    const materialized = await Effect.runPromise(materializeSandboxRunPlan(input(plan, {
+    const materialized = await Effect.runPromise(Effect.scoped(materializeSandboxRunPlan(input(plan, {
       _tag: "Test",
       materializeCompose,
-    })));
+    }))));
     expect(materializeCompose).toHaveBeenCalledWith(
       expect.objectContaining({
         evalId: "task/example",
-        caseKind: "compose",
-        declaration: expect.objectContaining({
-          form: "source",
-          value: expect.objectContaining({
-            file: join(root, "compose.yaml"),
-            mainService: "client",
-          }),
-        }),
+        mainService: "client",
+        collection: expect.objectContaining({ composePath: join(root, "compose.yaml") }),
       }),
       expect.objectContaining({ ctx: expect.objectContaining({ evalId: "task/example" }) }),
     );
     expect(materialized.sandbox.sandboxId).toBe("compose-main");
-    await materialized.group.stop();
     expect(stop).toHaveBeenCalledTimes(1);
     } finally {
       await rm(root, { recursive: true, force: true });

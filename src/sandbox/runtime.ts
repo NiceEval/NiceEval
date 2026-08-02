@@ -1,68 +1,53 @@
-// Provider-neutral physical plan -> live Sandbox materialization.
-// Runner 只交付 pair-owned LinkedRunPlan；adapter 解析、SDK Promise lift 与 provider 分发都留在 sandbox 域。
+// ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
-import { Data, Effect, Option, Schema } from "effect";
-import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
+import { Data, Effect, Option, type Scope } from "effect";
+import type { ProvisionSlot } from "./retry.ts";
+import { withProvisionRetry } from "./retry.ts";
 import type { MaterializedSandboxCase, SandboxResourceGroup } from "./case-types.ts";
-import type { PlannedSandboxCase } from "./case.ts";
-import { materializeDockerComposeCase } from "./compose.ts";
 import {
   collectComposeBuilds,
   composeCollectionIdentity,
   dockerComposeBuildProvider,
+  materializeDockerComposeProviderCase,
   normalizeBuildPlatform,
 } from "./compose.ts";
-import { collectDockerfileBuildFromPlan, dockerfileBuildProvider } from "./dockerfile-build.ts";
+import { collectDockerfileBuildFromIdentity, dockerfileBuildProvider } from "./dockerfile-build.ts";
 import type { SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { registerSandbox, unregisterSandbox } from "./registry.ts";
 import { currentRunIdentity } from "./run-identity.ts";
 import {
-  customSandboxTemplateRuntimeOf,
-  sandboxProviderRuntimeOf,
-  type SandboxRuntimePlan,
+  sandboxProviderBindingOf,
+  type SandboxProviderBinding,
+  type CustomCaseProviderPlan,
+  type CustomCaseSandboxOptions,
+  type CustomProviderPlan,
+  type CustomProviderSandboxOptions,
+  type DockerComposeProviderPlan,
+  type DockerfileProviderPlan,
+  type DockerImageProviderPlan,
+  type E2BProviderPlan,
+  type LocalProviderPlan,
+  type SandboxProviderCapabilities,
+  type SandboxProviderPlan,
+  type SandboxRuntimeDeadlineDeclaration,
+  type VercelProviderPlan,
 } from "./layer.ts";
-import { computeCaseKey, digestOf, type BuildKey, type CaseKey, type SandboxCaseKind } from "./identity.ts";
+import { computeCaseKey, digestOf, type BuildKey, type CaseKey } from "./identity.ts";
 import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
 import type { JsonValue, Sandbox, ScopedFeedback } from "../types.ts";
 
-const StringRecord = Schema.Record({ key: Schema.String, value: Schema.String });
-const Location = Schema.Union(
-  Schema.Struct({ _tag: Schema.Literal("Path"), value: Schema.NonEmptyTrimmedString }),
-  Schema.Struct({ _tag: Schema.Literal("Url"), value: Schema.NonEmptyTrimmedString }),
-);
-const Lifetime = Schema.Union(
-  Schema.Struct({ _tag: Schema.Literal("ProviderDefault") }),
-  Schema.Struct({ _tag: Schema.Literal("Configured"), milliseconds: Schema.Positive }),
-);
-const DockerComposeInput = Schema.Struct({
-  file: Location,
-  workspaceService: Schema.NonEmptyTrimmedString,
-  build: Schema.Literal("on-demand", "prebuilt"),
-  executionUser: Schema.Union(
-    Schema.Struct({ _tag: Schema.Literal("ImageDefault") }),
-    Schema.Struct({ _tag: Schema.Literal("Configured"), value: Schema.NonEmptyTrimmedString }),
-  ),
-  env: StringRecord,
-  plannedBuildKeys: Schema.Array(Schema.NonEmptyTrimmedString),
-  plannedCaseIdentityDigest: Schema.NonEmptyTrimmedString,
-});
-const DockerfileInput = Schema.Struct({
-  context: Location,
-  dockerfile: Schema.NonEmptyTrimmedString,
-  buildArgs: StringRecord,
-  plannedBuildKey: Schema.NonEmptyTrimmedString,
-});
-const DockerImageInput = Schema.Struct({ image: Schema.NonEmptyTrimmedString });
-const E2BInput = Schema.Struct({ template: Schema.NonEmptyTrimmedString, lifetime: Lifetime });
-const VercelInput = Schema.Struct({ snapshotId: Schema.NonEmptyTrimmedString, lifetime: Lifetime });
-const LocalInput = Schema.Struct({ directory: Schema.NonEmptyTrimmedString });
+export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
 
-export type SandboxRuntimeDeadline =
-  | { readonly _tag: "Unlimited" }
-  | { readonly _tag: "Bounded"; readonly timeoutMs: number; readonly deadlineAt: number };
+/** Scope 退出时的唯一释放协议；不以 optional callback 或 boolean 表达所有权。 */
+export type SandboxRuntimeRelease =
+  | { readonly _tag: "Stop" }
+  | {
+      readonly _tag: "Managed";
+      readonly run: (owned: MaterializedSandboxCase) => Effect.Effect<void>;
+    };
 
 export interface SandboxRuntimeMaterializeInput {
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
@@ -75,28 +60,28 @@ export interface SandboxRuntimeMaterializeInput {
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
   readonly services: SandboxRuntimeServices;
+  readonly release: SandboxRuntimeRelease;
 }
+
+/** ProviderModule 闭包收到的完整上下文；公开 plan 只提供中性 identity/scheduling 元数据。 */
+export type SandboxRuntimeMaterializeContext = Omit<SandboxRuntimeMaterializeInput, "release">;
 
 export type SandboxRuntimeServices =
   | { readonly _tag: "Live" }
   | {
       readonly _tag: "Test";
-      readonly materializeCompose: typeof materializeDockerComposeCase;
+      readonly materializeCompose: typeof materializeDockerComposeProviderCase;
     };
 
 export const liveSandboxRuntimeServices: SandboxRuntimeServices = Object.freeze({ _tag: "Live" });
-
-export type SandboxRuntimeRetention =
-  | { readonly _tag: "DestroyOnly" }
-  | { readonly _tag: "Suspendable" };
 
 export interface SandboxRuntimeCapabilities {
   readonly provider: string;
   readonly schedulingLane: string;
   readonly admission: "Shared" | "Exclusive";
-  readonly retention: SandboxRuntimeRetention;
-  readonly reuse: "Supported" | "Unsupported";
-  readonly sessionLimitMs: number | null;
+  readonly retention: SandboxProviderCapabilities["retention"];
+  readonly reuse: SandboxProviderCapabilities["reuse"];
+  readonly sessionLimit: SandboxProviderCapabilities["sessionLimit"];
 }
 
 export interface SandboxRuntimeBuildPreparation {
@@ -108,57 +93,57 @@ export interface SandboxRuntimeBuildPreparation {
 export class SandboxRuntimeMaterializationError extends Data.TaggedError(
   "SandboxRuntimeMaterializationError",
 )<{
-  readonly code: "sandbox.runtime-adapter-missing" | "sandbox.runtime-input-invalid" | "sandbox.materialization-failed";
-  readonly adapter: string;
+  readonly code:
+    | "sandbox.provider-binding-missing"
+    | "sandbox.build-input-drift"
+    | "sandbox.build-locator-missing"
+    | "sandbox.materialization-failed";
   readonly provider: string;
   readonly message: string;
   readonly cause: Error;
 }> {}
 
 function runtimeFailure(
-  input: SandboxRuntimeMaterializeInput,
+  context: SandboxRuntimeMaterializeContext,
   code: SandboxRuntimeMaterializationError["code"],
   cause: unknown,
 ): SandboxRuntimeMaterializationError {
   const error = cause instanceof Error ? cause : new Error(String(cause));
   return new SandboxRuntimeMaterializationError({
     code,
-    adapter: input.plan.providerPlan.runtimeAdapter,
-    provider: input.plan.providerPlan.provider,
+    provider: context.plan.providerPlan.provider,
     message: error.message,
     cause: error,
   });
 }
 
-function decode<A, I>(
-  schema: Schema.Schema<A, I>,
-  input: SandboxRuntimeMaterializeInput,
-): Effect.Effect<A, SandboxRuntimeMaterializationError> {
-  return Effect.flatMap(providerRuntime(input), (runtime) =>
-    Schema.decodeUnknown(schema)(runtime.input).pipe(
-      Effect.mapError((cause) => runtimeFailure(input, "sandbox.runtime-input-invalid", cause)),
-    ));
-}
-
-function providerRuntime(
-  input: SandboxRuntimeMaterializeInput,
-): Effect.Effect<SandboxRuntimePlan, SandboxRuntimeMaterializationError> {
-  return Option.match(sandboxProviderRuntimeOf(input.plan.providerPlan), {
-    onNone: () => Effect.fail(runtimeFailure(
-      input,
-      "sandbox.runtime-adapter-missing",
-      new Error(`Sandbox provider plan has no bound runtime for ${JSON.stringify(input.plan.providerPlan.runtimeAdapter)}`),
-    )),
-    onSome: Effect.succeed,
+function buildFailure(
+  plan: SandboxProviderPlan,
+  code: SandboxRuntimeMaterializationError["code"],
+  cause: unknown,
+): SandboxRuntimeMaterializationError {
+  const error = cause instanceof Error ? cause : new Error(String(cause));
+  return new SandboxRuntimeMaterializationError({
+    code,
+    provider: plan.provider,
+    message: error.message,
+    cause: error,
   });
 }
 
-function locationValue(value: Schema.Schema.Type<typeof Location>): string | URL {
-  return value._tag === "Path" ? value.value : new URL(value.value);
-}
-
-function configuredLifetime(value: Schema.Schema.Type<typeof Lifetime>): number | undefined {
-  return value._tag === "Configured" ? value.milliseconds : undefined;
+function providerBinding(
+  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+): Effect.Effect<SandboxProviderBinding, SandboxRuntimeMaterializationError> {
+  const binding = sandboxProviderBindingOf(plan.providerPlan);
+  return Option.match(binding, {
+    onNone: () => Effect.fail(new SandboxRuntimeMaterializationError({
+      code: "sandbox.provider-binding-missing",
+      provider: plan.providerPlan.provider,
+      message: `Sandbox provider plan ${JSON.stringify(plan.providerPlan.provider)} was not created by its bound ProviderModule.`,
+      cause: new Error("provider module binding missing"),
+    })),
+    onSome: Effect.succeed,
+  });
 }
 
 function deadlineOptions(deadline: SandboxRuntimeDeadline): {
@@ -170,40 +155,40 @@ function deadlineOptions(deadline: SandboxRuntimeDeadline): {
     : { timeout: deadline.timeoutMs, deadlineAt: deadline.deadlineAt };
 }
 
-function boundProvisionSlot(input: SandboxRuntimeMaterializeInput): ProvisionSlot | undefined {
-  return input.provisionSlot._tag === "Bound" ? input.provisionSlot.value : undefined;
+function configuredLifetime(
+  value: E2BProviderPlan["lifetime"] | VercelProviderPlan["lifetime"],
+): number | undefined {
+  return value._tag === "Configured" ? value.milliseconds : undefined;
 }
 
-function runtimeCaseKind(plan: SandboxRuntimeMaterializeInput["plan"]): SandboxCaseKind {
-  switch (plan.providerPlan.caseKind) {
-    case "compose":
-      return "compose";
-    case "on-demand-build":
-      return "on-demand-build";
-    case "custom":
-    case "custom-provider":
-      return "custom";
-    default:
-      return "prebuilt";
-  }
+function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): ProvisionSlot | undefined {
+  return context.provisionSlot._tag === "Bound" ? context.provisionSlot.value : undefined;
 }
 
-function caseKey(plan: SandboxRuntimeMaterializeInput["plan"]): CaseKey {
-  return digestOf({ version: 1, providerPlan: plan.providerPlan.identity }) as CaseKey;
+function caseKey(context: SandboxRuntimeMaterializeContext): CaseKey {
+  return computeCaseKey({
+    caseKind: context.plan.providerPlan.caseKind,
+    materializerRevision: context.plan.providerPlan.plannerRevision,
+    buildKeys: [...context.buildLocators.keys()],
+    caseParams: context.plan.providerPlan.identity,
+  });
 }
 
 function wrapSingleSandbox(
   backend: SandboxProviderBackend,
-  input: SandboxRuntimeMaterializeInput,
+  context: SandboxRuntimeMaterializeContext,
   facts: JsonValue,
 ): MaterializedSandboxCase {
-  const provider = input.plan.providerPlan.provider;
+  const provider = context.plan.providerPlan.provider;
   const sandbox = normalizeSandboxPaths(backend, provider);
   registerSandbox(sandbox);
+  let stopped = false;
   const group: SandboxResourceGroup = {
     primary: { sandboxId: sandbox.sandboxId, provider },
     resources: { kind: "single", provider, sandboxId: sandbox.sandboxId },
     async stop() {
+      if (stopped) return;
+      stopped = true;
       try {
         await sandbox.stop();
       } finally {
@@ -211,34 +196,26 @@ function wrapSingleSandbox(
       }
     },
   };
-  return {
+  return Object.freeze({
     sandbox,
     group,
-    caseKind: runtimeCaseKind(input.plan),
-    caseKey: caseKey(input.plan),
-    buildKeys: [...input.buildLocators.keys()],
-    identity: input.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(input.plan),
+    caseKind: context.plan.providerPlan.caseKind,
+    caseKey: caseKey(context),
+    buildKeys: Object.freeze([...context.buildLocators.keys()]),
+    identity: context.plan.providerPlan.identity,
+    carryEligible: linkedRunCarryEligible(context.plan),
     facts,
-  };
-}
-
-function wrapAuthorSandbox(
-  sandbox: Sandbox,
-  input: SandboxRuntimeMaterializeInput,
-  facts: JsonValue,
-): MaterializedSandboxCase {
-  return wrapSingleSandbox(customSandboxBackend(sandbox), input, facts);
+  });
 }
 
 function normalizeMaterialized(
   materialized: MaterializedSandboxCase,
-  input: SandboxRuntimeMaterializeInput,
+  context: SandboxRuntimeMaterializeContext,
 ): MaterializedSandboxCase {
-  const candidate = materialized.sandbox as Sandbox & Partial<SandboxProviderBackend>;
-  const sandbox = candidate.capabilities === undefined
-    ? normalizeSandboxPaths(customSandboxBackend(materialized.sandbox), input.plan.providerPlan.provider)
-    : normalizeSandboxPaths(candidate as SandboxProviderBackend, input.plan.providerPlan.provider);
+  const sandbox = normalizeSandboxPaths(
+    customSandboxBackend(materialized.sandbox),
+    context.plan.providerPlan.provider,
+  );
   registerSandbox(sandbox);
   let stopped = false;
   const group: SandboxResourceGroup = {
@@ -253,328 +230,271 @@ function normalizeMaterialized(
       }
     },
   };
-  return { ...materialized, sandbox, group };
+  return Object.freeze({ ...materialized, sandbox, group });
 }
 
-function legacyComposePlan(
-  input: SandboxRuntimeMaterializeInput,
-  decoded: Schema.Schema.Type<typeof DockerComposeInput>,
-): PlannedSandboxCase {
-  const source = {
-    kind: "compose" as const,
-    file: locationValue(decoded.file),
-    mainService: decoded.workspaceService,
-    build: decoded.build,
-    ...(decoded.executionUser._tag === "Configured" ? { executionUser: decoded.executionUser.value } : {}),
-    env: decoded.env,
-    __brand: "niceeval.sandboxSource.compose" as const,
-  };
-  return {
-    evalId: input.evalId,
-    profile: input.evalId,
-    caseKind: "compose",
-    sourceKind: "compose",
-    via: "builtin",
-    caseKey: caseKey(input.plan),
-    buildKeys: [...input.buildLocators.keys()],
-    identity: input.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(input.plan),
-    declaration: {
-      form: "source",
-      value: source,
-      materializer: {
-        kind: "compose",
-        revision: input.plan.providerPlan.plannerRevision,
-        materialize: () => Promise.reject(new Error("provider runtime owns Compose materialization")),
-      },
-    },
-  };
-}
-
-function legacyDockerfilePlan(
-  input: SandboxRuntimeMaterializeInput,
-  decoded: Schema.Schema.Type<typeof DockerfileInput>,
-): PlannedSandboxCase {
-  const source = {
-    kind: "dockerfile" as const,
-    context: locationValue(decoded.context),
-    dockerfile: decoded.dockerfile,
-    buildArgs: decoded.buildArgs,
-    __brand: "niceeval.sandboxSource.dockerfile" as const,
-  };
-  return {
-    evalId: input.evalId,
-    profile: input.evalId,
-    caseKind: "on-demand-build",
-    sourceKind: "dockerfile",
-    via: "builtin",
-    caseKey: caseKey(input.plan),
-    buildKeys: [],
-    identity: input.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(input.plan),
-    declaration: { form: "dockerfile", provider: "docker", value: source },
-  };
-}
-
-function materializeBuiltin(
-  input: SandboxRuntimeMaterializeInput,
+function materializationEffect(
+  context: SandboxRuntimeMaterializeContext,
+  acquire: () => Promise<MaterializedSandboxCase>,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  const adapter = input.plan.providerPlan.runtimeAdapter;
-  const common = deadlineOptions(input.deadline);
-  switch (adapter) {
-    case "niceeval/docker-compose":
-      return Effect.flatMap(decode(DockerComposeInput, input), (decoded) =>
-        Effect.tryPromise({
-          try: async () => normalizeMaterialized(await (
-            input.services._tag === "Live" ? materializeDockerComposeCase : input.services.materializeCompose
-          )(
-            legacyComposePlan(input, decoded),
-            {
-              ctx: {
-                evalId: input.evalId,
-                profile: input.evalId,
-                signal: input.signal,
-                buildLocators: input.buildLocators,
-              },
-              ...common,
-              feedback: input.feedback,
-              provisionSlot: boundProvisionSlot(input),
-            },
-          ), input),
-          catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-        }));
-    case "niceeval/dockerfile":
-      return Effect.flatMap(decode(DockerfileInput, input), () => Effect.tryPromise({
-        try: async () => {
-          const locator = [...input.buildLocators.values()][0];
-          if (locator === undefined) throw new Error("Dockerfile materialization requires its Run build locator");
-          const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
-          const provisionToken = randomUUID();
-          const backend = await withProvisionRetry(
-            () => DockerSandbox.create({
-              ...common,
-              runtime: "node24",
-              image: locator,
-              feedback: input.feedback,
-              provisionToken,
-              runIdentity: currentRunIdentity(),
-            }),
-            classifyProvisionError,
-            boundProvisionSlot(input),
-            input.feedback,
-            () => reconcileProvision(provisionToken),
-          );
-          return wrapSingleSandbox(backend, input, { image: locator });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    case "niceeval/docker-image":
-      return Effect.flatMap(decode(DockerImageInput, input), ({ image }) => Effect.tryPromise({
-        try: async () => {
-          const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
-          const provisionToken = randomUUID();
-          const backend = await withProvisionRetry(
-            () => DockerSandbox.create({
-              ...common,
-              runtime: "node24",
-              image,
-              feedback: input.feedback,
-              provisionToken,
-              runIdentity: currentRunIdentity(),
-            }),
-            classifyProvisionError,
-            boundProvisionSlot(input),
-            input.feedback,
-            () => reconcileProvision(provisionToken),
-          );
-          return wrapSingleSandbox(backend, input, { image });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    case "niceeval/e2b-template":
-      return Effect.flatMap(decode(E2BInput, input), ({ template, lifetime }) => Effect.tryPromise({
-        try: async () => {
-          const { E2BSandbox, classifyProvisionError, reconcileProvision } = await import("./e2b.ts");
-          const provisionToken = randomUUID();
-          const backend = await withProvisionRetry(
-            () => E2BSandbox.create({
-              ...common,
-              runtime: "node24",
-              template,
-              lifetimeMs: configuredLifetime(lifetime),
-              provisionToken,
-              runIdentity: currentRunIdentity(),
-            }),
-            classifyProvisionError,
-            boundProvisionSlot(input),
-            input.feedback,
-            () => reconcileProvision(provisionToken),
-          );
-          return wrapSingleSandbox(backend, input, { template });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    case "niceeval/vercel-snapshot":
-      return Effect.flatMap(decode(VercelInput, input), ({ snapshotId }) => Effect.tryPromise({
-        try: async () => {
-          const { VercelSandbox, classifyProvisionError } = await import("./vercel.ts");
-          const backend = await withProvisionRetry(
-            () => VercelSandbox.create({
-              ...common,
-              runtime: "node24",
-              snapshotId,
-              feedback: input.feedback,
-            }),
-            classifyProvisionError,
-            boundProvisionSlot(input),
-            input.feedback,
-          );
-          return wrapSingleSandbox(backend, input, { snapshotId });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    case "niceeval/local-directory":
-      return Effect.flatMap(decode(LocalInput, input), ({ directory }) => Effect.tryPromise({
-        try: async () => {
-          const { LocalSandbox } = await import("./local.ts");
-          return wrapSingleSandbox(await LocalSandbox.create({ ...common, dir: directory }), input, { directory });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    default:
-      return Effect.fail(runtimeFailure(
-        input,
-        "sandbox.runtime-adapter-missing",
-        new Error(`No Sandbox runtime adapter is registered for ${JSON.stringify(adapter)}`),
-      ));
-  }
-}
-
-function materializeCustom(
-  input: SandboxRuntimeMaterializeInput,
-): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  const binding = customSandboxTemplateRuntimeOf(input.plan.pair.template);
-  if (binding._tag === "Unbound") return materializeBuiltin(input);
-  const runtime = binding.runtime;
-  if (runtime._tag === "CustomProvider") {
-    return Effect.tryPromise({
-      try: async () => wrapAuthorSandbox(await runtime.create({
-        ...deadlineOptions(input.deadline),
-        runtime: "node24",
-        feedback: input.feedback,
-      }), input, { provider: input.plan.providerPlan.provider }),
-      catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-    });
-  }
   return Effect.tryPromise({
-    try: async () => {
-      const materialized = await runtime.materialize({
-        evalId: input.evalId,
-        profile: input.evalId,
-        signal: input.signal,
-        buildLocators: input.buildLocators,
-      });
-      const normalized = normalizeMaterialized({
-        ...materialized,
-        caseKind: "custom",
-        caseKey: caseKey(input.plan),
-        buildKeys: [...input.buildLocators.keys()],
-        identity: input.plan.providerPlan.identity,
-        carryEligible: linkedRunCarryEligible(input.plan),
-        facts: materialized.facts ?? {},
-      }, input);
-      return normalized;
-    },
-    catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
+    try: acquire,
+    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
   });
 }
 
-/** 完整 plan 的唯一物化入口。成功值由调用方显式拥有，且必须调用 `group.stop()`。 */
-export function materializeSandboxRunPlan(
-  input: SandboxRuntimeMaterializeInput,
+export function materializeDockerComposeProviderPlan(
+  plan: DockerComposeProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return materializeCustom(input);
+  const materialize = context.services._tag === "Live"
+    ? materializeDockerComposeProviderCase
+    : context.services.materializeCompose;
+  return materializationEffect(context, async () => normalizeMaterialized(await materialize({
+    evalId: context.evalId,
+    profile: context.evalId,
+    mainService: plan.workspaceService,
+    ...(plan.executionUser._tag === "Configured" ? { executionUser: plan.executionUser.value } : {}),
+    env: plan.env,
+    collection: plan.collection,
+    caseKey: caseKey(context),
+    identity: context.plan.providerPlan.identity,
+    carryEligible: linkedRunCarryEligible(context.plan),
+  }, {
+    ctx: {
+      evalId: context.evalId,
+      profile: context.evalId,
+      signal: context.signal,
+      buildLocators: context.buildLocators,
+    },
+    ...deadlineOptions(context.deadline),
+    feedback: context.feedback,
+    provisionSlot: boundProvisionSlot(context),
+  }), context));
 }
 
-/** Run 级 build coordinator 的 provider-owned 收集边界；无构建的 adapter 返回 Option.None。 */
-export function collectSandboxRuntimeBuildPreparation(
-  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+export function materializeDockerfileProviderPlan(
+  plan: DockerfileProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return Option.match(Option.fromNullable(context.buildLocators.get(plan.buildKey)), {
+    onNone: () => Effect.fail(runtimeFailure(
+      context,
+      "sandbox.build-locator-missing",
+      new Error(`Dockerfile build ${plan.buildKey} has no prepared locator.`),
+    )),
+    onSome: (image) => materializationEffect(context, async () => {
+      const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
+      const provisionToken = randomUUID();
+      const backend = await withProvisionRetry(
+        () => DockerSandbox.create({
+          ...deadlineOptions(context.deadline),
+          runtime: "node24",
+          image,
+          feedback: context.feedback,
+          provisionToken,
+          runIdentity: currentRunIdentity(),
+        }),
+        classifyProvisionError,
+        boundProvisionSlot(context),
+        context.feedback,
+        () => reconcileProvision(provisionToken),
+      );
+      return wrapSingleSandbox(backend, context, { image });
+    }),
+  });
+}
+
+export function materializeDockerImageProviderPlan(
+  plan: DockerImageProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return materializationEffect(context, async () => {
+    const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
+    const provisionToken = randomUUID();
+    const backend = await withProvisionRetry(
+      () => DockerSandbox.create({
+        ...deadlineOptions(context.deadline),
+        runtime: "node24",
+        image: plan.image,
+        feedback: context.feedback,
+        provisionToken,
+        runIdentity: currentRunIdentity(),
+      }),
+      classifyProvisionError,
+      boundProvisionSlot(context),
+      context.feedback,
+      () => reconcileProvision(provisionToken),
+    );
+    return wrapSingleSandbox(backend, context, { image: plan.image });
+  });
+}
+
+export function materializeE2BProviderPlan(
+  plan: E2BProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return materializationEffect(context, async () => {
+    const { E2BSandbox, classifyProvisionError, reconcileProvision } = await import("./e2b.ts");
+    const provisionToken = randomUUID();
+    const backend = await withProvisionRetry(
+      () => E2BSandbox.create({
+        ...deadlineOptions(context.deadline),
+        runtime: "node24",
+        template: plan.template,
+        lifetimeMs: configuredLifetime(plan.lifetime),
+        provisionToken,
+        runIdentity: currentRunIdentity(),
+      }),
+      classifyProvisionError,
+      boundProvisionSlot(context),
+      context.feedback,
+      () => reconcileProvision(provisionToken),
+    );
+    return wrapSingleSandbox(backend, context, { template: plan.template });
+  });
+}
+
+export function materializeVercelProviderPlan(
+  plan: VercelProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return materializationEffect(context, async () => {
+    const { VercelSandbox, classifyProvisionError } = await import("./vercel.ts");
+    const backend = await withProvisionRetry(
+      () => VercelSandbox.create({
+        ...deadlineOptions(context.deadline),
+        runtime: "node24",
+        snapshotId: plan.snapshotId,
+        feedback: context.feedback,
+      }),
+      classifyProvisionError,
+      boundProvisionSlot(context),
+      context.feedback,
+    );
+    return wrapSingleSandbox(backend, context, { snapshotId: plan.snapshotId });
+  });
+}
+
+export function materializeLocalProviderPlan(
+  plan: LocalProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return materializationEffect(context, async () => {
+    const { LocalSandbox } = await import("./local.ts");
+    return wrapSingleSandbox(
+      await LocalSandbox.create({ ...deadlineOptions(context.deadline), dir: plan.directory }),
+      context,
+      { directory: plan.directory },
+    );
+  });
+}
+
+export function materializeCustomProviderPlan(
+  plan: CustomProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+  create: CustomProviderSandboxOptions["create"],
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return Effect.map(
+    create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback }).pipe(
+      Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+    ),
+    (sandbox) => wrapSingleSandbox(customSandboxBackend(sandbox), context, { provider: plan.name }),
+  );
+}
+
+export function materializeCustomCaseProviderPlan(
+  _plan: CustomCaseProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+  materialize: CustomCaseSandboxOptions["materialize"],
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
+  return Effect.map(materialize({
+    evalId: context.evalId,
+    profile: context.evalId,
+    signal: context.signal,
+    buildLocators: context.buildLocators,
+  }).pipe(
+    Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
+  ), (result) => normalizeMaterialized({
+    sandbox: result.sandbox,
+    ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
+    group: result.group,
+    caseKind: "custom",
+    caseKey: caseKey(context),
+    buildKeys: Object.freeze([...context.buildLocators.keys()]),
+    identity: context.plan.providerPlan.identity,
+    carryEligible: linkedRunCarryEligible(context.plan),
+    facts: result.facts,
+  }, context));
+}
+
+export function collectDockerComposeProviderBuildPreparation(
+  plan: DockerComposeProviderPlan,
+  published: SandboxProviderPlan,
   evalId: string,
 ): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
-  const input: SandboxRuntimeMaterializeInput = {
-    plan,
-    evalId,
-    deadline: { _tag: "Unlimited" },
-    feedback: { progress: () => {}, diagnostic: () => {} },
-    signal: new AbortController().signal,
-    buildLocators: new Map(),
-    provisionSlot: { _tag: "Detached" },
-    services: liveSandboxRuntimeServices,
-  };
-  switch (plan.providerPlan.runtimeAdapter) {
-    case "niceeval/docker-compose":
-      return Effect.flatMap(decode(DockerComposeInput, input), (decoded) => Effect.tryPromise({
-        try: async () => {
-          const file = locationValue(decoded.file);
-          const collection = await collectComposeBuilds({
-            file,
-            mainService: decoded.workspaceService,
-            platform: plannedBuildPlatform(plan),
-            env: decoded.env,
-          });
-          assertSameBuildKeys(decoded.plannedBuildKeys, collection.buildKeys, "Compose");
-          if (decoded.plannedCaseIdentityDigest !== digestOf(composeCollectionIdentity(collection))) {
-            throw new Error("Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.");
-          }
-          return Option.some({
-            works: collection.works,
-            provider: dockerComposeBuildProvider({ env: decoded.env }),
-            caseKey: computeCaseKey({
-              caseKind: "compose",
-              materializerRevision: plan.providerPlan.plannerRevision,
-              composeBytes: collection.composeBytes,
-              buildKeys: collection.buildKeys,
-              serviceImageDigests: collection.imageRefs,
-              bindMountDigests: collection.bindMountDigests,
-              configContents: collection.configContents,
-              caseParams: plan.providerPlan.identity,
-            }),
-          });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    case "niceeval/dockerfile":
-      return Effect.flatMap(decode(DockerfileInput, input), (decoded) => Effect.tryPromise({
-        try: async () => {
-          const collection = await collectDockerfileBuildFromPlan(legacyDockerfilePlan(input, decoded), {
-            dockerPlatform: plannedBuildPlatform(plan),
-          });
-          if (collection === undefined) throw new Error("Dockerfile runtime did not produce a build work item");
-          assertSameBuildKeys([decoded.plannedBuildKey], [collection.buildKey], "Dockerfile");
-          return Option.some({
-            works: [collection.work],
-            provider: dockerfileBuildProvider([collection]),
-            caseKey: collection.caseKey,
-          });
-        },
-        catch: (cause) => runtimeFailure(input, "sandbox.materialization-failed", cause),
-      }));
-    default:
-      return Effect.succeed(Option.none());
-  }
+  return Effect.tryPromise({
+    try: async () => {
+      const file = plan.file._tag === "Url" ? new URL(plan.file.value) : plan.file.value;
+      const collection = await collectComposeBuilds({
+        file,
+        mainService: plan.workspaceService,
+        platform: plan.collection.platform,
+        env: plan.env,
+      });
+      assertSameBuildKeys(plan.collection.buildKeys, collection.buildKeys, "Compose");
+      if (digestOf(composeCollectionIdentity(plan.collection)) !== digestOf(composeCollectionIdentity(collection))) {
+        throw new Error("Compose case inputs changed after physical planning. Restart the Run to plan the new inputs.");
+      }
+      return Option.some({
+        works: collection.works,
+        provider: dockerComposeBuildProvider({ env: plan.env }),
+        caseKey: computeCaseKey({
+          caseKind: "compose",
+          materializerRevision: published.plannerRevision,
+          composeBytes: collection.composeBytes,
+          buildKeys: collection.buildKeys,
+          serviceImageDigests: collection.imageRefs,
+          bindMountDigests: collection.bindMountDigests,
+          configContents: collection.configContents,
+          caseParams: published.identity,
+        }),
+      });
+    },
+    catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+  });
 }
 
-function plannedBuildPlatform(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>): string {
-  const platform = plan.providerPlan.target.platform;
-  const arch = platform.arch === "x64" ? "amd64" : platform.arch;
-  return normalizeBuildPlatform(`${platform.os}/${arch}`);
+export function collectDockerfileProviderBuildPreparation(
+  plan: DockerfileProviderPlan,
+  published: SandboxProviderPlan,
+  evalId: string,
+): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
+  return Effect.tryPromise({
+    try: async () => {
+      const collection = await collectDockerfileBuildFromIdentity({
+        provider: "docker",
+        profile: evalId,
+        context: plan.context,
+        dockerfile: plan.dockerfile,
+        buildArgs: plan.buildArgs,
+        platform: plan.platform,
+        expected: plan.build,
+      });
+      if (collection.buildKey !== plan.buildKey) {
+        throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
+      }
+      return Option.some({
+        works: [collection.work],
+        provider: dockerfileBuildProvider([collection]),
+        caseKey: collection.caseKey,
+      });
+    },
+    catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),
+  });
 }
 
-function assertSameBuildKeys(
-  planned: readonly string[],
-  collected: readonly string[],
-  label: string,
-): void {
+function assertSameBuildKeys(planned: readonly string[], collected: readonly string[], label: string): void {
   const expected = [...planned].sort();
   const actual = [...collected].sort();
   if (expected.length === actual.length && expected.every((key, index) => key === actual[index])) return;
@@ -584,32 +504,51 @@ function assertSameBuildKeys(
   );
 }
 
-/** Runner 的调度/留存只读中性能力，不按 provider 名或 adapter tag 分支。 */
+function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: MaterializedSandboxCase): Effect.Effect<void> {
+  return input.release._tag === "Stop"
+    ? Effect.promise(() => owned.group.stop())
+    : input.release.run(owned);
+}
+
+/** 完整 plan 的唯一物化入口；Scope 退出恒执行声明的 release，不允许裸资源逃逸。 */
+export function materializeSandboxRunPlan(
+  input: SandboxRuntimeMaterializeInput,
+): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
+  const context: SandboxRuntimeMaterializeContext = {
+    plan: input.plan,
+    evalId: input.evalId,
+    deadline: input.deadline,
+    feedback: input.feedback,
+    signal: input.signal,
+    buildLocators: input.buildLocators,
+    provisionSlot: input.provisionSlot,
+    services: input.services,
+  };
+  return Effect.acquireRelease(
+    Effect.flatMap(providerBinding(input.plan), (binding) => binding.materialize(context)),
+    (owned) => releaseOwned(input, owned),
+  );
+}
+
+/** Build preparation 同样只调用 private binding，不按 provider/module id 分支。 */
+export function collectSandboxRuntimeBuildPreparation(
+  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+  evalId: string,
+): Effect.Effect<Option.Option<SandboxRuntimeBuildPreparation>, SandboxRuntimeMaterializationError> {
+  return Effect.flatMap(providerBinding(plan), (binding) => binding.collectBuildPreparation(evalId));
+}
+
+/** 调度能力来自完成态 ProviderModule binding；core 不从 provider 名推导。 */
 export function sandboxRuntimeCapabilities(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
 ): SandboxRuntimeCapabilities {
-  const adapter = plan.providerPlan.runtimeAdapter;
-  const sessionLimitMs = adapter === "niceeval/vercel-snapshot"
-    ? 1_200_000
-    : adapter === "niceeval/e2b-template"
-      ? 1_800_000
-      : null;
-  const retention: SandboxRuntimeRetention =
-    adapter === "niceeval/docker-image" ||
-      adapter === "niceeval/dockerfile" ||
-      adapter === "niceeval/e2b-template" ||
-      adapter === "niceeval/vercel-snapshot"
-      ? { _tag: "Suspendable" }
-      : { _tag: "DestroyOnly" };
-  const reuse = adapter === "niceeval/local-directory" || adapter === "niceeval/custom-provider" || adapter === "niceeval/custom-case"
-    ? "Unsupported"
-    : "Supported";
+  const capabilities = plan.providerPlan.capabilities;
   return Object.freeze({
     provider: plan.providerPlan.provider,
     schedulingLane: plan.providerPlan.scheduling.lane.key,
     admission: plan.providerPlan.scheduling.admission._tag,
-    retention,
-    reuse,
-    sessionLimitMs,
+    retention: capabilities.retention,
+    reuse: capabilities.reuse,
+    sessionLimit: capabilities.sessionLimit,
   });
 }

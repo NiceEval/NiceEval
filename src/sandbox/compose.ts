@@ -849,7 +849,6 @@ export async function materializeDockerComposeCase(
   if (decl === undefined) {
     throw new Error(`compose case ${JSON.stringify(plan.evalId)} has no compose declaration`);
   }
-
   const collection = await collectComposeBuilds({
     file: decl.file,
     mainService: decl.mainService,
@@ -858,11 +857,47 @@ export async function materializeDockerComposeCase(
     env: decl.env,
   });
 
-  const overlay = buildComposeOverlay({
-    mainService: decl.mainService,
+  return materializeDockerComposeProviderCase({
     evalId: plan.evalId,
     profile: plan.profile,
-    projectName: plan.declaration.form === "docker" ? plan.declaration.value.compose?.projectName : undefined,
+    mainService: decl.mainService,
+    ...(decl.executionUser !== undefined ? { executionUser: decl.executionUser } : {}),
+    env: decl.env ?? {},
+    ...(plan.declaration.form === "docker" && plan.declaration.value.compose?.projectName !== undefined
+      ? { projectName: plan.declaration.value.compose.projectName }
+      : {}),
+    collection,
+    caseKey: plan.caseKey,
+    identity: plan.identity,
+    carryEligible: plan.carryEligible,
+  }, opts);
+}
+
+/** ProviderModule 的 typed Compose 完成态；不再逆向构造 PlannedSandboxCase。 */
+export interface DockerComposeProviderMaterializationPlan {
+  readonly evalId: string;
+  readonly profile: string;
+  readonly mainService: string;
+  readonly executionUser?: string;
+  readonly env: Readonly<Record<string, string>>;
+  readonly projectName?: string;
+  readonly collection: ComposeBuildCollection;
+  readonly caseKey: import("./identity.ts").CaseKey;
+  readonly identity: JsonValue;
+  readonly carryEligible: boolean;
+}
+
+export async function materializeDockerComposeProviderCase(
+  plan: DockerComposeProviderMaterializationPlan,
+  opts: MaterializeComposeOpts,
+): Promise<MaterializedSandboxCase> {
+  const collection = plan.collection;
+
+  const overlay = buildComposeOverlay({
+    mainService: plan.mainService,
+    evalId: plan.evalId,
+    profile: plan.profile,
+    ...(plan.projectName !== undefined ? { projectName: plan.projectName } : {}),
     serviceNames: collection.inspection.services.map((s) => s.name),
   });
 
@@ -884,7 +919,7 @@ export async function materializeDockerComposeCase(
   // 平台与 BuildKey 同源:物化期这次 compose build 构出的架构必须与身份里写的一致。
   const env = {
     ...process.env,
-    ...decl.env,
+    ...plan.env,
     COMPOSE_PROJECT_NAME: overlay.projectName,
     [DOCKER_PLATFORM_ENV]: collection.platform,
   };
@@ -948,7 +983,7 @@ export async function materializeDockerComposeCase(
     const resolveId =
       opts._testHooks?.resolveMainContainerId ??
       ((project: string, service: string) => resolveComposeContainerId(project, service, composeFiles, cwd, env));
-    const containerId = await resolveId(overlay.projectName, decl.mainService);
+    const containerId = await resolveId(overlay.projectName, plan.mainService);
 
     const attach =
       opts._testHooks?.attachMain ??
@@ -957,7 +992,7 @@ export async function materializeDockerComposeCase(
           timeout: opts.timeout,
           feedback: opts.feedback,
           releaseMode: "detach",
-          ...(decl.executionUser !== undefined ? { executionUser: decl.executionUser as "image" | string } : {}),
+          ...(plan.executionUser !== undefined ? { executionUser: plan.executionUser as "image" | string } : {}),
         }));
     const sandbox = await attach(containerId);
 
@@ -975,7 +1010,7 @@ export async function materializeDockerComposeCase(
         kind: "docker-compose",
         projectName: overlay.projectName,
         composeFiles,
-        mainService: decl.mainService,
+        mainService: plan.mainService,
       },
       stop: finalizer,
       entry: {
@@ -985,7 +1020,7 @@ export async function materializeDockerComposeCase(
         resources: {
           kind: "docker-compose",
           projectName: overlay.projectName,
-          mainService: decl.mainService,
+          mainService: plan.mainService,
         },
         state: "alive",
       },
@@ -1004,12 +1039,12 @@ export async function materializeDockerComposeCase(
       group,
       caseKind: "compose",
       caseKey: plan.caseKey,
-      buildKeys: collection.buildKeys.length > 0 ? collection.buildKeys : plan.buildKeys,
+      buildKeys: collection.buildKeys,
       identity: plan.identity,
       carryEligible: plan.carryEligible,
       facts: {
         projectName: overlay.projectName,
-        mainService: decl.mainService,
+        mainService: plan.mainService,
         composeFile: collection.composePath,
         containerId: sandbox.sandboxId,
         imageRefs: collection.imageRefs,

@@ -311,18 +311,24 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 它构成一个自定义 template-bearing layer;身份、能力与留存义务见 [Sandbox Case · 自定义 case](case.md#自定义-case):
 
 ```typescript
+import { Effect } from "effect";
 import { defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",                          // 只用于展示 / 日志,不参与分发
   recommendedConcurrency: 8,               // 可选;省略默认 5
-  create: async ({ timeout, runtime, feedback }) => {
+  create: ({ deadline, runtime, feedback }) => Effect.sync(() => {
     feedback.progress({ message: "allocating Modal sandbox" });
     // 返回一个实现 Sandbox 接口(run/read/write/stop/...)的实例
-    return new MyModalSandbox({ timeout, runtime });
-  },
+    return new MyModalSandbox({ deadline, runtime });
+  }),
 });
 ```
+
+`create` 返回 typed `Effect`，不是 Promise。
+provider 的分配失败必须进入 Effect error channel。
+资源成功创建后由 NiceEval 的 Scope 接管。
+Scope release 统一执行 stop 或已经提交的 keep disposition。
 
 自定义 provider 不支持 `--keep-sandbox`。
 留存后的 `niceeval sandbox stop` 是不加载 config / eval 模块的新进程,无法安全找回用户对象上的销毁函数;框架也不会用“删登记项、让用户手工清理”冒充完整生命周期。

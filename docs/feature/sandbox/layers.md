@@ -259,6 +259,23 @@ discovery + selection
 `niceeval check <experiment>` 在 pure link 后停止,零 Provider 文件读取与网络请求。
 `--dry` 与正常运行消费同一份 linked matrix,在 fingerprint 后停止;三者不各自重算 template 选择。
 
+### ProviderModule 与完成态 plan
+
+每个 template factory 私下绑定一个泛型 `ProviderModule<Plan>`。
+`Plan` 是该 provider 自己的完整 typed 运行计划。
+Compose、Dockerfile、E2B 等互不共享 `adapter: string + input: JsonValue` 信封。
+
+factory 完成 planning 后，用闭包把 `Plan` 与 module 一起绑定到公开 `SandboxProviderPlan`。
+core 只取得已经消去泛型的 materialize / build closure。
+core 不读取 provider 私有字段，也不按 provider 名或 adapter 字符串分支。
+
+公开 plan 是不可伪造的冻结完成态。
+它一次带齐 target、scheduling、capabilities、carry 与稳定 identity。
+会改变调度或生命周期的事实全部进入 identity。
+凭据值与 callback 只留在私有 binding，不能被 record 或 fingerprint 原样泄露。
+动态构造的假对象没有 binding，运行边界返回 typed `sandbox.provider-binding-missing`。
+运行边界不会回退到猜测或兼容路径。
+
 人类错误至少给出可直接修改的两处声明:
 
 ```text
