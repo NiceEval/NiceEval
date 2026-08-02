@@ -86,7 +86,8 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **template 配对与作者面**：`sandbox` 字段只接受 factory 产物,没有默认值、不自动探测。
 
   - 每个实际配对恰好一方 template-bearing:1×1 报 `sandbox.template-conflict`、0×0 报 `sandbox.template-missing`,全矩阵聚合、零 Provider I/O、零 Sandbox 创建。
-  - 混合数据集：command-only Experiment 同时选择共享 `node24()` helper 的普通 Eval 与自带 Compose 的 Eval 时全部合法、仍是一份 Experiment；给 Experiment 加 template 后对应配对明确 conflict，不允许 Eval override 或静默丢层。
+  - 混合数据集：command-only Experiment 同时选择共享 `node24()` helper 的普通 Eval 与自带 Compose 的 Eval 时全部合法，仍是一份 Experiment。
+    给 Experiment 加 template 后，对应配对明确 conflict，不允许 Eval override 或静默丢层。
   - 物理身份相同的两份 template 仍是 conflict;三个入口消费同一 linker,要有 `check`、`--dry` 与正常运行对同一非法矩阵给出同一结论的区分力场景。
   - pair key 用 tuple 编码并覆盖 id 自带分隔符的反例；同一 `(Experiment, Eval)` 重复出现走 typed failure，不能静默覆盖。
     linked pair 的 carry 只允许 `Eligible` 或带非空 reasons 的 `Blocked`，没有 boolean 与可选数组的矛盾组合。

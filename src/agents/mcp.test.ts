@@ -1,3 +1,4 @@
+// cases: docs/engineering/testing/unit/adapters.md
 import { describe, expect, it } from "vitest";
 
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
