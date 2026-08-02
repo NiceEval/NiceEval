@@ -216,7 +216,7 @@ const FLAG_OPTIONS = {
   stats: { type: "boolean" },
   /** `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 */
   exp: { type: "string", multiple: true },
-  /** `show` / `view` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
+  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
   record: { type: "string" },
   /** `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 */
   run: { type: "string" },
