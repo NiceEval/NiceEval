@@ -306,6 +306,25 @@ export interface CarriedAcceptance {
   to?: string;
 }
 
+/** 一条人工接受结果的差异摘要。与 manifest 相减的 selector/value 投影保持同一词表。 */
+export interface AcceptedDifference {
+  selector: string;
+  from?: string;
+  to?: string;
+}
+
+/** `niceeval accept @<locator>` 写入新结果的来源与重锚审计记录。 */
+export interface AcceptedResult {
+  /** 被复制的历史 attempt locator。 */
+  locator: string;
+  /** 被复制条目的旧指纹。 */
+  fingerprint: string;
+  /** 当前项目按本次配置重算出的指纹。 */
+  acceptedFingerprint: string;
+  /** 新旧 manifest/config 的有界差异摘要。 */
+  differences: AcceptedDifference[];
+}
+
 /** 自动重试吸收的一次物理 send 失败；不进入逻辑会话事件流。 */
 export interface RetryAttemptRecord {
   sessionIndex: number;
@@ -426,8 +445,14 @@ export interface EvalResult {
    * 仅经 `--accept` 授权跨过指纹差异携入时留下的审计痕迹:跨过的每条差异各一项。
    * 它让「这条是在哪个口径下被采信的」跟着结果走,不随 Run 翻篇丢失——授权是把风险显式交给
    * 人,报告因此会在新配置身份下混入旧配置跑出的结果,这个字段是事后追认这笔账的唯一线索。
-   */
+  */
   carriedAccepting?: CarriedAcceptance[];
+  /**
+   * 人工 `niceeval accept @<locator>` 产生的新结果：来源 locator、旧/新 fingerprint
+   * 与 manifest 差异摘要。与 `carriedAccepting`（旧版 --accept 携入痕迹）并列保留，
+   * 读取旧记录时不做迁移。
+   */
+  acceptedFrom?: AcceptedResult;
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在
    * docs/feature/record/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
