@@ -265,7 +265,7 @@ type LifecyclePhase =
   // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
   | "experiment.setup"     // ExperimentDefinition.setup;setup 抛错时是本实验所有 attempt 的错误锚点
   | "experiment.teardown"  // ExperimentDefinition.teardown;失败只产生运行级 diagnostic
-  // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
+  // Attempt 工作链:从排队到 supplemental trace collect；是否影响判定由证据依赖决定
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create"       // provider 从 image / template / snapshot 启动 Sandbox(共享构建不在这里,它在 Run 级 activity)
   | "sandbox.prepare"      // 两层作者 layer 的 prepare 链:template owner 的命令先执行,另一 owner 随后(见 Sandbox · 三方准备时序)
@@ -277,9 +277,9 @@ type LifecyclePhase =
   | "telemetry.configure"  // tracing 出口配置
   | "eval.run"             // 整段 test(t),含所有 send 与手工命令
   | "agent.run"            // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
-  | "workspace.diff"       // 从分类账折叠 agent 归因增量
+  | "workspace.diff"       // 从分类账折叠 agent 归因增量；required 失败致命，supplemental 失败只诊断
   | "assertions.evaluate"     // 断言 finalize + 判定,含 judge 调用
-  | "telemetry.collect"    // OTLP receiver settle / collect
+  | "telemetry.collect"    // supplemental OTLP receiver settle / collect；失败只诊断
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
   | "sandbox.cleanup"      // 两层作者 layer 已登记 cleanup 按全局准备顺序逆序执行
@@ -441,7 +441,7 @@ interface AttemptRecord {
   verdict: "passed" | "failed" | "skipped" | "errored";
   attempt: number;
   fingerprint?: string;
-  /** 判定链耗时:从 sandbox.queue 到 telemetry.collect 的主链,不含收尾段(show 以 `teardown +N` 单列;全仓引用这个字段时用「判定链耗时」措辞,不叫墙钟)。 */
+  /** Attempt 工作链耗时:从 sandbox.queue 到 telemetry.collect,不含收尾段(show 以 `teardown +N` 单列)。 */
   durationMs: number;
   /**
    * 执行耗时:`durationMs` 减去 `sandbox.queue` 那一段,即从 sandbox.create 起算的主链耗时。
@@ -544,7 +544,7 @@ interface PhaseTiming {
   name: LifecyclePhase;
   /** 阶段耗时；失败阶段计到抛错或超时中断时。 */
   durationMs: number;
-  /** 该阶段抛错或被超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记,不改判定。 */
+  /** 该阶段抛错或被超时中断。致命主链失败后无后续主链条目；supplemental 失败与收尾失败可继续并只追加 diagnostic。 */
   failed?: true;
   /** 锚点内的 activity 子树,offset 相对本 attempt 的单调时钟起点;只供单 attempt 诊断,不做跨实验聚合。 */
   children?: TimingActivity[];
@@ -667,6 +667,10 @@ Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来
 `error` 与 `diagnostics` 的 attempt 锚点都由 runner 在错误 / 诊断发生时按已打开的生命周期锚点绑定,调用方不能自行填写。
 两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。
 `diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
+
+同一个 phase 可以产生两种后果：`workspace.diff` 被非 optional 断言消费时，采集失败形成 required evidence unavailable；它只为 artifact 或 optional 断言服务时，失败形成 diagnostic。
+`telemetry.configure` 与 `telemetry.collect` 只产时间轨，按 Observability 契约始终是 supplemental。
+后发生的 supplemental 失败不得覆盖先前的 `AttemptError`，也不得把已经可计算的 AssertionResult 丢弃。
 
 `DiagnosticRecord` 是持久化 observation:只保存 code、origin、level、去重次数与当时观察到的 `detail` / `context`。
 它不存本地化文案、修复建议或命令。

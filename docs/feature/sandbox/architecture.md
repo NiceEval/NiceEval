@@ -19,7 +19,7 @@
   │    t.send()                              #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events);send 窗口内的变化归因给 agent
   │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量
   │    t.sandbox.upload* / runShell         # send 窗口外的普通 eval 归因操作
-  → workspace.diff                         # 折叠全部 send 窗口的 agent 归因增量
+  → workspace.diff                         # 折叠全部 send 窗口；失败后果由本 Attempt 的证据依赖决定
   → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → Agent runtime teardown                 # finally:agent 收尾先行
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
@@ -87,7 +87,13 @@ export default defineEval({
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
 - **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
-- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。尺寸核算先于内容传输;仍然越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
+- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。尺寸核算先于内容传输。内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
+
+导出命令、下载或解析失败时不得伪造空窗口。
+非 optional 的 diff 消费者存在时，失败使对应断言 `unavailable`，并令 Attempt `errored`。
+没有 required 消费者时，失败只记 `workspace-diff-unavailable` diagnostic，并省略 `diff.json`。
+Runner 继续用已经取得的命令结果、事件与其它证据完成判定。
+这条 required / supplemental 分界的单源在 [Assertion 证据与完整性](../assertions/architecture/evidence.md#判定依赖与补充证据)。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 窗口归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐窗口归因的引擎,这是选它的理由,不是历史惯性。
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
@@ -106,7 +112,8 @@ runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
-`/tmp` 不可写是环境缺陷:撞上它的 attempt 按环境错误 `errored`(不携带,修好镜像重跑即续上),报错点名不可写的路径与修法,不透传 SDK 的原始错误串。
+`/tmp` 不可写是环境缺陷，报错必须点名不可写路径与修法，不透传 SDK 的原始错误串。
+它发生在必需的 ledger 等运行路径时仍是执行错误；只阻断 OTLP 接收器等 supplemental 证据时写 diagnostic 并继续，不能用环境缺陷这一分类绕过证据依赖边界。
 
 ## 时限归属:attempt deadline 是唯一默认
 

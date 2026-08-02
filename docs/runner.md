@@ -297,6 +297,20 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 
 `show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
 
+## 证据采集失败
+
+Runner 不按“发生在评分前还是评分后”粗分致命性，而是在采集前读取 Assertion collector 登记的证据需求。
+非 optional 断言依赖的通道是 required；optional 断言和没有断言消费的报告 artifact 是 supplemental。
+
+- required 采集失败不伪造空值，对应断言记 `unavailable`，最终按 Verdict 规则进入 `errored`。
+- supplemental 采集失败追加带原 phase 的 diagnostic，省略没有成功写出的 artifact，继续 finalize 其它断言。
+- OTel span 不参与断言，因此 `telemetry.configure` 与 `telemetry.collect` 失败始终走 supplemental 分支。
+- 已存在致命错误时，后续收尾或 supplemental 采集只能追加 diagnostic，不能替换第一条 `AttemptError`。
+
+例如 Terminal-Bench 只把 `run-tests.sh` 的 `CommandResult` 交给 `commandSucceeded()`。
+Sandbox 在命令返回后消失、导致 diff 导出失败时，Runner 保留命令断言的 Verdict，并记录 `workspace-diff-unavailable`。
+同一条 Eval 若声明 `t.sandbox.fileChanged()`，diff 就是 required，导出失败必须 `errored`，不能把空 diff 判成文件没改。
+
 **超时线是删失线,不是中立的公平线。**
 `timeoutMs` 压在耗时分布上沿时,测出的是「谁先撞线」而不是「谁做得完」。
 对每个 attempt 背着固定协议开销的条件(记忆检索、额外收尾轮),同一条线系统性地更早截断它们;被截断的样本又从完成耗时统计中消失,让慢条件反而显得快(幸存者偏差)。

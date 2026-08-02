@@ -99,6 +99,10 @@ t.check(t.o11y.totalToolCalls, satisfies((n) => (n as number) < 50, "工具调�
 合并靠**显式 correlation ID 或 GenAI 语义约定属性**(如 `gen_ai.tool.call.id`),**永远不靠拿 span 名字 / 文本去猜哪个事件对应哪个 span**。
 没有 OTel 接入时,节点照样全部显示,只是耗时标「timing unavailable」;span 存在但唯一关联不上任何事件时,保留成一个单独标注的 telemetry-only 节点,不悄悄猜着合并到某个事件上。
 
+因为 span 不参与断言，`telemetry.configure` / `telemetry.collect` 都是 supplemental 采集。
+接收器启动、exporter 配置、settle 或 collect 失败时，Runner 追加带原始 phase 的 diagnostic，随后继续执行或保留已经形成的 Verdict；不得把 trace 缺席升级成 `AttemptError`。
+若某种 Adapter 只能从 telemetry 取得行为事件，它违反“事件是行为轨、span 是时间轨”的边界，应修 Adapter 的事件转换器，不能把 OTel 暗中提升成判定依赖。
+
 这份事件骨架用于 `show --execution`:它回答「agent 做了什么」,唯一关联上的 span 只作为该事件旁的时间注释。
 完整的时间分析入口是 `show --timing`:它以 runner 的 lifecycle/turn/command 时间树为骨架,再按 turn 保存的 `traceId` 把 OTel agent/model/tool 子树挂进去。
 两个视图可以显示同一条 tool span,但只是对同一事实的两种投影,不会把 span 复制进事件或 runner timing。
@@ -264,7 +268,7 @@ JUnit reporter 也按这个口径输出 `<failure>` 与 `<error>`。
 
 OTel trace 不是执行错误的权威存储。
 Sandbox provisioning 可能早于 telemetry,teardown 可能晚于 trace collect,没有 tracing 的 provider 也必须产生同样可回顾的结构化 error/diagnostic。
-trace 只在存在时补充调用关系与耗时。
+trace 只在存在时补充调用关系与耗时；配置或收集失败产生 diagnostic，不改变 Verdict。
 
 artifact 是机器可读的,可回放、可二次分析、可喂给下游 dashboard。
 

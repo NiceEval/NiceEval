@@ -191,6 +191,13 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   字面渲染（人读结论行与 `--json` 的 `eval` 事件）归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」在真实进程输出上验收。
 - **budget**：只按已完成实测花费判断（在飞不影响派发是契约不是 bug）、到顶停发在飞跑完、按 experiment 域隔离、未派发导致 incomplete 与退出码 1、成本缺失 warning 的去重与触发前提。
 - **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase` 是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs` 不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`niceeval accept @<locator>` 的单条重锚面**(逐条资格与留痕见下面独立条目)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；带 `sandbox.reused` 的历史终态和当前 `sandboxReuse: true` 都按同一判据携带，复用只是实际派发时的 Sandbox 生命周期；执行模式 flag 的携带豁免——`--keep-sandbox` 下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed` 一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
+- **证据依赖决定采集失败后果**：没有 diff 断言时，`ledger.exportWindows()` 失败后仍 finalize 已登记的命令结果。
+
+  - 无 diff 消费者：保留 passed / failed Verdict，写 `workspace-diff-unavailable` diagnostic，且不声明 `diff` artifact。
+  - 非 optional diff 断言或直接消费：同一失败产生 unavailable，并使 Attempt `errored`。
+  - 只有 optional diff 断言：保留 unavailable AssertionResult，但不改 Verdict。
+  - telemetry 配置或收集失败：写带正确 phase 的 diagnostic，并继续执行或保留既有 Verdict。
+  - 错误优先级：后发生的采集失败不能覆盖较早的 AttemptError。
 - **携带规划的 ADT 与不可变性**：携带门分别覆盖 `Eligible` 和带 gate/reason 的 `Blocked`；正常与反事实指纹分别覆盖 `Current` / `Counterfactual`；配置差异覆盖 `Added` / `Removed` / `Changed` 三种值要求。
   规划产物的 Map、Set 与数组在交付后不可写，运行期重查使用独立状态。
   规划 I/O 从 linker 到 manifest 计算保持一条 Effect 链，中途没有 `runPromise`。

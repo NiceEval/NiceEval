@@ -30,6 +30,10 @@ Record 只持久化运行时真正观察到的内容:
 `DiagnosticRecord.level` 是写入方当时观察到的运行影响,不是最终 Notice 严重度,也不是 verdict 的别名。
 读取 policy 可以结合宿主、范围和其它事实上调或下调 Notice。
 
+证据采集失败不能只凭 phase 映射成 `AttemptError`。
+同一项采集被非 optional 断言消费时属于 required evidence unavailable；只服务 optional 断言或报告 artifact 时写 `DiagnosticRecord`，并保留其它证据形成的 Verdict。
+`workspace-diff-unavailable` 与 telemetry 配置 / 收集 diagnostic 都必须保存 provider、操作、对象和底层 cause 的有界摘要，不能退回笼统的 `fetch failed` 或 `[unknown] terminated`。
+
 ### Read: Issue
 
 Issue 是从记录、artifact 可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
