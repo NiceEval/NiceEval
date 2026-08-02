@@ -228,6 +228,14 @@ async function makeInSandboxReceiver(sandbox: Sandbox): Promise<TraceReceiver> {
 }
 
 // spans 文件每行一个 { ct: string; b: string(base64) }
+function collectorEnvelope(value: unknown): { readonly ct: string; readonly b: string } | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as globalThis.Record<string, unknown>;
+  return typeof record.ct === "string" && typeof record.b === "string"
+    ? { ct: record.ct, b: record.b }
+    : undefined;
+}
+
 function parseSpansFile(raw: Uint8Array): TraceSpan[] {
   const spans: TraceSpan[] = [];
   const text = Buffer.from(raw).toString("utf8");
@@ -235,9 +243,10 @@ function parseSpansFile(raw: Uint8Array): TraceSpan[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      const { ct, b } = JSON.parse(trimmed) as { ct: string; b: string };
-      const body = Buffer.from(b, "base64");
-      spans.push(...parseOtlpTraces(body, ct));
+      const envelope = collectorEnvelope(JSON.parse(trimmed));
+      if (!envelope) continue;
+      const body = Buffer.from(envelope.b, "base64");
+      spans.push(...parseOtlpTraces(body, envelope.ct));
     } catch {
       // 跳过损坏行
     }

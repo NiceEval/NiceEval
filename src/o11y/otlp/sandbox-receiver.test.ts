@@ -122,6 +122,54 @@ describe("沙箱内 OTLP 采集器启动:脚本化 fixture", () => {
   });
 });
 
+describe("沙箱内 OTLP 采集器:采集文件解码", () => {
+  it("只把形状正确的 JSONL 信封归一为 TraceSpan", async () => {
+    const otlp = JSON.stringify({
+      resourceSpans: [{
+        scopeSpans: [{
+          spans: [{
+            traceId: "trace-1",
+            spanId: "span-1",
+            name: "model",
+            startTimeUnixNano: "1000000",
+            endTimeUnixNano: "2000000",
+            attributes: [{ key: "gen_ai.system", value: { stringValue: "openai" } }],
+          }, { name: "missing stable trace identity" }],
+        }],
+      }],
+    });
+    const raw = Buffer.from([
+      JSON.stringify({ ct: 42, b: "not-a-string-content-type" }),
+      JSON.stringify({ ct: "application/json", b: Buffer.from(otlp).toString("base64") }),
+    ].join("\n"));
+    const { sandbox } = scriptedSandbox(["4242\n61002"]);
+    const readingSandbox = baseSandbox({
+      writeText: sandbox.writeText.bind(sandbox),
+      runShell: sandbox.runShell.bind(sandbox),
+      readBytes: async () => raw,
+    });
+
+    const spans = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const receiver = yield* createInSandboxTraceReceiver(readingSandbox);
+          yield* Effect.promise(() => receiver.settle(1, 1));
+          return receiver.collect();
+        }),
+      ),
+    );
+
+    expect(spans).toEqual([expect.objectContaining({
+      traceId: "trace-1",
+      spanId: "span-1",
+      name: "model",
+      startMs: 1,
+      endMs: 2,
+      attributes: { "gen_ai.system": "openai" },
+    })]);
+  });
+});
+
 describe("沙箱内 OTLP 采集器启动:真实 /bin/sh 执行", () => {
   const dirs: string[] = [];
   const pids: number[] = [];

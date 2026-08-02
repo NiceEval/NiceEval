@@ -36,27 +36,29 @@ function statusFromCode(code: number | string | undefined): TraceSpan["status"] 
 
 // ───────────────────────── OTLP/JSON ─────────────────────────
 
-interface JsonAnyValue {
-  stringValue?: string;
-  boolValue?: boolean;
-  intValue?: string | number;
-  doubleValue?: number;
-  arrayValue?: { values?: JsonAnyValue[] };
-  kvlistValue?: { values?: { key?: string; value?: JsonAnyValue }[] };
-  bytesValue?: string;
+function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function jsonAnyValue(v: JsonAnyValue | undefined): JsonValue {
-  if (!v) return null;
-  if (v.stringValue !== undefined) return v.stringValue;
-  if (v.boolValue !== undefined) return v.boolValue;
-  if (v.intValue !== undefined) return Number(v.intValue);
-  if (v.doubleValue !== undefined) return v.doubleValue;
-  if (v.bytesValue !== undefined) return v.bytesValue;
-  if (v.arrayValue) return (v.arrayValue.values ?? []).map(jsonAnyValue);
-  if (v.kvlistValue) {
+function jsonAnyValue(value: unknown): JsonValue {
+  if (!isRecord(value)) return null;
+  if (typeof value.stringValue === "string") return value.stringValue;
+  if (typeof value.boolValue === "boolean") return value.boolValue;
+  if (typeof value.intValue === "string" || typeof value.intValue === "number") {
+    const integer = Number(value.intValue);
+    return Number.isFinite(integer) ? integer : null;
+  }
+  if (typeof value.doubleValue === "number") return Number.isFinite(value.doubleValue) ? value.doubleValue : null;
+  if (typeof value.bytesValue === "string") return value.bytesValue;
+  if (isRecord(value.arrayValue) && Array.isArray(value.arrayValue.values)) {
+    return value.arrayValue.values.map(jsonAnyValue);
+  }
+  if (isRecord(value.kvlistValue) && Array.isArray(value.kvlistValue.values)) {
     const obj: globalThis.Record<string, JsonValue> = {};
-    for (const kv of v.kvlistValue.values ?? []) if (kv.key) obj[kv.key] = jsonAnyValue(kv.value);
+    for (const entry of value.kvlistValue.values) {
+      if (!isRecord(entry) || typeof entry.key !== "string" || entry.key.length === 0) continue;
+      obj[entry.key] = jsonAnyValue(entry.value);
+    }
     return obj;
   }
   return null;
@@ -64,40 +66,42 @@ function jsonAnyValue(v: JsonAnyValue | undefined): JsonValue {
 
 function parseJsonTraces(text: string): TraceSpan[] {
   if (!text.trim()) return [];
-  const root = JSON.parse(text) as {
-    resourceSpans?: { scopeSpans?: { spans?: JsonSpan[] }[] }[];
-  };
+  const root: unknown = JSON.parse(text);
+  if (!isRecord(root) || !Array.isArray(root.resourceSpans)) return [];
   const out: TraceSpan[] = [];
-  for (const rs of root.resourceSpans ?? []) {
-    for (const ss of rs.scopeSpans ?? []) {
-      for (const s of ss.spans ?? []) out.push(jsonSpan(s));
+  for (const resourceSpan of root.resourceSpans) {
+    if (!isRecord(resourceSpan) || !Array.isArray(resourceSpan.scopeSpans)) continue;
+    for (const scopeSpan of resourceSpan.scopeSpans) {
+      if (!isRecord(scopeSpan) || !Array.isArray(scopeSpan.spans)) continue;
+      for (const span of scopeSpan.spans) {
+        if (!isRecord(span)) continue;
+        const normalized = jsonSpan(span);
+        if (normalized) out.push(normalized);
+      }
     }
   }
   return out;
 }
 
-interface JsonSpan {
-  traceId?: string;
-  spanId?: string;
-  parentSpanId?: string;
-  name?: string;
-  startTimeUnixNano?: string;
-  endTimeUnixNano?: string;
-  status?: { code?: number | string; message?: string };
-  attributes?: { key?: string; value?: JsonAnyValue }[];
-}
-
-function jsonSpan(s: JsonSpan): TraceSpan {
+function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefined {
+  if (typeof span.traceId !== "string" || span.traceId.length === 0) return undefined;
+  if (typeof span.spanId !== "string" || span.spanId.length === 0) return undefined;
   const attributes: globalThis.Record<string, JsonValue> = {};
-  for (const a of s.attributes ?? []) if (a.key) attributes[a.key] = jsonAnyValue(a.value);
+  if (Array.isArray(span.attributes)) {
+    for (const attribute of span.attributes) {
+      if (!isRecord(attribute) || typeof attribute.key !== "string" || attribute.key.length === 0) continue;
+      attributes[attribute.key] = jsonAnyValue(attribute.value);
+    }
+  }
+  const status = isRecord(span.status) ? span.status : undefined;
   return {
-    traceId: s.traceId ?? "",
-    spanId: s.spanId ?? "",
-    parentSpanId: s.parentSpanId || undefined,
-    name: s.name ?? "span",
-    startMs: nanoToMs(s.startTimeUnixNano),
-    endMs: nanoToMs(s.endTimeUnixNano),
-    status: statusFromCode(s.status?.code),
+    traceId: span.traceId,
+    spanId: span.spanId,
+    parentSpanId: typeof span.parentSpanId === "string" && span.parentSpanId ? span.parentSpanId : undefined,
+    name: typeof span.name === "string" ? span.name : "span",
+    startMs: nanoToMs(typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number" ? span.startTimeUnixNano : undefined),
+    endMs: nanoToMs(typeof span.endTimeUnixNano === "string" || typeof span.endTimeUnixNano === "number" ? span.endTimeUnixNano : undefined),
+    status: statusFromCode(typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined),
     attributes: Object.keys(attributes).length ? attributes : undefined,
   };
 }
