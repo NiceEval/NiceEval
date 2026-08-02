@@ -1,5 +1,6 @@
 import { Clock, Data, Effect, Option, Ref, Schema } from "effect";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
+import { classifySandboxIoError } from "../sandbox/errors.ts";
 import { freezeStateJson, StateCheckpointSchema, stateJsonValueOf } from "./definition.ts";
 import type { PlannedExperimentState } from "./plan.ts";
 import type {
@@ -54,6 +55,13 @@ export class StateSaveFailure extends Data.TaggedError("StateSaveFailure")<{
 
 export type StateFailure = StateLoadFailure | StateSaveFailure;
 
+type StateSandboxUnavailableReason = "sandbox-lost" | "provider-unreachable";
+
+class StateSandboxTransferUnavailable extends Data.TaggedError("StateSandboxTransferUnavailable")<{
+  readonly reason: StateSandboxUnavailableReason;
+  readonly detail: string;
+}> {}
+
 function externalErrorCode(value: unknown): ExternalErrorCode {
   return typeof value === "string" && value.trim() !== ""
     ? { _tag: "Code", value }
@@ -88,6 +96,64 @@ function normalizeExternalCause(value: unknown): ExternalStateCause {
     message: typeof candidate.message === "string" ? candidate.message : String(value),
     stack: externalErrorStack(candidate.stack),
   };
+}
+
+/** Sandbox operation 的 throwable 在 catch 边界归一；普通作者 callback 错误不走这条分类。 */
+function sandboxTransferFailure(value: unknown): StateSandboxTransferUnavailable | undefined {
+  if (typeof value === "object" && value !== null) {
+    const tagged = value as { _tag?: unknown; reason?: unknown; detail?: unknown };
+    if (
+      tagged._tag === "StateSandboxTransferUnavailable" &&
+      (tagged.reason === "sandbox-lost" || tagged.reason === "provider-unreachable") &&
+      typeof tagged.detail === "string"
+    ) {
+      return new StateSandboxTransferUnavailable({
+        reason: tagged.reason,
+        detail: tagged.detail,
+      });
+    }
+  }
+  const cause = normalizeExternalCause(value);
+  if (/terminated|killed|sandbox.*(?:closed|stopped|not found)/i.test(`${cause.name} ${cause.message}`)) {
+    return new StateSandboxTransferUnavailable({ reason: "sandbox-lost", detail: cause.message });
+  }
+  const ioKind = classifySandboxIoError(value);
+  return ioKind === "network" || ioKind === "service_unavailable"
+    ? new StateSandboxTransferUnavailable({ reason: "provider-unreachable", detail: cause.message })
+    : undefined;
+}
+
+function stateSandboxTarget(target: SandboxCommandTarget): SandboxCommandTarget {
+  const operation = async <A>(run: () => Promise<A>): Promise<A> => {
+    try {
+      return await run();
+    } catch (throwable) {
+      const unavailable = sandboxTransferFailure(throwable);
+      if (unavailable !== undefined) throw unavailable;
+      throw throwable;
+    }
+  };
+  return {
+    get workdir() { return target.workdir; },
+    runCommand: (command, args, options) => operation(() => target.runCommand(command, args, options)),
+    runShell: (script, options) => operation(() => target.runShell(script, options)),
+    runCommandOrThrow: (command, args, options) => operation(() => target.runCommandOrThrow(command, args, options)),
+    runShellOrThrow: (script, options) => operation(() => target.runShellOrThrow(script, options)),
+    readText: (path) => operation(() => target.readText(path)),
+    writeText: (path, content) => operation(() => target.writeText(path, content)),
+    readBytes: (path) => operation(() => target.readBytes(path)),
+    writeBytes: (path, content) => operation(() => target.writeBytes(path, content)),
+    pathExists: (path) => operation(() => target.pathExists(path)),
+    copyPath: (sourcePath, targetPath) => operation(() => target.copyPath(sourcePath, targetPath)),
+    putContent: (content, targetPath) => operation(() => target.putContent(content, targetPath)),
+  };
+}
+
+function transferUnavailable(value: unknown): StateSandboxTransferUnavailable | undefined {
+  return typeof value === "object" && value !== null &&
+      (value as { _tag?: unknown })._tag === "StateSandboxTransferUnavailable"
+    ? sandboxTransferFailure(value)
+    : undefined;
 }
 
 function decodedCheckpoint(value: Schema.Schema.Type<typeof StateCheckpointSchema>): StateCheckpoint {
@@ -163,7 +229,7 @@ function stateContext(
     phase,
     experimentId,
     windowId,
-    sandbox: environment.sandbox,
+    sandbox: stateSandboxTarget(environment.sandbox),
     signal,
     progress: environment.progress,
     diagnostic: environment.diagnostic,
@@ -180,6 +246,16 @@ export function loadExperimentState(
   return Effect.tryPromise({
     try: (signal) => plan.definition.load(stateContext("load", experimentId, windowId, environment, signal)),
     catch: (throwable) => {
+      const unavailable = transferUnavailable(throwable);
+      if (unavailable !== undefined) {
+        return new StateLoadFailure({
+          phase: "state.load",
+          kind: "unavailable",
+          code: `state.load.${unavailable.reason}`,
+          message: `state.load.${unavailable.reason}: ${unavailable.detail}`,
+          evidence: { _tag: "TransferUnavailable", reason: unavailable.reason },
+        });
+      }
       const cause = normalizeExternalCause(throwable);
       return new StateLoadFailure({
         phase: "state.load",
@@ -223,6 +299,16 @@ export function saveExperimentState(
     // tryPromise 为这条 Effect fiber 创建新 signal；不复用已经 abort 的 load / Attempt signal。
     try: (signal) => plan.definition.save(stateContext("save", experimentId, windowId, environment, signal)),
     catch: (throwable) => {
+      const unavailable = transferUnavailable(throwable);
+      if (unavailable !== undefined) {
+        return new StateSaveFailure({
+          phase: "state.save",
+          kind: "unavailable",
+          code: `state.save.${unavailable.reason}`,
+          message: `state.save.${unavailable.reason}: ${unavailable.detail}`,
+          evidence: { _tag: "TransferUnavailable", reason: unavailable.reason },
+        });
+      }
       const cause = normalizeExternalCause(throwable);
       return new StateSaveFailure({
         phase: "state.save",
@@ -364,16 +450,16 @@ export class ExperimentStateWindow {
         });
       }
 
-      const startedAt = yield* Clock.currentTimeMillis;
+      const startedAt = yield* Clock.currentTimeNanos;
       const transition = loadExperimentState(this.plan, this.experimentId, this.windowId, environment).pipe(
         Effect.flatMap((checkpoint) => Effect.gen(this, function* () {
-          const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
+          const durationMs = Number((yield* Clock.currentTimeNanos) - startedAt) / 1_000_000;
           const activity: StateTransferActivity = { outcome: "succeeded", checkpoint, durationMs };
           yield* Ref.set(this.status, { _tag: "Loaded", activity });
           return { _tag: "Loaded", activity } as const;
         })),
         Effect.catchAll((failure) => Effect.gen(this, function* () {
-          const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
+          const durationMs = Number((yield* Clock.currentTimeNanos) - startedAt) / 1_000_000;
           const activity = activityForFailure(failure, durationMs);
           yield* Ref.set(this.status, { _tag: "LoadFailed", activity, failure });
           return yield* new ExperimentStateSequenceFailure({ activity, failure });
@@ -453,7 +539,7 @@ export class ExperimentStateWindow {
         return record;
       }
 
-      const startedAt = yield* Clock.currentTimeMillis;
+      const startedAt = yield* Clock.currentTimeNanos;
       const transition = saveExperimentState(
         this.plan,
         this.experimentId,
@@ -462,7 +548,7 @@ export class ExperimentStateWindow {
         input.budget,
       ).pipe(
         Effect.flatMap((checkpoint) => Effect.gen(this, function* () {
-          const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
+          const durationMs = Number((yield* Clock.currentTimeNanos) - startedAt) / 1_000_000;
           const record: StateWindowRecord = {
             windowId: this.windowId,
             experimentId: this.experimentId,
@@ -474,7 +560,7 @@ export class ExperimentStateWindow {
           return record;
         })),
         Effect.catchAll((failure) => Effect.gen(this, function* () {
-          const durationMs = Math.max(0, (yield* Clock.currentTimeMillis) - startedAt);
+          const durationMs = Number((yield* Clock.currentTimeNanos) - startedAt) / 1_000_000;
           const save = activityForFailure(failure, durationMs);
           const record: StateWindowRecord = {
             windowId: this.windowId,

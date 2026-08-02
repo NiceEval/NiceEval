@@ -200,6 +200,73 @@ describe("Experiment State runtime", () => {
     });
   });
 
+  it("Sandbox 终止和 provider 断连分别落 typed unavailable，不冒充 callback failure", async () => {
+    const lostSandbox: SandboxCommandTarget = {
+      ...sandbox,
+      async readText() { throw new Error("Sandbox was terminated"); },
+    };
+    const lostWindow = await Effect.runPromise(ExperimentStateWindow.make(rolling({
+      async load(context) {
+        await context.sandbox.readText("/state/checkpoint.json");
+        return { identity: {}, digest: digestUnavailable, facts: {} };
+      },
+      async save() { return { identity: {}, digest: digestUnavailable, facts: {} }; },
+    }), "experiment/fixture", "window-sandbox-lost"));
+    const lost = await sequenceFailure(lostWindow.load({ ...environment, sandbox: lostSandbox }));
+    expect(lost.failure).toMatchObject({
+      kind: "unavailable",
+      code: "state.load.sandbox-lost",
+      evidence: { _tag: "TransferUnavailable", reason: "sandbox-lost" },
+    });
+    expect(lost.activity).toMatchObject({ outcome: "unavailable", reason: "sandbox-lost" });
+
+    const unreachableSandbox: SandboxCommandTarget = {
+      ...sandbox,
+      async writeText() {
+        throw Object.assign(new Error("connection reset while uploading"), { code: "ECONNRESET" });
+      },
+    };
+    const unreachableWindow = await Effect.runPromise(ExperimentStateWindow.make(rolling({
+      async load() { return { identity: {}, digest: digestUnavailable, facts: {} }; },
+      async save(context) {
+        await context.sandbox.writeText("/state/checkpoint.json", "{}");
+        return { identity: {}, digest: digestUnavailable, facts: {} };
+      },
+    }), "experiment/fixture", "window-provider-unreachable"));
+    const unreachableEnvironment = { ...environment, sandbox: unreachableSandbox };
+    await Effect.runPromise(unreachableWindow.load(unreachableEnvironment));
+    const unreachable = await sequenceFailure(unreachableWindow.finalize(unreachableEnvironment, succeeded));
+    expect(unreachable.failure).toMatchObject({
+      kind: "unavailable",
+      code: "state.save.provider-unreachable",
+      evidence: { _tag: "TransferUnavailable", reason: "provider-unreachable" },
+    });
+    expect(unreachable.activity).toMatchObject({ outcome: "unavailable", reason: "provider-unreachable" });
+  });
+
+  it("Sandbox 限流不冒充 provider-unreachable", async () => {
+    const throttledSandbox: SandboxCommandTarget = {
+      ...sandbox,
+      async readText() {
+        throw Object.assign(new Error("too many requests"), { status: 429 });
+      },
+    };
+    const window = await Effect.runPromise(ExperimentStateWindow.make(rolling({
+      async load(context) {
+        await context.sandbox.readText("/state/checkpoint.json");
+        return { identity: {}, digest: digestUnavailable, facts: {} };
+      },
+      async save() { return { identity: {}, digest: digestUnavailable, facts: {} }; },
+    }), "experiment/fixture", "window-provider-throttled"));
+
+    const failure = await sequenceFailure(window.load({ ...environment, sandbox: throttledSandbox }));
+    expect(failure.failure).toMatchObject({
+      kind: "callback",
+      code: "state.load.callback",
+      evidence: { _tag: "External", cause: { message: "too many requests" } },
+    });
+  });
+
   it("save 使用新的有界 signal，超时是 typed unavailable 而不是 interrupt", async () => {
     let loadSignal: AbortSignal | undefined;
     let saveSignal: AbortSignal | undefined;
