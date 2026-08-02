@@ -1,6 +1,6 @@
 // 题型构成的单点判据(docs/feature/reports/library/measures.md「题型构成与主读数」):一个
 // 范围的对比主读数由其中出现的题型决定——通过制读通过率,计分制读总分,混型两者并排、
-// 各读各的。题型是定义期事实(EvalDescriptor.scoring,单个 experiment 内由启动期强制同型),
+// 各读各的。题型是定义期事实(EvalDescriptor.scoring,同一个 experiment 也可以选择混型 Eval),
 // 所以这个判断不依赖任何 attempt 执行结果。官方消费者(ScopeSummary 的渲染面、
 // ExperimentList 的主列、ExperimentComparison 的 compose 步骤)都调用这一个函数判定构成,
 // 不各自另设判据。
@@ -23,9 +23,8 @@ import { selectedAttemptsOnly } from "../components/shared-compute.ts";
  *
  * @param input Sample,或手工挑选的快照数组。
  * @returns `"pass"`:范围内全部通过制;`"points"`:全部计分制;`"mixed"`:同一范围内并排
- *   出现两种题型——题型只在单个 experiment 内被启动期强制统一,一个 Sample 可以并排多个
- *   experiment,不同 experiment 之间允许不同题型(docs/feature/experiments/score-points.md
- *   「横截面聚合」)。
+ *   出现两种题型——混型既可能来自同一个 experiment,也可能来自不同 experiment 并排
+ *   (docs/feature/experiments/score-points.md)。
  */
 export async function scoringComposition(input: ReportInput): Promise<ScoringComposition> {
   const { runs, attempts } = resolveInput(input);

@@ -13,6 +13,7 @@ import type {
   ExperimentListEvalRow,
   ExperimentListItem,
   ReportInput,
+  ScoringComposition,
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
 import type { AttemptHandle, Run } from "../../../record/types.ts";
@@ -77,6 +78,7 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     evalId: evalIdOf(item),
     attempt: result.attempt,
     agent: result.agent,
+    scoring: result.scoring === "points" ? "points" : "pass",
     verdict: result.verdict,
     failureSummary: summary,
     moreFailures: more,
@@ -147,16 +149,26 @@ export async function evalListData(input: ReportInput): Promise<EvalListItem[]> 
  * 分组恒 attempts >= 1),它们的 `scoring` 是占位默认值而非读到的事实,一屏占位行不该把纯
  * 计分制列表误判成 mixed。
  */
-function listScoringComposition(items: readonly ExperimentListItem[]): "pass" | "points" | "mixed" {
+function listScoringComposition(items: readonly ExperimentListItem[]): ScoringComposition {
   let hasPass = false;
   let hasPoints = false;
   for (const item of items) {
     if (item.attempts === 0) continue;
-    if (item.scoring === "points") hasPoints = true;
-    else hasPass = true;
+    if (item.scoring !== "pass") hasPoints = true;
+    if (item.scoring !== "points") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
   return hasPoints ? "points" : "pass";
+}
+
+function itemScoringComposition(items: readonly Item[]): ScoringComposition {
+  const hasPoints = items.some((item) => item.attempt.result.scoring === "points");
+  const hasPass = items.some((item) => item.attempt.result.scoring !== "points");
+  return hasPass && hasPoints ? "mixed" : hasPoints ? "points" : "pass";
+}
+
+function passScoringItems(items: readonly Item[]): Item[] {
+  return items.filter((item) => item.attempt.result.scoring !== "points");
 }
 
 /**
@@ -226,7 +238,9 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       const attempts = await Promise.all(sorted.map((item) => attemptListItemOf(item)));
       evalRows.push({
         evalId,
+        scoring: itemScoringComposition(sorted),
         verdict,
+        endToEndPassRate: await computeCell(endToEndPassRate, passScoringItems(sorted)),
         totalScore: await computeCell(totalScore, sorted),
         durationMs: await computeCell(durationMs, sorted),
         costUSD: await computeCell(costUSD, sorted),
@@ -241,10 +255,9 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       agent: newest.run.agent || newest.attempt.result.agent,
       ...(model !== undefined ? { model } : {}),
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
-      // 定义期事实,单个 experiment 内由启动期强制同型:newest 里任一 attempt 都能代表整组。
-      scoring: newest.attempt.result.scoring === "points" ? "points" : "pass",
+      scoring: itemScoringComposition(group),
       evalVerdicts: stats.verdicts,
-      endToEndPassRate: await computeCell(endToEndPassRate, group),
+      endToEndPassRate: await computeCell(endToEndPassRate, passScoringItems(group)),
       totalScore: await computeCell(totalScore, group),
       costUSD: await computeCell(costUSD, group),
       durationMs: await computeCell(durationMs, group),

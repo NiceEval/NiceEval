@@ -8,12 +8,19 @@ import {
   type Validator,
 } from "../shared.ts";
 
+function scoringProblem(value: unknown, path: string, allowMixed: boolean): string | null {
+  if (value === "pass" || value === "points" || (allowMixed && value === "mixed")) return null;
+  return `"${path}" must be ${allowMixed ? '"pass", "points", or "mixed"' : '"pass" or "points"'}`;
+}
+
 function attemptListItemProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (typeof value.experimentId !== "string") return `"${path}.experimentId" must be a string`;
   if (typeof value.evalId !== "string") return `"${path}.evalId" must be a string`;
   if (typeof value.attempt !== "number") return `"${path}.attempt" must be a number`;
   if (typeof value.agent !== "string") return `"${path}.agent" must be a string`;
+  const scoring = scoringProblem(value.scoring, `${path}.scoring`, false);
+  if (scoring !== null) return scoring;
   if (typeof value.verdict !== "string") return `"${path}.verdict" must be a string`;
   if (!(value.failureSummary === null || typeof value.failureSummary === "string")) {
     return `"${path}.failureSummary" must be a string or null`;
@@ -36,7 +43,8 @@ export const validateExperimentListData: Validator = (data) =>
     if (!isObject(item)) return `"${path}" must be an object`;
     if (typeof item.experimentId !== "string") return `"${path}.experimentId" must be a string`;
     if (typeof item.agent !== "string") return `"${path}.agent" must be a string`;
-    if (typeof item.scoring !== "string") return `"${path}.scoring" must be a string`;
+    const scoring = scoringProblem(item.scoring, `${path}.scoring`, true);
+    if (scoring !== null) return scoring;
     const verdictsProblem = tallyProblem(item.evalVerdicts, `${path}.evalVerdicts`);
     if (verdictsProblem !== null) return verdictsProblem;
     const passRateProblem = cellProblem(item.endToEndPassRate, `${path}.endToEndPassRate`);
@@ -61,6 +69,10 @@ export const validateExperimentListData: Validator = (data) =>
       if (!isObject(row) || typeof row.evalId !== "string") {
         return `"${rowPath}" must be an object with a string "evalId"`;
       }
+      const rowScoring = scoringProblem(row.scoring, `${rowPath}.scoring`, true);
+      if (rowScoring !== null) return rowScoring;
+      const rowPassRateProblem = cellProblem(row.endToEndPassRate, `${rowPath}.endToEndPassRate`);
+      if (rowPassRateProblem !== null) return rowPassRateProblem;
       const rowTotalScoreProblem = cellProblem(row.totalScore, `${rowPath}.totalScore`);
       if (rowTotalScoreProblem !== null) return rowTotalScoreProblem;
       const rowDurationProblem = cellProblem(row.durationMs, `${rowPath}.durationMs`);

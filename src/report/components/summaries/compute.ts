@@ -49,6 +49,7 @@ export async function sampleSummary(input: ReportInput): Promise<SampleSummaryCo
   // scoringComposition()(docs/feature/reports/library/measures.md「题型构成与主读数」)——
   // 不在这里另设一份 hasPoints/hasPass 判断。
   const composition = await scoringComposition(input);
+  const passItems = items.filter((item) => item.attempt.result.scoring !== "points");
 
   return {
     range: { earliestStartedAt: earliest, latestStartedAt: latest },
@@ -57,7 +58,7 @@ export async function sampleSummary(input: ReportInput): Promise<SampleSummaryCo
     attempts: stats.attempts,
     evalVerdicts: stats.verdicts,
     attemptVerdicts,
-    endToEndPassRate: await computeCell(passRate, items),
+    endToEndPassRate: await computeCell(passRate, passItems),
     scoringComposition: composition,
     ...(composition !== "pass" ? { totalScore: await computeCell(totalScore, items) } : {}),
     totalCostUSD: await computeCell(totalCostMetric, items),

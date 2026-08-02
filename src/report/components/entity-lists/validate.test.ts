@@ -14,6 +14,7 @@ const validAttemptItem = {
   evalId: "q1",
   attempt: 0,
   agent: "codex",
+  scoring: "pass",
   verdict: "passed",
   failureSummary: null,
   moreFailures: 0,
@@ -84,7 +85,9 @@ describe("validateEvalListData", () => {
 describe("validateExperimentListData", () => {
   const validEvalRow = {
     evalId: "q1",
+    scoring: "pass",
     verdict: "passed",
+    endToEndPassRate: validCell,
     totalScore: validCell,
     durationMs: validCell,
     costUSD: validCell,
@@ -113,6 +116,14 @@ describe("validateExperimentListData", () => {
 
   it("合规 literal 通过", () => {
     expect(validateExperimentListData(valid)).toBeNull();
+    expect(validateExperimentListData([{ ...valid[0], scoring: "mixed" }])).toBeNull();
+  });
+
+  it("scoring 使用闭集，拒绝任意字符串", () => {
+    expect(validateExperimentListData([{ ...valid[0], scoring: "hybrid" }])).toMatch(/data\[0\]\.scoring/);
+    expect(validateExperimentListData([{ ...valid[0], evalRows: [{ ...validEvalRow, scoring: "hybrid" }] }])).toMatch(
+      /data\[0\]\.evalRows\[0\]\.scoring/,
+    );
   });
 
   it("[i].evalVerdicts(四态 tally)缺字段报错", () => {

@@ -12,6 +12,7 @@ import {
   type ReportLocale,
 } from "./locale.ts";
 import type { MetricFormat } from "./calculation.ts";
+import type { ScoringComposition } from "./types.ts";
 
 /** 内部 AttemptMetric 显示覆盖：只格式化同一个终值，不改变口径。 */
 export type MetricDisplay = (value: number, locale: ReportLocale) => string;
@@ -337,14 +338,14 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
  * 判据,不各自重新判断,列集合与 `experimentListData` 已经算好的默认排序永远对得上。
  */
 export function experimentListScoringComposition(
-  items: readonly { scoring: "pass" | "points"; attempts: number }[],
-): "pass" | "points" | "mixed" {
+  items: readonly { scoring: ScoringComposition; attempts: number }[],
+): ScoringComposition {
   let hasPass = false;
   let hasPoints = false;
   for (const item of items) {
     if (item.attempts === 0) continue;
-    if (item.scoring === "points") hasPoints = true;
-    else hasPass = true;
+    if (item.scoring !== "pass") hasPoints = true;
+    if (item.scoring !== "points") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
   return hasPoints ? "points" : "pass";

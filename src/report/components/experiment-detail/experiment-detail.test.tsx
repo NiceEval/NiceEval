@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { EvalResult, Verdict } from "../../../types.ts";
+import type { AssertionResult, EvalResult, Verdict } from "../../../types.ts";
 import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
 import type { AttemptHandle, Run, Sample, SampleIssue, SampleCoverage } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
@@ -20,7 +20,7 @@ import { ExperimentDetails } from "./index.tsx";
 
 let seq = 0;
 
-function res(id: string, verdict: Verdict): EvalResult {
+function res(id: string, verdict: Verdict, extra: Partial<EvalResult> = {}): EvalResult {
   seq += 1;
   return {
     id,
@@ -31,7 +31,12 @@ function res(id: string, verdict: Verdict): EvalResult {
     durationMs: 1000,
     assertions: [],
     evidenceCoverage: completeEvidenceCoverage,
+    ...extra,
   };
+}
+
+function scoreAssertion(points: number): AssertionResult {
+  return { name: "score", severity: "gate", outcome: "passed", score: 1, points } as AssertionResult;
 }
 
 let runSeq = 0;
@@ -137,6 +142,27 @@ describe("ExperimentDetails:六区块投影同一份转换结果", () => {
     expect(data.catchUpCommand).toBeNull();
     const resolved = await resolveExperimentDetails(scope);
     expect(collectElementsByType(resolved, CopyBlock)).toHaveLength(0);
+  });
+
+  it("单实验混型时身份标成 mixed，摘要并排显示通过率与总分", async () => {
+    const run = snap({
+      experimentId: "agents/mixed",
+      results: [
+        res("plain", "failed"),
+        res("score", "passed", { scoring: "points", assertions: [scoreAssertion(5)] }),
+      ],
+    });
+    const scope = scopeOf([run]);
+    const data = await experimentDetailsData(scope);
+    expect(data.experiment.scoring).toBe("mixed");
+    expect(data.experiment.endToEndPassRate.value).toBe(0);
+    expect(data.experiment.totalScore.value).toBe(5);
+
+    const resolved = await resolveExperimentDetails(scope);
+    const stats = collectElementsByType(resolved, Stat);
+    expect(stats.some((stat) => (stat.props.label as { en?: string } | undefined)?.en === "Pass rate")).toBe(true);
+    expect(stats.some((stat) => (stat.props.label as { en?: string } | undefined)?.en === "Total score")).toBe(true);
+    expect(stats.some((stat) => stat.props.value === "mixed")).toBe(true);
   });
 
   it("收窄到零个实验:按完整用户反馈报错,不静默取第一个", async () => {

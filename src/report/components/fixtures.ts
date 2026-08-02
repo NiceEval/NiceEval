@@ -232,6 +232,7 @@ const failedAttempt: AttemptListItem = {
   evalId: "algebra/quadratic",
   attempt: 3,
   agent: "bub",
+  scoring: "pass",
   verdict: "failed",
   // 已按 Scoring display 契约折好的单行摘要;渲染面只做宽度截断,不重算
   failureSummary: "gate: roots-correct · expected x=2 · received x=3",
@@ -251,6 +252,7 @@ const erroredAttempt: AttemptListItem = {
   evalId: "geometry/angles",
   attempt: 0,
   agent: "codex",
+  scoring: "pass",
   verdict: "errored",
   // errored:结构化 error 的一层摘要(phase · code · message)
   failureSummary: "eval.run · unexpected-error · TypeError: cannot read properties of undefined (reading 'foo')",
@@ -276,6 +278,7 @@ const passedAttempt: AttemptListItem = {
   evalId: "algebra/simple",
   attempt: 0,
   agent: "bub",
+  scoring: "pass",
   verdict: "passed",
   failureSummary: null,
   moreFailures: 0,
@@ -311,7 +314,9 @@ export const experimentListItems: ExperimentListItem[] = [
     evalRows: [
       {
         evalId: "algebra/quadratic",
+        scoring: "pass",
         verdict: "failed",
+        endToEndPassRate: { value: 0, unit: "%", basis: "eval", samples: 2, total: 2, refs: [failedAttempt.locator, failedRetryAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [failedAttempt.locator] },
         durationMs: { value: 32_000, basis: "eval", samples: 1, total: 1, refs: [failedAttempt.locator] },
         costUSD: { value: 0.12, basis: "eval", samples: 1, total: 1, refs: [failedAttempt.locator] },
@@ -320,7 +325,9 @@ export const experimentListItems: ExperimentListItem[] = [
       },
       {
         evalId: "algebra/simple",
+        scoring: "pass",
         verdict: "passed",
+        endToEndPassRate: { value: 1, unit: "%", basis: "eval", samples: 1, total: 1, refs: [passedAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },
         durationMs: { value: 5_000, basis: "eval", samples: 1, total: 1, refs: [] },
         costUSD: { value: 0.02, basis: "eval", samples: 1, total: 1, refs: [] },
@@ -347,7 +354,9 @@ export const experimentListItems: ExperimentListItem[] = [
     evalRows: [
       {
         evalId: "geometry/angles",
+        scoring: "pass",
         verdict: "errored",
+        endToEndPassRate: { value: 0, unit: "%", basis: "eval", samples: 1, total: 1, refs: [erroredAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },
         durationMs: { value: 4_500, basis: "eval", samples: 1, total: 1, refs: [erroredAttempt.locator] },
         costUSD: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },

@@ -718,6 +718,25 @@ describe("实体列表 data", () => {
     expect(byId.get("exam/plain-pass")!.scoring).toBe("pass");
   });
 
+  it("单一 Experiment 混型:题型为 mixed，通过率只读 pass Eval，总分只读 points Eval", async () => {
+    const mixed = snap({
+      experimentId: "exam/mixed-one",
+      results: [
+        res("plain", "failed"),
+        res("score", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] }),
+      ],
+    });
+    const [item] = await experimentListData([mixed]);
+    expect(item!.scoring).toBe("mixed");
+    expect(item!.endToEndPassRate.value).toBe(0);
+    expect(item!.endToEndPassRate.total).toBe(1);
+    expect(item!.totalScore.value).toBe(5);
+    expect(item!.evalRows.map((row) => [row.evalId, row.scoring])).toEqual([
+      ["plain", "pass"],
+      ["score", "points"],
+    ]);
+  });
+
   it("ExperimentListItem.totalScore 是跨题 sum,不是 mean:3 分 + 5 分 = 8,不是 4", async () => {
     const s = snap({
       experimentId: "exam/multi",
@@ -857,6 +876,21 @@ describe("scopeSummaryData", () => {
     const data = await scopeSummaryData([passExp, pointsExp]);
     expect(data.scoringComposition).toBe("mixed");
     expect(data.totalScore).toBeDefined();
+  });
+
+  it("scoringComposition:同一 experiment 混型时通过率不被 points Eval 稀释", async () => {
+    const mixed = snap({
+      experimentId: "exp/mixed-one",
+      results: [
+        res("plain", "failed"),
+        res("score", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] }),
+      ],
+    });
+    const data = await scopeSummaryData([mixed]);
+    expect(data.scoringComposition).toBe("mixed");
+    expect(data.endToEndPassRate.value).toBe(0);
+    expect(data.endToEndPassRate.total).toBe(1);
+    expect(data.totalScore?.value).toBe(5);
   });
 
   it("scoringComposition() 与 ScopeSummaryData.scoringComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {

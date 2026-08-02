@@ -30,6 +30,7 @@ function attempt(
     evalId,
     attempt: 0,
     agent: "codex",
+    scoring: "pass",
     verdict,
     failureSummary: null,
     moreFailures: 0,
@@ -50,9 +51,26 @@ function evalRow(
   attempts: AttemptListItem[],
   overrides: Partial<ExperimentListEvalRow> = {},
 ): ExperimentListEvalRow {
+  const scoring = overrides.scoring ?? (attempts.some((item) => item.scoring === "points") ? "points" : "pass");
+  const passAttempts = scoring === "points" ? [] : attempts.filter((item) => item.scoring === "pass");
+  const readablePassAttempts = passAttempts.filter((item) => item.verdict !== "unreadable");
+  const passRefs = passAttempts.map((item) => item.locator);
   return {
     evalId,
+    scoring,
     verdict,
+    endToEndPassRate: {
+      value: readablePassAttempts.length === 0
+        ? null
+        : readablePassAttempts.filter((item) => item.verdict === "passed").length / readablePassAttempts.length,
+      unit: "%",
+      better: "higher",
+      bounds: { min: 0, max: 1 },
+      basis: "eval",
+      samples: readablePassAttempts.length,
+      total: passAttempts.length,
+      refs: passRefs,
+    },
     totalScore: emptyCell,
     durationMs: cell(attempts[0]?.durationMs ?? 0),
     costUSD: cell(attempts[0]?.costUSD ?? 0),
@@ -456,6 +474,38 @@ describe("行形状与列集同源", () => {
     expect(columnKeys(pass)).not.toContain("totalScore");
     expect(pass.rows[0]!.cells.totalScore).toBeUndefined();
     assertRowShapes(pass);
+  });
+
+  it("单一 Experiment 混型时两列并排，Experiment 行分别填写两种主读数", () => {
+    const plainAttempt = attempt("plain", "failed");
+    const scoreAttempt = attempt("score", "passed", {
+      scoring: "points",
+      totalScore: cell(5),
+    });
+    const content = experimentListContent([
+      experimentItem({
+        scoring: "mixed",
+        endToEndPassRate: cell(0),
+        totalScore: cell(5),
+        evalRows: [
+          evalRow("plain", "failed", [plainAttempt]),
+          evalRow("score", "passed", [scoreAttempt], { scoring: "points", totalScore: cell(5) }),
+        ],
+        missingEvalIds: [],
+      }),
+    ]);
+    expect(columnKeys(content)).toEqual(expect.arrayContaining(["passRate", "totalScore"]));
+    expect(content.rows[0]!.cells.passRate).toMatchObject({ kind: "metric", metric: { value: 0 } });
+    expect(content.rows[0]!.cells.totalScore).toMatchObject({ kind: "metric", metric: { value: 5 } });
+    const [plainRow, scoreRow] = content.rows[0]!.subRows!;
+    // Eval / Attempt 层沿用原有表格纪律：主读数只在 Experiment / group 行展示，叶子以 verdict 表意。
+    expect(plainRow!.cells.passRate).toEqual({ kind: "notApplicable" });
+    expect(plainRow!.cells.totalScore).toEqual({ kind: "notApplicable" });
+    expect(scoreRow!.cells.passRate).toEqual({ kind: "notApplicable" });
+    expect(scoreRow!.cells.totalScore).toEqual({ kind: "notApplicable" });
+    expect(plainRow!.subRows![0]!.cells.totalScore).toEqual({ kind: "notApplicable" });
+    expect(scoreRow!.subRows![0]!.cells.totalScore).toEqual({ kind: "notApplicable" });
+    assertRowShapes(content);
   });
 });
 

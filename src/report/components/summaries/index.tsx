@@ -1,6 +1,6 @@
 // 概览组合件:SampleSummary / SampleOverview 用 defineComponent(compose) + 公开计算。
 
-import type { Sample, Run } from "../../../record/types.ts";
+import type { Sample } from "../../../record/types.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import { Col, Grid, Scatter, Stat, Text } from "../../definition/primitives.tsx";
 import type { ChartTargetPoint } from "../../definition/primitives/chart.tsx";
@@ -136,12 +136,10 @@ function resolveComparisonSeries(
   return { series, connect: props.connect ?? seriesName(series) === LINE_LABEL_KEY };
 }
 
-function snapshotScoring(run: Run): "pass" | "points" {
-  return run.attempts.some((a) => a.result.scoring === "points") ? "points" : "pass";
-}
-
-function filterInputBySnapshot(input: Sample, predicate: (run: Run) => boolean): Sample {
-  return input.filter((attempt) => predicate(attempt.run));
+function filterInputByScoring(input: Sample, scoring: "pass" | "points"): Sample {
+  return input.filter((attempt) =>
+    (attempt.result.scoring === "points" ? "points" : "pass") === scoring
+  );
 }
 
 function seriesGroup(series: SeriesInput): { key: string; fn: GroupFunction } {
@@ -230,8 +228,8 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
     );
   }
 
-  const passInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "pass");
-  const pointsInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "points");
+  const passInput = filterInputByScoring(input, "pass");
+  const pointsInput = filterInputByScoring(input, "points");
   return (
     <Col className={props.className}>
       {await scatterBlock(passInput, { series, connect, y: "passRate", pointTarget, locale: props.locale })}

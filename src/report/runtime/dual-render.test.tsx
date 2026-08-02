@@ -889,6 +889,43 @@ describe("SampleOverview(组合组件)", () => {
     expect(lists[0]!.props.data).toEqual(experimentListContent(await toExperimentRows(scope)));
   });
 
+  it("同一 Experiment 混型:散点按 Attempt 题型拆分，不把整个 Run 塞进 points 图", async () => {
+    const mixed = snap({
+      experimentId: "mixed/one",
+      agent: "codex",
+      results: [
+        res("plain", "failed"),
+        res("score", "passed", { scoring: "points", assertions: [scoreAssertion(4)] }),
+      ],
+    });
+    const scope = scopeOf([mixed]);
+    const resolved = await resolveTree(<SampleOverview />, scope);
+    const charts = collectElementsByType(resolved, Chart);
+    expect(charts).toHaveLength(2);
+
+    const chartByY = new Map(charts.map((el) => [(el.props as { y?: string }).y, el]));
+    const passScope = scope.filter((attempt) => attempt.result.scoring !== "points");
+    const pointsScope = scope.filter((attempt) => attempt.result.scoring === "points");
+    const passPoints = await overviewPoints(passScope, { seriesKey: "agent", seriesFn: agent, y: "passRate" });
+    const scorePoints = await overviewPoints(pointsScope, { seriesKey: "agent", seriesFn: agent, y: "totalScore" });
+    expect(chartByY.get("passRate")?.props.data).toEqual(
+      pointsToDataset(passPoints as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "passRate",
+        point: "experiment",
+        series: "agent",
+      }),
+    );
+    expect(chartByY.get("totalScore")?.props.data).toEqual(
+      pointsToDataset(scorePoints as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "totalScore",
+        point: "experiment",
+        series: "agent",
+      }),
+    );
+  });
+
   it("SampleOverview 严格等价于摘要、实验散点与实验详情表的手写组合", async () => {
     const scope = scopeOf([
       snap({ experimentId: "compare/a", results: [res("q", "passed")] }),

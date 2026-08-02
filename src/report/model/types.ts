@@ -395,7 +395,7 @@ export interface VerdictTally {
 
 /**
  * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
- * (一个 Sample 可以并排多个 experiment;题型只在单个 experiment 内被强制统一)。是定义期事实
+ * (同一个 experiment 或多个 experiment 并排都可能形成 mixed)。是定义期事实
  * (`EvalDescriptor.scoring`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
  * 「题型构成与主读数」)。
  */
@@ -421,8 +421,8 @@ export interface SampleSummaryContent {
   endToEndPassRate: MetricValue;
   /**
    * 该 Sample 内出现的题型:`"pass"` 全部通过制(默认,与此字段引入前行为一致)、`"points"`
-   * 全部计分制、`"mixed"` 两者都有(一个 Sample 可以并排多个 experiment,题型只在单个
-   * experiment 内被强制统一,见 docs/feature/experiments/score-points.md「横截面聚合」)。
+   * 全部计分制、`"mixed"` 两者都有(同一个 experiment 也可以选择两种题型,
+   * 见 docs/feature/experiments/score-points.md)。
    * 渲染面据此决定主 KPI:`"points"` 隐藏通过率只显示 `totalScore`;`"mixed"` 两者都显示;
    * `"pass"` 只显示通过率、`totalScore` 省略——不摆空列。
    */
@@ -520,6 +520,8 @@ export interface AttemptListItem {
   evalId: string;
   attempt: number;
   agent: string;
+  /** 该 Attempt 所属 Eval 的定义期题型；渲染面据此区分不适用读数与缺失读数。 */
+  scoring: "pass" | "points";
   verdict: Verdict;
   /**
    * 该轮的单行结果摘要,已按 Scoring display 契约折好:failed 取主失败断言摘要,
@@ -563,7 +565,11 @@ export interface EvalListItem {
 /** `ExperimentList` 一项里,一个 Eval 的展开行。 */
 export interface ExperimentListEvalRow {
   evalId: string;
+  /** 该 Eval 在所选快照中出现的题型构成；通常为单型，跨历史定义变化时可为 mixed。 */
+  scoring: ScoringComposition;
   verdict: Verdict;
+  /** 只对通过制 Eval 聚合；计分制 Eval 为不适用的 null cell。 */
+  endToEndPassRate: MetricValue;
   /** 该题挣分;通过制 eval 为 null cell。 */
   totalScore: MetricValue;
   durationMs: MetricValue;
@@ -584,10 +590,11 @@ export interface ExperimentListItem {
   agent: string;
   model?: string;
   flags?: globalThis.Record<string, JsonValue>;
-  /** 该 experiment 的题型(定义期事实,单个 experiment 内由启动期强制同型)。主读数列据此选择。 */
-  scoring: "pass" | "points";
+  /** 该 experiment 内出现的题型构成；混型时通过率与总分分别聚合、并排展示。 */
+  scoring: ScoringComposition;
   /** eval 级最终 verdict 计票(Result 列的构成)。 */
   evalVerdicts: VerdictTally;
+  /** 仅聚合该 Experiment 内的通过制 Eval；纯计分制时为 null cell。 */
   endToEndPassRate: MetricValue;
   /** 实验总分(totalScore 指标:perEval mean、acrossEvals sum);通过制实验为 null cell。 */
   totalScore: MetricValue;
