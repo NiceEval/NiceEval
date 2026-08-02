@@ -707,6 +707,33 @@ describe("runAttemptEffect · 主链与 Sample 收尾的计时边界", () => {
     expect(stop?.durationMs).toBeGreaterThanOrEqual(30);
     expect(mainDurationMs).toBeLessThanOrEqual(result.durationMs);
   });
+
+  it("墙钟在 send 期间回拨不会把 attempt / phase 耗时压成 0", async () => {
+    const wallClock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const agent = defineSandboxAgent({
+      name: "fake-agent-wall-clock-rollback",
+      send: async () => {
+        wallClock.mockReturnValue(1_000);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { events: [], status: "completed" };
+      },
+    });
+    try {
+      const result = await runOnce(agent, new FakeSandbox(), {
+        evalDefOverrides: {
+          test: async (t: TestContext) => {
+            await t.send("measure me");
+          },
+        },
+      });
+      const evalRun = result.phases?.find((phase) => phase.name === "eval.run");
+      expect(result.error).toBeUndefined();
+      expect(result.durationMs).toBeGreaterThanOrEqual(15);
+      expect(evalRun?.durationMs).toBeGreaterThanOrEqual(15);
+    } finally {
+      wallClock.mockRestore();
+    }
+  });
 });
 
 describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () => {

@@ -76,6 +76,7 @@ export async function sendWithTurnRetry<T>(callOnce: () => Promise<T>, deps: Sen
 
   for (let sendAttempt = 0; ; sendAttempt++) {
     const startedAtMs = Date.now();
+    const monotonicStartedAt = performance.now();
     let failure: SendFailure;
     try {
       return await callOnce();
@@ -83,7 +84,7 @@ export async function sendWithTurnRetry<T>(callOnce: () => Promise<T>, deps: Sen
       failure = normalizeSendFailure(error);
     }
 
-    const durationMs = Date.now() - startedAtMs;
+    const durationMs = Math.max(0, performance.now() - monotonicStartedAt);
     const cls = resolveSendFailureClass(failure, {
       experiment: deps.experimentClassifier,
       adapter: deps.classifier,

@@ -248,7 +248,7 @@ export function runAttemptEffect(
   // 阶段计时:live 展示、error.phase、落盘 phases[].name 用同一套 LifecyclePhase 闭集,
   // 一次 enterPhase 同时推进三者(词表全仓只有一套,见 runner/types.ts 的 LifecyclePhase)。
   let lastPhase: LifecyclePhase | undefined;
-  const recorder = createTimingRecorder(() => Date.now());
+  const recorder = createTimingRecorder();
   // adapter send 在飞时,错误/诊断归因到嵌套的 `agent.run`(eval.run 内打开,不单列计时条目)。
   let sendActive = false;
   // 超时证据保全的外层句柄:与 recorder 同一模式,runAttemptBody 内部一建好 SessionManager /
@@ -405,7 +405,7 @@ export function runAttemptEffect(
           const retryAttempts = liveRetryAttempts?.();
           return {
             ...base,
-            durationMs: Date.now() - t0,
+            durationMs: recorder.offsetNow(),
             error,
             ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
             ...(usage !== undefined ? { usage: { ...usage } } : {}),
@@ -451,13 +451,13 @@ export function runAttemptEffect(
       // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
       // 结果封口(附 phases)发生在 Sample release 完成之后(见下方 Effect.map)。
-      let releaseStartedAt = 0;
+      let releaseStartedAt: number | undefined;
       if (run.agent.kind === "sandbox" && !reusedSandbox) {
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             // 留存路径的 phases 以 sandbox.suspend 结尾,没有 sandbox.stop 条目(见 release)。
-            if (releaseStartedAt > 0 && disposition !== "keep") {
-              recorder.record("sandbox.stop", Date.now() - releaseStartedAt);
+            if (releaseStartedAt !== undefined && disposition !== "keep") {
+              recorder.record("sandbox.stop", recorder.offsetNow() - releaseStartedAt);
             }
           }),
         );
@@ -508,15 +508,15 @@ export function runAttemptEffect(
                         }
                         unregisterSandbox(sb);
                         const providerName = runtimeCapabilities.provider;
-                        const suspendStart = Date.now();
+                        const suspendStart = recorder.offsetNow();
                         try {
                           await suspendSandbox(sb);
-                          recorder.record("sandbox.suspend", Date.now() - suspendStart);
+                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
                           await updateKeptEntry(niceevalRoot, keptEntryId(providerName, sb.sandboxId), {
                             state: "dormant",
                           }).catch(() => false);
                         } catch (e) {
-                          recorder.record("sandbox.suspend", Date.now() - suspendStart, true);
+                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
                           recordDiagnostic({
                             code: "sandbox-suspend-failed",
                             level: "warning",
@@ -624,7 +624,7 @@ export function runAttemptEffect(
         // 后加先跑:release 链开始时打起点戳(与上面的终点戳配对,测出整段 sandbox.stop)。
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
-            releaseStartedAt = Date.now();
+            releaseStartedAt = recorder.offsetNow();
           }),
         );
       }
@@ -641,13 +641,13 @@ export function runAttemptEffect(
           if (!timedOut) return;
           const events = liveEvents?.() ?? [];
           if (run.agent.kind === "sandbox" && liveLedger) {
-            const startedAt = Date.now();
+            const startedAt = recorder.offsetNow();
             try {
               timeoutDiff = await withCleanupTimeout(() => liveLedger!.exportWindows());
             } catch {
               // 沙箱不可用 / 导出挂起到点:如实缺失,不阻塞收尾。
             } finally {
-              recorder.record("workspace.diff", Date.now() - startedAt);
+              recorder.record("workspace.diff", recorder.offsetNow() - startedAt);
             }
           }
           try {
@@ -671,10 +671,10 @@ export function runAttemptEffect(
                 const before = diagnostics.length;
                 for (let i = layerCleanups.length - 1; i >= 0; i--) {
                   const cleanup = layerCleanups[i]!;
-                  const startedAt = Date.now();
+                  const startedAt = recorder.offsetNow();
                   const node = recorder.child(sandboxPrepareActivity({
                     label: `${cleanup.label} cleanup`,
-                    startOffsetMs: Math.max(0, startedAt - t0),
+                    startOffsetMs: startedAt,
                   }));
                   if (node) recorder.pushParent(node);
                   try {
@@ -689,7 +689,7 @@ export function runAttemptEffect(
                     diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
                   } finally {
                     if (node) {
-                      node.durationMs = Date.now() - startedAt;
+                      node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
                       recorder.popParent();
                     }
                   }
@@ -710,7 +710,7 @@ export function runAttemptEffect(
             return Effect.void;
           }
           enterPhase("state.save");
-          const startedAt = Date.now();
+          const startedAt = recorder.offsetNow();
           return Effect.either(attemptState.window.finalize({
             sandbox: commandTarget,
             progress: scopedFeedback.progress,
@@ -721,7 +721,7 @@ export function runAttemptEffect(
             budget: { _tag: "Bounded", timeoutMs: CLEANUP_TIMEOUT_MS },
           })).pipe(
             Effect.tap((finalized) => Effect.gen(function* () {
-              recorder.record("state.save", Date.now() - startedAt, Either.isLeft(finalized));
+              recorder.record("state.save", recorder.offsetNow() - startedAt, Either.isLeft(finalized));
               if (Either.isLeft(finalized)) {
                 scopeOutcome.stateFailure = finalized.left;
                 declareFailure("state.save", finalized.left);
@@ -756,7 +756,6 @@ export function runAttemptEffect(
           recorder,
           ...(attemptTimeout ? { attemptTimeout } : {}),
           ...(deadlineAt !== undefined ? { deadlineAt } : {}),
-          attemptEpoch: t0,
           feedback: scopedFeedback,
           diagnostics,
           facts,
@@ -765,8 +764,8 @@ export function runAttemptEffect(
           declareFailure,
           attemptState,
           layerCleanups,
-          complete: (result, agentTeardownSucceeded) => {
-            scopeOutcome.completion = completionFor(result, agentTeardownSucceeded);
+          complete: (completion) => {
+            scopeOutcome.completion = completion;
           },
           registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
             liveEvents = getEvents;
@@ -861,7 +860,7 @@ export function runAttemptEffect(
             declareFailure(phase, raw);
             return Effect.succeed({
               ...base,
-              durationMs: Date.now() - t0,
+              durationMs: recorder.offsetNow(),
               error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             });
@@ -1023,8 +1022,6 @@ interface AttemptResources {
   setSendActive: (active: boolean) => void;
   /** 阶段计时 recorder(turn/command 时间树挂载点)。 */
   recorder: TimingRecorder;
-  /** attempt 墙钟起点(turn 节点的 startOffsetMs 基准)。 */
-  attemptEpoch: number;
   /** 作用域反馈句柄(归因随 runner 当前阶段);各生命周期入口共享同一实现。 */
   feedback: ScopedFeedback;
   /** attempt 级诊断累计(runAttemptEffect 持有,含 sandbox.create 期间的诊断)。 */
@@ -1051,7 +1048,7 @@ interface AttemptResources {
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 在 State finalizer 之后全局 LIFO 执行。 */
   layerCleanups: LayerCleanupEntry[];
   /** Agent teardown 完成后提交显式 completion ADT，供 State Scope finalizer 读取。 */
-  complete(result: EvalResult | undefined, agentTeardownSucceeded: boolean): void;
+  complete(completion: AttemptCompletion): void;
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (
@@ -1108,7 +1105,6 @@ async function runAttemptBody(
     getPhase,
     setSendActive,
     recorder,
-    attemptEpoch,
     feedback,
     diagnostics,
     facts,
@@ -1129,8 +1125,10 @@ async function runAttemptBody(
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
   const sandbox = usesSandbox ? withCommandTiming(rawSandbox, recorder, getPhase, commands, res.deadlineAt) : rawSandbox;
-  // 在两个 return 前赋值,好让 finally 把 diagnostics 挂到即将返回的同一个对象上(见 finally 末尾)。
-  let result: EvalResult | undefined;
+  // Promise author 边界也只保存完成态 ADT：主链未能定稿时安全侧视为 errored，
+  // 正常返回后替换为与 verdict 对应的完成态。不用 `EvalResult | undefined + boolean`
+  // 在 producer 边界拼装终态，避免表达出“没有 result 但却成功”之类非法组合。
+  let completion: AttemptCompletion = { _tag: "VerdictNotPassed", verdict: "errored" };
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
     signal,
@@ -1152,7 +1150,6 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
-  let agentTeardownSucceeded = true;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
@@ -1174,10 +1171,10 @@ async function runAttemptBody(
             : "sandbox.prepare.experiment";
           enterPhase(ownerPhase);
           const label = `${entry.owner.kind}#${entry.index}`;
-          const startedAt = Date.now();
+          const startedAt = recorder.offsetNow();
           const node = recorder.child(sandboxPrepareActivity({
             label,
-            startOffsetMs: Math.max(0, startedAt - attemptEpoch),
+            startOffsetMs: startedAt,
           }));
           if (node) recorder.pushParent(node);
           const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
@@ -1203,7 +1200,7 @@ async function runAttemptBody(
             throw error;
           } finally {
             if (node) {
-              node.durationMs = Date.now() - startedAt;
+              node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
               recorder.popParent();
             }
           }
@@ -1324,6 +1321,7 @@ async function runAttemptBody(
           }
         : undefined,
       onSendActive: setSendActive,
+      timingNow: recorder.offsetNow,
       // 每次 send 一个 turn 节点:本地单调时钟测得的端到端包络 + session/turn 身份;
       // OTel 接入时再带 traceId,trace.json 的 spans 由消费方按它临时挂到 turn 下。usage 有记录
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
@@ -1331,7 +1329,7 @@ async function runAttemptBody(
       onTurn: (info) =>
         recorder.child(turnActivity({
           label: `s${info.sessionIndex}/t${info.turnIndex}`,
-          startOffsetMs: Math.max(0, info.startedAt - attemptEpoch),
+          startOffsetMs: info.startOffsetMs,
           durationMs: info.durationMs,
           ...(info.failed ? { failed: true as const } : {}),
           sessionIndex: info.sessionIndex,
@@ -1376,10 +1374,10 @@ async function runAttemptBody(
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     if (!skipReason && usesSandbox && ledger) {
-      const startedAt = Date.now();
+      const startedAt = recorder.offsetNow();
       const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
-        startOffsetMs: Math.max(0, startedAt - attemptEpoch),
+        startOffsetMs: startedAt,
         durationMs: 0,
       }));
       if (operation) recorder.pushParent(operation);
@@ -1394,7 +1392,7 @@ async function runAttemptBody(
         throw error;
       } finally {
         if (operation) {
-          operation.durationMs = Date.now() - startedAt;
+          operation.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
           recorder.popParent();
         }
       }
@@ -1482,7 +1480,7 @@ async function runAttemptBody(
     // 主链 phase 会一直开到 sandbox.stop 完成，既把收尾时间重复算进主链，也会让 phases
     // 主链合计大于 durationMs。Sample finalizer 只负责另记 sandbox.stop / sandbox.suspend。
     recorder.closeCurrent();
-    const durationMs = Date.now() - t0;
+    const durationMs = recorder.offsetNow();
     const o11y = buildO11ySummary(events);
     // 实测成本(网关带回)优先,缺则按 model + 用量查价格表估算(见 o11y/cost.ts)。
     // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
@@ -1525,7 +1523,7 @@ async function runAttemptBody(
       // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
       // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
     };
-    result = value;
+    completion = completionForResult(value);
     return value;
   } catch (e) {
     recorder.failCurrent();
@@ -1534,11 +1532,11 @@ async function runAttemptBody(
     declareFailure(getPhase() ?? "eval.run", e);
     const value: EvalResult = {
       ...base,
-      durationMs: Date.now() - t0,
+      durationMs: recorder.offsetNow(),
       error: errorFromThrown(e, getPhase(), res.attemptTimeout),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
-    result = value;
+    completion = completionForResult(value);
     return value;
   } finally {
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
@@ -1561,7 +1559,7 @@ async function runAttemptBody(
               if (teardown) await withCleanupTimeout(() => teardown(attemptCtx));
             }
           } catch (e) {
-            agentTeardownSucceeded = false;
+            completion = completionWithAgentTeardownFailure(completion);
             declareFailure("agent.teardown", e);
             diagnostics.push(teardownDiagnostic("agent.teardown", e));
             throw e;
@@ -1571,24 +1569,27 @@ async function runAttemptBody(
     }
     // Agent teardown 是 Promise author 边界内最后一步；State / author cleanup / Provider Case
     // 都由外层 Effect Scope finalizer 接管。这里只提交显式 completion ADT，不手写后续清理链。
-    complete(result, agentTeardownSucceeded);
+    complete(completion);
   }
 }
 
-function completionFor(
-  result: EvalResult | undefined,
-  agentTeardownSucceeded: boolean,
-): AttemptCompletion {
-  const verdict = result?.verdict;
+function completionForResult(result: EvalResult): AttemptCompletion {
+  const verdict = result.verdict;
   const persistedVerdict = verdict === "passed" || verdict === "failed"
     ? verdict
     : "errored";
-  if (!agentTeardownSucceeded) {
-    return { _tag: "AgentTeardownFailed", verdict: persistedVerdict };
-  }
   return persistedVerdict === "passed"
     ? { _tag: "Succeeded" }
     : { _tag: "VerdictNotPassed", verdict: persistedVerdict };
+}
+
+function completionWithAgentTeardownFailure(
+  completion: AttemptCompletion,
+): AttemptCompletion {
+  if (completion._tag === "AgentTeardownFailed") return completion;
+  return completion._tag === "Succeeded"
+    ? { _tag: "AgentTeardownFailed", verdict: "passed" }
+    : { _tag: "AgentTeardownFailed", verdict: completion.verdict };
 }
 
 /** 把一次 teardown / cleanup 失败折成一条 `DiagnosticRecord`(warning,不改判定)。message 取一层
@@ -1622,10 +1623,10 @@ function withCommandTiming(
 ): Sandbox {
   const wrap = async <T>(display: string, opts: unknown, fn: () => Promise<T>): Promise<T> => {
     const startOffsetMs = recorder.offsetNow();
-    const t0 = Date.now();
+    const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
     // 这一刻**的剩余量——同一台沙箱上的第二条命令拿到的不是一整份上限。
-    const limit = commandLimitAttribution(opts as { timeoutMs?: number } | undefined, { deadlineAt }, t0);
+    const limit = commandLimitAttribution(opts as { timeoutMs?: number } | undefined, { deadlineAt }, wallStartedAt);
     try {
       const result = await fn();
       const exitCode = (result as { exitCode?: unknown })?.exitCode;
@@ -1633,7 +1634,7 @@ function withCommandTiming(
         commandNode({
           display,
           startOffsetMs,
-          durationMs: Date.now() - t0,
+          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           ...(limit !== undefined ? { limit } : {}),
           ...(typeof exitCode === "number" ? { exitCode, failed: exitCode !== 0 } : {}),
         }),
@@ -1670,7 +1671,7 @@ function withCommandTiming(
         commandNode({
           display,
           startOffsetMs,
-          durationMs: Date.now() - t0,
+          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           failed: true,
           ...(hit !== undefined ? { limit: hit } : {}),
         }),

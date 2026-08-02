@@ -90,7 +90,9 @@ export interface ContextDeps {
   onSendActive?: (active: boolean) => void;
   /** 变更分类账的 send 窗口钩子(仅沙箱型);透传给 SessionManager(见 SessionDeps.ledgerHooks)。 */
   ledgerHooks?: import("./session.ts").SessionDeps["ledgerHooks"];
-  /** 每轮 send 的墙钟包络回报(runner 挂 turn 时间树节点);透传给 SessionManager。 */
+  /** attempt 单调时钟域的当前 offset；透传给 SessionManager。 */
+  timingNow?: import("./session.ts").SessionDeps["timingNow"];
+  /** 每轮 send 的单调时钟包络回报(runner 挂 turn 时间树节点);透传给 SessionManager。 */
   onTurn?: import("./session.ts").SessionDeps["onTurn"];
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 SessionManager。 */
   concurrencySlot?: ConcurrencySlot;
@@ -143,6 +145,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     feedback: deps.feedback,
     fact: deps.fact,
     onSendActive: deps.onSendActive,
+    timingNow: deps.timingNow,
     onTurn: deps.onTurn,
     ledgerHooks: deps.ledgerHooks,
     concurrencySlot: deps.concurrencySlot,

@@ -131,14 +131,16 @@ export interface SessionDeps {
     beforeSend(label: string): Promise<void>;
     afterSend(label: string): Promise<void>;
   };
+  /** attempt 单调时钟域的当前 offset；runner 注入，测试直调缺省使用 performance.now()。 */
+  timingNow?: () => number;
   /**
-   * 每轮 send 结束后回报墙钟包络(runner 挂成 eval.run 下的 turn 时间树节点)。`usage` 是该轮
+   * 每轮 send 结束后回报单调时钟包络(runner 挂成 eval.run 下的 turn 时间树节点)。`usage` 是该轮
    * `Turn.usage` 落盘原样(有记录才传;`--execution`/`--timing` 的 turn 头行读 TimingNode.usage)。
    */
   onTurn?: (info: {
     sessionIndex: number;
     turnIndex: number;
-    startedAt: number;
+    startOffsetMs: number;
     durationMs: number;
     failed?: boolean;
     traceId?: string;
@@ -270,7 +272,8 @@ export class SessionManager {
       ? t("session.turn.primary", { turn: n })
       : t("session.turn.secondary", { session: session.index, turn: n });
     this.deps.log(`${turnLabel} → "${preview}…"`);
-    const t0 = Date.now();
+    const timingNow = this.deps.timingNow ?? (() => performance.now());
+    const startOffsetMs = timingNow();
 
     session.lastInput = text;
     const userEvent: StreamEvent = { type: "message", role: "user", text, loc };
@@ -353,8 +356,8 @@ export class SessionManager {
       this.deps.onTurn?.({
         sessionIndex: session.index,
         turnIndex,
-        startedAt: t0,
-        durationMs: Date.now() - t0,
+        startOffsetMs,
+        durationMs: Math.max(0, timingNow() - startOffsetMs),
         failed: true,
         traceAttribution: sentAttribution,
         ...(isSendFailure(e) && e.usage !== undefined ? { usage: e.usage } : {}),
@@ -369,8 +372,8 @@ export class SessionManager {
     this.deps.onTurn?.({
       sessionIndex: session.index,
       turnIndex,
-      startedAt: t0,
-      durationMs: Date.now() - t0,
+      startOffsetMs,
+      durationMs: Math.max(0, timingNow() - startOffsetMs),
       failed: turn.status === "failed" ? true : undefined,
       traceId: sentTraceId,
       traceAttribution: sentAttribution,
@@ -401,7 +404,7 @@ export class SessionManager {
     const tools = turn.events.filter((e) => e.type === "action.called").length;
     const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
     this.deps.log(
-      `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round((Date.now() - t0) / 1000)}s${reason ? ` · ${reason}` : ""}`,
+      `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,
     );
     return turn;
   }
