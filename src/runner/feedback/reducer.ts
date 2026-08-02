@@ -3,12 +3,12 @@
 // RunFeedbackState,不各自维护第二份推导,也不解析 message 里的人类文案(结构化字段都在
 // DiagnosticNotice.data / FailureNotice 的具名字段上,见 ../types.ts 的类型注释)。
 //
-// `total = reused + running + elsewhere + queued + passed + failed + errored + unreadable`
+// `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
 //(八项恒等式,契约见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理每一个事件
 // 之后都成立 —— 见 reducer.test.ts 的表驱动用例,每一步都断言这个不变量,不只在流程末尾断言
 // 一次。八项是互斥状态划分:每一次迁移都是「从一项减 x、往另一项加 x」的原子操作(plan →
 // queued;attempt:start queued→running;attempt:complete running→事件携带的 verdict 那一项;
-// attempt:early-exit 与 budget-exhausted queued→unreadable;lock-wait started queued→elsewhere;
+// attempt:early-exit 与 budget-exhausted queued→skipped;lock-wait started queued→elsewhere;
 // lock-wait resolved elsewhere→reused / elsewhere→queued),没有一个事件会让某条 attempt 同时
 // 落在两项里或凭空消失。emitter 侧的对应义务是「报进 elsewhere 多少条,就要报出来多少条」
 //(见 run.ts 的 recheckCarry)。
@@ -35,7 +35,7 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     passed: 0,
     failed: 0,
     errored: 0,
-    unreadable: 0,
+    skipped: 0,
     earlyExitSkipped: 0,
     earlyExitByEval: new Map(),
     elapsedMs: 0,
@@ -71,7 +71,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         passed: 0,
         failed: 0,
         errored: 0,
-        unreadable: 0,
+        skipped: 0,
         active: new Map(),
         activePrecheck: undefined,
         experimentHooks: new Map(),
@@ -258,7 +258,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     }
 
     case "attempt:early-exit": {
-      // 首过即停下已知 verdict 的省略次数:折进 unreadable —— 这一轮没跑,没有自己的 verdict,
+      // 首过即停下已知 verdict 的省略次数:折进 skipped —— 这一轮没跑,没有自己的 verdict,
       // 不冒充 passed(题目结论已经确定,但这条 attempt 本身没产出结论),也
       // 不产生 failures/diagnostics —— 这不是一次失败或异常,只是省下的重复验证
       // (真正「未完整覆盖」的信号来自 budget-exhausted / fail-fast diagnostic,不是这里)。
@@ -273,7 +273,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       return {
         ...state,
         queued: state.queued - 1,
-        unreadable: state.unreadable + 1,
+        skipped: state.skipped + 1,
         earlyExitSkipped: state.earlyExitSkipped + 1,
         earlyExitByEval,
       };
@@ -314,7 +314,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
 
     case "budget-exhausted":
       // 约定:emitter 对每一个因 budget 到顶而不派发的 attempt 各发一次这个事件(与
-      // attempt:early-exit 同构),所以每次触发在这里折进 unreadable 一次 —— 不去信任
+      // attempt:early-exit 同构),所以每次触发在这里折进 skipped 一次 —— 不去信任
       // event.unstarted 的绝对值来算「这次要挪多少」(那需要 reducer 额外记住上一次的值,
       // 破坏纯 (state, event) => state 的最小状态原则)。event.unstarted / event.spent 仍然
       // 整体写进 diagnostic 的 data,供 json 直接读取当次快照值;真正的去重计数由
@@ -322,7 +322,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       return {
         ...state,
         queued: state.queued - 1,
-        unreadable: state.unreadable + 1,
+        skipped: state.skipped + 1,
         diagnostics: upsertDiagnostic(state.diagnostics, {
           at: event.at,
           key: `budget-exhausted:${event.experimentId}`,

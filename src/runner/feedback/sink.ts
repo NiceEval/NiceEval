@@ -17,7 +17,7 @@
 import { writeStderrLine } from "../../tty-line.ts";
 import { t } from "../../i18n/index.ts";
 import type { AttemptLifecycleEvent, AttemptRef, ExperimentHookName, FailureDetail } from "../types.ts";
-import type { Verdict } from "../../scoring/types.ts";
+import type { Verdict } from "../../shared/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 

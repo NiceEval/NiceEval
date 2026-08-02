@@ -46,7 +46,7 @@ export function timelineStamp(iso: string): string {
 
 function verdictMark(verdict: Verdict): string {
   if (verdict === "passed") return "✓";
-  if (verdict === "unreadable") return "-";
+  if (verdict === "skipped") return "-";
   return "✗";
 }
 

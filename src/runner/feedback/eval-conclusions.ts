@@ -17,7 +17,7 @@
 // 不依赖 run.ts 里两个事件谁先谁后这类隐式顺序契约,只读两份已经落定的最终计数。
 
 import type { DiagnosticNotice, EvalResult } from "../types.ts";
-import type { Verdict } from "../../scoring/types.ts";
+import type { Verdict } from "../../shared/types.ts";
 
 /** `earlyExitByEval` 与结论行分组共用的同一把 key——两处必须同源,不能各写一份拼法。 */
 export function evalConclusionKey(ref: { experimentId?: string; evalId: string }): string {

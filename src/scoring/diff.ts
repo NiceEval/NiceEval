@@ -112,7 +112,7 @@ export function describeElided(elided: NonNullable<WindowChange["elided"]>): str
   return bytes.length > 0 ? `${elided.reason} (${bytes.join(", ")})` : elided.reason;
 }
 
-/** 空 diff(remote / unreadable attempt)。 */
+/** 空 diff(remote / skipped attempt)。 */
 export function emptyDiffData(): DiffData {
   return deriveDiffData([]);
 }

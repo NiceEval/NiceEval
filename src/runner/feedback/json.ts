@@ -263,7 +263,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         passed: state.passed,
         failed: state.failed,
         errored: state.errored,
-        unreadable: state.unreadable,
+        skipped: state.skipped,
       });
     },
 

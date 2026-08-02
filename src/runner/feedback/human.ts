@@ -510,7 +510,7 @@ function countsText(state: RunFeedbackState): string {
     passed: state.passed,
     failed: state.failed,
     errored: state.errored,
-    unreadable: state.unreadable,
+    skipped: state.skipped,
   };
   return state.elsewhere > 0
     ? t("feedback.human.countsWithElsewhere", {

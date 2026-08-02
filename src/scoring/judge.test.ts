@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssertionCollector } from "./collector.ts";
 import { buildJudge, probeJudge } from "./judge.ts";
-import { computeVerdict } from "./verdict.ts";
+import { computeVerdict } from "../shared/verdict.ts";
 import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";

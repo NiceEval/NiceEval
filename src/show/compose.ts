@@ -33,7 +33,7 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 
 /**
  * 单行结果摘要:与默认报告 Result 单元格同一条 display 契约(docs/feature/assertions/library/display.md)——
- * 结构化 error 取一层 message 摘要,unreadable 取理由,failed 取主失败断言的紧凑单行;passed 无摘要。
+ * 结构化 error 取一层 message 摘要,skipped 取理由,failed 取主失败断言的紧凑单行;passed 无摘要。
  */
 function rowSummary(result: EvalResult): string | undefined {
   if (result.error !== undefined) return summaryText(result.error.message);

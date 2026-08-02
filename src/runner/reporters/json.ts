@@ -55,15 +55,15 @@ export function JUnit(path: string): Reporter {
             const msg = xmlAttr(r.assertions.filter((a) => a.outcome === "failed").map((a) => a.name).join("; "));
             return `    <testcase name="${name}" time="${time}"><failure message="${msg}"/></testcase>`;
           }
-          if (r.verdict === "unreadable") {
-            return `    <testcase name="${name}" time="${time}"><unreadable message="${xmlAttr(r.skipReason ?? "")}"/></testcase>`;
+          if (r.verdict === "skipped") {
+            return `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? "")}"/></testcase>`;
           }
           return `    <testcase name="${name}" time="${time}"/>`;
         })
         .join("\n");
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?>\n` +
-        `<testsuite name="niceeval" tests="${summary.results.length}" failures="${summary.failed}" errors="${summary.errored}" unreadable="${summary.unreadable}" time="${(summary.durationMs / 1000).toFixed(3)}">\n` +
+        `<testsuite name="niceeval" tests="${summary.results.length}" failures="${summary.failed}" errors="${summary.errored}" skipped="${summary.skipped}" time="${(summary.durationMs / 1000).toFixed(3)}">\n` +
         `${cases}\n</testsuite>\n`;
       await atomicWriteFile(path, xml);
     },

@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // 表驱动测试:RunFeedbackEvent 序列 → RunFeedbackState。核心断言是「任何时刻」都满足
-// total = reused + running + elsewhere + queued + passed + failed + errored + unreadable
+// total = reused + running + elsewhere + queued + passed + failed + errored + skipped
 //(见 docs/feature/experiments/cli.md 的守恒公式)——
 // 每处理一个事件就断言一次,不是只在序列末尾断言。辅助不变量 active.size === running 一并核对
 // (active map 按设计只存「正在运行」的 attempt,见 ../types.ts 的 ActiveAttempt 注释)。
@@ -19,7 +19,7 @@ function ref(evalId: string, attempt = 0, experimentId?: string): AttemptRef {
 }
 
 /** 恒等式的八个互斥桶。 */
-const BUCKETS = ["reused", "running", "elsewhere", "queued", "passed", "failed", "errored", "unreadable"] as const;
+const BUCKETS = ["reused", "running", "elsewhere", "queued", "passed", "failed", "errored", "skipped"] as const;
 
 /** 依次喂事件,每一步都断言守恒公式与 active/running 一致,返回最终状态供调用方追加断言。 */
 function replay(events: readonly RunFeedbackEvent[]): RunFeedbackState {
@@ -28,7 +28,7 @@ function replay(events: readonly RunFeedbackEvent[]): RunFeedbackState {
     state = reduceRunFeedback(state, event);
     expect(
       state.total,
-      `after event #${i} (${event.type}): total should equal reused+running+elsewhere+queued+passed+failed+errored+unreadable`,
+      `after event #${i} (${event.type}): total should equal reused+running+elsewhere+queued+passed+failed+errored+skipped`,
     ).toBe(
       state.reused +
         state.running +
@@ -37,7 +37,7 @@ function replay(events: readonly RunFeedbackEvent[]): RunFeedbackState {
         state.passed +
         state.failed +
         state.errored +
-        state.unreadable,
+        state.skipped,
     );
     expect(
       state.active.size,
@@ -68,7 +68,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
       { type: "attempt:complete", at: 5, identity: b, who: "codex", verdict: "passed", tokenCount: 25, estimatedCostUSD: 0.2 },
       { type: "attempt:complete", at: 6, identity: c, who: "codex", verdict: "passed", estimatedCostUSD: 0.05 },
     ]);
-    expect(state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 3, failed: 0, errored: 0, unreadable: 0 });
+    expect(state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 3, failed: 0, errored: 0, skipped: 0 });
     expect(state.estimatedCostUSD).toBeCloseTo(0.35, 5);
     expect(state.newTokenCount).toBe(40);
     expect(state.active.size).toBe(0);
@@ -124,9 +124,9 @@ describe("reduceRunFeedback: 守恒公式", () => {
     // plan 之后立刻(在任何 attempt 事件之前)守恒公式就应成立:2 个 reused + 3 个 queued。
     // 携入结果的 verdict 留在 reused,不摊进四项结局:plan 带 reusedFailures 也一样。
     expect(state1.total).toBe(
-      state1.reused + state1.running + state1.queued + state1.passed + state1.failed + state1.errored + state1.unreadable,
+      state1.reused + state1.running + state1.queued + state1.passed + state1.failed + state1.errored + state1.skipped,
     );
-    expect(state1).toMatchObject({ total: 5, reused: 2, running: 0, queued: 3, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(state1).toMatchObject({ total: 5, reused: 2, running: 0, queued: 3, passed: 0, failed: 0, errored: 0, skipped: 0 });
 
     const a = ref("memory/a", 0, "compare/bub-e2b");
     const b = ref("memory/b", 0, "compare/bub-e2b");
@@ -140,7 +140,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
       { type: "attempt:complete", at: 5, identity: b, who: "bub-e2b", verdict: "passed" },
       { type: "attempt:complete", at: 5, identity: c, who: "bub-e2b", verdict: "passed" },
     ]);
-    expect(final).toMatchObject({ total: 5, reused: 2, running: 0, queued: 0, passed: 3, failed: 0, errored: 0, unreadable: 0 });
+    expect(final).toMatchObject({ total: 5, reused: 2, running: 0, queued: 0, passed: 3, failed: 0, errored: 0, skipped: 0 });
   });
 
   it("并发完成:多个 active attempt 以任意顺序结束,active map 逐条精确摘除", () => {
@@ -170,30 +170,30 @@ describe("reduceRunFeedback: 守恒公式", () => {
     for (const { identity, verdict } of order) {
       state = reduceRunFeedback(state, { type: "attempt:complete", at: 2, identity, who: "codex", verdict });
       expect(state.total).toBe(
-        state.reused + state.running + state.queued + state.passed + state.failed + state.errored + state.unreadable,
+        state.reused + state.running + state.queued + state.passed + state.failed + state.errored + state.skipped,
       );
       expect(state.active.size).toBe(state.running);
       // 每次完成后,已完成的那个 identity 必须已经从 active 里摘除,其余仍在的必须还在。
       expect(state.active.has(encodeAttemptKey(identity))).toBe(false);
     }
     // 落项由事件携带的 verdict 决定:同一批完成事件里换 verdict,落项跟着变,不是恒落同一项。
-    expect(state).toMatchObject({ running: 0, queued: 0, passed: 2, failed: 1, errored: 1, unreadable: 0 });
+    expect(state).toMatchObject({ running: 0, queued: 0, passed: 2, failed: 1, errored: 1, skipped: 0 });
   });
 
-  it("attempt:complete 的 unreadable verdict 落 unreadable,不并进 passed", () => {
+  it("attempt:complete 的 skipped verdict 落 skipped,不并进 passed", () => {
     const a = ref("memory/a");
     const b = ref("memory/b");
     const state = replay([
       { type: "plan", at: 0, plan: { shape: { evals: 2, configs: 1, totalAttempts: 2, maxConcurrency: 2 }, reused: 0, reusedFailures: [] } },
       { type: "attempt:start", at: 1, identity: a, who: "codex", phase: "eval.run" },
       { type: "attempt:start", at: 1, identity: b, who: "codex", phase: "eval.run" },
-      { type: "attempt:complete", at: 2, identity: a, who: "codex", verdict: "unreadable" },
+      { type: "attempt:complete", at: 2, identity: a, who: "codex", verdict: "skipped" },
       { type: "attempt:complete", at: 3, identity: b, who: "codex", verdict: "passed" },
     ]);
-    expect(state).toMatchObject({ total: 2, running: 0, queued: 0, passed: 1, failed: 0, errored: 0, unreadable: 1 });
+    expect(state).toMatchObject({ total: 2, running: 0, queued: 0, passed: 1, failed: 0, errored: 0, skipped: 1 });
   });
 
-  it("early exit:未派发的重复轮次折进 unreadable(不冒充 passed),不产生 failures/diagnostics;按 (experiment, eval) 累计 earlyExitByEval", () => {
+  it("early exit:未派发的重复轮次折进 skipped(不冒充 passed),不产生 failures/diagnostics;按 (experiment, eval) 累计 earlyExitByEval", () => {
     const first = ref("memory/retry", 0);
     const retry1 = ref("memory/retry", 1);
     const retry2 = ref("memory/retry", 2);
@@ -204,8 +204,8 @@ describe("reduceRunFeedback: 守恒公式", () => {
       { type: "attempt:early-exit", at: 3, identity: retry1, who: "codex" },
       { type: "attempt:early-exit", at: 4, identity: retry2, who: "codex" },
     ]);
-    // 1 条真跑出 passed,2 条省略的轮次进 unreadable —— 省了多少轮直接读得出来。
-    expect(state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 1, failed: 0, errored: 0, unreadable: 2 });
+    // 1 条真跑出 passed,2 条省略的轮次进 skipped —— 省了多少轮直接读得出来。
+    expect(state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 1, failed: 0, errored: 0, skipped: 2 });
     expect(state.failures).toEqual([]);
     expect(state.diagnostics).toEqual([]);
     // 无 experimentId 的裸 run:evalConclusionKey 用 "" 占位空 experimentId 段。
@@ -259,7 +259,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     });
     expect(state.failures).toHaveLength(1);
     expect(state.failures[0]?.reason).toContain("sandbox-rate-limit");
-    expect(state).toMatchObject({ total: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 1, unreadable: 0 });
+    expect(state).toMatchObject({ total: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 1, skipped: 0 });
 
     // 同一 locator 再来一次(比如 coordinator 重放/去抖动),覆盖而不是变成两条。
     state = reduceRunFeedback(state, {
@@ -276,7 +276,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     expect(state.failures[0]?.reason).toBe("updated reason");
   });
 
-  it("budget:每次因预算跳过一个 attempt 就折进 unreadable,诊断按 experimentId 去重并累加 count", () => {
+  it("budget:每次因预算跳过一个 attempt 就折进 skipped,诊断按 experimentId 去重并累加 count", () => {
     const a = ref("memory/a", 0, "regression/codex");
     const b = ref("memory/b", 0, "regression/codex");
     let state = createInitialRunFeedbackState();
@@ -288,7 +288,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: a, who: "regression/codex", phase: "eval.run" });
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: b, who: "regression/codex", phase: "eval.run" });
     state = reduceRunFeedback(state, { type: "attempt:complete", at: 2, identity: a, who: "regression/codex", verdict: "passed" });
-    expect(state).toMatchObject({ total: 4, running: 1, queued: 2, passed: 1, unreadable: 0 });
+    expect(state).toMatchObject({ total: 4, running: 1, queued: 2, passed: 1, skipped: 0 });
 
     state = reduceRunFeedback(state, {
       type: "budget-exhausted",
@@ -297,7 +297,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
       spent: 25.1,
       unstarted: 1,
     });
-    expect(state).toMatchObject({ total: 4, running: 1, queued: 1, passed: 1, unreadable: 1 });
+    expect(state).toMatchObject({ total: 4, running: 1, queued: 1, passed: 1, skipped: 1 });
     expect(state.diagnostics).toHaveLength(1);
     expect(state.diagnostics[0]).toMatchObject({ key: "budget-exhausted:regression/codex", count: 1, severity: "warning" });
     expect(state.diagnostics[0]?.data).toMatchObject({ experimentId: "regression/codex", spent: 25.1, unstarted: 1 });
@@ -309,14 +309,14 @@ describe("reduceRunFeedback: 守恒公式", () => {
       spent: 25.31,
       unstarted: 2,
     });
-    expect(state).toMatchObject({ total: 4, running: 1, queued: 0, passed: 1, unreadable: 2 });
+    expect(state).toMatchObject({ total: 4, running: 1, queued: 0, passed: 1, skipped: 2 });
     // 去重:同一个 experimentId 仍然只有一条诊断,count 累加到 2,data 更新到最新一次的值。
     expect(state.diagnostics).toHaveLength(1);
     expect(state.diagnostics[0]).toMatchObject({ count: 2 });
     expect(state.diagnostics[0]?.data).toMatchObject({ spent: 25.31, unstarted: 2 });
 
     state = reduceRunFeedback(state, { type: "attempt:complete", at: 5, identity: b, who: "regression/codex", verdict: "passed" });
-    expect(state).toMatchObject({ total: 4, reused: 0, running: 0, queued: 0, passed: 2, failed: 0, errored: 0, unreadable: 2 });
+    expect(state).toMatchObject({ total: 4, reused: 0, running: 0, queued: 0, passed: 2, failed: 0, errored: 0, skipped: 2 });
   });
 
   it("interrupted:只追加一条去重诊断,不擅自改变 running/queued 计数(中断时的进行中 attempt 保持原状)", () => {
@@ -331,7 +331,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: a, who: "codex", phase: "eval.run" });
     const beforeInterrupt = state;
     state = reduceRunFeedback(state, { type: "interrupted", at: 2 });
-    expect(state).toMatchObject({ total: 3, running: 1, queued: 2, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(state).toMatchObject({ total: 3, running: 1, queued: 2, passed: 0, failed: 0, errored: 0, skipped: 0 });
     expect(state.diagnostics).toHaveLength(1);
     expect(state.diagnostics[0]).toMatchObject({ key: "interrupted", severity: "warning", count: 1 });
     // interrupted 只追加诊断,counts/active 与中断前完全一致(除了 diagnostics 数组本身)。
@@ -341,7 +341,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     expect(state.passed).toBe(beforeInterrupt.passed);
     expect(state.failed).toBe(beforeInterrupt.failed);
     expect(state.errored).toBe(beforeInterrupt.errored);
-    expect(state.unreadable).toBe(beforeInterrupt.unreadable);
+    expect(state.skipped).toBe(beforeInterrupt.skipped);
     expect(state.active).toBe(beforeInterrupt.active);
 
     // 再来一次 interrupted(理论上不该发生,防御性验证不会重复追加成两条)。
@@ -375,7 +375,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
         completedAt: "2026-07-13T00:01:00.000Z",
         passed: 1,
         failed: 0,
-        unreadable: 0,
+        skipped: 0,
         errored: 0,
         durationMs: 60_000,
         results: [],
@@ -491,7 +491,7 @@ describe("reduceRunFeedback: judge 预检运行级行", () => {
   it("started 建行、done 清行;预检期间 attempt 全程保持 queued(计数不变量不受预检影响)", () => {
     const afterStart = replay([plan, { type: "precheck", at: 1, status: "started" }]);
     // 复现用户看到的「0 running · 1 queued」——预检不动计数,这行才是它停在 queued 的解释。
-    expect(afterStart).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterStart).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, skipped: 0 });
     expect(afterStart.activePrecheck).toEqual({ startedAt: 1 });
 
     const afterDone = replay([
@@ -500,7 +500,7 @@ describe("reduceRunFeedback: judge 预检运行级行", () => {
       { type: "precheck", at: 15, status: "done", durationMs: 14 },
     ]);
     expect(afterDone.activePrecheck).toBeUndefined();
-    expect(afterDone).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterDone).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, skipped: 0 });
   });
 
   // 预检失败不再中止整次运行(见 docs/feature/judge/library.md「派发前预检」):受影响 eval 的
@@ -512,7 +512,7 @@ describe("reduceRunFeedback: judge 预检运行级行", () => {
       { type: "precheck", at: 40_013, status: "failed", durationMs: 40_012 },
     ]);
     expect(afterFailed.activePrecheck).toBeUndefined();
-    expect(afterFailed).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterFailed).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, skipped: 0 });
   });
 
   it("plan 事件清空残留的预检行(reducer 复用于多次 run 时不带上一次的预检状态)", () => {
@@ -537,7 +537,7 @@ describe("reduceRunFeedback: 实验级钩子", () => {
       plan,
       { type: "experiment-hook", at: 1, experimentId: "compare/bub-e2b", hook: "setup", status: "started" },
     ]);
-    expect(afterStart).toMatchObject({ total: 2, running: 0, queued: 2, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterStart).toMatchObject({ total: 2, running: 0, queued: 2, passed: 0, failed: 0, errored: 0, skipped: 0 });
     expect(afterStart.experimentHooks.get("compare/bub-e2b")).toMatchObject({
       experimentId: "compare/bub-e2b",
       hook: "setup",
@@ -615,7 +615,7 @@ describe("reduceRunFeedback: 用例锁等待(elsewhere)", () => {
         attempts: 3,
       },
     ]);
-    expect(afterStart).toMatchObject({ total: 5, reused: 0, running: 0, elsewhere: 3, queued: 2, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterStart).toMatchObject({ total: 5, reused: 0, running: 0, elsewhere: 3, queued: 2, passed: 0, failed: 0, errored: 0, skipped: 0 });
     expect(afterStart.lockWaits.get("compare/codex")?.waiting.get("memory/retention")).toMatchObject({
       startedAt: 1,
       holderPid: 41267,
@@ -647,7 +647,7 @@ describe("reduceRunFeedback: 用例锁等待(elsewhere)", () => {
         waitedMs: 19_000,
       },
     ]);
-    expect(afterResolved).toMatchObject({ total: 5, reused: 3, running: 0, elsewhere: 0, queued: 2, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+    expect(afterResolved).toMatchObject({ total: 5, reused: 3, running: 0, elsewhere: 0, queued: 2, passed: 0, failed: 0, errored: 0, skipped: 0 });
     // 等待条目从 waiting 里摘除,但窗口聚合状态(供非 TTY 收尾行读取)仍保留在 map 里。
     expect(afterResolved.lockWaits.get("compare/codex")?.waiting.size).toBe(0);
     expect(afterResolved.lockWaits.get("compare/codex")).toMatchObject({ resolvedCarried: 3, resolvedDispatched: 0 });
@@ -682,7 +682,7 @@ describe("reduceRunFeedback: 用例锁等待(elsewhere)", () => {
     ]);
     // plan 初始 5 - 3(撞锁的)= 2 个 queued;3 个从 elsewhere 转来的 attempt 也都进了 queued
     // (合计 5),其中 1 个真的被派发跑完,4 个仍在 queued。
-    expect(state).toMatchObject({ total: 5, reused: 0, elsewhere: 0, queued: 4, running: 0, passed: 1, failed: 0, errored: 0, unreadable: 0 });
+    expect(state).toMatchObject({ total: 5, reused: 0, elsewhere: 0, queued: 4, running: 0, passed: 1, failed: 0, errored: 0, skipped: 0 });
   });
 
   it("runs 部分携入部分补跑:同一 resolved 事件里 carried 与 dispatched 同时非零", () => {

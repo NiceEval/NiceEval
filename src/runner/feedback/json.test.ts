@@ -19,7 +19,7 @@ function summary(overrides: Partial<InvocationSummary> = {}): InvocationSummary 
     completedAt: "2026-07-13T00:03:21.000Z",
     passed: 1,
     failed: 0,
-    unreadable: 0,
+    skipped: 0,
     errored: 0,
     durationMs: 60_000,
     results: [],

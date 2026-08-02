@@ -6,7 +6,7 @@ export const VERDICT_SYM: globalThis.Record<Verdict, string> = {
   passed: "✓",
   failed: "✗",
   errored: "!",
-  unreadable: "○",
+  skipped: "○",
 };
 
 export function verdictSymbol(verdict: string): string {

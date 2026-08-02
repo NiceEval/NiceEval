@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { AssertionCollector } from "./collector.ts";
 import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
-import { computeVerdict } from "./verdict.ts";
+import { computeVerdict } from "../shared/verdict.ts";
 import { equals, includes, makeAssertion, similarity } from "../expect/index.ts";
 import { EvalRequirementFailed } from "../context/control-flow.ts";
 import type { AssertionResult, ScoringContext, ValueAssertion } from "../types.ts";
@@ -146,7 +146,7 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
     expect(results[0]!.outcome === "unavailable" ? undefined : results[0]!.points).toBe(0);
     expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed" });
     expect(results[0]).not.toHaveProperty("stopOnFailure");
-    expect(computeVerdict({ assertions: results, scoring: "points" })).toBe("failed");
+    expect(computeVerdict({ assertions: results })).toBe("failed");
   });
 });
 
@@ -161,8 +161,8 @@ describe("severity 与 stopOnFailure 正交", () => {
     expect(result!.severity).toBe("soft"); // 降级为观测:丢分不参与判定
     expect(result!.outcome).toBe("failed"); // 通过线保留,没做到照记 failed
     expect(result!.outcome === "unavailable" ? undefined : result!.points).toBe(0);
-    expect(computeVerdict({ assertions: [result!], strict: false, scoring: "points" })).toBe("passed");
-    expect(computeVerdict({ assertions: [result!], strict: true, scoring: "points" })).toBe("failed");
+    expect(computeVerdict({ assertions: [result!], strict: false })).toBe("passed");
+    expect(computeVerdict({ assertions: [result!], strict: true })).toBe("failed");
   });
 
   it(".gate().stopOnFailure() 未过:保留失败结果并以 EvalRequirementFailed 就地中止", async () => {
@@ -175,7 +175,7 @@ describe("severity 与 stopOnFailure 正交", () => {
     const results = await collector.finalize(ctxWith());
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed", stopOnFailure: true, points: 0 });
-    expect(computeVerdict({ assertions: results, scoring: "points" })).toBe("failed");
+    expect(computeVerdict({ assertions: results })).toBe("failed");
   });
 
   it(".atLeast(x).stopOnFailure() 中止控制流，但保持 soft severity", async () => {
@@ -185,8 +185,8 @@ describe("severity 与 stopOnFailure 正交", () => {
     await expect(stopping.stopOnFailure()).rejects.toBeInstanceOf(EvalRequirementFailed);
     const [result] = await collector.finalize(ctxWith());
     expect(result).toMatchObject({ severity: "soft", threshold: 0.7, outcome: "failed", stopOnFailure: true });
-    expect(computeVerdict({ assertions: [result!], strict: false, scoring: "points" })).toBe("passed");
-    expect(computeVerdict({ assertions: [result!], strict: true, scoring: "points" })).toBe("failed");
+    expect(computeVerdict({ assertions: [result!], strict: false })).toBe("passed");
+    expect(computeVerdict({ assertions: [result!], strict: true })).toBe("failed");
   });
 
   it("stopOnFailure 就地求值:结论定在链的位置，finalize 不按后续状态重算", async () => {

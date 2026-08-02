@@ -1,7 +1,8 @@
 // scoring 结果的摘要投影。这里仅决定「摘要面显示哪一条、显示哪些事实」；完整诊断面继续
 // 消费 AssertionResult[]，不复用这个有损投影。
 
-import type { AssertionResult, PrimaryAssertionSummary, Verdict } from "./types.ts";
+import type { AssertionResult, PrimaryAssertionSummary } from "./types.ts";
+import type { Verdict } from "../shared/types.ts";
 
 /**
  * 计分制挣分标注:"+1 pt" / "+0.8 pts"(单复数随数值)。与 report/model/format.ts 的
