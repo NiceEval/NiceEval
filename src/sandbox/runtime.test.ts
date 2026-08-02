@@ -54,6 +54,7 @@ function planned(layer: SandboxLayer): Extract<LinkedRunPlan, { readonly _tag: "
   const [output] = Effect.runSync(planLinkedRuns([{
     pair,
     authorBaseDirs: { eval: "/repo/evals/task/example", experiment: "/repo/experiments" },
+    requirements: [],
   }]));
   if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
   return output.plan;
@@ -198,6 +199,44 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(providerCreate).not.toHaveBeenCalled();
   });
 
+  it("keeps JsonValue locators to the provider boundary and rejects a non-string Dockerfile locator", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-locator-"));
+    await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"e".repeat(64)}\n`);
+    try {
+      const factories = createBuiltinSandboxFactories({
+        dockerBuildPlatform: Effect.succeed("linux/amd64"),
+        hostPlatform: linux,
+      });
+      const [pair] = Effect.runSync(linkSandboxLayers([{
+        eval: { id: "task/example", layer: factories.dockerfileSandbox({ context: "." }) },
+        experiment: { id: "compare/codex", layer: sandboxLayer() },
+        agent: { kind: "sandbox", name: "codex" },
+      }]));
+      if (pair === undefined) throw new Error("missing linked pair");
+      const [output] = await Effect.runPromise(planLinkedRuns([{
+        pair,
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      }]));
+      if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
+      const buildKey = output.plan.providerPlan.build.buildKeys[0];
+      if (buildKey === undefined) throw new Error("missing BuildKey");
+
+      const result = await Effect.runPromise(Effect.either(Effect.scoped(materializeSandboxRunPlan({
+        ...input(output.plan, { _tag: "Live" }),
+        buildLocators: new Map([[buildKey, { templateId: "provider-native-object" }]]),
+      }))));
+
+      expect(result._tag).toBe("Left");
+      if (result._tag === "Left") {
+        expect(result.left.code).toBe("sandbox.materialization-failed");
+        expect(String(result.left.cause)).toContain("must be a string");
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects Dockerfile inputs that change after physical planning", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-"));
     await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"e".repeat(64)}\nCOPY payload /payload\n`);
@@ -216,6 +255,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
       const [output] = await Effect.runPromise(planLinkedRuns([{
         pair,
         authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
       }]));
       if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
 
@@ -257,6 +297,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
       const [output] = await Effect.runPromise(planLinkedRuns([{
         pair,
         authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
       }]));
       if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
       const plannedCaseKey = output.plan.providerPlan.build.caseKey;
@@ -313,6 +354,45 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(groupStop).toHaveBeenCalledTimes(1);
   });
 
+  it("custom case rejects half-states and unknown capabilities before accepting completion", async () => {
+    expect(() => customCaseSandbox({
+      identity: { revision: () => "opaque" } as never,
+      targetPlatform: linux,
+      services: { _tag: "Unsupported" },
+      materialize: (() => Effect.dieMessage("must not run")) as never,
+    })).toThrow(/pure JSON data/);
+    expect(() => customCaseSandbox({
+      identity: { revision: "v1" },
+      targetPlatform: linux,
+      services: { _tag: "Maybe" } as never,
+      materialize: (() => Effect.dieMessage("must not run")) as never,
+    })).toThrow(/Supported.*Unsupported/);
+
+    const groupStop = vi.fn(async () => {});
+    const plan = planned(customCaseSandbox({
+      identity: { revision: "v1" },
+      targetPlatform: linux,
+      services: { _tag: "Unsupported" },
+      materialize: (() => Effect.succeed({
+        sandbox: fakeSandbox("invalid-custom-case"),
+        group: {
+          primary: { sandboxId: "invalid-custom-case" },
+          resources: { namespace: "fixture" },
+          stop: groupStop,
+        },
+        services: { _tag: "None" },
+        facts: {},
+        retention: { entry: "not-supported" },
+      })) as never,
+    }));
+    const result = await Effect.runPromise(Effect.either(
+      Effect.scoped(materializeSandboxRunPlan(input(plan, { _tag: "Live" }))),
+    ));
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left.message).toMatch(/unsupported field.*retention/);
+    expect(groupStop).toHaveBeenCalledTimes(1);
+  });
+
   it("Scope runs exactly one selected release disposition", async () => {
     const sandboxStop = vi.fn(async () => {});
     const managedRelease = vi.fn(() => Effect.void);
@@ -358,6 +438,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
     const [output] = await Effect.runPromise(planLinkedRuns([{
       pair,
       authorBaseDirs: { eval: root, experiment: root },
+      requirements: [],
     }]));
     if (output?.plan._tag !== "Sandbox") throw new Error("missing sandbox plan");
     const plan = output.plan;

@@ -44,7 +44,14 @@ export interface LinkedRunPlanInput {
   readonly pair: LinkedDirectPair | LinkedSandboxPair;
   /** 两个值均来自 discovery 完成态；相对 template 按实际 owner 选其中一个。 */
   readonly authorBaseDirs: SandboxAuthorBaseDirs;
+  /** Runner 已经能在创建资源前裁决的运行能力要求。 */
+  readonly requirements: readonly SandboxPhysicalCapabilityRequirement[];
 }
+
+export type SandboxPhysicalCapabilityRequirement =
+  | { readonly _tag: "Reuse" }
+  | { readonly _tag: "Retention" }
+  | { readonly _tag: "SessionDuration"; readonly milliseconds: number };
 
 /**
  * 通用 planner 调用边界。默认实现只调用 template 私绑 planner；测试可注入拦截器，
@@ -66,7 +73,10 @@ export function liveSandboxPlanningServices(): SandboxPlanningServices {
 }
 
 export interface SandboxPhysicalPlanningIssue {
-  readonly code: "sandbox.author-base-dir-invalid" | "sandbox.provider-planning-failed";
+  readonly code:
+    | "sandbox.author-base-dir-invalid"
+    | "sandbox.provider-planning-failed"
+    | "sandbox.capability-unavailable";
   readonly providerCode: string;
   readonly pair: {
     readonly evalId: string;
@@ -79,11 +89,16 @@ export interface SandboxPhysicalPlanningIssue {
   readonly actions: readonly string[];
 }
 
+export type SandboxPhysicalPlanningIssues = readonly [
+  SandboxPhysicalPlanningIssue,
+  ...SandboxPhysicalPlanningIssue[],
+];
+
 export class SandboxPhysicalPlanningError extends Data.TaggedError(
   "SandboxPhysicalPlanningError",
 )<{
   readonly code: "sandbox.physical-planning-failed";
-  readonly issues: readonly SandboxPhysicalPlanningIssue[];
+  readonly issues: SandboxPhysicalPlanningIssues;
   readonly message: string;
 }> {}
 
@@ -127,8 +142,75 @@ function providerIssue(
   });
 }
 
-function planningError(issues: readonly SandboxPhysicalPlanningIssue[]): SandboxPhysicalPlanningError {
-  const frozen = Object.freeze([...issues]);
+function capabilityIssue(
+  pair: LinkedSandboxPair,
+  baseDir: string,
+  providerCode: string,
+  summary: string,
+  actions: readonly string[],
+): SandboxPhysicalPlanningIssue {
+  return Object.freeze({
+    code: "sandbox.capability-unavailable",
+    providerCode,
+    pair: pairView(pair),
+    templateOwner: pair.templateOwner,
+    baseDir,
+    summary,
+    actions: Object.freeze([...actions]),
+  });
+}
+
+function capabilityIssues(
+  pair: LinkedSandboxPair,
+  baseDir: string,
+  plan: SandboxProviderPlan,
+  requirements: readonly SandboxPhysicalCapabilityRequirement[],
+): readonly SandboxPhysicalPlanningIssue[] {
+  const issues: SandboxPhysicalPlanningIssue[] = [];
+  for (const requirement of requirements) {
+    if (requirement._tag === "Reuse" && plan.capabilities.reuse._tag === "Unsupported") {
+      issues.push(capabilityIssue(
+        pair,
+        baseDir,
+        "sandbox.reuse-unavailable",
+        `Provider ${JSON.stringify(plan.provider)} cannot satisfy sandboxReuse: ${plan.capabilities.reuse.reason}.`,
+        ["Select a provider with Sandbox reuse support, or disable sandboxReuse for this Experiment."],
+      ));
+      continue;
+    }
+    if (requirement._tag === "Retention" && plan.capabilities.retention._tag === "DestroyOnly") {
+      issues.push(capabilityIssue(
+        pair,
+        baseDir,
+        "sandbox.retention-unavailable",
+        `Provider ${JSON.stringify(plan.provider)} cannot retain this Sandbox Case after the Attempt.`,
+        ["Select a provider with suspendable retention, or remove --keep-sandbox."],
+      ));
+      continue;
+    }
+    if (
+      requirement._tag === "SessionDuration" &&
+      plan.capabilities.sessionLimit._tag === "Bounded" &&
+      requirement.milliseconds > plan.capabilities.sessionLimit.milliseconds
+    ) {
+      issues.push(capabilityIssue(
+        pair,
+        baseDir,
+        "sandbox.session-limit-exceeded",
+        `Provider ${JSON.stringify(plan.provider)} limits Sandbox sessions to ` +
+          `${plan.capabilities.sessionLimit.milliseconds}ms, below the requested ${requirement.milliseconds}ms.`,
+        ["Lower the resolved Attempt timeout, or select a provider with a sufficient session limit."],
+      ));
+    }
+  }
+  return Object.freeze(issues);
+}
+
+function planningError(issues: SandboxPhysicalPlanningIssues): SandboxPhysicalPlanningError {
+  const frozen = Object.freeze([
+    issues[0],
+    ...issues.slice(1),
+  ] as [SandboxPhysicalPlanningIssue, ...SandboxPhysicalPlanningIssue[]]);
   return new SandboxPhysicalPlanningError({
     code: "sandbox.physical-planning-failed",
     issues: frozen,
@@ -136,6 +218,27 @@ function planningError(issues: readonly SandboxPhysicalPlanningIssue[]): Sandbox
       `Sandbox physical planning failed for ${frozen.length} pair${frozen.length === 1 ? "" : "s"}. ` +
       "No provider build or Sandbox creation was started.",
   });
+}
+
+/** CLI 面向作者的完整规划反馈：保留每条 pair、provider code 与可执行修法。 */
+export function formatSandboxPhysicalPlanningError(error: SandboxPhysicalPlanningError): string {
+  const lines: string[] = [];
+  for (const issue of error.issues) {
+    lines.push(`${issue.providerCode}: ${issue.summary}`);
+    lines.push(
+      `  pair: ${issue.pair.experimentId} × ${issue.pair.evalId} (${issue.pair.agentName})`,
+    );
+    lines.push(
+      `  template: ${issue.templateOwner.kind} ${JSON.stringify(issue.templateOwner.id)} at ${issue.baseDir}`,
+    );
+    for (const action of issue.actions) lines.push(`  fix: ${action}`);
+    lines.push("");
+  }
+  lines.push(
+    `${error.issues.length} unavailable Sandbox plan${error.issues.length === 1 ? "" : "s"} found. ` +
+      "No provider build or Sandbox creation was started.",
+  );
+  return lines.join("\n");
 }
 
 /**
@@ -170,12 +273,17 @@ export function planLinkedRuns(
         issues.push(providerIssue(input.pair, baseDir, planned.left));
         continue;
       }
+      const gaps = capabilityIssues(input.pair, baseDir, planned.right, input.requirements);
+      if (gaps.length > 0) {
+        issues.push(...gaps);
+        continue;
+      }
       plans.push(Object.freeze({
         pair: input.pair,
         plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.right }),
       }));
     }
-    if (issues.length > 0) return yield* planningError(issues);
+    if (issues.length > 0) return yield* planningError([issues[0], ...issues.slice(1)]);
     return Object.freeze(plans);
   });
 }

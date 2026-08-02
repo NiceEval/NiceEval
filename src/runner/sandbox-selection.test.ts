@@ -28,6 +28,7 @@ import {
   schedulingForPreparedPairs,
   SandboxRunPairDuplicateError,
 } from "./sandbox-selection.ts";
+import { SandboxPhysicalPlanningError } from "../sandbox/plan.ts";
 
 const factories = createBuiltinSandboxFactories({
   dockerBuildPlatform: Effect.succeed("linux/amd64"),
@@ -257,5 +258,33 @@ describe("pair-owned Sandbox planning", () => {
         { key: "user-worktree", limit: 1, admission: "Exclusive" },
       ],
     });
+  });
+
+  it("reuse / keep 要求在 carry、build 与 materialize 前按完整 Run 聚合", () => {
+    const first = evalDef("first", factories.localSandbox());
+    const second = evalDef("second", factories.localSandbox());
+    const selected = run({
+      sandbox: sandboxLayer(),
+      sandboxReuse: true,
+      selectedEvalIds: ["first", "second"],
+    });
+    const failure = Effect.runSync(Effect.flip(prepareRunSandboxes(
+      [first, second],
+      [selected],
+      undefined,
+      { keepSandbox: "all" },
+    )));
+
+    expect(failure).toBeInstanceOf(SandboxPhysicalPlanningError);
+    if (!(failure instanceof SandboxPhysicalPlanningError)) {
+      throw new Error("expected physical planning failure");
+    }
+    expect(failure.issues.map(({ pair, providerCode }) => [pair.evalId, providerCode])).toEqual([
+      ["first", "sandbox.reuse-unavailable"],
+      ["first", "sandbox.retention-unavailable"],
+      ["second", "sandbox.reuse-unavailable"],
+      ["second", "sandbox.retention-unavailable"],
+    ]);
+    expect(failure.message).toContain("No provider build or Sandbox creation was started");
   });
 });

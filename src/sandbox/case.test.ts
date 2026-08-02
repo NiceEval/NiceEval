@@ -5,14 +5,13 @@
 import { describe, expect, it } from "vitest";
 import { dockerSandbox, e2bSandbox } from "../define.ts";
 import {
-  allSelectedCapabilitySkipped,
   assertEnvironmentCaseShape,
-  collectCapabilityGaps,
-  collectMissingProfiles,
+  collectSandboxCasePlanningGaps,
   composeSandbox,
   dockerfileSandbox,
   materializePlannedCase,
   planSandboxCase,
+  sandboxCasePlanningError,
   type MaterializedSandboxCase,
   type SandboxMaterializer,
 } from "./case.ts";
@@ -121,17 +120,24 @@ describe("profile / source 双入口与优先级", () => {
     expect(result.plan.sourceKind).toBe("compose");
   });
 
-  it("profile 键查不到且无 folder-local source → missing-profile(启动期配置错误)", () => {
+  it("profile 键查不到且无 folder-local source → locator-unavailable", () => {
     const result = planSandboxCase({
       evalId: "math/py39",
       environment: "python-3.9",
       spec: dockerSpec({ "python-3.10": { image: "acme/py310" } }),
     });
-    expect(result).toEqual({ status: "missing-profile", evalId: "math/py39", profile: "python-3.9" });
-    expect(collectMissingProfiles([result])).toEqual([{ evalId: "math/py39", profile: "python-3.9" }]);
+    expect(result).toMatchObject({
+      status: "unavailable",
+      gap: {
+        code: "sandbox.locator-unavailable",
+        evalId: "math/py39",
+        profile: "python-3.9",
+        provider: "docker",
+      },
+    });
   });
 
-  it("声明合法但缺表项与 materializer → capability-missing(计划期 skipped)", () => {
+  it("声明合法但缺表项与 materializer → capability-unavailable", () => {
     const source = composeSandbox({ file: "compose.yaml", mainService: "client" });
     const result = planSandboxCase({
       evalId: "tb/sheets",
@@ -139,28 +145,55 @@ describe("profile / source 双入口与优先级", () => {
       defaultProfileId: "tb-sheets",
       spec: dockerSpec({ other: { image: "acme/other" } }),
     });
-    expect(result.status).toBe("capability-missing");
-    if (result.status !== "capability-missing") return;
-    expect(result.sourceKind).toBe("compose");
-    expect(result.skipReason).toContain("tb/sheets");
-    expect(result.skipReason).toContain("compose");
-    expect(result.skipReason).toContain("materializers.compose");
-    expect(collectCapabilityGaps([result])).toHaveLength(1);
+    expect(result.status).toBe("unavailable");
+    if (result.status !== "unavailable") return;
+    expect(result.gap).toMatchObject({
+      code: "sandbox.capability-unavailable",
+      evalId: "tb/sheets",
+      profile: "tb-sheets",
+      provider: "docker",
+      capability: { _tag: "SourceMaterializer", sourceKind: "compose" },
+    });
+    expect(result.gap.summary).toContain("compose");
   });
 
-  it("选中集合全部 capability-missing 时可升级启动期报错", () => {
+  it("任一 locator / capability gap 与 ready 混合也聚合为零资源规划失败", () => {
     const source = composeSandbox({ file: "compose.yaml", mainService: "client" });
     const results = [
       planSandboxCase({ evalId: "a", environment: source, defaultProfileId: "a", spec: dockerSpec() }),
-      planSandboxCase({ evalId: "b", environment: source, defaultProfileId: "b", spec: dockerSpec() }),
+      planSandboxCase({ evalId: "b", spec: dockerSpec() }),
+      planSandboxCase({ evalId: "c", environment: "absent", spec: dockerSpec() }),
     ];
-    expect(allSelectedCapabilitySkipped(results)).toBe(true);
+    const gaps = collectSandboxCasePlanningGaps(results);
+    expect(gaps.map(({ code }) => code)).toEqual([
+      "sandbox.capability-unavailable",
+      "sandbox.locator-unavailable",
+    ]);
+    if (gaps.length === 0) throw new Error("expected planning gaps");
+    const failure = sandboxCasePlanningError("docker", [gaps[0], ...gaps.slice(1)]);
+    expect(failure).toMatchObject({
+      code: "sandbox.case-planning-failed",
+      provider: "docker",
+      gaps,
+    });
+    expect(failure.message).toContain("No provider build or Sandbox creation was started");
   });
 
   it("非法判别键组合在规划期报错", () => {
     expect(() =>
       assertEnvironmentCaseShape("docker", { image: "x", compose: { file: "c.yaml", mainService: "main" } }, "bad"),
     ).toThrow(/exactly one of image \| build \| compose/);
+  });
+
+  it("动态 environments 表值必须在规划期解码为真实的纯 JSON 声明", () => {
+    expect(() => assertEnvironmentCaseShape("docker", { image: 42 }, "bad-image")).toThrow(/image must be a string/);
+    expect(() =>
+      assertEnvironmentCaseShape(
+        "docker",
+        { compose: { file: "compose.yaml", mainService: "main", env: { TOKEN: () => "secret" } } },
+        "bad-compose",
+      ),
+    ).toThrow(/pure JSON data/);
   });
 });
 
@@ -224,10 +257,24 @@ describe("sandbox case 五类", () => {
 
   it("自定义 case 缺稳定纯数据 identity 时禁止携带", () => {
     expect(() => assertPureDataIdentity({ kind: "bad", run: () => "nope" })).toThrow(/pure JSON data/);
+    expect(() => assertPureDataIdentity({ revision: Number.NaN })).toThrow(/pure JSON data/);
+    expect(() => assertPureDataIdentity({ revision: Number.POSITIVE_INFINITY })).toThrow(/pure JSON data/);
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    expect(() => assertPureDataIdentity(cyclic)).toThrow(/pure JSON data/);
 
-    expect(caseCarryEligible({ hasStableIdentity: false })).toBe(false);
-    expect(caseCarryEligible({ hasStableIdentity: true, identity: { ok: true } })).toBe(true);
-    expect(caseCarryEligible({ hasStableIdentity: true, unresolvedFloatingTags: true })).toBe(false);
+    expect(caseCarryEligible({
+      identity: { _tag: "Unavailable", code: "sandbox.identity-missing", reason: "fixture" },
+      floatingImages: { _tag: "Resolved" },
+    })).toBe(false);
+    expect(caseCarryEligible({
+      identity: { _tag: "Stable", identity: { ok: true } },
+      floatingImages: { _tag: "Resolved" },
+    })).toBe(true);
+    expect(caseCarryEligible({
+      identity: { _tag: "Stable", identity: { image: "node:24-slim" } },
+      floatingImages: { _tag: "Unresolved", refs: ["node:24-slim"] },
+    })).toBe(false);
   });
 
   it("Compose materializer 物化时仍只暴露一个主 Sandbox", async () => {

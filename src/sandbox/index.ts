@@ -25,6 +25,9 @@ export {
   materializePlannedCase,
   isSandboxSource,
   validateSpecEnvironmentCases,
+  collectSandboxCasePlanningGaps,
+  sandboxCasePlanningError,
+  SandboxCasePlanningError,
 } from "./case.ts";
 export {
   COMPOSE_MATERIALIZER_REVISION,
@@ -45,21 +48,11 @@ export {
   prebuiltProductSlotsOf,
   specWithPrebuiltProduct,
   assertKeepAllowedForCase,
-  assertCustomCapabilitiesHonored,
-  hasGroupKeep,
-  caseCapabilitiesOf,
   isSingleSandboxCaseKind,
   SINGLE_SANDBOX_CASE_KINDS,
 } from "./resolve.ts";
 export type { CreateMaterializedCaseOpts } from "./resolve.ts";
 export type { PrebuiltProductSlots, SingleSandboxCaseKind } from "./single-case.ts";
-export {
-  registerCustomGroupKeep,
-  lookupCustomGroupKeep,
-  destroyCustomGroupKeep,
-  wakeCustomGroupKeep,
-  clearCustomGroupKeepRegistry,
-} from "./custom-group-keep.ts";
 export {
   computeBuildKey,
   computeCaseKey,
@@ -96,6 +89,9 @@ export type {
   LocalSandboxOptions,
   CustomProviderSandboxOptions,
   CustomCaseSandboxOptions,
+  CustomCaseServices,
+  CustomCaseMaterializedServices,
+  CustomCaseMaterializeResult,
   SandboxTargetPlatform,
   SandboxLeakGate,
 } from "./layer.ts";
@@ -143,7 +139,6 @@ export type {
   DockerfileSandboxSource,
   SandboxCaseKind,
   SandboxSourceKind,
-  SandboxCapability,
   ServiceController,
   MaterializedSandboxCase,
   SandboxGroupEntry,
@@ -151,11 +146,12 @@ export type {
   DockerEnvironmentCase,
   E2BEnvironmentCase,
   VercelEnvironmentCase,
-  CustomEnvironmentCase,
   SandboxMaterializer,
   SandboxMaterializers,
   PlannedSandboxCase,
   CasePlanResult,
+  SandboxCasePlanningGap,
+  SandboxCasePlanningGaps,
 } from "./case.ts";
 
 export type {
@@ -165,6 +161,9 @@ export type {
   CaseKeyInput,
   ImageRefResolution,
   CredentialRef,
+  SandboxCaseIdentityResolution,
+  SandboxCaseFloatingImages,
+  SandboxCaseCarryInput,
 } from "./identity.ts";
 
 export type {

@@ -2,24 +2,22 @@
 // Docker Compose 原生物化见 compose.ts;本文件在 docker compose 表项上委派过去。
 // 契约单源:docs/feature/sandbox/case.md。
 
+import { Data } from "effect";
 import type { JsonValue } from "../shared/types.ts";
 import {
   assertPureDataIdentity,
-  caseCarryEligible,
   computeCaseKey,
   type BuildKey,
   type CaseKey,
 } from "./identity.ts";
 import type {
   ComposeSandboxSource,
-  CustomEnvironmentCase,
-  CustomMaterializeResult,
+  DockerBuildDecl,
   DockerComposeDecl,
   DockerEnvironmentCase,
   DockerfileSandboxSource,
   E2BEnvironmentCase,
   MaterializedSandboxCase,
-  SandboxCapability,
   SandboxCaseKind,
   SandboxMaterializeContext,
   SandboxMaterializer,
@@ -39,14 +37,12 @@ import {
 
 export type {
   ComposeSandboxSource,
-  CustomEnvironmentCase,
   DockerComposeDecl,
   DockerEnvironmentCase,
   DockerfileSandboxSource,
   E2BEnvironmentCase,
   MaterializedSandboxCase,
   ProviderLocator,
-  SandboxCapability,
   SandboxCaseKind,
   SandboxGroupEntry,
   SandboxLocator,
@@ -140,24 +136,46 @@ export type PlannedCaseDeclaration =
       readonly value: DockerfileSandboxSource;
     }
   | { readonly form: "vercel"; readonly value: VercelEnvironmentCase }
-  | { readonly form: "custom"; readonly value: CustomEnvironmentCase }
   | { readonly form: "source"; readonly value: SandboxSource; readonly materializer: SandboxMaterializer }
   | { readonly form: "base"; readonly provider: string; readonly product: JsonValue };
 
 export type CasePlanResult =
   | { readonly status: "ready"; readonly plan: PlannedSandboxCase }
   | {
-      readonly status: "missing-profile";
+      readonly status: "unavailable";
+      readonly gap: SandboxCasePlanningGap;
+    };
+
+export type SandboxCasePlanningGap =
+  | {
+      readonly code: "sandbox.locator-unavailable";
       readonly evalId: string;
       readonly profile: string;
+      readonly provider: string;
+      readonly summary: string;
+      readonly actions: readonly string[];
     }
   | {
-      readonly status: "capability-missing";
+      readonly code: "sandbox.capability-unavailable";
       readonly evalId: string;
       readonly profile: string;
-      readonly sourceKind?: SandboxSourceKind;
-      readonly skipReason: string;
+      readonly provider: string;
+      readonly capability: { readonly _tag: "SourceMaterializer"; readonly sourceKind: SandboxSourceKind };
+      readonly summary: string;
+      readonly actions: readonly string[];
     };
+
+export type SandboxCasePlanningGaps = readonly [
+  SandboxCasePlanningGap,
+  ...SandboxCasePlanningGap[],
+];
+
+export class SandboxCasePlanningError extends Data.TaggedError("SandboxCasePlanningError")<{
+  readonly code: "sandbox.case-planning-failed";
+  readonly provider: string;
+  readonly gaps: SandboxCasePlanningGaps;
+  readonly message: string;
+}> {}
 
 export interface PlanSandboxCaseInput {
   readonly evalId: string;
@@ -190,7 +208,7 @@ export function specMaterializers(spec: SandboxOption): SandboxMaterializers | u
 /**
  * 规划一条 eval 的 sandbox case。
  * 优先级:显式 environments[profile] > materializers[source.kind] > 无 environment 时的基础产物。
- * 两类缺失分开返回,调用方负责穷举 / skipped 升级。
+ * locator / capability 两类 gap 分开返回，调用方对完整选中集合穷举后统一失败。
  */
 export function planSandboxCase(input: PlanSandboxCaseInput): CasePlanResult {
   const { evalId, spec } = input;
@@ -201,9 +219,8 @@ export function planSandboxCase(input: PlanSandboxCaseInput): CasePlanResult {
     const base = baseProductOf(spec);
     if (base === undefined) {
       return {
-        status: "missing-profile",
-        evalId,
-        profile: "(base)",
+        status: "unavailable",
+        gap: locatorGap({ evalId, profile: "(base)", provider: String(spec.provider) }),
       };
     }
     const identity = { caseKind: "prebuilt" as const, provider: spec.provider, product: base.product };
@@ -244,11 +261,8 @@ export function planSandboxCase(input: PlanSandboxCaseInput): CasePlanResult {
       return planFromBuiltinDockerfile({ evalId, profile, source, provider: spec.provider });
     }
     return {
-      status: "capability-missing",
-      evalId,
-      profile,
-      sourceKind: source.kind,
-      skipReason: capabilitySkipReason({
+      status: "unavailable",
+      gap: capabilityGap({
         evalId,
         profile,
         sourceKind: source.kind,
@@ -264,58 +278,35 @@ export function planSandboxCase(input: PlanSandboxCaseInput): CasePlanResult {
   }
 
   // 纯 profile 字符串、表里没有、也没有 folder-local source → 键名笔误(配置错误)。
-  return { status: "missing-profile", evalId, profile };
+  return {
+    status: "unavailable",
+    gap: locatorGap({ evalId, profile, provider: String(spec.provider) }),
+  };
 }
 
-/** 一次穷举全部 missing-profile;有任一即应启动期失败、零 Sandbox 创建。 */
-export function collectMissingProfiles(results: readonly CasePlanResult[]): Array<{ evalId: string; profile: string }> {
-  return results
-    .filter((r): r is Extract<CasePlanResult, { status: "missing-profile" }> => r.status === "missing-profile")
-    .map((r) => ({ evalId: r.evalId, profile: r.profile }));
-}
-
-/** 能力缺失 → 计划期 skipped 的条目。 */
-export function collectCapabilityGaps(
+/** 穷举完整规划集合中的 locator / capability gap；与 ready 条目混合时也不降级。 */
+export function collectSandboxCasePlanningGaps(
   results: readonly CasePlanResult[],
-): Array<{ evalId: string; profile: string; sourceKind?: SandboxSourceKind; skipReason: string }> {
-  return results
-    .filter((r): r is Extract<CasePlanResult, { status: "capability-missing" }> => r.status === "capability-missing")
-    .map((r) => ({
-      evalId: r.evalId,
-      profile: r.profile,
-      ...(r.sourceKind !== undefined ? { sourceKind: r.sourceKind } : {}),
-      skipReason: r.skipReason,
-    }));
+): readonly SandboxCasePlanningGap[] {
+  return Object.freeze(results.flatMap((result) => result.status === "unavailable" ? [result.gap] : []));
 }
 
-/**
- * 选中集合是否全部因能力缺失而 skipped(应升级为启动期报错)。
- * 有 ready 或 missing-profile 时返回 false——后者已是更硬的配置错误。
- */
-export function allSelectedCapabilitySkipped(results: readonly CasePlanResult[]): boolean {
-  if (results.length === 0) return false;
-  return results.every((r) => r.status === "capability-missing");
-}
-
-export function missingProfilesError(
-  experimentLabel: string,
-  missing: ReadonlyArray<{ evalId: string; profile: string }>,
-): Error {
-  const entries = missing.map((m) => `  ${m.evalId} → ${JSON.stringify(m.profile)}`).join("\n");
-  return new Error(
-    `sandbox spec for experiment ${JSON.stringify(experimentLabel)} has no environments entry for:\n${entries}\n` +
-      `add the missing profile(s) to the spec's environments table, or give the eval a folder-local sandbox source`,
-  );
-}
-
-export function allSkippedStartupError(
-  experimentLabel: string,
-  gaps: ReadonlyArray<{ evalId: string; skipReason: string }>,
-): Error {
-  const entries = gaps.map((g) => `  ${g.evalId}: ${g.skipReason}`).join("\n");
-  return new Error(
-    `all selected evals were skipped for experiment ${JSON.stringify(experimentLabel)} — provider lacks materializer or case mapping:\n${entries}`,
-  );
+export function sandboxCasePlanningError(
+  provider: string,
+  gaps: SandboxCasePlanningGaps,
+): SandboxCasePlanningError {
+  const frozen = Object.freeze([
+    gaps[0],
+    ...gaps.slice(1),
+  ] as [SandboxCasePlanningGap, ...SandboxCasePlanningGap[]]);
+  return new SandboxCasePlanningError({
+    code: "sandbox.case-planning-failed",
+    provider,
+    gaps: frozen,
+    message:
+      `Sandbox case planning failed for ${frozen.length} selected eval${frozen.length === 1 ? "" : "s"} ` +
+      `on provider ${JSON.stringify(provider)}. No provider build or Sandbox creation was started.`,
+  });
 }
 
 /**
@@ -326,8 +317,6 @@ export function assertEnvironmentCaseShape(provider: string, entry: unknown, pro
   if (entry === null || typeof entry !== "object") {
     throw new Error(`environments[${JSON.stringify(profile)}] must be an object`);
   }
-  if (isCustomEnvironmentCase(entry)) return;
-
   if (provider === "docker") {
     const keys = discriminantKeys(entry, ["image", "build", "compose"]);
     if (keys.length !== 1) {
@@ -335,6 +324,7 @@ export function assertEnvironmentCaseShape(provider: string, entry: unknown, pro
         `environments[${JSON.stringify(profile)}] for docker must have exactly one of image | build | compose (got ${keys.join(", ") || "none"})`,
       );
     }
+    decodeDockerEnvironmentCase(entry);
     return;
   }
   if (provider === "e2b") {
@@ -344,6 +334,7 @@ export function assertEnvironmentCaseShape(provider: string, entry: unknown, pro
         `environments[${JSON.stringify(profile)}] for e2b must have exactly one of template | build (got ${keys.join(", ") || "none"})`,
       );
     }
+    decodeE2BEnvironmentCase(entry);
     return;
   }
   if (provider === "vercel") {
@@ -353,6 +344,12 @@ export function assertEnvironmentCaseShape(provider: string, entry: unknown, pro
         `environments[${JSON.stringify(profile)}] for vercel must have snapshotId (got ${keys.join(", ") || "none"})`,
       );
     }
+    decodeVercelEnvironmentCase(entry);
+    return;
+  }
+  const record = jsonRecord(entry, `environment case for provider ${JSON.stringify(provider)}`);
+  if (record.compose === undefined) {
+    throw new Error(`unsupported environment case shape for provider ${JSON.stringify(provider)}`);
   }
 }
 
@@ -360,23 +357,44 @@ function discriminantKeys(entry: object, keys: readonly string[]): string[] {
   return keys.filter((k) => (entry as globalThis.Record<string, unknown>)[k] !== undefined);
 }
 
-function isCustomEnvironmentCase(entry: unknown): entry is CustomEnvironmentCase {
-  if (entry === null || typeof entry !== "object") return false;
-  const e = entry as CustomEnvironmentCase;
-  return e.identity !== undefined && typeof e.materialize === "function";
+function locatorGap(opts: {
+  evalId: string;
+  profile: string;
+  provider: string;
+}): Extract<SandboxCasePlanningGap, { readonly code: "sandbox.locator-unavailable" }> {
+  return Object.freeze({
+    code: "sandbox.locator-unavailable",
+    evalId: opts.evalId,
+    profile: opts.profile,
+    provider: opts.provider,
+    summary:
+      `eval ${JSON.stringify(opts.evalId)} references sandbox profile ${JSON.stringify(opts.profile)}, ` +
+      `but provider ${JSON.stringify(opts.provider)} has no locator for it.`,
+    actions: Object.freeze([
+      "Add the profile to the provider environments table, or select a template with an available locator.",
+    ]),
+  });
 }
 
-function capabilitySkipReason(opts: {
+function capabilityGap(opts: {
   evalId: string;
   profile: string;
   sourceKind: SandboxSourceKind;
   provider: string;
-}): string {
-  return (
-    `eval ${JSON.stringify(opts.evalId)} profile ${JSON.stringify(opts.profile)} needs source kind ${JSON.stringify(opts.sourceKind)}, ` +
-    `but provider ${JSON.stringify(opts.provider)} has neither environments[${JSON.stringify(opts.profile)}] ` +
-    `nor materializers.${opts.sourceKind} — add an environments mapping or register the materializer`
-  );
+}): Extract<SandboxCasePlanningGap, { readonly code: "sandbox.capability-unavailable" }> {
+  return Object.freeze({
+    code: "sandbox.capability-unavailable",
+    evalId: opts.evalId,
+    profile: opts.profile,
+    provider: opts.provider,
+    capability: Object.freeze({ _tag: "SourceMaterializer", sourceKind: opts.sourceKind }),
+    summary:
+      `eval ${JSON.stringify(opts.evalId)} profile ${JSON.stringify(opts.profile)} needs source kind ` +
+      `${JSON.stringify(opts.sourceKind)}, but provider ${JSON.stringify(opts.provider)} cannot materialize it.`,
+    actions: Object.freeze([
+      `Add environments[${JSON.stringify(opts.profile)}], register materializers.${opts.sourceKind}, or exclude this pair with a selector.`,
+    ]),
+  });
 }
 
 function planFromSource(opts: {
@@ -479,30 +497,6 @@ function planFromEnvironmentEntry(opts: {
 }): CasePlanResult {
   assertEnvironmentCaseShape(String(opts.spec.provider), opts.entry, opts.profile);
 
-  if (isCustomEnvironmentCase(opts.entry)) {
-    const identity = assertPureDataIdentity(opts.entry.identity);
-    const caseKey = computeCaseKey({
-      caseKind: "custom",
-      materializerRevision: "custom",
-      buildKeys: [],
-      caseParams: identity,
-    });
-    return {
-      status: "ready",
-      plan: {
-        evalId: opts.evalId,
-        profile: opts.profile,
-        caseKind: "custom",
-        via: opts.via,
-        caseKey,
-        buildKeys: [],
-        identity,
-        carryEligible: caseCarryEligible({ hasStableIdentity: true, identity }),
-        declaration: { form: "custom", value: opts.entry },
-      },
-    };
-  }
-
   const classified = classifyBuiltinCase(String(opts.spec.provider), opts.entry);
   const identity = { caseKind: classified.caseKind, provider: opts.spec.provider, declaration: classified.identity };
   const caseKey = computeCaseKey({
@@ -535,64 +529,202 @@ function classifyBuiltinCase(
   identity: JsonValue;
   declaration: PlannedCaseDeclaration;
 } {
-  const e = entry as globalThis.Record<string, unknown>;
   if (provider === "docker") {
-    if (e.compose !== undefined) {
-      const compose = e.compose as DockerComposeDecl;
+    const declaration = decodeDockerEnvironmentCase(entry);
+    if (declaration.compose !== undefined) {
+      const compose = declaration.compose;
       return {
         caseKind: "compose",
-        identity: { compose: compose as unknown as JsonValue },
-        declaration: { form: "docker", value: entry as DockerEnvironmentCase },
+        identity: { compose: jsonDockerComposeDecl(compose) },
+        declaration: { form: "docker", value: declaration },
       };
     }
-    if (e.build !== undefined) {
+    if (declaration.build !== undefined) {
       return {
         caseKind: "on-demand-build",
-        identity: { build: e.build as JsonValue },
-        declaration: { form: "docker", value: entry as DockerEnvironmentCase },
+        identity: { build: jsonDockerBuildDecl(declaration.build) },
+        declaration: { form: "docker", value: declaration },
       };
     }
     return {
       caseKind: "prebuilt",
-      identity: { image: e.image as string },
-      declaration: { form: "docker", value: entry as DockerEnvironmentCase },
+      identity: { image: declaration.image },
+      declaration: { form: "docker", value: declaration },
     };
   }
   if (provider === "e2b") {
-    if (e.build !== undefined) {
+    const declaration = decodeE2BEnvironmentCase(entry);
+    if (declaration.build !== undefined) {
       return {
         caseKind: "on-demand-build",
-        identity: { build: e.build as JsonValue },
-        declaration: { form: "e2b", value: entry as E2BEnvironmentCase },
+        identity: {
+          build: {
+            context: declaration.build.context,
+            ...(declaration.build.dockerfile !== undefined ? { dockerfile: declaration.build.dockerfile } : {}),
+          },
+        },
+        declaration: { form: "e2b", value: declaration },
       };
     }
     return {
       caseKind: "prebuilt",
-      identity: { template: e.template as string },
-      declaration: { form: "e2b", value: entry as E2BEnvironmentCase },
+      identity: { template: declaration.template },
+      declaration: { form: "e2b", value: declaration },
     };
   }
   if (provider === "vercel") {
+    const declaration = decodeVercelEnvironmentCase(entry);
     return {
       caseKind: "prebuilt",
-      identity: { snapshotId: e.snapshotId as string },
-      declaration: { form: "vercel", value: entry as VercelEnvironmentCase },
+      identity: { snapshotId: declaration.snapshotId },
+      declaration: { form: "vercel", value: declaration },
     };
   }
+  const e = jsonRecord(entry, `environment case for provider ${JSON.stringify(provider)}`);
   // 云端 Compose 表值由声明支持的云 provider 自定;内核只认「带 compose 判别键」这一形状,
   // 物化必须走该 provider 注册的 materializer(不得在此降级成单 Sandbox)。
   if (e.compose !== undefined) {
     return {
       caseKind: "cloud-compose",
-      identity: { compose: e.compose as JsonValue, ...(e as globalThis.Record<string, JsonValue>) },
+      identity: e,
       declaration: {
         form: "base",
         provider,
-        product: { caseKind: "cloud-compose", ...(e as globalThis.Record<string, JsonValue>) },
+        product: { ...e, caseKind: "cloud-compose" },
       },
     };
   }
   throw new Error(`unsupported environment case shape for provider ${JSON.stringify(provider)}`);
+}
+
+function jsonRecord(value: unknown, path: string): globalThis.Record<string, JsonValue> {
+  const json = assertPureDataIdentity(value);
+  if (json === null || Array.isArray(json) || typeof json !== "object") {
+    throw new Error(`${path} must be a JSON object`);
+  }
+  return json;
+}
+
+function assertOnlyKeys(
+  value: globalThis.Record<string, JsonValue>,
+  allowed: readonly string[],
+  path: string,
+): void {
+  const extra = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (extra.length > 0) throw new Error(`${path} has unsupported field(s): ${extra.join(", ")}`);
+}
+
+function requiredString(value: globalThis.Record<string, JsonValue>, key: string, path: string): string {
+  const field = value[key];
+  if (typeof field !== "string") throw new Error(`${path}.${key} must be a string`);
+  return field;
+}
+
+function optionalString(
+  value: globalThis.Record<string, JsonValue>,
+  key: string,
+  path: string,
+): string | undefined {
+  const field = value[key];
+  if (field === undefined) return undefined;
+  if (typeof field !== "string") throw new Error(`${path}.${key} must be a string`);
+  return field;
+}
+
+function optionalStringRecord(
+  value: globalThis.Record<string, JsonValue>,
+  key: string,
+  path: string,
+): Readonly<globalThis.Record<string, string>> | undefined {
+  const field = value[key];
+  if (field === undefined) return undefined;
+  const record = jsonRecord(field, `${path}.${key}`);
+  const strings: globalThis.Record<string, string> = {};
+  for (const [entryKey, entryValue] of Object.entries(record)) {
+    if (typeof entryValue !== "string") throw new Error(`${path}.${key}.${entryKey} must be a string`);
+    strings[entryKey] = entryValue;
+  }
+  return strings;
+}
+
+function decodeDockerBuildDecl(value: unknown, path: string): DockerBuildDecl {
+  const record = jsonRecord(value, path);
+  assertOnlyKeys(record, ["context", "dockerfile", "args", "target"], path);
+  const dockerfile = optionalString(record, "dockerfile", path);
+  const args = optionalStringRecord(record, "args", path);
+  const target = optionalString(record, "target", path);
+  return {
+    context: requiredString(record, "context", path),
+    ...(dockerfile !== undefined ? { dockerfile } : {}),
+    ...(args !== undefined ? { args } : {}),
+    ...(target !== undefined ? { target } : {}),
+  };
+}
+
+function decodeDockerComposeDecl(value: unknown, path: string): DockerComposeDecl {
+  const record = jsonRecord(value, path);
+  assertOnlyKeys(record, ["file", "mainService", "env", "projectName"], path);
+  const env = optionalStringRecord(record, "env", path);
+  const projectName = optionalString(record, "projectName", path);
+  return {
+    file: requiredString(record, "file", path),
+    mainService: requiredString(record, "mainService", path),
+    ...(env !== undefined ? { env } : {}),
+    ...(projectName !== undefined ? { projectName } : {}),
+  };
+}
+
+function decodeDockerEnvironmentCase(value: unknown): DockerEnvironmentCase {
+  const record = jsonRecord(value, "docker environment case");
+  assertOnlyKeys(record, ["image", "build", "compose"], "docker environment case");
+  if (record.compose !== undefined) {
+    return { compose: decodeDockerComposeDecl(record.compose, "docker environment case.compose") };
+  }
+  if (record.build !== undefined) {
+    return { build: decodeDockerBuildDecl(record.build, "docker environment case.build") };
+  }
+  return { image: requiredString(record, "image", "docker environment case") };
+}
+
+function decodeE2BEnvironmentCase(value: unknown): E2BEnvironmentCase {
+  const record = jsonRecord(value, "e2b environment case");
+  assertOnlyKeys(record, ["template", "build"], "e2b environment case");
+  if (record.build !== undefined) {
+    const build = jsonRecord(record.build, "e2b environment case.build");
+    assertOnlyKeys(build, ["context", "dockerfile"], "e2b environment case.build");
+    const dockerfile = optionalString(build, "dockerfile", "e2b environment case.build");
+    return {
+      build: {
+        context: requiredString(build, "context", "e2b environment case.build"),
+        ...(dockerfile !== undefined ? { dockerfile } : {}),
+      },
+    };
+  }
+  return { template: requiredString(record, "template", "e2b environment case") };
+}
+
+function decodeVercelEnvironmentCase(value: unknown): VercelEnvironmentCase {
+  const record = jsonRecord(value, "vercel environment case");
+  assertOnlyKeys(record, ["snapshotId"], "vercel environment case");
+  return { snapshotId: requiredString(record, "snapshotId", "vercel environment case") };
+}
+
+function jsonDockerBuildDecl(value: DockerBuildDecl): JsonValue {
+  return {
+    context: value.context,
+    ...(value.dockerfile !== undefined ? { dockerfile: value.dockerfile } : {}),
+    ...(value.args !== undefined ? { args: { ...value.args } } : {}),
+    ...(value.target !== undefined ? { target: value.target } : {}),
+  };
+}
+
+function jsonDockerComposeDecl(value: DockerComposeDecl): JsonValue {
+  return {
+    file: value.file,
+    mainService: value.mainService,
+    ...(value.env !== undefined ? { env: { ...value.env } } : {}),
+    ...(value.projectName !== undefined ? { projectName: value.projectName } : {}),
+  };
 }
 
 function baseProductOf(spec: SandboxSpec): { product: JsonValue } | undefined {
@@ -638,11 +770,6 @@ export async function materializePlannedCase(
 ): Promise<MaterializedSandboxCase> {
   const decl = plan.declaration;
 
-  if (decl.form === "custom") {
-    const result = await decl.value.materialize(opts.ctx);
-    return finalizeCustomMaterialization(plan, result);
-  }
-
   if (decl.form === "source") {
     return decl.materializer.materialize(decl.value, opts.ctx);
   }
@@ -676,47 +803,6 @@ export async function materializePlannedCase(
   }
 
   return wrapPrimaryOnly(plan, opts.primarySandbox);
-}
-
-function finalizeCustomMaterialization(
-  plan: PlannedSandboxCase,
-  result: CustomMaterializeResult,
-): MaterializedSandboxCase {
-  if (result.sandbox === undefined || result.sandbox === null) {
-    throw new Error("custom sandbox case materialize() must return exactly one primary sandbox");
-  }
-  const custom = plan.declaration.form === "custom" ? plan.declaration.value : undefined;
-  const resources =
-    result.resources ??
-    custom?.groupKeep?.resources ??
-    { kind: "primary-only", sandboxId: result.sandbox.sandboxId };
-  const group: SandboxResourceGroup = {
-    primary: { sandboxId: result.sandbox.sandboxId },
-    resources,
-    stop: result.stop,
-    ...(custom?.groupKeep !== undefined
-      ? {
-          entry: {
-            provider: "custom",
-            profile: plan.profile,
-            primary: { sandboxId: result.sandbox.sandboxId },
-            resources: custom.groupKeep.resources,
-            state: "alive" as const,
-          },
-        }
-      : {}),
-  };
-  return {
-    sandbox: result.sandbox,
-    ...(result.services !== undefined ? { services: result.services } : {}),
-    group,
-    caseKind: "custom",
-    caseKey: plan.caseKey,
-    buildKeys: plan.buildKeys,
-    identity: plan.identity,
-    carryEligible: plan.carryEligible,
-    facts: result.facts ?? { sandboxId: result.sandbox.sandboxId },
-  };
 }
 
 function wrapPrimaryOnly(plan: PlannedSandboxCase, sandbox: Sandbox): MaterializedSandboxCase {

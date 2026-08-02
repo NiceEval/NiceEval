@@ -33,10 +33,14 @@ import {
   promptAcceptSelections,
   type AcceptChoice,
 } from "./runner/accept-prompt.ts";
-import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun, splitByScoring } from "./runner/eval-selection.ts";
+import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { formatSandboxLayerLinkError, SandboxLayerLinkError } from "./sandbox/link.ts";
+import {
+  formatSandboxPhysicalPlanningError,
+  SandboxPhysicalPlanningError,
+} from "./sandbox/plan.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
 import { drainHeldCaseLocks, isCaseLockStale, readCaseLock } from "./runner/lock.ts";
 import { drainHeldGateLeases } from "./runner/gate-lease.ts";
@@ -130,7 +134,7 @@ interface Flags {
   help: boolean;
   version: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
-  source: boolean;
+  source?: true | string;
   execution: boolean;
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
@@ -206,7 +210,7 @@ const FLAG_OPTIONS = {
   // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/tutorials/viewing-results.mdx)。
   // 证据切面只认 `@<locator>`(或收窄到单个 eval 的前缀)选出的那一个 attempt——不再有
   // 数字 `--attempt`,选哪个 attempt 由 locator 精确指名,不是「先选 eval 再挑第几次」。
-  /** `show` 命令专用:该 attempt 运行时保存的 Eval 源码,gate/soft 断言标回源码行(证据切面)。 */
+  /** `show` 命令专用:该 attempt 运行时保存的 Eval 源码调用树。裸写为有界默认投影；`--source=full` 展开全部调用路径；`--source=<path>` 按捕获路径后缀唯一匹配并显示该文件全文。 */
   source: { type: "boolean" },
   /** `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 */
   execution: { type: "boolean" },
@@ -292,6 +296,8 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
   // --timing[=summary|full] 预扫:node:util 的单个 option 不支持 boolean|string 联合，
   // 所以 mode 在严格 parseArgs 前提取，再把两种形式统一成布尔 --timing。
   let timingMode: "summary" | "full" | undefined;
+  // --source[=full|<path>] 预扫:本体是布尔，值只接受 = 连写，避免吞掉 eval 前缀位置参数。
+  let sourceValue: string | undefined;
   let rerunMode: "failed" | "all" | undefined;
   // 不带值的 `--accept`(TTY 逐原因标记);selector 由交互选出,不来自命令行。
   let acceptInteractive = false;
@@ -320,6 +326,15 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     argv = normalized;
   }
   argv = argv.map((arg) => {
+    if (arg.startsWith("--source=")) {
+      const value = arg.slice("--source=".length);
+      if (value.length === 0) {
+        process.stderr.write("--source=<path> requires a non-empty captured source path, or use bare --source.\n");
+        process.exit(1);
+      }
+      sourceValue = value;
+      return "--source";
+    }
     if (arg.startsWith("--diff=")) {
       const path = arg.slice("--diff=".length);
       if (path) diffPath = path;
@@ -411,7 +426,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
     version: values.version === true,
-    source: values.source === true,
+    source: values.source === true ? (sourceValue ?? true) : undefined,
     execution: values.execution === true,
     diff: values.diff === true && diffPath === undefined,
     diffPath,
@@ -1036,19 +1051,6 @@ async function main(): Promise<void> {
         evals,
       });
       for (const e of selectorEvals) experimentScopeIds.add(e.id);
-      // 同一 experiment 可以混合题型；这里分桶只服务 `--strict` 的适用性判断。
-      // 报告层按 scoring 分列通过率与总分，绝不把两种无共同单位的读数相加。
-      const scoringSplit = splitByScoring(selectedEvals);
-      // --strict 的全部作用是「把带线 soft 翻成 gate」,而计分制的判定面只认前置中止:
-      // 这个 flag 对计分制实验一件事都做不了,静默接受一个什么都不做的 flag 会让人以为
-      // 判定收紧了(见 docs/feature/experiments/score-points.md「计分制没有 --strict」)。
-      if (flags.strict && scoringSplit.points.length > 0 && scoringSplit.pass.length === 0) {
-        process.stderr.write(t("cli.experiment.strictOnPoints", {
-          experimentId: exp.id,
-          count: scoringSplit.points.length,
-        }));
-        process.exit(1);
-      }
       agentRuns.push({
         agent: exp.agent,
         model: exp.model,
@@ -1529,6 +1531,8 @@ main().catch(async (e) => {
   process.stderr.write(
     e instanceof SandboxLayerLinkError
       ? `${formatSandboxLayerLinkError(e)}\n`
+      : e instanceof SandboxPhysicalPlanningError
+        ? `${formatSandboxPhysicalPlanningError(e)}\n`
       : t("cli.error", { error: formatThrown(e) }),
   );
   // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表、用例锁与

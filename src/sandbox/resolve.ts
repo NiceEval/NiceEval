@@ -28,23 +28,19 @@ import {
   type SandboxProvisionErrorKind,
 } from "./errors.ts";
 import {
-  allSkippedStartupError,
   materializePlannedCase,
-  missingProfilesError,
   planSandboxCase,
+  sandboxCasePlanningError,
   validateSpecEnvironmentCases,
   type MaterializedSandboxCase,
   type SandboxSource,
 } from "./case.ts";
 import type { BuildKey } from "./identity.ts";
 import {
-  assertCustomCapabilitiesHonored,
   assertKeepAllowedForCase,
-  hasGroupKeep,
   prebuiltProductSlotsOf,
   specWithPrebuiltProduct,
 } from "./single-case.ts";
-import { registerCustomGroupKeep } from "./custom-group-keep.ts";
 import {
   customSandboxBackend,
   sandboxCapabilities,
@@ -54,11 +50,8 @@ import {
 export {
   planSandboxCase,
   materializePlannedCase,
-  collectMissingProfiles,
-  collectCapabilityGaps,
-  allSelectedCapabilitySkipped,
-  missingProfilesError,
-  allSkippedStartupError,
+  collectSandboxCasePlanningGaps,
+  sandboxCasePlanningError,
   validateSpecEnvironmentCases,
 } from "./case.ts";
 export type { CasePlanResult, PlannedSandboxCase, PlanSandboxCaseInput } from "./case.ts";
@@ -70,25 +63,25 @@ export {
   assertPureDataIdentity,
   caseCarryEligible,
 } from "./identity.ts";
-export type { BuildKey, CaseKey, BuildKeyInput, CaseKeyInput, ImageRefResolution, CredentialRef } from "./identity.ts";
+export type {
+  BuildKey,
+  CaseKey,
+  BuildKeyInput,
+  CaseKeyInput,
+  ImageRefResolution,
+  CredentialRef,
+  SandboxCaseIdentityResolution,
+  SandboxCaseFloatingImages,
+  SandboxCaseCarryInput,
+} from "./identity.ts";
 export {
   prebuiltProductSlotsOf,
   specWithPrebuiltProduct,
   assertKeepAllowedForCase,
-  assertCustomCapabilitiesHonored,
-  hasGroupKeep,
-  caseCapabilitiesOf,
   isSingleSandboxCaseKind,
   SINGLE_SANDBOX_CASE_KINDS,
 } from "./single-case.ts";
 export type { PrebuiltProductSlots, SingleSandboxCaseKind } from "./single-case.ts";
-export {
-  registerCustomGroupKeep,
-  lookupCustomGroupKeep,
-  destroyCustomGroupKeep,
-  wakeCustomGroupKeep,
-  clearCustomGroupKeepRegistry,
-} from "./custom-group-keep.ts";
 
 /** 归一化后的沙箱描述:确定的 provider + 各 provider 参数(只有对应 provider 用得上的会有值)。 */
 export interface ResolvedSandbox {
@@ -315,8 +308,8 @@ export interface CreateMaterializedCaseOpts {
   readonly provisionSlot?: ProvisionSlot;
   readonly feedback?: ScopedFeedback;
   readonly signal?: AbortSignal;
-  readonly buildLocators?: ReadonlyMap<BuildKey, string>;
-  /** 为 true 时在创建前跑 keep 守卫(自定义缺 group-keep / local 等会硬失败)。 */
+  readonly buildLocators?: ReadonlyMap<BuildKey, JsonValue>;
+  /** 为 true 时在创建前跑 keep 守卫(callback 自定义 case / local 等会硬失败)。 */
   readonly keepRequested?: boolean;
 }
 
@@ -336,15 +329,8 @@ export async function createMaterializedCase(
     spec: opts.sandbox,
   });
 
-  if (planned.status === "missing-profile") {
-    throw missingProfilesError(String(opts.sandbox.provider), [
-      { evalId: planned.evalId, profile: planned.profile },
-    ]);
-  }
-  if (planned.status === "capability-missing") {
-    throw allSkippedStartupError(String(opts.sandbox.provider), [
-      { evalId: planned.evalId, skipReason: planned.skipReason },
-    ]);
+  if (planned.status === "unavailable") {
+    throw sandboxCasePlanningError(String(opts.sandbox.provider), [planned.gap]);
   }
 
   const plan = planned.plan;
@@ -360,14 +346,6 @@ export async function createMaterializedCase(
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     ...(opts.buildLocators !== undefined ? { buildLocators: opts.buildLocators } : {}),
   };
-
-  if (plan.declaration.form === "custom") {
-    const materialized = await materializePlannedCase(plan, { ctx });
-    assertCustomCapabilitiesHonored(plan, materialized);
-    attachCaseLifecycle(materialized);
-    registerGroupKeepIfPresent(plan, materialized, String(opts.sandbox.provider));
-    return materialized;
-  }
 
   if (plan.caseKind === "compose") {
     const materialized = await materializePlannedCase(plan, {
@@ -434,16 +412,29 @@ export async function createMaterializedCase(
 }
 
 function firstBuildLocator(
-  locators: ReadonlyMap<BuildKey, string> | undefined,
+  locators: ReadonlyMap<BuildKey, JsonValue> | undefined,
   provider: string,
 ): readonly [BuildKey, string] | undefined {
   if (locators === undefined || locators.size === 0) return undefined;
   for (const entry of locators) {
     const locator = entry[1];
-    if (provider === "docker" && locator.startsWith("niceeval-build:")) return entry;
-    if (provider === "e2b" && locator.startsWith("niceeval-build-")) return entry;
+    if (typeof locator !== "string") {
+      throw new TypeError(
+        `on-demand-build locator for ${JSON.stringify(entry[0])} must be a string for provider ${JSON.stringify(provider)}`,
+      );
+    }
+    if (provider === "docker" && locator.startsWith("niceeval-build:")) return [entry[0], locator];
+    if (provider === "e2b" && locator.startsWith("niceeval-build-")) return [entry[0], locator];
   }
-  return locators.entries().next().value;
+  const first = locators.entries().next().value;
+  if (first === undefined) return undefined;
+  const [buildKey, locator] = first;
+  if (typeof locator !== "string") {
+    throw new TypeError(
+      `on-demand-build locator for ${JSON.stringify(buildKey)} must be a string for provider ${JSON.stringify(provider)}`,
+    );
+  }
+  return [buildKey, locator];
 }
 
 function onDemandCreateSpec(spec: SandboxOption, evalId: string, locator: string): SandboxOption {
@@ -465,26 +456,6 @@ function attachCaseLifecycle(materialized: MaterializedSandboxCase): void {
       unregisterSandbox(sandbox);
     }
   };
-}
-
-function registerGroupKeepIfPresent(
-  plan: import("./case.ts").PlannedSandboxCase,
-  materialized: MaterializedSandboxCase,
-  provider: string,
-): void {
-  if (plan.declaration.form !== "custom") return;
-  const custom = plan.declaration.value;
-  if (!hasGroupKeep(custom) || custom.groupKeep === undefined) return;
-  registerCustomGroupKeep({
-    provider,
-    profile: plan.profile,
-    primarySandboxId: materialized.sandbox.sandboxId,
-    handlers: {
-      resources: custom.groupKeep.resources,
-      wake: custom.groupKeep.wake,
-      destroy: custom.groupKeep.destroy,
-    },
-  });
 }
 
 function withCaseFacts(materialized: MaterializedSandboxCase, extra: JsonValue): MaterializedSandboxCase {

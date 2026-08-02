@@ -15,6 +15,7 @@ import {
   planLinkedRuns,
   providerPlanRecordIdentity,
   type LinkedRunPlan,
+  type SandboxPhysicalCapabilityRequirement,
   type SandboxPlanningServices,
   type SandboxPhysicalPlanningError,
 } from "../sandbox/plan.ts";
@@ -67,6 +68,26 @@ export type SandboxRunPlanningError =
   | SandboxPhysicalPlanningError
   | SandboxRunPlanningInvariantError
   | SandboxRunPairDuplicateError;
+
+export interface SandboxRunPlanningOptions {
+  readonly keepSandbox?: "failed" | "all";
+  readonly configTimeoutMs?: number;
+}
+
+function physicalCapabilityRequirements(
+  run: AgentRun,
+  evalDef: DiscoveredEval,
+  options: SandboxRunPlanningOptions,
+): readonly SandboxPhysicalCapabilityRequirement[] {
+  const requirements: SandboxPhysicalCapabilityRequirement[] = [];
+  if (run.sandboxReuse === true) requirements.push(Object.freeze({ _tag: "Reuse" }));
+  if (options.keepSandbox !== undefined) requirements.push(Object.freeze({ _tag: "Retention" }));
+  const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? options.configTimeoutMs;
+  if (timeoutMs !== undefined) {
+    requirements.push(Object.freeze({ _tag: "SessionDuration", milliseconds: timeoutMs }));
+  }
+  return Object.freeze(requirements);
+}
 
 /** Injective tuple encoding keeps `(a|b,c)` distinct from `(a,b|c)` without forbidding characters in either id. */
 export function runPairKey(experimentId: string, evalId: string): string {
@@ -210,12 +231,14 @@ export function prepareRunSandboxes(
   evals: readonly DiscoveredEval[],
   runs: readonly AgentRun[],
   services: SandboxPlanningServices = liveSandboxPlanningServices(),
+  options: SandboxRunPlanningOptions = {},
 ): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
   return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
     Effect.flatMap(
-      planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs }) => ({
+      planLinkedRuns(linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
         pair,
         authorBaseDirs,
+        requirements: physicalCapabilityRequirements(run, evalDef, options),
       })), services),
       (planned) => {
         const linkedByPair = new Map(linkedPairs.map((linked) => [linkedOwnerKey(linked.pair), linked]));

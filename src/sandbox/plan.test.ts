@@ -19,6 +19,7 @@ import {
 } from "./layer.ts";
 import { linkSandboxLayers, type LinkedSandboxLayerPair } from "./link.ts";
 import {
+  formatSandboxPhysicalPlanningError,
   linkedRunFingerprintIdentity,
   linkedRunCarryEligible,
   linkedRunRecordIdentity,
@@ -52,6 +53,16 @@ const fixtureModule: SandboxProviderModule<{ readonly manifest: string }> = Obje
   }),
   materialize: () => Effect.dieMessage("fixture module must not materialize"),
   collectBuildPreparation: () => Effect.succeed(Option.none()),
+});
+
+const boundedModule: SandboxProviderModule<{ readonly manifest: string }> = Object.freeze({
+  ...fixtureModule,
+  id: "acme/bounded-pod",
+  capabilities: Object.freeze({
+    retention: Object.freeze({ _tag: "Suspendable" }),
+    reuse: Object.freeze({ _tag: "Supported" }),
+    sessionLimit: Object.freeze({ _tag: "Bounded", milliseconds: 60_000 }),
+  }),
 });
 
 const factories = createBuiltinSandboxFactories({
@@ -94,6 +105,7 @@ function planned(pair: LinkedSandboxLayerPair): LinkedRunPlan {
   const [output] = Effect.runSync(planLinkedRuns([{
     pair,
     authorBaseDirs: { eval: "/repo/evals/task", experiment: "/repo/experiments" },
+    requirements: [],
   }]));
   if (output === undefined) throw new Error("missing plan fixture");
   return output.plan;
@@ -143,6 +155,7 @@ describe("provider-neutral Sandbox planning", () => {
     const outputs = await Effect.runPromise(planLinkedRuns(pairs.map((pair) => ({
       pair,
       authorBaseDirs: { eval: root, experiment: root },
+      requirements: [],
     }))));
     const plans = outputs.map(({ plan }) => {
       if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
@@ -222,6 +235,7 @@ describe("provider-neutral Sandbox planning", () => {
     Effect.runSync(planLinkedRuns([{
       pair: directPair,
       authorBaseDirs: { eval: "/repo/evals/task", experiment: "/repo/experiments" },
+      requirements: [],
     }]));
     expect(calls).toBe(0);
 
@@ -258,8 +272,8 @@ describe("provider-neutral Sandbox planning", () => {
     const first = linked(failing("acme-a"));
     const second = linked(undefined, failing("acme-b"));
     const failure = Effect.runSync(Effect.flip(planLinkedRuns([
-      { pair: first, authorBaseDirs: { eval: "/repo/a", experiment: "/repo/exp" } },
-      { pair: second, authorBaseDirs: { eval: "/repo/b", experiment: "/repo/exp" } },
+      { pair: first, authorBaseDirs: { eval: "/repo/a", experiment: "/repo/exp" }, requirements: [] },
+      { pair: second, authorBaseDirs: { eval: "/repo/b", experiment: "/repo/exp" }, requirements: [] },
     ])));
 
     expect(failure).toBeInstanceOf(SandboxPhysicalPlanningError);
@@ -269,6 +283,96 @@ describe("provider-neutral Sandbox planning", () => {
     ]);
     expect(plannedCount).toBe(2);
     expect(createCount).toBe(0);
+    expect(formatSandboxPhysicalPlanningError(failure)).toContain("acme-a.locator-missing");
+    expect(formatSandboxPhysicalPlanningError(failure)).toContain("experiment/codex × eval/task (codex)");
+    expect(formatSandboxPhysicalPlanningError(failure)).toContain("No provider build or Sandbox creation was started");
+  });
+
+  it("任一已声明 capability 不可用时与 ready pair 一起走整个 Run 的零资源聚合失败", () => {
+    let plannedCount = 0;
+    const template = defineSandboxTemplate({
+      provider: "acme",
+      kind: "pod",
+      publishableIdentity: {},
+      privateFingerprintIdentity: {},
+      leakGate: { _tag: "None" },
+      plan: () => {
+        plannedCount += 1;
+        return Effect.succeed(sandboxProviderPlan({
+          provider: "acme",
+          plannerRevision: "1",
+          caseKind: "custom",
+          target: { platform: linux, source: "provider-defined" },
+          scheduling: {
+            recommendedConcurrency: 1,
+            lane: { key: "acme", limit: 1 },
+            admission: { _tag: "Shared" },
+          },
+          module: fixtureModule,
+          build: { _tag: "None", caseKey: "case", buildKeys: [] },
+          runtimePlan: Object.freeze({ manifest: "sha256:abc" }),
+          publishableIdentity: {},
+          privateFingerprintIdentity: {},
+        }));
+      },
+    });
+    const first = linked(template);
+    const second = linked(undefined, template);
+    const failure = Effect.runSync(Effect.flip(planLinkedRuns([
+      {
+        pair: first,
+        authorBaseDirs: { eval: "/repo/a", experiment: "/repo/exp" },
+        requirements: [{ _tag: "Reuse" }, { _tag: "Retention" }],
+      },
+      {
+        pair: second,
+        authorBaseDirs: { eval: "/repo/b", experiment: "/repo/exp" },
+        requirements: [],
+      },
+    ])));
+
+    expect(plannedCount).toBe(2);
+    expect(failure.issues.map(({ code, providerCode }) => ({ code, providerCode }))).toEqual([
+      { code: "sandbox.capability-unavailable", providerCode: "sandbox.reuse-unavailable" },
+      { code: "sandbox.capability-unavailable", providerCode: "sandbox.retention-unavailable" },
+    ]);
+    expect(failure.message).toContain("No provider build or Sandbox creation was started");
+  });
+
+  it("已解析 Attempt timeout 超过 provider session limit 时在资源创建前拒绝", () => {
+    const template = defineSandboxTemplate({
+      provider: "acme",
+      kind: "bounded-pod",
+      publishableIdentity: {},
+      privateFingerprintIdentity: {},
+      leakGate: { _tag: "None" },
+      plan: () => Effect.succeed(sandboxProviderPlan({
+        provider: "acme",
+        plannerRevision: "1",
+        caseKind: "custom",
+        target: { platform: linux, source: "provider-defined" },
+        scheduling: {
+          recommendedConcurrency: 1,
+          lane: { key: "acme", limit: 1 },
+          admission: { _tag: "Shared" },
+        },
+        module: boundedModule,
+        build: { _tag: "None", caseKey: "case", buildKeys: [] },
+        runtimePlan: Object.freeze({ manifest: "sha256:abc" }),
+        publishableIdentity: {},
+        privateFingerprintIdentity: {},
+      })),
+    });
+    const failure = Effect.runSync(Effect.flip(planLinkedRuns([{
+      pair: linked(template),
+      authorBaseDirs: { eval: "/repo/a", experiment: "/repo/exp" },
+      requirements: [{ _tag: "SessionDuration", milliseconds: 120_000 }],
+    }])));
+
+    expect(failure.issues).toMatchObject([{
+      code: "sandbox.capability-unavailable",
+      providerCode: "sandbox.session-limit-exceeded",
+    }]);
   });
 
   it("record 与 fingerprint projection 只含可发布 JSON，不含 callback/runtime locator", () => {
@@ -321,6 +425,7 @@ describe("provider-neutral Sandbox planning", () => {
       const [output] = await Effect.runPromise(planLinkedRuns([{
         pair,
         authorBaseDirs: { eval: authorBaseDir, experiment: "/repo/experiments" },
+        requirements: [],
       }]));
       if (output === undefined) throw new Error("missing secure plan fixture");
       return output.plan;

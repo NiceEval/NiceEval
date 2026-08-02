@@ -489,7 +489,10 @@ export function planCarry(
   options: CarryPlanOptions = {},
 ): Effect.Effect<CarryPlan, SandboxRunPlanningError> {
   return Effect.flatMap(
-    prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices()),
+    prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices(), {
+      ...(options.keepSandbox === undefined ? {} : { keepSandbox: options.keepSandbox }),
+      ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
+    }),
     (preparedPairs) => Effect.promise(() => planCarryPrepared(
       preparedPairs,
       priorResults,

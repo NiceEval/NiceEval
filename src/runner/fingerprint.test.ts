@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
+import { SandboxPhysicalPlanningError } from "../sandbox/plan.ts";
 import { STATELESS } from "../state/plan.ts";
 import {
   computeConfigHash,
@@ -251,6 +252,43 @@ describe("按需构建进入指纹", () => {
       expect(current).not.toBe(previous);
       previous = current;
     }
+  });
+});
+
+describe("planCarry · physical capability barrier", () => {
+  it("keep / reuse 要求经 planCarry 接线到全 Run 规划，不进入携带与构建", async () => {
+    const evalDef = makeEval("local", { sandbox: sandboxFactories.localSandbox() });
+    const run: AgentRun = {
+      ...makeRun("exp-local", ["local"], 1),
+      sandboxReuse: true,
+      agent: defineSandboxAgent({
+        name: "sandbox",
+        evidenceCoverage: completeEvidenceCoverage,
+        ensure: {
+          identity: { agent: "sandbox", version: "0.0.0-test", revision: "1" },
+          probe: defineSandboxCommand(
+            { id: "test.sandbox.probe", revision: "1", inputs: {} },
+            async () => {},
+          ),
+        },
+        installers: [],
+        send: async () => ({ events: [], status: "completed" }),
+      }),
+    };
+
+    const failure = await Effect.runPromise(Effect.flip(planCarryEffect(
+      [evalDef],
+      [run],
+      [],
+      undefined,
+      { keepSandbox: "all" },
+    )));
+    expect(failure).toBeInstanceOf(SandboxPhysicalPlanningError);
+    if (!(failure instanceof SandboxPhysicalPlanningError)) throw new Error("expected physical planning failure");
+    expect(failure.issues.map(({ providerCode }) => providerCode)).toEqual([
+      "sandbox.reuse-unavailable",
+      "sandbox.retention-unavailable",
+    ]);
   });
 });
 

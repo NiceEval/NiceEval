@@ -40,6 +40,7 @@ async function composePlan(): Promise<Extract<LinkedRunPlan, { readonly _tag: "S
   const [planned] = await Effect.runPromise(planLinkedRuns([{
     pair,
     authorBaseDirs: { eval: directory, experiment: "/repo/experiments" },
+    requirements: [],
   }]));
   if (planned?.plan._tag !== "Sandbox") throw new Error("missing plan");
   return planned.plan;
@@ -112,7 +113,7 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
     );
 
     const acquireAndReturn = () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      const lease = yield* pool.acquire(60_000);
+      const lease = yield* pool.acquire(60_000, new Map());
       yield* lease.commit({ _tag: "Reset" });
       return lease;
     })));
@@ -139,7 +140,7 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       { _tag: "Test", materializeCompose },
     );
     const attemptScope = Effect.runSync(Scope.make());
-    await Effect.runPromise(Scope.extend(pool.acquire(60_000), attemptScope));
+    await Effect.runPromise(Scope.extend(pool.acquire(60_000, new Map()), attemptScope));
 
     let stopSettled = false;
     const stopping = Effect.runPromise(pool.stop()).finally(() => { stopSettled = true; });
@@ -165,7 +166,7 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       { _tag: "Test", materializeCompose },
     );
     const attemptScope = Effect.runSync(Scope.make());
-    const acquiring = Effect.runPromise(Scope.extend(pool.acquire(60_000), attemptScope));
+    const acquiring = Effect.runPromise(Scope.extend(pool.acquire(60_000, new Map()), attemptScope));
     await vi.waitFor(() => expect(materializeCompose).toHaveBeenCalledTimes(1));
 
     let stopSettled = false;
