@@ -9,6 +9,7 @@ import {
   registeredSandboxContentSnapshotOf,
   type RegisteredSandboxContent,
 } from "./content.ts";
+import { redactSensitiveText } from "./redaction.ts";
 
 // Provider file APIs often impose a much shorter per-request deadline than the
 // Attempt budget. Keep each write comfortably below that boundary, then replace
@@ -87,19 +88,36 @@ export class SandboxCommandExitError extends Error {
   readonly code = "command-exit";
   readonly result: CommandResult;
 
-  constructor(result: CommandResult) {
-    super(
-      result.command
-        ? `sandbox command exited with code ${result.exitCode}: ${result.command}`
-        : `sandbox command exited with code ${result.exitCode}`,
-    );
+  constructor(result: CommandResult, sensitiveValues: readonly string[] = []) {
+    const command = redactSensitiveText(result.command
+      ? `sandbox command exited with code ${result.exitCode}: ${result.command}`
+      : `sandbox command exited with code ${result.exitCode}`, sensitiveValues);
+    const output = result.stderr.length > 0 ? result.stderr : result.stdout;
+    const outputLabel = result.stderr.length > 0 ? "stderr" : "stdout";
+    const tail = boundedCommandOutputTail(redactSensitiveText(output, sensitiveValues));
+    super(tail.length > 0 ? `${command}; ${outputLabel} tail: ${tail}` : command);
     this.name = "SandboxCommandExitError";
     this.result = result;
   }
 }
 
-export function successfulCommandResult(result: CommandResult): SuccessfulCommandResult {
-  if (result.exitCode !== 0) throw new SandboxCommandExitError(result);
+const COMMAND_ERROR_TAIL_MAX_CHARS = 240;
+
+function boundedCommandOutputTail(text: string): string {
+  const cleaned = text
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length <= COMMAND_ERROR_TAIL_MAX_CHARS) return cleaned;
+  return `…${cleaned.slice(-(COMMAND_ERROR_TAIL_MAX_CHARS - 1))}`;
+}
+
+export function successfulCommandResult(
+  result: CommandResult,
+  sensitiveValues: readonly string[] = [],
+): SuccessfulCommandResult {
+  if (result.exitCode !== 0) throw new SandboxCommandExitError(result, sensitiveValues);
   return result as SuccessfulCommandResult;
 }
 

@@ -250,11 +250,11 @@ export class LocalSandbox implements SandboxProviderBackend {
     args: readonly string[] = [],
     opts: CommandOptions = {},
   ): Promise<SuccessfulCommandResult> {
-    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+    return successfulCommandResult(await this.runCommand(cmd, args, opts), opts.sensitiveValues);
   }
 
   async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
-    return successfulCommandResult(await this.runShell(script, opts));
+    return successfulCommandResult(await this.runShell(script, opts), opts.sensitiveValues);
   }
 
   async readText(path: string): Promise<string> {

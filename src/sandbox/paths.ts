@@ -52,14 +52,20 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       runProviderBoundary(() => sandbox.runCommand(cmd, args, resolveCommandOptions(sandbox.workdir, opts))),
     runShell: (script, opts) =>
       runProviderBoundary(() => sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts))),
-    runCommandOrThrow: (cmd, args, opts) =>
-      runProviderBoundary(async () => successfulCommandResult(
-        await sandbox.runCommand(cmd, args, resolveCommandOptions(sandbox.workdir, opts)),
-      )),
-    runShellOrThrow: (script, opts) =>
-      runProviderBoundary(async () =>
-        successfulCommandResult(await sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts))),
-      ),
+    runCommandOrThrow: (cmd, args, opts) => {
+      const resolved = resolveCommandOptions(sandbox.workdir, opts);
+      return runProviderBoundary(async () => successfulCommandResult(
+        await sandbox.runCommand(cmd, args, resolved),
+        resolved?.sensitiveValues,
+      ));
+    },
+    runShellOrThrow: (script, opts) => {
+      const resolved = resolveCommandOptions(sandbox.workdir, opts);
+      return runProviderBoundary(async () => successfulCommandResult(
+        await sandbox.runShell(script, resolved),
+        resolved?.sensitiveValues,
+      ));
+    },
     readText: (path) => runProviderBoundary(() =>
       withSandboxIoRetry(() => sandbox.readText(resolveSandboxPath(sandbox.workdir, path))),
     ),

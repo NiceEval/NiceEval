@@ -70,7 +70,17 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - Direct Agent 搭配 SandboxLayer 报 link 错误;command 的窄上下文没有 `stop()` 也没有 Provider-native SDK。
 - **路径规则**：沙箱侧相对/绝对/省略三态解析、`../` 规范化与逃逸拒绝、无 shell 变量展开、本地侧按 eval 定义文件目录解析——适合表驱动，每个 case 指向一条允许或拒绝语义。`Sandbox` wrapper 只转发正式接口与可选 `appendLog`；留存走 `MaterializedSandboxCase.retention`，不得通过接口外 `sandbox.suspend` 动态探测。
 - **三个操作视图一套语义**：完整 `Sandbox`、`EvalSandbox` 与 `SandboxCommandTarget` 的 `runCommand` / `runShell` / 文本 / 字节方法逐个同签名同结果；差异只在宿主传输、diff、Case lifecycle 与登记内容能力是否存在。同名方法在 layer target 非零抛错、在 `t.sandbox` 返回结果的旧分叉必须被区分力场景抓住。
-- **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；`runCommand` / `runShell` 非零返回 CommandResult，`runCommandOrThrow` / `runShellOrThrow` 才抛携带完整结果的 exit error；env 叠加不清空；root 的映射与不支持时报错；`timeoutMs` / signal 合并；执行入口永不被隐式重试。
+- **命令执行**：
+  - argv 传参不经 shell；含分号或美元符的参数原样送达。参数透传必须能发现错误的 shell 拼接，不能只断言 mock 被调一次。
+  - `runCommand` / `runShell` 非零时返回 CommandResult；`runCommandOrThrow` / `runShellOrThrow` 才抛携带完整结果的 exit error。
+  - exit error 的默认 message 带控制字符清理、长度有界的 stderr 尾部，stderr 为空时回落 stdout；完整结果不截断。
+  - env 叠加不清空；覆盖 root 的映射与不支持时报错、`timeoutMs` / signal 合并，以及执行入口不隐式重试。
+- **E2B command completion framing**：
+  - 测试把生产 wrapper 交给真实 `/bin/bash` 执行，再把 bash 的真实 stdout/stderr chunk 送进生产 parser。
+  - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk，以及 Codex 形状的长命令/heredoc。
+  - wrapper 源码或带反斜线的转义诊断即使同时包含 prefix/suffix 也不得完成命令。
+  - 人工从 script 提取 prefix/suffix 后直接拼合法数字 marker 的 fake 不能充当这条契约的证明。
+  - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK/bash 边界与单元层一致。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
 - **失败命令证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `FailedCommandEvidence`，再把结果交还调用方。
   证据与同一次 timing command node 共用 id；成功命令不登记输出，provider 内部转调不重复。

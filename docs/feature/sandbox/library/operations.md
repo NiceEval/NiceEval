@@ -63,6 +63,8 @@ interface CommandOptions {
 
 作者确实要求命令成功时使用名字写明策略的 `runCommandOrThrow()` / `runShellOrThrow()`。它们仅把非零退出转成携带完整 `CommandResult` 的 command-exit error；timeout、取消、transport failure 在四个方法上都会 reject。
 
+command-exit error 的默认 message 除 exit code 外，还要带经过控制字符清理与长度收口的 stderr 尾部；stderr 为空时才回落 stdout。fixture/build 的直接死因因此无需下钻 execution 就可见。完整、未截断的 stdout/stderr 仍只保存在 error 携带的 `CommandResult` 与命令证据中。
+
 没有 `tryCommand()` / `tryShell()`：如果普通方法叫 `runCommand`，它就不应暗含“必须成功”；checked 语义只放在 `OrThrow` 后缀上。同一段 probe 因此直写：
 
 ```ts
@@ -101,6 +103,8 @@ Promise 因 timeout、取消、Attempt interruption 或 Agent runtime cancellati
 正常命令成功结束后，关闭 transport / session 不得顺带杀死命令有意启动的独立任务服务。保留哪些任务服务由 Sandbox Case 与 reuse/keep 契约决定，不由命令客户端连接寿命猜测。
 
 E2B 的 command RPC 会把直接 shell 的完成与 stdout/stderr event stream EOF 绑在一起；后台服务继承输出管道时，后者可以继续打开。E2B provider 因此以直接 shell 的退出码和前台输出作为命令完成信号，随后只断开 event transport，既不等待后台服务关闭管道，也不把它的输出重定向到 `/dev/null`。这条放行只适用于正常完成；timeout、取消和 interruption 仍按上面的命令树终止协议退休整台 VM。
+
+这个完成信号是 Provider 私有 framing，不是普通输出里的字符串搜索：wrapper 自身被 shell、SDK 或子进程按源码/转义文本回显时，不得把其中的 marker 字面量和 `$exit` 变量误认成完成帧。只有 wrapper 的直接 supervisor 在 shell 已取得子进程状态后写出的、payload 严格为十进制数字且 stdout/stderr 两路一致的帧才可结束命令；协议完整性失败时退出状态必须标为未知，不能用 SDK 默认值或解析失败文本伪造。wrapper 的生成与解析必须同时经过真实 bash 执行测试，不能由测试替 shell 人工拼出合法 marker。
 
 ## 文件：文本、字节与传输分词
 

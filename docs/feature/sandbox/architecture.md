@@ -211,7 +211,7 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 
 - `E2BSandbox.create({ template, timeout })` 起一台 [E2B](https://e2b.dev) 微 VM;`template` 由 `e2bSandbox({ template })` 声明,必填(见 [Sandbox Layer](layers.md#template-bearing-factory)),不用 e2b 账号侧的默认模板。
 - 命令经 `commands.run`(走 bash,支持 `&&` / 管道);`{ root: true }` → `{ user: "root" }`。
-- `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。timeout、取消或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
+- `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。完成帧只接受 supervisor 在取得子进程状态后写出的十进制 exit code，wrapper 源码、转义诊断或子进程回显中出现的 marker 字面量都不是完成边界。timeout、取消、协议完整性失败或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作记录。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制环境](library/prebuilt-environments.md))。
 

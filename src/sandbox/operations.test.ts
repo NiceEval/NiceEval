@@ -74,6 +74,68 @@ describe("checked command semantics", () => {
       expect((error as SandboxCommandExitError).result).toBe(result);
     }
   });
+
+  it("summarizes a bounded, redacted stderr tail without truncating the carried result", () => {
+    const secret = "synthetic-e2b-secret";
+    const stderr = `HEAD-ONLY-${"x".repeat(500)}\n${secret}\n\u001b[31mfinal stderr tail\u001b[0m\n`;
+    const result: CommandResult = {
+      stdout: "stdout is not selected when stderr is present",
+      stderr,
+      exitCode: 17,
+      command: `install-tool --token=${secret}`,
+    };
+
+    try {
+      successfulCommandResult(result, [secret]);
+      throw new Error("expected successfulCommandResult to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxCommandExitError);
+      const message = (error as SandboxCommandExitError).message;
+      expect(message).toContain("stderr tail:");
+      expect(message).toContain("final stderr tail");
+      expect(message).toContain("<redacted>");
+      expect(message).not.toContain(secret);
+      expect(message).not.toContain("\u001b");
+      expect(message).not.toContain("HEAD-ONLY-");
+      expect(result.stderr).toBe(stderr);
+      expect((error as SandboxCommandExitError).result).toBe(result);
+    }
+  });
+
+  it("stderr 为空时用完整 stdout 的尾部作为 checked error 摘要", () => {
+    const result: CommandResult = {
+      stdout: "stdout root cause\n",
+      stderr: "",
+      exitCode: 2,
+    };
+
+    expect(() => successfulCommandResult(result)).toThrow(/stdout tail: stdout root cause/);
+  });
+
+  it("将多行 stderr tail 收口到同一行并保留最后的 pack-objects/fatal 根因", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: [
+        "debconf: delaying package configuration, since apt-utils is not installed",
+        "pack-objects: unexpected disconnect while reading sideband packet",
+        "fatal: the remote end hung up unexpectedly",
+        "fatal: unable to write new object",
+      ].join("\n"),
+      exitCode: 128,
+    };
+
+    try {
+      successfulCommandResult(result);
+      throw new Error("expected successfulCommandResult to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxCommandExitError);
+      const message = (error as SandboxCommandExitError).message;
+      expect(message).not.toMatch(/[\r\n]/);
+      expect(message).toContain("pack-objects: unexpected disconnect while reading sideband packet");
+      expect(message).toContain("fatal: the remote end hung up unexpectedly");
+      expect(message).toContain("fatal: unable to write new object");
+    }
+  });
 });
 
 describe("provider-neutral facade", () => {

@@ -13,7 +13,9 @@ Adapter 常用操作包括：
 | 方法 | 用途 |
 |---|---|
 | `runCommand(cmd, args)` | 运行命令 |
+| `runCommandOrThrow(cmd, args)` | 运行命令，非零退出时抛错 |
 | `runShell(script)` | 运行 shell 脚本 |
+| `runShellOrThrow(script)` | 运行 shell 脚本，非零退出时抛错 |
 | `readText(path)` / `readBytes(path)` | 读取文本或二进制文件 |
 | `writeText(path, content)` / `writeBytes(path, content)` | 写入文本或二进制文件 |
 | `pathExists(path)` | 检查路径是否存在 |
@@ -21,6 +23,8 @@ Adapter 常用操作包括：
 | `workdir` | provider 真实工作目录；省略的 `cwd` / `targetDir` 都解析到这里 |
 | `runCommand(..., { cwd })` | 单条命令临时切换工作目录；相对路径按 `workdir` 解析 |
 | `stop()` | 销毁环境 |
+
+两个 `OrThrow` 方法抛出的错误消息会附带经过清理、脱敏和截断的 stderr 尾部；stderr 为空时回退 stdout。排障时可以先看这条摘要，需要完整输出时再读取 `SandboxCommandExitError.result`。
 
 ## 选择 Sandbox 
 

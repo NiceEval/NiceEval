@@ -41,6 +41,28 @@ interface E2BCommandOutputState {
   markerStarted: boolean;
   complete: boolean;
   exitCode?: number;
+  invalidMarkerPayload?: string;
+}
+
+/**
+ * 把 marker 编成 bash 的 printf `%b` 输入。wrapper 源码与 xtrace 诊断因此不会直接包含
+ * 可被 parser 当成一整帧的 prefix/suffix；实际字节仍由同一个 bash supervisor 生成。
+ */
+function shellByteEscapes(value: string): string {
+  return [...Buffer.from(value, "utf8")]
+    .map((byte) => `\\x${byte.toString(16).padStart(2, "0")}`)
+    .join("");
+}
+
+/** 当前内容仍可能是 `digits + suffix` 的跨 chunk 前缀。 */
+function isCompletionFramePrefix(encoded: string, suffix: string): boolean {
+  if (encoded.length === 0) return true;
+  let firstNonDigit = 0;
+  while (firstNonDigit < encoded.length && /\d/.test(encoded[firstNonDigit]!)) firstNonDigit += 1;
+  if (firstNonDigit === encoded.length) return true;
+  if (firstNonDigit === 0) return false;
+  const suffixPrefix = encoded.slice(firstNonDigit);
+  return suffixPrefix.length < suffix.length && suffix.startsWith(suffixPrefix);
 }
 
 /**
@@ -83,6 +105,8 @@ class E2BCommandCompletion {
     // 原脚本住在异步 subshell：它继续继承 E2B login shell 的变量、函数、cwd 与 shell option，
     // `exit` / `exec` / EXIT trap 只结束自己的 shell。外层只 wait 这个直接 shell，不会等它
     // 有意留下的孙进程；因此能在 `nohup ... &` 之后可靠写出两路终局 marker。
+    const encodedPrefix = shellQuote(shellByteEscapes(this.prefix));
+    const encodedSuffix = shellQuote(shellByteEscapes(this.suffix));
     this.script = [
       "(",
       script,
@@ -93,8 +117,10 @@ class E2BCommandCompletion {
       "else",
       "  __niceeval_e2b_command_exit=$?",
       "fi",
-      `printf '%s%s%s' ${shellQuote(this.prefix)} \"$__niceeval_e2b_command_exit\" ${shellQuote(this.suffix)}`,
-      `printf '%s%s%s' ${shellQuote(this.prefix)} \"$__niceeval_e2b_command_exit\" ${shellQuote(this.suffix)} >&2`,
+      `__niceeval_e2b_command_prefix=$(printf '%b' ${encodedPrefix})`,
+      `__niceeval_e2b_command_suffix=$(printf '%b' ${encodedSuffix})`,
+      `printf '%s%s%s' \"$__niceeval_e2b_command_prefix\" \"$__niceeval_e2b_command_exit\" \"$__niceeval_e2b_command_suffix\"`,
+      `printf '%s%s%s' \"$__niceeval_e2b_command_prefix\" \"$__niceeval_e2b_command_exit\" \"$__niceeval_e2b_command_suffix\" >&2`,
       "exit \"$__niceeval_e2b_command_exit\"",
     ].join("\n");
   }
@@ -121,6 +147,18 @@ class E2BCommandCompletion {
       }
     }
 
+    const invalid = (["stdout", "stderr"] as const)
+      .map((channel) => ({ channel, state: this.states[channel] }))
+      .find(({ state }) => !state.complete && state.invalidMarkerPayload !== undefined);
+    if (invalid !== undefined) {
+      throw new Error(
+        `e2b command completion marker carried an invalid exit code: ${JSON.stringify(invalid.state.invalidMarkerPayload)}`,
+      );
+    }
+
+    const mismatch = this.exitCodeMismatch();
+    if (mismatch !== undefined) throw mismatch;
+
     const partial = (["stdout", "stderr"] as const).filter((channel) => {
       const state = this.states[channel];
       return state.markerStarted && !state.complete;
@@ -140,35 +178,56 @@ class E2BCommandCompletion {
     if (state.complete) return;
     state.pending += chunk;
 
-    if (!state.markerStarted) {
-      const markerAt = state.pending.indexOf(this.prefix);
-      if (markerAt < 0) {
-        // marker 可能跨 SDK chunk；只保留足以匹配 prefix 的尾巴，其余实时透传。
-        const safeLength = Math.max(0, state.pending.length - this.prefix.length + 1);
-        if (safeLength > 0) {
-          const safe = state.pending.slice(0, safeLength);
-          state.pending = state.pending.slice(safeLength);
-          await this.emit(channel, safe);
+    while (!state.complete) {
+      if (!state.markerStarted) {
+        const markerAt = state.pending.indexOf(this.prefix);
+        if (markerAt < 0) {
+          // marker 可能跨 SDK chunk；只保留足以匹配 prefix 的尾巴，其余实时透传。
+          const safeLength = Math.max(0, state.pending.length - this.prefix.length + 1);
+          if (safeLength > 0) {
+            const safe = state.pending.slice(0, safeLength);
+            state.pending = state.pending.slice(safeLength);
+            await this.emit(channel, safe);
+          }
+          return;
         }
+        const before = state.pending.slice(0, markerAt);
+        state.pending = state.pending.slice(markerAt);
+        await this.emit(channel, before);
+        state.markerStarted = true;
+      }
+
+      const encoded = state.pending.slice(this.prefix.length);
+      const markerEnd = encoded.indexOf(this.suffix);
+      if (markerEnd >= 0) {
+        const encodedExitCode = encoded.slice(0, markerEnd);
+        if (!/^\d+$/.test(encodedExitCode) || !Number.isSafeInteger(Number(encodedExitCode))) {
+          // wrapper 源码、bash -x 和 SDK 转义诊断都可能带 marker 字面量。它们不是完成帧，
+          // 作为普通输出保留，并继续寻找后面的真实帧；只有 stream 结束仍没有真实帧时，
+          // finish() 才把这条协议错误交给调用方。
+          state.invalidMarkerPayload ??= encodedExitCode;
+          const invalid = state.pending.slice(0, this.prefix.length + markerEnd + this.suffix.length);
+          state.pending = encoded.slice(markerEnd + this.suffix.length);
+          state.markerStarted = false;
+          await this.emit(channel, invalid);
+          continue;
+        }
+        state.exitCode = Number(encodedExitCode);
+        state.complete = true;
+        // suffix 后同一个 chunk 里的字节来自后台服务；它们不属于已经 settle 的直接命令。
+        state.pending = "";
+        this.maybeComplete();
         return;
       }
-      const before = state.pending.slice(0, markerAt);
-      state.pending = state.pending.slice(markerAt + this.prefix.length);
-      state.markerStarted = true;
-      await this.emit(channel, before);
-    }
 
-    const markerEnd = state.pending.indexOf(this.suffix);
-    if (markerEnd < 0) return;
-    const encodedExitCode = state.pending.slice(0, markerEnd);
-    if (!/^\d+$/.test(encodedExitCode)) {
-      throw new Error(`e2b command completion marker carried an invalid exit code: ${JSON.stringify(encodedExitCode)}`);
+      if (isCompletionFramePrefix(encoded, this.suffix)) return;
+
+      // 当前 prefix 后的内容已经不可能组成数字帧。先把 prefix 当普通输出吐出，再从
+      // 剩余文本继续扫描；这样 source/diagnostic 中的假 prefix 不会吞掉后面的真实帧。
+      state.pending = encoded;
+      state.markerStarted = false;
+      await this.emit(channel, this.prefix);
     }
-    state.exitCode = Number(encodedExitCode);
-    state.complete = true;
-    // suffix 后同一个 chunk 里的字节来自后台服务；它们不属于已经 settle 的直接命令。
-    state.pending = "";
-    this.maybeComplete();
   }
 
   private async emit(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
@@ -181,13 +240,19 @@ class E2BCommandCompletion {
     const stdoutExit = this.states.stdout.exitCode;
     const stderrExit = this.states.stderr.exitCode;
     if (stdoutExit === undefined || stderrExit === undefined) return;
-    if (stdoutExit !== stderrExit) {
-      this.rejectCompletion(
-        new Error(`e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`),
-      );
+    const mismatch = this.exitCodeMismatch();
+    if (mismatch !== undefined) {
+      this.rejectCompletion(mismatch);
       return;
     }
     this.resolveCompletion(stdoutExit);
+  }
+
+  private exitCodeMismatch(): Error | undefined {
+    const stdoutExit = this.states.stdout.exitCode;
+    const stderrExit = this.states.stderr.exitCode;
+    if (stdoutExit === undefined || stderrExit === undefined || stdoutExit === stderrExit) return undefined;
+    return new Error(`e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`);
   }
 }
 
@@ -565,11 +630,11 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     args: readonly string[] = [],
     opts: CommandOptions = {},
   ): Promise<SuccessfulCommandResult> {
-    return successfulCommandResult(await this.runCommand(cmd, args, opts));
+    return successfulCommandResult(await this.runCommand(cmd, args, opts), opts.sensitiveValues);
   }
 
   async runShellOrThrow(script: string, opts: CommandOptions = {}): Promise<SuccessfulCommandResult> {
-    return successfulCommandResult(await this.runShell(script, opts));
+    return successfulCommandResult(await this.runShell(script, opts), opts.sensitiveValues);
   }
 
   async readText(path: string): Promise<string> {

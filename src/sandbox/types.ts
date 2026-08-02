@@ -117,11 +117,20 @@ export interface SandboxOperations {
    * 需要拼多条命令或做条件判断时用它。
    */
   runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
+  /**
+   * 像 `runCommand` 一样执行单个命令，但非零退出时抛出 `SandboxCommandExitError`。错误消息附带
+   * 有界、已清理和脱敏的 stderr 尾部；stderr 为空时回退 stdout。完整输出保留在异常的
+   * `result` 字段中。成功结果的 `exitCode` 在类型上固定为 `0`。
+   */
   runCommandOrThrow(
     cmd: string,
     args?: readonly string[],
     opts?: CommandOptions,
   ): Promise<SuccessfulCommandResult>;
+  /**
+   * 像 `runShell` 一样执行 shell 脚本，但非零退出时抛出 `SandboxCommandExitError`。错误摘要、
+   * 完整输出和成功结果的语义与 `runCommandOrThrow` 相同。
+   */
   runShellOrThrow(script: string, opts?: CommandOptions): Promise<SuccessfulCommandResult>;
   /** 读取 Sandbox 内文件的文本内容(UTF-8)。文件不存在时抛错。 */
   readText(path: string): Promise<string>;

@@ -4,11 +4,13 @@
 // ignore/剥离/写盘逻辑)。fake `sbx.commands.run` / `sbx.files.read`,不连真实 e2b API——
 // 真实 E2B 沙箱行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { E2BSandbox } from "./e2b.ts";
 import { SandboxCommandTimeoutError } from "./deadline.ts";
+import { shellQuote } from "./shell.ts";
 
 let roots: string[] = [];
 afterEach(async () => {
@@ -36,41 +38,82 @@ function makeSandbox(sbx: unknown): E2BSandbox {
 
 interface FakeE2BRunOptions {
   readonly background?: boolean;
+  readonly cwd?: string;
   readonly onStdout?: (chunk: string) => void | Promise<void>;
   readonly onStderr?: (chunk: string) => void | Promise<void>;
 }
 
-function completionMarkerParts(script: string): { prefix: string; suffix: string } {
-  const markers = [...script.matchAll(/'(__niceeval_e2b_command_[0-9a-f]+_(?:exit_|end__))'/g)]
-    .map((match) => match[1]!)
-    .filter((marker, index, all) => all.indexOf(marker) === index);
-  if (markers.length !== 2) throw new Error(`expected two e2b completion marker parts, received ${markers.length}`);
-  return { prefix: markers[0]!, suffix: markers[1]! };
+interface LocalBashOptions {
+  readonly cwd?: string;
+  readonly xtrace?: boolean;
+  readonly chunkSize?: number;
+  readonly onDisconnect?: () => void | Promise<void>;
 }
 
-async function completedCommandHandle(
+/**
+ * 只模拟 E2B 的 transport：生产 wrapper 原样交给本地 bash，bash 的真实两路输出再按小块
+ * 送回生产 parser。这里不读取、提取或拼接 completion marker。
+ */
+function localBashCommandHandle(
   script: string,
   opts: FakeE2BRunOptions,
-  result: { stdout: string; stderr: string; exitCode: number },
-): Promise<{ wait: () => Promise<never>; disconnect: () => Promise<void> }> {
+  options: LocalBashOptions = {},
+): { wait: () => Promise<{ stdout: string; stderr: string; exitCode: number }>; disconnect: () => Promise<void> } {
   expect(opts.background).toBe(true);
-  const { prefix, suffix } = completionMarkerParts(script);
-  const marker = `${prefix}${result.exitCode}${suffix}`;
-  await opts.onStdout?.(`${result.stdout}${marker}`);
-  await opts.onStderr?.(`${result.stderr}${marker}`);
+  const child = spawn("/bin/bash", options.xtrace ? ["-x", "-c", script] : ["-c", script], {
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const chunkSize = options.chunkSize ?? 7;
+  let stdout = "";
+  let stderr = "";
+  let delivery = Promise.resolve();
+  const deliver = async (
+    callback: ((chunk: string) => void | Promise<void>) | undefined,
+    text: string,
+  ): Promise<void> => {
+    for (let offset = 0; offset < text.length; offset += chunkSize) {
+      await callback?.(text.slice(offset, offset + chunkSize));
+    }
+  };
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+    delivery = delivery.then(() => deliver(opts.onStdout, chunk));
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+    delivery = delivery.then(() => deliver(opts.onStderr, chunk));
+  });
+  const wait = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (exitCode) => {
+      void delivery.then(
+        () => resolve({ stdout, stderr, exitCode: exitCode ?? 1 }),
+        reject,
+      );
+    });
+  });
   return {
-    wait: () => new Promise<never>(() => {}),
-    disconnect: async () => {},
+    wait: () => wait,
+    disconnect: async () => {
+      await options.onDisconnect?.();
+    },
   };
 }
 
 describe("E2BSandbox.downloadDirectory", () => {
   it("lists under the resolved remote dir, threads ignore into the find script, and writes exact bytes", async () => {
     const localDir = await makeLocalDir();
+    const remoteRoot = await makeLocalDir();
     const files = new Map<string, Buffer>([
       ["a.txt", Buffer.from("hello")],
       ["nested/b.bin", Buffer.from([0, 1, 2, 255])],
     ]);
+    await mkdir(join(remoteRoot, "out", "nested"), { recursive: true });
+    await writeFile(join(remoteRoot, "out", "a.txt"), files.get("a.txt")!);
+    await writeFile(join(remoteRoot, "out", "nested", "b.bin"), files.get("nested/b.bin")!);
     let capturedScript = "";
     let capturedCwd = "";
     const sandbox = makeSandbox({
@@ -78,12 +121,7 @@ describe("E2BSandbox.downloadDirectory", () => {
         run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedScript = script;
           capturedCwd = opts.cwd;
-          // 不重新实现 find 语义:直接回放已知的(已被剪枝过的)相对路径清单。
-          return completedCommandHandle(
-            script,
-            opts,
-            { stdout: [...files.keys()].map((p) => `./${p}`).join("\n"), stderr: "", exitCode: 0 },
-          );
+          return localBashCommandHandle(script, opts, { cwd: join(remoteRoot, "out"), chunkSize: 3 });
         },
       },
       files: {
@@ -106,11 +144,12 @@ describe("E2BSandbox.downloadDirectory", () => {
 
   it("resolves a relative source directory from workdir", async () => {
     let capturedCwd = "";
+    const remoteRoot = await makeLocalDir();
     const sandbox = makeSandbox({
       commands: {
         run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedCwd = opts.cwd;
-          return completedCommandHandle(script, opts, { stdout: "", stderr: "", exitCode: 0 });
+          return localBashCommandHandle(script, opts, { cwd: remoteRoot, chunkSize: 3 });
         },
       },
       files: { read: async () => new Uint8Array() },
@@ -241,41 +280,45 @@ describe("E2BSandbox.ensureLifetime", () => {
   });
 });
 
+// bug: memory/e2b-command-completion-marker-source-echo.md
 // bug: memory/e2b-command-stream-waits-for-detached-service.md
 describe("E2BSandbox command completion", () => {
-  it("直接 shell 退出即返回完整前台输出与退出码，只断 transport、不杀仍持有输出管道的任务服务", async () => {
-    let wrappedScript = "";
-    let runOptions: FakeE2BRunOptions | undefined;
-    let notifyStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      notifyStarted = resolve;
-    });
+  it.each([
+    {
+      name: "exit 0",
+      source: "printf 'stdout body\\n'; printf 'stderr body\\n' >&2",
+      exitCode: 0,
+      stdout: "stdout body\n",
+      stderr: "stderr body\n",
+    },
+    {
+      name: "nonzero exit",
+      source: "printf 'nonzero stdout\\n'; printf 'nonzero stderr\\n' >&2; exit 23",
+      exitCode: 23,
+      stdout: "nonzero stdout\n",
+      stderr: "nonzero stderr\n",
+    },
+  ])("真实 bash wrapper preserves $name output and exit code", async ({ source, exitCode, stdout, stderr }) => {
     let disconnects = 0;
     let sandboxKills = 0;
-    let serviceAlive = true;
     const sandbox = makeSandbox({
       commands: {
         run: async (script: string, opts: FakeE2BRunOptions) => {
-          wrappedScript = script;
-          runOptions = opts;
-          notifyStarted();
-          return {
-            // 模拟 E2B 的真实症状：后台服务继承 stdout/stderr，SDK wait 永远等不到 EOF。
-            wait: () => new Promise<never>(() => {}),
-            disconnect: async () => {
+          return localBashCommandHandle(script, opts, {
+            chunkSize: 3,
+            xtrace: true,
+            onDisconnect: () => {
               disconnects += 1;
             },
-          };
+          });
         },
       },
       kill: async () => {
         sandboxKills += 1;
-        serviceAlive = false;
       },
     });
     const streamedStdout: string[] = [];
     const streamedStderr: string[] = [];
-    const source = "printf front; printf warn >&2; nohup task-server &; exit 23";
 
     const running = sandbox.runShell(source, {
       onStdout: (chunk) => {
@@ -285,31 +328,61 @@ describe("E2BSandbox command completion", () => {
         streamedStderr.push(chunk);
       },
     });
-    await started;
-
-    expect(runOptions?.background).toBe(true);
-    expect(wrappedScript).toContain(source);
-    const { prefix, suffix } = completionMarkerParts(wrappedScript);
-    const marker = `${prefix}23${suffix}`;
-    // 两路 marker 都故意跨 chunk；正文尾巴也和 marker prefix 同 chunk，证明过滤不会吞前台输出。
-    await runOptions?.onStdout?.(`front${marker.slice(0, 9)}`);
-    await runOptions?.onStdout?.(marker.slice(9));
-    await runOptions?.onStderr?.(`warn${marker.slice(0, 17)}`);
-    await runOptions?.onStderr?.(marker.slice(17));
-
-    await expect(running).resolves.toEqual({ stdout: "front", stderr: "warn", exitCode: 23 });
-    expect(streamedStdout).toEqual(["front"]);
-    expect(streamedStderr).toEqual(["warn"]);
+    const result = await running;
+    expect(result.exitCode).toBe(exitCode);
+    expect(result.stdout).toContain(stdout.trim());
+    expect(result.stderr).toContain(stderr.trim());
+    expect(streamedStdout.join("")).toContain(stdout.trim());
+    expect(streamedStderr.join("")).toContain(stderr.trim());
     expect(disconnects).toBe(1);
     expect(sandboxKills).toBe(0);
-    expect(serviceAlive).toBe(true);
   });
 
-  it("abort 与 marker 同时到达时等待唯一一次 VM kill 后才以取消原因 settle", async () => {
-    const reason = new DOMException("cancelled during marker delivery", "AbortError");
+  it("真实 bash 执行 Codex 形状的长命令/heredoc，源码诊断不截断真实完成帧", async () => {
+    const remoteRoot = await makeLocalDir();
+    const body = [
+      "# generated by codex",
+      "const answer = 42;",
+      "x".repeat(8_192),
+      "EOF-looking content is still ordinary heredoc text",
+    ].join("\n");
+    const source = [
+      `cd ${shellQuote(remoteRoot)} && cat > codex-output.txt <<'CODEX_EOF'`,
+      body,
+      "CODEX_EOF",
+      "printf 'codex stdout\\n'; printf 'codex stderr\\n' >&2; exit 7",
+    ].join("\n");
+    let disconnects = 0;
+    let sandboxKills = 0;
+    const sandbox = makeSandbox({
+      commands: {
+        run: async (script: string, opts: FakeE2BRunOptions) => localBashCommandHandle(script, opts, {
+          chunkSize: 1,
+          xtrace: true,
+          onDisconnect: () => {
+            disconnects += 1;
+          },
+        }),
+      },
+      kill: async () => {
+        sandboxKills += 1;
+      },
+    });
+
+    const result = await sandbox.runShell(source);
+    expect(result).toMatchObject({
+      stdout: "codex stdout\n",
+      stderr: expect.stringContaining("codex stderr\n"),
+      exitCode: 7,
+    });
+    expect(await readFile(join(remoteRoot, "codex-output.txt"), "utf8")).toBe(body + "\n");
+    expect(disconnects).toBe(1);
+    expect(sandboxKills).toBe(0);
+  });
+
+  it("abort 时等待唯一一次 VM kill 后才以取消原因 settle", async () => {
+    const reason = new DOMException("cancelled during command delivery", "AbortError");
     const controller = new AbortController();
-    let wrappedScript = "";
-    let runOptions: FakeE2BRunOptions | undefined;
     let notifyRaceReady!: () => void;
     const raceReady = new Promise<void>((resolve) => {
       notifyRaceReady = resolve;
@@ -323,9 +396,7 @@ describe("E2BSandbox command completion", () => {
     let disconnects = 0;
     const sandbox = makeSandbox({
       commands: {
-        run: async (script: string, opts: FakeE2BRunOptions) => {
-          wrappedScript = script;
-          runOptions = opts;
+        run: async () => {
           return {
             wait: () => {
               // runShell has installed its abort listener before it asks for the stream outcome.
@@ -360,12 +431,6 @@ describe("E2BSandbox command completion", () => {
     );
     await raceReady;
     controller.abort(reason);
-
-    // Feed both completion markers while kill() is deliberately still pending.
-    const { prefix, suffix } = completionMarkerParts(wrappedScript);
-    const marker = `${prefix}0${suffix}`;
-    await runOptions?.onStdout?.(marker);
-    await runOptions?.onStderr?.(marker);
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(settled).toBe(false);
@@ -380,37 +445,19 @@ describe("E2BSandbox command completion", () => {
     expect(sandboxKills).toBe(2);
   });
 
-  it("stream、callback 与 marker 完整性异常都会先退休 VM", async () => {
-    for (const kind of ["stream", "callback", "marker", "partial", "single"] as const) {
+  it("stream 与 callback 完整性异常都会先退休 VM", async () => {
+    for (const kind of ["stream", "callback"] as const) {
       const failure = new Error(`${kind} failed`);
       let sandboxKills = 0;
       const sandbox = makeSandbox({
         commands: {
-          run: async (script: string, opts: FakeE2BRunOptions) => {
-            if (kind === "callback") {
-              const { prefix, suffix } = completionMarkerParts(script);
-              await opts.onStdout?.(`front${prefix}0${suffix}`);
-            }
-            if (kind === "marker") {
-              const { prefix, suffix } = completionMarkerParts(script);
-              await opts.onStdout?.(`${prefix}0${suffix}`);
-              await opts.onStderr?.(`${prefix}1${suffix}`);
-            }
-            if (kind === "partial") {
-              const { prefix } = completionMarkerParts(script);
-              await opts.onStdout?.(`${prefix}0`);
-            }
-            if (kind === "single") {
-              const { prefix, suffix } = completionMarkerParts(script);
-              await opts.onStdout?.(`${prefix}0${suffix}`);
-            }
+          run: async (_script: string, opts: FakeE2BRunOptions) => {
+            if (kind === "callback") await opts.onStdout?.("front".repeat(100));
             return {
               wait: kind === "stream"
                 ? async () => {
                     throw failure;
                   }
-                : kind === "partial" || kind === "single"
-                  ? async () => ({ stdout: "", stderr: "", exitCode: 0 })
                 : () => new Promise<never>(() => {}),
               disconnect: async () => {},
             };
@@ -429,10 +476,7 @@ describe("E2BSandbox command completion", () => {
             },
           }
         : {});
-      if (kind === "marker") await expect(running).rejects.toThrow(/markers disagreed on exit code/);
-      else if (kind === "partial") await expect(running).rejects.toThrow(/marker was truncated on stdout/);
-      else if (kind === "single") await expect(running).rejects.toThrow(/marker was received only on stdout/);
-      else await expect(running).rejects.toBe(failure);
+      await expect(running).rejects.toBe(failure);
       expect(sandboxKills).toBe(1);
     }
   });
