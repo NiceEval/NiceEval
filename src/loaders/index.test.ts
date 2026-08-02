@@ -18,7 +18,6 @@ import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-sel
 import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadJson, loadText, loadYaml } from "./index.ts";
 
 // computeFingerprint 无条件读 evalDef.sourcePath;内容不重要,指向本测试文件自己,永远存在。
@@ -62,13 +61,17 @@ const run: AgentRun = {
   experimentId: "exp",
   experimentBaseDir: "/project/experiments",
   experimentSourcePath: "/project/experiments/exp.ts",
-  state: STATELESS,
 };
 
 async function preparedPair(evalDef: DiscoveredEval): Promise<PreparedRunPair> {
   const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
   if (pair === undefined) throw new Error("expected one prepared run pair");
   return pair;
+}
+
+function decodeTextData(value: unknown): string {
+  if (typeof value !== "string") throw new TypeError("data must be a string");
+  return value;
 }
 
 describe("loadText · 判据文件进 eval 源码闭包", () => {
@@ -143,12 +146,21 @@ describe("loader 的调用面", () => {
 
   it("capture 不在场时调用任一 loader 直接报错,文案给出下一步", async () => {
     const path = await criterionFile("exit 0\n");
-    const identity = (value: unknown) => value;
-
     await expect(loadText(path)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
-    await expect(loadJson(path, identity)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
-    await expect(loadYaml(path, identity)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
+    await expect(loadJson(path, decodeTextData)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
+    await expect(loadYaml(path, decodeTextData)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
     // 下一步指引在文案里:把读取挪走,别在 test(t) 运行期调 loader。
     expect(t("loaders.outsideDiscovery", { path })).toContain("test(t)");
+  });
+
+  it("decoder 不允许把动态 unknown 原样带出加载边界", async () => {
+    const path = await criterionFile("null\n");
+    if (false) {
+      const identity = (value: unknown): unknown => value;
+      // @ts-expect-error decoder 必须产出已验证的领域类型，不能返回 unknown。
+      void loadJson(path, identity);
+      // @ts-expect-error YAML 与 JSON 服从同一条强类型边界。
+      void loadYaml(path, identity);
+    }
   });
 });

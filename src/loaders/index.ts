@@ -75,7 +75,13 @@ function fromFileUrl(url: URL): string {
  * `new URL(p, import.meta.url)`。内容哈希进读它的那条 eval 的指纹。`decode` 必须在
  * 这个动态输入边界完成结构验证与归一；不提供「用泛型直接信任文件」的入口。
  */
-export type DataDecoder<T> = (value: unknown) => T | Promise<T>;
+type DecodedData<T> = unknown extends T ? never : T;
+
+/**
+ * 动态文件值到领域值的唯一出口。`unknown`（以及会把它吞掉的 `any`）不能成为解码结果；
+ * decoder 必须返回一个比动态输入更窄、可供 Eval 定义直接使用的领域类型。
+ */
+export type DataDecoder<T> = (value: unknown) => DecodedData<T> | Promise<DecodedData<T>>;
 
 export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
   const raw = await readFile(resolvedPath(path), "utf-8");
