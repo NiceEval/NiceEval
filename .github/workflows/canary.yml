@@ -8,8 +8,8 @@ name: Canary
 # 消费侧(NiceEval-Eval 的 pin-candidate)靠这个 tag 取按版本存档的 INIT.md,缺了它
 # canary 就评不了。
 #
-# tag 用默认 GITHUB_TOKEN 推,GitHub 不会用它级联触发 release.yml——这是刻意依赖的行为,
-# 不然同一个版本会被发布两次。
+# tag 用默认 GITHUB_TOKEN 推，GitHub 不会用它级联触发 release.yml——这避免同一版本被
+# 发布两次。完成发布后显式 dispatch Release 的只读核验 job，因此每个 tag 仍有可见日志。
 #
 # 触发:每天定时发一版(schedule),外加 workflow_dispatch 允许随时手动补发。不按 push main
 # 发是刻意的——eval 只是偶尔对比 canary,每次 push 都发一版只会在 npm 上刷版本号噪声。定时
@@ -21,6 +21,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write # dispatch Release 核验日志需要
   contents: write # 推 tag、创建 release 需要
   id-token: write # npm provenance 需要
 
@@ -70,7 +71,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Push tag and create GitHub prerelease
+      - name: Push tag, create GitHub prerelease, and record Release log
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -78,3 +79,4 @@ jobs:
           git tag "$TAG"
           git push origin "$TAG"
           gh release create "$TAG" --title "$TAG" --generate-notes --prerelease
+          gh workflow run release.yml --ref main -f tag="$TAG"

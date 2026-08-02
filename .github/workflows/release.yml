@@ -16,6 +16,14 @@ on:
   push:
     tags:
       - "v*"
+  # Canary 由 GITHUB_TOKEN 推 tag；GitHub 不会让那次 push 再触发本工作流。
+  # 它会在发布完成后显式 dispatch 到这里，留下可追溯的 Release 日志，而不重复 publish。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已发布、需要核验的 vX.Y.Z 标签"
+        required: true
+        type: string
 
 permissions:
   contents: write # 创建 release 需要
@@ -23,6 +31,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name == 'push'
     name: Publish to npm
     runs-on: ubuntu-latest
     steps:
@@ -90,3 +99,35 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
+
+  verify-existing-release:
+    if: github.event_name == 'workflow_dispatch'
+    name: Verify published tag
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate tag input
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag 必须是 vX.Y.Z（可带预发布标识），收到: $TAG"
+            exit 1
+          fi
+
+      - name: Verify npm package and GitHub Release
+        run: |
+          VERSION="${TAG#v}"
+          PUBLISHED_VERSION="$(npm view "niceeval@$VERSION" version)"
+          if [ "$PUBLISHED_VERSION" != "$VERSION" ]; then
+            echo "::error::npm 上的 niceeval@$VERSION 未找到或版本不一致（收到: $PUBLISHED_VERSION）"
+            exit 1
+          fi
+          RELEASE_URL="$(gh release view "$TAG" --json url --jq .url)"
+          {
+            echo "## 已发布标签核验"
+            echo
+            echo "- Tag: \`$TAG\`"
+            echo "- npm: \`niceeval@$PUBLISHED_VERSION\`"
+            echo "- GitHub Release: $RELEASE_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
