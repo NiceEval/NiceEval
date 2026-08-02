@@ -127,6 +127,8 @@ Provider 可以限制最大值，但不能静默压短。
 不支持指定值时，Experiment 在第一条 Attempt 派发前报错并展示 Provider 理由。
 超出上限时报错点名 `lifetimeMs` 与 Provider 的拒绝理由，不替作者把值改小——悄悄压短会让复用池按声明的寿命记账，而实例在远处按更短的寿命被回收，症状要到 Attempt 跑到一半才现形。
 
+对 E2B，创建新实例和复用池首次建实例使用同一条请求规则：有 Attempt deadline 而未声明 `lifetimeMs` 时，请求 deadline 加 30 秒收尾预留；已声明但更短时，在创建远端实例前失败，不能悄悄加长。后续复用仍由 Provider 按每条 Attempt 的 deadline 加收尾预留确认或续期；未声明 deadline 时没有可推导的有限寿命，需要该保证则显式声明 `lifetimeMs`。
+
 ## 派发前确认
 
 每个支持 Sandbox 复用的 Provider 提供：

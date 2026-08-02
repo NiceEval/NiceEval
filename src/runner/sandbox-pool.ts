@@ -10,10 +10,9 @@ import {
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
 import type { JsonValue, Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
+import { CLEANUP_TIMEOUT_MS } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { Effect, Either, Exit, Scope } from "effect";
-
-const CLEANUP_RESERVE_MS = 30_000;
 
 export interface ReusableSandboxLease {
   readonly sandbox: Sandbox;
@@ -93,7 +92,7 @@ export class ReusableSandboxPool {
     Scope.Scope
   > {
     return Effect.gen(this, function* () {
-      const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_RESERVE_MS;
+      const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_TIMEOUT_MS;
     /**
      * 借出期内单条命令的上限从这条线派生(`undefined` = 四层都没声明上限,照旧不发明一条线)。
      * 实例活得比 attempt 长,所以这条线必须**每次借出重设**——只在 create 时给一次的话,
@@ -173,7 +172,7 @@ export class ReusableSandboxPool {
       }
       const deadline: SandboxRuntimeDeadline = deadlineAt === undefined
         ? { _tag: "Unlimited" }
-        : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_RESERVE_MS), deadlineAt };
+        : { _tag: "Bounded", timeoutMs: Math.max(1, minRemainingMs - CLEANUP_TIMEOUT_MS), deadlineAt };
       const entryScope = yield* Scope.make();
       const materialized = yield* Scope.extend(materializeSandboxRunPlan({
         plan: this.plan,

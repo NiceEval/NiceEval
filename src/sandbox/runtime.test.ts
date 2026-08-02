@@ -16,7 +16,11 @@ import {
 } from "./layer.ts";
 import { linkSandboxLayers } from "./link.ts";
 import { planLinkedRuns, type LinkedRunPlan } from "./plan.ts";
-import { collectSandboxRuntimeBuildPreparation, materializeSandboxRunPlan } from "./runtime.ts";
+import {
+  collectSandboxRuntimeBuildPreparation,
+  e2bLifetimeRequest,
+  materializeSandboxRunPlan,
+} from "./runtime.ts";
 import type { Sandbox } from "./types.ts";
 
 const linux: SandboxTargetPlatform = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" };
@@ -76,6 +80,28 @@ function input(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>, servi
 }
 
 describe("provider-owned Sandbox runtime materialization", () => {
+  // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」
+  // bug: memory/e2b-deadline-lifetime-default.md
+  it("E2B 将 bounded attempt 的 deadline 加收尾预留写成创建请求，而不是 SDK 默认 TTL", () => {
+    expect(e2bLifetimeRequest(
+      { _tag: "ProviderDefault" },
+      { _tag: "Bounded", timeoutMs: 6 * 60_000, deadlineAt: Date.now() + 6 * 60_000 },
+    )).toEqual({
+      _tag: "Requested",
+      milliseconds: 6 * 60_000 + 30_000,
+      source: "attempt-deadline",
+    });
+  });
+
+  // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」
+  // bug: memory/e2b-deadline-lifetime-default.md
+  it("E2B 在创建前拒绝短于 attempt 加收尾预留的显式 lifetimeMs", () => {
+    expect(() => e2bLifetimeRequest(
+      { _tag: "Configured", milliseconds: 6 * 60_000 },
+      { _tag: "Bounded", timeoutMs: 6 * 60_000, deadlineAt: Date.now() + 6 * 60_000 },
+    )).toThrow(/shorter than this attempt's required 390000ms/);
+  });
+
   it("物理实例只在创建/释放边界执行 lifecycle，setup 正序且 teardown 逆序", async () => {
     const events: string[] = [];
     const plan = planned(

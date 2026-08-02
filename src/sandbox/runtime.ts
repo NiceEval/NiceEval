@@ -46,6 +46,7 @@ import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
+import type { E2BSandboxLifetime } from "./e2b.ts";
 
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
 
@@ -168,6 +169,35 @@ function configuredLifetime(
   value: SandboxProviderLifetime,
 ): number | undefined {
   return value._tag === "Configured" ? value.milliseconds : undefined;
+}
+
+/**
+ * E2B 的 SDK 默认 TTL 不是 attempt 时限的一个来源。bounded attempt 在创建时必须把
+ * deadline 加收尾预留写进 provider；作者另有声明时，它是上限承诺而不是可被静默加长的 hint。
+ */
+export function e2bLifetimeRequest(
+  lifetime: SandboxProviderLifetime,
+  deadline: SandboxRuntimeDeadline,
+): E2BSandboxLifetime {
+  const declared = configuredLifetime(lifetime);
+  if (deadline._tag === "Unlimited") {
+    return declared === undefined
+      ? { _tag: "ProviderDefault" }
+      : { _tag: "Requested", milliseconds: declared, source: "explicit" };
+  }
+
+  const required = deadline.timeoutMs + CLEANUP_TIMEOUT_MS;
+  if (declared !== undefined) {
+    if (declared < required) {
+      throw new Error(
+        `e2bSandbox lifetimeMs=${declared}ms is shorter than this attempt's required ${required}ms ` +
+          `(timeoutMs=${deadline.timeoutMs}ms plus cleanup reserve ${CLEANUP_TIMEOUT_MS}ms). ` +
+          "Increase lifetimeMs or lower timeoutMs; niceeval will not silently lengthen a declared sandbox lifetime.",
+      );
+    }
+    return { _tag: "Requested", milliseconds: declared, source: "explicit" };
+  }
+  return { _tag: "Requested", milliseconds: required, source: "attempt-deadline" };
 }
 
 function boundProvisionSlot(context: SandboxRuntimeMaterializeContext): ProvisionSlot | undefined {
@@ -344,6 +374,7 @@ export function materializeE2BProviderPlan(
   context: SandboxRuntimeMaterializeContext,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return materializationEffect(context, async () => {
+    const lifetime = e2bLifetimeRequest(plan.lifetime, context.deadline);
     const { E2BSandbox, classifyProvisionError, reconcileProvision } = await import("./e2b.ts");
     const provisionToken = randomUUID();
     const backend = await withProvisionRetry(
@@ -351,7 +382,7 @@ export function materializeE2BProviderPlan(
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         template: plan.template,
-        lifetimeMs: configuredLifetime(plan.lifetime),
+        lifetime,
         provisionToken,
         runIdentity: currentRunIdentity(),
       }),

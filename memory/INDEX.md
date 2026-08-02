@@ -45,6 +45,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 台账
 
 - [reuse-ensure-lifetime-generic-bookkeeping-fake](reuse-ensure-lifetime-generic-bookkeeping-fake.md) — resolve.ts 通用 ensureLifetime 本地时钟记账,e2b/vercel 对 lifetimeMs 零引用,E2B 30 分钟杀实例而 runner 一路 ready:true;修法=删通用包装,未实现 provider 派发前硬失败(reuse.md 契约已在)
+- [e2b-deadline-lifetime-default](e2b-deadline-lifetime-default.md) — bounded E2B Attempt 未声明 lifetimeMs 时曾落到 SDK 五分钟默认并在 diff/cleanup 前消失；修为 deadline + 30s 收尾预留的创建请求，显式较短值创建前失败，reuse/fresh 共用强类型解析入口
 - [one-shot-sandbox-misses-deadline-remaining](one-shot-sandbox-misses-deadline-remaining.md) — 发现(未修):`deadlineAt` 只有复用池传得下去,一次性沙箱每条命令各拿一整份 `timeoutMs` 而不是 deadline 剩余量;症状被 runner 的硬超时盖住,修法=`createMaterializedCase` 透传 deadlineAt
 - [reuse-dogfooding-observability-gaps](reuse-dogfooding-observability-gaps.md) — 复用 dogfooding 四连:setup 失败丢 sandbox 归属(已进契约:租借时刻写)、复用污染无线索(已进契约:承接序号聚合诊断)、携带命名与复用汇总收窄进 roadmap/reuse-feedback、loadText 缺口实为下游旧版误报
 - 已修 [reuse-pool-retired-entries-deadlock](reuse-pool-retired-entries-deadlock.md) — 复用池淘汰实例不摘除,死实例占满容量后 acquire 永久挂起;修为 splice 移除 + 实例编号单调计数(src/runner/sandbox-pool.ts)

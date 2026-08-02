@@ -179,6 +179,8 @@ e2bSandbox({
 
 `lifetimeMs` 属于 Sandbox Provider 配置，与 Experiment `timeoutMs` 不同。
 前者控制一个 Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox 能否覆盖下一条 Attempt。
+
+对 E2B，带 deadline 的 Attempt 在未声明 `lifetimeMs` 时会请求 `timeoutMs + 30s` 收尾预留，不能退回 SDK 的短默认值。声明了 `lifetimeMs` 时它必须不少于同一最低值；不足会在创建实例前报错，NiceEval 不会静默把作者声明加长。未声明 Attempt deadline 时没有可推导的有限寿命；需要该保证就显式声明 `lifetimeMs`。
 完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
 
 起点参数只在对应 Provider 内部消费——**核心不按 provider 名分支**,Runner 只消费 factory 归一出的 template 与 Provider planner。

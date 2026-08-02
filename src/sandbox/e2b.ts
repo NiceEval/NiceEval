@@ -41,6 +41,32 @@ const RECONCILE_LIST_MAX_ATTEMPTS = 3;
 const RECONCILE_LIST_RETRY_DELAY_MS = 500;
 
 /**
+ * E2B 创建请求必须明确说明寿命是作者声明、attempt deadline 派生，还是没有 deadline 可派生。
+ * 把这个区分留在类型里，运行时就不会再把「没有显式 lifetimeMs」误传成 SDK 的短默认值。
+ */
+export type E2BSandboxLifetime =
+  | { readonly _tag: "ProviderDefault" }
+  | {
+      readonly _tag: "Requested";
+      readonly milliseconds: number;
+      readonly source: "explicit" | "attempt-deadline";
+    };
+
+interface E2BSandboxCreateOptions {
+  readonly timeout?: number;
+  /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
+  readonly deadlineAt?: number;
+  readonly runtime?: "node20" | "node24";
+  readonly template?: string;
+  readonly provisionToken?: string;
+  /** 运行时已解析的实例寿命；bounded attempt 不能退回 E2B 的 SDK 默认值。 */
+  readonly lifetime: E2BSandboxLifetime;
+  /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
+   *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
+  readonly runIdentity?: RunIdentity;
+}
+
+/**
  * Provisioning 重试前的对账:按 metadata 里的 provision token 检索远端实例,查到即 kill。
  * 检索或销毁失败必须抛出——对账是重试的硬前置,静默放行等于盲重试,会复制计费实例
  * (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
@@ -101,8 +127,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
   private commandTimeoutMs?: number;
-  /** 作者声明的实例寿命;复用下续期一律续到这个值(滑动窗口)。省略 = 没声明,不支持复用。 */
-  private lifetimeMs?: number;
+  /** 已实际请求的实例寿命;复用下续期一律续到这个值(滑动窗口)。 */
+  private lifetime: E2BSandboxLifetime;
   readonly sandboxId: string;
 
   private deadlineAt?: number;
@@ -113,11 +139,17 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
   };
 
-  private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs?: number, lifetimeMs?: number, deadlineAt?: number) {
+  private constructor(
+    sbx: E2BSdkSandbox,
+    id: string,
+    commandTimeoutMs: number | undefined,
+    lifetime: E2BSandboxLifetime,
+    deadlineAt?: number,
+  ) {
     this.sbx = sbx;
     this.sandboxId = id;
     this.commandTimeoutMs = commandTimeoutMs;
-    this.lifetimeMs = lifetimeMs;
+    this.lifetime = lifetime;
     this.deadlineAt = deadlineAt;
   }
 
@@ -135,44 +167,35 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
    * 无归属的 sandbox 消失。宁可在这里如实报 `ready: false` 让 runner 轮换实例。
    */
   async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
-    if (this.lifetimeMs === undefined) {
-      return { ready: false, reason: "the e2b sandbox needs lifetimeMs when sandboxReuse is enabled" };
+    if (this.lifetime._tag === "ProviderDefault") {
+      return {
+        ready: false,
+        reason: "the e2b sandbox has no requested lifetime; an unlimited attempt must declare lifetimeMs before sandboxReuse",
+      };
     }
     try {
       const remainingMs = async () => (await this.sbx.getInfo()).endAt.getTime() - Date.now();
       const before = await remainingMs();
       if (before >= minRemainingMs) return { ready: true, expiresAt: new Date(Date.now() + before).toISOString() };
-      // setTimeout 是「从此刻起再活这么久」,不是增量;续到作者声明的完整寿命。
-      await this.sbx.setTimeout(this.lifetimeMs);
+      // setTimeout 是「从此刻起再活这么久」,不是增量;续到创建期实际请求的完整寿命。
+      await this.sbx.setTimeout(this.lifetime.milliseconds);
       const after = await remainingMs();
       return after >= minRemainingMs
         ? { ready: true, expiresAt: new Date(Date.now() + after).toISOString() }
         : {
             ready: false,
             reason:
-              `e2b capped this sandbox's lifetime at ${Math.round(after / 1000)}s after renewing to the declared ` +
-              `lifetimeMs=${this.lifetimeMs}ms; the next attempt needs ${Math.round(minRemainingMs / 1000)}s`,
+              `e2b capped this sandbox's lifetime at ${Math.round(after / 1000)}s after renewing to the ${
+                this.lifetime.source === "explicit" ? "declared" : "attempt-deadline-derived"
+              } ` +
+              `lifetimeMs=${this.lifetime.milliseconds}ms; the next attempt needs ${Math.round(minRemainingMs / 1000)}s`,
           };
     } catch (e) {
       return { ready: false, reason: `e2b could not confirm this sandbox's lifetime: ${String(e)}` };
     }
   }
 
-  static async create(
-    opts: {
-      timeout?: number;
-      /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
-      deadlineAt?: number;
-      runtime?: "node20" | "node24";
-      template?: string;
-      provisionToken?: string;
-      /** 实例寿命(复用必需)。省略时使用 E2B 当前账号档位的 provider 默认。 */
-      lifetimeMs?: number;
-      /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
-       *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
-      runIdentity?: RunIdentity;
-    } = {},
-  ): Promise<E2BSandbox> {
+  static async create(opts: E2BSandboxCreateOptions): Promise<E2BSandbox> {
     // 单条命令没有 provider 级默认:上限恒从 attempt deadline 派生(见 deadline.ts)。
     const commandTimeoutMs = opts.timeout;
     // e2b 的 node 版本由模板决定,runtime 仅作记录(不在创建时选)。
@@ -184,11 +207,12 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
-    // 作者声明了 lifetimeMs 就按原值交给 provider 校验；没声明则使用 provider 默认，
-    // NiceEval 不把某个账号档位观测到的上限硬编码成全体用户的契约。
+    // bounded attempt 一定携带由 runtime 派生的 timeoutMs；只有没有 deadline 可派生的
+    // unlimited attempt 才允许 ProviderDefault。NiceEval 不把某个账号档位观测到的上限硬编码
+    // 成全体用户的契约。
     const sdkOpts = {
       apiKey,
-      ...(opts.lifetimeMs !== undefined ? { timeoutMs: opts.lifetimeMs } : {}),
+      ...(opts.lifetime._tag === "Requested" ? { timeoutMs: opts.lifetime.milliseconds } : {}),
       ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
     // 有 template 就从模板起,否则用 e2b 默认 "base"。
@@ -201,11 +225,12 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         // 惹的祸、也不说上限是多少。把 provider 的理由原样带出来并指到 lifetimeMs 上——
         // 「不能静默压短」的另一半是「压不下就把原因说清楚」
         // (见 docs/feature/sandbox/reuse.md「派发前确认」)。
-        if (opts.lifetimeMs !== undefined && /timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
+        if (opts.lifetime._tag === "Requested" && /timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
           throw new Error(
-            `e2b rejected the declared lifetimeMs=${opts.lifetimeMs}ms for this account: ` +
-              `${e instanceof Error ? e.message : String(e)}. Lower lifetimeMs to fit the plan's maximum sandbox ` +
-              "lifetime, or raise that maximum on the e2b side; niceeval will not silently shorten it.",
+            `e2b rejected the ${opts.lifetime.source === "explicit" ? "declared" : "attempt-deadline-derived"} ` +
+              `lifetimeMs=${opts.lifetime.milliseconds}ms for this account: ${e instanceof Error ? e.message : String(e)}. ` +
+              "Lower the attempt timeout or lifetimeMs to fit the plan's maximum sandbox lifetime, or raise that maximum " +
+              "on the e2b side; niceeval will not silently shorten it.",
             { cause: e },
           );
         }
@@ -218,7 +243,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetimeMs, opts.deadlineAt);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.deadlineAt);
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;

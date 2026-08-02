@@ -25,8 +25,13 @@ async function makeLocalDir(): Promise<string> {
 /** e2b 的构造函数是 TS `private`(编译期限定,运行时只是普通函数);测试绕开它直接注入 fake sbx,
  *  不必走 `E2BSandbox.create()`(需要真实 API key、起真实 microVM)。 */
 function makeSandbox(sbx: unknown): E2BSandbox {
-  const Ctor = E2BSandbox as unknown as new (sbx: unknown, id: string, timeoutMs: number) => E2BSandbox;
-  return new Ctor(sbx, "test-sandbox", 5_000);
+  const Ctor = E2BSandbox as unknown as new (
+    sbx: unknown,
+    id: string,
+    timeoutMs: number,
+    lifetime: { readonly _tag: "ProviderDefault" },
+  ) => E2BSandbox;
+  return new Ctor(sbx, "test-sandbox", 5_000, { _tag: "ProviderDefault" });
 }
 
 describe("E2BSandbox.downloadDirectory", () => {
@@ -87,15 +92,26 @@ describe("E2BSandbox.downloadDirectory", () => {
 // `ready: true` 的唯一合法依据是远端真实到期时刻:两次都读 `getInfo().endAt`,不复读我们
 // 请求给 `setTimeout` 的值——e2b 的账号档位会把请求值压短(见 e2b.ts 的 ensureLifetime 注释)。
 describe("E2BSandbox.ensureLifetime", () => {
-  /** 带寿命声明的实例:构造函数第四个参数就是作者声明的 lifetimeMs。 */
+  /** 构造函数第四个参数是 runtime 已写进 provider 的寿命请求。 */
   function makeReusable(sbx: unknown, lifetimeMs?: number): E2BSandbox {
     const Ctor = E2BSandbox as unknown as new (
       sbx: unknown,
       id: string,
       timeoutMs: number,
-      lifetimeMs?: number,
+      lifetime: { readonly _tag: "ProviderDefault" } | {
+        readonly _tag: "Requested";
+        readonly milliseconds: number;
+        readonly source: "explicit" | "attempt-deadline";
+      },
     ) => E2BSandbox;
-    return new Ctor(sbx, "test-sandbox", 5_000, lifetimeMs);
+    return new Ctor(
+      sbx,
+      "test-sandbox",
+      5_000,
+      lifetimeMs === undefined
+        ? { _tag: "ProviderDefault" }
+        : { _tag: "Requested", milliseconds: lifetimeMs, source: "explicit" },
+    );
   }
 
   it("远端剩余寿命已经够时直接确认,不动 setTimeout", async () => {
@@ -152,7 +168,7 @@ describe("E2BSandbox.ensureLifetime", () => {
     expect(result.ready === false ? result.reason : "").toContain("capped");
   });
 
-  it("没有声明 lifetimeMs 时不假装能复用,也不去碰远端", async () => {
+  it("没有可请求寿命的无限 attempt 不假装能复用,也不去碰远端", async () => {
     let touched = 0;
     const sandbox = makeReusable({
       getInfo: async () => {
@@ -168,7 +184,8 @@ describe("E2BSandbox.ensureLifetime", () => {
 
     expect(result.ready).toBe(false);
     expect(result.ready === false ? result.reason : "").toContain("lifetimeMs");
-    // 远端还剩一小时也没用:这条能力的前提是作者声明过寿命,没声明就没有可确认的东西。
+    // bounded attempt 未声明时 runtime 会传入 deadline 派生值；这里是没有 deadline 可派生的
+    // ProviderDefault，远端还剩一小时也不能伪装成可确认的复用寿命。
     expect(touched).toBe(0);
   });
 
