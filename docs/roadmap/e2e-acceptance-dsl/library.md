@@ -24,13 +24,16 @@ import "../verify/matchers";
 ```ts
 const { stdout } = await cli("pnpm exec niceeval show weather --history");
 const fail = await cli("pnpm exec niceeval exp deliberate-fail --force --json", { expect: "nonzero" });
-fail.stdout; fail.stderr; fail.combined; fail.exit;
+fail.stdout; fail.stderr; fail.combined; fail.exitCode(); fail.signal();
+fail.stdoutText(); fail.stderrText(); fail.combinedText();
 ```
 
 - `expect: 0 | number | "nonzero"`,不符即抛断言错误,消息含命令原文、实际退出码与 stderr 尾部。
 - `cwd`:执行目录,默认仓库根;消费边界一类的场景用它切到 world 里的临时项目目录。
 - `pipe: true`:stdout 接真实管道而不是文件,验收「输出喂给下游工具」的场景用它。
 - 每次调用把命令与输出追加到证据日志(供 `e2e.ts` 的基础设施故障分类扫描),路径来自 world manifest。
+- `exitCode()` 与 `signal()` 返回 `Observed`,让进程结果与 JSON / JUnit 关系进入同一条 Outcome Assertion。
+- `stdoutText()`、`stderrText()` 与 `combinedText()` 只用于逐字承诺；结构 adapter 直接消费对应 evidence stream。
 
 **输出流归属是一等事实,断言要点名读哪一路。**
 [用法错误与无匹配提示写 stderr](../../../memory/cli-usage-errors-go-to-stderr.md) 是公开契约,把两路合起来查子串的写法对这条契约没有区分力:文案回退到 stdout 时断言照样通过。
@@ -51,7 +54,9 @@ w.resultsRoot;                  // 本次运行的记录根,只读
 w.locator("tool-call");         // prepare 提取好的 attempt locator,缺失即抛错并列出可用键
 w.target("failed-attempt");     // prepare 命名的 { pageId, key },不把 target 限定为 attempt
 w.exportDir("branded");         // 命名导出站目录
+w.artifact("junit");            // 命名机器出口或其它文件 artifact
 w.consumerDir("react-jsx");     // prepare 搭好的临时消费方项目目录
+w.process("main-run");          // prepare 真实执行并封口的命名进程结果
 w.logPath;                      // 证据日志(cli() 自动追加的那份)
 ```
 
@@ -76,9 +81,10 @@ const screen = await ptyScreen(w, "pnpm exec niceeval show", { columns: 80 });
 const events = ndjsonEvents(stdout);                      // exp --json 的生命周期事件
 const summary = jsonSummary(readFileSync("summary.json", "utf8"));
 const junit = junitReport(readFileSync("fail.xml", "utf8"));
-const index = await siteDoc(w.exportDir("site"), "index"); // 站点固定文档,真实 Chromium,可选择禁用 JS
-const doc = await targetDoc(w, w.target("failed-attempt")); // 参数化页 HTML,真实 Chromium,禁用 JS
-const ui = await openSite(w.exportDir("site"));           // 浏览器会话,启用 JS
+const site = siteExport(w.exportDir("site"));              // 导出目录的文档、链接与 target 集合
+const index = await siteDoc(w.exportDir("site"), "index", { hosting: "file-url" });
+const doc = await targetDoc(w, w.target("failed-attempt"), { hosting: "file-url" });
+const ui = await openSite(w.exportDir("site"), { hosting: "directory-root" }); // 浏览器会话,启用 JS
 ```
 
 构造函数与 Behavior 声明的 `observations` 一一对应:声明了 `stdout` 却构造 `ptyScreen`,静态守护直接红。
@@ -100,7 +106,7 @@ const doc = await targetDoc(w, target, { hosting: "directory-root" });
 
 这是读面的显式参数,不是它自己挑一个默认值。
 导出站的正确性取决于产物**和**索引文档所在目录两件事,而 server 起在哪个路径由验收方决定——读面替测试作者挑形态,等于替它挑掉一整类观察不到的缺陷。
-理由与两次真实失效见 [html-export 的回归剧本](use-case/html-export.md#回归剧本)。
+理由与两次真实失效见[静态托管缺陷账本](../e2e-acceptance-testing/bugs/hosting-base.md)。
 
 同一份产物在三种形态下的领域断言完全相同:领域词不随托管变,变的只是浏览器解析相对引用时的基底。
 声明哪一种由 Behavior 的 `observations` 写死,`e2e.ts` 按声明起对应形态的服务,测试正文不出现端口、路径与 rewrite 规则。
@@ -159,7 +165,7 @@ expectObserved(textRow.cell("Pass rate")).toEqualObserved(webRow.cell("Pass rate
 只用于[逐字承诺的短文本](README.md#逐字比对的适用面)。比对前先过 scrub 归一管线,归一必须在传入 matcher 前完成(vitest 的自定义 serializer 不作用于 file snapshot,见 References):
 
 ```ts
-await expect(fail.combined).toMatchScrubbedFileSnapshot("golden/deliberate-fail.txt", {
+expectObserved(fail.combinedText()).toMatchScrubbedFileSnapshot("golden/deliberate-fail.txt", {
   scrub: [{ pattern: /run-\d{8}T\d{6}/g, tag: "RUN_ID" }],   // 仓库自定义规则,追加在内置表之后
 });
 ```
@@ -188,7 +194,7 @@ adapter 只做两件事:按公开组件契约立词的领域寻址,和步骤轨�
 等待、重试与结构读取全部直接用 Playwright 原生面,不做第二层包装。
 
 ```ts
-const ui = await openSite(w.exportDir("site"));   // 起本地静态 server 与浏览器页
+const ui = await openSite(w.exportDir("site"), { hosting: "directory-root" });
 await ui.goto("Scoreboard");                       // 按导航名切页;页不存在列出实际导航
 
 const table = ui.table("Comparison");
@@ -212,9 +218,12 @@ await expect(ui.dialog()).toBeVisible();           // dialog 对 attempt / exper
 | `ui.filter()` | Table searchable | 过滤输入框 |
 | `ui.targetLink({ pageId, key })` | Report target | 按公开 target 身份寻址下钻链接，不按 DOM 位置或实体种类猜测 |
 | `ui.dialog()` | 参数化页 dialog | 当前 dialog Locator；内容身份仍按 target 的公开 pageId / key 断言 |
+| `ui.closeDialog(方式)` | 参数化页 dialog | 按 `button`、`escape` 或 `backdrop` 关闭，并等待 URL 与焦点恢复 |
 | `ui.chartPoint({ series, x })` | Chart 数据点 | 按系列与横轴身份寻址一个点 |
 | `ui.tooltip()` | Chart 悬停提示 | 提示元素 Locator,断可见与内容 |
 | `ui.region(名称)` | 页内命名区块 | 区块句柄,可继续取领域词 |
+| `ui.consoleErrors()` | 浏览器诊断 | `Observed<string[]>`，只收集未登记豁免的 console error |
+| `ui.networkFailures()` | 浏览器诊断 | `Observed<string[]>`，包含最终 URL、method 与失败原因或 HTTP 状态 |
 
 三条运行学约定:
 
@@ -224,7 +233,7 @@ await expect(ui.dialog()).toBeVisible();           // dialog 对 attempt / exper
 
 `target` 是唯一跨页下钻身份。attempt locator 只是 `{ pageId: "attempt", key: locator }` 的一种 key；
 experiment 与自定义参数化页不得新增平行的 `experimentLink()` / `customDialog()` 词。全量 target 是否闭合由
-[测试方案的结构 census](../e2e-acceptance-testing/README.md#结构-census)负责，DSL 只负责按一个已声明 target 观察文档、链接与 dialog。
+[Report target 闭环](../e2e-acceptance-testing/use-case/report-target-closure.md)负责，DSL 只负责按一个已声明 target 观察文档、链接与 dialog。
 
 ## 读面内部
 
@@ -320,4 +329,3 @@ Evidence:
 - Behavior 文件按用户任务组织(`test/behavior/analyze/compare-experiments.test.ts`),vitest 原生标题统一带 `[Behavior ID]` 前缀。
 - 单例重跑走仓库唯一入口:`pnpm e2e -- verify --world <manifest> --behavior <id>`,底层 `-t` 仍可按稳定 ID 定位同一测试。
 - `e2e.ts` 对 vitest 的退出码按既有规则折叠:非零一律回归,除非证据日志扫描确证外部故障(退 `75`)。
-</content>

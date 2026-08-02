@@ -26,6 +26,13 @@ PLAN-2：Behavior 身份、用户任务、契约、主证明与边界要求
 
 DSL 不决定“应该有哪条测试”；测试方案不重定义 Behavior，也不按 DOM、输出字符串或内部函数发明另一套断言语言。
 
+## 入口
+
+- [Architecture](architecture.md) —— Recipe、World、执行登记、调度、失败阶段、身份复用与准入。
+- [Use Cases](use-case/README.md) —— Report target、真实进程、消费方矩阵、时间线和可变 service 的完整代码。
+- [现行 testing 体系失效分析](current-system-gaps.md) —— 当前规则为什么仍会漏掉完整产品回归。
+- [历史缺陷研究与证据账本](bugs/README.md) —— proof 的真实反例、反证和实施顺序。
+
 ## 为什么从 DSL 中拆出
 
 原目录同时放了媒介词表、evidence 生命周期、九题验收、历史 bug 账本与 rollout 批次，导致三种责任混在一起：
@@ -62,99 +69,15 @@ NiceEval 仍只有[单元与 E2E 两层](../../engineering/testing/README.md)。
 
 组合原则是“最早层失败”：纯公式不经浏览器穷举，概率竞态不靠 E2E 多跑碰运气；跨进程、跨宿主、真实 URL、浏览器动作和外部最终状态必须留用户侧 E2E。
 
-## 一条 proof 的生命周期
+## 运行模型
 
-所有 Behavior 使用同一套五阶段因果模型：
+所有 Behavior 使用 prepare、invoke、observe、outcome、cleanup 五阶段。
+Recipe 产生可校验身份的只读 World；需要修改输入的 Behavior 使用私有 clone 和登记过的 mutation action。
+并发由 read-only、mutable-clone、service 与 exclusive-external 四种资源类别决定。
 
-| 阶段 | 必须先成立的事实 | 典型失败 |
-|---|---|---|
-| prepare | 候选包、recipe、结果根、fixture、producer closure 与权限正确 | 复用了旧产物、共享 evidence 被污染 |
-| invoke | 用户命令能在声明的 cwd、consumer、hosting 或 provider world 启动 | CJS / foreign cwd 装载失败、服务未就绪 |
-| observe | 用户收到的流、文件、HTTP、DOM 与结构完整可消费 | pipe 截断、目标文档 404、observer parse 失败 |
-| outcome | verdict、identity、公式、时间线与页面状态满足公开契约 | retry exit 错误、并发闸错误、dialog 未打开 |
-| cleanup | 子进程、浏览器、端口、sandbox、lease 与外部资源收束 | teardown 被切断、orphan、锁复活 |
-
-失败报告必须给出 Behavior id、已执行 action 轨迹、失败阶段、公开对象身份、实际观察、期望、证据路径和最短复现命令。observer 自己坏了必须在 observe 阶段失败，不得退化成空数组、`undefined` 或跳过。
-
-## Evidence world 与衔接
-
-每个 evidence recipe 产出一个原子发布、可校验身份的 world manifest：
-
-- `candidateDigest`：实际安装并执行的候选包；
-- `recipeId` 与 `recipeDigest`：输入、producer helper、fixture 与环境；
-- `resultsRoot`、命名导出目录、公开 locator / target；
-- producer 与 verifier 各自的版本身份；
-- 可写范围、外部资源 owner 与异常清理入口。
-
-prepare 完成后默认只读。普通 Behavior 前后比较文件树 digest；要追加 run、修改 Report 或维持长驻服务的 Behavior 必须申请私有 clone，并且只可执行 recipe 签入的命名 action。旧的“某个 verifier 必须最后运行”顺序约定删除。
-
-同一份真实 evidence 可以被多个只读 Behavior 消费，模型和导出不重复执行；但共享的是冻结事实，不是可写目录、Page 或端口。
-
-## 并发与运行拓扑
-
-并发规则按资源所有权决定，不按测试文件名决定：
-
-- 只读 Behavior 可以并发；每例使用独立 BrowserContext / Page 和独立临时输出目录。
-- 同一个浏览器进程可以复用，但 Page、console/request 日志和截图归各 Behavior 所有。
-- mutable clone 之间只有在写集、端口命名空间和外部 owner 全部分离时才能并发；同一 clone 内 action 串行。
-- `service()`、signal、Docker/Compose、orphan 与 lease proof 默认串行，并注册无条件异常清理。
-- 端口动态分配，不维护全局端口表，不在并发任务间共享长驻服务。
-- 调度契约比较带身份事件的偏序与 overlap，不比较墙钟阈值；retry/heartbeat 等概率竞态的主守护使用可控 barrier 单元测试。
-
-## Report：通用 target 闭环
-
-Report 的用户模型是通用参数化目标：
-
-```ts
-type ReportTarget = { pageId: string; key: string };
-```
-
-一条 target proof 必须闭合下面整条链：
-
-```text
-最终 Report page 清单
-→ params.enumerate(有效根)
-→ <pageId>/<key>.html
-→ 来源页 target href
-→ 声明的 hosting 形态下 HTTP 200
-→ 浏览器拦截并更新 hash
-→ dialog 展示该 target 的同一份内容
-```
-
-### 结构 census
-
-结构守护对最终 Report 清单中的所有参数化页执行全集检查：
-
-1. `enumerate()` 的每个 key 恰有一个导出文档；
-2. 页面产生的每个内部 target 链接都指向清单中的 pageId 和有效 key；
-3. 链接目标与产物集合双向闭合，不允许孤儿链接或无入口文档；
-4. 任一实例渲染失败时，静态导出保持全有或全无；
-5. 收窄后的页面、target 文档与 artifact 使用同一份有效根。
-
-这一层负责全量，不启动浏览器。
-
-### 浏览器代表矩阵
-
-真实 Chromium 不遍历每个实例，只保留具有区分力的代表：
-
-| 代表 | 必须证明 |
-|---|---|
-| `attempt/<locator>` | 点击后请求 200、dialog 可见、判定与详情身份正确 |
-| `experiment/<key>` | 实验行下钻打开实验详情，不被 attempt 专用逻辑漏掉 |
-| 自定义参数化页 | 宿主只按 pageId 清单工作，不认识业务实体 |
-| `experiment → attempt` | dialog 内嵌套 target 仍可下钻，hash 与内容切换正确 |
-
-每个代表还要覆盖：直接 hash deep link、关闭按钮 / `Esc` / 遮罩、关闭后的 URL、焦点进入与恢复、背景滚动锁、修饰键点击放行，以及无 JavaScript 时独立文档仍可读。
-
-hosting 至少包含 `directory-root`、`file-url` 与 `clean-url-subpath`。浏览器 proof 同时收集 console error、page error、request failure、最终请求 URL、HTTP 状态和截图；“链接存在”或“文件存在”不能单独通过。
-
-这组 Behavior 取代 attempt 专用的 A8，使用本地确定性 deliberate run 生产最小 Record，不调用模型或公网；目标命令形态为：
-
-```sh
-pnpm e2e --repo report --behavior report-target-closure
-```
-
-在 runner 支持 Behavior 选择前，命令仍可由 `report` 仓库唯一的 `pnpm e2e` 执行，但该组必须能独立复用 prepare 后的 world 重跑。
+类型、数据流、并发规则和失败折叠单源在 [Architecture](architecture.md)。
+Report 参数化页的全集 census、Chromium 代表矩阵与 hosting 路径见
+[Report target 闭环](use-case/report-target-closure.md)。
 
 ## 变更卡与门禁
 
@@ -174,14 +97,8 @@ CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 
 
 ## Proof 准入门槛
 
-每条新 proof 必须同时满足：
-
-1. 当前修复版经真实公开入口通过；
-2. fix parent 或最小历史逆补丁在预期最早阶段失败；
-3. 至少一个同形反证也失败，证明没有写 bug 专用 matcher；
-4. 文案、DOM class、ANSI、无关毫秒值等非契约扰动不误红；
-5. malformed / unsupported 公开输出使 observer 显式失败；
-6. 不要求用户修改 Eval、Report 或产品代码添加测试探针。
+Proof 必须通过当前候选、历史逆补丁、同形反证、非契约扰动和 observer malformed case 五类判定。
+完整准入不变量见 [Architecture · 身份、复用与准入](architecture.md#身份复用与准入)。
 
 ## 题库与实施顺序
 
@@ -189,8 +106,29 @@ CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 
 - [九题验收与单元 / 机制题](bugs/acceptance-bank.md)
 - [综合分层与试点顺序](bugs/synthesis.md)
 - [现行 testing 体系失效分析与迁移面](current-system-gaps.md)
+- [完整工程 Use Cases](use-case/README.md)
 
 实施按“验收器内核 → 便宜确定性 proof → 事件与计算 → 浏览器 target 闭环 → 高成本生命周期 → 机制缺口”推进。每批只有在当前版绿、旧 bug 红、无关扰动仍绿、observer 不假绿后才能进入下一批。
+
+## Engineering 采用形状
+
+开放分歧裁决后，两份 Roadmap 合并为一个工程主题，而不是作为两个平行测试系统存在：
+
+```text
+docs/engineering/testing/acceptance/
+  README.md
+  architecture.md
+  dsl/
+    README.md
+    library.md
+    architecture.md
+  use-case/
+```
+
+本目录的测试方案进入 acceptance 的 README 与 Architecture；DSL 目录进入 `dsl/`；两边的目标代码示例汇入同一个 `use-case/`。
+`current-system-gaps.md` 和逐 bug 研究不进入目标状态正文。采用时将稳定规则写入 Engineering，把历史原因留在 memory。
+
+采用必须同步改写 [现行 testing 文档清单](current-system-gaps.md#对现行-testing-文档的采用改动)，不能只移动目录或增加索引链接。
 
 ## 待裁决分歧
 

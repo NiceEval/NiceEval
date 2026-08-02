@@ -15,7 +15,8 @@
 它只给已经选定的 proof 提供稳定表达能力；没有测试方案绑定的 DSL 词不构成覆盖。
 
 完整词表见 [Library 逐词表说明](library.md)。
-逐场景的「现行断言 → 候选写法 → 回归剧本」对照见 [Use Cases](use-case/README.md)。
+模块边界、Observation 数据流和失败传播见 [Architecture](architecture.md)。
+完整测试文件见 [Use Cases](use-case/README.md)。
 调研来源见 [References · Playwright ARIA 结构期望](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植)、[References · trycmd / snapbox](../../references.md#trycmd--snapboxrust)、[References · CLI / TUI 测试生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等)。
 
 ## 问题
@@ -33,7 +34,7 @@ E2E 验收脚本(约 4,200 行、近 500 条断言)的断言词表停在**字面
   写脚本的人已经在自救(空白折叠、双面事实互提对比、颜色只比 rendered-to-rendered),但每次都是就地手工。
 
 fail-fast、单例重跑、共享 evidence 被改写和“必须排最后”等运行问题由
-[测试方案的生命周期与 evidence world](../e2e-acceptance-testing/README.md#一条-proof-的生命周期)解决，不再作为 DSL 自己的职责。
+[测试方案 Architecture](../e2e-acceptance-testing/architecture.md)解决，不再作为 DSL 自己的职责。
 
 调研结论(细节见 References 三节):现成生态没有能直接用的方案——「vitest 友好的终端结构断言库」这个生态位是空的。
 两套设计值得整段照抄:**aria 结构期望的匹配语义**(默认有序子序列、省略即不关心、显式升级精确)和 **trycmd 的容差词表**(脱敏变量长在 golden 里)。
@@ -68,7 +69,7 @@ adapter 负责三件事:把媒介原文解析成结构、按领域身份寻址�
 
 DSL 提供 `world()`、`w.locator()`、`w.target()`、`w.exportDir()`、`w.consumerDir()` 与私有 clone 的类型化读取接口。
 manifest 如何产生、何时冻结、哪些 Behavior 有写权限以及 clone 能否并发，由
-[测试方案的 Evidence world 与衔接](../e2e-acceptance-testing/README.md#evidence-world-与衔接)决定。
+[测试方案 Architecture](../e2e-acceptance-testing/architecture.md#recipe-与-world)决定。
 
 DSL 只执行两条边界：身份或 digest 不匹配时拒绝读取；未授权能力调用时显式失败。它不静默重跑 producer，也不靠进程全局 cwd 猜结果根。
 
@@ -176,7 +177,8 @@ vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 r
 ## 相关阅读
 
 - [Library 逐词表说明](library.md) —— 领域词与读面内部两组词的完整语法、匹配语义、API 与失败反馈。
-- [Use Cases](use-case/README.md) —— 真实验收脚本逐场景的「现行断言 → 候选写法 → 回归剧本」对照。
+- [Architecture](architecture.md) —— World reader、媒介 adapter、Domain View、`Observed<T>` 与失败传播。
+- [Use Cases](use-case/README.md) —— 各种公开媒介的完整目标测试文件。
 - [E2E 验收测试方案](../e2e-acceptance-testing/README.md) —— Behavior、evidence world、分层门禁、并发拓扑、题库与 rollout。
 - [测试作者面决策](../../design/user-readable-testing/DECISION.md) —— 作者轴、渲染边界与本目录必须满足的十项边界。
 - [PLAN-2 · 用户任务规格与类型化可观察读面](../../design/user-readable-testing/PLAN-2/README.md) —— Behavior 声明、User View 规则与失败格式;本目录是它的 adapter 层。
@@ -186,5 +188,4 @@ vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 r
 - [测试体系总纲 · 变更预算](../../engineering/testing/README.md#变更预算无关测试变红是缺陷) —— 「化妆性变更不打红」的裁决依据。
 - [References · Playwright ARIA 结构期望](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植) / [trycmd](../../references.md#trycmd--snapboxrust) / [生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等) —— 调研原始记录:抄什么、不抄什么及理由。
 - [Library · 排版原语](../../feature/reports/library/layout.md) —— 终端结构解析器的规范来源。
-</content>
 </invoke>
