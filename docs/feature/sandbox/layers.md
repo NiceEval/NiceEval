@@ -276,6 +276,11 @@ core 不读取 provider 私有字段，也不按 provider 名或 adapter 字符�
 动态构造的假对象没有 binding，运行边界返回 typed `sandbox.provider-binding-missing`。
 运行边界不会回退到猜测或兼容路径。
 
+每条边从 `(experimentId, evalId)` tuple 派生身份。
+id 含紧凑分隔符时切换到无碰撞编码，不从结果字符串猜边界。
+同一 tuple 重复出现是 `sandbox.duplicate-run-pair` typed link failure。
+Map 的后写值不能静默覆盖先写值。
+
 人类错误至少给出可直接修改的两处声明:
 
 ```text
