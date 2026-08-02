@@ -58,21 +58,13 @@
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "340d6c1256066c1c1fd1a327504454e88e6fbe4a",
-      "pending": {
-        "upstreamTree": "2c274467bb4a6731b9ad590865d6a1ea6ab4d964",
-        "needsInstall": false
-      }
+      "baseTree": "2c274467bb4a6731b9ad590865d6a1ea6ab4d964"
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "6d507fb2d7bd230e5a7c5d479b6cb50160eb6de9",
-      "pending": {
-        "upstreamTree": "b66cbe31cb727b1636514a1a7f6813efe0e74bb1",
-        "needsInstall": false
-      }
+      "baseTree": "b66cbe31cb727b1636514a1a7f6813efe0e74bb1"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
