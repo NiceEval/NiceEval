@@ -331,7 +331,7 @@ export default uiMessageStreamAgent({
 它替你做好的能力：
 
 - **收发 + 事件流**：SSE 帧经 `ai` 包官方的框架无关 reducer `readUIMessageStream`（`useChat` 内部同款）归约，工具调用/结果/消息文本从消息 parts 直构——**不要求应用接 OTel**。
-- **会话续接**：协议是服务端零状态、「客户端带全量历史」——工厂用 `ctx.session.history()` 存整份 `UIMessage[]`，每轮原样重放；新会话线（`t.newSession()` 之后）拿到的是空历史。
+- **会话续接**：协议是服务端零状态、「客户端带全量历史」——工厂用 Adapter 私有的 typed slot 存整份 `UIMessage[]`，每轮原样重放；新会话线（`t.newSession()` 之后）还没有写过这个 slot。
 - **HITL**：AI SDK v7 tool approval（工具带 `needsApproval: true`）原生映射——part 停在 `approval-requested` 时该 Turn 的 `status: "waiting"` + `input.requested`；`t.respond("approve" / "deny")` 翻译成 `approval-responded` 原地改写该 part、原样重发 `messages` 触发服务端续跑（和真实前端 `addToolApprovalResponse()` + `sendMessage()` 的协议行为一致，没有单独的 approve 端点）。拒绝的调用以 `rejected` 落进事件流，且默认带「不要重试」的 reason（`denyReason` 可覆盖）——不带的话模型经常原样重发同一个调用。
 - **usage / 瀑布图**：UI Message Stream 协议帧里没有 usage，所以 `t.maxTokens` 这类用量断言在这个内置件上默认没有数据（应用把 usage 放进 message metadata 属于应用自己的协议扩展）。瀑布图是另一回事：应用有 OTel 埋点（如官方 `@ai-sdk/otel`）时，按 [OTel 接入](/zh/tutorials/connect-otel)把 span 发给 [NiceEval](https://niceeval.com/)，`niceeval view` 就有完整瀑布图——span 只进瀑布图，不喂断言。
 
@@ -448,33 +448,35 @@ return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()�
 
 ## 通用「拼装方式」件：`driveFrameStream` / `deltaStream` + `ctx.session`
 
-一个手写 send 里真正互不相干的只有三段：transport（怎么发）、reduce（原始数据 → 事件，上一节的转换器管这个）、编排（会话续接 + HITL 暂停恢复）。第三段和任何具体协议无关，纯粹是控制流模式——会话续接（`id`/`capture`、`history`）和 HITL 停轮现场（`hold`/`take`）的存取器直接挂在 `ctx.session` 上（`AgentSession`，见 [Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)），不需要单独导入什么件、也不需要声明；剩下真正跨协议复用的只有两个官方件：
+一个手写 send 里真正互不相干的只有三段：transport（怎么发）、reduce（原始数据 → 事件，上一节的转换器管这个）、编排（会话续接 + HITL 暂停恢复）。第三段和任何具体协议无关，纯粹是控制流模式——服务端历史用 `ctx.session.id` / `capture`，客户端历史和 HITL 停轮现场用 `createSessionSlot<T>()` 声明的 Adapter 私有 slot，经 `ctx.session.get` / `set` / `take` 存取（`AgentSession`，见 [Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)）；剩下真正跨协议复用的只有两个官方件：
 
 | 件 | 解决什么 |
 |---|---|
-| `driveFrameStream(cursor, reducer, ctx, onFrame?)` | 逐帧喂 reducer、处理传输帧、检测 HITL 暂停信号——循环本身收成一个函数。暂停时 `cursor` 不关闭，`onFrame` 里用 `ctx.session.hold(cursor)` 存住它，回答轮 `ctx.session.take()` 取回接着读，不重新发起请求 |
+| `driveFrameStream(cursor, reducer, ctx, onFrame?)` | 逐帧喂 reducer、处理传输帧、检测 HITL 暂停信号——循环本身收成一个函数。暂停时 `cursor` 不关闭，`onFrame` 里用 `ctx.session.set(slot, cursor)` 存住它，回答轮 `ctx.session.take(slot)` 取回接着读，不重新发起请求 |
 | `deltaStream(spec)` | 逐 token / 逐参数增量的通用累加器——原始 OpenAI/Anthropic 流式 API、自己手写的 token-by-token 后端这类"没有整段落地帧"的协议用它；声明"这一帧对应哪个操作"（文本增量/工具参数增量/收尾），拼接时机它自己管 |
 
 ```ts
+const pendingSlot = createSessionSlot<Pending>("my-adapter/pending");
+
 // send 一进来先看有没有挂起的现场（HITL 回答轮）
-const pending = ctx.session.take<Pending>();
+const pending = ctx.session.take(pendingSlot);
 if (pending) {
   // ……按 input.responses 对位取裁决、把审批交回应用……
   return driveFrameStream(pending.cursor, pending.stream, ctx, onFrame);
 }
 
-// 正常轮：会话续接走 ctx.session.id / capture，暂停时 ctx.session.hold 存住 cursor
+// 正常轮：会话续接走 ctx.session.id / capture，暂停时把 cursor 存进 typed slot
 return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
   ctx.session.capture(stream.sessionId);
   const gated = derived.find((e) => e.type === "action.called" && e.name === GATED_TOOL_NAME);
   if (gated?.type === "action.called") {
-    ctx.session.hold<Pending>({ cursor, stream, toolUseId: gated.callId });
+    ctx.session.set(pendingSlot, { cursor, stream, toolUseId: gated.callId });
     return { pause: { id: gated.callId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
   }
 });
 ```
 
-三个 Tier 1 示例（claude-sdk、pi-sdk 用 `driveFrameStream` + `ctx.session.hold`/`take`，codex-sdk 只用 `driveFrameStream`）已经用这套件重写，adapter 只剩 transport 与 `onFrame` 里"这一帧要不要额外处理"的判断，没有手写循环和模块级 Map。
+三个 Tier 1 示例（claude-sdk、pi-sdk 用 `driveFrameStream` + typed slot，codex-sdk 只用 `driveFrameStream`）已经用这套件重写，Adapter 只剩 transport 与 `onFrame` 里"这一帧要不要额外处理"的判断，没有手写循环和模块级 Map。
 
 ## `turnFromAiSdk`：AI SDK 结果 → 事件流转换器
 
@@ -499,9 +501,9 @@ export default defineAgent({
 - 被测对象是 AI SDK 应用（`useChat` 后端）：内置 `uiMessageStreamAgent` 无侵入接入，零映射（含 HITL）。
 - 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下五个示例全是这条路；应用已埋 OTel 的话顺手接上，多一张瀑布图。
 - 需要调用瀑布图（`niceeval view` 的 trace）：`claude-code` / `codex` / `bub` 三个都自发 OTLP（claude-code 走 CLI 的 beta 遥测，span 只有结构与计时）；自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。
-- 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）；Sandbox 型三个都不支持，其它被测对象自己写 adapter，拿 `driveFrameStream` + `ctx.session.hold`/`take` 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
+- 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）；Sandbox 型三个都不支持，其它被测对象自己写 Adapter，拿 `driveFrameStream` + typed slot 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
 - 想跑一个 coding agent 改代码、看 diff、判断工具调用：`claude-code` / `codex` / `bub`（收发 + 事件流 + 会话续接 + workspace + sandbox）。
-- 后端协议是自己发明的、没有官方 SDK 转换器可用：别从零手写 send——挑一种 reduce 形状（整段落地写小映射，逐 token 增量用 `deltaStream`），会话续接直接取用 `ctx.session.id`/`capture` 或 `ctx.session.history`，有 HITL 再加 `ctx.session.hold`/`take`，拼起来就是 send。
+- 后端协议是自己发明的、没有官方 SDK 转换器可用：别从零手写 send——挑一种 reduce 形状（整段落地写小映射，逐 token 增量用 `deltaStream`），服务端会话续接用 `ctx.session.id` / `capture`，客户端历史或 HITL 现场用 typed slot，拼起来就是 send。
 
 ## 相关阅读
 

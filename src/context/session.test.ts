@@ -1,14 +1,42 @@
-// cases: docs/engineering/testing/unit/eval.md
+// cases: docs/engineering/testing/unit/adapters.md
 import { describe, expect, it } from "vitest";
 
 import { createAgentSession, SessionManager } from "./session.ts";
-import type { Agent, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import { createSessionSlot } from "../agents/index.ts";
+import type { Agent, AgentSession, Sandbox, SessionSlot, StreamEvent, Turn, TurnInput } from "../types.ts";
 import { isSendFailure, makeSendFailure, type SendFailure, type SendFailureClassifier } from "./send-failures.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
 // docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
 // 端到端的「同一条线同一个 ctx.session」由 SessionManager / RunSession 保证。
+
+function sessionSlotTypeContract(session: AgentSession): void {
+  const textSlot = createSessionSlot<string>("types/text");
+  const countSlot = createSessionSlot<number>("types/count");
+  const text: string | undefined = session.get(textSlot);
+  const count: number | undefined = session.take(countSlot);
+  session.set(textSlot, "ready");
+  session.set(countSlot, 1);
+  void [text, count];
+
+  // @ts-expect-error slot 的值类型由 createSessionSlot<T> 固定。
+  session.set(textSlot, 1);
+  // @ts-expect-error 不能把 text slot 的读取结果当成 number。
+  const wrongResult: number | undefined = session.get(textSlot);
+  // @ts-expect-error 不同值类型的 slot 不能互换。
+  const wrongSlot: SessionSlot<number> = textSlot;
+  // @ts-expect-error 无 slot 的 history 旧逃生口已删除。
+  session.history();
+  // @ts-expect-error 无 slot 的 hold 旧逃生口已删除。
+  session.hold("held");
+  // @ts-expect-error take 必须指定 typed slot。
+  session.take();
+  // @ts-expect-error 字符串 state 字典已从公开 AgentSession 删除。
+  session.state.answer = 42;
+  void [wrongResult, wrongSlot];
+}
+void sessionSlotTypeContract;
 
 function fakeSandbox(): Sandbox {
   return {
@@ -318,22 +346,59 @@ describe("SessionManager · onTurn 回报的 usage(turn 挂接 TimingNode 的数
 });
 
 describe("createAgentSession", () => {
-  describe("history()", () => {
-    it("新线 get() 是空数组;commit 之后同一条线的 get() 能看见", () => {
+  describe("typed slots", () => {
+    it("新线为空;set 之后 get 可重复读取并可覆盖", () => {
       const session = createAgentSession();
-      const history = session.history<{ role: string; text: string }>();
-      expect(history.get()).toEqual([]);
+      const historySlot = createSessionSlot<Array<{ role: string; text: string }>>("test/history");
+      expect(session.get(historySlot)).toBeUndefined();
 
-      history.commit([{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }]);
-      expect(history.get()).toEqual([{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }]);
+      const first = [{ role: "user", text: "hi" }];
+      session.set(historySlot, first);
+      expect(session.get(historySlot)).toBe(first);
+      expect(session.get(historySlot)).toBe(first);
+
+      const second = [...first, { role: "assistant", text: "hello" }];
+      session.set(historySlot, second);
+      expect(session.get(historySlot)).toBe(second);
     });
 
-    it("不同会话线的历史互相隔离", () => {
-      const a = createAgentSession();
-      a.history<{ n: number }>().commit([{ n: 1 }]);
+    it("take 返回同一值并只消费一次", () => {
+      const session = createAgentSession();
+      const heldSlot = createSessionSlot<{ toolCallId: string }>("test/held");
+      const held = { toolCallId: "c1" };
+      expect(session.take(heldSlot)).toBeUndefined();
+      session.set(heldSlot, held);
+      expect(session.take(heldSlot)).toBe(held);
+      expect(session.get(heldSlot)).toBeUndefined();
+      expect(session.take(heldSlot)).toBeUndefined();
+    });
 
+    it("同名 slot 按 symbol 身份隔离", () => {
+      const session = createAgentSession();
+      const a = createSessionSlot<string>("same-name");
+      const b = createSessionSlot<string>("same-name");
+      expect(typeof a.key).toBe("symbol");
+      expect(Reflect.ownKeys(a)).toEqual(["key"]);
+      session.set(a, "A");
+      session.set(b, "B");
+      expect(session.get(a)).toBe("A");
+      expect(session.get(b)).toBe("B");
+    });
+
+    it("不同会话线的 slot 值互相隔离", () => {
+      const slot = createSessionSlot<{ n: number }>("test/isolation");
+      const a = createAgentSession();
       const b = createAgentSession();
-      expect(b.history<{ n: number }>().get()).toEqual([]); // 全新会话线,看不到 a 的历史
+      a.set(slot, { n: 1 });
+      expect(a.get(slot)).toEqual({ n: 1 });
+      expect(b.get(slot)).toBeUndefined();
+    });
+
+    it("运行时不暴露字符串 state 字典或无 slot 旧存取器", () => {
+      const session = createAgentSession();
+      expect(session).not.toHaveProperty("state");
+      expect(session).not.toHaveProperty("history");
+      expect(session).not.toHaveProperty("hold");
     });
   });
 
@@ -367,32 +432,6 @@ describe("createAgentSession", () => {
       a.capture("sess-a");
       expect(a.id).toBe("sess-a");
       expect(b.id).toBeUndefined(); // b 是新线,看不到 a 的 id
-    });
-  });
-
-  describe("hold() / take()", () => {
-    it("take() 只消费一次;没有 hold 过就是 undefined", () => {
-      const session = createAgentSession();
-      expect(session.take<{ toolCallId: string }>()).toBeUndefined();
-      session.hold({ toolCallId: "c1" });
-      expect(session.take<{ toolCallId: string }>()).toEqual({ toolCallId: "c1" });
-      expect(session.take<{ toolCallId: string }>()).toBeUndefined();
-    });
-
-    it("不要求会话有 id:第一轮就能 hold(服务端无状态的接口也能停轮)", () => {
-      const session = createAgentSession();
-      session.hold({ x: 1 });
-      expect(session.id).toBeUndefined();
-      expect(session.take<{ x: number }>()).toEqual({ x: 1 });
-    });
-
-    it("按会话线隔离,不同线互不干扰", () => {
-      const a = createAgentSession();
-      const b = createAgentSession();
-      a.hold({ v: "A" });
-      b.hold({ v: "B" });
-      expect(b.take<{ v: string }>()).toEqual({ v: "B" });
-      expect(a.take<{ v: string }>()).toEqual({ v: "A" });
     });
   });
 

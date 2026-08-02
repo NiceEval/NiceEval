@@ -21,7 +21,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 
 | 行为 | 文件 |
 |---|---|
-| Agent 契约(`kind: "sandbox" | "direct"`,无能力位字段)/ 三类配置归属 | `src/agents/types.ts`(`Agent` / `AgentContext` / `AgentSession` / `SpanMapper`) |
+| Agent 契约(`kind: "sandbox" | "direct"`,无能力位字段)/ 三类配置归属 / typed `SessionSlot` | `src/agents/types.ts`(`Agent` / `AgentContext` / `AgentSession` / `SpanMapper`)、`src/agents/session-slot.ts`(`createSessionSlot`) |
 | `AgentContext.experimentId`(路径推导的实验 id,与结果归属同源;沙箱生命周期 Hook 按它隔离跨 attempt 状态) | `src/agents/types.ts`(`AgentContext.experimentId`) |
 | 能力调用守卫(缺声明的动作第一次调用即报清晰错误;conversation gate 第二轮起) | `src/context/context.ts`(`capabilityGuard`) |
 | 逐 API 适配义务(send / newSession / respond 的运行器侧翻译) | `src/context/session.ts`(`SessionManager` / `RunSession`)、`src/context/context.ts` |

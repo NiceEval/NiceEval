@@ -5,7 +5,7 @@
 //
 // 唯一非 LangGraphEventLike 的帧是 `{type: "session", sessionId}`(会话 id 回传,首轮才发,
 // 语义同其它 origin/* 示例)。
-import { completeCoverage, defineAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
+import { completeCoverage, createSessionSlot, defineAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, LangGraphEventLike, LangGraphStream, SseFrameCursor } from "niceeval/adapter";
 import type { StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -24,6 +24,7 @@ interface PendingApproval {
   readonly requestId: string;
   readonly toolCallId: string | undefined;
 }
+const heldSlot = createSessionSlot<PendingApproval>("langgraph/held-stream");
 
 async function appFetch(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
   try {
@@ -86,7 +87,7 @@ async function drainStream(cursor: ProtoCursor, stream: LangGraphStream, ctx: Ag
         throw new Error("input.requested 事件缺少 request.id——LangGraph interrupt 必须带 id 才能定位恢复请求");
       }
       const toolCallId = findPendingCallId(events, justRequested.request.action);
-      ctx.session.hold<PendingApproval>({ cursor, stream, requestId, toolCallId });
+      ctx.session.set(heldSlot, { cursor, stream, requestId, toolCallId });
       return { status: "waiting", events };
     }
   }
@@ -97,7 +98,7 @@ async function drainStream(cursor: ProtoCursor, stream: LangGraphStream, ctx: Ag
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   // 回答轮:取回停轮现场,把裁决交回应用,接着读同一条流。
-  const pending = ctx.session.take<PendingApproval>();
+  const pending = ctx.session.take(heldSlot);
   if (pending) {
     const response = input.responses?.find((r) => r.requestId === pending.requestId);
     if (!response) {

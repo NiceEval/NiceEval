@@ -59,7 +59,7 @@ HITL 对 Adapter 的全部要求就三件事——前两件发生在停下的那
 2. **每个待回答的问题吐一条 `input.requested`**，`id` 稳定、字段尽量填全——评估侧的检查和对位全靠它们；
 3. **下一次 `send` 先交裁决、再续跑**：从 `input.responses` 按 `requestId` 把裁决交回应用（不要按顺序猜），然后接着上一轮挂起的地方继续，而不是重发请求。
 
-"挂起的现场"（比如读了一半的 SSE 流）存在本会话线的 `ctx.session` 上——停轮时 `ctx.session.hold(现场)`，回答轮 `ctx.session.take()` 取回，取到即清除。怎么和流式驱动拼起来，见[写 send](/zh/tutorials/write-send#第五步：hitl) 第五步的完整骨架。
+"挂起的现场"（比如读了一半的 SSE 流）存在本会话线的 `ctx.session` 上——Adapter 用 `createSessionSlot<Pending>()` 声明私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮 `ctx.session.take(slot)` 取回，取到即清除。怎么和流式驱动拼起来，见[写 send](/zh/tutorials/write-send#第五步：hitl) 第五步的完整骨架。
 
 和 [NiceEval](https://niceeval.com/) 的其它能力一样，HITL 没有布尔声明：**做到了就是有**。send 返回过 `"waiting"` 并吐了 `input.requested`，`t.respond` 就能工作；没做到，eval 会在第一个 `parked()` 或 `requireInputRequest()` 上明确失败，而不是静默假通过。能力如何从构造中来，见 [Adapter](/zh/explanation/adapter#能力从哪来：构造证明，不是问卷)。
 
@@ -81,5 +81,5 @@ HITL 对 Adapter 的全部要求就三件事——前两件发生在停下的那
 
 - [Drive](/zh/explanation/drive#人工介入-hitl) — 评估侧的完整用法：`t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`。
 - [Adapter](/zh/explanation/adapter#不同回答的入参) — 回答到 Adapter 的结构化入参，四种典型形态。
-- [写 send](/zh/tutorials/write-send) — Adapter 侧实操：`ctx.session.hold` / `take` 与流式 + HITL 的完整骨架。
+- [写 send](/zh/tutorials/write-send) — Adapter 侧实操：typed session slot 与流式 + HITL 的完整骨架。
 - [接入你的 Agent](/zh/tutorials/connect-your-agent) — 接入全景：最小接入、参数通道与增量地图。

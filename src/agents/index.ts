@@ -1,6 +1,7 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
 export { defineDirectAgent, defineSandboxAgent } from "../define.ts";
+export { createSessionSlot } from "./session-slot.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
@@ -71,7 +72,7 @@ export type { LangGraphEventLike, LangGraphContentBlockLike, LangGraphStream } f
 // 通用「拼装方式」件:逐帧驱动循环、逐 token/参数增量累加器。见 docs-site/zh/tutorials/write-send.mdx——
 // 这些和任何具体协议无关,自己写 adapter 时优先拿这些拼,只有 transport(怎么发)与
 // 「帧类型 → 操作」这张映射表才是真正要手写的。会话续接与 HITL 停轮现场不再是可选件,
-// 而是 ctx.session(AgentSession)本身自带的存取器(history()/id+capture()、hold()/take())。
+// 而是 ctx.session(AgentSession)本身的 typed slot 与 id/capture 存取器。
 export { driveFrameStream, deltaStream } from "./streaming.ts";
 export type { FrameReducer, FrameHook, DeltaOp, DeltaStreamSpec } from "./streaming.ts";
 
@@ -124,6 +125,7 @@ export type {
   DirectAgentSetup,
   DirectAgentTeardown,
   AgentSession,
+  SessionSlot,
   AgentSetup,
   AgentSetupManifest,
   AgentSetupSkill,

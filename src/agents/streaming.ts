@@ -6,8 +6,7 @@
 //   2. 原始数据怎么变成 StreamEvent[]——按数据到达形状分「整段落地」(sdk-streams.ts 的
 //      fromXxxEvents,已有)和「逐 token / 逐参数增量」(deltaStream,这里新增)两种官方 reducer;
 //   3. 会话续接与 HITL 暂停恢复——这两件事完全是控制流层面的模式,和任何具体协议无关,
-//      存取器直接挂在 ctx.session 上(history()/id+capture()、hold()/take()),adapter 取用即可,
-//      不需要额外声明什么(见 src/context/session.ts 的 createAgentSession)。
+//      adapter 用 ctx.session 的 typed slot 保存私有状态,或用 id/capture 续接服务端历史。
 //
 // driveFrameStream 把「逐帧喂 reducer + 处理特殊传输帧 + 检测 HITL 暂停信号」这个循环收成
 // 一个函数——claude-sdk / codex-sdk / pi-sdk 三个示例里几乎相同的 drainStream,现在只需要
@@ -39,8 +38,8 @@ export type FrameHook<Frame> = (
 
 /**
  * 逐帧驱动一个 reducer,直到流结束或命中 `onFrame` 的暂停信号。
- * 暂停时不关闭 cursor——调用方多半用 `ctx.session.hold(cursor)` 存住它,回答轮
- * `ctx.session.take()` 取回,下一轮直接接着读同一条流,不重新发起请求。
+ * 暂停时不关闭 cursor——调用方用自己的 typed slot 存住它,回答轮经
+ * `ctx.session.take(slot)` 取回,下一轮直接接着读同一条流,不重新发起请求。
  *
  * reducer 的帧类型(`RFrame`)允许只覆盖流(`Frame`)的一个子集:adapter 常在 SDK 原生帧之外
  * 混入自己的传输帧(session / server_error…),这些由 `onFrame` 处理,reducer 对认不出的帧
@@ -77,9 +76,8 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
   return { status: transportFailed || reducer.failed ? "failed" : "completed", events, usage: reducer.usage };
 }
 
-// 会话续接(id/capture、history)与 HITL 停轮现场(hold/take)不再是这里的可选「拼装件」——
-// 它们是 ctx.session(AgentSession)本身的存取器,任何 adapter 直接取用,不需要额外声明什么。
-// 见 docs-site/zh/explanation/adapter.mdx 与 src/context/session.ts 的 createAgentSession。
+// 会话续接与 HITL 停轮现场不再是这里的可选「拼装件」。adapter 定义
+// typed slot 后直接调 ctx.session.get/set/take；服务端历史仍调 id/capture。
 
 // ───────────────────────── deltaStream:逐 token / 逐参数增量累加器 ─────────────────────────
 

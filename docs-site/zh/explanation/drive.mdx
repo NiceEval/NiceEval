@@ -61,7 +61,7 @@ await t.send("好,发出去。");
 t.calledTool("send_email");
 ```
 
-多轮 `t.send()` 能不能真的续上上文，取决于 Adapter 的 `send` 是否接了 `ctx.session` 的会话续接存取器（`history()` 或 `id` + `capture()`）——没接时每轮各是一场新对话。怎么接见 [Adapter](/zh/explanation/adapter) 与[写 send](/zh/tutorials/write-send)。
+多轮 `t.send()` 能不能真的续上上文，取决于 Adapter 的 `send` 是否接了 `ctx.session` 的会话续接存取器（typed slot 或 `id` + `capture()`）——没接时每轮各是一场新对话。怎么接见 [Adapter](/zh/explanation/adapter) 与[写 send](/zh/tutorials/write-send)。
 
 ## 独立会话 —— `t.newSession()`
 

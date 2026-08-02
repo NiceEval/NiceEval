@@ -1,7 +1,7 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SandboxAgentContext, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import {
   downgradeEvidenceCoverage,
@@ -23,15 +23,26 @@ import type { RetryAttemptRecord } from "../runner/types.ts";
 import { recordFact } from "../shared/facts.ts";
 
 /**
- * 一条会话线的存取器实现(见 docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。
- * 私有槽都关在闭包里——`state` 只归用户,框架内部数据不往里塞。
+ * 一条会话线的存取器实现。slot 值只按 factory 创建的 symbol 身份存取；
+ * 从异构 Map 取出后立即依 typed slot 恢复 `T`，不让擦除后的值流入领域逻辑。
  */
+abstract class StoredSessionSlotValue {
+  declare private readonly storedSessionSlotValue: void;
+}
+
+class StoredSessionSlotValueOf<T> extends StoredSessionSlotValue {
+  constructor(readonly value: T) {
+    super();
+  }
+}
+
+function valueFromStoredSlot<T>(stored: StoredSessionSlotValue): T {
+  return (stored as StoredSessionSlotValueOf<T>).value;
+}
+
 export function createAgentSession(): AgentSession {
   let capturedId: string | undefined;
-  let historyLine: unknown[] = [];
-  let held: unknown;
-  let hasHeld = false;
-  const state: globalThis.Record<string, unknown> = {};
+  const slots = new Map<symbol, StoredSessionSlotValue>();
 
   return {
     get id() {
@@ -41,31 +52,24 @@ export function createAgentSession(): AgentSession {
       if (!id || capturedId !== undefined) return; // 空值忽略;first-writer-wins
       capturedId = id;
     },
-    history<TMsg>() {
-      return {
-        get: () => historyLine as TMsg[],
-        commit: (messages: TMsg[]) => {
-          historyLine = messages;
-        },
-      };
+    get<T>(slot: SessionSlot<T>): T | undefined {
+      const stored = slots.get(slot.key);
+      return stored === undefined ? undefined : valueFromStoredSlot<T>(stored);
     },
-    hold(s) {
-      held = s;
-      hasHeld = true;
+    set<T>(slot: SessionSlot<T>, value: T): void {
+      slots.set(slot.key, new StoredSessionSlotValueOf(value));
     },
-    take<T>() {
-      if (!hasHeld) return undefined;
-      hasHeld = false;
-      const v = held as T;
-      held = undefined;
-      return v;
+    take<T>(slot: SessionSlot<T>): T | undefined {
+      const stored = slots.get(slot.key);
+      if (stored === undefined) return undefined;
+      slots.delete(slot.key);
+      return valueFromStoredSlot<T>(stored);
     },
-    state,
   };
 }
 
 /**
- * 一条会话线的可变状态。存取器(id/capture/history/hold/take/state)委托给
+ * 一条会话线的可变状态。存取器(id/capture/get/set/take)委托给
  * `createAgentSession()`;index/lastMessage/… 是运行器自己的会话簿记,不属于公开契约。
  */
 export class RunSession implements AgentSession {
@@ -77,17 +81,14 @@ export class RunSession implements AgentSession {
   capture(id: string | undefined): void {
     this.session.capture(id);
   }
-  history<TMsg>() {
-    return this.session.history<TMsg>();
+  get<T>(slot: SessionSlot<T>): T | undefined {
+    return this.session.get(slot);
   }
-  hold<T>(s: T): void {
-    this.session.hold(s);
+  set<T>(slot: SessionSlot<T>, value: T): void {
+    this.session.set(slot, value);
   }
-  take<T>(): T | undefined {
-    return this.session.take<T>();
-  }
-  get state(): globalThis.Record<string, unknown> {
-    return this.session.state;
+  take<T>(slot: SessionSlot<T>): T | undefined {
+    return this.session.take(slot);
   }
 
   index = 1;

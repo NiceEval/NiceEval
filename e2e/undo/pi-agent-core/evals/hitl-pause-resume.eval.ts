@@ -1,7 +1,7 @@
 // 协议行为:send_alert 经 server.ts 的 beforeToolCall 挂审批,回调型 HITL——同一条 SSE 流卡在
 // 服务端等 /api/chat/approve。adapter 在 approval_request 帧上返回 { pause },
-// ctx.session.hold() 保存"读了一半的 SSE 流"(见 agents/pi-agent-core.ts);respond 触发的下一轮
-// send() 里 ctx.session.take() 取回现场、continue 读同一条流。拒绝与批准各触发一次
+// heldSlot 保存"读了一半的 SSE 流"(见 agents/pi-agent-core.ts);respond 触发的下一轮
+// send() 里 take(heldSlot) 取回现场、continue 读同一条流。拒绝与批准各触发一次
 // hold()/take(),证明 resume 不是只能用一次、也不是从不消费的死状态。
 import { defineEval } from "niceeval";
 

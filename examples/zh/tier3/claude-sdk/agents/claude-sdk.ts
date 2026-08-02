@@ -3,8 +3,8 @@
 //
 // `SDKMessage` → 标准事件的映射是官方转换器 `createClaudeSdkEventStream`(`"niceeval/adapter"`
 // 导出)的事;逐帧驱动也是官方件(`driveFrameStream`)。HITL 停轮现场(读了一半的流)和会话
-// id 续接都不需要自己声明状态槽——挂在 `ctx.session` 上,取用即可:`ctx.session.hold` /
-// `ctx.session.take` 存取停轮现场,`ctx.session.id` / `ctx.session.capture` 续接会话。这里
+// HITL 停轮现场用 Adapter 私有 heldSlot 存取，会话 id 用
+// `ctx.session.id` / `ctx.session.capture` 续接。这里
 // 只剩传输粘合:端点在哪、审批打哪个端点、HITL 停轮怎么判。
 // 无 OTel(CLI 原生遥测只有 metrics+logs,niceeval 不消费),事件全部来自转换器。
 //
@@ -17,7 +17,7 @@
 // mcp__demo-tools__calculate 一个(应用 agent.ts 里的 GATED_TOOL_NAME,这里必须写死同一个
 // 字符串),`driveFrameStream` 的 onFrame 钩子扫 derived 事件认出它就返回 `{ pause }`;
 // 下一轮先打 /api/chat/approve 再继续读同一条流。
-import { defineAgent, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, ClaudeSdkStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -52,6 +52,7 @@ interface Pending {
   readonly stream: ClaudeSdkStream;
   readonly toolUseId: string;
 }
+const heldSlot = createSessionSlot<Pending>("claude-sdk/held-stream");
 // 会话续接走「服务端记历史」范式:请求带 ctx.session.id,init 帧回传的 session_id 用
 // ctx.session.capture 写回(first-writer-wins,不会被之后的重复回传覆盖)。
 
@@ -64,7 +65,7 @@ function readStream(cursor: SseFrameCursor<ClaudeFrame>, ctx: AgentContext, stre
     // HITL 停轮:gated 工具的 tool_use 到了(canUseTool 此刻把流卡住,不会再有后续帧)。
     const gated = derived.find((e) => e.type === "action.called" && e.name === GATED_TOOL_NAME);
     if (gated && gated.type === "action.called") {
-      ctx.session.hold<Pending>({ cursor, stream, toolUseId: gated.callId });
+      ctx.session.set(heldSlot, { cursor, stream, toolUseId: gated.callId });
       return { pause: { id: gated.callId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
     }
   });
@@ -89,7 +90,7 @@ async function postApprove(toolUseId: string, approved: boolean, signal: AbortSi
 }
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-  const pending = ctx.session.take<Pending>();
+  const pending = ctx.session.take(heldSlot);
   if (pending) {
     // 按 requestId(挂起的 toolUseId)从 input.responses 里对位取裁决,不从 text 猜;
     // 这里每次只挂一条审批,取第一条即可——多请求并停时按 requestId 对位。

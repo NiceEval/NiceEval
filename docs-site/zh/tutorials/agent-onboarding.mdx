@@ -107,7 +107,7 @@ export default defineConfig({
 | 能做什么 | 改动量 | 好处 | 文档 |
 |---|---|---|---|
 | 工具调用断言（`t.calledTool()` 等） | 只改 Adapter：把应用响应映射成标准事件流，约 10–30 行映射代码 | 评估用例能断言「Agent 有没有调对工具、参数对不对」，不再只看最终回复 | [编写 send](/zh/tutorials/write-send)、[事件参考](/zh/reference/events) |
-| 多轮对话、会话隔离 | 只改 Adapter：接上 `ctx.session`（`history()` 或 `id` + `capture()`），几行到十几行 | 评估用例能写多轮场景、`t.newSession()` 验证会话间不串味 | [驱动多轮交互](/zh/explanation/drive)、[编写 send](/zh/tutorials/write-send) |
+| 多轮对话、会话隔离 | 只改 Adapter：接上 `ctx.session`（typed slot 或 `id` + `capture()`），几行到十几行 | 评估用例能写多轮场景、`t.newSession()` 验证会话间不串味 | [驱动多轮交互](/zh/explanation/drive)、[编写 send](/zh/tutorials/write-send) |
 | 人工审批流（HITL） | 只改 Adapter：停轮返回 `waiting` + `input.requested`，回答轮续跑，约 10–20 行 | 评估用例能覆盖「批准/拒绝之后 Agent 行为对不对」这类审批场景 | [HITL](/zh/explanation/hitl) |
 | 调用瀑布图（升 Tier 2） | 应用已有 OTel 埋点（第 1 步探过）：只是把 span 多发一份给 NiceEval，几行配置；没埋点：补一段通用 OTel 初始化 | `niceeval view` 里看到应用内部每次模型调用、工具执行的耗时和 token 时间线；不影响任何断言 | [配置 OTel](/zh/tutorials/connect-otel) |
 | feature A/B 对比（升 Tier 3） | 改应用：把变体暴露成 `flags` 可切换的配置，改动量取决于应用；已有 A/B 开关（第 1 步探过）就是现成入口 | Experiment 层面直接对比「改 prompt / 换工具集 / 开关 feature 谁更好」 | [组织 Experiment](/zh/tutorials/experiments)、[接入等级](/zh/explanation/tier) |

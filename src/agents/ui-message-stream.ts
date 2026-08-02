@@ -4,7 +4,7 @@
 // (`data: {UIMessageChunk}\n\n`,以 `data: [DONE]\n\n` 收尾)。这是「对着一个已部署的
 // AI SDK 应用的 HTTP 接口无侵入接入」:adapter 只 fetch,不 import 被测应用的任何代码。
 //
-//   · 会话:协议是服务端零状态、「客户端带全量历史」——工厂用 ctx.session.history() 存整份
+//   · 会话:协议是服务端零状态、「客户端带全量历史」——工厂用 typed slot 存整份
 //     UIMessage[],每轮原样重放;ctx.session.id 未记录时开新 chat id 并 capture 回写。
 //   · 事件流:从归约后的 assistant 消息 parts 直构(text → message,tool part 的
 //     output-available / output-error / 审批拒绝 → action.called + action.result),
@@ -28,6 +28,7 @@ import { defineDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
+import { createSessionSlot } from "./session-slot.ts";
 
 // UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
 // 第 2 节);events/actions/messages/status 都直接来自完整归约的协议帧,和 turnFromAiSdk/aiSdkAgent
@@ -66,6 +67,14 @@ interface UIMessageChunkLike {
   errorText?: string;
   [key: string]: unknown;
 }
+
+interface UiMessageSessionState {
+  chatId?: string;
+  reported?: ReportedState;
+}
+
+const historySlot = createSessionSlot<UIMessageLike[]>("ui-message-stream/history");
+const sessionStateSlot = createSessionSlot<UiMessageSessionState>("ui-message-stream/state");
 
 type ReadUIMessageStream = (options: {
   message?: UIMessageLike;
@@ -257,12 +266,11 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
     async send(input: TurnInput, ctx: AgentContext) {
       const { readUIMessageStream } = await loadAi();
 
-      // 会话续接是「客户端带全量历史」模式:历史槽直接挂在 ctx.session 上,新线自然为空。
-      // chat id(useChat 协议要求请求带,每条会话线固定一个)和 reported(HITL 续跑时跨轮
-      // 去重要用)是本协议特有的簿记,存进 ctx.session.state(逃生舱,随会话线创建/丢弃)。
-      const history = ctx.session.history<UIMessageLike>();
-      const priorMessages = history.get();
-      const bookkeeping = ctx.session.state as { chatId?: string; reported?: ReportedState };
+      // 会话续接是「客户端带全量历史」模式:历史与协议簿记各用一个 typed slot,
+      // 新线自然两者都为空；相同名字不会让其它 Adapter 的 slot 与它们碰撞。
+      const priorMessages = ctx.session.get(historySlot) ?? [];
+      const bookkeeping = ctx.session.get(sessionStateSlot) ?? {};
+      ctx.session.set(sessionStateSlot, bookkeeping);
       let id = bookkeeping.chatId;
       if (!id) {
         id = `uims-${randomUUID()}`;
@@ -351,7 +359,8 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
       }
 
       // 续跑轮:finalMessage 是同一条消息的完整版,替换末尾半成品;全新轮:追加。
-      history.commit(
+      ctx.session.set(
+        historySlot,
         resumeFrom ? [...messagesToSend.slice(0, -1), finalMessage] : [...messagesToSend, finalMessage],
       );
 

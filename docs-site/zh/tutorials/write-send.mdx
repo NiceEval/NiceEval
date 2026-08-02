@@ -82,26 +82,27 @@ if (!res.requestId) {
 
 运行器在会话上只承诺一件事：**同一条会话线的每次 `send` 拿到同一个 `ctx.session`，新会话线（评估用例的第一轮，或 `t.newSession()` 之后）拿到一个全新的。**
 
-会话续接方式取决于应用接口形状。`ctx.session` 为两种常见模式分别提供一对存取器：
+会话续接方式取决于应用接口形状：
 
-- **客户端带全量历史**（服务端无状态，每轮发完整消息列表：Chat Completions 形是典型）→ `ctx.session.history<TMsg>()`
+- **客户端带全量历史**（服务端无状态，每轮发完整消息列表：Chat Completions 形是典型）→ 用 `createSessionSlot<TMsg[]>()` 创建 Adapter 私有 slot，再用 `ctx.session.get(slot)` / `set(slot, messages)` 存取
 - **服务端记历史**（接口收一个会话 id：Responses 形的 `previous_response_id`、各 SDK 的原生 session / thread）→ `ctx.session.id` + `ctx.session.capture(id)`
 
 主线的接口是前者：
 
 ```ts
 // agents/chat-app.ts
-import { defineAgent } from "niceeval/adapter";
+import { createSessionSlot, defineAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";
 
 interface Msg { role: "user" | "assistant"; content: string | null }
+const historySlot = createSessionSlot<Msg[]>("chat-app/history");
 
 export default defineAgent({
   name: "chat-app",
   async send(input, ctx) {
-    const history = ctx.session.history<Msg>();  // ← 本会话线的历史槽；新会话线是空的
-    const messages = [...history.get(), { role: "user" as const, content: input.text }];
+    const history = ctx.session.get(historySlot) ?? []; // ← 新会话线还没有写过这个 slot
+    const messages = [...history, { role: "user" as const, content: input.text }];
 
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
       // ……method、headers、signal 同第一步，省略
@@ -109,7 +110,7 @@ export default defineAgent({
     }).then((r) => r.json());
 
     const reply = res.choices[0].message;
-    history.commit([...messages, reply]);        // ← 写回；同一条线的下一轮 get() 自动带上
+    ctx.session.set(historySlot, [...messages, reply]); // ← 写回；同一条线的下一轮 get() 自动带上
 
     return {
       status: "completed",
@@ -119,7 +120,7 @@ export default defineAgent({
 });
 ```
 
-注意这里**没有"第一轮"分支**：新会话线的 `history.get()` 自然返回空数组——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何东西：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
+注意这里**没有"第一轮"分支**：新会话线的 `ctx.session.get(historySlot)` 自然返回 `undefined`，`?? []` 归一为空历史——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何东西：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
 
 应用接口收会话 id 的话，历史在服务端，Adapter 只记 id——`send` 里只改两处：
 
@@ -230,19 +231,20 @@ Chat Completions 响应**不保证包含完整过程记录**。应用可能在�
 - **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.parked()`、`t.requireInputRequest()` 读它，回答靠这个 `id` 对位。
 - **回答轮**：评估用例里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，`action.result` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
 
-"停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上：停轮时 `ctx.session.hold(现场)`，回答轮开头 `ctx.session.take()` 取回——取到即清除，一次消费。
+"停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上：Adapter 先用 `createSessionSlot<Pending>()` 创建私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮开头 `ctx.session.take(slot)` 取回——取到即清除，一次消费。
 
 HITL 几乎总是发生在流式接口上（停在流中间），所以这一步的示例换成一个以 SSE 透传原生事件的应用——它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
 
 ```ts
 // agents/my-app.ts
-import { defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
 const BASE_URL = "http://localhost:5299";               // 应用自己的端口，eval 不代管进程
 
 interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId: string }
+const pendingSlot = createSessionSlot<Pending>("my-app/pending");
 
 function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
   return driveFrameStream(cursor, stream, ctx, (frame) => {
@@ -251,7 +253,7 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
       return;
     }
     if (frame.type === "approval_request") {            // ← 本步：应用停下等审批，存下现场
-      ctx.session.hold<Pending>({ cursor, stream, callId: frame.toolCallId });
+      ctx.session.set(pendingSlot, { cursor, stream, callId: frame.toolCallId });
       return { pause: { id: frame.toolCallId, action: frame.toolName,
                         options: [{ id: "approve" }, { id: "deny" }] } };
       // driveFrameStream 收到 pause：补一条 input.requested、status 置 "waiting"、停止读流
@@ -263,7 +265,7 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
 export default defineAgent({
   name: "my-app",
   async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-    const held = ctx.session.take<Pending>();
+    const held = ctx.session.take(pendingSlot);
     if (held) {                                         // ← t.respond("approve")：普通 send，先交裁决
       const approved = input.responses?.[0]?.optionId === "approve";  // 多请求并停时按 requestId 对位
       if (!approved) held.stream.markRejected(held.callId);

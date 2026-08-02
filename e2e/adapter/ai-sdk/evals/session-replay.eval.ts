@@ -1,6 +1,6 @@
 // Protocol behavior: 会话 — the UI Message Stream protocol is server-stateless and
 // client-full-history: the adapter stores the whole UIMessage[] history and replays it
-// every turn (ctx.session.history()), so a second turn on the same session line can
+// every turn (an Adapter-private typed session slot), so a second turn on the same session line can
 // recall the first turn's fact. A fresh session line shares none of that history.
 import { defineEval } from "niceeval";
 import { excludes } from "niceeval/expect";

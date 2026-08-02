@@ -33,8 +33,8 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
   `tool-output` → `action.result`(completed)、`tool-output-denied` → `action.result`
   (rejected,called 在上一轮的 `tool-input` 已落,同一个 `toolCallId` 跨轮配对)、
   `text-delta` 累积成完整回复在轮次结束补一条 `message`、`session` → `ctx.session.capture`、
-  `tool-approval-request` → `input.requested` + `waiting`(停轮现场用 `ctx.session.hold`
-  存住,回答轮 `ctx.session.take` 取回接着读同一条流)、`error` → `failed`、`finish` → 结束。
+  `tool-approval-request` → `input.requested` + `waiting`(停轮现场用 Adapter 私有的 typed slot
+  存住,回答轮 `ctx.session.take(slot)` 取回接着读同一条流)、`error` → `failed`、`finish` → 结束。
   协议帧里没有 usage,所以这个示例没有用量断言。
 - `evals/`：基础问答、天气工具调用、跨轮记忆 + `newSession()` 隔离、HITL 批准/拒绝。
 - `experiments/langgraph.ts`：单配置基线。没有 `compare-models/`——

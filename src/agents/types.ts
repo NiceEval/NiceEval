@@ -8,6 +8,9 @@ import type { Sandbox } from "../sandbox/types.ts";
 import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
 import type { RegisteredSandboxContent } from "../sandbox/content.ts";
 import type { SendFailureClassifier } from "../context/send-failures.ts";
+import type { SessionSlot } from "./session-slot.ts";
+
+export type { SessionSlot } from "./session-slot.ts";
 
 /**
  * 本地 stdio 形态的 MCP server:沙箱内起子进程,按 stdio 说 MCP 协议。
@@ -256,23 +259,20 @@ export interface AgentTracing {
 /**
  * 一条会话线。核心承诺只有一句:**同一条会话线的每次 send 拿到同一个 `ctx.session`,
  * 新会话线(eval 第一轮 / t.newSession() 之后)拿到一个全新的。**
- * 会话续接(`id`/`capture`、`history`)和 HITL 停轮现场(`hold`/`take`)的存取器都在它上面,
- * "第一轮"是新会话线的自然形态,没有要判断的分支;`state` 是这些存取器之外的逃生舱,
- * 框架从不往里写数据。见 docs-site/zh/explanation/adapter.mdx「AgentContext」一节。
+ * 服务端历史用 `id` / `capture`，客户端历史与 HITL 停轮现场用 Adapter
+ * 私有的 typed slot。"第一轮"是新会话线的自然形态，没有要判断的分支。
  */
 export interface AgentSession {
   /** 会话续接:服务端记历史。本线记过的会话 id;新会话线是 undefined。 */
   readonly id?: string;
   /** 记回传的会话 id;只在还没记过时落地(first-writer-wins),空值忽略。 */
   capture(id: string | undefined): void;
-  /** 会话续接:客户端带全量历史。返回本会话线的历史槽句柄;新线 get() 是空数组。 */
-  history<TMsg>(): { get(): TMsg[]; commit(messages: TMsg[]): void };
-  /** HITL 停轮现场:存。 */
-  hold<T>(state: T): void;
-  /** HITL 停轮现场:取,取到即清除(一次消费)。 */
-  take<T>(): T | undefined;
-  /** 逃生舱:自由状态槽,起始 `{}`,框架从不写入。 */
-  readonly state: globalThis.Record<string, unknown>;
+  /** 读 Adapter 私有 slot；新会话线或未写过的 slot 为空。 */
+  get<T>(slot: SessionSlot<T>): T | undefined;
+  /** 写 Adapter 私有 slot；同一 slot 再写覆盖旧值。 */
+  set<T>(slot: SessionSlot<T>, value: T): void;
+  /** 读并删除 Adapter 私有 slot，只消费一次。 */
+  take<T>(slot: SessionSlot<T>): T | undefined;
 }
 
 export interface AgentContext {

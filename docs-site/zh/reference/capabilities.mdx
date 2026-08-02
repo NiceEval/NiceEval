@@ -15,7 +15,7 @@ description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明
 | `t.sandbox` / `t.sandbox.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造(`Agent.kind` 恒为 `"sandbox"`) | 无 |
 | `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型写了 `tracing` 字段；长驻应用在 config 配了 `telemetry` 固定端口 | 无（配置本来就要写）|
 | 工具/动作断言（`t.calledTool()` 等，含负断言） | 用官方转换器（`createClaudeSdkEventStream`、`turnFromAiSdk` 等）——返回值里有多少 `action.*` 事件就是多少 | 无；手工映射时事件完整与否由你的映射代码决定 |
-| 跨轮记忆、`t.newSession()` 隔离 | 用了 `ctx.session`（`id`/`capture`、`history`）续接上下文 | 无——接了就续得上，没接每轮都是新对话，不会报错 |
+| 跨轮记忆、`t.newSession()` 隔离 | 用了 `ctx.session`（`id` / `capture` 或 typed slot）续接上下文 | 无——接了就续得上，没接每轮都是新对话，不会报错 |
 | HITL（`t.respond()`） | `send` 返回过 `status: "waiting"` + `input.requested` | 无 |
 
 没做到的能力 = 没有对应的事件/字段出现，相关断言组不可用（不是"报错"，是断言本身没有可判断的依据）；基础断言（文本、结构化、judge）永远可用。
@@ -33,7 +33,7 @@ description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明
 
 ### 会话续接
 
-含义：用 `ctx.session.id` / `capture` 或 `ctx.session.history` 把请求连到同一个后端会话/累计历史上。有它，跨轮记忆断言、`t.newSession()` 隔离断言才有意义。两种实现写法见[写 send](/zh/tutorials/write-send)。
+含义：用 `ctx.session.id` / `capture` 续接服务端会话，或用 Adapter 私有的 typed slot 累计客户端历史。有它，跨轮记忆断言、`t.newSession()` 隔离断言才有意义。两种实现写法见[写 send](/zh/tutorials/write-send)。
 
 ### `tracing` —— 发 OTLP trace
 

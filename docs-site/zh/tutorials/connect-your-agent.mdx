@@ -228,7 +228,7 @@ npx niceeval exp prod
 | 目标能力 | Adapter 改动 | 教程 |
 |---|---|---|
 | 工具断言（`calledTool` / `toolOrder` / 负断言） | 把应用返回映射成标准事件流 | [写 send](/zh/tutorials/write-send)、[事件流参考](/zh/reference/events) |
-| 多轮对话、`t.newSession()` 隔离 | 接上 `ctx.session`：`history()` 或 `id` + `capture()` | [写 send](/zh/tutorials/write-send) |
+| 多轮对话、`t.newSession()` 隔离 | 接上 `ctx.session`：typed slot 或 `id` + `capture()` | [写 send](/zh/tutorials/write-send) |
 | 审批流（HITL，人工介入） | 停轮返回 `waiting` + `input.requested`，回答轮续跑 | [HITL](/zh/explanation/hitl) |
 | `niceeval view` 的调用瀑布图 | 应用把 OTel span 发给 NiceEval（不影响断言） | [OTel 接入](/zh/tutorials/connect-otel) |
 | feature A/B 对比 | 应用把变体暴露成 `flags` 可切换的配置 | [Tier](/zh/explanation/tier)、[写实验](/zh/tutorials/write-experiment) |

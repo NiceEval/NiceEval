@@ -4,6 +4,7 @@
 
 - [Adapters](../../../feature/adapters/README.md)
 - [Agent Ensure](../../../feature/adapters/architecture/agent-ensure.md)
+- [会话与 HITL 状态模型](../../../feature/adapters/architecture/session-state.md)
 - [Sandbox Agent](../../../feature/adapters/library/sandbox-agent.md)
 - [Sandbox Case](../../../feature/sandbox/case.md)
 - [Experiments · 缓存与携带](../../../feature/experiments/cache.md)
@@ -20,6 +21,7 @@ SDK 事件转换与协议归一没有单元层测试维度——协议的真身�
 | 身份与 staged payload | fingerprint / configHash 输入、Run 投影字段 | 纯数据 identity + digest fixture |
 | 断网题面 | 题面网络配置在 Ensure 前后逐字相等；安装是否走文件 API | 带故障 DNS / 被替换工具的 recording Sandbox |
 | 复用与环境隔离 | 第二次 check 命中、跨 profile 不串装 | 复用同一 Sandbox 的多 attempt；两 profile 并列 |
+| typed session slot | symbol 身份、值类型、一次消费与会话线隔离 | 两个同名 slot；两条独立 AgentSession |
 
 缝：fake 自有 `Sandbox` 接口与脚本化 `AgentInstaller`，测 ensure 循环与身份逻辑；缝的真实侧（真实 Agent CLI 安装）由 E2E 适配器域验收。
 Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)。
@@ -79,6 +81,12 @@ function scriptedInstaller(steps: {
   - 安装产物在 workdir 外的 Agent 自有目录，题间 reset 不删除。
   - 不同 environment profile 不共享 Sandbox，也不共享安装产物。
   - 一条重环境 eval 装过的 Agent 不得让另一条环境错误继承；安装事实与指纹不串组。
+- **Typed SessionSlot**（[会话与 HITL 状态模型](../../../feature/adapters/architecture/session-state.md)）：
+
+  - `createSessionSlot<T>()` 保留值类型；错类型 `set` 与把 `get` 结果当成其它 slot 类型均不能编译。
+  - 新会话线的 `get` / `take` 为空；`set` 后 `get` 可重复读，`take` 返回同一值并立即删除。
+  - 同名 slot 仍按 symbol 身份隔离；不同 `AgentSession` 之间不共享 slot 值。
+  - 公开 `AgentSession` 不存在字符串 `state` 字典，也不存在无 slot 的 `history` / `hold` / `take`。
 
 ## 不这样测
 

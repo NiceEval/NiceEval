@@ -44,7 +44,7 @@ pi-agent-core 没有官方 OTel 集成,没有 span 可接。**Tier 3(侵入改�
 
 `calculate` 工具经服务端 `beforeToolCall` 挂了审批(见 `src/backend/server.ts` 头注释)。approval
 frame 到达时 SSE 流不关闭——服务端把执行卡在一个 Promise 上,等 `POST /api/chat/approve`。adapter
-把"读了一半的流"存进 `ctx.session.hold()`,下一次 `t.respond("approve"/"deny")` 里 `ctx.session.take()`
+把"读了一半的流"存进 Adapter 私有的 typed slot,下一次 `t.respond("approve"/"deny")` 里 `ctx.session.take(slot)`
 取回现场(取到即清除)、打 approve 端点后**继续读同一条流**到结束,不重新发 `/api/chat`。批准字段名是
 `toolUseId`(不是 `toolCallId`——这是 `/api/chat/approve` 请求体的字段名,和帧里的 `toolCallId` 不是
 一回事)。

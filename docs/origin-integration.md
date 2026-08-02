@@ -45,9 +45,10 @@ adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`—�
 
 ```ts
 // agents/<name>.ts
-import { completeEvidenceCoverage, defineDirectAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
 
 const BASE_URL = process.env.<NAME>_URL ?? "http://127.0.0.1:<port>";  // 应用自己的端口,eval 不代管进程
+const pendingSlot = createSessionSlot<Pending>("<name>/pending");
 
 export default defineDirectAgent({
   name: "<name>",
@@ -56,7 +57,7 @@ export default defineDirectAgent({
   // spanMapper: mapCodexSpans,
   async send(input, ctx) {
     // 回答轮:先查有没有停轮现场(HITL),有就把裁决交回应用,接着读同一条流
-    const pending = ctx.session.take<Pending>();
+    const pending = ctx.session.take(pendingSlot);
     if (pending) {
       const approved = input.responses?.[0]?.optionId === "approve";
       await postApprove(pending.requestId, approved, ctx.signal);
@@ -73,7 +74,8 @@ export default defineDirectAgent({
     });
 
     // 逐帧读 SSE,用官方转换器(有的话)或手写映射翻成 StreamEvent;
-    // 碰到审批帧就 ctx.session.hold() 存住现场、返回 waiting;流正常结束就返回 completed
+    // 碰到审批帧就 ctx.session.set(pendingSlot, pending) 存住现场、返回 waiting;
+    // 流正常结束就返回 completed
     return driveFrameStream(sseJsonFrames(res.body!), reducer, ctx, onFrame);
   },
 });
@@ -93,8 +95,8 @@ export default defineDirectAgent({
 
 adapter 要这样做:
 
-1. `send` 读流,读到审批帧(各应用帧名见小节)时**不要关流**——把「读了一半的流 + 待批准的 callId」存进 `ctx.session.hold()`(不是模块级 `Map`——这是逃过 attempt/session 边界串用状态的关键),返回 `waiting` + `input.requested` 事件。
-2. 下一次 `send`(就是 eval 里的 `t.respond("approve"/"deny")`)先 `ctx.session.take()` 取回停轮现场:有,就按 `input.responses[0].optionId`(不是解析 `text`)判断批准与否,`POST /api/chat/approve`(body 字段名各应用不同!claude/pi 是 `toolUseId`,langgraph 是 `toolCallId`),然后**继续读原来那条流**到结束,把剩余帧作为这一轮的 events 返回。
+1. Adapter 在模块作用域用 `createSessionSlot<Pending>(name)` 创建自己的 slot。`send` 读到审批帧时**不要关流**——用 `ctx.session.set(slot, pending)` 保存「读了一半的流 + 待批准的 callId」,返回 `waiting` + `input.requested` 事件。slot 由 symbol 身份隔离,不需要模块级 `Map`。
+2. 下一次 `send`(就是 eval 里的 `t.respond("approve"/"deny")`)先用 `ctx.session.take(slot)` 取回停轮现场(取到即清除):有,就按 `input.responses[0].optionId`(不是解析 `text`)判断批准与否,`POST /api/chat/approve`(body 字段名各应用不同!claude/pi 是 `toolUseId`,langgraph 是 `toolCallId`),然后**继续读原来那条流**到结束,把剩余帧作为这一轮的 events 返回。
 3. 拒绝(`deny`)时,把被拒工具的 `action.result` 的 `status` 置 `"rejected"`,不是 `"failed"`。
 
 没有审批流的应用(codex-sdk)跳过这一整节,永远不返回 `waiting`。

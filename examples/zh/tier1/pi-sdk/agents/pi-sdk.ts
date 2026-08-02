@@ -10,10 +10,10 @@
 //
 // HITL:calculate 工具经服务端 beforeToolCall 挂审批。approval_request 帧到达时,流并不关闭——
 // 服务端把执行卡在一个 Promise 上等 POST /api/chat/approve。所以 `driveFrameStream` 在这一帧
-// 返回 `{ pause }`,`ctx.session.hold()` 记住"读了一半的 SSE 流"(连同转换器状态);下一次 send
-// (即 t.respond)先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。`ctx.session.take()`
+// 返回 `{ pause }`时用 heldSlot 记住"读了一半的 SSE 流"(连同转换器状态);下一次 send
+// (即 t.respond)先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。`take(heldSlot)`
 // 取到即清除,一次消费。
-import { defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, Turn, TurnInput } from "niceeval";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
@@ -49,6 +49,7 @@ interface Pending {
   readonly stream: PiAgentStream;
   readonly toolCallId: string;
 }
+const heldSlot = createSessionSlot<Pending>("pi-sdk/held-stream");
 
 function readStream(cursor: SseFrameCursor<PiFrame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
   return driveFrameStream(cursor, stream, ctx, (frame) => {
@@ -59,7 +60,7 @@ function readStream(cursor: SseFrameCursor<PiFrame>, ctx: AgentContext, stream: 
       return;
     }
     if (frame.type === "approval_request") {
-      ctx.session.hold<Pending>({ cursor, stream, toolCallId: frame.toolCallId });
+      ctx.session.set(heldSlot, { cursor, stream, toolCallId: frame.toolCallId });
       return {
         pause: { id: frame.toolCallId, action: frame.toolName, input: frame.args as JsonValue, options: [{ id: "approve" }, { id: "deny" }] },
       };
@@ -69,7 +70,7 @@ function readStream(cursor: SseFrameCursor<PiFrame>, ctx: AgentContext, stream: 
 }
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-  const pending = ctx.session.take<Pending>();
+  const pending = ctx.session.take(heldSlot);
   if (pending) {
     // 按 requestId(挂起的 toolCallId)从 input.responses 里对位取裁决,不从 text 猜;
     // 这里每次只挂一条审批,取第一条即可——多请求并停时按 requestId 对位。

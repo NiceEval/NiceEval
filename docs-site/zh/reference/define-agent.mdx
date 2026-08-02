@@ -373,9 +373,9 @@ log(msg: string): void;
 `ctx.session`(`AgentSession`)是一条会话线的状态槽:同一条会话线的每次 `send` 拿到同一个 `ctx.session`,新会话线(评估用例第一轮 / `t.newSession()` 之后)拿到一个全新的。存取器:
 
 - `id?: string` / `capture(id): void` —— 会话续接·服务端记历史时用:`id` 是本线记过的会话 id(新线是 `undefined`),`capture` 记回传的 id(只在还没记过时落地)。
-- `history<TMsg>(): { get(): TMsg[]; commit(messages: TMsg[]): void }` —— 会话续接·客户端带全量历史时用。
-- `hold<T>(state: T): void` / `take<T>(): T | undefined` —— HITL 停轮现场的存取,`take` 取到即清除(一次消费)。
-- `state: Record<string, unknown>` —— 逃生舱,起始 `{}`,框架从不写入。
+- `createSessionSlot<T>(name)` —— 在 Adapter 模块作用域创建一个 typed slot；slot 按 symbol 身份隔离。
+- `get(slot)` / `set(slot, value)` —— 存取客户端历史或 Adapter 私有状态。
+- `take(slot)` —— 读取并删除 HITL 停轮现场，一次消费。
 
 完整契约见[Adapter 概念](/zh/explanation/adapter#上下文：agentcontext)。
 
