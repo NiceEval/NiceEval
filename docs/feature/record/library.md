@@ -111,9 +111,8 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
 Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。
 反过来,进 configHash 的字段必须在 `run.json` 上找得到,顶层或 `ExperimentRunInfo` 二选一:拿历史 Run 重算配置身份是解释配置面差异的前提,少落一个字段,那条路径就只能靠猜。
 
-[`--accept <selector>`](../experiments/cache.md#--accept授权跨过一条精确差异) 是这条可比性担保上唯一的人为出口:它让命中该差异的一批历史条目跨过它,重锚到本 Run 的口径上。
-它不消除上面那个「混着两套配置的数据」的风险,而是把风险显式交给人——accept 一条 `config:` 差异,报告就会在新配置身份下混入旧配置跑出的结果。
-留痕跟着条目走:被携入的条目记 `carriedAccepting`,逐条写下跨过的 selector 与旧值新值摘要,消费方要分辨时读得到。
+[`niceeval accept @<locator>`](../experiments/cache.md#niceeval-accept-locator接受一条结果) 是这条可比性担保上唯一的人为出口:它只让指定的历史条目重锚到当前口径。
+它不消除「混着两套配置的数据」的风险,而是把风险显式交给人。读取面可从 `acceptedFrom` 看出这条结果的来源 locator、旧/新指纹与差异摘要。
 
 ## 携带条目与 `evidenceState`
 

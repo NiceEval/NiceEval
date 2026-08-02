@@ -74,9 +74,9 @@ interface AttemptSpec {
     `judge` 只落 `model` / `baseUrl`，`apiKeyEnv` 指向的凭据不落。
   - **携带条目的 `fingerprint` 按本 Run 口径重打**，一份 Run 里的条目因此共享一个指纹口径。
      fixture 要让「原指纹 ≠ 本 Run 指纹」的携带条目落盘后仍等于本 Run 指纹。
-  - **`--accept` 放行的条目另落 `carriedAccepting`。**
-    逐条差异的 selector 与旧值新值摘要都要往返；`opaque:no-manifest` 这条两侧算不出，只有 selector。
-    它是这条差异的唯一记录，缺了消费方就无从分辨这条是在哪个口径下被采信的。
+  - **`niceeval accept @<locator>` 新建的条目另落 `acceptedFrom`。**
+    来源 locator、旧/新指纹与逐条差异摘要都要往返；`opaque:no-manifest` 两侧值算不出时只保留 selector。
+    它是这条结果为何在新口径下成立的唯一记录。
 - **`manifests.json` 落盘**：与 `run.json` 同层、逐 eval 一份，配置面 / 源码面 / 数据面三块都要往返读回。
   只跑了一半的 Run 也已经有它——它在规划期一次写成，不随 attempt 完成回写，fixture 要有「Run 未收尾但清单已在」这一格。
   历史 Run 没有这个文件时读取面如实为缺失，不合成一份空清单。

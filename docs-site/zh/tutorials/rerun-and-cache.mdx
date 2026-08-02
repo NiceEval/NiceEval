@@ -157,31 +157,28 @@ npx niceeval exp compare --dry
 plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
-stale  config:flags.tunnelUrl  https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com
-       affects 36 evals · baseline 01/02/03/05/06
-       accept:  niceeval exp compare --accept config:flags.tunnelUrl
+compare/baseline  01  stale: config:flags.tunnelUrl
+  prior:  @a1b2c3d4  https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com
+  accept: niceeval accept @a1b2c3d4
 ```
 
-`accept:` 那一行可以原样复制。带上它再跑，命中这条差异的结果就跨过它照常沿用：
+`accept:` 那一行只指向这一条历史结果。先用 locator 打开证据，确认结论仍然成立后直接接受它：
 
 ```bash
-npx niceeval exp compare --accept config:flags.tunnelUrl
+npx niceeval show @a1b2c3d4 --timing
+npx niceeval accept @a1b2c3d4
 ```
 
 ```text
 ╭─ PLAN ──────────────────────────────────────────╮
-│ 36 attempts · 36 evals × 1 configs              │
-│ 36 of 36 reused · 0 to run                      │
+│ Accepted @a1b2c3d4 as @d4c3b2a1                 │
+│ Current fingerprint: 5f3b…                      │
 ╰─────────────────────────────────────────────────╯
 ```
 
-沿用进来的每条结果记下它跨过了哪条差异，`niceeval show` 读得到。这次沿用同时把它们重新锚在本次的口径上，所以下一次跑同一条命令自然命中，不用再带这个 flag。
+接受会写出一个使用当前指纹的新结果，并记下来源 locator、旧/新指纹和差异摘要。下一次跑同一实验时，这条结果自然命中。一次命令不会因为同一处差异顺带接受其它结果；要接受另一条结果，传入它自己的 locator。
 
-selector 要指向本次计划里真实存在的一条差异。打错键名时没有任何差异匹配得上，NiceEval 直接报用法错误并列出本次可以 accept 的原因，不会静默放行。
-
-一条结果身上有两处差异时，两处都 accept 它才沿用；只 accept 一处照常重跑——没被授权的那处差异不会搭便车溜过去。
-
-不想手拼 selector 时，在终端里跑 `--accept` 不带值：NiceEval 打出计划后逐条问“沿用还是重跑”，选“重跑”就是不授权。选完先打印等价的带值命令，再按你的选择执行。
+`passed` 和 `failed` 的历史结果可以接受。`errored`、`skipped`、复用 Sandbox 产生的结果和当前要求真实执行的结果不能接受；命令会说明原因，不会自动改为运行实验。
 
 ## 指纹没得改但就是要重跑
 

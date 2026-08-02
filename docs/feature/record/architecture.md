@@ -231,7 +231,7 @@ interface ExperimentRunInfo {
 - 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。
   **进 [configHash](../experiments/cache.md#指纹两个哈希嵌套) 的字段这条是硬约束**:配置身份的每一个输入都要在 `run.json` 上找得到,顶层或本投影二选一。
   `agent` / `model` 住顶层,其余住这里。
-  少落一个,就无法拿历史 Run 重算配置身份,[`--accept`](../experiments/cache.md#--accept授权跨过一条精确差异) 的差异解释与授权校验直接失效。
+  少落一个,就无法拿历史 Run 重算配置身份,[`niceeval accept`](../experiments/cache.md#niceeval-accept-locator接受一条结果) 的差异解释与重锚校验直接失效。
 
 通过数、失败数、总用量、总成本这类聚合**不落盘**:它们由 `result.json` 逐条推导,聚合永远发生在消费方(`openRecord` 分层之上的计算函数或你的脚本)——这与读取面「忠实磁盘,不合并不聚合」是同一条铁律。
 
@@ -511,12 +511,12 @@ interface AttemptRecord {
   /** 携带条目专用: artifact 目录(相对记录根目录),指向原 Run 里的落盘。 */
   artifactBase?: string;
   /**
-   * 携带条目专用:这条被携入时,[`--accept`](../experiments/cache.md#--accept授权跨过一条精确差异)
-   * 授权它跨过了哪几条指纹差异,逐条记 selector 与旧值新值摘要。
-   * 条目已按本 Run 口径重打指纹,这个字段是它与本 Run 指纹输入之间那点差异的唯一记录,
-   * 跟着结果走而不是跟着 Run 走;省略等价于「本 Run 的指纹输入逐项相等」。
+   * 人工接受条目专用: `niceeval accept @<locator>` 复制一条历史结果时,
+   * 记录来源 locator、旧/新指纹与完整差异摘要。
+   * 条目已按当前口径重打指纹;这个字段跟着结果走而不是跟着 Run 走,
+   * 省略等价于「这条结果不是人工接受而来」。
    */
-  carriedAccepting?: AcceptedDifference[];
+  acceptedFrom?: AcceptedResult;
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在[证据 registry](#证据-registry),
    * 如 ["commands", "events", "sources"])。省略等价于空列表;携带条目原样携带。读取面的懒加载语义
@@ -525,13 +525,17 @@ interface AttemptRecord {
   artifacts?: string[];
 }
 
-/** `--accept` 授权跨过的一条具名差异,写进被携入条目的 `carriedAccepting`。 */
+/** `niceeval accept @<locator>` 的审计记录,写进新建的已接受条目。 */
+interface AcceptedResult {
+  locator: string;
+  fingerprint: string;
+  acceptedFingerprint: string;
+  differences: AcceptedDifference[];
+}
+
 interface AcceptedDifference {
-  /** 与 `--accept` 同一词表:`config:<路径>` / `source:<路径>` / `data:<路径>` / `opaque:no-manifest`。 */
   selector: string;
-  /** 旧值摘要:config 面写解析后的值,source / data 面写内容哈希;`opaque:no-manifest` 两侧都算不出,省略。 */
   from?: string;
-  /** 新值摘要,口径同 `from`。 */
   to?: string;
 }
 
@@ -689,7 +693,7 @@ Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这�
 
   合入只重打 `fingerprint` 一个字段,让[一份 Run 里的条目共享一个指纹口径](../experiments/cache.md#一份-run-里的条目共享一个指纹口径)。
   「条目与配置怎么对上号」因此不靠 fingerprint 承担:`attempt.run.configHash` 直接给出该条目所在 Run 的配置身份,读取面不必翻更早的 Run,也不必从指纹反推。
-  常规携带下重打前后本就相等——相等正是携带判据;[`--accept`](../experiments/cache.md#--accept授权跨过一条精确差异) 授权跨过一条差异时两者不等,被跨过的那几条逐条记进 `carriedAccepting`,它是「这条采信了哪些差异」的唯一记录。
+  常规携带下重打前后本就相等——相等正是携带判据。人工接受会新建一条当前口径的结果,来源与新旧差异写进 `acceptedFrom`,它是「这条为何能跨过指纹门」的唯一记录。
 
   `artifactBase` 是事实上的「携带」标记,读取面把它连同目标目录是否仍在一起投影成 [`evidenceState`](library.md#携带条目与-evidencestate) 三态。
   清理历史 Run 前先用 `publish` 解引用并复制要保留的结果——原 Run 删除后,该条目转为 `dangling`,artifact 懒加载返回 `null`,而 `artifacts` 列表仍声明写过它们;两者的差值就是「证据丢了」,不与「没采集」混为一谈。

@@ -190,35 +190,22 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   reducer 侧只断言 `RunFeedbackState.earlyExitByEval` 按 `(experiment, eval)` 累计原始计数（不剔除 fail-fast，剔除是 `evalConclusionRows` 的职责）。
   字面渲染（人读结论行与 `--json` 的 `eval` 事件）归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」在真实进程输出上验收。
 - **budget**：只按已完成实测花费判断（在飞不影响派发是契约不是 bug）、到顶停发在飞跑完、按 experiment 域隔离、未派发导致 incomplete 与退出码 1、成本缺失 warning 的去重与触发前提。
-- **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase` 是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs` 不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--accept <selector>` 的授权面**(逐条类别见下面几条独立条目)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox` 下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed` 一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
+- **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase` 是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs` 不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`niceeval accept @<locator>` 的单条重锚面**(逐条资格与留痕见下面独立条目)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox` 下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed` 一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - **携带规划的 ADT 与不可变性**：携带门分别覆盖 `Eligible` 和带 gate/reason 的 `Blocked`；正常与反事实指纹分别覆盖 `Current` / `Counterfactual`；配置差异覆盖 `Added` / `Removed` / `Changed` 三种值要求。
   规划产物的 Map、Set 与数组在交付后不可写，运行期重查使用独立状态。
   规划 I/O 从 linker 到 manifest 计算保持一条 Effect 链，中途没有 `runPromise`。
-- **`--accept` 的授权判据**：四支 selector(`config:` / `source:` / `data:` / `opaque:no-manifest`)各自命中本类差异时携带。
-  同一条 eval 另有一条未授权差异时仍重跑,两个方向都要有区分力场景。
-  selector 按路径命中:同一路径带两个不同旧值的两批历史条目,一条 selector 全部携带,各自的 `carriedAccepting` 记自己的旧值新值。
-  与 `--rerun failed` 同用不冲突:被授权的 `failed` 条目仍被口径门拦下重跑,`passed` 照常携带。
-  selector 在本次计划里算不出对应差异是空转,按启动期用法错误报出并列出本次可授权的原因,不静默通过;与 `--rerun all` 同用同样是用法错误。
-- **`--accept` 的重锚与留痕**：被授权携入的条目按本次口径重打指纹,留痕两处都要断言——条目的 `carriedAccepting` 逐条记 selector 与旧值新值摘要,本次 Run 另记一条 `accept` diagnostic。
-  下一次不带这个 flag 的运行照常命中,这一格证明它是重锚而不是一次豁免。
-- **`--accept` 打不开的门**：终态、资格、出身、模式四道门各要一条。
-  缺失序号与 `errored` / `skipped`、`executionMs` 超过当前上限、带 `sandbox.reused` 的历史条目、落在留存档内的条目,授权都不放行。
+- **`niceeval accept @<locator>` 的对象与资格**：只接受 locator 指向的一条历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。坏 locator、`errored` / `skipped`、带 `sandbox.reused` 的结果、当前 `sandboxReuse: true` 或留存 Sandbox 的结果各有一条失败测试；失败不派发 attempt，也不接受任何其它结果。
+- **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制来源结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返来源 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。
 - **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单,配置面、源码面、数据面与指纹同一份输入。
   新旧相减给出带名字的差异:`config:` 字段的旧值新值、`source:` / `data:` 的内容哈希变化与文件增删。
   历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是六道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
-  九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言按差异聚合出的分组与可复制的 accept 命令。
-  同一 selector 对应多个不同旧值时按「selector × 旧值→新值」各成一组,`accept:` 命令行是同一条。
+  九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示来源 locator、差异摘要和对应的 `niceeval accept @<locator>`。
 - **`incompatible` 与 `new` 的区分**:同一次计划里一条 eval 的历史落在版本不同的快照里、另一条从没跑过,两行的原因词不同。
   把不兼容历史一并算作「没有任何历史」的实现只在这一格会红。
   判定链的另一半在读取面:不兼容的快照只按目录名认坐标(它的文件按格式规则不解析)。
   断言面是 `loadCarryInputs` 的 `incompatibleHistory` 收进了那些坐标,而 `results` 一条都没多。
-- **不带值 `--accept` 的 TTY 交互选择语义**：逐条问下来,只有明确选「复用」的那些 selector 进带值执行路径。
-  选「重跑」与读入中断都不授权,后者是把中断当空答案、按默认放行的实现唯一会红的那一格。
-  可 accept 的分组逐条都要被问到,提问文本点到每条 selector,人才知道自己在为哪条差异做决定。
-- **等价命令的拼装**：先打印的那条命令只含已授权的 selector,一个都没选时它就是原命令本身。
-- **非 TTY 下不带值的 `--accept`**：按启动期用法错误报出,错误信息除了「要带 selector」还要列出本次计划里真实可授权的原因清单(与 selector 空转报错同一份枚举),两个语言各断言一次。
 - **尾随 eval 前缀逐个必须命中**：每个尾随前缀在选中实验的发现集里匹配 0 条时,按启动期用法错误报出,不静默丢弃。
   「一个前缀命中、另一个零命中」是唯一会红的那一格——按整体命中数判空的实现会放过它。
 - **超时归属**：超时把 attempt 转成 `errored` 时,`error.timeout` 三样都要断言——触发层、生效的上限值、值来自哪一层。

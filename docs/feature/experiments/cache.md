@@ -16,7 +16,7 @@
 | 门 | 看哪一侧 | 判据 | 不过会怎样 |
 |---|---|---|---|
 | 终态 | 条目 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不携带,总会重试 |
-| 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹,或它的每条差异都被本次 [`--accept`](#--accept授权跨过一条精确差异) 授权 | 这条 eval 的全部 attempt 重跑 |
+| 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹 | 这条 eval 的全部 attempt 重跑 |
 | 资格 | 条目 | `executionMs` ≤ 当前解析后的 `timeoutMs` | 这一条重跑 |
 | 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
@@ -60,7 +60,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 三条配套规则:
 
 - **进 configHash 的字段必须落进 `run.json`**,顶层或 `ExperimentRunInfo` 二选一、不重复。
-  没落盘就没法对历史侧重算配置身份,配置面的差异解释与 [`--accept`](#--accept授权跨过一条精确差异) 的授权校验也就无从落地。
+  没落盘就没法对历史侧重算配置身份,配置面的差异解释与 [`accept`](#niceeval-accept-locator接受一条结果) 的重锚校验也就无从落地。
 - **`configHash` 不逐 eval、不逐题型分叉。**
   代价是配置改动会波及证明上不受它影响的 eval: 一条 eval 自己完整声明了 `judge` 时,config 层换裁判模型照样让它重跑。
    `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
@@ -81,7 +81,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 - **数据面**:loader 登记文件的同口径清单。
 
 指纹不等时,新旧两份 manifest 相减得到**带名字的精确差异**: `config:judge.model` 的旧值到新值、`source:evals/share/prompts.ts` 的内容哈希变化、 `data:evals/data/cases.yaml` 的增删改。
-差异有两个消费方: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)拿它解释, [`--accept`](#--accept授权跨过一条精确差异)拿它作授权单位。
+差异只服务于解释: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)展示它, `niceeval accept` 在接受前把它完整写入审计记录。
 历史条目缺 manifest 时,算不出的只有源码面与数据面,两者合并成一条 `opaque:no-manifest`,不猜。
 配置面另有出处:它落盘在 `run.json`,从条目重建后照常给具名差异。
 
@@ -265,57 +265,30 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队, `exe
 读取面因此不必翻更早的 Run 就能把条目与 Run 记下的配置对上号,`flags` 与条目指纹恒同源。
 合入只重打指纹一个字段:`locator`、`artifactBase`、判定、`facts` 与证据指向照旧原样携带, 落盘语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
 
-## `--accept`:授权跨过一条精确差异
+## `niceeval accept @<locator>`:接受一条结果
 
-指纹门失败的条目不总是该重跑:改的是全局 judge 配置时,不用 judge 的 eval 也被连带作废; 把误进 `flags` 的连接坐标搬去 [`ctx.fact()`](../record/architecture.md#facts运行事实) 时, 袋子一变历史全废。
-框架从路径和值的形状判断不出「这次变化影响不影响这条 eval」, 这个判断属于人。
-`--accept <selector>`(可重复)就是把这个判断交给人的出口: 授权「跨过这条差异照常携带」,selector 指向 [manifest 相减](#manifest哈希做索引清单做解释) 得出的一条具名差异:
+指纹变化后,人判断某条历史结果仍然成立时,直接接受这条结果:
 
-| selector | 指向 | 例子 |
-|---|---|---|
-| `config:<字段路径>` | configHash 字段级差异,键的增删同样是差异 | `config:judge.model`、`config:flags.webSearch` |
-| `source:<路径>` | 源码闭包内单文件的内容差异 | `source:evals/share/prompts.ts` |
-| `data:<路径>` | loader 数据面文件的增删改 | `data:evals/data/cases.yaml` |
-| `opaque:no-manifest` | 历史条目缺 manifest,源码面与数据面不可算 | 明知旧结果仍然成立时显式采信 |
+```sh
+niceeval accept @a1b2c3d4
+```
 
-**它做的是一次重锚,不是一次豁免。**
-被授权携入的条目照常按[本 Run 的口径](#一份-run-里的条目共享一个指纹口径) 重打指纹,于是下一次跑同一条命令自然命中,不需要再带这个 flag。
-授权因此没有生命周期,也就没有「多久过期」的问题: 同一路径下一次再变是一条新差异,照样拦下、照样要人重新判断。
+`@<locator>` 是唯一输入,也是唯一作用域。命令从当前项目发现同一 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
-**授权按条目整组判:一条条目携带,当且仅当它的每一条差异都被授权。**
-只授权其中一部分时这条照常重跑——未授权的差异会搭着已授权的一起溜过指纹门, 保守方向的代价只是多跑一次。
-缺 manifest 的条目同样整组判,判据是**反事实指纹**: 用该条目的配置身份(从 `run.json` 重建)配上本次的源码面与数据面重算一份指纹。
-它等于条目落盘的指纹,就证明源码面与数据面没变,单独授权那几条具名 `config:` 差异即可携带; 不等说明还有算不出名字的变化,要连 `opaque:no-manifest` 一起授权。
+接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。差异只帮助人理解变化;一次接受只代表「我确认这个 locator 的结论在现在仍有效」。要接受另一条结果,显式传入它自己的 locator。
 
-正常重算与反事实重算分别是 `Current` 和 `Counterfactual`，不共享一袋可选 override。
-配置与 manifest 的具名差异按 `Added | Removed | Changed` 保存；三种状态分别要求新值、旧值或两侧值，不允许靠可选 `from` / `to` 拼出矛盾形状。
-携带计划是规划期生成的不可变快照，派发期重查只能写自己的运行期状态，不能反向修改计划里的 Map、Set 或差异数组。
+接受前必须同时满足下列条件:
 
-**selector 按路径命中,不按值转换收窄。**
-历史条目在同一路径上带着多个不同旧值时,一条 selector 把它们全部授权; 每条条目实际跨过的旧值新值记在自己的 `carriedAccepting` 里—— 精确到转换的账在留痕层,授权层保持一个可打字、可复述的词表。
-要只授权其中一批,用位置参数收窄本次选择,与下面的作用域规则同一条路。
+- locator 恰好指向一条可读的历史结果;
+- 结果是 `passed` 或 `failed`,且没有 `sandbox.reused` 标记;
+- 当前项目仍发现同一 experiment 与 eval,并能解析其运行配置;
+- 当前超时上限仍允许该结果的 `executionMs`。
 
-三道约束,与它取代的搬迁出口同一基因:
+缺失序号、`errored`、`skipped`、留存 Sandbox 和 `sandboxReuse: true` 的结果都不能接受。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
-- **selector 必须命中本次计划里真实存在的差异。**
-  两侧都没有的是空转,多半是打错了, 按启动期用法错误报出来并列出本次计划里可授权的原因,不静默通过。
-- **作用域 = 本次选中矩阵 ∩ 命中该差异的条目。**
-  要只对部分 eval 授权, 用位置参数收窄本次选择;另一部分在下一次调用里重跑或另行授权。
-  选择轴不进 selector,与 [CLI 的两类输入](cli.md)保持一致。
-- **留痕落在条目上。**
-  被授权携入的条目记 `carriedAccepting`, 写下跨过的每条差异(selector 与旧值新值摘要);本次调用另记一条 Run diagnostic(`accept`)。
-  条目侧那份让「这条是在哪个口径下被采信的」跟着结果走,不随 Run 翻篇丢失。
+新条目记录 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
 
-授权是把风险显式交给人,不是消除风险:accept 一条 `config:` 差异, 报告就会在新配置身份下混入旧配置跑出的结果,`carriedAccepting` 是事后追认这笔账的唯一线索。
-长期反复 accept 同一类差异说明声明放错了家——连接坐标该搬去 `ctx.fact()`, 稳定的开关该从 `flags` 里拆出去,出口只负责让例外那一次不赔钱。
-
-`--accept` 打不开的门,逐条有理由:
-
-- **终态门**:缺失序号与 `errored` / `skipped` 不可 accept——授权不能凭空造出没跑过的结果。
-- **资格门**:`executionMs` 超过当前上限的条目在新上限下复现不出来,采信它就是采信一条撞线记录。
-- **出身门与模式门**:`sandboxReuse` 绝缘与 `--keep-sandbox` 留存档不可 accept——这些模式都要求本轮真实执行，授权不能凭旧结果伪造当前物理实例。
-- 与 `--rerun all` 同用是用法错误:一边全不采信一边又要采信,方向自相矛盾。
-  `--rerun failed` 不冲突:accept 只开指纹门,被授权的 `failed` 条目照常被口径门拦下重跑,`passed` 照常携带。
+长期反复接受同一类变化说明声明放错了家——连接坐标该搬去 `ctx.fact()`,稳定的开关该从 `flags` 里拆出去。接受入口只记录一次明确的人为判断,不把不可比的结果伪装成正常缓存命中。
 
 ## 携带来源不要求 Run 收尾
 

@@ -62,28 +62,25 @@ compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 全部携带的行标 `carried`,不标原因。
 正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
 
-`stale` 行在双侧 manifest 都在时进一步给出差异明细,并按差异聚合成可直接行动的分组—— selector 原样可复制进 [`--accept`](cache.md#--accept授权跨过一条精确差异):
+`stale` 行在双侧 manifest 都在时进一步给出差异明细。每条要派发的历史结果都带自己的 locator；它是检查证据和接受该结果的唯一对象:
 
 ```text
-stale  config:judge.model  gpt-5.6 → gpt-5.6-sol
-       affects 5 evals · baseline 01/02/03/05/06
-       accept:  niceeval exp compare/codex --accept config:judge.model
+compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale: config:judge.model
+  prior:  @a1b2c3d4  gpt-5.6 → gpt-5.6-sol
+  accept: niceeval accept @a1b2c3d4
 ```
 
-同一 selector 在历史里对应多个不同旧值时,按「selector × 旧值→新值」各成一组,`accept:` 命令行是同一条—— 分组精确到转换,授权按路径([值作用域](cache.md#--accept授权跨过一条精确差异))。
-历史条目缺 manifest 时明细给不出,分组如实标 `opaque:no-manifest`,同样可显式 accept。
+差异按历史结果各自展示,不会被聚合成一条会影响多题的授权。历史侧缺 manifest 时如实标 `opaque:no-manifest`; locator 仍可用于 `niceeval show` 和 `niceeval accept`。
 
-### `--accept` 不带值:TTY 下逐原因标记
+### `niceeval accept @<locator>`
 
-带 selector 的 [`--accept`](cache.md#--accept授权跨过一条精确差异) 是非交互授权,也是唯一的规范形态,CI 与脚本用它。
-不带值的 `--accept` 是「帮我拼 selector」的显式请求: 计划打出后,按差异分组逐条问是否授权复用, 选完先打印等价的带值命令(可直接进 CI 或复述给同事),再按它执行。
-选「重跑」就是不授权,与跳过提问同效; 提问的价值是多条差异一次选完,并拿到那条等价命令。
-只有可 accept 的分组会被问;`sandbox-reuse` 绝缘、`errored` 这类打不开的门照常展示,
-但不提供「复用」选项。
+接受动作不属于 `exp` 的规划参数。它精确接受一个历史结果,并将这条结果重锚到当前指纹；完整资格与审计语义见[缓存与携带](cache.md#niceeval-accept-locator接受一条结果)。
 
-非 TTY 下 `--accept` 不带值是用法错误。
-报错先给带 selector 的写法,再列出本次计划里真实可授权的那几条原因——与 selector 空转的报错同一份枚举,人不必为了知道能填什么再跑一趟 `--dry`。
-交互不是 TTY 分叉出的第二形态:形态由「不带值」这个写法选定, TTY 检测只回答这个请求能不能被满足;每条命令一个人读 text 面、`--json` 是机器面的原则不受影响, 执行的永远是打印出的那条带值命令。
+```sh
+niceeval accept @a1b2c3d4
+```
+
+命令完成后打印新结果 locator、来源 locator 和当前指纹摘要。失败时不派发 attempt，也不会根据共同的差异接受其它结果。`exp --accept` 与 selector 参数不存在。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 
@@ -863,7 +860,7 @@ interface ExpPlanDispatch {
 }
 
 interface ExpPlanDelta {
-  /** 与 --accept 同一词表:config:<路径> / source:<路径> / data:<路径> / opaque:no-manifest。 */
+  /** 指纹差异词表:config:<路径> / source:<路径> / data:<路径> / opaque:no-manifest。 */
   selector: string;
   /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
   from?: string;
@@ -954,7 +951,6 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
 | 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;单独使用 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
-| 缓存 | `--accept <selector>` | 整次调用(可重复) | 授权跨过一条具名指纹差异照常携带,重锚后下次自然命中;不带值且 stderr 是 TTY 时进入[逐原因标记](#--accept-不带值tty-下逐原因标记);判据、词表与不可 accept 面见[缓存与携带](cache.md#--accept授权跨过一条精确差异) |
 | 执行模式 | [`--keep-sandbox`](../sandbox/cli.md) | 整次调用；与 Experiment 的 `sandboxReuse: true` 互斥 | 留存单条 Attempt 的现场 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
 | 预览 | `--dry` | 整次调用 | 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘 |
