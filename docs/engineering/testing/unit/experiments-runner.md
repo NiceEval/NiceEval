@@ -227,6 +227,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   进 / 不进两侧各要区分力场景：改被引用 helper 的一行使**引用它的那些 eval** 重跑而未引用的照常携带；改测试集一行只作废对应那条 eval；`node_modules` 下的包与动态 `import()` 改动不作废。
   判据文件经 `loadText` 读入时改一字节即重跑，同一文件换 `fs` 直读不触发。
 - **数据 loader 的调用面**：同一份数据文件用项目根相对字符串与 `URL` 两种入参读入，登记与指纹等价——两种写法算出同一个哈希，这一格在只支持 string 的实现下会红。
+  `loadYaml` / `loadJson` 必须接收 decoder，文件解析出的动态值只有经过完整结构验证后才返回领域类型；缺 decoder 的调用在类型检查期就失败。
   发现期之外调用 `loadText` / `loadYaml` / `loadJson` 立即报错，错误文案含问题与下一步，不得静默跳过登记。
 - **普通本地上传的 transfer manifest**：改树内一个文件的一字节、增加文件、删除文件，三种改动都使使用上一份 manifest 的 Attempt 重跑；改权限位与修改时间不作废；`ignore` 命中的生成物变化不作废。
   首次真实执行记录 source tree、内容摘要、目标与 send 区间；源码闭包不变时重算历史 manifest，源码变化时不信任旧依赖集合并重跑。

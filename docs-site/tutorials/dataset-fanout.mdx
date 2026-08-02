@@ -64,9 +64,13 @@ If the file is `evals/swelancer.eval.ts` and the key is `15193`, the ID is `swel
 
 ```ts
 import { loadYaml } from "niceeval/loaders";
+import { z } from "zod";
 
-const doc = await loadYaml("evals/data/sql-cases.yaml");
-const rows = doc.cases as { task: string; prompt: string; sql: string }[];
+const SqlCases = z.object({
+  cases: z.array(z.object({ task: z.string(), prompt: z.string(), sql: z.string() })),
+});
+const doc = await loadYaml("evals/data/sql-cases.yaml", (value) => SqlCases.parse(value));
+const rows = doc.cases;
 ```
 
 ```yaml
@@ -75,6 +79,8 @@ cases:
     prompt: Count all rows in the users table
     sql: SELECT COUNT(*) FROM users;
 ```
+
+`loadYaml` and `loadJson` require a decoder. The unvalidated dynamic value exists only at the decoder input; after validation, the return value is strongly typed data that the Eval can use directly.
 
 ## Filtering dataset evals
 

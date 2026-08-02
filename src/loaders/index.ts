@@ -72,11 +72,15 @@ function fromFileUrl(url: URL): string {
 
 /**
  * 读入一个 JSON 数据文件并解析。路径写项目根相对的字符串,或 eval 文件相对的
- * `new URL(p, import.meta.url)`。内容哈希进读它的那条 eval 的指纹。
+ * `new URL(p, import.meta.url)`。内容哈希进读它的那条 eval 的指纹。`decode` 必须在
+ * 这个动态输入边界完成结构验证与归一；不提供「用泛型直接信任文件」的入口。
  */
-export async function loadJson<T = unknown>(path: string | URL): Promise<T> {
+export type DataDecoder<T> = (value: unknown) => T | Promise<T>;
+
+export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
   const raw = await readFile(resolvedPath(path), "utf-8");
-  return JSON.parse(raw) as T;
+  const parsed: unknown = JSON.parse(raw);
+  return decode(parsed);
 }
 
 /**
@@ -227,9 +231,10 @@ async function assertInsideRoot(root: string, absolute: string, shown: string): 
 
 /**
  * 读入一个 YAML 数据文件并解析,需要项目里装了 `yaml`。路径写项目根相对的字符串,
- * 或 eval 文件相对的 `new URL(p, import.meta.url)`。内容哈希进读它的那条 eval 的指纹。
+ * 或 eval 文件相对的 `new URL(p, import.meta.url)`。内容哈希进读它的那条 eval 的指纹。解析结果与
+ * JSON 一样必须立即经 `decode` 验证，不让未证明的动态值进入 Eval 定义。
  */
-export async function loadYaml<T = unknown>(path: string | URL): Promise<T> {
+export async function loadYaml<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
   const raw = await readFile(resolvedPath(path), "utf-8");
   // yaml 是可选依赖:用变量 specifier 避免 tsc 静态解析。装了就用真解析器;
   // 没装直接报错并给出下一步 —— 不再退回手写的「极简 YAML」:它对嵌套 / 多行 /
@@ -241,5 +246,5 @@ export async function loadYaml<T = unknown>(path: string | URL): Promise<T> {
   } catch {
     throw new Error(t("loaders.yamlMissing", { path: String(path) }));
   }
-  return parse(raw) as T;
+  return decode(parse(raw));
 }

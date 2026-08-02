@@ -101,6 +101,31 @@ describe("loadText · 判据文件进 eval 源码闭包", () => {
 });
 
 describe("loader 的调用面", () => {
+  it("JSON 动态值必须经 decoder 验证后才返回领域类型", async () => {
+    const path = await criterionFile('{"cases":[{"prompt":"hello"}]}\n');
+    const decode = (value: unknown): { cases: Array<{ prompt: string }> } => {
+      if (typeof value !== "object" || value === null || !("cases" in value) || !Array.isArray(value.cases)) {
+        throw new TypeError("cases must be an array");
+      }
+      const cases = value.cases.map((entry) => {
+        if (typeof entry !== "object" || entry === null || !("prompt" in entry) || typeof entry.prompt !== "string") {
+          throw new TypeError("case.prompt must be a string");
+        }
+        return { prompt: entry.prompt };
+      });
+      return { cases };
+    };
+
+    const loaded = await captureLoadedFiles(() => loadJson(path, decode));
+    expect(loaded.value.cases).toEqual([{ prompt: "hello" }]);
+    expect(loaded.paths).toEqual([path]);
+
+    if (false) {
+      // @ts-expect-error 外部 JSON 不允许用泛型直接信任，必须提供 decoder。
+      void loadJson<{ cases: Array<{ prompt: string }> }>(path);
+    }
+  });
+
   it("同一份判据文件:字符串路径与 URL 两种入参登记与指纹等价", async () => {
     const path = await criterionFile("exit 0\n");
 
@@ -118,11 +143,11 @@ describe("loader 的调用面", () => {
 
   it("capture 不在场时调用任一 loader 直接报错,文案给出下一步", async () => {
     const path = await criterionFile("exit 0\n");
-    const loaders = [loadText, loadJson, loadYaml];
+    const identity = (value: unknown) => value;
 
-    for (const load of loaders) {
-      await expect(load(path)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
-    }
+    await expect(loadText(path)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
+    await expect(loadJson(path, identity)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
+    await expect(loadYaml(path, identity)).rejects.toThrow(t("loaders.outsideDiscovery", { path }));
     // 下一步指引在文案里:把读取挪走,别在 test(t) 运行期调 loader。
     expect(t("loaders.outsideDiscovery", { path })).toContain("test(t)");
   });

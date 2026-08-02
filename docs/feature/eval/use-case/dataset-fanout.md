@@ -27,9 +27,13 @@
    import { defineEval } from "niceeval";
    import { loadYaml } from "niceeval/loaders";
    import { equals } from "niceeval/expect";
+   import { z } from "zod";
 
-   const doc = await loadYaml("evals/data/sql-cases.yaml");
-   const rows = doc.cases as { task: string; prompt: string; sql: string }[];
+   const SqlCases = z.object({
+     cases: z.array(z.object({ task: z.string(), prompt: z.string(), sql: z.string() })),
+   });
+   const doc = await loadYaml("evals/data/sql-cases.yaml", (value) => SqlCases.parse(value));
+   const rows = doc.cases;
 
    export default rows.map((row) =>
      defineEval({
@@ -80,6 +84,7 @@
 - 数组 id 按**位置**生成：在中间插行会移动后续所有 id。
   测试集会增删时改用 keyed record。
 - record 的 key 必须是合法路径片段（非空、不含 `/` 与 `\\`、不是 `.` / `..`）；整组条目共享同一份 `tags` / `sandbox` 声明。
+- `loadYaml` / `loadJson` 必须接 decoder。解析出来的动态值只停留在 decoder 入口；验证通过后才以领域类型进入 Eval 定义。
 - 传统 prompt 评估的统一 input / expected-output 表不是一等概念——逐 case 检查方式各异时，就在 map 里按行写不同断言（[设计依据](../architecture.md#两条设计原则)）。
 
 ## 相关阅读
