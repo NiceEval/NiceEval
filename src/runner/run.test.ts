@@ -58,7 +58,7 @@ import type { CarryPlan as CoreCarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
-import { CustomSandboxMaterializationError } from "../sandbox/layer.ts";
+import { CustomSandboxMaterializationError, sandboxLayer } from "../sandbox/layer.ts";
 import { Effect } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
 import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
@@ -444,6 +444,71 @@ describe("runEvals · --keep-sandbox 与 sandboxReuse ownership 互斥", () => {
       keepSandbox: "all",
       conflictingExperimentIds: ["keep/reuse"],
     });
+  });
+});
+
+describe("runEvals · sandboxReuse 按物理 Sandbox identity 分池", () => {
+  it("不同 Eval prepare 共用同一物理 Sandbox，并逐 Attempt 各自重放", async () => {
+    let sandboxCreates = 0;
+    const prepared: string[] = [];
+    const template = defineSandboxCase({
+      identity: { kind: "reuse-layer-identity-provider", revision: 1 },
+      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+      services: { _tag: "Unsupported" },
+      materialize: () => Effect.sync(() => {
+        sandboxCreates += 1;
+        const sandbox = asSandbox(new FakeSandbox());
+        return {
+          sandbox,
+          group: {
+            primary: { sandboxId: `reuse-${sandboxCreates}`, provider: "custom-case" },
+            resources: { kind: "primary-only" as const, sandboxId: `reuse-${sandboxCreates}` },
+            async stop() {},
+          },
+          services: { _tag: "None" as const },
+          facts: null,
+        };
+      }),
+    });
+    const evalWithPrepare = (id: string, commandId: string): DiscoveredEval =>
+      discoverEval(defineEval({
+        sandbox: sandboxLayer().prepare(defineSandboxCommand(
+          { id: commandId, revision: "1", inputs: {} },
+          async () => { prepared.push(commandId); },
+        )),
+        test() {},
+      }), {
+        id,
+        baseDir: "/project",
+        sourcePath,
+        loaderDataPaths: Object.freeze([]),
+        criteriaPaths: Object.freeze([]),
+        privatePaths: Object.freeze([]),
+        source,
+      });
+    const evals = [
+      evalWithPrepare("reuse-a", "test.reuse.prepare-a"),
+      evalWithPrepare("reuse-b", "test.reuse.prepare-b"),
+    ];
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-reuse-layer-identity"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: template,
+      sandboxReuse: true,
+      maxConcurrency: 1,
+      timeoutMs: 5_000,
+      selectedEvalIds: evals.map((evalDef) => evalDef.id),
+      experimentId: "reuse-layer-identity-exp",
+    };
+
+    const { summary } = await run(evals, [agentRun], { maxConcurrency: 1 });
+
+    expect(summary.results).toHaveLength(2);
+    expect(summary.results.every((result) => result.verdict === "passed")).toBe(true);
+    expect(sandboxCreates).toBe(1);
+    expect(prepared).toEqual(["test.reuse.prepare-a", "test.reuse.prepare-b"]);
   });
 });
 
