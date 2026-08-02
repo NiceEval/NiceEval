@@ -1,4 +1,4 @@
-# ai-sdk-v7 示例：niceeval Tier 3 接入（侵入改造 + experiment params）
+# ai-sdk-v7 示例：niceeval Tier 3 接入（侵入改造 + experiment flags）
 
 这是 [`examples/zh/tier2/ai-sdk-v7`](../../tier2/ai-sdk-v7/) 的**副本 + 一层侵入 delta**
 （分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）。前两档应用代码
@@ -12,18 +12,18 @@
   (`instructions` 覆盖 system prompt、`tools` 按名字挑工具子集);**不传时行为与改造前
   逐字节等价**——侵入改造的铁律是默认行为不变。
 - `src/backend/server.ts`:`/api/chat` 请求体多 `instructions` / `tools` 两个可选字段。
-- `agents/ai-sdk-v7.ts`:experiment 的 params 经 `ctx.params` 随请求体透传。
+- `agents/ai-sdk-v7.ts`:experiment 的 flags 经 `ctx.flags` 随请求体透传。
 - `experiments/compare-prompts/`:默认 prompt vs 极简风格两个变体。
 - 本 README。
 
 注意侵入的是**应用**(把变体暴露成配置),不是接入面——adapter 依然只对着 HTTP 端点收发,
 eval 侧照旧不 spawn 进程、不开新端口。
 
-## params 怎么流动
+## flags 怎么流动
 
 ```
-experiments/compare-prompts/concise.ts  →  params: { instructions: "…极简…" }
-agents/ai-sdk-v7.ts                     →  ctx.params 塞进请求体(instructions / tools)
+experiments/compare-prompts/concise.ts  →  flags: { instructions: "…极简…" }
+agents/ai-sdk-v7.ts                     →  ctx.flags 塞进请求体(instructions / tools)
 src/backend/server.ts                   →  透传给 streamChat 的 overrides
 src/backend/ai-sdk-runtime.ts           →  instructions ?? SYSTEM_PROMPT、buildTools(tools)
 ```
@@ -31,7 +31,7 @@ src/backend/ai-sdk-runtime.ts           →  instructions ?? SYSTEM_PROMPT、bui
 evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变体下的对照:极简变体下工具
 断言应当照常绿(变体 prompt 原样保留了工具规则),看点在 judge 分与回复长度的差异。
 `tools` 字段在实验里没用到,但同一条通道已经打通:比如
-`params: { tools: ["get_weather", "calculate"] }` 就能对照"禁用 web_search"的变体。
+`flags: { tools: ["get_weather", "calculate"] }` 就能对照"禁用 web_search"的变体。
 
 ## 目录
 
@@ -46,9 +46,10 @@ evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变�
 
 ## 能力从哪来
 
-新契约下没有能力声明这件事——agent 工厂 option 里已经没有 `capabilities` 字段，`t` 上解锁
-什么完全看 adapter 实际接了什么、返回过什么，不是写一个标志位。这个示例（内置
-`uiMessageStreamAgent`）能验证到：
+新契约下没有 `capabilities` 标志位；`defineDirectAgent` 只要求如实声明
+`evidenceCoverage`。`uiMessageStreamAgent` 已在工厂内声明协议帧完整覆盖的事件、动作、消息和
+状态，并把协议不含的 usage 标为 unavailable；`t` 上能判什么仍取决于 adapter 实际接到的证据。
+这个示例能验证到：
 
 - 跨轮记忆 + `newSession()` 隔离：已验证——新会话线（首轮）生成新 `sessionId`、之后按
   `sessionId` 找回完整历史并原样重发（服务端零状态，续接完全靠客户端重放）；会话续接的存
@@ -85,4 +86,4 @@ pnpm exec niceeval view
 ```
 
 单配置基线 `pnpm exec niceeval exp assistant`、多模型对比 `compare-models` 仍然可用,
-且可以和 params 组合(model 与 params 是 experiment 的两个正交维度)。
+且可以和 flags 组合(model 与 flags 是 experiment 的两个正交维度)。

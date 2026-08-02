@@ -1,4 +1,4 @@
-# codex-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment params）
+# codex-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment flags）
 
 这是 [`examples/zh/tier2/codex-sdk`](../../tier2/codex-sdk/) 的**副本 + 一层侵入 delta**
 （分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）。前两档应用代码
@@ -12,18 +12,18 @@
   `threadOptions`;**不传时行为与改造前逐字节等价**——侵入改造的铁律是默认行为不变。
 - `src/backend/server.ts`:`/api/chat` 请求体多一个可选字段 `sandboxMode`(取值校验,
   非法值 400)。
-- `agents/codex-sdk.ts`:experiment 的 `params.sandboxMode` 经 `ctx.params` 随请求体透传。
+- `agents/codex-sdk.ts`:experiment 的 `flags.sandboxMode` 经 `ctx.flags` 随请求体透传。
 - `experiments/compare-sandbox/`:workspace-write vs read-only 两个变体。
 - 本 README。
 
 注意侵入的是**应用**(把变体暴露成配置),不是接入面——adapter 依然只对着 HTTP 端点收发,
 eval 侧照旧不 spawn 进程、不开新端口。
 
-## params 怎么流动
+## flags 怎么流动
 
 ```
-experiments/compare-sandbox/read-only.ts   →  params: { sandboxMode: "read-only" }
-agents/codex-sdk.ts                        →  ctx.params.sandboxMode 塞进请求体
+experiments/compare-sandbox/read-only.ts   →  flags: { sandboxMode: "read-only" }
+agents/codex-sdk.ts                        →  ctx.flags.sandboxMode 塞进请求体
 src/backend/server.ts                      →  校验后交给 runTurnStreamed
 src/backend/agent.ts                       →  threadOptions.sandboxMode
 ```
@@ -42,14 +42,16 @@ read-only 变体下 `create-file`(要写盘)预期变红,沙箱拦下写操作�
 - `evals/`：基础问答、创建文件（用 `node:fs` 直接核实磁盘上的真实内容，不只信模型自述）、跑
   shell 命令、跨轮记忆 + `newSession()` 隔离（用口头偏好而不是文件是否存在做隔离信号，见
   `session-isolation.eval.ts` 注释——`workspace/` 是所有 thread 共享的同一份磁盘状态）。
-- `experiments/codex-sdk.ts`：不带 params 的单配置基线。`experiments/compare-sandbox/`：
+- `experiments/codex-sdk.ts`：不带 flags 的单配置基线。`experiments/compare-sandbox/`：
   workspace-write / read-only 两个 sandbox mode 变体；这个应用只有一个可用模型档位，因此仍没有
   `experiments/compare-models/`（`docs/origin-integration.md` 的验收清单里多模型对比只点名了
   ai-sdk-v7 / claude-sdk / pi-sdk）。
 
 ## 接入验证过什么
 
-不需要在 `defineAgent` 上声明任何东西,能力从 `send` 实际做到的事、`events` 里出的证据自然成立:
+`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`createCodexThreadEventStream` 完整转换 `ThreadEvent`，因此使用
+`completeEvidenceCoverage`。能力仍从 `send` 实际做到的事、`events` 里的证据自然成立：
 
 - 会话续接:新会话线不带 `threadId` 开新会话、`thread.started` 帧回传的 `thread_id` 经
   `ctx.session.capture()` 写回,之后带 `ctx.session.id` 经 `codex.resumeThread` 续接同一条
@@ -76,4 +78,4 @@ pnpm exec niceeval exp compare-sandbox
 pnpm exec niceeval view
 ```
 
-单配置基线 `pnpm exec niceeval exp codex-sdk` 仍然可用(不带 params,应用走默认行为)。
+单配置基线 `pnpm exec niceeval exp codex-sdk` 仍然可用(不带 flags,应用走默认行为)。

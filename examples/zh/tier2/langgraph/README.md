@@ -44,7 +44,9 @@ codex-sdk/ai-sdk-v7 相反**,那两个应用自己拼尾巴。
 
 ## 能力从哪来
 
-能力不是声明出来的，是构造证明——做到了就是有，不需要在 `defineAgent` 上额外填字段：
+能力不是用 `capabilities` 标志位声明出来的，而是由构造和证据证明；不过
+`defineDirectAgent` 必须如实填写 `evidenceCoverage`。这个手写协议映射明确声明 events、actions、
+messages 与 status 完整，协议未提供的 usage 和 adapter 未产生的 `Turn.data` 标为 unavailable：
 
 - 多轮续接、`t.newSession()` 隔离——已验证：新会话线（`ctx.session.id` 是 `undefined`）不带
   `sessionId` 开新会话、`session` 帧回传的 `sessionId` 经 `ctx.session.capture` 写回

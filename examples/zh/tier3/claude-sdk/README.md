@@ -1,4 +1,4 @@
-# claude-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment params）
+# claude-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment flags）
 
 这是 [`examples/zh/tier1/claude-sdk`](../../tier1/claude-sdk/) 的**副本 + 一层侵入 delta**
 （分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx);这个应用没有
@@ -12,18 +12,18 @@ tier3 直接叠在 tier1 之上)。Tier 1 应用代码一行不改;这一档**�
 - `src/backend/agent.ts`:`runTurn` 多一个可选参数 `systemPrompt`;**不传时行为与改造前
   逐字节等价**——侵入改造的铁律是默认行为不变。
 - `src/backend/server.ts`:`/api/chat` 请求体多一个可选字段 `systemPrompt`(类型校验)。
-- `agents/claude-sdk.ts`:experiment 的 `params.systemPrompt` 经 `ctx.params` 随请求体透传。
+- `agents/claude-sdk.ts`:experiment 的 `flags.systemPrompt` 经 `ctx.flags` 随请求体透传。
 - `experiments/compare-prompts/`:默认 prompt vs 极简风格两个变体。
 - 本 README。
 
 注意侵入的是**应用**(把变体暴露成配置),不是接入面——adapter 依然只对着 HTTP 端点收发,
 eval 侧照旧不 spawn 进程、不开新端口。
 
-## params 怎么流动
+## flags 怎么流动
 
 ```
-experiments/compare-prompts/concise.ts  →  params: { systemPrompt: "…极简…" }
-agents/claude-sdk.ts                    →  ctx.params.systemPrompt 塞进请求体
+experiments/compare-prompts/concise.ts  →  flags: { systemPrompt: "…极简…" }
+agents/claude-sdk.ts                    →  ctx.flags.systemPrompt 塞进请求体
 src/backend/server.ts                   →  校验后交给 runTurn
 src/backend/agent.ts                    →  options.systemPrompt ?? SYSTEM_PROMPT
 ```
@@ -31,9 +31,13 @@ src/backend/agent.ts                    →  options.systemPrompt ?? SYSTEM_PROM
 evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变体下的对照:极简变体下工具
 断言、HITL 批准/拒绝应当照常绿(变体 prompt 原样保留了工具规则),看点在 judge 分与回复
 长度的差异。会话续接走 SDK 的 `resume`,每轮 `query()` 都重新给 options,同一实验组内
-params 恒定,变体之间不会串。
+flags 恒定,变体之间不会串。
 
 ## 已验证的行为
+
+`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`createClaudeSdkEventStream` 完整转换原生 `SDKMessage`，因此使用
+`completeEvidenceCoverage`。
 
 - 会话续接:新会话线不带 `sessionId` 开新会话、`system`/`init` 帧回传的 `session_id` 写回
   `ctx.session.id`,同一条会话线带 id 经 SDK 的 `resume` 续接同一条历史(SDK 落盘在
@@ -74,6 +78,6 @@ pnpm exec niceeval exp compare-prompts
 pnpm exec niceeval view
 ```
 
-单配置基线 `pnpm exec niceeval exp assistant` 仍然可用(不带 params,应用走默认行为)。
+单配置基线 `pnpm exec niceeval exp assistant` 仍然可用(不带 flags,应用走默认行为)。
 其余细节(并发限制)见 [tier1 README](../../tier1/claude-sdk/README.md),
 这一层没有改变它们。

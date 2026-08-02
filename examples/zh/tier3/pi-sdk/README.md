@@ -1,4 +1,4 @@
-# pi-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment params）
+# pi-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment flags）
 
 这是 [`examples/zh/tier1/pi-sdk`](../../tier1/pi-sdk/) 的**副本 + 一层侵入 delta**
 （分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx);这个应用没有
@@ -13,18 +13,18 @@ Tier 2——pi-agent-core 没有官方 OTel 集成,所以 tier3 直接叠在 tie
   与改造前逐字节等价**——侵入改造的铁律是默认行为不变。
 - `src/backend/server.ts`:`/api/chat` 请求体多一个可选字段 `systemPrompt`(类型校验),
   透传给 `createAgent`。
-- `agents/pi-sdk.ts`:experiment 的 `params.systemPrompt` 经 `ctx.params` 随请求体透传。
+- `agents/pi-sdk.ts`:experiment 的 `flags.systemPrompt` 经 `ctx.flags` 随请求体透传。
 - `experiments/compare-prompts/`:默认 prompt vs 极简风格两个变体。
 - 本 README。
 
 注意侵入的是**应用**(把变体暴露成配置),不是接入面——adapter 依然只对着 HTTP 端点收发,
 eval 侧照旧不 spawn 进程、不开新端口。
 
-## params 怎么流动
+## flags 怎么流动
 
 ```
-experiments/compare-prompts/concise.ts  →  params: { systemPrompt: "…极简…" }
-agents/pi-sdk.ts                        →  ctx.params.systemPrompt 塞进请求体
+experiments/compare-prompts/concise.ts  →  flags: { systemPrompt: "…极简…" }
+agents/pi-sdk.ts                        →  ctx.flags.systemPrompt 塞进请求体
 src/backend/server.ts                   →  校验后交给 streamChat → createAgent
 src/backend/agent.ts                    →  initialState.systemPrompt ?? SYSTEM_PROMPT
 ```
@@ -32,11 +32,13 @@ src/backend/agent.ts                    →  initialState.systemPrompt ?? SYSTEM
 evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变体下的对照:极简变体下工具
 断言、HITL 批准/拒绝应当照常绿(变体 prompt 保留了"需要时调用工具"的规则),看点在
 judge 分与回复长度的差异。pi 每轮请求都重建 Agent(历史经 `options.messages` 续接),
-所以 prompt 覆盖天然是请求级的;同一实验组内 params 恒定,变体之间不会串。
+所以 prompt 覆盖天然是请求级的;同一实验组内 flags 恒定,变体之间不会串。
 
 ## 接入验证过什么
 
-不需要在 `defineAgent` 上声明任何东西,能力从 `send` 实际做到的事自然成立:
+`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`createPiAgentEventStream` 完整转换原生 `AgentEvent`，因此使用
+`completeEvidenceCoverage`。能力仍从 `send` 实际做到的事自然成立：
 
 - 会话续接:新会话线不带 `sessionId` 开新会话、服务端回传的 `sessionId` 经 `ctx.session.capture()`
   写回、已有会话线带 `ctx.session.id` 续接同一条服务端内存历史(`sessions` Map)。
@@ -69,6 +71,6 @@ pnpm exec niceeval exp compare-prompts
 pnpm exec niceeval view
 ```
 
-单配置基线 `pnpm exec niceeval exp assistant` 仍然可用(不带 params,应用走默认行为)。
+单配置基线 `pnpm exec niceeval exp assistant` 仍然可用(不带 flags,应用走默认行为)。
 其余细节(帧协议)见 [tier1 README](../../tier1/pi-sdk/README.md),
 这一层没有改变它们。

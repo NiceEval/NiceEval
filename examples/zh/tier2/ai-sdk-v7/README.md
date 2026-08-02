@@ -39,9 +39,10 @@ gap:`@ai-sdk/otel` 对 `needsApproval` 工具的审批链路不产 `execute_tool
 
 ## 能力从哪来
 
-新契约下没有能力声明这件事——agent 工厂 option 里已经没有 `capabilities` 字段，`t` 上解锁
-什么完全看 adapter 实际接了什么、返回过什么，不是写一个标志位。这个示例（内置
-`uiMessageStreamAgent`）能验证到：
+新契约下没有 `capabilities` 标志位；`defineDirectAgent` 只要求如实声明
+`evidenceCoverage`。`uiMessageStreamAgent` 已在工厂内声明协议帧完整覆盖的事件、动作、消息和
+状态，并把协议不含的 usage 标为 unavailable；`t` 上能判什么仍取决于 adapter 实际接到的证据。
+这个示例能验证到：
 
 - 跨轮记忆 + `newSession()` 隔离：已验证——新会话线（首轮）生成新 `sessionId`、之后按
   `sessionId` 找回完整历史并原样重发（服务端零状态，续接完全靠客户端重放）；会话续接的存

@@ -39,7 +39,9 @@ README),和 span 无关。span 晚到、缺失时也只是瀑布图缺一块,断
 
 ## 接入验证过什么
 
-不需要在 `defineAgent` 上声明任何东西,能力从 `send` 实际做到的事、`events` 里出的证据自然成立:
+`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`createCodexThreadEventStream` 完整转换 `ThreadEvent`，因此使用
+`completeEvidenceCoverage`。能力仍从 `send` 实际做到的事、`events` 里的证据自然成立：
 
 - 会话续接:新会话线不带 `threadId` 开新会话、`thread.started` 帧回传的 `thread_id` 经
   `ctx.session.capture()` 写回,之后带 `ctx.session.id` 经 `codex.resumeThread` 续接同一条
