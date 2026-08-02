@@ -3,27 +3,55 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { describe, expect, it } from "vitest";
-import { createBuiltinSandboxFactories, sandboxLayer, type SandboxLayer } from "../sandbox/layer.ts";
-import { linkSandboxLayers } from "../sandbox/link.ts";
-import { planLinkedRuns, type LinkedRunPlan } from "../sandbox/plan.ts";
-import { collectBuildPreparation } from "./build-preparation.ts";
-import type { PreparedRunPair } from "./sandbox-selection.ts";
+import { defineEval, defineSandboxAgent } from "../define.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
+import { STATELESS } from "../state/plan.ts";
+import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
+import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
+import { discoverEval, type AgentRun } from "./types.ts";
 
-async function planned(layer: SandboxLayer, baseDir: string): Promise<Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>> {
-  const [pair] = Effect.runSync(linkSandboxLayers([{
-    eval: { id: "task/dockerfile", layer },
-    experiment: { id: "compare/codex", layer: sandboxLayer() },
-    agent: { kind: "sandbox", name: "codex" },
-  }]));
-  if (pair === undefined) throw new Error("missing pair");
-  const [result] = await Effect.runPromise(planLinkedRuns([{
-    pair,
-    authorBaseDirs: { eval: baseDir, experiment: "/repo/experiments" },
-  }]));
-  if (result?.plan._tag !== "Sandbox") throw new Error("missing plan");
-  return result.plan;
+async function prepared(layer: SandboxLayer, baseDir: string): Promise<PreparedRunPair> {
+  const evalId = "task/dockerfile";
+  const sourcePath = join(baseDir, "eval.ts");
+  const evalDef = discoverEval(defineEval({ sandbox: layer, test() {} }), {
+    id: evalId,
+    baseDir,
+    sourcePath,
+    loaderDataPaths: Object.freeze([]),
+    criteriaPaths: Object.freeze([]),
+    privatePaths: Object.freeze([]),
+    source: { path: "eval.ts", content: "", sha256: "0".repeat(64) },
+  });
+  const run: AgentRun = {
+    agent: defineSandboxAgent({
+      name: "codex",
+      evidenceCoverage: completeEvidenceCoverage,
+      ensure: {
+        identity: { agent: "codex", version: "test", revision: "1" },
+        probe: defineSandboxCommand(
+          { id: "test.codex.probe", revision: "1", inputs: {} },
+          async () => {},
+        ),
+      },
+      installers: [],
+      send: async () => ({ events: [], status: "completed" }),
+    }),
+    flags: {},
+    attempts: 1,
+    earlyExit: false,
+    selectedEvalIds: [evalId],
+    experimentId: "compare/codex",
+    experimentBaseDir: baseDir,
+    experimentSourcePath: sourcePath,
+    state: STATELESS,
+  };
+  const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (pair === undefined) throw new Error("missing prepared pair");
+  return pair;
 }
 
 describe("Run build preparation · PreparedRunPair", () => {
@@ -38,22 +66,45 @@ describe("Run build preparation · PreparedRunPair", () => {
       dockerBuildPlatform: Effect.succeed("linux/amd64"),
       hostPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
     });
-    const plan = await planned(factories.dockerfileSandbox({ context: "." }), directory);
-    const prepared = {
-      key: "compare/codex|task/dockerfile",
-      plan,
-      run: { attempts: 1 },
-      evalDef: { id: "task/dockerfile" },
-      identity: {},
-    } as PreparedRunPair;
+    await writeFile(join(directory, "eval.ts"), "export default null;\n", "utf8");
+    const pair = await prepared(factories.dockerfileSandbox({ context: "." }), directory);
 
-    const collected = await collectBuildPreparation({
-      preparedPairs: [prepared],
+    const collection = await Effect.runPromise(collectBuildPreparation({
+      preparedPairs: [pair],
       carriedAttemptsByKey: new Map(),
+    }));
+    const collected = Option.getOrThrow(collection);
+    expect(collected.works).toHaveLength(1);
+    expect(collected.works[0]).toMatchObject({ provider: "docker" });
+    expect(collected.evalBuildKeys[pair.key]).toEqual([collected.works[0]?.buildKey]);
+    expect(collected.caseKeys.has(pair.key)).toBe(true);
+    expect(Option.isSome(toBuildPreparation(collected))).toBe(true);
+  });
+
+  it("distinguishes case-only preparation from no fresh work", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "niceeval-runtime-build-none-"));
+    await writeFile(join(directory, "eval.ts"), "export default null;\n", "utf8");
+    const factories = createBuiltinSandboxFactories({
+      dockerBuildPlatform: Effect.succeed("linux/amd64"),
+      hostPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
     });
-    expect(collected?.works).toHaveLength(1);
-    expect(collected?.works[0]).toMatchObject({ provider: "docker" });
-    expect(collected?.evalBuildKeys[prepared.key]).toEqual([collected?.works[0]?.buildKey]);
-    expect(collected?.caseKeys.has(prepared.key)).toBe(true);
+    const pair = await prepared(
+      factories.dockerImageSandbox({ image: `node@sha256:${"b".repeat(64)}` }),
+      directory,
+    );
+
+    const caseOnly = Option.getOrThrow(await Effect.runPromise(collectBuildPreparation({
+      preparedPairs: [pair],
+      carriedAttemptsByKey: new Map(),
+    })));
+    expect(caseOnly.works).toEqual([]);
+    expect(caseOnly.caseKeys.has(pair.key)).toBe(true);
+    expect(Option.isNone(toBuildPreparation(caseOnly))).toBe(true);
+
+    const fullyCarried = await Effect.runPromise(collectBuildPreparation({
+      preparedPairs: [pair],
+      carriedAttemptsByKey: new Map([[pair.key, new Set([0])]]),
+    }));
+    expect(Option.isNone(fullyCarried)).toBe(true);
   });
 });
