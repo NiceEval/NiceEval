@@ -1,7 +1,7 @@
 ---
 title: "实验与生命周期"
 sidebarTitle: "实验"
-description: "如何写好实验。选择 Agent、传递 model 和 flags，设置 runs、预算、并发与 Sandbox，并用 setup / teardown 起停实验级共享服务。"
+description: "如何写好实验。选择 Agent、传递 model 和 flags，设置 attempts、预算、并发与 Sandbox，并用 setup / teardown 起停实验级共享服务。"
 ---
 
 Experiment 是可签入的运行配置：同一批评估用例对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛评估用例，不负责临时改 agent 或运行配置。
@@ -140,7 +140,7 @@ npx niceeval exp prompts/concise
 sandboxSetup(): SandboxHook {
   return async (sandbox, ctx) => {
     ctx.fact("nowledge.endpoint", env.url); // 这条 Attempt 实际连的实例
-    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env.url}\n` });
+    await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
   };
 }
 ```
@@ -235,9 +235,10 @@ export default defineExperiment({
   sandbox: e2bSandbox({ template: "niceeval-agents" })
     .setup(async (sandbox, ctx) => {
       // 每沙箱一次，晚于实验级 setup：把宿主机侧坐标写进沙箱
-      await sandbox.writeFiles({
-        ".nowledge/config.json": JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
-      });
+      await sandbox.writeText(
+        ".nowledge/config.json",
+        JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
+      );
       await loadMemoryState(sandbox, ctx.experimentId);
     })
     .teardown(async (sandbox, ctx) => {
@@ -286,9 +287,10 @@ export function nowledgeLifecycle() {
     /** 每沙箱一次：把闭包坐标写进沙箱 */
     sandboxSetup(): SandboxHook {
       return async (sandbox) => {
-        await sandbox.writeFiles({
-          ".nowledge/env": `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
-        });
+        await sandbox.writeText(
+          ".nowledge/env",
+          `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
+        );
       };
     },
   };

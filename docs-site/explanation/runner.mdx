@@ -39,14 +39,14 @@ npx niceeval exp local --max-concurrency 8
 
 Remote HTTP agents can usually handle higher concurrency; local Docker Sandbox runs usually need lower concurrency to avoid CPU, memory, and disk contention.
 
-## runs and early-exit
+## attempts and early-exit
 
 ```bash
-npx niceeval exp local fixtures/button --runs 5
-npx niceeval exp local fixtures/button --runs 5 --no-early-exit
+npx niceeval exp local fixtures/button --attempts 5
+npx niceeval exp local fixtures/button --attempts 5 --early-exit
 ```
 
-`runs` is for measuring pass rate. Early exit is on by default: once one Attempt for an eval passes, the remaining Attempts for that eval are stopped. To get the full pass-rate distribution, turn it off with `--no-early-exit` so each eval runs the full `runs` count.
+`attempts` is for measuring pass rate. By default, every configured Attempt runs. Opt in to `--early-exit` to stop an eval's remaining Attempts once one passes; use `--no-early-exit` to explicitly keep the default full distribution when another configuration layer enabled early exit.
 
 ## Cache
 

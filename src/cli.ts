@@ -1089,7 +1089,7 @@ async function main(): Promise<void> {
     }
   } else {
     // 裸 run / `niceeval <eval>` 不再执行。运行配置必须来自 experiments/,
-    // 这样 agent/model/flags/runs/budget 与结果聚合都有可签入的身份。
+    // 这样 agent/model/flags/attempts/budget 与结果聚合都有可签入的身份。
     const experiments = await discoverExperiments(cwd);
     const ids = experiments.map((e) => e.id);
     const matchedIds = new Set(positionals.flatMap((p) => matchExperimentSelector(ids, p)));
@@ -1502,7 +1502,7 @@ async function main(): Promise<void> {
   // 退出码统一走 CompletionStatus 驱动的语义(interrupted → 130、incomplete/required reporter
   // 失败 → 1),不再只看 verdict 计数;两种 profile 共用同一套退出码,不是 json 专属。failed/errored
   // 先按 (experiment, eval) 折叠再喂给 computeExitCode——它只认 InvocationSummary 原始字段,不知道
-  // 「同一 eval 的重试轮不该重复计红」这条 eval 级判定规则(被 runs+earlyExit 重试吸收的失败,
+  // 「同一 eval 的重试轮不该重复计红」这条 eval 级判定规则(被 attempts+earlyExit 重试吸收的失败,
   // 先挂一次、后来过了,不该把进程判红,否则 CI 判定与 evalLevelStats 报表口径不一致;
   // 见 memory 的 cli-exit-code-attempt-level-not-eval-level)。
   const foldedStats = evalLevelStats(summary.results, (r) => `${r.experimentId ?? ""}|${r.id}`);

@@ -78,7 +78,7 @@ t.maxTokens(80_000).atLeast(0.7);                 // 降为 soft 并带阈值
   </Card>
 </CardGroup>
 
-多次运行（`runs > 1`）时，单个 eval 的汇总变成**通过率**（产出 `passed` 的运行占比）和平均耗时，而不是单一 verdict。
+多次尝试（`attempts > 1`）时，单个 eval 的汇总变成**通过率**（产出 `passed` 的 Attempt 占比）和平均耗时，而不是单一 verdict。
 
 ## 1. 值断言 —— `niceeval/expect` 匹配器
 

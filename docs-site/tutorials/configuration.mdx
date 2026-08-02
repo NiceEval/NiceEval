@@ -1,12 +1,12 @@
 ---
 title: "Put configuration and secrets where they belong"
 sidebarTitle: "Config & environment"
-description: "Which layer of code holds runs, timeout, concurrency, judge, and locale — and which environment variables carry API keys and provider tokens."
+description: "Which layer of code holds attempts, timeout, concurrency, judge, and locale — and which environment variables carry API keys and provider tokens."
 ---
 
 Values in [NiceEval](https://niceeval.com/) have exactly two homes:
 
-- **Configuration lives in code** — CLI flags, experiment files under `experiments/`, and `niceeval.config.ts` at the root. How many runs, how long before timeout, how much concurrency, which judge model, which report to show by default, which interface language: all of it lives here, with no environment variable counterpart.
+- **Configuration lives in code** — CLI flags, experiment files under `experiments/`, and `niceeval.config.ts` at the root. How many attempts, how long before timeout, how much concurrency, which judge model, which report to show by default, which interface language: all of it lives here, with no environment variable counterpart.
 - **Secrets live in environment variables** — API keys and provider tokens, plus facts like `NO_COLOR` and the system language that describe *which terminal you are printing to*.
 
 So every value has exactly one source. What `niceeval exp --dry` prints is what actually takes effect; no environment variable is quietly changing it behind your back.
@@ -18,7 +18,7 @@ When the same value appears in more than one layer, resolution is **CLI flag →
 **Just this once** — put it on the command:
 
 ```bash
-npx niceeval exp ci --runs 5 --timeout 600000
+npx niceeval exp ci --attempts 5 --timeout 600000
 ```
 
 **Always, for this experiment** — put it in the experiment file:
@@ -31,7 +31,7 @@ import { codexAgent } from "niceeval/agents";
 export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.4",
-  runs: 3,
+  attempts: 3,
   timeoutMs: 600_000,
   budget: 5,
 });
@@ -135,7 +135,7 @@ NICEEVAL_JUDGE_KEY=sk-...
 
 | Old form | Write it as |
 | --- | --- |
-| `NICEEVAL_RUNS` | `--runs`, or `runs` on an experiment |
+| `NICEEVAL_RUNS` | `--attempts`, or `attempts` on an experiment |
 | `NICEEVAL_TIMEOUT` | `--timeout`, or `timeoutMs` on an experiment / config |
 | `NICEEVAL_BUDGET` | `--budget`, or `budget` on an experiment |
 | `NICEEVAL_MAX_CONCURRENCY` | `--max-concurrency`, or `maxConcurrency` in config |

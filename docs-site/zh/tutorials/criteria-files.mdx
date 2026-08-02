@@ -49,10 +49,8 @@ description: "用 loadText 在模块顶层读入隐藏测试、跑测脚本等�
      description: "react-datepicker pr-6058",
      async test(t) {
        await t.send("修复 changeMonth 面板错位问题；不要改测试文件。");
-       await t.sandbox.writeFiles({
-         "src/test/datepicker_test.test.tsx": hiddenTest,
-         "tests/run-tests.sh": runTests,
-       });
+       await t.sandbox.writeText("src/test/datepicker_test.test.tsx", hiddenTest);
+       await t.sandbox.writeText("tests/run-tests.sh", runTests);
        t.check(await t.sandbox.runCommand("bash", ["tests/run-tests.sh"]), commandSucceeded());
      },
    });

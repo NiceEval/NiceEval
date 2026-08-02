@@ -166,7 +166,7 @@ export default defineSandboxAgent({
   async send(input, ctx) {
     ctx.progress({ message: "运行 my-agent CLI" });
     await ctx.sandbox.runCommand("my-agent", ["run", input.text, "--json-out", "agent-events.json"]);
-    const transcript = await ctx.sandbox.readFile("agent-events.json");
+    const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({
         code: "empty-transcript",

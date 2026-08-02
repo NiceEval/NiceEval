@@ -65,7 +65,7 @@ A tunnel address changes every time the service starts. Putting it in `flags` in
 sandboxSetup(): SandboxHook {
   return async (sandbox, ctx) => {
     ctx.fact("nowledge.endpoint", env.url);
-    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env.url}\n` });
+    await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
   };
 }
 ```

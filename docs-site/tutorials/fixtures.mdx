@@ -51,7 +51,7 @@ export default defineEval({
 });
 ```
 
-You can also use `t.sandbox.writeFiles()` to add seed files within a single eval — a good fit for small tasks or security probes.
+You can also use `t.sandbox.writeText()` to add seed files within a single eval — a good fit for small tasks or security probes.
 
 ## Write the task prompt
 
@@ -78,7 +78,7 @@ Leave implicit quality requirements, such as whether the code defends against pa
 ```ts
 import { includes, excludes } from "niceeval/expect";
 
-const code = await t.sandbox.readFile("src/config/env.ts");
+const code = await t.sandbox.readText("src/config/env.ts");
 
 t.check(code, includes(/z\.object\s*\(/));
 t.check(code, includes(/EnvSchema\.parse\s*\(\s*process\.env/));
@@ -93,8 +93,9 @@ t.sandbox.fileChanged("src/config/env.ts");
 For coding-agent tasks, real commands are usually more reliable than text matching:
 
 ```ts
-await t.sandbox.writeFiles({
-  "_test_traversal.py": [
+await t.sandbox.writeText(
+  "_test_traversal.py",
+  [
     "import sys, os",
     "sys.path.insert(0, '.')",
     "from uploads import safe_upload_path",
@@ -106,7 +107,7 @@ await t.sandbox.writeFiles({
     "    pass",
     "print('ok')",
   ].join("\n"),
-});
+);
 
 const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);
 t.check(result.stdout.trim(), includes(/ok/));
@@ -134,7 +135,7 @@ A typical A/B setup:
 
 - `experiments/baseline.ts`: a plain agent.
 - `experiments/with-skill.ts`: the same agent plus a setup hook that writes `CLAUDE.md`.
-- Both groups use the same eval set, model, run count, and budget.
+- Both groups use the same eval set, model, attempt count, and budget.
 
 ## When to use Sandbox Fixture
 

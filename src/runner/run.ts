@@ -336,7 +336,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       for (const evalDef of evals) {
         const carryKey = cacheKey(run, evalDef.id);
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
-        // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——runs:5 里若只有
+        // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——attempts:5 里若只有
         // 序号 1 是上一轮的终态、序号 0 是 errored,这里必须只跳过序号 1、照常调度序号 0。
         if (carriedAttemptsByKey.get(carryKey)?.has(i)) continue;
         // key 标识「同一个运行配置下的同一条 eval」,earlyExit 的跳过/abort 只应作用于

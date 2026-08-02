@@ -95,7 +95,7 @@ export default defineScoreEval({
     await t.send("把 DB-GPT 装起来并通过健康检查。");
 
     // 前置条件没过，后面步骤没意义：t.require 记硬失败并就地结束 test()
-    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue());
+    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue());
 
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     // 值 1 分，而且没装依赖后面全白跑——挣分和硬前置可以是同一条

@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** 一个可渲染的成员:函数 / 接口字段 / 联合类型变体 / CLI flag。 */
 export interface Member {
-  /** 展示名,如 `includes`、`gate`、`message`、`--runs`。 */
+  /** 展示名,如 `includes`、`gate`、`message`、`--attempts`。 */
   name: string;
   /** ts 代码块里原样展示的签名。 */
   signature: string;

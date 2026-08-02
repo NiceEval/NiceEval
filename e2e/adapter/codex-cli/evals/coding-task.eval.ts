@@ -25,7 +25,7 @@ const seed = `alpha\n${oldMarker}\nomega\n`;
 export default defineEval({
   description: "coding 任务工具轨:文件变更(改既有文件)与 shell 调用都归一进标准事件流,调用与结果配对成立",
   async test(t) {
-    await t.sandbox.writeFiles({ [relPath]: seed });
+    await t.sandbox.writeText(relPath, seed);
 
     const turn = await t.send(
       `在当前工作目录里做两件事:` +

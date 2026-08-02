@@ -43,7 +43,7 @@ Prerequisites: install the optional `braintrust` package (`npm install braintrus
 
 ### Reporting Shape
 
-- Each attempt becomes one Braintrust row. `runs: 3` creates three rows, distinguished by `attempt` in metadata.
+- Each attempt becomes one Braintrust row. `attempts: 3` creates three rows, distinguished by `attempt` in metadata.
 - Soft assertions are recorded as scores by name. Gate assertions are recorded under a `gate:` prefix, so gate regressions and soft score regressions appear in the same Braintrust experiment diff surface.
 - Metrics include start/end time, token usage, and estimated cost. Missing data is omitted rather than filled with zero.
 - Metadata includes `agent`, `model`, `experiment`, `flags`, `verdict`, and failed assertion details, so Braintrust filters can slice by those dimensions.

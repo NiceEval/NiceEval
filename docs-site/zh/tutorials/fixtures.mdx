@@ -51,7 +51,7 @@ export default defineEval({
 });
 ```
 
-也可以用 `t.sandbox.writeFiles()` 在单个评估用例里补充种子文件，适合小任务或安全探针。
+也可以用 `t.sandbox.writeText()` 在单个评估用例里补充种子文件，适合小任务或安全探针。
 
 ## 写任务 prompt
 
@@ -78,7 +78,7 @@ await t
 ```ts
 import { includes, excludes } from "niceeval/expect";
 
-const code = await t.sandbox.readFile("src/config/env.ts");
+const code = await t.sandbox.readText("src/config/env.ts");
 
 t.check(code, includes(/z\.object\s*\(/));
 t.check(code, includes(/EnvSchema\.parse\s*\(\s*process\.env/));
@@ -93,8 +93,9 @@ t.sandbox.fileChanged("src/config/env.ts");
 对 coding-agent 任务，真实命令通常比文本匹配更可靠：
 
 ```ts
-await t.sandbox.writeFiles({
-  "_test_traversal.py": [
+await t.sandbox.writeText(
+  "_test_traversal.py",
+  [
     "import sys, os",
     "sys.path.insert(0, '.')",
     "from uploads import safe_upload_path",
@@ -106,7 +107,7 @@ await t.sandbox.writeFiles({
     "    pass",
     "print('ok')",
   ].join("\n"),
-});
+);
 
 const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);
 t.check(result.stdout.trim(), includes(/ok/));
@@ -134,7 +135,7 @@ pnpm exec niceeval exp compare api-validation
 
 - `experiments/baseline.ts`：裸 agent。
 - `experiments/with-skill.ts`：同一 agent + setup hook 注入 `CLAUDE.md`。
-- 两组使用同一批评估用例、同一模型、同一 runs 和预算。
+- 两组使用同一批评估用例、同一模型、同一 attempts 和预算。
 
 ## Sandbox Fixture 的适用场景
 

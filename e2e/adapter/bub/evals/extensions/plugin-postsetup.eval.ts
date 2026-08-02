@@ -17,7 +17,7 @@ export default defineEval({
   description: "pythonPlugins 声明的包在 bub 自己的 tool venv 里可导入;postSetup 钩子按声明顺序执行",
 
   async test(t) {
-    const order = await t.sandbox.readFile(POSTSETUP_ORDER_LOG);
+    const order = await t.sandbox.readText(POSTSETUP_ORDER_LOG);
     t.check(order, includes("first\nsecond"));
 
     const hostCheck = await t.sandbox.runShell(PLUGIN_CHECK_CMD);

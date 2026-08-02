@@ -3,7 +3,7 @@ import { isDefined } from "niceeval/expect";
 
 // The one Eval in this repo that drives a real model call — everything else this repo
 // asserts (disk format, openRecord() parity, --json parity, --junit folding) is read off
-// this Eval's real attempts, run twice (see experiments/main.ts) so sources.json dedup
+// this Eval's two real attempts (see experiments/main.ts) so sources.json dedup
 // across attempts sharing this eval file has something to exercise.
 export default defineEval({
   description: "tool-call:真实 Chat Completions 兼容网关一次工具调用(get_stock_price),验证 calledTool 走通",

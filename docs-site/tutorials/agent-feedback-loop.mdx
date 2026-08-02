@@ -227,7 +227,7 @@ The goal of the loop isn't to make a command exit green — it's to form and ver
     | The `diff` doesn't match what the task asked for | The tested agent's implementation strategy, or its runtime environment |
     | Correct behavior gets rejected by a gate | The eval's assertions, Fixtures, setup |
     | Timeout, auth, or Sandbox errors | Experiment configuration, the Adapter, the Sandbox |
-    | The same eval passes sometimes and fails other times | `--history`, `runs`, and stability issues |
+    | The same eval passes sometimes and fails other times | `--history`, `attempts`, and stability issues |
 
     Don't loosen a correct assertion just to turn it green. Write down which evidence supports which conclusion before touching the code.
   </Step>

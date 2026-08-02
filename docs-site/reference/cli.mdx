@@ -80,7 +80,7 @@ The table below is generated from the CLI's flag-parsing table; any flag outside
 |---|---|---|
 | `--agent` | string | Experiment runs do not support this flag. To switch agents, add or duplicate a config file under `experiments/`. |
 | `--model` | string | Experiment runs do not support this flag. To switch models, add or duplicate an experiment file and change `model`. |
-| `--runs` | number | How many times to run each eval, commonly used for pass@N. |
+| `--attempts` | number | How many attempts to run for each eval, commonly used for pass@N. |
 | `--max-concurrency` | number | Set how many evals run at the same time. |
 | `--timeout` | number | Timeout for a single attempt, in milliseconds. |
 | `--budget` | number | Budget limit for the whole run, in dollars. |
@@ -182,7 +182,7 @@ npx niceeval show weather/brooklyn --history
 
 ## `--early-exit` and `--strict`
 
-`--early-exit` defaults to `true`: once one attempt of an eval passes, the runner automatically stops the eval's remaining attempts (to save cost). Passing `--early-exit` explicitly therefore has no effect; what's actually useful is turning it off with `--no-early-exit`, which makes `--runs` > 1 run every attempt to completion (to measure the real pass rate instead of stopping early).
+`--early-exit` defaults to `false`, so `--attempts` runs every configured Attempt and measures the full pass-rate distribution. Turn `--early-exit` on when you want to save cost by stopping an eval's remaining Attempts after the first pass; `--no-early-exit` explicitly keeps the default full distribution when another configuration layer enabled early exit.
 
 `--strict` does not mean "report errors more strictly" — it changes how soft-threshold assertions are judged. A soft threshold like `.atLeast(n)` (`soft` severity) failing normally does not mark the whole eval as `failed` (it just records an assertion that fell short); with `--strict`, a soft threshold falling short also makes the eval's overall verdict count as `failed`. This is recommended in CI, to avoid the case where "the assertion score is short but the eval shows as passed" slips through.
 

@@ -17,13 +17,13 @@ export default defineExperiment({
   agent: webAgent({ baseUrl: "https://staging.example.com" }), // configured agent instance
   model: "gpt-5.4",                    // forwarded to the Adapter through ctx.model
   flags: { promptVariant: "concise" }, // forwarded through ctx.flags; visible in evals as t.flags
-  runs: 3,                             // how many times to run each eval (to counter randomness)
+  attempts: 3,                         // how many times to run each eval (to counter randomness)
 });
 ```
 
 - `agent`: who to evaluate. Put a configured instance here — the subject-under-test URL and credentials go to the Adapter factory, not into other fields on the experiment.
 - `model` / `flags`: pass-through values. [NiceEval](https://niceeval.com/) does not interpret them. They are forwarded through `ctx` to the Adapter as-is, and the Adapter forwards them with the request and applies the switch as needed — this is exactly the channel [Tier](/explanation/tier) uses for model comparisons (Tier 1) and feature A/B tests (Tier 3).
-- `runs`, `budget`, concurrency, `sandbox`, and other run parameters: how to run, and how much. See [Write experiments](/tutorials/write-experiment) for the full field list.
+- `attempts`, `budget`, concurrency, `sandbox`, and other run parameters: how to run, and how much. See [Write experiments](/tutorials/write-experiment) for the full field list.
 
 An experiment also has a pair of experiment-level hooks, `setup` / `teardown`. They run once for the whole experiment, on your own machine, to start and stop services shared across all attempts — for example, a tunnel to an internal service, or a mock server dedicated to the experiment. `setup` runs before the first attempt in this experiment is dispatched; `teardown` runs after all attempts finish (including on interruption), but only if `setup`'s point in the timeline was already reached. To prepare an environment inside the Sandbox on a per-experiment basis (install binaries, warm things up, carry state across attempts), attach that to the spec on the `sandbox` field instead — the object returned by factories such as `dockerImageSandbox({ image: "node:24-slim" })` can chain `.setup()` / `.teardown()`. For where the boundary between the two lies and how to write each, see [Write experiments · Start experiment-shared services](/tutorials/write-experiment#start-experiment-shared-services) and [Sandbox providers · Lifecycle](/tutorials/sandbox-providers#lifecycle).
 
@@ -35,7 +35,7 @@ Write one experiment file per variant you want to compare: two models means two 
 
 ## Related reading
 
-- [Write experiments](/tutorials/write-experiment) — The full `defineExperiment` field set: runs, budget, concurrency, and sandbox.
+- [Write experiments](/tutorials/write-experiment) — The full `defineExperiment` field set: attempts, budget, concurrency, and sandbox.
 - [Experiment matrix](/tutorials/experiments) — How to organize comparisons across agent / model / flags, and how to read the results.
 - [Evals](/explanation/evals) — The other half: what an eval is, plus its lifecycle and verdicts.
 - [Tier](/explanation/tier) — Which tier `model` and `flags` each take effect at.

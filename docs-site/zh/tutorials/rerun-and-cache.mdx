@@ -136,7 +136,7 @@ import { Picker } from '/snippets/widgets.jsx';
 sandboxSetup(): SandboxHook {
   return async (sandbox, ctx) => {
     ctx.fact("nowledge.endpoint", env.url);   // 这条 Attempt 实际连的实例
-    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env.url}\n` });
+    await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
   };
 }
 ```

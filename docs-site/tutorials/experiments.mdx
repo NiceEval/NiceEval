@@ -26,7 +26,7 @@ export default defineExperiment({
   description: "gpt-5.4: comparison model",
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
   model: "gpt-5.4",   // single string; copy the file and change this line for another model
-  runs: 2,
+  attempts: 2,
   earlyExit: true,
 });
 ```

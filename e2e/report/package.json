@@ -2,7 +2,7 @@
   "name": "niceeval-e2e-results",
   "private": true,
   "type": "module",
-  "description": "report E2E repo — validates on-disk Record format/openRecord() parity/--json/--junit folding, read-face CLI behavior, and show/view rendering (structure, terminal typography, browser visual & interaction) against real runs (docs/engineering/testing/e2e/report.md).",
+  "description": "report E2E repo — validates on-disk Record format/openRecord() parity/--json/--junit folding, read-face CLI behavior, and show/view rendering (structure, terminal typography, browser visual & interaction) against real attempts (docs/engineering/testing/e2e/report.md).",
   "scripts": {
     "e2e": "tsx scripts/e2e.ts",
     "typecheck": "tsc --noEmit",

@@ -1,10 +1,10 @@
 ---
 title: "Experiments and their lifecycle"
 sidebarTitle: "Experiments"
-description: "How to write a good experiment. Choose an agent, pass model and flags, configure runs, budget, concurrency, and sandbox, and use setup / teardown to start and stop experiment-shared services."
+description: "How to write a good experiment. Choose an agent, pass model and flags, configure attempts, budget, concurrency, and sandbox, and use setup / teardown to start and stop experiment-shared services."
 ---
 
-An experiment is a checked-in run configuration: which adapter, which model, which flags, how many runs, and what budget apply to the same set of evals all live in `experiments/`. CLI positional arguments only select which evals to run; they do not temporarily change the agent or run configuration.
+An experiment is a checked-in run configuration: which adapter, which model, which flags, how many attempts, and what budget apply to the same set of evals all live in `experiments/`. CLI positional arguments only select which evals to run; they do not temporarily change the agent or run configuration.
 
 ## Minimal experiment
 
@@ -38,7 +38,7 @@ export default defineExperiment({
   flags: {
     promptVariant: "v1",
   },
-  runs: 1,
+  attempts: 1,
   earlyExit: true,
   budget: 5,
 });
@@ -58,7 +58,7 @@ export default defineExperiment({
   flags: {
     promptVariant: "v1",
   },
-  runs: 1,
+  attempts: 1,
   earlyExit: true,
   budget: 5,
 });
@@ -120,8 +120,8 @@ Useful for troubleshooting one configuration at a time — confirming whether a 
 | `model` | Single model name, passed through `ctx.model` |
 | `reasoningEffort` | Single reasoning effort level (e.g. `"high"`), passed through `ctx.reasoningEffort` / `t.reasoningEffort`, same ownership as `model` |
 | `flags` | Experiment condition (a feature flag in A/B terms), any JSON object, passed through `ctx.flags` / `t.flags` |
-| `runs` | Maximum runs per eval × configuration |
-| `earlyExit` | Stop repeated runs as soon as one passes |
+| `attempts` | Maximum attempts per eval × configuration |
+| `earlyExit` | Stop repeated attempts as soon as one passes |
 | `evals` | Restrict which evals this configuration runs |
 | `timeoutMs` | Timeout for a single attempt |
 | `budget` | Budget limit for this configuration |
@@ -207,9 +207,10 @@ export default defineExperiment({
   sandbox: e2bSandbox({ template: "niceeval-agents" })
     .setup(async (sandbox, ctx) => {
       // once per sandbox, after the experiment-level setup: write host-side coordinates into the sandbox
-      await sandbox.writeFiles({
-        ".nowledge/config.json": JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
-      });
+      await sandbox.writeText(
+        ".nowledge/config.json",
+        JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
+      );
       await loadMemoryState(sandbox, ctx.experimentId);
     })
     .teardown(async (sandbox, ctx) => {
@@ -258,9 +259,10 @@ export function nowledgeLifecycle() {
     /** once per sandbox: write the closure coordinates into the sandbox */
     sandboxSetup(): SandboxHook {
       return async (sandbox) => {
-        await sandbox.writeFiles({
-          ".nowledge/env": `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
-        });
+        await sandbox.writeText(
+          ".nowledge/env",
+          `NMEM_URL=${env!.url}\nNMEM_API_KEY=${env!.apiKey}\n`,
+        );
       };
     },
   };

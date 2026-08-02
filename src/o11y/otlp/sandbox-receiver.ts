@@ -1,6 +1,6 @@
 // 在沙箱内部起一个轻量 OTLP/HTTP 接收器,供 e2b / vercel 等远程沙箱使用。
 // 流程:
-//   1. writeFiles 把 collector 脚本上传到沙箱
+//   1. writeText 把 collector 脚本上传到沙箱
 //   2. runShell 在后台启动它(node ... & echo $!),拿 PID;collector 用内核分配端口
 //      (listen 0)并把实际端口写回端口文件,host 轮询读回 —— 不写死 4318,沙箱里已有
 //      服务占用端口时不会冲突
