@@ -145,12 +145,89 @@ function gitEnv(sandbox: Sandbox, gitDir: string): globalThis.Record<string, str
     GIT_AUTHOR_EMAIL: "niceeval@localhost",
     GIT_COMMITTER_NAME: "niceeval",
     GIT_COMMITTER_EMAIL: "niceeval@localhost",
+    // Internal root Git must never consume configuration or hooks writable by the Agent.
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    GIT_CONFIG_VALUE_0: "/dev/null",
+    GIT_TERMINAL_PROMPT: "0",
     HOME: "/tmp",
   };
 }
 
 function shellQuote(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Root Git can faithfully restore bytes but would otherwise recreate ordinary fixture files as root.
+ * Keep a content-free metadata mirror inside the private (0700) ledger and reapply uid/gid/mode after
+ * reset. The batched xargs loops preserve arbitrary Git path bytes without exposing objects to the Agent.
+ */
+function captureBaselineMetadataScript(): string {
+  return [
+    'META="$GIT_DIR/niceeval-baseline-metadata"',
+    'rm -rf "$META" && mkdir -p "$META/files" "$META/dirs"',
+    "export META",
+    "git ls-files -z | xargs -0 -n 100 sh -c '",
+    "  for p do",
+    '    src="$GIT_WORK_TREE/$p"',
+    '    ref="$META/files/$p"',
+    '    mkdir -p "$(dirname "$ref")" && : > "$ref"',
+    '    owner=$(stat -c "%u:%g" "$src") && mode=$(stat -c "%a" "$src")',
+    '    chown -h "$owner" "$ref" && chmod "$mode" "$ref"',
+    '    d=$(dirname "$p")',
+    '    while [ "$d" != "." ]; do',
+    '      dref="$META/dirs/$d/.ref"',
+    '      if [ ! -e "$dref" ]; then',
+    '        mkdir -p "$(dirname "$dref")" && : > "$dref"',
+    '        downer=$(stat -c "%u:%g" "$GIT_WORK_TREE/$d") && dmode=$(stat -c "%a" "$GIT_WORK_TREE/$d")',
+    '        chown "$downer" "$dref" && chmod "$dmode" "$dref"',
+    "      fi",
+    '      d=$(dirname "$d")',
+    "    done",
+    "  done",
+    "' niceeval-meta",
+    // Agent and any background process share the ordinary sandbox uid. Keep both objects and the
+    // metadata mirror root-private for the whole attempt; reset never opens this directory to that uid.
+    'chmod go-rwx "$GIT_DIR"',
+  ].join("\n");
+}
+
+function restoreBaselineMetadataScript(): string {
+  return [
+    'META="$GIT_DIR/niceeval-baseline-metadata"',
+    "export META",
+    'if [ -d "$META/files" ]; then',
+    "  find \"$META/files\" -type f -print0 | xargs -0 -n 100 sh -c '",
+    "    for ref do",
+    '      p=${ref#"$META/files/"}',
+    '      target="$GIT_WORK_TREE/$p"',
+    '      if [ -e "$target" ] || [ -L "$target" ]; then',
+    '        owner=$(stat -c "%u:%g" "$ref") && mode=$(stat -c "%a" "$ref")',
+    '        chown -h "$owner" "$target"',
+    '        [ -L "$target" ] || chmod "$mode" "$target"',
+    "      fi",
+    "    done",
+    "  ' niceeval-meta-restore",
+    "fi",
+    // Apply directory metadata last so restrictive parent modes cannot interfere with child repair.
+    'if [ -d "$META/dirs" ]; then',
+    "  find \"$META/dirs\" -type f -name .ref -print0 | xargs -0 -n 100 sh -c '",
+    "    for ref do",
+    '      d=${ref%/.ref}',
+    '      p=${d#"$META/dirs/"}',
+    '      target="$GIT_WORK_TREE/$p"',
+    '      if [ -d "$target" ]; then',
+    '        owner=$(stat -c "%u:%g" "$ref") && mode=$(stat -c "%a" "$ref")',
+    '        chown "$owner" "$target" && chmod "$mode" "$target"',
+    "      fi",
+    "    done",
+    "  ' niceeval-dir-meta-restore",
+    "fi",
+    'chmod go-rwx "$GIT_DIR"',
+  ].join("\n");
 }
 
 /**
@@ -185,6 +262,16 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown
   // workdir，Agent 命令仍沿标准非 root 身份；不支持提权的 provider 保持既有用户态路径。
   const commandOptions = rootCommands ? { env, root: true as const } : { env };
+  const captureMetadata = rootCommands ? ` && ${captureBaselineMetadataScript()}` : "";
+  const lockPrivateLedger = rootCommands ? ' && chmod go-rwx "$GIT_DIR"' : "";
+  let ordinaryUid: string | undefined;
+  if (rootCommands) {
+    // Capture before Agent setup/send can mutate the VM. A post-attempt `id` probe would not be a
+    // trustworthy boundary when the configured execution identity itself is root.
+    const identity = await sandbox.runShell("command -p id -u", { env });
+    ensureCommandSucceeded(identity, "detect sandbox execution identity for reuse", false);
+    ordinaryUid = identity.stdout.trim();
+  }
 
   // add -A -f:绕过项目自己的 .gitignore(项目 ignore 的文件照常记录);排除靠 pathspec
   // (runner 私有清单,agent / fixture 写 .gitignore 影响不了它);include 用第二次 add 打洞加回。
@@ -199,7 +286,12 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const addAll = `git -c advice.addEmbeddedRepo=false add -A -f -- . ${excludeSpecs}${includeAdd}${rejectGitlinks}`;
 
   const anchor = await sandbox.runShell(
-    `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor" && (git rev-parse -q --verify niceeval-reuse-anchor >/dev/null || git tag niceeval-reuse-anchor)`,
+    // The path is predictable inside an isolated VM. Remove any image/prepare-time occupant or
+    // symlink, then recreate the exact runner-private directory as root 0700 before Git touches it.
+    `rm -rf -- ${shellQuote(gitDir)} && mkdir -p -m 0700 -- ${shellQuote(gitDir)} && ` +
+      `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor" && ` +
+      `(git rev-parse -q --verify niceeval-reuse-anchor >/dev/null || git tag niceeval-reuse-anchor)` +
+      captureMetadata,
     {
       ...commandOptions,
     },
@@ -209,27 +301,35 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
-      const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})`, {
+      const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`, {
         ...commandOptions,
       });
       ensureCommandSucceeded(result, `commit eval window ${label}`, rootCommands);
     },
     async commitAgentWindow(label: string): Promise<void> {
       // 窗口内没有变化时也落一条(--allow-empty),diff.json 里该窗口 changes 为空对象。
-      const result = await sandbox.runShell(`${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}`, commandOptions);
+      const result = await sandbox.runShell(`${addAll} && git commit -q --allow-empty -m ${shellQuote(`agent ${label}`)}${lockPrivateLedger}`, commandOptions);
       ensureCommandSucceeded(result, `commit agent window ${label}`, rootCommands);
     },
     async exportWindows(): Promise<DiffArtifact> {
       return exportAgentWindows(sandbox, commandOptions, exportDir, rootCommands);
     },
     async resetToAnchor(): Promise<void> {
-      // `git reset --hard` 恢复被分类账追踪的 workdir；随后只清理不在排除清单内的未追踪项。
-      // exclude pathspec 与 anchor 使用同一份编译结果，动态依赖/缓存不会被题间重置误删。
+      if (ordinaryUid === "0") {
+        throw new Error(
+          "sandboxReuse cannot safely reuse a root-agent sandbox: the Agent could read private ledger objects from prior attempts; use a non-root execution user or disable sandboxReuse",
+        );
+      }
+      // Root performs the byte reset, then reapplies the content-free baseline metadata mirror so
+      // ordinary files return to their original uid/gid/mode instead of becoming root-owned. The
+      // private object database stays 0700 throughout; no Agent/background process can read it.
       const result = await sandbox.runShell(
-        `git reset -q --hard niceeval-reuse-anchor && git clean -fd ${excludes.map((pattern) => `-e ${shellQuote(pattern)}`).join(" ")}`,
+        `git reset -q --hard niceeval-reuse-anchor && ` +
+          `git clean -fd ${excludes.map((pattern) => `-e ${shellQuote(pattern)}`).join(" ")} && ` +
+          restoreBaselineMetadataScript(),
         commandOptions,
       );
-      ensureCommandSucceeded(result, "reset reusable sandbox to anchor", rootCommands);
+      ensureCommandSucceeded(result, "reset reusable sandbox to anchor and restore ownership", rootCommands);
     },
   };
 }
@@ -250,14 +350,15 @@ function ensureCommandSucceeded(
   result: { exitCode: number; stderr: string },
   operation: string,
   rootCommands: boolean,
+  permissionGuidance?: string,
 ): void {
   if (result.exitCode === 0) return;
   const lines = result.stderr.trim().split("\n").filter(Boolean);
   const permission = lines.find((line) => /permission denied|operation not permitted/i.test(line));
   if (permission !== undefined) {
-    const guidance = rootCommands
+    const guidance = permissionGuidance ?? (rootCommands
       ? "the provider declared root command support, but root ledger execution still could not read the workspace; check its root command mapping"
-      : "this sandbox provider does not support root ledger commands; use a root-capable provider for tasks that intentionally start with unreadable files instead of chmod/chowning away the task condition";
+      : "this sandbox provider does not support root ledger commands; use a root-capable provider for tasks that intentionally start with unreadable files instead of chmod/chowning away the task condition");
     throw new Error(`${operation} failed (exit ${result.exitCode}): ${permission}; ${guidance}`);
   }
   // git 可能先输出 advisory warning，再输出 niceeval 的可操作诊断；最后一行最接近失败根因。

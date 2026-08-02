@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { exec } from "node:child_process";
-import { chmod, mkdtemp, rm, writeFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile, mkdir, readdir, readFile, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -138,9 +138,157 @@ describe("createChangeLedger", () => {
     expect(after.uid).toBe(before.uid);
     expect(after.gid).toBe(before.gid);
     expect(after.mode & 0o777).toBe(0o311);
-    expect(counters.shellOptions).toHaveLength(3);
-    expect(counters.shellOptions.every((options) => options.root === true)).toBe(true);
+    expect(counters.shellOptions).toHaveLength(4);
+    expect(counters.shells[0]).toBe("command -p id -u");
+    expect(counters.shellOptions[0]?.root).not.toBe(true);
+    expect(counters.shellOptions.slice(1).every((options) => options.root === true)).toBe(true);
     expect(counters.downloads).toEqual(["/tmp/.niceeval-ledger-export/export.bin"]);
+  });
+
+  it("root-capable provider 接管预创建的 ledger symlink，且不跟随删除其目标", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    const attackerTarget = join(ledgerDir, "..", "attacker-owned-ledger-target");
+    await mkdir(attackerTarget);
+    await writeFile(join(attackerTarget, "sentinel"), "keep\n");
+    await symlink(attackerTarget, ledgerDir);
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+
+    await createChangeLedger(rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters));
+
+    expect((await stat(ledgerDir)).isDirectory()).toBe(true);
+    expect((await stat(ledgerDir)).mode & 0o077).toBe(0);
+    await expect(readFile(join(attackerTarget, "sentinel"), "utf8")).resolves.toBe("keep\n");
+    const anchorScript = counters.shells.find((script) => script.includes("git init -q"));
+    expect(anchorScript).toContain("rm -rf --");
+    expect(anchorScript).toContain("mkdir -p -m 0700 --");
+  });
+
+  it("root-capable ledger 回锚后按私有 metadata 恢复普通文件 ownership/mode，且对象库始终私有", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    const editablePath = join(workdir, "app.ts");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    const restrictedBefore = await stat(restrictedPath);
+    await writeFile(editablePath, "export const value = 1;\n");
+    const before = await stat(editablePath);
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+    const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
+    const ledger = await createChangeLedger(sandbox);
+
+    await rm(editablePath);
+    await ledger.commitAgentWindow("s1/t1");
+    await ledger.resetToAnchor();
+
+    await expect(readFile(editablePath, "utf8")).resolves.toBe("export const value = 1;\n");
+    const after = await stat(editablePath);
+    expect(after.uid).toBe(before.uid);
+    expect(after.gid).toBe(before.gid);
+    expect(after.mode & 0o777).toBe(before.mode & 0o777);
+    const restrictedAfter = await stat(restrictedPath);
+    expect(restrictedAfter.uid).toBe(restrictedBefore.uid);
+    expect(restrictedAfter.gid).toBe(restrictedBefore.gid);
+    expect(restrictedAfter.mode & 0o777).toBe(0o311);
+
+    const resetAt = counters.shells.findIndex((script) => script.includes("git reset -q --hard"));
+    expect(resetAt).toBeGreaterThanOrEqual(0);
+    expect(counters.shellOptions.filter((_options, index) => counters.shells[index] !== "command -p id -u")
+      .every((options) => options.root === true)).toBe(true);
+    expect(counters.shellOptions[counters.shells.indexOf("command -p id -u")]?.root).not.toBe(true);
+    const anchorScript = counters.shells.find((script) => script.includes('git commit -q --allow-empty -m "anchor"'));
+    expect(anchorScript).toContain("niceeval-baseline-metadata");
+    expect(anchorScript).toContain('chmod go-rwx "$GIT_DIR"');
+    expect(anchorScript).not.toContain('chmod -R go-rwx "$GIT_DIR"');
+    expect(counters.shells[resetAt]).toContain("niceeval-meta-restore");
+    expect(counters.shellOptions[resetAt]?.env).toMatchObject({
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_KEY_0: "core.hooksPath",
+      GIT_CONFIG_VALUE_0: "/dev/null",
+    });
+  });
+
+  it("root reset 后 metadata 恢复失败会使 reuse 上抛，不会静默留下错误 ownership", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+    const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
+    const originalRunShell = sandbox.runShell.bind(sandbox);
+    sandbox.runShell = async (script, options = {}) => {
+      if (script.includes("niceeval-meta-restore")) {
+        counters.shells.push(script);
+        counters.shellOptions.push(options);
+        return {
+          stdout: "",
+          stderr: "error: unable to unlink old 'root-owned.txt': Permission denied\n",
+          exitCode: 1,
+        };
+      }
+      return originalRunShell(script, options);
+    };
+    const ledger = await createChangeLedger(sandbox);
+
+    await expect(ledger.resetToAnchor()).rejects.toThrow(
+      /reset reusable sandbox.*provider declared root command support.*could not read the workspace/,
+    );
+    const restoreOptions = counters.shellOptions.filter((_options, index) =>
+      counters.shells[index]?.includes("niceeval-meta-restore")
+    );
+    expect(restoreOptions).toHaveLength(1);
+    expect(restoreOptions[0]?.root).toBe(true);
+  });
+
+  it("root-capable reset 可恢复 file 与 directory 的双向替换", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    await writeFile(join(workdir, "file-to-dir"), "anchor file\n");
+    await mkdir(join(workdir, "dir-to-file"));
+    await writeFile(join(workdir, "dir-to-file", "anchor.txt"), "anchor child\n");
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+    const ledger = await createChangeLedger(rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters));
+
+    await rm(join(workdir, "file-to-dir"));
+    await mkdir(join(workdir, "file-to-dir"));
+    await writeFile(join(workdir, "file-to-dir", "agent.txt"), "agent child\n");
+    await rm(join(workdir, "dir-to-file"), { recursive: true });
+    await writeFile(join(workdir, "dir-to-file"), "agent file\n");
+    await ledger.commitAgentWindow("replace-types");
+    await ledger.resetToAnchor();
+
+    await expect(readFile(join(workdir, "file-to-dir"), "utf8")).resolves.toBe("anchor file\n");
+    await expect(readFile(join(workdir, "dir-to-file", "anchor.txt"), "utf8")).resolves.toBe("anchor child\n");
+    expect(counters.shells.some((script) => script.includes("git reset -q --hard"))).toBe(true);
+  });
+
+  it("普通执行身份本身为 root 时拒绝跨 attempt 复用私有对象库", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const restrictedPath = join(workdir, "collect_data.sh");
+    await writeFile(restrictedPath, "#!/bin/sh\necho collected\n");
+    await chmod(restrictedPath, 0o311);
+    const counters = { shells: [] as string[], shellOptions: [] as CommandOptions[], downloads: [] as string[] };
+    const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
+    const originalRunShell = sandbox.runShell.bind(sandbox);
+    sandbox.runShell = async (script, options = {}) => {
+      if (script === "command -p id -u" && options.root !== true) {
+        counters.shells.push(script);
+        counters.shellOptions.push(options);
+        return { stdout: "0\n", stderr: "", exitCode: 0 };
+      }
+      return originalRunShell(script, options);
+    };
+    const ledger = await createChangeLedger(sandbox);
+
+    await expect(ledger.resetToAnchor()).rejects.toThrow(
+      /cannot safely reuse a root-agent sandbox.*private ledger objects.*non-root execution user/,
+    );
+    expect(counters.shells.some((script) => script.includes("git reset -q --hard"))).toBe(false);
   });
 
   it("不支持 root 的 provider 遇受限文件时点明能力边界，不建议改坏题目条件", async () => {
@@ -221,6 +369,21 @@ describe("createChangeLedger", () => {
     await expect(readFile(join(workdir, "app.ts"), "utf8")).resolves.toBe("export const value = 1;\n");
     await expect(readFile(join(workdir, "attempt-only.txt"), "utf8")).rejects.toThrow();
     await expect(readFile(join(workdir, "node_modules", "pkg", "cache.js"), "utf8")).resolves.toBe("cached\n");
+  });
+
+  it("连续复用在私有 metadata 回锚后不把上一轮 agent window 带进下一轮", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    await writeFile(join(workdir, "app.ts"), "baseline\n");
+    const ledger = await createChangeLedger(hostSandbox(workdir, ledgerDir));
+
+    await writeFile(join(workdir, "app.ts"), "first attempt\n");
+    await ledger.commitAgentWindow("attempt-1");
+    await expect(ledger.exportWindows()).resolves.toMatchObject([{ window: "attempt-1" }]);
+    await ledger.resetToAnchor();
+
+    await expect(readFile(join(workdir, "app.ts"), "utf8")).resolves.toBe("baseline\n");
+    await ledger.commitAgentWindow("attempt-2");
+    await expect(ledger.exportWindows()).resolves.toEqual([{ window: "attempt-2", changes: {} }]);
   });
 
   it("eval 可以在 workdir 自己 git init,不与分类账冲突;agent 的 .git 不进归因", async () => {
