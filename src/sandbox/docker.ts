@@ -120,7 +120,7 @@ export interface DockerSandboxOptions {
   /**
    * 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 label 事后收回(见
    * docs/feature/sandbox/architecture.md「孤儿核对」)。省略时不写这组 label(如直接单测构造
-   * DockerSandbox,不经 resolve.ts 的 createProvider())。
+   * DockerSandbox,不经 runtime.ts 的 provider materializer)。
    */
   runIdentity?: RunIdentity;
   /**

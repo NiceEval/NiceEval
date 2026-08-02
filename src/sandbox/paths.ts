@@ -33,7 +33,7 @@ function resolveCommandOptions(workdir: string, opts: CommandOptions | undefined
 }
 
 /**
- * @param provider provider 名(`resolveSandbox()` 的解析结果),只用于报错点名是谁的 SDK
+ * @param provider physical plan 已确定的 provider 名，只用于报错点名是谁的 SDK
  * 在超时(见 transfer-errors.ts);省略时报错说 `sandbox`,行为不变。
  */
 export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider: string): Sandbox {

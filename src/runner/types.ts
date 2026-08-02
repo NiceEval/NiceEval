@@ -660,7 +660,7 @@ export interface EvalAuthorFields {
   diff?: { include?: string[]; ignore?: string[] };
 }
 
-/** 作者输入：id、evaluationKind、configHash 都由后续阶段拥有。 */
+/** 作者输入：id 归 discovery、evaluationKind 归 factory、configHash 归 planning，作者都不能填写。 */
 export type EvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
   evaluationKind?: EvaluationKindComesFromFactory;
@@ -763,7 +763,7 @@ export function discoverEval(definition: AnyEvalDefinition, facts: DiscoveredEva
 
 /**
  * `ExperimentDefinition.setup` / `teardown` 拿到的窄上下文。`progress` 更新本实验运行级
- * active 行的次要文本(短命状态,agent/ci profile 不逐条输出),`diagnostic` 进运行级永久
+ * active 行的次要文本(短命状态,JSON 机器流不逐条输出),`diagnostic` 进运行级永久
  * 事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的 `result.json`;setup 抛错
  * 以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。钩子的起止本身由 runner 直接发布为
  * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。
@@ -1197,10 +1197,9 @@ export interface Attempt {
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────
-// `niceeval exp` 的 human / agent / ci 反馈模型(见 docs/feature/experiments/cli.md)。
-// 本节只定义类型 + 纯 reducer 需要的输入输出契约;profile renderer、terminal coordinator、
-// runner 侧的实际事件发射均由后续阶段实现 —— 这里先把事件形状和状态形状钉死,后续阶段
-// 不需要重新设计事件联合类型。
+// `niceeval exp` 的 human / json 反馈模型(见 docs/feature/experiments/cli.md)。
+// 本节定义 coordinator、纯 reducer、renderer 与 runner emitter 共用的事件及状态契约；实现分别
+// 位于 `runner/feedback/` 与 `runner/attempt.ts` / `runner/run.ts`，没有另一套阶段性事件模型。
 
 /** 两种反馈形态(见 docs/feature/experiments/cli.md「每条命令一个人读 text 面,`--json` 是机器面」):
  *  `--json` 即机器面,否则人读文本(TTY live 面板 / 非 TTY 追加流,由渲染层内部按 `io.stderr.isTTY`
@@ -1325,7 +1324,7 @@ export interface ActiveRunActivity {
 }
 
 /**
- * 一次失败/错误的永久通知:human 撤下 dashboard 后追加一行、agent/ci 立即追加一行,都读它。
+ * 一次失败/错误的永久通知:human 撤下 dashboard 后追加一行、JSON 机器流立即追加一行,都读它。
  * 字段全部结构化(locator / identity / verdict / phase 都是具名字段),profile renderer 不需要
  * 解析 `reason` 之外的任何文本就能拼出机器可读的输出。
  */
@@ -1352,7 +1351,7 @@ export interface FailureNotice extends FailureDetail {
 /**
  * 去重后的诊断通知(warning/error):相同 `key` 的诊断只保留一条,`count` 累加受影响次数
  *(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的去重规则)。
- * `data` 携带结构化字段(如 budget 的 experimentId/spent/unstarted),agent/ci 直接读取,
+ * `data` 携带结构化字段(如 budget 的 experimentId/spent/unstarted),renderer 直接读取,
  * 不解析 `message`(`message` 只是 human 展示用的一句话)。
  */
 /**
@@ -1398,7 +1397,7 @@ export interface InvocationCompletion {
 
 /**
  * 事件 → 状态的纯 reducer 产出(见 `src/runner/feedback/reducer.ts`)。所有计数、active map、
- * cost 累计、failure/diagnostic 去重都只在 reducer 里算一次;三种 profile 的 renderer 只读取
+ * cost 累计、failure/diagnostic 去重都只在 reducer 里算一次;human/json renderer 只读取
  * 这份状态,不各自维护第二份推导。
  *
  * `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
@@ -1539,7 +1538,7 @@ export interface FeedbackTickEvent {
 }
 
 /**
- * 永久事件:human 撤下 dashboard 后追加一行、agent 按 envelope 追加、ci 按 stdout 事件追加,
+ * 永久事件:human 撤下 dashboard 后追加一行、JSON renderer 在 stdout 追加 NDJSON 事件,
  * 一旦发生就不会被后续状态覆盖掉(与上面按当前帧覆盖的 `AttemptLifecycleEvent` 相对)。
  * 字段全部结构化,profile renderer 不解析 `message` 之外的任何文本、不解析 i18n 字符串。
  */
@@ -1574,11 +1573,11 @@ export type DurableFeedbackEvent =
   /**
    * emitter 对每一个因 budget 到顶而不派发的 attempt 各发一次(与 `attempt:early-exit` 同构,
    * 见 reducer 实现);`unstarted` 是 emitter 自己记的、发出这条时的累计未派发数,写进
-   * `DiagnosticNotice.data` 供 agent/ci 直接读取,不是 reducer 用来计算「这次要挪多少」的输入
+   * `DiagnosticNotice.data` 供 renderer 直接读取,不是 reducer 用来计算「这次要挪多少」的输入
    *(reducer 只按事件触发次数折算,保持纯函数不需要额外记住上一次的值)。
    */
   | { type: "budget-exhausted"; at: number; experimentId: string; spent: number; unstarted: number }
-  /** 一次留存授予(--keep-sandbox):run 摘要后三种 profile 都追加输出(见 docs/feature/sandbox/cli.md)。 */
+  /** 一次留存授予(--keep-sandbox):run 摘要后 human/json 两种形态都追加输出(见 docs/feature/sandbox/cli.md)。 */
   | {
       type: "kept";
       at: number;

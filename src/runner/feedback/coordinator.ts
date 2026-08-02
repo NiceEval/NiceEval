@@ -12,13 +12,12 @@
 // - 通过 sink.ts 的活跃栈,成为底层模块(sandbox provider、budget 记账、reporter 兜底……)
 //   的统一诊断出口 —— start() 时激活自己,finish() 时退出。
 //
-// 不负责(留给后续阶段):
-// - 具体怎么画(ANSI dashboard、agent envelope、CI 事件行……)—— 那是各 renderer 自己的事,
+// 不负责:
+// - 具体怎么画(ANSI dashboard 或 NDJSON 事件)—— 那是各 renderer 自己的事,
 //   coordinator 只保证「什么时候、按什么顺序」调用 renderer。
-// - 从 runner 实际生命周期(sandbox provision / agent setup / …)推导 AttemptPhase 并发出
-//   attempt:start/phase/progress 事件 —— 那是 A2 阶段的 lifecycle 接线;coordinator 只是
-//   这些事件的消费者,不关心它们从哪来。
-// - 在 cli.ts 里决定何时构造 coordinator、传哪个 renderer —— 那是 CLI 接线阶段的事。
+// - 从 runner 实际生命周期(sandbox provision / agent setup / …)推导 LifecyclePhase 并发出
+//   attempt:start/phase/progress 事件 —— `attempt.ts` / `run.ts` 负责生产，coordinator 只消费。
+// - 在 cli.ts 里决定何时构造 coordinator、传哪个 renderer —— CLI 接线已经独立负责这件事。
 
 import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
 import {
@@ -77,7 +76,7 @@ export interface FeedbackCoordinator extends FeedbackSink {
   /**
    * 任意 `RunFeedbackEvent` 的通用入口:lifecycle/tick/durable 都走这里。`diagnostic()`/
    * `activity()`/`interrupted()`/`reporterError()` 是构造 durable 事件的便捷封装,内部
-   * 也调用这个方法,保证两条路径(未来的 typed lifecycle 接线 vs 今天的 sink.ts 迁移出口)
+   * 也调用这个方法,保证 typed lifecycle emitter 与 sink.ts 运行级出口
    * 共用同一套 reducer 更新与 renderer 分派逻辑。
    */
   emit(event: RunFeedbackEvent): void;
@@ -441,10 +440,16 @@ function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
     case "experiment-hook":
     case "precheck":
     case "lock-wait":
+    case "kept":
+    case "run-activity":
       // 钩子/预检/锁等待起止都不是失败证据:setup 失败与预检失败的每条 attempt 都另有
       // "failure" 事件兜底,锁等待解决与否不改变任何 verdict——
-      // renderer 崩溃丢一行起止不丢数据。
+      // renderer 崩溃丢一行起止不丢数据。kept 与 Run activity 也另有 registry / timing 事实。
       return undefined;
+    default: {
+      const exhaustive: never = event;
+      return exhaustive;
+    }
   }
 }
 

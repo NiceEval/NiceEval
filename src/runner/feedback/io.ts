@@ -1,4 +1,4 @@
-// 可注入的终端 I/O 面:feedback coordinator(coordinator.ts)与两种 profile renderer(后续阶段)
+// 可注入的终端 I/O 面:feedback coordinator(coordinator.ts)与 human/json 两种 renderer
 // 只经这里读写 stdout/stderr、探测 TTY/尺寸、拿时钟与定时器 —— 不直接引用全局 `process`。
 //
 // 这样测试能喂一份完全确定性的假 IO(见 testing.ts 的 createFakeFeedbackIO):不靠 monkey-patch
@@ -34,8 +34,8 @@ export interface FeedbackClock {
 export interface FeedbackIO {
   readonly stdout: FeedbackStream;
   readonly stderr: FeedbackStream;
-  /** 只读环境变量面(profile 自动检测的 CI 标记、NO_COLOR 等都从这里读,不直接碰
-   *  process.env),同样是为了让 profile.ts 的纯函数可测。 */
+  /** 只读环境变量面；human renderer 从这里读 NO_COLOR，不直接碰 process.env。输出形态只由
+   *  CLI 的 `--json` 决定，不从 CI 等环境标记自动猜测。 */
   readonly env: Readonly<globalThis.Record<string, string | undefined>>;
   readonly clock: FeedbackClock;
 }

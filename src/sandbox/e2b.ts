@@ -32,7 +32,7 @@ import { supportedBackendCapability, unsupportedBackendCapability, type SandboxP
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
 
-/** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 resolve.ts 的 withProvisionRetry。 */
+/** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 retry.ts 的 withProvisionRetry。 */
 // 对账本身只有一次机会:retry.ts 的 withProvisionRetry 对账失败就直接放弃重试、抛回原始
 // create() 错误(见那边的注释)。对账走的这次 list 请求跟刚失败的 create() 往往挨得很近,
 // 大概率处在同一段网络抖动里——不给它自己的重试,一次瞬时失败就会把本可能自愈的 attempt

@@ -4,7 +4,7 @@
 // 了才调用这里;renderer 只管「拿到一个已经确定要展示的 typed 事件 / 已经更新好的状态,
 // 该画成什么样」。
 //
-// human.ts / json.ts 各写一个模块实现这个接口,不需要再回来改这个文件。
+// human.ts / json.ts 分别实现这份接口。
 
 import type {
   AttemptLifecycleEvent,
@@ -24,8 +24,8 @@ export interface FeedbackRenderer {
   /**
    * 一条永久事件落地(见 `DurableFeedbackEvent`):human 打一行、json 按 NDJSON 事件追加到
    * stdout。两种 profile 都必须实现 —— 这是最基本的职责,即便某个 profile 选择对
-   * 某个 `event.type` 不输出任何可见内容(如 json 收到 "saved" 但把路径信息留到 "result"
-   * 事件才汇总展示),也要显式接住、不抛错。
+   * 某个 `event.type` 不输出任何可见内容(如 json 暂存 "summary"，等 "saved" 到达后一次写出
+   * eval 结论与 result),也要显式接住、不抛错。
    *
    * 同一个逻辑事件(如两次 `key` 相同的 "diagnostic")可能被调用多次 —— coordinator 只保证
    * `RunFeedbackState.diagnostics` 里的去重计数正确,不代为决定「该不该重复打印」;renderer
@@ -51,9 +51,10 @@ export interface FeedbackRenderer {
 
   /**
    * 不进入 `RunFeedbackState`、不去重的瞬时活动文本(如 docker 镜像拉取进度、vercel session
-   * rotate 成功通知)—— A2 阶段(scoped `ScopedFeedback.progress`)落地前的过渡出口,详见
-   * `sink.ts` 的 `reportActivity`。coordinator 仍按 clearDynamic → activity → redrawDynamic
-   * 的顺序调用;不实现就等价于「provisioning retry/backoff 不逐次输出」——json 的目标行为
+   * rotate 成功通知),详见 `sink.ts` 的 `reportActivity`。作用域明确、需要覆盖更新的长期步骤走
+   * `ScopedFeedback.progress`;这条通道只承载无状态的一次性宿主活动文本。coordinator 仍按
+   * clearDynamic → activity → redrawDynamic 的顺序调用;不实现就等价于「provisioning
+   * retry/backoff 不逐次输出」——json 的目标行为
    * (见 cli.md 信息分级表)天然由「不实现这个可选方法」满足,不需要 renderer 自己判断 profile。
    */
   activity?(text: string, state: RunFeedbackState): void | Promise<void>;
@@ -61,15 +62,15 @@ export interface FeedbackRenderer {
   /**
    * 运行级时钟 tick(见 `FeedbackTickEvent`):human 用它判断要不要重画 dashboard(自行做
    * 4fps/1Hz 节流 —— coordinator 只保证「这是一次重画机会」,不承诺 tick 间隔恰好等于某个
-   * profile 需要的帧率);json 用它判断距上一次永久事件是否已超过空闲阈值(30s / 60s,
-   * coordinator 不知道这两个数字,那是各 renderer 自己维护的常量),超过则自行追加一条
+   * profile 需要的帧率);json 用它判断距上一次永久事件是否已超过固定的 30 秒空闲阈值
+   * (coordinator 不知道这个数字,由 renderer 自己维护),超过则自行追加一条
    * heartbeat(通过自己的输出通道,不是再回调 coordinator——heartbeat 不是需要去重/计入
    * RunFeedbackState 的永久事件)。
    */
   onTick?(event: FeedbackTickEvent, state: RunFeedbackState): void | Promise<void>;
 
   /** attempt 生命周期事件(见 `AttemptLifecycleEvent`):human 用它驱动 active slot 的内容;
-   *  json 通常不需要实现 —— 它们不逐条展示 active 状态(见 cli.md 的信息分级表)。 */
+   *  json 不实现 —— 机器流不逐条展示 active 状态(见 cli.md 的信息分级表)。 */
   onLifecycle?(event: AttemptLifecycleEvent, state: RunFeedbackState): void | Promise<void>;
 
   /**

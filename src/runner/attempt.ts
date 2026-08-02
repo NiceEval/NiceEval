@@ -321,7 +321,7 @@ export function runAttemptEffect(
     };
     if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
     diagnostics.push(record);
-    // 同时进运行级永久事件流(human 撤下 dashboard 后追加、agent/ci 各追加一条,去重按 key)。
+    // 同时进运行级永久事件流(human 撤下 dashboard 后追加、JSON stdout 追加 warning,去重按 key)。
     // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
     // 编进去);对外稳定词法始终单独给 `code`,不让消费方从 key 反推(见 sink.ts 的
     // DiagnosticInput.code、docs/feature/experiments/cli.md 的 WarningEvent)。
@@ -358,8 +358,8 @@ export function runAttemptEffect(
     // 附着在「当前阶段」上的次要文本(见 ActiveAttempt.detail);attempt:start 早于本函数任何
     // 调用点发出(见上),active map 里一定已经有这个 identity 的条目。这是 log() 唯一的出口 ——
     // 没有裸写 stderr 的兜底分支(那是给已删除的 Live reporter 用的旧接线,见
-    // docs/feature/experiments/cli.md「一个 run 内只有一个终端协调者」);由当前活跃的 profile
-    // renderer(human/agent/ci)决定这条 detail 要不要、怎么展示。
+    // docs/feature/experiments/cli.md「一个 run 内只有一个终端协调者」);由当前 renderer 决定
+    // 是否消费这条 detail（human 展示，JSON 不消费 lifecycle detail）。
     reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail: m });
   };
 
@@ -446,7 +446,7 @@ export function runAttemptEffect(
       // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
       // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
       let disposition: "stop" | "keep" = "stop";
-      // 退避重试(resolve.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
+      // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
       const provisionSlot = {
         release: () => Effect.runPromise(sandboxSem.release(1)).then(() => {}),

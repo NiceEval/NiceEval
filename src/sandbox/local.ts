@@ -42,7 +42,7 @@ export interface LocalSandboxOptions {
   deadlineAt?: number;
   /**
    * 内部测试用:覆盖「当前目录」的解析起点(省略 `dir` 时向上找 git 根、显式 `dir` 时的相对路径
-   * 基准都从它算)。生产路径(resolve.ts 的 `createProvider()`)从不传这个字段,恒用
+   * 基准都从它算)。生产路径(runtime.ts 的 provider materializer)从不传这个字段,恒用
    * `process.cwd()`——不是公开 spec 的一部分,`localSandbox()` 工厂不暴露它。
    */
   cwd?: string;
@@ -197,7 +197,7 @@ export class LocalSandbox implements SandboxProviderBackend {
     this.sandboxId = `local-${randomUUID().slice(0, 8)}`;
   }
 
-  /** 解析 workdir + 备好变更分类账的私有临时目录(不参与 provisioning 重试,见 resolve.ts)。 */
+  /** 解析 workdir + 备好变更分类账的私有临时目录；Local provider 不参与 provisioning 重试。 */
   static async create(options: LocalSandboxOptions = {}): Promise<LocalSandbox> {
     const workdir = await resolveWorkdir(options.dir, options.cwd ?? process.cwd());
     const ledgerBase = await mkdtemp(join(tmpdir(), "niceeval-local-ledger-"));
