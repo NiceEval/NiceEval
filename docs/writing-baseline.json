@@ -98,7 +98,80 @@
     "docs/origin-integration.md": 1,
     "docs/references.md": 3
   },
-  "bannedTerms": {},
+  "bannedTerms": {
+    "docs/design/environment-model/PLAN-11/architecture.md": {
+      "scoring": 7
+    },
+    "docs/design/environment-model/PLAN-11/library.md": {
+      "scoring": 2
+    },
+    "docs/design/environment-model/PLAN-11/lifecycle.md": {
+      "scoring": 1
+    },
+    "docs/design/environment-model/PLAN-11/use-case/README.md": {
+      "scoring": 1
+    },
+    "docs/design/environment-model/PLAN-3/lifecycle.md": {
+      "scoring": 1
+    },
+    "docs/design/environment-model/PLAN-4/lifecycle.md": {
+      "scoring": 1
+    },
+    "docs/design/environment-model/PLAN-7/lifecycle.md": {
+      "scoring": 1
+    },
+    "docs/design/user-readable-testing/EVIDENCE.md": {
+      "scoring": 1
+    },
+    "docs/engineering/testing/unit/README.md": {
+      "scoring": 4
+    },
+    "docs/engineering/testing/unit/eval.md": {
+      "scoring": 2
+    },
+    "docs/engineering/testing/unit/experiments-runner.md": {
+      "scoring": 4
+    },
+    "docs/feature/assertions/library/score-points.md": {
+      "scoring": 2
+    },
+    "docs/feature/compile-time-contracts/README.md": {
+      "scoring": 1
+    },
+    "docs/feature/compile-time-contracts/architecture.md": {
+      "scoring": 3
+    },
+    "docs/feature/eval/README.md": {
+      "scoring": 1
+    },
+    "docs/feature/eval/library.md": {
+      "scoring": 1
+    },
+    "docs/feature/eval/use-case/README.md": {
+      "scoring": 3
+    },
+    "docs/feature/eval/use-case/sandbox-coding.md": {
+      "scoring": 1
+    },
+    "docs/feature/experiments/cli.md": {
+      "scoring": 2
+    },
+    "docs/feature/judge/library.md": {
+      "scoring": 2
+    },
+    "docs/feature/reports/components/experiment-detail/README.md": {
+      "scoring": 1
+    },
+    "docs/roadmap/e2e-acceptance-dsl/bugs/README.md": {
+      "scoring": 1
+    },
+    "docs/roadmap/e2e-acceptance-dsl/bugs/diagnostic-identity.md": {
+      "scoring": 2
+    },
+    "docs/source-map.md": {
+      "scoring": 1
+    }
+  },
   "deadTerms": [
     "报告槽位 / Report slot(内部代号) / Report slot / 内部代号",
     "断言范围 / Assertion scope",
