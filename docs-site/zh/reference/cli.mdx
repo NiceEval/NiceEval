@@ -105,7 +105,7 @@ npx niceeval exp models weather
 | `--usage` | boolean | `show` 命令专用:范围内逐 attempt 的用量表(`UsageTable` 装配)——判定、轮数、工具调用数、token 拆分与成本;多个 experiment 时逐 experiment 分节、节尾各自合计,缺失字段显示 `—` 且不计入合计。`@<locator>` 范围下退化成该 attempt 的单行表。 |
 | `--stats` | boolean | `show` 命令专用:eval × experiment 的稳定性矩阵(`StabilityMatrix` 装配)——每格是该组合全部历史执行(跨快照去重、不设可比性门槛)的判定计数,回答「哪些题从来没通过过」;与 `@<locator>`、`--report` 互斥。 |
 | `--exp` | string | `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 |
-| `--record` | string | `show` / `view` / `sandbox enter\|list\|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 |
+| `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 |
 | `--run` | string | `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 |
 | `--report` | string | `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 |
 | `--theme` | string | `view` 命令专用:内建主题名或显式主题文件路径。 |
