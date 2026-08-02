@@ -67,6 +67,11 @@ export interface ReusableStateWindowFailure {
 
 const STATELESS_POOL: ReusablePoolStatePlan = Object.freeze({ _tag: "Stateless" });
 
+type EntryLifecycle =
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Leased" }
+  | { readonly _tag: "Retired" };
+
 interface Entry {
   sandbox: Sandbox;
   scope: Scope.CloseableScope;
@@ -75,10 +80,28 @@ interface Entry {
   ledger: ChangeLedger;
   reuseSandbox: number;
   ordinal: number;
-  busy: boolean;
-  dead: boolean;
+  lifecycle: EntryLifecycle;
   stateWindow: ReusableLeaseStateWindow;
 }
+
+/** Scope 尚未关闭前，lease 只能在这里两种归还意图之间演进。 */
+type LeaseReleaseDecision =
+  | { readonly _tag: "Uncommitted" }
+  | { readonly _tag: "Committed"; readonly release: ReusableLeaseRelease };
+
+/** State window 决策只接受第一次提交；之后读回同一份已定稿 disposition。 */
+type LeaseStateWindowDecision =
+  | { readonly _tag: "Undecided" }
+  | { readonly _tag: "Decided"; readonly disposition: ReusableStateWindowDisposition };
+
+/** 漏 commit 保持 Uncommitted，finalizer 因而 Retire；不再用 boolean 记账。 */
+type LeaseLifecycle =
+  | {
+      readonly _tag: "Open";
+      readonly release: LeaseReleaseDecision;
+      readonly stateWindow: LeaseStateWindowDecision;
+    }
+  | { readonly _tag: "Finalized" };
 
 /** 一个 pair-owned physical plan 的按需复用池；实例始终独占借给单条 Attempt。 */
 export class ReusableSandboxPool {
@@ -135,7 +158,7 @@ export class ReusableSandboxPool {
       const leaseDeadlineAt = attemptDeadlineMs === undefined ? undefined : () => Date.now() + minRemainingMs;
       for (;;) {
         if (this.stopped) return yield* Effect.fail(new Error("sandbox reuse pool has been stopped"));
-        const ready = this.entries.find((entry) => !entry.busy && !entry.dead);
+        const ready = this.entries.find((entry) => entry.lifecycle._tag === "Idle");
         if (ready) {
         // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
         // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
@@ -271,8 +294,7 @@ export class ReusableSandboxPool {
         ledger,
         reuseSandbox: this.created,
         ordinal: 0,
-        busy: false,
-        dead: false,
+        lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
         stateWindow,
       };
     }).pipe(Effect.onError((cause) => Scope.close(entryScope, Exit.failCause(cause))));
@@ -284,53 +306,66 @@ export class ReusableSandboxPool {
     entry: Entry,
     deadlineAt: number | undefined,
   ): Effect.Effect<ReusableSandboxLease, never, Scope.Scope> {
-    entry.busy = true;
+    entry.lifecycle = { _tag: "Leased" };
     entry.ordinal += 1;
     applyCommandDeadline(entry.sandbox, deadlineAt);
     if (this.statePlan._tag === "Stateful") this.remainingPlannedUses = Math.max(0, this.remainingPlannedUses - 1);
-    let release: ReusableLeaseRelease = { _tag: "Retire" };
-    let finalized = false;
-    let stateDisposition: ReusableStateWindowDisposition = { _tag: "Continue" };
-    let stateDecisionSubmitted = false;
+    let lifecycle: LeaseLifecycle = {
+      _tag: "Open",
+      release: { _tag: "Uncommitted" },
+      stateWindow: { _tag: "Undecided" },
+    };
     const lease: ReusableSandboxLease = {
       sandbox: entry.sandbox,
       reuseSandbox: entry.reuseSandbox,
       reuseOrdinal: entry.ordinal,
       stateWindow: entry.stateWindow,
       decideStateWindow: ({ cancelledPlannedUses, retire }) => {
-        if (stateDecisionSubmitted) return stateDisposition;
-        stateDecisionSubmitted = true;
-        if (this.statePlan._tag === "Stateless") return { _tag: "Continue" };
-        this.cancelPlannedUses(cancelledPlannedUses);
-        stateDisposition = retire || this.remainingPlannedUses === 0
-          ? { _tag: "Finalize" }
-          : { _tag: "Continue" };
-        return stateDisposition;
+        if (lifecycle._tag !== "Open") return { _tag: "Finalize" };
+        if (lifecycle.stateWindow._tag === "Decided") return lifecycle.stateWindow.disposition;
+        const disposition = this.decideStateWindow({ cancelledPlannedUses, retire });
+        lifecycle = { ...lifecycle, stateWindow: { _tag: "Decided", disposition } };
+        return disposition;
       },
-      commit: (disposition) => Effect.sync(() => {
-        if (!finalized) release = disposition;
+      commit: (release) => Effect.sync(() => {
+        if (lifecycle._tag !== "Open") return;
+        lifecycle = { ...lifecycle, release: { _tag: "Committed", release } };
       }),
     };
     return Effect.addFinalizer(() => Effect.gen(this, function* () {
-        if (finalized) return;
-        finalized = true;
+        if (lifecycle._tag === "Finalized") return;
+        const settled = lifecycle;
+        lifecycle = { _tag: "Finalized" };
+        const release: ReusableLeaseRelease = settled.release._tag === "Committed"
+          ? settled.release.release
+          : { _tag: "Retire" };
         if (release._tag === "Retire") {
           yield* this.retire(entry);
-        } else if (!entry.dead) {
+        } else if (entry.lifecycle._tag !== "Retired") {
           const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
           if (Either.isLeft(reset)) yield* this.retire(entry);
+          else entry.lifecycle = { _tag: "Idle" };
         }
-        entry.busy = false;
         this.wake();
       })).pipe(Effect.as(lease));
+  }
+
+  private decideStateWindow(
+    input: ReusableStateWindowDecisionInput,
+  ): ReusableStateWindowDisposition {
+    if (this.statePlan._tag === "Stateless") return { _tag: "Continue" };
+    this.cancelPlannedUses(input.cancelledPlannedUses);
+    return input.retire || this.remainingPlannedUses === 0
+      ? { _tag: "Finalize" }
+      : { _tag: "Continue" };
   }
 
   /** 淘汰一台实例:收束 State、停资源组并移出池——留在池里会占满容量,
    *  让后续 acquire 既等不到空闲实例、也创建不出替代实例(等待者永远醒不来)。 */
   private retire(entry: Entry): Effect.Effect<void> {
     return Effect.gen(this, function* () {
-      if (entry.dead) return;
-      entry.dead = true;
+      if (entry.lifecycle._tag === "Retired") return;
+      entry.lifecycle = { _tag: "Retired" };
       const at = this.entries.indexOf(entry);
       if (at >= 0) this.entries.splice(at, 1);
       if (entry.stateWindow._tag === "Stateful") {
