@@ -4,6 +4,7 @@
 // src/runner/attempt.test.ts;这里只测 dockerSandbox()/vercelSandbox()/e2bSandbox()/
 // defineSandbox() 这四个工厂产出的 spec 对象本身的构造行为。
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { dockerSandbox, e2bSandbox, vercelSandbox, defineSandbox } from "./define.ts";
 import { defineSandboxCommand } from "./sandbox/commands.ts";
 // 从公开 subpath 取类型，守住下游共享 helper 的正式导入面。
@@ -67,9 +68,7 @@ describe("sandbox factories: .setup()/.teardown() chain", () => {
   });
 
   it("defineSandbox() creates a template-bearing layer whose prepare chain is immutable", async () => {
-    const create = async () => {
-      throw new Error("not called in this test");
-    };
+    const create = () => Effect.dieMessage("not called in this test");
     const command = defineSandboxCommand(
       { id: "test.custom.prepare", revision: "1", inputs: {} },
       async () => {},

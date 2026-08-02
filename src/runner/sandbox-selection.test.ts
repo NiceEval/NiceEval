@@ -39,8 +39,8 @@ function inertProviderModule(id: string): SandboxProviderModule<Readonly<Record<
     id,
     capabilities: Object.freeze({
       retention: Object.freeze({ _tag: "DestroyOnly" as const }),
-      reuse: "Unsupported" as const,
-      sessionLimitMs: null,
+      reuse: Object.freeze({ _tag: "Unsupported" as const, reason: "selection test provider does not reset sandboxes" }),
+      sessionLimit: Object.freeze({ _tag: "Unlimited" as const }),
     }),
     materialize: () => Effect.dieMessage("selection tests never materialize provider plans"),
     collectBuildPreparation: () => Effect.succeed(Option.none()),

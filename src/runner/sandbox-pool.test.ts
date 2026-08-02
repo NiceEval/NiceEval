@@ -29,9 +29,9 @@ async function customProviderPlan() {
   const layer = defineSandbox({
     name: "opaque-test-provider",
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-    async create() {
+    create() {
       creates += 1;
-      throw new Error("must not materialize an unsupported reusable provider");
+      return Effect.dieMessage("must not materialize an unsupported reusable provider");
     },
   });
   const evalDef = discoverEval(defineEval({ test() {} }), {
@@ -70,7 +70,7 @@ describe("ReusableSandboxPool · pair-owned runtime capability", () => {
       { signal: new AbortController().signal, progress() {}, diagnostic() {}, fact() {} },
     );
 
-    await expect(pool.acquire(60_000)).rejects.toThrow(/sandboxReuse is unsupported/);
+    await expect(Effect.runPromise(Effect.scoped(pool.acquire(60_000)))).rejects.toThrow(/sandboxReuse is unsupported/);
     expect(fixture.creates()).toBe(0);
   });
 });

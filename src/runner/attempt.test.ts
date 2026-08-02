@@ -115,7 +115,7 @@ function fakeProviderLayer(box: FakeSandbox, name = "fake-provider"): SandboxLay
   return defineSandbox({
     name,
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-    create: async () => asSandbox(box),
+    create: () => Effect.succeed(asSandbox(box)),
   });
 }
 
@@ -159,17 +159,18 @@ async function runOnce(
     test: () => {},
     ...opts.evalDefOverrides,
   } as DiscoveredEval;
+  const selectedSandbox = opts.experimentLayer ?? opts.sandbox ?? defineSandbox({
+    name: "fake-provider",
+    targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+    create: () => Effect.succeed(asSandbox(box)),
+  });
   const run: AgentRun = {
     agent,
     flags: {},
     attempts: 1,
     earlyExit: true,
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
-    sandbox: opts.sandbox ?? defineSandbox({
-      name: "fake-provider",
-      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => asSandbox(box),
-    }),
+    sandbox: selectedSandbox,
     state: STATELESS,
     experimentId: opts.experimentId ?? "fake/experiment",
     experimentBaseDir: "/project",
@@ -178,7 +179,6 @@ async function runOnce(
     ...(opts.runTimeout ?? { timeoutMs: opts.timeoutMs ?? 5_000 }),
     selectedEvalIds: [evalDef.id],
   };
-  if (opts.experimentLayer !== undefined) run.sandbox = opts.experimentLayer;
   const [prepared] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
   if (prepared === undefined) throw new Error("test fixture did not produce a sandbox plan");
   const attempt: Attempt = {
@@ -808,7 +808,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       const experimentLayer = defineSandbox({
         name: "fake-provider-hang-setup",
         targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-        create: async () => asSandbox(box),
+        create: () => Effect.succeed(asSandbox(box)),
       }).prepare(async () => await new Promise<never>(() => {}));
       const resultPromise = runOnce(agent, box, {
         timeoutMs: 5_000,

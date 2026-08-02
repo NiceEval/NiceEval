@@ -58,12 +58,13 @@ import type { CarryPlan as CoreCarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
+import { CustomSandboxMaterializationError } from "../sandbox/layer.ts";
 import { Effect } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
 import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import { STATELESS } from "../state/plan.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
-import { prepareRunSandboxes, preparedPairsByKey, type PreparedRunPair } from "./sandbox-selection.ts";
+import { prepareRunSandboxes, preparedPairsByKey, runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import type {
   Agent,
   CommandResult,
@@ -236,6 +237,14 @@ class FakeSandbox implements Partial<Sandbox> {
 
 const asSandbox = (box: FakeSandbox): Sandbox => box as unknown as Sandbox;
 
+function materializationFailure(message: string): CustomSandboxMaterializationError {
+  return new CustomSandboxMaterializationError({
+    code: "test.materialization-failed",
+    message,
+    cause: new Error(message),
+  });
+}
+
 // judge 预检需要一个真实可读的文件(runEvals 无条件 readFile(evalDef.sourcePath));
 // 内容无所谓(这些测试都不配置 judge),直接指向本测试文件自己,永远存在。
 const sourcePath = fileURLToPath(import.meta.url);
@@ -251,7 +260,7 @@ function fakeSandboxSpec() {
   return defineSandbox({
     name: "fake-provider",
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-    create: async () => asSandbox(new FakeSandbox()),
+    create: () => Effect.succeed(asSandbox(new FakeSandbox())),
   });
 }
 
@@ -260,13 +269,16 @@ function stableFakeSandboxSpec() {
   return defineSandboxCase({
     identity: { kind: "test-stable-fake", revision: 1 },
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-    materialize: async () => ({
+    services: { _tag: "Unsupported" },
+    materialize: () => Effect.succeed({
       sandbox: asSandbox(new FakeSandbox()),
       group: {
         primary: { sandboxId: "fake", provider: "custom-case" },
         resources: { kind: "primary-only", sandboxId: "fake" },
         async stop() {},
       },
+      services: { _tag: "None" },
+      facts: null,
     }),
   });
 }
@@ -619,7 +631,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
         manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-        carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
+        carriedAttemptsByKey: new Map([[runPairKey(experimentId, evalId), new Set([0])]]),
         carriedResults: [carried],
       },
     });
@@ -849,9 +861,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
     const missingTemplate = defineSandbox({
       name: "missing-template",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => {
-        throw new Error("404: template 'memory-evals-claude-mempal-deadbeef-0-9-0' not found");
-      },
+      create: () => Effect.fail(materializationFailure("404: template 'memory-evals-claude-mempal-deadbeef-0-9-0' not found")),
     });
     const agentRun: AgentRun = {
       agent: makeAgent("agent-budget"),
@@ -976,7 +986,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
           manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-          carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
+          carriedAttemptsByKey: new Map([[runPairKey(experimentId, evalId), new Set([0])]]),
           carriedResults: [carried],
         },
       });
@@ -1050,7 +1060,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
           manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-          carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
+          carriedAttemptsByKey: new Map([[runPairKey(experimentId, evalId), new Set([0])]]),
           carriedResults: [carried],
         },
       });
@@ -1113,7 +1123,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
         manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-        carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([1])]]),
+        carriedAttemptsByKey: new Map([[runPairKey(experimentId, evalId), new Set([1])]]),
         carriedResults: [carried],
       },
     });
@@ -1244,7 +1254,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
         manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-        carriedAttemptsByKey: new Map([[`${experimentId}|done`, new Set([0])]]),
+        carriedAttemptsByKey: new Map([[runPairKey(experimentId, "done"), new Set([0])]]),
         carriedResults: [carried],
       },
     });
@@ -1884,13 +1894,13 @@ describe("runEvals · exclusive provider 强制串行", () => {
       name: "exclusive-fake",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       exclusive: true,
-      create: async () => {
+      create: () => Effect.promise(async () => {
         concurrent += 1;
         peak = Math.max(peak, concurrent);
         await sleep(20);
         concurrent -= 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
     const evals = ["a", "b", "c", "d"].map((id) => makeEval(id, () => {}));
     const agentRun: AgentRun = {
@@ -1918,26 +1928,26 @@ describe("runEvals · exclusive provider 强制串行", () => {
       name: "exclusive-fake-2",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
       exclusive: true,
-      create: async () => {
+      create: () => Effect.promise(async () => {
         exclusiveConcurrent += 1;
         exclusivePeak = Math.max(exclusivePeak, exclusiveConcurrent);
         await sleep(20);
         exclusiveConcurrent -= 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
     let normalConcurrent = 0;
     let normalPeak = 0;
     const normalSpec = defineSandbox({
       name: "normal-fake",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => {
+      create: () => Effect.promise(async () => {
         normalConcurrent += 1;
         normalPeak = Math.max(normalPeak, normalConcurrent);
         await sleep(20);
         normalConcurrent -= 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
 
     const exclusiveEvals = ["e1", "e2", "e3"].map((id) => makeEval(id, () => {}));
@@ -2002,10 +2012,10 @@ describe("runEvals · 退避的槽位持有期差:实验级闸全程持有,全�
       const sandboxSpec = defineSandbox({
         name: "fake-retry-serial-sandbox",
         targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-        create: async () => {
+        create: () => Effect.sync(() => {
           sandboxCreates += 1;
           return asSandbox(new FakeSandbox());
-        },
+        }),
       });
       const evalA = makeEval("a", async (t: TestContext) => {
         await t.send("go");
@@ -2060,10 +2070,10 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
     const sandboxSpec = defineSandbox({
       name: "fake-teardown-barrier-sandbox",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => {
+      create: () => Effect.sync(() => {
         sandboxCreates += 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
     const agent = defineSandboxAgent({
       name: "agent-teardown-barrier",
@@ -2451,7 +2461,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       priorResults: [prior],
       accept: ["config:flags.endpoint"],
       // 差异解释读产出那一轮写下的清单(那一份 Run 的 manifests.json)。
-      priorManifests: new Map([[`${experimentId}|${evalId}`, old.manifest]]),
+      priorManifests: new Map([[runPairKey(experimentId, evalId), old.manifest]]),
     });
 
     expect(summary.results).toHaveLength(1);
@@ -2460,7 +2470,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     expect(summary.results[0]!.fingerprint).toBe(plannedFingerprint);
     // 留痕跟着结果走,写下跨过的那条差异。
     expect(summary.results[0]!.carriedAccepting).toEqual([
-      { selector: "config:flags.endpoint", from: "https://old.example" },
+      { _tag: "Removed", selector: "config:flags.endpoint", from: "https://old.example" },
     ]);
     // Run 侧另记一条 diagnostic,code 是可按值分支的稳定词。
     const record = await openRecord(root);
@@ -4149,14 +4159,16 @@ describe("runEvals · linked prepare 失败", () => {
     const reusableSandbox = defineSandbox({
       name: "fake-linked-prepare",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => asSandbox(new FakeSandbox()),
+      create: () => Effect.succeed(asSandbox(new FakeSandbox())),
     });
-    const haltedRun = probeRun(makeAgent("agent-lease-fatal"), haltedExp, haltedIds, {
+    const haltedRun: AgentRun = {
+      ...probeRun(makeAgent("agent-lease-fatal"), haltedExp, haltedIds, {
       sandbox: reusableSandbox,
-    });
-    haltedRun.sandbox = reusableSandbox.prepare(() => {
-      throw new ExperimentFatalError(message);
-    });
+      }),
+      sandbox: reusableSandbox.prepare(() => {
+        throw new ExperimentFatalError(message);
+      }),
+    };
     const bystanderRun = probeRun(makeAgent("agent-lease-bystander"), bystanderExp, ["b-1", "b-2"]);
     const plan: RunFeedbackPlan = {
       shape: { evals: 5, configs: 2, totalAttempts: 5, maxConcurrency: 1 },
@@ -4459,10 +4471,10 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     const countingSandbox = defineSandbox({
       name: "pair-counting-provider",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => {
+      create: () => Effect.sync(() => {
         created += 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
     const base: Omit<AgentRun, "experimentId" | "judge"> = {
       agent: makeAgent("agent-a"),
@@ -4520,10 +4532,10 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     const countingSandbox = defineSandbox({
       name: "counting-provider",
       targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      create: async () => {
+      create: () => Effect.sync(() => {
         created += 1;
         return asSandbox(new FakeSandbox());
-      },
+      }),
     });
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
@@ -4682,7 +4694,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
           manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
-          carriedAttemptsByKey: new Map([[`${experimentId}|judged`, new Set([0])]]),
+          carriedAttemptsByKey: new Map([[runPairKey(experimentId, "judged"), new Set([0])]]),
           carriedResults: [carried],
         },
       }));
