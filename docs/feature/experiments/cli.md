@@ -58,16 +58,15 @@ compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 
 携入摘要那一行只在真有条目携入时打印:一条都没携入时它退化成「0 of 4」这种废话,不如让计划头行直接接矩阵。
 
-要派发的行**逐条标出为什么没携带**,词表就是[携带的六道门](cache.md#携带要过的门)加上缺历史的两个词:
+要派发的行**逐条标出为什么没携带**,词表就是[携带的五道门](cache.md#携带要过的门)加上缺历史的两个词:
 
 | 标注 | 对应的门 |
 |---|---|
 | `stale` | 指纹门 |
 | `errored` | 终态门,从不携带 |
 | `exceeds-timeout` | 资格门 |
-| `reused-origin` | 出身门 |
 | `rerun` | 口径门 |
-| `sandbox-reuse` / `keep-sandbox` | 模式门 |
+| `keep-sandbox` | 模式门 |
 | `new` | 计划内序号没有任何历史 |
 | `incompatible` | 有历史,但那份落盘的 `schemaVersion` 这个 CLI 读不动 |
 
@@ -881,7 +880,7 @@ interface ExpPlanRow {
   reused: boolean;
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(锁语义见 Architecture);省略等于 false。`--dry` 只读锁目录,不取锁、不等待。 */
   locked?: boolean;
-  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与六道门同名,缺历史序号记 "missing"(`new` 与 `incompatible` 同属这一档,机器面不因人读词分家)。 */
+  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与五道门同名,缺历史序号记 "missing"(`new` 与 `incompatible` 同属这一档,机器面不因人读词分家)。 */
   dispatch?: ExpPlanDispatch[];
 }
 
@@ -890,7 +889,6 @@ interface ExpPlanDispatch {
     | "fingerprint"
     | "terminal"
     | "eligibility"
-    | "origin"
     | "rerun"
     | "mode"
     | "missing";

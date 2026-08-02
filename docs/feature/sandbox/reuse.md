@@ -160,10 +160,8 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 ## 结果与结果沿用
 
-声明复用的 Experiment 每次都真实执行计划内的 Attempt：
+声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。
 
-- 不消费历史结果沿用；
-- 产出的 Attempt 不供后续 Run 结果沿用；
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
   这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结（含 Eval `setup` 失败与超时），记录里都必须带完整归属，不得因为没走到收尾而缺失。
@@ -176,11 +174,11 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中 `errored` 在同一生命周期阶段时，结束反馈追加一条运行级 diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
 诊断只指路，不改判定。
 
-禁用结果沿用不是在否定结果，而是避免跳过部分 Attempt 后改变 Sandbox 的完整生命周期。
+携带结果不会伪造 Sandbox 生命周期：它只复用已落盘的判定和证据。后续实际派发的 Attempt 仍从本次 Invocation 创建的 Sandbox 开始，并按当前复用规则运行。
 
 ## 与其它能力组合
 
-- **`--rerun`**：合法，但没有结果沿用可关闭。
+- **`--rerun`**：与普通 Experiment 相同；`failed` 和 `all` 档要求相应 Attempt 真实重跑。
 - **`attempts > 1`**：每次运行仍是一条 Attempt，开始前重置 workdir。
 - **首过即停**：语义不变，取消的 Attempt 不触发新 Sandbox 创建。
 - **`--keep-sandbox`**：与 `sandboxReuse: true` 互斥；最终现场不只属于某一条 Attempt。

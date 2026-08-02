@@ -124,7 +124,6 @@ describe("acceptPreparedAttempt", () => {
 
   it.each([
     ["errored", { verdict: "errored" }, "not-terminal"],
-    ["reused sandbox", { sandbox: { provider: "docker", sandboxId: "s", reused: true } }, "sandbox-reused"],
     ["kept sandbox", { sandbox: { provider: "docker", sandboxId: "s", kept: true } }, "sandbox-kept"],
   ] as const)("拒绝 %s 结果", async (_label, result, code) => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-accept-gate-"));
@@ -132,13 +131,13 @@ describe("acceptPreparedAttempt", () => {
     await expect(accept(makeSource(root, result))).rejects.toMatchObject({ name: "AcceptError", code });
   });
 
-  it("拒绝 sandboxReuse 模式、缺失 attempt 序号与超时结果", async () => {
+  it("接受复用 Sandbox 的结果与目标 Experiment，并拒绝缺失 attempt 序号与超时结果", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-accept-gate-"));
     roots.push(root);
-    await expect(accept(makeSource(root), makePair({ sandboxReuse: true }))).rejects.toMatchObject({
-      name: "AcceptError",
-      code: "sandbox-reuse",
-    });
+    await expect(accept(
+      makeSource(root, { sandbox: { provider: "docker", sandboxId: "s", reused: true } }),
+      makePair({ sandboxReuse: true }),
+    )).resolves.toMatchObject({ attempt: { result: { verdict: "passed" } } });
     await expect(accept(makeSource(root, { attempt: 1 }))).rejects.toMatchObject({
       name: "AcceptError",
       code: "missing-attempt",
@@ -164,4 +163,3 @@ describe("acceptPreparedAttempt", () => {
     expect(error.code).toBe("timeout");
   });
 });
-

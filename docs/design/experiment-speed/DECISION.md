@@ -70,8 +70,7 @@ Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`，不得静�
 
 Sandbox 复用是签入的实验语义：
 
-- 不消费结果沿用；
-- 复用结果不供后续 Run 沿用；
+- 与普通 Experiment 使用同一套结果沿用与 `--rerun` 语义；
 - 结果可以进入 CI，因为 `sandboxReuse` 与 Provider 配置进入配置哈希；
 - workdir reset 不等同于全新 Sandbox；
 - 与 `--keep-sandbox` 和 `localSandbox()` 互斥。

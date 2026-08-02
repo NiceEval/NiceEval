@@ -617,7 +617,7 @@ export interface JsonPlanDelta {
 
 /** 本行要派发的 attempt 按未携带原因分组(`ExpPlanDispatch`);gate 词表与六道门同名。 */
 export interface JsonPlanDispatch {
-  gate: "fingerprint" | "terminal" | "eligibility" | "origin" | "rerun" | "mode" | "missing";
+  gate: "fingerprint" | "terminal" | "eligibility" | "rerun" | "mode" | "missing";
   /** 这组原因覆盖的 attempt 序号。 */
   attempts: number[];
   /** 指纹门的差异明细；省略表示本次规划无法给出结构化差异。 */

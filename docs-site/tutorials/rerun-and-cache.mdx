@@ -40,9 +40,8 @@ The fingerprint is only one gate:
 | Terminal state | The verdict is `passed` or `failed`; `errored` and `skipped` always rerun |
 | Fingerprint | The eval fingerprint matches, or every difference was authorized with `--accept` |
 | Eligibility | Its execution time does not exceed the currently resolved `timeoutMs` |
-| Origin | It was not produced by a reused Sandbox |
 | Rerun policy | The current `--rerun` mode still trusts that verdict |
-| Execution mode | The experiment does not use `sandboxReuse: true`, and the Attempt is outside the current `--keep-sandbox` band |
+| Execution mode | The Attempt is outside the current `--keep-sandbox` band |
 
 Carry-forward works per Attempt. Increasing `attempts` therefore fills only the missing ordinals, and an interrupted Run can contribute every completed terminal Attempt even when the Run itself was never finalized.
 
@@ -139,9 +138,9 @@ An Attempt writes `result.json` after its cleanup chain completes. Its trustwort
 
 Concurrent invocations use the same rule. Before dispatch, each eval takes a lease and checks the records again; work completed by another invocation carries forward, while still-missing Attempts run locally.
 
-## Keep execution modes isolated
+## Execution modes and carry
 
-- An experiment with `sandboxReuse: true` always executes its planned Attempts, and those results never become carry-forward sources. One Run cannot mix clean carried results with stateful reused-Sandbox results.
+- An experiment with `sandboxReuse: true` follows the same carry rule as a regular experiment. Terminal Attempts with a matching fingerprint carry forward; only Attempts that are not carried run in the invocation's shared Sandbox. `--rerun` can still require those Attempts to execute again.
 - `--keep-sandbox` requires a real execution to leave a live debugging environment. Attempts inside the requested keep band rerun because a carried result has no Sandbox to keep.
 
 ## Next steps

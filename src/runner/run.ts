@@ -1570,7 +1570,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         {
           rerun: opts.rerun,
           keepSandbox: opts.keepSandbox,
-          sandboxReuse: a0.run.sandboxReuse,
           accept: opts.accept,
         },
       );

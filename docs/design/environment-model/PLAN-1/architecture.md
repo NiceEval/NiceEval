@@ -197,7 +197,7 @@ Provision 没有 teardown,安装内容随 Sandbox 销毁。
 - 每条 Attempt 开始前 workdir 回到题间重置点。
 - Provision 每 Attempt inspect,miss 才 install。
 - `$HOME`、`/tmp`、全局安装、后台进程与外部状态可能存续。
-- 复用结果不参与跨 Run 结果携带。
+- 复用结果按普通 Experiment 的终态、指纹、资格与 `--rerun` 判据参与跨 Run 结果携带；携带的 Attempt 不创建 Sandbox。
 
 Provision 安装昂贵不自动推出 Sandbox 复用。
 默认路径仍是每条 Attempt 取得全新 Sandbox;稳定重依赖进入预制环境,Provider 可以透明克隆准备好的隔离实例。

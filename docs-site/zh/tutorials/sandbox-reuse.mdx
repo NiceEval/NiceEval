@@ -13,14 +13,15 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 
 先说清代价，再说怎么开：
 
-- **复用运行的结果不进缓存。** 它不沿用历史结果，产出的结果也不会被后续运行沿用——
-  中断后重跑同一条命令是全量重跑。要靠「重跑即续跑」推进的大批次对比实验不要开复用。
+- **复用运行的结果照常进缓存。** 终态结果指纹匹配时直接沿用，不创建 Sandbox；未沿用的
+  Attempt 才在本次的共用 Sandbox 中执行。`--rerun` 仍可要求相应 Attempt 真实重跑，
+  中断后重跑同一条命令也会从已完成的终态继续。
 - **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
   评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
 - 与 `--keep-sandbox`、`localSandbox()` 互斥。
 
 适合的场景：本地冒烟一批评估、同一道题重复跑 N 次看稳定性、验证接线——要的是快，
-不需要结果进缓存。
+同时保留结果沿用与 `--rerun` 的选择。
 
 ## 开启：Experiment 三件套
 
@@ -156,7 +157,7 @@ export default defineExperiment({
 
 ## 相关阅读
 
-- [重跑与沿用](/zh/tutorials/rerun-and-cache)——为什么复用运行的结果不参与沿用。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)——复用 Sandbox 如何沿用终态结果，以及何时使用 `--rerun`。
 - [并发与执行顺序](/zh/tutorials/concurrency)——不复用时怎么用并发拿到同一份提速。
 - [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——各 Provider 的
   template / image / snapshot 怎么做。

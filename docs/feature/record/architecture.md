@@ -486,7 +486,7 @@ interface AttemptRecord {
    * `provider` / `sandboxId` / `reused` / `reuseSandbox` / `reuseOrdinal` 是调度事实，
    * 在 Sandbox 租借给该 Attempt 时确定；Attempt 在任何阶段终结（含 prepare 失败与超时）
    * 都必须带上它们，只有 `kept` 在收尾时点决定。
-   * [出身门](../experiments/cache.md#携带要过的门)读取 `reused`，让复用产出永不成为后续命中。
+   * `reused` 是读取和复用污染诊断用的调度事实；它不改变这条终态结果的携带资格。
    */
   sandbox?: {
     provider: string;

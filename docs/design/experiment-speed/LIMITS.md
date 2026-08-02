@@ -34,7 +34,7 @@ Runner 不能因为安装内容看起来稳定，就改变 Agent Hook 的调用�
 
 Provider 中立接口无法完整清理这些状态。
 因此，Sandbox 复用必须写进 Experiment 并进入配置哈希。
-结果不得进入结果沿用；CI 可以运行这个已签入的 Experiment。
+结果按普通携带判据进入结果沿用；CI 可以运行这个已签入的 Experiment。
 
 ## Provider 限制
 

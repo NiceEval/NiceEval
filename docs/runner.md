@@ -254,7 +254,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
   `maxConcurrency: 1` 时本次 Invocation 同时最多运行一个 Sandbox。
   每次派发前确认 Sandbox 复用寿命覆盖 Attempt deadline 与收尾预留时间；不足时续期,不能续期时停止旧 Sandbox 并创建替代 Sandbox。
   题间 reset、`SandboxReuseCapability` 与故障淘汰见[Sandbox 复用](feature/sandbox/reuse.md)。
-- **复用与指纹缓存双向绝缘**:不消费携带，也不产生命中。
+- **复用与指纹缓存**:复用和普通 Experiment 使用同一套按指纹携带与 `--rerun` 规则；携带 Attempt 不创建 Sandbox，之后真实派发的 Attempt 照常走复用生命周期。
 - **[`--keep-sandbox`](feature/sandbox/cli.md) 与 `sandboxReuse: true` 互斥**，组合在创建 Sandbox 前报错：留存的现场必须属于那一次 Attempt，不能被题间 `git reset` 抹掉后再当现场留下。
   Sandbox 预热不受影响——Run 结束时未被领用的预创建 Sandbox 照常销毁,留存只作用于跑过 Attempt 的 Sandbox。
 
@@ -263,7 +263,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 规划阶段,运行器对每条 eval 算 `(eval 代码 + 相关配置)` 的指纹(`runner/fingerprint.ts`),据此决定哪些已落盘的 attempt 直接携带合入本次 Run、哪些要真派发。
 派发的只是过不了判据的那些,所以「改一个 case 重跑」只花那一个 case 的时间,而不是全量。
 
-指纹的输入清单、携带要过的门(条目侧的终态 / 指纹 / `timeoutMs` 资格 / 出身,调用侧的 `--rerun` 口径与执行模式)、attempt 粒度与并发多开下的重规划,完整契约单源在[Experiments · 缓存与携带](feature/experiments/cache.md)。
+指纹的输入清单、携带要过的门(条目侧的终态 / 指纹 / `timeoutMs` 资格,调用侧的 `--rerun` 口径与留存模式)、attempt 粒度与并发多开下的重规划,完整契约单源在[Experiments · 缓存与携带](feature/experiments/cache.md)。
 
 ## 超时:双层保护
 

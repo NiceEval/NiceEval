@@ -77,7 +77,7 @@ Runner 不知道 Provider 使用 Docker TTL、E2B timeout 还是 Vercel session�
 2. Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`，不得静默重跑。
 3. SandboxSpec Hook 每个 Sandbox 成对一次；Agent 与 Eval Hook 每 Attempt 成对一次。
 4. 同时 `busy` 的 Sandbox 不超过全局并发位和实验并发限制的最小值。
-5. 所有复用结果记录 `sandbox.reused`，不得进入结果沿用。
+5. 所有复用结果记录 `sandbox.reused`，按普通携带判据进入结果沿用。
 6. reset、续期或 SandboxSpec `setup` 失败的 Sandbox 不再承接 Attempt。
 
 ## 与其它方案的关系

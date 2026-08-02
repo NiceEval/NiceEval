@@ -223,7 +223,7 @@ export default defineExperiment({
 - **执行模式组合。**
   `--rerun` 不豁免锁：等待照旧，等完按本次口径判携带（`all` 档全部自跑）。
   它关掉的是缓存，不是“别双跑”。
-  声明 `sandboxReuse: true` 的 Experiment 不消费结果沿用，等待结束后仍全量执行。
+  声明 `sandboxReuse: true` 的 Experiment 与普通 Experiment 一样重做结果沿用判据；可携带的 Attempt 不派发，其余 Attempt 才进入本次的复用生命周期。
   [`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于其它 Experiment。
   `--dry` 不取锁、不等待，只读锁目录把撞锁用例如实标进计划（见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状)）。
 - **实验级 `maxConcurrency` 的名额域跨 Invocation。**

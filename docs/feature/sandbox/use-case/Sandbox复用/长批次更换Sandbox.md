@@ -40,7 +40,7 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 - 实例在 Attempt 已开始后异常消失时，本条仍记 `errored`，不会静默重跑。
 - reset 或续期失败时，该 Sandbox 不再承接 Attempt；prepare 命令失败只让当前 Attempt `errored`，reset 成功后 Sandbox 继续承接。
 - Provider 没有 `SandboxReuseCapability` 时，实验在创建前报错，并提示去掉 `sandboxReuse`。
-- 复用实验可以进入 CI，但结果不参与沿用；轮换只能管理寿命，不能消除题间污染。
+- 复用实验可以进入 CI，结果按普通携带判据沿用；轮换只管理寿命，不能消除题间污染。
 
 ## 什么时候改用默认模式
 

@@ -9,18 +9,17 @@
 
 一条已落盘的 attempt 要携带进本次 Run,必须同时过下面每一道门,缺一不可。
 只有指纹那道走哈希——它是其中一个判据,不是携带的全部。
-前四道问的是「这个条目自己够不够格」,后两道问的是「本次调用还认不认它」。
+前三道问的是「这个条目自己够不够格」,后两道问的是「本次调用还认不认它」。
 
-![结果携带的六道门](assets/carry-six-gates.svg)
+![结果携带的五道门](assets/carry-six-gates.svg)
 
 | 门 | 看哪一侧 | 判据 | 不过会怎样 |
 |---|---|---|---|
 | 终态 | 条目 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不携带,总会重试 |
 | 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹 | 这条 eval 的全部 attempt 重跑 |
 | 资格 | 条目 | `executionMs` ≤ 当前解析后的 `timeoutMs` | 这一条重跑 |
-| 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
-| 模式 | Experiment 与本次调用 | 没有 `sandboxReuse: true`，且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
+| 模式 | 本次调用 | 该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态, 没理由重花一次钱去复现同一个已知结果。
 `errored` 与 `skipped` 的判定本身不可信,不是可复用的终态,因此从不缓存—— 前者是框架或环境层面的不确定失败,例如超时、沙箱失败。
@@ -30,7 +29,7 @@ Runner 内部把每条判定表达为 `Eligible | Blocked`；`Blocked` 才携带
 
 后两道门的完整语义在[执行模式划走的两块](#执行模式划走的两块)。
 
-六道门只管读得进来的条目。
+五道门只管读得进来的条目。
 写它的 niceeval 版本与本次的 `schemaVersion` 不同时,那份落盘整份不解析([版本不匹配时的读取行为](../record/architecture.md#版本不匹配时的读取行为)),条目根本走不到任何一道门前——`--dry` 把这样的行标 `incompatible` 而不是 `new`,它跟从没跑过是两回事。
 
 ## 指纹:两个哈希嵌套
@@ -68,7 +67,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 - **凭据不进。**
   `judge` 进的是解析后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
 - **`sandboxReuse` 进。**
-  复用改变 Case 创建次数、题间状态边界与 Attempt 是否能被独立沿用,两层 prepare 每条 Attempt 照常重放;省略等价于 `false`。
+  复用改变 Case 创建次数和题间状态边界，因此属于可比性配置；它不改变已完成结果能否按相同指纹携带。省略等价于 `false`。
 
 ### manifest:哈希做索引,清单做解释
 
@@ -280,11 +279,11 @@ niceeval accept @a1b2c3d4
 接受前必须同时满足下列条件:
 
 - locator 恰好指向一条可读的历史结果;
-- 结果是 `passed` 或 `failed`,且没有 `sandbox.reused` 标记;
+- 结果是 `passed` 或 `failed`;
 - 当前项目仍发现同一 experiment 与 eval,并能解析其运行配置;
 - 当前超时上限仍允许该结果的 `executionMs`。
 
-缺失序号、`errored`、`skipped`、留存 Sandbox 和 `sandboxReuse: true` 的结果都不能接受。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
+缺失序号、`errored`、`skipped` 和留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
 新条目记录 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
 
@@ -308,11 +307,9 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 这次重判无条件发生在取锁之后,两条选择有交集的 Invocation 因此不论时序怎样交错, 各自结束时都拿到完整结果集,交集部分只花一份成本。
 锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](architecture.md#并发-invocation用例锁)。
 
-## 执行模式划走的两块
+## 执行模式划走的一块
 
-声明 [`sandboxReuse: true`](../sandbox/reuse.md#结果与结果沿用) 的 Experiment 与结果沿用**双向绝缘**：每次都真实执行计划内的 Attempt，复用产出也永不成为后续 Run 的结果沿用来源。
-绝缘让一份 Run 里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。
-出向那一半靠条目自己带的标记落地:复用 attempt 落盘时记 `sandbox.reused`, [出身门](#携带要过的门)读它，与当前 Experiment 是否声明复用无关。
+[`sandboxReuse: true`](../sandbox/reuse.md#结果与结果沿用) 是真实派发时的 Sandbox 生命周期，不是结果携带门。复用与普通 Experiment 都按同一组终态、指纹、资格与 `--rerun` 判据携带；`sandbox.reused` 保留为读取和污染诊断的运行事实，不降低结果资格。携带的 Attempt 不创建 Sandbox，也不补建或模拟历史 Sandbox；之后实际派发的 Attempt 仍按当前 Experiment 的复用生命周期执行。
 
 [`--keep-sandbox`](../sandbox/cli.md) 下,历史终态判定落在**当前留存档内**的 attempt 不携带、照常派发重跑: 留存要的是一次真实执行的现场,携带条目没有沙箱可留。
 `failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。

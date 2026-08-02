@@ -60,9 +60,7 @@ import { encodeAttemptLocator } from "../record/locator.ts";
 /** accept 资格门失败；CLI 可按 code 映射到本地化文案，message 保留可读的下一步。 */
 export type AcceptFailureCode =
   | "not-terminal"
-  | "sandbox-reused"
   | "sandbox-kept"
-  | "sandbox-reuse"
   | "missing-attempt"
   | "timeout"
   | "fingerprint-missing"
@@ -167,15 +165,6 @@ export async function acceptLocator(options: AcceptLocatorOptions): Promise<Acce
   }
 
   const run = agentRunOf(experiment, selection.selectedEvalIds);
-  // sandboxReuse 是当前运行模式的绝缘门：即使历史条目没有 reused 标记，也不能伪造本次
-  // 需要真实共享沙箱的物理执行。
-  if (run.sandboxReuse === true) {
-    throw new AcceptError(
-      "sandbox-reuse",
-      `Experiment "${experiment.id}" declares sandboxReuse: true; accepted results require a real run.`,
-    );
-  }
-
   let prepared: readonly PreparedRunPair[];
   try {
     prepared = await Effect.runPromise(prepareRunSandboxes(
@@ -370,14 +359,8 @@ function validateAcceptance(source: AttemptHandle, pair: PreparedRunPair, config
       `Attempt "${source.locator}" is ${result.verdict}; only passed or failed terminal results can be accepted.`,
     );
   }
-  if (result.sandbox?.reused === true) {
-    throw new AcceptError("sandbox-reused", `Attempt "${source.locator}" used a reused Sandbox and cannot be accepted.`);
-  }
   if (result.sandbox?.kept === true) {
     throw new AcceptError("sandbox-kept", `Attempt "${source.locator}" kept its Sandbox and cannot be accepted.`);
-  }
-  if (result.experiment?.sandboxReuse === true || pair.run.sandboxReuse === true) {
-    throw new AcceptError("sandbox-reuse", `Experiment "${pair.run.experimentId}" uses sandboxReuse and requires a real run.`);
   }
   const evalHistory = source.run.evals.find((evalEntry) => evalEntry.id === source.evalId);
   if (!Number.isInteger(result.attempt) || result.attempt < 0) {

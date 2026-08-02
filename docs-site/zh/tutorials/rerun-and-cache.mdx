@@ -111,9 +111,8 @@ import { Picker } from '/snippets/widgets.jsx';
 | 终态 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不沿用，总会重试 |
 | 指纹 | 这条评估用例的指纹等于本次配置算出的指纹 | 这条评估用例的全部 Attempt 重跑 |
 | 资格 | 执行耗时不超过当前解析后的 `timeoutMs` | 这一条重跑 |
-| 出身 | 它不是复用 Sandbox 跑出来的 | 这一条重跑 |
 | 口径 | `--rerun` 这次仍采信这个判定 | 该判定的 Attempt 重跑 |
-| 模式 | 实验没声明 `sandboxReuse: true`，且这条不落在 `--keep-sandbox` 的留存档内 | 这一条真派发 |
+| 模式 | 这条不落在 `--keep-sandbox` 的留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态，没理由重花一次钱去复现同一个已知结果。`errored` 是超时、Sandbox 失败这类环境层面的不确定失败，判定本身不可信，所以从不沿用。
 
@@ -207,9 +206,9 @@ Attempt 的 `result.json` 在收尾链完成后一次写成，判定可信与否
 
 多开一个终端跑同一条命令也是同一套规则：每条评估用例开跑前拿一把带心跳的锁，取到锁之后重新看一眼它当前的结果，别人已经跑完落盘的直接沿用，仍缺的自己跑。两边最后都拿到完整结果，交集部分只花一份钱。
 
-## 两种模式不参与沿用
+## 一种模式不参与沿用
 
-- **复用 Sandbox 的运行与沿用双向绝缘。** 声明 `sandboxReuse: true` 的实验每次都真实执行计划内的 Attempt，产出的结果也不会成为后续运行的沿用来源。这样一份运行里的结果只有一种出身，不会一半干净沿用、一半带着上一道题的残留。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+- **复用 Sandbox 的运行照常沿用结果。** 声明 `sandboxReuse: true` 的实验与普通实验一样，指纹匹配的终态 Attempt 直接沿用；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。`--rerun` 仍可要求相应 Attempt 真实重跑。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
 - **`--keep-sandbox` 要的是一次真实执行的现场。** 判定落在当前留存档内的 Attempt 不沿用、照常派发：沿用来的结果没有 Sandbox 可留。`failed` 档下 `failed` 重跑、`passed` 照常沿用，`all` 档下全部重跑。
 
 ## 接着看

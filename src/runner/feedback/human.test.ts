@@ -894,7 +894,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [
         { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", deltas: [delta] }] },
         { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", deltas: [delta] }] },
-        { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "sandbox-reuse" }] },
+        { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "keep-sandbox" }] },
       ],
     });
 
@@ -902,7 +902,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(text).toContain("prior:  @1A1B2C3D4E5F (passed)");
     expect(text).toContain("accept: niceeval accept @1A1B2C3D4E5F");
     expect(text).toContain("prior:  @1E5F6G7H8J9K (failed)");
-    expect(text).not.toContain("baseline04  stale"); // sandbox-reuse 无 prior,不提供接受入口
+    expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
   });
 
   it("同一 selector 的不同旧值各随自己的 locator 输出", () => {

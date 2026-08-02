@@ -770,7 +770,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     expect(after.availableDeltas.map((d) => d.selector)).toEqual(["config:flags.endpoint"]);
   });
 
-  it("--accept 打不开的门:终态 / 资格 / 出身 / 模式四道门的拦截不受授权影响", async () => {
+  it("--accept 只打开指纹门；终态 / 资格 / 留存模式的拦截不受授权影响", async () => {
     const evals = [makeEval("e")];
     const oldRun = runWith({ flags: OLD_FLAGS });
     const newRun = runWith({ flags: NEW_FLAGS, timeoutMs: 600_000 });
@@ -786,22 +786,28 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     expect((await planCarry(evals, [newRun], [slow], undefined, accept))
       .carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
-    // 出身门:落盘带 sandbox.reused 的条目。
+    // sandbox reuse 是执行策略，不是结果携带的出身门。
     const reused = await priorFrom(evals[0]!, oldRun, { sandbox: { provider: "docker", sandboxId: "s1", reused: true } });
-    expect((await planCarry(evals, [newRun], [reused], undefined, accept))
-      .carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+    expect([...(await planCarry(evals, [newRun], [reused], undefined, accept))
+      .carriedAttemptsByKey.get("exp|e") ?? []]).toEqual([0]);
 
-    // 模式门:本次实验声明了 sandboxReuse(绝缘),以及 --keep-sandbox 留存档内。
+    // 当前 sandboxReuse 同样不改变结果携带资格；留存现场仍必须真实执行。
     const fine = await priorFrom(evals[0]!, oldRun);
+    const fineManifest = priorManifests.get("exp|e");
     const reuseRun = runWith({ flags: NEW_FLAGS, sandboxReuse: true });
-    expect((await planCarry(evals, [reuseRun], [fine], undefined, accept))
-      .carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+    const reusedFine = await priorFrom(evals[0]!, runWith({ flags: OLD_FLAGS, sandboxReuse: true }));
+    expect([...(await planCarry(evals, [reuseRun], [reusedFine], undefined, accept))
+      .carriedAttemptsByKey.get("exp|e") ?? []]).toEqual([0]);
     expect((await planCarry(evals, [runWith({ flags: NEW_FLAGS })], [fine], undefined, {
       ...accept,
       keepSandbox: "all",
     })).carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
-    // 同一份 fixture 在没有这些门的情况下确实会被授权携入(证明上面四条不是恒不携带)。
+    // 同一份 fixture 在默认模式下同样会被授权携入。
+    // 上面的 sandboxReuse fixture 共用 key，恢复 fine 对应的历史 manifest，避免把
+    // sandboxReuse 差异误算到这条普通 Experiment 的 --accept 结果上。
+    if (fineManifest === undefined) throw new Error("expected fine manifest");
+    priorManifests.set("exp|e", fineManifest);
     expect([...((await planCarry(evals, [runWith({ flags: NEW_FLAGS })], [fine], undefined, accept))
       .carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });

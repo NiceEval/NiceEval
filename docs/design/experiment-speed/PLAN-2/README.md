@@ -41,7 +41,7 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，
 ## 验收
 
 1. Attempt 开始前，被跟踪的 workdir 内容回到题间重置点。
-2. 结果记录 `sandbox.reused`，不得进入结果沿用；CI 使用签入的 Experiment 配置。
+2. 结果记录 `sandbox.reused`，按普通携带判据进入结果沿用；CI 使用签入的 Experiment 配置。
 3. 派发前确认 Sandbox 复用寿命，不能等待 Sandbox 在 Attempt 中途到期。
 4. Agent 与 Eval Hook 每 Attempt 成对执行。
 

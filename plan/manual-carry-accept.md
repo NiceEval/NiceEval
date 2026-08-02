@@ -70,7 +70,7 @@
 
 - **3. 真实 repo 验收** `[S: 1]`（在 `/Users/ctrdh/Code/MemoryBench`，只 `--dry`，不烧 attempt）
   - 3.1 `[P]` `pnpm exec niceeval exp compare/codex toggl-cli/ --dry`：18 格逐行有原因
-    （sandboxReuse 的 12 格标 `sandbox-reuse`，judge 作废的标 `stale: config:judge.model` 分组）。
+    （sandboxReuse 的 12 格按普通终态、指纹、资格、`--rerun` 与 `--keep-sandbox` 判据决定，不再有专门的复用 dispatch reason；judge 作废的标 `stale: config:judge.model` 分组）。
   - 3.2 `[S: 3.1]` `--accept config:judge.model --dry`：carried 数从 1 跳到 6 上下
     （baseline 5 格回归 + 已在新 judge 下跑完的 1 格）；真跑与否由用户决定，plan 不含烧钱步骤。
   - 3.3 `[P]` `--history` 印出的历史 locator 逐条 `show @<locator>` 能开（bug 修复的真实面复验）。

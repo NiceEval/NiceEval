@@ -45,7 +45,7 @@ import { Picker, Schedule } from '/snippets/widgets.jsx';
       lead: "让多条 Attempt 共用 Sandbox",
       why: [
         <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟时，在实验里声明 <code>sandboxReuse: true</code>，这段每个 Sandbox 只付一次。</>,
-        <>代价是结果不进缓存、工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。稳定的重依赖应该先烘进镜像或模板，那比什么都省。</>,
+        <>工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>；结果仍按指纹进入缓存。稳定的重依赖应该先烘进镜像或模板，那比什么都省。</>,
       ],
     },
     {

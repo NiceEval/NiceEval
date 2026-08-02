@@ -239,10 +239,10 @@ async function resolveModule(from: string, specifier: string): Promise<string | 
 }
 
 /**
- * 携带的六道门(docs/feature/experiments/cache.md「携带要过的门」)加上「无历史」。
+ * 携带的五道门(docs/feature/experiments/cache.md「携带要过的门」)加上「无历史」。
  * `--dry --json` 的 `ExpPlanDispatch.gate` 用这套词。
  */
-export type CarryGate = "terminal" | "fingerprint" | "eligibility" | "origin" | "rerun" | "mode" | "missing";
+export type CarryGate = "terminal" | "fingerprint" | "eligibility" | "rerun" | "mode" | "missing";
 
 /**
  * 同一道门的人读词(`--dry` 计划行尾);模式门按两个来源分成两个词,缺历史门按「真没有」与
@@ -253,9 +253,7 @@ export type DispatchReason =
   | "errored"
   | "stale"
   | "exceeds-timeout"
-  | "reused-origin"
   | "rerun"
-  | "sandbox-reuse"
   | "keep-sandbox"
   | "incompatible"
   | "new";
@@ -364,8 +362,7 @@ export function resolvedTimeoutMsForCarry(run: AgentRun, evalDef: DiscoveredEval
 export interface CarryGateOptions {
   rerun?: "failed" | "all";
   keepSandbox?: "failed" | "all";
-  sandboxReuse?: boolean;
-  /** 本次授权的差异 selector(`--accept`);只放松指纹门,其余五道门不受影响。 */
+  /** 本次授权的差异 selector(`--accept`);只放松指纹门,其余四道门不受影响。 */
   accept?: readonly string[];
   /**
    * 有历史、但那份落盘的 `schemaVersion` 与本读取器不同的 `cacheKey`(见
@@ -419,11 +416,9 @@ export function carryGateFor(
         ? r.durationMs
         : undefined;
   if (executionMs === undefined || executionMs > timeoutMs) return carryBlocked("eligibility", "exceeds-timeout");
-  if (r.sandbox?.reused === true) return carryBlocked("origin", "reused-origin");
   if (options.rerun === "all" || (options.rerun === "failed" && r.verdict === "failed")) {
     return carryBlocked("rerun", "rerun");
   }
-  if (options.sandboxReuse === true) return carryBlocked("mode", "sandbox-reuse");
   if (options.keepSandbox === "all" || (options.keepSandbox === "failed" && r.verdict === "failed")) {
     return carryBlocked("mode", "keep-sandbox");
   }
@@ -647,7 +642,7 @@ async function planCarryPrepared(
       plannedConfigHashes.get(key),
       acceptable.get(key),
       plannedTimeoutMs.get(key) ?? Infinity,
-      { ...options, sandboxReuse: run.sandboxReuse },
+      options,
     );
     if (carried.length === 0) continue;
     const indices = new Set<number>();
@@ -688,7 +683,7 @@ async function planCarryPrepared(
             plannedConfigHashes.get(key),
             acceptable.get(key),
             plannedTimeoutMs.get(key) ?? Infinity,
-            { ...options, sandboxReuse: run.sandboxReuse },
+            options,
           );
       if (decision._tag === "Eligible") {
         throw new Error(
