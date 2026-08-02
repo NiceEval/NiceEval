@@ -10,7 +10,10 @@
 // 这是 Tier 3(侵入改造 + experiment flags):比 ../../tier2/codex-sdk 多一层——应用侧把
 // threadOptions 的 sandbox mode 提升为请求体可选字段(src/backend/{agent,server}.ts),
 // 本文件把 experiment 的 `flags.sandboxMode` 经 ctx.flags 随请求体透传过去,
-// feature A/B 见 experiments/compare-sandbox/。OTel 部分(spanMapper + telemetry)与 Tier 2 相同。
+// feature A/B 见 experiments/compare-sandbox/。它保留 Tier 2 的 OTel delta：
+// `spanMapper: mapCodexSpans`、config 加 `telemetry: { port }`。OTel 只管 `niceeval view`
+// 的瀑布图:codex CLI 原生 OTLP(config.toml [otel] 块)把 span 发到钉住的接收端口,
+// `mapCodexSpans` 归一语义——span 不喂断言,断言与 Tier 1 完全相同。
 import { completeEvidenceCoverage, defineDirectAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";

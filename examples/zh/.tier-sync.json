@@ -40,21 +40,13 @@
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "b76c744a779e1516d3c803e02037958ff9c93bfc",
-      "pending": {
-        "upstreamTree": "4ca2eeaacb5169f934a68cbb2e5de626ffd6d60d",
-        "needsInstall": false
-      }
+      "baseTree": "4ca2eeaacb5169f934a68cbb2e5de626ffd6d60d"
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "f0cfdc5f135f579bf20bbff6cea2df263fa560cf",
-      "pending": {
-        "upstreamTree": "6474bd669026476ffab92fdbb62b79f7c04110fe",
-        "needsInstall": false
-      }
+      "baseTree": "6474bd669026476ffab92fdbb62b79f7c04110fe"
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
@@ -66,13 +58,17 @@
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "2c274467bb4a6731b9ad590865d6a1ea6ab4d964"
+      "baseTree": "2c274467bb4a6731b9ad590865d6a1ea6ab4d964",
+      "pending": {
+        "upstreamTree": "6ebcf8ae67f8e1c2ff88993a4e3003c6d49beb98",
+        "needsInstall": false
+      }
     },
     {
       "from": "examples/zh/tier2/langgraph",
       "to": "examples/zh/tier3/langgraph",
       "contract": "overlay",
-      "baseTree": "b66cbe31cb727b1636514a1a7f6813efe0e74bb1"
+      "baseTree": "cecb71918c9d37da3aa1d873764cc43389dc721e"
     },
     {
       "from": "examples/zh/tier1/claude-sdk",
