@@ -85,7 +85,7 @@ import {
   type AttemptCompletion,
 } from "../state/runtime.ts";
 import { experimentStateProjection } from "../state/definition.ts";
-import type { ReusableLeaseStateWindow } from "./sandbox-pool.ts";
+import type { ReusableLeaseStateWindow, ReusableStateWindowDisposition } from "./sandbox-pool.ts";
 import type {
   AgentRun,
   Attempt,
@@ -155,7 +155,7 @@ export interface RunAttemptEffectOptions {
     reuseSandbox: number;
     reuseOrdinal: number;
     stateWindow?: ReusableLeaseStateWindow;
-    lastPlannedUse?: boolean;
+    decideStateWindow(result: EvalResult): ReusableStateWindowDisposition;
   };
 }
 
@@ -425,6 +425,8 @@ export function runAttemptEffect(
   let attemptStateForResult: AttemptState = { _tag: "Stateless" };
   const scopeOutcome: AttemptScopeOutcome = {
     completion: { _tag: "VerdictNotPassed", verdict: "errored" },
+    // 未能产出正常结果（中断、资源缺陷）时安全侧默认封口；正常 body 返回后再显式决议。
+    reuseStateWindow: { _tag: "Finalize" },
     stateFailure: undefined,
     stateRecord: undefined,
   };
@@ -548,7 +550,7 @@ export function runAttemptEffect(
             ? {
                 _tag: "Reused",
                 window: reusedSandbox.stateWindow.window,
-                lastPlannedUse: reusedSandbox.lastPlannedUse === true,
+                decideStateWindow: reusedSandbox.decideStateWindow,
               }
             : yield* Effect.die(
                 new Error("Stateful AgentRun received a Stateless reusable Sandbox lease."),
@@ -701,7 +703,7 @@ export function runAttemptEffect(
 
       const finalizeState =
         attemptState._tag === "Fresh" ||
-        (attemptState._tag === "Reused" && attemptState.lastPlannedUse);
+        (attemptState._tag === "Reused" && scopeOutcome.reuseStateWindow._tag === "Finalize");
       if (attemptState._tag !== "Stateless" && finalizeState) {
         yield* Effect.addFinalizer(() => {
           enterPhase("state.save");
@@ -820,6 +822,9 @@ export function runAttemptEffect(
             // 只有 `kept` 在收尾时点决定;provider / sandboxId 等归属键仍由租借时刻的
             // sandboxFacts 统一挂上(见下方 Effect.map)。
             kept = true;
+            if (attemptState._tag === "Reused") {
+              scopeOutcome.reuseStateWindow = attemptState.decideStateWindow(bodyResult);
+            }
             return bodyResult;
           } catch (e) {
             recordDiagnostic({
@@ -830,6 +835,9 @@ export function runAttemptEffect(
             });
           }
         }
+      }
+      if (attemptState._tag === "Reused") {
+        scopeOutcome.reuseStateWindow = attemptState.decideStateWindow(bodyResult);
       }
       return bodyResult;
     }),
@@ -1060,7 +1068,7 @@ type AttemptState =
   | {
       readonly _tag: "Reused";
       readonly window: ExperimentStateWindow;
-      readonly lastPlannedUse: boolean;
+      readonly decideStateWindow: (result: EvalResult) => ReusableStateWindowDisposition;
     };
 
 interface LayerCleanupEntry {
@@ -1071,6 +1079,7 @@ interface LayerCleanupEntry {
 
 interface AttemptScopeOutcome {
   completion: AttemptCompletion;
+  reuseStateWindow: ReusableStateWindowDisposition;
   stateFailure: ExperimentStateSequenceFailure | StateWindowTransitionFailure | undefined;
   stateRecord: import("../state/types.ts").StateWindowRecord | undefined;
 }

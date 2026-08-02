@@ -12,7 +12,11 @@ import type { Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedbac
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { randomUUID } from "node:crypto";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
-import { ExperimentStateWindow } from "../state/runtime.ts";
+import {
+  ExperimentStateSequenceFailure,
+  ExperimentStateWindow,
+  StateWindowTransitionFailure,
+} from "../state/runtime.ts";
 import type { PlannedExperimentState } from "../state/plan.ts";
 import type { StateWindowRecord } from "../state/types.ts";
 import { Effect, Either, Exit, Scope } from "effect";
@@ -24,7 +28,8 @@ export interface ReusableSandboxLease {
   readonly reuseSandbox: number;
   readonly reuseOrdinal: number;
   readonly stateWindow: ReusableLeaseStateWindow;
-  readonly lastPlannedUse: boolean;
+  /** 在 Attempt Scope 关闭前结算动态跳过，并决定本 State window 是否必须在本条 cleanup 前封口。 */
+  decideStateWindow(input: ReusableStateWindowDecisionInput): ReusableStateWindowDisposition;
   /** 提交本次 Attempt 的归还决策；Scope 退出负责实际 reset/retire，漏提交默认 Retire。 */
   commit(disposition: ReusableLeaseRelease): Effect.Effect<void>;
 }
@@ -32,6 +37,15 @@ export interface ReusableSandboxLease {
 export type ReusableLeaseRelease =
   | { readonly _tag: "Reset" }
   | { readonly _tag: "Retire" };
+
+export interface ReusableStateWindowDecisionInput {
+  readonly cancelledPlannedUses: number;
+  readonly retire: boolean;
+}
+
+export type ReusableStateWindowDisposition =
+  | { readonly _tag: "Continue" }
+  | { readonly _tag: "Finalize" };
 
 export type ReusableLeaseStateWindow =
   | { readonly _tag: "Stateless" }
@@ -45,6 +59,11 @@ export type ReusablePoolStatePlan =
       readonly experimentId: string;
       readonly plannedUses: number;
     };
+
+export interface ReusableStateWindowFailure {
+  readonly experimentId: string;
+  readonly failure: ExperimentStateSequenceFailure | StateWindowTransitionFailure;
+}
 
 const STATELESS_POOL: ReusablePoolStatePlan = Object.freeze({ _tag: "Stateless" });
 
@@ -71,6 +90,7 @@ export class ReusableSandboxPool {
   private created = 0;
   private remainingPlannedUses: number;
   private readonly stateRecords: StateWindowRecord[] = [];
+  private readonly stateFailures: ReusableStateWindowFailure[] = [];
 
   constructor(
     private readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
@@ -160,6 +180,17 @@ export class ReusableSandboxPool {
 
   stateWindowRecords(): readonly StateWindowRecord[] {
     return Object.freeze([...this.stateRecords]);
+  }
+
+  stateWindowFailures(): readonly ReusableStateWindowFailure[] {
+    return Object.freeze([...this.stateFailures]);
+  }
+
+  /** 已规划但在取得 lease 前被 early-exit / budget / halt / preflight 取消的使用次数。 */
+  cancelPlannedUses(count: number): void {
+    if (this.statePlan._tag === "Stateful") {
+      this.remainingPlannedUses = Math.max(0, this.remainingPlannedUses - count);
+    }
   }
 
   private create(
@@ -257,15 +288,25 @@ export class ReusableSandboxPool {
     entry.ordinal += 1;
     applyCommandDeadline(entry.sandbox, deadlineAt);
     if (this.statePlan._tag === "Stateful") this.remainingPlannedUses = Math.max(0, this.remainingPlannedUses - 1);
-    const lastPlannedUse = this.statePlan._tag === "Stateful" && this.remainingPlannedUses === 0;
     let release: ReusableLeaseRelease = { _tag: "Retire" };
     let finalized = false;
+    let stateDisposition: ReusableStateWindowDisposition = { _tag: "Continue" };
+    let stateDecisionSubmitted = false;
     const lease: ReusableSandboxLease = {
       sandbox: entry.sandbox,
       reuseSandbox: entry.reuseSandbox,
       reuseOrdinal: entry.ordinal,
       stateWindow: entry.stateWindow,
-      lastPlannedUse,
+      decideStateWindow: ({ cancelledPlannedUses, retire }) => {
+        if (stateDecisionSubmitted) return stateDisposition;
+        stateDecisionSubmitted = true;
+        if (this.statePlan._tag === "Stateless") return { _tag: "Continue" };
+        this.cancelPlannedUses(cancelledPlannedUses);
+        stateDisposition = retire || this.remainingPlannedUses === 0
+          ? { _tag: "Finalize" }
+          : { _tag: "Continue" };
+        return stateDisposition;
+      },
       commit: (disposition) => Effect.sync(() => {
         if (!finalized) release = disposition;
       }),
@@ -295,7 +336,7 @@ export class ReusableSandboxPool {
       if (entry.stateWindow._tag === "Stateful") {
         let snapshot = yield* entry.stateWindow.window.snapshot();
         if (snapshot._tag === "Open") {
-          yield* Effect.either(entry.stateWindow.window.finalize({
+          const finalized = yield* Effect.either(entry.stateWindow.window.finalize({
               sandbox: createSandboxCommandTarget(entry.sandbox),
               progress: (input) => this.feedback.progress(input),
               diagnostic: (input) => this.feedback.diagnostic({ ...input, level: "warning" }),
@@ -304,6 +345,14 @@ export class ReusableSandboxPool {
               completion: { _tag: "VerdictNotPassed", verdict: "errored" },
               budget: { _tag: "Bounded", timeoutMs: CLEANUP_RESERVE_MS },
             }));
+          if (Either.isLeft(finalized) && this.statePlan._tag === "Stateful") {
+            this.stateFailures.push({ experimentId: this.statePlan.experimentId, failure: finalized.left });
+            this.feedback.diagnostic({
+              code: "state.save.failed",
+              level: "error",
+              message: finalized.left.message,
+            });
+          }
         }
         snapshot = yield* entry.stateWindow.window.snapshot();
         if (snapshot._tag === "Finalized" && !this.stateRecords.some((item) => item.windowId === snapshot.record.windowId)) {

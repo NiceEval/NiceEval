@@ -32,6 +32,8 @@ import { equals } from "../expect/index.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import { defineExperimentState } from "../state/definition.ts";
+import { ExperimentStateWindow } from "../state/runtime.ts";
+import type { ReusableLeaseStateWindow, ReusableStateWindowDisposition } from "./sandbox-pool.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
@@ -151,7 +153,13 @@ async function runOnce(
     /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
     config?: Config;
     /** 复用池借出的实例(调度事实测试用):模拟 run.ts 把 lease 交给 runAttemptEffect。 */
-    reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
+    reusedSandbox?: {
+      sandbox: Sandbox;
+      reuseSandbox: number;
+      reuseOrdinal: number;
+      stateWindow?: ReusableLeaseStateWindow;
+      decideStateWindow?: () => ReusableStateWindowDisposition;
+    };
   } = {},
 ): Promise<import("../types.ts").EvalResult> {
   const evalDef = {
@@ -212,7 +220,14 @@ async function runOnce(
   return Effect.runPromise(
     runAttemptEffect(attempt, runOpts, sandboxSem, {
       onPhase: opts.onPhase,
-      ...(opts.reusedSandbox ? { reusedSandbox: opts.reusedSandbox } : {}),
+      ...(opts.reusedSandbox
+        ? {
+            reusedSandbox: {
+              ...opts.reusedSandbox,
+              decideStateWindow: opts.reusedSandbox.decideStateWindow ?? (() => ({ _tag: "Continue" as const })),
+            },
+          }
+        : {}),
     }),
   );
 }
@@ -553,13 +568,26 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       },
     });
 
+    const state = {
+      _tag: "Pinned" as const,
+      definition,
+      revision: "fixture-r1",
+      cadence: "attempt" as const,
+    };
+    const window = await Effect.runPromise(ExperimentStateWindow.make(
+      state,
+      "fake/experiment",
+      "state-order-window",
+    ));
     const result = await runOnce(agent, box, {
       experimentLayer,
-      state: {
-        _tag: "Pinned",
-        definition,
-        revision: "fixture-r1",
-        cadence: "attempt",
+      state,
+      reusedSandbox: {
+        sandbox: asSandbox(box),
+        reuseSandbox: 1,
+        reuseOrdinal: 2,
+        stateWindow: { _tag: "Stateful", window },
+        decideStateWindow: () => ({ _tag: "Finalize" }),
       },
       evalDefOverrides: {
         test: async (t: TestContext) => {

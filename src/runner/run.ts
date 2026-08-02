@@ -69,7 +69,7 @@ import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
-import { ReusableSandboxPool } from "./sandbox-pool.ts";
+import { ReusableSandboxPool, type ReusableStateWindowDisposition } from "./sandbox-pool.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
@@ -116,6 +116,15 @@ function attemptIdentityKey(
 
 function attemptGroupKey(run: AgentRun, evalId: string): string {
   return attemptIdentityKey(run.experimentId, run.agent.name, run.model, evalId);
+}
+
+function reuseResultRequiresRetirement(result: EvalResult): boolean {
+  const stateFailed = result.error?.origin.scope === "attempt" &&
+    (result.error.origin.phase === "state.load" || result.error.origin.phase === "state.save");
+  return result.error?.code === "timeout" ||
+    result.error?.code === "agent-send-failed" ||
+    stateFailed ||
+    result.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
 }
 
 export type { AgentRun, RunOptions } from "./types.ts";
@@ -623,16 +632,34 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   type ReusePoolSelection =
     | { readonly _tag: "Fresh" }
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
-  const reusePoolFor = (a: Attempt): Effect.Effect<ReusePoolSelection, never, import("effect").Scope.Scope> => {
-    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") {
-      return Effect.succeed({ _tag: "Fresh" });
-    }
-    const poolIdentity = {
+  const reusePoolKeyOf = (a: Attempt): string | undefined => {
+    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
+    return digestOf({
       version: 1,
       linkedPlan: linkedRunFingerprintIdentity(a.plan),
       agentInstalls: [...agentInstallPlansForRun(a.run)],
-    } as const;
-    const key = digestOf(poolIdentity);
+    });
+  };
+  const acquiredReuseAttempts = new WeakSet<Attempt>();
+  const authorizedReuseAttempts = new WeakSet<Attempt>();
+  const cancelledReuseAttempts = new WeakSet<Attempt>();
+  const existingReusePoolFor = (a: Attempt): ReusableSandboxPool | undefined => {
+    const key = reusePoolKeyOf(a);
+    return key === undefined ? undefined : reusePools.get(a.run)?.get(key);
+  };
+  const cancelReuseAttempt = (a: Attempt, force = false): boolean => {
+    if ((!force && authorizedReuseAttempts.has(a)) || acquiredReuseAttempts.has(a) || cancelledReuseAttempts.has(a)) {
+      return false;
+    }
+    cancelledReuseAttempts.add(a);
+    existingReusePoolFor(a)?.cancelPlannedUses(1);
+    return true;
+  };
+  const reusePoolFor = (a: Attempt): Effect.Effect<ReusePoolSelection, never, import("effect").Scope.Scope> => {
+    const key = reusePoolKeyOf(a);
+    if (key === undefined || a.plan._tag !== "Sandbox") {
+      return Effect.succeed({ _tag: "Fresh" });
+    }
     let bySpec = reusePools.get(a.run);
     if (bySpec === undefined) {
       bySpec = new Map<string, ReusableSandboxPool>();
@@ -650,13 +677,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       };
       const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
       const plannedUses = attempts.filter((candidate) =>
+        !cancelledReuseAttempts.has(candidate) &&
         candidate.run === a.run &&
-        candidate.plan._tag === "Sandbox" &&
-        digestOf({
-          version: 1,
-          linkedPlan: linkedRunFingerprintIdentity(candidate.plan),
-          agentInstalls: [...agentInstallPlansForRun(candidate.run)],
-        }) === key
+        reusePoolKeyOf(candidate) === key
       ).length;
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: () => {},
@@ -1296,6 +1319,30 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   };
 
   /**
+   * Attempt Scope 关闭前，把本结果已经确定会取消的未来 lease 从 State window 计划中扣掉。
+   * 这样最后一条真实 Attempt 能在自己的 author cleanup 之前保存，而不是拖到 pool.stop。
+   */
+  const reconcileReusePlanBeforeFinalizers = (a: Attempt, result: EvalResult): void => {
+    const poolKey = reusePoolKeyOf(a);
+    if (poolKey === undefined) return;
+    const budget = a.run.budget;
+    const projectedBudgetExhausted = budget !== undefined && result.estimatedCostUSD !== undefined &&
+      budgetState(a.run.experimentId ?? a.run.agent.name).spent + result.estimatedCostUSD >= budget;
+    const resultCode = result.error?.code ?? "unexpected-error";
+    const previousError = lastErrorCode.get(a.key);
+    const projectedFailFast = result.verdict === "errored" &&
+      previousError?.code === resultCode && previousError.streak + 1 >= 2;
+
+    for (const candidate of attempts) {
+      if (candidate === a || reusePoolKeyOf(candidate) !== poolKey || candidate.run !== a.run) continue;
+      const halted = checkDispatchHalt(candidate).halted;
+      const earlyExit = result.verdict === "passed" && a.run.earlyExit && candidate.key === a.key;
+      const failFast = projectedFailFast && candidate.key === a.key;
+      if (halted || earlyExit || failFast || projectedBudgetExhausted) cancelReuseAttempt(candidate);
+    }
+  };
+
+  /**
    * 未派发记账:与 run 级 fail-fast / budget 停派发同一条通路——每个未派发 attempt 各发一次
    * `attempt:early-exit`(queued → completed,反馈层五项计数守恒),再把当次累计的未派发数刷进
    * 同一条 `dispatch-halted` 诊断。不为没跑过的 attempt 制造 `errored` 记录(architecture.md
@@ -1854,6 +1901,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 首过即停:只由 passed 触发(errored 不中止其余样本,见 docs/feature/experiments/
             // architecture.md「调度接口」)。
             if (a.run.earlyExit && passedKeys.has(a.key)) {
+              cancelReuseAttempt(a);
               yield* reportMutex.withPermits(1)(
                 Effect.promise(() =>
                   emitReporterEvent(reporters, {
@@ -1876,6 +1924,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 未派发计入 unstarted(结论落 incomplete,不伪装成全绿;与首过即停互不混用)。
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
+              cancelReuseAttempt(a);
               failFast.unreadable += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -1900,6 +1949,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               // 没到顶就立即放行——不等待、不做预测性节流。
               const s = budgetState(budgetKey);
               if (s.spent >= budget) {
+                cancelReuseAttempt(a);
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
@@ -2001,6 +2051,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 : buildFailure !== undefined
                   ? buildFailure
                   : undefined;
+            if (blockedError !== undefined) cancelReuseAttempt(a, true);
             const poolSelection: ReusePoolSelection = blockedError === undefined
               ? yield* reusePoolFor(a)
               : { _tag: "Fresh" };
@@ -2013,13 +2064,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
             const result = yield* Effect.scoped(Effect.gen(function* () {
+              const leaseStateWindow: { disposition: ReusableStateWindowDisposition } = {
+                disposition: { _tag: "Continue" },
+              };
               const leased = poolSelection._tag === "Reuse"
               ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
                   buildLocators,
                 )), {
                   onLeft: (error) => ({ _tag: "Failed" as const, error }),
-                  onRight: (lease) => ({ _tag: "Acquired" as const, lease }),
+                  onRight: (lease) => {
+                    acquiredReuseAttempts.add(a);
+                    return { _tag: "Acquired" as const, lease };
+                  },
                 })
               : { _tag: "NotRequested" as const };
             const lease = leased._tag === "Acquired" ? leased.lease : undefined;
@@ -2028,6 +2085,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const leaseError: AttemptError | undefined =
               leased._tag === "Failed" ? errorFromThrown(leased.error, "sandbox.create") : undefined;
             if (leased._tag === "Failed") {
+              cancelReuseAttempt(a, true);
               const declaration = attemptFailureDeclaration(a.run.classifyFailure, "sandbox.create", leased.error);
               if (declaration) closeHaltGate(a, declaration);
             }
@@ -2069,7 +2127,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                           reuseSandbox: lease.reuseSandbox,
                           reuseOrdinal: lease.reuseOrdinal,
                           stateWindow: lease.stateWindow,
-                          lastPlannedUse: lease.lastPlannedUse,
+                          decideStateWindow: (result) => {
+                            reconcileReusePlanBeforeFinalizers(a, result);
+                            leaseStateWindow.disposition = lease.decideStateWindow({
+                              cancelledPlannedUses: 0,
+                              retire: reuseResultRequiresRetirement(result),
+                            });
+                            return leaseStateWindow.disposition;
+                          },
                         },
                       }
                     : {}),
@@ -2082,12 +2147,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             if (lease) {
               // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
               // 本条结果如实保留，后续派发创建替代实例。
-              const failedDuringStateSave = evaluated.error?.origin.scope === "attempt" &&
-                evaluated.error.origin.phase === "state.save";
-              const mustRetire = evaluated.error?.code === "timeout" ||
-                evaluated.error?.code === "agent-send-failed" ||
-                failedDuringStateSave ||
-                evaluated.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
+              const mustRetire = leaseStateWindow.disposition._tag === "Finalize" ||
+                reuseResultRequiresRetirement(evaluated);
               yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
             return evaluated;
@@ -2225,6 +2286,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             }
             const proceed = yield* preflight;
             if (!proceed) return { kind: "done" } as const;
+            authorizedReuseAttempts.add(a);
             if (a.run.setup || a.run.teardown) {
               // 实验级 setup:第一个通过派发许可的 attempt 真正执行,其余等同一个 memoized
               // promise(它从不 reject——失败收进 lc.setupFailed,由 body 合成 errored 结果)。
@@ -2253,6 +2315,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
             if (halt.halted) {
+              cancelReuseAttempt(a);
               accountDispatchHalted(a, halt.gate);
               return;
             }
@@ -2264,8 +2327,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后重查
             // 携带——携入的收工,仍要自跑的按原优先级回到派发队列(下一轮循环)。
             yield* Effect.promise(() => outcome.window);
-            if (caseState!.carried.has(a.attempt)) return;
-            if (opts.signal?.aborted) return;
+            if (caseState!.carried.has(a.attempt)) {
+              cancelReuseAttempt(a);
+              return;
+            }
+            if (opts.signal?.aborted) {
+              cancelReuseAttempt(a);
+              return;
+            }
           }
         });
         // 实验级 teardown 计数:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
@@ -2323,6 +2392,26 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const pools = allReusePools();
   const stateWindowsByExperiment = new Map<string, import("../state/types.ts").StateWindowRecord[]>();
   for (const pool of pools) {
+    for (const { experimentId, failure } of pool.stateWindowFailures()) {
+      const code = failure._tag === "ExperimentStateSequenceFailure" &&
+          failure.activity.outcome === "failed"
+        ? failure.activity.code
+        : "state.save.failed";
+      reportDiagnostic({
+        key: `state-window-finalize-failed:${experimentId}`,
+        code,
+        severity: "error",
+        message: failure.message,
+        data: { experimentId, phase: "state.save" },
+      });
+      recordExperimentDiagnostic({
+        experimentId,
+        code,
+        level: "error",
+        message: failure.message,
+        phase: "state.save",
+      });
+    }
     for (const record of pool.stateWindowRecords()) {
       const records = stateWindowsByExperiment.get(record.experimentId) ?? [];
       records.push(record);
