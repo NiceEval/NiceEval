@@ -134,6 +134,19 @@ function reuseResultRequiresRetirement(result: EvalResult): boolean {
 
 export type { AgentRun, RunOptions } from "./types.ts";
 
+type SandboxReusePoolScope =
+  | { readonly _tag: "Shared" }
+  | { readonly _tag: "Eval"; readonly evalId: string };
+
+/** 复用池只按物理 Sandbox 与物理 lifecycle 分组；prepare commands 在每次 lease 后重放。 */
+export function sandboxReusePoolKey(input: {
+  readonly providerPlan: JsonValue;
+  readonly agentInstalls: readonly JsonValue[];
+  readonly scope: SandboxReusePoolScope;
+}): string {
+  return digestOf({ version: 1, ...input });
+}
+
 /** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 pair 的生效
  *  配置(Experiment / Eval / Config 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
  *  model|baseUrl|apiKeyEnv 去重。要跑的 eval 都不用 judge 时返回空 —— 全局配了 judge
@@ -661,11 +674,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
   const reusePoolKeyOf = (a: Attempt): string | undefined => {
     if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
-    return digestOf({
-      version: 1,
+    return sandboxReusePoolKey({
       providerPlan: a.plan.providerPlan.identity,
       agentInstalls: [...agentInstallPlansForRun(a.run)],
-      ...(a.plan.pair.hasEvalLifecycleHooks ? { evalId: a.evalDef.id } : {}),
+      scope: a.plan.pair.hasEvalLifecycleHooks
+        ? { _tag: "Eval", evalId: a.evalDef.id }
+        : { _tag: "Shared" },
     });
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
