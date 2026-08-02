@@ -195,7 +195,7 @@ progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与
 
 ### 实验级 Hook 的显示
 
-`ExperimentDefinition.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。
+`ExperimentDefinition.setup` / `teardown` 这对独立 Hook 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。
 起止由 runner 自己发布——一个什么都不调的 setup 也必须可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死:
 
 - **Human(TTY)**:Hook 在跑期间,ACTIVE 区为每个在飞的实验 Hook 显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;Hook 结束行即消失,成功的 Hook 不在 scrollback 留任何永久行。
