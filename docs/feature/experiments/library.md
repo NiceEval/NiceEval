@@ -215,7 +215,7 @@ export default defineExperiment({
 ```
 
 直接传入的 callback 是 opaque command,该 Attempt `carryEligible = false`、不跨 Run 携带(词表见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback))。
-跨 Attempt 状态的载入与回存不写进 prepare command,用 [`defineExperimentState()`](../state/library.md) 声明并归 State load / save 相位;rolling 的载入到回存临界区靠 `maxConcurrency: 1` 声明式串行。
+跨 Attempt 的外部语义状态的载入与回存不写进 prepare command，用 [`defineExperimentState()`](../state/library.md) 声明并归 State load / save 相位；实际 Sandbox 自己的持久目录或快照使用 layer 的 `setup()` / `teardown()`。rolling 的 load 到 save 临界区靠 `maxConcurrency: 1` 声明式串行。
 
 一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;逐 Attempt 的沙箱写入在 `sandbox` layer 的 prepare 命令里,经闭包消费实验级产物;agent 怎么连自己、eval 的题目准备各在 agent 定义与 Eval 文件里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
 

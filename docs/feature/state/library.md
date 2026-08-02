@@ -82,59 +82,35 @@ callback 函数体不会自动进入身份;修改 transfer 格式、路径集合
 `signal` 只覆盖当前 transfer。
 `load` 使用 Attempt 的前向 deadline;`save` 使用 Runner 新建的有界收尾 signal,不会复用已经超时或取消的前向 signal。
 
-## Mempal rolling state
+## 外部 checkpoint 的边界
 
-MemoryBench 的真实消费者把 `$HOME/.mempal` 与 `$HOME/.mempal-notes` 打成宿主 checkpoint:
+State 适用于下一条 Attempt 需要从外部 store 读取前一条语义结果的场景。例如中心服务中的用户档案可以声明 rolling checkpoint：
 
 ```typescript
-import { createHash } from "node:crypto";
 import { defineExperimentState } from "niceeval";
-import { createCheckpoint, restoreCheckpoint } from "niceeval/sandbox";
 
-export function mempalState() {
+export function profileState() {
   return defineExperimentState({
     identity: {
-      store: "memorybench-host-checkpoint",
-      cohort: process.env.MEMPAL_COHORT?.trim() || "local",
-      memory: "mempal",
+      store: "customer-profile-snapshots",
+      cohort: process.env.COHORT?.trim() || "local",
       schema: 1,
     },
     consistency: { mode: "rolling" },
     saveOn: "after-load",
     async load(ctx) {
-      const data = readCheckpoint(ctx.experimentId);
-      if (data) await restoreCheckpoint(ctx.sandbox, data);
-      else await ctx.sandbox.runShellOrThrow("mempal init .");
-
-      return {
-        identity: { experimentId: ctx.experimentId, cohort: cohort() },
-        digest: data
-          ? { _tag: "Sha256", value: createHash("sha256").update(data).digest("hex") }
-          : { _tag: "Unavailable" },
-        facts: { restored: Boolean(data), bytes: data?.length ?? 0 },
-      };
+      return restoreProfileSnapshot(ctx.sandbox, ctx.experimentId);
     },
     async save(ctx) {
-      const data = await createCheckpoint(ctx.sandbox, [
-        "$HOME/.mempal",
-        "$HOME/.mempal-notes",
-      ]);
-      atomicWriteCheckpoint(ctx.experimentId, data);
-      return {
-        identity: { experimentId: ctx.experimentId, cohort: cohort() },
-        digest: {
-          _tag: "Sha256",
-          value: createHash("sha256").update(data).digest("hex"),
-        },
-        facts: { bytes: data.length },
-      };
+      return saveProfileSnapshot(ctx.sandbox, ctx.experimentId);
     },
   });
 }
 ```
 
-宿主写入必须原子提交,例如同目录临时文件写完后 rename。
-`save()` 返回前外部 store 已经是可读取的新 head;只排队上传就返回不算成功。
+`restoreProfileSnapshot()` / `saveProfileSnapshot()` 必须返回前述 checkpoint ADT；宿主写入必须原子提交，例如同目录临时文件写完后 rename。`save()` 返回前外部 store 已经是可读取的新 head；只排队上传就返回不算成功。
+
+如果要保存的只是一个实际 Sandbox 的 `$HOME`、守护进程数据或缓存，其自然边界是 Sandbox 创建到退休，而不是下一条 Attempt 的外部语义序列。此时把初始化或 restore 放入 Experiment `SandboxLayer.setup()`，把 snapshot 或收尾放入 `teardown()`；需要唯一连续实例时以 `maxConcurrency: 1` 限制该 Experiment。MemoryBench 的 mempal 目录属于这一类，不应声明为顶层 `state`。
 
 ## `saveOn`
 

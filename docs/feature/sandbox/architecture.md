@@ -7,7 +7,9 @@
 一次 agent eval 中,核心固定各环节**的调用顺序**,每个环节**内部做什么**交给两层 `SandboxLayer`、adapter 与 eval 各自的作者(声明面见 [Sandbox Layer](layers.md),完整时序见[三方准备时序](lifecycle.md)):
 
 ```text
- Sandbox Case create / build / start / ready(复用时每 Attempt 先 reset 到已知 Case 起点)
+ Sandbox Case create / build / start / ready
+  → Sandbox lifecycle setup                   # 每个实际 Sandbox 一次；复用时不重跑
+  → reset 到已知 Case 起点                    # 复用时每 Attempt 都执行
   → template owner 的 prepare 命令          # sandbox.prepare.<owner>:按声明顺序;owner 由配对的 template 归属决定
   → 另一作者 owner 的 prepare 命令          # 同上,随后执行
   → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
@@ -24,11 +26,12 @@
   → State save                             # 回存跨 Attempt 实验状态
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
   → commitKeepOrStop()                      # 决定 Scope release 时 stop 还是 suspend
+  → Sandbox lifecycle teardown              # 每个实际 Sandbox 一次，setup 的全局逆序
   → Scope release                           # Provider Case finalizer;释放或留存完成后才能封口 result.json
 ```
 
 这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)为唯一权威。
-收尾是全局 LIFO:Agent runtime teardown 先行,State save 随后,已登记 cleanup 按全局准备顺序逆序执行,Provider Case finalizer 最后整组关闭。
+收尾是全局 LIFO:Agent runtime teardown 先行,State save 随后,已登记 cleanup 按全局准备顺序逆序执行；实际 Sandbox 退休时再跑 lifecycle teardown，Provider Case finalizer 最后整组关闭。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
 `result.json` 的物理封口则必须等 Scope release 完成；两者不是同一个“定稿”时点。
 
@@ -290,7 +293,7 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:
 
 1. 把稳定重依赖做进 Docker image、E2B template 或 Vercel snapshot;每次 attempt 只从这个起点创建。
-2. layer 的 `prepare()` 只做按 experiment / eval 变化的小配置与预检,昂贵动作靠真实检查快速命中;跨 Attempt 状态归 State load / save。
+2. layer 的 `prepare()` 只做按 experiment / eval 变化的小配置与预检,昂贵动作靠真实检查快速命中；语义上独立于 Sandbox 的跨 Attempt 状态归 State load / save，而物理 Sandbox 自己的持久目录归 lifecycle hook。
 3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。

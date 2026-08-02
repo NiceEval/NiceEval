@@ -54,6 +54,7 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 |---|---|
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
+| `SandboxLayer.setup()` / `teardown()` | 每个实际 Sandbox 成对一次；仅 Experiment hook 可跨 Eval 共用，Eval hook 隔离该 Eval |
 | 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
 | agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
@@ -64,17 +65,17 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 - cleanup 只在 command 成功取得资源后经 `context.onCleanup()` 登记,按全局准备顺序逆序执行;
 - Attempt 的 Agent 与 cleanup 收尾完成后,Sandbox 才能 reset、轮换或停止。
 
-Runner 不把任何作者准备提升成每个 Sandbox 一次。
+Runner 不把 `prepare()` 提升成每个 Sandbox 一次；只有作者显式声明的 `setup()` / `teardown()` 是物理 Sandbox 的生命周期。
 稳定 Agent CLI 应进入预制环境;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重放成本。
 
 Agent CLI 先由 ensure 重新 probe；缺失或 identity 不符时由配对 Installer 安装并复检。
 随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
 「可重复执行」的作者义务只覆盖作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
 
-## 复用池按完整身份分组
+## 复用池按物理身份分组
 
 一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
-Runner 按 `(CaseKey, templateOwner, layer identities, Agent ensure identity)` 分组:
+Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecycle owner marker 分组。不同 Eval 即使 `prepare()` 命令不同，只要物理计划相同仍可共享同一个 Sandbox，prepare 会在每次领取时重放；Eval 声明 lifecycle hook 时带入 Eval marker，因此不会和其他 Eval 共享。
 
 - 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；

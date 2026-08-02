@@ -92,7 +92,7 @@ export default defineExperiment({
 - 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账锚点前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
-- 跨 Attempt 实验状态由 [`defineExperimentState()`](../state/library.md) 声明,归 State load / save 相位(见[三方准备时序](../sandbox/lifecycle.md#准备state-与-baseline))。
+- 跨 Attempt 的外部语义状态由 [`defineExperimentState()`](../state/library.md) 声明,归 State load / save 相位；实际 Sandbox 自己的持久目录或快照则归 `SandboxLayer.setup()` / `teardown()`。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
 哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。

@@ -209,8 +209,11 @@ export default defineExperiment({
       identity: { version: "0.9.0" },
       probe: shell("mempal --version | grep -q 0.9.0"),
       install: shell("curl -fsSL https://get.mempal.dev | sh"),
-    })),
-  maxConcurrency: 1,                                          // [载入…回存] 是临界区,声明式串行
+    }))
+    .setup(restoreMempalForThisPhysicalSandbox)
+    .teardown(archiveMempalFromThisPhysicalSandbox),
+  sandboxReuse: true,
+  maxConcurrency: 1,                                          // 只维持一个连续的物理实例
 });
 ```
 

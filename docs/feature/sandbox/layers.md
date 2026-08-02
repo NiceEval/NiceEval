@@ -26,13 +26,14 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 `SandboxLayer` 是 **Eval / Experiment 对同一 Sandbox 生命周期的声明层**，不是 Docker image layer，也不是可单独构建的镜像增量。保留 `Layer` 这个词，是因为它表达 owner 与有序组合；物理运行句柄始终叫 `Sandbox`，完整环境单位始终叫 `SandboxCase`。
 普通 layer 不能创建第二个 Sandbox、替换 template、增加 sidecar 或停止 Case。
 
-## 作者只学三个规则
+## 作者只学四个规则
 
 1. `dockerComposeSandbox()` / `e2bSandbox()` 等具体 factory 声明 template;`sandboxLayer()` 只声明命令。
 2. 一个配对只能有一方带 template。两边都有是 `sandbox.template-conflict`,两边都没有是 `sandbox.template-missing`。
 3. template owner 的命令先执行,另一方的命令后执行,Agent 安装最后执行;同一 layer 内按书写顺序执行。
+4. 逐 Attempt 的准备使用 `prepare()`；只属于实际 Sandbox 寿命的目录、守护进程或快照使用 `setup()` / `teardown()`，不借此表达调度 lane。
 
-普通 command 只有逐 Attempt 的 `prepare()` 一种频次;开启 Sandbox 复用后也先 reset,再重放完整准备链。
+普通 command 只有逐 Attempt 的 `prepare()` 一种频次;开启 Sandbox 复用后也先 reset,再重放完整准备链。物理 Sandbox 生命周期另由显式的 `setup()` / `teardown()` 表达。
 预装或昂贵工具由 prepare command 检查实际版本,命中后快速返回;缺失时安装并复检。
 作者因此不必区分窗口级与逐题级两种 scope,也没有放错 scope 造成的复用污染。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](lifecycle.md)。
@@ -56,6 +57,8 @@ import {
   type SandboxCommand,
   type SandboxCommandContext,
   type SandboxCommandTarget,
+  type SandboxHook,
+  type SandboxHookContext,
   type SandboxLayer,
 } from "niceeval/sandbox";
 ```
@@ -73,10 +76,28 @@ declare const sandboxLayerKind: unique symbol;
 interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [sandboxLayerKind]: Kind;
   prepare(command: SandboxCommand): SandboxLayer<Kind>;
+  setup(hook: SandboxHook): SandboxLayer<Kind>;
+  teardown(hook: SandboxHook): SandboxLayer<Kind>;
 }
+
+interface SandboxHookContext {
+  readonly experimentId: string;
+  readonly signal: AbortSignal;
+  fact(key: string, value: string | number | boolean): void;
+  // 另有与当前生命周期绑定的 progress() / diagnostic() 反馈入口。
+}
+
+type SandboxHook = (
+  sandbox: Sandbox,
+  context: SandboxHookContext,
+) => MaybePromise<void>;
 ```
 
-`prepare()` 是普通 layer 唯一的公开生命周期方法,每条 Attempt 都执行。
+hook 还可经上下文上报绑定当前生命周期的 progress 与 diagnostic；它没有 attempt、session、模型或复用池句柄。
+
+`prepare()` 每条 Attempt 都执行。`setup()` / `teardown()` 则是一对**物理 Sandbox 生命周期** hook：同一个实际 Sandbox 创建并 ready 后只 setup 一次，在它的最后一条 Attempt 收尾、Provider finalizer 前只 teardown 一次。
+setup 按声明顺序运行；teardown 按所有 setup 的全局逆序运行。setup 中途失败也仍会进入已登记的 teardown，随后才停止或释放 Provider 资源。
+它们附着在配对后的实际 Sandbox 上，不引入 lane、lane id 或可由作者持有的复用池句柄。仅 Experiment 所有的 hook 不改变可共享的物理身份；Eval 所有的 hook 会把该 Eval 的物理生命周期隔离开。
 command 链只保留原 kind:不能把 command-only layer 变成 template-bearing,也不能给 template-bearing layer 追加第二个起点。
 共享接口不暴露 `.template()`、`.provider()` 或可写 template 属性;起点只能由具体 factory 的 options 声明。
 
@@ -478,7 +499,7 @@ Linked pair 内部把它保存为 `Eligible | Blocked`；只有 `Blocked` 携带
 
 命令需要清理时,在本次执行成功取得资源后调用 `context.onCleanup()` 登记。
 Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行或取得失败的命令不会产生虚假 cleanup。
-绑定完整 Case 的资源由 Provider finalizer 清理,跨 Attempt 状态由 State Feature 清理,两者都不走 `onCleanup()`。
+绑定完整 Case 的资源由 Provider finalizer 清理；属于该物理 Sandbox 的持久路径可由 `setup()` / `teardown()` 成对处理；语义上独立于 Sandbox 的跨 Attempt 外部状态才由 State Feature 清理，三者都不走 `onCleanup()`。
 
 ## Agent layer
 

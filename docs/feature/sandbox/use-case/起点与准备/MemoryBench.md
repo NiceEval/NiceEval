@@ -17,7 +17,13 @@ export default defineExperiment({
       identity: { version: "0.9.0" },
       probe: shell("mempal --version | grep -q 0.9.0"),
       install: shell("curl -fsSL https://get.mempal.dev | sh"),
-    })),
+    }))
+    .setup(async (sandbox) => {
+      await restoreMempalForThisPhysicalSandbox(sandbox);
+    })
+    .teardown(async (sandbox) => {
+      await archiveMempalFromThisPhysicalSandbox(sandbox);
+    }),
   agent: codexAgent(),
 });
 ```
@@ -44,10 +50,10 @@ export default defineEval({
 
 ```text
 Experiment E2B template
+  -> Sandbox lifecycle setup (一次)
   -> Experiment installTool(mempal)
   -> Eval checkout 与依赖安装
   -> agent.ensure
-  -> State load
   -> Agent runtime
 ```
 
@@ -56,10 +62,10 @@ template 已预装正确版本时首测即命中;缺失时现场安装并复检;
 
 开启 Sandbox 复用后,Runner 每条 Attempt 仍先 reset,再重放 installTool、checkout 与 `agent.ensure`。
 mempal 装在 workdir 外,reset 后 probe 命中;`checkout()` 的镜像让第二条 Attempt 起零网络,只付本地写入。
-作者不需要判断哪条准备该放进哪种 scope——频次只有一种。
+逐 Attempt 的命令仍只有 `prepare()` 一种频次；物理实例的记忆目录则明确由 lifecycle hook 管理。
 
-外部 memory state 不进入 layer:`agent.ensure` 收敛后执行 State load,Agent teardown 后执行 State save。
-需要跨 Attempt 保留活状态时由 State 相位与 `sandboxReuse` 声明窗口边界,普通 command 不假装拥有一次性窗口语义。
+Mempal 的 `$HOME` 目录属于实际 Sandbox，`setup()` 在实例 ready 后恢复一次，`teardown()` 在其退休、Provider finalizer 前封存一次。它不进入顶层 State，也不假装成普通 command；需要同一条连续实例时声明 `sandboxReuse: true` 和 `maxConcurrency: 1`。
+真正独立于 Sandbox 的外部语义 checkpoint 才由 State 相位管理。
 
 同一 Experiment 误选一道自带 Compose template 的 Eval 时,该配对是两份 template:
 

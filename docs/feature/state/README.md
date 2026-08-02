@@ -1,24 +1,26 @@
 # State —— 跨 Attempt 延续实验状态
 
-State 让一个 Experiment 显式载入与回存跨 Attempt 的外部状态,例如记忆库、累积笔记或可归档的用户目录。
+State 让一个 Experiment 显式载入与回存跨 Attempt 的外部状态，例如中心服务中的用户档案、累积笔记或可归档的业务 checkpoint。
 它解决的是「下一条 Attempt 从哪份 checkpoint 继续」,不是装工具、准备题目或复用 Sandbox。
 
 ```typescript
 import { defineExperiment, defineExperimentState } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { e2bSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: codexAgent(),
-  sandbox: mempalSandbox,
+  sandbox: e2bSandbox({ template: "niceeval-agents" }),
   state: defineExperimentState({
     identity: {
-      store: "memorybench-host-checkpoint",
-      cohort: process.env.MEMPAL_COHORT ?? "local",
+      store: "customer-profile-snapshots",
+      cohort: process.env.COHORT ?? "local",
       schema: 1,
     },
     consistency: { mode: "rolling" },
     saveOn: "after-load",
-    load: mempalLoad,
-    save: mempalSave,
+    load: restoreProfileSnapshot,
+    save: saveProfileSnapshot,
   }),
   maxConcurrency: 1,
 });
@@ -37,6 +39,7 @@ State 不承担以下职责:
 - Agent CLI 与依赖安装属于 [Agent Ensure](../adapters/architecture/agent-ensure.md) 和 [Sandbox prepare command](../sandbox/prepare-commands.md)。
 - 题目 fixture 属于 Eval layer 或 `test(t)`。
 - Sandbox 的创建、reset 与窗口寿命属于 [Sandbox Case](../sandbox/case.md) 和 [Sandbox 复用](../sandbox/reuse.md)。
+- 一个物理 Sandbox 自己的目录、守护进程或快照属于 `SandboxLayer.setup()` / `teardown()`；它不是外部 State 序列。
 - 一次 Run 的宿主机共享服务属于 Experiment `setup` / `teardown`。
 
 ## 两种一致性
@@ -51,7 +54,7 @@ State 不承担以下职责:
 
 ## 相关阅读
 
-- [Library](library.md) —— 公开 API、checkpoint、`saveOn` 与真实 mempal 写法。
+- [Library](library.md) —— 公开 API、checkpoint 与 `saveOn`。
 - [Architecture](architecture.md) —— 内部 ADT、fresh / reuse cadence、fingerprint、失败和 Effect Scope。
 - [Sandbox 三方准备时序](../sandbox/lifecycle.md) —— State 在完整 Attempt 生命周期里的位置。
 - [Experiments](../experiments/README.md) —— `state`、`sandboxReuse` 与 `maxConcurrency` 的组合入口。
