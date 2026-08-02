@@ -2,7 +2,7 @@
 // `accept` 的资格门与重锚落盘：只复制一条历史终态，不派发 Agent/Sandbox。
 
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
@@ -14,7 +14,7 @@ import type { AgentRun, DiscoveredEval, EvalResult } from "./types.ts";
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
-function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number }> = {}) {
+function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan: unknown }> = {}) {
   const run = {
     agent: { name: "current-agent" },
     flags: {},
@@ -35,7 +35,7 @@ function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number }> = 
     key: "exp|e",
     run,
     evalDef,
-    plan: {} as never,
+    plan: over.plan ?? ({} as never),
     identity: {},
   } as never;
 }
@@ -86,6 +86,32 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
   run.evals = [{ id: "e", attempts: [source] }];
   run.attempts = [source];
   return source;
+}
+
+function blockedSandboxPlan() {
+  return {
+    _tag: "Sandbox",
+    pair: {
+      carry: {
+        _tag: "Blocked",
+        reasons: [
+          {
+            code: "sandbox.command-opaque",
+            owner: { kind: "experiment", id: "exp" },
+            commandIndex: { _tag: "Declared", value: 0 },
+            reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run).",
+          },
+          {
+            code: "sandbox.lifecycle-opaque",
+            owner: { kind: "eval", id: "e" },
+            commandIndex: { _tag: "Omitted" },
+            reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled.",
+          },
+        ],
+      },
+    },
+    providerPlan: { carry: { _tag: "Eligible" } },
+  };
 }
 
 async function accept(source: AttemptHandle, pair = makePair(), configTimeoutMs?: number) {
@@ -155,6 +181,45 @@ describe("acceptPreparedAttempt", () => {
       name: "AcceptError",
       code: "fingerprint-missing",
     });
+  });
+
+  it("当前 pair carry blocked 时拒绝重锚且在拒绝前不写 snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-carry-disabled-"));
+    roots.push(root);
+    const source = makeSource(root);
+    const pair = makePair({ plan: blockedSandboxPlan() });
+
+    await expect(accept(source, pair)).rejects.toMatchObject({
+      name: "AcceptError",
+      code: "carry-ineligible",
+      message: expect.stringMatching(/sandbox\.command-opaque.*sandbox\.lifecycle-opaque/),
+    });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("accept 资格门优先于 carry blocker,既有错误不被吞掉且仍不写 snapshot", async () => {
+    const cases: readonly {
+      label: string;
+      result: Partial<EvalResult>;
+      timeoutMs?: number;
+      code: "not-terminal" | "sandbox-kept" | "missing-attempt" | "timeout";
+    }[] = [
+      { label: "errored", result: { verdict: "errored" }, code: "not-terminal" },
+      { label: "kept sandbox", result: { sandbox: { provider: "docker", sandboxId: "s", kept: true } }, code: "sandbox-kept" },
+      { label: "missing attempt", result: { attempt: 1 }, code: "missing-attempt" },
+      { label: "timeout", result: { executionMs: 20 }, timeoutMs: 10, code: "timeout" },
+    ];
+
+    for (const testCase of cases) {
+      const root = await mkdtemp(join(tmpdir(), `niceeval-accept-gate-priority-${testCase.label.replaceAll(" ", "-")}-`));
+      roots.push(root);
+      await expect(accept(
+        makeSource(root, testCase.result),
+        makePair({ plan: blockedSandboxPlan() }),
+        testCase.timeoutMs,
+      )).rejects.toMatchObject({ name: "AcceptError", code: testCase.code });
+      expect(await readdir(root)).toEqual([]);
+    }
   });
 
   it("导出可判别的 AcceptError 类型", () => {

@@ -1374,6 +1374,9 @@ async function main(): Promise<void> {
               gate: group.gate,
               attempts: [...group.attempts],
               ...(group.deltas !== undefined ? { deltas: group.deltas.map(jsonPlanDelta) } : {}),
+              ...(group.blockers !== undefined
+                ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
+                : {}),
             })),
           }
         : {}),
@@ -1406,6 +1409,9 @@ async function main(): Promise<void> {
             dispatch: row.dispatch.map((group) => ({
               reason: group.reason,
               ...(group.deltas !== undefined ? { deltas: group.deltas } : {}),
+              ...(group.blockers !== undefined
+                ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
+                : {}),
             })),
           })),
         }),

@@ -281,9 +281,12 @@ niceeval accept @a1b2c3d4
 - locator 恰好指向一条可读的历史结果;
 - 结果是 `passed` 或 `failed`;
 - 当前项目仍发现同一 experiment 与 eval,并能解析其运行配置;
+- 当前 Sandbox pair 的跨 Run carry 资格是 `Eligible`;
 - 当前超时上限仍允许该结果的 `executionMs`。
 
-缺失序号、`errored`、`skipped` 和留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
+缺失序号、`errored`、`skipped`、留存 Sandbox 与 carry 资格被阻断的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。真正阻断的是 opaque command / lifecycle、无法固定的环境身份等具体原因。
+
+`accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
 新条目记录 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
 
@@ -296,6 +299,10 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 **重跑同一条命令就是续跑**:只花缺失 attempt 的成本。
 这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径, 配合[实验面的启动自愈](architecture.md#强杀后的收尾回退收尾登记与启动自愈) 与[实例面的孤儿核对](../sandbox/architecture.md#孤儿核对强杀路径的实例面回退), 重跑前不需要任何手工清理。
+
+这条保证只覆盖 NiceEval 自己能判定的结果与受管资源,不声称回滚 Agent 已经写进外部系统、`$HOME` checkpoint 或共享数据库的副作用。跨 Attempt 持久状态的作者必须把 Attempt 终态设计成原子提交边界:中断中的 Attempt 要么能够回滚到上一个已提交 checkpoint,要么把当前 cohort 标为污染并换一个干净 cohort 重建序列。否则「已完成结果照常携带、缺失 Attempt 续跑」会把半次写入带进后半段,这两部分不能视为同一条实验轨迹。
+
+直接 callback 本来就是 opaque,其 pair 的 carry 资格会被阻断；这会保守地阻止结果沿用,但不会自动清除 callback 写到外部的状态。`--dry` 必须展示具体 carry-disabled 原因,而不是把这种条目伪装成可 `accept` 的普通 fingerprint stale。
 
 ## 并发 Invocation:取到锁之后重做一次规划
 

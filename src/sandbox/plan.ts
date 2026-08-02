@@ -298,10 +298,37 @@ export function providerPlanFingerprintIdentity(plan: ProviderPlan): JsonValue {
   return plan.identity;
 }
 
+/** 跨 Run 携带被阻断时对 CLI/accept 公开的稳定、可行动原因。 */
+export interface SandboxCarryBlocker {
+  readonly code: string;
+  readonly reason: string;
+}
+
+const NO_SANDBOX_CARRY_BLOCKERS: readonly SandboxCarryBlocker[] = Object.freeze([]);
+
+/**
+ * 将 linked pair 的静态原因与 provider physical plan 的动态原因归一成同一份 blocker 列表。
+ * 这份列表是 carry 规划、dry 反馈和 accept 资格检查的共同事实源。
+ */
+export function linkedRunCarryBlockers(plan: LinkedRunPlan): readonly SandboxCarryBlocker[] {
+  if (plan._tag !== "Sandbox") return NO_SANDBOX_CARRY_BLOCKERS;
+
+  const blockers: SandboxCarryBlocker[] = [];
+  if (plan.pair.carry._tag === "Blocked") {
+    blockers.push(...plan.pair.carry.reasons.map(({ code, reason }) => Object.freeze({ code, reason })));
+  }
+  if (plan.providerPlan.carry._tag === "Ineligible") {
+    blockers.push(Object.freeze({
+      code: plan.providerPlan.carry.code,
+      reason: plan.providerPlan.carry.reason,
+    }));
+  }
+  return Object.freeze(blockers);
+}
+
 /** Link 的静态资格与 physical planner 的动态资格同时满足才允许跨 Invocation 携带。 */
 export function linkedRunCarryEligible(plan: LinkedRunPlan): boolean {
-  return plan._tag === "Direct" ||
-    (plan.pair.carry._tag === "Eligible" && plan.providerPlan.carry._tag === "Eligible");
+  return linkedRunCarryBlockers(plan).length === 0;
 }
 
 function commandFingerprintIdentity(command: SandboxCommandFingerprint): JsonValue {

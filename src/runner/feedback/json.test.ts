@@ -398,6 +398,38 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(doc.matrix[1]).not.toHaveProperty("dispatch");
   });
 
+  it("carry-disabled dispatch 结构化保留 linked blocker 的 code/reason", () => {
+    const doc = JSON.parse(renderJsonPlanDocument({
+      total: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      matrix: [{
+        experimentId: "compare/codex",
+        evalId: "opaque",
+        reused: false,
+        dispatch: [{
+          gate: "eligibility",
+          attempts: [0],
+          blockers: [
+            { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
+            { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+          ],
+        }],
+      }],
+    }));
+
+    expect(doc.matrix[0].dispatch).toEqual([{
+      gate: "eligibility",
+      attempts: [0],
+      blockers: [
+        { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
+        { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+      ],
+    }]);
+    expect(JSON.stringify(doc)).not.toContain("details unavailable");
+  });
+
   it("prior 暴露历史 verdict 与是否可接受，差异保留方向", () => {
     const doc = JSON.parse(renderJsonPlanDocument({
       total: 1,

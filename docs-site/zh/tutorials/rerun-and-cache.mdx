@@ -204,11 +204,13 @@ Attempt 的 `result.json` 在收尾链完成后一次写成，判定可信与否
 
 所以长批次撞上 CI 时限或宿主超时之后，恢复路径就是重跑同一条命令：只花缺失 Attempt 的成本，重跑前不需要任何手工清理。完整的恢复流程见[被强杀之后接着跑](/zh/troubleshooting/recover-after-kill)。
 
+这只说明 NiceEval 的结果与受管 Sandbox 能续上，不代表外部状态自动回滚。实验若把 `$HOME` checkpoint、远端 memory 服务或共享数据库跨 Attempt 累积，中断中的 Attempt 可能已经写入一半。正式比较必须恢复到最后一个终态 Attempt 的原子 checkpoint；做不到就换干净 cohort 从头重建。继续沿用旧 cohort 适合调试，不应和完整批次混作同一条实验轨迹。
+
 多开一个终端跑同一条命令也是同一套规则：每条评估用例开跑前拿一把带心跳的锁，取到锁之后重新看一眼它当前的结果，别人已经跑完落盘的直接沿用，仍缺的自己跑。两边最后都拿到完整结果，交集部分只花一份钱。
 
 ## 留存现场要求真实执行
 
-- **复用 Sandbox 的运行照常沿用结果。** 声明 `sandboxReuse: true` 的实验与普通实验一样，指纹匹配的终态 Attempt 直接沿用；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。`--rerun` 仍可要求相应 Attempt 真实重跑。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+- **复用 Sandbox 的运行照常沿用结果。** 声明 `sandboxReuse: true` 的实验与普通实验一样，在 pair 具备稳定 carry identity 时沿用指纹匹配的终态 Attempt；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。直接 callback 是 opaque，会明确禁用 carry。`--rerun` 仍可要求相应 Attempt 真实重跑。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
 - **`--keep-sandbox` 要的是一次真实执行的现场。** 判定落在当前留存档内的 Attempt 不沿用、照常派发：沿用来的结果没有 Sandbox 可留。`failed` 档下 `failed` 重跑、`passed` 照常沿用，`all` 档下全部重跑。
 
 ## 接着看

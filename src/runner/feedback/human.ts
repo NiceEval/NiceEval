@@ -891,7 +891,11 @@ export interface HumanDryPlanRow {
   locked?: boolean;
   /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
    *  「`--dry`:计划矩阵与作废原因」);省略或空数组 = 全部携带,行尾标 `carried`。 */
-  dispatch?: readonly { reason: string; deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[] }[];
+  dispatch?: readonly {
+    reason: string;
+    deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
+    blockers?: readonly { code: string; reason: string }[];
+  }[];
   /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
   prior?: readonly {
     locator: string;
@@ -962,6 +966,9 @@ function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
   const out: string[] = [];
   for (const row of input.rows) {
     if (!row.prior || row.prior.length === 0) continue;
+    // carry-disabled 已经给出 pair 的具体阻断原因；历史结果不能再伪装成普通 stale，
+    // 也不能为这个当前必失败的 accept 路径打印命令。
+    if (row.dispatch?.some((group) => (group.blockers?.length ?? 0) > 0)) continue;
     for (const prior of row.prior) {
       const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.deltas?.length);
       const deltas = prior.deltas ?? staleGroup?.deltas;
@@ -1000,6 +1007,9 @@ function dryPlanReasonSuffix(dispatch: HumanDryPlanRow["dispatch"], prior: Human
   if (dispatch === undefined || dispatch.length === 0) return "carried";
   return dispatch
     .map((group) => {
+      if (group.blockers !== undefined && group.blockers.length > 0) {
+        return `carry-disabled: ${group.blockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`;
+      }
       const selectors = (group.deltas ?? []).map(formatDryDelta);
       const staleVerdicts = group.reason === "stale"
         ? [...new Set((prior ?? []).map((result) => result.verdict))]

@@ -13,9 +13,11 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 
 先说清代价，再说怎么开：
 
-- **复用运行的结果照常进缓存。** 终态结果指纹匹配时直接沿用，不创建 Sandbox；未沿用的
-  Attempt 才在本次的共用 Sandbox 中执行。`--rerun` 仍可要求相应 Attempt 真实重跑，
-  中断后重跑同一条命令也会从已完成的终态继续。
+- **复用运行的结果照常进缓存。** pair 具备稳定 carry identity 时，终态结果指纹匹配就直接
+  沿用，不创建 Sandbox；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。直接 command /
+  lifecycle callback 是 opaque，会明确禁用 carry。`--rerun` 仍可要求相应 Attempt 真实重跑。
+- **中断不等于外部状态回滚。** 只在跨 Attempt 状态能回到最后一个终态提交边界时，续跑才是
+  同一条实验轨迹；否则应换干净 cohort 从头重建。
 - **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
   评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
 - 与 `--keep-sandbox`、`localSandbox()` 互斥。

@@ -615,6 +615,12 @@ export interface JsonPlanDelta {
   to?: string;
 }
 
+/** 当前 Sandbox pair 的跨 Run 携带阻断原因；来自 linked pair/provider plan 的稳定投影。 */
+export interface JsonPlanCarryBlocker {
+  code: string;
+  reason: string;
+}
+
 /** 本行要派发的 attempt 按未携带原因分组(`ExpPlanDispatch`);gate 词表与六道门同名。 */
 export interface JsonPlanDispatch {
   gate: "fingerprint" | "terminal" | "eligibility" | "rerun" | "mode" | "missing";
@@ -622,6 +628,8 @@ export interface JsonPlanDispatch {
   attempts: number[];
   /** 指纹门的差异明细；省略表示本次规划无法给出结构化差异。 */
   deltas?: JsonPlanDelta[];
+  /** `eligibility/carry-disabled` 的具体 code/reason；其它门省略。 */
+  blockers?: JsonPlanCarryBlocker[];
 }
 
 export interface JsonPlanRow {

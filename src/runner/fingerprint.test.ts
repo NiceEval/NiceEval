@@ -100,6 +100,25 @@ function makeRun(experimentId: string, selectedEvalIds: string[], attempts: numb
   };
 }
 
+function makeSandboxRun(experimentId: string, selectedEvalIds: string[], attempts: number): AgentRun {
+  return {
+    ...makeRun(experimentId, selectedEvalIds, attempts),
+    agent: defineSandboxAgent({
+      name: "sandbox-agent",
+      evidenceCoverage: completeEvidenceCoverage,
+      ensure: {
+        identity: { agent: "sandbox-agent", version: "0.0.0-test", revision: "1" },
+        probe: defineSandboxCommand(
+          { id: "test.sandbox.probe", revision: "1", inputs: {} },
+          async () => {},
+        ),
+      },
+      installers: [],
+      send: async () => ({ events: [], status: "completed" }),
+    }),
+  };
+}
+
 function result(over: Partial<EvalResult> & Pick<EvalResult, "id" | "attempt" | "verdict">): EvalResult {
   return {
     experimentId: "exp",
@@ -839,6 +858,63 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
         deltas: [{ _tag: "Unknown", selector: "opaque:no-manifest" }],
       },
       { gate: "missing", reason: "new", attempts: [3] },
+    ]);
+  });
+
+  it("Sandbox pair 的 opaque command/lifecycle 不走 stale/details unavailable，而是带 blockers 的 carry-disabled", async () => {
+    const opaqueCommand = async (): Promise<void> => {};
+    const opaqueHook = async (): Promise<void> => {};
+    const evalDef = makeEval("opaque", {
+      sandbox: sandboxFactories.dockerImageSandbox({ image: `node@sha256:${"a".repeat(64)}` })
+        .prepare(opaqueCommand)
+        .setup(opaqueHook),
+    });
+    const run = makeSandboxRun("exp", ["opaque"], 1);
+    const historical = await fingerprintWithManifestFor(evalDef, run);
+    const historicalAgain = await fingerprintWithManifestFor(evalDef, run);
+
+    // carry epoch 只进入 fingerprint，不进入 manifest；这正是旧实现会误报 details unavailable 的输入。
+    expect(historical.manifest).toEqual(historicalAgain.manifest);
+    expect(historical.fingerprint).not.toBe(historicalAgain.fingerprint);
+
+    const plan = await planCarry(
+      [evalDef],
+      [run],
+      [result({ id: "opaque", attempt: 0, verdict: "passed", fingerprint: historical.fingerprint })],
+      undefined,
+      { priorManifests: new Map([["exp|opaque", historical.manifest]]) },
+    );
+
+    expect(plan.carriedAttemptsByKey.get("exp|opaque")).toBeUndefined();
+    expect(plan.dispatchByKey.get("exp|opaque")).toMatchObject([{
+      gate: "eligibility",
+      reason: "carry-disabled",
+      attempts: [0],
+      blockers: [
+        { code: "sandbox.command-opaque", reason: expect.stringContaining("defineSandboxCommand") },
+        { code: "sandbox.lifecycle-opaque", reason: expect.stringContaining("opaque callbacks") },
+      ],
+    }]);
+
+    const mixedRun = makeSandboxRun("exp", ["opaque"], 4);
+    const mixedHistorical = await fingerprintWithManifestFor(evalDef, mixedRun);
+    const mixedPlan = await planCarry(
+      [evalDef],
+      [mixedRun],
+      [
+        result({ id: "opaque", attempt: 0, verdict: "passed", fingerprint: mixedHistorical.fingerprint }),
+        result({ id: "opaque", attempt: 1, verdict: "failed", fingerprint: mixedHistorical.fingerprint }),
+        result({ id: "opaque", attempt: 2, verdict: "errored", fingerprint: mixedHistorical.fingerprint }),
+        result({ id: "opaque", attempt: 3, verdict: "skipped", fingerprint: mixedHistorical.fingerprint }),
+      ],
+      undefined,
+      { priorManifests: new Map([["exp|opaque", mixedHistorical.manifest]]) },
+    );
+    expect(mixedPlan.dispatchByKey.get("exp|opaque")).toMatchObject([
+      { gate: "eligibility", reason: "carry-disabled", attempts: [0, 1] },
+      // carryGateFor 的既有 terminal 词表把 errored/skipped 都归为 terminal/errored；
+      // 这里验证 opaque blocker 不会抢走这道更早的终态门。
+      { gate: "terminal", reason: "errored", attempts: [2, 3] },
     ]);
   });
 

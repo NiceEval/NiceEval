@@ -896,6 +896,13 @@ interface ExpPlanDispatch {
   attempts: number[];
   /** 指纹门的差异明细,双侧 manifest 都在才有;缺 manifest 时给 [{ selector: "opaque:no-manifest" }]。 */
   deltas?: ExpPlanDelta[];
+  /** eligibility 门被 Sandbox carry 资格阻断时给出稳定 code 与可行动原因；其它门省略。 */
+  blockers?: ExpPlanCarryBlocker[];
+}
+
+interface ExpPlanCarryBlocker {
+  code: string;
+  reason: string;
 }
 
 interface ExpPlanDelta {

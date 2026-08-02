@@ -60,6 +60,7 @@ export {
   type JsonPlanRow,
   type JsonPlanDispatch,
   type JsonPlanDelta,
+  type JsonPlanCarryBlocker,
   type ExpEvent,
   type StartEvent,
   type ProgressEvent,

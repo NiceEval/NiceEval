@@ -160,7 +160,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 ## 结果与结果沿用
 
-声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。
+声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：pair 的跨 Run carry 资格为 `Eligible` 时，终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。直接 command / lifecycle callback 是 opaque，会阻断该 pair 的 carry；这是 callback 无稳定 identity 的结果，不是 `sandboxReuse` 的特殊禁令。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
@@ -175,6 +175,8 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 诊断只指路，不改判定。
 
 携带结果不会伪造 Sandbox 生命周期：它只复用已落盘的判定和证据。后续实际派发的 Attempt 仍从本次 Invocation 创建的 Sandbox 开始，并按当前复用规则运行。
+
+携带也不会恢复或回滚 workdir 之外的持久状态。若 Experiment 把 `$HOME`、远端 memory 服务或共享数据库当作跨 Attempt 轨迹，作者必须提供 Attempt 边界的原子 checkpoint：只有终态 Attempt 的状态可以提交，中断中的 Attempt 必须丢弃或回滚。做不到时，中断后的正式实验要换干净 cohort 并从头重建轨迹；继续使用旧 cohort 只能算带污染的调试续跑，不能与完整批次混作同一比较样本。
 
 ## 与其它能力组合
 
@@ -193,6 +195,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
 - reset 或寿命确认失败：停止该 Sandbox，后续 Attempt 等待替代 Sandbox。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
+- Invocation 中断不会替外部持久状态提供事务回滚；`teardown` 能否排除中断 Attempt 的半成品写入由作者契约决定。
 - cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。
 
 ## 非目标
