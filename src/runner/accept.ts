@@ -380,13 +380,20 @@ function validateAcceptance(source: AttemptHandle, pair: PreparedRunPair, config
     throw new AcceptError("sandbox-reuse", `Experiment "${pair.run.experimentId}" uses sandboxReuse and requires a real run.`);
   }
   const evalHistory = source.run.evals.find((evalEntry) => evalEntry.id === source.evalId);
-  const attemptNumbers = new Set(evalHistory?.attempts.map((attempt) => attempt.result.attempt) ?? []);
-  for (let index = 0; index <= result.attempt; index++) {
-    if (!attemptNumbers.has(index)) {
-      throw new AcceptError(
-        "missing-attempt",
-        `Attempt ${source.evalId}#${index} is missing; an incomplete attempt sequence cannot be accepted.`,
-      );
+  if (!Number.isInteger(result.attempt) || result.attempt < 0) {
+    throw new AcceptError("missing-attempt", `Attempt ${source.evalId} has an invalid sequence number.`);
+  }
+  // openRecord 产出的 Run 总有 evalHistory；低层嵌入调用方可提供手工句柄，缺少这份
+  // 索引时不凭空宣称序号缺失，仍让其它资格门决定是否可接受。
+  if (evalHistory !== undefined) {
+    const attemptNumbers = new Set(evalHistory.attempts.map((attempt) => attempt.result.attempt));
+    for (let index = 0; index <= result.attempt; index++) {
+      if (!attemptNumbers.has(index)) {
+        throw new AcceptError(
+          "missing-attempt",
+          `Attempt ${source.evalId}#${index} is missing; an incomplete attempt sequence cannot be accepted.`,
+        );
+      }
     }
   }
   const timeoutMs = resolvedTimeoutMsForCarry(pair.run, pair.evalDef, configTimeoutMs);

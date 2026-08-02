@@ -105,7 +105,15 @@ export {
 // 结果数据类型的家还没搬(facade 迁移是下一波);先从这里 re-export,
 // 让消费方从一个入口拿全「分层句柄 + 数据类型 + 格式常量」。
 export { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
-export type { DiagnosticRecord, EvalResult, ExperimentRunInfo, FailedCommandEvidence, InvocationSummary } from "../types.ts";
+export type {
+  AcceptedDifference,
+  AcceptedResult,
+  DiagnosticRecord,
+  EvalResult,
+  ExperimentRunInfo,
+  FailedCommandEvidence,
+  InvocationSummary,
+} from "../types.ts";
 export type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../types.ts";
 export type { AgentSetupManifest, AgentSetupSkill, DiffData, SourceArtifact } from "../types.ts";
 export type { SandboxBuildRecord, TimingActivity, TimingOrigin } from "../types.ts";

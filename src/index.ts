@@ -58,6 +58,8 @@ export type {
   Reporter,
   ReporterEvent,
   EvalResult,
+  AcceptedDifference,
+  AcceptedResult,
   RetryAttemptRecord,
   InvocationSummary,
   InvocationShape,
