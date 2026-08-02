@@ -31,6 +31,36 @@ src/backend/agent.ts                       →  threadOptions.sandboxMode
 evals 一条没改——feature A/B 的判读就是**同一批 eval 在不同变体下的红绿对照**:
 read-only 变体下 `create-file`(要写盘)预期变红,沙箱拦下写操作正是这个 flag 的行为差异;
 基础问答、会话隔离不受影响。
+
+## 目录
+
+- `agents/codex-sdk.ts`：adapter 本体,只剩**传输粘合**——应用在哪个 URL(`CODEX_SDK_URL`,
+  默认 `http://127.0.0.1:31001`)。断言依据全部来自 `ThreadEvent` 流:官方转换器
+  `createCodexThreadEventStream` 映射消息文本(`agent_message` / `reasoning`)、工具项
+  (`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `operation.started`/`operation.finished`)
+  和 `turn.completed` 的 usage。**没有 HITL**（Codex SDK 不支持），永不返回 `waiting`。
+- `evals/`：基础问答、创建文件（用 `node:fs` 直接核实磁盘上的真实内容，不只信模型自述）、跑
+  shell 命令、跨轮记忆 + `newSession()` 隔离（用口头偏好而不是文件是否存在做隔离信号，见
+  `session-isolation.eval.ts` 注释——`workspace/` 是所有 thread 共享的同一份磁盘状态）。
+- `experiments/codex-sdk.ts`：不带 params 的单配置基线。`experiments/compare-sandbox/`：
+  workspace-write / read-only 两个 sandbox mode 变体；这个应用只有一个可用模型档位，因此仍没有
+  `experiments/compare-models/`（`docs/origin-integration.md` 的验收清单里多模型对比只点名了
+  ai-sdk-v7 / claude-sdk / pi-sdk）。
+
+## 接入验证过什么
+
+不需要在 `defineAgent` 上声明任何东西,能力从 `send` 实际做到的事、`events` 里出的证据自然成立:
+
+- 会话续接:新会话线不带 `threadId` 开新会话、`thread.started` 帧回传的 `thread_id` 经
+  `ctx.session.capture()` 写回,之后带 `ctx.session.id` 经 `codex.resumeThread` 续接同一条
+  历史(SDK 落盘在 `~/.codex/sessions`)。
+- 工具可观测:每个工具项在 `ThreadEvent` 流里都有 `item.started`/`item.completed`,
+  `createCodexThreadEventStream` 据此产配对的 `operation.started`/`operation.finished`(如 run-command eval
+  断言的 `command_execution`,按 `exit_code` 判成败),覆盖完整。usage 从 `turn.completed`
+  的 `usage`(input/cached/output tokens)聚合进 `Turn.usage`,`t.maxTokens` 可用。
+- trace 瀑布图:本档通过 `telemetry` 接收 Codex CLI 已有的 span，并由 `mapCodexSpans` 归一成
+  canonical GenAI 语义，`niceeval view` 因而能正确着色、分组调用时间线；span 只丰富观测，
+  不参与断言判决。
 ## 跑起来
 
 ```sh

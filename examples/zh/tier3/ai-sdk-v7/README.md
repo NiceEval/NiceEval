@@ -33,6 +33,42 @@ evals 一条没改——feature A/B 的判读就是同一批 eval 在不同变�
 `tools` 字段在实验里没用到,但同一条通道已经打通:比如
 `params: { tools: ["get_weather", "calculate"] }` 就能对照"禁用 web_search"的变体。
 
+## 目录
+
+- `agents/ai-sdk-v7.ts`：adapter 本体——就是一个**内置 `uiMessageStreamAgent` 的配置调用**
+  （UI Message Stream 协议的官方无侵入 adapter,`"niceeval/adapter"` 导出）。SSE 归约
+  （官方 reducer `readUIMessageStream`）、"客户端带全量历史"的会话重放、HITL 审批 part
+  改写重发、工具/消息事件从协议帧直构,全部是工厂内置行为;这里只声明端点在哪、
+  请求体怎么带 `model`。协议帧里没有 usage,所以这个示例没有用量断言。
+- `evals/`：基础问答、天气工具调用、跨轮记忆 + `newSession()` 隔离、HITL 批准/拒绝。
+- `experiments/assistant.ts`：单配置基线。`experiments/compare-models/`：deepseek-v4-flash /
+  deepseek-v4-pro 两个模型对比。
+
+## 能力从哪来
+
+新契约下没有能力声明这件事——agent 工厂 option 里已经没有 `capabilities` 字段，`t` 上解锁
+什么完全看 adapter 实际接了什么、返回过什么，不是写一个标志位。这个示例（内置
+`uiMessageStreamAgent`）能验证到：
+
+- 跨轮记忆 + `newSession()` 隔离：已验证——新会话线（首轮）生成新 `sessionId`、之后按
+  `sessionId` 找回完整历史并原样重发（服务端零状态，续接完全靠客户端重放）；会话续接的存
+  取器是工厂内置行为，agent 配置里不用多写一行。
+- 工具事件全量可信（`t.calledTool()` / `t.notCalledTool()` 等负断言可用）：`get_weather` /
+  `calculate`（含审批批准/拒绝两条分支）每次调用的 `operation.started`/`operation.finished` 都从协议
+  帧直构，无遗漏——这份完整性证明随工厂返回值走，不用声明。
+- trace 瀑布图：本档通过 `telemetry` 接收应用已有的 OTel span，`settleMs` 留出末批 span
+  的收集宽限，`niceeval view` 据此展示调用时间线；span 只丰富观测，不参与断言判决。
+
+## HITL
+
+`calculate` 工具声明了 `needsApproval: true`（AI SDK 自己的 tool loop 停轮机制）。**没有
+approve 端点**——批准/拒绝的决定是把上一条（还停在 `approval-requested` 状态的）assistant
+消息原地改成 `approval-responded`，原样重发整个 `messages` 数组触发服务端续跑，和真实前端
+`addToolApprovalResponse` + 自动重发的效果完全一致——这套握手现在整个是
+`uiMessageStreamAgent` 的内置行为（拒绝时默认带"不要重试"的 reason,可用 `denyReason`
+覆盖）。`approval.id` **不是** `toolCallId`，是流里单独发的 `approvalId`
+（`tool-approval-request` chunk 里的字段，打帧确认过）。
+
 ## 跑起来
 
 ```sh

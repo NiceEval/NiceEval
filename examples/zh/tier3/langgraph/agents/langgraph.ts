@@ -12,7 +12,11 @@
 // 这是 Tier 3(侵入改造 + experiment flags):比 ../../tier2/langgraph 多一层——应用侧把
 // system prompt 提升为请求体可选字段(src/backend/{agent.py,server.py}),本文件把
 // experiment 的 `flags.systemPrompt` 经 ctx.flags 随请求体透传,feature A/B 见
-// experiments/compare-prompts/。OTel 部分(telemetry + 收尾宽限 + traceparent)与 Tier 2 相同。
+// experiments/compare-prompts/。OTel 部分继承 Tier 2:config 的 telemetry 接收 LangSmith
+// 导出的 span、本文件在轮次收尾后留出 OTEL_FLUSH_GRACE_MS，并随请求传 traceparent。
+// OTel 只管 `niceeval view` 的瀑布图:LangSmith OTel 导出的 span 发到钉住的接收端口
+// (环境变量在启动应用时给,见 README「跑起来」)——span 不喂断言,断言与 Tier 1 完全相同,
+// 埋点缺一块也只影响瀑布图。
 import { createSessionSlot, defineAgent, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
