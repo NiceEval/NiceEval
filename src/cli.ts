@@ -1069,7 +1069,7 @@ async function main(): Promise<void> {
         ? new Set(ids)
         : new Set(matchExperimentSelector(ids, selector));
       const selected = experiments.filter((experiment) => selectedIds.has(experiment.id));
-      if (selected.length === 0) {
+      if (selected.length === 0 && selector !== undefined) {
         process.stderr.write(t("cli.experiment.noMatch", {
           arg: selector ?? "list",
           experiments: browsableExperimentPaths(ids).join(", ") || t("cli.none"),
