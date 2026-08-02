@@ -103,10 +103,8 @@ export interface ScoringSplit {
 }
 
 /**
- * 按题型(`EvalDescriptor.scoring`)把选中的 eval 分桶。只做检测,不抛错、不格式化——一个
- * experiment 选中的 eval 必须同一题型(通过率与总分不能相加),两桶都非空是启动期配置错误,
- * 由调用方(CLI)决定怎么报(纯选题边界不持有格式化职责,见
- * docs/feature/experiments/README.md「defineExperiment 的形状」)。
+ * 按题型(`EvalDescriptor.scoring`)把选中的 eval 分桶。混型是合法运行形状；报告按桶分别
+ * 计算通过率与总分，不把两者相加。CLI 只据此判断 `--strict` 是否完全落在 points 题型。
  */
 export function splitByScoring(selectedEvals: readonly DiscoveredEval[]): ScoringSplit {
   const pass: string[] = [];

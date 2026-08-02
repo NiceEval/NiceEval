@@ -1029,20 +1029,9 @@ async function main(): Promise<void> {
         evals,
       });
       for (const e of selectorEvals) experimentScopeIds.add(e.id);
-      // 一个 experiment 选中的 eval 必须同一题型:通过率(defineEval)与总分(defineScoreEval)
-      // 是两种不能相加的读数,混型是启动期配置错误(见 docs/feature/experiments/score-points.md
-      // 「横截面聚合:同型实验,各读各的」)。
+      // 同一 experiment 可以混合题型；这里分桶只服务 `--strict` 的适用性判断。
+      // 报告层按 scoring 分列通过率与总分，绝不把两种无共同单位的读数相加。
       const scoringSplit = splitByScoring(selectedEvals);
-      if (scoringSplit.pass.length > 0 && scoringSplit.points.length > 0) {
-        process.stderr.write(t("cli.experiment.mixedScoring", {
-          experimentId: exp.id,
-          passCount: scoringSplit.pass.length,
-          passIds: scoringSplit.pass.join(", "),
-          pointsCount: scoringSplit.points.length,
-          pointsIds: scoringSplit.points.join(", "),
-        }));
-        process.exit(1);
-      }
       // --strict 的全部作用是「把带线 soft 翻成 gate」,而计分制的判定面只认前置中止:
       // 这个 flag 对计分制实验一件事都做不了,静默接受一个什么都不做的 flag 会让人以为
       // 判定收紧了(见 docs/feature/experiments/score-points.md「计分制没有 --strict」)。

@@ -258,11 +258,6 @@ export const zhCN = {
   "cli.experiment.noEvalsSelected":
     "未选择任何 eval:{{selection}} 匹配到 0 个 eval。可用的 eval 前缀:{{experiments}}。\n" +
     "运行 `niceeval exp {{selection}} --dry` 查看它覆盖了什么,或去掉 eval 过滤跑这些实验选中的全部 eval。\n",
-  "cli.experiment.mixedScoring":
-    "实验 \"{{experimentId}}\" 选中的 eval 混了两种题型:{{passCount}} 个通过制(defineEval)—— {{passIds}} —— " +
-    "与 {{pointsCount}} 个计分制(defineScoreEval)—— {{pointsIds}}。\n" +
-    "通过率与总分不能折成一个读数;按 tags / id 前缀 / scoring 字段收窄 `evals`,让选中的 eval 同一题型," +
-    "或拆成两个实验文件(每种题型一个)。\n",
   "cli.experiment.strictOnPoints":
     "实验 \"{{experimentId}}\" 选中的 {{count}} 个 eval 全是计分制(defineScoreEval),而 `--strict` 对它们一件事都做不了:\n" +
     "这个开关只把「带通过线的 soft 断言」翻成 gate,而计分制的判定只认前置 `.gate()` 中止——丢分从不改 verdict。\n" +
