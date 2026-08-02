@@ -52,11 +52,28 @@ plan: 4 attempts · 1 eval × 4 configs · attempts 1
 1 of 4 carried in from cache · 3 to run
 compare/codex-gpt-5.6-luna              memory/commit0-cachetool   stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
 compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool   new
-compare/codex-gpt-5.6-luna--mempal     memory/commit0-cachetool   carried
+compare/codex-gpt-5.6-luna--mempal     memory/commit0-cachetool   carried (passed)
 compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 ```
 
 携入摘要那一行只在真有条目携入时打印:一条都没携入时它退化成「0 of 4」这种废话,不如让计划头行直接接矩阵。
+
+计划行尾的 `carried` 保留被携入结果的 Verdict。单个 Attempt 显示为 `carried (passed)` 或 `carried (failed)`。
+多个 Attempt 全部携入时按 Verdict 汇总，例如 `carried (3 passed)` 或 `carried (2 passed · 1 failed)`。
+
+一行只有部分 Attempt 携入时，`carried` 必须保留在行尾，并给出携入分子、计划分母和 Verdict 汇总。
+每个派发原因组也给出自己的 Attempt 分数：
+
+```text
+compare/codex  memory/mixed   carried 2/3 (1 passed · 1 failed) · errored 1/3
+```
+
+Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列。
+`stale` 仍先显示历史 Verdict，再显示差异摘要；分数来自该原因组的 Attempt 序号，不把其它组的历史结果混入。
+
+默认不带 `--rerun` 时，历史 `passed` 与 `failed` 都是已确定判定，满足其它携带门就携入；历史 `errored` 与 `skipped` 不携入，本次自动派发。
+单独写 `--rerun` 等同于 `--rerun failed`，主动复验历史 `failed`，同时继续携入 `passed`。
+`--rerun all` 让选中矩阵的每个 Attempt 都重新派发；它是全量复验，不是默认对 `errored` 的自动重跑。
 
 要派发的行**逐条标出为什么没携带**,词表就是[携带的五道门](cache.md#携带要过的门)加上缺历史的两个词:
 
@@ -858,6 +875,9 @@ type ExpEvent =
 ```
 
 `--dry --json` 输出单个 `ExpPlanDocument`,是一次完成的读取,不是事件流:选中的 experiment × eval 矩阵与复用预测一次性给出,`total` / `configs` / `reused` 与 `start` 事件同一口径,`matrix` 逐行给出复用预测;顶层身份字段(`format: "niceeval.exp-plan"`、`schemaVersion`)与事件流的 `start` 事件可区分:
+
+人读文本额外投影每个 `CarryPlan.carriedResults` 的 Verdict 与 Attempt 汇总。
+这部分不进入 `ExpPlanDocument`，机器面继续使用 `reused` 与 `dispatch` 既有字段。
 
 ```typescript
 interface ExpPlanDocument {

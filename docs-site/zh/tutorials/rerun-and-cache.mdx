@@ -15,6 +15,19 @@ import { Picker } from '/snippets/widgets.jsx';
 ╰─────────────────────────────────────────────────╯
 ```
 
+先用 `--dry` 查看派发计划。人读输出会保留每条携入结果的 Verdict：
+
+```text
+compare/codex  memory/passed       carried (passed)
+compare/codex  memory/failed       carried (failed)
+compare/codex  memory/mixed        carried (2 passed · 1 failed)
+compare/codex  memory/partial      carried 2/3 (1 passed · 1 failed) · errored 1/3
+```
+
+一行有多个 Attempt 时，每个派发原因都使用 `N/total`。
+默认规则携入指纹匹配的 `passed` 与 `failed`，`errored` 和 `skipped` Attempt 自动重跑。
+裸写 `--rerun` 主动重跑 `failed`，`--rerun all` 重跑选中矩阵的全部 Attempt。
+
 这一页回答两个问题：我刚改的这一处会让多少条重跑，以及改的东西 NiceEval 看不见时怎么让它复验。
 
 ## 一处改动作废多大范围

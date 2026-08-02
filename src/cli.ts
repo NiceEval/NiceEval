@@ -452,14 +452,17 @@ function planRowInputs(
 ): {
   experimentId: string;
   evalId: string;
+  attempts: number;
   reused: boolean;
+  carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
   dispatch: readonly DispatchGroup[];
-  prior?: readonly { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
+  prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
 }[] {
-  const priorByKeyAttempt = new Map<string, { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator" }>();
+  const priorByKeyAttempt = new Map<string, { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator" }>();
   for (const prior of priorResults) {
     if (prior.locator === undefined) continue;
     priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, {
+      attempt: prior.attempt,
       locator: prior.locator,
       verdict: prior.verdict,
       acceptance: decodeAttemptLocator(prior.locator).valid ? "available" : "legacy-locator",
@@ -468,14 +471,25 @@ function planRowInputs(
   const rows: {
     experimentId: string;
     evalId: string;
+    attempts: number;
     reused: boolean;
+    carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
     dispatch: readonly DispatchGroup[];
-    prior?: readonly { locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
+    prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
   }[] = [];
+  const carriedByPair = new Map<string, { attempt: number; verdict: "passed" | "failed" }[]>();
+  for (const result of carryPlan?.carriedResults ?? []) {
+    if (result.experimentId === undefined || (result.verdict !== "passed" && result.verdict !== "failed")) continue;
+    const key = JSON.stringify([result.experimentId, result.id]);
+    const carried = carriedByPair.get(key) ?? [];
+    carried.push({ attempt: result.attempt, verdict: result.verdict });
+    carriedByPair.set(key, carried);
+  }
   for (let i = 0; i < agentRuns.length; i++) {
     const run = agentRuns[i]!;
     for (const e of matchedByRun[i]!) {
-      const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? 0;
+      const carried = carriedByPair.get(JSON.stringify([run.experimentId ?? "", e.id])) ?? [];
+      const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? carried.length;
       // 没有任何可读历史时不必先跑一趟携带规划:计划内每个序号都缺条目,逐条报缺历史门的原因词。
       const dispatch: readonly DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
         ?? (carriedCount >= run.attempts
@@ -490,7 +504,9 @@ function planRowInputs(
       rows.push({
         experimentId: run.experimentId ?? "",
         evalId: e.id,
+        attempts: run.attempts,
         reused: carriedCount >= run.attempts,
+        carried,
         dispatch,
         ...(stalePrior.length > 0 ? { prior: stalePrior } : {}),
       });
@@ -1404,10 +1420,13 @@ async function main(): Promise<void> {
           rows: rowInputs.map((row, i) => ({
             experimentId: row.experimentId,
             evalId: row.evalId,
+            attempts: row.attempts,
             ...(lockedFlags[i] ? { locked: true } : {}),
+            ...(row.carried.length > 0 ? { carried: row.carried } : {}),
             ...(row.prior !== undefined ? { prior: row.prior } : {}),
             dispatch: row.dispatch.map((group) => ({
               reason: group.reason,
+              attempts: [...group.attempts],
               ...(group.deltas !== undefined ? { deltas: group.deltas } : {}),
               ...(group.blockers !== undefined
                 ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }

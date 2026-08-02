@@ -13,6 +13,17 @@ When you repeat the same command, NiceEval carries completed results forward ins
 ╰─────────────────────────────────────────────────╯
 ```
 
+Use `--dry` to inspect the attempt-level plan before dispatch. Human output keeps the Verdict of every carried result:
+
+```text
+compare/codex  memory/passed       carried (passed)
+compare/codex  memory/failed       carried (failed)
+compare/codex  memory/mixed        carried (2 passed · 1 failed)
+compare/codex  memory/partial      carried 2/3 (1 passed · 1 failed) · errored 1/3
+```
+
+For a row with multiple Attempts, each dispatched reason uses the same `N/total` form. The default policy carries matching `passed` and `failed` Verdicts, while `errored` and `skipped` Attempts run again. Bare `--rerun` actively reruns `failed` Attempts; `--rerun all` reruns every selected Attempt.
+
 ## Understand the invalidation scope
 
 The scope follows the input that changed:

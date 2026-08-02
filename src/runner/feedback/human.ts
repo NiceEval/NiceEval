@@ -886,18 +886,28 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
 export interface HumanDryPlanRow {
   experimentId: string;
   evalId: string;
+  /** 本行计划内的 attempt 总数；混合 `attempts` 的多个 Experiment 不共用 input 的最大值。 */
+  attempts?: number;
   /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
    *  「并发 Invocation:用例锁」);计划行尾如实标注,`--dry` 本身不取锁、不等待。 */
   locked?: boolean;
+  /** 本行实际携入的终态结果；只会出现 `passed` / `failed`，供人读面显示已确定判定。 */
+  carried?: readonly {
+    attempt: number;
+    verdict: "passed" | "failed";
+  }[];
   /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
-   *  「`--dry`:计划矩阵与作废原因」);省略或空数组 = 全部携带,行尾标 `carried`。 */
+   *  「`--dry`:计划矩阵与作废原因」);`attempts` 是这组原因覆盖的 0-based 序号。
+   *  省略或空数组 = 全部携带(兼容直接调用 formatter 的旧 fixture)。 */
   dispatch?: readonly {
     reason: string;
+    attempts?: readonly number[];
     deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
     blockers?: readonly { code: string; reason: string }[];
   }[];
   /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
   prior?: readonly {
+    attempt?: number;
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";
     acceptance: "available" | "legacy-locator";
@@ -953,7 +963,7 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
     const suffix = row.locked
       ? t("feedback.human.lockedRowSuffix")
-      : dryPlanReasonSuffix(row.dispatch, row.prior);
+      : dryPlanReasonSuffix(row.dispatch, row.prior, row.carried, row.attempts ?? input.attempts);
     lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
   }
   const staleBlocks = renderStaleDeltaGroups(input);
@@ -1002,23 +1012,65 @@ function foldIds(ids: string[]): string {
   return `${prefix} ${sorted.map((id) => id.slice(prefix.length)).join("/")}`;
 }
 
-/** `stale: config:judge.model · new` —— 同一行的多组原因按门的出现序连排,stale 附差异 selector。 */
-function dryPlanReasonSuffix(dispatch: HumanDryPlanRow["dispatch"], prior: HumanDryPlanRow["prior"]): string {
-  if (dispatch === undefined || dispatch.length === 0) return "carried";
-  return dispatch
-    .map((group) => {
-      if (group.blockers !== undefined && group.blockers.length > 0) {
-        return `carry-disabled: ${group.blockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`;
-      }
-      const selectors = (group.deltas ?? []).map(formatDryDelta);
-      const staleVerdicts = group.reason === "stale"
-        ? [...new Set((prior ?? []).map((result) => result.verdict))]
-        : [];
-      const reason = staleVerdicts.length > 0 ? `stale ${staleVerdicts.join("/")}` : group.reason;
-      if (selectors.length > 0) return `${reason}: ${selectors.join(", ")}`;
-      return group.reason === "stale" ? `${reason}: details unavailable` : reason;
-    })
+/**
+ * `stale: config:judge.model · new` —— 同一行的多组原因按门的出现序连排,stale 附差异 selector。
+ * 当一行有多个 attempt 时,每个派发组带 `N/total`;携入组只在部分携入时带这个分数,避免把
+ * `carried` 的来源判定折叠成一个没有 verdict 的总数。
+ */
+function dryPlanReasonSuffix(
+  dispatch: HumanDryPlanRow["dispatch"],
+  prior: HumanDryPlanRow["prior"],
+  carried: HumanDryPlanRow["carried"] = [],
+  totalAttempts = 1,
+): string {
+  const carriedSuffix = carried.length > 0 ? formatCarriedSuffix(carried, totalAttempts) : undefined;
+  if (dispatch === undefined || dispatch.length === 0) return carriedSuffix ?? "carried";
+  return [
+    ...(carriedSuffix === undefined ? [] : [carriedSuffix]),
+    ...dispatch.map((group) => formatDispatchGroup(group, prior, totalAttempts)),
+  ].join(" · ");
+}
+
+function formatCarriedSuffix(
+  carried: NonNullable<HumanDryPlanRow["carried"]>,
+  totalAttempts: number,
+): string {
+  if (totalAttempts === 1 && carried.length === 1) return `carried (${carried[0]!.verdict})`;
+  const verdicts = formatVerdictCounts(carried.map((result) => result.verdict));
+  if (carried.length < totalAttempts) return `carried ${carried.length}/${totalAttempts} (${verdicts})`;
+  return `carried (${verdicts})`;
+}
+
+function formatVerdictCounts(verdicts: readonly ("passed" | "failed")[]): string {
+  const counts = { passed: 0, failed: 0 };
+  for (const verdict of verdicts) counts[verdict] += 1;
+  return (["passed", "failed"] as const)
+    .filter((verdict) => counts[verdict] > 0)
+    .map((verdict) => `${counts[verdict]} ${verdict}`)
     .join(" · ");
+}
+
+function formatDispatchGroup(
+  group: NonNullable<HumanDryPlanRow["dispatch"]>[number],
+  prior: HumanDryPlanRow["prior"],
+  totalAttempts: number,
+): string {
+  const countSuffix = group.attempts !== undefined && totalAttempts > 1
+    ? ` ${group.attempts.length}/${totalAttempts}`
+    : "";
+  if (group.blockers !== undefined && group.blockers.length > 0) {
+    return `carry-disabled${countSuffix}: ${group.blockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`;
+  }
+  const selectors = (group.deltas ?? []).map(formatDryDelta);
+  const relevantPrior = (prior ?? []).filter((result) =>
+    group.attempts === undefined || result.attempt === undefined || group.attempts.includes(result.attempt));
+  const staleVerdicts = group.reason === "stale"
+    ? (["passed", "failed", "errored", "skipped"] as const).filter((verdict) =>
+        relevantPrior.some((result) => result.verdict === verdict))
+    : [];
+  const reason = staleVerdicts.length > 0 ? `stale ${staleVerdicts.join("/")}` : group.reason;
+  if (selectors.length > 0) return `${reason}${countSuffix}: ${selectors.join(", ")}`;
+  return group.reason === "stale" ? `${reason}${countSuffix}: details unavailable` : `${reason}${countSuffix}`;
 }
 
 function formatDryDelta(delta: { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }): string {

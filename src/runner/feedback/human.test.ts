@@ -901,6 +901,81 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(rowOf(text, "memory/mixed")).toContain("errored · new");
   });
 
+  // cases: docs/engineering/testing/unit/experiments-runner.md「--dry 的 carried verdict 与 attempt 汇总」
+  it("全携带的单 attempt 显示实际 carried verdict,不把 failed 隐藏成裸 carried", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 2,
+      evals: 2,
+      configs: 1,
+      attempts: 1,
+      rows: [
+        {
+          experimentId: "compare/codex",
+          evalId: "memory/passed",
+          attempts: 1,
+          carried: [{ attempt: 0, verdict: "passed" }],
+          dispatch: [],
+        },
+        {
+          experimentId: "compare/codex",
+          evalId: "memory/failed",
+          attempts: 1,
+          carried: [{ attempt: 0, verdict: "failed" }],
+          dispatch: [],
+        },
+      ],
+    });
+
+    expect(rowOf(text, "memory/passed")).toMatch(/carried \(passed\)$/);
+    expect(rowOf(text, "memory/failed")).toMatch(/carried \(failed\)$/);
+  });
+
+  it("全携带的多 attempt 按 carried 结果汇总 passed 与 failed", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 3,
+      evals: 1,
+      configs: 1,
+      attempts: 3,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "memory/mixed-verdicts",
+        attempts: 3,
+        carried: [
+          { attempt: 0, verdict: "passed" },
+          { attempt: 1, verdict: "failed" },
+          { attempt: 2, verdict: "passed" },
+        ],
+        dispatch: [],
+      }],
+    });
+
+    expect(rowOf(text, "memory/mixed-verdicts")).toMatch(/carried \(2 passed · 1 failed\)$/);
+  });
+
+  it("部分携入时保留 carried verdict,并按 dispatch 分组显示各原因的 attempt 分数", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 4,
+      evals: 1,
+      configs: 1,
+      attempts: 4,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "memory/partial",
+        attempts: 4,
+        carried: [
+          { attempt: 0, verdict: "passed" },
+          { attempt: 1, verdict: "failed" },
+        ],
+        dispatch: [
+          { reason: "errored", attempts: [2] },
+          { reason: "new", attempts: [3] },
+        ],
+      }],
+    });
+
+    expect(rowOf(text, "memory/partial")).toContain("carried 2/4 (1 passed · 1 failed) · errored 1/4 · new 1/4");
+  });
+
   it("stale 行显示历史 verdict、具名差异与独立 accept 命令", () => {
     const delta = { selector: "config:judge.model", kind: "changed" as const, from: "gpt-5.6", to: "gpt-5.6-sol" };
     const text = renderHumanDryPlan({

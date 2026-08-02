@@ -213,6 +213,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
   九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
+- **`--dry` 的 carried Verdict 投影**：Human 计划行要证明携入 Verdict 不被隐藏。
+  单 Attempt 分别显示 `carried (passed)` 与 `carried (failed)`，多 Attempt 按 `passed` / `failed` 汇总。
+- **`--dry` 的部分携入计数**：要保留 `carried N/total (… verdict …)`。
+  还要按 `DispatchGroup.attempts` 给每个其它派发原因显示 `reason N/total`，多个原因的序号不能互相计数。
+- **`--dry` 的双形态边界**：Verdict 与分数是人读 formatter 的内部投影。
+  `--dry --json` 的 `reused` / `dispatch` 结构不因展示需要增加字段。
 - **`incompatible` 与 `new` 的区分**:同一次计划里一条 eval 的历史落在版本不同的快照里、另一条从没跑过,两行的原因词不同。
   把不兼容历史一并算作「没有任何历史」的实现只在这一格会红。
   判定链的另一半在读取面:不兼容的快照只按目录名认坐标(它的文件按格式规则不解析)。
