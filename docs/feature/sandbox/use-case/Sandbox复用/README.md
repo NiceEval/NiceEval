@@ -1,7 +1,7 @@
 # `sandboxReuse: true` —— 用例
 
-Experiment 声明 `sandboxReuse: true` 后，仍会真实执行每条 Attempt，只让它们共用 Sandbox。
-它分摊 Sandbox 创建，但不会让结果进入后续结果沿用。
+Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会照常由后续 Run 沿用，不创建 Sandbox。
+未沿用的 Attempt 才共用 Sandbox，分摊创建和公共准备。
 两层作者 layer 的 `prepare()` 每条 Attempt 重放；昂贵动作靠真实检查把关，复用窗口内第二条起检查命中、快速返回。
 
 | 目标 | 用例 |

@@ -179,7 +179,7 @@ npx niceeval accept @1A1B2C3D4E5F
 
 很早的落盘可能带有不符合当前 locator 格式的旧值。此时 `--dry` 会显示 `accept: unavailable (legacy locator …)`，不会给出一个必然失败的命令；重新运行该 eval 即可生成新的可接受 locator。
 
-`passed` 和 `failed` 的历史结果可以接受。`errored`、`skipped`、复用 Sandbox 产生的结果和当前要求真实执行的结果不能接受；命令会说明原因，不会自动改为运行实验。
+`passed` 和 `failed` 的历史结果可以接受。结果是否来自复用 Sandbox、当前实验是否声明 `sandboxReuse: true`，都不影响接受资格。`errored`、`skipped`，以及要求保留真实 Sandbox 现场的执行模式不能接受；命令会说明原因，不会自动改为运行实验。
 
 ## 指纹没得改但就是要重跑
 
@@ -206,7 +206,7 @@ Attempt 的 `result.json` 在收尾链完成后一次写成，判定可信与否
 
 多开一个终端跑同一条命令也是同一套规则：每条评估用例开跑前拿一把带心跳的锁，取到锁之后重新看一眼它当前的结果，别人已经跑完落盘的直接沿用，仍缺的自己跑。两边最后都拿到完整结果，交集部分只花一份钱。
 
-## 一种模式不参与沿用
+## 留存现场要求真实执行
 
 - **复用 Sandbox 的运行照常沿用结果。** 声明 `sandboxReuse: true` 的实验与普通实验一样，指纹匹配的终态 Attempt 直接沿用；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。`--rerun` 仍可要求相应 Attempt 真实重跑。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
 - **`--keep-sandbox` 要的是一次真实执行的现场。** 判定落在当前留存档内的 Attempt 不沿用、照常派发：沿用来的结果没有 Sandbox 可留。`failed` 档下 `failed` 重跑、`passed` 照常沿用，`all` 档下全部重跑。
