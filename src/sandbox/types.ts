@@ -68,10 +68,11 @@ export interface SandboxHooks<Self> {
 export interface SandboxHookContext extends ScopedFeedback {
   /** 运行计划中已解析的实验 id；生命周期 hook 不在脱离 Experiment 的上下文执行。 */
   readonly experimentId: string;
-  /** 本次 attempt 的中止信号。 */
+  /** 当前 Invocation 的中止信号；物理 Sandbox 生命周期不从某条 Attempt 借用信号。 */
   readonly signal: AbortSignal;
   /**
-   * 第三条反馈通道:上报本次运行的中性环境观测,落进 `AttemptRecord.facts`。key 匹配
+   * 第三条反馈通道:上报物理 Sandbox 生命周期的中性环境观测,落进所属 Experiment 的
+   * `Run.facts`。这类事实不归属于某一条 Attempt。key 匹配
    * `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,非法 key 或非标量 value 抛错。
    * 不影响判定,不参与 verdict / 评分 / 指纹。形状与归属语义见
    * docs/feature/record/architecture.md#facts运行事实。

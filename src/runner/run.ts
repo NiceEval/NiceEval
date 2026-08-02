@@ -710,13 +710,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     let pool = bySpec.get(key);
     if (!pool) {
       const plannedState = a.run.state;
-      const setupContext = {
-        experimentId: a.run.experimentId,
-        signal: opts.signal ?? new AbortController().signal,
-        progress: () => {},
-        diagnostic: () => {},
-        fact: () => {},
-      };
+      // 物理 Sandbox lifecycle 不属于任一 Attempt；反馈与事实落到所属 Experiment 的 Run。
+      const setupContext = makeExperimentHookContext(a.run, "sandbox.create");
       const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
       const plannedUses = attempts.filter((candidate) =>
         !cancelledReuseAttempts.has(candidate) &&
@@ -724,8 +719,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         reusePoolKeyOf(candidate) === key
       ).length;
       pool = new ReusableSandboxPool(a.plan, capacity, {
-        progress: () => {},
-        diagnostic: () => {},
+        progress: setupContext.progress,
+        diagnostic: setupContext.diagnostic,
       }, setupContext, plannedState._tag === "Stateless"
         ? { _tag: "Stateless" }
         : {

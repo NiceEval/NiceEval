@@ -546,7 +546,16 @@ describe("runEvals · sandboxReuse 按物理 Sandbox identity 分池", () => {
   it("不同 Eval prepare 共用同一物理 Sandbox，并逐 Attempt 各自重放", async () => {
     let sandboxCreates = 0;
     const prepared: string[] = [];
-    const template = reusableFakeSandboxSpec(() => { sandboxCreates += 1; });
+    const template = reusableFakeSandboxSpec(() => { sandboxCreates += 1; })
+      .setup((_sandbox, ctx) => { ctx.fact("sandbox.lifecycle", "setup"); })
+      .teardown((_sandbox, ctx) => {
+        ctx.fact("sandbox.lifecycle", "teardown");
+        ctx.diagnostic({
+          code: "sandbox-lifecycle-test",
+          level: "warning",
+          message: "physical sandbox teardown completed",
+        });
+      });
     const evalWithPrepare = (id: string, commandId: string): DiscoveredEval =>
       discoverEval(defineEval({
         sandbox: sandboxLayer().prepare(defineSandboxCommand(
@@ -580,12 +589,17 @@ describe("runEvals · sandboxReuse 按物理 Sandbox identity 分池", () => {
       experimentId: "reuse-layer-identity-exp",
     };
 
-    const { summary } = await run(evals, [agentRun], { maxConcurrency: 1 });
+    const { summary, root } = await run(evals, [agentRun], { maxConcurrency: 1 });
 
     expect(summary.results).toHaveLength(2);
     expect(summary.results.every((result) => result.verdict === "passed")).toBe(true);
     expect(sandboxCreates).toBe(1);
     expect(prepared).toEqual(["test.reuse.prepare-a", "test.reuse.prepare-b"]);
+
+    const record = await openRecord(root);
+    const latestRun = record.experiments.find((entry) => entry.id === agentRun.experimentId)?.latestRun;
+    expect(latestRun?.facts).toMatchObject({ "sandbox.lifecycle": "teardown" });
+    expect(latestRun?.diagnostics).toContainEqual(expect.objectContaining({ code: "sandbox-lifecycle-test" }));
   });
 });
 
