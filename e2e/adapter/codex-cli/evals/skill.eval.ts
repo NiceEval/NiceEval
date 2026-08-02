@@ -30,7 +30,7 @@ export default defineEval({
         `Then create a file named ${relPath} that is a status report saying "all systems nominal", ` +
         `following whatever convention you found.`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.noFailedActions();
 
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {

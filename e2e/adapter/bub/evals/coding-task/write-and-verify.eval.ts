@@ -15,7 +15,7 @@ export default defineEval({
         `第二步:作为单独一步,用 shell 命令(例如 \`cat notes.txt\`)把 notes.txt 读回来,` +
         `并把它打印的内容原样告诉我。`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("写入 notes.txt,再串行 shell 读回来验证", () => {
       t.calledTool("file_write", { input: { path: /notes\.txt/ } });

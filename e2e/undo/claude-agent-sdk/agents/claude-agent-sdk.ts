@@ -8,18 +8,18 @@
 // `ctx.session.id` / `ctx.session.capture` 续接。这里只剩
 // 传输粘合:端点在哪、审批打哪个端点、HITL 停轮怎么判。
 //
-// coverage: completeCoverage——官方 SDK adapter,事件流、usage、状态都来自
+// evidenceCoverage: completeEvidenceCoverage——官方 SDK adapter,事件流、usage、状态都来自
 // createClaudeSdkEventStream() 的完整归一,声明全通道 complete(见
 // docs/feature/adapters/architecture/evidence.md)。这与是否声明 tracing 面是两件事:本
 // adapter 不接 OTel(见下),`tracing` 字段留空,执行树的时间注释因此显示 timing unavailable——
 // 覆盖声明只影响 calledTool/notCalledTool/maxTokens 这类断言的证据完整性判定,不影响 trace。
 import {
-  defineAgent,
+  defineDirectAgent,
   sseJsonFrames,
   createClaudeSdkEventStream,
   createSessionSlot,
   driveFrameStream,
-  completeCoverage,
+  completeEvidenceCoverage,
 } from "niceeval/adapter";
 import type { AgentContext, ClaudeSdkStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
@@ -114,8 +114,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, createClaudeSdkEventStream());
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "claude-agent-sdk",
-  coverage: completeCoverage,
+  evidenceCoverage: completeEvidenceCoverage,
   send,
 });

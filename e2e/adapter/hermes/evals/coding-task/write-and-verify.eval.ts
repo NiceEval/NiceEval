@@ -8,7 +8,7 @@ export default defineEval({
         "第一步:用文件写入工具在工作目录创建 notes.txt,内容精确为这一行:niceeval e2e ok\n" +
         "第二步:用 shell(例如 cat notes.txt)把内容读回来,并原样告诉我。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
       t.calledTool("file_write", { input: { path: /notes\.txt/ } });
       t.calledTool("shell");

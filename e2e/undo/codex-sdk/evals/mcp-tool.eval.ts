@@ -17,7 +17,7 @@ export default defineEval({
         "any code, do not compute the sum yourself in any way -- the only acceptable action is one call to " +
         "the e2e.get-sum MCP tool. Report only the final number it returns.",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("MCP 工具调用且入参正确", () => {
       t.calledTool("e2e.get-sum", { status: "completed", input: { a: 100, b: 23 } });

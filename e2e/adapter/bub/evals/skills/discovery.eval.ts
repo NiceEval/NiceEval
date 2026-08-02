@@ -17,7 +17,7 @@ export default defineEval({
         `检查你的项目 skills 目录里的 review-conventions skill,把其中记录的确切魔法词` +
         `告诉我。`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     t.messageIncludes(MAGIC_WORD);
     t.eventsSatisfy(

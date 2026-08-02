@@ -7,12 +7,12 @@ export default defineEval({
   description: "测试 agent 在多轮纯文本对话中维持上下文连贯的能力",
 
   async test(t) {
-    (await t.send("请用一句话介绍一下自己")).expectOk();
-    (await t.send("你刚才说的是什么语言？")).expectOk();
-    (await t.send("好的，谢谢你的回答")).expectOk();
+    await (await t.send("请用一句话介绍一下自己")).succeeded().stopOnFailure();
+    await (await t.send("你刚才说的是什么语言？")).succeeded().stopOnFailure();
+    await (await t.send("好的，谢谢你的回答")).succeeded().stopOnFailure();
 
     await t.group("三轮都正常收发", () => {
-      // 每轮 send 已各自 .expectOk()；succeeded() 再确认整次运行没有失败或卡在 HITL。
+      // 每轮 send 已各自 succeeded().stopOnFailure()；succeeded() 再确认整次运行没有失败或卡在 HITL。
       // 事件流现在也含 user 消息，不再用 event("message",{count}) 数 assistant 轮数。
       t.succeeded();
     });

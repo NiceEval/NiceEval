@@ -18,7 +18,7 @@ export default defineEval({
         `(2) 编辑 notes.txt,追加恰好一行:${MARKER_B}。` +
         "(3) 运行 shell 命令 'cat notes.txt',并把它的输出展示给我。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.succeeded();
 
     await t.group("file 与 shell 工具事件均已出现且状态为 completed", () => {

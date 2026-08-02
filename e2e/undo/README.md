@@ -6,7 +6,7 @@ fixture 只有在产品侧补齐对应官方工厂，并完成以下收口后才
 
 - 删除仓库内的 `agents/` 与本地 Adapter 实现；
 - Experiment 直接从 `niceeval/adapter` 导入并实例化官方工厂；
-- 不调用 `defineAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent；
+- 不调用 `defineDirectAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent；
 - 通过 `test/e2e-structure.test.ts` 与该仓库真实 E2E。
 
 当前暂停项：`claude-agent-sdk`、`codex-sdk`、`pi-agent-core`、`langgraph`。

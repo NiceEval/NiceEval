@@ -37,7 +37,7 @@ export default defineEval({
     // 便宜的收尾轮:证明 attempt 真的跑通了 agent,同时是 hook 在真实 session 里执行的载体
     // ——SessionStart 钩子在这轮的第一条消息之前就已经跑过。
     const turn = await t.send('Say "ok" and nothing else. Do not run any commands or read any files.');
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.succeeded();
 
     await t.group("hook 证据:SessionStart 钩子的输出真的落进了 Codex 自己的 session 记录", async () => {

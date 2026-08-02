@@ -13,7 +13,7 @@ export default defineEval({
       '你现在必须调用 WebSearch 工具,搜索这个确切短语:"niceeval e2e mcp test"。' +
         "不要凭自己的知识回答,不要跳过这次工具调用。如果你被阻止调用它,请明确说明。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("denied 之后 WebSearch/WebFetch 从未被调用", () => {
       t.notCalledTool("web_search");

@@ -14,7 +14,7 @@ export default defineEval({
     const turn = await t.send(
       `${TOPIC} 是什么?回答前先检查你是否有一个关于这个确切主题的 skill,如果有就使用它。`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("原生 Skill 工具被调用,归一为 skill.loaded", () => {
       t.loadedSkill("e2e-marker");

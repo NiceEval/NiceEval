@@ -6,7 +6,7 @@ export default defineEval({
   description: "greet/hello:真实 DeepSeek 网关一次问候,验证 send / messageIncludes 走通",
   async test(t) {
     const turn = await t.send("Reply with exactly this sentence and nothing else: Hello, niceeval!");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.messageIncludes(/Hello/i);
   },
 });

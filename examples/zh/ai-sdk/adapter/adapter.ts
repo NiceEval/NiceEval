@@ -1,4 +1,4 @@
-import { defineAgent } from "niceeval/adapter";
+import { defineDirectAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 import type { StreamEvent, ToolName, Usage } from "niceeval";
 import type { AgentEvent, AgentResponse } from "../src/protocol.ts";
@@ -31,8 +31,18 @@ export function webAgent(opts: WebAgentOptions): Agent {
   if (!opts.baseUrl) throw new Error("webAgent 需要 baseUrl —— 被测 web agent 跑在哪由调用方传入。");
   const baseUrl = opts.baseUrl.replace(/\/$/, "");
 
-  return defineAgent({
+  return defineDirectAgent({
     name: "web-agent",
+    // 自建 HTTP 协议只证明服务已回传的帧；usage 可选，且 HTTP/传输错误不能证明服务端
+    // 已给出可评分终态，因此显式降级相关通道，不能伪报为 complete。
+    evidenceCoverage: {
+      events: { status: "partial", reason: "自建 HTTP 响应只覆盖服务端实际回传的事件帧" },
+      actions: { status: "partial", reason: "工具生命周期仅来自服务端回传的事件帧" },
+      messages: { status: "partial", reason: "助手消息仅来自服务端回传的事件帧" },
+      usage: { status: "partial", reason: "服务端协议允许省略 usage" },
+      status: { status: "partial", reason: "HTTP 或传输错误未必是服务端给出的可信终态" },
+      data: { status: "partial", reason: "失败响应不携带应用 data" },
+    },
 
     async send(input, ctx) {
       try {

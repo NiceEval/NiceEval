@@ -10,7 +10,7 @@ export default defineEval({
   description: "HITL 反证:Codex SDK 没有审批回调,事件流从不出现 input.requested",
   async test(t) {
     const turn = await t.send("在当前工作目录跑 `echo niceeval-e2e-hitl-926`,把命令输出告诉我。");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.noFailedActions();
     t.calledTool("shell", { status: "completed" });
     t.notEvent("input.requested");

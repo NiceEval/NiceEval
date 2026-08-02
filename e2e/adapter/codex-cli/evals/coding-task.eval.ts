@@ -32,7 +32,7 @@ export default defineEval({
         `(1) 把 ${relPath} 中的 ${oldMarker} 改成 ${newMarker},其它内容保持不变;` +
         `(2) 跑 \`echo ${cmdMarker}\`,把命令的输出告诉我。`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     t.noFailedActions();
 

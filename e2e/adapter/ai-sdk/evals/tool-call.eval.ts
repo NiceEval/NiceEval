@@ -7,7 +7,7 @@ export default defineEval({
   description: "天气 prompt 以裸工具名调用 get_weather(SSE,按 call id 配对 output-available)",
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("裸工具名调用 + 结果配对", () => {
       t.calledTool("get_weather", { input: { city: /北京/ } });

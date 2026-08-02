@@ -16,7 +16,7 @@ export default defineEval({
         "然后重试同一个工具调用;持续重试直到两次调用都成功,不要放弃。" +
         "把两个结果报告为用空格分隔的两个数字,先报告求和结果。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("两个已挂载的 MCP server 都以精确入参被调用;未挂载的 server 从未被调用", () => {
       t.calledTool("mcp__e2e-stdio__get-sum", { input: { a: 100, b: 23 } });

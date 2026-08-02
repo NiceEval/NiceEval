@@ -15,7 +15,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("Brooklyn 现在天气怎么样?调用 get_weather 工具查一下。");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("调用 get_weather 且 city=Brooklyn,不调用未挂载的 search 工具", () => {
       t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } });

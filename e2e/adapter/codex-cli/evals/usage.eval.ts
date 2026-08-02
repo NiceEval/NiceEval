@@ -12,7 +12,7 @@ export default defineEval({
   description: "usage 与实际模型:usage 逐轮非空;实际模型从 Codex session 侧写核对",
   async test(t) {
     const turn = await t.send("9 乘以 7 等于多少?先说明简短的推理过程,再给出最终数字。");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("usage 逐轮非空", () => {
       t.check(

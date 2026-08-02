@@ -10,7 +10,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("北京今天天气怎么样?");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("调用 get_weather 且城市正确", () => {
       t.calledTool("get_weather", { input: { city: "北京" }, status: "completed" });

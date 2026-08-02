@@ -17,7 +17,7 @@ export default defineEval({
       "一列火车第一小时行驶 60 公里,第二小时车速比第一小时快 15 公里/小时,第三小时车速比第二小时" +
         "慢 5 公里/小时。先简短说明逐步推理过程,再给出三小时行驶的总公里数(只给最终数字)。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("usage 逐轮非空", () => {
       t.check(

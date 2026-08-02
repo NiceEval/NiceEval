@@ -28,7 +28,7 @@ export default defineEval({
       `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}请精确执行以下 shell 命令,把它的 stdout 原样贴回来,` +
         `不要输出其它内容:\n${PLUGIN_CHECK_CMD}`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.calledTool("shell");
     t.messageIncludes("PLUGIN_OK");
   },

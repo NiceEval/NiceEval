@@ -21,10 +21,10 @@ export default defineEval({
     // 拆成两轮各一个动作(而不是一条提示词里塞两件事),降低模型只做其中一件的风险——
     // 仍是同一个 Eval、同一条会话线,只是分两步下达指令。
     const createTurn = await t.send(`在当前工作目录创建一个文件 ${relPath},内容只写一行:${fileMarker}。`);
-    createTurn.expectOk();
+    await createTurn.succeeded().stopOnFailure();
 
     const runTurn = await t.send(`跑 \`echo ${cmdMarker}\`,把命令的输出告诉我。`);
-    runTurn.expectOk();
+    await runTurn.succeeded().stopOnFailure();
 
     t.noFailedActions();
 

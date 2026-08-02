@@ -5,7 +5,7 @@
 //
 // `AgentEvent` → 标准事件的映射是官方转换器 `createPiAgentEventStream`(`"niceeval/adapter"` 导出)
 // 的事;逐帧驱动 + HITL 挂起用的是官方驱动件 `driveFrameStream`,停轮现场与会话续接的状态槽
-// 都在 `ctx.session` 上——不需要模块级状态、也不需要在 `defineAgent` 上声明什么。这里只剩传输
+// 都在 `ctx.session` 上——不需要模块级状态、也不需要在 `defineDirectAgent` 上声明什么。这里只剩传输
 // 粘合:端点在哪、三种传输帧怎么处理、审批打哪个端点。
 //
 // 无 OTel(pi-agent-core 没有官方集成,调研见
@@ -18,12 +18,12 @@
 // 先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。`take(heldSlot)`
 // 取到即清除,一次消费。
 import {
-  defineAgent,
+  defineDirectAgent,
   sseJsonFrames,
   createPiAgentEventStream,
   createSessionSlot,
   driveFrameStream,
-  completeCoverage,
+  completeEvidenceCoverage,
 } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, Turn, TurnInput } from "niceeval";
@@ -110,10 +110,10 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return readStream(sseJsonFrames<PiFrame>(res.body), ctx, createPiAgentEventStream());
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "pi-agent-core",
   // createPiAgentEventStream 是官方转换器,喂的是完整的 AgentEvent 流(见 server.ts:pi 的事件原样
   // 透传成 SSE,没有裁剪或采样)——全通道声明 complete。
-  coverage: completeCoverage,
+  evidenceCoverage: completeEvidenceCoverage,
   send,
 });

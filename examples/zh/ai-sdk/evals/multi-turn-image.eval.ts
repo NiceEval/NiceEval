@@ -18,12 +18,12 @@ export default defineEval({
   description: "测试 agent 在多轮对话中基于图片内容作答的能力",
 
   async test(t) {
-    (await t.sendFile("evals/sample.png", "这张图片里有什么？")).expectOk();
-    (await t.send("图片里的背景是什么颜色？")).expectOk();
-    (await t.send("中间那个形状是什么颜色的？")).expectOk();
+    await (await t.sendFile("evals/sample.png", "这张图片里有什么？")).succeeded().stopOnFailure();
+    await (await t.send("图片里的背景是什么颜色？")).succeeded().stopOnFailure();
+    await (await t.send("中间那个形状是什么颜色的？")).succeeded().stopOnFailure();
 
     await t.group("三轮都正常收发", () => {
-      // 每轮 send 已各自 .expectOk()；succeeded() 再确认整次运行没有失败或卡在 HITL。
+      // 每轮 send 已各自 succeeded().stopOnFailure()；succeeded() 再确认整次运行没有失败或卡在 HITL。
       // 事件流现在也含 user 消息，不再用 event("message",{count}) 数 assistant 轮数。
       t.succeeded();
     });

@@ -24,7 +24,7 @@ export default defineEval({
         '(call it with repoName "openai/codex", do not guess). ' +
         "Report the sum, then a comma-separated list of the top-level topic names you found.",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("stdio MCP 工具调用且入参正确", () => {
       t.calledTool("e2e.get-sum", { status: "completed", input: { a: 100, b: 23 } });

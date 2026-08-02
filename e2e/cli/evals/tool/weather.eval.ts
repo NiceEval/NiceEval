@@ -9,7 +9,7 @@ export default defineEval({
     const turn = await t.send(
       "What is the weather like in Brooklyn right now? You must call the get_weather tool to check, do not guess.",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     turn.calledTool("get_weather", { input: { city: /Brooklyn/i } });
   },
 });

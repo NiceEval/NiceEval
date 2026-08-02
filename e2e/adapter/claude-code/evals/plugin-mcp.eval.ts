@@ -26,7 +26,7 @@ export default defineEval({
         "然后重试同一个工具调用;持续重试直到成功,不要放弃。" +
         "只报告它返回的最终数字。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     t.calledTool("mcp__plugin_e2e-plugin_tools__get-sum", { input: { a: 55, b: 8 } });
     turn.messageIncludes("63");

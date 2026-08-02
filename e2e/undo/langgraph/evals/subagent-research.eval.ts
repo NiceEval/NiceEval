@@ -10,7 +10,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("帮我研究一下 langgraph 是什么,这个问题请委派给 research 子agent 处理。");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("research 子图被委派且正常完成", () => {
       t.calledSubagent("research", { status: "completed" });

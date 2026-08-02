@@ -12,7 +12,7 @@ export default defineEval({
     const turn = await t.send(
       "请调用 get_stock_price 工具查询股票代码 ACME 的当前价格,查到后用一句简短的话告诉我。",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     turn.calledTool("get_stock_price", {
       count: 1,

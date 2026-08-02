@@ -12,7 +12,7 @@ export default defineEval({
       "Search the web for the most recent news headline about OpenAI, then summarize it in one sentence. " +
         "If you cannot search the web, say so explicitly instead of guessing.",
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
     t.notCalledTool("web_search");
   },
 });

@@ -5,7 +5,7 @@
 //
 // 唯一非 LangGraphEventLike 的帧是 `{type: "session", sessionId}`(会话 id 回传,首轮才发,
 // 语义同其它 origin/* 示例)。
-import { completeCoverage, createSessionSlot, defineAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, LangGraphEventLike, LangGraphStream, SseFrameCursor } from "niceeval/adapter";
 import type { StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -136,12 +136,12 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return drainStream(sseJsonFrames<ProtoFrame>(res.body), createLangGraphEventStream(), ctx);
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "langgraph",
   send,
   // 官方 createLangGraphEventStream() 转换器 + 自建 SSE transport 忠实转写 LangGraph 真实的
   // messages/tools/input/lifecycle 四通道,不是最终自然语言或半覆盖埋点——声明全通道 complete,
   // 负断言(notCalledTool)与上限断言(maxTokens)才会真的判定,而不是记 unavailable/errored
   // (见 docs/feature/adapters/architecture/evidence.md)。
-  coverage: completeCoverage,
+  evidenceCoverage: completeEvidenceCoverage,
 });

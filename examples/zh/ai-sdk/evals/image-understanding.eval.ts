@@ -10,7 +10,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.sendFile("evals/fixtures/sample.png", "这张图片里有什么？主要是什么颜色？");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("助手描述出图片内容", () => {
       t.succeeded();

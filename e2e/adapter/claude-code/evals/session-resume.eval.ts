@@ -19,11 +19,11 @@ export default defineEval({
     const first = await t.send(
       "我叫 Ada,请记住这个名字。不要运行任何命令,也不要读取任何文件,用一句简短的话确认一下就好。",
     );
-    first.expectOk();
+    await first.succeeded().stopOnFailure();
     first.maxTokens(200_000);
 
     const recall = await t.send("我叫什么名字?只回答名字,不要运行任何命令。");
-    recall.expectOk();
+    await recall.succeeded().stopOnFailure();
     t.check(recall.message, includes("Ada"));
     recall.maxTokens(200_000);
   },
