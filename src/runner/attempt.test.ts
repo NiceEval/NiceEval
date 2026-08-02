@@ -31,6 +31,7 @@ import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
 import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
+import { defineExperimentState } from "../state/definition.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
@@ -145,6 +146,8 @@ async function runOnce(
     experimentId?: string;
     /** Experiment 级 Judge 覆盖。 */
     judge?: AgentRun["judge"];
+    /** 已完成规划的 Experiment State（生命周期顺序测试用）。 */
+    state?: AgentRun["state"];
     /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
     config?: Config;
     /** 复用池借出的实例(调度事实测试用):模拟 run.ts 把 lease 交给 runAttemptEffect。 */
@@ -171,7 +174,7 @@ async function runOnce(
     earlyExit: true,
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
     sandbox: selectedSandbox,
-    state: STATELESS,
+    state: opts.state ?? STATELESS,
     experimentId: opts.experimentId ?? "fake/experiment",
     experimentBaseDir: "/project",
     experimentSourcePath: "/project/fake.experiment.ts",
@@ -505,6 +508,80 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       "experiment.cleanup:b",
       "experiment.cleanup:a",
     ]);
+  });
+
+  it("State save 固定发生在 agent teardown 之后、作者 cleanup 之前", async () => {
+    const events: string[] = [];
+    const identity = { store: "fixture", cohort: "scope-order", schema: 1 } as const;
+    const checkpoint = {
+      identity: { revision: "fixture-r1" },
+      digest: { _tag: "Sha256" as const, value: "a".repeat(64) },
+      facts: {},
+    };
+    const definition = defineExperimentState({
+      identity,
+      consistency: { mode: "pinned", revision: "fixture-r1" },
+      saveOn: "after-load",
+      async load() {
+        events.push("state.load");
+        return checkpoint;
+      },
+      async save() {
+        events.push("state.save");
+        return checkpoint;
+      },
+    });
+    const box = new FakeSandbox();
+    const experimentLayer = fakeProviderLayer(box, "fake-provider-state-order")
+      .prepare(async (_sandbox, context) => {
+        events.push("sandbox.prepare");
+        context.onCleanup(async () => {
+          events.push("sandbox.cleanup");
+        });
+      });
+    const agent = defineSandboxAgent({
+      name: "fake-agent-state-order",
+      setup: async () => {
+        events.push("agent.setup");
+      },
+      send: async () => {
+        events.push("agent.send");
+        return { events: [], status: "completed" };
+      },
+      teardown: async () => {
+        events.push("agent.teardown");
+      },
+    });
+
+    const result = await runOnce(agent, box, {
+      experimentLayer,
+      state: {
+        _tag: "Pinned",
+        definition,
+        revision: "fixture-r1",
+        cadence: "attempt",
+      },
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          await t.send("go");
+        },
+      },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(events).toEqual([
+      "sandbox.prepare",
+      "state.load",
+      "agent.setup",
+      "agent.send",
+      "agent.teardown",
+      "state.save",
+      "sandbox.cleanup",
+    ]);
+    expect(result.state).toMatchObject({
+      load: { outcome: "succeeded" },
+      save: { outcome: "succeeded" },
+    });
   });
 
   it("prepare 中途失败时后续命令与 agent 不运行，只清理已登记资源", async () => {

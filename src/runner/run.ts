@@ -3,11 +3,16 @@
 // reporter 编排 / 汇总在 report.ts,Sandbox 适配器在 remote-sandbox.ts。
 
 import { readFile } from "node:fs/promises";
-import { Effect, Cause, Exit } from "effect";
+import { Effect, Cause, Either, Exit, Option } from "effect";
 import { probeJudge } from "../scoring/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, carriableAttempts, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
-import { configDeltas, configIdentityForRun, configIdentityFromResult } from "./config-identity.ts";
+import {
+  agentInstallPlansForRun,
+  configDeltas,
+  configIdentityForRun,
+  configIdentityFromResult,
+} from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -63,7 +68,7 @@ import {
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
-import type { PreparedRunPair } from "./sandbox-selection.ts";
+import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
@@ -89,6 +94,7 @@ import {
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
 import { loadLatestResultsForCase } from "../record/open.ts";
 import type { RunManifests } from "../record/manifest.ts";
+import { linkedRunFingerprintIdentity } from "../sandbox/plan.ts";
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -97,6 +103,19 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 }
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
+}
+
+function attemptIdentityKey(
+  experimentId: string | undefined,
+  agentName: string,
+  model: string | undefined,
+  evalId: string,
+): string {
+  return JSON.stringify([experimentId, agentName, model ?? null, evalId]);
+}
+
+function attemptGroupKey(run: AgentRun, evalId: string): string {
+  return attemptIdentityKey(run.experimentId, run.agent.name, run.model, evalId);
 }
 
 export type { AgentRun, RunOptions } from "./types.ts";
@@ -184,6 +203,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 等),判定本身不可信,必须重跑。跳过/fingerprint 不匹配同样重跑。--force 跳过此逻辑
   // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
   // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
+  const carryPlan = opts.carryPlan ?? (await Effect.runPromise(planCarry(
+    opts.evals,
+    opts.agentRuns,
+    opts.priorResults,
+    opts.config.timeoutMs,
+    {
+      rerun: opts.rerun,
+      configJudge: opts.config.judge,
+      ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
+      keepSandbox: opts.keepSandbox,
+      accept: opts.accept,
+    },
+  )));
   const {
     preparedPairsByKey,
     plannedConfigHashes,
@@ -193,15 +225,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     carriedResults: planCarriedResults,
     carriedAcceptingByResult,
     manifestsByKey,
-  } =
-    opts.carryPlan ??
-    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.timeoutMs, {
-      rerun: opts.rerun,
-      configJudge: opts.config.judge,
-      ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
-      keepSandbox: opts.keepSandbox,
-      accept: opts.accept,
-    }));
+  } = carryPlan;
+  // CarryPlan 是冻结快照；派发重查期间新发现的 accept 留痕进入独立运行状态，绝不回写计划。
+  const runtimeCarriedAcceptingByResult = new Map(carriedAcceptingByResult);
   if (preparedPairsByKey === undefined) {
     throw new Error("CarryPlan is incomplete: preparedPairsByKey must come from physical Sandbox planning.");
   }
@@ -214,7 +240,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 才能对上号。判定面不受影响:能走到这里,说明这条已经过了携带资格判据。
    */
   const restampCarried = (r: EvalResult): EvalResult => {
-    const key = `${r.experimentId ?? ""}|${r.id}`;
+    if (r.experimentId === undefined) return r;
+    const key = runPairKey(r.experimentId, r.id);
     const fp = plannedFingerprints.get(key);
     const configHash = plannedConfigHashes.get(key);
     return fp === undefined
@@ -223,8 +250,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           ...r,
           fingerprint: fp,
           configHash,
-          ...(carriedAcceptingByResult.has(r)
-            ? { carriedAccepting: [...(carriedAcceptingByResult.get(r) ?? [])] }
+          ...(runtimeCarriedAcceptingByResult.has(r)
+            ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
             : {}),
         };
   };
@@ -250,7 +277,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const evals = selectedEvalsForRun(opts.evals, run);
     for (let i = 0; i < run.attempts; i++) {
       for (const evalDef of evals) {
-        const carryKey = `${run.experimentId}|${evalDef.id}`;
+        const carryKey = cacheKey(run, evalDef.id);
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
         // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——runs:5 里若只有
         // 序号 1 是上一轮的终态、序号 0 是 errored,这里必须只跳过序号 1、照常调度序号 0。
@@ -259,7 +286,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 同 key 的重试轮。experimentId 必须进 key:两个实验可以同 agent 同 model、只差
         // flags(feature A/B 正是这种形状),漏掉它会让先过的实验把其它实验的同名 eval
         // 整个跳掉——花了钱还丢结果。
-        const key = `${run.experimentId}|${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
+        const key = attemptGroupKey(run, evalDef.id);
         const prepared = preparedPairsByKey.get(cacheKey(run, evalDef.id));
         if (prepared === undefined) {
           throw new Error(`Missing prepared Sandbox plan for ${JSON.stringify(cacheKey(run, evalDef.id))}.`);
@@ -373,20 +400,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
   const buildFailureByEval = new Map<string, AttemptError>();
   const buildLocatorsByEval = new Map<string, Map<string, string>>();
-  const caseKeyByEval = new Map<string, string>();
+  const buildLocatorsByAttempt = new WeakMap<Attempt, ReadonlyMap<string, string>>();
 
   const collected =
     opts.buildPreparation === undefined
-      ? await collectBuildPreparation({
+      ? await Effect.runPromise(collectBuildPreparation({
           preparedPairs: [...preparedPairsByKey.values()],
           carriedAttemptsByKey,
-        })
-      : undefined;
-  if (collected) {
-    for (const [evalId, caseKey] of collected.caseKeys) caseKeyByEval.set(evalId, caseKey);
-  }
-
-  const buildPrep = opts.buildPreparation ?? (collected ? toBuildPreparation(collected) : undefined);
+        }))
+      : Option.none();
+  const buildPreparation = opts.buildPreparation === undefined
+    ? Option.flatMap(collected, toBuildPreparation)
+    : Option.some(opts.buildPreparation);
+  const buildPrep = Option.getOrUndefined(buildPreparation);
   // 共享构建**不阻塞派发**:整批 key 同时开工,每条 attempt 只等自己引用的那几个 key
   // (case.md「Run 级构建协调」第 4 条的逐 key 放行)。全局 barrier 会让 10 个已就绪的镜像
   // 陪着最慢的那个构建干等(台账见 memory/shared-build-single-barrier-not-per-buildkey.md)。
@@ -443,19 +469,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     return pending;
   };
 
-  // CaseKey 与构建无关,展开后立即灌进 attempts;locators 在各自的 key 结算后补进去。
-  for (const a of attempts) {
-    const caseKey = caseKeyByEval.get(cacheKey(a.run, a.evalDef.id)) ?? caseKeyByEval.get(a.evalDef.id);
-    if (caseKey !== undefined) a.caseKey = caseKey;
-  }
-
   // Run 级 Agent artifact prepare:由 attempt 内探测到目标 Sandbox 平台后触发 single-flight。
   // 绝不能在这里按宿主平台 eager prepare：macOS 宿主跑 Linux Sandbox 会拿到错误制品。
   const artifactPrepare =
     opts.artifactPrepare ??
     new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
-  // 把 coordinator 挂到 opts 上,供 attempt 内 runner-owned ensure 读取(同对象引用)。
-  (opts as { artifactPrepare?: ArtifactPrepareCoordinator }).artifactPrepare = artifactPrepare;
+  // 运行期依赖用新快照扩展，不回写调用方交进来的 RunOptions 计划对象。
+  const attemptOptions: RunOptions = opts.artifactPrepare === undefined
+    ? { ...opts, artifactPrepare }
+    : opts;
 
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
   // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。
@@ -555,7 +577,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 还失败,或想凑够 pass@N 的样本量)。
   for (const r of carriedResults) {
     if (r.verdict === "passed" && r.experimentId) {
-      passedKeys.add(`${r.experimentId}|${r.agent}|${r.model ?? ""}|${r.id}`);
+      passedKeys.add(attemptIdentityKey(r.experimentId, r.agent, r.model, r.id));
     }
   }
 
@@ -598,9 +620,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
   const allReusePools = (): ReusableSandboxPool[] =>
     [...reusePools.values()].flatMap((bySpec) => [...bySpec.values()]);
-  const reusePoolFor = (a: Attempt): ReusableSandboxPool | undefined => {
-    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
-    const key = digestOf(a.plan.providerPlan.identity);
+  type ReusePoolSelection =
+    | { readonly _tag: "Fresh" }
+    | { readonly _tag: "Reuse"; readonly pool: ReusableSandboxPool };
+  const reusePoolFor = (a: Attempt): Effect.Effect<ReusePoolSelection, never, import("effect").Scope.Scope> => {
+    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") {
+      return Effect.succeed({ _tag: "Fresh" });
+    }
+    const poolIdentity = {
+      version: 1,
+      linkedPlan: linkedRunFingerprintIdentity(a.plan),
+      agentInstalls: [...agentInstallPlansForRun(a.run)],
+    } as const;
+    const key = digestOf(poolIdentity);
     let bySpec = reusePools.get(a.run);
     if (bySpec === undefined) {
       bySpec = new Map<string, ReusableSandboxPool>();
@@ -620,7 +652,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       const plannedUses = attempts.filter((candidate) =>
         candidate.run === a.run &&
         candidate.plan._tag === "Sandbox" &&
-        digestOf(candidate.plan.providerPlan.identity) === key
+        digestOf({
+          version: 1,
+          linkedPlan: linkedRunFingerprintIdentity(candidate.plan),
+          agentInstalls: [...agentInstallPlansForRun(candidate.run)],
+        }) === key
       ).length;
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: () => {},
@@ -634,8 +670,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             plannedUses,
           });
       bySpec.set(key, pool);
+      return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
-    return pool;
+    return Effect.succeed({ _tag: "Reuse", pool });
   };
 
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。
@@ -704,14 +741,18 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // ExperimentDef.teardown 字段,按 per-run 剩余 attempt 计数在最后一个 attempt 收尾后执行,
   // 当且仅当 setup 时点走到过(triggered)——setup 抛错不豁免,未声明 setup 不影响触发;
   // 计数递减挂在 Effect.ensuring 上,中断路径同样递减,teardown 因此必跑。
+  type ExperimentSetupState =
+    | { readonly _tag: "Pending" }
+    | { readonly _tag: "Succeeded" }
+    | { readonly _tag: "Failed"; readonly error: AttemptError };
+
   interface ExperimentLifecycle {
     /** memoized 的 setup 执行;undefined = 还没有 attempt 触发过。未声明 setup 时为已决议 promise。 */
     setupPromise?: Promise<void>;
     /** setup 时点已走到(第一个通过派发许可的 attempt 已触发本实验生命周期;未声明 setup 也置位)。 */
     triggered: boolean;
-    /** setup 抛过错(用独立布尔标记,不能拿 error 值判断——throw undefined 也是失败)。 */
-    setupFailed: boolean;
-    setupError?: unknown;
+    /** setup 的完成态；throw 任意 JS 值都在 catch 边界立即归一成 AttemptError。 */
+    setupState: ExperimentSetupState;
     /** teardown 的 memoized 执行体:谁先到(计数归零 / 扫尾 / 强清 drain)谁启动,后到者等
      *  同一个 promise——「恰好一次 + 在飞可等待」的全部机制。undefined = 还没人启动。 */
     teardownPromise?: Promise<void>;
@@ -725,7 +766,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (!a.run.setup && !a.run.teardown) continue;
     let lc = expLifecycles.get(a.run);
     if (!lc)
-      expLifecycles.set(a.run, (lc = { triggered: false, setupFailed: false, remaining: 0, tornDown: false }));
+      expLifecycles.set(a.run, (lc = {
+        triggered: false,
+        setupState: { _tag: "Pending" },
+        remaining: 0,
+        tornDown: false,
+      }));
     lc.remaining += 1;
   }
 
@@ -1054,9 +1100,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           throw e;
         }
         reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
-      })().catch((e) => {
-        lc.setupFailed = true;
-        lc.setupError = e;
+      })().then(() => {
+        lc.setupState = { _tag: "Succeeded" };
+      }).catch((e) => {
+        lc.setupState = {
+          _tag: "Failed",
+          error: { ...errorFromThrown(e, "experiment.setup"), code: "experiment-setup-failed" },
+        };
       });
     }
     return lc.setupPromise;
@@ -1413,7 +1463,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               )
                 .filter((delta) => opts.accept!.includes(delta.selector));
           if (crossed.length > 0) {
-            carriedAcceptingByResult?.set(r, crossed);
+            runtimeCarriedAcceptingByResult.set(r, crossed);
             recordExperimentDiagnostic({
               experimentId,
               code: "accept",
@@ -1427,7 +1477,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         }
         lateCarriedResults.push(restampCarried(r));
         if (r.verdict === "passed") {
-          passedKeys.add(`${experimentId}|${a0.run.agent.name}|${a0.run.model ?? ""}|${evalId}`);
+          passedKeys.add(attemptGroupKey(a0.run, evalId));
         }
       }
     }
@@ -1688,10 +1738,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     readonly reacquire: Effect.Effect<void>;
   }
 
-  const withGlobalSlot = (
+  const withGlobalSlot = <R>(
     haltSignal: Effect.Effect<void>,
-    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome>,
-  ): Effect.Effect<DispatchOutcome> =>
+    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome, never, R>,
+  ): Effect.Effect<DispatchOutcome, never, R> =>
     Effect.uninterruptibleMask((restore) => {
       const state = { held: false };
       const release = Effect.suspend(() =>
@@ -1738,10 +1788,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 正常返回,作用域退出、名额归还,挂起结束后重新取——挂起的用例不占名额,否则同实验的
    * 持锁方(可能就在另一条 Invocation 里)会被自己的等待方饿死。
    */
-  const withExperimentGate = (
+  const withExperimentGate = <R>(
     a: Attempt,
-    use: Effect.Effect<DispatchOutcome>,
-  ): Effect.Effect<DispatchOutcome> => {
+    use: Effect.Effect<DispatchOutcome, never, R>,
+  ): Effect.Effect<DispatchOutcome, never, R> => {
     const { maxConcurrency, experimentId } = a.run;
     const localSem = gateLocalSems.get(a.run);
     if (maxConcurrency === undefined || localSem === undefined) return use;
@@ -1791,7 +1841,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 把「中断/signal 已 abort」当正常的部分结果收尾,只有真·非中断缺陷才上抛。
   let interrupted = false;
   const exit = await Effect.runPromiseExit(
-    Effect.forEach(
+    Effect.scoped(Effect.forEach(
       attempts,
       (a) => {
         const budgetKey = a.run.experimentId ?? a.run.agent.name;
@@ -1888,6 +1938,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               evalAc && opts.signal
                 ? AbortSignal.any([opts.signal, evalAc.signal])
                 : (evalAc?.signal ?? opts.signal);
+            const buildLocators = buildLocatorsByAttempt.get(a);
 
             // turn 级重试退避期间释放/收回的并发槽位——两级闸按持有期分工的单点契约见
             // docs/runner.md「调度:有界并发」与 docs/feature/error-classification/
@@ -1943,14 +1994,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const expLc = expLifecycles.get(a.run);
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByEval.get(cacheKey(a.run, a.evalDef.id));
-            const blockedError: AttemptError | undefined = expLc?.setupFailed
-              ? { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" }
+            const blockedError: AttemptError | undefined = expLc?.setupState._tag === "Failed"
+              ? expLc.setupState.error
               : precheckFailure !== undefined
                 ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
                 : buildFailure !== undefined
                   ? buildFailure
                   : undefined;
-            const pool = blockedError ? undefined : reusePoolFor(a);
+            const poolSelection: ReusePoolSelection = blockedError === undefined
+              ? yield* reusePoolFor(a)
+              : { _tag: "Fresh" };
             // 复用池的租借失败(实例创建、SandboxSpec setup 钩子、寿命确认都在池内)是**这条
             // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
             // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
@@ -1959,33 +2012,27 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
             // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
             // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
-            const leased = pool
-              ? yield* Effect.promise(() =>
-                  // 复用池要预留的寿命 = 这条 attempt 实际生效的上限,与 attempt.ts 同一个解析链
-                  // (单源见 runner/timeout.ts),不在这里重写一遍 `??`。没有上限时如实传
-                  // undefined:池只能要求覆盖收尾预留,不替 attempt 编一条 deadline。
-                  pool
-                    .acquire(
-                      resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
-                      a.buildLocators,
-                    )
-                    .then(
-                      (ok) => ({ ok: true, lease: ok }) as const,
-                      (e: unknown) => ({ ok: false, error: e }) as const,
-                    ),
-                )
-              : undefined;
-            const lease = leased?.ok === true ? leased.lease : undefined;
+            const result = yield* Effect.scoped(Effect.gen(function* () {
+              const leased = poolSelection._tag === "Reuse"
+              ? Either.match(yield* Effect.either(poolSelection.pool.acquire(
+                  resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
+                  buildLocators,
+                )), {
+                  onLeft: (error) => ({ _tag: "Failed" as const, error }),
+                  onRight: (lease) => ({ _tag: "Acquired" as const, lease }),
+                })
+              : { _tag: "NotRequested" as const };
+            const lease = leased._tag === "Acquired" ? leased.lease : undefined;
             // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxSpec setup + 确认寿命」
             // 打包成一次借出,调度器这一侧只知道这条 attempt 没能拿到可用实例。
             const leaseError: AttemptError | undefined =
-              leased?.ok === false ? errorFromThrown(leased.error, "sandbox.create") : undefined;
-            if (leased?.ok === false) {
+              leased._tag === "Failed" ? errorFromThrown(leased.error, "sandbox.create") : undefined;
+            if (leased._tag === "Failed") {
               const declaration = attemptFailureDeclaration(a.run.classifyFailure, "sandbox.create", leased.error);
               if (declaration) closeHaltGate(a, declaration);
             }
             const failedBeforeDispatch = blockedError ?? leaseError;
-            const result = failedBeforeDispatch
+            const evaluated = failedBeforeDispatch
               ? ({
                   id: a.evalDef.id,
                   description: a.evalDef.description,
@@ -2008,7 +2055,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   evidenceCoverage: a.run.agent.evidenceCoverage,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)
-              : yield* runAttemptEffect(a, opts, sandboxSem, {
+              : yield* runAttemptEffect(
+                  buildLocators === undefined ? a : { ...a, buildLocators },
+                  attemptOptions,
+                  sandboxSem,
+                  {
                   parentSignal: attemptSignal,
                   concurrencySlot,
                   ...(lease
@@ -2026,12 +2077,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                   // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                   onFailureClass: (declaration) => closeHaltGate(a, declaration),
-                });
+                  },
+                );
             if (lease) {
               // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
               // 本条结果如实保留，后续派发创建替代实例。
-              yield* Effect.promise(() => lease.release(true));
+              const failedDuringStateSave = evaluated.error?.origin.scope === "attempt" &&
+                evaluated.error.origin.phase === "state.save";
+              const mustRetire = evaluated.error?.code === "timeout" ||
+                evaluated.error?.code === "agent-send-failed" ||
+                failedDuringStateSave ||
+                evaluated.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true;
+              yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
             }
+            return evaluated;
+            }));
             // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
             // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
             // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
@@ -2188,7 +2248,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           const pairKey = cacheKey(a.run, a.evalDef.id);
           yield* Effect.promise(() => awaitBuildsFor(pairKey, a.evalDef.id));
           const locators = buildLocatorsByEval.get(pairKey);
-          if (locators !== undefined) a.buildLocators = locators;
+          if (locators !== undefined) buildLocatorsByAttempt.set(a, locators);
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
@@ -2250,7 +2310,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         }
         return Effect.failCause(cause); // 非中断的意外缺陷:照常抛出
       }),
-    ),
+    )),
     { signal: opts.signal },
   );
   // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
@@ -2261,7 +2321,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     sandboxBuildRecords = [...(await runningBuilds.done).records];
   }
   const pools = allReusePools();
-  await Promise.allSettled(pools.map((pool) => pool.stop()));
   const stateWindowsByExperiment = new Map<string, import("../state/types.ts").StateWindowRecord[]>();
   for (const pool of pools) {
     for (const record of pool.stateWindowRecords()) {

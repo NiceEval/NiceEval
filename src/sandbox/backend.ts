@@ -70,6 +70,9 @@ export async function runProviderBoundary<T>(operation: () => Promise<T>): Promi
 /** defineSandbox() 的公共新接口实现显式降成 provider backend；不探测任何旧方法。 */
 export function customSandboxBackend(sandbox: Sandbox): SandboxProviderBackend {
   const appendLog = sandbox.appendLog;
+  // Provider facade 产出的 Sandbox 再经 runtime 归一化时必须保留 provider-only capabilities；
+  // 作者直接返回的普通 Sandbox 没有登记项，仍严格退回 Unsupported，不能靠鸭子类型猜能力。
+  const registered = SANDBOX_CAPABILITIES.get(sandbox) ?? noSandboxBackendCapabilities;
   return {
     get workdir() {
       return sandbox.workdir;
@@ -81,12 +84,10 @@ export function customSandboxBackend(sandbox: Sandbox): SandboxProviderBackend {
       return sandbox.otlpHost;
     },
     capabilities: {
+      ...registered,
       appendLog: appendLog === undefined
         ? unsupportedBackendCapability
         : supportedBackendCapability((line) => appendLog.call(sandbox, line)),
-      suspend: unsupportedBackendCapability,
-      ensureLifetime: unsupportedBackendCapability,
-      setCommandDeadline: unsupportedBackendCapability,
     },
     runCommand: (command, args, options) => sandbox.runCommand(command, args, options),
     runShell: (script, options) => sandbox.runShell(script, options),

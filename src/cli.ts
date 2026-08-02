@@ -26,6 +26,7 @@ import {
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
+import type { FingerprintDelta } from "./runner/manifest.ts";
 import {
   createStdinPromptReader,
   equivalentAcceptCommand,
@@ -61,6 +62,7 @@ import {
   computeExitCode,
   reportActivity,
   type JsonPlanRow,
+  type JsonPlanDelta,
 } from "./runner/feedback/index.ts";
 import {
   buildView,
@@ -442,14 +444,14 @@ function planRowInputs(
   matchedByRun: DiscoveredEval[][],
   carryPlan: CarryPlan | undefined,
   incompatibleKeys: ReadonlySet<string>,
-): { experimentId: string; evalId: string; reused: boolean; dispatch: DispatchGroup[] }[] {
-  const rows: { experimentId: string; evalId: string; reused: boolean; dispatch: DispatchGroup[] }[] = [];
+): { experimentId: string; evalId: string; reused: boolean; dispatch: readonly DispatchGroup[] }[] {
+  const rows: { experimentId: string; evalId: string; reused: boolean; dispatch: readonly DispatchGroup[] }[] = [];
   for (let i = 0; i < agentRuns.length; i++) {
     const run = agentRuns[i]!;
     for (const e of matchedByRun[i]!) {
       const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? 0;
       // 没有任何可读历史时不必先跑一趟携带规划:计划内每个序号都缺条目,逐条报缺历史门的原因词。
-      const dispatch: DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
+      const dispatch: readonly DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
         ?? (carriedCount >= run.attempts
           ? []
           : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
@@ -457,6 +459,16 @@ function planRowInputs(
     }
   }
   return rows;
+}
+
+/** 内部 ADT tag 不属于 `ExpPlanDelta` 的公开 JSON 契约；边界显式投影，禁止对象展开泄漏。 */
+function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
+  switch (delta._tag) {
+    case "Added": return { selector: delta.selector, to: delta.to };
+    case "Removed": return { selector: delta.selector, from: delta.from };
+    case "Changed": return { selector: delta.selector, from: delta.from, to: delta.to };
+    case "Unknown": return { selector: delta.selector };
+  }
 }
 
 /**
@@ -1170,14 +1182,14 @@ async function main(): Promise<void> {
   }
   // 即使没有历史也必须规划：它是 link → physical plan → fingerprint → dispatch 的唯一完成态，
   // dry 与真实运行都消费同一组不可变 PreparedRunPair。
-  let carryPlan = await planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
+  let carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
     rerun: flags.rerun,
     configJudge: config.judge,
     keepSandbox: flags.keepSandbox,
     accept: flags.accept,
     incompatibleKeys,
     priorManifests: carryInputs?.manifestsByEvalKey,
-  });
+  }));
 
   // 不带值的 `--accept` 在非 TTY 下是用法错误。报错落在这里而不是解析 argv 时:它要带上
   // 本次计划里真实可授权的原因清单(与 selector 空转报错同一份枚举),那份清单要等携带规划
@@ -1225,14 +1237,14 @@ async function main(): Promise<void> {
       } else {
         process.stderr.write(t("cli.accept.equivalent", { command: equivalentAcceptCommand(acceptCommand, chosen) }));
         flags.accept = chosen;
-        carryPlan = await planCarry(evals, agentRuns, priorResults ?? [], config.timeoutMs, {
+        carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults ?? [], config.timeoutMs, {
           rerun: flags.rerun,
           configJudge: config.judge,
           keepSandbox: flags.keepSandbox,
           accept: chosen,
           incompatibleKeys,
           priorManifests: carryInputs?.manifestsByEvalKey,
-        });
+        }));
       }
     }
   }
@@ -1283,7 +1295,7 @@ async function main(): Promise<void> {
             dispatch: row.dispatch.map((group) => ({
               gate: group.gate,
               attempts: [...group.attempts],
-              ...(group.deltas !== undefined ? { deltas: group.deltas.map((delta) => ({ ...delta })) } : {}),
+              ...(group.deltas !== undefined ? { deltas: group.deltas.map(jsonPlanDelta) } : {}),
             })),
           }
         : {}),

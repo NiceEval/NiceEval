@@ -78,7 +78,12 @@ import type {
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
 import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
-import { ExperimentStateWindow, ExperimentStateSequenceFailure } from "../state/runtime.ts";
+import {
+  ExperimentStateWindow,
+  ExperimentStateSequenceFailure,
+  StateWindowTransitionFailure,
+  type AttemptCompletion,
+} from "../state/runtime.ts";
 import { experimentStateProjection } from "../state/definition.ts";
 import type { ReusableLeaseStateWindow } from "./sandbox-pool.ts";
 import type {
@@ -416,6 +421,14 @@ export function runAttemptEffect(
     );
   };
 
+  const layerCleanups: LayerCleanupEntry[] = [];
+  let attemptStateForResult: AttemptState = { _tag: "Stateless" };
+  const scopeOutcome: AttemptScopeOutcome = {
+    completion: { _tag: "VerdictNotPassed", verdict: "errored" },
+    stateFailure: undefined,
+    stateRecord: undefined,
+  };
+
   return Effect.scoped(
     Effect.gen(function* () {
       const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
@@ -466,28 +479,26 @@ export function runAttemptEffect(
                   assertDeadlineFitsPlan(runtimeCapabilities, attemptTimeout?.timeoutMs);
                   if (opts.keepSandbox !== undefined && runtimeCapabilities.retention._tag !== "Suspendable") {
                     throw new Error(
-                      `--keep-sandbox is unsupported by runtime adapter ${JSON.stringify(sandboxPlan.providerPlan.runtimeAdapter)}`,
+                      `--keep-sandbox is unsupported by provider ${JSON.stringify(runtimeCapabilities.provider)}`,
                     );
                   }
                   const runtimeDeadline: SandboxRuntimeDeadline = attemptTimeout === undefined || deadlineAt === undefined
                     ? { _tag: "Unlimited" }
                     : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
-                  const materialized = yield* Effect.acquireRelease(
-                    materializeSandboxRunPlan({
-                      plan: sandboxPlan,
-                      evalId: evalDef.id,
-                      deadline: runtimeDeadline,
-                      feedback: scopedFeedback,
-                      signal,
-                      buildLocators: a.buildLocators ?? new Map(),
-                      provisionSlot: { _tag: "Bound", value: provisionSlot },
-                      services: liveSandboxRuntimeServices,
-                    }),
-                    // Sample release 按 disposition 收尾:stop = 整组销毁(默认);keep = provider
-                    // suspend(sandbox.suspend 阶段,有界计时),成功把登记项转 dormant,
-                    // 失败保持 alive 并追加 diagnostic——不销毁、不冒充 dormant。
-                    (owned) =>
-                      Effect.promise(async () => {
+                  const materialized = yield* materializeSandboxRunPlan({
+                    plan: sandboxPlan,
+                    evalId: evalDef.id,
+                    deadline: runtimeDeadline,
+                    feedback: scopedFeedback,
+                    signal,
+                    buildLocators: a.buildLocators ?? new Map(),
+                    provisionSlot: { _tag: "Bound", value: provisionSlot },
+                    services: liveSandboxRuntimeServices,
+                    // Provider runtime 自己用 acquireRelease 持有 Case；Attempt 只提交显式
+                    // Managed disposition，避免外层再包一层 acquireRelease 造成 double-stop。
+                    release: {
+                      _tag: "Managed",
+                      run: (owned) => Effect.promise(async () => {
                         const sb = owned.sandbox;
                         if (disposition !== "keep") {
                           await owned.group.stop();
@@ -512,7 +523,8 @@ export function runAttemptEffect(
                           });
                         }
                       }),
-                  );
+                    },
+                  });
                   return materialized.sandbox;
                 }),
               );
@@ -523,6 +535,26 @@ export function runAttemptEffect(
         sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
       }
       if (run.agent.kind !== "sandbox") log(t("runner.useRemoteAgent"));
+
+      const plannedState = run.state;
+      const attemptState: AttemptState = plannedState._tag === "Stateless"
+        ? { _tag: "Stateless" }
+        : reusedSandbox === undefined
+          ? {
+              _tag: "Fresh",
+              window: yield* ExperimentStateWindow.make(plannedState, run.experimentId, randomUUID()),
+            }
+          : reusedSandbox.stateWindow?._tag === "Stateful"
+            ? {
+                _tag: "Reused",
+                window: reusedSandbox.stateWindow.window,
+                lastPlannedUse: reusedSandbox.lastPlannedUse === true,
+              }
+            : yield* Effect.die(
+                new Error("Stateful AgentRun received a Stateless reusable Sandbox lease."),
+              );
+      attemptStateForResult = attemptState;
+      const commandTarget = createSandboxCommandTarget(sandbox);
 
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
@@ -624,6 +656,81 @@ export function runAttemptEffect(
         }),
       );
 
+      // 先登记作者 cleanup、再登记 State；Scope 的 LIFO 让实际收尾顺序固定为
+      // Agent teardown(body finally) → State save → 作者 cleanup → Provider Case finalizer。
+      // cleanup 使用新的有界 signal，不复用已经超时/取消的 Attempt signal。
+      if (run.agent.kind === "sandbox") {
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(async () => {
+            if (layerCleanups.length === 0) return;
+            enterPhase("sandbox.cleanup");
+            await recorder
+              .measureClosing("sandbox.cleanup", async () => {
+                const before = diagnostics.length;
+                for (let i = layerCleanups.length - 1; i >= 0; i--) {
+                  const cleanup = layerCleanups[i]!;
+                  const startedAt = Date.now();
+                  const node = recorder.child(sandboxPrepareActivity({
+                    label: `${cleanup.label} cleanup`,
+                    startOffsetMs: Math.max(0, startedAt - t0),
+                  }));
+                  if (node) recorder.pushParent(node);
+                  try {
+                    const cleanupSignal = AbortSignal.timeout(CLEANUP_TIMEOUT_MS);
+                    await withCleanupTimeout(() => cleanup.command(commandTarget, {
+                      ...cleanup.context,
+                      signal: cleanupSignal,
+                    }));
+                  } catch (error) {
+                    if (node) node.failed = true;
+                    declareFailure("sandbox.cleanup", error);
+                    diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
+                  } finally {
+                    if (node) {
+                      node.durationMs = Date.now() - startedAt;
+                      recorder.popParent();
+                    }
+                  }
+                }
+                if (diagnostics.length > before) throw new Error("sandbox cleanup diagnostics");
+              })
+              .catch(() => {});
+          }),
+        );
+      }
+
+      const finalizeState =
+        attemptState._tag === "Fresh" ||
+        (attemptState._tag === "Reused" && attemptState.lastPlannedUse);
+      if (attemptState._tag !== "Stateless" && finalizeState) {
+        yield* Effect.addFinalizer(() => {
+          enterPhase("state.save");
+          const startedAt = Date.now();
+          return Effect.either(attemptState.window.finalize({
+            sandbox: commandTarget,
+            progress: scopedFeedback.progress,
+            diagnostic: (input) => scopedFeedback.diagnostic({ ...input, level: "warning" }),
+            fact: (key, value) => recordFact(facts, key, value),
+          }, {
+            completion: scopeOutcome.completion,
+            budget: { _tag: "Bounded", timeoutMs: CLEANUP_TIMEOUT_MS },
+          })).pipe(
+            Effect.tap((finalized) => Effect.gen(function* () {
+              recorder.record("state.save", Date.now() - startedAt, Either.isLeft(finalized));
+              if (Either.isLeft(finalized)) {
+                scopeOutcome.stateFailure = finalized.left;
+                declareFailure("state.save", finalized.left);
+              } else {
+                scopeOutcome.stateRecord = finalized.right;
+              }
+              const snapshot = yield* attemptState.window.snapshot();
+              if (snapshot._tag === "Finalized") scopeOutcome.stateRecord = snapshot.record;
+            })),
+            Effect.asVoid,
+          );
+        });
+      }
+
       // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断
       //(用户 Ctrl+C / 下面 timeoutTo 到点)时 abort —— 并进 signal,让真正观察 signal 的
       // adapter / docker 命令随中断一起停,而不只靠 Sample release 兜底。
@@ -651,7 +758,11 @@ export function runAttemptEffect(
           commands,
           concurrencySlot,
           declareFailure,
-          reusedSandbox,
+          attemptState,
+          layerCleanups,
+          complete: (result, agentTeardownSucceeded) => {
+            scopeOutcome.completion = completionFor(result, agentTeardownSucceeded);
+          },
           registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
             liveEvents = getEvents;
             liveUsage = getUsage;
@@ -751,10 +862,42 @@ export function runAttemptEffect(
     // 必须等 Sample release(本 map 之前的所有 finalizer)跑完才有值,不能在 onTimeout 的同步
     // 回调里就地给,原理与 phases 完全一致(见该 finalizer 与 onTimeout 的注释)。
     Effect.map((r: EvalResult): EvalResult => {
+      const stateFailure = scopeOutcome.stateFailure;
+      const afterState: EvalResult = stateFailure === undefined
+        ? r
+        : {
+            ...r,
+            verdict: "errored",
+            error: {
+              ...errorFromThrown(stateFailure, "state.save"),
+              code: stateFailure instanceof ExperimentStateSequenceFailure && stateFailure.activity.outcome === "failed"
+                ? stateFailure.activity.code
+                : "state.save.failed",
+            },
+          };
+      const state = attemptStateForResult._tag === "Stateless"
+        ? undefined
+        : run.state._tag !== "Stateless" && run.state.cadence === "attempt" && scopeOutcome.stateRecord !== undefined
+          ? {
+              windowId: scopeOutcome.stateRecord.windowId,
+              load: scopeOutcome.stateRecord.load,
+              save: scopeOutcome.stateRecord.save,
+            }
+          : { windowId: attemptStateForResult.window.windowId };
+      const withEvidence: EvalResult = {
+        ...afterState,
+        ...(diagnostics.length > 0 ? { diagnostics: [...diagnostics] } : {}),
+        ...(Object.keys(facts).length > 0 ? { facts: { ...facts } } : {}),
+        ...(commands.length > 0 ? { commands: [...commands] } : {}),
+        ...(state !== undefined ? { state } : {}),
+      };
       const phases = recorder.finalize();
       // 现有阶段计时尚未把 sandbox.create 起点单独持久化；在它可用前落同口径的保守值，
       // 读取旧记录也按 durationMs 回退，绝不因缺值错误携带。
-      const withPhases = { ...(phases ? { ...r, phases } : r), executionMs: r.executionMs ?? r.durationMs };
+      const withPhases = {
+        ...(phases ? { ...withEvidence, phases } : withEvidence),
+        executionMs: withEvidence.executionMs ?? withEvidence.durationMs,
+      };
       // 调度事实统一在这里挂:每条出口(正常、body 抛错、超时、Sample 层失败)都经过本 map,
       // 归属因此不随「走到了哪一步」丢失(见 sandboxFacts 的声明)。
       const withSandbox = sandboxFacts
@@ -837,8 +980,9 @@ function assertDeadlineFitsPlan(
   deadlineMs: number | undefined,
 ): void {
   if (deadlineMs === undefined) return;
-  const limit = capabilities.sessionLimitMs ?? undefined;
-  if (limit === undefined || deadlineMs <= limit) return;
+  if (capabilities.sessionLimit._tag === "Unlimited") return;
+  const limit = capabilities.sessionLimit.milliseconds;
+  if (deadlineMs <= limit) return;
   throw new ExperimentFatalError(
     t("sandbox.deadlineExceedsSession", {
       provider: capabilities.provider,
@@ -891,14 +1035,12 @@ interface AttemptResources {
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
-  /** 复用池借出的实例标识，用于结果落盘。 */
-  reusedSandbox?: {
-    sandbox: Sandbox;
-    reuseSandbox: number;
-    reuseOrdinal: number;
-    stateWindow?: ReusableLeaseStateWindow;
-    lastPlannedUse?: boolean;
-  };
+  /** State window 由外层 Effect Scope 持有；Promise author 边界只执行 load，不负责 finalizer。 */
+  attemptState: AttemptState;
+  /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 在 State finalizer 之后全局 LIFO 执行。 */
+  layerCleanups: LayerCleanupEntry[];
+  /** Agent teardown 完成后提交显式 completion ADT，供 State Scope finalizer 读取。 */
+  complete(result: EvalResult | undefined, agentTeardownSucceeded: boolean): void;
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (
@@ -910,6 +1052,27 @@ interface AttemptResources {
   registerLedger: (ledger: ChangeLedger) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
+}
+
+type AttemptState =
+  | { readonly _tag: "Stateless" }
+  | { readonly _tag: "Fresh"; readonly window: ExperimentStateWindow }
+  | {
+      readonly _tag: "Reused";
+      readonly window: ExperimentStateWindow;
+      readonly lastPlannedUse: boolean;
+    };
+
+interface LayerCleanupEntry {
+  readonly command: SandboxCleanupCommand;
+  readonly context: Omit<SandboxCommandContext, "onCleanup">;
+  readonly label: string;
+}
+
+interface AttemptScopeOutcome {
+  completion: AttemptCompletion;
+  stateFailure: ExperimentStateSequenceFailure | StateWindowTransitionFailure | undefined;
+  stateRecord: import("../state/types.ts").StateWindowRecord | undefined;
 }
 
 // attempt 的固定段(上传→基线→setup→驱动 agent→采 diff→脚本→评分→判定)。
@@ -940,7 +1103,9 @@ async function runAttemptBody(
     commands,
     concurrencySlot,
     declareFailure,
-    reusedSandbox,
+    attemptState,
+    layerCleanups,
+    complete,
     registerEvidence,
     registerLedger,
     prepareCoordinator,
@@ -973,30 +1138,6 @@ async function runAttemptBody(
   };
   const sandboxAttemptCtx: SandboxAgentContext = { ...attemptCtx, sandbox };
   const commandTarget = createSandboxCommandTarget(sandbox);
-  const plannedState = run.state;
-  const attemptState = plannedState._tag === "Stateless"
-    ? { _tag: "Stateless" as const }
-    : reusedSandbox === undefined
-      ? {
-          _tag: "Fresh" as const,
-          window: await Effect.runPromise(
-            ExperimentStateWindow.make(plannedState, run.experimentId, randomUUID()),
-          ),
-        }
-      : reusedSandbox.stateWindow?._tag === "Stateful"
-        ? {
-            _tag: "Reused" as const,
-            window: reusedSandbox.stateWindow.window,
-            lastPlannedUse: reusedSandbox.lastPlannedUse === true,
-          }
-        : (() => {
-            throw new Error("Stateful AgentRun received a Stateless reusable Sandbox lease.");
-          })();
-  const layerCleanups: Array<{
-    command: SandboxCleanupCommand;
-    context: Omit<SandboxCommandContext, "onCleanup">;
-    label: string;
-  }> = [];
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
   let agentTeardownSucceeded = true;
@@ -1416,97 +1557,26 @@ async function runAttemptBody(
         })
         .catch(() => {});
     }
-    const finalizeState =
-      attemptState._tag === "Fresh" ||
-      (attemptState._tag === "Reused" && attemptState.lastPlannedUse);
-    if (attemptState._tag !== "Stateless" && finalizeState) {
-      enterPhase("state.save");
-      await recorder
-        .measureClosing("state.save", async () => {
-          try {
-            const completion = !agentTeardownSucceeded
-              ? {
-                  _tag: "AgentTeardownFailed" as const,
-                  verdict: result?.verdict === "unreadable" ? "errored" : (result?.verdict ?? "errored"),
-                }
-              : result?.verdict === "passed"
-                ? { _tag: "Succeeded" as const }
-                : {
-                    _tag: "VerdictNotPassed" as const,
-                    verdict: result?.verdict === "unreadable" ? "errored" : (result?.verdict ?? "errored"),
-                  };
-            const finalized = await Effect.runPromise(Effect.either(attemptState.window.finalize({
-              sandbox: commandTarget,
-              progress: feedback.progress,
-              diagnostic: (input) => feedback.diagnostic({ ...input, level: "warning" }),
-              fact,
-            }, {
-              completion,
-              budget: { _tag: "Bounded", timeoutMs: CLEANUP_TIMEOUT_MS },
-            })));
-            if (Either.isLeft(finalized)) throw finalized.left;
-          } catch (error) {
-            declareFailure("state.save", error);
-            if (result !== undefined) {
-              result.verdict = "errored";
-              result.error = {
-                ...errorFromThrown(error, "state.save"),
-                code: error instanceof ExperimentStateSequenceFailure && error.activity.outcome === "failed"
-                  ? error.activity.code
-                  : "state.save.failed",
-              };
-            }
-            throw error;
-          }
-        })
-        .catch(() => {});
-    }
-    if (usesSandbox && layerCleanups.length > 0) {
-      enterPhase("sandbox.cleanup");
-      await recorder
-        .measureClosing("sandbox.cleanup", async () => {
-          const before = diagnostics.length;
-          // 只清理本 Attempt 实际登记的资源；全局 LIFO 自然得到「第二作者逆序，再 template
-          // owner 逆序」。每条 cleanup 独立有界，一条失败不剥夺后续 cleanup 的执行机会。
-          for (let i = layerCleanups.length - 1; i >= 0; i--) {
-            const cleanup = layerCleanups[i]!;
-            const startedAt = Date.now();
-            const node = recorder.child(sandboxPrepareActivity({
-              label: `${cleanup.label} cleanup`,
-              startOffsetMs: Math.max(0, startedAt - attemptEpoch),
-            }));
-            if (node) recorder.pushParent(node);
-            try {
-              await withCleanupTimeout(() => cleanup.command(commandTarget, cleanup.context));
-            } catch (e) {
-              if (node) node.failed = true;
-              declareFailure("sandbox.cleanup", e);
-              diagnostics.push(teardownDiagnostic("sandbox.cleanup", e));
-            } finally {
-              if (node) {
-                node.durationMs = Date.now() - startedAt;
-                recorder.popParent();
-              }
-            }
-          }
-          if (diagnostics.length > before) throw new Error("sandbox cleanup diagnostics");
-        })
-        .catch(() => {});
-    }
-    // finally 在两个 return 求值之后、函数真正交还返回值之前运行;`result` 已经是那个即将被返回的
-    // 对象引用,这里往它上面挂 diagnostics,调用方拿到的就是带诊断的同一个对象(标准 try/finally
-    // 变异语义)。result 恒已赋值(两个 return 分支都先赋值再 return);极端情况下(finally 之前就
-    // 抛了、result 还没赋值)静默跳过,不掩盖原始异常。
-    if (diagnostics.length > 0 && result) result.diagnostics = diagnostics;
-    if (Object.keys(facts).length > 0 && result) result.facts = facts;
-    if (commands.length > 0 && result) result.commands = commands;
-    if (attemptState._tag !== "Stateless" && result) {
-      const snapshot = Effect.runSync(attemptState.window.snapshot());
-      result.state = plannedState._tag !== "Stateless" && plannedState.cadence === "attempt" && snapshot._tag === "Finalized"
-        ? { windowId: snapshot.record.windowId, load: snapshot.record.load, save: snapshot.record.save }
-        : { windowId: attemptState.window.windowId };
-    }
+    // Agent teardown 是 Promise author 边界内最后一步；State / author cleanup / Provider Case
+    // 都由外层 Effect Scope finalizer 接管。这里只提交显式 completion ADT，不手写后续清理链。
+    complete(result, agentTeardownSucceeded);
   }
+}
+
+function completionFor(
+  result: EvalResult | undefined,
+  agentTeardownSucceeded: boolean,
+): AttemptCompletion {
+  const verdict = result?.verdict;
+  const persistedVerdict = verdict === "passed" || verdict === "failed"
+    ? verdict
+    : "errored";
+  if (!agentTeardownSucceeded) {
+    return { _tag: "AgentTeardownFailed", verdict: persistedVerdict };
+  }
+  return persistedVerdict === "passed"
+    ? { _tag: "Succeeded" }
+    : { _tag: "VerdictNotPassed", verdict: persistedVerdict };
 }
 
 /** 把一次 teardown / cleanup 失败折成一条 `DiagnosticRecord`(warning,不改判定)。message 取一层
@@ -1682,7 +1752,7 @@ export function experimentRunInfo(
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
       : {}),
-    agentInstalls: agentInstallPlansForRun(run),
+    agentInstalls: [...agentInstallPlansForRun(run)],
   };
 }
 

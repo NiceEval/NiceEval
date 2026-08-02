@@ -1044,59 +1044,59 @@ export function runWho(run: { agentName: string; model?: string; experimentId?: 
 
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AgentRun {
-  agent: Agent;
-  model?: string;
-  reasoningEffort?: string;
-  flags: globalThis.Record<string, JsonValue>;
-  attempts: number;
-  earlyExit: boolean;
+  readonly agent: Agent;
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly attempts: number;
+  readonly earlyExit: boolean;
   /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
-  sandbox?: SandboxLayer;
-  sandboxReuse?: boolean;
+  readonly sandbox?: SandboxLayer;
+  readonly sandboxReuse?: boolean;
   /** 作者输入已完成组合校验后的穷尽 State 规划；运行器不再解释可选 callback。 */
-  state: PlannedExperimentState;
+  readonly state: PlannedExperimentState;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
-  judge?: JudgeConfig;
+  readonly judge?: JudgeConfig;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
    * `resolveAttemptTimeout` 在派发时接上,提前物化会让 eval 自己声明的上限永久短路
    * (见 timeout.ts 与 memory/multi-source-field-resolution-order.md)。
    */
-  timeoutMs?: number;
+  readonly timeoutMs?: number;
   /** `timeoutMs` 那个值来自哪一层,供超时消息标注出处;省略按 `experiment` 读。 */
-  timeoutSource?: "flag" | "experiment";
-  budget?: number;
-  experimentId: string;
+  readonly timeoutSource?: "flag" | "experiment";
+  readonly budget?: number;
+  readonly experimentId: string;
   /** Experiment 定义文件目录；只用于解析 template 中的相对宿主路径。 */
-  experimentBaseDir: string;
+  readonly experimentBaseDir: string;
   /** Experiment 定义文件路径；link 诊断来源。 */
-  experimentSourcePath: string;
+  readonly experimentSourcePath: string;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
-  description?: string;
+  readonly description?: string;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
-  labels?: globalThis.Record<string, string | number>;
+  readonly labels?: Readonly<globalThis.Record<string, string | number>>;
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),进 ExperimentRunInfo.evalFilterFingerprint。 */
-  evalFilterFingerprint?: string;
+  readonly evalFilterFingerprint?: string;
   /**
    * 本次 invocation 解析后实际选中的 eval id 全集——CLI 在构造 AgentRun 时对候选 eval 各求值
    * 一次算好(见 `eval-selection.ts` 的 `resolveExperimentEvals()`),下游(dry-run、sandbox 查表、
    * fingerprint/carry、attempt 展开、hook ctx、落盘)只消费这份已解析结果,不重新调用用户谓词。
    * 保持顺序 = discovery 稳定顺序,去重。
    */
-  selectedEvalIds: readonly string[];
-  strict?: boolean;
+  readonly selectedEvalIds: readonly string[];
+  readonly strict?: boolean;
   /** 本配置自己的并发上限(来自 ExperimentDef.maxConcurrency):调度器为它单建信号量,
    *  attempt 先过这道闸再占全局并发位;省略则只受全局并发约束。 */
-  maxConcurrency?: number;
+  readonly maxConcurrency?: number;
   /** 实验级生命周期钩子对(来自 ExperimentDef.setup / .teardown):setup 整场至多一次,
    *  调度器 memoize 执行;teardown 在全部 attempt 收尾后执行,当且仅当 setup 时点走到过
    *  (语义见 ExperimentDef 对应字段)。 */
-  setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
-  teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  readonly setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  readonly teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
   /** 实验声明的失败分类器(来自 ExperimentDef.classifyFailure):turn 链上排在 adapter 之前,
    *  生命周期链上排在抛出点声明之后;产出的空间轴由止损闸在 attempt 封口消费。 */
-  classifyFailure?: AttemptFailureClassifier;
+  readonly classifyFailure?: AttemptFailureClassifier;
 }
 
 export interface RunOptions {
@@ -1169,30 +1169,30 @@ export interface RunOptions {
 
 /** 调度器内部的一次尝试:eval × run × 第几轮。 */
 export interface Attempt {
-  evalDef: DiscoveredEval;
-  run: AgentRun;
-  attempt: number;
+  readonly evalDef: DiscoveredEval;
+  readonly run: AgentRun;
+  readonly attempt: number;
   /** agent+model+evalId,用于首过即停。 */
-  key: string;
-  fingerprint: string;
-  configHash: string;
+  readonly key: string;
+  readonly fingerprint: string;
+  readonly configHash: string;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
-  plan: LinkedRunPlan;
+  readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
-  sandboxPlansByEval: globalThis.Record<string, JsonValue>;
+  readonly sandboxPlansByEval: Readonly<globalThis.Record<string, JsonValue>>;
   /**
    * Run 级构建协调产出的 BuildKey → locator;on-demand / Compose case 物化前注入。
    * 完全携带、未查询的 key 不在此表。
    */
-  buildLocators?: ReadonlyMap<string, string>;
+  readonly buildLocators?: ReadonlyMap<string, string>;
   /** 规划期 CaseKey(与指纹同源);物化后可与 MaterializedSandboxCase.caseKey 对照。 */
-  caseKey?: string;
+  readonly caseKey?: string;
   /**
    * 构造 fresh attempt plan 时即算好的 Attempt 定位符(不是完成后写回):由 invocation 的
    * snapshotStartedAt 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
-  locator: AttemptLocator;
+  readonly locator: AttemptLocator;
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────

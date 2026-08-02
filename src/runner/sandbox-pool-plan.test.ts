@@ -15,6 +15,7 @@ import { createBuiltinSandboxFactories, sandboxLayer } from "../sandbox/layer.ts
 import { linkSandboxLayers } from "../sandbox/link.ts";
 import { planLinkedRuns, type LinkedRunPlan } from "../sandbox/plan.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
+import { normalizeSandboxPaths } from "../sandbox/paths.ts";
 
 async function composePlan(): Promise<Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>> {
   const directory = await mkdtemp(join(tmpdir(), "niceeval-runtime-compose-"));
@@ -72,7 +73,7 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       async stop() {},
     };
     const materializeCompose = vi.fn(async (legacy): Promise<MaterializedSandboxCase> => ({
-      sandbox: backend as never,
+      sandbox: normalizeSandboxPaths(backend, "docker"),
       group: {
         primary: { sandboxId: backend.sandboxId, provider: "docker" },
         resources: { projectName: "fixture" },
@@ -100,11 +101,14 @@ describe("ReusableSandboxPool · pair-owned plan", () => {
       { _tag: "Test", materializeCompose },
     );
 
-    const first = await pool.acquire(60_000);
-    await first.release(true);
-    const second = await pool.acquire(60_000);
-    await second.release(true);
-    await pool.stop();
+    const acquireAndReturn = () => Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const lease = yield* pool.acquire(60_000);
+      yield* lease.commit({ _tag: "Reset" });
+      return lease;
+    })));
+    const first = await acquireAndReturn();
+    const second = await acquireAndReturn();
+    await Effect.runPromise(pool.stop());
 
     expect(materializeCompose).toHaveBeenCalledTimes(1);
     expect(first.sandbox).toBe(second.sandbox);
