@@ -701,11 +701,14 @@ export function runAttemptEffect(
         );
       }
 
-      const finalizeState =
-        attemptState._tag === "Fresh" ||
-        (attemptState._tag === "Reused" && scopeOutcome.reuseStateWindow._tag === "Finalize");
-      if (attemptState._tag !== "Stateless" && finalizeState) {
-        yield* Effect.addFinalizer(() => {
+      if (attemptState._tag !== "Stateless") {
+        yield* Effect.addFinalizer(() => Effect.suspend(() => {
+          // Reuse window 是否在本 Attempt 封口，只能在 body 定稿后决定。finalizer 必须预先
+          // 登记以保持它早于作者 cleanup 的 LIFO 位置，但执行时才读取 disposition；中间
+          // Attempt 的 Continue 不产生假的 state.save phase，也不能提前固化 window record。
+          if (attemptState._tag === "Reused" && scopeOutcome.reuseStateWindow._tag === "Continue") {
+            return Effect.void;
+          }
           enterPhase("state.save");
           const startedAt = Date.now();
           return Effect.either(attemptState.window.finalize({
@@ -730,7 +733,7 @@ export function runAttemptEffect(
             })),
             Effect.asVoid,
           );
-        });
+        }));
       }
 
       // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断

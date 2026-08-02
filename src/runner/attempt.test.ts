@@ -525,7 +525,7 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
     ]);
   });
 
-  it("State save 固定发生在 agent teardown 之后、作者 cleanup 之前", async () => {
+  it("Reuse State 只在末条 Attempt 保存，且发生在 agent teardown 之后、作者 cleanup 之前", async () => {
     const events: string[] = [];
     const identity = { store: "fixture", cohort: "scope-order", schema: 1 } as const;
     const checkpoint = {
@@ -554,13 +554,15 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
           events.push("sandbox.cleanup");
         });
       });
+    let sendOrdinal = 0;
     const agent = defineSandboxAgent({
       name: "fake-agent-state-order",
       setup: async () => {
         events.push("agent.setup");
       },
       send: async () => {
-        events.push("agent.send");
+        sendOrdinal += 1;
+        events.push(`agent.send:${sendOrdinal}`);
         return { events: [], status: "completed" };
       },
       teardown: async () => {
@@ -572,13 +574,29 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       _tag: "Pinned" as const,
       definition,
       revision: "fixture-r1",
-      cadence: "attempt" as const,
+      cadence: "window" as const,
     };
     const window = await Effect.runPromise(ExperimentStateWindow.make(
       state,
       "fake/experiment",
       "state-order-window",
     ));
+    const first = await runOnce(agent, box, {
+      experimentLayer,
+      state,
+      reusedSandbox: {
+        sandbox: asSandbox(box),
+        reuseSandbox: 1,
+        reuseOrdinal: 1,
+        stateWindow: { _tag: "Stateful", window },
+        decideStateWindow: () => ({ _tag: "Continue" }),
+      },
+      evalDefOverrides: {
+        test: async (t: TestContext) => {
+          await t.send("first");
+        },
+      },
+    });
     const result = await runOnce(agent, box, {
       experimentLayer,
       state,
@@ -591,24 +609,35 @@ describe("runAttemptEffect · SandboxLayer prepare 与 cleanup", () => {
       },
       evalDefOverrides: {
         test: async (t: TestContext) => {
-          await t.send("go");
+          await t.send("second");
         },
       },
     });
 
+    expect(first.error).toBeUndefined();
+    expect(first.state).toEqual({ windowId: "state-order-window" });
     expect(result.error).toBeUndefined();
     expect(events).toEqual([
       "sandbox.prepare",
       "state.load",
       "agent.setup",
-      "agent.send",
+      "agent.send:1",
+      "agent.teardown",
+      "sandbox.cleanup",
+      "sandbox.prepare",
+      "agent.setup",
+      "agent.send:2",
       "agent.teardown",
       "state.save",
       "sandbox.cleanup",
     ]);
-    expect(result.state).toMatchObject({
-      load: { outcome: "succeeded" },
-      save: { outcome: "succeeded" },
+    expect(result.state).toEqual({ windowId: "state-order-window" });
+    expect(await Effect.runPromise(window.snapshot())).toMatchObject({
+      _tag: "Finalized",
+      record: {
+        load: { outcome: "succeeded" },
+        save: { outcome: "succeeded" },
+      },
     });
   });
 
