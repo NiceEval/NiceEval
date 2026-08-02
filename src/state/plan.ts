@@ -22,6 +22,7 @@ export type StatePlanningCode =
   | "state.invalid-definition"
   | "state.requires-sandbox-agent"
   | "state.rolling-requires-serial"
+  | "state.reuse-requires-serial"
   | "state.reuse-requires-after-load";
 
 export class StatePlanningError extends Data.TaggedError("StatePlanningError")<{
@@ -98,6 +99,17 @@ export function planExperimentState(
     return Effect.fail(new StatePlanningError({
       code: "state.rolling-requires-serial",
       message: "state.rolling-requires-serial: Rolling State requires maxConcurrency: 1.",
+    }));
+  }
+  if (
+    input.sandbox._tag === "Reuse" &&
+    (input.concurrency._tag !== "Limited" || input.concurrency.value !== 1)
+  ) {
+    return Effect.fail(new StatePlanningError({
+      code: "state.reuse-requires-serial",
+      message:
+        "state.reuse-requires-serial: State with sandboxReuse requires maxConcurrency: 1 so every physical window " +
+        "has one ordered load/save sequence and can close before its final author cleanup.",
     }));
   }
   if (input.sandbox._tag === "Reuse" && definition.saveOn !== "after-load") {

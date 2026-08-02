@@ -115,7 +115,8 @@ export default defineExperiment({
 完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
 
 `state` 只接受 `defineExperimentState()` 返回的品牌化定义。
-rolling state 必须配 `maxConcurrency: 1`;与 `sandboxReuse: true` 同用时还必须配 `saveOn: "after-load"`。
+rolling state 必须配 `maxConcurrency: 1`;State 与 `sandboxReuse: true` 同用时也必须配
+`maxConcurrency: 1` 与 `saveOn: "after-load"`,保证每个 State window 只有一条有序的 load/save 序列。
 完整 API、fresh / reuse cadence 与携带规则见 [State](../state/README.md)。
 
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。

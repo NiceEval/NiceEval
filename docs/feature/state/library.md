@@ -163,6 +163,7 @@ cleanup 失败只追加诊断,不能倒流撤销已经原子提交的 checkpoint
 | `state.pinned-revision-missing` | pinned revision 为空 | 填入外部 store 可核对的稳定 revision |
 | `state.requires-sandbox-agent` | Direct Agent 声明了 State | 改用 Sandbox Agent,或移除 State |
 | `state.rolling-requires-serial` | rolling Experiment 没有 `maxConcurrency: 1` | 显式设为 1 或拆分 cohort |
+| `state.reuse-requires-serial` | State 与 `sandboxReuse: true` 同用但没有 `maxConcurrency: 1` | 显式设为 1,或关闭 State / Sandbox 复用 |
 | `state.reuse-requires-after-load` | `sandboxReuse: true` 搭配 `attempt-succeeded` | 改成 `after-load`,或关闭复用 |
 
 运行时 pinned load 返回的 checkpoint 与声明 revision 不一致时报 `state.pinned-revision-mismatch`。

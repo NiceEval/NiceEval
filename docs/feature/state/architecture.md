@@ -77,6 +77,13 @@ save 产物只作审计输出,不会替换下一次 load 的 revision。
 Rolling 首次读取 store 当前 head;每笔成功 save 成为唯一后继。
 save 失败、unavailable 或 load 失败后没有合法后继,Runner 关闭该状态序列的派发闸。
 
+声明 State 且开启 `sandboxReuse` 时必须同时声明 `maxConcurrency: 1`。State window
+是一条线性的 load → save 序列；若同一 Experiment 并行开多个 physical window，
+early-exit、budget 或 halt 可能在空闲 window 上取消“下一次使用”，从而无法在上一条
+Attempt 的 author cleanup 前确定它已是末次。规划器因此在 Provider I/O 前拒绝该组合，
+而不是静默把每条 Attempt 降级成全新 Sandbox。不需要 State 的 `sandboxReuse`
+仍可以在多个 Sandbox lane 间并行。
+
 ## Fingerprint、configHash 与 carry
 
 State 的静态投影进入 Experiment `configHash`:

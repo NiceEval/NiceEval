@@ -29,6 +29,8 @@ export default defineExperiment({
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
+使用 Experiment State 时跨 Attempt 状态序列总是严格有序的，因此 State 与
+`sandboxReuse: true` 同用也必须显式声明 `maxConcurrency: 1`。
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
 这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。
 

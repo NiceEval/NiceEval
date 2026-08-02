@@ -118,7 +118,7 @@ describe("Experiment State definition and planning", () => {
       .toBe("state.invalid-definition");
   });
 
-  it("在 provider I/O 前拒绝 Direct、并发 rolling 和不安全 reuse save policy", async () => {
+  it("在 provider I/O 前拒绝 Direct、并发 rolling、并发 reuse 和不安全 reuse save policy", async () => {
     const pinned = defineExperimentState(input());
     const rolling = defineExperimentState(input({ consistency: { mode: "rolling" } }));
     const afterSuccess = defineExperimentState(input({ saveOn: "attempt-succeeded" }));
@@ -129,6 +129,9 @@ describe("Experiment State definition and planning", () => {
     expect((await planningFailure(planExperimentState({
       state: declaredState(rolling), agent: sandboxAgent, sandbox: STATE_FRESH, concurrency: limitedStateConcurrency(2),
     }))).code).toBe("state.rolling-requires-serial");
+    expect((await planningFailure(planExperimentState({
+      state: declaredState(pinned), agent: sandboxAgent, sandbox: STATE_REUSE, concurrency: limitedStateConcurrency(2),
+    }))).code).toBe("state.reuse-requires-serial");
     expect((await planningFailure(planExperimentState({
       state: declaredState(afterSuccess), agent: sandboxAgent, sandbox: STATE_REUSE, concurrency: limitedStateConcurrency(1),
     }))).code).toBe("state.reuse-requires-after-load");
