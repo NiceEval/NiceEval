@@ -49,7 +49,6 @@ import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordin
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { digestOf } from "../sandbox/identity.ts";
-import type { SandboxLayerFingerprintProjection } from "../sandbox/link.ts";
 import { firstLine } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
@@ -139,10 +138,9 @@ type SandboxReusePoolScope =
   | { readonly _tag: "Shared" }
   | { readonly _tag: "Eval"; readonly evalId: string };
 
-/** 复用池按物理 Sandbox、作者 layer、Agent ensure 与 lifecycle scope 的完整身份分组。 */
+/** 复用池只按物理 Sandbox 与物理 lifecycle 分组；prepare commands 在每次 lease 后重放。 */
 export function sandboxReusePoolKey(input: {
   readonly providerPlan: JsonValue;
-  readonly layer: SandboxLayerFingerprintProjection;
   readonly agentInstalls: readonly JsonValue[];
   readonly scope: SandboxReusePoolScope;
 }): string {
@@ -678,9 +676,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
     return sandboxReusePoolKey({
       providerPlan: a.plan.providerPlan.identity,
-      // physical identity 只回答「能否落在同一种 Case」；完整分组还必须保留 template owner
-      // 与两层作者 command identity，否则不同准备语义会被误塞进同一个池。
-      layer: a.plan.pair.fingerprint,
       agentInstalls: [...agentInstallPlansForRun(a.run)],
       scope: a.plan.pair.hasEvalLifecycleHooks
         ? { _tag: "Eval", evalId: a.evalDef.id }

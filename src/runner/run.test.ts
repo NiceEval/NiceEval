@@ -58,8 +58,20 @@ import type { CarryPlan as CoreCarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
-import { CustomSandboxMaterializationError, sandboxLayer } from "../sandbox/layer.ts";
-import { Effect } from "effect";
+import {
+  CustomSandboxMaterializationError,
+  defineSandboxTemplate,
+  sandboxLayer,
+  sandboxProviderPlan,
+  type SandboxProviderModule,
+} from "../sandbox/layer.ts";
+import {
+  noSandboxBackendCapabilities,
+  supportedBackendCapability,
+  type SandboxProviderBackend,
+} from "../sandbox/backend.ts";
+import { normalizeSandboxPaths } from "../sandbox/paths.ts";
+import { Effect, Option } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
 import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import { STATELESS } from "../state/plan.ts";
@@ -283,6 +295,89 @@ function stableFakeSandboxSpec() {
   });
 }
 
+/**
+ * 复用路径不能用 custom provider/case 冒充：它们的 provider plan 明确没有 reset contract。
+ * 这份测试 ProviderModule 声明了 reuse 和 ensureLifetime，让 runEvals 真正进入复用池。
+ */
+function reusableFakeSandboxSpec(onCreate: () => void) {
+  const provider = "test-reusable-provider";
+  const module: SandboxProviderModule<undefined> = {
+    id: provider,
+    capabilities: {
+      retention: { _tag: "DestroyOnly" },
+      reuse: { _tag: "Supported" },
+      sessionLimit: { _tag: "Unlimited" },
+    },
+    materialize: () => Effect.sync(() => {
+      onCreate();
+      const box = new FakeSandbox();
+      const backend: SandboxProviderBackend = {
+        workdir: box.workdir,
+        sandboxId: `reusable-${box.sandboxId}`,
+        otlpHost: box.otlpHost,
+        capabilities: {
+          ...noSandboxBackendCapabilities,
+          ensureLifetime: supportedBackendCapability(async () => ({ ready: true as const })),
+        },
+        runCommand: () => box.runCommand(),
+        runShell: (script) => box.runShell(script),
+        readText: (path) => box.readText(path),
+        writeText: (path, content) => box.writeText(path, content),
+        readBytes: (path) => box.readBytes(path),
+        writeBytes: (path, content) => box.writeBytes(path, content),
+        pathExists: (path) => box.pathExists(path),
+        uploadFile: () => box.uploadFile(),
+        uploadDirectory: () => box.uploadDirectory(),
+        downloadFile: () => box.downloadFile(),
+        downloadDirectory: () => box.downloadDirectory(),
+        stop: () => box.stop(),
+      };
+      const sandbox = normalizeSandboxPaths(backend, provider);
+      return {
+        sandbox,
+        group: {
+          primary: { sandboxId: sandbox.sandboxId, provider },
+          resources: { kind: "primary-only", sandboxId: sandbox.sandboxId },
+          stop: () => sandbox.stop(),
+        },
+        caseKind: "custom" as const,
+        caseKey: "test-reusable-case",
+        buildKeys: [],
+        identity: { provider },
+        carryEligible: true,
+        facts: null,
+      };
+    }),
+    collectBuildPreparation: () => Effect.succeed(Option.none()),
+  };
+  return defineSandboxTemplate({
+    provider,
+    kind: "test-reusable",
+    publishableIdentity: { provider },
+    privateFingerprintIdentity: { provider, revision: 1 },
+    leakGate: { _tag: "None" },
+    plan: () => Effect.succeed(sandboxProviderPlan({
+      provider,
+      plannerRevision: "1",
+      caseKind: "custom",
+      target: {
+        platform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+        source: "provider-defined",
+      },
+      scheduling: {
+        recommendedConcurrency: 1,
+        lane: { key: provider, limit: 1 },
+        admission: { _tag: "Shared" },
+      },
+      module,
+      runtimePlan: undefined,
+      build: { _tag: "None", caseKey: "test-reusable-case", buildKeys: [] },
+      publishableIdentity: { provider },
+      privateFingerprintIdentity: { provider, revision: 1 },
+    })),
+  });
+}
+
 function makeEval(id: string, test: DiscoveredEval["test"]): DiscoveredEval {
   return discoverEval(defineEval({ test }), {
     id,
@@ -451,25 +546,7 @@ describe("runEvals · sandboxReuse 按物理 Sandbox identity 分池", () => {
   it("不同 Eval prepare 共用同一物理 Sandbox，并逐 Attempt 各自重放", async () => {
     let sandboxCreates = 0;
     const prepared: string[] = [];
-    const template = defineSandboxCase({
-      identity: { kind: "reuse-layer-identity-provider", revision: 1 },
-      targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-      services: { _tag: "Unsupported" },
-      materialize: () => Effect.sync(() => {
-        sandboxCreates += 1;
-        const sandbox = asSandbox(new FakeSandbox());
-        return {
-          sandbox,
-          group: {
-            primary: { sandboxId: `reuse-${sandboxCreates}`, provider: "custom-case" },
-            resources: { kind: "primary-only" as const, sandboxId: `reuse-${sandboxCreates}` },
-            async stop() {},
-          },
-          services: { _tag: "None" as const },
-          facts: null,
-        };
-      }),
-    });
+    const template = reusableFakeSandboxSpec(() => { sandboxCreates += 1; });
     const evalWithPrepare = (id: string, commandId: string): DiscoveredEval =>
       discoverEval(defineEval({
         sandbox: sandboxLayer().prepare(defineSandboxCommand(
