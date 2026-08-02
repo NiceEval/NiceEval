@@ -604,9 +604,9 @@ export function computeExitCode(summary: InvocationSummary, completion: Invocati
 
 /** 一个 (experiment, eval) 组合在 `ExpPlanDocument.matrix` 里的一行(cli.md「`--dry --json`
  *  输出单个 `ExpPlanDocument`」)。 */
-/** 一条具名差异的机器面投影(`ExpPlanDelta`);selector 原样可复制进 `--accept`。 */
+/** 一条具名差异的机器面投影(`ExpPlanDelta`);selector 只解释本次指纹变化。 */
 export interface JsonPlanDelta {
-  /** 与 --accept 同一词表:`config:<路径>` / `source:<路径>` / `data:<路径>` / `opaque:no-manifest`。 */
+  /** 指纹差异词表:`config:<路径>` / `source:<路径>` / `data:<路径>` / `opaque:no-manifest`。 */
   selector: string;
   /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
   from?: string;
