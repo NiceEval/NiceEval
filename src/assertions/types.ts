@@ -1,4 +1,4 @@
-// scoring 域类型:值断言(expect 匹配器)、断言记录与结果、评分上下文、judge 配置。
+// assertions 域类型:值断言(expect 匹配器)、断言记录与结果、断言求值上下文、judge 配置。
 
 import type { Severity, SourceLoc } from "../shared/types.ts";
 import type { DerivedFacts, StreamEvent, Usage } from "../o11y/types.ts";
@@ -192,7 +192,7 @@ export interface ScorePointHandle {
 }
 
 /** scoped / judge 断言在 final 评估时拿到的运行结果。 */
-export interface ScoringContext {
+export interface AssertionEvaluationContext {
   readonly events: readonly StreamEvent[];
   readonly facts: DerivedFacts;
   readonly diff: DiffData;
@@ -261,7 +261,7 @@ export type { Verdict } from "../shared/types.ts";
 export interface JudgeConfig {
   /** 可由更低优先级层补齐；四层都未解析到时，实际 assertion 记 judge-model-unresolved。 */
   model?: string;
-  /** OpenAI 兼容 base url + key 来源;省略则从 env 探测(见 scoring/judge.ts)。 */
+  /** OpenAI 兼容 base url + key 来源;省略则从 env 探测(见 assertions/judge.ts)。 */
   baseUrl?: string;
   apiKeyEnv?: string;
   /**

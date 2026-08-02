@@ -1,5 +1,5 @@
 // 真正跨域的原子类型:序列化 / 严重度 / 源码位置 / 生命周期。
-// 各域的类型住在各自目录的 types.ts(o11y / sandbox / agents / scoring / context / runner),
+// 各域的类型住在各自目录的 types.ts(o11y / sandbox / agents / assertions / context / runner),
 // src/types.ts 是聚合 facade —— 模块代码统一从那里 import,不必记住每个类型的家。
 
 /** JSON 可表达的任意值(递归定义),用于事件流 / 工具输入输出等跨进程/跨语言传递的数据。 */

@@ -15,7 +15,7 @@
 判定层给出“看似合理但错误的答案”的代价最高，因此测试预算也最高。
 裁决出处见[test-budget-inverted-pyramid](../../../../memory/test-budget-inverted-pyramid.md)。
 
-本篇构造证据图（`ScoringContext`）作为输入。
+本篇构造证据图（`AssertionEvaluationContext`）作为输入。
 Judge 只 fake 传输层，测试其上的判定逻辑。
 真实证据与真实裁判模型由[E2E 适配器域](../e2e/adapter/README.md)验收。
 Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)。
@@ -34,10 +34,10 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 
 ## Fixture 规范
 
-Collector 的 fixture 提供最小完整 `ScoringContext`，每个字段默认采用"明确空"而不是 `undefined`：
+Collector 的 fixture 提供最小完整 `AssertionEvaluationContext`，每个字段默认采用"明确空"而不是 `undefined`：
 
 ```ts
-function scoringContext(overrides: Partial<ScoringContext> = {}): ScoringContext {
+function assertionEvaluationContext(overrides: Partial<AssertionEvaluationContext> = {}): AssertionEvaluationContext {
   return {
     events: [],
     facts: {
@@ -87,7 +87,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   `AssertionCollector.score(label, n)` 立即记录一条`ScoreEntry`（不像断言那样等 finalize 求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前`t.group` 栈,与断言同一份分组约定。
   未链 `.points()` 的断言 `AssertionResult.points` 省略（不是`0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
   得分点落盘为 `severity: "soft"` + 有`points`，丢分不改 verdict；`.points()` 之后不暴露 `.soft()` /`.atLeast()`，但可链 `.gate().stopOnFailure()`，给分、严重度和控制流三个字段互不覆盖（类型层证明，见 typecheck fixture）。
-- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 ScoringContext 求值，failed 时截断其后断言与 `ScoreEntry`，已产生的记录照实保留；finalize 复用该快照，不因后续事件或文件变化重算。
+- **控制流与严重度正交**：`.gate()` 在两种题型都只把断言放进硬判定面、不中止后续；`.atLeast(x)` 保持 soft。只有显式 `.stopOnFailure()` 才在该位置用实时 AssertionEvaluationContext 求值，failed 时截断其后断言与 `ScoreEntry`，已产生的记录照实保留；finalize 复用该快照，不因后续事件或文件变化重算。
   `.gate().stopOnFailure()` 是硬前置，`.atLeast(x).stopOnFailure()` 会中止但仍是 soft；matcher 默认通过线也允许直接 stop。未 await 的调用由下一个异步`t.*`入口与 runner 收尾补做结算。
   计分制 matcher 自带的默认 gate 仍只贡献观测通过线；句柄显式 `.gate()` 才变成硬要求，但无论哪种 severity 都不会隐式改变控制流。
 - **证据完整性**：负断言与上限断言在「完整且找到 / 完整且确认无 / 不完整」三态矩阵下的结果——不完整时绝不给出可信 passed；正断言缺数据时失败不猜；不用 OTel span 补写行为事件。

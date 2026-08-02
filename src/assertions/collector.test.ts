@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/scoring.md
+// cases: docs/engineering/testing/unit/assertions.md
 // computePassed 的 gate 默认通过线单测(契约见
 // docs/feature/verdict/architecture.md「Severity」与
 // docs/feature/assertions/library/value-assertions.md「改严重度与阈值」):
@@ -11,9 +11,9 @@ import { emptyDiffData } from "./diff.ts";
 import { computeVerdict } from "../shared/verdict.ts";
 import { equals, includes, makeAssertion, similarity } from "../expect/index.ts";
 import { EvalRequirementFailed } from "../context/control-flow.ts";
-import type { AssertionResult, ScoringContext, ValueAssertion } from "../types.ts";
+import type { AssertionResult, AssertionEvaluationContext, ValueAssertion } from "../types.ts";
 
-function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
+function ctxWith(over: Partial<AssertionEvaluationContext> = {}): AssertionEvaluationContext {
   return {
     events: [],
     facts: {
@@ -137,7 +137,7 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
   });
 
   it(".points(n).gate() 同时进入分数面与判定面，但不隐式中止", async () => {
-    const collector = new AssertionCollector({ scoring: "points", liveContext: async () => ctxWith() });
+    const collector = new AssertionCollector({ evaluationKind: "points", liveContext: async () => ctxWith() });
     collector.record(specForAssertion(equals(4), 5)).points(10).gate();
     collector.record(specForAssertion(equals(4), 4)).points(2);
     expect(await collector.settlePrerequisites()).toBeUndefined();
@@ -151,7 +151,7 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
 });
 
 describe("severity 与 stopOnFailure 正交", () => {
-  const points = () => new AssertionCollector({ scoring: "points", liveContext: async () => ctxWith() });
+  const points = () => new AssertionCollector({ evaluationKind: "points", liveContext: async () => ctxWith() });
 
   it("matcher 自带的默认 gate 只贡献通过线,不使断言成为前置(回归:否则第一条检查点腰斩整题)", async () => {
     const collector = points();
@@ -201,6 +201,24 @@ describe("severity 与 stopOnFailure 正交", () => {
     value = 4;
     const [result] = await collector.finalize(ctxWith());
     expect(result!.outcome).toBe("failed");
+  });
+
+  it("stopOnFailure 求值异常在 catch 边界归一，finalize 仍保留错误链诊断", async () => {
+    const collector = points();
+    const socket = Object.assign(new Error("socket reset"), { code: "ECONNRESET" });
+    const stopping = collector.record({
+      name: "external prerequisite",
+      severity: "gate",
+      evaluate: async () => {
+        throw new Error("judge wrapper", { cause: socket });
+      },
+    });
+
+    await expect(stopping.stopOnFailure()).rejects.toBeInstanceOf(EvalRequirementFailed);
+    const [result] = await collector.finalize(ctxWith());
+    expect(result).toMatchObject({ outcome: "failed", score: 0, stopOnFailure: true });
+    expect(result!.detail).toContain("judge wrapper");
+    expect(result!.detail).toContain("caused by: Error (ECONNRESET): socket reset");
   });
 
   it("stopOnFailure 通过时返回原句柄，后续断言与给分照常保留", async () => {

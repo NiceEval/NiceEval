@@ -12,7 +12,7 @@
 import { ClosedQA, Factuality, Summary } from "autoevals";
 import OpenAI from "openai";
 import { unavailable, type EvalScore, type EvalUnavailable } from "./collector.ts";
-import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
+import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, AssertionEvaluationContext } from "../types.ts";
 import { getEnv } from "../util.ts";
 import { t } from "../i18n/index.ts";
 
@@ -51,7 +51,7 @@ export interface JudgeDeps {
     detail: string;
     /** 这是一条判分断言:collector 据此逐条上报判分推进。 */
     judge: true;
-    evaluate(ctx: ScoringContext): Promise<EvalScore | EvalUnavailable>;
+    evaluate(ctx: AssertionEvaluationContext): Promise<EvalScore | EvalUnavailable>;
   }): AssertionHandle;
   judge: JudgeConfig | undefined;
   getOutput: () => string;
@@ -183,7 +183,7 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
 export function buildJudge(deps: JudgeDeps): JudgeNamespace {
   const resolved = resolveJudge(deps.judge);
 
-  const materialFor = async (ctx: ScoringContext, on?: string): Promise<string> => {
+  const materialFor = async (ctx: AssertionEvaluationContext, on?: string): Promise<string> => {
     if (on) {
       // on 既可能是沙箱里的文件路径,也可能是一段字面文本(如 t.sandbox.diff.get(...) 的内容)。
       // 只有「长得像路径」(单行且不长)才尝试按文件读,避免对几 KB 的 diff 文本做无谓 IO,
@@ -198,14 +198,14 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
     return deps.getOutput();
   };
 
-  type Scorer = (args: globalThis.Record<string, unknown>) => Promise<{ score?: number | null }>;
+  type ScoreFunction = (args: globalThis.Record<string, unknown>) => Promise<{ score?: number | null }>;
 
   // 三个 autoevals 方法只差评分器和材料字段名,共享行为(record spec / 材料构造 /
   // 分数归一 / evidence)单一出处。model 解析:单次 { model } → judge config;
   // 没解析到模型或 key 时该条记 unavailable(带 reason),
   // 绝不静默消失、也不在调用点崩——评不了的折叠交给 Severity 与 Verdict 规则。
   const makeAutoeval =
-    (kind: "closedQA" | "factuality" | "summarizes", scorer: Scorer, payloadKey: "criteria" | "expected") =>
+    (kind: "closedQA" | "factuality" | "summarizes", scorer: ScoreFunction, payloadKey: "criteria" | "expected") =>
     (reference: string, opts?: { on?: string; model?: string }) => {
       const model = opts?.model ?? resolved.model;
       return deps.record({
@@ -278,9 +278,9 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
 
   return {
     autoevals: {
-      closedQA: makeAutoeval("closedQA", ClosedQA as unknown as Scorer, "criteria"),
-      factuality: makeAutoeval("factuality", Factuality as unknown as Scorer, "expected"),
-      summarizes: makeAutoeval("summarizes", Summary as unknown as Scorer, "expected"),
+      closedQA: makeAutoeval("closedQA", ClosedQA as unknown as ScoreFunction, "criteria"),
+      factuality: makeAutoeval("factuality", Factuality as unknown as ScoreFunction, "expected"),
+      summarizes: makeAutoeval("summarizes", Summary as unknown as ScoreFunction, "expected"),
     },
   };
 }

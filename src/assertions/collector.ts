@@ -1,11 +1,15 @@
 // 断言收集器:test 期间记录断言(值断言就地、作用域断言延迟),test 结束后对完整运行
-// 结果(ScoringContext)统一 finalize 成 AssertionResult[],再交判定。
+// 结果(AssertionEvaluationContext)统一 finalize 成 AssertionResult[],再交判定。
 
-import type { AssertionResult, ScoreEntry, ScoringContext, Severity, SourceLoc } from "../types.ts";
+import type { AssertionResult, ScoreEntry, AssertionEvaluationContext, Severity, SourceLoc } from "../types.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
-import { formatThrown } from "../util.ts";
 import { EvalRequirementFailed } from "../context/control-flow.ts";
+import {
+  externalCauseText,
+  normalizeExternalCause,
+  type ExternalCause,
+} from "../shared/external-cause.ts";
 
 export interface EvalScore {
   score: number;
@@ -65,8 +69,8 @@ export interface Spec {
   /** stopOnFailure 断言就地求值的结果快照；finalize 直接复用，不再求值一次。 */
   settled?:
     | { kind: "value"; value: number | EvalScore | EvalUnavailable }
-    | { kind: "error"; error: unknown };
-  evaluate(ctx: ScoringContext): number | EvalScore | EvalUnavailable | Promise<number | EvalScore | EvalUnavailable>;
+    | { kind: "error"; cause: ExternalCause };
+  evaluate(ctx: AssertionEvaluationContext): number | EvalScore | EvalUnavailable | Promise<number | EvalScore | EvalUnavailable>;
 }
 
 /** 作者拿到的可链式句柄,改严重度 / 阈值 / optional / 计分权重(回头改 spec)。 */
@@ -86,12 +90,12 @@ export interface CollectorOptions {
    * 题型(默认通过制)。计分制下 matcher 自带的默认 gate 只贡献通过线；作者在断言句柄上
    * 显式链 `.gate()` 才是硬要求。两种题型是否中止都只由 `.stopOnFailure()` 决定。
    */
-  scoring?: "pass" | "points";
+  evaluationKind?: "pass" | "points";
   /**
    * stopOnFailure 断言就地求值时看的实时运行结果(events/diff/沙箱等)。生产 Context 必传；
    * 省略时调用 `.stopOnFailure()` 会报内部接线错误。
    */
-  liveContext?: () => Promise<ScoringContext>;
+  liveContext?: () => Promise<AssertionEvaluationContext>;
 }
 
 /** 一条判分断言开始求值时的推进快照(见 FinalizeOptions.onJudgeProgress)。 */
@@ -124,14 +128,14 @@ export class AssertionCollector {
   private readonly specs: Spec[] = [];
   private readonly groupStack: string[] = [];
   private readonly entries: ScoreEntry[] = [];
-  private readonly scoring: "pass" | "points";
-  private readonly liveContext: (() => Promise<ScoringContext>) | undefined;
+  private readonly evaluationKind: "pass" | "points";
+  private readonly liveContext: (() => Promise<AssertionEvaluationContext>) | undefined;
   /** 待结算的 stopOnFailure 求值(按调用顺序)；runner 收尾也会兜底结算未 await 的调用。 */
   private pending: Promise<AbortPoint | undefined>[] = [];
   private aborted: AbortPoint | undefined;
 
   constructor(options: CollectorOptions = {}) {
-    this.scoring = options.scoring ?? "pass";
+    this.evaluationKind = options.evaluationKind ?? "pass";
     this.liveContext = options.liveContext;
   }
 
@@ -142,7 +146,7 @@ export class AssertionCollector {
   /** `t.score(label, n)` 的直接给分:立即记录(不像断言那样要等 finalize 求值),n 必须非负有限数。 */
   score(label: string, points: number): void {
     if (!Number.isFinite(points) || points < 0) {
-      throw new Error(t("scoring.scoreInvalid", { label, n: points }));
+      throw new Error(t("assertions.scoreInvalid", { label, n: points }));
     }
     this.entries.push({
       label,
@@ -174,7 +178,7 @@ export class AssertionCollector {
     if (spec.loc === undefined) spec.loc = captureLoc();
     // 计分制的未链句柄角色是观测：matcher 自带的 gate 只贡献通过线。作者随后在句柄上
     // 显式 `.gate()` 时会再把 severity 改回 gate；`.stopOnFailure()` 与这里完全正交。
-    if (this.scoring === "points" && spec.severity === "gate") {
+    if (this.evaluationKind === "points" && spec.severity === "gate") {
       spec.severity = "soft";
       spec.threshold = spec.threshold ?? 1;
     }
@@ -221,7 +225,7 @@ export class AssertionCollector {
       },
       points(n) {
         if (!Number.isFinite(n) || n <= 0) {
-          throw new Error(t("scoring.pointsInvalid", { n }));
+          throw new Error(t("assertions.pointsInvalid", { n }));
         }
         spec.points = n;
         return handle;
@@ -252,7 +256,7 @@ export class AssertionCollector {
           return computePassed(severity, threshold, score) ? undefined : { ...before, name: spec.name };
         } catch (error) {
           // 与 finalize 同口径：求值异常落为 score 0 的 failed AssertionResult，并触发停止。
-          spec.settled = { kind: "error", error };
+          spec.settled = { kind: "error", cause: normalizeExternalCause(error) };
           return { ...before, name: spec.name };
         }
       })(),
@@ -287,7 +291,7 @@ export class AssertionCollector {
     return this.aborted.name;
   }
 
-  async finalize(ctx: ScoringContext, options: FinalizeOptions = {}): Promise<AssertionResult[]> {
+  async finalize(ctx: AssertionEvaluationContext, options: FinalizeOptions = {}): Promise<AssertionResult[]> {
     const out: AssertionResult[] = [];
     const judgeTotal = this.specs.filter((s) => s.judge === true).length;
     let judgeIndex = 0;
@@ -313,31 +317,32 @@ export class AssertionCollector {
       let evidence: string | undefined;
       try {
         // stopOnFailure 已在链的位置就地求值过，直接用快照；之后发生的事不改变结论。
-        if (spec.settled?.kind === "error") throw spec.settled.error;
-        const raw = spec.settled?.kind === "value" ? spec.settled.value : await spec.evaluate(ctx);
-        if (isUnavailable(raw)) {
-          out.push({
-            ...base,
-            outcome: "unavailable",
-            reason: raw.reason,
-            ...(raw.evidence !== undefined ? { evidence: raw.evidence } : {}),
-          });
-          continue;
-        }
-        if (typeof raw === "number") {
-          score = raw;
+        if (spec.settled?.kind === "error") {
+          detail = evaluationErrorDetail(detail, spec.settled.cause);
         } else {
-          score = raw.score;
-          if (raw.detail) detail = detail ? `${detail}; ${raw.detail}` : raw.detail;
-          expected = raw.expected;
-          received = raw.received;
-          evidence = raw.evidence;
+          const raw = spec.settled?.kind === "value" ? spec.settled.value : await spec.evaluate(ctx);
+          if (isUnavailable(raw)) {
+            out.push({
+              ...base,
+              outcome: "unavailable",
+              reason: raw.reason,
+              ...(raw.evidence !== undefined ? { evidence: raw.evidence } : {}),
+            });
+            continue;
+          }
+          if (typeof raw === "number") {
+            score = raw;
+          } else {
+            score = raw.score;
+            if (raw.detail) detail = detail ? `${detail}; ${raw.detail}` : raw.detail;
+            expected = raw.expected;
+            received = raw.received;
+            evidence = raw.evidence;
+          }
         }
       } catch (e) {
         score = 0;
-        detail = `${detail ? detail + "; " : ""}${t("scoring.evalError", {
-          error: formatThrown(e),
-        })}`;
+        detail = evaluationErrorDetail(detail, normalizeExternalCause(e));
       }
       const passed = computePassed(spec.severity, spec.threshold, score);
       out.push({
@@ -356,6 +361,12 @@ export class AssertionCollector {
     }
     return out;
   }
+}
+
+function evaluationErrorDetail(detail: string | undefined, cause: ExternalCause): string {
+  return `${detail ? detail + "; " : ""}${t("assertions.evaluationError", {
+    error: externalCauseText(cause),
+  })}`;
 }
 
 export function computePassed(severity: Severity, threshold: number | undefined, score: number): boolean {

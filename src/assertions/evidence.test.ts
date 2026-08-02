@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/scoring.md
+// cases: docs/engineering/testing/unit/assertions.md
 // 证据完整性模型的单测:覆盖代数(resolve/downgrade/worst)、作用域断言的三值折叠、
 // 判定折叠(非 optional unavailable → errored)、judge 未解析 → unavailable。
 // 契约见 docs/feature/verdict/architecture.md、docs/feature/assertions/architecture/evidence.md 与
@@ -7,14 +7,14 @@
 import { describe, expect, it } from "vitest";
 import { completeEvidenceCoverage, downgradeEvidenceCoverage, worstEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
-import { computeVerdict } from "./verdict.ts";
+import { computeVerdict } from "../shared/verdict.ts";
 import { AssertionCollector } from "./collector.ts";
 import * as Scoped from "./scoped.ts";
 import { buildJudge } from "./judge.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
-import type { AssertionResult, ScoringContext, StreamEvent } from "../types.ts";
+import type { AssertionResult, AssertionEvaluationContext, StreamEvent } from "../types.ts";
 
-function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
+function ctxWith(over: Partial<AssertionEvaluationContext> = {}): AssertionEvaluationContext {
   const events = (over.events ?? []) as StreamEvent[];
   return {
     events,
@@ -60,7 +60,7 @@ describe("evidence coverage 代数", () => {
   });
 });
 
-async function evaluate(spec: ReturnType<typeof Scoped.usedNoTools>, ctx: ScoringContext): Promise<AssertionResult> {
+async function evaluate(spec: ReturnType<typeof Scoped.usedNoTools>, ctx: AssertionEvaluationContext): Promise<AssertionResult> {
   const collector = new AssertionCollector();
   collector.record(spec);
   const [result] = await collector.finalize(ctx);
@@ -69,8 +69,8 @@ async function evaluate(spec: ReturnType<typeof Scoped.usedNoTools>, ctx: Scorin
 
 describe("作用域断言的三值折叠", () => {
   const toolEvents: StreamEvent[] = [
-    { type: "action.called", callId: "c1", name: "shell", input: { cmd: "ls" } } as StreamEvent,
-    { type: "action.result", callId: "c1", output: {}, status: "completed" } as StreamEvent,
+    { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "shell", input: { cmd: "ls" } } } as StreamEvent,
+    { type: "operation.finished", operationId: "c1", kind: "tool", output: {}, status: "completed" } as StreamEvent,
   ];
 
   it("正断言:非 complete 通道上找到匹配仍通过(证据存在就是证据)", async () => {
@@ -149,7 +149,7 @@ describe("判定折叠:非 optional unavailable → errored", () => {
     expect(computeVerdict({ assertions: [passedGate, optional] })).toBe("passed");
   });
 
-  it("errored 压过 failed;failed 压过 unreadable", () => {
+  it("errored 压过 failed;failed 压过 skipped", () => {
     const failedGate: AssertionResult = { name: "x", severity: "gate", outcome: "failed", score: 0 };
     expect(computeVerdict({ assertions: [failedGate, unavailableGate] })).toBe("errored");
     expect(computeVerdict({ assertions: [failedGate], skipReason: "later" })).toBe("failed");

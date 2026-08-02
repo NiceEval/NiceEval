@@ -14,7 +14,7 @@ import { elidedContentPaths } from "./diff.ts";
 import type { EvidenceCoverageChannel } from "./coverage.ts";
 import type {
   JsonValue,
-  ScoringContext,
+  AssertionEvaluationContext,
   StreamEvent,
   SubagentCall,
   SubagentMatch,
@@ -25,7 +25,7 @@ import type {
 // ── 覆盖折叠 ──
 
 /** 所需通道非 complete 时返回 unavailable(带机器可读 reason),complete 返回 undefined。 */
-function coverageGap(ctx: ScoringContext, channel: EvidenceCoverageChannel): EvalUnavailable | undefined {
+function coverageGap(ctx: AssertionEvaluationContext, channel: EvidenceCoverageChannel): EvalUnavailable | undefined {
   const c = ctx.evidenceCoverage[channel];
   if (c.status === "complete") return undefined;
   return unavailable(`evidence-coverage:${channel}=${c.status}${c.reason ? ` (${c.reason})` : ""}`);

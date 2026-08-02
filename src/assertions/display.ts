@@ -1,4 +1,4 @@
-// scoring 结果的摘要投影。这里仅决定「摘要面显示哪一条、显示哪些事实」；完整诊断面继续
+// assertion evaluation 结果的摘要投影。这里仅决定「摘要面显示哪一条、显示哪些事实」；完整诊断面继续
 // 消费 AssertionResult[]，不复用这个有损投影。
 
 import type { AssertionResult, PrimaryAssertionSummary } from "./types.ts";
@@ -6,7 +6,7 @@ import type { Verdict } from "../shared/types.ts";
 
 /**
  * 计分制挣分标注:"+1 pt" / "+0.8 pts"(单复数随数值)。与 report/model/format.ts 的
- * formatPointsSuffix 同规则,scoring 层不依赖 report 层,这里独立实现同一条格式化规则。
+ * formatPointsSuffix 同规则,assertions 层不依赖 report 层,这里独立实现同一条格式化规则。
  */
 function pointsSuffix(points: number): string {
   const n = Math.round(points * 10) / 10;
@@ -59,15 +59,15 @@ export function summaryText(value: string): string {
 
 /**
  * 按公开展示契约选择主失败断言：failed gate 优先；只有 soft 促成 failed verdict 时才取 soft；
- * errored 且没有结构化 error 时可由第一条非 optional unavailable 解释；计分制（`scoring:
+ * errored 且没有结构化 error 时可由第一条非 optional unavailable 解释；计分制（`evaluationKind:
  * "points"`）`passed` 存在丢分得分点（`.points` 断言 outcome 为 failed）时取记录顺序第一条
- * （docs/feature/assertions/library/display.md「主失败断言怎样选」规则 6）。`scoring` 必填而非
+ * （docs/feature/assertions/library/display.md「主失败断言怎样选」规则 6）。`evaluationKind` 必填而非
  * 默认 "pass"：调用方必须显式表态，避免漏传导致这条规则悄悄失效。
  */
 export function primaryAssertionSummary(
   assertions: readonly AssertionResult[],
   verdict: Verdict,
-  scoring: "pass" | "points",
+  evaluationKind: "pass" | "points",
 ): PrimaryAssertionSummary | undefined {
   if (verdict === "failed") {
     const failedGates = assertions.filter(
@@ -88,7 +88,7 @@ export function primaryAssertionSummary(
     if (unavailable.length > 0) return summaryOf(unavailable[0]!, unavailable.length - 1);
   }
 
-  if (verdict === "passed" && scoring === "points") {
+  if (verdict === "passed" && evaluationKind === "points") {
     const lostPoints = assertions.filter(
       (assertion) => assertion.outcome === "failed" && assertion.points !== undefined,
     );
