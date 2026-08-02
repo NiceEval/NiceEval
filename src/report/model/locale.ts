@@ -111,7 +111,7 @@ const en = {
   "stabilityOverview.neverPassed": "Never passed",
   "stabilityOverview.flaky": "Flaky evals",
 
-  /** ScopeSummary 的 KPI 标签。 */
+  /** SampleSummary 的 KPI 标签。 */
   "scopeSummary.experiments": "Experiments",
   "scopeSummary.evals": "Evals",
   "scopeSummary.attempts": "Attempts",

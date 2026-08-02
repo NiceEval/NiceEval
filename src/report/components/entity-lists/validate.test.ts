@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
 // "validate*Data 递归覆盖到嵌套字段" 行:entity-lists 三个 validate*Data 的表驱动字段突变覆盖,AttemptListItem 的形状在三个组件族
-// 共用(独立 data 或嵌套在 evalRows/attempts 里),重点覆盖嵌套 MetricCell/tally 字段与
+// 共用(独立 data 或嵌套在 evalRows/attempts 里),重点覆盖嵌套 MetricValue/tally 字段与
 // 深层嵌套(ExperimentListItem.evalRows[i].attempts[j])的路径定位。
 
 import { describe, expect, it } from "vitest";
@@ -36,7 +36,7 @@ describe("validateAttemptListData", () => {
     expect(validateAttemptListData({})).toMatch(/"data" must be an array/);
   });
 
-  it("[i].examScore 结构错误定位到嵌套 MetricCell 字段", () => {
+  it("[i].examScore 结构错误定位到嵌套 MetricValue 字段", () => {
     const bad = [{ ...validAttemptItem, examScore: { value: 1 } }];
     expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.examScore\.samples"/);
   });
@@ -71,7 +71,7 @@ describe("validateEvalListData", () => {
     expect(validateEvalListData(valid)).toBeNull();
   });
 
-  it("[i].durationMs(MetricCell)结构错误报错", () => {
+  it("[i].durationMs(MetricValue)结构错误报错", () => {
     const bad = [{ ...valid[0], durationMs: { value: 1, samples: 1, total: 1 } }];
     expect(validateEvalListData(bad)).toMatch(/"data\[0\]\.durationMs\.basis"/);
   });

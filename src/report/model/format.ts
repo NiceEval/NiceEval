@@ -19,7 +19,7 @@ export type MetricDisplay = (value: number, locale: ReportLocale) => string;
 
 /**
  * 一组 id 的显示名：每个 id 缩成在这组里唯一的最短路径后缀，重名逐步加长到能区分为止
- * （与 `MetricScatter` 点标签同一算法，两处共用本函数以保证同一份 experiment id 在散点和
+ * （与 `Scatter` 点标签同一算法，两处共用本函数以保证同一份 experiment id 在散点和
  * 列表里缩成同一个显示名）。单个 id、或所有 id 深度不同时也照常缩到各自的最短唯一后缀。
  * 完整 id 不受影响，调用方仍用它做排序 / 过滤 / 折叠的身份键，这里只产出显示名。
  */

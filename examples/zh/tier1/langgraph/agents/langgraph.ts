@@ -11,8 +11,8 @@
 //
 // 这是 Tier 1(只接 send):要 `niceeval view` 的调用瀑布图时升 Tier 2,见
 // ../../tier2/langgraph/——config 加一行 telemetry、本文件加一段 span 收尾宽限,其它不变。
-import { createSessionSlot, defineAgent, sseJsonFrames } from "niceeval/adapter";
-import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
+import { createSessionSlot, defineDirectAgent, sseJsonFrames } from "niceeval/adapter";
+import type { AgentContext, EvidenceCoverage, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
 
 // 被测应用由你自己按它的方式启动(python server.py / 部署在哪都行),eval 不代管进程、
@@ -55,6 +55,15 @@ interface PendingApproval {
   readonly toolCallId: string;
 }
 const heldSlot = createSessionSlot<PendingApproval>("langgraph/held-stream");
+
+const evidenceCoverage = {
+  events: { status: "complete" },
+  actions: { status: "complete" },
+  messages: { status: "complete" },
+  usage: { status: "unavailable", reason: "LangGraph 自定义 SSE 协议不包含 token usage" },
+  status: { status: "complete" },
+  data: { status: "unavailable", reason: "adapter 不产生 Turn.data" },
+} satisfies EvidenceCoverage;
 
 async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> {
   const events: StreamEvent[] = [];
@@ -168,7 +177,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return drainStream(sseJsonFrames<LanggraphFrame>(res.body), ctx);
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "langgraph",
+  evidenceCoverage,
   send,
 });

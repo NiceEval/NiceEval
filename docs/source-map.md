@@ -156,7 +156,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 发现(evals/ 的 *.eval.ts / *.eval.tsx 与目录入口 eval.ts,experiments/ 的实验,路径推导 id;同 id 双入口报重名) | `src/runner/discover.ts` |
-| folder-local sandbox source、默认 profile id、loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
+| Eval 源码捕获、folder-local 目录入口 base id、loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
 | 普通本地上传的 transfer manifest 与动态泄漏比对 | `src/sandbox/` 上传包装、`src/runner/attempt.ts`、fingerprint/carry planner 与 materializer closure 记录;契约见 `docs/feature/eval/use-case/criteria-files.md` |
 | 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换、Agent Ensure 调用) | `src/runner/attempt.ts` |

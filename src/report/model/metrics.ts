@@ -22,7 +22,7 @@
 //
 // 两档指标(docs/feature/reports/library/measures.md「内置指标」):以上除 assistantTurns 与
 // repeatedFailedCommands 外全部只读 attempt.result 的瘦身字段——任何 producer、任何
-// publish artifacts 选择都算得出,内置报告 ExperimentComparison 只用这一档。
+// publish artifacts 选择都算得出,内置 SampleOverview 只用这一档。
 // 后两个读 attempt.o11y()(懒加载 artifact),发布时若 o11y 没随行就诚实渲染缺数据「—」,
 // 不算 0——报告作者自己摆时心里要有这根弦,内置报告不用它们。
 
@@ -172,7 +172,7 @@ export const durationMs = attemptMetric({
     if (a.result.verdict === "skipped") return null;
     // 超时删失:线值不是「跑了这么久」,是「被砍在这里」——计入聚合会把截断当实测,
     // 排除又制造幸存者偏差(慢条件因为被截断反而显得快)。唯一诚实做法是 null,
-    // 让 MetricCell 的 samples < total 把删失显式呈现出来(docs/feature/reports/library/measures.md「内置指标」)。
+    // 让 MetricValue 的 samples < total 把删失显式呈现出来(docs/feature/reports/library/measures.md「内置指标」)。
     if (a.result.verdict === "errored" && a.result.error?.code === "timeout") return null;
     return a.result.durationMs;
   },

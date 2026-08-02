@@ -405,11 +405,21 @@ export function materializeCustomProviderPlan(
   context: SandboxRuntimeMaterializeContext,
   create: CustomProviderSandboxOptions["create"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.map(
+  return Effect.flatMap(
     create({ deadline: context.deadline, runtime: "node24", feedback: context.feedback }).pipe(
       Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
     ),
-    (sandbox) => wrapSingleSandbox(customSandboxBackend(sandbox), context, { provider: plan.name }),
+    (sandbox) => Effect.try({
+      try: () => wrapSingleSandbox(customSandboxBackend(sandbox), context, { provider: plan.name }),
+      catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+    }).pipe(
+      // create 已经交出真实资源，但 acquireRelease 只有在本 Effect 成功后才会登记 finalizer。
+      // facade 归一化若在这个窄窗口失败，必须原地 stop，不能让裸资源逃出 Scope。
+      Effect.tapError(() => Effect.tryPromise({
+        try: () => sandbox.stop(),
+        catch: () => undefined,
+      }).pipe(Effect.ignore)),
+    ),
   );
 }
 

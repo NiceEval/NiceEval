@@ -1,7 +1,7 @@
 ---
-title: "defineAgent 和 defineSandboxAgent：adapter 参考"
-sidebarTitle: "defineAgent"
-description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 sandbox helpers。"
+title: "defineDirectAgent 和 defineSandboxAgent：Adapter 参考"
+sidebarTitle: "定义 Adapter"
+description: "defineDirectAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 Sandbox helpers。"
 ---
 
 import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
@@ -10,21 +10,22 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 <TurnRoundtrip />
 
-## `defineAgent`
+## `defineDirectAgent`
 
 用于 direct agent 接入：
 
 ```ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 ```
 
-`defineAgent` 产出的 `Agent.kind` 恒为 `"remote"`(内部判别字段,不用你声明)。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 agent(`kind: "sandbox"`)上才有,其余全靠 `send` 实际返回了什么事件/`ctx.session` 用没用来判断,详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
+`defineDirectAgent` 产出的 `Agent.kind` 恒为 `"direct"`（内部判别字段，不用你声明）。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 Agent（`kind: "sandbox"`）上才有；其余由 `send` 实际返回的事件和 `ctx.session` 的使用决定，详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
 
 ### direct agent 示例
 
 ```ts
-export default defineAgent({
+export default defineDirectAgent({
   name: "echo",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
     return {
       status: "completed",
@@ -53,10 +54,15 @@ export default defineAgent({
 用于 coding agent CLI。产出的 `Agent.kind` 恒为 `"sandbox"`——`t.sandbox`、`t.sandbox.fileChanged()` 等文件系统断言只在这类 agent 上解锁。字段全集同样见下方「Agent 与 Adapter Context 字段」的 `SandboxAgentDef`；`ctx.sandbox`(`Sandbox` 接口)的完整方法见再下方「Sandbox 接口」。
 
 ```ts
-import { defineSandboxAgent } from "niceeval/adapter";
+import { command, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 
 export default defineSandboxAgent({
   name: "my-cli-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-cli-agent", version: "1.0.0" },
+    probe: command("my-agent", ["--version"]),
+  },
   async send(input, ctx) {
     await ctx.sandbox.runCommand("my-agent", ["run", input.text]);
     return { status: "completed", events: [] };
@@ -78,7 +84,7 @@ export default defineExperiment({
 
 ## Agent 与 Adapter Context 字段
 
-`defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
+`defineDirectAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
 以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
 
 {/* GENERATED:BEGIN agent-def */}

@@ -122,6 +122,32 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("custom provider 创建成功后 facade 归一化失败仍停止尚未纳入 Scope 的实例", async () => {
+    const stop = vi.fn(async () => {});
+    const sandbox = { ...fakeSandbox("facade-failure"), stop };
+    Object.defineProperty(sandbox, "appendLog", {
+      get() {
+        throw new Error("broken provider facade");
+      },
+    });
+    const plan = planned(customProviderSandbox({
+      name: "facade-failure",
+      targetPlatform: linux,
+      create: () => Effect.succeed(sandbox),
+    }));
+
+    const result = await Effect.runPromise(Effect.either(Effect.scoped(
+      materializeSandboxRunPlan(input(plan, { _tag: "Live" })),
+    )));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") {
+      expect(result.left.code).toBe("sandbox.materialization-failed");
+      expect(result.left.message).toBe("broken provider facade");
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it("teardown hook 的失败只记诊断，继续后续 hook 并停止 provider", async () => {
     const events: string[] = [];
     const stop = vi.fn(async () => { events.push("stop"); });

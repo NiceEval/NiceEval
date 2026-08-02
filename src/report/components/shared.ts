@@ -2,7 +2,7 @@
 // isLocalizedText / isCell / isTally / cellProblem / tallyProblem / arrayProblem /
 // dataShapeError)、`targetOfRefs`/`hrefForLocator` 下钻目标解析、`ChromeProps` 呈现选项
 // 基类、`cx` classname 拼接——每个组件族在自己的 index.tsx 里用这些原语递归拼自己的
-// validate*Data(字段路径要覆盖到嵌套 MetricCell/Tally,不只顶层哨兵),具体的 validate*Data
+// validate*Data(字段路径要覆盖到嵌套 MetricValue/Tally,不只顶层哨兵),具体的 validate*Data
 // 与组件导出留在各族。
 
 import type { ReportLocale } from "../model/locale.ts";

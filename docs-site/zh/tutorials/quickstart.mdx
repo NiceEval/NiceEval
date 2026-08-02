@@ -40,10 +40,11 @@ Adapter 连接 Agent 与 [NiceEval](https://niceeval.com/)。三种接入等级�
 
 ```ts
 // agents/my-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     // 示例地址：换成你自己 agent 的真实端点（HTTP、CLI、SDK 都行，只要 send 里能拿到回复文本）
     const r = await fetch("http://localhost:3000/chat", {

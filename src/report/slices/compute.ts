@@ -1,6 +1,6 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。跑在 Node 侧,产物是算好的、可序列化的
 // 普通 JSON(终值 + 渲染提示,不含公式);渲染面(web/text)只做展示。指标图形族
-// (MetricTable / MetricMatrix / MetricBars / Scoreboard / MetricScatter / MetricLine /
+// (Table / Matrix / Bars / Scoreboard / Scatter / Line /
 // DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/calculations.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):

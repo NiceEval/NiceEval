@@ -4,7 +4,7 @@ sidebarTitle: "接入 Agent"
 description: "写一个 Adapter、配置一个 Experiment，并运行第一条评估用例；再把配置和参数从 Experiment 传给 Adapter 与被测应用。"
 ---
 
-把一个被测对象接入 [NiceEval](https://niceeval.com/) 需要一个 **Adapter**。`defineAgent` 包住一个 `send` 函数；该函数接收输入、驱动 Agent，并返回本轮结果。
+把一个被测对象接入 [NiceEval](https://niceeval.com/) 需要一个 **Adapter**。`defineDirectAgent` 构造直接调用函数、SDK 或服务端点的 Adapter；它的 `send` 接收输入、驱动 Agent，并返回本轮结果。
 
 本教程先用 Adapter、Experiment 和评估用例跑通最小接入，再说明参数从 Experiment 到 Adapter 和被测应用的传递路径。事件流、多轮、HITL 与 tracing 属于可选能力，文末列出对应教程。
 
@@ -30,10 +30,11 @@ description: "写一个 Adapter、配置一个 Experiment，并运行第一条�
 
 ```ts
 // agents/my-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     // 示例地址：换成你自己 agent 的真实端点（HTTP、CLI、SDK 都行，只要 send 里能拿到回复文本）
     const r = await fetch("http://localhost:3000/chat", {
@@ -115,16 +116,17 @@ npx niceeval view              # 本地查看器里看结果
 1. **静态配置走 Adapter 工厂。** URL、鉴权和协议细节等环境级配置作为工厂参数写在 Experiment 文件里。`defineExperiment` 的 `agent` 字段接收**已经配置好的实例**。
 2. **每轮动态值走 `ctx`。** experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
 
-把第一步的 `my-agent` 从固定 URL 的实例改成接收配置的工厂。将 default export 改为返回 `defineAgent(...)` 的函数，并让 `send` 读取工厂参数。Experiment 声明的 `model` 和 `flags` 每轮经 `ctx` 到达，再由 `send` 随请求转发：
+把第一步的 `my-agent` 从固定 URL 的实例改成接收配置的工厂。将 default export 改为返回 `defineDirectAgent(...)` 的函数，并让 `send` 读取工厂参数。Experiment 声明的 `model` 和 `flags` 每轮经 `ctx` 到达，再由 `send` 随请求转发：
 
 ```ts
 // agents/my-agent.ts —— 工厂：静态配置进闭包
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 export function myAgent(options: { baseUrl: string }): Agent {
-  return defineAgent({
+  return defineDirectAgent({
     name: "my-agent",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {
       const r = await fetch(`${options.baseUrl}/chat`, {   // ← 工厂配置：连哪
         method: "POST",
@@ -169,7 +171,7 @@ export default defineExperiment({
 | `model` | experiment 的 `model` | 应用接口收模型选择就随请求转发；不收就忽略 |
 | `flags` | experiment 的 `flags` | 原样转发（请求体、header 都行），应用按参数切换变体 |
 | `telemetry` | 配置了 OTel 接入时出现 | 只碰 `headers`：每轮新的 W3C `traceparent`，spread 进请求头。接收端点每次运行都一样，在 `defineConfig` 里固定、应用启动时指向它，不从 send 传——见 [OTel 接入](/zh/tutorials/connect-otel) |
-| `session` | 运行器（每条会话线一份） | 会话续接与 HITL 停轮现场的存取器都在它上面：`history()`、`id` / `capture()`、`hold()` / `take()`，见[写 send](/zh/tutorials/write-send) |
+| `session` | 运行器（每条会话线一份） | 会话续接与 HITL 停轮现场的存取器都在它上面：`id` / `capture()`、typed slot 的 `get()` / `set()` / `take()`，见[写 send](/zh/tutorials/write-send) |
 | `progress(update)` | 运行器（绑定当前 `agent.run`） | 报告 Turn/tool 的短期状态；Human dashboard 可显示，结果不保存 |
 | `diagnostic(input)` | 运行器（绑定当前 `agent.run`） | 保存协议退化、响应不完整等 warning/error；可由 locator 下钻回顾 |
 

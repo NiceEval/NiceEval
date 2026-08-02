@@ -1,5 +1,5 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。SampleSummary 的 sampleSummary 住在这里
-// (docs/feature/reports/components/summaries/README.md)。ExperimentComparison 是纯组合组件,不产生
+// (docs/feature/reports/components/summaries/README.md)。SampleOverview 是纯组合组件,不产生
 // 独立的 data,没有对应的计算函数。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):

@@ -19,7 +19,7 @@ export default defineEval({
     const turn = await t.send(
       `在当前工作目录创建一个文件 niceeval-create-file.txt,内容只写一行:${MARKER}`,
     );
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("正常收发、没有失败的动作", () => {
       t.succeeded();

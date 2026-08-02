@@ -34,12 +34,13 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 ```ts
 // agents/chat-app.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";   // 要按 experiment 切换地址，改成工厂参数：见接入指南
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     ctx.progress({ message: "等待 Chat API" });
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {  // ← 前端本来就在用的接口
@@ -91,15 +92,16 @@ if (!res.requestId) {
 
 ```ts
 // agents/chat-app.ts
-import { createSessionSlot, defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";
 
 interface Msg { role: "user" | "assistant"; content: string | null }
 const historySlot = createSessionSlot<Msg[]>("chat-app/history");
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     const history = ctx.session.get(historySlot) ?? []; // ← 新会话线还没有写过这个 slot
     const messages = [...history, { role: "user" as const, content: input.text }];
@@ -120,7 +122,7 @@ export default defineAgent({
 });
 ```
 
-注意这里**没有"第一轮"分支**：新会话线的 `ctx.session.get(historySlot)` 自然返回 `undefined`，`?? []` 归一为空历史——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何东西：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
+注意这里**没有"第一轮"分支**：新会话线的 `ctx.session.get(historySlot)` 自然返回 `undefined`，`?? []` 归一为空历史——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineDirectAgent` 上声明任何能力：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
 
 应用接口收会话 id 的话，历史在服务端，Adapter 只记 id——`send` 里只改两处：
 
@@ -245,7 +247,7 @@ HITL 几乎总是发生在流式接口上（停在流中间），所以这一步
 
 ```ts
 // agents/my-app.ts
-import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -270,8 +272,9 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
   });
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     const held = ctx.session.take(pendingSlot);
     if (held) {                                         // ← t.respond("approve")：普通 send，先交裁决

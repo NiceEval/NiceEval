@@ -10,7 +10,7 @@ import { pad4 } from "../util.ts";
 import {
   assertNoHiddenInputLeaks,
   captureEvalSource,
-  defaultProfileIdForFolderEntry,
+  folderEntryBaseId,
   type HiddenInput,
   type LeakGateHints,
 } from "./eval-source.ts";
@@ -212,7 +212,7 @@ function collectEvalEntries(evalsDir: string, root: string): Effect.Effect<reado
           const relDir = relative(evalsDir, dirname(file)).split(sep).join("/");
           return {
             file,
-            baseId: defaultProfileIdForFolderEntry(relDir === "" ? "." : relDir),
+            baseId: folderEntryBaseId(relDir === "" ? "." : relDir),
             kind: "folder",
           };
         }

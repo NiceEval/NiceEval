@@ -38,7 +38,7 @@ export interface AxisBounds {
  * 距离;都未声明(MetricLine 的 NumericAxis)不适用下限。
  *
  * 声明了 bounds 的一端,两步扩展都截到边界为止——贴边数据点如实落在框线上(如通过率 100%),
- * 那是指标的自然边界,不是裁剪。MetricScatter 的两轴与 MetricLine 的两轴共用同一个函数;
+ * 那是指标的自然边界,不是裁剪。Scatter 与 Line 的两轴共用同一个函数;
  * web SVG 与 text 字符坐标图消费同一份返回值,渲染层不重算。
  */
 export function paddedAxisDomain(values: readonly number[], bounds?: AxisBounds): [number, number] {
@@ -110,7 +110,7 @@ export interface AxisScale {
  * 一根轴的完整推定:先用 `paddedAxisDomain` 定值域(呼吸边距 + bounds 钳制),再用
  * `ticksInDomain` 在域内取整齐刻度,最后按 `[pixelLo, pixelHi]` 做线性映射。`invert` 只影响
  * 最后这一步的映射方向(`better: "lower"` 的轴反向渲染)——值域先按呼吸边距 / bounds 推定,
- * 再决定要不要反向,反向不改变值域本身或钳制结果。MetricScatter 与 MetricLine 的两轴共用
+ * 再决定要不要反向,反向不改变值域本身或钳制结果。Scatter 与 Line 的两轴共用
  * 这一个函数(docs/feature/reports/components/charts/README.md「值域」)。
  */
 export function axisScale(
@@ -207,7 +207,7 @@ function ringCandidates(p: PointLabelInput, d: number): Omit<PlacedPointLabel, "
 }
 
 /**
- * 散点直接标签的候选位择优布局(docs/feature/reports/library.md「MetricScatter」):
+ * 散点直接标签的候选位择优布局(docs/feature/reports/library.md「Scatter」):
  * 每个标签在点四周由近及远的候选环上打分——与已放置标签的重叠、与任何数据点的重叠、
  * 越出画布的面积、离点距离逐项累加,取代价最小的候选。存在无冲突候选时标签必不遮点、
  * 不叠标签、不越界;全候选冲突时取重叠最小者,绝不丢标签。重合点簇因此向不同方向散开,

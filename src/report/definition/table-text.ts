@@ -1,5 +1,5 @@
 // <Table> 原语的 text 面(../primitives.tsx 的 Table.text 就是它)。
-// 官方的表状组件(MetricTable / MetricMatrix / Scoreboard / DeltaTable)的 text 面也直接
+// 官方的表状组件(Table / Scoreboard / DeltaTable)的 text 面也直接
 // 调它 —— 官方与自定义表共用同一个渲染器,是「用户组件与官方组件对等」的构造证明:
 // 官方用不上的能力用户就拿不到,官方绕过它手搓它就一定会长歪。
 //

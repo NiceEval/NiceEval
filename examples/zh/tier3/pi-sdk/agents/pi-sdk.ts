@@ -4,20 +4,20 @@
 //
 // `AgentEvent` → 标准事件的映射是官方转换器 `createPiAgentEventStream`(`"niceeval/adapter"` 导出)
 // 的事;逐帧驱动 + HITL 挂起用的是官方驱动件 `driveFrameStream`,停轮现场与会话续接的状态槽
-// 都在 `ctx.session` 上——不需要模块级状态、也不需要在 `defineAgent` 上声明什么。这里只剩传输
+// 都在 `ctx.session` 上——不需要模块级状态；`defineDirectAgent` 只如实声明转换器的证据覆盖。这里只剩传输
 // 粘合:端点在哪、三种传输帧怎么处理、审批打哪个端点——不再手写循环和模块级 Map。
 // 无 OTel(pi-agent-core 没有官方集成),事件全部来自转换器。
 //
-// 这是 Tier 3(侵入改造 + experiment params):比 ../../tier1/pi-sdk 多一层——应用侧把
+// 这是 Tier 3(侵入改造 + experiment flags):比 ../../tier1/pi-sdk 多一层——应用侧把
 // system prompt 提升为请求体可选字段(src/backend/{agent,server}.ts),本文件把 experiment
-// 的 `params.systemPrompt` 经 ctx.params 随请求体透传,feature A/B 见 experiments/compare-prompts/。
+// 的 `flags.systemPrompt` 经 ctx.flags 随请求体透传,feature A/B 见 experiments/compare-prompts/。
 //
 // HITL:calculate 工具经服务端 beforeToolCall 挂审批。approval_request 帧到达时,流并不关闭——
 // 服务端把执行卡在一个 Promise 上等 POST /api/chat/approve。所以 `driveFrameStream` 在这一帧
 // 返回 `{ pause }`时用 heldSlot 记住"读了一半的 SSE 流"(连同转换器状态);下一次 send
 // (即 t.respond)先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。`take(heldSlot)`
 // 取到即清除,一次消费。
-import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, Turn, TurnInput } from "niceeval";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
@@ -92,8 +92,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     {
       message: input.text,
       sessionId: ctx.session.id,
-      // Tier 3:experiment 的 params 经 ctx.params 透传给应用(见 experiments/compare-prompts/)。
-      systemPrompt: ctx.params.systemPrompt,
+      // Tier 3:experiment 的 flags 经 ctx.flags 透传给应用(见 experiments/compare-prompts/)。
+      systemPrompt: ctx.flags.systemPrompt,
     },
     ctx.signal,
   );
@@ -103,7 +103,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return readStream(sseJsonFrames<PiFrame>(res.body), ctx, createPiAgentEventStream());
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "pi-sdk",
+  evidenceCoverage: completeEvidenceCoverage,
   send,
 });

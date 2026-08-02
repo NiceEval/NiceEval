@@ -415,10 +415,11 @@ spanMapper?: SpanMapper;
 `turnFromChatCompletion(res)` / `turnFromResponses(res)`（`niceeval/adapter` 导出）把 OpenAI 的两种响应形状——Chat Completions 与 Responses——整段响应零映射转成 `Turn`：不限于 OpenAI 官方，任何声明兼容这两种协议形状的服务都能用。
 
 ```ts
-import { turnFromChatCompletion } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, turnFromChatCompletion } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-openai-compat-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
     const res = await client.chat.completions.create({ messages: [...], tools });
     return turnFromChatCompletion(res);
@@ -487,10 +488,11 @@ return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
 `turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 tool `operation.finished`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
 
 ```ts
-import { defineAgent, turnFromAiSdk } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, turnFromAiSdk } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-ai-sdk-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
     const result = await generateText({ model, tools, prompt: input.text });
     return { ...turnFromAiSdk(result), data: result.text };
@@ -513,5 +515,5 @@ export default defineAgent({
 
 - [接入你的 agent](/zh/tutorials/connect-your-agent) — 自己写 adapter 时每个能力怎么做、对应什么断言。
 - [Sandbox Agent](/zh/tutorials/sandbox-agent) — 怎么运行内置 sandbox agent，以及怎么写自己的。
-- [defineAgent 参考](/zh/reference/define-agent) — `defineAgent` / `defineSandboxAgent` 完整参数。
+- [Adapter 参考](/zh/reference/define-agent) — `defineDirectAgent` / `defineSandboxAgent` 完整参数。
 - [OTel 接入](/zh/tutorials/connect-otel) — 把应用的 span 发给 [NiceEval](https://niceeval.com/)，换 `niceeval view` 的调用瀑布图。

@@ -8,7 +8,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("在当前工作目录跑 `echo niceeval-run-command-926`,把命令的输出告诉我。");
-    turn.expectOk();
+    await turn.succeeded().stopOnFailure();
 
     await t.group("调用了 shell 且没有失败的动作", () => {
       t.calledTool("command_execution", { status: "completed" });

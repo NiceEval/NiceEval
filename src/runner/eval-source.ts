@@ -10,9 +10,8 @@
 // 函数。runner 已经单向依赖 results(reporters/artifacts.ts 用 createWriter),这里
 // 反向引用不新增循环。
 //
-// folder-local sandbox source 的默认 profile id 与环境 profile 解析也落在本文件:
-// BuildKey / CaseKey 的哈希仍归 sandbox identity 线;这里只提供「目录路径 → profile id」
-// 与「string | source source → 查表用 profile id」的规则。
+// folder-local eval 的目录入口 id 也落在本文件；它只负责「目录路径 → eval base id」。
+// Sandbox 起点由每条 Eval 的普通 TypeScript helper 直接声明，不存在 profile registry 或按名查表。
 
 import { readFile } from "node:fs/promises";
 import { relative, sep } from "node:path";
@@ -47,11 +46,10 @@ export async function captureEvalSource(filePath: string, opts?: { root?: string
 }
 
 /**
- * 目录入口 `evals/<dir>/eval.ts` 的默认 profile id:目录相对 `evals/` 的正斜杠路径。
- * 与 eval id 在非扇出时相同;扇出条目(数组 / keyed record)仍用入口目录的 profile id,
- * 不用 `…/0000` 之类的扇出后缀。
+ * 目录入口 `evals/<dir>/eval.ts` 的 base id:目录相对 `evals/` 的正斜杠路径。
+ * 非扇出时它就是 eval id；扇出条目（数组 / keyed record）在它后面追加扇出后缀。
  */
-export function defaultProfileIdForFolderEntry(evalsRelativeDir: string): string {
+export function folderEntryBaseId(evalsRelativeDir: string): string {
   const id = evalsRelativeDir.split(sep).join("/").replace(/^\.\/+/, "").replace(/\/+$/, "");
   if (!id || id === ".") {
     throw new Error(
@@ -60,34 +58,6 @@ export function defaultProfileIdForFolderEntry(evalsRelativeDir: string): string
     );
   }
   return id;
-}
-
-/**
- * 解析这条 eval 用来查 `environments` 表的 profile id:
- * - `environment` 是非空字符串 → 用它(共享 profile);
- * - `environment` 是对象(folder-local sandbox source) → 用目录入口的 `defaultProfileId`;
- * - 都没有 → undefined。
- *
- * CaseKey / materializer 选择仍归 sandbox 线;本函数只给出查表键。
- */
-export function resolvedEnvironmentProfileId(evalDef: {
-  environment?: unknown;
-  defaultProfileId?: string;
-}): string | undefined {
-  const env = evalDef.environment;
-  if (typeof env === "string") {
-    const trimmed = env.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-  if (env !== null && typeof env === "object") {
-    return evalDef.defaultProfileId;
-  }
-  return undefined;
-}
-
-/** 结构判定:`environment` 是否为 folder-local sandbox source(非字符串的对象声明)。 */
-export function isFolderLocalSandboxSource(environment: unknown): environment is object {
-  return environment !== null && typeof environment === "object";
 }
 
 // 泄题门 API 从本模块再导出,方便 sandbox identity 线只依赖 runner/eval-source 边界,

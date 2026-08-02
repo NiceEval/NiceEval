@@ -1,8 +1,8 @@
 // 题型构成的单点判据(docs/feature/reports/library/measures.md「题型构成与主读数」):一个
 // 范围的对比主读数由其中出现的题型决定——通过制读通过率,计分制读总分,混型两者并排、
 // 各读各的。题型是定义期事实(EvalDescriptor.evaluationKind,同一个 experiment 也可以选择混型 Eval),
-// 所以这个判断不依赖任何 attempt 执行结果。官方消费者(ScopeSummary 的渲染面、
-// ExperimentList 的主列、ExperimentComparison 的 compose 步骤)都调用这一个函数判定构成,
+// 所以这个判断不依赖任何 attempt 执行结果。官方消费者(SampleSummary 的渲染面、
+// ExperimentTable 的主列、SampleOverview 的 compose 步骤)都调用这一个函数判定构成,
 // 不各自另设判据。
 
 import { collectItems, resolveInput } from "./aggregate.ts";
@@ -13,7 +13,7 @@ import { selectedAttemptsOnly } from "../components/shared-compute.ts";
  * `input` 内出现的题型构成,取自快照记录的定义期 `evaluationKind` 事实(`EvalDescriptor.evaluationKind`,
  * 省略或 `"pass"` 记通过制、`"points"` 记计分制)。
  *
- * 这是主读数选择的单点规则:`ScopeSummary`、`ExperimentList` 的主列、`ExperimentComparison`
+ * 这是主读数选择的单点规则:`SampleSummary`、`ExperimentTable` 的主列、`SampleOverview`
  * 的 compose 步骤都调用这一个函数,不各自重新发明「pass vs points vs mixed」的判断。自定义
  * 报告需要同样的切换时也应该调用它,而不是重新读 `attempt.result.evaluationKind` 另写一份等价逻辑。
  *

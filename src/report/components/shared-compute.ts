@@ -15,7 +15,7 @@ import type { VerdictTally } from "../model/types.ts";
  * `selectedEvalIdsOf` 退化为其实际 evals,过滤天然是 no-op。宿主注入的 `current()` Sample
  * 在选择时已按这条规则收窄,这里对真实 Sample 是幂等的;只对作者手工拼的 `Run[]`
  * 真正生效。`experimentListData` / `sampleSummary` / `evaluationKindComposition` 共用
- * 同一条规则,保证经 `ExperimentComparison` 展开后收到的 spec 与
+ * 同一条规则,保证经 `SampleOverview` 展开后收到的 spec 与
  * 直接调用同一份 input 深相等。
  */
 export function selectedAttemptsOnly(attempts: readonly AttemptHandle[]): AttemptHandle[] {

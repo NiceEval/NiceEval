@@ -2,18 +2,14 @@
 // captureEvalSource 的单测(定稿见 docs/feature/record/architecture.md「sources.json」)。
 // 覆盖:哈希确定性、path 相对 root 计算、CRLF/BOM 归一化行为、与 results/source-hash.ts
 // 算法保持一致(两处哈希必须逐字节相同,见 eval-source.ts 顶部注释)。
-// folder-local 默认 profile id 归 eval.md「目录入口与重名冲突」。
+// folder-local 目录入口 base id 归 eval.md「目录入口与重名冲突」。
 
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
-import {
-  captureEvalSource,
-  defaultProfileIdForFolderEntry,
-  resolvedEnvironmentProfileId,
-} from "./eval-source.ts";
+import { captureEvalSource, folderEntryBaseId } from "./eval-source.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {
@@ -99,25 +95,14 @@ describe("captureEvalSource", () => {
   });
 });
 
-describe("folder-local profile id", () => {
-  it("目录路径即默认 profile id", () => {
-    expect(defaultProfileIdForFolderEntry("terminal-bench/debug-long-program")).toBe(
+describe("folder-local eval base id", () => {
+  it("目录路径即 base id", () => {
+    expect(folderEntryBaseId("terminal-bench/debug-long-program")).toBe(
       "terminal-bench/debug-long-program",
     );
   });
 
   it("evals 根下的 eval.ts 拒绝", () => {
-    expect(() => defaultProfileIdForFolderEntry(".")).toThrow(/named directory/);
-  });
-
-  it("resolvedEnvironmentProfileId:字符串 profile 优先;对象 source 用 defaultProfileId", () => {
-    expect(resolvedEnvironmentProfileId({ environment: "shared-py" })).toBe("shared-py");
-    expect(
-      resolvedEnvironmentProfileId({
-        environment: { kind: "compose" },
-        defaultProfileId: "task/foo",
-      }),
-    ).toBe("task/foo");
-    expect(resolvedEnvironmentProfileId({})).toBeUndefined();
+    expect(() => folderEntryBaseId(".")).toThrow(/named directory/);
   });
 });

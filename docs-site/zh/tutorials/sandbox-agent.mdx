@@ -149,10 +149,15 @@ pattern 是 gitignore 风格，以 workdir 根为基准：不带 `/` 的匹配�
 ## 自定义 sandbox agent
 
 ```ts
-import { defineSandboxAgent } from "niceeval/adapter";
+import { command, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 
 export default defineSandboxAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure: {
+    identity: { agent: "my-agent", version: "1.0.0" },
+    probe: command("my-agent", ["--version"]),
+  },
   async setup(sandbox, ctx) {
     ctx.progress({ message: "检查 my-agent 安装" });
     await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);

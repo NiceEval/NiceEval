@@ -11,6 +11,6 @@ const CONCISE_PROMPT =
 export default defineExperiment({
   description: "concise: 极简风格 system prompt",
   agent,
-  params: { systemPrompt: CONCISE_PROMPT },
+  flags: { systemPrompt: CONCISE_PROMPT },
   attempts: 1,
 });

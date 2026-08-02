@@ -31,7 +31,9 @@ pi-agent-core 没有官方 OTel 集成,没有 span 可接。**Tier 3(侵入改�
 
 ## 接入验证过什么
 
-不需要在 `defineAgent` 上声明任何东西,能力从 `send` 实际做到的事自然成立:
+`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`createPiAgentEventStream` 完整转换原生 `AgentEvent`，因此使用
+`completeEvidenceCoverage`。能力仍从 `send` 实际做到的事自然成立：
 
 - 会话续接:新会话线不带 `sessionId` 开新会话、服务端回传的 `sessionId` 经 `ctx.session.capture()`
   写回、已有会话线带 `ctx.session.id` 续接同一条服务端内存历史(`sessions` Map)。

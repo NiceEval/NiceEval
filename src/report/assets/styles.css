@@ -291,7 +291,7 @@ table.niceeval-report,
   font-size: 12px;
 }
 
-/* ---- MetricCell:缺数据 / 覆盖率角标 / 证据链接 ---- */
+/* ---- MetricValue:缺数据 / 覆盖率角标 / 证据链接 ---- */
 .niceeval-report .niceeval-value { white-space: nowrap; }
 .niceeval-report .niceeval-missing {
   color: var(--soft);
@@ -370,7 +370,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-verdict-pill.niceeval-verdict-failed { border-color: color-mix(in oklch, var(--bad), var(--line) 55%); }
 .niceeval-report .niceeval-verdict-pill.niceeval-verdict-errored { border-color: color-mix(in oklch, var(--warn), var(--line) 55%); }
 
-/* ---- ScopeSummary:范围摘要卡的范围行 ---- */
+/* ---- SampleSummary:范围摘要卡的范围行 ---- */
 .niceeval-report .niceeval-sample-summary-range {
   color: var(--soft);
   font-size: 0.85em;

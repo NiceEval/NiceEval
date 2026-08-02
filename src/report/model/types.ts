@@ -131,7 +131,7 @@ export type DimensionRef =
 export type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
 
 /**
- * series 类选项(MetricScatter / MetricLine / ExperimentComparison)的输入:单维度,或
+ * series 类选项(Scatter / Line / SampleOverview)的输入:单维度,或
  * 非空数组解析为复合维度——name 依声明顺序以 ` × ` 连接,每个 attempt 的值为各成员显示键
  * 以 ` · ` 连接,任一成员缺失沿用 `(missing)` 显示键参与连接(docs/feature/reports/library/measures.md)。
  */
@@ -360,7 +360,7 @@ export interface StabilityMatrixData {
   totals: globalThis.Record<string, StabilityMatrixCell>;
 }
 
-// ───────────────────────── 概览(ScopeSummary / ExperimentComparison)─────────────────────────
+// ───────────────────────── 概览(SampleSummary / SampleOverview)─────────────────────────
 
 export interface VerdictTally {
   passed: number;

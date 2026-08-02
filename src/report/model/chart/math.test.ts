@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 分区「MetricScatter 点标签布局(web 面)」:对 placePointLabels 直接断言标签框与点框的几何关系,不经 HTML。
+// 分区「Scatter 点标签布局(web 面)」:对 placePointLabels 直接断言标签框与点框的几何关系,不经 HTML。
 
 import { describe, expect, it } from "vitest";
 import {

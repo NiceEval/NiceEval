@@ -3,10 +3,10 @@
 // niceeval/record 的读取契约手工构造)。覆盖登记行:两级聚合 vs 平铺、errored=0 口径、
 // skipped=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
 // 身份键去重、现刻水位、自定义指标 where/aggregate、evalGroup 完整父路径、verdict 权威、
-// MetricCell 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
+// MetricValue 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
 // sampleSummary 两级计票、experimentListData/sampleSummary 的 selectedEvalIds 投影、conditionsByFlag、
 // MetricLine 点身份、空数组反馈、measureRowsData sort、series 配色的确定性索引计算(colorIndexForKey /
-// colorIndicesForKeys,纯函数,不断言渲染出的颜色值)。MetricScatter 的 text 面(`scatterText`)本身是
+// colorIndicesForKeys,纯函数,不断言渲染出的颜色值)。Scatter 的 text 面(`scatterText`)本身是
 // 终端排版渲染——图例分配、connect 位移摘要的字符串产物归 E2E 报告域(docs/engineering/testing/e2e/
 // report.md §5 终端排版),不在本文件内。
 
@@ -324,9 +324,9 @@ describe("两级聚合口径", () => {
   });
 });
 
-// ───────────────────────── MetricCell 与缺数据行为 ─────────────────────────
+// ───────────────────────── MetricValue 与缺数据行为 ─────────────────────────
 
-describe("MetricCell 诚实契约", () => {
+describe("MetricValue 诚实契约", () => {
   it("measuredZero / partial / missing 三种格子互不混淆;refs 序列化后不丢", async () => {
     const zero = snap({ experimentId: "exp/zero", results: [res("a", "failed")] });
     const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "skipped")] });
@@ -898,7 +898,7 @@ describe("sampleSummary", () => {
     expect(data.totalScore?.value).toBe(5);
   });
 
-  it("evaluationKindComposition() 与 ScopeSummaryData.evaluationKindComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {
+  it("evaluationKindComposition() 与 SampleSummaryContent.evaluationKindComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {
     const passInput = [snap({ experimentId: "exp/agree-pass", results: [res("a", "passed")] })];
     expect(await evaluationKindComposition(passInput)).toBe((await sampleSummary(passInput)).evaluationKindComposition);
 
@@ -924,8 +924,8 @@ describe("sampleSummary", () => {
 });
 
 // ───────────────────────── experimentListData / sampleSummary 的 selectedEvalIds 投影 ─────────────────────────
-// ExperimentComparison 已收为普通组合组件(把同一个 input 原样透传给 ScopeSummary /
-// MetricScatter / ExperimentList,不再有自己的 data 形态);经它展开后与直接调用这三个
+// SampleOverview 是普通组合组件(把同一个 input 原样透传给 SampleSummary /
+// ExperimentScatter / ExperimentTable,不再有自己的 data 形态);经它展开后与直接调用这三个
 // 函数深等的验证挪到 dual-render.test.tsx(需要 resolve 管线)。这里只测三个函数自己的
 // selectedEvalIds 投影契约。
 

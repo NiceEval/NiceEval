@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
-// "validate*Data 递归覆盖到嵌套字段" 行:summaries 的 validateScopeSummaryData 表驱动字段突变覆盖,range 的 null 边界、两级 tally、
-// 两个 MetricCell 字段各自的嵌套校验。
+// "validate*Data 递归覆盖到嵌套字段" 行:summaries 的 validateSampleSummaryContent 表驱动字段突变覆盖,range 的 null 边界、两级 tally、
+// 两个 MetricValue 字段各自的嵌套校验。
 
 import { describe, expect, it } from "vitest";
 import { validateSampleSummaryContent } from "./validate.ts";
@@ -38,7 +38,7 @@ describe("validateSampleSummaryContent", () => {
     expect(validateSampleSummaryContent(bad)).toMatch(/"attemptVerdicts\.skipped"/);
   });
 
-  it("endToEndPassRate 结构错误定位到嵌套 MetricCell", () => {
+  it("endToEndPassRate 结构错误定位到嵌套 MetricValue", () => {
     const bad = { ...valid, endToEndPassRate: { value: 1, basis: "eval", samples: 1, total: 1, refs: "x" } };
     expect(validateSampleSummaryContent(bad)).toMatch(/"endToEndPassRate\.refs"/);
   });

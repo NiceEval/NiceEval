@@ -25,7 +25,7 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 ```ts
 // agents/web-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 interface WebAgentOptions {
@@ -36,8 +36,9 @@ interface WebAgentOptions {
 export function webAgent(options: WebAgentOptions): Agent {
   const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-  return defineAgent({
+  return defineDirectAgent({
     name: "web-agent",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {
       ctx.progress({ message: "等待 Web Agent" });
       const response = await fetch(`${baseUrl}/api/turn`, {
@@ -288,7 +289,7 @@ turn.data.amount;   // 类型是 number——不是 unknown，不用手动收窄
 
 ## 能力从哪来：构造证明，不是问卷
 
-`defineAgent` 构造 Direct Agent：runner 直接调用函数、SDK 或服务端点，目标可以在本地或远端。
+`defineDirectAgent` 构造 Direct Agent：runner 直接调用函数、SDK 或服务端点，目标可以在本地或远端。
 Direct Agent 的 `setup`、`send` 与 `teardown` 都拿不到 Sandbox。`defineSandboxAgent` 构造
 Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentContext`。
 
