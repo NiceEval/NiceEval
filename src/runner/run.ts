@@ -3,7 +3,7 @@
 // reporter 编排 / 汇总在 report.ts,Sandbox 适配器在 remote-sandbox.ts。
 
 import { readFile } from "node:fs/promises";
-import { Effect, Cause, Either, Exit, Option } from "effect";
+import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../scoring/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, carriableAttempts, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
@@ -95,6 +95,12 @@ import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./ga
 import { loadLatestResultsForCase } from "../record/open.ts";
 import type { RunManifests } from "../record/manifest.ts";
 import { linkedRunFingerprintIdentity } from "../sandbox/plan.ts";
+
+export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
+  readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
+  readonly conflictingExperimentIds: readonly string[];
+  readonly message: string;
+}> {}
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -193,6 +199,28 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 传给 reporter(见下方 shape 构造),run.ts 之外没有第二个入口能改这份身份。
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
+
+  // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
+  // `sandboxReuse` 则让整个 Invocation 的 pool 继续拥有并在收尾时销毁同一个 Case。
+  // 两种 ownership 不能同时成立；在 carry planning/build/provider 等任何资源动作之前
+  // 拒绝，避免产生“已登记 kept 但 pool finalizer 又销毁”的假现场。
+  if (opts.keepSandbox !== undefined) {
+    const conflictingExperiments = [...new Set(
+      opts.agentRuns
+        .filter((run) => run.sandboxReuse)
+        .map((run) => run.experimentId),
+    )];
+    if (conflictingExperiments.length > 0) {
+      throw new RunModeConflictError({
+        keepSandbox: opts.keepSandbox,
+        conflictingExperimentIds: Object.freeze(conflictingExperiments),
+        message:
+          `--keep-sandbox cannot be combined with sandboxReuse: true ` +
+          `(experiments: ${conflictingExperiments.map((id) => JSON.stringify(id)).join(", ")}). ` +
+          "Drop --keep-sandbox or use an experiment that does not reuse sandboxes.",
+      });
+    }
+  }
 
   // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
   // 矩阵大时(实验 × eval)规划阶段不做串行重复文件读。

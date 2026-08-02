@@ -378,6 +378,7 @@ async function run(
     /** 项目级配置(判分预检要读 `config.judge`);省略则用空配置。 */
     config?: Config;
     buildPreparation?: RunOptions["buildPreparation"];
+    keepSandbox?: NonNullable<RunOptions["keepSandbox"]>;
   } = {},
 ): Promise<{
   summary: Awaited<ReturnType<typeof runEvals>>;
@@ -417,10 +418,34 @@ async function run(
     ...(opts.carryPlan ? { carryPlan: await completeCarryPlan(evals, completedRuns, opts.carryPlan) } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.buildPreparation ? { buildPreparation: opts.buildPreparation } : {}),
+    ...(opts.keepSandbox ? { keepSandbox: opts.keepSandbox } : {}),
   };
   const summary = await runEvals(runOpts);
   return { summary, root, onEvalComplete, onEventComplete };
 }
+
+describe("runEvals · --keep-sandbox 与 sandboxReuse ownership 互斥", () => {
+  it("在 carry planning 与 Sandbox 创建前拒绝冲突组合", async () => {
+    const evalDef = makeEval("keep-reuse-conflict", () => {});
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-keep-reuse"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      sandboxReuse: true,
+      timeoutMs: 5_000,
+      selectedEvalIds: [evalDef.id],
+      experimentId: "keep/reuse",
+    };
+
+    await expect(run([evalDef], [agentRun], { keepSandbox: "all" })).rejects.toMatchObject({
+      _tag: "RunModeConflictError",
+      keepSandbox: "all",
+      conflictingExperimentIds: ["keep/reuse"],
+    });
+  });
+});
 
 async function diskSnapshotStartedAt(root: string, experimentId: string): Promise<string> {
   const results = await openRecord(root);
