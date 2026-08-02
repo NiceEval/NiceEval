@@ -148,19 +148,23 @@ interface SnapshotState {
   /** 快照的权威 meta(不含 completedAt;knownEvalIds 随重复声明累加)。 */
   meta: RunMeta;
   dir: string;
-  writer: RunWriter;
   declCompletedAt?: string;
   declName?: LocalizedText;
   /** 这个 Run 是否已经封口;`finish()` 只能对每个 Run 生效一次。 */
   finished: boolean;
 }
 
+interface SnapshotHandle {
+  readonly state: SnapshotState;
+  readonly writer: RunWriter;
+}
+
 /** 同步:不建目录、不碰磁盘。目录创建发生在第一次 run() 调用里。 */
 export function createWriter(root: string, opts: WriterOptions): Writer {
-  const pending = new Map<string, Promise<SnapshotState>>();
+  const pending = new Map<string, Promise<SnapshotHandle>>();
   const created: { experimentId: string; dir: string }[] = [];
 
-  async function buildSnapshot(decl: RunDeclaration): Promise<SnapshotState> {
+  async function buildSnapshot(decl: RunDeclaration): Promise<SnapshotHandle> {
     const meta: RunMeta = {
       format: RECORD_FORMAT,
       schemaVersion: RECORD_SCHEMA_VERSION,
@@ -195,9 +199,8 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       declCompletedAt: decl.completedAt,
       declName: decl.name,
       finished: false,
-      writer: undefined as unknown as RunWriter, // 下面立即补上,writer.finish 需要闭包引用 state 本身
     };
-    state.writer = {
+    const writer: RunWriter = {
       dir,
       async writeAttempt(entry: AttemptEntry, artifacts?: AttemptArtifacts): Promise<void> {
         await writeAttemptFiles(dir, { experimentId: state.meta.experimentId, startedAt: state.meta.startedAt }, entry, artifacts, sourceStore);
@@ -233,7 +236,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
         await writeFile(join(dir, RUN_FILE), JSON.stringify(finalMeta, null, 2), "utf-8");
       },
     };
-    return state;
+    return { state, writer };
   }
 
   async function snapshotImpl(decl: RunDeclaration): Promise<RunWriter> {
@@ -243,19 +246,20 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       );
     }
     const existing = pending.get(decl.experimentId);
-    const statePromise: Promise<SnapshotState> = existing
-      ? existing.then((state) => {
+    const handlePromise: Promise<SnapshotHandle> = existing
+      ? existing.then((handle) => {
+          const { state } = handle;
           if (decl.knownEvalIds?.length) {
             state.meta.knownEvalIds = [...new Set([...(state.meta.knownEvalIds ?? []), ...decl.knownEvalIds!])];
           }
           if (decl.completedAt !== undefined) state.declCompletedAt = decl.completedAt;
           if (decl.name !== undefined) state.declName = decl.name;
-          return state;
+          return handle;
         })
       : buildSnapshot(decl);
-    pending.set(decl.experimentId, statePromise);
-    const state = await statePromise;
-    return state.writer;
+    pending.set(decl.experimentId, handlePromise);
+    const handle = await handlePromise;
+    return handle.writer;
   }
 
   async function writeAttemptForImpl(result: EvalResult): Promise<void> {
@@ -354,8 +358,8 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       return [...created];
     },
     async snapshotWriters(): Promise<{ experimentId: string; writer: RunWriter }[]> {
-      const states = await Promise.all([...pending.values()]);
-      return states.map((state) => ({ experimentId: state.meta.experimentId, writer: state.writer }));
+      const handles = await Promise.all([...pending.values()]);
+      return handles.map(({ state, writer }) => ({ experimentId: state.meta.experimentId, writer }));
     },
   };
 }
