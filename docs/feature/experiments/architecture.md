@@ -236,24 +236,28 @@ export default defineExperiment({
 同一实验被两条 Invocation 选中时,实验级 `setup` 在每条 Invocation 各执行一次,跨进程共享服务的互斥仍归外部编排。
 它也不是跨机分布式锁:判据依赖同一份文件系统与同一只时钟,不同工作副本各有各的 `.niceeval`,天然不共享锁域。
 
-## Invocation 活动登记
+## Session 登记
 
-Run 是一个 Experiment 的持久结果快照，Invocation 则是一次 `niceeval exp` 调度过程。活动登记只补上 Invocation 存活期间的可观测性，不把 Invocation 变成 Results 的第三种持久实体，也不改变 Run / Attempt 的落盘格式。
+Session 是一次 `niceeval exp` 调度的持久目录项。它聚合该次调用选中的多个 Experiment Run，回答「这些 Run 是不是同一批发起」与「这批还在不在跑」。
+Run 仍是一条 Experiment 的结果快照，Attempt 仍是一条 Eval 的一轮执行。Session 不是 agent 的对话 session；agent session / turn 只属于 Attempt 的 execution 证据。
 
-- **每次 Invocation 一份短命登记。**
-  runner 在预分配每个 Experiment 的 `runId` 后、首次派发前，以 UUID v4 `invocationId` 在 `.niceeval/active/` 原子创建一份登记。文件名只作互斥与扫描，权威内容含 `invocationId`、`pid`、`startedAt`、`heartbeatAt` 和每个选中 Experiment 的 `{ experimentId, runId, state, running, queued, elsewhere }`。
-  `state` 是 `setup`、`running`、`waiting` 或 `teardown` 之一。计数与 live 面板使用同一份反馈状态，不另建调度计数器。
+- **每次调度一份 Session。**
+
+  - runner 在预分配每个 Experiment 的 `runId` 后、首次派发前，以 UUID v4 `sessionId` 在 `.niceeval/sessions/` 原子创建 `<sessionId>.json`。文件名只作定位。
+  - 初始内容是权威身份：`sessionId`、`pid`、`startedAt`、`status` 与每个 Experiment 的 `{ experimentId, runId }`。
+  - 活动期间写入 `heartbeatAt` 与各 Experiment 的 `{ state, running, queued, elsewhere }`。完成后写入 `completedAt`、completion 与各 Run 的路径。
+  - `state` 是 `setup`、`running`、`waiting` 或 `teardown` 之一。计数与 live 面板使用同一份反馈状态，不另建调度计数器。
+- **Session 记录跨过结束点。**
+  正常完成、启动期失败与中断都封口同一份 Session，而不是删除它。`session list` 默认只列有效心跳的活动 Session，`--all` 才读历史；这份轻量索引不复制 Attempt 的 verdict、usage、事件或 artifact，完整结果继续从每个 Run 读取。
 - **心跳表示活动，不表示锁。**
-  活动登记每 10s 原子更新一次，`heartbeatAt` 落后当前时间超过 30s 即失活。失活登记只能作为 `STALE` 诊断展示，不能证明进程仍在、不能挡住派发，也不能作为用例锁或实验级名额租约的依据。
-  用例锁与名额租约继续各自判断心跳和接管，不能因为活动登记存在就跳过它们。
-- **同一份登记覆盖整次调用。**
-  一条 Invocation 选中多个 Experiment 时共用一个 `invocationId`，但每个 Experiment 保留自己的 `runId` 和计数。这让活动查询既能回答「哪条命令还活着」，又能精确回答「哪些 Experiment 在跑」，不伪造跨 Experiment 的 Run。
-- **收尾删除，异常容忍。**
-  正常完成、启动期失败与中断收尾都删除自己的活动登记。`SIGKILL`、断电或文件系统错误留下的文件由失活规则降级为 STALE；查询不修改它，后续 `exp` 也不需要先清理它。
+  活动 Session 每 10s 原子更新一次，`heartbeatAt` 落后当前时间超过 30s 即失活。失活 Session 只能作为 `STALE` 诊断展示，不能证明进程仍在、不能挡住派发，也不能作为用例锁或实验级名额租约的依据。
+  用例锁与名额租约继续各自判断心跳和接管，不能因为 Session 存在就跳过它们。
+- **一份 Session 覆盖多个 Run。**
+  一条 `exp` 选中多个 Experiment 时共用一个 `sessionId`，但每个 Experiment 保留自己的 `runId`、运行状态和结果路径。这让查询既能回答「哪条命令还活着」，又能精确回答「哪些 Experiment 在跑」，不伪造跨 Experiment 的 Run。
 - **读取面与结果面分离。**
-  `niceeval exp --active` 只扫描该目录并按登记的 `experimentId` 过滤，不加载配置或源码。它不输出 Attempt locator、agent 事件或 artifact；完成后的证据仍由 Run 和 `niceeval show` 提供。
+  `niceeval session list` / `show` 只扫描 Session 目录并按记录的 `experimentId` 过滤，不加载配置或源码。它们不输出 Attempt locator、agent 事件或 artifact；完成后的证据仍由 Run 和 `niceeval show` 提供。
 
-活动查询的命令和 JSON 形状单源在 [CLI · 查看活跃 Invocation](cli.md#查看活跃-invocation)。它的用户决策路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
+Session 的命令和 JSON 形状单源在 [CLI · Session 查询](cli.md#session-查询)。它的用户决策路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
 
 ## Carry：自动携带
 

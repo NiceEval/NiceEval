@@ -2,6 +2,7 @@
 
 ```sh
 niceeval exp                            # 跑 experiments/ 下全部实验
+niceeval exp list                       # 列出可运行的实验配置,不派发
 niceeval exp agents/codex               # 按目录路径跑一批实验
 niceeval exp agents/codex/gpt-5.4       # 跑一个实验
 niceeval exp agents/codex/gpt           # 按文件名前缀跑一族实验
@@ -10,6 +11,20 @@ niceeval exp agents/codex memory/retention # 再按 eval id 前缀收窄
 
 不写 experiment 不能运行 eval。
 experiment 决定 agent、model、flags、attempts、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
+
+### `niceeval exp list`:先看有哪些运行配置
+
+`niceeval exp list [<experiment-prefix>]` 发现 config、eval 与 experiment，但不创建 Session、不取锁、不派发 Attempt。它回答的是「这里有哪些可以运行的 Experiment」，不是「哪些已经在运行」：
+
+```sh
+niceeval exp list
+niceeval exp list compare/codex
+niceeval exp list --json
+```
+
+不带 selector 时逐 id 列出全部 Experiment；带 selector 时复用 `exp` 的 experiment 路径选择规则，零命中按用法错误给出可浏览目录。每行固定给出 `experimentId`、description、agent、model、attempts、实际选中的 eval 数和 labels；`flags`、环境变量、API key 与 Sandbox 配置不打印。`--json` 输出单个 `{ format: "niceeval.experiments", schemaVersion: 1, experiments }` 文档，数组项复用同一组字段并额外给出完整 `selectedEvalIds`。
+
+`list` 是 `exp` 保留子命令，不能作为 experiment id 或路径段使用。要运行 experiment id 含 `list` 的目录，必须给出包含该目录的更长 selector。
 
 ### 实验选择器怎样解析
 
@@ -108,23 +123,31 @@ TTY 只决定人读文本用哪种版式(live 面板还是追加流),不改变�
 
 `--quiet` 不存在:安静与否不是消费者差别,机器消费直接用 `--json`。
 
-## 查看活跃 Invocation
+## Session 查询
 
-`niceeval exp --active [<experiment-prefix>]` 是同一记录根内的只读活动查询。它不发现 Experiment 源码、不加载配置、不启动 agent 或 Sandbox，也不读取历史结果来推测「可能还在跑」。它只读取尚持有效心跳的 Invocation 活动登记，因此适合在不是启动方的终端确认哪些 Experiment 正在执行：
+每次 `niceeval exp …` 调度都创建一个 Session。它把这条命令选中的多个 Experiment Run 放进同一个可查询单元；Run 仍是一条 Experiment 的结果快照，Attempt 仍是一个 Eval 的一轮执行。Session 不是 agent 的对话 session，agent 的 session / turn 只属于 Attempt 的 execution 证据。
+
+`niceeval session list [--all] [<experiment-prefix>]` 是同一记录根内的只读查询：默认列出有有效心跳的 Session，`--all` 还列出已结束 Session。它不发现 Experiment 源码、不加载配置、不启动 agent 或 Sandbox：
 
 ```sh
-niceeval exp --active
-niceeval exp --active compare/codex
-niceeval exp --active --json
+niceeval session list
+niceeval session list compare/codex
+niceeval session list --all --json
+niceeval session show s_01J5R0H3K8
 ```
 
-不带 selector 时列出全部活跃 Invocation；带 selector 时按登记中的 `experimentId` 路径前缀收窄，零命中正常显示空清单而不是把它当作 `exp` 的选择错误。一个 Invocation 选中了多个 Experiment 时，结果按 Invocation 分组、组内一行一个 Experiment。每行固定包含 `experimentId`、本次预分配的 `runId` 短写、运行级状态和 `running` / `queued` / `elsewhere` 计数；状态只能是 `setup`、`running`、`waiting` 或 `teardown`。
+不带 selector 时列出全部 Session；带 selector 时按 Session 记录中的 `experimentId` 路径前缀收窄，零命中正常显示空清单。`session show <sessionId>` 要求完整 id 或唯一前缀；歧义时列出候选，不猜测。一个 Session 选中了多个 Experiment 时，结果按 Session 分组、组内一行一个 Experiment。活动行固定包含 `experimentId`、`runId` 短写、运行级状态和 `running` / `queued` / `elsewhere` 计数；状态只能是 `setup`、`running`、`waiting` 或 `teardown`。结束行给出 completion 与各 Run 路径。
 
-Human text 先打印 `ACTIVE INVOCATIONS`，随后是可选的 `STALE INVOCATIONS`。过期心跳的登记不是正在运行的事实，绝不并入 ACTIVE、`running` 或 `elsewhere`；它只给出 pid、最后心跳时刻和「重新运行原命令」的下一步。活动行不展开 agent detail、命令或 Attempt locator，避免把活动索引变成第二套 execution 输出。
+Human text 先打印 `ACTIVE SESSIONS`，`--all` 再追加 `COMPLETED SESSIONS` 与可选的 `STALE SESSIONS`。过期心跳的 Session 不是正在运行的事实，绝不并入 ACTIVE、`running` 或 `elsewhere`；它只给出 session id、pid、最后心跳时刻和「重新运行原命令」的下一步。活动行不展开 agent detail、命令或 Attempt locator，避免把 Session 索引变成第二套 execution 输出。
 
-`--active --json` 输出一份 JSON 文档，不是 `exp --json` 的 NDJSON 事件流。根对象固定为 `{ format: "niceeval.active", schemaVersion: 1, invocations, stale }`；`invocations` 与 `stale` 都是 Invocation 数组。每个活跃 Invocation 必有 `invocationId`、`pid`、`startedAt`、`heartbeatAt` 与 `experiments`；每个 experiment 项必有 `experimentId`、`runId`、`state`、`running`、`queued`、`elsewhere`。`stale` 项只保留身份与最后心跳，不携带可被误读为当前状态的计数。未知字段必须忽略。
+`session list --json` 与 `session show --json` 都输出单个 JSON 文档，不是 `exp --json` 的 NDJSON 事件流。列表根对象固定为 `{ format: "niceeval.sessions", schemaVersion: 1, sessions, stale }`。
 
-活动查询的存储、心跳和失活判定单源在 [Architecture · Invocation 活动登记](architecture.md#invocation-活动登记)；完整操作路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
+- 每个 Session 必有 `sessionId`、`pid`、`startedAt`、`status`、`experiments`。
+- 活动 Session 另有 `heartbeatAt`。
+- 每个 experiment 项必有 `experimentId`、`runId`。活动项另有 `state`、`running`、`queued`、`elsewhere`；结束项另有 Run 的 `path`。
+- `stale` 项只保留身份与最后心跳，不携带可被误读为当前状态的计数。未知字段必须忽略。
+
+Session 的存储、心跳和失活判定单源在 [Architecture · Session 登记](architecture.md#session-登记)；完整操作路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
 
 ## 什么动态更新,什么逐条追加
 
