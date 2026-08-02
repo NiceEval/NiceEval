@@ -2,8 +2,8 @@
 // `SDKMessage` 流原样透传成 SSE,外加自定义 { type: "server_error" } 传输帧)。
 //
 // `SDKMessage` → 标准事件的映射是官方转换器 `createClaudeSdkEventStream`(`"niceeval/adapter"`
-// 导出)的事;逐帧驱动也是官方件(`driveFrameStream`)。HITL 停轮现场(读了一半的流)和会话
-// HITL 停轮现场用 Adapter 私有 heldSlot 存取，会话 id 用
+// 导出)的事;逐帧驱动也是官方件(`driveFrameStream`)。HITL 停轮现场用 Adapter 私有
+// heldSlot 存取，会话 id 用
 // `ctx.session.id` / `ctx.session.capture` 续接。这里
 // 只剩传输粘合:端点在哪、审批打哪个端点、HITL 停轮怎么判。
 // 无 OTel(CLI 原生遥测只有 metrics+logs,niceeval 不消费),事件全部来自转换器。
