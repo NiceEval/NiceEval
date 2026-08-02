@@ -108,6 +108,24 @@ TTY 只决定人读文本用哪种版式(live 面板还是追加流),不改变�
 
 `--quiet` 不存在:安静与否不是消费者差别,机器消费直接用 `--json`。
 
+## 查看活跃 Invocation
+
+`niceeval exp --active [<experiment-prefix>]` 是同一记录根内的只读活动查询。它不发现 Experiment 源码、不加载配置、不启动 agent 或 Sandbox，也不读取历史结果来推测「可能还在跑」。它只读取尚持有效心跳的 Invocation 活动登记，因此适合在不是启动方的终端确认哪些 Experiment 正在执行：
+
+```sh
+niceeval exp --active
+niceeval exp --active compare/codex
+niceeval exp --active --json
+```
+
+不带 selector 时列出全部活跃 Invocation；带 selector 时按登记中的 `experimentId` 路径前缀收窄，零命中正常显示空清单而不是把它当作 `exp` 的选择错误。一个 Invocation 选中了多个 Experiment 时，结果按 Invocation 分组、组内一行一个 Experiment。每行固定包含 `experimentId`、本次预分配的 `runId` 短写、运行级状态和 `running` / `queued` / `elsewhere` 计数；状态只能是 `setup`、`running`、`waiting` 或 `teardown`。
+
+Human text 先打印 `ACTIVE INVOCATIONS`，随后是可选的 `STALE INVOCATIONS`。过期心跳的登记不是正在运行的事实，绝不并入 ACTIVE、`running` 或 `elsewhere`；它只给出 pid、最后心跳时刻和「重新运行原命令」的下一步。活动行不展开 agent detail、命令或 Attempt locator，避免把活动索引变成第二套 execution 输出。
+
+`--active --json` 输出一份 JSON 文档，不是 `exp --json` 的 NDJSON 事件流。根对象固定为 `{ format: "niceeval.active", schemaVersion: 1, invocations, stale }`；`invocations` 与 `stale` 都是 Invocation 数组。每个活跃 Invocation 必有 `invocationId`、`pid`、`startedAt`、`heartbeatAt` 与 `experiments`；每个 experiment 项必有 `experimentId`、`runId`、`state`、`running`、`queued`、`elsewhere`。`stale` 项只保留身份与最后心跳，不携带可被误读为当前状态的计数。未知字段必须忽略。
+
+活动查询的存储、心跳和失活判定单源在 [Architecture · Invocation 活动登记](architecture.md#invocation-活动登记)；完整操作路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
+
 ## 什么动态更新,什么逐条追加
 
 判断标准只有一个:**新值是否使旧值失去意义**。

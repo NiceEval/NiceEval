@@ -236,6 +236,25 @@ export default defineExperiment({
 同一实验被两条 Invocation 选中时,实验级 `setup` 在每条 Invocation 各执行一次,跨进程共享服务的互斥仍归外部编排。
 它也不是跨机分布式锁:判据依赖同一份文件系统与同一只时钟,不同工作副本各有各的 `.niceeval`,天然不共享锁域。
 
+## Invocation 活动登记
+
+Run 是一个 Experiment 的持久结果快照，Invocation 则是一次 `niceeval exp` 调度过程。活动登记只补上 Invocation 存活期间的可观测性，不把 Invocation 变成 Results 的第三种持久实体，也不改变 Run / Attempt 的落盘格式。
+
+- **每次 Invocation 一份短命登记。**
+  runner 在预分配每个 Experiment 的 `runId` 后、首次派发前，以 UUID v4 `invocationId` 在 `.niceeval/active/` 原子创建一份登记。文件名只作互斥与扫描，权威内容含 `invocationId`、`pid`、`startedAt`、`heartbeatAt` 和每个选中 Experiment 的 `{ experimentId, runId, state, running, queued, elsewhere }`。
+  `state` 是 `setup`、`running`、`waiting` 或 `teardown` 之一。计数与 live 面板使用同一份反馈状态，不另建调度计数器。
+- **心跳表示活动，不表示锁。**
+  活动登记每 10s 原子更新一次，`heartbeatAt` 落后当前时间超过 30s 即失活。失活登记只能作为 `STALE` 诊断展示，不能证明进程仍在、不能挡住派发，也不能作为用例锁或实验级名额租约的依据。
+  用例锁与名额租约继续各自判断心跳和接管，不能因为活动登记存在就跳过它们。
+- **同一份登记覆盖整次调用。**
+  一条 Invocation 选中多个 Experiment 时共用一个 `invocationId`，但每个 Experiment 保留自己的 `runId` 和计数。这让活动查询既能回答「哪条命令还活着」，又能精确回答「哪些 Experiment 在跑」，不伪造跨 Experiment 的 Run。
+- **收尾删除，异常容忍。**
+  正常完成、启动期失败与中断收尾都删除自己的活动登记。`SIGKILL`、断电或文件系统错误留下的文件由失活规则降级为 STALE；查询不修改它，后续 `exp` 也不需要先清理它。
+- **读取面与结果面分离。**
+  `niceeval exp --active` 只扫描该目录并按登记的 `experimentId` 过滤，不加载配置或源码。它不输出 Attempt locator、agent 事件或 artifact；完成后的证据仍由 Run 和 `niceeval show` 提供。
+
+活动查询的命令和 JSON 形状单源在 [CLI · 查看活跃 Invocation](cli.md#查看活跃-invocation)。它的用户决策路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
+
 ## Carry：自动携带
 
 上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次 Run（带 `artifactBase` 指回原 artifact），让最新 Run 保持完整；[`--rerun`](use-case/重新运行/) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。
