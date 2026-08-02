@@ -33,7 +33,7 @@ export const STATELESS: PlannedExperimentState = Object.freeze({ _tag: "Stateles
 
 export type StateDeclaration =
   | { readonly _tag: "Absent" }
-  | { readonly _tag: "Declared"; readonly definition: unknown };
+  | { readonly _tag: "Declared"; readonly definition: ExperimentStateDefinition };
 
 export type StateSandboxMode =
   | { readonly _tag: "Fresh" }
@@ -48,8 +48,25 @@ export const STATE_FRESH: StateSandboxMode = Object.freeze({ _tag: "Fresh" });
 export const STATE_REUSE: StateSandboxMode = Object.freeze({ _tag: "Reuse" });
 export const STATE_CONCURRENCY_UNBOUNDED: StateConcurrencyLimit = Object.freeze({ _tag: "Unbounded" });
 
-export function declaredState(definition: unknown): StateDeclaration {
+/**
+ * 领域 ADT 只接收已验证的 Definition；调用者若持有外部动态值，必须先经过
+ * decodeStateDeclaration()，不能把 unknown 带入规划阶段。
+ */
+export function declaredState(definition: ExperimentStateDefinition): StateDeclaration {
   return Object.freeze({ _tag: "Declared", definition });
+}
+
+/** 外部动态 State 值进入规划层的唯一解码边界。 */
+export function decodeStateDeclaration(
+  definition: unknown,
+): Effect.Effect<StateDeclaration, StatePlanningError> {
+  if (!isExperimentStateDefinition(definition)) {
+    return Effect.fail(new StatePlanningError({
+      code: "state.invalid-definition",
+      message: "state.invalid-definition: Experiment state must be created by defineExperimentState().",
+    }));
+  }
+  return Effect.succeed(declaredState(definition));
 }
 
 export function limitedStateConcurrency(value: number): StateConcurrencyLimit {
@@ -67,12 +84,6 @@ export function planExperimentState(
   input: PlanExperimentStateInput,
 ): Effect.Effect<PlannedExperimentState, StatePlanningError> {
   if (input.state._tag === "Absent") return Effect.succeed(STATELESS);
-  if (!isExperimentStateDefinition(input.state.definition)) {
-    return Effect.fail(new StatePlanningError({
-      code: "state.invalid-definition",
-      message: "state.invalid-definition: Experiment state must be created by defineExperimentState().",
-    }));
-  }
   const definition = input.state.definition;
   if (input.agent.kind !== "sandbox") {
     return Effect.fail(new StatePlanningError({

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Agent } from "../agents/types.ts";
 import { defineExperimentState, ExperimentStateDefinitionError, isExperimentStateDefinition } from "./definition.ts";
 import {
+  decodeStateDeclaration,
   declaredState,
   limitedStateConcurrency,
   planExperimentState,
@@ -37,7 +38,9 @@ function input(overrides: Partial<ExperimentStateInput> = {}): ExperimentStateIn
 const sandboxAgent = { kind: "sandbox", name: "fixture" } as Agent;
 const directAgent = { kind: "direct", name: "fixture" } as Agent;
 
-async function planningFailure(effect: ReturnType<typeof planExperimentState>): Promise<StatePlanningError> {
+async function planningFailure(
+  effect: Effect.Effect<unknown, StatePlanningError>,
+): Promise<StatePlanningError> {
   const exit = await Effect.runPromiseExit(effect);
   if (exit._tag === "Success") throw new Error("expected State planning failure");
   return Option.getOrThrow(Cause.failureOption(exit.cause));
@@ -49,6 +52,11 @@ function typeContracts(): void {
   // @ts-expect-error Definition 的私有品牌不能由作者对象字面量伪造。
   const forged: typeof definition = input();
   void forged;
+  const declaration = declaredState(definition);
+  void declaration;
+  // @ts-expect-error 规划 ADT 不接受未经来源验证的作者输入。
+  const uncheckedDeclaration = declaredState(input());
+  void uncheckedDeclaration;
 }
 void typeContracts;
 
@@ -99,6 +107,15 @@ describe("Experiment State definition and planning", () => {
       sandbox: STATE_REUSE,
       concurrency: limitedStateConcurrency(1),
     })).toMatchObject({ _tag: "Rolling", cadence: "window" });
+  });
+
+  it("只在解码边界读取动态 State，并立即归一为领域错误", async () => {
+    const definition = defineExperimentState(input());
+    const declaration = await Effect.runPromise(decodeStateDeclaration(definition));
+
+    expect(declaration).toEqual({ _tag: "Declared", definition });
+    expect((await planningFailure(decodeStateDeclaration({ identity: definition.identity }))).code)
+      .toBe("state.invalid-definition");
   });
 
   it("在 provider I/O 前拒绝 Direct、并发 rolling 和不安全 reuse save policy", async () => {
