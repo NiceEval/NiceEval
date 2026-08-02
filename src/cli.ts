@@ -573,7 +573,12 @@ function parseAcceptLocator(positionals: string[], flags: Flags): string {
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
   ];
-  const bad = unsupported.find(([, value]) => value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0));
+  const bad = unsupported.find(([flag, value]) => {
+    // `--no-open` / `--no-early-exit` are represented as false, but are still
+    // explicit flags and therefore invalid on this command.
+    if (flag === "--open/--no-open" || flag === "--early-exit/--no-early-exit") return value !== undefined;
+    return value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0);
+  });
   if (bad) {
     process.stderr.write(t("cli.accept.flagUnsupported", { flag: bad[0] }));
     process.exit(1);
