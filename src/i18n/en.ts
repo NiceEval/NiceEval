@@ -105,6 +105,15 @@ export const en = {
     "Running as planned.\n",
   "cli.accept.equivalent": "equivalent command:  {{command}}\n",
   "cli.accept.noneChosen": "Nothing accepted; running as planned.\n",
+  "cli.accept.usage":
+    "error: niceeval accept expects exactly one locator in the form @<locator>\n" +
+    "  fix: copy a locator from `niceeval show --history`, then run `niceeval accept @<locator>`\n",
+  "cli.accept.flagUnsupported":
+    "error: {{flag}} is not valid with niceeval accept\n" +
+    "  fix: pass only @<locator> (and optionally --record <dir>)\n",
+  "cli.accept.failed": "error: could not accept result: {{error}}\n",
+  "cli.accept.done":
+    "Accepted {{sourceLocator}}. New result locator: {{locator}}. Current fingerprint: {{fingerprint}}\n",
   "cli.error": "niceeval error: {{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept needs a selector, for example --accept config:judge.model\n" +
@@ -162,6 +171,7 @@ export const en = {
     "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
+    "  niceeval accept @<locator>                         accept one historical result\n" +
     "  niceeval show [eval-id-prefix… | @<locator>]        read results in the terminal\n" +
     "      no evidence flag: leaderboard scoped to the matched evals (bare show, an\n" +
     "        eval id prefix, or a single --exp all land here); two or more --exp\n" +
@@ -205,7 +215,7 @@ export const en = {
     "  niceeval init                                       scaffold config + evals/\n\n" +
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --accept[=selector]  --dry\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +

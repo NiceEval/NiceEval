@@ -892,6 +892,11 @@ export interface HumanDryPlanRow {
   /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
    *  「`--dry`:计划矩阵与作废原因」);省略或空数组 = 全部携带,行尾标 `carried`。 */
   dispatch?: readonly { reason: string; deltas?: readonly { selector: string; from?: string; to?: string }[] }[];
+  /** stale 行对应的历史结果；每个 locator 都是一次独立的接受对象。 */
+  prior?: readonly {
+    locator: string;
+    deltas?: readonly { selector: string; from?: string; to?: string }[];
+  }[];
 }
 
 export interface HumanDryPlanInput {
@@ -906,10 +911,7 @@ export interface HumanDryPlanInput {
    *  全新派发场景,没有第二行)。 */
   reused?: number;
   rows: readonly HumanDryPlanRow[];
-  /**
-   * 本次调用的命令前缀(如 `niceeval exp compare/codex`),用来把差异分组的 `accept:` 行拼成
-   * 一条**可直接复制**的命令。省略时不打这一行——拼不出真命令就不给半条,人照抄会跑错选择集。
-   */
+  /** 兼容旧调用方的命令前缀；accept 行现在固定指向每条历史结果的 locator。 */
   command?: string;
 }
 
@@ -953,47 +955,23 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * 逐行的原因回答「这一格为什么重跑」,差异分组回答「一条改动赔了多少、怎么把它拿回来」——
- * 矩阵按格排,人要做的决定按**差异**排,所以这里按「selector × 旧值→新值」这一种转换重新聚合一次:
- * 一条转换一块,带旧新摘要、影响面与可直接复制的 `accept:` 命令。只有指纹门(`stale`)的行进这个聚合:
- * 别的门 `--accept` 打不开,给一条抄了也不生效的命令是误导。没有 stale 行时整块不打印。
- */
+/** stale 行逐条列出历史 locator；接受命令永远只影响这一条结果，不按 selector 聚合。 */
 function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
-  const byTransition = new Map<string, { delta: { selector: string; from?: string; to?: string }; evalIds: Set<string> }>();
-  for (const row of input.rows) {
-    for (const group of row.dispatch ?? []) {
-      if (group.reason !== "stale") continue;
-      for (const delta of group.deltas ?? []) {
-        // selector 是授权作用域，不含值；展示分组却必须保留每一种真实转换。否则同一路径从两个
-        // 历史值汇到本次值时，后遇到的那批会被吞进第一块，影响面与旧值摘要都说错。
-        const transition = JSON.stringify([delta.selector, delta.from ?? null, delta.to ?? null]);
-        const entry = byTransition.get(transition) ?? { delta, evalIds: new Set<string>() };
-        entry.evalIds.add(row.evalId);
-        byTransition.set(transition, entry);
-      }
-    }
-  }
   const out: string[] = [];
-  const groups = [...byTransition.values()].sort((a, b) =>
-    a.delta.selector.localeCompare(b.delta.selector) ||
-    (a.delta.from ?? "").localeCompare(b.delta.from ?? "") ||
-    (a.delta.to ?? "").localeCompare(b.delta.to ?? "")
-  );
-  for (const { delta, evalIds } of groups) {
-    const selector = delta.selector;
-    const change = delta.from !== undefined || delta.to !== undefined
-      ? `  ${delta.from ?? ""} → ${delta.to ?? ""}`.trimEnd()
-      : "";
-    out.push(`stale  ${selector}${change}`);
-    out.push(
-      `       ${t("cli.dry.affects", {
-        evals: pluralUnit(evalIds.size, "cli.dry.unit.eval", "cli.dry.unit.evals"),
-        ids: foldIds([...evalIds]),
-      })}`,
-    );
-    if (input.command !== undefined) {
-      out.push(`       ${t("cli.dry.acceptHint", { command: `${input.command} --accept ${selector}` })}`);
+  for (const row of input.rows) {
+    if (!row.prior || row.prior.length === 0) continue;
+    for (const prior of row.prior) {
+      const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.deltas?.length);
+      const deltas = prior.deltas ?? staleGroup?.deltas;
+      const summary = deltas?.map((delta) => {
+        const change = delta.from !== undefined || delta.to !== undefined
+          ? ` ${delta.from ?? ""} → ${delta.to ?? ""}`.trimEnd()
+          : "";
+        return `${delta.selector}${change}`;
+      }).join(", ");
+      out.push(`${row.experimentId}  ${row.evalId}  stale${summary ? `: ${summary}` : ""}`);
+      out.push(`  prior:  ${prior.locator}`);
+      out.push(`  accept: niceeval accept ${prior.locator}`);
     }
   }
   return out;

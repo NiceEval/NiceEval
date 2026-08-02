@@ -854,7 +854,7 @@ describe("renderHumanDryPlan: locked 标注", () => {
 describe("renderHumanDryPlan: 逐条未携带原因", () => {
   const rowOf = (text: string, evalId: string): string => text.trim().split("\n").find((l) => l.includes(evalId))!;
 
-  it("要派发的行标出门的人读词,stale 行附上可复制进 --accept 的 selector,全携带的行标 carried", () => {
+  it("要派发的行标出门的人读词,stale 行逐条引用 locator,全携带的行标 carried", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 4,
       evals: 4,
@@ -884,35 +884,33 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(rowOf(text, "memory/mixed")).toContain("errored · new");
   });
 
-  it("stale 行按差异聚合成分组块:旧新摘要、影响面与可直接复制的 accept 命令", () => {
+  it("stale 行逐条列出旧值、来源 locator 与独立 accept 命令", () => {
     const delta = { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" };
     const text = renderHumanDryPlan({
       totalAttempts: 3,
       evals: 3,
       configs: 1,
       attempts: 1,
-      command: "niceeval exp compare/codex",
       rows: [
-        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }] },
-        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }] },
-        // 别的门不进分组:--accept 打不开它,给一条抄了也不生效的命令是误导。
+        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@a1b2c3d4", deltas: [delta] }] },
+        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@e5f6g7h8", deltas: [delta] }] },
         { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "sandbox-reuse" }] },
       ],
     });
 
-    expect(text).toContain("stale  config:judge.model  gpt-5.6 → gpt-5.6-sol");
-    expect(text).toContain("baseline 01/03");
-    expect(text).toContain("accept:  niceeval exp compare/codex --accept config:judge.model");
-    expect(text).not.toContain("--accept sandbox-reuse");
+    expect(text).toContain("compare/codex  baseline01  stale: config:judge.model gpt-5.6 → gpt-5.6-sol");
+    expect(text).toContain("prior:  @a1b2c3d4");
+    expect(text).toContain("accept: niceeval accept @a1b2c3d4");
+    expect(text).toContain("prior:  @e5f6g7h8");
+    expect(text).not.toContain("baseline04  stale"); // sandbox-reuse 无 prior,不提供接受入口
   });
 
-  it("同一 selector 的不同旧值转换各成一组,授权命令仍是同一条", () => {
+  it("同一 selector 的不同旧值各随自己的 locator 输出", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 3,
       evals: 3,
       configs: 1,
       attempts: 1,
-      command: "niceeval exp compare/codex",
       rows: [
         {
           experimentId: "compare/codex",
@@ -921,6 +919,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
             reason: "stale",
             deltas: [{ selector: "config:judge.model", from: "old-a", to: "current" }],
           }],
+          prior: [{ locator: "@a1b2c3d4" }],
         },
         {
           experimentId: "compare/codex",
@@ -929,6 +928,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
             reason: "stale",
             deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
           }],
+          prior: [{ locator: "@e5f6g7h8" }],
         },
         {
           experimentId: "compare/codex",
@@ -937,14 +937,16 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
             reason: "stale",
             deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
           }],
+          prior: [{ locator: "@j9k0l1m2" }],
         },
       ],
     });
 
-    expect(text.match(/^stale  config:judge\.model/gm)).toHaveLength(2);
-    expect(text).toContain("config:judge.model  old-a → current");
-    expect(text).toContain("config:judge.model  old-b → current");
-    expect(text.match(/--accept config:judge\.model/g)).toHaveLength(2);
+    expect(text.match(/^compare\/codex  from-old-.*stale:/gm)).toHaveLength(3);
+    expect(text).toContain("prior:  @a1b2c3d4");
+    expect(text).toContain("prior:  @e5f6g7h8");
+    expect(text).toContain("prior:  @j9k0l1m2");
+    expect(text.match(/niceeval accept @/g)).toHaveLength(3);
   });
 
   it("没有 stale 行时整块不打印", () => {

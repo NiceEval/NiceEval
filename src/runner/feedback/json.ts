@@ -627,6 +627,8 @@ export interface JsonPlanRow {
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
+  /** stale 历史结果的精确接受对象；每个 locator 都是独立的一次接受。 */
+  prior?: readonly { locator: string }[];
   /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。 */
   dispatch?: JsonPlanDispatch[];
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(见

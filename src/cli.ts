@@ -1,6 +1,7 @@
 // niceeval CLI 入口。执行 eval 必须以 experiment 为单位;位置参数只在 exp 后筛 eval id 前缀。
 //   niceeval check [组|配置] [pattern]  只做发现、选择与 SandboxLayer pure link
 //   niceeval exp [组|配置] [pattern]    跑实验
+//   niceeval accept @<locator>          接受一条历史结果并重锚到当前配置
 //   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
 //   niceeval list                    只列出发现到的 eval
 //   niceeval clean                   删除 .niceeval/ 历史运行 artifact
@@ -18,12 +19,6 @@ import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector 
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import type { FingerprintDelta } from "./runner/manifest.ts";
-import {
-  createStdinPromptReader,
-  equivalentAcceptCommand,
-  promptAcceptSelections,
-  type AcceptChoice,
-} from "./runner/accept-prompt.ts";
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
@@ -110,9 +105,6 @@ interface Flags {
   dry: boolean;
   force: boolean;
   rerun?: "failed" | "all";
-  accept?: string[];
-  /** 不带值的 `--accept`(TTY 下逐原因标记):selector 由计划打出后的逐条问答选出。 */
-  acceptInteractive?: boolean;
   strict: boolean;
   budget?: number;
   tag?: string;
@@ -145,6 +137,7 @@ interface Flags {
   stats: boolean;
   /** `show` / `view` 命令专用:`--exp` 可重复出现;每次出现是一个数组元素,顺序即用户输入顺序。 */
   experiment?: string[];
+  /** `show` / `view` / `accept` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
   record?: string;
   run?: string;
   report?: string;
@@ -243,8 +236,6 @@ const FLAG_OPTIONS = {
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },
-  /** `exp` 命令专用:授权跨过一条具名指纹差异照常携带,可重复。selector 指向 manifest 相减得出的一条差异(`config:<字段路径>` 如 `config:judge.model`、`source:<路径>`、`data:<路径>`,历史侧缺清单时是 `opaque:no-manifest`),写法与 `--dry` 打出的原因逐字相同。不带值时:stderr 是 TTY 就在计划打出后按差异分组逐条问「复用还是重跑」,选完先打印等价的带值命令再执行;非 TTY 不带值是用法错误。被授权携入的条目按本次口径重打指纹,下一次跑同一条命令自然命中,不需要再带这个 flag;跨过的差异记进条目的 `carriedAccepting`。与 `--rerun all` 同用是用法错误。 */
-  accept: { type: "string", multiple: true },
   /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
   strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 */
@@ -270,7 +261,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "show", "list", "view", "clean", "init", "run", "sandbox"] as const;
+const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 function isCliCommand(candidate: string): candidate is CliCommand {
@@ -290,23 +281,12 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
   // --source[=full|<path>] 预扫:本体是布尔，值只接受 = 连写，避免吞掉 eval 前缀位置参数。
   let sourceValue: string | undefined;
   let rerunMode: "failed" | "all" | undefined;
-  // 不带值的 `--accept`(TTY 逐原因标记);selector 由交互选出,不来自命令行。
-  let acceptInteractive = false;
   // boolean|string 联合 flag 的空格写法先归一：--rerun all → --rerun=all。
   {
     const normalized: string[] = [];
     for (let index = 0; index < argv.length; index += 1) {
       const arg = argv[index]!;
       const next = argv[index + 1];
-      // 不带值的 `--accept`:stderr 是 TTY 就进逐原因标记(计划打出后按差异分组逐条问),
-      // 非 TTY 是用法错误。这里必须预扫——不预扫的话 node:util 会把后面那个 flag 当成它的值
-      // (`--accept --dry` → selector 是 "--dry"),一次手滑变成一次静默生效的授权。
-      // 非 TTY 的报错不在这里发:它要带上「本次计划里可以授权的原因清单」,而那份清单要等
-      // 携带规划算完才有,所以只在这里记下形态,报错落在 exp 里 carryPlan 之后。
-      if ((arg === "--accept" && (next === undefined || next.startsWith("-"))) || arg === "--accept=") {
-        acceptInteractive = true;
-        continue; // 这个 token 不进 parseArgs:它没有值,留着只会被当成缺参数的 flag
-      }
       if (arg === "--rerun" && (next === "failed" || next === "all")) {
         normalized.push(`--rerun=${next}`);
         index += 1;
@@ -410,8 +390,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     dry: values.dry === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
-    accept: values.accept as string[] | undefined,
-    ...(acceptInteractive ? { acceptInteractive: true } : {}),
     strict: values.strict === true,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
@@ -454,16 +432,33 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
  */
 /**
  * 计划矩阵的行原料:(experimentId, evalId) 逐行,携带预测与未携带原因分组各一份。
- * `--dry` 的两种形态与 `--accept` 交互标记前的那次计划打印共用它——三处各拼一遍矩阵,
- * 迟早出现「交互里说这格 stale,`--dry` 说它 carried」。
+ * `--dry` 的两种形态共用同一份计划矩阵，避免人读与机器面各自重算出不同的携带结论。
  */
 function planRowInputs(
   agentRuns: AgentRun[],
   matchedByRun: DiscoveredEval[][],
   carryPlan: CarryPlan | undefined,
   incompatibleKeys: ReadonlySet<string>,
-): { experimentId: string; evalId: string; reused: boolean; dispatch: readonly DispatchGroup[] }[] {
-  const rows: { experimentId: string; evalId: string; reused: boolean; dispatch: readonly DispatchGroup[] }[] = [];
+  priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string }[] = [],
+): {
+  experimentId: string;
+  evalId: string;
+  reused: boolean;
+  dispatch: readonly DispatchGroup[];
+  prior?: readonly { locator: string; deltas?: readonly FingerprintDelta[] }[];
+}[] {
+  const priorByKeyAttempt = new Map<string, { locator: string }>();
+  for (const prior of priorResults) {
+    if (prior.locator === undefined) continue;
+    priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, { locator: prior.locator });
+  }
+  const rows: {
+    experimentId: string;
+    evalId: string;
+    reused: boolean;
+    dispatch: readonly DispatchGroup[];
+    prior?: readonly { locator: string; deltas?: readonly FingerprintDelta[] }[];
+  }[] = [];
   for (let i = 0; i < agentRuns.length; i++) {
     const run = agentRuns[i]!;
     for (const e of matchedByRun[i]!) {
@@ -473,7 +468,19 @@ function planRowInputs(
         ?? (carriedCount >= run.attempts
           ? []
           : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
-      rows.push({ experimentId: run.experimentId ?? "", evalId: e.id, reused: carriedCount >= run.attempts, dispatch });
+      const stalePrior = dispatch.flatMap((group) => group.reason === "stale"
+        ? group.attempts.flatMap((attempt) => {
+            const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
+            return prior === undefined ? [] : [{ locator: prior.locator, ...(group.deltas !== undefined ? { deltas: group.deltas } : {}) }];
+          })
+        : []);
+      rows.push({
+        experimentId: run.experimentId ?? "",
+        evalId: e.id,
+        reused: carriedCount >= run.attempts,
+        dispatch,
+        ...(stalePrior.length > 0 ? { prior: stalePrior } : {}),
+      });
     }
   }
   return rows;
@@ -487,45 +494,6 @@ function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
     case "Changed": return { selector: delta.selector, from: delta.from, to: delta.to };
     case "Unknown": return { selector: delta.selector };
   }
-}
-
-/**
- * 逐原因标记要问的那几条:本次计划里真实存在、且**能被授权**的差异,各带影响面。
- * 影响面按 eval 数算(一条差异常常同时拦下一批 eval,那才是人要衡量的赔本规模)。
- * 只收指纹门(`stale`)的行——别的门 `--accept` 打不开,问了也只能问出一个不生效的答案。
- */
-function acceptChoicesFor(
-  agentRuns: AgentRun[],
-  matchedByRun: DiscoveredEval[][],
-  carryPlan: CarryPlan | undefined,
-): AcceptChoice[] {
-  if (carryPlan === undefined) return [];
-  const evalsBySelector = new Map<string, Set<string>>();
-  for (let i = 0; i < agentRuns.length; i++) {
-    const run = agentRuns[i]!;
-    for (const e of matchedByRun[i]!) {
-      for (const group of carryPlan.dispatchByKey.get(cacheKey(run, e.id)) ?? []) {
-        if (group.reason !== "stale") continue;
-        for (const delta of group.deltas ?? []) {
-          const ids = evalsBySelector.get(delta.selector) ?? new Set<string>();
-          ids.add(e.id);
-          evalsBySelector.set(delta.selector, ids);
-        }
-      }
-    }
-  }
-  // 顺序跟着 availableDeltas(按 selector 字典序),问答顺序与 `--dry` 的分组顺序一致。
-  return carryPlan.availableDeltas
-    .filter((delta) => evalsBySelector.has(delta.selector))
-    .map((delta) => ({ ...delta, evals: evalsBySelector.get(delta.selector)!.size }));
-}
-
-/**
- * 可复制命令的前缀:`niceeval <command> <位置参数…>`。只带位置参数——差异分组要人复制的是
- * 「同一批选择,加一条授权」,别的 flag(`--dry` / `--json`)抄过去只会让人再删一遍。
- */
-function acceptCommandPrefix(command: string, positionals: string[]): string {
-  return ["niceeval", command, ...positionals].join(" ");
 }
 
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
@@ -552,6 +520,88 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
   return undefined;
+}
+
+/**
+ * `accept` 只接受一个精确 locator；它不是 `exp` 的另一种选择器，也不派发 attempt。
+ * `--record` 是唯一允许的附加 flag，用来接受发布根或其它显式记录根里的结果。
+ */
+function parseAcceptLocator(positionals: string[], flags: Flags): string {
+  if (positionals.length !== 1 || !/^@[^@\s]+$/.test(positionals[0] ?? "")) {
+    process.stderr.write(t("cli.accept.usage"));
+    process.exit(1);
+  }
+
+  // `parseArgs` 已经负责未知 flag；这里拒绝那些虽为全局已知、但会改变运行/查看语义的 flag。
+  // `--record` 是 accept 的唯一范围输入，help/version 在 main() 更早处理。
+  const unsupported: Array<[string, unknown]> = [
+    ["--agent", flags.agent],
+    ["--model", flags.model],
+    ["--attempts", flags.attempts],
+    ["--max-concurrency", flags.maxConcurrency],
+    ["--timeout", flags.timeout],
+    ["--budget", flags.budget],
+    ["--tag", flags.tag],
+    ["--junit", flags.junit],
+    ["--json", flags.json],
+    ["--dry", flags.dry],
+    ["--force", flags.force],
+    ["--rerun", flags.rerun],
+    ["--strict", flags.strict],
+    ["--early-exit/--no-early-exit", flags.earlyExit],
+    ["--open/--no-open", flags.open],
+    ["--source", flags.source],
+    ["--execution", flags.execution],
+    ["--diff", flags.diff || flags.diffPath !== undefined],
+    ["--grep", flags.grep],
+    ["--expand", flags.expand],
+    ["--timing", flags.timing],
+    ["--keep-sandbox", flags.keepSandbox],
+    ["--all", flags.all],
+    ["--window", flags.window],
+    ["--path", flags.sandboxPath],
+    ["--leave-running", flags.leaveRunning],
+    ["--history", flags.history],
+    ["--usage", flags.usage],
+    ["--stats", flags.stats],
+    ["--exp", flags.experiment],
+    ["--run", flags.run],
+    ["--report", flags.report],
+    ["--page", flags.page],
+    ["--theme", flags.theme],
+    ["--fresh", flags.fresh],
+    ["--orphans", flags.orphans],
+    ["--teardown", flags.teardown],
+  ];
+  const bad = unsupported.find(([, value]) => value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0));
+  if (bad) {
+    process.stderr.write(t("cli.accept.flagUnsupported", { flag: bad[0] }));
+    process.exit(1);
+  }
+  return positionals[0]!;
+}
+
+interface AcceptLocatorResult {
+  locator: string;
+  sourceLocator: string;
+  fingerprint?: string;
+}
+
+/** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
+async function runAcceptCommand(cwd: string, locator: string, recordRoot: string | undefined): Promise<void> {
+  const mod = await import("./runner/accept.ts") as {
+    acceptLocator(input: { cwd: string; locator: string; recordRoot?: string }): Promise<AcceptLocatorResult>;
+  };
+  const result = await mod.acceptLocator({
+    cwd,
+    locator,
+    ...(recordRoot !== undefined ? { recordRoot } : {}),
+  });
+  process.stdout.write(t("cli.accept.done", {
+    sourceLocator: result.sourceLocator,
+    locator: result.locator,
+    fingerprint: result.fingerprint ?? "—",
+  }));
 }
 
 /** 加载 cwd/.env(不覆盖已有环境变量)。 */
@@ -789,6 +839,21 @@ async function main(): Promise<void> {
 
   if (flags.version) {
     process.stdout.write(`${await packageVersion()}\n`);
+    process.exit(0);
+  }
+
+  if (command === "accept") {
+    const locator = parseAcceptLocator(positionals, flags);
+    try {
+      await runAcceptCommand(cwd, locator, flags.record);
+    } catch (e) {
+      // acceptance core 的资格/定位错误都是用户可修复的：不进入 runner 的崩溃路径，
+      // 直接给出一行错误并以 1 退出，保证不会误报“已派发 attempt”。
+      process.stderr.write(t("cli.accept.failed", {
+        error: e instanceof Error ? e.message : String(e),
+      }));
+      process.exit(1);
+    }
     process.exit(0);
   }
 
@@ -1141,12 +1206,6 @@ async function main(): Promise<void> {
   // `--dry`(两种形态)都需要这份计算:`--dry --json` 的 `ExpPlanDocument.matrix[].reused`,
   // 人读 `--dry` 首行的携入摘要(见 docs/feature/experiments/cli.md 开头示例与「事件与计划
   // 文档的 TypeScript 形状」),口径必须与真正开跑时一致。
-  // 一边全不采信一边又要采信,方向自相矛盾(见 docs/feature/experiments/cache.md
-  // 「`--accept` 打不开的门」)。
-  if ((flags.accept?.length || flags.acceptInteractive) && flags.rerun === "all") {
-    process.stderr.write(t("cli.flag.acceptWithRerunAll"));
-    process.exit(1);
-  }
   const carryInputs = await loadCarryInputs(join(cwd, ".niceeval"));
   const priorResults = carryInputs?.results;
   // 本次计划里哪些坐标「有历史但那份落盘读不动」:不标出来,它们会跟从没跑过的坐标一样落在
@@ -1167,85 +1226,9 @@ async function main(): Promise<void> {
     rerun: flags.rerun,
     configJudge: config.judge,
     keepSandbox: flags.keepSandbox,
-    accept: flags.accept,
     incompatibleKeys,
     priorManifests: carryInputs?.manifestsByEvalKey,
   }));
-
-  // 不带值的 `--accept` 在非 TTY 下是用法错误。报错落在这里而不是解析 argv 时:它要带上
-  // 本次计划里真实可授权的原因清单(与 selector 空转报错同一份枚举),那份清单要等携带规划
-  // 算完才有——只说「必须带 selector」而不说「这次能填什么」,人还是得再跑一趟 `--dry`。
-  if (flags.acceptInteractive && process.stderr.isTTY !== true) {
-    const available = carryPlan?.availableDeltas ?? [];
-    process.stderr.write(t("cli.flag.acceptNeedsSelector", {
-      available: available.length > 0
-        ? available.map((delta) => delta.selector).join(", ")
-        : t("cli.none"),
-    }));
-    process.exit(1);
-  }
-
-  // 不带值的 `--accept`:计划打出后按差异分组逐条问「复用还是重跑」,只问可 accept 的分组
-  // (打不开的门在矩阵里照常展示,但不给「复用」选项——给了也不生效)。选完先打印等价的
-  // 带值命令(可直接进 CI),再按选择重做一次携带规划:授权改变的是「哪些指纹算数」,
-  // 不重算就等于没选。
-  if (flags.acceptInteractive) {
-    const acceptCommand = acceptCommandPrefix(command, positionals);
-    const choices = acceptChoicesFor(agentRuns, matchedByRun, carryPlan);
-    if (choices.length === 0) {
-      process.stderr.write(t("cli.accept.nothingToAccept"));
-    } else {
-      process.stderr.write(
-        renderHumanDryPlan({
-          totalAttempts,
-          evals: uniqueEvalIds.size,
-          configs: agentRuns.length,
-          attempts: Math.max(1, ...agentRuns.map((r) => r.attempts)),
-          reused: carryPlan?.carriedResults.length ?? 0,
-          rows: planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys),
-          command: acceptCommand,
-        }),
-      );
-      const reader = createStdinPromptReader();
-      let chosen: string[];
-      try {
-        chosen = await promptAcceptSelections(choices, reader, (text) => process.stderr.write(text));
-      } finally {
-        reader.close();
-      }
-      if (chosen.length === 0) {
-        process.stderr.write(t("cli.accept.noneChosen"));
-      } else {
-        process.stderr.write(t("cli.accept.equivalent", { command: equivalentAcceptCommand(acceptCommand, chosen) }));
-        flags.accept = chosen;
-        carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults ?? [], config.timeoutMs, {
-          rerun: flags.rerun,
-          configJudge: config.judge,
-          keepSandbox: flags.keepSandbox,
-          accept: chosen,
-          incompatibleKeys,
-          priorManifests: carryInputs?.manifestsByEvalKey,
-        }));
-      }
-    }
-  }
-
-  // selector 必须命中本次计划里真实存在的差异。两侧都没有的是空转,多半是打错了——
-  // 静默通过会让人以为授权生效了,而条目其实照常重跑。
-  if (flags.accept?.length) {
-    const available = carryPlan?.availableDeltas ?? [];
-    const known = new Set(available.map((delta) => delta.selector));
-    const unknown = flags.accept.filter((selector) => !known.has(selector));
-    if (unknown.length > 0) {
-      process.stderr.write(t("cli.flag.acceptNoSuchDifference", {
-        selectors: unknown.join(", "),
-        available: available.length > 0
-          ? available.map((delta) => delta.selector).join(", ")
-          : t("cli.none"),
-      }));
-      process.exit(1);
-    }
-  }
 
   if (flags.dry) {
     // --dry 只按所选形态打印计划,不运行、不落盘——一次完成的读取,不是事件流
@@ -1253,7 +1236,7 @@ async function main(): Promise<void> {
     // 矩阵——(experimentId, evalId) 逐行,携带同一口径的 reused 预测——不是各自重算一遍。
     const dryRuns = Math.max(1, ...agentRuns.map((r) => r.attempts));
     // 一行一份未携带原因分组:人读面投影出门的人读词,`--json` 投影出 gate 名,同一份数据。
-    const rowInputs = planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys);
+    const rowInputs = planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys, priorResults ?? []);
     // 只读锁目录,不取锁、不等待(见 docs/feature/experiments/architecture.md「并发
     // Invocation:用例锁」);过期(无人续心跳)的锁不算"正被持锁运行",不标注。裸 run(没有
     // experimentId)不参与锁,恒不标注。并行读——矩阵行数可能不小,不逐行串行等磁盘。
@@ -1270,6 +1253,7 @@ async function main(): Promise<void> {
       experimentId: row.experimentId,
       evalId: row.evalId,
       reused: row.reused,
+      ...(row.prior !== undefined ? { prior: row.prior.map((prior) => ({ locator: prior.locator })) } : {}),
       ...(lockedFlags[i] ? { locked: true } : {}),
       ...(row.dispatch.length > 0
         ? {
@@ -1299,9 +1283,8 @@ async function main(): Promise<void> {
           configs: agentRuns.length,
           attempts: dryRuns,
           reused: carryPlan?.carriedResults.length ?? 0,
-          // 差异分组的 `accept:` 行拼的是**本次这条命令**加一个 selector:选择集照抄,
-          // 人复制过去跑的就是同一批 eval(选择轴不进 selector,见 cache.md)。
-          command: acceptCommandPrefix(command, positionals),
+          // stale 行逐条提供历史 locator；接受动作通过顶层 `niceeval accept @<locator>` 完成。
+          command: ["niceeval", command, ...positionals].join(" "),
           rows: rowInputs.map((row, i) => ({
             experimentId: row.experimentId,
             evalId: row.evalId,
@@ -1456,7 +1439,6 @@ async function main(): Promise<void> {
       carryPlan,
       keepSandbox: flags.keepSandbox,
       rerun: flags.rerun,
-      accept: flags.accept,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
     });
     // 交给强清路径一个可等待的收尾句柄:二次中断/看门狗强清时先有界等它收口,让在飞的

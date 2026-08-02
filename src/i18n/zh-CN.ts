@@ -103,6 +103,15 @@ export const zhCN = {
     "按原计划运行。\n",
   "cli.accept.equivalent": "等价命令:  {{command}}\n",
   "cli.accept.noneChosen": "没有授权任何差异,按原计划运行。\n",
+  "cli.accept.usage":
+    "error: niceeval accept 必须且只能接收一个 @<locator>\n" +
+    "  fix: 从 `niceeval show --history` 复制 locator,再运行 `niceeval accept @<locator>`\n",
+  "cli.accept.flagUnsupported":
+    "error: {{flag}} 不能用于 niceeval accept\n" +
+    "  fix: 只传 @<locator>(可选 `--record <目录>`)\n",
+  "cli.accept.failed": "error: 接受结果失败:{{error}}\n",
+  "cli.accept.done":
+    "已接受 {{sourceLocator}}。新结果 locator: {{locator}}。当前指纹:{{fingerprint}}\n",
   "cli.error": "niceeval 出错:{{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept 必须带 selector,例如 --accept config:judge.model\n" +
@@ -159,6 +168,7 @@ export const zhCN = {
     "  niceeval exp [路径|实验] [eval-id 前缀…]   跑实验\n" +
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
+    "  niceeval accept @<locator>              接受一条历史结果\n" +
     "  niceeval show [eval-id 前缀… | @<locator>]   终端读结果\n" +
     "      不带证据 flag:命中范围的默认报告(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
     "        两个以上 --exp 改为逐条件对照\n" +
@@ -197,7 +207,7 @@ export const zhCN = {
     "  niceeval init                            脚手架 config + evals/\n\n" +
     "标志:\n" +
     "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --accept[=selector]  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
