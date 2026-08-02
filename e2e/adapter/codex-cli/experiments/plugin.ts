@@ -24,6 +24,6 @@ export default defineExperiment({
   agent,
   model: "gpt-5.4-mini",
   evals: ["plugin-hook"],
-  runs: 1,
+  attempts: 1,
   budget: 2,
 });

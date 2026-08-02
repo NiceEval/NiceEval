@@ -139,7 +139,7 @@ interface ExpPlanDocument {
   total: number;
   evals: number;
   configs: number;
-  runs: number;
+  attempts: number;
   reused: number;
   matrix: ExpPlanRow[];
 }

@@ -12,13 +12,13 @@ const agent = uiMessageStreamAgent({
 });
 
 // 单一实验:仓库里全部 Eval 共用同一个 uiMessageStreamAgent,不需要按前缀选择。
-// runs: 3 + earlyExit absorbs a single real-model blip; three consecutive misses is a
+// attempts: 3 + earlyExit absorbs a single real-model blip; three consecutive misses is a
 // genuine regression and the matrix should stay red for it.
 export default defineExperiment({
   description: "ai-sdk:HTTP useChat 后端(SSE、全量历史重放、审批改写重发、OTel)",
   agent,
   model: DEFAULT_MODEL,
-  runs: 3,
+  attempts: 3,
   earlyExit: true,
   budget: 1,
 });

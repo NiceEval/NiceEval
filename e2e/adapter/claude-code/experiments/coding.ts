@@ -11,6 +11,6 @@ export default defineExperiment({
   description: "coding:基线 claude-code agent —— coding-task 工具轨 + session resume/usage",
   agent,
   model: "deepseek-v4-flash",
-  runs: 1,
+  attempts: 1,
   evals: (e) => e.id === "coding-task" || e.id === "session-resume",
 });

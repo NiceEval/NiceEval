@@ -78,7 +78,7 @@ export async function verifyUsageErrors(evidence: Evidence): Promise<void> {
     cmd = `pnpm exec niceeval show --execution --grep x --expand t1.c1 --record ${root}`;
     assertMentions(shUsageError(cmd), ["cannot combine"], cmd);
 
-    // main:"tool-call" 有 runs: 2 的两个真实 attempt——不收窄到单 attempt 时 --expand 必须拒绝。
+    // main:"tool-call" 有 attempts: 2 的两个真实 attempt——不收窄到单 attempt 时 --expand 必须拒绝。
     cmd = `pnpm exec niceeval show tool-call --execution --expand t1.c1 --record ${root}`;
     assertMentions(shUsageError(cmd), ["resolve to exactly one attempt, got 2"], cmd);
 

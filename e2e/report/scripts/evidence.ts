@@ -44,7 +44,7 @@ export interface Evidence {
   resultsRoot: string;
   /** 本次运行对应的 `niceeval view --out` 导出目录——真实的静态站点,由 rendering/CLI-readback 各 domain 共用。相对于仓库根目录。 */
   siteExportDir: string;
-  /** main:"tool-call" 的 `runs: 2` 次真实网关 attempt,均预期为 passed。 */
+  /** main:"tool-call" 的 `attempts: 2` 次真实网关 attempt,均预期为 passed。 */
   main: {
     id: "main";
     evalId: "tool-call";
@@ -185,7 +185,7 @@ export async function produceEvidence(): Promise<Evidence> {
   assert.equal(
     mainAttemptDirNames.length,
     2,
-    `expected 2 attempt directories under ${mainEvalDir} (runs:2, earlyExit:false), found ${mainAttemptDirNames.length}: ${mainAttemptDirNames.join(", ")}`,
+    `expected 2 attempt directories under ${mainEvalDir} (attempts:2, earlyExit:false), found ${mainAttemptDirNames.length}: ${mainAttemptDirNames.join(", ")}`,
   );
   const mainAttempts: AttemptEvidence[] = mainAttemptDirNames.map((name) => {
     const attemptDir = join(mainEvalDir, name);

@@ -6,5 +6,5 @@ import agent from "../agents/pi-agent-core.ts";
 export default defineExperiment({
   description: "pi-agent-core e2e:工具执行、会话续接、HITL 暂停恢复、usage 与失败状态",
   agent,
-  runs: 1,
+  attempts: 1,
 });

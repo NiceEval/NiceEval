@@ -5,5 +5,5 @@ import agent from "../agents/langgraph.ts";
 export default defineExperiment({
   description: "langgraph: createLangGraphEventStream() 官方转换器 + 真实模型",
   agent,
-  runs: 1,
+  attempts: 1,
 });

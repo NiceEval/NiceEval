@@ -1,6 +1,6 @@
 # e2e：真实模型全链路 CI 套件
 
-设计见 [`docs/engineering/testing/e2e/README.md`](../docs/engineering/testing/e2e/README.md)。全程真实模型，没有任何 mock——费用靠每个仓库自己的 Experiment 档位（模型、runs、budget、timeout）控制。
+设计见 [`docs/engineering/testing/e2e/README.md`](../docs/engineering/testing/e2e/README.md)。全程真实模型，没有任何 mock——费用靠每个仓库自己的 Experiment 档位（模型、attempts、budget、timeout）控制。
 
 ## 布局
 

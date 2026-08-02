@@ -22,6 +22,6 @@ export default defineExperiment({
   description: "plugin:装了 marketplace plugin(自带 MCP server)的 claude-code agent",
   agent,
   model: "deepseek-v4-flash",
-  runs: 1,
+  attempts: 1,
   evals: (e) => e.id === "plugin-mcp",
 });

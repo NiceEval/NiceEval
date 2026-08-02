@@ -15,7 +15,7 @@ export default defineExperiment({
   agent,
   model: "gpt-5.4-mini",
   evals: ["mcp"],
-  runs: 2,
+  attempts: 2,
   earlyExit: true,
   budget: 3,
 });

@@ -12,5 +12,5 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   evals: ["coding-task/write-and-verify", "session/recall", "usage/tokens"],
-  runs: 1,
+  attempts: 1,
 });

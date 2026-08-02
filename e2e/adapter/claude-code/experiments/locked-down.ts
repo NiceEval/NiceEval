@@ -12,6 +12,6 @@ export default defineExperiment({
   description: "locked-down:挂了 settingsFile 拒绝 WebSearch/WebFetch 的 claude-code agent",
   agent,
   model: "deepseek-v4-flash",
-  runs: 1,
+  attempts: 1,
   evals: (e) => e.id === "websearch-denied",
 });

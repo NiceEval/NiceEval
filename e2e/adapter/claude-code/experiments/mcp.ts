@@ -21,6 +21,6 @@ export default defineExperiment({
   description: "mcp:挂载了 stdio + 远程 HTTP MCP server 的 claude-code agent",
   agent,
   model: "deepseek-v4-flash",
-  runs: 1,
+  attempts: 1,
   evals: (e) => e.id === "mcp-tools",
 });

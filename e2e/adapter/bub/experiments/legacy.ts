@@ -20,5 +20,5 @@ export default defineExperiment({
   // (预算见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),
   // 其余三条行为已由 ci.ts 在默认版本上证明。
   model: "gpt-5.4-mini",
-  runs: 1,
+  attempts: 1,
 });

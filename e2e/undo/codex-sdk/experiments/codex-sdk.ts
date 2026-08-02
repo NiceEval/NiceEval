@@ -7,7 +7,7 @@ export default defineExperiment({
   description: "codex-sdk 协议闭环:coding tool / MCP 工具 / 会话续接 / usage / HITL 反证",
   agent,
   model: process.env.AGENT_MODEL,
-  runs: 2,
+  attempts: 2,
   earlyExit: true,
   budget: 3,
 });

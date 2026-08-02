@@ -372,7 +372,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
 
   const afterForce = sh(`pnpm exec niceeval show tool-call --record ${root} --history`);
   const afterForceRows = historyRows(afterForce);
-  assert.equal(afterForceRows.length, baselineRows.length + 2, "a --rerun all re-run of main should add 2 new distinct attempts to --history (runs:2)");
+  assert.equal(afterForceRows.length, baselineRows.length + 2, "a --rerun all re-run of main should add 2 new distinct attempts to --history (attempts:2)");
   assertAscending(afterForceRows, "--history after --rerun all re-run");
   for (const original of baselineRows) {
     assert.ok(afterForceRows.some((r) => r.locator === original.locator), `--history after re-run lost the original attempt ${original.locator} — cross-snapshot merge dropped history instead of appending`);
@@ -391,7 +391,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   // live-carry-row-shows-waiting-forever);两边都算成 1 是对的,plan 说 2 而实际只携 1 才是 bug。
   const planned = /(\d+) of (\d+) carried in from cache/.exec(reuseOutput);
   assert.ok(planned, `expected the no-force re-run to print a cache-reuse summary line; got: ${reuseOutput}`);
-  assert.equal(planned[2], "2", `the re-run should still plan 2 attempts (runs:2); got: ${reuseOutput}`);
+  assert.equal(planned[2], "2", `the re-run should still plan 2 attempts (attempts:2); got: ${reuseOutput}`);
   const actual = /\((\d+) reused\)/.exec(reuseOutput);
   assert.ok(actual, `expected the run summary to report a reused count; got: ${reuseOutput}`);
   assert.equal(

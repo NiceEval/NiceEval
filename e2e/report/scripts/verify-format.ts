@@ -72,7 +72,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     );
   }
 
-  assert.equal(evidence.main.attempts.length, 2, `Evidence.main.attempts should have 2 entries (runs:2, earlyExit:false), found ${evidence.main.attempts.length}`);
+  assert.equal(evidence.main.attempts.length, 2, `Evidence.main.attempts should have 2 entries (attempts:2, earlyExit:false), found ${evidence.main.attempts.length}`);
 
   const attemptRecords: AttemptRecordLike[] = [];
   const sourceShas = new Set<string>();
@@ -208,7 +208,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   // stdout 上的 NDJSON 事件流(docs/feature/experiments/cli.md「机器怎么读:--json」),不是
   // 单个聚合文档——没有 RunSummary 这种形状,也没有把 2 个 attempt 的 locator 逐条摊平进流里
   // (那是 `show` 下钻的职责);这里按事件流真实提供的东西断言:`result` 事件的 attempt 级聚合
-  // 计数,以及 `eval` 事件给出的代表 attempt(runs:2 且 earlyExit:false 时取 attempt 序号最大
+  // 计数,以及 `eval` 事件给出的代表 attempt(attempts:2 且 earlyExit:false 时取 attempt 序号最大
   // 项)与磁盘的一致性。
   // ---------------------------------------------------------------------
   interface ResultEvent {
@@ -254,8 +254,8 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   assert.equal(evalEvents.length, 1, `--json event stream should have exactly 1 \`eval\` event for the single tool-call eval, found ${evalEvents.length}`);
   const toolCallEvalEvent = evalEvents[0]!;
   assert.equal(toolCallEvalEvent.evalId, "tool-call", "--json eval event has the wrong evalId");
-  assert.equal(toolCallEvalEvent.attempts, 2, "--json eval event should report 2 attempts (runs:2)");
-  assert.equal(toolCallEvalEvent.passed, 2, "--json eval event should report 2 passed (earlyExit:false runs to completion)");
+  assert.equal(toolCallEvalEvent.attempts, 2, "--json eval event should report 2 attempts (attempts:2)");
+  assert.equal(toolCallEvalEvent.passed, 2, "--json eval event should report 2 passed (earlyExit:false completes every attempt)");
   assert.equal(toolCallEvalEvent.verdict, "passed", "--json eval event's representative-attempt verdict should be passed");
 
   const onDiskForEvalLocator = diskByLocator.get(toolCallEvalEvent.locator);

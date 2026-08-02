@@ -12,7 +12,7 @@ export default defineExperiment({
   agent,
   model: "gpt-5.4-mini",
   evals: ["configfile"],
-  runs: 2,
+  attempts: 2,
   earlyExit: true,
   budget: 3,
 });
