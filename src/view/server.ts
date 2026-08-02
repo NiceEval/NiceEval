@@ -370,17 +370,30 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       // 站点相对路径:`/` 即 index.html；artifact 使用静态站点同形的 `/artifact/<path>`。
       // 打开或刷新页面不是重建理由(view.md「重建理由是一个闭集」)：盘上没变时直接命中
       // 上一次产物。数据是否最新由 watch 保证，不靠每次请求重跑管线。
-      const sitePath: string = url.pathname === "/"
-        ? "index.html"
-        : decodeURIComponent(url.pathname.slice(1));
-
+      // plan 的参数化页键本身就是 URL 路径（`<pageId>/<encodeURIComponent(key)>.html`），
+      // 因此先按浏览器请求里的编码路径精确查表。artifact 等历史清单键仍可能保存未编码的
+      // 文件名；只有精确未命中时才回退到解码路径，不能在查表前无条件把 `%40` 变回 `@`。
+      const requestPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+      const lookup = (candidate: SitePlan) => {
+        let path = requestPath;
+        let result = candidate.files.get(path);
+        if (!result) {
+          try {
+            path = decodeURIComponent(requestPath);
+            result = candidate.files.get(path);
+          } catch {
+            // 非法 percent encoding 按原路径查不到处理，由下面统一返回 404。
+          }
+        }
+        return { path, result };
+      };
       let plan = await current;
-      let file = plan.files.get(sitePath);
+      let { path: sitePath, result: file } = lookup(plan);
       if (!file && sitePath.startsWith("artifact/")) {
         // 未命中最近一次构建的产物清单:管线重建一次再查——server 运行期间
         // 新落盘的证据(新快照、补跑)不需要重启。
         plan = await rebuild("records").catch(() => current);
-        file = plan.files.get(sitePath);
+        ({ path: sitePath, result: file } = lookup(plan));
       }
       if (!file) {
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

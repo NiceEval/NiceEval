@@ -689,7 +689,10 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
     const exportedIndex = readFileSync(join(evidence.siteExportDir, "index.html"), "utf8");
     assert.equal(indexBody, exportedIndex, "local server's / response must be byte-identical to the --out export's index.html for the same input");
 
-    const attemptResp = await fetch(`${fullServer.baseUrl}/attempt/${evidence.main.attempts[0]!.locator}.html`);
+    // 浏览器使用报告里真实生成的 URL（locator 作为单个 path segment 经 URI 编码）；server
+    // 必须按这条编码后的路径命中参数化页，而不是只在测试里用未编码的 `@...` 绕过去。
+    const attemptHref = `attempt/${encodeURIComponent(evidence.main.attempts[0]!.locator)}.html`;
+    const attemptResp = await fetch(`${fullServer.baseUrl}/${attemptHref}`);
     assert.equal(attemptResp.status, 200, "server should serve the attempt detail page with 200");
     const attemptBody = await attemptResp.text();
     const exportedAttempt = readFileSync(join(evidence.siteExportDir, "attempt", `${evidence.main.attempts[0]!.locator}.html`), "utf8");
@@ -745,7 +748,9 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   //     两条不同的路由,两条不同的作用域规则,都记录在 view.md 的"导出与 server"这一段里。
   const narrowedServer = await startViewServer(["--exp", "main", "--record", root]);
   try {
-    const outOfScopeAttemptResp = await fetch(`${narrowedServer.baseUrl}/attempt/${evidence.deliberateFail.attempt.locator}.html`);
+    const outOfScopeAttemptResp = await fetch(
+      `${narrowedServer.baseUrl}/attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`,
+    );
     assert.equal(outOfScopeAttemptResp.status, 200, "the attempt-detail route must resolve an out-of-scope locator (full-root addressing) even under --exp main");
     const outOfScopeAttemptBody = await outOfScopeAttemptResp.text();
     assert.ok(outOfScopeAttemptBody.includes("deliberate-fail"), "the resolved out-of-scope attempt page should show its real content");
