@@ -1194,6 +1194,10 @@ describe("runEvals · 实验级 setup/teardown", () => {
     let teardownCalls = 0;
     let completedAtTeardown = -1;
     let completed = 0;
+    let releaseSetup!: () => void;
+    const setupBarrier = new Promise<void>((resolve) => {
+      releaseSetup = resolve;
+    });
     const evals = ["a", "b", "c"].map((id) =>
       makeEval(id, () => {
         completed += 1;
@@ -1203,8 +1207,8 @@ describe("runEvals · 实验级 setup/teardown", () => {
       "lifecycle-exp",
       async () => {
         setupCalls += 1;
-        // 给并发的其它 attempt 一个真实的等待窗口,验证它们不各自重跑 setup
-        await new Promise((r) => setTimeout(r, 20));
+        // 受控 barrier 把状态钉在 setup 进行中，验证其它并发 attempt 只等同一个 memo。
+        await setupBarrier;
       },
       () => {
         teardownCalls += 1;
@@ -1213,7 +1217,11 @@ describe("runEvals · 实验级 setup/teardown", () => {
       { attempts: 2, selectedEvalIds: ["a", "b", "c"] },
     );
 
-    const { summary } = await run(evals, [agentRun], { maxConcurrency: 4 });
+    const running = run(evals, [agentRun], { maxConcurrency: 4 });
+    await vi.waitFor(() => expect(setupCalls).toBe(1));
+    expect(completed).toBe(0);
+    releaseSetup();
+    const { summary } = await running;
 
     expect(setupCalls).toBe(1);
     expect(teardownCalls).toBe(1);
@@ -1358,6 +1366,43 @@ describe("runEvals · 实验级 setup/teardown", () => {
     await run([evalDef], [agentRun], { signal: controller.signal });
 
     expect(teardownCalls).toBe(1);
+  });
+
+  it("setup 进行中被中断并由强清注册表接管时，等待 setup settle 后 teardown 仍恰好一次", async () => {
+    let setupCalls = 0;
+    let teardownCalls = 0;
+    let releaseSetup!: () => void;
+    const setupBarrier = new Promise<void>((resolve) => {
+      releaseSetup = resolve;
+    });
+    const controller = new AbortController();
+    const evalDef = makeEval("abort-during-setup", () => {});
+    const agentRun = runWithHooks(
+      "interrupt-drain-exp",
+      async () => {
+        setupCalls += 1;
+        await setupBarrier;
+      },
+      () => {
+        teardownCalls += 1;
+      },
+      { selectedEvalIds: ["abort-during-setup"] },
+    );
+
+    const running = run([evalDef], [agentRun], { signal: controller.signal });
+    await vi.waitFor(() => expect(setupCalls).toBe(1));
+    expect(pendingExperimentTeardownCount()).toBe(1);
+
+    controller.abort();
+    const draining = drainExperimentTeardowns();
+    await Promise.resolve();
+    expect(teardownCalls).toBe(0);
+    releaseSetup();
+
+    const [, drained] = await Promise.all([running, draining]);
+    expect(drained).toBe(1);
+    expect(teardownCalls).toBe(1);
+    expect(pendingExperimentTeardownCount()).toBe(0);
   });
 
   it("ctx 携带 experimentId / selectedEvalIds / signal;未声明 teardown 时无收尾动作、也不产生诊断", async () => {

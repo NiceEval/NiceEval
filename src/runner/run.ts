@@ -94,7 +94,6 @@ import {
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
 import { loadLatestResultsForCase } from "../record/open.ts";
 import type { RunManifests } from "../record/manifest.ts";
-import { linkedRunFingerprintIdentity } from "../sandbox/plan.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -664,8 +663,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || a.plan._tag !== "Sandbox") return undefined;
     return digestOf({
       version: 1,
-      linkedPlan: linkedRunFingerprintIdentity(a.plan),
+      providerPlan: a.plan.providerPlan.identity,
       agentInstalls: [...agentInstallPlansForRun(a.run)],
+      ...(a.plan.pair.hasEvalLifecycleHooks ? { evalId: a.evalDef.id } : {}),
     });
   };
   const acquiredReuseAttempts = new WeakSet<Attempt>();
@@ -789,41 +789,59 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
   // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个
   // memoized promise;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown 是
-  // ExperimentDef.teardown 字段,按 per-run 剩余 attempt 计数在最后一个 attempt 收尾后执行,
-  // 当且仅当 setup 时点走到过(triggered)——setup 抛错不豁免,未声明 setup 不影响触发;
-  // 计数递减挂在 Effect.ensuring 上,中断路径同样递减,teardown 因此必跑。
-  type ExperimentSetupState =
-    | { readonly _tag: "Pending" }
+  // ExperimentDef.teardown 字段,在最后一个 attempt 收尾后执行,当且仅当 setup 时点走到过
+  // ——setup 抛错不豁免,未声明 setup 不影响触发。pendingAttempts 按 Attempt 身份结算并挂在
+  // Effect.ensuring 上,中断路径同样移除;重复结算不会像数字计数那样下溢。
+  type ExperimentSetupOutcome =
     | { readonly _tag: "Succeeded" }
     | { readonly _tag: "Failed"; readonly error: AttemptError };
 
-  interface ExperimentLifecycle {
-    /** memoized 的 setup 执行;undefined = 还没有 attempt 触发过。未声明 setup 时为已决议 promise。 */
-    setupPromise?: Promise<void>;
-    /** setup 时点已走到(第一个通过派发许可的 attempt 已触发本实验生命周期;未声明 setup 也置位)。 */
-    triggered: boolean;
-    /** setup 的完成态；throw 任意 JS 值都在 catch 边界立即归一成 AttemptError。 */
-    setupState: ExperimentSetupState;
-    /** teardown 的 memoized 执行体:谁先到(计数归零 / 扫尾 / 强清 drain)谁启动,后到者等
-     *  同一个 promise——「恰好一次 + 在飞可等待」的全部机制。undefined = 还没人启动。 */
-    teardownPromise?: Promise<void>;
-    /** 本实验还没收尾的 attempt 数;归零即触发 teardown。 */
-    remaining: number;
-    /** 本实验的收尾时点已走到(计数归零 / run 收尾扫尾)。 */
-    tornDown: boolean;
+  type ExperimentSetup =
+    | { readonly _tag: "InProgress"; readonly promise: Promise<void> }
+    | ExperimentSetupOutcome;
+
+  /**
+   * 生命周期是一条闭合状态链，而不是 optional promise、boolean 与计数器的笛卡尔积：
+   *
+   * Dormant → Active(setup 进行中/成功/失败) → TearingDown → TornDown
+   *        ↘ UntriggeredComplete（所有 attempt 都在触发点前结算）
+   *
+   * TearingDown/TornDown 仍携带 setup 与 pendingAttempts，因为强清 drain 可以在 setup 或
+   * attempt 尚在飞时先取得收尾执行权；后续 attempt 恢复时仍须读到 setup 的失败结果。
+   */
+  type ExperimentLifecycle =
+    | { readonly _tag: "Dormant"; readonly pendingAttempts: ReadonlySet<Attempt> }
+    | {
+        readonly _tag: "Active";
+        readonly pendingAttempts: ReadonlySet<Attempt>;
+        readonly setup: ExperimentSetup;
+      }
+    | {
+        readonly _tag: "TearingDown";
+        readonly pendingAttempts: ReadonlySet<Attempt>;
+        readonly setup: ExperimentSetup;
+        readonly promise: Promise<void>;
+      }
+    | {
+        readonly _tag: "TornDown";
+        readonly pendingAttempts: ReadonlySet<Attempt>;
+        readonly setup: ExperimentSetupOutcome;
+      }
+    | { readonly _tag: "UntriggeredComplete" };
+
+  interface ExperimentLifecycleCell {
+    state: ExperimentLifecycle;
   }
-  const expLifecycles = new Map<AgentRun, ExperimentLifecycle>();
+  const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
   for (const a of attempts) {
     if (!a.run.setup && !a.run.teardown) continue;
-    let lc = expLifecycles.get(a.run);
-    if (!lc)
-      expLifecycles.set(a.run, (lc = {
-        triggered: false,
-        setupState: { _tag: "Pending" },
-        remaining: 0,
-        tornDown: false,
-      }));
-    lc.remaining += 1;
+    const cell = expLifecycles.get(a.run);
+    if (cell) {
+      if (cell.state._tag !== "Dormant") throw new Error("Experiment lifecycle initialized after dispatch.");
+      cell.state = { _tag: "Dormant", pendingAttempts: new Set([...cell.state.pendingAttempts, a]) };
+    } else {
+      expLifecycles.set(a.run, { state: { _tag: "Dormant", pendingAttempts: new Set([a]) } });
+    }
   }
 
   // 实验域诊断累积器(docs/runner.md「实验域诊断持久化」):只接无法归属单 Attempt 的实验
@@ -942,19 +960,43 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       fact: (key, value) => recordExperimentFact(run.experimentId, key, value),
     };
   };
-  const runExperimentTeardown = (run: AgentRun, lc: ExperimentLifecycle): Promise<void> => {
-    // memoized 一次性执行体(docs/cli.md「中断:三级响应」):正常路径(计数归零 / run 收尾
-    // 扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——
-    // 不双跑、也不空转;注册表条目在 settle 后注销,drain 因此能等待在飞中的 teardown。
-    lc.teardownPromise ??= (async () => {
-      const experimentId = run.experimentId ?? run.agent.name;
+  const replaceSetup = (cell: ExperimentLifecycleCell, setup: ExperimentSetupOutcome): void => {
+    const state = cell.state;
+    if (state._tag === "Active") {
+      cell.state = { ...state, setup };
+    } else if (state._tag === "TearingDown") {
+      cell.state = { ...state, setup };
+    }
+  };
+  const setupPromiseOf = (setup: ExperimentSetup): Promise<void> =>
+    setup._tag === "InProgress" ? setup.promise : Promise.resolve();
+  const setupOutcomeOf = (state: ExperimentLifecycle): ExperimentSetupOutcome => {
+    if (state._tag === "Active" || state._tag === "TearingDown") {
+      if (state.setup._tag === "InProgress") {
+        throw new Error(`Experiment setup is still in progress while lifecycle is ${state._tag}.`);
+      }
+      return state.setup;
+    }
+    if (state._tag === "TornDown") return state.setup;
+    throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
+  };
+  const runExperimentTeardown = (run: AgentRun, cell: ExperimentLifecycleCell): Promise<void> => {
+    const current = cell.state;
+    // setup 时点没走到就没有收尾义务；已完成与在飞状态分别复用自己的确定结论/promise。
+    if (current._tag === "Dormant" || current._tag === "UntriggeredComplete") return Promise.resolve();
+    if (current._tag === "TearingDown") return current.promise;
+    if (current._tag === "TornDown") return Promise.resolve();
+
+    // memoized 一次性执行体(docs/cli.md「中断:三级响应」):正常路径(attempt 集合归零 / run
+    // 收尾扫尾)、强清 drain、崩溃路径谁先到都把 Active 原子转成 TearingDown,后到者只等
+    // 该状态携带的同一个 promise——不双跑、也不空转。
+    const experimentId = run.experimentId ?? run.agent.name;
+    const teardownPromise = (async () => {
       try {
-        // 触发规则(docs/feature/experiments/architecture.md):setup 时点没走到(一个 attempt
-        // 都没通过派发许可)则跳过;setup 抛错不豁免——半初始化现场同样要扫尾。
-        if (!lc.triggered || !run.teardown) return;
-        // 与 setup 串行:setup 仍在飞(极端时序:全部 attempt 在 setup 完成前被中断收尾)时等它
-        // settle 再收尾;setupPromise 自带 catch(失败收进 setupFailed),这里不会 reject。
-        await lc.setupPromise;
+        // 与 setup 串行:强清 drain 可能在 setup 仍在飞时先取得收尾执行权；等 memoized setup
+        // settle 后再清理。setup 的 rejection 已在边界归一进闭合 outcome,这里不会 reject。
+        await setupPromiseOf(current.setup);
+        if (!run.teardown) return;
         // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级 Hook 的显示」)。
         reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
         const startedAt = Date.now();
@@ -990,6 +1032,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 不是整个 Invocation 收尾那一刻(见下方 experiment:complete 事件的发送处)。
         experimentCompletedAt.set(experimentId, new Date().toISOString());
       } finally {
+        // teardown promise resolve 之前 setup 必已 settle；把 outcome 留在终态，使强清先完成、
+        // attempt 后恢复的竞态仍能读取 setup 失败，而不是把它随 teardown 状态一起丢掉。
+        cell.state = {
+          _tag: "TornDown",
+          pendingAttempts: cell.state._tag === "TearingDown"
+            ? cell.state.pendingAttempts
+            : current.pendingAttempts,
+          setup: setupOutcomeOf(cell.state),
+        };
         // settle 后才注销:drain 的「启动全部未启动 + 等待全部未 settle」依赖条目在飞期间仍可见。
         unregisterExperimentTeardown(experimentId);
         // 磁盘镜像同一时点删除(所有触发路径:完成 / 中断 / 强清 drain 都经这条 finally)——
@@ -1004,7 +1055,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         }
       }
     })();
-    return lc.teardownPromise;
+    cell.state = {
+      _tag: "TearingDown",
+      pendingAttempts: current.pendingAttempts,
+      setup: current.setup,
+      promise: teardownPromise,
+    };
+    return teardownPromise;
   };
   /**
    * 启动自愈:本实验触发 setup 之前,先核对磁盘上是否有它自己的遗留登记——上一次运行同一
@@ -1088,79 +1145,91 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   };
   const ensureExperimentSetup = (a: Attempt): Promise<void> => {
-    const lc = expLifecycles.get(a.run)!;
-    if (!lc.setupPromise) {
-      const run = a.run;
-      const experimentId = run.experimentId ?? run.agent.name;
-      lc.triggered = true;
-      // teardown 从触发时点起就静态可达:立即登记进宿主机侧兜底表,setup 挂起 / 抛错都不会
-      // 丢收尾——强清退出(二次中断/看门狗/崩溃路径)时 cli 由此排空未被运行路径消费的
-      // teardown(docs/cli.md「中断:三级响应」)。
-      if (run.teardown) registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, lc));
-      const ctx = run.setup ? makeExperimentHookContext(run, "experiment.setup") : undefined;
-      lc.setupPromise = (async () => {
-        // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」):
-        // 先核对并补执行本实验自己的遗留登记,再原子写入本次的登记——两步都先于 setup。
-        if (run.teardown && run.experimentId) {
-          await recoverStaleTeardownRegistration(run, experimentId);
-          await writeTeardownRegistration(niceevalRoot, {
-            experimentId: run.experimentId,
-            selectedEvalIds: run.selectedEvalIds,
-            pid: process.pid,
-            host: currentHost,
-            startedAt: new Date().toISOString(),
-          }).catch((e) => {
-            const message = t("runner.teardownRegistrationWriteFailed", {
-              experimentId,
-              message: e instanceof Error ? e.message : String(e),
-            }).trimEnd();
-            reportDiagnostic({ key: `teardown-registration-write-failed:${experimentId}`, code: "teardown-registration-write-failed", severity: "warning", message, data: { experimentId } });
-            recordExperimentDiagnostic({
-              experimentId: run.experimentId,
-              code: "teardown-registration-write-failed",
-              level: "warning",
-              message,
-              phase: "experiment.setup",
-            });
-          });
-        }
-        if (!run.setup) return;
-        // 起止由 runner 发布(见 cli.md「实验级 Hook 的显示」):一个什么都不调的 setup 也必须
-        // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
-        reportExperimentHook({ experimentId, hook: "setup", status: "started" });
-        const startedAt = Date.now();
-        try {
-          const returned = (await run.setup!(ctx!)) as unknown;
-          if (typeof returned === "function") {
-            // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略而泄漏资源。
-            // best-effort 执行一次返回的函数(把已起的资源收掉),然后按 setup 失败报清晰错误。
-            try {
-              await withCleanupTimeout(returned as () => unknown);
-            } catch {
-              // 迁移护栏里的旧式 cleanup 失败不再叠加报错,主错误(下一行)已指明修法。
-            }
-            throw new Error(
-              t("runner.setupReturnedCleanup", {
-                layer: `ExperimentDef.setup (${experimentId})`,
-                hint: "ExperimentDef.teardown",
-              }).trimEnd(),
-            );
-          }
-        } catch (e) {
-          reportExperimentHook({ experimentId, hook: "setup", status: "failed", durationMs: Date.now() - startedAt });
-          throw e;
-        }
-        reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
-      })().then(() => {
-        lc.setupState = { _tag: "Succeeded" };
-      }).catch((e) => {
-        lc.setupState = {
-          _tag: "Failed",
-          error: { ...errorFromThrown(e, "experiment.setup"), code: "experiment-setup-failed" },
-        };
-      });
+    const cell = expLifecycles.get(a.run)!;
+    const current = cell.state;
+    if (current._tag === "Active" || current._tag === "TearingDown") {
+      return setupPromiseOf(current.setup);
     }
-    return lc.setupPromise;
+    if (current._tag === "TornDown") return Promise.resolve();
+    if (current._tag === "UntriggeredComplete") {
+      throw new Error("Experiment lifecycle cannot be triggered after all attempts settled.");
+    }
+
+    const run = a.run;
+    const experimentId = run.experimentId ?? run.agent.name;
+    // teardown 从触发时点起就静态可达:立即登记进宿主机侧兜底表,setup 挂起 / 抛错都不会
+    // 丢收尾——强清退出(二次中断/看门狗/崩溃路径)时 cli 由此排空未被运行路径消费的
+    // teardown(docs/cli.md「中断:三级响应」)。
+    if (run.teardown) registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, cell));
+    const ctx = run.setup ? makeExperimentHookContext(run, "experiment.setup") : undefined;
+    const setupPromise = (async () => {
+      // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」):
+      // 先核对并补执行本实验自己的遗留登记,再原子写入本次的登记——两步都先于 setup。
+      if (run.teardown && run.experimentId) {
+        await recoverStaleTeardownRegistration(run, experimentId);
+        await writeTeardownRegistration(niceevalRoot, {
+          experimentId: run.experimentId,
+          selectedEvalIds: run.selectedEvalIds,
+          pid: process.pid,
+          host: currentHost,
+          startedAt: new Date().toISOString(),
+        }).catch((e) => {
+          const message = t("runner.teardownRegistrationWriteFailed", {
+            experimentId,
+            message: e instanceof Error ? e.message : String(e),
+          }).trimEnd();
+          reportDiagnostic({ key: `teardown-registration-write-failed:${experimentId}`, code: "teardown-registration-write-failed", severity: "warning", message, data: { experimentId } });
+          recordExperimentDiagnostic({
+            experimentId: run.experimentId,
+            code: "teardown-registration-write-failed",
+            level: "warning",
+            message,
+            phase: "experiment.setup",
+          });
+        });
+      }
+      if (!run.setup) return;
+      // 起止由 runner 发布(见 cli.md「实验级 Hook 的显示」):一个什么都不调的 setup 也必须
+      // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
+      reportExperimentHook({ experimentId, hook: "setup", status: "started" });
+      const startedAt = Date.now();
+      try {
+        const returned = (await run.setup(ctx!)) as unknown;
+        if (typeof returned === "function") {
+          // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略而泄漏资源。
+          // best-effort 执行一次返回的函数(把已起的资源收掉),然后按 setup 失败报清晰错误。
+          try {
+            await withCleanupTimeout(returned as () => unknown);
+          } catch {
+            // 迁移护栏里的旧式 cleanup 失败不再叠加报错,主错误(下一行)已指明修法。
+          }
+          throw new Error(
+            t("runner.setupReturnedCleanup", {
+              layer: `ExperimentDef.setup (${experimentId})`,
+              hint: "ExperimentDef.teardown",
+            }).trimEnd(),
+          );
+        }
+      } catch (e) {
+        reportExperimentHook({ experimentId, hook: "setup", status: "failed", durationMs: Date.now() - startedAt });
+        throw e;
+      }
+      reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
+    })().then(
+      () => replaceSetup(cell, { _tag: "Succeeded" }),
+      (e: unknown) => replaceSetup(cell, {
+        _tag: "Failed",
+        error: { ...errorFromThrown(e, "experiment.setup"), code: "experiment-setup-failed" },
+      }),
+    );
+    // 先写 Active 再让 promise continuation 有机会落 outcome；JS microtask 保证即使 hook 同步
+    // 返回，then 也只能在这次同步 transition 之后执行。
+    cell.state = {
+      _tag: "Active",
+      pendingAttempts: current.pendingAttempts,
+      setup: { _tag: "InProgress", promise: setupPromise },
+    };
+    return setupPromise;
   };
 
   // 自愈是「选中实验」的启动期职责，不是首个派发 attempt 的副作用：全携带使 attempts 为空时，
@@ -1711,7 +1780,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   };
 
   /** 用例全部 attempt(不论真实派发还是被重查携带命中而跳过)都 settle 后删锁;与
-   *  expLifecycles.remaining 归零触发 teardown 同一种「逐 attempt 收尾时递减,归零触发」模式。 */
+   *  ExperimentLifecycle.pendingAttempts 清空触发 teardown 同一种「逐 attempt 身份结算」模式。 */
   const releaseCaseLockIfDone = async (st: CaseLockState, attempt: number): Promise<void> => {
     st.pending.delete(attempt);
     if (st.pending.size > 0) return;
@@ -2070,10 +2139,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 都没跑成的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
             // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
             const expLc = expLifecycles.get(a.run);
+            const setupFailure = expLc === undefined
+              ? Option.none<AttemptError>()
+              : (() => {
+                  const outcome = setupOutcomeOf(expLc.state);
+                  return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
+                })();
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
             const buildFailure = buildFailureByEval.get(cacheKey(a.run, a.evalDef.id));
-            const blockedError: AttemptError | undefined = expLc?.setupState._tag === "Failed"
-              ? expLc.setupState.error
+            const blockedError: AttemptError | undefined = Option.isSome(setupFailure)
+              ? setupFailure.value
               : precheckFailure !== undefined
                 ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
                 : buildFailure !== undefined
@@ -2365,21 +2440,32 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             }
           }
         });
-        // 实验级 teardown 计数:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
-        // late-carry 跳过的)都递减,归零触发 ExperimentDef.teardown。ensuring 在中断路径
-        // 同样执行,teardown 因此必跑。
+        // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
+        // late-carry 跳过的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
+        // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
           !a.run.setup && !a.run.teardown
             ? pipeline
             : pipeline.pipe(
                 Effect.ensuring(
                   Effect.promise(async () => {
-                    const lc = expLifecycles.get(a.run)!;
-                    lc.remaining -= 1;
-                    if (lc.remaining === 0 && !lc.tornDown) {
-                      lc.tornDown = true;
-                      await runExperimentTeardown(a.run, lc);
+                    const cell = expLifecycles.get(a.run)!;
+                    const state = cell.state;
+                    if (state._tag === "UntriggeredComplete") return;
+                    const pendingAttempts = new Set(state.pendingAttempts);
+                    pendingAttempts.delete(a);
+                    if (state._tag === "Dormant") {
+                      cell.state = pendingAttempts.size === 0
+                        ? { _tag: "UntriggeredComplete" }
+                        : { _tag: "Dormant", pendingAttempts };
+                      return;
                     }
+                    if (state._tag === "Active") {
+                      cell.state = { ...state, pendingAttempts };
+                      if (pendingAttempts.size === 0) await runExperimentTeardown(a.run, cell);
+                      return;
+                    }
+                    cell.state = { ...state, pendingAttempts };
                   }),
                 ),
               );
@@ -2467,34 +2553,43 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     });
   }
 
-  // 实验级 teardown 兜底扫尾:正常路径由 per-attempt ensuring 的计数归零触发(见上),但一次
-  // 真实批跑观察到过计数路径未触发的间歇现象(根因未定位,排查记录见 memory 的
+  // 实验级 teardown 兜底扫尾:正常路径由 per-attempt ensuring 的身份集合归零触发(见上),但一次
+  // 真实批跑观察到过结算路径未触发的间歇现象(根因未定位,排查记录见 memory 的
   // experiment-teardown-missed-once-in-batch)。走到这里时 forEach 的全部 fiber 连同 finalizer
-  // 都已结算,任何 tornDown 仍为 false 的实验都意味着泄漏;在此强制收尾并报警示诊断——
+  // 都已结算,任何仍停在 Active 的实验都意味着泄漏;在此强制收尾并报警示诊断——
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
   // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
   // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
   const sweepExperimentTeardowns = async (): Promise<void> => {
-    for (const [run, lc] of expLifecycles) {
-      if (lc.tornDown) continue;
-      lc.tornDown = true;
-      // 无事可扫:没触发过 / 没声明 teardown——静默跳过。
-      if (!lc.triggered || !run.teardown) continue;
-      // 只有扫尾是启动者时才报「late」诊断;已在飞的(如强清 drain 先到)只等 settle,不算漏。
-      if (!lc.teardownPromise) {
+    for (const [run, cell] of expLifecycles) {
+      const state = cell.state;
+      // 未触发、已完成均无事可扫；在飞的 teardown 只等 settle，不算漏。
+      if (state._tag === "Dormant" || state._tag === "UntriggeredComplete" || state._tag === "TornDown") {
+        continue;
+      }
+      if (state._tag === "TearingDown") {
+        await state.promise;
+        continue;
+      }
+      if (!run.teardown) {
+        await runExperimentTeardown(run, cell);
+        continue;
+      }
+      // 只有扫尾从 Active 启动时才报「late」诊断。
+      {
         const experimentId = run.experimentId ?? run.agent.name;
         const message = t("runner.experimentTeardownLate", { experimentId }).trimEnd();
-        reportDiagnostic({ key: `experiment-teardown-late:${experimentId}`, code: "experiment-teardown-late", severity: "warning", message, data: { experimentId, remaining: lc.remaining } });
+        reportDiagnostic({ key: `experiment-teardown-late:${experimentId}`, code: "experiment-teardown-late", severity: "warning", message, data: { experimentId, remaining: state.pendingAttempts.size } });
         recordExperimentDiagnostic({
           experimentId: run.experimentId,
           code: "experiment-teardown-late",
           level: "warning",
           message,
           phase: "experiment.teardown",
-          data: { remaining: lc.remaining },
+          data: { remaining: state.pendingAttempts.size },
         });
       }
-      await runExperimentTeardown(run, lc);
+      await runExperimentTeardown(run, cell);
     }
   };
   if (Exit.isFailure(exit)) {
