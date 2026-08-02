@@ -39,7 +39,7 @@ import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData, emptyDiffData } from "../assertions/diff.ts";
-import { createRemoteSandbox } from "./remote-sandbox.ts";
+import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
@@ -522,12 +522,12 @@ export function runAttemptEffect(
                 }),
               );
             })
-          : createRemoteSandbox());
+          : createDirectAgentSandbox());
       // 一次性沙箱的租借时刻:实例到手就定归属,后面无论走到哪一步终结都带着它。
       if (run.agent.kind === "sandbox" && !sandboxFacts) {
         sandboxFacts = { provider: runtimeCapabilities!.provider, sandboxId: sandbox.sandboxId };
       }
-      if (run.agent.kind !== "sandbox") log(t("runner.useRemoteAgent"));
+      if (run.agent.kind !== "sandbox") log(t("runner.useDirectAgent"));
 
       const commandTarget = createSandboxCommandTarget(sandbox);
 
@@ -1244,7 +1244,7 @@ async function runAttemptBody(
 
     if (skipReason) log(t("runner.skip", { reason: skipReason }));
 
-    // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。remote agent 没有 workspace。
+    // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。Direct Agent 没有 workspace。
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
     let diffWindows: DiffArtifact = [];
     if (!skipReason && usesSandbox && ledger) {

@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/sandbox.md
 import { describe, expect, it } from "vitest";
 import type { Sandbox } from "../types.ts";
-import { withEvalLocalPaths } from "./remote-sandbox.ts";
+import { withEvalLocalPaths } from "./direct-agent-sandbox.ts";
 
 describe("withEvalLocalPaths", () => {
   it("anchors relative host strings at the eval directory and preserves URL objects exactly", async () => {

@@ -454,7 +454,7 @@ export const en = {
   "runner.otlpShared": "OTLP shared receiver (run-scoped) -> {{endpoint}}",
   "runner.providerExclusiveSerial":
     "  · [sandbox] the \"{{provider}}\" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency {{concurrency}}\n",
-  "runner.remoteSandboxUnavailable": "remote agents do not have sandbox.{{method}}; use a sandbox agent or remove workspace assertions.",
+  "runner.directAgentSandboxUnavailable": "Direct Agents do not have sandbox.{{method}}; use a Sandbox Agent or remove workspace assertions.",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} failed (ignored): {{message}}\n",
   "runner.skip": "skip: {{reason}}",
   "runner.startAgentSetup": "agent setup (install CLI / write config)...",
@@ -465,7 +465,7 @@ export const en = {
   "runner.startSandboxTeardown": "sandbox teardown (environment provisioning hooks)...",
   "runner.timeout": "attempt timed out ({{timeoutMs}}ms, from {{source}})\nRecent progress:\n{{recentLogs}}",
   "runner.traceSelected": " -> kept {{count}} semantic spans",
-  "runner.useRemoteAgent": "using remote agent (no sandbox created)...",
+  "runner.useDirectAgent": "using Direct Agent (no Sandbox created)...",
   "sandbox.deadlineExceedsSession":
     "error: this attempt's timeout ({{timeoutMs}}ms) is longer than what a single {{provider}} session lives ({{limitMs}}ms); the sandbox would be reclaimed mid-attempt.\n" +
     "  fix: lower timeoutMs below {{limitMs}}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.\n",

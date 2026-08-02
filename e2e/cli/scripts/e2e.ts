@@ -2,7 +2,7 @@
 // scripts/e2e.ts — cli 唯一执行入口(docs/engineering/testing/e2e/README.md §3.1)。
 // 检查 secrets → 装依赖 → 清理上次运行的临时结果 → 跑验收(scripts/verify.ts,内含全部
 // niceeval exp / show 调用)→ 按「能确证的外部故障退 75,其余一律回归」折叠退出码。
-// 本仓库没有需要起停的被测服务(remote agent 直连真实网关)。
+// 本仓库没有需要起停的被测服务（Direct Agent 直连真实网关）。
 
 import "dotenv/config";
 

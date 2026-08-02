@@ -1075,7 +1075,7 @@ export function diffText(opts: {
   const { header, data, artifactPath, file } = opts;
   const source = artifactPath ? join(artifactPath, "diff.json") : undefined;
   if (data === null) {
-    return `${header}\n\ndiff unavailable (no diff recorded for this attempt: remote agent, or diff artifact not published${source ? `; expected: ${source}` : ""})`;
+    return `${header}\n\ndiff unavailable (no diff recorded for this attempt: Direct Agent, or diff artifact not published${source ? `; expected: ${source}` : ""})`;
   }
   const files = data.files;
 

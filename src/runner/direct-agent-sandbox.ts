@@ -4,29 +4,29 @@ import { resolveEvalLocalPath } from "../sandbox/paths.ts";
 import type { Sandbox } from "../types.ts";
 import { t } from "../i18n/index.ts";
 
-function remoteUnavailable<T>(method: keyof Sandbox): Promise<T> {
-  return Promise.reject(new Error(t("runner.remoteSandboxUnavailable", { method })));
+function directAgentUnavailable<T>(method: keyof Sandbox): Promise<T> {
+  return Promise.reject(new Error(t("runner.directAgentSandboxUnavailable", { method })));
 }
 
 /** Direct Agent 没有运行中 Sandbox；除固定清理 stop 外，首次调用即点名具体 API。 */
-export function createRemoteSandbox(): Sandbox {
+export function createDirectAgentSandbox(): Sandbox {
   return {
     workdir: "",
-    sandboxId: "remote",
+    sandboxId: "direct-agent",
     otlpHost: "127.0.0.1",
-    runCommand: () => remoteUnavailable("runCommand"),
-    runShell: () => remoteUnavailable("runShell"),
-    runCommandOrThrow: () => remoteUnavailable("runCommandOrThrow"),
-    runShellOrThrow: () => remoteUnavailable("runShellOrThrow"),
-    readText: () => remoteUnavailable("readText"),
-    writeText: () => remoteUnavailable("writeText"),
-    readBytes: () => remoteUnavailable("readBytes"),
-    writeBytes: () => remoteUnavailable("writeBytes"),
-    pathExists: () => remoteUnavailable("pathExists"),
-    uploadFile: () => remoteUnavailable("uploadFile"),
-    uploadDirectory: () => remoteUnavailable("uploadDirectory"),
-    downloadFile: () => remoteUnavailable("downloadFile"),
-    downloadDirectory: () => remoteUnavailable("downloadDirectory"),
+    runCommand: () => directAgentUnavailable("runCommand"),
+    runShell: () => directAgentUnavailable("runShell"),
+    runCommandOrThrow: () => directAgentUnavailable("runCommandOrThrow"),
+    runShellOrThrow: () => directAgentUnavailable("runShellOrThrow"),
+    readText: () => directAgentUnavailable("readText"),
+    writeText: () => directAgentUnavailable("writeText"),
+    readBytes: () => directAgentUnavailable("readBytes"),
+    writeBytes: () => directAgentUnavailable("writeBytes"),
+    pathExists: () => directAgentUnavailable("pathExists"),
+    uploadFile: () => directAgentUnavailable("uploadFile"),
+    uploadDirectory: () => directAgentUnavailable("uploadDirectory"),
+    downloadFile: () => directAgentUnavailable("downloadFile"),
+    downloadDirectory: () => directAgentUnavailable("downloadDirectory"),
     // stop 是调度器固定清理路径；Direct Agent 没有资源需要释放。
     stop: async () => {},
   };

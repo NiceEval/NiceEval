@@ -1,6 +1,6 @@
 // 运行器主调度:发现产出的 eval × agent × runs → attempt,有界并发调度。
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
-// reporter 编排 / 汇总在 report.ts,Sandbox 适配器在 remote-sandbox.ts。
+// reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";

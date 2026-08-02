@@ -444,7 +444,7 @@ export const zhCN = {
   "runner.otlpShared": "OTLP 共享接收器(run 级) → {{endpoint}}",
   "runner.providerExclusiveSerial":
     "  · [sandbox] “{{provider}}” provider 强制 attempt 一次只跑一个(独占串行);不论 --max-concurrency 写了 {{concurrency}},它的实际并发恒为 1\n",
-  "runner.remoteSandboxUnavailable": "remote agent 没有 sandbox.{{method}};请改用 sandbox agent 或移除 workspace 断言。",
+  "runner.directAgentSandboxUnavailable": "Direct Agent 没有 sandbox.{{method}}；请改用 Sandbox Agent 或移除 workspace 断言。",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} 失败(已忽略):{{message}}\n",
   "runner.skip": "skip:{{reason}}",
   "runner.startAgentSetup": "agent setup(装 CLI / 写配置)…",
@@ -458,7 +458,7 @@ export const zhCN = {
   // 撞线时用户要的下一步是「去哪儿把它调大」。
   "runner.timeout": "attempt 超时({{timeoutMs}}ms, from {{source}})\n最近进度:\n{{recentLogs}}",
   "runner.traceSelected": " → 留 {{count}}(按语义)",
-  "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
+  "runner.useDirectAgent": "使用 Direct Agent（不创建 Sandbox）…",
   "sandbox.deadlineExceedsSession":
     "error: 这条 attempt 的超时上限({{timeoutMs}}ms)超过 {{provider}} 单个会话的寿命({{limitMs}}ms),沙箱会在 attempt 跑到一半时被回收。\n" +
     "  fix: 把 timeoutMs 调到 {{limitMs}}ms 以内,或在 sandbox spec 上声明更长的 lifetimeMs(账号档位允许的话)。\n",

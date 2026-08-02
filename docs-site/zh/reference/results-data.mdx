@@ -81,7 +81,7 @@ await attempt.sources();       // SourceArtifact[] | null
 
 三条要点：
 
-- **懒加载即存在性判断。** artifact 缺失返回 `null`，不抛错——remote agent 没有 `diff.json` 时，`await attempt.diff()` 就是 `null`，你据此决定跳过还是报缺。
+- **懒加载即存在性判断。** artifact 缺失返回 `null`，不抛错——Direct Agent 没有 `diff.json` 时，`await attempt.diff()` 就是 `null`，你据此决定跳过还是报缺。
 - **读不了的落盘不静默。** 版本不兼容、目录损坏的 Run 进 `unreadable` 并带原因；要不要展示由你定，但缺口永远被算出来。
 - **同进程内按句柄记忆化。** 两处都读同一个 `diff()` 不会把上百 MB 读两遍。
 
