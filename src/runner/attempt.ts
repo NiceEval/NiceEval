@@ -284,7 +284,16 @@ export function runAttemptEffect(
   const declareFailure = (phase: LifecyclePhase, e: unknown): void => {
     if (!onFailureClass) return;
     const declaration = attemptFailureDeclaration(run.classifyFailure, phase, e);
-    if (declaration) onFailureClass(declaration);
+    if (declaration) {
+      // 空间轴回执会先于 Attempt 结果封口进入 run.ts，并立即生成运行期反馈与 run.json 的
+      // dispatch-halted 诊断。它不能依赖下面的 EvalResult 最终扫描补救，否则同一条错误在
+      // result.json 已脱敏、Run 级诊断却仍保留原值。分类决策只消费原始错误；对外回执单独
+      // 复制并脱敏正文，scope / phase 等路由事实保持原样。
+      onFailureClass({
+        ...declaration,
+        text: redactSensitiveText(declaration.text, sensitiveValues),
+      });
+    }
   };
   // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):layer prepare/cleanup 与
   // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
@@ -1480,27 +1489,82 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
 }
 
 /**
+ * 不参加敏感值替换的 Attempt 元数据。它们是调度、缓存与引用身份，或作者源码的原样快照；
+ * 改写会让 result 与 run/manifests 身份分叉。其余 EvalResult 字段一律视为运行期证据并在
+ * Attempt 交给 reporter 前递归封口。新增 EvalResult 字段默认不能悄悄落进豁免表：下面的
+ * `EvalResultRedactionUnclassifiedKey` 会迫使作者明确裁决它属于哪一侧。
+ */
+const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
+  "id",
+  "description",
+  "experimentId",
+  "experiment",
+  "agent",
+  "model",
+  "verdict",
+  "fingerprint",
+  "configHash",
+  "attempt",
+  "startedAt",
+  "locator",
+  "locatorRunId",
+  "durationMs",
+  "executionMs",
+  "evaluationKind",
+  "usage",
+  "estimatedCostUSD",
+  "sources",
+  "sandbox",
+  "artifactBase",
+  "carriedAccepting",
+  "artifacts",
+] as const satisfies readonly (keyof EvalResult)[];
+
+const EVAL_RESULT_REDACTED_EVIDENCE_KEYS = [
+  "assertions",
+  "scoreEntries",
+  "retryAttempts",
+  "error",
+  "diagnostics",
+  "facts",
+  "phases",
+  "skipReason",
+  "events",
+  "o11y",
+  "trace",
+  "agentSetup",
+  "evidenceCoverage",
+  "diff",
+  "commands",
+  "rawTranscript",
+] as const satisfies readonly (keyof EvalResult)[];
+
+type EvalResultRedactionUnclassifiedKey = Exclude<
+  keyof EvalResult,
+  (typeof EVAL_RESULT_REDACTION_EXEMPT_KEYS)[number] | (typeof EVAL_RESULT_REDACTED_EVIDENCE_KEYS)[number]
+>;
+
+/**
  * Attempt 的持久化证据封口。命令级元数据可能在较晚的 send/teardown 才登记，因此这里对
- * `show --timing` / `--execution` / 错误页会消费的所有结构再做一次最终扫描，堵住“较早事件
- * 已写进内存、较晚才得知同一敏感值”的时序洞。源码、diff、facts 不属于命令证据契约；任意
- * 自由文本里的未知 secret 仍必须由产生它的命令显式登记。
+ * result.json、聚合 JSON/JUnit 与独立 artifact 会消费的全部运行期结构再做一次最终扫描，
+ * 堵住“较早证据已写进内存、较晚才得知同一敏感值”的时序洞。源码与身份不是命令证据；
+ * 任意自由文本里的未知 secret 仍必须由产生它的命令显式登记。
  */
 function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlySet<string>): EvalResult {
   if (sensitiveValues.size === 0) return result;
+  // 编译期穷尽守卫：EvalResult 新增字段却没在上面两侧明确归类时，这里不再能赋值。
+  const allFieldsClassified: EvalResultRedactionUnclassifiedKey extends never ? true : never = true;
+  void allFieldsClassified;
   const redact = <Value>(value: Value): Value => redactSensitiveEvidence(value, sensitiveValues);
+  const redactedEvidence = Object.fromEntries(
+    EVAL_RESULT_REDACTED_EVIDENCE_KEYS.flatMap((key) => {
+      const value = result[key];
+      return value === undefined ? [] : [[key, redact(value)] as const];
+    }),
+  );
   return {
     ...result,
-    ...(result.error !== undefined ? { error: redact(result.error) } : {}),
-    ...(result.diagnostics !== undefined ? { diagnostics: redact(result.diagnostics) } : {}),
-    ...(result.commands !== undefined ? { commands: redact(result.commands) } : {}),
-    ...(result.phases !== undefined ? { phases: redact(result.phases) } : {}),
-    ...(result.events !== undefined ? { events: redact(result.events) } : {}),
-    ...(result.retryAttempts !== undefined ? { retryAttempts: redact(result.retryAttempts) } : {}),
-    ...(result.assertions !== undefined ? { assertions: redact(result.assertions) } : {}),
-    ...(result.trace !== undefined ? { trace: redact(result.trace) } : {}),
-    ...(result.o11y !== undefined ? { o11y: redact(result.o11y) } : {}),
-    ...(result.agentSetup !== undefined ? { agentSetup: redact(result.agentSetup) } : {}),
-    ...(result.skipReason !== undefined ? { skipReason: redact(result.skipReason) } : {}),
+    ...redactedEvidence,
   };
 }
 

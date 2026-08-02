@@ -3959,6 +3959,59 @@ describe("runEvals · 止损闸: 触发", () => {
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
 
+  it("已登记敏感值的终局失败在 onFailureClass 前封口，反馈、result.json 与 dispatch-halted 均不泄漏", async () => {
+    const experimentId = "halt-sensitive-exp";
+    const sensitive = "synthetic-sensitive-value-for-halt-test";
+    const started: string[] = [];
+    const fatal = makeEval("s-fatal", async (t: TestContext) => {
+      started.push("s-fatal");
+      // 成功命令本身不生成 commands artifact，但 sensitiveValues 已登记进当前 Attempt。
+      await t.sandbox.runCommand("register-sensitive-value", [], { sensitiveValues: [sensitive] });
+      throw new ExperimentFatalError(`shared credential ${sensitive} was rejected`);
+    });
+    const blocked = makeEval("s-blocked", () => {
+      started.push("s-blocked");
+    });
+    const agentRun = probeRun(makeAgent("agent-halt-sensitive"), experimentId, ["s-fatal", "s-blocked"]);
+    const plan: RunFeedbackPlan = {
+      shape: { evals: 2, configs: 1, totalAttempts: 2, maxConcurrency: 1 },
+      reused: 0,
+      reusedFailures: [],
+    };
+
+    await withCoordinator(plan, async (coordinator) => {
+      const { summary, root } = await runWithPriorResults([fatal, blocked], [agentRun], {
+        priorResults: [],
+        maxConcurrency: 1,
+      });
+
+      expect(started).toEqual(["s-fatal"]);
+      expect(summary.results).toHaveLength(1);
+      const notice = coordinator.state.diagnostics.find((d) => d.key === experimentHaltKey(experimentId));
+      expect(notice).toBeDefined();
+      const persistedHalt = await snapshotHaltDiagnostics(root, experimentId);
+      expect(persistedHalt).toHaveLength(1);
+      const record = await openRecord(root);
+      const persistedAttempt = record.experiments
+        .find((entry) => entry.id === experimentId)
+        ?.latestRun.evals.find((entry) => entry.id === "s-fatal")
+        ?.attempts[0]?.result;
+      expect(persistedAttempt).toBeDefined();
+
+      const everySurface = JSON.stringify({
+        summaryResult: summary.results[0],
+        feedback: notice,
+        runDiagnostic: persistedHalt,
+        resultJson: persistedAttempt,
+      });
+      expect(everySurface).not.toContain(sensitive);
+      expect(everySurface).toContain("<redacted>");
+      expect(summary.results[0]!.error?.message).toBe("shared credential <redacted> was rejected");
+      expect(notice!.message).toContain("shared credential <redacted> was rejected");
+      expect(persistedHalt[0]!.detail).toContain("shared credential <redacted> was rejected");
+    });
+  }, SCHEDULING_TEST_TIMEOUT_MS);
+
   // 触发(eval 档)+ 诊断双通路:attempts: 3 下只停本 eval 剩余的两个 attempt,同实验另一个 eval 的
   // 三个 attempt 一个不少;两条通路(反馈流通知 / run.json)各自带齐 scope、evalId 与 phase。
   it("EvalFatalError:只停本 eval 剩余 attempt(同实验另一个 eval 的 3 个 attempt 照跑);双通路的 scope/evalId/phase 同源", async () => {

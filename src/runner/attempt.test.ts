@@ -17,6 +17,9 @@
 // 并与同一次 timing command 节点共用 id;成功命令不登记;调用方处理非零结果并继续不撤销证据,
 // 即使随后只把 stderr 尾部拼进自己的诊断。见文件末尾专用 describe 块。
 
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
 import { runAttemptEffect } from "./attempt.ts";
@@ -31,6 +34,8 @@ import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
+import { attemptDirOf } from "../record/format.ts";
+import { createWriter } from "../record/writer.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
 import type {
@@ -47,7 +52,8 @@ import type {
 
 /** 这些测试关注 runner 生命周期；probe 恒命中，避免把安装行为混进 fixture。 */
 function defineSandboxAgent(
-  def: Omit<SandboxAgentDef, "ensure" | "installers" | "evidenceCoverage">,
+  def: Omit<SandboxAgentDef, "ensure" | "installers" | "evidenceCoverage"> &
+    Partial<Pick<SandboxAgentDef, "evidenceCoverage">>,
 ) {
   const ensure = {
     identity: { agent: def.name, version: "0.0.0-test", revision: "1" },
@@ -56,7 +62,12 @@ function defineSandboxAgent(
       async () => {},
     ),
   };
-  return defineSandboxAgentBase({ ...def, evidenceCoverage: completeEvidenceCoverage, ensure, installers: [] });
+  return defineSandboxAgentBase({
+    ...def,
+    evidenceCoverage: def.evidenceCoverage ?? completeEvidenceCoverage,
+    ensure,
+    installers: [],
+  });
 }
 
 /** 内存沙箱:writeText/readText 记文件,runShell 恒成功(供 git ledger / diff 采集用)。 */
@@ -1044,10 +1055,25 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
   });
 
   // bug: memory/command-evidence-known-secret-redaction.md
-  it("显式敏感值只交给 provider/调用方原始结果，timing、commands、events 与 AttemptError 封口后均只剩脱敏值", async () => {
+  it("显式敏感值只交给 provider/调用方原始结果，全部运行期证据与拆分 artifact 封口后均只剩脱敏值", async () => {
     const sensitive = "synthetic-sensitive-value-for-attempt-test";
     let providerSawOriginal = false;
     let callerSawOriginalOutput = false;
+
+    const diffExport = (): Uint8Array => {
+      const zero = "0".repeat(40);
+      const afterSha = "a".repeat(40);
+      const after = Buffer.from(`workspace echoed ${sensitive}`);
+      const section = (name: string, body: Buffer): Buffer =>
+        Buffer.concat([Buffer.from(`section ${name} ${body.byteLength}\n`), body]);
+      return Buffer.concat([
+        Buffer.from("window fixture-hash s1/t1\n"),
+        section("difftree", Buffer.from(`:000000 100644 ${zero} ${afterSha} A\0secret.txt\0`)),
+        section("numstat", Buffer.from("1\t0\tsecret.txt\0")),
+        section("sizes", Buffer.from(`${afterSha} blob ${after.byteLength}\n`)),
+        section("blobs", Buffer.concat([Buffer.from(`${afterSha} blob ${after.byteLength}\n`), after, Buffer.from("\n")])),
+      ]);
+    };
 
     class SensitiveCommandSandbox extends FakeSandbox {
       override async runCommand(_command?: string, args: readonly string[] = []): Promise<CommandResult> {
@@ -1059,16 +1085,31 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
           command: `provider raw command ${sensitive}`,
         };
       }
+
+      override async readBytes(): Promise<Uint8Array> {
+        return diffExport();
+      }
     }
 
     const agent = defineSandboxAgent({
       name: "fake-agent-sensitive-command",
+      evidenceCoverage: {
+        ...completeEvidenceCoverage,
+        events: { status: "partial", reason: `adapter omitted ${sensitive}` },
+      },
+      setup: async (_sandbox, ctx) => {
+        ctx.reportSetup({
+          skills: [],
+          mcpServers: [{ name: "sensitive-fixture", command: `server-${sensitive}` }],
+        });
+      },
       send: async (_input, ctx) => {
         const command = await ctx.sandbox.runCommand("synthetic-cli", ["--token", sensitive], {
           sensitiveValues: [sensitive],
         });
         callerSawOriginalOutput = command.stdout.includes(sensitive);
         expect(command.command).toBe("synthetic-cli --token <redacted>");
+        ctx.fact("adapter.secret_echo", `fact repeated ${sensitive}`);
         return {
           events: [{ type: "error" as const, message: `agent event echoed ${sensitive}` }],
           status: "failed" as const,
@@ -1078,21 +1119,19 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
 
     const result = await runOnce(agent, new SensitiveCommandSandbox(), {
       evalDefOverrides: {
-        test: async (t: TestContext) => {
+        evaluationKind: "points",
+        test: (async (t: ScoreTestContext) => {
           await t.send("exercise command evidence redaction");
+          t.check(`assertion actual ${sensitive}`, equals(`assertion actual ${sensitive}`));
+          t.score(`direct score ${sensitive}`, 3);
           throw new Error(`outer error repeated ${sensitive}`);
-        },
+        }) as unknown as DiscoveredEval["test"],
       },
     });
 
     expect(providerSawOriginal).toBe(true);
     expect(callerSawOriginalOutput).toBe(true);
-    const persistedShowSources = JSON.stringify({
-      phases: result.phases,
-      commands: result.commands,
-      events: result.events,
-      error: result.error,
-    });
+    const persistedShowSources = JSON.stringify(result);
     expect(persistedShowSources).not.toContain(sensitive);
     expect(persistedShowSources).toContain("<redacted>");
     expect(result.commands?.[0]).toMatchObject({
@@ -1102,6 +1141,38 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
       exitCode: 17,
     });
     expect(result.error?.message).toBe("outer error repeated <redacted>");
+    expect(result.facts?.["adapter.secret_echo"]).toBe("fact repeated <redacted>");
+    expect(result.scoreEntries).toMatchObject([{ label: "direct score <redacted>", points: 3 }]);
+    expect(result.evidenceCoverage.events).toEqual({ status: "partial", reason: "adapter omitted <redacted>" });
+    expect(result.agentSetup?.mcpServers).toMatchObject([{ command: "server-<redacted>" }]);
+    expect(result.diff).toMatchObject([
+      { window: "s1/t1", changes: { "secret.txt": { status: "added", after: "workspace echoed <redacted>" } } },
+    ]);
+
+    // 默认 Artifacts reporter 会把同一结果拆成 result.json / commands.json / events.json /
+    // agent-setup.json / diff.json。逐文件复查，防止“内存结果脱敏、拆分 artifact 仍拿旧引用”。
+    const root = await mkdtemp(join(tmpdir(), "niceeval-sensitive-attempt-"));
+    try {
+      const writer = createWriter(root, { producer: { name: "niceeval-test" } });
+      await writer.writeAttemptFor(result);
+      const snapshot = writer.snapshotDirs()[0];
+      if (!snapshot) throw new Error("fixture did not create a result snapshot");
+      const dir = join(snapshot.dir, attemptDirOf(result));
+      const files = await readdir(dir);
+      expect(files).toEqual(expect.arrayContaining([
+        "result.json",
+        "commands.json",
+        "events.json",
+        "agent-setup.json",
+        "diff.json",
+      ]));
+      const artifacts = await Promise.all(files.map((file) => readFile(join(dir, file), "utf8")));
+      const serializedArtifacts = artifacts.join("\n");
+      expect(serializedArtifacts).not.toContain(sensitive);
+      expect(serializedArtifacts).toContain("<redacted>");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("checked run* 抛出的 command-exit 也从错误携带的结果登记脱敏失败证据", async () => {
