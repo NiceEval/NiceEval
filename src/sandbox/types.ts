@@ -66,8 +66,8 @@ export interface SandboxHooks<Self> {
  * (见 docs/feature/sandbox/library.md「环境层生命周期钩子」)。
  */
 export interface SandboxHookContext extends ScopedFeedback {
-  /** 路径推导出的实验 id;不经 experiment 跑时是 undefined。跨 attempt 状态按它分区。 */
-  readonly experimentId?: string;
+  /** 运行计划中已解析的实验 id；生命周期 hook 不在脱离 Experiment 的上下文执行。 */
+  readonly experimentId: string;
   /** 本次 attempt 的中止信号。 */
   readonly signal: AbortSignal;
   /**

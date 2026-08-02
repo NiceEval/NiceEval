@@ -63,6 +63,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **生命周期与资源释放**：失败与中断路径的清理和成功路径同等重要。
 
   - 调用链固定顺序:template owner 命令先、另一 owner 次、`agent.ensure` 最后;省略 `sandbox` 字段归一成空 command-only layer。
+  - modern `SandboxLayer.setup()` / `.teardown()` 只在物理实例首尾运行：fresh 各一次，reuse 每 lane 一次；setup 正序、teardown 逆序，setup 失败仍完整 teardown，单个 teardown 失败记 diagnostic 不阻止其余 hook 与 provider stop。纯 Experiment-owned hook 可跨 eval 共池，Eval-owned hook 必须隔离。
   - prepare 抛错时已登记 cleanup 逆序执行,finalizer 与 stop 走 finally;prepare 抛错计 errored,cleanup 报错只记诊断,逐段清理超时收束成诊断。
   - layer 的 `prepare()` 追加序与 kind 品牌不可变:command-only 变不成 template-bearing,template-bearing 追加不了第二起点。
   - `onCleanup()` 只在取得资源后登记、按全局准备顺序逆序执行;创建后被终止属 lifecycle failure 不进 IO 重试。

@@ -273,6 +273,31 @@ describe("pure SandboxLayer linker", () => {
     });
   });
 
+  it("lifecycle 以 opaque marker 进入 fingerprint，并保留 template owner 优先的执行顺序", () => {
+    const evalSetup = async (): Promise<void> => {};
+    const experimentSetup = async (): Promise<void> => {};
+    const evalTeardown = async (): Promise<void> => {};
+    const experimentTeardown = async (): Promise<void> => {};
+    const [linked] = linkOk([
+      sandboxPair({
+        evalLayer: dockerImageSandbox({ image: "node:24" }).setup(evalSetup).teardown(evalTeardown),
+        experimentLayer: sandboxLayer().setup(experimentSetup).teardown(experimentTeardown),
+      }),
+    ]);
+    if (linked?.kind !== "sandbox") throw new Error("expected linked sandbox pair");
+
+    expect(linked.setupHooks).toEqual([evalSetup, experimentSetup]);
+    expect(linked.teardownHooks).toEqual([evalTeardown, experimentTeardown]);
+    expect(linked.hasEvalLifecycleHooks).toBe(true);
+    expect(linked.fingerprint.lifecycle).toEqual([
+      { kind: "opaque", owner: { kind: "eval", id: "eval/task" }, phase: "setup", index: 0 },
+      { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, phase: "setup", index: 0 },
+      { kind: "opaque", owner: { kind: "eval", id: "eval/task" }, phase: "teardown", index: 0 },
+      { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, phase: "teardown", index: 0 },
+    ]);
+    expect(linked.carry).toMatchObject({ _tag: "Blocked" });
+  });
+
   it("混合矩阵逐 pair link，不从相邻 Eval 借 template，也不让 Experiment template 覆盖 Eval", () => {
     const sharedExperiment = sandboxLayer().prepare(stable("experiment.shared"));
     const linked = linkOk([

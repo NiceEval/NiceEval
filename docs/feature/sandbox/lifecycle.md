@@ -17,7 +17,6 @@
 | Experiment layer | 可选 template、逐 Attempt 的 SandboxCommand | 实验起点或实验准备 |
 | Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、probe、payload、平台、安装与复检 |
 | Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并清理完整资源组 |
-| [State](../state/README.md) | load、save、临界区与窗口状态 | 外部或跨 Attempt 实验状态 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
 Agent layer 只共享排序位置,ensure 循环的协议不降格成普通命令。
@@ -71,17 +70,18 @@ fresh Case 默认在 Scope 退出时整组 stop。
 Eval template + Experiment command-only + Agent layer
   -> Eval template 选择 Provider
   -> build / start / ready Sandbox Case
+  -> Sandbox lifecycle setup
   -> 每条 Attempt:
        reset 到已知 Case 起点
        -> Eval prepare commands(声明顺序)
        -> Experiment prepare commands(声明顺序)
        -> agent.ensure 循环(按 ensure 声明顺序)
-       -> State load
        -> 建立 Agent 可归因起点
        -> Agent runtime setup / send / test
-       -> Agent teardown / State save
+       -> Agent teardown
        -> Experiment 已登记 cleanup(逆序)
        -> Eval 已登记 cleanup(逆序)
+  -> Sandbox lifecycle teardown
   -> Provider Case finalizer
 ```
 
@@ -94,17 +94,18 @@ Compose Eval 自己选择 Docker Compose Provider;同一 Experiment 不需要知
 Experiment template + Eval command-only + Agent layer
   -> Experiment template 选择 Provider
   -> build / start / ready Sandbox Case
+  -> Sandbox lifecycle setup
   -> 每条 Attempt:
        reset 到已知 Case 起点
        -> Experiment prepare commands(声明顺序)
        -> Eval prepare commands(声明顺序)
        -> agent.ensure 循环(按 ensure 声明顺序)
-       -> State load
        -> 建立 Agent 可归因起点
        -> Agent runtime setup / send / test
-       -> Agent teardown / State save
+       -> Agent teardown
        -> Eval 已登记 cleanup(逆序)
        -> Experiment 已登记 cleanup(逆序)
+  -> Sandbox lifecycle teardown
   -> Provider Case finalizer
 ```
 
@@ -117,7 +118,7 @@ Agent CLI 与 Adapter 配置可以依赖 template 提供的系统能力,也可�
 普通题目准备不应依赖某个 Agent Adapter 的私有安装路径,否则同一 Eval 无法更换 Agent。
 
 因此 agent.ensure 循环是准备链最后一道强制屏障。
-循环完成 probe、缺失时的 install 与复检后,Runner 才进入 State 与 Agent runtime;作者不能把 Agent 提前,Adapter 也不能暗中替换 template。
+循环完成 probe、缺失时的 install 与复检后,Runner 才进入 Agent runtime;作者不能把 Agent 提前,Adapter 也不能暗中替换 template。
 
 ## 单一 Attempt prepare 频次
 
@@ -135,8 +136,7 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 这项选择刻意放弃窗口专属 command 的表达力:
 
 - 绑定 Case 寿命的资源归 Provider Case;
-- 外部状态的 load / save 归 State Feature;
-- 无法重复执行、严格每窗口一次的任意 callback 不属于普通 SandboxLayer。
+- 无法重复执行、严格每个物理实例一次的环境动作归 Sandbox lifecycle hooks。
 
 它换来的是作者不需要理解 reset 边界与复用池就能把准备写对。
 
@@ -150,7 +150,7 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 | reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
 | 两层作者 prepare commands | 每 Attempt | 每 Attempt 重放 |
 | agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
-| State load / save | 每 Attempt,按 [State](../state/architecture.md#生命周期与-cadence) 契约 | 每窗口,按 State 契约 |
+| Sandbox lifecycle hooks | 每物理实例一次 | 每台被复用的物理实例一次；纯 Experiment-owned hook 可跨 eval 共用，Eval-owned hook 按 eval 隔离 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
 | Provider finalizer | 每 Attempt | 每复用窗口 |
@@ -159,17 +159,16 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 某个检查命令的已安装内容在 reset 后仍然存在时,它的检查会命中;reset 删除了该内容时,当前 Attempt 重新安装,这是正确性结果,不是缓存失败。
 reset 语义、寿命确认与污染诊断见 [Sandbox 复用](reuse.md)。
 
-## 准备、State 与 baseline
+## 准备、lifecycle 与 baseline
 
 两层作者 command 和 agent.ensure 循环都属于 Agent 开始前的基础设施活动。
-State load 在 Agent CLI 可用后执行;Runner 随后建立本条 Attempt 的 Agent 可归因起点。
-无 State 时不产生空 phase;fresh 每 Attempt load/save,复用时每窗口 load/save,完整 cadence 与 save policy 由 [State Architecture](../state/architecture.md#生命周期与-cadence) 定义。
+Sandbox setup 在物理实例创建后、逐 Attempt prepare 前执行；teardown 在 Agent teardown 与逐 Attempt cleanup 后、provider finalizer 前执行。多个 setup 按追加序，多个 teardown 按追加的逆序；setup 失败也仍执行 teardown，teardown 失败记 diagnostic 后继续收尾。
 
 因此:
 
 - 作者 command 写入的题目材料不算 Agent 修改;
 - Agent CLI 安装不得把工具文件写进任务 workdir;
-- State load 载入的实验条件不算 Agent 修改;
+- lifecycle setup 写入的环境条件不算 Agent 修改;
 - `test(t)` 在 `send` 窗口外上传的文件仍按 Eval 活动归因;
 - 只有 Agent turn 窗口内的变化进入 Agent diff。
 
@@ -182,11 +181,11 @@ Runner 只清理本条 Attempt 实际取得的资源,顺序为全局 LIFO:
 
 ```text
 Agent runtime teardown
-  -> State save
   -> 第二作者 layer cleanup(命令逆序)
   -> template owner layer cleanup(命令逆序)
   -> reset / 退休决策
-  -> 窗口关闭时 Provider Case finalizer
+  -> 物理实例关闭时 Sandbox lifecycle teardown
+  -> Provider Case finalizer
 ```
 
 agent.ensure 循环默认不卸载 CLI;临时 payload 由 Agent 安装层与 Runner 的专用 finalizer 处理。
@@ -200,22 +199,22 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 - template identity、template owner 与 Provider planner revision;
 - 物理 locator、BuildKey、CaseKey 与目标平台;
 - 固定 layer 顺序;
-- 两个作者 layer 的 command identity;
+- 两个作者 layer 的 command identity 与 lifecycle opaque marker;
 - Agent ensure identity:ensure 声明 identity、配对安装层 identity、payload digest、平台与安装模式;
 - Eval、Experiment、Agent、输入与 transfer manifest identity。
 
 同一 Run 中不同配对即使使用相同物理 template,也不能省略 owner 与 layer 顺序。
 `command()` / `shell()` 与显式登记 inputs 的 `defineSandboxCommand()` 参与稳定 fingerprint;任一直接 callback 为 opaque 时,该 Attempt `carryEligible = false`。
 
-Sandbox 复用池的键至少固定:
+Sandbox 复用池的键只固定物理实例共享所需的输入:
 
 ```text
-(CaseKey, templateOwner, author layer identities, Agent ensure identity)
+(Provider physical plan identity, Agent ensure identity, lifecycle owner marker)
 ```
 
-每条 Attempt 都重放命令,所以池键不把「某条命令已经执行」当作可跳过证据。
-含 opaque command 的 layer 没有稳定 layer identity,对应窗口不跨配对、不跨 Invocation 共享。
-reset 失败、cleanup 失败或 State Feature 无法恢复已知边界时退休窗口。
+每条 Attempt 都重放命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
+hook callback 是 opaque：它会阻断跨 Run carry；Eval-owned hook 还会把同一 Run 的物理实例按 eval 隔离，Experiment-owned hook 不会。
+reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
 ## 错误语义
 
@@ -229,7 +228,8 @@ reset 失败、cleanup 失败或 State Feature 无法恢复已知边界时退休
 | template owner 的作者 command | Attempt `errored`,归 `sandbox.prepare.<templateOwner>` |
 | 第二作者 layer 的 command | Attempt `errored`,归对应 owner 的 `sandbox.prepare` |
 | agent.ensure 循环的 probe 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
-| State load / save | Attempt `errored`,归 `state.load` / `state.save`;状态序列无合法后继时停止该 Experiment 后续派发 |
+| Sandbox lifecycle setup | Attempt `errored`;已创建的物理实例仍依序运行 teardown 后停止 |
+| Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用窗口 |
 | Provider finalizer | 记录 Case cleanup 诊断,不覆盖原始 Attempt 判定 |
 
@@ -239,5 +239,4 @@ reset 失败、cleanup 失败或 State Feature 无法恢复已知边界时退休
 - [Sandbox Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
 - [Sandbox 复用](reuse.md) —— reset、寿命确认与复用污染诊断。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— ensure 声明与 Agent 安装层的协议。
-- [State](../state/README.md) —— checkpoint、一致性、save policy 与窗口 cadence。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— fingerprint 与 configHash 的完整输入清单。

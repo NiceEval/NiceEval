@@ -67,7 +67,7 @@ describe("ReusableSandboxPool · pair-owned runtime capability", () => {
       fixture.plan,
       1,
       { progress() {}, diagnostic() {} },
-      { signal: new AbortController().signal, progress() {}, diagnostic() {}, fact() {} },
+      { experimentId: "experiments/pool", signal: new AbortController().signal, progress() {}, diagnostic() {}, fact() {} },
     );
 
     await expect(Effect.runPromise(Effect.scoped(pool.acquire(60_000)))).rejects.toThrow(/sandboxReuse is unsupported/);

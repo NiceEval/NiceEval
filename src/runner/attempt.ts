@@ -493,6 +493,13 @@ export function runAttemptEffect(
                     deadline: runtimeDeadline,
                     feedback: scopedFeedback,
                     signal,
+                    hookContext: {
+                      experimentId: sandboxPlan.pair.experimentId,
+                      signal,
+                      progress: scopedFeedback.progress,
+                      diagnostic: scopedFeedback.diagnostic,
+                      fact: (key, value) => recordFact(facts, key, value),
+                    },
                     buildLocators: a.buildLocators ?? new Map(),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
                     services: liveSandboxRuntimeServices,

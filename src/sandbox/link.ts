@@ -16,6 +16,7 @@ import {
   type SandboxTemplateDeclaration,
 } from "./layer.ts";
 import type { JsonValue } from "../shared/types.ts";
+import type { SandboxHook } from "./types.ts";
 import { Data, Effect } from "effect";
 
 export interface SandboxLayerDeclarationSite {
@@ -71,6 +72,14 @@ export type SandboxCommandFingerprint =
       readonly owner: SandboxLayerOwnerRef;
       readonly index: number;
     };
+
+/** 生命周期函数本身不可序列化；这个 marker 只固定其 owner、phase 与追加位置。 */
+export interface SandboxLifecycleFingerprint {
+  readonly kind: "opaque";
+  readonly owner: SandboxLayerOwnerRef;
+  readonly phase: "setup" | "teardown";
+  readonly index: number;
+}
 
 export interface SandboxLayerDeclarationView {
   readonly owner: SandboxLayerOwnerRef;
@@ -175,6 +184,8 @@ export interface SandboxLayerFingerprintProjection {
   readonly templateOwner: SandboxLayerOwnerRef;
   readonly template: JsonValue;
   readonly commands: readonly SandboxCommandFingerprint[];
+  /** 有 hook 时才出现，避免把回调实现或闭包写入 record。 */
+  readonly lifecycle?: readonly SandboxLifecycleFingerprint[];
 }
 
 export interface LinkedSandboxPair {
@@ -186,6 +197,11 @@ export interface LinkedSandboxPair {
   readonly template: SandboxTemplateDeclaration;
   /** template owner 的 commands 在前，另一作者的 commands 在后。 */
   readonly commands: readonly LinkedSandboxCommand[];
+  /** 物理实例生命周期:template owner 在前,另一 layer 在后。回调不进 record,但阻断跨 Run carry。 */
+  readonly setupHooks: readonly SandboxHook[];
+  readonly teardownHooks: readonly SandboxHook[];
+  /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
+  readonly hasEvalLifecycleHooks: boolean;
   readonly fingerprint: SandboxLayerFingerprintProjection;
   /** 携带资格与原因是一个穷尽状态，不存在 `true + reasons` 或 `false + []`。 */
   readonly carry: SandboxCarryEligibility;
@@ -222,11 +238,15 @@ export function sandboxLayerIdentityFor(
           inputs: entry.fingerprint.inputs,
         }
       : { kind: "opaque" as const, index: entry.index });
+  const lifecycle = linked.fingerprint.lifecycle
+    ?.filter((entry) => entry.owner.kind === ownerKind)
+    .map((entry): JsonValue => ({ kind: entry.kind, phase: entry.phase, index: entry.index }));
   return {
     layer: ownsTemplate
       ? { _tag: "Template", value: sandboxTemplateIdentity(linked.template) }
       : { _tag: "CommandOnly" },
     commands,
+    ...(lifecycle === undefined || lifecycle.length === 0 ? {} : { lifecycle }),
   };
 }
 
@@ -279,6 +299,19 @@ function fingerprintCommand(
     revision: declaration.identity.revision,
     inputs: sandboxCommandIdentityJson(declaration.identity.inputs),
   });
+}
+
+function fingerprintLifecycle(
+  owner: SandboxLayerOwnerRef,
+  phase: SandboxLifecycleFingerprint["phase"],
+  hooks: readonly SandboxHook[],
+): readonly SandboxLifecycleFingerprint[] {
+  return Object.freeze(hooks.map((_, index) => Object.freeze({
+    kind: "opaque" as const,
+    owner,
+    phase,
+    index,
+  })));
 }
 
 function normalizeContribution(
@@ -408,16 +441,29 @@ function linkSandboxPair(
         reason: template.carry.reason,
       })
     : undefined;
-  const reasons = templateReason === undefined
+  const initialReasons = templateReason === undefined
     ? linked.reasons
-    : Object.freeze([...linked.reasons, templateReason]);
+    : [...linked.reasons, templateReason];
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
+  const lifecycle = Object.freeze([
+    ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
+    ...fingerprintLifecycle(otherOwner.owner, "setup", otherOwner.state.setupHooks),
+    ...fingerprintLifecycle(templateOwner.owner, "teardown", templateOwner.state.teardownHooks),
+    ...fingerprintLifecycle(otherOwner.owner, "teardown", otherOwner.state.teardownHooks),
+  ]);
   const fingerprint = Object.freeze({
     version: 1 as const,
     templateOwner: templateOwner.owner,
     template: sandboxTemplateIdentity(template),
     commands: fingerprints,
+    ...(lifecycle.length === 0 ? {} : { lifecycle }),
   });
+  const reasons = lifecycle.length === 0 ? initialReasons : [...initialReasons, Object.freeze({
+    code: "sandbox.lifecycle-opaque",
+    owner: templateOwner.owner,
+    commandIndex: Object.freeze({ _tag: "Omitted" }),
+    reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled.",
+  })];
   const carry: SandboxCarryEligibility = reasons.length === 0
     ? Object.freeze({ _tag: "Eligible" as const })
     : Object.freeze({
@@ -432,6 +478,9 @@ function linkSandboxPair(
     templateOwner: templateOwner.owner,
     template,
     commands: linked.commands,
+    setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwner.state.setupHooks]),
+    teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwner.state.teardownHooks]),
+    hasEvalLifecycleHooks: (templateOwner.owner.kind === "eval" ? templateOwner.state.setupHooks.length + templateOwner.state.teardownHooks.length : otherOwner.state.setupHooks.length + otherOwner.state.teardownHooks.length) > 0,
     fingerprint,
     carry,
   });

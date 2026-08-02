@@ -66,6 +66,7 @@ function input(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>, servi
     deadline: { _tag: "Unlimited" as const },
     feedback: { progress: () => {}, diagnostic: () => {} },
     signal: new AbortController().signal,
+    hookContext: { experimentId: "compare/runtime", signal: new AbortController().signal, progress: () => {}, diagnostic: () => {}, fact: () => {} },
     buildLocators: new Map<string, string>(),
     provisionSlot: { _tag: "Detached" as const },
     services,
@@ -74,6 +75,83 @@ function input(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>, servi
 }
 
 describe("provider-owned Sandbox runtime materialization", () => {
+  it("物理实例只在创建/释放边界执行 lifecycle，setup 正序且 teardown 逆序", async () => {
+    const events: string[] = [];
+    const plan = planned(
+      customProviderSandbox({
+        name: "lifecycle",
+        targetPlatform: linux,
+        create: () => Effect.succeed(fakeSandbox("lifecycle")),
+      })
+        .setup(() => { events.push("setup:a"); })
+        .setup(() => { events.push("setup:b"); })
+        .teardown(() => { events.push("teardown:a"); })
+        .teardown(() => { events.push("teardown:b"); }),
+    );
+    await Effect.runPromise(Effect.scoped(materializeSandboxRunPlan(input(plan, { _tag: "Live" }))));
+    expect(events).toEqual(["setup:a", "setup:b", "teardown:b", "teardown:a"]);
+  });
+
+  it("setup 失败仍执行完整 teardown 并停止 provider 实例", async () => {
+    const events: string[] = [];
+    const stop = vi.fn(async () => { events.push("stop"); });
+    const diagnostics: string[] = [];
+    const plan = planned(
+      customProviderSandbox({
+        name: "lifecycle-setup-failure",
+        targetPlatform: linux,
+        create: () => Effect.succeed({ ...fakeSandbox("lifecycle-setup-failure"), stop }),
+      })
+        .setup(() => { events.push("setup"); throw new Error("setup failed"); })
+        .teardown(() => { events.push("teardown:a"); })
+        .teardown(() => { events.push("teardown:b"); }),
+    );
+    const result = await Effect.runPromise(Effect.either(Effect.scoped(materializeSandboxRunPlan({
+      ...input(plan, { _tag: "Live" }),
+      hookContext: {
+        ...input(plan, { _tag: "Live" }).hookContext,
+        diagnostic: (entry) => diagnostics.push(entry.code),
+      },
+    }))));
+
+    expect(result._tag).toBe("Left");
+    if (result._tag === "Left") expect(result.left.code).toBe("sandbox.materialization-failed");
+    expect(events).toEqual(["setup", "teardown:b", "teardown:a", "stop"]);
+    expect(diagnostics).toEqual([]);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("teardown hook 的失败只记诊断，继续后续 hook 并停止 provider", async () => {
+    const events: string[] = [];
+    const stop = vi.fn(async () => { events.push("stop"); });
+    const diagnostics: string[] = [];
+    const plan = planned(
+      customProviderSandbox({
+        name: "lifecycle-teardown-failure",
+        targetPlatform: linux,
+        create: () => Effect.succeed({ ...fakeSandbox("lifecycle-teardown-failure"), stop }),
+      })
+        .teardown(() => { events.push("teardown:a"); })
+        .teardown(() => { events.push("teardown:b"); throw new Error("teardown failed"); }),
+    );
+    await Effect.runPromise(Effect.scoped(materializeSandboxRunPlan({
+      ...input(plan, { _tag: "Live" }),
+      hookContext: {
+        ...input(plan, { _tag: "Live" }).hookContext,
+        diagnostic: (entry) => diagnostics.push(entry.code),
+      },
+    })));
+
+    expect(events).toEqual(["teardown:b", "teardown:a", "stop"]);
+    expect(diagnostics).toEqual(["sandbox-teardown-failed"]);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("在声明点拒绝非函数 lifecycle hook", () => {
+    expect(() => sandboxLayer().setup(null as never)).toThrow("sandbox setup hook must be a function");
+    expect(() => sandboxLayer().teardown(null as never)).toThrow("sandbox teardown hook must be a function");
+  });
+
   it("rejects a serialized plan without its private ProviderModule binding", async () => {
     const providerCreate = vi.fn(() => Effect.succeed(fakeSandbox("must-not-create")));
     const original = planned(customProviderSandbox({

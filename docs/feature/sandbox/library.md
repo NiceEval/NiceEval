@@ -217,8 +217,7 @@ export default defineExperiment({
 这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热)走 layer 的 `prepare()`。
 两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,prepare command 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 Attempt 的外部实验状态不写进 prepare command。
-它使用独立的 State load / save 相位,位置与失败语义见 [三方准备时序](lifecycle.md#准备state-与-baseline);载入到回存的临界区靠 `maxConcurrency: 1` 串行,不需要框架另设锁。
+跨 Attempt 的沙箱内状态不写进 prepare command，也不放进 Experiment 顶层 State。把它挂在现代 `SandboxLayer` 的 `.setup()` / `.teardown()`：前者在物理实例创建后一次运行，后者在 provider stop 前一次运行；`sandboxReuse: true` 且 `maxConcurrency: 1` 时正好覆盖同一台被复用物理实例的首尾。
 
 prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.prepare.<owner>`。
 清理经 `context.onCleanup()` 在取得资源后就地登记,按全局准备顺序逆序执行;未执行或取得失败的命令不产生虚假 cleanup。
@@ -300,7 +299,7 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
 | Agent CLI 的精确版本(每 Attempt probe) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 probe、缺失时安装、复检 | 安装失败归 `agent.ensure`；产物随 Sandbox 销毁或题间复用策略处理 |
 | 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装产物的后置脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
-| 跨 Attempt 的外部实验状态(记忆库、累积笔记) | State load / save 相位,见[三方准备时序](lifecycle.md#准备state-与-baseline) | save 在 Agent teardown 后执行;临界区靠 `maxConcurrency: 1` 串行 |
+| 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | modern `SandboxLayer.setup()` / `.teardown()`；setup 接收 `(sandbox, { experimentId, signal, progress, diagnostic, fact })` | teardown 在 Agent teardown 与 Attempt cleanup 后、provider stop 前逆序运行；失败只记 diagnostic，`maxConcurrency: 1` 保证共享 checkpoint 串行 |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
 分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内):宿主机侧、每实验一份的服务进 `ExperimentDefinition.setup`;沙箱内、按实验变的环境(装什么、开不开预热)进 Experiment layer;题目材料按 eval 变(这条题目需要哪些起始文件)进 Eval layer 或 `test(t)`;agent 怎么连自己是 agent 的私事;跨实验、生命周期长于一次 run 的资源交给外部编排。

@@ -238,6 +238,7 @@ export class ReusableSandboxPool {
         deadline,
         feedback: this.feedback,
         signal: this.setupContext.signal,
+        hookContext: this.setupContext,
         buildLocators,
         provisionSlot: { _tag: "Detached" },
         services: this.runtimeServices,

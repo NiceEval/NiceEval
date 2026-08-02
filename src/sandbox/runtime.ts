@@ -37,7 +37,8 @@ import {
 } from "./layer.ts";
 import { computeCaseKey, digestOf, type BuildKey, type CaseKey } from "./identity.ts";
 import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
-import type { JsonValue, Sandbox, ScopedFeedback } from "../types.ts";
+import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
+import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
 
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
 
@@ -55,6 +56,8 @@ export interface SandboxRuntimeMaterializeInput {
   readonly deadline: SandboxRuntimeDeadline;
   readonly feedback: ScopedFeedback;
   readonly signal: AbortSignal;
+  /** 物理实例 hook 的完成态上下文；由 fresh attempt 或 reuse pool 在创建边界绑定。 */
+  readonly hookContext: SandboxHookContext;
   readonly buildLocators: ReadonlyMap<BuildKey, string>;
   readonly provisionSlot:
     | { readonly _tag: "Detached" }
@@ -504,10 +507,37 @@ function assertSameBuildKeys(planned: readonly string[], collected: readonly str
   );
 }
 
+async function runHooks(
+  hooks: readonly SandboxHook[],
+  sandbox: Sandbox,
+  context: SandboxHookContext,
+  reverse: boolean,
+): Promise<void> {
+  for (const hook of reverse ? [...hooks].reverse() : hooks) {
+    try {
+      if (reverse) {
+        const cleanupContext = { ...context, signal: AbortSignal.timeout(CLEANUP_TIMEOUT_MS) };
+        await withCleanupTimeout(() => hook(sandbox, cleanupContext));
+      } else {
+        await hook(sandbox, context);
+      }
+    } catch (cause) {
+      if (!reverse) throw cause;
+      context.diagnostic({
+        code: "sandbox-teardown-failed",
+        level: "warning",
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+}
+
 function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: MaterializedSandboxCase): Effect.Effect<void> {
-  return input.release._tag === "Stop"
-    ? Effect.promise(() => owned.group.stop())
-    : input.release.run(owned);
+  return Effect.promise(async () => {
+    await runHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext, true);
+    if (input.release._tag === "Stop") await owned.group.stop();
+    else await Effect.runPromise(input.release.run(owned));
+  });
 }
 
 /** 完整 plan 的唯一物化入口；Scope 退出恒执行声明的 release，不允许裸资源逃逸。 */
@@ -520,6 +550,7 @@ export function materializeSandboxRunPlan(
     deadline: input.deadline,
     feedback: input.feedback,
     signal: input.signal,
+    hookContext: input.hookContext,
     buildLocators: input.buildLocators,
     provisionSlot: input.provisionSlot,
     services: input.services,
@@ -527,7 +558,10 @@ export function materializeSandboxRunPlan(
   return Effect.acquireRelease(
     Effect.flatMap(providerBinding(input.plan), (binding) => binding.materialize(context)),
     (owned) => releaseOwned(input, owned),
-  );
+  ).pipe(Effect.tap((owned) => Effect.tryPromise({
+    try: () => runHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext, false),
+    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+  })));
 }
 
 /** Build preparation 同样只调用 private binding，不按 provider/module id 分支。 */

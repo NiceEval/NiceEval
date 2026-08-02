@@ -11,7 +11,7 @@ import type {
   SandboxResourceGroup,
   ServiceController,
 } from "./case-types.ts";
-import type { Sandbox, SandboxRuntime } from "./types.ts";
+import type { Sandbox, SandboxHook, SandboxRuntime } from "./types.ts";
 import type { SandboxCommand, SandboxCommandDeclaration } from "./commands.ts";
 import { sandboxCommandDeclarationOf } from "./commands.ts";
 import {
@@ -47,6 +47,8 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
   prepare(command: SandboxCommand): SandboxLayer<Kind>;
+  setup(hook: SandboxHook): SandboxLayer<Kind>;
+  teardown(hook: SandboxHook): SandboxLayer<Kind>;
 }
 
 export interface DockerComposeSandboxOptions {
@@ -318,12 +320,16 @@ export interface BuiltinSandboxFactories {
 export interface CommandOnlySandboxLayerState {
   readonly kind: "command-only";
   readonly commands: readonly SandboxCommandDeclaration[];
+  readonly setupHooks: readonly SandboxHook[];
+  readonly teardownHooks: readonly SandboxHook[];
 }
 
 export interface TemplateBearingSandboxLayerState {
   readonly kind: "template-bearing";
   readonly template: SandboxTemplateDeclaration;
   readonly commands: readonly SandboxCommandDeclaration[];
+  readonly setupHooks: readonly SandboxHook[];
+  readonly teardownHooks: readonly SandboxHook[];
 }
 
 export type SandboxLayerState<Kind extends SandboxLayerKind = SandboxLayerKind> =
@@ -618,19 +624,35 @@ function createLayer(state: CommandOnlySandboxLayerState): SandboxLayer<"command
 function createLayer(state: TemplateBearingSandboxLayerState): SandboxLayer<"template-bearing">;
 function createLayer(state: SandboxLayerState): SandboxLayer {
   const frozenCommands = Object.freeze([...state.commands]);
+  const setupHooks = Object.freeze([...state.setupHooks]);
+  const teardownHooks = Object.freeze([...state.teardownHooks]);
   const frozenState = state.kind === "command-only"
-    ? Object.freeze({ kind: "command-only" as const, commands: frozenCommands })
-    : Object.freeze({ kind: "template-bearing" as const, template: state.template, commands: frozenCommands });
+    ? Object.freeze({ kind: "command-only" as const, commands: frozenCommands, setupHooks, teardownHooks })
+    : Object.freeze({ kind: "template-bearing" as const, template: state.template, commands: frozenCommands, setupHooks, teardownHooks });
   const layer = {
     prepare(command: SandboxCommand): SandboxLayer {
       const declaration = sandboxCommandDeclarationOf(command);
       return frozenState.kind === "command-only"
-        ? createLayer({ kind: "command-only", commands: [...frozenCommands, declaration] })
+        ? createLayer({ kind: "command-only", commands: [...frozenCommands, declaration], setupHooks, teardownHooks })
         : createLayer({
             kind: "template-bearing",
             template: frozenState.template,
             commands: [...frozenCommands, declaration],
+            setupHooks,
+            teardownHooks,
           });
+    },
+    setup(hook: SandboxHook): SandboxLayer {
+      if (typeof hook !== "function") throw new TypeError("sandbox setup hook must be a function");
+      return frozenState.kind === "command-only"
+        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks })
+        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks: [...setupHooks, hook], teardownHooks });
+    },
+    teardown(hook: SandboxHook): SandboxLayer {
+      if (typeof hook !== "function") throw new TypeError("sandbox teardown hook must be a function");
+      return frozenState.kind === "command-only"
+        ? createLayer({ kind: "command-only", commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] })
+        : createLayer({ kind: "template-bearing", template: frozenState.template, commands: frozenCommands, setupHooks, teardownHooks: [...teardownHooks, hook] });
     },
   } as SandboxLayerRuntime<SandboxLayerKind>;
   Object.defineProperty(layer, SANDBOX_LAYER, { value: frozenState.kind });
@@ -640,7 +662,7 @@ function createLayer(state: SandboxLayerState): SandboxLayer {
 }
 
 export function sandboxLayer(): SandboxLayer<"command-only"> {
-  return createLayer({ kind: "command-only", commands: [] });
+  return createLayer({ kind: "command-only", commands: [], setupHooks: [], teardownHooks: [] });
 }
 
 /** @internal Provider factory 用它一次性绑定纯数据声明与 Effect planner。 */
@@ -665,7 +687,7 @@ export function defineSandboxTemplate(
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
-  return createLayer({ kind: "template-bearing", template: declaration, commands: [] });
+  return createLayer({ kind: "template-bearing", template: declaration, commands: [], setupHooks: [], teardownHooks: [] });
 }
 
 function sharedScheduling(laneKey: string, recommendedConcurrency: number): SandboxProviderScheduling {
