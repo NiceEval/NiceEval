@@ -83,8 +83,8 @@ export interface DiagnosticInput {
 /**
  * 作用域反馈 API(见 docs/feature/experiments/library.md「生命周期代码怎样向这次运行反馈」):
  * sandbox provider、sandbox hook、eval 与 Agent Adapter 从 runner 注入的上下文获得同一套入口。
- * - `progress` 是短命状态:Human profile 更新 active 行,Agent/CI 不逐条打印,不进最终结果;
- * - `diagnostic` 是永久事件:进 Human/Agent/CI 的永久输出流并落进 attempt 的 diagnostics;
+ * - `progress` 是短命状态:human profile 更新 active 行,JSON 不逐条输出,不进最终结果;
+ * - `diagnostic` 是永久事件:进 human/JSON 的永久输出流并落进 attempt 的 diagnostics;
  *   即使 level 为 "error" 也不自动改变 verdict(要 errored 抛异常,要 failed 用断言)。
  * 两个方法都不接受 phase / scope / 颜色 / 输出流——runner 知道当前回调属于哪个生命周期阶段,
  * 调用方不能冒充其它阶段。

@@ -15,15 +15,15 @@ function pointsSuffix(points: number): string {
 }
 
 /**
- * Human/Agent 摘要是一条终端事实行，不是完整证据面。压成单行并设字符上限，避免 received
+ * Human/JSON 失败摘要是一条终端事实行，不是完整证据面。压成单行并设字符上限，避免 received
  * 恰好是源码/工具输出时把多页内容灌进 scrollback；完整 AssertionResult 仍原样留给 show/view。
  */
 const SUMMARY_TEXT_MAX_CHARS = 240;
 
 /**
- * Human/Agent 永久行的单行事实预算，与 SUMMARY_TEXT_MAX_CHARS（单值上限）分开计:一条
+ * Human/JSON 永久失败行的单行事实预算，与 SUMMARY_TEXT_MAX_CHARS（单值上限）分开计:一条
  * `matcher · expected · received` 拼起来很容易超过一屏宽,这里给的是「一行」的上限，不依赖
- * 终端 columns——agent profile 的 handoff 不是 TTY，不能按运行时宽度变化。
+ * 终端 columns——JSON 机器流不是 TTY，不能按运行时宽度变化。
  */
 const DETAIL_LINE_MAX_CHARS = 100;
 
@@ -119,7 +119,7 @@ function summaryOf(assertion: AssertionResult, additionalFailures: number): Prim
   };
 }
 
-/** 摘要的事实层；Human/Agent 用作第二行，表格可把它接在标题后。 */
+/** 摘要的事实层；human/JSON renderer 用作失败事实行，表格可把它接在标题后。 */
 export function assertionSummaryDetail(summary: PrimaryAssertionSummary): string | undefined {
   const parts: string[] = [];
   if (summary.matcher !== undefined) parts.push(summary.matcher);
@@ -134,7 +134,7 @@ export function assertionSummaryDetail(summary: PrimaryAssertionSummary): string
 }
 
 /**
- * Human/Agent 永久行的排版：标题独占一行；`matcher · expected`（含 score/threshold/reason）
+ * Human/JSON 永久失败行的排版：标题独占一行；`matcher · expected`（含 score/threshold/reason）
  * 独占下一行；`received` 能跟这行拼在一起仍在 DETAIL_LINE_MAX_CHARS 内就合并，放不下就单独
  * 再起一行并硬截断。`+N more failures` 永远是独立尾行，不参与截断，也不拼进被截断的值——
  * 截断处的 `…` 后面只会是值本身，不会被人误读成计数的一部分。

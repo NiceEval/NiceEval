@@ -1,5 +1,5 @@
 // 纯 reducer:RunFeedbackEvent → RunFeedbackState。计数、active slot、cost 累计、
-// failure/diagnostic 去重全部只在这里计算 —— 两种 profile 的 renderer(后续阶段实现)只读
+// failure/diagnostic 去重全部只在这里计算 —— human/json 两种 renderer 只读
 // RunFeedbackState,不各自维护第二份推导,也不解析 message 里的人类文案(结构化字段都在
 // DiagnosticNotice.data / FailureNotice 的具名字段上,见 ../types.ts 的类型注释)。
 //
@@ -87,8 +87,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       return { ...state, elapsedMs: event.elapsedMs };
 
     case "attempt:queued":
-      // 计数已经在 "plan" 时一次性算好(见上),这个事件目前只是为后续阶段预留「单条 attempt
-      // 进入排队」的挂点(如展示排队位置),对 RunFeedbackState 不产生任何变化。
+      // 计数已经在 "plan" 时一次性算好(见上)；逐 attempt 的 queued 通知保留调度身份与事件序，
+      // 但不重复迁移 RunFeedbackState。
       return state;
 
     case "attempt:start": {

@@ -1,4 +1,4 @@
-// 测试专用:确定性假 FeedbackIO。coordinator.test.ts 与后续阶段(D/E/F renderer 测试)共用,
+// 测试专用:确定性假 FeedbackIO。coordinator 与 human/json renderer 测试共用,
 // 好让「同一种 fake IO 的搭建方式」只维护一份 —— 不在每个测试文件里各自 monkey-patch
 // `process.stdout`/`process.stderr`/`Date.now`/`setInterval`。
 //
@@ -47,7 +47,7 @@ interface FakeTimer {
   cleared: boolean;
 }
 
-/** 创建一份完全确定性的假 IO;env 默认空对象(profile.ts 的 CI 检测据此判定「非 CI」)。 */
+/** 创建一份完全确定性的假 IO；env 默认空对象，因此 human renderer 默认未设置 NO_COLOR。 */
 export function createFakeFeedbackIO(
   opts: {
     stdout?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">>;

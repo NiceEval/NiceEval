@@ -967,7 +967,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
         reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
       },
-      // diagnostic 双落:运行级永久事件流(即时反馈,人/agent/ci 都能看到)+ 实验域诊断累积器
+      // diagnostic 双落:运行级永久事件流（human/json 都有即时反馈）+ 实验域诊断累积器
       // (持久化,该 Experiment 的 Run 封口时一次写入)——两条通路相互独立,互不派生
       // (docs/runner.md「实验域诊断持久化」)。实验级钩子的事实不属于任何单个 Attempt,不落
       // result.json。
