@@ -942,7 +942,8 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       ],
     });
 
-    expect(text.match(/^compare\/codex  from-old-.*stale:/gm)).toHaveLength(3);
+    // 每条结果既有矩阵行尾的 stale 原因，也有带 prior/accept 的详细行。
+    expect(text.match(/^compare\/codex  from-old-.*stale:/gm)).toHaveLength(6);
     expect(text).toContain("prior:  @a1b2c3d4");
     expect(text).toContain("prior:  @e5f6g7h8");
     expect(text).toContain("prior:  @j9k0l1m2");
