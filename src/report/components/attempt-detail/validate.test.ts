@@ -10,19 +10,19 @@ import {
   validateDiagnosticsData,
   validateDiffData,
   validateErrorData,
-  validateSourceData,
   validateSummaryData,
   validateTimelineData,
   validateTraceData,
   validateUsageData,
 } from "./index.tsx";
 
-const validIdentity = { experimentId: "compare/codex", snapshotStartedAt: "2026-07-01T00:00:00Z", evalId: "q1", attempt: 0 };
+const validIdentity = { runId: "run-codex", evalId: "q1", attempt: 0 };
 const validCapabilities = { source: true, execution: true, timing: false, diff: false };
 
 describe("validateSummaryData", () => {
   const valid = {
     locator: "@1abcdef2",
+    experimentId: "compare/codex",
     identity: validIdentity,
     verdict: "passed",
     durationMs: 1000,
@@ -38,9 +38,9 @@ describe("validateSummaryData", () => {
     expect(validateSummaryData({ ...valid, costUSD: null })).toBeNull();
   });
 
-  it("identity 缺 snapshotStartedAt 报错定位到嵌套字段", () => {
-    const bad = { ...valid, identity: { experimentId: "compare/codex", evalId: "q1", attempt: 0 } };
-    expect(validateSummaryData(bad)).toMatch(/"identity\.snapshotStartedAt"/);
+  it("identity 缺 runId 报错定位到嵌套字段", () => {
+    const bad = { ...valid, identity: { evalId: "q1", attempt: 0 } };
+    expect(validateSummaryData(bad)).toMatch(/"identity\.runId"/);
   });
 
   it("capabilities.timing 非布尔报错", () => {
@@ -54,7 +54,6 @@ describe("validateSummaryData", () => {
     expect(validateSummaryData({ ...valid, totalScore: "4" })).toMatch(/"totalScore"/);
   });
 });
-
 describe("validateErrorData", () => {
   const valid = { code: "unexpected-error", message: "boom", phase: "eval.run", locator: "@1abcdef2" };
 
@@ -110,78 +109,6 @@ describe("validateAssertionsData", () => {
   });
 });
 
-describe("validateSourceData", () => {
-  const validSummary = {
-    totalAssertions: 1,
-    mappedAssertions: 1,
-    unmappedAssertions: 0,
-    passed: 1,
-    failed: 0,
-    gate: 1,
-    soft: 0,
-    totalLines: 10,
-    annotatedLines: 1,
-  };
-  const valid = {
-    locator: "@1abcdef2",
-    sourcePath: "eval.ts",
-    lines: [{ line: 1, text: "t.send(...)", assertions: [], sends: [], turns: [], scoreEntries: [] }],
-    unmapped: [],
-    passedGroups: [],
-    unlocatedTurns: [],
-    summary: validSummary,
-  };
-
-  it("合规 literal 通过", () => {
-    expect(validateSourceData(valid)).toBeNull();
-  });
-
-  it("summary 缺 totalLines 报错", () => {
-    const bad = { ...valid, summary: { ...validSummary, totalLines: undefined } };
-    expect(validateSourceData(bad)).toMatch(/"summary\.totalLines"/);
-  });
-
-  it("lines[i].assertions 嵌套断言结构错误报错", () => {
-    const bad = { ...valid, lines: [{ line: 1, text: "x", assertions: [{ name: "eq" }], sends: [], turns: [], scoreEntries: [] }] };
-    expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.assertions\[0\]\.severity"/);
-  });
-
-  it("lines[i].turns[j].replies[k] 递归校验回复判别联合", () => {
-    const bad = {
-      ...valid,
-      lines: [
-        {
-          line: 1,
-          text: "x",
-          assertions: [],
-          sends: [],
-          turns: [{ label: "s1/t1", status: "completed", sentText: "go", replies: [{ kind: "assistant" }] }],
-          scoreEntries: [],
-        },
-      ],
-    };
-    expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.turns\[0\]\.replies\[0\]\.text"/);
-  });
-
-  it("lines[i].scoreEntries 嵌套 ScoreEntry 结构错误报错", () => {
-    const bad = { ...valid, lines: [{ line: 1, text: "x", assertions: [], sends: [], turns: [], scoreEntries: [{ label: "x" }] }] };
-    expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.scoreEntries\[0\]\.points"/);
-  });
-
-  it("lines[i].aborted / unreached 非 true 报错;省略合法", () => {
-    expect(validateSourceData(valid)).toBeNull();
-    const bad = { ...valid, lines: [{ ...valid.lines[0], aborted: "yes" }] };
-    expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.aborted"/);
-  });
-
-  it("unmappedScoreEntries 存在时按分组结构校验,省略合法", () => {
-    const withEntries = { ...valid, unmappedScoreEntries: [{ group: "", items: [{ label: "bonus", points: 2 }] }] };
-    expect(validateSourceData(withEntries)).toBeNull();
-    const bad = { ...valid, unmappedScoreEntries: [{ group: "", items: [{ label: "bonus" }] }] };
-    expect(validateSourceData(bad)).toMatch(/"unmappedScoreEntries\[0\]\.items\[0\]\.points"/);
-  });
-});
-
 describe("validateTimelineData", () => {
   const valid = { locator: "@1abcdef2", phases: [{ name: "eval.run", durationMs: 500 }], trace: null };
 
@@ -212,13 +139,12 @@ describe("validateConversationData — AttemptConversationReply 判别联合", (
 
   it.each([
     ["assistant", { kind: "assistant" }, /"rounds\[0\]\.replies\[0\]\.text"/],
-    ["tool 缺 callId", { kind: "tool", name: "shell", input: "ls" }, /"rounds\[0\]\.replies\[0\]\.callId"/],
-    ["tool 缺 input", { kind: "tool", callId: "c1", name: "shell" }, /"rounds\[0\]\.replies\[0\]\.input"/],
+    ["tool 缺 operationId", { kind: "tool", name: "shell", input: "ls" }, /"rounds\[0\]\.replies\[0\]\.operationId"/],
+    ["tool 缺 input", { kind: "tool", operationId: "c1", name: "shell" }, /"rounds\[0\]\.replies\[0\]\.input"/],
     ["skill 缺 skill", { kind: "skill" }, /"rounds\[0\]\.replies\[0\]\.skill"/],
     ["context 缺 text", { kind: "context", source: "hook" }, /"rounds\[0\]\.replies\[0\]\.text"/],
-    ["subagent 缺 name", { kind: "subagent", callId: "c1" }, /"rounds\[0\]\.replies\[0\]\.name"/],
+    ["subagent 缺 name", { kind: "subagent", operationId: "c1" }, /"rounds\[0\]\.replies\[0\]\.name"/],
     ["input 缺 request", { kind: "input" }, /"rounds\[0\]\.replies\[0\]\.request"/],
-    ["raw 缺 raw", { kind: "raw" }, /"rounds\[0\]\.replies\[0\]\.raw"/],
     ["未知 kind", { kind: "unknown-future-kind" }, /"rounds\[0\]\.replies\[0\]\.kind"/],
   ])("%s 报错定位到具体缺失字段", (_label, reply, expected) => {
     const bad = { locator: "@1abcdef2", rounds: [{ sentText: "go", replies: [reply] }] };

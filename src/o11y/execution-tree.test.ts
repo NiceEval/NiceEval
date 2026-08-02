@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // buildExecutionTree 的单测(定稿见 docs/observability.md「OTLP traces → 统一瀑布图」、
-// docs/concepts.md「执行树」词条)。覆盖:无 OTel 时骨架完整、有 OTel 时按 callId 精确合并、
-// 唯一关联不上时降级成 telemetry-only 节点(不猜)、同 callId 撞多条 span 时不強行择一、
+// docs/concepts.md「执行树」词条)。覆盖:无 OTel 时骨架完整、有 OTel 时按 operationId 精确合并、
+// 唯一关联不上时降级成 telemetry-only 节点(不猜)、同 operationId 撞多条 span 时不強行择一、
 // call id 撞不上任何节点时同样降级、乱序/截断 transcript 的占位节点、skill.loaded 一等节点、
 // tool 失败状态透传、telemetry-only 节点按时间排序追加在骨架之后。
 
@@ -31,10 +31,10 @@ describe("buildExecutionTree", () => {
       { type: "message", role: "user", text: "do the thing" },
       { type: "thinking", text: "let me think" },
       { type: "skill.loaded", skill: "pdf-processing" },
-      { type: "action.called", callId: "c1", name: "Bash", input: { cmd: "ls" }, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "a.ts\n", status: "completed" },
-      { type: "subagent.called", callId: "s1", name: "Task" },
-      { type: "subagent.completed", callId: "s1", output: "done", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: { cmd: "ls" }, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "a.ts\n", status: "completed" },
+      { type: "operation.started", operationId: "s1", operation: { kind: "subagent", name: "Task" } },
+      { type: "operation.finished", operationId: "s1", kind: "subagent", output: "done", status: "completed" },
       { type: "input.requested", request: { prompt: "approve?" } },
       { type: "compaction", reason: "context full" },
       { type: "error", message: "boom" },
@@ -58,7 +58,7 @@ describe("buildExecutionTree", () => {
     const action = tree.nodes[3] as ExecutionActionNode;
     expect(action).toMatchObject({
       kind: "action",
-      callId: "c1",
+      operationId: "c1",
       name: "Bash",
       tool: "shell",
       input: { cmd: "ls" },
@@ -69,7 +69,7 @@ describe("buildExecutionTree", () => {
     const subagent = tree.nodes[4];
     expect(subagent).toMatchObject({
       kind: "subagent",
-      callId: "s1",
+      operationId: "s1",
       name: "Task",
       output: "done",
       status: "completed",
@@ -78,8 +78,8 @@ describe("buildExecutionTree", () => {
 
   it("merges a span onto the action node it explicitly correlates to via attributes.call_id, and enriches its attributes with io.tool/io.input/io.output/io.status (same shape as otlp/select.ts's enrichTraceWithIO)", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: { cmd: "ls" }, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: { cmd: "ls" }, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
     ];
     const toolSpan = span({ spanId: "sp1", startMs: 100, endMs: 150, attributes: { call_id: "c1" } });
 
@@ -105,8 +105,8 @@ describe("buildExecutionTree", () => {
 
   it("also correlates via the GenAI semantic convention key gen_ai.tool.call.id", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: {}, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: {}, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
     ];
     const toolSpan = span({ spanId: "sp1", attributes: { "gen_ai.tool.call.id": "c1" } });
 
@@ -119,8 +119,8 @@ describe("buildExecutionTree", () => {
   it("truncates long tool input/output onto the merged span's io.* attributes using the same IO_MAX budget as otlp/select.ts (not a different one)", () => {
     const bigOutput = "x".repeat(IO_MAX + 500);
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Read", input: { path: "/big.txt" }, tool: "file_read" },
-      { type: "action.result", callId: "c1", output: bigOutput, status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Read", input: { path: "/big.txt" }, tool: "file_read" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: bigOutput, status: "completed" },
     ];
     const toolSpan = span({ spanId: "sp1", attributes: { call_id: "c1" } });
 
@@ -136,8 +136,8 @@ describe("buildExecutionTree", () => {
 
   it("does not enrich a subagent node's span with io.* keys (no tool-call-shaped input to join)", () => {
     const events: StreamEvent[] = [
-      { type: "subagent.called", callId: "s1", name: "Task" },
-      { type: "subagent.completed", callId: "s1", output: "done", status: "completed" },
+      { type: "operation.started", operationId: "s1", operation: { kind: "subagent", name: "Task" } },
+      { type: "operation.finished", operationId: "s1", kind: "subagent", output: "done", status: "completed" },
     ];
     const agentSpan = span({ spanId: "sp1", attributes: { call_id: "s1" } });
 
@@ -149,8 +149,8 @@ describe("buildExecutionTree", () => {
 
   it("never guesses by name/text: a span whose call_id matches no node becomes a telemetry-only node, and the skeleton node's span stays absent", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: {}, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: {}, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
     ];
     const orphanSpan = span({ spanId: "sp-orphan", attributes: { call_id: "does-not-exist" } });
 
@@ -175,8 +175,8 @@ describe("buildExecutionTree", () => {
 
   it("two spans sharing the same call_id cannot be uniquely correlated, so neither merges — both fall back to telemetry-only", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: {}, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: {}, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
     ];
     const dup1 = span({ spanId: "sp1", attributes: { call_id: "c1" } });
     const dup2 = span({ spanId: "sp2", attributes: { call_id: "c1" } });
@@ -189,8 +189,8 @@ describe("buildExecutionTree", () => {
     expect(telemetryIds.sort()).toEqual(["telemetry-sp1", "telemetry-sp2"]);
   });
 
-  it("an action.result with no matching action.called produces a placeholder node instead of being dropped", () => {
-    const events: StreamEvent[] = [{ type: "action.result", callId: "orphan", output: "late", status: "completed" }];
+  it("an orphan tool operation.finished produces a placeholder node instead of being dropped", () => {
+    const events: StreamEvent[] = [{ type: "operation.finished", operationId: "orphan", kind: "tool", output: "late", status: "completed" }];
 
     const tree = buildExecutionTree(events, []);
 
@@ -198,7 +198,7 @@ describe("buildExecutionTree", () => {
       {
         id: "action-orphan",
         kind: "action",
-        callId: "orphan",
+        operationId: "orphan",
         name: "unknown",
         input: null,
         output: "late",
@@ -207,18 +207,18 @@ describe("buildExecutionTree", () => {
     ]);
   });
 
-  it("a subagent.completed with no matching subagent.called produces a placeholder node instead of being dropped", () => {
-    const events: StreamEvent[] = [{ type: "subagent.completed", callId: "orphan", output: "late", status: "failed" }];
+  it("an orphan subagent operation.finished produces a placeholder node instead of being dropped", () => {
+    const events: StreamEvent[] = [{ type: "operation.finished", operationId: "orphan", kind: "subagent", output: "late", status: "failed" }];
 
     const tree = buildExecutionTree(events, []);
 
     expect(tree.nodes).toEqual([
-      { id: "subagent-orphan", kind: "subagent", callId: "orphan", name: "unknown", output: "late", status: "failed" },
+      { id: "subagent-orphan", kind: "subagent", operationId: "orphan", name: "unknown", output: "late", status: "failed" },
     ]);
   });
 
   it("an action that never receives a result stays in a distinct pending state, not silently completed", () => {
-    const events: StreamEvent[] = [{ type: "action.called", callId: "c1", name: "Bash", input: {}, tool: "shell" }];
+    const events: StreamEvent[] = [{ type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: {}, tool: "shell" } }];
 
     const tree = buildExecutionTree(events, []);
 
@@ -228,8 +228,8 @@ describe("buildExecutionTree", () => {
 
   it("propagates a failed tool result and its error-status span onto the same node", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: { cmd: "false" }, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "exit 1", status: "failed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: { cmd: "false" }, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "exit 1", status: "failed" },
     ];
     const failedSpan = span({ spanId: "sp1", status: "error", attributes: { call_id: "c1" } });
 
@@ -242,9 +242,9 @@ describe("buildExecutionTree", () => {
 
   it("a skill.loaded node passes through immediately as its own node — it has no result event to pair with, so it never gets stuck 'pending' the way action/subagent nodes do while awaiting a result", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: {}, tool: "shell" },
-      { type: "skill.loaded", skill: "pdf-processing", callId: "toolu_skill" },
-      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: {}, tool: "shell" } },
+      { type: "skill.loaded", skill: "pdf-processing", operationId: "toolu_skill" },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
       { type: "message", role: "assistant", text: "done" },
     ];
 
@@ -255,14 +255,14 @@ describe("buildExecutionTree", () => {
     // action/subagent, so there's no "unresolved" state for it to be stuck in).
     expect(tree.nodes.map((n) => n.kind)).toEqual(["action", "skill.loaded", "message"]);
     const skill = tree.nodes[1] as ExecutionSkillNode;
-    expect(skill).toEqual({ id: "skill-0", kind: "skill.loaded", skill: "pdf-processing", callId: "toolu_skill" });
+    expect(skill).toEqual({ id: "skill-0", kind: "skill.loaded", skill: "pdf-processing", operationId: "toolu_skill" });
     expect("status" in skill).toBe(false);
     const action = tree.nodes[0] as ExecutionActionNode;
     expect(action.status).toBe("completed");
   });
 
-  it("a span whose call_id explicitly correlates to a skill.loaded node's callId enriches that node with timing, same as an action/subagent node (Claude Code's Skill invocation is itself a tool_use, and the OTel mapper copies its tool_use_id onto span.attributes.call_id like any other tool span)", () => {
-    const events: StreamEvent[] = [{ type: "skill.loaded", skill: "pdf-processing", callId: "toolu_skill" }];
+  it("a span whose call_id explicitly correlates to a skill.loaded node's operationId enriches that node with timing, same as an action/subagent node (Claude Code's Skill invocation is itself a tool_use, and the OTel mapper copies its tool_use_id onto span.attributes.call_id like any other tool span)", () => {
+    const events: StreamEvent[] = [{ type: "skill.loaded", skill: "pdf-processing", operationId: "toolu_skill" }];
     const skillSpan = span({ spanId: "sp1", startMs: 5, endMs: 20, attributes: { call_id: "toolu_skill" } });
 
     const tree = buildExecutionTree(events, [skillSpan]);
@@ -274,7 +274,7 @@ describe("buildExecutionTree", () => {
     expect(Object.keys(skill.span?.attributes ?? {})).toEqual(["call_id"]);
   });
 
-  it("a skill.loaded node with no callId at all simply never correlates — any span stays telemetry-only, no crash on the missing key", () => {
+  it("a skill.loaded node with no operationId at all simply never correlates — any span stays telemetry-only, no crash on the missing key", () => {
     const events: StreamEvent[] = [{ type: "skill.loaded", skill: "pdf-processing" }];
     const orphanSpan = span({ spanId: "sp1", attributes: { call_id: "does-not-exist" } });
 
@@ -310,17 +310,17 @@ describe("buildExecutionTree", () => {
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "do the thing" },
       { type: "thinking", text: "let me think" },
-      { type: "skill.loaded", skill: "pdf-processing", callId: "skillcall" },
-      { type: "action.called", callId: "c1", name: "Bash", input: { cmd: "ls" }, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "a.ts\n", status: "completed" },
-      { type: "subagent.called", callId: "s1", name: "Task" },
-      { type: "subagent.completed", callId: "s1", output: "done", status: "completed" },
+      { type: "skill.loaded", skill: "pdf-processing", operationId: "skillcall" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: { cmd: "ls" }, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "a.ts\n", status: "completed" },
+      { type: "operation.started", operationId: "s1", operation: { kind: "subagent", name: "Task" } },
+      { type: "operation.finished", operationId: "s1", kind: "subagent", output: "done", status: "completed" },
       { type: "input.requested", request: { prompt: "approve?" } },
       { type: "compaction", reason: "context full" },
       { type: "error", message: "boom" },
     ];
 
-    // Correlates to only 2 of the 3 callId-bearing nodes (action c1, skill skillcall);
+    // Correlates to only 2 of the 3 operationId-bearing nodes (action c1, skill skillcall);
     // the subagent s1 deliberately gets no span, so this run mixes "correlated" and
     // "uncorrelated-despite-spans-being-available" nodes in the same tree.
     const actionSpan = span({ spanId: "sp-action", startMs: 10, endMs: 20, attributes: { call_id: "c1" } });
@@ -352,7 +352,7 @@ describe("buildExecutionTree", () => {
     // The two nodes that DO explicitly correlate gain timing in the enriched run...
     expect((withSpans.nodes[3] as ExecutionActionNode).span?.startMs).toBe(10);
     expect((withSpans.nodes[2] as ExecutionSkillNode).span?.startMs).toBe(30);
-    // ...while every other node — including the subagent, which had a callId but no
+    // ...while every other node — including the subagent, which had a operationId but no
     // matching span — stays exactly as timing-unavailable as the no-spans run.
     // (nodes: 0 message, 1 thinking, 2 skill*, 3 action*, 4 subagent, 5 input.requested,
     // 6 compaction, 7 error — * = correlated in this run, asserted separately above.)
@@ -363,8 +363,8 @@ describe("buildExecutionTree", () => {
 
   it("correlation honesty: a span that superficially looks like it belongs to a node — same name as the tool, time window plausibly overlapping — but carries no call_id/gen_ai.tool.call.id attribute must NOT be guessed onto that node; it lands as telemetry-only and the node's span stays absent", () => {
     const events: StreamEvent[] = [
-      { type: "action.called", callId: "c1", name: "Bash", input: { cmd: "ls" }, tool: "shell" },
-      { type: "action.result", callId: "c1", output: "a.ts\n", status: "completed" },
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "Bash", input: { cmd: "ls" }, tool: "shell" } },
+      { type: "operation.finished", operationId: "c1", kind: "tool", output: "a.ts\n", status: "completed" },
     ];
     // Deliberately deceptive: span.name matches the tool name exactly, and the time
     // window is exactly where you'd expect the tool call to have run — the only thing

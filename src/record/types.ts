@@ -10,7 +10,7 @@ import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, Sa
 import type { StateWindowRecord } from "../state/types.ts";
 import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
-import type { AttemptLocator } from "./locator.ts";
+import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
 
 /** attempt 级 artifact 的种类;文件名见 format.ts 的 artifactFileOf,布局见 docs/feature/record/architecture.md。 */
 export const ARTIFACT_KINDS = ["commands", "events", "trace", "o11y", "agentSetup", "diff", "sources"] as const;
@@ -112,6 +112,11 @@ export interface AttemptHandle {
    * 不强制手工构造的 AttemptHandle(测试里的内存 fake)也必须带上——真实读取路径永远有值。
    */
   locator?: AttemptLocator;
+  /**
+   * locator 对应的来源身份。真实 openRecord() 句柄恒填；可选只为兼容手工构造的测试句柄。
+   * carry 句柄会沿 artifactBase 指向原 attempt，而不是使用承载它的新 Run 身份。
+   */
+  locatorIdentity?: AttemptIdentity;
   /**
    * 携带条目投影:true = fingerprint 未变、上一轮终态结果合入本快照(`result.artifactBase`
    * 有值);false = 本快照那次运行真实执行。`startedAt` 为原执行时刻,不因携带而改写

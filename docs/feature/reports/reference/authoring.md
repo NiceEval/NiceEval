@@ -103,7 +103,7 @@ NiceEval 输入是 Sample 与 Attempt Evidence，普通报告直接调用 TypeSc
 5. 结果和配置都应可检查、复制和导出。
     NiceEval 不必复制远端 View API，但开发模式应能查看组件收到的 rows、 MetricValue 元数据与 refs，而不是只能看最终图。
 
-Braintrust 也暴露了一个不应复制的坑：部分内建 preset 会自动排除 scorer spans，而自定义图默认包含它们。
+Braintrust 也暴露了一个不应复制的坑：部分内建 preset 会自动排除 Judge spans，而自定义图默认包含它们。
 这意味着看起来相同的官方图和用户图可能因为隐藏过滤不同而得出不同值。
  NiceEval 必须让官方 Calculation 与用户 Calculation 都走公开的 `rollup()` / `aggregate()`，默认排除规则则进入 Sample 或显式函数，不能藏在内建报告里。
 

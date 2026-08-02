@@ -5,11 +5,8 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Template } from "e2b";
 import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
-import type { DockerBuildDecl } from "./case-types.ts";
-import type { PlannedSandboxCase } from "./case.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
 import {
@@ -40,72 +37,7 @@ export interface DockerfileBuildCollection {
   readonly carryEligible: boolean;
 }
 
-/** 从 environments[profile].build 抽出一条单 Dockerfile 构建工作。 */
-export async function collectDockerfileBuildFromPlan(
-  plan: PlannedSandboxCase,
-  opts?: {
-    readonly baseDir?: string;
-    readonly dockerPlatform?: string;
-    readonly dockerPlatformProbe?: () => Promise<string | undefined>;
-  },
-): Promise<DockerfileBuildCollection | undefined> {
-  const declaration = buildDeclaration(plan);
-  if (declaration === undefined) return undefined;
-
-  const baseDir = opts?.baseDir ?? process.cwd();
-  const platform =
-    declaration.provider === "e2b"
-      ? "linux/amd64"
-      : opts?.dockerPlatform !== undefined
-        ? normalizeBuildPlatform(opts.dockerPlatform)
-        : await detectDockerBuildPlatform(
-            opts?.dockerPlatformProbe !== undefined ? { probe: opts.dockerPlatformProbe } : undefined,
-          );
-  const identity = await resolveDockerfileBuildIdentity({
-    provider: declaration.provider,
-    context: declaration.build.context,
-    dockerfile: declaration.build.dockerfile,
-    buildArgs: declaration.build.args,
-    target: declaration.build.target,
-    platform,
-    baseDir,
-    label: `sandbox profile ${plan.profile}`,
-  });
-  const { buildKey, contextDir, dockerfilePath, dockerfile, contextFilterRules } = identity;
-  const caseKey = caseKeyForDockerfileBuild(plan, buildKey);
-  const details: DockerfileBuildDetails = {
-    provider: declaration.provider,
-    contextDir,
-    dockerfilePath,
-    dockerfile,
-    platform,
-    ...(declaration.build.args !== undefined ? { buildArgs: declaration.build.args } : {}),
-    ...(declaration.build.target !== undefined ? { target: declaration.build.target } : {}),
-  };
-  return {
-    buildKey,
-    caseKey,
-    details,
-    carryEligible: identity.carryEligible,
-    work: {
-      buildKey,
-      provider: declaration.provider,
-      label: `${declaration.provider}:dockerfile:${plan.profile}`,
-      inputs: {
-        kind: "dockerfile",
-        profile: plan.profile,
-        platform,
-        context: contextDir,
-        dockerfile: dockerfilePath,
-        contextFilterRules,
-        ...(declaration.build.args !== undefined ? { args: declaration.build.args } : {}),
-        ...(declaration.build.target !== undefined ? { target: declaration.build.target } : {}),
-      },
-    },
-  };
-}
-
-/** ProviderModule 的 typed Dockerfile 收集入口；不需要逆向构造 PlannedSandboxCase。 */
+/** ProviderModule 的 typed Dockerfile 收集入口；不从作者输入逆向重建计划。 */
 export async function collectDockerfileBuildFromIdentity(input: {
   readonly provider: "docker" | "e2b";
   readonly profile: string;
@@ -161,52 +93,6 @@ export async function collectDockerfileBuildFromIdentity(input: {
       }),
     }),
   });
-}
-
-/** 收集期与 attempt 物化期共用，保证 result.json 的 CaseKey 与携带规划看到的是同一个。 */
-export function caseKeyForDockerfileBuild(plan: PlannedSandboxCase, buildKey: BuildKey): CaseKey {
-  const provider =
-    plan.declaration.form === "docker" || plan.declaration.form === "e2b"
-      ? plan.declaration.form
-      : plan.declaration.form === "dockerfile"
-        ? plan.declaration.provider
-        : "custom";
-  return computeCaseKey({
-    caseKind: "on-demand-build",
-    materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
-    buildKeys: [buildKey],
-    caseParams: { provider, profile: plan.profile, buildKey },
-  });
-}
-
-function buildDeclaration(
-  plan: PlannedSandboxCase,
-): { readonly provider: "docker" | "e2b"; readonly build: DockerBuildDecl } | undefined {
-  if (plan.caseKind !== "on-demand-build") return undefined;
-  if (plan.declaration.form === "docker" && plan.declaration.value.build !== undefined) {
-    return { provider: "docker", build: plan.declaration.value.build };
-  }
-  if (plan.declaration.form === "e2b" && plan.declaration.value.build !== undefined) {
-    return { provider: "e2b", build: plan.declaration.value.build };
-  }
-  if (plan.declaration.form === "dockerfile") {
-    return {
-      provider: plan.declaration.provider,
-      build: {
-        context:
-          typeof plan.declaration.value.context === "string"
-            ? plan.declaration.value.context
-            : fileURLToPath(plan.declaration.value.context),
-        ...(plan.declaration.value.dockerfile !== undefined
-          ? { dockerfile: plan.declaration.value.dockerfile }
-          : {}),
-        ...(plan.declaration.value.buildArgs !== undefined
-          ? { args: plan.declaration.value.buildArgs }
-          : {}),
-      },
-    };
-  }
-  return undefined;
 }
 
 interface DockerfileProviderHooks {

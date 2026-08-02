@@ -91,7 +91,7 @@ describe("discoverEvals · 源码捕获", () => {
   it("裸对象即使字段同形也在发现期拒绝，并要求 factory Definition", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "evals"), { recursive: true });
-    await writeFile(join(root, "evals", "bad-score.eval.ts"), 'export default { scoring: "points", test() {} };\n', "utf-8");
+    await writeFile(join(root, "evals", "bad-score.eval.ts"), 'export default { evaluationKind: "points", test() {} };\n', "utf-8");
     await expect(discoverEvals(root)).rejects.toThrow(/defineEval\(\).*defineScoreEval\(\)/s);
   });
 
@@ -177,7 +177,7 @@ describe("discoverEvals · 目录入口与重名冲突", () => {
 
     const evals = await discoverEvals(root);
     expect(evals.map((e) => e.id)).toEqual(["suite/0000", "suite/0001"]);
-    expect(evals.every((e) => e.scoring === "pass")).toBe(true);
+    expect(evals.every((e) => e.evaluationKind === "pass")).toBe(true);
   });
 
   it("无 eval.ts 的目录(_lib)不被发现", async () => {

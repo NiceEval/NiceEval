@@ -126,7 +126,7 @@ Useful for troubleshooting one configuration at a time — confirming whether a 
 | `timeoutMs` | Timeout for a single attempt |
 | `budget` | Budget limit for this configuration |
 | `maxConcurrency` | Concurrency limit for this configuration |
-| `sandbox` | The fixed spec used by sandbox agents; the spec can carry an `environments` table to swap prebuilt artifacts by eval environment profile, and can also chain `.setup()` / `.teardown()` to attach environment hooks |
+| `sandbox` | A `SandboxLayer`; a concrete factory declares one provider-native template and can chain `.prepare()` / `.setup()` / `.teardown()` |
 | `setup` | Experiment-level hook: runs once for the whole experiment, on your own machine, to start services shared by every attempt (see below) |
 | `teardown` | Experiment-level hook paired with `setup`: runs once after all attempts finish, if and only if `setup`'s point has already been reached (see below) |
 
@@ -317,12 +317,12 @@ The boundary is the run's lifecycle: a service shared within a batch does not ou
 
 ## Let different evals use different prebuilt environments
 
-A batch of real-world tasks may need different runtime and dependency versions. An eval declares a provider-agnostic profile ID with `environment`; the sandbox spec's `environments` table then maps it to a concrete template or snapshot:
+A batch of real-world tasks may need different runtime and dependency versions. Put the concrete template-bearing factory on each Eval so the task and its execution environment remain one declaration:
 
 ```ts
 // evals/astropy-2021.eval.ts
 export default defineEval({
-  environment: "python-3.9-astropy-4.2",
+  sandbox: e2bSandbox({ template: "codex-python39" }),
   async test(t) {
     // drive the task and verify the result
   },
@@ -330,28 +330,21 @@ export default defineEval({
 ```
 
 ```ts
-// experiments/shared.ts — one table per provider, shared by every experiment
+// evals/shared/python39.ts — ordinary TypeScript reuse, not a profile registry
 import { e2bSandbox } from "niceeval/sandbox";
 
-export const e2b = e2bSandbox({
-  template: "codex-default",              // used by evals that don't declare an environment
-  environments: {
-    "python-3.9-astropy-4.2": { template: "codex-python39" },
-  },
-});
+export const python39 = () => e2bSandbox({ template: "codex-python39" });
 ```
 
 ```ts
-// experiments/e2b.ts — the experiment stays a one-line diff, covering every eval
+// experiments/e2b.ts — Eval owns the template, so the Experiment only owns the agent
 import { defineExperiment } from "niceeval";
-import { e2b } from "./shared";
 
 export default defineExperiment({
   agent: codexAgent(),
-  sandbox: e2b,
 });
 ```
 
-`environment` is a non-empty, stable string, not a package version constraint. The `environments` table's values are overrides of that provider's prebuilt-artifact field (Docker's `image`, E2B's `template`, Vercel's `snapshotId`). NiceEval resolves this table for every selected eval before starting any Sandbox; if an eval declares a profile with no matching table entry, every missing entry is reported at once at startup. A remote agent does not create a Sandbox and does not take part in this lookup. Because the mapping is data reused alongside the spec, a single experiment can cover every eval — scores and comparison tables are not split into multiple experiments just because the environment differs.
+There is no profile registry and no source-kind materializer table. Each factory owns both support and implementation, and physical planning validates every selected Eval before creating any Sandbox. Share repeated templates with ordinary TypeScript helpers. A single Experiment can still cover all Evals: link planning pairs each Eval's layer with the Experiment layer independently.
 
 See [Experiment Matrix](/tutorials/experiments) for design advice on cross-configuration comparison. See [Adapter](/explanation/adapter) for how the adapter uses `ctx.model` and `ctx.flags`.

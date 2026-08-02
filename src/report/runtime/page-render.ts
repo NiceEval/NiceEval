@@ -14,6 +14,7 @@ import { resolveLocator } from "../../record/open.ts";
 import { loadAttemptEvidence } from "../../record/attempt-evidence.ts";
 import type {
   PageLoadContext,
+  PageRenderInput,
   ReportDefinition,
   ReportMeta,
   ReportPage,
@@ -25,8 +26,7 @@ import type { DimensionPins } from "../presentation.ts";
 import { targetKey } from "./target.ts";
 
 export { encodeTargetKey, targetHref, targetKey } from "./target.ts";
-
-export type PageRenderInput = unknown;
+export type { PageRenderInput } from "../definition/report.ts";
 
 /** `target.page` 在 definition.pages 里没有匹配的 page id。 */
 export class UnknownPageError extends Error {
@@ -52,7 +52,7 @@ async function runPageRender(
         `Report page "${page.id}" has no render function — pass render: (input) => tree from defineReport.`,
       );
     }
-    pending = Promise.resolve(page.render(input as never));
+    pending = Promise.resolve(page.render(input));
     cache?.set(key, pending);
   }
   return pending;
@@ -126,12 +126,15 @@ export async function renderTarget(
 ): Promise<ResolvedPage> {
   const page = definition.pages.find((candidate) => candidate.id === target.page);
   if (page === undefined) throw new UnknownPageError(target.page);
-  const input =
-    page.params !== undefined
-      ? await page.load(base, target.params, ctx)
-      : page.load !== undefined
-        ? await page.load(base, undefined, ctx)
-        : base;
+  let input: PageRenderInput;
+  if (page.params !== undefined) {
+    if (target.params === undefined) {
+      throw new Error(`Report target for parameterized page "${page.id}" is missing params.`);
+    }
+    input = await page.load(base, target.params, ctx);
+  } else {
+    input = page.load !== undefined ? await page.load(base, undefined, ctx) : base;
+  }
   const key = targetKey(page, target.params);
   const tree = await runPageRender(page, input, key, options?.renderCache);
   return resolvePage(tree, {

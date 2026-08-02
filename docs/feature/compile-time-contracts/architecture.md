@@ -21,7 +21,7 @@ Author Input → Definition → Discovered Definition → Linked Configuration �
 
 Runner 内部函数按自己真正消费的阶段收参数。
 发现器构造 `DiscoveredEval` 与 `DiscoveredExperiment`，规划器把 configHash 写进 Planned Run，两者都不回写作者定义。
-通过制与计分制定义组成以 scoring 判别的 union；Runner 先收窄分支，再以对应 context 调用 test，不用类型断言抹平两种题型。
+通过制与计分制定义组成以 `evaluationKind` 判别的 union；Runner 先收窄分支，再以对应 context 调用 test，不用类型断言抹平两种题型。
 
 Linked Configuration 是跨文件硬约束的边界。
 单个 `EvalDefinition` 与 `ExperimentDefinition` 都可以合法携带 template-bearing 或 command-only SandboxLayer；只有 discovery 与 selector 完成后，Runner 才知道实际配对。
@@ -57,7 +57,7 @@ linker 必须先聚合全部 template conflict 与 missing，再允许任何 Pro
 
 | 契约族 | 必须编译 | 必须拒绝 |
 |---|---|---|
-| Eval / Experiment | 不带派生字段的 factory 调用；scoring 保持字面量 | 手写 id、scoring、configHash |
+| Eval / Experiment | 不带派生字段的 factory 调用；`evaluationKind` 保持字面量 | 手写 id、evaluationKind、configHash |
 | Page | 普通页可无 load；参数化页带完整三件套 | params 缺 load；params 配可导航状态 |
 | MCP | 纯 stdio；纯 HTTP | 同时 command 与 url；分支携带对方专属字段 |
 | HITL | optionId 回答；text 回答 | 两者都缺；两者同时出现 |

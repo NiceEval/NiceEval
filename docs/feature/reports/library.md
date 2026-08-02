@@ -1058,7 +1058,7 @@ function comparisonResult(
 ): Promise<ComparisonResult>;
 
 function stabilityResult(
-  sample: Sample,
+  sample: Sample | readonly Run[],
   options?: StabilityOptions,
 ): Promise<StabilityResult>;
 
@@ -1077,7 +1077,11 @@ function conversationResult(
 
 function timingResult(
   attempt: AttemptEvidence,
-): Promise<TimingResult>;
+): Promise<AttemptTimingResult>;
+
+function timingResult(
+  run: Run,
+): Promise<RunTimingResult>;
 
 function usageResult(
   attempt: AttemptEvidence,
@@ -1102,9 +1106,9 @@ Result 类型以对应 show 切片的 JSON 形状为准，并且不包含 Report
 组件想让读者「点过去看证据」时，交出的是一个目标值，不是 URL：
 
 ```ts
-interface ReportTarget {
+interface ReportTarget<Params extends JsonValue = JsonValue> {
   page: string;
-  params?: unknown;
+  params?: Params;
 }
 ```
 

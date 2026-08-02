@@ -17,7 +17,7 @@ import {
 // 每一行的版式都照抄 CLI 自己的人读面,不自创措辞:
 //   - PLAN / live / FAILED / FAILURES / NEXT 五个面板与框线嵌字 —— docs/feature/experiments/cli.md
 //   - 首行守恒计数与 active 行列序 —— src/runner/feedback/human.ts 的 countsText / formatActiveRow
-//   - 失败行的 locator / 断言两级缩进 —— src/scoring/display.ts 的 assertionSummaryLines
+//   - 失败行的 locator / 断言两级缩进 —— src/assertions/display.ts 的 assertionSummaryLines
 //   - 对照矩阵的头两行与列组 —— src/show/index.ts 的 renderCompareSlice、show/compare.md
 // 动效规则也沿用 CLI 的契约:计数与 active 行动态覆盖,失败证据只追加,live 面板结束后被
 // 结论面板顶替。这段输出不做 i18n —— 终端里跑出来的就是这一套英文字面量。
@@ -92,7 +92,7 @@ const ATTEMPTS: Attempt[] = [
       [0, "creating sandbox"],
       [0.1, "running eval: tool: pnpm install"],
       [0.24, "running eval: tool: pnpm vitest run"],
-      [0.42, 'scoring: judge 1/2 · closedQA("cart total …")'],
+      [0.42, 'evaluating assertions: judge 1/2 · closedQA("cart total …")'],
     ],
   },
   {

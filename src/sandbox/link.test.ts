@@ -26,12 +26,13 @@ if (false) {
 }
 
 function imageTemplateIdentity(image: string) {
+  const lifetime = { _tag: "ProviderDefault" as const };
   return {
     version: 2,
     provider: "docker",
     kind: "image",
-    publishable: { source: "configured-image" },
-    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image }),
+    publishable: { source: "configured-image", lifetime },
+    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image, lifetime }),
   };
 }
 

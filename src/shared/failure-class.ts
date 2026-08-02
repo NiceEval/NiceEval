@@ -8,6 +8,12 @@
 // 这份词表。
 
 import type { LifecyclePhase } from "../runner/types.ts";
+import {
+  externalCauseMessageChain,
+  isExternalCause,
+  normalizeExternalCause,
+  type ExternalCause,
+} from "./external-cause.ts";
 
 /** 空间轴取值:失败死因的波及范围。 */
 export type FailureScope = "attempt" | "eval" | "experiment";
@@ -32,8 +38,8 @@ export interface AttemptFailureInfo {
   readonly phase: LifecyclePhase;
   /** 与报错文案同源的失败文本:SendFailure 取 `sendFailureText`,其它阶段取错误链 message。 */
   readonly text: string;
-  /** 原始失败对象；send 阶段是结构化 SendFailure，其它阶段是抛出的值。 */
-  readonly cause: unknown;
+  /** 动态 throwable 的有界快照；分类器只能读取 typed facts/message/cause 链。 */
+  readonly cause: ExternalCause;
 }
 
 /**
@@ -89,8 +95,10 @@ export class EvalFatalError extends Error {
  * 依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。
  */
 export function failureClassOf(error: unknown): FailureClass | undefined {
+  if (isExternalCause(error)) return failureClassOfExternalCause(error);
   let current: unknown = error;
   for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
+    if (isExternalCause(current)) return failureClassOfExternalCause(current);
     if (typeof current === "object") {
       const candidate = current as { _tag?: unknown; class?: unknown };
       if (isClassifiedFailureTag(candidate._tag) && isFailureClass(candidate.class)) return candidate.class;
@@ -98,6 +106,17 @@ export function failureClassOf(error: unknown): FailureClass | undefined {
     current = causeOf(current);
   }
   return undefined;
+}
+
+function failureClassOfExternalCause(cause: ExternalCause): FailureClass | undefined {
+  let current: ExternalCause = cause;
+  for (;;) {
+    if (current._tag !== "ThrownValue" && current.failureClass._tag === "Present") {
+      return current.failureClass.value;
+    }
+    if (current.cause._tag !== "Cause") return undefined;
+    current = current.cause.value;
+  }
 }
 
 /** cause 链与错误文本串接共用的深度上限:防御自引用 / 病态深链,不做环检测。 */
@@ -182,5 +201,6 @@ export function resolveAttemptFailureClass(
 
 /** @internal 从一个抛出的错误构造实验分类器的输入(文本与报错文案同源)。 */
 export function attemptFailureInfo(phase: LifecyclePhase, error: unknown): AttemptFailureInfo {
-  return { phase, text: errorChainText(error), cause: error };
+  const cause = normalizeExternalCause(error);
+  return { phase, text: externalCauseMessageChain(cause), cause };
 }

@@ -13,7 +13,7 @@ export interface RendererMeta {
 
 export function rendererMetaOf(type: unknown): RendererMeta | undefined {
   if (typeof type !== "function") return undefined;
-  return (type as ReportComponent<unknown> & { [COMPONENT_RENDERER]?: RendererMeta })[COMPONENT_RENDERER];
+  return (type as ReportComponent<object> & { [COMPONENT_RENDERER]?: RendererMeta })[COMPONENT_RENDERER];
 }
 
 export function isRendererComponent(type: unknown): boolean {

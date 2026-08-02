@@ -58,6 +58,16 @@ export interface AssertionBase {
   detail?: string;
   /** 断言在 eval 源码中的调用点,`--source` 把结果标回源码行的锚。 */
   loc?: SourceLoc;
+  /**
+   * 这条源码事实在当前 attempt 内的发生顺序。历史记录可省略；当前 collector 对每条新结果必写，
+   * 与 `ScoreEntry.sourceOrder`、用户 message 的 `sourceOrder` 共用同一条单调序列。
+   */
+  sourceOrder?: number;
+  /**
+   * `.points(n)` 声明的可得分值。计分制里链过 `.points()` 的结果必写，包括 failed 与
+   * unavailable；通过制和未链 `.points()` 的断言省略。它与实得分 `points` 是两项独立事实。
+   */
+  pointsAvailable?: number;
 }
 
 /**
@@ -106,6 +116,8 @@ export interface ScoreEntry {
   groupPath?: string[];
   /** 调用点,同 AssertionBase.loc。 */
   loc?: SourceLoc;
+  /** 与断言、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前 collector 必写。 */
+  sourceOrder?: number;
 }
 
 /**

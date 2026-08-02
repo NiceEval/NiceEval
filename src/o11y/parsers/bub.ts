@@ -14,6 +14,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
 
 /** Bub 特有别名(fs.* / web.* 命名空间与裸 read/write/edit)+ 裸动词;通用别名走基表。 */
 export const BUB_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
@@ -45,12 +46,13 @@ function num(obj: unknown, ...keys: string[]): number {
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as JsonValue;
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
     } catch {
       return value;
     }
   }
-  return (value ?? {}) as JsonValue;
+  return normalizeJsonValue(value, {});
 }
 
 function extractText(content: unknown): string {
@@ -112,13 +114,23 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
   const emitCall = (originalName: string, input: JsonValue, explicitId: unknown): string => {
     const callId = explicitId != null ? String(explicitId) : nextSynthId();
     if (explicitId == null) pendingCallIds.push(callId);
-    events.push({ type: "action.called", callId, name: originalName, input, tool: normalizeToolName(originalName) });
+    events.push({
+      type: "operation.started",
+      operationId: callId,
+      operation: { kind: "tool", name: originalName, input, tool: normalizeToolName(originalName) },
+    });
     return callId;
   };
 
   const emitResult = (output: unknown, success: boolean, explicitId: unknown): void => {
     const callId = explicitId != null ? String(explicitId) : pendingCallIds.shift() ?? nextSynthId();
-    events.push({ type: "action.result", callId, output: (output ?? null) as JsonValue, status: success ? "completed" : "failed" });
+    events.push({
+      type: "operation.finished",
+      operationId: callId,
+      kind: "tool",
+      output: (output ?? null) as JsonValue,
+      status: success ? "completed" : "failed",
+    });
   };
 
   for (const line of raw.split("\n")) {

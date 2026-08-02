@@ -5,6 +5,7 @@
 // (resolve 制品)之间原本会出现的循环 import:两边都需要这份纯函数,谁也不拥有它。
 
 import type { ReportPage, ReportTarget } from "../definition/report.ts";
+import type { JsonValue } from "../../types.ts";
 
 /**
  * `page.params.encode(params)` 的安全求值:page 没有声明 `params`,或 `encode` 抛错,统一
@@ -12,9 +13,9 @@ import type { ReportPage, ReportTarget } from "../definition/report.ts";
  */
 export function encodeTargetKey(
   page: Pick<ReportPage, "params">,
-  params: unknown,
+  params: JsonValue | undefined,
 ): string | undefined {
-  if (page.params === undefined) return undefined;
+  if (page.params === undefined || params === undefined) return undefined;
   try {
     return page.params.encode(params);
   } catch {
@@ -27,7 +28,7 @@ export function encodeTargetKey(
  * 与旧版 sample page 的缓存键一致);有 `params` 且编码成功时是 `<id>/<encoded>`,与静态导出
  * 目录布局(`<pageId>/<key>.html`)同形。
  */
-export function targetKey(page: Pick<ReportPage, "id" | "params">, params?: unknown): string {
+export function targetKey(page: Pick<ReportPage, "id" | "params">, params?: JsonValue): string {
   const encoded = encodeTargetKey(page, params);
   return encoded === undefined ? page.id : `${page.id}/${encoded}`;
 }

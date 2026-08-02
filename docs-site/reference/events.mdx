@@ -11,7 +11,7 @@ An adapter's `send` returns a `Turn`, and its `events: StreamEvent[]` is the **o
 ```ts
 interface Turn {
   events: StreamEvent[];                          // this turn's events, in real order
-  data?: unknown;                                 // structured output → outputEquals / outputMatches
+  data?: JsonValue;                               // structured output → outputEquals / outputMatches
   status: "completed" | "failed" | "waiting";     // waiting = paused for human input (HITL)
   usage?: Usage;                                  // → maxTokens / maxCost / cost reports, full fields below
 }
@@ -100,39 +100,46 @@ The ten variants of `StreamEvent`, listed field by field (see the "Event table" 
 { type: "message"; role: "assistant" | "user"; text: string; loc?: SourceLoc }
 ```
 
-#### `action.called`
-
-```ts
-{ type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
-```
-
-#### `action.result`
+#### `operation.started`
 
 ```ts
 {
-  type: "action.result";
-  callId: string;
+  type: "operation.started";
+  operationId: string;
+  operation:
+    | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+    | { kind: "subagent"; name: string; remoteUrl?: string };
+}
+```
+
+#### `operation.finished`
+
+```ts
+{
+  type: "operation.finished";
+  operationId: string;
+  kind: "tool";
   output?: JsonValue;
   status: "completed" | "failed" | "rejected";
+}
+```
+
+#### `operation.finished`
+
+```ts
+{
+  type: "operation.finished";
+  operationId: string;
+  kind: "subagent";
+  output?: JsonValue;
+  status: "completed" | "failed";
 }
 ```
 
 #### `skill.loaded`
 
 ```ts
-{ type: "skill.loaded"; skill: string; callId?: string }
-```
-
-#### `subagent.called`
-
-```ts
-{ type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
-```
-
-#### `subagent.completed`
-
-```ts
-{ type: "subagent.completed"; callId: string; output?: JsonValue; status: "completed" | "failed" }
+{ type: "skill.loaded"; skill: string; operationId?: string }
 ```
 
 #### `input.requested`
@@ -166,10 +173,10 @@ The ten variants of `StreamEvent`, listed field by field (see the "Event table" 
 | Event | Meaning | Consumed by |
 |---|---|---|
 | `message` | the agent (or user) said something | `t.reply`, `messageIncludes`, judge inputs |
-| `action.called` | a tool call started | `calledTool`, `toolOrder`, `maxToolCalls`, `notCalledTool` |
-| `action.result` | the result of that call | `calledTool` status matching, `noFailedActions` |
-| `subagent.called` | delegated to a subagent | `calledSubagent` |
-| `subagent.completed` | the subagent returned | `calledSubagent` status, `noFailedActions` |
+| `operation.started` (`kind: "tool"`) | a tool call started | `calledTool`, `toolOrder`, `maxToolCalls`, `notCalledTool` |
+| `operation.finished` (`kind: "tool"`) | the result of that tool call | `calledTool` status matching, `noFailedActions` |
+| `operation.started` (`kind: "subagent"`) | delegated to a subagent | `calledSubagent` |
+| `operation.finished` (`kind: "subagent"`) | the subagent returned | `calledSubagent` status, `noFailedActions` |
 | `input.requested` | paused and waiting for human input (HITL) | `t.parked()`, `t.requireInputRequest()` |
 | `thinking` | reasoning text | `event("thinking")`, viewer display |
 | `compaction` | context got compacted | `event("compaction")` (the adapter's parser emitting this event is enough to assert on it — no declaration is needed) |
@@ -187,27 +194,29 @@ Any event can also be consumed by the generic assertions: `event(type)` / `notEv
 
 Emit one `message` with `role: "assistant"` for each chunk of assistant text. **Tool results are not assistant messages** — do not wrap tool output as `message`, or `t.reply` will read the wrong thing. `message` events for user input are recorded automatically by [NiceEval](https://niceeval.com/); the adapter does not need to emit them.
 
-### `action.called` / `action.result` — which tool was called, and what happened
+### Tool `operation.started` / `operation.finished` — which tool was called, and what happened
 
 ```ts
-{ type: "action.called", callId: string, name: string, input: JsonValue }
-{ type: "action.result", callId: string, output?: JsonValue,
-  status: "completed" | "failed" | "rejected" }
+{ type: "operation.started", operationId: string,
+  operation: { kind: "tool", name: string, input: JsonValue, tool?: ToolName } }
+{ type: "operation.finished", operationId: string, kind: "tool",
+  output?: JsonValue, status: "completed" | "failed" | "rejected" }
 ```
 
-- Pair each `action.called` with an `action.result` that has the **same `callId`** — this is what keeps concurrent calls from getting mixed up. Use the explicit id your agent's response gives you (AI SDK's `toolCallId`, Anthropic's `tool_use.id`) directly; only synthesize one by order as a last resort when there truly isn't one.
+- Pair each tool `operation.started` with a tool `operation.finished` that has the **same `operationId`** — this is what keeps concurrent calls from getting mixed up. Use the explicit id your agent's response gives you (AI SDK's `toolCallId`, Anthropic's `tool_use.id`) directly; only synthesize one by order as a last resort when there truly isn't one.
 - Fill `status` truthfully: an actual tool execution failure is `"failed"` (`noFailedActions()` fires on it); **a human denial is `"rejected"`** (`noFailedActions()` still passes, and `calledTool(..., { status: "rejected" })` can assert on it precisely). These are two different things — don't conflate them.
 - Use the tool's original name for `name`.
 
-### `subagent.called` / `subagent.completed` — who was delegated to
+### Subagent `operation.started` / `operation.finished` — who was delegated to
 
 ```ts
-{ type: "subagent.called", callId: string, name: string, remoteUrl?: string }
-{ type: "subagent.completed", callId: string, output?: JsonValue,
-  status: "completed" | "failed" }
+{ type: "operation.started", operationId: string,
+  operation: { kind: "subagent", name: string, remoteUrl?: string } }
+{ type: "operation.finished", operationId: string, kind: "subagent",
+  output?: JsonValue, status: "completed" | "failed" }
 ```
 
-Emit this pair when the system under test delegates a task to a subagent (and waits for it to return); the `callId` pairing rule is the same as above. This feeds assertions like `calledSubagent("researcher")`.
+Emit this pair when the system under test delegates a task to a subagent (and waits for it to return); the `operationId` pairing rule is the same as above. This feeds assertions like `calledSubagent("researcher")`.
 
 ### `input.requested` — paused for human input (HITL)
 
@@ -236,7 +245,7 @@ Emit them when you have them; don't fabricate them when you don't. `compaction` 
 ## Three mapping rules
 
 1. **Order is fact**: events are laid out in the order they actually happened. `toolOrder` / `eventOrder` match by subsequence, so a wrong order makes the assertion misleading.
-2. **Pair `callId`s**: every `called` event needs a `result` with the same id; missing half of the pair makes `calledTool(..., { status })` fail to match.
+2. **Pair `operationId`s**: every started operation needs a finished operation of the same `kind` with the same id; missing half of the pair makes `calledTool(..., { status })` fail to match.
 3. **Completeness has no declaration layer — it is proven by the source**: with official converters (`createClaudeSdkEventStream`, `turnFromAiSdk`, etc.), the return value itself guarantees **every** tool call is in the stream; with manual mapping, completeness depends entirely on whether your mapping code covers everything. When only part of the stream is emitted, negative assertions like `notCalledTool` / `maxToolCalls` pass silently — with no error, which is harder to notice than an outright failure. Confirm your mapping code covers every tool call before relying on manual mapping — see the [capabilities reference](/reference/capabilities).
 
 ## A complete mapping example
@@ -250,10 +259,15 @@ function toStreamEvents(body: MyAgentResponse): StreamEvent[] {
   const events: StreamEvent[] = [];
   for (const step of body.steps) {
     if (step.type === "tool_call") {
-      events.push({ type: "action.called", callId: step.id, name: step.tool, input: step.args });
       events.push({
-        type: "action.result",
-        callId: step.id,
+        type: "operation.started",
+        operationId: step.id,
+        operation: { kind: "tool", name: step.tool, input: step.args },
+      });
+      events.push({
+        type: "operation.finished",
+        operationId: step.id,
+        kind: "tool",
         output: step.result,
         status: step.error ? "failed" : "completed",
       });

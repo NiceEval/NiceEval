@@ -2,10 +2,13 @@
 // `t` 的形状按 Agent 能力组装(见 docs/architecture.md「能力决定形状」)。
 
 import type { InputRequest, O11ySummary, StreamEvent, ToolCall, Usage } from "../o11y/types.ts";
-import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
-import type { AssertionHandle, BaseAssertionHandle, ScoreAssertionHandle, ValueAssertion } from "../scoring/types.ts";
+import type { DiagnosticInput, JsonMatch, JsonValue, ProgressUpdate } from "../shared/types.ts";
+import type { AssertionHandle, BaseAssertionHandle, ScoreAssertionHandle, ValueAssertion } from "../assertions/types.ts";
 import type { SandboxOperations, SandboxTransferOperations } from "../sandbox/types.ts";
 import type { AnswerValue } from "../agents/types.ts";
+import type { DeferredFileContent } from "./deferred-file-content.ts";
+
+export type { DeferredFileContent } from "./deferred-file-content.ts";
 
 /** `t.send()` / `session.send()` 的入参:字符串,或带附件的结构化消息。 */
 export type SendInput = string | { text: string; files?: readonly import("../agents/types.ts").InputFile[] };
@@ -26,7 +29,7 @@ export interface TurnHandle<H extends BaseAssertionHandle = AssertionHandle> {
   /** 本轮助手最终文本回复(events 里的消息增量拼接结果)。 */
   readonly message: string;
   /** adapter 附带的结构化输出(如有),供 outputEquals / outputMatches 比对。 */
-  readonly data?: unknown;
+  readonly data?: JsonValue;
   /** 本轮 token 用量与估算成本(仅上报了 usage 的 agent 才有)。 */
   readonly usage?: Usage;
   /** 断言 data 与给定值深度相等。 */
@@ -113,14 +116,14 @@ export interface ToolMatch {
    * 顶层给谓词函数 `(input) => boolean` 拿原始输入值自行判断。三种顶层形态互斥,不会退化
    * 成深比对——RegExp / 函数不是"键值对象",不会被当成 plain object 逐键枚举。
    */
-  input?: globalThis.Record<string, unknown> | RegExp | ((input: unknown) => boolean);
+  input?: JsonMatch;
   /** 数字精确匹配调用次数;谓词对命中次数自行判定(如 `(n) => n >= 2`);省略则只要求「至少一次」。 */
   count?: number | ((n: number) => boolean);
   /**
    * 输出匹配,值语义同 `input` 的值位置:RegExp 对字符串输出测试(非字符串先序列化再测);
    * 谓词函数拿原始输出自行判断;对象做深度部分匹配;其余值严格相等。
    */
-  output?: unknown;
+  output?: JsonMatch;
   /** 只匹配处于该状态的调用。`pending` 是已发起、尚无结果的调用——典型是 HITL 停在审批上的那一笔。 */
   status?: "pending" | "completed" | "failed" | "rejected";
 }
@@ -129,12 +132,12 @@ export interface ToolMatch {
 export interface SubagentMatch {
   /** 数字精确匹配调用次数;谓词对命中次数自行判定;省略则只要求「至少一次」。 */
   count?: number | ((n: number) => boolean);
-  /** 子 agent 委派没有 rejected 状态(subagent.completed 只报 completed / failed)。 */
+  /** 子 agent 委派没有 rejected 状态(operation.finished 只报 completed / failed)。 */
   status?: "pending" | "completed" | "failed";
   /** 只匹配指向该远程地址的子 agent 调用:字符串精确匹配、RegExp 测试、或谓词函数自行判断。 */
   remoteUrl?: string | RegExp | ((url: string) => boolean);
   /** 匹配子 agent 的返回,值语义同 ToolMatch.output。 */
-  output?: unknown;
+  output?: JsonMatch;
 }
 
 /** requireInputRequest 的过滤条件;多个字段之间是 AND 关系。 */
@@ -143,7 +146,8 @@ export interface InputRequestFilter {
   prompt?: string | RegExp;
   display?: string | RegExp;
   action?: string | RegExp;
-  input?: globalThis.Record<string, unknown>;
+  /** 请求携带的结构化输入，使用与 ToolMatch 相同的递归 JsonMatch 语义。 */
+  input?: JsonMatch;
   /** 请求的可选项 id 集合必须与此完全一致(顺序无关)。 */
   optionIds?: readonly string[];
 }
@@ -162,8 +166,8 @@ export interface EvalSandbox<H extends BaseAssertionHandle = AssertionHandle>
   extends SandboxOperations, SandboxTransferOperations {
   /** 相对 git 基线的最终 diff 视图(test() 跑完、finalize 前才落定)。 */
   readonly diff: DiffView;
-  /** 取 Sandbox 内某文件的最终内容,占位延迟到 finalize 才真正读取;只能配合 t.check 使用。 */
-  file(path: string): string;
+  /** 取 Sandbox 内某文件的最终内容；返回的是延迟证据，只能配合 t.check 使用。 */
+  file(path: string): DeferredFileContent;
   /** 断言 diff 里某路径发生了变化(新增或修改)。 */
   fileChanged(path: string): H;
   /** 断言 diff 里某路径被删除。 */
@@ -285,7 +289,7 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   /** 本次 attempt 的推理努力程度(如 "low"/"medium"/"high",取值由 adapter/模型决定)。 */
   readonly reasoningEffort?: string;
   /** 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。 */
-  readonly flags: Readonly<globalThis.Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   /**
    * 作用域反馈:报告评估用例自己执行的长步骤(上传 Fixture、跑构建……)。短命状态,scope 固定
    * 为 `eval.run`;只报告不断言(见 docs/feature/eval/library/context.md「向运行反馈长步骤」)。

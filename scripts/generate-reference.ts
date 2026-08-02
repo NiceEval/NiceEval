@@ -450,7 +450,7 @@ function replaceBetween(content: string, begin: string, end: string, newBody: st
 /** 生成器需要读取的源文件(相对仓库根),CLI 与测试共用同一份清单。 */
 export const SOURCE_FILES = [
   "src/expect/index.ts",
-  "src/scoring/types.ts",
+  "src/assertions/types.ts",
   "src/runner/types.ts",
   "src/context/types.ts",
   "src/agents/types.ts",
@@ -471,7 +471,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
       return renderMemberList(extractExportedFunctions(sources["src/expect/index.ts"], "src/expect/index.ts"));
     case "value-assertion":
       return renderMemberList(
-        extractInterfaceMembers(sources["src/scoring/types.ts"], "src/scoring/types.ts", "ValueAssertion"),
+        extractInterfaceMembers(sources["src/assertions/types.ts"], "src/assertions/types.ts", "ValueAssertion"),
       );
     case "defineeval-options":
       return renderMemberList(

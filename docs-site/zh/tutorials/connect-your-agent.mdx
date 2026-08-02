@@ -90,7 +90,7 @@ export default defineEval({
 });
 ```
 
-断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容有三条路子——多措辞等价的正则、形状断言（`includesUrl()` / `hasSections()`），或 `t.judge` 的语义判定；确定性的结果（具体数值、ID）才用精确断言。完整取舍见[评分指南](/zh/tutorials/scoring-guide)。
+断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容有三条路子——多措辞等价的正则、形状断言（`includesUrl()` / `hasSections()`），或 `t.judge` 的语义判定；确定性的结果（具体数值、ID）才用精确断言。完整取舍见[题型与断言](/zh/tutorials/evaluation-kinds)。
 
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval

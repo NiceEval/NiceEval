@@ -237,7 +237,7 @@ Model reasoning effort; belongs alongside model — decided by the experiment, a
 #### `flags`
 
 ```ts
-readonly flags: Readonly<Record<string, unknown>>;
+readonly flags: Readonly<Record<string, JsonValue>>;
 ```
 
 The experiment's `flags` field, passed through as-is; its content and shape are entirely defined by the experiment author
@@ -253,7 +253,7 @@ readonly experimentId?: string;
 
 The experiment id derived from the path (same source as the result attribution `runWho` / `AgentRun.experimentId`);
 undefined when the run does not go through an experiment (e.g. outside the CLI, constructing an `AgentRun` directly).
-Typical uses: a `SandboxSpec.setup` hook isolating cross-attempt state per experiment (cache directory names,
+Typical uses: a `SandboxLayer.setup` hook isolating cross-attempt state per experiment (cache directory names,
 snapshot tags, etc. partitioned by `ctx.experimentId`), or an adapter switching auth / routing per experiment. It is a
 different dimension from `flags` (the concrete values of the experiment's conditions) — this is only the stable identifier
 of "which experiment is running", and carries no condition content.
@@ -325,9 +325,7 @@ error information, to help locate where it got stuck.
 `ctx.session` (`AgentSession`) is the state slot for one conversation line: every `send` on the same conversation line gets the same `ctx.session`, and a new conversation line (the eval's first turn / after `t.newSession()`) gets a fresh one. Accessors:
 
 - `id?: string` / `capture(id): void` — session continuation when the server keeps history: `id` is the session id recorded on this line (`undefined` on a new line), `capture` records the returned id (it only lands when none has been recorded yet).
-- `history<TMsg>(): { get(): TMsg[]; commit(messages: TMsg[]): void }` — session continuation when the client carries the full history.
-- `hold<T>(state: T): void` / `take<T>(): T | undefined` — storage for the HITL paused-turn scene; `take` clears on read (consume once).
-- `state: Record<string, unknown>` — escape hatch, starts as `{}`, never written by the framework.
+- `get<T>(slot: SessionSlot<T>): T | undefined` / `set<T>(slot, value): void` / `take<T>(slot): T | undefined` — adapter-private typed slots. Create each slot once with `createSessionSlot<T>()`; `take` clears on read (consume once), which suits a paused HITL scene.
 
 Full contract in the [Adapter concept](/explanation/adapter#context-agentcontext).
 

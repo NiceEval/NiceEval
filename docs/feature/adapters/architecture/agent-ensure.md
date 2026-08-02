@@ -14,7 +14,7 @@ sandbox case 构建所需产物并启动实例 → 主 Sandbox
     ├─ probe 命中   → 记录命中的安装事实
     └─ probe 未命中 → 按 identity 配对安装层 → install → 复检 probe
  → State load → workspace baseline → Agent runtime setup(agent.setup)
- → test(t) → scoring
+ → test(t) → assertions.evaluate
 ```
 
 probe 是只读探测零件,install 是安装零件,ensure 是「probe → 缺失才 install → 复检」的循环;`installTool` 是它的工具版,`agent.ensure` 是 Agent 版(词族与 `installTool` 见[内置 prepare 命令](../../sandbox/prepare-commands.md))。

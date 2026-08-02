@@ -71,7 +71,7 @@ export default defineConfig({
 
 判分调用不重试。判分请求不是幂等读取，连接断开或超时后的暗中重放会为同一条 rubric 产生第二笔模型费用；偶发失败按 unavailable 契约留记录，要不要再评由重跑决定。
 
-一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再并发 judge 只会放大网关限流，而判分不重试，一次 429 就让整条 attempt errored。正在评哪条 judge，live 面板的 scoring 行以 `judge k/n` 推进显示，契约见 [CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
+一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再并发 judge 只会放大网关限流，而判分不重试，一次 429 就让整条 attempt errored。正在评哪条 judge，live 面板的断言求值行以 `judge k/n` 推进显示，契约见 [CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
 
 Judge 默认 soft、无阈值，只记录分数；`.atLeast(x)` 添加 soft 阈值，`.gate(x?)` 变成硬要求；`.optional()` 声明允许缺席。severity（影不影响判定）与 optional（证据允许不允许缺席）是两个正交维度：
 
@@ -94,7 +94,7 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 ## 派发前预检
 
-一次 `exp` 运行的计划里存在**要真派发、且会执行 judge 断言**的 eval 时，运行器在派发任何 attempt 之前对判分端点做一次最小探测请求，验证连通与鉴权。探测不判分、不产生模型费用。目的只有一个：判分端点不可用要在烧 agent 成本**之前**知道，而不是每条 attempt 跑完十分钟 agent 工作后才在 scoring 阶段撞出一堆 unavailable。
+一次 `exp` 运行的计划里存在**要真派发、且会执行 judge 断言**的 eval 时，运行器在派发任何 attempt 之前对判分端点做一次最小探测请求，验证连通与鉴权。探测不判分、不产生模型费用。目的只有一个：判分端点不可用要在烧 agent 成本**之前**知道，而不是每条 attempt 跑完十分钟 agent 工作后才在 `assertions.evaluate` 阶段撞出一堆 unavailable。
 
 两种情况不预检：Experiment、Eval 与项目都没配置 judge（运行期按 `judge-model-unresolved` 记录）；计划里含 judge 的 eval 全部命中携带、没有要派发的 attempt。
 

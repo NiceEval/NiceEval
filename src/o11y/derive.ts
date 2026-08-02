@@ -1,5 +1,5 @@
 // 从归一化的 StreamEvent[] 折叠出结构化事实。
-//   - deriveRunFacts:断言层吃的 DerivedFacts(按 callId 把 called+result 折成 ToolCall);
+//   - deriveRunFacts:断言层吃的 DerivedFacts(按 operationId 把 started+finished 折成 ToolCall);
 //   - buildO11ySummary:给人看的 o11y 摘要,同时是宿主侧 `t.o11y` 与落盘 o11y.json 的同一份算法。
 // 一旦事件流归一好了,这两个折叠对所有 agent 通用。
 
@@ -61,16 +61,13 @@ function pickExitCode(output: JsonValue | undefined): number | undefined {
 // ───────────────────────── deriveRunFacts ─────────────────────────
 
 export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
-  // 折叠是逐条按发生顺序进行的:called 追加一条新调用,result 回填「当前还没配上 result 的
-  // 同 callId 调用」。callId 只在一个 called→result 配对内保证稳定,不保证跨轮唯一——adapter
-  // 常按轮各自编号(OpenAI 兼容协议、transcript 归一都会复用 c1/c2…)。所以一个 callId 在其
-  // result 之后再次以 called 出现,是新的一次调用,起一条新记录,不覆盖前一轮那条(否则跨轮
-  // 聚合会把前面几轮的工具调用抹成「只剩最后一轮」)。用 open*ByCallId 只跟踪各 callId 当前
-  // 敞口的那条,配上 result 即关闭。
+  // 折叠是逐条按发生顺序进行的:started 追加一条新操作,finished 回填「当前还没配上 finished 的
+  // 同 operationId 操作」。operationId 只在一个 started→finished 配对内保证稳定,不保证跨轮唯一。
+  // 同一个 id 在 finished 后再次 started 是一条新操作，不覆盖前一轮记录。
   const toolCalls: ToolCall[] = [];
-  const openToolByCallId = new Map<string, number>();
+  const openToolByOperationId = new Map<string, number>();
   const subagentCalls: SubagentCall[] = [];
-  const openSubagentByCallId = new Map<string, number>();
+  const openSubagentByOperationId = new Map<string, number>();
   const inputRequests: InputRequest[] = [];
   let messageCount = 0;
   let compactions = 0;
@@ -86,63 +83,58 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
         contextInjections += 1;
         break;
 
-      case "action.called": {
-        openToolByCallId.set(ev.callId, toolCalls.length);
-        toolCalls.push({
-          callId: ev.callId,
-          name: ev.tool ?? "unknown",
-          originalName: ev.name,
-          input: ev.input,
-          // 只有 called、尚未等到 result 的调用是 pending(见 docs/feature/adapters/architecture/events.md)。
-          status: "pending",
-        });
-        break;
-      }
-
-      case "action.result": {
-        const idx = openToolByCallId.get(ev.callId);
-        if (idx !== undefined) {
-          toolCalls[idx].output = ev.output;
-          toolCalls[idx].status = ev.status;
-          openToolByCallId.delete(ev.callId);
-        } else {
-          // 只有结果、没配上调用:补一条占位 ToolCall。
+      case "operation.started": {
+        if (ev.operation.kind === "tool") {
+          openToolByOperationId.set(ev.operationId, toolCalls.length);
           toolCalls.push({
-            callId: ev.callId,
-            name: "unknown",
-            input: null,
-            output: ev.output,
-            status: ev.status,
+            operationId: ev.operationId,
+            name: ev.operation.tool ?? "unknown",
+            originalName: ev.operation.name,
+            input: ev.operation.input,
+            status: "pending",
+          });
+        } else {
+          openSubagentByOperationId.set(ev.operationId, subagentCalls.length);
+          subagentCalls.push({
+            operationId: ev.operationId,
+            name: ev.operation.name,
+            remoteUrl: ev.operation.remoteUrl,
+            status: "pending",
           });
         }
         break;
       }
 
-      case "subagent.called": {
-        openSubagentByCallId.set(ev.callId, subagentCalls.length);
-        subagentCalls.push({
-          callId: ev.callId,
-          name: ev.name,
-          remoteUrl: ev.remoteUrl,
-          // 只有 called、尚未等到 result 的调用是 pending(与 ToolCall 折叠同一条契约)。
-          status: "pending",
-        });
-        break;
-      }
-
-      case "subagent.completed": {
-        const idx = openSubagentByCallId.get(ev.callId);
-        if (idx !== undefined) {
-          subagentCalls[idx].output = ev.output;
-          subagentCalls[idx].status = ev.status;
-          openSubagentByCallId.delete(ev.callId);
+      case "operation.finished": {
+        if (ev.kind === "tool") {
+          const idx = openToolByOperationId.get(ev.operationId);
+          if (idx !== undefined) {
+            toolCalls[idx].output = ev.output;
+            toolCalls[idx].status = ev.status;
+            openToolByOperationId.delete(ev.operationId);
+          } else {
+            toolCalls.push({
+              operationId: ev.operationId,
+              name: "unknown",
+              input: null,
+              output: ev.output,
+              status: ev.status,
+            });
+          }
         } else {
-          subagentCalls.push({
-            callId: ev.callId,
-            name: "unknown",
-            output: ev.output,
-            status: ev.status,
-          });
+          const idx = openSubagentByOperationId.get(ev.operationId);
+          if (idx !== undefined) {
+            subagentCalls[idx].output = ev.output;
+            subagentCalls[idx].status = ev.status;
+            openSubagentByOperationId.delete(ev.operationId);
+          } else {
+            subagentCalls.push({
+              operationId: ev.operationId,
+              name: "unknown",
+              output: ev.output,
+              status: ev.status,
+            });
+          }
         }
         break;
       }
@@ -232,12 +224,6 @@ export function buildO11ySummary(events: readonly StreamEvent[]): O11ySummary {
   let compactions = 0;
   let totalTurns = 0;
 
-  // 先把结果按 callId 建索引,供 shell / web 回填成败。
-  const resultByCallId = new Map<string, Extract<StreamEvent, { type: "action.result" }>>();
-  for (const ev of events) {
-    if (ev.type === "action.result") resultByCallId.set(ev.callId, ev);
-  }
-
   for (const ev of events) {
     switch (ev.type) {
       case "message":
@@ -256,48 +242,47 @@ export function buildO11ySummary(events: readonly StreamEvent[]): O11ySummary {
         if (ev.message) errors.push(ev.message);
         break;
 
-      case "action.called": {
-        const canonical: ToolName = ev.tool ?? "unknown";
-        toolCalls[canonical] = (toolCalls[canonical] ?? 0) + 1;
-        totalToolCalls += 1;
-
-        const input = ev.input;
-        const result = resultByCallId.get(ev.callId);
-
-        if (ev.tool === "file_read") {
-          const path = pickString(input, ["path", "file", "file_path", "filename"]);
-          if (path) filesRead.add(path);
-        } else if (ev.tool === "file_write" || ev.tool === "file_edit") {
-          const path = pickString(input, ["path", "file", "file_path", "filename"]);
-          if (path) filesModified.add(path);
-        } else if (ev.tool === "shell") {
-          const command = pickCommand(input);
-          if (command) {
-            const entry: { command: string; exitCode?: number; success?: boolean } = { command };
-            if (result) {
-              entry.success = result.status === "completed";
-              const exit = pickExitCode(result.output);
-              if (exit !== undefined) entry.exitCode = exit;
-            }
-            shellCommands.push(entry);
-          }
-        } else if (ev.tool === "web_fetch") {
-          const url = pickString(input, ["url", "uri", "endpoint", "href"]);
-          if (url) {
-            const entry: { url: string; status?: number; success?: boolean } = { url };
-            if (result) {
-              entry.success = result.status === "completed";
-              const status = field(result.output, "status");
-              if (typeof status === "number") entry.status = status;
-            }
-            webFetches.push(entry);
-          }
-        }
-        break;
-      }
-
       default:
         break;
+    }
+  }
+
+  // 人读摘要直接消费同一份严格配对后的 ToolCall，避免按 operationId 全局索引时把跨轮复用
+  // 或 finished-before-started 容错事件错配给另一条操作。没有 originalName 的是孤儿 finished 占位。
+  for (const call of deriveRunFacts(events).toolCalls) {
+    if (call.originalName === undefined) continue;
+    const canonical: ToolName = call.name;
+    toolCalls[canonical] = (toolCalls[canonical] ?? 0) + 1;
+    totalToolCalls += 1;
+
+    if (canonical === "file_read") {
+      const path = pickString(call.input, ["path", "file", "file_path", "filename"]);
+      if (path) filesRead.add(path);
+    } else if (canonical === "file_write" || canonical === "file_edit") {
+      const path = pickString(call.input, ["path", "file", "file_path", "filename"]);
+      if (path) filesModified.add(path);
+    } else if (canonical === "shell") {
+      const command = pickCommand(call.input);
+      if (command) {
+        const entry: { command: string; exitCode?: number; success?: boolean } = { command };
+        if (call.status !== "pending") {
+          entry.success = call.status === "completed";
+          const exit = pickExitCode(call.output);
+          if (exit !== undefined) entry.exitCode = exit;
+        }
+        shellCommands.push(entry);
+      }
+    } else if (canonical === "web_fetch") {
+      const url = pickString(call.input, ["url", "uri", "endpoint", "href"]);
+      if (url) {
+        const entry: { url: string; status?: number; success?: boolean } = { url };
+        if (call.status !== "pending") {
+          entry.success = call.status === "completed";
+          const status = field(call.output, "status");
+          if (typeof status === "number") entry.status = status;
+        }
+        webFetches.push(entry);
+      }
     }
   }
 

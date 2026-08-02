@@ -22,7 +22,13 @@ import {
   normalizeBuildPlatform,
   type ComposeBuildCollection,
 } from "./compose.ts";
-import { computeCaseKey, digestOf, looksLikeDigestRef, type CaseKey } from "./identity.ts";
+import {
+  assertPureDataIdentity,
+  computeCaseKey,
+  digestOf,
+  looksLikeDigestRef,
+  type CaseKey,
+} from "./identity.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
   resolveDockerfileBuildIdentity,
@@ -61,16 +67,19 @@ export interface DockerComposeSandboxOptions {
   readonly credentialEnv?: Readonly<
     globalThis.Record<string, { readonly value: string; readonly revision?: string }>
   >;
+  readonly lifetimeMs?: number;
 }
 
 export interface DockerfileSandboxOptions {
   readonly context: string | URL;
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  readonly lifetimeMs?: number;
 }
 
 export interface DockerImageSandboxOptions {
   readonly image: string;
+  readonly lifetimeMs?: number;
 }
 
 export interface E2BSandboxOptions {
@@ -111,16 +120,30 @@ export interface CustomProviderMaterializeContext {
   readonly feedback: ScopedFeedback;
 }
 
+export type CustomCaseServices =
+  | { readonly _tag: "Supported" }
+  | { readonly _tag: "Unsupported" };
+
+export type CustomCaseMaterializedServices =
+  | { readonly _tag: "None" }
+  | { readonly _tag: "Available"; readonly value: ServiceController };
+
+export interface CustomCaseMaterializeResult {
+  readonly sandbox: Sandbox;
+  readonly group: SandboxResourceGroup;
+  readonly services: CustomCaseMaterializedServices;
+  readonly facts: JsonValue;
+  /** Callback cases cannot provide detached retention without a discoverable provider plugin. */
+  readonly retention?: never;
+}
+
 export interface CustomCaseSandboxOptions {
   readonly identity: JsonValue;
   readonly targetPlatform: SandboxTargetPlatform;
-  readonly services: { readonly _tag: "Supported" } | { readonly _tag: "Unsupported" };
-  readonly materialize: (context: SandboxMaterializeContext) => Effect.Effect<{
-    readonly sandbox: Sandbox;
-    readonly group: SandboxResourceGroup;
-    readonly services: { readonly _tag: "None" } | { readonly _tag: "Available"; readonly value: ServiceController };
-    readonly facts: JsonValue;
-  }, CustomSandboxMaterializationError>;
+  readonly services: CustomCaseServices;
+  readonly materialize: (
+    context: SandboxMaterializeContext,
+  ) => Effect.Effect<CustomCaseMaterializeResult, CustomSandboxMaterializationError>;
 }
 
 export type SandboxRuntimeDeadlineDeclaration =
@@ -183,7 +206,12 @@ export type SandboxRuntimeReuse =
 
 export type SandboxRuntimeSessionLimit =
   | { readonly _tag: "Unlimited" }
-  | { readonly _tag: "Bounded"; readonly milliseconds: number };
+  | { readonly _tag: "Bounded"; readonly milliseconds: number }
+  | {
+      /** 上限由 provider 账号/plan 决定，只有真实创建或续期请求才能裁决。 */
+      readonly _tag: "ProviderValidated";
+      readonly reason: string;
+    };
 
 /** Provider 在 physical planning 时一并冻结的运行能力；core 不从 provider 名反推。 */
 export interface SandboxProviderCapabilities {
@@ -494,10 +522,18 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
         }),
     sessionLimit: capabilities.sessionLimit._tag === "Unlimited"
       ? Object.freeze({ _tag: "Unlimited" as const })
-      : Object.freeze({
-          _tag: "Bounded" as const,
-          milliseconds: capabilities.sessionLimit.milliseconds,
-        }),
+      : capabilities.sessionLimit._tag === "Bounded"
+        ? Object.freeze({
+            _tag: "Bounded" as const,
+            milliseconds: capabilities.sessionLimit.milliseconds,
+          })
+        : Object.freeze({
+            _tag: "ProviderValidated" as const,
+            reason: nonEmptyString(
+              capabilities.sessionLimit.reason,
+              "sandbox provider capabilities.sessionLimit.reason",
+            ),
+          }),
   });
 }
 
@@ -778,6 +814,7 @@ export interface DockerComposeProviderPlan {
   readonly executionUser: SandboxExecutionUser;
   readonly env: Readonly<Record<string, string>>;
   readonly collection: ComposeBuildCollection;
+  readonly lifetime: SandboxProviderLifetime;
 }
 
 export interface DockerfileProviderPlan {
@@ -787,10 +824,12 @@ export interface DockerfileProviderPlan {
   readonly build: DockerfileBuildIdentity;
   readonly buildKey: BuildKey;
   readonly platform: string;
+  readonly lifetime: SandboxProviderLifetime;
 }
 
 export interface DockerImageProviderPlan {
   readonly image: string;
+  readonly lifetime: SandboxProviderLifetime;
 }
 
 export interface E2BProviderPlan {
@@ -876,7 +915,10 @@ const e2bProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    sessionLimit: Object.freeze({ _tag: "Bounded", milliseconds: 1_800_000 }),
+    sessionLimit: Object.freeze({
+      _tag: "ProviderValidated",
+      reason: "E2B validates lifetimeMs against the active account tier when the sandbox is created or renewed.",
+    }),
   }),
   materialize: (plan, context) => Effect.flatMap(
     loadProviderRuntime(),
@@ -890,7 +932,10 @@ const vercelProviderModule = Object.freeze({
   capabilities: Object.freeze({
     retention: Object.freeze({ _tag: "Suspendable" }),
     reuse: Object.freeze({ _tag: "Supported" }),
-    sessionLimit: Object.freeze({ _tag: "Bounded", milliseconds: 1_200_000 }),
+    sessionLimit: Object.freeze({
+      _tag: "ProviderValidated",
+      reason: "Vercel validates lifetimeMs against the active project plan when the sandbox session is created or extended.",
+    }),
   }),
   materialize: (plan, context) => Effect.flatMap(
     loadProviderRuntime(),
@@ -962,7 +1007,7 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerComposeSandbox options");
       assertOnlyKeys(
         options,
-        ["file", "workspaceService", "build", "executionUser", "env", "credentialEnv"],
+        ["file", "workspaceService", "build", "executionUser", "env", "credentialEnv", "lifetimeMs"],
         "dockerComposeSandbox options",
       );
       if (options.build !== undefined && options.build !== "on-demand" && options.build !== "prebuilt") {
@@ -989,6 +1034,7 @@ export function createBuiltinSandboxFactories(
         ...env,
         ...Object.fromEntries(Object.entries(credentialEnv).map(([name, credential]) => [name, credential.value])),
       };
+      const plannedLifetime = lifetime(options.lifetimeMs, "dockerComposeSandbox options.lifetimeMs");
       const identity: JsonValue = {
         provider: "docker",
         kind: "compose",
@@ -998,6 +1044,7 @@ export function createBuiltinSandboxFactories(
         executionUser,
         env: { ...env },
         credentialEnv: credentialIdentity,
+        lifetime: plannedLifetime,
       };
       return defineSandboxTemplate({
         provider: "docker",
@@ -1008,6 +1055,7 @@ export function createBuiltinSandboxFactories(
           executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
           envKeys: Object.keys(env).sort(),
           credentialEnv: credentialIdentity,
+          lifetime: plannedLifetime,
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Compose", file, workspaceService },
@@ -1028,6 +1076,7 @@ export function createBuiltinSandboxFactories(
             executionUser,
             env: { ...env },
             credentialEnv: credentialIdentity,
+            lifetime: plannedLifetime,
             plannedBuildKeys: [...collection.buildKeys].sort(),
             plannedCaseIdentityDigest: digestOf(caseIdentity),
           };
@@ -1055,6 +1104,7 @@ export function createBuiltinSandboxFactories(
               executionUser: Object.freeze({ ...executionUser }),
               env: Object.freeze({ ...runtimeEnv }),
               collection,
+              lifetime: plannedLifetime,
             }),
             publishableIdentity: {
               workspaceService,
@@ -1062,6 +1112,7 @@ export function createBuiltinSandboxFactories(
               executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
               envKeys: Object.keys(env).sort(),
               credentialEnv: credentialIdentity,
+              lifetime: plannedLifetime,
               ...(caseIdentity as Record<string, JsonValue>),
             },
             privateFingerprintIdentity: {
@@ -1091,24 +1142,27 @@ export function createBuiltinSandboxFactories(
 
     dockerfileSandbox(options: DockerfileSandboxOptions) {
       assertRecord(options, "dockerfileSandbox options");
-      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs"], "dockerfileSandbox options");
+      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "lifetimeMs"], "dockerfileSandbox options");
       const context = location(options.context, "dockerfileSandbox options.context");
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
         : nonEmptyString(options.dockerfile, "dockerfileSandbox options.dockerfile");
       const buildArgs = stringRecord(options.buildArgs, "dockerfileSandbox options.buildArgs");
+      const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
       const identity: JsonValue = {
         provider: "docker",
         kind: "dockerfile",
         context,
         dockerfile,
         buildArgs: { ...buildArgs },
+        lifetime: plannedLifetime,
       };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "dockerfile",
         publishableIdentity: {
           buildArgKeys: Object.keys(buildArgs).sort(),
+          lifetime: plannedLifetime,
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
@@ -1128,6 +1182,7 @@ export function createBuiltinSandboxFactories(
             dockerfile,
             buildArgs: { ...buildArgs },
             plannedBuildKey: build.buildKey,
+            lifetime: plannedLifetime,
           };
           return sandboxProviderPlan({
             provider: "docker",
@@ -1140,7 +1195,7 @@ export function createBuiltinSandboxFactories(
               caseKind: "on-demand-build",
               materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
               buildKeys: [build.buildKey],
-              caseParams: { provider: "docker", buildKey: build.buildKey },
+              caseParams: { provider: "docker", buildKey: build.buildKey, lifetime: plannedLifetime },
             }),
             runtimePlan: Object.freeze({
               context: plannedContext,
@@ -1149,12 +1204,14 @@ export function createBuiltinSandboxFactories(
               build,
               buildKey: build.buildKey,
               platform: plannedTargetPlatform(target),
+              lifetime: plannedLifetime,
             }),
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
               buildKey: build.buildKey,
+              lifetime: plannedLifetime,
             },
-            privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey },
+            privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey, lifetime: plannedLifetime },
             ...(build.carryEligible
               ? {}
               : {
@@ -1178,13 +1235,14 @@ export function createBuiltinSandboxFactories(
 
     dockerImageSandbox(options: DockerImageSandboxOptions) {
       assertRecord(options, "dockerImageSandbox options");
-      assertOnlyKeys(options, ["image"], "dockerImageSandbox options");
+      assertOnlyKeys(options, ["image", "lifetimeMs"], "dockerImageSandbox options");
       const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
-      const identity: JsonValue = { provider: "docker", kind: "image", image };
+      const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
+      const identity: JsonValue = { provider: "docker", kind: "image", image, lifetime: plannedLifetime };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
-        publishableIdentity: { source: "configured-image" },
+        publishableIdentity: { source: "configured-image", lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
@@ -1199,11 +1257,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "docker-image-1",
               buildKeys: [],
-              caseParams: { image },
+              caseParams: { image, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ image }),
-            publishableIdentity: { source: "configured-image" },
-            privateFingerprintIdentity: { image },
+            runtimePlan: Object.freeze({ image, lifetime: plannedLifetime }),
+            publishableIdentity: { source: "configured-image", lifetime: plannedLifetime },
+            privateFingerprintIdentity: { image, lifetime: plannedLifetime },
             ...(looksLikeDigestRef(image)
               ? {}
               : {
@@ -1421,7 +1479,7 @@ export function customProviderSandbox(
   });
 }
 
-export function customCaseSandbox(
+export function defineSandboxCase(
   options: CustomCaseSandboxOptions,
 ): SandboxLayer<"template-bearing"> {
   assertRecord(options, "defineSandboxCase options");
@@ -1430,8 +1488,18 @@ export function customCaseSandbox(
     throw new TypeError("defineSandboxCase options.materialize must be a function");
   }
   const targetPlatform = freezePlatform(options.targetPlatform);
+  if (
+    options.services === null ||
+    typeof options.services !== "object" ||
+    (options.services._tag !== "Supported" && options.services._tag !== "Unsupported") ||
+    Object.keys(options.services).some((key) => key !== "_tag")
+  ) {
+    throw new TypeError(
+      'defineSandboxCase options.services must be exactly { _tag: "Supported" } or { _tag: "Unsupported" }',
+    );
+  }
   const services = Object.freeze({ _tag: options.services._tag });
-  const identity = freezeJson(options.identity);
+  const identity = freezeJson(assertPureDataIdentity(options.identity));
   const module = customCaseProviderModule(options.materialize);
   const declarationIdentity: JsonValue = {
     provider: "custom-case",

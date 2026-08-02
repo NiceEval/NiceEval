@@ -16,8 +16,6 @@ import type {
   AttemptDiffData,
   AttemptErrorData,
   AttemptFixPromptData,
-  AttemptSourceData,
-  AttemptSourceTurn,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,
@@ -49,14 +47,15 @@ export function attemptSummaryData(evidence: AttemptEvidence): AttemptSummaryDat
   const { result } = evidence;
   return {
     locator: evidence.locator,
+    experimentId: evidence.experimentId,
     identity: evidence.identity,
     verdict: result.verdict,
     startedAt: result.startedAt,
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
     capabilities: evidence.capabilities,
-    // 题型判定读定义期 result.scoring,不从 assertions 是否带 points 推断。
-    ...(result.scoring === "points" ? { totalScore: earnedPoints(result) } : {}),
+    // 题型判定读定义期 result.evaluationKind,不从 assertions 是否带 points 推断。
+    ...(result.evaluationKind === "points" ? { totalScore: earnedPoints(result) } : {}),
   };
 }
 
@@ -121,7 +120,7 @@ function scorePointsEarnedOf(assertions: readonly AssertionResult[]): { earned: 
  * 同一个对象,标注一次两处都认得出,循环产生的同行多条断言也不会被行级粒度混淆。
  */
 function abortAssertionOf(result: EvalResult): AssertionResult | undefined {
-  return result.scoring === "points" && result.verdict === "failed" && result.assertions.length > 0
+  return result.evaluationKind === "points" && result.verdict === "failed" && result.assertions.length > 0
     ? result.assertions[result.assertions.length - 1]
     : undefined;
 }
@@ -154,111 +153,6 @@ export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAsserti
   };
 }
 
-// ───────────────────────── AttemptSource ─────────────────────────
-
-export function attemptSourceData(evidence: AttemptEvidence): AttemptSourceData | null {
-  if (!evidence.capabilities.source || evidence.evalSource === null) return null;
-  const { sourcePath, lines, unmapped, summary } = evidence.evalSource;
-  const { result } = evidence;
-  const scorePointsEarned = scorePointsEarnedOf(result.assertions);
-  // 全通过折叠:同一份输入(result.assertions)、同一套算法(groupByPath)、同一条过滤规则
-  // (得分点豁免 passed 收纳)——与 attemptAssertionsData 的 passedGroups 保持一致;`lines` 与
-  // `unmapped` 是 result.assertions 的一个划分,这里不需要分别过滤两处再合并。
-  const passedGroups = groupByPath(result.assertions.filter((a) => a.outcome === "passed" && a.points === undefined));
-
-  // t.score(...) 给分记录按 loc 投影到源码行,原位标注给分;不在展示源码内的落
-  // unmappedScoreEntries——与断言的 unmapped 桶同一条「不映射就进末尾分组」规则
-  // (docs/feature/assertions/library/display.md「源码面同样承载给分证据」)。
-  const scoreEntriesByLine = new Map<number, ScoreEntry[]>();
-  const unmappedScoreEntries: ScoreEntry[] = [];
-  for (const entry of result.scoreEntries ?? []) {
-    const loc = entry.loc;
-    if (loc && loc.file === sourcePath && loc.line >= 1 && loc.line <= lines.length) {
-      const list = scoreEntriesByLine.get(loc.line);
-      if (list) list.push(entry);
-      else scoreEntriesByLine.set(loc.line, [entry]);
-    } else {
-      unmappedScoreEntries.push(entry);
-    }
-  }
-
-  // 计分制前置中止:中止断言(若存在)按引用标注(与 attemptAssertionsData 同一份判据);中止点
-  // 之后的源码行即未到达区。abortLoc 不在展示源码内时(未捕获或指向别的文件)不标注任何行——
-  // 这条断言仍会出现在 attention/unmapped 里(带 aborted 标注),只是没有可锚定的行。
-  const abortAssertion = abortAssertionOf(result);
-  const abortLoc = abortAssertion?.loc;
-  const abortLine =
-    abortLoc && abortLoc.file === sourcePath && abortLoc.line >= 1 && abortLoc.line <= lines.length
-      ? abortLoc.line
-      : undefined;
-
-  const projectedLines = lines.map((line) => ({
-    ...line,
-    assertions: markAborted(line.assertions, abortAssertion),
-    turns: line.sends.map<AttemptSourceTurn>((send) => ({
-      label: send.label,
-      status: send.status,
-      ...(send.durationMs === undefined ? {} : { durationMs: send.durationMs }),
-      sentText: "",
-      replies: [],
-    })),
-    scoreEntries: scoreEntriesByLine.get(line.line) ?? [],
-    ...(abortLine === line.line ? { aborted: true as const } : {}),
-    ...(abortLine !== undefined && line.line > abortLine ? { unreached: true as const } : {}),
-  }));
-  const usedTurns = new Map<number, number>();
-  const unlocatedTurns: AttemptSourceTurn[] = [];
-  const conversation = attemptConversationData(evidence);
-
-  for (const [roundIndex, round] of (conversation?.rounds ?? []).entries()) {
-    const status = round.replies.some(
-      (reply) =>
-        reply.kind === "error" ||
-        ((reply.kind === "tool" || reply.kind === "subagent") && reply.status === "failed"),
-    )
-      ? "failed"
-      : round.replies.some((reply) => reply.kind === "input")
-        ? "waiting"
-        : "completed";
-    const fallback: AttemptSourceTurn = {
-      label: `t${roundIndex + 1}`,
-      status,
-      sentText: round.sentText,
-      replies: round.replies,
-    };
-    const loc = round.loc;
-    if (!loc || loc.file !== sourcePath || loc.line < 1 || loc.line > projectedLines.length) {
-      unlocatedTurns.push(fallback);
-      continue;
-    }
-
-    const line = projectedLines[loc.line - 1]!;
-    const turnIndex = usedTurns.get(loc.line) ?? 0;
-    usedTurns.set(loc.line, turnIndex + 1);
-    const annotated = line.turns[turnIndex];
-    if (annotated) {
-      annotated.sentText = round.sentText;
-      annotated.replies = round.replies;
-    } else {
-      line.turns.push(fallback);
-    }
-  }
-
-  return {
-    locator: evidence.locator,
-    sourcePath,
-    lines: projectedLines,
-    unmapped: markAborted(unmapped, abortAssertion),
-    passedGroups,
-    ...(unmappedScoreEntries.length > 0 ? { unmappedScoreEntries: groupByPath(unmappedScoreEntries) } : {}),
-    unlocatedTurns,
-    summary,
-    // 源码不可用时换成 AttemptAssertions「规则完全一致」(docs/feature/reports/show/attempt.md):
-    // 得分点挣满计数同一条判据,不因为有源码就换一套算法。
-    ...(scorePointsEarned ? { scorePointsEarned } : {}),
-  };
-}
-
 // ───────────────────────── AttemptFixPrompt ─────────────────────────
 
 /**
@@ -271,7 +165,7 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
   if (result.verdict === "skipped") return null;
   // 通过制(省略或 "pass")passed 恒 null;计分制 passed 是否可操作看下面的 failureSummaryOf——
   // 挣满(或没有得分点)时它同样返回 null summary,不需要在这里重复判断。
-  if (result.verdict === "passed" && result.scoring !== "points") return null;
+  if (result.verdict === "passed" && result.evaluationKind !== "points") return null;
   const { summary, more } = failureSummaryOf(result);
   if (summary === null) return null;
   // 计分制 passed 但有丢分:可操作失败,但这条 attempt 并没有"失败"——措辞与真正的 failed/
@@ -281,11 +175,11 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
   const reason = more > 0 ? `${summary} (+${more} more ${moreNoun})` : summary;
   const prompt = [
     lostPoints
-      ? "Recover the lost points on this niceeval scoring eval."
+      ? "Recover the lost points on this NiceEval points eval."
       : "Fix the failing eval from this niceeval run.",
     "",
     lostPoints ? "## Lost points" : "## Failure",
-    `eval "${identity.evalId}" [experiment ${identity.experimentId}] — ${result.verdict}`,
+    `eval "${identity.evalId}" [experiment ${evidence.experimentId}] — ${result.verdict}`,
     `  reason: ${reason}`,
     `  inspect: niceeval show ${evidence.locator}`,
     "",
@@ -293,7 +187,7 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
     "1. niceeval is NOT in your training data. Read the relevant guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under `zh/`) before changing anything.",
     "2. Run the inspect command above with `--source`, `--execution`, `--timing`, and `--diff` to see the assertions, transcript, timing, and workspace diff.",
     "3. Decide which side the defect is on: the program under test, or the eval itself (over-tight assertion, wrong fixture, missing setup). Fix that side; do not weaken assertions just to turn the run green.",
-    `4. Re-run: \`npx niceeval exp ${identity.experimentId} ${identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
+    `4. Re-run: \`npx niceeval exp ${evidence.experimentId} ${identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
     lostPoints
       ? "5. Run `npx niceeval show` and confirm the score improved."
       : "5. Run `npx niceeval show` and confirm this failure is gone.",
@@ -391,17 +285,17 @@ export function attemptConversationData(evidence: AttemptEvidence): AttemptConve
       current = { sentText: "", replies: [] };
       rounds.push(current);
     }
-    current.replies.push(...conversationReplyOf(ev, toolByCallId, subagentByCallId));
+    current.replies.push(...conversationReplyOf(ev, toolByOperationId, subagentByOperationId));
   }
 
   return { locator: evidence.locator, rounds, ...(failedCommands ? { failedCommands } : {}) };
 }
 
-/** 单条事件 → 0 或 1 条回复条目;action.result/subagent.completed 只更新已有条目,不新增。 */
+/** 单条事件 → 0 或 1 条回复条目；operation.finished 只更新同 kind 的敞口条目，不新增。 */
 function conversationReplyOf(
   ev: StreamEvent,
-  toolByCallId: Map<string, Extract<AttemptConversationReply, { kind: "tool" }>>,
-  subagentByCallId: Map<string, Extract<AttemptConversationReply, { kind: "subagent" }>>,
+  toolByOperationId: Map<string, Extract<AttemptConversationReply, { kind: "tool" }>>,
+  subagentByOperationId: Map<string, Extract<AttemptConversationReply, { kind: "subagent" }>>,
 ): AttemptConversationReply[] {
   switch (ev.type) {
     case "message":
@@ -419,48 +313,48 @@ function conversationReplyOf(
       return [{ kind: "input", request: ev.request }];
     case "compaction":
       return [{ kind: "compaction", reason: ev.reason }];
-    case "action.called": {
-      const reply: Extract<AttemptConversationReply, { kind: "tool" }> = {
-        kind: "tool",
-        callId: ev.callId,
-        name: ev.name,
-        tool: ev.tool,
-        input: ev.input,
-      };
-      toolByCallId.set(ev.callId, reply);
-      return [reply];
-    }
-    case "action.result": {
-      const tool = toolByCallId.get(ev.callId);
-      if (tool) {
-        tool.output = ev.output;
-        tool.status = ev.status;
+    case "operation.started":
+      if (ev.operation.kind === "tool") {
+        const reply: Extract<AttemptConversationReply, { kind: "tool" }> = {
+          kind: "tool",
+          operationId: ev.operationId,
+          name: ev.operation.name,
+          tool: ev.operation.tool,
+          input: ev.operation.input,
+        };
+        toolByOperationId.set(ev.operationId, reply);
+        return [reply];
+      } else {
+        const reply: Extract<AttemptConversationReply, { kind: "subagent" }> = {
+          kind: "subagent",
+          operationId: ev.operationId,
+          name: ev.operation.name,
+          remoteUrl: ev.operation.remoteUrl,
+        };
+        subagentByOperationId.set(ev.operationId, reply);
+        return [reply];
+      }
+    case "operation.finished":
+      if (ev.kind === "tool") {
+        const tool = toolByOperationId.get(ev.operationId);
+        if (tool) {
+          tool.output = ev.output;
+          tool.status = ev.status;
+          toolByOperationId.delete(ev.operationId);
+        }
+      } else {
+        const subagent = subagentByOperationId.get(ev.operationId);
+        if (subagent) {
+          subagent.output = ev.output;
+          subagent.status = ev.status;
+          subagentByOperationId.delete(ev.operationId);
+        }
       }
       return [];
-    }
-    case "subagent.called": {
-      const reply: Extract<AttemptConversationReply, { kind: "subagent" }> = {
-        kind: "subagent",
-        callId: ev.callId,
-        name: ev.name,
-        remoteUrl: ev.remoteUrl,
-      };
-      subagentByCallId.set(ev.callId, reply);
-      return [reply];
-    }
-    case "subagent.completed": {
-      const subagent = subagentByCallId.get(ev.callId);
-      if (subagent) {
-        subagent.output = ev.output;
-        subagent.status = ev.status;
-      }
-      return [];
-    }
     default: {
-      // 穷尽性检查在这里刻意不做:StreamEvent 是随 artifact 版本演进的开放词表,未识别的
-      // 事件(将来的新 type,或第三方 harness 的自定义变体)包成 raw 原样呈现,不静默丢弃、
-      // 也不因为一个不认识的条目让整个装配失败。
-      return [{ kind: "raw", raw: ev as unknown as JsonValue }];
+      const exhaustive: never = ev;
+      void exhaustive;
+      throw new Error("Unsupported StreamEvent variant in AttemptConversation.");
     }
   }
 }
@@ -502,7 +396,7 @@ export function usageTableData(evidence: AttemptEvidence): UsageTableData | null
 
   return {
     locator: evidence.locator,
-    experimentId: identity.experimentId,
+    experimentId: evidence.experimentId,
     evalId: identity.evalId,
     attempt: identity.attempt,
     verdict: result.verdict,

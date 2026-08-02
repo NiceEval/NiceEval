@@ -17,7 +17,6 @@ import {
   dedupeAttempts,
   openRecord,
   resolveLocator,
-  loadAnnotatedEvalSource,
   LocatorNotFoundError,
   MalformedLocatorError,
   LocatorCollisionError,
@@ -374,6 +373,47 @@ void assertScopeWarningKindExhaustive;
 // ───────────────────────── 时效:attempt.carried 与 fresh 口径 ─────────────────────────
 
 describe("时效:carried 投影与 fresh 口径", () => {
+  it("historyAttempts 对 carry 副本按稳定身份去重，且 fresh 不裁历史总体", async () => {
+    const root = await makeRoot();
+    const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({
+      experimentId: "e",
+      agent: "bub",
+      startedAt: "2026-07-01T08:00:00.000Z",
+      completedAt: "2026-07-01T08:10:00.000Z",
+    }));
+    await writeResultFile(monday, "q1/a1", record({
+      id: "q1",
+      attempt: 1,
+      startedAt: "2026-07-01T08:01:00.000Z",
+    }));
+    const tuesday = await writeSnapshot(root, "e", "2026-07-02T08-00-00-000Z", meta({
+      experimentId: "e",
+      agent: "bub",
+      startedAt: "2026-07-02T08:00:00.000Z",
+      completedAt: "2026-07-02T08:10:00.000Z",
+    }));
+    await writeResultFile(tuesday, "q1/a1", record({
+      id: "q1",
+      attempt: 1,
+      startedAt: "2026-07-01T08:01:00.000Z",
+      artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1",
+    }));
+
+    const results = await openRecord(root);
+    const latest = latestRunSample(results, { fresh: true });
+    expect(latest.attempts).toEqual([]);
+    expect(latest.historyAttempts).toHaveLength(1);
+    expect(latest.historyAttempts[0]!.run.dir).toBe(tuesday);
+
+    const current = currentSample(results);
+    expect(current.historyAttempts).toHaveLength(1);
+    expect(current.historyAttempts[0]!.run.dir).toBe(tuesday);
+    const fresh = current.freshOnly();
+    expect(fresh.attempts).toEqual([]);
+    expect(fresh.runs).toEqual([]);
+    expect(fresh.historyAttempts).toEqual(current.historyAttempts);
+  });
+
   it("latest({ fresh: true }):排除携带条目,被排除的题进 coverage.missingEvalIds", async () => {
     const root = await makeRoot();
     const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));

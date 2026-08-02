@@ -34,9 +34,6 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
 // Vercel Sandbox 的默认工作区路径(SDK writeFiles 默认落这里)。
 const VERCEL_WORKDIR = "/vercel/sandbox";
 
-// Rotate session when it has been alive >270s to stay under the plan cap (~360-390s).
-const ROTATE_THRESHOLD_MS = 270_000;
-const SESSION_TIMEOUT_MS = 1_200_000;
 // rotate 时停掉旧 session 的等待上限:stop 挂起时不无限拖住当前命令。
 const STOP_OLD_SESSION_TIMEOUT_MS = 15_000;
 
@@ -61,6 +58,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private vsb: InstanceType<typeof VSandbox>;
   private commandTimeoutMs?: number;
   private deadlineAt?: number;
+  private lifetimeMs?: number;
   private sessionCreatedAt: number;
   private runtime: string;
   readonly sandboxId: string;
@@ -76,6 +74,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     id: string,
     commandTimeoutMs: number | undefined,
     runtime: string,
+    lifetimeMs?: number,
     deadlineAt?: number,
   ) {
     this.vsb = vsb;
@@ -84,6 +83,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.deadlineAt = deadlineAt;
     this.sessionCreatedAt = Date.now();
     this.runtime = runtime;
+    this.lifetimeMs = lifetimeMs;
   }
 
   /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
@@ -98,6 +98,8 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       deadlineAt?: number;
       runtime?: "node20" | "node24";
       snapshotId?: string;
+      /** 实例 session 寿命；由当前 Vercel project plan 在 create 时真实校验。 */
+      lifetimeMs?: number;
       feedback?: import("../types.ts").ScopedFeedback;
     } = {},
   ): Promise<VercelSandbox> {
@@ -116,22 +118,30 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // 给了 snapshotId 就从快照起 microVM(预制模板:烘焙好 agent CLI 的快照)。
     const sourceParams = opts.snapshotId ? { source: { type: "run", snapshotId: opts.snapshotId } } : {};
 
-    // session timeout 固定为 1200000ms (20 min)。不随 commandTimeoutMs 放大:
-    // 实测发现超大的 timeout 值(>1200s)会导致 Vercel 返回实际更短的 session。
-    // 1200000ms 是经验证能跑完 ~355s eval 的上限。
-    const vsb = await VSandbox.create({ runtime, timeout: SESSION_TIMEOUT_MS, ...sourceParams, ...credParams } as Parameters<typeof VSandbox.create>[0]);
+    // 未声明 lifetimeMs 时交给 provider 选择默认值；声明后原值交给 provider 校验，绝不按
+    // 本地假定的账号上限静默压短。
+    const vsb = await VSandbox.create({
+      runtime,
+      ...(opts.lifetimeMs !== undefined ? { timeout: opts.lifetimeMs } : {}),
+      ...sourceParams,
+      ...credParams,
+    } as Parameters<typeof VSandbox.create>[0]);
     // sandboxId = 沙箱的持久 name(留存唤醒的查找键),不是当前 session 的 sessionId——
     // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
     // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
     const id = vsb.name;
-    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.deadlineAt);
+    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.lifetimeMs, opts.deadlineAt);
   }
 
-  // 当 session 存活超过 ROTATE_THRESHOLD_MS 时，拍快照并换用新 session。
-  // 这绕过了 Vercel plan 对 extendTimeout 的限制(始终返回 HTTP 400)。
-  private async rotateIfNeeded(): Promise<void> {
+  // 当前 session 的真实剩余寿命不足以覆盖即将执行的命令时，拍快照并请求一条新 session。
+  // 是否允许该请求由当前 project plan 裁决，不维护一张会漂移的本地上限表。
+  private async rotateIfNeeded(minRemainingMs: number | undefined): Promise<void> {
+    if (minRemainingMs === undefined) return;
+    const currentSession = this.vsb.currentSession();
+    const remainingMs = currentSession.createdAt.getTime() + currentSession.timeout - Date.now();
+    if (remainingMs >= minRemainingMs) return;
+    const requestedLifetimeMs = this.lifetimeMs ?? Math.max(currentSession.timeout, minRemainingMs);
     const elapsed = Date.now() - this.sessionCreatedAt;
-    if (elapsed < ROTATE_THRESHOLD_MS) return;
 
     const token = process.env.VERCEL_API_TOKEN;
     const teamId = process.env.VERCEL_TEAM_ID;
@@ -143,7 +153,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       const snapshotId = snap.snapshotId;
       const newVsb = await VSandbox.create({
         runtime: this.runtime,
-        timeout: SESSION_TIMEOUT_MS,
+        timeout: requestedLifetimeMs,
         source: { type: "snapshot", snapshotId },
         ...credParams,
       } as Parameters<typeof VSandbox.create>[0]);
@@ -216,8 +226,11 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
-    await this.rotateIfNeeded();
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+    // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
+    // 普通 provider 调用或显式的单命令 timeout 只是这条命令的执行上限，不能为此读取
+    // currentSession()/轮换实例；前者在留存、文件传输等常规操作中甚至未必可用。
+    await this.rotateIfNeeded(this.deadlineAt === undefined ? undefined : limit.timeoutMs);
     const finished = await this.vsb.runCommand({
       cmd,
       args: [...args],

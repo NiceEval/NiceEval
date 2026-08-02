@@ -158,13 +158,14 @@ The app's response contains more than reply text — the `tool_calls` in a Chat 
 ```ts
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
-  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
-  | { type: "action.result"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" | "rejected" }
-  | { type: "skill.loaded"; skill: string; callId?: string }
-  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
-  | { type: "subagent.completed"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" }
+  | { type: "operation.started"; operationId: string; operation:
+      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "subagent"; name: string; remoteUrl?: string } }
+  | { type: "operation.finished"; operationId: string; kind: "tool";
+      output?: JsonValue; status: "completed" | "failed" | "rejected" }
+  | { type: "operation.finished"; operationId: string; kind: "subagent";
+      output?: JsonValue; status: "completed" | "failed" }
+  | { type: "skill.loaded"; skill: string; operationId?: string }
   | { type: "input.requested"; request: InputRequest }
   | { type: "thinking"; text: string }
   | { type: "compaction"; reason?: string }
@@ -179,8 +180,15 @@ Parsing is one "response field → event" mapping. Hand-written it looks like th
 
     const events: StreamEvent[] = [];
     for (const call of reply.tool_calls ?? []) {
-      events.push({ type: "action.called", callId: call.id,
-                    name: call.function.name, input: JSON.parse(call.function.arguments) });
+      events.push({
+        type: "operation.started",
+        operationId: call.id,
+        operation: {
+          kind: "tool",
+          name: call.function.name,
+          input: JSON.parse(call.function.arguments),
+        },
+      });
     }
     if (reply.content) events.push({ type: "message", role: "assistant", text: reply.content });
 
@@ -213,7 +221,7 @@ Once normalized, whichever events you emit determine which family of assertions 
 | Events you emit | Assertions unlocked |
 |---|---|
 | `message` | `t.reply`, `t.messageIncludes()`, Judge conversation material |
-| `action.called` / `action.result` (paired by `callId`) | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
+| tool `operation.started` / `operation.finished` (paired by `operationId`) | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
 | `input.requested` (together with status `"waiting"`) | `t.parked()`, `t.requireInputRequest()`, `t.respond()` (step five) |
 | `thinking` / `compaction` / `error` | The matching assertions and o11y counts |
 
@@ -226,21 +234,22 @@ The Chat Completions response **does not guarantee a complete process record**. 
 When the app stops mid-turn to wait for a human (tool approval, missing information), `send` has obligations on both sides:
 
 - **The pausing turn**: return `status: "waiting"`, and emit one `input.requested` event with a stable `id` per pending question — `t.parked()` and `t.requireInputRequest()` read them, and answers are matched by this `id`.
-- **The answer turn**: `t.respond(...)` in the eval reaches the Adapter as **just another ordinary `send`** (still the same session line, the same state); the human verdict arrives in structured form via `input.responses`, each entry carrying `requestId` and `optionId` or `text` (for the shapes, see [Inputs for the different answers](/explanation/adapter)). The Adapter hands the verdict back to the app first, then continues fetching the result. For a call a human rejected, set the `action.result`'s `status` to `"rejected"` rather than `"failed"` — a rejection is a human decision, not a tool failure, so `noFailedActions()` does not misfire.
+- **The answer turn**: `t.respond(...)` in the eval reaches the Adapter as **just another ordinary `send`** (still the same session line, the same state); the human verdict arrives in structured form via `input.responses`, each entry carrying `requestId` and `optionId` or `text` (for the shapes, see [Inputs for the different answers](/explanation/adapter)). The Adapter hands the verdict back to the app first, then continues fetching the result. For a call a human rejected, set the tool `operation.finished` event's `status` to `"rejected"` rather than `"failed"` — a rejection is a human decision, not a tool failure, so `noFailedActions()` does not misfire.
 
-The "scene read halfway through when the turn paused" (say, an SSE stream read halfway through) also lives on `ctx.session`: call `ctx.session.hold(scene)` when pausing, and `ctx.session.take()` at the start of the answer turn to get it back — taking it clears it, a single consumption.
+The "scene read halfway through when the turn paused" (say, an SSE stream read halfway through) also lives on `ctx.session`: create an adapter-private `createSessionSlot<Pending>()`, call `ctx.session.set(slot, scene)` when pausing, and `ctx.session.take(slot)` at the start of the answer turn to get it back — taking it clears it, a single consumption.
 
 HITL almost always happens on streaming interfaces (pausing mid-stream), so this step's example switches to an app that passes native events through over SSE — it exercises everything from the earlier steps together (complete runnable version in the [tier1 example](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)):
 
 ```ts
 // agents/my-app.ts
-import { defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
 const BASE_URL = "http://localhost:5299";               // the app's own port; evals do not manage the process
 
 interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId: string }
+const pendingSlot = createSessionSlot<Pending>("my-app/pending");
 
 function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
   return driveFrameStream(cursor, stream, ctx, (frame) => {
@@ -249,7 +258,7 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
       return;
     }
     if (frame.type === "approval_request") {            // ← this step: the app stops for approval; hold the scene
-      ctx.session.hold<Pending>({ cursor, stream, callId: frame.toolCallId });
+      ctx.session.set(pendingSlot, { cursor, stream, callId: frame.toolCallId });
       return { pause: { id: frame.toolCallId, action: frame.toolName,
                         options: [{ id: "approve" }, { id: "deny" }] } };
       // driveFrameStream on pause: emits an input.requested, sets status to "waiting", stops reading the stream
@@ -261,7 +270,7 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
 export default defineAgent({
   name: "my-app",
   async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-    const held = ctx.session.take<Pending>();
+    const held = ctx.session.take(pendingSlot);
     if (held) {                                         // ← t.respond("approve"): an ordinary send; deliver the verdict first
       const approved = input.responses?.[0]?.optionId === "approve";  // with multiple pending requests, match by requestId
       if (!approved) held.stream.markRejected(held.callId);
@@ -284,7 +293,7 @@ export default defineAgent({
 });
 ```
 
-For interfaces that don't need HITL, delete the three parts related to the held pause-scene (`Pending`, `hold`, and the opening `take` branch) — the rest stays the same. For the complete mental model of pausing / answering / resuming, see [HITL](/explanation/hitl).
+For interfaces that don't need HITL, delete the three parts related to the held pause-scene (`Pending`, its session slot, and the opening `take` branch) — the rest stays the same. For the complete mental model of pausing / answering / resuming, see [HITL](/explanation/hitl).
 
 **This step unlocks**: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`, and the precise assertion `calledTool(..., { status: "rejected" })`.
 

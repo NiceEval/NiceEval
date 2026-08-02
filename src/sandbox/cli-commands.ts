@@ -53,6 +53,22 @@ interface Io {
 
 const LEASE_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * 刷新 provider 的留存期限。没有期限的 provider 必须省略字段，而不是把
+ * `expiresAt: undefined` 带进逐条目 JSON；后者既不是 JSON 值，也会被共享持久层拒绝。
+ */
+function refreshedEntryState(
+  entry: KeptSandboxEntry,
+  state: KeptSandboxEntry["state"],
+  now: string,
+): KeptSandboxEntry {
+  const { expiresAt: _previousExpiresAt, ...withoutExpiresAt } = entry;
+  const expiresAt = computeExpiresAt(entry.provider, now);
+  return expiresAt === undefined
+    ? { ...withoutExpiresAt, state }
+    : { ...withoutExpiresAt, state, expiresAt };
+}
+
 /** `list`/`history` 一次性面板的传输能力:是 TTY 且没有要求朴素输出时才画框
  *  (docs/feature/sandbox/cli.md「输出体裁」)——`sandbox` 命令组只在启动时探测一次,
  *  不像 `exp` 的 live 面板那样需要随 resize 重新判断。 */
@@ -347,11 +363,7 @@ async function enterCommand(root: string, ids: string[], flags: SandboxCommandFl
 
   const result = await withLease(root, id, entry, "enter", io, async () => {
     await wakeDetached(entry.provider, entry.sandboxId);
-    await updateKeptEntry(root, id, (current) => ({
-      ...current,
-      state: "alive",
-      expiresAt: computeExpiresAt(current.provider, new Date().toISOString()),
-    }));
+    await updateKeptEntry(root, id, (current) => refreshedEntryState(current, "alive", new Date().toISOString()));
     let code: number;
     try {
       code = await openInteractiveShell(entry.provider, entry.sandboxId, entry.workdir);
@@ -370,11 +382,7 @@ async function enterCommand(root: string, ids: string[], flags: SandboxCommandFl
     // shell 退出(含 Ctrl+C)后自动送回休眠——「休眠不烧资源」不因进去看过一眼失效。
     try {
       await suspendDetached(entry.provider, entry.sandboxId);
-      await updateKeptEntry(root, id, (current) => ({
-        ...current,
-        state: "dormant",
-        expiresAt: computeExpiresAt(current.provider, new Date().toISOString()),
-      }));
+      await updateKeptEntry(root, id, (current) => refreshedEntryState(current, "dormant", new Date().toISOString()));
     } catch (e) {
       io.err(`failed to re-suspend ${entry.sandboxId}: ${e instanceof Error ? e.message : String(e)}\n`);
       await updateKeptEntry(root, id, { state: "alive" });

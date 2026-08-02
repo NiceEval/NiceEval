@@ -84,7 +84,7 @@ export async function runVerify(): Promise<void> {
   assert.ok(subagentExec.includes("delegate_research"), "执行树缺少 delegate_research 调用节点");
   assert.ok(
     subagentExec.toLowerCase().includes("research"),
-    "执行树缺少 research 子agent 层级节点——namespace 没有归一成 subagent.called/subagent.completed",
+    "执行树缺少 research 子agent 层级节点——namespace 没有归一成 subagent operation 生命周期",
   );
 
   // 用例五:show --timing——未声明 tracing 面的仓库,--timing 不挂 OTel 子树。

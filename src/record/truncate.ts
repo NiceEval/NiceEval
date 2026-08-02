@@ -4,7 +4,7 @@
 // 任意字符串值;commands.json 不在适用范围内(失败诊断的完整语义单位,全量原样落盘)。
 // 没有 flag、没有配置项;截断永远不影响判决(落盘是证据,不是评分输入)。
 
-import type { StreamEvent, TraceSpan, Truncation } from "../types.ts";
+import type { JsonValue, StreamEvent, TraceSpan, Truncation } from "../types.ts";
 
 /** 每个字符串值的落盘上限(UTF-8 字节)。 */
 export const ARTIFACT_VALUE_MAX_BYTES = 256 * 1024;
@@ -29,7 +29,7 @@ function truncateString(value: string, originalBytes: number): string {
  * 深度遍历一个 JSON 值,截断其中超限的字符串;返回(可能新建的)值与收集到的截断记录。
  * `path` 用点分段(数组下标同样入段),事件里从字段名起、span 属性里从 attribute key 起。
  */
-function truncateJsonValue(value: unknown, path: string, out: Truncation[]): unknown {
+function truncateJsonValue(value: JsonValue, path: string, out: Truncation[]): JsonValue {
   if (typeof value === "string") {
     const bytes = encoder.encode(value).length;
     if (bytes <= ARTIFACT_VALUE_MAX_BYTES) return value;
@@ -47,7 +47,7 @@ function truncateJsonValue(value: unknown, path: string, out: Truncation[]): unk
   }
   if (value !== null && typeof value === "object") {
     let changed = false;
-    const next: globalThis.Record<string, unknown> = {};
+    const next: globalThis.Record<string, JsonValue> = {};
     for (const [k, v] of Object.entries(value)) {
       const r = truncateJsonValue(v, path ? `${path}.${k}` : k, out);
       if (r !== v) changed = true;
@@ -62,9 +62,9 @@ function truncateJsonValue(value: unknown, path: string, out: Truncation[]): unk
 export function truncateEvents(events: readonly StreamEvent[]): StreamEvent[] {
   return events.map((event) => {
     const out: Truncation[] = [];
-    const next: globalThis.Record<string, unknown> = {};
+    const next: globalThis.Record<string, JsonValue> = {};
     let changed = false;
-    for (const [k, v] of Object.entries(event)) {
+    for (const [k, v] of Object.entries(event) as [string, JsonValue][]) {
       if (k === "type" || k === "truncated") {
         next[k] = v;
         continue;
@@ -74,7 +74,7 @@ export function truncateEvents(events: readonly StreamEvent[]): StreamEvent[] {
       next[k] = r;
     }
     if (!changed) return event;
-    return { ...next, truncated: [...(event.truncated ?? []), ...out] } as StreamEvent;
+    return { ...event, ...next, truncated: [...(event.truncated ?? []), ...out] } as StreamEvent;
   });
 }
 
@@ -83,7 +83,7 @@ export function truncateSpans(spans: readonly TraceSpan[]): TraceSpan[] {
   return spans.map((span) => {
     const out: Truncation[] = [];
     const attributes = span.attributes
-      ? (truncateJsonValue(span.attributes, "", out) as TraceSpan["attributes"])
+      ? truncateJsonValue(span.attributes, "", out) as TraceSpan["attributes"]
       : span.attributes;
     if (out.length === 0) return span;
     return { ...span, attributes, truncated: [...(span.truncated ?? []), ...out] };

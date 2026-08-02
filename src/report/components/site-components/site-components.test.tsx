@@ -61,6 +61,7 @@ function snap(spec: {
   runSeq += 1;
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -398,7 +399,7 @@ describe("copyFixPromptData", () => {
     expect(data.prompt).toContain('eval "fix/errored"');
     expect(data.prompt).toContain("equals(42)");
     expect(data.prompt).toContain("docker daemon unreachable");
-    expect(data.prompt).toMatch(/inspect: niceeval show @1[0-9a-z]{7}/);
+    expect(data.prompt).toMatch(/inspect: niceeval show @1[0-9A-HJKMNP-TV-Z]{12}/);
   });
 
   it("全 passed 时 prompt 为空串、failures 为 0", async () => {

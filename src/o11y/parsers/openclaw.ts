@@ -12,6 +12,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
 
 /**
  * OpenClaw 特有工具别名(CLI 自己的 transcript 词汇,不会撞用户域名,裸动词可 opt-in)
@@ -50,12 +51,13 @@ function num(obj: unknown, ...keys: string[]): number {
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as JsonValue;
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
     } catch {
       return value;
     }
   }
-  return (value ?? {}) as JsonValue;
+  return normalizeJsonValue(value, {});
 }
 
 /** content parts / 字符串 → 纯文本(text 类 part 拼接)。 */
@@ -77,8 +79,8 @@ function extractText(content: unknown): string {
 
 /**
  * OpenClaw session transcript(JSONL,pi-agent 系消息格式)→ 标准事件流 + 用量 + 压缩计数。
- * assistant 消息的 text / thinking / toolCall parts → message / thinking / action.called,
- * toolResult 消息按 toolCallId 配对成 action.result(isError → failed),消息级 usage 逐条
+ * assistant 消息的 text / thinking / toolCall parts → message / thinking / operation.started,
+ * toolResult 消息按 toolCallId 配对成 operation.finished(isError → failed),消息级 usage 逐条
  * 累加,compaction 条目计入压缩次数。认不出 / 解析失败的行标 `parseSuccess: false` 并跳过,
  * 不猜测——transcript 不完整时负断言不可信(契约见 sdk/openclaw/README.md)。
  */
@@ -167,11 +169,14 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
             const name = String(get(part, "name") ?? get(part, "toolName") ?? "unknown");
             const callId = str(get(part, "id")) ?? str(get(part, "toolCallId")) ?? str(get(part, "tool_call_id")) ?? nextSynthId();
             events.push({
-              type: "action.called",
-              callId,
-              name,
-              input: coerceArgs(get(part, "arguments") ?? get(part, "args") ?? get(part, "input")),
-              tool: normalizeToolName(name),
+              type: "operation.started",
+              operationId: callId,
+              operation: {
+                kind: "tool",
+                name,
+                input: coerceArgs(get(part, "arguments") ?? get(part, "args") ?? get(part, "input")),
+                tool: normalizeToolName(name),
+              },
             });
           }
         }
@@ -190,8 +195,9 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
         const isError = get(msg, "isError") === true || get(msg, "is_error") === true;
         const output = get(msg, "output") ?? get(msg, "result") ?? get(msg, "content");
         events.push({
-          type: "action.result",
-          callId,
+          type: "operation.finished",
+          operationId: callId,
+          kind: "tool",
           output: (typeof output === "string" ? output : (extractText(output) || output)) as JsonValue,
           status: isError ? "failed" : "completed",
         });

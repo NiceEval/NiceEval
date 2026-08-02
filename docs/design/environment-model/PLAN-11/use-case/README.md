@@ -44,4 +44,4 @@
 3. 收敛 Eval 与 Experiment 成员并建立 baseline,再由 AgentProvisioner Ensure CLI。
 4. 独立 state lifecycle 按 fresh Attempt 或 reuse window cadence load。
 5. 重建 turn 前 Fixture,执行并验证 Agent runtime,再运行三方最终屏障。
-6. 最后一次 Agent turn 后才通过受管 Fixture 挂载隐藏 verifier;scoring 后先清理隐藏材料,再按 fresh/reuse 顺序执行 runtime、state、Eval 与 Sandbox 收尾。
+6. 最后一次 Agent turn 后才通过受管 Fixture 挂载隐藏 verifier;断言求值后先清理隐藏材料,再按 fresh/reuse 顺序执行 runtime、state、Eval 与 Sandbox 收尾。

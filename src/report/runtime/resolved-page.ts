@@ -33,7 +33,9 @@ import { ATTEMPT_PAGE_ID } from "../components/shared.ts";
  */
 function attemptLocatorOf(target: ReportTarget): string | undefined {
   if (target.page !== ATTEMPT_PAGE_ID) return undefined;
-  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
+  const params = target.params;
+  if (params === undefined || params === null || typeof params !== "object" || Array.isArray(params)) return undefined;
+  const locator = params.locator;
   return typeof locator === "string" ? locator : undefined;
 }
 

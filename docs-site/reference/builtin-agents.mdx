@@ -417,7 +417,7 @@ The two shapes differ in how trustworthy negative assertions (`notCalledTool` an
 Each agent SDK's streaming protocol is a generic protocol defined by the SDK, not some app's private format — the native-frame-to-standard-event mapping knowledge lives in the official package (exported from `niceeval/adapter`), so when writing your own non-invasive adapter only the **transport glue** remains (which endpoint the app puts the stream on, which endpoint approvals go through). Driving the loop frame by frame is itself an official piece (`driveFrameStream`, see the next section), so no hand-written `for` loop:
 
 ```ts
-import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
+import { createSessionSlot, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 
 const frames = sseJsonFrames<SDKMessage>(res.body);   // Standard SSE → per-frame JSON
 const stream = createClaudeSdkEventStream();               // SDKMessage → standard events
@@ -426,43 +426,50 @@ return driveFrameStream(frames, stream, ctx);         // Feed stream.add() frame
 
 - **`createClaudeSdkEventStream`** (Claude Agent SDK `SDKMessage`): `assistant` text/tool_use blocks, `user` tool_result blocks, `system`/`permission_denied` (→ `rejected`), `result` usage; `markRejected()` registers denied calls.
 - **`createPiAgentEventStream`** (pi-agent-core `AgentEvent`): text/thinking/usage from `message_end`, tool pairs from `tool_execution_start/end`.
-- **`createCodexThreadEventStream`** (Codex SDK `ThreadEvent`): message-class frames from `agent_message`/`reasoning`, tool items (`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`), usage from `turn.completed`, error frames. The waterfall needs the codex CLI's native OTLP (the `[otel]` block in config.toml) sending spans to [NiceEval](https://niceeval.com/), normalized with the official `mapCodexSpans`.
+- **`createCodexThreadEventStream`** (Codex SDK `ThreadEvent`): message-class frames from `agent_message`/`reasoning`, tool items (`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → paired tool `operation.started` + `operation.finished`), usage from `turn.completed`, error frames. The waterfall needs the codex CLI's native OTLP (the `[otel]` block in config.toml) sending spans to [NiceEval](https://niceeval.com/), normalized with the official `mapCodexSpans`.
 
 Runnable references: the claude-sdk / pi-sdk / codex-sdk adapters under [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) are exactly these three converters + `driveFrameStream` + transport glue.
 
 ## Generic "assembly" pieces: `driveFrameStream` / `deltaStream` + `ctx.session`
 
-Inside a hand-written send, only three truly independent parts exist: transport (how to send), reduce (raw data → events, handled by the converters above), and orchestration (session continuation + HITL pause/resume). The third part is protocol-agnostic, pure control-flow pattern — the accessors for session continuation (`id`/`capture`, `history`) and the HITL paused-turn scene (`hold`/`take`) hang directly off `ctx.session` (`AgentSession`, see [Adapter concept](/explanation/adapter#context-agentcontext)); nothing to import separately and nothing to declare. What actually remains reusable across protocols is just two official pieces:
+Inside a hand-written send, only three truly independent parts exist: transport (how to send), reduce (raw data → events, handled by the converters above), and orchestration (session continuation + HITL pause/resume). The third part is protocol-agnostic, pure control-flow pattern — session continuation (`id`/`capture`) and adapter-private typed slots hang directly off `ctx.session` (`AgentSession`, see [Adapter concept](/explanation/adapter#context-agentcontext)). Create a slot once with `createSessionSlot<T>()`, then use `set(slot, value)` and `take(slot)` for a paused scene. What actually remains reusable across protocols is just two official pieces:
 
 | Piece | What it solves |
 |---|---|
-| `driveFrameStream(cursor, reducer, ctx, onFrame?)` | Feeds the reducer frame by frame, handles transport frames, detects the HITL pause signal — the loop itself collapsed into one function. On pause the `cursor` is not closed: store it with `ctx.session.hold(cursor)` inside `onFrame`, and on the answer turn `ctx.session.take()` retrieves it and keeps reading, without issuing a new request |
+| `driveFrameStream(cursor, reducer, ctx, onFrame?)` | Feeds the reducer frame by frame, handles transport frames, detects the HITL pause signal — the loop itself collapsed into one function. On pause the `cursor` is not closed: store it with `ctx.session.set(pendingSlot, cursor)` inside `onFrame`, and on the answer turn `ctx.session.take(pendingSlot)` retrieves it and keeps reading, without issuing a new request |
 | `deltaStream(spec)` | Generic accumulator for token-by-token / per-argument deltas — for protocols with "no whole-chunk landing frames" like raw OpenAI/Anthropic streaming APIs or your own hand-rolled token-by-token backend; declare "which operation this frame belongs to" (text delta / tool-argument delta / finalize) and it manages assembly timing itself |
 
 ```ts
+// Create this once at adapter module scope.
+const pendingSlot = createSessionSlot<Pending>("my-app/pending");
+
 // First thing in send: check for a held scene (HITL answer turn)
-const pending = ctx.session.take<Pending>();
+const pending = ctx.session.take(pendingSlot);
 if (pending) {
   // ...match verdicts from input.responses, hand the approval back to the app...
   return driveFrameStream(pending.cursor, pending.stream, ctx, onFrame);
 }
 
-// Normal turn: session continuation via ctx.session.id / capture; on pause, ctx.session.hold stores the cursor
+// Normal turn: session continuation via ctx.session.id / capture; on pause, a typed slot stores the cursor
 return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
   ctx.session.capture(stream.sessionId);
-  const gated = derived.find((e) => e.type === "action.called" && e.name === GATED_TOOL_NAME);
-  if (gated?.type === "action.called") {
-    ctx.session.hold<Pending>({ cursor, stream, toolUseId: gated.callId });
-    return { pause: { id: gated.callId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
+  const gated = derived.find((event) =>
+    event.type === "operation.started" &&
+    event.operation.kind === "tool" &&
+    event.operation.name === GATED_TOOL_NAME
+  );
+  if (gated?.type === "operation.started") {
+    ctx.session.set(pendingSlot, { cursor, stream, toolUseId: gated.operationId });
+    return { pause: { id: gated.operationId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
   }
 });
 ```
 
-The three Tier 1 examples (claude-sdk and pi-sdk use `driveFrameStream` + `ctx.session.hold`/`take`; codex-sdk uses only `driveFrameStream`) have been rewritten on these pieces — the adapters are down to transport plus the "does this frame need extra handling" decision in `onFrame`, with no hand-written loops or module-level Maps.
+The three Tier 1 examples (claude-sdk and pi-sdk use `driveFrameStream` plus typed session slots; codex-sdk uses only `driveFrameStream`) are built on these pieces — the adapters are down to transport plus the "does this frame need extra handling" decision in `onFrame`, with no hand-written loops or module-level Maps.
 
 ## `turnFromAiSdk`: AI SDK result → event stream converter
 
-`turnFromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed `action.result`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
+`turnFromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed tool `operation.finished`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
 
 ```ts
 import { defineAgent, turnFromAiSdk } from "niceeval/adapter";
@@ -483,9 +490,9 @@ The `status` comes from the converter: `"waiting"` when there is a tool approval
 - The system under test is an AI SDK app (`useChat` backend): the built-in `uiMessageStreamAgent` connects non-invasively with zero mapping (including HITL).
 - The system under test is another agent system (HTTP / gRPC service): connect non-invasively and hand-write the event mapping (official converters cover most of it) — all five examples under [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) take this path; if the app already has OTel instrumentation, wire it up for a bonus waterfall.
 - You need the call waterfall (the trace in `niceeval view`): all three of `claude-code` / `codex` / `bub` emit OTLP themselves (claude-code via the CLI's beta telemetry; its spans carry structure and timing only); adapters you write yourself just declare `tracing` (see the OTel guide).
-- You need human approval / multi-step confirmation (HITL): `uiMessageStreamAgent` supports it natively (AI SDK v7 tool approval); none of the three sandbox agents do; for other systems write your own adapter, assembled from `driveFrameStream` + `ctx.session.hold`/`take` (the pi-sdk / claude-sdk Tier 1 examples have ready-made patterns).
+- You need human approval / multi-step confirmation (HITL): `uiMessageStreamAgent` supports it natively (AI SDK v7 tool approval); none of the three sandbox agents do; for other systems write your own adapter, assembled from `driveFrameStream` plus typed session slots (the pi-sdk / claude-sdk Tier 1 examples have ready-made patterns).
 - You want to run a coding agent that edits code, inspect diffs, and judge tool calls: `claude-code` / `codex` / `bub` (send/receive + event stream + session continuation + workspace + sandbox).
-- Your backend protocol is home-grown with no official SDK converter: do not hand-write send from scratch — pick a reduce shape (a small mapping for whole-chunk landing, `deltaStream` for token-by-token deltas), take `ctx.session.id`/`capture` or `ctx.session.history` for session continuation, add `ctx.session.hold`/`take` if you have HITL, and the assembly is your send.
+- Your backend protocol is home-grown with no official SDK converter: do not hand-write send from scratch — pick a reduce shape (a small mapping for whole-chunk landing, `deltaStream` for token-by-token deltas), use `ctx.session.id`/`capture` for session continuation, add a typed session slot if you have HITL, and the assembly is your send.
 
 ## Related reading
 

@@ -79,26 +79,42 @@ export interface Truncation {
  * `truncated` 只由 results writer 在落盘时刻写入(运行时全量,落盘截断);adapter 不产出它。
  */
 export type StreamEvent = { truncated?: Truncation[] } & (
-  /** 一条文本消息(assistant 回复或 user 输入);`loc` 是可选的源码位置,用于把消息叠回 eval 源码。 */
-  | { type: "message"; role: "assistant" | "user"; text: string; loc?: SourceLoc }
-  /** 发起一次工具/动作调用;`tool` 是归一化后的规范工具名,原始名保留在 DerivedFacts.ToolCall.originalName。 */
-  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
-  /** 一次工具/动作调用的结果,按 `callId` 与对应的 `action.called` 对位。 */
+  /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */
+  | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
+  /**
+   * eval 作者发出的用户输入；`loc` 把消息叠回源码，`sourceOrder` 与断言、直接给分共用同一条
+   * attempt 级序列。历史事件可省略，当前 SessionManager 产出的 user message 必写。
+   */
+  | { type: "message"; role: "user"; text: string; loc?: SourceLoc; sourceOrder?: number }
+  /** 发起一次工具或子 agent 操作；嵌套 `kind` 让两种 started 形状保持闭合。 */
   | {
-      type: "action.result";
-      callId: string;
+      type: "operation.started";
+      operationId: string;
+      operation:
+        | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+        | { kind: "subagent"; name: string; remoteUrl?: string };
+    }
+  /** 工具操作完成；人工拒绝只属于工具操作。 */
+  | {
+      type: "operation.finished";
+      operationId: string;
+      kind: "tool";
       output?: JsonValue;
       status: "completed" | "failed" | "rejected";
     }
+  /** 子 agent 操作完成；子 agent 没有人工拒绝状态。 */
+  | {
+      type: "operation.finished";
+      operationId: string;
+      kind: "subagent";
+      output?: JsonValue;
+      status: "completed" | "failed";
+    }
   /**
    * 一次 Skill 加载:一等事件,由 adapter 从原生协议里识别出「这是加载 Skill」并直接产出,
-   * 不靠 renderer 按工具名/文本猜。`callId` 仅当原生协议把 Skill 加载表达成可关联的工具调用时才有。
+   * 不靠 renderer 按工具名/文本猜。`operationId` 仅当原生协议把 Skill 加载表达成可关联的工具调用时才有。
    */
-  | { type: "skill.loaded"; skill: string; callId?: string }
-  /** 发起一次子 agent 调用(如 Task 工具、远程 sub-agent);`remoteUrl` 仅远程子 agent 有。 */
-  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
-  /** 一次子 agent 调用的结果,按 `callId` 与对应的 `subagent.called` 对位。 */
-  | { type: "subagent.completed"; callId: string; output?: JsonValue; status: "completed" | "failed" }
+  | { type: "skill.loaded"; skill: string; operationId?: string }
   /** 模型停下来向人请求输入(HITL);具体请求内容见 InputRequest。 */
   | { type: "input.requested"; request: InputRequest }
   /** 模型的思考/推理文本(非最终回复)。 */
@@ -116,12 +132,12 @@ export type StreamEvent = { truncated?: Truncation[] } & (
 );
 
 /**
- * core 从事件流折叠出的结构化事实(deriveRunFacts)。折叠按 callId 把 called 与 result 对成一条
- * 调用:配上 result 的取 result 的状态;只有 called、尚未等到 result 的调用状态是 `pending`——
+ * core 从事件流折叠出的结构化事实(deriveRunFacts)。折叠按 operationId 把 started 与 finished 对成一条
+ * 调用:配上 finished 的取其状态;只有 started、尚未等到 finished 的调用状态是 `pending`——
  * HITL 停在审批上的调用就以这个状态被断言,不是容错分支(见 docs/feature/adapters/architecture/events.md)。
  */
 export interface ToolCall {
-  callId: string;
+  operationId: string;
   name: ToolName;
   originalName?: string;
   input: JsonValue;
@@ -130,11 +146,11 @@ export interface ToolCall {
 }
 
 export interface SubagentCall {
-  callId: string;
+  operationId: string;
   name: string;
   remoteUrl?: string;
   output?: JsonValue;
-  /** 子 agent 委派没有 rejected 状态(subagent.completed 只报 completed / failed)。 */
+  /** 子 agent 委派没有 rejected 状态(operation.finished 只报 completed / failed)。 */
   status: "pending" | "completed" | "failed";
 }
 

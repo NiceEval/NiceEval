@@ -1,5 +1,5 @@
 // Eval 源码的归一化与哈希:discovery 时的捕获(src/runner/eval-source.ts)与证据重建
-// (annotated-source.ts 的 buildAnnotatedEvalSource)必须对同一份源码算出同一个 SHA-256,
+// (annotated-source.ts 的完整源码树装配)必须对同一份源码算出同一个 SHA-256,
 // 所以归一化规则与哈希算法只住这一处 —— 两侧各自 import,不各写一份可能跑偏的实现。
 //
 // 只做归一化 + 哈希,不碰文件系统:住在 results/ 而不是 shared/,是因为 shared/ 的既有约定

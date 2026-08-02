@@ -189,8 +189,8 @@ interface ExperimentStateLifecycle {
 
 | 值 | save 条件 |
 |---|---|
-| `after-load` | 只要 load 成功,后续 Fixture、runtime、Agent turn、verifier、scoring 或 teardown 失败也在 outer-finally 尝试 save |
-| `attempt-succeeded` | 仅用于 fresh;本 Attempt 的 Agent turn、verifier、scoring、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save |
+| `after-load` | 只要 load 成功,后续 Fixture、runtime、Agent turn、verifier、断言求值或 teardown 失败也在 outer-finally 尝试 save |
+| `attempt-succeeded` | 仅用于 fresh;本 Attempt 的 Agent turn、verifier、断言求值、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save |
 
 两种策略都在隐藏判分 cleanup 失败时跳过 save,避免隐藏材料进入 checkpoint。
 Provider 硬丢实例时 save 记为 `unavailable`,不是假装成功。

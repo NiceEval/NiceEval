@@ -122,7 +122,7 @@
     },
     {
       "source": "/zh/how-to/scoring-guide",
-      "destination": "/zh/tutorials/scoring-guide"
+      "destination": "/zh/tutorials/evaluation-kinds"
     },
     {
       "source": "/zh/how-to/ci-integration",
@@ -230,7 +230,7 @@
     },
     {
       "source": "/zh/guides/scoring-guide",
-      "destination": "/zh/tutorials/scoring-guide"
+      "destination": "/zh/tutorials/evaluation-kinds"
     },
     {
       "source": "/zh/guides/runner",
@@ -402,7 +402,15 @@
     },
     {
       "source": "/guides/scoring-guide",
-      "destination": "/tutorials/scoring-guide"
+      "destination": "/tutorials/evaluation-kinds"
+    },
+    {
+      "source": "/tutorials/scoring-guide",
+      "destination": "/tutorials/evaluation-kinds"
+    },
+    {
+      "source": "/zh/tutorials/scoring-guide",
+      "destination": "/zh/tutorials/evaluation-kinds"
     },
     {
       "source": "/guides/runner",
@@ -521,7 +529,7 @@
                   "tutorials/experiments",
                   "tutorials/fixtures",
                   "tutorials/dataset-fanout",
-                  "tutorials/scoring-guide"
+                  "tutorials/evaluation-kinds"
                 ]
               },
               {
@@ -560,7 +568,7 @@
                 ]
               },
               {
-                "group": "Interaction & Scoring",
+                "group": "Interaction & Assertions",
                 "pages": [
                   "explanation/drive",
                   "explanation/hitl",
@@ -677,7 +685,7 @@
                   "zh/tutorials/fixtures",
                   "zh/tutorials/dataset-fanout",
                   "zh/tutorials/criteria-files",
-                  "zh/tutorials/scoring-guide"
+                  "zh/tutorials/evaluation-kinds"
                 ]
               },
               {

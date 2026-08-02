@@ -18,7 +18,7 @@ import {
   totalScore,
   type GroupFunction,
 } from "../../model/calculation.ts";
-import { scoringComposition } from "../../model/scoring.ts";
+import { evaluationKindComposition } from "../../model/evaluation-kind.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
 import { formatInstant, formatReportDateTimeRange } from "../../model/format.ts";
 import type { ChromeProps } from "../shared.ts";
@@ -47,7 +47,7 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
   return (
     <Col className={["niceeval-sample-summary", props.className].filter(Boolean).join(" ")}>
       <Grid>
-        {snapshot.scoringComposition !== "points" ? (
+        {snapshot.evaluationKindComposition !== "points" ? (
           <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "metric", metric: snapshot.endToEndPassRate }} />
         ) : null}
         {snapshot.totalScore !== undefined ? (
@@ -136,9 +136,9 @@ function resolveComparisonSeries(
   return { series, connect: props.connect ?? seriesName(series) === LINE_LABEL_KEY };
 }
 
-function filterInputByScoring(input: Sample, scoring: "pass" | "points"): Sample {
+function filterInputByEvaluationKind(input: Sample, evaluationKind: "pass" | "points"): Sample {
   return input.filter((attempt) =>
-    (attempt.result.scoring === "points" ? "points" : "pass") === scoring
+    (attempt.result.evaluationKind === "points" ? "points" : "pass") === evaluationKind
   );
 }
 
@@ -216,7 +216,7 @@ async function scatterBlock(
 export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (props, ctx) => {
   const input: Sample = props.input ?? ctx.scope;
   const { series, connect } = resolveComparisonSeries(input, props);
-  const composition = await scoringComposition(input);
+  const composition = await evaluationKindComposition(input);
   const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;
 
   if (composition !== "mixed") {
@@ -228,8 +228,8 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
     );
   }
 
-  const passInput = filterInputByScoring(input, "pass");
-  const pointsInput = filterInputByScoring(input, "points");
+  const passInput = filterInputByEvaluationKind(input, "pass");
+  const pointsInput = filterInputByEvaluationKind(input, "points");
   return (
     <Col className={props.className}>
       {await scatterBlock(passInput, { series, connect, y: "passRate", pointTarget, locale: props.locale })}

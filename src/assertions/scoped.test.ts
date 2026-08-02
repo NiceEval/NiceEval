@@ -10,7 +10,7 @@ import { completeEvidenceCoverage, downgradeEvidenceCoverage } from "./coverage.
 import { deriveDiffData, emptyDiffData } from "./diff.ts";
 import * as Scoped from "./scoped.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
-import type { AssertionResult, DiffArtifact, AssertionEvaluationContext, StreamEvent, SubagentMatch } from "../types.ts";
+import type { AssertionResult, DiffArtifact, AssertionEvaluationContext, JsonMatch, StreamEvent, SubagentMatch } from "../types.ts";
 
 function ctxWith(over: Partial<AssertionEvaluationContext> = {}): AssertionEvaluationContext {
   const events = (over.events ?? []) as StreamEvent[];
@@ -117,6 +117,26 @@ describe("calledTool:output 四种值语义", () => {
     expect(r.outcome).toBe("passed");
   });
 
+  it("数组等长逐项递归匹配，嵌套对象仍是部分匹配且可放谓词", async () => {
+    const events: StreamEvent[] = [
+      { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "batch", input: {} } },
+      {
+        type: "operation.finished",
+        operationId: "c1",
+        kind: "tool",
+        output: [{ id: 1, label: "first" }, { id: 2, label: "second" }],
+        status: "completed",
+      },
+    ];
+    const r = await evaluate(
+      Scoped.calledTool("batch", {
+        output: [{ label: /first/ }, { id: (value) => typeof value === "number" && value > 1 }],
+      }),
+      ctxWith({ events }),
+    );
+    expect(r.outcome).toBe("passed");
+  });
+
   it("RegExp 对字符串输出测试", async () => {
     const events: StreamEvent[] = [
       { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "shell", input: { command: "curl https://example.com/tutorials/x" } } },
@@ -157,7 +177,10 @@ describe("calledTool:output 四种值语义", () => {
       { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "get_weather", input: {} } },
       { type: "operation.finished", operationId: "c1", kind: "tool", output: new Date("2026-01-01") as never, status: "completed" },
     ];
-    const r = await evaluate(Scoped.calledTool("get_weather", { output: new Date("2026-01-01") }), ctxWith({ events }));
+    const r = await evaluate(
+      Scoped.calledTool("get_weather", { output: new Date("2026-01-01") as never }),
+      ctxWith({ events }),
+    );
     expect(r.outcome).toBe("failed");
   });
 });
@@ -328,3 +351,9 @@ const subagentMatchHasNoRejected: SubagentMatch = {
   status: "rejected",
 };
 void subagentMatchHasNoRejected;
+
+const recursiveJsonMatch: JsonMatch = { rows: [{ name: /Ada/, score: (value) => typeof value === "number" }] };
+void recursiveJsonMatch;
+// @ts-expect-error JsonMatch 只能存 JSON、RegExp 或显式动态谓词，不能存 Date。
+const jsonMatchRejectsClassInstances: JsonMatch = { createdAt: new Date() };
+void jsonMatchRejectsClassInstances;

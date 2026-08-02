@@ -671,7 +671,7 @@ async function initProject(cwd: string): Promise<void> {
         "export default defineConfig({",
         "  // Add experiments/ with defineExperiment(...) to run evals.",
         "  //",
-        "  // TODO(judge): semantic assertions (t.judge.*) are silently unreadable until a judge",
+        "  // IMPORTANT(judge): semantic assertions (t.judge.*) are silently unreadable until a judge",
         "  // model is configured — an all-green run does not mean the judge ran. Any",
         "  // OpenAI-compatible /chat/completions service works; the key is read from",
         "  // OPENAI_API_KEY unless apiKeyEnv says otherwise.",
@@ -1397,7 +1397,7 @@ async function main(): Promise<void> {
   // 只跑一次;先停 dashboard 的 tick/动态区域(coordinator.stopDynamic()),
   // 避免硬退时终端卡在半帧 ANSI 状态。
   const FORCE_SETTLE_CAP_MS = CLEANUP_TIMEOUT_MS * 2;
-  let runInFlight: Promise<unknown> | undefined;
+  let runInFlight: Promise<InvocationSummary> | undefined;
   let forcing = false;
   const forceCleanupAndExit = (code: number) => {
     if (forcing) return;

@@ -3,8 +3,9 @@
 // reporter 编排 / 汇总在 report.ts,Sandbox 适配器在 remote-sandbox.ts。
 
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
-import { probeJudge } from "../scoring/judge.ts";
+import { probeJudge } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, carriableAttempts, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
 import {
@@ -48,7 +49,7 @@ import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runO
 import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
-import { digestOf } from "../sandbox/identity.ts";
+import { digestOf, type BuildKey } from "../sandbox/identity.ts";
 import { firstLine } from "../util.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
@@ -66,7 +67,7 @@ import {
   reportRunActivity,
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
-import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
+import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool, type ReusableStateWindowDisposition } from "./sandbox-pool.ts";
@@ -92,7 +93,7 @@ import {
   type CaseLockRecord,
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
-import { loadLatestResultsForCase } from "../record/open.ts";
+import { assertFreshAttemptLocatorRegistrations, loadLatestResultsForCase, openRecord } from "../record/open.ts";
 import type { RunManifests } from "../record/manifest.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
@@ -144,7 +145,12 @@ export function sandboxReusePoolKey(input: {
   readonly agentInstalls: readonly JsonValue[];
   readonly scope: SandboxReusePoolScope;
 }): string {
-  return digestOf({ version: 1, ...input });
+  return digestOf({
+    version: 1,
+    providerPlan: input.providerPlan,
+    agentInstalls: [...input.agentInstalls],
+    scope: input.scope,
+  });
 }
 
 /** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 pair 的生效
@@ -211,6 +217,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 传给 reporter(见下方 shape 构造),run.ts 之外没有第二个入口能改这份身份。
   const snapshotStartedAt = startedAt;
   const t0 = Date.now();
+  const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
+  const runIds = new Map(opts.runIds ?? []);
+  for (const run of opts.agentRuns) {
+    if (!runIds.has(run.experimentId)) runIds.set(run.experimentId, randomUUID());
+  }
 
   // `--keep-sandbox` 要把单条 Attempt 的最终现场转交给用户，
   // `sandboxReuse` 则让整个 Invocation 的 pool 继续拥有并在收尾时销毁同一个 Case。
@@ -364,14 +375,26 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
           // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
           locator: encodeAttemptLocator({
-            experimentId: run.experimentId,
-            snapshotStartedAt,
+            runId: runIds.get(run.experimentId)!,
             evalId: evalDef.id,
             attempt: i,
           }),
         });
       }
     }
+  }
+
+  if (attempts.length > 0) {
+    const registrations: AttemptLocatorRegistration[] = attempts.map((attempt) => ({
+      identity: {
+        runId: runIds.get(attempt.run.experimentId)!,
+        evalId: attempt.evalDef.id,
+        attempt: attempt.attempt,
+      },
+      locator: attempt.locator,
+    }));
+    const existingRecord = await openRecord(niceevalRoot);
+    assertFreshAttemptLocatorRegistrations(existingRecord, registrations);
   }
 
   // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
@@ -444,11 +467,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
   // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
-  // 显式 buildPreparation 优先(测试注入);否则从 PlannedSandboxCase / Compose 自动收集。
+  // 显式 buildPreparation 优先(测试注入);否则从 pair-owned ProviderPlan 自动收集。
   const runTiming = createRunTimingRecorder();
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
-  const buildFailureByEval = new Map<string, AttemptError>();
-  const buildLocatorsByEval = new Map<string, Map<string, string>>();
+  const buildFailureByPair = new Map<string, AttemptError>();
+  const buildLocatorsByPair = new Map<string, Map<BuildKey, JsonValue>>();
 
   const collected =
     opts.buildPreparation === undefined
@@ -486,21 +509,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         })
       : undefined;
 
-  // 逐 eval 的放行闸:第一次问到就记下等待,之后同 eval 的其它 attempt 复用同一条。
+  // 逐 pair 的放行闸:第一次问到就记下等待,之后同 pair 的其它 attempt 复用同一条。
   const buildWaits = new Map<string, Promise<void>>();
-  const awaitBuildsFor = (pairKey: string, legacyEvalId?: string): Promise<void> => {
-    const keys = buildPrep?.evalBuildKeys[pairKey] ?? (legacyEvalId === undefined ? undefined : buildPrep?.evalBuildKeys[legacyEvalId]);
+  const awaitBuildsFor = (pairKey: string): Promise<void> => {
+    const keys = buildPrep?.pairBuildKeys[pairKey];
     if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Promise.resolve();
     let pending = buildWaits.get(pairKey);
     if (pending !== undefined) return pending;
     pending = (async () => {
       for (const key of keys) await runningBuilds.settled(key);
-      const locators = new Map<string, string>();
+      const locators = new Map<BuildKey, JsonValue>();
       for (const key of keys) {
         const failure = runningBuilds.failures.get(key);
         if (failure !== undefined) {
           const originFields = buildFailureOrigin(failure);
-          buildFailureByEval.set(pairKey, {
+          buildFailureByPair.set(pairKey, {
             code: originFields.code,
             message: originFields.message,
             origin: runOrigin(originFields.timingNodeId),
@@ -509,9 +532,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           return;
         }
         const locator = runningBuilds.locators.get(key);
-        if (typeof locator === "string") locators.set(key, locator);
+        if (locator !== undefined) locators.set(key, locator);
       }
-      if (locators.size > 0) buildLocatorsByEval.set(pairKey, locators);
+      if (locators.size > 0) buildLocatorsByPair.set(pairKey, locators);
     })();
     buildWaits.set(pairKey, pending);
     return pending;
@@ -553,6 +576,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
     snapshotStartedAt,
+    runIds,
     ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
@@ -584,6 +608,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         totalAttempts: scopedRuns,
         maxConcurrency: opts.maxConcurrency,
         snapshotStartedAt,
+        runIds,
       }),
       name: `eval-reporter-${evalReporterIndex++}`,
       required: false,
@@ -615,7 +640,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 即判定确定性错误,停止派发受同一配置影响的后续 attempt(如实报 errored 的结果保留;
   // 这是止损,不是「首过即停」,两个机制互不混用)。
   const lastErrorCode = new Map<string, { code: string; streak: number }>();
-  const failFastKeys = new Map<string, { code: string; unreadable: number }>();
+  const failFastKeys = new Map<string, { code: string; skipped: number }>();
   // 携入的 passed 结果预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
   // 那部分)如果不预置这个,会在明明已经拿到过 passed 结果的情况下真的再调度一次 agent——
   // earlyExit 的语义是「已知会通过就不用再跑」,携入的 passed 同样是「已知会通过」,理应同等对待
@@ -930,7 +955,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
   // 挂在结果根下,与留存注册表 `.niceeval/sandboxes/` 同一个根(省略时退回 cwd/.niceeval,
   // 与 attempt.ts 的 niceevalRoot 兜底同一口径)。
-  const niceevalRoot = opts.niceevalRoot ?? `${process.cwd()}/.niceeval`;
   const currentHost = hostname();
   const makeExperimentHookContext = (run: AgentRun, phase: LifecyclePhase): ExperimentHookContext => {
     const experimentId = run.experimentId;
@@ -2030,7 +2054,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
               cancelReuseAttempt(a);
-              failFast.unreadable += 1;
+              failFast.skipped += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
                 at: Date.now(),
@@ -2095,7 +2119,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 : (evalAc?.signal ?? opts.signal);
             // BuildKey / CaseKey 已在 Attempt.plan 的 physical completion state 中确定；
             // 这里只把协调器执行结果作为必填运行输入传给 materializer，不回写 Attempt。
-            const buildLocators = buildLocatorsByEval.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<string, string>();
+            const buildLocators = buildLocatorsByPair.get(cacheKey(a.run, a.evalDef.id)) ?? new Map<BuildKey, JsonValue>();
 
             // turn 级重试退避期间释放/收回的并发槽位——两级闸按持有期分工的单点契约见
             // docs/runner.md「调度:有界并发」与 docs/feature/error-classification/
@@ -2156,7 +2180,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   return outcome._tag === "Failed" ? Option.some(outcome.error) : Option.none<AttemptError>();
                 })();
             const precheckFailure = judgePrecheckFailures.get(cacheKey(a.run, a.evalDef.id));
-            const buildFailure = buildFailureByEval.get(cacheKey(a.run, a.evalDef.id));
+            const buildFailure = buildFailureByPair.get(cacheKey(a.run, a.evalDef.id));
             const blockedError: AttemptError | undefined = Option.isSome(setupFailure)
               ? setupFailure.value
               : precheckFailure !== undefined
@@ -2168,7 +2192,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const poolSelection: ReusePoolSelection = blockedError === undefined
               ? yield* reusePoolFor(a)
               : { _tag: "Fresh" };
-            // 复用池的租借失败(实例创建、SandboxSpec setup 钩子、寿命确认都在池内)是**这条
+            // 复用池的租借失败(实例创建、SandboxLayer setup 钩子、寿命确认都在池内)是**这条
             // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
             // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
             // blockedError 完全相同的下游路径。
@@ -2193,7 +2217,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                 })
               : { _tag: "NotRequested" as const };
             const lease = leased._tag === "Acquired" ? leased.lease : undefined;
-            // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxSpec setup + 确认寿命」
+            // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxLayer setup + 确认寿命」
             // 打包成一次借出,调度器这一侧只知道这条 attempt 没能拿到可用实例。
             const leaseError: AttemptError | undefined =
               leased._tag === "Failed" ? errorFromThrown(leased.error, "sandbox.create") : undefined;
@@ -2344,7 +2368,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const streak = prev?.code === code ? prev.streak + 1 : 1;
               lastErrorCode.set(a.key, { code, streak });
               if (streak >= 2 && !failFastKeys.has(a.key)) {
-                failFastKeys.set(a.key, { code, unreadable: 0 });
+                failFastKeys.set(a.key, { code, skipped: 0 });
               }
             } else {
               lastErrorCode.delete(a.key);
@@ -2422,7 +2446,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
           // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
           const pairKey = cacheKey(a.run, a.evalDef.id);
-          yield* Effect.promise(() => awaitBuildsFor(pairKey, a.evalDef.id));
+          yield* Effect.promise(() => awaitBuildsFor(pairKey));
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);

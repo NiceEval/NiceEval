@@ -7,7 +7,14 @@
 import { join, relative } from "node:path";
 import type { AssertionResult, CommandLimitAttribution, EvalResult, FailedCommandEvidence, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
-import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
+import type {
+  LineAnnotation,
+  ProjectedSourceCall,
+  ProjectedSourceLine,
+  SendAnnotation,
+  SourceCallSummary,
+  SourceContentNode,
+} from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
@@ -16,6 +23,13 @@ import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
 import { diffFilePatchText, diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { AttemptDiffData } from "../report/model/types.ts";
+import type {
+  AnnotatedSourceResult,
+  AttemptTimingResult,
+  ConversationResult,
+  RunTimingBuildResult,
+  RunTimingResult,
+} from "../report/tasks.ts";
 import { indentBlock, padDisplay, renderAlignedRows, wrapDisplay } from "../report/model/text-layout.ts";
 import type { AttemptHistoryRow } from "./compose.ts";
 import { localizeText, type HostCommandContext } from "../report/runtime/host.ts";
@@ -140,7 +154,7 @@ export function assertionLine(a: AssertionResult): string {
 
 /** 证据切面的头行:`@<locator> · <evalId> · <experimentId> · <verdict>`。 */
 export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
-  return [evidence.locator, evidence.identity.evalId, evidence.identity.experimentId, evidence.result.verdict].join(" · ");
+  return [evidence.locator, evidence.identity.evalId, evidence.experimentId, evidence.result.verdict].join(" · ");
 }
 
 /**
@@ -167,9 +181,8 @@ export function verdictReasonLine(result: EvalResult): string | undefined {
 /**
  * 断言计票摘要,`--eval` 与全景面共用:`assertions: 1 passed · 1 gate failed · 1 soft below
  * target`。直接读 `EvalResult.assertions`(恒可用的瘦身字段)而不是
- * `AnnotatedEvalSource.summary`——两者对同一批断言算出的计票恒等(`AnnotatedEvalSource` 正是
- * 用这同一个数组喂 `buildAnnotatedEvalSource` 的),但 `evalSource` 可能是 `null`
- * (未捕获源码),读 `result.assertions` 让这条摘要不因缺源码而跟着消失。
+ * 完整源码树的 summary 与这批断言计票恒等，但源码证据可能不可用；直接读
+ * `result.assertions` 让这条摘要不因缺源码而跟着消失。
  */
 export function assertionSummaryLine(assertions: AssertionResult[]): string {
   const passed = assertions.filter((a) => a.outcome === "passed").length;
@@ -277,8 +290,6 @@ function indentedText(text: string, width: number, indent = 4, maxLines = 18): s
 
 // ───────────────────────── 证据切面:--eval(Eval 源码标注) ─────────────────────────
 
-const MAX_SOURCE_LINES = 400;
-
 /** gate 失败 / soft 恒带分 / unavailable 带 reason——与 assertionLine 的口径一致,但不带断言
  *  name(源码行本身就是名字)。 */
 function evalAssertionDetailLine(a: AssertionResult): string | undefined {
@@ -313,36 +324,116 @@ function sendAnnotationLine(send: SendAnnotation): string {
   return parts.join(" · ");
 }
 
-function evalSourceLineText(line: AnnotatedSourceLine, gutterWidth: number, width: number): string[] {
-  const anyFailed = line.assertions.some((a) => a.outcome === "failed") ||
-    line.sends.some((send) => send.status === "failed");
-  const anyUnavailable = line.assertions.some((a) => a.outcome === "unavailable");
-  const glyph = line.assertions.length === 0 && line.sends.length === 0
+function lineGlyph(annotations: readonly LineAnnotation[]): string {
+  const assertions = annotations.flatMap((annotation) =>
+    annotation.kind === "assertion" ? [annotation.assertion] : []
+  );
+  const sends = annotations.flatMap((annotation) => annotation.kind === "send" ? [annotation.send] : []);
+  const anyFailed = assertions.some((assertion) => assertion.outcome === "failed") ||
+    sends.some((send) => send.status === "failed");
+  const anyUnavailable = assertions.some((assertion) => assertion.outcome === "unavailable");
+  return annotations.length === 0
     ? " "
     : anyFailed
       ? "✗"
       : anyUnavailable
         ? "◌"
         : "✓";
+}
+
+function annotationDetailLine(annotation: LineAnnotation): string | undefined {
+  if (annotation.kind === "assertion") return evalAssertionDetailLine(annotation.assertion);
+  if (annotation.kind === "send") return sendAnnotationLine(annotation.send);
+  const group = annotation.score.groupPath?.join(" · ");
+  return [group, annotation.score.label, `${annotation.score.points} pts`].filter(Boolean).join(" · ");
+}
+
+function evalSourceLineText(line: ProjectedSourceLine, gutterWidth: number, width: number, indent: string): string[] {
+  const glyph = lineGlyph(line.annotations);
   const marginWidth = gutterWidth + 2; // 行号列 + glyph + 分隔空格
-  const prefix = `${padDisplay(String(line.line), gutterWidth)}${glyph} `;
+  const prefix = `${indent}${padDisplay(String(line.line), gutterWidth)}${glyph} `;
   // 源码行的空白(尤其是缩进)是语义的一部分:wrapDisplay 按单词重排会把连续空格
   // 吃成一个、把缩进整体丢掉(agent-feedback-loop.mdx 的示例明确保留 2/4/6 格嵌套缩进)。
   // 过长的源码行只裁一刀(clip,与其它证据切面的截断口径一致),不按词折成多行——
   // 折行只对续行加统一 margin,救不回已经被吃掉的原始缩进,不如老实截断。
-  const out = [prefix + clip(line.text, Math.max(20, width - marginWidth))];
-  const margin = " ".repeat(marginWidth);
-  for (const send of line.sends) {
-    for (const wrapped2 of wrapDisplay(sendAnnotationLine(send), Math.max(20, width - marginWidth))) {
-      out.push(margin + wrapped2);
-    }
-  }
-  for (const a of line.assertions) {
-    const detail = evalAssertionDetailLine(a);
+  const available = Math.max(20, width - marginWidth - indent.length);
+  const out = [prefix + clip(line.text, available)];
+  const margin = `${indent}${" ".repeat(marginWidth)}`;
+  for (const annotation of line.annotations) {
+    const detail = annotationDetailLine(annotation);
     if (detail === undefined) continue;
-    for (const wrapped2 of wrapDisplay(detail, Math.max(20, width - marginWidth))) out.push(margin + wrapped2);
+    for (const wrapped2 of wrapDisplay(detail, available)) out.push(margin + wrapped2);
   }
   return out;
+}
+
+function sourceCallSummaryLine(summary: SourceCallSummary): string {
+  return [
+    `${summary.checks} checks`,
+    `${summary.passed} ✓`,
+    `${summary.failed} ✗`,
+    ...(summary.unavailable > 0 ? [`${summary.unavailable} unavailable`] : []),
+    ...(summary.points ? [`${summary.points.earned}/${summary.points.available} pts`] : []),
+    ...(summary.aborted ? ["aborted"] : []),
+  ].join(" · ");
+}
+
+function renderOpaqueCall(call: ProjectedSourceCall, indent: string, width: number): string[] {
+  const target = call.target;
+  if (target.kind === "source") return renderSourceNode(target.node, indent, width);
+  const label = target.kind === "package"
+    ? `package: ${target.package}`
+    : `source unavailable: ${target.file}${target.line === undefined ? "" : `:${target.line}`}`;
+  const lines = [`${indent}${label}`];
+  if (target.kind === "unavailable") {
+    for (const annotation of target.annotations) {
+      const detail = annotationDetailLine(annotation);
+      if (detail) lines.push(...wrapDisplay(detail, Math.max(20, width - indent.length - 2)).map((part) => `${indent}  ${part}`));
+    }
+  }
+  if (call.open) {
+    for (const child of target.calls) {
+      const childLabel = child.target.kind === "source"
+        ? child.target.node.file
+        : child.target.kind === "package"
+          ? `package: ${child.target.package}`
+          : `source unavailable: ${child.target.file}`;
+      lines.push(`${indent}↳ ${childLabel} · ${sourceCallSummaryLine(child.summary)}`);
+      if (child.open) lines.push(...renderOpaqueCall(child, `${indent}│ `, width));
+    }
+  }
+  return lines;
+}
+
+function renderSourceNode(node: SourceContentNode, indent: string, width: number): string[] {
+  const lines: string[] = [`${indent}${node.file}`];
+  const gutterWidth = String(node.lines.at(-1)?.line ?? 1).length;
+  let previous = 0;
+  for (const line of node.lines) {
+    if (previous > 0 && line.line > previous + 1) lines.push(`${indent}... ${line.line - previous - 1} lines`);
+    else if (previous === 0 && line.line > 1) lines.push(`${indent}... ${line.line - 1} lines`);
+    lines.push(...evalSourceLineText(line, gutterWidth, width, indent));
+    for (const call of line.calls) {
+      const label = call.target.kind === "source"
+        ? call.target.node.file
+        : call.target.kind === "package"
+          ? `package: ${call.target.package}`
+          : `source unavailable: ${call.target.file}`;
+      lines.push(`${indent}  ↳ ${label} · ${sourceCallSummaryLine(call.summary)}`);
+      if (call.open) lines.push(...renderOpaqueCall(call, `${indent}  │ `, width));
+    }
+    previous = line.line;
+  }
+  return lines;
+}
+
+function hasClosedCalls(node: SourceContentNode): boolean {
+  const visit = (calls: readonly ProjectedSourceCall[]): boolean => calls.some((call) => {
+    if (!call.open) return true;
+    if (call.target.kind === "source") return hasClosedCalls(call.target.node);
+    return visit(call.target.calls);
+  });
+  return node.lines.some((line) => visit(line.calls));
 }
 
 /**
@@ -350,38 +441,42 @@ function evalSourceLineText(line: AnnotatedSourceLine, gutterWidth: number, widt
  * 与断言计票摘要。`evidence.evalSource === null` 时如实说明源码未捕获,不伪造空文档。
  */
 export function evalSourceText(
-  evidence: AttemptEvidence,
+  result: AnnotatedSourceResult,
   opts: { header: string; artifactPath?: string; width: number },
 ): string {
   const { header, artifactPath, width } = opts;
-  const source = evidence.evalSource;
+  const source = result.source;
   const artifact = artifactPath ? join(artifactPath, "sources.json") : undefined;
   if (!source) {
     return `${header}\n\n(eval source unavailable for this attempt${artifact ? ` · expected: ${artifact}` : ""})`;
   }
 
-  const blocks: string[] = [header, `eval source: ${source.sourcePath} · sha256:${source.sourceSha256.slice(0, 8)}…`];
-
-  const gutterWidth = String(source.lines.length).length;
-  const shownLines = source.lines.slice(0, MAX_SOURCE_LINES);
-  const lineLines = shownLines.flatMap((line) => evalSourceLineText(line, gutterWidth, width));
-  if (source.lines.length > shownLines.length) {
-    lineLines.push(`(${source.lines.length - shownLines.length} more lines not shown)`);
+  const blocks: string[] = [header, renderSourceNode(source.spine, "", width).join("\n")];
+  for (const detached of source.detached) {
+    blocks.push(`outside the eval entry · ${renderSourceNode(detached, "", width).join("\n")}`);
   }
-  blocks.push(lineLines.join("\n"));
 
-  if (source.unmapped.length > 0) {
-    const unmappedLines = source.unmapped.map((a) => indentBlock(wrapDisplay(assertionLine(a), width - 2).join("\n"), "  "));
+  if (source.unmapped.assertions.length > 0 || source.unmapped.scores.length > 0) {
+    const unmappedLines = [
+      ...source.unmapped.assertions.map((assertion) => assertionLine(assertion)),
+      ...source.unmapped.scores.map((score) => `${score.groupPath?.join(" · ") ?? "score"} · ${score.label} · ${score.points} pts`),
+    ].map((line) => indentBlock(wrapDisplay(line, width - 2).join("\n"), "  "));
     blocks.push(
-      [`unmapped assertions (${source.unmapped.length}, no source location):`, ...unmappedLines].join("\n"),
+      [`unmapped evidence (${unmappedLines.length}, no source location):`, ...unmappedLines].join("\n"),
     );
   }
 
-  const tail = [assertionSummaryLine(evidence.result.assertions)];
+  const tail = [
+    `${source.summary.checks} checks · ${source.summary.passed} passed · ${source.summary.failed} failed` +
+      (source.summary.unavailable > 0 ? ` · ${source.summary.unavailable} unavailable` : ""),
+  ];
   // 标注行的值是收口预览;有未通过断言时给「更进一步」——attempt 首页展开完整 expected /
   // received(含 output tail),再往下是 result.json / events.json。
-  if (evidence.result.assertions.some((a) => a.outcome !== "passed")) {
-    tail.push(`full failure detail: niceeval show ${evidence.locator}`);
+  if (source.summary.failed > 0 || source.summary.unavailable > 0) {
+    tail.push(`full failure detail: niceeval show ${result.locator}`);
+  }
+  if (hasClosedCalls(source.spine) || source.detached.some(hasClosedCalls)) {
+    tail.push(`inline every callee: niceeval show ${result.locator} --source=full`);
   }
   if (artifact) tail.push(`full eval source: ${artifact}`);
   blocks.push(tail.join("\n"));
@@ -517,8 +612,8 @@ interface CommandCard {
 }
 
 /** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有失败命令时 evidence.commands 为 null。 */
-function failedCommandsOf(evidence: AttemptEvidence): readonly FailedCommandEvidence[] {
-  return evidence.commands ?? [];
+function failedCommandsOf(evidence: ConversationResult): readonly FailedCommandEvidence[] {
+  return evidence.commands;
 }
 
 function findTimingActivityById(nodes: readonly TimingActivity[] | undefined, id: string): TimingActivity | undefined {
@@ -530,7 +625,7 @@ function findTimingActivityById(nodes: readonly TimingActivity[] | undefined, id
   return undefined;
 }
 
-function findCommandTimingActivity(phases: NonNullable<EvalResult["phases"]>, id: string): TimingActivity | undefined {
+function findCommandTimingActivity(phases: readonly NonNullable<EvalResult["phases"]>[number][], id: string): TimingActivity | undefined {
   for (const p of phases) {
     const found = findTimingActivityById(p.children, id);
     if (found) return found;
@@ -540,10 +635,10 @@ function findCommandTimingActivity(phases: NonNullable<EvalResult["phases"]>, id
 
 /** 失败命令卡按关联 timing 节点的 startOffsetMs 排序后编号;关联不到节点的排到最后(仍确定性,
  *  按原始 commands.json 顺序兜底)。 */
-function buildCommandCards(evidence: AttemptEvidence): CommandCard[] {
+function buildCommandCards(evidence: ConversationResult): CommandCard[] {
   const commands = failedCommandsOf(evidence);
   if (commands.length === 0) return [];
-  const phases = evidence.result.phases ?? [];
+  const phases = evidence.phases;
   const withNode = commands.map((command) => ({ command, timingNode: findCommandTimingActivity(phases, command.timingNodeId) }));
   withNode.sort((a, b) => (a.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY) - (b.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY));
   return withNode.map((entry, i) => ({ handle: `cmd${i + 1}`, command: entry.command, timingNode: entry.timingNode }));
@@ -737,7 +832,7 @@ function renderCardLines(parts: CardParts, handle: string, locator: string, full
 // ───────────────────────── --execution 三种输出形态 ─────────────────────────
 
 function executionTail(
-  evidence: AttemptEvidence,
+  evidence: ConversationResult,
   tree: ExecutionTree | null,
   timingAvailable: boolean,
   telemetryCount: number,
@@ -752,7 +847,7 @@ function executionTail(
     const aiMessages = nodes.filter((n) => n.kind === "message" && n.role === "assistant").length;
     tail.push(
       [
-        `total ${formatDurationMs(evidence.result.durationMs)}`,
+        `total ${formatDurationMs(evidence.durationMs)}`,
         `${skillLoads} skill ${skillLoads === 1 ? "load" : "loads"}`,
         `${toolCalls} tool ${toolCalls === 1 ? "call" : "calls"}`,
         `${aiMessages} AI ${aiMessages === 1 ? "message" : "messages"}`,
@@ -769,7 +864,7 @@ function executionTail(
 
 /** 全量渲染(无 --grep/--expand):逐轮头行 + 卡片,末尾追加失败命令卡与事实小结。 */
 function renderFull(
-  evidence: AttemptEvidence,
+  evidence: ConversationResult,
   header: string,
   tree: ExecutionTree | null,
   timingAvailable: boolean,
@@ -808,7 +903,7 @@ function renderFull(
  * 0 命中与「N matches in M attempts」的最终措辞归调用方,这里只回填 matches 数。
  */
 function renderGrep(
-  evidence: AttemptEvidence,
+  evidence: ConversationResult,
   turns: readonly TurnSection[],
   commandCards: readonly CommandCard[],
   grep: RegExp,
@@ -821,7 +916,7 @@ function renderGrep(
       const parts = agentCardParts(card.node, originMs);
       if (!testGrep(grep, parts.matchText)) continue;
       matches += 1;
-      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.identity.experimentId, section.turn?.label ?? `t${section.turnNumber}`].join(
+      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, section.turn?.label ?? `t${section.turnNumber}`].join(
         " · ",
       );
       const cardLines = renderCardLines(parts, card.handle, evidence.locator, false);
@@ -832,7 +927,7 @@ function renderGrep(
     const parts = commandCardParts(entry.command);
     if (!testGrep(grep, parts.matchText)) continue;
     matches += 1;
-    const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.identity.experimentId, entry.command.phase].join(" · ");
+    const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, entry.command.phase].join(" · ");
     const cardLines = renderCardLines({ ...parts, header: commandCardHeader(entry) }, entry.handle, evidence.locator, false);
     blocks.push([locatorLine, ...cardLines.map((l) => `  ${l}`)].join("\n"));
   }
@@ -845,7 +940,7 @@ function renderGrep(
  * (docs/feature/reports/show/execution.md「卡片预览预算与 --expand」)。
  */
 function renderExpand(
-  evidence: AttemptEvidence,
+  evidence: ConversationResult,
   header: string,
   turns: readonly TurnSection[],
   commandCards: readonly CommandCard[],
@@ -911,10 +1006,20 @@ export interface ExecutionRenderOptions {
  * attempt 内的命中卡片数——「N matches in M attempts」与 0 命中的措辞归调用方组装。
  */
 export function executionText(
-  evidence: AttemptEvidence,
+  input: ConversationResult | AttemptEvidence,
   opts: { header: string; artifactPath?: string; width: number },
   options?: ExecutionRenderOptions,
 ): { text: string; matches?: number } {
+  const evidence: ConversationResult = "conversation" in input ? input : {
+    locator: input.locator,
+    experimentId: input.experimentId,
+    identity: input.identity,
+    conversation: null,
+    execution: input.execution,
+    commands: input.commands ?? [],
+    phases: input.result.phases ?? [],
+    durationMs: input.result.durationMs,
+  };
   const { header, artifactPath } = opts;
   const tree = evidence.execution;
   const eventsSource = artifactPath ? join(artifactPath, "events.json") : undefined;
@@ -930,7 +1035,7 @@ export function executionText(
 
   // 按轮分段(见 docs/feature/reports/show.md「--execution」):边界按用户消息切
   // (t.send 恒以用户消息开轮),turn 身份取自 result.json.phases 的 turn 时间树。
-  const turnNodes = (evidence.result.phases ?? [])
+  const turnNodes = evidence.phases
     .flatMap((p) => p.children ?? [])
     .filter((n) => n.key === "agent.turn");
 
@@ -1239,28 +1344,35 @@ function diagnosticTimingLines(
  * 从 trace.json 挂接 agent/model/tool spans。缩进表达包含关系,子项不能求和后与父项比较。
  */
 export function timingText(
-  evidence: AttemptEvidence,
+  input: AttemptTimingResult | AttemptEvidence,
   opts: { header: string; artifactPath?: string; width: number; mode?: "summary" | "full" },
 ): string {
-  const r = evidence.result;
-  if (!r.phases || r.phases.length === 0) {
+  const result: AttemptTimingResult = "kind" in input ? input : {
+    kind: "attempt",
+    locator: input.locator,
+    durationMs: input.result.durationMs,
+    ...(input.result.error !== undefined ? { error: input.result.error } : {}),
+    phases: input.result.phases ?? [],
+    trace: input.trace,
+  };
+  if (result.phases.length === 0) {
     return `${opts.header}\n\nphase timing unavailable (this result was not produced by a runner with phase timing)`;
   }
-  const spans = evidence.trace;
+  const spans = result.trace;
   // 超时 attempt 的 workspace.diff 条目是收尾段补折叠的(docs/runner.md「超时:双层保护」超时
   // 不丢证据),不计入 durationMs——与正常完成路径里 workspace.diff 属于主链、计入 durationMs
   // 是两回事,但两者共用同一个 phase 名字(同一件事:折叠 workspace diff,只是时点不同)。
   // `error.code === "timeout"` 是唯二真正把它归为收尾段的场景(非超时 attempt 的 error.code
   // 永远不是 "timeout"),用它做判别,不新增 LifecyclePhase 成员。
   const isTimeoutClosingDiff = (p: NonNullable<EvalResult["phases"]>[number]) =>
-    p.name === "workspace.diff" && r.error?.code === "timeout";
-  const main = r.phases.filter((p) => !CLOSING_PHASE_NAMES.has(p.name) && !isTimeoutClosingDiff(p));
-  const closing = r.phases.filter((p) => CLOSING_PHASE_NAMES.has(p.name) || isTimeoutClosingDiff(p));
+    p.name === "workspace.diff" && result.error?.code === "timeout";
+  const main = result.phases.filter((p) => !CLOSING_PHASE_NAMES.has(p.name) && !isTimeoutClosingDiff(p));
+  const closing = result.phases.filter((p) => CLOSING_PHASE_NAMES.has(p.name) || isTimeoutClosingDiff(p));
   const traceCounts = new Map<string, number>();
-  for (const phase of r.phases) traceReferenceCounts(phase.children ?? [], traceCounts);
+  for (const phase of result.phases) traceReferenceCounts(phase.children ?? [], traceCounts);
   const uniqueTraceIds = new Set([...traceCounts].filter(([, count]) => count === 1).map(([traceId]) => traceId));
   const phaseForests = new Map(
-    r.phases.map((phase) => [
+    result.phases.map((phase) => [
       phase,
       (phase.children ?? []).map((node) => diagnosticTimingActivity(node, spans ?? [], uniqueTraceIds)),
     ]),
@@ -1268,18 +1380,18 @@ export function timingText(
   const allRoots = [...phaseForests.values()].flat();
   const selected = opts.mode === "full" ? undefined : selectTimingActivitys(allRoots);
 
-  const lines: string[] = [`total ${formatDurationMs(r.durationMs)}`, ""];
+  const lines: string[] = [`total ${formatDurationMs(result.durationMs)}`, ""];
   // 超时归属:撞的是哪层时限、上限多少、值从哪一层来。三样一起印在时间树顶上——
   // 「跑了 20 分钟然后 ✗」本身说不出是谁把它掐的(见 docs/feature/sandbox/architecture.md
   // 「时限归属」)。
-  if (r.error?.timeout) {
-    const { trigger, limitMs, source } = r.error.timeout;
+  if (result.error?.timeout) {
+    const { trigger, limitMs, source } = result.error.timeout;
     lines.push(`timeout  ${trigger} · limit ${formatDurationMs(limitMs)} · from ${source}`, "");
   }
   const renderPhase = (p: NonNullable<EvalResult["phases"]>[number]) => {
-    const failedNote = p.failed ? ` ✗ failed here${r.error ? ` (${r.error.code})` : ""}` : "";
+    const failedNote = p.failed ? ` ✗ failed here${result.error ? ` (${result.error.code})` : ""}` : "";
     lines.push(`${p.name.padEnd(22)}${formatDurationMs(p.durationMs)}${failedNote}`);
-    lines.push(...diagnosticTimingLines(phaseForests.get(p) ?? [], "  ", selected, evidence.locator, opts.mode === "full"));
+    lines.push(...diagnosticTimingLines(phaseForests.get(p) ?? [], "  ", selected, result.locator, opts.mode === "full"));
   };
   for (const p of main) renderPhase(p);
   if (closing.length > 0) {
@@ -1295,17 +1407,33 @@ export function timingText(
  * 专用卡从 provenance 读 locator/inputs/依赖 attempt,不解析 timing label。
  */
 export function runTimingText(
-  run: Run,
+  input: RunTimingResult | Run,
   opts: {
     header: string;
     width: number;
     mode?: "summary" | "full";
-    /** 本 Run 内可用来标注「依赖该 BuildKey 的 attempt」的句柄(含 locator)。 */
-    attempts?: readonly AttemptHandle[];
   },
 ): string {
-  const timings = run.timings ?? [];
-  const builds = run.sandboxBuilds ?? [];
+  const result: RunTimingResult = "kind" in input ? input : {
+    kind: "run",
+    experimentId: input.experimentId,
+    runId: input.runId,
+    startedAt: input.startedAt,
+    timings: input.timings ?? [],
+    sandboxBuilds: (input.sandboxBuilds ?? []).map((build) => {
+      const timing = findTimingActivityById(input.timings, build.timingNodeId);
+      const dependents = input.attempts
+        .filter((attempt) => attempt.result.error?.origin?.scope === "run" && attempt.result.error.origin.timingNodeId === build.timingNodeId)
+        .map((attempt) => attempt.locator ?? `${attempt.evalId}#${attempt.result.attempt}`);
+      return {
+        ...build,
+        ...(timing !== undefined ? { durationMs: timing.durationMs } : {}),
+        ...(dependents.length > 0 ? { dependents } : {}),
+      };
+    }),
+  };
+  const timings = result.timings;
+  const builds = result.sandboxBuilds;
   if (timings.length === 0 && builds.length === 0) {
     return `${opts.header}\n\nrun timing unavailable (this run has no shared activity)`;
   }
@@ -1314,12 +1442,12 @@ export function runTimingText(
   const selected = opts.mode === "full" ? undefined : selectTimingActivitys(roots);
   const totalMs = timings.reduce((sum, node) => Math.max(sum, node.startOffsetMs + node.durationMs), 0);
   const lines: string[] = [`total ${formatDurationMs(totalMs)}`, ""];
-  lines.push(...diagnosticTimingLines(roots, "", selected, run.runId, opts.mode === "full"));
+  lines.push(...diagnosticTimingLines(roots, "", selected, result.runId, opts.mode === "full"));
 
   if (builds.length > 0) {
     lines.push("", "sandboxBuilds:");
     for (const build of builds) {
-      lines.push(...sandboxBuildCardLines(build, timings, opts.attempts ?? run.attempts));
+      lines.push(...sandboxBuildCardLines(build));
     }
   }
   return `${opts.header}\n\n${lines.join("\n")}`;
@@ -1327,20 +1455,12 @@ export function runTimingText(
 
 /** sandboxBuild 专用卡:字段全部来自 provenance + 经 timingNodeId 关联的耗时,不解析 label。 */
 function sandboxBuildCardLines(
-  build: SandboxBuildRecord,
-  timings: readonly TimingActivity[],
-  attempts: readonly AttemptHandle[],
+  build: RunTimingBuildResult,
 ): string[] {
-  const timing = findTimingActivityById(timings, build.timingNodeId);
-  const duration = timing ? formatDurationMs(timing.durationMs) : "—";
-  const dependents = attempts
-    .filter((a) => {
-      const origin = a.result.error?.origin;
-      return origin?.scope === "run" && origin.timingNodeId === build.timingNodeId;
-    })
-    .map((a) => a.locator ?? `${a.evalId}#${a.result.attempt}`);
+  const duration = build.durationMs !== undefined ? formatDurationMs(build.durationMs) : "—";
+  const dependents = build.dependents ?? [];
   const lines = [
-    `  ${build.status} · ${build.provider} · ${build.buildKey.slice(0, 16)}…  ${duration}${timing?.failed ? " ✗" : ""}`,
+    `  ${build.status} · ${build.provider} · ${build.buildKey.slice(0, 16)}…  ${duration}${build.status === "failed" ? " ✗" : ""}`,
   ];
   if (build.locator !== undefined) {
     lines.push(`    locator: ${JSON.stringify(build.locator)}`);
@@ -1353,41 +1473,4 @@ function sandboxBuildCardLines(
     lines.push(`    dependents: ${dependents.join(", ")}`);
   }
   return lines;
-}
-
-/** Run 级 `--timing` 的 `--json` data:timings 完整树 + sandboxBuilds provenance(不经 text 预算)。 */
-export function runTimingJson(run: Run, attempts?: readonly AttemptHandle[]): {
-  experimentId: string;
-  runId: string;
-  startedAt: string;
-  timings: TimingActivity[];
-  sandboxBuilds: Array<
-    SandboxBuildRecord & {
-      durationMs?: number;
-      dependents?: string[];
-    }
-  >;
-} {
-  const timings = run.timings ?? [];
-  const builds = (run.sandboxBuilds ?? []).map((build) => {
-    const timing = findTimingActivityById(timings, build.timingNodeId);
-    const dependents = (attempts ?? run.attempts)
-      .filter((a) => {
-        const origin = a.result.error?.origin;
-        return origin?.scope === "run" && origin.timingNodeId === build.timingNodeId;
-      })
-      .map((a) => a.locator ?? `${a.evalId}#${a.result.attempt}`);
-    return {
-      ...build,
-      ...(timing !== undefined ? { durationMs: timing.durationMs } : {}),
-      ...(dependents.length > 0 ? { dependents } : {}),
-    };
-  });
-  return {
-    experimentId: run.experimentId,
-    runId: run.runId,
-    startedAt: run.startedAt,
-    timings: [...timings],
-    sandboxBuilds: builds,
-  };
 }

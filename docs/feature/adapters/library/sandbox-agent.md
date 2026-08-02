@@ -88,7 +88,8 @@ CLI 非零、signal、transport 中断或无法解析终态时 reject `SendFailu
 ## 会话与 HITL
 
 CLI 原生 resume ID 写入 `ctx.session.capture()`，下一轮用 `ctx.session.id` 拼接 resume 参数。
-审批过程中尚未消费完的 cursor、parser 和 request ID 用 `hold()` / `take()` 保存。
+审批过程中尚未消费完的 cursor、parser 和 request ID 放进模块级 `createSessionSlot<T>()` 创建的 typed slot。
+暂停前调用 `ctx.session.set(slot, value)`，回答轮调用 `ctx.session.take(slot)` 一次性取回；需要重复读取的状态用 `get(slot)`。
 
 ## Skills 与 Plugins
 

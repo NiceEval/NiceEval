@@ -31,7 +31,7 @@ export class AgentOtelChannel {
   /** traceparent 已确认生效(收到过带我们 traceId 的 span)→ 并发守卫解除。 */
   private confirmed = false;
   /** 串行守卫:未确认 traceparent 时,同 agent 的轮次挨个跑(promise 链当互斥锁)。 */
-  private chain: Promise<unknown> = Promise.resolve();
+  private chain: Promise<void> = Promise.resolve();
   /** 已归属过的 span(spanId),共享流里不能重复分给两轮。 */
   private readonly consumed = new Set<string>();
 
@@ -79,7 +79,10 @@ export class AgentOtelChannel {
     // 未确认:挂到串行链上。链上的前序轮次结束(含它的 settle)后才开跑,窗口不重叠。
     const prev = this.chain;
     const p = prev.then(exec, exec);
-    this.chain = p.catch(() => {});
+    this.chain = p.then(
+      () => undefined,
+      () => undefined,
+    );
     return p;
   }
 

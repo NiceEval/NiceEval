@@ -38,8 +38,8 @@ type IdComesFromFilePath = {
   readonly [CONTRACT_DIAGNOSTIC]: "id comes from the file path";
 };
 
-type ScoringComesFromFactory = {
-  readonly [CONTRACT_DIAGNOSTIC]: "scoring comes from defineEval / defineScoreEval";
+type EvaluationKindComesFromFactory = {
+  readonly [CONTRACT_DIAGNOSTIC]: "evaluationKind comes from defineEval / defineScoreEval";
 };
 
 type ConfigHashComesFromPlanning = {
@@ -59,7 +59,7 @@ symbol 不从包入口导出，因此这些字段在包外没有任何可写入�
 ```ts
 type EvalAuthorInput<Context> = EvalAuthorFields & {
   id?: IdComesFromFilePath;
-  scoring?: ScoringComesFromFactory;
+  evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
   test(t: Context): Promise<void> | void;
 };
@@ -67,11 +67,13 @@ type EvalAuthorInput<Context> = EvalAuthorFields & {
 type EvalInput = EvalAuthorInput<TestContext>;
 type ScoreEvalInput = EvalAuthorInput<ScoreTestContext>;
 
+type EvaluationKind = "pass" | "points";
+
 interface EvalDefinition<
-  Scoring extends "pass" | "points",
+  Kind extends EvaluationKind,
   Context,
 > extends EvalAuthorFields {
-  readonly scoring: Scoring;
+  readonly evaluationKind: Kind;
   test(t: Context): Promise<void> | void;
 }
 
@@ -86,7 +88,7 @@ type AnyEvalDefinition =
 ```
 
 `id` 只在发现阶段加入，`configHash` 只属于规划和 Run 身份。
-通过制与计分制在 factory 返回后仍保留精确的 `scoring` 与 test context，不退化成共同的可选字段。
+通过制与计分制在 factory 返回后仍保留精确的 `evaluationKind` 与 test context，不退化成共同的可选字段。
 
 Experiment 使用同一条阶段规则：
 
@@ -130,7 +132,7 @@ defineExperiment({ id: "codex", agent });
 
 ```text
 eval.ts(1,14): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
-eval.ts(2,14): error TS2322: Type 'string' is not assignable to type 'ScoringComesFromFactory'.
+eval.ts(2,14): error TS2322: Type 'string' is not assignable to type 'EvaluationKindComesFromFactory'.
 eval.ts(3,14): error TS2322: Type 'string' is not assignable to type 'ConfigHashComesFromPlanning'.
 eval.ts(4,20): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
 ```
@@ -139,7 +141,7 @@ eval.ts(4,20): error TS2322: Type 'string' is not assignable to type 'IdComesFro
 
 ```text
 defineEval 不接受 id —— id 由文件路径推导。
-defineEval 不接受 scoring —— 恒定为 "pass"(通过制)。计分制请用 defineScoreEval。
+defineEval 不接受 evaluationKind —— 恒定为 "pass"(通过制)。计分制请用 defineScoreEval。
 defineExperiment 不接受 id —— id 由文件路径推导。
 ```
 
@@ -545,21 +547,34 @@ JavaScript 或类型断言绕过静态入口时，Agent 构造器在 discovery �
 
 ## Custom Sandbox case 的产物边界
 
-自定义 case 不填写 capability 字符串；它返回固定形状的运行句柄，能力是否存在由句柄本身表达：
+自定义 case 不填写 capability 字符串；声明与创建结果都用闭合 ADT，资源组定位和运行事实也是必填纯数据：
 
 ```ts
+import { Effect } from "effect";
+
+type CustomCaseServices =
+  | { readonly _tag: "Supported" }
+  | { readonly _tag: "Unsupported" };
+
+type CustomCaseMaterializedServices =
+  | { readonly _tag: "None" }
+  | { readonly _tag: "Available"; readonly value: ServiceController };
+
 interface CustomMaterializeResult {
   readonly sandbox: Sandbox;
   readonly group: SandboxResourceGroup;
-  readonly services?: ServiceController;
+  readonly services: CustomCaseMaterializedServices;
+  readonly facts: JsonValue;
   readonly retention?: never;
 }
 
 interface CustomSandboxCaseInput {
   readonly identity: JsonValue;
+  readonly targetPlatform: SandboxTargetPlatform;
+  readonly services: CustomCaseServices;
   materialize(
     ctx: SandboxMaterializeContext,
-  ): Promise<CustomMaterializeResult>;
+  ): Effect.Effect<CustomMaterializeResult, CustomSandboxMaterializationError>;
 }
 
 declare function defineSandboxCase(
@@ -567,7 +582,8 @@ declare function defineSandboxCase(
 ): SandboxLayer<"template-bearing">;
 ```
 
-`sandbox` 与 `group` 是每个 case 都必须兑现的基线；`services` 是唯一可选扩展句柄。
+`sandbox`、`group`、`services` 与 `facts` 是每个 case 都必须兑现的完成态；`group.resources` 也是必填 `JsonValue`。
+没有 services 返回 `{ _tag: "None" }`，有 services 返回 `{ _tag: "Available", value }`，并与声明侧的 `Supported` / `Unsupported` 一致。
 跨进程留存需要可发现的 provider identity 与 detached 实现，不能由一次 callback 临时声明，因此输入与返回值都没有 `retention`、`wake` 或 capability 数组。
 
 合法调用直接返回完整的主执行空间与资源组：
@@ -575,13 +591,14 @@ declare function defineSandboxCase(
 ```ts
 defineSandboxCase({
   identity: { provider: "kubernetes", manifestDigest: "sha256:..." },
-  async materialize(ctx) {
-    return {
-      sandbox: await createMainPod(ctx),
-      group: namespaceResourceGroup,
-      services: podServiceController,
-    };
-  },
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+  services: { _tag: "Supported" },
+  materialize: (ctx) => Effect.promise(async () => ({
+    sandbox: await createMainPod(ctx),
+    group: namespaceResourceGroup,
+    services: { _tag: "Available", value: podServiceController },
+    facts: { namespace: "eval-prod" },
+  })),
 });
 ```
 
@@ -590,9 +607,15 @@ defineSandboxCase({
 ```ts
 defineSandboxCase({
   identity: { provider: "fly" },
-  async materialize() {
-    return { sandbox, group, retention };
-  },
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+  services: { _tag: "Unsupported" },
+  materialize: () => Effect.succeed({
+    sandbox,
+    group,
+    services: { _tag: "None" },
+    facts: {},
+    retention,
+  }),
 });
 ```
 
@@ -600,7 +623,9 @@ defineSandboxCase({
 sandbox.ts(4,30): error TS2322: Type 'SandboxRetention' is not assignable to type 'undefined'.
 ```
 
-运行时仍对 JavaScript 与类型断言绕过检查同一边界：缺 `sandbox` / `group`、出现未知能力字段或用自定义 case 请求 `--keep-sandbox`，都在创建资源前报错。
+运行时仍对 JavaScript 与类型断言绕过检查同一边界。
+非法声明和 `--keep-sandbox` 在创建资源前报错。
+callback 缺必填字段、返回未知能力字段或 services ADT 前后不一致时，结果不会进入完成态；系统会尽力整组清理已创建资源。
 
 ## Factory 产物使用私有品牌
 

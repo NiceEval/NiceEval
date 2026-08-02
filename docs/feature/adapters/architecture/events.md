@@ -1,18 +1,22 @@
 # 标准事件模型
 
 `Turn.events` 是断言的唯一行为数据源。
+`Turn.data` 是独立的长期结构化输出域，值域固定为 `JsonValue`；动态 SDK/schema 值必须在 adapter 边界正规化，不能把 `unknown` 或原始响应对象挂进 Turn。
 Adapter 将 SDK 事件、结构化响应或 transcript 归一成中性事件，core 再从中派生工具、subagent、HITL 和消息事实。
 
 ## 数据结构
 
 ```ts
 type StreamEvent =
-  | { type: "message"; role: "assistant" | "user"; text: string; loc?: SourceLoc }
+  | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
+  | { type: "message"; role: "user"; text: string; loc?: SourceLoc; sourceOrder?: number }
   | { type: "operation.started"; operationId: string; operation:
       | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
       | { kind: "subagent"; name: string; remoteUrl?: string } }
-  | { type: "operation.finished"; operationId: string; kind: "tool" | "subagent";
+  | { type: "operation.finished"; operationId: string; kind: "tool";
       output?: JsonValue; status: "completed" | "failed" | "rejected" }
+  | { type: "operation.finished"; operationId: string; kind: "subagent";
+      output?: JsonValue; status: "completed" | "failed" }
   | { type: "skill.loaded"; skill: string; operationId?: string }
   | { type: "input.requested"; request: InputRequest }
   | { type: "thinking"; text: string }
@@ -38,7 +42,9 @@ type StreamEvent =
 8. **`loc` 只属于 eval 侧注入的 user message。
    ** `t.send` 由 core 记录、携带 send 语句的源码位置；adapter 从 SDK 事件或 transcript 归一出的任何消息都不携带 `loc`。
    消费方以「user message 是否带 `loc`」区分 eval 发出的 send 与被测系统内部注入的 user 消息（agent 自身的续跑提示、对输入的重新包装）——内部注入保留在流里如实呈现，但不是新的一轮。
-9. **`context.injected` 是被测系统内部注入的第二种形态：不披着 `message` 外衣的上下文文本。
+9. **`sourceOrder` 只属于 eval 侧注入的 user message。** 它由 core 与断言、直接给分共用的
+   attempt 级序列分配；历史事件可省略，当前 `t.send` 产物必写。adapter 不生成也不改写它。
+10. **`context.injected` 是被测系统内部注入的第二种形态：不披着 `message` 外衣的上下文文本。
    ** 不变量 8 的内部注入仍然是一条 `role:"user"` 的 `message`（只是没有 `loc`）；但有些被测系统的注入根本不构成一条消息——例如 Claude Code 的 SessionStart / UserPromptSubmit hook 在下一轮开始前把额外文本前置进模型上下文，这段文本既不是 assistant 说的也不是 user 说的，硬套进 `message.role` 会污染按 role 或消息数做的断言。
    `context.injected` 只承载**带实际文本内容**的注入；被测系统内部机制里"某个动作执行完毕"这类不携带上下文文本的信号（例如一次注入确认），不构成事件——它对行为断言没有信息量，和「系统元数据行不进事件流」是同一条原则的延伸，不是新例外。
    `source` 是可选的原始来源标记（如 Claude Code 自己的 hook 名 `SessionStart`），adapter 按各自协议原样透传供下钻，不强行归一到一组封闭枚举，不同被测系统的命名不必对齐。

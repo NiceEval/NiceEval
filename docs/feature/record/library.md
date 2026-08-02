@@ -119,7 +119,7 @@ Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导�
 ## 携带条目与 `evidenceState`
 
 运行器默认把上一轮 fingerprint 匹配、判定为终态的结果**携带合入**新 Run(语义见 [Experiments · 缓存与携带](../experiments/cache.md)),让最新 Run 天然完整。
-携带条目在新 Run 里也是一条 `result.json`,带原条目的 `startedAt`、`artifactBase`(相对记录根,指向原 Run 的 attempt 目录)与 `artifacts` 词干列表。
+携带条目在新 Run 里也是一条 `result.json`,带原条目的 `startedAt`、`locator`、`locatorRunId`、`artifactBase`(相对记录根,指向原 Run 的 attempt 目录)与 `artifacts` 词干列表。`locatorRunId` 是 locator 的来源 Run 身份，因此同一条 attempt 被多轮 carry 后仍是同一索引身份；旧记录缺失它时 reader 沿 `artifactBase` 回溯。
 读取面把它投影成 `attempt.carried`,消费方不自己探测 artifactBase。
 
 artifact 因此有三种去处,`attempt.evidenceState` 如实说出是哪一种:
@@ -161,15 +161,22 @@ Record 的义务是**把身份键四字段全部放在数据上**,让任何人�
 用户从 `niceeval show` 的输出、报告或 view 深链里复制到一个 locator,拿它回到库里定位同一个 attempt:
 
 ```typescript
-import { openRecord, resolveLocator, LocatorNotFoundError, MalformedLocatorError } from "niceeval/record";
+import {
+  openRecord,
+  resolveLocator,
+  AmbiguousLocatorError,
+  LocatorNotFoundError,
+  MalformedLocatorError,
+} from "niceeval/record";
 
 const record = await openRecord(".niceeval");
 const attempt = resolveLocator(record, locatorFromShowOutput);   // → AttemptHandle
 console.log(attempt.evalId, attempt.result.verdict);
 ```
 
-`openRecord()` 收尾时已经把扫到的全部 attempt 建成 locator 索引,`resolveLocator` 只查这份索引, 不碰磁盘。
-两种失败各自抛一个可分辨的错误,不返回 `null`:输入串本身语法不合法(不是 `@` 开头、body 长度或字符不对)抛 `MalformedLocatorError`;语法合法但索引里没有这个 attempt(记录目录被清理、locator 来自别的项目)抛 `LocatorNotFoundError`——CLI 据此分别给出「这不是一个 locator」与「这个 attempt 不在当前记录里」两种提示。
+`openRecord()` 收尾时已经把扫到的全部 attempt 建成多值 locator 索引,`resolveLocator` 只查这份索引,不碰磁盘。同一来源身份经 carry 出现在多份落盘时只保留最新副本；不同来源身份恰好共享同一 locator 才是多候选。
+三种失败各自抛一个可分辨的错误,不返回 `null`:输入串本身语法不合法(不是 `@` 开头、body 长度或 Crockford 字符不对)抛 `MalformedLocatorError`;语法合法但索引里没有这个 attempt(记录目录被清理、locator 来自别的项目)抛 `LocatorNotFoundError`;同一个 locator 经来源身份去重后仍命中多份落盘则抛 `AmbiguousLocatorError`,其 `candidates` 逐条列出 `experimentId` / `evalId` / `attempt`,不任取一条。
+CLI 据此分别给出「这不是一个 locator」「这个 attempt 不在当前记录里」和「当前记录里有多条候选」三种提示。
 
 ## 写:`createWriter`
 
@@ -205,6 +212,7 @@ await run.finish({                       // 封口这个 Run:唯一一次补 com
 ```
 
 `writer.run()` 是读取面「实验 → Run 」层次的镜像:experimentId / agent / model / startedAt / configHash 这些 Run 级身份在这里声明一次,不放入每条 attempt——否则第三方转换器要么漏写要么各条不一致,reader 侧还得猜以谁为准(类型上由 `writeAttempt` 参数的 `Omit` 保证)。
+
 Run 级可选项还包括 `experiment`(实验运行配置 `ExperimentRunInfo`)、`knownEvalIds`(该实验已知的 eval 并集, 残缺检测的分母)、`completedAt`(转换历史数据时如实交代收尾时刻)与 `name`(项目名,view hero 显示)。
 attempt 级 facts 不走 `finish()`——随 `writeAttempt` 第一参数的 `facts` 字段与判定一起一次写成,形状与两级归属语义见 [Architecture · facts](architecture.md#facts运行事实)。
 

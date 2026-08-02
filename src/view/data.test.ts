@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 type AttemptFixture = Pick<EvalResult, "id" | "verdict" | "evidenceCoverage"> &
-  Partial<Pick<EvalResult, "attempt" | "durationMs" | "assertions" | "fingerprint" | "startedAt" | "artifactBase" | "artifacts">>;
+  Partial<Pick<EvalResult, "attempt" | "durationMs" | "assertions" | "fingerprint" | "startedAt" | "artifactBase" | "artifacts" | "locator">>;
 
 function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}): AttemptFixture {
   return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], evidenceCoverage: completeEvidenceCoverage, ...extra };
@@ -55,6 +55,10 @@ function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}):
 /** 实验目录名的清洗:与 docs/feature/record/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
 function cleanDirName(id: string): string {
   return id.replace(/[^\w.@-]/g, "_");
+}
+
+function fixtureRunId(snapshotDirName: string): string {
+  return `${snapshotDirName}-0000-4000-8000-000000000000`;
 }
 
 interface SnapshotOpts {
@@ -81,7 +85,7 @@ async function writeSnapshot(
     format: RECORD_FORMAT,
     schemaVersion: opts.schemaVersion ?? RECORD_SCHEMA_VERSION,
     producer: opts.producer ?? { name: "niceeval", version: "0.4.0" },
-    runId: `${snapDirName}-0000-4000-8000-000000000000`,
+    runId: fixtureRunId(snapDirName),
     experimentId: opts.experimentId,
     agent: opts.agent ?? "agent",
     ...(opts.model !== undefined ? { model: opts.model } : {}),
@@ -200,20 +204,17 @@ describe("loadViewScan · 报告槽是现刻水位口径,裸跑与局部收窄�
     // 周一自己的 q1(被周二顶替,不再是现刻水位选中的那份)locator 不同,dedup 也不吞它——
     // 它是独立的历史事实,不是 --resume 字面携带的复印件。
     const q1TuesdayLocator = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-02T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-02T08-00-00-000Z"),
       evalId: "q1",
       attempt: 0,
     });
     const q2Locator = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-01T08-00-00-000Z"),
       evalId: "q2",
       attempt: 0,
     });
     const q1MondayLocator = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-01T08-00-00-000Z"),
       evalId: "q1",
       attempt: 0,
     });
@@ -227,6 +228,11 @@ describe("loadViewScan · 报告槽是现刻水位口径,裸跑与局部收窄�
 describe("loadViewScan · 跨快照去重(--resume 携带的复印件只算一次)", () => {
   it("同一 attempt 存在于两份落盘:只保留最新快照里的那份,locator 落在最新落盘,artifactBase 沿用原快照 artifact", async () => {
     const root = await makeRoot();
+    const originalLocator = encodeAttemptLocator({
+      runId: fixtureRunId("2026-07-01T08-00-00-000Z"),
+      evalId: "q1",
+      attempt: 0,
+    });
     const oldDir = await writeSnapshot(
       root,
       "exp_a",
@@ -240,6 +246,7 @@ describe("loadViewScan · 跨快照去重(--resume 携带的复印件只算一�
       res("q1", "passed", {
         artifacts: ["events"],
         startedAt: "2026-07-01T08:00:00.000Z",
+        locator: originalLocator,
         artifactBase: "exp_a/2026-07-01T08-00-00-000Z/q1/a0",
       }),
       res("q2", "passed"),
@@ -251,10 +258,8 @@ describe("loadViewScan · 跨快照去重(--resume 携带的复印件只算一�
     const allAttempts = [...attemptsByBase.values()];
     expect(allAttempts.filter((a) => a.evalId === "q1")).toHaveLength(1);
     const q1 = allAttempts.find((a) => a.evalId === "q1")!;
-    // 证据身份(locator)跟着最新落盘走:身份元组里的 snapshotStartedAt 是新快照的 startedAt。
-    expect(q1.locator).toBe(
-      encodeAttemptLocator({ experimentId: "exp/a", snapshotStartedAt: "2026-07-02T08:00:00.000Z", evalId: "q1", attempt: 0 }),
-    );
+    // 携带复印件保留产出它的原 Run locator，不按承载它的新 Run 重算。
+    expect(q1.locator).toBe(originalLocator);
     expect(q1.result.artifactBase).toBe("exp_a/2026-07-01T08-00-00-000Z/q1/a0"); // artifact 仍指原快照
     // 静态导出(--out)能把携带条目的 artifact 一并带走。
     expect(artifactDirs.get("exp_a/2026-07-01T08-00-00-000Z/q1/a0")).toBe(join(oldDir, "q1", "a0"));
@@ -279,11 +284,10 @@ describe("loadViewScan · 新布局落盘直接可读(写入面 / 读取面同�
     const attempts = [...scan.attemptsByBase.values()];
     expect(attempts.every((a) => a.run.agent === "bub")).toBe(true);
     expect(attempts.every((a) => a.run.startedAt === "2026-07-03T08:00:00.000Z")).toBe(true);
-    // 每条结果的 locator 都能由身份元组(experimentId/快照 startedAt/evalId/attempt 下标)独立复算,
-    // 证明它不是随手塞的占位值,而是真从落盘产物(run.json + result.json)算出来的。
+    // 每条结果的 locator 都能由身份元组(runId/evalId/attempt 下标)独立复算，
+    // 证明它不是占位值，而是由落盘产物(run.json + result.json)的权威字段算出。
     expect(attempts.every((a) => a.locator === encodeAttemptLocator({
-      experimentId: a.experimentId,
-      snapshotStartedAt: a.run.startedAt,
+      runId: a.run.runId,
       evalId: a.evalId,
       attempt: a.result.attempt,
     }))).toBe(true);

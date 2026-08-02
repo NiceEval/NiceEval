@@ -17,6 +17,46 @@ export interface CaseLockRecord {
   heartbeatAt: string; // ISO
 }
 
+function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as globalThis.Record<string, unknown>
+    : undefined;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/** 只接受本锁身份对应的完整记录，避免错位或半截 JSON 被当成持有者。 */
+function decodeCaseLockRecord(experimentId: string, evalId: string) {
+  return (value: unknown): CaseLockRecord | undefined => {
+    const record = recordOf(value);
+    if (
+      record === undefined ||
+      record.experimentId !== experimentId ||
+      record.evalId !== evalId ||
+      !isPositiveInteger(record.pid) ||
+      typeof record.host !== "string" ||
+      !isTimestamp(record.startedAt) ||
+      !isTimestamp(record.heartbeatAt)
+    ) {
+      return undefined;
+    }
+    return {
+      experimentId,
+      evalId,
+      pid: record.pid,
+      host: record.host,
+      startedAt: record.startedAt,
+      heartbeatAt: record.heartbeatAt,
+    };
+  };
+}
+
 /** 持有者续租心跳的周期。 */
 export const CASE_LOCK_HEARTBEAT_INTERVAL_MS = 10_000;
 /** `heartbeatAt` 落后当前时间超过这个阈值(三个心跳周期)即视为持有者已死。 */
@@ -36,7 +76,11 @@ export async function readCaseLock(
   experimentId: string,
   evalId: string,
 ): Promise<CaseLockRecord | undefined> {
-  return readEntryFile<CaseLockRecord>(locksDirOf(niceevalRoot), caseLockEntryId(experimentId, evalId));
+  return readEntryFile(
+    locksDirOf(niceevalRoot),
+    caseLockEntryId(experimentId, evalId),
+    decodeCaseLockRecord(experimentId, evalId),
+  );
 }
 
 /** 过期判据:只看心跳时间戳,不看 pid(容器/跨用户场景下 pid 判活不可靠)。
@@ -110,9 +154,11 @@ export async function tryAcquireCaseLockOnce(
     return { kind: "acquired", takenOver: false };
   }
 
-  const existing = await readEntryFile<CaseLockRecord>(dir, id);
+  const existing = await readEntryFile(dir, id, decodeCaseLockRecord(experimentId, evalId));
   if (existing === undefined) {
-    // O_EXCL 失败之后、读回之前锁被正常释放:此刻已经无锁,重新评估。
+    // O_EXCL 失败之后、读回之前锁可能已被正常释放，也可能是 decoder 拒绝的坏条目；后者
+    // 先经 rename 认领移除，不能让坏文件把后续重试卡成永久递归。
+    await claimEntryFile(dir, id);
     return tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, nowMs);
   }
   if (!isCaseLockStale(existing, nowMs)) {
@@ -148,7 +194,7 @@ async function renewHeartbeat(
   if (isReleased()) return;
   const dir = locksDirOf(niceevalRoot);
   const id = caseLockEntryId(experimentId, evalId);
-  const current = await readEntryFile<CaseLockRecord>(dir, id);
+  const current = await readEntryFile(dir, id, decodeCaseLockRecord(experimentId, evalId));
   if (current === undefined) return; // 锁已经不在了(已释放或被接管),没有心跳可续
   if (isReleased()) return; // 释放发生在上面这次 await 期间——写回之前的最后一道闸
   const next: CaseLockRecord = { ...current, heartbeatAt: new Date(nowMs).toISOString() };

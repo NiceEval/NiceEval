@@ -15,7 +15,7 @@ const LABEL: globalThis.Record<string, LocalizedText> = {
   agent: { en: "Agent", "zh-CN": "Agent" },
   model: { en: "Model", "zh-CN": "模型" },
   flags: { en: "Flags", "zh-CN": "Flags" },
-  scoring: { en: "Scoring", "zh-CN": "题型" },
+  evaluationKind: { en: "Evaluation kind", "zh-CN": "题型" },
   lastRun: { en: "Last run", "zh-CN": "最近运行" },
   passRate: { en: "Pass rate", "zh-CN": "通过率" },
   totalScore: { en: "Total score", "zh-CN": "总分" },
@@ -42,21 +42,21 @@ export const ExperimentDetails = defineComponent<ExperimentDetailsProps>(async (
 
   return (
     <Col className={cx("niceeval-experiment-details", props.className)}>
-      {/* 实验身份:experiment id、agent、model、flags、scoring、最近运行时间。 */}
+      {/* 实验身份:experiment id、agent、model、flags、题型、最近运行时间。 */}
       <Grid className="niceeval-experiment-identity">
         <Stat label={LABEL.experiment!} value={exp.experimentId} />
         <Stat label={LABEL.agent!} value={exp.agent} />
         {exp.model !== undefined ? <Stat label={LABEL.model!} value={exp.model} /> : null}
         {exp.flags !== undefined ? <Stat label={LABEL.flags!} value={JSON.stringify(exp.flags)} /> : null}
-        <Stat label={LABEL.scoring!} value={exp.scoring} />
+        <Stat label={LABEL.evaluationKind!} value={exp.evaluationKind} />
         <Stat label={LABEL.lastRun!} value={formatInstant(exp.lastRunAt, locale)} />
       </Grid>
       {/* 读数摘要:主读数(随题型选)、成本、tokens、耗时,以及 evals × attempts 覆盖。 */}
       <Grid className="niceeval-experiment-summary">
-        {exp.scoring !== "points" ? (
+        {exp.evaluationKind !== "points" ? (
           <Stat label={LABEL.passRate!} value={{ kind: "metric", metric: exp.endToEndPassRate }} />
         ) : null}
-        {exp.scoring !== "pass" ? (
+        {exp.evaluationKind !== "pass" ? (
           <Stat label={LABEL.totalScore!} value={{ kind: "metric", metric: exp.totalScore }} />
         ) : null}
         <Stat label={LABEL.cost!} value={{ kind: "metric", metric: exp.costUSD }} />

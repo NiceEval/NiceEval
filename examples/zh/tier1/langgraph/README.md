@@ -29,8 +29,8 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
 - `agents/langgraph.ts`：adapter 本体,只剩传输粘合——应用在哪个 URL(`LANGGRAPH_URL`,默认
   `http://127.0.0.1:35000`)、自定义帧怎么解析、审批打哪个端点。应用由你自己按它的方式启动
   (`python server.py`),eval 不代管进程。
-  **断言依据全部来自应用自己的 SSE 帧**,逐帧映射:`tool-input` → `action.called`、
-  `tool-output` → `action.result`(completed)、`tool-output-denied` → `action.result`
+  **断言依据全部来自应用自己的 SSE 帧**,逐帧映射:`tool-input` → `operation.started`、
+  `tool-output` → `operation.finished`(completed)、`tool-output-denied` → `operation.finished`
   (rejected,called 在上一轮的 `tool-input` 已落,同一个 `toolCallId` 跨轮配对)、
   `text-delta` 累积成完整回复在轮次结束补一条 `message`、`session` → `ctx.session.capture`、
   `tool-approval-request` → `input.requested` + `waiting`(停轮现场用 Adapter 私有的 typed slot
@@ -49,7 +49,7 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
   `ctx.session.id`、已有 id 的会话线带 id 续接同一条历史（LangGraph `InMemorySaver`，进程
   存活期间有效）。
 - `t.calledTool()` 等工具断言——已验证：`get_weather` / `calculate` 每次调用都有配对的
-  `action.called`/`action.result`,全部来自协议帧映射(approve 分支 `tool-input`/`tool-output`
+  `operation.started`/`operation.finished`,全部来自协议帧映射(approve 分支 `tool-input`/`tool-output`
   正常配对,deny 分支 rejected 的 result 与上一轮的 called 按 `toolCallId` 跨轮配对),无遗漏。
 - `EvalResult.trace`、`niceeval view` 瀑布图——这一档没有,它是 Tier 2 的产物,见
   [`../../tier2/langgraph/`](../../tier2/langgraph/)。断言不受影响,span 本来就不喂断言。

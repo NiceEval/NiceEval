@@ -14,9 +14,10 @@ export interface FeedbackStream {
   readonly rows: number;
 }
 
-/** setInterval 返回句柄的不透明品牌类型 —— 真实实现是 NodeJS.Timeout,测试实现是数字 id,
- *  调用方永远不检视内部结构,只用来传回 clearInterval。 */
-export type FeedbackTimerHandle = { readonly __brand: "FeedbackTimerHandle" };
+/** setInterval 句柄的显式 ADT：生产与 fake 的资源身份不再靠双断言伪装成空品牌。 */
+export type FeedbackTimerHandle =
+  | { readonly _tag: "NodeFeedbackTimer"; readonly handle: ReturnType<typeof setInterval> }
+  | { readonly _tag: "FakeFeedbackTimer"; readonly id: number };
 
 /** coordinator 需要的最小时钟面:当前时间 + 周期定时器。不用 Date.now()/setInterval 直接调用,
  *  好让 reducer 之外唯一还需要「时间」概念的这一层(tick 节奏、heartbeat 空闲判断)也能被
@@ -68,10 +69,13 @@ export function createNodeFeedbackIO(): FeedbackIO {
       setInterval: (fn, ms) => {
         const handle = setInterval(fn, ms);
         handle.unref?.();
-        return handle as unknown as FeedbackTimerHandle;
+        return { _tag: "NodeFeedbackTimer", handle };
       },
       clearInterval: (handle) => {
-        clearInterval(handle as unknown as ReturnType<typeof setInterval>);
+        if (handle._tag !== "NodeFeedbackTimer") {
+          throw new TypeError("createNodeFeedbackIO received a non-node timer handle");
+        }
+        clearInterval(handle.handle);
       },
     },
   };

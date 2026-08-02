@@ -21,6 +21,48 @@ export interface TeardownRegistration {
   startedAt: string;
 }
 
+function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as globalThis.Record<string, unknown>
+    : undefined;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/** 收尾登记的完整持久形状；单条读取还会核对文件身份。 */
+function decodeTeardownRegistration(
+  value: unknown,
+  expected: { experimentId?: string; pid?: number } = {},
+): TeardownRegistration | undefined {
+  const record = recordOf(value);
+  if (
+    record === undefined ||
+    typeof record.experimentId !== "string" ||
+    !Array.isArray(record.selectedEvalIds) ||
+    !record.selectedEvalIds.every((id) => typeof id === "string") ||
+    !isPositiveInteger(record.pid) ||
+    typeof record.host !== "string" ||
+    !isTimestamp(record.startedAt) ||
+    (expected.experimentId !== undefined && record.experimentId !== expected.experimentId) ||
+    (expected.pid !== undefined && record.pid !== expected.pid)
+  ) {
+    return undefined;
+  }
+  return {
+    experimentId: record.experimentId,
+    selectedEvalIds: record.selectedEvalIds,
+    pid: record.pid,
+    host: record.host,
+    startedAt: record.startedAt,
+  };
+}
+
 export function teardownsDirOf(niceevalRoot: string): string {
   return join(niceevalRoot, "teardowns");
 }
@@ -42,14 +84,18 @@ export async function readTeardownRegistration(
   experimentId: string,
   pid: number,
 ): Promise<TeardownRegistration | undefined> {
-  return readEntryFile<TeardownRegistration>(teardownsDirOf(niceevalRoot), teardownEntryId(experimentId, pid));
+  return readEntryFile(
+    teardownsDirOf(niceevalRoot),
+    teardownEntryId(experimentId, pid),
+    (value) => decodeTeardownRegistration(value, { experimentId, pid }),
+  );
 }
 
 /** 读全部登记项(损坏条目跳过,不整体失败;目录不存在时返回空集合)。 */
 export async function readTeardownRegistrations(
   niceevalRoot: string,
 ): Promise<{ id: string; entry: TeardownRegistration }[]> {
-  return readAllEntryFiles<TeardownRegistration>(teardownsDirOf(niceevalRoot));
+  return readAllEntryFiles(teardownsDirOf(niceevalRoot), decodeTeardownRegistration);
 }
 
 /**

@@ -4,11 +4,11 @@ sidebarTitle: "Results Data API"
 description: "The data layer under reports: openRecord parses on-disk artifacts into a typed experiment → Run → eval → Attempt hierarchy, createWriter writes other harnesses' records into NiceEval's format, and publish prepares a publication root."
 ---
 
-Under the conversion functions, components, and dual-render renderers used by [Custom Reports](/tutorials/custom-reports) sits one more layer: `niceeval/record`, the reader for on-disk artifacts. Both official doors and every report read from this layer, with no private data channel; when a scoring need cannot even be expressed in a report, drop to this layer and grab the data directly.
+Under the conversion functions, components, and dual-render renderers used by [Custom Reports](/tutorials/custom-reports) sits one more layer: `niceeval/record`, the reader for on-disk artifacts. Both official doors and every report read from this layer, with no private data channel; when an analysis cannot even be expressed in a report, drop to this layer and grab the data directly.
 
 When to drop to this layer:
 
-- **The scoring cannot even be folded with `aggregate()` / `rollup()`.** Tables, matrices, scorecards, and scatter plots are all "folding"; distribution-style views (histograms, per-event analysis) are not folding — you have to traverse attempts yourself.
+- **The analysis cannot be folded with `aggregate()` / `rollup()`.** Tables, matrices, scorecards, and scatter plots are all "folding"; distribution-style views (histograms, per-event analysis) are not folding — you have to traverse attempts yourself.
 - **Feeding results into your own system.** A data warehouse, alerting, an internal platform — they consume typed data, not a disk layout.
 - **Converting results from another platform into NiceEval's format.** The write side guarantees "what is written back is exactly what is read back" — once converted, `niceeval show` / `view` / custom reports all work on it directly.
 
@@ -275,7 +275,7 @@ The size precheck only decides whether the whole copy succeeds or fails; it neve
 | Layer | Entry | Answers |
 | --- | --- | --- |
 | The two official doors | `niceeval show` / `niceeval view` | View the official layout, zero code |
-| Custom reports | [Custom Reports](/tutorials/custom-reports), [Report Components](/reference/report-components) | Your own scoring and layout |
+| Custom reports | [Custom Reports](/tutorials/custom-reports), [Report Components](/reference/report-components) | Your own metrics and layout |
 | Record data API (this page) | `niceeval/record` | Algorithms folding cannot express, wiring into your own systems, the format itself |
 
 Each layer builds on the one below it. The same on-disk artifacts are the sole source of truth — anything derived above can be recomputed at any time.

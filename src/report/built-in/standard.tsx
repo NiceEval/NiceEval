@@ -5,50 +5,33 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
 import type { ParameterizedPageDefinition } from "../definition/report.ts";
 import {
-  AttemptDetails,
   Callouts,
   Col,
-  CopyBlock,
   ExperimentDetails,
   Hero,
-  SampleOverview,
   Waterfall,
   defineReport,
 } from "../index.ts";
 import {
   toRunNotices,
-  toSampleFixPrompt,
   toSampleNotices,
   toTraceNodes,
 } from "../model/conversions.ts";
+import {
+  attemptDetailsResult,
+  standardOverviewResult,
+} from "../tasks.ts";
+import {
+  AttemptDetailsResultView,
+  StandardOverviewResultView,
+} from "./result-components.tsx";
 
 export async function standardOverviewRender(sample: Sample) {
-  const [notices, diagnostics, fixPrompt] = await Promise.all([
-    toSampleNotices(sample),
-    toRunNotices(sample),
-    toSampleFixPrompt(sample),
-  ]);
-  return (
-    <Col>
-      <Hero />
-      <Callouts items={notices} />
-      <Callouts items={diagnostics} />
-      {fixPrompt !== null ? <CopyBlock content={fixPrompt} /> : null}
-      <SampleOverview />
-    </Col>
-  );
+  return <StandardOverviewResultView result={await standardOverviewResult(sample)} />;
 }
 
 export async function standardAttemptsRender(sample: Sample) {
-  const [notices, diagnostics] = await Promise.all([toSampleNotices(sample), toRunNotices(sample)]);
-  return (
-    <Col>
-      <Hero />
-      <Callouts items={notices} />
-      <Callouts items={diagnostics} />
-      <SampleOverview />
-    </Col>
-  );
+  return <StandardOverviewResultView result={await standardOverviewResult(sample)} />;
 }
 
 export async function standardTracesRender(sample: Sample) {
@@ -68,7 +51,7 @@ export async function standardTracesRender(sample: Sample) {
 }
 
 export async function standardAttemptRender(attempt: AttemptEvidence) {
-  return <AttemptDetails attempt={attempt} />;
+  return <AttemptDetailsResultView result={await attemptDetailsResult(attempt)} />;
 }
 
 export async function standardExperimentRender(sample: Sample) {

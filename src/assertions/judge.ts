@@ -110,6 +110,17 @@ function judgeClient(apiKey: string, baseURL: string, signal?: AbortSignal): Ope
   });
 }
 
+type AutoevalOpenAIClient = NonNullable<Parameters<typeof ClosedQA>[0]["client"]>;
+
+/**
+ * autoevals 与应用都依赖同一版 OpenAI SDK，但 pnpm 因 zod 3/4 peer context 生成了两个类型身份。
+ * 运行时 facade 相同；把例外固定在这一处，评分调用本身继续由各 scorer 的真实参数类型检查。
+ */
+function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAIClient } {
+  // @ts-expect-error Same OpenAI SDK version, distinct pnpm peer-context private-field identity.
+  return { client };
+}
+
 /** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达。传输失败(超时、
  *  连接失败)后重试一次,**每次探测各自拥有完整的 20 秒预算**;端点已给出 HTTP 回应(非 2xx)
  *  不重试——回应是确定性答案。返回错误描述字符串,可达则返回 undefined。*/
@@ -198,14 +209,12 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
     return deps.getOutput();
   };
 
-  type ScoreFunction = (args: globalThis.Record<string, unknown>) => Promise<{ score?: number | null }>;
-
   // 三个 autoevals 方法只差评分器和材料字段名,共享行为(record spec / 材料构造 /
   // 分数归一 / evidence)单一出处。model 解析:单次 { model } → judge config;
   // 没解析到模型或 key 时该条记 unavailable(带 reason),
   // 绝不静默消失、也不在调用点崩——评不了的折叠交给 Severity 与 Verdict 规则。
   const makeAutoeval =
-    (kind: "closedQA" | "factuality" | "summarizes", scorer: ScoreFunction, payloadKey: "criteria" | "expected") =>
+    (kind: "closedQA" | "factuality" | "summarizes") =>
     (reference: string, opts?: { on?: string; model?: string }) => {
       const model = opts?.model ?? resolved.model;
       return deps.record({
@@ -236,13 +245,15 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
           try {
             // autoevals 覆盖 HTTP、连接、调用超时与响应解析；这些边界上的任何异常都不能
             // 漏到 collector 的「求值异常 = 0 分」回退，必须成为没有可信分数的 unavailable。
-            const call = scorer({
-              input: deps.getInput(),
-              output,
-              [payloadKey]: reference,
-              model,
-              client: judgeClient(resolved.apiKey, resolved.baseUrl, callSignal),
-            });
+            const input = deps.getInput();
+            const client = bridgeAutoevalClient(judgeClient(resolved.apiKey, resolved.baseUrl, callSignal));
+            const call = Promise.resolve(
+              kind === "closedQA"
+                ? ClosedQA({ input, output, criteria: reference, model, ...client })
+                : kind === "factuality"
+                  ? Factuality({ input, output, expected: reference, model, ...client })
+                  : Summary({ input, output, expected: reference, model, ...client }),
+            );
             // 超时后这次调用的迟到 rejection 不再有人接:先挂一个吸收器,避免未处理拒绝。
             call.catch(() => {});
             result = await Promise.race([
@@ -278,9 +289,9 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
 
   return {
     autoevals: {
-      closedQA: makeAutoeval("closedQA", ClosedQA as unknown as ScoreFunction, "criteria"),
-      factuality: makeAutoeval("factuality", Factuality as unknown as ScoreFunction, "expected"),
-      summarizes: makeAutoeval("summarizes", Summary as unknown as ScoreFunction, "expected"),
+      closedQA: makeAutoeval("closedQA"),
+      factuality: makeAutoeval("factuality"),
+      summarizes: makeAutoeval("summarizes"),
     },
   };
 }

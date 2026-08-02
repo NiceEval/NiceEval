@@ -64,7 +64,6 @@ export default defineConfig({
 | `locale` | CLI 与运行时文案的语言（`"en"` / `"zh-CN"`）。CI 里想让日志恒定英文，写这个 |
 | `report` | 默认报告定义，裸 `show` / `view` 装载它（见[自定义报告](/zh/tutorials/custom-reports#设成项目默认)） |
 | `judge` | 默认裁判配置：`model`、`baseUrl`、`apiKeyEnv`、`timeoutMs`（判分调用等待上限，默认 180_000） |
-| `sandbox` | 默认 Sandbox provider，填 `dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` / `localSandbox()` 的产物 |
 | `workspace` | 上传进 Sandbox 的工作区根目录 |
 | `reporters` | 默认 reporter 列表（落盘、上报实验平台） |
 | `maxConcurrency` | 默认并发上限 |

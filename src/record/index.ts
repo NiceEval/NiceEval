@@ -13,11 +13,15 @@ export {
   withArtifactBase,
   experimentOfSnapshot,
   resolveLocator,
+  assertFreshAttemptLocatorRegistrations,
   LocatorNotFoundError,
   MalformedLocatorError,
+  AmbiguousLocatorError,
+  type AmbiguousLocatorCandidate,
 } from "./open.ts";
 export {
   ATTEMPT_LOCATOR_PREFIX,
+  assertLocatorRegistrationsAvailable,
   buildLocatorIndex,
   decodeAttemptLocator,
   encodeAttemptLocator,
@@ -25,24 +29,27 @@ export {
   LocatorCollisionError,
   type AttemptIdentity,
   type AttemptLocator,
+  type AttemptLocatorRegistration,
   type LocatorAttempt,
+  type LocatorIndex,
   type LocatorDecodeResult,
   type LocatorResolution,
 } from "./locator.ts";
 export {
-  buildAnnotatedEvalSource,
   assembleSourceTree,
   projectSourceView,
   deriveSendAnnotations,
-  type AnnotatedEvalSource,
-  type AnnotatedEvalSourceSummary,
-  type AnnotatedSourceLine,
   type SendAnnotation,
   type AnnotatedSourceTree,
+  type LineAnnotation,
+  type ProjectedSourceCall,
+  type ProjectedSourceLine,
   type SourceContent,
+  type SourceContentNode,
+  type SourceCallSummary,
   type SourceNode,
 } from "./annotated-source.ts";
-export { loadAnnotatedEvalSource, loadAttemptSourceTree } from "./attempt-source.ts";
+export { loadAttemptSourceTree } from "./attempt-source.ts";
 export {
   isAttemptEvidence,
   loadAttemptEvidence,

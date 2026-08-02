@@ -52,7 +52,7 @@ Sandbox create / reset
   -> agent.ensure
   -> state.load
   -> workspace.baseline
-  -> agent.setup / eval.run / agent.run / scoring
+  -> agent.setup / eval.run / agent.run / assertions.evaluate
   -> agent.teardown
   -> state.save
   -> 作者 command cleanup
@@ -138,14 +138,11 @@ type StateFailure =
         | { readonly _tag: "TransferUnavailable"; readonly reason: TransferUnavailableReason };
     };
 
-type ExternalCause = {
-  readonly _tag: "ExternalCause";
-  readonly name: string;
-  readonly code: { readonly _tag: "CodeAbsent" } | { readonly _tag: "Code"; readonly value: string };
-  readonly message: string;
-  readonly stack: { readonly _tag: "StackAbsent" } | { readonly _tag: "Stack"; readonly value: string };
-};
+type ExternalCause = import("niceeval").ExternalCause;
 ```
+
+`ExternalCause` 不在 State 域重复定义；它直接复用[执行失败分类](../error-classification/architecture.md#失败数据形状)的闭合 ADT。
+`Error`、`Object` 与 `ThrownValue` 分支，以及 code / stack / cause 的显式缺席分支，都以该单一契约为准。
 
 这两个 tagged failure 是 runner 内部错误通道,不从 `niceeval` 导出。
 识别依赖 `_tag` 与数据字段,不依赖跨包可能失效的 `instanceof`。

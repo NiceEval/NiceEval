@@ -30,7 +30,7 @@ function attempt(
     evalId,
     attempt: 0,
     agent: "codex",
-    scoring: "pass",
+    evaluationKind: "pass",
     verdict,
     failureSummary: null,
     moreFailures: 0,
@@ -51,13 +51,13 @@ function evalRow(
   attempts: AttemptListItem[],
   overrides: Partial<ExperimentListEvalRow> = {},
 ): ExperimentListEvalRow {
-  const scoring = overrides.scoring ?? (attempts.some((item) => item.scoring === "points") ? "points" : "pass");
-  const passAttempts = scoring === "points" ? [] : attempts.filter((item) => item.scoring === "pass");
+  const evaluationKind = overrides.evaluationKind ?? (attempts.some((item) => item.evaluationKind === "points") ? "points" : "pass");
+  const passAttempts = evaluationKind === "points" ? [] : attempts.filter((item) => item.evaluationKind === "pass");
   const readablePassAttempts = passAttempts.filter((item) => item.verdict !== "skipped");
   const passRefs = passAttempts.map((item) => item.locator);
   return {
     evalId,
-    scoring,
+    evaluationKind,
     verdict,
     endToEndPassRate: {
       value: readablePassAttempts.length === 0
@@ -84,7 +84,7 @@ function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentLi
   return {
     experimentId: "exp/x",
     agent: "codex",
-    scoring: "pass",
+    evaluationKind: "pass",
     evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
     endToEndPassRate: emptyCell,
     totalScore: emptyCell,
@@ -230,7 +230,7 @@ describe("experimentListContent Eval 分组层", () => {
   it("组行 tokens / totalScore 走统一格式化入口,不落裸数字", () => {
     const content = experimentListContent([
       experimentItem({
-        scoring: "points",
+        evaluationKind: "points",
         evalRows: [
           evalRow("downshift/a", "passed", [attempt("downshift/a", "passed")], {
             tokens: { value: 40_000, basis: "eval", samples: 1, total: 1, refs: [] },
@@ -388,7 +388,7 @@ describe("行形状与列集同源", () => {
   it("层级表:每一行(含 group / placeholder / 各层子行)的 cells key 集合等于列集", () => {
     const content = experimentListContent([
       experimentItem({
-        scoring: "points",
+        evaluationKind: "points",
         evalRows: [
           evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")]),
           evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")]),
@@ -462,7 +462,7 @@ describe("行形状与列集同源", () => {
 
   it("列集随 composition 变时行跟着变:纯计分制没有 passRate 列,行上也没有那一格", () => {
     const points = experimentListContent([
-      experimentItem({ scoring: "points", evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+      experimentItem({ evaluationKind: "points", evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
     ]);
     expect(columnKeys(points)).not.toContain("passRate");
     expect(points.rows[0]!.cells.passRate).toBeUndefined();
@@ -479,17 +479,17 @@ describe("行形状与列集同源", () => {
   it("单一 Experiment 混型时两列并排，Experiment 行分别填写两种主读数", () => {
     const plainAttempt = attempt("plain", "failed");
     const scoreAttempt = attempt("score", "passed", {
-      scoring: "points",
+      evaluationKind: "points",
       totalScore: cell(5),
     });
     const content = experimentListContent([
       experimentItem({
-        scoring: "mixed",
+        evaluationKind: "mixed",
         endToEndPassRate: cell(0),
         totalScore: cell(5),
         evalRows: [
           evalRow("plain", "failed", [plainAttempt]),
-          evalRow("score", "passed", [scoreAttempt], { scoring: "points", totalScore: cell(5) }),
+          evalRow("score", "passed", [scoreAttempt], { evaluationKind: "points", totalScore: cell(5) }),
         ],
         missingEvalIds: [],
       }),

@@ -4,6 +4,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
 
 export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -37,12 +38,13 @@ function num(obj: unknown, ...keys: string[]): number {
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as JsonValue;
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
     } catch {
       return value;
     }
   }
-  return (value ?? {}) as JsonValue;
+  return normalizeJsonValue(value, {});
 }
 
 function parseJsonField(value: unknown): unknown {
@@ -93,8 +95,9 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
       const callId = str(msg.tool_call_id) ?? str(msg.toolCallId) ?? nextSynthId();
       const success = msg.is_error !== true && msg.isError !== true;
       events.push({
-        type: "action.result",
-        callId,
+        type: "operation.finished",
+        operationId: callId,
+        kind: "tool",
         output: (content ?? get(msg, "output") ?? null) as JsonValue,
         status: success ? "completed" : "failed",
       });
@@ -110,11 +113,9 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
         const callId = str(get(call, "id")) ?? nextSynthId();
         const args = coerceArgs(get(fn, "arguments") ?? get(call, "arguments") ?? get(call, "input"));
         events.push({
-          type: "action.called",
-          callId,
-          name,
-          input: args,
-          tool: normalizeToolName(name),
+          type: "operation.started",
+          operationId: callId,
+          operation: { kind: "tool", name, input: args, tool: normalizeToolName(name) },
         });
       }
     }

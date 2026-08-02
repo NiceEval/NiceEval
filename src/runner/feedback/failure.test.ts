@@ -9,6 +9,7 @@ import { shared } from "../../agents/shared.ts";
 import { failureDetailFromResult } from "./failure.ts";
 import type { EvalResult } from "../../types.ts";
 import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
+import { encodeAttemptLocator } from "../../record/locator.ts";
 
 const RICH_TAIL = [
   "│ ❱ 205 │   raise APIError(",
@@ -54,7 +55,7 @@ function erroredResult(message: string): EvalResult {
     durationMs: 1,
     assertions: [],
     evidenceCoverage: completeEvidenceCoverage,
-    locator: "@1abc1234",
+    locator: encodeAttemptLocator({ runId: "failure-feedback-fixture", evalId: "react-datepicker/pr-6168", attempt: 0 }),
     error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }

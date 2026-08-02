@@ -176,7 +176,7 @@ describe("validateScoreboardData", () => {
 
 describe("validateDeltaData", () => {
   const validDeltaCell = {
-    scoring: "pass",
+    evaluationKind: "pass",
     verdict: "passed",
     attempts: ["@1abcdef2"],
     totalTokens: 1000,
@@ -194,7 +194,7 @@ describe("validateDeltaData", () => {
         delta: { "agents-md": { tokens: 0, costUSD: 0 } },
       },
     ],
-    totals: { baseline: { scoringComposition: "pass", passed: 1, denominator: 1 } },
+    totals: { baseline: { evaluationKindComposition: "pass", passed: 1, denominator: 1 } },
     pairedDelta: { "agents-md": { commonEvalIds: ["coding/a"], pass: { knownEvalIds: ["coding/a"], passRatePoints: 0 } } },
   };
 
@@ -223,9 +223,9 @@ describe("validateDeltaData", () => {
     expect(validateDeltaData(bad)).toMatch(/"rows\[0\]\.flipped"/);
   });
 
-  it("totals.<condition>.scoringComposition 不在三态内报错", () => {
-    const bad = { ...valid, totals: { baseline: { scoringComposition: "half" } } };
-    expect(validateDeltaData(bad)).toMatch(/"totals\.baseline\.scoringComposition"/);
+  it("totals.<condition>.evaluationKindComposition 不在三态内报错", () => {
+    const bad = { ...valid, totals: { baseline: { evaluationKindComposition: "half" } } };
+    expect(validateDeltaData(bad)).toMatch(/"totals\.baseline\.evaluationKindComposition"/);
   });
 
   it("pairedDelta.<condition>.commonEvalIds 非字符串数组报错", () => {

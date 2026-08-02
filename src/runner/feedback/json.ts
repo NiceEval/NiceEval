@@ -33,6 +33,7 @@ import type {
   LifecyclePhase,
   RunFeedbackState,
 } from "../types.ts";
+import type { JsonValue, Verdict } from "../../shared/types.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
 /** `ExpEvent`/`ExpPlanDocument` 的 `format`/`schemaVersion` —— 只在破坏性形状变更时递增
@@ -49,10 +50,168 @@ export interface JsonRendererOptions {
   io: FeedbackIO;
 }
 
-/** JSON 值:与 Record run.json 的 `JsonValue` 同一定义(见 cli.md)。 */
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export interface StartEvent {
+  format: typeof EXP_STREAM_FORMAT;
+  schemaVersion: number;
+  event: "start";
+  total: number;
+  configs: number;
+  concurrency: number;
+  experimentConcurrency?: Readonly<globalThis.Record<string, number>>;
+  reused: number;
+}
 
-function writeEvent(io: FeedbackIO, event: globalThis.Record<string, JsonValue | undefined>): void {
+export interface ProgressEvent {
+  event: "progress";
+  elapsedMs: number;
+  total: number;
+  reused: number;
+  running: number;
+  elsewhere: number;
+  queued: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+}
+
+export interface FailureEvent {
+  event: "failure";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  severity: "gate" | "soft";
+  assertion: string;
+  matcher?: string;
+  expected?: JsonValue;
+  received?: JsonValue;
+}
+
+export interface ErrorEvent {
+  event: "error";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  phase: LifecyclePhase;
+  reason: string;
+}
+
+interface EvalEventBase {
+  event: "eval";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  verdict: Verdict;
+  attempts: number;
+}
+
+export type EvalEvent = EvalEventBase & (
+  | { passed: number; planned?: never; unstarted?: never; reason?: never }
+  | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
+);
+
+export interface KeptEvent {
+  event: "kept";
+  locator: string;
+  evalId: string;
+  attempt: number;
+  verdict: Exclude<Verdict, "skipped">;
+  provider: string;
+  sandboxId: string;
+  enter: string;
+}
+
+export interface WarningEvent {
+  event: "warning";
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  phase?: LifecyclePhase;
+  experimentId?: string;
+  evalId?: string;
+}
+
+export interface BudgetExhaustedEvent {
+  event: "budget_exhausted";
+  experimentId: string;
+  spent: number;
+  unstarted: number;
+}
+
+export interface ReporterErrorEvent {
+  event: "reporter_error";
+  reporter: string;
+  required: boolean;
+  message: string;
+}
+
+export interface InterruptedEvent {
+  event: "interrupted";
+}
+
+export interface JudgePrecheckEvent {
+  event: "judge_precheck";
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+export interface ExperimentSetupEvent {
+  event: "experiment_setup";
+  experimentId: string;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+export interface ExperimentTeardownEvent {
+  event: "experiment_teardown";
+  experimentId: string;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+export interface LockWaitEvent {
+  event: "lock_wait";
+  experimentId: string;
+  evalId: string;
+  status: "started" | "resolved";
+  holderPid?: number;
+  holderHost?: string;
+  resolution?: "carried" | "dispatched";
+  waitedMs?: number;
+}
+
+export interface ResultEvent {
+  event: "result";
+  status: "passed" | "failed" | "incomplete" | "interrupted";
+  passed: number;
+  failed: number;
+  errored: number;
+  reused?: number;
+  unstarted?: number;
+  completion: "complete" | "incomplete" | "interrupted";
+  snapshots: string[];
+  junit?: string;
+}
+
+/** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
+export type ExpEvent =
+  | StartEvent
+  | ProgressEvent
+  | FailureEvent
+  | ErrorEvent
+  | EvalEvent
+  | KeptEvent
+  | WarningEvent
+  | BudgetExhaustedEvent
+  | ReporterErrorEvent
+  | InterruptedEvent
+  | JudgePrecheckEvent
+  | ExperimentSetupEvent
+  | ExperimentTeardownEvent
+  | LockWaitEvent
+  | ResultEvent;
+
+function writeEvent(io: FeedbackIO, event: ExpEvent): void {
   io.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
@@ -107,7 +266,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         case "diagnostic": {
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, event.key)) return; // 去重后只追加一次(cli.md)
-          const phase = typeof event.data?.phase === "string" ? (event.data.phase as LifecyclePhase) : undefined;
+          const phase = lifecyclePhaseField(event.data?.phase);
           // `code` 是 cli.md `WarningEvent` 里那个稳定词法(`lock-taken-over` / `dispatch-halted`),
           // **不是**去重 key:去重 key 常把折叠身份编进去(`lock-taken-over:<exp>|<eval>`),原样
           // 透出会让消费方拿到一个每次运行都不同的 code、没法按值分支。折叠到哪一条实验/用例
@@ -184,15 +343,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         }
 
         case "run-activity": {
-          noteCheckpoint(event.at);
-          writeEvent(io, {
-            event: "run_activity",
-            id: event.id,
-            key: event.key,
-            label: event.label,
-            status: event.status,
-            ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
-          });
+          // Run activity 只服务 human live 面；ExpEvent 的已采纳词表没有这一种事件。
           return;
         }
 
@@ -220,6 +371,9 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           return;
 
         case "kept": {
+          if (event.verdict === "skipped") {
+            throw new Error("A skipped attempt cannot own a retained sandbox");
+          }
           writeEvent(io, {
             event: "kept",
             locator: String(event.locator),
@@ -285,15 +439,48 @@ function stringField(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/** 诊断 data 是 JSON 边界；只有全局 LifecyclePhase 闭集成员才能进入 WarningEvent.phase。 */
+function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | undefined {
+  switch (value) {
+    case "judge.precheck":
+    case "experiment.setup":
+    case "experiment.teardown":
+    case "sandbox.queue":
+    case "sandbox.create":
+    case "sandbox.prepare":
+    case "sandbox.prepare.eval":
+    case "sandbox.prepare.experiment":
+    case "agent.ensure":
+    case "state.load":
+    case "workspace.baseline":
+    case "agent.setup":
+    case "telemetry.configure":
+    case "eval.run":
+    case "agent.run":
+    case "workspace.diff":
+    case "assertions.evaluate":
+    case "telemetry.collect":
+    case "agent.teardown":
+    case "state.save":
+    case "sandbox.cleanup":
+    case "sandbox.suspend":
+    case "sandbox.stop":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 // ───────────────────────── failure / error 事件(不设上限) ─────────────────────────
 
 function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { type: "failure" }): void {
+  const experimentId = requiredExperimentId(event.identity.experimentId, event.identity.evalId);
   if (event.verdict === "errored") {
     writeEvent(io, {
       event: "error",
       locator: String(event.locator),
       evalId: event.identity.evalId,
-      ...(event.identity.experimentId !== undefined ? { experimentId: event.identity.experimentId } : {}),
+      experimentId,
       phase: event.phase ?? "eval.run",
       reason: event.reason,
     });
@@ -304,7 +491,7 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
     event: "failure",
     locator: String(event.locator),
     evalId: event.identity.evalId,
-    ...(event.identity.experimentId !== undefined ? { experimentId: event.identity.experimentId } : {}),
+    experimentId,
     severity: a?.severity ?? "gate",
     assertion: a?.assertion ?? event.reason,
     ...(a?.matcher !== undefined ? { matcher: a.matcher } : {}),
@@ -313,23 +500,41 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
   });
 }
 
+function requiredExperimentId(experimentId: string | undefined, evalId: string): string {
+  if (experimentId === undefined) {
+    throw new Error(`JSON experiment event is missing experimentId for eval ${evalId}`);
+  }
+  return experimentId;
+}
+
 // ───────────────────────── 逐 eval 结论行(不设上限,写在 result 之前) ─────────────────────────
 
 /** 一条 `eval` 事件(cli.md「runs 与首过即停怎样展示」):字段随 earlyExit 是否触发在
  *  planned/unstarted/reason 与 passed 两组间二选一,不同时出现两组字段。`rate` 是
  *  `EvalConclusionRow` 派生出的额外读数,不在 `ExpEvent` 的 `EvalEvent` 形状里,这里不透出。 */
-function evalConclusionEvent(row: EvalConclusionRow): globalThis.Record<string, JsonValue | undefined> {
-  return {
+function evalConclusionEvent(row: EvalConclusionRow): EvalEvent {
+  const experimentId = requiredExperimentId(row.experimentId, row.evalId);
+  if (row.locator === undefined) {
+    throw new Error(`JSON experiment event is missing locator for eval ${row.evalId}`);
+  }
+  const base: EvalEventBase = {
     event: "eval",
-    ...(row.locator !== undefined ? { locator: row.locator } : {}),
+    locator: row.locator,
     evalId: row.evalId,
-    ...(row.experimentId !== undefined ? { experimentId: row.experimentId } : {}),
+    experimentId,
     verdict: row.verdict,
     attempts: row.attempts,
-    ...(row.reason !== undefined
-      ? { planned: row.planned!, unstarted: row.unstarted!, reason: row.reason }
-      : { passed: row.passed! }),
   };
+  if (row.reason === "early_exit") {
+    if (row.planned === undefined || row.unstarted === undefined) {
+      throw new Error(`Early-exit eval event is missing planned counts for eval ${row.evalId}`);
+    }
+    return { ...base, planned: row.planned, unstarted: row.unstarted, reason: row.reason };
+  }
+  if (row.passed === undefined) {
+    throw new Error(`Completed eval event is missing passed count for eval ${row.evalId}`);
+  }
+  return { ...base, passed: row.passed };
 }
 
 function writeEvalConclusions(
@@ -374,7 +579,7 @@ function writeResultEvent(
     ...(reused > 0 ? { reused } : {}),
     ...(completion.unstarted > 0 ? { unstarted: completion.unstarted } : {}),
     completion: completion.status,
-    runs: [...event.paths],
+    snapshots: [...event.paths],
     ...(event.junit !== undefined ? { junit: event.junit } : {}),
   });
 }

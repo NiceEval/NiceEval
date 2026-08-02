@@ -8,7 +8,7 @@ import { register } from "tsx/esm/api";
 import { pathToFileURL } from "node:url";
 
 let generation = 0;
-let chain: Promise<unknown> = Promise.resolve();
+let chain: Promise<void> = Promise.resolve();
 
 /**
  * 装载 abs 路径的模块,其子图(项目内相对 import)全部是新实例。

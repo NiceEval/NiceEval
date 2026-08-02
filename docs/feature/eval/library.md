@@ -31,7 +31,7 @@ export default defineEval({
 | `parked` / `requireInputRequest` / `respond` / `respondAll` | 停在人工输入上的 gate 与续接 | [Context · 驱动 API](library/context.md#驱动-api) | [HITL 审批](use-case/hitl-approval.md) |
 | `succeeded` / `calledTool` / `toolOrder` / `event` / `maxTokens` … | 作用域断言：断 agent 做了什么、花了多少 | [Assertions · 作用域断言](../assertions/library/scoped-assertions.md) | [过程与成本](use-case/process-and-cost.md) · [calledTool 全参数](use-case/calledtool.md) |
 | `t.group` | 分组断言：报告区块，组名同时是对比的得分点维度 | [Assertions · 值断言 · 分组](../assertions/library/value-assertions.md#分组) | [过程与成本](use-case/process-and-cost.md) |
-| `.points(n)` / `t.score(label, n)` | 计分制给分（仅 `defineScoreEval` 的 `t`）：断言条件给分 / 直接累加给分 | [Assertions · 计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明) | [计分制](use-case/rubric-scoring.md) |
+| `.points(n)` / `t.score(label, n)` | 计分制给分（仅 `defineScoreEval` 的 `t`）：断言条件给分 / 直接累加给分 | [Assertions · 计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明) | [计分制](use-case/rubric-points.md) |
 | `t.check` / `t.require` + `niceeval/expect` matcher | 值断言：断某个具体值（`t.require` 是通过制的前置词，计分制的 `t` 上没有） | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
 | `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |

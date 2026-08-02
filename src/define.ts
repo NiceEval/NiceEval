@@ -5,21 +5,15 @@ import type {
   DirectAgent,
   DirectAgentDef,
   Config,
-  DockerSandboxSpec,
-  E2BSandboxSpec,
   EvalInput,
   EvalDefinition,
   ExperimentDefinition,
   ExperimentInput,
-  LocalSandboxSpec,
   SandboxAgent,
   SandboxAgentDef,
-  SandboxHook,
-  SandboxHooks,
   ScoreEvalInput,
   ScoreTestContext,
   TestContext,
-  VercelSandboxSpec,
   JsonValue,
 } from "./types.ts";
 import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
@@ -41,9 +35,9 @@ import {
   STATE_REUSE,
 } from "./state/plan.ts";
 import { Either, Schema } from "effect";
-import { assertEvidenceCoverage } from "./scoring/coverage.ts";
+import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 
-// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
+// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
 
@@ -96,8 +90,8 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.evalIdRejected"));
   }
-  if (Object.hasOwn(def, "scoring")) {
-    throw new Error(t("define.evalScoringRejected"));
+  if (Object.hasOwn(def, "evaluationKind")) {
+    throw new Error(t("define.evalEvaluationKindRejected"));
   }
   if (Object.hasOwn(def, "configHash")) {
     throw new Error(t("define.evalConfigHashRejected"));
@@ -106,7 +100,7 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
     throw new Error(t("define.evalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineEval");
-  return brandEvalDefinition({ ...normalizeEvalFields(def), scoring: "pass", test: def.test });
+  return brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "pass", test: def.test });
 }
 
 /**
@@ -120,8 +114,8 @@ export function defineScoreEval(
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
-  if (Object.hasOwn(def, "scoring")) {
-    throw new Error(t("define.scoreEvalScoringRejected"));
+  if (Object.hasOwn(def, "evaluationKind")) {
+    throw new Error(t("define.scoreEvalEvaluationKindRejected"));
   }
   if (Object.hasOwn(def, "configHash")) {
     throw new Error(t("define.scoreEvalConfigHashRejected"));
@@ -130,7 +124,7 @@ export function defineScoreEval(
     throw new Error(t("define.scoreEvalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineScoreEval");
-  const result = brandEvalDefinition({ ...normalizeEvalFields(def), scoring: "points", test: def.test });
+  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "points", test: def.test });
   definedScoreEvals.add(result);
   return result;
 }
@@ -239,7 +233,7 @@ function decodeJsonRecord(
 
 /**
  * `SandboxLayer` 的品牌只由 `niceeval/sandbox` 工厂写入。动态 TSX/JS 调用绕过静态类型时，
- * 不接受旧 SandboxSpec 或看似相同的裸对象，以免在 linker 阶段才得到难以定位的错误。
+ * 不接受看似相同的裸对象，以免在 linker 阶段才得到难以定位的错误。
  */
 function assertSandboxLayer(value: unknown, factory: string): void {
   if (value !== undefined && !isSandboxLayer(value)) {
@@ -252,92 +246,6 @@ function assertSandboxLayer(value: unknown, factory: string): void {
 /** 项目级配置。 */
 export function defineConfig(config: Config): Config {
   return config;
-}
-
-// ───────────────────────── Sandbox 工厂 ─────────────────────────
-// Sandbox 与 agent 一样用数据结构带参数(见 docs/feature/sandbox/library.md)。这些工厂只是把
-// provider + 参数包成 spec 对象;真正的行为在 sandbox/<provider>.ts 里,由 resolve.ts 派发。
-//
-// 四个工厂都要挂上 `.setup()` / `.teardown()` 链式方法(见 sandbox/types.ts 的
-// SandboxHooks<Self>):累积的钩子数组随 `HookState` 传递,每次链式调用都重新调
-// `build()` 产出一个新对象,原 spec 不被修改。
-
-/** 链式追加中累积的钩子(setup 按追加顺序执行,teardown 执行时逆序,见 SandboxHooks)。 */
-interface HookState {
-  readonly setupHooks: readonly SandboxHook[];
-  readonly teardownHooks: readonly SandboxHook[];
-}
-
-/** 四个工厂共用:把当前钩子状态包成 `.setup()` / `.teardown()` 方法,调用即用新状态重新 build。 */
-function hookMethods<TSpec>(
-  state: HookState,
-  rebuild: (state: HookState) => TSpec,
-): Pick<SandboxHooks<TSpec>, "setup" | "teardown"> {
-  return {
-    setup: (fn) => rebuild({ setupHooks: [...state.setupHooks, fn], teardownHooks: state.teardownHooks }),
-    teardown: (fn) => rebuild({ setupHooks: state.setupHooks, teardownHooks: [...state.teardownHooks, fn] }),
-  };
-}
-
-const EMPTY_HOOKS: HookState = { setupHooks: [], teardownHooks: [] };
-
-/** Docker 沙箱:本地容器。`image` 可覆盖默认 `node:*-slim`(预制模板:烘焙好 agent CLI 的镜像)。 */
-export function dockerSandbox(
-  opts: Omit<DockerSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
-): DockerSandboxSpec {
-  const build = (state: HookState): DockerSandboxSpec => ({
-    provider: "docker",
-    ...opts,
-    setupHooks: state.setupHooks,
-    teardownHooks: state.teardownHooks,
-    ...hookMethods(state, build),
-  });
-  return build(EMPTY_HOOKS);
-}
-
-/** Vercel Sandbox:microVM。`snapshotId` 从已有快照起(预制模板:烘焙好 agent CLI 的快照)。 */
-export function vercelSandbox(
-  opts: Omit<VercelSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
-): VercelSandboxSpec {
-  const build = (state: HookState): VercelSandboxSpec => ({
-    provider: "vercel",
-    ...opts,
-    setupHooks: state.setupHooks,
-    teardownHooks: state.teardownHooks,
-    ...hookMethods(state, build),
-  });
-  return build(EMPTY_HOOKS);
-}
-
-/** E2B 沙箱。`template` 选 e2b 模板名/ID(预制模板:如 `"niceeval-agents"`);省略用 e2b 默认 `"base"`。 */
-export function e2bSandbox(
-  opts: Omit<E2BSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
-): E2BSandboxSpec {
-  const build = (state: HookState): E2BSandboxSpec => ({
-    provider: "e2b",
-    ...opts,
-    setupHooks: state.setupHooks,
-    teardownHooks: state.teardownHooks,
-    ...hookMethods(state, build),
-  });
-  return build(EMPTY_HOOKS);
-}
-
-/**
- * 本地沙箱:宿主机本地目录直接当 workdir 跑(见 docs/feature/sandbox/local.md)。`dir` 省略时
- * 从当前目录向上解析 git 仓库根;显式 `dir` 可以是任意本地目录,不要求已是 git 仓库。
- */
-export function localSandbox(
-  opts: Omit<LocalSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
-): LocalSandboxSpec {
-  const build = (state: HookState): LocalSandboxSpec => ({
-    provider: "local",
-    ...opts,
-    setupHooks: state.setupHooks,
-    teardownHooks: state.teardownHooks,
-    ...hookMethods(state, build),
-  });
-  return build(EMPTY_HOOKS);
 }
 
 /**

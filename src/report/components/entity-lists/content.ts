@@ -9,10 +9,10 @@ import type {
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
-  ScoringComposition,
+  EvaluationKindComposition,
 } from "../../model/types.ts";
 import type { MetricValue } from "../../model/calculation.ts";
-import { experimentListScoringComposition } from "../../model/format.ts";
+import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 
 /** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
@@ -54,7 +54,7 @@ function projectCells(bag: CellBag, columns: readonly ColumnSpec[]): globalThis.
 /** 层级表的一次投影:列集随 composition 动态,行按这一份列集裁。 */
 interface HierarchyView {
   readonly columns: readonly ColumnSpec[];
-  readonly composition: ScoringComposition;
+  readonly composition: EvaluationKindComposition;
 }
 
 function measureCell(value: MetricValue): Cell {
@@ -126,7 +126,7 @@ function attemptCells(item: AttemptListItem): CellBag {
     record: { kind: "verdict", verdict },
     durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
     costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
-    ...(item.scoring === "points" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
+    ...(item.evaluationKind === "points" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
   };
 }
 
@@ -207,7 +207,7 @@ function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MetricValue 
   let total = 0;
   const refs: AttemptLocator[] = [];
   for (const row of evalRows) {
-    if (row.scoring === "points") continue;
+    if (row.evaluationKind === "points") continue;
     total += row.endToEndPassRate.total;
     samples += row.endToEndPassRate.samples;
     refs.push(...row.endToEndPassRate.refs);
@@ -298,17 +298,17 @@ function memberEvalRows(members: readonly LeafMember[]): ExperimentListEvalRow[]
 function groupPrimaryValue(
   evalRows: readonly ExperimentListEvalRow[],
 ): number | null {
-  const scoring = evalRowsScoringComposition(evalRows);
-  if (scoring === "mixed") return null;
-  if (scoring === "points") {
+  const evaluationKind = evalRowsEvaluationKindComposition(evalRows);
+  if (evaluationKind === "mixed") return null;
+  if (evaluationKind === "points") {
     return sumCells(evalRows.map((row) => row.totalScore)).value;
   }
   return groupPassRate(evalRows).value;
 }
 
-function evalRowsScoringComposition(evalRows: readonly ExperimentListEvalRow[]): ScoringComposition {
-  const hasPass = evalRows.some((row) => row.scoring !== "points");
-  const hasPoints = evalRows.some((row) => row.scoring !== "pass");
+function evalRowsEvaluationKindComposition(evalRows: readonly ExperimentListEvalRow[]): EvaluationKindComposition {
+  const hasPass = evalRows.some((row) => row.evaluationKind !== "points");
+  const hasPoints = evalRows.some((row) => row.evaluationKind !== "pass");
   return hasPass && hasPoints ? "mixed" : hasPoints ? "points" : "pass";
 }
 
@@ -469,7 +469,7 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
 }
 
 /** 层级表列集:主读数列随题型构成在场,其余固定。 */
-function experimentColumns(composition: ScoringComposition): ColumnSpec[] {
+function experimentColumns(composition: EvaluationKindComposition): ColumnSpec[] {
   return [
     { key: "entity", header: HEADER.entity },
     { key: "model", header: HEADER.model },
@@ -494,7 +494,7 @@ const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
 ];
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
-  const composition = experimentListScoringComposition(items);
+  const composition = experimentListEvaluationKindComposition(items);
   const view: HierarchyView = { columns: experimentColumns(composition), composition };
   return {
     columns: view.columns,

@@ -1,5 +1,5 @@
 import { defineConfig } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 
 export default defineConfig({
   name: { "zh-CN": "e2e: codex-cli (codexAgent, docker sandbox)", en: "e2e: codex-cli (codexAgent, docker sandbox)" },
@@ -15,7 +15,7 @@ export default defineConfig({
   // lifetimeMs 是容器 TTL,也是 sandboxReuse 派发前寿命确认的唯一依据:docker 容器的 TTL
   // 烧在 PID1 里没有续期通道,不声明它时声明了复用的实验(experiments/plugin-reuse.ts)在
   // 第一条 attempt 派发前就报错。30 分钟覆盖复用实验的两条 attempt(每条 timeoutMs 10 分钟)。
-  sandbox: dockerSandbox({ image: "niceeval/codex:v0.9.1", lifetimeMs: 30 * 60_000 }),
+  sandbox: dockerImageSandbox({ image: "niceeval/codex:v0.9.1", lifetimeMs: 30 * 60_000 }),
   // 沙箱型 agent 每个 attempt 都是全新容器;CLI 已随镜像预装,但 setup 阶段的
   // skills/MCP/plugin 仍要装;实测本机单次 attempt 数十秒到数分钟,10 分钟放足余量。
   timeoutMs: 600_000,

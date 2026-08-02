@@ -254,11 +254,12 @@ const scope = reportScopeFixture({
 - **公开呈现 helper**：`shortestUniqueLabels` 与 `presentDimension` 从 `niceeval/report` 顶层导出，并与内部定义同一引用。
    `presentDimension(declaration)` 与报告树内 `ctx.dimension(handle)` 对同一份声明返回相同槽位。
 
-- **公开 `to*` 转换**（[Library · 实体转换](../../../feature/reports/library.md)）：顶层导出含 `toExperimentRows`、`toEvalRows`、`toAttemptRows`、`toSampleNotices`、 `toTraceNodes`、`toAnnotatedEvalSource` 等。
+- **公开 `to*` 转换**（[Library · 实体转换](../../../feature/reports/library.md)）：顶层导出含 `toExperimentRows`、`toEvalRows`、`toAttemptRows`、`toSampleNotices`、`toTraceNodes` 与 `toAttemptSource` 等。
   断言面是返回的普通值形状，不是组件树。
   区分力：零样本、缺 artifact、计分制字段投影、`experimentRows` 的 evalId 分组与占位行、 `failureSummary` 计分制口径、`durationMs` 对 timeout 返回 `null` 各一条代表场景。
   测试落点 `src/report/model/conversions.ts` 与消费方 compute。
-- **原语 plain props**：`Callouts items=`、`Waterfall nodes=`、`CopyBlock content=`、 `Table rows=`、`Scatter`/`Line`/`Bars`/`Area` 的 `points=` 只接收 page render 算好的普通值，不经 Source / `data=` 双形态。
+- **原语 plain props**：`Callouts items=`、`Waterfall nodes=`、`CopyBlock content=` 与 `Table rows=` 只接收 page render 算好的普通值。
+  `Scatter` / `Line` / `Bars` / `Area` 的 `points=` 遵守同一规则，不经 Source / `data=` 双形态。
    Sample 派生路径校验 EvidenceRow.refs 与 MetricValue；`external: true` 只退出证据校验。
    `Bars` 的 `sort` / `limit` 只改变显示行序与截断，不聚合长尾、不制造「其他」桶；缺 sort 值沉底。
   内建三视图的 page render 与具名导出同引用。
@@ -370,9 +371,13 @@ const scope = reportScopeFixture({
   渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要 `pnpm run build:report`，改动 view 壳 / dialog 摆放后需要 `pnpm run view:build`。
 - **源码调用树的数据语义**：源码证据按 entry 角色确定主干，不按断言命中数猜测。
   跨文件 `loc` 在没有 callers 时进入 detached，有 callers 时挂回最内层主干帧。
-   package 与 unavailable 中间段不吞掉更深节点；只有没有 `loc` 的记录进入 unmapped。
+  package 与 unavailable 中间段不吞掉更深节点；正文存在但定位行越界同样保留 unavailable；只有没有 `loc` 的记录进入 unmapped。
+  passed / failed / unavailable、挣分 / 显式满分与中止自底向上汇总，unavailable 不计成 failed；send / assertion / score 按统一发生序交错排列。
   完整树不受展示预算影响。
-   default、full、 file 与 web 的行选择只在投影函数发生。
+  行选择只在 default、full、file 与 web 的投影函数发生：主干 / 子树上下文半径为 3 / 2，无关段折叠阈值为 8 / 4。
+  full 展开全部调用边但节点内部仍折行；default 超过 400 行时先收深层，同层先 soft 后 gate。
+  web 保留全部路径并只设置默认 open；file 按捕获路径后缀唯一匹配并显示全文。零命中与多命中都是可分辨的用法错误。
+  text、web 与 ShowJson 消费同一个 `AnnotatedSourceResult`，旧的按命中数猜单文件投影不得再出现在公开或内部读取路径。
 - **`attemptAssertions` 的计分制字段**：
   - `.points` 挣分随所在 `AssertionResult` 一起出现，包括「失败的检查点挣 0 分」。
   - **得分点不参与 passed 收纳**：passed 的得分点逐条进平铺列表、不折进 `passedGroups` 计数（[收纳豁免](../../../feature/assertions/library/display.md#计分制points-与给分记录)）。
@@ -380,7 +385,9 @@ const scope = reportScopeFixture({
   - `t.score(label, n)` 的给分记录与断言分属两个数组，按 `groupPath.join(" > ")` 分组。
   - 没有 assertion 但存在给分记录时 `attemptAssertions` 不是 `null`。
   - 通过制 attempt 的 `scoreEntries` 字段恒省略；`validateAssertionsData` 校验 `scoreEntries` 结构。
-- **计分制的 attempt 详情数据**：`attemptSummary` 的本轮挣分字段（计分制 attempt 才出现，通过制省略——它是详情页总分的唯一出现处）；`attemptSource` 的给分投影——得分点行的挣分标注、`t.score` 调用行的给分标注、前置中止行的 `⤓` 与其后源码行的未到达标记；`attemptFixPrompt` 把丢分得分点与前置中止都算可操作失败（计分制 `passed` 有丢分不是 `null`，挣满且未中止才是 `null`，通过制 passed 恒 `null`）。
+- **计分制的 attempt 详情数据**：`attemptSummary` 的本轮挣分字段只在计分制 attempt 出现；它是详情页总分的唯一出现处。
+  标注源码树投影得分点的挣分 / 满分、`t.score` 给分、前置中止的 `⤓`，以及后续源码行的未到达状态。
+  `attemptFixPrompt` 把丢分与前置中止都算可操作失败。计分制挣满且未中止才返回 `null`；通过制 passed 恒为 `null`。
   染色、降灰、pill 与右缘 sticky 的呈现归 E2E 报告域。
 - **计分制的跨文件源码投影**：跨文件给分进入调用片段或 detached block。
   没有 `loc` 的得分点与给分记录进入 unmapped，并按 `groupPath` 分组；分组算法与 `attemptAssertions` 相同。
@@ -388,7 +395,9 @@ const scope = reportScopeFixture({
   断言装载结果或错误对象。
 - **惰性 page render** （[Architecture · 执行模型](../../../feature/reports/architecture.md#执行模型)）：装载不执行 render；打开一页不执行兄弟页；同一实例 text/web/locale 共用一次 render Promise。
   区分力：多页 + 调用计数。
-- **show 终端宿主的文案纯函数**：`show` 专属的纯函数以返回值为断言面，不依赖终端排版——紧凑索引行的判定原因（`verdictReasonLine`）对多行 `error.message` 折首行并剥控制字节收口，完整多行 message 归 attempt 详情块展开；`showCommand` / `otherPagesText` 按 `HostCommandContext` 拼出可复现的页/组索引命令，只列未渲染的页且携带完整上下文。
+- **show 终端宿主的文案纯函数**：`show` 的纯函数以返回值为断言面，不依赖终端排版。
+  `verdictReasonLine` 把多行 `error.message` 收为首行并移除控制字节；完整 message 只在 attempt 详情块展开。
+  `showCommand` / `otherPagesText` 按 `HostCommandContext` 生成可复现的页 / 组索引命令，只列未渲染页并携带完整上下文。
   选择收窄、`--history` 时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归 [E2E 功能域 · 报告与读面](../e2e/report.md)；跨 Run 的当前 Sample 选择与去重语义归[单元测试 Record / Sample](record.md)的 `currentSample()` 类别。
 - **o11y 数据派生**：
   - `estimateCost` 对未知 Model 返回 `null`。
@@ -447,8 +456,9 @@ const scope = reportScopeFixture({
   - 命令节点的时限归属：因超时失败的节点在 text 面原位标注生效 deadline 值与来源层；`--json` 与 `--timing=full` 对全部命令节点给出该字段。fixture 要有两个不同来源层的超时命令，证明标注取的是各自生效的那层，不是全树共用一个值。
 
 - **`--json` 投影**：
-  - envelope 包含 format、schemaVersion、view 与 scope 回显。
-  - text 与 JSON 消费同一次 page render 计算出的数据。
+  - envelope 包含 format、schemaVersion、view 与 sample 回显。
+  - `view` 判别 `data` 的完整 task Result 类型；消费方收窄 `view` 后不出现 `unknown`。
+  - text、JSON 与对应内建 page 消费同一次 task Result 计算出的数据。
     它们必须选择同一批实体，共有字段必须同值。
   - JSON 是 text 的数据超集，不要求字段集合相等。
   - timing 的 JSON 始终保留完整树，不受 text 的节点预算影响。
@@ -456,6 +466,11 @@ const scope = reportScopeFixture({
      `--json` 与 `--report` 互斥。
   - 本类别只证明 envelope 与跨视图不变量。
     逐视图字段由对应数据源类别证明。
+
+- **内建 task Result**：
+  - 10 个公开 task 函数返回可序列化普通数据，不含 `ReportNode`。
+  - 一个切片的 text / JSON / page 接线使用调用计数或严格同值 fixture 证明只解析一次。
+  - `AttemptJson` 用 `runStartedAt`；ShowJson 信封用 `sample`，不保留旧别名。
 
   设计理由见[show 的切片是组件选择](../../../feature/reports/architecture.md#show-的切片是组件选择)。
 

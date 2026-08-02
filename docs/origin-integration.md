@@ -84,7 +84,7 @@ export default defineDirectAgent({
 `driveFrameStream` / `sseJsonFrames` 从 `niceeval/adapter` 导出,是逐帧驱动循环的官方件,五个 adapter 共用思路(langgraph/pi 的自定义帧、claude 的 SDKMessage、codex 的 ThreadEvent 都是这一种传输)。
 有官方转换器的用官方转换器(`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`),没有的手写一张"帧类型 → StreamEvent"映射表。
 
-事件词汇表(`message` / `action.called` / `action.result` / `input.requested` …)见 [docs-site 事件流参考](../docs-site/zh/reference/events.mdx)。
+事件词汇表(`message` / `operation.started` / `operation.finished` / `input.requested` …)见 [docs-site 事件流参考](../docs-site/zh/reference/events.mdx)。
 映射三要点:按真实顺序、`callId` 配对、不漏帧——漏帧只是让这条 eval 的负断言不可信,不是运行时错误。
 
 模型对比怎么做:多数应用走 `AGENT_MODEL` 环境变量(启动应用时指定),ai-sdk-v7 例外——它的接口本身收请求级 `model` 字段,`ctx.model` 直接透传,同一个 server 实例就能测多个模型,不用重启。
@@ -97,7 +97,7 @@ adapter 要这样做:
 
 1. Adapter 在模块作用域用 `createSessionSlot<Pending>(name)` 创建自己的 slot。`send` 读到审批帧时**不要关流**——用 `ctx.session.set(slot, pending)` 保存「读了一半的流 + 待批准的 callId」,返回 `waiting` + `input.requested` 事件。slot 由 symbol 身份隔离,不需要模块级 `Map`。
 2. 下一次 `send`(就是 eval 里的 `t.respond("approve"/"deny")`)先用 `ctx.session.take(slot)` 取回停轮现场(取到即清除):有,就按 `input.responses[0].optionId`(不是解析 `text`)判断批准与否,`POST /api/chat/approve`(body 字段名各应用不同!claude/pi 是 `toolUseId`,langgraph 是 `toolCallId`),然后**继续读原来那条流**到结束,把剩余帧作为这一轮的 events 返回。
-3. 拒绝(`deny`)时,把被拒工具的 `action.result` 的 `status` 置 `"rejected"`,不是 `"failed"`。
+3. 拒绝(`deny`)时,把被拒工具的 `operation.finished` 的 `status` 置 `"rejected"`,不是 `"failed"`。
 
 没有审批流的应用(codex-sdk)跳过这一整节,永远不返回 `waiting`。
 
@@ -149,7 +149,7 @@ adapter 要这样做:
 
 ### codex-sdk
 
-- 帧是原生 `ThreadEvent`,官方转换器 `createCodexThreadEventStream`(`niceeval/adapter` 导出)映射:`thread.started`(带 `thread_id`,写回 session)→ `item.*` 系列(`agent_message` → `message`;`command_execution` / `file_change` / `mcp_tool_call` → 配对的 `action.called`/`action.result`)→ `turn.completed`(usage)/ `turn.failed` / `error`。
+- 帧是原生 `ThreadEvent`,官方转换器 `createCodexThreadEventStream`(`niceeval/adapter` 导出)映射:`thread.started`(带 `thread_id`,写回 session)→ `item.*` 系列(`agent_message` → `message`;`command_execution` / `file_change` / `mcp_tool_call` → 配对的 `operation.started`/`operation.finished`)→ `turn.completed`(usage)/ `turn.failed` / `error`。
 - 无 HITL,永不返回 `waiting`。
   它是编码 agent,eval 测「在工作目录里写文件、跑命令」这类真实任务,用 `node:fs` 直接核实磁盘上的真实内容,不只信模型自述。
 - OTel:codex CLI 原生 OTLP,长驻服务必须 run 级共享接收器(固定端口模式)。
@@ -167,7 +167,7 @@ adapter 要这样做:
 
 ### langgraph
 
-- 唯一的 Python 应用,也是唯一**完全手写帧映射、零 OTel 依赖用于事件**的应用:自定义 JSON 帧(`tool-input` → `action.called`、`tool-output` → `action.result`(completed,帧带 `isError: true` 时 failed)、`tool-output-denied` → `action.result`(rejected)、`text-delta` 累积成 `message`、`tool-approval-request` → `input.requested` + `waiting`)。
+- 唯一的 Python 应用,也是唯一**完全手写帧映射、零 OTel 依赖用于事件**的应用:自定义 JSON 帧(`tool-input` → `operation.started`、`tool-output` → `operation.finished`(completed,帧带 `isError: true` 时 failed)、`tool-output-denied` → `operation.finished`(rejected)、`text-delta` 累积成 `message`、`tool-approval-request` → `input.requested` + `waiting`)。
   工具异常靠 `ToolRetryMiddleware(max_retries=0, on_failure="continue")` 落成 `status="error"` 的 ToolMessage——`create_agent` 默认让工具异常炸穿整张图,没有这层就表达不了"执行了但失败"。
 - HITL 标准配方,**approve 端点字段是 `toolCallId`**(别照抄 claude/pi 的 `toolUseId`)。
 - session 是 `InMemorySaver`,同 pi:应用不要中途重启。

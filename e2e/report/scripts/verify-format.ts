@@ -102,12 +102,29 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     assert.equal(typeof result.estimatedCostUSD, "number", `estimatedCostUSD missing alongside usage in ${attemptDir} (architecture.md: durationMs/usage/estimatedCostUSD 三件套成组出现)`);
     assert.ok(result.estimatedCostUSD! > 0, `estimatedCostUSD should be > 0 in ${attemptDir}, got ${result.estimatedCostUSD}`);
 
-    const events = readJson<{ type: string; name?: string; callId?: string; status?: string; role?: string }[]>(join(attemptDir, "events.json"));
-    const called = events.find((e) => e.type === "action.called" && e.name === "get_stock_price");
-    assert.ok(called, `events.json in ${attemptDir} has no action.called for get_stock_price`);
-    const actionResult = events.find((e) => e.type === "action.result" && e.callId === called!.callId);
-    assert.ok(actionResult, `events.json in ${attemptDir} has no action.result matching callId ${called!.callId}`);
-    assert.equal(actionResult!.status, "completed", `action.result.status in ${attemptDir} should be "completed"`);
+    const events = readJson<{
+      type: string;
+      operationId?: string;
+      operation?: { kind?: string; name?: string };
+      kind?: string;
+      status?: string;
+      role?: string;
+    }[]>(join(attemptDir, "events.json"));
+    const started = events.find(
+      (event) =>
+        event.type === "operation.started" &&
+        event.operation?.kind === "tool" &&
+        event.operation.name === "get_stock_price",
+    );
+    assert.ok(started, `events.json in ${attemptDir} has no started tool operation for get_stock_price`);
+    const finished = events.find(
+      (event) =>
+        event.type === "operation.finished" &&
+        event.kind === "tool" &&
+        event.operationId === started!.operationId,
+    );
+    assert.ok(finished, `events.json in ${attemptDir} has no matching finished operation ${started!.operationId}`);
+    assert.equal(finished!.status, "completed", `operation.finished.status in ${attemptDir} should be "completed"`);
     assert.ok(events.some((e) => e.type === "message" && e.role === "assistant"), `events.json in ${attemptDir} has no assistant message event`);
 
     const sources = readJson<{ path: string; sha256: string }[]>(join(attemptDir, "sources.json"));
@@ -166,8 +183,13 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     const events = await attempt.events();
     assert.ok(events, "openRecord() attempt.events() returned null for a fresh attempt that has events.json on disk");
     assert.ok(
-      events!.some((e) => e.type === "action.called" && (e as { name?: string }).name === "get_stock_price"),
-      "openRecord() events() is missing the action.called seen on disk",
+      events!.some(
+        (event) =>
+          event.type === "operation.started" &&
+          event.operation.kind === "tool" &&
+          event.operation.name === "get_stock_price",
+      ),
+      "openRecord() events() is missing the started tool operation seen on disk",
     );
 
     const sourceArtifacts = await attempt.sources();

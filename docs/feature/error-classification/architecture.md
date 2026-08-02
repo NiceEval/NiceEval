@@ -31,7 +31,7 @@ export interface SendFailure {
   /** 协议对本次输入是否已开始处理的证据；只有 rejected 允许整段重发。 */
   readonly acceptance: "rejected" | "started" | "unknown";
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause?: ExternalCause;
   readonly events?: readonly StreamEvent[];
   readonly usage?: Usage;
   readonly process?: {
@@ -53,11 +53,20 @@ export interface AttemptFailureInfo {
   readonly phase: LifecyclePhase;
   /** 与报错文案同源的失败文本；SendFailure 取 sendFailureText，其它阶段取错误链 message。 */
   readonly text: string;
-  readonly cause: unknown;
+  readonly cause: ExternalCause;
 }
 
 /** 实验可选分类器,挂载在 ExperimentDefinition.classifyFailure:识别自家共享基建的死因。 */
 export type AttemptFailureClassifier = (failure: AttemptFailureInfo) => FailureClass | undefined;
+
+/** 动态 throwable 的有界快照；unknown 只存在于 normalizeExternalCause 的输入边界。 */
+export type ExternalCause =
+  | { readonly _tag: "Error" | "Object"; readonly name: string; readonly message: string;
+      readonly code: ExternalCauseFact<string | number>; readonly status: ExternalCauseFact<number>;
+      readonly stack: ExternalCauseFact<string>; readonly failureClass: ExternalCauseFact<FailureClass>;
+      readonly cause: ExternalCauseLink }
+  | { readonly _tag: "ThrownValue"; readonly valueType: string; readonly message: string;
+      readonly cause: { readonly _tag: "Absent" } };
 ```
 
 `retryable: true` 时 `reason` 必填是类型级规则:可重试的失败一定出现在 activity 行与可能的耗尽摘要里,那里需要一个给人读的词;不可重试的失败常常说不清是什么(这正是它不可重试的原因),`reason` 可省略。
@@ -105,6 +114,7 @@ fatal 错误类只覆盖空间轴的两个非默认档;默认档(`scope: "attemp
 4. **保守回退分类器**:只在 envelope 同时带有可验证的协议/transport code 时映射通用形状——受理前 429 → `{ retryable: true, reason: "rate_limit" }`;连接建立失败 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。
    回退永不给出超出 `"attempt"` 的 scope:框架无法从文案证明兄弟必死。
    失败文本与报错文案都取 `sendFailureText(failure)`，不出现「报错说 A、分类看 B」。文本本身只用于诊断，不能把 `acceptance` 从 `unknown` 猜成 `rejected`。
+   - SDK 的 `code` / `status` 只从 `ExternalCause` 的 typed facts 与有界 `cause` 链读取；分类器拿不到原始 throwable，也不通过强转恢复它。
 5. **受理证据门**(执行体的否决权,只裁时间轴):只有 `failure.acceptance === "rejected"` 才保留 `retryable: true`；`started` 或 `unknown` 一律强制降为 `false`。
    Adapter 只有在协议终态、服务端 code 或 transport 阶段能证明未受理时才可写 `rejected`。任何 agent 产出事件都要求至少为 `started`；空 `events`、CLI 非零退出、流中断或 “retry later” 文案都只能是 `unknown`，不能作为反证。
    它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。
@@ -123,6 +133,8 @@ scope 由止损闸消费,映射与判据单源在 [Sandbox · Provisioning 失�
 内部分类与回退正则的形状同见该篇;两边正则表各自实现,sandbox 的错误模块不外泄到 context 层,重复是模块边界的价格,刻意付。
 
 **分类器纪律**(对 adapter 与实验分类器一致):快、纯、不抛错——分类器抛错按 `undefined` 回落处理、自身错误被吞掉,分类是旁路,不得用新错误掩盖原始失败。
+
+动态 `catch` 值在进入 `SendFailure` / `AttemptFailureInfo` 前必须调用 `normalizeExternalCause`。快照保留有界的 name/message/code/status/stack、声明分类与 cause 链；循环和过深链显式记为 truncated，不把 raw SDK 对象长期挂在领域状态上。
 
 ## 重试执行体
 

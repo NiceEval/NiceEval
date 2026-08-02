@@ -157,7 +157,7 @@ If touching app code is inconvenient, fan out through an OTel Collector instead 
 | `gen_ai.operation.name: "chat"` (or `text_completion` / `embeddings`) | Colored and grouped as a **model call** |
 | `gen_ai.operation.name: "execute_tool"`, or a `tool_name` attribute | Colored and grouped as a **tool execution** |
 | `gen_ai.operation.name: "invoke_agent"` / `"create_agent"` | Colored and grouped as a **sub-agent** |
-| A `call_id` attribute equal to the `callId` in one of your send events | That tool span gets the real input/output backfilled (`io.input` / `io.output`, joined by callId from the events `send` returned — many instrumentations do not capture content by default, and this path is unaffected) |
+| A `call_id` attribute equal to the `operationId` in one of your send events | That tool span gets the real input/output backfilled (`io.input` / `io.output`, joined by `operationId` from the events `send` returned — many instrumentations do not capture content by default, and this path is unaffected) |
 | Span status = error | Marked red |
 | Nothing recognizable (normalized to `other`) | The timeline is still there; in large traces (>150 spans) it is folded away as internal noise |
 | Any other attributes | Preserved as-is, drillable in the view |

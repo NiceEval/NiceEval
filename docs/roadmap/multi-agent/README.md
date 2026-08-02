@@ -12,7 +12,7 @@
 
 ## 现状与差距
 
-事件词汇里已经有委派:`subagent.called` / `subagent.completed`(callId 配对),断言有 `calledSubagent(name, match?)`,`noFailedActions` 也覆盖子 agent 失败。但只能评到「委派发生了」这一层:
+事件词汇里已经有委派:kind 为 `subagent` 的 `operation.started` / `operation.finished`(`operationId` 配对),断言有 `calledSubagent(name, match?)`,`noFailedActions` 也覆盖子 agent 失败。但只能评到「委派发生了」这一层:
 
 ```ts
 // 今天能写到的极限

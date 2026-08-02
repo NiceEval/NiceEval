@@ -67,7 +67,7 @@ NiceEval supports two integration modes, depending on whether the agent under te
    └──────────────────────────┘
 ```
 
-- **NiceEval core** owns discovery, scheduling, scoring, reporting, and artifacts.
+- **NiceEval core** owns discovery, scheduling, assertions, reporting, and artifacts.
 - **Agent adapters** are the open boundary: you decide how to call the system under test.
 - Coding agents that need filesystem isolation run inside the **Docker Sandbox**; your own AI agent can connect directly, without Docker.
 

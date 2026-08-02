@@ -189,11 +189,11 @@ Experiment state、Fixture 与 Agent runtime setup 分别保持自己的 cadence
 任一失败都阻止 Agent turn。
 
 Eval Fixture 分成两个可见性窗口。
-turn 前的 setup 与 Fixture 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入 scoring。
+turn 前的 setup 与 Fixture 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入断言求值。
 Base build content 也不能携带本应隐藏的判分材料。
 
 隐藏 verifier 的 materialization 与 cleanup 必须成对。
-materialization 一旦进入,无论 verifier、scoring 或后续阶段怎样退出,cleanup 都在 `finally` 中运行。
+materialization 一旦进入,无论 verifier、断言求值或后续阶段怎样退出,cleanup 都在 `finally` 中运行。
 
 Library 的 `HiddenVerifierMaterializeContext.onCleanup()` 要求作者在取得每项外部资源前登记收尾,Runner 按 LIFO 执行并记录结果。
 cleanup 覆盖 workdir 外的路径、mount、进程和临时凭据,并且必须在下一条 Attempt、state save 与 Sandbox reset 之前成功。
@@ -309,7 +309,7 @@ runtime setup 也可能静默漏装 Plugin、Skill 或 MCP。
 屏障失败时,诊断记录受影响成员和 Agent 安装 activity。
 
 AgentRuntimeLifecycle 也遵守 entered-at 成对语义。
-一旦调用 runtime setup,即使 setup、verify、最终屏障、Agent turn、verifier 或 scoring 失败,Runner 都在 `finally` 中执行 runtime teardown。
+一旦调用 runtime setup,即使 setup、verify、最终屏障、Agent turn、verifier 或断言求值失败,Runner 都在 `finally` 中执行 runtime teardown。
 teardown 失败不覆盖更早的主错误,但会退休复用窗口;活动以 `terminatedAt` 与可选阶段结果表达未到达的检查。
 
 ## Sandbox 复用
@@ -348,7 +348,7 @@ fresh state 可以写 workdir,因为 save 在可能清理 turn 前 Fixture 的 E
 3. 重新执行 AgentProvisioner Ensure;前次安装通常让 check 命中。
 4. 窗口首条 Attempt 载入状态;后续 Attempt 直接使用活状态。
 5. 重建 turn 前 Fixture,执行并验证 Agent runtime setup。
-6. 运行三方最终屏障,完成所有 Agent turn 后再进入隐藏 verifier、scoring 与证据收集。
+6. 运行三方最终屏障,完成所有 Agent turn 后再进入隐藏 verifier、断言求值与证据收集。
 7. 执行 Agent runtime teardown;窗口不在此时 save,随后执行 Eval teardown。
 
 需要跨 reset 演化的状态、全局安装与 cache 必须位于 workdir 之外。
@@ -369,9 +369,9 @@ Eval teardown 只能释放对应 Eval setup / Fixture 自己取得的资源,不�
 `state.load` 失败时当前 Attempt 记为 `errored`,窗口立即退休,不会承接下一条 Attempt。
 `state.save` 失败不反改已经完成的题目 verdict,但使该 Experiment 的状态序列失败;Runner 停止继续派发依赖这份状态的 Attempt。
 
-`saveOn: "after-load"` 表示 load 成功后,Fixture、runtime、最终屏障、Agent turn、verifier、scoring 或 teardown 失败都在 outer-finally 尝试 save。
+`saveOn: "after-load"` 表示 load 成功后,Fixture、runtime、最终屏障、Agent turn、verifier、断言求值或 teardown 失败都在 outer-finally 尝试 save。
 `saveOn: "attempt-succeeded"` 只用于 fresh。
-本 Attempt 的 Agent turn、verifier、scoring、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save。
+本 Attempt 的 Agent turn、verifier、断言求值、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save。
 reuse 没有逐 Attempt 状态回滚,因此只能使用 `after-load`;非法组合在创建 Sandbox 前报配置错误。
 
 Eval teardown 仍沿既有规则只追加诊断;fresh save 位于它之前,所以这类诊断不反改 checkpoint。
@@ -505,7 +505,7 @@ activity 至少记录 owner、Requirement name、阶段、时点、耗时与结�
 - 依赖阻塞链与资源等待时间。
 - 初始检查、成员复检和最终屏障结果。
 - AgentProvisioner 与 Agent runtime 各自的 target、actual identity 和最终检查。
-- 隐藏 verifier materialization、scoring 与 cleanup 的结果;不会落盘判分材料正文。
+- 隐藏 verifier materialization、断言求值与 cleanup 的结果;不会落盘判分材料正文。
 - state declared identity、load/save checkpoint identity、digest、outcome 与 window identity。
 - Sandbox 复用 window identity、承接序号与资源修改代次。
 

@@ -90,7 +90,7 @@ Eval Requirement、Experiment Requirement、AgentProvisioner、SandboxSpec Hook�
 | Eval setup 与 Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
 | Agent CLI 检查与 Ensure | AgentProvisioner | 每 Attempt 一次 | 每 Attempt 一次 |
 | Experiment state load/save | Experiment 状态 | Library 没有公开可执行相位 | Library 没有公开可执行相位 |
-| Agent turn、隐藏 verifier 与 scoring | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
+| Agent turn、隐藏 verifier 与断言求值 | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
 | Eval 与 Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
 | `sandbox.teardown` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
 | Case finalizer | 选中的完整 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |

@@ -28,7 +28,7 @@ export default defineEval({
 
    export default defineEval({
      sandbox: sandboxLayer().prepare(async (sandbox, context) => {
-       context.progress.report({ message: "seeding fixture repo" });
+       context.progress({ message: "seeding fixture repo" });
        const fixture = await createFixtureRepo("pr-review/close-stale");  // 沙箱外的临时资源
        context.onCleanup(() => fixture.destroy());                        // 取得成功后就地登记回收
        await sandbox.runCommand("git", ["clone", fixture.repoUrl, "."]);  // 被测 checkout 直接落 workdir 根

@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "Understand how NiceEval, Adapters, and Sandbox Providers work together to evaluate any AI agent through one API."
 ---
 
-NiceEval's core design separates "the evaluation logic" from "how the subject under test is connected". NiceEval owns discovery, scheduling, scoring, and reporting. Adapters call the system under test. Sandbox Providers isolate the filesystem.
+NiceEval's core design separates "the evaluation logic" from "how the subject under test is connected". NiceEval owns discovery, scheduling, assertion evaluation, and reporting. Adapters call the system under test. Sandbox Providers isolate the filesystem.
 
 ## Four layers
 
@@ -27,7 +27,7 @@ Subject under test / Sandbox Provider
   <Card title="Scheduling" icon="timeline">
     Controls the run pool size, retries, attempts, and early exit.
   </Card>
-  <Card title="Assertions and scoring" icon="chart-bar">
+  <Card title="Assertions and verdicts" icon="chart-bar">
     Collects `t.check`, scoped assertions, judge scores, and test results.
   </Card>
   <Card title="Cache" icon="database">
@@ -95,7 +95,7 @@ That boundary keeps NiceEval generic. Evaluating your own AI agent, Claude Code,
   <Step title="Discovery">Find eval files and fixtures.</Step>
   <Step title="Scheduling">Plan the run from concurrency, cache, and attempts.</Step>
   <Step title="Agent send">Call the adapter so the subject under test produces a `Turn`.</Step>
-  <Step title="Scoring">Run assertions, judge checks, and tests.</Step>
+  <Step title="Evaluate assertions">Run assertions, Judge checks, and tests.</Step>
   <Step title="Verdict">Fold every result into `passed`, `failed`, `errored`, or `skipped`.</Step>
   <Step title="Reporting & artifacts">Write reports and save structured files.</Step>
 </Steps>
@@ -106,4 +106,4 @@ That boundary keeps NiceEval generic. Evaluating your own AI agent, Claude Code,
 - [Adapter](/explanation/adapter) — how to write an adapter and reference it in an experiment.
 - [Drive](/explanation/drive) — `t.send()`, sessions, and HITL: how to produce the `Turn` data that assertions read.
 - [Assert](/explanation/assert) — assertion vocabulary and verdict rules.
-- [Judge](/explanation/judge) — LLM-as-judge, for scoring open-ended quality.
+- [Judge](/explanation/judge) — LLM-as-judge, for evaluating open-ended quality.

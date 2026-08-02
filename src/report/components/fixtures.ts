@@ -31,7 +31,7 @@ export const scopeSummaryData: ScopeSummaryData = {
   attemptVerdicts: { passed: 4, failed: 3, errored: 1, skipped: 1 },
   // 两级聚合口径,刻意不等于任一计票的比例:组件必须原样渲染,不重算
   endToEndPassRate: { value: 0.6, basis: "eval", samples: 8, total: 9, refs: [] },
-  scoringComposition: "pass",
+  evaluationKindComposition: "pass",
   totalCostUSD: { value: 1.5, basis: "eval", samples: 8, total: 9, refs: [] },
 };
 
@@ -152,7 +152,7 @@ export const deltaData: DeltaData = {
       flipped: false,
       cells: {
         "compare/baseline": {
-          scoring: "pass",
+          evaluationKind: "pass",
           verdict: "passed",
           attempts: [locator("@1abcdef2")],
           totalTokens: 512300,
@@ -160,7 +160,7 @@ export const deltaData: DeltaData = {
           historical: false,
         },
         "compare/agents-md": {
-          scoring: "pass",
+          evaluationKind: "pass",
           verdict: "passed",
           attempts: [locator("@1abcdef3")],
           totalTokens: 305100,
@@ -176,7 +176,7 @@ export const deltaData: DeltaData = {
       flipped: true,
       cells: {
         "compare/baseline": {
-          scoring: "pass",
+          evaluationKind: "pass",
           verdict: "failed",
           attempts: [locator("@2abcdef2")],
           totalTokens: 621000,
@@ -184,7 +184,7 @@ export const deltaData: DeltaData = {
           historical: false,
         },
         "compare/agents-md": {
-          scoring: "pass",
+          evaluationKind: "pass",
           verdict: "passed",
           attempts: [locator("@2abcdef3")],
           totalTokens: 298400,
@@ -200,7 +200,7 @@ export const deltaData: DeltaData = {
       flipped: false,
       cells: {
         "compare/agents-md": {
-          scoring: "pass",
+          evaluationKind: "pass",
           verdict: "passed",
           attempts: [locator("@3abcdef3")],
           totalTokens: 511800,
@@ -211,8 +211,8 @@ export const deltaData: DeltaData = {
     },
   ],
   totals: {
-    "compare/baseline": { scoringComposition: "pass", passed: 1, denominator: 2, totalTokens: 1133300, totalCostUSD: 1.54 },
-    "compare/agents-md": { scoringComposition: "pass", passed: 3, denominator: 3, totalTokens: 1115300, totalCostUSD: 1.55 },
+    "compare/baseline": { evaluationKindComposition: "pass", passed: 1, denominator: 2, totalTokens: 1133300, totalCostUSD: 1.54 },
+    "compare/agents-md": { evaluationKindComposition: "pass", passed: 3, denominator: 3, totalTokens: 1115300, totalCostUSD: 1.55 },
   },
   pairedDelta: {
     "compare/agents-md": {
@@ -232,9 +232,9 @@ const failedAttempt: AttemptListItem = {
   evalId: "algebra/quadratic",
   attempt: 3,
   agent: "bub",
-  scoring: "pass",
+  evaluationKind: "pass",
   verdict: "failed",
-  // 已按 Scoring display 契约折好的单行摘要;渲染面只做宽度截断,不重算
+  // 已按断言摘要契约折好的单行摘要;渲染面只做宽度截断,不重算
   failureSummary: "gate: roots-correct · expected x=2 · received x=3",
   moreFailures: 1,
   examScore: { value: 0, basis: "eval", samples: 1, total: 1, refs: [locator("@1a4a4a4a")] },
@@ -252,7 +252,7 @@ const erroredAttempt: AttemptListItem = {
   evalId: "geometry/angles",
   attempt: 0,
   agent: "codex",
-  scoring: "pass",
+  evaluationKind: "pass",
   verdict: "errored",
   // errored:结构化 error 的一层摘要(phase · code · message)
   failureSummary: "eval.run · unexpected-error · TypeError: cannot read properties of undefined (reading 'foo')",
@@ -278,7 +278,7 @@ const passedAttempt: AttemptListItem = {
   evalId: "algebra/simple",
   attempt: 0,
   agent: "bub",
-  scoring: "pass",
+  evaluationKind: "pass",
   verdict: "passed",
   failureSummary: null,
   moreFailures: 0,
@@ -299,7 +299,7 @@ export const experimentListItems: ExperimentListItem[] = [
     agent: "bub",
     model: "gpt-5.4",
     flags: { memory: true },
-    scoring: "pass",
+    evaluationKind: "pass",
     evalVerdicts: { passed: 1, failed: 1, errored: 0, skipped: 0 },
     endToEndPassRate: { value: 0.5, basis: "eval", samples: 2, total: 2, refs: [] },
     totalScore: { value: null, basis: "eval", samples: 0, total: 2, refs: [] },
@@ -314,7 +314,7 @@ export const experimentListItems: ExperimentListItem[] = [
     evalRows: [
       {
         evalId: "algebra/quadratic",
-        scoring: "pass",
+        evaluationKind: "pass",
         verdict: "failed",
         endToEndPassRate: { value: 0, unit: "%", basis: "eval", samples: 2, total: 2, refs: [failedAttempt.locator, failedRetryAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [failedAttempt.locator] },
@@ -325,7 +325,7 @@ export const experimentListItems: ExperimentListItem[] = [
       },
       {
         evalId: "algebra/simple",
-        scoring: "pass",
+        evaluationKind: "pass",
         verdict: "passed",
         endToEndPassRate: { value: 1, unit: "%", basis: "eval", samples: 1, total: 1, refs: [passedAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },
@@ -339,7 +339,7 @@ export const experimentListItems: ExperimentListItem[] = [
   {
     experimentId: "compare/codex",
     agent: "codex",
-    scoring: "pass",
+    evaluationKind: "pass",
     evalVerdicts: { passed: 0, failed: 0, errored: 1, skipped: 0 },
     endToEndPassRate: { value: 0, basis: "eval", samples: 1, total: 1, refs: [] },
     totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },
@@ -354,7 +354,7 @@ export const experimentListItems: ExperimentListItem[] = [
     evalRows: [
       {
         evalId: "geometry/angles",
-        scoring: "pass",
+        evaluationKind: "pass",
         verdict: "errored",
         endToEndPassRate: { value: 0, unit: "%", basis: "eval", samples: 1, total: 1, refs: [erroredAttempt.locator] },
         totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },

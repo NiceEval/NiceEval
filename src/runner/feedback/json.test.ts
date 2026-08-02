@@ -8,10 +8,38 @@
 // docs/engineering/testing/e2e/cli.md「反馈输出格式」在真实进程输出上验收。
 
 import { describe, expect, it } from "vitest";
-import { computeExitCode, createJsonRenderer, renderJsonPlanDocument } from "./json.ts";
+import { computeExitCode, createJsonRenderer, renderJsonPlanDocument, type ExpEvent } from "./json.ts";
 import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
 import { createFakeFeedbackIO } from "./testing.ts";
-import { HALT_DIAGNOSTIC_CODE, type DurableFeedbackEvent, type InvocationCompletion, type InvocationSummary } from "../types.ts";
+import {
+  HALT_DIAGNOSTIC_CODE,
+  type DurableFeedbackEvent,
+  type EvalResult,
+  type InvocationCompletion,
+  type InvocationSummary,
+} from "../types.ts";
+import { encodeAttemptLocator } from "../../record/locator.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
+
+function expEventCompileTimeContract(): void {
+  ({
+    event: "failure",
+    locator: "@example",
+    evalId: "memory/a",
+    experimentId: "compare/codex",
+    severity: "gate",
+    assertion: "works",
+  }) satisfies ExpEvent;
+
+  // @ts-expect-error failure 的 experimentId 是机器事件主身份，不得省略。
+  ({ event: "failure", locator: "@example", evalId: "memory/a", severity: "gate", assertion: "works" }) satisfies ExpEvent;
+  // @ts-expect-error 文档未采纳 run_activity，它不是 ExpEvent 成员。
+  ({ event: "run_activity", id: "build-1", key: "build.image", label: "build", status: "done" }) satisfies ExpEvent;
+  // @ts-expect-error ResultEvent 的权威路径字段是 snapshots，不是旧 runs。
+  ({ event: "result", status: "passed", passed: 1, failed: 0, errored: 0, completion: "complete", runs: [] }) satisfies ExpEvent;
+}
+
+void expEventCompileTimeContract;
 
 function summary(overrides: Partial<InvocationSummary> = {}): InvocationSummary {
   return {
@@ -81,7 +109,7 @@ describe("computeExitCode:CompletionStatus 驱动退出码,不只看 failed/erro
 
 /** 依次喂进 reducer 再交给 json renderer(与生产的 coordinator 同序:先 reduce 后 render),
  *  返回逐行解析出的事件对象。 */
-function emitDurable(events: readonly DurableFeedbackEvent[]): globalThis.Record<string, unknown>[] {
+function emitDurable(events: readonly DurableFeedbackEvent[]): ExpEvent[] {
   const { io, stdout } = createFakeFeedbackIO();
   const renderer = createJsonRenderer({ io });
   let state = createInitialRunFeedbackState();
@@ -93,7 +121,7 @@ function emitDurable(events: readonly DurableFeedbackEvent[]): globalThis.Record
     .join("")
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as globalThis.Record<string, unknown>);
+    .map((line): ExpEvent => JSON.parse(line));
 }
 
 describe("warning 事件:code 是稳定词法,折叠身份走具名字段", () => {
@@ -183,6 +211,115 @@ describe("warning 事件:code 是稳定词法,折叠身份走具名字段", () =
     });
     const events = emitDurable([halted(1, 0), halted(2, 1), halted(3, 2)]);
     expect(events.filter((e) => e.event === "warning")).toHaveLength(1);
+  });
+});
+
+describe("ExpEvent 的 attempt 身份与结果路径", () => {
+  it("failure / error 都强制写出 locator、evalId 与 experimentId", () => {
+    const failedLocator = encodeAttemptLocator({ runId: "run-feedback", evalId: "memory/fail", attempt: 0 });
+    const errorLocator = encodeAttemptLocator({ runId: "run-feedback", evalId: "memory/error", attempt: 1 });
+    const events = emitDurable([
+      {
+        type: "failure",
+        at: 1,
+        locator: failedLocator,
+        identity: { experimentId: "compare/codex", evalId: "memory/fail", attempt: 0 },
+        who: "compare/codex",
+        verdict: "failed",
+        reason: "gate failed",
+        assertion: { severity: "gate", assertion: "tests pass", additionalFailures: 0 },
+      },
+      {
+        type: "failure",
+        at: 2,
+        locator: errorLocator,
+        identity: { experimentId: "compare/codex", evalId: "memory/error", attempt: 1 },
+        who: "compare/codex",
+        verdict: "errored",
+        reason: "sandbox failed",
+        phase: "sandbox.create",
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        event: "failure",
+        locator: failedLocator,
+        evalId: "memory/fail",
+        experimentId: "compare/codex",
+        severity: "gate",
+        assertion: "tests pass",
+      },
+      {
+        event: "error",
+        locator: errorLocator,
+        evalId: "memory/error",
+        experimentId: "compare/codex",
+        phase: "sandbox.create",
+        reason: "sandbox failed",
+      },
+    ]);
+  });
+
+  it("缺少 experimentId 时拒绝产生不完整的 failure 事件", () => {
+    const locator = encodeAttemptLocator({ runId: "run-feedback", evalId: "memory/bare", attempt: 0 });
+    expect(() => emitDurable([{
+      type: "failure",
+      at: 1,
+      locator,
+      identity: { evalId: "memory/bare", attempt: 0 },
+      who: "codex",
+      verdict: "failed",
+      reason: "failed",
+    }])).toThrow("missing experimentId");
+  });
+
+  it("eval 使用同一组必填身份，result 只输出 snapshots", () => {
+    const locator = encodeAttemptLocator({ runId: "run-feedback", evalId: "memory/pass", attempt: 0 });
+    const result: EvalResult = {
+      id: "memory/pass",
+      experimentId: "compare/codex",
+      agent: "codex",
+      verdict: "passed",
+      attempt: 0,
+      locator,
+      durationMs: 1_000,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+    };
+    const events = emitDurable([
+      {
+        type: "plan",
+        at: 0,
+        plan: {
+          shape: { evals: 1, configs: 1, totalAttempts: 1, maxConcurrency: 1 },
+          reused: 0,
+          reusedFailures: [],
+        },
+      },
+      { type: "summary", at: 1, summary: summary({ results: [result] }), completion: completion() },
+      { type: "saved", at: 2, paths: [".niceeval/compare/codex/run-feedback"] },
+    ]);
+
+    expect(events[1]).toEqual({
+      event: "eval",
+      locator,
+      evalId: "memory/pass",
+      experimentId: "compare/codex",
+      verdict: "passed",
+      attempts: 1,
+      passed: 1,
+    });
+    expect(events[2]).toEqual({
+      event: "result",
+      status: "passed",
+      passed: 1,
+      failed: 0,
+      errored: 0,
+      completion: "complete",
+      snapshots: [".niceeval/compare/codex/run-feedback"],
+    });
+    expect(events[2]).not.toHaveProperty("runs");
   });
 });
 
@@ -308,8 +445,9 @@ describe("start 事件的 experimentConcurrency:只收声明了实验闸的实�
       },
     ]);
     expect(start).toMatchObject({ event: "start", concurrency: 19, experimentConcurrency: { mempal: 1, nowledge: 4 } });
+    if (start?.event !== "start") throw new Error("expected start event");
     // 第三个实验(未声明上限)不许被补成全局值——那会把「没有实验闸」写成「闸恰好等于全局」。
-    expect(Object.keys(start!.experimentConcurrency as object)).toEqual(["mempal", "nowledge"]);
+    expect(Object.keys(start.experimentConcurrency ?? {})).toEqual(["mempal", "nowledge"]);
   });
 
   it("没有任何实验声明 maxConcurrency 时省略整个字段,不输出空对象", () => {
@@ -369,8 +507,8 @@ describe("judge_precheck 事件:started / done / failed 三值,结束态带时�
 });
 
 // cases: docs/engineering/testing/unit/experiments-runner.md「live feedback 的未知 activity 通用投影」
-describe("run_activity 事件:未知 key 用 label 通用投影", () => {
-  it("起止/失败各一行;key 与 label 原样透出,不需要登记", () => {
+describe("run-activity 不是 ExpEvent", () => {
+  it("Run 级 activity 只服务 human live 面，不写入 --json 事件流", () => {
     const events = emitDurable([
       {
         type: "run-activity",
@@ -390,22 +528,6 @@ describe("run_activity 事件:未知 key 用 label 通用投影", () => {
         durationMs: 1_200,
       },
     ]);
-    expect(events).toEqual([
-      {
-        event: "run_activity",
-        id: "warm-1",
-        key: "acme.cache.warm",
-        label: "warming acme cache shard-3",
-        status: "started",
-      },
-      {
-        event: "run_activity",
-        id: "warm-1",
-        key: "acme.cache.warm",
-        label: "warming acme cache shard-3",
-        status: "failed",
-        durationMs: 1_200,
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 });

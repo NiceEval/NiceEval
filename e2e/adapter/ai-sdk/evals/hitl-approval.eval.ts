@@ -1,7 +1,7 @@
 // Protocol behavior: HITL 审批 — a tool-approval-request part stops the turn at
 // "waiting" with an input.requested event; approving rewrites the part in place and
 // resends the full message history, and the resumed turn carries a completed
-// action.result. Denying produces a rejected result with no tool output ever having
+// operation.finished. Denying produces a rejected result with no tool output ever having
 // existed — the reverse guard below rules out "execute first, ask forgiveness later".
 import { defineEval } from "niceeval";
 import { equals } from "niceeval/expect";
@@ -13,9 +13,21 @@ export default defineEval({
     t.check(draft.status, equals("waiting"));
     draft.eventsSatisfy("审批前不应存在已完成的 calculate 结果", (events) => {
       const calcIds = new Set(
-        events.flatMap((e) => (e.type === "action.called" && e.name === "calculate" ? [e.callId] : [])),
+        events.flatMap((event) =>
+          event.type === "operation.started" &&
+          event.operation.kind === "tool" &&
+          event.operation.name === "calculate"
+            ? [event.operationId]
+            : [],
+        ),
       );
-      return !events.some((e) => e.type === "action.result" && calcIds.has(e.callId) && e.status === "completed");
+      return !events.some(
+        (event) =>
+          event.type === "operation.finished" &&
+          event.kind === "tool" &&
+          calcIds.has(event.operationId) &&
+          event.status === "completed",
+      );
     });
     t.requireInputRequest({ action: "calculate" });
 

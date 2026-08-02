@@ -34,13 +34,14 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
       // 每次 run 换一个新 writer(同一个 reporter 实例可能被复用):writer 内部按
       // experimentId 懒建各自的快照目录,这里只重置引用。
       // snapshotStartedAt 显式接收自 runner(shape.snapshotStartedAt,见 InvocationShape 的注释)——
-      // 不再各自按「该 experiment 第一条落盘 result 的 attempt startedAt」猜,与 runner
-      // 在 result.locator 里编码的身份锚点是同一个值。省略只出现在没有真实 shape 的
+      // 不再各自按「该 experiment 第一条落盘 result 的 attempt startedAt」猜。locator 身份
+      // 则由 shape.runIds 转交，保证 plan 与 run.json 使用同一个值。省略只出现在没有真实 shape 的
       // 直调场景(如测试手写 Reporter 调用),此时退回 createWriter 自己的兜底
       // (result.startedAt,见 writer.ts 的 WriterOptions.snapshotStartedAt)。
       writer = createWriter(root, {
         producer: { name: "niceeval", version: await producerVersion() },
         snapshotStartedAt: shape?.snapshotStartedAt,
+        ...(shape?.runIds ? { runIds: shape.runIds } : {}),
         // 指纹输入清单同样由 runner 显式递来(规划期算出),writer 在建 Run 目录时与
         // run.json 同批写出;这里只转手,不持有清单怎么算的知识。
         ...(shape?.manifests ? { manifests: shape.manifests } : {}),

@@ -459,7 +459,7 @@ type ReporterEvent =
 `verdict` 是互斥的判定分类:`passed` / `failed` / `errored` / `skipped`,没有 `scored` 中间态。
 `invocation:summary.failed` 只统计断言或评分不通过,环境、超时、adapter 或 agent runtime 问题统计到 `errored`。
 
-fresh attempt 的最终 `locator` 在构造调度计划时就由预先确定的 `snapshotStartedAt` 与 attempt 身份算好并传入执行体。
+fresh attempt 的最终 `locator` 在构造调度计划时就由预先分配的 `runId` 与 `{evalId, attempt}` 算好、完成记录根碰撞登记，再传入执行体。
 所以留存注册表、feedback、`eval:complete` 与落盘 `result.json` 从第一次观察起就是同一个值,reporter 不需要等 artifact 落盘。
 
 终端反馈(human dashboard 与 `--json` 的单一 stdout 事件流)不消费这条 `Reporter` 事件流。

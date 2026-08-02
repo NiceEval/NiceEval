@@ -32,9 +32,6 @@ import { supportedBackendCapability, unsupportedBackendCapability, type SandboxP
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
 
-// 沙箱存活上限(到点 e2b 自动回收)。给足空间跑完 setup + agent + 测试脚本。
-const SESSION_TIMEOUT_MS = 1_800_000;
-
 /** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 resolve.ts 的 withProvisionRetry。 */
 // 对账本身只有一次机会:retry.ts 的 withProvisionRetry 对账失败就直接放弃重试、抛回原始
 // create() 错误(见那边的注释)。对账走的这次 list 请求跟刚失败的 create() 往往挨得很近,
@@ -169,7 +166,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       runtime?: "node20" | "node24";
       template?: string;
       provisionToken?: string;
-      /** 实例寿命(复用必需)。省略时退回 SESSION_TIMEOUT_MS,只够单条 attempt 用完即弃。 */
+      /** 实例寿命(复用必需)。省略时使用 E2B 当前账号档位的 provider 默认。 */
       lifetimeMs?: number;
       /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
        *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
@@ -187,12 +184,11 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
-    // 作者声明了 lifetimeMs 就按它建实例;没声明才退回 SESSION_TIMEOUT_MS 这个单 attempt 的兜底。
-    // 之前这里恒用 SESSION_TIMEOUT_MS,是「静默压短」的源头:复用池按声明的寿命记账,实例却按
-    // 30 分钟被回收(见 docs/feature/sandbox/reuse.md「两种时间不能混用」)。
+    // 作者声明了 lifetimeMs 就按原值交给 provider 校验；没声明则使用 provider 默认，
+    // NiceEval 不把某个账号档位观测到的上限硬编码成全体用户的契约。
     const sdkOpts = {
       apiKey,
-      timeoutMs: opts.lifetimeMs ?? SESSION_TIMEOUT_MS,
+      ...(opts.lifetimeMs !== undefined ? { timeoutMs: opts.lifetimeMs } : {}),
       ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
     // 有 template 就从模板起,否则用 e2b 默认 "base"。

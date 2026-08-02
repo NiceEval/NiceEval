@@ -24,6 +24,7 @@ import type {
   ReportPage,
   ReportTarget,
 } from "../../../dist/report/definition/report.js";
+import type { ThemeDefinition } from "../../../dist/report/theme.js";
 import type { DimensionPins } from "../../../dist/report/presentation.js";
 
 export type { PageContext } from "../../../dist/report/definition/tree.js";
@@ -40,9 +41,36 @@ export type {
   PageLoadContext,
 } from "../../../dist/report/definition/report.js";
 export type { ThemeDefinition } from "../../../dist/report/theme.js";
+export type { ResolvedPage } from "../../../dist/report/runtime/resolved-page.js";
 
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
+
+/**
+ * 项目 config 是动态模块；它的 `report` 字段不能因为 `loadConfigFile()` 的静态返回注解而
+ * 被当成已经验证过的 ReportDefinition。这里是 source → dist 的唯一收口点：只把同一份
+ * dist factory 打过品牌的值交给宿主后续长期持有的 report 槽。
+ */
+async function normalizeConfiguredReport(value: unknown): Promise<ReportDefinition> {
+  const { isReportDefinition } = await import("../../../dist/report/definition/report.js");
+  if (!isReportDefinition(value)) {
+    throw new HostReportError(
+      'The project default report (the "report" field in niceeval.config.ts) must be the result of defineReport(...) from "niceeval/report".',
+    );
+  }
+  return value;
+}
+
+/** 与 report 同理：动态 config 值只有通过 dist factory 品牌后才成为 ThemeDefinition。 */
+async function normalizeConfiguredTheme(value: unknown): Promise<ThemeDefinition> {
+  const { isThemeDefinition } = await import("../../../dist/report/theme.js");
+  if (!isThemeDefinition(value)) {
+    throw new HostReportError(
+      'The project default theme (the "theme" field in niceeval.config.ts) must be the result of defineTheme(...) from "niceeval/report".',
+    );
+  }
+  return value;
+}
 
 // ───────────────────────── 装载 ─────────────────────────
 
@@ -62,13 +90,7 @@ export async function loadHostReport(
     return (isExplicitModulePath(reportPath) ? loadReportFile(cwd, reportPath, options) : loadBuiltInReport(reportPath)) as Promise<ReportDefinition>;
   }
   if (configuredReport !== undefined) {
-    const { isReportDefinition } = await import("../../../dist/report/definition/report.js");
-    if (!isReportDefinition(configuredReport)) {
-      throw new HostReportError(
-        'The project default report (the "report" field in niceeval.config.ts) must be the result of defineReport(...) from "niceeval/report".',
-      );
-    }
-    return configuredReport;
+    return normalizeConfiguredReport(configuredReport);
   }
   const { standard } = await import("../../../dist/report/built-in/index.js");
   return standard as ReportDefinition;
@@ -79,7 +101,7 @@ export async function loadHostReport(
  * → 内建 `standard`）。宿主报错要点名「这份报告是从哪来的」——把出处判断留在调用点，
  * 消息就会像 `--report` 没给时那样一律说成内建，而实际装载的是配置里的报告。
  */
-export function describeReportSource(reportPath: string | undefined, configuredReport?: unknown): string {
+export function describeReportSource(reportPath: string | undefined, configuredReport?: ReportDefinition): string {
   if (reportPath !== undefined) return `the report loaded by \`--report ${reportPath}\``;
   if (configuredReport !== undefined) return "the project default report (the `report` field in niceeval.config.ts)";
   return "the built-in report";
@@ -90,8 +112,10 @@ export function describeReportSource(reportPath: string | undefined, configuredR
  * 没声明时仍保留官方 AttemptDetails，避免组合组件的 locator 因换了首页而退化成不可点击文本。
  */
 export async function loadDefaultHostAttemptPage(): Promise<ReportPage> {
-  const { standardAttemptPage } = await import("../../../dist/report/built-in/index.js");
-  return standardAttemptPage as ReportPage;
+  const { standard } = await import("../../../dist/report/built-in/index.js");
+  const page = standard.pages.find((candidate) => candidate.id === "attempt");
+  if (page === undefined) throw new Error('The built-in report is missing its "attempt" page.');
+  return page;
 }
 
 /**
@@ -112,26 +136,18 @@ export async function buildHostReportMeta(definition: ReportDefinition, scope: S
 export async function resolveHostTheme(
   cwd: string,
   cliTheme: string | undefined,
-  reportTheme: import("../../../dist/report/theme.js").ThemeDefinition | undefined,
+  reportTheme: ThemeDefinition | undefined,
   configTheme: unknown,
   options?: { freshImport?: boolean },
-): Promise<import("../../../dist/report/theme.js").ThemeDefinition> {
+): Promise<ThemeDefinition> {
   const { isExplicitModulePath, loadBuiltInTheme, loadThemeFile } = await import("../../../dist/report/runtime/load.js");
-  if (cliTheme !== undefined) return (isExplicitModulePath(cliTheme) ? loadThemeFile(cwd, cliTheme, options) : loadBuiltInTheme(cliTheme)) as Promise<import("../../../dist/report/theme.js").ThemeDefinition>;
+  if (cliTheme !== undefined) return (isExplicitModulePath(cliTheme) ? loadThemeFile(cwd, cliTheme, options) : loadBuiltInTheme(cliTheme)) as Promise<ThemeDefinition>;
   if (reportTheme !== undefined) return reportTheme;
-  if (configTheme !== undefined) {
-    const { isThemeDefinition } = await import("../../../dist/report/theme.js");
-    if (!isThemeDefinition(configTheme)) {
-      throw new HostReportError(
-        'The project default theme (the "theme" field in niceeval.config.ts) must be the result of defineTheme(...) from "niceeval/report".',
-      );
-    }
-    return configTheme;
-  }
-  return loadBuiltInTheme("basalt") as Promise<import("../../../dist/report/theme.js").ThemeDefinition>;
+  if (configTheme !== undefined) return normalizeConfiguredTheme(configTheme);
+  return loadBuiltInTheme("basalt") as Promise<ThemeDefinition>;
 }
 
-export async function hostThemeStylesheet(theme: import("../../../dist/report/theme.js").ThemeDefinition): Promise<string> {
+export async function hostThemeStylesheet(theme: ThemeDefinition): Promise<string> {
   const { themeStylesheet } = await import("../../../dist/report/theme.js");
   return themeStylesheet(theme);
 }

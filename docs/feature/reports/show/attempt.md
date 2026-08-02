@@ -32,7 +32,7 @@ usage: 6 turns · 21 tool calls · 62.3k uncached in
 
 ## 断言与源码
 
-有 Eval 源码时，`toAnnotatedEvalSource(attempt)` 返回标注源码；否则 `toAssertionRows(attempt)` 返回断言 rows。
+有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则 `toAttemptAssertions(attempt)` 返回断言 rows。
 两条路径使用同一份 AssertionResult 和源码锚。
 
 失败断言按原始声明顺序显示，并保留 group、matcher、expected、received 与位置。

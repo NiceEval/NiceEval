@@ -113,6 +113,19 @@ describe("teardown registry: 逐条目文件的原子写 / 读 / 删", () => {
     const all = await readTeardownRegistrations(niceevalRoot);
     expect(all.map(({ entry }) => entry.experimentId)).toEqual(["exp/good"]);
   });
+
+  it("完整 decoder 拒绝 selectedEvalIds 非字符串数组的有效 JSON", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    const { writeFile, mkdir } = await import("node:fs/promises");
+    await mkdir(teardownsDirOf(niceevalRoot), { recursive: true });
+    await writeFile(
+      join(teardownsDirOf(niceevalRoot), "wrong-shape.json"),
+      JSON.stringify({ experimentId: "exp/bad", selectedEvalIds: [1], pid: 123, host: "h", startedAt: "2026-07-21T10:00:00.000Z" }),
+      "utf-8",
+    );
+    expect(await readTeardownRegistrations(niceevalRoot)).toEqual([]);
+  });
 });
 
 describe("isStaleTeardownRegistration: 遗留义务判定", () => {

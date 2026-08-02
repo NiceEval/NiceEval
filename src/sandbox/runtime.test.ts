@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { MaterializedSandboxCase } from "./case-types.ts";
 import {
   createBuiltinSandboxFactories,
-  customCaseSandbox,
+  defineSandboxCase,
   customProviderSandbox,
   sandboxLayer,
   type SandboxLayer,
@@ -340,7 +340,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
       services: { _tag: "None" as const },
       facts: { namespace: "fixture" },
     }));
-    const casePlan = planned(customCaseSandbox({
+    const casePlan = planned(defineSandboxCase({
       identity: { revision: "v1" },
       targetPlatform: linux,
       services: { _tag: "Unsupported" },
@@ -355,13 +355,13 @@ describe("provider-owned Sandbox runtime materialization", () => {
   });
 
   it("custom case rejects half-states and unknown capabilities before accepting completion", async () => {
-    expect(() => customCaseSandbox({
+    expect(() => defineSandboxCase({
       identity: { revision: () => "opaque" } as never,
       targetPlatform: linux,
       services: { _tag: "Unsupported" },
       materialize: (() => Effect.dieMessage("must not run")) as never,
     })).toThrow(/pure JSON data/);
-    expect(() => customCaseSandbox({
+    expect(() => defineSandboxCase({
       identity: { revision: "v1" },
       targetPlatform: linux,
       services: { _tag: "Maybe" } as never,
@@ -369,7 +369,7 @@ describe("provider-owned Sandbox runtime materialization", () => {
     })).toThrow(/Supported.*Unsupported/);
 
     const groupStop = vi.fn(async () => {});
-    const plan = planned(customCaseSandbox({
+    const plan = planned(defineSandboxCase({
       identity: { revision: "v1" },
       targetPlatform: linux,
       services: { _tag: "Unsupported" },

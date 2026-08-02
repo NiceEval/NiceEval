@@ -20,6 +20,7 @@ import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
 const roots: string[] = [];
+const fixtureRunId = (startedAt: string): string => `${startedAt}-0000-4000-8000-000000000000`;
 async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "niceeval-siteparam-"));
   roots.push(root);
@@ -39,7 +40,7 @@ async function writeSnapshot(root: string, expDirName: string, experimentId: str
       format: RECORD_FORMAT,
       schemaVersion: RECORD_SCHEMA_VERSION,
       producer: { name: "niceeval", version: "0.4.0" },
-      runId: `${startedAt}-0000-4000-8000-000000000000`,
+      runId: fixtureRunId(startedAt),
       experimentId,
       agent: "agent",
       startedAt,
@@ -75,14 +76,12 @@ describe("planSite · 参数化页按 enumerate() 逐实例物化(attempt + expe
     const paths = [...plan.files.keys()];
 
     const q1LocatorA = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-01T08:00:00.000Z"),
       evalId: "q1",
       attempt: 0,
     });
     const q1LocatorB = encodeAttemptLocator({
-      experimentId: "exp/b",
-      snapshotStartedAt: "2026-07-02T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-02T08:00:00.000Z"),
       evalId: "q1",
       attempt: 0,
     });
@@ -140,14 +139,12 @@ describe("planSite / writeSite · 单实例失败的两种处置", () => {
     await writeSnapshot(root, "exp_a", "exp/a", "2026-07-01T08:00:00.000Z", "q1");
     await writeSnapshot(root, "exp_b", "exp/b", "2026-07-02T08:00:00.000Z", "q1");
     const failingLocator = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-01T08:00:00.000Z"),
       evalId: "q1",
       attempt: 0,
     });
     const okLocator = encodeAttemptLocator({
-      experimentId: "exp/b",
-      snapshotStartedAt: "2026-07-02T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-02T08:00:00.000Z"),
       evalId: "q1",
       attempt: 0,
     });
@@ -172,8 +169,7 @@ describe("planSite / writeSite · 单实例失败的两种处置", () => {
     await writeSnapshot(root, "exp_a", "exp/a", "2026-07-01T08:00:00.000Z", "q1");
     await writeSnapshot(root, "exp_b", "exp/b", "2026-07-02T08:00:00.000Z", "q1");
     const failingLocator = encodeAttemptLocator({
-      experimentId: "exp/a",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: fixtureRunId("2026-07-01T08:00:00.000Z"),
       evalId: "q1",
       attempt: 0,
     });

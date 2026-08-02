@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SandboxCommandTimeoutError, providerSessionLimitMs } from "../sandbox/deadline.ts";
+import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { errorFromThrown } from "./attempt.ts";
 
 describe("attempt 超时归属", () => {
@@ -31,11 +31,4 @@ describe("attempt 超时归属", () => {
     expect(error.timeout).toEqual({ trigger: "command-timeout", limitMs: 5_000, source: "command" });
   });
 
-  it("provider 固有会话上限可在派发前解析,本地 provider 不凭空新增默认", () => {
-    expect(providerSessionLimitMs("e2b")).toBe(1_800_000);
-    expect(providerSessionLimitMs("vercel")).toBe(1_200_000);
-    expect(providerSessionLimitMs("docker")).toBeUndefined();
-    expect(providerSessionLimitMs("local")).toBeUndefined();
-    expect(providerSessionLimitMs("e2b", 600_000)).toBe(600_000);
-  });
 });

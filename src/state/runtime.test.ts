@@ -190,11 +190,36 @@ describe("Experiment State runtime", () => {
       evidence: {
         _tag: "External",
         cause: {
-          _tag: "ExternalCause",
+          _tag: "Error",
           name: "Error",
-          code: { _tag: "Code", value: "ECONNREFUSED" },
+          code: { _tag: "Present", value: "ECONNREFUSED" },
           message: "store refused read",
-          stack: { _tag: "Stack" },
+          stack: { _tag: "Present" },
+          cause: { _tag: "Absent" },
+        },
+      },
+    });
+  });
+
+  it("保留有界 cause 链，而不是把外部 throwable 留在 State 失败里", async () => {
+    const window = await Effect.runPromise(ExperimentStateWindow.make(rolling({
+      async load() {
+        throw new Error("state read failed", { cause: new Error("connection reset") });
+      },
+      async save() { return { identity: {}, digest: digestUnavailable, facts: {} }; },
+    }), "experiment/fixture", "window-cause-chain"));
+
+    const failure = await sequenceFailure(window.load(environment));
+    expect(failure.failure).toMatchObject({
+      evidence: {
+        _tag: "External",
+        cause: {
+          _tag: "Error",
+          message: "state read failed",
+          cause: {
+            _tag: "Cause",
+            value: { _tag: "Error", message: "connection reset" },
+          },
         },
       },
     });

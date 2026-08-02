@@ -57,7 +57,7 @@ HITL asks the adapter to do exactly three things — the first two happen on the
 2. **Emit one `input.requested` event for each pending question**, with a stable `id` and as many fields populated as possible — the eval-side checks and matching all depend on them.
 3. **On the next `send`, hand over the decision before continuing**: take the verdict from `input.responses` by `requestId` (do not guess by order), then continue from where the previous turn paused, instead of resending the request.
 
-The paused execution state (for example, a partially read SSE stream) lives on the session line, in `ctx.session`: call `ctx.session.hold(state)` on the paused turn and `ctx.session.take()` on the response turn to retrieve it — `take()` clears it once read. See [Write Send](/tutorials/write-send#step-5-hitl) step 5 for the full skeleton of how this fits together with streaming.
+The paused execution state (for example, a partially read SSE stream) lives on the session line, in `ctx.session`: create an adapter-private `createSessionSlot<Pending>()`, call `ctx.session.set(slot, state)` on the paused turn, and `ctx.session.take(slot)` on the response turn to retrieve it. `take(slot)` clears it once read. See [Write Send](/tutorials/write-send#step-5-hitl) step 5 for the full skeleton of how this fits together with streaming.
 
 Like the rest of [NiceEval](https://niceeval.com/)'s capabilities, HITL is not declared with a boolean flag: **doing it is having it**. If `send` has returned `"waiting"` and emitted `input.requested`, `t.respond` works; if it has not, the eval fails explicitly at the first `parked()` or `requireInputRequest()`, instead of silently passing. See [Adapter](/explanation/adapter#where-capabilities-come-from-proof-by-construction-not-a-questionnaire) for how capabilities follow from construction.
 
@@ -79,5 +79,5 @@ The rule is simple: use HITL only when your agent's execution loop has a branch 
 
 - [Drive](/explanation/drive#human-in-the-loop-hitl) — The full eval-side usage: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`.
 - [Adapter](/explanation/adapter) — The structured input that answers carry to the adapter, four typical shapes.
-- [Write Send](/tutorials/write-send) — The adapter-side practice: `ctx.session.hold` / `take` and the full skeleton for streaming + HITL.
+- [Write Send](/tutorials/write-send) — The adapter-side practice: typed session slots and the full skeleton for streaming + HITL.
 - [Connect Your Agent](/tutorials/connect-your-agent) — The integration overview: minimal integration, parameter channels, and the incremental map.

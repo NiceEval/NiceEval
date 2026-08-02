@@ -82,7 +82,7 @@ describe("Run build preparation · PreparedRunPair", () => {
     const collected = Option.getOrThrow(collection);
     expect(collected.works).toHaveLength(1);
     expect(collected.works[0]).toMatchObject({ provider: "docker" });
-    expect(collected.evalBuildKeys[pair.key]).toEqual([collected.works[0]?.buildKey]);
+    expect(collected.pairBuildKeys[pair.key]).toEqual([collected.works[0]?.buildKey]);
     expect(pair.plan.providerPlan.build.buildKeys).toEqual([collected.works[0]?.buildKey]);
     expect("caseKeys" in collected).toBe(false);
     expect(Option.isSome(toBuildPreparation(collected))).toBe(true);

@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
 //
-// 覆盖类别:「--json 投影」。本文件只证明 envelope 字段与跨视图不变量:format/schemaVersion/view/scope 回显;同 fixture
+// 覆盖类别:「--json 投影」。本文件只证明 envelope 字段与跨视图不变量:format/schemaVersion/view/sample 回显;同 fixture
 // 下 text 面与 --json 面选出同一批实体、共有派生字段同值(由同一次组件 resolve 产物构造保证,
 // 不是两套手写投影分别实现再比对);JSON 是 text 的数据超集(允许保留 text 省略的字段,不能
 // 反向要求字段集合相等);字段名复用落盘类型、不重命名;timing 的 JSON 面恒为完整树,不受
@@ -62,7 +62,7 @@ async function writeSnapshot(root: string, snapDirName: string, opts: SnapshotOp
     format: RECORD_FORMAT,
     schemaVersion: RECORD_SCHEMA_VERSION,
     producer: { name: "niceeval", version: "0.4.6" },
-    runId: `${snapDirName}-0000-4000-8000-000000000000`,
+    runId: `${cleanDirName(opts.experimentId)}:${snapDirName}`,
     experimentId: opts.experimentId,
     agent: opts.agent ?? "bub",
     startedAt: opts.startedAt,
@@ -124,42 +124,42 @@ describe("--json envelope 形状", () => {
     return root;
   }
 
-  it("leaderboard:format/schemaVersion/view/scope 回显", async () => {
+  it("leaderboard:format/schemaVersion/view/sample 回显", async () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, []);
     expect(doc.format).toBe("niceeval.show");
     expect(doc.schemaVersion).toBe(1);
     expect(doc.view).toBe("leaderboard");
-    expect(doc.scope.resultsRoot).toBe(root);
-    expect(doc.scope.fresh).toBe(false);
-    expect(doc.scope.experiments.sort()).toEqual(["dev-e2b/claude", "dev-e2b/codex"]);
-    expect(doc.scope.evalPrefix).toBeUndefined();
+    expect(doc.sample.resultsRoot).toBe(root);
+    expect(doc.sample.fresh).toBe(false);
+    expect(doc.sample.experiments.sort()).toEqual(["dev-e2b/claude", "dev-e2b/codex"]);
+    expect(doc.sample.evalPrefix).toBeUndefined();
   });
 
-  it("compare:view 与 scope.experiments 顺序即条件顺序,首个是基准", async () => {
+  it("compare:view 与 sample.experiments 顺序即条件顺序,首个是基准", async () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, [], { experiment: ["dev-e2b/codex", "dev-e2b/claude"] });
     expect(doc.view).toBe("compare");
-    expect(doc.scope.experiments).toEqual(["dev-e2b/codex", "dev-e2b/claude"]);
+    expect(doc.sample.experiments).toEqual(["dev-e2b/codex", "dev-e2b/claude"]);
   });
 
-  it("eval id 前缀回显进 scope.evalPrefix", async () => {
+  it("eval id 前缀回显进 sample.evalPrefix", async () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, ["weather/brooklyn"]);
-    expect(doc.scope.evalPrefix).toBe("weather/brooklyn");
+    expect(doc.sample.evalPrefix).toBe("weather/brooklyn");
   });
 
-  it("--fresh 回显进 scope.fresh", async () => {
+  it("--fresh 回显进 sample.fresh", async () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, [], { fresh: true });
-    expect(doc.scope.fresh).toBe(true);
+    expect(doc.sample.fresh).toBe(true);
   });
 
-  it("usage:view 为 usage,scope.experiments 反映 --exp 收窄", async () => {
+  it("usage:view 为 usage,sample.experiments 反映 --exp 收窄", async () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, [], { experiment: ["dev-e2b/codex"], usage: true });
     expect(doc.view).toBe("usage");
-    expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
+    expect(doc.sample.experiments).toEqual(["dev-e2b/codex"]);
   });
 
   it("stats:view 为 stats", async () => {
@@ -174,7 +174,7 @@ describe("--json envelope 形状", () => {
     const locator = results.experiments.find((e) => e.id === "dev-e2b/codex")!.latestRun.evals[0]!.attempts[0]!.locator!;
     const { doc } = await showJson(root, [locator]);
     expect(doc.view).toBe("attempt");
-    expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
+    expect(doc.sample.experiments).toEqual(["dev-e2b/codex"]);
   });
 
   // locator 的寻址作用域是整个记录根,不是现刻水位(docs/feature/record/architecture.md
@@ -197,7 +197,7 @@ describe("--json envelope 形状", () => {
 
     const { doc } = await showJson(root, [historical.locator!]);
     expect(doc.view).toBe("attempt");
-    expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
+    expect(doc.sample.experiments).toEqual(["dev-e2b/codex"]);
     expect((doc.data as { summary: { verdict: string } }).summary.verdict).toBe("failed");
   });
 });
@@ -205,6 +205,56 @@ describe("--json envelope 形状", () => {
 // ───────────────────────── text 面与 --json 面同一批实体、共有字段同值 ─────────────────────────
 
 describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
+  it("显式 --source 在 attempt 没有源码证据时非零退出，text 与 JSON 都不伪造空文档", async () => {
+    const root = await makeRoot();
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "dev/e2b", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/no-source", "passed"),
+    ]);
+
+    const text = await show(root, [], { source: true });
+    expect(text.code).toBe(1);
+    expect(text.out).toBe("");
+    expect(text.err).toContain("Source evidence unavailable");
+
+    const json = await show(root, [], { source: true, json: true });
+    expect(json.code).toBe(1);
+    expect(json.out).toBe("");
+    expect(json.err).toContain("Source evidence unavailable");
+  });
+
+  it("--source --json 不沿用终端的源码裁行预算", async () => {
+    const root = await makeRoot();
+    const experimentId = "dev/e2b";
+    const snapDir = "2026-07-08T10-00-00-000Z";
+    const evalId = "weather/source";
+    const content = Array.from({ length: 20 }, (_, index) => `line ${index + 1};`).join("\n");
+    await writeSnapshot(root, snapDir, { experimentId, startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res(evalId, "passed", {
+        assertions: [{
+          name: "captured source",
+          severity: "soft",
+          outcome: "passed",
+          score: 1,
+          loc: { file: "evals/source.ts", line: 10, callers: [] },
+        }],
+      }),
+    ]);
+    const snapshotDir = join(root, cleanDirName(experimentId), snapDir);
+    const sha256 = "source-json-budget";
+    await mkdir(join(snapshotDir, "sources"), { recursive: true });
+    await writeFile(
+      join(snapshotDir, evalId, "a0", "sources.json"),
+      JSON.stringify([{ path: "evals/source.ts", sha256, role: "entry" }]),
+      "utf-8",
+    );
+    await writeFile(join(snapshotDir, "sources", `${sha256}.json`), JSON.stringify({ content }), "utf-8");
+
+    const { doc } = await showJson(root, [], { source: true });
+    expect(doc.view).toBe("source");
+    if (doc.view !== "source" || Array.isArray(doc.data)) throw new Error("expected one source result");
+    expect((doc.data as { source?: { spine: { lines: unknown[] } } | null }).source?.spine.lines).toHaveLength(20);
+  });
+
   it("--usage:text 面的成本/token 数字与 --json 该行的落盘字段同值", async () => {
     const root = await makeRoot();
     await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "dev/e2b", startedAt: "2026-07-08T10:00:00.000Z" }, [
@@ -214,7 +264,9 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
     const text = await show(root, [], { experiment: ["dev/e2b"], usage: true });
     const { doc } = await showJson(root, [], { experiment: ["dev/e2b"], usage: true });
     expect(text.code).toBe(0);
-    const rows = doc.data as { locator: string; evalId: string; estimatedCostUSD?: number; usage?: { outputTokens: number } }[];
+    expect(doc.view).toBe("usage");
+    if (doc.view !== "usage") throw new Error("expected usage view");
+    const rows = doc.data;
     const brooklyn = rows.find((r) => r.evalId === "weather/brooklyn")!;
     // 同一个 fixture:text 面渲染出的成本数字与 --json 该 attempt 的落盘字段一致——两面消费的是
     // 同一次 usageRowsOf() 产物(show/index.ts 的 usageRowsOf),不是各自重新聚合的两份数字。
@@ -223,7 +275,7 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
     expect(brooklyn.usage?.outputTokens).toBe(20);
     // 两面选出同一批实体:text 面两行都出现,json 面两行都出现,locator 集合相同。
     const jsonLocators = rows.map((r) => r.locator).sort();
-    const textLocators = [...text.out.matchAll(/@[0-9a-z]+/g)].map((m) => m[0]).sort();
+    const textLocators = [...text.out.matchAll(/@1[0-9A-HJKMNP-TV-Z]{12}/g)].map((m) => m[0]).sort();
     expect(jsonLocators).toEqual(textLocators);
   });
 
@@ -234,7 +286,9 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
     ]);
     const text = await show(root, [], { experiment: ["dev/e2b"], usage: true });
     const { doc } = await showJson(root, [], { experiment: ["dev/e2b"], usage: true });
-    const row = (doc.data as globalThis.Record<string, unknown>[])[0]!;
+    expect(doc.view).toBe("usage");
+    if (doc.view !== "usage") throw new Error("expected usage view");
+    const row = doc.data[0]!;
     const queensLine = text.out.split("\n").find((l) => l.includes("weather/queens"))!;
     expect(queensLine.trim().endsWith("—")).toBe(true);
     expect("usage" in row).toBe(false);
@@ -248,7 +302,9 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
       res("weather/brooklyn", "passed"),
     ]);
     const { doc } = await showJson(root, [], { experiment: ["dev/e2b"], usage: true });
-    const row = (doc.data as globalThis.Record<string, unknown>[])[0]!;
+    expect(doc.view).toBe("usage");
+    if (doc.view !== "usage") throw new Error("expected usage view");
+    const row = doc.data[0]!;
     expect(Object.keys(row).sort()).toEqual(["attempt", "evalId", "experimentId", "locator", "verdict"].sort());
   });
 });
@@ -268,7 +324,7 @@ describe("--timing 的 --json 面恒为完整树", () => {
       }),
     ]);
     const locator = (await openRecord(root)).experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
-    const summaryDoc = await showJson(root, [locator], { timing: true });
+    const summaryDoc = await showJson(root, [locator], { timing: "summary" });
     const fullDoc = await showJson(root, [locator], { timing: "full" });
     expect(summaryDoc.doc.data).toEqual(fullDoc.doc.data);
     expect(summaryDoc.doc.data).not.toBeNull();
@@ -284,7 +340,9 @@ describe("--history 的 --json 面:直接投影 AttemptJson,不是 text 面的�
       res("weather/brooklyn", "passed", { assertions: [], durationMs: 1234 }),
     ]);
     const { doc } = await showJson(root, [], { history: true });
-    const sections = doc.data as { experimentId: string; evalId: string; attempts: globalThis.Record<string, unknown>[] }[];
+    expect(doc.view).toBe("history");
+    if (doc.view !== "history") throw new Error("expected history view");
+    const sections = doc.data.sections;
     expect(sections).toHaveLength(1);
     expect(sections[0]!.experimentId).toBe("dev/e2b");
     expect(sections[0]!.evalId).toBe("weather/brooklyn");
@@ -294,7 +352,7 @@ describe("--history 的 --json 面:直接投影 AttemptJson,不是 text 面的�
     expect(attempt.durationMs).toBe(1234);
     expect(attempt.assertions).toEqual([]);
     expect(attempt.experimentId).toBe("dev/e2b");
-    expect(attempt.snapshotStartedAt).toBe("2026-07-08T10:00:00.000Z");
+    expect(attempt.runStartedAt).toBe("2026-07-08T10:00:00.000Z");
   });
 });
 

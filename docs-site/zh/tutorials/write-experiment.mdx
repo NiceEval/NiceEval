@@ -125,7 +125,7 @@ npx niceeval exp prompts/concise
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
-| `sandbox` | sandbox agent 使用的固定 spec；spec 可带 `environments` 表按评估用例的环境 profile 换预制产物，也可以链 `.setup()` / `.teardown()` 挂环境 Hook |
+| `sandbox` | 一条 `SandboxLayer`；具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
 | `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
 
@@ -345,12 +345,12 @@ export const sharedNowledge = {
 
 ## 让不同评估用例使用不同预制环境
 
-一批真实任务可能需要不同版本的运行时和依赖。评估用例用 `environment` 声明一个与 provider 无关的 profile ID；sandbox spec 的 `environments` 表再把它映射到具体模板或快照：
+一批真实任务可能需要不同版本的运行时和依赖。把具体的 template-bearing factory 直接放在每条 Eval 上，让任务与执行环境保持为同一份声明：
 
 ```ts
 // evals/astropy-2021.eval.ts
 export default defineEval({
-  environment: "python-3.9-astropy-4.2",
+  sandbox: e2bSandbox({ template: "codex-python39" }),
   async test(t) {
     // 驱动任务并验证结果
   },
@@ -358,28 +358,21 @@ export default defineEval({
 ```
 
 ```ts
-// experiments/shared.ts —— 一个 provider 一张表，所有实验共用
+// evals/shared/python39.ts —— 用普通 TypeScript 复用，不建 profile registry
 import { e2bSandbox } from "niceeval/sandbox";
 
-export const e2b = e2bSandbox({
-  template: "codex-default",              // 未声明 environment 的 eval 用它
-  environments: {
-    "python-3.9-astropy-4.2": { template: "codex-python39" },
-  },
-});
+export const python39 = () => e2bSandbox({ template: "codex-python39" });
 ```
 
 ```ts
-// experiments/e2b.ts —— 实验保持一行 diff，覆盖全部 eval
+// experiments/e2b.ts —— Eval 拥有 template，Experiment 只拥有 agent
 import { defineExperiment } from "niceeval";
-import { e2b } from "./shared";
 
 export default defineExperiment({
   agent: codexAgent(),
-  sandbox: e2b,
 });
 ```
 
-`environment` 是非空的稳定字符串，不是包版本约束。`environments` 表的值就是该 Provider 预制产物字段的覆盖（Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`）。NiceEval 在启动任何 Sandbox 前对所有选中的评估用例完成查表；某条评估用例声明的 profile 缺表项会在启动时一次性报出全部缺项。Direct Agent 不创建 Sandbox，不参与查表。因为映射是随 spec 复用的数据，同一个实验能覆盖全部评估用例——分数和对比表不会因为环境不同被拆成多个实验。
+没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中 Eval。重复 template 用普通 TypeScript helper 共享；同一个 Experiment 仍能覆盖全部 Eval，link planning 会逐条把 Eval layer 与 Experiment layer 配对。
 
 跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。

@@ -10,14 +10,16 @@
 //   · `tool-approval-request` part → `input.requested` 事件 + 整轮 `status: "waiting"`,
 //     直接满足 HITL 契约的「waiting + input.requested」两条义务(resume 仍归 adapter 管);
 //   · 批准 / 拒绝后的 resume 结果里,执行结果只出现在 `responseMessages` 的 tool 消息中
-//     (不在 steps 里),这里挖出来补成 `action.result` —— 拒绝(execution-denied)映射成
+//     (不在 steps 里),这里挖出来补成 `operation.finished` —— 拒绝(execution-denied)映射成
 //     `status: "rejected"`,喂 `calledTool(..., { status: "rejected" })` 与 `noFailedActions()`。
 
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { randomUUID } from "node:crypto";
 
 import { defineDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
+import { normalizeJsonValue } from "../shared/json-value.ts";
 import { normalizeToolName as normalizeShared } from "../o11y/tool-names.ts";
 import type { Agent, InputRequest, InputResponse, JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
 
@@ -107,7 +109,7 @@ export interface AiSdkResultLike {
   usage?: AiSdkUsageLike;
   /**
    * 本次调用新产生的消息(v7)。tool approval 批准 / 拒绝后,被拦工具的执行结果只出现在
-   * 这里的 tool 消息里(不进 steps),turnFromAiSdk 从中补齐 `action.result`。
+   * 这里的 tool 消息里(不进 steps),turnFromAiSdk 从中补齐 `operation.finished`。
    */
   responseMessages?: readonly AiSdkResponseMessageLike[];
 }
@@ -133,12 +135,12 @@ export interface AiSdkTurn {
  * `callId` 用 AI SDK 原生的 `toolCallId`(显式配对,不合成);工具名保留原名进 `name`,
  * canonical 名进 `tool`(认不出的域内工具落 "unknown",`calledTool("get_weather")`
  * 仍按原名匹配)。工具执行失败(v5+ 的 `tool-error` part)映射成 `status: "failed"` 的
- * `action.result`,喂 `noFailedActions()`。
+ * `operation.finished`,喂 `noFailedActions()`。
  *
  * v7 tool approval:`needsApproval` 工具被拦下时返回 `status: "waiting"` + 每个待批准
  * 调用一条 `input.requested`(`id` = approvalId、`action` = 工具原名、`options` =
  * approve / deny)。resume(把 `tool-approval-response` 塞回 messages 再跑一次)后的结果
- * 再交给 turnFromAiSdk,会从 `responseMessages` 里补出执行 / 拒绝的 `action.result`。
+ * 再交给 turnFromAiSdk,会从 `responseMessages` 里补出执行 / 拒绝的 `operation.finished`。
  */
 export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const stepEvents: StreamEvent[] = [];
@@ -156,7 +158,7 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
     }
   }
 
-  // approval resume 时被拦工具的执行结果只在 responseMessages 里;补出的 action.result
+  // approval resume 时被拦工具的执行结果只在 responseMessages 里;补出的 operation.finished
   // 排在本轮 step 事件之前 —— 时间上它确实先于模型看到结果后的新输出。
   const minedEvents = mineResponseMessages(result.responseMessages, seen.resolved);
 
@@ -200,8 +202,9 @@ function pushContentParts(
         const callId = str(part.toolCallId) ?? "unknown";
         seen.resolved.add(callId);
         events.push({
-          type: "action.result",
-          callId,
+          type: "operation.finished",
+          operationId: callId,
+          kind: "tool",
           output: asJson(part.output ?? part.result),
           status: "completed",
         });
@@ -211,8 +214,9 @@ function pushContentParts(
         const callId = str(part.toolCallId) ?? "unknown";
         seen.resolved.add(callId);
         events.push({
-          type: "action.result",
-          callId,
+          type: "operation.finished",
+          operationId: callId,
+          kind: "tool",
           output: { error: part.error instanceof Error ? part.error.message : String(part.error) },
           status: "failed",
         });
@@ -253,8 +257,9 @@ function pushStepFields(events: StreamEvent[], step: AiSdkStepLike, seen: SeenCa
   for (const res of step.toolResults ?? []) {
     seen.resolved.add(res.toolCallId);
     events.push({
-      type: "action.result",
-      callId: res.toolCallId,
+      type: "operation.finished",
+      operationId: res.toolCallId,
+      kind: "tool",
       output: asJson(res.output ?? res.result),
       status: "completed",
     });
@@ -262,7 +267,7 @@ function pushStepFields(events: StreamEvent[], step: AiSdkStepLike, seen: SeenCa
   if (step.text?.trim()) events.push({ type: "message", role: "assistant", text: step.text });
 }
 
-/** 同一 callId 只发一条 action.called(tool-call part 与 approval-request 的 toolCall 会重)。 */
+/** 同一原生 tool call ID 只发一条 operation.started(tool-call part 与 approval-request 会重)。 */
 function pushCalled(
   events: StreamEvent[],
   seen: SeenCallIds,
@@ -271,11 +276,14 @@ function pushCalled(
   if (seen.called.has(call.toolCallId)) return;
   seen.called.add(call.toolCallId);
   events.push({
-    type: "action.called",
-    callId: call.toolCallId,
-    name: call.toolName,
-    input: asJson(call.input),
-    tool: normalizeToolName(call.toolName),
+    type: "operation.started",
+    operationId: call.toolCallId,
+    operation: {
+      kind: "tool",
+      name: call.toolName,
+      input: asJson(call.input),
+      tool: normalizeToolName(call.toolName),
+    },
   });
 }
 
@@ -295,7 +303,7 @@ function mineResponseMessages(
       if (part.type !== "tool-result") continue;
       const callId = str(part.toolCallId);
       if (!callId || resolved.has(callId)) continue;
-      events.push({ type: "action.result", callId, ...unwrapToolOutput(part.output) });
+      events.push({ type: "operation.finished", operationId: callId, kind: "tool", ...unwrapToolOutput(part.output) });
     }
   }
   return events;
@@ -349,9 +357,9 @@ function normalizeToolName(name: string): ToolName {
   return normalizeShared(name);
 }
 
-/** 工具入参 / 出参在 AI SDK 里经 schema 校验,本就是 JSON 值;这里只做形状断言。 */
+/** 工具入参 / 出参来自可替换的 AI SDK 版本；在边界立即清洗成领域 JsonValue。 */
 function asJson(value: unknown): JsonValue {
-  return (value ?? null) as JsonValue;
+  return normalizeJsonValue(value);
 }
 
 function str(value: unknown): string | undefined {
@@ -369,34 +377,35 @@ function num(value: unknown): number | undefined {
  * approval 裁决),直接透传给 generateText / streamText 即可;泛型 `M` 由调用方钉成自己
  * AI SDK 版本的 `ModelMessage`,niceeval 不引 `ai` 包。
  */
-export interface AiSdkGenerateContext<M = unknown> {
+export interface AiSdkGenerateContext<M = JsonValue, Integration extends object = object> {
   readonly messages: M[];
   /** 实验钉的 model(ctx.model);省略 → 用应用自己的默认。 */
   readonly model?: string;
   /** 实验钉的推理努力程度(ctx.reasoningEffort);省略 → 用应用自己的默认。应用自己决定怎么塞进 providerOptions(如 OpenAI 的 reasoningEffort)。 */
   readonly reasoningEffort?: string;
   readonly signal: AbortSignal;
-  readonly flags: Readonly<globalThis.Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   /**
    * 配了 `tracing`(如 `aiSdkOtel()`)才有:直接放进 generateText / streamText 的
    * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,
    * 应用侧原样透传即可。
    */
-  readonly telemetry?: AiSdkTelemetrySettings;
+  readonly telemetry?: AiSdkTelemetrySettings<Integration>;
 }
 
 /**
  * generateText / streamText 的 `telemetry` 选项的形状子集。integrations 的元素是
- * `@ai-sdk/otel` 的集成实例——类型属于用户的 ai 版本,niceeval 不引 `ai` 包,所以是 any。
+ * `@ai-sdk/otel` 的集成实例。`Integration` 由 tracing 实现携带，niceeval 不引
+ * 用户版本的 `ai` 包，也不在中间层抹成 `any`。
  */
-export interface AiSdkTelemetrySettings {
-  readonly integrations: any[];
+export interface AiSdkTelemetrySettings<Integration extends object = object> {
+  readonly integrations: readonly Integration[];
 }
 
 /** tracing 管线为某一轮建好的遥测件(`AiSdkTracing.telemetryForEndpoint` 的返回值)。 */
-export interface AiSdkTurnTelemetry {
+export interface AiSdkTurnTelemetry<Integration extends object = object> {
   /** 直接放进 generateText / streamText 的 `telemetry` 选项。 */
-  settings: AiSdkTelemetrySettings;
+  settings: AiSdkTelemetrySettings<Integration>;
   /** 每轮结束后由工厂调用:轮次归属靠时间窗口,span 必须立刻送到,不能等 batch。 */
   flush(): Promise<void>;
 }
@@ -406,12 +415,12 @@ export interface AiSdkTurnTelemetry {
  * 独立子路径导出,OTel 三件套是可选 peer 依赖,只有 import 那个入口的项目才需要安装;
  * 这里只放形状,`niceeval/adapter` 本身零 OTel 依赖。
  */
-export interface AiSdkTracing {
+export interface AiSdkTracing<Integration extends object = object> {
   /** 为本轮的 OTLP 接收端点建(或复用)一条导出管线。每个 attempt 端点不同,按端点缓存。 */
-  telemetryForEndpoint(endpoint: string): AiSdkTurnTelemetry;
+  telemetryForEndpoint(endpoint: string): AiSdkTurnTelemetry<Integration>;
 }
 
-export interface AiSdkAgentOptions<M = unknown> {
+export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = object> {
   /** agent 名(报告 / 结果聚合的身份)。默认 "ai-sdk"。 */
   name?: string;
   /**
@@ -426,14 +435,14 @@ export interface AiSdkAgentOptions<M = unknown> {
    * aiSdkAgent({ tracing: aiSdkOtel(), generate });
    * ```
    */
-  tracing?: AiSdkTracing;
+  tracing?: AiSdkTracing<Integration>;
   /**
    * 每轮一召:拿会话历史跑一次 generateText / streamText(await 完整结果)并原样返回。
    * model / tools / system prompt / stopWhen 都在这里配 —— 那是应用的事,工厂不掺和。
    */
-  generate(ctx: AiSdkGenerateContext<M>): Promise<AiSdkResultLike>;
+  generate(ctx: AiSdkGenerateContext<M, Integration>): Promise<AiSdkResultLike>;
   /** 本轮的结构化输出(Turn.data,喂 outputEquals / outputMatches)。省略则 data 为 undefined。 */
-  data?(result: AiSdkResultLike, turn: AiSdkTurn): unknown;
+  data?(result: AiSdkResultLike, turn: AiSdkTurn): JsonValue;
 }
 
 /**
@@ -465,7 +474,9 @@ export interface AiSdkAgentOptions<M = unknown> {
  * });
  * ```
  */
-export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
+export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
+  options: AiSdkAgentOptions<M, Integration>,
+): Agent {
   interface SessionState {
     messages: M[];
     /** 上一轮停下的 tool approval:下一轮输入按行翻译成裁决。 */
@@ -521,7 +532,7 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw makeSendFailure({ acceptance: "unknown", message, cause: error });
+        throw makeSendFailure({ acceptance: "unknown", message, cause: normalizeExternalCause(error) });
       } finally {
         // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
         await otel?.flush();

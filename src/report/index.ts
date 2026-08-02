@@ -70,7 +70,45 @@ export {
 export { presentDimension, shortestUniqueLabels } from "./presentation.ts";
 export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "./presentation.ts";
 export { flag, label, numericFlag, numericLabel, numericRunConfig, runConfig } from "./model/flag.ts";
-export { scoringComposition } from "./model/scoring.ts";
+export { evaluationKindComposition } from "./model/evaluation-kind.ts";
+
+// 内建任务结果：page、show text 与 ShowJson 的共同计算锚点。
+export {
+  annotatedSourceResult,
+  attemptDetailsResult,
+  comparisonResult,
+  conversationResult,
+  diffResult,
+  historyResult,
+  stabilityResult,
+  standardOverviewResult,
+  timingResult,
+  usageResult,
+} from "./tasks.ts";
+export type {
+  AnnotatedSourceOptions,
+  AnnotatedSourceResult,
+  AttemptDetailsResult,
+  AttemptTimingResult,
+  ComparisonCoverageResult,
+  ComparisonOptions,
+  ComparisonResult,
+  ConversationResult,
+  DiffResult,
+  HistoryAttemptResult,
+  HistoryOptions,
+  HistoryResult,
+  HistorySectionResult,
+  RunTimingBuildResult,
+  RunTimingResult,
+  StabilityOptions,
+  StabilityResult,
+  StandardOverviewChartResult,
+  StandardOverviewPoint,
+  StandardOverviewResult,
+  TimingResult,
+  UsageResult,
+} from "./tasks.ts";
 
 // 报告定义与组件基座
 export {
@@ -327,7 +365,7 @@ export type {
   RunConfigKey,
   SampleSummaryContent,
   SampleIssue,
-  ScoringComposition,
+  EvaluationKindComposition,
   SeriesInput,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
@@ -346,9 +384,6 @@ export type {
   AttemptDiffData,
   AttemptErrorData,
   AttemptFixPromptData,
-  AttemptSourceData,
-  AttemptSourceLineData,
-  AttemptSourceTurn,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,

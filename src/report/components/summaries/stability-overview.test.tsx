@@ -36,6 +36,7 @@ function snap(experimentId: string, results: EvalResult[]): Run {
   runSeq += 1;
   const startedAt = `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId,
     startedAt,
     completedAt: startedAt,

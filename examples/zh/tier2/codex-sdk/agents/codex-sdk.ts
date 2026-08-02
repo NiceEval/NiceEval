@@ -3,7 +3,7 @@
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
 //
 // 断言依据全部来自这条 ThreadEvent 流:官方转换器 `createCodexThreadEventStream` 翻消息文本、
-// 工具项(command_execution / mcp_tool_call / file_change → action.*)、`turn.completed` 的
+// 工具项(command_execution / mcp_tool_call / file_change → 配对的 operation.started / operation.finished)、`turn.completed` 的
 // usage 和终局错误;逐帧驱动是官方件 `driveFrameStream`(没有 HITL,onFrame 只用来处理
 // 传输帧 + 抓 threadId)。
 //

@@ -79,7 +79,7 @@ export async function runVerify(): Promise<void> {
   const execution = sh(`pnpm exec niceeval show ${locator} --execution`);
   assert.ok(
     execution.includes("get_weather"),
-    "execution tree is missing the get_weather call node — the SSE tool part wasn't normalized into action.called/result",
+    "execution tree is missing the get_weather call node — the SSE tool part wasn't normalized into operation events",
   );
   assert.ok(
     /北京/.test(execution),

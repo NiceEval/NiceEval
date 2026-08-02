@@ -7,6 +7,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
+/**
+ * 持久条目从 JSON.parse 出来后仍是 unknown。每个消费域必须在读取边界提供自己的完整 decoder，
+ * 才能把它带入后续业务逻辑；返回 undefined 代表该条目对该领域而言已损坏或不属于该领域。
+ */
+export type EntryDecoder<T> = (value: unknown) => T | undefined;
+
 /** 纯哈希 entry id:parts 用 ":" 拼接后 sha256,取十六进制前缀。不带可读前缀,只须无碰撞。 */
 export function hashEntryId(parts: readonly string[], length = 12): string {
   return createHash("sha256").update(parts.join(":")).digest("hex").slice(0, length);
@@ -21,8 +27,11 @@ export function slugHashEntryId(slugSource: string, hashParts: readonly string[]
   return `${slug}-${hashEntryId(hashParts, length)}`;
 }
 
-/** 原子写入一条 entry:临时文件 → fsync 文件 → rename → fsync 目录(尽力而为,见 fsyncDir)。 */
+/** 原子写入一条 entry:先验证 plain JSON tree，再临时文件 → fsync 文件 → rename → fsync 目录。 */
 export async function writeEntryFile(dir: string, id: string, data: unknown): Promise<void> {
+  if (!isPlainJsonTree(data)) {
+    throw new TypeError("Entry file data must be a finite, acyclic plain JSON tree");
+  }
   await mkdir(dir, { recursive: true });
   const tmpPath = join(dir, `.${id}.${process.pid}.tmp`);
   const finalPath = join(dir, `${id}.json`);
@@ -37,17 +46,35 @@ export async function writeEntryFile(dir: string, id: string, data: unknown): Pr
   await fsyncDir(dir);
 }
 
-/** 读一条 entry(不存在或损坏都返回 undefined,不抛错)。 */
-export async function readEntryFile<T>(dir: string, id: string): Promise<T | undefined> {
+/** unknown 只活在写入边界；通过后才允许交给 JSON.stringify 与持久层。 */
+function isPlainJsonTree(value: unknown, ancestors: ReadonlySet<object> = new Set()): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (ancestors.has(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
+  const next = new Set(ancestors);
+  next.add(value);
+  return Array.isArray(value)
+    ? value.every((item) => isPlainJsonTree(item, next))
+    : Object.values(value).every((item) => isPlainJsonTree(item, next));
+}
+
+/** 读一条 entry(不存在、JSON 损坏或 decoder 拒绝都返回 undefined,不抛错)。 */
+export async function readEntryFile<T>(dir: string, id: string, decode: EntryDecoder<T>): Promise<T | undefined> {
   try {
-    return JSON.parse(await readFile(join(dir, `${id}.json`), "utf-8")) as T;
+    return decode(JSON.parse(await readFile(join(dir, `${id}.json`), "utf-8")));
   } catch {
     return undefined;
   }
 }
 
-/** 读全部 entry(目录不存在返回空集合;跳过点文件与非 `.json` 文件;损坏条目跳过,不拖垮整次扫描)。 */
-export async function readAllEntryFiles<T>(dir: string): Promise<{ id: string; entry: T }[]> {
+/**
+ * 读全部 entry(目录不存在返回空集合;跳过点文件与非 `.json` 文件;JSON 损坏或 decoder 拒绝的
+ * 条目跳过,不拖垮整次扫描)。
+ */
+export async function readAllEntryFiles<T>(dir: string, decode: EntryDecoder<T>): Promise<{ id: string; entry: T }[]> {
   let files: string[];
   try {
     files = await readdir(dir);
@@ -59,9 +86,10 @@ export async function readAllEntryFiles<T>(dir: string): Promise<{ id: string; e
     if (!file.endsWith(".json") || file.startsWith(".")) continue; // 点文件是在飞临时/墓碑文件
     try {
       const raw = await readFile(join(dir, file), "utf-8");
-      out.push({ id: file.slice(0, -".json".length), entry: JSON.parse(raw) as T });
+      const entry = decode(JSON.parse(raw));
+      if (entry !== undefined) out.push({ id: file.slice(0, -".json".length), entry });
     } catch {
-      // 跳过损坏条目,不让一条坏文件拖垮整次扫描。
+      // 跳过 JSON 损坏条目,不让一条坏文件拖垮整次扫描。
     }
   }
   return out;

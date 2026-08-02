@@ -83,7 +83,7 @@ Scope fixture 必须让三个接收者得到**不同答案**，才能发现 sele
   - `.soft()`、`.gate()` 与 `.atLeast()` 共用一份 `RecordHandle` 契约测试，不按 matcher 重复。
   - `.stopOnFailure()` 在链的位置立即结算且只对 failed 中止；通过返回原句柄，失败结果带 `stopOnFailure: true` 并以 `EvalRequirementFailed` 退出。值、t、session 与 turn 句柄在两种题型共用这套语义；无线 soft 单独链时报清晰作者错误。
 - **`.soft()` 对判定的影响**：分数照实落盘（`AssertionResult.score`保留原始分，不因降级为 soft 被抹掉）；`outcome` 恒为 `passed`（`computePassed` 对 threshold undefined 的 soft 恒返回 true）；`computeVerdict` 无论 `strict` 是否为真都不会因这条断言判`failed`——`--strict` 只翻转「有阈值的 soft」，无阈值的 soft 没有阈值可比较，不受这个旋钮影响。
-- **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)`把权重挂上 spec，`finalize` 按 `n × score` 写进 `AssertionResult.points`（0/1 断言通过挣`n`、不过挣 0；连续打分断言按比例）；`n <= 0`或非有限数立即抛错（不是记一条失败断言）。
+- **计分制给分链路（`.points(n)` / `t.score(label, n)`）**：`RecordHandle.points(n)`把权重挂上 spec，`finalize` 把声明值 `n` 独立写进 `AssertionResult.pointsAvailable`，并按 `n × score` 写进 `AssertionResult.points`（0/1 断言通过挣`n`、不过挣 0；连续打分断言按比例）；failed 与 unavailable 都保留 `pointsAvailable`，unavailable 没有实得 `points`；`n <= 0`或非有限数立即抛错（不是记一条失败断言）。
   `AssertionCollector.score(label, n)` 立即记录一条`ScoreEntry`（不像断言那样等 finalize 求值），`n < 0` 或非有限数立即抛错；`groupPath` 跟随当前`t.group` 栈,与断言同一份分组约定。
   未链 `.points()` 的断言 `AssertionResult.points` 省略（不是`0`）——省略与 0 分是两个读数，省略表示这条断言不参与计分。
   得分点落盘为 `severity: "soft"` + 有`points`，丢分不改 verdict；`.points()` 之后不暴露 `.soft()` /`.atLeast()`，但可链 `.gate().stopOnFailure()`，给分、严重度和控制流三个字段互不覆盖（类型层证明，见 typecheck fixture）。

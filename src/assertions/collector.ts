@@ -59,6 +59,8 @@ export interface Spec {
   groupPath?: string[];
   /** 断言在 eval 源码里的调用点(record 时栈回溯抠出)。 */
   loc?: SourceLoc;
+  /** collector 在 record 时分配的 attempt 级发生顺序。 */
+  sourceOrder?: number;
   /**
    * `.points(n)` 挂在这条断言上的挣分权重(仅计分制 eval 的 `t` 类型上可链):`n × score`。
    * 运行时对全部 eval 一视同仁地记录(不需要按题型守护,见 docs/feature/experiments/score-points.md);
@@ -96,6 +98,8 @@ export interface CollectorOptions {
    * 省略时调用 `.stopOnFailure()` 会报内部接线错误。
    */
   liveContext?: () => Promise<AssertionEvaluationContext>;
+  /** 与 SessionManager 共用的 attempt 级序号分配器；直接构造 collector 时使用自身序列。 */
+  nextSourceOrder?: () => number;
 }
 
 /** 一条判分断言开始求值时的推进快照(见 FinalizeOptions.onJudgeProgress)。 */
@@ -130,6 +134,8 @@ export class AssertionCollector {
   private readonly entries: ScoreEntry[] = [];
   private readonly evaluationKind: "pass" | "points";
   private readonly liveContext: (() => Promise<AssertionEvaluationContext>) | undefined;
+  private localSourceOrder = 0;
+  private readonly nextSourceOrder: () => number;
   /** 待结算的 stopOnFailure 求值(按调用顺序)；runner 收尾也会兜底结算未 await 的调用。 */
   private pending: Promise<AbortPoint | undefined>[] = [];
   private aborted: AbortPoint | undefined;
@@ -137,6 +143,7 @@ export class AssertionCollector {
   constructor(options: CollectorOptions = {}) {
     this.evaluationKind = options.evaluationKind ?? "pass";
     this.liveContext = options.liveContext;
+    this.nextSourceOrder = options.nextSourceOrder ?? (() => ++this.localSourceOrder);
   }
 
   get hasEntries(): boolean {
@@ -151,6 +158,7 @@ export class AssertionCollector {
     this.entries.push({
       label,
       points,
+      sourceOrder: this.nextSourceOrder(),
       ...(this.groupStack.length > 0 ? { groupPath: this.groupStack.slice() } : {}),
       loc: captureLoc(),
     });
@@ -176,6 +184,7 @@ export class AssertionCollector {
       spec.groupPath = this.groupStack.slice();
     }
     if (spec.loc === undefined) spec.loc = captureLoc();
+    if (spec.sourceOrder === undefined) spec.sourceOrder = this.nextSourceOrder();
     // 计分制的未链句柄角色是观测：matcher 自带的 gate 只贡献通过线。作者随后在句柄上
     // 显式 `.gate()` 时会再把 severity 改回 gate；`.stopOnFailure()` 与这里完全正交。
     if (this.evaluationKind === "points" && spec.severity === "gate") {
@@ -309,6 +318,10 @@ export class AssertionCollector {
         ...(spec.detail !== undefined ? { detail: spec.detail } : {}),
         ...(spec.groupPath !== undefined ? { groupPath: spec.groupPath } : {}),
         ...(spec.loc !== undefined ? { loc: spec.loc } : {}),
+        ...(spec.sourceOrder !== undefined ? { sourceOrder: spec.sourceOrder } : {}),
+        ...(options.includePoints !== false && spec.points !== undefined
+          ? { pointsAvailable: spec.points }
+          : {}),
       };
       let score = 0;
       let detail = spec.detail;

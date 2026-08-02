@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { Data, Effect, Option, type Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
-import type { MaterializedSandboxCase, SandboxResourceGroup } from "./case-types.ts";
+import type {
+  MaterializedSandboxCase,
+  SandboxResourceGroup,
+  ServiceController,
+} from "./case-types.ts";
 import {
   collectComposeBuilds,
   composeCollectionIdentity,
@@ -22,7 +26,9 @@ import {
   sandboxProviderBindingOf,
   type SandboxProviderBinding,
   type CustomCaseProviderPlan,
+  type CustomCaseMaterializeResult,
   type CustomCaseSandboxOptions,
+  type CustomCaseServices,
   type CustomProviderPlan,
   type CustomProviderSandboxOptions,
   type DockerComposeProviderPlan,
@@ -31,11 +37,12 @@ import {
   type E2BProviderPlan,
   type LocalProviderPlan,
   type SandboxProviderCapabilities,
+  type SandboxProviderLifetime,
   type SandboxProviderPlan,
   type SandboxRuntimeDeadlineDeclaration,
   type VercelProviderPlan,
 } from "./layer.ts";
-import { digestOf, type BuildKey } from "./identity.ts";
+import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
@@ -58,7 +65,7 @@ export interface SandboxRuntimeMaterializeInput {
   readonly signal: AbortSignal;
   /** 物理实例 hook 的完成态上下文；由 fresh attempt 或 reuse pool 在创建边界绑定。 */
   readonly hookContext: SandboxHookContext;
-  readonly buildLocators: ReadonlyMap<BuildKey, string>;
+  readonly buildLocators: ReadonlyMap<BuildKey, JsonValue>;
   readonly provisionSlot:
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
@@ -158,7 +165,7 @@ function deadlineOptions(deadline: SandboxRuntimeDeadline): {
 }
 
 function configuredLifetime(
-  value: E2BProviderPlan["lifetime"] | VercelProviderPlan["lifetime"],
+  value: SandboxProviderLifetime,
 ): number | undefined {
   return value._tag === "Configured" ? value.milliseconds : undefined;
 }
@@ -263,6 +270,7 @@ export function materializeDockerComposeProviderPlan(
     ...deadlineOptions(context.deadline),
     feedback: context.feedback,
     provisionSlot: boundProvisionSlot(context),
+    lifetimeMs: configuredLifetime(plan.lifetime),
   }), context));
 }
 
@@ -276,14 +284,21 @@ export function materializeDockerfileProviderPlan(
       "sandbox.build-locator-missing",
       new Error(`Dockerfile build ${plan.buildKey} has no prepared locator.`),
     )),
-    onSome: (image) => materializationEffect(context, async () => {
+    onSome: (locator) => typeof locator !== "string"
+      ? Effect.fail(runtimeFailure(
+          context,
+          "sandbox.materialization-failed",
+          new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
+        ))
+      : materializationEffect(context, async () => {
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
       const provisionToken = randomUUID();
       const backend = await withProvisionRetry(
         () => DockerSandbox.create({
           ...deadlineOptions(context.deadline),
           runtime: "node24",
-          image,
+          image: locator,
+          lifetimeMs: configuredLifetime(plan.lifetime),
           feedback: context.feedback,
           provisionToken,
           runIdentity: currentRunIdentity(),
@@ -293,7 +308,7 @@ export function materializeDockerfileProviderPlan(
         context.feedback,
         () => reconcileProvision(provisionToken),
       );
-      return wrapSingleSandbox(backend, context, { image });
+      return wrapSingleSandbox(backend, context, { image: locator });
     }),
   });
 }
@@ -310,6 +325,7 @@ export function materializeDockerImageProviderPlan(
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         image: plan.image,
+        lifetimeMs: configuredLifetime(plan.lifetime),
         feedback: context.feedback,
         provisionToken,
         runIdentity: currentRunIdentity(),
@@ -359,6 +375,7 @@ export function materializeVercelProviderPlan(
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         snapshotId: plan.snapshotId,
+        lifetimeMs: configuredLifetime(plan.lifetime),
         feedback: context.feedback,
       }),
       classifyProvisionError,
@@ -397,28 +414,165 @@ export function materializeCustomProviderPlan(
 }
 
 export function materializeCustomCaseProviderPlan(
-  _plan: CustomCaseProviderPlan,
+  plan: CustomCaseProviderPlan,
   context: SandboxRuntimeMaterializeContext,
   materialize: CustomCaseSandboxOptions["materialize"],
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
-  return Effect.map(materialize({
+  return Effect.flatMap(materialize({
     evalId: context.evalId,
     profile: context.evalId,
     signal: context.signal,
     buildLocators: context.buildLocators,
   }).pipe(
     Effect.mapError((cause) => runtimeFailure(context, "sandbox.materialization-failed", cause)),
-  ), (result) => normalizeMaterialized({
-    sandbox: result.sandbox,
-    ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
-    group: result.group,
-    caseKind: "custom",
-    caseKey: context.plan.providerPlan.build.caseKey,
-    buildKeys: context.plan.providerPlan.build.buildKeys,
-    identity: context.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(context.plan),
+  ), (rawResult) => Effect.try({
+    try: () => {
+      const result = validateCustomCaseMaterializeResult(rawResult, plan.services);
+      return normalizeMaterialized({
+        sandbox: result.sandbox,
+        ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
+        group: result.group,
+        caseKind: "custom",
+        caseKey: context.plan.providerPlan.build.caseKey,
+        buildKeys: context.plan.providerPlan.build.buildKeys,
+        identity: context.plan.providerPlan.identity,
+        carryEligible: linkedRunCarryEligible(context.plan),
+        facts: result.facts,
+      }, context);
+    },
+    catch: (cause) => runtimeFailure(context, "sandbox.materialization-failed", cause),
+  }).pipe(
+    Effect.catchAll((failure) => Effect.zipRight(
+      stopInvalidCustomCaseResult(rawResult),
+      Effect.fail(failure),
+    )),
+  ));
+}
+
+function validateCustomCaseMaterializeResult(
+  value: unknown,
+  declaredServices: CustomCaseServices,
+): CustomCaseMaterializeResult {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("defineSandboxCase materialize() must return an object");
+  }
+  const result = value as globalThis.Record<string, unknown>;
+  const extra = Object.keys(result).filter(
+    (key) => key !== "sandbox" && key !== "group" && key !== "services" && key !== "facts",
+  );
+  if (extra.length > 0) {
+    throw new TypeError(
+      `defineSandboxCase materialize() returned unsupported field(s): ${extra.join(", ")}`,
+    );
+  }
+  if (result.sandbox === null || typeof result.sandbox !== "object") {
+    throw new TypeError("defineSandboxCase materialize() must return sandbox");
+  }
+  const group = validateCustomCaseResourceGroup(result.group);
+  const services = validateCustomCaseServices(result.services, declaredServices);
+  if (!isPureDataIdentity(result.facts)) {
+    throw new TypeError("defineSandboxCase materialize() facts must be pure JSON data");
+  }
+  return {
+    sandbox: result.sandbox as Sandbox,
+    group,
+    services,
     facts: result.facts,
-  }, context));
+  };
+}
+
+function validateCustomCaseResourceGroup(value: unknown): SandboxResourceGroup {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("defineSandboxCase materialize() must return group");
+  }
+  const group = value as globalThis.Record<string, unknown>;
+  const extra = Object.keys(group).filter(
+    (key) => key !== "primary" && key !== "resources" && key !== "stop",
+  );
+  if (extra.length > 0) {
+    throw new TypeError(
+      `defineSandboxCase materialize() group returned unsupported field(s): ${extra.join(", ")}`,
+    );
+  }
+  if (group.primary === null || typeof group.primary !== "object" || Array.isArray(group.primary)) {
+    throw new TypeError("defineSandboxCase materialize() group.primary must be a SandboxLocator");
+  }
+  const primary = group.primary as globalThis.Record<string, unknown>;
+  if (typeof primary.sandboxId !== "string" || primary.sandboxId.length === 0) {
+    throw new TypeError("defineSandboxCase materialize() group.primary.sandboxId must be a non-empty string");
+  }
+  if (primary.provider !== undefined && typeof primary.provider !== "string") {
+    throw new TypeError("defineSandboxCase materialize() group.primary.provider must be a string");
+  }
+  if (!isPureDataIdentity(group.resources)) {
+    throw new TypeError("defineSandboxCase materialize() group.resources must be pure JSON data");
+  }
+  if (typeof group.stop !== "function") {
+    throw new TypeError("defineSandboxCase materialize() group.stop must be a function");
+  }
+  return value as SandboxResourceGroup;
+}
+
+function validateCustomCaseServices(
+  value: unknown,
+  declared: CustomCaseServices,
+): CustomCaseMaterializeResult["services"] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("defineSandboxCase materialize() services must be a tagged value");
+  }
+  const services = value as globalThis.Record<string, unknown>;
+  if (services._tag === "None") {
+    if (Object.keys(services).some((key) => key !== "_tag")) {
+      throw new TypeError('defineSandboxCase materialize() services "None" cannot contain a value');
+    }
+    if (declared._tag === "Supported") {
+      throw new TypeError(
+        'defineSandboxCase declared services "Supported" but materialize() returned "None"',
+      );
+    }
+    return { _tag: "None" };
+  }
+  if (services._tag !== "Available") {
+    throw new TypeError(
+      'defineSandboxCase materialize() services must be { _tag: "None" } or { _tag: "Available", value }',
+    );
+  }
+  if (Object.keys(services).some((key) => key !== "_tag" && key !== "value")) {
+    throw new TypeError('defineSandboxCase materialize() services "Available" has unsupported fields');
+  }
+  if (declared._tag === "Unsupported") {
+    throw new TypeError(
+      'defineSandboxCase declared services "Unsupported" but materialize() returned "Available"',
+    );
+  }
+  if (services.value === null || typeof services.value !== "object") {
+    throw new TypeError('defineSandboxCase materialize() services "Available" needs a ServiceController');
+  }
+  const controller = services.value as globalThis.Record<string, unknown>;
+  if (
+    typeof controller.exec !== "function" ||
+    typeof controller.collectLogs !== "function" ||
+    typeof controller.stop !== "function"
+  ) {
+    throw new TypeError(
+      'defineSandboxCase materialize() services "Available" needs exec, collectLogs, and stop functions',
+    );
+  }
+  return { _tag: "Available", value: services.value as ServiceController };
+}
+
+function stopInvalidCustomCaseResult(value: unknown): Effect.Effect<void> {
+  if (value === null || typeof value !== "object") return Effect.void;
+  const group = (value as globalThis.Record<string, unknown>).group;
+  if (group === null || typeof group !== "object") return Effect.void;
+  const stop = (group as globalThis.Record<string, unknown>).stop;
+  if (typeof stop !== "function") return Effect.void;
+  return Effect.tryPromise({
+    try: async () => {
+      await stop.call(group);
+    },
+    catch: () => undefined,
+  }).pipe(Effect.ignore);
 }
 
 export function collectDockerComposeProviderBuildPreparation(

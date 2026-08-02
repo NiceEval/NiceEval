@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/sandbox.md
-// pair-owned plan 的 reuse 门：池只消费物理计划的 runtime capability，不能再从旧 SandboxSpec
+// pair-owned plan 的 reuse 门：池只消费物理计划的 runtime capability，不能从作者声明反推
 // 或 public Sandbox 鸭子类型猜测 provider 行为。
 
 import { Effect } from "effect";
@@ -70,7 +70,7 @@ describe("ReusableSandboxPool · pair-owned runtime capability", () => {
       { experimentId: "experiments/pool", signal: new AbortController().signal, progress() {}, diagnostic() {}, fact() {} },
     );
 
-    await expect(Effect.runPromise(Effect.scoped(pool.acquire(60_000)))).rejects.toThrow(/sandboxReuse is unsupported/);
+    await expect(Effect.runPromise(Effect.scoped(pool.acquire(60_000, new Map())))).rejects.toThrow(/sandboxReuse is unsupported/);
     expect(fixture.creates()).toBe(0);
   });
 });

@@ -130,7 +130,7 @@ provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不�
 verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored`，包括被硬超时打断的 `errored`；`all` 档提交全部 verdict。
 此时其余收尾(agent teardown、State save、已登记 cleanup、diff 采集)已经照常完成。
 
-attempt 的最终 `locator` 在调度前已经由 invocation 的 `snapshotStartedAt` 与 attempt 身份算好。
+attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{evalId, attempt}` 算好并通过记录根碰撞登记。
 因此登记项、run 收尾反馈与 `result.json` 从第一次写入起就使用同一个 locator，没有事后补写窗口。
 
 沙箱的 Effect Scope 持有一个只在本 attempt 内可变的 release disposition,初始为 `stop`。attempt deadline 只中断 Scope **里面的 verdict-producing 工作 fiber**,把超时转换成 `errored` draft;它不关闭外层 Scope。runner 随后仍在同一个 Scope 内执行有界 teardown、定稿 verdict,再调用 `commitKeepOrStop()`。这样硬超时现场尚未被 finalizer 销毁,而 Ctrl+C 中断外层 Scope 时 disposition 仍是 `stop`,照常清理。Scope release 最后按 disposition 执行:只有留存提交成功才跳过 `sandbox.stop()`。

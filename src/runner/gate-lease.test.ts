@@ -145,6 +145,27 @@ describe("tryAcquireGateSlotOnce: 逐槽取位", () => {
     expect(leases).toHaveLength(1);
     expect(leases[0]!.pid).toBe(4242);
   });
+
+  it("完整 decoder 跳过缺失身份字段的 JSON，并回收其占住的槽", async () => {
+    const root = await makeRoot();
+    const nowMs = Date.parse("2026-07-24T00:00:00.000Z");
+    await writeEntryFile(gateLeasesDirOf(root), gateEntryId(EXP, 0), {
+      experimentId: EXP,
+      slot: 0,
+      declaredN: 1,
+      pid: 111,
+      host: "holder-host",
+      startedAt: new Date(nowMs).toISOString(),
+      // heartbeatAt 故意缺失。
+    });
+
+    expect(await readGateLeases(root, EXP)).toEqual([]);
+    await expect(tryAcquireGateSlotOnce(root, EXP, 1, { pid: 4242, host: "runner-host" }, nowMs)).resolves.toMatchObject({
+      kind: "acquired",
+      slot: 0,
+      takenOver: false,
+    });
+  });
 });
 
 describe("槽互斥:并发取位", () => {

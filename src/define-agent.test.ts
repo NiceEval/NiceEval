@@ -5,6 +5,22 @@ import { defineDirectAgent, defineSandboxAgent } from "./define.ts";
 import { makeSendFailure } from "./context/send-failures.ts";
 import { defineSandboxCommand } from "./sandbox/commands.ts";
 import { completeEvidenceCoverage } from "./assertions/coverage.ts";
+import type { AgentContext, JsonValue, Turn } from "./types.ts";
+
+function structuredAgentContract(ctx: AgentContext): void {
+  const flag: JsonValue | undefined = ctx.flags.example;
+  void flag;
+  const valid: Turn = { events: [], status: "completed", data: { score: 1, labels: ["ok"] } };
+  void valid;
+  const invalid: Turn = {
+    events: [],
+    status: "completed",
+    // @ts-expect-error Turn.data 是持久结构化域，不接受非 JSON 对象。
+    data: new Date(),
+  };
+  void invalid;
+}
+void structuredAgentContract;
 
 const ensure = {
   identity: { agent: "fixture", version: "1.0.0", revision: "1" },

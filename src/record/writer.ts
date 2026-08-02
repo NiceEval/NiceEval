@@ -28,13 +28,19 @@ export interface WriterOptions {
    * 本次 invocation 的快照身份锚点(ISO 时间戳,即 runner 的 `InvocationShape.snapshotStartedAt`)。
    * `writeAttemptFor()` 的隐式 run 声明统一用它做 `startedAt`,不再按「该 experiment
    * 第一条落盘 result 的 attempt startedAt」猜 —— 那个锚点依赖并发完成顺序,不确定;
-   * 同一 writer 处理多个 experiment 时也共享这同一个值(locator 身份还含 experimentId,
-   * 不会碰撞)。省略时退回旧行为:每次隐式声明按 `result.startedAt ?? now()` 各自取锚,
+   * 同一 writer 处理多个 experiment 时也共享这同一个值；locator 身份另用每个 experiment
+   * 独立的 `runId`。省略时退回旧行为:每次隐式声明按 `result.startedAt ?? now()` 各自取锚,
    * 供未提供该值的直调场景使用(测试、结果转换脚本、第三方 harness 直接调
    * `createWriter()` 而不经过 niceeval 自己的 runner)。显式调用 `writer.run()`
    * 声明快照的调用方不受这个选项影响,必须自己传 `RunDeclaration.startedAt`。
    */
   snapshotStartedAt?: string;
+  /**
+   * runner 在调度前为每个 Experiment 预分配的持久化 Run 身份。Artifacts 把同一映射转交
+   * writer，保证 plan 期 locator 与 run.json 使用同一个 runId。第三方直调省略时由 writer
+   * 在建 Run 时生成 UUID。
+   */
+  runIds?: ReadonlyMap<string, string>;
   /**
    * 本次 invocation 规划期算出的指纹输入清单,按 experimentId 分组(见
    * `runner/fingerprint.ts` 的 `CarryPlan.manifestsByKey`)。写在 Run 目录建成的那一刻,
@@ -47,6 +53,8 @@ export interface WriterOptions {
 
 /** 快照级声明:一个 experiment 声明一次,这些字段不塞进每条 attempt。 */
 export interface RunDeclaration {
+  /** 预分配的持久化 Run 身份；省略时由 writer 生成 UUID。 */
+  runId?: string;
   experimentId: string;
   agent: string;
   model?: string;
@@ -105,6 +113,8 @@ export interface AttemptArtifacts {
 export interface RunWriter {
   /** 本快照的目录(绝对路径)。 */
   readonly dir: string;
+  /** 写进 run.json、也是该 Run fresh locator 的身份输入。 */
+  readonly runId: string;
   /** 增量落盘一条 attempt:拆 artifact 文件、回填 has* 引用、写 result.json;空数据不落文件。 */
   writeAttempt(entry: AttemptEntry, artifacts?: AttemptArtifacts): Promise<void>;
   /**
@@ -169,7 +179,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       format: RECORD_FORMAT,
       schemaVersion: RECORD_SCHEMA_VERSION,
       producer: opts.producer,
-      runId: randomUUID(),
+      runId: decl.runId ?? opts.runIds?.get(decl.experimentId) ?? randomUUID(),
       experimentId: decl.experimentId,
       // 运行配置不带 id:身份的家是顶层 experimentId,重复一份只会引出「以谁为准」。
       ...(decl.experiment !== undefined ? { experiment: (decl.experiment) } : {}),
@@ -202,8 +212,9 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
     };
     const writer: RunWriter = {
       dir,
+      runId: meta.runId,
       async writeAttempt(entry: AttemptEntry, artifacts?: AttemptArtifacts): Promise<void> {
-        await writeAttemptFiles(dir, { experimentId: state.meta.experimentId, startedAt: state.meta.startedAt }, entry, artifacts, sourceStore);
+        await writeAttemptFiles(dir, { runId: state.meta.runId }, entry, artifacts, sourceStore);
       },
       async finish(finishOpts): Promise<void> {
         if (state.finished) {
@@ -283,9 +294,9 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
 
     if (result.artifactBase) {
       // 携带条目(--resume 合入):本轮没有任何新数据,不写 artifact、不重算 artifacts 词干列表,
-      // startedAt(身份锚)与 artifactBase 原样保留。locator 同理原样保留(在 ...rest 里,
+      // startedAt(执行事实)与 artifactBase 原样保留。locator / locatorRunId 同理原样保留(在 ...rest 里,
       // 没被解构掉)、从不重算——`result` 是上一轮 openRecord() 读回的记录,原快照的
-      // startedAt 已经不在本轮快照里了,重算会用错的 snapshotStartedAt 算出不同的字符串,
+      // 来源 runId 不属于本轮快照,按当前 Run 重算会得到不同的字符串,
       // 让已经发布/引用过的 locator 失效。真缺失(没经过 openRecord 的手工构造)时如实留空,
       // 交给读取面按当前身份兜底算(见 open.ts 的 locator 回填),不在这里瞎猜。
       const {
@@ -367,7 +378,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
 /** 一条 attempt 的落盘:拆 artifact 文件、算 artifacts 词干列表、写 result.json;空数据不落文件。 */
 async function writeAttemptFiles(
   snapDir: string,
-  run: { experimentId: string; startedAt: string },
+  run: { runId: string },
   entry: AttemptEntry,
   artifacts: AttemptArtifacts | undefined,
   sourceStore: Map<string, Promise<void>>,
@@ -384,7 +395,7 @@ async function writeAttemptFiles(
   const hasAgentSetup = !!artifacts?.agentSetup;
   const hasDiff = !!artifacts?.diff;
 
-  const writes: Promise<unknown>[] = [];
+  const writes: Promise<void>[] = [];
   // 大值截断只发生在这里(序列化的那一刻):events 的事件字段与 trace 的 span 属性里的任意
   // 字符串值按 ARTIFACT_VALUE_MAX_BYTES 截断并留结构化 truncated 标记;运行时(断言 / o11y
   // 派生)看到的始终是完整值。commands、sources 与 diff 不截断——失败命令的 stdout/stderr 是
@@ -410,13 +421,12 @@ async function writeAttemptFiles(
   // 否则按当前身份元组算一份 —— 这条路径只服务「非携带」的新写入,携带条目走
   // writeAttemptForImpl 的 artifactBase 分支,原样透传 result.locator,从不落到这里重算。
   // niceeval 自己的 runner(src/runner/run.ts)在 fresh attempt 完成时已经把 locator 写进
-  // entry.locator(用的正是同一个 run.startedAt),所以这条 encodeAttemptLocator 兜底
+  // entry.locator(用的正是同一个 runId),所以这条 encodeAttemptLocator 兜底
   // 对 niceeval 自身运行永不触发,只在第三方 harness 未预先算好 locator 时才会走到。
   const locator =
     entry.locator ??
     encodeAttemptLocator({
-      experimentId: run.experimentId,
-      snapshotStartedAt: run.startedAt,
+      runId: run.runId,
       evalId: entry.id,
       attempt: entry.attempt,
     });
@@ -437,7 +447,12 @@ async function writeAttemptFiles(
     .filter(([, present]) => present)
     .map(([stem]) => stem);
 
-  const record = { ...entry, locator, ...(artifactStems.length ? { artifacts: artifactStems } : {}) };
+  const record = {
+    ...entry,
+    locator,
+    locatorRunId: entry.locatorRunId ?? run.runId,
+    ...(artifactStems.length ? { artifacts: artifactStems } : {}),
+  };
   await writeFile(join(attemptDir, RESULT_FILE), JSON.stringify(record, null, 2), "utf-8");
 }
 

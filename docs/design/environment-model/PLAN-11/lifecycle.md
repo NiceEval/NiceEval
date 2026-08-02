@@ -97,7 +97,7 @@ turn 前 Eval Fixture 与 turn 后隐藏判分材料都随 Attempt 重建。
 | AgentProvisioner Ensure | 每 Attempt 一次 | 每 Attempt 一次 |
 | Experiment state load | AgentProvisioner 后每 Attempt 一次 | 首条 AgentProvisioner 后每窗口一次 |
 | turn 前 Eval Fixture、Agent runtime 与最终屏障 | 每 Attempt 一次 | 每 Attempt 一次 |
-| Agent turn、隐藏判分、scoring、判分清理与 runtime teardown | 每 Attempt 一次 | 每 Attempt 一次 |
+| Agent turn、隐藏判分、断言求值、判分清理与 runtime teardown | 每 Attempt 一次 | 每 Attempt 一次 |
 | Experiment state save / skip | runtime teardown 后、Eval teardown 前 | 关窗时一次 |
 | Eval teardown | state save / skip 后每 Attempt 一次 | 每 Attempt 一次 |
 | SandboxSpec teardown、Case finalizer 与 stop | 每 Attempt 一次 | 每窗口一次 |

@@ -42,7 +42,14 @@ interface AttemptSpec {
 
 ## 覆盖规范
 
-- **落盘格式**：`run.json` 开始写入、`snap.finish()` 唯一一次补 `completedAt` 与 Run 级 diagnostics；`result.json` 只含 attempt 级事实（Run 级字段以「不存在」断言）；不落 `runId` / `invocationId` / Run Manifest 或跨实验成员关系；目录独占创建与撞名重试；artifact 省略时不生成、`null` 与 `[]` 语义分离；截断唯一落点与 UTF-8 字符边界；源码两层落盘按内容哈希去重；locator 确定性派生与携带条目原样复制不重算；目录名只是可逆编码投影、权威身份在字段；轮标签在 `diff.json`/时间树/send 标注三处逐字相等。
+- **落盘格式**：
+  - `run.json` 开始写入，`snap.finish()` 唯一一次补 `completedAt` 与 Run 级 diagnostics。
+  - `result.json` 只含 attempt 级事实；Run 级字段以「不存在」断言。
+  - 不落 `runId` / `invocationId` / Run Manifest 或跨实验成员关系。
+  - 目录独占创建并处理撞名；artifact 省略时不生成，`null` 与 `[]` 语义分离。
+  - 截断只有一个落点，并守住 UTF-8 字符边界；源码两层按内容哈希去重。
+  - locator 确定性派生；携带条目原样复制，不重新计算。
+  - 目录名只是可逆编码投影，权威身份在字段；轮标签在 `diff.json`、时间树与 send 标注中逐字相等。
 
 - **身份与编码**（[locator 的唯一性](../../../feature/record/architecture.md#locator-的唯一性)）：
 
@@ -77,13 +84,30 @@ interface AttemptSpec {
   两个触发层各要一条，`attempt-deadline` 的来源层按四层来源各一条区分力格，`command-timeout` 的来源恒为 `command`；非超时的 `errored` 不带这个字段，缺失与写空对象不合并成同一种 fixture。
 - **执行耗时与出身两个新字段**：`executionMs` 落盘且等于 `durationMs` 减去 `sandbox.queue` 那一段（fixture 要有非零排队，否则两者相等、这条测试没有区分力）；`sandbox.reused` 只在复用运行的 attempt 上出现，与 `kept` 互不干扰、可同时省略。
   两者都是可选字段，读取面对缺失的历史落盘不报错。
-- **`evidenceState` 三态**：`local` / `borrowed` / `dangling` 三态各自可达且不合并——fixture 分别构造同目录 artifact、`artifactBase` 指向存活原 Run、原 Run 目录已删除三种落盘树；`dangling` 时 `artifacts` 列表仍声明写过该文件，懒加载返回 `null`，两者的差值可被消费方判断。
-- **artifact 懒加载**：七个方法（`commands` / `events` / `trace` / `o11y` / `agentSetup` / `diff` / `sources`）缺文件一律 `null` 不抛；携带条目按候选顺序回退 `artifactBase`；`sources()` 的解引用去向；截断是磁盘事实原样读出；同 handle 记忆化。
+- **`evidenceState` 三态**：`local` / `borrowed` / `dangling` 各自可达且不合并。
+  fixture 分别构造同目录 artifact、`artifactBase` 指向存活原 Run、原 Run 目录已删除三种落盘树。
+  `dangling` 时 `artifacts` 列表仍声明写过该文件，懒加载返回 `null`；消费方能够观察两者差值。
+- **artifact 懒加载**：七个方法（`commands` / `events` / `trace` / `o11y` / `agentSetup` / `diff` / `sources`）缺文件一律返回 `null`，不抛错。
+  携带条目按候选顺序查询 `artifactBase`；测试还覆盖 `sources()` 解引用去向、磁盘截断事实和同 handle 记忆化。
   缺失、空、有值三态不合并成同一种 fixture 默认值。
-- **标注源码与证据装配**：断言/send 标注的行映射与 unmapped 桶（never silently dropped）；轮与 turn 节点的配对规则和错位保护；行切分无幻影尾空行、CRLF/LF 归一；`AttemptEvidence` 四个能力位以「数据真的存在且非空」为准、identity 与 locator 原样一致、execution 与 span 按 call id 关联不按名字猜。
-- **Usage、facts 与失败命令证据落盘**：`Usage` 每个字段只在协议真实提供时写入——fixture 要区分「省略」与「写 0 / 写 1」（尤其 `requests`：无请求计数的协议不得落 `requests: 1`）；**桶恒互斥归一**是 adapter / 转换器 / transcript 解析器的落值义务：OpenAI 系口径（codex `cached_input_tokens`、Chat Completions / Responses / bub tape 的 `cached_tokens`、AI SDK `cachedInputTokens` 与 `inputTokenDetails`、LangChain `input_token_details`）落 `inputTokens` 前从输入总量扣掉缓存明细且不产生负数，互斥系口径（Anthropic、pi 简写）如实转发不扣减——fixture 的输入总量与缓存子集要选「扣与不扣结果可区分」的数值，缺缓存字段时输入总量原样保留（不虚构扣减）；每个生产点各锁一条自己的字段映射，扣减夹底（cached > input 时归 0）只在一处证明，不逐生产点复述；`fact()` 的作用域归属（sandbox hook / agent 上下文 → `AttemptRecord.facts`，experiment hook → `RunMeta.facts`，runner 自动归属、调用方无法指定层级）、同作用域同 key 后写覆盖、key 词法（`[a-z0-9._-]{1,64}`）与非标量 value 的完整报错、experiment 级 facts 与 `completedAt` 同批封口补写、facts 不参与 verdict / 指纹 / `configHash`；读取面把两级 facts 原样读回不合并。
-  `commands.json` 只在有非零 Sandbox 命令时生成，`AttemptRecord.artifacts` 含 `commands` 与文件存在同值;每条 evidence 的 timingNodeId / phase / display / exitCode / stdout / stderr 原样往返，stdout/stderr 不参与逐值截断——一条超过 256 KiB 的失败输出全量原样落盘再读回，这一格在复用 events 截断路径的实现下会红；携带按 artifactBase 懒加载，`publish({ artifacts: ["commands"] })` 解引用并复制后不留回退指针。
-- **publish 与 resolveLocator**：目标非空即报错不合并、预检失败不留半成品；文件大小预检的整体失败与错误明细；产物自包含（解引用复制、重新去重、补 `knownEvalIds`，复制出的条目 `evidenceState` 恒为 `local`）；源里含 `dangling` 条目时整体失败并列出这些 attempt；`resolveLocator` 只查内存、两类错误可分辨。
+- **标注源码与证据装配**：
+  - `SourceArtifact.role === "entry"` 唯一决定主干。
+  - 带位置的断言、给分与 send 沿 project / package / unavailable 路径归属。正文缺失或行号越界不降级成 unmapped；只有真正没有位置的记录进入未映射分组。
+  - 递归汇总区分 passed / failed / unavailable、挣分 / 满分与前置中止；标注按统一发生序排列。
+  - 测试覆盖轮与 turn 的配对和错位保护、无幻影尾空行，以及 CRLF/LF 归一。
+  - `AttemptEvidence` 携带完整树而非单文件投影。能力位取决于数据真实存在，identity 与 locator 原样一致，execution 与 span 按 call id 关联。
+- **Usage 落盘**：每个字段只在协议真实提供时写入。fixture 区分省略、零值与非零值；没有请求计数的协议不得写 `requests: 1`。
+  - OpenAI 系口径在落 `inputTokens` 前扣除缓存明细且不产生负数；Anthropic、pi 等互斥口径如实转发。
+  - fixture 让扣与不扣的结果可区分；缺缓存字段时保留输入总量。每个生产点各锁一条字段映射，扣减下限只集中证明一次。
+- **facts 落盘**：sandbox hook 与 agent 上下文写入 `AttemptRecord.facts`，experiment hook 写入 `RunMeta.facts`。Runner 自动决定层级。
+  - 测试覆盖同 key 后写覆盖、key 词法、非标量值报错，以及 experiment facts 与 `completedAt` 同批封口。
+  - facts 不参与 verdict、指纹或 `configHash`；读取面把两级 facts 原样读回，不合并。
+- **失败命令证据落盘**：`commands.json` 只在有 Sandbox 命令时生成，文件存在性与 `AttemptRecord.artifacts` 一致。
+  - evidence 的 timingNodeId、phase、display、exitCode、stdout、stderr 原样往返。超过 256 KiB 的失败输出也不复用 events 的逐值截断。
+  - 携带按 artifactBase 懒加载；`publish({ artifacts: ["commands"] })` 解引用复制后不留回退指针。
+- **publish 与 resolveLocator**：目标非空时报错，预检失败不留半成品；文件大小预检报告整体失败与明细。
+  产物经解引用、去重并补 `knownEvalIds` 后自包含，复制条目的 `evidenceState` 恒为 `local`。
+  源含 `dangling` 条目时整体失败并列出 attempt；`resolveLocator` 只查内存，错误类别可分辨。
 - **开放 activity key 的往返与未知 key 读取**（[两层时间模型](../../../feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity)）：
 
   - writer 接受第三方未知 `ActivityKey` 原样落盘；`openRecord` 读回同一棵树，不因 key 不在官方词表而拒绝。

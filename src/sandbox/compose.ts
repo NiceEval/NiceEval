@@ -20,16 +20,11 @@ import {
 } from "../runner/leak-gate.ts";
 import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import type {
-  ComposeSandboxSource,
-  DockerComposeDecl,
   MaterializedSandboxCase,
   SandboxMaterializeContext,
-  SandboxMaterializer,
   SandboxResourceGroup,
-  SandboxSource,
   ServiceController,
 } from "./case-types.ts";
-import type { PlannedSandboxCase } from "./case.ts";
 import { classifyProvisionError, DockerSandbox } from "./docker.ts";
 import { computeBuildKey, digestOf, looksLikeDigestRef, type BuildKey } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
@@ -449,18 +444,6 @@ export async function leakGateHintsFromComposeFile(
   return { hints, inspection, composePath };
 }
 
-/** 把泄题门 hints 挂到 folder-local compose source 上。 */
-export async function attachComposeLeakGateHints(
-  source: ComposeSandboxSource,
-  opts?: { readonly baseDir?: string },
-): Promise<ComposeSandboxSource> {
-  const { hints } = await leakGateHintsFromComposeFile(source.file, {
-    mainService: source.mainService,
-    baseDir: opts?.baseDir,
-  });
-  return attachLeakGateHints(source, hints);
-}
-
 function relativeBindSource(vol: string, composeDir: string): string | undefined {
   // 短语法: ./foo:/app/foo[:ro] 或 foo:/bar(命名卷跳过)
   const short = vol.match(/^([^:]+):([^:]+)(?::([^:]+))?$/);
@@ -644,53 +627,6 @@ function relativeIdentityPath(baseDir: string, path: string): string {
 }
 
 /**
- * 从 PlannedSandboxCase 抽 Compose BuildKey / works。
- * 非 compose 或缺声明时返回空集合。
- */
-export async function composeBuildWorksFromPlan(
-  plan: PlannedSandboxCase,
-  opts?: { readonly baseDir?: string; readonly platform?: string },
-): Promise<ComposeBuildCollection | undefined> {
-  const decl = composeDeclFromPlan(plan);
-  if (decl === undefined) return undefined;
-  return collectComposeBuilds({
-    file: decl.file,
-    mainService: decl.mainService,
-    baseDir: opts?.baseDir,
-    platform: opts?.platform,
-    env: decl.env,
-  });
-}
-
-function composeDeclFromPlan(
-  plan: PlannedSandboxCase,
-): {
-  file: string | URL;
-  mainService: string;
-  env?: Readonly<globalThis.Record<string, string>>;
-  executionUser?: string;
-} | undefined {
-  if (plan.caseKind !== "compose") return undefined;
-  const d = plan.declaration;
-  if (d.form === "docker" && d.value.compose !== undefined) {
-    return {
-      file: d.value.compose.file,
-      mainService: d.value.compose.mainService,
-      ...(d.value.compose.env !== undefined ? { env: d.value.compose.env } : {}),
-    };
-  }
-  if (d.form === "source" && d.value.kind === "compose") {
-    return {
-      file: d.value.file,
-      mainService: d.value.mainService,
-      ...(d.value.env !== undefined ? { env: d.value.env } : {}),
-      ...(d.value.executionUser !== undefined ? { executionUser: d.value.executionUser } : {}),
-    };
-  }
-  return undefined;
-}
-
-/**
  * Compose build 作为 SandboxBuildProvider:cache 查本地镜像 tag,miss 时 `docker compose build`。
  * works.inputs 需含 composeFile + service。
  */
@@ -829,6 +765,8 @@ export interface MaterializeComposeOpts {
   readonly platform?: string;
   /** Runner 持有的 provisioning 并发槽；退避期间临时归还，避免网络抖动拖住整批并发。 */
   readonly provisionSlot?: ProvisionSlot;
+  /** Compose 资源组的最长物理寿命；附着的主 Sandbox 用同一完成态做复用确认。 */
+  readonly lifetimeMs?: number;
   /** 测试可注入:跳过真实 docker compose,直接返回已构造的主 Sandbox。 */
   readonly _testHooks?: {
     readonly runCompose?: typeof runDockerCompose;
@@ -837,43 +775,7 @@ export interface MaterializeComposeOpts {
   };
 }
 
-/** environments 表 / source materializer 共用的 Compose 物化。 */
-export async function materializeDockerComposeCase(
-  plan: PlannedSandboxCase,
-  opts: MaterializeComposeOpts,
-): Promise<MaterializedSandboxCase> {
-  if (plan.caseKind !== "compose") {
-    throw new Error(`materializeDockerComposeCase requires caseKind "compose", got ${JSON.stringify(plan.caseKind)}`);
-  }
-  const decl = composeDeclFromPlan(plan);
-  if (decl === undefined) {
-    throw new Error(`compose case ${JSON.stringify(plan.evalId)} has no compose declaration`);
-  }
-  const collection = await collectComposeBuilds({
-    file: decl.file,
-    mainService: decl.mainService,
-    baseDir: opts.baseDir,
-    platform: opts.platform,
-    env: decl.env,
-  });
-
-  return materializeDockerComposeProviderCase({
-    evalId: plan.evalId,
-    profile: plan.profile,
-    mainService: decl.mainService,
-    ...(decl.executionUser !== undefined ? { executionUser: decl.executionUser } : {}),
-    env: decl.env ?? {},
-    ...(plan.declaration.form === "docker" && plan.declaration.value.compose?.projectName !== undefined
-      ? { projectName: plan.declaration.value.compose.projectName }
-      : {}),
-    collection,
-    caseKey: plan.caseKey,
-    identity: plan.identity,
-    carryEligible: plan.carryEligible,
-  }, opts);
-}
-
-/** ProviderModule 的 typed Compose 完成态；不再逆向构造 PlannedSandboxCase。 */
+/** ProviderModule 的 typed Compose 完成态；不从作者输入逆向重建计划。 */
 export interface DockerComposeProviderMaterializationPlan {
   readonly evalId: string;
   readonly profile: string;
@@ -990,6 +892,7 @@ export async function materializeDockerComposeProviderCase(
       ((id: string) =>
         DockerSandbox.attach(id, {
           timeout: opts.timeout,
+          lifetimeMs: opts.lifetimeMs,
           feedback: opts.feedback,
           releaseMode: "detach",
           ...(plan.executionUser !== undefined ? { executionUser: plan.executionUser as "image" | string } : {}),
@@ -1055,71 +958,6 @@ export async function materializeDockerComposeProviderCase(
     if (isAbortError(e) || opts.ctx.signal?.aborted) throw abortError(opts.ctx.signal, e);
     throw await enrichComposeError(e, overlay.projectName, composeFiles, cwd, env, runCompose);
   }
-}
-
-/** folder-local `materializers.compose` 工厂。 */
-export function dockerComposeMaterializer(opts?: {
-  readonly baseDir?: string;
-  readonly platform?: string;
-}): SandboxMaterializer {
-  const materializer: SandboxMaterializer = {
-    kind: "compose",
-    revision: COMPOSE_MATERIALIZER_REVISION,
-    async materialize(source: SandboxSource, ctx: SandboxMaterializeContext): Promise<MaterializedSandboxCase> {
-      if (source.kind !== "compose") {
-        throw new Error(`dockerComposeMaterializer expected compose source, got ${JSON.stringify(source.kind)}`);
-      }
-      const collection = await collectComposeBuilds({
-        file: source.file,
-        mainService: source.mainService,
-        baseDir: opts?.baseDir,
-        platform: opts?.platform,
-        ...(source.env !== undefined ? { env: source.env } : {}),
-      });
-      const overlay = buildComposeOverlay({
-        mainService: source.mainService,
-        evalId: ctx.evalId,
-        profile: ctx.profile,
-        serviceNames: collection.inspection.services.map((s) => s.name),
-      });
-      const { computeCaseKey } = await import("./identity.ts");
-      const identity = {
-        caseKind: "compose" as const,
-        sourceKind: "compose" as const,
-        file: typeof source.file === "string" ? source.file : source.file.href,
-        mainService: source.mainService,
-        ...(source.build !== undefined ? { build: source.build } : {}),
-        ...(source.executionUser !== undefined ? { executionUser: source.executionUser } : {}),
-        ...(source.env !== undefined ? { envNames: Object.keys(source.env).sort() } : {}),
-      };
-      const caseKey = computeCaseKey({
-        caseKind: "compose",
-        materializerRevision: COMPOSE_MATERIALIZER_REVISION,
-        composeBytes: collection.composeBytes,
-        overlayBytes: overlay.yaml,
-        buildKeys: collection.buildKeys,
-        caseParams: identity,
-      });
-      const plan: PlannedSandboxCase = {
-        evalId: ctx.evalId,
-        profile: ctx.profile,
-        caseKind: "compose",
-        sourceKind: "compose",
-        via: "materializer",
-        caseKey,
-        buildKeys: collection.buildKeys,
-        identity,
-        carryEligible: true,
-        declaration: { form: "source", value: source, materializer },
-      };
-      return materializeDockerComposeCase(plan, {
-        ctx,
-        baseDir: opts?.baseDir,
-        platform: opts?.platform,
-      });
-    },
-  };
-  return materializer;
 }
 
 function composeFileArgs(files: readonly string[]): string[] {
@@ -1430,16 +1268,6 @@ function parseScalar(text: string): YamlNode {
     return inner.split(",").map((p) => parseScalar(p.trim()));
   }
   return text;
-}
-
-/** 供类型导出与测试:把 DockerComposeDecl 转成可挂 hints 的对象。 */
-export function composeDeclAsSource(decl: DockerComposeDecl): ComposeSandboxSource {
-  return {
-    kind: "compose",
-    file: decl.file,
-    mainService: decl.mainService,
-    __brand: "niceeval.sandboxSource.compose",
-  };
 }
 
 export type { JsonValue };

@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/record.md
 // loadAttemptEvidence 单测(定稿契约见 plan/attempt-evidence-feedback-loop.md「中性数据准备」、
 // src/record/attempt-evidence.ts 的头注)。用真实 createWriter → openRecord 的读写链路
-// 落一份最小 fixture(不手写 JSON 文件,理由同 loadAnnotatedEvalSource 的既有端到端测试:
+// 落一份最小 fixture(不手写 JSON 文件，确保真实写入/读取链路参与验证：
 // 这条链路本身就是被测对象的一部分),覆盖四种 capability 组合与 identity 正确性。
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DiffArtifact } from "../types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import {
   createWriter,
   loadAttemptEvidence,
@@ -42,8 +42,8 @@ const ASSERTIONS: EvalResult["assertions"] = [
 
 const EVENTS: StreamEvent[] = [
   { type: "message", role: "assistant", text: "looking at weather" },
-  { type: "action.called", callId: "c1", name: "get_weather", input: { city: "Brooklyn" } },
-  { type: "action.result", callId: "c1", output: { tempF: 72 }, status: "completed" },
+  { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "get_weather", input: { city: "Brooklyn" } } },
+  { type: "operation.finished", operationId: "c1", kind: "tool", output: { tempF: 72 }, status: "completed" },
 ];
 
 const TRACE: TraceSpan[] = [
@@ -76,13 +76,18 @@ describe("loadAttemptEvidence", () => {
     const attempt = await seedAttempt(
       root,
       { id: "weather/brooklyn", assertions: ASSERTIONS, phases: [{ name: "eval.run", durationMs: 900 }] },
-      { events: EVENTS, trace: TRACE, diff: NONEMPTY_DIFF, sources: [{ path: SOURCE_PATH, content: SOURCE_CONTENT }] },
+      {
+        events: EVENTS,
+        trace: TRACE,
+        diff: NONEMPTY_DIFF,
+        sources: [{ path: SOURCE_PATH, content: SOURCE_CONTENT, role: "entry" }],
+      },
     );
 
     const evidence = await loadAttemptEvidence(attempt);
 
     expect(evidence.evalSource).not.toBeNull();
-    expect(evidence.evalSource!.sourcePath).toBe(SOURCE_PATH);
+    expect(evidence.evalSource!.spine.file).toBe(SOURCE_PATH);
     expect(evidence.execution).not.toBeNull();
     expect(evidence.execution!.timingAvailable).toBe(true);
     // action 节点唯一关联上了 span(call_id 精确匹配),不是只挂了个 telemetry-only 节点。
@@ -129,22 +134,54 @@ describe("loadAttemptEvidence", () => {
     expect(evidence.capabilities.diff).toBe(false);
   });
 
-  it("identity 与源 attempt 的 experimentId / snapshotStartedAt / evalId / attempt 完全一致", async () => {
+  it("源码树把前置中止锚在首条 failed stopOnFailure 断言，而不是最后一条记录", async () => {
+    const root = await makeRoot();
+    const attempt = await seedAttempt(
+      root,
+      {
+        id: "weather/abort-anchor",
+        assertions: [
+          {
+            name: "first-stop",
+            outcome: "failed",
+            severity: "gate",
+            score: 0,
+            stopOnFailure: true,
+            loc: { file: SOURCE_PATH, line: 2 },
+          },
+          {
+            name: "later-stop",
+            outcome: "failed",
+            severity: "gate",
+            score: 0,
+            stopOnFailure: true,
+            loc: { file: SOURCE_PATH, line: 3 },
+          },
+        ],
+      },
+      { sources: [{ path: SOURCE_PATH, content: SOURCE_CONTENT, role: "entry" }] },
+    );
+
+    const evidence = await loadAttemptEvidence(attempt);
+
+    expect(evidence.evalSource?.spine.lines[1]?.aborted).toBe(true);
+    expect(evidence.evalSource?.spine.lines[2]?.aborted).toBeUndefined();
+  });
+
+  it("locator identity 与源 attempt 的 runId / evalId / attempt 一致，experiment 作为独立归属", async () => {
     const root = await makeRoot();
     const attempt = await seedAttempt(root, { id: "weather/dover", attempt: 0 });
 
     const evidence = await loadAttemptEvidence(attempt);
 
     expect(evidence.identity).toEqual({
-      experimentId: "compare/bub",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: attempt.run.runId,
       evalId: "weather/dover",
       attempt: 0,
     });
-    expect(evidence.identity.experimentId).toBe(attempt.experimentId);
+    expect(evidence.experimentId).toBe(attempt.experimentId);
     expect(evidence.identity.evalId).toBe(attempt.evalId);
     expect(evidence.identity.attempt).toBe(attempt.result.attempt);
-    expect(evidence.identity.snapshotStartedAt).toBe(attempt.run.startedAt);
     // 真实读取路径:locator 恒有值,且与 attempt.locator 原样一致(不重算)。
     expect(attempt.locator).toBeDefined();
     expect(evidence.locator).toBe(attempt.locator);

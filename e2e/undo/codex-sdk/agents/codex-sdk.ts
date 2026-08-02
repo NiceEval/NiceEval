@@ -3,7 +3,7 @@
 // projects/ 的隐含拓扑,见 docs/engineering/testing/e2e/README.md §9)。
 //
 // 断言依据全部来自标准事件流:官方转换器 `createCodexThreadEventStream()` 翻消息文本、工具项
-// (command_execution / mcp_tool_call / file_change → action.*)、`turn.completed` 的 usage;
+// (command_execution / mcp_tool_call / file_change → 配对的 operation.started / operation.finished)、`turn.completed` 的 usage;
 // 逐帧驱动用官方件 `driveFrameStream`。Codex SDK 没有与 Claude Agent SDK `canUseTool` 等价的
 // 公开审批回调,因此这条 adapter 从不产生 `input.requested`(反证见 evals/hitl-negative.eval.ts)。
 import { mkdir } from "node:fs/promises";

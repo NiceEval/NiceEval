@@ -35,8 +35,8 @@ Claude Code CLI 的原生遥测只有 metrics+logs,niceeval 只消费 trace span
   `ctx.session.id`,同一条会话线带 id 经 SDK 的 `resume` 续接同一条历史(SDK 落盘在
   `~/.claude/projects/`)。这些存取器都在 `ctx.session` 上,adapter 不需要声明任何东西。
 - 工具可观测性:`get_weather` / `calculate` 每次调用都有配对的
-  `tool_use` → `action.called`、`tool_result`(或拒绝时的 `system`/`permission_denied`)→
-  `action.result`,无遗漏。
+  `tool_use` → `operation.started`、`tool_result`(或拒绝时的 `system`/`permission_denied`)→
+  `operation.finished`,无遗漏。
 - **没有 trace 瀑布图**:claude-code CLI 原生遥测(`CLAUDE_CODE_ENABLE_TELEMETRY=1`)只导出
   metrics + logs,没有 trace spans——niceeval 只消费 trace spans,这个应用在形态矩阵里是
   "只有 metrics+logs"档。`niceeval view` 这个应用没有调用瀑布图——这不是接入疏漏,是应用侧现状。

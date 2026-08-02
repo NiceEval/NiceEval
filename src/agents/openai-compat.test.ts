@@ -5,7 +5,41 @@
 
 import { describe, expect, it } from "vitest";
 
-import { turnFromChatCompletion, turnFromResponses } from "./openai-compat.ts";
+import { defineDirectAgent } from "../define.ts";
+import {
+  chatCompletionEvidenceCoverage,
+  responsesEvidenceCoverage,
+  turnFromChatCompletion,
+  turnFromResponses,
+} from "./index.ts";
+
+describe("openai-compat evidence coverage", () => {
+  it("Chat 与 Responses 对负 action 断言的可信度不同，且六通道闭合", () => {
+    expect(Object.keys(chatCompletionEvidenceCoverage).sort()).toEqual(["actions", "data", "events", "messages", "status", "usage"]);
+    expect(chatCompletionEvidenceCoverage.actions.status).toBe("partial");
+    expect(responsesEvidenceCoverage.actions.status).toBe("complete");
+    expect(Object.isFrozen(chatCompletionEvidenceCoverage)).toBe(true);
+    expect(Object.isFrozen(responsesEvidenceCoverage)).toBe(true);
+  });
+
+  it("adapter 入口导出的常量可直接用于 defineDirectAgent", () => {
+    const agent = defineDirectAgent({
+      name: "chat-completions",
+      evidenceCoverage: chatCompletionEvidenceCoverage,
+      async send() {
+        return turnFromChatCompletion({ choices: [{ message: { content: "ok" } }] });
+      },
+    });
+    expect(agent.evidenceCoverage).toBe(chatCompletionEvidenceCoverage);
+  });
+
+  it("单轮缺 usage 时从协议默认 complete 据实降级", () => {
+    const chat = turnFromChatCompletion({ choices: [{ message: { content: "ok" } }] });
+    const responses = turnFromResponses({ output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }] });
+    expect(chat.evidenceCoverage?.usage?.status).toBe("unavailable");
+    expect(responses.evidenceCoverage?.usage?.status).toBe("unavailable");
+  });
+});
 
 describe("openai-compat usage 归一(OpenAI 口径)", () => {
   it("Chat Completions:prompt_tokens 扣掉 prompt_tokens_details.cached_tokens", () => {

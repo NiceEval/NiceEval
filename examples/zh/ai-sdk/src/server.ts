@@ -63,7 +63,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     });
     const response = await handleAiSdkTurn(request, abortSignalFor(req));
     trace.event("tools", {
-      calls: response.events.filter((e) => e.type === "action.called").map((e) => e.name),
+      calls: response.events.flatMap((event) =>
+        event.type === "operation.started" && event.operation.kind === "tool" ? [event.operation.name] : [],
+      ),
     });
     trace.end({ sessionId: response.sessionId, output: response.reply, usage: response.usage, lastAction: response.data.lastAction });
     json(res, 200, response);

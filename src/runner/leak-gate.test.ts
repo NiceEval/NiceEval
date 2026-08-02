@@ -120,7 +120,7 @@ describe("泄题门 · bind mount", () => {
       bindMounts: [
         {
           source: join(root, "reference"),
-          phase: "scoring",
+          phase: "assertions",
           agentReachable: false,
           label: "reference-vol",
         },
@@ -131,25 +131,25 @@ describe("泄题门 · bind mount", () => {
     expect(findings[0]!.kind).toBe("private");
   });
 
-  it("verifier 仅 scoring 且非 Agent 可达时放行;Agent 阶段可达时报", async () => {
+  it("verifier 仅供断言求值且非 Agent 可达时放行;Agent 阶段可达时报", async () => {
     const root = await makeRoot();
     const verifier = join(root, "tests", "check.py");
     await mkdir(join(root, "tests"), { recursive: true });
     await writeFile(verifier, "assert True\n", "utf-8");
 
-    const scoringOnly = await findHiddenInputLeaks({
+    const assertionsOnly = await findHiddenInputLeaks({
       hidden: [{ path: verifier, kind: "verifier" }],
       buildContexts: [],
       bindMounts: [
         {
           source: join(root, "tests"),
-          phase: "scoring",
+          phase: "assertions",
           agentReachable: true,
           label: "tests",
         },
       ],
     });
-    expect(scoringOnly).toEqual([]);
+    expect(assertionsOnly).toEqual([]);
 
     const agentPhase = await findHiddenInputLeaks({
       hidden: [{ path: verifier, kind: "verifier" }],

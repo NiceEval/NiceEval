@@ -6,7 +6,7 @@
 import { defineEval } from "niceeval";
 
 export default defineEval({
-  description: "beforeToolCall 暂停产生 input.requested;hold()/take() 恢复后出现对应 action.result",
+  description: "beforeToolCall 暂停产生 input.requested;hold()/take() 恢复后出现对应 operation.finished",
   async test(t) {
     // 拒绝分支:deny 之后 send_alert 应记 rejected,不是 failed。
     const denyTurn = await t.send(

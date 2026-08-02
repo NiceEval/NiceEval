@@ -7,6 +7,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
 
 // ───────────────────────── 工具名归一 ─────────────────────────
 
@@ -23,7 +24,7 @@ function normalizeToolName(name: string): ToolName {
 
 // ───────────────────────── 小工具 ─────────────────────────
 
-/** 宽松取一个对象字段(原始 JSON 是 any,这里只做存在性收口)。 */
+/** 宽松取一个对象字段（原始 JSON 尚未验证，这里只做存在性收口）。 */
 function get(obj: unknown, key: string): unknown {
   return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
@@ -32,12 +33,13 @@ function get(obj: unknown, key: string): unknown {
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as JsonValue;
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
     } catch {
       return value;
     }
   }
-  return (value ?? {}) as JsonValue;
+  return normalizeJsonValue(value, {});
 }
 
 /** 从 content(string | block[])里抠出纯文本。 */
@@ -162,7 +164,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
 
   const emitCall = (callId: string, name: string, input: JsonValue, tool: ToolName): void => {
     startedCallIds.add(callId);
-    events.push({ type: "action.called", callId, name, input, tool });
+    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool } });
   };
 
   const emitResult = (
@@ -170,7 +172,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
     output: JsonValue | undefined,
     status: "completed" | "failed" | "rejected",
   ): void => {
-    events.push({ type: "action.result", callId, output, status });
+    events.push({ type: "operation.finished", operationId: callId, kind: "tool", output, status });
   };
 
   // 处理 item.started / item.completed 里的 item。

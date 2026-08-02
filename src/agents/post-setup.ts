@@ -17,6 +17,11 @@ import type { AgentContext } from "./types.ts";
 
 const registeredCleanups = new WeakMap<Sandbox, SandboxCleanupCommand[]>();
 
+/** Throwable 边界立即收窄；收尾队列不长期保存 `unknown`。 */
+function teardownError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
 /** 窄上下文与 layer command 同款:不把 session / model / telemetry 借给过程钩子。 */
 function commandContext(
   ctx: AgentContext,
@@ -84,7 +89,7 @@ export async function runPreTeardownHooks(
     diagnostic: hookCtx.diagnostic,
     facts: hookCtx.facts,
   };
-  const failures: unknown[] = [];
+  const failures: Error[] = [];
   try {
     // 收尾链里的单点失败不能剥夺其余 hook 与已登记 cleanup 的执行机会。顺序仍然是
     // preTeardown 声明的逆序，随后是截至当时所有 onCleanup 的全局逆序。
@@ -92,14 +97,14 @@ export async function runPreTeardownHooks(
       try {
         await hook(target, hookCtx);
       } catch (error) {
-        failures.push(error);
+        failures.push(teardownError(error));
       }
     }
     for (const cleanup of [...(registeredCleanups.get(sb) ?? []), ...nestedCleanups].reverse()) {
       try {
         await cleanup(target, cleanupContext);
       } catch (error) {
-        failures.push(error);
+        failures.push(teardownError(error));
       }
     }
   } finally {

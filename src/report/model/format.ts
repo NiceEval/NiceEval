@@ -12,7 +12,7 @@ import {
   type ReportLocale,
 } from "./locale.ts";
 import type { MetricFormat } from "./calculation.ts";
-import type { ScoringComposition } from "./types.ts";
+import type { EvaluationKindComposition } from "./types.ts";
 
 /** 内部 AttemptMetric 显示覆盖：只格式化同一个终值，不改变口径。 */
 export type MetricDisplay = (value: number, locale: ReportLocale) => string;
@@ -320,7 +320,7 @@ export function verdictMark(verdict: Verdict): string {
 }
 
 /**
- * `AttemptListItem.failureSummary` 的宽度收口:摘要已在计算侧按 Scoring display 契约折好,
+ * `AttemptListItem.failureSummary` 的宽度收口:摘要已在计算侧按断言摘要契约折好,
  * 渲染面只做尾截,不重算摘要。maxChars 是渲染面的宽度预算(如两行单元格 = 2 × 列宽)。
  */
 export function fitFailureSummary(summary: string, maxChars: number): string {
@@ -332,20 +332,20 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
 /**
  * 一份 `ExperimentList` data 的题型构成:主读数列该显示 Pass rate、Total score,还是两者
  * 并存(docs/feature/reports/library.md 主读数列)。与
- * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listScoringComposition`
- * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`scoring` 是占位默认值不是
+ * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listEvaluationKindComposition`
+ * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`evaluationKind` 是占位默认值不是
  * 读到的事实,一屏占位行不该把纯计分制列表误判成 mixed)。web 面与 text 面在这里读同一份
  * 判据,不各自重新判断,列集合与 `experimentListData` 已经算好的默认排序永远对得上。
  */
-export function experimentListScoringComposition(
-  items: readonly { scoring: ScoringComposition; attempts: number }[],
-): ScoringComposition {
+export function experimentListEvaluationKindComposition(
+  items: readonly { evaluationKind: EvaluationKindComposition; attempts: number }[],
+): EvaluationKindComposition {
   let hasPass = false;
   let hasPoints = false;
   for (const item of items) {
     if (item.attempts === 0) continue;
-    if (item.scoring !== "pass") hasPoints = true;
-    if (item.scoring !== "points") hasPass = true;
+    if (item.evaluationKind !== "pass") hasPoints = true;
+    if (item.evaluationKind !== "points") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
   return hasPoints ? "points" : "pass";

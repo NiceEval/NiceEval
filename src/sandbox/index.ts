@@ -1,11 +1,10 @@
 // niceeval/sandbox 公开导出:「在哪里跑」相关的类型 + 工厂 + 扩展点。
 // 具体 provider 实现类(DockerSandbox / VercelSandbox / E2BSandbox)是内部实现细节,不在此导出——
-// 需要自定义 provider 时用 defineSandbox(),不需要绕开 resolve.ts 直接 new 内置类。
+// 需要自定义 provider 时用 defineSandbox(),不需要直接 new 内置实现类。
 
-// 新 SandboxLayer factory 不与旧 provider spec 工厂做兼容重载。旧实现仍留在 define.ts 供
-// Runner 迁移期间内部使用；无命名冲突的 dockerSandbox/defineSandbox 暂保留原入口。
-export { dockerSandbox, defineSandbox } from "../define.ts";
+export { defineSandbox } from "../define.ts";
 export {
+  CustomSandboxMaterializationError,
   sandboxLayer,
   dockerComposeSandbox,
   dockerfileSandbox,
@@ -13,46 +12,23 @@ export {
   e2bSandbox,
   vercelSandbox,
   localSandbox,
+  defineSandboxCase,
 } from "./layer.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
 export { checkout, installTool } from "./prepare-commands.ts";
 export { SandboxCommandExitError } from "./operations.ts";
 export { registerSandboxContent } from "./content.ts";
 export {
-  composeSandbox,
-  defineSandboxCase,
-  planSandboxCase,
-  materializePlannedCase,
-  isSandboxSource,
-  validateSpecEnvironmentCases,
-  collectSandboxCasePlanningGaps,
-  sandboxCasePlanningError,
-  SandboxCasePlanningError,
-} from "./case.ts";
-export {
   COMPOSE_MATERIALIZER_REVISION,
-  dockerComposeMaterializer,
   dockerComposeBuildProvider,
   collectComposeBuilds,
-  composeBuildWorksFromPlan,
-  attachComposeLeakGateHints,
   leakGateHintsFromComposeFile,
   inspectComposeYaml,
   assertComposeBlacklist,
   findComposeBlacklistViolations,
   buildComposeOverlay,
-  materializeDockerComposeCase,
+  materializeDockerComposeProviderCase,
 } from "./compose.ts";
-export {
-  createMaterializedCase,
-  prebuiltProductSlotsOf,
-  specWithPrebuiltProduct,
-  assertKeepAllowedForCase,
-  isSingleSandboxCaseKind,
-  SINGLE_SANDBOX_CASE_KINDS,
-} from "./resolve.ts";
-export type { CreateMaterializedCaseOpts } from "./resolve.ts";
-export type { PrebuiltProductSlots, SingleSandboxCaseKind } from "./single-case.ts";
 export {
   computeBuildKey,
   computeCaseKey,
@@ -118,41 +94,22 @@ export type {
   SandboxOperations,
   SandboxTransferOperations,
   SandboxProvider,
-  SandboxOption,
-  SandboxSpec,
   SandboxRuntime,
   SandboxHook,
   SandboxHookContext,
-  DockerSandboxSpec,
-  VercelSandboxSpec,
-  E2BSandboxSpec,
-  LocalSandboxSpec,
-  CustomSandboxSpec,
   CommandResult,
   CommandOptions,
   SuccessfulCommandResult,
 } from "../types.ts";
 
 export type {
-  SandboxSource,
-  ComposeSandboxSource,
-  DockerfileSandboxSource,
   SandboxCaseKind,
-  SandboxSourceKind,
   ServiceController,
   MaterializedSandboxCase,
   SandboxGroupEntry,
   SandboxResourceGroup,
-  DockerEnvironmentCase,
-  E2BEnvironmentCase,
-  VercelEnvironmentCase,
-  SandboxMaterializer,
-  SandboxMaterializers,
-  PlannedSandboxCase,
-  CasePlanResult,
-  SandboxCasePlanningGap,
-  SandboxCasePlanningGaps,
-} from "./case.ts";
+  SandboxMaterializeContext,
+} from "./case-types.ts";
 
 export type {
   BuildKey,

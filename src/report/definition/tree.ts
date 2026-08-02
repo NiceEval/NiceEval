@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import type { Record, Sample } from "../../record/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 import type { ReportInput } from "../model/types.ts";
-import type { ReportMeta, ReportTarget } from "./report.ts";
+import type { PageRenderInput, ReportMeta, ReportTarget } from "./report.ts";
 import type { PanelMode, PanelRow } from "../model/panel.ts";
 import {
   allocatePageDimensions,
@@ -35,9 +35,9 @@ import {
  * 消费 attempt 证据的叶子组件对 `input` 做结构校验(参见 `isAttemptEvidence`),不查一个
  * 实体名字段。
  */
-export interface PageContext {
+export interface PageContext<Input extends PageRenderInput = PageRenderInput> {
   id: string;
-  input: unknown;
+  input: Input;
 }
 
 // ───────────────────────── 节点形状 ─────────────────────────
@@ -160,7 +160,7 @@ export interface ComposeContext {
   page: PageContext;
 }
 
-export interface ComponentFaces<P, R = P> {
+export interface ComponentFaces<P extends object, R extends object = P> {
   /**
    * 组件唯一的异步 / IO 面:把作者写下的 props 规范化成渲染 props(R)。宿主管线在
    * resolve 阶段调用它,按「同引用 input + 深相等 spec」在一次页渲染内记忆化;
@@ -181,12 +181,12 @@ export interface ComponentFaces<P, R = P> {
 
 /**
  * 报告组件的产物:可直接用于 JSX。双面组件当普通 React 组件调用时走 web 面(只接受
- * 数据形态 props);组合组件只在报告管线内展开,宿主外直接渲染报错。R 在存储边界抹成 any——
- * 树遍历只按 ComponentFaces 的结构调用 resolve / web / text,不需要在类型层追踪 R。
+ * 数据形态 props);组合组件只在报告管线内展开,宿主外直接渲染报错。R 只在
+ * 组件注册边界擦除为 `object`；树遍历在调用 resolve 后立即将同一个值交给
+ * dimensions / web / text，不把擦除值存入领域模型。
  */
-export type ReportComponent<P> = ((props: P) => ReactNode) & {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [COMPONENT_FACES]?: ComponentFaces<P, any>;
+export type ReportComponent<P extends object> = ((props: P) => ReactNode) & {
+  [COMPONENT_FACES]?: ComponentFaces<P, object>;
   [COMPONENT_COMPOSE]?: (props: P, ctx: ComposeContext) => ReportNode | Promise<ReportNode>;
   [COMPONENT_ROLE]?: "tabs" | "tab";
   [COMPONENT_RAW_CHILDREN]?: true;
@@ -379,12 +379,12 @@ export function runWithWebContext<T>(ctx: WebContext, fn: () => T): T {
 }
 
 /** 函数形态:组合组件,只装配已有组件,可以异步;ctx 携带 scope / results / report。 */
-export function defineComponent<P>(
+export function defineComponent<P extends object>(
   compose: (props: P, context: ComposeContext) => ReportNode | Promise<ReportNode>,
 ): ReportComponent<P>;
 /** 对象形态:双面组件,自己渲染;text 与 web 两面必填,可选 resolve 承担取数。 */
-export function defineComponent<P, R = P>(faces: ComponentFaces<P, R>): ReportComponent<P>;
-export function defineComponent<P, R = P>(
+export function defineComponent<P extends object, R extends object = P>(faces: ComponentFaces<P, R>): ReportComponent<P>;
+export function defineComponent<P extends object, R extends object = P>(
   input: ComponentFaces<P, R> | ((props: P, context: ComposeContext) => ReportNode | Promise<ReportNode>),
 ): ReportComponent<P> {
   if (typeof input === "function") {
@@ -424,7 +424,7 @@ export function defineComponent<P, R = P>(
       props as unknown as R,
       bindNodeDimensions(resolveActiveWebContext(), props as unknown as object),
     )) as ReportComponent<P>;
-  component[COMPONENT_FACES] = faces as ComponentFaces<P, unknown>;
+  component[COMPONENT_FACES] = faces as ComponentFaces<P, object>;
   return component;
 }
 
@@ -433,27 +433,27 @@ function componentDisplayName(fn: unknown): string | undefined {
   return named.displayName || named.name || undefined;
 }
 
-export function facesOf(type: unknown): ComponentFaces<unknown> | undefined {
+export function facesOf(type: unknown): ComponentFaces<object, object> | undefined {
   if (typeof type !== "function") return undefined;
-  return (type as ReportComponent<unknown>)[COMPONENT_FACES];
+  return (type as ReportComponent<object>)[COMPONENT_FACES];
 }
 
 export function composeOf(
   type: unknown,
 ): ((props: unknown, ctx: ComposeContext) => ReportNode | Promise<ReportNode>) | undefined {
   if (typeof type !== "function") return undefined;
-  return (type as ReportComponent<unknown>)[COMPONENT_COMPOSE] as
+  return (type as ReportComponent<object>)[COMPONENT_COMPOSE] as
     | ((props: unknown, ctx: ComposeContext) => ReportNode | Promise<ReportNode>)
     | undefined;
 }
 
 function roleOf(type: unknown): "tabs" | "tab" | undefined {
   if (typeof type !== "function") return undefined;
-  return (type as ReportComponent<unknown>)[COMPONENT_ROLE];
+  return (type as ReportComponent<object>)[COMPONENT_ROLE];
 }
 
 function hasRawChildren(type: unknown): boolean {
-  return typeof type === "function" && (type as ReportComponent<unknown>)[COMPONENT_RAW_CHILDREN] === true;
+  return typeof type === "function" && (type as ReportComponent<object>)[COMPONENT_RAW_CHILDREN] === true;
 }
 
 // ───────────────────────── 深相等(记忆化的 spec 比较)─────────────────────────
@@ -489,20 +489,20 @@ export function deepEqualSpec(a: unknown, b: unknown): boolean {
 // ───────────────────────── resolve 管线 ─────────────────────────
 
 interface MemoEntry {
-  input: unknown;
-  spec: unknown;
-  result: Promise<unknown>;
+  input: object;
+  spec: object;
+  result: Promise<object>;
 }
 
 /** 一次页渲染内的记忆化缓存:键 = 计算函数引用 → (同引用 input + 深相等 spec) 命中。 */
 export class ResolveMemo {
-  private readonly entries = new Map<unknown, MemoEntry[]>();
+  private readonly entries = new Map<object, MemoEntry[]>();
 
-  fetch(fn: unknown, input: unknown, spec: unknown, compute: () => Promise<unknown>): Promise<unknown> {
+  fetch<T extends object>(fn: object, input: object, spec: object, compute: () => Promise<T>): Promise<T> {
     let list = this.entries.get(fn);
     if (!list) this.entries.set(fn, (list = []));
     for (const entry of list) {
-      if (entry.input === input && deepEqualSpec(entry.spec, spec)) return entry.result;
+      if (entry.input === input && deepEqualSpec(entry.spec, spec)) return entry.result as Promise<T>;
     }
     const result = compute();
     list.push({ input, spec, result });
@@ -524,7 +524,7 @@ export interface ResolveEnv {
 /** 官方 spec 组件在 resolve 内取数的记忆化入口;经内部扩展的 ResolveContext 传递。 */
 export interface InternalResolveContext extends ResolveContext {
   /** 按 (计算函数引用, 同引用 input, 深相等 options) 记忆化地调用计算函数。 */
-  memoFetch<T>(dataFn: unknown, input: unknown, options: unknown, compute: () => Promise<T>): Promise<T>;
+  memoFetch<T extends object>(dataFn: object, input: object, options: object, compute: () => Promise<T>): Promise<T>;
 }
 
 /** 组件 resolve 里安全取记忆化入口:经宿主管线时在场,手工直调 resolve 时退化为直接计算。 */
@@ -615,13 +615,17 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
       const ctx: InternalResolveContext = {
         input,
         page: state.composeCtx.page,
-        memoFetch: <T,>(dataFn: unknown, dataInput: unknown, options: unknown, compute: () => Promise<T>) =>
-          state.memo.fetch(dataFn, dataInput, options, compute) as Promise<T>,
+        memoFetch: <T extends object>(dataFn: object, dataInput: object, options: object, compute: () => Promise<T>) =>
+          state.memo.fetch(dataFn, dataInput, options, compute),
       };
-      const resolved = await state.memo.fetch(resolveFn, input, bound, async () =>
-        resolveFn(bound, ctx),
-      );
-      const resolvedProps = { ...(resolved as globalThis.Record<string, unknown>) };
+      const resolved = await state.memo.fetch(resolveFn, input, bound, async () => {
+        const value = await resolveFn(bound, ctx);
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          throw new Error(`${componentLabel(type)} resolve() must return a props object.`);
+        }
+        return value;
+      });
+      const resolvedProps = { ...resolved } as globalThis.Record<string, unknown>;
       if (resolvedProps.children !== undefined) {
         resolvedProps.children = await resolveNode(resolvedProps.children as ReportNode, state, [
           ...path,

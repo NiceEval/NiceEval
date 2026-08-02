@@ -28,6 +28,38 @@ export {
 export { failures } from "./failures.tsx";
 export { stability } from "./stability.tsx";
 
+// 内建 page 与零配置 show 切片共用的公开任务结果。
+export {
+  annotatedSourceResult,
+  attemptDetailsResult,
+  comparisonResult,
+  conversationResult,
+  diffResult,
+  historyResult,
+  stabilityResult,
+  standardOverviewResult,
+  timingResult,
+  usageResult,
+} from "../tasks.ts";
+export type {
+  AnnotatedSourceOptions,
+  AnnotatedSourceResult,
+  AttemptDetailsResult,
+  AttemptTimingResult,
+  ComparisonOptions,
+  ComparisonResult,
+  ConversationResult,
+  DiffResult,
+  HistoryOptions,
+  HistoryResult,
+  RunTimingResult,
+  StabilityOptions,
+  StabilityResult,
+  StandardOverviewResult,
+  TimingResult,
+  UsageResult,
+} from "../tasks.ts";
+
 // 内建主题与内建视图同一个入口(docs/feature/reports/themes/README.md):名字即 CLI 取值。
 export { basalt, chalk } from "../theme.ts";
 

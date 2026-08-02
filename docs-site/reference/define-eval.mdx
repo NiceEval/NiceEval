@@ -42,7 +42,7 @@ Derived from the file path; hand-writing it in the definition is not allowed.
 description?: string;
 ```
 
-One-line description, shown in `niceeval list` and the view; purely informational — it does not affect scheduling or scoring.
+One-line description, shown in `niceeval list` and the view; purely informational — it does not affect scheduling or assertion evaluation.
 
 #### `tags`
 
@@ -87,10 +87,10 @@ Overrides the project-level / CLI timeout for a single attempt (milliseconds), t
 #### `metadata`
 
 ```ts
-metadata?: Record<string, unknown>;
+metadata?: Record<string, JsonValue>;
 ```
 
-Arbitrary extra metadata, passed through as-is into `EvalResult`; does not participate in scheduling or scoring, and is meant for custom reporters to consume.
+Arbitrary extra metadata, passed through as-is into `EvalResult`; does not participate in scheduling or assertion evaluation, and is meant for custom reporters to consume.
 
 #### `diff`
 
@@ -249,7 +249,7 @@ The reasoning effort for this attempt (e.g. "low"/"medium"/"high"; valid values 
 #### `flags`
 
 ```ts
-readonly flags: Readonly<Record<string, unknown>>;
+readonly flags: Readonly<Record<string, JsonValue>>;
 ```
 
 The experiment flags in effect for this attempt (a read-only view of `experiment.flags`; an experimental condition, not a command-line switch).
@@ -295,7 +295,7 @@ check(value: unknown, assertion: ValueAssertion): AssertionHandle;
 ```
 
 Runs a `ValueAssertion` against any value, returning an `AssertionHandle` that can be chained with `.gate()` / `.atLeast()`.
-Scoring is deferred until finalize at the end of the eval; the call itself is synchronous and never throws — a failure just
+Assertion evaluation is deferred until finalize at the end of the eval; the call itself is synchronous and never throws — a failure just
 records a failed assertion, it does not abort the rest of the code. Use `require` for "abort the eval immediately if this isn't met."
 
 #### `require`
@@ -306,7 +306,7 @@ require(value: unknown, assertion: ValueAssertion): Promise<unknown>;
 
 Runs a `ValueAssertion` against any value, evaluated immediately (when awaited); if it isn't met, throws and aborts the rest of the eval's
 steps (the assertion is still recorded in the report, and does not affect other already-recorded assertions). The difference from `check`:
-`check` only records and never throws, with scoring left to the end; `require` judges on the spot and aborts on failure — suited to
+`check` only records and never throws, with assertion evaluation left to the end; `require` evaluates on the spot and aborts on failure — suited to
 "if this prerequisite isn't met, nothing written after it matters."
 
 #### `group`
@@ -316,7 +316,7 @@ group<T>(title: string, fn: () => Promise<T> | T): Promise<T>;
 ```
 
 Groups a set of assertions under a titled section (analogous to vitest's `test('title', ...)`). Purely for organization/reporting —
-it does not change scoring: every assertion inside the group is still scored independently. Can be nested (titles joined with ›).
+it does not change assertion evaluation: every assertion inside the group is still evaluated independently. Can be nested (titles joined with ›).
 
 #### `succeeded`
 
@@ -534,7 +534,7 @@ The assistant's final text reply for this turn (the concatenation of the message
 #### `data`
 
 ```ts
-readonly data?: unknown;
+readonly data?: JsonValue;
 ```
 
 Structured output attached by the adapter (if any), for `outputEquals` / `outputMatches` to compare against.

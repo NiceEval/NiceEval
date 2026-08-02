@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { diffText, executionText, runTimingText, timingText, verdictReasonLine } from "./render.ts";
 import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingActivity, SandboxBuildRecord, Verdict } from "../types.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import type { Run } from "../record/index.ts";
 import { buildExecutionTree } from "../o11y/execution-tree.ts";
 import { encodeAttemptLocator, type AttemptEvidence, type AttemptHandle, type AttemptIdentity } from "../record/index.ts";
@@ -50,7 +50,7 @@ describe("verdictReasonLine 的 errored 单行收口", () => {
 // ───────────────────────── fixture:AttemptEvidence + 手工 timing 树 ─────────────────────────
 
 function identityOf(overrides: Partial<AttemptIdentity> = {}): AttemptIdentity {
-  return { experimentId: "exp/a", snapshotStartedAt: "2026-07-01T00:00:00.000Z", evalId: "eval/one", attempt: 0, ...overrides };
+  return { runId: "run-a", evalId: "eval/one", attempt: 0, ...overrides };
 }
 
 function resultOf(overrides: Partial<EvalResult> = {}): EvalResult {
@@ -71,6 +71,7 @@ function evidenceOf(overrides: Partial<AttemptEvidence> = {}): AttemptEvidence {
   return {
     locator: overrides.locator ?? encodeAttemptLocator(identity),
     identity,
+    experimentId: overrides.experimentId ?? "exp/a",
     result: overrides.result ?? resultOf(),
     events: overrides.events ?? null,
     evalSource: overrides.evalSource ?? null,
@@ -88,8 +89,8 @@ function twoTurnEvents(): StreamEvent[] {
   return [
     { type: "message", role: "user", text: "Please fix the bug" },
     { type: "message", role: "assistant", text: "Looking into it" },
-    { type: "action.called", callId: "call-1", name: "shell", input: { command: "ls" } },
-    { type: "action.result", callId: "call-1", output: { output: "file.txt", exit_code: 0 }, status: "completed" },
+    { type: "operation.started", operationId: "call-1", operation: { kind: "tool", name: "shell", input: { command: "ls" } } },
+    { type: "operation.finished", operationId: "call-1", kind: "tool", output: { output: "file.txt", exit_code: 0 }, status: "completed" },
     { type: "message", role: "user", text: "thanks" },
     { type: "message", role: "assistant", text: "done" },
   ];
@@ -204,13 +205,14 @@ describe("--execution:TOOL 卡 input/result 各自独立按 3 行截断,尾巴�
   function toolCardEvidence(): AttemptEvidence {
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "start" },
-      { type: "action.called", callId: "call-1", name: "shell", input: { command: "cmd1\ncmd2\ncmd3\ncmd4" } },
+      { type: "operation.started", operationId: "call-1", operation: { kind: "tool", name: "shell", input: { command: "cmd1\ncmd2\ncmd3\ncmd4" } } },
       {
-        type: "action.result",
-        callId: "call-1",
-        output: { output: "out1\nout2\nout3\nout4\nout5", exit_code: 0 },
-        status: "completed",
-      },
+    type: "operation.finished",
+    operationId: "call-1",
+    kind: "tool",
+    output: { output: "out1\nout2\nout3\nout4\nout5", exit_code: 0 },
+    status: "completed"
+},
     ];
     return evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
   }

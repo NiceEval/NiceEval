@@ -6,7 +6,7 @@
 //   · o11y/types.ts     标准事件流 / DerivedFacts / TraceSpan / Usage / O11ySummary
 //   · sandbox/types.ts  Sandbox 接口 / provider spec / 命令与文件 IO
 //   · agents/types.ts   Agent / Adapter 契约 / 会话 / tracing 导出
-//   · scoring/types.ts  断言(值 / 记录 / 结果)/ ScoringContext / JudgeConfig
+//   · assertions/types.ts  断言(值 / 记录 / 结果)/ AssertionEvaluationContext / JudgeConfig
 //   · context/types.ts  TestContext(t)与子句柄(turn / session / sandbox 视图)
 //   · runner/types.ts   EvalResult / InvocationSummary / Reporter / eval・experiment・config 定义 / 调度编排
 //
@@ -17,7 +17,7 @@ export * from "./shared/types.ts";
 export * from "./o11y/types.ts";
 export * from "./sandbox/types.ts";
 export * from "./agents/types.ts";
-export * from "./scoring/types.ts";
+export * from "./assertions/types.ts";
 export * from "./context/types.ts";
 export * from "./runner/types.ts";
 
@@ -29,3 +29,9 @@ export type {
   AttemptFailureInfo,
   AttemptFailureClassifier,
 } from "./shared/failure-class.ts";
+export type {
+  ExternalCause,
+  ExternalCauseFact,
+  ExternalCauseLink,
+  ExternalCauseScalar,
+} from "./shared/external-cause.ts";

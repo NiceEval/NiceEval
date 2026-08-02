@@ -69,7 +69,7 @@ assertNoTracing(sessionExecution, "session-history");
 const hitlExecution = sh(`pnpm exec niceeval show ${locators["hitl-pause-resume"]} --execution`);
 assert.ok(hitlExecution.includes("send_alert"), "hitl-pause-resume 执行树缺少 send_alert 调用节点");
 assert.ok(hitlExecution.includes("数据库连接数过高"), "hitl-pause-resume 执行树里没有出现被拒绝那条告警的入参——审批分支没有正确落到事件流");
-assert.ok(hitlExecution.includes("磁盘空间不足"), "hitl-pause-resume 执行树里没有出现被批准那条告警的入参——resume 之后的 action.result 没有正确落到事件流");
+assert.ok(hitlExecution.includes("磁盘空间不足"), "hitl-pause-resume 执行树里没有出现被批准那条告警的入参——resume 之后的 operation.finished 没有正确落到事件流");
 assertNoTracing(hitlExecution, "hitl-pause-resume");
 
 const usageExecution = sh(`pnpm exec niceeval show ${locators["usage-and-failure"]} --execution`);

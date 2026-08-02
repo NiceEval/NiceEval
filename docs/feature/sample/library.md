@@ -137,10 +137,11 @@ const algebra = currentSample(record)
 |---|---|---|
 | `scope({ experiments?, evals? })` | 声明「我比较的总体就是这些实体」 | 与作用域取交集;被排除的实体消失,不算 missing |
 | `filter(predicate)` | 声明「总体不变,但这些观测不可信或不适用」 | 保持不变;被删到无结果的题进入 missing |
-| `freshOnly()` | `filter` 的具名快捷方式,只保留新执行 | 保持不变;历史题进入 missing |
+| `freshOnly()` | 只把当前读面收窄到新执行，保留完整去重历史 | 保持不变;历史题进入 missing |
 
-两者都同步更新 `attempts`、`historyAttempts`、`runs`、`coverage` 与有来源作用域的 `issues`;非实验作用域 Issue 保留。
-`runs` 只保留仍被两组 attempts 引用的真实 Run。
+`scope()` 与 `filter()` 同步更新 `attempts`、`historyAttempts`、`runs`、`coverage` 与有来源作用域的 `issues`;非实验作用域 Issue 保留。
+`freshOnly()` 只收窄 `attempts`、`runs` 与 coverage，不裁掉供趋势读数使用的 `historyAttempts`。
+`runs` 只保留仍被当前 `attempts` 引用的真实 Run；完整历史通过 `historyAttempts` 自带的 `attempt.run` 读取。
 选择器的 `{ fresh: true }` 等价于在基础选择后调用 `freshOnly()`。
 
 这层不提供 `pipe`、`only/drop` 算子族,也不提供 `groupBy` / `reduce`。

@@ -103,7 +103,7 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
   }
 
   // 通道 0 直构:steps 里带 toolCallId 的完整调用记录 + 全 step 聚合 usage,一步转成标准事件流。
-  // turnFromAiSdk 产出的只有 message / thinking / action.* —— 是 AgentEvent 的子集。
+  // turnFromAiSdk 产出的只有 message / thinking / operation.* —— 是 AgentEvent 的子集。
   const converted = turnFromAiSdk(result);
   const events = converted.events as AgentEvent[];
   const usage = converted.usage;
@@ -112,11 +112,22 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
   const reply = result.text.trim();
   rememberAiTurn(session, request.message, reply);
 
-  const lastAction = events.findLast((e) => e.type === "action.called")?.name ?? "chat";
-  turn.end({ "assistant.last_action": lastAction });
+  const lastActionName =
+    events
+      .flatMap((event) =>
+        event.type === "operation.started" && event.operation.kind === "tool" ? [event.operation.name] : [],
+      )
+      .at(-1) ?? "chat";
+  turn.end({ "assistant.last_action": lastActionName });
   await trace.flush();
 
-  return { sessionId: session.id, reply, events, data: { lastAction }, usage };
+  return {
+    sessionId: session.id,
+    reply,
+    events,
+    data: { lastAction: lastActionName },
+    usage,
+  };
 }
 
 function userMessage(message: string, files?: RequestFile[]): ModelMessage {
@@ -152,4 +163,3 @@ function stripImageParts(messages: ModelMessage[]): ModelMessage[] {
     return { ...msg, content: filtered } as ModelMessage;
   });
 }
-

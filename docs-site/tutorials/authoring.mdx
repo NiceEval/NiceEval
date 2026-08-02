@@ -7,7 +7,7 @@ description: "Write evals with defineEval, covering single-turn conversations, m
 ## The `defineEval` shape
 
 ```ts
-import { defineEval } from "niceeval";
+import { defineEval, type JsonValue } from "niceeval";
 
 export default defineEval({
   description?: string;
@@ -15,7 +15,7 @@ export default defineEval({
   judge?: JudgeConfig;
   reporters?: Reporter[];
   timeoutMs?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, JsonValue>;
   async setup(sandbox, ctx) { /* task fixture + progress/diagnostic */ },
   async test(t) { /* interactions + assertions */ },
 });

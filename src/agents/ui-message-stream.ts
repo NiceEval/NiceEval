@@ -7,14 +7,14 @@
 //   · 会话:协议是服务端零状态、「客户端带全量历史」——工厂用 typed slot 存整份
 //     UIMessage[],每轮原样重放;ctx.session.id 未记录时开新 chat id 并 capture 回写。
 //   · 事件流:从归约后的 assistant 消息 parts 直构(text → message,tool part 的
-//     output-available / output-error / 审批拒绝 → action.called + action.result),
+//     output-available / output-error / 审批拒绝 → operation.started + operation.finished),
 //     不要求应用接 OTel;跨 resume 轮次按 callId / 已报文本长度去重。
 //   · HITL:v7 tool approval(`needsApproval` 工具)——part 停在 `approval-requested` 时
 //     整轮 `waiting` + `input.requested`;下一轮输入(approve / yes / 同意 / 批准 开头 =
 //     批准,其余拒绝)翻译成 `approval-responded` 原地改写该 part、原样重发 messages 触发
 //     服务端续跑 —— 和真实前端 `addToolApprovalResponse()` + `sendMessage()` 的协议行为
 //     完全一致,没有单独的 approve 端点。拒绝的调用协议里不会有任何 tool-output 帧
-//     (从没真正执行),由工厂合成 `status: "rejected"` 的 action.result。
+//     (从没真正执行),由工厂合成 `status: "rejected"` 的 operation.finished。
 //   · chunk 归约用 `ai` 包官方导出的框架无关 reducer `readUIMessageStream`(`useChat`
 //     内部同款),保证重放回服务端的 UIMessage 形状协议正确 —— `ai` 是可选 peer 依赖,
 //     只在用到本工厂时需要安装。
@@ -26,7 +26,8 @@ import { randomUUID } from "node:crypto";
 
 import { defineDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 import { createSessionSlot } from "./session-slot.ts";
 
@@ -46,7 +47,7 @@ export interface UIMessageLike {
   id: string;
   role: string;
   parts: UIMessagePartLike[];
-  [key: string]: unknown;
+  [key: string]: JsonValue | UIMessagePartLike[] | undefined;
 }
 
 export interface UIMessagePartLike {
@@ -55,17 +56,17 @@ export interface UIMessagePartLike {
   text?: string;
   toolCallId?: string;
   toolName?: string;
-  input?: unknown;
-  output?: unknown;
+  input?: JsonValue;
+  output?: JsonValue;
   errorText?: string;
   approval?: { id: string; approved?: boolean; reason?: string };
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 }
 
 interface UIMessageChunkLike {
   type: string;
   errorText?: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 }
 
 interface UiMessageSessionState {
@@ -195,17 +196,17 @@ function deriveTurnEvents(message: UIMessageLike, reported: ReportedState): Stre
     const name = toolNameOf(part);
     const input = (part.input ?? null) as JsonValue;
     if (part.state === "output-available") {
-      events.push({ type: "action.called", callId, name, input });
-      events.push({ type: "action.result", callId, output: part.output as JsonValue, status: "completed" });
+      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.output as JsonValue, status: "completed" });
       reported.calls.add(callId);
     } else if (part.state === "output-error") {
-      events.push({ type: "action.called", callId, name, input });
-      events.push({ type: "action.result", callId, output: part.errorText, status: "failed" });
+      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: part.errorText, status: "failed" });
       reported.calls.add(callId);
     } else if (part.state === "approval-responded" && part.approval?.approved === false) {
       // 拒绝的调用从没真正执行,协议里不会再有它的任何帧 —— 在裁决落地的这一轮合成。
-      events.push({ type: "action.called", callId, name, input });
-      events.push({ type: "action.result", callId, status: "rejected" });
+      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input } });
+      events.push({ type: "operation.finished", operationId: callId, kind: "tool", status: "rejected" });
       reported.calls.add(callId);
     }
     // approval-requested(还没裁决)/ input-* 中间态:先不报,等它到终态。
@@ -331,14 +332,14 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
         throw makeSendFailure({
           acceptance: "unknown",
           message: `Could not connect to ${url} (${cause}). Is the app under test running? Start it yourself first, or point url at a deployed instance via config.`,
-          cause: err,
+          cause: normalizeExternalCause(err),
         });
       }
       if (!res.ok || !res.body) {
         throw makeSendFailure({
           acceptance: "unknown",
           message: `POST ${url} failed: ${res.status} ${await res.text().catch(() => "")}. Confirm the app is running and the endpoint speaks the UI Message Stream protocol (the backend useChat expects).`,
-          cause: { status: res.status },
+          cause: normalizeExternalCause({ status: res.status }),
         });
       }
 

@@ -4,10 +4,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { EvalResult, Verdict } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Run, Sample } from "../../record/index.ts";
 import { encodeAttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
+import { flag, label, runConfig } from "./flag.ts";
+import type { DimensionRef } from "./types.ts";
 import {
   aggregate,
   agent,
@@ -33,6 +35,12 @@ function assertReportCalculationStaticContracts(sample: Sample): void {
   void aggregate(sample, { by: { agent }, values: { agent: passRate } });
   // @ts-expect-error refs 是行级保留键，不能出现在分组键里
   void aggregate(sample, { by: { refs: agent }, values: { passRate } });
+  const flagRef: Extract<DimensionRef, { readonly kind: "flag" }> = flag("memory");
+  const labelRef: Extract<DimensionRef, { readonly kind: "label" }> = label("line");
+  const configRef: Extract<DimensionRef, { readonly kind: "runConfig" }> = runConfig("model");
+  void [flagRef, labelRef, configRef];
+  // @ts-expect-error runConfig 只接受 RunConfigKey，不接受任意字符串。
+  runConfig("arbitrary-config");
 }
 void assertReportCalculationStaticContracts;
 
@@ -87,8 +95,7 @@ function snap(spec: {
       },
     );
     handle.locator = encodeAttemptLocator({
-      experimentId: spec.experimentId,
-      snapshotStartedAt: startedAt,
+      runId: run.runId,
       evalId: r.id,
       attempt: r.attempt,
     });
@@ -119,17 +126,23 @@ describe("Reducer", () => {
   });
 });
 
+describe("DimensionRef", () => {
+  it("三种构造函数保留判别 kind，runConfig 只承载声明的配置键", () => {
+    expect(flag("memory")).toMatchObject({ kind: "flag", name: "memory" });
+    expect(label("line")).toMatchObject({ kind: "label", name: "line" });
+    expect(runConfig("reasoningEffort")).toMatchObject({ kind: "runConfig", name: "reasoningEffort" });
+  });
+});
+
 describe("metricValue / evidenceRow", () => {
   it("校验 samples/total，refs 稳定去重；evidenceRow 合并 MetricValue refs", () => {
     const locA = encodeAttemptLocator({
-      experimentId: "e",
-      snapshotStartedAt: "2026-07-01T00:00:00.000Z",
+      runId: "e/run-a",
       evalId: "a",
       attempt: 0,
     });
     const locB = encodeAttemptLocator({
-      experimentId: "e",
-      snapshotStartedAt: "2026-07-01T00:00:00.000Z",
+      runId: "e/run-a",
       evalId: "b",
       attempt: 0,
     });

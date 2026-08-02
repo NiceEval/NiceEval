@@ -95,9 +95,9 @@ NiceEval 维护公开镜像：
 并直接用 `niceeval/sandbox` 导出的常量：
 
 ```ts
-import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerImageSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
+sandbox: dockerImageSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
 ```
 
 镜像由 [Docker image workflow](../.github/workflows/docker-image.yml) 在基线配方变更落到 `main`

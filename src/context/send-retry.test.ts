@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { makeSendFailure } from "./send-failures.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {
   ATTEMPT_MAX_RETRIES,
   SEND_MAX_ATTEMPTS,
@@ -35,7 +36,7 @@ describe("sendWithTurnRetry · SendFailure acceptance gate", () => {
     const failure = makeSendFailure({
       acceptance: "rejected",
       message: "structured overload",
-      cause: { status: 429 },
+      cause: normalizeExternalCause({ status: 429 }),
       events: [{ type: "error", message: "admission rejected" }],
       usage: { inputTokens: 3 },
       process: { exitCode: 75, stderr: "busy" },
@@ -70,7 +71,7 @@ describe("sendWithTurnRetry · SendFailure acceptance gate", () => {
       type: "agent-send-failed",
       acceptance: "unknown",
       message: "socket reset after request",
-      cause,
+      cause: { _tag: "Error", message: "socket reset after request" },
     });
   });
 
@@ -78,7 +79,7 @@ describe("sendWithTurnRetry · SendFailure acceptance gate", () => {
     const call = vi.fn(async () => Promise.reject(makeSendFailure({
       acceptance: "rejected",
       message: "busy",
-      cause: { code: "RATE_LIMITED" },
+      cause: normalizeExternalCause({ code: "RATE_LIMITED" }),
     })));
     await expect(sendWithTurnRetry(call, deps())).rejects.toMatchObject({
       type: "agent-send-failed",
@@ -95,7 +96,11 @@ describe("sendWithTurnRetry · SendFailure acceptance gate", () => {
       release: async () => { order.push("release"); },
       reacquire: async () => { order.push("reacquire"); },
     };
-    const failure = () => makeSendFailure({ acceptance: "rejected", message: "429", cause: { status: 429 } });
+    const failure = () => makeSendFailure({
+      acceptance: "rejected",
+      message: "429",
+      cause: normalizeExternalCause({ status: 429 }),
+    });
     const first = vi.fn().mockRejectedValueOnce(failure()).mockResolvedValueOnce("ok");
     await expect(sendWithTurnRetry(first, deps({ budget, slot, sleep: async () => { order.push("sleep"); } })))
       .resolves.toBe("ok");

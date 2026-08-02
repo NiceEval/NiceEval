@@ -106,7 +106,7 @@ test(t: TestContext): Promise<void> | void;
 
 ## Test context: `t`
 
-`t`（`TestContext`）是评估用例作者拿到的高层上下文。运行器按 agent 的实际能力组装它——`t.sandbox` 这类字段只在 `defineSandboxAgent` 构造的 agent 上才有意义，完整规则见[能力位参考](/zh/reference/capabilities)。下面签名里的 `H` 是断言句柄类型：`defineEval` 的 `t` 上 `H` 恒为 `AssertionHandle`；计分制 `defineScoreEval` 的 `t`（`ScoreTestContext`）换成 `ScoreAssertionHandle`——多出 `.points(n)` 这一个给分词。严重度三个词在两种题型里含义相同：`.gate()` 只声明「不过就 failed」，不改变 `test()` 的控制流；要「这步不成立就别往下跑了」再链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`（两种题型都有）。跨两种题型复用的 helper 把参数标注成 `BaseTestContext<H>`，两种 `t` 都能传进去。详见[计分制](/zh/tutorials/scoring-guide#走完三步也要记三分)。全部成员：
+`t`（`TestContext`）是评估用例作者拿到的高层上下文。运行器按 agent 的实际能力组装它——`t.sandbox` 这类字段只在 `defineSandboxAgent` 构造的 agent 上才有意义，完整规则见[能力位参考](/zh/reference/capabilities)。下面签名里的 `H` 是断言句柄类型：`defineEval` 的 `t` 上 `H` 恒为 `AssertionHandle`；计分制 `defineScoreEval` 的 `t`（`ScoreTestContext`）换成 `ScoreAssertionHandle`——多出 `.points(n)` 这一个给分词。严重度三个词在两种题型里含义相同：`.gate()` 只声明「不过就 failed」，不改变 `test()` 的控制流；要「这步不成立就别往下跑了」再链 `.stopOnFailure()`，或者用值断言的简写 `t.require()`（两种题型都有）。跨两种题型复用的 helper 把参数标注成 `BaseTestContext<H>`，两种 `t` 都能传进去。详见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -216,7 +216,7 @@ readonly reasoningEffort?: string;
 #### `flags`
 
 ```ts
-readonly flags: Readonly<globalThis.Record<string, unknown>>;
+readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
 ```
 
 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。
@@ -253,7 +253,7 @@ log(msg: string): void;
 skip(reason: string): never;
 ```
 
-立即中止本评估用例并标记为 unreadable(verdict / EvalResult.skipReason),reason 不能为空。
+立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。
 
 #### `check`
 
@@ -519,7 +519,7 @@ readonly message: string;
 #### `data`
 
 ```ts
-readonly data?: unknown;
+readonly data?: JsonValue;
 ```
 
 adapter 附带的结构化输出(如有),供 outputEquals / outputMatches 比对。

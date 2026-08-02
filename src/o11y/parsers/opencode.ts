@@ -4,6 +4,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { normalizeJsonValue } from "../../shared/json-value.ts";
 
 export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -59,12 +60,13 @@ function num(obj: unknown, ...keys: string[]): number {
 function coerceArgs(value: unknown): JsonValue {
   if (typeof value === "string") {
     try {
-      return JSON.parse(value) as JsonValue;
+      const parsed: unknown = JSON.parse(value);
+      return normalizeJsonValue(parsed, value);
     } catch {
       return value;
     }
   }
-  return (value ?? {}) as JsonValue;
+  return normalizeJsonValue(value, {});
 }
 
 /**
@@ -173,11 +175,9 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
           pending.push(callId);
         }
         events.push({
-          type: "action.called",
-          callId,
-          name,
-          input,
-          tool,
+          type: "operation.started",
+          operationId: callId,
+          operation: { kind: "tool", name, input, tool },
         });
         const status = str(get(state, "status"));
         if (status === "completed" || status === "error" || get(state, "output") !== undefined) {
@@ -189,8 +189,9 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
             ? exitCode === 0 || exitCode === undefined
             : status !== "error" && !get(state, "error");
           events.push({
-            type: "action.result",
-            callId,
+            type: "operation.finished",
+            operationId: callId,
+            kind: "tool",
             output,
             status: success ? "completed" : "failed",
           });
@@ -252,17 +253,21 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
                 const name = str(get(p, "tool")) ?? str(get(p, "name")) ?? "unknown";
                 const callId = str(get(p, "callID")) ?? str(get(p, "id")) ?? nextSynthId();
                 events.push({
-                  type: "action.called",
-                  callId,
-                  name,
-                  input: coerceArgs(get(get(p, "state"), "input") ?? get(p, "input")),
-                  tool: normalizeToolName(name),
+                  type: "operation.started",
+                  operationId: callId,
+                  operation: {
+                    kind: "tool",
+                    name,
+                    input: coerceArgs(get(get(p, "state"), "input") ?? get(p, "input")),
+                    tool: normalizeToolName(name),
+                  },
                 });
                 const st = get(p, "state") as globalThis.Record<string, unknown> | undefined;
                 if (st && (str(get(st, "status")) === "completed" || get(st, "output") !== undefined)) {
                   events.push({
-                    type: "action.result",
-                    callId,
+                    type: "operation.finished",
+                    operationId: callId,
+                    kind: "tool",
                     output: (get(st, "output") ?? null) as JsonValue,
                     status: str(get(st, "status")) === "error" ? "failed" : "completed",
                   });

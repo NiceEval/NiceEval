@@ -25,7 +25,7 @@ export function niceevalDockerImage(agent: CodingAgentBaseline): string {
 }
 
 /**
- * NiceEval 官方公共 Docker 镜像：每个值是完整、版本钉死的引用，直接交给 `dockerSandbox({ image })`，
+ * NiceEval 官方公共 Docker 镜像：每个值是完整、版本钉死的引用，直接交给 `dockerImageSandbox({ image })`，
  * 或写进项目 Dockerfile 的 `FROM` 继续叠加依赖。
  */
 export const NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE = niceevalDockerImage("claude-code");

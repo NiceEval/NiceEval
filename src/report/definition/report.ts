@@ -16,6 +16,7 @@ import type { ReportNode } from "./tree.ts";
 import { localizedTextEquals, type LocalizedText } from "../model/locale.ts";
 import { assertDimensionPins, type DimensionPins } from "../presentation.ts";
 import type { ThemeDefinition } from "../theme.ts";
+import type { JsonValue } from "../../types.ts";
 
 // ───────────────────────── 公开形状 ─────────────────────────
 
@@ -51,7 +52,10 @@ export interface ReportShell {
 }
 
 /** page render 函数:装载期不执行,只在被请求的 page 实例上调用一次并缓存 Promise。 */
-export type PageRender<Input> = (input: Input) => ReportNode | Promise<ReportNode>;
+/** page load 完成后可保存的输入；排除 function / symbol / bigint 这些不是报告数据的值。 */
+export type PageRenderInput = object | string | number | boolean | null | undefined;
+
+export type PageRender<Input extends PageRenderInput> = (input: Input) => ReportNode | Promise<ReportNode>;
 
 export type NonEmptyArray<T> = readonly [T, ...T[]];
 
@@ -63,16 +67,16 @@ export interface ReportPageBase {
 }
 
 /** 组件下钻交出的目标值(不是 URL):哪张页、哪个参数(docs/feature/reports/library.md「目标与下钻」)。 */
-export interface ReportTarget {
+export interface ReportTarget<Params extends JsonValue = JsonValue> {
   page: string;
-  params?: unknown;
+  params?: Params;
 }
 
 /**
  * 参数化页的寻址声明:`encode`/`decode` 定义参数与 URL key 的互转,`enumerate` 列出有效根内
  * 全部合法参数(静态导出据此物化每个实例)。
  */
-export interface PageParams<Params> {
+export interface PageParams<Params extends JsonValue> {
   encode(params: Params): string;
   decode(key: string): Params;
   enumerate(base: Sample): Iterable<Params>;
@@ -84,7 +88,7 @@ export interface PageLoadContext {
 }
 
 /** `load` 回答"这页的输入从哪来";省略时输入就是宿主选好的 Sample。 */
-export type PageLoad<Params, Input> = (
+export type PageLoad<Params extends JsonValue | void, Input extends PageRenderInput> = (
   base: Sample,
   params: Params,
   ctx: PageLoadContext,
@@ -95,45 +99,83 @@ export type PageLoad<Params, Input> = (
  * navigation: false；union 将这一作者错误留在调用处，defineReport 仍为无类型 JavaScript
  * 保留同一条装载期反馈。attempt 与 experiment 详情只是这类普通参数化页。
  */
-interface PageBase<Input> extends ReportPageBase {
+interface PageBase<Input extends PageRenderInput> extends ReportPageBase {
   render: PageRender<Input>;
 }
 
 /** 普通页没有 URL 参数；可选 load 只以宿主 Sample 为输入。 */
-export interface PlainPageDefinition<Input = Sample> extends PageBase<Input> {
+export interface PlainPageDefinition<Input extends PageRenderInput = Sample> extends PageBase<Input> {
   params?: never;
   navigation?: boolean;
   load?: PageLoad<void, Input>;
 }
 
 /** 参数化页必须同时给出寻址、装载与不可导航三项声明。 */
-export interface ParameterizedPageDefinition<Params, Input> extends PageBase<Input> {
+export interface ParameterizedPageDefinition<Params extends JsonValue, Input extends PageRenderInput> extends PageBase<Input> {
   params: PageParams<Params>;
   navigation: false;
   load: PageLoad<Params, Input>;
 }
 
-export type PageDefinition<Params = void, Input = Sample> = [Params] extends [void]
+export type PageDefinition<Params extends JsonValue | void = void, Input extends PageRenderInput = Sample> = [Params] extends [void]
   ? PlainPageDefinition<Input>
-  : ParameterizedPageDefinition<Params, Input>;
+  : Params extends JsonValue
+    ? ParameterizedPageDefinition<Params, Input>
+    : never;
 
 /**
  * defineReport 的 pages 可混合两类已完整声明的页。它只用于 factory 的宽泛收集边界；
  * 作者应使用 PageDefinition<Params, Input>，由 Params 决定可写的分支。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyPageDefinition = PlainPageDefinition<any> | ParameterizedPageDefinition<any, any>;
+type PageRenderBoundary = (...args: never[]) => ReportNode | Promise<ReportNode>;
+type PageLoadBoundary = (...args: never[]) => PageRenderInput | Promise<PageRenderInput>;
 
-/** 规范化后的 page 类型;装载期只做形状校验,不为具体 Params/Input 收窄类型。 */
-export type ReportPage = AnyPageDefinition;
+interface PageParamsBoundary {
+  encode(...args: never[]): string;
+  decode(key: string): JsonValue;
+  enumerate(base: Sample): Iterable<JsonValue>;
+}
+
+type PlainPageDefinitionBoundary = ReportPageBase & {
+  params?: never;
+  navigation?: boolean;
+  load?: PageLoadBoundary;
+  render: PageRenderBoundary;
+};
+
+type ParameterizedPageDefinitionBoundary = ReportPageBase & {
+  params: PageParamsBoundary;
+  navigation: false;
+  load: PageLoadBoundary;
+  render: PageRenderBoundary;
+};
+
+interface NormalizedPageBase extends ReportPageBase {
+  render(input: PageRenderInput): ReportNode | Promise<ReportNode>;
+}
+
+/** 规范化后的 page：通过包装闭包擦除作者的具体 Params/Input，不存 `unknown`。 */
+export type ReportPage =
+  | (NormalizedPageBase & {
+      params?: never;
+      navigation: boolean;
+      load?: PageLoad<void, PageRenderInput>;
+    })
+  | (NormalizedPageBase & {
+      params: PageParams<JsonValue>;
+      navigation: false;
+      load: PageLoad<JsonValue, PageRenderInput>;
+    });
 
 /** 作者向 page 声明的输入形态;装载期规范化 navigation,不执行 render / load。 */
-export type PageDefinitionInput = AnyPageDefinition;
+export type PageDefinitionInput = PlainPageDefinitionBoundary | ParameterizedPageDefinitionBoundary;
 
 /** pages 是非空有序数组;单页函数缩写不经此类型。 */
-export type ReportOptions<Pages extends NonEmptyArray<AnyPageDefinition> = NonEmptyArray<AnyPageDefinition>> = ReportShell & {
+export type ReportOptions<Pages extends NonEmptyArray<PageDefinitionInput> = NonEmptyArray<PageDefinitionInput>> = ReportShell & {
   pages: Pages;
 };
+
+type NormalizedReportOptions = ReportShell & { pages: NonEmptyArray<ReportPage> };
 
 export type ReportDef = ReportOptions;
 
@@ -343,7 +385,7 @@ function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPa
   if (typeof page.render !== "function") {
     throw new Error(`Report page "${page.id}" must declare "render": (input) => tree.`);
   }
-  const render = page.render as PageRender<unknown>;
+  const render = page.render as PageRender<PageRenderInput>;
   const params = page.params;
   if (params !== undefined) {
     if (typeof page.load !== "function") {
@@ -360,8 +402,8 @@ function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPa
       id: page.id as string,
       title: page.title as LocalizedText,
       render,
-      params: params as PageParams<unknown>,
-      load: page.load as PageLoad<unknown, unknown>,
+      params: params as PageParams<JsonValue>,
+      load: page.load as PageLoad<JsonValue, PageRenderInput>,
       navigation: false,
     };
   }
@@ -369,14 +411,15 @@ function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPa
     id: page.id as string,
     title: page.title as LocalizedText,
     render,
-    ...(typeof page.load === "function" ? { load: page.load as PageLoad<unknown, unknown> } : {}),
+    ...(typeof page.load === "function" ? { load: page.load as PageLoad<void, PageRenderInput> } : {}),
     navigation: page.navigation !== false,
   };
 }
 
 export function defineReport(render: PageRender<Sample>): ReportDefinition;
 export function defineReport<const Pages extends NonEmptyArray<PageDefinitionInput>>(def: ReportOptions<Pages>): ReportDefinition;
-export function defineReport(input: PageRender<Sample> | ReportOptions): ReportDefinition {
+export function defineReport(def: NormalizedReportOptions): ReportDefinition;
+export function defineReport(input: PageRender<Sample> | ReportOptions | NormalizedReportOptions): ReportDefinition {
   if (typeof input === "function") {
     return defineReportFromDef({
       pages: [
@@ -392,7 +435,7 @@ export function defineReport(input: PageRender<Sample> | ReportOptions): ReportD
   return defineReportFromDef(input);
 }
 
-function defineReportFromDef(def: ReportOptions): ReportDefinition {
+function defineReportFromDef(def: ReportOptions | NormalizedReportOptions): ReportDefinition {
   if (typeof def !== "object" || def === null) {
     throw new Error(
       "defineReport expects a page render function or a config object ({ title?, theme?, dimensionPins?, head?, pages }). " +

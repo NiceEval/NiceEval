@@ -28,31 +28,31 @@ Adapter 常用操作包括：
 ```ts
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: myCodingAgent,
   model: "claude-sonnet-4-6",
-  sandbox: dockerSandbox(), // 或 vercelSandbox() / e2bSandbox()
+  sandbox: dockerImageSandbox({ image: "node:24-slim" }), // 或 vercelSandbox({ snapshotId }) / e2bSandbox({ template })
 });
 ```
 
-如果 experiment 和 `niceeval.config.ts` 都没有设置 `sandbox`，[NiceEval](https://niceeval.com/) 在创建 sandbox 时会直接报错，而不会猜一个 provider。
+Eval 与 Experiment 都没声明 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败，而不会猜一个 provider。
 
 三个内置 provider 的 SDK 不随 NiceEval 一起安装——用哪个就装哪个，避免把用不到的依赖（以及它们的原生构建脚本）带进你的项目：
 
 | provider | 安装命令 |
 |---|---|
-| `dockerSandbox()` | `pnpm add dockerode @types/dockerode` |
-| `vercelSandbox()` | `pnpm add @vercel/sandbox` |
-| `e2bSandbox()` | `pnpm add e2b` |
+| `dockerImageSandbox({ image: "node:24-slim" })` | `pnpm add dockerode @types/dockerode` |
+| `vercelSandbox({ snapshotId })` | `pnpm add @vercel/sandbox` |
+| `e2bSandbox({ template })` | `pnpm add e2b` |
 | `localSandbox()` | 无需额外安装 |
 
 漏装时不会静默失败：NiceEval 在创建 sandbox 的那一刻报错并直接给出上面的安装命令，例如 `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`。
 
 ## 生命周期
 
-`dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 返回的 spec 上有两个链式方法：`.setup(fn)` 和 `.teardown(fn)`。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。
+`dockerImageSandbox({ image })` / `vercelSandbox({ snapshotId })` / `e2bSandbox({ template })` 返回的 `SandboxLayer` 有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 链式方法。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。
 
 共享 helper 需要显式标注回调类型时，从公开入口导入，不要从某个 provider 的 spec 反推：
 
@@ -139,7 +139,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
 NiceEval 用 typed spec 统一引用预制环境，但不提供一个假的通用构建命令：
 
 ```ts
-dockerSandbox({ image: "my-evals:node24" })
+dockerImageSandbox({ image: "my-evals:node24" })
 vercelSandbox({ snapshotId: "snap_abc123" })
 e2bSandbox({ template: "my-evals" })
 ```
@@ -244,16 +244,16 @@ e2bCodingAgentTemplate("bub", {
 Agent 的版本。稳定 CI 用具名常量或 digest，不要依赖会移动的 `latest`：
 
 ```ts
-import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerImageSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
+sandbox: dockerImageSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
 ```
 
 这个镜像是 NiceEval 维护的公开镜像，不是 Docker 的 `library/*` Official Image。它在 Agent 版本或
 构建配方变化时发布新 tag，跟 NiceEval 库的发版节奏无关。
 
 如果只需要一个 Agent，或还要加入项目专有依赖，写 Dockerfile 从 Docker 的官方基线
-`node:24-slim` 派生。省略 `image` 时，NiceEval 也会按 runtime 使用该默认镜像：
+`node:24-slim` 派生：
 
 ```dockerfile title="Dockerfile"
 FROM node:24-slim
@@ -272,12 +272,12 @@ docker build -t acme-codex-evals:0.144.1-r1 .
 然后在 Experiment 里只引用构建结果：
 
 ```ts
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
+sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
-Docker Sandbox 默认以非 root 的 `node` 用户（UID 1000）跑命令，并把 `/usr/local/bin` 放进 PATH，所以 `npm install -g` 装的全局二进制天然可见；要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。本地快速迭代可以直接省略 `image` 用默认 `node:*-slim`，稳定 CI 引用不可变 tag。
+Docker Sandbox 默认以非 root 的 `node` 用户（UID 1000）跑命令，并把 `/usr/local/bin` 放进 PATH，所以 `npm install -g` 装的全局二进制天然可见；要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。`dockerImageSandbox` 要求显式 image；稳定 CI 引用不可变 tag。
 
 #### Vercel：从官方 runtime 拍快照
 

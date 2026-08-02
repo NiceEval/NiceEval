@@ -13,7 +13,7 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
     id: evalDef.id,
     ...(evalDef.description !== undefined ? { description: evalDef.description } : {}),
     tags: Object.freeze([...(evalDef.tags ?? [])]),
-    scoring: evalDef.scoring ?? "pass",
+    evaluationKind: evalDef.evaluationKind ?? "pass",
     ...(Object.keys(evalDef.metadata ?? {}).length > 0
       ? { metadata: Object.freeze({ ...evalDef.metadata }) }
       : {}),
@@ -96,21 +96,21 @@ export function resolveExperimentEvals(input: ResolveExperimentEvalsInput): Reso
   return { selectedEvals, selectedEvalIds: selectedEvals.map((e) => e.id), selectorEvals };
 }
 
-/** `resolveExperimentEvals` 选中的 eval 按题型分桶后的 id 列表(见 splitByScoring)。 */
-export interface ScoringSplit {
+/** `resolveExperimentEvals` 选中的 eval 按题型分桶后的 id 列表(见 splitByEvaluationKind)。 */
+export interface EvaluationKindSplit {
   pass: string[];
   points: string[];
 }
 
 /**
- * 按题型(`EvalDescriptor.scoring`)把选中的 eval 分桶。混型是合法运行形状；报告按桶分别
- * 计算通过率与总分，不把两者相加。CLI 只据此判断 `--strict` 是否完全落在 points 题型。
+ * 按题型(`EvalDescriptor.evaluationKind`)把选中的 eval 分桶。混型是合法运行形状；报告按桶分别
+ * 计算通过率与总分，不把两者相加。
  */
-export function splitByScoring(selectedEvals: readonly DiscoveredEval[]): ScoringSplit {
+export function splitByEvaluationKind(selectedEvals: readonly DiscoveredEval[]): EvaluationKindSplit {
   const pass: string[] = [];
   const points: string[] = [];
   for (const evalDef of selectedEvals) {
-    (evalDef.scoring === "points" ? points : pass).push(evalDef.id);
+    (evalDef.evaluationKind === "points" ? points : pass).push(evalDef.id);
   }
   return { pass, points };
 }

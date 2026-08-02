@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import { conditionsByFlag, deltaTableData } from "./compute.ts";
@@ -46,6 +46,7 @@ function snap(
   runSeq += 1;
   const startedAt = opts.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId,
     startedAt,
     completedAt: startedAt,
@@ -154,19 +155,19 @@ describe("deltaTableData", () => {
     expect(pd.costUSD).toBeCloseTo(-0.05, 5);
   });
 
-  it("混型:eval 集横跨通过制与计分制时 totals.scoringComposition 为 mixed,pass/points 子集分开报,不共用分母", async () => {
+  it("混型:eval 集横跨通过制与计分制时 totals.evaluationKindComposition 为 mixed,pass/points 子集分开报,不共用分母", async () => {
     const base = snap("exp/base", [
       res("passEval", "passed"),
-      res("scoreEval", "passed", { scoring: "points", scoreEntries: [scoreEntry("quality", 3)] }),
+      res("scoreEval", "passed", { evaluationKind: "points", scoreEntries: [scoreEntry("quality", 3)] }),
     ]);
     const cond = snap("exp/cond", [
       res("passEval", "failed"),
-      res("scoreEval", "passed", { scoring: "points", scoreEntries: [scoreEntry("quality", 7)] }),
+      res("scoreEval", "passed", { evaluationKind: "points", scoreEntries: [scoreEntry("quality", 7)] }),
     ]);
     const scope = scopeOf([base, cond]);
     const data = await deltaTableData(scope, { by: "experiment", conditions: ["exp/base", "exp/cond"] });
 
-    expect(data.totals["exp/base"].scoringComposition).toBe("mixed");
+    expect(data.totals["exp/base"].evaluationKindComposition).toBe("mixed");
     expect(data.totals["exp/base"]).toMatchObject({ passed: 1, denominator: 1, totalScore: 3 });
     expect(data.totals["exp/cond"]).toMatchObject({ passed: 0, denominator: 1, totalScore: 7 });
 
@@ -177,7 +178,7 @@ describe("deltaTableData", () => {
     expect(pd.points!.totalScore).toBe(4);
 
     const row = data.rows.find((r) => r.key === "scoreEval")!;
-    expect(row.cells["exp/base"].scoring).toBe("points");
+    expect(row.cells["exp/base"].evaluationKind).toBe("points");
     expect(row.delta?.["exp/cond"]).toMatchObject({ score: 4 });
   });
 

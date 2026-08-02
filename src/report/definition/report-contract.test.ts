@@ -86,7 +86,7 @@ void navigableParameterizedPage;
 const fabricatedReport: ReportDefinition = {
   kind: "report",
   head: [],
-  pages: [overviewPage],
+  pages: [] as never,
 };
 void fabricatedReport;
 

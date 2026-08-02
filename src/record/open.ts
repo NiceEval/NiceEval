@@ -12,7 +12,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { EvalResult } from "../types.ts";
 import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
-import { deriveDiffData } from "../scoring/diff.ts";
+import { deriveDiffData } from "../assertions/diff.ts";
 import {
   ATTEMPT_DIR_PREFIX,
   RESULT_FILE,
@@ -24,11 +24,15 @@ import {
 } from "../record/format.ts";
 import { isNewerSnapshot, isNewerSnapshotPlacement } from "../sample/index.ts";
 import {
+  assertLocatorRegistrationsAvailable,
+  attemptIdentitiesEqual,
+  buildLocatorIndex,
   encodeAttemptLocator,
   resolveAttemptLocator,
-  LocatorCollisionError,
+  type AttemptLocatorRegistration,
   type AttemptIdentity,
   type AttemptLocator,
+  type LocatorIndex,
 } from "../record/locator.ts";
 import type {
   ArtifactKind,
@@ -42,7 +46,7 @@ import type {
   RunMeta,
 } from "../record/types.ts";
 import { ARTIFACT_KINDS } from "../record/types.ts";
-import { assertEvidenceCoverage } from "../scoring/coverage.ts";
+import { assertEvidenceCoverage } from "../assertions/coverage.ts";
 
 // publish 补记 knownEvalIds 需要「复制时刻该实验的 knownEvalIds」,而 Run 上按定稿
 // 不挂 Experiment 反向指针 —— 用模块级 WeakMap 记归属,只供库内部(copy.ts)取用。
@@ -57,7 +61,7 @@ export function experimentOfSnapshot(run: Run): Experiment | undefined {
 // (Record 接口保持精简,索引经 resolveLocator() 这个自由函数取用,与 experimentOfSnapshot
 // 同一种「WeakMap 记归属」模式)。openRecord() 之外手工拼出来的 Record 对象查不到索引,
 // resolveLocator() 对此的处理是「查不到 = 空索引」,一律 not-found,不抛意外错误。
-const locatorIndexByResults = new WeakMap<Record, Map<AttemptLocator, AttemptHandle>>();
+const locatorIndexByResults = new WeakMap<Record, LocatorIndex<AttemptHandle>>();
 
 /** locator 语法合法、但索引里没有这个 key——落盘已被清理、复制时没带上,或纯粹打错。 */
 export class LocatorNotFoundError extends Error {
@@ -81,13 +85,33 @@ export class MalformedLocatorError extends Error {
   }
 }
 
+export interface AmbiguousLocatorCandidate {
+  experimentId: string;
+  evalId: string;
+  attempt: number;
+}
+
+/** 同一个语法合法 locator 在记录根里对应多条落盘；任取其一会把用户带到错误证据。 */
+export class AmbiguousLocatorError extends Error {
+  constructor(
+    public readonly locator: AttemptLocator,
+    public readonly candidates: readonly AmbiguousLocatorCandidate[],
+  ) {
+    const lines = candidates.map(
+      (candidate) => `  - ${candidate.experimentId} / ${candidate.evalId} / attempt ${candidate.attempt}`,
+    );
+    super(`Attempt locator "${locator}" is ambiguous in this results root:\n${lines.join("\n")}`);
+    this.name = "AmbiguousLocatorError";
+  }
+}
+
 /**
  * 拿 CLI 位置参数里的原始 `@...` 字符串,在 `openRecord()` 建好的 locator 索引里查找。
  * 找不到 / 语法不对是两种不同的用户错误(打错 vs 过期),用两个可判别的 Error 子类分开抛,
  * 不折叠成一句通用报错——上层(CLI)按 `instanceof` 决定提示文案。
  */
 export function resolveLocator(results: Record, input: string): AttemptHandle {
-  const index = locatorIndexByResults.get(results) ?? new Map<AttemptLocator, AttemptHandle>();
+  const index = locatorIndexByResults.get(results) ?? new Map<AttemptLocator, []>();
   const resolution = resolveAttemptLocator(index, input);
   switch (resolution.kind) {
     case "found":
@@ -96,51 +120,80 @@ export function resolveLocator(results: Record, input: string): AttemptHandle {
       throw new MalformedLocatorError(resolution.input, resolution.reason);
     case "not-found":
       throw new LocatorNotFoundError(resolution.locator);
+    case "ambiguous":
+      throw new AmbiguousLocatorError(
+        resolution.locator,
+        resolution.candidates.map(({ handle }) => ({
+          experimentId: handle.experimentId,
+          evalId: handle.evalId,
+          attempt: handle.result.attempt,
+        })),
+      );
   }
 }
 
 /**
- * 扫描出的全部 attempt 建一份 locator → AttemptHandle 索引(openRecord() 收尾时调一次)。
- * 遍历顺序 = experiments(字典序)→ exp.runs(新→旧,buildExperiments 已排好序)→
- * run.attempts;「先遇到的赢」自然保留最新快照里的那份(--resume 携带条目在新旧两个
- * 快照里都能扫到时,新快照排在前面先被记进索引,旧快照那份被跳过——同一份 locator 重复
- * 出现不是撞车)。三元组(experimentId/evalId/attempt 序号)不同却撞出同一个 locator
- * 字符串,才是真撞车,直接抛 LocatorCollisionError,不静默覆盖。
+ * runner 在 fresh attempt 派发前调用：只查 openRecord 已建的内存索引，再连同本批登记一起
+ * 检查。carry 不传进来，所以原 locator 原样保留且不会按承载它的新 Run 重算。
  */
-function buildAttemptLocatorIndex(experiments: Experiment[]): Map<AttemptLocator, AttemptHandle> {
-  const index = new Map<AttemptLocator, AttemptHandle>();
-  for (const exp of experiments) {
-    for (const run of exp.runs) {
-      for (const attempt of run.attempts) {
-        const locator = attempt.locator;
-        if (locator === undefined) continue; // 理论上不会发生(makeAttempt 恒回填),防御性跳过
-        const existing = index.get(locator);
-        if (existing === undefined) {
-          index.set(locator, attempt);
-          continue;
-        }
-        if (
-          existing.experimentId !== attempt.experimentId ||
-          existing.evalId !== attempt.evalId ||
-          existing.result.attempt !== attempt.result.attempt
-        ) {
-          throw new LocatorCollisionError(locator, [identityForError(existing), identityForError(attempt)]);
-        }
-      }
-    }
-  }
-  return index;
+export function assertFreshAttemptLocatorRegistrations(
+  results: Record,
+  registrations: readonly AttemptLocatorRegistration[],
+): void {
+  const index = locatorIndexByResults.get(results) ?? new Map<AttemptLocator, []>();
+  assertLocatorRegistrationsAvailable(index, registrations);
 }
 
-/** LocatorCollisionError 诊断信息用:携带条目场景下这不一定是「真」身份(snapshotStartedAt
- *  取当前所在快照的值,携带条目原本可能来自更早的快照),但足够定位是哪两个 attempt 撞的。 */
-function identityForError(attempt: AttemptHandle): AttemptIdentity {
-  return {
-    experimentId: attempt.experimentId,
-    snapshotStartedAt: attempt.run.startedAt,
-    evalId: attempt.evalId,
-    attempt: attempt.result.attempt,
+/**
+ * 扫描出的全部 attempt 建一份 locator → AttemptHandle 索引(openRecord() 收尾时调一次)。
+ * carry 是同一来源 attempt 的另一份落盘：沿 locatorRunId / artifactBase 还原来源身份后，
+ * 同身份只保留遍历中先遇到的最新副本。只有来源身份不同却共享同一 locator 才保留为
+ * 多候选，由 resolveLocator() 抛 AmbiguousLocatorError。
+ */
+function buildAttemptLocatorIndex(experiments: Experiment[]): LocatorIndex<AttemptHandle> {
+  const attempts = experiments.flatMap((experiment) => experiment.runs.flatMap((run) => run.attempts));
+  const attemptsByRef = new Map(attempts.map((attempt) => [`${attempt.ref.run}/${attempt.ref.attempt}`, attempt]));
+  const identityMemo = new Map<AttemptHandle, AttemptIdentity>();
+
+  const identityFor = (attempt: AttemptHandle, visiting = new Set<AttemptHandle>()): AttemptIdentity => {
+    const memoized = identityMemo.get(attempt);
+    if (memoized) return memoized;
+
+    let runId = attempt.result.locatorRunId;
+    if (runId === undefined && attempt.result.artifactBase !== undefined && !visiting.has(attempt)) {
+      const origin = attemptsByRef.get(attempt.result.artifactBase);
+      if (origin !== undefined && origin !== attempt) {
+        const nextVisiting = new Set(visiting);
+        nextVisiting.add(attempt);
+        runId = identityFor(origin, nextVisiting).runId;
+      }
+    }
+    runId ??= attempt.run.runId;
+
+    const identity: AttemptIdentity = {
+      runId,
+      evalId: attempt.evalId,
+      attempt: attempt.result.attempt,
+    };
+    identityMemo.set(attempt, identity);
+    attempt.locatorIdentity = identity;
+    return identity;
   };
+
+  const seen = new Map<AttemptLocator, AttemptIdentity[]>();
+  return buildLocatorIndex(
+    attempts.flatMap((attempt) => {
+      const identity = identityFor(attempt);
+      const locator = attempt.locator ?? encodeAttemptLocator(identity);
+      attempt.locator = locator;
+      attempt.result.locator = locator;
+      const identities = seen.get(locator) ?? [];
+      if (identities.some((candidate) => attemptIdentitiesEqual(candidate, identity))) return [];
+      identities.push(identity);
+      seen.set(locator, identities);
+      return [{ identity, handle: attempt, locator }];
+    }),
+  );
 }
 
 interface ScanState {
@@ -311,12 +364,18 @@ function applySnapshotDefaults(record: EvalResult, meta: RunMeta): void {
   // 携带条目原样携带上一轮的值——只有真缺失(第三方 harness 没实现 locator,或手工构造的
   // 落盘)才按当前身份兜底算一份;这份兜底不保证跨未来的 --resume 稳定,但至少确定性、
   // 可解析,不比完全没有 locator 差。
-  record.locator ??= encodeAttemptLocator({
-    experimentId: record.experimentId,
-    snapshotStartedAt: meta.startedAt,
-    evalId: record.id,
-    attempt: record.attempt,
-  });
+  if (record.locator === undefined && record.artifactBase === undefined) {
+    record.locator = encodeAttemptLocator({
+      runId: meta.runId,
+      evalId: record.id,
+      attempt: record.attempt,
+    });
+  }
+  // 新格式由 writer 恒写 locatorRunId。第三方/旧格式的 fresh 条目可安全回填当前 Run；
+  // carry 缺失时不能这么做，buildAttemptLocatorIndex 会沿 artifactBase 找到原来源身份。
+  if (record.locatorRunId === undefined && record.artifactBase === undefined) {
+    record.locatorRunId = meta.runId;
+  }
 }
 
 /**

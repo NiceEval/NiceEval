@@ -138,7 +138,7 @@ export const zhCN = {
   "runner.dispatchHaltedEval": "eval 已止损:{{message}}\n",
   "judge.modelMissing":
     "judge 未配置模型:在 Experiment、Eval 或 defineConfig 的 judge 配置里指定裁判模型(没有内置默认模型,也没有对应的环境变量)。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/tutorials/evaluation-kinds.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
   "loaders.criteriaNoMatch":
@@ -239,6 +239,7 @@ export const zhCN = {
     "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
   "cli.show.locatorMalformed": "{{message}}\n",
   "cli.show.locatorNotFound": "{{message}}\n",
+  "cli.show.locatorAmbiguous": "{{message}}\n",
   "cli.eval.noMatch": "没有匹配的 eval:{{patterns}}。\n",
   "cli.eval.noMatchHintExperiment": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "已发现 {{count}} 个 eval:{{evals}}\n",
@@ -368,7 +369,7 @@ export const zhCN = {
   "feedback.human.lockWaitDispatched": "{{count}} 条自跑",
   "feedback.human.lockedRowSuffix": "locked",
   "feedback.phase.sandboxPrepare": "准备沙箱",
-  "feedback.phase.scoring": "评分",
+  "feedback.phase.assertions": "评估断言",
   "feedback.phase.teardown": "清理中",
   "feedback.phase.telemetryCollect": "收集 trace",
   "feedback.phase.telemetryConfigure": "配置 telemetry",
@@ -463,7 +464,7 @@ export const zhCN = {
     "  fix: 把 timeoutMs 调到 {{limitMs}}ms 以内,或在 sandbox spec 上声明更长的 lifetimeMs(账号档位允许的话)。\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
-    "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认 provider——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
+    "沙箱型 agent 需要一条带 template 的 SandboxLayer，但 Eval 与 Experiment 都没有声明——请从 \"niceeval/sandbox\" 使用 dockerImageSandbox({ image })、dockerComposeSandbox({ file, workspaceService })、dockerfileSandbox({ context })、vercelSandbox({ snapshotId })、e2bSandbox({ template }) 或 localSandbox()。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
@@ -485,9 +486,9 @@ export const zhCN = {
     "沙箱内 OTLP 采集器写不进 {{path}}:系统临时目录对沙箱的运行用户不可写。这是镜像环境缺陷,不是 eval 或 niceeval 配置问题——" +
     "provider 的可写保证不止 workdir,runner 要在 workdir 之外放采集器与变更分类账。" +
     "修法:让 /tmp 对运行用户可写(镜像里 `chmod 1777 /tmp`,或换一个不把 /tmp 挂成只读的镜像 / 用户),修好后重跑即续上。",
-  "scoring.evalError": "评估出错: {{error}}",
-  "scoring.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",
-  "scoring.scoreInvalid": "t.score({{label}}, {{n}}) 非法;给分必须是非负有限数(n >= 0)。",
+  "assertions.evaluationError": "断言评估出错: {{error}}",
+  "assertions.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",
+  "assertions.scoreInvalid": "t.score({{label}}, {{n}}) 非法;给分必须是非负有限数(n >= 0)。",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} 工具",
   "session.turn.primary": "第{{turn}}轮",

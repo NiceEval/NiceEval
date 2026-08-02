@@ -98,8 +98,7 @@ export function locatorOf(item: Item): AttemptLocator {
   return (
     item.attempt.locator ??
     encodeAttemptLocator({
-      experimentId: experimentIdOf(item),
-      snapshotStartedAt: item.run.startedAt,
+      runId: item.run.runId,
       evalId: evalIdOf(item),
       attempt: item.attempt.result.attempt,
     })

@@ -17,81 +17,165 @@ import type {
   AttemptDiagnosticsData,
   AttemptErrorData,
   AttemptFixPromptData,
-  AttemptSourceData,
-  AttemptSourceLineData,
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
 import type { AssertionResult, JsonValue, ScoreEntry, TimingActivity, TraceSpan } from "../../../types.ts";
-import { stripControl } from "../../../scoring/display.ts";
+import { stripControl } from "../../../assertions/display.ts";
 import { formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
+import type {
+  LineAnnotation,
+  ProjectedSourceCall,
+  ProjectedSourceLine,
+  SourceContent as ProjectedSourceContent,
+  SourceContentNode as ProjectedSourceNode,
+  SourceCallSummary,
+} from "../../../record/annotated-source.ts";
 
-function lineTone(line: AttemptSourceLineData): SourceLineTone | undefined {
-  if (line.assertions.length === 0) return line.sends.length > 0 ? "send" : undefined;
-  if (line.assertions.some((a) => a.outcome === "failed" && a.severity === "gate")) return "gate-fail";
-  if (line.assertions.some((a) => a.outcome === "failed")) return "soft-fail";
-  if (line.assertions.some((a) => a.outcome === "unavailable")) return "unavailable";
-  if (line.assertions.some((a) => a.outcome === "passed")) return "passed";
-  if (line.sends.length > 0) return "send";
-  return undefined;
+function projectedLineTone(line: ProjectedSourceLine): SourceLineTone | undefined {
+  const assertions = line.annotations.flatMap((annotation) =>
+    annotation.kind === "assertion" ? [annotation.assertion] : []
+  );
+  if (assertions.some((assertion) => assertion.outcome === "failed" && assertion.severity === "gate")) return "gate-fail";
+  if (assertions.some((assertion) => assertion.outcome === "failed")) return "soft-fail";
+  if (assertions.some((assertion) => assertion.outcome === "unavailable")) return "unavailable";
+  if (assertions.some((assertion) => assertion.outcome === "passed")) return "passed";
+  return line.annotations.some((annotation) => annotation.kind === "send") ? "send" : undefined;
 }
 
-function sourceLineOf(line: AttemptSourceLineData): SourceLine {
-  const points =
-    line.assertions.reduce(
-      (sum, a) => sum + (a.outcome !== "unavailable" && typeof a.points === "number" ? a.points : 0),
-      0,
-    ) + line.scoreEntries.reduce((sum, e) => sum + e.points, 0);
-  const hasPoints =
-    line.assertions.some((a) => a.outcome !== "unavailable" && a.points !== undefined) || line.scoreEntries.length > 0;
-  // 展开区顺序:该行的轮次回复 → 每条 assertion 的判定与细节 → 该行的给分记录。
-  const turns = lineTurnsNode(line);
-  const details: ReportNode[] = [
-    ...(turns === null ? [] : [turns]),
-    ...line.assertions.flatMap((assertion, i) => assertionNodes(assertion, `a${i}`)),
-    ...line.scoreEntries.map((entry, i) => scoreEntryNode(entry, `s${i}`)),
+function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] {
+  if (annotation.kind === "assertion") return assertionNodes(annotation.assertion, key);
+  if (annotation.kind === "score") return [scoreEntryNode(annotation.score, key)];
+  const send = annotation.send;
+  return [
+    <Text key={key}>
+      {[send.label, send.status, send.durationMs === undefined ? undefined : `${send.durationMs}ms`]
+        .filter((part): part is string => part !== undefined)
+        .join(" · ")}
+    </Text>,
   ];
+}
+
+function sourceCallSummaryText(summary: SourceCallSummary): string {
+  const parts = [
+    `${summary.checks} checks`,
+    `${summary.passed} ✓`,
+    `${summary.failed} ✗`,
+    ...(summary.unavailable > 0 ? [`${summary.unavailable} unavailable`] : []),
+    ...(summary.points ? [`${summary.points.earned}/${summary.points.available} pts`] : []),
+    ...(summary.aborted ? ["aborted"] : []),
+  ];
+  return parts.join(" · ");
+}
+
+function projectedCallTone(
+  call: ProjectedSourceCall,
+): import("../../definition/primitives/source-view.tsx").SourceCallContent["tone"] {
+  let gateFailed = false;
+  let softFailed = false;
+  const visitAnnotations = (annotations: readonly LineAnnotation[]) => {
+    for (const annotation of annotations) {
+      if (annotation.kind !== "assertion" || annotation.assertion.outcome !== "failed") continue;
+      if (annotation.assertion.severity === "gate") gateFailed = true;
+      else softFailed = true;
+    }
+  };
+  const visitCalls = (calls: readonly ProjectedSourceCall[]) => {
+    for (const child of calls) visitCall(child);
+  };
+  const visitNode = (node: ProjectedSourceNode) => {
+    for (const line of node.lines) {
+      visitAnnotations(line.annotations);
+      visitCalls(line.calls);
+    }
+  };
+  const visitCall = (candidate: ProjectedSourceCall) => {
+    if (candidate.target.kind === "source") visitNode(candidate.target.node);
+    else {
+      if (candidate.target.kind === "unavailable") visitAnnotations(candidate.target.annotations);
+      visitCalls(candidate.target.calls);
+    }
+  };
+  visitCall(call);
+  if (gateFailed || call.summary.aborted) return "gate-fail";
+  if (softFailed || (call.summary.points !== undefined && call.summary.points.earned < call.summary.points.available)) {
+    return "soft-fail";
+  }
+  if (call.summary.unavailable > 0) return "unavailable";
+  return "passed";
+}
+
+function projectedCallContent(call: ProjectedSourceCall): import("../../definition/primitives/source-view.tsx").SourceCallContent {
+  const tone = projectedCallTone(call);
+  if (call.target.kind === "source") {
+    return {
+      summary: sourceCallSummaryText(call.summary),
+      tone,
+      open: call.open,
+      target: { kind: "source", block: projectedBlockContent(call.target.node) },
+    };
+  }
+  const calls = call.target.calls.map(projectedCallContent);
   return {
-    number: line.line,
-    text: line.text,
-    tone: line.sends.length > 0 || line.turns.length > 0 ? "send" : lineTone(line),
-    ...(hasPoints ? { pill: formatPointsSuffix(points) } : {}),
-    ...(line.aborted ? { aborted: true } : {}),
-    ...(details.length > 0 ? { details } : {}),
+    summary: sourceCallSummaryText(call.summary),
+    tone,
+    open: call.open,
+    target: {
+      kind: "opaque",
+      label: call.target.kind === "package"
+        ? `package: ${call.target.package}`
+        : `source unavailable: ${call.target.file}${call.target.line === undefined ? "" : `:${call.target.line}`}`,
+      ...(calls.length > 0 ? { calls } : {}),
+    },
   };
 }
 
-export function attemptSourceContent(data: AttemptSourceData | null): SourceContent | null {
+function projectedBlockContent(node: ProjectedSourceNode): import("../../definition/primitives/source-view.tsx").SourceBlockContent {
+  return {
+    path: node.file,
+    lines: node.lines.map((line): SourceLine => {
+      const details = line.annotations.flatMap((annotation, index) => annotationNodes(annotation, `${node.file}:${line.line}:${index}`));
+      const calls = line.calls.map(projectedCallContent);
+      const points = line.annotations.reduce((sum, annotation) => {
+        if (annotation.kind === "score") return sum + annotation.score.points;
+        if (annotation.kind === "assertion" && annotation.assertion.outcome !== "unavailable") {
+          return sum + (annotation.assertion.points ?? 0);
+        }
+        return sum;
+      }, 0);
+      const hasPoints = line.annotations.some((annotation) =>
+        annotation.kind === "score" ||
+        (annotation.kind === "assertion" && annotation.assertion.outcome !== "unavailable" && annotation.assertion.points !== undefined)
+      );
+      return {
+        number: line.line,
+        text: line.text,
+        ...(projectedLineTone(line) !== undefined ? { tone: projectedLineTone(line) } : {}),
+        ...(hasPoints ? { pill: formatPointsSuffix(points) } : {}),
+        ...(line.aborted ? { aborted: true } : {}),
+        ...(details.length > 0 ? { details } : {}),
+        ...(calls.length > 0 ? { calls } : {}),
+      };
+    }),
+  };
+}
+
+/** AnnotatedSourceResult 的完整调用树到 SourceView Content；不再做裁行或展开决策。 */
+export function projectedSourceContent(
+  data: ProjectedSourceContent | null,
+  locator?: import("../../../record/locator.ts").AttemptLocator,
+): SourceContent | null {
   if (data === null) return null;
-  // 兜底区:没有 loc 的 assertion、给分记录与轮次都不丢弃,列在全部源码块之后
-  // (docs/feature/reports/components/attempt-detail/presentation.md「源码行展开区里有什么」)。
   const unmapped: ReportNode[] = [
-    ...data.unmapped.flatMap((assertion, i) => assertionNodes(assertion, `u${i}`)),
-    ...(data.unmappedScoreEntries ?? []).flatMap((group, gi) =>
-      group.items.map((entry, i) => scoreEntryNode(entry, `us${gi}:${i}`)),
-    ),
-    ...data.unlocatedTurns.map((turn, i) => (
-      <Conversation
-        key={`ut${i}`}
-        data={{
-          turns: [
-            {
-              key: `turn:${i}`,
-              label: turn.label,
-              verdict: turn.status === "failed" ? ("failed" as const) : turn.status === "waiting" ? ("skipped" as const) : ("passed" as const),
-              entries: turn.replies.map(conversationEntryOf),
-            },
-          ],
-        }}
-      />
-    )),
+    ...data.unmapped.assertions.flatMap((assertion, index) => assertionNodes(assertion, `unmapped:a${index}`)),
+    ...data.unmapped.scores.map((score, index) => scoreEntryNode(score, `unmapped:s${index}`)),
   ];
   return {
-    spine: { path: data.sourcePath, lines: data.lines.map(sourceLineOf) },
-    detached: [],
+    spine: projectedBlockContent(data.spine),
+    detached: data.detached.map(projectedBlockContent),
     ...(unmapped.length > 0 ? { unmapped } : {}),
-    locator: data.locator,
+    ...(locator !== undefined ? { locator } : {}),
   };
 }
 
@@ -289,8 +373,6 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
       return { kind: "input", preview: reply.request.display ?? reply.request.prompt ?? reply.request.action ?? "input requested" };
     case "compaction":
       return { kind: "compaction", preview: reply.reason ?? "context compacted" };
-    case "raw":
-      return { kind: "raw", preview: jsonPreview(reply.raw) };
   }
 }
 
@@ -334,24 +416,6 @@ function assertionNodes(assertion: AssertionResult, key: string): ReportNode[] {
     );
   }
   return nodes;
-}
-
-/** 该行发出的轮次:复用 Conversation 的条目呈现,轮头在展开区里由 stylesheet 收起。 */
-function lineTurnsNode(line: AttemptSourceLineData): ReportNode | null {
-  if (line.turns.length === 0) return null;
-  return (
-    <Conversation
-      key="turns"
-      data={{
-        turns: line.turns.map((turn, i) => ({
-          key: `turn:${i}`,
-          label: turn.label,
-          verdict: turn.status === "failed" ? "failed" : turn.status === "waiting" ? "skipped" : "passed",
-          entries: turn.replies.map(conversationEntryOf),
-        })),
-      }}
-    />
-  );
 }
 
 function scoreEntryNode(entry: ScoreEntry, key: string): ReportNode {

@@ -27,7 +27,7 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | 事实 | owner | 校验位置 |
 |---|---|---|
 | 作者选择的 agent、page、字段和计算 | 作者输入 | TypeScript；运行时作无类型后备 |
-| 路径生成的 id、factory 生成的 scoring、规划生成的 configHash | 发现器、factory、规划器 | 对应阶段构造，不回流到作者输入 |
+| 路径生成的 id、factory 生成的 `evaluationKind`、规划生成的 configHash | 发现器、factory、规划器 | 对应阶段构造，不回流到作者输入 |
 | 文件是否存在、URL 是否可达、请求 options 的实际成员 | 运行时资源 | 运行时 |
 | JSON 行的真实结构、跨行一致性和数值关系 | 数据读取边界 | 运行时 |
 | 实际 Eval × Experiment 是否恰好一份 Sandbox template | discovery、selector 与 CLI filter 形成的配对 | 资源前 linker；`niceeval check` 与正常运行共用 |
@@ -50,20 +50,20 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | 阶段 | 类型 | 谁构造 |
 |---|---|---|
 | 作者输入 | `EvalInput` / `ScoreEvalInput` | 作者写在 `defineEval()` / `defineScoreEval()` 的实参里 |
-| 定义产物 | `EvalDefinition<Scoring, Context>` | factory |
+| 定义产物 | `EvalDefinition<Kind, Context>` | factory |
 | 发现结果 | `DiscoveredEval` | 发现器 |
 
 Experiment 走同一条规则：`ExperimentInput` → `ExperimentDefinition` → `DiscoveredExperiment`。
 
 三个阶段各有其名，`Def` 后缀不进公开类型。
 一个名字同时指作者输入、factory 产物与带 id 的发现结果时，读者无法从名字判断手上的值处在哪一阶段。
-`id`、`scoring` 与 `configHash` 也只能声明成可选才能同时满足三方，于是“禁止手写”这条规矩没有类型可以表达。
+`id`、`evaluationKind` 与 `configHash` 也只能声明成可选才能同时满足三方，于是“禁止手写”这条规矩没有类型可以表达。
 
 ## 契约范围
 
 | 契约族 | 类型形态 | 作者得到的反馈 |
 |---|---|---|
-| Eval / Experiment | 拆分 Author Input、Definition 与 Discovered 类型；移出 `id`、`scoring`、`configHash` | 禁止字段在 `define*` 调用处报类型错误 |
+| Eval / Experiment | 拆分 Author Input、Definition 与 Discovered 类型；移出 `id`、`evaluationKind`、`configHash` | 禁止字段在 `define*` 调用处报类型错误 |
 | Report page | 普通页与参数化页组成 union | `params` 缺 `load` 或 `navigation: false` 时不能编译 |
 | MCP server | stdio 与 HTTP 分支互相声明负字段 | `command` 与 `url` 同时出现时不能编译 |
 | HITL answer | `optionId` 与 `text` 使用共享 XOR 值类型 | 两者都缺或同时出现时不能编译 |

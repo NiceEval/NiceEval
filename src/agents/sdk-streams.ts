@@ -90,17 +90,17 @@ export interface ClaudeSdkStream {
   readonly failed: boolean;
   /**
    * 拒绝审批后续读前登记:该 tool_use 的 `tool_result` / `permission_denied` 落成
-   * `status: "rejected"`(而不是 failed),且两种帧只产一条 action.result。
+   * `status: "rejected"`(而不是 failed),且两种帧只产一条 operation.finished。
    */
   markRejected(toolUseId: string): void;
 }
 
 /**
  * Claude Agent SDK 消息流(`system` / `assistant` / `user` / `result`)→ 标准事件。
- * `assistant` 的 text/thinking/tool_use 块 → message / thinking / action.called;`user` 的
- * tool_result 块 → action.result;`system`/`permission_denied` → rejected;`stream_event`
+ * `assistant` 的 text/thinking/tool_use 块 → message / thinking / operation.started;`user` 的
+ * tool_result 块 → operation.finished;`system`/`permission_denied` → rejected;`stream_event`
  * (逐 token 渲染)整个忽略。HITL 的停轮判定(哪个工具被门控)是应用侧的知识,不在这里——
- * 扫描 add() 返回的 action.called 自行决定。
+ * 扫描 add() 返回的 operation.started 自行决定。
  */
 export function createClaudeSdkEventStream(): ClaudeSdkStream {
   let sessionId: string | undefined;
@@ -142,7 +142,7 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
           } else if (frame.subtype === "permission_denied" && typeof frame.tool_use_id === "string") {
             if (!resolvedCallIds.has(frame.tool_use_id)) {
               resolvedCallIds.add(frame.tool_use_id);
-              events.push({ type: "action.result", callId: frame.tool_use_id, status: "rejected" });
+              events.push({ type: "operation.finished", operationId: frame.tool_use_id, kind: "tool", status: "rejected" });
             }
           }
           break;
@@ -157,11 +157,14 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
               events.push({ type: "thinking", text: block.thinking });
             } else if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
               events.push({
-                type: "action.called",
-                callId: block.id,
-                name: block.name,
-                input: block.input as JsonValue,
-                tool: normalizeToolName(block.name, CLAUDE_TOOL_ALIASES),
+                type: "operation.started",
+                operationId: block.id,
+                operation: {
+                  kind: "tool",
+                  name: block.name,
+                  input: block.input as JsonValue,
+                  tool: normalizeToolName(block.name, CLAUDE_TOOL_ALIASES),
+                },
               });
             }
           }
@@ -174,8 +177,9 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
             if (resolvedCallIds.has(block.tool_use_id)) continue;
             resolvedCallIds.add(block.tool_use_id);
             events.push({
-              type: "action.result",
-              callId: block.tool_use_id,
+              type: "operation.finished",
+              operationId: block.tool_use_id,
+              kind: "tool",
               output: toolResultText(block.content) as JsonValue,
               status: rejected.has(block.tool_use_id) ? "rejected" : block.is_error ? "failed" : "completed",
             });
@@ -247,7 +251,7 @@ export interface PiAgentStream {
  * message_end 落地成 message / thinking(优先取 end 帧的完整 content,缺了用累加的增量兜底);
  * 只有 start/delta 的截断流不产出半条消息。message_end 同时累加 usage;assistant 消息以
  * stopReason "error" / "aborted" 收尾时记失败(`failed`)并发一条 error 事件。
- * tool_execution_start/end → action.called / action.result。
+ * tool_execution_start/end → operation.started / operation.finished。
  */
 export function createPiAgentEventStream(): PiAgentStream {
   let usage: Usage | undefined;
@@ -325,14 +329,18 @@ export function createPiAgentEventStream(): PiAgentStream {
         }
         case "tool_execution_start": {
           if (typeof event.toolCallId === "string" && typeof event.toolName === "string") {
-            events.push({ type: "action.called", callId: event.toolCallId, name: event.toolName, input: event.args as JsonValue });
+            events.push({
+              type: "operation.started",
+              operationId: event.toolCallId,
+              operation: { kind: "tool", name: event.toolName, input: event.args as JsonValue },
+            });
           }
           break;
         }
         case "tool_execution_end": {
           if (typeof event.toolCallId === "string") {
             const status = event.isError ? (rejected.has(event.toolCallId) ? "rejected" : "failed") : "completed";
-            events.push({ type: "action.result", callId: event.toolCallId, output: event.result as JsonValue, status });
+            events.push({ type: "operation.finished", operationId: event.toolCallId, kind: "tool", output: event.result as JsonValue, status });
           }
           break;
         }
@@ -360,7 +368,7 @@ export interface CodexThreadStream {
   /**
    * 逐帧喂 `ThreadEvent`,返回标准事件:消息类(agent_message → message、reasoning → thinking、
    * error item / turn.failed → error)+ 工具项(command_execution / mcp_tool_call / web_search /
-   * file_change → action.called + action.result,附规范工具名 `tool`,如 command_execution →
+   * file_change → operation.started + operation.finished,附规范工具名 `tool`,如 command_execution →
    * `"shell"`,供 `calledTool("shell")` 这类跨 agent 断言命中)。usage 从 `turn.completed` 聚合,经 `usage` 读。
    * 断言依据全部来自这条流;codex CLI 的原生 OTLP span 只用于瀑布图(spanMapper: mapCodexSpans)。
    */
@@ -378,7 +386,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
   let threadId: string | undefined;
   let usage: Usage | undefined;
   let failed = false;
-  // item.started 已发 action.called 的 id;item.completed 时不重发,只补 result。
+  // item.started 已发 operation.started 的 id;item.completed 时不重发,只补 result。
   const startedCallIds = new Set<string>();
   let synth = 0;
 
@@ -387,7 +395,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
     return typeof id === "string" || typeof id === "number" ? String(id) : `${prefix}_${++synth}`;
   };
 
-  // 工具项 → action.called(+completed 时的 action.result)。与 o11y/parsers/codex.ts 的
+  // 工具项 → operation.started(+completed 时的 operation.finished)。与 o11y/parsers/codex.ts 的
   // transcript 映射保持同一套语义(字段名以 codex exec --json 的 ThreadItem 为准),
   // 包括规范工具名 tool:少了它 derive 只能落 name="unknown",calledTool("shell") 这类
   // 跨 agent 规范名断言在 SDK 流路径上会静默失配(2026-07-09 CI 实红)。
@@ -396,7 +404,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
     const emitCall = (callId: string, name: string, input: JsonValue, tool: ToolName): void => {
       if (startedCallIds.has(callId)) return;
       startedCallIds.add(callId);
-      events.push({ type: "action.called", callId, name, input, tool });
+      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool } });
     };
 
     switch (item.type) {
@@ -407,8 +415,9 @@ export function createCodexThreadEventStream(): CodexThreadStream {
           const exit = item.exit_code;
           const success = exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error");
           events.push({
-            type: "action.result",
-            callId,
+            type: "operation.finished",
+            operationId: callId,
+            kind: "tool",
             output: { output: (item.aggregated_output ?? null) as JsonValue, exit_code: (exit ?? null) as JsonValue },
             status: success ? "completed" : "failed",
           });
@@ -422,14 +431,22 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         emitCall(callId, name, (item.arguments ?? null) as JsonValue, normalizeToolName(tool, CODEX_TOOL_ALIASES));
         if (isCompleted) {
           const success = !item.error && item.status !== "failed";
-          events.push({ type: "action.result", callId, output: (item.result ?? null) as JsonValue, status: success ? "completed" : "failed" });
+          events.push({
+            type: "operation.finished",
+            operationId: callId,
+            kind: "tool",
+            output: (item.result ?? null) as JsonValue,
+            status: success ? "completed" : "failed",
+          });
         }
         return events;
       }
       case "web_search": {
         const callId = callIdOf(item, "web");
         emitCall(callId, "web_search", { query: item.query ?? null } as JsonValue, "web_search");
-        if (isCompleted) events.push({ type: "action.result", callId, output: null, status: "completed" });
+        if (isCompleted) {
+          events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: null, status: "completed" });
+        }
         return events;
       }
       case "file_change": {
@@ -440,8 +457,12 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         changes.forEach((ch, i) => {
           const callId = `${baseId}#${i}`;
           const change = isRecord(ch) ? { path: ch.path ?? null, kind: ch.kind ?? null } : {};
-          events.push({ type: "action.called", callId, name: "file_change", input: change as JsonValue, tool: "file_edit" });
-          events.push({ type: "action.result", callId, output: change as JsonValue, status: "completed" });
+          events.push({
+            type: "operation.started",
+            operationId: callId,
+            operation: { kind: "tool", name: "file_change", input: change as JsonValue, tool: "file_edit" },
+          });
+          events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: change as JsonValue, status: "completed" });
         });
         return events;
       }

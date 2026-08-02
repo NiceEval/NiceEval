@@ -109,8 +109,8 @@ export const validateScoreboardData: Validator = (data) => {
 const VERDICTS = ["passed", "failed", "errored", "skipped"];
 /** DeltaCell:同 MetricCell 家族但字段不同(verdict/totalScore/attempts/totalTokens/totalCostUSD/historical)。 */
 function deltaCellProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an object { scoring, verdict, attempts, historical }`;
-  if (value.scoring !== "pass" && value.scoring !== "points") return `"${path}.scoring" must be "pass" or "points"`;
+  if (!isObject(value)) return `"${path}" must be an object { evaluationKind, verdict, attempts, historical }`;
+  if (value.evaluationKind !== "pass" && value.evaluationKind !== "points") return `"${path}.evaluationKind" must be "pass" or "points"`;
   if (typeof value.verdict !== "string" || !VERDICTS.includes(value.verdict)) {
     return `"${path}.verdict" must be one of ${JSON.stringify(VERDICTS)}`;
   }
@@ -124,10 +124,10 @@ function deltaCellProblem(value: unknown, path: string): string | null {
   return null;
 }
 function deltaTotalsProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an object { scoringComposition }`;
-  const composition = value.scoringComposition;
+  if (!isObject(value)) return `"${path}" must be an object { evaluationKindComposition }`;
+  const composition = value.evaluationKindComposition;
   if (composition !== "pass" && composition !== "points" && composition !== "mixed") {
-    return `"${path}.scoringComposition" must be one of ["pass","points","mixed"]`;
+    return `"${path}.evaluationKindComposition" must be one of ["pass","points","mixed"]`;
   }
   if (value.passed !== undefined && typeof value.passed !== "number") return `"${path}.passed" must be a number`;
   if (value.denominator !== undefined && typeof value.denominator !== "number") return `"${path}.denominator" must be a number`;
@@ -228,4 +228,3 @@ export const validateStabilityMatrixData: Validator = (data) => {
   }
   return null;
 };
-

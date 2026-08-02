@@ -97,12 +97,12 @@ delta、stability、scoreboard 与 frontier 不因出现在内建报告里就成
 这个选择不依赖任何 attempt 结果，题目一行代码没跑时就有答案。
 
 ```ts
-type ScoringComposition = "pass" | "points" | "mixed";
+type EvaluationKindComposition = "pass" | "points" | "mixed";
 
-const composition = await scoringComposition(sample);
+const composition = await evaluationKindComposition(sample);
 ```
 
-`scoringComposition(sample)` 是公开函数；取自 Run 记录的定义期 `scoring`。
+`evaluationKindComposition(sample)` 是公开函数；取自 Run 记录的定义期 `evaluationKind`。
 
 **主读数映射是单点规则**，官方消费者都引用这一条，不各自另设判据：
 
@@ -114,7 +114,7 @@ const composition = await scoringComposition(sample);
 
 `Table` 与图表不感知题型。
 分支只发生在首页任务函数、`SampleSummary`、`SampleOverview` 等显式读取该字段的组合里。
-自定义报告需要同样切换时，调用同一个 `scoringComposition(sample)`。
+自定义报告需要同样切换时，调用同一个 `evaluationKindComposition(sample)`。
 
 题型选择属于报告任务函数，不藏在图表或组件的默认绑定里。
 混合题型不能把两种无共同单位的数值压成一个“总分”。

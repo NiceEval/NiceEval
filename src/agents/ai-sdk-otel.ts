@@ -38,11 +38,11 @@ export interface AiSdkOtelOptions {
  * provider 按 endpoint 缓存(per-attempt 端点各建一条,同 attempt 的后续轮复用),
  * 用 SimpleSpanProcessor 即时导出——轮次归属靠时间窗口,span 不能等 batch。
  */
-export function aiSdkOtel(options: AiSdkOtelOptions = {}): AiSdkTracing {
+export function aiSdkOtel(options: AiSdkOtelOptions = {}): AiSdkTracing<OpenTelemetry> {
   const providers = new Map<string, NodeTracerProvider>();
 
   return {
-    telemetryForEndpoint(endpoint: string): AiSdkTurnTelemetry {
+    telemetryForEndpoint(endpoint: string): AiSdkTurnTelemetry<OpenTelemetry> {
       let provider = providers.get(endpoint);
       if (!provider) {
         const spanProcessors = [new SimpleSpanProcessor(new OTLPTraceExporter({ url: endpoint }))];

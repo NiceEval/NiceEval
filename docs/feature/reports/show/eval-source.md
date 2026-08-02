@@ -93,5 +93,5 @@ outside the eval entry · lib/candidate.ts
 ## 相关阅读
 
 - [源码调用树](../eval-source/README.md) —— 多文件源码的心智模型与降级下限。
-- [`toAnnotatedEvalSource(attempt)`](../components/attempt-detail/README.md) —— 同一份证据的 web 投影。
+- [`toAttemptSource(attempt)`](../components/primitives/source-view.md) —— 同一份证据的 web 投影。
 - [Assertions 展示](../../assertions/library/display.md) —— 每条标注的判定语义。

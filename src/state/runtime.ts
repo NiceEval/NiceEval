@@ -1,6 +1,7 @@
 import { Clock, Data, Effect, Option, Ref, Schema } from "effect";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
 import { classifySandboxIoError } from "../sandbox/errors.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { freezeStateJson, StateCheckpointSchema, stateJsonValueOf } from "./definition.ts";
 import type { PlannedExperimentState } from "./plan.ts";
 import type {
@@ -10,24 +11,9 @@ import type {
   StateWindowRecord,
 } from "./types.ts";
 
-export type ExternalErrorCode =
-  | { readonly _tag: "CodeAbsent" }
-  | { readonly _tag: "Code"; readonly value: string };
-
-export type ExternalErrorStack =
-  | { readonly _tag: "StackAbsent" }
-  | { readonly _tag: "Stack"; readonly value: string };
-
-export interface ExternalStateCause {
-  readonly _tag: "ExternalCause";
-  readonly name: string;
-  readonly code: ExternalErrorCode;
-  readonly message: string;
-  readonly stack: ExternalErrorStack;
-}
-
 export type StateFailureEvidence =
-  | { readonly _tag: "External"; readonly cause: ExternalStateCause }
+  /** 动态 throwable 已在 Promise 边界归一为可序列化的有界快照。 */
+  | { readonly _tag: "External"; readonly cause: ExternalCause }
   | { readonly _tag: "ContractViolation"; readonly expected: string; readonly actual: string }
   | {
       readonly _tag: "TransferUnavailable";
@@ -62,42 +48,6 @@ class StateSandboxTransferUnavailable extends Data.TaggedError("StateSandboxTran
   readonly detail: string;
 }> {}
 
-function externalErrorCode(value: unknown): ExternalErrorCode {
-  return typeof value === "string" && value.trim() !== ""
-    ? { _tag: "Code", value }
-    : { _tag: "CodeAbsent" };
-}
-
-function externalErrorStack(value: unknown): ExternalErrorStack {
-  return typeof value === "string" && value !== ""
-    ? { _tag: "Stack", value }
-    : { _tag: "StackAbsent" };
-}
-
-/** Promise throwable 在这一瞬间被消费；unknown 从不进入 State ADT。 */
-function normalizeExternalCause(value: unknown): ExternalStateCause {
-  if (typeof value !== "object" || value === null) {
-    return {
-      _tag: "ExternalCause",
-      name: "ThrownValue",
-      code: { _tag: "CodeAbsent" },
-      message: String(value),
-      stack: { _tag: "StackAbsent" },
-    };
-  }
-  const candidate = value as { name?: unknown; code?: unknown; message?: unknown; stack?: unknown };
-  const constructorName = Object.getPrototypeOf(value)?.constructor?.name;
-  return {
-    _tag: "ExternalCause",
-    name: typeof candidate.name === "string" && candidate.name !== ""
-      ? candidate.name
-      : typeof constructorName === "string" && constructorName !== "" ? constructorName : "Error",
-    code: externalErrorCode(candidate.code),
-    message: typeof candidate.message === "string" ? candidate.message : String(value),
-    stack: externalErrorStack(candidate.stack),
-  };
-}
-
 /** Sandbox operation 的 throwable 在 catch 边界归一；普通作者 callback 错误不走这条分类。 */
 function sandboxTransferFailure(value: unknown): StateSandboxTransferUnavailable | undefined {
   if (typeof value === "object" && value !== null) {
@@ -114,7 +64,8 @@ function sandboxTransferFailure(value: unknown): StateSandboxTransferUnavailable
     }
   }
   const cause = normalizeExternalCause(value);
-  if (/terminated|killed|sandbox.*(?:closed|stopped|not found)/i.test(`${cause.name} ${cause.message}`)) {
+  const causeLabel = cause._tag === "ThrownValue" ? cause.message : `${cause.name} ${cause.message}`;
+  if (/terminated|killed|sandbox.*(?:closed|stopped|not found)/i.test(causeLabel)) {
     return new StateSandboxTransferUnavailable({ reason: "sandbox-lost", detail: cause.message });
   }
   const ioKind = classifySandboxIoError(value);

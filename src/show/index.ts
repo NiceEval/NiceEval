@@ -26,6 +26,7 @@ import {
   ATTEMPT_LOCATOR_PREFIX,
   LocatorNotFoundError,
   MalformedLocatorError,
+  AmbiguousLocatorError,
 } from "../record/index.ts";
 // ReportLoadError must come from the SAME module instance the report runtime is built
 // against — `instanceof` is keyed by declaration site, so a raw src copy and the compiled
@@ -35,12 +36,27 @@ import {
 import { ReportLoadError } from "../../dist/report/runtime/load.js";
 import { detectLocale, t } from "../i18n/index.ts";
 import { currentSample, filterExperiments } from "../sample/index.ts";
-import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregate.ts";
+import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { panelCapabilityOf } from "../report/model/panel.ts";
 import { formatMetricValue, formatUSD, verdictMark } from "../report/model/format.ts";
 import { renderAlignedRows, type ColumnAlign } from "../report/model/text-layout.ts";
-import { attemptHistory, attemptHistoryHandles } from "./compose.ts";
-import { attemptJsonOf, buildShowScope, renderShowJson, type ShowJsonView } from "./json.ts";
+import {
+  annotatedSourceResult,
+  attemptDetailsResult,
+  comparisonResult,
+  conversationResult,
+  diffResult,
+  historyResult,
+  stabilityResult,
+  standardOverviewResult,
+  SourceFileSelectionError,
+  timingResult,
+  usageResult,
+  type ComparisonResult,
+  type StabilityResult,
+  type UsageResult,
+} from "../report/tasks.ts";
+import { buildShowSample, renderShowJson, type ShowJson, type ShowJsonSample } from "./json.ts";
 import {
   buildHostReportMeta,
   createHostPageLoadContext,
@@ -50,6 +66,7 @@ import {
   renderHostPageText,
   renderHostTarget,
   type HostCommandContext,
+  type ReportDefinition,
   type ReportPage,
 } from "../report/runtime/host.ts";
 import {
@@ -60,21 +77,19 @@ import {
   evalSourceText,
   executionText,
   otherPagesText,
-  runTimingJson,
   runTimingText,
   timingText,
   skippedRunsText,
 } from "./render.ts";
-import type { AttemptEvidence, AttemptHandle, Record, Run, Sample } from "../record/index.ts";
-import type { DeltaData, StabilityMatrixData, UsageTableData } from "../report/model/types.ts";
+import type { AttemptHandle, Record, Run, Sample } from "../record/index.ts";
 
 export interface ShowFlags {
   /** --source:该 attempt 运行时保存的 Eval 源码,断言标回源码行(证据切面)。 */
-  source?: boolean;
+  source?: boolean | string;
   /** 该 attempt 的标准执行事件流 + OTel enrichment(证据切面)。 */
   execution?: boolean;
-  /** --timing:默认有界诊断投影；full 逐节点展开。boolean 仅供库调用兼容，等价 summary。 */
-  timing?: boolean | "summary" | "full";
+  /** --timing:summary 是有界诊断投影；full 逐节点展开。 */
+  timing?: "summary" | "full";
   /** --diff(文件级摘要)。 */
   diff?: boolean;
   /** --diff=<路径>(单个文件的完整改动;路径必须 = 连写,位置参数永远留给 eval id 前缀)。 */
@@ -102,7 +117,7 @@ export interface ShowFlags {
   record?: string;
   report?: string;
   /** 来自 config 的动态模块值；host facade 会按 dist factory 品牌验证。 */
-  configReport?: unknown;
+  configReport?: ReportDefinition;
   /** --page:多页报告选页;未命中按用法错误退出并列出可用页 id。 */
   page?: string;
   /** --fresh:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行)。 */
@@ -197,31 +212,24 @@ function grepSummaryText(matches: number, attempts: number, zeroMatchAttempts: n
  * 证据切面(--source/--execution/--timing/--diff)只能选一个当 `--json` 的 view——见 show()
  * 顶层的 evidenceFlagCount 校验,调用这个函数前已保证恰好一个为真。
  */
-function evidenceViewOf(flags: Pick<ShowFlags, "source" | "execution" | "timing" | "diff" | "diffPath">): ShowJsonView {
-  if (flags.source === true) return "source";
+function evidenceViewOf(
+  flags: Pick<ShowFlags, "source" | "execution" | "timing" | "diff" | "diffPath">,
+): "source" | "execution" | "timing" | "diff" {
+  if (flags.source !== undefined && flags.source !== false) return "source";
   if (flags.execution === true) return "execution";
-  if (flags.timing !== undefined && flags.timing !== false) return "timing";
+  if (flags.timing !== undefined) return "timing";
   return "diff";
 }
 
-/**
- * 证据切面单个 attempt 的 `--json` `data`:直接调用该 view 对应的组件 `*Data` 函数
- * (docs/feature/reports/show/json.md「data:按 view 找组件声明」),不重算一遍——与 text 面
- * 消费同一份产物。`AttemptDiffData` 带每个文件的逐窗口 patch,`--json` 对 `diff` view 恒输出
- * 完整投影(不截断是 JSON 面的通则),`diffPath` 只影响 text 面选哪一个文件展开。
- */
-async function evidenceJsonDataOf(view: ShowJsonView, evidence: AttemptEvidence): Promise<unknown> {
-  const mod = await import("../../dist/report/components/attempt-detail/compute.js");
-  switch (view) {
-    case "source":
-      return mod.attemptSourceData(evidence);
-    case "execution":
-      return mod.attemptConversationData(evidence);
-    case "timing":
-      return mod.attemptTimelineData(evidence);
-    default:
-      return mod.attemptDiffData(evidence);
-  }
+function sourceOptions(
+  source: ShowFlags["source"],
+  options: { json?: boolean } = {},
+): import("../report/tasks.ts").AnnotatedSourceOptions {
+  if (source === "full") return { mode: "full" };
+  if (typeof source === "string") return { mode: "file", file: source };
+  // JSON 是结构化审计面，不沿用终端的注意力预算；保留上面的选择语义，
+  // 但 bare --source 必须返回完整捕获树。
+  return { mode: options.json ? "full" : "default" };
 }
 
 /**
@@ -258,33 +266,40 @@ async function renderEvidenceSections(
     const header = attemptEvidenceHeader(attemptEvidence);
     const artifactPath = attemptArtifactsPath(attempt, cwd);
     const blocks: string[] = [];
-    if (flags.source) blocks.push(evalSourceText(attemptEvidence, { header, artifactPath, width }));
+    if (flags.source) {
+      const result = await annotatedSourceResult(attemptEvidence, sourceOptions(flags.source));
+      if (result.source === null) {
+        throw new ShowError(`Source evidence unavailable for ${attemptEvidence.locator}; this attempt did not capture sources.json.`);
+      }
+      blocks.push(evalSourceText(result, { header, artifactPath, width }));
+    }
     if (flags.execution) {
-      let result: { text: string; matches?: number };
+      let rendered: { text: string; matches?: number };
       try {
-        result = executionText(attemptEvidence, { header, artifactPath, width }, { grep, expand: flags.expand });
+        const result = await conversationResult(attemptEvidence);
+        rendered = executionText(result, { header, artifactPath, width }, { grep, expand: flags.expand });
       } catch (e) {
         if (flags.expand !== undefined && e instanceof Error) {
           throw new ShowError(t("cli.show.expandNotFound", { message: e.message }));
         }
         throw e;
       }
-      if (result.text.length > 0) blocks.push(result.text);
+      if (rendered.text.length > 0) blocks.push(rendered.text);
       if (grep !== undefined) {
         grepAttempts += 1;
-        grepMatches += result.matches ?? 0;
-        if ((result.matches ?? 0) === 0) grepZeroMatchAttempts += 1;
+        grepMatches += rendered.matches ?? 0;
+        if ((rendered.matches ?? 0) === 0) grepZeroMatchAttempts += 1;
       }
     }
-    if (flags.timing !== undefined && flags.timing !== false) {
+    if (flags.timing !== undefined) {
+      const result = await timingResult(attemptEvidence);
       blocks.push(
-        timingText(attemptEvidence, { header, artifactPath, width, mode: flags.timing === "full" ? "full" : "summary" }),
+        timingText(result, { header, artifactPath, width, mode: flags.timing === "full" ? "full" : "summary" }),
       );
     }
     if (flags.diff || flags.diffPath !== undefined) {
-      // text 面与 --json、web 面读同一份投影(docs/feature/reports/show/diff.md「投影单源」)。
-      const mod = await import("../../dist/report/components/attempt-detail/compute.js");
-      blocks.push(diffText({ header, data: mod.attemptDiffData(attemptEvidence), artifactPath, file: flags.diffPath }));
+      const result = await diffResult(attemptEvidence);
+      blocks.push(diffText({ header, data: result, artifactPath, file: flags.diffPath }));
     }
     sections.push(blocks.join("\n\n"));
   }
@@ -303,30 +318,42 @@ async function renderEvidenceSections(
  * `--grep`/`--expand` 是 text 渲染面的注意力预算选项,不影响这份完整 resolve 产物
  * (docs/feature/reports/architecture.md「show 的切片是组件选择」)。
  */
-async function evidenceJsonOf(view: ShowJsonView, attempts: readonly AttemptHandle[]): Promise<unknown> {
+async function evidenceJsonOf(
+  view: "source" | "execution" | "diff",
+  attempts: readonly AttemptHandle[],
+  sample: ShowJsonSample,
+  source: ShowFlags["source"],
+): Promise<ShowJson> {
   const ordered = sortAttemptsForSections(attempts);
-  const perAttempt = await Promise.all(
-    ordered.map(async (attempt) => evidenceJsonDataOf(view, await loadAttemptEvidence(attempt))),
-  );
-  return perAttempt.length === 1 ? perAttempt[0] : perAttempt;
+  const evidence = await Promise.all(ordered.map(loadAttemptEvidence));
+  const oneOrMany = <Result,>(results: readonly Result[]): Result | readonly Result[] =>
+    results.length === 1 ? results[0]! : results;
+  if (view === "source") {
+    const results = await Promise.all(evidence.map((item) => annotatedSourceResult(item, sourceOptions(source, { json: true }))));
+    const unavailable = results.find((result) => result.source === null);
+    if (unavailable !== undefined) {
+      throw new ShowError(`Source evidence unavailable for ${unavailable.locator}; this attempt did not capture sources.json.`);
+    }
+    return { format: "niceeval.show", schemaVersion: 1, view, sample, data: oneOrMany(results) };
+  }
+  if (view === "execution") {
+    return { format: "niceeval.show", schemaVersion: 1, view, sample, data: oneOrMany(await Promise.all(evidence.map((item) => conversationResult(item)))) };
+  }
+  return { format: "niceeval.show", schemaVersion: 1, view, sample, data: oneOrMany(await Promise.all(evidence.map((item) => diffResult(item)))) };
 }
 
 /** 不带 attempt locator 的 `--timing`:按 Sample.runs 输出 Run 级 activity 树。 */
-function renderRunTimingSections(
+async function renderRunTimingSections(
   runs: readonly Run[],
   opts: { width: number; mode: "summary" | "full" },
-): string {
+): Promise<string> {
   const sections: string[] = [];
   for (const run of runs) {
     const header = `${run.experimentId}  run ${run.runId.slice(0, 8)}  ${run.startedAt}`;
-    sections.push(runTimingText(run, { header, width: opts.width, mode: opts.mode, attempts: run.attempts }));
+    const result = await timingResult(run);
+    sections.push(runTimingText(result, { header, width: opts.width, mode: opts.mode }));
   }
   return sections.join("\n\n");
-}
-
-function runTimingJsonOf(runs: readonly Run[]): unknown {
-  const docs = runs.map((run) => runTimingJson(run, run.attempts));
-  return docs.length === 1 ? docs[0] : docs;
 }
 
 /**
@@ -336,17 +363,9 @@ function runTimingJsonOf(runs: readonly Run[]): unknown {
  * 不是 `DeltaTable` 自己的文案——组件的 text 面(deltaText)只产出表格与共同题 footnote,
  * 不产出这行覆盖统计,所以由 show 自己按 `DeltaData.rows[].cells` 算。
  */
-function compareCoverageText(data: DeltaData): string {
-  const common = data.rows.filter((row) => data.conditions.every((c) => row.cells[c] !== undefined)).length;
-  const onlyCounts = data.conditions.map((condition) => {
-    const n = data.rows.filter(
-      (row) =>
-        row.cells[condition] !== undefined &&
-        data.conditions.every((other) => other === condition || row.cells[other] === undefined),
-    ).length;
-    return `${condition} only ${n}`;
-  });
-  return `common ${common} · ${onlyCounts.join(" · ")}`;
+function compareCoverageText(data: ComparisonResult): string {
+  const onlyCounts = data.conditions.map((condition) => `${condition} only ${data.coverage.only[condition] ?? 0}`);
+  return `common ${data.coverage.common} · ${onlyCounts.join(" · ")}`;
 }
 
 /**
@@ -364,20 +383,19 @@ async function renderCompareSlice(
   cwd: string,
   results: Record,
   selection: Sample,
-  conditions: readonly [string, string, ...string[]],
+  data: ComparisonResult,
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
-  const [{ Table }, { deltaTableData }, { deltaTableContent }] = await Promise.all([
+  const [{ Table }, { deltaTableContent }] = await Promise.all([
     import("../../dist/report/definition/primitives.js"),
-    import("../report/slices/compute.ts"),
     import("../report/slices/content.ts"),
   ]);
-  const data = await deltaTableData(selection, { by: "experiment", conditions });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, selection);
   const page: ReportPage = {
     id: "compare",
     title: "Compare",
+    navigation: true,
     render: () => ({ type: Table, props: { data: deltaTableContent(data) } }),
   };
   const table = await renderHostPageText(
@@ -402,28 +420,22 @@ async function renderStatsSlice(
   cwd: string,
   results: Record,
   experimentFilter: readonly string[] | undefined,
-  patterns: readonly string[],
+  data: StabilityResult,
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
-  const experiments = filterExperiments(results.experiments, experimentFilter as string[] | undefined);
-  const runs = experiments.flatMap((exp) => exp.runs);
-  const [{ Table }, { stabilityMatrixData }, { stabilityMatrixContent }] = await Promise.all([
+  const [{ Table }, { stabilityMatrixContent }] = await Promise.all([
     import("../../dist/report/definition/primitives.js"),
-    import("../report/slices/compute.ts"),
     import("../report/slices/content.ts"),
   ]);
-  const data = await stabilityMatrixData(runs, {
-    by: "experiment",
-    ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
-  });
   // 只给渲染管线占位用的 Sample——Table 走 data 形态,不重新消费它;单独调用
   // currentSample 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 runs)。
-  const scope = currentSample(results, { experiments: experimentFilter as string[] | undefined, evals: [...patterns] });
+  const scope = currentSample(results, { experiments: experimentFilter as string[] | undefined });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, scope);
   const page: ReportPage = {
     id: "stats",
     title: "Stability",
+    navigation: true,
     render: () => ({ type: Table, props: { data: stabilityMatrixContent(data) } }),
   };
   const table = await renderHostPageText(
@@ -443,7 +455,7 @@ const USAGE_ALIGN: readonly ColumnAlign[] = ["left", "left", "left", "right", "r
 
 /** uncached in 列的取值:桶恒互斥,inputTokens 本身就是未缓存输入(见 docs/feature/reports/
  *  library/attempt-detail.md#usagetable-组装口径单源)。 */
-function uncachedInOf(row: UsageTableData): number | undefined {
+function uncachedInOf(row: UsageResult): number | undefined {
   return row.usage?.inputTokens;
 }
 
@@ -459,7 +471,7 @@ function summarizeUsageColumn(values: readonly (number | undefined)[], format: (
 }
 
 /** 一个 experiment 分节的用量表:一行一个 attempt,尾行合计(docs/feature/reports/show/usage.md)。 */
-function usageSectionText(experimentId: string, rows: readonly UsageTableData[]): string {
+function usageSectionText(experimentId: string, rows: readonly UsageResult[]): string {
   const head = `usage · ${experimentId} · ${rows.length} ${rows.length === 1 ? "attempt" : "attempts"}`;
   const body = rows.map((r) => [
     r.locator,
@@ -499,28 +511,19 @@ function usageSectionText(experimentId: string, rows: readonly UsageTableData[])
  * 「范围内每个 attempt 逐条映射成一行」——即便某个 attempt 没有任何用量事实,行本身仍要
  * 出现,数值格全部落 `—`,所以 null 时在这里现场兜底出一行只有身份字段的 `UsageTableData`。
  */
-async function usageRowsOf(attempts: readonly AttemptHandle[]): Promise<UsageTableData[]> {
-  const { usageTableData } = await import("../../dist/report/components/attempt-detail/compute.js");
+async function usageRowsOf(attempts: readonly AttemptHandle[]): Promise<UsageResult[]> {
   const ordered = sortAttemptsForSections(attempts);
-  const rows: UsageTableData[] = [];
+  const rows: UsageResult[] = [];
   for (const attempt of ordered) {
     const evidence = await loadAttemptEvidence(attempt);
-    rows.push(
-      usageTableData(evidence) ?? {
-        locator: evidence.locator,
-        experimentId: evidence.identity.experimentId,
-        evalId: evidence.identity.evalId,
-        attempt: evidence.identity.attempt,
-        verdict: evidence.result.verdict,
-      },
-    );
+    rows.push(await usageResult(evidence));
   }
   return rows;
 }
 
 async function renderUsageSlice(attempts: readonly AttemptHandle[]): Promise<string> {
   const rows = await usageRowsOf(attempts);
-  const byExperiment = new Map<string, UsageTableData[]>();
+  const byExperiment = new Map<string, UsageResult[]>();
   for (const row of rows) {
     const list = byExperiment.get(row.experimentId);
     if (list) list.push(row);
@@ -555,7 +558,7 @@ function sumUsageColumn(values: readonly (number | undefined)[]): number | undef
   return defined.length === 0 ? undefined : defined.reduce((a, b) => a + b, 0);
 }
 
-function usageMatrixCellOf(rows: readonly UsageTableData[]): UsageMatrixCell {
+function usageMatrixCellOf(rows: readonly UsageResult[]): UsageMatrixCell {
   return {
     turns: sumUsageColumn(rows.map((r) => r.turns)),
     toolCalls: sumUsageColumn(rows.map((r) => r.toolCalls)),
@@ -592,16 +595,14 @@ function usageMatrixCellText(cell: UsageMatrixCell, historical: boolean): string
  * 条件整组落 `—`。
  */
 async function renderUsageCompareSlice(
-  selection: Sample,
-  conditions: readonly [string, string, ...string[]],
+  data: ComparisonResult,
+  usageRows: readonly UsageResult[],
 ): Promise<string> {
-  const { deltaTableData } = await import("../report/slices/compute.ts");
-  const data: DeltaData = await deltaTableData(selection, { by: "experiment", conditions });
+  const conditions = data.conditions;
   const head = `usage · ${conditions.length} conditions · paired by eval id · baseline ${conditions[0]}`;
   if (data.rows.length === 0) return `${head} · no attempts matched this range`;
 
-  const usageRows = await usageRowsOf(selection.attempts);
-  const byConditionByEval = new Map<string, UsageTableData[]>();
+  const byConditionByEval = new Map<string, UsageResult[]>();
   for (const row of usageRows) {
     const key = `${row.experimentId}\u0000${row.evalId}`;
     const list = byConditionByEval.get(key);
@@ -699,7 +700,7 @@ export async function runShow(
     });
     return 0;
   } catch (e) {
-    if (e instanceof ShowError || e instanceof ReportLoadError || e instanceof HostReportError) {
+    if (e instanceof ShowError || e instanceof ReportLoadError || e instanceof HostReportError || e instanceof SourceFileSelectionError) {
       err(e.message.endsWith("\n") ? e.message : `${e.message}\n`);
       return 1;
     }
@@ -714,9 +715,9 @@ async function show(
   io: { out: (s: string) => void; err: (s: string) => void; width: number; now: number; panelMode: "boxed" | "plain" },
 ): Promise<void> {
   const evidence =
-    flags.source === true ||
+    (flags.source !== undefined && flags.source !== false) ||
     flags.execution === true ||
-    (flags.timing !== undefined && flags.timing !== false) ||
+    flags.timing !== undefined ||
     flags.diff === true ||
     flags.diffPath !== undefined;
 
@@ -788,9 +789,9 @@ async function show(
   // 允许同时点多个 flag(逐 attempt 拼成一个块),但 `--json` 一次调用只能落在一个 view 上——
   // 同时点多个证据 flag 时没有「合并成一个 view」的字段形状,按用法错误退出,不猜合并成哪种。
   const evidenceFlagCount = [
-    flags.source === true,
+    flags.source !== undefined && flags.source !== false,
     flags.execution === true,
-    flags.timing !== undefined && flags.timing !== false,
+    flags.timing !== undefined,
     flags.diff === true || flags.diffPath !== undefined,
   ].filter(Boolean).length;
   if (flags.json && evidenceFlagCount > 1) {
@@ -825,6 +826,7 @@ async function show(
     } catch (e) {
       if (e instanceof MalformedLocatorError) throw new ShowError(t("cli.show.locatorMalformed", { message: e.message }));
       if (e instanceof LocatorNotFoundError) throw new ShowError(t("cli.show.locatorNotFound", { message: e.message }));
+      if (e instanceof AmbiguousLocatorError) throw new ShowError(t("cli.show.locatorAmbiguous", { message: e.message }));
       throw e;
     }
     // locator 的寻址作用域就是这个记录根扫到的全部 attempt(docs/feature/record/architecture.md
@@ -842,7 +844,7 @@ async function show(
             format: "niceeval.show",
             schemaVersion: 1,
             view: "usage",
-            scope: buildShowScope({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
+            sample: buildShowSample({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
             data: rows,
           }),
         );
@@ -856,16 +858,19 @@ async function show(
     if (evidence) {
       if (flags.json) {
         const view = evidenceViewOf(flags);
-        const data = await evidenceJsonOf(view, [attempt]);
-        io.out(
-          renderShowJson({
+        if (view === "timing") {
+          const data = await timingResult(await loadAttemptEvidence(attempt));
+          io.out(renderShowJson({
             format: "niceeval.show",
             schemaVersion: 1,
             view,
-            scope: buildShowScope({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
+            sample: buildShowSample({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
             data,
-          }),
-        );
+          }));
+          return;
+        }
+        const sample = buildShowSample({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true });
+        io.out(renderShowJson(await evidenceJsonOf(view, [attempt], sample, flags.source)));
         return;
       }
       // locator = 单元素范围:与下面「证据切面是宿主本体」分支共用同一个范围通用实现
@@ -880,26 +885,13 @@ async function show(
       // resolve 产物,因此全部 11 个叶子区块都计算,不因 text 面「有 source 时不重复
       // AttemptConversation」这条渲染面去重规则而省略 conversation。`--report` 已经与
       // `--json` 互斥(见 show() 顶层),这里不需要装载报告就能直接算数据。
-      const mod = await import("../../dist/report/components/attempt-detail/compute.js");
-      const data = {
-        summary: mod.attemptSummaryData(attemptEvidence),
-        error: mod.attemptErrorData(attemptEvidence),
-        assertions: mod.attemptAssertionsData(attemptEvidence),
-        source: mod.attemptSourceData(attemptEvidence),
-        fixPrompt: mod.attemptFixPromptData(attemptEvidence),
-        timeline: mod.attemptTimelineData(attemptEvidence),
-        conversation: mod.attemptConversationData(attemptEvidence),
-        diagnostics: mod.attemptDiagnosticsData(attemptEvidence),
-        usage: mod.usageTableData(attemptEvidence),
-        trace: mod.attemptTraceData(attemptEvidence),
-        diff: mod.attemptDiffData(attemptEvidence),
-      };
+      const data = await attemptDetailsResult(attemptEvidence);
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view: "attempt",
-          scope: buildShowScope({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
+          sample: buildShowSample({ resultsRoot: root, patterns: [], experiments: [attempt.experimentId], fresh: flags.fresh === true }),
           data,
         }),
       );
@@ -960,27 +952,26 @@ async function show(
   // `--history` 相同——不是 `current()` 现刻水位,所以在下面的 `selection`/`matchedEvalIds`
   // (现刻水位专属)计算与 noEvalMatch 校验之前分流掉,不借用那份口径。
   if (flags.stats) {
+    const experiments = filterExperiments(results.experiments, experimentFilter);
+    const runs = experiments.flatMap((exp) => exp.runs);
+    const data = await stabilityResult(runs, {
+      by: "experiment",
+      ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
+    });
     if (flags.json) {
-      const experiments = filterExperiments(results.experiments, experimentFilter);
-      const runs = experiments.flatMap((exp) => exp.runs);
-      const { stabilityMatrixData } = await import("../report/slices/compute.ts");
-      const data = await stabilityMatrixData(runs, {
-        by: "experiment",
-        ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
-      });
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view: "stats",
-          scope: buildShowScope({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
+          sample: buildShowSample({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
           data,
         }),
       );
       return;
     }
     io.out(
-      (await renderStatsSlice(cwd, results, experimentFilter, patterns, {
+      (await renderStatsSlice(cwd, results, experimentFilter, data, {
         width: io.width,
         locale: detectLocale(),
         panelMode: io.panelMode,
@@ -1007,23 +998,34 @@ async function show(
   // 出现两次以上)下是逐 eval 的用量矩阵(renderUsageCompareSlice,配对/占位/时效复用
   // `deltaTableData`);否则是逐 attempt、逐 experiment 分节的通用表(renderUsageSlice)。
   if (flags.usage) {
+    const rows = await usageRowsOf(selection.attempts);
     if (flags.json) {
-      const rows = await usageRowsOf(selection.attempts);
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view: "usage",
-          scope: buildShowScope({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
+          sample: buildShowSample({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
           data: rows,
         }),
       );
       return;
     }
-    const text =
-      expSelectors.length >= 2
-        ? await renderUsageCompareSlice(selection, resolveCompareConditions(experimentIds, expSelectors))
-        : await renderUsageSlice(selection.attempts);
+    let text: string;
+    if (expSelectors.length >= 2) {
+      const conditions = resolveCompareConditions(experimentIds, expSelectors);
+      text = await renderUsageCompareSlice(await comparisonResult(selection, { by: "experiment", conditions }), rows);
+    } else {
+      const byExperiment = new Map<string, UsageResult[]>();
+      for (const row of rows) {
+        const list = byExperiment.get(row.experimentId);
+        if (list) list.push(row);
+        else byExperiment.set(row.experimentId, [row]);
+      }
+      text = byExperiment.size === 0
+        ? "usage · no attempts matched this range"
+        : [...byExperiment.entries()].map(([experimentId, list]) => usageSectionText(experimentId, list)).join("\n\n");
+    }
     io.out(text + "\n");
     return;
   }
@@ -1035,7 +1037,7 @@ async function show(
   // 「Run 级 activity 的读取」),与 attempt 生命周期树分流。
   if (evidence) {
     const timingMode =
-      flags.timing !== undefined && flags.timing !== false
+      flags.timing !== undefined
         ? flags.timing === "full"
           ? ("full" as const)
           : ("summary" as const)
@@ -1050,21 +1052,23 @@ async function show(
       expand: flags.expand,
     };
     const hasAttemptEvidence =
-      flags.source === true ||
+      (flags.source !== undefined && flags.source !== false) ||
       flags.execution === true ||
       flags.diff === true ||
       flags.diffPath !== undefined;
 
     if (flags.json) {
       const view = evidenceViewOf(flags);
-      if (view === "timing" && timingMode) {
-        const data = runTimingJsonOf(selection.runs);
+      if (view === "timing") {
+        if (!timingMode) throw new Error("timing view requires a timing mode");
+        const results = await Promise.all(selection.runs.map((run) => timingResult(run)));
+        const data = results.length === 1 ? results[0]! : results;
         io.out(
           renderShowJson({
             format: "niceeval.show",
             schemaVersion: 1,
             view,
-            scope: buildShowScope({
+            sample: buildShowSample({
               resultsRoot: root,
               patterns,
               experiments: resolvedExperimentIds,
@@ -1075,27 +1079,19 @@ async function show(
         );
         return;
       }
-      const data = await evidenceJsonOf(view, selection.attempts);
-      io.out(
-        renderShowJson({
-          format: "niceeval.show",
-          schemaVersion: 1,
-          view,
-          scope: buildShowScope({
-            resultsRoot: root,
-            patterns,
-            experiments: resolvedExperimentIds,
-            fresh: flags.fresh === true,
-          }),
-          data,
-        }),
-      );
+      const sample = buildShowSample({
+        resultsRoot: root,
+        patterns,
+        experiments: resolvedExperimentIds,
+        fresh: flags.fresh === true,
+      });
+      io.out(renderShowJson(await evidenceJsonOf(view, selection.attempts, sample, flags.source)));
       return;
     }
 
     const blocks: string[] = [];
     if (timingMode) {
-      blocks.push(renderRunTimingSections(selection.runs, { width: io.width, mode: timingMode }));
+      blocks.push(await renderRunTimingSections(selection.runs, { width: io.width, mode: timingMode }));
     }
     if (hasAttemptEvidence) {
       blocks.push(await renderEvidenceSections(selection.attempts, attemptEvidenceFlags, grep, cwd, io.width));
@@ -1110,41 +1106,28 @@ async function show(
   // 变形:时间轴本来就按 experimentId 分节,条件只是收窄节集合。
   if (flags.history) {
     const experiments = filterExperiments(results.experiments, experimentFilter);
-    // eval 位置参数与 Sample 选择用同一个前缀谓词(单点在 shared/aggregate.ts),不另立口径。
-    const matchesPattern = patterns.length > 0 ? evalPrefixPredicate(patterns) : () => true;
+    const attempts = experiments.flatMap((exp) => exp.runs.flatMap((run) => run.attempts));
+    const data = await historyResult(attempts, { ...(patterns.length > 0 ? { evals: patterns } : {}) });
     if (flags.json) {
       // `history` 不进组件模型,直接投影 Record evidence(docs/feature/reports/show/json.md
       // 「data:按 view 找组件声明」)——每节携带 `AttemptJson`(完整落盘字段 + 归属身份),
       // 不是 text 面的单行摘要。
-      const sections: { experimentId: string; evalId: string; attempts: unknown[] }[] = [];
-      for (const exp of experiments) {
-        const knownEvalIds = [...exp.knownEvalIds].filter(matchesPattern).sort();
-        for (const evalId of knownEvalIds) {
-          const handles = attemptHistoryHandles(exp, evalId);
-          if (handles.length === 0) continue;
-          sections.push({ experimentId: exp.id, evalId, attempts: handles.map(attemptJsonOf) });
-        }
-      }
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view: "history",
-          scope: buildShowScope({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
-          data: sections,
+          sample: buildShowSample({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
+          data,
         }),
       );
       return;
     }
-    const blocks: string[] = [];
-    for (const exp of experiments) {
-      const knownEvalIds = [...exp.knownEvalIds].filter(matchesPattern).sort();
-      for (const evalId of knownEvalIds) {
-        const rows = attemptHistory(exp, evalId);
-        if (rows.length === 0) continue;
-        blocks.push(attemptHistoryText({ experimentId: exp.id, evalId, rows }));
-      }
-    }
+    const blocks = data.sections.map((section) => attemptHistoryText({
+      experimentId: section.experimentId,
+      evalId: section.evalId,
+      rows: [...section.attempts],
+    }));
     io.out(blocks.join("\n\n") + "\n");
     return;
   }
@@ -1154,22 +1137,21 @@ async function show(
   // 报告树替换时对照矩阵不再适用)。
   if (flags.report === undefined && expSelectors.length >= 2) {
     const conditions = resolveCompareConditions(experimentIds, expSelectors);
+    const data = await comparisonResult(selection, { by: "experiment", conditions });
     if (flags.json) {
-      const { deltaTableData } = await import("../report/slices/compute.ts");
-      const data = await deltaTableData(selection, { by: "experiment", conditions });
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view: "compare",
-          scope: buildShowScope({ resultsRoot: root, patterns, experiments: conditions, fresh: flags.fresh === true }),
+          sample: buildShowSample({ resultsRoot: root, patterns, experiments: conditions, fresh: flags.fresh === true }),
           data,
         }),
       );
       return;
     }
     io.out(
-      (await renderCompareSlice(cwd, results, selection, conditions, {
+      (await renderCompareSlice(cwd, results, selection, data, {
         width: io.width,
         locale: detectLocale(),
         panelMode: io.panelMode,
@@ -1182,17 +1164,13 @@ async function show(
     // 缺省切片(leaderboard):内建报告首页的 `ExperimentComparison`/`ExperimentList` 对应的两个
     // 计算函数(docs/feature/reports/show/json.md「data:按 view 找组件声明」)。`--report` 已经
     // 与 `--json` 互斥,不需要装载报告就能直接算数据。
-    const [{ experimentListData }, { sampleSummary }] = await Promise.all([
-      import("../../dist/report/components/entity-lists/compute.js"),
-      import("../../dist/report/components/summaries/compute.js"),
-    ]);
-    const data = { experiments: await experimentListData(selection), summary: await sampleSummary(selection) };
+    const data = await standardOverviewResult(selection);
     io.out(
       renderShowJson({
         format: "niceeval.show",
         schemaVersion: 1,
         view: "leaderboard",
-        scope: buildShowScope({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
+        sample: buildShowSample({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
         data,
       }),
     );

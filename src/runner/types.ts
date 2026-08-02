@@ -7,14 +7,14 @@ import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.t
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
+import type { BuildKey } from "../sandbox/identity.ts";
 import type {
   AssertionResult,
   DiffArtifact,
   JudgeConfig,
   PrimaryAssertionSummary,
   ScoreEntry,
-  Verdict,
-} from "../scoring/types.ts";
+} from "../assertions/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
@@ -105,7 +105,7 @@ export type LifecyclePhase =
   | "eval.run" // 整段 test(t),含所有 send 与手工命令
   | "agent.run" // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
   | "workspace.diff" // 从分类账折叠 agent 归因增量
-  | "scoring.evaluate" // 断言 finalize + 判定,含 judge 调用
+  | "assertions.evaluate" // 断言 finalize + 判定,含 judge 调用
   | "telemetry.collect" // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
@@ -356,12 +356,16 @@ export interface EvalResult {
   startedAt?: string;
   /**
    * 不透明的 Attempt 定位符(`@` 前缀短确定性编码,见 `src/record/locator.ts` 的 AttemptLocator),
-   * 由 {experimentId, 快照 startedAt, evalId, attempt} 身份元组派生。非携带条目由 writer 在落盘时
-   * 算出;携带条目(`--resume` 合入)原样复制上一轮的值,从不重算——原快照的 startedAt 已经不在
-   * 当前快照里,重算会算出不同的字符串,详见 writer.ts 对携带分支的说明。省略时读取面按当前
-   * 已知身份兜底算出(第三方 harness 未实现 locator 时的降级,不保证跨 --resume 稳定)。
+   * 由 {runId, evalId, attempt} 身份元组派生。非携带条目由 writer 在落盘时算出;
+   * 携带条目(`--resume` 合入)原样复制上一轮的值,从不按承载它的新 Run 重算。
    */
   locator?: string;
+  /**
+   * `locator` 的来源 Run 身份。niceeval writer 对 fresh 条目恒写；carry 与 publish 原样保留，
+   * 使同一 attempt 在多份落盘中仍共享一个 locator 身份。旧记录缺失时 reader 会沿
+   * `artifactBase` 回溯来源，无法回溯才退回当前 Run。
+   */
+  locatorRunId?: string;
   durationMs: number;
   /** 自 sandbox.create 起、排除并发排队和收尾的执行耗时；旧记录缺失时携带保守回退 durationMs。 */
   executionMs?: number;
@@ -487,7 +491,7 @@ export interface InvocationSummary {
   passed: number;
   /** 断言不通过的数量;不包含 errored。 */
   failed: number;
-  unreadable: number;
+  skipped: number;
   /** 环境、超时、adapter、agent runtime 等执行错误数量;与 failed 互斥。 */
   errored: number;
   durationMs: number;
@@ -508,16 +512,18 @@ export interface InvocationShape {
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
   /**
-   * 本次 Invocation 的快照身份锚点(ISO 时间戳),在调度任何 attempt 前确定。fresh
-   * `EvalResult.locator` 编码进去的 `snapshotStartedAt`(见 `results/locator.ts` 的
-   * `AttemptIdentity`)与 Artifacts writer 写进 `run.json` 的 `startedAt` 共用
-   * 同一个值 —— 不同 experiment 在同一次 Invocation 内共享它也不会碰撞(locator 身份
-   * 还含 experimentId)。`runEvals()` 恒在 `onInvocationStart` 触发前把它填进这里,这是它
-   * 从 run.ts 传给 Artifacts 等 reporter 的唯一途径;省略只出现在测试/第三方手写
-   * `InvocationShape` 的直调场景。见 docs/feature/experiments/cli.md「Locator 必须在
-   * result 发布前确定」。
+   * 本次 Invocation 的快照时间(ISO 时间戳),在调度任何 attempt 前确定。
+   * Artifacts writer 把它写入 `run.json.startedAt`；Attempt locator 另由持久化 Run 的
+   * `runId` 与 `evalId` / attempt 下标派生，不把时间戳当身份。`runEvals()` 恒在
+   * `onInvocationStart` 触发前填入该值；省略只出现在测试/第三方手写
+   * `InvocationShape` 的直调场景。
    */
   snapshotStartedAt?: string;
+  /**
+   * 调度前为每个 Experiment 分配的持久化 Run 身份。Artifacts writer 必须把同一值写进
+   * run.json；其它 reporter 可用它关联 plan 期 attempt locator 与最终 Run。
+   */
+  runIds?: ReadonlyMap<string, string>;
   /**
    * 本次规划期算出的指纹输入清单,按 experimentId 分组(evalId → 清单)。落盘面据此在建 Run
    * 目录时与 `run.json` 同批写出 `manifests.json`(见 record/writer.ts 的 `WriterOptions`)。
@@ -596,10 +602,10 @@ export type ReporterEvent =
 
 /**
  * 计分粒度题型:`defineEval` 恒 `"pass"`(通过制,一题一分,读通过率),`defineScoreEval` 恒
- * `"points"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.scoring` 直接读取,
+ * `"points"`(计分制,题内叠加挣分,读总分)。定义期事实,发现期从 `EvalDefinition.evaluationKind` 直接读取,
  * 不靠执行 `test()` 推断(见 docs/feature/experiments/score-points.md)。
  */
-export type EvalScoring = "pass" | "points";
+export type EvaluationKind = "pass" | "points";
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。
@@ -614,8 +620,8 @@ type IdComesFromFilePath = {
   readonly [EVAL_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
 };
 
-type ScoringComesFromFactory = {
-  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "scoring comes from defineEval / defineScoreEval";
+type EvaluationKindComesFromFactory = {
+  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "evaluationKind comes from defineEval / defineScoreEval";
 };
 
 type ConfigHashComesFromPlanning = {
@@ -654,10 +660,10 @@ export interface EvalAuthorFields {
   diff?: { include?: string[]; ignore?: string[] };
 }
 
-/** 作者输入：id、scoring、configHash 都由后续阶段拥有。 */
+/** 作者输入：id、evaluationKind、configHash 都由后续阶段拥有。 */
 export type EvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
-  scoring?: ScoringComesFromFactory;
+  evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
   test(t: TestContext): Promise<void> | void;
 };
@@ -665,7 +671,7 @@ export type EvalInput = EvalAuthorFields & {
 /** 计分制作者输入，只有 test 的上下文不同。 */
 export type ScoreEvalInput = EvalAuthorFields & {
   id?: IdComesFromFilePath;
-  scoring?: ScoringComesFromFactory;
+  evaluationKind?: EvaluationKindComesFromFactory;
   configHash?: ConfigHashComesFromPlanning;
   test(t: ScoreTestContext): Promise<void> | void;
 };
@@ -705,7 +711,7 @@ export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
   value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): Promise<void> | void },
 ): EvalDefinition<Kind, Context> {
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
-  return Object.freeze(value) as EvalDefinition<Scoring, Context>;
+  return Object.freeze(value) as EvalDefinition<Kind, Context>;
 }
 
 /** Definition 之后由 discovery 一次性补齐的不可变事实。 */
@@ -734,7 +740,7 @@ export interface DiscoveredEvalFacts {
   readonly source: CapturedEvalSource;
 }
 
-/** discovery 保留 factory 的 scoring 判别、私有品牌与对应 test context。 */
+/** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */
 export type DiscoveredEval =
   | (EvalDefinition<"pass", TestContext> & DiscoveredEvalFacts)
   | (EvalDefinition<"points", ScoreTestContext> & DiscoveredEvalFacts);
@@ -961,7 +967,7 @@ export interface EvalDescriptor {
    * 每条发现出的 eval 上都有确定值。供 `ExperimentDefinition.evals` 谓词按题型过滤(见
    * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
-  readonly scoring: EvalScoring;
+  readonly evaluationKind: EvaluationKind;
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
@@ -1121,6 +1127,8 @@ export interface RunOptions {
   priorManifests?: ReadonlyMap<string, EvalManifest>;
   /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
   niceevalRoot?: string;
+  /** @internal 测试/嵌入式编排可预分配 Run 身份；CLI 省略时 runner 为每个 Experiment 生成 UUID。 */
+  runIds?: ReadonlyMap<string, string>;
   /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
    * 通道——调用方(今天只有 `cli.ts`)按来源(默认 artifacts / 显式 --json·--junit / 用户
@@ -1147,7 +1155,7 @@ export interface RunOptions {
   otelPool?: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool;
   /**
    * Run 级共享构建准备。只含携带规划后仍需 fresh 执行的 BuildKey;
-   * 省略时 runEvals 从 PlannedSandboxCase / composeBuildWorksFromPlan 自动收集
+   * 省略时 runEvals 从 pair-owned ProviderPlan 自动收集
    * (Compose works 默认接 dockerComposeBuildProvider)。测试可显式注入假 provider。
    * 共享构建不占 attempt 并发位,不计入 executionMs。
    */
@@ -1155,7 +1163,7 @@ export interface RunOptions {
     readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
     readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
     /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
-    readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
+    readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly BuildKey[]>>;
     readonly maxConcurrency?: number;
     readonly buildTimeoutMs?: number;
     readonly prepareBudgetMs?: number;
@@ -1182,7 +1190,7 @@ export interface Attempt {
   readonly sandboxPlansByEval: Readonly<globalThis.Record<string, JsonValue>>;
   /**
    * 构造 fresh attempt plan 时即算好的 Attempt 定位符(不是完成后写回):由 invocation 的
-   * snapshotStartedAt 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
+   * 预分配 runId 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
   readonly locator: AttemptLocator;
@@ -1208,9 +1216,9 @@ export type OutputProfile = "human" | "json";
  * 反馈系统里一次 attempt 的稳定身份:reducer 用它做 active map 的 key、事件的关联字段。
  * 只含调度身份三元组 —— 不含 agent/model/展示 label(那是 `who`,来自 `runWho()`,
  * 见该函数注释:展示 label 不能当 identity key 用,folding 两个不同 config 到同一个 key
- * 曾经就是 live 表格两个真实 bug 的根因),也不含 `AttemptLocator` 需要的
- * `snapshotStartedAt`(那是落盘身份,由 `results/locator.ts` 的 `AttemptIdentity` 独立管理;
- * 完成/failure 事件在 locator 确定后直接携带派生好的 `AttemptLocator` 字符串,反馈层
+ * 曾经就是 live 表格两个真实 bug 的根因),也不含落盘 `AttemptLocator`
+ * 所需的持久化 `runId`。完成/failure 事件在 locator 确定后直接携带
+ * 派生好的 `AttemptLocator` 字符串,反馈层
  * 不重新推导身份 —— 两个同名概念的 identity 类型故意不同名,以免和落盘身份互相看错)。
  */
 export interface AttemptRef {
@@ -1393,7 +1401,7 @@ export interface InvocationCompletion {
  * cost 累计、failure/diagnostic 去重都只在 reducer 里算一次;三种 profile 的 renderer 只读取
  * 这份状态,不各自维护第二份推导。
  *
- * `total = reused + running + elsewhere + queued + passed + failed + errored + unreadable`
+ * `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
  * (八项恒等式,见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理完每一个事件
  * 之后都成立,是 reducer 的不变量:任何一次迁移都是「从一项减 x、往另一项加 x」,不存在两项
  * 同时计数或都不计数的中间态(见 reducer.test.ts 的表驱动用例,每一步都断言,不只在流程末尾
@@ -1418,7 +1426,7 @@ export interface RunFeedbackState {
   errored: number;
   /** 本次不产生 verdict 的了结:eval 自身 skip、首过即停省略的轮次、budget 未派发。
    *  它们不冒充 `passed`/`failed`;三者彼此的区别由结束结论与题目级 `eval` 事件给出。 */
-  unreadable: number;
+  skipped: number;
   /** attempt:early-exit 事件的累计次数(首过即停省略 + fail-fast 未派发;后者由 fail-fast
    *  diagnostic 的 count 单独区分,见 cli.ts 的 assembleRunCompletion)。 */
   earlyExitSkipped: number;
@@ -1489,7 +1497,7 @@ export interface RunFeedbackPlan {
  * 只影响 dashboard 当前帧、reducer 不为它保留历史的事件:新值使旧值失去意义,所以覆盖而不是
  * 追加(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的判断标准)。
  * `attempt:early-exit` 同样折进这一组 —— 它不打印永久行,只把已知 verdict 的省略次数收进
- * `unreadable`(见 reducer 实现)。
+ * `skipped`(见 reducer 实现)。
  */
 export type AttemptLifecycleEvent =
   | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string }

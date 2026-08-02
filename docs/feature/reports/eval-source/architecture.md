@@ -43,6 +43,13 @@ niceeval 自身、Node 内建模块和 loader 过渡帧不进入路径；连续�
 `AssertionResult.loc`、`ScoreEntry.loc` 与用户消息事件的 `loc` 共用这个形状。
 完整项目帧序列是 `callers` 中的 project 分支加声明位置，package 分支保留它们之间不可展开的边界。
 
+三类源码事实还共用一个 attempt 级单调 `sourceOrder`：`t.send` 写入用户 message、collector
+记录断言、`t.score` 记录直接给分时，从同一序列分配下一值。历史落盘可以没有该字段；当前运行
+产出的三类事实必须携带。装配层据此恢复跨数组的真实发生顺序，不按 assertion → score → send
+的存储分区拼接猜测。
+历史事实缺少 `sourceOrder` 时，装配层把它们作为稳定的 legacy 后缀保留原存储桶内顺序；这个
+回退不声称 assertion、score 与 send 之间存在可恢复的实际先后。
+
 ### 采集约束
 
 一次 `captureLoc()` 调用 `Error.captureStackTrace` 取得一份栈并完成下面的同步步骤：
@@ -119,7 +126,8 @@ interface SourceCallSummary {
 }
 ```
 
-`LineAnnotation` 是断言、给分记录和 send 头行事实的判别联合，数组按实际发生顺序排列。
+`LineAnnotation` 是断言、给分记录和 send 头行事实的判别联合：带 `sourceOrder` 的当前事实按
+实际发生顺序排列；旧事实缺序号时只保留稳定回退顺序，不伪称跨种类的实际顺序。
 `SourceCallSummary` 自底向上汇总后代标注。
 它不含调用次数：调用帧没有 invocation 身份，无法区分“调用三次各产生两条断言”和“调用一次产生六条断言”。
 

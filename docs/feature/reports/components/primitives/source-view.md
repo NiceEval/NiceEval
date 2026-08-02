@@ -3,8 +3,8 @@
 这里的 `source` 属性指待显示的标注源码值，不是惰性数据源：
 
 ```tsx
-const source = await toAnnotatedEvalSource(attempt);
-return <SourceView source={source} />;
+const source = await toAttemptSource(attempt);
+return <SourceView data={source} />;
 ```
 
 组件显示文件、行号、调用边界与断言标注。

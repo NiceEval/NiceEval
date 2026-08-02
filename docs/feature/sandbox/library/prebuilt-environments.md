@@ -57,7 +57,7 @@ RUN npm install -g @openai/codex@0.144.1
 
 ```typescript
 // docker build -t acme-codex-evals:0.144.1-r1 . 之后
-sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
+sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
 镜像只在构建机上时是单机可用;要在 CI 或多机消费,push 到项目自己的 registry,`image` 字段写完整引用。

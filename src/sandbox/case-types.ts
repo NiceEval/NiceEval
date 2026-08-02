@@ -8,41 +8,6 @@ import type { BuildKey, CaseKey, SandboxCaseKind } from "./identity.ts";
 
 export type { SandboxCaseKind };
 
-/** folder-local source 的 kind:与 SandboxSpec.materializers 表键对齐。 */
-export type SandboxSourceKind = "compose" | "dockerfile";
-
-/** 第一期能力位;声明即承担对应完整契约。 */
-export type SandboxCapability = "services" | "group-keep";
-
-/**
- * Eval 侧中性 sandbox source:只声明要什么执行空间,不选 provider。
- * 用 `composeSandbox` / `dockerfileSandbox` 构造;裸对象不算。
- */
-export type SandboxSource = ComposeSandboxSource | DockerfileSandboxSource;
-
-export interface ComposeSandboxSource {
-  readonly kind: "compose";
-  readonly file: string | URL;
-  readonly mainService: string;
-  readonly build?: "on-demand" | "prebuilt";
-  readonly executionUser?: string;
-  /**
-   * Compose 插值环境变量(如 Terminal-Bench 的 `T_BENCH_*`)。
-   * 只把键名计入 BuildKey;随机目录/容器名等值是物化事实,不进身份。
-   */
-  readonly env?: Readonly<globalThis.Record<string, string>>;
-  /** 品牌标记:防同形误换;不要手写本字段。 */
-  readonly __brand: "niceeval.sandboxSource.compose";
-}
-
-export interface DockerfileSandboxSource {
-  readonly kind: "dockerfile";
-  readonly context: string | URL;
-  readonly dockerfile?: string;
-  readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
-  readonly __brand: "niceeval.sandboxSource.dockerfile";
-}
-
 /** 逐服务采证与控制;不进 Sandbox 接口。 */
 export interface ServiceController {
   exec(service: string, command: string[]): Promise<CommandResult>;
@@ -95,91 +60,10 @@ export interface MaterializedSandboxCase {
   readonly facts: JsonValue;
 }
 
-/** Docker environments 表值:靠判别键区分的原生纯数据。 */
-export type DockerEnvironmentCase =
-  | { readonly image: string; readonly build?: undefined; readonly compose?: undefined }
-  | {
-      readonly build: DockerBuildDecl;
-      readonly image?: undefined;
-      readonly compose?: undefined;
-    }
-  | {
-      readonly compose: DockerComposeDecl;
-      readonly image?: undefined;
-      readonly build?: undefined;
-    };
-
-export interface DockerBuildDecl {
-  readonly context: string;
-  readonly dockerfile?: string;
-  readonly args?: Readonly<globalThis.Record<string, string>>;
-  readonly target?: string;
-}
-
-export interface DockerComposeDecl {
-  readonly file: string;
-  readonly mainService: string;
-  readonly env?: Readonly<globalThis.Record<string, string>>;
-  readonly projectName?: string;
-}
-
-export type E2BEnvironmentCase =
-  | { readonly template: string; readonly build?: undefined }
-  | {
-      /** E2B Template API 只接收 context + Dockerfile，不虚构 Docker CLI 的 args/target。 */
-      readonly build: Pick<DockerBuildDecl, "context" | "dockerfile">;
-      readonly template?: undefined;
-    };
-
-export type VercelEnvironmentCase = {
-  readonly snapshotId: string;
-};
-
-/** 自定义 environments 表值:必须带纯数据 identity + materialize。 */
-export interface CustomEnvironmentCase {
-  readonly identity: JsonValue;
-  readonly capabilities?: readonly SandboxCapability[];
-  readonly materialize: (
-    ctx: SandboxMaterializeContext,
-  ) => Promise<CustomMaterializeResult>;
-  /**
-   * group keep 需要可序列化定位 + 跨进程恢复 + detached stop;
-   * 未同时提供时不得声明 `"group-keep"`。
-   */
-  readonly groupKeep?: {
-    readonly resources: ProviderLocator;
-    wake(resources: ProviderLocator): Promise<CustomMaterializeResult>;
-    destroy(resources: ProviderLocator): Promise<void>;
-  };
-}
-
-export interface CustomMaterializeResult {
-  readonly sandbox: Sandbox;
-  readonly services?: ServiceController;
-  readonly stop: () => Promise<void>;
-  readonly resources?: ProviderLocator;
-  readonly facts?: JsonValue;
-}
-
 export interface SandboxMaterializeContext {
   readonly evalId: string;
   readonly profile: string;
-  readonly signal?: AbortSignal;
+  readonly signal: AbortSignal;
   /** 构建协调器放行后写入的 BuildKey → locator;无构建的 case 可为空。 */
-  readonly buildLocators?: ReadonlyMap<BuildKey, string>;
+  readonly buildLocators: ReadonlyMap<BuildKey, JsonValue>;
 }
-
-/**
- * folder-local source 的物化器:按 source kind 挂在 SandboxSpec.materializers。
- * Compose 完整实现在 compose.ts;本内核只认接口。
- */
-export interface SandboxMaterializer {
-  readonly kind: SandboxSourceKind;
-  readonly revision: string;
-  materialize(
-    source: SandboxSource,
-    ctx: SandboxMaterializeContext,
-  ): Promise<MaterializedSandboxCase>;
-}
-
-export type SandboxMaterializers = Readonly<Partial<globalThis.Record<SandboxSourceKind, SandboxMaterializer>>>;

@@ -3,7 +3,7 @@
 // `braintrust` 是可选依赖:动态 import,装了才用得上,没装在 onInvocationStart 报错
 // (reporter 错误按框架约定只记 diagnostic,不会让运行崩)。
 
-import type { EvalResult, Reporter } from "../../types.ts";
+import type { EvalResult, JsonValue, Reporter } from "../../types.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
 export interface BraintrustConfig {
@@ -20,7 +20,7 @@ export interface BraintrustConfig {
   /** true = 更新同名既有实验,而不是新建一个。 */
   update?: boolean;
   /** 实验级附加 metadata;与 niceeval 自动写入的字段合并,同名以这里为准。 */
-  metadata?: globalThis.Record<string, unknown>;
+  metadata?: globalThis.Record<string, JsonValue>;
   /** API key;省略时 SDK 读 BRAINTRUST_API_KEY 环境变量。 */
   apiKey?: string;
 }
@@ -39,7 +39,7 @@ interface BraintrustSdk {
     baseExperimentId?: string;
     update?: boolean;
     apiKey?: string;
-    metadata?: globalThis.Record<string, unknown>;
+    metadata?: globalThis.Record<string, JsonValue>;
     setCurrent?: boolean;
   }): BraintrustExperiment | Promise<BraintrustExperiment>;
   flush(): Promise<void>;
@@ -52,11 +52,11 @@ interface BraintrustExperiment {
 
 export interface BraintrustLogEvent {
   id?: string;
-  input?: unknown;
-  output?: unknown;
-  error?: unknown;
+  input?: string;
+  output?: string;
+  error?: EvalResult["error"];
   scores?: globalThis.Record<string, number>;
-  metadata?: globalThis.Record<string, unknown>;
+  metadata?: globalThis.Record<string, JsonValue>;
   metrics?: globalThis.Record<string, number>;
 }
 
@@ -152,7 +152,7 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   }
   if (result.estimatedCostUSD !== undefined) metrics.estimated_cost_usd = result.estimatedCostUSD;
 
-  const metadata: globalThis.Record<string, unknown> = {
+  const metadata: globalThis.Record<string, JsonValue> = {
     eval: result.id,
     agent: result.agent,
     attempt: result.attempt,
@@ -166,7 +166,7 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
   const failed = result.assertions
     .filter((a) => a.outcome === "failed")
-    .map((a) => ({ name: a.name, detail: a.detail }));
+    .map((a) => ({ name: a.name, ...(a.detail === undefined ? {} : { detail: a.detail }) }));
   if (failed.length > 0) metadata.failedAssertions = failed;
   const unavailable = result.assertions
     .filter((a) => a.outcome === "unavailable")

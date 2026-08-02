@@ -1,13 +1,13 @@
 // show 专属的执行时间轴口径(--history;契约:docs/feature/reports/show.md「--history:一个 eval
 // 的执行时间轴」)。逐 attempt 而非逐快照:对 Sample 中匹配的每个 experimentId + evalId 分节,
 // 节内按 startedAt 升序列出跨快照按 attempt 身份键去重后的历次 attempt——时间、verdict、
-// 单行结果摘要(Scoring display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。
+// 单行结果摘要(Assertion display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。
 //
 // 现刻水位 Sample(两个宿主共用)住在 ../sample/index.ts;本文件只留 show 独有的时间轴计算。
 // 数据只消费 niceeval/record 的读取面。
 
 import { attemptCostUSD } from "../report/model/metrics.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../scoring/display.ts";
+import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../assertions/display.ts";
 import type { EvalResult, Verdict } from "../types.ts";
 import type { AttemptHandle, Experiment } from "../record/index.ts";
 
@@ -38,7 +38,7 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 function rowSummary(result: EvalResult): string | undefined {
   if (result.error !== undefined) return summaryText(result.error.message);
   if (result.skipReason !== undefined) return summaryText(result.skipReason);
-  const summary = primaryAssertionSummary(result.assertions, result.verdict, result.scoring === "points" ? "points" : "pass");
+  const summary = primaryAssertionSummary(result.assertions, result.verdict, result.evaluationKind === "points" ? "points" : "pass");
   return summary === undefined ? undefined : compactAssertionSummary(summary);
 }
 

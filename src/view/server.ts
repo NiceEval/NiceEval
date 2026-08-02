@@ -367,18 +367,12 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         return;
       }
 
-      // 站点相对路径:`/` 即 index.html;兼容旧的 /artifact?p= query 形式
-      // (0.2.x 前端烘焙的 HTML 可能还开着)。
-      let sitePath: string;
-      if (url.pathname === "/") {
-        // 打开或刷新页面不是重建理由(view.md「重建理由是一个闭集」):盘上没变时产物就是
-        // 上一次那份,直接命中。数据永远最新由 watch 保证,不靠每次请求重跑一遍管线。
-        sitePath = "index.html";
-      } else if (url.pathname === "/artifact") {
-        sitePath = `artifact/${url.searchParams.get("p") ?? ""}`;
-      } else {
-        sitePath = decodeURIComponent(url.pathname.slice(1));
-      }
+      // 站点相对路径:`/` 即 index.html；artifact 使用静态站点同形的 `/artifact/<path>`。
+      // 打开或刷新页面不是重建理由(view.md「重建理由是一个闭集」)：盘上没变时直接命中
+      // 上一次产物。数据是否最新由 watch 保证，不靠每次请求重跑管线。
+      const sitePath: string = url.pathname === "/"
+        ? "index.html"
+        : decodeURIComponent(url.pathname.slice(1));
 
       let plan = await current;
       let file = plan.files.get(sitePath);

@@ -9,10 +9,15 @@ export type JsonValue =
 export type AgentEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: string }
   | {
-      type: "action.result";
-      callId: string;
+      type: "operation.started";
+      operationId: string;
+      operation: { kind: "tool"; name: string; input: JsonValue; tool?: string };
+    }
+  | {
+      type: "operation.finished";
+      operationId: string;
+      kind: "tool";
       output?: JsonValue;
       status: "completed" | "failed" | "rejected";
     }

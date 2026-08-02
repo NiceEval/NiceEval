@@ -71,24 +71,3 @@ export class SandboxCommandTimeoutError extends Error {
     this.explicit = explicit;
   }
 }
-
-/**
- * provider 固有的会话上限(毫秒);deadline 超过它时 attempt 会在跑到一半时被平台截断,
- * 所以在派发前就报环境约束,点名 provider 与上限值。
- *
- * 按 provider 名路由发生在 sandbox 边界(与 `sandbox list` / `stop` 的 detached 销毁同一层),
- * 运行器与评分路径仍不感知 provider 名。声明了 `lifetimeMs` 的实例以声明值为准——那是作者
- * 自己给的线。返回 `undefined` = 这个 provider 的会话能覆盖任意长的 deadline。
- */
-export function providerSessionLimitMs(provider: string, lifetimeMs?: number): number | undefined {
-  if (provider === "docker" || provider === "local") return lifetimeMs; // TTL 从 deadline 派生,没有固有上限
-  if (lifetimeMs !== undefined) return lifetimeMs;
-  if (provider === "e2b") return E2B_SESSION_LIMIT_MS;
-  if (provider === "vercel") return VERCEL_SESSION_LIMIT_MS;
-  return undefined;
-}
-
-/** e2b 实例未声明 `lifetimeMs` 时的寿命(与 e2b.ts 的 `SESSION_TIMEOUT_MS` 同值)。 */
-export const E2B_SESSION_LIMIT_MS = 1_800_000;
-/** Vercel 单个 session 的时长上限(与 vercel.ts 的 `SESSION_TIMEOUT_MS` 同值);单条命令不能跨 session。 */
-export const VERCEL_SESSION_LIMIT_MS = 1_200_000;

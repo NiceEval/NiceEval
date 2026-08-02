@@ -166,7 +166,7 @@ Human 展示列只是各阶段的人读投影:
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
 | `eval.run` | running eval | 执行 `EvalDefinition.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
 | `workspace.diff` | capturing diff | 读取 Sandbox 工作区变化；Direct / skipped Attempt 跳过 |
-| `assertions.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
+| `assertions.evaluate` | evaluating assertions | 收集断言并运行可用的 judge;skipped attempt 跳过 |
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
 | `agent.teardown` / `sandbox.cleanup` / `sandbox.stop` | cleaning up | 收尾段(Agent teardown 与已登记 cleanup 的逆序执行):Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |
 
@@ -186,12 +186,22 @@ detail 是最后一条短预览，不逐帧追加、不过度保留工具输出�
 detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。
 `running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
 
-`scoring` 的 detail 是 judge 推进 `judge k/n · <检查方式>`:n 是这条 attempt 收集到的 judge 断言数,k 是正在评第几条,检查方式与落盘的 `detail` 字段同源(如 `closedQA("…")`)。
-没有 judge 断言时 scoring 不带 detail:本地断言的求值不足一帧,detail 只解释「在等裁判模型」这一种等待, 不复述阶段词本身。
+`evaluating assertions` 的 detail 是 judge 推进 `judge k/n · <检查方式>`。
+n 是这条 attempt 收集到的 judge 断言数，k 是正在评第几条，检查方式与落盘的 `detail` 字段同源，例如 `closedQA("…")`。
 
-phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段:每一次转换都由 `attempt.ts` 沿它自己固有的执行顺序、在真正跨入该步骤时发出;没有对应 hook/配置的步骤直接跳过,不产生空阶段。
-各层想表达「我正在做什么」走各自作用域的 `progress()` / `diagnostic()`(sandbox provider、hook、eval、adapter 各拿各的句柄,契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈));`AgentContext.log(text)` 是 `progress({ message: text })` 的别名,不是第二条通道。
-progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与 `--json` 不展示,也不写入 results;任何一层都不能借它改写 phase 本身,或声称进入了另一个生命周期阶段。
+没有 judge 断言时，`evaluating assertions` 不带 detail。
+本地断言的求值不足一帧，detail 只解释「在等裁判模型」这一种等待，不复述阶段词本身。
+
+phase 是 runner 对真实 lifecycle 的单方面投影，不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段。
+每一次转换都由 `attempt.ts` 按固有执行顺序发布，并且只在真正跨入对应步骤时发布。
+没有对应 hook 或配置的步骤直接跳过，不产生空阶段。
+
+各层用各自作用域的 `progress()` / `diagnostic()` 表达正在执行的工作。
+sandbox provider、hook、eval 与 adapter 分别获得自己的句柄，契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈)。
+`AgentContext.log(text)` 是 `progress({ message: text })` 的别名，不是第二条通道。
+
+progress 只更新 live 面板当前 active 行的次要文本，非 TTY 文本与 `--json` 不展示，也不写入 results。
+任何一层都不能借它改写 phase，或声称进入另一个生命周期阶段。
 
 ### 实验级 Hook 的显示
 

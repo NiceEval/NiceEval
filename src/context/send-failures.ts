@@ -5,11 +5,16 @@
 import type { StreamEvent, Usage } from "../types.ts";
 import {
   callClassifier,
-  errorChainText,
   failureClassOf,
   type AttemptFailureClassifier,
   type FailureClass,
 } from "../shared/failure-class.ts";
+import {
+  externalCauseMessageChain,
+  isExternalCause,
+  normalizeExternalCause,
+  type ExternalCause,
+} from "../shared/external-cause.ts";
 
 export type SendAcceptance = "rejected" | "started" | "unknown";
 
@@ -19,7 +24,7 @@ export interface SendFailure {
   /** 只有协议能证明输入未被受理时才可写 rejected。 */
   readonly acceptance: SendAcceptance;
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause?: ExternalCause;
   readonly events?: readonly StreamEvent[];
   readonly usage?: Usage;
   readonly process?: {
@@ -72,11 +77,19 @@ export function sendFailureText(failure: SendFailure): string {
  * 把它保守归一为 acceptance=unknown，并保留 cause 供诊断和 fatal 分类穿透。
  */
 export function normalizeSendFailure(error: unknown): SendFailure {
-  if (isSendFailure(error)) return error;
+  if (isSendFailure(error)) {
+    const rawCause = (error as { cause?: unknown }).cause;
+    if (rawCause === undefined || isExternalCause(rawCause)) return error;
+    return makeSendFailure({
+      ...error,
+      cause: normalizeExternalCause(rawCause),
+    });
+  }
+  const cause = normalizeExternalCause(error);
   return makeSendFailure({
     acceptance: "unknown",
-    message: errorChainText(error) || String(error),
-    cause: error,
+    message: externalCauseMessageChain(cause),
+    cause,
   });
 }
 
@@ -88,9 +101,9 @@ const NETWORK_CODES = /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREA
  * scope 永远留在默认 attempt 档。
  */
 export function classifySendFailure(failure: SendFailure): FailureClass {
-  for (const candidate of structuredFacts(failure)) {
-    const status = numberField(candidate, "status", "statusCode", "httpStatus");
-    const code = stringOrNumberField(candidate, "code", "errorCode");
+  for (const candidate of structuredFacts(failure.cause)) {
+    const status = candidate.status._tag === "Present" ? candidate.status.value : undefined;
+    const code = candidate.code._tag === "Present" ? String(candidate.code.value) : undefined;
     const normalizedCode = code?.toUpperCase().replace(/[ -]+/g, "_");
     if (status === 429 || (normalizedCode !== undefined && RATE_LIMIT_CODES.has(normalizedCode))) {
       return { retryable: true, reason: "rate_limit" };
@@ -113,7 +126,11 @@ export function resolveSendFailureClass(
   classifiers: SendFailureClassifiers = {},
 ): FailureClass {
   const declared = failureClassOf(failure);
-  const info = { phase: "agent.run" as const, text: sendFailureText(failure), cause: failure };
+  const info = {
+    phase: "agent.run" as const,
+    text: sendFailureText(failure),
+    cause: normalizeExternalCause(failure),
+  };
   const resolved =
     declared ??
     callClassifier(classifiers.experiment, info) ??
@@ -131,34 +148,17 @@ export function sendAcceptanceFromEvents(events: readonly StreamEvent[]): "start
   return events.some((event) =>
     (event.type === "message" && event.role === "assistant") ||
     event.type === "thinking" ||
-    event.type === "action.called" ||
-    event.type === "action.result"
+    event.type === "operation.started" ||
+    event.type === "operation.finished"
   )
     ? "started"
     : "unknown";
 }
 
-function* structuredFacts(failure: SendFailure): Generator<globalThis.Record<string, unknown>> {
-  let current: unknown = failure;
-  const seen = new Set<unknown>();
-  for (let depth = 0; depth < 6 && current !== null && typeof current === "object"; depth++) {
-    if (seen.has(current)) return;
-    seen.add(current);
-    const object = current as globalThis.Record<string, unknown>;
-    yield object;
-    current = object.cause;
+function* structuredFacts(cause: ExternalCause | undefined): Generator<Extract<ExternalCause, { _tag: "Error" | "Object" }>> {
+  let current = cause;
+  while (current) {
+    if (current._tag !== "ThrownValue") yield current;
+    current = current.cause._tag === "Cause" ? current.cause.value : undefined;
   }
-}
-
-function numberField(object: globalThis.Record<string, unknown>, ...keys: string[]): number | undefined {
-  for (const key of keys) if (typeof object[key] === "number") return object[key];
-  return undefined;
-}
-
-function stringOrNumberField(object: globalThis.Record<string, unknown>, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = object[key];
-    if (typeof value === "string" || typeof value === "number") return String(value);
-  }
-  return undefined;
 }

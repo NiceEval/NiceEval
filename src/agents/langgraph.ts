@@ -37,8 +37,8 @@ export interface LangGraphContentBlockLike {
   reasoning?: string;
   id?: string;
   name?: string;
-  args?: unknown;
-  [key: string]: unknown;
+  args?: JsonValue;
+  [key: string]: JsonValue | undefined;
 }
 
 /**
@@ -60,8 +60,8 @@ export interface LangGraphEventLike {
   /** subgraph / subagent 层级(自外向内),如 `["research", "web"]`;段内 `:` 后缀(checkpoint id)不进展示名。 */
   namespace?: readonly string[];
   /** 通道载荷。 */
-  data?: globalThis.Record<string, unknown> | null;
-  [key: string]: unknown;
+  data?: globalThis.Record<string, JsonValue> | null;
+  [key: string]: JsonValue | readonly string[] | undefined | null;
 }
 
 /** {@link createLangGraphEventStream} 返回的流句柄。 */
@@ -105,18 +105,18 @@ function segmentName(segment: string): string {
  * LangGraph 官方事件流(messages / tools / input / lifecycle 四通道)→ 标准事件。
  *
  * - `messages` 的 finish 帧:text block → message、reasoning block → thinking、
- *   tool_call block → action.called(与 tools/started 按 call ID 去重),usage 从
+ *   tool_call block → operation.started(与 tools/started 按 call ID 去重),usage 从
  *   消息的 usage_metadata 累加;partial(逐 token 增量)整个忽略。
- * - `tools` 的 started / finished / error → action.called / action.result,按 tool call ID 配对;
+ * - `tools` 的 started / finished / error → operation.started / operation.finished,按 tool call ID 配对;
  *   error 默认 "failed",经 {@link LangGraphStream.markRejected} 登记过的落 "rejected"。
  * - `input` 帧与 lifecycle 的 interrupted → input.requested(同一 interrupt 出现在两处时按
  *   id 去重);interrupt 载荷里的 HITL 请求形状(action_request / description / config.allow_*)
  *   映射成 InputRequest 的 action / input / display / options。
  * - `lifecycle`(根 namespace)映射 `status`:completed / failed / interrupted("waiting");
  *   failed 帧的错误信息补一条 error 事件。
- * - `namespace` 非空的帧翻译前先为每级未见过的层级补 subagent.called(callId 是自外向内
+ * - `namespace` 非空的帧翻译前先为每级未见过的层级补 operation.started(callId 是自外向内
  *   的路径,层级关系由路径前缀表达);该层级自己的 lifecycle completed / failed 闭合成
- *   subagent.completed,根图 completed / failed 时把仍未闭合的层级按同状态一起闭合
+ *   operation.finished,根图 completed / failed 时把仍未闭合的层级按同状态一起闭合
  *   (interrupted 不闭合——层级还要 resume)。
  * - 帧带 `seq` 时按 seq 恢复协议定义的事件顺序(超前暂存、缺口补齐放出、落后当重复丢弃),
  *   流结束调 {@link LangGraphStream.end} 放出仍压着的乱序帧。
@@ -190,11 +190,9 @@ export function createLangGraphEventStream(): LangGraphStream {
     if (startedCallIds.has(callId)) return;
     startedCallIds.add(callId);
     events.push({
-      type: "action.called",
-      callId,
-      name,
-      input: (input ?? null) as JsonValue,
-      tool: normalizeToolName(name),
+      type: "operation.started",
+      operationId: callId,
+      operation: { kind: "tool", name, input: (input ?? null) as JsonValue, tool: normalizeToolName(name) },
     });
   };
 
@@ -207,8 +205,9 @@ export function createLangGraphEventStream(): LangGraphStream {
     if (resolvedCallIds.has(callId)) return;
     resolvedCallIds.add(callId);
     events.push({
-      type: "action.result",
-      callId,
+      type: "operation.finished",
+      operationId: callId,
+      kind: "tool",
       ...(output !== undefined ? { output: output as JsonValue } : {}),
       status: status_,
     });
@@ -285,13 +284,17 @@ export function createLangGraphEventStream(): LangGraphStream {
     }
   };
 
-  /** 为 namespace 的每级未见过的前缀补 subagent.called(层级由路径 callId 表达)。 */
+  /** 为 namespace 的每级未见过的前缀补 operation.started(层级由路径 callId 表达)。 */
   const ensureNamespace = (events: StreamEvent[], ns: readonly string[]): void => {
     for (let i = 1; i <= ns.length; i++) {
       const key = ns.slice(0, i).join("/");
       if (openNamespaces.has(key) || closedNamespaces.has(key)) continue;
       openNamespaces.add(key);
-      events.push({ type: "subagent.called", callId: key, name: segmentName(ns[i - 1]!) });
+      events.push({
+        type: "operation.started",
+        operationId: key,
+        operation: { kind: "subagent", name: segmentName(ns[i - 1]!) },
+      });
     }
   };
 
@@ -309,13 +312,14 @@ export function createLangGraphEventStream(): LangGraphStream {
     for (const child of descendants) {
       openNamespaces.delete(child);
       closedNamespaces.add(child);
-      events.push({ type: "subagent.completed", callId: child, status: status_ });
+      events.push({ type: "operation.finished", operationId: child, kind: "subagent", status: status_ });
     }
     openNamespaces.delete(key);
     closedNamespaces.add(key);
     events.push({
-      type: "subagent.completed",
-      callId: key,
+      type: "operation.finished",
+      operationId: key,
+      kind: "subagent",
       ...(output !== undefined ? { output: output as JsonValue } : {}),
       status: status_,
     });

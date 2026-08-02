@@ -91,12 +91,12 @@ export type DeltaOp =
   | { readonly kind: "text-delta"; readonly text: string }
   | { readonly kind: "message-end" }
   | { readonly kind: "thinking-delta"; readonly text: string }
-  | { readonly kind: "tool-call-start"; readonly callId: string; readonly name: string }
-  | { readonly kind: "tool-args-delta"; readonly callId: string; readonly delta: string }
-  /** 该调用的参数已经拼完,落地成 `action.called`(此时通常还没有结果——纯补全式流
+  | { readonly kind: "tool-call-start"; readonly operationId: string; readonly name: string }
+  | { readonly kind: "tool-args-delta"; readonly operationId: string; readonly delta: string }
+  /** 该调用的参数已经拼完,落地成 `operation.started`(此时通常还没有结果——纯补全式流
    *  一般由调用方在流外真正执行工具;流内也执行的后端随后再喂一条 "tool-result"）。 */
-  | { readonly kind: "tool-call-end"; readonly callId: string }
-  | { readonly kind: "tool-result"; readonly callId: string; readonly output?: JsonValue; readonly status?: "completed" | "failed" | "rejected" }
+  | { readonly kind: "tool-call-end"; readonly operationId: string }
+  | { readonly kind: "tool-result"; readonly operationId: string; readonly output?: JsonValue; readonly status?: "completed" | "failed" | "rejected" }
   | { readonly kind: "usage"; readonly usage: Usage }
   | { readonly kind: "error"; readonly message: string };
 
@@ -113,7 +113,7 @@ interface ToolBuffer {
 /**
  * 逐 token / 逐参数增量的通用累加器(delta streaming——OpenAI/Anthropic 原始流式 API、
  * 手写的 token-by-token SSE 后端都是这个形状)。文本按 delta 拼接、遇 `message-end` 落地成
- * 一条 `message`;工具参数按 `callId` 拼接、遇 `tool-call-end` 落地成 `action.called`
+ * 一条 `message`;工具参数按 `operationId` 拼接、遇 `tool-call-end` 落地成 `operation.started`
  * (JSON 解析失败就把拼出来的原始字符串塞进 `input`,不吞错误);`tool-result` 独立到达,
  * 与「整段落地」的 `fromXxxEvents()` 系列同一个 `FrameReducer` 形状,可以直接喂
  * `driveFrameStream`。
@@ -153,16 +153,16 @@ export function deltaStream<Frame>(spec: DeltaStreamSpec<Frame>): FrameReducer<F
             flushText(events);
             break;
           case "tool-call-start":
-            toolBuffers.set(op.callId, { name: op.name, args: "" });
+            toolBuffers.set(op.operationId, { name: op.name, args: "" });
             break;
           case "tool-args-delta": {
-            const buf = toolBuffers.get(op.callId);
+            const buf = toolBuffers.get(op.operationId);
             if (buf) buf.args += op.delta;
             break;
           }
           case "tool-call-end": {
-            const buf = toolBuffers.get(op.callId);
-            toolBuffers.delete(op.callId);
+            const buf = toolBuffers.get(op.operationId);
+            toolBuffers.delete(op.operationId);
             let input: JsonValue = null;
             if (buf?.args) {
               try {
@@ -171,11 +171,21 @@ export function deltaStream<Frame>(spec: DeltaStreamSpec<Frame>): FrameReducer<F
                 input = buf.args; // 拼不出合法 JSON 也别吞掉,原样交给断言/人去看
               }
             }
-            events.push({ type: "action.called", callId: op.callId, name: buf?.name ?? "unknown", input });
+            events.push({
+              type: "operation.started",
+              operationId: op.operationId,
+              operation: { kind: "tool", name: buf?.name ?? "unknown", input },
+            });
             break;
           }
           case "tool-result":
-            events.push({ type: "action.result", callId: op.callId, output: op.output, status: op.status ?? "completed" });
+            events.push({
+              type: "operation.finished",
+              operationId: op.operationId,
+              kind: "tool",
+              output: op.output,
+              status: op.status ?? "completed",
+            });
             break;
           case "usage":
             usage = op.usage;

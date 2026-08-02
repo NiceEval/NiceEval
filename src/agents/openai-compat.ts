@@ -2,15 +2,51 @@
 // 表格里的 turnFromChatCompletion(res) / turnFromResponses(res)。和 turnFromAiSdk 同一先例:结构化
 // *Like 类型,不依赖 openai 包,兼容任何声明自己走这两种协议形状的服务(不止 OpenAI 官方)。
 //
-// 两种形状对负断言的可信度不同(见 docs-site/zh/tutorials/write-send.mdx):
-//   · Chat Completions 不承诺「响应 = 完整过程」(应用可能在服务端跑完工具循环,只把最终
-//     答案给你),所以 notCalledTool 这类负断言只能当「没看到」,不能当「确实没发生」。
-//   · Responses 的协议契约里 output 数组记录了模型这一轮决定做的全部事(包括每个
-//     function_call),负断言可信。
-// niceeval 目前没有「事件完整性证明」这个跨事件流的元数据字段,所以这条差异只体现在
-// 文档提示里,两个转换器产出的 Turn 形状本身相同。
+// 两种形状对负断言的可信度不同:Chat Completions 可能只给最终消息，Responses.output
+// 则完整列出本轮 function_call。下列六通道 EvidenceCoverage 常量把差异交给 core 的
+// 三值逻辑；转换器在单轮缺 usage 时再据实降级该通道。
 
-import type { JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
+import type { EvidenceCoverage, JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
+
+const COMPLETE = Object.freeze({ status: "complete" as const });
+const NO_DATA = Object.freeze({ status: "unavailable" as const, reason: "OpenAI response conversion does not populate Turn.data." });
+const SYNTHETIC_STATUS = Object.freeze({
+  status: "partial" as const,
+  reason: "The converter maps a returned response to completed and does not observe the full request lifecycle.",
+});
+
+export const chatCompletionEvidenceCoverage: EvidenceCoverage = Object.freeze({
+  events: Object.freeze({
+    status: "partial",
+    reason: "Chat Completions may expose only the final response, not a server-side tool loop.",
+  }),
+  actions: Object.freeze({
+    status: "partial",
+    reason: "Chat Completions cannot prove that no hidden server-side tool action occurred.",
+  }),
+  messages: COMPLETE,
+  usage: COMPLETE,
+  status: SYNTHETIC_STATUS,
+  data: NO_DATA,
+});
+
+export const responsesEvidenceCoverage: EvidenceCoverage = Object.freeze({
+  events: Object.freeze({
+    status: "partial",
+    reason: "Unknown Responses output item types are intentionally skipped by the protocol-neutral converter.",
+  }),
+  actions: COMPLETE,
+  messages: COMPLETE,
+  usage: COMPLETE,
+  status: SYNTHETIC_STATUS,
+  data: NO_DATA,
+});
+
+function missingUsageCoverage(usage: Usage | undefined): Turn["evidenceCoverage"] {
+  return usage
+    ? undefined
+    : { usage: { status: "unavailable", reason: "This response did not include protocol usage." } };
+}
 
 /** tool_calls / function_call 的 `arguments` 恒为 JSON 字符串;解析失败(极少见)原样退回字符串,不吞异常。 */
 function parseArgs(raw: string | undefined): JsonValue {
@@ -64,21 +100,21 @@ function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage 
 
 /**
  * Chat Completions 形状的响应 → `Turn`。零映射:`res.choices[0].message` 的
- * `tool_calls` / `content` 直接变成 `action.called` / `message`,`usage` 顺手带上。
+ * `tool_calls` / `content` 直接变成 `operation.started` / `message`,`usage` 顺手带上。
  */
 export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   const message = res.choices[0]?.message;
   const events: StreamEvent[] = [];
   for (const call of message?.tool_calls ?? []) {
     events.push({
-      type: "action.called",
-      callId: call.id,
-      name: call.function.name,
-      input: parseArgs(call.function.arguments),
+      type: "operation.started",
+      operationId: call.id,
+      operation: { kind: "tool", name: call.function.name, input: parseArgs(call.function.arguments) },
     });
   }
   if (message?.content) events.push({ type: "message", role: "assistant", text: message.content });
-  return { events, status: "completed", usage: chatCompletionUsage(res.usage) };
+  const usage = chatCompletionUsage(res.usage);
+  return { events, status: "completed", usage, evidenceCoverage: missingUsageCoverage(usage) };
 }
 
 // ───────────────────────── Responses ─────────────────────────
@@ -145,7 +181,7 @@ function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined
 
 /**
  * Responses 形状的响应 → `Turn`。零映射:`res.output` 逐项翻译——
- * `message`(`content` 里的 `output_text`)变成 `message`,`function_call` 变成 `action.called`。
+ * `message`(`content` 里的 `output_text`)变成 `message`,`function_call` 变成 `operation.started`。
  */
 export function turnFromResponses(res: ResponseLike): Turn {
   const events: StreamEvent[] = [];
@@ -158,12 +194,12 @@ export function turnFromResponses(res: ResponseLike): Turn {
       if (text) events.push({ type: "message", role: "assistant", text });
     } else if (isFunctionCallItem(item)) {
       events.push({
-        type: "action.called",
-        callId: item.call_id,
-        name: item.name,
-        input: parseArgs(item.arguments),
+        type: "operation.started",
+        operationId: item.call_id,
+        operation: { kind: "tool", name: item.name, input: parseArgs(item.arguments) },
       });
     }
   }
-  return { events, status: "completed", usage: responsesUsage(res.usage) };
+  const usage = responsesUsage(res.usage);
+  return { events, status: "completed", usage, evidenceCoverage: missingUsageCoverage(usage) };
 }

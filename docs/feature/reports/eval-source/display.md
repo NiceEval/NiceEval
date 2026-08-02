@@ -94,4 +94,4 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。
 - web 面只负责 `<details>`、汇总 pill、行状态和源码横向滚动。
 
 两个面都消费 `AnnotatedSourceResult`，不重新分桶、汇总或选择上下文行。
-web 视觉细节见 [`toAnnotatedEvalSource(attempt)`](../components/primitives/source-view.md)。
+web 视觉细节见 [`toAttemptSource(attempt)`](../components/primitives/source-view.md)。

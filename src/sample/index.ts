@@ -69,8 +69,11 @@ export function latestRunSample(
   }
   issues.push(...unreadableSnapshotWarnings(record.unreadable, record.root));
   issues.push(...danglingEvidenceIssues(attempts));
-  const historyAttempts = selected.flatMap((exp) => exp.runs.flatMap((run) => run.attempts));
-  return makeSample("latest-run", runs, attempts, issues, coverage, fresh, historyAttempts);
+  const selectedAttempts = dedupeAttempts(attempts).attempts;
+  const historyAttempts = dedupeAttempts(
+    selected.flatMap((exp) => exp.runs.flatMap((run) => run.attempts)),
+  ).attempts;
+  return makeSample("latest-run", runs, selectedAttempts, issues, coverage, fresh, historyAttempts);
 }
 
 /** currentSample 的范围输入:experiment id 前缀与 eval id 前缀,都可缺省。 */
@@ -254,8 +257,13 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
 
   issues.push(...unreadableSnapshotWarnings(record.unreadable, record.root));
   issues.push(...danglingEvidenceIssues(attempts));
-  const historyAttempts = experiments.flatMap((exp) => exp.runs.flatMap((run) => run.attempts).filter((attempt) => match(attempt.evalId)));
-  return makeSample("current", runs, attempts, issues, coverage, fresh, historyAttempts);
+  const selectedAttempts = dedupeAttempts(attempts).attempts;
+  const historyAttempts = dedupeAttempts(
+    experiments.flatMap((exp) =>
+      exp.runs.flatMap((run) => run.attempts).filter((attempt) => match(attempt.evalId))
+    ),
+  ).attempts;
+  return makeSample("current", runs, selectedAttempts, issues, coverage, fresh, historyAttempts);
 }
 
 function danglingEvidenceIssues(attempts: readonly AttemptHandle[]): SampleIssue[] {
@@ -338,7 +346,7 @@ export function makeSample(
     nextCoverage = coverage,
     nextFresh = fresh,
   ): Sample => {
-    const runSet = new Set([...nextAttempts, ...nextHistory].map((attempt) => attempt.run));
+    const runSet = new Set(nextAttempts.map((attempt) => attempt.run));
     const nextRuns = runs.filter((run) => runSet.has(run));
     const coveredByExperiment = new Map<string, Set<string>>();
     for (const attempt of nextAttempts) {
@@ -397,7 +405,7 @@ export function makeSample(
     freshOnly(): Sample {
       return rebuild(
         attempts.filter((attempt) => !attempt.carried && attempt.run === runs.find((run) => run.experimentId === attempt.experimentId)),
-        historyAttempts.filter((attempt) => !attempt.carried && attempt.run === runs.find((run) => run.experimentId === attempt.experimentId)),
+        historyAttempts,
         issues,
         coverage,
         true,

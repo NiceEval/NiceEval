@@ -13,7 +13,7 @@ import type {
   ExperimentListEvalRow,
   ExperimentListItem,
   ReportInput,
-  ScoringComposition,
+  EvaluationKindComposition,
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
 import type { AttemptHandle, Run } from "../../../record/types.ts";
@@ -32,14 +32,14 @@ import {
   type Item,
 } from "../../model/aggregate.ts";
 import { attemptCostUSD, costUSD, durationMs, endToEndPassRate, examScore, tokens, totalScore } from "../../model/metrics.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../scoring/display.ts";
+import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
 import { selectedAttemptsOnly, summarizeItems } from "../shared-compute.ts";
 
 /**
- * 一次 attempt 的单行结果摘要(Scoring display 契约):failed 取主失败断言摘要(不含
+ * 一次 attempt 的单行结果摘要(断言摘要契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
- * (phase · code · message);计分制(`scoring: "points"`)passed 存在丢分得分点时取首条丢分
+ * (phase · code · message);计分制(`evaluationKind: "points"`)passed 存在丢分得分点时取首条丢分
  * 摘要(规则 6,含 points 挣分尾缀);其余 passed / skipped 为 null。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
@@ -51,10 +51,10 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
     );
     return { summary: summaryText(parts.join(" · ")), more: 0 };
   }
-  const scoring = result.scoring === "points" ? "points" : "pass";
-  const scorablePassed = result.verdict === "passed" && scoring === "points";
+  const evaluationKind = result.evaluationKind === "points" ? "points" : "pass";
+  const scorablePassed = result.verdict === "passed" && evaluationKind === "points";
   if (result.verdict === "failed" || result.verdict === "errored" || scorablePassed) {
-    const primary = primaryAssertionSummary(result.assertions, result.verdict, scoring);
+    const primary = primaryAssertionSummary(result.assertions, result.verdict, evaluationKind);
     if (primary !== undefined) {
       return {
         summary: compactAssertionSummary({ ...primary, additionalFailures: 0 }),
@@ -78,7 +78,7 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     evalId: evalIdOf(item),
     attempt: result.attempt,
     agent: result.agent,
-    scoring: result.scoring === "points" ? "points" : "pass",
+    evaluationKind: result.evaluationKind === "points" ? "points" : "pass",
     verdict: result.verdict,
     failureSummary: summary,
     moreFailures: more,
@@ -144,31 +144,31 @@ export async function evalListData(input: ReportInput): Promise<EvalListItem[]> 
 
 /**
  * `experimentListData` 默认排序专用的题型构成判据——列表自己的、只看这份 data 的局部决定,
- * 不是 `scoringComposition()`(那是 Sample 级目标判据,见 measures.md「题型构成与主读数」)的
+ * 不是 `evaluationKindComposition()`(那是 Sample 级目标判据,见 measures.md「题型构成与主读数」)的
  * 第二份实现。跳过 attempts === 0 的行:这类行只可能来自 coverage-only 占位(真实 experiment
- * 分组恒 attempts >= 1),它们的 `scoring` 是占位默认值而非读到的事实,一屏占位行不该把纯
+ * 分组恒 attempts >= 1),它们的 `evaluationKind` 是占位默认值而非读到的事实,一屏占位行不该把纯
  * 计分制列表误判成 mixed。
  */
-function listScoringComposition(items: readonly ExperimentListItem[]): ScoringComposition {
+function listEvaluationKindComposition(items: readonly ExperimentListItem[]): EvaluationKindComposition {
   let hasPass = false;
   let hasPoints = false;
   for (const item of items) {
     if (item.attempts === 0) continue;
-    if (item.scoring !== "pass") hasPoints = true;
-    if (item.scoring !== "points") hasPass = true;
+    if (item.evaluationKind !== "pass") hasPoints = true;
+    if (item.evaluationKind !== "points") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
   return hasPoints ? "points" : "pass";
 }
 
-function itemScoringComposition(items: readonly Item[]): ScoringComposition {
-  const hasPoints = items.some((item) => item.attempt.result.scoring === "points");
-  const hasPass = items.some((item) => item.attempt.result.scoring !== "points");
+function itemEvaluationKindComposition(items: readonly Item[]): EvaluationKindComposition {
+  const hasPoints = items.some((item) => item.attempt.result.evaluationKind === "points");
+  const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "points");
   return hasPass && hasPoints ? "mixed" : hasPoints ? "points" : "pass";
 }
 
-function passScoringItems(items: readonly Item[]): Item[] {
-  return items.filter((item) => item.attempt.result.scoring !== "points");
+function passEvaluationItems(items: readonly Item[]): Item[] {
+  return items.filter((item) => item.attempt.result.evaluationKind !== "points");
 }
 
 /**
@@ -203,7 +203,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
   const coverageByExperiment = new Map(coverage.map((c) => [c.experimentId, c]));
 
   // 可比性配置单义检查:同一 experiment 的输入快照必须共享一套可比性配置。
-  const configByExperiment = new Map<string, { run: Run; config: unknown }>();
+  const configByExperiment = new Map<string, { run: Run; config: ReturnType<typeof comparabilityConfigOf> }>();
   for (const run of runs) {
     const config = comparabilityConfigOf(run);
     const existing = configByExperiment.get(run.experimentId);
@@ -227,7 +227,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     // 这一行显示的 agent/model/flags 读水位基准 Run(贡献来源中 startedAt 最新者),
     // 不是任取某个真实来源(docs/feature/reports/architecture.md「Sample 是计算入口」)——
     // 组内每个 item 的 watermark 是同一个对象,取任一个即可;优先找真实来源恰好等于水位
-    // 基准的 item,好让下面混读的 attempt 级字段(model/scoring 等)也来自同一份数据。
+    // 基准的 item,好让下面混读的 attempt 级字段(model/evaluationKind 等)也来自同一份数据。
     const watermark = group[0]!.watermark;
     const newest = group.find((item) => item.run === watermark) ?? group[0]!;
     const evalGroups = groupItems(group, "eval");
@@ -238,9 +238,9 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       const attempts = await Promise.all(sorted.map((item) => attemptListItemOf(item)));
       evalRows.push({
         evalId,
-        scoring: itemScoringComposition(sorted),
+        evaluationKind: itemEvaluationKindComposition(sorted),
         verdict,
-        endToEndPassRate: await computeCell(endToEndPassRate, passScoringItems(sorted)),
+        endToEndPassRate: await computeCell(endToEndPassRate, passEvaluationItems(sorted)),
         totalScore: await computeCell(totalScore, sorted),
         durationMs: await computeCell(durationMs, sorted),
         costUSD: await computeCell(costUSD, sorted),
@@ -255,9 +255,9 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       agent: newest.run.agent || newest.attempt.result.agent,
       ...(model !== undefined ? { model } : {}),
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
-      scoring: itemScoringComposition(group),
+      evaluationKind: itemEvaluationKindComposition(group),
       evalVerdicts: stats.verdicts,
-      endToEndPassRate: await computeCell(endToEndPassRate, passScoringItems(group)),
+      endToEndPassRate: await computeCell(endToEndPassRate, passEvaluationItems(group)),
       totalScore: await computeCell(totalScore, group),
       costUSD: await computeCell(costUSD, group),
       durationMs: await computeCell(durationMs, group),
@@ -285,7 +285,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
       // SampleCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
       // 纪律下的默认,不是从任何真实数据推断出来的。
-      scoring: "pass",
+      evaluationKind: "pass",
       evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
       endToEndPassRate: await computeCell(endToEndPassRate, emptyItems),
       totalScore: await computeCell(totalScore, emptyItems),
@@ -301,11 +301,11 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     });
   }
   // 默认排序按这份列表自身的题型构成选择主读数(占位行不计入构成判断,见
-  // listScoringComposition):纯通过制沿用端到端通过率降序;纯计分制改按总分降序——
+  // listEvaluationKindComposition):纯通过制沿用端到端通过率降序;纯计分制改按总分降序——
   // endToEndPassRate 对计分制 attempt 同样是良态数字,此前一律拿它预排会把总分列表
   // 悄悄按错误指标排序,这正是本节点要修的 bug。两型并存时两种读数不能互相排名,
   // 退回 experiment id 字典序。
-  const composition = listScoringComposition(out);
+  const composition = listEvaluationKindComposition(out);
   if (composition === "points") {
     out.sort(byMetricDescThenId((item) => item.totalScore.value));
   } else if (composition === "mixed") {

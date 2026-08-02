@@ -81,9 +81,10 @@ const TOOL_NAMES: ReadonlySet<string> = new Set([
 
 /** AgentEvent → niceeval StreamEvent:服务端(turnFromAiSdk)已归一好 canonical 工具名,这里只收窄类型。 */
 function toStreamEvent(event: AgentEvent): StreamEvent {
-  if (event.type === "action.called") {
-    const tool: ToolName = event.tool && TOOL_NAMES.has(event.tool) ? (event.tool as ToolName) : "unknown";
-    return { ...event, tool };
+  if (event.type === "operation.started") {
+    const tool = event.operation.tool;
+    const canonicalTool: ToolName = tool && TOOL_NAMES.has(tool) ? (tool as ToolName) : "unknown";
+    return { ...event, operation: { ...event.operation, tool: canonicalTool } };
   }
   return event;
 }

@@ -83,10 +83,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
   template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
-- **`EvalDescriptor.scoring` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 产物投影 `scoring: "pass"`，对 `defineScoreEval` 产物投影 `"points"`。
-  未经两个定义函数处理的未包装对象缺少 scoring 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
-  同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、记录与携带，不能在启动期拒绝或静默删掉一类。报告按 scoring 分列通过率与总分，绝不把两种无共同单位的数相加。
-- **计分制 attempt 落盘**：`runAttemptEffect` 对 `scoring: "points"` 的 eval 把 `.points(n)` 挣分正确写进 `EvalResult.assertions[].points`、把 `t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的产物接上了落盘字段）；前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已记录，不是执行异常）、中止前已经产生的 `scoreEntries` 照实保留、中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）；没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个来源。
+- **`EvalDescriptor.evaluationKind` 投影与混型保真**：`evalDescriptorOf` 对 `defineEval` 产物投影 `evaluationKind: "pass"`，对 `defineScoreEval` 产物投影 `"points"`。
+  未经两个定义函数处理的未包装对象缺少 `evaluationKind` 时，discovery 明确拒绝；不能用默认 `"pass"` 猜它原本想调用哪个 factory。
+  同一 Experiment 选择混合题型时，两类 Eval 全部进入调度、记录与携带，不能在启动期拒绝或静默删掉一类。报告按题型分列通过率与总分，绝不把两种无共同单位的数相加。
+- **计分制 attempt 落盘**：`runAttemptEffect` 对 `evaluationKind: "points"` 的 eval 把 `.points(n)` 的声明值与挣分分别写进 `EvalResult.assertions[].pointsAvailable` / `.points`、把 `t.score(label, n)` 正确写进 `EvalResult.scoreEntries`（不只是 collector 单元层的孤立证明，这里证明 runner 真的把 collector 的产物接上了落盘字段）；同一 attempt 内 user send、断言、直接给分的 `sourceOrder` 来自同一条单调序列，跨三个存储分区仍能恢复真实发生顺序；前置 `.gate()` 中止时 `verdict` 为 `failed` 而非 `errored`（断言已记录，不是执行异常）、中止前已经产生的 `scoreEntries` 照实保留、中止后的 `test()` 代码不再执行（后续 `.points()` / `t.score()` 调用不出现在结果里）；没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为 `passed`——计分制的 `failed` 只有中止一个来源。
 - **调度项优先级**：CLI flag → experiment → config → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与 Run 投影。
   **这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。
   这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/` 下所有非测试源码实际读取的环境变量名，断言它们全部落在「凭据 + 终端环境」白名单内。
@@ -151,9 +151,9 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   新的 `plan` 清空残留行。
   用例见[环境预置与收尾怎么放](../../../feature/experiments/use-case/生命周期/)。
   字节渲染归 [E2E · CLI](../e2e/cli.md)。
-- **scoring 阶段的 judge 推进 detail（`runner/attempt.ts` 接线）**：进入 `scoring.evaluate` 后，collector 的每次 judge 进度回调把 active 行 detail 更新为 `judge k/n · <检查方式>`。
+- **断言求值阶段的 judge 推进 detail（`runner/attempt.ts` 接线）**：进入 `assertions.evaluate` 后，collector 的每次 judge 进度回调把 active 行 detail 更新为 `judge k/n · <检查方式>`。
   契约见 [CLI · Attempt 阶段](../../../feature/experiments/cli.md#attempt-阶段)。
-  无 judge 断言的 attempt 在 scoring 阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。
+  无 judge 断言的 attempt 在断言求值阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。
   断言面是 feedback 事件流里的 progress 文本，不断言渲染字节。
 - **Judge 预检的运行级行**：`precheck` 起止事件归约进 `RunFeedbackState.activePrecheck`。
   `started` 建行，`done` / `failed` 清行。

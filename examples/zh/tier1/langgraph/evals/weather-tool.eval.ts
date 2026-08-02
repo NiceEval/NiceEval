@@ -1,7 +1,7 @@
 import { defineEval } from "niceeval";
 
 // 这条 eval 验证 agent 遇到实时天气问题时调 get_weather,而不是直接编一个答案。
-// get_weather 不是 gated 工具,它的 action.called/action.result 完全来自 LangSmith span
+// get_weather 不是 gated 工具,它的 operation.started/operation.finished 完全来自 LangSmith span
 // 派生,adapter 没有为它写一行帧映射(帧映射只补了 gated 的 calculate,见 agents/langgraph.ts)。
 export default defineEval({
   description: "测试 agent 在天气问题中正确调用 get_weather 并基于结果作答",

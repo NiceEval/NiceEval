@@ -1,7 +1,7 @@
 ---
 title: "NiceEval assertions: values, scoped facts, tests, and cost"
 sidebarTitle: "Assert"
-description: "NiceEval's assertion vocabulary — value assertions, scoped assertions, test-as-scoring, and efficiency checks — plus gate vs soft severity and the rules that fold them into a verdict."
+description: "NiceEval's assertion vocabulary — value assertions, scoped assertions, project-test assertions, and efficiency checks — plus gate vs soft severity and the rules that fold them into a verdict."
 ---
 
 Assertion is the process of taking everything an agent did during an eval — every message, tool call, file change, and token spent — and folding it into a single, explainable result. [NiceEval](https://niceeval.com/) gives you four assertion mechanisms that complement each other: some check values immediately, some assess the whole run after it completes, some execute tests inside the Sandbox, and some measure efficiency. All four produce the same `Assertion` type and feed into the same verdict rules. For the fifth mechanism — asking a language model to judge open-ended quality — see [Judge](/explanation/judge).
@@ -15,7 +15,7 @@ Assertion is the process of taking everything an agent did during an eval — ev
   <Card title="2. Scoped assertions" icon="crosshairs">
     `t.succeeded()`, `t.calledTool()`, `t.messageIncludes()`, and friends are registered during `test(t)` but evaluated **after** the function returns, against the complete turn data. Use these for whole-run facts.
   </Card>
-  <Card title="3. Test-as-scoring" icon="flask">
+  <Card title="3. Project-test assertions" icon="flask">
     For Sandbox evals, run project tests, build scripts, or focused probe commands from `test(t)`. Use this for coding tasks where file content and build results are the ground truth.
   </Card>
   <Card title="4. Efficiency assertions" icon="gauge">
@@ -36,7 +36,7 @@ Every assertion carries a **severity** that determines how it influences the fin
   <Tab title="soft">
     A soft assertion is a quality score with a numeric threshold. If the score falls below the threshold, the eval becomes `passed` rather than `failed` — a signal that there is a quality regression, but not a hard breakage. Soft failures only count as failures when you run with `--strict`.
 
-    Use soft for continuous judgments where the answer is "how good" rather than "correct or not": similarity scoring, LLM-as-judge factuality ratings, cost budgets you want to track without blocking CI.
+    Use soft for continuous judgments where the answer is "how good" rather than "correct or not": similarity measurement, LLM-as-judge factuality ratings, cost budgets you want to track without blocking CI.
 
     Matchers that produce a continuous score (`similarity`) and all judge calls default to soft.
   </Tab>
@@ -183,7 +183,7 @@ t.sandbox.noFailedShellCommands();
 
 Scoped assertions follow one rule everywhere: **the receiver decides the scope, not the assertion name.** `t.*` aggregates every turn of the whole eval run (including any `t.newSession()` sessions); `session.*` (from `t.newSession()`) scopes to that one session; `turn.*` (from `t.send()`'s return value) scopes to that single turn only. Same vocabulary, different receiver — see [Drive](/explanation/drive) for what each receiver is.
 
-## 3. Test-as-scoring (Sandbox evals)
+## 3. Project-test assertions (Sandbox evals)
 
 For Sandbox coding evals, run validation commands inside `test(t)` and record their result as assertions.
 
@@ -201,7 +201,7 @@ You can also assert behavior through the standard event stream: `t.calledTool(..
 
 ## 4. Efficiency / cost assertions
 
-Token usage is a first-class scoring dimension. An agent that answers correctly but burns far more tokens than expected should not score identically to one that answers efficiently.
+Token usage is a first-class evaluation dimension. An agent that answers correctly but burns far more tokens than expected should not be treated identically to one that answers efficiently.
 
 ```ts
 t.maxTokens(50_000);            // hard token limit for the entire run (gate by default)
@@ -239,6 +239,6 @@ Custom matchers compose with the same chain methods as built-ins: `.gate()`, `.a
 ## Related reading
 
 - [Drive](/explanation/drive) — `t.send()`, `t.newSession()`, and HITL: how you produce the Turn data these assertions read from.
-- [Judge](/explanation/judge) — the fifth scoring mechanism, for open-ended quality that can't be expressed as a fixed rule.
+- [Judge](/explanation/judge) — the fifth assertion mechanism, for open-ended quality that can't be expressed as a fixed rule.
 - [Write send](/tutorials/write-send) — how the standard event stream is produced, and what scoped assertions depend on.
 - [Evals](/explanation/evals) — how assertions fold into the eval lifecycle and verdict types.

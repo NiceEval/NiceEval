@@ -14,7 +14,7 @@ There is no `capabilities` field on `defineAgent` / `defineSandboxAgent` — **n
 |---|---|---|
 | `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Constructed with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Nothing |
 | `tracing` (OTLP receiver → `niceeval view` waterfall) | CLI-style agents write the `tracing` field; long-running apps configure a fixed `telemetry` port in the config | Nothing (the configuration is what you would write anyway) |
-| Tool/action assertions (`t.calledTool()` etc., including negative assertions) | Use an official converter (`createClaudeSdkEventStream`, `turnFromAiSdk`, etc.) — the `action.*` events in the return value are exactly what you get | Nothing; with manual mapping, event completeness is decided by your mapping code |
+| Tool/action assertions (`t.calledTool()` etc., including negative assertions) | Use an official converter (`createClaudeSdkEventStream`, `turnFromAiSdk`, etc.) — the paired `operation.started` / `operation.finished` events in the return value are exactly what you get | Nothing; with manual mapping, event completeness is decided by your mapping code |
 | Cross-turn memory, `t.newSession()` isolation | Used `ctx.session` (`id`/`capture`, `history`) to continue context | Nothing — wire it up and continuation works; skip it and every turn is a fresh conversation, with no error either way |
 | HITL (`t.respond()`) | `send` has returned `status: "waiting"` + `input.requested` | Nothing |
 
@@ -29,7 +29,7 @@ With the declaration layer gone, "false claims" no longer exist either — whate
 
 ### Tool/action event completeness
 
-Meaning: whether every tool call in the turn appears in events as `action.called` + `action.result` ([events reference](/reference/events)). There are only two sources: official converters guarantee it per the contract of the protocol under test; manual mapping is decided by your code. OTel spans are not a source — spans only feed the waterfall, never the event stream (see [OTel integration](/tutorials/connect-otel)).
+Meaning: whether every tool call in the turn appears in events as a tool `operation.started` + `operation.finished` pair ([events reference](/reference/events)). There are only two sources: official converters guarantee it per the contract of the protocol under test; manual mapping is decided by your code. OTel spans are not a source — spans only feed the waterfall, never the event stream (see [OTel integration](/tutorials/connect-otel)).
 
 ### Session continuation
 
@@ -54,4 +54,3 @@ Meaning: when the agent under test compacts its context, it emits a `compaction`
 - [Connect your agent](/tutorials/connect-your-agent) — how to follow each integration path.
 - [OTel integration](/tutorials/connect-otel) — the full walkthrough of spans feeding only the waterfall, never assertions.
 - [Built-in agent capabilities](/reference/builtin-agents) — what each built-in adapter has done.
-

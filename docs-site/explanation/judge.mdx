@@ -1,16 +1,16 @@
 ---
-title: "LLM-as-judge in NiceEval: scoring open-ended output"
+title: "LLM-as-judge in NiceEval: assessing open-ended output"
 sidebarTitle: "Judge"
 description: "How t.judge, session.judge, and turn.judge use a separate judge model to score factuality, closed-ended quality, and summarization faithfulness — plus model resolution and severity."
 ---
 
-Judge assertions are the fifth scoring mechanism, alongside the four covered in [Assert](/explanation/assert). Use them when correctness cannot be expressed as a rule — for open-ended prose, tone, factual consistency, or summarization quality. The judge model is **entirely separate** from the agent under test, which prevents self-evaluation bias: the same model grading its own output would be prone to rating itself generously.
+Judge assertions are the fifth assertion mechanism, alongside the four covered in [Assert](/explanation/assert). Use them when correctness cannot be expressed as a rule — for open-ended prose, tone, factual consistency, or summarization quality. The Judge model is **entirely separate** from the agent under test, which prevents self-evaluation bias: the same model grading its own output would be prone to rating itself generously.
 
 ```ts
 t.judge.autoevals.factuality(reference).atLeast(0.8);   // factual consistency with a reference text
 t.judge.autoevals.closedQA("Is the response appropriate for a 10-year-old?");
 t.judge.autoevals.summarizes(sourceDocument);            // faithful summarization check
-t.judge.autoevals.closedQA("Custom scoring rubric description", { on: t.reply });
+t.judge.autoevals.closedQA("Custom evaluation rubric description", { on: t.reply });
 ```
 
 ## The three judge shapes
@@ -115,7 +115,7 @@ Point `judge.baseUrl` explicitly at your gateway or OpenAI-compatible proxy — 
 
 ## Severity: judge defaults to soft
 
-Judge calls are scoring functions like any other assertion, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:
+Judge calls are assertions, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:
 
 ```ts
 t.judge.autoevals.closedQA("Is the tone polite?");              // no threshold → soft, pure score, never fails the eval
@@ -123,7 +123,7 @@ t.judge.autoevals.closedQA("Is the tone polite?").atLeast(0.7); // soft with a t
 t.judge.autoevals.closedQA("Is the tone polite?").gate();       // promoted to gate → fails immediately if below threshold
 ```
 
-With no `.atLeast()` and no `.gate()`, a bare judge call is recorded purely as a quality score — it shows up on the eval's score chip but can never fail the run on its own. This is the right default for judge: it's a probabilistic model scoring another probabilistic model's output, and treating every rubric miss as a hard failure would make suites brittle and constantly red. Reach for `.gate()` only when the judged property is truly load-bearing (for example, "the response must not fabricate account details").
+With no `.atLeast()` and no `.gate()`, a bare judge call is recorded purely as a quality score — it shows up on the eval's score chip but can never fail the run on its own. This is the right default for judge: it's a probabilistic model assessing another probabilistic model's output, and treating every rubric miss as a hard failure would make suites brittle and constantly red. Reach for `.gate()` only when the judged property is truly load-bearing (for example, "the response must not fabricate account details").
 
 ## Related pages
 

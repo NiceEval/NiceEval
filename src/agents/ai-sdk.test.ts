@@ -5,7 +5,16 @@
 
 import { describe, expect, it } from "vitest";
 
-import { turnFromAiSdk } from "./ai-sdk.ts";
+import { turnFromAiSdk, type AiSdkAgentOptions } from "./ai-sdk.ts";
+
+const invalidDataCallback: AiSdkAgentOptions = {
+  async generate() {
+    return { text: "ok" };
+  },
+  // @ts-expect-error AI SDK data callback 必须在 adapter 边界返回 JsonValue。
+  data: () => new Date(),
+};
+void invalidDataCallback;
 
 describe("turnFromAiSdk usage 归一(含明细口径)", () => {
   it("v5 形状:cachedInputTokens 从 inputTokens 里扣出", () => {

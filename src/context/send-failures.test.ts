@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {
   classifySendFailure,
   makeSendFailure,
@@ -30,13 +31,17 @@ describe("SendFailure envelope", () => {
     expect(rendered.endsWith("…")).toBe(true);
   });
 
-  it("normalizes generic throws conservatively and preserves cause", () => {
+  it("normalizes generic throws conservatively into a typed cause snapshot", () => {
     const cause = new Error("fetch failed", { cause: Object.assign(new Error("dns"), { code: "ENOTFOUND" }) });
     expect(normalizeSendFailure(cause)).toMatchObject({
       type: "agent-send-failed",
       acceptance: "unknown",
       message: "fetch failed · dns",
-      cause,
+      cause: {
+        _tag: "Error",
+        message: "fetch failed",
+        cause: { _tag: "Cause", value: { message: "dns" } },
+      },
     });
   });
 });
@@ -46,12 +51,12 @@ describe("send failure classification chain", () => {
     expect(classifySendFailure(makeSendFailure({
       acceptance: "rejected",
       message: "busy",
-      cause: { statusCode: 429 },
+      cause: normalizeExternalCause({ statusCode: 429 }),
     }))).toEqual({ retryable: true, reason: "rate_limit" });
     expect(classifySendFailure(makeSendFailure({
       acceptance: "rejected",
       message: "connect failed",
-      cause: { cause: { code: "ECONNREFUSED" } },
+      cause: normalizeExternalCause({ cause: { code: "ECONNREFUSED" } }),
     }))).toEqual({ retryable: true, reason: "network" });
     expect(classifySendFailure(makeSendFailure({ acceptance: "rejected", message: "429 retry later" })))
       .toEqual({ retryable: false });
@@ -66,7 +71,11 @@ describe("send failure classification chain", () => {
     const adapter = vi.fn(() => ({ retryable: true as const, reason: "adapter" }));
     const experiment = vi.fn(() => ({ retryable: false as const, scope: "eval" as const, reason: "experiment" }));
     const declared = new ExperimentFatalError("tunnel dead");
-    const failure = makeSendFailure({ acceptance: "rejected", message: "outer", cause: declared });
+    const failure = makeSendFailure({
+      acceptance: "rejected",
+      message: "outer",
+      cause: normalizeExternalCause(declared),
+    });
     expect(resolveSendFailureClass(failure, { experiment, adapter })).toEqual({ retryable: false, scope: "experiment" });
     expect(experiment).not.toHaveBeenCalled();
     expect(adapter).not.toHaveBeenCalled();

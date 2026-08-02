@@ -5,6 +5,7 @@ import type {
   CommandOptions,
   CommandResult,
   Sandbox,
+  SandboxReuseCapability,
   SandboxTransferOperations,
 } from "./types.ts";
 
@@ -116,4 +117,10 @@ export function sandboxCapabilities(sandbox: Sandbox): SandboxBackendCapabilitie
     throw new Error(`sandbox ${sandbox.sandboxId} was not constructed by the provider facade`);
   }
   return capabilities;
+}
+
+/** Provider facade 登记的复用寿命能力；不存在时保持显式 Unsupported，不做鸭子类型探测。 */
+export function sandboxReuseCapability(sandbox: Sandbox): SandboxReuseCapability | undefined {
+  const capability = sandboxCapabilities(sandbox).ensureLifetime;
+  return capability._tag === "Supported" ? { ensureLifetime: capability.value } : undefined;
 }

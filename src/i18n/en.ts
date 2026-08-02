@@ -141,7 +141,7 @@ export const en = {
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
     "No judge model configured. Set it in the Experiment, Eval, or defineConfig judge config (there is no built-in default model, and no environment variable for it).\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/tutorials/evaluation-kinds.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
   "loaders.criteriaNoMatch":
@@ -247,6 +247,7 @@ export const en = {
     "error: --json requires exactly one of --source/--execution/--timing/--diff at a time — the envelope's \"view\" is a single value, there is no combined shape for more than one\n  fix: drop the extra evidence flags, or make one --json call per flag\n",
   "cli.show.locatorMalformed": "{{message}}\n",
   "cli.show.locatorNotFound": "{{message}}\n",
+  "cli.show.locatorAmbiguous": "{{message}}\n",
   "cli.eval.noMatch": "No eval matched: {{patterns}}.\n",
   "cli.eval.noMatchHintExperiment": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
@@ -376,7 +377,7 @@ export const en = {
   "feedback.human.lockWaitDispatched": "{{count}} to run",
   "feedback.human.lockedRowSuffix": "locked",
   "feedback.phase.sandboxPrepare": "preparing sandbox",
-  "feedback.phase.scoring": "scoring",
+  "feedback.phase.assertions": "evaluating assertions",
   "feedback.phase.teardown": "cleaning up",
   "feedback.phase.telemetryCollect": "collecting trace",
   "feedback.phase.telemetryConfigure": "configuring telemetry",
@@ -470,7 +471,7 @@ export const en = {
     "  fix: lower timeoutMs below {{limitMs}}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
-    "sandbox agent needs a sandbox, but none was given. niceeval no longer picks a default — set `sandbox` in defineExperiment()/defineConfig() to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n" +
+    "sandbox agent needs a template-bearing SandboxLayer, but neither the Eval nor Experiment declared one — use dockerImageSandbox({ image }), dockerComposeSandbox({ file, workspaceService }), dockerfileSandbox({ context }), vercelSandbox({ snapshotId }), e2bSandbox({ template }), or localSandbox() from \"niceeval/sandbox\".\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
@@ -487,9 +488,9 @@ export const en = {
     "the in-sandbox OTLP collector cannot write {{path}}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — " +
     "a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. " +
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
-  "scoring.evalError": "evaluation error: {{error}}",
-  "scoring.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
-  "scoring.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
+  "assertions.evaluationError": "assertion evaluation error: {{error}}",
+  "assertions.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
+  "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",
   "session.turn.primary": "turn {{turn}}",

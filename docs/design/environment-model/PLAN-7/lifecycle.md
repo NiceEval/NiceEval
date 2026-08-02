@@ -52,7 +52,7 @@
 | 本地 source 读取或上传 | eval.run | 进入 teardown |
 | `t.send()` | eval.run / agent.run | 按 turn failure 契约处理 |
 | 跑测命令 | eval.run | 作者可断言非零结果；基础设施异常进入 teardown |
-| 动态泄漏比对 | workspace.diff 后、scoring 前 | Attempt errored，不接受 verdict |
+| 动态泄漏比对 | `workspace.diff` 后、`assertions.evaluate` 前 | Attempt errored，不接受 verdict |
 | reset | teardown diagnostic | 禁止复用该 Sandbox |
 
 没有 `eval.verify` 或 `eval.afterAgent` phase。

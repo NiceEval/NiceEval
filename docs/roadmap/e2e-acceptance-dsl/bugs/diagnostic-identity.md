@@ -39,7 +39,7 @@ fix commit `d3792749` 前，runner 把 teardown 前最后一个 lifecycle phase 
 同一 NDJSON 读面即可作反证：
 
 - errored 的 phase 等于结构化 error origin。
-- failed 没有 phase；字段省略时不能伪造“unknown scoring”。
+- failed 没有 phase；字段省略时不能伪造 `unknown assertions.evaluate`。
 - 后续 telemetry / teardown 事件不改变前述事实。
 
 因此不新增 `lastMeaningfulPhase()`；“meaningful”会再次让测试从时间线猜原因。

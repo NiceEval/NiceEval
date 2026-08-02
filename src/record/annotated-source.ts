@@ -1,17 +1,5 @@
-// AnnotatedEvalSource:标注 Eval 源码(定稿见 docs/concepts.md「结果数据与报告」、
-// docs/concepts.md「Attempt 证据」)。把一份 eval 源码文本与该次运行产出的
-// AssertionResult[] 叠在一起 —— 每条断言按 SourceLoc 标回源码行,没有(或够不上)行映射的
-// 断言进 `unmapped` 桶,不静默丢弃。这是共享 model:未来的网页 CodeView 与
-// `show --eval` 文本 renderer 只消费这同一份数据,不各自重新分桶。
-//
-// 泛化自 src/view/app/lib/transcript-data.tsx 的 indexAsserts()(Map<string, Assertion[]>
-// + noloc 兜底桶的先例)——同一套"按 loc 分桶、没有 loc 进兜底"的思路,换成源码行数组
-// (不是 Map)存放,外加 sourceSha256 / summary 计数。轮次的完整展开(events → ExecutionTree)
-// 仍是 ExecutionTree 的地盘;这个模型只把每轮的头行事实标回 send 调用行(见 SendAnnotation),
-// 作为源码页指向 --execution 的跨面指针。
-//
-// 本模块不 import react/jsx,纯数据 + 纯函数,可以在任何 Node 语境(CLI 的 show、
-// view 的 server 端数据准备)调用。
+// 面无关的完整源码调用树与面相关投影。AttemptEvidence 只保存完整树；text、web 与 JSON
+// 都消费 projectSourceView() 产出的同一个 SourceContent，不各自重分桶或猜入口文件。
 
 import type { AssertionResult, PhaseTiming, ScoreEntry, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
@@ -30,63 +18,8 @@ export interface SendAnnotation {
   durationMs?: number;
   /** send 调用位置(用户消息事件的 loc)。 */
   loc: SourceLoc;
-}
-
-/** 一行源码 + 映射到这一行的全部断言与 send 标注(保持原始顺序;可以是空数组)。 */
-export interface AnnotatedSourceLine {
-  /** 1-indexed 行号,与 SourceLoc.line 同一坐标系。 */
-  line: number;
-  /** 这一行的原始文本(已按 normalizeEvalSource 归一化,不含行尾换行符)。 */
-  text: string;
-  /**
-   * 映射到这一行的断言,按输入顺序(通常即执行顺序)排列。每条断言自带 severity / score /
-   * passed / detail / evidence —— 这就是"状态 / 严重度 / 分数 / detail / evidence"标回源码行
-   * 的完整信息,不需要额外的行级折叠字段:折叠成单一显示态是 renderer 的展示决定,不是这份
-   * 领域 model 的职责(与 indexAsserts() 的先例一致,它同样只分桶、不折叠)。
-   */
-  assertions: AssertionResult[];
-  /**
-   * 映射到这一行的 send 标注,按轮次顺序;循环里的 send 一行多轮。与断言的 never-drop
-   * 契约不同,定位不到行的轮不进任何兜底桶——轮次的全量面是 --execution,这里只是指针。
-   */
-  sends: SendAnnotation[];
-}
-
-export interface AnnotatedEvalSourceSummary {
-  /** 参与统计的断言总数 = mappedAssertions + unmappedAssertions。 */
-  totalAssertions: number;
-  /** 成功映射到某一行源码的断言数。 */
-  mappedAssertions: number;
-  /** 落进 unmapped 桶的断言数。 */
-  unmappedAssertions: number;
-  /** 按 passed 计票(映射与未映射的断言都计入)。 */
-  passed: number;
-  failed: number;
-  /** 按 severity 计票(映射与未映射的断言都计入)。 */
-  gate: number;
-  soft: number;
-  /** 源码总行数,等于 lines.length。 */
-  totalLines: number;
-  /** 至少挂了一条断言的行数。 */
-  annotatedLines: number;
-}
-
-export interface AnnotatedEvalSource {
-  /** 项目相对路径,与 SourceArtifact.path / SourceLoc.file 同一约定。 */
-  sourcePath: string;
-  /** 归一化后源码文本的 SHA-256(与 captureEvalSource() 的算法一致,见 source-hash.ts)。 */
-  sourceSha256: string;
-  lines: AnnotatedSourceLine[];
-  /**
-   * 没有落到 lines 里任何一行的断言,原始顺序保留,永不丢弃。三种情况都进这里:
-   * 没有 SourceLoc(如 skip 前就出错的 eval、或调用方尚未收集到位置)、SourceLoc 指向
-   * 另一个文件(loc.file !== sourcePath —— 罕见,如断言写在共享 helper 里)、
-   * SourceLoc 的行号落在这份源码的行范围之外(源码与断言记录不同步的边界情况)。
-   * 后两种不是文档明确要求的场景,但"never silently dropped"的契约对它们同样成立 ——
-   * 这份 model 是分桶断言的唯一出口,不属于任何一行就必须出现在这里。
-   */
-  unmapped: AssertionResult[];
-  summary: AnnotatedEvalSourceSummary;
+  /** 与断言、直接给分共用的 attempt 级发生顺序；历史事件可省略。 */
+  sourceOrder?: number;
 }
 
 /**
@@ -111,85 +44,23 @@ export function deriveSendAnnotations(
       label: turn?.label ?? `t${turnIndex + 1}`,
       status: turn?.failed ? "failed" : "completed",
       ...(turn !== undefined ? { durationMs: turn.durationMs } : {}),
+      ...(event.sourceOrder !== undefined ? { sourceOrder: event.sourceOrder } : {}),
       loc: event.loc,
     });
   }
   return out;
 }
 
-/**
- * 纯函数:给定一份源码文本(未归一化也可以,内部会 normalizeEvalSource)与一批断言,
- * 产出标注好的 AnnotatedEvalSource。幂等 / 无 IO —— 可以在渲染路径上安全调用。
- *
- * 断言 → 源码行的映射规则:`a.loc` 存在、`a.loc.file === source.path`、且
- * `1 <= a.loc.line <= lines.length` 三者同时成立才落到对应行;否则进 `unmapped`。
- */
-export function buildAnnotatedEvalSource(
-  source: { path: string; content: string },
-  assertions: readonly AssertionResult[],
-  sends: readonly SendAnnotation[] = [],
-): AnnotatedEvalSource {
-  const normalized = normalizeEvalSource(source.content);
-  // 末尾的单个换行符不产出幻影空行(源码文件几乎总以换行符收尾);中间的空行原样保留为一行。
-  const body = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
-  const rawLines = body.length === 0 && normalized.length === 0 ? [""] : body.split("\n");
+/** 调用树的面无关完整证据。 */
+export type LineAnnotation =
+  | { kind: "assertion"; assertion: AssertionResult }
+  | { kind: "score"; score: ScoreEntry }
+  | { kind: "send"; send: SendAnnotation };
 
-  const lines: AnnotatedSourceLine[] = rawLines.map((text, i) => ({ line: i + 1, text, assertions: [], sends: [] }));
-
-  for (const send of sends) {
-    // 与断言同一条映射规则;不满足的轮直接丢(全量面在 --execution,见 SendAnnotation)。
-    if (send.loc.file === source.path && send.loc.line >= 1 && send.loc.line <= lines.length) {
-      lines[send.loc.line - 1]!.sends.push(send);
-    }
-  }
-
-  const unmapped: AssertionResult[] = [];
-  let mappedAssertions = 0;
-  let passed = 0;
-  let failed = 0;
-  let gate = 0;
-  let soft = 0;
-
-  for (const assertion of assertions) {
-    if (assertion.outcome === "passed") passed++;
-    else failed++;
-    if (assertion.severity === "gate") gate++;
-    else soft++;
-
-    const loc = assertion.loc;
-    const target = loc && loc.file === source.path && loc.line >= 1 && loc.line <= lines.length ? lines[loc.line - 1] : undefined;
-    if (target) {
-      target.assertions.push(assertion);
-      mappedAssertions++;
-    } else {
-      unmapped.push(assertion);
-    }
-  }
-
-  return {
-    sourcePath: source.path,
-    sourceSha256: hashEvalSource(normalized),
-    lines,
-    unmapped,
-    summary: {
-      totalAssertions: assertions.length,
-      mappedAssertions,
-      unmappedAssertions: unmapped.length,
-      passed,
-      failed,
-      gate,
-      soft,
-      totalLines: lines.length,
-      annotatedLines: lines.reduce((n, l) => n + (l.assertions.length > 0 ? 1 : 0), 0),
-    },
-  };
-}
-
-/** 调用树的面无关投影。旧的 buildAnnotatedEvalSource 仍保留给兼容消费方。 */
 export interface SourceTreeLine {
   line: number;
   text: string;
-  annotations: (AssertionResult | ScoreEntry | SendAnnotation)[];
+  annotations: LineAnnotation[];
   calls: SourceCall[];
   aborted?: true;
 }
@@ -203,7 +74,13 @@ export interface SourceCall {
   target:
     | { kind: "source"; node: SourceNode }
     | { kind: "package"; package: string; calls: SourceCall[] }
-    | { kind: "unavailable"; file: string; calls: SourceCall[] };
+    | {
+        kind: "unavailable";
+        file: string;
+        line?: number;
+        annotations: LineAnnotation[];
+        calls: SourceCall[];
+      };
 }
 export interface SourceCallSummary {
   checks: number;
@@ -217,11 +94,27 @@ export interface AnnotatedSourceTree {
   spine: SourceNode;
   detached: SourceNode[];
   unmapped: { assertions: AssertionResult[]; scores: ScoreEntry[] };
-  summary: { checks: number; passed: number; failed: number; unavailable: number };
+  summary: SourceCallSummary;
+}
+
+export interface ProjectedSourceLine extends Omit<SourceTreeLine, "calls"> {
+  calls: ProjectedSourceCall[];
 }
 export interface SourceContentNode extends Omit<SourceNode, "lines"> {
-  lines: SourceTreeLine[];
-  calls: (SourceCall & { open: boolean })[];
+  lines: ProjectedSourceLine[];
+}
+export interface ProjectedSourceCall extends Omit<SourceCall, "target"> {
+  open: boolean;
+  target:
+    | { kind: "source"; node: SourceContentNode }
+    | { kind: "package"; package: string; calls: ProjectedSourceCall[] }
+    | {
+        kind: "unavailable";
+        file: string;
+        line?: number;
+        annotations: LineAnnotation[];
+        calls: ProjectedSourceCall[];
+      };
 }
 export interface SourceContent extends Omit<AnnotatedSourceTree, "spine" | "detached"> {
   spine: SourceContentNode;
@@ -231,90 +124,215 @@ export interface SourceContent extends Omit<AnnotatedSourceTree, "spine" | "deta
 /** 用 entry role 决定主干，绝不按命中数猜入口。 */
 export function assembleSourceTree(input: {
   entry: SourceArtifact;
-  sources: SourceArtifact[];
-  assertions: AssertionResult[];
-  scoreEntries: ScoreEntry[];
-  sends: SendAnnotation[];
+  sources: readonly SourceArtifact[];
+  assertions: readonly AssertionResult[];
+  scoreEntries: readonly ScoreEntry[];
+  sends: readonly SendAnnotation[];
   abort?: SourceLoc;
 }): AnnotatedSourceTree {
   const artifacts = new Map(input.sources.map((s) => [s.path, s]));
   artifacts.set(input.entry.path, { ...input.entry, role: "entry" });
-  const nodes = new Map<string, SourceNode>();
-  const node = (file: string): SourceNode | undefined => {
-    const hit = nodes.get(file);
-    if (hit) return hit;
+  const makeNode = (file: string): SourceNode | undefined => {
     const source = artifacts.get(file);
     if (!source) return undefined;
     const body = normalizeEvalSource(source.content).replace(/\n$/, "");
-    const made: SourceNode = {
+    return {
       file,
       sha256: hashEvalSource(normalizeEvalSource(source.content)),
       lines: (body === "" ? [""] : body.split("\n")).map((text, i) => ({ line: i + 1, text, annotations: [], calls: [] })),
     };
-    nodes.set(file, made);
+  };
+  const spine = makeNode(input.entry.path);
+  if (!spine) throw new Error(`Entry source is missing from the captured source set: ${input.entry.path}`);
+  const detached: SourceNode[] = [];
+  const unmapped: AnnotatedSourceTree["unmapped"] = { assertions: [], scores: [] };
+  const abortedCalls = new Set<SourceCall>();
+
+  const findOrCreateDetached = (file: string): SourceNode | undefined => {
+    const found = detached.find((candidate) => candidate.file === file);
+    if (found) return found;
+    const made = makeNode(file);
+    if (made) detached.push(made);
     return made;
   };
-  const spine = node(input.entry.path)!;
-  const detached: SourceNode[] = [];
-  const unmapped = { assertions: [] as AssertionResult[], scores: [] as ScoreEntry[] };
-  const add = (fact: AssertionResult | ScoreEntry | SendAnnotation, loc: SourceLoc | undefined, kind: "assertion" | "score" | "send") => {
+
+  const callListAt = (node: SourceNode, frame: { line: number }): SourceCall[] | undefined =>
+    node.lines[frame.line - 1]?.calls;
+
+  const sourceCall = (calls: SourceCall[], file: string, line: number): SourceCall => {
+    let call = calls.find((candidate) =>
+      (candidate.target.kind === "source" && candidate.target.node.file === file) ||
+      (candidate.target.kind === "unavailable" && candidate.target.file === file)
+    );
+    if (call) return call;
+    const target = makeNode(file);
+    // 帧里的行号是进入该文件后继续下钻或落声明的位置。正文存在但行号越界时，
+    // 这段路径同样不可定位，必须保留为 unavailable，不能把痕迹丢进 unmapped。
+    const targetAvailable = target?.lines[line - 1] !== undefined;
+    call = {
+      summary: emptySummary(),
+      target: targetAvailable
+        ? { kind: "source", node: target }
+        : { kind: "unavailable", file, line, annotations: [], calls: [] },
+    };
+    calls.push(call);
+    return call;
+  };
+
+  const packageCall = (calls: SourceCall[], packageName: string): SourceCall => {
+    let call = calls.find((candidate) =>
+      candidate.target.kind === "package" && candidate.target.package === packageName
+    );
+    if (call) return call;
+    call = {
+      summary: emptySummary(),
+      target: { kind: "package", package: packageName, calls: [] },
+    };
+    calls.push(call);
+    return call;
+  };
+
+  const add = (
+    annotation: LineAnnotation | undefined,
+    loc: SourceLoc | undefined,
+    kind: LineAnnotation["kind"] | "abort",
+  ) => {
     if (!loc) {
-      if (kind === "assertion") unmapped.assertions.push(fact as AssertionResult);
-      if (kind === "score") unmapped.scores.push(fact as ScoreEntry);
+      if (annotation?.kind === "assertion") unmapped.assertions.push(annotation.assertion);
+      if (annotation?.kind === "score") unmapped.scores.push(annotation.score);
       return;
     }
-    const projectFrames = [...(loc.callers ?? []).filter((f) => f.kind === "project"), { kind: "project" as const, file: loc.file, line: loc.line, column: loc.column }];
-    const spineAt = projectFrames.map((f) => f.file).lastIndexOf(spine.file);
-    const anchorIndex = spineAt >= 0 ? spineAt : 0;
-    const anchor = spineAt >= 0 ? spine : node(projectFrames[0]!.file);
-    if (!anchor) return; // 缺源码仍由下面的 unavailable 边承载；没有可挂项目节点不伪造。
-    if (spineAt < 0 && !detached.includes(anchor)) detached.push(anchor);
-    let current = anchor;
-    const packages = (loc.callers ?? []).filter((frame): frame is { kind: "package"; package: string } => frame.kind === "package");
-    for (let i = anchorIndex + 1; i < projectFrames.length; i++) {
-      const frame = projectFrames[i]!;
-      const previous = projectFrames[i - 1]!;
-      const line = current.lines[previous.line - 1];
-      if (!line) break;
-      const targetNode = node(frame.file);
-      // package 段是不可展开边界，但不能吞掉包回调到项目源码的更深节点。
-      if (i === anchorIndex + 1 && packages.length > 0) {
-        const packageName = packages[0]!.package;
-        let opaque = line.calls.find((c) => c.target.kind === "package" && c.target.package === packageName);
-        if (!opaque) {
-          opaque = { summary: emptySummary(), target: { kind: "package", package: packageName, calls: [] } };
-          line.calls.push(opaque);
-        }
-        const packageTarget = opaque.target;
-        if (packageTarget.kind !== "package") continue;
-        const targetNode = node(frame.file);
-        let nested = packageTarget.calls.find((c) => c.target.kind === "source" && c.target.node.file === frame.file);
-        if (!nested) {
-          nested = { summary: emptySummary(), target: targetNode ? { kind: "source", node: targetNode } : { kind: "unavailable", file: frame.file, calls: [] } };
-          packageTarget.calls.push(nested);
-        }
-        if (nested.target.kind === "source") current = nested.target.node;
-        else break;
+    const declaration = {
+      kind: "project" as const,
+      file: loc.file,
+      line: loc.line,
+      ...(loc.column !== undefined ? { column: loc.column } : {}),
+    };
+    const frames = [...(loc.callers ?? []), declaration];
+    const spineFrameIndexes = frames.flatMap((frame, index) =>
+      frame.kind === "project" && frame.file === spine.file ? [index] : []
+    );
+    const anchorIndex = spineFrameIndexes.at(-1) ?? frames.findIndex((frame) => frame.kind === "project");
+    if (anchorIndex < 0) return;
+    const anchorFrame = frames[anchorIndex]!;
+    if (anchorFrame.kind !== "project") return;
+    let currentNode = anchorFrame.file === spine.file
+      ? spine
+      : findOrCreateDetached(anchorFrame.file);
+    let currentProjectFrame = anchorFrame;
+    let nestedCalls: SourceCall[] | undefined;
+    const pathCalls: SourceCall[] = [];
+
+    for (let index = anchorIndex + 1; index < frames.length; index += 1) {
+      const frame = frames[index]!;
+      const calls = nestedCalls ?? (currentNode ? callListAt(currentNode, currentProjectFrame) : undefined);
+      if (!calls) break;
+      if (frame.kind === "package") {
+        const call = packageCall(calls, frame.package);
+        if (call.target.kind !== "package") break;
+        pathCalls.push(call);
+        nestedCalls = call.target.calls;
         continue;
       }
-      let call = line.calls.find((c) => c.target.kind === "source" && c.target.node.file === frame.file);
-      if (!call) {
-        call = { summary: emptySummary(), target: targetNode ? { kind: "source", node: targetNode } : { kind: "unavailable", file: frame.file, calls: [] } };
-        line.calls.push(call);
+      // 连续项目帧保留每层调用边；同一行、同一路径段才合并。
+      const call = sourceCall(calls, frame.file, frame.line);
+      pathCalls.push(call);
+      currentProjectFrame = frame;
+      nestedCalls = undefined;
+      if (call.target.kind === "source") {
+        currentNode = call.target.node;
+      } else if (call.target.kind === "unavailable") {
+        currentNode = undefined;
+        nestedCalls = call.target.calls;
+        if (index === frames.length - 1 && annotation) call.target.annotations.push(annotation);
       }
-      if (call.target.kind === "source") current = call.target.node;
-      else break;
     }
-    const leaf = current.file === loc.file ? current.lines[loc.line - 1] : undefined;
-    if (leaf) leaf.annotations.push(fact);
-    else if (kind === "assertion") unmapped.assertions.push(fact as AssertionResult);
-    else if (kind === "score") unmapped.scores.push(fact as ScoreEntry);
+
+    const leaf = currentNode?.file === loc.file ? currentNode.lines[loc.line - 1] : undefined;
+    if (kind === "abort") for (const call of pathCalls) abortedCalls.add(call);
+    if (leaf) {
+      if (kind === "abort") leaf.aborted = true;
+      else if (annotation) leaf.annotations.push(annotation);
+      return;
+    }
+    // 只有真正没有 loc 的断言/给分进 unmapped。有 loc 但源码或行不可用时，
+    // 路径上的 unavailable 段已承载它，不降级成“无位置”。
   };
-  for (const a of input.assertions) add(a, a.loc, "assertion");
-  for (const s of input.scoreEntries) add(s, s.loc, "score");
-  for (const send of input.sends) add(send, send.loc, "send");
-  const summary = summarize(spine);
+  for (const item of sortSourceAnnotations(input)) add(item.annotation, item.loc, item.annotation.kind);
+  if (input.abort) add(undefined, input.abort, "abort");
+
+  summarizeNode(spine, abortedCalls);
+  for (const node of detached) summarizeNode(node, abortedCalls);
+  const summary = addSummaries(
+    [summaryOfNode(spine), ...detached.map(summaryOfNode), summaryOfUnmapped(unmapped)],
+  );
   return { spine, detached, unmapped, summary };
+}
+
+type SourceAnnotationKind = LineAnnotation["kind"];
+
+interface SourceAnnotationInput {
+  annotation: LineAnnotation;
+  loc: SourceLoc | undefined;
+  sequence: SourceAnnotationSequence;
+}
+
+/**
+ * 当前 producer 的三类事实都有 sourceOrder，因而能恢复真正的跨数组发生顺序。历史记录缺
+ * 该字段时只能保留原有存储桶内的稳定顺序：它们被明确放在已知顺序事实之后，绝不把这个
+ * 回退位置解释成 assertion / score / send 三种事实之间的实际先后。
+ */
+type SourceAnnotationSequence =
+  | { kind: "recorded"; sourceOrder: number; inputIndex: number }
+  | { kind: "legacy"; sourceKind: SourceAnnotationKind; inputIndex: number };
+
+const legacySourceKindRank: Readonly<Record<SourceAnnotationKind, number>> = {
+  assertion: 0,
+  score: 1,
+  send: 2,
+};
+
+function sortSourceAnnotations(input: {
+  assertions: readonly AssertionResult[];
+  scoreEntries: readonly ScoreEntry[];
+  sends: readonly SendAnnotation[];
+}): SourceAnnotationInput[] {
+  const inputs: SourceAnnotationInput[] = [];
+  const addInputs = <T>(
+    values: readonly T[],
+    makeAnnotation: (value: T) => LineAnnotation,
+    sourceOrder: (value: T) => number | undefined,
+  ) => {
+    for (const [inputIndex, value] of values.entries()) {
+      const annotation = makeAnnotation(value);
+      const order = sourceOrder(value);
+      inputs.push({
+        annotation,
+        loc: annotation.kind === "send" ? annotation.send.loc : annotation.kind === "score" ? annotation.score.loc : annotation.assertion.loc,
+        sequence: order === undefined
+          ? { kind: "legacy", sourceKind: annotation.kind, inputIndex }
+          : { kind: "recorded", sourceOrder: order, inputIndex },
+      });
+    }
+  };
+  addInputs(input.assertions, (assertion) => ({ kind: "assertion", assertion }), (assertion) => assertion.sourceOrder);
+  addInputs(input.scoreEntries, (score) => ({ kind: "score", score }), (score) => score.sourceOrder);
+  addInputs(input.sends, (send) => ({ kind: "send", send }), (send) => send.sourceOrder);
+  return inputs.sort(compareSourceAnnotationSequence);
+}
+
+function compareSourceAnnotationSequence(left: SourceAnnotationInput, right: SourceAnnotationInput): number {
+  const leftSequence = left.sequence;
+  const rightSequence = right.sequence;
+  if (leftSequence.kind === "recorded" && rightSequence.kind === "recorded") {
+    return leftSequence.sourceOrder - rightSequence.sourceOrder ||
+      legacySourceKindRank[left.annotation.kind] - legacySourceKindRank[right.annotation.kind] ||
+      leftSequence.inputIndex - rightSequence.inputIndex;
+  }
+  if (leftSequence.kind === "recorded") return -1;
+  if (rightSequence.kind === "recorded") return 1;
+  return legacySourceKindRank[leftSequence.sourceKind] - legacySourceKindRank[rightSequence.sourceKind] ||
+    leftSequence.inputIndex - rightSequence.inputIndex;
 }
 
 /** 唯一的裁行入口；full/file/default/web 不会改变完整树或事实顺序。 */
@@ -322,41 +340,303 @@ export function projectSourceView(
   source: AnnotatedSourceTree,
   options: { mode: "default" | "full" | "file" | "web"; file?: string; budgetLines?: number },
 ): SourceContent {
-  const project = (node: SourceNode, isSpine: boolean): SourceContentNode => {
-    const selected =
-      options.mode === "file" && options.file === node.file
-        ? node.lines
-        : node.lines.filter((line) => options.mode === "full" || line.annotations.length > 0 || line.calls.length > 0 || line.aborted);
+  const projectCall = (call: SourceCall, depth: number): ProjectedSourceCall => {
+    const open = options.mode === "full" ||
+      ((options.mode === "default" || options.mode === "web") && needsAttention(call.summary));
+    if (call.target.kind === "source") {
+      return {
+        summary: call.summary,
+        open,
+        target: { kind: "source", node: projectNode(call.target.node, false, depth + 1) },
+      };
+    }
+    if (call.target.kind === "package") {
+      return {
+        summary: call.summary,
+        open,
+        target: { kind: "package", package: call.target.package, calls: call.target.calls.map((child) => projectCall(child, depth + 1)) },
+      };
+    }
     return {
-      ...node,
-      lines: selected,
-      calls: selected.flatMap((line) =>
-        line.calls.map((call) => ({
-          ...call,
-          open:
-            options.mode === "full" ||
-            options.mode === "web"
-              ? call.summary.failed > 0 || call.summary.unavailable > 0 || call.summary.aborted
-              : false,
-        })),
-      ),
+      summary: call.summary,
+      open,
+      target: {
+        kind: "unavailable",
+        file: call.target.file,
+        ...(call.target.line !== undefined ? { line: call.target.line } : {}),
+        annotations: call.target.annotations,
+        calls: call.target.calls.map((child) => projectCall(child, depth + 1)),
+      },
     };
   };
-  return { ...source, spine: project(source.spine, true), detached: source.detached.map((n) => project(n, false)) };
+
+  const projectNode = (node: SourceNode, isSpine: boolean, depth: number): SourceContentNode => {
+    const selected = options.mode === "file"
+      ? node.lines
+      : selectSourceLines(node.lines, isSpine ? 3 : 2, isSpine ? 8 : 4);
+    return {
+      file: node.file,
+      sha256: node.sha256,
+      lines: selected.map((line) => ({
+        ...line,
+        calls: line.calls.map((call) => projectCall(call, depth)),
+      })),
+    };
+  };
+
+  if (options.mode === "file" && options.file !== undefined) {
+    const nodes = collectNodes(source).filter((node) => node.file === options.file);
+    if (nodes.length > 0) {
+      const merged = mergeFileNodes(nodes);
+      return { ...source, spine: projectNode(merged, true, 0), detached: [] };
+    }
+    throw new Error(`Captured source file not found in annotated source tree: ${options.file}`);
+  }
+
+  const projected: SourceContent = {
+    ...source,
+    spine: projectNode(source.spine, true, 0),
+    detached: source.detached.map((node) => projectNode(node, false, 0)),
+  };
+  if (options.mode === "default") applyLineBudget(projected, options.budgetLines ?? 400);
+  return projected;
 }
 
 function emptySummary(): SourceCallSummary {
   return { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false };
 }
-function summarize(node: SourceNode): { checks: number; passed: number; failed: number; unavailable: number } {
-  const out = { checks: 0, passed: 0, failed: 0, unavailable: 0 };
-  for (const line of node.lines) {
-    for (const item of line.annotations) {
-      if ("outcome" in item) {
-        out.checks++;
-        item.outcome === "passed" ? out.passed++ : out.failed++;
-      }
+
+function annotationSummary(annotation: LineAnnotation): SourceCallSummary {
+  if (annotation.kind === "send") return emptySummary();
+  if (annotation.kind === "score") {
+    return { ...emptySummary(), points: { earned: annotation.score.points, available: annotation.score.points } };
+  }
+  const assertion = annotation.assertion;
+  const base: SourceCallSummary = {
+    checks: 1,
+    passed: assertion.outcome === "passed" ? 1 : 0,
+    failed: assertion.outcome === "failed" ? 1 : 0,
+    unavailable: assertion.outcome === "unavailable" ? 1 : 0,
+    aborted: false,
+  };
+  if (assertion.pointsAvailable !== undefined) {
+    base.points = {
+      earned: assertion.outcome === "unavailable" ? 0 : assertion.points ?? 0,
+      available: assertion.pointsAvailable,
+    };
+  }
+  return base;
+}
+
+function addSummaries(items: readonly SourceCallSummary[]): SourceCallSummary {
+  const out = emptySummary();
+  let earned = 0;
+  let available = 0;
+  let hasPoints = false;
+  for (const item of items) {
+    out.checks += item.checks;
+    out.passed += item.passed;
+    out.failed += item.failed;
+    out.unavailable += item.unavailable;
+    out.aborted ||= item.aborted;
+    if (item.points) {
+      hasPoints = true;
+      earned += item.points.earned;
+      available += item.points.available;
     }
   }
+  if (hasPoints) out.points = { earned, available };
   return out;
+}
+
+function summaryOfTarget(target: SourceCall["target"]): SourceCallSummary {
+  if (target.kind === "source") return summaryOfNode(target.node);
+  const children = target.calls.map((call) => call.summary);
+  if (target.kind === "package") return addSummaries(children);
+  const own = target.annotations.map(annotationSummary);
+  // 源码段本身不可用也是一个可观察的缺口，但绝不折成 failed。
+  return addSummaries([{ ...emptySummary(), unavailable: 1 }, ...own, ...children]);
+}
+
+function summarizeCall(call: SourceCall, abortedCalls: ReadonlySet<SourceCall>): SourceCallSummary {
+  if (call.target.kind === "source") summarizeNode(call.target.node, abortedCalls);
+  else for (const child of call.target.calls) summarizeCall(child, abortedCalls);
+  call.summary = addSummaries([
+    summaryOfTarget(call.target),
+    ...(abortedCalls.has(call) ? [{ ...emptySummary(), aborted: true }] : []),
+  ]);
+  return call.summary;
+}
+
+function summaryOfNode(node: SourceNode): SourceCallSummary {
+  const parts: SourceCallSummary[] = [];
+  for (const line of node.lines) {
+    parts.push(...line.annotations.map(annotationSummary));
+    parts.push(...line.calls.map((call) => call.summary));
+    if (line.aborted) parts.push({ ...emptySummary(), aborted: true });
+  }
+  return addSummaries(parts);
+}
+
+function summarizeNode(node: SourceNode, abortedCalls: ReadonlySet<SourceCall>): SourceCallSummary {
+  for (const line of node.lines) for (const call of line.calls) summarizeCall(call, abortedCalls);
+  return summaryOfNode(node);
+}
+
+function summaryOfUnmapped(unmapped: AnnotatedSourceTree["unmapped"]): SourceCallSummary {
+  return addSummaries([
+    ...unmapped.assertions.map((assertion) => annotationSummary({ kind: "assertion", assertion })),
+    ...unmapped.scores.map((score) => annotationSummary({ kind: "score", score })),
+  ]);
+}
+
+function needsAttention(summary: SourceCallSummary): boolean {
+  return summary.failed > 0 || summary.unavailable > 0 || summary.aborted ||
+    (summary.points !== undefined && summary.points.earned < summary.points.available);
+}
+
+function selectSourceLines(
+  lines: readonly SourceTreeLine[],
+  radius: number,
+  foldThreshold: number,
+): SourceTreeLine[] {
+  if (lines.length === 0) return [];
+  const keep = new Set<number>();
+  const essentials = lines.flatMap((line, index) =>
+    line.annotations.length > 0 || line.calls.length > 0 || line.aborted ? [index] : []
+  );
+  for (const index of essentials) {
+    for (let candidate = Math.max(0, index - radius); candidate <= Math.min(lines.length - 1, index + radius); candidate++) {
+      keep.add(candidate);
+    }
+  }
+  // 没有任何证据锦标时仍给读者一个有界的源码起点。
+  if (essentials.length === 0) {
+    for (let index = 0; index < Math.min(lines.length, radius + 1); index++) keep.add(index);
+  }
+  let gapStart = 0;
+  while (gapStart < lines.length) {
+    while (gapStart < lines.length && keep.has(gapStart)) gapStart++;
+    if (gapStart >= lines.length) break;
+    let gapEnd = gapStart;
+    while (gapEnd + 1 < lines.length && !keep.has(gapEnd + 1)) gapEnd++;
+    if (gapEnd - gapStart + 1 < foldThreshold) {
+      for (let index = gapStart; index <= gapEnd; index++) keep.add(index);
+    }
+    gapStart = gapEnd + 1;
+  }
+  return lines.filter((_line, index) => keep.has(index));
+}
+
+function collectNodes(source: AnnotatedSourceTree): SourceNode[] {
+  const nodes: SourceNode[] = [];
+  const visitCalls = (calls: readonly SourceCall[]) => {
+    for (const call of calls) {
+      if (call.target.kind === "source") visitNode(call.target.node);
+      else visitCalls(call.target.calls);
+    }
+  };
+  const visitNode = (node: SourceNode) => {
+    nodes.push(node);
+    for (const line of node.lines) visitCalls(line.calls);
+  };
+  visitNode(source.spine);
+  for (const node of source.detached) visitNode(node);
+  return nodes;
+}
+
+/** 单文件模式把该路径在不同调用分支上的标注合回同一份全文。 */
+function mergeFileNodes(nodes: readonly SourceNode[]): SourceNode {
+  const first = nodes[0]!;
+  const lines = first.lines.map((line) => ({ ...line, annotations: [...line.annotations], calls: [...line.calls] }));
+  for (const node of nodes.slice(1)) {
+    for (const line of node.lines) {
+      const target = lines[line.line - 1];
+      if (!target) continue;
+      target.annotations.push(...line.annotations);
+      target.calls.push(...line.calls);
+      if (line.aborted) target.aborted = true;
+    }
+  }
+  return { file: first.file, sha256: first.sha256, lines };
+}
+
+interface BudgetCandidate {
+  call: ProjectedSourceCall;
+  depth: number;
+  severity: "soft" | "gate";
+}
+
+function failedSeverity(call: ProjectedSourceCall): "soft" | "gate" {
+  const annotations: LineAnnotation[] = [];
+  const visitCalls = (calls: readonly ProjectedSourceCall[]) => {
+    for (const child of calls) {
+      if (child.target.kind === "source") visitNode(child.target.node);
+      else {
+        if (child.target.kind === "unavailable") annotations.push(...child.target.annotations);
+        visitCalls(child.target.calls);
+      }
+    }
+  };
+  const visitNode = (node: SourceContentNode) => {
+    for (const line of node.lines) {
+      annotations.push(...line.annotations);
+      visitCalls(line.calls);
+    }
+  };
+  if (call.target.kind === "source") visitNode(call.target.node);
+  else {
+    if (call.target.kind === "unavailable") annotations.push(...call.target.annotations);
+    visitCalls(call.target.calls);
+  }
+  return annotations.some((annotation) =>
+    annotation.kind === "assertion" && annotation.assertion.outcome === "failed" && annotation.assertion.severity === "gate"
+  ) ? "gate" : "soft";
+}
+
+function applyLineBudget(source: SourceContent, budget: number): void {
+  const candidates: BudgetCandidate[] = [];
+  const visibleLinesInCalls = (calls: readonly ProjectedSourceCall[], depth: number): number => {
+    let count = 0;
+    for (const call of calls) {
+      if (call.open) {
+        candidates.push({ call, depth, severity: failedSeverity(call) });
+        if (call.target.kind === "source") {
+          count += call.target.node.lines.length;
+          count += call.target.node.lines.reduce((sum, line) => sum + visibleLinesInCalls(line.calls, depth + 1), 0);
+        } else {
+          count += visibleLinesInCalls(call.target.calls, depth + 1);
+        }
+      }
+    }
+    return count;
+  };
+  const rootLines = source.spine.lines.length + source.detached.reduce((sum, node) => sum + node.lines.length, 0);
+  let visible = rootLines +
+    source.spine.lines.reduce((sum, line) => sum + visibleLinesInCalls(line.calls, 1), 0) +
+    source.detached.reduce((sum, node) => sum + node.lines.reduce((subtotal, line) => subtotal + visibleLinesInCalls(line.calls, 1), 0), 0);
+  if (visible <= budget) return;
+  candidates.sort((left, right) =>
+    right.depth - left.depth ||
+    (left.severity === right.severity ? 0 : left.severity === "soft" ? -1 : 1)
+  );
+  for (const candidate of candidates) {
+    if (!candidate.call.open) continue;
+    candidate.call.open = false;
+    visible = visibleLineCount(source);
+    if (visible <= budget) break;
+  }
+}
+
+function visibleLineCount(source: SourceContent): number {
+  const calls = (items: readonly ProjectedSourceCall[]): number => items.reduce((sum, call) => {
+    if (!call.open) return sum;
+    if (call.target.kind === "source") {
+      return sum + call.target.node.lines.length + call.target.node.lines.reduce((nested, line) => nested + calls(line.calls), 0);
+    }
+    return sum + calls(call.target.calls);
+  }, 0);
+  const node = (value: SourceContentNode): number =>
+    value.lines.length + value.lines.reduce((sum, line) => sum + calls(line.calls), 0);
+  return node(source.spine) + source.detached.reduce((sum, value) => sum + node(value), 0);
 }

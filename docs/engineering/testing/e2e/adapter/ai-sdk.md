@@ -14,8 +14,8 @@
 
 | 协议行为                   | Eval 断言（只读事件流）                                                                                                          |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| UI Message Stream 工具调用 | 工具以**不带命名空间的工具名**出现在 `action.called`，并按 tool call ID 与 `action.result` 配对；反例断言未提供的工具 `notCalledTool`        |
-| HITL 审批                  | approval part 产生 `input.requested`；批准后经改写重发恢复，恢复轮出现对应 `action.result`；拒绝路径产生被拒状态，不产生工具结果 |
+| UI Message Stream 工具调用 | 工具以**不带命名空间的工具名**出现在 `operation.started`，并按 operation ID 与 `operation.finished` 配对；反例断言未提供的工具 `notCalledTool`        |
+| HITL 审批                  | approval part 产生 `input.requested`；批准后经改写重发恢复，恢复轮出现对应 `operation.finished`；拒绝路径产生被拒状态，不产生工具结果 |
 | 会话                       | 全量历史重放下，第二轮能引用首轮事实                                                                                             |
 
 ## 仓库验收

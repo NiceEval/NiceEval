@@ -147,6 +147,12 @@ describe("SandboxLayer 声明与 command identity", () => {
       provider: "docker",
       kind: "image",
     });
+    expect(sandboxLayerStateOf(dockerImageSandbox({
+      image: "node:24",
+      lifetimeMs: 60_000,
+    })).template).toMatchObject({
+      identity: { publishable: { lifetime: { _tag: "Configured", milliseconds: 60_000 } } },
+    });
     expect(sandboxLayerStateOf(e2bSandbox({ template: "niceeval-codex", lifetimeMs: 60_000 })).template).toMatchObject({
       provider: "e2b",
       kind: "template",
@@ -172,6 +178,9 @@ describe("SandboxLayer 声明与 command identity", () => {
       /workspaceService must be a non-empty string/,
     );
     expect(() => vercelSandbox({ snapshotId: "snap", lifetimeMs: Number.POSITIVE_INFINITY })).toThrow(
+      /positive finite number/,
+    );
+    expect(() => dockerImageSandbox({ image: "node:24", lifetimeMs: 0 })).toThrow(
       /positive finite number/,
     );
     expect(() => e2bSandbox({ template: "base", provider: "e2b" } as never)).toThrow(

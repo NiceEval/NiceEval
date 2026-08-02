@@ -6,7 +6,7 @@
 ## `defineEval` 的形状
 
 ```typescript
-import { defineEval } from "niceeval";
+import { defineEval, type JsonValue } from "niceeval";
 
 export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
@@ -25,7 +25,7 @@ export default defineEval({
   //  只改变「哪些路径算进 agent 归因」,不改变沙箱里实际有什么;仅沙箱型有意义
 
   reporters?: Reporter[];               // 这个 eval 专用的报告器
-  metadata?: Record<string, unknown>;   // 原样落进记录,给报告和事后分析读
+  metadata?: Record<string, JsonValue>; // 纯 JSON 元数据,原样落进记录,给报告和事后分析读
 
   async test(t) { /* 按顺序写普通上传、交互、命令、读取与断言 */ },
 });
@@ -125,7 +125,7 @@ export default defineScoreEval({
 
 题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "points"`)供报告选择主读数。
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
-计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-scoring.md)。
+计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-points.md)。
 
 API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集从输入数组生成多条 eval、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
 评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。

@@ -442,7 +442,7 @@ return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()�
 
 - **`createClaudeSdkEventStream`**（Claude Agent SDK `SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage；`markRejected()` 登记被拒调用。
 - **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
-- **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类、工具项（`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`）、`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
+- **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类、工具项（`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → 配对的 tool `operation.started` + `operation.finished`）、`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
 
 可跑参考：[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下 claude-sdk / pi-sdk / codex-sdk 三个 adapter 就是这三个转换器 + `driveFrameStream` + 传输粘合。
 
@@ -468,10 +468,14 @@ if (pending) {
 // 正常轮：会话续接走 ctx.session.id / capture，暂停时把 cursor 存进 typed slot
 return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
   ctx.session.capture(stream.sessionId);
-  const gated = derived.find((e) => e.type === "action.called" && e.name === GATED_TOOL_NAME);
-  if (gated?.type === "action.called") {
-    ctx.session.set(pendingSlot, { cursor, stream, toolUseId: gated.callId });
-    return { pause: { id: gated.callId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
+  const gated = derived.find((event) =>
+    event.type === "operation.started" &&
+    event.operation.kind === "tool" &&
+    event.operation.name === GATED_TOOL_NAME
+  );
+  if (gated?.type === "operation.started") {
+    ctx.session.set(pendingSlot, { cursor, stream, toolUseId: gated.operationId });
+    return { pause: { id: gated.operationId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
   }
 });
 ```
@@ -480,7 +484,7 @@ return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
 
 ## `turnFromAiSdk`：AI SDK 结果 → 事件流转换器
 
-`turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 `action.result`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
+`turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 tool `operation.finished`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
 
 ```ts
 import { defineAgent, turnFromAiSdk } from "niceeval/adapter";

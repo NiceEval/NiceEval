@@ -139,7 +139,7 @@ export const examScore = attemptMetric({
  * 计分制(`defineScoreEval`)eval 的挣分:`assertions[].points` 之和加 `scoreEntries[].points`
  * 之和——纯累加,不声明满分(docs/feature/experiments/score-points.md「计分制:叠加给分,
  * 没有上限声明」)。errored 记 null(基础设施得 null,不折成 0);skipped 同为 null。通过制
- * (`scoring !== "points"`,含省略即 "pass")eval 没有分数面,同样返回 null——这样跨题型的
+ * (`evaluationKind !== "points"`,含省略即 "pass")eval 没有分数面,同样返回 null——这样跨题型的
  * Sample 里对 totalScore 求 acrossEvals 和时,通过制 eval 天然不贡献、也不拉低分母(它们不落
  * 进这个指标的样本)。`runs > 1` 时同一 eval 的多个 attempt 取均值(perEval mean,与文档「eval
  * 得分取各 attempt 的均值」一致);跨 eval 用 sum(acrossEvals sum,对应「总分 = Σ 各 eval 挣分」)。
@@ -147,11 +147,11 @@ export const examScore = attemptMetric({
 export const totalScore = attemptMetric({
   name: "total-score",
   label: { en: "Total score", "zh-CN": "总分" },
-  description: "Points-scoring eval's earned points: sum of assertions[].points + scoreEntries[].points. Not applicable (null) to pass-scoring evals.",
+  description: "Points eval's earned points: sum of assertions[].points + scoreEntries[].points. Not applicable (null) to pass evals.",
   better: "higher",
   bounds: { min: 0 },
   value(a) {
-    if (a.result.scoring !== "points") return null;
+    if (a.result.evaluationKind !== "points") return null;
     if (a.result.verdict === "errored" || a.result.verdict === "skipped") return null;
     let total = 0;
     for (const assertion of a.result.assertions) {
@@ -257,4 +257,3 @@ export const repeatedFailedCommands = attemptMetric({
     return repeated;
   },
 });
-

@@ -94,9 +94,9 @@ def _translate(ns: tuple[str, ...], chunk: dict[str, Any], seq: Iterator[int], l
         if node_name in _SUBGRAPH_CONTAINER_NODES and len(ns) == 0:
             # 子图作为节点时父级(根命名空间)上报的是子图全量状态回放——里面唯一的新信息
             # (满足外层 tool_call 的 ToolMessage)已经在子图内部 namespace 的增量更新里
-            # 处理过一次(同一个 callId,action.result 不分命名空间,子图内那次已经把它
-            # 解析出来,顺带触发了 ensureNamespace → subagent.called)。这里整条跳过,
-            # 否则会对同一个 tool_call_id 重发一次 tools/finished(转换器会按 callId 去重,
+            # 处理过一次(同一个 operationId,operation.finished 不分命名空间,子图内那次已经把它
+            # 解析出来,顺带触发了 ensureNamespace → subagent operation.started)。这里整条跳过,
+            # 否则会对同一个 tool_call_id 重发一次 tools/finished(转换器会按 operationId 去重,
             # 不算错,但没有意义)。
             continue
 

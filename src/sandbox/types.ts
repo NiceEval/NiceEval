@@ -1,5 +1,5 @@
-// sandbox 域类型:Sandbox 接口、provider spec(可辨识联合)、命令与文件 IO 的形状。
-// 「在哪里跑、如何隔离」的全部契约在这里;provider 实现见本目录各文件,分发见 resolve.ts。
+// sandbox 域类型:运行中 Sandbox、生命周期 hook、命令与文件 IO 的形状。
+// 作者声明使用 layer.ts 的闭合 SandboxLayer；本文件不再保留旧 provider spec。
 
 import type { ScopedFeedback } from "../shared/types.ts";
 
@@ -15,50 +15,11 @@ export interface CommandResult {
   command?: string;
 }
 
-/** 内置 provider 名;不出现在 `sandbox` 字段的类型里(spec 用各自的 `provider` 判别字段区分)。 */
+/** 内置 provider 名；ProviderModule 的完成态计划使用普通 string 兼容自定义 provider。 */
 export type SandboxProvider = "docker" | "vercel" | "e2b" | "local";
 
 /** 镜像/模板里的 Node 运行时版本。 */
 export type SandboxRuntime = "node20" | "node24";
-
-/**
- * SandboxSpec 四个变体共有的沙箱生命周期钩子挂载点:`.setup(fn)` / `.teardown(fn)` 链式方法,
- * 由 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` / `defineSandbox()` 产出的对象上
- * 直接可调。
- *
- * **语义**:环境预置层,俗称「动态镜像层」——本想直接烘进镜像/快照/模板,但内容要按实验
- * (`ctx.flags` / `ctx.experimentId`)动态变化的东西:装某个实验专属的二进制、预热缓存、
- * 写运行期才知道内容的 hook 文件、按 `ctx.experimentId` 载入/回存跨 attempt 的状态。
- *
- * **与另外两层 setup 的分工**(三者都在同一个沙箱生命周期里,各管一层):
- *   · `sandbox.setup`(这里)—— 环境层,不知道具体跑哪个 eval / 接哪个 agent;
- *   · `eval.setup` —— 任务层,准备这次 eval 的素材(如 `npm install` 起始项目依赖);
- *   · `agent.setup` —— 协议层,接入被测 agent(装 CLI、写鉴权 / 模型配置)。
- *
- * **执行顺序**:沙箱就绪 → `sandbox.setup` 钩子 → workspace 上传 / git 基线 / `eval.setup` →
- * `agent.setup` → `agent.tracing.configure` → 逐轮 `send`。`sandbox.setup` 特意排在 git
- * 基线之前——它的改动会被提交进基线,不会被误算进 agent 产出的 diff。收尾按 LIFO:
- * `agent.teardown` 先跑,`sandbox.teardown` 钩子最后跑(沙箱销毁前)。
- *
- * **多钩子**:`.setup(a).setup(b)` 按追加顺序依次执行(a 先 b 后);`.teardown(x).teardown(y)`
- * 按追加的**逆序**执行(y 先 x 后)。每次调用都返回一个新 spec(不改变原对象),可继续链式。
- * `setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完。
- *
- * **失败语义**:`setup` 钩子抛错按执行错误计——与 `eval.setup` / `agent.setup` 抛错走同一条
- * 路径,不新增错误分类;但不阻断该 attempt 已进入的收尾(已挂载的 `teardown` 钩子仍会在
- * finally 里跑)。`teardown` 钩子报错只作诊断(吞掉 / 记 log),不改变已产出的结果——与
- * `agent.teardown` 现状一致。
- */
-export interface SandboxHooks<Self> {
-  /** 已挂载的 setup 钩子,按追加顺序保存(内部读取,一般用不到)。 */
-  readonly setupHooks?: readonly SandboxHook[];
-  /** 已挂载的 teardown 钩子,按追加顺序保存,执行时逆序(内部读取,一般用不到)。 */
-  readonly teardownHooks?: readonly SandboxHook[];
-  /** 追加一个沙箱级 setup 钩子,返回新 spec;详细契约见 {@link SandboxHooks}。 */
-  setup(fn: SandboxHook): Self;
-  /** 追加一个沙箱级 teardown 钩子,返回新 spec;详细契约见 {@link SandboxHooks}。 */
-  teardown(fn: SandboxHook): Self;
-}
 
 /**
  * Sandbox hook 的窄上下文:只有 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic`,
@@ -80,116 +41,11 @@ export interface SandboxHookContext extends ScopedFeedback {
   fact(key: string, value: string | number | boolean): void;
 }
 
-/** 沙箱级生命周期钩子(`.setup()` / `.teardown()` 链式挂载);`setup` 不返回值——要把 `setup`
- * 创建的句柄传给 `teardown`,以 `sandbox` 实例为键存取(见 {@link SandboxHooks})。 */
+/** 沙箱级生命周期钩子(`SandboxLayer.setup()` / `.teardown()` 链式挂载)。 */
 export type SandboxHook = (
   sandbox: Sandbox,
   ctx: SandboxHookContext,
 ) => void | Promise<void>;
-
-/**
- * Sandbox 的「数据结构」定义 —— 与 agent 一样可带参数(见 docs/feature/sandbox/library.md)。
- * 必须用工厂函数构造(`dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` / `defineSandbox()`),
- * 放进 config / experiment 的 `sandbox` 字段 —— 字段类型只接受这个数据结构,不接受裸字符串。
- * 各 provider 的参数互不相同 —— 这是个按 `provider` 区分的可辨识联合(discriminated union)。
- * 四个变体都带 {@link SandboxHooks} 的 `.setup()` / `.teardown()` 链式方法。
- */
-export interface DockerSandboxSpec extends SandboxHooks<DockerSandboxSpec> {
-  readonly provider: "docker";
-  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
-  readonly lifetimeMs?: number;
-  /** 覆盖默认镜像;默认按 runtime 选 `node:*-slim`。预制模板:传烘焙好 agent CLI 的镜像名。 */
-  readonly image?: string;
-  /**
-   * 按 eval 的 `environment` profile 映射完整 sandbox case。
-   * 表值靠判别键区分:`{ image }` 预制、`{ build }` 按需构建、`{ compose }` Compose case。
-   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
-   */
-  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").DockerEnvironmentCase>>;
-  /** folder-local source 的物化器,按 source kind(`compose` / `dockerfile`)注册。 */
-  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
-  readonly runtime?: SandboxRuntime;
-}
-export interface VercelSandboxSpec extends SandboxHooks<VercelSandboxSpec> {
-  readonly provider: "vercel";
-  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
-  readonly lifetimeMs?: number;
-  /** 从已有快照起 microVM。预制模板:烘焙好 agent CLI 的 snapshotId。 */
-  readonly snapshotId?: string;
-  /**
-   * 按 eval 的 `environment` profile 映射完整 sandbox case(第一期仅 `{ snapshotId }` 预制)。
-   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
-   */
-  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").VercelEnvironmentCase>>;
-  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
-  readonly runtime?: SandboxRuntime;
-}
-export interface E2BSandboxSpec extends SandboxHooks<E2BSandboxSpec> {
-  readonly provider: "e2b";
-  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
-  readonly lifetimeMs?: number;
-  /** e2b 模板名/ID。预制模板:烘焙好 agent CLI 的模板(如 `"niceeval-agents"`)。省略用 e2b 默认 `"base"`。 */
-  readonly template?: string;
-  /**
-   * 按 eval 的 `environment` profile 映射完整 sandbox case:`{ template }` 预制或 `{ build }` 按需构建。
-   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
-   */
-  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").E2BEnvironmentCase>>;
-  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
-  /** 仅作记录;e2b 的 node 版本由模板决定,不在创建时选。 */
-  readonly runtime?: SandboxRuntime;
-}
-/**
- * 本地执行:宿主机本地目录直接当 workdir 跑,零隔离、零仪式(见 docs/feature/sandbox/local.md)。
- * `dir` 省略时从进程当前目录向上解析 git 仓库根;不在任何 git 仓库内时报错并给出两条出路
- * (进入目标仓库再跑,或显式传 `dir`)。显式 `dir` 允许任意本地目录,不要求已是 git 仓库。
- */
-export interface LocalSandboxSpec extends SandboxHooks<LocalSandboxSpec> {
-  readonly provider: "local";
-  /** 显式指定 workdir;省略时从当前目录向上解析 git 仓库根。目录必须已存在且可写。 */
-  readonly dir?: string;
-  readonly runtime?: SandboxRuntime;
-}
-
-/**
- * 用户自定义 provider:`create` 直接产出一个 `Sandbox` 实例,不经 resolve.ts 的内置 provider switch。
- * 用 `defineSandbox()` 构造(见 src/define.ts)。`provider` 只用于展示 / 日志,不参与分发。
- */
-export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
-  readonly provider: string;
-  readonly runtime?: SandboxRuntime;
-  readonly recommendedConcurrency?: number;
-  /**
-   * 独占串行声明:该 provider 的所有 attempt 共享同一份不可并发的底层资源(如同一棵真实工作树),
-   * runner 加一道 provider 级串行闸,显式 `--max-concurrency` / 实验级 `maxConcurrency` 都不解除
-   * (见 docs/runner.md「调度:有界并发」)。中性的 provider 声明,省略即不独占。
-   */
-  readonly exclusive?: boolean;
-  /**
-   * 与内置 provider 同形的 environment 映射:值是 {@link import("./case-types.ts").CustomEnvironmentCase}
-   * (纯数据 identity + materialize)。与 {@link materializers} 同时命中同一 profile 时本表优先。
-   */
-  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").CustomEnvironmentCase>>;
-  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
-  /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 run 的进度与诊断走它。 */
-  readonly create: (opts: {
-    timeout?: number;
-    /** attempt 的绝对截止时刻；自定义 provider 应据此约束未显式给 timeout 的命令。 */
-    deadlineAt?: number;
-    runtime?: SandboxRuntime;
-    feedback: ScopedFeedback;
-  }) => Promise<Sandbox>;
-  /**
-   * 「哪些参数可发布」的投影,进结果快照的 ExperimentRunInfo.sandbox.params;
-   * 未实现时只落 provider 名。token、凭据路径永远不该出现在返回值里。
-   */
-  readonly publicConfig?: () => globalThis.Record<string, import("../shared/types.ts").JsonValue>;
-}
-
-export type SandboxSpec = DockerSandboxSpec | VercelSandboxSpec | E2BSandboxSpec | LocalSandboxSpec | CustomSandboxSpec;
-
-/** config / experiment 的 `sandbox` 字段:必须是工厂函数产出的 spec 数据结构;沙箱型 agent 不能省略。 */
-export type SandboxOption = SandboxSpec;
 
 export interface CommandOptions {
   /** 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。 */

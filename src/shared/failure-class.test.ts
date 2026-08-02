@@ -9,6 +9,7 @@ import {
   resolveAttemptFailureClass,
   type AttemptFailureInfo,
 } from "./failure-class.ts";
+import { isExternalCause, normalizeExternalCause } from "./external-cause.ts";
 
 describe("糖衣类 · 抛出点声明空间轴", () => {
   it("ExperimentFatalError 携带 experiment 档,message 原样保留(它是走完全程的修复提示)", () => {
@@ -57,6 +58,59 @@ describe("failureClassOf · 结构守卫", () => {
     // retryable: true 必须带 reason(类型级规则),运行时进来的非法组合同样不认
     expect(failureClassOf({ _tag: "NiceevalClassifiedError", class: { retryable: true } })).toBeUndefined();
     expect(failureClassOf({ _tag: "NiceevalClassifiedError", class: { retryable: false, scope: "run" } })).toBeUndefined();
+  });
+});
+
+describe("ExternalCause · 跨边界快照", () => {
+  it("已归一化快照仍完整解码、复制并冻结，不长期引用调用者对象", () => {
+    const nested = {
+      _tag: "ThrownValue",
+      valueType: "string",
+      message: "socket reset",
+      cause: { _tag: "Absent" },
+    } as const;
+    const foreignSnapshot = {
+      _tag: "Error",
+      name: "Error",
+      message: "store unavailable",
+      code: { _tag: "Present", value: "ECONNRESET" },
+      status: { _tag: "Absent" },
+      stack: { _tag: "Absent" },
+      failureClass: { _tag: "Absent" },
+      cause: { _tag: "Cause", value: nested },
+    } as const;
+
+    expect(isExternalCause(foreignSnapshot)).toBe(true);
+    const normalized = normalizeExternalCause(foreignSnapshot);
+    expect(normalized).toEqual(foreignSnapshot);
+    expect(normalized).not.toBe(foreignSnapshot);
+    expect(Object.isFrozen(normalized)).toBe(true);
+    if (normalized._tag !== "ThrownValue") {
+      expect(Object.isFrozen(normalized.code)).toBe(true);
+      if (normalized.cause._tag === "Cause") {
+        expect(normalized.cause.value).not.toBe(nested);
+        expect(Object.isFrozen(normalized.cause.value)).toBe(true);
+      }
+    }
+  });
+
+  it("浅层像 ExternalCause 的伪造对象不会跳过归一化", () => {
+    const malformed = {
+      _tag: "Error",
+      name: "Error",
+      message: "untrusted",
+      code: { _tag: "Present", value: { raw: true } },
+      status: { _tag: "Absent" },
+      stack: { _tag: "Absent" },
+      failureClass: { _tag: "Absent" },
+      cause: { _tag: "Absent" },
+    };
+
+    expect(isExternalCause(malformed)).toBe(false);
+    const normalized = normalizeExternalCause(malformed);
+    expect(normalized).not.toBe(malformed);
+    expect(Object.isFrozen(normalized)).toBe(true);
+    if (normalized._tag !== "ThrownValue") expect(normalized.code).toEqual({ _tag: "Absent" });
   });
 });
 
@@ -132,6 +186,10 @@ describe("resolveAttemptFailureClass · 生命周期阶段的三道链", () => {
     });
     expect(seen[0].phase).toBe("sandbox.prepare.eval");
     expect(seen[0].text).toBe("eval setup failed · connect ECONNREFUSED tunnel.example:443");
-    expect(seen[0].cause).toBe(error);
+    expect(seen[0].cause).toMatchObject({
+      _tag: "Error",
+      message: "eval setup failed",
+      cause: { _tag: "Cause", value: { _tag: "Error", message: "connect ECONNREFUSED tunnel.example:443" } },
+    });
   });
 });

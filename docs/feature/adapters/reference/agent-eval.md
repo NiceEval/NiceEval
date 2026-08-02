@@ -47,8 +47,17 @@ interface Transcript {
 }
 ```
 
-`type` 只有五种(`message` / `tool_call` / `tool_result` / `thinking` / `error`),`tool_call` 和 `tool_result` 是**两条独立事件**,不像 niceeval 的 `operation.started` / `operation.finished` 那样带 `operationId` 配对。
-这一点直接影响了后面聚合层怎么把 call 和 result 对上号 (见"聚合层"一节的问题)。
+这里的三个 `unknown` 是 **agent-eval 自己的外部目标 schema**，不是 NiceEval 的领域字段：`args` / `result`
+来自第三方 CLI wire payload，`raw` 是它额外保留的原始调试对象。NiceEval parser 只在读取这类 SDK / JSONL
+输入的动态边界接收 `unknown`，当场把工具输入与输出正规化成 `JsonValue`；无法正规化的值必须得到显式
+降级或失败状态。不能把 `raw`、类实例或 `unknown` 写入 `StreamEvent`、`Turn` 或 attempt 记录，
+再交给下游猜。
+因此引用代码保留原项目的真实签名，但它不构成 NiceEval 可以长期保存 `unknown` 的先例。
+
+`type` 只有五种：`message`、`tool_call`、`tool_result`、`thinking` 与 `error`。
+`tool_call` 和 `tool_result` 是**两条独立事件**，不像 NiceEval 的
+`operation.started` / `operation.finished` 那样以 `operationId` 配对。
+这一点直接影响后面聚合层如何把 call 和 result 对上号（见“聚合层”一节）。
 
 ## 分发层:一个 agent 名对一个 parser 函数
 
@@ -70,7 +79,9 @@ function getParserForAgent(agent: string) {
 }
 ```
 
-用 `agent.includes(key)` 而不是精确相等,是为了让 `vercel-ai-gateway/claude-code` 这种网关前缀变体和直接 `claude-code` 走同一个 parser——两边其实是同一个 CLI,只是鉴权路径不同,不该因为名字里多了个前缀就找不到 parser。
+用 `agent.includes(key)` 而不是精确相等，是为了让
+`vercel-ai-gateway/claude-code` 这类网关前缀变体和直接 `claude-code` 走同一个 parser。
+两边其实是同一个 CLI，只是鉴权路径不同；不能因为名字多了前缀就找不到 parser。
 认不出的 agent 直接返回 `parseSuccess: false` 加一句报错(列出 `SUPPORTED_AGENTS`),不猜。
 
 ## Claude Code 怎么转换
@@ -79,11 +90,18 @@ function getParserForAgent(agent: string) {
 
 **转换逻辑(`parseClaudeCodeLine`,逐行处理):**
 
-- `type === "assistant"`:先从 `content` 数组里挑出 `type === "text"` 的块拼成一条 `message` 事件;再挑出 `type === "tool_use"` 的块,每个转成一条独立的 `tool_call` 事件(`name` 经 `normalizeToolName` 归一,原名存进 `originalName`,`input` 整个存进 `args`);再挑出 `type === "thinking"` 的块转成 `thinking` 事件。
+- `type === "assistant"`：先从 `content` 数组挑出 `type === "text"` 的块，拼成一条 `message` 事件。
+  再挑出 `type === "tool_use"` 的块；每块转成一条独立的 `tool_call` 事件。
+  `name` 经 `normalizeToolName` 归一，原名存进 `originalName`，整个 `input` 存进 `args`。
+  最后把 `type === "thinking"` 的块转成 `thinking` 事件。
   **一行输入可能产出好几条事件**,不是一对一。
-- `type === "user"`:**这是最容易踩坑的一步**——Claude Code 把工具执行结果也包装成一条 `user` 消息(`content` 数组里塞一个 `type: "tool_result"` 的块),parser 必须先检查 `content` 里有没有 `tool_result` 块,有就转成 `tool_result` 事件,没有才当成真的用户消息。
+- `type === "user"`：**这是最容易踩坑的一步**。Claude Code 也会把工具执行结果包装成 `user` 消息，
+  即 `content` 数组中有一个 `type: "tool_result"` 的块。parser 必须先检查有没有这个块：
+  有就转成 `tool_result` 事件，没有才当成真的用户消息。
   搞反了就会把工具结果误判成用户在说话。
-- 还兼容一种 OpenAI 风格的 `tool_calls` 数组(`message.tool_calls[].function.{name,arguments}`,`arguments` 是要再 `JSON.parse` 一次的字符串)——这是防御性代码,应对 Claude Code 某些输出路径可能改用 OpenAI 兼容格式。
+- 还兼容一种 OpenAI 风格的 `tool_calls` 数组：
+  `message.tool_calls[].function.{name,arguments}`。`arguments` 是要再 `JSON.parse` 一次的字符串。
+  这是防御性代码，应对 Claude Code 某些输出路径可能改用 OpenAI 兼容格式。
 
 **`normalizeToolName`(Claude Code 专属映射表)**,把 CLI 的私有工具名收敛成 canonical `ToolName`:
 
@@ -112,7 +130,10 @@ function getParserForAgent(agent: string) {
 **转换逻辑是一个大 `switch(eventType)`,不是 if/else 链**,分支比 Claude Code 多得多,因为 Codex 的事件粒度更细:
 
 - `message` / `chat` / `response` → 一条 `message`,`role` 从 `data.role` 或者猜 `data.from === "assistant"`。
-- `function_call` / `tool_call` / `tool_use` / `action`(四个同义 type 名全部映射到同一逻辑)→ 一条 `tool_call`;`name` 依次尝试 `data.function?.name || data.name || data.tool || data.action`;`args` 优先解析 OpenAI 式的 `function.arguments`(JSON 字符串,需要再 `JSON.parse`),否则退回 `data.arguments || data.input || data.params`。
+- `function_call` / `tool_call` / `tool_use` / `action`（四个同义 type 名）都映射到一条 `tool_call`。
+  `name` 依次尝试 `data.function?.name`、`data.name`、`data.tool` 与 `data.action`。
+  `args` 优先解析 OpenAI 式的 `function.arguments`（JSON 字符串，需再 `JSON.parse`）；
+  否则退回 `data.arguments`、`data.input` 或 `data.params`。
 - `function_result` / `tool_result` / `tool_response` / `action_result` → 一条 `tool_result`。
 - `thinking` / `reasoning` / `thought` → 一条 `thinking`。
 - `thread.started/completed`、`turn.started/completed/failed` → 当成控制流事件,`turn.failed` 转成 `error`,其余转成一条内容是事件名本身的 `system` 消息(纯占位,不是真正有信息量的内容)。
@@ -120,7 +141,10 @@ function getParserForAgent(agent: string) {
 - `output_text.delta` / `output_text.done` → 流式文本增量,转成 `assistant` 消息(意味着一次真实回复可能在这里被拆成好几条 `message` 事件,和 Claude Code "一次性给完整文本"不一样)。
 - `item.started` / `item.completed` → 再按 `data.item.type` 分二级:
   - `reasoning` → `thinking`。
-  - `command_execution` → **`started` 产 `tool_call`(shell,`args.command`),`completed` 产 `tool_result`(`result.output` 取 `aggregated_output`,`result.exitCode` 取 `exit_code`,`success` 判 `status === "completed" && exitCode 是 0 或未定义`)**——shell 命令的开始和结束是两个独立事件,靠"先后顺序"隐式配对,不靠 id。
+  - `command_execution`：**`started` 产 `tool_call`（shell，`args.command`），`completed` 产 `tool_result`。**
+    后者的 `result.output` 取 `aggregated_output`，`result.exitCode` 取 `exit_code`。
+    当 `status === "completed"` 且 exitCode 为 0 或未定义时，`success` 为真。
+    shell 命令的开始和结束是两个独立事件，靠“先后顺序”隐式配对，不靠 id。
   - `agent_message` → `assistant` 消息。
 - `default`(没认出的 type):再按数据形状猜——有 `role` 字段就当消息,有 `function`/`tool` 字段且带 `result`/`output` 就当 `tool_result`,否则当 `tool_call`。
   这是最后一道回退,处理型号漂移到连 `eventType` 都认不出的情况。
@@ -142,14 +166,21 @@ function getParserForAgent(agent: string) {
 
 ## 两份 parser 对比暴露的设计事实
 
-- **Claude Code 的分支数(~6 个 if/else)远少于 Codex(~15 个 switch case)**,不是因为哪份代码写得更细,而是两家 CLI 的 transcript **颗粒度不同**:Claude Code 一行大致等于"一条完整消息 / 一次工具调用",Codex 的 Responses API 把同一件事拆成多个生命周期事件(`item.started` → `item.completed`,`response.created` → `response.completed`)。
+- **Claude Code 的分支数（约 6 个 if/else）远少于 Codex（约 15 个 switch case）**。
+  这不是因为哪份代码写得更细，而是两家 CLI 的 transcript **颗粒度不同**。
+  Claude Code 一行大致等于“一条完整消息 / 一次工具调用”；Codex 的 Responses API 会把同一件事
+  拆成多个生命周期事件，例如 `item.started` → `item.completed` 与
+  `response.created` → `response.completed`。
   parser 的复杂度是被上游协议形状决定的,不是可以统一简化掉的。
 - **`normalizeToolName` 映射表不共享,每个 agent 各写一份**,即便两家都有等价的"读文件""跑 shell"概念。
   没有一张全局的"规范名 ← 各家别名"总表,复用发生在**结构**(都产出同一个 `ToolName` 联合类型)而不是**数据**(映射表本身)上。
-- **文件路径 / URL / 命令的提取函数(`extractFilePath` / `extractUrl` / `extractCommand`)在两份 parser 里几乎逐字重复**,只是取的字段名优先级顺序不同(Claude Code 先试 `args.path`,Codex 先试 `args.path` 但也认 `args.endpoint`)。
+- **文件路径、URL 与命令的提取函数**（`extractFilePath` / `extractUrl` / `extractCommand`）
+  在两份 parser 里几乎逐字重复。差异只在字段名的优先级：Claude Code 先试 `args.path`；
+  Codex 也先试 `args.path`，但还识别 `args.endpoint`。
   新增一个 agent = 复制这一整套函数再改字段名,没有抽成共享 helper。
-- **tool_call 和 tool_result 不是靠 id 配对的。
-  ** `TranscriptEvent` 没有 `callId` 这类字段,聚合层靠"数组里最后一个还没被填 `exitCode` 的 shellCommand"这种**顺序假设**去把 call 和 result 拼起来(见下一节)——如果两个工具调用交叠或乱序,这个假设会配错。
+- **tool_call 和 tool_result 不靠 id 配对。** `TranscriptEvent` 没有 `callId` 这类字段。
+  聚合层以“数组里最后一个还没填 `exitCode` 的 shellCommand”这个**顺序假设**，
+  把 call 和 result 拼起来（见下一节）。如果两个工具调用交叠或乱序，这个假设会配错。
 
 ## 聚合层:`generateSummary` 完全不认识 agent
 
@@ -195,16 +226,26 @@ case 'tool_result':
   }
 ```
 
-"数组里最后一条还没写 exitCode 的记录"就是这次 result 对应的 call——这是可行的,因为 Codex/Claude Code 的工具调用在 transcript 里基本是严格顺序的(等上一个工具跑完才发起下一个),但这个假设没有 id 回退,一旦上游并发发起多个工具调用,配对就会错。
+“数组里最后一条还没写 exitCode 的记录”就是这次 result 对应的 call。
+这是可行的，因为 Codex/Claude Code 的工具调用在 transcript 里基本严格顺序：
+等上一个工具跑完才发起下一个。但这个假设没有 id 回退；一旦上游并发多个工具调用，配对就会错。
 
 ## 采集层:两份 parser 之前,原始数据从哪来
 
-- **Claude Code(纯磁盘旁读):** `captureTranscript()` 把沙箱工作目录的斜杠换成短横线拼出 `~/.claude/projects/{workdir-with-dashes}`,shell 出 `ls -t *.jsonl | head -1` 找最新一份,`sandbox.readText()` 整份读回来当 `transcript`。
+- **Claude Code（纯磁盘旁读）：** `captureTranscript()` 把沙箱工作目录的斜杠换成短横线，
+  拼出 `~/.claude/projects/{workdir-with-dashes}`。它通过 `ls -t *.jsonl | head -1` 找最新文件，
+  再用 `sandbox.readText()` 整份读回来作为 `transcript`。
   这份文件是 Claude Code 自己为会话续接（resume）才写的,agent-eval 只是读。
 - **Codex(两条通道,各管各的用途):**
-  - **主 transcript:** 直接把 `codex exec --json` 的 `stdout + stderr` 拼起来,`extractTranscriptFromOutput()` 过滤出"看起来像 JSON 对象"的行(`trim().startsWith('{') && endsWith('}')`)当作 transcript——这是 stdout 捕获,不是磁盘读。
-  - **第二条通道,只为了拿"实际用的模型":** 从 stdout 里先抓一个 `thread.started` 事件拿到 `thread_id`,再用它去 `~/.codex/sessions` 磁盘上 `find` 对应的 session JSONL 文件读出来,从里面找 `turn_context` 事件的 `payload.model` ——因为经网关请求的模型名和网关实际路由到的模型可能不一致,只有磁盘上的 session 文件会记录真实值。
-    **同一个 agent 的"转换用" transcript 和"读实际模型用"的数据来源是两条不同的采集路径**,不是一份数据复用两次。
+  - **主 transcript：** 直接把 `codex exec --json` 的 `stdout + stderr` 拼起来。
+    `extractTranscriptFromOutput()` 过滤出“看起来像 JSON 对象”的行，
+    即 `trim().startsWith('{') && endsWith('}')`，作为 transcript。这是 stdout 捕获，不是磁盘读。
+  - **第二条通道，只为了拿“实际用的模型”：** 从 stdout 先抓一个 `thread.started` 事件，
+    取得 `thread_id`。再用它在 `~/.codex/sessions` 磁盘上 `find` 对应的 session JSONL 文件，
+    从中找 `turn_context` 事件的 `payload.model`。经网关请求的模型名可能与实际路由的模型不一致，
+    只有磁盘上的 session 文件会记录真实值。
+    **同一个 agent 的“转换用” transcript 与“读实际模型用”的数据来源是两条不同采集路径**，
+    不是一份数据复用两次。
 
 ## 落地:注入沙箱给断言用
 

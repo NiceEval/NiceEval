@@ -72,7 +72,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
    `errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
 - **`attempts > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
 
-两种题内写法（完整用例见[计分制用例](../../eval/use-case/rubric-scoring.md)）：
+两种题内写法（完整用例见[计分制用例](../../eval/use-case/rubric-points.md)）：
 
 ```typescript
 // 检查点制:每步 1 分,走完三步挣 3 分,挂一步不连坐后面
@@ -174,7 +174,7 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 ## 相关阅读
 
 - [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型) —— 计分制题型的定义形状。
-- [计分制用例](../../eval/use-case/rubric-scoring.md) —— 检查点制与 rubric 制的完整写法。
+- [计分制用例](../../eval/use-case/rubric-points.md) —— 检查点制与 rubric 制的完整写法。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— 四态折叠与 gate / soft 语义，判定面的基础。
 - [Assertions Architecture](../architecture.md) —— `AssertionResult` 的字段（`groupPath` / `score` / `severity`），折叠树的叶子素材。
 - [Reports](../../reports/README.md) —— show / view 共用的 page 声明，读取面的落点。

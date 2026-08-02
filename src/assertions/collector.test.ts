@@ -103,6 +103,9 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
     const [hit, miss] = await collector.finalize(ctxWith());
     expect(hit!.outcome === "unavailable" ? undefined : hit!.points).toBe(5);
     expect(miss!.outcome === "unavailable" ? undefined : miss!.points).toBe(0);
+    expect(hit!.pointsAvailable).toBe(5);
+    expect(miss!.pointsAvailable).toBe(5);
+    expect([hit!.sourceOrder, miss!.sourceOrder]).toEqual([1, 2]);
   });
 
   it("连续打分断言(judge 类)按 n × score 比例挣分", async () => {
@@ -118,6 +121,24 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
     collector.record(specForAssertion(equals(4), 4));
     const [result] = await collector.finalize(ctxWith());
     expect(result!.outcome === "unavailable" ? undefined : result!.points).toBeUndefined();
+    expect(result!.pointsAvailable).toBeUndefined();
+  });
+
+  it("unavailable 得分点保留可得分值但没有实得分", async () => {
+    const collector = new AssertionCollector();
+    collector.record({
+      name: "judge unavailable",
+      severity: "soft",
+      evaluate: () => ({ unavailable: true, reason: "judge-call-failed" }),
+    }).points(8);
+    const [result] = await collector.finalize(ctxWith());
+    expect(result).toMatchObject({
+      outcome: "unavailable",
+      reason: "judge-call-failed",
+      pointsAvailable: 8,
+      sourceOrder: 1,
+    });
+    expect(result).not.toHaveProperty("points");
   });
 
   it("持久化边界未开启 points 时，即使运行时链了 .points() 也不输出 points", async () => {
@@ -125,6 +146,7 @@ describe("计分制给分链路:.points(n) 挂在断言上", () => {
     collector.record(specForAssertion(equals(4), 4)).points(5);
     const [result] = await collector.finalize(ctxWith(), { includePoints: false });
     expect(result!.outcome === "unavailable" ? undefined : result!.points).toBeUndefined();
+    expect(result!.pointsAvailable).toBeUndefined();
   });
 
   it("n <= 0 或非有限数立即抛错(不是记一条失败断言)", () => {
@@ -255,7 +277,12 @@ describe("计分制给分链路:t.score(label, n) 直接给分", () => {
   it("立即记录 ScoreEntry(不像断言那样等 finalize 求值),label 与 points 原样落盘", () => {
     const collector = new AssertionCollector();
     collector.score("代码精简", 15);
-    expect(collector.scoreEntries).toEqual([{ label: "代码精简", points: 15, loc: expect.anything() }]);
+    expect(collector.scoreEntries).toEqual([{
+      label: "代码精简",
+      points: 15,
+      sourceOrder: 1,
+      loc: expect.anything(),
+    }]);
   });
 
   it("groupPath 跟随当前 t.group 栈,与断言同一份分组约定", async () => {

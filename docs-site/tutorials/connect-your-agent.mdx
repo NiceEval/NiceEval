@@ -98,7 +98,7 @@ npx niceeval exp my-agent refund # only run those whose ID starts with refund
 npx niceeval view              # inspect results in the local viewer
 ```
 
-**What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary, the failure locators, and the result path. `npx niceeval view` shows each eval's per-turn inputs, events, and scoring detail.
+**What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary, the failure locators, and the result path. `npx niceeval view` shows each eval's per-turn inputs, events, and assertion details.
 
 If it doesn't run, triage by where the error shows up, into three buckets:
 
@@ -106,7 +106,7 @@ If it doesn't run, triage by where the error shows up, into three buckets:
 - **`t.succeeded()` fails and the turn's verdict is failed**: the request went out, but the Turn the app returned is `failed`. Map the protocol's failures onto `Turn.status` or a standard `error` event; keep any extra bounded context you need with `ctx.diagnostic(...)`, not by printing the full response body.
 - **Only content assertions fail**: the integration itself already works — compare the actual value of `t.reply` in `view`, then adjust the assertion or the app.
 
-Once these steps are done, text assertions and Judge scoring both work. Tool, multi-turn, and approval-flow assertions require adding the optional capabilities listed at the end.
+Once these steps are done, text assertions and Judge assessments both work. Tool, multi-turn, and approval-flow assertions require adding the optional capabilities listed at the end.
 
 ## Experiment flags
 

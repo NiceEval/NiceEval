@@ -8,7 +8,7 @@ Eval 或 Experiment 的 template-bearing layer
  → template 绑定的 Provider planner
  → provider-specific SandboxCase 构建产物并启动运行实例
  → 主 Sandbox + 可选能力句柄 + 资源组
- → 现有 Agent / Eval / scoring 生命周期
+ → 现有 Agent / Eval / `assertions.evaluate` 生命周期
  → case 自己采证、留存或整组销毁
 ```
 
@@ -177,6 +177,20 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 浮动 image tag 若 provider 不能解析成 digest,该环境的旧结果不参与携带;可以运行并记录 tag 与实际事实,但不能假装两次环境可比。
 凭据值不落盘、不进身份:凭据轮换不改变环境语义时只记录引用名;凭据同时选择了不同租户、数据集或权限面时,用户必须提供非敏感 `revision` 进入身份,不靠 secret 值自动推断。
 
+携带门输入是闭合完成态，不保存 `identity?: unknown` 或 `unresolvedFloatingTags?` 这类半状态：
+
+```typescript
+type SandboxCaseIdentityResolution =
+  | { readonly _tag: "Stable"; readonly identity: JsonValue }
+  | { readonly _tag: "Unavailable"; readonly code: string; readonly reason: string };
+
+type SandboxCaseFloatingImages =
+  | { readonly _tag: "Resolved" }
+  | { readonly _tag: "Unresolved"; readonly refs: readonly [string, ...string[]] };
+```
+
+只有 `Stable + Resolved` 可以携带；不可用身份保留 typed code/reason，未解析 tag 保留非空 ref 列表。
+
 ## Run 级构建协调:共享准备的预算与调度
 
 构建协调按本次仍需 fresh 执行的 attempt 所引用的 BuildKey 分组:
@@ -257,6 +271,7 @@ defineSandboxCase({
     cluster: "eval-prod",
     manifestDigest: "sha256:...",
   },
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
   services: { _tag: "Supported" },
   materialize: (ctx) => Effect.succeed({
     sandbox: mainPodSandbox,

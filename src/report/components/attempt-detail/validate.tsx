@@ -11,7 +11,7 @@ function sourceLocProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-/** AssertionResult(src/scoring/types.ts):按 outcome 判别的联合,passed/failed 要 score,unavailable 要 reason。 */
+/** AssertionResult(src/assertions/types.ts):按 outcome 判别的联合,passed/failed 要 score,unavailable 要 reason。 */
 function assertionResultProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AssertionResult object`;
   if (typeof value.name !== "string") return `"${path}.name" must be a string`;
@@ -43,10 +43,9 @@ function traceSpanProblem(value: unknown, path: string): string | null {
 /** AttemptIdentity(src/record/locator.ts):locator 派生自的不可变身份元组。 */
 function attemptIdentityProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) {
-    return `"${path}" must be an AttemptIdentity { experimentId, snapshotStartedAt, evalId, attempt }`;
+    return `"${path}" must be an AttemptIdentity { runId, evalId, attempt }`;
   }
-  if (typeof value.experimentId !== "string") return `"${path}.experimentId" must be a string`;
-  if (typeof value.snapshotStartedAt !== "string") return `"${path}.snapshotStartedAt" must be a string`;
+  if (typeof value.runId !== "string") return `"${path}.runId" must be a string`;
   if (typeof value.evalId !== "string") return `"${path}.evalId" must be a string`;
   if (typeof value.attempt !== "number") return `"${path}.attempt" must be a number`;
   return null;
@@ -64,6 +63,7 @@ function capabilitiesProblem(value: unknown, path: string): string | null {
 export function validateSummaryData(data: unknown): string | null {
   if (!isObject(data)) return "expected an object";
   if (typeof data.locator !== "string") return 'missing "locator" (string)';
+  if (typeof data.experimentId !== "string") return 'missing "experimentId" (string)';
   const identityProblem = attemptIdentityProblem(data.identity, "identity");
   if (identityProblem !== null) return identityProblem;
   if (typeof data.verdict !== "string") return 'missing "verdict" (string)';
@@ -91,7 +91,7 @@ export function validateErrorData(data: unknown): string | null {
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-/** ScoreEntry(src/scoring/types.ts):t.score(label, n) 的直接给分记录。 */
+/** ScoreEntry(src/assertions/types.ts):t.score(label, n) 的直接给分记录。 */
 function scoreEntryProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be a ScoreEntry { label, points }`;
   if (typeof value.label !== "string") return `"${path}.label" must be a string`;
@@ -99,8 +99,7 @@ function scoreEntryProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-/** `{ group, items: ScoreEntry[] }[]` 分组结构;AttemptAssertionsData.scoreEntries 与
- *  AttemptSourceData.unmappedScoreEntries 共用同一套算法(groupByPath)与同一份校验。 */
+/** `{ group, items: ScoreEntry[] }[]` 分组结构；用于 AttemptAssertionsData.scoreEntries。 */
 function scoreEntryGroupsProblem(value: unknown, path: string): string | null {
   return arrayProblem(value, path, (group, groupPath) => {
     if (!isObject(group) || typeof group.group !== "string") {
@@ -110,8 +109,7 @@ function scoreEntryGroupsProblem(value: unknown, path: string): string | null {
   });
 }
 
-/** `{ group, items: AssertionResult[] }[]` 分组结构;AttemptAssertionsData.passedGroups 与
- *  AttemptSourceData.passedGroups 共用同一套算法(groupByPath)与同一份校验。 */
+/** `{ group, items: AssertionResult[] }[]` 分组结构；用于 AttemptAssertionsData.passedGroups。 */
 function assertionGroupsProblem(value: unknown, path: string): string | null {
   return arrayProblem(value, path, (group, groupPath) => {
     if (!isObject(group) || typeof group.group !== "string") {
@@ -121,8 +119,7 @@ function assertionGroupsProblem(value: unknown, path: string): string | null {
   });
 }
 
-/** 得分点挣满计数;AttemptAssertionsData 与 AttemptSourceData 共用同一条判据(源码不可用时
- *  换成 AttemptAssertions「规则完全一致」,见 docs/feature/reports/show/attempt.md)。 */
+/** AttemptAssertionsData 的得分点挣满计数。 */
 function scorePointsEarnedProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { earned, total }`;
   if (typeof value.earned !== "number") return `"${path}.earned" must be a number`;
@@ -140,78 +137,6 @@ export function validateAssertionsData(data: unknown): string | null {
     const scoreEntriesProblem = scoreEntryGroupsProblem(data.scoreEntries, "scoreEntries");
     if (scoreEntriesProblem !== null) return scoreEntriesProblem;
   }
-  if (data.scorePointsEarned === undefined) return null;
-  return scorePointsEarnedProblem(data.scorePointsEarned, "scorePointsEarned");
-}
-
-
-// ───────────────────────── AttemptSource ─────────────────────────
-
-/** AnnotatedSourceLine(src/record/annotated-source.ts):一行源码 + 映射到这一行的断言 / send 标注。 */
-function annotatedSourceLineProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AttemptSourceLineData { line, text, assertions, sends, turns }`;
-  if (typeof value.line !== "number") return `"${path}.line" must be a number`;
-  if (typeof value.text !== "string") return `"${path}.text" must be a string`;
-  const assertionsProblem = arrayProblem(value.assertions, `${path}.assertions`, assertionResultProblem);
-  if (assertionsProblem !== null) return assertionsProblem;
-  if (!Array.isArray(value.sends)) return `"${path}.sends" must be an array`;
-  const turnsProblem = arrayProblem(value.turns, `${path}.turns`, sourceTurnProblem);
-  if (turnsProblem !== null) return turnsProblem;
-  const scoreEntriesProblem = arrayProblem(value.scoreEntries, `${path}.scoreEntries`, scoreEntryProblem);
-  if (scoreEntriesProblem !== null) return scoreEntriesProblem;
-  if (value.aborted !== undefined && value.aborted !== true) return `"${path}.aborted" must be true or omitted`;
-  if (value.unreached !== undefined && value.unreached !== true) return `"${path}.unreached" must be true or omitted`;
-  return null;
-}
-
-function sourceTurnProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AttemptSourceTurn`;
-  if (typeof value.label !== "string") return `"${path}.label" must be a string`;
-  if (value.status !== "completed" && value.status !== "failed" && value.status !== "waiting") {
-    return `"${path}.status" must be "completed", "failed", or "waiting"`;
-  }
-  if (value.durationMs !== undefined && typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
-  if (typeof value.sentText !== "string") return `"${path}.sentText" must be a string`;
-  return arrayProblem(value.replies, `${path}.replies`, conversationReplyProblem);
-}
-
-/** AnnotatedEvalSourceSummary(src/record/annotated-source.ts):全是计数字段。 */
-function sourceSummaryProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AnnotatedEvalSourceSummary`;
-  for (const key of [
-    "totalAssertions",
-    "mappedAssertions",
-    "unmappedAssertions",
-    "passed",
-    "failed",
-    "gate",
-    "soft",
-    "totalLines",
-    "annotatedLines",
-  ] as const) {
-    if (typeof value[key] !== "number") return `"${path}.${key}" must be a number`;
-  }
-  return null;
-}
-
-export function validateSourceData(data: unknown): string | null {
-  if (!isObject(data)) return "expected an object";
-  if (typeof data.locator !== "string") return 'missing "locator" (string)';
-  if (typeof data.sourcePath !== "string") return 'missing "sourcePath" (string)';
-  const linesProblem = arrayProblem(data.lines, "lines", annotatedSourceLineProblem);
-  if (linesProblem !== null) return linesProblem;
-  const unmappedProblem = arrayProblem(data.unmapped, "unmapped", assertionResultProblem);
-  if (unmappedProblem !== null) return unmappedProblem;
-  const passedGroupsProblem = assertionGroupsProblem(data.passedGroups, "passedGroups");
-  if (passedGroupsProblem !== null) return passedGroupsProblem;
-  if (data.unmappedScoreEntries !== undefined) {
-    const unmappedScoreEntriesProblem = scoreEntryGroupsProblem(data.unmappedScoreEntries, "unmappedScoreEntries");
-    if (unmappedScoreEntriesProblem !== null) return unmappedScoreEntriesProblem;
-  }
-  const turnsProblem = arrayProblem(data.unlocatedTurns, "unlocatedTurns", sourceTurnProblem);
-  if (turnsProblem !== null) return turnsProblem;
-  const summaryProblem = sourceSummaryProblem(data.summary, "summary");
-  if (summaryProblem !== null) return summaryProblem;
   if (data.scorePointsEarned === undefined) return null;
   return scorePointsEarnedProblem(data.scorePointsEarned, "scorePointsEarned");
 }
@@ -259,12 +184,10 @@ const CONVERSATION_REPLY_KINDS = [
   "subagent",
   "input",
   "compaction",
-  "raw",
 ];
 
 /**
- * AttemptConversationReply(src/report/model/types.ts):按 `kind` 判别的联合,每支自己的必填
- * 字段各自校验——`raw` 是未识别事件类型的兜底分支,不吞没其余 kind 的校验。
+ * AttemptConversationReply(src/report/model/types.ts):按 `kind` 判别的联合,每支自己的必填字段各自校验。
  */
 function conversationReplyProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AttemptConversationReply object`;
@@ -276,7 +199,7 @@ function conversationReplyProblem(value: unknown, path: string): string | null {
       if (typeof value.text !== "string") return `"${path}.text" must be a string`;
       return null;
     case "tool":
-      if (typeof value.callId !== "string") return `"${path}.callId" must be a string`;
+      if (typeof value.operationId !== "string") return `"${path}.operationId" must be a string`;
       if (typeof value.name !== "string") return `"${path}.name" must be a string`;
       if (!("input" in value)) return `"${path}.input" is required`;
       return null;
@@ -288,16 +211,13 @@ function conversationReplyProblem(value: unknown, path: string): string | null {
       if (value.source !== undefined && typeof value.source !== "string") return `"${path}.source" must be a string`;
       return null;
     case "subagent":
-      if (typeof value.callId !== "string") return `"${path}.callId" must be a string`;
+      if (typeof value.operationId !== "string") return `"${path}.operationId" must be a string`;
       if (typeof value.name !== "string") return `"${path}.name" must be a string`;
       return null;
     case "input":
       if (!isObject(value.request)) return `"${path}.request" must be an InputRequest object`;
       return null;
     case "compaction":
-      return null;
-    case "raw":
-      if (!("raw" in value)) return `"${path}.raw" is required`;
       return null;
     default:
       return `"${path}.kind" must be one of ${JSON.stringify(CONVERSATION_REPLY_KINDS)}`;
@@ -429,5 +349,3 @@ export function validateDiffData(data: unknown): string | null {
   if (typeof data.locator !== "string") return 'missing "locator" (string)';
   return arrayProblem(data.files, "files", diffFileEntryProblem);
 }
-
-

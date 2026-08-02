@@ -4,16 +4,16 @@
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { SessionManager, RunSession, lastAssistantText } from "./session.ts";
-import { AssertionCollector, computePassed, unavailable } from "../scoring/collector.ts";
-import type { ResolvedEvidenceCoverage } from "../scoring/coverage.ts";
-import { deepEqual, validateSchema } from "../scoring/match.ts";
-import type { Spec } from "../scoring/collector.ts";
-import * as Scoped from "../scoring/scoped.ts";
-import { buildJudge } from "../scoring/judge.ts";
+import { AssertionCollector, computePassed, unavailable } from "../assertions/collector.ts";
+import type { ResolvedEvidenceCoverage } from "../assertions/coverage.ts";
+import { deepEqual, validateSchema } from "../assertions/match.ts";
+import type { Spec } from "../assertions/collector.ts";
+import * as Scoped from "../assertions/scoped.ts";
+import { buildJudge } from "../assertions/judge.ts";
 import { EvalSkipped, EvalRequirementFailed } from "./control-flow.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
 import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
-import { describeElided, diffIsEmpty, diffMatches, elidedContentAt, elidedContentPaths, emptyDiffData } from "../scoring/diff.ts";
+import { describeElided, diffIsEmpty, diffMatches, elidedContentAt, elidedContentPaths, emptyDiffData } from "../assertions/diff.ts";
 import { t } from "../i18n/index.ts";
 import { resolveEvalLocalPath } from "../sandbox/paths.ts";
 import { brief } from "../util.ts";
@@ -25,11 +25,12 @@ import type {
   InputRequest,
   InputRequestFilter,
   InputResponse,
+  JsonValue,
   JudgeConfig,
   RespondAnswer,
   Sandbox,
   EvalSandbox,
-  ScoringContext,
+  AssertionEvaluationContext,
   ScriptResult,
   SessionHandle,
   StreamEvent,
@@ -40,11 +41,8 @@ import type {
   Usage,
   ValueAssertion,
 } from "../types.ts";
-
-/** t.sandbox.file(path) 返回它,延迟到 finalize 再读沙箱文件;t.check 识别并解析它。 */
-export class FileRef {
-  constructor(public readonly path: string) {}
-}
+import { FileRef } from "./deferred-file-content.ts";
+import { matchesJson } from "../shared/json-match.ts";
 
 /** 运行器在 test 跑完后填进来的「迟到结果」(diff / 脚本),供 finalize 用。 */
 export interface LateResult {
@@ -68,7 +66,7 @@ export interface ContextDeps {
   attempt?: import("../types.ts").AgentContext["attempt"];
   model?: string;
   reasoningEffort?: string;
-  flags: globalThis.Record<string, unknown>;
+  flags: globalThis.Record<string, JsonValue>;
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string;
   signal: AbortSignal;
@@ -102,7 +100,7 @@ export interface ContextDeps {
   retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
   /** 题型(默认通过制);只改变计分 API 与未链句柄的角色，不改变 gate / stopOnFailure 语义。 */
-  scoring?: "pass" | "points";
+  evaluationKind?: "pass" | "points";
   /** 取当前已提交窗口的 agent diff(stopOnFailure 断言就地求值要用;非沙箱型省略)。 */
   liveDiff?: () => Promise<DiffData>;
 }
@@ -123,12 +121,14 @@ function capabilityGuard(agentName: string, cap: string, method: string): () => 
 /**
  * CommandResult 摘录(`received` 首行引号内那段)的字符预算。取这个数是为了让摘录整段活着走完
  * 终端摘要行:human 面的 `received: exit <code> · "…<摘录>"` 有 100 字符预算且从**头**收口
- * (scoring/display.ts),摘录比预算长时被砍掉的正是尾部——也就是 runner 的失败计数。宁可窗口
+ * (assertions/display.ts),摘录比预算长时被砍掉的正是尾部——也就是 runner 的失败计数。宁可窗口
  * 小一点,也不能让唯一的新事实死在收口里;更长的原始尾部随后由 `output tail:` 段承载。
  */
 const COMMAND_SUMMARY_MAX_CHARS = 76;
 
 export function createEvalContext(deps: ContextDeps): { context: TestContext; state: ContextState } {
+  let sourceOrder = 0;
+  const nextSourceOrder = (): number => ++sourceOrder;
   const manager = new SessionManager({
     agent: deps.agent,
     sandbox: deps.sandbox,
@@ -152,13 +152,14 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     experimentClassifier: deps.experimentClassifier,
     retryRandom: deps.retryRandom,
     retrySleep: deps.retrySleep,
+    nextSourceOrder,
   });
   const late: LateResult = { diff: emptyDiffData(), scripts: {} };
 
   // stopOnFailure 断言就地求值时看的实时运行结果。diff 只在 send 之后才会变(agent 只在窗口内动
   // 工作区),所以按 send 计数缓存一次导出,同一批前置不重复跑 git 导出。
   let liveDiffCache: { at: number; diff: Promise<DiffData> } | undefined;
-  const liveContext = async (): Promise<ScoringContext> => {
+  const liveContext = async (): Promise<AssertionEvaluationContext> => {
     const events = manager.allEvents;
     let diff = late.diff;
     if (deps.liveDiff) {
@@ -187,8 +188,9 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   };
 
   const collector = new AssertionCollector({
-    ...(deps.scoring !== undefined ? { scoring: deps.scoring } : {}),
+    ...(deps.evaluationKind !== undefined ? { evaluationKind: deps.evaluationKind } : {}),
     liveContext,
+    nextSourceOrder,
   });
   const state: ContextState = { collector, manager, late };
 
@@ -211,7 +213,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     };
   }
 
-  async function resolveValue(value: unknown, sc: ScoringContext): Promise<unknown> {
+  async function resolveValue(value: unknown, sc: AssertionEvaluationContext): Promise<unknown> {
     if (value instanceof FileRef) return (await sc.readFile(value.path)) ?? "";
     return value;
   }
@@ -335,7 +337,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   };
 
   const sandboxAssertions = {
-    file: (path: string) => new FileRef(path) as unknown as string,
+    file: (path: string) => new FileRef(path),
     fileChanged: (path: string) => collector.record(Scoped.fileChanged(path)),
     fileDeleted: (path: string) => collector.record(Scoped.fileDeleted(path)),
     notInDiff: (re: RegExp) => collector.record(Scoped.notInDiff(re)),
@@ -506,7 +508,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   // 其余能力(多轮对话、工具断言……)不再问卷式声明——没接 ctx.session 续接存取器的 agent
   // 每轮各是新对话,没吐 action.* 事件的 agent 上正断言自然不命中,负断言按事件完整性证明
   // 提示可信度,都不需要在这里拦。
-  const guards: globalThis.Record<string, unknown> = {};
+  const guards: Partial<Pick<TestContext, "sandbox">> = {};
   if (deps.agent.kind !== "sandbox") {
     Object.defineProperty(guards, "sandbox", {
       get: capabilityGuard(deps.agent.name, "sandbox", "sandbox"),
@@ -628,7 +630,7 @@ function makeTurnHandle(
 ): TurnHandle {
   const message = lastAssistantText(turn.events) ?? "";
   const facts = deriveRunFacts(turn.events);
-  // ScoringContext.usage 是必填对象,但字段本身可选(见 src/o11y/types.ts 的 Usage)——
+  // AssertionEvaluationContext.usage 是必填对象,但字段本身可选(见 src/o11y/types.ts 的 Usage)——
   // 协议没报 usage 时给空对象,不拿 0 冒充「实测就是 0」。
   const usage = turn.usage ?? {};
 
@@ -800,19 +802,10 @@ function inputRequestMatches(request: InputRequest, filter?: InputRequestFilter)
     if (optionIds.size !== filter.optionIds.length) return false;
     if (!filter.optionIds.every((id) => optionIds.has(id))) return false;
   }
-  if (filter.input !== undefined && !partialObjectMatches(request.input, filter.input)) return false;
+  if (filter.input !== undefined && !matchesJson(request.input, filter.input)) return false;
   return true;
 }
 
 function stringMatches(actual: string, expected: string | RegExp): boolean {
   return expected instanceof RegExp ? expected.test(actual) : actual === expected;
-}
-
-function partialObjectMatches(actual: unknown, expected: globalThis.Record<string, unknown>): boolean {
-  if (actual === null || typeof actual !== "object") return false;
-  const obj = actual as globalThis.Record<string, unknown>;
-  for (const [key, value] of Object.entries(expected)) {
-    if (!deepEqual(obj[key], value)) return false;
-  }
-  return true;
 }

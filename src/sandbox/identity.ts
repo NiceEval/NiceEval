@@ -70,17 +70,17 @@ export interface CredentialRef {
 }
 
 /** 键序稳定的 JSON 序列化,保证同一 payload 永远同一 digest。 */
-export function stableJson(value: unknown): string {
+export function stableJson(value: JsonValue): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  const obj = value as globalThis.Record<string, unknown>;
+  const obj = value as globalThis.Record<string, JsonValue>;
   return `{${Object.keys(obj)
     .sort()
     .map((key) => `${JSON.stringify(key)}:${stableJson(obj[key])}`)
     .join(",")}}`;
 }
 
-export function digestOf(value: unknown): string {
+export function digestOf(value: JsonValue): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
@@ -151,19 +151,26 @@ export function credentialIdentityContribution(cred: CredentialRef): { name: str
   return cred.revision !== undefined ? { name: cred.name, revision: cred.revision } : { name: cred.name };
 }
 
-/** 值是否可序列化为 JSON 纯数据(无函数 / undefined / bigint / symbol)。 */
+/** 值是否可序列化为 JSON 纯数据(无函数 / undefined / bigint / symbol / 非有限数 / 循环引用)。 */
 export function isPureDataIdentity(value: unknown): value is JsonValue {
+  return isPureDataTree(value, new Set());
+}
+
+function isPureDataTree(value: unknown, ancestors: ReadonlySet<object>): value is JsonValue {
   if (value === null) return true;
-  const t = typeof value;
-  if (t === "string" || t === "number" || t === "boolean") return true;
-  if (t !== "object") return false;
-  if (Array.isArray(value)) return value.every(isPureDataIdentity);
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (ancestors.has(value)) return false;
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(value);
+  if (Array.isArray(value)) return value.every((child) => isPureDataTree(child, nextAncestors));
   if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
     return false;
   }
   for (const [key, child] of Object.entries(value as globalThis.Record<string, unknown>)) {
     if (typeof key !== "string") return false;
-    if (!isPureDataIdentity(child)) return false;
+    if (!isPureDataTree(child, nextAncestors)) return false;
   }
   return true;
 }
@@ -181,17 +188,32 @@ export function assertPureDataIdentity(identity: unknown): JsonValue {
   return identity;
 }
 
+/** Case identity resolution has no optional/unknown half-state. */
+export type SandboxCaseIdentityResolution =
+  | { readonly _tag: "Stable"; readonly identity: JsonValue }
+  | {
+      readonly _tag: "Unavailable";
+      readonly code: string;
+      readonly reason: string;
+    };
+
+/** Every floating image is either resolved, or the unresolved refs are preserved explicitly. */
+export type SandboxCaseFloatingImages =
+  | { readonly _tag: "Resolved" }
+  | {
+      readonly _tag: "Unresolved";
+      readonly refs: readonly [string, ...string[]];
+    };
+
+export interface SandboxCaseCarryInput {
+  readonly identity: SandboxCaseIdentityResolution;
+  readonly floatingImages: SandboxCaseFloatingImages;
+}
+
 /**
  * 该 case 的结果是否允许进入携带门。
  * 缺稳定纯数据身份、或仍有未解析浮动 tag 时一律禁止。
  */
-export function caseCarryEligible(opts: {
-  readonly identity?: unknown;
-  readonly hasStableIdentity: boolean;
-  readonly unresolvedFloatingTags?: boolean;
-}): boolean {
-  if (!opts.hasStableIdentity) return false;
-  if (opts.unresolvedFloatingTags === true) return false;
-  if (opts.identity !== undefined && !isPureDataIdentity(opts.identity)) return false;
-  return true;
+export function caseCarryEligible(input: SandboxCaseCarryInput): boolean {
+  return input.identity._tag === "Stable" && input.floatingImages._tag === "Resolved";
 }

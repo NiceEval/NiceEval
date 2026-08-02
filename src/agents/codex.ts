@@ -30,8 +30,8 @@ import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failu
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
 //
 // 连接方式:在沙箱里 spawn `codex exec --json`,stdout JSONL → parseCodex → 标准事件流。
-// 配置:鉴权本地(config / env),模型交给实验(ctx.model),推理努力程度经 ctx.reasoningEffort
-// (兼容旧的 ctx.flags.effort),其余参数经 ctx.flags。
+// 配置:鉴权本地(config / env),模型交给实验(ctx.model),推理努力程度经 ctx.reasoningEffort,
+// 其余参数经 ctx.flags。
 // 扩展(skill / plugin / MCP)是构造参数,setup 翻译成 codex 的原生形态并写 manifest。
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -180,12 +180,14 @@ export function codexAgent(config?: CodexConfig): Agent {
       // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
       // 不在 adapter 里硬编码一个会过期的模型名。
       const modelLine = ctx.model ? `model = "${ctx.model}"\n` : "";
-      const effort = ctx.reasoningEffort ?? (ctx.flags.effort as string | undefined) ?? "medium";
+      const effortLine = ctx.reasoningEffort === undefined
+        ? ""
+        : `model_reasoning_effort = "${ctx.reasoningEffort}"\n`;
       const base = getBaseUrl();
 
       const topLevel = base
-        ? modelLine + `model_provider = "s2a"\n` + `model_reasoning_effort = "${effort}"\n`
-        : `${modelLine}model_reasoning_effort = "${effort}"\n`;
+        ? modelLine + `model_provider = "s2a"\n` + effortLine
+        : modelLine + effortLine;
       const providerTable = base
         ? `[model_providers.s2a]\n` +
           `name = "s2a"\n` +

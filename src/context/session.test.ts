@@ -6,6 +6,7 @@ import { createSessionSlot } from "../agents/index.ts";
 import type { Agent, AgentSession, Sandbox, SessionSlot, StreamEvent, Turn, TurnInput } from "../types.ts";
 import { isSendFailure, makeSendFailure, type SendFailure, type SendFailureClassifier } from "./send-failures.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
 // docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
@@ -128,7 +129,7 @@ describe("SessionManager · send 执行失败重试", () => {
   const rateLimited = makeSendFailure({
     acceptance: "rejected",
     message: "admission rejected",
-    cause: { status: 429 },
+    cause: normalizeExternalCause({ status: 429 }),
     events: [{ type: "error", message: "provider busy" }],
     usage: { inputTokens: 2, outputTokens: 1 },
   });
@@ -158,9 +159,15 @@ describe("SessionManager · send 执行失败重试", () => {
   });
 
   it("adapter classifySendFailure 可识别自家协议 code", async () => {
-    const queueFull = makeSendFailure({ acceptance: "rejected", message: "queue full", cause: { code: "ACME_QUEUE_FULL" } });
+    const queueFull = makeSendFailure({
+      acceptance: "rejected",
+      message: "queue full",
+      cause: normalizeExternalCause({ code: "ACME_QUEUE_FULL" }),
+    });
     const agent = scriptedRetryAgent([queueFull, succeeded], (failure) =>
-      (failure.cause as { code?: string }).code === "ACME_QUEUE_FULL"
+      failure.cause?._tag !== "ThrownValue" &&
+      failure.cause?.code._tag === "Present" &&
+      failure.cause.code.value === "ACME_QUEUE_FULL"
         ? { retryable: true, reason: "acme_queue_full" }
         : undefined);
     const { manager } = makeRetryManager(agent);

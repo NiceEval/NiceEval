@@ -11,6 +11,20 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
+/**
+ * JSON 值的递归匹配小语言。对象是深度部分匹配，数组逐项精确匹配；RegExp 与谓词可出现在
+ * 任意层级。`unknown` 只存在于谓词接收动态运行时值的边界，不作为可存储的匹配值。
+ */
+export type JsonMatch =
+  | string
+  | number
+  | boolean
+  | null
+  | RegExp
+  | ((value: unknown) => boolean)
+  | readonly JsonMatch[]
+  | { readonly [key: string]: JsonMatch };
+
 /** 断言的严重度:"gate" 失败必判整轮 failed;"soft" 默认只记录不拦截,仅在 `--strict` 模式或显式设阈值未达标时才计入失败。 */
 export type Severity = "gate" | "soft";
 

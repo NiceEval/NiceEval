@@ -229,7 +229,7 @@ site/
 
 站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的`sources/<sha256>.json`。
 携带条目的源码正文由复制管线归拢进本 Run 的`sources/`，静态站不需要原 Run 在场。
-这个存储去重机制与页面渲染路径无关：`toAnnotatedEvalSource(attempt)` 消费的源码已在 AttemptEvidence 中解引用，构建期直接写进对应 Attempt 页面的初始 HTML。
+这个存储去重机制与页面渲染路径无关：`toAttemptSource(attempt)` 消费的源码已在 AttemptEvidence 中解引用，构建期直接写进对应 Attempt 页面的初始 HTML。
 
 多页报告仍只用一个 `index.html`：导航页是 `#/<pageId>` 路由，托管方不需要为每页配置路径。
 参数化页不同：基线目标链接直接指向 `<pageId>/<key>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。

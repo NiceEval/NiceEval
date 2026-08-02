@@ -99,10 +99,10 @@ run 激活后(`coordinator.start(plan)` 之后),全部诊断——sandbox provis
 
 ### locator 在调度前生成
 
-`runEvals()` 在展开/调度任何 attempt 之前就确定好本次 invocation 的 `snapshotStartedAt`,并在构造 fresh attempt plan 时立即计算 `locator = encodeAttemptLocator({ experimentId, snapshotStartedAt, evalId, attempt })`。
+`runEvals()` 在展开/调度任何 attempt 之前就为每个 Experiment 预分配持久化 `runId`,并在构造 fresh attempt plan 时立即计算 `locator = encodeAttemptLocator({ runId, evalId, attempt })`。
 这个值作为 attempt 身份的一部分传进 `runAttempt`,不是完成后再写回结果。
 于是 verdict 定稿时提交的留存注册表、feedback coordinator 的 failure / kept 事件、reporter 的 `eval:complete` 与最终 `result.json` 从第一次观察起就拿到同一个 locator。
-Artifacts writer 经 `RunShape.snapshotStartedAt` 使用同一个锚点;自动携带的条目仍原样保留旧 locator,不按当前 invocation 重算。
+Artifacts writer 经 `RunShape.runIds` 使用同一份身份并把来源写成 `locatorRunId`;自动携带的条目仍原样保留旧 locator 与来源 Run,不按当前 invocation 重算。
 
 ## 终端框线:一个渲染件,全仓消费
 

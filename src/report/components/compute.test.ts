@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, AttemptError, EvalResult, O11ySummary, Verdict } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
 import type { Record } from "../../record/types.ts";
@@ -54,7 +54,7 @@ import {
 import { scopeSummaryData } from "./summaries/compute.ts";
 import { validateSampleSummaryContent } from "./summaries/validate.ts";
 import { evalGroupOf } from "../model/aggregate.ts";
-import { scoringComposition } from "../model/scoring.ts";
+import { evaluationKindComposition } from "../model/evaluation-kind.ts";
 import type { AttemptMetric } from "../model/types.ts";
 
 // ───────────────────────── fake 数据(按 results 读取契约造)─────────────────────────
@@ -140,6 +140,7 @@ function snap(spec: SnapSpec): Run {
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const dir = `/results/exp/snap-${runSeq}`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -576,13 +577,13 @@ describe("实体列表 data", () => {
     // 挣满:唯一得分点满分(pointsAssertion 默认 outcome passed、score 1),不是「没有得分点」的
     // null,是「挣满」的 null——两种 null 的根因不同,fixture 用真实挣满而非省略得分点来区分。
     const earnedInFull = res("exam/earned", "passed", {
-      scoring: "points",
+      evaluationKind: "points",
       assertions: [pointsAssertion("installed", 1), pointsAssertion("configured", 1)],
     });
-    // 丢分:两个得分点失败(严重度必须是 soft——scoring 下失败的 gate 会中止,不可能与 passed
+    // 丢分:两个得分点失败(严重度必须是 soft——points Eval 下失败的 gate 会中止,不可能与 passed
     // 并存),取记录顺序第一条(healthy)为主摘要,second-loss 计入 moreFailures。
     const lostPoints = res("exam/lost", "passed", {
-      scoring: "points",
+      evaluationKind: "points",
       assertions: [
         pointsAssertion("installed", 1), // 挣满,不是候选
         pointsAssertion("healthy", 16, { severity: "soft", outcome: "failed", score: 0.8 }),
@@ -592,7 +593,7 @@ describe("实体列表 data", () => {
     // 中止:记录顺序最后一条、唯一 failed 的 gate——既有规则 1 自然选中,计分制不改选择逻辑
     // (docs/feature/assertions/library/display.md「主失败断言怎样选」规则 5)。
     const aborted = res("exam/aborted", "failed", {
-      scoring: "points",
+      evaluationKind: "points",
       assertions: [
         pointsAssertion("cloned repo", 1),
         { name: "installed deps", severity: "gate", outcome: "failed" as const, score: 0 },
@@ -707,15 +708,15 @@ describe("实体列表 data", () => {
     });
   });
 
-  // ─────── 计分制字段:scoring 定义期投影 / totalScore 的两级聚合方向 / 预排 ───────
+  // ─────── 计分制字段:evaluationKind 定义期投影 / totalScore 的两级聚合方向 / 预排 ───────
 
-  it('ExperimentListItem.scoring 是定义期事实投影,不从 attempt 判定推断:failed 的计分制 eval 仍读 "points",passed 的通过制 eval 仍读 "pass"', async () => {
-    const pointsFailed = snap({ experimentId: "exam/points-fail", results: [res("a", "failed", { scoring: "points" })] });
+  it('ExperimentListItem.evaluationKind 是定义期事实投影,不从 attempt 判定推断:failed 的计分制 eval 仍读 "points",passed 的通过制 eval 仍读 "pass"', async () => {
+    const pointsFailed = snap({ experimentId: "exam/points-fail", results: [res("a", "failed", { evaluationKind: "points" })] });
     const plainPassed = snap({ experimentId: "exam/plain-pass", results: [res("a", "passed")] });
     const items = await experimentListData([pointsFailed, plainPassed]);
     const byId = new Map(items.map((item) => [item.experimentId, item]));
-    expect(byId.get("exam/points-fail")!.scoring).toBe("points");
-    expect(byId.get("exam/plain-pass")!.scoring).toBe("pass");
+    expect(byId.get("exam/points-fail")!.evaluationKind).toBe("points");
+    expect(byId.get("exam/plain-pass")!.evaluationKind).toBe("pass");
   });
 
   it("单一 Experiment 混型:题型为 mixed，通过率只读 pass Eval，总分只读 points Eval", async () => {
@@ -723,15 +724,15 @@ describe("实体列表 data", () => {
       experimentId: "exam/mixed-one",
       results: [
         res("plain", "failed"),
-        res("score", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] }),
+        res("score", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] }),
       ],
     });
     const [item] = await experimentListData([mixed]);
-    expect(item!.scoring).toBe("mixed");
+    expect(item!.evaluationKind).toBe("mixed");
     expect(item!.endToEndPassRate.value).toBe(0);
     expect(item!.endToEndPassRate.total).toBe(1);
     expect(item!.totalScore.value).toBe(5);
-    expect(item!.evalRows.map((row) => [row.evalId, row.scoring])).toEqual([
+    expect(item!.evalRows.map((row) => [row.evalId, row.evaluationKind])).toEqual([
       ["plain", "pass"],
       ["score", "points"],
     ]);
@@ -741,8 +742,8 @@ describe("实体列表 data", () => {
     const s = snap({
       experimentId: "exam/multi",
       results: [
-        res("q1", "passed", { scoring: "points", assertions: [pointsAssertion("x", 3)] }),
-        res("q2", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] }),
+        res("q1", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] }),
+        res("q2", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] }),
       ],
     });
     const items = await experimentListData([s]);
@@ -754,8 +755,8 @@ describe("实体列表 data", () => {
     const s = snap({
       experimentId: "exam/retry",
       results: [
-        res("q1", "passed", { attempt: 0, scoring: "points", assertions: [pointsAssertion("x", 4)] }),
-        res("q1", "passed", { attempt: 1, scoring: "points", assertions: [pointsAssertion("x", 2)] }),
+        res("q1", "passed", { attempt: 0, evaluationKind: "points", assertions: [pointsAssertion("x", 4)] }),
+        res("q1", "passed", { attempt: 1, evaluationKind: "points", assertions: [pointsAssertion("x", 2)] }),
       ],
     });
     const evalItems = await evalListData([s]);
@@ -776,11 +777,11 @@ describe("实体列表 data", () => {
   it("默认预排:纯计分制列表按 totalScore 降序,不是 endToEndPassRate(两个 experiment 端到端通过率同为 1,只有总分能分出高低)", async () => {
     const low = snap({
       experimentId: "exam/a-lowscore",
-      results: [res("q1", "passed", { scoring: "points", assertions: [pointsAssertion("x", 3)] })],
+      results: [res("q1", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
     });
     const high = snap({
       experimentId: "exam/z-highscore",
-      results: [res("q1", "passed", { scoring: "points", assertions: [pointsAssertion("x", 9)] })],
+      results: [res("q1", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 9)] })],
     });
     const items = await experimentListData([low, high]);
     expect(items.map((item) => item.experimentId)).toEqual(["exam/z-highscore", "exam/a-lowscore"]);
@@ -789,7 +790,7 @@ describe("实体列表 data", () => {
   it("默认预排:pass 与 points 混型退回 experiment id 字典序,两种读数不能互相排名", async () => {
     const pointsExp = snap({
       experimentId: "exam/z-points",
-      results: [res("q1", "passed", { scoring: "points", assertions: [pointsAssertion("x", 100)] })],
+      results: [res("q1", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 100)] })],
     });
     const passExp = snap({ experimentId: "exam/a-pass", results: [res("q1", "passed")] });
     const items = await experimentListData([pointsExp, passExp]);
@@ -851,59 +852,59 @@ describe("scopeSummaryData", () => {
     expect(data.evals).toBe(0);
   });
 
-  it("scoringComposition 与 totalScore:纯通过制 Sample 省略 totalScore(不摆空列)", async () => {
+  it("evaluationKindComposition 与 totalScore:纯通过制 Sample 省略 totalScore(不摆空列)", async () => {
     const data = await scopeSummaryData([snap({ experimentId: "exp/pass", results: [res("a", "passed")] })]);
-    expect(data.scoringComposition).toBe("pass");
+    expect(data.evaluationKindComposition).toBe("pass");
     expect(data.totalScore).toBeUndefined();
   });
 
-  it("scoringComposition 与 totalScore:纯计分制 Sample 携带 totalScore", async () => {
+  it("evaluationKindComposition 与 totalScore:纯计分制 Sample 携带 totalScore", async () => {
     const s = snap({
       experimentId: "exp/points",
-      results: [res("a", "passed", { scoring: "points", assertions: [pointsAssertion("x", 3)] })],
+      results: [res("a", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
     });
     const data = await scopeSummaryData([s]);
-    expect(data.scoringComposition).toBe("points");
+    expect(data.evaluationKindComposition).toBe("points");
     expect(data.totalScore?.value).toBe(3);
   });
 
-  it("scoringComposition:一个 Sample 里并排通过制与计分制两个 experiment → \"mixed\"", async () => {
+  it("evaluationKindComposition:一个 Sample 里并排通过制与计分制两个 experiment → \"mixed\"", async () => {
     const passExp = snap({ experimentId: "exp/a-pass", results: [res("a", "passed")] });
     const pointsExp = snap({
       experimentId: "exp/b-points",
-      results: [res("b", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] })],
+      results: [res("b", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] })],
     });
     const data = await scopeSummaryData([passExp, pointsExp]);
-    expect(data.scoringComposition).toBe("mixed");
+    expect(data.evaluationKindComposition).toBe("mixed");
     expect(data.totalScore).toBeDefined();
   });
 
-  it("scoringComposition:同一 experiment 混型时通过率不被 points Eval 稀释", async () => {
+  it("evaluationKindComposition:同一 experiment 混型时通过率不被 points Eval 稀释", async () => {
     const mixed = snap({
       experimentId: "exp/mixed-one",
       results: [
         res("plain", "failed"),
-        res("score", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] }),
+        res("score", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] }),
       ],
     });
     const data = await scopeSummaryData([mixed]);
-    expect(data.scoringComposition).toBe("mixed");
+    expect(data.evaluationKindComposition).toBe("mixed");
     expect(data.endToEndPassRate.value).toBe(0);
     expect(data.endToEndPassRate.total).toBe(1);
     expect(data.totalScore?.value).toBe(5);
   });
 
-  it("scoringComposition() 与 ScopeSummaryData.scoringComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {
+  it("evaluationKindComposition() 与 ScopeSummaryData.evaluationKindComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {
     const passInput = [snap({ experimentId: "exp/agree-pass", results: [res("a", "passed")] })];
-    expect(await scoringComposition(passInput)).toBe((await scopeSummaryData(passInput)).scoringComposition);
+    expect(await evaluationKindComposition(passInput)).toBe((await scopeSummaryData(passInput)).evaluationKindComposition);
 
     const pointsInput = [
       snap({
         experimentId: "exp/agree-points",
-        results: [res("a", "passed", { scoring: "points", assertions: [pointsAssertion("x", 3)] })],
+        results: [res("a", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
       }),
     ];
-    expect(await scoringComposition(pointsInput)).toBe((await scopeSummaryData(pointsInput)).scoringComposition);
+    expect(await evaluationKindComposition(pointsInput)).toBe((await scopeSummaryData(pointsInput)).evaluationKindComposition);
 
     // 混型:一个通过制 experiment 快照 + 一个计分制 experiment 快照并排——最可能出现
     // 复制粘贴分叉的形态。
@@ -911,10 +912,10 @@ describe("scopeSummaryData", () => {
       snap({ experimentId: "exp/agree-a-pass", results: [res("a", "passed")] }),
       snap({
         experimentId: "exp/agree-b-points",
-        results: [res("b", "passed", { scoring: "points", assertions: [pointsAssertion("x", 5)] })],
+        results: [res("b", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] })],
       }),
     ];
-    expect(await scoringComposition(mixedInput)).toBe((await scopeSummaryData(mixedInput)).scoringComposition);
+    expect(await evaluationKindComposition(mixedInput)).toBe((await scopeSummaryData(mixedInput)).evaluationKindComposition);
   });
 });
 
@@ -1139,7 +1140,7 @@ describe("totalScore", () => {
       experimentId: "score/x",
       results: [
         res("checkpoints", "passed", {
-          scoring: "points",
+          evaluationKind: "points",
           assertions: [pointsAssertion("a", 1), pointsAssertion("b", 1), pointsAssertion("c", 0)],
           scoreEntries: [{ label: "代码精简", points: 15 }],
         }),
@@ -1153,7 +1154,7 @@ describe("totalScore", () => {
   it("errored 记 null(基础设施得 null,不折成 0),不进分母", async () => {
     const s = snap({
       experimentId: "score/errored",
-      results: [res("crashed", "errored", { scoring: "points", error: erroredWith("boom") })],
+      results: [res("crashed", "errored", { evaluationKind: "points", error: erroredWith("boom") })],
     });
     const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
     const cell = table.rows.find((r) => r.key === "crashed")!.cells[totalScore.name]!;
@@ -1164,7 +1165,7 @@ describe("totalScore", () => {
   it("skipped 记 null", async () => {
     const s = snap({
       experimentId: "score/skipped",
-      results: [res("skip", "skipped", { scoring: "points", skipReason: "not applicable" })],
+      results: [res("skip", "skipped", { evaluationKind: "points", skipReason: "not applicable" })],
     });
     const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
     expect(table.rows.find((r) => r.key === "skip")!.cells[totalScore.name]!.value).toBeNull();
@@ -1175,7 +1176,7 @@ describe("totalScore", () => {
       experimentId: "score/failed",
       results: [
         res("partial", "failed", {
-          scoring: "points",
+          evaluationKind: "points",
           assertions: [
             pointsAssertion("step1", 1),
             pointsAssertion("step2", 0, { outcome: "failed" as const, severity: "gate" }),
@@ -1187,10 +1188,10 @@ describe("totalScore", () => {
     expect(table.rows.find((r) => r.key === "partial")!.cells[totalScore.name]!.value).toBe(1);
   });
 
-  it("通过制 eval(scoring 省略或 \"pass\"):恒 null,不参与聚合——两种题型天然不互相污染", async () => {
+  it("通过制 eval(evaluationKind 省略或 \"pass\"):恒 null,不参与聚合——两种题型天然不互相污染", async () => {
     const s = snap({
       experimentId: "score/mixed-scope",
-      results: [res("pass-eval", "passed"), res("also-pass-eval", "passed", { scoring: "pass" })],
+      results: [res("pass-eval", "passed"), res("also-pass-eval", "passed", { evaluationKind: "pass" })],
     });
     const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
     expect(table.rows.find((r) => r.key === "pass-eval")!.cells[totalScore.name]!.value).toBeNull();
@@ -1202,10 +1203,10 @@ describe("totalScore", () => {
       experimentId: "score/aggregate",
       results: [
         // 同一题 "q1" 跑两轮:4 分与 2 分 → perEval mean = 3
-        res("q1", "passed", { attempt: 0, scoring: "points", assertions: [pointsAssertion("a", 4)] }),
-        res("q1", "passed", { attempt: 1, scoring: "points", assertions: [pointsAssertion("a", 2)] }),
+        res("q1", "passed", { attempt: 0, evaluationKind: "points", assertions: [pointsAssertion("a", 4)] }),
+        res("q1", "passed", { attempt: 1, evaluationKind: "points", assertions: [pointsAssertion("a", 2)] }),
         // 另一题 "q2" 跑一轮:5 分
-        res("q2", "passed", { scoring: "points", assertions: [pointsAssertion("a", 5)] }),
+        res("q2", "passed", { evaluationKind: "points", assertions: [pointsAssertion("a", 5)] }),
       ],
     });
     const table = await metricTableData([s], { rows: "experiment", columns: [totalScore] });
@@ -1219,7 +1220,7 @@ describe("totalScore", () => {
     expect(totalScoreFromBarrel).toBe(totalScoreCalc); // 同引用:barrel 不复制一份新计算
     const s = snap({
       experimentId: "score/barrel",
-      results: [res("checkpoints", "passed", { scoring: "points", assertions: [pointsAssertion("a", 4)] })],
+      results: [res("checkpoints", "passed", { evaluationKind: "points", assertions: [pointsAssertion("a", 4)] })],
     });
     const rows = await aggregate(scopeOf([s]), {
       by: { experiment },

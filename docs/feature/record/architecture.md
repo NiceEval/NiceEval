@@ -305,7 +305,7 @@ type LifecyclePhase =
 activity 的 `key` 是非空、以 `.` 分段、带命名空间的稳定字符串,例如 `sandbox.build`、`agent.artifact.prepare`、`provider.image.pull`。
 key 只回答「这项工作是什么」,供程序分组与专用读取面按名识别;人读文字由 `label` 表达,消费者不得解析 label 重建语义。
 
-NiceEval 保留 `sandbox`、`agent`、`eval`、`workspace`、`scoring`、`telemetry`、`experiment`、`judge`、`record` 九个顶级命名空间。
+NiceEval 保留 `sandbox`、`agent`、`eval`、`workspace`、`assertions`、`telemetry`、`experiment`、`judge`、`record` 九个顶级命名空间。
 第三方 producer 使用自己的 provider、Adapter 或 package 命名空间,不需要任何注册或枚举放行。
 
 ### `TimingActivity`:Run 与 attempt 共用的计时节点
@@ -523,6 +523,8 @@ interface AttemptRecord {
    * 唯一性作用域与碰撞语义见下方[locator 的唯一性](#locator-的唯一性)。
    */
   locator?: string;
+  /** locator 的来源 Run 身份；fresh 恒写，carry / publish 原样保留。 */
+  locatorRunId?: string;
   /** 携带条目专用: artifact 目录(相对记录根目录),指向原 Run 里的落盘。 */
   artifactBase?: string;
   /**
@@ -646,6 +648,7 @@ interface DiagnosticRecord {
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。
 数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。
+
 `agent.teardown` / `sandbox.cleanup` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应收尾 diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
 结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
@@ -690,12 +693,12 @@ attempt 的结果封口发生在 Effect Scope release 完成之后：teardown �
 这样 teardown diagnostic 不会因为主 test 已经返回而丢失。
 进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
 
-Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份回退算一份。
+Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份回退算一份。`locatorRunId` 则记录 locator 的来源 Run:本 Run fresh 条目写本 Run 的 `runId`,carry 与 publish 原样保留；旧记录缺失它时 reader 沿 `artifactBase` 回溯原 attempt，无法回溯才退回条目所在 Run。
 
 两类条目:
 
 - **本 Run 跑出的条目**:artifact 与 `result.json` 同目录,不需要任何路径引用字段。
-- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本 Run,让最新 Run 保持完整;`--rerun all` 关闭携带全部重跑,语义见 [Experiments · 缓存与携带](../experiments/cache.md)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对记录根,指向原 Run 的 attempt 目录),`artifacts` 列表、`facts`、`locator`、判定与证据指向**一律原样携带,没有例外**——携带来的是那一轮真实发生过的事,不按本轮改写。
+- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本 Run,让最新 Run 保持完整;`--rerun all` 关闭携带全部重跑,语义见 [Experiments · 缓存与携带](../experiments/cache.md)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对记录根,指向原 Run 的 attempt 目录),`artifacts` 列表、`facts`、`locator`、`locatorRunId`、判定与证据指向**一律原样携带,没有例外**——携带来的是那一轮真实发生过的事,不按本轮改写。
   一个被改写的历史字段没有任何读者能正确解释:它既不是当初发生的事,也不是本轮观察到的事。
 
   合入只重打 `fingerprint` 一个字段,让[一份 Run 里的条目共享一个指纹口径](../experiments/cache.md#一份-run-里的条目共享一个指纹口径)。
@@ -1037,9 +1040,9 @@ Agent runtime 在把工具结果发给模型前仍需自己的字节预算:如�
 输入是 `{runId, evalId, attempt}` 这个不可变元组,同样的输入永远得到同样的 body。
 所以碰撞不是「换个随机数再试」,而是必须有定义的两侧行为:
 
-- **写入侧**:runner 在 attempt 登记时查当前记录根的 locator 索引。
-  已存在且身份元组不同,抛 `LocatorCollisionError` 并中止该 attempt——不静默覆盖,也不悄悄换一个值,否则同一条 attempt 在不同进程里会有两个 locator。
-- **读取侧**:`resolveLocator` 命中多于一条时抛 `AmbiguousLocatorError`,列出候选的 experimentId / evalId / attempt,不返回其中任意一条。
+- **写入侧**:runner 在派发 fresh attempt 前,把本批登记与当前记录根的 locator 索引一起预检。
+  已存在且身份元组不同,抛 `LocatorCollisionError` 并在任何 attempt 调度前中止本次 invocation——不静默覆盖,也不悄悄换一个值,否则同一条 attempt 在不同进程里会有两个 locator。carry 不重新登记,沿用原来源身份。
+- **读取侧**:同一来源身份的 carry 副本先折叠到最新一份；`resolveLocator` 经此去重仍命中多于一条时抛 `AmbiguousLocatorError`,列出候选的 experimentId / evalId / attempt,不返回其中任意一条。
   返回一条会让用户看着别人的 attempt 却以为是自己那条,比报错严重。
 
 三种失败因此各自可分辨:语法不合法是 `MalformedLocatorError`,索引里没有是 `LocatorNotFoundError`,索引里有多条是 `AmbiguousLocatorError`。

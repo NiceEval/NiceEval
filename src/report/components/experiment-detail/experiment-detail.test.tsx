@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../../types.ts";
-import { completeEvidenceCoverage } from "../../../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../../../assertions/coverage.ts";
 import type { AttemptHandle, Run, Sample, SampleIssue, SampleCoverage } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { defineReport } from "../../definition/report.ts";
@@ -45,6 +45,7 @@ function snap(spec: { experimentId: string; results: EvalResult[]; agent?: strin
   runSeq += 1;
   const startedAt = `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -149,12 +150,12 @@ describe("ExperimentDetails:六区块投影同一份转换结果", () => {
       experimentId: "agents/mixed",
       results: [
         res("plain", "failed"),
-        res("score", "passed", { scoring: "points", assertions: [scoreAssertion(5)] }),
+        res("score", "passed", { evaluationKind: "points", assertions: [scoreAssertion(5)] }),
       ],
     });
     const scope = scopeOf([run]);
     const data = await experimentDetailsData(scope);
-    expect(data.experiment.scoring).toBe("mixed");
+    expect(data.experiment.evaluationKind).toBe("mixed");
     expect(data.experiment.endToEndPassRate.value).toBe(0);
     expect(data.experiment.totalScore.value).toBe(5);
 

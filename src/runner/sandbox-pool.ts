@@ -1,6 +1,7 @@
 import { applyCommandDeadline } from "../sandbox/deadline.ts";
-import { sandboxReuseCapability } from "../sandbox/resolve.ts";
+import { sandboxReuseCapability } from "../sandbox/backend.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
+import type { BuildKey } from "../sandbox/identity.ts";
 import {
   materializeSandboxRunPlan,
   liveSandboxRuntimeServices,
@@ -8,7 +9,7 @@ import {
   type SandboxRuntimeDeadline,
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
-import type { Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
+import type { JsonValue, Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { randomUUID } from "node:crypto";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
@@ -139,7 +140,7 @@ export class ReusableSandboxPool {
    */
   acquire(
     attemptDeadlineMs: number | undefined,
-    buildLocators: ReadonlyMap<string, string> = new Map(),
+    buildLocators: ReadonlyMap<BuildKey, JsonValue>,
   ): Effect.Effect<
     ReusableSandboxLease,
     Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError,
@@ -230,7 +231,7 @@ export class ReusableSandboxPool {
   private create(
     minRemainingMs: number,
     deadlineAt: number | undefined,
-    buildLocators: ReadonlyMap<string, string>,
+    buildLocators: ReadonlyMap<BuildKey, JsonValue>,
   ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
     return Effect.gen(this, function* () {
       const capabilities = sandboxRuntimeCapabilities(this.plan);

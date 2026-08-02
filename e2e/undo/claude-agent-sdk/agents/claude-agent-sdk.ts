@@ -65,10 +65,15 @@ function readStream(cursor: SseFrameCursor<ClaudeFrame>, ctx: AgentContext, stre
     if (frame.type === "server_error") return { fail: (frame as TransportFrame).message };
 
     // HITL 停轮:gated 工具的 tool_use 到了(canUseTool 此刻把流卡住,不会再有后续帧)。
-    const gated = derived.find((e) => e.type === "action.called" && e.name === GATED_TOOL_NAME);
-    if (gated && gated.type === "action.called") {
-      ctx.session.set(heldSlot, { cursor, stream, toolUseId: gated.callId });
-      return { pause: { id: gated.callId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
+    const gated = derived.find(
+      (event) =>
+        event.type === "operation.started" &&
+        event.operation.kind === "tool" &&
+        event.operation.name === GATED_TOOL_NAME,
+    );
+    if (gated?.type === "operation.started") {
+      ctx.session.set(heldSlot, { cursor, stream, toolUseId: gated.operationId });
+      return { pause: { id: gated.operationId, action: GATED_TOOL_NAME, options: [{ id: "approve" }, { id: "deny" }] } };
     }
   });
 }

@@ -1,5 +1,5 @@
 import { defineConfig } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 import { IMAGE_TAG } from "./scripts/build-docker-env.ts";
 
 export default defineConfig({
@@ -14,7 +14,7 @@ export default defineConfig({
   // agent 配了 pythonPlugins: [{ package: "cowsay" }],安装指纹永远对不上裸镜像;这套 eval
   // 本来就是要验证「pythonPlugins 声明的包被真正装进 bub 自己的 uv tool venv」这条运行时安装
   // 路径,预装反而会跳过它要证明的行为。
-  sandbox: dockerSandbox({ image: IMAGE_TAG }),
+  sandbox: dockerImageSandbox({ image: IMAGE_TAG }),
   // 同一进程内的 attempt 共享 bub 安装的内存 checkpoint(见 src/agents/bub.ts 的
   // installsInProgress 互斥),小并发即可,不必对 Docker daemon 施加更大压力。
   maxConcurrency: 2,

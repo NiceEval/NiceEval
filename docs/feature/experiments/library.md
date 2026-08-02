@@ -369,7 +369,7 @@ interface ScopedFeedback {
 
 ```typescript
 const experimentLayer = e2bSandbox({ template: "niceeval-agents" }).prepare(async (sandbox, context) => {
-  context.progress.report("restoring memory cache");
+  context.progress({ message: "restoring memory cache" });
   await restoreCache(sandbox, context.owner.id);
 });
 

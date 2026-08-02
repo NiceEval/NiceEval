@@ -6,7 +6,7 @@
 ## 正例：命令成功执行，`calledTool("shell")` 却失败
 
 fix commit `060a6a05` 前，`codex-sdk/run-command` 连续 6 个 attempt 失败。
-artifact 中的 `command_execution` 已完成且 exit 0，但 SDK 流转换器发出的 `action.called` 没有规范 `tool` 字段；事实推导只能得到 `name: "unknown"`，所以既有 Eval 的 `calledTool("shell")` 不命中。
+artifact 中的 `command_execution` 已完成且 exit 0，但 SDK 流转换器发出的 tool `operation.started` 没有规范 `tool` 字段；事实推导只能得到 `name: "unknown"`，所以既有 Eval 的 `calledTool("shell")` 不命中。
 
 公开错误事实是同一个 NiceEval 规范工具身份随接入路径变化：transcript parser 路径把命令归一为 `shell`，SDK stream 路径却没有。
 用户症状看起来像 agent 没有调用工具，实际是 adapter 丢了身份。

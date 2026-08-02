@@ -11,6 +11,7 @@ import {
   type SendFailure,
   type SendFailureClassifier,
 } from "./send-failures.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 
 export const SEND_MAX_ATTEMPTS = 4;
 export const ATTEMPT_MAX_RETRIES = 8;
@@ -138,7 +139,7 @@ function finalizeExhausted(
   const wrapped = makeSendFailure({
     ...failure,
     message: sendFailureText(failure) + suffix,
-    cause: failure,
+    cause: normalizeExternalCause(failure),
   });
   return attachFailureClass(wrapped, cls);
 }

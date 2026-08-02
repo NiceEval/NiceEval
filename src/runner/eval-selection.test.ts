@@ -3,9 +3,9 @@
 // docs/feature/eval/library.md「EvalDescriptor」、docs/feature/experiments/library.md「evals」)。
 
 import { describe, expect, it } from "vitest";
-import { evalDescriptorOf, resolveExperimentEvals, selectedEvalsForRun, splitByScoring } from "./eval-selection.ts";
+import { evalDescriptorOf, resolveExperimentEvals, selectedEvalsForRun, splitByEvaluationKind } from "./eval-selection.ts";
 import { defineEval, defineScoreEval } from "../define.ts";
-import { discoverEval, type DiscoveredEval, type EvalScoring } from "./types.ts";
+import { discoverEval, type DiscoveredEval, type EvaluationKind } from "./types.ts";
 import type { JsonValue } from "../shared/types.ts";
 
 const source = { path: "evals/fake.eval.ts", content: "export default { test() {} };\n", sha256: "fake" };
@@ -14,7 +14,7 @@ function makeEval(id: string, overrides: {
   readonly description?: string;
   readonly tags?: readonly string[];
   readonly metadata?: Readonly<Record<string, JsonValue>>;
-  readonly scoring?: EvalScoring;
+  readonly evaluationKind?: EvaluationKind;
 } = {}): DiscoveredEval {
   const input = {
     ...(overrides.description !== undefined ? { description: overrides.description } : {}),
@@ -22,7 +22,7 @@ function makeEval(id: string, overrides: {
     ...(overrides.metadata !== undefined ? { metadata: { ...overrides.metadata } } : {}),
     test() {},
   };
-  const definition = overrides.scoring === "points" ? defineScoreEval(input) : defineEval(input);
+  const definition = overrides.evaluationKind === "points" ? defineScoreEval(input) : defineEval(input);
   return discoverEval(definition, {
     id,
     baseDir: "/project/evals",
@@ -46,7 +46,7 @@ describe("evalDescriptorOf", () => {
       id: "coding/fix-button",
       description: "fix the button",
       tags: ["coding", "frontend"],
-      scoring: "pass",
+      evaluationKind: "pass",
       metadata: { owner: "team-a" },
     });
     expect(descriptor).not.toHaveProperty("sourcePath");
@@ -205,36 +205,36 @@ describe("selectedEvalsForRun", () => {
   });
 });
 
-describe("evalDescriptorOf: scoring 投影", () => {
-  it("defineEval 产物(scoring: \"pass\")投影为 \"pass\"", () => {
-    const evalDef = makeEval("pass/one", { scoring: "pass" });
-    expect(evalDescriptorOf(evalDef).scoring).toBe("pass");
+describe("evalDescriptorOf: evaluationKind 投影", () => {
+  it("defineEval 产物(evaluationKind: \"pass\")投影为 \"pass\"", () => {
+    const evalDef = makeEval("pass/one", { evaluationKind: "pass" });
+    expect(evalDescriptorOf(evalDef).evaluationKind).toBe("pass");
   });
 
-  it("defineScoreEval 产物(scoring: \"points\")投影为 \"points\"", () => {
-    const evalDef = makeEval("points/one", { scoring: "points" });
-    expect(evalDescriptorOf(evalDef).scoring).toBe("points");
+  it("defineScoreEval 产物(evaluationKind: \"points\")投影为 \"points\"", () => {
+    const evalDef = makeEval("points/one", { evaluationKind: "points" });
+    expect(evalDescriptorOf(evalDef).evaluationKind).toBe("points");
   });
 
 });
 
-describe("splitByScoring", () => {
+describe("splitByEvaluationKind", () => {
   it("全通过制:points 桶为空", () => {
-    const a = makeEval("a", { scoring: "pass" });
-    const b = makeEval("b", { scoring: "pass" });
-    expect(splitByScoring([a, b])).toEqual({ pass: ["a", "b"], points: [] });
+    const a = makeEval("a", { evaluationKind: "pass" });
+    const b = makeEval("b", { evaluationKind: "pass" });
+    expect(splitByEvaluationKind([a, b])).toEqual({ pass: ["a", "b"], points: [] });
   });
 
   it("全计分制:pass 桶为空", () => {
-    const a = makeEval("a", { scoring: "points" });
-    const b = makeEval("b", { scoring: "points" });
-    expect(splitByScoring([a, b])).toEqual({ pass: [], points: ["a", "b"] });
+    const a = makeEval("a", { evaluationKind: "points" });
+    const b = makeEval("b", { evaluationKind: "points" });
+    expect(splitByEvaluationKind([a, b])).toEqual({ pass: [], points: ["a", "b"] });
   });
 
   it("混合题型:两桶都非空且各自列出对应 id", () => {
-    const a = makeEval("pass-eval", { scoring: "pass" });
-    const b = makeEval("points-eval", { scoring: "points" });
-    const split = splitByScoring([a, b]);
+    const a = makeEval("pass-eval", { evaluationKind: "pass" });
+    const b = makeEval("points-eval", { evaluationKind: "points" });
+    const split = splitByEvaluationKind([a, b]);
     expect(split.pass).toEqual(["pass-eval"]);
     expect(split.points).toEqual(["points-eval"]);
   });

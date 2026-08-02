@@ -176,8 +176,8 @@ const en = {
   /** ScopeWarnings 聚合层的 chrome:汇总行、kind 徽标、组头与明细折叠标签;message 本体不经字典。 */
   "issues.summary.experiments.one": "{n} experiment flagged",
   "issues.summary.experiments.other": "{n} experiments flagged",
-  "issues.group.unreadableSnapshot.one": "{n} run skipped",
-  "issues.group.unreadableSnapshot.other": "{n} runs skipped",
+  "issues.group.unreadableSnapshot.one": "{n} run unreadable",
+  "issues.group.unreadableSnapshot.other": "{n} runs unreadable",
   "issues.details.one": "{n} warning",
   "issues.details.other": "{n} issues",
   "issues.badge.unfinishedSnapshot": "unfinished",

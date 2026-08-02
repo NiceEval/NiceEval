@@ -6,7 +6,6 @@
 import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, Run } from "../../record/types.ts";
 import type { AttemptIdentity, AttemptLocator } from "../../record/locator.ts";
 import type { AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
-import type { AnnotatedEvalSourceSummary, AnnotatedSourceLine } from "../../record/annotated-source.ts";
 import type {
   AssertionResult,
   AttemptError,
@@ -108,12 +107,25 @@ export interface CustomDimension {
  * 顶层运行配置当分组维度。读取的落盘值可能是任意形状,分组显示键按稳定 JSON 规则生成;
  * 缺失值显示内置文案 `(missing)`,不同原始值撞出同一显示键时计算报错并要求改用 CustomDimension。
  */
-export interface DimensionRef {
-  readonly kind: "flag" | "runConfig" | "label";
-  readonly name: string;
-  readonly label?: LocalizedText;
-  readonly unit?: string;
-}
+export type DimensionRef =
+  | {
+    readonly kind: "flag";
+    readonly name: string;
+    readonly label?: LocalizedText;
+    readonly unit?: string;
+  }
+  | {
+    readonly kind: "label";
+    readonly name: string;
+    readonly label?: LocalizedText;
+    readonly unit?: string;
+  }
+  | {
+    readonly kind: "runConfig";
+    readonly name: RunConfigKey;
+    readonly label?: LocalizedText;
+    readonly unit?: string;
+  };
 
 /** 维度槽的输入:内置维度、自定义维度,或 flag() / label() / runConfig() 的产物。 */
 export type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
@@ -289,7 +301,7 @@ export interface ScoreboardData {
  * 不是均值。
  */
 export interface DeltaCell {
-  scoring: "pass" | "points";
+  evaluationKind: "pass" | "points";
   /** 复用 Record 的判定枚举,不为组件发明第二套。 */
   verdict: Verdict;
   /** 计分制的题目级挣分;通过制省略——计分制没有满分分母。 */
@@ -321,7 +333,7 @@ export interface DeltaData {
   totals: globalThis.Record<
     string,
     {
-      scoringComposition: "pass" | "points" | "mixed";
+      evaluationKindComposition: "pass" | "points" | "mixed";
       passed?: number;
       denominator?: number; // pass / mixed
       totalScore?: number; // points / mixed
@@ -396,10 +408,10 @@ export interface VerdictTally {
 /**
  * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
  * (同一个 experiment 或多个 experiment 并排都可能形成 mixed)。是定义期事实
- * (`EvalDescriptor.scoring`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
+ * (`EvalDescriptor.evaluationKind`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
  * 「题型构成与主读数」)。
  */
-export type ScoringComposition = "pass" | "points" | "mixed";
+export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
 /**
  * 一个范围的摘要:快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端通过率
@@ -426,8 +438,8 @@ export interface SampleSummaryContent {
    * 渲染面据此决定主 KPI:`"points"` 隐藏通过率只显示 `totalScore`;`"mixed"` 两者都显示;
    * `"pass"` 只显示通过率、`totalScore` 省略——不摆空列。
    */
-  scoringComposition: ScoringComposition;
-  /** 计分制总分(totalScore 指标)。仅 `scoringComposition` 为 `"points"` 或 `"mixed"` 时出现。 */
+  evaluationKindComposition: EvaluationKindComposition;
+  /** 计分制总分(totalScore 指标)。仅 `evaluationKindComposition` 为 `"points"` 或 `"mixed"` 时出现。 */
   totalScore?: MetricValue;
   /** costUSD 按 attempt 求和;缺失成本不伪造为 0。 */
   totalCostUSD: MetricValue;
@@ -521,10 +533,10 @@ export interface AttemptListItem {
   attempt: number;
   agent: string;
   /** 该 Attempt 所属 Eval 的定义期题型；渲染面据此区分不适用读数与缺失读数。 */
-  scoring: "pass" | "points";
+  evaluationKind: "pass" | "points";
   verdict: Verdict;
   /**
-   * 该轮的单行结果摘要,已按 Scoring display 契约折好:failed 取主失败断言摘要,
+   * 该轮的单行结果摘要,已按断言摘要契约折好:failed 取主失败断言摘要,
    * errored 取结构化 error 的一层摘要(phase · code · message),passed / skipped 为 null。
    * 渲染面只做宽度截断,不重算摘要。
    */
@@ -566,7 +578,7 @@ export interface EvalListItem {
 export interface ExperimentListEvalRow {
   evalId: string;
   /** 该 Eval 在所选快照中出现的题型构成；通常为单型，跨历史定义变化时可为 mixed。 */
-  scoring: ScoringComposition;
+  evaluationKind: EvaluationKindComposition;
   verdict: Verdict;
   /** 只对通过制 Eval 聚合；计分制 Eval 为不适用的 null cell。 */
   endToEndPassRate: MetricValue;
@@ -591,7 +603,7 @@ export interface ExperimentListItem {
   model?: string;
   flags?: globalThis.Record<string, JsonValue>;
   /** 该 experiment 内出现的题型构成；混型时通过率与总分分别聚合、并排展示。 */
-  scoring: ScoringComposition;
+  evaluationKind: EvaluationKindComposition;
   /** eval 级最终 verdict 计票(Result 列的构成)。 */
   evalVerdicts: VerdictTally;
   /** 仅聚合该 Experiment 内的通过制 Eval；纯计分制时为 null cell。 */
@@ -644,6 +656,8 @@ export interface ExperimentDetailsData {
 /** `AttemptSummary` 的 data:身份、verdict、时间与成本——恒非空。 */
 export interface AttemptSummaryData {
   locator: AttemptLocator;
+  /** 展示归属；不参与 locator 的 `{ runId, evalId, attempt }` 哈希。 */
+  experimentId: string;
   identity: AttemptIdentity;
   verdict: Verdict;
   startedAt?: string;
@@ -651,10 +665,10 @@ export interface AttemptSummaryData {
   costUSD: number | null;
   capabilities: AttemptEvidenceCapabilities;
   /**
-   * 计分制(`scoring: "points"`)attempt 本轮挣分:`assertions[].points` 之和(排除 unavailable)
+   * 计分制(`evaluationKind: "points"`)attempt 本轮挣分:`assertions[].points` 之和(排除 unavailable)
    * 加 `scoreEntries[].points` 之和;详情页总分位的唯一出现处,其它区块不重复这个总数
    * (docs/feature/assertions/library/display.md「计分制」)。通过制 eval 恒省略,不是 0——
-   * 题型判定读定义期 `result.scoring`,不从结果推断。
+   * 题型判定读定义期 `result.evaluationKind`,不从结果推断。
    */
   totalScore?: number;
 }
@@ -674,7 +688,7 @@ export interface AttemptErrorData extends AttemptError {
 
 /**
  * `AttemptAssertions` 的 data:非 passed 条目默认展开,passed 按 group 折叠计数;没有 assertion
- * 且没有给分记录时 null。计分制(`scoring: "points"`)eval 的 `.points` 挣分随所在
+ * 且没有给分记录时 null。计分制(`evaluationKind: "points"`)eval 的 `.points` 挣分随所在
  * `AssertionResult` 一起出现在 `attention` / `passedGroups` 里(字段本就在 `AssertionResult` 上,
  * 不需要额外投影);`t.score(label, n)` 的直接给分记录另成一个分组数组,见 `scoreEntries`
  * (docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。
@@ -707,64 +721,6 @@ export interface AttemptAssertionsData {
   scorePointsEarned?: { earned: number; total: number };
 }
 
-/** `AttemptSource` 源码行内的一轮执行：send 头事实 + 标准事件流归并出的完整回复。 */
-export interface AttemptSourceTurn {
-  label: string;
-  status: "completed" | "failed" | "waiting";
-  durationMs?: number;
-  sentText: string;
-  replies: AttemptConversationReply[];
-}
-
-/**
- * AnnotatedSourceLine 加上 web 源码视图需要的行内执行轮与计分制给分投影
- * (docs/feature/assertions/library/display.md「源码面同样承载给分证据」)。
- */
-export interface AttemptSourceLineData extends AnnotatedSourceLine {
-  /** 覆盖基类字段:中止断言(若映射到这一行)带 `aborted: true`,与 AttemptAssertionsData.attention 同一份标注。 */
-  assertions: (AssertionResult & { aborted?: true })[];
-  turns: AttemptSourceTurn[];
-  /** `t.score(label, n)` 调用行原位标注的给分记录(该行 `loc` 命中的全部记录,按声明顺序)。 */
-  scoreEntries: ScoreEntry[];
-  /** 计分制前置中止点:此行的某条断言是让 `test()` 就地结束的 failed gate。 */
-  aborted?: true;
-  /** 中止行之后的未到达区:此行在中止点之后,没有任何断言或给分记录跑到这里(而不是没写)。 */
-  unreached?: true;
-}
-
-/** `AttemptSource` 的 data:AnnotatedEvalSource + 按 loc 投影的标准事件流;没有 source 时 null。 */
-export interface AttemptSourceData {
-  /** text 面拼 `niceeval show <locator> --source` 下钻命令用;web 面不需要。 */
-  locator: AttemptLocator;
-  sourcePath: string;
-  lines: AttemptSourceLineData[];
-  unmapped: (AssertionResult & { aborted?: true })[];
-  /**
-   * 全通过、不带 `.points` 的观测断言按 `groupPath.join(" > ")` 分组(无分组键为 ""),组内保持
-   * 原始顺序——`lines` 与 `unmapped` 两处的 passed 条目都算在内,与 `AttemptAssertionsData.
-   * passedGroups` 同一份算法同一份输入(`result.assertions`;行内 assertions 与 `unmapped` 是它
-   * 的一个划分,见 `results/annotated-source.ts`)。text 面只在没有失败可看(`attention` 与
-   * `unmapped` 的非 passed 条目都为空)时用它折成 `✓ passed · <group> · <count>` 一行;web 面本就
-   * 逐行铺开完整源码,不需要折叠(docs/feature/reports/show/attempt.md「全通过折叠」)。
-   */
-  passedGroups: { group: string; items: AssertionResult[] }[];
-  /**
-   * `t.score(...)` 给分记录里 `loc` 不在展示源码内的部分,按 groupPath.join(" > ") 分组
-   * (无分组键为 "",与 `AttemptAssertionsData.scoreEntries` 同一套算法)。只在存在给分记录时
-   * 出现。
-   */
-  unmappedScoreEntries?: { group: string; items: ScoreEntry[] }[];
-  /**
-   * 得分点挣满计数,与 `AttemptAssertionsData.scorePointsEarned` 同一条判据(源码不可用时换成
-   * `AttemptAssertions`「规则完全一致」,见 docs/feature/reports/show/attempt.md)。只在存在
-   * 至少一个得分点时出现。
-   */
-  scorePointsEarned?: { earned: number; total: number };
-  /** 没有 loc、指向其它文件或越界的轮次；不能静默丢弃，放在源码块末尾。 */
-  unlocatedTurns: AttemptSourceTurn[];
-  summary: AnnotatedEvalSourceSummary;
-}
-
 /** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */
 export interface AttemptFixPromptData {
   prompt: string;
@@ -787,16 +743,15 @@ export interface AttemptConversationRound {
   replies: AttemptConversationReply[];
 }
 
-/** 一轮内的回复条目;`raw` 是未识别事件类型的原样兜底,不吞没其余事件。 */
+/** 一轮内的回复条目；与闭合 StreamEvent ADT 一一投影，不保存未归一的未知事件。 */
 export type AttemptConversationReply =
   | { kind: "assistant" | "user" | "thinking" | "error"; text: string }
-  | { kind: "tool"; callId: string; name: string; tool?: ToolName; input: JsonValue; output?: JsonValue; status?: "completed" | "failed" | "rejected" }
+  | { kind: "tool"; operationId: string; name: string; tool?: ToolName; input: JsonValue; output?: JsonValue; status?: "completed" | "failed" | "rejected" }
   | { kind: "skill"; skill: string }
   | { kind: "context"; text: string; source?: string }
-  | { kind: "subagent"; callId: string; name: string; remoteUrl?: string; output?: JsonValue; status?: "completed" | "failed" }
+  | { kind: "subagent"; operationId: string; name: string; remoteUrl?: string; output?: JsonValue; status?: "completed" | "failed" }
   | { kind: "input"; request: InputRequest }
-  | { kind: "compaction"; reason?: string }
-  | { kind: "raw"; raw: JsonValue };
+  | { kind: "compaction"; reason?: string };
 
 /** `AttemptConversation` 的 data:标准事件流按 loc 分轮;没有 events 时 null。 */
 export interface AttemptConversationData {

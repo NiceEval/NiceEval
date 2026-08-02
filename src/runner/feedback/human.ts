@@ -19,7 +19,7 @@
 import { t } from "../../i18n/index.ts";
 import { verdictSymbol } from "../reporters/shared.ts";
 import { formatCost } from "../../shared/format.ts";
-import { assertionSummaryLines } from "../../scoring/display.ts";
+import { assertionSummaryLines } from "../../assertions/display.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -477,8 +477,8 @@ function phaseLabel(phase: LifecyclePhase): string {
       return t("feedback.phase.evalRun");
     case "workspace.diff":
       return t("feedback.phase.workspaceDiff");
-    case "scoring.evaluate":
-      return t("feedback.phase.scoring");
+    case "assertions.evaluate":
+      return t("feedback.phase.assertions");
     case "telemetry.collect":
       return t("feedback.phase.telemetryCollect");
     case "agent.teardown":

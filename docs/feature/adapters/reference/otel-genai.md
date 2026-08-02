@@ -107,13 +107,13 @@ LLM 工程平台的数据模型:`Trace`(一次请求)+ 嵌套 `Observation`(span
 | OpenLLMetry | span 树 | 同 gen_ai | 可配 | 无 | 向 gen_ai 收敛 |
 | OpenAI Agents SDK | 私有类型化 span 树 | function_span 内 | 开关控制 | 无 | 私有,可导出 |
 | AG-UI | **扁平事件流** | `toolCallId` | 全量(流式 delta) | 无 | 协议 v1 |
-| niceeval `StreamEvent` | **扁平事件流** | `callId` | 全量 | `tool: ToolName` | 本仓库 |
+| niceeval `StreamEvent` | **扁平事件流** | `operationId` | 全量 | `tool: ToolName` | 本仓库 |
 
 ## 对 niceeval 的印证与启发
 
 1. **显式 id 配对是共识,agent-eval 是孤例。**
     OTel(`gen_ai.tool.call.id`)、OpenInference(`tool_call.id`)、AG-UI(`toolCallId`)、OTel 事件体(`tool_call` / `tool_call_response` 的 `id`)全部显式配对;只有 agent-eval 靠顺序。
-   niceeval `StreamEvent` 的 `callId` 站在多数这边(见 [标准事件模型](../architecture/events.md))。
+   niceeval `StreamEvent` 的 `operationId` 站在多数这边(见 [标准事件模型](../architecture/events.md))。
 2. **工具名跨 agent 归一是 eval 特有的需求,没有任何标准替你做。**
     所有标准都保留原始工具名——它们的用户只看自己一个系统,不需要"Claude 的 `Bash` 和 Codex 的 `shell` 是同一件事"。
    要写 `calledTool("shell")` 这种跨 agent 断言,canonical `ToolName` 映射表(agent-eval 先做,niceeval 沿用)必须自己维护,这层没法外包给标准。

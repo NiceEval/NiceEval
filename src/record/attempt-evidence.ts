@@ -1,11 +1,10 @@
 // AttemptEvidence:一次装配一个 Attempt 的全部证据(定稿见 plan/attempt-evidence-feedback-loop.md
 // 「中性数据准备」、docs/concepts.md「Attempt 证据」词条)。
 //
-// 这是 results/evidence 层的装配终点:locator + identity + EvalResult + AnnotatedEvalSource +
+// 这是 results/evidence 层的装配终点:locator + identity + EvalResult + AnnotatedSourceTree +
 // ExecutionTree + diff + artifact 路径 + capability 位,一次算好。show、view、静态导出、报告列表
 // 共用同一个 loadAttemptEvidence(attempt),不各自重读 artifact 或重算 capability——这正是
-// loadAnnotatedEvalSource(attempt-source.ts)文档里说的"后续阶段的真正 assembler",这里只组合
-// 已有的纯函数/薄壳,不重新实现 Eval 源码标注、ExecutionTree 合并或 diff 读取的任何一条逻辑。
+// 已有的纯函数/薄壳,不重新实现源码树、ExecutionTree 合并或 diff 读取的任何一条逻辑。
 //
 // capability 位的门槛:每一位只在"数据真的存在且非空"时为 true,不是"artifact 文件存在"——
 // 一份缺内容但存在的 diff.json(两个数组都空)与压根没有 diff.json 都不能点亮 [D]:两者对
@@ -13,7 +12,7 @@
 // 不留给 capability 位区分(capability 位只回答"要不要显示这个证据切面")。
 //
 //   source    —— evalSource 非空 AND (至少有一行源码 或 至少有一条断言);理论上
-//                buildAnnotatedEvalSource 对空文件也会产出一行 ""(split("\n") 的自然结果),
+//                空入口文件也会产出一行 ""(split("\n") 的自然结果),
 //                所以这条件实践中约等于"evalSource 非空",按文档口径原样写出两个子句,
 //                不依赖这个实现细节。
 //   execution —— events() 非空且非空数组;ExecutionTree 的骨架完全来自 events,没有事件
@@ -30,8 +29,8 @@
 import { join } from "node:path";
 import type { AttemptHandle } from "./types.ts";
 import { type AttemptIdentity, type AttemptLocator, encodeAttemptLocator } from "./locator.ts";
-import { loadAnnotatedEvalSource } from "./attempt-source.ts";
-import { deriveSendAnnotations, type AnnotatedEvalSource } from "./annotated-source.ts";
+import { loadAttemptSourceTree } from "./attempt-source.ts";
+import { deriveSendAnnotations, type AnnotatedSourceTree } from "./annotated-source.ts";
 import { buildExecutionTree, type ExecutionTree } from "../o11y/execution-tree.ts";
 import type { DiffData, EvalResult, FailedCommandEvidence, StreamEvent } from "../types.ts";
 
@@ -75,15 +74,16 @@ export interface AttemptEvidenceCapabilities {
  */
 export interface AttemptEvidence {
   locator: AttemptLocator;
-  /** locator 派生自的不可变身份元组,与 `locator` 编码的是同一份数据,供不想解码 locator
-   * 的调用方直接读结构化字段(如按 experimentId 分组、按时间排序)。 */
+  /** locator 派生自的不可变身份元组，与 `locator` 编码的是同一份数据。 */
   identity: AttemptIdentity;
+  /** 所属 experiment 的读面归属；不参与 locator 身份编码。 */
+  experimentId: string;
   result: EvalResult;
   /** 标准事件流(`--execution` 切面与 AttemptConversation 分轮的唯一事实来源);没有非空
    * events() 就是 null。装配一次,`show` / `view` / 报告不再各自调用 `attempt.events()`。 */
   events: readonly StreamEvent[] | null;
-  /** 运行时保存的 Eval 源码标注(`--source` 切面);没有 sources() 就是 null,不伪造空文档。 */
-  evalSource: AnnotatedEvalSource | null;
+  /** 面无关的完整源码调用树。裁行、展开、预算和单文件选择都只发生在 Result 层。 */
+  evalSource: AnnotatedSourceTree | null;
   /** 标准事件流 + OTel enrichment(`--execution` 切面);没有非空 events 就是 null,
    * 不产出一棵只剩 telemetry-only 节点、没有真实骨架的误导性树(见头注 execution 门槛)。 */
   execution: ExecutionTree | null;
@@ -109,7 +109,7 @@ export function isAttemptEvidence(value: unknown): value is AttemptEvidence {
 
 /**
  * 纯组合:一次性 await 好 attempt 的四类懒加载证据(events / trace / diff / 经
- * loadAnnotatedEvalSource 解引用的 eval 源码),拼成一份 AttemptEvidence。不重新实现
+ * loadAttemptSourceTree 解引用的完整源码树),拼成一份 AttemptEvidence。不重新实现
  * Eval 源码标注、ExecutionTree 合并或 diff 语义的任何一条规则——那些规则的家分别在
  * annotated-source.ts / execution-tree.ts / attempt.diff() 自身,这里只调用与判定"够不够
  * 亮起对应的证据切面"。
@@ -119,9 +119,8 @@ export function isAttemptEvidence(value: unknown): value is AttemptEvidence {
  * 只服务手工构造 AttemptHandle 的测试场景,不改变真实读取路径的行为。
  */
 export async function loadAttemptEvidence(attempt: AttemptHandle): Promise<AttemptEvidence> {
-  const identity: AttemptIdentity = {
-    experimentId: attempt.experimentId,
-    snapshotStartedAt: attempt.run.startedAt,
+  const identity: AttemptIdentity = attempt.locatorIdentity ?? {
+    runId: attempt.result.locatorRunId ?? attempt.run.runId,
     evalId: attempt.evalId,
     attempt: attempt.result.attempt,
   };
@@ -135,7 +134,7 @@ export async function loadAttemptEvidence(attempt: AttemptHandle): Promise<Attem
   ]);
   // send 标注要拿事件流里用户消息的 loc 与阶段时间树里的 turn 节点配对,所以在 events
   // 就绪后再装配 evalSource;派生与分桶都是纯函数(annotated-source.ts),这里只接线。
-  const evalSource = await loadAnnotatedEvalSource(
+  const evalSource = await loadAttemptSourceTree(
     attempt,
     deriveSendAnnotations(events, attempt.result.phases),
   );
@@ -146,13 +145,15 @@ export async function loadAttemptEvidence(attempt: AttemptHandle): Promise<Attem
   const hasEvents = events !== null && events.length > 0;
   const execution = hasEvents ? buildExecutionTree(events, trace ?? []) : null;
 
-  const evalCapable = evalSource !== null && (evalSource.lines.length > 0 || evalSource.summary.totalAssertions > 0);
+  const evalCapable = evalSource !== null &&
+    (evalSource.spine.lines.length > 0 || evalSource.summary.checks > 0 || evalSource.summary.points !== undefined);
   // 与 show/render.ts::diffText 同一口径:任一窗口触及过任一文件才算"有变化"。
   const diffCapable = diff !== null && Object.keys(diff.files).length > 0;
 
   return {
     locator,
     identity,
+    experimentId: attempt.experimentId,
     result: attempt.result,
     events: hasEvents ? events : null,
     evalSource,

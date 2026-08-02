@@ -4,7 +4,7 @@ sidebarTitle: "Drive"
 description: "t.send() and the Turn it returns, t.sendFile(), multi-turn conversations, t.newSession(), and HITL through t.respond() / t.respondAll()."
 ---
 
-Before assertions or judge scoring, you need to make the agent do something. **Drive** is the part of `test(t)` that sends input and gets results back: `t.send()`, `t.sendFile()`, `t.newSession()`, and HITL through `t.respond()` / `t.respondAll()`. Every drive API produces a **Turn**. All assertions and judge checks in [NiceEval](https://niceeval.com/) read from Turn data. See [Assert](/explanation/assert) and [Judge](/explanation/judge) for the scoring side.
+Before assertions or Judge evaluation, you need to make the agent do something. **Drive** is the part of `test(t)` that sends input and gets results back: `t.send()`, `t.sendFile()`, `t.newSession()`, and HITL through `t.respond()` / `t.respondAll()`. Every drive API produces a **Turn**. All assertions and Judge checks in [NiceEval](https://niceeval.com/) read from Turn data. See [Assert](/explanation/assert) and [Judge](/explanation/judge) for the assertion side.
 
 ## `t.send()` and the `Turn` it returns
 

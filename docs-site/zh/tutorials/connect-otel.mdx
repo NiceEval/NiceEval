@@ -159,7 +159,7 @@ provider.register();
 | `gen_ai.operation.name: "chat"`（或 `text_completion` / `embeddings`） | 按**模型调用**着色分类 |
 | `gen_ai.operation.name: "execute_tool"`，或属性里有 `tool_name` | 按**工具执行**着色分类 |
 | `gen_ai.operation.name: "invoke_agent"` / `"create_agent"` | 按**子 agent** 着色分类 |
-| 属性 `call_id` = 你 send 事件里的 `callId` | 该工具 span 自动补上真实入参/出参（`io.input` / `io.output`，从 send 返回的事件按 callId join 过来——很多埋点默认不采内容，这条路不受影响） |
+| 属性 `call_id` = 你 send 事件里的 `operationId` | 该工具 span 自动补上真实入参/出参（`io.input` / `io.output`，从 send 返回的事件按 `operationId` join 过来——很多埋点默认不采内容，这条路不受影响） |
 | span 状态 = error | 红色标错 |
 | 什么都没给（归一成 `other`） | 时间线还在；大 trace（>150 span）时按内部噪声折叠掉 |
 | 其余属性 | 原样保留，view 里点开下钻 |

@@ -1,6 +1,6 @@
 // 协议行为:message_end 的 AssistantMessage.usage 逐轮累加进 Turn.usage(见
 // createPiAgentEventStream);工具执行真实抛错时(除以零算出 Infinity,被 Number.isFinite 挡下来
-// 真实抛出,见 src/tools.ts 的 calculate)如实归一成 action.result status "failed",
+// 真实抛出,见 src/tools.ts 的 calculate)如实归一成 operation.finished status "failed",
 // 不折成一条看起来正常的助手消息、也不能和 agent 自己编的数字混在一起。
 import { defineEval } from "niceeval";
 import { isDefined, satisfies } from "niceeval/expect";

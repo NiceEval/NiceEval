@@ -15,8 +15,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../types.ts";
-import { completeEvidenceCoverage } from "../../scoring/coverage.ts";
-import type { AttemptHandle, Record, Sample, Run } from "../../record/index.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
+import type { AttemptEvidence, AttemptHandle, Record, Sample, Run } from "../../record/index.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../components/scope.harness.ts";
 import {
@@ -50,7 +50,6 @@ import { pointsToDataset } from "../definition/primitives/points-dataset.ts";
 import { attemptListData } from "../components/entity-lists/compute.ts";
 import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
-import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import { ExperimentDetails } from "../components/experiment-detail/index.tsx";
 import {
   agent,
@@ -65,8 +64,12 @@ import { label } from "../model/flag.ts";
 import { toExperimentRows } from "../model/conversions.ts";
 import builtInReport, { failures, stability, standard, standardAttemptPage, standardExperimentPage } from "../built-in/index.tsx";
 import { RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
-import { StabilityOverview } from "../components/summaries/index.tsx";
 import { loadBuiltInReport } from "./load.ts";
+import {
+  AttemptDetailsResultView,
+  StabilityResultView,
+  StandardOverviewResultView,
+} from "../built-in/result-components.tsx";
 
 // ───────────────────────── fake 数据 ─────────────────────────
 
@@ -107,6 +110,7 @@ function snap(spec: {
   runSeq += 1;
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const run = {
+    runId: `run-${runSeq}`,
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -382,7 +386,7 @@ describe("defineReport 装载规范化", () => {
           id: "a1",
           title: "A1",
           params: dummyParams,
-          load: (_b: unknown, p: unknown) => p,
+          load: (_b: Sample, p: { locator: string }) => p,
           navigation: false,
           render: () => null,
         },
@@ -390,7 +394,7 @@ describe("defineReport 装载规范化", () => {
           id: "a2",
           title: "A2",
           params: dummyParams,
-          load: (_b: unknown, p: unknown) => p,
+          load: (_b: Sample, p: { locator: string }) => p,
           navigation: false,
           render: () => null,
         },
@@ -437,7 +441,7 @@ describe("defineReport 装载规范化", () => {
           id: "attempt",
           title: "Attempt",
           params: dummyParams,
-          load: (_b: unknown, p: unknown) => p,
+          load: (_b: Sample, p: { locator: string }) => p,
           navigation: false,
           render: () => null,
         },
@@ -461,7 +465,7 @@ describe("defineReport 装载规范化", () => {
           id: "attempt",
           title: "Attempt",
           params: dummyParams,
-          load: (_b: unknown, p: unknown) => p,
+          load: (_b: Sample, p: { locator: string }) => p,
           navigation: false,
           render: () => null,
         },
@@ -512,15 +516,12 @@ describe("内建报告", () => {
       );
     };
     const [reportPage, attemptsPage, tracesPage, attemptPage, experimentPage] = builtInReport.pages;
-    expect(childTypes(await pageTree(reportPage!, scope)).map((c) => c.type)).toEqual([
-      Hero,
-      Callouts,
-      Callouts,
-      SampleOverview,
-    ]);
+    const reportTree = await pageTree(reportPage!, scope) as { type: unknown; props: globalThis.Record<string, unknown> };
+    expect(reportTree.type).toBe(StandardOverviewResultView);
     // 首页在无可复制 fix prompt 时不挂 CopyBlock；有失败时才会多一节。
-    const attemptsChildren = childTypes(await pageTree(attemptsPage!, scope));
-    expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, Callouts, Callouts, SampleOverview]);
+    const attemptsTree = await pageTree(attemptsPage!, scope) as { type: unknown; props: globalThis.Record<string, unknown> };
+    expect(attemptsTree.type).toBe(StandardOverviewResultView);
+    expect(reportTree.props.result).toEqual(attemptsTree.props.result);
     expect(childTypes(await pageTree(tracesPage!, scope)).map((c) => c.type)).toEqual([Hero, Callouts, Callouts, Waterfall]);
     expect(attemptPage!.render).toBe(standardAttemptPage.render);
     expect(attemptPage).toMatchObject({
@@ -529,7 +530,22 @@ describe("内建报告", () => {
       navigation: false,
     });
     expect(attemptPage!.params).toBe(standardAttemptPage.params);
-    expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetails);
+    const attemptResult = res("q", "passed");
+    const attemptEvidence: AttemptEvidence = {
+      locator: "@1abcdefg" as AttemptLocator,
+      identity: { runId: "agents/codex/run-a", evalId: "q", attempt: 0 },
+      experimentId: "agents/codex",
+      result: attemptResult,
+      events: null,
+      evalSource: null,
+      execution: null,
+      diff: null,
+      trace: null,
+      commands: null,
+      artifactPaths: { dir: "/tmp/q/a0" },
+      capabilities: { source: false, execution: false, timing: false, diff: false },
+    };
+    expect(((await attemptPage!.render(attemptEvidence as never)) as { type: unknown }).type).toBe(AttemptDetailsResultView);
     expect(experimentPage!.render).toBe(standardExperimentPage.render);
     expect(experimentPage).toMatchObject({
       id: standardExperimentPage.id,
@@ -573,7 +589,7 @@ describe("内建报告", () => {
       Hero,
       SampleNotices,
       RunNotices,
-      StabilityOverview,
+      StabilityResultView,
     ]);
   });
 
@@ -818,12 +834,12 @@ describe("SampleOverview(组合组件)", () => {
     const g1a = snap({
       experimentId: "score/a",
       agent: "bub",
-      results: [res("q", "passed", { scoring: "points", assertions: [scoreAssertion(3)] })],
+      results: [res("q", "passed", { evaluationKind: "points", assertions: [scoreAssertion(3)] })],
     });
     const g1b = snap({
       experimentId: "score/b",
       agent: "codex",
-      results: [res("q", "passed", { scoring: "points", assertions: [scoreAssertion(2)] })],
+      results: [res("q", "passed", { evaluationKind: "points", assertions: [scoreAssertion(2)] })],
     });
     const all = [g1a, g1b];
     const scope = scopeOf(all);
@@ -848,7 +864,7 @@ describe("SampleOverview(组合组件)", () => {
     const pointsSnap = snap({
       experimentId: "mixed/points",
       agent: "codex",
-      results: [res("q", "passed", { scoring: "points", assertions: [scoreAssertion(4)] })],
+      results: [res("q", "passed", { evaluationKind: "points", assertions: [scoreAssertion(4)] })],
     });
     const scope = scopeOf([passSnap, pointsSnap]);
     const resolved = await resolveTree(<SampleOverview />, scope);
@@ -895,7 +911,7 @@ describe("SampleOverview(组合组件)", () => {
       agent: "codex",
       results: [
         res("plain", "failed"),
-        res("score", "passed", { scoring: "points", assertions: [scoreAssertion(4)] }),
+        res("score", "passed", { evaluationKind: "points", assertions: [scoreAssertion(4)] }),
       ],
     });
     const scope = scopeOf([mixed]);
@@ -904,8 +920,8 @@ describe("SampleOverview(组合组件)", () => {
     expect(charts).toHaveLength(2);
 
     const chartByY = new Map(charts.map((el) => [(el.props as { y?: string }).y, el]));
-    const passScope = scope.filter((attempt) => attempt.result.scoring !== "points");
-    const pointsScope = scope.filter((attempt) => attempt.result.scoring === "points");
+    const passScope = scope.filter((attempt) => attempt.result.evaluationKind !== "points");
+    const pointsScope = scope.filter((attempt) => attempt.result.evaluationKind === "points");
     const passPoints = await overviewPoints(passScope, { seriesKey: "agent", seriesFn: agent, y: "passRate" });
     const scorePoints = await overviewPoints(pointsScope, { seriesKey: "agent", seriesFn: agent, y: "totalScore" });
     expect(chartByY.get("passRate")?.props.data).toEqual(

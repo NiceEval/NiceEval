@@ -8,7 +8,7 @@ import {
   type SandboxProviderBackend,
 } from "./backend.ts";
 import { suspendSandbox } from "./keep.ts";
-import { sandboxReuseCapability } from "./resolve.ts";
+import { sandboxReuseCapability } from "./backend.ts";
 
 function fakeSandbox(
   capabilities: SandboxBackendCapabilities = noSandboxBackendCapabilities,

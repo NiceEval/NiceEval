@@ -236,17 +236,18 @@ provider 创建和 prepare command 都可以向当前 `niceeval exp` 报告信�
 ```typescript
 const layer = e2bSandbox({ template: "niceeval-agents" })
   .prepare(async (sandbox, context) => {
-    context.progress.report("installing memory helper", 1, 2);
+    context.progress({ message: "installing memory helper", current: 1, total: 2 });
     await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
 
-    context.progress.report("warming memory index", 2, 2);
+    context.progress({ message: "warming memory index", current: 2, total: 2 });
     try {
       await warmIndex(sandbox);
     } catch (error) {
-      context.diagnostic.report({
+      context.diagnostic({
         code: "memory-warmup-degraded",
+        level: "warning",
         message: "Memory warmup failed; continuing with a cold index",
-        details: { reason: String(error) },
+        data: { reason: String(error) },
       });
     }
   });
@@ -269,21 +270,32 @@ context.facts("memory.restored", true);
 自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`:
 
 ```typescript
+import { Effect } from "effect";
+import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
+
 export default defineSandbox({
   name: "modal",
-  async create({ timeout, runtime, feedback }) {
-    feedback.progress({ message: "allocating Modal sandbox" });
-    const instance = await allocateModal({ timeout, runtime });
-    if (instance.usedFallbackRegion) {
-      feedback.diagnostic({
-        code: "modal-fallback-region",
-        level: "warning",
-        message: `Using fallback region ${instance.region}`,
-        data: { region: instance.region },
-      });
-    }
-    return new MyModalSandbox(instance);
-  },
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
+  create: ({ deadline, runtime, feedback }) => Effect.tryPromise({
+    try: async () => {
+      feedback.progress({ message: "allocating Modal sandbox" });
+      const instance = await allocateModal({ deadline, runtime });
+      if (instance.usedFallbackRegion) {
+        feedback.diagnostic({
+          code: "modal-fallback-region",
+          level: "warning",
+          message: `Using fallback region ${instance.region}`,
+          data: { region: instance.region },
+        });
+      }
+      return new MyModalSandbox(instance);
+    },
+    catch: (cause) => new CustomSandboxMaterializationError({
+      code: "modal-allocation-failed",
+      message: "Modal sandbox allocation failed",
+      cause: cause instanceof Error ? cause : new Error(String(cause)),
+    }),
+  }),
 });
 ```
 
@@ -314,15 +326,23 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 
 ```typescript
 import { Effect } from "effect";
-import { defineSandbox } from "niceeval/sandbox";
+import { CustomSandboxMaterializationError, defineSandbox } from "niceeval/sandbox";
 
 export default defineSandbox({
   name: "modal",                          // 只用于展示 / 日志,不参与分发
+  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
   recommendedConcurrency: 8,               // 可选;省略默认 5
-  create: ({ deadline, runtime, feedback }) => Effect.sync(() => {
-    feedback.progress({ message: "allocating Modal sandbox" });
-    // 返回一个实现 Sandbox 接口(run/read/write/stop/...)的实例
-    return new MyModalSandbox({ deadline, runtime });
+  create: ({ deadline, runtime, feedback }) => Effect.try({
+    try: () => {
+      feedback.progress({ message: "allocating Modal sandbox" });
+      // 返回一个实现 Sandbox 接口(run/read/write/stop/...)的实例
+      return new MyModalSandbox({ deadline, runtime });
+    },
+    catch: (cause) => new CustomSandboxMaterializationError({
+      code: "modal-allocation-failed",
+      message: "Modal sandbox allocation failed",
+      cause: cause instanceof Error ? cause : new Error(String(cause)),
+    }),
   }),
 });
 ```

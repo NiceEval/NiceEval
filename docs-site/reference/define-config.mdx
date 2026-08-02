@@ -45,14 +45,6 @@ Language of the CLI and runtime copy (BCP 47, e.g. `"en"` / `"zh-CN"`); set it w
 should stay in one language. Omitted, the language follows the system locale (`LC_ALL` /
 `LC_MESSAGES` / `LANG`), falling back to `zh-CN` when none is set.
 
-#### `sandbox`
-
-```ts
-sandbox?: SandboxOption;
-```
-
-Project-level default Sandbox provider (docker / vercel / e2b / custom); the experiment can override it.
-
 #### `workspace`
 
 ```ts
@@ -122,4 +114,4 @@ gateway-measured actual cost (`usage.costUSD`) — measured cost always takes pr
 
 {/* GENERATED:END config-fields */}
 
-[NiceEval](https://niceeval.com/) keeps environment preparation in ordinary code: files an eval itself needs are written in `test(t)`, and an agent's own preparation is written in the adapter's `setup`. A Sandbox provider is never auto-detected from environment variables, and there is no corresponding CLI flag — construct one with `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` / `localSandbox()` from `niceeval/sandbox` and put it in the `sandbox` field (either directly on the experiment, or only here as a project-level fallback: `exp.sandbox ?? config.sandbox`).
+[NiceEval](https://niceeval.com/) keeps environment preparation in ordinary code: files an eval itself needs are written in `test(t)`, and an agent's own preparation is written in the adapter's setup. `Config` deliberately has no `sandbox` field and no provider auto-detection. Declare a template-bearing `SandboxLayer` on the Eval or Experiment so link planning can identify its owner and pair it before any resource is created.

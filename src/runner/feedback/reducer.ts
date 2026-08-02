@@ -143,7 +143,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         event.tokenCount === undefined
           ? state.newTokenCount
           : (state.newTokenCount ?? 0) + event.tokenCount;
-      // 落项完全由事件携带的 verdict 决定 —— reducer 不自己判断成败(那是 scoring 的事),
+      // 落项完全由事件携带的 verdict 决定 —— reducer 不自己判断成败(那是断言求值的事),
       // 也不留一个「已完成但未归类」的兜底项:Verdict 是四值闭集,穷尽覆盖。
       return {
         ...state,

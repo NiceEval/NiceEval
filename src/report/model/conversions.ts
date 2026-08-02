@@ -30,7 +30,7 @@ import {
   attemptDiffContent,
   attemptFixPromptContent,
   attemptNoticesContent,
-  attemptSourceContent,
+  projectedSourceContent,
   attemptTimelineContent,
 } from "../components/attempt-detail/content.tsx";
 import {
@@ -40,7 +40,6 @@ import {
   attemptDiffData,
   attemptErrorData,
   attemptFixPromptData,
-  attemptSourceData,
   attemptSummaryData,
   attemptTimelineData,
   usageTableData,
@@ -122,7 +121,9 @@ export async function toTimelineNodes(attempt: AttemptEvidence): Promise<Waterfa
 }
 
 export async function toAttemptSource(attempt: AttemptEvidence) {
-  return attemptSourceContent(attemptSourceData(attempt));
+  const { annotatedSourceResult } = await import("../tasks.ts");
+  const result = await annotatedSourceResult(attempt, { mode: "web" });
+  return projectedSourceContent(result.source, result.locator);
 }
 
 export async function toAttemptAssertions(attempt: AttemptEvidence) {

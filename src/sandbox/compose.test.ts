@@ -11,17 +11,15 @@ import {
   assertComposeBlacklist,
   buildComposeOverlay,
   collectComposeBuilds,
-  composeBuildWorksFromPlan,
   COMPOSE_MATERIALIZER_REVISION,
   detectDockerBuildPlatform,
   dockerComposeBuildProvider,
   findComposeBlacklistViolations,
   inspectComposeYaml,
   leakGateHintsFromComposeFile,
-  materializeDockerComposeCase,
+  materializeDockerComposeProviderCase,
 } from "./compose.ts";
-import { composeSandbox, planSandboxCase } from "./case.ts";
-import { dockerSandbox } from "../define.ts";
+import { computeCaseKey } from "./identity.ts";
 import type { Sandbox } from "./types.ts";
 
 const tmpDirs: string[] = [];
@@ -35,6 +33,27 @@ async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "niceeval-compose-"));
   tmpDirs.push(root);
   return root;
+}
+
+async function composeProviderPlan(file: string, evalId: string, mainService = "client") {
+  const collection = await collectComposeBuilds({ file, mainService });
+  const identity = { provider: "docker", kind: "compose", file, mainService } as const;
+  return {
+    evalId,
+    profile: evalId,
+    mainService,
+    env: {},
+    collection,
+    caseKey: computeCaseKey({
+      caseKind: "compose",
+      materializerRevision: COMPOSE_MATERIALIZER_REVISION,
+      composeBytes: collection.composeBytes,
+      buildKeys: collection.buildKeys,
+      caseParams: identity,
+    }),
+    identity,
+    carryEligible: collection.carryEligible,
+  };
 }
 
 function stubSandbox(id = "compose-main"): Sandbox {
@@ -179,7 +198,7 @@ services:
     expect(hints.bindMounts![0]!.agentReachable).toBe(false);
 
     const source = attachLeakGateHints(
-      composeSandbox({ file: join(root, "docker-compose.yaml"), mainService: "client" }),
+      { kind: "compose", file: join(root, "docker-compose.yaml"), mainService: "client" },
       hints,
     );
     expect(getLeakGateHints(source)?.buildContexts).toHaveLength(1);
@@ -231,7 +250,7 @@ services:
     expect(collection.works[0]!.provider).toBe("docker");
   });
 
-  it("composeBuildWorksFromPlan 从 PlannedSandboxCase 抽出 works", async () => {
+  it("typed provider planning 直接从 Compose 声明抽出 works", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "ctx"), { recursive: true });
     await writeFile(join(root, "ctx", "Dockerfile"), "FROM alpine\n", "utf-8");
@@ -244,19 +263,8 @@ services:
 `,
       "utf-8",
     );
-    const planned = planSandboxCase({
-      evalId: "tb/sheets",
-      environment: "tb-sheets",
-      spec: dockerSandbox({
-        environments: {
-          "tb-sheets": { compose: { file: join(root, "compose.yaml"), mainService: "client" } },
-        },
-      }),
-    });
-    expect(planned.status).toBe("ready");
-    if (planned.status !== "ready") return;
-    const collection = await composeBuildWorksFromPlan(planned.plan);
-    expect(collection?.buildKeys).toHaveLength(1);
+    const collection = await collectComposeBuilds({ file: join(root, "compose.yaml"), mainService: "client" });
+    expect(collection.buildKeys).toHaveLength(1);
     expect(dockerComposeBuildProvider()).toMatchObject({ lookup: expect.any(Function), build: expect.any(Function) });
     expect(COMPOSE_MATERIALIZER_REVISION).toMatch(/^docker-compose-/);
   });
@@ -456,24 +464,19 @@ services:
       "utf-8",
     );
 
-    const planned = planSandboxCase({
-      evalId: "tb/sheets",
-      environment: "tb-sheets",
-      spec: dockerSandbox({
-        environments: {
-          "tb-sheets": { compose: { file: join(root, "docker-compose.yaml"), mainService: "client" } },
-        },
-      }),
-    });
-    expect(planned.status).toBe("ready");
-    if (planned.status !== "ready") return;
+    const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/sheets");
 
     const composeCalls: string[][] = [];
     let downCount = 0;
     const primary = stubSandbox("main-from-compose");
 
-    const materialized = await materializeDockerComposeCase(planned.plan, {
-      ctx: { evalId: "tb/sheets", profile: "tb-sheets" },
+    const materialized = await materializeDockerComposeProviderCase(plan, {
+      ctx: {
+        evalId: "tb/sheets",
+        profile: "tb-sheets",
+        signal: new AbortController().signal,
+        buildLocators: new Map(),
+      },
       _testHooks: {
         async runCompose(args) {
           composeCalls.push([...args]);
@@ -512,22 +515,17 @@ services:
 `,
       "utf-8",
     );
-    const planned = planSandboxCase({
-      evalId: "tb/fail",
-      environment: "tb-fail",
-      spec: dockerSandbox({
-        environments: {
-          "tb-fail": { compose: { file: join(root, "docker-compose.yaml"), mainService: "client" } },
-        },
-      }),
-    });
-    expect(planned.status).toBe("ready");
-    if (planned.status !== "ready") return;
+    const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/fail");
 
     let downCount = 0;
     await expect(
-      materializeDockerComposeCase(planned.plan, {
-        ctx: { evalId: "tb/fail", profile: "tb-fail" },
+      materializeDockerComposeProviderCase(plan, {
+        ctx: {
+          evalId: "tb/fail",
+          profile: "tb-fail",
+          signal: new AbortController().signal,
+          buildLocators: new Map(),
+        },
         _testHooks: {
           async runCompose(args) {
             if (args.includes("down")) {
@@ -557,23 +555,18 @@ services:
 `,
         "utf-8",
       );
-      const planned = planSandboxCase({
-        evalId: "tb/transient-pull",
-        environment: "tb-transient-pull",
-        spec: dockerSandbox({
-          environments: {
-            "tb-transient-pull": { compose: { file: join(root, "docker-compose.yaml"), mainService: "client" } },
-          },
-        }),
-      });
-      expect(planned.status).toBe("ready");
-      if (planned.status !== "ready") return;
+      const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/transient-pull");
 
       vi.useFakeTimers();
       const order: string[] = [];
       let upCount = 0;
-      const promise = materializeDockerComposeCase(planned.plan, {
-        ctx: { evalId: "tb/transient-pull", profile: "tb-transient-pull" },
+      const promise = materializeDockerComposeProviderCase(plan, {
+        ctx: {
+          evalId: "tb/transient-pull",
+          profile: "tb/transient-pull",
+          signal: new AbortController().signal,
+          buildLocators: new Map(),
+        },
         _testHooks: {
           async runCompose(args) {
             if (args.includes("up")) {

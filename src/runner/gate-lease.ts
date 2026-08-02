@@ -29,6 +29,55 @@ export interface GateLeaseRecord {
   heartbeatAt: string; // ISO
 }
 
+function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as globalThis.Record<string, unknown>
+    : undefined;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isSlot(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/** 验证租约的全部持久字段；按槽读取时还会核对身份，防止错位记录冒充当前持有者。 */
+function decodeGateLeaseRecord(
+  value: unknown,
+  expected: { experimentId?: string; slot?: number } = {},
+): GateLeaseRecord | undefined {
+  const record = recordOf(value);
+  if (
+    record === undefined ||
+    typeof record.experimentId !== "string" ||
+    !isSlot(record.slot) ||
+    !isPositiveInteger(record.declaredN) ||
+    !isPositiveInteger(record.pid) ||
+    typeof record.host !== "string" ||
+    !isTimestamp(record.startedAt) ||
+    !isTimestamp(record.heartbeatAt) ||
+    (expected.experimentId !== undefined && record.experimentId !== expected.experimentId) ||
+    (expected.slot !== undefined && record.slot !== expected.slot)
+  ) {
+    return undefined;
+  }
+  return {
+    experimentId: record.experimentId,
+    slot: record.slot,
+    declaredN: record.declaredN,
+    pid: record.pid,
+    host: record.host,
+    startedAt: record.startedAt,
+    heartbeatAt: record.heartbeatAt,
+  };
+}
+
 /** 持有者续租心跳的周期。与用例锁同参数。 */
 export const GATE_LEASE_HEARTBEAT_INTERVAL_MS = CASE_LOCK_HEARTBEAT_INTERVAL_MS;
 /** `heartbeatAt` 落后当前时间超过这个阈值(三个心跳周期)即视为持有者已死。 */
@@ -57,24 +106,12 @@ function gateLeaseEntryId(experimentId: string, slot: number): string {
   return slugHashEntryId(`gate-${experimentId}-${slot}`, ["gate-lease", experimentId, String(slot)]);
 }
 
-/** 租约与用例锁同住 `.niceeval/locks/`,分辨走内容而不是文件名:只有租约带 `slot` + `declaredN`。 */
-function isGateLeaseRecordOf(entry: unknown, experimentId: string): entry is GateLeaseRecord {
-  if (typeof entry !== "object" || entry === null) return false;
-  const r = entry as Partial<GateLeaseRecord>;
-  return (
-    r.experimentId === experimentId &&
-    typeof r.slot === "number" &&
-    typeof r.declaredN === "number" &&
-    typeof r.heartbeatAt === "string"
-  );
-}
-
 /** 读取该实验当前在场的全部租约记录,无副作用。`--dry` 与 min-N 扫描用它。 */
 export async function readGateLeases(niceevalRoot: string, experimentId: string): Promise<GateLeaseRecord[]> {
-  const entries = await readAllEntryFiles<unknown>(gateLeasesDirOf(niceevalRoot));
+  const entries = await readAllEntryFiles(gateLeasesDirOf(niceevalRoot), decodeGateLeaseRecord);
   return entries
     .map(({ entry }) => entry)
-    .filter((entry): entry is GateLeaseRecord => isGateLeaseRecordOf(entry, experimentId))
+    .filter((entry) => entry.experimentId === experimentId)
     .sort((a, b) => a.slot - b.slot);
 }
 
@@ -177,8 +214,15 @@ export async function tryAcquireGateSlotOnce(
   // 一趟走完仍无所获就返回 full,由上层轮询重新评估——不递归,避免竞争激烈时栈深不可控。
   for (let slot = 0; slot < effectiveN; slot += 1) {
     const id = gateLeaseEntryId(experimentId, slot);
-    const current = await readEntryFile<GateLeaseRecord>(dir, id);
-    if (current === undefined || !isGateLeaseStale(current, nowMs)) continue;
+    const current = await readEntryFile(dir, id, (value) => decodeGateLeaseRecord(value, { experimentId, slot }));
+    if (current === undefined) {
+      // O_EXCL 已证明此槽有文件，但 decoder 拒绝它；认领并重建，不能让坏条目永久占坑。
+      if (!(await claimEntryFile(dir, id))) continue;
+      const record = recordFor(slot);
+      if (!(await createLeaseFileExclusive(dir, id, record))) continue;
+      return { kind: "acquired", slot, takenOver: false, record };
+    }
+    if (!isGateLeaseStale(current, nowMs)) continue;
     if (!(await claimEntryFile(dir, id))) continue;
     const record = recordFor(slot);
     if (!(await createLeaseFileExclusive(dir, id, record))) continue;
@@ -207,7 +251,11 @@ async function renewHeartbeat(
   isReleased: () => boolean,
 ): Promise<void> {
   if (isReleased()) return;
-  const current = await readEntryFile<GateLeaseRecord>(dir, id);
+  const current = await readEntryFile(
+    dir,
+    id,
+    (value) => decodeGateLeaseRecord(value, { experimentId: mine.experimentId, slot: mine.slot }),
+  );
   if (current === undefined) return; // 租约已经不在了(已释放或被接管),没有心跳可续
   if (!isSameHolder(current, mine)) return;
   if (isReleased()) return; // 释放发生在上面这次 await 期间——写回之前的最后一道闸
@@ -327,7 +375,7 @@ export async function acquireGateSlot(
     clearInterval(timer);
     held.delete(key);
     await Promise.all(inFlight); // 等在飞心跳全部落地(写或不写),再删——不然写回可能晚于 rm
-    const current = await readEntryFile<GateLeaseRecord>(dir, id);
+    const current = await readEntryFile(dir, id, (value) => decodeGateLeaseRecord(value, { experimentId, slot }));
     if (current !== undefined && !isSameHolder(current, mine)) return; // 槽已被接管,不删别人的租约
     await rm(join(dir, `${id}.json`), { force: true });
     await fsyncDir(dir);

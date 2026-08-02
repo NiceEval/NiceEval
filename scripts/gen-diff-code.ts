@@ -40,6 +40,8 @@ interface DiffPair {
   statGroups: Array<{ label: string; files: string[] }>;
   /** 这个对比额外排除的文件（精确路径或目录前缀），如 README、env 模板等与接入无关的 */
   exclude?: string[];
+  /** 页面语言；省略时沿用中文，英文页和中文页由同一份示例 diff 生成。 */
+  locale?: "zh" | "en";
 }
 
 /** Tier 1 示例的统一分类:必要 = 不写接不上;评测内容按需增长。应用由用户自己启动,
@@ -127,7 +129,7 @@ const PAIRS: DiffPair[] = [
       "",
       "**接入方式**：官方转换器——codex 原生 `ThreadEvent` → 标准事件的映射是",
       "`createCodexThreadEventStream`（`\"niceeval/adapter\"` 导出）的事：消息文本、工具项",
-      "（`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `action.*`）和",
+      "（`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `operation.started` / `operation.finished`）和",
       "`turn.completed` 的 usage 全部来自这条流，adapter 只剩传输粘合。没有 HITL",
       "（Codex SDK 不支持）。评估用例测的是真实编码任务（在工作目录里写文件、跑命令），断言",
       "直接读磁盘验证。应用由你自己启动（`pnpm start`），评估用例不代管进程。应用侧",
@@ -160,7 +162,7 @@ const PAIRS: DiffPair[] = [
       "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       "**接入方式**：手写帧映射——server.py 的自定义 JSON 帧逐帧翻成标准事件（`tool-input` →",
-      "`action.called`、`tool-output` → `action.result`、`text-delta` 累积成 `message`、",
+      "`operation.started`、`tool-output` → `operation.finished`、`text-delta` 累积成 `message`、",
       "`tool-approval-request` → 停轮 + `input.requested`），HITL 停轮现场的存取走 `ctx.session`。",
       "被测应用是 Python，评估用例侧是另起的独立 TS 项目，应用侧 `src/backend/*.py` 逐字节未变。",
       "要 OTel 瀑布图见 `tier2/`，feature A/B 见 `tier3/`。",
@@ -211,6 +213,130 @@ const PAIRS: DiffPair[] = [
   // openllmetry / openinference 的 before-after 配置连同两个示例目录一起移除了
   // (2026-07,待 langgraph 那批做完后重做,见 examples/README.md)。2026-07 langgraph 那批
   // 已做完(examples/zh/tier1/*),上面五个配置已按 docs/origin-integration.md 重做。
+];
+
+const ENGLISH_TIER1_STAT_GROUPS: DiffPair["statGroups"] = [
+  { label: "App-side config (required: dependency declarations)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+  { label: "adapter (required: transport glue; protocol mapping is in the official package)", files: ["niceeval.config.ts", "agents/"] },
+  { label: "evals and experiments (test content, grows as needed)", files: ["evals/", "experiments/"] },
+];
+
+function englishPair(
+  base: DiffPair,
+  page: Pick<DiffPair, "out" | "frontmatter" | "intro" | "sections" | "statGroups">,
+): DiffPair {
+  return { ...base, ...page, locale: "en" };
+}
+
+const ENGLISH_PAIRS: DiffPair[] = [
+  englishPair(PAIRS[0], {
+    out: "docs-site/examples/integrations/pi-sdk.mdx",
+    frontmatter: {
+      title: "Integrate pi-agent-core with NiceEval non-invasively",
+      sidebarTitle: "pi-agent-core integration",
+      description: "The complete before/after diff for connecting a pi-agent-core (@earendil-works) assistant backend to NiceEval: the app side only adds one devDependency.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) -- a standalone `@earendil-works/pi-agent-core` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping pi native `AgentEvent` events into standard events is handled by `createPiAgentEventStream` (exported from `\"niceeval/adapter\"`). The adapter only keeps transport glue: which URL the app uses and which endpoint handles approvals (`calculate` goes through HITL approval). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[1], {
+    out: "docs-site/examples/integrations/claude-sdk.mdx",
+    frontmatter: {
+      title: "Integrate Claude Agent SDK with NiceEval non-invasively",
+      sidebarTitle: "Claude Agent SDK integration",
+      description: "The complete before/after diff for connecting a Claude Agent SDK assistant backend to NiceEval: zero app-side code changes; everything is added on the eval side.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk) -- a standalone `@anthropic-ai/claude-agent-sdk` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping Claude Agent SDK native `SDKMessage` events into standard events is handled by `createClaudeSdkEventStream` (exported from `\"niceeval/adapter\"`). The adapter only keeps transport glue and HITL stop-turn detection (`calculate` is gated through the official `canUseTool` callback). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[2], {
+    out: "docs-site/examples/integrations/codex-sdk.mdx",
+    frontmatter: {
+      title: "Integrate Codex SDK with NiceEval non-invasively",
+      sidebarTitle: "Codex SDK integration",
+      description: "The complete before/after diff for connecting a Codex SDK coding-agent backend to NiceEval: zero app-side code changes.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) -- a standalone `@openai/codex-sdk` HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: official converter -- mapping Codex native `ThreadEvent` events into standard events is handled by `createCodexThreadEventStream` (exported from `\"niceeval/adapter\"`). Message text, tool items (`command_execution` / `mcp_tool_call` / `file_change` -> paired `operation.started` / `operation.finished` events), and `turn.completed` usage all come from this stream, leaving only transport glue in the adapter. There is no HITL because Codex SDK does not support it. The evals run real coding tasks (writing files and running commands in a working directory), and assertions read the disk directly. You start the app yourself (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
+  englishPair(PAIRS[3], {
+    out: "docs-site/examples/integrations/langgraph.mdx",
+    frontmatter: {
+      title: "Integrate LangGraph with NiceEval non-invasively",
+      sidebarTitle: "LangGraph integration",
+      description: "The complete before/after diff for connecting a pure Python LangGraph app with LangSmith OTel export to NiceEval.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) -- a pure Python `create_agent` (LangChain 1.x / LangGraph) HTTP service, before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: handwritten frame mapping -- custom JSON frames from `server.py` are translated one by one into standard events (`tool-input` -> `operation.started`, `tool-output` -> `operation.finished`, accumulated `text-delta` -> `message`, `tool-approval-request` -> stop turn + `input.requested`). HITL stop-turn state is stored through a typed `ctx.session` slot. The subject app is Python, while the eval side is a separate TypeScript project. App-side `src/backend/*.py` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "Added TypeScript-side scaffolding (the app itself is unchanged)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: [
+      { label: "Eval-side TypeScript scaffolding (required because the subject app is Python; all-new files)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      ...ENGLISH_TIER1_STAT_GROUPS.slice(1),
+    ],
+  }),
+  englishPair(PAIRS[4], {
+    out: "docs-site/examples/integrations/ai-sdk-v7.mdx",
+    frontmatter: {
+      title: "Integrate AI SDK v7 with NiceEval non-invasively",
+      sidebarTitle: "AI SDK v7 integration",
+      description: "The complete before/after diff for connecting an AI SDK v7 chat app to NiceEval through its HTTP interface: zero app-side code changes.",
+    },
+    intro: [
+      "Comparison targets:",
+      "",
+      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) -- a regular AI SDK v7 chat app (HTTP server + React chat UI), before any eval integration.",
+      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) -- the same app after integrating NiceEval.",
+      "",
+      "**Integration path**: built-in **`uiMessageStreamAgent`** -- the official non-invasive adapter for the AI SDK UI Message Stream protocol (the standard SSE backend used by `useChat`). The adapter file only declares where the endpoint lives and how to pass `model` in the request body. Session replay, HITL approval (rewriting and resending `needsApproval` tool parts), and tool/message events built directly from protocol frames are all handled by the factory. The protocol frames do not include usage data, so this example does not assert usage. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
+    ].join("\n"),
+    sections: [
+      { title: "App-side changes (dependency declarations only)", files: ["package.json", "tsconfig.json", "pnpm-workspace.yaml"] },
+      { title: "Added adapter, evals, and experiments", files: ["niceeval.config.ts", "agents/", "evals/", "experiments/"] },
+    ],
+    statGroups: ENGLISH_TIER1_STAT_GROUPS,
+  }),
 ];
 
 // 与学习无关的目录/文件，不进 diff
@@ -349,7 +475,12 @@ interface TreeNode {
   status?: Status;
 }
 
-function renderTree(entries: Array<{ file: string; status: Status }>, rootLabel: string, order: string[]): string {
+function renderTree(
+  entries: Array<{ file: string; status: Status }>,
+  rootLabel: string,
+  order: string[],
+  locale: DiffPair["locale"],
+): string {
   const root: TreeNode = { children: new Map() };
   for (const { file, status } of entries) {
     let node = root;
@@ -388,7 +519,11 @@ function renderTree(entries: Array<{ file: string; status: Status }>, rootLabel:
   walk(root, "", "");
 
   const width = Math.max(...rows.map(([tree]) => tree.length));
-  return rows.map(([tree, status]) => (status ? `${tree.padEnd(width + 3)}${status}` : tree)).join("\n");
+  const statusLabel = (status: string) => {
+    if (locale !== "en") return status;
+    return ({ 新增: "added", 修改: "modified", 删除: "deleted" } as const)[status as Status];
+  };
+  return rows.map(([tree, status]) => (status ? `${tree.padEnd(width + 3)}${statusLabel(status)}` : tree)).join("\n");
 }
 
 // ---- GitHub PR 式 diff 表格 ----
@@ -414,7 +549,7 @@ async function renderFileDiff(pair: DiffPair, file: string, status: Status): Pro
       html: [
         `<div className="gd-file">`,
         head(`<span className="gd-stats">${jsxText("BIN")}</span>`),
-        `<div className="gd-note">${jsxText(`二进制文件，${size} bytes，略`)}</div>`,
+        `<div className="gd-note">${jsxText(pair.locale === "en" ? `Binary file, ${size} bytes, omitted` : `二进制文件，${size} bytes，略`)}</div>`,
         `</div>`,
       ],
       adds: 0,
@@ -493,7 +628,7 @@ async function renderFileDiff(pair: DiffPair, file: string, status: Status): Pro
     while (j < ops.length && hide[j]) j++;
     const id = `gdf${foldSeq++}`;
     rows.push(
-      `<tr className="gd-expand" data-fold="${id}"><td className="gd-ln" colSpan={2}>${jsxText("⇕")}</td><td className="gd-sign"></td><td className="gd-code">${jsxText(`展开 ${j - k} 行未变更代码`)}</td></tr>`,
+      `<tr className="gd-expand" data-fold="${id}"><td className="gd-ln" colSpan={2}>${jsxText("⇕")}</td><td className="gd-sign"></td><td className="gd-code">${jsxText(pair.locale === "en" ? `Expand ${j - k} unchanged lines` : `展开 ${j - k} 行未变更代码`)}</td></tr>`,
     );
     for (; k < j; k++) pushRow(ops[k], `gd-fold ${id}`);
   }
@@ -517,6 +652,7 @@ async function renderFileDiff(pair: DiffPair, file: string, status: Status): Pro
 // ---- MDX 生成 ----
 
 async function generate(pair: DiffPair): Promise<void> {
+  const english = pair.locale === "en";
   const excluded = (f: string) => pair.exclude?.some((p) => f === p || f.startsWith(`${p}/`)) ?? false;
   const beforeFiles = new Set(listFiles(pair.source).filter((f) => !excluded(f)));
   const afterFiles = new Set(listFiles(pair.target).filter((f) => !excluded(f)));
@@ -543,7 +679,11 @@ async function generate(pair: DiffPair): Promise<void> {
   lines.push(`description: "${pair.frontmatter.description}"`);
   lines.push("---");
   lines.push("");
-  lines.push(`{/* 本文件由 scripts/gen-diff-code.ts 生成（pnpm run gen:diff-code），不要手工编辑 */}`);
+  lines.push(
+    english
+      ? `{/* Generated by scripts/gen-diff-code.ts (pnpm run gen:diff-code). Do not edit by hand. */}`
+      : `{/* 本文件由 scripts/gen-diff-code.ts 生成（pnpm run gen:diff-code），不要手工编辑 */}`,
+  );
   lines.push("");
   lines.push(pair.intro);
   lines.push("");
@@ -565,13 +705,13 @@ async function generate(pair: DiffPair): Promise<void> {
   };
   const fmtLines = (adds: number, dels: number) =>
     [adds ? `+${adds}` : "", dels ? `−${dels}` : ""].filter(Boolean).join(" ") || "0";
-  lines.push("接入的全部代码变更（生成时从两个目录实测统计）：");
+  lines.push(english ? "All integration code changes (measured from both directories when generated):" : "接入的全部代码变更（生成时从两个目录实测统计）：");
   lines.push("");
   // 统计表必须用 JSX 表格,不能用 markdown 管道表:同一页里出现 GFM 表格 + diff 的超长
   // 单行 JSX 时,MDX 编译直接 Maximum call stack size exceeded(实测,五页全挂),
   // 见 memory/mintlify-mdx-html-rendering-limits.md
   const statRows: string[] = [
-    `<tr><th>${jsxText("类别")}</th><th>${jsxText("文件数")}</th><th>${jsxText("行数")}</th></tr>`,
+    `<tr><th>${jsxText(english ? "Category" : "类别")}</th><th>${jsxText(english ? "Files" : "文件数")}</th><th>${jsxText(english ? "Lines" : "行数")}</th></tr>`,
   ];
   let totalN = 0;
   let totalAdds = 0;
@@ -584,21 +724,21 @@ async function generate(pair: DiffPair): Promise<void> {
     totalN += rs.length;
     totalAdds += adds;
     totalDels += dels;
-    const label = gi < pair.statGroups.length ? pair.statGroups[gi].label : "其它";
+    const label = gi < pair.statGroups.length ? pair.statGroups[gi].label : english ? "Other" : "其它";
     statRows.push(
       `<tr><td>${jsxText(label)}</td><td>${jsxText(String(rs.length))}</td><td>${jsxText(fmtLines(adds, dels))}</td></tr>`,
     );
   }
   statRows.push(
-    `<tr className="gd-total"><td>${jsxText("合计")}</td><td>${jsxText(String(totalN))}</td><td>${jsxText(fmtLines(totalAdds, totalDels))}</td></tr>`,
+    `<tr className="gd-total"><td>${jsxText(english ? "Total" : "合计")}</td><td>${jsxText(String(totalN))}</td><td>${jsxText(fmtLines(totalAdds, totalDels))}</td></tr>`,
   );
   lines.push(`<table className="gd-summary"><tbody>${statRows.join("")}</tbody></table>`);
   lines.push("");
 
-  lines.push("## 文件清单");
+  lines.push(english ? "## File list" : "## 文件清单");
   lines.push("");
   lines.push("```text");
-  lines.push(renderTree(entries, basename(pair.target), pair.order));
+  lines.push(renderTree(entries, basename(pair.target), pair.order, pair.locale));
   lines.push("```");
   lines.push("");
 
@@ -775,5 +915,5 @@ document.addEventListener("click", (e) => {
   console.log(`已生成 ${JS_OUT}`);
 }
 
-for (const pair of PAIRS) await generate(pair);
+for (const pair of [...PAIRS, ...ENGLISH_PAIRS]) await generate(pair);
 writeCss();

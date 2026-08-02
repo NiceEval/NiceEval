@@ -20,6 +20,7 @@ import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { resolveJudge } from "./judge-config.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
+import type { ExternalCause } from "../shared/external-cause.ts";
 import { computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
 import { runAgentEnsure, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
@@ -38,7 +39,7 @@ import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
-import { deriveDiffData, emptyDiffData } from "../scoring/diff.ts";
+import { deriveDiffData, emptyDiffData } from "../assertions/diff.ts";
 import { createRemoteSandbox } from "./remote-sandbox.ts";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
@@ -63,9 +64,10 @@ import type {
   EvalResult,
   FailedCommandEvidence,
   JudgeConfig,
+  JsonValue,
   Sandbox,
   ScopedFeedback,
-  ScoringContext,
+  AssertionEvaluationContext,
   ScriptResult,
   SourceArtifact,
   StreamEvent,
@@ -132,7 +134,7 @@ export function attemptFailureDeclaration(
 
 export interface RunAttemptEffectOptions {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
-  readonly buildLocators: ReadonlyMap<string, string>;
+  readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** 父级调度器的中断信号；测试直调时省略。 */
   parentSignal?: AbortSignal;
   /** 每次跨入一个新 `LifecyclePhase` 边界时同步回调一次(与下面的 `enterPhase` 同一调用点,见
@@ -151,7 +153,7 @@ export interface RunAttemptEffectOptions {
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
-  /** 由复用池独占借出的实例；池负责 SandboxSpec 生命周期与最终 stop。 */
+  /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
   reusedSandbox?: {
     sandbox: Sandbox;
     reuseSandbox: number;
@@ -187,10 +189,10 @@ export function runAttemptEffect(
     durationMs: 0,
     assertions: [],
     evidenceCoverage: run.agent.evidenceCoverage,
-    scoring: evalDef.scoring ?? "pass",
+    evaluationKind: evalDef.evaluationKind ?? "pass",
     // 资源获取/硬超时等在 collector 尚不可用前就可能收束；计分制的异常骨架也保持该字段的
     // 读取面（空数组而非缺失），与正常路径一致。
-    ...(evalDef.scoring === "points" ? { scoreEntries: [] } : {}),
+    ...(evalDef.evaluationKind === "points" ? { scoreEntries: [] } : {}),
   };
 
   /**
@@ -943,18 +945,13 @@ export function errorFromThrown(
   deadline?: { timeoutMs: number; source: TimeoutSource },
 ): AttemptError {
   if (isSendFailure(e)) {
-    const nestedFailure = isSendFailure(e.cause) ? e.cause : undefined;
-    const detail = e.cause === undefined || nestedFailure ? undefined : describeError(e.cause);
+    const detail = e.cause === undefined ? undefined : describeExternalCause(e.cause);
     return {
       code: "agent-send-failed",
       message: sendFailureText(e),
       origin: attemptOrigin(phase ?? "eval.run"),
       ...(detail?.stack ? { stack: detail.stack } : {}),
-      ...(nestedFailure
-        ? { cause: { message: sendFailureText(nestedFailure) } }
-        : detail
-          ? { cause: detail.cause ?? { message: detail.message } }
-          : {}),
+      ...(detail ? { cause: detail.cause } : {}),
     };
   }
   const { message, stack, cause } = describeError(e);
@@ -969,6 +966,21 @@ export function errorFromThrown(
     ...(timeout ? { timeout } : {}),
     ...(stack ? { stack } : {}),
     ...(cause ? { cause } : {}),
+  };
+}
+
+function describeExternalCause(cause: ExternalCause): {
+  stack?: string;
+  cause: { name?: string; code?: string; message: string };
+} {
+  if (cause._tag === "ThrownValue") return { cause: { message: cause.message } };
+  return {
+    ...(cause.stack._tag === "Present" ? { stack: cause.stack.value } : {}),
+    cause: {
+      name: cause.name,
+      ...(cause.code._tag === "Present" ? { code: String(cause.code.value) } : {}),
+      message: cause.message,
+    },
   };
 }
 
@@ -999,7 +1011,7 @@ function assertDeadlineFitsPlan(
   deadlineMs: number | undefined,
 ): void {
   if (deadlineMs === undefined) return;
-  if (capabilities.sessionLimit._tag === "Unlimited") return;
+  if (capabilities.sessionLimit._tag !== "Bounded") return;
   const limit = capabilities.sessionLimit.milliseconds;
   if (deadlineMs <= limit) return;
   throw new ExperimentFatalError(
@@ -1319,7 +1331,7 @@ async function runAttemptBody(
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
       // 题型:计分制下句柄上的 .gate() 是前置(就地求值 + 挂了中止 test()),见 collector。
-      scoring: evalDef.scoring ?? "pass",
+      evaluationKind: evalDef.evaluationKind ?? "pass",
       // 前置断言就地求值要看当前已提交窗口的 agent diff(非沙箱型没有分类账,省略)。
       ...(ledger ? { liveDiff: async () => deriveDiffData(await ledger!.exportWindows()) } : {}),
       // send 窗口钩子:进入前落 eval 归因、返回后落 agent 归因(见 ledger.ts)。
@@ -1423,7 +1435,7 @@ async function runAttemptBody(
     const events = state.manager.allEvents;
     const usage = state.manager.usage;
     const facts = deriveRunFacts(events);
-    const scoringContext: ScoringContext = {
+    const assertionEvaluationContext: AssertionEvaluationContext = {
       events,
       facts,
       diff,
@@ -1441,13 +1453,13 @@ async function runAttemptBody(
         }
       },
     };
-    if (!skipReason) enterPhase("scoring.evaluate");
+    if (!skipReason) enterPhase("assertions.evaluate");
     // 类型面挡住通过制 t.points()/t.score()，但 tsx 与 JS 可绕过；持久化边界必须再门控一次。
     const assertions = skipReason
       ? []
-      : await state.collector.finalize(scoringContext, {
-          includePoints: evalDef.scoring === "points",
-          // scoring 阶段唯一值得解释的等待是「在等裁判模型」:有判分断言时逐条推进 detail,
+      : await state.collector.finalize(assertionEvaluationContext, {
+          includePoints: evalDef.evaluationKind === "points",
+          // assertions.evaluate 阶段唯一值得解释的等待是「在等裁判模型」:有判分断言时逐条推进 detail,
           // 没有则整段不发 detail(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
           // 文本是契约字面量,中英一致,不进 i18n。
           onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
@@ -1512,11 +1524,11 @@ async function runAttemptBody(
       startedAt: new Date(t0).toISOString(),
       durationMs,
       assertions,
-      scoring: evalDef.scoring ?? "pass",
+      evaluationKind: evalDef.evaluationKind ?? "pass",
       // 只在计分制 eval 上落 scoreEntries(t.score 直接给分记录);通过制 eval 的 t 上没有
       // t.score,collector.scoreEntries 恒为空数组,省略即等价于空数组
       // (见 docs/feature/record/architecture.md「result.json」)。
-      ...(evalDef.scoring === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
+      ...(evalDef.evaluationKind === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,

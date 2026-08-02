@@ -1,14 +1,10 @@
 // cases: docs/engineering/testing/unit/record.md
-// AttemptLocator 单测(定稿见 docs/feature/record/library.md「按 locator 寻址一个 attempt」、docs/concepts.md「Attempt 定位符」):
-// 确定性编码、字段敏感(任一身份字段变化都换 locator)、@ 前缀与定长 base36 格式、decode 的语法
-// 校验分支、大批量下的实际无撞车、buildLocatorIndex 的撞车检测(用可注入的 encode 强制制造撞车,
-// 不依赖真实哈希小概率碰撞)与「相同身份重复出现不算撞车」(--resume 携带条目跨快照复现同一身份的场景)、
-// resolveAttemptLocator 的 found/malformed/not-found 三态。
 
 import { describe, expect, it } from "vitest";
 import {
   ATTEMPT_LOCATOR_PREFIX,
   LocatorCollisionError,
+  assertLocatorRegistrationsAvailable,
   buildLocatorIndex,
   decodeAttemptLocator,
   encodeAttemptLocator,
@@ -16,61 +12,48 @@ import {
   type AttemptIdentity,
 } from "./locator.ts";
 
-function id(over: Partial<AttemptIdentity> = {}): AttemptIdentity {
+function id(overrides: Partial<AttemptIdentity> = {}): AttemptIdentity {
   return {
-    experimentId: "compare/bub",
-    snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+    runId: "550e8400-e29b-41d4-a716-446655440000",
     evalId: "algebra/q1",
     attempt: 0,
-    ...over,
+    ...overrides,
   };
 }
 
-describe("encodeAttemptLocator · 确定性与格式", () => {
-  it("同一身份元组永远编码出同一个 locator", () => {
-    const a = encodeAttemptLocator(id());
-    const b = encodeAttemptLocator(id());
-    expect(a).toBe(b);
-  });
-
-  it("以 @ 开头,后跟 1 位 scheme 字符 + 定长 base36 body", () => {
+describe("encodeAttemptLocator · finalized 60-bit Crockford 契约", () => {
+  it("固定身份得到固定向量；形态严格为 @ + scheme + 12 位 Crockford base32", () => {
     const locator = encodeAttemptLocator(id());
+    // 固定向量独立钉住 canonical tuple、SHA-256 前 60 bit 与 Crockford 字母表，
+    // 不在测试里调用另一份期望值算法。
+    expect(locator).toBe("@1SDY7M94VEFSS");
     expect(locator.startsWith(ATTEMPT_LOCATOR_PREFIX)).toBe(true);
-    expect(locator).toMatch(/^@[0-9a-z]+$/);
-    const decoded = decodeAttemptLocator(locator);
-    expect(decoded).toEqual({ valid: true, scheme: 1 });
+    expect(locator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
+    expect(decodeAttemptLocator(locator)).toEqual({ valid: true, scheme: 1 });
   });
 
-  it("四个身份字段中任一变化,locator 都会变(不会因为拼接歧义碰巧撞上)", () => {
+  it("三个身份字段中任一变化都会改变 locator", () => {
     const base = encodeAttemptLocator(id());
-    expect(encodeAttemptLocator(id({ experimentId: "compare/other" }))).not.toBe(base);
-    expect(encodeAttemptLocator(id({ snapshotStartedAt: "2026-07-01T08:00:00.001Z" }))).not.toBe(base);
+    expect(encodeAttemptLocator(id({ runId: "550e8400-e29b-41d4-a716-446655440001" }))).not.toBe(base);
     expect(encodeAttemptLocator(id({ evalId: "algebra/q2" }))).not.toBe(base);
     expect(encodeAttemptLocator(id({ attempt: 1 }))).not.toBe(base);
   });
 
-  it("拒绝非法身份:空字符串字段、非法 attempt", () => {
-    expect(() => encodeAttemptLocator(id({ experimentId: "" }))).toThrow();
-    expect(() => encodeAttemptLocator(id({ snapshotStartedAt: "" }))).toThrow();
-    expect(() => encodeAttemptLocator(id({ evalId: "" }))).toThrow();
-    expect(() => encodeAttemptLocator(id({ attempt: -1 }))).toThrow();
-    expect(() => encodeAttemptLocator(id({ attempt: 1.5 }))).toThrow();
+  it("拒绝空身份和非法 attempt", () => {
+    expect(() => encodeAttemptLocator(id({ runId: "" }))).toThrow(/runId/);
+    expect(() => encodeAttemptLocator(id({ evalId: "" }))).toThrow(/evalId/);
+    expect(() => encodeAttemptLocator(id({ attempt: -1 }))).toThrow(/attempt/);
+    expect(() => encodeAttemptLocator(id({ attempt: 1.5 }))).toThrow(/attempt/);
   });
 
-  it("大批量身份(不同 experiment × eval × attempt × startedAt 组合)实际不撞车", () => {
+  it("一批不同 Run × Eval × attempt 身份不碰撞", () => {
     const locators = new Set<string>();
     let count = 0;
-    for (let exp = 0; exp < 10; exp++) {
-      for (let ev = 0; ev < 20; ev++) {
-        for (let attempt = 0; attempt < 5; attempt++) {
-          for (const startedAt of ["2026-07-01T08:00:00.000Z", "2026-07-02T09:30:00.000Z"]) {
-            locators.add(
-              encodeAttemptLocator(
-                id({ experimentId: `exp-${exp}`, evalId: `group/eval-${ev}`, attempt, snapshotStartedAt: startedAt }),
-              ),
-            );
-            count++;
-          }
+    for (let run = 0; run < 20; run += 1) {
+      for (let evalIndex = 0; evalIndex < 20; evalIndex += 1) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          locators.add(encodeAttemptLocator(id({ runId: `run-${run}`, evalId: `group/eval-${evalIndex}`, attempt })));
+          count += 1;
         }
       }
     }
@@ -79,99 +62,64 @@ describe("encodeAttemptLocator · 确定性与格式", () => {
   });
 });
 
-describe("decodeAttemptLocator · 语法校验", () => {
+describe("decodeAttemptLocator · 严格语法", () => {
   it.each([
     ["", "空字符串"],
-    ["7k2m9qz", "缺 @ 前缀"],
-    ["@", "只有前缀,没有 scheme 和 body"],
-    ["@1", "只有 scheme,没有 body"],
-    ["@1ABC123", "body 含大写字母"],
-    ["@1x7f3q!", "body 含非法字符"],
-    ["@1abc123", "scheme 1 的 body 长度不对(6 位,期望 7 位)"],
-    ["@1abcdefg1", "scheme 1 的 body 长度不对(8 位,期望 7 位)"],
+    ["1SDY7M94VEFSS", "缺 @"],
+    ["@1SDY7M94VEFS", "body 11 位"],
+    ["@1SDY7M94VEFSS0", "body 13 位"],
+    ["@1sdy7m94vefss", "小写不是 canonical Crockford"],
+    ["@1SDY7M94VEFSO", "O 是 Crockford 排除字符"],
+    ["@1SDY7M94VEFSI", "I 是 Crockford 排除字符"],
+    ["@!SDY7M94VEFSS", "scheme 非数字"],
   ])("拒绝畸形 locator %s (%s)", (input) => {
     const result = decodeAttemptLocator(input);
     expect(result.valid).toBe(false);
     if (!result.valid) expect(result.reason.length).toBeGreaterThan(0);
   });
 
-  it("scheme 字符非法(不是单个 base36 数字)判定为畸形", () => {
-    const result = decodeAttemptLocator("@!x7f3qz");
-    expect(result).toEqual({ valid: false, reason: expect.stringContaining("scheme character") });
+  it("另一数字 scheme 仍是语法合法 locator；是否存在交给索引", () => {
+    expect(decodeAttemptLocator("@2SDY7M94VEFSS")).toEqual({ valid: true, scheme: 2 });
   });
 });
 
-describe("buildLocatorIndex", () => {
-  it("正常建索引:每个身份映射到对应的句柄", () => {
-    const identities = [id({ evalId: "algebra/q1" }), id({ evalId: "algebra/q2" }), id({ attempt: 1 })];
-    const index = buildLocatorIndex(identities.map((identity, i) => ({ identity, handle: `handle-${i}` })));
-    expect(index.size).toBe(3);
-    for (let i = 0; i < identities.length; i++) {
-      expect(index.get(encodeAttemptLocator(identities[i]))).toBe(`handle-${i}`);
-    }
-  });
-
-  it("相同身份重复出现不算撞车(--resume 携带条目跨快照复现同一身份);索引仍只有一条,后者覆盖前者", () => {
+describe("locator 多候选索引与解析", () => {
+  it("单候选 found；空索引 not-found；坏串 malformed", () => {
     const identity = id();
-    const index = buildLocatorIndex([
-      { identity, handle: "old-run-handle" },
-      { identity, handle: "new-run-handle" },
-    ]);
-    expect(index.size).toBe(1);
-    expect(index.get(encodeAttemptLocator(identity))).toBe("new-run-handle");
+    const index = buildLocatorIndex([{ identity, handle: { name: "the-attempt" } }]);
+    const locator = encodeAttemptLocator(identity);
+    expect(resolveAttemptLocator(index, locator)).toEqual({ kind: "found", locator, handle: { name: "the-attempt" } });
+    expect(resolveAttemptLocator(index, "@1ZZZZZZZZZZZZ")).toEqual({ kind: "not-found", locator: "@1ZZZZZZZZZZZZ" });
+    expect(resolveAttemptLocator(index, "not-a-locator").kind).toBe("malformed");
   });
 
-  it("两个不同身份撞车时抛出 LocatorCollisionError,携带 locator 与两个身份", () => {
-    // 用可注入的 encode 强制制造撞车:真实哈希函数下撞车概率可忽略,不适合用来做确定性测试。
-    const forcedCollision = (_identity: AttemptIdentity): ReturnType<typeof encodeAttemptLocator> =>
-      "@1collided" as ReturnType<typeof encodeAttemptLocator>;
-    const a = id({ evalId: "algebra/q1" });
-    const b = id({ evalId: "algebra/q2" });
-    let thrown: unknown;
-    try {
-      buildLocatorIndex(
-        [
-          { identity: a, handle: "handle-a" },
-          { identity: b, handle: "handle-b" },
-        ],
-        forcedCollision,
-      );
-    } catch (e) {
-      thrown = e;
-    }
-    expect(thrown).toBeInstanceOf(LocatorCollisionError);
-    const err = thrown as LocatorCollisionError;
-    expect(err.locator).toBe("@1collided");
-    expect(err.identities).toEqual([a, b]);
-    expect(err.message).toContain("collision");
+  it("同 locator 的每个候选都保留，resolve 返回 ambiguous 而不任选一个", () => {
+    const locator = encodeAttemptLocator(id());
+    const first = { identity: id(), handle: "first", locator };
+    const second = { identity: id({ runId: "other-run" }), handle: "second", locator };
+    const index = buildLocatorIndex([first, second]);
+    expect(index.get(locator)).toEqual([first, second]);
+    expect(resolveAttemptLocator(index, locator)).toEqual({ kind: "ambiguous", locator, candidates: [first, second] });
   });
-
 });
 
-describe("resolveAttemptLocator", () => {
-  const identity = id();
-  const index = buildLocatorIndex([{ identity, handle: { name: "the-attempt" } }]);
-  const locator = encodeAttemptLocator(identity);
-
-  it("找到:返回 found 连同 locator 与句柄", () => {
-    const result = resolveAttemptLocator(index, locator);
-    expect(result).toEqual({ kind: "found", locator, handle: { name: "the-attempt" } });
+describe("fresh locator 调度前登记", () => {
+  it("当前记录根已有异身份同 locator 时抛 LocatorCollisionError；同身份重放幂等", () => {
+    const locator = encodeAttemptLocator(id());
+    const existing = buildLocatorIndex([{ identity: id(), handle: "persisted", locator }]);
+    expect(() =>
+      assertLocatorRegistrationsAvailable(existing, [{ identity: id({ runId: "new-run" }), locator }]),
+    ).toThrow(LocatorCollisionError);
+    expect(() => assertLocatorRegistrationsAvailable(existing, [{ identity: id(), locator }])).not.toThrow();
   });
 
-  it("语法不对:返回 malformed,不查索引", () => {
-    const result = resolveAttemptLocator(index, "not-a-locator");
-    expect(result.kind).toBe("malformed");
-    if (result.kind === "malformed") {
-      expect(result.input).toBe("not-a-locator");
-      expect(result.reason.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("语法对但索引里没有:返回 not-found", () => {
-    // 构造一个语法合法但从未被 encode 出来过的 locator。
-    const unknown = "@1zzzzzzz";
-    expect(decodeAttemptLocator(unknown).valid).toBe(true);
-    const result = resolveAttemptLocator(index, unknown);
-    expect(result).toEqual({ kind: "not-found", locator: unknown });
+  it("同一批 fresh 登记内部出现异身份同值也立即失败", () => {
+    const locator = encodeAttemptLocator(id());
+    expect(() =>
+      assertLocatorRegistrationsAvailable(new Map(), [
+        { identity: id(), locator },
+        { identity: id({ evalId: "algebra/q2" }), locator },
+      ]),
+    ).toThrow(LocatorCollisionError);
   });
 });

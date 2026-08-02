@@ -1,4 +1,4 @@
-// 协议行为:MCP 工具调用——MCP 工具出现在 action.called(名字是 `${server}.${tool}`,见
+// 协议行为:MCP 工具调用——MCP 工具出现在 operation.started(名字是 `${server}.${tool}`,见
 // src/agents/sdk-streams.ts 的 createCodexThreadEventStream);反例断言未挂载的工具 notCalledTool。
 //
 // MCP server 用官方 `@modelcontextprotocol/server-everything` 的确定性 get-sum 工具

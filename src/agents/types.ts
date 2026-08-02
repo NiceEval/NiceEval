@@ -2,7 +2,7 @@
 // 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 docs-site/zh/explanation/adapter.mdx)。
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
-import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
+import type { DiagnosticInput, JsonValue, ProgressUpdate } from "../shared/types.ts";
 import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { AttemptRef, MaybePromise, SandboxCommandTarget, StableSandboxCommand } from "../sandbox/commands.ts";
@@ -187,7 +187,7 @@ export interface TurnInput {
 /** adapter 的 send 返回值(事件流为核心)。 */
 export interface Turn {
   readonly events: StreamEvent[];
-  readonly data?: unknown;
+  readonly data?: JsonValue;
   readonly status: "completed" | "failed" | "waiting";
   readonly usage?: Usage;
   /**
@@ -293,7 +293,7 @@ export interface AgentContext {
    * 读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
    * `flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
    */
-  readonly flags: Readonly<globalThis.Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>>;
   /**
    * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
    * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:

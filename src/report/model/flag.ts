@@ -86,7 +86,7 @@ function assertName(name: unknown, fn: string, hint: string): asserts name is st
  * 分组显示键按稳定 JSON 规则生成(字符串直接显示,其它值用键递归排序后的 JSON),
  * 缺失值显示内置文案 `(missing)`;显示键冲突时计算报错并要求改用 CustomDimension。
  */
-export function flag(name: string, options?: DimensionOptions): DimensionRef {
+export function flag(name: string, options?: DimensionOptions): Extract<DimensionRef, { readonly kind: "flag" }> {
   assertName(name, "flag", "the key declared in the experiment's flags");
   return {
     kind: "flag",
@@ -101,7 +101,7 @@ export function flag(name: string, options?: DimensionOptions): DimensionRef {
  * 同一套用法。labels 是纯报告侧的归类坐标:不透传运行时、不参与可比性配置;报告不从
  * experiment id 字符串猜语义,归类只认声明(docs/feature/experiments/library.md「labels」)。
  */
-export function label(name: string, options?: DimensionOptions): DimensionRef {
+export function label(name: string, options?: DimensionOptions): Extract<DimensionRef, { readonly kind: "label" }> {
   assertName(name, "label", "the key declared in the experiment's labels");
   return {
     kind: "label",
@@ -116,7 +116,7 @@ export function label(name: string, options?: DimensionOptions): DimensionRef {
  * 投影;可用键由 RunConfigKey 在类型层穷尽(那张接口的字段全集,外加桥接到快照顶层权威
  * 字段的 `model` / `agent`),拼错键在编译期就被拒绝。
  */
-export function runConfig(name: RunConfigKey, options?: DimensionOptions): DimensionRef {
+export function runConfig(name: RunConfigKey, options?: DimensionOptions): Extract<DimensionRef, { readonly kind: "runConfig" }> {
   assertName(name, "runConfig", 'an ExperimentRunInfo field, or the bridged "model" / "agent" keys');
   return {
     kind: "runConfig",

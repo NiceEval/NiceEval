@@ -24,6 +24,8 @@
 ### 3. 机器出口
 
 - CLI `--json` 输出的机器摘要与读取面口径一致。
+- `niceeval show --json` 的信封用 `sample`回显范围，`view` 判别 10 个内建 task Result 的 `data`形状；history attempt 用 `runStartedAt`。
+- 对同一份真实 Record，text 与 JSON 必须选出同一批实体且公共派生字段同值，证明两面消费同一 task Result，不是 CLI 私有公式。
 - 显式 `--junit` 文件里 `failed` 折叠为 `<failure>`、`errored` 折叠为 `<error>`，用例集合与实际 attempt 对应。
 
 ### 4. 读面 CLI 行为

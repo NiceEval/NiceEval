@@ -22,18 +22,18 @@ Sandbox agents start a coding-agent CLI inside an isolated environment, give it 
 
 ## Run a built-in agent
 
-Set `sandbox` in the experiment, or as a project-level fallback in `niceeval.config.ts`, to choose where [NiceEval](https://niceeval.com/) creates the isolated environment:
+Set `sandbox` on the Eval or Experiment to choose where [NiceEval](https://niceeval.com/) creates the isolated environment:
 
 ```ts
 // experiments/local.ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent(),
   model: "claude-sonnet-4-6",
-  sandbox: dockerSandbox(),
+  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
 });
 ```
 
@@ -45,7 +45,7 @@ npx niceeval exp local fixtures/button --runs 10
 ```
 
 <Note>
-  There is no CLI flag for this — provider selection lives entirely in code. If neither the experiment nor `niceeval.config.ts` sets `sandbox`, [NiceEval](https://niceeval.com/) fails when it tries to create the sandbox — it does not auto-detect one.
+  There is no CLI flag or project-level fallback for this. If neither the Eval nor Experiment contributes a template-bearing layer, link planning fails before any Sandbox is created.
 </Note>
 
 When you run a coding agent in the cloud, you can use the E2B public templates NiceEval already publishes, so no attempt has to install the CLI:
@@ -69,7 +69,7 @@ The built-in agents exported from `niceeval/adapter` are factory functions. Put 
 ```ts
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 
 export default defineExperiment({
   agent: claudeCodeAgent({
@@ -86,7 +86,7 @@ export default defineExperiment({
     skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2" }],
   }),
   model: "claude-sonnet-4-6",
-  sandbox: dockerSandbox(),
+  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
 });
 ```
 
@@ -109,7 +109,7 @@ createSandbox
   → adapter.send(input, ctx)              # only files the agent changes at this step enter the diff
   → test(t): runCommand(...)              # run verification commands by hand
   → collect the agent's changed files     # used by t.sandbox.diff / fileChanged
-  → scoring and verdict
+  → assertion evaluation and verdict
   → adapter.teardown?                     # agent cleanup
   → the sandbox spec's .teardown() hook?  # environment cleanup (such as saving state back), last before destroy
   → sandbox.stop()
@@ -177,13 +177,13 @@ The model and flags declared by the experiment appear in the adapter context. Th
 
 ```ts
 import { defineExperiment } from "niceeval";
-import { dockerSandbox } from "niceeval/sandbox";
+import { dockerImageSandbox } from "niceeval/sandbox";
 import myAgent from "./agents/my-agent";
 
 export default defineExperiment({
   agent: myAgent,
   model: "claude-sonnet-4-6",
-  sandbox: dockerSandbox(),
+  sandbox: dockerImageSandbox({ image: "node:24-slim" }),
   runs: 3,
 });
 ```

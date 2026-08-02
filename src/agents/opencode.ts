@@ -8,7 +8,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import {
   parseOpenCodeTranscript,
   sessionIdFromOpenCodeTranscript,
@@ -161,7 +161,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       let parsed = parseOpenCodeTranscript(raw);
       // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
       // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
-      const hasActions = parsed.events.some((e) => e.type === "action.called");
+      const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
       const hasMessages = parsed.events.some((e) => e.type === "message");
       if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
         const sid = sessionId ?? ctx.session.id!;

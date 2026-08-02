@@ -1,13 +1,13 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
+import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import {
   downgradeEvidenceCoverage,
   worstEvidenceCoverage,
   type ResolvedEvidenceCoverage,
-} from "../scoring/coverage.ts";
+} from "../assertions/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 import {
@@ -113,7 +113,7 @@ export interface SessionDeps {
   attempt?: AgentContext["attempt"];
   model?: string;
   reasoningEffort?: string;
-  flags: globalThis.Record<string, unknown>;
+  flags: globalThis.Record<string, JsonValue>;
   signal: AbortSignal;
   log(msg: string): void;
   /** runner 绑定的作用域反馈(adapter ctx.progress/diagnostic);省略时 progress 退回 log。 */
@@ -167,6 +167,8 @@ export interface SessionDeps {
   /** 仅供确定性单测注入:turn 重试执行体的随机数与睡眠(生产路径省略,走真实退避)。 */
   retryRandom?: () => number;
   retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** 与 AssertionCollector 共用的 attempt 级源码事实序号分配器。 */
+  nextSourceOrder?: () => number;
 }
 
 export class SessionManager {
@@ -193,11 +195,14 @@ export class SessionManager {
   private turnCount = 0;
   private sessionCount = 0;
   /** 沙箱型 send 的串行链(见 SessionDeps.ledgerHooks):窗口不重叠。 */
-  private sendChain: Promise<unknown> = Promise.resolve();
+  private sendChain: Promise<void> = Promise.resolve();
   /** attempt 级 turn 重试预算,跨该 attempt 全部 send(全部 session)持续扣减,不随单次 send 重置。 */
   private readonly retryBudget: AttemptRetryBudget = createAttemptRetryBudget();
+  private localSourceOrder = 0;
+  private readonly nextSourceOrder: () => number;
 
   constructor(private readonly deps: SessionDeps) {
+    this.nextSourceOrder = deps.nextSourceOrder ?? (() => ++this.localSourceOrder);
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.primary = this.newSession();
@@ -228,7 +233,10 @@ export class SessionManager {
       // 沙箱型 send 经串行链执行:同一 workdir 上重叠的 send 本身就是写入竞争,
       // 合并窗口只会掩盖归因不确定性(见 docs/feature/sandbox/architecture.md)。
       const run = this.sendChain.then(() => this.sendSerialized(session, text, loc, files, responses));
-      this.sendChain = run.catch(() => {});
+      this.sendChain = run.then(
+        () => undefined,
+        () => undefined,
+      );
       return run;
     }
     return this.sendSerialized(session, text, loc, files, responses);
@@ -277,7 +285,13 @@ export class SessionManager {
     const startOffsetMs = timingNow();
 
     session.lastInput = text;
-    const userEvent: StreamEvent = { type: "message", role: "user", text, loc };
+    const userEvent: StreamEvent = {
+      type: "message",
+      role: "user",
+      text,
+      loc,
+      sourceOrder: this.nextSourceOrder(),
+    };
     this.allEvents.push(userEvent);
     session.events.push(userEvent);
     session.pendingInputRequests.length = 0;
@@ -392,7 +406,7 @@ export class SessionManager {
       accumulateUsage(this.usage, turn.usage);
       accumulateUsage(session.usage, turn.usage);
     }
-    // 证据覆盖:attempt / session 级聚合取各轮最差值(见 scoring/coverage.ts)。
+    // 证据覆盖:attempt / session 级聚合取各轮最差值(见 assertions/coverage.ts)。
     const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
     this.evidenceCoverage = worstEvidenceCoverage([this.evidenceCoverage, turnEvidenceCoverage]);
     session.evidenceCoverage = worstEvidenceCoverage([session.evidenceCoverage, turnEvidenceCoverage]);
@@ -402,7 +416,7 @@ export class SessionManager {
     if (reply !== undefined) session.lastMessage = reply;
 
     const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
-    const tools = turn.events.filter((e) => e.type === "action.called").length;
+    const tools = turn.events.filter((e) => e.type === "operation.started" && e.operation.kind === "tool").length;
     const reason = turn.status === "failed" ? failureReason(turn.events) : undefined;
     this.deps.log(
       `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round(Math.max(0, timingNow() - startOffsetMs) / 1000)}s${reason ? ` · ${reason}` : ""}`,

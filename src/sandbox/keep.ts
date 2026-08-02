@@ -373,8 +373,8 @@ async function execInDockerLedger(sandboxId: string, workdir: string, script: st
  * provider 名)如实报出「不是 niceeval sandbox provider」,不是逐条 `if (provider === …)`。
  * 返回 undefined 表示可执行;否则给出可直接展示给用户的原因。
  *
- * 自定义 case 的 group-keep 同进程 detached 走 `custom-group-keep.ts`,不进本静态表——
- * `niceeval sandbox` 不加载用户模块,跨进程仍不能对自定义 provider 执行。
+ * callback 自定义 case 不支持留存：`niceeval sandbox` 不加载用户模块，也没有可发现的
+ * detached provider 实现可以在另一个进程中恢复或销毁资源组。
  */
 export function detachedCapabilityGap(provider: string): string | undefined {
   if (KEEPABLE_PROVIDERS.has(provider)) return undefined;
@@ -382,7 +382,7 @@ export function detachedCapabilityGap(provider: string): string | undefined {
 }
 
 /**
- * 创建前组合校验入口:内置 KEEPABLE + 自定义 group-keep 两条路径。
+ * 创建前组合校验入口:只有可发现的内置 KEEPABLE provider 路径。
  * Runner 合流后应优先调 `assertKeepAllowedForCase`;本函数保留给尚无 planned case 的旧路径。
  */
 export function assertProviderKeepable(provider: string, isCustomCreate: boolean): void {
@@ -391,7 +391,7 @@ export function assertProviderKeepable(provider: string, isCustomCreate: boolean
       `--keep-sandbox is not supported with a defineSandbox custom provider ("${provider}"): ` +
         `the after-the-fact 'niceeval sandbox' commands never load project code, so a detached stop ` +
         `for user-defined sandboxes cannot be recovered safely. Use a built-in provider (docker / e2b / vercel), ` +
-        `or declare a custom sandbox case with capability "group-keep", or drop --keep-sandbox.`,
+        `or drop --keep-sandbox.`,
     );
   }
   if (!KEEPABLE_PROVIDERS.has(provider)) {

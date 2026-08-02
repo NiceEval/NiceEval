@@ -85,6 +85,26 @@ describe("tryAcquireCaseLockOnce: 空目录上的新鲜取锁", () => {
       heartbeatAt: new Date(nowMs).toISOString(),
     });
   });
+
+  it("完整 decoder 跳过缺字段的 JSON，并清掉占坑后取得新锁", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    const experimentId = "compare/bub-e2b";
+    const evalId = "memory/commit0";
+    await writeEntryFile(locksDirOf(niceevalRoot), lockEntryId(experimentId, evalId), {
+      experimentId,
+      evalId,
+      pid: 111,
+      host: "holder-host",
+      startedAt: "2026-07-21T10:00:00.000Z",
+      // heartbeatAt 故意缺失：不能因文件名正确就被断言成完整锁记录。
+    });
+
+    expect(await readCaseLock(niceevalRoot, experimentId, evalId)).toBeUndefined();
+    await expect(
+      tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, { pid: 4242, host: "runner-host" }, Date.now()),
+    ).resolves.toEqual({ kind: "acquired", takenOver: false });
+  });
 });
 
 describe("tryAcquireCaseLockOnce: 撞上新鲜锁", () => {

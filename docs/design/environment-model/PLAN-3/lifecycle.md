@@ -63,7 +63,7 @@ Experiment Addon、Experiment 状态、turn 前 Fixture、Agent 安装与 turn �
 | 建立或恢复 workdir baseline | Runner / workspace | 每 Attempt 建立一次 | 每窗口建立一次,后续 Attempt reset |
 | turn 前 Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
 | Agent 安装检查、准备、安装与复检 | Agent | 每 Attempt 一次 | 每 Attempt 一次 |
-| Agent turn、turn 后隐藏判分与 scoring | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
+| Agent turn、turn 后隐藏判分与断言求值 | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
 | Eval / Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
 | Case finalizer | 选中的启动环境 | 每 Attempt 一次 | 每窗口一次 |
 

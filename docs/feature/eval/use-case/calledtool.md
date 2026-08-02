@@ -44,7 +44,9 @@ t.calledTool("get_weather");                 // 调过就行,不管参数、次�
    字面量与 RegExp 表达不了的结构条件才用（谓词对报告不透明，见边界）：
 
    ```typescript
-   t.calledTool("write_files", { input: (input) => input.files.length <= 3 });
+   t.calledTool("write_files", { input: (input) =>
+     typeof input === "object" && input !== null && "files" in input && Array.isArray(input.files) && input.files.length <= 3
+   });
    ```
 
 ## count：断次数的三种形态
@@ -67,7 +69,9 @@ t.calledTool("retry", { count: (n) => n <= 3 });   // "至多三次"也是 count
 ```typescript
 t.calledTool("shell", { input: { command: /curl/ }, output: /tutorials\// });
 t.calledTool("query_db", { output: { rows: [] } });        // 对象部分匹配
-t.calledTool("fetch", { output: (o) => o.status === 200 }); // 谓词
+t.calledTool("fetch", { output: (o) =>
+  typeof o === "object" && o !== null && "status" in o && o.status === 200
+}); // 谓词的动态输入是 unknown，先收窄
 ```
 
 `output` 断的是工具返回给 agent 的内容，不是 agent 之后说了什么——断回复文本用 `messageIncludes` 或值断言。

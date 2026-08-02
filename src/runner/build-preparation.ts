@@ -14,7 +14,7 @@ import type { RunOptions } from "./types.ts";
 
 export interface CollectedBuildPreparation {
   readonly works: readonly SandboxBuildWork[];
-  readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
+  readonly pairBuildKeys: Readonly<globalThis.Record<string, readonly BuildKey[]>>;
   readonly provider: SandboxBuildProvider;
 }
 
@@ -34,7 +34,7 @@ export function collectBuildPreparation(opts: {
   return Effect.gen(function* () {
     const worksByKey = new Map<BuildKey, SandboxBuildWork>();
     const providerByKey = new Map<BuildKey, SandboxBuildProvider>();
-    const evalBuildKeys = new Map<string, string[]>();
+    const pairBuildKeys = new Map<string, BuildKey[]>();
 
     for (const pair of opts.preparedPairs) {
       const carried = opts.carriedAttemptsByKey.get(pair.key);
@@ -72,20 +72,20 @@ export function collectBuildPreparation(opts: {
           cause: new Error("build key mismatch"),
         });
       }
-      const keys: string[] = [];
+      const keys: BuildKey[] = [];
       for (const work of collected.works) {
         if (!worksByKey.has(work.buildKey)) worksByKey.set(work.buildKey, work);
         providerByKey.set(work.buildKey, opts.provider ?? collected.provider);
         if (!keys.includes(work.buildKey)) keys.push(work.buildKey);
       }
-      if (keys.length > 0) evalBuildKeys.set(pair.key, keys);
+      if (keys.length > 0) pairBuildKeys.set(pair.key, keys);
     }
 
     if (worksByKey.size === 0) return Option.none();
     const provider = opts.provider ?? routeBuildProviders(providerByKey);
     return Option.some(Object.freeze({
       works: Object.freeze([...worksByKey.values()]),
-      evalBuildKeys: Object.freeze(Object.fromEntries(evalBuildKeys)),
+      pairBuildKeys: Object.freeze(Object.fromEntries(pairBuildKeys)),
       provider,
     }));
   });
@@ -98,7 +98,7 @@ export function toBuildPreparation(
   if (collected.works.length === 0) return Option.none();
   return Option.some({
     works: collected.works,
-    evalBuildKeys: collected.evalBuildKeys,
+    pairBuildKeys: collected.pairBuildKeys,
     provider: collected.provider,
   });
 }

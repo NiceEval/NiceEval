@@ -37,7 +37,6 @@ export {
   validateDiffData,
   validateErrorData,
   validateFixPromptData,
-  validateSourceData,
   validateSummaryData,
   validateTimelineData,
   validateTraceData,
@@ -76,7 +75,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           <span className="niceeval-attempt-summary-locator">{d.locator}</span>
         </div>
         <Grid className="niceeval-attempt-summary-kpis">
-          <Kpi label="Experiment" value={d.identity.experimentId} />
+          <Kpi label="Experiment" value={d.experimentId} />
           <Kpi label="Eval" value={d.identity.evalId} />
           <Kpi label="Attempt" value={String(d.identity.attempt + 1)} />
           {d.totalScore !== undefined ? <Kpi label="Score" value={formatPoints(d.totalScore)} /> : null}

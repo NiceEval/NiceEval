@@ -1,5 +1,5 @@
 // 跨组件族共用的计算辅助:summaries(scopeSummaryData)、entity-lists(experimentListData)、
-// scoring(scoringComposition)与 metric-views(metricScatterData)共用同一条 selectedEvalIds
+// 题型构成(evaluationKindComposition)与 metric-views(metricScatterData)共用同一条 selectedEvalIds
 // 投影规则与同一套组级统计折叠,住在这里而不是任一族自己的 compute.ts,避免重复实现分叉。
 
 import type { AttemptHandle, Run } from "../../record/types.ts";
@@ -14,7 +14,7 @@ import type { VerdictTally } from "../model/types.ts";
  * (即使恰好在同一次运行里跑过)不进分母、不污染另一个来源。第三方快照缺该字段时
  * `selectedEvalIdsOf` 退化为其实际 evals,过滤天然是 no-op。宿主注入的 `current()` Sample
  * 在选择时已按这条规则收窄,这里对真实 Sample 是幂等的;只对作者手工拼的 `Run[]`
- * 真正生效。`experimentListData` / `scopeSummaryData` / `scoringComposition` /
+ * 真正生效。`experimentListData` / `scopeSummaryData` / `evaluationKindComposition` /
  * `metricScatterData` 共用同一条规则,保证经 `ExperimentComparison` 展开后收到的 spec 与
  * 直接调用同一份 input 深相等。
  */

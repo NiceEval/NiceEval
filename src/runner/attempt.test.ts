@@ -29,7 +29,7 @@ import { linkSandboxLayers } from "../sandbox/link.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { equals } from "../expect/index.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 import { defineExperimentState } from "../state/definition.ts";
 import { ExperimentStateWindow } from "../state/runtime.ts";
@@ -202,8 +202,7 @@ async function runOnce(
     plan: prepared.plan,
     sandboxPlansByEval: { [evalDef.id]: prepared.identity },
     locator: encodeAttemptLocator({
-      experimentId: run.experimentId,
-      snapshotStartedAt: "2026-08-02T00:00:00.000Z",
+      runId: "attempt-test-run",
       evalId: evalDef.id,
       attempt: 0,
     }),
@@ -361,7 +360,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
       "agent.setup",
       "eval.run",
       "workspace.diff",
-      "scoring.evaluate",
+      "assertions.evaluate",
     ]);
   });
 
@@ -375,10 +374,10 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     const box = new FakeSandbox();
     await runOnce(agent, box, { onPhase: (phase) => phases.push(phase) });
 
-    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
+    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "assertions.evaluate"]);
   });
 
-  it("test() 抛出的普通执行错误不设置 skipReason,diff/scoring 仍照常进入", async () => {
+  it("test() 抛出的普通执行错误不设置 skipReason,diff/assertions.evaluate 仍照常进入", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-throws",
       send: async () => ({ events: [], status: "completed" }),
@@ -398,9 +397,9 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     expect(result.error?.message).toContain("boom-from-eval");
     expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.run");
     // test() 里的普通异常被 runAttemptBody 内层 try/catch 收作 result.error,不设置
-    // skipReason——所以 diff/scoring 的跳过条件(`!skipReason`)不成立,两个阶段仍会进入,
+    // skipReason——所以 diff/assertions.evaluate 的跳过条件(`!skipReason`)不成立,两个阶段仍会进入,
     // 最后落 teardown。这是「running 阶段失败」的真实序列。
-    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "scoring.evaluate"]);
+    expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "eval.run", "workspace.diff", "assertions.evaluate"]);
   });
 
   it("agent.setup 中途抛错时,phase 序列停在 agent-setup 就跳进 teardown(不会假装跑到了 running)", async () => {
@@ -418,7 +417,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
 
     expect(result.error?.message).toContain("boom-from-setup");
     expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("agent.setup");
-    // 失败发生在 agent-setup:之后不再出现 running/diff/scoring —— run.ts 的 reportFailure()
+    // 失败发生在 agent-setup:之后不再出现 running/diff/assertions.evaluate —— run.ts 的 reportFailure()
     // 靠的正是这个真实的「最后已知阶段」,不是硬编码成 running(见 run.ts 的 lastPhase 注释)。
     expect(phases).toEqual(["sandbox.queue", "sandbox.create", "agent.ensure", "workspace.baseline", "agent.setup"]);
   });
@@ -737,32 +736,41 @@ describe("runAttemptEffect · 主链与 Sample 收尾的计时边界", () => {
   });
 });
 
-describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () => {
-  const scoringAgent = () =>
+describe("runAttemptEffect · 计分制(evaluationKind:\"points\")的挣分落盘", () => {
+  const pointsAgent = () =>
     defineSandboxAgent({
-      name: "fake-agent-scoring",
+      name: "fake-agent-points",
       send: async () => ({ events: [], status: "completed" }),
     });
 
   it(".points()/t.score() 的挣分正确写进 EvalResult.assertions[].points 与 scoreEntries", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
-        scoring: "points",
+        evaluationKind: "points",
         test: (async (t: ScoreTestContext) => {
+          await t.send("先执行任务");
           t.check("actual", equals("actual")).points(3); // 0/1 断言通过挣满 3 分
           t.score("手动给分", 7);
         }) as unknown as DiscoveredEval["test"],
       },
     });
 
-    expect(result.scoring).toBe("points");
-    const passedAssertion = result.assertions.find((a) => a.outcome === "passed") as { points?: number } | undefined;
-    expect(passedAssertion?.points).toBe(3);
+    expect(result.evaluationKind).toBe("points");
+    const passedAssertion = result.assertions.find((a) => a.outcome === "passed");
+    if (passedAssertion?.outcome !== "passed") throw new Error("fixture 应产出 passed 得分点");
+    expect(passedAssertion.points).toBe(3);
+    expect(passedAssertion.pointsAvailable).toBe(3);
     expect(result.scoreEntries).toMatchObject([{ label: "手动给分", points: 7 }]);
+    const userMessage = result.events?.find((event) => event.type === "message" && event.role === "user");
+    expect([
+      userMessage?.sourceOrder,
+      passedAssertion.sourceOrder,
+      result.scoreEntries?.[0]?.sourceOrder,
+    ]).toEqual([1, 2, 3]);
   });
 
   it("通过制即使被运行时绕过类型调用 points/score，也不把给分字段落盘", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
         test: (async (t: ScoreTestContext) => {
           t.check("actual", equals("actual")).points(3);
@@ -770,15 +778,16 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
         }) as unknown as DiscoveredEval["test"],
       },
     });
-    expect(result.scoring).toBe("pass");
+    expect(result.evaluationKind).toBe("pass");
     expect((result.assertions[0] as { points?: number } | undefined)?.points).toBeUndefined();
+    expect(result.assertions[0]?.pointsAvailable).toBeUndefined();
     expect(result.scoreEntries).toBeUndefined();
   });
 
   it("计分制在评分前异常收束时也落空 scoreEntries，而非省略字段", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
-        scoring: "points",
+        evaluationKind: "points",
         sandbox: sandboxLayer().prepare(async () => {
           throw new Error("setup boom");
         }),
@@ -789,9 +798,9 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
   });
 
   it(".gate().stopOnFailure() 中止后:verdict 为 failed,中止后的给分被丢弃", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
-        scoring: "points",
+        evaluationKind: "points",
         test: (async (t: ScoreTestContext) => {
           t.score("早期给分", 5);
           await t.check("actual", equals("expected")).gate().stopOnFailure();
@@ -810,9 +819,9 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
   });
 
   it("stopOnFailure 不写 await 也不漏中止:结论与写了 await 完全一致", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
-        scoring: "points",
+        evaluationKind: "points",
         test: (async (t: ScoreTestContext) => {
           t.score("早期给分", 5);
           t.check("actual", equals("expected")).gate().stopOnFailure(); // 没有 await
@@ -828,9 +837,9 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
   });
 
   it("计分制丢分不是失败:得分点全挂但没有前置中止时 verdict 仍是 passed", async () => {
-    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+    const result = await runOnce(pointsAgent(), new FakeSandbox(), {
       evalDefOverrides: {
-        scoring: "points",
+        evaluationKind: "points",
         test: (async (t: ScoreTestContext) => {
           // matcher 自带默认 severity 是 gate,计分制里只贡献通过线——不使这条成为前置
           t.check("actual", equals("expected")).points(3);
@@ -1265,7 +1274,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
               code: "warmup-degraded",
               level: "warning",
               message: "cold index",
-              data: { origin: { scope: "attempt" as const, phase: "scoring.evaluate" }, indexAgeDays: 12 },
+              data: { origin: { scope: "attempt" as const, phase: "assertions.evaluate" }, indexAgeDays: 12 },
             });
           }),
         },
@@ -1283,10 +1292,10 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
   });
 });
 
-// scoring 阶段的 detail 只解释「在等裁判模型」这一种等待:有判分断言时逐条推进,
+// assertions.evaluate 阶段的 detail 只解释「在等裁判模型」这一种等待:有判分断言时逐条推进,
 // 没有则整段不发 detail(契约见 docs/feature/experiments/cli.md「Attempt 阶段」)。
 // 断言面是 feedback 事件流里的 progress 文本,不断言渲染字节。
-describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
+describe("runAttemptEffect · assertions.evaluate 阶段的 judge 推进 detail", () => {
   const judgeAgent = () =>
     defineSandboxAgent({
       name: "fake-agent-judge-progress",
@@ -1349,10 +1358,10 @@ describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
     return { seen, deactivate: activateFeedbackSink(sink) };
   }
 
-  /** scoring.evaluate 这一段(到下一个阶段为止)里发出的 detail 文本。 */
-  function scoringDetails(seen: AttemptLifecycleEvent[]): string[] {
-    const start = seen.findIndex((e) => e.type === "attempt:phase" && e.phase === "scoring.evaluate");
-    expect(start, "attempt 应该进入过 scoring.evaluate 阶段").toBeGreaterThanOrEqual(0);
+  /** assertions.evaluate 这一段(到下一个阶段为止)里发出的 detail 文本。 */
+  function assertionEvaluationDetails(seen: AttemptLifecycleEvent[]): string[] {
+    const start = seen.findIndex((e) => e.type === "attempt:phase" && e.phase === "assertions.evaluate");
+    expect(start, "attempt 应该进入过 assertions.evaluate 阶段").toBeGreaterThanOrEqual(0);
     const rest = seen.slice(start + 1);
     const next = rest.findIndex((e) => e.type === "attempt:phase");
     return (next === -1 ? rest : rest.slice(0, next))
@@ -1379,13 +1388,13 @@ describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
       vi.unstubAllEnvs();
     }
 
-    expect(scoringDetails(seen)).toEqual([
+    expect(assertionEvaluationDetails(seen)).toEqual([
       'judge 1/2 · closedQA("回答是否切题?")',
       'judge 2/2 · factuality("布鲁克林今天是晴天")',
     ]);
   });
 
-  it("没有 judge 断言时 scoring 阶段一个 detail 都不发(不存在与阶段词重复的静态占位)", async () => {
+  it("没有 judge 断言时 assertions.evaluate 阶段一个 detail 都不发(不存在与阶段词重复的静态占位)", async () => {
     const { seen, deactivate } = captureLifecycle();
     try {
       await runOnce(judgeAgent(), new FakeSandbox(), {
@@ -1399,7 +1408,7 @@ describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
       deactivate();
     }
 
-    expect(scoringDetails(seen)).toEqual([]);
+    expect(assertionEvaluationDetails(seen)).toEqual([]);
   });
 });
 

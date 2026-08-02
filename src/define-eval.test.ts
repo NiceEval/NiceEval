@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/eval.md
 // defineEval / defineScoreEval 的题型标记(契约见 docs/feature/eval/README.md「defineScoreEval:
 // 计分制题型」、docs/feature/experiments/score-points.md):两者字段与校验规则完全同形,唯一
-// 运行时差异是各自定死的 scoring 值;.points()/t.score 只在计分制 t 上存在,是类型层的证明
+// 运行时差异是各自定死的 evaluationKind 值;.points()/t.score 只在计分制 t 上存在,是类型层的证明
 // (typecheck fixture),不需要运行时守护。
 
 import { describe, expect, it } from "vitest";
@@ -11,9 +11,9 @@ import { sandboxLayer } from "./sandbox/layer.ts";
 import type { BaseAssertionHandle, BaseTestContext, EvalDefinition, ScoreTestContext, TestContext } from "./types.ts";
 
 describe("defineEval:通过制", () => {
-  it("产物恒 scoring: \"pass\"", () => {
+  it("产物恒 evaluationKind: \"pass\"", () => {
     const def = defineEval({ async test() {} });
-    expect(def.scoring).toBe("pass");
+    expect(def.evaluationKind).toBe("pass");
     expect(def.tags).toEqual([]);
     expect(def.reporters).toEqual([]);
     expect(def.metadata).toEqual({});
@@ -25,8 +25,8 @@ describe("defineEval:通过制", () => {
     expect(() => defineEval({ id: "manual-id", async test() {} } as never)).toThrow(/id/);
   });
 
-  it("拒绝显式 scoring(题型由 defineEval/defineScoreEval 定死,不可手写)", () => {
-    expect(() => defineEval({ scoring: "points", async test() {} } as never)).toThrow(/scoring/);
+  it("拒绝显式 evaluationKind(题型由 defineEval/defineScoreEval 定死,不可手写)", () => {
+    expect(() => defineEval({ evaluationKind: "points", async test() {} } as never)).toThrow(/evaluationKind/);
   });
 
   it("拒绝显式 configHash(configHash 属于运行规划,不是作者输入)", () => {
@@ -43,17 +43,17 @@ describe("defineEval:通过制", () => {
 });
 
 describe("defineScoreEval:计分制", () => {
-  it("产物恒 scoring: \"points\"", () => {
+  it("产物恒 evaluationKind: \"points\"", () => {
     const def = defineScoreEval({ async test() {} });
-    expect(def.scoring).toBe("points");
+    expect(def.evaluationKind).toBe("points");
   });
 
   it("拒绝显式 id(与 defineEval 同规则,报错指名 defineScoreEval)", () => {
     expect(() => defineScoreEval({ id: "manual-id", async test() {} } as never)).toThrow(/defineScoreEval/);
   });
 
-  it("拒绝显式 scoring,报错指名 defineScoreEval(不复用 defineEval 的文案)", () => {
-    expect(() => defineScoreEval({ scoring: "pass", async test() {} } as never)).toThrow(/defineScoreEval/);
+  it("拒绝显式 evaluationKind,报错指名 defineScoreEval(不复用 defineEval 的文案)", () => {
+    expect(() => defineScoreEval({ evaluationKind: "pass", async test() {} } as never)).toThrow(/defineScoreEval/);
   });
 
   it("拒绝显式 configHash,报错指名 defineScoreEval", () => {
@@ -85,25 +85,25 @@ describe("defineScoreEval:计分制", () => {
 });
 
 describe("类型层:给分词汇只存在于计分制的 t 上", () => {
-  it("factory 输入拒绝派生字段，返回值保留精确 scoring 且 Definition 不能手造(typecheck fixture)", () => {
+  it("factory 输入拒绝派生字段，返回值保留精确 evaluationKind 且 Definition 不能手造(typecheck fixture)", () => {
     const pass = defineEval({ async test() {} });
     const points = defineScoreEval({ async test() {} });
-    const passScoring: "pass" = pass.scoring;
-    const pointsScoring: "points" = points.scoring;
-    void passScoring;
-    void pointsScoring;
+    const passKind: "pass" = pass.evaluationKind;
+    const pointsKind: "points" = points.evaluationKind;
+    void passKind;
+    void pointsKind;
 
     if (false) {
       // @ts-expect-error id 由发现期路径推导，不是作者输入
       defineEval({ id: "manual", async test() {} });
-      // @ts-expect-error scoring 只能由两个 factory 写入
-      defineEval({ scoring: "pass", async test() {} });
+      // @ts-expect-error evaluationKind 只能由两个 factory 写入
+      defineEval({ evaluationKind: "pass", async test() {} });
       // @ts-expect-error configHash 只在规划期存在
       defineEval({ configHash: "manual", async test() {} });
       // @ts-expect-error environment 已由统一 SandboxLayer 字段取代
       defineEval({ environment: "node-22", async test() {} });
       // @ts-expect-error Definition 带模块私有品牌，不能用对象字面量伪造
-      const forged: EvalDefinition<"pass", TestContext> = { scoring: "pass", async test() {} };
+      const forged: EvalDefinition<"pass", TestContext> = { evaluationKind: "pass", async test() {} };
       void forged;
     }
     expect(true).toBe(true);

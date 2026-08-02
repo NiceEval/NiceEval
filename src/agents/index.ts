@@ -10,7 +10,7 @@ export type { NpmCliInstallerOptions } from "./npm-staged.ts";
 
 // 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeEvidenceCoverage;
 // 手写映射按实际情况声明(见 docs/feature/adapters/architecture/evidence.md)。
-export { completeEvidenceCoverage } from "../scoring/coverage.ts";
+export { completeEvidenceCoverage } from "../assertions/coverage.ts";
 export type {
   EvidenceCoverageStatus,
   EvidenceCoverageEntry,
@@ -25,6 +25,8 @@ export type {
 export { makeSendFailure, sendFailureText } from "../context/send-failures.ts";
 export type { SendFailure, SendFailureClassifier } from "../context/send-failures.ts";
 export type { FailureClass, FailureScope } from "../shared/failure-class.ts";
+export { externalCauseMessageChain, externalCauseText, normalizeExternalCause } from "../shared/external-cause.ts";
+export type { ExternalCause, ExternalCauseFact, ExternalCauseLink } from "../shared/external-cause.ts";
 
 // span → canonical GenAI 归一(只服务瀑布图,不喂断言)。私有埋点写自己的 spanMapper 时用:
 // tagSpan 把判定写回 span(原属性只增不改),heuristicTag 是通用兜底判定;mapCodexSpans 是
@@ -39,7 +41,12 @@ export type { UiMessageStreamAgentOptions, UIMessageLike, UIMessagePartLike } fr
 
 // 两种 OpenAI 响应形状(不限于 OpenAI 官方,任何声明兼容这两种协议形状的服务都能用)的
 // 官方转换器:整段响应 → Turn,零映射。
-export { turnFromChatCompletion, turnFromResponses } from "./openai-compat.ts";
+export {
+  chatCompletionEvidenceCoverage,
+  responsesEvidenceCoverage,
+  turnFromChatCompletion,
+  turnFromResponses,
+} from "./openai-compat.ts";
 export type {
   ChatCompletionLike,
   ChatCompletionMessageLike,

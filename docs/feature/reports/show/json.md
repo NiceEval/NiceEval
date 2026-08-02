@@ -10,12 +10,22 @@ JSON 是结构化审计面，可以保留 text 为注意力预算省略的字段
 ## 信封
 
 ```typescript
-interface ShowJson {
+type ShowJson =
+  | (ShowJsonBase & { view: "leaderboard"; data: StandardOverviewResult })
+  | (ShowJsonBase & { view: "compare"; data: ComparisonResult })
+  | (ShowJsonBase & { view: "attempt"; data: AttemptDetailsResult })
+  | (ShowJsonBase & { view: "source"; data: AnnotatedSourceResult | readonly AnnotatedSourceResult[] })
+  | (ShowJsonBase & { view: "execution"; data: ConversationResult | readonly ConversationResult[] })
+  | (ShowJsonBase & { view: "timing"; data: TimingResult | readonly TimingResult[] })
+  | (ShowJsonBase & { view: "usage"; data: readonly UsageResult[] })
+  | (ShowJsonBase & { view: "diff"; data: DiffResult | readonly DiffResult[] })
+  | (ShowJsonBase & { view: "history"; data: HistoryResult })
+  | (ShowJsonBase & { view: "stats"; data: StabilityResult });
+
+interface ShowJsonBase {
   format: "niceeval.show";
   /** 破坏性形状变更时递增；新增可选字段不递增，消费方忽略未知字段。 */
   schemaVersion: 1;
-  view: "leaderboard" | "compare" | "attempt" | "source" | "execution"
-      | "timing" | "usage" | "diff" | "history" | "stats";
   /** 本次调用解析后的范围回显。 */
   sample: {
     resultsRoot: string;
@@ -24,7 +34,6 @@ interface ShowJson {
     experiments: string[];
     fresh: boolean;
   };
-  data: unknown; // 单源指针见下「`data`：按 view 找组件声明」
 }
 ```
 
@@ -39,8 +48,8 @@ interface ShowJson {
 这份投影收在信封层，供各任务 Result 复用或收窄：
 
 ```typescript
-/** attempt 的通用投影：AttemptRecord 全字段 + 归属身份。 */
-type AttemptJson = AttemptRecord & {
+/** attempt 的通用投影：EvalResult 全字段 + 归属身份。 */
+type AttemptJson = EvalResult & {
   experimentId: string;
   /** 所属（或携带来源）Run 的 startedAt。 */
   runStartedAt: string;
@@ -65,7 +74,7 @@ type AttemptJson = AttemptRecord & {
 | `timing` | `timingResult(attempt)` |
 | `usage` | `usageResult(attempt)` 的数组 |
 | `diff` | `diffResult(attempt)` |
-| `history` | [`--history`](history.md)「分节与行内字段」：这个切片不进入组件模型，直接投影 Record evidence（[切片表](../architecture.md#show-的切片是组件选择)未列出它） |
+| `history` | `historyResult(attempts, options)` |
 | `stats` | `stabilityResult(sample, options)` |
 
 ## 边界

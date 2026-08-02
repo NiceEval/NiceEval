@@ -113,8 +113,7 @@ function locatorOfEvidence(item: AttemptHandle | AttemptLocator): AttemptLocator
   if (typeof item === "string") return item as AttemptLocator;
   if (item.locator) return item.locator;
   return encodeAttemptLocator({
-    experimentId: item.experimentId,
-    snapshotStartedAt: item.run.startedAt,
+    runId: item.run.runId,
     evalId: item.evalId,
     attempt: item.result.attempt,
   });

@@ -39,6 +39,94 @@ export interface KeptSandboxLease {
   ttlMs: number;
 }
 
+interface PersistedKeptSandboxLease extends KeptSandboxLease {
+  token?: string;
+}
+
+function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as globalThis.Record<string, unknown>
+    : undefined;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isVerdict(value: unknown): value is Verdict {
+  return value === "passed" || value === "failed" || value === "errored" || value === "skipped";
+}
+
+function isKeptSandboxState(value: unknown): value is KeptSandboxEntry["state"] {
+  return value === "alive" || value === "dormant" || value === "expired" || value === "unknown";
+}
+
+/** 留存条目的全部字段均在磁盘边界验证，特别是两个字符串联合与可选时间字段。 */
+function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
+  const record = recordOf(value);
+  if (
+    record === undefined ||
+    typeof record.sandboxId !== "string" ||
+    typeof record.provider !== "string" ||
+    typeof record.evalId !== "string" ||
+    !isNonNegativeInteger(record.attempt) ||
+    (record.experimentId !== undefined && typeof record.experimentId !== "string") ||
+    typeof record.locator !== "string" ||
+    !isVerdict(record.verdict) ||
+    !isTimestamp(record.keptAt) ||
+    typeof record.workdir !== "string" ||
+    (record.enter !== undefined && typeof record.enter !== "string") ||
+    (record.expiresAt !== undefined && !isTimestamp(record.expiresAt)) ||
+    !isKeptSandboxState(record.state)
+  ) {
+    return undefined;
+  }
+  return {
+    sandboxId: record.sandboxId,
+    provider: record.provider,
+    evalId: record.evalId,
+    attempt: record.attempt,
+    ...(record.experimentId === undefined ? {} : { experimentId: record.experimentId }),
+    locator: record.locator,
+    verdict: record.verdict,
+    keptAt: record.keptAt,
+    workdir: record.workdir,
+    ...(record.enter === undefined ? {} : { enter: record.enter }),
+    ...(record.expiresAt === undefined ? {} : { expiresAt: record.expiresAt }),
+    state: record.state,
+  };
+}
+
+/** lease 同样来自持久 JSON；token 是内部互斥凭据，可选但类型必须正确。 */
+function decodeKeptSandboxLease(value: unknown): PersistedKeptSandboxLease | undefined {
+  const record = recordOf(value);
+  if (
+    record === undefined ||
+    typeof record.holder !== "string" ||
+    typeof record.op !== "string" ||
+    !isTimestamp(record.acquiredAt) ||
+    !isPositiveInteger(record.ttlMs) ||
+    (record.token !== undefined && typeof record.token !== "string")
+  ) {
+    return undefined;
+  }
+  return {
+    holder: record.holder,
+    op: record.op,
+    acquiredAt: record.acquiredAt,
+    ttlMs: record.ttlMs,
+    ...(record.token === undefined ? {} : { token: record.token }),
+  };
+}
+
 /** entry id:provider + sandboxId 的稳定散列(条目文件名)。 */
 export function keptEntryId(provider: string, sandboxId: string): string {
   return hashEntryId([provider, sandboxId]);
@@ -55,7 +143,7 @@ function leasePath(niceevalRoot: string, id: string): string {
 /** 读取当前 lease；坏文件也视为占坑，避免在不明状态下并发操作现场。 */
 export async function readKeptLease(niceevalRoot: string, id: string): Promise<KeptSandboxLease | undefined> {
   try {
-    return JSON.parse(await readFile(leasePath(niceevalRoot, id), "utf-8")) as KeptSandboxLease;
+    return decodeKeptSandboxLease(JSON.parse(await readFile(leasePath(niceevalRoot, id), "utf-8")));
   } catch {
     return undefined;
   }
@@ -100,8 +188,8 @@ export async function acquireKeptLease(
 export async function releaseKeptLease(niceevalRoot: string, id: string, token: string): Promise<void> {
   const path = leasePath(niceevalRoot, id);
   try {
-    const current = JSON.parse(await readFile(path, "utf-8")) as KeptSandboxLease & { token?: string };
-    if (current.token === token) await rm(path, { force: true });
+    const current = decodeKeptSandboxLease(JSON.parse(await readFile(path, "utf-8")));
+    if (current?.token === token) await rm(path, { force: true });
   } catch {
     // 已被接管或删除时无需动作。
   }
@@ -154,7 +242,7 @@ export async function readKeptEntries(
   for (const file of files) {
     if (!file.endsWith(".json") || file.startsWith(".")) continue;
     const id = file.slice(0, -".json".length);
-    const entry = await readEntryFile<KeptSandboxEntry>(dir, id);
+    const entry = await readEntryFile(dir, id, decodeKeptSandboxEntry);
     if (entry === undefined) malformed.push(file);
     else entries.push({ id, entry });
   }
@@ -168,7 +256,7 @@ export async function updateKeptEntry(
   id: string,
   patch: Partial<KeptSandboxEntry> | ((entry: KeptSandboxEntry) => KeptSandboxEntry),
 ): Promise<boolean> {
-  const entry = await readEntryFile<KeptSandboxEntry>(sandboxesDirOf(niceevalRoot), id);
+  const entry = await readEntryFile(sandboxesDirOf(niceevalRoot), id, decodeKeptSandboxEntry);
   if (entry === undefined) return false;
   const next = typeof patch === "function" ? patch(entry) : { ...entry, ...patch };
   await writeKeptEntry(niceevalRoot, next);

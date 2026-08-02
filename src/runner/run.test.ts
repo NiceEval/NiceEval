@@ -32,10 +32,11 @@ import { fileURLToPath } from "node:url";
 import { judgeProbePlan, judgeProbeTargets, runEvals } from "./run.ts";
 import { experimentRunInfo } from "./attempt.ts";
 import { defineEval, defineSandbox, defineSandboxAgent as defineSandboxAgentBase } from "../define.ts";
-import { defineSandboxCase } from "../sandbox/case.ts";
+import { defineSandboxCase } from "../sandbox/layer.ts";
 import { Artifacts } from "./reporters/artifacts.ts";
 import { openRecord } from "../record/open.ts";
-import { encodeAttemptLocator } from "../record/locator.ts";
+import { createWriter } from "../record/writer.ts";
+import { encodeAttemptLocator, LocatorCollisionError } from "../record/locator.ts";
 import { equals } from "../expect/index.ts";
 import { createFeedbackCoordinator, type FeedbackCoordinator } from "./feedback/coordinator.ts";
 import { createFakeFeedbackIO } from "./feedback/testing.ts";
@@ -56,6 +57,7 @@ import { slugHashEntryId } from "../shared/entry-file-store.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan as CoreCarryPlan } from "./fingerprint.ts";
 import { ExperimentFatalError, EvalFatalError } from "../shared/failure-class.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import {
@@ -63,6 +65,8 @@ import {
   defineSandboxTemplate,
   sandboxLayer,
   sandboxProviderPlan,
+  type SandboxLayer,
+  type SandboxProviderBuildPlan,
   type SandboxProviderModule,
 } from "../sandbox/layer.ts";
 import {
@@ -75,7 +79,7 @@ import { Effect, Option } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
 import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import { STATELESS } from "../state/plan.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { prepareRunSandboxes, preparedPairsByKey, runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import type {
   Agent,
@@ -266,7 +270,7 @@ function makeAgent(name: string): Agent {
   return defineSandboxAgent({ name, send: async () => ({ events: [], status: "completed" }) });
 }
 
-function fakeSandboxSpec() {
+function fakeSandboxLayer() {
   // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider;每次调用给一个
   // 全新实例,并发 attempt 之间不共享可变文件状态。
   return defineSandbox({
@@ -277,7 +281,7 @@ function fakeSandboxSpec() {
 }
 
 /** 指纹等值测试需要一个可携带的模板；自定义 provider 的 opaque create 按契约每轮加入 epoch。 */
-function stableFakeSandboxSpec() {
+function stableFakeSandboxLayer() {
   return defineSandboxCase({
     identity: { kind: "test-stable-fake", revision: 1 },
     targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
@@ -299,7 +303,10 @@ function stableFakeSandboxSpec() {
  * 复用路径不能用 custom provider/case 冒充：它们的 provider plan 明确没有 reset contract。
  * 这份测试 ProviderModule 声明了 reuse 和 ensureLifetime，让 runEvals 真正进入复用池。
  */
-function reusableFakeSandboxSpec(onCreate: () => void) {
+function reusableFakeSandboxLayer(
+  onCreate: () => void,
+  build: SandboxProviderBuildPlan = { _tag: "None", caseKey: "test-reusable-case", buildKeys: [] },
+) {
   const provider = "test-reusable-provider";
   const module: SandboxProviderModule<undefined> = {
     id: provider,
@@ -308,7 +315,7 @@ function reusableFakeSandboxSpec(onCreate: () => void) {
       reuse: { _tag: "Supported" },
       sessionLimit: { _tag: "Unlimited" },
     },
-    materialize: () => Effect.sync(() => {
+    materialize: (_plan, context) => Effect.sync(() => {
       onCreate();
       const box = new FakeSandbox();
       const backend: SandboxProviderBackend = {
@@ -341,8 +348,8 @@ function reusableFakeSandboxSpec(onCreate: () => void) {
           stop: () => sandbox.stop(),
         },
         caseKind: "custom" as const,
-        caseKey: "test-reusable-case",
-        buildKeys: [],
+        caseKey: context.plan.providerPlan.build.caseKey,
+        buildKeys: context.plan.providerPlan.build.buildKeys,
         identity: { provider },
         carryEligible: true,
         facts: null,
@@ -371,15 +378,15 @@ function reusableFakeSandboxSpec(onCreate: () => void) {
       },
       module,
       runtimePlan: undefined,
-      build: { _tag: "None", caseKey: "test-reusable-case", buildKeys: [] },
+      build,
       publishableIdentity: { provider },
       privateFingerprintIdentity: { provider, revision: 1 },
     })),
   });
 }
 
-function makeEval(id: string, test: DiscoveredEval["test"]): DiscoveredEval {
-  return discoverEval(defineEval({ test }), {
+function makeEval(id: string, test: DiscoveredEval["test"], sandbox?: SandboxLayer): DiscoveredEval {
+  return discoverEval(defineEval({ test, ...(sandbox === undefined ? {} : { sandbox }) }), {
     id,
     baseDir: "/project",
     sourcePath,
@@ -474,6 +481,7 @@ async function run(
     config?: Config;
     buildPreparation?: RunOptions["buildPreparation"];
     keepSandbox?: NonNullable<RunOptions["keepSandbox"]>;
+    runIds?: ReadonlyMap<string, string>;
   } = {},
 ): Promise<{
   summary: Awaited<ReturnType<typeof runEvals>>;
@@ -510,6 +518,7 @@ async function run(
     // 兜底口径),测试进程的 cwd 是仓库根——不隔离到这里传的临时目录,会在真实仓库根写出
     // .niceeval/teardowns/ 之类的测试副作用(见 memory 的 test-must-isolate-niceeval-root)。
     niceevalRoot: root,
+    ...(opts.runIds ? { runIds: opts.runIds } : {}),
     ...(opts.carryPlan ? { carryPlan: await completeCarryPlan(evals, completedRuns, opts.carryPlan) } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.buildPreparation ? { buildPreparation: opts.buildPreparation } : {}),
@@ -527,7 +536,7 @@ describe("runEvals · --keep-sandbox 与 sandboxReuse ownership 互斥", () => {
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       sandboxReuse: true,
       timeoutMs: 5_000,
       selectedEvalIds: [evalDef.id],
@@ -546,7 +555,7 @@ describe("runEvals · sandboxReuse 按物理 Sandbox identity 分池", () => {
   it("不同 Eval prepare 共用同一物理 Sandbox，并逐 Attempt 各自重放", async () => {
     let sandboxCreates = 0;
     const prepared: string[] = [];
-    const template = reusableFakeSandboxSpec(() => { sandboxCreates += 1; })
+    const template = reusableFakeSandboxLayer(() => { sandboxCreates += 1; })
       .setup((_sandbox, ctx) => { ctx.fact("sandbox.lifecycle", "setup"); })
       .teardown((_sandbox, ctx) => {
         ctx.fact("sandbox.lifecycle", "teardown");
@@ -610,6 +619,13 @@ async function diskSnapshotStartedAt(root: string, experimentId: string): Promis
   return exp.latestRun.startedAt;
 }
 
+async function diskRunId(root: string, experimentId: string): Promise<string> {
+  const results = await openRecord(root);
+  const exp = results.experiments.find((entry) => entry.id === experimentId);
+  if (!exp) throw new Error(`no run written for experiment ${experimentId}`);
+  return exp.latestRun.runId;
+}
+
 async function diskLocator(
   root: string,
   experimentId: string,
@@ -635,7 +651,7 @@ describe("runEvals · Reporter 的 Invocation 回调面(onInvocationStart / onIn
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["a", "b"],
     };
@@ -681,6 +697,51 @@ describe("runEvals · Reporter 的 Invocation 回调面(onInvocationStart / onIn
 // result.json 完全相同;carry result 必须原样透传,不能被本次 invocation 的
 // snapshotStartedAt 悄悄重算成另一个身份。
 describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已经确定", () => {
+  it("调度前检查整个记录根；异身份占用计划 locator 时中止且不执行 eval", async () => {
+    const root = await makeRoot();
+    const experimentId = "locator-collision-exp";
+    const plannedRunId = "planned-run-id";
+    const targetLocator = encodeAttemptLocator({ runId: plannedRunId, evalId: "fresh", attempt: 0 });
+
+    const historicalWriter = createWriter(root, { producer: { name: "fixture", version: "1" } });
+    const historicalRun = await historicalWriter.run({
+      runId: "historical-run-id",
+      experimentId,
+      agent: "fixture",
+      startedAt: "2026-07-01T00:00:00.000Z",
+    });
+    await historicalRun.writeAttempt({
+      id: "other",
+      verdict: "passed",
+      attempt: 0,
+      durationMs: 1,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+      locator: targetLocator,
+    });
+    await historicalRun.finish();
+
+    let executed = false;
+    const evalDef = makeEval("fresh", () => {
+      executed = true;
+    });
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      flags: {},
+      attempts: 1,
+      earlyExit: true,
+      sandbox: fakeSandboxLayer(),
+      timeoutMs: 5_000,
+      selectedEvalIds: ["fresh"],
+      experimentId,
+    };
+
+    await expect(
+      run([evalDef], [agentRun], { root, runIds: new Map([[experimentId, plannedRunId]]) }),
+    ).rejects.toThrow(LocatorCollisionError);
+    expect(executed).toBe(false);
+  });
+
   it("onEvalComplete / eval:complete 观察到的 locator 与落盘 result.json 完全相同(passed 与 errored 各一次)", async () => {
     const experimentId = "locator-exp";
     const evalOk = makeEval("ok", () => {});
@@ -692,7 +753,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["ok", "boom"],
       experimentId,
@@ -704,10 +765,10 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     expect(summary.results.find((r) => r.id === "ok")!.verdict).toBe("passed");
     expect(summary.results.find((r) => r.id === "boom")!.verdict).toBe("errored");
 
-    const snapStartedAt = await diskSnapshotStartedAt(root, experimentId);
+    const runId = await diskRunId(root, experimentId);
     for (const evalId of ["ok", "boom"]) {
       const key = `${experimentId}|${evalId}|0`;
-      const expected = encodeAttemptLocator({ experimentId, snapshotStartedAt: snapStartedAt, evalId, attempt: 0 });
+      const expected = encodeAttemptLocator({ runId, evalId, attempt: 0 });
       expect(onEvalComplete.get(key)).toBe(expected);
       expect(onEventComplete.get(key)).toBe(expected);
       expect(await diskLocator(root, experimentId, evalId, 0)).toBe(expected);
@@ -722,7 +783,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["algebra/q1"],
       experimentId,
@@ -751,7 +812,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       flags: {},
       attempts: 2,
       earlyExit: false, // 两次都要真的跑,不能被首过即停吞掉其中一次
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["flaky"],
       experimentId,
@@ -768,12 +829,11 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     expect(await diskLocator(root, experimentId, "flaky", 1)).toBe(locator1);
   });
 
-  it("carry 结果的 locator 原样透传,不按本次 invocation 的 snapshotStartedAt 重算", async () => {
+  it("carry 结果的 locator 原样透传,不按本次 invocation 的 runId 重算", async () => {
     const experimentId = "carry-exp";
     const evalId = "carried-eval";
     const staleLocator = encodeAttemptLocator({
-      experimentId,
-      snapshotStartedAt: "2020-01-01T00:00:00.000Z", // 明确不同于本次 invocation 的锚点
+      runId: "carried-origin-run",
       evalId,
       attempt: 0,
     });
@@ -792,14 +852,14 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     // eval 的 test() 会抛错——如果携带 / 首过即停判断漏了这条、真的调度了一次新 attempt,
     // 这里会产出一条 errored 的重复结果,而不是静默漏测。
     const evalDef = makeEval(evalId, () => {
-      throw new Error("carried result should have unreadable scheduling a fresh attempt");
+      throw new Error("carried result should have skipped scheduling a fresh attempt");
     });
     const agentRun: AgentRun = {
       agent: makeAgent("agent-carried"),
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -824,10 +884,9 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
 
     // 反证:如果按本次 invocation 的 snapshotStartedAt 重算,会得到不同的字符串——
     // 证明确实是原样透传,不是巧合相等。
-    const snapStartedAt = await diskSnapshotStartedAt(root, experimentId);
+    const runId = await diskRunId(root, experimentId);
     const wronglyRecomputed = encodeAttemptLocator({
-      experimentId,
-      snapshotStartedAt: snapStartedAt,
+      runId,
       evalId,
       attempt: 0,
     });
@@ -855,7 +914,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["c-slow", "c-mid", "c-fast"],
       experimentId,
@@ -877,10 +936,10 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     // sanity:确实是并发乱序完成,不是退化成串行(否则这条测试没有真正测到并发路径)。
     expect(completionOrder.indexOf("c-fast")).toBeLessThan(completionOrder.indexOf("c-slow"));
 
-    const snapStartedAt = await diskSnapshotStartedAt(root, experimentId);
+    const runId = await diskRunId(root, experimentId);
     for (const evalId of ["c-slow", "c-mid", "c-fast"]) {
       const key = `${experimentId}|${evalId}|0`;
-      const expected = encodeAttemptLocator({ experimentId, snapshotStartedAt: snapStartedAt, evalId, attempt: 0 });
+      const expected = encodeAttemptLocator({ runId, evalId, attempt: 0 });
       expect(onEvalComplete.get(key)).toBe(expected);
       expect(onEventComplete.get(key)).toBe(expected);
       expect(await diskLocator(root, experimentId, evalId, 0)).toBe(expected);
@@ -906,7 +965,7 @@ async function withCoordinator<T>(
     return await fn(coordinator);
   } finally {
     await coordinator.finish({
-      summary: { startedAt: "", completedAt: "", passed: 0, failed: 0, unreadable: 0, errored: 0, durationMs: 0, results: [] },
+      summary: { startedAt: "", completedAt: "", passed: 0, failed: 0, skipped: 0, errored: 0, durationMs: 0, results: [] },
       completion: { status: "complete", unstarted: 0, earlyExitUnstarted: 0, reporterErrors: [] },
       paths: [],
     });
@@ -932,7 +991,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["ok", "boom", "gate-fail"],
       experimentId,
@@ -960,7 +1019,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
         verdict: "errored",
         who: experimentId, // runWho():有 experimentId 时用它的最后一段(这里没有 "/",就是整段)
         identity: { experimentId, evalId: "boom", attempt: 0 },
-        // evalDef.test() 抛的是普通 Error；即使 attempt 随后仍进入 diff/scoring，永久错误通知
+        // evalDef.test() 抛的是普通 Error；即使 attempt 随后仍进入 diff/assertions.evaluate，永久错误通知
         // 也必须使用结构化 error.phase，报告错误真正发生的 eval.run，而不是最后经过的阶段。
         origin: { scope: "attempt" as const, phase: "eval.run" },
       });
@@ -980,8 +1039,8 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
           additionalFailures: 0,
         },
       });
-      // failed 是断言 outcome，不是 lifecycle error；即使 verdict 在 scoring 阶段算出，也不应
-      // 把 scoring（更不能把随后可能发生的 telemetry.collect）冒充成「失败发生阶段」。
+      // failed 是断言 outcome，不是 lifecycle error；即使 verdict 在 assertions.evaluate 阶段算出，也不应
+      // 把 assertions.evaluate（更不能把随后可能发生的 telemetry.collect）冒充成「失败发生阶段」。
       expect(failedNotice).not.toHaveProperty("phase");
     });
   });
@@ -1000,7 +1059,7 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["a", "b", "c"],
       experimentId,
@@ -1022,10 +1081,10 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
       expect(diag?.count).toBe(3); // 三个 attempt 各发一次,去重折成同一个 key、count 累加到 3
       expect(diag?.data).toMatchObject({ experimentId, spent: 0, unstarted: 3 });
 
-      // reducer 不变量:每条 budget-exhausted 把一个 attempt 从 queued 挪进 unreadable —— 没派发就
+      // reducer 不变量:每条 budget-exhausted 把一个 attempt 从 queued 挪进 skipped —— 没派发就
       // 没有 verdict,不冒充 passed/failed(与 assembleInvocationCompletion() 读取 count 折算
       // InvocationCompletion.unstarted 的口径一致)。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, unreadable: 3 });
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, skipped: 3 });
     });
   });
 });
@@ -1082,7 +1141,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["a", "b", "c"],
       experimentId,
@@ -1121,8 +1180,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const experimentId = "carry-grow-passed-exp";
     const evalId = "grown-eval";
     const staleLocator = encodeAttemptLocator({
-      experimentId,
-      snapshotStartedAt: "2020-01-01T00:00:00.000Z",
+      runId: "carry-grow-passed-origin",
       evalId,
       attempt: 0,
     });
@@ -1148,7 +1206,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       flags: {},
       attempts: 3, // 上次只留 1 条(attempts: 1 时代的携入),这次调大
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -1178,8 +1236,8 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       expect(matches[0]!.locator).toBe(staleLocator); // 携入结果原样透传
 
       // 不变量:携入 1 + early-exit 回填 2 == 本次请求的 attempts: 3,不留没有解释的差额
-      // (queued 必须真正归零,不能停在「还差 2 个不知道去哪」)。回填的两轮没真跑,进 unreadable。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, unreadable: 2 });
+      // (queued 必须真正归零,不能停在「还差 2 个不知道去哪」)。回填的两轮没真跑,进 skipped。
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, skipped: 2 });
     });
   });
 
@@ -1187,8 +1245,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const experimentId = "carry-grow-failed-exp";
     const evalId = "grown-failed-eval";
     const staleLocator = encodeAttemptLocator({
-      experimentId,
-      snapshotStartedAt: "2020-01-01T00:00:00.000Z",
+      runId: "carry-grow-failed-origin",
       evalId,
       attempt: 0,
     });
@@ -1216,7 +1273,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       flags: {},
       attempts: 3,
       earlyExit: true, // failed 不触发 earlyExit(只有 passed/errored 会),回填的两次应该真的跑
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -1253,7 +1310,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       expect(matches.every((r) => r.verdict === "failed")).toBe(true);
 
       // 差额两次真的跑了,各自落进 failed —— 携入那条的 verdict 留在 reused,不摊进结局项。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 2, errored: 0, unreadable: 0 });
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 2, errored: 0, skipped: 0 });
       // InvocationSummary 的三条 failed（1 carry + 2 fresh）与终局 handoff 的 FailureNotice 清单同口径。
       // carry 不能只进 summary 计数而从 FAILURES / agent handoff 消失。
       expect(coordinator.state.failures).toHaveLength(3);
@@ -1269,8 +1326,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const evalId = "noncontig-eval";
     const evalDef = makeEval(evalId, () => {});
     const staleLocator = encodeAttemptLocator({
-      experimentId,
-      snapshotStartedAt: "2020-01-01T00:00:00.000Z",
+      runId: "carry-noncontiguous-origin",
       evalId,
       attempt: 1,
     });
@@ -1291,7 +1347,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       flags: {},
       attempts: 3,
       earlyExit: false, // 关掉 earlyExit:避免序号 0 先跑出 passed 把序号 2 提前吞掉,专注验证"跑了哪些序号"
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -1335,7 +1391,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [],
       experimentId,
@@ -1668,7 +1724,7 @@ describe("runEvals · 实验级 teardown 失败只作运行级诊断", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["tidy"],
       experimentId: "registry-exp",
@@ -1694,7 +1750,7 @@ describe("runEvals · 实验级 teardown 失败只作运行级诊断", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["ok"],
       experimentId,
@@ -1736,7 +1792,7 @@ describe("runEvals · 实验域诊断持久化到 Run", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["a"],
       experimentId: "diag-exp-a",
@@ -1750,7 +1806,7 @@ describe("runEvals · 实验域诊断持久化到 Run", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["b"],
       experimentId: "diag-exp-b",
@@ -1789,7 +1845,7 @@ describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Run.fa
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["a"],
       experimentId: "fact-exp-a",
@@ -1806,7 +1862,7 @@ describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Run.fa
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["b"],
       experimentId: "fact-exp-b",
@@ -1874,7 +1930,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["fresh-eval"],
       experimentId,
@@ -1998,7 +2054,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["fresh-eval"],
       experimentId,
@@ -2061,7 +2117,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["fresh-eval"],
       experimentId,
@@ -2089,7 +2145,7 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: stableFakeSandboxSpec(),
+      sandbox: stableFakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["fp"],
       experimentId: "fp-exp",
@@ -2213,7 +2269,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
 // 分工的语义单点见 docs/runner.md「调度:有界并发」。失败必须是协议证明未受理的
 // SendFailure；可信 failed Turn 是领域结果，不进入重试。
 function retryableSendFailure(message: string) {
-  return makeSendFailure({ acceptance: "rejected", message, cause: { status: 429 } });
+  return makeSendFailure({ acceptance: "rejected", message, cause: normalizeExternalCause({ status: 429 }) });
 }
 function okTurn(): Turn {
   return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
@@ -2398,7 +2454,7 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
         flags: {},
         attempts: 1,
         earlyExit: false,
-        sandbox: fakeSandboxSpec(),
+        sandbox: fakeSandboxLayer(),
         timeoutMs: 30_000,
         selectedEvalIds: ["r1"],
         experimentId: "guard-r",
@@ -2408,7 +2464,7 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
         flags: {},
         attempts: 1,
         earlyExit: false,
-        sandbox: fakeSandboxSpec(),
+        sandbox: fakeSandboxLayer(),
         timeoutMs: 30_000,
         selectedEvalIds: ["w1", "w2"],
         experimentId: "guard-w",
@@ -2602,7 +2658,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: stableFakeSandboxSpec(),
+      sandbox: stableFakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2639,7 +2695,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     const evalDef = makeEval(evalId, async () => {
       throw new Error("carried attempt must not be dispatched");
     });
-    const sandbox = stableFakeSandboxSpec();
+    const sandbox = stableFakeSandboxLayer();
     const base = {
       agent: makeAgent("agent-carry-restamp"),
       attempts: 1,
@@ -2723,7 +2779,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
         flags: {},
         attempts: 1,
         earlyExit: false,
-        sandbox: fakeSandboxSpec(),
+        sandbox: fakeSandboxLayer(),
         timeoutMs: 30_000,
         selectedEvalIds: [evalId],
         experimentId,
@@ -2786,7 +2842,7 @@ describe("runEvals · 用例锁: 等待语义", () => {
         flags: {},
         attempts: 1,
         earlyExit: false,
-        sandbox: fakeSandboxSpec(),
+        sandbox: fakeSandboxLayer(),
         timeoutMs: 30_000,
         selectedEvalIds: [evalIdLocked, evalIdFree],
         experimentId,
@@ -2848,7 +2904,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: stableFakeSandboxSpec(),
+      sandbox: stableFakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2900,7 +2956,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2923,7 +2979,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: stableFakeSandboxSpec(),
+      sandbox: stableFakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -2968,7 +3024,7 @@ describe("runEvals · 用例锁: 执行模式组合", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -3010,7 +3066,7 @@ describe("runEvals · 用例锁: 释放路径", () => {
       flags: {},
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
@@ -3082,7 +3138,7 @@ function probeRun(
     flags: {},
     attempts: 1,
     earlyExit: false,
-    sandbox: fakeSandboxSpec(),
+    sandbox: fakeSandboxLayer(),
     timeoutMs: 600_000,
     selectedEvalIds,
     experimentId,
@@ -3217,7 +3273,7 @@ describe("runEvals · 用例锁: 多开分工", () => {
       const secondWave = ["m-3", "m-4"];
       const ids = [...firstWave, ...secondWave];
       const agent = makeAgent("agent-multi-open");
-      const sandbox = stableFakeSandboxSpec();
+      const sandbox = stableFakeSandboxLayer();
 
       const gateA = makeBarrier();
       const gateB = makeBarrier();
@@ -3290,7 +3346,7 @@ describe("runEvals · 用例锁: 多开分工", () => {
     const gatedId = "c-1";
     const sharedId = "c-2";
     const agent = makeAgent("agent-multi-open-clean");
-    const sandbox = stableFakeSandboxSpec();
+    const sandbox = stableFakeSandboxLayer();
     const { barrier, release } = makeBarrier();
     const all = newDispatchProbe();
 
@@ -3363,7 +3419,7 @@ describe("runEvals · 用例锁: 干净取锁下的执行模式组合", () => {
     const gatedId = "fc-1";
     const sharedId = "fc-2";
     const agent = makeAgent("agent-force-clean");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = fakeSandboxLayer();
     const { barrier, release } = makeBarrier();
     const all = newDispatchProbe();
 
@@ -3424,7 +3480,7 @@ describe("runEvals · 实验闸租约跨 runEvals 共享名额", () => {
       const root = await makeRoot();
       const experimentId = "gate-cross-exp";
       const agent = makeAgent("agent-gate-cross");
-      const sandbox = fakeSandboxSpec();
+      const sandbox = fakeSandboxLayer();
       const idsA = ["g-a1", "g-a2"];
       const idsB = ["g-b1", "g-b2"];
 
@@ -3640,7 +3696,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
     const experimentId = "lock-recheck-exp";
     const evalId = "recheck-eval";
     const agent = makeAgent("agent-lock-recheck");
-    const sandbox = stableFakeSandboxSpec();
+    const sandbox = stableFakeSandboxLayer();
 
     // 先用一次真实运行落下序号 0 的 passed 终态(指纹由生产路径自己算,不手工拼)。
     const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });
@@ -3706,7 +3762,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
     const gatedId = "p-1";
     const sharedId = "p-2";
     const agent = makeAgent("agent-clean-recheck-partial");
-    const sandbox = stableFakeSandboxSpec();
+    const sandbox = stableFakeSandboxLayer();
     const { barrier, release } = makeBarrier();
     const all = newDispatchProbe();
     const sideA = newDispatchProbe();
@@ -3769,7 +3825,7 @@ describe("runEvals · 用例锁: 取锁后重查携带的读取面", () => {
     const root = await makeRoot();
     const experimentId = "read-surface-exp";
     const ids = ["r-1", "r-2", "r-3"];
-    const sandbox = fakeSandboxSpec();
+    const sandbox = fakeSandboxLayer();
 
     // 先落一批历史结果(另一个 agent ⇒ 指纹不同,不会被携入):读取面要在"结果树非空"的前提
     // 下计数,否则测不出"读了什么"与"读了多大一片"的区别。
@@ -3826,7 +3882,7 @@ function expectCountIdentity(state: RunFeedbackState): void {
       state.passed +
       state.failed +
       state.errored +
-      state.unreadable,
+      state.skipped,
   );
 }
 
@@ -4459,7 +4515,7 @@ describe("runEvals · 用例锁: --force 撞新鲜锁的挂起窗口", () => {
     const experimentId = "force-fresh-lock-exp";
     const evalId = "force-fresh-eval";
     const agent = makeAgent("agent-force-fresh");
-    const sandbox = fakeSandboxSpec();
+    const sandbox = fakeSandboxLayer();
 
     // 先落一条指纹匹配的 passed 终态:--force 下它不该被消费,等完窗口照样自跑。
     const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });
@@ -4565,7 +4621,7 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
     const experimentId = "recheck-partial-count-exp";
     const evalId = "recheck-partial-count-eval";
     const agent = makeAgent("agent-recheck-partial-count");
-    const sandbox = stableFakeSandboxSpec();
+    const sandbox = stableFakeSandboxLayer();
 
     // 先落一条序号 0 的 passed 终态(指纹由生产路径自己算)。
     const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });
@@ -4846,7 +4902,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["judged"],
       experimentId: "no-judge-exp",
@@ -4891,8 +4947,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
       durationMs: 1,
       assertions: [],
       locator: encodeAttemptLocator({
-        experimentId,
-        snapshotStartedAt: "2020-01-01T00:00:00.000Z",
+        runId: "judge-carried-origin",
         evalId: "judged",
         attempt: 0,
       }),
@@ -4903,7 +4958,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
+      sandbox: fakeSandboxLayer(),
       timeoutMs: 5_000,
       selectedEvalIds: ["judged", "plain"],
       experimentId,
@@ -4948,20 +5003,31 @@ describe("runEvals · Run 级共享构建协调", () => {
     const otherStarted = new Promise<void>((resolve) => {
       markOtherStarted = resolve;
     });
-    const evalDep = makeEval("dep", async () => {
-      if (buildRunning) depStartedDuringBuild = true;
-    });
-    const evalOther = makeEval("other", async () => {
-      if (buildRunning) otherStartedDuringBuild = true;
-      markOtherStarted();
-    });
+    const evalDep = makeEval(
+      "dep",
+      async () => {
+        if (buildRunning) depStartedDuringBuild = true;
+      },
+      reusableFakeSandboxLayer(() => {}, {
+        _tag: "Required",
+        caseKey: "case-bk-shared",
+        buildKeys: ["bk-shared"],
+      }),
+    );
+    const evalOther = makeEval(
+      "other",
+      async () => {
+        if (buildRunning) otherStartedDuringBuild = true;
+        markOtherStarted();
+      },
+      fakeSandboxLayer(),
+    );
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
       experimentId: "exp-build",
       flags: {},
       attempts: 1,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: ["dep", "other"],
     };
@@ -4969,7 +5035,7 @@ describe("runEvals · Run 级共享构建协调", () => {
       maxConcurrency: 2,
       buildPreparation: {
         works: [{ buildKey: "bk-shared", provider: "docker", inputs: { tag: "a" }, label: "shared image" }],
-        evalBuildKeys: { dep: ["bk-shared"] },
+        pairBuildKeys: { [runPairKey("exp-build", "dep")]: ["bk-shared"] },
         provider: {
           async lookup() {
             return undefined;
@@ -4997,24 +5063,31 @@ describe("runEvals · Run 级共享构建协调", () => {
   });
 
   it("确定性构建失败:依赖 eval 全部 errored 且共用同一 run origin;不伪造 attempt 锚点", async () => {
-    const evalDep = makeEval("needs-build", async () => {
-      throw new Error("should not run");
-    });
-    const evalOk = makeEval("independent", async () => {});
+    const evalDep = makeEval(
+      "needs-build",
+      async () => {
+        throw new Error("should not run");
+      },
+      reusableFakeSandboxLayer(() => {}, {
+        _tag: "Required",
+        caseKey: "case-bk-bad",
+        buildKeys: ["bk-bad"],
+      }),
+    );
+    const evalOk = makeEval("independent", async () => {}, fakeSandboxLayer());
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
       experimentId: "exp-fail",
       flags: {},
       attempts: 2,
       earlyExit: false,
-      sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: ["needs-build", "independent"],
     };
     const { summary, root } = await run([evalDep, evalOk], [agentRun], {
       buildPreparation: {
         works: [{ buildKey: "bk-bad", provider: "docker", inputs: { tag: "bad" } }],
-        evalBuildKeys: { "needs-build": ["bk-bad"] },
+        pairBuildKeys: { [runPairKey("exp-fail", "needs-build")]: ["bk-bad"] },
         provider: {
           async lookup() {
             return undefined;

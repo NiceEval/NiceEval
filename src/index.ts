@@ -15,6 +15,7 @@ export type {
   StreamEvent,
   ToolName,
   JsonValue,
+  JsonMatch,
   Usage,
   Turn,
   EvidenceCoverageStatus,
@@ -69,6 +70,7 @@ export type {
   DiffView,
   ScriptResult,
   EvalSandbox,
+  DeferredFileContent,
   CommandResult,
   InputRequest,
   InputRequestFilter,
@@ -80,6 +82,10 @@ export type {
   FailureScope,
   AttemptFailureInfo,
   AttemptFailureClassifier,
+  ExternalCause,
+  ExternalCauseFact,
+  ExternalCauseLink,
+  ExternalCauseScalar,
 } from "./types.ts";
 export type {
   ExperimentStateContext,

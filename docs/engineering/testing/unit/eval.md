@@ -76,12 +76,12 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
   安装 manifest 由 adapter 在宿主侧交给运行器存成 attempt artifact，不经沙箱磁盘。
 - **Session**：session 与主 session 的读写隔离（各自续接、respond 不串消费），同时新 session 的事件仍汇入 `t.*` 聚合——隔离与聚合两面都要有区分力场景。
 - **作用域断言的接收者行为**：`t.*` 全量聚合 + final timing、`session.*` 时点 Run、`turn.*` 本轮独占；接收者专属 API 的类型边界。
-  判定语义的完整矩阵归[Assertions、Judge 与 Verdict](scoring.md)，这里只测接收者行为。
+  判定语义的完整矩阵归[Assertions、Judge 与 Verdict](assertions.md)，这里只测接收者行为。
 - **HITL**：`requireInputRequest` 的恰好一个语义（0 个、多个都报错）；filter 的匹配与不匹配；无法对位时**先报错且不向 agent 发送任何响应**——错误反馈正确但响应已发出仍违反契约，`agent.received` 长度必须一并断言；`respond`/`respondAll` 的续接与跨 session 隔离。
 - **Sandbox 能力暴露面**：`t.sandbox` 只在声明 capability 时存在，未声明时是明确错误而非 undefined；文件只经显式上传进入沙箱；本地路径按 eval 定义文件目录解析；`t.sandbox` 面不含生命周期动作。
   路径、命令与生命周期契约归 [Sandbox](sandbox.md)。
 - **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 覆盖；`diagnostic` 不改变 verdict、scope 不可伪装；`progress` 不进最终输出。
-  judge 的评分与模型解析归[Assertions、Judge 与 Verdict](scoring.md)。
+  judge 的评分与模型解析归[Assertions、Judge 与 Verdict](assertions.md)。
 - **send 执行错误与重试**：`Turn{status: "failed"}` 是可信领域终态，只参与 `succeeded()` 等断言、绝不进入重试；CLI 非零、signal、transport 中断与无法解析终态 reject `SendFailure` 并最终落 `agent-send-failed`。`acceptance` 的 `rejected` / `started` / `unknown` 三态都要有区分力场景：只有 `rejected` 且分类为 retryable 才重发；空 events、非零退出和限流文案不能把 unknown 升格。adapter 分类器的自定义 reason 原样透出，返回 `undefined` 与抛错都回落且不掩盖原始失败；重试只包 `agent.send`、会话记账不重放；被吸收尝试不进入逻辑事件流，但按顺序完整写入 `retryAttempts`（acceptance、分类、events、usage、process、耗时），顶层 usage / cost 包含所有物理尝试；send 级与 attempt 级预算各自封顶，多轮 send 时前者重置、后者持续扣减；耗尽后 message 注明耗尽层，退避可被中断干净打断。
 - **send settle 与命令树**：一次逻辑 send 的归因窗口覆盖全部物理尝试；返回或拒绝前，台账已写入且 Agent 命令树终止或静止。命令 timeout、取消、Attempt interruption 与 runtime cancellation 都必须在 Promise settle 前确认受管命令树终止；做不到时停止整个 Sandbox。正常命令结束后关闭 transport 不得误杀作者有意启动的任务服务。
 - **失败分类链的两轴扩展**：

@@ -20,10 +20,9 @@ import {
   dedupeAttempts,
   openRecord,
   resolveLocator,
-  loadAnnotatedEvalSource,
   LocatorNotFoundError,
   MalformedLocatorError,
-  LocatorCollisionError,
+  AmbiguousLocatorError,
   encodeAttemptLocator,
   type AttemptHandle,
   type AttemptArtifacts,
@@ -999,9 +998,10 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     await finishAll(writer);
 
     const record1 = JSON.parse(await readFile(join(snap.dir, "q1/a0/result.json"), "utf-8"));
-    expect(record1.locator).toMatch(/^@1[0-9a-z]{7}$/);
+    expect(record1.locator).toMatch(/^@1[0-9A-HJKMNP-TV-Z]{12}$/);
+    expect(record1.locatorRunId).toBe(snap.runId);
     expect(record1.locator).toBe(
-      encodeAttemptLocator({ experimentId: "e", snapshotStartedAt: "2026-07-01T08:00:00.000Z", evalId: "q1", attempt: 0 }),
+      encodeAttemptLocator({ runId: snap.runId, evalId: "q1", attempt: 0 }),
     );
 
     const record2 = JSON.parse(await readFile(join(snap.dir, "q2/a0/result.json"), "utf-8"));
@@ -1017,7 +1017,7 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     expect(resolveLocator(resultsA, record1.locator).evalId).toBe("q1");
   });
 
-  it("携带条目(--resume 合入)原样复制原 locator,不按新快照的 startedAt 重算", async () => {
+  it("携带条目原样复制 locator 来源；全根同时保留原条目时 resolve 选最新副本而不误报歧义", async () => {
     const root = await makeRoot();
     const writer1 = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
     await writer1.writeAttemptFor({
@@ -1064,19 +1064,67 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     const newest = opened2.experiments[0].latestRun;
     const carriedAttempt = newest.evals.find((e) => e.id === "q1")!.attempts[0];
     expect(carriedAttempt.locator).toBe(originalLocator);
-    expect(resolveLocator(opened2, originalLocator).evalId).toBe("q1");
+    expect(carriedAttempt.result.locatorRunId).toBe(original.run.runId);
+    expect(carriedAttempt.locatorIdentity).toEqual({ runId: original.run.runId, evalId: "q1", attempt: 0 });
+    expect(resolveLocator(opened2, originalLocator)).toBe(carriedAttempt);
     // attempt.carried 是 artifactBase 的读取面投影:携带条目为 true,本快照真实执行的 q2 为 false。
     expect(carriedAttempt.carried).toBe(true);
     expect(newest.evals.find((e) => e.id === "q2")!.attempts[0].carried).toBe(false);
 
-    // 反证:如果按「新快照的 startedAt」重算,会得到一个不同的字符串——证明确实是原样复制,不是重算。
+    // 反证:如果按承载它的新 Run 身份重算，会得到不同字符串。
     const wronglyRecomputed = encodeAttemptLocator({
-      experimentId: "e",
-      snapshotStartedAt: newest.startedAt,
+      runId: newest.runId,
       evalId: "q1",
       attempt: 0,
     });
     expect(originalLocator).not.toBe(wronglyRecomputed);
+  });
+
+  it("旧格式 carry 缺 locatorRunId 时沿 artifactBase 回溯来源，不把同一 attempt 判成 ambiguous", async () => {
+    const root = await makeRoot();
+    const writer1 = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
+    await writer1.writeAttemptFor({
+      id: "legacy",
+      experimentId: "e",
+      agent: "bub",
+      verdict: "passed",
+      attempt: 0,
+      startedAt: "2026-07-01T08:00:00.000Z",
+      durationMs: 1,
+      assertions: [],
+    });
+    await finishAll(writer1);
+
+    const opened1 = await openRecord(root);
+    const original = opened1.experiments[0].latestRun.attempts[0]!;
+    const originalPath = join(original.run.dir, original.ref.attempt, "result.json");
+    const originalRecord = JSON.parse(await readFile(originalPath, "utf-8"));
+    delete originalRecord.locatorRunId;
+    delete originalRecord.locator;
+    await writeFile(originalPath, JSON.stringify(originalRecord), "utf-8");
+    const expectedLocator = encodeAttemptLocator({ runId: original.run.runId, evalId: "legacy", attempt: 0 });
+
+    const writer2 = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
+    const snap2 = await writer2.run({ experimentId: "e", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z" });
+    await snap2.writeAttempt({ id: "fresh", verdict: "passed", attempt: 0, durationMs: 1, assertions: [] });
+    const carryDir = join(snap2.dir, "legacy/a0");
+    await mkdir(carryDir, { recursive: true });
+    await writeFile(
+      join(carryDir, "result.json"),
+      JSON.stringify({
+        ...originalRecord,
+        artifactBase: `${original.ref.run}/${original.ref.attempt}`,
+      }),
+      "utf-8",
+    );
+    await finishAll(writer2);
+
+    const results = await openRecord(root);
+    const newestCarry = results.experiments[0].latestRun.evals.find((e) => e.id === "legacy")!.attempts[0]!;
+    expect(newestCarry.result.locatorRunId).toBeUndefined();
+    expect(newestCarry.locatorIdentity?.runId).toBe(original.run.runId);
+    expect(newestCarry.locator).toBe(expectedLocator);
+    expect(resolveLocator(results, expectedLocator)).toBe(newestCarry);
   });
 
   it("resolveLocator:malformed 与 not-found 是两种可判别的错误", async () => {
@@ -1085,10 +1133,10 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     const results = await openRecord(root);
 
     expect(() => resolveLocator(results, "not-a-locator")).toThrow(MalformedLocatorError);
-    expect(() => resolveLocator(results, "@1nosuch1")).toThrow(LocatorNotFoundError); // 语法合法(7 位 body),索引里没有
+    expect(() => resolveLocator(results, "@1ZZZZZZZZZZZZ")).toThrow(LocatorNotFoundError);
   });
 
-  it("两个不同身份的 attempt 撞出同一个 locator 字符串:openRecord() 抛 LocatorCollisionError,不静默覆盖", async () => {
+  it("两个不同身份的 attempt 同 locator：openRecord 保留记录，resolve 抛 AmbiguousLocatorError 并列候选", async () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
     const snap = await writer.run({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
@@ -1105,7 +1153,18 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     q2Record.locator = q1Record.locator;
     await writeFile(q2Path, JSON.stringify(q2Record), "utf-8");
 
-    await expect(openRecord(root)).rejects.toThrow(LocatorCollisionError);
+    const results = await openRecord(root);
+    let ambiguous: AmbiguousLocatorError | undefined;
+    try {
+      resolveLocator(results, q1Record.locator);
+    } catch (error) {
+      if (error instanceof AmbiguousLocatorError) ambiguous = error;
+    }
+    expect(ambiguous).toBeDefined();
+    expect(ambiguous?.candidates).toEqual([
+      { experimentId: "e", evalId: "q1", attempt: 0 },
+      { experimentId: "e", evalId: "q2", attempt: 0 },
+    ]);
   });
 
   it("多 experiment:同 evalId/attempt 在不同 experiment 下产出不同 locator,resolveLocator 精确定位到各自的 experiment", async () => {
@@ -1120,7 +1179,7 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     const results = await openRecord(root);
     const a = results.experiments.find((e) => e.id === "compare/bub")!.latestRun.evals[0]!.attempts[0]!;
     const b = results.experiments.find((e) => e.id === "compare/codex")!.latestRun.evals[0]!.attempts[0]!;
-    // 同 evalId、同 attempt 序号,只有 experimentId 不同 → locator 必须不同(身份元组含 experimentId)。
+    // 两个 writer Run 的 runId 不同，因此相同 evalId / attempt 仍有不同 locator。
     expect(a.locator).not.toBe(b.locator);
 
     expect(resolveLocator(results, a.locator!).experimentId).toBe("compare/bub");
@@ -1161,7 +1220,7 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     expect(exp.runs).toHaveLength(2); // 两次快照都在(忠实磁盘,不合并/不丢弃历史)
     const oldAttempt = exp.runs.find((s) => s.startedAt === "2026-07-01T08:00:00.000Z")!.attempts[0]!;
     const newAttempt = exp.runs.find((s) => s.startedAt === "2026-07-05T08:00:00.000Z")!.attempts[0]!;
-    expect(oldAttempt.locator).not.toBe(newAttempt.locator); // 不同 startedAt → 不同身份 → 不同 locator
+    expect(oldAttempt.locator).not.toBe(newAttempt.locator); // 不同 runId → 不同身份 → 不同 locator
 
     expect(resolveLocator(results, oldAttempt.locator!).result.verdict).toBe("failed");
     expect(resolveLocator(results, newAttempt.locator!).result.verdict).toBe("passed");
@@ -1180,8 +1239,7 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     // 这份 locator 语法合法、甚至真的对应 handMadeResults 里那个 attempt 的身份,
     // 但 handMadeResults 没经过 openRecord(),locatorIndexByResults 里查不到它 —— 空索引,not-found。
     const syntacticallyValidLocator = encodeAttemptLocator({
-      experimentId: "e",
-      snapshotStartedAt: "2026-07-01T08:00:00.000Z",
+      runId: run.runId,
       evalId: "q1",
       attempt: 0,
     });
@@ -1243,13 +1301,13 @@ describe("AttemptLocator · 落盘 / 读取 / 携带 / 撞车", () => {
     expect(attempt1.result.startedAt).toBe("2020-01-01T00:00:00.000Z");
     expect(attempt2.result.startedAt).toBe("2021-06-15T00:00:00.000Z");
 
-    // locator 由统一锚点 + experimentId 派生,两边不因为共享锚点而碰撞。
+    // locator 由各自 runId 派生；展示时间相同不共享身份。
     expect(attempt1.locator).not.toBe(attempt2.locator);
     expect(attempt1.locator).toBe(
-      encodeAttemptLocator({ experimentId: "e1", snapshotStartedAt, evalId: "q1", attempt: 0 }),
+      encodeAttemptLocator({ runId: expE1.latestRun.runId, evalId: "q1", attempt: 0 }),
     );
     expect(attempt2.locator).toBe(
-      encodeAttemptLocator({ experimentId: "e2", snapshotStartedAt, evalId: "q1", attempt: 0 }),
+      encodeAttemptLocator({ runId: expE2.latestRun.runId, evalId: "q1", attempt: 0 }),
     );
   });
 
@@ -1399,46 +1457,5 @@ describe("sources · 快照级去重仓库", () => {
     const q1 = destResults.experiments[0].latestRun.evals.find((e) => e.id === "q1")!.attempts[0];
     expect(await q1.sources()).toEqual(shared);
     expect(q1.result.locator).toBe(originalLocator); // locator 随 result.json 原样复制,不重算
-  });
-});
-
-// ───────────────────────── loadAnnotatedEvalSource(端到端打通) ─────────────────────────
-
-describe("loadAnnotatedEvalSource · discovery 捕获 → 去重存储 → 检索 → 标注 打通链路", () => {
-  it("给一个真实落盘的 attempt,取回 sources() 内容并按 loc 标注断言", async () => {
-    const root = await makeRoot();
-    const writer = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
-    const snap = await writer.run({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
-    const content = "import { defineEval } from \"niceeval\";\nexport default defineEval({\n  test() {},\n});\n";
-    const assertions = [
-      { name: "check-1", passed: true, severity: "gate", score: 1, loc: { file: "evals/a.eval.ts", line: 3 } },
-      { name: "no-loc", passed: false, severity: "soft", score: 0 },
-    ] as unknown as EvalResult["assertions"];
-    await snap.writeAttempt(
-      { id: "q1", verdict: "passed", attempt: 0, durationMs: 1, assertions },
-      { sources: [{ path: "evals/a.eval.ts", content, role: "referenced" }] },
-    );
-    await finishAll(writer);
-
-    const results = await openRecord(root);
-    const attempt = results.experiments[0].latestRun.evals.find((e) => e.id === "q1")!.attempts[0];
-    const annotated = await loadAnnotatedEvalSource(attempt);
-    expect(annotated).not.toBeNull();
-    expect(annotated!.sourcePath).toBe("evals/a.eval.ts");
-    expect(annotated!.lines[2]!.assertions.map((a) => a.name)).toEqual(["check-1"]);
-    expect(annotated!.unmapped.map((a) => a.name)).toEqual(["no-loc"]);
-    expect(annotated!.summary).toMatchObject({ totalAssertions: 2, mappedAssertions: 1, unmappedAssertions: 1 });
-  });
-
-  it("没有 sources() 时返回 null,不伪造空文档", async () => {
-    const root = await makeRoot();
-    const writer = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
-    const snap = await writer.run({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
-    await snap.writeAttempt({ id: "q1", verdict: "passed", attempt: 0, durationMs: 1, assertions: [] });
-    await finishAll(writer);
-
-    const results = await openRecord(root);
-    const attempt = results.experiments[0].latestRun.evals.find((e) => e.id === "q1")!.attempts[0];
-    expect(await loadAnnotatedEvalSource(attempt)).toBeNull();
   });
 });

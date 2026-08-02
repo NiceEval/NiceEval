@@ -2,7 +2,7 @@
 // 留存注册表的单测:逐条目文件、原子写、发现规则、更新与删除(见 docs/feature/sandbox/architecture.md)。
 
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -76,6 +76,17 @@ describe("kept-sandbox registry", () => {
     expect(entries).toHaveLength(2);
   });
 
+  it("完整 decoder 拒绝未知 verdict/state，保留文件名供 list 诊断并禁止更新", async () => {
+    const root = await makeRoot();
+    const niceeval = join(root, ".niceeval");
+    const id = keptEntryId("docker", "invalid-entry");
+    await mkdir(join(niceeval, "sandboxes"), { recursive: true });
+    await writeFile(join(niceeval, "sandboxes", `${id}.json`), JSON.stringify({ ...entry({ sandboxId: "invalid-entry" }), verdict: "flaky", state: "gone" }), "utf-8");
+
+    expect(await readKeptEntries(niceeval)).toEqual({ entries: [], malformed: [`${id}.json`] });
+    expect(await updateKeptEntry(niceeval, id, { state: "alive" })).toBe(false);
+  });
+
   it("注册表发现:从子目录向上找最近的 .niceeval;找不到返回 undefined", async () => {
     const root = await makeRoot();
     const niceeval = join(root, ".niceeval");
@@ -111,5 +122,20 @@ describe("kept-sandbox registry", () => {
     await releaseKeptLease(niceeval, expiredId, expired.token);
     expect((await readKeptLease(niceeval, expiredId))?.holder).toBe("second@host");
     await releaseKeptLease(niceeval, id, winner.token);
+  });
+
+  it("lease decoder 拒绝无效 TTL，并在新操作中回收该坏占坑", async () => {
+    const root = await makeRoot();
+    const niceeval = join(root, ".niceeval");
+    const id = keptEntryId("docker", "invalid-lease");
+    await mkdir(join(niceeval, "sandboxes"), { recursive: true });
+    await writeFile(
+      join(niceeval, "sandboxes", `${id}.lease`),
+      JSON.stringify({ holder: "old@host", op: "enter", acquiredAt: "2026-07-21T10:00:00.000Z", ttlMs: -1, token: "old" }),
+      "utf-8",
+    );
+
+    expect(await readKeptLease(niceeval, id)).toBeUndefined();
+    await expect(acquireKeptLease(niceeval, id, { holder: "new@host", op: "enter", acquiredAt: new Date().toISOString(), ttlMs: 60_000 })).resolves.toMatchObject({ acquired: true });
   });
 });

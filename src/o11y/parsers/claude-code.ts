@@ -51,7 +51,7 @@ function normalizeToolName(name: string): ToolName {
  */
 const SKILL_TOOL_NAME = "skill";
 
-/** name 是 Skill 工具、且 input.skill 是非空字符串时返回 skill 名;否则 undefined(交给调用方走普通 action.called)。 */
+/** name 是 Skill 工具、且 input.skill 是非空字符串时返回 skill 名;否则 undefined(交给调用方走普通 operation.started)。 */
 function extractSkillName(name: string, input: JsonValue): string | undefined {
   if (name.toLowerCase() !== SKILL_TOOL_NAME) return undefined;
   const skill = get(input, "skill");
@@ -169,7 +169,7 @@ export function parseClaudeCodeTranscript(raw: string | undefined): ParsedTransc
   let compactions = 0;
   let parseSuccess = true;
   // 已识别成 skill.loaded 的 tool_use callId:对应的 tool_result 回来时要吃掉、
-  // 不再补发一条 action.result(否则会凭空多出一个没有 action.called 配对的孤儿事件,
+  // 不再补发一条 operation.finished(否则会凭空多出一个没有 operation.started 配对的孤儿事件,
   // ExecutionTree 会把它当成占位工具调用节点,而 Skill 加载已经由 skill.loaded 表达过了)。
   const skillCallIds = new Set<string>();
 
@@ -221,8 +221,9 @@ export function parseClaudeCodeTranscript(raw: string | undefined): ParsedTransc
             if (skillCallIds.has(callId)) continue; // Skill 加载的结果已经由 skill.loaded 表达过,不重复计入。
             const isError = get(r, "is_error") === true || !!get(r, "error");
             events.push({
-              type: "action.result",
-              callId,
+              type: "operation.finished",
+              operationId: callId,
+              kind: "tool",
               output: (get(r, "content") ?? null) as JsonValue,
               status: isError ? "failed" : "completed",
             });
@@ -250,27 +251,26 @@ export function parseClaudeCodeTranscript(raw: string | undefined): ParsedTransc
 
             const skill = extractSkillName(name, input);
             if (skill !== undefined) {
-              events.push({ type: "skill.loaded", skill, callId });
+              events.push({ type: "skill.loaded", skill, operationId: callId });
               skillCallIds.add(callId);
               continue;
             }
 
             events.push({
-              type: "action.called",
-              callId,
-              name,
-              input,
-              tool: normalizeToolName(name),
+              type: "operation.started",
+              operationId: callId,
+              operation: { kind: "tool", name, input, tool: normalizeToolName(name) },
             });
           }
         }
       } else if (type === "tool_result" || type === "tool_response") {
         const callId = String(get(data, "tool_use_id") ?? get(data, "id") ?? "unknown");
-        if (skillCallIds.has(callId)) continue; // 同上:Skill 加载的结果不重复计入 action.result。
+        if (skillCallIds.has(callId)) continue; // 同上:Skill 加载的结果不重复计入 operation.finished。
         const isError = get(data, "is_error") === true || !!get(data, "error");
         events.push({
-          type: "action.result",
-          callId,
+          type: "operation.finished",
+          operationId: callId,
+          kind: "tool",
           output: (get(data, "content") ?? get(data, "output") ?? get(data, "result") ?? null) as JsonValue,
           status: isError ? "failed" : "completed",
         });

@@ -24,6 +24,7 @@ import { buildHostReportMeta,
   type ReportAsset,
   type ReportDefinition,
   type ReportPage,
+  type ResolvedPage,
   type ReportTarget,
   type PageLoadContext,
   type HeadTag,
@@ -104,7 +105,7 @@ export interface ViewScan {
     string,
     {
       page: ReportPage;
-      instances: Map<string, unknown>;
+      instances: Map<string, JsonValue>;
       render(key: string): Promise<{
         en: string;
         "zh-CN": string;
@@ -469,10 +470,10 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // 退化成纯文本,这里不该另外抛错打断整个 scan)。
   const paramPages = new Map<
     string,
-    { page: ReportPage; instances: Map<string, unknown>; render(key: string): ReturnType<typeof slot.renderParamPage> }
+    { page: ReportPage; instances: Map<string, JsonValue>; render(key: string): ReturnType<typeof slot.renderParamPage> }
   >();
   for (const [id, page] of slot.paramPageDefs) {
-    const instances = new Map<string, unknown>();
+    const instances = new Map<string, JsonValue>();
     if (page.params) {
       for (const params of page.params.enumerate(effectiveRoot)) {
         try {
@@ -485,7 +486,11 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     paramPages.set(id, {
       page,
       instances,
-      render: (key) => slot.renderParamPage(page, instances.get(key)),
+      render: (key) => {
+        const params = instances.get(key);
+        if (params === undefined) throw new Error(`No parameterized page instance "${id}/${key}" exists in this view scope.`);
+        return slot.renderParamPage(page, params);
+      },
     });
   }
 
@@ -648,7 +653,7 @@ async function renderReportSlot(
   paramPageDefs: Map<string, ReportPage>;
   renderParamPage: (
     page: ReportPage,
-    params: unknown,
+    params: JsonValue,
   ) => Promise<{
     en: string;
     "zh-CN": string;
@@ -661,8 +666,8 @@ async function renderReportSlot(
   // 只会触发 watch/SSE,内容仍是旧定义。
   const loadDefinitions = async (): Promise<LoadedDefinitions> => {
     // 配置模块由 raw src 执行，host 则消费 dist/report；私有品牌必须在 host 边界重新证明。
-    let configReport: unknown;
-    let configTheme: unknown;
+    let configReport: ReportDefinition | undefined;
+    let configTheme: ThemeDefinition | undefined;
     if (config !== undefined) {
       const { loadConfigFile } = await import("../load-config.ts");
       const loaded = await loadConfigFile(config.cwd, { freshImport: true });
@@ -736,9 +741,9 @@ async function renderReportSlot(
   // 按需渲染:一次 page resolve 记忆化在 pageId 上,两种语言共用它——按语言分块是为了少传
   // 一半字节,不该把取数算两遍(architecture.md「一次 page resolve 的缓存」)。渲染结果再按
   // (pageId, locale) 记忆化一层,同一块被 index.html 预烘与 report/ 路径同时要到时只渲染一次。
-  const resolvedPages = new Map<string, Promise<unknown>>();
+  const resolvedPages = new Map<string, Promise<ResolvedPage>>();
   const renderedBlocks = new Map<string, Promise<string>>();
-  const resolveScopePage = (pageId: string): Promise<unknown> => {
+  const resolveScopePage = (pageId: string): Promise<ResolvedPage> => {
     const hostPage = scopePages.find((p) => p.id === pageId);
     if (!hostPage) return Promise.reject(new ViewInputError(`error: page "${pageId}" not found in the loaded report.`));
     let resolved = resolvedPages.get(pageId);
@@ -759,7 +764,7 @@ async function renderReportSlot(
   const renderBlock = async (pageId: string, locale: ReportLocale): Promise<string> => {
     try {
       const resolved = resolveScopePage(pageId);
-      return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, {
+      return await renderHostPageFromResolved(await resolved, {
         locale,
         href: (target) => targetHref(hrefPages, target),
       });
@@ -785,7 +790,7 @@ async function renderReportSlot(
       try {
         const resolved = await resolveScopePage(pageId);
         return materializeHostPageRendererAssets(
-          resolved as Awaited<ReturnType<typeof resolveHostPage>>,
+          resolved,
         );
       } catch (error) {
         if (pageFailure !== "embed") throw error;
@@ -818,7 +823,7 @@ async function renderReportSlot(
   // experiment 这些词不出现在这个函数里,新实体注册新标准库参数化页即可,不需要改这里的分支。
   const renderParamPage = async (
     paramPage: ReportPage,
-    params: unknown,
+    params: JsonValue,
   ): Promise<{
     en: string;
     "zh-CN": string;

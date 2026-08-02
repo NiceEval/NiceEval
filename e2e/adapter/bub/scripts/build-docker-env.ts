@@ -5,7 +5,7 @@
 // node:24-slim 默认没有 curl/git/ca-certificates,而 bub 的安装(uv 装 python 工具链 +
 // git+https 依赖)三者都要用到——见 docker/Dockerfile 的注释。构建归 provider 原生工具
 // (这里就是 `docker build`),experiment 只消费产物 tag(niceeval.config.ts 的
-// `dockerSandbox({ image: IMAGE_TAG })`)。
+// `dockerImageSandbox({ image: IMAGE_TAG })`)。
 //
 // 幂等:tag 已存在时跳过构建,除非传 --force 或设 BUB_E2E_REBUILD_IMAGE=1
 // (改了 Dockerfile 后要重建时用)。产物只在本机 Docker daemon 有效(单机构建,单机消费),

@@ -12,6 +12,7 @@
 import { unavailable, type EvalUnavailable, type Spec } from "./collector.ts";
 import { elidedContentPaths } from "./diff.ts";
 import type { EvidenceCoverageChannel } from "./coverage.ts";
+import { matchesJson } from "../shared/json-match.ts";
 import type {
   JsonValue,
   AssertionEvaluationContext,
@@ -33,67 +34,10 @@ function coverageGap(ctx: AssertionEvaluationContext, channel: EvidenceCoverageC
 
 // ── 工具匹配小语言 ──
 
-function valueMatches(actual: unknown, expected: unknown, fullInput: unknown): boolean {
-  if (expected instanceof RegExp) {
-    if (typeof actual === "string" && expected.test(actual)) return true;
-    // 逃生:对整个 input 的序列化串再试一次(路径可能藏在 command 里)
-    try {
-      return expected.test(JSON.stringify(fullInput));
-    } catch {
-      return false;
-    }
-  }
-  if (typeof expected === "function") {
-    return Boolean((expected as (v: unknown) => unknown)(actual));
-  }
-  if (expected !== null && typeof expected === "object") {
-    return deepPartial(actual, expected);
-  }
-  return actual === expected;
-}
-
-function deepPartial(actual: unknown, expected: unknown): boolean {
-  if (expected instanceof RegExp) return valueMatches(actual, expected, actual);
-  // 只有 plain object 才是部分匹配的结构字面量。Date/Map/Set 等实例没有可枚举键，
-  // 把它们当对象枚举会把空 entries 误判为「匹配一切」。
-  if (isPlainObject(expected)) {
-    if (actual === null || typeof actual !== "object") return false;
-    for (const [k, v] of Object.entries(expected)) {
-      if (!valueMatches((actual as globalThis.Record<string, unknown>)[k], v, actual)) return false;
-    }
-    return true;
-  }
-  return Object.is(actual, expected);
-}
-
-function isPlainObject(value: unknown): value is globalThis.Record<string, unknown> {
-  if (value === null || typeof value !== "object") return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-/**
- * `match.input` 顶层的三种独立形态:RegExp 匹配序列化后的**完整输入**;谓词函数拿原始输入值
- * 自行判断;plain object 做深度部分匹配(逐键复用 valueMatches,值位置仍可放 RegExp/谓词)。
- * RegExp / 函数不是"键值对象",绝不落进下面的逐键枚举分支——否则会枚举 RegExp 实例自身的
- * (空)可枚举属性,静默匹配一切调用。
- */
-function matchTopLevelInput(actual: JsonValue, expected: NonNullable<ToolMatch["input"]>): boolean {
-  if (expected instanceof RegExp) {
-    try {
-      return expected.test(JSON.stringify(actual) ?? String(actual));
-    } catch {
-      return false;
-    }
-  }
-  if (typeof expected === "function") {
-    return Boolean((expected as (input: unknown) => unknown)(actual));
-  }
-  for (const [k, v] of Object.entries(expected)) {
-    const field = (actual as globalThis.Record<string, unknown> | null | undefined)?.[k];
-    if (!valueMatches(field, v, actual)) return false;
-  }
-  return true;
+/** `match.input` 使用共享递归 JsonMatch；undefined 只表示未提供过滤条件。 */
+function matchTopLevelInput(actual: JsonValue, expected: ToolMatch["input"]): boolean {
+  if (expected === undefined) return true;
+  return matchesJson(actual, expected);
 }
 
 /** 数字精确匹配次数;谓词对命中次数自行判定;省略即「至少一次」。 */
@@ -115,7 +59,7 @@ function toolMatches(tc: ToolCall, name: string, match?: ToolMatch): boolean {
   if (tc.name !== name && tc.originalName !== name) return false;
   if (match?.status && tc.status !== match.status) return false;
   if (match?.input !== undefined && !matchTopLevelInput(tc.input, match.input)) return false;
-  if (match?.output !== undefined && !valueMatches(tc.output, match.output, tc.output)) return false;
+  if (match?.output !== undefined && !matchesJson(tc.output, match.output)) return false;
   return true;
 }
 
@@ -168,7 +112,7 @@ function subagentMatches(call: SubagentCall, name: string, match?: SubagentMatch
       return false;
     }
   }
-  if (match?.output !== undefined && !valueMatches(call.output, match.output, call.output)) return false;
+  if (match?.output !== undefined && !matchesJson(call.output, match.output)) return false;
   return true;
 }
 
@@ -185,7 +129,9 @@ function describeToolExpectation(name: string, match?: ToolMatch): string {
   if (match?.input !== undefined) {
     if (match.input instanceof RegExp) conditions.push(`input matches ${match.input}`);
     else if (typeof match.input === "function") conditions.push("input matching predicate");
-    else for (const [k, v] of Object.entries(match.input)) conditions.push(`input.${k} = ${briefJson(v, 120)}`);
+    else if (match.input !== null && typeof match.input === "object" && !Array.isArray(match.input)) {
+      for (const [k, v] of Object.entries(match.input)) conditions.push(`input.${k} = ${briefJson(v, 120)}`);
+    } else conditions.push(`input = ${briefJson(match.input, 120)}`);
   }
   if (match?.output !== undefined) {
     conditions.push(

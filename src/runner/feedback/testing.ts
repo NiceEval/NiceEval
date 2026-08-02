@@ -4,7 +4,7 @@
 //
 // 只在测试导入(`from "./testing.ts"`),不进 index.ts 的生产条形码出口。
 
-import type { FeedbackClock, FeedbackIO, FeedbackStream, FeedbackTimerHandle } from "./io.ts";
+import type { FeedbackClock, FeedbackIO, FeedbackStream } from "./io.ts";
 
 export interface FakeFeedbackStream extends FeedbackStream {
   /** 按写入顺序累积的完整历史,供断言「写了几次、写了什么」。 */
@@ -67,10 +67,13 @@ export function createFakeFeedbackIO(
     setInterval: (fn, ms) => {
       const id = nextId++;
       timers.set(id, { id, fn, intervalMs: ms, nextFireAt: now + ms, cleared: false });
-      return { id } as unknown as FeedbackTimerHandle;
+      return { _tag: "FakeFeedbackTimer", id };
     },
     clearInterval: (handle) => {
-      const id = (handle as unknown as { id: number }).id;
+      if (handle._tag !== "FakeFeedbackTimer") {
+        throw new TypeError("createFakeFeedbackIO received a non-fake timer handle");
+      }
+      const id = handle.id;
       const timer = timers.get(id);
       if (timer) timer.cleared = true;
       timers.delete(id);

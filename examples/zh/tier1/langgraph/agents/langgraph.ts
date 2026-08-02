@@ -2,8 +2,8 @@
 // (server.py 不透传 LangGraph 原生 stream 事件,自己翻译成一套小协议,见其头注释)。
 //
 // 断言依据全部来自这条流,零 OTel 依赖:
-//   · `tool-input` → action.called、`tool-output` → action.result(completed,
-//     带 isError 时 failed)、`tool-output-denied` → action.result(rejected)——
+//   · `tool-input` → operation.started、`tool-output` → operation.finished(completed,
+//     带 isError 时 failed)、`tool-output-denied` → operation.finished(rejected)——
 //     协议帧里本来就有全量工具过程;
 //   · `text-delta` 累积成完整回复,轮次结束补一条 message 事件;
 //   · HITL:`tool-approval-request` → input.requested + waiting,停轮现场(还开着的流 +
@@ -60,7 +60,7 @@ async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> 
   const events: StreamEvent[] = [];
   let status: "completed" | "failed" = "completed";
   let messageText = "";
-  // 本次 drain 里见过的 tool-input,按 callId 记名字——tool-approval-request 帧不带工具名,
+  // 本次 drain 里见过的 tool-input,按 operationId 记名字——tool-approval-request 帧不带工具名,
   // input.requested 的 action 字段从这里查。
   const toolNames = new Map<string, string>();
 
@@ -85,13 +85,18 @@ async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> 
       }
       case "tool-input": {
         toolNames.set(frame.toolCallId, frame.name);
-        events.push({ type: "action.called", callId: frame.toolCallId, name: frame.name, input: frame.input as JsonValue });
+        events.push({
+          type: "operation.started",
+          operationId: frame.toolCallId,
+          operation: { kind: "tool", name: frame.name, input: frame.input as JsonValue },
+        });
         break;
       }
       case "tool-output": {
         events.push({
-          type: "action.result",
-          callId: frame.toolCallId,
+          type: "operation.finished",
+          operationId: frame.toolCallId,
+          kind: "tool",
           output: frame.output as JsonValue,
           status: frame.isError === true ? "failed" : "completed",
         });
@@ -113,9 +118,9 @@ async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> 
         return { status: "waiting", events };
       }
       case "tool-output-denied": {
-        // 被拒绝的调用不执行:action.called 在 tool-input 帧(上一轮)已落,这里只补 rejected
-        // 的 result——同一个 toolCallId,跨轮配对。
-        events.push({ type: "action.result", callId: frame.toolCallId, status: "rejected" });
+        // 被拒绝的调用不执行:operation.started 在 tool-input 帧(上一轮)已落,这里只补
+        // rejected 的 operation.finished——同一个 operationId,跨轮配对。
+        events.push({ type: "operation.finished", operationId: frame.toolCallId, kind: "tool", status: "rejected" });
         break;
       }
       case "error": {

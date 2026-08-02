@@ -72,6 +72,10 @@ interface AssertionBase {
   detail?: string;
   /** 断言在 eval 源码中的声明位置与调用路径，`--source` 据此装配源码调用树。 */
   loc?: SourceLoc;
+  /** 与 ScoreEntry、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
+  sourceOrder?: number;
+  /** `.points(n)` 声明的可得分值；failed / unavailable 也保留，未链 points 与通过制省略。 */
+  pointsAvailable?: number;
 }
 
 type AssertionResult =
@@ -119,6 +123,8 @@ interface ScoreEntry {
   groupPath?: string[];
   /** 调用点，同 AssertionBase.loc。 */
   loc?: SourceLoc;
+  /** 与断言、用户 send 共用的 attempt 级发生顺序；历史记录可省略，当前产物必写。 */
+  sourceOrder?: number;
 }
 ```
 
@@ -134,7 +140,9 @@ interface ScoreEntry {
 show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」的隐式约定。
 `expected`、`received` 与 `evidence` 是有界预览，而不是原始值。
 原始证据保存在 `events.json`、`diff.json` 等 artifact 里。
-判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 不参与判定。
+判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 与
+`pointsAvailable` 不参与判定。`pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明；
+展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
 
 `points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。
 两者共用同一套 `groupPath` 折叠约定, 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。

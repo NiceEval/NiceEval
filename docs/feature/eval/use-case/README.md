@@ -16,7 +16,7 @@
 - [过程与成本：断 agent 怎么做到的](process-and-cost.md)
 - [calledTool 匹配全参数：每个字段每种形态怎么用](calledtool.md)
 - [裁判评质量：规则写不出对错时](judge-quality.md)
-- [计分制：五步走完三步挣 3 分](rubric-scoring.md)
+- [计分制：五步走完三步挣 3 分](rubric-points.md)
 
 ## 规模与环境
 
@@ -36,7 +36,7 @@
 | [单轮](first-single-turn.md) · [HITL 审批](hitl-approval.md) | **通过制**：几条 gate 折叠成一个 verdict |
 | [多轮与并行会话](multi-turn-sessions.md) | 通过制；要对比「挂在第几轮」时按轮 `t.group`，gate 失败按组定位 |
 | [过程与成本](process-and-cost.md) | 通过制为主：gate 定判定，`.atLeast(1)` / `.soft()` 记质量分 |
-| [计分制](rubric-scoring.md) | **计分制的典型场景**：检查点 `.points(1)` 各挣各的、`t.require()` 前置中止、rubric 按分值给分 |
+| [计分制](rubric-points.md) | **计分制的典型场景**：检查点 `.points(1)` 各挣各的、`t.require()` 前置中止、rubric 按分值给分 |
 | [沙箱 coding 任务](sandbox-coding.md) | 两制都常见：整题过/不过用 `defineEval`；要部分分时改用 `defineScoreEval` 按步骤给分 |
 | [裁判评质量](judge-quality.md) | judge 默认 `.soft()` 进质量分；计分制里 `.points(n)` 按连续分比例挣 |
 | [测试集从输入数组生成多条 eval](dataset-fanout.md) | **通过制 × N**：独立可跑的 case 拆成多个 eval——粒度来自更多的题，不是更细的分 |
@@ -57,7 +57,7 @@
 | `t.group` / `.gate()` / `.atLeast(x)` / `.soft()` / `.optional()` | [过程与成本](process-and-cost.md) |
 | `t.check` / `t.require` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `t.judge` / `session.judge` / `turn.judge` / `autoevals.*` / `{ on }` / `.atLeast(x)` | [裁判评质量](judge-quality.md) |
-| `.points(n)` / `t.score` / `t.require()` / `.stopOnFailure()` | [计分制](rubric-scoring.md) |
+| `.points(n)` / `t.score` / `t.require()` / `.stopOnFailure()` | [计分制](rubric-points.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集从输入数组生成多条 eval](dataset-fanout.md) |
 | `loadText` | [本地测试文件](criteria-files.md) |
 | `t.sandbox.writeText` / `writeBytes` / `uploadDirectory` / `downloadDirectory` / `runCommand` / `runShell` | [沙箱 coding 任务](sandbox-coding.md) |

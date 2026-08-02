@@ -70,7 +70,7 @@ The first positional argument accepts an experiment group name, a single configu
 
 ## Common flags
 
-The table below is generated from the CLI's flag-parsing table; any flag outside it fails as an unknown flag with a non-zero exit status. **There is no CLI flag for selecting a Sandbox provider**: the provider can only be set in code — set `sandbox` on the experiment (`defineExperiment`), or in `niceeval.config.ts` (`defineConfig`) as a project-level fallback, using `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` from `niceeval/sandbox`.
+The table below is generated from the CLI's flag-parsing table; any flag outside it fails as an unknown flag with a non-zero exit status. **There is no CLI flag or project-level fallback for selecting a Sandbox provider**: declare a template-bearing `SandboxLayer` on the Eval or Experiment with `dockerImageSandbox({ image })`, `dockerComposeSandbox({ file, workspaceService })`, `dockerfileSandbox({ context })`, `vercelSandbox({ snapshotId })`, `e2bSandbox({ template })`, or `localSandbox()` from `niceeval/sandbox`.
 
 {/* GENERATED:BEGIN cli-flags */}
 

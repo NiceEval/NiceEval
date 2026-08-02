@@ -161,13 +161,14 @@ export default defineAgent({
 ```ts
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
-  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
-  | { type: "action.result"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" | "rejected" }
-  | { type: "skill.loaded"; skill: string; callId?: string }
-  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
-  | { type: "subagent.completed"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" }
+  | { type: "operation.started"; operationId: string; operation:
+      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "subagent"; name: string; remoteUrl?: string } }
+  | { type: "operation.finished"; operationId: string; kind: "tool";
+      output?: JsonValue; status: "completed" | "failed" | "rejected" }
+  | { type: "operation.finished"; operationId: string; kind: "subagent";
+      output?: JsonValue; status: "completed" | "failed" }
+  | { type: "skill.loaded"; skill: string; operationId?: string }
   | { type: "input.requested"; request: InputRequest }
   | { type: "thinking"; text: string }
   | { type: "compaction"; reason?: string }
@@ -182,8 +183,15 @@ type StreamEvent =
 
     const events: StreamEvent[] = [];
     for (const call of reply.tool_calls ?? []) {
-      events.push({ type: "action.called", callId: call.id,
-                    name: call.function.name, input: JSON.parse(call.function.arguments) });
+      events.push({
+        type: "operation.started",
+        operationId: call.id,
+        operation: {
+          kind: "tool",
+          name: call.function.name,
+          input: JSON.parse(call.function.arguments),
+        },
+      });
     }
     if (reply.content) events.push({ type: "message", role: "assistant", text: reply.content });
 
@@ -216,7 +224,7 @@ type StreamEvent =
 | 你吐的事件 | 解锁的断言 |
 |---|---|
 | `message` | `t.reply`、`t.messageIncludes()`、judge 的对话材料 |
-| `action.called` / `action.result`（靠 `callId` 配对） | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
+| tool `operation.started` / `operation.finished`（靠 `operationId` 配对） | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
 | `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
 | `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
 
@@ -229,7 +237,7 @@ Chat Completions 响应**不保证包含完整过程记录**。应用可能在�
 应用中途停下来等人（工具审批、等补充信息）时，`send` 两侧各有义务：
 
 - **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.parked()`、`t.requireInputRequest()` 读它，回答靠这个 `id` 对位。
-- **回答轮**：评估用例里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，`action.result` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
+- **回答轮**：评估用例里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，tool `operation.finished` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
 
 "停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上：Adapter 先用 `createSessionSlot<Pending>()` 创建私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮开头 `ctx.session.take(slot)` 取回——取到即清除，一次消费。
 

@@ -7,14 +7,18 @@
 ```ts
 // 1. StreamEvent 全部成员追加一个可选归属字段。
 //    省略(undefined)= 主 agent 自己 —— 单 agent adapter 一行不用改。
-{ type: "action.called", callId: "c7", name: "web_search", input: {...}, agent: "researcher" }
+{ type: "operation.started", operationId: "c7",
+  operation: { kind: "tool", name: "web_search", input: {...}, agent: "researcher" } }
 { type: "message", role: "assistant", text: "报告如下…", agent: "writer" }
 
-// 2. 新事件类型:交接(控制权单向转移;区别于 subagent.called/completed 的调用-返回)
+// 2. 新事件类型:交接(控制权单向转移;区别于 subagent operation 的调用-返回)
 { type: "handoff", from: "planner", to: "researcher" }
 ```
 
-委派和交接都保留,语义不同:`subagent.called/completed` 是父 agent 等子 agent 返回(有 callId、有 output);`handoff` 是控制权走了就不回头(OpenAI Agents SDK 的 handoff、LangGraph 的节点跳转)。adapter 按被测系统的真实语义选,不要互相模拟。
+委派和交接都保留，语义不同。
+kind 为 `subagent` 的 `operation.started/finished` 表示父 agent 等子 agent 返回，事件有 `operationId` 和 output。
+`handoff` 表示控制权走了就不回头，例如 OpenAI Agents SDK 的 handoff 或 LangGraph 的节点跳转。
+adapter 按被测系统的真实语义选择，不要互相模拟。
 
 ## 能力位:`agentObservability`
 
@@ -28,7 +32,7 @@
 | `t.agent(x).notCalledTool()` 等负断言 | 归属**完整性** | **假通过(静默)** |
 | `agentOrder([...])` | 归属首次出现的顺序,子序匹配 | fail(响) |
 | `handedOff({ from?, to })` | `handoff` 事件 | fail(响) |
-| `calledSubagent(name)` | `subagent.called/completed`(已有) | fail(响) |
+| `calledSubagent(name)` | subagent `operation.started/finished`(已有) | fail(响) |
 
 派生事实同步扩:`DerivedFacts` 加 `agents: string[]`(按首现顺序)、`handoffs: { from?: string; to: string }[]`;`toolCalls` 各条带上归属。
 

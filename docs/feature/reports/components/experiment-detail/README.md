@@ -14,7 +14,7 @@
 
 | 区块 | 内容 |
 |---|---|
-| 实验身份 | experiment id、agent、model、flags、scoring、最近运行时间 |
+| 实验身份 | experiment id、agent、model、flags、`evaluationKind`、最近运行时间 |
 | 读数摘要 | 主读数、成本、tokens、耗时，以及 evals × attempts 覆盖 |
 | 结果构成 | eval verdict 计票 |
 | 题目清单 | Eval → Attempt 层级，每条 attempt 的 locator 是 attempt 详情目标 |

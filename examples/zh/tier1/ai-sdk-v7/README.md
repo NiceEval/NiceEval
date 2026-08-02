@@ -44,7 +44,7 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
   `sessionId` 找回完整历史并原样重发（服务端零状态，续接完全靠客户端重放）；会话续接的存
   取器是工厂内置行为，agent 配置里不用多写一行。
 - 工具事件全量可信（`t.calledTool()` / `t.notCalledTool()` 等负断言可用）：`get_weather` /
-  `calculate`（含审批批准/拒绝两条分支）每次调用的 `action.called`/`action.result` 都从协议
+  `calculate`（含审批批准/拒绝两条分支）每次调用的 `operation.started`/`operation.finished` 都从协议
   帧直构，无遗漏——这份完整性证明随工厂返回值走，不用声明。
 - trace 瀑布图：这一档没有——它是 Tier 2 的产物,见
   [`../../tier2/ai-sdk-v7/`](../../tier2/ai-sdk-v7/)。断言不受影响,span 本来就不喂断言。

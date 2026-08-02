@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createEvalContext, type ContextState } from "./context.ts";
 import { commandSucceeded, includes, makeAssertion } from "../expect/index.ts";
 import { EvalRequirementFailed } from "./control-flow.ts";
-import { deriveDiffData } from "../scoring/diff.ts";
-import { completeEvidenceCoverage } from "../scoring/coverage.ts";
-import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
+import { deriveDiffData } from "../assertions/diff.ts";
+import { completeEvidenceCoverage } from "../assertions/coverage.ts";
+import { assertionSummaryLines, primaryAssertionSummary } from "../assertions/display.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import type { Agent, AgentContext, DiffArtifact, InputRequest, InputResponse, RespondAnswer, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
@@ -48,8 +48,8 @@ function calculatorAgent(): Agent {
     async send(_input: TurnInput, ctx: AgentContext): Promise<Turn> {
       ctx.session.capture("sess-1");
       const events: StreamEvent[] = [
-        { type: "action.called", callId: "c1", name: "calculate", input: { expr: "1+1" }, tool: undefined },
-        { type: "action.result", callId: "c1", output: { result: 2 }, status: "completed" },
+        { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "calculate", input: { expr: "1+1" }, tool: undefined } },
+        { type: "operation.finished", operationId: "c1", kind: "tool", output: { result: 2 }, status: "completed" },
         { type: "message", role: "assistant", text: "1 + 1 = **2** 哦!😊" },
       ];
       return { events, status: "completed", usage: { inputTokens: 10, outputTokens: 5, requests: 1 } };
@@ -92,7 +92,7 @@ function fakeSandbox(): FakeSandbox {
   };
 }
 
-function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string, scoring?: "pass" | "points") {
+function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string, evaluationKind?: "pass" | "points") {
   return createEvalContext({
     agent,
     sandbox,
@@ -101,11 +101,11 @@ function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string
     log: () => {},
     judge: undefined,
     evalBaseDir,
-    scoring,
+    evaluationKind,
   });
 }
 
-function scoringContext(state: ContextState) {
+function assertionEvaluationContext(state: ContextState) {
   return {
     events: [],
     facts: { toolCalls: [], subagentCalls: [], inputRequests: [], parked: false, messageCount: 0, compactions: 0, contextInjections: 0 },
@@ -170,20 +170,20 @@ describe("createEvalContext / TestContext live state", () => {
   });
 
   it("t.require 两种题型都透传原引用；失败记录 gate + stopOnFailure 并抛控制流信号", async () => {
-    for (const scoring of ["pass", "points"] as const) {
-      const passed = makeContext(calculatorAgent(), fakeSandbox(), undefined, scoring);
+    for (const evaluationKind of ["pass", "points"] as const) {
+      const passed = makeContext(calculatorAgent(), fakeSandbox(), undefined, evaluationKind);
       const original = { stable: true };
       const same = await passed.context.require(
         original,
         makeAssertion({ name: "same reference", score: (value) => (value === original ? 1 : 0) }),
       );
       expect(same).toBe(original);
-      const [passingResult] = await passed.state.collector.finalize(scoringContext(passed.state));
+      const [passingResult] = await passed.state.collector.finalize(assertionEvaluationContext(passed.state));
       expect(passingResult).toMatchObject({ severity: "gate", outcome: "passed", stopOnFailure: true });
 
-      const failed = makeContext(calculatorAgent(), fakeSandbox(), undefined, scoring);
+      const failed = makeContext(calculatorAgent(), fakeSandbox(), undefined, evaluationKind);
       await expect(failed.context.require(original, includes("never"))).rejects.toBeInstanceOf(EvalRequirementFailed);
-      const [failingResult] = await failed.state.collector.finalize(scoringContext(failed.state));
+      const [failingResult] = await failed.state.collector.finalize(assertionEvaluationContext(failed.state));
       expect(failingResult).toMatchObject({ severity: "gate", outcome: "failed", stopOnFailure: true });
       expect(failingResult).toHaveProperty("received");
     }
@@ -199,7 +199,7 @@ describe("createEvalContext / TestContext live state", () => {
       EvalRequirementFailed,
     );
 
-    const results = await state.collector.finalize(scoringContext(state));
+    const results = await state.collector.finalize(assertionEvaluationContext(state));
     expect(results).toHaveLength(3);
     expect(results[0]).toMatchObject({ severity: "gate", outcome: "failed" });
     expect(results[0]).not.toHaveProperty("stopOnFailure");
@@ -410,6 +410,19 @@ function completedTurn(text = "ok"): Turn {
 }
 
 describe("t.respond() / t.respondAll(): structured InputResponse", () => {
+  it("requireInputRequest 的 input 使用递归 JsonMatch", async () => {
+    const agent = scriptedAgent([
+      waitingTurn({ id: "req_1", input: { commands: [{ argv: ["npm", "test"], retries: 2 }] } }),
+    ]);
+    const { context } = makeContext(agent);
+    await context.send("run checks");
+
+    const request = context.requireInputRequest({
+      input: { commands: [{ argv: ["npm", /test/], retries: (value) => value === 2 }] },
+    });
+    expect(request.id).toBe("req_1");
+  });
+
   it("string arg hitting a pending request's option becomes { requestId, optionId }", async () => {
     const agent = scriptedAgent([
       waitingTurn({ id: "req_1", action: "send_email", options: [{ id: "approve" }, { id: "deny" }] }),
@@ -547,7 +560,7 @@ describe("t.respond() / t.respondAll(): structured InputResponse", () => {
   });
 });
 
-function baseScoringContext(state: ContextState) {
+function baseAssertionEvaluationContext(state: ContextState) {
   return {
     events: [],
     facts: { toolCalls: [], subagentCalls: [], inputRequests: [], parked: false, messageCount: 0, compactions: 0, contextInjections: 0 },
@@ -568,16 +581,16 @@ describe("t.* 作用域断言聚合全部轮次(callId 跨轮复用)", () => {
       {
         status: "completed",
         events: [
-          { type: "action.called", callId: "c1", name: "read", input: { path: "INDEX.md" } },
-          { type: "action.result", callId: "c1", output: "index contents", status: "completed" },
+          { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "read", input: { path: "INDEX.md" } } },
+          { type: "operation.finished", operationId: "c1", kind: "tool", output: "index contents", status: "completed" },
           { type: "message", role: "assistant", text: "读完了 INDEX,继续" },
         ],
       },
       {
         status: "completed",
         events: [
-          { type: "action.called", callId: "c1", name: "write", input: { path: "note.md" } },
-          { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+          { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "write", input: { path: "note.md" } } },
+          { type: "operation.finished", operationId: "c1", kind: "tool", output: "ok", status: "completed" },
           { type: "message", role: "assistant", text: "答复" },
         ],
       },
@@ -588,7 +601,7 @@ describe("t.* 作用域断言聚合全部轮次(callId 跨轮复用)", () => {
 
     context.calledTool("read", { input: { path: "INDEX.md" } });
 
-    const [result] = await state.collector.finalize(baseScoringContext(state));
+    const [result] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(result.name).toBe("calledTool(read)");
     expect(result.outcome).toBe("passed");
   });
@@ -603,7 +616,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     const turn = await context.send("draft an email");
     turn.parked();
 
-    const [result] = await state.collector.finalize(baseScoringContext(state));
+    const [result] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(result.name).toBe("parked");
     expect(result.outcome).toBe("passed");
   });
@@ -613,8 +626,8 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
       {
         status: "completed",
         events: [
-          { type: "action.called", callId: "c1", name: "shell", input: { cmd: "false" } },
-          { type: "action.result", callId: "c1", output: {}, status: "failed" },
+          { type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "shell", input: { cmd: "false" } } },
+          { type: "operation.finished", operationId: "c1", kind: "tool", output: {}, status: "failed" },
         ],
       },
     ]);
@@ -622,7 +635,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     const turn = await context.send("run a command");
     turn.noFailedActions();
 
-    const [result] = await state.collector.finalize(baseScoringContext(state));
+    const [result] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(result.name).toBe("noFailedActions");
     expect(result.outcome).toBe("failed");
   });
@@ -636,7 +649,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     turn.maxTokens(1000);
     turn.maxCost(0.01);
 
-    const [tokens, cost] = await state.collector.finalize(baseScoringContext(state));
+    const [tokens, cost] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(tokens.name).toBe("maxTokens(1000)");
     expect(tokens.outcome).toBe("passed");
     expect(cost.name).toBe("maxCost(0.01)");
@@ -647,14 +660,14 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     const agent = scriptedAgent([
       {
         status: "completed",
-        events: [{ type: "skill.loaded", skill: "pdf-export", callId: "c1" }],
+        events: [{ type: "skill.loaded", skill: "pdf-export", operationId: "c1" }],
       },
     ]);
     const { context, state } = makeContext(agent);
     const turn = await context.send("export as pdf");
     turn.loadedSkill("pdf-export");
 
-    const [result] = await state.collector.finalize(baseScoringContext(state));
+    const [result] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(result.outcome).toBe("passed");
   });
 
@@ -665,14 +678,14 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     const agent = scriptedAgent([
       {
         status: "completed",
-        events: [{ type: "action.called", callId: "c1", name: "load_skill", input: { skill: "pdf-export" } }],
+        events: [{ type: "operation.started", operationId: "c1", operation: { kind: "tool", name: "load_skill", input: { skill: "pdf-export" } } }],
       },
     ]);
     const { context, state } = makeContext(agent);
     const turn = await context.send("export as pdf");
     turn.loadedSkill("pdf-export");
 
-    const [result] = await state.collector.finalize(baseScoringContext(state));
+    const [result] = await state.collector.finalize(baseAssertionEvaluationContext(state));
     expect(result.outcome).toBe("failed");
   });
 });

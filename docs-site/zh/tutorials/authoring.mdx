@@ -9,7 +9,7 @@ import { Lifecycle } from '/snippets/widgets.jsx';
 ## `defineEval` 的结构
 
 ```ts
-import { defineEval } from "niceeval";
+import { defineEval, type JsonValue } from "niceeval";
 
 export default defineEval({
   description?: string;
@@ -18,7 +18,7 @@ export default defineEval({
   reporters?: Reporter[];
   timeoutMs?: number;
   environment?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, JsonValue>;
   async setup(sandbox, ctx) { /* task fixture + progress/diagnostic */ },
   async test(t) { /* interactions + assertions */ },
 });

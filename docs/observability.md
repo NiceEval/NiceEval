@@ -13,7 +13,7 @@ adapter 的核心职责,就是把它**归一化**成那条[标准事件流 `Stre
 **这是接新 agent 的第二件事**(第一件是 adapter 的 `send`):没有解析器,trace 就退化成不透明字符串。
 归一化失败不崩:保留原始 JSONL,并在该 eval 的 `result.json` 上标 `parseSuccess: false`。
 
-事件里工具调用的名字(`action.called.name`)被归一化到一组**规范名**,便于跨 agent 断言:
+事件里工具调用的名字(`operation.started.operation.name`)被归一化到一组**规范名**,便于跨 agent 断言:
 
 ```typescript
 type ToolName =
@@ -94,7 +94,7 @@ t.check(t.o11y.totalToolCalls, satisfies((n) => (n as number) < 50, "工具调�
 
 展示层则同时消费两条数据:span 除了喂瀑布图,还作为**可选 enrichment** 合并进事件骨架,构成 `ExecutionTree`,供 `niceeval show --execution` 这类需要「一份读完」的视图消费——把 events 和 trace 分成两份文件、两套 renderer 去读,对着一次失败要来回翻两个视图拼时间线;`ExecutionTree` 用纯函数 `buildExecutionTree(events, spans)` 把两者合并成一份视图(事件当骨架),只服务展示,不反哺判分。
 
-`ExecutionTree` 的骨架就是标准事件流本身:`message`、`thinking`、`skill.loaded`(一等事件——agent 加载 Skill 时归一化直接产出,不靠「识别到叫 `load_skill` 的工具调用」这类按名字猜的办法)、`action.called`/`action.result`(按 `callId` 合并成一个调用节点)、`subagent.called`/`subagent.completed`、`input.requested`、`context.injected`(被测系统内部机制注入进上下文的文本,不属于任何一方"说的话",单独成一类节点,不并进 `message`,详见[标准事件模型 · 不变量 9](feature/adapters/architecture/events.md))、`compaction`、`error`。
+`ExecutionTree` 的骨架就是标准事件流本身:`message`、`thinking`、`skill.loaded`(一等事件——agent 加载 Skill 时归一化直接产出,不靠「识别到叫 `load_skill` 的工具调用」这类按名字猜的办法)、`operation.started`/`operation.finished`(按 `operationId` 合并成工具或子 agent 调用节点)、`input.requested`、`context.injected`(被测系统内部机制注入进上下文的文本,不属于任何一方"说的话",单独成一类节点,不并进 `message`,详见[标准事件模型 · 不变量 9](feature/adapters/architecture/events.md))、`compaction`、`error`。
 **骨架的节点、顺序、内容永远不因 OTel 有没有接入而变**——OTel span 只是叠加在同一个节点上的可选信息:起止时间、耗时、父子关系、错误状态。
 合并靠**显式 correlation ID 或 GenAI 语义约定属性**(如 `gen_ai.tool.call.id`),**永远不靠拿 span 名字 / 文本去猜哪个事件对应哪个 span**。
 没有 OTel 接入时,节点照样全部显示,只是耗时标「timing unavailable」;span 存在但唯一关联不上任何事件时,保留成一个单独标注的 telemetry-only 节点,不悄悄猜着合并到某个事件上。

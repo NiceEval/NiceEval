@@ -626,7 +626,7 @@ function deriveConditionsByFlag(
 
 /** 单格折叠:同一条件值 × eval 的全部 attempt 折成一个 DeltaCell。 */
 async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
-  const scoring: "pass" | "points" = items[0]!.attempt.result.scoring === "points" ? "points" : "pass";
+  const evaluationKind: "pass" | "points" = items[0]!.attempt.result.evaluationKind === "points" ? "points" : "pass";
   const verdict: Verdict = foldEvalVerdict(items.map((item) => ({ verdict: item.attempt.result.verdict })));
   const refs = new Set<AttemptLocator>();
   let historical = false;
@@ -639,7 +639,7 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   for (const item of items) {
     refs.add(locatorOf(item));
     if (historicalOf(item)) historical = true;
-    if (scoring === "points") {
+    if (evaluationKind === "points") {
       const value = await evaluateMetric(totalScoreMetric, item.attempt);
       if (value !== null) {
         scoreSum += value;
@@ -658,7 +658,7 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
     }
   }
   return {
-    scoring,
+    evaluationKind,
     verdict,
     // totalScore 是题目级挣分(各 attempt 均值,与默认报告 totalScore 指标同一套 perEval 聚合);
     // totalTokens / totalCostUSD 是该题在该条件下全部 attempt 的合计,不是均值。
@@ -773,11 +773,11 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
   const totals: DeltaData["totals"] = {};
   for (const condition of conditions) {
     const coveredRows = rows.filter((r) => r.cells[condition] !== undefined);
-    const passRows = coveredRows.filter((r) => r.cells[condition]!.scoring === "pass");
-    const pointsRows = coveredRows.filter((r) => r.cells[condition]!.scoring === "points");
-    const scoringComposition: "pass" | "points" | "mixed" =
+    const passRows = coveredRows.filter((r) => r.cells[condition]!.evaluationKind === "pass");
+    const pointsRows = coveredRows.filter((r) => r.cells[condition]!.evaluationKind === "points");
+    const evaluationKindComposition: "pass" | "points" | "mixed" =
       passRows.length > 0 && pointsRows.length > 0 ? "mixed" : pointsRows.length > 0 ? "points" : "pass";
-    const entry: DeltaData["totals"][string] = { scoringComposition };
+    const entry: DeltaData["totals"][string] = { evaluationKindComposition };
     if (passRows.length > 0) {
       entry.passed = passRows.filter((r) => r.cells[condition]!.verdict === "passed").length;
       entry.denominator = passRows.length;
@@ -822,7 +822,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
       const commonRows = rows.filter((r) => r.cells[baseline] !== undefined && r.cells[condition] !== undefined);
       const entry: DeltaData["pairedDelta"][string] = { commonEvalIds: commonRows.map((r) => r.key) };
 
-      const passRows = commonRows.filter((r) => r.cells[baseline]!.scoring === "pass");
+      const passRows = commonRows.filter((r) => r.cells[baseline]!.evaluationKind === "pass");
       if (passRows.length > 0) {
         const passedBase = passRows.filter((r) => r.cells[baseline]!.verdict === "passed").length;
         const passedCond = passRows.filter((r) => r.cells[condition]!.verdict === "passed").length;
@@ -834,7 +834,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
 
       const pointsRows = commonRows.filter(
         (r) =>
-          r.cells[baseline]!.scoring === "points" &&
+          r.cells[baseline]!.evaluationKind === "points" &&
           r.cells[baseline]!.totalScore !== undefined &&
           r.cells[condition]!.totalScore !== undefined,
       );

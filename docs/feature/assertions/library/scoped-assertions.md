@@ -53,9 +53,9 @@ Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asse
 
 | 字段 | 语义 |
 |---|---|
-| `input?` | 入参匹配小语言：对象做**深度部分匹配**（写出的键值要求出现且相等，未写的忽略，嵌套递归比较；值位置可以放 `RegExp` 匹配该字段的字符串值）；顶层给 `RegExp` 匹配序列化后的完整输入；给谓词函数 `(input) => boolean` 拿原始值自行判断 |
+| `input?: JsonMatch` | 递归匹配小语言：JSON 标量严格相等；对象做**深度部分匹配**；数组等长逐项匹配；`RegExp` 与谓词 `(value: unknown) => boolean` 可出现在任意层级。正则先匹配当前位置的字符串，不命中时再匹配完整输入的序列化文本；谓词是唯一接收动态 `unknown` 的边界 |
 | `count?: number \| ((n: number) => boolean)` | 数字＝恰好 n 次；谓词＝对命中次数自行判定（`(n) => n >= 2`）；省略＝至少一次 |
-| `output?` | 输出匹配，值语义同 `input` 的值位置：`RegExp` 对字符串输出测试（非字符串先序列化再测）；谓词拿原始输出自行判断；对象深度部分匹配；其余值严格相等 |
+| `output?: JsonMatch` | 与 `input` 使用同一递归 `JsonMatch`：JSON 标量、数组、对象、`RegExp` 或动态谓词；对象仍是部分匹配，数组是等长逐项匹配 |
 | `status?: "pending" \| "completed" \| "failed" \| "rejected"` | 只匹配处于该状态的调用。`pending` 是已发起、尚无结果的调用——典型是 HITL 停在审批上的那一笔 |
 
 `calledSubagent` 的 `match` 是 `SubagentMatch`，语义同 `ToolMatch`：
@@ -65,9 +65,11 @@ interface SubagentMatch {
   count?: number | ((n: number) => boolean);
   status?: "pending" | "completed" | "failed";
   remoteUrl?: string | RegExp | ((url: string) => boolean);
-  output?: unknown;
+  output?: JsonMatch;
 }
 ```
+
+`JsonMatch` 只允许 JSON 标量 / 数组 / 对象、`RegExp` 和 `(value: unknown) => boolean`；不会把 `Date`、`Map` 或任意类实例存进 match。需要检查这类动态运行时形状时，把判断写进显式谓词。
 
 `remoteUrl` 只匹配指向该远程地址的子 Agent 委派，`output` 匹配子 Agent 返回。
  `event(type, opts?)` 的 `opts` 是 `{ count?: number | ((n: number) => boolean) }`，计数语义相同。
@@ -76,6 +78,7 @@ interface SubagentMatch {
 t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
 t.calledTool("file_read", { count: (n) => n >= 2 });           // 次数在 count 里,不是严重度修饰
 t.calledTool("shell", { input: { command: /curl/ }, output: /tutorials\// }); // 入参与输出一起断
+t.calledTool("batch", { output: [{ id: 1 }, { id: (value) => typeof value === "number" }] });
 t.notCalledTool("bash", { input: { command: /npm i/ } });      // 值位置用 RegExp
 
 t.calledSubagent("weather", {

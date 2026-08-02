@@ -25,15 +25,15 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 ## `defineExperiment` 的形状
 
 ```typescript
-import { defineExperiment } from "niceeval";
+import { defineExperiment, type JsonValue } from "niceeval";
 import type { Agent } from "niceeval/adapter";
 
 interface EvalDescriptor {
   id: string;
   description?: string;
   tags: readonly string[];
-  scoring: "pass" | "points";   // 题型:defineEval → "pass",defineScoreEval → "points"
-  metadata?: Readonly<Record<string, unknown>>;
+  evaluationKind: "pass" | "points";   // 题型:defineEval → "pass",defineScoreEval → "points"
+  metadata?: Readonly<Record<string, JsonValue>>;
 }
 
 export default defineExperiment({
@@ -63,7 +63,7 @@ export default defineExperiment({
 ```
 
 `evals` 可以同时选择通过制与计分制 eval。
-题型由 `EvalDescriptor.scoring` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
+题型由 `EvalDescriptor.evaluationKind` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
 `judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只覆盖**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。解析链见 [Architecture · 配置解析](architecture.md#配置解析链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。

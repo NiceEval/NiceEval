@@ -193,8 +193,7 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
       plan: prepared.plan,
       sandboxPlansByEval: { [evalDef.id]: prepared.identity },
       locator: encodeAttemptLocator({
-        experimentId: run.experimentId,
-        snapshotStartedAt: "2026-08-02T00:00:00.000Z",
+        runId: "local-sandbox-test-run",
         evalId: evalDef.id,
         attempt: 0,
       }),

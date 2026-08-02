@@ -16,7 +16,7 @@ type ProtoCursor = SseFrameCursor<ProtoFrame>;
 
 // HITL 停轮现场:还开着的流(与其 createLangGraphEventStream() 转换器状态,seq/命名空间/去重集合
 // 必须跨暂停延续,见 src/backend/server.py 头注释)、这一轮待答的 interrupt id,以及被审批
-// 工具调用的 callId(resume 时若非 accept,要在喂错误帧之前调用 stream.markRejected(callId),
+// 工具调用的 operationId(resume 时若非 accept,要在喂错误帧之前调用 stream.markRejected(operationId),
 // 见下方 send() 的 resume 分支)。
 interface PendingApproval {
   readonly cursor: ProtoCursor;
@@ -42,15 +42,27 @@ async function appFetch(path: string, body: unknown, signal: AbortSignal): Promi
   }
 }
 
-/** 找出仍未被 action.result 解决、且工具名匹配的最近一次 action.called——就是这次 interrupt 门下的那次调用。 */
+/** 找出仍未完成、且工具名匹配的最近一次 tool operation——就是这次 interrupt 门下的那次调用。 */
 function findPendingCallId(events: readonly StreamEvent[], actionName: string | undefined): string | undefined {
   if (!actionName) return undefined;
   const resolved = new Set(
-    events.filter((e): e is Extract<StreamEvent, { type: "action.result" }> => e.type === "action.result").map((e) => e.callId),
+    events
+      .filter(
+        (event): event is Extract<StreamEvent, { type: "operation.finished"; kind: "tool" }> =>
+          event.type === "operation.finished" && event.kind === "tool",
+      )
+      .map((event) => event.operationId),
   );
   for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i]!;
-    if (e.type === "action.called" && e.name === actionName && !resolved.has(e.callId)) return e.callId;
+    const event = events[i]!;
+    if (
+      event.type === "operation.started" &&
+      event.operation.kind === "tool" &&
+      event.operation.name === actionName &&
+      !resolved.has(event.operationId)
+    ) {
+      return event.operationId;
+    }
   }
   return undefined;
 }

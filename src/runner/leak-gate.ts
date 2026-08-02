@@ -155,7 +155,7 @@ export async function findHiddenInputLeaks(input: {
           via: "bind-mount",
           detail:
             `verifier file is bind-mounted into an Agent-reachable service via ${mount.label ?? mount.source} ` +
-            `during the agent phase; mount it only for scoring on main, or keep it out of Agent-visible mounts.`,
+            `during the agent phase; mount it only for assertion evaluation on main, or keep it out of Agent-visible mounts.`,
         });
       }
     }
