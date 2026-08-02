@@ -40,10 +40,11 @@ The Adapter connects your Agent to [NiceEval](https://niceeval.com/). Three inte
 
 ```ts
 // agents/my-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     // Example endpoint: replace with your agent's real endpoint (HTTP, CLI, or SDK all work, as long as send() can get the reply text)
     const r = await fetch("http://localhost:3000/chat", {
@@ -72,7 +73,7 @@ export default defineExperiment({
   description: "my-agent baseline",
   model: "gpt-4o",
   agent: myAgent,
-  runs: 1,
+  attempts: 1,
 });
 ```
 
@@ -86,8 +87,8 @@ import { includes } from "niceeval/expect";
 export default defineEval({
   description: "Refund policy question",
   async test(t) {
-    await t.send("What is your refund policy?");
-    t.succeeded();
+    const turn = await t.send("What is your refund policy?");
+    await turn.succeeded().stopOnFailure();
     t.check(t.reply, includes("30 days"));
   },
 });

@@ -79,7 +79,7 @@ await attempt.sources();       // SourceArtifact[] | null
 
 Three points:
 
-- **Lazy loading is existence checking.** A missing artifact returns `null` and does not throw — when a remote agent has no `diff.json`, `await attempt.diff()` is `null`, and you decide whether to skip or report the gap.
+- **Lazy loading is existence checking.** A missing artifact returns `null` and does not throw — when a Direct Agent has no `diff.json`, `await attempt.diff()` is `null`, and you decide whether to skip or report the gap.
 - **Unreadable stores are never silent.** Version-incompatible or corrupt Runs go into `unreadable` with a reason; whether you display them is up to you, but the gap is always computed.
 - **Memoized per handle in-process.** Two readers of the same `diff()` do not read hundreds of MB twice.
 

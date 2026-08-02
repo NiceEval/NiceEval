@@ -8,12 +8,11 @@
 
 ```text
  Sandbox Case create / build / start / ready
-  → Sandbox lifecycle setup                   # 每个实际 Sandbox 一次；复用时不重跑
+  → Sandbox lifecycle setup                   # 每个实际 Sandbox 一次；可恢复目录或 checkpoint
   → reset 到已知 Case 起点                    # 复用时每 Attempt 都执行
   → template owner 的 prepare 命令          # sandbox.prepare.<owner>:按声明顺序;owner 由配对的 template 归属决定
   → 另一作者 owner 的 prepare 命令          # 同上,随后执行
   → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
-  → State load                             # 跨 Attempt 实验状态载入
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
   → test(t)                                # ← 驱动 Agent 与读取结果:
@@ -23,7 +22,6 @@
   → workspace.diff                         # 折叠全部 send 窗口的 agent 归因增量
   → assertions.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → Agent runtime teardown                 # finally:agent 收尾先行
-  → State save                             # 回存跨 Attempt 实验状态
   → 已登记 cleanup(全局逆序)               # context.onCleanup() 登记的清理:第二作者 layer 先清,template owner 后清,层内命令逆序
   → commitKeepOrStop()                      # 决定 Scope release 时 stop 还是 suspend
   → Sandbox lifecycle teardown              # 每个实际 Sandbox 一次，setup 的全局逆序
@@ -31,7 +29,7 @@
 ```
 
 这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)为唯一权威。
-收尾是全局 LIFO:Agent runtime teardown 先行,State save 随后,已登记 cleanup 按全局准备顺序逆序执行；实际 Sandbox 退休时再跑 lifecycle teardown，Provider Case finalizer 最后整组关闭。
+收尾是全局 LIFO:Agent runtime teardown 先行,已登记 cleanup 按全局准备顺序逆序执行；实际 Sandbox 退休时再跑 lifecycle teardown（可回存目录或 checkpoint），Provider Case finalizer 最后整组关闭。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
 `result.json` 的物理封口则必须等 Scope release 完成；两者不是同一个“定稿”时点。
 
@@ -39,7 +37,7 @@
 
 | 路径 | Attempt 收尾 | keep 决策 | Scope release | `result.json` | Experiment teardown |
 |---|---|---|---|---|---|
-| 正常完成 | Agent teardown → State save → cleanup 逆序 | 按 `--keep-sandbox` 提交 | stop 或 suspend | release 后封口 | 全部 Attempt 收尾后执行 |
+| 正常完成 | Agent teardown → cleanup 逆序 | 按 `--keep-sandbox` 提交 | stop 或 suspend | release 后封口 | 全部 Attempt 收尾后执行 |
 | Attempt timeout | 同上，逐段有界 | `errored` 可命中 keep 档位 | stop 或 suspend | release 后封口为 `errored` | 全部 Attempt 收尾后执行 |
 | Ctrl+C | 已进入的收尾与 finalizer 有界执行 | 不新提交 keep | disposition 保持 stop | 仅已走到封口点的 Attempt 存在 | 执行有界 teardown |
 | SIGKILL / 断电 | 无法执行 | 无法提交 | 无法执行 | 在飞 Attempt 不封口 | 无法执行；由 orphan 对账事后回收 |
@@ -79,7 +77,7 @@ export default defineEval({
 });
 ```
 
-- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,两层 prepare 命令、agent.ensure 循环与 State load 之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(`test(t)` 里 send 前的 fixture 写入与 `runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
+- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,两层 prepare 命令与 `agent.ensure` 循环之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(`test(t)` 里 send 前的 fixture 写入与 `runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
 - **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,direct agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
@@ -89,9 +87,9 @@ export default defineEval({
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
 
-这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / State save / cleanup / `stop`)在判定口径之外单独记录。
+这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、两层 prepare 命令逐条形成时间树、收尾段(agent 收尾 / cleanup / `stop`)在判定口径之外单独记录。
 
-Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/command/turn 下,所以 `sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 以及 State save 的回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
+Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/command/turn 下,所以 `sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 与 lifecycle hook 的回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
 
 runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点;例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
@@ -128,7 +126,7 @@ provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不�
 
 [`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步。
 verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored`，包括被硬超时打断的 `errored`；`all` 档提交全部 verdict。
-此时其余收尾(agent teardown、State save、已登记 cleanup、diff 采集)已经照常完成。
+此时其余收尾(agent teardown、已登记 cleanup、diff 采集)已经照常完成；若实例实际退休，lifecycle `teardown()` 随后回存其 checkpoint。
 
 attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{evalId, attempt}` 算好并通过记录根碰撞登记。
 因此登记项、run 收尾反馈与 `result.json` 从第一次写入起就使用同一个 locator，没有事后补写窗口。
@@ -293,7 +291,7 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:
 
 1. 把稳定重依赖做进 Docker image、E2B template 或 Vercel snapshot;每次 attempt 只从这个起点创建。
-2. layer 的 `prepare()` 只做按 experiment / eval 变化的小配置与预检,昂贵动作靠真实检查快速命中；语义上独立于 Sandbox 的跨 Attempt 状态归 State load / save，而物理 Sandbox 自己的持久目录归 lifecycle hook。
+2. layer 的 `prepare()` 只做按 experiment / eval 变化的小配置与预检,昂贵动作靠真实检查快速命中；跨 Attempt 的实际 Sandbox 目录、服务或 checkpoint 都归 lifecycle hook。
 3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。

@@ -64,9 +64,18 @@ record key 是上游 task id,最终 Eval id 为 `terminal-bench/<task-id>`。
 它内部对每个目录做固定投影:
 
 ```typescript
+import { z } from "zod";
+
+const TaskYaml = z.object({
+  instruction: z.string(),
+  tags: z.array(z.string()).optional(),
+  max_agent_timeout_sec: z.number(),
+  max_test_timeout_sec: z.number(),
+});
+
 export async function loadTerminalBench(options: Options) {
   return mapTaskDirectories(options.root, async (taskId, root) => {
-    const task = await loadYaml<TaskYaml>(new URL("task.yaml", root));
+    const task = await loadYaml(new URL("task.yaml", root), (value) => TaskYaml.parse(value));
 
     return defineEval({
       description: `Terminal-Bench: ${taskId}`,
@@ -94,6 +103,8 @@ export async function loadTerminalBench(options: Options) {
   });
 }
 ```
+
+`task.yaml` 是动态输入；Zod decoder 在 loader 边界验证完整结构，只有验证后的领域值才进入 Eval 定义。
 
 这里的 `environment` 是 adapter 产出的内部投影,不是要求 Eval 作者理解 Provider runtime。
 `terminalBenchTaskEnvironment()` 只返回 provider-neutral Compose source;Docker、E2B 或其它 Provider 仍由 Experiment 的 SandboxSpec 选择。

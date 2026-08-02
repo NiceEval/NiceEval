@@ -324,6 +324,8 @@ await restoreCheckpoint(nextSandbox, data);
 
 这适合运行时缓存，不会创建可发布的 image/template/snapshot，也不管理共享、版本和过期。归档或恢复失败会直接抛错。
 
+如果这些目录或快照要跨 Attempt 延续，把 `restoreCheckpoint()` 放进 `SandboxLayer.setup()`，把 `createCheckpoint()` 放进配对的 `teardown()`。`setup()` 在实际 Sandbox 创建后恢复，因此新 run 也走同一边界；`teardown()` 在实例退休、Provider finalizer 前回存。`sandboxReuse: true` 只让同一个物理实例在一批 Attempt 内继续存在，不另建 Experiment 顶层状态。
+
 ## 瞬时错误重试
 
 内置 Provider 创建 Sandbox 时，限流、`fetch failed`、连接重置、5xx、临时网络不可达这类瞬时失败会自动做指数退避重试；模板不存在、凭据缺失这类配置错误第一次就报错。重试用尽后该 Attempt 记为 errored。`defineSandbox` 自定义 Provider 的 `create` 是你自己的函数，NiceEval 不替它重试。

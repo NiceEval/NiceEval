@@ -166,8 +166,6 @@ interface RunMeta {
    * 形状见[共享构建的 provenance](#共享构建的-provenancesandboxbuilds)。
    */
   sandboxBuilds?: SandboxBuildRecord[];
-  /** reuse State 的 window 级 load/save provenance;fresh State 的活动只住对应 AttemptRecord。 */
-  stateWindows?: StateWindowRecord[];
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(publish 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
@@ -200,12 +198,6 @@ interface ExperimentRunInfo {
   maxConcurrency?: number;
   /** 是否允许多条 Attempt 共用 Sandbox；进 configHash，省略等价于 false。 */
   sandboxReuse?: boolean;
-  /** State 静态投影;进 configHash。省略表示 Stateless;callback 与动态 checkpoint 不落在这里。 */
-  state?: {
-    identity: JsonValue;
-    consistency: { mode: "pinned"; revision: string } | { mode: "rolling" };
-    saveOn: "after-load" | "attempt-succeeded";
-  };
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**
@@ -231,7 +223,6 @@ interface ExperimentRunInfo {
 - **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。
   `selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
-- **`state` 只投影静态声明。** 实际 checkpoint 与 transfer 结果在 fresh Attempt 或 reuse window 的 provenance 上;rolling head 不是可签入配置,不冒充 configHash 输入。
 - **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
   `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
 - **ProviderPlan 只含 provider 明确构造的可发布纯数据。** token、凭据值、runtime callback 与私有路径不进入 plan；
@@ -281,7 +272,6 @@ type LifecyclePhase =
   | "sandbox.prepare.eval"       // 仅错误/诊断归因:细分到 Eval layer 的 prepare 命令,不单列计时条目
   | "sandbox.prepare.experiment" // 仅错误/诊断归因:细分到 Experiment layer 的 prepare 命令,不单列计时条目
   | "agent.ensure"         // ensure 循环:probe、缺失时配对安装层 install、复检(见 Adapters · Agent Ensure)
-  | "state.load"           // State checkpoint 载入;无 State 或 reuse window 中间 Attempt 不产生
   | "workspace.baseline"   // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "agent.setup"          // Agent runtime setup:Adapter 在 CLI 就绪后的逐 Attempt 运行时准备(写鉴权与运行时配置)
   | "telemetry.configure"  // tracing 出口配置
@@ -292,7 +282,6 @@ type LifecyclePhase =
   | "telemetry.collect"    // OTLP receiver settle / collect
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "agent.teardown"
-  | "state.save"           // State checkpoint 回存;是否执行服从 saveOn,使用独立收尾 signal
   | "sandbox.cleanup"      // 两层作者 layer 已登记 cleanup 按全局准备顺序逆序执行
   | "sandbox.suspend"      // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause);耗时可观(pause 随内存增长),必须可见
   | "sandbox.stop";        // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
@@ -478,12 +467,6 @@ interface AttemptRecord {
   usage?: Usage;
   /** attempt 作用域生命周期代码经 `ctx.fact()` 上报的运行事实;字段契约见下方 facts 小节。 */
   facts?: Record<string, string | number | boolean>;
-  /** fresh State 的 transfer 活动;reuse 时只写 windowId,活动在 RunMeta.stateWindows。无 State 时省略。 */
-  state?: {
-    windowId: string;
-    load?: StateTransferActivity;
-    save?: StateTransferActivity;
-  };
   estimatedCostUSD?: number;
   /** 使 attempt 无法正常完成的唯一致命执行错误。 */
   error?: AttemptError;

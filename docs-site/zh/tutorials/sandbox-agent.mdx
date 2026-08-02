@@ -149,7 +149,8 @@ pattern 是 gitignore 风格，以 workdir 根为基准：不带 `/` 的匹配�
 ## 自定义 sandbox agent
 
 ```ts
-import { command, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { command } from "niceeval/sandbox";
 
 export default defineSandboxAgent({
   name: "my-agent",

@@ -20,10 +20,11 @@ At run time [NiceEval](https://niceeval.com/) starts a local OTLP receiver. Span
 
 ```ts
 // agents/support-bot.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "support-bot",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     // Example URL: swap in your own agent's real endpoint
     const r = await fetch("http://localhost:5188/chat", {
@@ -172,7 +173,7 @@ When your instrumentation has an app-private shape the generic fallback cannot r
 - **Write a `spanMapper`**: when touching the app is inconvenient, declare a pure function on the agent that translates private spans into the semantics of the table above before rendering. Both `tagSpan` (writes the verdict back onto the span; existing attributes are only added to, never changed) and `heuristicTag` (the generic fallback verdict) are exported from `niceeval/adapter`:
 
 ```ts
-import { defineAgent, tagSpan, heuristicTag } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, tagSpan, heuristicTag } from "niceeval/adapter";
 import type { TraceSpan } from "niceeval";
 
 function mapMySpans(spans: TraceSpan[]): TraceSpan[] {
@@ -188,8 +189,9 @@ function mapMySpans(spans: TraceSpan[]): TraceSpan[] {
   });
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   spanMapper: mapMySpans,
   async send(input, ctx) { /* same wiring as above */ },
 });

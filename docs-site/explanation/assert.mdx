@@ -128,7 +128,7 @@ Scoped assertions only appear on `t` if the agent has declared the corresponding
 ### Run / session dimension
 
 ```ts
-t.succeeded();                  // run completed with no failed actions and no unresolved HITL
+await t.succeeded().stopOnFailure(); // run completed; stop dependent checks if it did not
 t.parked();                     // cleanly stopped on a HITL input.requested event
 t.messageIncludes("Regards,");  // all message events concatenated contain this string/regex
 ```
@@ -210,7 +210,7 @@ t.maxTokens(80_000).atLeast(0.7);     // soft variant — tracked but only red u
 t.check(t.usage.outputTokens, satisfies((n) => n < 10_000, "not verbose"));
 ```
 
-`t.usage` is available anywhere inside `test(t)` and exposes `{ inputTokens, outputTokens, cacheReadTokens?, … }`. For Sandbox agents, token counts are extracted from the transcript by the adapter; for remote agents, they are returned in `Turn.usage`.
+`t.usage` is available anywhere inside `test(t)` and exposes `{ inputTokens, outputTokens, cacheReadTokens?, … }`. For Sandbox agents, token counts are extracted from the transcript by the adapter; for Direct Agents, they are returned in `Turn.usage`.
 
 ## Custom scorers
 

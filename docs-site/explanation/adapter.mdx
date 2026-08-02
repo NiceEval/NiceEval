@@ -24,7 +24,7 @@ The system under test's URL, auth, and protocol details are passed in through th
 
 ```ts
 // agents/web-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 interface WebAgentOptions {
@@ -35,8 +35,9 @@ interface WebAgentOptions {
 export function webAgent(options: WebAgentOptions): Agent {
   const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-  return defineAgent({
+  return defineDirectAgent({
     name: "web-agent",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {
       ctx.progress({ message: "Waiting for Web Agent" });
       const response = await fetch(`${baseUrl}/api/turn`, {
@@ -211,7 +212,7 @@ interface AgentContext {
   readonly flags: Readonly<Record<string, JsonValue>>; // Tier 3 feature A/B: experiment.flags passed through; {} when unset
   readonly experimentId?: string;  // The path-derived experiment id, the same source as the experimentId in results; undefined when not run through an experiment
 
-  readonly sandbox: Sandbox;       // Non-sandbox Agents also receive a Sandbox (a no-op stub for remote agents)
+  readonly sandbox: Sandbox;       // Non-sandbox Agents also receive a Sandbox (a no-op stub for Direct Agents)
 }
 
 interface AgentSession {
@@ -289,7 +290,7 @@ The handle you get from `await t.send()` is a view onto this one Turn: turn-leve
 | What unlocks on `t` | What the evidence is | What you write |
 |---|---|---|
 | `t.send`, `t.sendFile`, `t.check`, `t.judge`… | Every Agent has them | Nothing |
-| Multiple `t.send()`, `t.reply`, `t.newSession()` | `send` wired up `ctx.session`'s continuation accessors (`history()` or `id` + `capture()`) — without them every turn is a fresh conversation | Nothing — the accessors are right on `ctx` |
+| Multiple `t.send()`, `t.reply`, `t.newSession()` | `send` wired up `ctx.session` through a typed slot or `id` + `capture()` — without them every turn is a fresh conversation | Nothing — the accessors are right on `ctx` |
 | `t.respond()` / `t.parked()` and other HITL | send has returned `"waiting"` + an `input.requested` event | Nothing — doing it is having it |
 | `t.calledTool()` / `t.toolOrder()` and other positive assertions | paired operation events present | Nothing — having events means you can assert |
 | `t.notCalledTool()` / `t.usedNoTools()` and other negative assertions being **trustworthy** | Events come from an official converter with a completeness proof | Nothing — the proof travels with the converter's return value |

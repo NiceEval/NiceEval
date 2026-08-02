@@ -13,10 +13,13 @@ Common Adapter operations include:
 | Method | Use |
 |---|---|
 | `runCommand(cmd, args)` | run a command |
+| `runCommandOrThrow(cmd, args)` | run a command and throw on non-zero exit |
 | `runShell(script)` | run a shell script |
-| `readFile(path)` | read a file |
-| `writeFiles(files)` | write a batch of files |
-| `uploadFiles(files)` | upload a workspace or test files |
+| `readText(path)` / `readBytes(path)` | read text or exact bytes from the Sandbox |
+| `writeText(path, content)` / `writeBytes(path, content)` | write in-memory content into the Sandbox |
+| `pathExists(path)` | check whether a file or directory exists |
+| `uploadFile(source, target)` / `uploadDirectory(source, target?)` | transfer host files into the Sandbox |
+| `downloadFile(source, target)` / `downloadDirectory(source, target)` | transfer Sandbox files to the host |
 | `workdir` | the provider's real working directory; omitted `cwd` / `targetDir` resolve here |
 | `runCommand(..., { cwd })` | temporarily switch directory for one command; relative paths resolve from `workdir` |
 | `stop()` | destroy the environment |
@@ -80,7 +83,7 @@ The rules:
 - **Timing**: `setup` hooks run first — after the Sandbox is created and before the git baseline. The files they write go into the baseline and are not counted in the agent's diff. `teardown` hooks run last — after the Adapter's `teardown` and before the Sandbox is destroyed. That is exactly the right moment to save state to an external store.
 - **Trigger rule**: `teardown` runs if and only if the same Sandbox's `setup` point was reached — a `setup` throw does not exempt it, so cleanup code must defend against handles that may not have been assigned; if `setup` never ran (the Sandbox failed to be created), `teardown` is skipped too.
 - **Failure semantics**: if a `setup` hook throws, the attempt is recorded as `errored` (an environment problem, not the Agent getting the task wrong). A `teardown` hook can report a diagnostic and, by default, does not change the verdict you already have. If some cleanup action is a precondition for the result to be valid, throw — the runner records it explicitly as a fatal error.
-- **Agents without a sandbox**: an Agent built with `defineAgent` has no sandbox, the `sandbox` field does not apply to it, and the hooks never run.
+- **Agents without a sandbox**: an Agent built with `defineDirectAgent` has no sandbox, the `sandbox` field does not apply to it, and the hooks never run.
 
 ### Pass setup's output to teardown
 
@@ -308,7 +311,7 @@ This suits runtime caches. It does not create a publishable image/template/snaps
 
 When a built-in provider creates a Sandbox, transient failures — rate limiting, `fetch failed`, connection resets, 5xx, temporary network unreachability — automatically retry with exponential backoff. Configuration errors, such as a missing template or missing credentials, fail on the first try. Once retries are exhausted, the attempt is recorded as `errored`. `defineSandbox`'s custom provider `create` is your own function; NiceEval does not retry it for you.
 
-`readFile`, `downloadFile`, `uploadFile`, batch writes, and directory uploads automatically make a bounded number of retries on transient transport errors: 429, 5xx, `fetch failed`, connection resets. Missing files, permission errors, cancellation, and a terminated Sandbox are not retried.
+`readText`, `readBytes`, `writeText`, `writeBytes`, `pathExists`, and the upload/download operations automatically make a bounded number of retries on transient transport errors: 429, 5xx, `fetch failed`, connection resets. Missing files, permission errors, cancellation, and a terminated Sandbox are not retried.
 
 `runCommand` and `runShell` do not retry automatically. A command may already have produced side effects, so retry it explicitly in a hook or an eval only when you can confirm it is safe to repeat.
 

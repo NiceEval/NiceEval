@@ -12,8 +12,8 @@ import { defineEval } from "niceeval";
 export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
-    await t.send("What's the weather like in Brooklyn today?");
-    t.succeeded();
+    const turn = await t.send("What's the weather like in Brooklyn today?");
+    await turn.succeeded().stopOnFailure();
   },
 });
 ```
@@ -546,14 +546,6 @@ readonly usage?: Usage;
 ```
 
 This turn's token usage and estimated cost (present only for agents that reported usage).
-
-#### `expectOk`
-
-```ts
-expectOk(): TurnHandle;
-```
-
-Throws if the previous turn failed (aborting what follows).
 
 #### `outputEquals`
 

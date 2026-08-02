@@ -4,7 +4,7 @@ sidebarTitle: "Connect Agent"
 description: "Write an Adapter, configure an Experiment, and run the first eval; then pass configuration and parameters from the Experiment to the Adapter and the app under test."
 ---
 
-Connecting a subject under test to [NiceEval](https://niceeval.com/) requires an **Adapter**. `defineAgent` wraps a `send` function: it receives the input, drives the Agent, and returns the turn's result.
+Connecting a subject under test to [NiceEval](https://niceeval.com/) requires an **Adapter**. `defineDirectAgent` wraps a `send` function: it receives the input, drives the Agent, and returns the turn's result.
 
 This tutorial first gets a minimal integration running with an Adapter, an Experiment, and an eval, then explains how parameters flow from the Experiment to the Adapter and on to the app under test. Event streams, multi-turn, HITL, and tracing are optional capabilities, with the corresponding tutorials listed at the end.
 
@@ -30,10 +30,11 @@ Assume the project already has `npx niceeval init` run, so `niceeval.config.ts` 
 
 ```ts
 // agents/my-agent.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     // Example URL: swap in your own agent's real endpoint (HTTP, CLI, or SDK all work,
     // as long as send can get the reply text)
@@ -70,7 +71,7 @@ export default defineExperiment({
   description: "my-agent baseline",
   agent: myAgent,
   model: "gpt-4o",
-  runs: 1,
+  attempts: 1,
 });
 ```
 
@@ -84,8 +85,8 @@ import { includes } from "niceeval/expect";
 export default defineEval({
   description: "Refund policy Q&A",
   async test(t) {
-    await t.send("What is your refund policy?");
-    t.succeeded();
+    const turn = await t.send("What is your refund policy?");
+    await turn.succeeded().stopOnFailure();
     t.check(t.reply, includes("30 days"));
     t.judge.autoevals.closedQA("Does the answer explain the refund window?").atLeast(0.7);
   },
@@ -115,16 +116,17 @@ Configuration belongs to exactly two channels; keep them separate and the integr
 1. **Static configuration goes through the Adapter factory.** Environment-level configuration such as URL, auth, and protocol details is written as factory parameters in the Experiment file. The `agent` field of `defineExperiment` receives an **already-configured instance**.
 2. **Per-turn dynamic values go through `ctx`.** The `model` and `flags` declared by the experiment are handed to `send` verbatim via `ctx` on every turn; the Adapter does not interpret their meaning, it only forwards them to the app with the request.
 
-Turn step 1's `my-agent` from an instance with a hardcoded URL into a factory that receives configuration. Change the default export to a function that returns `defineAgent(...)`, and have `send` read the factory parameters. The `model` and `flags` declared by the Experiment arrive via `ctx` on every turn, and `send` forwards them with the request:
+Turn step 1's `my-agent` from an instance with a hardcoded URL into a factory that receives configuration. Change the default export to a function that returns `defineDirectAgent(...)`, and have `send` read the factory parameters. The `model` and `flags` declared by the Experiment arrive via `ctx` on every turn, and `send` forwards them with the request:
 
 ```ts
 // agents/my-agent.ts — factory: static configuration goes into the closure
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 export function myAgent(options: { baseUrl: string }): Agent {
-  return defineAgent({
+  return defineDirectAgent({
     name: "my-agent",
+    evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {
       const r = await fetch(`${options.baseUrl}/chat`, {   // ← factory option: where to connect
         method: "POST",
@@ -169,7 +171,7 @@ The `ctx` fields a turn may use, and how to consume them:
 | `model` | The experiment's `model` | Forward it with the request if the app's interface accepts a model choice; ignore it otherwise |
 | `flags` | The experiment's `flags` | Forward as-is (request body or header both work); the app switches variants on it |
 | `telemetry` | Present when OTel integration is configured | Touch only `headers`: a fresh W3C `traceparent` each turn, spread into the request headers. The receiving endpoint is the same on every run — pin it in `defineConfig` and point the app at it on startup; it is not passed from send — see [OTel Integration](/tutorials/connect-otel) |
-| `session` | The runner (one per session line) | The accessors for session continuation and HITL held state all live on it: `history()`, `id` / `capture()`, `hold()` / `take()` — see [Write Send](/tutorials/write-send) |
+| `session` | The runner (one per session line) | Session continuation and HITL held state live here: `id` / `capture()`, plus typed-slot `get()` / `set()` / `take()` — see [Write Send](/tutorials/write-send) |
 | `progress(update)` | The runner (bound to the current `agent.run`) | Report the short-lived status of a turn or tool; the human dashboard may show it, but it is not saved with the results |
 | `diagnostic(input)` | The runner (bound to the current `agent.run`) | Save warnings/errors such as protocol degradation or an incomplete response; a locator can drill back into them |
 
@@ -228,7 +230,7 @@ Once the minimal integration is done, extend the Adapter as needed. Existing eva
 | Target capability | Adapter change | Tutorial |
 |---|---|---|
 | Tool assertions (`calledTool` / `toolOrder` / negative assertions) | Map the app's response into the standard event stream | [Write Send](/tutorials/write-send), [Events reference](/reference/events) |
-| Multi-turn conversations, `t.newSession()` isolation | Connect `ctx.session`: `history()` or `id` + `capture()` | [Write Send](/tutorials/write-send) |
+| Multi-turn conversations, `t.newSession()` isolation | Connect `ctx.session`: a typed slot or `id` + `capture()` | [Write Send](/tutorials/write-send) |
 | Approval flows (HITL, human-in-the-loop) | Return `waiting` + `input.requested` to pause the turn, resume on the answer turn | [HITL](/explanation/hitl) |
 | The call waterfall in `niceeval view` | The app sends OTel spans to NiceEval (does not affect assertions) | [OTel Integration](/tutorials/connect-otel) |
 | Feature A/B comparison | The app exposes variants as configuration switchable via `flags` | [Tier](/explanation/tier), [Write Experiments](/tutorials/write-experiment) |

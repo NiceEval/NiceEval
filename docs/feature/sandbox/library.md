@@ -220,7 +220,7 @@ export default defineExperiment({
 这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热)走 layer 的 `prepare()`。
 两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,prepare command 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 Attempt 的沙箱内状态不写进 prepare command，也不放进 Experiment 顶层 State。把它挂在现代 `SandboxLayer` 的 `.setup()` / `.teardown()`：前者在物理实例创建后一次运行，后者在 provider stop 前一次运行；`sandboxReuse: true` 且 `maxConcurrency: 1` 时正好覆盖同一台被复用物理实例的首尾。
+跨 Attempt 的沙箱内状态不写进 prepare command，也不放进 Experiment 顶层字段。把它挂在现代 `SandboxLayer` 的 `.setup()` / `.teardown()`：前者在物理实例创建后一次运行，后者在 provider stop 前一次运行；`sandboxReuse: true` 时正好覆盖同一台被复用物理实例的首尾，需要固定顺序再声明 `maxConcurrency: 1`。
 
 prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败),归属 `sandbox.prepare.<owner>`。
 清理经 `context.onCleanup()` 在取得资源后就地登记,按全局准备顺序逆序执行;未执行或取得失败的命令不产生虚假 cleanup。

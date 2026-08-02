@@ -20,7 +20,7 @@
 | 资格 | 条目 | `executionMs` ≤ 当前解析后的 `timeoutMs` | 这一条重跑 |
 | 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
-| 模式 | Experiment 与本次调用 | 没有 `sandboxReuse: true`、State 不是 rolling,且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
+| 模式 | Experiment 与本次调用 | 没有 `sandboxReuse: true`，且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态, 没理由重花一次钱去复现同一个已知结果。
 `errored` 与 `skipped` 的判定本身不可信,不是可复用的终态,因此从不缓存—— 前者是框架或环境层面的不确定失败,例如超时、沙箱失败。
@@ -39,7 +39,7 @@ Runner 内部把每条判定表达为 `Eligible | Blocked`；`Blocked` 才携带
 
 ```text
 configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse,
-                   Experiment sandbox layer 身份, State 静态投影, strict, judge)
+                   Experiment sandbox layer 身份, strict, judge)
 fingerprint = hash(configHash, eval 源码闭包, evalId / tags / metadata,
                    pair-owned ProviderPlan(含 template owner、目标 platform/libc 与物理身份),
                    loader 登记的数据文件内容与判据树哈希)
@@ -69,10 +69,6 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
   `judge` 进的是解析后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
 - **`sandboxReuse` 进。**
   复用改变 Case 创建次数、题间状态边界与 Attempt 是否能被独立沿用,两层 prepare 每条 Attempt 照常重放;省略等价于 `false`。
-- **State 静态投影进。**
-  `identity`、`consistency` 与 `saveOn` 共同决定跨 Attempt 起点;Pinned revision 因此是配置身份的一部分。
-  callback 函数体、window id 与实际 checkpoint digest 是运行事实,不进哈希。
-  Rolling 的 store head 会沿序列推进,所以它在指纹之外关闭该 Experiment 的 carry 模式,完整规则见 [State Architecture](../state/architecture.md#fingerprintconfighash-与-carry)。
 
 ### manifest:哈希做索引,清单做解释
 
@@ -317,7 +313,7 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队, `exe
 
 - **终态门**:缺失序号与 `errored` / `skipped` 不可 accept——授权不能凭空造出没跑过的结果。
 - **资格门**:`executionMs` 超过当前上限的条目在新上限下复现不出来,采信它就是采信一条撞线记录。
-- **出身门与模式门**:`sandboxReuse` 绝缘、rolling State 与 `--keep-sandbox` 留存档不可 accept——这些模式都要求本轮真实执行,授权不能把旧 checkpoint 序列插进当前 head。
+- **出身门与模式门**:`sandboxReuse` 绝缘与 `--keep-sandbox` 留存档不可 accept——这些模式都要求本轮真实执行，授权不能凭旧结果伪造当前物理实例。
 - 与 `--rerun all` 同用是用法错误:一边全不采信一边又要采信,方向自相矛盾。
   `--rerun failed` 不冲突:accept 只开指纹门,被授权的 `failed` 条目照常被口径门拦下重跑,`passed` 照常携带。
 
@@ -344,9 +340,6 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 声明 [`sandboxReuse: true`](../sandbox/reuse.md#结果与结果沿用) 的 Experiment 与结果沿用**双向绝缘**：每次都真实执行计划内的 Attempt，复用产出也永不成为后续 Run 的结果沿用来源。
 绝缘让一份 Run 里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。
 出向那一半靠条目自己带的标记落地:复用 attempt 落盘时记 `sandbox.reused`, [出身门](#携带要过的门)读它，与当前 Experiment 是否声明复用无关。
-
-声明 [rolling State](../state/README.md#两种一致性) 的 Experiment 同样不消费或产出跨 Run 携带。
-原因不是 Sandbox 污染,而是旧结果占据旧 checkpoint 序列位置;当前 store head 上没有一条可证明相同的插入位置。
 
 [`--keep-sandbox`](../sandbox/cli.md) 下,历史终态判定落在**当前留存档内**的 attempt 不携带、照常派发重跑: 留存要的是一次真实执行的现场,携带条目没有沙箱可留。
 `failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。

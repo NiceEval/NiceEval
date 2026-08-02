@@ -315,7 +315,7 @@ export default uiMessageStreamAgent({
 Capabilities it handles for you:
 
 - **Send/receive + event stream**: SSE frames are reduced by the `ai` package's official framework-agnostic reducer `readUIMessageStream` (the same one inside `useChat`); tool calls/results/message text are built directly from message parts — **the app is not required to wire up OTel**.
-- **Session continuation**: the protocol is server-stateless, "client carries the full history" — the factory stores the whole `UIMessage[]` with `ctx.session.history()` and replays it verbatim each turn; a new conversation line (after `t.newSession()`) gets an empty history.
+- **Session continuation**: the protocol is server-stateless, "client carries the full history" — the factory stores the whole `UIMessage[]` in an adapter-private typed session slot and replays it verbatim each turn; a new conversation line (after `t.newSession()`) gets an empty history.
 - **HITL**: AI SDK v7 tool approval (tools with `needsApproval: true`) maps natively — when a part stops at `approval-requested`, the whole turn is `status: "waiting"` + `input.requested`; `t.respond("approve" / "deny")` is translated into `approval-responded`, rewriting that part in place and resending `messages` verbatim to trigger the server to continue (identical protocol behavior to a real frontend's `addToolApprovalResponse()` + `sendMessage()`; there is no separate approve endpoint). Denied calls land in the event stream as `rejected`, and by default carry a "do not retry" reason (`denyReason` can override) — without one, models often resend the very same call.
 - **usage / waterfall**: UI Message Stream protocol frames carry no usage, so usage assertions like `t.maxTokens` have no data by default on this built-in (an app putting usage into message metadata is the app's own protocol extension). The waterfall is a separate matter: when the app has OTel instrumentation (e.g. the official `@ai-sdk/otel`), send spans to [NiceEval](https://niceeval.com/) per [OTel integration](/tutorials/connect-otel) and `niceeval view` gets a full waterfall — spans only feed the waterfall, never assertions.
 
@@ -399,10 +399,11 @@ The span-normalizing function when the app has OTel (for the waterfall); the eve
 `turnFromChatCompletion(res)` / `turnFromResponses(res)` (exported from `niceeval/adapter`) map OpenAI's two response shapes — Chat Completions and Responses — from the whole response into a `Turn` with zero manual mapping: this is not limited to the official OpenAI API — any service that claims compatibility with either protocol shape works.
 
 ```ts
-import { turnFromChatCompletion } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, turnFromChatCompletion } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-openai-compat-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
     const res = await client.chat.completions.create({ messages: [...], tools });
     return turnFromChatCompletion(res);
@@ -472,10 +473,11 @@ The three Tier 1 examples (claude-sdk and pi-sdk use `driveFrameStream` plus typ
 `turnFromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed tool `operation.finished`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
 
 ```ts
-import { defineAgent, turnFromAiSdk } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent, turnFromAiSdk } from "niceeval/adapter";
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-ai-sdk-agent",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
     const result = await generateText({ model, tools, prompt: input.text });
     return { ...turnFromAiSdk(result), data: result.text };
@@ -498,5 +500,5 @@ The `status` comes from the converter: `"waiting"` when there is a tool approval
 
 - [Connect your agent](/tutorials/connect-your-agent) — how to implement each capability in your own adapter and which assertions it maps to.
 - [Sandbox Agent](/tutorials/sandbox-agent) — how to run the built-in sandbox agents and write your own.
-- [defineAgent reference](/reference/define-agent) — full parameters of `defineAgent` / `defineSandboxAgent`.
+- [defineDirectAgent reference](/reference/define-agent) — full parameters of `defineDirectAgent` / `defineSandboxAgent`.
 - [OTel integration](/tutorials/connect-otel) — send your app's spans to [NiceEval](https://niceeval.com/) in exchange for the call waterfall in `niceeval view`.

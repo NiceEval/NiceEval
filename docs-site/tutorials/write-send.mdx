@@ -32,12 +32,13 @@ The minimal `send` does exactly three things: send `input.text` to the app's int
 
 ```ts
 // agents/chat-app.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";   // to switch the URL per experiment, make it a factory option: see the integration guide
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
     ctx.progress({ message: "Waiting for the Chat API" });
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {  // ← the interface the frontend already uses
@@ -82,24 +83,26 @@ The runner promises exactly one thing about sessions: **every `send` on the same
 
 How to continue a session depends on the shape of the app's interface. The app's interface follows one of two common patterns, and `ctx.session` provides a pair of accessors for each:
 
-- **Client carries the full history** (stateless server; the complete message list is sent every turn: the Chat Completions shape is the typical case) → `ctx.session.history<TMsg>()`
+- **Client carries the full history** (stateless server; the complete message list is sent every turn: the Chat Completions shape is the typical case) → create an adapter-private slot with `createSessionSlot<TMsg[]>()`, then use `ctx.session.get(slot)` / `set(slot, messages)`
 - **Server keeps the history** (the interface takes a session id: the Responses shape's `previous_response_id`, the native sessions / threads of various SDKs) → `ctx.session.id` + `ctx.session.capture(id)`
 
 The storyline's interface is the former:
 
 ```ts
 // agents/chat-app.ts
-import { defineAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";
 
 interface Msg { role: "user" | "assistant"; content: string | null }
+const historySlot = createSessionSlot<Msg[]>("chat-app/history");
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "chat-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
-    const history = ctx.session.history<Msg>();  // ← this session line's history slot; empty on a new session line
-    const messages = [...history.get(), { role: "user" as const, content: input.text }];
+    const history = ctx.session.get(historySlot) ?? []; // ← unwritten on a new session line
+    const messages = [...history, { role: "user" as const, content: input.text }];
 
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
       // …method, headers, signal same as step one, omitted
@@ -107,7 +110,7 @@ export default defineAgent({
     }).then((r) => r.json());
 
     const reply = res.choices[0].message;
-    history.commit([...messages, reply]);        // ← write back; the next turn on the same line picks it up via get()
+    ctx.session.set(historySlot, [...messages, reply]); // ← the next turn on this line reads it back
 
     return {
       status: "completed",
@@ -117,7 +120,7 @@ export default defineAgent({
 });
 ```
 
-Notice there is **no "first turn" branch**: `history.get()` on a new session line naturally returns an empty array — the "first send" form is the natural consequence of a new session line, not a condition for you to check. Nothing needs declaring on `defineAgent` either: connect `ctx.session` and multi-turn continues; skip it and every turn is a new conversation.
+Notice there is **no "first turn" branch**: `ctx.session.get(historySlot)` naturally returns `undefined` on a new session line, and `?? []` normalizes that to empty history. Nothing needs declaring beyond using the typed session slot: connect it and multi-turn continues; skip it and every turn is a new conversation.
 
 If the app's interface takes a session id, the history lives on the server and the Adapter only records the id — just two changes inside `send`:
 
@@ -242,7 +245,7 @@ HITL almost always happens on streaming interfaces (pausing mid-stream), so this
 
 ```ts
 // agents/my-app.ts
-import { createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -267,8 +270,9 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
   });
 }
 
-export default defineAgent({
+export default defineDirectAgent({
   name: "my-app",
+  evidenceCoverage: completeEvidenceCoverage,
   async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     const held = ctx.session.take(pendingSlot);
     if (held) {                                         // ← t.respond("approve"): an ordinary send; deliver the verdict first

@@ -143,6 +143,7 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineEval } from "niceeval";
 import { commandSucceeded } from "niceeval/expect";
+import { z } from "zod";
 import {
   loadCriteriaTree,
   loadText,
@@ -150,17 +151,17 @@ import {
 } from "niceeval/loaders";
 import { composeSandbox } from "niceeval/sandbox";
 
-interface TaskYaml {
-  instruction: string;
-  tags?: string[];
-  max_agent_timeout_sec: number;
-  max_test_timeout_sec: number;
-}
+const TaskYaml = z.object({
+  instruction: z.string(),
+  tags: z.array(z.string()).optional(),
+  max_agent_timeout_sec: z.number(),
+  max_test_timeout_sec: z.number(),
+});
 
 export async function defineTerminalBenchEval(entry: string | URL) {
   const root = new URL("./", entry);
   const name = basename(fileURLToPath(root));
-  const task = await loadYaml<TaskYaml>(new URL("task.yaml", root));
+  const task = await loadYaml(new URL("task.yaml", root), (value) => TaskYaml.parse(value));
   const runTests = await loadText(new URL("run-tests.sh", root));
   const tests = await loadCriteriaTree(new URL("tests/", root));
 

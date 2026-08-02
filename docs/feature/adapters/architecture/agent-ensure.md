@@ -4,7 +4,7 @@
 前者是 Adapter 的 ensure 声明(`AgentEnsure`:目标 identity 加只读 probe);后者是按 identity 配对的官方 Agent 安装层(`AgentInstaller`)。
 
 Runner 在每条 Attempt 的 `agent.ensure` 相位执行 **ensure 循环**:probe 命中就直接使用,未命中时由配对安装层执行锁定版本的安装,随后复检同一个 probe。
-`agent.ensure` 排在两方作者 layer 的 prepare command 之后、State load 之前;Agent runtime setup 仍记 `agent.setup`。
+`agent.ensure` 排在两方作者 layer 的 prepare command 之后、workspace baseline 之前;Agent runtime setup 仍记 `agent.setup`。
 官方 template、自建 template、任务镜像与空白环境都走这条循环,差别只是第一次 probe 是否命中——预装 Agent 是 probe 命中的优化,不是任意任务环境可运行的前提。
 
 ```text
@@ -13,7 +13,7 @@ sandbox case 构建所需产物并启动实例 → 主 Sandbox
  → agent.ensure:逐条 ensure 声明执行循环
     ├─ probe 命中   → 记录命中的安装事实
     └─ probe 未命中 → 按 identity 配对安装层 → install → 复检 probe
- → State load → workspace baseline → Agent runtime setup(agent.setup)
+ → workspace baseline → Agent runtime setup(agent.setup)
  → test(t) → assertions.evaluate
 ```
 

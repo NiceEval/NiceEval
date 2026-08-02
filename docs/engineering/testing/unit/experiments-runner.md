@@ -6,8 +6,8 @@
 - [Experiments Architecture](../../../feature/experiments/architecture.md)
 - [Experiments Library](../../../feature/experiments/library.md)
 - [Experiments CLI](../../../feature/experiments/cli.md)
-- [State](../../../feature/state/README.md)
-- [State Architecture](../../../feature/state/architecture.md)
+- [Sandbox 生命周期](../../../feature/sandbox/lifecycle.md)
+- [Sandbox 复用](../../../feature/sandbox/reuse.md)
 - [Runner](../../../runner.md)
 - [执行错误类型](../../../feature/error-classification/README.md)
 - [错误与警告反馈](../../../error-feedback.md)
@@ -33,7 +33,7 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 | 退出码折叠            | `InvocationCompletion` 与退出码                                                   |
 | 资源生命周期          | fake Sandbox 的 created/stopped 集合、reporter queue 收尾                         |
 | 实验级 setup/teardown | 生命周期 Hook 调用计数、收尾登记文件、运行级事件                                  |
-| State 序列            | load/save 次数与顺序、checkpoint 后继、transfer 活动与剩余派发                    |
+| Sandbox 生命周期连续性 | 每个物理 Sandbox 的 setup/teardown 次数、checkpoint 恢复/回存与实例退休顺序       |
 
 ## Fixture 规范
 
@@ -248,19 +248,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   字节级渲染归 [E2E · CLI](../e2e/cli.md)，这里以 reducer/renderer 的事件序列与状态为断言面。
 - **生命周期与资源**：成功、失败、中断三条路径下 sandbox 全部 stop、reporter queue 收尾；预热池边界；生命周期阶段闭集与主链耗时封口；diagnostic 去重与不改判定；逐轮进度行的提取规则；分类账导出的常数往返。
   资源泄漏通常出现在失败和中断——三条路径缺一不可。
-- **State 定义与组合约束**：
-  - `defineExperimentState()` 校验 JSON identity、pinned revision 与私有品牌；省略值规划成 Stateless。
-  - Direct Agent、非串行 rolling、reuse + `attempt-succeeded` 都在 Provider I/O 前给出稳定 code。
-- **State cadence 与顺序**：fresh 每 Attempt 各 load/save 一次，reuse 每 window 各一次。
-  Fixture 把 command、ensure、baseline、Agent teardown 与 cleanup 做成可辨认事件，交换任一相邻步骤都会失败。
-- **Pinned / Rolling 后继**：pinned 始终核对固定 revision，rolling 则严格串行地推进唯一 head。
-  load/save failed 或 unavailable 会关闭该序列的后续派发。
-- **State save policy 与收尾 Scope**：区分 `after-load` 与 `attempt-succeeded` 的 save 条件。
-  断言 unavailable、rolling head 不前移，以及 State finalizer 早于作者 cleanup 与 Sandbox stop。
-- **State 身份与 carry**：identity / consistency / saveOn 进 configHash，callback、windowId 与实际 digest 不进。
-  Stateless 与 pinned 服从普通资格门，rolling 恒不携带；pinned checkpoint provenance 保持原值。
-- **State typed failure**：区分 callback、checkpoint、revision 与 transport 失败，对外落 `state.load` / `state.save`。
-  连续性失败只关闭本 Experiment，同批其他 Experiment 照常完成。
+- **Sandbox lifecycle 连续性**：每个实际 Sandbox 的 `setup()` / `teardown()` 恰好成对一次。
+  fresh 新建实例会在 `setup()` 恢复 checkpoint，退休时在 `teardown()` 回存。
+  `sandboxReuse: true` 只复用同一个物理实例，`maxConcurrency: 1` 只负责需要固定顺序的场景。
+  Fixture 把 setup、command、ensure、baseline、Agent teardown、cleanup 与 teardown 做成可辨认事件，交换相邻边界会失败。
+- **生命周期失败与收尾**：setup 或 teardown 的 callback、checkpoint 与 transport 失败可区分并关闭受影响实例；同批其它 Experiment 照常完成。
+  断言 teardown 在实例退休、Provider finalizer 前运行，不新增额外的逐 Attempt checkpoint phase 或 Experiment 顶层字段。
 - **止损闸（空间轴消费）**：触发——终局失败携带 `scope: "eval"` 只停本 eval 剩余 attempt、`"experiment"` 停全实验且同批其它实验不连坐；组合——可重试失败被重试吸收不落闸、耗尽后的终局失败才读 scope；幂等与不可逆——并发重复声明按 dedupeKey 折叠成一条 `dispatch-halted` 诊断、落闸后在飞 attempt 成功不重开派发；闸只停派发不抢占——在飞 attempt 照常跑完落账、等待集中同闸 attempt 经 interruption 中止；记账——未派发计 `unstarted`、完成状态 `incomplete`、退出码由观察到失败的 `errored` attempt 判红；teardown 边界——实验级 teardown 抛声明降级普通诊断、per-attempt teardown 抛声明照常落闸且不改 verdict；诊断双通路——反馈流通知与 `run.json` 的 `dispatch-halted`（`data.scope` / `data.evalId`）同源互不派生。
 - **派发前资源获取失败的归一化**：`sandboxReuse` 的实例创建、Case 就绪与寿命确认都在复用池内完成。
   任一步失败只让这条 attempt 落 `errored`，phase 为 `sandbox.create`、message 保留原始正文。

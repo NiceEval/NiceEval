@@ -106,7 +106,6 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
   两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`executionMs` ≤ 当前上限),止损闸管覆盖缺口(被掐掉的题没有结果,如实进 [`coverage`](../sample/library.md#覆盖是逐行的事实))。
 - **`attempts` / `earlyExit` / `maxConcurrency` / `selectedEvalIds` / `labels` 不进。**
   编排与选题字段决定跑哪些、跑几次,不改变单题被测行为;`labels` 是报告坐标。
-- **State 静态投影进。** `identity`、`consistency` 与 `saveOn` 共同决定 Attempt 的外部起点;实际 checkpoint digest 与 window id 是运行事实,不进。
 
 `configHash` 落在 `run.json` 上,是格式的一部分:第三方转换器写入时同样声明它,不声明的 Run 只能与自己比较。
 Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。

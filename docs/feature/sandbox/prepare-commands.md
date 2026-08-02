@@ -93,7 +93,7 @@ template 预装只是让 `probe` 首测即命中的一种手段。
 
 - 镜像与探测不共享任何跨 Sandbox 的状态;缓存活在当前 Sandbox 的 workdir 外私有路径,随 Sandbox 销毁消失。
 - 缓存不经 `context.onCleanup()` 登记——它的价值正是跨 Attempt 存续;需要销毁整窗状态时退休或停止 Sandbox。
-- 缓存服从 reset 与活状态边界:reset 只恢复 workdir,不触碰镜像;Sandbox lifecycle hook 或 State Feature 拥有的路径内置命令不写入。
+- 缓存服从 reset 与活状态边界:reset 只恢复 workdir,不触碰镜像;Sandbox lifecycle hook 拥有的路径内置命令不写入。
 - 缓存不可用或损坏时按首次执行处理(重新走网络或重装),不产生额外错误类别。
 
 ## `--dry` 复用成本视图

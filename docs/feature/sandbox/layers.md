@@ -501,7 +501,7 @@ Linked pair 内部把它保存为 `Eligible | Blocked`；只有 `Blocked` 携带
 
 命令需要清理时,在本次执行成功取得资源后调用 `context.onCleanup()` 登记。
 Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行或取得失败的命令不会产生虚假 cleanup。
-绑定完整 Case 的资源由 Provider finalizer 清理；属于该物理 Sandbox 的持久路径可由 `setup()` / `teardown()` 成对处理；语义上独立于 Sandbox 的跨 Attempt 外部状态才由 State Feature 清理，三者都不走 `onCleanup()`。
+绑定完整 Case 的资源由 Provider finalizer 清理；属于该物理 Sandbox 的持久路径，以及跨 run checkpoint 的恢复与回存，都由 `setup()` / `teardown()` 成对处理；三者都不走 `onCleanup()`。
 
 ## Agent layer
 

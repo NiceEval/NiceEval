@@ -4,7 +4,7 @@ sidebarTitle: "AI Agent Application"
 description: "A runnable AI SDK v6 web agent eval project covering a hand-written adapter, tool calls, image understanding, multi-turn sessions, model comparison, and dual observability."
 ---
 
-This project shows how to use `defineAgent` to connect an existing HTTP agent to NiceEval. It's a good fit for applications that need control over their own protocol and event mapping.
+This project shows how to use `defineDirectAgent` to connect an existing HTTP agent to NiceEval. It's a good fit for applications that need control over their own protocol and event mapping.
 
 - [View the full source](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/ai-sdk)
 - Local directory: `examples/zh/ai-sdk/`
@@ -18,7 +18,7 @@ This project shows how to use `defineAgent` to connect an existing HTTP agent to
 | Part | Implementation |
 | --- | --- |
 | System under test | AI SDK v6 web agent, HTTP `POST /api/turn` |
-| Adapter | `defineAgent` + custom `AgentEvent` → `StreamEvent` mapping |
+| Adapter | `defineDirectAgent` + custom `AgentEvent` → `StreamEvent` mapping |
 | Evals | Weather tool, image understanding, multi-turn text, multi-turn image context |
 | Experiment | Each file pins one model; the group compares DeepSeek against GPT |
 | Observability | The app keeps reporting to Langfuse while also sending this turn's OTLP data to NiceEval |

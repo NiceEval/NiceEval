@@ -6,7 +6,7 @@ description: "How NiceEval knows what your adapter has done: there are no declar
 
 Capabilities answer one question: **what has your adapter actually done** — which decides which assertions are trustworthy and which services the runner prepares for you.
 
-There is no `capabilities` field on `defineAgent` / `defineSandboxAgent` — **nothing needs to be declared**. Every capability is proven by how the agent is constructed or by what it actually returns. The decision table is below.
+There is no `capabilities` field on `defineDirectAgent` / `defineSandboxAgent` — **nothing needs to be declared**. Every capability is proven by how the agent is constructed or by what it actually returns. The decision table is below.
 
 ## Where capabilities come from: one decision table
 
@@ -33,7 +33,7 @@ Meaning: whether every tool call in the turn appears in events as a tool `operat
 
 ### Session continuation
 
-Meaning: using `ctx.session.id` / `capture` or `ctx.session.history` to connect requests to the same backend session / accumulated history. With it, cross-turn memory assertions and `t.newSession()` isolation assertions become meaningful. Both implementation styles are shown in [Write send](/tutorials/write-send).
+Meaning: using `ctx.session.id` / `capture`, or an adapter-private typed slot via `get` / `set`, to connect requests to the same backend session / accumulated history. With it, cross-turn memory assertions and `t.newSession()` isolation assertions become meaningful. Both implementation styles are shown in [Write send](/tutorials/write-send).
 
 ### `tracing` — emitting OTLP traces
 

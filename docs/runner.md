@@ -323,7 +323,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 | Provider finalizer | Provider Case finalizer(整组关闭 service、volume 与日志) | 复用窗口关闭时;fresh Sandbox 每 Attempt 一次 |
 | 实验级 teardown | `ExperimentDefinition.teardown` | 全部 Attempt 与 Sandbox 收尾之后;中断和强清退出也执行 |
 
-State Feature 的 load 在 Agent CLI 就绪后、分类账锚点之前执行,save 在 Agent teardown 之后、cleanup 之前。
+需要跨 Attempt 连续目录、服务或外部 checkpoint 时，`SandboxLayer.setup()` 在实际 Sandbox 创建后恢复，`teardown()` 在其退休、Provider finalizer 前回存；新 run 也从同一条 `setup()` 边界恢复。
 完整时序、fresh / reuse 次数表与失败归属单源在[三方准备时序](feature/sandbox/lifecycle.md);题间重置点与多实例交错见[Sandbox 复用](feature/sandbox/reuse.md#完整生命周期)。
 
 跨层收尾顺序固定为 Agent teardown → 已登记 cleanup 逆序 → reset / 退休决策 → 窗口关闭时 Provider finalizer。

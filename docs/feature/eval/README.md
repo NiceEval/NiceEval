@@ -61,7 +61,7 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记清理(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
 收尾按全局准备顺序逆序:Agent teardown 之后,两层已登记 cleanup 逆序执行,复用窗口关闭时 Provider Case finalizer 整组回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
-准备时间线上的分工:template owner 的命令先执行,另一 owner 随后,Agent 安装(`agent.ensure`)收尾准备链,再进入 State load 与 Agent runtime setup(`agent.setup`)。
+准备时间线上的分工:template owner 的命令先执行,另一 owner 随后,Agent 安装(`agent.ensure`)收尾准备链,再进入 workspace baseline 与 Agent runtime setup(`agent.setup`)。需要恢复实际 Sandbox checkpoint 时，由 lifecycle `setup()` 在实例创建后完成。
 
 文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。

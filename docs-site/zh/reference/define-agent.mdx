@@ -54,7 +54,8 @@ export default defineDirectAgent({
 用于 coding agent CLI。产出的 `Agent.kind` 恒为 `"sandbox"`——`t.sandbox`、`t.sandbox.fileChanged()` 等文件系统断言只在这类 agent 上解锁。字段全集同样见下方「Agent 与 Adapter Context 字段」的 `SandboxAgentDef`；`ctx.sandbox`(`Sandbox` 接口)的完整方法见再下方「Sandbox 接口」。
 
 ```ts
-import { command, completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { command } from "niceeval/sandbox";
 
 export default defineSandboxAgent({
   name: "my-cli-agent",
@@ -200,7 +201,7 @@ setup?: AgentSetup;
 ```
 
 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/State load/baseline 之后)、第一次 send 前
+本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/baseline 之后)、第一次 send 前
 调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
 
 #### `tracing`

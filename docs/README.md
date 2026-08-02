@@ -23,7 +23,7 @@ Feature 和未归类的产品页描述**已经定稿、希望产品最终满足�
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
 | 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
 | 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
-| 让记忆库或累积笔记跨 Attempt 延续 | [State](feature/state/README.md) |
+| 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 设计或评审公开 API | [API 设计](api-design.md) |
