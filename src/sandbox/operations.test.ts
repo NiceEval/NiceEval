@@ -220,4 +220,110 @@ describe("SandboxCommandTarget.putContent", () => {
       expect.stringMatching(/^command!:rm:-rf,payload\.bin\.niceeval-parts-[a-f0-9]{16}$/),
     ]);
   });
+
+  it("large content keeps staging, merge, replace, and cleanup under the controlled root fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-content-large-root-owned-"));
+    roots.push(root);
+    const path = join(root, "payload.bin");
+    await writeFile(path, Buffer.alloc(8 * 1024 * 1024 + 1, 0x61));
+    const content = registerSandboxContent(new URL(`file://${path}`));
+    const operations = fakeOperations([]);
+    const commands: Array<{ command: string; args: readonly string[]; root: boolean }> = [];
+    const writes: number[] = [];
+
+    operations.runCommandOrThrow = async (command, args, options) => {
+      const asRoot = options?.root === true;
+      commands.push({ command, args: args ?? [], root: asRoot });
+      if (command === "mkdir" && !asRoot) {
+        throw new SandboxCommandExitError({
+          stdout: "",
+          stderr: `mkdir: cannot create directory '${args?.[1]}': Permission denied`,
+          exitCode: 1,
+          command: `mkdir -p ${args?.[1]}`,
+        });
+      }
+      if (["sh", "mv"].includes(command) && !asRoot) {
+        throw new Error(`${command} unexpectedly lost the root transfer identity`);
+      }
+      return commandResult() as ReturnType<typeof successfulCommandResult>;
+    };
+    operations.writeBytes = async (_target, bytes) => {
+      writes.push(bytes.byteLength);
+    };
+
+    await createSandboxCommandTarget(operations).putContent(content, "/root-owned/payload.bin");
+
+    expect(writes).toEqual([8 * 1024 * 1024, 1]);
+    expect(commands.map(({ command, root }) => `${command}:${root ? "root" : "user"}`)).toEqual([
+      "rm:user",
+      "mkdir:user",
+      "rm:root",
+      "mkdir:root",
+      "sh:root",
+      "mv:root",
+      "rm:root",
+    ]);
+    expect(commands.some(({ command }) => command === "chmod" || command === "chown")).toBe(false);
+  });
+
+  it("sticky parent with an existing root-owned target escalates only the denied final replacement", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-content-large-sticky-target-"));
+    roots.push(root);
+    const path = join(root, "payload.bin");
+    await writeFile(path, Buffer.alloc(8 * 1024 * 1024 + 1, 0x61));
+    const content = registerSandboxContent(new URL(`file://${path}`));
+    const operations = fakeOperations([]);
+    const commands: Array<{ command: string; root: boolean }> = [];
+
+    operations.runCommandOrThrow = async (command, _args, options) => {
+      const asRoot = options?.root === true;
+      commands.push({ command, root: asRoot });
+      if (command === "mv" && !asRoot) {
+        throw new SandboxCommandExitError({
+          stdout: "",
+          stderr: "mv: cannot move merge to target: Operation not permitted",
+          exitCode: 1,
+          command: "mv -f merge target",
+        });
+      }
+      return commandResult() as ReturnType<typeof successfulCommandResult>;
+    };
+    operations.writeBytes = async () => {};
+
+    await createSandboxCommandTarget(operations).putContent(content, "/tmp/payload.bin");
+
+    expect(commands.map(({ command, root }) => `${command}:${root ? "root" : "user"}`)).toEqual([
+      "rm:user",
+      "mkdir:user",
+      "sh:user",
+      "mv:user",
+      "mv:root",
+      "rm:root",
+    ]);
+  });
+
+  it("large content never escalates a non-permission final replacement failure", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-content-large-no-escalation-"));
+    roots.push(root);
+    const path = join(root, "payload.bin");
+    await writeFile(path, Buffer.alloc(8 * 1024 * 1024 + 1, 0x61));
+    const content = registerSandboxContent(new URL(`file://${path}`));
+    const operations = fakeOperations([]);
+    const rootsUsed: boolean[] = [];
+    const failure = new SandboxCommandExitError({
+      stdout: "",
+      stderr: "mkdir: No space left on device",
+      exitCode: 1,
+      command: "mkdir -p parts",
+    });
+
+    operations.runCommandOrThrow = async (command, _args, options) => {
+      rootsUsed.push(options?.root === true);
+      if (command === "mv") throw failure;
+      return commandResult() as ReturnType<typeof successfulCommandResult>;
+    };
+
+    await expect(createSandboxCommandTarget(operations).putContent(content, "payload.bin")).rejects.toBe(failure);
+    expect(rootsUsed).toEqual([false, false, false, false]);
+  });
 });

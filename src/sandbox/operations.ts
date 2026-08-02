@@ -29,8 +29,20 @@ async function putContentBytes(
   const suffix = digest.replace(/^sha256:/, "").slice(0, 16);
   const partsDir = `${targetPath}.niceeval-parts-${suffix}`;
   const mergedPath = `${targetPath}.niceeval-merge-${suffix}`;
-  await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath]);
-  await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir]);
+  let asRoot = false;
+  try {
+    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath]);
+    await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir]);
+  } catch (error) {
+    if (!isPermissionDeniedCommand(error)) throw error;
+    // A fixture may intentionally create the destination parent as root. Retry only a proven
+    // permission denial with root; transport failures and deterministic non-permission exits must
+    // retain their original identity and error.
+    asRoot = true;
+    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath], { root: true });
+    await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir], { root: true });
+  }
+  let commandOptions = asRoot ? { root: true as const } : undefined;
 
   try {
     let index = 0;
@@ -45,15 +57,29 @@ async function putContentBytes(
       "niceeval-put-content",
       partsDir,
       mergedPath,
-    ]);
-    await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath]);
-    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir]);
+    ], commandOptions);
+    try {
+      await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath], commandOptions);
+    } catch (error) {
+      if (asRoot || !isPermissionDeniedCommand(error)) throw error;
+      // In a sticky directory (for example /tmp), staging can be user-owned while an existing target
+      // is root-owned and cannot be replaced. Escalate only that proven final replacement failure.
+      asRoot = true;
+      commandOptions = { root: true };
+      await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath], commandOptions);
+    }
+    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir], commandOptions);
   } catch (error) {
     // Cleanup is best effort; never replace the provider error that explains
     // which part failed to transfer.
-    await sandbox.runCommand("rm", ["-rf", partsDir, mergedPath]).catch(() => undefined);
+    await sandbox.runCommand("rm", ["-rf", partsDir, mergedPath], commandOptions).catch(() => undefined);
     throw error;
   }
+}
+
+function isPermissionDeniedCommand(error: unknown): error is SandboxCommandExitError {
+  return error instanceof SandboxCommandExitError &&
+    /permission denied|operation not permitted/i.test(`${error.result.stdout}\n${error.result.stderr}`);
 }
 
 /** `run*OrThrow` 的非零退出错误；transport、timeout 与取消错误不会被改写成它。 */
@@ -81,12 +107,7 @@ async function ensureContentDirectory(sandbox: SandboxOperations, path: string):
   try {
     await sandbox.runCommandOrThrow("mkdir", ["-p", path]);
   } catch (error) {
-    if (
-      !(error instanceof SandboxCommandExitError) ||
-      !/permission denied|operation not permitted/i.test(`${error.result.stdout}\n${error.result.stderr}`)
-    ) {
-      throw error;
-    }
+    if (!isPermissionDeniedCommand(error)) throw error;
 
     // putContent is a host transfer primitive. Prefer the sandbox user so normal
     // workdir fixtures stay editable, but a caller may have prepared the target

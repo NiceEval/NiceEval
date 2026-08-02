@@ -120,6 +120,18 @@ class E2BCommandCompletion {
         await this.emit(channel, pending);
       }
     }
+
+    const partial = (["stdout", "stderr"] as const).filter((channel) => {
+      const state = this.states[channel];
+      return state.markerStarted && !state.complete;
+    });
+    if (partial.length > 0) {
+      throw new Error(`e2b command completion marker was truncated on ${partial.join(" and ")}`);
+    }
+    const completed = (["stdout", "stderr"] as const).filter((channel) => this.states[channel].complete);
+    if (completed.length === 1) {
+      throw new Error(`e2b command completion marker was received only on ${completed[0]}`);
+    }
   }
 
   private async consume(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
@@ -274,6 +286,9 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
   private commandTimeoutMs?: number;
+  /** A VM retirement is idempotent across abort, transport failure, and the scope finalizer. */
+  private retirement?: Promise<void>;
+  private retired = false;
   /** 已实际请求的实例寿命;复用下续期一律续到这个值(滑动窗口)。 */
   private lifetime: E2BSandboxLifetime;
   readonly sandboxId: string;
@@ -408,7 +423,50 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     const completion = new E2BCommandCompletion(script, opts);
-    let onAbort: (() => void) | undefined;
+    // Attach a rejection handler before starting the SDK command. A malformed marker can reject while
+    // commands.run() is still delivering its initial events; keeping this outcome fulfilled avoids an
+    // unhandled rejection before the command handle is returned.
+    const completionOutcome = completion.completion.then(
+      (exitCode) => ({ _tag: "DirectShellExited" as const, exitCode }),
+      (error: unknown) => ({ _tag: "CompletionFailed" as const, error }),
+    );
+    const signal = opts.signal;
+    let aborted = false;
+    let cancellationReason: unknown = new DOMException("sandbox command aborted", "AbortError");
+    let abortRetirement: Promise<void> | undefined;
+    let resolveAbort: ((outcome: { readonly _tag: "Aborted"; readonly reason: unknown }) => void) | undefined;
+    const abortOutcome = signal === undefined
+      ? undefined
+      : new Promise<{ readonly _tag: "Aborted"; readonly reason: unknown }>((resolve) => {
+          resolveAbort = resolve;
+        });
+    const onAbort = signal === undefined
+      ? undefined
+      : () => {
+          if (aborted) return;
+          // This flag must change synchronously. Marker delivery can finish while kill() is still in
+          // flight; every success path checks it before settling and awaits the same retirement.
+          aborted = true;
+          cancellationReason = signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
+          abortRetirement ??= this.retire();
+          // Cancellation waits for retirement to settle, but a kill transport failure must not
+          // replace the caller's AbortSignal reason. A later stop() may retry a failed kill.
+          void abortRetirement.then(
+            () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
+            () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
+          );
+        };
+    const throwIfAborted = async (): Promise<void> => {
+      if (!aborted) return;
+      await abortRetirement?.catch(() => undefined);
+      throw cancellationReason;
+    };
+
+    if (signal !== undefined) {
+      signal.addEventListener("abort", onAbort!, { once: true });
+      // Close the check/listener race: AbortSignal does not replay an abort to a late listener.
+      if (signal.aborted) onAbort!();
+    }
     try {
       const commandOptions = {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
@@ -419,57 +477,82 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         onStderr: completion.onStderr,
         background: true as const,
       };
-      const signal = opts.signal;
-      if (signal?.aborted) {
-        throw signal.reason ?? new DOMException("sandbox command aborted", "AbortError");
-      }
-      const handle = await this.sbx.commands.run(completion.script, commandOptions);
-      // E2B 的 CommandHandle.kill() 只承诺 SIGKILL 入口进程，无法证明孙进程也已终止。
-      // 因此取消时退休整台 Sandbox；kill() settle 后才让本次命令 Promise settle。
-      const abort = async (): Promise<never> => {
-        await this.sbx.kill();
-        throw signal?.reason ?? new DOMException("sandbox command aborted", "AbortError");
-      };
-      if (signal?.aborted) return await abort();
-      const aborted = signal === undefined
-        ? undefined
-        : new Promise<never>((_resolve, reject) => {
-            onAbort = () => void abort().catch(reject);
-            signal.addEventListener("abort", onAbort, { once: true });
-          });
-      const outcome = await Promise.race([
-        completion.completion.then((exitCode) => ({ _tag: "DirectShellExited" as const, exitCode })),
-        handle.wait().then((result) => ({ _tag: "SdkStreamEnded" as const, result })),
-        ...(aborted ? [aborted] : []),
+      await throwIfAborted();
+      // Starting a background command is itself a remote RPC and can hang. Race handle acquisition
+      // against the abort retirement, while eagerly handling a late start rejection.
+      const commandStartOutcome = this.sbx.commands.run(completion.script, commandOptions).then(
+        (handle) => ({ _tag: "HandleReady" as const, handle }),
+        (error: unknown) => ({ _tag: "HandleFailed" as const, error }),
+      );
+      const startOutcome = await Promise.race([
+        commandStartOutcome,
+        ...(abortOutcome ? [abortOutcome] : []),
       ]);
+      await throwIfAborted();
+      if (startOutcome._tag === "Aborted") throw startOutcome.reason;
+      if (startOutcome._tag === "HandleFailed") throw startOutcome.error;
+      const handle = startOutcome.handle;
+      const streamOutcome = handle.wait().then(
+        (result) => ({ _tag: "SdkStreamEnded" as const, result }),
+        (error: unknown) => ({ _tag: "SdkStreamFailed" as const, error }),
+      );
+      const outcome = await Promise.race([
+        completionOutcome,
+        streamOutcome,
+        ...(abortOutcome ? [abortOutcome] : []),
+      ]);
+      await throwIfAborted();
       if (outcome._tag === "DirectShellExited") {
         // SDK 文档保证 disconnect 只断 event transport、不 kill command。直接 shell 已退出；仍持有
         // stdout/stderr 的只能是它有意留下的后台服务，正是这条路径要保留的对象。
         await handle.disconnect();
+        await throwIfAborted();
         return completion.result(outcome.exitCode);
       }
+      if (outcome._tag === "CompletionFailed" || outcome._tag === "SdkStreamFailed") {
+        throw outcome.error;
+      }
+      if (outcome._tag === "Aborted") throw outcome.reason;
       await completion.finish();
+      await throwIfAborted();
       return completion.result(outcome.result.exitCode);
     } catch (e) {
+      if (aborted) {
+        await abortRetirement?.catch(() => undefined);
+        throw cancellationReason;
+      }
       // e2b 在退出码非 0 时【抛】CommandExitError;但 Sandbox 契约要求【返回】带 exitCode 的结果
       // (与 docker / vercel 一致)——否则 agent 命令 / build / 测试一旦非 0 退出就会炸,而不是被判分。
       if (e instanceof CommandExitError) {
-        await completion.finish();
+        try {
+          await completion.finish();
+        } catch (callbackError) {
+          if (aborted) {
+            await abortRetirement?.catch(() => undefined);
+            throw cancellationReason;
+          }
+          await this.retire();
+          throw callbackError;
+        }
+        await throwIfAborted();
         return completion.result(e.exitCode);
       }
       // 撞的是我们给的那条线时,把归属一起抛出去(runner 据此落 error.timeout)。
       if (limit.timeoutMs !== undefined && isTimeoutError(e)) {
         // SDK timeout 只保证终止入口进程，不能证明命令树已经消失；按公共契约退休整台 VM。
-        await this.sbx.kill();
+        await this.retire();
         throw new SandboxCommandTimeoutError(
           `e2b command timed out after ${limit.timeoutMs}ms`,
           limit.timeoutMs,
           limit.explicit,
         );
       }
+      // Stream transport, output callbacks, marker integrity, and disconnect failures all leave the
+      // managed command tree in an unknown state. Retire the VM before exposing the original error.
+      await this.retire();
       throw e;
     } finally {
-      if (onAbort !== undefined) opts.signal?.removeEventListener("abort", onAbort);
+      if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);
     }
   }
 
@@ -567,7 +650,25 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   }
 
   async stop(): Promise<void> {
-    await this.sbx.kill();
+    await this.retire();
+  }
+
+  private retire(): Promise<void> {
+    if (this.retired) return Promise.resolve();
+    if (this.retirement !== undefined) return this.retirement;
+    let attempt!: Promise<void>;
+    attempt = this.sbx.kill().then(
+      () => {
+        this.retired = true;
+        if (this.retirement === attempt) this.retirement = undefined;
+      },
+      (error: unknown) => {
+        if (this.retirement === attempt) this.retirement = undefined;
+        throw error;
+      },
+    );
+    this.retirement = attempt;
+    return attempt;
   }
 
   /**

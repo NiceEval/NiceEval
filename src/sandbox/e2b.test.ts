@@ -304,9 +304,170 @@ describe("E2BSandbox command completion", () => {
     expect(sandboxKills).toBe(0);
     expect(serviceAlive).toBe(true);
   });
+
+  it("abort 与 marker 同时到达时等待唯一一次 VM kill 后才以取消原因 settle", async () => {
+    const reason = new DOMException("cancelled during marker delivery", "AbortError");
+    const controller = new AbortController();
+    let wrappedScript = "";
+    let runOptions: FakeE2BRunOptions | undefined;
+    let notifyRaceReady!: () => void;
+    const raceReady = new Promise<void>((resolve) => {
+      notifyRaceReady = resolve;
+    });
+    let releaseKill!: () => void;
+    const killFinished = new Promise<void>((resolve) => {
+      releaseKill = resolve;
+    });
+    const killFailure = new Error("e2b kill transport failed");
+    let sandboxKills = 0;
+    let disconnects = 0;
+    const sandbox = makeSandbox({
+      commands: {
+        run: async (script: string, opts: FakeE2BRunOptions) => {
+          wrappedScript = script;
+          runOptions = opts;
+          return {
+            wait: () => {
+              // runShell has installed its abort listener before it asks for the stream outcome.
+              notifyRaceReady();
+              return new Promise<never>(() => {});
+            },
+            disconnect: async () => {
+              disconnects += 1;
+            },
+          };
+        },
+      },
+      kill: async () => {
+        sandboxKills += 1;
+        if (sandboxKills === 1) {
+          await killFinished;
+          throw killFailure;
+        }
+        return true;
+      },
+    });
+
+    const running = sandbox.runShell("exit 0", { signal: controller.signal });
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await raceReady;
+    controller.abort(reason);
+
+    // Feed both completion markers while kill() is deliberately still pending.
+    const { prefix, suffix } = completionMarkerParts(wrappedScript);
+    const marker = `${prefix}0${suffix}`;
+    await runOptions?.onStdout?.(marker);
+    await runOptions?.onStderr?.(marker);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(settled).toBe(false);
+    expect(sandboxKills).toBe(1);
+    expect(disconnects).toBe(0);
+    releaseKill();
+    await expect(running).rejects.toBe(reason);
+    expect(settled).toBe(true);
+    expect(sandboxKills).toBe(1);
+    expect(disconnects).toBe(0);
+    await expect(sandbox.stop()).resolves.toBeUndefined();
+    expect(sandboxKills).toBe(2);
+  });
+
+  it("stream、callback 与 marker 完整性异常都会先退休 VM", async () => {
+    for (const kind of ["stream", "callback", "marker", "partial", "single"] as const) {
+      const failure = new Error(`${kind} failed`);
+      let sandboxKills = 0;
+      const sandbox = makeSandbox({
+        commands: {
+          run: async (script: string, opts: FakeE2BRunOptions) => {
+            if (kind === "callback") {
+              const { prefix, suffix } = completionMarkerParts(script);
+              await opts.onStdout?.(`front${prefix}0${suffix}`);
+            }
+            if (kind === "marker") {
+              const { prefix, suffix } = completionMarkerParts(script);
+              await opts.onStdout?.(`${prefix}0${suffix}`);
+              await opts.onStderr?.(`${prefix}1${suffix}`);
+            }
+            if (kind === "partial") {
+              const { prefix } = completionMarkerParts(script);
+              await opts.onStdout?.(`${prefix}0`);
+            }
+            if (kind === "single") {
+              const { prefix, suffix } = completionMarkerParts(script);
+              await opts.onStdout?.(`${prefix}0${suffix}`);
+            }
+            return {
+              wait: kind === "stream"
+                ? async () => {
+                    throw failure;
+                  }
+                : kind === "partial" || kind === "single"
+                  ? async () => ({ stdout: "", stderr: "", exitCode: 0 })
+                : () => new Promise<never>(() => {}),
+              disconnect: async () => {},
+            };
+          },
+        },
+        kill: async () => {
+          sandboxKills += 1;
+          return true;
+        },
+      });
+
+      const running = sandbox.runShell("exit 0", kind === "callback"
+        ? {
+            onStdout: () => {
+              throw failure;
+            },
+          }
+        : {});
+      if (kind === "marker") await expect(running).rejects.toThrow(/markers disagreed on exit code/);
+      else if (kind === "partial") await expect(running).rejects.toThrow(/marker was truncated on stdout/);
+      else if (kind === "single") await expect(running).rejects.toThrow(/marker was received only on stdout/);
+      else await expect(running).rejects.toBe(failure);
+      expect(sandboxKills).toBe(1);
+    }
+  });
 });
 
 describe("E2BSandbox command interruption", () => {
+  it("commands.run 尚未返回 handle 时，signal 取消仍在 kill settle 后及时返回", async () => {
+    const reason = new DOMException("cancelled during command start", "AbortError");
+    const controller = new AbortController();
+    let notifyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    let sandboxKills = 0;
+    const sandbox = makeSandbox({
+      commands: {
+        run: () => {
+          notifyStarted();
+          return new Promise<never>(() => {});
+        },
+      },
+      kill: async () => {
+        sandboxKills += 1;
+        return true;
+      },
+    });
+
+    const running = sandbox.runShell("sleep 60", { signal: controller.signal });
+    await started;
+    controller.abort(reason);
+
+    await expect(running).rejects.toBe(reason);
+    expect(sandboxKills).toBe(1);
+  });
+
   it("signal 取消时退休整台 VM，再以原始取消原因 reject", async () => {
     const reason = new DOMException("cancelled by test", "AbortError");
     const controller = new AbortController();
