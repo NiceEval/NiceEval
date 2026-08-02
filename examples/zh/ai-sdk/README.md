@@ -65,6 +65,6 @@ pnpm exec niceeval exp compare-models weather-tool  # 在实验组里只跑某�
 
 跨模型对比写**多个实验文件**：`experiments/compare-models/` 下每个文件钉一个 `model`（`model` 是单个字符串，不接受数组）。
 
-`webAgent()` 是 remote agent，所以不会创建 Docker 沙箱；如果 eval 里使用 `t.sandbox.diff`、`t.sandbox.fileChanged()` 或 workspace 文件断言，需要改用 sandbox agent。
+`webAgent()` 是 Direct Agent，所以不会创建 Sandbox；如果 eval 里使用 `t.sandbox.diff`、`t.sandbox.fileChanged()` 或 workspace 文件断言，需要改用 Sandbox Agent。
 
-没有 judge API key 时，eval 只跑确定性断言和工具调用断言；设置 `OPENAI_API_KEY`、`CODEX_API_KEY` 或 `NICEEVAL_JUDGE_KEY` 后，会额外启用 soft judge 评分。
+这组 eval 包含非 optional 的 Judge 断言，因此必须设置 `NICEEVAL_JUDGE_KEY`（或在 `judge.apiKeyEnv` 指定别的变量名）；缺少 key 时断言会记为 `unavailable`，Attempt 会 `errored`。若只想跑确定性断言，应删除 Judge 断言；只有明确接受证据缺席时才链 `.optional()`。

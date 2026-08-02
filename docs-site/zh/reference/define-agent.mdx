@@ -200,9 +200,9 @@ installers?: readonly AgentInstaller[];
 setup?: AgentSetup;
 ```
 
-每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/baseline 之后)、第一次 send 前
-调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
+每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
+本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
+备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
 
 #### `tracing`
 

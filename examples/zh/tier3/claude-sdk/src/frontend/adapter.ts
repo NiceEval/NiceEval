@@ -82,6 +82,64 @@ type BlockState =
   | { kind: "tool_use"; cell: Extract<Cell, { kind: "tool" }> }
   | { kind: "other" };
 
+type ClaudeStreamEvent =
+  | { type: "message_start" }
+  | { type: "content_block_start"; index: number; block: ClaudeContentBlock }
+  | { type: "content_block_delta"; index: number; delta: ClaudeContentDelta }
+  | { type: "content_block_stop"; index: number };
+
+type ClaudeContentBlock =
+  | { type: "text" }
+  | { type: "thinking" }
+  | { type: "tool_use"; id: string; name: string }
+  | { type: "other" };
+
+type ClaudeContentDelta =
+  | { type: "text_delta"; text: string }
+  | { type: "thinking_delta"; thinking: string }
+  | { type: "input_json_delta"; partialJson: string }
+  | { type: "other" };
+
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function parseStreamEvent(value: unknown): ClaudeStreamEvent | undefined {
+  const event = recordOf(value);
+  if (!event || typeof event.type !== "string") return undefined;
+  if (event.type === "message_start") return { type: "message_start" };
+  if (event.type === "content_block_stop") {
+    return typeof event.index === "number" ? { type: "content_block_stop", index: event.index } : undefined;
+  }
+  if (event.type === "content_block_start") {
+    const block = recordOf(event.content_block);
+    if (typeof event.index !== "number" || !block || typeof block.type !== "string") return undefined;
+    if (block.type === "text") return { type: "content_block_start", index: event.index, block: { type: "text" } };
+    if (block.type === "thinking") return { type: "content_block_start", index: event.index, block: { type: "thinking" } };
+    if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+      return { type: "content_block_start", index: event.index, block: { type: "tool_use", id: block.id, name: block.name } };
+    }
+    return { type: "content_block_start", index: event.index, block: { type: "other" } };
+  }
+  if (event.type === "content_block_delta") {
+    const delta = recordOf(event.delta);
+    if (typeof event.index !== "number" || !delta || typeof delta.type !== "string") return undefined;
+    if (delta.type === "text_delta" && typeof delta.text === "string") {
+      return { type: "content_block_delta", index: event.index, delta: { type: "text_delta", text: delta.text } };
+    }
+    if (delta.type === "thinking_delta" && typeof delta.thinking === "string") {
+      return { type: "content_block_delta", index: event.index, delta: { type: "thinking_delta", thinking: delta.thinking } };
+    }
+    if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
+      return { type: "content_block_delta", index: event.index, delta: { type: "input_json_delta", partialJson: delta.partial_json } };
+    }
+    return { type: "content_block_delta", index: event.index, delta: { type: "other" } };
+  }
+  return undefined;
+}
+
 class TurnState {
   readonly cells: Cell[] = [];
   readonly blocks = new Map<number, BlockState>();
@@ -128,15 +186,17 @@ class TurnState {
   }
 }
 
-function handleStreamEvent(state: TurnState, event: Record<string, any>): boolean {
-  const blockKey: number = event.index;
+function handleStreamEvent(state: TurnState, rawEvent: unknown): boolean {
+  const event = parseStreamEvent(rawEvent);
+  if (!event) return false;
   switch (event.type) {
     case "message_start":
       // 新的一条 assistant 子消息开始,index 从 0 重新数,清掉上一条的块表。
       state.blocks.clear();
       return false;
     case "content_block_start": {
-      const block = event.content_block;
+      const blockKey = event.index;
+      const block = event.block;
       if (block.type === "text") {
         const cell = { kind: "text" as const, text: "" };
         state.cells.push(cell);
@@ -156,6 +216,7 @@ function handleStreamEvent(state: TurnState, event: Record<string, any>): boolea
       return true;
     }
     case "content_block_delta": {
+      const blockKey = event.index;
       const blockState = state.blocks.get(blockKey);
       if (!blockState) return false;
       if (blockState.kind === "text" && event.delta.type === "text_delta") {
@@ -167,12 +228,13 @@ function handleStreamEvent(state: TurnState, event: Record<string, any>): boolea
         return true;
       }
       if (blockState.kind === "tool_use" && event.delta.type === "input_json_delta") {
-        blockState.cell.argsText += event.delta.partial_json;
+        blockState.cell.argsText += event.delta.partialJson;
         return true;
       }
       return false;
     }
     case "content_block_stop": {
+      const blockKey = event.index;
       const blockState = state.blocks.get(blockKey);
       if (blockState?.kind !== "tool_use") return false;
       const cell = blockState.cell;
@@ -209,7 +271,7 @@ function handleFrame(state: TurnState, frame: ServerFrame): boolean {
       }
       return false;
     case "stream_event":
-      return handleStreamEvent(state, frame.event as Record<string, any>);
+      return handleStreamEvent(state, frame.event);
     case "user": {
       // 工具结果以 user 消息里的 tool_result 块回来。
       const content = frame.message.content;

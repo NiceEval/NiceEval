@@ -196,9 +196,9 @@ Installers paired to exact `ensure` identities. When omitted, a failed probe rep
 setup?: AgentSetup;
 ```
 
-Runs once per sandbox (not once per turn): install the CLI, write config.toml / auth config (model/base/auth and other
-things that do not change within a turn). The runner calls it once after the sandbox is ready (after upload/baseline/eval.setup)
-and before the first send; does not return a value.
+Runs once per Attempt (not once per turn): write config.toml / auth config (model/base/auth and other runtime settings
+that do not change within the Attempt). CLI probing, installation, and verification belong to `agent.ensure`. The runner
+calls setup once after the Sandbox is ready (after layer prepare/ensure/baseline) and before the first send; it returns no value.
 
 #### `tracing`
 

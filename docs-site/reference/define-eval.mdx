@@ -301,13 +301,13 @@ records a failed assertion, it does not abort the rest of the code. Use `require
 #### `require`
 
 ```ts
-require(value: unknown, assertion: ValueAssertion): Promise<unknown>;
+require<T>(value: T, assertion: ValueAssertion): Promise<T>;
 ```
 
 Runs a `ValueAssertion` against any value, evaluated immediately (when awaited); if it isn't met, throws and aborts the rest of the eval's
 steps (the assertion is still recorded in the report, and does not affect other already-recorded assertions). The difference from `check`:
 `check` only records and never throws, with assertion evaluation left to the end; `require` evaluates on the spot and aborts on failure — suited to
-"if this prerequisite isn't met, nothing written after it matters."
+"if this prerequisite isn't met, nothing written after it matters." On success it returns the original value with its type preserved.
 
 #### `group`
 

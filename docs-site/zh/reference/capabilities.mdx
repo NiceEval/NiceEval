@@ -1,56 +1,94 @@
 ---
-title: "能力位参考"
+title: "能力与证据覆盖参考"
 sidebarTitle: "能力位"
-description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明式能力位，全部由构造和实际行为证明。"
+description: "Agent 的构造方式、运行时行为与必填的六通道 evidenceCoverage 声明，怎样共同决定 NiceEval 的断言能相信什么。"
 ---
 
-能力回答一个问题：**你的 adapter 做到了什么**——决定哪些断言可信、runner 要为你准备什么服务。
+能力要回答两个不同的问题：
 
-`defineDirectAgent` / `defineSandboxAgent` 上没有 `capabilities` 字段——**没有任何东西需要你声明**。每一项能力都由构造方式或实际返回的内容证明，判定表如下。
+1. **Runner 能构造或调用什么？** Agent 的构造方式与运行时行为提供 Sandbox、tracing、会话续接和 HITL。
+2. **断言能相信什么结论？** 每个 Agent 都必须用 `evidenceCoverage` 声明六个证据通道的完整性。
 
-## 能力从哪来：一张对照表
+`defineDirectAgent` / `defineSandboxAgent` 上没有另一个 `capabilities` 字段。这不表示「什么都不用声明」：两种定义的 `evidenceCoverage` 都是必填字段，避免缺失证据变成含糊的第四种状态。
 
-| 能力 | 怎么获得 | 你要写什么 |
+## 构造与运行时能力
+
+| 能力 | 怎么获得 | 对证据的影响 |
 |---|---|---|
-| `t.sandbox` / `t.sandbox.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造(`Agent.kind` 恒为 `"sandbox"`) | 无 |
-| `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型写了 `tracing` 字段；长驻应用在 config 配了 `telemetry` 固定端口 | 无（配置本来就要写）|
-| 工具/动作断言（`t.calledTool()` 等，含负断言） | 用官方转换器（`createClaudeSdkEventStream`、`turnFromAiSdk` 等）——返回值里有多少配对的 `operation.started` / `operation.finished` 事件就是多少 | 无；手工映射时事件完整与否由你的映射代码决定 |
-| 跨轮记忆、`t.newSession()` 隔离 | 用了 `ctx.session`（`id` / `capture` 或 typed slot）续接上下文 | 无——接了就续得上，没接每轮都是新对话，不会报错 |
-| HITL（`t.respond()`） | `send` 返回过 `status: "waiting"` + `input.requested` | 无 |
+| `t.sandbox` / `t.sandbox.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造（`Agent.kind` 恒为 `"sandbox"`） | Sandbox 结果断言消费 Attempt 的 agent 归因 diff，不对应 `evidenceCoverage` 的某个通道 |
+| `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型 Agent 配置 `tracing`；长驻应用在 config 配置固定的 `telemetry` 端口 | Span 只进时间瀑布图，不能填补行为证据缺口 |
+| 跨轮续接与 `t.newSession()` 隔离 | 用 `ctx.session.id` / `capture` 续接后端会话，或用 `ctx.session.get` / `set` 保存 Adapter 私有的强类型历史 | 会话接法决定实际行为，不从一个 evidence bit 推断 |
+| HITL（`t.respond()`） | `send` 返回 `status: "waiting"` 和 `input.requested` | 下一轮回答按结构化 request ID 对位 |
+| Compaction 可见 | 官方 parser 或完整的手写映射发出 `compaction` 事件 | `t.event("compaction")` 还要受下方 `events` 覆盖声明约束 |
 
-没做到的能力 = 没有对应的事件/字段出现，相关断言组不可用（不是"报错"，是断言本身没有可判断的依据）；基础断言（文本、结构化、judge）永远可用。
+## 必填的六通道声明
 
+`defineDirectAgent` 与 `defineSandboxAgent` 都要求一个 `EvidenceCoverage`：
 
-## 手工映射时事件不全，会怎样
+```ts
+interface EvidenceCoverage {
+  readonly events: EvidenceCoverageEntry;
+  readonly actions: EvidenceCoverageEntry;
+  readonly messages: EvidenceCoverageEntry;
+  readonly usage: EvidenceCoverageEntry;
+  readonly status: EvidenceCoverageEntry;
+  readonly data: EvidenceCoverageEntry;
+}
 
-没有声明这一层之后，"谎报"这件事也不存在了——手工映射漏了哪些工具事件，`t.calledTool()` 这类断言看到的就是漏掉之后的样子，包括负断言（`notCalledTool()`）可能因为事件本来就没写全而"看起来通过"。这不是框架的判定失误，是手工映射本身的完整性问题：**要不要相信一个负断言，取决于你有没有确认过自己的映射代码覆盖了全部工具调用**，不存在框架帮你担保的中间层。
+type EvidenceCoverageEntry =
+  | { readonly status: "complete"; readonly reason?: never }
+  | {
+      readonly status: "partial" | "unavailable";
+      readonly reason: string;
+    };
+```
 
-## 逐项速查
+只有 Adapter 确实完整采到全部通道时才用 `completeEvidenceCoverage`。官方 converter 会给出它对所归一协议的覆盖声明；手写映射必须把六个通道逐项如实写清：
 
-### 工具/动作事件完整性
+```ts
+import type { EvidenceCoverage } from "niceeval/adapter";
 
-含义：这一轮的每次工具调用是否都以 tool `operation.started` + `operation.finished` 事件对出现在 events 里（[事件流参考](/zh/reference/events)）。来源只有两个：官方转换器按被测协议的契约保证；手工映射由你的代码决定。OTel span 不是来源——span 只进瀑布图，不进事件流（见 [OTel 接入](/zh/tutorials/connect-otel)）。
+const evidenceCoverage = {
+  events: { status: "partial", reason: "接口只发送最终事件" },
+  actions: { status: "unavailable", reason: "接口不暴露工具生命周期" },
+  messages: { status: "complete" },
+  usage: { status: "unavailable", reason: "接口不返回 token usage" },
+  status: { status: "complete" },
+  data: { status: "complete" },
+} satisfies EvidenceCoverage;
+```
 
-### 会话续接
+`Turn.evidenceCoverage` 是可选的逐轮**降级**。只列这一轮比 Agent 默认值更差的通道，例如 stream 在 usage 到达前断开。省略的通道继承 Agent 声明；Turn 不能把默认覆盖升格。
 
-含义：用 `ctx.session.id` / `capture` 续接服务端会话，或用 Adapter 私有的 typed slot 累计客户端历史。有它，跨轮记忆断言、`t.newSession()` 隔离断言才有意义。两种实现写法见[写 send](/zh/tutorials/write-send)。
+## 覆盖怎样改变断言结果
 
-### `tracing` —— 发 OTLP trace
+Coverage 防止「没采到」看起来像「确认没发生」：
 
-runner 消费：运行时起一个本机 OTLP 接收器，把本轮 trace context 经 `ctx.telemetry.headers` 交给你；span 归一后在 `niceeval view` 画瀑布图——只画图，不喂断言。来源：CLI 型写 `tracing` 字段（env / configure 把端点交给被测进程）；长驻应用在 `niceeval.config.ts` 配 `telemetry: { port }` 固定端口（见 [OTel 接入](/zh/tutorials/connect-otel)）。
+| 检查 | 所需通道 complete | 所需通道 partial / unavailable |
+|---|---|---|
+| 正断言找到了匹配证据 | `passed` | `passed`——已经存在的证据仍然成立 |
+| 正断言没找到匹配 | `failed` | `unavailable`——采集缺口不能证明 Agent 没做 |
+| `notCalledTool()` / `notEvent()` 等负断言 | 正常求值 | `unavailable` |
+| `maxTokens()` / `maxCost()` 等上限断言 | 正常求值 | `unavailable` |
 
-### `kind: "sandbox"` —— Sandbox 与改文件
+`unavailable` 断言始终带机器可读原因落盘，绝不静默丢弃，也不折成通过：
 
-runner 消费：为每次 attempt 准备 Sandbox（Docker / Vercel / E2B），经 `ctx.sandbox` 交给 adapter；解锁 `t.sandbox.fileChanged()` 等 diff 断言。来源：`defineSandboxAgent` 构造，内部判别字段，不用你写。
+- 非 optional 的 unavailable 断言让 Attempt `errored`；
+- 显式链 `.optional()` 的断言仍显示 unavailable，但不影响 Verdict。
 
-### 压缩可见（compaction）
+Judge 也遵守同一条 Verdict 规则，但有自己的不可用原因：Judge 模型或 API key 解析不到、Judge 调用失败、响应取不出分数，都会得到 `unavailable`。所以 Judge 并非「永远可用」。
 
-含义：被测 agent 发生上下文压缩时吐 `compaction` 事件，`t.event("compaction")` 有意义。来源：内置 parsers 自动带；自写 parser 覆盖了对应逻辑就有。
+## 手写映射漏事件会怎样
+
+手写映射漏了事件，却把 `events` 或 `actions` 声明成 complete，会让负断言在残缺画面上看起来通过。这是错误的完整性声明。在映射覆盖成功、失败、拒绝和并发工具生命周期之前，应当如实声明 `partial` 或 `unavailable` 并写原因。
+
+官方 converter 只保证其协议契约明确覆盖的表面。OTel span 不能修补不完整的事件映射：span 只进瀑布图，不进断言。
 
 ## 相关阅读
 
-- [事件流参考](/zh/reference/events) —— 事件流承诺的具体内容。
-- [Adapter 概念](/zh/explanation/adapter) —— `ctx`/`Turn` 的完整契约、能力从哪来。
-- [接入你的 agent](/zh/tutorials/connect-your-agent) —— 每种接入路径怎么做。
-- [OTel 接入](/zh/tutorials/connect-otel) —— span 只进瀑布图、不喂断言的完整走法。
-- [内置 Agent 能力](/zh/reference/builtin-agents) —— 内置 adapter 各自做到什么。
+- [事件流参考](/zh/reference/events) —— 标准事件流契约。
+- [Adapter 概念](/zh/explanation/adapter) —— `ctx` / `Turn` 完整契约。
+- [defineDirectAgent 与 defineSandboxAgent](/zh/reference/define-agent) —— Agent 字段与示例。
+- [断言](/zh/explanation/assert) —— unavailable、`.optional()` 与 Verdict 传播。
+- [OTel 接入](/zh/tutorials/connect-otel) —— span 为什么只进可视化、不进断言。
+- [内置 Agent 能力](/zh/reference/builtin-agents) —— 各内置 Adapter 实际采到什么。

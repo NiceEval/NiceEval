@@ -1,56 +1,94 @@
 ---
-title: "Capabilities reference"
+title: "Capabilities and evidence coverage"
 sidebarTitle: "Capabilities"
-description: "How NiceEval knows what your adapter has done: there are no declarative capability bits — everything is proven by construction and actual behavior."
+description: "How construction, runtime behavior, and the required six-channel evidenceCoverage declaration determine which NiceEval assertions can be trusted."
 ---
 
-Capabilities answer one question: **what has your adapter actually done** — which decides which assertions are trustworthy and which services the runner prepares for you.
+Capabilities answer two separate questions:
 
-There is no `capabilities` field on `defineDirectAgent` / `defineSandboxAgent` — **nothing needs to be declared**. Every capability is proven by how the agent is constructed or by what it actually returns. The decision table is below.
+1. **What can the runner construct or call?** Agent construction and runtime behavior provide Sandbox access, tracing, session continuation, and HITL.
+2. **What conclusions can assertions trust?** Every Agent declares the completeness of six evidence channels with the required `evidenceCoverage` field.
 
-## Where capabilities come from: one decision table
+There is no separate `capabilities` field on `defineDirectAgent` or `defineSandboxAgent`. That does **not** mean there is nothing to declare: `evidenceCoverage` is required on both definitions so missing evidence never becomes an implicit fourth state.
 
-| Capability | How it is obtained | What you write |
+## Construction and runtime capabilities
+
+| Capability | How it is obtained | Evidence implication |
 |---|---|---|
-| `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Constructed with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Nothing |
-| `tracing` (OTLP receiver → `niceeval view` waterfall) | CLI-style agents write the `tracing` field; long-running apps configure a fixed `telemetry` port in the config | Nothing (the configuration is what you would write anyway) |
-| Tool/action assertions (`t.calledTool()` etc., including negative assertions) | Use an official converter (`createClaudeSdkEventStream`, `turnFromAiSdk`, etc.) — the paired `operation.started` / `operation.finished` events in the return value are exactly what you get | Nothing; with manual mapping, event completeness is decided by your mapping code |
-| Cross-turn memory, `t.newSession()` isolation | Used `ctx.session` (`id`/`capture`, `history`) to continue context | Nothing — wire it up and continuation works; skip it and every turn is a fresh conversation, with no error either way |
-| HITL (`t.respond()`) | `send` has returned `status: "waiting"` + `input.requested` | Nothing |
+| `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Construct the Agent with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Sandbox result assertions consume the Attempt's agent-attributed diff, not an `evidenceCoverage` channel |
+| `tracing` (OTLP receiver → `niceeval view` waterfall) | CLI-style agents configure `tracing`; long-running apps configure a fixed `telemetry` port | Spans feed the timing waterfall only; they never fill gaps in behavior evidence |
+| Cross-turn continuation and `t.newSession()` isolation | Continue the backend session with `ctx.session.id` / `capture`, or store typed adapter-private history with `ctx.session.get` / `set` | Session wiring determines behavior; it is not inferred from an evidence bit |
+| HITL (`t.respond()`) | `send` returns `status: "waiting"` plus `input.requested` | The next response is matched to the structured request ID |
+| Compaction visibility | An official parser or a complete manual mapping emits a `compaction` event | `t.event("compaction")` also depends on the `events` coverage declared below |
 
-A capability you have not implemented = the corresponding events/fields never appear, and the related assertion group is unavailable (not an "error" — the assertions simply have nothing to judge from); basic assertions (text, structured output, Judge) are always available.
+## The required six-channel declaration
 
+`defineDirectAgent` and `defineSandboxAgent` both require an `EvidenceCoverage` value:
+
+```ts
+interface EvidenceCoverage {
+  readonly events: EvidenceCoverageEntry;
+  readonly actions: EvidenceCoverageEntry;
+  readonly messages: EvidenceCoverageEntry;
+  readonly usage: EvidenceCoverageEntry;
+  readonly status: EvidenceCoverageEntry;
+  readonly data: EvidenceCoverageEntry;
+}
+
+type EvidenceCoverageEntry =
+  | { readonly status: "complete"; readonly reason?: never }
+  | {
+      readonly status: "partial" | "unavailable";
+      readonly reason: string;
+    };
+```
+
+Use `completeEvidenceCoverage` only when the adapter really captures every channel completely. Official converters expose a coverage declaration for the protocol they normalize; a manual mapping must declare all six channels honestly:
+
+```ts
+import type { EvidenceCoverage } from "niceeval/adapter";
+
+const evidenceCoverage = {
+  events: { status: "partial", reason: "the endpoint emits final events only" },
+  actions: { status: "unavailable", reason: "tool lifecycle events are not exposed" },
+  messages: { status: "complete" },
+  usage: { status: "unavailable", reason: "the endpoint omits token usage" },
+  status: { status: "complete" },
+  data: { status: "complete" },
+} satisfies EvidenceCoverage;
+```
+
+`Turn.evidenceCoverage` is an optional per-turn **downgrade**. List only channels that were worse than the Agent default for that turn, such as a stream that disconnected before usage arrived. Omitted channels inherit the Agent declaration; a Turn cannot upgrade it.
+
+## How coverage changes an assertion result
+
+Coverage prevents missing telemetry from looking like proof that nothing happened:
+
+| Check | Complete required channel | Partial / unavailable required channel |
+|---|---|---|
+| Positive assertion finds matching evidence | `passed` | `passed` — evidence that exists is still evidence |
+| Positive assertion finds no match | `failed` | `unavailable` — missing collection cannot prove the Agent did not do it |
+| Negative assertion such as `notCalledTool()` / `notEvent()` | Evaluated normally | `unavailable` |
+| Upper-bound assertion such as `maxTokens()` / `maxCost()` | Evaluated normally | `unavailable` |
+
+An `unavailable` assertion is always recorded with a machine-readable reason. It is never silently discarded or folded into a pass:
+
+- a non-optional unavailable assertion makes the Attempt `errored`;
+- an assertion explicitly chained with `.optional()` stays visible as unavailable but does not affect the Verdict.
+
+Judge availability follows the same Verdict rule but has its own causes: an unresolved Judge model or API key, a failed Judge call, or an unparseable score produces `unavailable`. Judge is therefore not "always available."
 
 ## What happens when a manual mapping misses events
 
-With the declaration layer gone, "false claims" no longer exist either — whatever tool events your manual mapping misses, assertions like `t.calledTool()` see exactly the post-omission picture, and negative assertions (`notCalledTool()`) may "look like they pass" simply because the events were never written. That is not a framework misjudgment; it is a completeness problem in the manual mapping itself: **whether to trust a negative assertion depends on whether you have confirmed your mapping code covers every tool call** — there is no framework-provided middle layer vouching for you.
+If a manual mapping claims `events` or `actions` are complete while omitting events, negative assertions can appear to pass on an incomplete picture. That is a false completeness declaration. Declare `partial` or `unavailable` with a reason until the mapping covers success, failure, rejection, and concurrent tool lifecycles.
 
-## Item-by-item quick reference
-
-### Tool/action event completeness
-
-Meaning: whether every tool call in the turn appears in events as a tool `operation.started` + `operation.finished` pair ([events reference](/reference/events)). There are only two sources: official converters guarantee it per the contract of the protocol under test; manual mapping is decided by your code. OTel spans are not a source — spans only feed the waterfall, never the event stream (see [OTel integration](/tutorials/connect-otel)).
-
-### Session continuation
-
-Meaning: using `ctx.session.id` / `capture`, or an adapter-private typed slot via `get` / `set`, to connect requests to the same backend session / accumulated history. With it, cross-turn memory assertions and `t.newSession()` isolation assertions become meaningful. Both implementation styles are shown in [Write send](/tutorials/write-send).
-
-### `tracing` — emitting OTLP traces
-
-What the runner consumes: at runtime it starts a local OTLP receiver and hands this turn's trace context to you via `ctx.telemetry.headers`; normalized spans are drawn as a waterfall in `niceeval view` — drawing only, never feeding assertions. Source: CLI-style agents write the `tracing` field (`env` / `configure` hands the endpoint to the process under test); long-running apps configure a fixed port with `telemetry: { port }` in `niceeval.config.ts` (see [OTel integration](/tutorials/connect-otel)).
-
-### `kind: "sandbox"` — Sandbox and file changes
-
-What the runner consumes: it prepares a Sandbox (Docker / Vercel / E2B) for each attempt and hands it to the adapter via `ctx.sandbox`; this unlocks diff assertions like `t.sandbox.fileChanged()`. Source: constructed with `defineSandboxAgent` — an internal discriminant field you never write.
-
-### Compaction visibility
-
-Meaning: when the agent under test compacts its context, it emits a `compaction` event, making `t.event("compaction")` meaningful. Source: built-in parsers emit it automatically; a hand-written parser has it if you covered that logic.
+Official converters guarantee only the protocol surface stated by their contract. OTel spans cannot repair an incomplete event mapping: spans feed the waterfall, never assertions.
 
 ## Related reading
 
-- [Events reference](/reference/events) — exactly what the event stream promises.
-- [Adapter concept](/explanation/adapter) — the full `ctx`/`Turn` contract and where capabilities come from.
-- [Connect your agent](/tutorials/connect-your-agent) — how to follow each integration path.
-- [OTel integration](/tutorials/connect-otel) — the full walkthrough of spans feeding only the waterfall, never assertions.
-- [Built-in agent capabilities](/reference/builtin-agents) — what each built-in adapter has done.
+- [Events reference](/reference/events) — the standard event stream contract.
+- [Adapter concept](/explanation/adapter) — the full `ctx` / `Turn` contract.
+- [defineDirectAgent and defineSandboxAgent](/reference/define-agent) — Agent fields and examples.
+- [Assertions](/explanation/assert) — unavailable, `.optional()`, and Verdict propagation.
+- [OTel integration](/tutorials/connect-otel) — why spans feed visualization rather than assertions.
+- [Built-in agent capabilities](/reference/builtin-agents) — what each built-in adapter captures.

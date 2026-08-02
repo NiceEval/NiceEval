@@ -221,7 +221,7 @@ export interface Telemetry {
 
 /**
  * agent 的 OTLP 导出配置 —— 「沙箱里怎么让这个 CLI 把 trace 发到 endpoint」。
- * 刻意从 setup 里拆出来:setup 管装 CLI / 写主配置,这里只管 otel 导出。两种投递方式
+ * 刻意从 setup 里拆出来:setup 管运行配置,这里只管 otel 导出。CLI 安装归 `agent.ensure`。两种投递方式
  * (互不排斥,按 CLI 而定):
  *   · env-based(标准 OTEL_* 环境变量,如 bub/Python OTel SDK)—— 用 `env`;
  *   · file-based(CLI 自有配置文件,如 codex 的 config.toml [otel] 块)—— 用 `configure`。
@@ -521,7 +521,7 @@ export type AgentInstaller =
 /** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
 export interface SandboxAgent extends AgentBase {
   readonly kind: "sandbox";
-  /** Runner 在 author layers 后、state / setup 前按声明顺序执行。 */
+  /** Runner 在 author layers 后、setup 前按声明顺序执行。 */
   readonly ensure: readonly AgentEnsure[];
   /** 官方或第三方随 adapter 提供的安装层；仅 identity 精确匹配时可接手。 */
   readonly installers: readonly AgentInstaller[];
@@ -557,9 +557,9 @@ export interface SandboxAgentDef {
    */
   installers?: readonly AgentInstaller[];
   /**
-   * 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
-   * 本轮内不变的东西)。运行器在 Sandbox 备好(layer prepare/ensure/baseline 之后)、第一次 send 前
-   * 调用一次,不返回值。Ensure 已在 setup 前由 Runner 统一执行。
+   * 每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
+   * 本 Attempt 内不变的运行配置)。CLI 的 probe、安装与复检属于 `agent.ensure`。运行器在 Sandbox
+   * 备好(layer prepare/ensure/baseline 之后)、第一次 send 前调用一次,不返回值。
    */
   setup?: AgentSetup;
   /** OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。 */

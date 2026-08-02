@@ -3,7 +3,7 @@ import { defineEval } from "niceeval";
 // 这条 eval 验证 agent 遇到实时天气问题时会走工具，而不是直接编一个答案。
 //
 // 关键检查有两层：先确认调用 get_weather 且 city 参数是北京，再确认最终回复确实使用了工具结果。
-// judge 断言没有 judge key 时会自动跳过，保留它是为了在真实模型模式下补充语义评分。
+// Judge 断言是必需判据；缺少 NICEEVAL_JUDGE_KEY 时它会 unavailable，并让 Attempt errored。
 export default defineEval({
   description: "测试 agent 在实时天气问题中正确调用工具并基于结果作答的能力",
 
