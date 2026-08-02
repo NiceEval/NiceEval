@@ -171,6 +171,19 @@ describe("judge 端点/凭据/模型解析进入真实请求", () => {
     expect(captured[0]!.authorization).toBe("Bearer gateway-key");
   });
 
+  it("judge.apiKeyEnv 指向缺失变量时不回退 NICEEVAL_JUDGE_KEY,记录 key-unresolved", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "default-key");
+    const captured = stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "config-model", apiKeyEnv: "MISSING_GATEWAY_KEY" });
+    ns.autoevals.closedQA("是否切题?");
+    const [result] = await collector.finalize(ctx());
+
+    expect(captured).toHaveLength(0);
+    expect(result).toMatchObject({ outcome: "unavailable" });
+    expect((result as { reason?: string }).reason).toContain("judge-key-unresolved (MISSING_GATEWAY_KEY unset)");
+  });
+
   it("没配 baseUrl 时打官方端点", async () => {
     vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
     const captured = stubJudgeFetch();

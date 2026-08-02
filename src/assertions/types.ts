@@ -273,7 +273,7 @@ export type { Verdict } from "../shared/types.ts";
 export interface JudgeConfig {
   /** 可由更低优先级层补齐；四层都未解析到时，实际 assertion 记 judge-model-unresolved。 */
   model?: string;
-  /** OpenAI 兼容 base url + key 来源;省略则从 env 探测(见 assertions/judge.ts)。 */
+  /** OpenAI 兼容 base url;省略时使用官方 https://api.openai.com/v1 端点。 */
   baseUrl?: string;
   apiKeyEnv?: string;
   /**

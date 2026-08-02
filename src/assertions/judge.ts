@@ -33,7 +33,7 @@ const JUDGE_TIMEOUT_MS = 180_000;
 function resolveJudge(judge: JudgeConfig | undefined): ResolvedJudge {
   const model = judge?.model;
   const baseUrl = judge?.baseUrl ?? "https://api.openai.com/v1";
-  const apiKey = (judge?.apiKeyEnv ? getEnv(judge.apiKeyEnv) : undefined) ?? getEnv("NICEEVAL_JUDGE_KEY");
+  const apiKey = getEnv(judge?.apiKeyEnv ?? "NICEEVAL_JUDGE_KEY");
   return { model, baseUrl, apiKey, timeoutMs: judge?.timeoutMs ?? JUDGE_TIMEOUT_MS };
 }
 
