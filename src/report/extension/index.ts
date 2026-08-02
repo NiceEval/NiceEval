@@ -17,6 +17,7 @@ export type {
   RendererContext,
   RendererFaces,
   RendererProps,
+  RendererOptions,
   RendererTextContext,
   RendererWebContext,
 } from "./types.ts";

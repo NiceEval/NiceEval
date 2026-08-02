@@ -44,9 +44,9 @@ export interface PageContext<Input extends PageRenderInput = PageRenderInput> {
 
 /** 标准 jsx-runtime 元素形状;text 宿主只认 type / props,不管 $$typeof。 */
 export interface ReportElement {
-  type: unknown;
-  props: globalThis.Record<string, unknown>;
-  key?: unknown;
+  type: string | symbol | ReportComponent<never>;
+  props: object & { readonly children?: ReportNode };
+  key?: string | number | bigint | null;
 }
 
 /**
@@ -60,14 +60,15 @@ export type ReportNode = ReportElement | readonly ReportNode[] | null | undefine
 const REACT_FRAGMENT = Symbol.for("react.fragment");
 
 function isReportElement(node: unknown): node is ReportElement {
-  return (
-    typeof node === "object" &&
-    node !== null &&
-    !Array.isArray(node) &&
-    "type" in node &&
-    "props" in node &&
-    typeof (node as ReportElement).props === "object"
-  );
+  if (typeof node !== "object" || node === null || Array.isArray(node)) return false;
+  if (!("type" in node) || !("props" in node)) return false;
+  const candidate = node as { type: unknown; props: unknown; key?: unknown };
+  const typeIsRenderable =
+    typeof candidate.type === "string" || typeof candidate.type === "symbol" || typeof candidate.type === "function";
+  const keyIsValid =
+    candidate.key === undefined || candidate.key === null ||
+    typeof candidate.key === "string" || typeof candidate.key === "number" || typeof candidate.key === "bigint";
+  return typeIsRenderable && typeof candidate.props === "object" && candidate.props !== null && keyIsValid;
 }
 
 // ───────────────────────── 组件模型 ─────────────────────────
@@ -440,11 +441,9 @@ export function facesOf(type: unknown): ComponentFaces<object, object> | undefin
 
 export function composeOf(
   type: unknown,
-): ((props: unknown, ctx: ComposeContext) => ReportNode | Promise<ReportNode>) | undefined {
+): ((props: object, ctx: ComposeContext) => ReportNode | Promise<ReportNode>) | undefined {
   if (typeof type !== "function") return undefined;
-  return (type as ReportComponent<object>)[COMPONENT_COMPOSE] as
-    | ((props: unknown, ctx: ComposeContext) => ReportNode | Promise<ReportNode>)
-    | undefined;
+  return (type as ReportComponent<object>)[COMPONENT_COMPOSE];
 }
 
 function roleOf(type: unknown): "tabs" | "tab" | undefined {

@@ -49,7 +49,7 @@ import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Tabl
 import { pointsToDataset } from "../definition/primitives/points-dataset.ts";
 import { attemptListData } from "../components/entity-lists/compute.ts";
 import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
-import { scopeSummaryData } from "../components/summaries/compute.ts";
+import { sampleSummary } from "../components/summaries/compute.ts";
 import { ExperimentDetails } from "../components/experiment-detail/index.tsx";
 import {
   agent,
@@ -174,7 +174,7 @@ function collectElementsByType(
 }
 
 async function expectSnapshotStats(resolved: unknown, scope: Sample) {
-  const expected = await scopeSummaryData(scope);
+  const expected = await sampleSummary(scope);
   const stats = collectElementsByType(resolved, Stat);
   expect(stats.some((s) => s.props.value === expected.experiments)).toBe(true);
   expect(stats.some((s) => s.props.value === expected.evals)).toBe(true);

@@ -14,6 +14,7 @@ import { COMPONENT_RENDERER, type RendererMeta } from "./meta.ts";
 import type {
   RendererFaces,
   RendererProps,
+  RendererOptions,
   RendererTextContext,
   RendererWebContext,
 } from "./types.ts";
@@ -78,7 +79,7 @@ function assertSerializable(value: unknown, path: string, active = new WeakSet<o
   }
 }
 
-function splitRendererProps<TValue, TOptions extends Record<string, unknown>>(
+function splitRendererProps<TValue, TOptions extends RendererOptions>(
   props: RendererProps<TValue, TOptions>,
 ): { value: TValue; options: TOptions } {
   const { value, ...rest } = props as RendererProps<TValue, TOptions> & { value: TValue };
@@ -101,7 +102,7 @@ function toRendererTextContext(ctx: TextContext): RendererTextContext {
     locale: ctx.locale,
     width: ctx.width,
     dimension: (handle) => ctx.dimension(handle),
-    render: (node, width) => ctx.render(node as never, width),
+    render: (node, width) => ctx.render(node, width),
   };
 }
 
@@ -118,7 +119,7 @@ function toRendererWebContext(ctx: WebContext): RendererWebContext {
  * @param faces text 与 web 必填。
  * @param moduleUrl 声明 assets 时必填，传作者文件的 `import.meta.url`，作为相对路径基准。
  */
-export function defineRenderer<TValue, TOptions extends Record<string, unknown> = Record<string, never>>(
+export function defineRenderer<TValue, TOptions extends RendererOptions = Record<string, never>>(
   faces: RendererFaces<TValue, TOptions>,
   moduleUrl?: string,
 ): ReportComponent<RendererProps<TValue, TOptions>> {

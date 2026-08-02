@@ -175,13 +175,6 @@ export interface MetricColumn {
   bounds?: { min?: number; max?: number };
 }
 
-/** @internal 供尚未迁移的报告实现与测试过渡使用；不从 niceeval/report 导出。 */
-export type Metric<Name extends string = string> = AttemptMetric<Name>;
-/** @internal */
-export type MetricAggregate = AttemptMetricAggregate;
-/** @internal 读数格 = MetricValue（渲染面按 unit/format 格式化）。 */
-export type MetricCell = MetricValue;
-
 /**
  * 通用读数投影(docs/feature/reports/library/measures.md):本次选择的 Dimension + AttemptMetric
  * 组成的按需 Dataset。Chart / Table 只按字段名绑定，不重新读取 Record。
@@ -209,41 +202,12 @@ export interface Dataset<Row extends DatasetRow = DatasetRow> {
 }
 
 
-/**
- * 数据形状的字段命名规则(docs/feature/reports/calculations.md「共用数据形状」):
- * 维度名字段 = 产生它的选项名 + `Dimension` 后缀,值是解析后的维度 name;
- * 条目数组一律叫 `rows`(Matrix 的稀疏格子叫 `cells`);条目内的 key / series 是维度值,不带后缀。
- */
-export interface TableData {
-  rowDimension: string;
-  columns: MetricColumn[];
-  rows: Array<{
-    key: string;
-    cells: globalThis.Record<string, MetricValue>;
-  }>;
-}
-
 export interface MatrixData {
   rowDimension: string;
   columnDimension: string;
   metric: MetricColumn;
   /** 稀疏格子:没有 attempt 的组合不生成格子。 */
   cells: Array<{ row: string; column: string; cell: MetricValue }>;
-}
-
-export interface ScatterData {
-  pointDimension: string;
-  seriesDimension?: string;
-  /** 轴方向跟随 better:lower 反向渲染(值大在左/下),「更好」恒指向右上;刻度显示真实值。 */
-  x: MetricColumn;
-  y: MetricColumn;
-  rows: Array<{
-    key: string;
-    series?: string;
-    x: MetricValue;
-    /** 任一为 null 的点组件不画,注脚如实报数(点仍留在 rows 里,可数)。 */
-    y: MetricValue;
-  }>;
 }
 
 export interface LineData {
@@ -444,9 +408,6 @@ export interface SampleSummaryContent {
   /** costUSD 按 attempt 求和;缺失成本不伪造为 0。 */
   totalCostUSD: MetricValue;
 }
-
-/** @internal 供尚未迁移的报告实现与测试过渡使用；不从 niceeval/report 导出。 */
-export type ScopeSummaryData = SampleSummaryContent;
 
 // ───────────────────────── 站点组件(Hero / CopyFixPrompt / TraceWaterfall)─────────────────────────
 

@@ -19,20 +19,19 @@ import { Chart, Series, Table } from "../src/report/react/index.tsx";
 import {
   attemptListItems,
   experimentListItems,
-  scatterData,
-  tableData,
+  scatterDataset,
+  tableDataset,
 } from "../src/report/components/fixtures.ts";
 import {
   attemptListContent,
   experimentListContent,
 } from "../src/report/components/entity-lists/content.ts";
-import { datasetToTableContent, scatterDataToDataset, tableDataToDataset } from "../src/report/model/dataset.ts";
+import { datasetToTableContent } from "../src/report/model/dataset.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const attemptHref = (locator: string) => `view/#/attempt/${locator}`;
 
-const measureTable = datasetToTableContent(tableDataToDataset(tableData));
-const chartDataset = scatterDataToDataset(scatterData);
+const measureTable = datasetToTableContent(tableDataset);
 const attemptTable = attemptListContent(attemptListItems);
 const experimentTable = experimentListContent(experimentListItems);
 
@@ -42,7 +41,7 @@ const page = renderToStaticMarkup(
     <h2>Table · measure.rows</h2>
     <Table data={measureTable} attemptHref={attemptHref} />
     <h2>Chart · measure.chart</h2>
-    <Chart data={chartDataset} x="costUSD" y="passRate" legend>
+    <Chart data={scatterDataset} x="costUSD" y="passRate" legend>
       <Series id="frontier" mark="scatter" points="experiment" by="agent" />
     </Chart>
     <h2>Table · entity.attempts</h2>

@@ -7,7 +7,7 @@
 //   指标(name)                                    skipped  errored          failed  passed        better
 //   taskPassRate(task-pass-rate)                   null     null             0       1             higher
 //   executionReliability(execution-reliability)    null     0                1       1             higher
-//   endToEndPassRate(end-to-end-pass-rate)         null     0                0       1             higher
+//   passRate(pass-rate)                            null     0                0       1             higher
 //   examScore(exam-score)                          null     0                0       soft 均分      higher
 //   totalScore(total-score)                        null     null             Σpoints Σpoints       higher(通过制 eval 恒 null,不参与聚合)
 //   durationMs(duration)                           null     实测;timeout→null 同左   实测     实测          lower
@@ -105,9 +105,6 @@ export const passRate = attemptMetric({
   value: (a) =>
     a.result.verdict === "skipped" ? null : a.result.verdict === "passed" ? 1 : 0,
 });
-
-/** @internal 供仓库内尚未迁移的实现过渡；不从 niceeval/report 导出。 */
-export const endToEndPassRate = passRate;
 
 export const examScore = attemptMetric({
   name: "exam-score",

@@ -1,4 +1,4 @@
-// 计算函数(*Data):ReportInput → 一份组件数据。ScopeSummary 的 scopeSummaryData 住在这里
+// 计算函数(*Data):ReportInput → 一份组件数据。SampleSummary 的 sampleSummary 住在这里
 // (docs/feature/reports/components/summaries/README.md)。ExperimentComparison 是纯组合组件,不产生
 // 独立的 data,没有对应的计算函数。
 //
@@ -13,7 +13,7 @@ import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { evaluationKindComposition } from "../../model/evaluation-kind.ts";
 import { selectedAttemptsOnly, summarizeItems, tallyOf } from "../shared-compute.ts";
 
-// ───────────────────────── scopeSummaryData ─────────────────────────
+// ───────────────────────── sampleSummary ─────────────────────────
 
 /** costUSD 的求和投影:两级都 sum(题内多轮求和 + 跨题求和 = 全量求和)。 */
 const totalCostMetric = {
@@ -26,7 +26,7 @@ const totalCostMetric = {
 };
 
 /**
- * `scopeSummaryData(input)`:范围摘要——快照时间窗、experiment / eval / attempt 数、
+ * `sampleSummary(input)`:范围摘要——快照时间窗、experiment / eval / attempt 数、
  * 两级判定计票、端到端通过率与总成本(docs/feature/reports/components/summaries/sample-summary.md)。
  * data 恒携带两级计票;通过率来自官方两级指标引擎,不从任一计票重算。
  */
@@ -64,6 +64,3 @@ export async function sampleSummary(input: ReportInput): Promise<SampleSummaryCo
     totalCostUSD: await computeCell(totalCostMetric, items),
   };
 }
-
-/** @internal 供仓库内尚未迁移的测试过渡；不从 niceeval/report 导出。 */
-export const scopeSummaryData = sampleSummary;

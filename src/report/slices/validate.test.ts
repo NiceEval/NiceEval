@@ -9,49 +9,12 @@ import {
   validateDeltaData,
   validateLineData,
   validateMatrixData,
-  validateScatterData,
   validateScoreboardData,
   validateStabilityMatrixData,
-  validateTableData,
 } from "./validate.ts";
 
 const validCell = { value: 1, basis: "eval", samples: 1, total: 1, refs: ["@1abcdef2"] };
 const validColumn = { key: "costUSD", label: "Cost" };
-
-describe("validateTableData", () => {
-  const valid = {
-    rowDimension: "agent",
-    columns: [validColumn],
-    rows: [{ key: "agent-x", cells: { costUSD: validCell } }],
-  };
-
-  it("合规 literal 通过", () => {
-    expect(validateTableData(valid)).toBeNull();
-  });
-
-  it("空 rows 本身合法", () => {
-    expect(validateTableData({ ...valid, rows: [] })).toBeNull();
-  });
-
-  it("columns[i] 缺 key 报错定位到该列", () => {
-    const bad = { ...valid, columns: [{ label: "Cost" }] };
-    expect(validateTableData(bad)).toMatch(/"columns\[0\]\.key"/);
-  });
-
-  it("rows[i].cells.<metric> 缺 samples 报错定位到嵌套 MetricCell 字段", () => {
-    const bad = {
-      ...valid,
-      rows: [{ key: "agent-x", cells: { costUSD: { value: 1, total: 1, refs: [] } } }],
-    };
-    expect(validateTableData(bad)).toMatch(/"rows\[0\]\.cells\.costUSD\.samples"/);
-  });
-
-  it("rows[i].key 非字符串报错", () => {
-    const bad = { ...valid, rows: [{ key: 1, cells: {} }] };
-    expect(validateTableData(bad)).toMatch(/"rows\[0\]\.key"/);
-  });
-
-});
 
 describe("validateMatrixData", () => {
   const valid = {
@@ -77,28 +40,6 @@ describe("validateMatrixData", () => {
   it("cells[i].column 非字符串报错", () => {
     const bad = { ...valid, cells: [{ row: "agent-x", column: 1, cell: validCell }] };
     expect(validateMatrixData(bad)).toMatch(/"cells\[0\]\.column"/);
-  });
-});
-
-describe("validateScatterData", () => {
-  const valid = {
-    pointDimension: "experiment",
-    x: validColumn,
-    y: { key: "endToEndPassRate", label: "Pass rate" },
-    rows: [{ key: "exp-a", x: validCell, y: validCell }],
-  };
-
-  it("合规 literal 通过", () => {
-    expect(validateScatterData(valid)).toBeNull();
-  });
-
-  it("y 轴 MetricColumn 缺 key 报错", () => {
-    expect(validateScatterData({ ...valid, y: { label: "Pass rate" } })).toMatch(/"y\.key"/);
-  });
-
-  it("rows[i].y 结构错误定位到该点", () => {
-    const bad = { ...valid, rows: [{ key: "exp-a", x: validCell, y: { value: 1 } }] };
-    expect(validateScatterData(bad)).toMatch(/"rows\[0\]\.y/);
   });
 });
 

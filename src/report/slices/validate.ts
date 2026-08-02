@@ -13,22 +13,6 @@ function metricColumnProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-export const validateTableData: Validator = (data) => {
-  if (!isObject(data)) return "expected an object";
-  if (typeof data.rowDimension !== "string") return 'missing "rowDimension" (string)';
-  const columnsProblem = arrayProblem(data.columns, "columns", metricColumnProblem);
-  if (columnsProblem !== null) return columnsProblem;
-  return arrayProblem(data.rows, "rows", (row, path) => {
-    if (!isObject(row)) return `"${path}" must be an object`;
-    if (typeof row.key !== "string") return `"${path}.key" must be a string`;
-    if (!isObject(row.cells)) return `"${path}.cells" must be an object`;
-    for (const [metricKey, cell] of Object.entries(row.cells)) {
-      const problem = cellProblem(cell, `${path}.cells.${metricKey}`);
-      if (problem !== null) return problem;
-    }
-    return null;
-  });
-};
 export const validateMatrixData: Validator = (data) => {
   if (!isObject(data)) return "expected an object";
   if (typeof data.rowDimension !== "string" || typeof data.columnDimension !== "string") {
@@ -42,20 +26,6 @@ export const validateMatrixData: Validator = (data) => {
       return `"${path}.row" / "${path}.column" must be strings`;
     }
     return cellProblem(item.cell, `${path}.cell`);
-  });
-};
-export const validateScatterData: Validator = (data) => {
-  if (!isObject(data)) return "expected an object";
-  if (typeof data.pointDimension !== "string") return 'missing "pointDimension" (string)';
-  const xColumnProblem = metricColumnProblem(data.x, "x");
-  if (xColumnProblem !== null) return xColumnProblem;
-  const yColumnProblem = metricColumnProblem(data.y, "y");
-  if (yColumnProblem !== null) return yColumnProblem;
-  return arrayProblem(data.rows, "rows", (row, path) => {
-    if (!isObject(row) || typeof row.key !== "string") return `"${path}" must be an object with a string "key"`;
-    const xProblem = cellProblem(row.x, `${path}.x`);
-    if (xProblem !== null) return xProblem;
-    return cellProblem(row.y, `${path}.y`);
   });
 };
 export const validateLineData: Validator = (data) => {

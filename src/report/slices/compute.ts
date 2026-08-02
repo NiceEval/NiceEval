@@ -24,11 +24,9 @@ import type { DatasetField,
   MetricValue,
   NumericAxis,
   ReportInput,
-  ScatterData,
   ScoreboardData,
   SeriesInput,
   StabilityMatrixData,
-  TableData,
 } from "../model/types.ts";
 import type { JsonValue, Verdict } from "../../types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
@@ -62,9 +60,9 @@ import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore
 import { formatMetricValue, formatPlainNumber, formatPoints } from "../model/format.ts";
 import type { LocalizedText } from "../model/locale.ts";
 import { selectedAttemptsOnly } from "../components/shared-compute.ts";
-import { datasetToTableData, metricFieldOf } from "../model/dataset.ts";
+import { metricFieldOf } from "../model/dataset.ts";
 
-// ───────────────────────── metricTableData ─────────────────────────
+// ───────────────────────── measureRowsData ─────────────────────────
 
 export interface MetricRowsOptions {
   /** 空数组表示整个 Sample 只产生一行聚合结果。 */
@@ -72,26 +70,6 @@ export interface MetricRowsOptions {
   measures: readonly [AttemptMetric, ...AttemptMetric[]];
   sort?: AttemptMetric;
   evals?: string | readonly string[];
-}
-
-/** @internal 过渡 spec：rows / columns 映射到 dimensions / measures。 */
-export interface MetricTableOptions {
-  rows: DimensionInput;
-  columns: readonly [AttemptMetric, ...AttemptMetric[]];
-  sort?: AttemptMetric;
-  evals?: string | readonly string[];
-}
-
-function normalizeMetricRowsOptions(
-  options: MetricRowsOptions | MetricTableOptions,
-): MetricRowsOptions {
-  if ("dimensions" in options) return options;
-  return {
-    dimensions: [options.rows],
-    measures: options.columns,
-    sort: options.sort,
-    evals: options.evals,
-  };
 }
 
 function groupByDimensions(items: Item[], dimensions: readonly DimensionInput[]): Map<string, Item[]> {
@@ -117,38 +95,37 @@ function dimensionFieldName(dimensions: readonly DimensionInput[]): string | nul
 
 export async function measureRowsData(
   input: ReportInput,
-  options: MetricRowsOptions | MetricTableOptions,
+  options: MetricRowsOptions,
 ): Promise<Dataset> {
-  const normalized = normalizeMetricRowsOptions(options);
-  assertUniqueMetricNames(normalized.measures, "measureRowsData measures");
-  if (normalized.sort !== undefined) {
-    if (!normalized.measures.includes(normalized.sort)) {
+  assertUniqueMetricNames(options.measures, "measureRowsData measures");
+  if (options.sort !== undefined) {
+    if (!options.measures.includes(options.sort)) {
       throw new Error(
-        `measureRowsData sort must be one of the Metric instances passed in measures (got "${normalized.sort.name}"). ` +
+        `measureRowsData sort must be one of the Metric instances passed in measures (got "${options.sort.name}"). ` +
           "Pass the same imported instance in both places so the sorted column is visible in the table.",
       );
     }
-    if (normalized.sort.better === undefined) {
+    if (options.sort.better === undefined) {
       throw new Error(
-        `measureRowsData cannot sort by "${normalized.sort.name}": the metric declares no "better" direction, so there is no defined order. ` +
+        `measureRowsData cannot sort by "${options.sort.name}": the metric declares no "better" direction, so there is no defined order. ` +
           'Declare better: "higher" | "lower" on the metric, or drop sort to keep the lexicographic row order.',
       );
     }
   }
   const { runs, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(runs, attempts), normalized.evals);
-  const dimName = dimensionFieldName(normalized.dimensions);
-  const groups = groupByDimensions(items, normalized.dimensions);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
+  const dimName = dimensionFieldName(options.dimensions);
+  const groups = groupByDimensions(items, options.dimensions);
   const rows: DatasetRow[] = [];
   for (const [key, group] of groups) {
     const values: globalThis.Record<string, string | MetricValue> = {};
     if (dimName !== null) values[dimName] = key;
-    for (const metric of normalized.measures) values[metric.name] = await computeCell(metric, group);
+    for (const metric of options.measures) values[metric.name] = await computeCell(metric, group);
     rows.push({ key, values });
   }
-  if (normalized.sort) {
-    const better = normalized.sort.better ?? "higher";
-    const name = normalized.sort.name;
+  if (options.sort) {
+    const better = options.sort.better ?? "higher";
+    const name = options.sort.name;
     rows.sort((a: DatasetRow, b: DatasetRow) => {
       const aCell = a.values[name];
       const bCell = b.values[name];
@@ -164,20 +141,12 @@ export async function measureRowsData(
   }
   const fields: DatasetField[] = [];
   if (dimName !== null) fields.push({ name: dimName, kind: "dimension", valueType: "string" });
-  fields.push(...normalized.measures.map(metricFieldOf));
+  fields.push(...options.measures.map(metricFieldOf));
   return { fields, rows };
 }
 
 function isMetricValueCell(value: unknown): value is MetricValue {
   return typeof value === "object" && value !== null && "value" in value && "samples" in value && "total" in value;
-}
-
-/** @internal 过渡：Dataset → TableData。 */
-export async function metricTableData(
-  input: ReportInput,
-  options: MetricRowsOptions | MetricTableOptions,
-): Promise<TableData> {
-  return datasetToTableData(await measureRowsData(input, options));
 }
 
 // ───────────────────────── metricMatrixData(= MetricBars 的数据)─────────────────────────
@@ -403,40 +372,6 @@ export async function scoreboardData(input: ReportInput, options: ScoreboardOpti
 function subjectDisplay(earned: number, possible: number): LocalizedText {
   const ratio = possible === 0 ? 0 : earned / possible;
   return `${formatPlainNumber(earned)}/${formatPlainNumber(possible)} (${formatMetricValue(ratio, "%")})`;
-}
-
-export interface MetricScatterOptions {
-  /** 点维度:每个点 = 该组 attempt 的聚合。 */
-  points: DimensionInput;
-  /** 决定颜色和图例归类,默认不连线(连线是呈现 prop `connect`);数组形态解析为复合维度。 */
-  series?: SeriesInput;
-  x: AttemptMetric;
-  y: AttemptMetric;
-  /** eval id 前缀过滤,同 CLI 位置参数语义。 */
-  evals?: string | readonly string[];
-}
-
-export async function metricScatterData(input: ReportInput, options: MetricScatterOptions): Promise<ScatterData> {
-  const { runs, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(runs, selectedAttemptsOnly(attempts)), options.evals);
-  const groups = groupItems(items, options.points);
-  const rows: ScatterData["rows"] = [];
-  for (const [key, group] of groups) {
-    rows.push({
-      key,
-      // 组内取第一条解析系列:点维度细于系列维度时(experiment ⊂ agent)天然一致
-      ...(options.series ? { series: seriesKey(options.series, group[0]!) } : {}),
-      x: await computeCell(options.x, group),
-      y: await computeCell(options.y, group), // 任一轴 null 的点留在 rows 里:组件不画,但注脚要报的数就从这里数
-    });
-  }
-  return {
-    pointDimension: dimensionName(options.points),
-    ...(options.series ? { seriesDimension: seriesName(options.series) } : {}),
-    x: toColumn(options.x),
-    y: toColumn(options.y),
-    rows,
-  };
 }
 
 export interface MetricLineOptions {

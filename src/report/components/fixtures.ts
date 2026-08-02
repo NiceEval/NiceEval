@@ -1,28 +1,25 @@
-// 手工 fixture:模拟计算函数(metricTableData / metricMatrixData / …)的产物。
+// 手工 fixture:模拟计算函数与 Dataset 投影的产物。
 // 仅供 scripts/report-react-demo.tsx 使用,不从入口导出。
 // 数字刻意覆盖诚实细节:coverage 角标(samples<total)、全 null 格子、
 // 稀疏矩阵、缺数据的散点、delta 的 null 不硬算、truncated 计数。
 
 import type {
   AttemptListItem,
+  Dataset,
   DeltaData,
   ExperimentListItem,
   LineData,
   MetricColumn,
-  ScatterData,
-  ScopeSummaryData,
-  TableData,
+  SampleSummaryContent,
 } from "../model/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
 export const passRateColumn: MetricColumn = { key: "task-pass-rate", label: "pass rate", unit: "%", better: "higher" };
-export const codeLinesColumn: MetricColumn = { key: "code-lines", label: "code lines", unit: "lines", better: "lower" };
-export const costColumn: MetricColumn = { key: "cost", label: "cost", unit: "$", better: "lower" };
 
-/** scopeSummaryData 的产物形态:两级计票恒随行,通过率与总成本是官方 MetricCell。 */
-export const scopeSummaryData: ScopeSummaryData = {
+/** sampleSummary 的产物形态:两级计票恒随行,通过率与总成本是官方 MetricValue。 */
+export const sampleSummaryContent: SampleSummaryContent = {
   range: { earliestStartedAt: "2026-07-01T10:00:00Z", latestStartedAt: "2026-07-01T11:30:00Z" },
   experiments: 2,
   evals: 6,
@@ -35,14 +32,18 @@ export const scopeSummaryData: ScopeSummaryData = {
   totalCostUSD: { value: 1.5, basis: "eval", samples: 8, total: 9, refs: [] },
 };
 
-export const tableData: TableData = {
-  rowDimension: "agent",
+export const tableDataset: Dataset = {
+  fields: [
+    { name: "agent", kind: "dimension", valueType: "string" },
+    { name: "task-pass-rate", kind: "metric", valueType: "number", unit: "%", better: "higher" },
+    { name: "code-lines", kind: "metric", valueType: "number", unit: "lines", better: "lower" },
+  ],
   // 行顺序故意不按 passRate 排:组件必须按传入顺序渲染,不重排
-  columns: [passRateColumn, codeLinesColumn],
   rows: [
     {
       key: "codex",
-      cells: {
+      values: {
+        agent: "codex",
         "task-pass-rate": { value: 0.5, basis: "eval", samples: 6, total: 6, refs: [] },
         // 全 null:一个有效样本都没有 → 缺数据文案,绝不画 0
         "code-lines": { value: null, basis: "eval", samples: 0, total: 6, refs: [] },
@@ -50,7 +51,8 @@ export const tableData: TableData = {
     },
     {
       key: "bub",
-      cells: {
+      values: {
+        agent: "bub",
         "task-pass-rate": {
           value: 0.87,
           basis: "eval", samples: 6,
@@ -64,36 +66,30 @@ export const tableData: TableData = {
   ],
 };
 
-export const scatterData: ScatterData = {
-  pointDimension: "experiment",
-  seriesDimension: "agent",
-  x: costColumn, // better: "lower" → 轴反向(贵在左、便宜在右);两轴都有 better → 提示「越靠右上越好」
-  y: passRateColumn,
+export const scatterDataset: Dataset = {
+  fields: [
+    { name: "experiment", kind: "dimension", valueType: "string" },
+    { name: "agent", kind: "dimension", valueType: "string" },
+    { name: "costUSD", kind: "metric", valueType: "number", unit: "$", better: "lower" },
+    { name: "passRate", kind: "metric", valueType: "number", unit: "%", better: "higher" },
+  ],
   rows: [
     {
-      key: "compare/bub-low",
-      series: "bub",
-      x: { value: 5, basis: "eval", samples: 6, total: 6, refs: [] },
-      y: { value: 0.5, basis: "eval", samples: 6, total: 6, refs: [] },
+      key: "compare/bub-low\0bub",
+      values: { experiment: "compare/bub-low", agent: "bub", costUSD: { value: 5, basis: "eval", samples: 6, total: 6, refs: [] }, passRate: { value: 0.5, basis: "eval", samples: 6, total: 6, refs: [] } },
     },
     {
-      key: "compare/bub-high",
-      series: "bub",
-      x: { value: 10, basis: "eval", samples: 6, total: 6, refs: [] },
-      y: { value: 0.9, basis: "eval", samples: 6, total: 6, refs: [] },
+      key: "compare/bub-high\0bub",
+      values: { experiment: "compare/bub-high", agent: "bub", costUSD: { value: 10, basis: "eval", samples: 6, total: 6, refs: [] }, passRate: { value: 0.9, basis: "eval", samples: 6, total: 6, refs: [] } },
     },
     {
-      key: "compare/codex-mid",
-      series: "codex",
-      x: { value: 7, basis: "eval", samples: 6, total: 6, refs: [] },
-      y: { value: 0.6, basis: "eval", samples: 6, total: 6, refs: [] },
+      key: "compare/codex-mid\0codex",
+      values: { experiment: "compare/codex-mid", agent: "codex", costUSD: { value: 7, basis: "eval", samples: 6, total: 6, refs: [] }, passRate: { value: 0.6, basis: "eval", samples: 6, total: 6, refs: [] } },
     },
     {
       // x 缺数据:这个点不画,注脚报 1 个点缺数据
-      key: "compare/codex-broken",
-      series: "codex",
-      x: { value: null, basis: "eval", samples: 0, total: 6, refs: [] },
-      y: { value: 0.7, basis: "eval", samples: 6, total: 6, refs: [] },
+      key: "compare/codex-broken\0codex",
+      values: { experiment: "compare/codex-broken", agent: "codex", costUSD: { value: null, basis: "eval", samples: 0, total: 6, refs: [] }, passRate: { value: 0.7, basis: "eval", samples: 6, total: 6, refs: [] } },
     },
   ],
 };

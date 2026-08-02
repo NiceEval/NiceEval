@@ -31,7 +31,7 @@ import {
   resolveInput,
   type Item,
 } from "../../model/aggregate.ts";
-import { attemptCostUSD, costUSD, durationMs, endToEndPassRate, examScore, tokens, totalScore } from "../../model/metrics.ts";
+import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
 import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
 import { selectedAttemptsOnly, summarizeItems } from "../shared-compute.ts";
@@ -173,7 +173,7 @@ function passEvaluationItems(items: readonly Item[]): Item[] {
 
 /**
  * `ExperimentList` 默认排序的共用比较器形状:按 `valueOf` 降序,null 沉底(含双 null),
- * 同值一律按 experimentId 字典序收口。纯通过制传 `endToEndPassRate`、纯计分制传 `totalScore`,
+ * 同值一律按 experimentId 字典序收口。纯通过制传 `passRate`、纯计分制传 `totalScore`,
  * 复用同一形状而不是各写一份。
  */
 function byMetricDescThenId(
@@ -240,7 +240,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
         evalId,
         evaluationKind: itemEvaluationKindComposition(sorted),
         verdict,
-        endToEndPassRate: await computeCell(endToEndPassRate, passEvaluationItems(sorted)),
+        endToEndPassRate: await computeCell(passRate, passEvaluationItems(sorted)),
         totalScore: await computeCell(totalScore, sorted),
         durationMs: await computeCell(durationMs, sorted),
         costUSD: await computeCell(costUSD, sorted),
@@ -257,7 +257,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
       evaluationKind: itemEvaluationKindComposition(group),
       evalVerdicts: stats.verdicts,
-      endToEndPassRate: await computeCell(endToEndPassRate, passEvaluationItems(group)),
+      endToEndPassRate: await computeCell(passRate, passEvaluationItems(group)),
       totalScore: await computeCell(totalScore, group),
       costUSD: await computeCell(costUSD, group),
       durationMs: await computeCell(durationMs, group),
@@ -287,7 +287,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       // 纪律下的默认,不是从任何真实数据推断出来的。
       evaluationKind: "pass",
       evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
-      endToEndPassRate: await computeCell(endToEndPassRate, emptyItems),
+      endToEndPassRate: await computeCell(passRate, emptyItems),
       totalScore: await computeCell(totalScore, emptyItems),
       costUSD: await computeCell(costUSD, emptyItems),
       durationMs: await computeCell(durationMs, emptyItems),

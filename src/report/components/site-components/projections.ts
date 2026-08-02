@@ -1,4 +1,4 @@
-// 专用件 → 原语 Content 的投影(remaining-gap 1.7)。Source compute 产出原语可直接吃的形状。
+// 专用件 → 原语 Content 的投影。Source compute 产出原语可直接吃的形状。
 
 import type { ReportInput } from "../../model/types.ts";
 import type { CalloutGroup } from "../../definition/primitives/callouts-logic.ts";

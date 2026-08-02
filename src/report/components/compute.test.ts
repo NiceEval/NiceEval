@@ -4,8 +4,8 @@
 // skipped=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
 // 身份键去重、现刻水位、自定义指标 where/aggregate、evalGroup 完整父路径、verdict 权威、
 // MetricCell 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
-// scopeSummaryData 两级计票、experimentListData/scopeSummaryData 的 selectedEvalIds 投影、conditionsByFlag、
-// MetricLine 点身份、空数组反馈、metricTableData sort、series 配色的确定性索引计算(colorIndexForKey /
+// sampleSummary 两级计票、experimentListData/sampleSummary 的 selectedEvalIds 投影、conditionsByFlag、
+// MetricLine 点身份、空数组反馈、measureRowsData sort、series 配色的确定性索引计算(colorIndexForKey /
 // colorIndicesForKeys,纯函数,不断言渲染出的颜色值)。MetricScatter 的 text 面(`scatterText`)本身是
 // 终端排版渲染——图例分配、connect 位移摘要的字符串产物归 E2E 报告域(docs/engineering/testing/e2e/
 // report.md §5 终端排版),不在本文件内。
@@ -21,7 +21,7 @@ import {
   assistantTurns,
   costUSD,
   durationMs,
-  endToEndPassRate,
+  passRate,
   examScore,
   executionReliability,
   repeatedFailedCommands,
@@ -37,8 +37,7 @@ import {
   deltaTableData,
   metricLineData,
   metricMatrixData,
-  metricScatterData,
-  metricTableData,
+  measureRowsData,
   scoreboardData,
   stabilityMatrixData,
 } from "../slices/compute.ts";
@@ -46,16 +45,21 @@ import {
   validateDeltaData,
   validateLineData,
   validateMatrixData,
-  validateScatterData,
   validateScoreboardData,
   validateStabilityMatrixData,
-  validateTableData,
 } from "../slices/validate.ts";
-import { scopeSummaryData } from "./summaries/compute.ts";
+import { sampleSummary } from "./summaries/compute.ts";
 import { validateSampleSummaryContent } from "./summaries/validate.ts";
 import { evalGroupOf } from "../model/aggregate.ts";
 import { evaluationKindComposition } from "../model/evaluation-kind.ts";
-import type { AttemptMetric } from "../model/types.ts";
+import { isDataset, isMetricValue } from "../model/dataset.ts";
+import type { AttemptMetric, DatasetRow, MetricValue } from "../model/types.ts";
+
+function metricCell(row: DatasetRow, name: string): MetricValue {
+  const value = row.values[name];
+  if (!isMetricValue(value)) throw new Error(`expected metric cell ${JSON.stringify(name)} in row ${JSON.stringify(row.key)}`);
+  return value;
+}
 
 // ───────────────────────── fake 数据(按 results 读取契约造)─────────────────────────
 
@@ -186,8 +190,8 @@ describe("两级聚合口径", () => {
     ],
   });
 
-  it("endToEndPassRate 先题内折叠再跨题折叠:5/9,不是平铺 3/5、条件 5/6 或任一轮 2/3", async () => {
-    const data = await scopeSummaryData([discriminating]);
+  it("passRate 先题内折叠再跨题折叠:5/9,不是平铺 3/5、条件 5/6 或任一轮 2/3", async () => {
+    const data = await sampleSummary([discriminating]);
     expect(data.endToEndPassRate.value).toBeCloseTo(5 / 9);
     expect(data.endToEndPassRate.value).not.toBeCloseTo(3 / 5);
     expect(data.endToEndPassRate.value).not.toBeCloseTo(5 / 6);
@@ -199,15 +203,15 @@ describe("两级聚合口径", () => {
   });
 
   it("taskPassRate 排除 errored,只能作为带限定名称的诊断指标:同 fixture 得 5/6", async () => {
-    const table = await metricTableData([discriminating], {
-      rows: "agent",
-      columns: [endToEndPassRate, taskPassRate, executionReliability],
+    const table = await measureRowsData([discriminating], {
+      dimensions: ["agent"],
+      measures: [passRate, taskPassRate, executionReliability],
     });
-    const cells = table.rows[0]!.cells;
-    expect(cells[taskPassRate.name]!.value).toBeCloseTo(5 / 6);
-    expect(cells[endToEndPassRate.name]!.value).toBeCloseTo(5 / 9);
+    const row = table.rows[0]!;
+    expect(metricCell(row, taskPassRate.name).value).toBeCloseTo(5 / 6);
+    expect(metricCell(row, passRate.name).value).toBeCloseTo(5 / 9);
     // executionReliability:e1=1、e2=1、e3=0 → 2/3
-    expect(cells[executionReliability.name]!.value).toBeCloseTo(2 / 3);
+    expect(metricCell(row, executionReliability.name).value).toBeCloseTo(2 / 3);
   });
 
   it("2 passed + 5 errored 的默认通过率是 2/7,不是 100%", async () => {
@@ -219,7 +223,7 @@ describe("两级聚合口径", () => {
         ...[3, 4, 5, 6, 7].map((n) => res(`q${n}`, "errored", { error: erroredWith("x") })),
       ],
     });
-    const data = await scopeSummaryData([s]);
+    const data = await sampleSummary([s]);
     expect(data.endToEndPassRate.value).toBeCloseTo(2 / 7);
   });
 
@@ -228,7 +232,7 @@ describe("两级聚合口径", () => {
       experimentId: "exp/skip",
       results: [res("a", "passed"), res("b", "skipped"), res("c", "failed")],
     });
-    const data = await scopeSummaryData([s]);
+    const data = await sampleSummary([s]);
     expect(data.endToEndPassRate.value).toBeCloseTo(0.5); // (1+0)/2,skipped 不稀释
     expect(data.endToEndPassRate.samples).toBe(2);
     expect(data.endToEndPassRate.total).toBe(3);
@@ -245,8 +249,8 @@ describe("两级聚合口径", () => {
       value: (attempt) => values.get(attempt.evalId) ?? null,
     };
     const s = snap({ experimentId: "exp/tri", results: [res("a", "passed"), res("b", "passed"), res("c", "passed")] });
-    const table = await metricTableData([s], { rows: "agent", columns: [metric] });
-    expect(table.rows[0]!.cells.tri!.value).toBeCloseTo(0.5);
+    const table = await measureRowsData([s], { dimensions: ["agent"], measures: [metric] });
+    expect(metricCell(table.rows[0]!, "tri").value).toBeCloseTo(0.5);
   });
 
   it("跨快照计算先按身份键去重:局部补跑重叠快照下 samples 不虚增", async () => {
@@ -254,7 +258,7 @@ describe("两级聚合口径", () => {
     const s1 = snap({ experimentId: "exp/dup", results: [carried], runStartedAt: "2026-07-01T09:00:00.000Z" });
     // 携带合入:同一条结果(同身份键)原样出现在更新的快照里
     const s2 = snap({ experimentId: "exp/dup", results: [{ ...carried }], runStartedAt: "2026-07-02T09:00:00.000Z" });
-    const data = await scopeSummaryData([s1, s2]);
+    const data = await sampleSummary([s1, s2]);
     expect(data.attempts).toBe(1);
     expect(data.endToEndPassRate.samples).toBe(1);
   });
@@ -276,8 +280,8 @@ describe("两级聚合口径", () => {
       perEval: "min",
       acrossEvals: "mean",
     };
-    const table = await metricTableData([s], { rows: "agent", columns: [fastest] });
-    const cell = table.rows[0]!.cells["fastest-pass"]!;
+    const table = await measureRowsData([s], { dimensions: ["agent"], measures: [fastest] });
+    const cell = metricCell(table.rows[0]!, "fastest-pass");
     // b 被 where 排除;a 题内 min = 100,c = 500 → mean 300(双 mean 会是 (200+500)/2=350,可区分)
     expect(cell.value).toBe(300);
     expect(cell.samples).toBe(3);
@@ -288,8 +292,8 @@ describe("两级聚合口径", () => {
       where: () => false,
       value: () => 1,
     };
-    const empty = await metricTableData([s], { rows: "agent", columns: [allExcluded] });
-    expect(empty.rows[0]!.cells.none!.value).toBeNull();
+    const empty = await measureRowsData([s], { dimensions: ["agent"], measures: [allExcluded] });
+    expect(metricCell(empty.rows[0]!, "none").value).toBeNull();
   });
 
   it("evalGroup 按完整父路径分组(无 / 取完整 id),与可比组同一条派生规则", async () => {
@@ -300,7 +304,7 @@ describe("两级聚合口径", () => {
       experimentId: "exp/g",
       results: [res("a/b/c", "passed"), res("a/b/d", "failed"), res("solo", "passed")],
     });
-    const matrix = await metricMatrixData([s], { rows: "evalGroup", columns: "agent", cell: endToEndPassRate });
+    const matrix = await metricMatrixData([s], { rows: "evalGroup", columns: "agent", cell: passRate });
     const rowKeys = [...new Set(matrix.cells.map((c) => c.row))];
     expect(rowKeys.sort()).toEqual(["a/b", "solo"]);
   });
@@ -315,7 +319,7 @@ describe("两级聚合口径", () => {
         }),
       ],
     });
-    const data = await scopeSummaryData([s]);
+    const data = await sampleSummary([s]);
     expect(data.endToEndPassRate.value).toBe(0);
   });
 });
@@ -327,30 +331,30 @@ describe("MetricCell 诚实契约", () => {
     const zero = snap({ experimentId: "exp/zero", results: [res("a", "failed")] });
     const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "skipped")] });
     const missing = snap({ experimentId: "exp/missing", results: [res("a", "skipped")] });
-    const table = await metricTableData([zero, partial, missing], {
-      rows: "experiment",
-      columns: [endToEndPassRate],
+    const table = await measureRowsData([zero, partial, missing], {
+      dimensions: ["experiment"],
+      measures: [passRate],
     });
-    const cellOf = (key: string) => table.rows.find((r) => r.key === key)!.cells[endToEndPassRate.name]!;
+    const cellOf = (key: string) => metricCell(table.rows.find((r) => r.key === key)!, passRate.name);
     expect(cellOf("exp/zero")).toMatchObject({ value: 0, samples: 1, total: 1 });
     expect(cellOf("exp/partial")).toMatchObject({ value: 1, samples: 1, total: 2 });
     expect(cellOf("exp/missing")).toMatchObject({ value: null, samples: 0, total: 1 });
     // 覆盖率与 refs 不因 JSON 序列化丢失;refs 跟随覆盖范围(含 null 值的 attempt)
     const roundTrip = JSON.parse(JSON.stringify(table)) as typeof table;
-    expect(roundTrip.rows.find((r) => r.key === "exp/partial")!.cells[endToEndPassRate.name]!.refs).toHaveLength(2);
+    expect(metricCell(roundTrip.rows.find((r) => r.key === "exp/partial")!, passRate.name).refs).toHaveLength(2);
     expect(cellOf("exp/missing").refs).toHaveLength(1);
   });
 
   it("缺 o11y.json 时 assistantTurns / repeatedFailedCommands 为 missing;result.json 指标不受影响", async () => {
     const s = snap({ experimentId: "exp/noo11y", results: [res("a", "passed", { durationMs: 1234 })] });
-    const table = await metricTableData([s], {
-      rows: "agent",
-      columns: [assistantTurns, repeatedFailedCommands, durationMs],
+    const table = await measureRowsData([s], {
+      dimensions: ["agent"],
+      measures: [assistantTurns, repeatedFailedCommands, durationMs],
     });
-    const cells = table.rows[0]!.cells;
-    expect(cells[assistantTurns.name]!.value).toBeNull();
-    expect(cells[repeatedFailedCommands.name]!.value).toBeNull();
-    expect(cells[durationMs.name]!.value).toBe(1234);
+    const row = table.rows[0]!;
+    expect(metricCell(row, assistantTurns.name).value).toBeNull();
+    expect(metricCell(row, repeatedFailedCommands.name).value).toBeNull();
+    expect(metricCell(row, durationMs.name).value).toBe(1234);
   });
 
   it("durationMs 对 timeout attempt 删失:线值不进均值,cell.samples < cell.total 如实呈现覆盖率缺口", async () => {
@@ -363,8 +367,8 @@ describe("MetricCell 诚实契约", () => {
         res("c", "errored", { durationMs: 1200000, error: { code: "timeout", message: "timed out", origin: { scope: "attempt" as const, phase: "eval.run" } } }),
       ],
     });
-    const table = await metricTableData([s], { rows: "experiment", columns: [durationMs] });
-    const cell = table.rows[0]!.cells[durationMs.name]!;
+    const table = await measureRowsData([s], { dimensions: ["experiment"], measures: [durationMs] });
+    const cell = metricCell(table.rows[0]!, durationMs.name);
     // 均值只在 a/b 上算:(100+300)/2 = 200;若线值 1200000 混进来均值会失真到 400100
     expect(cell.value).toBe(200);
     expect(cell.samples).toBe(2);
@@ -378,8 +382,8 @@ describe("MetricCell 诚实契约", () => {
       experimentId: "exp/other-error",
       results: [res("a", "errored", { durationMs: 500, error: erroredWith("boom") })],
     });
-    const table = await metricTableData([s], { rows: "experiment", columns: [durationMs] });
-    const cell = table.rows[0]!.cells[durationMs.name]!;
+    const table = await measureRowsData([s], { dimensions: ["experiment"], measures: [durationMs] });
+    const cell = metricCell(table.rows[0]!, durationMs.name);
     expect(cell.value).toBe(500);
     expect(cell.samples).toBe(1);
     expect(cell.total).toBe(1);
@@ -414,11 +418,11 @@ describe("MetricCell 诚实契约", () => {
         }),
       ],
     });
-    const table = await metricTableData([repeat, distinct], {
-      rows: "experiment",
-      columns: [repeatedFailedCommands],
+    const table = await measureRowsData([repeat, distinct], {
+      dimensions: ["experiment"],
+      measures: [repeatedFailedCommands],
     });
-    const cellOf = (key: string) => table.rows.find((r) => r.key === key)!.cells[repeatedFailedCommands.name]!;
+    const cellOf = (key: string) => metricCell(table.rows.find((r) => r.key === key)!, repeatedFailedCommands.name);
     expect(cellOf("exp/repeat").value).toBe(2);
     expect(cellOf("exp/distinct").value).toBe(0);
   });
@@ -431,7 +435,7 @@ describe("MetricCell 诚实契约", () => {
         res("q5", "failed"),
       ],
     });
-    const data = await scopeSummaryData([s]);
+    const data = await sampleSummary([s]);
     expect(data.endToEndPassRate.value).toBeCloseTo(5 / 6);
     expect(data.endToEndPassRate.unit).toBe("%");
 
@@ -440,8 +444,8 @@ describe("MetricCell 诚实契约", () => {
       value: () => 1,
       display: (value, locale) => (locale === "zh-CN" ? `${value} 个` : `${value} item`),
     };
-    const table = await metricTableData([s], { rows: "agent", columns: [localized] });
-    const loc = table.rows[0]!.cells.loc!;
+    const table = await measureRowsData([s], { dimensions: ["agent"], measures: [localized] });
+    const loc = metricCell(table.rows[0]!, "loc");
     expect(loc.format && typeof loc.format === "object" && loc.format.kind === "custom").toBe(true);
     if (loc.format && typeof loc.format === "object" && loc.format.kind === "custom") {
       expect(loc.format.format(1, "en")).toBe("1 item");
@@ -457,7 +461,7 @@ describe("MetricCell 诚实契约", () => {
       },
     };
     const s = snap({ experimentId: "exp/bad", results: [res("a", "passed")] });
-    await expect(metricTableData([s], { rows: "agent", columns: [bad] })).rejects.toThrow(/explode.*boom/s);
+    await expect(measureRowsData([s], { dimensions: ["agent"], measures: [bad] })).rejects.toThrow(/explode.*boom/s);
   });
 });
 
@@ -628,7 +632,7 @@ describe("实体列表 data", () => {
     expect(byEval.get("list/errored")!.costUSD).toBeNull();
   });
 
-  it("experimentListData:evalVerdicts / endToEndPassRate / costUSD / durationMs / tokens 齐全,默认按端到端通过率降序", async () => {
+  it("experimentListData:evalVerdicts / passRate / costUSD / durationMs / tokens 齐全,默认按端到端通过率降序", async () => {
     const winner = snap({ experimentId: "exp/win", results: [res("a", "passed"), res("b", "passed")] });
     const loser = snap({ experimentId: "exp/lose", results: [res("a", "failed"), res("b", "passed")] });
     const items = await experimentListData([loser, winner]);
@@ -675,7 +679,7 @@ describe("实体列表 data", () => {
     expect(items[0]!.attempts).toBe(2);
 
     // run 维度按真实来源分组:两条 attempt 各自的真实 startedAt 不同,不被合并成一个键。
-    const table = await metricTableData(scope, { rows: "run", columns: [endToEndPassRate] });
+    const table = await measureRowsData(scope, { dimensions: ["run"], measures: [passRate] });
     expect(table.rows.map((r) => r.key).sort()).toEqual([
       "exp/multi @ 2026-07-01T08:00:00.000Z",
       "exp/multi @ 2026-07-02T08:00:00.000Z",
@@ -767,14 +771,14 @@ describe("实体列表 data", () => {
     expect(expItems[0]!.evalRows[0]!.totalScore.value).toBe(3);
   });
 
-  it("通过制 experiment:ExperimentListItem.totalScore 为 null cell,同一行 endToEndPassRate 仍是良态数字,二者并存不互斥", async () => {
+  it("通过制 experiment:ExperimentListItem.totalScore 为 null cell,同一行 passRate 仍是良态数字,二者并存不互斥", async () => {
     const s = snap({ experimentId: "exam/passonly", results: [res("a", "passed"), res("b", "failed")] });
     const items = await experimentListData([s]);
     expect(items[0]!.totalScore.value).toBeNull();
     expect(items[0]!.endToEndPassRate.value).toBe(0.5);
   });
 
-  it("默认预排:纯计分制列表按 totalScore 降序,不是 endToEndPassRate(两个 experiment 端到端通过率同为 1,只有总分能分出高低)", async () => {
+  it("默认预排:纯计分制列表按 totalScore 降序,不是 passRate(两个 experiment 端到端通过率同为 1,只有总分能分出高低)", async () => {
     const low = snap({
       experimentId: "exam/a-lowscore",
       results: [res("q1", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
@@ -801,9 +805,9 @@ describe("实体列表 data", () => {
   });
 });
 
-// ───────────────────────── scopeSummaryData ─────────────────────────
+// ───────────────────────── sampleSummary ─────────────────────────
 
-describe("scopeSummaryData", () => {
+describe("sampleSummary", () => {
   it("evals 按 experimentId + evalId 计数(2 实验 × 6 题 = 12),与 evalVerdicts 同分母;两级计票在含重试时不同", async () => {
     const mk = (experimentId: string) =>
       snap({
@@ -818,7 +822,7 @@ describe("scopeSummaryData", () => {
           res("q6", "skipped"),
         ],
       });
-    const data = await scopeSummaryData([mk("cmp/a"), mk("cmp/b")]);
+    const data = await sampleSummary([mk("cmp/a"), mk("cmp/b")]);
     expect(data.experiments).toBe(2);
     expect(data.evals).toBe(12);
     expect(data.evalVerdicts).toEqual({ passed: 6, failed: 2, errored: 2, skipped: 2 });
@@ -840,20 +844,20 @@ describe("scopeSummaryData", () => {
         res("c", "passed"),
       ],
     });
-    const data = await scopeSummaryData([withCost]);
+    const data = await sampleSummary([withCost]);
     expect(data.totalCostUSD.value).toBeCloseTo(0.3);
-    const none = await scopeSummaryData([snap({ experimentId: "exp/free", results: [res("a", "passed")] })]);
+    const none = await sampleSummary([snap({ experimentId: "exp/free", results: [res("a", "passed")] })]);
     expect(none.totalCostUSD.value).toBeNull();
   });
 
   it("空范围的 range 为 null,不编造当前时间", async () => {
-    const data = await scopeSummaryData([]);
+    const data = await sampleSummary([]);
     expect(data.range).toEqual({ earliestStartedAt: null, latestStartedAt: null });
     expect(data.evals).toBe(0);
   });
 
   it("evaluationKindComposition 与 totalScore:纯通过制 Sample 省略 totalScore(不摆空列)", async () => {
-    const data = await scopeSummaryData([snap({ experimentId: "exp/pass", results: [res("a", "passed")] })]);
+    const data = await sampleSummary([snap({ experimentId: "exp/pass", results: [res("a", "passed")] })]);
     expect(data.evaluationKindComposition).toBe("pass");
     expect(data.totalScore).toBeUndefined();
   });
@@ -863,7 +867,7 @@ describe("scopeSummaryData", () => {
       experimentId: "exp/points",
       results: [res("a", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
     });
-    const data = await scopeSummaryData([s]);
+    const data = await sampleSummary([s]);
     expect(data.evaluationKindComposition).toBe("points");
     expect(data.totalScore?.value).toBe(3);
   });
@@ -874,7 +878,7 @@ describe("scopeSummaryData", () => {
       experimentId: "exp/b-points",
       results: [res("b", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] })],
     });
-    const data = await scopeSummaryData([passExp, pointsExp]);
+    const data = await sampleSummary([passExp, pointsExp]);
     expect(data.evaluationKindComposition).toBe("mixed");
     expect(data.totalScore).toBeDefined();
   });
@@ -887,7 +891,7 @@ describe("scopeSummaryData", () => {
         res("score", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] }),
       ],
     });
-    const data = await scopeSummaryData([mixed]);
+    const data = await sampleSummary([mixed]);
     expect(data.evaluationKindComposition).toBe("mixed");
     expect(data.endToEndPassRate.value).toBe(0);
     expect(data.endToEndPassRate.total).toBe(1);
@@ -896,7 +900,7 @@ describe("scopeSummaryData", () => {
 
   it("evaluationKindComposition() 与 ScopeSummaryData.evaluationKindComposition 同一 fixture 下一致(同规则同值,不各自重复判据)", async () => {
     const passInput = [snap({ experimentId: "exp/agree-pass", results: [res("a", "passed")] })];
-    expect(await evaluationKindComposition(passInput)).toBe((await scopeSummaryData(passInput)).evaluationKindComposition);
+    expect(await evaluationKindComposition(passInput)).toBe((await sampleSummary(passInput)).evaluationKindComposition);
 
     const pointsInput = [
       snap({
@@ -904,7 +908,7 @@ describe("scopeSummaryData", () => {
         results: [res("a", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 3)] })],
       }),
     ];
-    expect(await evaluationKindComposition(pointsInput)).toBe((await scopeSummaryData(pointsInput)).evaluationKindComposition);
+    expect(await evaluationKindComposition(pointsInput)).toBe((await sampleSummary(pointsInput)).evaluationKindComposition);
 
     // 混型:一个通过制 experiment 快照 + 一个计分制 experiment 快照并排——最可能出现
     // 复制粘贴分叉的形态。
@@ -915,17 +919,17 @@ describe("scopeSummaryData", () => {
         results: [res("b", "passed", { evaluationKind: "points", assertions: [pointsAssertion("x", 5)] })],
       }),
     ];
-    expect(await evaluationKindComposition(mixedInput)).toBe((await scopeSummaryData(mixedInput)).evaluationKindComposition);
+    expect(await evaluationKindComposition(mixedInput)).toBe((await sampleSummary(mixedInput)).evaluationKindComposition);
   });
 });
 
-// ───────────────────────── experimentListData / scopeSummaryData 的 selectedEvalIds 投影 ─────────────────────────
+// ───────────────────────── experimentListData / sampleSummary 的 selectedEvalIds 投影 ─────────────────────────
 // ExperimentComparison 已收为普通组合组件(把同一个 input 原样透传给 ScopeSummary /
 // MetricScatter / ExperimentList,不再有自己的 data 形态);经它展开后与直接调用这三个
 // 函数深等的验证挪到 dual-render.test.tsx(需要 resolve 管线)。这里只测三个函数自己的
 // selectedEvalIds 投影契约。
 
-describe("experimentListData / scopeSummaryData 的 selectedEvalIds 投影", () => {
+describe("experimentListData / sampleSummary 的 selectedEvalIds 投影", () => {
   it("不同深度目录的 experiments 一律进同一份 data,不按父路径分组比较", async () => {
     const g1a = snap({ experimentId: "compare/a", agent: "bub", results: [res("q", "passed")] });
     const g1b = snap({ experimentId: "compare/b", agent: "codex", results: [res("q", "failed")] });
@@ -961,7 +965,7 @@ describe("experimentListData / scopeSummaryData 的 selectedEvalIds 投影", () 
     expect(rowB.evalRows.map((r) => r.evalId)).toEqual(["q2"]);
 
     // 汇总口径同样不被污染:全 Sample 只有 2 个 eval(exp/a·q1、exp/b·q2),不是 3 个。
-    const summary = await scopeSummaryData([a, b]);
+    const summary = await sampleSummary([a, b]);
     expect(summary.evals).toBe(2);
   });
 
@@ -975,30 +979,20 @@ describe("experimentListData / scopeSummaryData 的 selectedEvalIds 投影", () 
   });
 });
 
-// ───────────────────────── metricScatterData / metricMatrixData ─────────────────────────
+// ───────────────────────── metricMatrixData / measureRowsData ─────────────────────────
 
-describe("metricScatterData / metricMatrixData", () => {
-  it("缺 x 或 y 的点留在 rows 里可数(组件不画并报数);矩阵稀疏:无 attempt 的组合不生成格子", async () => {
+describe("metricMatrixData / measureRowsData", () => {
+  it("矩阵稀疏:无 attempt 的组合不生成格子", async () => {
     const withCost = snap({
       experimentId: "cmp/priced",
       agent: "bub",
       results: [res("a", "passed", { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.2 } })],
     });
     const noCost = snap({ experimentId: "cmp/free", agent: "codex", results: [res("b", "passed")] });
-    const scatter = await metricScatterData([withCost, noCost], {
-      points: "experiment",
-      series: "agent",
-      x: costUSD,
-      y: endToEndPassRate,
-    });
-    expect(scatter.pointDimension).toBe("experiment");
-    expect(scatter.rows).toHaveLength(2);
-    expect(scatter.rows.find((r) => r.key === "cmp/free")!.x.value).toBeNull();
-
     const matrix = await metricMatrixData([withCost, noCost], {
       rows: "eval",
       columns: "agent",
-      cell: endToEndPassRate,
+      cell: passRate,
     });
     // a×codex、b×bub 没有样本 → 不出现(不是 value: 0)
     expect(matrix.cells).toHaveLength(2);
@@ -1013,46 +1007,46 @@ describe("metricScatterData / metricMatrixData", () => {
       experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "mempal" } },
     });
     const withoutFlag = snap({ experimentId: "f/off", results: [res("a", "failed")] });
-    const table = await metricTableData([withFlag, withoutFlag], {
-      rows: flag("memory"),
-      columns: [endToEndPassRate],
+    const table = await measureRowsData([withFlag, withoutFlag], {
+      dimensions: [flag("memory")],
+      measures: [passRate],
     });
     expect(table.rows.map((r) => r.key).sort()).toEqual(["(missing)", "mempal"]);
   });
 
-  it("metricTableData sort:必须是 columns 中同一实例且声明 better;方向随 better,缺数据沉底", async () => {
+  it("measureRowsData sort:必须是 columns 中同一实例且声明 better;方向随 better,缺数据沉底", async () => {
     const hi = snap({ experimentId: "s/hi", results: [res("a", "passed")] });
     const lo = snap({ experimentId: "s/lo", results: [res("a", "failed")] });
     const na = snap({ experimentId: "s/na", results: [res("a", "skipped")] });
-    const byPass = await metricTableData([lo, hi, na], {
-      rows: "experiment",
-      columns: [endToEndPassRate],
-      sort: endToEndPassRate,
+    const byPass = await measureRowsData([lo, hi, na], {
+      dimensions: ["experiment"],
+      measures: [passRate],
+      sort: passRate,
     });
     expect(byPass.rows.map((r) => r.key)).toEqual(["s/hi", "s/lo", "s/na"]);
 
     const fast = snap({ experimentId: "d/fast", results: [res("a", "passed", { durationMs: 10 })] });
     const slow = snap({ experimentId: "d/slow", results: [res("a", "passed", { durationMs: 99 })] });
-    const byDuration = await metricTableData([slow, fast], {
-      rows: "experiment",
-      columns: [durationMs],
+    const byDuration = await measureRowsData([slow, fast], {
+      dimensions: ["experiment"],
+      measures: [durationMs],
       sort: durationMs,
     });
     expect(byDuration.rows.map((r) => r.key)).toEqual(["d/fast", "d/slow"]); // lower better:低在前
 
     await expect(
-      metricTableData([hi], { rows: "experiment", columns: [endToEndPassRate], sort: durationMs }),
+      measureRowsData([hi], { dimensions: ["experiment"], measures: [passRate], sort: durationMs }),
     ).rejects.toThrow(/measures/);
     const noBetter: AttemptMetric = { name: "plain", value: () => 1 };
     await expect(
-      metricTableData([hi], { rows: "experiment", columns: [noBetter], sort: noBetter }),
+      measureRowsData([hi], { dimensions: ["experiment"], measures: [noBetter], sort: noBetter }),
     ).rejects.toThrow(/better/);
   });
 
   it("省略 sort 时按行 key 字典序(维度 domain 稳定序,不随文件扫描顺序)", async () => {
     const b = snap({ experimentId: "o/bbb", results: [res("a", "passed")] });
     const a = snap({ experimentId: "o/aaa", results: [res("a", "failed")] });
-    const table = await metricTableData([b, a], { rows: "experiment", columns: [endToEndPassRate] });
+    const table = await measureRowsData([b, a], { dimensions: ["experiment"], measures: [passRate] });
     expect(table.rows.map((r) => r.key)).toEqual(["o/aaa", "o/bbb"]);
   });
 });
@@ -1075,7 +1069,7 @@ describe("metricLineData", () => {
   it("未声明数值 flag 的 experiment 不伪造 x 值(不落到 x=0)并可数", async () => {
     const data = await metricLineData(
       [flaggedSnap("l/100", 100, ["passed"]), flaggedSnap("l/none", undefined, ["passed"])],
-      { x: numericFlag("budget"), y: endToEndPassRate },
+      { x: numericFlag("budget"), y: passRate },
     );
     const missing = data.rows.filter((r) => r.x === null);
     expect(missing).toHaveLength(1);
@@ -1086,7 +1080,7 @@ describe("metricLineData", () => {
     // 两个 experiment 同 x=100:各 1 题,一个 passed 一个 failed → 合成一点 y = (1+0)/2
     const data = await metricLineData(
       [flaggedSnap("m/one", 100, ["passed"]), flaggedSnap("m/two", 100, ["failed"])],
-      { x: numericFlag("budget"), y: endToEndPassRate },
+      { x: numericFlag("budget"), y: passRate },
     );
     expect(data.rows).toHaveLength(1);
     expect(data.rows[0]!.key).toBe("100"); // x 的稳定十进制字符串
@@ -1103,7 +1097,7 @@ describe("metricLineData", () => {
       name: "per-attempt",
       of: (attempt: AttemptHandle) => attempt.result.durationMs,
     };
-    await expect(metricLineData([s], { x: perAttempt, y: endToEndPassRate })).rejects.toThrow(/not constant/);
+    await expect(metricLineData([s], { x: perAttempt, y: passRate })).rejects.toThrow(/not constant/);
   });
 });
 
@@ -1123,8 +1117,8 @@ describe("examScore", () => {
         res("crashed", "errored", { error: erroredWith("boom") }),
       ],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [examScore] });
-    const cellOf = (key: string) => table.rows.find((r) => r.key === key)!.cells[examScore.name]!;
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [examScore] });
+    const cellOf = (key: string) => metricCell(table.rows.find((r) => r.key === key)!, examScore.name);
     expect(cellOf("soft").value).toBeCloseTo(0.75);
     expect(cellOf("allgate").value).toBe(1);
     expect(cellOf("crashed").value).toBe(0);
@@ -1146,8 +1140,8 @@ describe("totalScore", () => {
         }),
       ],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
-    const cellOf = (key: string) => table.rows.find((r) => r.key === key)!.cells[totalScore.name]!;
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [totalScore] });
+    const cellOf = (key: string) => metricCell(table.rows.find((r) => r.key === key)!, totalScore.name);
     expect(cellOf("checkpoints").value).toBe(17); // 1 + 1 + 0 + 15
   });
 
@@ -1156,8 +1150,8 @@ describe("totalScore", () => {
       experimentId: "score/errored",
       results: [res("crashed", "errored", { evaluationKind: "points", error: erroredWith("boom") })],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
-    const cell = table.rows.find((r) => r.key === "crashed")!.cells[totalScore.name]!;
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [totalScore] });
+    const cell = metricCell(table.rows.find((r) => r.key === "crashed")!, totalScore.name);
     expect(cell.value).toBeNull();
     expect(cell.samples).toBe(0);
   });
@@ -1167,8 +1161,8 @@ describe("totalScore", () => {
       experimentId: "score/skipped",
       results: [res("skip", "skipped", { evaluationKind: "points", skipReason: "not applicable" })],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
-    expect(table.rows.find((r) => r.key === "skip")!.cells[totalScore.name]!.value).toBeNull();
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [totalScore] });
+    expect(metricCell(table.rows.find((r) => r.key === "skip")!, totalScore.name).value).toBeNull();
   });
 
   it("failed(gate 挂了)仍照实求和已挣到的分——中止挣 0 靠 test() 控制流,不靠这个指标折成 0", async () => {
@@ -1184,8 +1178,8 @@ describe("totalScore", () => {
         }),
       ],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
-    expect(table.rows.find((r) => r.key === "partial")!.cells[totalScore.name]!.value).toBe(1);
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [totalScore] });
+    expect(metricCell(table.rows.find((r) => r.key === "partial")!, totalScore.name).value).toBe(1);
   });
 
   it("通过制 eval(evaluationKind 省略或 \"pass\"):恒 null,不参与聚合——两种题型天然不互相污染", async () => {
@@ -1193,9 +1187,9 @@ describe("totalScore", () => {
       experimentId: "score/mixed-scope",
       results: [res("pass-eval", "passed"), res("also-pass-eval", "passed", { evaluationKind: "pass" })],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
-    expect(table.rows.find((r) => r.key === "pass-eval")!.cells[totalScore.name]!.value).toBeNull();
-    expect(table.rows.find((r) => r.key === "also-pass-eval")!.cells[totalScore.name]!.value).toBeNull();
+    const table = await measureRowsData([s], { dimensions: ["eval"], measures: [totalScore] });
+    expect(metricCell(table.rows.find((r) => r.key === "pass-eval")!, totalScore.name).value).toBeNull();
+    expect(metricCell(table.rows.find((r) => r.key === "also-pass-eval")!, totalScore.name).value).toBeNull();
   });
 
   it("聚合口径:同一 eval 的多个 attempt 取均值(perEval mean),跨 eval 求和(acrossEvals sum)", async () => {
@@ -1209,9 +1203,9 @@ describe("totalScore", () => {
         res("q2", "passed", { evaluationKind: "points", assertions: [pointsAssertion("a", 5)] }),
       ],
     });
-    const table = await metricTableData([s], { rows: "experiment", columns: [totalScore] });
+    const table = await measureRowsData([s], { dimensions: ["experiment"], measures: [totalScore] });
     // acrossEvals sum:q1 的 perEval 均值(3)+ q2 的值(5)= 8,不是全部 attempt 直接相加(11)。
-    expect(table.rows[0]!.cells[totalScore.name]!.value).toBe(8);
+    expect(metricCell(table.rows[0]!, totalScore.name).value).toBe(8);
   });
 
   it("从公开导出面(niceeval/report 顶层)可以拿到同一个 totalScore Calculation,构建自定义报告不需要下钻内部模块", async () => {
@@ -1252,38 +1246,19 @@ describe("labels 维度、series 归类与 connect", () => {
     });
 
   it("label() 按声明值分组、未声明归 (missing);numericLabel 对字符串值返回 null 不猜序", async () => {
-    const table = await metricTableData(
+    const table = await measureRowsData(
       [labeled("m/one", { memory: "mempal" }, ["passed"]), labeled("m/two", undefined, ["failed"])],
-      { rows: label("memory"), columns: [endToEndPassRate] },
+      { dimensions: [label("memory")], measures: [passRate] },
     );
     expect(table.rows.map((r) => r.key).sort()).toEqual(["(missing)", "mempal"]);
 
     const line = await metricLineData(
       [labeled("m/num", { contextK: 32 }, ["passed"]), labeled("m/str", { contextK: "big" }, ["passed"])],
-      { x: numericLabel("contextK"), y: endToEndPassRate },
+      { x: numericLabel("contextK"), y: passRate },
     );
     expect(line.rows.filter((r) => r.x === null)).toHaveLength(1);
     expect(line.rows.some((r) => r.x === 32)).toBe(true);
     expect(line.rows.some((r) => r.x === 0)).toBe(false);
-  });
-
-  it("series 数组解析为复合维度:name 以 × 连接、值以 · 连接,缺失成员沿用 (missing)", async () => {
-    const a = labeled("c/one", { memory: "mempal" }, ["passed"], "codex");
-    const b = labeled("c/two", undefined, ["failed"], "codex");
-    const data = await metricScatterData([a, b], {
-      points: "experiment",
-      series: ["agent", label("memory")],
-      x: costUSD,
-      y: endToEndPassRate,
-    });
-    expect(data.seriesDimension).toBe("agent × memory");
-    const byKey = new Map(data.rows.map((r) => [r.key, r.series]));
-    expect(byKey.get("c/one")).toBe("codex · mempal");
-    expect(byKey.get("c/two")).toBe("codex · (missing)");
-    // 单成员数组等价于单维度
-    const single = await metricScatterData([a], { points: "experiment", series: ["agent"], x: costUSD, y: endToEndPassRate });
-    expect(single.seriesDimension).toBe("agent");
-    expect(single.rows[0]!.series).toBe("codex");
   });
 
   it("同图撞色按图例顺序线性探测空格;无冲突键仍取散列格;超过色板才复用", () => {
@@ -1315,23 +1290,18 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
   const scope = scopeOf([a, b]);
   const noLabelMetric: AttemptMetric = { name: "custom-no-label", value: (attempt) => (attempt.result.verdict === "passed" ? 1 : 0) };
 
-  it("metricTableData:含未声明 label 的自定义指标", async () => {
-    const table = await metricTableData(scope, { rows: "agent", columns: [costUSD, noLabelMetric] });
-    expect(validateTableData(table)).toBeNull();
+  it("measureRowsData:含未声明 label 的自定义指标", async () => {
+    const table = await measureRowsData(scope, { dimensions: ["agent"], measures: [costUSD, noLabelMetric] });
+    expect(isDataset(table)).toBe(true);
   });
 
   it("metricMatrixData", async () => {
-    const matrix = await metricMatrixData(scope, { rows: "experiment", columns: "eval", cell: endToEndPassRate });
+    const matrix = await metricMatrixData(scope, { rows: "experiment", columns: "eval", cell: passRate });
     expect(validateMatrixData(matrix)).toBeNull();
   });
 
-  it("metricScatterData:含缺 y 的点(null MetricCell.value)", async () => {
-    const scatter = await metricScatterData(scope, { points: "experiment", x: costUSD, y: noLabelMetric });
-    expect(validateScatterData(scatter)).toBeNull();
-  });
-
   it("metricLineData", async () => {
-    const line = await metricLineData(scope, { x: numericFlag("budget"), y: endToEndPassRate });
+    const line = await metricLineData(scope, { x: numericFlag("budget"), y: passRate });
     expect(validateLineData(line)).toBeNull();
   });
 
@@ -1361,8 +1331,8 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
     expect(validateStabilityMatrixData(stability)).toBeNull();
   });
 
-  it("scopeSummaryData", async () => {
-    const summary = await scopeSummaryData(scope);
+  it("sampleSummary", async () => {
+    const summary = await sampleSummary(scope);
     expect(validateSampleSummaryContent(summary)).toBeNull();
   });
 
