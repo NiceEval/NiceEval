@@ -1294,6 +1294,7 @@ async function main(): Promise<void> {
             experimentId: row.experimentId,
             evalId: row.evalId,
             ...(lockedFlags[i] ? { locked: true } : {}),
+            ...(row.prior !== undefined ? { prior: row.prior } : {}),
             dispatch: row.dispatch.map((group) => ({
               reason: group.reason,
               ...(group.deltas !== undefined ? { deltas: group.deltas } : {}),
