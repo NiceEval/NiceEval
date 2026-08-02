@@ -256,7 +256,7 @@ export interface DiffData {
   get(path: string): string | undefined;
 }
 
-export type Verdict = "passed" | "failed" | "errored" | "unreadable";
+export type { Verdict } from "../shared/types.ts";
 
 export interface JudgeConfig {
   /** 可由更低优先级层补齐；四层都未解析到时，实际 assertion 记 judge-model-unresolved。 */

@@ -14,6 +14,9 @@ export type JsonValue =
 /** 断言的严重度:"gate" 失败必判整轮 failed;"soft" 默认只记录不拦截,仅在 `--strict` 模式或显式设阈值未达标时才计入失败。 */
 export type Severity = "gate" | "soft";
 
+/** 一次 Attempt 的互斥终态；跳过是已结束但不构成可执行结论的结果。 */
+export type Verdict = "passed" | "failed" | "errored" | "skipped";
+
 /**
  * eval 源码里一次调用的位置(`t.send` / 各断言),运行期从栈回溯抠出来(见 src/source-loc.ts)。
  * view 据此把运行结果叠回真实源码行(github-diff 式代码视图)。`file` 为相对项目根的路径。
