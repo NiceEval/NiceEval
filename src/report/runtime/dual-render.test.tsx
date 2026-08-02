@@ -560,6 +560,42 @@ describe("内建报告", () => {
     ).toBe(ExperimentDetails);
   });
 
+  it("标准 attempt 的 usage Grid 是双面组件树，show 可渲染其 token 用量", async () => {
+    const scope = scopeOf([]);
+    const result = res("usage", "passed", {
+      usage: { inputTokens: 1_200, outputTokens: 34, requests: 2 },
+    });
+    const evidence: AttemptEvidence = {
+      locator: "@usage" as AttemptLocator,
+      identity: { runId: "agents/codex/run-usage", evalId: "usage", attempt: 0 },
+      experimentId: "agents/codex",
+      result,
+      events: null,
+      evalSource: null,
+      execution: null,
+      diff: null,
+      trace: null,
+      commands: null,
+      artifactPaths: { dir: "/tmp/usage/a0" },
+      capabilities: { source: false, execution: false, timing: false, diff: false },
+    };
+    const tree = await standardAttemptPage.render(evidence);
+    const resolved = await resolveReportTree(tree, {
+      scope,
+      results: resultsOf([]),
+      report: buildReportMeta(standard, scope),
+      page: { id: standardAttemptPage.id, input: evidence },
+      memo: new ResolveMemo(),
+    });
+
+    expect(() => validateReportTree(resolved)).not.toThrow();
+    const text = renderNodeToText(resolved, createTextContext({ width: 80 }));
+    expect(text).toContain("in");
+    expect(text).toContain("1,200");
+    expect(text).toContain("out");
+    expect(text).toContain("34");
+  });
+
   it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", async () => {
     const scope = scopeOf([]);
     const childTypes = (content: unknown) => {

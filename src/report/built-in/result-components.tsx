@@ -314,15 +314,29 @@ const TaskUsageResultView = defineComponent<{ data: UsageTableData }>(({ data })
   return (
     <Grid className="niceeval-usage-table">
       {rows.map(([label, value]) => (
-        <div key={label} className="niceeval-kpi">
-          <span className="niceeval-kpi-label">{label}</span>
-          <span className="niceeval-kpi-value">{value}</span>
-        </div>
+        <TaskUsageKpi key={label} label={label} value={value} />
       ))}
     </Grid>
   );
 });
 TaskUsageResultView.displayName = "TaskUsageResultView";
+
+/** usage Grid 的一格:网页保留 KPI 结构,text 面显式给出同一对 label/value。 */
+const TaskUsageKpi = defineComponent<{ label: string; value: string }>({
+  dimensions: () => ({}),
+  web({ label, value }) {
+    return (
+      <div className="niceeval-kpi">
+        <span className="niceeval-kpi-label">{label}</span>
+        <span className="niceeval-kpi-value">{value}</span>
+      </div>
+    );
+  },
+  text({ label, value }) {
+    return `${label}\n${value}`;
+  },
+});
+TaskUsageKpi.displayName = "TaskUsageKpi";
 
 export const AttemptDetailsResultView = defineComponent<{
   result: AttemptDetailsResult;
