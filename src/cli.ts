@@ -1227,7 +1227,7 @@ async function main(): Promise<void> {
   }
   // 即使没有历史也必须规划：它是 link → physical plan → fingerprint → dispatch 的唯一完成态，
   // dry 与真实运行都消费同一组不可变 PreparedRunPair。
-  let carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
+  const carryPlan = await Effect.runPromise(planCarry(evals, agentRuns, priorResults, config.timeoutMs, {
     rerun: flags.rerun,
     configJudge: config.judge,
     keepSandbox: flags.keepSandbox,
