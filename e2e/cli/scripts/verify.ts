@@ -267,6 +267,78 @@ function exitCodeFoldingDeliberateError(): void {
   assert.ok(line.includes("errored"), `deliberate-error/crash 最新 attempt 不是 errored:${line}`);
 }
 
+/**
+ * `accept` 是一个独立的单 locator 动作，不是 `exp` 的批量授权 flag。
+ *
+ * 这里复用 deliberate-fail / deliberate-error 的确定性 fixture，不额外消耗模型调用：
+ * - failed 结果通过改动 Eval 源码制造当前指纹漂移，再用 locator 重锚；
+ * - errored 结果验证终态门拒绝；
+ * - 非法 locator 验证命令在读盘前给出可行动的用法错误；
+ * - `exp --accept <selector>` 验证旧的 selector 入口已经不存在。
+ */
+function acceptanceCommandContracts(): void {
+  console.log("\n=== 7. acceptance DX: locator-only accept, re-anchor, and rejection paths ===");
+
+  // 新契约不允许把 selector 传给 exp；必须在启动期按未知 flag 拒绝，不能运行实验或静默忽略。
+  const selector = shResult("pnpm --silent exec niceeval exp deliberate-fail --accept config:flags.endpoint", "nonzero");
+  assert.equal(selector.stdout, "", "exp --accept selector usage error must not write stdout");
+  assert.match(selector.stderr, /unknown option ['\"]--accept['\"]/i);
+  assert.match(selector.stderr, /fix:/i);
+  assert.doesNotMatch(selector.combined, /\"event\":\"start\"/);
+
+  // locator 语法与索引错误都要在 acceptance 动作自身报出，不应退化成一次 exp 或 show。
+  const malformed = shResult("pnpm --silent exec niceeval accept @not-valid", "nonzero");
+  assert.match(malformed.combined, /locator/i);
+  assert.match(malformed.combined, /invalid|malformed|must|expects|not found/i);
+  assert.doesNotMatch(malformed.combined, /running|queued|dispatch/i);
+
+  const failedLocator = latestAttemptLine("deliberate-fail/broken").match(/@\S+/)?.[0];
+  assert.ok(failedLocator, "deliberate-fail/broken history line did not expose a locator for accept");
+  const erroredLocator = latestAttemptLine("deliberate-error/crash").match(/@\S+/)?.[0];
+  assert.ok(erroredLocator, "deliberate-error/crash history line did not expose a locator for accept");
+
+  // 形状合法但索引不存在的 locator 也必须和语法错误区分，且不能误接受相邻结果。
+  const missingLocator = `${failedLocator.slice(0, -1)}${failedLocator.endsWith("A") ? "B" : "A"}`;
+  const missing = shResult(`pnpm --silent exec niceeval accept ${missingLocator}`, "nonzero");
+  assert.match(missing.combined, /No attempt found|attempt .*not found/i);
+
+  // errored 是不可采信的终态；accept 必须拒绝且点名该阻止条件，不创建新快照。
+  const errored = shResult(`pnpm --silent exec niceeval accept ${erroredLocator}`, "nonzero");
+  assert.match(errored.combined, /errored/i);
+  assert.doesNotMatch(errored.combined, /accepted\s+@/i);
+
+  // 让同一条失败结果在当前源码下变成 stale，再用唯一 locator 接受。通过 finally 恢复 fixture，
+  // 不把本次验收的临时漂移写回工作树，也不依赖私有 `.niceeval` 目录布局。
+  const evalPath = "evals/deliberate-fail/broken.eval.ts";
+  const originalEval = readFileSync(evalPath, "utf8");
+  let acceptedLocator: string | undefined;
+  try {
+    writeFileSync(evalPath, `${originalEval}\n// acceptance contract: intentional fingerprint drift\n`, "utf8");
+    const accepted = shResult(`pnpm --silent exec niceeval accept ${failedLocator}`);
+    assert.match(accepted.combined, /accepted/i);
+    assert.match(accepted.combined, new RegExp(failedLocator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(accepted.combined, /fingerprint/i);
+
+    const locators = [...accepted.combined.matchAll(/@[0-9A-Za-z_-]+/g)].map((match) => match[0]);
+    acceptedLocator = locators.find((locator) => locator !== failedLocator);
+    assert.ok(
+      acceptedLocator,
+      `accept output must expose a new locator in addition to the source locator ${failedLocator}:\n${accepted.combined}`,
+    );
+
+    // acceptedFrom 是结果级审计字段；通过公开 show JSON 读面确认它随新结果落盘，且仍指回原 locator。
+    const acceptedJson = shResult(`pnpm --silent exec niceeval show ${acceptedLocator} --json`);
+    assert.match(acceptedJson.stdout, /"acceptedFrom"/);
+    assert.match(acceptedJson.stdout, new RegExp(failedLocator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    // 重锚后的结果已经使用当前指纹，下一次同一实验应携入而非再派发；输出是唯一的公开缓存观测面。
+    const carried = shResult("pnpm --silent exec niceeval exp deliberate-fail --json", "nonzero");
+    assert.match(carried.combined, /reused/i);
+  } finally {
+    writeFileSync(evalPath, originalEval, "utf8");
+  }
+}
+
 interface NormalBaseline {
   greet: number;
   tool: number;
@@ -369,6 +441,7 @@ export async function runVerify(): Promise<void> {
 
   exitCodeFoldingDeliberateFail();
   exitCodeFoldingDeliberateError();
+  acceptanceCommandContracts();
 
   const baseline = exitCodeFoldingNormal();
   cliReadBack(baseline.greetLine);
