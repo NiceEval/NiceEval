@@ -4,7 +4,7 @@
 [Architecture](../architecture.md)；用例只组合 Behavior、World reader、Domain View 和 matcher。
 
 - [终端 Report 结构](render-structure.md) —— stdout 断语义结构，PTY 断屏幕排版。
-- [Show 读回与 locator 往返](readback.md) —— history、stats 与公开 locator 使用同一身份。
+- [Show 读回与 locator 往返](readback.md) —— history、stats、公开 locator 与完整证据切片使用同一身份；完整切片 Behavior 见[测试方案](../../e2e-acceptance-testing/use-case/evidence-slices-roundtrip.md)。
 - [JSON、NDJSON 与 JUnit](machine-exports.md) —— 机器出口按结构比较，短文本才使用 golden。
 - [静态 HTML](html-export.md) —— 禁用 JavaScript 的真实 Chromium 读取参数化文档。
 - [浏览器交互](browser-interaction.md) —— target 下钻、过滤、tooltip 与 web-first 等待。

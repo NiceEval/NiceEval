@@ -87,13 +87,19 @@ Report 参数化页的全集 census、Chromium 代表矩阵与 hosting 路径见
 |---|---|
 | `src/view/**`、Report target / page / hosting、`enhance.js` | 单元结构 census + `report-target-closure` |
 | Report compute / renderer | 对应 compute contract + text/web 代表 E2E |
-| CLI / process output | 真实子进程、流与 exit Behavior |
+| CLI / process output | 真实子进程、流与 exit Behavior；Show 证据切片改动追加 `reports.evidence-slices-roundtrip` |
 | scheduler / retry / BuildKey | 可控 barrier 单元 + timeline 代表 E2E |
 | cleanup / sandbox ownership | cleanup 单元 + 串行生命周期 lane |
 
 CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 E2E 仓库；本方案额外要求确定性 Behavior 不依赖 secret，因而本机也能在提交前执行。未 push 的本地提交不能以“CI 将来会跑”代替本地变更卡。
 
 高风险跨层 coverage category 直接绑定 PLAN-2 的稳定 Behavior id。Behavior 声明已经持有 `task`、`contract`、`risk`、`primary.target` 与 `primary.execution`；所属 E2E 仓库的执行登记再为 Behavior id 指定 cadence 与并发 class。机器守护只核对覆盖类别、主证明与执行登记的双向存在，不把具体 scenario 清单复制进文档。这样 Feature 从 attempt 升级为 target 时，旧 Behavior 不能只凭“文件还在”继续冒充覆盖。
+
+影响图同样绑定稳定 Behavior id，但只登记能够改变该公开任务的精确 path set，不用顶层目录制造全量误跑。
+Show 的 flag、切片宿主、attempt evidence 读取、对应组件装配和候选包入口由
+[`reports.evidence-slices-roundtrip`](use-case/evidence-slices-roundtrip.md#变更触发路径)共同守护；
+producer 路径只有在改变落盘 evidence 契约时才进入这条闭环。重命名按 diff 新旧路径匹配，共享 helper
+按 import graph 扩一跳，确保“文件挪走所以规则不再命中”本身不能绕过门禁。
 
 ## Proof 准入门槛
 

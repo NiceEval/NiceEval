@@ -36,6 +36,16 @@ fix parent 或最小逆补丁验证记录。
 - **最早失败**：invoke / outcome；失败消息附 action 轨迹、候选全集、实际命中和 locator。
 - **成本**：每 PR，本地 deterministic adapter。
 
+### A3b · Show 证据切片从安装包完整往返
+
+- **覆盖**：提交边界遗漏或打包入口漂移导致 `niceeval show`、`--source`、`--execution`、`--timing`、`--timing=full`、`--diff` 中部分能力没有进入最终候选包；flag 尚在但宿主参数或 evidence component 断线的同形回归。
+- **fixture**：一份冻结的确定性 Record；同一 locator 同时有具名 source 路径、工具执行节点、runner + OTel timing 层级和单文件 diff，另带零净改动反例。
+- **动作**：从公开 locator 依次运行不带证据选项的详情与五种真实 CLI 调试命令；全部经候选 tarball 安装入口，不 import 内部 Show 函数。
+- **公开 oracle**：每条命令 exit 0；默认详情列出四类入口；source、execution、timing summary/full、diff 各返回题面声明的领域身份，summary 是 full 的有序子集。
+- **区分性**：删 CLI option 与断开宿主参数是两条必杀 mutation；只测 help、下钻提示、内部函数或源码工作树都不能通过。
+- **最早失败**：invoke（未知 flag / 包入口缺失）、observe（输出无法解析 / 切片缺失）、outcome（领域事实或 summary/full 关系错误）；附命令、locator、exit、stderr、候选包 digest 与 evidence 路径。
+- **成本**：每 PR和发布 tag，本地确定性，无模型 / 网络；完整设计见 [`reports.evidence-slices-roundtrip`](../use-case/evidence-slices-roundtrip.md)。
+
 ### A4 · 调度与就绪只比较区间关系
 
 - **覆盖**：一个串行实验钳住全批 `03de80d8`；retry backoff 释放闸 `9d7b352`；共享构建全局 barrier `b24b22d2`。
