@@ -398,7 +398,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(doc.matrix[1]).not.toHaveProperty("dispatch");
   });
 
-  it("carry-disabled dispatch 结构化保留 linked blocker 的 code/reason", () => {
+  it("carry-disabled dispatch 结构化保留 provider blocker 的 code/reason", () => {
     const doc = JSON.parse(renderJsonPlanDocument({
       total: 1,
       evals: 1,
@@ -412,8 +412,8 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
           gate: "eligibility",
           attempts: [0],
           blockers: [
-            { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
-            { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+            { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
+            { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
           ],
         }],
       }],
@@ -423,8 +423,8 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       gate: "eligibility",
       attempts: [0],
       blockers: [
-        { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
-        { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+        { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
+        { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
       ],
     }]);
     expect(JSON.stringify(doc)).not.toContain("details unavailable");

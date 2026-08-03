@@ -997,7 +997,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
   });
 
-  it("carry-disabled 行显示 linked blocker 的 code/reason,不退化为 details unavailable 或 accept", () => {
+  it("carry-disabled 行显示 provider blocker 的 code/reason,不退化为 details unavailable 或 accept", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 1,
       evals: 1,
@@ -1009,8 +1009,8 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
         dispatch: [{
           reason: "carry-disabled",
           blockers: [
-            { code: "sandbox.command-opaque", reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run)." },
-            { code: "sandbox.lifecycle-opaque", reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled." },
+            { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
+            { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
           ],
         }],
         // 即使上游误带 prior，carry-disabled 也不应生成 stale/accept 详情块。
@@ -1018,8 +1018,8 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       }],
     });
 
-    expect(text).toContain("carry-disabled: sandbox.command-opaque:");
-    expect(text).toContain("sandbox.lifecycle-opaque:");
+    expect(text).toContain("carry-disabled: sandbox.custom-provider-opaque:");
+    expect(text).toContain("sandbox.image-unresolved:");
     expect(text).not.toContain("details unavailable");
     expect(text).not.toContain("stale passed");
     expect(text).not.toContain("niceeval accept @1A1B2C3D4E5F");

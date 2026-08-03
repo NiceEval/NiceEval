@@ -235,7 +235,7 @@ describe("pure SandboxLayer linker", () => {
     expect(experimentOwned.templateOwner).toEqual({ kind: "experiment", id: "experiment/codex" });
   });
 
-  it("opaque callback 保留执行顺序但关闭 carry，并给出 owner、序号和可行动修法", () => {
+  it("opaque callback 保留执行顺序与 fingerprint marker，但不阻断 carry", () => {
     const opaque = async (): Promise<void> => {};
     const [linked] = linkOk([
       sandboxPair({
@@ -255,17 +255,7 @@ describe("pure SandboxLayer linker", () => {
       { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, index: 0 },
       expect.objectContaining({ kind: "stable", owner: { kind: "experiment", id: "experiment/codex" }, id: "experiment.stable" }),
     ]);
-    expect(linked.carry).toEqual({
-      _tag: "Blocked",
-      reasons: [
-        expect.objectContaining({
-          code: "sandbox.command-opaque",
-          owner: { kind: "experiment", id: "experiment/codex" },
-          commandIndex: { _tag: "Declared", value: 0 },
-          reason: expect.stringMatching(/prepare command #1.*defineSandboxCommand/),
-        }),
-      ],
-    });
+    expect(linked.carry).toEqual({ _tag: "Eligible" });
     expect(sandboxLayerIdentityFor(linked, "eval")).toMatchObject({
       layer: { _tag: "Template", value: { provider: "docker", kind: "image" } },
     });
@@ -274,7 +264,7 @@ describe("pure SandboxLayer linker", () => {
     });
   });
 
-  it("lifecycle 以 opaque marker 进入 fingerprint，并保留 template owner 优先的执行顺序", () => {
+  it("lifecycle 以 opaque marker 进入 fingerprint，并保留 template owner 优先的执行顺序且不阻断 carry", () => {
     const evalSetup = async (): Promise<void> => {};
     const experimentSetup = async (): Promise<void> => {};
     const evalTeardown = async (): Promise<void> => {};
@@ -296,7 +286,7 @@ describe("pure SandboxLayer linker", () => {
       { kind: "opaque", owner: { kind: "eval", id: "eval/task" }, phase: "teardown", index: 0 },
       { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, phase: "teardown", index: 0 },
     ]);
-    expect(linked.carry).toMatchObject({ _tag: "Blocked" });
+    expect(linked.carry).toEqual({ _tag: "Eligible" });
   });
 
   it("混合矩阵逐 pair link，不从相邻 Eval 借 template，也不让 Experiment template 覆盖 Eval", () => {

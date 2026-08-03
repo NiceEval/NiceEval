@@ -96,16 +96,16 @@ function blockedSandboxPlan() {
         _tag: "Blocked",
         reasons: [
           {
-            code: "sandbox.command-opaque",
+            code: "sandbox.custom-provider-opaque",
             owner: { kind: "experiment", id: "exp" },
             commandIndex: { _tag: "Declared", value: 0 },
-            reason: "wrap it with defineSandboxCommand({ id, revision, inputs }, run).",
+            reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry.",
           },
           {
-            code: "sandbox.lifecycle-opaque",
+            code: "sandbox.image-unresolved",
             owner: { kind: "eval", id: "e" },
             commandIndex: { _tag: "Omitted" },
-            reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled.",
+            reason: "Docker image is not pinned to a sha256 digest.",
           },
         ],
       },
@@ -183,7 +183,7 @@ describe("acceptPreparedAttempt", () => {
     });
   });
 
-  it("当前 pair carry blocked 时拒绝重锚且在拒绝前不写 snapshot", async () => {
+  it("当前 pair 有真实 carry blocker 时拒绝重锚且在拒绝前不写 snapshot", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-accept-carry-disabled-"));
     roots.push(root);
     const source = makeSource(root);
@@ -192,7 +192,7 @@ describe("acceptPreparedAttempt", () => {
     await expect(accept(source, pair)).rejects.toMatchObject({
       name: "AcceptError",
       code: "carry-ineligible",
-      message: expect.stringMatching(/sandbox\.command-opaque.*sandbox\.lifecycle-opaque/),
+      message: expect.stringMatching(/sandbox\.custom-provider-opaque.*sandbox\.image-unresolved/),
     });
     expect(await readdir(root)).toEqual([]);
   });

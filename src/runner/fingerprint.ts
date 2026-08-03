@@ -648,8 +648,8 @@ async function planCarryPrepared(
   const carriedAcceptingByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
   const hit = new Set<EvalResult>();
   for (const [key, { pair: { run }, blockers }] of entries) {
-    // opaque command/lifecycle 或 provider opaque plan 的 pair 从来不能跨 Run 携带。
-    // 它们仍然需要跑出新的结果，但不得被 --accept 或其它指纹候选放行。
+    // Provider 等明确报告 carry blocker 的 pair 不能跨 Run 携带。
+    // 未登记 identity 的作者 callback 不是 blocker；它按其它指纹输入正常参与携带。
     if (blockers.length > 0) continue;
     const carried = carriableAttempts(
       priorResults,

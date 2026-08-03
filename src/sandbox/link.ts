@@ -197,7 +197,7 @@ export interface LinkedSandboxPair {
   readonly template: SandboxTemplateDeclaration;
   /** template owner 的 commands 在前，另一作者的 commands 在后。 */
   readonly commands: readonly LinkedSandboxCommand[];
-  /** 物理实例生命周期:template owner 在前,另一 layer 在后。回调不进 record,但阻断跨 Run carry。 */
+  /** 物理实例生命周期:template owner 在前,另一 layer 在后。回调不进 record,但保留 marker。 */
   readonly setupHooks: readonly SandboxHook[];
   readonly teardownHooks: readonly SandboxHook[];
   /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
@@ -403,27 +403,15 @@ function linkedCommands(
   second: NormalizedContribution,
 ): {
   readonly commands: readonly LinkedSandboxCommand[];
-  readonly reasons: readonly SandboxCarryIneligibility[];
 } {
   const commands: LinkedSandboxCommand[] = [];
-  const reasons: SandboxCarryIneligibility[] = [];
   for (const contribution of [first, second]) {
     contribution.state.commands.forEach((declaration, index) => {
       const fingerprint = fingerprintCommand(contribution.owner, index, declaration);
       commands.push(Object.freeze({ owner: contribution.owner, index, command: declaration.command, fingerprint }));
-      if (declaration.kind === "opaque") {
-        reasons.push(Object.freeze({
-          code: "sandbox.command-opaque",
-          owner: contribution.owner,
-          commandIndex: Object.freeze({ _tag: "Declared", value: index }),
-          reason:
-            `${contribution.owner.kind} "${contribution.owner.id}" prepare command #${index + 1} is an opaque callback; ` +
-            "wrap it with defineSandboxCommand({ id, revision, inputs }, run) to enable cross-Run carry.",
-        }));
-      }
     });
   }
-  return Object.freeze({ commands: Object.freeze(commands), reasons: Object.freeze(reasons) });
+  return Object.freeze({ commands: Object.freeze(commands) });
 }
 
 function linkSandboxPair(
@@ -441,9 +429,6 @@ function linkSandboxPair(
         reason: template.carry.reason,
       })
     : undefined;
-  const initialReasons = templateReason === undefined
-    ? linked.reasons
-    : [...linked.reasons, templateReason];
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
   const lifecycle = Object.freeze([
     ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
@@ -458,17 +443,11 @@ function linkSandboxPair(
     commands: fingerprints,
     ...(lifecycle.length === 0 ? {} : { lifecycle }),
   });
-  const reasons = lifecycle.length === 0 ? initialReasons : [...initialReasons, Object.freeze({
-    code: "sandbox.lifecycle-opaque",
-    owner: templateOwner.owner,
-    commandIndex: Object.freeze({ _tag: "Omitted" }),
-    reason: "Sandbox lifecycle hooks are opaque callbacks; cross-Run carry is disabled.",
-  })];
-  const carry: SandboxCarryEligibility = reasons.length === 0
+  const carry: SandboxCarryEligibility = templateReason === undefined
     ? Object.freeze({ _tag: "Eligible" as const })
     : Object.freeze({
         _tag: "Blocked" as const,
-        reasons: reasons as readonly [SandboxCarryIneligibility, ...SandboxCarryIneligibility[]],
+        reasons: Object.freeze([templateReason] as const),
       });
   return Object.freeze({
     kind: "sandbox",
