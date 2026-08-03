@@ -183,7 +183,7 @@ const FLAG_OPTIONS = {
   "keep-sandbox": { type: "boolean" },
   /** `sandbox stop` 专用:销毁全部留存 Sandbox。 */
   all: { type: "boolean" },
-  /** `sandbox diff` 专用:只看某个 send 窗口(如 `--window s1/t2`);省略输出全部窗口的串联视图。 */
+  /** `sandbox diff` 专用:只看某个 send 窗口(如 `--window turn2` 或 `--window session2/turn1`);省略输出全部窗口的串联视图。 */
   window: { type: "string" },
   /** `sandbox diff` 专用:只看某个文件的 patch;省略输出该窗口的全部文件。 */
   path: { type: "string" },

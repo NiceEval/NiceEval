@@ -3,6 +3,7 @@
 
 import type { AssertionResult, PhaseTiming, ScoreEntry, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
+import { formatTurnLabel } from "../shared/turn-label.ts";
 
 /**
  * 标回 `t.send(...)` 调用行的一轮 turn 头行事实(契约见 docs/feature/reports/show.md
@@ -10,7 +11,7 @@ import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
  * 回复全文与轮内卡片不进这个模型——源码页只回答「这行代码对应哪一轮、这一轮成了没成」。
  */
 export interface SendAnnotation {
-  /** `s<session>/t<turn>`。 */
+  /** `turn<N>` 或 `session<K>/turn<N>`；已有 artifact 标签按不透明字符串保留。 */
   label: string;
   /** 轮的终态;时间树只记 failed 位,waiting 需要事件流佐证时由派生方给。 */
   status: "completed" | "failed" | "waiting";
@@ -41,7 +42,7 @@ export function deriveSendAnnotations(
     if (!event.loc) continue;
     const turn = turnNodes[turnIndex];
     out.push({
-      label: turn?.label ?? `t${turnIndex + 1}`,
+      label: turn?.label ?? formatTurnLabel(1, turnIndex + 1),
       status: turn?.failed ? "failed" : "completed",
       ...(turn !== undefined ? { durationMs: turn.durationMs } : {}),
       ...(event.sourceOrder !== undefined ? { sourceOrder: event.sourceOrder } : {}),

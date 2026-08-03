@@ -39,6 +39,10 @@ M manager_decisions.json · touched in turn1, turn2
 摘要与单文件 patch 都读 [`diffResult(attempt)`](../components/attempt-detail/attempt-diff.md) 这一份投影。
  web 面把同一批文件排成[路径树](../components/primitives/diff-view.md#web-面路径树)，行首字母、增删行数与窗口标签逐字同源。
 
+读取历史 `diff.json` 时窗口标签是 opaque token：旧 artifact 中的 `s1/t1` 会原样保留并在
+`show --diff` 中显示为 `window s1/t1`；新运行产生的标签才使用 `turn1` 或
+`session2/turn1`。展示层不迁移、不猜测标签内部结构。
+
 ## 相关阅读
 
 - [`--execution`](execution.md) —— 改动发生的那一轮说了什么、调了什么工具。

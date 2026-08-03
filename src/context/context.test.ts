@@ -710,7 +710,7 @@ describe("t.send() · failed Turn 是可评分领域结果", () => {
 describe("t.sandbox.diff 的内容读取:被省略的内容如实报不可用", () => {
   const windows: DiffArtifact = [
     {
-      window: "s1/t1",
+      window: "turn1",
       changes: {
         "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" },
         "dist/bundle.wasm": { status: "added", elided: { reason: "binary", afterBytes: 3_145_728 } },

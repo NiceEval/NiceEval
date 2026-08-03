@@ -22,7 +22,7 @@ import type {
 } from "../../model/types.ts";
 import type { AssertionResult, JsonValue, ScoreEntry, TimingActivity, TraceSpan } from "../../../types.ts";
 import { stripControl } from "../../../assertions/display.ts";
-import { formatPointsSuffix } from "../../model/format.ts";
+import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
 import type {
   LineAnnotation,
@@ -50,7 +50,7 @@ function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] 
   const send = annotation.send;
   return [
     <Text key={key}>
-      {[send.label, send.status, send.durationMs === undefined ? undefined : `${send.durationMs}ms`]
+      {[send.label, send.status, send.durationMs === undefined ? undefined : formatDurationMs(send.durationMs)]
         .filter((part): part is string => part !== undefined)
         .join(" · ")}
     </Text>,

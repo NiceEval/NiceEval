@@ -10,12 +10,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { EvalResult, StreamEvent, Verdict } from "../../../types.ts";
+import type { SourceContent as AnnotatedSourceContent } from "../../../record/annotated-source.ts";
 import { completeEvidenceCoverage } from "../../../assertions/coverage.ts";
 import type { Record, Sample } from "../../../record/index.ts";
 import { emptyScopeAndResults } from "../scope.harness.ts";
 import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../record/attempt-evidence.ts";
 import { encodeAttemptLocator, type AttemptIdentity } from "../../../record/locator.ts";
-import { resolveReportTree, ResolveMemo, type ReportNode, composeOf} from "../../definition/tree.ts";
+import { createTextContext, renderNodeToText, resolveReportTree, ResolveMemo, type ReportNode, composeOf} from "../../definition/tree.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import {
   attemptAssertionsData,
@@ -29,7 +30,7 @@ import {
   attemptTraceData,
   usageTableData,
 } from "./compute.ts";
-import { attemptTimelineContent, attemptTraceContent } from "./content.tsx";
+import { attemptTimelineContent, attemptTraceContent, projectedSourceContent } from "./content.tsx";
 import { deriveDiffData } from "../../../assertions/diff.ts";
 import {
   Callouts,
@@ -98,7 +99,7 @@ function evidenceOf(overrides: Partial<AttemptEvidence> = {}): AttemptEvidence {
 }
 
 /** resolve 单个 attempt-input page 节点,注入给定的 evidence。 */
-async function resolveOnAttemptPage(node: ReportNode, evidence: AttemptEvidence): Promise<unknown> {
+async function resolveOnAttemptPage(node: ReportNode, evidence: AttemptEvidence): Promise<ReportNode> {
   const { scope, results } = emptyScopeAndResults();
   const page = { id: "attempt", input: evidence };
   return resolveReportTree(node, {
@@ -126,6 +127,52 @@ async function resolveOnScopePage(node: ReportNode): Promise<unknown> {
 
 
 // ───────────────────────── AttemptConversation:loc 分轮 ─────────────────────────
+
+describe("AttemptSource:send annotation", () => {
+  it("轮耗时沿用统一时长格式,156502ms 显示为 2m 37s", () => {
+    const source: AnnotatedSourceContent = {
+      spine: {
+        file: "evals/weather.eval.ts",
+        sha256: "sha",
+        lines: [{
+          line: 1,
+          text: 'await t.send("hi");',
+          annotations: [{
+            kind: "send",
+            send: {
+              label: "turn1",
+              status: "completed",
+              durationMs: 156_502,
+              loc: { file: "evals/weather.eval.ts", line: 1 },
+            },
+          }],
+          calls: [],
+        }],
+      },
+      detached: [],
+      unmapped: { assertions: [], scores: [] },
+      summary: { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false },
+    };
+
+    const projected = projectedSourceContent(source)!;
+    const detail = projected.spine.lines[0]!.details![0] as { props: { children: unknown } };
+    expect(detail.props.children).toBe("turn1 · completed · 2m 37s");
+  });
+});
+
+describe("AttemptSummary:show 顶部 text 摘要", () => {
+  it("沿用统一时长格式,254334ms 显示为 4m 14s", async () => {
+    const evidence = evidenceOf({ result: resultOf({ durationMs: 254_334 }) });
+    const tree = await resolveOnAttemptPage(
+      <AttemptSummary data={attemptSummaryData(evidence)} />,
+      evidence,
+    );
+    const text = renderNodeToText(tree, createTextContext({ width: 120 }));
+
+    expect(text).toContain("passed · 4m 14s");
+    expect(text).not.toContain("254334ms");
+  });
+});
 
 describe("AttemptConversation:标准事件流按 loc 分轮", () => {
   it("send(带 loc)后紧跟同文本无 loc 回显,回复仍全部聚到 send 行", () => {
@@ -211,7 +258,7 @@ describe("timeline / trace 投影的时间树语义", () => {
           name: "eval.run",
           durationMs: 5_000,
           children: [
-            { id: "turn-1", key: "agent.turn", label: "s1/t1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
+            { id: "turn-1", key: "agent.turn", label: "turn1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
           ],
         },
         { name: "sandbox.stop", durationMs: 500, failed: true },
@@ -263,7 +310,7 @@ describe("timeline / trace 投影的时间树语义", () => {
 describe("attemptDiffData:内容被省略的文件投影成字节数 + 原因,不投 patch", () => {
   const diff = deriveDiffData([
     {
-      window: "s1/t1",
+      window: "turn1",
       changes: {
         "src/app.ts": { status: "modified", before: "old\n", after: "new\n" },
         "assets/logo.png": { status: "added", elided: { reason: "binary", afterBytes: 3_145_728 } },
@@ -271,7 +318,7 @@ describe("attemptDiffData:内容被省略的文件投影成字节数 + 原因,�
       },
     },
     {
-      window: "s1/t2",
+      window: "turn2",
       changes: {
         "data/dump.sql": { status: "modified", elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 } },
       },
@@ -293,7 +340,7 @@ describe("attemptDiffData:内容被省略的文件投影成字节数 + 原因,�
       elided: { reason: "oversized-text", beforeBytes: 1_048_577, afterBytes: 4_194_304 },
     });
     // 省略的文件窗口段一律不带 patch(没有内容可渲染),两个触及窗口仍如实列出
-    expect(byPath.get("data/dump.sql")!.windows).toEqual([{ window: "s1/t1" }, { window: "s1/t2" }]);
+    expect(byPath.get("data/dump.sql")!.windows).toEqual([{ window: "turn1" }, { window: "turn2" }]);
   });
 
   it("同一份 diff 里内容内联的文件照常出 patch 与行数", () => {

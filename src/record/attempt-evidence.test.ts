@@ -50,8 +50,9 @@ const TRACE: TraceSpan[] = [
   { traceId: "t1", spanId: "s1", name: "tool.get_weather", startMs: 0, endMs: 10, attributes: { call_id: "c1" } },
 ];
 
-const NONEMPTY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "hello" } } }];
-const EMPTY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: {} }];
+const NONEMPTY_DIFF: DiffArtifact = [{ window: "turn1", changes: { "a.txt": { status: "added", after: "hello" } } }];
+const EMPTY_DIFF: DiffArtifact = [{ window: "turn1", changes: {} }];
+const LEGACY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: { "legacy.txt": { status: "added", after: "kept" } } }];
 
 /** 起一个 writer,写一条 attempt,finish,再从头 openRecord 读回它的 AttemptHandle。 */
 async function seedAttempt(
@@ -97,6 +98,15 @@ describe("loadAttemptEvidence", () => {
     expect(evidence.diff?.windows).toEqual(NONEMPTY_DIFF);
 
     expect(evidence.capabilities).toEqual({ source: true, execution: true, timing: true, diff: true });
+  });
+
+  it("读取历史 diff artifact 时把旧窗口标签当不透明字符串原样保留,不迁移", async () => {
+    const root = await makeRoot();
+    const attempt = await seedAttempt(root, { id: "weather/legacy" }, { diff: LEGACY_DIFF });
+
+    const evidence = await loadAttemptEvidence(attempt);
+
+    expect(evidence.diff?.windows).toEqual(LEGACY_DIFF);
   });
 
   it("四个 capability 全部缺失:没有 sources / events / trace / diff,不崩溃", async () => {

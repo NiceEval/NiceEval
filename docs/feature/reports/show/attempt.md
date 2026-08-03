@@ -15,6 +15,9 @@
 每类证据各自决定是否有内容。
 缺失时整块省略或显示明确缺失，不留下空标题，也不猜一个零值。
 
+顶部 text 摘要的耗时与执行时间轴使用同一 `formatDurationMs` 口径；例如落盘值
+`254334ms` 显示为 `@1qrdcfq8 · passed · 4m 14s`，不会把原始毫秒直接拼进用户输出。
+
 ## Usage
 
 `usageResult(attempt)` 是详情、`--usage` 与 JSON 的共同结果。

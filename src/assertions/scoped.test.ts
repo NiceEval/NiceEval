@@ -302,11 +302,11 @@ describe("calledSubagent:remoteUrl 三种形态与 output", () => {
 
 describe("notInDiff:内容被省略的条目上「没出现」证明不了", () => {
   const inlined: DiffArtifact = [
-    { window: "s1/t1", changes: { "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" } } },
+    { window: "turn1", changes: { "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" } } },
   ];
   const withElided: DiffArtifact = [
     {
-      window: "s1/t1",
+      window: "turn1",
       changes: {
         "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" },
         "assets/logo.png": { status: "added", elided: { reason: "binary", afterBytes: 2048 } },

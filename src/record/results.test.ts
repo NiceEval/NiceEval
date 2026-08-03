@@ -411,7 +411,7 @@ describe("createWriter", () => {
     await snapA.writeAttempt({ id: "q2", verdict: "failed", attempt: 1, durationMs: 50, assertions: [] });
 
     const snapB = await writer.run({ experimentId: "compare/b", agent: "codex", startedAt: "2026-07-02T09:00:00.000Z" });
-    await snapB.writeAttempt({ id: "q1", verdict: "passed", attempt: 1, durationMs: 80, assertions: [] }, { diff: [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "1" } } }] });
+    await snapB.writeAttempt({ id: "q1", verdict: "passed", attempt: 1, durationMs: 80, assertions: [] }, { diff: [{ window: "turn1", changes: { "a.txt": { status: "added", after: "1" } } }] });
 
     await snapA.finish();
     await snapB.finish();
@@ -453,7 +453,7 @@ describe("createWriter", () => {
     const b = results.experiments[1].latestRun;
     expect(b.model).toBeUndefined();
     const bDiff = await b.attempts[0].diff();
-    expect(bDiff?.windows).toEqual([{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "1" } } }]);
+    expect(bDiff?.windows).toEqual([{ window: "turn1", changes: { "a.txt": { status: "added", after: "1" } } }]);
     expect(bDiff?.get("a.txt")).toBe("1");
 
     const coverage = latestRunSample(results).coverage.find((c) => c.experimentId === "compare/a")!;
@@ -840,7 +840,7 @@ describe("createWriter", () => {
       sources: [{ path: "evals/a.ts", content: "x", role: "referenced" }],
       trace: [{ name: "turn", key: "agent.turn" } as never],
       o11y: { toolCalls: 2 } as never,
-      diff: [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "1" } } }],
+      diff: [{ window: "turn1", changes: { "a.txt": { status: "added", after: "1" } } }],
       commands: [{ timingNodeId: "n1", phase: "eval.run" as const, display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" }],
       rawTranscript: "raw",
     };
@@ -918,6 +918,7 @@ describe("publish", () => {
     await writeResultFile(monday, "q1/a1", record({ id: "q1", attempt: 1, artifacts: ["events", "trace"] }));
     await writeArtifactFile(monday, "q1/a1", "events.json", [{ n: 1 }]);
     await writeArtifactFile(monday, "q1/a1", "trace.json", [{ name: "turn" }]);
+    // 历史快照 fixture:旧 token 必须由读取/发布链路原样保留,不做迁移。
     await writeArtifactFile(monday, "q1/a1", "diff.json", [{ window: "s1/t1", changes: {} }]);
     await writeResultFile(monday, "q2/a1", record({ id: "q2", attempt: 1 }));
 

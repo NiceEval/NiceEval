@@ -93,7 +93,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
   },
   text(props) {
     const d = props.data!;
-    return `${d.locator} · ${d.verdict} · ${d.durationMs}ms`;
+    return `${d.locator} · ${d.verdict} · ${formatDurationMs(d.durationMs)}`;
   },
 });
 AttemptSummary.displayName = "AttemptSummary";

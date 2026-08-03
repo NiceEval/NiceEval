@@ -279,6 +279,38 @@ function makeManagerWithTurns(turns: Turn[], overrides: Partial<ConstructorParam
   return manager;
 }
 
+describe("SessionManager · send 窗口轮标签", () => {
+  it("主会话与额外会话按各自轮次生成完整 token,前后归因窗口一致", async () => {
+    const labels: string[] = [];
+    const manager = makeManagerWithTurns(
+      [
+        { status: "completed", events: [] },
+        { status: "completed", events: [] },
+        { status: "completed", events: [] },
+      ],
+      {
+        ledgerHooks: {
+          beforeSend: async (label) => { labels.push(`before:${label}`); },
+          afterSend: async (label) => { labels.push(`after:${label}`); },
+        },
+      },
+    );
+
+    await manager.send(manager.primary, "one");
+    await manager.send(manager.primary, "two");
+    await manager.send(manager.newSession(), "three");
+
+    expect(labels).toEqual([
+      "before:turn1",
+      "after:turn1",
+      "before:turn2",
+      "after:turn2",
+      "before:session2/turn1",
+      "after:session2/turn1",
+    ]);
+  });
+});
+
 // cases: docs/engineering/testing/unit/eval.md「多轮 Usage 累计的诚实口径」——
 // adapter 未报告的字段(requests、cache 计数)累计后保持省略,不得以 0/每轮 +1 凑数,
 // fixture 要区分「报了 0」与「没报」两态。

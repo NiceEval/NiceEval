@@ -52,6 +52,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import { formatTurnLabel } from "../shared/turn-label.ts";
 import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   attemptFailureInfo,
@@ -1264,13 +1265,14 @@ async function runAttemptBody(
         : undefined,
       onSendActive: setSendActive,
       timingNow: recorder.offsetNow,
-      // 每次 send 一个 turn 节点:本地单调时钟测得的端到端包络 + session/turn 身份;
+      // 每次 send 一个 turn 节点:本地单调时钟测得的端到端包络 + 与 diff/source 共用的
+      // session/turn 身份 token;
       // OTel 接入时再带 traceId,trace.json 的 spans 由消费方按它临时挂到 turn 下。usage 有记录
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
       onTurn: (info) =>
         recorder.child(turnActivity({
-          label: `s${info.sessionIndex}/t${info.turnIndex}`,
+          label: formatTurnLabel(info.sessionIndex, info.turnIndex),
           startOffsetMs: info.startOffsetMs,
           durationMs: info.durationMs,
           ...(info.failed ? { failed: true as const } : {}),

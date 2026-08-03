@@ -131,8 +131,8 @@ describe("createChangeLedger", () => {
     const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
 
     const ledger = await createChangeLedger(sandbox);
-    await ledger.commitAgentWindow("s1/t1");
-    await expect(ledger.exportWindows()).resolves.toEqual([{ window: "s1/t1", changes: {} }]);
+    await ledger.commitAgentWindow("turn1");
+    await expect(ledger.exportWindows()).resolves.toEqual([{ window: "turn1", changes: {} }]);
 
     const after = await stat(restrictedPath);
     expect(after.uid).toBe(before.uid);
@@ -180,7 +180,7 @@ describe("createChangeLedger", () => {
     const ledger = await createChangeLedger(sandbox);
 
     await rm(editablePath);
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
     await ledger.resetToAnchor();
 
     await expect(readFile(editablePath, "utf8")).resolves.toBe("export const value = 1;\n");
@@ -319,25 +319,25 @@ describe("createChangeLedger", () => {
 
     // eval 侧写入(send 前):进 eval 归因,不进 agent diff。
     await writeFile(join(workdir, "fixture.json"), "{}\n");
-    await ledger.commitEvalWindow("s1/t1");
+    await ledger.commitEvalWindow("turn1");
 
     // 窗口 1:agent 改 start.txt、新建 out.txt。
     await writeFile(join(workdir, "start.txt"), "changed by agent\n");
     await writeFile(join(workdir, "out.txt"), "hello\n");
     await writeFile(join(workdir, "with space.txt"), "space-safe\n");
     await writeFile(join(workdir, "binary.bin"), Buffer.from([0, 1, 2, 3]));
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
 
     // 窗口间 eval 写入(隐藏校验文件):不得计入任何 agent 窗口。
     await writeFile(join(workdir, "hidden-check.txt"), "verify\n");
-    await ledger.commitEvalWindow("s1/t2");
+    await ledger.commitEvalWindow("turn2");
 
     // 窗口 2:agent 删除 out.txt(创建又删除 → 净 none,但两个窗口都留痕)。
     await rm(join(workdir, "out.txt"));
-    await ledger.commitAgentWindow("s1/t2");
+    await ledger.commitAgentWindow("turn2");
 
     const windows = await ledger.exportWindows();
-    expect(windows.map((w) => w.window)).toEqual(["s1/t1", "s1/t2"]);
+    expect(windows.map((w) => w.window)).toEqual(["turn1", "turn2"]);
     expect(windows[0]!.changes["start.txt"]).toMatchObject({ status: "modified", after: "changed by agent\n" });
     expect(windows[0]!.changes["out.txt"]).toMatchObject({ status: "added", after: "hello\n" });
     expect(windows[0]!.changes["with space.txt"]).toMatchObject({ status: "added", after: "space-safe\n" });
@@ -348,8 +348,8 @@ describe("createChangeLedger", () => {
 
     const diff = deriveDiffData(windows);
     // fileChanged 语义:任一窗口触及即算发生过;net=none(创建又删除)仍留痕。
-    expect(diff.files["out.txt"]).toEqual({ net: "none", windows: ["s1/t1", "s1/t2"] });
-    expect(diff.files["start.txt"]).toEqual({ net: "modified", windows: ["s1/t1"] });
+    expect(diff.files["out.txt"]).toEqual({ net: "none", windows: ["turn1", "turn2"] });
+    expect(diff.files["start.txt"]).toEqual({ net: "modified", windows: ["turn1"] });
     expect(diff.get("start.txt")).toBe("changed by agent\n");
     expect(diff.get("out.txt")).toBeUndefined();
   });
@@ -363,7 +363,7 @@ describe("createChangeLedger", () => {
 
     await writeFile(join(workdir, "app.ts"), "export const value = 2;\n");
     await writeFile(join(workdir, "attempt-only.txt"), "remove me\n");
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
     await ledger.resetToAnchor();
 
     await expect(readFile(join(workdir, "app.ts"), "utf8")).resolves.toBe("export const value = 1;\n");
@@ -393,10 +393,10 @@ describe("createChangeLedger", () => {
 
     // eval 在 workdir 里建真实 git repo(agent 视角的项目仓库)。
     await execAsync('git init -q && git config user.email t@t && git config user.name t', { cwd: workdir });
-    await ledger.commitEvalWindow("s1/t1");
+    await ledger.commitEvalWindow("turn1");
 
     await writeFile(join(workdir, "app.ts"), "export {};\n");
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
 
     const windows = await ledger.exportWindows();
     expect(Object.keys(windows[0]!.changes)).toEqual(["app.ts"]);
@@ -425,7 +425,7 @@ describe("createChangeLedger", () => {
       await mkdir(join(workdir, dir), { recursive: true });
       await writeFile(join(workdir, dir, "dependency.py"), "excluded virtualenv dependency\n");
     }
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
 
     const windows = await ledger.exportWindows();
     const paths = Object.keys(windows[0]!.changes).sort();
@@ -470,9 +470,9 @@ describe("createChangeLedger", () => {
     await Promise.all(
       Array.from({ length: 500 }, (_, i) => writeFile(join(workdir, "generated", `${i}.txt`), `file ${i}\n`)),
     );
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
     await writeFile(join(workdir, "second.txt"), "second window\n");
-    await ledger.commitAgentWindow("s1/t2");
+    await ledger.commitAgentWindow("turn2");
 
     const beforeExport = counters.shells.length;
     const windows = await ledger.exportWindows();
@@ -494,7 +494,7 @@ describe("createChangeLedger", () => {
     await Promise.all(
       Array.from({ length: 10_001 }, (_, i) => writeFile(join(workdir, "generated", `${i}.txt`), "")),
     );
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
 
     await expect(ledger.exportWindows()).rejects.toThrow("contains 10001 paths; limit is 10000");
   }, 30_000);
@@ -509,7 +509,7 @@ describe("createChangeLedger", () => {
     for (let i = 0; i < 65; i++) {
       await writeFile(join(workdir, "text", `${i}.txt`), "x".repeat(1024 * 1024 - 8) + String(i).padStart(8, "0"));
     }
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
 
     await expect(ledger.exportWindows()).rejects.toThrow(/transfers \d+ text blob bytes; limit is 67108864/);
   }, 60_000);
@@ -530,10 +530,10 @@ describe("createChangeLedger", () => {
       await writeFile(join(workdir, "big", `${i}.txt`), "y".repeat(2 * 1024 * 1024));
     }
     await writeFile(join(workdir, "small.txt"), "inline me\n");
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
     // 第二个窗口再改一次超限文本:before/after 两侧字节数都要记下来。
     await writeFile(join(workdir, "big", "0.txt"), "z".repeat(3 * 1024 * 1024));
-    await ledger.commitAgentWindow("s1/t2");
+    await ledger.commitAgentWindow("turn2");
 
     const windows = await ledger.exportWindows();
     expect(windows[0]!.changes["obj/0.o"]).toEqual({ status: "added", elided: { reason: "binary", afterBytes: 1024 * 1024 } });
@@ -551,9 +551,9 @@ describe("createChangeLedger", () => {
     const diff = deriveDiffData(windows);
     // 存在性与 net 照常成立(fileChanged 断得到),只有内容读不到。
     // 派生摘要带省略原因(单源是 WindowChange.elided):二进制与超限文本各自如实标注。
-    expect(diff.files["obj/0.o"]).toEqual({ net: "added", windows: ["s1/t1"], elided: "binary" });
-    expect(diff.files["big/0.txt"]).toEqual({ net: "added", windows: ["s1/t1", "s1/t2"], elided: "oversized-text" });
-    expect(diff.files["small.txt"]).toEqual({ net: "added", windows: ["s1/t1"] });
+    expect(diff.files["obj/0.o"]).toEqual({ net: "added", windows: ["turn1"], elided: "binary" });
+    expect(diff.files["big/0.txt"]).toEqual({ net: "added", windows: ["turn1", "turn2"], elided: "oversized-text" });
+    expect(diff.files["small.txt"]).toEqual({ net: "added", windows: ["turn1"] });
     expect(elidedContentAt(diff, "big/0.txt")).toEqual({
       reason: "oversized-text",
       beforeBytes: 2 * 1024 * 1024,
@@ -567,8 +567,8 @@ describe("createChangeLedger", () => {
     const { workdir, ledgerDir } = await makeDirs();
     const sandbox = hostSandbox(workdir, ledgerDir);
     const ledger = await createChangeLedger(sandbox);
-    await ledger.commitAgentWindow("s1/t1");
+    await ledger.commitAgentWindow("turn1");
     const windows = await ledger.exportWindows();
-    expect(windows).toEqual([{ window: "s1/t1", changes: {} }]);
+    expect(windows).toEqual([{ window: "turn1", changes: {} }]);
   });
 });

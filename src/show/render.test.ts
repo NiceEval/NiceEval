@@ -102,8 +102,8 @@ function twoTurnPhases(): PhaseTiming[] {
       name: "eval.run" as PhaseTiming["name"],
       durationMs: 2000,
       children: [
-        { id: "turn-1", key: "agent.turn", label: "s1/t1", startOffsetMs: 0, durationMs: 1200 },
-        { id: "turn-2", key: "agent.turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 },
+        { id: "turn-1", key: "agent.turn", label: "turn1", startOffsetMs: 0, durationMs: 1200 },
+        { id: "turn-2", key: "agent.turn", label: "turn2", startOffsetMs: 1200, durationMs: 800 },
       ],
     },
   ];
@@ -143,15 +143,15 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
     const events = twoTurnEvents();
     const evidence = evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
     const { text } = executionText(evidence, OPTS);
-    expect(text).toContain("s1/t1 · completed · 1.2s");
-    expect(text).toContain("s1/t2 · completed · 800ms");
+    expect(text).toContain("turn1 · completed · 1.2s");
+    expect(text).toContain("turn2 · completed · 800ms");
   });
 
   it("turn 头行有 usage 时带 token/成本(usage 有记录才出现;TimingActivity.usage 是该轮 Turn.usage 落盘原样)", () => {
     const turnWithUsage: TimingActivity = {
       id: "turn-1",
       key: "agent.turn",
-      label: "s1/t1",
+      label: "turn1",
       startOffsetMs: 0,
       durationMs: 1200,
       usage: { inputTokens: 2000, outputTokens: 10400, costUSD: 0.02 },
@@ -160,14 +160,14 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
       {
         name: "eval.run" as PhaseTiming["name"],
         durationMs: 2000,
-        children: [turnWithUsage, { id: "turn-2", key: "agent.turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 }],
+        children: [turnWithUsage, { id: "turn-2", key: "agent.turn", label: "turn2", startOffsetMs: 1200, durationMs: 800 }],
       },
     ];
     const evidence = evidenceOf({ execution: buildExecutionTree(twoTurnEvents(), []), result: resultOf({ phases }) });
     const { text } = executionText(evidence, OPTS);
-    expect(text).toContain("s1/t1 · completed · 1.2s · 12.4k tok · $0.02");
+    expect(text).toContain("turn1 · completed · 1.2s · 12.4k tok · $0.02");
     // 第二轮没有 usage,这一段整体省略,不是显示 0。
-    expect(text).toContain("s1/t2 · completed · 800ms\n");
+    expect(text).toContain("turn2 · completed · 800ms\n");
   });
 });
 
@@ -410,7 +410,7 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     const { text, matches } = executionText(evidence, OPTS, { grep: /shell/ });
     expect(matches).toBe(1);
     expect(text).toContain("TOOL · shell");
-    expect(text).toContain(`${LOCATOR} · eval/one · exp/a · s1/t1`);
+    expect(text).toContain(`${LOCATOR} · eval/one · exp/a · turn1`);
   });
 
   it("按角色文本命中(USER/ASSISTANT 消息)", () => {
@@ -459,25 +459,39 @@ describe("--diff:与 DiffView 的 text 面读同一份投影", () => {
       added: 2,
       removed: 1,
       windows: [
-        { window: "s1/t1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
-        { window: "s1/t2", patch: "@@ -9,1 +9,2 @@\n+later" },
+        { window: "turn1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
+        { window: "turn2", patch: "@@ -9,1 +9,2 @@\n+later" },
       ],
     },
-    { path: "b.md", change: "added" as const, added: 4, removed: 0, windows: [{ window: "s1/t2", patch: "@@ -1,0 +1,1 @@\n+new" }] },
+    { path: "b.md", change: "added" as const, added: 4, removed: 0, windows: [{ window: "turn2", patch: "@@ -1,0 +1,1 @@\n+new" }] },
   ];
   const data = { locator: encodeAttemptLocator(identityOf()), files };
 
   it("摘要体与组件 text 面逐字相同,带轮标签", () => {
     const body = diffText({ header: "H", data }).slice("H\n\n".length);
     expect(body).toBe(diffSummaryText(files, { singleFileHint: true }));
-    expect(body).toContain("s1/t1, s1/t2");
+    expect(body).toContain("turn1, turn2");
   });
 
   it("--diff=<path> 按窗口分段,不合成跨窗口 patch", () => {
     const text = diffText({ header: "H", data, file: "src/a.ts" });
-    expect(text).toContain("── window s1/t1");
-    expect(text).toContain("── window s1/t2");
-    expect(text).toContain("M src/a.ts · touched in s1/t1, s1/t2");
+    expect(text).toContain("── window turn1");
+    expect(text).toContain("── window turn2");
+    expect(text).toContain("M src/a.ts · touched in turn1, turn2");
+  });
+
+  it("旧 artifact 的窗口 token 在 show 投影中仍按不透明字符串原样显示", () => {
+    const legacyFiles = [{
+      path: "legacy.ts",
+      change: "modified" as const,
+      added: 1,
+      removed: 0,
+      windows: [{ window: "s1/t1", patch: "@@ -1 +1 @@\n-old\n+new" }],
+    }];
+    const legacyData = { locator: encodeAttemptLocator(identityOf()), files: legacyFiles };
+
+    expect(diffSummaryText(legacyFiles, { singleFileHint: true })).toContain("s1/t1");
+    expect(diffText({ header: "H", data: legacyData, file: "legacy.ts" })).toContain("── window s1/t1");
   });
 
   it("没有 diff 证据与一个文件都没改是两回事", () => {

@@ -232,7 +232,7 @@ describe("validateTraceData", () => {
 describe("validateDiffData", () => {
   const valid = {
     locator: "@1abcdef2",
-    files: [{ path: "a.ts", change: "modified", added: 1, removed: 0, windows: [{ window: "s1/t1", patch: "@@ -1 +1 @@" }] }],
+    files: [{ path: "a.ts", change: "modified", added: 1, removed: 0, windows: [{ window: "turn1", patch: "@@ -1 +1 @@" }] }],
   };
 
   it("合规 literal 通过", () => {

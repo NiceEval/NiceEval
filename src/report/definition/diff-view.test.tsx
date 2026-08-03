@@ -29,8 +29,8 @@ const content: DiffContent = [
     added: 2,
     removed: 1,
     windows: [
-      { window: "s1/t1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
-      { window: "s1/t2", patch: "@@ -5,1 +5,2 @@\n+second window" },
+      { window: "turn1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
+      { window: "turn2", patch: "@@ -5,1 +5,2 @@\n+second window" },
     ],
   },
   {
@@ -38,14 +38,14 @@ const content: DiffContent = [
     change: "added",
     added: 10,
     removed: 0,
-    windows: [{ window: "s1/t2", patch: "@@ -1,0 +1,1 @@\n+new file" }],
+    windows: [{ window: "turn2", patch: "@@ -1,0 +1,1 @@\n+new file" }],
   },
   {
     path: "old.txt",
     change: "deleted",
     added: 0,
     removed: 3,
-    windows: [{ window: "s1/t1", patch: "@@ -1,3 +1,0 @@\n-a\n-b\n-c" }],
+    windows: [{ window: "turn1", patch: "@@ -1,3 +1,0 @@\n-a\n-b\n-c" }],
   },
   {
     path: "assets/logo.png",
@@ -53,7 +53,7 @@ const content: DiffContent = [
     added: 0,
     removed: 0,
     elided: { reason: "binary", beforeBytes: 10, afterBytes: 20 },
-    windows: [{ window: "s1/t1" }],
+    windows: [{ window: "turn1" }],
   },
   {
     path: "data/dump.sql",
@@ -61,7 +61,7 @@ const content: DiffContent = [
     added: 0,
     removed: 0,
     elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 },
-    windows: [{ window: "s1/t1" }],
+    windows: [{ window: "turn1" }],
   },
 ];
 
@@ -117,9 +117,9 @@ describe("DiffView", () => {
     );
     expect(text).toContain("5 files changed by agent");
     expect(text).toContain("niceeval show @loc1 --diff");
-    expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +s1\/t1, s1\/t2/);
-    expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +s1\/t2/);
-    expect(text).toMatch(/D +old\.txt +-3 +s1\/t1/);
+    expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +turn1, turn2/);
+    expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +turn2/);
+    expect(text).toMatch(/D +old\.txt +-3 +turn1/);
     // 内容被省略的两种原因各自在行上标注,共用同一格字节数变化
     expect(text).toContain("binary 10 → 20 bytes");
     expect(text).toContain("oversized text 2097153 → 4194304 bytes");
@@ -132,8 +132,8 @@ describe("DiffView", () => {
     expect(html).toContain('data-change="modified"');
     expect(html).toContain('data-change="deleted"');
     // 一个文件的两个窗口各成一段,不合成跨窗口 patch
-    expect(html).toContain("window s1/t1");
-    expect(html).toContain("window s1/t2");
+    expect(html).toContain("window turn1");
+    expect(html).toContain("window turn2");
     expect(html.match(/niceeval-diff-window-title/g)?.length).toBe(4);
     expect(html).toContain("niceeval-diff-patch-line--add");
     expect(html).toContain("niceeval-diff-patch-line--remove");
@@ -173,7 +173,7 @@ describe("DiffView", () => {
         change: "modified",
         added: 1,
         removed: 1,
-        windows: [{ window: "s1/t1", patch: `@@ -1,1 +1,1 @@\n${"+x".repeat(40_000)}` }],
+        windows: [{ window: "turn1", patch: `@@ -1,1 +1,1 @@\n${"+x".repeat(40_000)}` }],
       },
     ];
     const tree = await resolve(<DiffView files={huge} />, attemptPage);

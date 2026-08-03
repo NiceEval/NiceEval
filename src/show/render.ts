@@ -21,6 +21,7 @@ import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
 import { summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
+import { formatTurnLabel } from "../shared/turn-label.ts";
 import { diffFilePatchText, diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { AttemptDiffData } from "../report/model/types.ts";
 import type {
@@ -774,7 +775,7 @@ function commandCardHeader(entry: CommandCard): string {
  *  show/execution.md)。usage 读 TimingActivity.usage(该轮 `Turn.usage` 落盘原样),字段不存在时
  *  这一段照常省略。 */
 function turnHeadLine(section: TurnSection): string {
-  const label = section.turn?.label ?? `t${section.turnNumber}`;
+  const label = section.turn?.label ?? formatTurnLabel(1, section.turnNumber);
   const status = section.turn?.failed ? "failed" : "completed";
   const parts = [label, status];
   if (section.turn) parts.push(formatDurationMs(section.turn.durationMs));
@@ -916,7 +917,7 @@ function renderGrep(
       const parts = agentCardParts(card.node, originMs);
       if (!testGrep(grep, parts.matchText)) continue;
       matches += 1;
-      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, section.turn?.label ?? `t${section.turnNumber}`].join(
+      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, section.turn?.label ?? formatTurnLabel(1, section.turnNumber)].join(
         " · ",
       );
       const cardLines = renderCardLines(parts, card.handle, evidence.locator, false);

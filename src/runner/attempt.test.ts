@@ -1234,7 +1234,7 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
       const section = (name: string, body: Buffer): Buffer =>
         Buffer.concat([Buffer.from(`section ${name} ${body.byteLength}\n`), body]);
       return Buffer.concat([
-        Buffer.from("window fixture-hash s1/t1\n"),
+        Buffer.from("window fixture-hash turn1\n"),
         section("difftree", Buffer.from(`:000000 100644 ${zero} ${afterSha} A\0secret.txt\0`)),
         section("numstat", Buffer.from("1\t0\tsecret.txt\0")),
         section("sizes", Buffer.from(`${afterSha} blob ${after.byteLength}\n`)),
@@ -1313,7 +1313,7 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     expect(result.evidenceCoverage.events).toEqual({ status: "partial", reason: "adapter omitted <redacted>" });
     expect(result.agentSetup?.mcpServers).toMatchObject([{ command: "server-<redacted>" }]);
     expect(result.diff).toMatchObject([
-      { window: "s1/t1", changes: { "secret.txt": { status: "added", after: "workspace echoed <redacted>" } } },
+      { window: "turn1", changes: { "secret.txt": { status: "added", after: "workspace echoed <redacted>" } } },
     ]);
 
     // 默认 Artifacts reporter 会把同一结果拆成 result.json / commands.json / events.json /

@@ -545,7 +545,7 @@ async function historyCommand(
 async function diffCommand(root: string, ids: string[], flags: SandboxCommandFlags, io: Io): Promise<number> {
   const resolved = await resolveEntries(root, ids.slice(0, 1), io);
   if (!resolved || resolved.length === 0) {
-    if (ids.length === 0) io.err("usage: niceeval sandbox diff <id> [--window s1/t2] [--path <file>]\n");
+    if (ids.length === 0) io.err("usage: niceeval sandbox diff <id> [--window turn2] [--path <file>]\n");
     return 1;
   }
   const { id, entry } = resolved[0]!;

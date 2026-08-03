@@ -211,7 +211,7 @@ export const costUSD = attemptMetric({
  * 读 artifact(o11y,懒加载)的内置指标之一——其余只读瘦身字段。
  * 发布时若该 attempt 没带 o11y(如 publish 的 artifacts 选项漏了它),
  * value 如实返回 null,渲染成「—」,不冒充 0。名字带限定词:o11y 事件流中的 assistant
- * turn 数与 `t.send` 的 `s<session>/t<turn>` 轮次是两个计数。
+ * turn 数与 `t.send` 的 `turn<N>` / `session<K>/turn<N>` 轮次是两个计数。
  */
 export const assistantTurns = attemptMetric({
   name: "assistant-turns",

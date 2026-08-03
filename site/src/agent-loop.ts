@@ -58,7 +58,7 @@ export const loopFrames: LoopFrame[] = [
       line("cmd", "$ niceeval show @1k2m9qtr --source"),
       line("plain", "10    async test(t) {"),
       line("plain", '11      const turn = await t.send("What\'s the weather in Brooklyn?");'),
-      line("dim", "        s1/t1 · completed · 3.4s"),
+      line("dim", "        turn1 · completed · 3.4s"),
       line("fail", '12✗     turn.calledTool("get_weather");'),
       line("dim", "        gate · tool was never called"),
       line("pass", "13✓     turn.succeeded();"),

@@ -27,13 +27,14 @@ function assertion(
 }
 
 describe("deriveSendAnnotations", () => {
-  it("第 i 条用户消息配第 i 个 turn 节点(与 --execution 分轮同一规则);无 loc 的轮不产出", () => {
+  it("第 i 条用户消息配第 i 个 turn 节点;已有标签(含旧 artifact 缩写)按原样保留", () => {
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "first", loc: { file: SOURCE_PATH, line: 3, column: 5 } },
       { type: "message", role: "assistant", text: "reply" },
       { type: "message", role: "user", text: "second (no loc)" },
       { type: "message", role: "user", text: "third", loc: { file: SOURCE_PATH, line: 9, column: 5 } },
     ];
+    // 这是旧 artifact 标签：derive 只读取并透传，不把历史 token 迁移到新格式。
     const phases: PhaseTiming[] = [{
       name: "eval.run",
       durationMs: 5000,
@@ -53,12 +54,12 @@ describe("deriveSendAnnotations", () => {
     ]);
   });
 
-  it("时间树缺 turn 节点时回退 t<i> 标签、无墙钟;没有事件时为空", () => {
+  it("时间树缺 turn 节点时回退 turn<i> 标签、无墙钟;没有事件时为空", () => {
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "only", loc: { file: SOURCE_PATH, line: 1 } },
     ];
     expect(deriveSendAnnotations(events, undefined)).toEqual([
-      { label: "t1", status: "completed", loc: { file: SOURCE_PATH, line: 1 } },
+      { label: "turn1", status: "completed", loc: { file: SOURCE_PATH, line: 1 } },
     ]);
     expect(deriveSendAnnotations(null, undefined)).toEqual([]);
     expect(deriveSendAnnotations([], undefined)).toEqual([]);
@@ -69,7 +70,7 @@ describe("deriveSendAnnotations", () => {
       { type: "message", role: "user", text: "only", loc: { file: SOURCE_PATH, line: 1 }, sourceOrder: 7 },
     ];
     expect(deriveSendAnnotations(events, undefined)).toEqual([
-      { label: "t1", status: "completed", loc: { file: SOURCE_PATH, line: 1 }, sourceOrder: 7 },
+      { label: "turn1", status: "completed", loc: { file: SOURCE_PATH, line: 1 }, sourceOrder: 7 },
     ]);
   });
 });

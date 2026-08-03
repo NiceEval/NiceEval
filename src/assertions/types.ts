@@ -229,7 +229,7 @@ export interface ScriptResult {
 export type DiffArtifact = DiffWindow[];
 
 export interface DiffWindow {
-  /** send 窗口标签,与时间树 turn 节点、--execution 轮次同源(如 "s1/t2")。 */
+  /** send 窗口标签,与时间树 turn 节点、--execution 轮次同源(如 "turn2" 或 "session2/turn1")。 */
   window: string;
   /** 该窗口内 agent 改动的文件;窗口内没有 workspace 变化时窗口仍落一条、changes 为空对象。 */
   changes: globalThis.Record<string, WindowChange>;

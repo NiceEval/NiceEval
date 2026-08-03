@@ -21,6 +21,7 @@ import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import { isSendFailure, sendFailureText } from "./send-failures.ts";
 import type { RetryAttemptRecord } from "../runner/types.ts";
 import { recordFact } from "../shared/facts.ts";
+import { formatTurnLabel } from "../shared/turn-label.ts";
 
 /**
  * 一条会话线的存取器实现。slot 值只按 factory 创建的 symbol 身份存取；
@@ -100,7 +101,7 @@ export class RunSession implements AgentSession {
   readonly usage: Usage = {};
   /** 本会话累计的证据覆盖(初值 = Agent 级默认,逐轮按 Turn.evidenceCoverage 降级折叠)。 */
   evidenceCoverage!: ResolvedEvidenceCoverage;
-  /** 本会话内的轮次计数(turn 时间树 / 展示标签 s<session>/t<turn> 用)。 */
+  /** 本会话内的轮次计数(turn 时间树 / 展示标签 turn<N> 用)。 */
   turnCount = 0;
 }
 
@@ -125,7 +126,8 @@ export interface SessionDeps {
   onSendActive?: (active: boolean) => void;
   /**
    * 变更分类账的 send 窗口钩子(仅沙箱型 agent):`beforeSend` 在 adapter send 前落 eval 归因
-   * commit,`afterSend` 在返回后落 agent 归因 commit;label 是 `s<session>/t<turn>` 窗口标签。
+   * commit,`afterSend` 在返回后落 agent 归因 commit;label 是 `turn<N>` 或
+   * `session<K>/turn<N>` 窗口标签。
    * 提供钩子时 send 自动串行(同一 workdir 上重叠的 send 是写入竞争,窗口不重叠)。
    */
   ledgerHooks?: {
@@ -296,7 +298,7 @@ export class SessionManager {
     session.events.push(userEvent);
     session.pendingInputRequests.length = 0;
     const turnIndex = ++session.turnCount;
-    const windowLabel = `s${session.index}/t${turnIndex}`;
+    const windowLabel = formatTurnLabel(session.index, turnIndex);
     // send 进入前:workdir 有未记录变化(fixture / setup / runCommand 副作用)先落 eval 归因。
     await this.deps.ledgerHooks?.beforeSend(windowLabel);
     let turn: Turn;
