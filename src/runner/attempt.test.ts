@@ -13,7 +13,7 @@
 // 覆盖)。
 //
 // cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」——公开 `run*` 最外层调用
-// 非零退出时,在把 `CommandResult` 交还调用方前登记 `FailedCommandEvidence`
+// 非零退出时,在把 `CommandResult` 交还调用方前登记 `CommandExitEvidence`
 // 并与同一次 timing command 节点共用 id;成功命令不登记;调用方处理非零结果并继续不撤销证据,
 // 即使随后只把 stderr 尾部拼进自己的诊断。见文件末尾专用 describe 块。
 
@@ -1148,7 +1148,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
 });
 
 // cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」
-describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShell 非零退出登记 FailedCommandEvidence)", () => {
+describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed 与 checked failed)", () => {
   /** runCommand 恒返回同一个非零 CommandResult;runShell 沿用 FakeSandbox 的恒成功语义
    *  (供 workspace.baseline 的 git 初始化用,不产生额外的失败命令证据)。 */
   class FailingCommandSandbox extends FakeSandbox {
@@ -1196,12 +1196,17 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     expect(evidence.stderr).toContain("/usr/lib/node_modules/pnpm");
     expect(evidence.display).toContain("npm install -g pnpm");
     expect(evidence.phase).toBe("eval.run");
+    expect(evidence.checked).toBe(false);
+    expect(evidence).not.toHaveProperty("classification");
 
     const evalRunPhase = result.phases?.find((p) => p.name === "eval.run");
     const node = evalRunPhase?.children?.find((n) => n.id === evidence.timingNodeId);
     expect(node).toBeDefined();
     expect(node?.id).toBe(evidence.timingNodeId);
     expect(node?.command?.exitCode).toBe(243);
+    expect(node?.failed).toBeUndefined();
+    expect(node?.command?.checked).toBe(false);
+    expect(node?.command).not.toHaveProperty("classification");
   });
 
   it("成功命令(exitCode 0)不登记输出:EvalResult.commands 整个不出现", async () => {
@@ -1372,10 +1377,17 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
       expect.objectContaining({
         display: "checked-command <redacted>",
         exitCode: 19,
+        checked: true,
         stdout: "checked stdout <redacted>",
         stderr: "checked stderr <redacted>",
       }),
     ]);
+    const checkedEvidence = result.commands![0]!;
+    const checkedNode = result.phases
+      ?.flatMap((phase) => phase.children ?? [])
+      .find((node) => node.id === checkedEvidence.timingNodeId);
+    expect(checkedNode?.failed).toBe(true);
+    expect(checkedNode?.command?.checked).toBe(true);
     expect(JSON.stringify({ phases: result.phases, commands: result.commands, error: result.error })).not.toContain(sensitive);
   });
 });

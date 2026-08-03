@@ -949,6 +949,66 @@ table.niceeval-report,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.niceeval-command-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.niceeval-command-evidence-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.niceeval-command-evidence--failed { border-left-color: var(--bad); }
+.niceeval-command-evidence--observed { border-left-color: var(--muted); }
+.niceeval-command-evidence-card .niceeval-conversation-turn-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 0.75em;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.niceeval-command-evidence-card .niceeval-conversation-turn-label {
+  font-weight: 650;
+  font-size: 13px;
+}
+.niceeval-command-evidence-display {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.niceeval-command-evidence-card .niceeval-conversation-entry,
+.niceeval-command-evidence-card .niceeval-conversation-entry > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.niceeval-command-evidence-card .niceeval-conversation-entry > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.niceeval-command-evidence-card .niceeval-conversation-entry > summary::-webkit-details-marker { display: none; }
+.niceeval-command-evidence-card .niceeval-conversation-io {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--panel), black 8%);
+  color: var(--muted);
+  font: 11px/1.45 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* ---- 图表通用:panel 卡片、轴/网格/tooltip ---- */
 .niceeval-chart {

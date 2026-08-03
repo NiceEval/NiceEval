@@ -32,7 +32,7 @@ import { type AttemptIdentity, type AttemptLocator, encodeAttemptLocator } from 
 import { loadAttemptSourceTree } from "./attempt-source.ts";
 import { deriveSendAnnotations, type AnnotatedSourceTree } from "./annotated-source.ts";
 import { buildExecutionTree, type ExecutionTree } from "../o11y/execution-tree.ts";
-import type { DiffData, EvalResult, FailedCommandEvidence, StreamEvent } from "../types.ts";
+import type { CommandExitEvidence, DiffData, EvalResult, StreamEvent } from "../types.ts";
 
 /**
  * 一个 Attempt 的 artifact 落盘位置。单一目录足够:一个 attempt 的全部 artifact
@@ -91,8 +91,8 @@ export interface AttemptEvidence {
   diff: DiffData | null;
   /** OTel spans(`--timing` 把 turn 节点下的 agent/model/tool spans 挂回时间树);没有 trace 就是 null。 */
   trace: import("../types.ts").TraceSpan[] | null;
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(`--execution` 末尾的失败命令卡);原样透传 attempt.commands()。 */
-  commands: readonly FailedCommandEvidence[] | null;
+  /** 非零 Sandbox 命令的 stdout/stderr 证据(`--execution` 的独立命令卡);原样透传 attempt.commands()。 */
+  commands: readonly CommandExitEvidence[] | null;
   artifactPaths: EvidencePaths;
   capabilities: AttemptEvidenceCapabilities;
 }

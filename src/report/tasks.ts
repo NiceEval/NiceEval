@@ -15,7 +15,7 @@ import {
 } from "../record/annotated-source.ts";
 import type {
   EvalResult,
-  FailedCommandEvidence,
+  CommandExitEvidence,
   PhaseTiming,
   SandboxBuildRecord,
   TimingActivity,
@@ -188,7 +188,7 @@ export interface ConversationResult {
   identity: AttemptIdentity;
   conversation: AttemptConversationData | null;
   execution: ExecutionTree | null;
-  commands: readonly FailedCommandEvidence[];
+  commands: readonly CommandExitEvidence[];
   phases: readonly PhaseTiming[];
   durationMs: number;
 }

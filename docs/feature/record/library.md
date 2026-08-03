@@ -49,7 +49,7 @@ attempt.carried;               // true = 携带条目:fingerprint 未变、上�
                                // startedAt 是原执行时刻
 attempt.evidenceState;         // "local" | "borrowed" | "dangling" —— artifact 在哪,见下
 await attempt.events();        // StreamEvent[] | null —— 重 artifact 全部懒加载
-await attempt.commands();      // CommandExitEvidence[] | null —— 非零 Sandbox 命令、解释类别与 stdout/stderr
+await attempt.commands();      // CommandExitEvidence[] | null —— 非零 Sandbox 命令、checked 调用事实与 stdout/stderr
 await attempt.trace();         // TraceSpan[] | null(span 属性同样受 256 KiB 值上限约束)
 await attempt.o11y();          // O11ySummary | null
 await attempt.agentSetup();    // AgentSetupManifest | null

@@ -43,7 +43,7 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 这些轮不在源码后重复渲染；没有源码位置的轮仍留在页面级 `Conversation`。
 源码不可用时，全部对话按原顺序显示在页面级 `Conversation`。
 
-非零 Sandbox 命令不归入任何 `Conversation`。Attempt 详情将其投影为独立的 lifecycle 命令区块，并按 timing 顺序放在对应阶段：setup 命令先于 Turn，teardown 命令后于 Turn。unchecked 命令使用中性 `observed` 样式；只有 checked 方法因非零抛出的命令使用失败样式。
+非零 Sandbox 命令不归入任何 `Conversation`。Attempt 详情将 `checked` 调用事实与非零 exitCode 在消费层投影为独立的 lifecycle 命令区块，并按 timing 顺序放在对应阶段：setup 命令先于 Turn，teardown 命令后于 Turn。`checked: false` 的命令使用中性 `observed` 样式；只有 `checked: true` 的命令使用失败样式。
 
 结果为 `null` 时在 Web 与 Text 两面渲染 warning `Callouts`。
 标题为 `Execution evidence unavailable`，内容为 `The events artifact is missing or was not published.`

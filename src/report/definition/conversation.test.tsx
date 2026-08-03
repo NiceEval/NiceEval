@@ -17,7 +17,7 @@ import {
   type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
-import { Conversation, Text, type ConversationContent } from "./primitives.tsx";
+import { CommandEvidence, Conversation, Text, type CommandEvidenceContent, type ConversationContent } from "./primitives.tsx";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -42,15 +42,6 @@ const content: ConversationContent = {
       label: "turn 2",
       verdict: "failed",
       entries: [{ kind: "tool", preview: "grep pattern" }],
-    },
-  ],
-  failedCommands: [
-    {
-      key: "cmd1",
-      phase: "eval.setup",
-      display: "pnpm test",
-      exitCode: 1,
-      stderr: "failed",
     },
   ],
 };
@@ -85,7 +76,7 @@ const webCtx: WebContext = {
 };
 
 describe("Conversation", () => {
-  it("两面投影:轮次摘要、预览收口与下钻命令", async () => {
+  it("两面投影只包含轮次,生命周期命令不进入 Conversation", async () => {
     const tree = await resolve(
       <Conversation data={content} />,
       { id: "attempt", input: { locator: "@loc1" as AttemptLocator, result: {} } as AttemptEvidence },
@@ -104,7 +95,7 @@ describe("Conversation", () => {
     expect(text).toContain("niceeval show @loc1 --execution");
     expect(text).toContain("turn 1 (passed)");
     expect(text).toContain("turn 2 (failed)");
-    expect(text).toContain("FAILED COMMAND · eval.setup · exit 1: pnpm test");
+    expect(text).not.toContain("FAILED COMMAND");
     expect(text).not.toContain("hello");
     expect(text).not.toContain("full assistant body");
     expect(text).not.toContain("grep pattern");
@@ -117,11 +108,11 @@ describe("Conversation", () => {
     expect(html).toContain("hello world");
     expect(html).toContain("full assistant body");
     expect(html).toContain("niceeval-conversation-entry--failed");
-    expect(html).toContain("FAILED COMMAND");
+    expect(html).not.toContain("FAILED COMMAND");
     expect(html).toContain("<details");
   });
 
-  it("空 turns 且无 failedCommands 时零输出", async () => {
+  it("空 turns 时零输出", async () => {
     const emptyTree = await resolve(<Conversation data={{ turns: [] }} />);
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(emptyTree as never))).toBe("");
@@ -130,6 +121,26 @@ describe("Conversation", () => {
     expect(renderNodeToText(nullTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
+});
 
+describe("CommandEvidence", () => {
+  const commands: CommandEvidenceContent = {
+    commands: [
+      { key: "cmd1", timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 2, classification: "observed", stderr: "EACCES" },
+      { key: "cmd2", timingNodeId: "n2", phase: "eval.run", display: "npm test", exitCode: 1, classification: "failed", stderr: "test failed" },
+    ],
+  };
 
+  it("observed 使用中性文案/样式,failed 才使用失败文案/样式", async () => {
+    const tree = await resolve(<CommandEvidence data={commands} />);
+    const text = renderNodeToText(tree, createTextContext({ width: 100 }));
+    expect(text).toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 2");
+    expect(text).toContain("FAILED COMMAND · eval.run · exit 1");
+
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    expect(html).toContain("niceeval-command-evidence");
+    expect(html).toContain("niceeval-command-evidence--observed");
+    expect(html).toContain("niceeval-command-evidence--failed");
+    expect(html).not.toContain("niceeval-conversation-failed-command");
+  });
 });

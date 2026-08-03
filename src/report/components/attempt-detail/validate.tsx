@@ -234,13 +234,16 @@ function conversationRoundProblem(value: unknown, path: string): string | null {
   return arrayProblem(value.replies, `${path}.replies`, conversationReplyProblem);
 }
 
-/** FailedCommandEvidence(src/runner/types.ts):commands.json 的一条落盘记录。 */
-function failedCommandEvidenceProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a FailedCommandEvidence { timingNodeId, phase, display, exitCode, stdout, stderr }`;
+/** CommandExitEvidence(src/runner/types.ts) 的报告卡投影。 */
+function commandEvidenceProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be a CommandExitEvidence card`;
+  if (typeof value.key !== "string") return `"${path}.key" must be a string`;
   if (typeof value.timingNodeId !== "string") return `"${path}.timingNodeId" must be a string`;
   if (typeof value.phase !== "string") return `"${path}.phase" must be a string`;
   if (typeof value.display !== "string") return `"${path}.display" must be a string`;
   if (typeof value.exitCode !== "number") return `"${path}.exitCode" must be a number`;
+  if (value.classification !== "observed" && value.classification !== "failed") return `"${path}.classification" must be observed | failed`;
+  if (value.durationMs !== undefined && typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
   if (typeof value.stdout !== "string") return `"${path}.stdout" must be a string`;
   if (typeof value.stderr !== "string") return `"${path}.stderr" must be a string`;
   return null;
@@ -251,8 +254,13 @@ export function validateConversationData(data: unknown): string | null {
   if (typeof data.locator !== "string") return 'missing "locator" (string)';
   const roundsProblem = arrayProblem(data.rounds, "rounds", conversationRoundProblem);
   if (roundsProblem !== null) return roundsProblem;
-  if (data.failedCommands === undefined) return null;
-  return arrayProblem(data.failedCommands, "failedCommands", failedCommandEvidenceProblem);
+  return null;
+}
+
+export function validateCommandEvidenceData(data: unknown): string | null {
+  if (!isObject(data)) return "expected an object";
+  if (typeof data.locator !== "string") return 'missing "locator" (string)';
+  return arrayProblem(data.commands, "commands", commandEvidenceProblem);
 }
 
 

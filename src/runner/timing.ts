@@ -283,6 +283,7 @@ export function commandNode(opts: {
   durationMs: number;
   exitCode?: number;
   failed?: boolean;
+  checked?: boolean;
   /** 这条命令生效的时限归属;四层解析链一个上限都没声明时省略。 */
   limit?: CommandLimitAttribution;
 }): Omit<TimingActivity, "id"> {
@@ -295,6 +296,7 @@ export function commandNode(opts: {
     command: {
       display: opts.display,
       ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}),
+      ...(opts.checked !== undefined ? { checked: opts.checked } : {}),
       ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
     },
   };

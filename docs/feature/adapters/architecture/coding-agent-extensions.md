@@ -78,7 +78,8 @@ marketplace 的摘除不以「注册在回读列表里可见」为前提。
 安装顺序第 1 步的原生配置整层替换会抹掉前一半；残下的后一半回读列表报告不出来，add 却会撞它报「同名不同源」（复用沙箱第二条 attempt 真机复现）。
 因此摘除按声明名字无条件执行：「本就没有可摘的」按已收敛处理，摘除的其它失败也不单独报错，紧随其后的 add 是权威失败面。
 
-Adapter 用 unchecked `runCommand()` / `runShell()` 执行这类摘除，让原始非零退出作为 `observed` 命令事实保留；不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Reports 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
+Adapter 用 unchecked `runCommand()` / `runShell()` 执行这类摘除，让原始非零退出以 `checked: false` 事实保留，消费层显示为 `observed`。
+不能使用 `runCommandOrThrow()` / `runShellOrThrow()`，也不能把退出码改写成零。Runner 与 Reports 必须保留 unchecked / checked 的区别，不能把 Adapter 已接管解释权的非零结果冒充成 setup 失败。
 
 不比对来源、相同就跳过：注册表里的来源字符串可能是同一来源的另一种写法——插件自带的 setup 脚本把注册改写成托管源是正常生态行为。
 判断两个来源等价，要理解每个 CLI 各自的来源规范化规则；按名字摘除重加只依赖名字这一个事实。

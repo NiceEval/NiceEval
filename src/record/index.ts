@@ -111,7 +111,7 @@ export type {
   DiagnosticRecord,
   EvalResult,
   ExperimentRunInfo,
-  FailedCommandEvidence,
+  CommandExitEvidence,
   InvocationSummary,
 } from "../types.ts";
 export type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../types.ts";

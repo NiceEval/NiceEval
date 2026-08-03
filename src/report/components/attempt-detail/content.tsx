@@ -4,7 +4,7 @@ import { Conversation, Text } from "../../definition/primitives.tsx";
 import type { ReportNode } from "../../definition/tree.ts";
 import type { CalloutGroup, CalloutItem } from "../../definition/primitives/callouts-logic.ts";
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
-import type { ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
+import type { CommandEvidenceContent, ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
 import type { DiffContent, DiffFile } from "../../definition/primitives/diff-view.tsx";
 import type {
   SourceBlockContent,
@@ -17,6 +17,7 @@ import type { WaterfallContent, WaterfallNode } from "../../definition/primitive
 import type { TableContent, TableContentRow } from "../../definition/cell.ts";
 import type {
   AttemptAssertionsData,
+  AttemptCommandEvidenceData,
   AttemptConversationData,
   AttemptConversationReply,
   AttemptDiffData,
@@ -271,7 +272,7 @@ export function embedConversationInSource(
       };
   const remainingTurns = turns.filter((_turn, turnIndex) => !mappedTurnIndexes.has(turnIndex));
   const remainingConversation = conversation === null ||
-      (remainingTurns.length === 0 && (conversation.failedCommands?.length ?? 0) === 0)
+      remainingTurns.length === 0
     ? null
     : { ...conversation, turns: remainingTurns };
   return { source: embeddedSource, conversation: remainingConversation };
@@ -550,19 +551,16 @@ export function attemptConversationContent(data: AttemptConversationData | null)
     label: round.loc ? `${round.loc.file}:${round.loc.line}` : `Round ${i + 1}`,
     entries: round.replies.map(conversationEntryOf),
   }));
-  if (turns.length === 0 && !data.failedCommands?.length) return null;
+  if (turns.length === 0) return null;
   return {
     turns,
-    failedCommands: data.failedCommands?.map((cmd, i) => ({
-      key: `cmd:${i}`,
-      phase: cmd.phase,
-      display: cmd.display,
-      exitCode: cmd.exitCode,
-      stdout: cmd.stdout,
-      stderr: cmd.stderr,
-    })),
     locator: data.locator,
   };
+}
+
+export function attemptCommandEvidenceContent(data: AttemptCommandEvidenceData | null): CommandEvidenceContent | null {
+  if (data === null || data.commands.length === 0) return null;
+  return { locator: data.locator, commands: data.commands };
 }
 
 export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [

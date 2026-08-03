@@ -9,6 +9,7 @@
 import type { AttemptEvidence } from "../../../record/attempt-evidence.ts";
 import type {
   AttemptAssertionsData,
+  AttemptCommandEvidenceData,
   AttemptConversationData,
   AttemptConversationReply,
   AttemptConversationRound,
@@ -21,7 +22,7 @@ import type {
   AttemptTraceData,
   UsageTableData,
 } from "../../model/types.ts";
-import type { AssertionResult, DiagnosticRecord, EvalResult, FailedCommandEvidence, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
+import type { AssertionResult, CommandExitEvidence, DiagnosticRecord, EvalResult, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
 import type { DiffFile } from "../../definition/primitives/diff-lines.ts";
 import { attemptCostUSD } from "../../model/metrics.ts";
 import { failureSummaryOf } from "../entity-lists/compute.ts";
@@ -67,15 +68,20 @@ export function attemptSummaryData(evidence: AttemptEvidence): AttemptSummaryDat
  * 严格短于(不是 `<=`)排除「message 恰好等于完整字段」的场景:那种情况没有被截掉的内容,
  * 提示「还有更多证据」是误导。
  */
-function looksLikeTruncatedCommandTail(message: string, commands: readonly FailedCommandEvidence[]): boolean {
+function looksLikeTruncatedCommandTail(message: string, commands: readonly CommandExitEvidence[]): boolean {
   const trimmed = message.trim();
   if (!trimmed) return false;
-  return commands.some((cmd) =>
+  return commands.filter((cmd) => commandClassification(cmd) === "failed").some((cmd) =>
     [cmd.stdout, cmd.stderr].some((field) => {
       const full = field.trim();
       return full.length > trimmed.length && full.endsWith(trimmed);
     }),
   );
+}
+
+/** 展示层唯一的命令分类规则;Record 只保存 checked 与 exitCode。 */
+function commandClassification(command: Pick<CommandExitEvidence, "checked" | "exitCode">): "observed" | "failed" {
+  return command.checked && command.exitCode !== 0 ? "failed" : "observed";
 }
 
 export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | null {
@@ -216,10 +222,10 @@ export function attemptTimelineData(evidence: AttemptEvidence): AttemptTimelineD
 
 /** 在 `phases` 时间树里按 id 查找 `key === "sandbox.command"` 节点的 `startOffsetMs`;查不到(timing
  *  unavailable,或第三方落盘没有 phases)返回 undefined。 */
-function commandStartOffsetMs(phases: readonly PhaseTiming[] | undefined, timingNodeId: string): number | undefined {
-  const find = (nodes: TimingActivity[] | undefined): number | undefined => {
+function commandTimingNode(phases: readonly PhaseTiming[] | undefined, timingNodeId: string): TimingActivity | undefined {
+  const find = (nodes: TimingActivity[] | undefined): TimingActivity | undefined => {
     for (const n of nodes ?? []) {
-      if (n.id === timingNodeId) return n.startOffsetMs;
+      if (n.id === timingNodeId) return n;
       const found = find(n.children);
       if (found !== undefined) return found;
     }
@@ -232,15 +238,19 @@ function commandStartOffsetMs(phases: readonly PhaseTiming[] | undefined, timing
   return undefined;
 }
 
+function commandStartOffsetMs(phases: readonly PhaseTiming[] | undefined, timingNodeId: string): number | undefined {
+  return commandTimingNode(phases, timingNodeId)?.startOffsetMs;
+}
+
 /**
- * 失败命令按关联 timing 节点的 `startOffsetMs` 排序(docs/feature/record/architecture.md
+ * 命令退出证据按关联 timing 节点的 `startOffsetMs` 排序(docs/feature/record/architecture.md
  * 「commandsjson」);关联不到 timing 节点的排在最后,组内保持 `commands.json` 原始顺序作稳定
  * tie-break,不按数组偶然顺序猜时间。
  */
-function sortFailedCommands(
-  commands: readonly FailedCommandEvidence[],
+function sortCommandExits(
+  commands: readonly CommandExitEvidence[],
   phases: readonly PhaseTiming[] | undefined,
-): FailedCommandEvidence[] {
+): CommandExitEvidence[] {
   return commands
     .map((command, index) => ({ command, index, offset: commandStartOffsetMs(phases, command.timingNodeId) }))
     .sort((a, b) => (a.offset ?? Number.POSITIVE_INFINITY) - (b.offset ?? Number.POSITIVE_INFINITY) || a.index - b.index)
@@ -253,15 +263,12 @@ function sortFailedCommands(
  * 吃掉,其它(stop-hook 反馈、skill 注入等轮内注入)作为回复条目留在当前轮。流首出现无 loc
  * 的 user 消息(没有当前轮可归入)时退化开一条 loc 缺省的兜底轮,不丢弃。未识别的事件类型
  * 包成 `raw` 条目原样呈现,不吞没其余事件——StreamEvent 是随 artifact 版本演进的开放词表,
- * 这份纯函数不能假设自己认识每一种将来会出现的 type。除标准事件流外还携带 `failedCommands`
- * (`commands.json` 的投影);没有 events 但有失败命令时仍非空——事件骨架与命令证据是两个
- * 独立的非空条件,任一非空这个组件就有内容可显示。
+ * 这份纯函数不能假设自己认识每一种将来会出现的 type。生命周期命令证据由独立的
+ * `attemptCommandEvidenceData` 投影,不进入 Conversation,因此没有 events 时这里仍返回 null。
  */
 export function attemptConversationData(evidence: AttemptEvidence): AttemptConversationData | null {
   const events = evidence.events;
-  const failedCommands =
-    evidence.commands && evidence.commands.length > 0 ? sortFailedCommands(evidence.commands, evidence.result.phases) : undefined;
-  if ((!events || events.length === 0) && failedCommands === undefined) return null;
+  if (!events || events.length === 0) return null;
 
   const rounds: AttemptConversationRound[] = [];
   const toolByOperationId = new Map<string, Extract<AttemptConversationReply, { kind: "tool" }>>();
@@ -287,7 +294,26 @@ export function attemptConversationData(evidence: AttemptEvidence): AttemptConve
     current.replies.push(...conversationReplyOf(ev, toolByOperationId, subagentByOperationId));
   }
 
-  return { locator: evidence.locator, rounds, ...(failedCommands ? { failedCommands } : {}) };
+  return { locator: evidence.locator, rounds };
+}
+
+/** 独立命令证据按 timing 顺序投影;不依赖 Conversation 是否有事件轮次。 */
+export function attemptCommandEvidenceData(evidence: AttemptEvidence): AttemptCommandEvidenceData | null {
+  const commands = evidence.commands;
+  if (!commands || commands.length === 0) return null;
+  const phases = evidence.result.phases;
+  return {
+    locator: evidence.locator,
+    commands: sortCommandExits(commands, phases).map((command, index) => {
+      const timing = commandTimingNode(phases, command.timingNodeId);
+      return {
+        ...command,
+        key: `cmd:${index}`,
+        classification: commandClassification(command),
+        ...(timing !== undefined ? { durationMs: timing.durationMs } : {}),
+      };
+    }),
+  };
 }
 
 /** 单条事件 → 0 或 1 条回复条目；operation.finished 只更新同 kind 的敞口条目，不新增。 */

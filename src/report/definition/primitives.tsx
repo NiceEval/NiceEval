@@ -1032,13 +1032,15 @@ export type { CopyBlockContent, CopyBlockProps } from "./primitives/copy-block.t
 export { DiffView, diffViewText } from "./primitives/diff-view.tsx";
 export type { DiffChange, DiffContent, DiffFile, DiffFileWindow, DiffViewProps } from "./primitives/diff-view.tsx";
 
-export { Conversation, ConversationEntries, conversationText, sanitizeConversationPreview } from "./primitives/conversation.tsx";
+export { CommandEvidence, Conversation, ConversationEntries, conversationText, sanitizeConversationPreview } from "./primitives/conversation.tsx";
 export type {
+  CommandEvidenceContent,
+  CommandEvidenceItem,
+  CommandEvidenceProps,
   ConversationContent,
   ConversationEntry,
   ConversationProps,
   ConversationTurn,
-  FailedCommandContent,
 } from "./primitives/conversation.tsx";
 
 export { Markdown, parseMarkdown, markdownToText, markdownToWeb } from "./primitives/markdown.tsx";

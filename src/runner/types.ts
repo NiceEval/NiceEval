@@ -134,6 +134,8 @@ export interface TimingActivity {
   command?: {
     display: string;
     exitCode?: number;
+    /** 是否由 checked run*OrThrow 公开调用产生;show/report 用它与 exitCode 推导展示语义。 */
+    checked?: boolean;
     /** 这条命令这次生效的时限与它来自哪一层;四层解析链一个上限都没声明时缺席。 */
     limit?: CommandLimitAttribution;
   };
@@ -212,14 +214,16 @@ export interface PhaseTiming {
  * 异常消息,这份证据仍然完整。只记非零退出;成功命令的输出不进第二份 artifact,provider 内部
  * 实现步骤与 Agent 自己调用的 shell 不经过这层包装,不伪装成这里的命令。
  */
-export interface FailedCommandEvidence {
-  /** 与 `PhaseTiming.children` 中 `key === "sandbox.command"` 的 `TimingActivity.id` 相同,唯一关联失败命令卡与 `--timing` 的 command 节点。 */
+export interface CommandExitEvidence {
+  /** 与 `PhaseTiming.children` 中 `key === "sandbox.command"` 的 `TimingActivity.id` 相同,唯一关联命令证据卡与 `--timing` 的 command 节点。 */
   timingNodeId: string;
   /** runner 在命令返回那一刻已经打开的生命周期阶段。 */
   phase: LifecyclePhase;
   /** 与该 `TimingActivity.command.display` 同一份有界脱敏命令摘要;不含 env value。 */
   display: string;
   exitCode: number;
+  /** 是否由 checked run*OrThrow 公开调用产生;非零 + checked 才是失败展示语义。 */
+  checked: boolean;
   /** 不截断落盘；`CommandOptions.sensitiveValues` 命中的已知值已替换为 `<redacted>`。 */
   stdout: string;
   /** 不截断落盘，同 `stdout` 的已知敏感值边界。 */
@@ -227,7 +231,7 @@ export interface FailedCommandEvidence {
 }
 
 /** `commands.json` 的落盘形状。 */
-export type CommandsArtifact = FailedCommandEvidence[];
+export type CommandsArtifact = CommandExitEvidence[];
 
 /**
  * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/record/architecture.md 的
@@ -444,8 +448,8 @@ export interface EvalResult {
   };
   /** agent 归因增量:逐 send 窗口的 delta 序列(落盘为 diff.json;文件级视图由读取面派生)。 */
   diff?: DiffArtifact;
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(落盘为 commands.json);只记非零退出,见 `FailedCommandEvidence`。 */
-  commands?: FailedCommandEvidence[];
+  /** 非零 Sandbox 命令的 stdout/stderr 证据(落盘为 commands.json);只记非零退出,见 `CommandExitEvidence`。 */
+  commands?: CommandExitEvidence[];
   rawTranscript?: string;
   /** 携带条目(--resume 合入)专用:artifact 目录(相对结果根目录),指向原快照里的落盘。 */
   artifactBase?: string;
@@ -497,8 +501,10 @@ export const RECORD_FORMAT = "niceeval.results";
  * `14` = result.json 的证据聚合字段从 `coverage` 破坏性重命名为 `evidenceCoverage`；
  * 六通道全部必填，不兼容旧 schema，也不做 normalize。
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
+ * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
+ * 旧版 commands.json 不做兼容读取。
  */
-export const RECORD_SCHEMA_VERSION = 14;
+export const RECORD_SCHEMA_VERSION = 15;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {

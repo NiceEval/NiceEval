@@ -5,7 +5,7 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, CommandLimitAttribution, EvalResult, FailedCommandEvidence, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { AssertionResult, CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type {
   LineAnnotation,
@@ -608,12 +608,12 @@ interface TurnSection {
 /** 失败 Sandbox 命令卡:句柄 `cmd<序号>`,按关联 timing 节点的 startOffsetMs 排序后从 1 编号。 */
 interface CommandCard {
   handle: string;
-  command: FailedCommandEvidence;
+  command: CommandExitEvidence;
   timingNode?: TimingActivity;
 }
 
-/** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有失败命令时 evidence.commands 为 null。 */
-function failedCommandsOf(evidence: ConversationResult): readonly FailedCommandEvidence[] {
+/** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有命令退出时 evidence.commands 为空。 */
+function commandExitsOf(evidence: ConversationResult): readonly CommandExitEvidence[] {
   return evidence.commands;
 }
 
@@ -637,11 +637,14 @@ function findCommandTimingActivity(phases: readonly NonNullable<EvalResult["phas
 /** 失败命令卡按关联 timing 节点的 startOffsetMs 排序后编号;关联不到节点的排到最后(仍确定性,
  *  按原始 commands.json 顺序兜底)。 */
 function buildCommandCards(evidence: ConversationResult): CommandCard[] {
-  const commands = failedCommandsOf(evidence);
+  const commands = commandExitsOf(evidence);
   if (commands.length === 0) return [];
   const phases = evidence.phases;
-  const withNode = commands.map((command) => ({ command, timingNode: findCommandTimingActivity(phases, command.timingNodeId) }));
-  withNode.sort((a, b) => (a.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY) - (b.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY));
+  const withNode = commands.map((command, index) => ({ command, index, timingNode: findCommandTimingActivity(phases, command.timingNodeId) }));
+  withNode.sort((a, b) =>
+    (a.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY) - (b.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY) ||
+    a.index - b.index,
+  );
   return withNode.map((entry, i) => ({ handle: `cmd${i + 1}`, command: entry.command, timingNode: entry.timingNode }));
 }
 
@@ -754,7 +757,7 @@ function agentCardParts(node: ExecutionNode, originMs: number): CardParts {
   }
 }
 
-function commandCardParts(command: FailedCommandEvidence): CardParts {
+function commandCardParts(command: CommandExitEvidence): CardParts {
   const segments: CardSegment[] = [{ text: command.display }];
   if (command.stdout) segments.push({ label: "stdout", text: command.stdout });
   if (command.stderr) segments.push({ label: "stderr", text: command.stderr });
@@ -768,7 +771,8 @@ function commandCardParts(command: FailedCommandEvidence): CardParts {
 
 function commandCardHeader(entry: CommandCard): string {
   const duration = entry.timingNode ? ` · ${formatDurationMs(entry.timingNode.durationMs)}` : "";
-  return `FAILED COMMAND · ${entry.command.phase} · exit ${entry.command.exitCode}${duration}`;
+  const title = entry.command.checked && entry.command.exitCode !== 0 ? "FAILED COMMAND" : "NON-ZERO COMMAND · observed";
+  return `${title} · ${entry.command.phase} · exit ${entry.command.exitCode}${duration}`;
 }
 
 /** turn 头行:`标签 · status · 该轮墙钟 · 该轮 usage`(usage 有记录才出现;docs/feature/reports/
@@ -863,7 +867,34 @@ function executionTail(
   return tail;
 }
 
-/** 全量渲染(无 --grep/--expand):逐轮头行 + 卡片,末尾追加失败命令卡与事实小结。 */
+type OrderedExecutionBlock =
+  | { kind: "turn"; section: TurnSection; order: number }
+  | { kind: "command"; entry: CommandCard; order: number };
+
+const CLOSING_COMMAND_PHASES = new Set(["agent.teardown", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"]);
+
+function commandPlacement(phase: string): number {
+  return CLOSING_COMMAND_PHASES.has(phase) ? 2 : phase === "eval.run" ? 1 : 0;
+}
+
+/** execution 的生命周期命令独立成卡,按 setup/turn/teardown 的 timing 位置安插。 */
+function orderedExecutionBlocks(
+  turns: readonly TurnSection[],
+  commandCards: readonly CommandCard[],
+): OrderedExecutionBlock[] {
+  const blocks: OrderedExecutionBlock[] = turns.map((section, index) => ({ kind: "turn", section, order: index }));
+  for (const [index, entry] of commandCards.entries()) blocks.push({ kind: "command", entry, order: turns.length + index });
+  return blocks.sort((a, b) => {
+    const aPosition = a.kind === "command" ? commandPlacement(a.entry.command.phase) : 1;
+    const bPosition = b.kind === "command" ? commandPlacement(b.entry.command.phase) : 1;
+    if (aPosition !== bPosition) return aPosition - bPosition;
+    const aOffset = a.kind === "command" ? a.entry.timingNode?.startOffsetMs : a.section.turn?.startOffsetMs;
+    const bOffset = b.kind === "command" ? b.entry.timingNode?.startOffsetMs : b.section.turn?.startOffsetMs;
+    return (aOffset ?? Number.POSITIVE_INFINITY) - (bOffset ?? Number.POSITIVE_INFINITY) || a.order - b.order;
+  });
+}
+
+/** 全量渲染(无 --grep/--expand):轮次与独立命令证据按 lifecycle timing 合并,末尾追加事实小结。 */
 function renderFull(
   evidence: ConversationResult,
   header: string,
@@ -877,22 +908,21 @@ function renderFull(
   originMs: number,
 ): string {
   const lines: string[] = [];
-  turns.forEach((section, i) => {
+  for (const [i, block] of orderedExecutionBlocks(turns, commandCards).entries()) {
     if (i > 0) lines.push("");
-    lines.push(turnHeadLine(section));
-    section.cards.forEach((card, j) => {
-      if (j > 0) lines.push("");
-      const parts = agentCardParts(card.node, originMs);
-      lines.push(...renderCardLines(parts, card.handle, evidence.locator, false).map((l) => `  ${l}`));
-    });
-  });
-  if (commandCards.length > 0) {
-    if (lines.length > 0) lines.push("");
-    commandCards.forEach((entry, i) => {
-      if (i > 0) lines.push("");
+    if (block.kind === "turn") {
+      const section = block.section;
+      lines.push(turnHeadLine(section));
+      section.cards.forEach((card, j) => {
+        if (j > 0) lines.push("");
+        const parts = agentCardParts(card.node, originMs);
+        lines.push(...renderCardLines(parts, card.handle, evidence.locator, false).map((l) => `  ${l}`));
+      });
+    } else {
+      const entry = block.entry;
       const parts = commandCardParts(entry.command);
       lines.push(...renderCardLines({ ...parts, header: commandCardHeader(entry) }, entry.handle, evidence.locator, false).map((l) => `  ${l}`));
-    });
+    }
   }
   const tail = executionTail(evidence, tree, timingAvailable, telemetryCount, eventsSource, artifactPath);
   return `${header}\n\n${lines.join("\n")}\n\n${tail.join("\n")}`;
@@ -970,7 +1000,7 @@ function renderExpand(
     const entry = commandCards[n - 1];
     if (!entry) {
       throw new Error(
-        `handle "${handle}" not found: this attempt has ${commandCards.length} failed command${commandCards.length === 1 ? "" : "s"}.`,
+        `handle "${handle}" not found: this attempt has ${commandCards.length} command exit${commandCards.length === 1 ? "" : "s"}.`,
       );
     }
     const parts = commandCardParts(entry.command);
@@ -995,11 +1025,11 @@ export interface ExecutionRenderOptions {
  * tool call+result / subagent / input.requested / compaction / error)按轮分段渲染成卡片,
  * 有 OTel 时同一节点补相对时间与耗时;没有 OTel 时节点、顺序与内容不变,只去掉时间列,并在结尾
  * 如实标 timing unavailable(ExecutionTree 的契约:骨架不因时间有无而变形,见
- * o11y/execution-tree.ts 头注)。除 Agent 事件外,attempt 节末尾追加失败 Sandbox 命令卡
- * (`cmd<N>`,来自 `commands.json`,经 `evidence.commands` 读取;没有失败命令时这一段自然
- * 零输出,见 `failedCommandsOf`)。
+ * o11y/execution-tree.ts 头注)。除 Agent 事件外,attempt 按 lifecycle timing 放置独立的
+ * Sandbox 命令退出卡(`cmd<N>`,来自 `commands.json`,经 `evidence.commands` 读取;没有命令
+ * 退出时这一段自然零输出,见 `commandExitsOf`)。
  *
- * 卡片正文按段(单段卡的正文、TOOL 卡的 input/result、失败命令卡的命令行/stdout/stderr)分别是
+ * 卡片正文按段(单段卡的正文、TOOL 卡的 input/result、命令证据卡的命令行/stdout/stderr)分别是
  * 3 行(保留原始换行)的有界预览,单段另有 1 KiB 字节兜底(按字符边界回退);截断尾巴带被折
  * 行数与字符数、以及展开句柄(全卡没有整行被折、只是字节兜底切了字符时,行数退化为省略)。
  * `options.expand` 精确定位一张卡片输出完整落盘内容;`options.grep` 只输出匹配面(角色文本/

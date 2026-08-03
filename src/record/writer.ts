@@ -11,7 +11,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AgentSetupManifest, DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
-import type { DiffArtifact, FailedCommandEvidence, O11ySummary, SourceArtifact, StreamEvent, TraceSpan } from "../types.ts";
+import type { CommandExitEvidence, DiffArtifact, O11ySummary, SourceArtifact, StreamEvent, TraceSpan } from "../types.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 import { RESULT_FILE, RUN_FILE, artifactFileOf, attemptDirOf, experimentDirOf } from "./format.ts";
 import { encodeAttemptLocator } from "./locator.ts";
@@ -106,7 +106,7 @@ export interface AttemptArtifacts {
   diff?: DiffArtifact;
   sources?: SourceArtifact[];
   /** 非零 Sandbox 命令的 stdout/stderr 证据(见 docs/feature/record/architecture.md「commandsjson」)。 */
-  commands?: FailedCommandEvidence[];
+  commands?: CommandExitEvidence[];
 }
 
 export interface RunWriter {

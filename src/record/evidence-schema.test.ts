@@ -21,9 +21,9 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("record schema 14 evidenceCoverage", () => {
+describe("record schema 15 evidenceCoverage + command call facts", () => {
   it("writer writes the required six-channel field under its new name", async () => {
-    expect(RECORD_SCHEMA_VERSION).toBe(14);
+    expect(RECORD_SCHEMA_VERSION).toBe(15);
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "test" } });
     const run = await writer.run({ experimentId: "evidence/valid", agent: "fixture", startedAt: "2026-08-02T00:00:00.000Z" });
@@ -55,7 +55,7 @@ describe("record schema 14 evidenceCoverage", () => {
     } as never)).rejects.toThrow(/writeAttempt\(\) requires evidenceCoverage/);
   });
 
-  it("reader marks a schema-14 result with only the old coverage field malformed", async () => {
+  it("reader marks a schema-14 result incompatible after the checked command-fact bump", async () => {
     const root = await makeRoot();
     const snapshot = join(root, "evidence_old", "2026-08-02T00-00-00-000Z");
     const attemptDir = join(snapshot, "q1", "a0");
@@ -79,9 +79,7 @@ describe("record schema 14 evidenceCoverage", () => {
     }), "utf-8");
 
     const record = await openRecord(root);
-    expect(record.unreadable).toEqual([
-      expect.objectContaining({ reason: "malformed", detail: expect.stringContaining("requires evidenceCoverage") }),
-    ]);
-    expect(record.experiments[0]?.latestRun.attempts).toHaveLength(0);
+    expect(record.unreadable).toEqual([expect.objectContaining({ reason: "incompatible", schemaVersion: 14 })]);
+    expect(record.experiments).toHaveLength(0);
   });
 });

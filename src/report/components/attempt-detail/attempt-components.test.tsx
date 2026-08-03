@@ -31,6 +31,7 @@ import {
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import {
   attemptAssertionsData,
+  attemptCommandEvidenceData,
   attemptConversationData,
   attemptDiagnosticsData,
   attemptDiffData,
@@ -328,7 +329,6 @@ describe("embedConversationInSource", () => {
         { key: "nested-round", label: "evals/helper.ts:3", entries: [{ kind: "tool", preview: "nested" }] },
         { key: "unmapped-round", label: "legacy", entries: [{ kind: "assistant", preview: "legacy" }] },
       ],
-      failedCommands: [{ key: "cmd-1", phase: "eval.run", display: "false", exitCode: 1 }],
       locator: encodeAttemptLocator(identityOf({ attempt: 1 })),
     };
 
@@ -346,7 +346,6 @@ describe("embedConversationInSource", () => {
     expect(detachedDetail.type).toBe(Conversation);
     expect(detachedDetail.props.data.turns.map((turn) => turn.key)).toEqual(["unlabeled-round"]);
     expect(embedded.conversation?.turns.map((turn) => turn.key)).toEqual(["unmapped-round"]);
-    expect(embedded.conversation?.failedCommands).toEqual(conversation.failedCommands);
     expect(embedded.conversation?.locator).toBe(conversation.locator);
     expect(source.spine.lines[0]!.calls![0]!.target.kind).toBe("source");
     expect(source.detached[0]!.lines[0]!.details).toBeUndefined();
@@ -472,6 +471,39 @@ describe("AttemptDetails:执行证据可用性", () => {
       },
     ]);
     expect(elementsByType(tree, Conversation)).toHaveLength(0);
+  });
+});
+
+describe("AttemptCommandEvidence:命令与 Conversation 分离、错误提示只认 failed", () => {
+  const observed = {
+    timingNodeId: "observed-command",
+    phase: "eval.run" as const,
+    display: "unchecked command",
+    exitCode: 2,
+    checked: false,
+    stdout: "complete output tail",
+    stderr: "",
+  };
+  const failed = { ...observed, timingNodeId: "failed-command", checked: true };
+
+  it("无 events 时 Conversation 仍为空,独立命令证据保留并排序", () => {
+    const evidence = evidenceOf({ commands: [failed, observed] });
+    expect(attemptConversationData(evidence)).toBeNull();
+    expect(attemptCommandEvidenceData(evidence)?.commands.map((command) => command.classification)).toEqual(["failed", "observed"]);
+  });
+
+  it("observed 非零不触发截断错误摘要提示,failed 才触发", () => {
+    const observedError = attemptErrorData(evidenceOf({
+      commands: [observed],
+      result: resultOf({ error: { code: "turn-failed", message: "output tail", origin: { scope: "attempt", phase: "eval.run" } } }),
+    }));
+    expect(observedError).not.toHaveProperty("commandEvidenceHint");
+
+    const failedError = attemptErrorData(evidenceOf({
+      commands: [failed],
+      result: resultOf({ error: { code: "turn-failed", message: "output tail", origin: { scope: "attempt", phase: "eval.run" } } }),
+    }));
+    expect(failedError?.commandEvidenceHint).toBe(true);
   });
 });
 

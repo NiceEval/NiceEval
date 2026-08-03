@@ -69,7 +69,7 @@ import type {
   DiagnosticInput,
   DiffArtifact,
   EvalResult,
-  FailedCommandEvidence,
+  CommandExitEvidence,
   JudgeConfig,
   JsonValue,
   Sandbox,
@@ -309,7 +309,7 @@ export function runAttemptEffect(
   // runAttemptBody 的 finally 与本函数的超时/中断兜底分支都读同一个数组引用
   // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
   // 调用方之前写入内存」)。
-  const commands: FailedCommandEvidence[] = [];
+  const commands: CommandExitEvidence[] = [];
   // CommandOptions.sensitiveValues 的 Attempt 级内存集合。值只供记录边界精确替换；最终
   // result 封口后集合随本次调用释放，不进入任何 artifact、指纹或 provider identity。
   const sensitiveValues = new Set<string>();
@@ -1001,7 +1001,7 @@ interface AttemptResources {
    * diagnostics/facts 同一种「共享容器」模式):`withCommandTiming` 往这里 push,
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
-  commands: FailedCommandEvidence[];
+  commands: CommandExitEvidence[];
   /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
   sensitiveValues: Set<string>;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
@@ -1703,14 +1703,15 @@ function withCommandTiming(
   sandbox: Sandbox,
   recorder: TimingRecorder,
   getPhase: () => LifecyclePhase | undefined,
-  commands: FailedCommandEvidence[],
+  commands: CommandExitEvidence[],
   sensitiveValues: Set<string>,
   deadlineAt: number | undefined,
 ): Sandbox {
-  const recordFailedCommand = (
+  const recordCommandExit = (
     node: TimingActivity | undefined,
     display: string,
     result: { exitCode: number; stdout?: unknown; stderr?: unknown },
+    checked: boolean,
   ): void => {
     if (!node || result.exitCode === 0) return;
     commands.push({
@@ -1718,6 +1719,7 @@ function withCommandTiming(
       phase: getPhase() ?? "eval.run",
       display,
       exitCode: result.exitCode,
+      checked,
       stdout: redactSensitiveText(typeof result.stdout === "string" ? result.stdout : "", sensitiveValues),
       stderr: redactSensitiveText(typeof result.stderr === "string" ? result.stderr : "", sensitiveValues),
     });
@@ -1727,6 +1729,7 @@ function withCommandTiming(
     cmd: string,
     args: readonly string[] | undefined,
     opts: unknown,
+    checked: boolean,
     fn: () => Promise<T>,
   ): Promise<T> => {
     rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
@@ -1739,20 +1742,31 @@ function withCommandTiming(
     try {
       const result = await fn();
       const exitCode = (result as { exitCode?: unknown })?.exitCode;
+      const nonZero = typeof exitCode === "number" && exitCode !== 0;
       const node = recorder.child(
         commandNode({
           display,
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
+          checked,
           ...(limit !== undefined ? { limit } : {}),
-          ...(typeof exitCode === "number" ? { exitCode, failed: exitCode !== 0 } : {}),
+          ...(typeof exitCode === "number"
+            ? {
+                exitCode,
+                ...(nonZero
+                  ? {
+                      ...(checked ? { failed: true } : {}),
+                    }
+                  : {}),
+              }
+            : {}),
         }),
       );
-      if (typeof exitCode === "number") {
-        recordFailedCommand(node, display, {
+      if (typeof exitCode === "number" && nonZero) {
+        recordCommandExit(node, display, {
           exitCode,
           ...(result as { stdout?: unknown; stderr?: unknown }),
-        });
+        }, checked);
       }
       // CommandResult.command:最外层公开调用恰好是「eval 实际跑了什么」的定义点,摘要
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
@@ -1779,12 +1793,17 @@ function withCommandTiming(
           display,
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
-          failed: true,
-          ...(typeof exitCode === "number" ? { exitCode } : {}),
+          checked,
+          ...(typeof exitCode === "number"
+            ? {
+                exitCode,
+                ...(checked && exitCode !== 0 ? { failed: true } : {}),
+              }
+            : { failed: true }),
           ...(hit !== undefined ? { limit: hit } : {}),
         }),
       );
-      if (commandResult !== undefined) recordFailedCommand(node, display, commandResult);
+      if (commandResult !== undefined) recordCommandExit(node, display, commandResult, checked);
       throw e;
     }
   };
@@ -1792,19 +1811,19 @@ function withCommandTiming(
     get(target, prop, receiver) {
       if (prop === "runCommand") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(cmd, args, opts, false, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
       }
       if (prop === "runShell") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(script, undefined, opts, false, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
       }
       if (prop === "runCommandOrThrow") {
         return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(cmd, args, opts, true, () => (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
       }
       if (prop === "runShellOrThrow") {
         return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(script, undefined, opts, true, () => (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts));
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;

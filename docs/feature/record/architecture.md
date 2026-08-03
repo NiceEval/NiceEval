@@ -57,7 +57,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 14,
+  "schemaVersion": 15,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -69,7 +69,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `14`；本次升版来自持久化字段 `coverage` → `evidenceCoverage` 的破坏性重命名。
+当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。
 历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -326,8 +326,8 @@ interface TimingActivity {
   command?: {
     display: string;
     exitCode?: number;
-    /** 非零时由公开调用方法确定；普通方法是 observed，checked 方法抛出是 failed。 */
-    classification?: "observed" | "failed";
+    /** 是否由 checked run*OrThrow 公开调用产生；展示层与 exitCode 一起推导语义。 */
+    checked?: boolean;
   };
 }
 ```
@@ -348,7 +348,7 @@ interface TimingActivity {
 | key | 时钟域 | 记什么 |
 |---|---|---|
 | `agent.turn` | attempt | 一次 send 的端到端包络;轮标签语法单点见 [Assertions · Turn 的展示](../assertions/architecture/scopes.md) |
-| `sandbox.command` | attempt | 四个公开 `run*` 方法的最外层调用；非零退出保留 checked / unchecked 分类，并经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
+| `sandbox.command` | attempt | 四个公开 `run*` 方法的最外层调用；非零退出保留 `checked` 调用事实，并经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
 | `sandbox.prepare` | attempt | 两层作者 layer 的逐 command 节点,`sandbox.cleanup` 锚点下的已登记 cleanup 节点同用此 key;label 带 owner 与序号,匿名 callback 用 `eval#<i>` / `experiment#<i>` |
 | `provider.*` | 两者皆可 | provider 内部步骤,如 `provider.image.pull`、`provider.build.execute` |
 | `workspace.diff.export` | attempt | 变更分类账的批量导出;label 带有界规模摘要 |
@@ -654,7 +654,7 @@ interface DiagnosticRecord {
 `sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经四个公开 `Sandbox.run*()` 方法发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
 命令摘要先按 `CommandOptions.sensitiveValues` 的显式 provenance 精确替换，再截断；env 只允许保留 key。
-非零退出命令的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。普通方法返回非零时分类为 `observed`，节点不标 `failed`；checked 方法因非零抛出时分类为 `failed`，节点同步标 `failed: true`。
+非零退出命令的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。Record 同时保存 `checked` 调用事实；普通方法的非零由消费层推导为 `observed`，节点不标 `failed`；checked 方法的非零由消费层推导为 `failed`，节点同步标 `failed: true`。
 
 敏感值集合只驻留当前 Attempt 内存。最终 result 封口再覆盖 timing、events/trace、retryAttempts、diagnostics 与 error，所有 show/JSON 读面共享同一边界。未登记自由文本与旧 artifact 不做键名正则猜测。
 成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
@@ -773,7 +773,7 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 | artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 默认 | 内容职责 |
 |---|---|---|---|---|---|---|
 | `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威记录 |
-| `commands.json` | `commands` | attempt 级,按需 | `CommandExitEvidence[]` | 不截(命令退出的完整语义单位) | 带 | 非零 Sandbox 命令的分类与 stdout/stderr |
+| `commands.json` | `commands` | attempt 级,按需 | `CommandExitEvidence[]` | 不截(命令退出的完整语义单位) | 带 | 非零 Sandbox 命令的公开调用事实与 stdout/stderr |
 | `events.json` | `events` | attempt 级,按需 | `StreamEvent[]` | 截 | 带 | 归一化标准事件流 |
 | `trace.json` | `trace` | attempt 级,按需 | `TraceSpan[]` | 截 | 带 | OTel span 树 |
 | `o11y.json` | `o11y` | attempt 级,按需 | `O11ySummary` | 不适用(派生缓存) | 带 | 行为计数缓存(见其小节) |
@@ -803,8 +803,8 @@ interface CommandExitEvidence {
   /** 与 TimingActivity.command.display 同一份有界脱敏命令；不含 env value。 */
   display: string;
   exitCode: number;
-  /** unchecked 返回只说明观测到非零；checked 抛出才说明命令失败。 */
-  classification: "observed" | "failed";
+  /** 是否由 checked run*OrThrow 调用产生；展示层以 checked + 非零退出推导失败语义。 */
+  checked: boolean;
   stdout: string;
   stderr: string;
 }
@@ -815,7 +815,7 @@ type CommandsArtifact = CommandExitEvidence[];
 - 只记录 `exitCode !== 0`；成功输出既可能巨大又通常没有诊断价值，不复制进第二份 artifact。
 - stdout / stderr 不截断、保留原换行落盘；唯一内容变换是替换调用方显式登记的已知敏感值。失败输出的起因常在前段，测试 runner 的 summary 惯例在尾部，截哪一端都毁掉另一半诊断。
   只记非零退出已让体量天然有界，进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
-- 记录不改变公开方法的返回 / 抛错语义。普通方法的非零只记为 `observed`，调用方可以处理后继续；checked 方法抛出的非零才记为 `failed`。
+- 记录不改变公开方法的返回 / 抛错语义。Record 只保存调用事实 `checked`；普通方法的非零在消费层显示为 `observed`，checked 方法抛出的非零才显示为 `failed`。
 - 调用方在普通方法返回后手工抛错，不把命令记录追改为 `failed`。Attempt error 说明调用方怎样解释结果，命令证据只说明该次公开调用本身采用哪种退出策略。
 - provider 内部实现步骤、Agent 自己调用的 shell 不经过公开 Sandbox 包装，不伪装成这里的命令；前者只进 provider timing，后者来自 `events.json`。
 - 携带条目按 `artifactBase` 读取原文件；发布携带与截断策略按[证据 registry](#证据-registry) 的 `commands` 行处理。

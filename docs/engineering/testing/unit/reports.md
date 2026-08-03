@@ -438,7 +438,7 @@ const scope = reportScopeFixture({
   - timing、非零命令、Agent 事件与 Attempt error 在落盘前按 `CommandOptions.sensitiveValues` 脱敏。
     summary/full、`--expand`、`--grep` 与 JSON 只能消费 `<redacted>`，不得从其它 artifact 补回。
     旧 artifact 与未登记自由文本不在 renderer 用 key-name regex 猜测。
-  - unchecked 命令的非零分类为 `observed`，不带失败样式；checked 命令因非零抛出才分类为 `failed`。
+  - 命令证据只保存 `checked` 调用事实；unchecked（`checked: false`）的非零由消费层推导为 `observed`、不带失败样式，checked（`checked: true`）的非零才推导为 `failed`。
     两类命令都保留原始 exit code 与输出，并在独立 lifecycle 区块按 timing 顺序展示，不进入 `Conversation`。
   - 预览按段截断。
     普通卡正文、TOOL 的 input/result、命令证据的命令行/stdout/stderr 分别计段。

@@ -63,7 +63,7 @@ interface CommandOptions {
 
 作者确实要求命令成功时使用名字写明策略的 `runCommandOrThrow()` / `runShellOrThrow()`。它们仅把非零退出转成携带完整 `CommandResult` 的 command-exit error；timeout、取消、transport failure 在四个方法上都会 reject。
 
-方法名同时是命令证据的解释边界。普通方法返回非零时，Runner 只能把它记为调用方尚未解释的 `observed` 事实，不能标成失败；checked 方法因非零抛出时才记为 `failed`。调用方拿到普通结果后再决定继续、重试或抛出，不会反向改写已经结束的命令节点；Attempt error 与命令退出事实分别保留各自的权威语义。
+方法名同时是命令证据的解释边界。Record 只保存公开调用事实 `checked` 与退出结果：普通方法的非零（`checked: false`）由消费层显示为尚未解释的 `observed`，不能标成失败；checked 方法的非零（`checked: true`）才显示为 `failed`。调用方拿到普通结果后再决定继续、重试或抛出，不会反向改写已经结束的命令节点；Attempt error 与命令退出事实分别保留各自的权威语义。
 
 因此 probe、best-effort cleanup 与“目标不存在即已收敛”的删除动作使用普通方法。确实要求零退出的安装、构建与验证使用 checked 方法。不要通过 `|| true` 抹掉原始退出码，也不另设退出码白名单让 Runner 猜调用方业务语义。
 

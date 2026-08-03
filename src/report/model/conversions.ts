@@ -26,6 +26,7 @@ import { heroData } from "../components/site-components/compute.ts";
 import type { HeroData } from "./types.ts";
 import {
   attemptAssertionsContent,
+  attemptCommandEvidenceContent,
   attemptConversationContent,
   attemptDiffContent,
   attemptFixPromptContent,
@@ -35,6 +36,7 @@ import {
 } from "../components/attempt-detail/content.tsx";
 import {
   attemptAssertionsData,
+  attemptCommandEvidenceData,
   attemptConversationData,
   attemptDiagnosticsData,
   attemptDiffData,
@@ -110,6 +112,10 @@ export async function toAttemptNotices(attempt: AttemptEvidence): Promise<readon
 
 export async function toConversationTurns(attempt: AttemptEvidence) {
   return attemptConversationContent(attemptConversationData(attempt));
+}
+
+export async function toCommandEvidence(attempt: AttemptEvidence) {
+  return attemptCommandEvidenceContent(attemptCommandEvidenceData(attempt));
 }
 
 export async function toDiffFiles(attempt: AttemptEvidence) {

@@ -5,7 +5,7 @@ import { createElement, Fragment, type ReactElement, type ReactNode } from "reac
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { isAttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { ATTEMPT_PAGE_ID } from "../../components/shared.ts";
-import { stripControl, summaryText } from "../../../assertions/display.ts";
+import { stripControl } from "../../../assertions/display.ts";
 import {
   dataShapeError,
   isLocalizedText,
@@ -31,20 +31,27 @@ export interface ConversationTurn {
   entries: readonly ConversationEntry[];
 }
 
-/** 失败 Sandbox 命令卡;字段对齐 FailedCommandEvidence。 */
-export interface FailedCommandContent {
+/** 独立生命周期命令证据卡;不属于 Conversation 的轮次或消息。 */
+export interface CommandEvidenceItem {
   key: string;
+  timingNodeId: string;
   phase: string;
   display: string;
   exitCode: number;
+  classification: "observed" | "failed";
+  durationMs?: number;
   stdout?: string;
   stderr?: string;
 }
 
 export interface ConversationContent {
   turns: readonly ConversationTurn[];
-  failedCommands?: readonly FailedCommandContent[];
   /** text 面 `--execution` 下钻;数据源投影时填入。 */
+  locator?: AttemptLocator;
+}
+
+export interface CommandEvidenceContent {
+  commands: readonly CommandEvidenceItem[];
   locator?: AttemptLocator;
 }
 
@@ -131,7 +138,7 @@ function assertConversationContent(data: unknown): ConversationContent | null {
 
 function isEmptyConversation(data: ConversationContent | null): boolean {
   if (data === null) return true;
-  return data.turns.length === 0 && (data.failedCommands?.length ?? 0) === 0;
+  return data.turns.length === 0;
 }
 
 function attemptDrillDown(ctx: ResolveContext, flag: string): string | undefined {
@@ -199,15 +206,20 @@ function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLoca
   );
 }
 
-function FailedCommandCard({ command }: { command: FailedCommandContent }): ReactElement {
+function commandEvidenceTitle(command: CommandEvidenceItem): string {
+  const title = command.classification === "failed" ? "FAILED COMMAND" : "NON-ZERO COMMAND · observed";
+  return `${title} · ${command.phase} · exit ${command.exitCode}${command.durationMs === undefined ? "" : ` · ${command.durationMs}ms`}`;
+}
+
+function CommandEvidenceCard({ command }: { command: CommandEvidenceItem }): ReactElement {
   return (
-    <article className="niceeval-conversation-turn niceeval-conversation-failed-command">
+    <article className={cx("niceeval-command-evidence-card", `niceeval-command-evidence--${command.classification}`)}>
       <header className="niceeval-conversation-turn-head">
         <span className="niceeval-conversation-turn-label">
-          FAILED COMMAND · {command.phase} · exit {command.exitCode}
+          {commandEvidenceTitle(command)}
         </span>
       </header>
-      <div className="niceeval-conversation-failed-display">{command.display}</div>
+      <div className="niceeval-command-evidence-display">{command.display}</div>
       {command.stdout ? (
         <details className="niceeval-conversation-entry niceeval-conversation-entry--expandable">
           <summary className="niceeval-conversation-entry-summary">stdout</summary>
@@ -241,13 +253,63 @@ export function conversationText(
     const verdict = turn.verdict ? ` (${turn.verdict})` : "";
     lines.push(`  ${label}${verdict}`);
   }
-  for (const cmd of data.failedCommands ?? []) {
-    lines.push(
-      `  FAILED COMMAND · ${cmd.phase} · exit ${cmd.exitCode}: ${summaryText(cmd.display)}`,
-    );
-  }
   return lines.join("\n");
 }
+
+function assertCommandEvidenceContent(data: unknown): CommandEvidenceContent | null {
+  if (data === null || data === undefined) return null;
+  if (!isObject(data) || !Array.isArray(data.commands)) {
+    throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", '"data.commands" must be an array');
+  }
+  for (const [index, command] of data.commands.entries()) {
+    if (!isObject(command)) throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}]" must be an object`);
+    if (typeof command.key !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].key" must be a string`);
+    if (typeof command.phase !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].phase" must be a string`);
+    if (typeof command.display !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].display" must be a string`);
+    if (typeof command.exitCode !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].exitCode" must be a number`);
+    if (command.classification !== "observed" && command.classification !== "failed") {
+      throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].classification" must be observed | failed`);
+    }
+    if (command.durationMs !== undefined && typeof command.durationMs !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].durationMs" must be a number`);
+    if (command.stdout !== undefined && typeof command.stdout !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].stdout" must be a string`);
+    if (command.stderr !== undefined && typeof command.stderr !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].stderr" must be a string`);
+  }
+  return data as unknown as CommandEvidenceContent;
+}
+
+export type CommandEvidenceProps = ValueProps<
+  CommandEvidenceContent | null,
+  { locale?: ReportLocale; className?: string }
+>;
+
+export const CommandEvidence = defineComponent<CommandEvidenceProps, { data: CommandEvidenceContent | null; className?: string }>({
+  dimensions: () => ({}),
+  resolve(props) {
+    return { data: props.data ?? null, className: props.className };
+  },
+  web({ data, className }) {
+    const content = assertCommandEvidenceContent(data);
+    if (content === null || content.commands.length === 0) return null;
+    return (
+      <section className={cx("niceeval-report", "niceeval-command-evidence", className)}>
+        {content.commands.map((command) => <CommandEvidenceCard key={command.key} command={command} />)}
+      </section>
+    );
+  },
+  text({ data }) {
+    const content = assertCommandEvidenceContent(data);
+    if (content === null || content.commands.length === 0) return "";
+    const lines = [`commands: ${content.commands.length}`];
+    for (const command of content.commands) {
+      lines.push(`  ${commandEvidenceTitle(command)}`);
+      lines.push(`    ${command.display}`);
+      if (command.stdout) lines.push(`    stdout\n      ${command.stdout.replace(/\n/g, "\n      ")}`);
+      if (command.stderr) lines.push(`    stderr\n      ${command.stderr.replace(/\n/g, "\n      ")}`);
+    }
+    return lines.join("\n");
+  },
+});
+CommandEvidence.displayName = "CommandEvidence";
 
 export const Conversation = defineComponent<ConversationProps, ResolvedConversationProps>({
   dimensions: () => ({}),
@@ -267,9 +329,6 @@ export const Conversation = defineComponent<ConversationProps, ResolvedConversat
       <div className={cx("niceeval-report", "niceeval-conversation", className)}>
         {content!.turns.map((turn) => (
           <TurnCard key={turn.key} turn={turn} locale={loc} />
-        ))}
-        {(content!.failedCommands ?? []).map((command) => (
-          <FailedCommandCard key={command.key} command={command} />
         ))}
       </div>
     );

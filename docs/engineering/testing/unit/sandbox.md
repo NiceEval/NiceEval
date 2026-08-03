@@ -82,7 +82,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 人工从 script 提取 prefix/suffix 后直接拼合法数字 marker 的 fake 不能充当这条契约的证明。
   - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK/bash 边界与单元层一致。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
-- **失败命令证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `FailedCommandEvidence`，再把结果交还调用方。
+- **命令退出证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
   证据与同一次 timing command node 共用 id；成功命令不登记输出，provider 内部转调不重复。
   调用方处理非零结果并继续也不撤销证据。stdout/stderr 保留原换行与首部根因，不能先 tail-only 再交 writer。
   fixture 必须让 Eval 随后把错误 `.slice(-500)`，仍能从登记项读到前部根因，证明捕获时点正确。

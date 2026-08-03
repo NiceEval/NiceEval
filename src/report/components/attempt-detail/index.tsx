@@ -4,6 +4,7 @@ import { isAttemptEvidence, type AttemptEvidence } from "../../../record/attempt
 import { defineComponent } from "../../definition/tree.ts";
 import {
   Callouts,
+  CommandEvidence,
   Col,
   Conversation,
   CopyBlock,
@@ -13,6 +14,7 @@ import {
   TableContentView,
   Waterfall,
 } from "../../definition/primitives.tsx";
+import type { CommandEvidenceContent } from "../../definition/primitives/conversation.tsx";
 import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
@@ -25,6 +27,7 @@ import {
   toAttemptSource,
   toAttemptSummary,
   toAttemptUsage,
+  toCommandEvidence,
   toConversationTurns,
   toDiffFiles,
   toTimelineNodes,
@@ -33,6 +36,7 @@ import { embedConversationInSource, executionEvidenceUnavailableCallouts } from 
 
 export {
   validateAssertionsData,
+  validateCommandEvidenceData,
   validateConversationData,
   validateDiagnosticsData,
   validateDiffData,
@@ -166,6 +170,21 @@ export type AttemptDetailsProps = {
   className?: string;
 };
 
+const COMMAND_CLOSING_PHASES = new Set(["agent.teardown", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"]);
+
+function commandEvidenceSections(data: CommandEvidenceContent | null): {
+  before: CommandEvidenceContent | null;
+  after: CommandEvidenceContent | null;
+} {
+  if (data === null || data.commands.length === 0) return { before: null, after: null };
+  const beforeCommands = data.commands.filter((command) => !COMMAND_CLOSING_PHASES.has(command.phase));
+  const afterCommands = data.commands.filter((command) => COMMAND_CLOSING_PHASES.has(command.phase));
+  return {
+    before: beforeCommands.length > 0 ? { ...data, commands: beforeCommands } : null,
+    after: afterCommands.length > 0 ? { ...data, commands: afterCommands } : null,
+  };
+}
+
 export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
   const evidence = evidenceOf(props, ctx);
   const notices = await toAttemptNotices(evidence);
@@ -189,7 +208,7 @@ AttemptAssessment.displayName = "AttemptAssessment";
 export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
   const evidence = evidenceOf(props, ctx);
   const hasSource = evidence.capabilities.source;
-  const [notices, source, assertions, summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([
+  const [notices, source, assertions, summary, fixPrompt, timeline, usage, commandEvidence, conversation, diff] = await Promise.all([
     toAttemptNotices(evidence),
     hasSource ? toAttemptSource(evidence) : Promise.resolve(null),
     hasSource ? Promise.resolve(null) : toAttemptAssertions(evidence),
@@ -197,15 +216,18 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
     toAttemptFixPrompt(evidence),
     toTimelineNodes(evidence),
     toAttemptUsage(evidence),
+    toCommandEvidence(evidence),
     toConversationTurns(evidence),
     toDiffFiles(evidence),
   ]);
   const embedded = embedConversationInSource(source, conversation);
+  const commandSections = commandEvidenceSections(commandEvidence);
   return (
     <Col className={props.className}>
       <AttemptSummary data={summary} />
       <Col>
         <Callouts items={notices} />
+        <CommandEvidence data={commandSections.before} />
         {embedded.source !== null ? (
           <SourceView data={embedded.source} />
         ) : assertions !== null && assertions.rows.length > 0 ? (
@@ -225,6 +247,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
       ) : (
         null
       )}
+      <CommandEvidence data={commandSections.after} />
       <DiffView files={diff} />
     </Col>
   );

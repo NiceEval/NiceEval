@@ -35,7 +35,7 @@ full OTel trace: .niceeval/.../trace.json
 `--execution` 以「做了什么」为主，时间只是事件旁的上下文注释；它不负责阶段聚合，也不把未关联 span 猜到某条事件上。
 除了 Agent 事件，它还显示 NiceEval 直接观察到的非零 Sandbox 命令（`commands.json`）。命令证据是独立的 lifecycle 区块，不拼进 Agent conversation，也不统一追加到所有 Turn 之后。区块按 timing `startOffsetMs` 排序；setup 类阶段位于 Turn 之前，收尾阶段位于 Turn 之后。
 
-unchecked 命令显示中性的 `NON-ZERO COMMAND · observed`；它只说明调用方取得了非零结果，不能使用红色失败样式。checked 命令因非零抛出时才显示 `FAILED COMMAND`。两类标题都带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr：
+`commands.json` 只保存公开调用事实 `checked`。unchecked 命令（`checked: false`）由 renderer + 非零 exitCode 推导为中性的 `NON-ZERO COMMAND · observed`，不能使用红色失败样式；checked 命令（`checked: true`）因非零抛出时才推导为 `FAILED COMMAND`。两类标题都带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr：
 
 ```text
   NON-ZERO COMMAND · observed · agent.setup · exit 1 · 0.3s
@@ -56,7 +56,7 @@ setup 或 Eval 手工命令真正失败时，不必指望 Agent event：
       (+18 lines · 1480 chars · niceeval show @1jmvhiau --execution --expand cmd1)
 ```
 
-命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联命令卡与[`--timing`](timing.md) 的 command 节点。若 Eval 随后抛出的 `error.message` 只剩截断尾部，Attempt 首页只在存在 `classification: "failed"` 的命令时提示 `failed command evidence: niceeval show @<locator> --execution`。要从整个 attempt 回答「时间花在哪里」，使用 [`--timing`](timing.md)。
+命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联命令卡与[`--timing`](timing.md) 的 command 节点。若 Eval 随后抛出的 `error.message` 只剩截断尾部，Attempt 首页只在存在 `checked: true` 的命令时提示 `failed command evidence: niceeval show @<locator> --execution`。要从整个 attempt 回答「时间花在哪里」，使用 [`--timing`](timing.md)。
 
 命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
 

@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   validateAssertionsData,
+  validateCommandEvidenceData,
   validateConversationData,
   validateDiagnosticsData,
   validateDiffData,
@@ -164,17 +165,17 @@ describe("validateConversationData — AttemptConversationReply 判别联合", (
     expect(validateConversationData(badLoc)).toMatch(/"rounds\[0\]\.loc\.line"/);
   });
 
-  it("failedCommands 省略合法(没有失败命令);存在时逐项校验 FailedCommandEvidence", () => {
-    expect(validateConversationData(valid)).toBeNull(); // valid 本身没有 failedCommands 字段
+  it("Conversation 不接收命令;独立 CommandEvidence 校验 classification 与退出字段", () => {
+    expect(validateConversationData(valid)).toBeNull();
     const withCommands = {
-      ...valid,
-      failedCommands: [
-        { timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" },
+      locator: "@1abcdef2",
+      commands: [
+        { key: "cmd1", timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, checked: false, classification: "observed", stdout: "", stderr: "boom" },
       ],
     };
-    expect(validateConversationData(withCommands)).toBeNull();
-    const missingExitCode = { ...valid, failedCommands: [{ timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", stdout: "", stderr: "boom" }] };
-    expect(validateConversationData(missingExitCode)).toMatch(/"failedCommands\[0\]\.exitCode"/);
+    expect(validateCommandEvidenceData(withCommands)).toBeNull();
+    expect(validateCommandEvidenceData({ ...withCommands, commands: [{ ...withCommands.commands[0], classification: "unknown" }] })).toMatch(/"commands\[0\]\.classification"/);
+    expect(validateCommandEvidenceData({ ...withCommands, commands: [{ ...withCommands.commands[0], exitCode: "1" }] })).toMatch(/"commands\[0\]\.exitCode"/);
   });
 });
 

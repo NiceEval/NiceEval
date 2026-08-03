@@ -621,6 +621,7 @@ describe("createWriter", () => {
         phase: "sandbox.prepare.eval" as const,
         display: "npm install -g pnpm",
         exitCode: 243,
+        checked: true,
         stdout: "",
         stderr: "npm error code EACCES\nnpm error path /usr/lib/node_modules/pnpm",
       },
@@ -645,6 +646,7 @@ describe("createWriter", () => {
     const results = await openRecord(root);
     const [q1, q2] = results.experiments[0].latestRun.attempts;
     expect(await q1.commands()).toEqual(evidence); // timingNodeId/phase/display/exitCode/stdout/stderr 原样往返
+    expect(JSON.stringify(await q1.commands())).not.toContain("classification"); // 展示语义不进入 Record
     expect(await q2.commands()).toBeNull(); // 没有非零命令的 attempt 恒 null,不是空数组
 
     // 缺省携带(证据 registry「publish 缺省」列):不显式声明 artifacts 时 commands 仍随行——
@@ -666,7 +668,7 @@ describe("createWriter", () => {
 
     const snap = await writer.run({ experimentId: "huge/output", agent: "bub", startedAt: "2026-07-11T08:00:00.000Z" });
     const evidence = [
-      { timingNodeId: "n1", phase: "eval.run" as const, display: "uv run pytest", exitCode: 1, stdout: hugeStdout, stderr: hugeStderr },
+      { timingNodeId: "n1", phase: "eval.run" as const, display: "uv run pytest", exitCode: 1, checked: true, stdout: hugeStdout, stderr: hugeStderr },
     ];
     await snap.writeAttempt({ id: "q1", verdict: "errored", attempt: 1, durationMs: 10, assertions: [] }, { commands: evidence });
     await finishAll(writer);
@@ -879,7 +881,7 @@ describe("createWriter", () => {
       trace: [{ name: "turn", key: "agent.turn" } as never],
       o11y: { toolCalls: 2 } as never,
       diff: [{ window: "turn1", changes: { "a.txt": { status: "added", after: "1" } } }],
-      commands: [{ timingNodeId: "n1", phase: "eval.run" as const, display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" }],
+      commands: [{ timingNodeId: "n1", phase: "eval.run" as const, display: "npm ci", exitCode: 1, checked: true, stdout: "", stderr: "boom" }],
       rawTranscript: "raw",
     };
     const carried: EvalResult = {
@@ -916,7 +918,7 @@ describe("createWriter", () => {
     expect(await readFile(join(snapDir, "algebra/q1/a1/events.json"), "utf-8")).toBe('[{"type":"message","role":"assistant","text":"hi"}]');
     expect(await readFile(join(snapDir, "algebra/q1/a1/o11y.json"), "utf-8")).toBe('{"toolCalls":2}');
     expect(await readFile(join(snapDir, "algebra/q1/a1/commands.json"), "utf-8")).toBe(
-      '[{"timingNodeId":"n1","phase":"eval.run","display":"npm ci","exitCode":1,"stdout":"","stderr":"boom"}]',
+      '[{"timingNodeId":"n1","phase":"eval.run","display":"npm ci","exitCode":1,"checked":true,"stdout":"","stderr":"boom"}]',
     );
 
     const carriedRecord = JSON.parse(await readFile(join(snapDir, "algebra/q3/a1/result.json"), "utf-8"));

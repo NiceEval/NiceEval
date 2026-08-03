@@ -7,7 +7,7 @@
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
 import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
-import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
+import type { CommandExitEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
 
@@ -122,8 +122,8 @@ export interface AttemptHandle {
   carried: boolean;
   /** artifact 是本地、借用历史 Run，还是其借用目标已丢失。 */
   evidenceState: "local" | "borrowed" | "dangling";
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(`commands.json`);没有失败命令时 null。 */
-  commands(): Promise<FailedCommandEvidence[] | null>;
+  /** 非零 Sandbox 命令的 stdout/stderr 证据(`commands.json`);没有非零命令时 null。 */
+  commands(): Promise<CommandExitEvidence[] | null>;
   events(): Promise<StreamEvent[] | null>;
   trace(): Promise<TraceSpan[] | null>;
   o11y(): Promise<O11ySummary | null>;

@@ -10,7 +10,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { EvalResult } from "../types.ts";
-import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
+import type { CommandExitEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import { deriveDiffData } from "../assertions/diff.ts";
 import {
@@ -542,7 +542,7 @@ function makeAttempt(run: Run, snapshotDir: string, attemptDir: string, record: 
     evidenceState: record.artifactBase
       ? (existsSync(candidates[1]!) ? "borrowed" : "dangling")
       : "local",
-    commands: lazyArtifact<FailedCommandEvidence[]>(candidates, "commands", record.commands),
+    commands: lazyArtifact<CommandExitEvidence[]>(candidates, "commands", record.commands),
     events: lazyArtifact<StreamEvent[]>(candidates, "events", record.events),
     trace: lazyArtifact<TraceSpan[]>(candidates, "trace", record.trace),
     o11y: lazyArtifact<O11ySummary>(candidates, "o11y", record.o11y),

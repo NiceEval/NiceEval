@@ -11,7 +11,7 @@ import type {
   AttemptError,
   DiagnosticRecord,
   ExperimentRunInfo,
-  FailedCommandEvidence,
+  CommandExitEvidence,
   InputRequest,
   JsonValue,
   PhaseTiming,
@@ -719,13 +719,21 @@ export interface AttemptConversationData {
   /** text 面拼 `niceeval show <locator> --execution` 下钻命令用;web 面不需要。 */
   locator: AttemptLocator;
   rounds: AttemptConversationRound[];
-  /**
-   * `commands.json` 的投影(见 docs/feature/record/architecture.md#commandsjson):按关联
-   * timing 节点(`timingNodeId` 对应 `PhaseTiming.children` 中 `kind === "command"` 的节点)
-   * 的 `startOffsetMs` 排序;关联不到 timing 节点的排在最后,不按数组偶然顺序猜时间。没有失败
-   * 命令时字段省略,不摆空数组。
-   */
-  failedCommands?: FailedCommandEvidence[];
+}
+
+/** 独立的生命周期命令证据项;不属于 Conversation 的轮次或消息。 */
+export interface AttemptCommandEvidence extends CommandExitEvidence {
+  key: string;
+  /** 消费层由 checked + 非零 exitCode 推导,不落盘。 */
+  classification: "observed" | "failed";
+  /** 从关联 timing node 派生,缺少 timing 时省略。 */
+  durationMs?: number;
+}
+
+/** `commands.json` 的报告投影;按 timing 顺序供 show 与 Web 独立命令区块消费。 */
+export interface AttemptCommandEvidenceData {
+  locator: AttemptLocator;
+  commands: AttemptCommandEvidence[];
 }
 
 /** `AttemptDiagnostics` 的 data:按 lifecycle phase 分组;没有 diagnostics 时 null。 */

@@ -387,7 +387,7 @@ describe("--expand:句柄未命中报实际 turn/卡片数,不猜相邻卡片", 
 
   it("命令序号超界:报该 attempt 实际失败命令数", () => {
     const evidence = evidenceOf({ execution: buildExecutionTree(twoTurnEvents(), []), result: resultOf({ phases: twoTurnPhases() }) });
-    expect(() => executionText(evidence, OPTS, { expand: "cmd1" })).toThrow(/this attempt has 0 failed commands/);
+    expect(() => executionText(evidence, OPTS, { expand: "cmd1" })).toThrow(/this attempt has 0 command exits/);
   });
 
   it("语法不认识的句柄报完整用法错误", () => {
@@ -403,8 +403,8 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
         name: "sandbox.prepare" as PhaseTiming["name"],
         durationMs: 500,
         children: [
-          { id: "cmd-node-b", key: "sandbox.command", label: "npm", startOffsetMs: 300, durationMs: 100, command: { display: "npm ci", exitCode: 1 } },
-          { id: "cmd-node-a", key: "sandbox.command", label: "git", startOffsetMs: 10, durationMs: 20, command: { display: "git fetch", exitCode: 128 } },
+          { id: "cmd-node-b", key: "sandbox.command", label: "npm", startOffsetMs: 300, durationMs: 100, command: { display: "npm ci", exitCode: 1, checked: true } },
+          { id: "cmd-node-a", key: "sandbox.command", label: "git", startOffsetMs: 10, durationMs: 20, command: { display: "git fetch", exitCode: 128, checked: true } },
         ],
       },
     ];
@@ -412,8 +412,8 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
       execution: null,
       result: resultOf({ phases }),
       commands: [
-        { timingNodeId: "cmd-node-b", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "npm error EACCES" },
-        { timingNodeId: "cmd-node-a", phase: "sandbox.prepare.eval", display: "git fetch", exitCode: 128, stdout: "", stderr: "fatal: could not read" },
+        { timingNodeId: "cmd-node-b", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, checked: true, stdout: "", stderr: "npm error EACCES" },
+        { timingNodeId: "cmd-node-a", phase: "sandbox.prepare.eval", display: "git fetch", exitCode: 128, checked: true, stdout: "", stderr: "fatal: could not read" },
       ],
     });
   }
@@ -445,6 +445,46 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
     const { text } = executionText(evidence, OPTS);
     expect(text).not.toContain("FAILED COMMAND");
   });
+
+  it("observed 命令保持中性且按 lifecycle timing 独立安插,只有 failed 使用失败文案", () => {
+    const phases: PhaseTiming[] = [
+      {
+        name: "sandbox.prepare" as PhaseTiming["name"],
+        durationMs: 100,
+        children: [{ id: "setup-command", key: "sandbox.command", label: "setup", startOffsetMs: 0, durationMs: 10, command: { display: "setup command", exitCode: 2, checked: false } }],
+      },
+      {
+        name: "eval.run" as PhaseTiming["name"],
+        durationMs: 300,
+        children: [
+          { id: "turn-1", key: "agent.turn", label: "turn1", startOffsetMs: 100, durationMs: 80 },
+          { id: "eval-command", key: "sandbox.command", label: "eval", startOffsetMs: 220, durationMs: 20, failed: true, command: { display: "checked command", exitCode: 9, checked: true } },
+        ],
+      },
+      {
+        name: "sandbox.cleanup" as PhaseTiming["name"],
+        durationMs: 50,
+        children: [{ id: "cleanup-command", key: "sandbox.command", label: "cleanup", startOffsetMs: 0, durationMs: 5, command: { display: "cleanup command", exitCode: 3, checked: false } }],
+      },
+    ];
+    const evidence = evidenceOf({
+      execution: buildExecutionTree(twoTurnEvents(), []),
+      result: resultOf({ phases }),
+      commands: [
+        { timingNodeId: "eval-command", phase: "eval.run", display: "checked command", exitCode: 9, checked: true, stdout: "", stderr: "checked stderr" },
+        { timingNodeId: "cleanup-command", phase: "sandbox.cleanup", display: "cleanup command", exitCode: 3, checked: false, stdout: "", stderr: "cleanup stderr" },
+        { timingNodeId: "setup-command", phase: "sandbox.prepare.eval", display: "setup command", exitCode: 2, checked: false, stdout: "", stderr: "setup stderr" },
+      ],
+    });
+
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 2 · 10ms");
+    expect(text).toContain("FAILED COMMAND · eval.run · exit 9 · 20ms");
+    expect(text).toContain("NON-ZERO COMMAND · observed · sandbox.cleanup · exit 3 · 5ms");
+    expect(text.indexOf("NON-ZERO COMMAND · observed · sandbox.prepare.eval")).toBeLessThan(text.indexOf("turn1"));
+    expect(text.indexOf("turn1")).toBeLessThan(text.indexOf("FAILED COMMAND · eval.run"));
+    expect(text.indexOf("FAILED COMMAND · eval.run")).toBeLessThan(text.indexOf("NON-ZERO COMMAND · observed · sandbox.cleanup"));
+  });
 });
 
 describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失败命令 display/stdout/stderr", () => {
@@ -460,7 +500,7 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     return evidenceOf({
       execution: buildExecutionTree(twoTurnEvents(), []),
       result: resultOf({ phases }),
-      commands: [{ timingNodeId: "cmd-node", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, stdout: "", stderr: "EACCES permission denied" }],
+      commands: [{ timingNodeId: "cmd-node", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 1, checked: true, stdout: "", stderr: "EACCES permission denied" }],
     });
   }
 
