@@ -44,6 +44,42 @@ import type {
 } from "../types.ts";
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
+import type { JsonValue } from "../../shared/types.ts";
+
+interface HumanFingerprintDelta {
+  selector: string;
+  _tag?: "Added" | "Removed" | "Changed" | "Unknown";
+  kind?: "added" | "removed" | "changed" | "unknown";
+  from?: string;
+  to?: string;
+}
+
+interface HumanFingerprintDiagnosticFactValue {
+  label: string;
+  value: JsonValue;
+}
+
+interface HumanFingerprintDiagnosticFactTransition {
+  label: string;
+  from: JsonValue;
+  to: JsonValue;
+}
+
+type HumanFingerprintDiagnosticFact = HumanFingerprintDiagnosticFactValue | HumanFingerprintDiagnosticFactTransition;
+
+interface HumanFingerprintDiagnostic {
+  code: string;
+  summary: string;
+  facts?: readonly HumanFingerprintDiagnosticFact[];
+  observedDeltas?: readonly HumanFingerprintDelta[];
+  limitations?: readonly string[];
+  causes?: readonly HumanFingerprintDiagnostic[];
+}
+
+type HumanFingerprintComparison =
+  | { kind: "match" }
+  | { kind: "changed"; deltas: readonly HumanFingerprintDelta[] }
+  | { kind: "unexplained"; diagnostic: HumanFingerprintDiagnostic };
 
 /** live/结束面板的传输能力(docs/feature/reports/library/layout.md「区域框」):是 TTY 且
  *  没有要求朴素输出(`NO_COLOR`)时才画框——`io.env` 而不是直接读 `process.env`,保持
@@ -902,15 +938,7 @@ export interface HumanDryPlanRow {
   dispatch?: readonly {
     reason: string;
     attempts?: readonly number[];
-    comparison?: {
-      kind: "changed";
-      deltas: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
-    } | {
-      kind: "unexplained";
-      reason: "manifest-missing" | "fingerprint-version-changed" | "legacy-untracked-input" | "fingerprint-invariant-violation";
-      fromVersion?: number;
-      toVersion?: number;
-    };
+    comparison?: HumanFingerprintComparison;
     blockers?: readonly { code: string; reason: string }[];
   }[];
   /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
@@ -920,15 +948,7 @@ export interface HumanDryPlanRow {
     verdict: "passed" | "failed" | "errored" | "skipped";
     acceptance: "available" | "legacy-locator";
     evidenceState?: "local" | "borrowed" | "dangling";
-    comparison?: {
-      kind: "changed";
-      deltas: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
-    } | {
-      kind: "unexplained";
-      reason: "manifest-missing" | "fingerprint-version-changed" | "legacy-untracked-input" | "fingerprint-invariant-violation";
-      fromVersion?: number;
-      toVersion?: number;
-    };
+    comparison?: HumanFingerprintComparison;
   }[];
 }
 
@@ -1000,11 +1020,13 @@ function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
       const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.comparison !== undefined);
       const comparison = prior.comparison ?? staleGroup?.comparison;
       const summary = comparison === undefined
-        ? "fingerprint comparison unexplained: manifest-missing"
+        ? "fingerprint comparison explanation unavailable"
         : formatFingerprintComparison(comparison);
       out.push(`${row.experimentId}  ${row.evalId}  stale ${prior.verdict}: ${summary}`);
+      if (comparison !== undefined) out.push(...renderFingerprintComparisonDetails(comparison, "  "));
       const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
       out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
+      if (prior.evidenceState !== "dangling") out.push(`  review: niceeval show ${prior.locator}`);
       out.push(prior.acceptance === "available"
         ? `  accept: niceeval accept ${prior.locator}`
         : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");
@@ -1094,16 +1116,31 @@ function formatDispatchGroup(
 }
 
 function formatFingerprintComparison(comparison: NonNullable<HumanDryPlanRow["dispatch"]>[number]["comparison"]): string {
-  if (comparison === undefined) return "fingerprint comparison unexplained: manifest-missing";
+  if (comparison === undefined) return "fingerprint comparison explanation unavailable";
+  if (comparison.kind === "match") return "fingerprint matches";
   if (comparison.kind === "changed") return comparison.deltas.map(formatDryDelta).join(", ");
-  const versions = comparison.fromVersion === undefined || comparison.toVersion === undefined
-    ? ""
-    : ` (${comparison.fromVersion} → ${comparison.toVersion})`;
-  return `${comparison.reason.replaceAll("-", " ")}${versions}; no input delta`;
+  return comparison.diagnostic.summary;
 }
 
-function formatDryDelta(delta: { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }): string {
-  switch (delta.kind) {
+function formatDryDelta(delta: {
+  selector: string;
+  _tag?: "Added" | "Removed" | "Changed" | "Unknown";
+  kind?: "added" | "removed" | "changed" | "unknown";
+  from?: string;
+  to?: string;
+}): string {
+  const kind = delta.kind ?? (
+    delta._tag === "Added"
+      ? "added"
+      : delta._tag === "Removed"
+        ? "removed"
+        : delta._tag === "Unknown"
+          ? "unknown"
+          : delta._tag === "Changed"
+            ? "changed"
+            : undefined
+  );
+  switch (kind) {
     case "added": return `${delta.selector} added (${delta.to ?? ""})`;
     case "removed": return `${delta.selector} removed (was ${delta.from ?? ""})`;
     case "unknown": return `${delta.selector}`;
@@ -1113,6 +1150,74 @@ function formatDryDelta(delta: { selector: string; kind?: "added" | "removed" | 
         ? `${delta.selector} changed (${delta.from ?? ""} → ${delta.to ?? ""})`
         : delta.selector;
   }
+}
+
+const DIAGNOSTIC_CAUSE_DEPTH_CAP = 4;
+const DIAGNOSTIC_NODE_CAP = 16;
+const DIAGNOSTIC_DELTA_CAP = 8;
+
+function renderFingerprintComparisonDetails(comparison: HumanFingerprintComparison, indent: string): string[] {
+  if (comparison.kind !== "unexplained") return [];
+  const budget = { nodes: 0 };
+  return renderFingerprintDiagnostic(comparison.diagnostic, indent, 0, budget);
+}
+
+function renderFingerprintDiagnostic(
+  diagnostic: Extract<HumanFingerprintComparison, { kind: "unexplained" }>["diagnostic"],
+  indent: string,
+  depth: number,
+  budget: { nodes: number },
+): string[] {
+  if (budget.nodes >= DIAGNOSTIC_NODE_CAP) return [];
+  budget.nodes += 1;
+  const lines = [`${indent}${diagnostic.code}: ${diagnostic.summary}`];
+  for (const fact of diagnostic.facts ?? []) {
+    if ("value" in fact) {
+      lines.push(`${indent}  ${fact.label}: ${formatDiagnosticValue(fact.value)}`);
+    } else {
+      lines.push(`${indent}  ${fact.label}: ${formatDiagnosticValue(fact.from)} → ${formatDiagnosticValue(fact.to)}`);
+    }
+  }
+  if (diagnostic.observedDeltas === undefined) {
+    lines.push(`${indent}  observed inputs: unavailable (comparable manifest inputs were not available)`);
+  } else if (diagnostic.observedDeltas.length === 0) {
+    lines.push(`${indent}  observed inputs: no differences in comparable manifest fields`);
+  } else {
+    lines.push(`${indent}  observed inputs:`);
+    const visible = diagnostic.observedDeltas.slice(0, DIAGNOSTIC_DELTA_CAP);
+    for (const delta of visible) lines.push(`${indent}    ${formatDryDelta(delta)}`);
+    if (diagnostic.observedDeltas.length > visible.length) {
+      lines.push(`${indent}    +${diagnostic.observedDeltas.length - visible.length} more observed deltas`);
+    }
+  }
+  for (const limitation of diagnostic.limitations ?? []) lines.push(`${indent}  limitation: ${limitation}`);
+  const causes = diagnostic.causes ?? [];
+  if (causes.length === 0) return lines;
+  if (depth >= DIAGNOSTIC_CAUSE_DEPTH_CAP) {
+    lines.push(`${indent}  +${causes.reduce((count, cause) => count + diagnosticNodeCount(cause), 0)} more diagnostic nodes suppressed`);
+    return lines;
+  }
+  for (let index = 0; index < causes.length; index++) {
+    const cause = causes[index];
+    if (cause === undefined) continue;
+    if (budget.nodes >= DIAGNOSTIC_NODE_CAP) {
+      const remaining = causes.slice(index).reduce((count, rest) => count + diagnosticNodeCount(rest), 0);
+      lines.push(`${indent}  +${remaining} more diagnostic nodes suppressed`);
+      break;
+    }
+    lines.push(`${indent}  cause:`);
+    lines.push(...renderFingerprintDiagnostic(cause, `${indent}    `, depth + 1, budget));
+  }
+  return lines;
+}
+
+function diagnosticNodeCount(diagnostic: Extract<HumanFingerprintComparison, { kind: "unexplained" }>["diagnostic"]): number {
+  return 1 + (diagnostic.causes ?? []).reduce((count, cause) => count + diagnosticNodeCount(cause), 0);
+}
+
+function formatDiagnosticValue(value: JsonValue): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value) ?? String(value);
 }
 
 /** `${n} ${unit}` 的单复数投影;zh 的 singular/plural key 值相同(中文不做语法数变化),

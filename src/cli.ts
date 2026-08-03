@@ -18,7 +18,7 @@ import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
-import type { FingerprintComparison, FingerprintDelta } from "./runner/manifest.ts";
+import type { FingerprintComparison, FingerprintDelta, FingerprintDiagnostic } from "./runner/manifest.ts";
 import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
@@ -54,6 +54,8 @@ import {
   reportActivity,
   type JsonPlanRow,
   type JsonPlanDelta,
+  type JsonPlanDiagnostic,
+  type JsonPlanDiagnosticFact,
   type JsonPlanFingerprintComparison,
 } from "./runner/feedback/index.ts";
 import {
@@ -542,7 +544,28 @@ function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
   }
 }
 
+function jsonPlanDiagnostic(diagnostic: FingerprintDiagnostic): JsonPlanDiagnostic {
+  const facts = diagnostic.facts?.map((fact): JsonPlanDiagnosticFact =>
+    "value" in fact
+      ? { label: fact.label, value: fact.value }
+      : { label: fact.label, from: fact.from, to: fact.to },
+  );
+  return {
+    code: diagnostic.code,
+    summary: diagnostic.summary,
+    ...(facts === undefined ? {} : { facts }),
+    ...(diagnostic.observedDeltas === undefined
+      ? {}
+      : { observedDeltas: diagnostic.observedDeltas.map(jsonPlanDelta) }),
+    ...(diagnostic.limitations === undefined ? {} : { limitations: [...diagnostic.limitations] }),
+    ...(diagnostic.causes === undefined ? {} : { causes: diagnostic.causes.map(jsonPlanDiagnostic) }),
+  };
+}
+
 function jsonPlanComparison(comparison: FingerprintComparison): JsonPlanFingerprintComparison {
+  if (comparison.kind === "match") {
+    throw new Error("A matching fingerprint has no plan comparison projection.");
+  }
   if (comparison.kind === "changed") {
     const deltas = comparison.deltas.map(jsonPlanDelta);
     const [first, ...rest] = deltas;
@@ -551,9 +574,7 @@ function jsonPlanComparison(comparison: FingerprintComparison): JsonPlanFingerpr
   }
   return {
     kind: "unexplained",
-    reason: comparison.reason,
-    ...(comparison.fromVersion === undefined ? {} : { fromVersion: comparison.fromVersion }),
-    ...(comparison.toVersion === undefined ? {} : { toVersion: comparison.toVersion }),
+    diagnostic: jsonPlanDiagnostic(comparison.diagnostic),
   };
 }
 
@@ -1429,7 +1450,9 @@ async function main(): Promise<void> {
       experimentId: row.experimentId,
       evalId: row.evalId,
       reused: row.reused,
-      ...(row.prior !== undefined ? { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) } : {}),
+      ...(row.prior !== undefined
+        ? { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) }
+        : {}),
       ...(lockedFlags[i] ? { locked: true } : {}),
       ...(row.dispatch.length > 0
         ? {

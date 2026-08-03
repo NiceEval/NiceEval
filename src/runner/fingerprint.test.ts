@@ -187,6 +187,18 @@ describe("fingerprint manifest comparison", () => {
     });
   });
 
+  it("相等指纹产出显式 match 决策", () => {
+    const manifest: EvalManifest = {
+      algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+      coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+      config: {},
+      source: {},
+      data: {},
+    };
+
+    expect(compareFingerprints("same", "same", manifest, manifest)).toEqual({ kind: "match" });
+  });
+
   it("manifestDeltas 为空但 fingerprint 不同时产出 unexplained", () => {
     const manifest: EvalManifest = {
       algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
@@ -196,13 +208,16 @@ describe("fingerprint manifest comparison", () => {
       data: {},
     };
 
-    expect(compareFingerprints("old", "new", manifest, manifest)).toEqual({
+    expect(compareFingerprints("old", "new", manifest, manifest)).toMatchObject({
       kind: "unexplained",
-      reason: "fingerprint-invariant-violation",
+      diagnostic: {
+        code: "fingerprint-invariant-violation",
+        observedDeltas: [],
+      },
     });
   });
 
-  it("版本不同时产出闭集的 fingerprint-version-changed reason", () => {
+  it("版本不同时产出开放 diagnostic 与版本 facts", () => {
     const current: EvalManifest = {
       algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
       coverageVersion: FINGERPRINT_COVERAGE_VERSION,
@@ -211,12 +226,42 @@ describe("fingerprint manifest comparison", () => {
       data: {},
     };
 
-    expect(compareFingerprints("old", "new", { ...current, algorithmVersion: 0, coverageVersion: 0 }, current)).toEqual({
+    expect(compareFingerprints("old", "new", { ...current, algorithmVersion: 0, coverageVersion: 0 }, current)).toMatchObject({
       kind: "unexplained",
-      reason: "fingerprint-version-changed",
-      fromVersion: 0,
-      toVersion: FINGERPRINT_ALGORITHM_VERSION,
+      diagnostic: {
+        code: "fingerprint-version-changed",
+        facts: [
+          { label: "algorithm", from: 0, to: FINGERPRINT_ALGORITHM_VERSION },
+          { label: "coverage", from: 0, to: FINGERPRINT_COVERAGE_VERSION },
+        ],
+        observedDeltas: [],
+      },
     });
+  });
+
+  it("版本变化且清单同时有具名输入差异时保留 observedDeltas", () => {
+    const historical: EvalManifest = {
+      algorithmVersion: 0,
+      coverageVersion: 0,
+      config: { model: "old" },
+      source: { "eval.ts": "a".repeat(64) },
+      data: {},
+    };
+    const current: EvalManifest = {
+      algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+      coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+      config: { model: "new" },
+      source: { "eval.ts": "b".repeat(64) },
+      data: {},
+    };
+
+    const comparison = compareFingerprints("old", "new", historical, current);
+    expect(comparison.kind).toBe("unexplained");
+    if (comparison.kind !== "unexplained") throw new Error("expected an unexplained comparison");
+    expect(comparison.diagnostic.observedDeltas).toEqual([
+      { _tag: "Changed", selector: "config:model", from: "old", to: "new" },
+      { _tag: "Changed", selector: "source:eval.ts", from: "aaaaaaaaaaaa", to: "bbbbbbbbbbbb" },
+    ]);
   });
 });
 
@@ -782,12 +827,21 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
 
     const dry = await planCarry(evals, [run], [prior], undefined, {});
     expect(dry.availableDeltas.map((d) => d.selector)).toEqual(["config:judge.model", "opaque:no-manifest"]);
-    expect(dry.dispatchByKey.get("exp|e")).toEqual([
+    expect(dry.dispatchByKey.get("exp|e")).toMatchObject([
       {
         gate: "fingerprint",
         reason: "stale",
         attempts: [0],
-        comparison: { kind: "unexplained", reason: "manifest-missing" },
+        comparison: {
+          kind: "unexplained",
+          diagnostic: {
+            code: "manifest-missing",
+            observedDeltas: [
+              { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
+              { _tag: "Unknown", selector: "opaque:no-manifest" },
+            ],
+          },
+        },
       },
     ]);
 
@@ -917,14 +971,20 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     const plan = await planCarry(evals, [run], priorResults);
 
     expect([...(plan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
-    expect(plan.dispatchByKey.get("exp|e")).toEqual([
+    expect(plan.dispatchByKey.get("exp|e")).toMatchObject([
       { gate: "terminal", reason: "errored", attempts: [1] },
       // 这条 fixture 没有历史清单(手写的落盘),差异如实算不出。
       {
         gate: "fingerprint",
         reason: "stale",
         attempts: [2],
-        comparison: { kind: "unexplained", reason: "manifest-missing" },
+        comparison: {
+          kind: "unexplained",
+          diagnostic: {
+            code: "manifest-missing",
+            observedDeltas: [{ _tag: "Unknown", selector: "opaque:no-manifest" }],
+          },
+        },
       },
       { gate: "missing", reason: "new", attempts: [3] },
     ]);
@@ -1024,16 +1084,17 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
     expect(plan.migratedFromByResult?.get(prior)).toBeUndefined();
-    expect(plan.dispatchByKey.get("exp|e")).toEqual([
+    expect(plan.dispatchByKey.get("exp|e")).toMatchObject([
       {
         gate: "fingerprint",
         reason: "stale",
         attempts: [0],
         comparison: {
           kind: "unexplained",
-          reason: "fingerprint-version-changed",
-          fromVersion: 0,
-          toVersion: FINGERPRINT_ALGORITHM_VERSION,
+          diagnostic: {
+            code: "fingerprint-version-changed",
+            observedDeltas: [],
+          },
         },
       },
     ]);

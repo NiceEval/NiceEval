@@ -124,6 +124,14 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
     两面合起来才证明排序只承诺到输出层。
 - **反馈协调器的事件队列纪律**：`FeedbackCoordinator` 对每一类 durable 事件都按 clear→append→redraw 的原子顺序转发给当前活跃 renderer（不止某一种事件；renderer 方法即便是异步的也不交错）；同一去重 key 的诊断在 `RunFeedbackState.diagnostics` 里合并计数，但仍逐次转发给 renderer——是否折叠展示是 renderer 自己的决定，不是 coordinator 的职责；renderer 在某次 durable 事件上抛错不会中断队列，后续事件仍按完整顺序处理；`activity()` 不写入 `diagnostics`/`failures`；tick 定时器按注入 clock 周期触发、`elapsedMs` 相对 `start()` 计算，`stopDynamic()` 之后立即失效；`finish()` 的收尾顺序恒为停 tick → 清 dashboard → summary → saved → close，之后拒绝任何新输出；`start()` 只能调用一次，`stopDynamic()`/`diagnostic()` 在 `start()` 之前调用抛错；`sink.ts` 的 `reportXxx()` 系列只在 coordinator 活跃期间（`start()` 之后、`finish()` 之前）转发给它，之外退回 bootstrap 出口。
   观察面是「renderer 的哪个方法按什么顺序、被调用几次」，不是它具体写出的字节。
+- **指纹门的开放诊断与单源差异**：`compareFingerprints` 是比较结果的唯一 owner。
+
+  - 同版本具名变化产出 `changed`；不能证明时产出带开放 `code` 的 `unexplained`。
+  - `observedDeltas` 三态区分不可比较、可比较字段无观察差异与具名观察差异。版本迁移同时保留 algorithm / coverage 事实，空数组不得放宽携带。
+  - `planCarry`、human plan 与 exp plan JSON 消费同一比较对象，不重新相减 manifest。
+  - 未知 code 与递归 cause 由通用 renderer 照实投影。测试须证明新增 producer 不要求 renderer 加分支。
+  - 机器计划文档输出 schema v2；运行事件流与 Record schema 不随之升级。
+  - 接受审计只消费完整 delta / opaque selector，不把 summary、limitation 或 cause 当授权项。
 - **attempt 级诊断的对外词法与阶段标注（`runner/attempt.ts` 的 `recordDiagnostic` + `runner/feedback/human.ts` 的诊断行）**：经 `ScopedFeedback.diagnostic` 报上来的一条诊断进反馈流时，`code` 恒是作者给的干净字面量——作者省略 `dedupeKey` 时折叠 key 里编进的 attempt 身份不得泄漏成 `code`（`// bug: memory/diagnostic-key-doubles-as-json-warning-code.md`）；`phase` 恒是运行器此刻所处的 `LifecyclePhase`，压过作者 `data` 里的同名字段（作者不能冒充阶段，与 `ScopedFeedback` 不收 phase 参数同一条纪律），`data` 其余字段原样保留。
   人读诊断行的标题是「阶段标签 · `code`」，阶段标签复用失败行同一个投影；没有 phase 的运行级诊断（止损闸、锁接管、budget）标题只有 `code`，不留空的分隔符。
   区分力要覆盖有/无 `dedupeKey`、有/无作者 `data`、`data` 里带一个冒充 `phase` 三面。

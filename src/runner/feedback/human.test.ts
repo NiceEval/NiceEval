@@ -997,6 +997,107 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
   });
 
+  it("unexplained 用开放 code 与递归 cause 通用投影,并区分 observedDeltas 三态", () => {
+    const deltas = Array.from({ length: 10 }, (_, index) => ({
+      selector: `data:field-${index}`,
+      kind: "changed" as const,
+      from: "old",
+      to: "new",
+    }));
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "future-diagnostic",
+        dispatch: [{
+          reason: "stale",
+          comparison: {
+            kind: "unexplained",
+            diagnostic: {
+              code: "producer.future-code",
+              summary: "future producer needs review",
+              facts: [{ label: "mode", value: "opaque" }],
+              observedDeltas: deltas,
+              causes: [
+                { code: "cause.future", summary: "nested open cause" },
+                { code: "cause.empty", summary: "comparable but equal", observedDeltas: [] },
+              ],
+            },
+          },
+        }],
+        prior: [{
+          locator: "@1A2B3C4D5E6F",
+          verdict: "passed",
+          acceptance: "available",
+          evidenceState: "local",
+        }],
+      }],
+    });
+
+    expect(text).toContain("stale passed: future producer needs review");
+    expect(text).toContain("producer.future-code: future producer needs review");
+    expect(text).toContain("mode: opaque");
+    expect(text).toContain("data:field-0 changed (old → new)");
+    expect(text).toContain("data:field-7 changed (old → new)");
+    expect(text).not.toContain("data:field-8 changed");
+    expect(text).toContain("+2 more observed deltas");
+    expect(text).toContain("cause.future: nested open cause");
+    expect(text).toContain("observed inputs: unavailable");
+    expect(text).toContain("cause.empty: comparable but equal");
+    expect(text).toContain("observed inputs: no differences in comparable manifest fields");
+    expect(text).not.toContain("no input delta");
+    expect(text).toContain("review: niceeval show @1A2B3C4D5E6F");
+    expect(text).toContain("accept: niceeval accept @1A2B3C4D5E6F");
+  });
+
+  it("diagnostic cause 展示最多四层且总节点不超过十六个", () => {
+    type DiagnosticFixture = {
+      code: string;
+      summary: string;
+      causes?: readonly DiagnosticFixture[];
+    };
+    const chain = (level: number): DiagnosticFixture => ({
+      code: `cause.level.${level}`,
+      summary: `level ${level}`,
+      ...(level > 0 ? { causes: [chain(level - 1)] } : {}),
+    });
+    const manyCauses: DiagnosticFixture[] = Array.from({ length: 20 }, (_, index) => ({
+      code: `cause.broad.${index}`,
+      summary: `broad ${index}`,
+    }));
+
+    const render = (diagnostic: DiagnosticFixture): string => renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "budgeted-diagnostic",
+        dispatch: [{ reason: "stale", comparison: { kind: "unexplained", diagnostic } }],
+        prior: [{
+          locator: "@1A2B3C4D5E6F",
+          verdict: "passed",
+          acceptance: "available",
+          evidenceState: "local",
+        }],
+      }],
+    });
+
+    const depthText = render({ code: "future.root", summary: "root", causes: [chain(6)] });
+    expect(depthText).toContain("cause.level.3: level 3");
+    expect(depthText).not.toContain("cause.level.2: level 2");
+    expect(depthText).toContain("+3 more diagnostic nodes suppressed");
+
+    const nodeText = render({ code: "future.root", summary: "root", causes: manyCauses });
+    expect(nodeText).toContain("cause.broad.14: broad 14");
+    expect(nodeText).not.toContain("cause.broad.15: broad 15");
+    expect(nodeText).toContain("+5 more diagnostic nodes suppressed");
+  });
+
   it("carry-disabled 行显示 provider blocker 的 code/reason,不退化为 details unavailable 或 accept", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 1,

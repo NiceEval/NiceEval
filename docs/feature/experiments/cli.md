@@ -103,14 +103,27 @@ compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge
 
 差异按历史结果各自展示,不会被聚合成一条会影响多题的授权。历史侧缺 manifest 时如实标 `opaque:no-manifest`。旧落盘若含不符合当前格式的 legacy locator，`--dry` 会显示 `accept: unavailable`，不会输出一个必然失败的命令；重新运行该 eval 后会生成可接受的新 locator。
 
-指纹比较只有三种状态：`match`、带非空 `deltas` 的 `changed`、带稳定原因的 `unexplained`。`unexplained` 原因闭集为 `manifest-missing`、`fingerprint-version-changed`、`legacy-untracked-input` 与 `fingerprint-invariant-violation`。
+指纹比较只有三种决策：`match`、带非空 `deltas` 的 `changed`、带结构化 `diagnostic` 的 `unexplained`。决策是携带逻辑消费的稳定闭集；诊断 `code` 是开放字符串，由发现问题的 owner 生成。human / JSON renderer 通用投影诊断的摘要、事实、已观察差异、限制与递归 cause，不按已知问题列表分支拼文案。
 执行证据是否存在与指纹差异能否解释是两条轴。`prior` 行从记录读取面投影 `evidenceState`，不得因 manifest 缺失而把 execution / diff / timing 说成不可用。
 
 ```text
-compare/codex  memory/task  stale passed: fingerprint version changed (legacy → v2); no input delta
+compare/codex  memory/task  stale passed: current fingerprint cannot be proven equivalent to the prior result
+  algorithm: 0 → 2
+  coverage: 0 → 1
+  observed inputs: no differences in comparable manifest fields
+  limitation: fingerprints produced by different algorithms are not directly comparable
   prior:  @1A1B2C3D4E5F (passed · evidence available)
+  review: niceeval show @1A1B2C3D4E5F
   accept: niceeval accept @1A1B2C3D4E5F
 ```
+
+`observed inputs` 只有在诊断显式携带 `observedDeltas` 时才出现：空数组投影为上例的限定说法，非空数组逐条投影具名差异，字段省略则显示输入差异不可用。它只报告 manifest 的观察结果，不把「没有观察到」写成「输入没有变化」。未知诊断沿同一层级递归展示 `cause`，renderer 不需要认识其 `code`。
+
+人读 renderer 对所有 `FingerprintDiagnostic` 使用同一套布局。矩阵行只显示 `summary`，每条 stale 历史结果的详情块按 `code → facts → observedDeltas → limitations → causes` 展开；cause 递归缩进，数组顺序保持 producer 给出的因果顺序。renderer 不按 `code` 选择模板。终端详情最多展开 4 层 cause、16 个诊断节点与每组前 8 条 observed delta，超出时显示剩余数量；`--dry --json` 保留完整有界结构，不套终端展示预算。
+
+诊断 producer 必须给出有限、无环的 cause 树。单条 `summary`、fact label 和 limitation 都是已经脱敏的有界文本；fact value 只能是 `JsonValue`。指纹 owner 只可从 manifest 安全摘要和版本元数据构造这些字段，不能把凭据、文件正文、Error 对象或 stack 放进去。
+
+`review` / `accept` 不是 diagnostic 自带动作。CLI 根据 stale 条目的 locator 与 evidence / acceptance 资格统一生成，避免底层比较器拼命令。证据可读时先给 `review: niceeval show @…`；locator 可接受时再给 `accept: niceeval accept @…`，旧 locator 继续显示 unavailable。
 
 ### `niceeval accept @<locator>...`
 
@@ -892,7 +905,8 @@ type ExpEvent =
 ```typescript
 interface ExpPlanDocument {
   format: "niceeval.exp-plan";
-  schemaVersion: number;
+  /** 当前为 2；v2 把 unexplained.reason/fromVersion/toVersion 换成开放 diagnostic。 */
+  schemaVersion: 2;
   /** matrix 行数 × attempts。 */
   total: number;
   evals: number;
@@ -908,6 +922,13 @@ interface ExpPlanRow {
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
+  /** stale 历史条目的机器可行动身份；没有 stale 条目时省略。 */
+  prior?: Array<{
+    locator: string;
+    verdict: "passed" | "failed" | "errored" | "skipped";
+    acceptance: "available" | "legacy-locator";
+    evidenceState: "local" | "borrowed" | "dangling";
+  }>;
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(锁语义见 Architecture);省略等于 false。`--dry` 只读锁目录,不取锁、不等待。 */
   locked?: boolean;
   /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与五道门同名,缺历史序号记 "missing"(`new` 与 `incompatible` 同属这一档,机器面不因人读词分家)。 */
@@ -934,14 +955,27 @@ type ExpPlanFingerprintComparison =
   | { kind: "changed"; deltas: [ExpPlanDelta, ...ExpPlanDelta[]] }
   | {
       kind: "unexplained";
-      reason:
-        | "manifest-missing"
-        | "fingerprint-version-changed"
-        | "legacy-untracked-input"
-        | "fingerprint-invariant-violation";
-      fromVersion?: number;
-      toVersion?: number;
+      diagnostic: ExpPlanDiagnostic;
     };
+
+interface ExpPlanDiagnostic {
+  /** 产生者命名空间内的开放 code；消费者不得按当前已知值做穷尽解析。 */
+  code: string;
+  /** 不依赖 code 才能读懂的单句摘要。 */
+  summary: string;
+  /** 有序、有界的现场事实；transition 表示一次转换，value 表示单值。 */
+  facts?: ExpPlanDiagnosticFact[];
+  /** 省略=不可比较，[]=可比较字段未观察到差异，非空=观察到的具名差异。 */
+  observedDeltas?: ExpPlanDelta[];
+  /** 为什么现有事实仍不足以证明可携带。 */
+  limitations?: string[];
+  /** 更底层 owner 产出的原因链；renderer 递归投影，不枚举 code。 */
+  causes?: ExpPlanDiagnostic[];
+}
+
+type ExpPlanDiagnosticFact =
+  | { label: string; value: JsonValue }
+  | { label: string; from: JsonValue; to: JsonValue };
 
 interface ExpPlanCarryBlocker {
   code: string;
@@ -951,11 +985,15 @@ interface ExpPlanCarryBlocker {
 interface ExpPlanDelta {
   /** 指纹差异词表:config:<路径> / source:<路径> / data:<路径> / opaque:no-manifest。 */
   selector: string;
+  /** 明确的差异方向；消费者不得从 from/to 是否存在反推。 */
+  kind: "added" | "removed" | "changed" | "unknown";
   /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
   from?: string;
   to?: string;
 }
 ```
+
+`niceeval.exp-plan` v2 是机器计划文档的破坏性升级；消费者先按顶层 `schemaVersion` 分流，不探测 `reason` 或 `diagnostic` 猜版本。它保留 v1 已有的 `prior` 与 delta `kind`，只替换 unexplained comparison 的诊断形状。它不改变运行事件流和 Record 格式；实现把 exp plan 的 schema 常量与其它 JSON 输出分开，不能为了这一处字段替换误升整个事件流版本。v1 只属于旧 CLI 的输出，新 CLI 不并排输出两套 comparison 形状。
 
 退出码按 `(experiment, eval)` 的最终 verdict 折叠,两种形态同一套——`0` 全部通过且覆盖完整(complete)、`1` 有 failed / errored 或 incomplete 或 required reporter 写失败、`2` 未捕获崩溃、`130` 中断;语义单源在 [Runner · 退出码](../../runner.md#退出码)。
 

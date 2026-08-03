@@ -89,9 +89,26 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 payload / 编码口径，`coverageVersion` 标识 manifest 覆盖的输入集合；旧记录未声明时按 legacy 版本 `0` 读取。
 任何进入 fingerprint 的输入都必须有同源 manifest 投影。当前版本内出现 fingerprint 不同、manifest 相同，属于 `fingerprint-invariant-violation`，不能退化成没有原因的 stale。
 
-跨版本先查显式迁移注册表。迁移只返回三种结果：已证明等价、具名差异、无法证明。
-已证明等价时结果自动携带，并在新条目记 `migratedFrom`；具名差异照常进入指纹门；无法证明时进入 `unexplained` 比较，交给人检查证据后接受或重跑。
+跨版本先查显式迁移注册表。迁移只返回三种决策：已证明等价、具名差异、无法证明。
+已证明等价时结果自动携带，并在新条目记 `migratedFrom`；具名差异照常进入指纹门；无法证明时阻断携带，交给人检查证据后接受或重跑。
 迁移不能只凭 manifest 相同猜等价；它必须点名 from/to 版本与被移除、改名或重编码的输入。
+
+携带决策与诊断解释分开建模。指纹门只维护 `match`、`changed`、`unexplained` 三种稳定决策；`unexplained` 携带比较 owner 给出的 `FingerprintDiagnostic`，不由 Runner 或 renderer 枚举可能原因。诊断 `code` 是可扩展的命名空间字符串，并携带自解释摘要、有序事实、已观察到的 manifest 差异、比较限制与递归 cause。新增一种不可证明情形时，owner 只增加一条诊断构造，不修改携带状态机或通用 renderer。
+
+`observedDeltas` 的存在性本身有语义：省略表示相应输入面不可比较，空数组表示完成了可比较字段的相减但没有观察到差异，非空数组表示观察到具体差异。三者都不等于跨版本等价证明。诊断不得把空数组渲染成 `no input delta`；人读面只能说「可比较的 manifest 字段未观察到差异」，同时保留「等价性未证明」这一阻断原因。
+
+诊断事实只保存规划期已经掌握的有界、安全摘要。凭据、源码正文、数据文件正文和未经脱敏的异常对象不进入诊断；需要查看执行证据时只给 locator 与下钻动作。
+
+`compareFingerprints` 是诊断的唯一 owner。它按下面的顺序形成结果：
+
+1. 指纹相等时返回 `match`，不制造诊断。
+2. 同版本且 manifest 有差异时返回 `changed`，`deltas` 是携带门与接受审计共同消费的权威差异。
+3. 不能证明时返回 `unexplained`。owner 同刻相减仍可比较的 manifest 字段，把结果放进 `diagnostic.observedDeltas`；不能比较的面写进 `limitations` 或递归 cause。
+4. `planCarry` 只消费比较结果，不再次计算另一份解释。已知迁移仍可把 `unexplained` 提升为已证明等价；没有迁移时，诊断再详细也不能放宽携带。
+
+`FingerprintDiagnostic` 不复用落盘的 `DiagnosticRecord`。后者是 Attempt / Run 已发生事件的 observation，带 level、origin、dedupe 与持久化约束；前者是一次规划里的比较证明，生命周期只到本次 `--dry` 或调度计划结束。它不进入 `run.json` / `result.json`，因此不改变 Record `schemaVersion`。
+
+`niceeval accept` 使用同一比较结果里的完整 `observedDeltas` 写审计；诊断摘要、限制和 cause 只解释为什么自动携带被阻断，不成为授权 selector，也不改变反事实重算规则。`observedDeltas` 省略时，接受动作只能按原有 opaque / locator 资格处理，不能把「无法比较」当成空差异。
 
 下面三块把每一行改动的后果标在原地。
 设定:这个实验选中 36 条 eval,上一轮全绿。

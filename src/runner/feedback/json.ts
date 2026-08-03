@@ -41,6 +41,7 @@ import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.t
 const EXP_STREAM_FORMAT = "niceeval.exp";
 const EXP_PLAN_FORMAT = "niceeval.exp-plan";
 const SCHEMA_VERSION = 1;
+const EXP_PLAN_SCHEMA_VERSION = 2;
 
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
  *  没有这些永久事件,才追加一条 progress 心跳」——两者合并前分别是 30s/60s,统一取 30s)。 */
@@ -622,13 +623,23 @@ export interface JsonPlanFingerprintComparisonChanged {
 
 export interface JsonPlanFingerprintComparisonUnexplained {
   kind: "unexplained";
-  reason:
-    | "manifest-missing"
-    | "fingerprint-version-changed"
-    | "legacy-untracked-input"
-    | "fingerprint-invariant-violation";
-  fromVersion?: number;
-  toVersion?: number;
+  diagnostic: JsonPlanDiagnostic;
+}
+
+export type JsonPlanDiagnosticFact =
+  | { label: string; value: JsonValue }
+  | { label: string; from: JsonValue; to: JsonValue };
+
+export interface JsonPlanDiagnostic {
+  /** producer 命名空间内的开放 code；消费者不得按当前已知值穷举。 */
+  code: string;
+  /** 不依赖 code 才能读懂的单句摘要。 */
+  summary: string;
+  facts?: JsonPlanDiagnosticFact[];
+  /** 省略=不可比较，[]=可比较字段未观察到差异，非空=观察到具名差异。 */
+  observedDeltas?: JsonPlanDelta[];
+  limitations?: string[];
+  causes?: JsonPlanDiagnostic[];
 }
 
 export type JsonPlanFingerprintComparison =
@@ -694,7 +705,7 @@ export function renderJsonPlanDocument(input: JsonPlanInput): string {
   const reused = input.matrix.reduce((n, row) => n + (row.reused ? 1 : 0), 0);
   return `${JSON.stringify({
     format: EXP_PLAN_FORMAT,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: EXP_PLAN_SCHEMA_VERSION,
     total: input.total,
     evals: input.evals,
     configs: input.configs,

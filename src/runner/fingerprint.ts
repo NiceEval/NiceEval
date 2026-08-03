@@ -23,7 +23,6 @@ import {
 } from "./sandbox-selection.ts";
 import {
   compareFingerprints,
-  manifestDeltas,
   OPAQUE_SELECTOR,
   type EvalManifest,
   type FingerprintComparison,
@@ -467,12 +466,12 @@ export function carriableAttempts(
   return out;
 }
 
-/** 只认旧版本、等价 manifest 与 plan opaque marker 三项同时成立的已知迁移路径。 */
+/** 只认旧版本、等价比较结果与 plan opaque marker 三项同时成立的已知迁移路径。 */
 function knownOpaqueCarryEpochMigration(
   fingerprint: string | undefined,
   historical: EvalManifest | undefined,
   current: EvalManifest,
-  historicalConfig?: globalThis.Record<string, JsonValue>,
+  comparison: FingerprintComparison,
 ): FingerprintMigration | undefined {
   if (fingerprint === undefined || fingerprint.length === 0 || historical === undefined) return undefined;
   if (historical.algorithmVersion !== 0 || historical.coverageVersion !== 0) return undefined;
@@ -480,7 +479,12 @@ function knownOpaqueCarryEpochMigration(
     current.algorithmVersion !== FINGERPRINT_ALGORITHM_VERSION ||
     current.coverageVersion !== FINGERPRINT_COVERAGE_VERSION
   ) return undefined;
-  if (manifestDeltas(historical, current, historicalConfig).length > 0) return undefined;
+  if (comparison.kind !== "unexplained") return undefined;
+  if (
+    comparison.diagnostic.code !== "legacy-untracked-input" &&
+    comparison.diagnostic.code !== "fingerprint-version-changed"
+  ) return undefined;
+  if (comparison.diagnostic.observedDeltas === undefined || comparison.diagnostic.observedDeltas.length > 0) return undefined;
   if (!containsOpaquePlanMarker(current.plan)) return undefined;
   return Object.freeze({
     kind: "opaque-carry-epoch" as const,
@@ -632,12 +636,12 @@ async function planCarryPrepared(
         current,
         historicalConfig,
       );
-      if (comparison === undefined) continue;
+      if (comparison.kind === "match") continue;
       const migration = knownOpaqueCarryEpochMigration(
         prior.fingerprint,
         historical,
         current,
-        historicalConfig,
+        comparison,
       );
       if (migration !== undefined) {
         const acceptableFingerprints = acceptable.get(key);
@@ -651,7 +655,7 @@ async function planCarryPrepared(
       comparisonByResult.set(prior, comparison);
       const deltas = comparison.kind === "changed"
         ? comparison.deltas
-        : manifestDeltas(historical, current, historicalConfig);
+        : comparison.diagnostic.observedDeltas ?? [];
       if (deltas.length === 0) continue;
       deltasByResult.set(prior, deltas);
       for (const delta of deltas) {
@@ -799,11 +803,14 @@ async function planCarryPrepared(
         );
       }
       const blocked = decision;
-      const groupKey = `${blocked.gate}|${blocked.reason}`;
+      const comparison = prior !== undefined && blocked.gate === "fingerprint"
+        ? comparisonByResult.get(prior)
+        : undefined;
+      const comparisonKey = comparison === undefined ? "" : JSON.stringify(comparison);
+      const groupKey = `${blocked.gate}|${blocked.reason}|${comparisonKey}`;
       let group = indexOfGroup.get(groupKey);
       if (group === undefined) {
         group = { gate: blocked.gate, reason: blocked.reason, attempts: [] };
-        const comparison = prior !== undefined && blocked.gate === "fingerprint" ? comparisonByResult.get(prior) : undefined;
         if (comparison !== undefined) group.comparison = comparison;
         indexOfGroup.set(groupKey, group);
         groups.push(group);
@@ -881,6 +888,7 @@ function readonlySetSnapshot<Value>(values: Iterable<Value>): ReadonlySet<Value>
 }
 
 function freezeFingerprintComparison(comparison: FingerprintComparison): FingerprintComparison {
+  if (comparison.kind === "match") return Object.freeze({ kind: "match" as const });
   if (comparison.kind === "changed") {
     const first = comparison.deltas[0];
     if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
@@ -890,7 +898,42 @@ function freezeFingerprintComparison(comparison: FingerprintComparison): Fingerp
       deltas: Object.freeze(deltas),
     });
   }
-  return Object.freeze({ ...comparison });
+  return Object.freeze({
+    kind: "unexplained" as const,
+    diagnostic: Object.freeze({
+      ...comparison.diagnostic,
+      ...(comparison.diagnostic.facts === undefined
+        ? {}
+        : { facts: Object.freeze(comparison.diagnostic.facts.map((fact) => Object.freeze({ ...fact }))) }),
+      ...(comparison.diagnostic.observedDeltas === undefined
+        ? {}
+        : { observedDeltas: Object.freeze(comparison.diagnostic.observedDeltas.map((delta) => Object.freeze({ ...delta }))) }),
+      ...(comparison.diagnostic.limitations === undefined
+        ? {}
+        : { limitations: Object.freeze([...comparison.diagnostic.limitations]) }),
+      ...(comparison.diagnostic.causes === undefined
+        ? {}
+        : { causes: Object.freeze(comparison.diagnostic.causes.map(freezeDiagnostic)) }),
+    }),
+  });
+}
+
+function freezeDiagnostic(diagnostic: NonNullable<Extract<FingerprintComparison, { kind: "unexplained" }>["diagnostic"]>): typeof diagnostic {
+  return Object.freeze({
+    ...diagnostic,
+    ...(diagnostic.facts === undefined
+      ? {}
+      : { facts: Object.freeze(diagnostic.facts.map((fact) => Object.freeze({ ...fact }))) }),
+    ...(diagnostic.observedDeltas === undefined
+      ? {}
+      : { observedDeltas: Object.freeze(diagnostic.observedDeltas.map((delta) => Object.freeze({ ...delta }))) }),
+    ...(diagnostic.limitations === undefined
+      ? {}
+      : { limitations: Object.freeze([...diagnostic.limitations]) }),
+    ...(diagnostic.causes === undefined
+      ? {}
+      : { causes: Object.freeze(diagnostic.causes.map(freezeDiagnostic)) }),
+  });
 }
 
 function hash(value: unknown): string {

@@ -60,6 +60,8 @@ export {
   type JsonPlanRow,
   type JsonPlanDispatch,
   type JsonPlanDelta,
+  type JsonPlanDiagnostic,
+  type JsonPlanDiagnosticFact,
   type JsonPlanFingerprintComparison,
   type JsonPlanFingerprintComparisonChanged,
   type JsonPlanFingerprintComparisonUnexplained,

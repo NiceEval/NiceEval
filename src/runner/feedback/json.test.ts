@@ -339,7 +339,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(lines).toHaveLength(1);
     const doc = JSON.parse(lines[0]!);
     expect(doc.format).toBe("niceeval.exp-plan");
-    expect(typeof doc.schemaVersion).toBe("number");
+    expect(doc.schemaVersion).toBe(2);
     expect(doc.total).toBe(4);
     expect(doc.evals).toBe(1);
     expect(doc.configs).toBe(4);
@@ -455,6 +455,63 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
         comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] },
       }],
     });
+  });
+
+  it("unexplained 完整保留开放 diagnostic、facts、三态 delta 与递归 cause", () => {
+    const doc = JSON.parse(renderJsonPlanDocument({
+      total: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      matrix: [{
+        experimentId: "compare/codex",
+        evalId: "legacy",
+        reused: false,
+        dispatch: [{
+          gate: "fingerprint",
+          attempts: [0],
+          comparison: {
+            kind: "unexplained",
+            diagnostic: {
+              code: "producer.future-code",
+              summary: "equivalence needs review",
+              facts: [{ label: "algorithm", from: 1, to: 2 }, { label: "note", value: { safe: true } }],
+              observedDeltas: [],
+              limitations: ["the evidence is incomplete"],
+              causes: [{
+                code: "nested.unknown",
+                summary: "nested reason",
+                observedDeltas: [{ selector: "source:helper.ts", kind: "changed", from: "old", to: "new" }],
+                causes: [{ code: "cause.without-observed-deltas", summary: "comparison unavailable" }],
+              }],
+            },
+          },
+        }],
+      }],
+    }));
+
+    expect(doc.matrix[0]).toMatchObject({
+      dispatch: [{
+        comparison: {
+          kind: "unexplained",
+          diagnostic: {
+            code: "producer.future-code",
+            summary: "equivalence needs review",
+            facts: [{ label: "algorithm", from: 1, to: 2 }, { label: "note", value: { safe: true } }],
+            observedDeltas: [],
+            limitations: ["the evidence is incomplete"],
+            causes: [{
+              code: "nested.unknown",
+              summary: "nested reason",
+              observedDeltas: [{ selector: "source:helper.ts", kind: "changed", from: "old", to: "new" }],
+              causes: [{ code: "cause.without-observed-deltas", summary: "comparison unavailable" }],
+            }],
+          },
+        },
+      }],
+    });
+
+    expect(doc.matrix[0].dispatch[0].comparison.diagnostic.causes[0].causes[0]).not.toHaveProperty("observedDeltas");
   });
 
   it("reused 是 matrix 逐行 reused 之和(命中数量,不是 attempt 数)", () => {

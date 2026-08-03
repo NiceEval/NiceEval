@@ -17,7 +17,7 @@ import {
   resolvedTimeoutMsForCarry,
 } from "./fingerprint.ts";
 import { configIdentityFromResult, configIdentityPaths } from "./config-identity.ts";
-import { manifestDeltas, type FingerprintDelta } from "./manifest.ts";
+import { compareFingerprints, type FingerprintDelta } from "./manifest.ts";
 import { experimentRunInfo } from "./attempt.ts";
 import { resolveRunTimeout } from "./timeout.ts";
 import {
@@ -289,7 +289,18 @@ export async function prepareAcceptedAttempt(options: AcceptPreparedAttemptOptio
   const historicalConfig = historicalIdentity === undefined
     ? undefined
     : Object.fromEntries(configIdentityPaths(historicalIdentity));
-  const deltas = manifestDeltas(historicalManifest, options.currentManifest, historicalConfig);
+  const comparison = compareFingerprints(
+    oldFingerprint,
+    options.currentFingerprint,
+    historicalManifest,
+    options.currentManifest,
+    historicalConfig,
+  );
+  const deltas = comparison.kind === "match"
+    ? []
+    : comparison.kind === "changed"
+      ? comparison.deltas
+      : comparison.diagnostic.observedDeltas ?? [];
   const differences = deltas.map(acceptedDifferenceOf);
   const acceptedFrom: AcceptedResult = {
     locator: sourceLocator,

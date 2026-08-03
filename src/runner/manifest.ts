@@ -25,22 +25,43 @@ export {
   type RunManifests,
 } from "../record/manifest.ts";
 
-export type FingerprintComparisonReason =
-  | "manifest-missing"
-  | "fingerprint-version-changed"
-  | "legacy-untracked-input"
-  | "fingerprint-invariant-violation";
+export type FingerprintDiagnosticFact =
+  | {
+      readonly label: string;
+      readonly value: JsonValue;
+    }
+  | {
+      readonly label: string;
+      readonly from: JsonValue;
+      readonly to: JsonValue;
+    };
+
+export interface FingerprintDiagnostic {
+  /** producer 命名空间内的开放 code。 */
+  readonly code: string;
+  /** 不依赖 code 才能理解的单句摘要。 */
+  readonly summary: string;
+  /** 已脱敏、有序且有界的事实。 */
+  readonly facts?: readonly FingerprintDiagnosticFact[];
+  /** 省略=不可比较，[]=完成可比较字段相减但无差异，非空=观察到具名差异。 */
+  readonly observedDeltas?: readonly FingerprintDelta[];
+  /** 现有事实仍不足以证明可携带的限制。 */
+  readonly limitations?: readonly string[];
+  /** 更底层 owner 产出的递归原因链。 */
+  readonly causes?: readonly FingerprintDiagnostic[];
+}
 
 export type FingerprintComparison =
+  | {
+      readonly kind: "match";
+    }
   | {
       readonly kind: "changed";
       readonly deltas: readonly [FingerprintDelta, ...FingerprintDelta[]];
     }
   | {
       readonly kind: "unexplained";
-      readonly reason: FingerprintComparisonReason;
-      readonly fromVersion?: number;
-      readonly toVersion?: number;
+      readonly diagnostic: FingerprintDiagnostic;
     };
 
 /** 历史条目缺清单时源码面与数据面的合并差异:算不出就如实算不出,不按「没差异」放过、也不猜。 */
@@ -105,9 +126,9 @@ export function manifestDeltas(
 }
 
 /**
- * 指纹比较的唯一投影：相等时返回 undefined；不等时只能是带非空差异的 changed，
- * 或带闭集原因的 unexplained。人读与 JSON 读面都消费这个结果，不能再把空差异降成
- * 没有语义的 details unavailable。
+ * 指纹比较与诊断的唯一 owner：相等显式返回 `match`；不等时只能是带非空差异的
+ * `changed`，或携带开放诊断的 `unexplained`。人读、JSON、carry 与 accept 都消费这个
+ * 结果，不能再各自相减或把空差异降成没有语义的 fallback 文案。
  */
 export function compareFingerprints(
   historicalFingerprint: string | undefined,
@@ -115,21 +136,45 @@ export function compareFingerprints(
   historical: EvalManifest | undefined,
   current: EvalManifest,
   historicalConfig?: globalThis.Record<string, JsonValue>,
-): FingerprintComparison | undefined {
-  if (historicalFingerprint === currentFingerprint) return undefined;
+): FingerprintComparison {
+  if (historicalFingerprint === currentFingerprint) return Object.freeze({ kind: "match" as const });
   if (historical === undefined) {
-    return Object.freeze({ kind: "unexplained", reason: "manifest-missing" as const });
+    return unexplainedDiagnostic(
+      "manifest-missing",
+      "The prior result has no manifest, so fingerprint equivalence cannot be proven.",
+      manifestDeltas(historical, current, historicalConfig),
+      ["The prior source and data inputs cannot be compared without its manifest."],
+    );
   }
 
   if (historical.algorithmVersion !== current.algorithmVersion || historical.coverageVersion !== current.coverageVersion) {
     const algorithmChanged = historical.algorithmVersion !== current.algorithmVersion;
     const legacyCoverage = historical.coverageVersion === 0 && current.coverageVersion > 0;
-    return Object.freeze({
-      kind: "unexplained" as const,
-      reason: legacyCoverage && !algorithmChanged ? "legacy-untracked-input" as const : "fingerprint-version-changed" as const,
-      fromVersion: algorithmChanged ? historical.algorithmVersion : historical.coverageVersion,
-      toVersion: algorithmChanged ? current.algorithmVersion : current.coverageVersion,
-    });
+    const facts: FingerprintDiagnosticFact[] = [];
+    const limitations: string[] = [];
+    if (algorithmChanged) {
+      facts.push({
+        label: "algorithm",
+        from: historical.algorithmVersion,
+        to: current.algorithmVersion,
+      });
+      limitations.push("Fingerprints produced by different algorithms are not directly comparable.");
+    }
+    if (historical.coverageVersion !== current.coverageVersion) {
+      facts.push({
+        label: "coverage",
+        from: historical.coverageVersion,
+        to: current.coverageVersion,
+      });
+      limitations.push("The manifest coverage changed, so equivalence is not proven.");
+    }
+    return unexplainedDiagnostic(
+      legacyCoverage && !algorithmChanged ? "legacy-untracked-input" : "fingerprint-version-changed",
+      "The current fingerprint cannot be proven equivalent to the prior result.",
+      manifestDeltas(historical, current, historicalConfig),
+      limitations,
+      facts,
+    );
   }
 
   const deltas = manifestDeltas(historical, current, historicalConfig);
@@ -142,7 +187,75 @@ export function compareFingerprints(
       deltas: Object.freeze(changedDeltas),
     });
   }
-  return Object.freeze({ kind: "unexplained" as const, reason: "fingerprint-invariant-violation" });
+  return unexplainedDiagnostic(
+    "fingerprint-invariant-violation",
+    "The fingerprints differ even though comparable manifest fields show no differences.",
+    [],
+    ["The fingerprint changed without a corresponding comparable manifest delta."],
+  );
+}
+
+function unexplainedDiagnostic(
+  code: string,
+  summary: string,
+  observedDeltas: readonly FingerprintDelta[] | undefined,
+  limitations: readonly string[] | undefined,
+  facts: readonly FingerprintDiagnosticFact[] = [],
+  causes: readonly FingerprintDiagnostic[] = [],
+): FingerprintComparison {
+  const diagnostic: FingerprintDiagnostic = {
+    code,
+    summary,
+    ...(facts.length === 0 ? {} : { facts: Object.freeze(facts.map(freezeDiagnosticFact)) }),
+    ...(observedDeltas === undefined
+      ? {}
+      : { observedDeltas: Object.freeze(observedDeltas.map(freezeFingerprintDelta)) }),
+    ...(limitations === undefined || limitations.length === 0
+      ? {}
+      : { limitations: Object.freeze([...limitations]) }),
+    ...(causes.length === 0 ? {} : { causes: Object.freeze(causes.map(freezeDiagnostic)) }),
+  };
+  return Object.freeze({ kind: "unexplained" as const, diagnostic: Object.freeze(diagnostic) });
+}
+
+function freezeDiagnosticFact(fact: FingerprintDiagnosticFact): FingerprintDiagnosticFact {
+  return "value" in fact
+    ? Object.freeze({ label: fact.label, value: freezeJsonValue(fact.value) })
+    : Object.freeze({
+        label: fact.label,
+        from: freezeJsonValue(fact.from),
+        to: freezeJsonValue(fact.to),
+      });
+}
+
+function freezeFingerprintDelta(delta: FingerprintDelta): FingerprintDelta {
+  return Object.freeze({ ...delta });
+}
+
+function freezeDiagnostic(diagnostic: FingerprintDiagnostic): FingerprintDiagnostic {
+  return Object.freeze({
+    ...diagnostic,
+    ...(diagnostic.facts === undefined
+      ? {}
+      : { facts: Object.freeze(diagnostic.facts.map(freezeDiagnosticFact)) }),
+    ...(diagnostic.observedDeltas === undefined
+      ? {}
+      : { observedDeltas: Object.freeze(diagnostic.observedDeltas.map(freezeFingerprintDelta)) }),
+    ...(diagnostic.limitations === undefined
+      ? {}
+      : { limitations: Object.freeze([...diagnostic.limitations]) }),
+    ...(diagnostic.causes === undefined
+      ? {}
+      : { causes: Object.freeze(diagnostic.causes.map(freezeDiagnostic)) }),
+  });
+}
+
+function freezeJsonValue(value: JsonValue): JsonValue {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return Object.freeze(value.map(freezeJsonValue)) as JsonValue;
+  return Object.freeze(Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, freezeJsonValue(child)]),
+  )) as JsonValue;
 }
 
 /**
