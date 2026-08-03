@@ -7,8 +7,8 @@
 [测试作者面决策](../../design/user-readable-testing/DECISION.md)采纳 [PLAN-2](../../design/user-readable-testing/PLAN-2/README.md):测试正文以 Report 领域对象为入口,断言消费带 evidence、提取路径与对象身份的 `Observed<T>`。
 本目录设计那层领域对象**底下**的 adapter——把 plain stdout、PTY 屏幕、JSON、JUnit、导出 HTML 与浏览器页面变成可观察值,再把它们装配进 vitest。
 
-分工一句话：Behavior、evidence recipe、分层、运行频率、并发与准入门槛归
-[E2E 验收测试方案](../e2e-acceptance-testing/README.md)；媒介怎么解析、领域对象怎么寻址、断言怎么执行归这里。
+分工一句话：Behavior、evidence recipe、unit / E2E 组合、运行频率、并发与准入门槛归
+[NiceEval 测试体系重构](../e2e-acceptance-testing/README.md)；媒介怎么解析、领域对象怎么寻址、动作怎么执行归这里。
 判据落在词表上——测试正文只出现领域词,`section`、`row`、`line`、正则与 DOM locator 只出现在 adapter 内部。
 
 本目录不维护历史 bug 题库，不决定某个 Feature 必须有几条 E2E，也不拥有 `scripts/e2e.ts` 的 prepare / cleanup 流程。
@@ -133,16 +133,18 @@ adapter 只补两样:按公开组件契约立词的领域寻址,与步骤轨迹�
 
 逐场景的写法对照见 [browser-interaction](use-case/browser-interaction.md)。
 
-### 落点:验收器留在所属 E2E 仓库
+### 落点：dialect 留在所属 E2E 仓库
 
-解析器、领域读面与 matcher 签入所属 E2E 仓库，由测试方案选出的 Behavior 消费，不发布公共包。
-两条理由:
+NiceEval 解析器与领域 dialect 签入所属 E2E 仓库，由测试体系选出的 Behavior 消费，不作为通用公共包发布。
+两条理由：
 
 - **仓库自治优先。**
   [E2E 总则](../../engineering/testing/e2e/README.md#21-独立的含义)要求把任一 E2E 仓库复制到独立 checkout 后仍能只靠自己的 `pnpm e2e` 完成验收。
   公共包让「用哪个版本」成为跨仓协调项,而各仓库要观察的读面本来就不同:适配器仓库只读 CLI 事实,report 仓库才需要结构与浏览器。
 - **重复量还没有证明抽象成本。**
-  至少两个自治仓库出现相同且稳定的需求后,才评审公共包;评审对象是那时的真实重复,不是现在的预测。
+  至少两个自治仓库出现相同且稳定的 kernel / medium protocol 需求后，才评审共享包。
+  评审对象是 BrowserContext 生命周期、ActionTrace、Observed 与 evidence capture，不包含 Attempt、`t.send`
+  等 NiceEval dialect。
 
 oracle 独立不靠发布形态保证,靠**不 import 候选包任何代码**:解析对象是公开渲染输出,预期由测试侧独立声明。
 vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 runner。
@@ -179,7 +181,7 @@ vitest 是宿主,不是替代入口:验收器只提供函数与 matcher,不带 r
 - [Library 逐词表说明](library.md) —— 领域词与读面内部两组词的完整语法、匹配语义、API 与失败反馈。
 - [Architecture](architecture.md) —— World reader、媒介 adapter、Domain View、`Observed<T>` 与失败传播。
 - [Use Cases](use-case/README.md) —— 各种公开媒介的完整目标测试文件。
-- [E2E 验收测试方案](../e2e-acceptance-testing/README.md) —— Behavior、evidence world、分层门禁、并发拓扑、题库与 rollout。
+- [NiceEval 测试体系重构](../e2e-acceptance-testing/README.md) —— Proof Portfolio、Behavior、机制 unit、evidence world、退役与门禁。
 - [测试作者面决策](../../design/user-readable-testing/DECISION.md) —— 作者轴、渲染边界与本目录必须满足的十项边界。
 - [PLAN-2 · 用户任务规格与类型化可观察读面](../../design/user-readable-testing/PLAN-2/README.md) —— Behavior 声明、User View 规则与失败格式;本目录是它的 adapter 层。
 - [验收脚本写法](../../engineering/testing/e2e/verification.md) —— 现行断言约定与 `sh()` 参考实现;本设计定稿后重写的对象。

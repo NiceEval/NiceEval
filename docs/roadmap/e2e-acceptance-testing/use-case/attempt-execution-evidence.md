@@ -2,8 +2,9 @@
 
 ## 目标
 
-防止 Attempt 同时具有源码与执行事件时，Report 把 Conversation 当成 Source 的替代项而静默隐藏。
-源码回答“运行了哪段评测代码”，对话回答“agent 实际做了什么”；两者必须能够同时出现，不能互相占位。
+防止 Attempt 虽然包含源码与执行事件，但用户展开源码中的 drive 调用时仍看不到该调用返回的执行过程。
+源码回答“哪一次 API 调用驱动了 agent”，行内返回回答“这次调用实际返回了什么”；两者必须按调用身份闭合。
+把完整 Conversation 放在页面末尾只能证明数据存在，不能证明用户点击入口成立。
 
 稳定 Behavior ID 为 `reports.attempt-execution-evidence`。主证明从候选 tarball 导出真实 Report，分别读取
 独立 attempt 文档和宿主中的 attempt dialog，不 import Report component、转换器或 artifact reader。
@@ -41,7 +42,8 @@ reportBehavior({
 
 Recipe 冻结两个有区分力的 Attempt：
 
-- `source-and-events` 同时具有具名 source 路径、assistant 回复、tool call、tool result 和工具名；
+- `source-and-events` 在同一源码文件包含两次 `t.send`；两轮分别具有不同 assistant 回复、tool call、tool result
+  和工具名，使错误挂接无法通过；
 - `source-without-events` 具有 source，但没有发布 events artifact。
 
 两个 Attempt 的 source 形状相同，使测试不能凭 source capability 猜测 events 是否存在。缺失反例必须是
@@ -54,24 +56,11 @@ reportBehavior(attemptExecutionEvidence, async ({ w, openSite }) => {
   const present = w.target("source-and-events");
   const missing = w.target("source-without-events");
 
-  const presentDoc = await targetDoc(w, present, {
-    javaScript: "disabled",
-    hosting: "file-url",
-  });
-  expectObserved(presentDoc.attempt().sourcePaths())
-    .toShowRows(["evals/tool-call.eval.ts"]);
-  expectObserved(presentDoc.attempt().conversation().entryKinds())
-    .toShowRows(["assistant", "tool"]);
-  expectObserved(presentDoc.attempt().conversation().toolNames())
-    .toShowRows(["get_stock_price"]);
-  expectObserved(presentDoc.attempt().executionEvidenceState())
-    .toEqualValue("available");
-
   const missingDoc = await targetDoc(w, missing, {
     javaScript: "disabled",
     hosting: "file-url",
   });
-  expectObserved(missingDoc.attempt().sourcePaths())
+  expectObserved(missingDoc.attempt().source().paths())
     .toShowRows(["evals/tool-call.eval.ts"]);
   expectObserved(missingDoc.attempt().executionEvidenceState())
     .toEqualValue("unavailable");
@@ -82,21 +71,44 @@ reportBehavior(attemptExecutionEvidence, async ({ w, openSite }) => {
     hosting: "clean-url-subpath",
   });
   await ui.targetLink(present).click();
-  expectObserved(ui.dialog().attempt().conversation().entryKinds())
+  const source = ui.dialog().attempt().source();
+  const stock = source.driveCall({
+    api: "t.send",
+    path: "evals/tool-call.eval.ts",
+    occurrence: 1,
+  });
+  const email = source.driveCall({
+    api: "t.send",
+    path: "evals/tool-call.eval.ts",
+    occurrence: 2,
+  });
+
+  await stock.expand();
+  expectObserved(stock.returned().entryKinds())
     .toShowRows(["assistant", "tool"]);
-  expectObserved(ui.dialog().attempt().conversation().toolNames())
+  expectObserved(stock.returned().toolNames())
     .toShowRows(["get_stock_price"]);
+  expectObserved(stock.returned().toolNames())
+    .not.toShowRows(["send_email"]);
+
+  await email.expand();
+  expectObserved(email.returned().toolNames())
+    .toShowRows(["send_email"]);
+  expectObserved(ui.dialog().attempt().unmappedConversation().entryKinds())
+    .toShowExactRows([]);
 });
 ```
 
-静态文档证明内容不依赖 enhancement 才出现；dialog 证明同一 evidence 经宿主装配后没有丢失。领域 reader
-按公开标题、entry kind 和工具身份读取，不在 Behavior 中出现 class、DOM 位置或 HTML 子串。
+静态文档只证明缺失 events 的降级内容不依赖 enhancement。主正例必须执行真实点击：领域 reader 按公开
+drive API、源码路径、发生序与返回类型寻址，不按气泡 class、DOM 位置、内部 suite/test 坐标或轮标签寻址。
+`occurrence` 是同一源码调用表达式的运行发生序，不是内部 session / turn 编号。
 
 ## 变更触发路径
 
 | path set | 路径 | 必跑原因 |
 |---|---|---|
-| `attempt-detail-composition` | `src/report/components/attempt-detail/index.tsx`、`content.tsx`、`src/report/built-in/result-components.tsx` | 决定 Source、Conversation、warning 的装配、互斥与顺序 |
+| `attempt-detail-composition` | `src/report/components/attempt-detail/index.tsx`、`content.tsx`、`src/report/built-in/result-components.tsx` | 决定 Source、行内返回、unmapped Conversation、warning 的装配与去重 |
+| `source-return-renderer` | `src/report/definition/primitives/source-view.tsx` 及直接样式、序列化依赖 | 决定 drive / assertion 调用能否展开，并把对应返回显示在调用作用域内 |
 | `conversation-projection` | `src/report/model/conversions.ts`、`types.ts`、`src/report/tasks.ts` 中 conversation 相关定义及其直接拆分文件 | 决定 events 是否成为可显示的轮次、entry 与工具身份 |
 | `conversation-renderer` | `src/report/definition/primitives/conversation.tsx` 及直接样式、序列化依赖 | 决定 Web 用户能否读到对话语义 |
 | `attempt-page-host` | attempt page 定义、`src/report/runtime/host.ts`、`src/report/runtime/page-render.ts` 及其直接拆分文件 | 决定独立 target 与宿主 dialog 是否消费同一结果 |
@@ -110,16 +122,20 @@ artifact / adapter proof，只有改变落盘 events 契约或 conversation proj
 
 ## 旧 bug kill 与定位
 
-保留 `5a4d01a9^` 的最小逆补丁：当 source capability 与 `evalSource` 同时存在时，把
-`toConversationTurns(evidence)` 或 `attemptConversationContent(...)` 替换为 `null`。这条 mutation 必须在
-`outcome` 阶段失败，并报告 locator、source 状态、events artifact 状态、期望与实际 entry kind、target URL、
-候选包 digest、HTML evidence 和截图。
+保留两条 mutation：
+
+1. `5a4d01a9^`：source 存在时把 Conversation 变成 `null`；
+2. 行内断线：events 仍完整写入页面，但全部追加到 Attempt 末尾，send 展开区只留 status / duration 摘要。
+
+两条都必须在 `outcome` 阶段失败。第二条失败报告必须给出 drive API、源码路径、occurrence、点击 action、
+返回区实际 entry kind、页面级 unmapped 内容、target URL、候选包 digest、HTML evidence 和截图。
 
 - Report 无法导出、target 无法打开或进程非零属于 `invoke`；
 - target 可打开但 reader 无法形成 attempt / conversation 领域对象属于 `observe`；
-- source 可见而 Conversation 缺失、工具身份错误，或缺 events 时未显示 warning 属于 `outcome`。
+- 点击成功但对应 drive 返回区缺 execution、轮次错挂、页面尾部重复已映射轮次，或缺 events 时未显示 warning
+  属于 `outcome`。
 
-只断 `niceeval show --execution`、组件 snapshot、页面存在或 dialog 能打开都不能替代本 proof。
+只断 `niceeval show --execution`、HTML 某处包含 events、组件 snapshot、页面存在或 dialog 能打开都不能替代本 proof。
 
 ## 频率
 

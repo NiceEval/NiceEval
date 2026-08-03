@@ -57,27 +57,12 @@ reportBehavior(brandLinkKeepsAttribution, async ({ w }) => {
   expectObserved(link.rel()).toEqualValue("noopener");
 });
 
-reportBehavior(attemptKeepsSourceAndExecution, async ({ w }) => {
-  const doc = await targetDoc(w, w.target("source-and-events"), {
-    javaScript: "disabled",
-    hosting: "file-url",
-  });
-  const attempt = doc.attempt();
-
-  expectObserved(attempt.sourcePaths())
-    .toShowRows(["evals/tool-call.eval.ts"]);
-  expectObserved(attempt.conversation().entryKinds())
-    .toShowRows(["assistant", "tool"]);
-  expectObserved(attempt.conversation().toolNames())
-    .toShowRows(["get_stock_price"]);
-  expectObserved(attempt.executionEvidenceState())
-    .toEqualValue("available");
-});
 ```
 
 ## 边界
 
 用例不读取原始 HTML 字符串、class 或 DOM 层级。HTML adapter 只通过真实 Chromium 的可访问语义产生领域对象。
 需要 JavaScript 的下钻、焦点和 tooltip 归浏览器交互用例。
-Attempt 执行证据的 fixture、双入口 oracle、path set 与旧 bug mutation 见
-[测试方案](../../e2e-acceptance-testing/use-case/attempt-execution-evidence.md)。
+静态读面可以证明 drive 与返回的结构关系，但不冒充点击行为。源码行内返回的真实动作闭环见
+[浏览器交互](browser-interaction.md)；完整 fixture、path set 与旧 bug mutation 见
+[测试体系 Use Case](../../e2e-acceptance-testing/use-case/attempt-execution-evidence.md)。

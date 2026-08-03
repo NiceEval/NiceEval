@@ -1,7 +1,7 @@
 # E2E 验收 DSL —— Architecture
 
 本篇定义公开媒介怎样进入领域读面、`Observed<T>` 怎样携带证据，以及 matcher 怎样产生可归因的 Outcome Assertion。
-Behavior、Recipe、World 与调度归 [E2E 验收测试方案](../e2e-acceptance-testing/architecture.md)。
+Behavior、Recipe、World 与调度归 [NiceEval 测试体系重构](../e2e-acceptance-testing/architecture.md)。
 
 ## 模块边界
 
@@ -24,6 +24,22 @@ DSL 分成五组模块：
 - domain view 用 Report、Attempt、Table、Chart、Target 等公开身份寻址。
 - `Observed<T>` 把值、来源、提取路径和对象身份绑定为一个不可伪造观察。
 - matcher 比较独立预期并产出带证据的 Outcome Assertion。
+
+## 通用内核与产品 dialect
+
+浏览器验收不在“全通用”与“全部 NiceEval 专用”之间二选一。DSL 分成三层：
+
+| 层 | 可以通用的能力 | 不拥有 |
+|---|---|---|
+| acceptance kernel | BrowserContext / Page 生命周期、web-first 等待、ActionTrace、Observed、截图、网络与 console evidence、失败阶段 | Attempt、SourceView、`t.send`、AssertionResult |
+| medium adapter protocol | 可访问语义寻址、展开 / 关闭 / hover 等动作协议、HTML 与 browser evidence 接口 | 产品对象身份与预期 |
+| NiceEval dialect | Report、Attempt、source drive / assertion 调用、返回 Turn / AssertionResult、Conversation、tool identity | CSS selector、DOM class、固定 sleep |
+
+Behavior 只调用 NiceEval dialect。dialect 内部把 `drive.expand()` 翻译成 kernel 的浏览器点击并记录 action；测试正文
+不调用 `click(selector)`。组件从 `<details>` 换成 button 时只改 adapter，用户 Behavior 不改。
+
+通用库只抽前两层，而且必须等至少两个自治验收仓库出现相同协议后再发布。NiceEval dialect 留在 report E2E
+支持包；不能为了复用把 `t.send` 或 Attempt 并入中立内核，也不能为了中立让场景退化为 DOM 操作脚本。
 
 ## World reader
 

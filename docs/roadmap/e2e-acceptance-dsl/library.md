@@ -131,15 +131,24 @@ const doc = await targetDoc(w, target, { hosting: "directory-root" });
 | `report.attempt(locator)` | attempt 对象,可继续按身份下钻 | [show 的 attempt 面](../../feature/reports/show/attempt.md) |
 | `attempt.executionNodes()` | `Observed<string[]>`,执行树节点身份 | [show --execution](../../feature/reports/show/execution.md) |
 | `attempt.timingGaps()` | `Observed<string[]>`,缺时间注释的节点身份 | 同上 |
-| `attempt.conversation()` | Web Attempt 的执行对话对象；不存在时仍返回可定位 reader，由状态词区分缺失 | [AttemptDetail](../../feature/reports/components/attempt-detail/README.md) |
+| `attempt.source()` | Web Attempt 的标注源码对象；按公开源码身份继续寻址 drive / assertion 调用 | [SourceView](../../feature/reports/components/primitives/source-view.md) |
+| `source.paths()` | `Observed<string[]>`，源码文件的公开捕获路径 | 同上 |
+| `source.driveCall({ api, path, occurrence })` | 一次 drive API 调用；按 API 的公开返回契约得到 `SourceCall<ReturnView>` | [Eval Context](../../feature/eval/library/context.md) |
+| `call.expand()` | 展开该调用的行内返回，并把点击前后状态写入 ActionTrace | [AttemptDetail](../../feature/reports/components/attempt-detail/README.md) |
+| `call.returned()` | 返回 API 对应的领域读面；`t.send` / `sendFile` 得到 Turn，输入请求 API 得到请求，找不到或错挂时列出源码调用候选 | [Turn](../../feature/assertions/library/display.md#turntsend的展示) |
+| `source.assertionCall({ api, path, occurrence })` | 一次 assertion API 调用，返回 `SourceCall<AssertionResultView>` | [Assertions](../../feature/assertions/library/display.md) |
+| `attempt.unmappedConversation()` | 只有无法归入源码 drive 调用的轮与失败命令；已映射轮次出现在这里属于重复 | [AttemptDetail](../../feature/reports/components/attempt-detail/README.md) |
 | `conversation.entryKinds()` | `Observed<string[]>`，按显示顺序返回 `assistant`、`tool` 等公开 entry kind | 同上 |
 | `conversation.toolNames()` | `Observed<string[]>`，按执行顺序返回对话中的公开工具身份 | 同上 |
 | `attempt.executionEvidenceState()` | `Observed<"available" \| "unavailable">`；根据 Conversation 或契约 warning 判定，不从 artifact 路径旁读 | 同上 |
 | `attempt.calloutTitles()` | `Observed<string[]>`，按显示顺序返回 Attempt 详情的公开 callout 标题 | 同上 |
 
-导出 HTML 与浏览器读面共享这批词；`targetDoc(...).attempt()` 与 `ui.dialog().attempt()` 必须产生相同的
-Attempt reader。只有各媒介独有的能力单独立词，例如 `doc.disclosure(名称).isExpanded()` 与
-`table.visibleRows()`。reader 不读取 Record artifact 来补页面缺失；否则 renderer 丢内容时测试会用旁路真值把缺陷遮住。
+导出 HTML 与浏览器读面共享查询词；动作只在声明 `browser-a11y` 的 Behavior 可用。`targetDoc(...).attempt()`
+可以读取 drive 与返回的结构关系，但不能冒充真实点击。`ui.dialog().attempt()` 才提供 `expand()` 等动作。
+
+reader 不读取 Record artifact 来补页面缺失；否则 renderer 丢内容时测试会用旁路真值把缺陷遮住。它也不按
+内部 session / turn label 寻址源码调用。调用身份来自公开 API、source path 与发生序，`returned()` 的类型来自
+该 API 已声明的返回契约，不为每个 API 发明一个新的 DSL 动词。
 
 ### 断言:`expectObserved`
 

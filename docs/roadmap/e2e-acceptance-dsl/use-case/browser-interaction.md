@@ -17,6 +17,7 @@ import {
   filterNarrowsRows,
   targetOpensInDialog,
   chartPointShowsTooltip,
+  driveCallReturnsInlineExecution,
 } from "../../support/behaviors";
 
 reportBehavior(filterNarrowsRows, async ({ w }) => {
@@ -60,9 +61,32 @@ reportBehavior(chartPointShowsTooltip, async ({ w }) => {
   expectObserved(ui.consoleErrors()).toShowExactRows([]);
   expectObserved(ui.networkFailures()).toShowExactRows([]);
 });
+
+reportBehavior(driveCallReturnsInlineExecution, async ({ w }) => {
+  await using ui = await openSite(w.exportDir("site"), {
+    hosting: "clean-url-subpath",
+  });
+  await ui.targetLink(w.target("source-and-events")).click();
+
+  const source = ui.dialog().attempt().source();
+  const send = source.driveCall({
+    api: "t.send",
+    path: "evals/tool-call.eval.ts",
+    occurrence: 1,
+  });
+
+  await send.expand();
+  expectObserved(send.returned().entryKinds())
+    .toShowRows(["assistant", "tool"]);
+  expectObserved(send.returned().toolNames())
+    .toShowRows(["get_stock_price"]);
+});
 ```
 
 ## 边界
 
 场景文件不出现 CSS selector、`:visible` 或固定 sleep。几何与 computed style 只有在视觉事实本身属于契约时使用 Playwright 原生读取。
+`drive.expand()` 是 NiceEval dialect 的领域动作；通用 kernel 只负责点击、等待、ActionTrace 与 evidence，不认识
+`t.send`。完整的两轮错挂反例与页面尾部去重归
+[测试体系 Use Case](../../e2e-acceptance-testing/use-case/attempt-execution-evidence.md)，这里不复制矩阵。
 全量 target census 与 hosting 代表矩阵见[测试方案用例](../../e2e-acceptance-testing/use-case/report-target-closure.md)。
