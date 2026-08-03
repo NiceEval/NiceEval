@@ -23,7 +23,7 @@ export default defineExperiment({
 `sandboxReuse: true` 表示作者接受以下生命周期：
 
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
-- `$HOME`、`/tmp`、全局安装、后台进程和外部服务状态可能继续存在；
+- 题间 reset 只恢复 workdir，workdir 外的状态可能继续存在；
 - 两层作者 layer 的 `prepare()` 每条 Attempt 重放,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
 - agent.ensure 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
@@ -94,6 +94,14 @@ Sandbox Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间�
 2. 按分类账排除清单执行 `git clean`；
 3. 按 owner 顺序重放两层作者 layer 的 `prepare()` 命令；
 4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因窗口;`test(t)` 重新准备本 Attempt 的 Fixture。
+
+题间 reset 不是整台 Sandbox 归零。
+Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外路径的文件,全局安装、包管理器缓存、build/cache 和后台进程都会保留,Provider 或作者显式清理的状态除外。
+这些残留可能是有意复用的加速状态,也可能污染后续 Attempt,不能把 reset 当成完整隔离。
+
+大型持久 build/cache 由作者负责生命周期治理。
+作者必须选择容量上限、达到上限前的可解释阈值告警、清理或轮换策略,以及无法安全清理时退休 Sandbox 的策略。
+正常的容量、缓存大小、版本和命中状态记录为 `facts`;只有达到明确风险阈值才报 `diagnostic`,清理或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
 
 reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
 reset 失败后,该 Sandbox 不再承接 Attempt。

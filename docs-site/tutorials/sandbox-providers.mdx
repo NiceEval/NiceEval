@@ -115,23 +115,27 @@ Long installs, warm-ups, and state restores can call `ctx.progress(...)`. It onl
 ```ts
 const sandbox = e2bSandbox({ template: "niceeval-agents" })
   .setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "Installing memory helper", current: 1, total: 2 });
-    await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
+    ctx.progress({ message: "Checking the project helper", current: 1, total: 2 });
+    await ensureProjectHelper(sandbox);
 
-    ctx.progress({ message: "Warming up memory index", current: 2, total: 2 });
+    ctx.progress({ message: "Warming up the project build cache", current: 2, total: 2 });
     try {
-      await warmIndex(sandbox);
+      await warmProjectBuildCache(sandbox);
     } catch (error) {
       ctx.diagnostic({
-        code: "memory-warmup-degraded",
+        code: "project-build-cache-degraded",
         level: "warning",
-        message: "Warm-up failed; continuing this run with a cold index",
+        message: "Build-cache warm-up failed; continuing without the warm cache",
         data: { reason: String(error) },
-        dedupeKey: "memory-warmup-degraded",
+        dedupeKey: "project-build-cache-degraded",
       });
     }
   });
 ```
+
+<Warning>
+  `progress`, `diagnostic`, and `facts` are mutually exclusive feedback channels. Use `progress` for short-lived status, `diagnostic` only for a real exception, degradation, or problem that needs attention, and `ctx.facts(...)` for neutral runtime observations. Normal capacity, cache size, version, and hit status are not warnings by default; emit a diagnostic only when a clear, explainable risk condition is met. If the environment cannot continue, throw.
+</Warning>
 
 Neither `progress` nor `diagnostic` can pick a global phase, a color, or an output stream. The runner knows the current callback belongs to `sandbox.setup` and shows the phase as sandbox setup in the human terminal. A `diagnostic` is written into `result.json` with the attempt and can be reviewed later with `niceeval show @<locator>`; it does not change the verdict by itself. If the environment cannot continue, throw.
 

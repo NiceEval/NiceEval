@@ -1,0 +1,122 @@
+---
+title: "Reuse Sandboxes: share setup across attempts"
+sidebarTitle: "Sandbox reuse"
+description: "Use sandboxReuse to let attempts share a Sandbox. Reset returns only the workdir to its ledger point; persistent state outside it needs an explicit policy."
+---
+
+import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
+
+When a batch of evals shares the same environment setup — the same toolchain or repository checkout — creating a new Sandbox for every Attempt pays for that setup N times. Set `sandboxReuse: true` on the Experiment so multiple Attempts use the same Sandbox in sequence. Sandbox creation and shared setup happen once per Sandbox, and NiceEval restores the `workdir` between evals.
+
+<Warning>
+  The between-attempt reset is not a reset of the entire Sandbox. NiceEval restores only the `workdir` from its change ledger; state outside it, including `/opt`, `$HOME`, `/tmp`, global installs, package-manager caches, build caches, and background processes, remains. For a large persistent build/cache, choose a capacity limit, an explainable threshold, cleanup or rotation rules, and a Sandbox-retirement policy before enabling reuse.
+</Warning>
+
+Before enabling reuse, understand its cost:
+
+- **Results can still be carried.** When a pair has a stable carry identity and the terminal result matches, NiceEval carries it without creating a Sandbox. Only Attempts that are not carried run in the shared Sandbox. `--rerun` can still force the relevant Attempts to run.
+- **An interruption does not roll back external state.** A resumed run is the same trajectory only when cross-attempt state can return to the last terminal commit boundary. Otherwise start a clean cohort.
+- **State outside the workdir remains.** Preparation code must tolerate that state or clean it deliberately. A reused Sandbox is not full isolation.
+- `--keep-sandbox` and `localSandbox()` cannot be combined with `sandboxReuse: true`.
+
+Reuse is useful for local smoke runs, repeated Attempts for stability checks, and wiring checks where Sandbox creation and shared setup dominate the runtime.
+
+## Enable reuse in an Experiment
+
+```ts
+import { defineExperiment } from "niceeval";
+import { e2bSandbox } from "niceeval/sandbox";
+import { codexAgent } from "niceeval/adapter";
+
+export default defineExperiment({
+  evals: ["fixtures/commit0"],
+  agent: codexAgent(),
+  sandbox: e2bSandbox({
+    template: "acme-evals",
+    lifetimeMs: 60 * 60_000,
+  }),
+  sandboxReuse: true,
+  maxConcurrency: 3,
+  timeoutMs: 20 * 60_000,
+});
+```
+
+`timeoutMs` and `lifetimeMs` are two clocks for two objects. The first limits one Attempt; the second limits one Sandbox. Increase `lifetimeMs` when the Sandbox needs to live longer — do not increase `timeoutMs` to solve that problem. A Provider account tier can cap `lifetimeMs`; exceeding the cap fails during creation with the Provider's reason.
+
+## Lifecycle frequency
+
+| Stage | With reuse |
+|---|---|
+| Sandbox create / stop | Once per Sandbox |
+| Sandbox-level `setup` / `teardown` | Once per Sandbox, before the between-attempt reset point |
+| Agent-level `setup` / `teardown` | Once per Attempt |
+| Eval `setup` / `teardown`, `test(t)` | Once per Attempt |
+
+<SandboxLanes />
+
+After each Attempt, NiceEval runs `git reset --hard` and `git clean` in the `workdir` and returns to the reset point before starting the next Attempt. The reset does not clear `/opt`, `$HOME`, `/tmp`, global installs, package caches, build caches, or background processes. A persistent build/cache therefore needs an author-owned capacity limit, threshold diagnostic, cleanup or rotation policy, and a retirement path when it cannot be kept safe.
+
+## Layer preparation by change scope
+
+- **Heavy dependencies every experiment needs** — Agent CLIs and runtimes — belong in the Provider's image, template, or snapshot rather than in `setup`.
+- **Preparation shared by the batch** — tool installation, a common checkout, or build-cache warm-up — belongs in Sandbox-level `.setup()`. It runs once per Sandbox and becomes part of the reset point.
+- **Materials needed by one eval** — its repository, data, or dependencies — belong in that eval's `setup` or `test(t)`. They are replayed after each reset, so the code must converge when replayed.
+- **Background processes and ports** belong to the eval's `teardown` unless the author deliberately makes them part of the reusable state and governs their lifetime.
+
+Normal cache size, version, and hit state are neutral runtime observations. Record them with `facts`; emit a `diagnostic` only after a stated, explainable risk threshold is reached. If cleanup or rotation cannot make the next Attempt safe, retire the Sandbox or throw instead of continuing with an unbounded cache.
+
+## Make preparation idempotent
+
+Sandbox- and eval-level preparation may encounter partial state left by the previous Attempt. Describe the target state directly:
+
+```bash
+# Bad: a partial rustup installation makes the probe pass and skips the repair.
+if ! command -v cargo; then curl https://sh.rustup.rs | sh; fi
+
+# Good: replay converges to the declared target state.
+rustup default 1.79.0
+npm install
+```
+
+The rule is simple: preparation describes the target state, not whether it happens to look present. Probe-and-skip guards can mistake half-finished state for completion and fail only when reuse is enabled.
+
+## Mixed environments in one batch
+
+When selected evals resolve to different prebuilt artifacts, the Runner groups them by the resolved environment profile. A Sandbox accepts Attempts from one group, and each group gets its own reset point. Groups do not share Sandboxes or Sandbox-level setup results. Experiment `maxConcurrency` limits the total number of concurrent Attempts across all groups.
+
+## Typical workflow
+
+```sh
+# 1. Inspect the plan before spending money.
+npx niceeval exp smoke fixtures/commit0 --dry
+
+# 2. Run the Experiment that declares sandboxReuse.
+npx niceeval exp smoke fixtures/commit0
+
+# 3. Re-run one failing eval in an Experiment without reuse to keep a faithful Sandbox.
+npx niceeval exp baseline fixtures/commit0/tool-first --keep-sandbox
+
+# 4. Validate the fix with the non-reuse Experiment.
+npx niceeval exp baseline fixtures/commit0
+```
+
+Do not debug a shared Sandbox with `--keep-sandbox`: the two modes are mutually exclusive, and the retained state belongs to the batch rather than one eval.
+
+## Use concurrency when preparation cannot be replayed
+
+If preparation cannot be made idempotent, or an eval requires a fresh `$HOME` or stateful service, do not enable `sandboxReuse`. Use bounded concurrency instead:
+
+```ts
+export default defineExperiment({
+  // No sandboxReuse: each Attempt gets a fresh Sandbox.
+  maxConcurrency: 8,
+  // ...
+});
+```
+
+Reuse saves Sandbox creation and shared setup per Sandbox. When those costs are much smaller than one Attempt, concurrency gives most of the wall-clock benefit without the persistent-state contract.
+
+## Related
+
+- [Rerun and cache](/tutorials/rerun-and-cache) — result carry and `--rerun`.
+- [Sandbox providers](/tutorials/sandbox-providers) — configure templates, images, and snapshots.

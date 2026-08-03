@@ -231,42 +231,49 @@ prepare 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 
 Direct Agent(`kind: "direct"`)没有真实 Sandbox。
 任一侧为它声明 SandboxLayer 都是 `sandbox.unexpected-for-direct-agent`,在创建资源前报错,不静默忽略。
 
-## 向运行反馈进度与诊断
+## 向运行反馈进度、诊断与事实
 
 provider 创建和 prepare command 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 lifecycle scope:
 
 ```typescript
 const layer = e2bSandbox({ template: "niceeval-agents" })
   .prepare(async (sandbox, context) => {
-    context.progress({ message: "installing memory helper", current: 1, total: 2 });
-    await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
+    context.progress({ message: "checking project helper", current: 1, total: 2 });
+    await ensureProjectHelper(sandbox);
 
-    context.progress({ message: "warming memory index", current: 2, total: 2 });
+    context.progress({ message: "warming project build cache", current: 2, total: 2 });
     try {
-      await warmIndex(sandbox);
+      await warmProjectBuildCache(sandbox);
     } catch (error) {
       context.diagnostic({
-        code: "memory-warmup-degraded",
+        code: "project-build-cache-degraded",
         level: "warning",
-        message: "Memory warmup failed; continuing with a cold index",
+        message: "Build-cache warm-up failed; continuing without the warm cache",
         data: { reason: String(error) },
       });
     }
   });
 ```
 
-`progress` 只更新当前 prepare 的短期 activity;`diagnostic` 才进入永久输出。
-它们不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
-诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
+三条通道语义互斥,调用方只能把一次观测归入其中一类:
 
-第三条通道 `context.facts(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。
-它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。
+- `progress` 是当前 prepare 的短期状态,例如正在检查、下载或预热;它不进入最终结果。
+- `diagnostic` 是真实异常、退化或需要处理的问题,会进入永久输出。
+  正常容量、缓存大小、版本和命中状态本身是中性观测,不能无条件伪装成 warning。
+  只有达到明确且可解释的风险条件时才上报 diagnostic。
+- `facts` 是中性运行观测,例如本次实际使用的版本、缓存大小和命中状态;它进入结果供事后审计,不参与 fingerprint。
+
+反馈通道不能指定 phase——runner 从当前 command 的 owner 自动得出阶段。
+反馈也不替代控制流:上例明确选择降级继续;如果环境或当前操作无法继续,应直接抛出原错误,让 Attempt 进入 `errored`。
+
+`context.facts(key, value)` 上报运行环境观测。
+它落进本 Attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现。
 计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
-三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`facts` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
+key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
 
 ```typescript
-context.facts("memory.notes", noteCount);
-context.facts("memory.restored", true);
+context.facts("build-cache.bytes", cacheBytes);
+context.facts("build-cache.hit", cacheHit);
 ```
 
 自定义 provider 在 `create` options 上取得绑定到 `sandbox.create` 的 `feedback`:

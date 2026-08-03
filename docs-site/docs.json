@@ -518,7 +518,8 @@
                   "tutorials/write-send",
                   "tutorials/connect-otel",
                   "tutorials/sandbox-agent",
-                  "tutorials/sandbox-providers"
+                  "tutorials/sandbox-providers",
+                  "tutorials/sandbox-reuse"
                 ]
               },
               {

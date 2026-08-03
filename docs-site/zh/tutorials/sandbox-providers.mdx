@@ -117,23 +117,27 @@ Hook 里可以用 `ctx.experimentId`（路径推导的实验 id）当状态隔�
 ```ts
 const sandbox = e2bSandbox({ template: "niceeval-agents" })
   .setup(async (sandbox, ctx) => {
-    ctx.progress({ message: "安装 memory helper", current: 1, total: 2 });
-    await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
+    ctx.progress({ message: "检查 project helper", current: 1, total: 2 });
+    await ensureProjectHelper(sandbox);
 
-    ctx.progress({ message: "预热 memory index", current: 2, total: 2 });
+    ctx.progress({ message: "预热 project build cache", current: 2, total: 2 });
     try {
-      await warmIndex(sandbox);
+      await warmProjectBuildCache(sandbox);
     } catch (error) {
       ctx.diagnostic({
-        code: "memory-warmup-degraded",
+        code: "project-build-cache-degraded",
         level: "warning",
-        message: "预热失败，本次使用冷索引继续运行",
+        message: "构建缓存预热失败，本次不使用预热缓存继续运行",
         data: { reason: String(error) },
-        dedupeKey: "memory-warmup-degraded",
+        dedupeKey: "project-build-cache-degraded",
       });
     }
   });
 ```
+
+<Warning>
+  `progress`、`diagnostic` 和 `facts` 是互斥的反馈通道。短期状态用 `progress`，真实异常、退化或需要处理的问题才用 `diagnostic`，中性运行观测用 `ctx.facts(...)`。正常容量、缓存大小、版本和命中状态不能无条件显示成 warning；只有达到明确且可解释的风险条件时才上报 diagnostic。环境无法继续时直接抛出异常。
+</Warning>
 
 `progress` 和 `diagnostic` 都不能指定全局阶段、颜色或输出流。Runner 知道当前回调属于 `sandbox.setup`，会把 Human 终端中的阶段显示为 sandbox setup。`diagnostic` 会随 Attempt 写入 `result.json`，之后可用 `niceeval show @<locator>` 回顾；它本身不会改变判定。环境无法继续时直接抛出异常。
 
