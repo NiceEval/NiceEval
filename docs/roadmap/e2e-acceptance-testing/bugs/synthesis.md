@@ -94,6 +94,19 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 合法契约迁移必须先改契约文档、迁移说明和题目版本；只运行 `vitest -u` 或把字面值改成当前输出，
 不能成为放行方式。
 
+## Portfolio 收敛门槛
+
+上述题库不是在现有测试上逐题叠加。每条主证明进入试点时必须同时提交 retirement audit：列出它替代的旧
+E2E、重复 unit / snapshot、仍保留的机制矩阵及具名错误算法。完整等价类矩阵只能有一个 owner，浏览器、CLI、
+Human 与 JSON 只保留各自独有契约和一个有区分力的接线代表。
+
+每批报告 Behavior 数、mechanism matrix 数、duplicated matrix、retired proof、net proof delta 和 fixture blast
+radius。`duplicated matrix` 必须为 0；纯实现重构的 `net proof delta` 不得为正。没有实际删除旧 proof 的批次，
+即使新 E2E 能杀死历史 bug，也不能算体系迁移完成。
+
+具体规则与 carried 例子见 [Proof Portfolio](../proof-portfolio.md)和
+[Carried 测试组合迁移](../use-case/carried-proof-migration.md)。
+
 ## 已删除的冗余或错误方案
 
 后续证据已证明下列候选会制造假红 / 假绿，最终方案不保留：
@@ -112,11 +125,12 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 
 | 批次 | 内容 | 进入下一批的可判定标准 |
 |---|---|---|
-| 0：验收器内核 | `world()`、`cli()`、`Observed`、失败阶段、observer malformed cases | 设施自测能区分 invoke / observe / outcome；只读 world 越权必红；无产品 E2E |
+| 0：Portfolio 与验收器内核 | proof inventory、matrix owner、retirement audit、`world()`、`cli()`、`Observed`、失败阶段 | duplicated matrix 可检测；退役旧 proof 仍存在时必红；设施自测能区分 invoke / observe / outcome；无产品 E2E |
 | 1：便宜高收益 | 题 A1 进程 / pipe、A2 consumer matrix、A3 locator roundtrip | 三题当前版绿；对应旧 commit / 逆补丁红在预期阶段；化妆性扰动仍绿 |
 | 2：事件与计算 | A4 timeline、A6 artifact boundary、A7 Report semantics | 不用 sleep；每题至少区分两个错误实现；失败消息只靠公开身份定位 |
 | 3：浏览器 | A8 generic target / clean-url / enhancement / hot reload | target census 全集闭合；attempt / experiment / custom 三类代表可达；三种 hosting recipe 隔离；缺 DOM、网络 404、服务提前退分别可诊断；无公网 |
 | 4：高成本生命周期 | A5 外部 adapter identity、A9 cleanup ownership | pinned 外部输入；串行 lane；无论成功失败都执行异常清理；下一次运行证明无残留 |
 | 5：机制关闭 | provider fault harness、Build attestation、unknown-key rejection | 每个 `GAP` 转成结构化公开事实后，先补 unit contract，再决定是否升一个代表 E2E |
+| 6：现有 unit 收敛 | 依次迁移 runner carried、Report compute、Record、adapter identity 的高跟改矩阵 | 每个 Feature 有唯一 owner；旧重复 proof 已删除；无关 DTO 字段变化只触及 fixture builder；净数量报告可审计 |
 
 任何一批若需要新增 bug 专用 matcher，先回到账本找同形反证；找不到第二个真实案例，不新增。

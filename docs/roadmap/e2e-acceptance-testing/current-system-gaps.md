@@ -1,4 +1,4 @@
-# 现行测试体系为什么仍会漏掉完整产品回归
+# 现行测试体系为什么既漏产品回归又持续膨胀
 
 本篇对照当前 [`docs/engineering/testing/`](../../engineering/testing/README.md) 与实际 `e2e/report`，解释为什么已经有大量测试、每个逃逸 bug 也会补回归文件，仍然需要靠用户在真实 Report 中发现“链接存在但 modal 打不开”。
 
@@ -12,6 +12,13 @@
 4. **失败闭包**：一处失败能落在最早阶段，并且不遮住同批其它 Behavior。
 
 现行体系分别拥有这些能力的局部实现，但没有把四个闭包变成一个可执行门禁。
+
+它还有第五个问题：**portfolio 没有闭包**。现行体系规定测试只随契约变化，却没有为一条语义指定唯一矩阵
+owner，也没有要求新增主证明时退役重复 unit。结果是每个出口、DTO 和历史 bug 都能各自获得一组测试；覆盖在
+增加，修改生产结构时需要同步维护的测试也持续增加。
+
+本 Roadmap 因此不是单独修 E2E。它用同一份 proof portfolio 管理 unit、structure 与 E2E，并把旧测试删除、
+矩阵合并和 fixture blast radius 纳入采用门槛。
 
 ## 本次 modal 逃逸的具体链条
 
@@ -33,7 +40,20 @@ Report Feature 已把详情机制定义成通用参数化页：内建至少有 `
 
 截图中的具体症状更早：链接已经存在，但对应 attempt 文档没有产出。现有 attempt E2E 若在同一候选上完整执行本应变红；它最终靠人工发现，说明除了覆盖抽象，还存在执行反馈的问题。
 
-## 现行规则的七个失效机制
+## 现行规则的八个失效机制
+
+### 0. “契约影响面”没有阻止内部 DTO 被升级成契约
+
+现行变更预算的方向正确，但契约边界依赖人工解释。测试文档可以把内部 ADT、完整对象形状、formatter 输入和
+manifest 当前字段登记成覆盖规范；实现一改，再同步改覆盖规范和测试，就会被归类为“合法契约变化”。
+
+carried 是代表：用户契约是未变化结果被复用、变化或无法解释的结果重跑，公共 JSON 另有机器 schema 契约。
+但 planner `deltas` / `comparison` 形状、Human formatter 输入和每处手写的完整 `EvalManifest` 也进入测试观察面，
+一次内部表示变化因此要求 fingerprint、human、JSON、record、accept 多处测试跟改。
+
+[测试跟改率](../../engineering/testing/churn.md)能发现这个症状，但它既不指定唯一 owner，也不要求删除重复 proof。
+新方案以 [Proof Portfolio](proof-portfolio.md)补上三条执行约束：每个 Behavior 一个主证明、每个机制矩阵一个
+owner、新 owner 进入时必须提交 retirement declaration。
 
 ### 1. “所有 E2E 都必须真实模型”把确定性产品闭环也变昂贵
 
@@ -143,7 +163,10 @@ reportBehavior({
 | `engineering/testing/e2e/README.md` | `secrets` 变成 recipe 能力而非 E2E 身份；唯一命令支持 `--behavior`；仓库可先 prepare 再单例 verify |
 | `engineering/testing/e2e/report.md` | 用通用 target closure 替代 attempt 专用导出 / modal 条目；确定性浏览器档成为 PR 硬门禁 |
 | `engineering/testing/e2e/verification.md` | 线性 `node:assert` 参考改成 Behavior + 冻结 world + 失败聚合；仍保留真实 shell 原文和公开入口 |
-| `engineering/testing/unit/registry.md` | 为高风险跨层 category 增加稳定 id 与 E2E Behavior 双向登记；不枚举具体 scenario |
-| `engineering/testing/churn.md` | 明确它只量维护性，不量 coverage freshness；周期审计同时查看无跟改但契约已升级的 proof |
+| `engineering/testing/unit/README.md` | 测试存在资格改成主证明或具名机制风险；删除按函数、类型和分支增测的解释空间 |
+| `engineering/testing/unit/harness.md` | 增加 production DTO 隔离要求和 fixture blast radius；无关字段只允许修改 builder |
+| `engineering/testing/unit/<feature>.md` | 覆盖规范改为 Behavior 与唯一 mechanism matrix owner，不登记内部 ADT / formatter 输入的完整形状 |
+| `engineering/testing/unit/registry.md` | 聚合主证明、matrix owner 与 retirement declaration；拒绝重复矩阵和只加不退 |
+| `engineering/testing/churn.md` | 明确它只量维护性，不量 coverage freshness；与 duplicated matrix、retired proof 和 fixture blast radius 同批审计 |
 
 在这些当前文档尚未迁移前，新的 DSL 与测试方案都只是候选设计，不能宣称已经防住同类回归。

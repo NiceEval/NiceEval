@@ -1,6 +1,6 @@
-# E2E 验收测试方案 —— Architecture
+# NiceEval 测试体系重构 —— Architecture
 
-本篇定义验收测试的登记、证据生产、调度、验证与准入边界。Behavior 的作者 schema 单源在
+本篇定义完整测试 portfolio 的登记、证据生产、调度、验证、退役与准入边界。Behavior 的作者 schema 单源在
 [PLAN-2](../../design/user-readable-testing/PLAN-2/README.md)，媒介解析与领域断言单源在
 [E2E 验收 DSL](../e2e-acceptance-dsl/README.md)。
 
@@ -21,7 +21,18 @@ CoverageCategory ──要求──▶ BehaviorDeclaration
                                                    BehaviorOutcome
 ```
 
-六个实体各有一个职责：
+上图的 Behavior 主证明与机制 proof 共同进入 Proof Portfolio。机制 proof 不要求伪装成用户 Behavior，但必须
+声明唯一风险 owner；新增或升级主证明时，Retirement Declaration 负责删除被替代的旧 proof。执行层是 unit
+还是 E2E，不改变这套所有权关系。
+
+```text
+Behavior ──恰有一个──▶ PrimaryProof ─┐
+                                     ├──▶ ProofPortfolio ──▶ Selection / Outcome
+MechanismRisk ──恰有一个──▶ MatrixOwner ┘          │
+                                                  └──▶ RetirementAudit
+```
+
+八个实体各有一个职责：
 
 - Coverage Category 表示需要持续证明的高风险工程类别，例如 Report target 闭环。
 - Behavior Declaration 表示稳定用户结果；其身份、任务和契约链接由 PLAN-2 定义。
@@ -29,6 +40,8 @@ CoverageCategory ──要求──▶ BehaviorDeclaration
 - World Manifest 是某次 prepare 的纯数据收据，不包含运行时代码。
 - Execution Registration 决定 Behavior 以哪个频率和资源类别运行。
 - Behavior Outcome 记录某次验证的执行结论与证据，不反写静态声明。
+- Mechanism Risk 表示主证明无法稳定制造或定位的具名错误算法，不等于源码函数或分支。
+- Retirement Declaration 是一次迁移的临时静态输入，证明新 owner 已替代、合并或明确保留旧 proof。
 
 ## Recipe 与 World
 
@@ -256,5 +269,57 @@ read-only verifier 前后核对受保护根的 digest；需要写入的 Behavior
 4. 非契约文案、DOM class、ANSI 与毫秒扰动不误红；
 5. malformed 或 unsupported 观察使 observer 显式失败；
 6. 用户代码不需要测试探针。
+
+## Portfolio Registry
+
+Registry 同时收集 Behavior 主证明和 mechanism matrix owner，不扫描源码函数推导测试义务：
+
+```ts
+interface MechanismProofDeclaration {
+  id: string;
+  feature: { path: string; anchor: string };
+  risk: string;
+  wrongAlgorithms: readonly [string, ...string[]];
+  matrixOwner: string;
+  layer: "unit" | "structure";
+}
+
+interface RetirementDeclaration {
+  replacement: string;
+  removes: readonly string[];
+  merges: readonly {
+    from: readonly [string, ...string[]];
+    into: string;
+  }[];
+  keeps: readonly {
+    proof: string;
+    risk: string;
+    wrongAlgorithm: string;
+  }[];
+  netNewReason?: string;
+}
+```
+
+`matrixOwner` 是等价类集合的稳定身份，不是测试文件路径。同一个 owner 只能由一条 proof 声明；human、JSON、
+text、web 等 projection 可以各有 schema case，但不能再次声明相同 owner。
+
+静态聚合输出以下错误：
+
+- Behavior 没有且不止一个主证明；
+- mechanism proof 没有具名 wrong algorithm；
+- 同一个 matrix owner 被重复声明；
+- retirement 的旧 proof 仍在测试收集结果中；
+- 新 proof 没有替代旧 owner，也没有 `netNewReason`；
+- proof 链接的 Feature anchor 不存在。
+
+迁移完成后删除 Retirement Declaration。Registry 的最终 manifest 只保留活跃 proof，不把历史迁移名单变成永久配置。
+
+## 选择与执行
+
+unit / structure proof 由源码影响图选择后仍走 `pnpm test`；Behavior 主证明按自己的公开边界走 unit 或 E2E
+执行器。选择器按 proof ID 聚合，不按测试文件重复运行矩阵。一个文件含多个 proof 时可以只选受影响 ID；
+一个 proof 的表驱动 case 必须作为整体运行，避免只跑部分等价类后错误宣称 owner 已通过。
+
+数量、fixture 与退役规则见 [Proof Portfolio](proof-portfolio.md)。
 
 完整代码路径见 [Use Cases](use-case/README.md)。

@@ -1,10 +1,20 @@
-# E2E 验收测试方案
+# NiceEval 测试体系重构
 
 还没定为当前契约的候选设计，见 [Roadmap 约定](../README.md)。
 
 ## 定位
 
-本方案决定 **哪些 Behavior 构成发布证明、怎样形成一条完整 proof、在哪个频率运行，以及失败由谁负责**。
+本方案重构 NiceEval 的完整测试体系，不是在现有 unit 之上追加一层 E2E。它决定：
+
+- 哪些稳定用户结果需要 Behavior 主证明；
+- 哪些机制风险只能由 unit / structure proof 最早、确定地证明；
+- 一条新主证明替代哪些旧测试，以及旧测试何时必须删除；
+- proof 怎样复用 evidence、在哪个频率运行、失败由谁负责。
+
+E2E 是主证明可能选择的执行边界，不是本方案的身份。纯确定性 Library 行为可以由 unit 主证明；候选包、
+CLI、协议、PTY、HTML 或浏览器行为由 E2E 主证明。两者进入同一份 proof inventory，接受同一套数量预算、
+唯一 owner、历史 bug kill 和退役审计。
+
 Behavior 的声明形状、用户任务链接、主证明与 supporting proof 关系已经由
 [PLAN-2 · 用户任务规格与类型化可观察读面](../../design/user-readable-testing/PLAN-2/README.md)定义，本方案不再造第二套作者 schema。
 测试正文如何读取 stdout、HTML、浏览器与机器出口，不在这里重复定义；它由
@@ -17,7 +27,7 @@ Feature / 历史缺陷
         ↓
 PLAN-2：Behavior 身份、用户任务、契约、主证明与边界要求
         ↓
-测试方案：Behavior 组合、recipe、分层、频率、并发与准入门槛
+测试体系：proof portfolio、unit 选择/退役、Behavior 组合、recipe、频率与准入
         ↓
 验收 DSL：cli / world / reportView / browser target / matcher
         ↓
@@ -29,6 +39,7 @@ DSL 不决定“应该有哪条测试”；测试方案不重定义 Behavior，�
 ## 入口
 
 - [Architecture](architecture.md) —— Recipe、World、执行登记、调度、失败阶段、身份复用与准入。
+- [Proof Portfolio 与测试退役](proof-portfolio.md) —— 测试数量预算、唯一矩阵 owner、unit 保留条件和替代删除协议。
 - [Use Cases](use-case/README.md) —— Report target、真实进程、消费方矩阵、时间线和可变 service 的完整代码。
 - [现行 testing 体系失效分析](current-system-gaps.md) —— 当前规则为什么仍会漏掉完整产品回归。
 - [历史缺陷研究与证据账本](bugs/README.md) —— proof 的真实反例、反证和实施顺序。
@@ -54,9 +65,10 @@ DSL 不决定“应该有哪条测试”；测试方案不重定义 Behavior，�
 现行 testing 体系已有大量正确局部，但仍缺覆盖、执行、证据与失败四个闭包；完整失效分析见
 [现行测试体系为什么仍会漏掉完整产品回归](current-system-gaps.md)。
 
-## Proof 组合
+## 一个体系，不是 unit 加 E2E
 
-NiceEval 仍只有[单元与 E2E 两层](../../engineering/testing/README.md)。下面是两层内的 proof 组合，不新增第三种测试类型：
+NiceEval 仍只有 unit 与 E2E 两种执行层，不新增第三种测试类型。变化的是测试的组织单位：从“测试文件和覆盖
+类别越多越安全”改成“一个稳定 Behavior 恰有一个主证明，少量机制风险各有一个唯一 owner”。
 
 | proof | 责任 | 频率 |
 |---|---|---|
@@ -68,6 +80,10 @@ NiceEval 仍只有[单元与 E2E 两层](../../engineering/testing/README.md)。
 这里有意修正现行“全部 E2E 都需要真实 provider 凭据”的规则。真实优先应绑定**待测边界**：adapter proof 的真实边界是 SDK / 模型，Report target proof 的真实边界是候选包、子进程、文件、HTTP 与 Chromium。后者使用确定性 Record 不是 mock 产品行为。
 
 组合原则是“最早层失败”：纯公式不经浏览器穷举，概率竞态不靠 E2E 多跑碰运气；跨进程、跨宿主、真实 URL、浏览器动作和外部最终状态必须留用户侧 E2E。
+
+同一输入矩阵只在一个 proof 中完整展开。其它层只补主证明无法观察、且删除后会放走已命名错误算法的机制事实，
+不能复制同一矩阵换一层断言。新增或升级 Behavior 必须提交 retirement manifest；没有说明替代、合并、保留和
+净数量变化的 proof 不进入门禁。详细规则见 [Proof Portfolio](proof-portfolio.md)。
 
 ## 运行模型
 
@@ -112,6 +128,10 @@ evidence 契约时才进入闭环。重命名按 diff 新旧路径匹配，共�
 Proof 必须通过当前候选、历史逆补丁、同形反证、非契约扰动和 observer malformed case 五类判定。
 完整准入不变量见 [Architecture · 身份、复用与准入](architecture.md#身份复用与准入)。
 
+准入还要求完成数量审计：主证明已有 owner、supporting proof 有独有机制风险、被替代旧测试已经删除，且同一
+scenario matrix 没有在 unit、human formatter、JSON 和 E2E 四处复制。测试总数允许因新契约净增加，但每项
+增加必须对应新的 Behavior 或独有错误算法，不能对应一个新函数、类型或 DTO 字段。
+
 ## 题库与实施顺序
 
 - [历史缺陷研究与证据账本](bugs/README.md)
@@ -122,22 +142,25 @@ Proof 必须通过当前候选、历史逆补丁、同形反证、非契约扰�
 
 实施按“验收器内核 → 便宜确定性 proof → 事件与计算 → 浏览器 target 闭环 → 高成本生命周期 → 机制缺口”推进。每批只有在当前版绿、旧 bug 红、无关扰动仍绿、observer 不假绿后才能进入下一批。
 
-## Engineering 采用形状
+## Review 与未来采用形状
 
-开放分歧裁决后，两份 Roadmap 合并为一个工程主题，而不是作为两个平行测试系统存在：
+本目录仍是未完成 review 的 Roadmap，不改变当前 `docs/engineering/testing/` 契约。开放分歧裁决后，两份
+Roadmap 合并为完整 testing 主题，而不是在现行体系旁边增加 acceptance 子系统：
 
 ```text
-docs/engineering/testing/acceptance/
+docs/engineering/testing/
   README.md
   architecture.md
+  portfolio.md
+  migration.md
+  unit/
+  e2e/
   dsl/
     README.md
     library.md
-    architecture.md
-  use-case/
 ```
 
-本目录的测试方案进入 acceptance 的 README 与 Architecture；DSL 目录进入 `dsl/`；两边的目标代码示例汇入同一个 `use-case/`。
+本目录的 portfolio、unit 退役、Behavior、recipe 与执行规则共同进入 Engineering；DSL 只作为公开观察工具。
 `current-system-gaps.md` 和逐 bug 研究不进入目标状态正文。采用时将稳定规则写入 Engineering，把历史原因留在 memory。
 
 采用必须同步改写 [现行 testing 文档清单](current-system-gaps.md#对现行-testing-文档的采用改动)，不能只移动目录或增加索引链接。

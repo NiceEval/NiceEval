@@ -1,6 +1,6 @@
 # 历史缺陷研究与证据账本
 
-这里是 [E2E 验收测试方案](../README.md)的历史证据账本，用已经修复的真实缺陷反推 Behavior、分层、recipe 与运行频率。
+这里是 [NiceEval 测试体系重构](../README.md)的历史证据账本，用已经修复的真实缺陷反推 Behavior、机制矩阵、分层、recipe、退役范围与运行频率。
 具体断言词由 [E2E 验收 DSL](../../e2e-acceptance-dsl/README.md)提供；账本可以要求一种观察能力，但不拥有 matcher API。
 每条结论同时核对 memory、fix commit、fix 前代码与当时已有测试；memory 只负责找到案例，不单独充当证据。
 
