@@ -45,12 +45,12 @@ This page answers one question first: **did the agent get it wrong (`failed`), o
 
 The troubleshooting order is "which assertion failed → what the agent actually did → what it actually changed."
 
-**1. Put the assertion back next to its source.** `--source` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`s1/t1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
+**1. Put the assertion back next to its source.** `--source` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`turn1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
 
 ```text
 $ niceeval show @1qrdcfq8 --source
 21✓     await t.send("Review the proposals and record your decision…");
-    s1/t1 · completed · 22.4s
+    turn1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
 39        await t.group(`Issue ${issue}: selected proposal matches…`, async () => {
 40✗         t.check(Number(decisions[issue]?.selected_proposal_id), equals(label.selected_proposal_id));
@@ -63,7 +63,7 @@ $ niceeval show @1qrdcfq8 --source
 
 ```text
 $ niceeval show @1qrdcfq8 --execution
-TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
+turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     Review the proposals and record your decision for each issue…
 
@@ -77,7 +77,7 @@ TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
       Proposal 1: …
 ```
 
-The conversation is segmented by turn; each turn's header line gives its number (`s1/t1`), status, duration, and usage — this same numbering is used in `--diff` and `--timing`, so you can cross-reference them.
+The conversation is segmented by turn; each turn's header line gives its number (`turn1`), status, duration, and usage — this same numbering is used in `--diff` and `--timing`, so you can cross-reference them.
 
 When you don't want to read the whole thing, pipe it into `grep` for a targeted search. List which tools this Attempt used and how many times each:
 
@@ -98,17 +98,17 @@ niceeval show @1qrdcfq8 --execution | grep proposals
 ```text
 $ niceeval show @1qrdcfq8 --diff
 2 files changed by agent
-  M manager_decisions.json   +6 -2    s1/t1, s1/t2
-  A notes/decision-log.md    +18      s1/t2
+  M manager_decisions.json   +6 -2    turn1, turn2
+  A notes/decision-log.md    +18      turn2
 
 single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 ```
 
-The `s1/t1` at the end of a line shows which turn changed that file, matching up with the turn numbers in `--execution`. To see one file's line-by-line changes, join the file path with `=`:
+The `turn1` at the end of a line shows which turn changed that file, matching up with the turn numbers in `--execution`. To see one file's line-by-line changes, join the file path with `=`:
 
 ```text
 $ niceeval show @1qrdcfq8 --diff=manager_decisions.json
-M manager_decisions.json · changed in s1/t1, s1/t2
+M manager_decisions.json · changed in turn1, turn2
 @@ -1,5 +1,7 @@
  {
 -  "15193": { "selected_proposal_id": 1 },
