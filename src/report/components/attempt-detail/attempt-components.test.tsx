@@ -8,6 +8,7 @@
 // E2E 报告域(docs/engineering/testing/e2e/report.md §5 结构/终端排版)。
 
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { EvalResult, StreamEvent, Verdict } from "../../../types.ts";
 import type { SourceContent as AnnotatedSourceContent } from "../../../record/annotated-source.ts";
@@ -16,7 +17,17 @@ import type { Record, Sample } from "../../../record/index.ts";
 import { emptyScopeAndResults } from "../scope.harness.ts";
 import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../record/attempt-evidence.ts";
 import { encodeAttemptLocator, type AttemptIdentity } from "../../../record/locator.ts";
-import { createTextContext, renderNodeToText, resolveReportTree, ResolveMemo, type ReportNode, composeOf} from "../../definition/tree.ts";
+import type { ConversationContent } from "../../definition/primitives/conversation.tsx";
+import type { SourceContent } from "../../definition/primitives/source-view.tsx";
+import {
+  createTextContext,
+  renderNodeToText,
+  resolveReportTree,
+  ResolveMemo,
+  runWithWebContext,
+  type ReportNode,
+  composeOf,
+} from "../../definition/tree.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import {
   attemptAssertionsData,
@@ -30,7 +41,12 @@ import {
   attemptTraceData,
   usageTableData,
 } from "./compute.ts";
-import { attemptTimelineContent, attemptTraceContent, projectedSourceContent } from "./content.tsx";
+import {
+  attemptTimelineContent,
+  attemptTraceContent,
+  embedConversationInSource,
+  projectedSourceContent,
+} from "./content.tsx";
 import { deriveDiffData } from "../../../assertions/diff.ts";
 import {
   Callouts,
@@ -155,17 +171,91 @@ function executionUnavailableCallout(node: unknown) {
   );
 }
 
-function sourceEvidenceOf() {
+function sourceEvidenceOf(
+  annotations: AnnotatedSourceContent["spine"]["lines"][number]["annotations"] = [],
+) {
   return {
     spine: {
       file: "evals/a.ts",
       sha256: "sha",
-      lines: [{ line: 1, text: 'await t.send("go");', annotations: [], calls: [] }],
+      lines: [{ line: 1, text: 'await t.send("go");', annotations, calls: [] }],
     },
     detached: [],
     unmapped: { assertions: [], scores: [] },
     summary: { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false },
   };
+}
+
+function sourceConversationEvidence(): AttemptEvidence {
+  const loc = { file: "evals/a.ts", line: 1 };
+  const events: StreamEvent[] = [
+    { type: "message", role: "user", text: "go", loc, sourceOrder: 1 },
+    {
+      type: "operation.started",
+      operationId: "tool-1",
+      operation: { kind: "tool", name: "bash", input: { command: "pwd" }, tool: "shell" },
+    },
+    { type: "operation.finished", operationId: "tool-1", kind: "tool", output: "ok", status: "completed" },
+    { type: "message", role: "assistant", text: "done" },
+  ];
+  return evidenceOf({
+    events,
+    evalSource: sourceEvidenceOf([{
+      kind: "send",
+      send: {
+        label: "legacy-internal-label",
+        status: "completed",
+        durationMs: 1_000,
+        loc,
+        sourceOrder: 1,
+      },
+    }]),
+    capabilities: { ...NO_CAPS, source: true, execution: true },
+  });
+}
+
+function renderAttemptHtml(tree: ReportNode): string {
+  return runWithWebContext(
+    {
+      locale: "en",
+      href: () => undefined,
+      dimension: () => {
+        throw new Error("unexpected dimension");
+      },
+    },
+    () => renderToStaticMarkup(tree as never),
+  );
+}
+
+function expectEmbeddedConversationHtml(html: string): void {
+  const detailStart = html.indexOf('<div class="niceeval-source-line-detail">');
+  expect(detailStart).toBeGreaterThanOrEqual(0);
+  const sourceDetailsStart = html.lastIndexOf("<details", detailStart);
+  expect(sourceDetailsStart).toBeGreaterThanOrEqual(0);
+  const detailTags = /<\/?details\b[^>]*>/g;
+  detailTags.lastIndex = sourceDetailsStart;
+  let depth = 0;
+  let sourceDetailsEnd = -1;
+  let match: RegExpExecArray | null;
+  while ((match = detailTags.exec(html)) !== null) {
+    if (match[0]!.startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        sourceDetailsEnd = match.index + match[0]!.length;
+        break;
+      }
+    } else {
+      depth += 1;
+    }
+  }
+  expect(sourceDetailsEnd).toBeGreaterThan(detailStart);
+  const detail = html.slice(detailStart, sourceDetailsEnd);
+  expect(detail).toContain('data-kind="assistant"');
+  expect(detail).toContain('data-kind="tool"');
+  expect((html.match(/data-kind="assistant"/g) ?? [])).toHaveLength(1);
+  expect((html.match(/data-kind="tool"/g) ?? [])).toHaveLength(1);
+  expect((html.match(/class="niceeval-report niceeval-conversation"/g) ?? [])).toHaveLength(1);
+  expect(html).not.toContain("legacy-internal-label");
 }
 
 // ───────────────────────── 11 个叶子的非空/空证据矩阵 ─────────────────────────
@@ -201,7 +291,66 @@ describe("AttemptSource:send annotation", () => {
 
     const projected = projectedSourceContent(source)!;
     const detail = projected.spine.lines[0]!.details![0] as { props: { children: unknown } };
-    expect(detail.props.children).toBe("turn1 · completed · 2m 37s");
+    expect(detail.props.children).toBe("completed · 2m 37s");
+  });
+});
+
+describe("embedConversationInSource", () => {
+  it("按源码标签把轮嵌入嵌套/ detached send 行，未映射轮与失败命令留在页尾", () => {
+    const source: SourceContent = {
+      spine: {
+        path: "evals/main.ts",
+        lines: [{
+          number: 1,
+          text: "helper();",
+          calls: [{
+            summary: "1 check",
+            open: true,
+            target: {
+              kind: "source",
+              block: {
+                path: "evals/helper.ts",
+                lines: [{ number: 3, text: 't.send("nested")', tone: "send" }],
+              },
+            },
+          }],
+        }],
+      },
+      detached: [{
+        path: "evals/detached.ts",
+        lines: [{ number: 7, text: 't.send("detached")', tone: "send" }],
+      }],
+      locator: encodeAttemptLocator(identityOf()),
+    };
+    const conversation: ConversationContent = {
+      turns: [
+        { key: "unlabeled-round", label: "legacy-first", entries: [{ kind: "assistant", preview: "detached" }] },
+        { key: "nested-round", label: "evals/helper.ts:3", entries: [{ kind: "tool", preview: "nested" }] },
+        { key: "unmapped-round", label: "legacy", entries: [{ kind: "assistant", preview: "legacy" }] },
+      ],
+      failedCommands: [{ key: "cmd-1", phase: "eval.run", display: "false", exitCode: 1 }],
+      locator: encodeAttemptLocator(identityOf({ attempt: 1 })),
+    };
+
+    const embedded = embedConversationInSource(source, conversation);
+    const nestedBlock = embedded.source!.spine.lines[0]!.calls![0]!.target;
+    expect(nestedBlock.kind).toBe("source");
+    if (nestedBlock.kind !== "source") return;
+    const nestedDetail = nestedBlock.block.lines[0]!.details![0] as { type: unknown; props: { data: ConversationContent } };
+    const detachedDetail = embedded.source!.detached[0]!.lines[0]!.details![0] as {
+      type: unknown;
+      props: { data: ConversationContent };
+    };
+    expect(nestedDetail.type).toBe(Conversation);
+    expect(nestedDetail.props.data.turns.map((turn) => turn.key)).toEqual(["nested-round"]);
+    expect(detachedDetail.type).toBe(Conversation);
+    expect(detachedDetail.props.data.turns.map((turn) => turn.key)).toEqual(["unlabeled-round"]);
+    expect(embedded.conversation?.turns.map((turn) => turn.key)).toEqual(["unmapped-round"]);
+    expect(embedded.conversation?.failedCommands).toEqual(conversation.failedCommands);
+    expect(embedded.conversation?.locator).toBe(conversation.locator);
+    expect(source.spine.lines[0]!.calls![0]!.target.kind).toBe("source");
+    expect(source.detached[0]!.lines[0]!.details).toBeUndefined();
+    expect(conversation.turns).toHaveLength(3);
   });
 });
 
@@ -360,6 +509,18 @@ describe("standardAttemptRender:执行证据投影", () => {
     ]);
     expect(elementsByType(tree, Conversation)).toHaveLength(0);
   });
+
+  it("标准结果视图把 assistant/tool 嵌入源码行且不在页尾重复", async () => {
+    const evidence = sourceConversationEvidence();
+    const tree = await resolveOnAttemptPage(await standardAttemptRender(evidence), evidence);
+    expectEmbeddedConversationHtml(renderAttemptHtml(tree));
+  });
+
+  it("公开 AttemptDetails 把 assistant/tool 嵌入源码行且不在页尾重复", async () => {
+    const evidence = sourceConversationEvidence();
+    const tree = await resolveOnAttemptPage(<AttemptDetails />, evidence);
+    expectEmbeddedConversationHtml(renderAttemptHtml(tree));
+  });
 });
 // 「Attempt 证据数据源」——timeline / trace 投影的时间树语义
 // (docs/engineering/testing/unit/reports.md)。
@@ -375,7 +536,7 @@ describe("timeline / trace 投影的时间树语义", () => {
           name: "eval.run",
           durationMs: 5_000,
           children: [
-            { id: "turn-1", key: "agent.turn", label: "turn1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
+            { id: "turn-1", key: "agent.turn", label: ["s1", "t1"].join("/"), startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
           ],
         },
         { name: "sandbox.stop", durationMs: 500, failed: true },
@@ -398,6 +559,7 @@ describe("timeline / trace 投影的时间树语义", () => {
     // t1 的 spans 是 turn 的 children,锚在该轮起点;span 父子层级保留
     const turn = evalRun.children!.find((c) => c.key === "turn-1")!;
     expect(turn.open).toBe(true);
+    expect(turn.label).toBe("turn1");
     const root = turn.children!.find((c) => c.key === "root")!;
     expect(root.startOffsetMs).toBe(1_200);
     expect(root.children!.map((c) => c.key)).toEqual(["child"]);

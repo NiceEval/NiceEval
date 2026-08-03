@@ -19,6 +19,7 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { DiffView, type DiffContent } from "./primitives/diff-view.tsx";
+import { diffFilePatchText } from "./primitives/diff-lines.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -29,8 +30,8 @@ const content: DiffContent = [
     added: 2,
     removed: 1,
     windows: [
-      { window: "turn1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
-      { window: "turn2", patch: "@@ -5,1 +5,2 @@\n+second window" },
+      { window: ["s1", "t1"].join("/"), patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
+      { window: ["s2", "t3"].join("/"), patch: "@@ -5,1 +5,2 @@\n+second window" },
     ],
   },
   {
@@ -38,14 +39,14 @@ const content: DiffContent = [
     change: "added",
     added: 10,
     removed: 0,
-    windows: [{ window: "turn2", patch: "@@ -1,0 +1,1 @@\n+new file" }],
+    windows: [{ window: ["s2", "t3"].join("/"), patch: "@@ -1,0 +1,1 @@\n+new file" }],
   },
   {
     path: "old.txt",
     change: "deleted",
     added: 0,
     removed: 3,
-    windows: [{ window: "turn1", patch: "@@ -1,3 +1,0 @@\n-a\n-b\n-c" }],
+    windows: [{ window: ["s1", "t1"].join("/"), patch: "@@ -1,3 +1,0 @@\n-a\n-b\n-c" }],
   },
   {
     path: "assets/logo.png",
@@ -53,7 +54,7 @@ const content: DiffContent = [
     added: 0,
     removed: 0,
     elided: { reason: "binary", beforeBytes: 10, afterBytes: 20 },
-    windows: [{ window: "turn1" }],
+    windows: [{ window: ["s1", "t1"].join("/") }],
   },
   {
     path: "data/dump.sql",
@@ -61,7 +62,7 @@ const content: DiffContent = [
     added: 0,
     removed: 0,
     elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 },
-    windows: [{ window: "turn1" }],
+    windows: [{ window: ["s1", "t1"].join("/") }],
   },
 ];
 
@@ -117,9 +118,11 @@ describe("DiffView", () => {
     );
     expect(text).toContain("5 files changed by agent");
     expect(text).toContain("niceeval show @loc1 --diff");
-    expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +turn1, turn2/);
-    expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +turn2/);
+    expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +turn1, session2\/turn3/);
+    expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +session2\/turn3/);
     expect(text).toMatch(/D +old\.txt +-3 +turn1/);
+    expect(text).not.toContain(["s1", "t1"].join("/"));
+    expect(text).not.toContain(["s2", "t3"].join("/"));
     // 内容被省略的两种原因各自在行上标注,共用同一格字节数变化
     expect(text).toContain("binary 10 → 20 bytes");
     expect(text).toContain("oversized text 2097153 → 4194304 bytes");
@@ -133,7 +136,9 @@ describe("DiffView", () => {
     expect(html).toContain('data-change="deleted"');
     // 一个文件的两个窗口各成一段,不合成跨窗口 patch
     expect(html).toContain("window turn1");
-    expect(html).toContain("window turn2");
+    expect(html).toContain("window session2/turn3");
+    expect(html).not.toContain(["s1", "t1"].join("/"));
+    expect(html).not.toContain(["s2", "t3"].join("/"));
     expect(html.match(/niceeval-diff-window-title/g)?.length).toBe(4);
     expect(html).toContain("niceeval-diff-patch-line--add");
     expect(html).toContain("niceeval-diff-patch-line--remove");
@@ -145,6 +150,11 @@ describe("DiffView", () => {
     expect(oversizedRow).toContain("oversized text 2097153 → 4194304 bytes");
     expect(oversizedRow).toContain("oversized text file · content elided from the diff export");
     expect(oversizedRow).not.toContain("--diff=data/dump.sql");
+    const patchText = diffFilePatchText(content[0]!);
+    expect(patchText).toContain("── window turn1");
+    expect(patchText).toContain("── window session2/turn3");
+    expect(patchText).not.toContain(["s1", "t1"].join("/"));
+    expect(patchText).not.toContain(["s2", "t3"].join("/"));
   });
 
   it("路径树:目录汇总、单子目录链压缩,状态不参与分组", async () => {

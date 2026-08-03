@@ -21,7 +21,7 @@ import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
 import { summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
-import { formatTurnLabel } from "../shared/turn-label.ts";
+import { formatTurnLabel, normalizeTurnLabel } from "../shared/turn-label.ts";
 import { diffFilePatchText, diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { AttemptDiffData } from "../report/model/types.ts";
 import type {
@@ -318,9 +318,9 @@ function evalAssertionDetailLine(a: AssertionResult): string | undefined {
   return undefined;
 }
 
-/** send 行标注:轮身份 · status · 墙钟(有记录才出现),契约见 show.md「--eval」。 */
+/** send 行摘要只显示 status · 墙钟(有记录才出现),不透传内部轮 label。 */
 function sendAnnotationLine(send: SendAnnotation): string {
-  const parts = [send.label, send.status];
+  const parts: string[] = [send.status];
   if (send.durationMs !== undefined) parts.push(formatDurationMs(send.durationMs));
   return parts.join(" · ");
 }
@@ -775,7 +775,7 @@ function commandCardHeader(entry: CommandCard): string {
  *  show/execution.md)。usage 读 TimingActivity.usage(该轮 `Turn.usage` 落盘原样),字段不存在时
  *  这一段照常省略。 */
 function turnHeadLine(section: TurnSection): string {
-  const label = section.turn?.label ?? formatTurnLabel(1, section.turnNumber);
+  const label = normalizeTurnLabel(section.turn?.label ?? formatTurnLabel(1, section.turnNumber));
   const status = section.turn?.failed ? "failed" : "completed";
   const parts = [label, status];
   if (section.turn) parts.push(formatDurationMs(section.turn.durationMs));
@@ -917,7 +917,7 @@ function renderGrep(
       const parts = agentCardParts(card.node, originMs);
       if (!testGrep(grep, parts.matchText)) continue;
       matches += 1;
-      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, section.turn?.label ?? formatTurnLabel(1, section.turnNumber)].join(
+      const locatorLine = [evidence.locator, evidence.identity.evalId, evidence.experimentId, normalizeTurnLabel(section.turn?.label ?? formatTurnLabel(1, section.turnNumber))].join(
         " · ",
       );
       const cardLines = renderCardLines(parts, card.handle, evidence.locator, false);
@@ -1129,7 +1129,7 @@ function timingNodeLabel(node: TimingActivity): string {
   // 结构化字段归 key 所有:sandbox.command / agent.turn 用自己的摘要形态。
   // 其它 key(含未知)一律渲染 producer 的 label——不查 LifecyclePhase 锚点表,也不对 key 穷尽 switch。
   if (node.key === "sandbox.command" && node.command) return `shell · ${node.command.display}`;
-  if (node.key === "agent.turn") return `turn ${node.label}`;
+  if (node.key === "agent.turn") return `turn ${normalizeTurnLabel(node.label)}`;
   return node.label;
 }
 

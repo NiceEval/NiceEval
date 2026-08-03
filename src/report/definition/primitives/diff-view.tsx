@@ -5,6 +5,7 @@
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { isAttemptEvidence } from "../../../record/attempt-evidence.ts";
+import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
 import { ATTEMPT_PAGE_ID, dataShapeError, isObject } from "../../components/shared.ts";
 import { type ReportLocale } from "../../model/locale.ts";
 import { defineComponent, type ResolveContext, type TextContext } from "../tree.ts";
@@ -157,7 +158,7 @@ function WindowSections({ windows }: { windows: readonly DiffFileWindow[] }): Re
     <>
       {withPatch.map((w) => (
         <section key={w.window} className="niceeval-diff-window">
-          <h4 className="niceeval-diff-window-title">window {w.window}</h4>
+          <h4 className="niceeval-diff-window-title">window {normalizeTurnLabel(w.window)}</h4>
           <PatchBody patch={w.patch!} />
         </section>
       ))}

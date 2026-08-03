@@ -12,7 +12,7 @@
 // display/stdout/stderr;命中计数与 0 命中的明确输出。
 
 import { describe, expect, it } from "vitest";
-import { diffText, executionText, runTimingText, timingText, verdictReasonLine } from "./render.ts";
+import { diffText, evalSourceText, executionText, runTimingText, timingText, verdictReasonLine } from "./render.ts";
 import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingActivity, SandboxBuildRecord, Verdict } from "../types.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
@@ -168,6 +168,65 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
     expect(text).toContain("turn1 · completed · 1.2s · 12.4k tok · $0.02");
     // 第二轮没有 usage,这一段整体省略,不是显示 0。
     expect(text).toContain("turn2 · completed · 800ms\n");
+  });
+
+  it("旧 artifact 的 turn label 在 execution、grep locator 与 timing 展示中归一", () => {
+    const legacyLabel = ["s1", "t1"].join("/");
+    const phases: PhaseTiming[] = [{
+      name: "eval.run" as PhaseTiming["name"],
+      durationMs: 1_000,
+      children: [{ id: "turn-legacy", key: "agent.turn", label: legacyLabel, startOffsetMs: 0, durationMs: 1_000 }],
+    }];
+    const evidence = evidenceOf({
+      execution: buildExecutionTree([{ type: "message", role: "user", text: "go" }], []),
+      result: resultOf({ phases }),
+    });
+
+    const execution = executionText(evidence, OPTS).text;
+    const grep = executionText(evidence, OPTS, { grep: /go/ }).text;
+    const timing = timingText(evidence, { ...OPTS, mode: "summary" });
+    expect(execution).toContain("turn1 · completed · 1.0s");
+    expect(grep).toContain(` · turn1\n`);
+    expect(timing).toContain("turn turn1");
+    expect(execution).not.toContain(legacyLabel);
+    expect(grep).not.toContain(legacyLabel);
+    expect(timing).not.toContain(legacyLabel);
+  });
+});
+
+describe("--eval:source send 摘要", () => {
+  it("不透传旧 artifact 的内部 label", () => {
+    const legacyLabel = "legacy-internal-label";
+    const result: Parameters<typeof evalSourceText>[0] = {
+      locator: LOCATOR,
+      source: {
+        spine: {
+          file: "evals/a.ts",
+          sha256: "sha",
+          lines: [{
+            line: 1,
+            text: 'await t.send("go");',
+            annotations: [{
+              kind: "send",
+              send: {
+                label: legacyLabel,
+                status: "completed",
+                durationMs: 1_000,
+                loc: { file: "evals/a.ts", line: 1 },
+              },
+            }],
+            calls: [],
+          }],
+        },
+        detached: [],
+        unmapped: { assertions: [], scores: [] },
+        summary: { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false },
+      },
+    };
+
+    const text = evalSourceText(result, { header: "H", width: 100 });
+    expect(text).toContain("completed · 1.0s");
+    expect(text).not.toContain(legacyLabel);
   });
 });
 
@@ -480,18 +539,23 @@ describe("--diff:与 DiffView 的 text 面读同一份投影", () => {
     expect(text).toContain("M src/a.ts · touched in turn1, turn2");
   });
 
-  it("旧 artifact 的窗口 token 在 show 投影中仍按不透明字符串原样显示", () => {
+  it("旧坐标在展示边界归一化", () => {
+    const legacyWindow = ["s1", "t1"].join("/");
     const legacyFiles = [{
       path: "legacy.ts",
       change: "modified" as const,
       added: 1,
       removed: 0,
-      windows: [{ window: "s1/t1", patch: "@@ -1 +1 @@\n-old\n+new" }],
+      windows: [{ window: legacyWindow, patch: "@@ -1 +1 @@\n-old\n+new" }],
     }];
     const legacyData = { locator: encodeAttemptLocator(identityOf()), files: legacyFiles };
 
-    expect(diffSummaryText(legacyFiles, { singleFileHint: true })).toContain("s1/t1");
-    expect(diffText({ header: "H", data: legacyData, file: "legacy.ts" })).toContain("── window s1/t1");
+    const summary = diffSummaryText(legacyFiles, { singleFileHint: true });
+    const text = diffText({ header: "H", data: legacyData, file: "legacy.ts" });
+    expect(summary).toContain("turn1");
+    expect(summary).not.toContain(legacyWindow);
+    expect(text).toContain("── window turn1");
+    expect(text).not.toContain(legacyWindow);
   });
 
   it("没有 diff 证据与一个文件都没改是两回事", () => {

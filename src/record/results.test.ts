@@ -956,8 +956,8 @@ describe("publish", () => {
     await writeResultFile(monday, "q1/a1", record({ id: "q1", attempt: 1, artifacts: ["events", "trace"] }));
     await writeArtifactFile(monday, "q1/a1", "events.json", [{ n: 1 }]);
     await writeArtifactFile(monday, "q1/a1", "trace.json", [{ name: "turn" }]);
-    // 历史快照 fixture:旧 token 必须由读取/发布链路原样保留,不做迁移。
-    await writeArtifactFile(monday, "q1/a1", "diff.json", [{ window: "s1/t1", changes: {} }]);
+    // 历史快照 fixture:opaque window 必须由读取/发布链路原样保留,不做迁移。
+    await writeArtifactFile(monday, "q1/a1", "diff.json", [{ window: "legacy-window", changes: {} }]);
     await writeResultFile(monday, "q2/a1", record({ id: "q2", attempt: 1 }));
 
     // 周五只重跑了 q1:最新快照残缺。

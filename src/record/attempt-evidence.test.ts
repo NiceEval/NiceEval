@@ -52,7 +52,7 @@ const TRACE: TraceSpan[] = [
 
 const NONEMPTY_DIFF: DiffArtifact = [{ window: "turn1", changes: { "a.txt": { status: "added", after: "hello" } } }];
 const EMPTY_DIFF: DiffArtifact = [{ window: "turn1", changes: {} }];
-const LEGACY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: { "legacy.txt": { status: "added", after: "kept" } } }];
+const LEGACY_DIFF: DiffArtifact = [{ window: "legacy-window", changes: { "legacy.txt": { status: "added", after: "kept" } } }];
 
 /** 起一个 writer,写一条 attempt,finish,再从头 openRecord 读回它的 AttemptHandle。 */
 async function seedAttempt(

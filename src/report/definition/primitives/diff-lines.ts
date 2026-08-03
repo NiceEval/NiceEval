@@ -3,6 +3,7 @@
 // src/show 能直接从源码引它,web 面走 dist/report 的编译产物,两条路径消费同一份实现。
 
 import { renderAlignedRows } from "../../model/text-layout.ts";
+import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
 
 export type DiffChange = "added" | "modified" | "deleted";
 
@@ -33,7 +34,7 @@ export function diffChangeLetter(change: DiffChange): string {
 }
 
 export function diffWindowLabels(file: DiffFile): string {
-  return file.windows.map((w) => w.window).join(", ");
+  return file.windows.map((w) => normalizeTurnLabel(w.window)).join(", ");
 }
 
 /** 省略原因在两面共用的一枚词:行上标注它,人才知道为什么没有 patch。 */
@@ -87,7 +88,7 @@ export function diffSummaryText(
 /** 单文件的逐窗口分段:`--diff=<path>` 与 web 面折叠区同一批段落,不合成跨窗口 patch。 */
 export function diffFilePatchText(file: DiffFile): string {
   const head = `${diffChangeLetter(file.change)} ${file.path} · touched in ${diffWindowLabels(file)}`;
-  const sections = file.windows.map((w) => `── window ${w.window}\n${windowBody(file, w)}`);
+  const sections = file.windows.map((w) => `── window ${normalizeTurnLabel(w.window)}\n${windowBody(file, w)}`);
   return [head, ...sections].join("\n\n");
 }
 

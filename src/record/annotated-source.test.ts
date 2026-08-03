@@ -27,30 +27,30 @@ function assertion(
 }
 
 describe("deriveSendAnnotations", () => {
-  it("第 i 条用户消息配第 i 个 turn 节点;已有标签(含旧 artifact 缩写)按原样保留", () => {
+  it("第 i 条用户消息配第 i 个 turn 节点;已有标签按原样保留", () => {
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "first", loc: { file: SOURCE_PATH, line: 3, column: 5 } },
       { type: "message", role: "assistant", text: "reply" },
       { type: "message", role: "user", text: "second (no loc)" },
       { type: "message", role: "user", text: "third", loc: { file: SOURCE_PATH, line: 9, column: 5 } },
     ];
-    // 这是旧 artifact 标签：derive 只读取并透传，不把历史 token 迁移到新格式。
+    // 这里使用当前 turn 标签：derive 只读取并透传。
     const phases: PhaseTiming[] = [{
       name: "eval.run",
       durationMs: 5000,
       children: [
         { id: "n1", key: "sandbox.command", label: "git", startOffsetMs: 0, durationMs: 10 },
-        { id: "n2", key: "agent.turn", label: "s1/t1", startOffsetMs: 10, durationMs: 1500 },
-        { id: "n3", key: "agent.turn", label: "s1/t2", startOffsetMs: 1510, durationMs: 900, failed: true },
-        { id: "n4", key: "agent.turn", label: "s1/t3", startOffsetMs: 2410, durationMs: 300 },
+        { id: "n2", key: "agent.turn", label: "turn1", startOffsetMs: 10, durationMs: 1500 },
+        { id: "n3", key: "agent.turn", label: "turn2", startOffsetMs: 1510, durationMs: 900, failed: true },
+        { id: "n4", key: "agent.turn", label: "turn3", startOffsetMs: 2410, durationMs: 300 },
       ],
     }];
 
     const sends = deriveSendAnnotations(events, phases);
     expect(sends).toEqual([
-      { label: "s1/t1", status: "completed", durationMs: 1500, loc: { file: SOURCE_PATH, line: 3, column: 5 } },
+      { label: "turn1", status: "completed", durationMs: 1500, loc: { file: SOURCE_PATH, line: 3, column: 5 } },
       // 第二条用户消息没有 loc → 不产出;第三条配第 3 个 turn 节点,不因跳过而错位
-      { label: "s1/t3", status: "completed", durationMs: 300, loc: { file: SOURCE_PATH, line: 9, column: 5 } },
+      { label: "turn3", status: "completed", durationMs: 300, loc: { file: SOURCE_PATH, line: 9, column: 5 } },
     ]);
   });
 

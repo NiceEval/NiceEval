@@ -26,6 +26,7 @@ import {
   attemptAssertionsContent,
   attemptConversationContent,
   attemptDiffContent,
+  embedConversationInSource,
   executionEvidenceUnavailableCallouts,
   attemptFixPromptContent,
   attemptNoticesContent,
@@ -354,23 +355,26 @@ export const AttemptDetailsResultView = defineComponent<{
     ...(result.timing.error?.code === "timeout" ? { timedOut: true as const } : {}),
   });
   const conversation = attemptConversationContent(result.conversation.conversation);
+  const embedded = embedConversationInSource(source, conversation);
   const files = attemptDiffContent(result.diff);
   return (
     <Col>
       <AttemptSummary data={result.summary} />
       <Callouts items={notices} />
-      {source !== null ? (
-        <SourceView data={source} />
+      {embedded.source !== null ? (
+        <SourceView data={embedded.source} />
       ) : assertions !== null && assertions.rows.length > 0 ? (
         <TableContentView data={assertions} />
       ) : null}
       <CopyBlock content={attemptFixPromptContent(result.fixPrompt)} />
       <Waterfall nodes={timeline ?? []} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} />
       <TaskUsageResultView data={result.usage} />
-      {conversation !== null ? (
-        <Conversation data={conversation} />
-      ) : (
+      {conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
+      ) : embedded.conversation !== null ? (
+        <Conversation data={embedded.conversation} />
+      ) : (
+        null
       )}
       <DiffView files={files} />
     </Col>

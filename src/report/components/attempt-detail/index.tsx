@@ -29,7 +29,7 @@ import {
   toDiffFiles,
   toTimelineNodes,
 } from "../../model/conversions.ts";
-import { executionEvidenceUnavailableCallouts } from "./content.tsx";
+import { embedConversationInSource, executionEvidenceUnavailableCallouts } from "./content.tsx";
 
 export {
   validateAssertionsData,
@@ -188,7 +188,11 @@ AttemptAssessment.displayName = "AttemptAssessment";
 /** 公开 Attempt 详情组合；文档名 AttemptDetails。 */
 export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
   const evidence = evidenceOf(props, ctx);
-  const [summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([
+  const hasSource = evidence.capabilities.source;
+  const [notices, source, assertions, summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([
+    toAttemptNotices(evidence),
+    hasSource ? toAttemptSource(evidence) : Promise.resolve(null),
+    hasSource ? Promise.resolve(null) : toAttemptAssertions(evidence),
     toAttemptSummary(evidence),
     toAttemptFixPrompt(evidence),
     toTimelineNodes(evidence),
@@ -196,20 +200,30 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
     toConversationTurns(evidence),
     toDiffFiles(evidence),
   ]);
+  const embedded = embedConversationInSource(source, conversation);
   return (
     <Col className={props.className}>
       <AttemptSummary data={summary} />
-      <AttemptAssessment attempt={evidence} />
+      <Col>
+        <Callouts items={notices} />
+        {embedded.source !== null ? (
+          <SourceView data={embedded.source} />
+        ) : assertions !== null && assertions.rows.length > 0 ? (
+          <TableContentView data={assertions} />
+        ) : null}
+      </Col>
       <CopyBlock content={fixPrompt} />
       <Waterfall
         nodes={timeline}
         title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
       />
       <AttemptUsage data={usage} />
-      {conversation !== null ? (
-        <Conversation data={conversation} />
-      ) : (
+      {conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
+      ) : embedded.conversation !== null ? (
+        <Conversation data={embedded.conversation} />
+      ) : (
+        null
       )}
       <DiffView files={diff} />
     </Col>

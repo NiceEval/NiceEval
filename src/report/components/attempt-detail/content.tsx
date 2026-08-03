@@ -6,7 +6,13 @@ import type { CalloutGroup, CalloutItem } from "../../definition/primitives/call
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
 import type { ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
 import type { DiffContent, DiffFile } from "../../definition/primitives/diff-view.tsx";
-import type { SourceContent, SourceLine, SourceLineTone } from "../../definition/primitives/source-view.tsx";
+import type {
+  SourceBlockContent,
+  SourceCallContent,
+  SourceContent,
+  SourceLine,
+  SourceLineTone,
+} from "../../definition/primitives/source-view.tsx";
 import type { WaterfallContent, WaterfallNode } from "../../definition/primitives/waterfall.tsx";
 import type { TableContent, TableContentRow } from "../../definition/cell.ts";
 import type {
@@ -24,6 +30,7 @@ import type { AssertionResult, JsonValue, ScoreEntry, TimingActivity, TraceSpan 
 import { stripControl } from "../../../assertions/display.ts";
 import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
+import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
 import type {
   LineAnnotation,
   ProjectedSourceCall,
@@ -50,7 +57,7 @@ function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] 
   const send = annotation.send;
   return [
     <Text key={key}>
-      {[send.label, send.status, send.durationMs === undefined ? undefined : formatDurationMs(send.durationMs)]
+      {[send.status, send.durationMs === undefined ? undefined : formatDurationMs(send.durationMs)]
         .filter((part): part is string => part !== undefined)
         .join(" · ")}
     </Text>,
@@ -161,6 +168,115 @@ function projectedBlockContent(node: ProjectedSourceNode): import("../../definit
   };
 }
 
+type SendLineRef = {
+  key: string;
+  line: SourceLine;
+};
+
+function collectSendLines(source: SourceContent): SendLineRef[] {
+  const lines: SendLineRef[] = [];
+  const visitCall = (call: SourceCallContent): void => {
+    if (call.target.kind === "source") {
+      visitBlock(call.target.block);
+      return;
+    }
+    for (const child of call.target.calls ?? []) visitCall(child);
+  };
+  const visitBlock = (block: SourceBlockContent): void => {
+    for (const line of block.lines) {
+      if (line.tone === "send") lines.push({ key: `${block.path}:${line.number}`, line });
+      for (const call of line.calls ?? []) visitCall(call);
+    }
+  };
+  visitBlock(source.spine);
+  for (const block of source.detached) visitBlock(block);
+  return lines;
+}
+
+/** 将 Conversation 轮嵌入源码 send 行；没有对应源码行的轮留在页尾。 */
+export function embedConversationInSource(
+  source: SourceContent | null,
+  conversation: ConversationContent | null,
+): { source: SourceContent | null; conversation: ConversationContent | null } {
+  const sendLines = source === null ? [] : collectSendLines(source);
+  const sendLinesByKey = new Map<string, SendLineRef[]>();
+  for (const sendLine of sendLines) {
+    const bucket = sendLinesByKey.get(sendLine.key);
+    if (bucket) bucket.push(sendLine);
+    else sendLinesByKey.set(sendLine.key, [sendLine]);
+  }
+
+  const occupied = new Set<SourceLine>();
+  const turnsByLine = new Map<SourceLine, ConversationTurn>();
+  const turns = conversation?.turns ?? [];
+  const mappedTurnIndexes = new Set<number>();
+  const assign = (turnIndex: number, target: SendLineRef): void => {
+    const turn = turns[turnIndex]!;
+    occupied.add(target.line);
+    turnsByLine.set(target.line, turn);
+    mappedTurnIndexes.add(turnIndex);
+  };
+
+  // 先按显式源码标签定位，避免流首无 loc 的轮抢走后续有 loc 轮的 send 行。
+  for (const [turnIndex, turn] of turns.entries()) {
+    const labeledCandidates = typeof turn.label === "string" ? sendLinesByKey.get(turn.label) : undefined;
+    const labeled = labeledCandidates?.find((candidate) => !occupied.has(candidate.line));
+    if (labeled) assign(turnIndex, labeled);
+  }
+  // 再按原 turns 顺序把没有命中标签的轮放入剩余 send 行。
+  for (const [turnIndex] of turns.entries()) {
+    if (mappedTurnIndexes.has(turnIndex)) continue;
+    const target = sendLines.find((candidate) => !occupied.has(candidate.line));
+    if (target) assign(turnIndex, target);
+  }
+
+  const cloneCall = (call: SourceCallContent): SourceCallContent => {
+    if (call.target.kind === "source") {
+      return {
+        ...call,
+        target: { kind: "source", block: cloneBlock(call.target.block) },
+      };
+    }
+    return {
+      ...call,
+      target: {
+        ...call.target,
+        ...(call.target.calls ? { calls: call.target.calls.map(cloneCall) } : {}),
+      },
+    };
+  };
+  const cloneLine = (line: SourceLine): SourceLine => {
+    const turn = turnsByLine.get(line);
+    const details =
+      line.details === undefined && turn === undefined
+        ? undefined
+        : [...(line.details ?? []), ...(turn === undefined ? [] : [<Conversation data={{ turns: [turn] }} />])];
+    return {
+      ...line,
+      ...(details === undefined ? {} : { details }),
+      ...(line.calls === undefined ? {} : { calls: line.calls.map(cloneCall) }),
+    };
+  };
+  const cloneBlock = (block: SourceBlockContent): SourceBlockContent => ({
+    ...block,
+    lines: block.lines.map(cloneLine),
+  });
+
+  const embeddedSource = source === null
+    ? null
+    : {
+        ...source,
+        spine: cloneBlock(source.spine),
+        detached: source.detached.map(cloneBlock),
+      };
+  const remainingTurns = turns.filter((_turn, turnIndex) => !mappedTurnIndexes.has(turnIndex));
+  const remainingConversation = conversation === null ||
+      (remainingTurns.length === 0 && (conversation.failedCommands?.length ?? 0) === 0)
+    ? null
+    : { ...conversation, turns: remainingTurns };
+  return { source: embeddedSource, conversation: remainingConversation };
+}
+
 /** AnnotatedSourceResult 的完整调用树到 SourceView Content；不再做裁行或展开决策。 */
 export function projectedSourceContent(
   data: ProjectedSourceContent | null,
@@ -257,7 +373,7 @@ function timingNodeToWaterfall(
   }
   return {
     key: node.id,
-    label: node.label,
+    label: node.key === "agent.turn" ? normalizeTurnLabel(node.label) : node.label,
     kind: node.key,
     startOffsetMs: node.startOffsetMs,
     durationMs: node.durationMs,
@@ -495,7 +611,13 @@ export function attemptFixPromptContent(data: AttemptFixPromptData | null): Copy
 /** 投影已经是 `DiffFile[]`,这里只把「没有证据」与「没有改动」都收成组件的零输出。 */
 export function attemptDiffContent(data: AttemptDiffData | null): DiffContent | null {
   if (data === null || data.files.length === 0) return null;
-  return data.files;
+  return data.files.map((file) => ({
+    ...file,
+    windows: file.windows.map((window) => ({
+      ...window,
+      window: normalizeTurnLabel(window.window),
+    })),
+  }));
 }
 
 export function attemptNoticesContent(
