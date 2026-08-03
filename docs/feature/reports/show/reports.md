@@ -53,7 +53,7 @@ $ niceeval show --record tmp/published-results --report reports/site.tsx
 
 ## Case 5：attempt 下钻使用同一份报告定义
 
-报告声明了 attempt 参数化页时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Record evidence，不经 page content：
+显式 `--report` 装载的报告声明了 attempt 参数化页时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Record evidence，不经 page content：
 
 ```sh
 $ niceeval show --report reports/site.tsx --page exam    # 页里出现 @1qrdcfq8
@@ -61,7 +61,7 @@ $ niceeval show @1qrdcfq8 --report reports/site.tsx      # 自定义参数化 pa
 $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可用
 ```
 
-报告没声明 attempt 参数化页时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。
+显式报告没声明 attempt 参数化页时 locator 只是文本，不生成一条会悄悄落回内建详情的报告内命令。
 要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就复用它的 `params` 与 `load` 并重组 `render`。
 
 ## Case 6：内建等价文件
@@ -71,10 +71,11 @@ $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可
 
 ## Case 7：项目默认报告与临时回到内建
 
-配置里填了 `report` 字段后，不带选项的 `show` 装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认报告，不必改配置：
+配置里填了 `report` 字段后，不带范围的 `show` 与 eval 前缀范围装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认报告，不必改配置。单 locator 是例外：`show @<locator>` 是内建诊断入口，不由项目默认报告改变：
 
 ```sh
 $ niceeval show                             # 装载 config.report
+$ niceeval show @1qrdcfq8                  # 官方 Attempt 诊断首页
 $ niceeval show --report standard           # 本次回到内建 standard
 $ niceeval show --report ./reports/exam.tsx # 本次换成另一份文件
 $ niceeval show --report site

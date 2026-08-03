@@ -94,9 +94,10 @@ niceeval show --report standard        # 内建视图名，回到默认报告
 
 `--report <名字|文件>` 替换整份 pages。
 值按形态判别：含 `/`、以 `.` 开头或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的当报告文件路径，其余不含路径的名称查[内建视图名](library/built-in.md)（当前只有 `standard`），不含路径的名称未命中就列出可用名字并提示文件要写成 `./reports/site.tsx`。
-不带 `--report` 时装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](README.md#项目默认报告)）。
+不带 `--report` 的 Sample 范围装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](README.md#项目默认报告)）。
+单个 `@<locator>` 是稳定的内建诊断入口：没有显式 `--report` 时，它不装载项目默认报告，直接调用 Attempt 详情任务并渲染官方 text 面；项目报告是否声明 `attempt` page 不影响这条命令。
 
-无证据 flag 的 `show @<locator> --report <file>` 选择其中 id 为 `attempt` 的参数化页，经它的 `load` 装载 locator 对应的 evidence 并渲染 text 面；`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。
+显式写出 `show @<locator> --report <file>` 才选择该报告中 id 为 `attempt` 的参数化页，经它的 `load` 装载 locator 对应的 evidence 并渲染 text 面；缺页时按用法错误退出，不回退到官方详情。`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。
 `--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/record` 读取面](../record/library.md)。
 
 ## 无匹配与不可读结果

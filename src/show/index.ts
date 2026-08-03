@@ -6,7 +6,7 @@
 // 切片(每个切片解析成一次报告组件装配,见 architecture.md「show 的切片是组件选择」):
 //   无证据 flag 且 --exp < 2   默认报告(内建报告的 text 面;裸 show / eval 前缀 / 单个 --exp 都落在这里)
 //   无证据 flag 且 --exp >= 2  对照矩阵(DeltaTable,接线点见 renderCompareSlice)
-//   @<locator> 且无证据 flag   失败诊断首页(当前 report 的 attempt-input page)
+//   @<locator> 且无证据 flag   官方 Attempt 诊断首页;显式 --report 时才进入该报告的 attempt page
 //   --source / --execution / --timing / --diff[=路径]   证据切面(宿主本体,不渲染报告槽);
 //     接受任意范围,范围含多个 attempt 时按 experimentId、evalId、attempt 序逐 attempt 分节
 //     (renderEvidenceSections),单 attempt 范围只是省掉分节
@@ -904,7 +904,9 @@ async function show(
     // 「在 show 与 view 怎样渲染」)。不带 --report 时装载内建 standard,其中就带这张页;--report
     // 指向的自定义报告没有声明 id 为 "attempt" 的页时报完整用户反馈,不回退到内建详情
     // (三条解决路径都在错误文案里给出)。
-    const report = await loadHostReport(cwd, flags.report, flags.configReport);
+    // 不带 --report 的 locator 是稳定的官方诊断入口,不受项目默认报告影响;只有显式 --report 才进入
+    // 用户报告声明的 attempt page。显式传入 undefined 也避免 config.report 在这一分支被品牌校验。
+    const report = await loadHostReport(cwd, flags.report ?? "standard", undefined);
     // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」)。
     const attemptPage = report.pages.find((p) => p.id === "attempt");
     if (attemptPage === undefined) {

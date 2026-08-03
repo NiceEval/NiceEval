@@ -45,6 +45,10 @@ async function renderTarget(
 attempt、experiment 这些词只出现在标准库的页定义与组件里，不出现在宿主分派、路由或目标类型中；新实体视图注册新页即可，核心不加分支。
 这与核心中立对 runner 的要求同构：需要差异行为时放进页定义，不写 `page == attempt` 式判断。
 
+`show` 的证据切片位于这条报告页管线之外。`@<locator>` 先把范围收窄为一个 Attempt；没有显式 `--report` 时，默认切片与 `--source`、`--execution`、`--timing`、`--usage`、`--diff` 一样，由 show 宿主调用公开任务函数并渲染官方 text 组件。项目 `config.report` 只替换 Sample 报告入口，不能让稳定的 locator 诊断入口失效。
+
+显式 `show @<locator> --report <定义>` 表达不同意图：用户要求用这份定义呈现该 Attempt。show 此时构造 `{ page: "attempt", params: { locator } }` 的普通 `ReportTarget`，再进入上面的中立页管线；目标页缺失就报错，不做隐藏注入或官方页回退。这个分流属于 CLI 的“内建切片还是显式报告”选择，不给报告运行时增加实体分支。
+
 本地 view 按请求求值对应 page 实例。
 承载它的宿主协议就是现有站点管线的按需块协议（[View](../../feature/reports/view.md)）。
 `#/<pageId>` 只是浏览器侧的浏览状态；page 内容按 `report/<pageId>.<locale>.html` 路径请求，server 因此在请求路径里就知道该求值哪张 page 实例。

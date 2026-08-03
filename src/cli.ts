@@ -19,7 +19,7 @@ import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector 
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import type { FingerprintDelta } from "./runner/manifest.ts";
-import { decodeAttemptLocator } from "./record/locator.ts";
+import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
@@ -1009,9 +1009,11 @@ async function main(): Promise<void> {
       process.stderr.write("--theme only affects the web view. Use `niceeval view --theme …` instead.\n");
       process.exit(1);
     }
-    // show 不依赖 niceeval.config.ts:读的是 .niceeval/(或 --record 指定的记录根)的落盘结果。
+    // show 中不带 --report 的 locator 是官方诊断入口,不读取项目默认报告;显式 --report 也已经替换了
+    // config.report。其余报告槽路径才读取 config.report 作为默认报告。
     let configReport: Config["report"] | undefined;
-    if (existsSync(join(cwd, "niceeval.config.ts"))) {
+    const hasAttemptLocator = positionals.some((value) => value.startsWith(ATTEMPT_LOCATOR_PREFIX));
+    if (!hasAttemptLocator && flags.report === undefined && existsSync(join(cwd, "niceeval.config.ts"))) {
       try {
         configReport = (await loadConfig(cwd)).report;
       } catch (e) {

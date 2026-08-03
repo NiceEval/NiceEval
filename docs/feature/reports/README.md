@@ -176,6 +176,7 @@ return <Table rows={rows} />;
    Sample 派生图表只接受 EvidenceRow；复杂算法通过 MetricValue 构造器强制提交 samples、total、basis 与 refs。
 3. **show / JSON。**
    `ShowJson` 信封继续存在；每个内建切片由一个公开任务函数产出普通 Result，text 组件和 JSON 序列化消费同一次结果，不从报告树切数据。
+   `show @<locator>` 是内建 Attempt 诊断切片，不受项目默认报告影响；显式 `--report` 才把同一 locator 交给报告的参数化页。
 4. **壳收缩到宿主必需品。**
    外壳只保留 `title`、`theme`、`dimensionPins` 与 `head`；页脚与页头链接是普通内容，组件脚本样式随组件资产声明，站点级注入走 `head`。
 

@@ -60,7 +60,7 @@ Attempt 详情是一张按 locator 参数化的 page，自定义时只换 `rende
 ```
 
 要改顺序或删区块，直接写 page render。
-报告没有 attempt page 时，`show` 的 locator 仍是普通文本，不生成一条会改变报告语义的命令； `view` 则使用官方 `AttemptDetails` 作为隐式详情页，让 web locator 保持可下钻。
+显式 `--report` 装载的报告没有 attempt page 时，报告 text 面的 locator 是普通文本，不生成一条会改变报告语义的报告内命令；不带 `--report` 的 `show @<locator>` 仍由官方 `AttemptDetails` 提供稳定诊断。`view` 使用官方 `AttemptDetails` 作为隐式详情页，让 web locator 保持可下钻。
 
 ## Usage 单源
 

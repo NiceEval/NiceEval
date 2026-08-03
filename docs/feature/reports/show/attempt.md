@@ -66,8 +66,9 @@ passed 或 failed Attempt 也可以带 cleanup warning。
 
 ## 自定义报告
 
-带 `--report <file>` 时，单 Attempt 范围仍进入该报告的 attempt page。
-报告没有 attempt page 时，locator 只是普通文本，宿主不追加官方详情。
+项目配置的默认报告不接管 `show @<locator>`；这条命令始终提供官方诊断首页，与 `--source`、`--execution`、`--timing`、`--usage`、`--diff` 组成稳定的证据读取面。
+
+只有显式带 `--report <file>` 时，单 Attempt 范围才进入该报告的 `attempt` page。报告没有这张参数化页时命令报错；显式选择报告意味着要求它负责呈现，宿主不静默换回官方详情。
 
 ## 相关阅读
 
