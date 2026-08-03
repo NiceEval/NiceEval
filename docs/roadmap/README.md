@@ -20,4 +20,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [NiceEval 测试体系重构](e2e-acceptance-testing/README.md) —— 统一 Behavior 主证明、机制 unit、旧测试退役、数量预算、evidence world 与历史缺陷题库；路径沿用早期 E2E 设计名，review 完成前不迁入 Engineering
 - [E2E 验收 DSL](e2e-acceptance-dsl/README.md) —— 把 stdout、PTY、JSON、HTML 与浏览器变成领域读面的媒介词表与 vitest 装配
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
-- [Record v2](record-v2/README.md) —— 复盘 schema v1–v14，将容器、事实文档与消费能力拆成独立兼容层
+- [Record v2](record-v2/README.md) —— 将运行观测、输入溯源、当时裁决与可重算投影拆开，建立可审计记录模型
