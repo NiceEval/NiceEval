@@ -30,3 +30,6 @@
   与 `sandboxBuilds`(BuildKey provenance)。旧 reader 读不出 origin 判别形态、也不认识
   activity key 结构化字段归属,故破坏兼容。契约单源在
   [Record · 两层时间模型](../docs/feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity)。
+- `14`(2026-08-02,commit c9e7d21f)`result.json` 的 `coverage` 改名为必填的
+  `evidenceCoverage`,并收紧为六条证据通道的完整 `EvidenceCoverage`。旧 reader 找不到改名后的
+  字段,新 reader 也拒绝缺少新字段的 v14 记录,故破坏兼容。
