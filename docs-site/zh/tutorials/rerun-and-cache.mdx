@@ -112,6 +112,15 @@ compare/codex  memory/partial      carried 2/3 (1 passed · 1 failed) · errored
         <>这时旧的绿掩盖的可能是真实回归。改了被测对象只复验失败项走 <code>--rerun</code>，外部环境整个变了走 <code>--rerun all</code>。</>,
       ],
     },
+    {
+      tab: "声明式 callback 的函数体",
+      tone: "warn",
+      lead: "identity 不变时一条不动，NiceEval 不会发现函数体变化",
+      why: [
+        <><code>defineSandboxCommand()</code> 只用 <code>id</code>、<code>revision</code> 与 <code>inputs</code> 建立身份。<code>run</code> 的函数体、函数名和闭包不进入指纹。</>,
+        <>实现语义变化时提高 <code>revision</code>，外部输入变化时更新 <code>inputs</code>。如果已经漏改，先修正 identity，再收窄选择并执行 <code>--rerun all</code>。</>,
+      ],
+    },
   ]}
 />
 
@@ -210,6 +219,8 @@ npx niceeval exp compare --rerun all    # Agent CLI 升级、镜像重建，全�
 ```
 
 裸写的 `--rerun` 用于改了不在指纹里的东西之后复验失败项，不必自己去结果树里挖失败的评估用例 ID——失败面板的 `Retry:` 行给的就是这条命令。`--rerun all` 用于外部环境整个变了时的全量重验，也是收工前确认没有回归的那一步。
+
+声明式 callback 漏改 identity 时，`--rerun all` 只能修复本次结果。先提高 `revision` 或把变化写进 `inputs`，再执行全量重验；否则下一轮仍可能沿用语义已经变化的旧结果。直接 callback 是 opaque，NiceEval 会禁用跨 Run carry，因此不需要用 `--rerun` 补偿函数体检测。
 
 ## 中断的运行重跑就是续跑
 
