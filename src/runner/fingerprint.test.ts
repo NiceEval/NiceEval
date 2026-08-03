@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
-import { createBuiltinSandboxFactories, type SandboxLayer } from "../sandbox/layer.ts";
+import { createBuiltinSandboxFactories, customProviderSandbox, type SandboxLayer } from "../sandbox/layer.ts";
 import { SandboxPhysicalPlanningError } from "../sandbox/plan.ts";
 import {
   computeConfigHash,
@@ -1036,6 +1036,84 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     expect(mixedPlan.dispatchByKey.get("exp|opaque")).toMatchObject([
       { gate: "terminal", reason: "errored", attempts: [2, 3] },
     ]);
+  });
+
+  it("pinned/floating Docker image、Dockerfile、Compose 与 opaque custom provider 都默认携带 passed/failed", async () => {
+    const platform = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" } as const;
+    const root = await mkdtemp(join(tmpdir(), "niceeval-fingerprint-opaque-provider-"));
+    tempRoots.push(root);
+    await writeFile(join(root, "Dockerfile"), "FROM node:24\n");
+    await mkdir(join(root, "client"));
+    await writeFile(join(root, "client", "Dockerfile"), "FROM node:24\n");
+    await writeFile(
+      join(root, "compose.yaml"),
+      "services:\n  client:\n    image: node:24\n  builder:\n    build: ./client\n",
+    );
+
+    const cases: readonly {
+      readonly id: string;
+      readonly sandbox: SandboxLayer;
+      readonly baseDir?: string;
+      readonly carry: { readonly _tag: "Eligible" } | { readonly _tag: "Ineligible"; readonly code: string; readonly reason: string };
+    }[] = [
+      {
+        id: "pinned-image",
+        sandbox: sandboxFactories.dockerImageSandbox({ image: `node@sha256:${"a".repeat(64)}` }),
+        carry: { _tag: "Eligible" },
+      },
+      {
+        id: "floating-image",
+        sandbox: sandboxFactories.dockerImageSandbox({ image: "node:24" }),
+        carry: { _tag: "Ineligible", code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
+      },
+      {
+        id: "floating-dockerfile",
+        sandbox: sandboxFactories.dockerfileSandbox({ context: root }),
+        carry: { _tag: "Ineligible", code: "sandbox.base-image-unresolved", reason: "Dockerfile FROM is not pinned to a sha256 digest." },
+      },
+      {
+        id: "floating-compose",
+        sandbox: sandboxFactories.dockerComposeSandbox({ file: join(root, "compose.yaml"), workspaceService: "client" }),
+        carry: { _tag: "Ineligible", code: "sandbox.image-unresolved", reason: "Compose references an image or FROM base that is not pinned to a sha256 digest." },
+      },
+      {
+        id: "opaque-provider",
+        sandbox: customProviderSandbox({
+          name: "opaque-provider",
+          targetPlatform: platform,
+          create: () => Effect.dieMessage("test provider is not materialized"),
+        }),
+        carry: {
+          _tag: "Ineligible",
+          code: "sandbox.custom-provider-opaque",
+          reason: 'custom provider "opaque-provider" owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry.',
+        },
+      },
+    ];
+
+    for (const { id, sandbox, baseDir, carry } of cases) {
+      const evalDef = makeEval(id, { sandbox, ...(baseDir === undefined ? {} : { baseDir }) });
+      const run = makeSandboxRun(`exp-${id}`, [id], 2);
+      const historical = await fingerprintWithManifestFor(evalDef, run);
+      const key = `${run.experimentId}|${id}`;
+      const pair = await preparedPair(evalDef, run);
+      expect(pair.plan).toMatchObject({
+        _tag: "Sandbox",
+        providerPlan: { identity: { version: 3, carry } },
+      });
+      const plan = await planCarry(
+        [evalDef],
+        [run],
+        [
+          result({ experimentId: run.experimentId, id, attempt: 0, verdict: "passed", fingerprint: historical.fingerprint }),
+          result({ experimentId: run.experimentId, id, attempt: 1, verdict: "failed", fingerprint: historical.fingerprint }),
+        ],
+        undefined,
+        { priorManifests: new Map([[key, historical.manifest]]) },
+      );
+      expect([...((plan.carriedAttemptsByKey.get(key)) ?? [])], id).toEqual([0, 1]);
+      expect(plan.dispatchByKey.get(key), id).toBeUndefined();
+    }
   });
 
   it("只迁移 v0 opaque carryEpoch 到当前确定性指纹并保存来源", async () => {

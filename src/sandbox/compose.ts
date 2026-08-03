@@ -26,7 +26,13 @@ import type {
   ServiceController,
 } from "./case-types.ts";
 import { classifyProvisionError, DockerSandbox } from "./docker.ts";
-import { computeBuildKey, digestOf, looksLikeDigestRef, type BuildKey } from "./identity.ts";
+import {
+  computeBuildKey,
+  digestOf,
+  looksLikeDigestRef,
+  unresolvedProviderFingerprintMarker,
+  type BuildKey,
+} from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 import type { CommandResult } from "./types.ts";
@@ -482,8 +488,8 @@ export interface ComposeBuildCollection {
   readonly imageRefs: Readonly<globalThis.Record<string, string>>;
   /** 本次进 BuildKey 的目标平台;构建执行拿同一个值。 */
   readonly platform: string;
-  /** 全部 FROM 与仅 image service 都有稳定 digest 时，才允许跨 Invocation 携带。 */
-  readonly carryEligible: boolean;
+  /** 兼容旧 provider identity 的 inert fingerprint marker；不参与 carry gate。 */
+  readonly providerIdentityMarker?: JsonValue;
   readonly bindMountDigests: Readonly<globalThis.Record<string, string>>;
   readonly configContents: Readonly<globalThis.Record<string, string>>;
 }
@@ -524,7 +530,7 @@ export async function collectComposeBuilds(opts: {
   const works: SandboxBuildWork[] = [];
   const buildKeys: BuildKey[] = [];
   const imageRefs: globalThis.Record<string, string> = {};
-  let carryEligible = true;
+  let providerIdentityMarker: JsonValue | undefined;
   const bindMountDigests: globalThis.Record<string, string> = {};
   for (const mount of hints.bindMounts ?? []) {
     const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
@@ -540,7 +546,12 @@ export async function collectComposeBuilds(opts: {
   for (const svc of inspection.services) {
     if (svc.image !== undefined && svc.build === undefined) {
       imageRefs[svc.name] = svc.image;
-      if (!looksLikeDigestRef(svc.image)) carryEligible = false;
+      if (!looksLikeDigestRef(svc.image)) {
+        providerIdentityMarker = unresolvedProviderFingerprintMarker(
+          "sandbox.image-unresolved",
+          "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+        );
+      }
       continue;
     }
     if (svc.build === undefined) continue;
@@ -571,7 +582,12 @@ export async function collectComposeBuilds(opts: {
     };
     const { contextDigest, contextFilterRules } = await buildContextIdentityContribution(contextSpec);
     const base = dockerfileBaseIdentity(dockerfile, svc.build.target);
-    if (!base.carryEligible) carryEligible = false;
+    if (base.providerIdentityMarker !== undefined) {
+      providerIdentityMarker = unresolvedProviderFingerprintMarker(
+        "sandbox.image-unresolved",
+        "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+      );
+    }
     const buildKey = computeBuildKey({
       builderKind: BUILDER_KIND,
       builderRevision: COMPOSE_MATERIALIZER_REVISION,
@@ -615,7 +631,7 @@ export async function collectComposeBuilds(opts: {
     inspection,
     imageRefs,
     platform,
-    carryEligible,
+    ...(providerIdentityMarker === undefined ? {} : { providerIdentityMarker }),
     bindMountDigests,
     configContents,
   };
@@ -786,7 +802,6 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly collection: ComposeBuildCollection;
   readonly caseKey: import("./identity.ts").CaseKey;
   readonly identity: JsonValue;
-  readonly carryEligible: boolean;
 }
 
 export async function materializeDockerComposeProviderCase(
@@ -944,7 +959,6 @@ export async function materializeDockerComposeProviderCase(
       caseKey: plan.caseKey,
       buildKeys: collection.buildKeys,
       identity: plan.identity,
-      carryEligible: plan.carryEligible,
       facts: {
         projectName: overlay.projectName,
         mainService: plan.mainService,

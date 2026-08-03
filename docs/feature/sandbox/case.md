@@ -133,7 +133,7 @@ BuildKey
  + .dockerignore 求值后的 build context 内容
  + build args 的非敏感解析值
  + 多阶段 Dockerfile 的 target stage
- + FROM 解析后的 digest
+ + FROM 的稳定声明投影(已 pin 时为 digest,未 pin 时为 `unresolved:<ref>`)
 ```
 
 target platform 是构建事实,不是一个写在代码里的默认值,并且**逐服务求值**,优先级从声明到探测:
@@ -146,7 +146,7 @@ target platform 是构建事实,不是一个写在代码里的默认值,并且**
 声明了平台的服务因此在任何宿主上身份稳定;未声明的服务在 arm64 宿主与 amd64 宿主拿到不同 BuildKey,两台机器不会对同一道题互认不可比的结果。
 多元素 `build.platforms` 是发布场景的多平台矩阵,一个 BuildKey 只对应一种架构的产物,这类声明在规划期直接报错拒绝,不挑其中一个平台近似执行。
 
-一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,只记录解析后的 image digest。
+一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,记录其声明的 image ref；可取得的实际 digest 另作为运行事实。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
 BuildKey 回答「为什么应该得到同一构建产物」,locator 回答「本次从哪里启动」,两者都进运行记录。
 
@@ -163,7 +163,7 @@ CaseKey
  + 影响主执行空间、网络与就绪语义的规范化 case 参数
 ```
 
-**BuildKey 负责构建产物复用,CaseKey 负责完整 attempt 环境身份与携带门。**
+**BuildKey 负责构建产物复用,CaseKey 负责完整 attempt 环境身份与 fingerprint。**
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果;逐 attempt 的容器名、临时目录和随机 project name 不进 CaseKey,只作为本次启动的运行事实记录。
 Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
@@ -174,22 +174,11 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 - Compose factory 读取 Compose bytes，为每个 build service 产生 BuildKey。
 - 安全摘要进 pair plan / fingerprint；context 路径、文件正文与 credential env 值不落盘。
 - 规划后输入若变化，构建收集期会拒绝 key 不一致的 Run，不用新内容冒充旧计划。
-浮动 image tag 若 provider 不能解析成 digest,该环境的旧结果不参与携带;可以运行并记录 tag 与实际事实,但不能假装两次环境可比。
+浮动 image tag 若 provider 不能解析成 digest,仍把原始 tag 作为身份声明；可以运行并记录 tag 与实际事实，但同名 tag 后来指向别的内容时不会自动作废旧结果。
+同理，未 pin 的 `FROM`、Compose image / `FROM`、checkout 浮动 ref 与 opaque provider callback 的外部变化都需要作者提升 revision、改变声明，或使用 `--rerun all`。
 凭据值不落盘、不进身份:凭据轮换不改变环境语义时只记录引用名;凭据同时选择了不同租户、数据集或权限面时,用户必须提供非敏感 `revision` 进入身份,不靠 secret 值自动推断。
 
-携带门输入是闭合完成态，不保存 `identity?: unknown` 或 `unresolvedFloatingTags?` 这类半状态：
-
-```typescript
-type SandboxCaseIdentityResolution =
-  | { readonly _tag: "Stable"; readonly identity: JsonValue }
-  | { readonly _tag: "Unavailable"; readonly code: string; readonly reason: string };
-
-type SandboxCaseFloatingImages =
-  | { readonly _tag: "Resolved" }
-  | { readonly _tag: "Unresolved"; readonly refs: readonly [string, ...string[]] };
-```
-
-只有 `Stable + Resolved` 可以携带；不可用身份保留 typed code/reason，未解析 tag 保留非空 ref 列表。
+身份解析是 fingerprint 的输入，不另设 provider carry eligibility 状态；未 pin 或未登记的值可以用原始声明或 opaque marker 表达，变化不会被自动观察。
 
 ## Run 级构建协调:共享准备的预算与调度
 
@@ -284,7 +273,7 @@ defineSandboxCase({
 
 约束:
 
-- `identity` 必须可序列化;函数体不参与自动哈希,缺稳定身份时禁止结果携带,不能用函数名或 `toString()` 冒充环境指纹。
+- `identity` 必须可序列化;函数体不参与自动哈希，身份声明进入 fingerprint；需要改变语义时提升声明或 revision，不能用函数名或 `toString()` 冒充环境指纹。
 - `services`、`materialize` 结果中的 services 与 facts 都是完整 ADT/必填值。
   不用 optional 字段表示领域状态；`materialize` 返回 typed Effect。
 - 声明了某项能力就承担对应完整契约测试。

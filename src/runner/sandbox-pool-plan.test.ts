@@ -87,7 +87,6 @@ function runtimeFixture(opts: { readonly beforeMaterialize?: () => Promise<void>
       caseKey: legacy.caseKey,
       buildKeys: [],
       identity: legacy.identity,
-      carryEligible: true,
       facts: { projectName: "fixture" },
     };
   });

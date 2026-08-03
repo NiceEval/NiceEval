@@ -65,7 +65,6 @@ export {
   type JsonPlanFingerprintComparison,
   type JsonPlanFingerprintComparisonChanged,
   type JsonPlanFingerprintComparisonUnexplained,
-  type JsonPlanCarryBlocker,
   type ExpEvent,
   type StartEvent,
   type ProgressEvent,

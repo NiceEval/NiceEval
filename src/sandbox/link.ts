@@ -165,20 +165,6 @@ export interface LinkedSandboxCommand {
   readonly fingerprint: SandboxCommandFingerprint;
 }
 
-export interface SandboxCarryIneligibility {
-  readonly code: string;
-  readonly owner: SandboxLayerOwnerRef;
-  readonly commandIndex: SandboxDeclaredValue<number>;
-  readonly reason: string;
-}
-
-export type SandboxCarryEligibility =
-  | { readonly _tag: "Eligible" }
-  | {
-      readonly _tag: "Blocked";
-      readonly reasons: readonly [SandboxCarryIneligibility, ...SandboxCarryIneligibility[]];
-    };
-
 export interface SandboxLayerFingerprintProjection {
   readonly version: 1;
   readonly templateOwner: SandboxLayerOwnerRef;
@@ -203,8 +189,6 @@ export interface LinkedSandboxPair {
   /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
   readonly hasEvalLifecycleHooks: boolean;
   readonly fingerprint: SandboxLayerFingerprintProjection;
-  /** 携带资格与原因是一个穷尽状态，不存在 `true + reasons` 或 `false + []`。 */
-  readonly carry: SandboxCarryEligibility;
 }
 
 export interface LinkedDirectPair {
@@ -421,14 +405,6 @@ function linkSandboxPair(
 ): LinkedSandboxPair {
   const template = templateOwner.state.template;
   const linked = linkedCommands(templateOwner, otherOwner);
-  const templateReason: SandboxCarryIneligibility | undefined = template.carry._tag === "Ineligible"
-    ? Object.freeze({
-        code: template.carry.code,
-        owner: templateOwner.owner,
-        commandIndex: Object.freeze({ _tag: "Omitted" }),
-        reason: template.carry.reason,
-      })
-    : undefined;
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
   const lifecycle = Object.freeze([
     ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
@@ -443,12 +419,6 @@ function linkSandboxPair(
     commands: fingerprints,
     ...(lifecycle.length === 0 ? {} : { lifecycle }),
   });
-  const carry: SandboxCarryEligibility = templateReason === undefined
-    ? Object.freeze({ _tag: "Eligible" as const })
-    : Object.freeze({
-        _tag: "Blocked" as const,
-        reasons: Object.freeze([templateReason] as const),
-      });
   return Object.freeze({
     kind: "sandbox",
     evalId: pair.evalId,
@@ -461,7 +431,6 @@ function linkSandboxPair(
     teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwner.state.teardownHooks]),
     hasEvalLifecycleHooks: (templateOwner.owner.kind === "eval" ? templateOwner.state.setupHooks.length + templateOwner.state.teardownHooks.length : otherOwner.state.setupHooks.length + otherOwner.state.teardownHooks.length) > 0,
     fingerprint,
-    carry,
   });
 }
 

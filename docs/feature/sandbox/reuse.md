@@ -168,7 +168,10 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 ## 结果与结果沿用
 
-声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：pair 的跨 Run carry 资格为 `Eligible` 时，终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
+声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则。
+终态结果通过终态、指纹、timeout、`--rerun` 与 `--keep-sandbox` 各门后就携带，`--rerun` 可要求重新派发。
+携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。
+直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。

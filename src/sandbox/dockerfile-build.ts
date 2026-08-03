@@ -33,8 +33,7 @@ export interface DockerfileBuildCollection {
   readonly caseKey: CaseKey;
   readonly work: SandboxBuildWork;
   readonly details: DockerfileBuildDetails;
-  /** FROM 已解析为 digest 才允许跨 Invocation 携带。 */
-  readonly carryEligible: boolean;
+  readonly providerIdentityMarker?: import("../shared/types.ts").JsonValue;
 }
 
 /** ProviderModule 的 typed Dockerfile 收集入口；不从作者输入逆向重建计划。 */
@@ -77,7 +76,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
     buildKey: identity.buildKey,
     caseKey,
     details,
-    carryEligible: identity.carryEligible,
+    ...(identity.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: identity.providerIdentityMarker }),
     work: Object.freeze({
       buildKey: identity.buildKey,
       provider: input.provider,

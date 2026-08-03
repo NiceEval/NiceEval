@@ -43,7 +43,7 @@ import {
   type VercelProviderPlan,
 } from "./layer.ts";
 import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
-import { linkedRunCarryEligible, type LinkedRunPlan } from "./plan.ts";
+import type { LinkedRunPlan } from "./plan.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
@@ -233,7 +233,6 @@ function wrapSingleSandbox(
     caseKey: context.plan.providerPlan.build.caseKey,
     buildKeys: context.plan.providerPlan.build.buildKeys,
     identity: context.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(context.plan),
     facts,
   });
 }
@@ -289,7 +288,6 @@ export function materializeDockerComposeProviderPlan(
     collection: plan.collection,
     caseKey: context.plan.providerPlan.build.caseKey,
     identity: context.plan.providerPlan.identity,
-    carryEligible: linkedRunCarryEligible(context.plan),
   }, {
     ctx: {
       evalId: context.evalId,
@@ -477,7 +475,6 @@ export function materializeCustomCaseProviderPlan(
         caseKey: context.plan.providerPlan.build.caseKey,
         buildKeys: context.plan.providerPlan.build.buildKeys,
         identity: context.plan.providerPlan.identity,
-        carryEligible: linkedRunCarryEligible(context.plan),
         facts: result.facts,
       }, context);
     },

@@ -339,7 +339,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(lines).toHaveLength(1);
     const doc = JSON.parse(lines[0]!);
     expect(doc.format).toBe("niceeval.exp-plan");
-    expect(doc.schemaVersion).toBe(2);
+    expect(doc.schemaVersion).toBe(3);
     expect(doc.total).toBe(4);
     expect(doc.evals).toBe(1);
     expect(doc.configs).toBe(4);
@@ -396,38 +396,6 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       { gate: "missing", attempts: [1] },
     ]);
     expect(doc.matrix[1]).not.toHaveProperty("dispatch");
-  });
-
-  it("carry-disabled dispatch 结构化保留 provider blocker 的 code/reason", () => {
-    const doc = JSON.parse(renderJsonPlanDocument({
-      total: 1,
-      evals: 1,
-      configs: 1,
-      attempts: 1,
-      matrix: [{
-        experimentId: "compare/codex",
-        evalId: "opaque",
-        reused: false,
-        dispatch: [{
-          gate: "eligibility",
-          attempts: [0],
-          blockers: [
-            { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
-            { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
-          ],
-        }],
-      }],
-    }));
-
-    expect(doc.matrix[0].dispatch).toEqual([{
-      gate: "eligibility",
-      attempts: [0],
-      blockers: [
-        { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
-        { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
-      ],
-    }]);
-    expect(JSON.stringify(doc)).not.toContain("details unavailable");
   });
 
   it("prior 暴露历史 verdict 与是否可接受，差异保留方向", () => {

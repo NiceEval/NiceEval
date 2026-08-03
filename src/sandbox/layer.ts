@@ -27,6 +27,7 @@ import {
   computeCaseKey,
   digestOf,
   looksLikeDigestRef,
+  unresolvedProviderFingerprintMarker,
   type CaseKey,
 } from "./identity.ts";
 import {
@@ -262,7 +263,6 @@ export interface SandboxProviderPlan {
   readonly target: SandboxPlannedTarget;
   readonly scheduling: SandboxProviderScheduling;
   readonly capabilities: SandboxProviderCapabilities;
-  readonly carry: SandboxTemplateCarry;
   readonly build: SandboxProviderBuildPlan;
   readonly identity: JsonValue;
 }
@@ -284,8 +284,8 @@ export interface SandboxProviderPlanInput<Plan> {
   readonly module: SandboxProviderModule<Plan>;
   readonly runtimePlan: Plan;
   readonly build: SandboxProviderBuildPlan;
-  /** physical planning 才能裁决的动态携带资格；省略表示可携带。 */
-  readonly carry?: SandboxTemplateCarry;
+  /** 仅用于保留既有 provider fingerprint 的稳定身份投影；不参与携带裁决。 */
+  readonly identityMarker?: JsonValue;
   /** 可直接出现在 record / manifest 的 provider-owned 纯数据。 */
   readonly publishableIdentity: JsonValue;
   /** 影响 fingerprint 但不得落盘的值；plan 只保存它的稳定摘要。 */
@@ -314,13 +314,8 @@ export interface SandboxTemplateDeclaration {
   readonly provider: string;
   readonly kind: string;
   readonly identity: JsonValue;
-  readonly carry: SandboxTemplateCarry;
   readonly leakGate: SandboxLeakGate;
 }
-
-export type SandboxTemplateCarry =
-  | { readonly _tag: "Eligible" }
-  | { readonly _tag: "Ineligible"; readonly code: string; readonly reason: string };
 
 export interface SandboxTemplateDefinition {
   readonly provider: string;
@@ -331,7 +326,6 @@ export interface SandboxTemplateDefinition {
   readonly privateFingerprintIdentity: JsonValue;
   readonly plan: SandboxTemplatePlanner;
   readonly leakGate: SandboxLeakGate;
-  readonly carry?: SandboxTemplateCarry;
 }
 
 export interface BuiltinSandboxPlannerServices {
@@ -444,9 +438,6 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const scheduling = freezeScheduling(input.scheduling);
   const moduleId = nonEmptyString(input.module.id, "sandbox provider module.id");
   const capabilities = freezeProviderCapabilities(input.module.capabilities);
-  const carry = input.carry === undefined
-    ? Object.freeze({ _tag: "Eligible" as const })
-    : Object.freeze({ ...input.carry });
   const publishableIdentity = freezeJson(input.publishableIdentity);
   const privateIdentityDigest = digestOf(input.privateFingerprintIdentity);
   const build: SandboxProviderBuildPlan = input.build._tag === "None"
@@ -473,7 +464,9 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
       reuse: capabilities.reuse,
       sessionLimit: capabilities.sessionLimit,
     },
-    carry,
+    // Keep the old identity slot stable while carry eligibility is no longer a
+    // provider/template concern. The marker is fingerprint data only.
+    carry: input.identityMarker ?? { _tag: "Eligible" },
     build: { _tag: build._tag, caseKey: build.caseKey, buildKeys: [...build.buildKeys] },
     publishable: publishableIdentity,
     privateIdentityDigest,
@@ -486,7 +479,6 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
     target,
     scheduling,
     capabilities,
-    carry,
     build,
     identity,
   };
@@ -736,9 +728,6 @@ export function defineSandboxTemplate(
       publishable: freezeJson(definition.publishableIdentity),
       privateIdentityDigest: digestOf(definition.privateFingerprintIdentity),
     }),
-    carry: definition.carry === undefined
-      ? Object.freeze({ _tag: "Eligible" as const })
-      : Object.freeze({ ...definition.carry }),
     leakGate: freezeLeakGate(definition.leakGate),
   });
   SANDBOX_TEMPLATE_PLANNERS.set(declaration, definition.plan);
@@ -1119,15 +1108,7 @@ export function createBuiltinSandboxFactories(
               identityInput,
               caseIdentity,
             },
-            ...(collection.carryEligible
-              ? {}
-              : {
-                  carry: {
-                    _tag: "Ineligible" as const,
-                    code: "sandbox.image-unresolved",
-                    reason: "Compose references an image or FROM base that is not pinned to a sha256 digest.",
-                  },
-                }),
+            identityMarker: collection.providerIdentityMarker,
           });
           },
           catch: (cause) => providerPlanningError(
@@ -1212,15 +1193,7 @@ export function createBuiltinSandboxFactories(
               lifetime: plannedLifetime,
             },
             privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey, lifetime: plannedLifetime },
-            ...(build.carryEligible
-              ? {}
-              : {
-                  carry: {
-                    _tag: "Ineligible" as const,
-                    code: "sandbox.base-image-unresolved",
-                    reason: "Dockerfile FROM is not pinned to a sha256 digest.",
-                  },
-                }),
+            identityMarker: build.providerIdentityMarker,
           });
           },
           catch: (cause) => providerPlanningError(
@@ -1262,15 +1235,12 @@ export function createBuiltinSandboxFactories(
             runtimePlan: Object.freeze({ image, lifetime: plannedLifetime }),
             publishableIdentity: { source: "configured-image", lifetime: plannedLifetime },
             privateFingerprintIdentity: { image, lifetime: plannedLifetime },
-            ...(looksLikeDigestRef(image)
-              ? {}
-              : {
-                  carry: {
-                    _tag: "Ineligible" as const,
-                    code: "sandbox.image-unresolved",
-                    reason: "Docker image is not pinned to a sha256 digest.",
-                  },
-                }),
+            identityMarker: looksLikeDigestRef(image)
+              ? undefined
+              : unresolvedProviderFingerprintMarker(
+                  "sandbox.image-unresolved",
+                  "Docker image is not pinned to a sha256 digest.",
+                ),
           });
         }),
       });
@@ -1452,13 +1422,6 @@ export function customProviderSandbox(
     publishableIdentity: {},
     privateFingerprintIdentity: identity,
     leakGate: { _tag: "None" },
-    carry: Object.freeze({
-      _tag: "Ineligible",
-      code: "sandbox.custom-provider-opaque",
-      reason:
-        `custom provider ${JSON.stringify(name)} owns an opaque create callback; ` +
-        "use defineSandboxCase({ identity, materialize }) for cross-Run carry.",
-    }),
     plan: () => Effect.succeed(sandboxProviderPlan({
       provider: name,
       plannerRevision: "custom-provider-1",
@@ -1475,6 +1438,10 @@ export function customProviderSandbox(
       runtimePlan: Object.freeze({ name }),
       publishableIdentity: {},
       privateFingerprintIdentity: identity,
+      identityMarker: unresolvedProviderFingerprintMarker(
+        "sandbox.custom-provider-opaque",
+        `custom provider ${JSON.stringify(name)} owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry.`,
+      ),
     })),
   });
 }

@@ -52,7 +52,6 @@ async function composeProviderPlan(file: string, evalId: string, mainService = "
       caseParams: identity,
     }),
     identity,
-    carryEligible: collection.carryEligible,
   };
 }
 

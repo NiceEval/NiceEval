@@ -25,7 +25,6 @@ import {
   type PreparedRunPair,
 } from "./sandbox-selection.ts";
 import {
-  linkedRunCarryBlockers,
   linkedRunRecordIdentity,
   type SandboxPlanningServices,
 } from "../sandbox/plan.ts";
@@ -73,8 +72,7 @@ export type AcceptFailureCode =
   | "eval-not-selected"
   | "planning-failed"
   | "pair-mismatch"
-  | "batch-mismatch"
-  | "carry-ineligible";
+  | "batch-mismatch";
 
 export class AcceptError extends Error {
   constructor(
@@ -270,14 +268,6 @@ export async function prepareAcceptedAttempt(options: AcceptPreparedAttemptOptio
     );
   }
   validateAcceptance(source, pair, options.configTimeoutMs);
-  const carryBlockers = linkedRunCarryBlockers(pair.plan);
-  if (carryBlockers.length > 0) {
-    throw new AcceptError(
-      "carry-ineligible",
-      `Attempt "${sourceLocator}" cannot be re-anchored as a cross-Run-carryable result because ` +
-        `the current Sandbox pair has carry blockers: ${carryBlockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`,
-    );
-  }
   const sourceResult = withArtifactBase(source);
   const oldFingerprint = sourceResult.fingerprint;
   if (oldFingerprint === undefined || oldFingerprint.length === 0) {

@@ -35,7 +35,6 @@ export {
   resolveFloatingImageTag,
   credentialIdentityContribution,
   assertPureDataIdentity,
-  caseCarryEligible,
   looksLikeDigestRef,
 } from "./identity.ts";
 export {
@@ -118,9 +117,6 @@ export type {
   CaseKeyInput,
   ImageRefResolution,
   CredentialRef,
-  SandboxCaseIdentityResolution,
-  SandboxCaseFloatingImages,
-  SandboxCaseCarryInput,
 } from "./identity.ts";
 
 export type {

@@ -1460,9 +1460,6 @@ async function main(): Promise<void> {
               gate: group.gate,
               attempts: [...group.attempts],
               ...(group.comparison !== undefined ? { comparison: jsonPlanComparison(group.comparison) } : {}),
-              ...(group.blockers !== undefined
-                ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
-                : {}),
             })),
           }
         : {}),
@@ -1498,9 +1495,6 @@ async function main(): Promise<void> {
               reason: group.reason,
               attempts: [...group.attempts],
               ...(group.comparison !== undefined ? { comparison: group.comparison } : {}),
-              ...(group.blockers !== undefined
-                ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
-                : {}),
             })),
           })),
         }),

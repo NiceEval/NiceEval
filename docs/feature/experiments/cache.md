@@ -49,6 +49,11 @@ layer 身份 = template-bearing factory 的纯数据 options,加 `command()` / `
 这条默认避免一次声明遗漏让整批昂贵评测永久重跑，但不表示 Runner 能识别 callback 的语义变化。
 需要让实现或动态输入变化自动作废结果时，作者必须改用 `defineSandboxCommand()` 并维护 `revision` / `inputs`。
 
+Docker image 的浮动 tag、Dockerfile 未 pin 的 `FROM`、Compose 未 pin 的 image / `FROM`、checkout 的浮动 `ref` 与 opaque custom provider callback 都进入 fingerprint。
+它们使用现有声明值、BuildKey 或 opaque marker。
+同名外部内容后来发生变化时，Runner 无法自动感知，历史 `passed` / `failed` 仍按默认规则携带。
+作者应提升 revision、改变声明，或用 `--rerun all` 明确重验。
+
 Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对 installer 的 identity/revision/installMode；
 它进入 configHash。计划目标平台属于 pair-owned ProviderPlan，进入逐 Eval fingerprint。
 实际 staged payload digest 与创建后核验出的实际平台是 runtime provenance/facts，不进入任一哈希。
@@ -309,10 +314,10 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 - locator 恰好指向一条可读的历史结果;
 - 结果是 `passed` 或 `failed`;
 - 当前项目仍发现同一 experiment 与 eval,并能解析其运行配置;
-- 当前 Sandbox pair 的跨 Run carry 资格是 `Eligible`;
+- 当前 Sandbox pair 已成功完成 discovery、link 与 physical planning;
 - 当前超时上限仍允许该结果的 `executionMs`。
 
-缺失序号、`errored`、`skipped`、留存 Sandbox 与 carry 资格被阻断的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。无法固定的 Provider 环境身份等显式 blocker 会阻断携带；未登记 identity 的作者 callback 本身不是 blocker。
+缺失序号、`errored`、`skipped` 与留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。Provider identity 未 pin 或 callback opaque 属于 fingerprint 输入，不单独作为 carry blocker。
 
 任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后只封口一个 snapshot；输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
 

@@ -916,8 +916,8 @@ type ExpEvent =
 ```typescript
 interface ExpPlanDocument {
   format: "niceeval.exp-plan";
-  /** 当前为 2；v2 把 unexplained.reason/fromVersion/toVersion 换成开放 diagnostic。 */
-  schemaVersion: 2;
+  /** 当前为 3；v2 的 diagnostic 形状保留，v3 删除 provider carry blocker 字段。 */
+  schemaVersion: 3;
   /** matrix 行数 × attempts。 */
   total: number;
   evals: number;
@@ -958,8 +958,6 @@ interface ExpPlanDispatch {
   attempts: number[];
   /** 指纹门的比较解释；其它 gate 省略。 */
   comparison?: ExpPlanFingerprintComparison;
-  /** eligibility 门被 Sandbox carry 资格阻断时给出稳定 code 与可行动原因；其它门省略。 */
-  blockers?: ExpPlanCarryBlocker[];
 }
 
 type ExpPlanFingerprintComparison =
@@ -988,11 +986,6 @@ type ExpPlanDiagnosticFact =
   | { label: string; value: JsonValue }
   | { label: string; from: JsonValue; to: JsonValue };
 
-interface ExpPlanCarryBlocker {
-  code: string;
-  reason: string;
-}
-
 interface ExpPlanDelta {
   /** 指纹差异词表:config:<路径> / source:<路径> / data:<路径> / opaque:no-manifest。 */
   selector: string;
@@ -1004,7 +997,7 @@ interface ExpPlanDelta {
 }
 ```
 
-`niceeval.exp-plan` v2 是机器计划文档的破坏性升级；消费者先按顶层 `schemaVersion` 分流，不探测 `reason` 或 `diagnostic` 猜版本。它保留 v1 已有的 `prior` 与 delta `kind`，只替换 unexplained comparison 的诊断形状。它不改变运行事件流和 Record 格式；实现把 exp plan 的 schema 常量与其它 JSON 输出分开，不能为了这一处字段替换误升整个事件流版本。v1 只属于旧 CLI 的输出，新 CLI 不并排输出两套 comparison 形状。
+`niceeval.exp-plan` v3 是机器计划文档的破坏性升级；消费者先按顶层 `schemaVersion` 分流，不探测 `reason` 或 `diagnostic` 猜版本。v2 保留的 diagnostic 形状继续有效，v3 删除 provider carry blocker 字段。它不改变运行事件流和 Record 格式；实现把 exp plan 的 schema 常量与其它 JSON 输出分开，不能为了这一处字段替换误升整个事件流版本。
 
 退出码按 `(experiment, eval)` 的最终 verdict 折叠,两种形态同一套——`0` 全部通过且覆盖完整(complete)、`1` 有 failed / errored 或 incomplete 或 required reporter 写失败、`2` 未捕获崩溃、`130` 中断;语义单源在 [Runner · 退出码](../../runner.md#退出码)。
 

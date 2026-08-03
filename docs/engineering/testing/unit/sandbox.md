@@ -111,7 +111,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
     给 Experiment 加 template 后，对应配对明确 conflict，不允许 Eval override 或静默丢层。
   - 物理身份相同的两份 template 仍是 conflict;三个入口消费同一 linker,要有 `check`、`--dry` 与正常运行对同一非法矩阵给出同一结论的区分力场景。
   - pair key 用 tuple 编码并覆盖 id 自带分隔符的反例；同一 `(Experiment, Eval)` 重复出现走 typed failure，不能静默覆盖。
-    linked pair 的 carry 只允许 `Eligible` 或带非空 reasons 的 `Blocked`，没有 boolean 与可选数组的矛盾组合。
+    linked pair 只保留 template、command 与 lifecycle 的 fingerprint projection，不存在独立的 provider carry blocker。
   - 自定义 provider 连同 factory 直接调用、核心路径无 provider 名分支;`t.sandbox` 的错误反馈带 API 名与 agent 名,经管线不经 stdout。
   - ProviderModule binding：公开 plan 无私有 runtime input；伪造 plan 得到 typed binding error。
     build/materialize 均调用 factory 私绑的同一 typed Plan。
@@ -156,13 +156,14 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 
   - 预制单 Sandbox、按需构建单 Sandbox、Docker Compose、云端 Compose、自定义 case 各自给齐主 Sandbox、资源、身份、证据与清理。
   - 每类 case 只返回一个主 `Sandbox`；Agent、Eval、文件 API、workdir、分类账与 diff 观察同一执行空间。
-  - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
+  - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 的纯数据 identity 进入 fingerprint，opaque provider callback 不成为 carry blocker。
+    pinned / floating image、Dockerfile `FROM`、Compose image / `FROM` 与 custom provider 都要有可携带终态的区分力场景。
 - **command identity 与内置 prepare 命令**：
 
   - `command()` / `shell()` 的纯数据 identity 进入 fingerprint；直接传入的 callback 不增加 identity，默认不阻断携带。要用跨 Run fixture 证明 callback 未登记时旧结果携带，并用 callback 改为 `defineSandboxCommand()`、改变 revision / inputs 的方向证明旧结果作废。prepare command identity 不进入同一 Run 的物理复用池键；另用两个 Eval 声明不同 prepare、但 Provider physical plan / Agent ensure / lifecycle owner 相同的场景，证明它们共用实例且每条命令在各自 Attempt 仍重放。
   - `defineSandboxCommand()` 的 id / revision / inputs 参与稳定身份;`registerSandboxContent()` 的 digest 折入 inputs。
   - `checkout()`:镜像按 `(repo, ref)` 键控,同一 Sandbox 第二次执行零网络。
-    区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,且该 Attempt 不参与跨 Run carry。
+    区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,同名 ref 暗变需作者用 `--rerun all` 重验。
   - `installTool()`:probe 命中快速返回、未命中 install 后复检、复检仍未命中计 errored;`tool` / `identity` / probe / install 任一变化使旧命中失效。
   - `--dry` 复用成本视图:内置命令标检查命中型,普通 command(含作者自建 `defineSandboxCommand()`)标每题重放;fresh 模式不展示该视图。
 - **BuildKey single-flight、失败向所有依赖项传播失败和预算**：

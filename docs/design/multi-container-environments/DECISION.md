@@ -143,9 +143,10 @@ Docker case 直接
   高并发批跑靠网络配额排队 + 文档写明
   `default-address-pools` 调法;kept 现场占坑计入可见账目。
   撞上限频率高于预期时考虑网络复用形态。
-- **浮动 tag 解析依赖 registry**:携带规划前要取得 OCI
-  digest,私有 registry 的凭据、限流与离线行为进入环境解析
-  失败面。不能解析时报错并禁用携带,不退回只哈希 tag。
+- **浮动 tag 不提供自动失效证明**:Provider 能解析 OCI digest 时把它作为
+  环境事实记录；解析失败时保留原始 tag 作为声明身份，不阻断历史终态携带。
+  同名 tag 后来指向不同内容时 Runner 无法自动观察，作者需改变声明、提升
+  revision，或使用 `--rerun all` 明确重验。
 - **Compose 上游语义面**:直接消费 Compose 意味着接受其
   演进;niceeval 只对自己注入的 overlay 与黑名单里的安全
   不变量负责,不承诺解释任意 Compose 行为。上游新增字段

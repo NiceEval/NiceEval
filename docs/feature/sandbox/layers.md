@@ -495,7 +495,7 @@ sandboxLayer()
 
 `putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
 未登记 identity 的 callback 默认允许跨 Run 携带，避免一个声明遗漏让昂贵 Attempt 永久重跑。这个默认只代表 callback 没有增加失效条件，不代表 Runner 已证明其语义稳定。
-Linked pair 仍把 Provider 等能够明确判定的资格保存为 `Eligible | Blocked`；只有 `Blocked` 携带非空原因列表，不并存可互相矛盾的 boolean 与可选 reasons。
+Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprint，不再额外保存或判定 provider carry eligibility。
 
 源码检出与慢工具安装这两类常见昂贵动作有内置命令(`checkout()` / `installTool()`),自带检查、缓存与稳定 identity,见[内置 prepare 命令](prepare-commands.md)。
 

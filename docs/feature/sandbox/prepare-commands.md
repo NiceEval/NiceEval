@@ -52,8 +52,8 @@ export default defineEval({
 - identity 是 `(repo, ref, into)`，进入 Attempt fingerprint 与命令自己的检查标记；它不进入物理复用池键，因为命令在每条 Attempt 都会重放。换 `ref` 会让旧结果不能携带，并使旧检查标记失效。
 - 凭据走宿主与 Sandbox 的 git 原生机制,不进入 identity,也不落运行记录。
 
-`ref` 应当是不可变引用(commit SHA 或 tag)。
-首次执行把解析出的 commit SHA 记进运行事实;`ref` 不是该 SHA 本身时,当前 Attempt 不参与跨 Run 结果沿用——与[浮动 image tag 的规则](case.md#buildkey-与-casekey两个身份各管一件事)同理,复用窗口内的镜像命中不受影响。
+`ref` 是 checkout 的声明 identity，推荐使用不可变引用(commit SHA 或 tag)。
+浮动 ref 仍可执行并把 ref 与解析出的 commit SHA 记入事实；同名 ref 后来移动时 Runner 不自动感知，历史终态按默认规则沿用。作者应改用明确 revision、提升声明，或用 `--rerun all` 重验。
 
 `checkout()` 装载的是 Agent 应当看见的题目起点。
 隐藏判分材料不走它,仍按[本地测试文件](../eval/use-case/criteria-files.md)的规则在 `send` 窗口后经普通上传进入。
@@ -89,7 +89,8 @@ export default defineExperiment({
 - `probe` 以 try 语义执行:退出码为零即命中,命令立即返回;非零是未命中,不是失败。
 - 未命中时执行 `install`,随后重跑 `probe` 复检;install 失败或复检仍非零,按执行失败计,归 `sandbox.prepare.<owner>`。
 - identity 是 `tool` 加 `identity` 参数,并折入 `probe` 与 `install` 的 command identity;任一项变化使旧命中失效。
-- `probe` 与 `install` 必须是稳定 command(`command()` / `shell()` 或 `defineSandboxCommand()` 产物);传入 opaque callback 会让整条 installTool opaque,禁跨 Run carry。
+- `probe` 与 `install` 必须是稳定 command(`command()` / `shell()` 或 `defineSandboxCommand()` 产物)。
+  opaque callback 不能作为 `installTool` 参数，需要不透明逻辑时使用普通 `prepare()` callback，其结果仍按默认规则携带。
 
 template 预装只是让 `probe` 首测即命中的一种手段。
 声明照常保留;预装缺失或漂移时命令现场补齐,与 [LIMITS「Manifest 不是状态证明」](../../design/environment-model/LIMITS.md)同向。

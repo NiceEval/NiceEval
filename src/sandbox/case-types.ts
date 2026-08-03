@@ -54,8 +54,6 @@ export interface MaterializedSandboxCase {
   readonly buildKeys: readonly BuildKey[];
   /** 纯数据身份;进指纹与运行记录。 */
   readonly identity: JsonValue;
-  /** 缺稳定身份或浮动 tag 未解析时为 false——禁止携带。 */
-  readonly carryEligible: boolean;
   /** 物化事实(locator、实际 digest、project name 等),不进 CaseKey。 */
   readonly facts: JsonValue;
 }

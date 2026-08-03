@@ -17,13 +17,6 @@ import {
   type SandboxLayerPairInput,
 } from "./link.ts";
 import { digestOf } from "./identity.ts";
-import type { SandboxCarryEligibility } from "./link.ts";
-
-if (false) {
-  // @ts-expect-error Blocked 必须有至少一条原因，不能表达 `blocked + []`。
-  const contradictoryCarry: SandboxCarryEligibility = { _tag: "Blocked", reasons: [] };
-  void contradictoryCarry;
-}
 
 function imageTemplateIdentity(image: string) {
   const lifetime = { _tag: "ProviderDefault" as const };
@@ -189,7 +182,6 @@ describe("pure SandboxLayer linker", () => {
         kind: "image",
         identity: imageTemplateIdentity("node:24@sha256:abc"),
       },
-      carry: { _tag: "Eligible" },
     });
     if (evalOwned?.kind !== "sandbox") throw new Error("expected linked sandbox pair");
     expect(evalOwned.commands.map((entry) => [entry.owner.kind, entry.index, entry.fingerprint.kind === "stable" ? entry.fingerprint.id : "opaque"])).toEqual([
@@ -255,7 +247,6 @@ describe("pure SandboxLayer linker", () => {
       { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, index: 0 },
       expect.objectContaining({ kind: "stable", owner: { kind: "experiment", id: "experiment/codex" }, id: "experiment.stable" }),
     ]);
-    expect(linked.carry).toEqual({ _tag: "Eligible" });
     expect(sandboxLayerIdentityFor(linked, "eval")).toMatchObject({
       layer: { _tag: "Template", value: { provider: "docker", kind: "image" } },
     });
@@ -286,7 +277,6 @@ describe("pure SandboxLayer linker", () => {
       { kind: "opaque", owner: { kind: "eval", id: "eval/task" }, phase: "teardown", index: 0 },
       { kind: "opaque", owner: { kind: "experiment", id: "experiment/codex" }, phase: "teardown", index: 0 },
     ]);
-    expect(linked.carry).toEqual({ _tag: "Eligible" });
   });
 
   it("混合矩阵逐 pair link，不从相邻 Eval 借 template，也不让 Experiment template 覆盖 Eval", () => {

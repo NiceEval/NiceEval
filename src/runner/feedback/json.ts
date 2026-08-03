@@ -41,7 +41,7 @@ import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.t
 const EXP_STREAM_FORMAT = "niceeval.exp";
 const EXP_PLAN_FORMAT = "niceeval.exp-plan";
 const SCHEMA_VERSION = 1;
-const EXP_PLAN_SCHEMA_VERSION = 2;
+const EXP_PLAN_SCHEMA_VERSION = 3;
 
 /** 连续无永久事件多久才追加一条 `progress` 心跳(cli.md「机器怎么读:--json」:「连续 30 秒
  *  没有这些永久事件,才追加一条 progress 心跳」——两者合并前分别是 30s/60s,统一取 30s)。 */
@@ -646,12 +646,6 @@ export type JsonPlanFingerprintComparison =
   | JsonPlanFingerprintComparisonChanged
   | JsonPlanFingerprintComparisonUnexplained;
 
-/** 当前 Sandbox pair 的跨 Run 携带阻断原因；来自 linked pair/provider plan 的稳定投影。 */
-export interface JsonPlanCarryBlocker {
-  code: string;
-  reason: string;
-}
-
 /** 本行要派发的 attempt 按未携带原因分组(`ExpPlanDispatch`);gate 词表与六道门同名。 */
 export interface JsonPlanDispatch {
   gate: "fingerprint" | "terminal" | "eligibility" | "rerun" | "mode" | "missing";
@@ -659,8 +653,6 @@ export interface JsonPlanDispatch {
   attempts: number[];
   /** 指纹门的比较解释；其它 gate 省略。 */
   comparison?: JsonPlanFingerprintComparison;
-  /** `eligibility/carry-disabled` 的具体 code/reason；其它门省略。 */
-  blockers?: JsonPlanCarryBlocker[];
 }
 
 export interface JsonPlanRow {

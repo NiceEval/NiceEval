@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createBuiltinSandboxFactories,
+  customProviderSandbox,
   defineSandboxTemplate,
   sandboxProviderBindingOf,
   sandboxLayer,
@@ -18,10 +19,10 @@ import {
   type SandboxTargetPlatform,
 } from "./layer.ts";
 import { linkSandboxLayers, type LinkedSandboxLayerPair } from "./link.ts";
+import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 import {
   formatSandboxPhysicalPlanningError,
   linkedRunFingerprintIdentity,
-  linkedRunCarryEligible,
   linkedRunRecordIdentity,
   planLinkedRuns,
   SandboxPhysicalPlanningError,
@@ -112,6 +113,18 @@ function planned(pair: LinkedSandboxLayerPair): LinkedRunPlan {
 }
 
 describe("provider-neutral Sandbox planning", () => {
+  it("未 pin FROM 仍把原始 ref 稳定投影进 BuildKey，并只保留 inert identity marker", () => {
+    const identity = dockerfileBaseIdentity("FROM node:24\n");
+    expect(identity.fromDigest).toBe('["unresolved:node:24"]');
+    expect(identity).toMatchObject({
+      providerIdentityMarker: {
+        _tag: "Ineligible",
+        code: "sandbox.base-image-unresolved",
+      },
+    });
+    expect(identity).not.toHaveProperty("carryEligible");
+  });
+
   it("rejects a dynamically forged Required build plan with no BuildKey", () => {
     const forgedPlan = () => sandboxProviderPlan({
       provider: "acme",
@@ -133,13 +146,33 @@ describe("provider-neutral Sandbox planning", () => {
     expect(forgedPlan).toThrow(/build\.buildKeys must contain at least one BuildKey/);
   });
 
-  it("physical plan downgrades floating Docker images from carry eligibility", () => {
+  it("physical plan keeps pinned/floating/custom provider declarations carryable", () => {
     const pinned = planned(linked(factories.dockerImageSandbox({
       image: `node@sha256:${"f".repeat(64)}`,
     })));
     const floating = planned(linked(factories.dockerImageSandbox({ image: "node:24" })));
-    expect(linkedRunCarryEligible(pinned)).toBe(true);
-    expect(linkedRunCarryEligible(floating)).toBe(false);
+    const custom = planned(linked(customProviderSandbox({
+      name: "opaque-provider",
+      targetPlatform: linux,
+      create: () => Effect.dieMessage("fixture provider must not materialize"),
+    })));
+    for (const plan of [pinned, floating, custom]) {
+      expect(plan._tag).toBe("Sandbox");
+      if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
+      expect(plan.providerPlan).not.toHaveProperty("carry");
+    }
+    if (pinned._tag !== "Sandbox" || floating._tag !== "Sandbox" || custom._tag !== "Sandbox") {
+      throw new Error("expected sandbox plans");
+    }
+    expect(pinned.providerPlan.identity).toMatchObject({ version: 3, carry: { _tag: "Eligible" } });
+    expect(floating.providerPlan.identity).toMatchObject({
+      version: 3,
+      carry: { _tag: "Ineligible", code: "sandbox.image-unresolved" },
+    });
+    expect(custom.providerPlan.identity).toMatchObject({
+      version: 3,
+      carry: { _tag: "Ineligible", code: "sandbox.custom-provider-opaque" },
+    });
   });
 
   it("built-in factory 归一完整 immutable plan，默认值不编码成 undefined", async () => {

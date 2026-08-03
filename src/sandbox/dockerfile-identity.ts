@@ -5,7 +5,12 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildContextIdentityContribution } from "../runner/leak-gate.ts";
-import { computeBuildKey, type BuildKey } from "./identity.ts";
+import type { JsonValue } from "../shared/types.ts";
+import {
+  computeBuildKey,
+  unresolvedProviderFingerprintMarker,
+  type BuildKey,
+} from "./identity.ts";
 
 export const DOCKERFILE_MATERIALIZER_REVISION = "dockerfile-2";
 
@@ -26,7 +31,7 @@ export interface DockerfileBuildIdentity {
   readonly dockerfilePath: string;
   readonly dockerfile: string;
   readonly contextFilterRules: string;
-  readonly carryEligible: boolean;
+  readonly providerIdentityMarker?: JsonValue;
 }
 
 export async function resolveDockerfileBuildIdentity(
@@ -62,7 +67,7 @@ export async function resolveDockerfileBuildIdentity(
     dockerfilePath,
     dockerfile,
     contextFilterRules,
-    carryEligible: base.carryEligible,
+    ...(base.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: base.providerIdentityMarker }),
   });
 }
 
@@ -70,7 +75,7 @@ export async function resolveDockerfileBuildIdentity(
 export function dockerfileBaseIdentity(
   dockerfile: string,
   target?: string,
-): { readonly fromDigest: string; readonly carryEligible: boolean } {
+): { readonly fromDigest: string; readonly providerIdentityMarker?: JsonValue } {
   const stages: Array<{ ref: string; name?: string }> = [];
   for (const line of dockerfile.split(/\r?\n/)) {
     const match = line.match(/^\s*FROM\s+(?:(?:--\S+)\s+)*(\S+)(?:\s+AS\s+(\S+))?/i);
@@ -84,7 +89,7 @@ export function dockerfileBaseIdentity(
   const included = stages.slice(0, targetIndex >= 0 ? targetIndex + 1 : stages.length);
   const aliases = new Set<string>();
   const bases: string[] = [];
-  let carryEligible = included.length > 0;
+  let hasUnresolvedBase = included.length === 0;
   for (const stage of included) {
     const ref = stage.ref.toLowerCase();
     if (ref === "scratch") {
@@ -94,7 +99,7 @@ export function dockerfileBaseIdentity(
     } else {
       const digest = digestFromReference(stage.ref);
       if (digest === undefined) {
-        carryEligible = false;
+        hasUnresolvedBase = true;
         bases.push(`unresolved:${stage.ref}`);
       } else {
         bases.push(digest);
@@ -102,7 +107,17 @@ export function dockerfileBaseIdentity(
     }
     if (stage.name !== undefined) aliases.add(stage.name.toLowerCase());
   }
-  return Object.freeze({ fromDigest: JSON.stringify(bases), carryEligible });
+  return Object.freeze({
+    fromDigest: JSON.stringify(bases),
+    ...(hasUnresolvedBase
+      ? {
+          providerIdentityMarker: unresolvedProviderFingerprintMarker(
+            "sandbox.base-image-unresolved",
+            "Dockerfile FROM is not pinned to a sha256 digest.",
+          ),
+        }
+      : {}),
+  });
 }
 
 function digestFromReference(ref: string | undefined): string | undefined {

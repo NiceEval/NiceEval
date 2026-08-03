@@ -1,7 +1,7 @@
 // BuildKey / CaseKey 与携带门所需的身份解析。
 // 契约单源:docs/feature/sandbox/case.md「BuildKey 与 CaseKey」「身份解析」。
-// BuildKey 管构建产物复用;CaseKey 管完整 attempt 环境身份与携带门。
-// 凭据值永不进身份;浮动 tag 解不出 digest 时禁止携带。
+// BuildKey 管构建产物复用;CaseKey 管完整 attempt 环境身份与携带指纹。
+// 凭据值永不进身份;浮动 tag 解不出 digest 时保留声明值作为 opaque marker。
 
 import { createHash } from "node:crypto";
 import type { JsonValue } from "../shared/types.ts";
@@ -56,11 +56,11 @@ export interface CaseKeyInput {
 
 /**
  * 浮动 image tag 的解析结果。
- * 解不出 digest 时仍可运行并记录 tag,但旧结果不参与携带。
+ * 解不出 digest 时仍可运行并记录 tag；是否发生变化由声明值或显式 rerun 表达。
  */
 export type ImageRefResolution =
   | { readonly status: "resolved"; readonly ref: string; readonly digest: string }
-  | { readonly status: "unresolved"; readonly ref: string; readonly carryEligible: false };
+  | { readonly status: "unresolved"; readonly ref: string };
 
 /** 凭据引用:只记名字;选租户/数据集/权限面时另带非敏感 revision。 */
 export interface CredentialRef {
@@ -121,7 +121,7 @@ export function computeCaseKey(input: CaseKeyInput): CaseKey {
 /**
  * 解析浮动 image tag。
  * `resolveDigest` 由 provider / registry 客户端提供:成功返回 digest,解不出返回 undefined。
- * 解不出时 `carryEligible` 恒为 false——可以跑、不能假装两次环境可比。
+ * 解不出时仍返回明确的 opaque 状态；调用方可把原始 ref 作为声明身份的一部分。
  */
 export async function resolveFloatingImageTag(
   ref: string,
@@ -133,7 +133,7 @@ export async function resolveFloatingImageTag(
   }
   const digest = await resolveDigest(ref);
   if (digest === undefined || digest === "") {
-    return { status: "unresolved", ref, carryEligible: false };
+    return { status: "unresolved", ref };
   }
   return { status: "resolved", ref, digest };
 }
@@ -141,6 +141,14 @@ export async function resolveFloatingImageTag(
 /** 形如 `repo@sha256:…` 或裸 `sha256:…` 已钉 digest,无需再问 registry。 */
 export function looksLikeDigestRef(ref: string): boolean {
   return /@sha256:[a-f0-9]{64}$/i.test(ref) || /^sha256:[a-f0-9]{64}$/i.test(ref);
+}
+
+/**
+ * Provider identity compatibility marker for plans written before carry
+ * eligibility was removed. It remains fingerprint data and is never a gate.
+ */
+export function unresolvedProviderFingerprintMarker(code: string, reason: string): JsonValue {
+  return { _tag: "Ineligible", code, reason };
 }
 
 /**
@@ -177,43 +185,14 @@ function isPureDataTree(value: unknown, ancestors: ReadonlySet<object>): value i
 
 /**
  * 自定义 case 的 identity 必须是纯数据。
- * 函数体不参与自动哈希;缺稳定身份时禁止携带,不能用函数名或 toString() 冒充。
+ * 函数体不参与自动哈希；需要稳定身份的 custom case 仍必须提供纯数据声明，
+ * 不能用函数名或 toString() 冒充；opaque provider callback 的变化由作者 revision 或显式 rerun 表达。
  */
 export function assertPureDataIdentity(identity: unknown): JsonValue {
   if (!isPureDataIdentity(identity)) {
     throw new Error(
-      "sandbox case identity must be pure JSON data (no functions); without a stable identity, results cannot be carried",
+      "sandbox case identity must be pure JSON data (no functions); provide a declared identity for fingerprinting",
     );
   }
   return identity;
-}
-
-/** Case identity resolution has no optional/unknown half-state. */
-export type SandboxCaseIdentityResolution =
-  | { readonly _tag: "Stable"; readonly identity: JsonValue }
-  | {
-      readonly _tag: "Unavailable";
-      readonly code: string;
-      readonly reason: string;
-    };
-
-/** Every floating image is either resolved, or the unresolved refs are preserved explicitly. */
-export type SandboxCaseFloatingImages =
-  | { readonly _tag: "Resolved" }
-  | {
-      readonly _tag: "Unresolved";
-      readonly refs: readonly [string, ...string[]];
-    };
-
-export interface SandboxCaseCarryInput {
-  readonly identity: SandboxCaseIdentityResolution;
-  readonly floatingImages: SandboxCaseFloatingImages;
-}
-
-/**
- * 该 case 的结果是否允许进入携带门。
- * 缺稳定纯数据身份、或仍有未解析浮动 tag 时一律禁止。
- */
-export function caseCarryEligible(input: SandboxCaseCarryInput): boolean {
-  return input.identity._tag === "Stable" && input.floatingImages._tag === "Resolved";
 }

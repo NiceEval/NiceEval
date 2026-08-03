@@ -506,7 +506,6 @@ describe("provider-owned Sandbox runtime materialization", () => {
       caseKey: providerPlan.caseKey,
       buildKeys: providerPlan.collection.buildKeys,
       identity: providerPlan.identity,
-      carryEligible: providerPlan.carryEligible,
       facts: { projectName: "fixture" },
     }));
 
@@ -539,7 +538,6 @@ describe("provider-owned Sandbox runtime materialization", () => {
         caseKey: "runtime-recomputed-case",
         buildKeys: providerPlan.collection.buildKeys,
         identity: providerPlan.identity,
-        carryEligible: providerPlan.carryEligible,
         facts: { projectName: "fixture-drift" },
       }),
     })))));

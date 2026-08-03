@@ -944,7 +944,6 @@ export interface HumanDryPlanRow {
     reason: string;
     attempts?: readonly number[];
     comparison?: HumanFingerprintComparison;
-    blockers?: readonly { code: string; reason: string }[];
   }[];
   /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
   prior?: readonly {
@@ -1018,9 +1017,6 @@ function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
   const out: string[] = [];
   for (const row of input.rows) {
     if (!row.prior || row.prior.length === 0) continue;
-    // carry-disabled 已经给出 pair 的具体阻断原因；历史结果不能再伪装成普通 stale，
-    // 也不能为这个当前必失败的 accept 路径打印命令。
-    if (row.dispatch?.some((group) => (group.blockers?.length ?? 0) > 0)) continue;
     for (const prior of row.prior) {
       const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.comparison !== undefined);
       const comparison = prior.comparison ?? staleGroup?.comparison;
@@ -1105,9 +1101,6 @@ function formatDispatchGroup(
   const countSuffix = group.attempts !== undefined && totalAttempts > 1
     ? ` ${group.attempts.length}/${totalAttempts}`
     : "";
-  if (group.blockers !== undefined && group.blockers.length > 0) {
-    return `carry-disabled${countSuffix}: ${group.blockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`;
-  }
   const comparison = group.comparison;
   const relevantPrior = (prior ?? []).filter((result) =>
     group.attempts === undefined || result.attempt === undefined || group.attempts.includes(result.attempt));

@@ -1112,34 +1112,6 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(nodeText).toContain("+5 more diagnostic nodes suppressed");
   });
 
-  it("carry-disabled 行显示 provider blocker 的 code/reason,不退化为 details unavailable 或 accept", () => {
-    const text = renderHumanDryPlan({
-      totalAttempts: 1,
-      evals: 1,
-      configs: 1,
-      attempts: 1,
-      rows: [{
-        experimentId: "compare/codex",
-        evalId: "opaque",
-        dispatch: [{
-          reason: "carry-disabled",
-          blockers: [
-            { code: "sandbox.custom-provider-opaque", reason: "custom provider owns an opaque create callback; use defineSandboxCase({ identity, materialize }) for cross-Run carry." },
-            { code: "sandbox.image-unresolved", reason: "Docker image is not pinned to a sha256 digest." },
-          ],
-        }],
-        // 即使上游误带 prior，carry-disabled 也不应生成 stale/accept 详情块。
-        prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available" }],
-      }],
-    });
-
-    expect(text).toContain("carry-disabled: sandbox.custom-provider-opaque:");
-    expect(text).toContain("sandbox.image-unresolved:");
-    expect(text).not.toContain("details unavailable");
-    expect(text).not.toContain("stale passed");
-    expect(text).not.toContain("niceeval accept @1A1B2C3D4E5F");
-  });
-
   it("同一 selector 的不同旧值各随自己的 locator 输出", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 3,

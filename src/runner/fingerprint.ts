@@ -6,11 +6,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
-import {
-  linkedRunCarryBlockers,
-  liveSandboxPlanningServices,
-  type SandboxCarryBlocker,
-} from "../sandbox/plan.ts";
+import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
 import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
 import type { AgentRun, FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
@@ -259,7 +255,6 @@ export type DispatchReason =
   | "exceeds-timeout"
   | "rerun"
   | "keep-sandbox"
-  | "carry-disabled"
   | "incompatible"
   | "new";
 
@@ -271,8 +266,6 @@ export interface DispatchGroup {
   readonly attempts: readonly number[];
   /** 指纹门的比较解释；不等时只能是非空 changed 或带闭集原因的 unexplained。 */
   readonly comparison?: FingerprintComparison;
-  /** 当前 pair 的跨 Run 携带资格被阻断时，来自 linked pair/provider plan 的具体原因。 */
-  readonly blockers?: readonly SandboxCarryBlocker[];
 }
 
 export interface CarryPlan {
@@ -574,7 +567,6 @@ async function planCarryPrepared(
   const entries = new Map<string, {
     pair: PreparedRunPair;
     identity: ConfigIdentity;
-    blockers: readonly SandboxCarryBlocker[];
   }>();
   const jobs: Promise<void>[] = [];
   for (const pair of preparedPairs) {
@@ -582,7 +574,7 @@ async function planCarryPrepared(
       const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
       const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
       const configHash = hashConfigIdentity(identity);
-      entries.set(key, { pair, identity, blockers: linkedRunCarryBlockers(pair.plan) });
+      entries.set(key, { pair, identity });
       plannedConfigHashes.set(key, configHash);
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
       jobs.push(
@@ -723,10 +715,7 @@ async function planCarryPrepared(
   const carriedAttemptsByKey = new Map<string, Set<number>>();
   const carriedAcceptingByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
   const hit = new Set<EvalResult>();
-  for (const [key, { pair: { run }, blockers }] of entries) {
-    // Provider 等明确报告 carry blocker 的 pair 不能跨 Run 携带。
-    // 未登记 identity 的作者 callback 不是 blocker；它按其它指纹输入正常参与携带。
-    if (blockers.length > 0) continue;
+  for (const [key, { pair: { run } }] of entries) {
     const carried = carriableAttempts(
       priorResults,
       key,
@@ -750,7 +739,7 @@ async function planCarryPrepared(
 
   // 逐条未携带原因:计划内每个没被携入的 attempt 序号,已知卡在哪一道门上。
   const dispatchByKey = new Map<string, readonly DispatchGroup[]>();
-  for (const [key, { pair: { run }, blockers }] of entries) {
+  for (const [key, { pair: { run } }] of entries) {
     const carriedIndices = carriedAttemptsByKey.get(key);
     const byAttempt = new Map<number, EvalResult>();
     for (const prior of priorsByKey.get(key) ?? []) {
@@ -761,33 +750,12 @@ async function planCarryPrepared(
       reason: DispatchReason;
       attempts: number[];
       comparison?: FingerprintComparison;
-      blockers?: readonly SandboxCarryBlocker[];
     };
     const groups: MutableDispatchGroup[] = [];
     const indexOfGroup = new Map<string, MutableDispatchGroup>();
     for (let i = 0; i < run.attempts; i++) {
       if (carriedIndices?.has(i)) continue;
       const prior = byAttempt.get(i);
-      if (
-        prior !== undefined &&
-        (prior.verdict === "passed" || prior.verdict === "failed") &&
-        blockers.length > 0
-      ) {
-        const groupKey = "eligibility|carry-disabled";
-        let group = indexOfGroup.get(groupKey);
-        if (group === undefined) {
-          group = {
-            gate: "eligibility",
-            reason: "carry-disabled",
-            attempts: [],
-            blockers,
-          };
-          indexOfGroup.set(groupKey, group);
-          groups.push(group);
-        }
-        group.attempts.push(i);
-        continue;
-      }
       const decision = prior === undefined
         ? missingReason(key, options)
         : carryGateFor(
@@ -822,7 +790,6 @@ async function planCarryPrepared(
         ...group,
         attempts: Object.freeze([...group.attempts]),
         ...(group.comparison === undefined ? {} : { comparison: freezeFingerprintComparison(group.comparison) }),
-        ...(group.blockers === undefined ? {} : { blockers: Object.freeze([...group.blockers]) }),
       }))));
     }
   }
