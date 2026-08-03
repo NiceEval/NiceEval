@@ -46,7 +46,7 @@
 格式里不存在跨 Experiment 聚合文件,所以进程 crash / 被 kill 只丢正在飞的 attempt 与尚未封口的 Run 级诊断——已完成 attempt 的判定和 artifact 都在盘上。
 某类数据为空就不生成对应 JSON 文件。
 
-`manifests.json` 与 `run.json` 同层,逐 eval 记本 Run 的指纹输入清单:配置面、源码面与数据面。
+`manifests.json` 与 `run.json` 同层,逐 eval 记本 Run 的指纹输入清单:algorithm / coverage 版本、配置面、源码面与数据面。
 它在规划阶段与指纹同刻算出、一次写成,不随 attempt 完成回写。
 清单的构成、新旧相减得出的具名差异,以及历史条目缺它时的 `opaque:no-manifest` 语义,单源在 [Experiments · manifest](../experiments/cache.md#manifest哈希做索引清单做解释)。
 
@@ -231,7 +231,7 @@ interface ExperimentRunInfo {
 - 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。
   **进 [configHash](../experiments/cache.md#指纹两个哈希嵌套) 的字段这条是硬约束**:配置身份的每一个输入都要在 `run.json` 上找得到,顶层或本投影二选一。
   `agent` / `model` 住顶层,其余住这里。
-  少落一个,就无法拿历史 Run 重算配置身份,[`niceeval accept`](../experiments/cache.md#niceeval-accept-locator接受一条结果) 的差异解释与重锚校验直接失效。
+  少落一个,就无法拿历史 Run 重算配置身份,[`niceeval accept`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 的差异解释与重锚校验直接失效。
 
 通过数、失败数、总用量、总成本这类聚合**不落盘**:它们由 `result.json` 逐条推导,聚合永远发生在消费方(`openRecord` 分层之上的计算函数或你的脚本)——这与读取面「忠实磁盘,不合并不聚合」是同一条铁律。
 
@@ -511,12 +511,14 @@ interface AttemptRecord {
   /** 携带条目专用: artifact 目录(相对记录根目录),指向原 Run 里的落盘。 */
   artifactBase?: string;
   /**
-   * 人工接受条目专用: `niceeval accept @<locator>` 复制一条历史结果时,
+   * 人工接受条目专用: `niceeval accept @<locator>...` 复制显式历史结果时,
    * 记录来源 locator、旧/新指纹与完整差异摘要。
    * 条目已按当前口径重打指纹;这个字段跟着结果走而不是跟着 Run 走,
    * 省略等价于「这条结果不是人工接受而来」。
    */
   acceptedFrom?: AcceptedResult;
+  /** 已知 fingerprint 迁移证明等价后自动携带的来源；与 acceptedFrom 互斥。 */
+  migratedFrom?: MigratedResult;
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在[证据 registry](#证据-registry),
    * 如 ["commands", "events", "sources"])。省略等价于空列表;携带条目原样携带。读取面的懒加载语义
@@ -525,12 +527,18 @@ interface AttemptRecord {
   artifacts?: string[];
 }
 
-/** `niceeval accept @<locator>` 的审计记录,写进新建的已接受条目。 */
+/** `niceeval accept @<locator>...` 的逐条审计记录,写进新建的已接受条目。 */
 interface AcceptedResult {
   locator: string;
   fingerprint: string;
   acceptedFingerprint: string;
   differences: AcceptedDifference[];
+}
+
+interface MigratedResult {
+  fingerprint: string;
+  algorithmVersion: number;
+  coverageVersion: number;
 }
 
 interface AcceptedDifference {

@@ -111,8 +111,11 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
 Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。
 反过来,进 configHash 的字段必须在 `run.json` 上找得到,顶层或 `ExperimentRunInfo` 二选一:拿历史 Run 重算配置身份是解释配置面差异的前提,少落一个字段,那条路径就只能靠猜。
 
-[`niceeval accept @<locator>`](../experiments/cache.md#niceeval-accept-locator接受一条结果) 是这条可比性担保上唯一的人为出口:它只让指定的历史条目重锚到当前口径。
+[`niceeval accept @<locator>...`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 是这条可比性担保上唯一的人为出口:它只让显式列出的历史条目重锚到当前口径。
 它不消除「混着两套配置的数据」的风险,而是把风险显式交给人。读取面可从 `acceptedFrom` 看出这条结果的来源 locator、旧/新指纹与差异摘要。
+
+已知 fingerprint 版本迁移不是人为出口。Runner 能证明旧、新输入等价时自动携带，并在结果保存 `migratedFrom: { fingerprint, algorithmVersion, coverageVersion }`。
+`acceptedFrom` 与 `migratedFrom` 互斥：前者表示人承担一次判断，后者表示 NiceEval 的迁移规则证明等价。
 
 ## 携带条目与 `evidenceState`
 

@@ -93,7 +93,7 @@ Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列
 全部携带的行标 `carried`,不标原因。
 正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
 
-`stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于“已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）；当前规划拿不到结构化差异时如实标记 `details unavailable`。每条要派发的历史结果都带自己的 locator；它是检查证据和接受该结果的唯一对象:
+`stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于“已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。
 
 ```text
 compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
@@ -103,15 +103,25 @@ compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge
 
 差异按历史结果各自展示,不会被聚合成一条会影响多题的授权。历史侧缺 manifest 时如实标 `opaque:no-manifest`。旧落盘若含不符合当前格式的 legacy locator，`--dry` 会显示 `accept: unavailable`，不会输出一个必然失败的命令；重新运行该 eval 后会生成可接受的新 locator。
 
-### `niceeval accept @<locator>`
+指纹比较只有三种状态：`match`、带非空 `deltas` 的 `changed`、带稳定原因的 `unexplained`。`unexplained` 原因闭集为 `manifest-missing`、`fingerprint-version-changed`、`legacy-untracked-input` 与 `fingerprint-invariant-violation`。
+执行证据是否存在与指纹差异能否解释是两条轴。`prior` 行从记录读取面投影 `evidenceState`，不得因 manifest 缺失而把 execution / diff / timing 说成不可用。
 
-接受动作不属于 `exp` 的规划参数。它精确接受一个历史结果,并将这条结果重锚到当前指纹；完整资格与审计语义见[缓存与携带](cache.md#niceeval-accept-locator接受一条结果)。
+```text
+compare/codex  memory/task  stale passed: fingerprint version changed (legacy → v2); no input delta
+  prior:  @1A1B2C3D4E5F (passed · evidence available)
+  accept: niceeval accept @1A1B2C3D4E5F
+```
+
+### `niceeval accept @<locator>...`
+
+接受动作不属于 `exp` 的规划参数。它接受一个或多个显式历史结果，并将每条结果重锚到当前指纹；完整资格与审计语义见[缓存与携带](cache.md#niceeval-accept-locator接受一条或多条结果)。
 
 ```sh
 niceeval accept @a1b2c3d4
+niceeval accept @a1b2c3d4 @e5f6g7h8
 ```
 
-命令完成后打印新结果 locator、来源 locator 和当前指纹摘要。失败时不派发 attempt，也不会根据共同的差异接受其它结果。`exp --accept` 与 selector 参数不存在。
+命令先验证全部 locator。任一条失败时零写入；全部通过后写一个 snapshot，并逐条打印来源 locator、新 locator 与当前指纹摘要。`exp --accept`、selector 参数与 `accept --all-stale` 都不存在。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 
@@ -914,11 +924,24 @@ interface ExpPlanDispatch {
     | "missing";
   /** 这组原因覆盖的 attempt 序号。 */
   attempts: number[];
-  /** 指纹门的差异明细,双侧 manifest 都在才有;缺 manifest 时给 [{ selector: "opaque:no-manifest" }]。 */
-  deltas?: ExpPlanDelta[];
+  /** 指纹门的比较解释；其它 gate 省略。 */
+  comparison?: ExpPlanFingerprintComparison;
   /** eligibility 门被 Sandbox carry 资格阻断时给出稳定 code 与可行动原因；其它门省略。 */
   blockers?: ExpPlanCarryBlocker[];
 }
+
+type ExpPlanFingerprintComparison =
+  | { kind: "changed"; deltas: [ExpPlanDelta, ...ExpPlanDelta[]] }
+  | {
+      kind: "unexplained";
+      reason:
+        | "manifest-missing"
+        | "fingerprint-version-changed"
+        | "legacy-untracked-input"
+        | "fingerprint-invariant-violation";
+      fromVersion?: number;
+      toVersion?: number;
+    };
 
 interface ExpPlanCarryBlocker {
   code: string;

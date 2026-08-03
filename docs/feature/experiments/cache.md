@@ -61,7 +61,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 三条配套规则:
 
 - **进 configHash 的字段必须落进 `run.json`**,顶层或 `ExperimentRunInfo` 二选一、不重复。
-  没落盘就没法对历史侧重算配置身份,配置面的差异解释与 [`accept`](#niceeval-accept-locator接受一条结果) 的重锚校验也就无从落地。
+  没落盘就没法对历史侧重算配置身份,配置面的差异解释与 [`accept`](#niceeval-accept-locator接受一条或多条结果) 的重锚校验也就无从落地。
 - **`configHash` 不逐 eval、不逐题型分叉。**
   代价是配置改动会波及证明上不受它影响的 eval: 一条 eval 自己完整声明了 `judge` 时,config 层换裁判模型照样让它重跑。
    `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
@@ -85,6 +85,13 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 差异只服务于解释: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)展示它, `niceeval accept` 在接受前把它完整写入审计记录。
 历史条目缺 manifest 时,算不出的只有源码面与数据面,两者合并成一条 `opaque:no-manifest`,不猜。
 配置面另有出处:它落盘在 `run.json`,从条目重建后照常给具名差异。
+
+fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 payload / 编码口径，`coverageVersion` 标识 manifest 覆盖的输入集合；旧记录未声明时按 legacy 版本 `0` 读取。
+任何进入 fingerprint 的输入都必须有同源 manifest 投影。当前版本内出现 fingerprint 不同、manifest 相同，属于 `fingerprint-invariant-violation`，不能退化成没有原因的 stale。
+
+跨版本先查显式迁移注册表。迁移只返回三种结果：已证明等价、具名差异、无法证明。
+已证明等价时结果自动携带，并在新条目记 `migratedFrom`；具名差异照常进入指纹门；无法证明时进入 `unexplained` 比较，交给人检查证据后接受或重跑。
+迁移不能只凭 manifest 相同猜等价；它必须点名 from/to 版本与被移除、改名或重编码的输入。
 
 下面三块把每一行改动的后果标在原地。
 设定:这个实验选中 36 条 eval,上一轮全绿。
@@ -266,19 +273,21 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队, `exe
 读取面因此不必翻更早的 Run 就能把条目与 Run 记下的配置对上号,`flags` 与条目指纹恒同源。
 合入只重打指纹一个字段:`locator`、`artifactBase`、判定、`facts` 与证据指向照旧原样携带, 落盘语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
 
-## `niceeval accept @<locator>`:接受一条结果
+## `niceeval accept @<locator>...`:接受一条或多条结果
 
 指纹变化后,人判断某条历史结果仍然成立时,直接接受这条结果:
 
 ```sh
 niceeval accept @a1b2c3d4
+niceeval accept @a1b2c3d4 @e5f6g7h8
 ```
 
-`@<locator>` 是唯一输入,也是唯一作用域。命令从当前项目发现同一 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
+显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每条来源对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
-接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。差异只帮助人理解变化;一次接受只代表「我确认这个 locator 的结论在现在仍有效」。要接受另一条结果,显式传入它自己的 locator。
+接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。`--all-stale` 不存在：范围会随当前发现结果漂移，不能代表逐条授权。
+多个 locator 只是把多条明确授权合成一次原子写盘，不把共同差异扩散到未列出的结果。
 
-接受前必须同时满足下列条件:
+写盘前先对全部 locator 验证下列条件:
 
 - locator 恰好指向一条可读的历史结果;
 - 结果是 `passed` 或 `failed`;
@@ -287,6 +296,8 @@ niceeval accept @a1b2c3d4
 - 当前超时上限仍允许该结果的 `executionMs`。
 
 缺失序号、`errored`、`skipped`、留存 Sandbox 与 carry 资格被阻断的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。无法固定的 Provider 环境身份等显式 blocker 会阻断携带；未登记 identity 的作者 callback 本身不是 blocker。
+
+任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后只封口一个 snapshot；输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
 
 `accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 

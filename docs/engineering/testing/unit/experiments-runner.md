@@ -203,14 +203,20 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   规划 I/O 从 linker 到 manifest 计算保持一条 Effect 链，中途没有 `runPromise`。
 - **未登记 callback 的默认携带**：prepare callback 与 lifecycle hook 不提供额外 identity 时，已有 `passed` / `failed` 终态仍按其它指纹输入携带，不归入 `eligibility/carry-disabled`。
   同一 fixture 改用 `defineSandboxCommand()` 后，revision / inputs 变化必须归入 fingerprint 门并重新派发；Provider 环境身份等真正的 eligibility blocker 仍保留全部 `code` / `reason`。
-- **`niceeval accept @<locator>` 的对象与资格**：只接受 locator 指向的一条历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。坏 locator、`errored` / `skipped`、留存 Sandbox 的结果各有一条失败测试；带 `sandbox.reused` 的来源和当前 `sandboxReuse: true` 都各有一条成功测试。失败不派发 attempt，也不接受任何其它结果。
+- **`niceeval accept @<locator>...` 的对象与资格**：只接受显式 locator 指向的历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。坏 locator、重复 locator、`errored` / `skipped`、留存 Sandbox 的结果各有失败测试；带 `sandbox.reused` 的来源和当前 `sandboxReuse: true` 都有成功测试。多 locator 先全量预检，任一失败时 writer 零调用；成功时只写一个 snapshot，每条结果保留独立 `acceptedFrom`。
 - **blocked accept 的写盘前拒绝**：carry eligibility 为 Blocked 的当前 pair，在 writer 写 snapshot 前以 `carry-ineligible` 拒绝并列出全部 `code`/`reason`。
 - **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
 - **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制来源结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返来源 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。
-- **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单,配置面、源码面、数据面与指纹同一份输入。
+- **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单，配置面、源码面、数据面与指纹同源。
+
+  algorithm / coverage 版本必须往返。当前版本内 fingerprint 不同而 manifest 相同必须落 `fingerprint-invariant-violation`，不能返回空 deltas。
+
   新旧相减给出带名字的差异:`config:` 字段的旧值新值、`source:` / `data:` 的内容哈希变化与文件增删。
+
   历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
+
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
+- **fingerprint 版本迁移**：已知等价迁移自动携带并落 `migratedFrom`，不伪装成人工 `acceptedFrom`；具名差异继续走 `changed`；未知迁移走 `unexplained/fingerprint-version-changed`。迁移必须校验 from/to 版本，不能只凭 manifest 相同放行。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
   九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
 - **`--dry` 的 carried Verdict 投影**：Human 计划行要证明携入 Verdict 不被隐藏。
