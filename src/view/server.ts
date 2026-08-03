@@ -1,4 +1,4 @@
-// HTTP server:把站点管线(site.ts 的 planSite)产出的同一份产物挂在 127.0.0.1 上按路径服务。
+// HTTP server:把站点管线(site.ts 的 planSite)产出的同一份产物挂在指定地址上按路径服务。
 // 这里不携带任何取数或布局知识——查不到清单条目就是 404,同一页同一语言的报告块与 `--out`
 // 逐字节一致(docs/feature/reports/view.md 开篇)。宿主语义全部作用在管线之外:
 //
@@ -13,6 +13,7 @@
 import { createServer, type Server } from "node:http";
 import { watch, type FSWatcher } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { type LoadedDefinitions, type ViewScanOptions } from "./data.ts";
 import {
@@ -31,6 +32,8 @@ export interface ViewOptions {
   input?: string;
   out?: string;
   port?: number;
+  /** 监听地址；缺省与 CLI 裸写 --host 都监听全部 IPv4 网卡。 */
+  host?: string;
   /** 站点管线的组合语义(位置前缀 / --exp 收窄有效根,--report 换报告槽),透传给管线。 */
   scan?: ViewScanOptions;
   /** 本地模式观察的项目根；静态导出忽略。 */
@@ -38,7 +41,10 @@ export interface ViewOptions {
 }
 
 export interface ViewServer {
+  /** 首选的本机 URL，供 `--open` 直接打开。 */
   url: string;
+  /** 可在浏览器打开的本机与局域网 URL。 */
+  urls: string[];
   close(): Promise<void>;
 }
 
@@ -419,9 +425,12 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
     }
   });
 
-  const port = await listen(server, opts.port ?? 0);
+  const host = opts.host ?? "0.0.0.0";
+  const port = await listen(server, opts.port ?? 0, host);
+  const urls = viewUrls(host, port);
   return {
-    url: `http://127.0.0.1:${port}/`,
+    url: urls[0]!,
+    urls,
     close: () =>
       new Promise((resolveClose, reject) => {
         scheduler.close();
@@ -433,7 +442,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   };
 }
 
-async function listen(server: Server, preferredPort: number): Promise<number> {
+async function listen(server: Server, preferredPort: number, host: string): Promise<number> {
   const tryListen = (port: number): Promise<number> =>
     new Promise((resolveListen, reject) => {
       const onError = (err: NodeJS.ErrnoException) => {
@@ -447,7 +456,7 @@ async function listen(server: Server, preferredPort: number): Promise<number> {
       };
       server.once("error", onError);
       server.once("listening", onListening);
-      server.listen(port, "127.0.0.1");
+      server.listen(port, host);
     });
 
   if (preferredPort === 0) return tryListen(0);
@@ -459,4 +468,17 @@ async function listen(server: Server, preferredPort: number): Promise<number> {
     }
   }
   throw new Error(`No available port near ${preferredPort}`);
+}
+
+/** `0.0.0.0` 不是浏览器实际访问的地址；把本机和每个 IPv4 局域网地址都明确列出来。 */
+function viewUrls(host: string, port: number): string[] {
+  const urlFor = (address: string) => `http://${address.includes(":") ? `[${address}]` : address}:${port}/`;
+  if (host !== "0.0.0.0") return [urlFor(host)];
+  const addresses = ["127.0.0.1"];
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal) addresses.push(entry.address);
+    }
+  }
+  return [...new Set(addresses)].map(urlFor);
 }

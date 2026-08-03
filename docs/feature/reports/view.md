@@ -38,6 +38,8 @@ niceeval view --run .niceeval/dev-e2b_codex-e2b/2026-07-12T10-08/run.json
                                        # 只打开这一份 Run
 niceeval view --no-open                # 只打印 URL
 niceeval view --port 4400              # 固定本地端口
+niceeval view --host                    # 监听全部网卡，打印本机与局域网可打开地址
+niceeval view --host 127.0.0.1          # 只监听指定地址
 niceeval view --report reports/exam.tsx
 niceeval view --report reports/site.tsx --page exam   # 多页报告，指定初始页
 niceeval view --report standard        # 内建视图名，回到默认报告
@@ -47,7 +49,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 位置参数只有一种含义：eval id 前缀，与 `show` 一致。
 记录根用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`——文件与目录都不进位置参数，位置参数的含义不随文件系统状态改变。
 
-本地 server 只监听 `127.0.0.1`。
+本地 server 默认监听全部 IPv4 网卡（等价于 `--host 0.0.0.0`）；启动后会列出本机 `127.0.0.1` 与每个局域网 IPv4 地址，直接点其中符合访问位置的一条即可。`--host [address]` 可改为只监听指定地址；裸写 `--host` 与不传值同样监听全部网卡。
 默认让操作系统随机分配端口；`--port <n>` 指定首选端口，被占用时从 n 起向上顺延最多 20 个，全被占用才报错。
 
 不带选项的 `niceeval view` 默认把记录根中的完整 Sample 作为各页 `load` 的 base。

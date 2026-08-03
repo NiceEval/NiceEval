@@ -107,6 +107,7 @@ npx niceeval exp list --json
 | `--json` | boolean | `exp` 命令专用:机器面——stdout 上单一有序的 NDJSON 事件流(一行一个 JSON 对象),供 coding agent、CI annotation adapter 或脚本消费;`--dry --json` 输出单个 JSON 计划文档而不是流。省略即人读文本(TTY live 面板 / 非 TTY 追加流)。`show` 命令专用:任何切片的结构化形态——同一范围、同一切片选出的同一批实体,输出成一个 JSON 文档到 stdout;与 `--report`、`--expand` 互斥,多个证据 flag(`--source`/`--execution`/`--timing`/`--diff`)只能选一个。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
+| `--host` | string | `view` 命令专用:指定监听地址；可裸写，此时监听全部网络地址并打印可打开的本机与局域网 URL。省略时同样监听全部网络地址。 |
 | `--source` | boolean | `show` 命令专用:该 attempt 运行时保存的 Eval 源码调用树。裸写为有界默认投影；`--source=full` 展开全部调用路径；`--source=<path>` 按捕获路径后缀唯一匹配并显示该文件全文。 |
 | `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 |
 | `--timing` | boolean | `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 |

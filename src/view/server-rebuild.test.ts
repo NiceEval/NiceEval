@@ -188,6 +188,31 @@ function subscribe(url: string, page: string, locale: string): { events: { event
   return { events, close: () => controller.abort() };
 }
 
+describe("本地监听地址", () => {
+  it("默认监听全部网卡，并给浏览器本机可访问的地址", async () => {
+    const fx = await makeFixture();
+    const server = await serve(fx);
+
+    expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    expect(server.urls).toContain(server.url);
+    expect((await fetch(server.url)).status).toBe(200);
+  });
+
+  it("显式 host 时只公布该地址", async () => {
+    const fx = await makeFixture();
+    const server = await startViewServer({
+      input: fx.record,
+      host: "127.0.0.1",
+      scan: { report: { path: fx.reportPath, cwd: fx.root } },
+      watchRoot: fx.root,
+    });
+    servers.push(server);
+
+    expect(server.urls).toEqual([server.url]);
+    expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+  });
+});
+
 describe("重建理由的闭集性", () => {
   it("请求 / 不是重建理由:连续请求命中同一份产物,报告只在启动时装载过一次", async () => {
     const fx = await makeFixture();

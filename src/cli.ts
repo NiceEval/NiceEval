@@ -123,6 +123,7 @@ interface Flags {
   open?: boolean;
   out?: string;
   port?: number;
+  host?: string;
   help: boolean;
   version: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
@@ -200,6 +201,8 @@ const FLAG_OPTIONS = {
   out: { type: "string" },
   /** `view` 命令专用:指定本地服务器监听端口。 */
   port: { type: "string" },
+  /** `view` 命令专用:指定监听地址；可裸写，此时监听全部网络地址并打印可打开的本机与局域网 URL。省略时同样监听全部网络地址。 */
+  host: { type: "string" },
   // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/tutorials/viewing-results.mdx)。
   // 证据切面只认 `@<locator>`(或收窄到单个 eval 的前缀)选出的那一个 attempt——不再有
   // 数字 `--attempt`,选哪个 attempt 由 locator 精确指名,不是「先选 eval 再挑第几次」。
@@ -290,7 +293,8 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
   // --source[=full|<path>] 预扫:本体是布尔，值只接受 = 连写，避免吞掉 eval 前缀位置参数。
   let sourceValue: string | undefined;
   let rerunMode: "failed" | "all" | undefined;
-  // boolean|string 联合 flag 的空格写法先归一：--rerun all → --rerun=all。
+  // boolean|string 联合 flag 的空格写法先归一：--rerun all → --rerun=all；
+  // --host 的裸写则补成默认地址，保持 `--host <地址>` 的普通 string flag 形态。
   {
     const normalized: string[] = [];
     for (let index = 0; index < argv.length; index += 1) {
@@ -299,6 +303,8 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
       if (arg === "--rerun" && (next === "failed" || next === "all")) {
         normalized.push(`--rerun=${next}`);
         index += 1;
+      } else if (arg === "--host" && (next === undefined || next.startsWith("-"))) {
+        normalized.push("--host=0.0.0.0");
       } else {
         normalized.push(arg);
       }
@@ -306,6 +312,13 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     argv = normalized;
   }
   argv = argv.map((arg) => {
+    if (arg.startsWith("--host=")) {
+      const value = arg.slice("--host=".length);
+      if (value.length === 0) {
+        process.stderr.write("--host=<address> requires a non-empty address, or use bare --host.\n");
+        process.exit(1);
+      }
+    }
     if (arg.startsWith("--source=")) {
       const value = arg.slice("--source=".length);
       if (value.length === 0) {
@@ -396,6 +409,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     json: values.json === true,
     out: values.out as string | undefined,
     port: numberFlag("port", values.port as string | undefined),
+    host: values.host as string | undefined,
     dry: values.dry === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
@@ -923,10 +937,10 @@ async function main(): Promise<void> {
       process.stdout.write(t("cli.view.exportedDir", { out }));
       process.exit(0);
     }
-    const server = await startViewServer({ input: viewInput.input, port: flags.port, scan, watchRoot: cwd }).catch(
+    const server = await startViewServer({ input: viewInput.input, port: flags.port, host: flags.host, scan, watchRoot: cwd }).catch(
       exitOnViewUserError,
     );
-    process.stdout.write(t("cli.view.url", { url: server.url }));
+    process.stdout.write(t("cli.view.urls", { urls: server.urls.map((url) => `  ${url}`).join("\n") }));
     if (flags.open !== false) {
       const opened = await openBrowser(server.url);
       if (!opened) process.stderr.write(t("cli.browserOpenFailed", { url: server.url }));
