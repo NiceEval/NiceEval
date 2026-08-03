@@ -49,7 +49,7 @@ attempt.carried;               // true = 携带条目:fingerprint 未变、上�
                                // startedAt 是原执行时刻
 attempt.evidenceState;         // "local" | "borrowed" | "dangling" —— artifact 在哪,见下
 await attempt.events();        // StreamEvent[] | null —— 重 artifact 全部懒加载
-await attempt.commands();      // FailedCommandEvidence[] | null —— 非零 Sandbox 命令与 stdout/stderr
+await attempt.commands();      // CommandExitEvidence[] | null —— 非零 Sandbox 命令、解释类别与 stdout/stderr
 await attempt.trace();         // TraceSpan[] | null(span 属性同样受 256 KiB 值上限约束)
 await attempt.o11y();          // O11ySummary | null
 await attempt.agentSetup();    // AgentSetupManifest | null
@@ -252,10 +252,10 @@ await publish(latestRunSample(record), "site/data/run", {
 `diff`、源码 blob 与历史版本的 artifact 也可能超过 Git host 的单文件限制。
 因此 `.niceeval/` 是本地事实根,不是默认可提交目录。
 
-记录数据分**两类**:`.niceeval/` 是**本地事实根**——prompt、工具参数、失败命令输出、Agent 输出、源码全在里面;任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。
+记录数据分**两类**:`.niceeval/` 是**本地事实根**——prompt、工具参数、非零命令输出、Agent 输出、源码全在里面;任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。
 可信边界内搬运事实根不是发布——把整个 `.niceeval/` 作为 CI job artifact 在 job 间传递或取回本机,就是搬一个普通目录,搬到哪里那里就是记录根,`--record` 直接打开。
 没有更细的档位:体积取舍由 `artifacts` 字段声明,导出层不做二次裁剪。
-发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:运行环境注入的 env 值不落盘,命令 display 脱敏;但失败进程主动写到 stdout/stderr 的内容会进入 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。
+发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:运行环境注入的 env 值不落盘,命令 display 脱敏;但非零退出进程写到 stdout/stderr 的内容会进入 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。
 复制忠实于源:artifact 原字节复制,不重新序列化、不改写。
 契约细节:
 
@@ -274,7 +274,7 @@ await publish(latestRunSample(record), "site/data/run", {
   源里有 artifact 已丢失的携带条目时,`publish()` 报错并列出这些 attempt 与它们指向的原 Run 目录,不产出一份「看起来完整、实际缺证据」的发布物。
   要发布只剩判定的历史,显式把该类 artifact 从 `artifacts` 里排除。
 - **`artifacts` 的合法词干与默认携带单源在[证据 registry](architecture.md#证据-registry)**——新增一种证据只需要 registry 加一行。
-  两条默认理由需要显式交代:失败命令证据是 errored attempt 的主要下钻面,`commands` 默认发布拷贝不能静默删掉;`diff` 不在默认之列,体量取舍留给显式选择。
+  两条默认理由需要显式交代:命令退出证据是 errored attempt 的主要下钻面,也保留被调用方接受的非零事实,`commands` 默认发布拷贝不能静默删掉;`diff` 不在默认之列,体量取舍留给显式选择。
 
 ## 直接吃读取面:一个真实脚本
 

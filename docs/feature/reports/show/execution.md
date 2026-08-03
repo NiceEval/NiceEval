@@ -33,8 +33,18 @@ full OTel trace: .niceeval/.../trace.json
 ```
 
 `--execution` 以「做了什么」为主，时间只是事件旁的上下文注释；它不负责阶段聚合，也不把未关联 span 猜到某条事件上。
-除了 Agent 事件，它还在对应 attempt 节末尾列出 NiceEval 直接观察到的失败 Sandbox 命令（`commands.json`）：标题带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr。
-这样 setup 或 Eval 手工命令失败时，不必指望 Agent event：
+除了 Agent 事件，它还显示 NiceEval 直接观察到的非零 Sandbox 命令（`commands.json`）。命令证据是独立的 lifecycle 区块，不拼进 Agent conversation，也不统一追加到所有 Turn 之后。区块按 timing `startOffsetMs` 排序；setup 类阶段位于 Turn 之前，收尾阶段位于 Turn 之后。
+
+unchecked 命令显示中性的 `NON-ZERO COMMAND · observed`；它只说明调用方取得了非零结果，不能使用红色失败样式。checked 命令因非零抛出时才显示 `FAILED COMMAND`。两类标题都带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr：
+
+```text
+  NON-ZERO COMMAND · observed · agent.setup · exit 1 · 0.3s
+    codex plugin marketplace remove nowledge-community
+    stderr
+      Error: marketplace `nowledge-community` is not configured or installed
+```
+
+setup 或 Eval 手工命令真正失败时，不必指望 Agent event：
 
 ```text
   FAILED COMMAND · eval.run · exit 243 · 1.2s
@@ -46,17 +56,15 @@ full OTel trace: .niceeval/.../trace.json
       (+18 lines · 1480 chars · niceeval show @1jmvhiau --execution --expand cmd1)
 ```
 
-失败命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联失败命令卡与[`--timing`](timing.md) 的 command 节点。
-若 Eval 随后抛出的 `error.message` 只剩截断尾部，Attempt 首页在错误摘要后明确提示 `failed command evidence: niceeval show @<locator> --execution`。
-要从整个 attempt 回答「时间花在哪里」，使用 [`--timing`](timing.md)。
+命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联命令卡与[`--timing`](timing.md) 的 command 节点。若 Eval 随后抛出的 `error.message` 只剩截断尾部，Attempt 首页只在存在 `classification: "failed"` 的命令时提示 `failed command evidence: niceeval show @<locator> --execution`。要从整个 attempt 回答「时间花在哪里」，使用 [`--timing`](timing.md)。
 
-失败命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
+命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
 
 ## 卡片预览预算与 `--expand`
 
 卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整的树解析产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。
 卡片正文是**有界预览**，主尺度是行：每个内容段最多显示前 3 行（保留原始换行）。
-段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；失败命令卡的命令行、stdout、stderr 各为一段。
+段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；命令证据卡的命令行、stdout、stderr 各为一段。
 每段另有 1 KiB（UTF-8 字节，按字符边界回退）回退，防单行超长的 JSON blob 击穿行预算。
 选 3 行而不是更宽，是因为这个视图的职责是全景骨架——回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；细读任何一张卡都是一条显式的 `--expand` 命令，不靠预览承载完整内容。
 
@@ -75,7 +83,7 @@ full OTel trace: .niceeval/.../trace.json
 ```
 
 - Agent 事件卡句柄语法是 `t<turn 序号>.c<轮内卡片序号>`，两个序号都从 1 起，由 `events.json` 的事件序确定性派生。
-  失败 Sandbox 命令卡使用 `cmd<序号>`，按 `commands.json` 中 `timingNodeId` 对应节点的 `startOffsetMs` 稳定排序后从 1 编号。
+  Sandbox 命令卡使用 `cmd<序号>`，按 `commands.json` 中 `timingNodeId` 对应节点的 `startOffsetMs` 稳定排序后从 1 编号。
   同一份 artifact 上句柄永远指同一张卡片，可以写进脚本与笔记。
 - `--expand <handle>` 与 `--execution` 组合、要求恰好一个 attempt 的范围，输出该卡片的完整落盘内容（原始换行，不再截断）。
   落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值如实带 `truncated` 标注与原始字节数——展开还原的是落盘证据，不是运行时全量。
@@ -88,7 +96,7 @@ full OTel trace: .niceeval/.../trace.json
 全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄这个 text 渲染面的注意力范围。
 
 `--grep <pattern>` 是这个区块 text 渲染面的选项，不是事实过滤器：它只输出命中的卡片，不改变哪些证据存在。
-pattern 是 JS 正则，匹配面是卡片的全部文本字段——角色文本、工具名、input、result，以及失败 Sandbox 命令的 display / stdout / stderr；每张命中卡片自带定位行，末尾汇总命中数：
+pattern 是 JS 正则，匹配面是卡片的全部文本字段——角色文本、工具名、input、result，以及非零 Sandbox 命令的 display / stdout / stderr；每张命中卡片自带定位行，末尾汇总命中数：
 
 ```text
 $ niceeval show --exp memory/codex-nowledge --execution --grep 'memory_search|nmem m search'

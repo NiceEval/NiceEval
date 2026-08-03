@@ -31,7 +31,7 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 3. 基础设施问题和持久化 diagnostics。
 4. 标注 Eval 源码；没有源码时显示断言表。
 5. 可行动失败的修复 prompt。
-6. 执行时间树、未映射的对话证据、trace 与 [文件差异](attempt-diff.md)。
+6. 执行时间树、按生命周期定位的非零命令证据、未映射的对话证据、trace 与 [文件差异](attempt-diff.md)。
 
 某类证据缺失时对应区块零输出或显示明确缺失，不伪造空值。
 全部数值由同一 AttemptEvidence 投影，`show` 切片与详情页不各算一份。
@@ -40,8 +40,10 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 `AttemptDetails` 始终调用 `toConversationTurns(evidence)`。
 
 源码与事件同时存在时，可按源码位置对应的每一轮 `Conversation` 进入相应 `send` 行的展开区。
-这些轮不在源码后重复渲染；没有源码位置的轮与无法归入单轮的失败命令仍留在页面级 `Conversation`。
+这些轮不在源码后重复渲染；没有源码位置的轮仍留在页面级 `Conversation`。
 源码不可用时，全部对话按原顺序显示在页面级 `Conversation`。
+
+非零 Sandbox 命令不归入任何 `Conversation`。Attempt 详情将其投影为独立的 lifecycle 命令区块，并按 timing 顺序放在对应阶段：setup 命令先于 Turn，teardown 命令后于 Turn。unchecked 命令使用中性 `observed` 样式；只有 checked 方法因非零抛出的命令使用失败样式。
 
 结果为 `null` 时在 Web 与 Text 两面渲染 warning `Callouts`。
 标题为 `Execution evidence unavailable`，内容为 `The events artifact is missing or was not published.`
