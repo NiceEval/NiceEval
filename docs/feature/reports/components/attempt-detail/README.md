@@ -36,6 +36,13 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 某类证据缺失时对应区块零输出或显示明确缺失，不伪造空值。
 全部数值由同一 AttemptEvidence 投影，`show` 切片与详情页不各算一份。
 
+执行对话的 `events` artifact 是可选证据。
+`AttemptDetails` 始终调用 `toConversationTurns(evidence)`。
+有对话内容时渲染 `Conversation`。
+结果为 `null` 时在 Web 与 Text 两面渲染 warning `Callouts`。
+标题为 `Execution evidence unavailable`，内容为 `The events artifact is missing or was not published.`
+源码与事件同时存在时仍显示 `Conversation`，不因源码区块已存在而隐藏对话。事件 artifact 读取损坏时沿现有转换器抛错，不把损坏吞成缺失提示。
+
 ## 自定义详情
 
 Attempt 详情是一张按 locator 参数化的 page，自定义时只换 `render`，`params` 与 `load` 沿用 [`standardAttemptPage`](../../library.md#参数化页attempt-与-experiment-详情)：

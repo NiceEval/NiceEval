@@ -26,6 +26,7 @@ import {
   attemptAssertionsContent,
   attemptConversationContent,
   attemptDiffContent,
+  executionEvidenceUnavailableCallouts,
   attemptFixPromptContent,
   attemptNoticesContent,
   projectedSourceContent,
@@ -352,9 +353,7 @@ export const AttemptDetailsResultView = defineComponent<{
     trace: result.timing.trace === null ? null : [...result.timing.trace],
     ...(result.timing.error?.code === "timeout" ? { timedOut: true as const } : {}),
   });
-  const conversation = result.source.source === null
-    ? attemptConversationContent(result.conversation.conversation)
-    : null;
+  const conversation = attemptConversationContent(result.conversation.conversation);
   const files = attemptDiffContent(result.diff);
   return (
     <Col>
@@ -368,7 +367,11 @@ export const AttemptDetailsResultView = defineComponent<{
       <CopyBlock content={attemptFixPromptContent(result.fixPrompt)} />
       <Waterfall nodes={timeline ?? []} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} />
       <TaskUsageResultView data={result.usage} />
-      {conversation !== null ? <Conversation data={conversation} /> : null}
+      {conversation !== null ? (
+        <Conversation data={conversation} />
+      ) : (
+        <Callouts items={executionEvidenceUnavailableCallouts} />
+      )}
       <DiffView files={files} />
     </Col>
   );

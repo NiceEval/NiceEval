@@ -29,6 +29,7 @@ import {
   toDiffFiles,
   toTimelineNodes,
 } from "../../model/conversions.ts";
+import { executionEvidenceUnavailableCallouts } from "./content.tsx";
 
 export {
   validateAssertionsData,
@@ -187,14 +188,12 @@ AttemptAssessment.displayName = "AttemptAssessment";
 /** 公开 Attempt 详情组合；文档名 AttemptDetails。 */
 export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
   const evidence = evidenceOf(props, ctx);
-  const conversationLivesInSource =
-    evidence.capabilities.source && evidence.evalSource !== null;
   const [summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([
     toAttemptSummary(evidence),
     toAttemptFixPrompt(evidence),
     toTimelineNodes(evidence),
     toAttemptUsage(evidence),
-    conversationLivesInSource ? Promise.resolve(null) : toConversationTurns(evidence),
+    toConversationTurns(evidence),
     toDiffFiles(evidence),
   ]);
   return (
@@ -207,7 +206,11 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
         title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
       />
       <AttemptUsage data={usage} />
-      {conversation !== null ? <Conversation data={conversation} /> : null}
+      {conversation !== null ? (
+        <Conversation data={conversation} />
+      ) : (
+        <Callouts items={executionEvidenceUnavailableCallouts} />
+      )}
       <DiffView files={diff} />
     </Col>
   );

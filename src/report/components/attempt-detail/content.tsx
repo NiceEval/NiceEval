@@ -449,6 +449,18 @@ export function attemptConversationContent(data: AttemptConversationData | null)
   };
 }
 
+export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [
+  {
+    title: "Execution evidence unavailable",
+    items: [
+      {
+        level: "warning",
+        message: "The events artifact is missing or was not published.",
+      },
+    ],
+  },
+];
+
 export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): readonly CalloutGroup[] | null {
   if (data === null) return null;
   return data.groups.map((group) => ({

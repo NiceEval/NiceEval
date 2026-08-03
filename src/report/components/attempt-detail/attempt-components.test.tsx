@@ -43,8 +43,10 @@ import {
 } from "../../definition/primitives.tsx";
 import {
   AttemptAssessment,
+  AttemptDetails,
   AttemptSummary,
 } from "./index.tsx";
+import { standardAttemptRender } from "../../built-in/standard.tsx";
 import {
   validateAssertionsData,
   validateConversationData,
@@ -121,6 +123,49 @@ async function resolveOnScopePage(node: ReportNode): Promise<unknown> {
     page: { id: "report", input: "sample" },
     memo: new ResolveMemo(),
   });
+}
+
+function elementsByType(
+  node: unknown,
+  target: unknown,
+  out: Array<{ type: unknown; props: globalThis.Record<string, unknown> }> = [],
+): Array<{ type: unknown; props: globalThis.Record<string, unknown> }> {
+  if (node === null || node === undefined || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) elementsByType(child, target, out);
+    return out;
+  }
+  const element = node as { type?: unknown; props?: globalThis.Record<string, unknown> };
+  if (element.type === target && element.props !== undefined) {
+    out.push(element as { type: unknown; props: globalThis.Record<string, unknown> });
+  }
+  elementsByType(element.props?.children, target, out);
+  return out;
+}
+
+function executionUnavailableCallout(node: unknown) {
+  return elementsByType(node, Callouts).find((element) =>
+    Array.isArray(element.props.items) &&
+    element.props.items.some(
+      (group) =>
+        typeof group === "object" &&
+        group !== null &&
+        (group as { title?: unknown }).title === "Execution evidence unavailable",
+    ),
+  );
+}
+
+function sourceEvidenceOf() {
+  return {
+    spine: {
+      file: "evals/a.ts",
+      sha256: "sha",
+      lines: [{ line: 1, text: 'await t.send("go");', annotations: [], calls: [] }],
+    },
+    detached: [],
+    unmapped: { assertions: [], scores: [] },
+    summary: { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false },
+  };
 }
 
 // ───────────────────────── 11 个叶子的非空/空证据矩阵 ─────────────────────────
@@ -242,6 +287,78 @@ describe("AttemptConversation:标准事件流按 loc 分轮", () => {
       { kind: "tool", operationId: "c1", name: "bash", tool: "shell", input: { command: "ls" }, output: "file.txt", status: "completed" },
     ]);
     expect(validateConversationData(data)).toBeNull();
+  });
+});
+
+describe("AttemptDetails:执行证据可用性", () => {
+  it("evalSource 与 events 同时存在时仍渲染 Conversation", async () => {
+    const events: StreamEvent[] = [
+      { type: "message", role: "user", text: "go", loc: { file: "evals/a.ts", line: 1 } },
+      { type: "message", role: "assistant", text: "done" },
+    ];
+    const evidence = evidenceOf({
+      events,
+      evalSource: sourceEvidenceOf(),
+      capabilities: { ...NO_CAPS, source: true, execution: true },
+    });
+    const tree = await resolveOnAttemptPage(<AttemptDetails />, evidence);
+
+    expect(elementsByType(tree, Conversation)).toHaveLength(1);
+    expect(executionUnavailableCallout(tree)).toBeUndefined();
+  });
+
+  it("events 为 null 时渲染执行证据缺失 warning Callouts", async () => {
+    const tree = await resolveOnAttemptPage(<AttemptDetails />, evidenceOf());
+    const unavailable = executionUnavailableCallout(tree);
+
+    expect(unavailable?.props.items).toEqual([
+      {
+        title: "Execution evidence unavailable",
+        items: [
+          {
+            level: "warning",
+            message: "The events artifact is missing or was not published.",
+          },
+        ],
+      },
+    ]);
+    expect(elementsByType(tree, Conversation)).toHaveLength(0);
+  });
+});
+
+describe("standardAttemptRender:执行证据投影", () => {
+  it("source 与 events 同时存在时仍保留 Conversation", async () => {
+    const events: StreamEvent[] = [
+      { type: "message", role: "user", text: "go", loc: { file: "evals/a.ts", line: 1 } },
+      { type: "message", role: "assistant", text: "done" },
+    ];
+    const evidence = evidenceOf({
+      events,
+      evalSource: sourceEvidenceOf(),
+      capabilities: { ...NO_CAPS, source: true, execution: true },
+    });
+    const tree = await resolveOnAttemptPage(await standardAttemptRender(evidence), evidence);
+
+    expect(elementsByType(tree, Conversation)).toHaveLength(1);
+    expect(executionUnavailableCallout(tree)).toBeUndefined();
+  });
+
+  it("events 为 null 时在标准 attempt 结果视图显示 warning Callouts", async () => {
+    const evidence = evidenceOf();
+    const tree = await resolveOnAttemptPage(await standardAttemptRender(evidence), evidence);
+
+    expect(executionUnavailableCallout(tree)?.props.items).toEqual([
+      {
+        title: "Execution evidence unavailable",
+        items: [
+          {
+            level: "warning",
+            message: "The events artifact is missing or was not published.",
+          },
+        ],
+      },
+    ]);
+    expect(elementsByType(tree, Conversation)).toHaveLength(0);
   });
 });
 // 「Attempt 证据数据源」——timeline / trace 投影的时间树语义

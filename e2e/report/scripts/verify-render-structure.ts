@@ -95,7 +95,8 @@ const AGENT = {
 
 /** AttemptDetails 声明的区块顺序(完整出处见 docs/feature/reports/components/attempt-detail/attempt-detail.md):
  * Summary、Assessment(先 Error,再 Source-or-Assertions)、FixPrompt、Timeline、
- * Diagnostics、Usage、Conversation(仅当 source 尚未包含时才出现)、Trace、Diff。 */
+ * Diagnostics、Usage、Conversation、Trace、Diff；events artifact 缺失时在对话位置显示
+ * execution evidence unavailable warning。 */
 const ATTEMPT_DETAIL_ORDER = [
   "attempt-summary",
   "attempt-error",
@@ -175,15 +176,31 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   const errorLocator = evidence.deliberateError.attempt.locator;
 
   // --- Passed attempt(main):source capability 为 true(真实发生过 send/tool-call)-> 会渲染
-  //     Summary、Source、Timeline、Usage;其余部分没有证据可渲染。
+  //     Summary、Source、Timeline、Usage、Conversation;其余部分没有证据可渲染。
   const mainBlocks = attemptBlockOrder(evidence, mainLocator);
   assertSubsequenceOfCanonicalOrder(mainBlocks, `attempt/${mainLocator}.html (passed)`);
   for (const must of ["attempt-summary", "attempt-source", "attempt-timeline", "usage-table"]) {
     assert.ok(mainBlocks.includes(must), `passed attempt ${mainLocator} is missing "${must}"`);
   }
-  for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-fix-prompt", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
+  for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-fix-prompt", "attempt-diagnostics", "attempt-trace", "attempt-diff"]) {
     assert.ok(!mainBlocks.includes(mustNot), `passed attempt ${mainLocator} unexpectedly rendered "${mustNot}" — zero-evidence components must produce zero output, not an empty placeholder block (report.md 结构条)`);
   }
+
+  // main 的真实事件流同时包含 assistant 回复与 get_stock_price 工具往返；源码区块存在
+  // 不能把这份 Conversation 隐藏掉。断言静态 attempt HTML 的语义条目与工具内容都存在。
+  const mainHtml = attemptHtml(evidence, mainLocator);
+  assert.ok(
+    mainHtml.includes('class="niceeval-conversation-entry-kind" data-kind="assistant"'),
+    `${mainLocator} web face is missing the assistant conversation entry`,
+  );
+  assert.ok(
+    mainHtml.includes('class="niceeval-conversation-entry-kind" data-kind="tool"'),
+    `${mainLocator} web face is missing the tool conversation entry`,
+  );
+  assert.ok(
+    mainHtml.includes("get_stock_price"),
+    `${mainLocator} web face is missing the get_stock_price tool content`,
+  );
 
   // --- Failed attempt(deliberate-fail):有 1 条 gate assertion,且带 source capability ->
   //     由 AttemptSource 渲染它(AttemptError 是给异常用的,不是给 assertion 失败用的,
