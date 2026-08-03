@@ -1,4 +1,6 @@
 // agent 域类型:Agent / Adapter 契约、会话与 tracing 导出配置。
+
+import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 // 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 docs-site/zh/explanation/adapter.mdx)。
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
@@ -508,6 +510,8 @@ interface AgentInstallerBase {
   readonly progress?: {
     readonly installing?: string;
   };
+  /** @internal 只由内置 cache-safe staged installer 写入。 */
+  readonly [AGENT_DOCKERFILE_CACHE_SAFE]?: true;
 }
 
 export type AgentInstaller =

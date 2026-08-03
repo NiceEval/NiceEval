@@ -209,7 +209,8 @@ export const zhCN = {
     "  niceeval clean                           删除 .niceeval/ 历史 artifact\n" +
     "  niceeval init                            脚手架 config + evals/\n\n" +
     "标志:\n" +
-    "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
+    "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
+    "  --budget usd  --tag t\n" +
     "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +

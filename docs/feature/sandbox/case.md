@@ -167,6 +167,18 @@ CaseKey
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果;逐 attempt 的容器名、临时目录和随机 project name 不进 CaseKey,只作为本次启动的运行事实记录。
 Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
+Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
+
+- 任务 `BuildKey` / `niceeval-build` 永远不含 Agent;派生身份只在 DockerfileProviderPlan 的运行 materialize 阶段计算。
+- 只有内置 `createNpmCliInstaller()` 产生并明确标记为 cache-safe 的 staged installer 可以 opt in;其它 installer 走普通 task image 路径。
+- 派生 key 由不可变 task image locator 或 digest、目标平台、ensure / installer 的稳定 identity 与安装 mode、以及派生 materializer revision 组成,不读取 `prepare()`、credentials 或 Agent setup。
+- 派生 key 命中时跨 Run 先做 Docker image inspect。同 key 在进程内 single-flight。
+- miss 时从干净 task image 创建临时 Docker sandbox。
+- 临时 sandbox 照常执行 Agent ensure、staged install 与复检。
+- 只提交临时 sandbox 为 `niceeval-agent:<derived-key 前 32 位>`，随后销毁它。attempt 容器绝不作为派生镜像提交对象。
+- attempt 从派生 locator 启动，但仍执行正常 `runAgentEnsure` 并记录 probe hit。
+- 其它 provider 或不满足 opt-in 条件时直接回落 task image。
+
 身份解析发生在携带决策之前。
 这一步就是 Provider physical planning:
 
@@ -193,7 +205,7 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 
 预算分两层,口径不混:
 
-- **Run 级共享准备**:BuildKey 构建、共享拉取或发布受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发位。
+- **Run 级共享准备**:BuildKey 构建、共享拉取或发布受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发位。构建并发由 `maxBuildConcurrency` / `--max-build-concurrency` 控制，默认 2；它与 `maxConcurrency` / `--max-concurrency` 正交。
 - **attempt 级启动**:从 image / template / snapshot 启动 Sandbox、创建资源组、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到产物并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份记录里只出现一次时间。

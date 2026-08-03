@@ -9,7 +9,7 @@ import {
   type SandboxRuntimeDeadline,
   type SandboxRuntimeServices,
 } from "../sandbox/runtime.ts";
-import type { JsonValue, Sandbox, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
+import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { CLEANUP_TIMEOUT_MS } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { Effect, Either, Exit, Scope } from "effect";
@@ -70,6 +70,8 @@ export class ReusableSandboxPool {
     private readonly feedback: ScopedFeedback,
     private readonly setupContext: SandboxHookContext,
     private readonly runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
+    private readonly agent?: SandboxAgent,
+    private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
   ) {}
 
   /** 把整座池登记进调用方 Scope；Invocation 中断与正常结束走同一条 stop finalizer。 */
@@ -182,6 +184,8 @@ export class ReusableSandboxPool {
         signal: this.setupContext.signal,
         hookContext: this.setupContext,
         buildLocators,
+        ...(this.agent !== undefined ? { agent: this.agent } : {}),
+        ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
         provisionSlot: { _tag: "Detached" },
         services: this.runtimeServices,
         release: { _tag: "Stop" },

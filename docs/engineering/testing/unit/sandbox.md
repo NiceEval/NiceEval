@@ -174,6 +174,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
     Attempt 不保存 optional locator/case 字段。运行时 locator 是启动 Sandbox 的执行输入；locator key 或 Provider 返回的 Case 不吻合计划时，都走 typed drift failure。
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
   - 瞬时构建失败（拉取限流、传输层中断）按性质分类退避重试、封顶次数；重试耗尽才落确定性止损，确定性失败零重试。
+  - builder CLI 必须持续读取 stdout，避免 Docker/BuildKit 进度写满 pipe 后构建永久阻塞；失败 stderr 仅保留有界尾部。
     退避睡眠按注入的时长参数推进，不做真实等待；重试期间 abort 立即收束成 `cancelled`，不睡满封顶次数。
   - 逐 BuildKey 放行：某个 key 还在构建时，只依赖已就绪 key 的 attempt 与不引用任何 key 的 attempt 照常派发。
     要有「一个慢 key + 一条不依赖它的 eval」的区分力场景，断言那条 eval 在慢构建返回之前已经开跑——全局 barrier 的实现在这一格必红。
@@ -182,8 +183,17 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 确定性构建失败只执行一次；依赖该 key 的 fresh attempt 同得环境 `errored`，origin 指向同一 Run timing node。
   - 不依赖失败 key 的 attempt 继续执行。
   - Run 级共享准备有独立并发、逐 key timeout、全局准备上限与 abort，不占 attempt 并发位。
+    覆盖默认并发 2，以及 `maxBuildConcurrency` 显式放宽后同时启动更多 BuildKey；不得误用 attempt 的 `maxConcurrency`。
   - 共享构建时间只在 `RunMeta.timings` 记一次，不进任何 attempt 的 `executionMs`。
   - 完全携带、无需查询的 BuildKey 不触发构建，也不造假 provenance。
+  - Dockerfile staged Agent 派生缓存单独覆盖以下边界：
+    - 任务 BuildKey 不含 Agent。
+    - 只有内置 cache-safe staged installer 才 lookup/build。
+    - 测试覆盖首次 miss、跨 Run inspect hit、key 隔离与 fallback。
+    - 同 key 并发 single-flight，lookup/build 进入 Run timing。
+    - fake builder 从干净 task image 创建临时 sandbox，并执行 ensure install + recheck。
+    - 只对临时 sandbox commit，最后清理；attempt 容器不得成为 commit 输入。
+    - locator 含 `:` 时，Dockerode 参数必须拆成 `repo` / `tag`。
 - **Compose 主空间、服务 ready、证据、整组清理与泄题门**：
 
   - `workspaceService`（或云端代理进 main）是唯一主 Sandbox；主容器 ready 后才进入 Agent。

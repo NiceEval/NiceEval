@@ -112,6 +112,7 @@ interface Flags {
   model?: string;
   attempts?: number;
   maxConcurrency?: number;
+  maxBuildConcurrency?: number;
   timeout?: number;
   earlyExit?: boolean;
   dry: boolean;
@@ -178,6 +179,8 @@ const FLAG_OPTIONS = {
   attempts: { type: "string" },
   /** 设置同时运行的 eval 数量。 */
   "max-concurrency": { type: "string" },
+  /** 设置同时进行的 Sandbox 镜像 lookup/build 数量；与 eval 并发独立，默认 2。 */
+  "max-build-concurrency": { type: "string" },
   /** 单个 attempt 的超时时间,单位毫秒。解析链:`--timeout` > experiment > eval(`defineEval({ timeoutMs })`)> `niceeval.config.ts`,默认无上限(四层都没声明就不设 deadline);config 是缺省底而不是覆盖层,写了 config 不会让 eval 自己声明的上限失效。 */
   timeout: { type: "string" },
   /** 整次运行的预算上限(美元)。 */
@@ -405,6 +408,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     model: values.model as string | undefined,
     attempts: numberFlag("attempts", values.attempts as string | undefined),
     maxConcurrency: numberFlag("max-concurrency", values["max-concurrency"] as string | undefined),
+    maxBuildConcurrency: numberFlag("max-build-concurrency", values["max-build-concurrency"] as string | undefined),
     timeout: numberFlag("timeout", values.timeout as string | undefined),
     budget: numberFlag("budget", values.budget as string | undefined),
     tag: values.tag as string | undefined,
@@ -625,6 +629,7 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--model", flags.model],
     ["--attempts", flags.attempts],
     ["--max-concurrency", flags.maxConcurrency],
+    ["--max-build-concurrency", flags.maxBuildConcurrency],
     ["--timeout", flags.timeout],
     ["--budget", flags.budget],
     ["--tag", flags.tag],
@@ -1105,6 +1110,11 @@ async function main(): Promise<void> {
   }
 
   const config = await loadConfig(cwd);
+  const maxBuildConcurrency = flags.maxBuildConcurrency ?? config.maxBuildConcurrency ?? 2;
+  if (!Number.isInteger(maxBuildConcurrency) || maxBuildConcurrency <= 0) {
+    process.stderr.write(`maxBuildConcurrency must be a positive integer, got ${maxBuildConcurrency}.\n`);
+    process.exit(1);
+  }
   const allEvals = await discoverEvals(cwd);
   const evals = flags.tag ? allEvals.filter((e) => e.tags?.includes(flags.tag as string)) : allEvals;
 
@@ -1643,6 +1653,7 @@ async function main(): Promise<void> {
       agentRuns,
       reporters,
       maxConcurrency,
+      maxBuildConcurrency,
       signal: ctrl.signal,
       priorResults,
       carryPlan,

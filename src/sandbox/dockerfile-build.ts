@@ -198,7 +198,7 @@ async function defaultRunDockerBuild(
     ...(details.target !== undefined ? ["--target", details.target] : []),
     details.contextDir,
   ];
-  await runCommand("docker", args, ctx.signal);
+  await runBuildCommand("docker", args, ctx.signal);
 }
 
 async function defaultE2BTemplateExists(name: string, signal: AbortSignal): Promise<boolean> {
@@ -234,19 +234,28 @@ async function dockerIgnorePatterns(contextDir: string): Promise<string[]> {
 
 async function commandSucceeded(command: string, args: readonly string[]): Promise<boolean> {
   try {
-    await runCommand(command, args, new AbortController().signal);
+    await runBuildCommand(command, args, new AbortController().signal);
     return true;
   } catch {
     return false;
   }
 }
 
-function runCommand(command: string, args: readonly string[], signal: AbortSignal): Promise<void> {
+const BUILD_STDERR_LIMIT = 64 * 1024;
+
+/**
+ * 运行会持续输出进度的 builder CLI。stdout 必须主动 drain：若只创建 pipe 却无人读取，
+ * Docker/BuildKit 写满 OS pipe buffer 后会永久阻塞，看起来像一个无 CPU 的超长构建。
+ * stderr 只保留尾部用于失败诊断，避免长构建把进度输出无限堆进内存。
+ */
+export function runBuildCommand(command: string, args: readonly string[], signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], signal });
     let stderr = "";
+    child.stdout?.resume();
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
+      if (stderr.length > BUILD_STDERR_LIMIT) stderr = stderr.slice(-BUILD_STDERR_LIMIT);
     });
     child.on("error", reject);
     child.on("close", (code) => {

@@ -350,7 +350,6 @@ function reusableFakeSandboxLayer(
         caseKey: context.plan.providerPlan.build.caseKey,
         buildKeys: context.plan.providerPlan.build.buildKeys,
         identity: { provider },
-        carryEligible: true,
         facts: null,
       };
     }),
@@ -484,6 +483,7 @@ async function run(
     extraReporters?: ReporterRegistration[];
     carryPlan?: CarryPlan;
     maxConcurrency?: number;
+    maxBuildConcurrency?: number;
     signal?: AbortSignal;
     /** 预先建好、需要在调用前写入固定文件(如伪造的收尾登记)的根;省略则自建一个临时目录。 */
     root?: string;
@@ -524,6 +524,7 @@ async function run(
       ...(opts.extraReporters ?? []),
     ],
     maxConcurrency: opts.maxConcurrency ?? 3,
+    ...(opts.maxBuildConcurrency !== undefined ? { maxBuildConcurrency: opts.maxBuildConcurrency } : {}),
     // 与 Artifacts(root) 同一个根:未显式传入时 run.ts 会退回 cwd/.niceeval(与 attempt.ts 同一
     // 兜底口径),测试进程的 cwd 是仓库根——不隔离到这里传的临时目录,会在真实仓库根写出
     // .niceeval/teardowns/ 之类的测试副作用(见 memory 的 test-must-isolate-niceeval-root)。
@@ -5077,6 +5078,52 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
 // - 共享 Run activity 不占 attempt 位
 // - build failure 的 Run origin
 describe("runEvals · Run 级共享构建协调", () => {
+  it("maxBuildConcurrency 独立放宽 Run 级 BuildKey 构建并发", async () => {
+    let running = 0;
+    let peak = 0;
+    const buildKeys = ["bk-a", "bk-b", "bk-c"] as const;
+    const evalDef = makeEval(
+      "build-width",
+      async () => {},
+      reusableFakeSandboxLayer(() => {}, {
+        _tag: "Required",
+        caseKey: "case-build-width",
+        buildKeys,
+      }),
+    );
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-build-width"),
+      experimentId: "exp-build-width",
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      selectedEvalIds: ["build-width"],
+    };
+
+    await run([evalDef], [agentRun], {
+      maxConcurrency: 1,
+      maxBuildConcurrency: 3,
+      buildPreparation: {
+        works: buildKeys.map((buildKey) => ({ buildKey, provider: "docker", inputs: { buildKey } })),
+        pairBuildKeys: { [runPairKey("exp-build-width", "build-width")]: buildKeys },
+        provider: {
+          async lookup() {
+            return undefined;
+          },
+          async build(work) {
+            running += 1;
+            peak = Math.max(peak, running);
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            running -= 1;
+            return `sha256:${work.buildKey}`;
+          },
+        },
+      },
+    });
+
+    expect(peak).toBe(3);
+  });
+
   it("逐 BuildKey 放行:依赖者等自己的 key,不依赖的同批开跑;timings/sandboxBuilds 落盘", async () => {
     let buildRunning = false;
     let depStartedDuringBuild = false;

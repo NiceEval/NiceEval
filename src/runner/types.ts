@@ -1013,6 +1013,8 @@ export interface Config {
   reporters?: Reporter[];
   /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
   maxConcurrency?: number;
+  /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
+  maxBuildConcurrency?: number;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
   timeoutMs?: number;
   /**
@@ -1157,6 +1159,8 @@ export interface RunOptions {
    */
   reporters: ReporterRegistration[];
   maxConcurrency: number;
+  /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
+  maxBuildConcurrency?: number;
   signal?: AbortSignal;
   /** 上次运行的结果。verdict 为 passed/failed 的 (experimentId, evalId) 组合跳过重跑,结果直接合入本次汇总。 */
   priorResults?: EvalResult[];

@@ -17,6 +17,7 @@ import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { registerSandboxContent } from "../sandbox/content.ts";
 import { SandboxCommandExitError } from "../sandbox/operations.ts";
 import type { SandboxCommandTarget } from "../sandbox/commands.ts";
+import { AGENT_DOCKERFILE_CACHE_SAFE } from "./cache-marker.ts";
 import type {
   AgentArtifactPlatform,
   AgentEnsure,
@@ -24,6 +25,7 @@ import type {
   AgentInstaller,
   AgentStagedArtifact,
 } from "./types.ts";
+import type { DockerfileAgentCacheSafeInstaller } from "./cache-marker.ts";
 
 /** 沙箱内 Agent 自有安装前缀(workdir 外);题间 reset 不删。 */
 export const AGENT_USER_PREFIX = "$HOME/.local";
@@ -305,7 +307,8 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
       }
     },
   );
-  const installer: Extract<AgentInstaller, { installMode: "staged" }> = {
+  const installer: Extract<AgentInstaller, { installMode: "staged" }> & DockerfileAgentCacheSafeInstaller = {
+    [AGENT_DOCKERFILE_CACHE_SAFE]: true,
     identity: opts.identity,
     installMode: "staged",
     ...(opts.progress?.installing !== undefined

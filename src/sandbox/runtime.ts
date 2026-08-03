@@ -1,6 +1,7 @@
 // ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
+import Docker from "dockerode";
 import { Data, Effect, Option, type Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
@@ -17,6 +18,12 @@ import {
   normalizeBuildPlatform,
 } from "./compose.ts";
 import { collectDockerfileBuildFromIdentity, dockerfileBuildProvider } from "./dockerfile-build.ts";
+import {
+  DockerfileAgentImageCoordinator,
+  isDockerfileAgentCacheSafeInstaller,
+  type DockerfileAgentCacheRequest,
+  type DockerfileAgentDerivedImageBuildInput,
+} from "./dockerfile-agent-cache.ts";
 import type { SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
@@ -44,8 +51,11 @@ import {
 } from "./layer.ts";
 import { digestOf, isPureDataIdentity, type BuildKey } from "./identity.ts";
 import type { LinkedRunPlan } from "./plan.ts";
+import { ArtifactPrepareCoordinator, platformKey, runAgentEnsure } from "../agents/provisioner.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "../runner/cleanup-timeout.ts";
 import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedback } from "../types.ts";
+import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
+import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
 
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
@@ -71,6 +81,10 @@ export interface SandboxRuntimeMaterializeInput {
     | { readonly _tag: "Detached" }
     | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
   readonly services: SandboxRuntimeServices;
+  /** Internal runner input; only Dockerfile provider consumes the staged cache opt-in. */
+  readonly agent?: SandboxAgent;
+  /** Invocation-level timing tree for derived Dockerfile Agent image lookup/build. */
+  readonly runTiming?: import("../runner/timing.ts").RunTimingRecorder;
   readonly release: SandboxRuntimeRelease;
 }
 
@@ -85,6 +99,10 @@ export type SandboxRuntimeServices =
     };
 
 export const liveSandboxRuntimeServices: SandboxRuntimeServices = Object.freeze({ _tag: "Live" });
+
+const dockerfileAgentImageCoordinator = new DockerfileAgentImageCoordinator({
+  imageExists: defaultDockerImageExists,
+});
 
 export interface SandboxRuntimeCapabilities {
   readonly provider: string;
@@ -319,13 +337,15 @@ export function materializeDockerfileProviderPlan(
           new TypeError(`Dockerfile build locator for ${plan.buildKey} must be a string.`),
         ))
       : materializationEffect(context, async () => {
+      const resolved = await resolveDockerfileAgentImage(plan, context, locator);
+      context.hookContext.fact("agent.image.cache", resolved.status);
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
       const provisionToken = randomUUID();
       const backend = await withProvisionRetry(
         () => DockerSandbox.create({
           ...deadlineOptions(context.deadline),
           runtime: "node24",
-          image: locator,
+          image: resolved.locator,
           lifetimeMs: configuredLifetime(plan.lifetime),
           feedback: context.feedback,
           provisionToken,
@@ -336,9 +356,141 @@ export function materializeDockerfileProviderPlan(
         context.feedback,
         () => reconcileProvision(provisionToken),
       );
-      return wrapSingleSandbox(backend, context, { image: locator });
+      return wrapSingleSandbox(backend, context, { image: resolved.locator });
     }),
   });
+}
+
+async function defaultDockerImageExists(locator: string): Promise<boolean> {
+  try {
+    await new Docker().getImage(locator).inspect();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveDockerfileAgentImage(
+  plan: DockerfileProviderPlan,
+  context: SandboxRuntimeMaterializeContext,
+  taskLocator: string,
+): Promise<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }> {
+  const request = dockerfileAgentCacheRequest(
+    plan,
+    context.agent,
+    taskLocator,
+    context.plan.providerPlan.target.platform,
+  );
+  if (request === undefined) return { status: "unsupported", locator: taskLocator };
+  return dockerfileAgentImageCoordinator.resolve(
+    request,
+    context.signal,
+    (input, signal) => buildDockerfileAgentImage(
+      input,
+      request,
+      context.plan.providerPlan.target.platform,
+      signal,
+    ),
+    context.runTiming,
+  );
+}
+
+function dockerfileAgentCacheRequest(
+  plan: DockerfileProviderPlan,
+  agent: SandboxAgent | undefined,
+  taskLocator: string,
+  targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
+): DockerfileAgentCacheRequest | undefined {
+  if (agent === undefined || agent.ensure.length !== 1) return undefined;
+  const ensure = agent.ensure[0];
+  if (ensure === undefined) return undefined;
+  const installer = agent.installers.find((candidate) =>
+    candidate.installMode === "staged" &&
+    isDockerfileAgentCacheSafeInstaller(candidate) &&
+    sameAgentIdentity(candidate.identity, ensure.identity)
+  );
+  if (installer === undefined) return undefined;
+  return {
+    taskLocator,
+    platform: `${plan.platform}|${platformKey(targetPlatform)}`,
+    ensure,
+    installer,
+  };
+}
+
+function sameAgentIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
+  return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
+}
+
+async function buildDockerfileAgentImage(
+  input: DockerfileAgentDerivedImageBuildInput,
+  request: DockerfileAgentCacheRequest,
+  targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
+  signal: AbortSignal,
+): Promise<void> {
+  return buildDockerfileAgentImageWithServices(input, request, targetPlatform, signal);
+}
+
+export interface DockerfileAgentImageProvisionSandbox {
+  readonly operations: import("./types.ts").SandboxOperations;
+  readonly sandboxId: string;
+  stop(): Promise<void>;
+}
+
+export interface DockerfileAgentImageProvisionServices {
+  readonly create: (taskLocator: string) => Promise<DockerfileAgentImageProvisionSandbox>;
+  readonly commit: (sandboxId: string, derivedLocator: string) => Promise<void>;
+}
+
+const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionServices = Object.freeze({
+  create: async (taskLocator: string) => {
+    const { DockerSandbox } = await import("./docker.ts");
+    const sandbox = await DockerSandbox.create({ image: taskLocator, runtime: "node24" });
+    return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
+  },
+  commit: async (sandboxId: string, derivedLocator: string) => {
+    await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
+  },
+});
+
+/** Dockerode 的 commit 参数把仓库与 tag 分开；不能把 `repo:tag` 整串塞进 repo。 */
+export function dockerCommitReference(locator: string): { readonly repo: string; readonly tag?: string } {
+  const slash = locator.lastIndexOf("/");
+  const colon = locator.lastIndexOf(":");
+  if (colon > slash) {
+    return { repo: locator.slice(0, colon), tag: locator.slice(colon + 1) };
+  }
+  return { repo: locator };
+}
+
+export async function buildDockerfileAgentImageWithServices(
+  input: DockerfileAgentDerivedImageBuildInput,
+  request: DockerfileAgentCacheRequest,
+  targetPlatform: import("../agents/types.ts").AgentArtifactPlatform,
+  signal: AbortSignal,
+  services: DockerfileAgentImageProvisionServices = liveDockerfileAgentImageProvisionServices,
+): Promise<void> {
+  if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Dockerfile Agent image build aborted");
+  let provisioned: DockerfileAgentImageProvisionSandbox | undefined;
+  try {
+    provisioned = await services.create(input.taskLocator);
+    const ensured = await Effect.runPromise(Effect.either(runAgentEnsure(
+      [request.ensure],
+      [request.installer],
+      provisioned.operations,
+      {
+        fact: () => {},
+        coordinator: Option.some(new ArtifactPrepareCoordinator()),
+        targetPlatform,
+        signal,
+        progress: () => {},
+      },
+    )));
+    if (ensured._tag === "Left") throw ensured.left;
+    await services.commit(provisioned.sandboxId, input.derivedLocator);
+  } finally {
+    await provisioned?.stop();
+  }
 }
 
 export function materializeDockerImageProviderPlan(
@@ -775,6 +927,8 @@ export function materializeSandboxRunPlan(
     buildLocators: input.buildLocators,
     provisionSlot: input.provisionSlot,
     services: input.services,
+    ...(input.agent !== undefined ? { agent: input.agent } : {}),
+    ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
   };
   return Effect.zipRight(
     verifyBuildLocators(context),

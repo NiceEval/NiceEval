@@ -72,6 +72,7 @@ import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistrat
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
+import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
 import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
@@ -512,7 +513,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       ? startSandboxBuilds(buildPrep.works, {
           timing: runTiming,
           provider: buildPrep.provider,
-          ...(buildPrep.maxConcurrency !== undefined ? { maxConcurrency: buildPrep.maxConcurrency } : {}),
+          maxConcurrency: opts.maxBuildConcurrency ?? buildPrep.maxConcurrency ?? 2,
           ...(buildPrep.buildTimeoutMs !== undefined ? { buildTimeoutMs: buildPrep.buildTimeoutMs } : {}),
           ...(buildPrep.prepareBudgetMs !== undefined ? { prepareBudgetMs: buildPrep.prepareBudgetMs } : {}),
           signal: opts.signal,
@@ -756,7 +757,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       pool = new ReusableSandboxPool(a.plan, capacity, {
         progress: setupContext.progress,
         diagnostic: setupContext.diagnostic,
-      }, setupContext);
+      }, setupContext, liveSandboxRuntimeServices, a.run.agent.kind === "sandbox" ? a.run.agent : undefined, runTiming);
       bySpec.set(key, pool);
       return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
     }
@@ -2232,6 +2233,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   sandboxSem,
                   {
                     buildLocators,
+                    runTiming,
                     parentSignal: attemptSignal,
                     concurrencySlot,
                     ...(lease

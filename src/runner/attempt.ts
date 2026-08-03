@@ -135,6 +135,8 @@ export function attemptFailureDeclaration(
 export interface RunAttemptEffectOptions {
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
+  /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
+  readonly runTiming?: import("./timing.ts").RunTimingRecorder;
   /** 父级调度器的中断信号；测试直调时省略。 */
   parentSignal?: AbortSignal;
   /** 每次跨入一个新 `LifecyclePhase` 边界时同步回调一次(与下面的 `enterPhase` 同一调用点,见
@@ -165,7 +167,7 @@ export function runAttemptEffect(
   a: Attempt,
   opts: RunOptions,
   sandboxSem: Effect.Semaphore,
-  { buildLocators, parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions,
+  { buildLocators, runTiming, parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions,
 ): Effect.Effect<EvalResult> {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
@@ -511,6 +513,8 @@ export function runAttemptEffect(
                       fact: (key, value) => recordFact(facts, key, value),
                     },
                     buildLocators,
+                    agent: run.agent.kind === "sandbox" ? run.agent : undefined,
+                    ...(runTiming !== undefined ? { runTiming } : {}),
                     provisionSlot: { _tag: "Bound", value: provisionSlot },
                     services: liveSandboxRuntimeServices,
                     // Provider runtime 自己用 acquireRelease 持有 Case；Attempt 只提交显式

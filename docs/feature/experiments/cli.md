@@ -1111,6 +1111,7 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 选择 | experiment、eval 前缀、`--tag` | 整次调用 | 决定矩阵里有什么 |
 | 调度 | `--attempts` | 每条 eval | 每条 eval 尝试多少次 |
 | 调度 | `--max-concurrency` | 全局并发位(实验级 `maxConcurrency` 闸不参与,见 [Runner · 调度](../../runner.md#调度有界并发)) | 同时运行多少 attempt |
+| 调度 | `--max-build-concurrency` | Run 级 Sandbox 构建准备；默认 2 | 同时 lookup/build 多少个不同 BuildKey；不占 attempt 并发位 |
 | 调度 | `--timeout` | 每个 attempt | 单次尝试的时间上限 |
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
