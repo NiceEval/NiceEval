@@ -201,8 +201,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **携带规划的 ADT 与不可变性**：携带门分别覆盖 `Eligible` 和带 gate/reason 的 `Blocked`；正常与反事实指纹分别覆盖 `Current` / `Counterfactual`；配置差异覆盖 `Added` / `Removed` / `Changed` 三种值要求。
   规划产物的 Map、Set 与数组在交付后不可写，运行期重查使用独立状态。
   规划 I/O 从 linker 到 manifest 计算保持一条 Effect 链，中途没有 `runPromise`。
-- **opaque pair 的携带反馈**：已有 `passed` / `failed` 终态归入 `eligibility/carry-disabled`，并保留 blocker 的 `code` / `reason`。
-  `errored` / `skipped` 仍走 terminal 门。Human 和 JSON 都不能把 blocker 降级成 `stale` / `details unavailable`，Human 也不输出 accept hint。
+- **未登记 callback 的默认携带**：prepare callback 与 lifecycle hook 不提供额外 identity 时，已有 `passed` / `failed` 终态仍按其它指纹输入携带，不归入 `eligibility/carry-disabled`。
+  同一 fixture 改用 `defineSandboxCommand()` 后，revision / inputs 变化必须归入 fingerprint 门并重新派发；Provider 环境身份等真正的 eligibility blocker 仍保留全部 `code` / `reason`。
 - **`niceeval accept @<locator>` 的对象与资格**：只接受 locator 指向的一条历史 `passed` 或 `failed` 结果；当前项目必须仍发现同一 experiment 与 eval,且当前超时上限允许该结果。坏 locator、`errored` / `skipped`、留存 Sandbox 的结果各有一条失败测试；带 `sandbox.reused` 的来源和当前 `sandboxReuse: true` 都各有一条成功测试。失败不派发 attempt，也不接受任何其它结果。
 - **blocked accept 的写盘前拒绝**：carry eligibility 为 Blocked 的当前 pair，在 writer 写 snapshot 前以 `carry-ineligible` 拒绝并列出全部 `code`/`reason`。
 - **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。

@@ -63,7 +63,7 @@ export default defineEval({
 - `progress` / `diagnostic` 只报告、不断言：`diagnostic` 即使 `level: "error"` 也不改 verdict。
   要影响结论就写断言或抛异常。
 - cleanup 抛错只追加诊断，不改已产出的判定；要让收尾动作影响结论，在 `prepare()` / `test` 里抛。
-- 直接传入的 callback 是 opaque command，该 Attempt 不跨 Run 沿用结果；要稳定 identity 用 `defineSandboxCommand()`（见 [Sandbox Layer](../../sandbox/layers.md#稳定-identity-与-opaque-callback)）。
+- 直接传入的 callback 不增加可追踪 identity，但不阻断跨 Run 沿用结果；要让实现或动态输入变化自动作废结果，用 `defineSandboxCommand()`（见 [Sandbox Layer](../../sandbox/layers.md#稳定-identity-与-opaque-callback)）。
 - 层次分工：实验条件的准备在 Experiment layer 的 `prepare()`，Agent 安装在 `agent.ensure`，**这条任务**的素材才在 Eval layer 的 `prepare()` 或 `test(t)`（三方时序见[三方准备时序](../../sandbox/lifecycle.md)）。
 
 ## 相关阅读

@@ -199,12 +199,12 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
 - template identity、template owner 与 Provider planner revision;
 - 物理 locator、BuildKey、CaseKey 与目标平台;
 - 固定 layer 顺序;
-- 两个作者 layer 的 command identity 与 lifecycle opaque marker;
+- 两个作者 layer 中已登记的 command identity 与 lifecycle owner marker;
 - Agent ensure identity:ensure 声明 identity、配对安装层 identity、payload digest、平台与安装模式;
 - Eval、Experiment、Agent、输入与 transfer manifest identity。
 
 同一 Run 中不同配对即使使用相同物理 template,也不能省略 owner 与 layer 顺序。
-`command()` / `shell()` 与显式登记 inputs 的 `defineSandboxCommand()` 参与稳定 fingerprint;任一直接 callback 为 opaque 时,该 Attempt `carryEligible = false`。
+`command()` / `shell()` 与显式登记 inputs 的 `defineSandboxCommand()` 参与稳定 fingerprint。直接 callback 与 lifecycle hook 不提供额外 identity，也不阻断携带；其语义变化需要作者通过已登记命令输入或 `--rerun all` 明确表达。
 
 Sandbox 复用池的键只固定物理实例共享所需的输入:
 
@@ -213,7 +213,7 @@ Sandbox 复用池的键只固定物理实例共享所需的输入:
 ```
 
 每条 Attempt 都重放命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
-hook callback 是 opaque：它会阻断跨 Run carry；Eval-owned hook 还会把同一 Run 的物理实例按 eval 隔离，Experiment-owned hook 不会。
+hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Eval-owned hook 会把同一 Run 的物理实例按 eval 隔离，Experiment-owned hook 不会；hook 语义变化后的复验由作者显式执行 `--rerun all`。
 reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
 ## 错误语义

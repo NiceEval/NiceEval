@@ -152,7 +152,7 @@ export default defineExperiment({
   它们是运行时基础设施坐标,不是实验条件——实验条件进 `flags`,一并进指纹;坐标进 `facts`,不参与可比性,轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
 - **不进 fingerprint**:实验级 Hook 的函数体不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
   sandbox layer 的 prepare 命令走另一条规则:`command()` / `shell()` 与 `defineSandboxCommand()` 的 identity 进入 configHash / fingerprint(输入清单见[缓存与携带](cache.md#指纹两个哈希嵌套))。
-  直接传入的 callback 一律 opaque,该 Attempt `carryEligible = false`、禁跨 Run 携带。
+  直接传入的 callback 不增加可追踪 identity，也不阻断跨 Run 携带；需要让变化自动作废结果时使用 `defineSandboxCommand()`。
 - **两个 Hook 都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
 
 ## 强杀后的收尾回退:收尾登记与启动自愈

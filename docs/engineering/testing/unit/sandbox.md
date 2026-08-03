@@ -159,7 +159,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
 - **command identity 与内置 prepare 命令**：
 
-  - `command()` / `shell()` 的纯数据 identity 进入 fingerprint；直接传入的 callback 一律 opaque，该 Attempt `carryEligible = false`。prepare command identity 不进入同一 Run 的物理复用池键；要用两个 Eval 声明不同 prepare、但 Provider physical plan / Agent ensure / lifecycle owner 相同的场景，证明它们共用实例且每条命令在各自 Attempt 仍重放。
+  - `command()` / `shell()` 的纯数据 identity 进入 fingerprint；直接传入的 callback 不增加 identity，默认不阻断携带。要用跨 Run fixture 证明 callback 未登记时旧结果携带，并用 callback 改为 `defineSandboxCommand()`、改变 revision / inputs 的方向证明旧结果作废。prepare command identity 不进入同一 Run 的物理复用池键；另用两个 Eval 声明不同 prepare、但 Provider physical plan / Agent ensure / lifecycle owner 相同的场景，证明它们共用实例且每条命令在各自 Attempt 仍重放。
   - `defineSandboxCommand()` 的 id / revision / inputs 参与稳定身份;`registerSandboxContent()` 的 digest 折入 inputs。
   - `checkout()`:镜像按 `(repo, ref)` 键控,同一 Sandbox 第二次执行零网络。
     区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,且该 Attempt 不参与跨 Run carry。

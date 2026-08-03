@@ -486,7 +486,7 @@ sandboxLayer()
 ```
 
 `command()` / `shell()` 由纯数据参数生成稳定 identity,identity 覆盖 executable / script、argv、cwd、env、root 与 stdin。
-复杂探测、分支与文件 IO 可以直接写 callback,但直接传入的 callback 一律 opaque:JavaScript 无法证明它没有读取 `process.env`、时间或其它全局状态,Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
+复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
 需要稳定 identity 的 helper 用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
 本地文件或目录先经 `registerSandboxContent()` 取得 digest-backed handle,再放进 `inputs` 并用 `putContent()` 送入 Sandbox。
@@ -494,8 +494,8 @@ sandboxLayer()
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
 
 `putContent()` 对大文件自动拆成有界的 provider 写入,全部到达后才在 Sandbox 内原子替换目标；SDK 单次请求超时不会留下半个目标文件。
-任一 opaque command 使整条 Attempt `carryEligible = false`,禁止跨 Run 结果沿用;计划与运行记录都显示具体原因。
-Linked pair 内部把它保存为 `Eligible | Blocked`；只有 `Blocked` 携带非空原因列表，不并存可互相矛盾的 boolean 与可选 reasons。
+未登记 identity 的 callback 默认允许跨 Run 携带，避免一个声明遗漏让昂贵 Attempt 永久重跑。这个默认只代表 callback 没有增加失效条件，不代表 Runner 已证明其语义稳定。
+Linked pair 仍把 Provider 等能够明确判定的资格保存为 `Eligible | Blocked`；只有 `Blocked` 携带非空原因列表，不并存可互相矛盾的 boolean 与可选 reasons。
 
 源码检出与慢工具安装这两类常见昂贵动作有内置命令(`checkout()` / `installTool()`),自带检查、缓存与稳定 identity,见[内置 prepare 命令](prepare-commands.md)。
 

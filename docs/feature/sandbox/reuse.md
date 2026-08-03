@@ -81,7 +81,7 @@ Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecyc
 - Experiment `maxConcurrency` 约束所有组的同时执行总数；
 - 不同组之间不共享 Sandbox,也不共享任何检查命中历史。
 
-含 opaque command 的 layer 会阻断跨 Invocation 结果携带，但不改变同一 Run 的物理复用池分组：命令在每条 Attempt 领取实例后照常重放。完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
+未登记 identity 的 callback 不改变跨 Invocation 结果携带，也不改变同一 Run 的物理复用池分组：真正派发时，命令仍在每条 Attempt 领取实例后照常重放。完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
 
 ## 题间重置
 
@@ -160,7 +160,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 ## 结果与结果沿用
 
-声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：pair 的跨 Run carry 资格为 `Eligible` 时，终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。直接 command / lifecycle callback 是 opaque，会阻断该 pair 的 carry；这是 callback 无稳定 identity 的结果，不是 `sandboxReuse` 的特殊禁令。
+声明复用的 Experiment 与普通 Experiment 使用同一套结果沿用规则：pair 的跨 Run carry 资格为 `Eligible` 时，终态结果指纹相同就携带，`--rerun` 可要求重新派发。携带不创建 Sandbox；真正派发的 Attempt 才进入下面的复用生命周期。直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。

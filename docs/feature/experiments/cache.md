@@ -45,7 +45,9 @@ fingerprint = hash(configHash, eval 源码闭包, evalId / tags / metadata,
 ```
 
 layer 身份 = template-bearing factory 的纯数据 options,加 `command()` / `shell()` / `defineSandboxCommand()` 的 command identity。
-直接传入的 callback 一律 opaque:该 Attempt `carryEligible = false`,永不跨 Run 携带(词表见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback))。
+直接传入的 callback 不提供额外 identity，也不阻断跨 Run 携带；其它指纹输入相同时，结果默认携带。
+这条默认避免一次声明遗漏让整批昂贵评测永久重跑，但不表示 Runner 能识别 callback 的语义变化。
+需要让实现或动态输入变化自动作废结果时，作者必须改用 `defineSandboxCommand()` 并维护 `revision` / `inputs`。
 
 Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对 installer 的 identity/revision/installMode；
 它进入 configHash。计划目标平台属于 pair-owned ProviderPlan，进入逐 Eval fingerprint。
@@ -128,7 +130,7 @@ export default defineExperiment({
   //  这个实验的 layer 是 command-only,起点由各条 eval 自带(见下一块)
   //  改 shell(...) 的脚本、cwd 或 env → 36 条全部重跑:command()/shell() 的 identity 进配置哈希
   //  追加或删除一条 prepare 命令 → 36 条全部重跑
-  //  把 prepare 改成直接传 callback → 每条 Attempt 变 opaque,永不跨 Run 携带(见 Sandbox Layer)
+  //  直接传 callback 不增加可追踪输入；要让变化自动作废结果，改用 defineSandboxCommand()
   //  反向配对(实验自带 template-bearing factory、eval 全部 command-only)时,
   //  换 factory 的任何一个参数 → 36 条全部重跑:起点身份进配置哈希
 
@@ -284,7 +286,7 @@ niceeval accept @a1b2c3d4
 - 当前 Sandbox pair 的跨 Run carry 资格是 `Eligible`;
 - 当前超时上限仍允许该结果的 `executionMs`。
 
-缺失序号、`errored`、`skipped`、留存 Sandbox 与 carry 资格被阻断的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。真正阻断的是 opaque command / lifecycle、无法固定的环境身份等具体原因。
+缺失序号、`errored`、`skipped`、留存 Sandbox 与 carry 资格被阻断的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。无法固定的 Provider 环境身份等显式 blocker 会阻断携带；未登记 identity 的作者 callback 本身不是 blocker。
 
 `accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
@@ -302,7 +304,7 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 这条保证只覆盖 NiceEval 自己能判定的结果与受管资源,不声称回滚 Agent 已经写进外部系统、`$HOME` checkpoint 或共享数据库的副作用。跨 Attempt 持久状态的作者必须把 Attempt 终态设计成原子提交边界:中断中的 Attempt 要么能够回滚到上一个已提交 checkpoint,要么把当前 cohort 标为污染并换一个干净 cohort 重建序列。否则「已完成结果照常携带、缺失 Attempt 续跑」会把半次写入带进后半段,这两部分不能视为同一条实验轨迹。
 
-直接 callback 本来就是 opaque,其 pair 的 carry 资格会被阻断；这会保守地阻止结果沿用,但不会自动清除 callback 写到外部的状态。`--dry` 必须展示具体 carry-disabled 原因,而不是把这种条目伪装成可 `accept` 的普通 fingerprint stale。
+直接 callback 不提供可追踪 identity。只改变 callback 实现或它读取的外部状态时，旧结果可能继续携带；作者应永久补上 `defineSandboxCommand()` 的 `revision` / `inputs`，并用 `--rerun all` 修复已经产生的结果集。
 
 ## 并发 Invocation:取到锁之后重做一次规划
 

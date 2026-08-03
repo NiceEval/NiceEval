@@ -214,7 +214,7 @@ export default defineExperiment({
 });
 ```
 
-直接传入的 callback 是 opaque command,该 Attempt `carryEligible = false`、不跨 Run 携带(词表见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback))。
+直接传入的 callback 不增加可追踪 identity，也不阻断跨 Run 携带。昂贵评测不会因漏写 identity 而永久重跑；需要让 callback 的实现或动态输入变化自动作废结果时，使用 `defineSandboxCommand()`（见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback)）。
 跨 Attempt 的实际 Sandbox 目录、服务或快照不写进 prepare command，也不放进 Experiment 顶层字段。实际 Sandbox 创建后的 `setup()` 负责恢复，实例退休前的 `teardown()` 负责回存；`sandboxReuse: true` 保留同一个物理实例，需要固定顺序时再显式声明 `maxConcurrency: 1`。
 
 一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;逐 Attempt 的沙箱写入在 `sandbox` layer 的 prepare 命令里,经闭包消费实验级产物;agent 怎么连自己、eval 的题目准备各在 agent 定义与 Eval 文件里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
