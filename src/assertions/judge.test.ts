@@ -4,10 +4,12 @@
 // 不起 HTTP server、不 spawn CLI。契约见 docs/feature/judge/library.md 与
 // docs-site/zh/explanation/judge.mdx 的解析优先级表;用例登记在
 // docs/engineering/testing/unit/assertions.md 的 Judge 分区。
+// 覆盖声明：Judge transport 的瞬时/永久分类、Retry-After、最多 3 次物理调用、总 timeout 预算、
+// precheck 的 20s 独立预算与瞬时 HTTP 重试都在本文件验证；不测试真实付费模型。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssertionCollector } from "./collector.ts";
-import { buildJudge, probeJudge } from "./judge.ts";
+import { buildJudge, probeJudge, type JudgeDeps } from "./judge.ts";
 import { computeVerdict } from "../shared/verdict.ts";
 import { completeEvidenceCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
@@ -77,13 +79,14 @@ function stubJudgeFetch(): CapturedRequest[] {
   return captured;
 }
 
-function judgeWith(judge: JudgeConfig | undefined) {
+function judgeWith(judge: JudgeConfig | undefined, retry: Pick<JudgeDeps, "sleep" | "random"> = {}) {
   const collector = new AssertionCollector();
   const ns = buildJudge({
     record: (spec) => collector.record(spec),
     judge,
     getOutput: () => "很抱歉,我目前使用的模型不支持图像输入,无法查看你发送的图片。",
     getInput: () => "这张图片里有什么?主要是什么颜色?",
+    ...retry,
   });
   return { collector, ns };
 }
@@ -277,7 +280,7 @@ describe("probeJudge 探测的错误分类", () => {
     expect(signals[1]).not.toBe(outer.signal);
   });
 
-  it("传输失败最多探测两次，HTTP 响应失败不重试", async () => {
+  it("传输失败与瞬时 HTTP 响应最多探测两次，永久 HTTP 错误立即失败", async () => {
     withKey();
     const transport = vi.fn(async (): Promise<Response> => {
       throw new Error("ECONNRESET");
@@ -286,10 +289,17 @@ describe("probeJudge 探测的错误分类", () => {
     await probeJudge(judge);
     expect(transport).toHaveBeenCalledTimes(2);
 
-    const http = vi.fn(async (): Promise<Response> => new Response("bad gateway", { status: 502 }));
+    const http = vi.fn()
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", http);
+    expect(await probeJudge(judge)).toBeUndefined();
+    expect(http).toHaveBeenCalledTimes(2);
+
+    const permanent = vi.fn(async (): Promise<Response> => new Response("bad request", { status: 400 }));
+    vi.stubGlobal("fetch", permanent);
     await probeJudge(judge);
-    expect(http).toHaveBeenCalledTimes(1);
+    expect(permanent).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -299,26 +309,28 @@ describe("judge 调用失败保留 unavailable", () => {
   async function expectUnavailable(
     fetchImpl: () => Promise<Response>,
     evidence: RegExp,
+    expectedCalls = 6,
   ): Promise<void> {
     vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
     const fetchMock = vi.fn(fetchImpl);
     vi.stubGlobal("fetch", fetchMock);
 
-    const required = judgeWith(judge);
+    const retry = { sleep: async (_ms: number, _signal: AbortSignal): Promise<void> => {}, random: () => 0 };
+    const required = judgeWith(judge, retry);
     required.ns.autoevals.closedQA("是否切题?").gate(0.8);
     const [requiredResult] = await required.collector.finalize(ctx());
     expect(requiredResult).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
     expect(requiredResult?.outcome === "unavailable" && requiredResult.evidence).toMatch(evidence);
     expect(computeVerdict({ assertions: [requiredResult!] })).toBe("errored");
 
-    const optional = judgeWith(judge);
+    const optional = judgeWith(judge, retry);
     optional.ns.autoevals.closedQA("是否切题?").optional();
     const [optionalResult] = await optional.collector.finalize(ctx());
     expect(optionalResult).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed", optional: true });
     expect(computeVerdict({ assertions: [optionalResult!] })).toBe("passed");
 
-    // 每条实际判分请求恰好一次；不能由 SDK 在失败后自动重放并重复收费。
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 每条判分请求按错误分类得到固定物理尝试数，SDK 不隐藏重放。
+    expect(fetchMock).toHaveBeenCalledTimes(expectedCalls);
   }
 
   it("HTTP 非 2xx 不伪装成 0 分", async () => {
@@ -338,7 +350,70 @@ describe("judge 调用失败保留 unavailable", () => {
   });
 
   it("2xx 但响应协议不符或取不出分数不伪装成 0 分", async () => {
-    await expectUnavailable(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }), /Cannot read properties/);
+    await expectUnavailable(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }), /Cannot read properties/, 2);
+  });
+
+  it("429/capacity 按 Retry-After 显式重试一次后拿到分数", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    let calls = 0;
+    const fetchMock = vi.fn(async (): Promise<Response> => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: { code: "model_capacity", message: "busy" } }), {
+          status: 429,
+          headers: { "retry-after": "0" },
+        });
+      }
+      return new Response(JSON.stringify({
+        id: "chatcmpl-fixture",
+        object: "chat.completion",
+        created: 0,
+        model: "fixture",
+        choices: [{
+          index: 0,
+          finish_reason: "tool_calls",
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [{
+              id: "call_1",
+              type: "function",
+              function: { name: "select_choice", arguments: JSON.stringify({ choice: "Y" }) },
+            }],
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const sleep = vi.fn(async (_ms: number, _signal: AbortSignal): Promise<void> => {});
+    const { collector, ns } = judgeWith({ model: "fixture-model", baseUrl: "http://judge.fixture.internal/v1" }, {
+      sleep,
+      random: () => 0,
+    });
+    ns.autoevals.closedQA("是否切题?");
+    const [result] = await collector.finalize(ctx());
+
+    expect(result).toMatchObject({ outcome: "passed", score: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(0, expect.any(AbortSignal));
+  });
+
+  it("403/SUBSCRIPTION_NOT_FOUND 是永久错误，不重试且 evidence 带模型、状态、code", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    const fetchMock = vi.fn(async (): Promise<Response> => new Response(JSON.stringify({
+      error: { code: "SUBSCRIPTION_NOT_FOUND", message: "subscription missing" },
+    }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { collector, ns } = judgeWith({ model: "fixture-model", baseUrl: "http://judge.fixture.internal/v1" });
+    ns.autoevals.closedQA("是否切题?").gate(0.8);
+    const [result] = await collector.finalize(ctx());
+
+    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("model=fixture-model");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("HTTP 403");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("code=SUBSCRIPTION_NOT_FOUND");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("retry=no");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -426,7 +501,7 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
 
     expect(settledEarly, "179s 时还不该收束——默认预算是 180s,不是立刻失败").toBe(false);
     expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
-    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("timed out after 180s");
   });
 
   it("同一挂起 fixture 配了更长的 timeoutMs 就正常拿到分数", async () => {
@@ -441,7 +516,7 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
     const { result } = await scoreWithClock(endpoint, 180_000);
 
     expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
-    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("timed out after 180s");
   });
 
   // 逐字段合并与整体覆盖唯一读数不同的一格:eval 写了自己的 judge 但没写 timeoutMs 时,
@@ -466,7 +541,48 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
     const { result } = await scoreWithClock(resolved!, 180_000);
 
     expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
-    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("timed out after 180s");
+  });
+});
+
+describe("judge retry 的总 timeout 预算", () => {
+  it("退避后的第二次请求继续消费同一个 timeoutMs，不按尝试重置", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    let calls = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      calls += 1;
+      if (calls === 1) return new Response("busy", { status: 503 });
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(new Response("late", { status: 200 })), 200);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        }, { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const sleep = (ms: number, signal: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new Error("aborted"));
+      }, { once: true });
+    });
+    const { collector, ns } = judgeWith({
+      model: "fixture-model",
+      baseUrl: "http://judge.fixture.internal/v1",
+      timeoutMs: 100,
+    }, { sleep, random: () => 0 });
+    ns.autoevals.closedQA("是否切题?");
+    const pending = collector.finalize(ctx());
+    await vi.advanceTimersByTimeAsync(100);
+    const [result] = await pending;
+
+    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(result?.outcome === "unavailable" && result.evidence).toContain("timed out after 0.1s");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
 

@@ -394,6 +394,24 @@ describe("表头长在列声明上", () => {
     const enHtml = webHtml(<TableContentView data={content} locale="en" />, "en");
     for (const header of ["Assertion", "Severity", "Outcome", "Detail"]) expect(enHtml).toContain(header);
   });
+
+  it("默认断言表保留 unavailable 的 reason 与 evidence", () => {
+    const content = attemptAssertionsContent({
+      attention: [{
+        name: "judge:autoevals:closedQA",
+        severity: "soft",
+        outcome: "unavailable",
+        reason: "judge-call-failed",
+        evidence: "HTTP 503: model=fixture-model · server overloaded · retries exhausted (3 attempts)",
+      }],
+      passedGroups: [],
+    })!;
+    const text = textOf(<TableContentView data={content} locale="en" />);
+    expect(text).toContain("reason: judge-call-failed");
+    expect(text).toContain("HTTP 503:");
+    expect(text).toContain("model=fixture-model");
+    expect(text).toContain("retries exhausted");
+  });
 });
 
 // cases: docs/engineering/testing/unit/reports.md 分区「数据格框（Table 与 Grid 的 text 面）」。

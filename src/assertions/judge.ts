@@ -29,6 +29,8 @@ interface ResolvedJudge {
  *  评不了;三分钟足以把「慢」与「挂死」分开(见 docs/feature/judge/library.md
  *  「调用预算与执行顺序」)。eval 与 config 的 judge 逐字段合并后仍没有 timeoutMs 才落到这里。 */
 const JUDGE_TIMEOUT_MS = 180_000;
+const JUDGE_MAX_ATTEMPTS = 3;
+const JUDGE_RETRY_BASE_DELAY_MS = 1_000;
 
 function resolveJudge(judge: JudgeConfig | undefined): ResolvedJudge {
   const model = judge?.model;
@@ -58,6 +60,9 @@ export interface JudgeDeps {
   /** 最后一条用户消息,作为 autoevals 的 input 字段。 */
   getInput: () => string;
   signal?: AbortSignal;
+  /** Judge transport retry 的测试时钟注入；不改变作者 API。 */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  random?: () => number;
 }
 
 /** 预检探测的有界等待:判分网关可能接受连接却迟迟不回(见 memory/
@@ -69,6 +74,105 @@ const PROBE_MAX_ATTEMPTS = 2;
 function errorSummary(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\s+/g, " ").slice(0, 300);
+}
+
+function objectField(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
+}
+
+function judgeStatus(error: unknown): number | undefined {
+  let current: unknown = error;
+  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+    const status = objectField(current, "status");
+    if (typeof status === "number" && Number.isInteger(status)) return status;
+    const nested = objectField(current, "error");
+    if (nested !== undefined) {
+      const nestedStatus = objectField(nested, "status");
+      if (typeof nestedStatus === "number" && Number.isInteger(nestedStatus)) return nestedStatus;
+    }
+    current = objectField(current, "cause");
+  }
+  return undefined;
+}
+
+function judgeCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+    const direct = objectField(current, "code");
+    if (typeof direct === "string" && direct !== "") return direct;
+    const nested = objectField(current, "error");
+    const nestedCode = objectField(nested, "code");
+    if (typeof nestedCode === "string" && nestedCode !== "") return nestedCode;
+    current = objectField(current, "cause");
+  }
+  return undefined;
+}
+
+function headerValue(headers: unknown, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const lower = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lower && typeof value === "string") return value;
+  }
+  return undefined;
+}
+
+function retryAfterMs(headers: unknown): number | undefined {
+  const raw = headerValue(headers, "retry-after")?.trim();
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
+}
+
+function isTransientJudgeStatus(status: number | undefined): boolean {
+  return status === 408 || status === 429 || (status !== undefined && status >= 500 && status <= 599);
+}
+
+function isConnectionFailure(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+    const name = objectField(current, "name");
+    const code = objectField(current, "code");
+    if (name === "APIUserAbortError") return false;
+    if (name === "APIConnectionError" || name === "APIConnectionTimeoutError") return true;
+    if (typeof code === "string" && /^(?:ECONN|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ETIMEDOUT|ERR_TLS)/i.test(code)) {
+      return true;
+    }
+    if (/fetch failed|socket hang up|connection (?:reset|closed|refused)|network error|other side closed|timed? out|timeout|\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\b/i.test(errorSummary(current))) {
+      return true;
+    }
+    current = objectField(current, "cause");
+  }
+  return false;
+}
+
+function isTransientJudgeFailure(error: unknown): boolean {
+  const status = judgeStatus(error);
+  return isTransientJudgeStatus(status) || (status === undefined && isConnectionFailure(error));
+}
+
+function defaultJudgeSleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("aborted"));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error("aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** 超时证据里的秒数:整秒不带小数(180_000 → `180s`),非整秒保留一位。 */
@@ -87,11 +191,22 @@ function checkSummary(kind: string, reference: string): string {
   return `${kind}(${JSON.stringify(short)})`;
 }
 
-/** autoevals/OpenAI 的 HTTP 错误在不同运行时有不同类名，只依赖稳定的 status 字段。 */
-function judgeFailureEvidence(error: unknown): string {
-  const status = typeof error === "object" && error !== null ? (error as { status?: unknown }).status : undefined;
-  const prefix = typeof status === "number" ? `HTTP ${status}: ` : "";
-  return `${prefix}${errorSummary(error)}`;
+/** autoevals/OpenAI 的错误类名不稳定；诊断只保留 status、服务端 code、模型与有界摘要。 */
+function judgeFailureEvidence(
+  error: unknown,
+  model: string,
+  attempts: number,
+  retried: boolean,
+): string {
+  const status = judgeStatus(error);
+  const code = judgeCode(error);
+  const parts = [`model=${model}`];
+  if (status !== undefined) parts.push(`HTTP ${status}`);
+  if (code !== undefined) parts.push(`code=${code}`);
+  parts.push(errorSummary(error));
+  parts.push(retried ? `retry=yes · attempts=${attempts}` : "retry=no");
+  if (attempts >= JUDGE_MAX_ATTEMPTS) parts.push("retries exhausted");
+  return parts.join(" · ");
 }
 
 function judgeClient(apiKey: string, baseURL: string, signal?: AbortSignal): OpenAI {
@@ -122,8 +237,8 @@ function bridgeAutoevalClient(client: OpenAI): { readonly client: AutoevalOpenAI
 }
 
 /** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达。传输失败(超时、
- *  连接失败)后重试一次,**每次探测各自拥有完整的 20 秒预算**;端点已给出 HTTP 回应(非 2xx)
- *  不重试——回应是确定性答案。返回错误描述字符串,可达则返回 undefined。*/
+ *  连接失败)以及 429、408、5xx 等瞬时 HTTP 状态后重试一次,**每次探测各自拥有完整的 20 秒预算**;
+ *  永久 HTTP 错误不重试——回应是确定性答案。返回错误描述字符串,可达则返回 undefined。*/
 export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Promise<string | undefined> {
   const resolved = resolveJudge(judge);
   if (!resolved.model) return t("judge.modelMissing");
@@ -132,8 +247,8 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
     return t("judge.probeMissingKey", { model: resolved.model, envHint });
   }
   const endpoint = resolved.baseUrl.replace(/\/$/, "");
-  // probe 只对尚未收到 HTTP 响应的传输失败重试一次。实际评分绝不走这个重试，
-  // 避免一个 rubric 因隐式重放产生第二笔模型费用。
+  // probe 对瞬时传输失败与 HTTP 状态显式重试一次；实际评分由自己的 transport policy
+  // 在总预算内显式重试，二者不共享隐式重放。
   for (let attempt = 1; attempt <= PROBE_MAX_ATTEMPTS; attempt++) {
     // 20s 上限**每次尝试各建一份**(见 docs/feature/judge/library.md「派发前预检」:每次探测
     // 各自拥有完整的 20 秒预算)。建在循环外会让第一次超时耗尽预算后,第二次拿着已 abort 的
@@ -161,6 +276,11 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
+        if (isTransientJudgeStatus(res.status) && attempt < PROBE_MAX_ATTEMPTS) {
+          const delay = retryAfterMs(res.headers);
+          if (delay !== undefined) await defaultJudgeSleep(delay, probeSignal);
+          continue;
+        }
         return t("judge.probeFailed", {
           endpoint,
           model: resolved.model,
@@ -231,50 +351,81 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
             return unavailable(`judge-key-unresolved (${envHint} unset)`);
           }
           const output = await materialFor(ctx, opts?.on);
-          let result: { score?: number | null };
+          let result: { score?: number | null } | undefined;
           // 判分调用有界:到点中断这次调用并记 unavailable。超时源自建 setTimeout +
           // AbortController(不是 AbortSignal.timeout):既要真正取消在飞的请求,也要在网关
           // 连 abort 都不回应时仍然按时结束等待,所以调用与计时器一起 race。
           const budget = new AbortController();
           let timedOut = false;
+          let attempts = 0;
+          let retried = false;
+          const deadlineAt = Date.now() + resolved.timeoutMs;
           const timer = setTimeout(() => {
             timedOut = true;
             budget.abort();
           }, resolved.timeoutMs);
           const callSignal = deps.signal ? AbortSignal.any([deps.signal, budget.signal]) : budget.signal;
           try {
-            // autoevals 覆盖 HTTP、连接、调用超时与响应解析；这些边界上的任何异常都不能
-            // 漏到 collector 的「求值异常 = 0 分」回退，必须成为没有可信分数的 unavailable。
-            const input = deps.getInput();
-            const client = bridgeAutoevalClient(judgeClient(resolved.apiKey, resolved.baseUrl, callSignal));
-            const call = Promise.resolve(
-              kind === "closedQA"
-                ? ClosedQA({ input, output, criteria: reference, model, ...client })
-                : kind === "factuality"
-                  ? Factuality({ input, output, expected: reference, model, ...client })
-                  : Summary({ input, output, expected: reference, model, ...client }),
-            );
-            // 超时后这次调用的迟到 rejection 不再有人接:先挂一个吸收器,避免未处理拒绝。
-            call.catch(() => {});
-            result = await Promise.race([
-              call,
-              new Promise<never>((_, reject) => {
-                budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), {
-                  once: true,
-                });
-              }),
-            ]);
-          } catch (error) {
-            // 判分不重试:超时和其它失败一样只留一条 unavailable,要不要再评由重跑决定。
-            if (timedOut) {
-              return unavailable("judge-call-failed", `timed out after ${formatSeconds(resolved.timeoutMs)}`);
+            for (let attempt = 0; attempt < JUDGE_MAX_ATTEMPTS; attempt++) {
+              if (Date.now() >= deadlineAt || budget.signal.aborted) {
+                timedOut = true;
+                return unavailable("judge-call-failed", `model=${model} · timed out after ${formatSeconds(resolved.timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`);
+              }
+              attempts = attempt + 1;
+              try {
+                // 每次物理调用都在这里显式发生；SDK maxRetries=0，避免隐藏重放。
+                const input = deps.getInput();
+                const client = bridgeAutoevalClient(judgeClient(resolved.apiKey, resolved.baseUrl, callSignal));
+                const call = Promise.resolve(
+                  kind === "closedQA"
+                    ? ClosedQA({ input, output, criteria: reference, model, ...client })
+                    : kind === "factuality"
+                      ? Factuality({ input, output, expected: reference, model, ...client })
+                      : Summary({ input, output, expected: reference, model, ...client }),
+                );
+                call.catch(() => {});
+                result = await Promise.race([
+                  call,
+                  new Promise<never>((_, reject) => {
+                    budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), {
+                      once: true,
+                    });
+                  }),
+                ]);
+                break;
+              } catch (error) {
+                if (timedOut || deps.signal?.aborted) {
+                  return unavailable("judge-call-failed", timedOut
+                    ? `model=${model} · timed out after ${formatSeconds(resolved.timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`
+                    : `model=${model} · interrupted · retry=no · attempts=${attempts}`);
+                }
+                if (!isTransientJudgeFailure(error) || attempt + 1 >= JUDGE_MAX_ATTEMPTS) {
+                  return unavailable("judge-call-failed", judgeFailureEvidence(error, model, attempts, retried));
+                }
+                const remaining = deadlineAt - Date.now();
+                if (remaining <= 0) {
+                  timedOut = true;
+                  return unavailable("judge-call-failed", `model=${model} · timed out after ${formatSeconds(resolved.timeoutMs)} · retry=${retried ? "yes" : "no"} · attempts=${attempts}`);
+                }
+                const retryAfter = retryAfterMs(objectField(error, "headers"));
+                const jitter = (deps.random ?? Math.random)() * JUDGE_RETRY_BASE_DELAY_MS * 2 ** attempt;
+                const delay = Math.min(retryAfter ?? jitter, remaining);
+                retried = true;
+                try {
+                  await (deps.sleep ?? defaultJudgeSleep)(delay, budget.signal);
+                } catch {
+                  timedOut = budget.signal.aborted;
+                  return unavailable("judge-call-failed", timedOut
+                    ? `model=${model} · timed out after ${formatSeconds(resolved.timeoutMs)} · retry=yes · attempts=${attempts}`
+                    : `model=${model} · interrupted · retry=no · attempts=${attempts}`);
+                }
+              }
             }
-            return unavailable("judge-call-failed", judgeFailureEvidence(error));
           } finally {
             clearTimeout(timer);
           }
-          if (typeof result.score !== "number" || !Number.isFinite(result.score)) {
-            return unavailable("judge-call-failed", "response did not contain a finite numeric score");
+          if (result === undefined || typeof result.score !== "number" || !Number.isFinite(result.score)) {
+            return unavailable("judge-call-failed", `model=${model} · response did not contain a finite numeric score · retry=no · attempts=${attempts}`);
           }
           // detail 只有「检查方式」一个含义(见 docs/feature/assertions/architecture.md
           // 「断言记录」),已由 spec.detail 给出;裁判自述的理由没有记录字段,不挤进这里,

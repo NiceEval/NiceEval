@@ -69,9 +69,11 @@ export default defineConfig({
 });
 ```
 
-判分调用不重试。判分请求不是幂等读取，连接断开或超时后的暗中重放会为同一条 rubric 产生第二笔模型费用；偶发失败按 unavailable 契约留记录，要不要再评由重跑决定。
+判分调用由 Judge 自己显式管理传输重试，最多 3 次物理调用（首次加 2 次重试）。429（含 capacity）、408、连接类错误与 5xx 可重试；400、401、403（包括 `SUBSCRIPTION_NOT_FOUND`）、404、422、无有效 score 与用户中断立即结束。SDK 隐式 retry 关闭，每次尝试都属于同一条 Judge 诊断。
 
-一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再并发 judge 只会放大网关限流，而判分不重试，一次 429 就让整条 attempt errored。正在评哪条 judge，live 面板的断言求值行以 `judge k/n` 推进显示，契约见 [CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
+`judge.timeoutMs` 是整条调用（请求与退避）的总预算，不会在重试时重置。退避优先遵守响应的 `Retry-After`，否则使用指数全抖动。耗尽后的 unavailable evidence 至少包含模型、HTTP status（若有）、服务端 code/摘要、是否重试和物理尝试次数；key 不进入 evidence。
+
+一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再并发 judge 只会放大网关限流；每条 Judge 自己在总预算内显式处理瞬时 transport retry，重试耗尽或永久错误仍按 unavailable 记录。正在评哪条 judge，live 面板的断言求值行以 `judge k/n` 推进显示，契约见 [CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
 
 Judge 默认 soft、无阈值，只记录分数；`.atLeast(x)` 添加 soft 阈值，`.gate(x?)` 变成硬要求；`.optional()` 声明允许缺席。severity（影不影响判定）与 optional（证据允许不允许缺席）是两个正交维度：
 
@@ -98,7 +100,7 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 两种情况不预检：Experiment、Eval 与项目都没配置 judge（运行期按 `judge-model-unresolved` 记录）；计划里含 judge 的 eval 全部命中携带、没有要派发的 attempt。
 
-**探测预算**：每次探测 20 秒超时；传输失败（超时、连接建立失败、断连）后重试一次，**每次探测各自拥有完整的 20 秒预算**，两次都失败才判预检失败。端点已给出 HTTP 回应（非 2xx）不重试——回应是确定性答案，再探一次不会变。判分调用不重试是因为判分请求非幂等、重放产生第二笔模型费用；探测请求没有判分语义、成本可忽略，重试只为把瞬时网络抖动与真不可用分开，两条规则不冲突。
+**探测预算**：每次探测 20 秒超时；传输失败或 429、408、5xx 后重试一次，**每次探测各自拥有完整的 20 秒预算**，两次都失败才判预检失败。400、401、403、404、422 等永久 HTTP 错误立即失败。探测请求没有判分语义、成本可忽略，重试只为把瞬时网络抖动与真不可用分开。
 
 **预检失败只作废需要 judge 的 eval，不拦整次运行**：
 

@@ -295,7 +295,7 @@ function indentedText(text: string, width: number, indent = 4, maxLines = 18): s
  *  name(源码行本身就是名字)。 */
 function evalAssertionDetailLine(a: AssertionResult): string | undefined {
   if (a.outcome === "unavailable") {
-    return `${a.severity} · unavailable · ${a.reason}`;
+    return `${a.severity} · unavailable · ${a.reason}${a.evidence ? ` · ${summaryText(a.evidence)}` : ""}`;
   }
   if (a.severity === "soft") {
     const detail = a.outcome === "failed" && a.detail ? ` · ${a.detail}` : "";

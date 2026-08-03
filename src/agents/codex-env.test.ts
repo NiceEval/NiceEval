@@ -5,28 +5,28 @@ import { createAgentSession } from "../context/session.ts";
 import type { CommandOptions, CommandResult, Sandbox, SandboxAgentContext } from "../types.ts";
 import { codexAgent, type CodexConfig } from "./codex.ts";
 import { DEFAULT_CODEX_CLI_VERSION } from "./coding-cli-versions.ts";
+import { resolveSendFailureClass } from "../context/send-failures.ts";
 
 interface ShellCall {
   readonly script: string;
   readonly options?: CommandOptions;
 }
 
-function fixture(): {
+function fixture(stdout = [
+  JSON.stringify({ type: "thread.started", thread_id: "thread-space-a" }),
+  JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }),
+].join("\n"), exitCode = 0, stderr = ""): {
   readonly sandbox: Sandbox;
   readonly context: SandboxAgentContext;
   readonly calls: ShellCall[];
 } {
   const calls: ShellCall[] = [];
-  const stdout = [
-    JSON.stringify({ type: "thread.started", thread_id: "thread-space-a" }),
-    JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }),
-  ].join("\n");
   const sandbox = {
     workdir: "/workspace",
     sandboxId: "codex-env-fixture",
     runShell: async (script: string, options?: CommandOptions): Promise<CommandResult> => {
       calls.push({ script, options });
-      return { stdout, stderr: "", exitCode: 0 };
+      return { stdout, stderr, exitCode };
     },
   } as unknown as Sandbox;
   const context: SandboxAgentContext = {
@@ -85,5 +85,62 @@ describe("codexAgent process env", () => {
       expect(call.script).not.toContain(apiKey);
     }
     expect(env).toEqual({ NMEM_SPACE: space, NOWLEDGE_TOKEN: pluginToken });
+  });
+
+  it("明确的 model-at-capacity admission 只在没有 started evidence 时放行重试", async () => {
+    const agent = codexAgent({ apiKey: "synthetic-codex-key" });
+    if (agent.kind !== "sandbox") throw new Error("codexAgent must be a sandbox agent");
+    const rejected = fixture(
+      JSON.stringify({ type: "turn.failed", error: { code: "model_at_capacity", message: "model is at capacity" } }),
+      1,
+    );
+    await expect(agent.send({ text: "first turn" }, rejected.context)).rejects.toMatchObject({ acceptance: "rejected" });
+    try {
+      await agent.send({ text: "first turn" }, rejected.context);
+    } catch (error) {
+      expect(resolveSendFailureClass(error as never, { adapter: agent.classifySendFailure })).toEqual({
+        retryable: true,
+        reason: "model_capacity",
+      });
+    }
+
+    const started = fixture([
+      JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "partial" } }),
+      JSON.stringify({ type: "turn.failed", error: { code: "model_at_capacity", message: "model is at capacity" } }),
+    ].join("\n"), 1);
+    await expect(agent.send({ text: "first turn" }, started.context)).rejects.toMatchObject({ acceptance: "started" });
+
+    const nativeText = fixture("", 1, "model is at capacity");
+    await expect(agent.send({ text: "first turn" }, nativeText.context)).rejects.toMatchObject({ acceptance: "rejected" });
+
+    const unknownRaw = fixture(JSON.stringify({ type: "notice", message: "model is at capacity" }), 1);
+    await expect(agent.send({ text: "first turn" }, unknownRaw.context)).rejects.toMatchObject({ acceptance: "unknown" });
+    const ordinaryText = fixture("ordinary output: model is at capacity", 1);
+    await expect(agent.send({ text: "first turn" }, ordinaryText.context)).rejects.toMatchObject({ acceptance: "unknown" });
+    const structuredMessage = fixture(
+      JSON.stringify({ type: "turn.failed", error: { message: "model is at capacity" } }),
+      1,
+    );
+    await expect(agent.send({ text: "first turn" }, structuredMessage.context)).rejects.toMatchObject({ acceptance: "rejected" });
+  });
+
+  it("只对稳定的原生 capacity 文本做无 started evidence 的窄回退", () => {
+    const agent = codexAgent({ apiKey: "synthetic-codex-key" });
+    expect(agent.classifySendFailure?.({
+      type: "agent-send-failed",
+      acceptance: "rejected",
+      message: "model is at capacity",
+    })).toEqual({ retryable: true, reason: "model_capacity" });
+    expect(agent.classifySendFailure?.({
+      type: "agent-send-failed",
+      acceptance: "rejected",
+      message: "capacity exceeded after partial answer",
+      events: [{ type: "message", role: "assistant", text: "partial" }],
+    })).toBeUndefined();
+    expect(agent.classifySendFailure?.({
+      type: "agent-send-failed",
+      acceptance: "rejected",
+      message: "capacity exceeded",
+    })).toBeUndefined();
   });
 });

@@ -24,7 +24,14 @@ import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import type { AgentArtifactPlatform } from "./types.ts";
-import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import {
+  makeSendFailure,
+  sendAcceptanceFromEvents,
+  sendFailureText,
+  type SendFailure,
+} from "../context/send-failures.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
+import type { FailureClass } from "../shared/failure-class.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -129,6 +136,99 @@ export interface CodexConfig {
   preTeardown?: SandboxCommand[];
 }
 
+const CODEX_CAPACITY_CODES = new Set([
+  "ADMISSION_FAILED",
+  "ADMISSION_FAILURE",
+  "ADMISSION_REJECTED",
+  "MODEL_AT_CAPACITY",
+  "MODEL_CAPACITY",
+  "MODEL_OVERLOADED",
+]);
+
+function normalizedCodexCode(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.trim().toUpperCase().replace(/[ -]+/g, "_");
+}
+
+function codexCapacityCode(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  for (const line of raw.split("\n")) {
+    try {
+      const value: unknown = JSON.parse(line);
+      if (!value || typeof value !== "object") continue;
+      const record = value as globalThis.Record<string, unknown>;
+      const error = record.error;
+      const candidates = [
+        record.code,
+        record.reason,
+        record.type,
+        error && typeof error === "object" ? (error as globalThis.Record<string, unknown>).code : undefined,
+        error && typeof error === "object" ? (error as globalThis.Record<string, unknown>).reason : undefined,
+        error && typeof error === "object" ? (error as globalThis.Record<string, unknown>).type : undefined,
+      ];
+      const code = candidates.map(normalizedCodexCode).find((candidate) => candidate !== undefined && CODEX_CAPACITY_CODES.has(candidate));
+      if (code !== undefined) return code;
+    } catch {
+      // Native stderr fallback is handled separately and remains deliberately narrow.
+    }
+  }
+  return undefined;
+}
+
+function codexCapacityMessage(raw: string | undefined): string {
+  if (raw === undefined) return "";
+  const messages: string[] = [];
+  for (const line of raw.split("\n")) {
+    try {
+      const value: unknown = JSON.parse(line);
+      if (!value || typeof value !== "object") continue;
+      const record = value as globalThis.Record<string, unknown>;
+      if (record.type !== "turn.failed" && record.type !== "response.failed") continue;
+      const error = record.error;
+      if (error && typeof error === "object") {
+        const message = (error as globalThis.Record<string, unknown>).message;
+        if (typeof message === "string") messages.push(message);
+      }
+    } catch {
+      // Native stderr fallback is handled separately and remains deliberately narrow.
+    }
+  }
+  return messages.join("\n");
+}
+
+const CODEX_CAPACITY_TEXT = /\bmodel(?:[ _-]+is)?[ _-]+at[ _-]+capacity\b|\badmission[ _-]+(?:failed|failure|rejected)\b/i;
+
+function codexCapacityFromFailure(failure: SendFailure): boolean {
+  if (failure.acceptance !== "rejected") return false;
+  if (failure.events !== undefined && sendAcceptanceFromEvents(failure.events) === "started") return false;
+  for (let cause = failure.cause; cause !== undefined;) {
+    if (cause._tag === "Error" || cause._tag === "Object") {
+      const code = cause.code._tag === "Present" ? normalizedCodexCode(cause.code.value) : undefined;
+      if (code !== undefined && CODEX_CAPACITY_CODES.has(code)) return true;
+      cause = cause.cause._tag === "Cause" ? cause.cause.value : undefined;
+      continue;
+    }
+    cause = undefined;
+  }
+  return CODEX_CAPACITY_TEXT.test(sendFailureText(failure));
+}
+
+function classifyCodexSendFailure(failure: SendFailure): FailureClass | undefined {
+  return codexCapacityFromFailure(failure) ? { retryable: true, reason: "model_capacity" } : undefined;
+}
+
+function codexAcceptance(
+  raw: string | undefined,
+  events: readonly import("../types.ts").StreamEvent[],
+  nativeErrorText = "",
+): "rejected" | "started" | "unknown" {
+  const acceptance = sendAcceptanceFromEvents(events);
+  if (acceptance === "started") return "started";
+  return codexCapacityCode(raw) !== undefined || CODEX_CAPACITY_TEXT.test(`${codexCapacityMessage(raw)}\n${nativeErrorText}`)
+    ? "rejected"
+    : acceptance;
+}
+
 /**
  * `@openai/codex` 的 npm 主包只是个 node shim,真正的 CLI 在平台包里
  * (`npm:@openai/codex@<ver>-linux-arm64`),是自带运行时的 musl 静态二进制。
@@ -182,6 +282,7 @@ export function codexAgent(config?: CodexConfig): Agent {
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
     spanMapper: mapCodexSpans,
+    classifySendFailure: classifyCodexSendFailure,
     ensure,
     installers: [installer],
 
@@ -361,8 +462,11 @@ export function codexAgent(config?: CodexConfig): Agent {
       const events = [...parsed.events];
       if (res.exitCode !== 0) {
         throw makeSendFailure({
-          acceptance: sendAcceptanceFromEvents(events),
+          acceptance: codexAcceptance(raw, events, res.stderr),
           message: shared.diagnoseFailure(res, parsed.events, raw),
+          ...(codexCapacityCode(raw) !== undefined
+            ? { cause: normalizeExternalCause({ code: codexCapacityCode(raw) }) }
+            : {}),
           events,
           usage: parsed.usage,
           process: res,

@@ -300,13 +300,19 @@ export function attemptAssertionsContent(data: AttemptAssertionsData | null): Ta
   if (data === null || (data.attention.length === 0 && data.passedGroups.length === 0)) return null;
   const rows: TableContentRow[] = [];
   for (const assertion of data.attention) {
+    const detail: string[] = [];
+    if (assertion.detail) detail.push(stripControl(assertion.detail));
+    if (assertion.outcome === "unavailable") {
+      detail.push(`reason: ${assertion.reason}`);
+      if (assertion.evidence !== undefined) detail.push(`evidence: ${stripControl(assertion.evidence)}`);
+    }
     rows.push({
       key: assertion.name,
       cells: {
         name: { kind: "text", text: assertion.name },
         severity: { kind: "text", text: assertion.severity },
         outcome: { kind: "verdict", verdict: assertion.outcome === "unavailable" ? "skipped" : assertion.outcome },
-        detail: assertion.detail ? { kind: "text", text: stripControl(assertion.detail) } : { kind: "notApplicable" },
+        detail: detail.length > 0 ? { kind: "text", text: detail.join(" · ") } : { kind: "notApplicable" },
       },
     });
   }

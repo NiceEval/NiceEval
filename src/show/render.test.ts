@@ -228,6 +228,43 @@ describe("--eval:source send 摘要", () => {
     expect(text).toContain("completed · 1.0s");
     expect(text).not.toContain(legacyLabel);
   });
+
+  it("--source 的 unavailable 断言显示有界 Judge HTTP/model/retry evidence", () => {
+    const result: Parameters<typeof evalSourceText>[0] = {
+      locator: LOCATOR,
+      source: {
+        spine: {
+          file: "evals/judge.ts",
+          sha256: "sha",
+          lines: [{
+            line: 1,
+            text: 'await t.judge("answer");',
+            annotations: [{
+              kind: "assertion",
+              assertion: {
+                name: "answer quality",
+                outcome: "unavailable",
+                severity: "gate",
+                reason: "judge-call-failed",
+                evidence: "model=judge-model · HTTP 429 · code=capacity · summary=busy · retry=yes · attempts=3",
+                loc: { file: "evals/judge.ts", line: 1 },
+              },
+            }],
+            calls: [],
+          }],
+        },
+        detached: [],
+        unmapped: { assertions: [], scores: [] },
+        summary: { checks: 1, passed: 0, failed: 0, unavailable: 1, aborted: false },
+      },
+    };
+
+    const text = evalSourceText(result, { header: "H", width: 160 });
+    expect(text).toContain("model=judge-model");
+    expect(text).toContain("HTTP 429");
+    expect(text).toContain("retry=yes");
+    expect(text).toContain("attempts=3");
+  });
 });
 
 describe("--execution:单段卡按 3 行截断,骨架行不计入,尾巴 `(+N lines · M chars · …)`", () => {
