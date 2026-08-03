@@ -207,6 +207,42 @@ describe("openRecord · 实验 → 快照 → eval → attempt 分层", () => {
   });
 });
 
+describe("record · migratedFrom", () => {
+  it("读写保留旧 opaque carryEpoch 的迁移来源", async () => {
+    const root = await makeRoot();
+    const writer = createWriter(root, { producer: { name: "niceeval", version: "test" } });
+    const snapshot = await writer.run({
+      experimentId: "exp",
+      agent: "agent",
+      startedAt: "2026-08-03T00:00:00.000Z",
+    });
+    await snapshot.writeAttempt({
+      id: "e",
+      verdict: "passed",
+      attempt: 0,
+      durationMs: 1,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+      fingerprint: "current-deterministic-fingerprint",
+      migratedFrom: {
+        kind: "opaque-carry-epoch",
+        fingerprint: "legacy-opaque-fingerprint",
+        algorithmVersion: 0,
+        coverageVersion: 0,
+      },
+    });
+    await snapshot.finish();
+
+    const opened = await openRecord(root);
+    expect(opened.experiments[0]!.latestRun.attempts[0]!.result.migratedFrom).toEqual({
+      kind: "opaque-carry-epoch",
+      fingerprint: "legacy-opaque-fingerprint",
+      algorithmVersion: 0,
+      coverageVersion: 0,
+    });
+  });
+});
+
 // ───────────────────────── 懒加载与回退 ─────────────────────────
 
 describe("AttemptHandle · 懒加载", () => {
@@ -466,11 +502,13 @@ describe("createWriter", () => {
     const root = await makeRoot();
     const manifests = {
       q1: {
+        algorithmVersion: 2,
+        coverageVersion: 1,
         config: { agent: "codex", model: "opus", "flags.webSearch": true },
         source: { "evals/q1.eval.ts": "a".repeat(64), "evals/share/assert.ts": "b".repeat(64) },
         data: { "evals/data/cases.yaml": "c".repeat(64) },
       },
-      q2: { config: { agent: "codex" }, source: { "evals/q2.eval.ts": "d".repeat(64) }, data: {} },
+      q2: { algorithmVersion: 2, coverageVersion: 1, config: { agent: "codex" }, source: { "evals/q2.eval.ts": "d".repeat(64) }, data: {} },
     };
     const writer = createWriter(root, {
       producer: { name: "niceeval", version: "0.12.0" },

@@ -615,6 +615,26 @@ export interface JsonPlanDelta {
   to?: string;
 }
 
+export interface JsonPlanFingerprintComparisonChanged {
+  kind: "changed";
+  deltas: [JsonPlanDelta, ...JsonPlanDelta[]];
+}
+
+export interface JsonPlanFingerprintComparisonUnexplained {
+  kind: "unexplained";
+  reason:
+    | "manifest-missing"
+    | "fingerprint-version-changed"
+    | "legacy-untracked-input"
+    | "fingerprint-invariant-violation";
+  fromVersion?: number;
+  toVersion?: number;
+}
+
+export type JsonPlanFingerprintComparison =
+  | JsonPlanFingerprintComparisonChanged
+  | JsonPlanFingerprintComparisonUnexplained;
+
 /** 当前 Sandbox pair 的跨 Run 携带阻断原因；来自 linked pair/provider plan 的稳定投影。 */
 export interface JsonPlanCarryBlocker {
   code: string;
@@ -626,8 +646,8 @@ export interface JsonPlanDispatch {
   gate: "fingerprint" | "terminal" | "eligibility" | "rerun" | "mode" | "missing";
   /** 这组原因覆盖的 attempt 序号。 */
   attempts: number[];
-  /** 指纹门的差异明细；省略表示本次规划无法给出结构化差异。 */
-  deltas?: JsonPlanDelta[];
+  /** 指纹门的比较解释；其它 gate 省略。 */
+  comparison?: JsonPlanFingerprintComparison;
   /** `eligibility/carry-disabled` 的具体 code/reason；其它门省略。 */
   blockers?: JsonPlanCarryBlocker[];
 }
@@ -642,6 +662,7 @@ export interface JsonPlanRow {
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";
     acceptance: "available" | "legacy-locator";
+    evidenceState: "local" | "borrowed" | "dangling";
   }[];
   /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。 */
   dispatch?: JsonPlanDispatch[];

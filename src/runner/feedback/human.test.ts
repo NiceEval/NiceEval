@@ -882,7 +882,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
         {
           experimentId: "compare/codex",
           evalId: "memory/stale",
-          dispatch: [{ reason: "stale", deltas: [{ selector: "config:judge.model" }] }],
+          dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [{ selector: "config:judge.model" }] } }],
         },
         { experimentId: "compare/codex", evalId: "memory/fresh", dispatch: [{ reason: "new" }] },
         { experimentId: "compare/codex", evalId: "memory/carried", dispatch: [] },
@@ -984,16 +984,16 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       configs: 1,
       attempts: 1,
       rows: [
-        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", deltas: [delta] }] },
-        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", deltas: [delta] }] },
+        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
+        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
         { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "keep-sandbox" }] },
       ],
     });
 
     expect(text).toContain("compare/codex  baseline01  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)");
-    expect(text).toContain("prior:  @1A1B2C3D4E5F (passed)");
+    expect(text).toContain("prior:  @1A1B2C3D4E5F (passed · evidence available)");
     expect(text).toContain("accept: niceeval accept @1A1B2C3D4E5F");
-    expect(text).toContain("prior:  @1E5F6G7H8J9K (failed)");
+    expect(text).toContain("prior:  @1E5F6G7H8J9K (failed · evidence available)");
     expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
   });
 
@@ -1037,7 +1037,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           evalId: "from-old-a",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-a", to: "current" }],
+            comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-a", to: "current" }] },
           }],
           prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available" }],
         },
@@ -1046,7 +1046,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           evalId: "from-old-b-1",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }],
+            comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }] },
           }],
           prior: [{ locator: "@1E5F6G7H8J9K", verdict: "passed", acceptance: "available" }],
         },
@@ -1055,7 +1055,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           evalId: "from-old-b-2",
           dispatch: [{
             reason: "stale",
-            deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }],
+            comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }] },
           }],
           prior: [{ locator: "@1J9K0L1M2N3P", verdict: "passed", acceptance: "available" }],
         },
@@ -1079,7 +1079,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [{
         experimentId: "compare/codex",
         evalId: "legacy",
-        dispatch: [{ reason: "stale", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] }],
+        dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] } }],
         prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
       }],
     });

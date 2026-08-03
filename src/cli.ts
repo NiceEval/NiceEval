@@ -1,7 +1,7 @@
 // niceeval CLI 入口。执行 eval 必须以 experiment 为单位;位置参数只在 exp 后筛 eval id 前缀。
 //   niceeval check [组|配置] [pattern]  只做发现、选择与 SandboxLayer pure link
 //   niceeval exp [组|配置] [pattern]    跑实验
-//   niceeval accept @<locator>          接受一条历史结果并重锚到当前配置
+//   niceeval accept @<locator>...       接受多条历史结果并重锚到当前配置
 //   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
 //   niceeval list                    只列出发现到的 eval
 //   niceeval clean                   删除 .niceeval/ 历史运行 artifact
@@ -18,7 +18,7 @@ import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
-import type { FingerprintDelta } from "./runner/manifest.ts";
+import type { FingerprintComparison, FingerprintDelta } from "./runner/manifest.ts";
 import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
 import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
@@ -54,6 +54,7 @@ import {
   reportActivity,
   type JsonPlanRow,
   type JsonPlanDelta,
+  type JsonPlanFingerprintComparison,
 } from "./runner/feedback/index.ts";
 import {
   buildView,
@@ -463,6 +464,7 @@ function planRowInputs(
   carryPlan: CarryPlan | undefined,
   incompatibleKeys: ReadonlySet<string>,
   priorResults: readonly { experimentId?: string; id: string; attempt: number; locator?: string; verdict: Verdict }[] = [],
+  evidenceStatesByAttempt: ReadonlyMap<string, "local" | "borrowed" | "dangling"> = new Map(),
 ): {
   experimentId: string;
   evalId: string;
@@ -470,9 +472,9 @@ function planRowInputs(
   reused: boolean;
   carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
   dispatch: readonly DispatchGroup[];
-  prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
+  prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
 }[] {
-  const priorByKeyAttempt = new Map<string, { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator" }>();
+  const priorByKeyAttempt = new Map<string, { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling" }>();
   for (const prior of priorResults) {
     if (prior.locator === undefined) continue;
     priorByKeyAttempt.set(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`, {
@@ -480,6 +482,7 @@ function planRowInputs(
       locator: prior.locator,
       verdict: prior.verdict,
       acceptance: decodeAttemptLocator(prior.locator).valid ? "available" : "legacy-locator",
+      evidenceState: evidenceStatesByAttempt.get(`${prior.experimentId ?? ""}|${prior.id}|${prior.attempt}`) ?? "dangling",
     });
   }
   const rows: {
@@ -489,7 +492,7 @@ function planRowInputs(
     reused: boolean;
     carried: readonly { attempt: number; verdict: "passed" | "failed" }[];
     dispatch: readonly DispatchGroup[];
-    prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; deltas?: readonly FingerprintDelta[] }[];
+    prior?: readonly { attempt: number; locator: string; verdict: Verdict; acceptance: "available" | "legacy-locator"; evidenceState: "local" | "borrowed" | "dangling"; comparison?: FingerprintComparison }[];
   }[] = [];
   const carriedByPair = new Map<string, { attempt: number; verdict: "passed" | "failed" }[]>();
   for (const result of carryPlan?.carriedResults ?? []) {
@@ -512,7 +515,7 @@ function planRowInputs(
       const stalePrior = dispatch.flatMap((group) => group.reason === "stale"
         ? group.attempts.flatMap((attempt) => {
             const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
-            return prior === undefined ? [] : [{ ...prior, ...(group.deltas !== undefined ? { deltas: group.deltas } : {}) }];
+            return prior === undefined ? [] : [{ ...prior, ...(group.comparison !== undefined ? { comparison: group.comparison } : {}) }];
           })
         : []);
       rows.push({
@@ -537,6 +540,21 @@ function jsonPlanDelta(delta: FingerprintDelta): JsonPlanDelta {
     case "Changed": return { selector: delta.selector, kind: "changed", from: delta.from, to: delta.to };
     case "Unknown": return { selector: delta.selector, kind: "unknown" };
   }
+}
+
+function jsonPlanComparison(comparison: FingerprintComparison): JsonPlanFingerprintComparison {
+  if (comparison.kind === "changed") {
+    const deltas = comparison.deltas.map(jsonPlanDelta);
+    const [first, ...rest] = deltas;
+    if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
+    return { kind: "changed", deltas: [first, ...rest] };
+  }
+  return {
+    kind: "unexplained",
+    reason: comparison.reason,
+    ...(comparison.fromVersion === undefined ? {} : { fromVersion: comparison.fromVersion }),
+    ...(comparison.toVersion === undefined ? {} : { toVersion: comparison.toVersion }),
+  };
 }
 
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
@@ -566,12 +584,16 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
 }
 
 /**
- * `accept` 只接受一个精确 locator；它不是 `exp` 的另一种选择器，也不派发 attempt。
+ * `accept` 接受一个或多个精确 locator；它不是 `exp` 的另一种选择器，也不派发 attempt。
  * `--record` 是唯一允许的附加 flag，用来接受发布根或其它显式记录根里的结果。
  */
-function parseAcceptLocator(positionals: string[], flags: Flags): string {
-  if (positionals.length !== 1 || !/^@[^@\s]+$/.test(positionals[0] ?? "")) {
+function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
+  if (positionals.length === 0 || positionals.some((locator) => !/^@[^@\s]+$/.test(locator))) {
     process.stderr.write(t("cli.accept.usage"));
+    process.exit(1);
+  }
+  if (new Set(positionals).size !== positionals.length) {
+    process.stderr.write("niceeval accept rejects duplicate locators.\n");
     process.exit(1);
   }
 
@@ -626,7 +648,7 @@ function parseAcceptLocator(positionals: string[], flags: Flags): string {
     process.stderr.write(t("cli.accept.flagUnsupported", { flag: bad[0] }));
     process.exit(1);
   }
-  return positionals[0]!;
+  return [...positionals];
 }
 
 interface AcceptLocatorResult {
@@ -636,20 +658,22 @@ interface AcceptLocatorResult {
 }
 
 /** 调用 acceptance core；CLI 只负责 cwd/记录根边界、输出与退出码，不重建结果或启动 runner。 */
-async function runAcceptCommand(cwd: string, locator: string, recordRoot: string | undefined): Promise<void> {
+async function runAcceptCommand(cwd: string, locators: readonly string[], recordRoot: string | undefined): Promise<void> {
   const mod = await import("./runner/accept.ts") as {
-    acceptLocator(input: { cwd: string; locator: string; recordRoot?: string }): Promise<AcceptLocatorResult>;
+    acceptLocators(input: { cwd: string; locators: readonly string[]; recordRoot?: string }): Promise<readonly AcceptLocatorResult[]>;
   };
-  const result = await mod.acceptLocator({
+  const results = await mod.acceptLocators({
     cwd,
-    locator,
+    locators,
     ...(recordRoot !== undefined ? { recordRoot } : {}),
   });
-  process.stdout.write(t("cli.accept.done", {
-    sourceLocator: result.sourceLocator,
-    locator: result.locator,
-    fingerprint: result.fingerprint ?? "—",
-  }));
+  for (const result of results) {
+    process.stdout.write(t("cli.accept.done", {
+      sourceLocator: result.sourceLocator,
+      locator: result.locator,
+      fingerprint: result.fingerprint ?? "—",
+    }));
+  }
 }
 
 /** 加载 cwd/.env(不覆盖已有环境变量)。 */
@@ -893,9 +917,9 @@ async function main(): Promise<void> {
   }
 
   if (command === "accept") {
-    const locator = parseAcceptLocator(positionals, flags);
+    const locators = parseAcceptLocators(positionals, flags);
     try {
-      await runAcceptCommand(cwd, locator, flags.record);
+      await runAcceptCommand(cwd, locators, flags.record);
     } catch (e) {
       // acceptance core 的资格/定位错误都是用户可修复的：不进入 runner 的崩溃路径，
       // 直接给出一行错误并以 1 退出，保证不会误报“已派发 attempt”。
@@ -1381,7 +1405,14 @@ async function main(): Promise<void> {
     // 矩阵——(experimentId, evalId) 逐行,携带同一口径的 reused 预测——不是各自重算一遍。
     const dryRuns = Math.max(1, ...agentRuns.map((r) => r.attempts));
     // 一行一份未携带原因分组:人读面投影出门的人读词,`--json` 投影出 gate 名,同一份数据。
-    const rowInputs = planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys, priorResults ?? []);
+    const rowInputs = planRowInputs(
+      agentRuns,
+      matchedByRun,
+      carryPlan,
+      incompatibleKeys,
+      priorResults ?? [],
+      carryInputs.evidenceStatesByAttempt,
+    );
     // 只读锁目录,不取锁、不等待(见 docs/feature/experiments/architecture.md「并发
     // Invocation:用例锁」);过期(无人续心跳)的锁不算"正被持锁运行",不标注。裸 run(没有
     // experimentId)不参与锁,恒不标注。并行读——矩阵行数可能不小,不逐行串行等磁盘。
@@ -1398,14 +1429,14 @@ async function main(): Promise<void> {
       experimentId: row.experimentId,
       evalId: row.evalId,
       reused: row.reused,
-      ...(row.prior !== undefined ? { prior: row.prior.map(({ locator, verdict, acceptance }) => ({ locator, verdict, acceptance })) } : {}),
+      ...(row.prior !== undefined ? { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) } : {}),
       ...(lockedFlags[i] ? { locked: true } : {}),
       ...(row.dispatch.length > 0
         ? {
             dispatch: row.dispatch.map((group) => ({
               gate: group.gate,
               attempts: [...group.attempts],
-              ...(group.deltas !== undefined ? { deltas: group.deltas.map(jsonPlanDelta) } : {}),
+              ...(group.comparison !== undefined ? { comparison: jsonPlanComparison(group.comparison) } : {}),
               ...(group.blockers !== undefined
                 ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
                 : {}),
@@ -1443,7 +1474,7 @@ async function main(): Promise<void> {
             dispatch: row.dispatch.map((group) => ({
               reason: group.reason,
               attempts: [...group.attempts],
-              ...(group.deltas !== undefined ? { deltas: group.deltas } : {}),
+              ...(group.comparison !== undefined ? { comparison: group.comparison } : {}),
               ...(group.blockers !== undefined
                 ? { blockers: group.blockers.map(({ code, reason }) => ({ code, reason })) }
                 : {}),

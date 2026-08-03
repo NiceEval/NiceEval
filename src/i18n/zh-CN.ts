@@ -104,8 +104,8 @@ export const zhCN = {
   "cli.accept.equivalent": "等价命令:  {{command}}\n",
   "cli.accept.noneChosen": "没有授权任何差异,按原计划运行。\n",
   "cli.accept.usage":
-    "error: niceeval accept 必须且只能接收一个 @<locator>\n" +
-    "  fix: 从 `niceeval show --history` 复制 locator,再运行 `niceeval accept @<locator>`\n",
+    "error: niceeval accept 必须接收一个或多个 @<locator>\n" +
+    "  fix: 从 `niceeval show --history` 复制明确的 locator,再运行 `niceeval accept @<locator>...`\n",
   "cli.accept.flagUnsupported":
     "error: {{flag}} 不能用于 niceeval accept\n" +
     "  fix: 只传 @<locator>(可选 `--record <目录>`)\n",
@@ -169,7 +169,7 @@ export const zhCN = {
     "  niceeval exp list [实验前缀]              列出可运行的实验配置(不派发)\n" +
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
-    "  niceeval accept @<locator>              接受一条历史结果\n" +
+    "  niceeval accept @<locator>...           接受明确列出的历史结果\n" +
     "  niceeval show [eval-id 前缀… | @<locator>]   终端读结果\n" +
     "      不带证据 flag:命中范围的默认报告(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
     "        两个以上 --exp 改为逐条件对照\n" +

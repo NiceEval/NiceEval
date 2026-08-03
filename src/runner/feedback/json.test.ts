@@ -363,7 +363,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(doc.matrix[1]).not.toHaveProperty("locked");
   });
 
-  it("dispatch 逐组给出 gate 与 attempt 序号,指纹门带 deltas;全携带的行不出现该字段", () => {
+  it("dispatch 逐组给出 gate 与 attempt 序号,指纹门带 comparison;全携带的行不出现该字段", () => {
     const text = renderJsonPlanDocument({
       total: 4,
       evals: 2,
@@ -378,7 +378,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
             {
               gate: "fingerprint",
               attempts: [0],
-              deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+              comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }] },
             },
             { gate: "missing", attempts: [1] },
           ],
@@ -391,7 +391,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       {
         gate: "fingerprint",
         attempts: [0],
-        deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+        comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "gpt-5.6", to: "gpt-5.6-sol" }] },
       },
       { gate: "missing", attempts: [1] },
     ]);
@@ -440,19 +440,19 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
         experimentId: "compare/codex",
         evalId: "legacy",
         reused: false,
-        prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
+        prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator", evidenceState: "dangling" }],
         dispatch: [{
           gate: "fingerprint",
           attempts: [0],
-          deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }],
+          comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] },
         }],
       }],
     }));
 
     expect(doc.matrix[0]).toMatchObject({
-      prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
+      prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator", evidenceState: "dangling" }],
       dispatch: [{
-        deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }],
+        comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] },
       }],
     });
   });

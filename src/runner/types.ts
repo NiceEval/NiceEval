@@ -313,6 +313,14 @@ export interface AcceptedDifference {
   to?: string;
 }
 
+/** 旧 opaque carryEpoch 指纹迁移到当前确定性指纹的已知来源。 */
+export interface FingerprintMigration {
+  kind: "opaque-carry-epoch";
+  fingerprint: string;
+  algorithmVersion: number;
+  coverageVersion: number;
+}
+
 /** `niceeval accept @<locator>` 写入新结果的来源与重锚审计记录。 */
 export interface AcceptedResult {
   /** 被复制的历史 attempt locator。 */
@@ -447,6 +455,8 @@ export interface EvalResult {
    * 人,报告因此会在新配置身份下混入旧配置跑出的结果,这个字段是事后追认这笔账的唯一线索。
   */
   carriedAccepting?: CarriedAcceptance[];
+  /** 当前确定性指纹替换已知旧 opaque carryEpoch 指纹时保留的来源。 */
+  migratedFrom?: FingerprintMigration;
   /**
    * 人工 `niceeval accept @<locator>` 产生的新结果：来源 locator、旧/新 fingerprint
    * 与 manifest 差异摘要。与 `carriedAccepting`（旧版 --accept 携入痕迹）并列保留，

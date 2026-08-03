@@ -902,7 +902,15 @@ export interface HumanDryPlanRow {
   dispatch?: readonly {
     reason: string;
     attempts?: readonly number[];
-    deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
+    comparison?: {
+      kind: "changed";
+      deltas: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
+    } | {
+      kind: "unexplained";
+      reason: "manifest-missing" | "fingerprint-version-changed" | "legacy-untracked-input" | "fingerprint-invariant-violation";
+      fromVersion?: number;
+      toVersion?: number;
+    };
     blockers?: readonly { code: string; reason: string }[];
   }[];
   /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
@@ -911,7 +919,16 @@ export interface HumanDryPlanRow {
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";
     acceptance: "available" | "legacy-locator";
-    deltas?: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
+    evidenceState?: "local" | "borrowed" | "dangling";
+    comparison?: {
+      kind: "changed";
+      deltas: readonly { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }[];
+    } | {
+      kind: "unexplained";
+      reason: "manifest-missing" | "fingerprint-version-changed" | "legacy-untracked-input" | "fingerprint-invariant-violation";
+      fromVersion?: number;
+      toVersion?: number;
+    };
   }[];
 }
 
@@ -980,11 +997,14 @@ function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
     // 也不能为这个当前必失败的 accept 路径打印命令。
     if (row.dispatch?.some((group) => (group.blockers?.length ?? 0) > 0)) continue;
     for (const prior of row.prior) {
-      const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.deltas?.length);
-      const deltas = prior.deltas ?? staleGroup?.deltas;
-      const summary = deltas?.map(formatDryDelta).join(", ") ?? "details unavailable";
+      const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.comparison !== undefined);
+      const comparison = prior.comparison ?? staleGroup?.comparison;
+      const summary = comparison === undefined
+        ? "fingerprint comparison unexplained: manifest-missing"
+        : formatFingerprintComparison(comparison);
       out.push(`${row.experimentId}  ${row.evalId}  stale ${prior.verdict}: ${summary}`);
-      out.push(`  prior:  ${prior.locator} (${prior.verdict})`);
+      const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
+      out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
       out.push(prior.acceptance === "available"
         ? `  accept: niceeval accept ${prior.locator}`
         : "  accept: unavailable (legacy locator; rerun to create an acceptable result)");
@@ -1061,7 +1081,7 @@ function formatDispatchGroup(
   if (group.blockers !== undefined && group.blockers.length > 0) {
     return `carry-disabled${countSuffix}: ${group.blockers.map(({ code, reason }) => `${code}: ${reason}`).join("; ")}`;
   }
-  const selectors = (group.deltas ?? []).map(formatDryDelta);
+  const comparison = group.comparison;
   const relevantPrior = (prior ?? []).filter((result) =>
     group.attempts === undefined || result.attempt === undefined || group.attempts.includes(result.attempt));
   const staleVerdicts = group.reason === "stale"
@@ -1069,15 +1089,24 @@ function formatDispatchGroup(
         relevantPrior.some((result) => result.verdict === verdict))
     : [];
   const reason = staleVerdicts.length > 0 ? `stale ${staleVerdicts.join("/")}` : group.reason;
-  if (selectors.length > 0) return `${reason}${countSuffix}: ${selectors.join(", ")}`;
-  return group.reason === "stale" ? `${reason}${countSuffix}: details unavailable` : `${reason}${countSuffix}`;
+  if (comparison !== undefined) return `${reason}${countSuffix}: ${formatFingerprintComparison(comparison)}`;
+  return `${reason}${countSuffix}`;
+}
+
+function formatFingerprintComparison(comparison: NonNullable<HumanDryPlanRow["dispatch"]>[number]["comparison"]): string {
+  if (comparison === undefined) return "fingerprint comparison unexplained: manifest-missing";
+  if (comparison.kind === "changed") return comparison.deltas.map(formatDryDelta).join(", ");
+  const versions = comparison.fromVersion === undefined || comparison.toVersion === undefined
+    ? ""
+    : ` (${comparison.fromVersion} → ${comparison.toVersion})`;
+  return `${comparison.reason.replaceAll("-", " ")}${versions}; no input delta`;
 }
 
 function formatDryDelta(delta: { selector: string; kind?: "added" | "removed" | "changed" | "unknown"; from?: string; to?: string }): string {
   switch (delta.kind) {
     case "added": return `${delta.selector} added (${delta.to ?? ""})`;
     case "removed": return `${delta.selector} removed (was ${delta.from ?? ""})`;
-    case "unknown": return `${delta.selector} changed (details unavailable)`;
+    case "unknown": return `${delta.selector}`;
     case "changed":
     default:
       return delta.from !== undefined || delta.to !== undefined

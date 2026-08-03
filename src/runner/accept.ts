@@ -73,6 +73,7 @@ export type AcceptFailureCode =
   | "eval-not-selected"
   | "planning-failed"
   | "pair-mismatch"
+  | "batch-mismatch"
   | "carry-ineligible";
 
 export class AcceptError extends Error {
@@ -129,10 +130,27 @@ export interface AcceptedAttempt {
   fingerprint: string;
 }
 
+export interface PreparedAcceptedAttempt {
+  recordRoot: string;
+  source: AttemptHandle;
+  sourceLocator: AttemptLocator;
+  pair: PreparedRunPair;
+  sourceResult: EvalResult;
+  acceptedFrom: AcceptedResult;
+  currentFingerprint: string;
+  currentManifest: EvalManifest;
+  currentConfigHash: string;
+  currentExperiment?: EvalResult["experiment"];
+  knownEvalIds?: readonly string[];
+  name?: LocalizedText;
+  now?: () => string;
+  producer?: Producer;
+}
+
 /**
  * 从当前项目发现并接受一条历史 locator。只写一条新结果，不运行 eval、Agent 或 Sandbox。
  */
-export async function acceptLocator(options: AcceptLocatorOptions): Promise<AcceptedAttempt> {
+export async function prepareAcceptLocator(options: AcceptLocatorOptions): Promise<PreparedAcceptedAttempt> {
   const cwd = resolve(options.cwd);
   const recordRoot = resolve(options.recordRoot ?? join(cwd, ".niceeval"));
   const prior = await openRecord(recordRoot);
@@ -199,7 +217,7 @@ export async function acceptLocator(options: AcceptLocatorOptions): Promise<Acce
     config,
     targetEval.judge,
   );
-  return acceptPreparedAttempt({
+  return prepareAcceptedAttempt({
     recordRoot,
     source,
     pair,
@@ -215,8 +233,33 @@ export async function acceptLocator(options: AcceptLocatorOptions): Promise<Acce
   });
 }
 
+/** 单 locator 兼容入口：prepare 后走同一份单 snapshot commit。 */
+export async function acceptLocator(options: AcceptLocatorOptions): Promise<AcceptedAttempt> {
+  const prepared = await prepareAcceptLocator(options);
+  const accepted = await writeAcceptedAttempts([prepared]);
+  const first = accepted[0];
+  if (first === undefined) throw new Error("acceptLocator committed no attempt.");
+  return first;
+}
+
+export interface AcceptLocatorsOptions extends Omit<AcceptLocatorOptions, "locator"> {
+  locators: readonly string[];
+}
+
+/** 多 locator 入口：所有 locator 先完成 prepare，成功后只创建并封口一个 snapshot。 */
+export async function acceptLocators(options: AcceptLocatorsOptions): Promise<readonly AcceptedAttempt[]> {
+  if (options.locators.length === 0) {
+    throw new AcceptError("missing-attempt", "accept requires at least one locator.");
+  }
+  if (new Set(options.locators).size !== options.locators.length) {
+    throw new AcceptError("batch-mismatch", "accept rejects duplicate locators.");
+  }
+  const prepared = await Promise.all(options.locators.map((locator) => prepareAcceptLocator({ ...options, locator })));
+  return writeAcceptedAttempts(prepared);
+}
+
 /** 已完成当前 planning/fingerprint 的低层入口，便于 runner/测试复用且不重复 discovery。 */
-export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOptions): Promise<AcceptedAttempt> {
+export async function prepareAcceptedAttempt(options: AcceptPreparedAttemptOptions): Promise<PreparedAcceptedAttempt> {
   const { source, pair } = options;
   const sourceLocator = locatorOf(source);
   if (source.evalId !== pair.evalDef.id || source.experimentId !== pair.run.experimentId) {
@@ -255,27 +298,115 @@ export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOption
     differences,
   };
 
-  const now = (options.now ?? (() => new Date().toISOString()))();
-  const writer = createWriter(options.recordRoot, {
-    producer: options.producer ?? { name: "niceeval" },
+  return {
+    recordRoot: options.recordRoot,
+    source,
+    sourceLocator,
+    pair,
+    sourceResult,
+    acceptedFrom,
+    currentFingerprint: options.currentFingerprint,
+    currentManifest: options.currentManifest,
+    currentConfigHash: options.currentConfigHash,
+    ...(options.currentExperiment === undefined ? {} : { currentExperiment: options.currentExperiment }),
+    ...(options.knownEvalIds === undefined ? {} : { knownEvalIds: options.knownEvalIds }),
+    ...(options.name === undefined ? {} : { name: options.name }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.producer === undefined ? {} : { producer: options.producer }),
+  };
+}
+
+/** 单条低层入口保持旧 API，内部也严格走 prepare → commit。 */
+export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOptions): Promise<AcceptedAttempt> {
+  const prepared = await prepareAcceptedAttempt(options);
+  const accepted = await writeAcceptedAttempts([prepared]);
+  const first = accepted[0];
+  if (first === undefined) throw new Error("acceptPreparedAttempt committed no attempt.");
+  return first;
+}
+
+/** 已完成全部资格校验的批量 commit；调用方必须先拿到完整 prepared 列表。 */
+export async function writeAcceptedAttempts(
+  preparedAttempts: readonly PreparedAcceptedAttempt[],
+): Promise<readonly AcceptedAttempt[]> {
+  const first = preparedAttempts[0];
+  if (first === undefined) throw new AcceptError("missing-attempt", "accept requires at least one prepared locator.");
+  const experimentId = first.pair.run.experimentId;
+  if (experimentId === undefined) throw new AcceptError("pair-mismatch", "Accepted attempts require an experiment id.");
+  for (const prepared of preparedAttempts) {
+    if (prepared.recordRoot !== first.recordRoot || prepared.pair.run.experimentId !== experimentId) {
+      throw new AcceptError(
+        "batch-mismatch",
+        "All accepted locators must belong to the same record root and experiment so they can share one snapshot.",
+      );
+    }
+  }
+  const targetAttempts = new Set<string>();
+  for (const prepared of preparedAttempts) {
+    const target = `${prepared.source.evalId}|${prepared.source.result.attempt}`;
+    if (targetAttempts.has(target)) {
+      throw new AcceptError(
+        "batch-mismatch",
+        `Multiple source locators target the same current attempt ${experimentId}/${target}; choose exactly one source.`,
+      );
+    }
+    targetAttempts.add(target);
+  }
+
+  const now = (first.now ?? (() => new Date().toISOString()))();
+  const writer = createWriter(first.recordRoot, {
+    producer: first.producer ?? { name: "niceeval" },
     snapshotStartedAt: now,
   });
+  const manifests: globalThis.Record<string, EvalManifest> = {};
+  const knownEvalIds = new Set<string>();
+  for (const prepared of preparedAttempts) {
+    manifests[prepared.source.evalId] = prepared.currentManifest;
+    for (const evalId of prepared.knownEvalIds ?? []) knownEvalIds.add(evalId);
+  }
   const snapshot = await writer.run({
-    experimentId: pair.run.experimentId,
-    agent: pair.run.agent.name,
-    ...(pair.run.model !== undefined ? { model: pair.run.model } : {}),
+    experimentId,
+    agent: first.pair.run.agent.name,
+    ...(first.pair.run.model !== undefined ? { model: first.pair.run.model } : {}),
     startedAt: now,
-    configHash: options.currentConfigHash,
-    ...(options.currentExperiment !== undefined ? { experiment: options.currentExperiment } : {}),
-    ...(options.knownEvalIds?.length ? { knownEvalIds: [...options.knownEvalIds] } : {}),
-    manifests: { [source.evalId]: options.currentManifest },
-    ...(options.name !== undefined ? { name: options.name } : {}),
+    configHash: first.currentConfigHash,
+    ...(first.currentExperiment === undefined ? {} : { experiment: first.currentExperiment }),
+    ...(knownEvalIds.size === 0 ? {} : { knownEvalIds: [...knownEvalIds] }),
+    manifests,
+    ...(first.name === undefined ? {} : { name: first.name }),
   });
-  const locator = encodeAttemptLocator({
-    runId: snapshot.runId,
-    evalId: source.evalId,
-    attempt: source.result.attempt,
+  const written: Array<{ prepared: PreparedAcceptedAttempt; locator: AttemptLocator }> = [];
+  for (const prepared of preparedAttempts) {
+    const locator = encodeAttemptLocator({
+      runId: snapshot.runId,
+      evalId: prepared.source.evalId,
+      attempt: prepared.source.result.attempt,
+    });
+    await writer.writeAttemptFor(acceptedResultFor(prepared, locator, snapshot.runId));
+    written.push({ prepared, locator });
+  }
+  await snapshot.finish();
+
+  const record = await openRecord(first.recordRoot);
+  return written.map(({ prepared, locator }) => {
+    const attempt = resolveLocator(record, locator);
+    return {
+      record,
+      run: attempt.run,
+      attempt,
+      source: prepared.source,
+      locator,
+      sourceLocator: prepared.sourceLocator,
+      fingerprint: prepared.currentFingerprint,
+    };
   });
+}
+
+function acceptedResultFor(
+  prepared: PreparedAcceptedAttempt,
+  locator: AttemptLocator,
+  locatorRunId: string,
+): EvalResult {
   const {
     agent: _agent,
     model: _model,
@@ -286,8 +417,9 @@ export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOption
     fingerprint: _sourceFingerprint,
     configHash: _sourceConfigHash,
     acceptedFrom: _previousAcceptedFrom,
+    migratedFrom: _previousMigratedFrom,
     ...copied
-  } = sourceResult;
+  } = prepared.sourceResult;
   void _agent;
   void _model;
   void _experimentId;
@@ -297,34 +429,19 @@ export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOption
   void _sourceFingerprint;
   void _sourceConfigHash;
   void _previousAcceptedFrom;
-  const accepted: EvalResult = {
-    ...copied,
-    id: source.evalId,
-    experimentId: pair.run.experimentId,
-    agent: pair.run.agent.name,
-    ...(pair.run.model !== undefined ? { model: pair.run.model } : {}),
-    ...(options.currentExperiment !== undefined ? { experiment: options.currentExperiment } : {}),
-    fingerprint: options.currentFingerprint,
-    configHash: options.currentConfigHash,
-    locator,
-    locatorRunId: snapshot.runId,
-    acceptedFrom,
-  };
-  // artifactBase 已由 withArtifactBase() 设置，writer 的 carry 分支只复制 result.json，
-  // 不重新落 artifacts；它保留新 locator/locatorRunId，因此新快照寻址与旧证据寻址分离。
-  await writer.writeAttemptFor(accepted);
-  await snapshot.finish();
-
-  const record = await openRecord(options.recordRoot);
-  const attempt = resolveLocator(record, locator);
+  void _previousMigratedFrom;
   return {
-    record,
-    run: attempt.run,
-    attempt,
-    source,
+    ...copied,
+    id: prepared.source.evalId,
+    experimentId: prepared.pair.run.experimentId,
+    agent: prepared.pair.run.agent.name,
+    ...(prepared.pair.run.model === undefined ? {} : { model: prepared.pair.run.model }),
+    ...(prepared.currentExperiment === undefined ? {} : { experiment: prepared.currentExperiment }),
+    fingerprint: prepared.currentFingerprint,
+    configHash: prepared.currentConfigHash,
     locator,
-    sourceLocator,
-    fingerprint: options.currentFingerprint,
+    locatorRunId,
+    acceptedFrom: prepared.acceptedFrom,
   };
 }
 

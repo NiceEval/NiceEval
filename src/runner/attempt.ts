@@ -1635,6 +1635,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "sandbox",
   "artifactBase",
   "carriedAccepting",
+  "migratedFrom",
   "acceptedFrom",
   "artifacts",
 ] as const satisfies readonly (keyof EvalResult)[];

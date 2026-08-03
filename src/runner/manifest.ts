@@ -15,7 +15,33 @@ import {
   type ConfigFieldDelta,
 } from "./config-identity.ts";
 
-export { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
+export {
+  FINGERPRINT_ALGORITHM_VERSION,
+  FINGERPRINT_COVERAGE_VERSION,
+  LEGACY_FINGERPRINT_VERSION,
+  MANIFESTS_FILE,
+  parseRunManifests,
+  type EvalManifest,
+  type RunManifests,
+} from "../record/manifest.ts";
+
+export type FingerprintComparisonReason =
+  | "manifest-missing"
+  | "fingerprint-version-changed"
+  | "legacy-untracked-input"
+  | "fingerprint-invariant-violation";
+
+export type FingerprintComparison =
+  | {
+      readonly kind: "changed";
+      readonly deltas: readonly [FingerprintDelta, ...FingerprintDelta[]];
+    }
+  | {
+      readonly kind: "unexplained";
+      readonly reason: FingerprintComparisonReason;
+      readonly fromVersion?: number;
+      readonly toVersion?: number;
+    };
 
 /** 历史条目缺清单时源码面与数据面的合并差异:算不出就如实算不出,不按「没差异」放过、也不猜。 */
 export const OPAQUE_SELECTOR = "opaque:no-manifest";
@@ -76,6 +102,47 @@ export function manifestDeltas(
     ...faceDeltas("source", historical.source ?? {}, current.source ?? {}, shortHash),
     ...faceDeltas("data", historical.data ?? {}, current.data ?? {}, shortHash),
   ];
+}
+
+/**
+ * 指纹比较的唯一投影：相等时返回 undefined；不等时只能是带非空差异的 changed，
+ * 或带闭集原因的 unexplained。人读与 JSON 读面都消费这个结果，不能再把空差异降成
+ * 没有语义的 details unavailable。
+ */
+export function compareFingerprints(
+  historicalFingerprint: string | undefined,
+  currentFingerprint: string,
+  historical: EvalManifest | undefined,
+  current: EvalManifest,
+  historicalConfig?: globalThis.Record<string, JsonValue>,
+): FingerprintComparison | undefined {
+  if (historicalFingerprint === currentFingerprint) return undefined;
+  if (historical === undefined) {
+    return Object.freeze({ kind: "unexplained", reason: "manifest-missing" as const });
+  }
+
+  if (historical.algorithmVersion !== current.algorithmVersion || historical.coverageVersion !== current.coverageVersion) {
+    const algorithmChanged = historical.algorithmVersion !== current.algorithmVersion;
+    const legacyCoverage = historical.coverageVersion === 0 && current.coverageVersion > 0;
+    return Object.freeze({
+      kind: "unexplained" as const,
+      reason: legacyCoverage && !algorithmChanged ? "legacy-untracked-input" as const : "fingerprint-version-changed" as const,
+      fromVersion: algorithmChanged ? historical.algorithmVersion : historical.coverageVersion,
+      toVersion: algorithmChanged ? current.algorithmVersion : current.coverageVersion,
+    });
+  }
+
+  const deltas = manifestDeltas(historical, current, historicalConfig);
+  if (deltas.length > 0) {
+    const first = deltas[0];
+    if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
+    const changedDeltas: [FingerprintDelta, ...FingerprintDelta[]] = [first, ...deltas.slice(1)];
+    return Object.freeze({
+      kind: "changed" as const,
+      deltas: Object.freeze(changedDeltas),
+    });
+  }
+  return Object.freeze({ kind: "unexplained" as const, reason: "fingerprint-invariant-violation" });
 }
 
 /**

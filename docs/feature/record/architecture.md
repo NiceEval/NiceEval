@@ -536,6 +536,7 @@ interface AcceptedResult {
 }
 
 interface MigratedResult {
+  kind: "opaque-carry-epoch";
   fingerprint: string;
   algorithmVersion: number;
   coverageVersion: number;

@@ -8,19 +8,27 @@ import { join } from "node:path";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import type { AttemptHandle, Run } from "../record/types.ts";
-import { acceptPreparedAttempt, AcceptError } from "./accept.ts";
+import {
+  acceptPreparedAttempt,
+  AcceptError,
+  prepareAcceptedAttempt,
+  writeAcceptedAttempts,
+} from "./accept.ts";
 import type { AgentRun, DiscoveredEval, EvalResult } from "./types.ts";
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
-function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan: unknown }> = {}) {
+function makePair(
+  over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan: unknown }> = {},
+  evalId = "e",
+) {
   const run = {
     agent: { name: "current-agent" },
     flags: {},
     attempts: 1,
     earlyExit: false,
-    selectedEvalIds: ["e"],
+    selectedEvalIds: [evalId],
     experimentId: "exp",
     experimentBaseDir: "/project",
     experimentSourcePath: "/project/experiments/exp.ts",
@@ -28,7 +36,7 @@ function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan
     ...(over.timeoutMs === undefined ? {} : { timeoutMs: over.timeoutMs }),
   } as unknown as AgentRun;
   const evalDef = {
-    id: "e",
+    id: evalId,
     ...(over.timeoutMs === undefined ? {} : { timeoutMs: undefined }),
   } as unknown as DiscoveredEval;
   return {
@@ -41,6 +49,7 @@ function makePair(over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan
 }
 
 function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle {
+  const evalId = over.id ?? "e";
   const run = {
     runId: "old-run",
     experimentId: "exp",
@@ -53,7 +62,7 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
     dir: root,
   } as unknown as Run;
   const result = {
-    id: "e",
+    id: evalId,
     experimentId: "exp",
     agent: "old-agent",
     verdict: "passed",
@@ -67,12 +76,12 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
     ...over,
   } as EvalResult;
   const source: AttemptHandle = {
-    evalId: "e",
+    evalId,
     experimentId: "exp",
     result,
     ref: { run: "exp/old-run", attempt: "e/a0" },
     run,
-    locator: encodeAttemptLocator({ runId: "old-run", evalId: "e", attempt: 0 }),
+    locator: encodeAttemptLocator({ runId: "old-run", evalId, attempt: result.attempt }),
     carried: false,
     evidenceState: "local",
     commands: async () => null,
@@ -83,7 +92,7 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
     diff: async () => null,
     sources: async () => null,
   };
-  run.evals = [{ id: "e", attempts: [source] }];
+  run.evals = [{ id: evalId, attempts: [source] }];
   run.attempts = [source];
   return source;
 }
@@ -122,7 +131,7 @@ async function accept(source: AttemptHandle, pair = makePair(), configTimeoutMs?
     source,
     pair,
     currentFingerprint: "new-fingerprint",
-    currentManifest: { config: {}, source: {}, data: {} },
+    currentManifest: { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} },
     currentConfigHash: "new-config",
     ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
     now: () => "2026-01-02T00:00:00.000Z",
@@ -193,6 +202,81 @@ describe("acceptPreparedAttempt", () => {
       name: "AcceptError",
       code: "carry-ineligible",
       message: expect.stringMatching(/sandbox\.custom-provider-opaque.*sandbox\.image-unresolved/),
+    });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("多条 prepared attempt 成功时只写一个 snapshot且逐条保留 acceptedFrom", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-batch-success-"));
+    roots.push(root);
+    const currentManifest = { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} };
+    const sources = [makeSource(root, { id: "e" }), makeSource(root, { id: "f" })];
+    const prepared = await Promise.all(sources.map((source) => prepareAcceptedAttempt({
+      recordRoot: root,
+      source,
+      pair: makePair({}, source.evalId),
+      currentFingerprint: `current-${source.evalId}`,
+      currentManifest,
+      currentConfigHash: `config-${source.evalId}`,
+      knownEvalIds: ["e", "f"],
+      now: () => "2026-01-02T00:00:00.000Z",
+    })));
+
+    const accepted = await writeAcceptedAttempts(prepared);
+
+    expect(accepted).toHaveLength(2);
+    expect(new Set(accepted.map((entry) => entry.run.runId)).size).toBe(1);
+    expect(accepted.map((entry) => entry.attempt.evalId)).toEqual(["e", "f"]);
+    expect(accepted.map((entry) => entry.attempt.result.acceptedFrom?.locator)).toEqual(
+      accepted.map((entry) => entry.sourceLocator),
+    );
+    expect(accepted[0]!.record.experiments[0]!.runs).toHaveLength(1);
+  });
+
+  it("批量 prepare 中任一条失败时不创建 snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-batch-preflight-"));
+    roots.push(root);
+    const currentManifest = { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} };
+    const valid = makeSource(root, { id: "e" });
+    const invalid = makeSource(root, { id: "f", verdict: "errored" });
+
+    await expect(Promise.all([
+      prepareAcceptedAttempt({
+        recordRoot: root,
+        source: valid,
+        pair: makePair({}, "e"),
+        currentFingerprint: "current-e",
+        currentManifest,
+        currentConfigHash: "config-e",
+      }),
+      prepareAcceptedAttempt({
+        recordRoot: root,
+        source: invalid,
+        pair: makePair({}, "f"),
+        currentFingerprint: "current-f",
+        currentManifest,
+        currentConfigHash: "config-f",
+      }),
+    ])).rejects.toMatchObject({ name: "AcceptError", code: "not-terminal" });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("批量来源不能重锚到同一个当前 attempt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-batch-target-duplicate-"));
+    roots.push(root);
+    const currentManifest = { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} };
+    const prepared = await Promise.all([makeSource(root), makeSource(root)].map((source) => prepareAcceptedAttempt({
+      recordRoot: root,
+      source,
+      pair: makePair(),
+      currentFingerprint: "current",
+      currentManifest,
+      currentConfigHash: "config",
+    })));
+
+    await expect(writeAcceptedAttempts(prepared)).rejects.toMatchObject({
+      name: "AcceptError",
+      code: "batch-mismatch",
     });
     expect(await readdir(root)).toEqual([]);
   });

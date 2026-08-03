@@ -77,7 +77,7 @@ import {
 import { normalizeSandboxPaths } from "../sandbox/paths.ts";
 import { Effect, Option } from "effect";
 import { discoverEval, type AgentRun as CoreAgentRun } from "./types.ts";
-import type { DiagnosticRecord, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
+import type { DiagnosticRecord, FingerprintMigration, RunFeedbackPlan, RunFeedbackState, RunOptions } from "./types.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { prepareRunSandboxes, preparedPairsByKey, runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import type {
@@ -114,9 +114,10 @@ function defineSandboxAgent(
 type AgentRun = Omit<CoreAgentRun, "experimentId" | "experimentBaseDir" | "experimentSourcePath"> &
   Partial<Pick<CoreAgentRun, "experimentId" | "experimentBaseDir" | "experimentSourcePath">>;
 type EvalResult = Omit<CoreEvalResult, "evidenceCoverage"> & Partial<Pick<CoreEvalResult, "evidenceCoverage">>;
-type CarryPlan = Omit<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult" | "carriedResults"> &
+type CarryPlan = Omit<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult" | "carriedResults" | "migratedFromByResult"> &
   Partial<Pick<CoreCarryPlan, "preparedPairsByKey" | "plannedConfigHashes" | "carriedAcceptingByResult">> & {
     carriedResults: EvalResult[];
+    migratedFromByResult?: ReadonlyMap<EvalResult, FingerprintMigration>;
   };
 
 function completeAgentRun(run: AgentRun): CoreAgentRun {
@@ -428,10 +429,20 @@ async function completeCarryPlan(
     carriedAttemptsByKey: new Map(),
     carriedResults: [],
     carriedAcceptingByResult: new Map(),
+    migratedFromByResult: new Map(),
     dispatchByKey: new Map(),
     manifestsByKey,
     availableDeltas: [],
   };
+  const carriedResults = partial.carriedResults.map(completeEvalResult);
+  const migratedFromByResult = new Map(
+    [...(partial.migratedFromByResult ?? [])].flatMap(([source, migration]) => {
+      const target = carriedResults.find((candidate) =>
+        candidate.experimentId === source.experimentId && candidate.id === source.id && candidate.attempt === source.attempt,
+      );
+      return target === undefined ? [] : [[target, migration] as const];
+    }),
+  );
   return Object.assign(defaults, partial, {
     preparedPairsByKey: new Map([...defaults.preparedPairsByKey, ...(partial.preparedPairsByKey ?? [])]),
     plannedConfigHashes: new Map([...defaults.plannedConfigHashes, ...(partial.plannedConfigHashes ?? [])]),
@@ -441,8 +452,9 @@ async function completeCarryPlan(
       ...defaults.carriedAcceptingByResult,
       ...(partial.carriedAcceptingByResult ?? []),
     ]),
+    migratedFromByResult,
     manifestsByKey: new Map([...defaults.manifestsByKey, ...partial.manifestsByKey]),
-    carriedResults: partial.carriedResults.map(completeEvalResult),
+    carriedResults,
   });
 }
 
@@ -846,6 +858,12 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       assertions: [],
       locator: staleLocator,
       artifactBase: `${experimentId}/some-old-run/${evalId}/a0`,
+      acceptedFrom: {
+        locator: staleLocator,
+        fingerprint: "legacy-opaque-fingerprint",
+        acceptedFingerprint: "old-current-fingerprint",
+        differences: [],
+      },
     };
     // eval 的 test() 会抛错——如果携带 / 首过即停判断漏了这条、真的调度了一次新 attempt,
     // 这里会产出一条 errored 的重复结果,而不是静默漏测。
@@ -865,13 +883,19 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
 
     const { summary, root } = await run([evalDef], [agentRun], {
       carryPlan: {
-        plannedFingerprints: new Map(),
+        plannedFingerprints: new Map([[runPairKey(experimentId, evalId), "current-deterministic-fingerprint"]]),
         acceptableFingerprints: new Map(),
         manifestsByKey: new Map(),
         dispatchByKey: new Map(),
         availableDeltas: [],
         carriedAttemptsByKey: new Map([[runPairKey(experimentId, evalId), new Set([0])]]),
         carriedResults: [carried],
+        migratedFromByResult: new Map([[carried, {
+          kind: "opaque-carry-epoch",
+          fingerprint: "legacy-opaque-fingerprint",
+          algorithmVersion: 0,
+          coverageVersion: 0,
+        }]]),
       },
     });
 
@@ -879,6 +903,14 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     expect(matches).toHaveLength(1); // 没有额外调度出一条新 attempt
     expect(matches[0]!.verdict).toBe("passed"); // 是携带的那份,不是抛错的新跑
     expect(matches[0]!.locator).toBe(staleLocator); // 原样透传,run.ts 没有碰过它
+    expect(matches[0]!.fingerprint).toBe("current-deterministic-fingerprint");
+    expect(matches[0]!.migratedFrom).toEqual({
+      kind: "opaque-carry-epoch",
+      fingerprint: "legacy-opaque-fingerprint",
+      algorithmVersion: 0,
+      coverageVersion: 0,
+    });
+    expect(matches[0]!.acceptedFrom).toBeUndefined();
 
     // 反证:如果按本次 invocation 的 snapshotStartedAt 重算,会得到不同的字符串——
     // 证明确实是原样透传,不是巧合相等。

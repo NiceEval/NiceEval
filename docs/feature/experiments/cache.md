@@ -285,7 +285,7 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每条来源对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
 接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。`--all-stale` 不存在：范围会随当前发现结果漂移，不能代表逐条授权。
-多个 locator 只是把多条明确授权合成一次原子写盘，不把共同差异扩散到未列出的结果。
+多个 locator 必须属于同一 experiment，才能合成该 experiment 的一个原子 snapshot；跨 experiment 时按 experiment 分开调用。它不把共同差异扩散到未列出的结果。
 
 写盘前先对全部 locator 验证下列条件:
 

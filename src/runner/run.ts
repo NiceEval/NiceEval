@@ -41,6 +41,7 @@ import type {
   Attempt,
   AttemptError,
   ExperimentHookContext,
+  FingerprintMigration,
   LifecyclePhase,
   AttemptRef,
   RunOptions,
@@ -281,8 +282,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     carriedAttemptsByKey,
     carriedResults: planCarriedResults,
     carriedAcceptingByResult,
+    migratedFromByResult: plannedMigratedFromByResult,
     manifestsByKey,
   } = carryPlan;
+  const migratedFromByResult = plannedMigratedFromByResult ?? new Map<EvalResult, FingerprintMigration>();
   // CarryPlan 是冻结快照；派发重查期间新发现的 accept 留痕进入独立运行状态，绝不回写计划。
   const runtimeCarriedAcceptingByResult = new Map(carriedAcceptingByResult);
   if (preparedPairsByKey === undefined) {
@@ -308,16 +311,29 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const key = runPairKey(r.experimentId, r.id);
     const fp = plannedFingerprints.get(key);
     const configHash = plannedConfigHashes.get(key);
-    return fp === undefined
-      ? r
-      : {
-          ...r,
-          fingerprint: fp,
-          configHash,
-          ...(runtimeCarriedAcceptingByResult.has(r)
-            ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
-            : {}),
-        };
+    const migration = migratedFromByResult.get(r);
+    if (fp === undefined) return r;
+    if (migration !== undefined) {
+      const { acceptedFrom: _acceptedFrom, ...withoutAcceptedFrom } = r;
+      void _acceptedFrom;
+      return {
+        ...withoutAcceptedFrom,
+        fingerprint: fp,
+        configHash,
+        migratedFrom: migration,
+        ...(runtimeCarriedAcceptingByResult.has(r)
+          ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
+          : {}),
+      };
+    }
+    return {
+      ...r,
+      fingerprint: fp,
+      configHash,
+      ...(runtimeCarriedAcceptingByResult.has(r)
+        ? { carriedAccepting: [...(runtimeCarriedAcceptingByResult.get(r) ?? [])] }
+        : {}),
+    };
   };
   const carriedResults = planCarriedResults.map(restampCarried);
 

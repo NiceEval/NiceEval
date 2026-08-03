@@ -1,19 +1,18 @@
 // 指纹缓存:用 (eval 源码 + 运行配置) 的稳定哈希标识一次 attempt 的输入。
 // 上次 passed 且指纹未变的 (experimentId, evalId) 组合可以直接携入,不再重跑。
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
 import {
   linkedRunCarryBlockers,
-  linkedRunCarryEligible,
   liveSandboxPlanningServices,
   type SandboxCarryBlocker,
 } from "../sandbox/plan.ts";
-import type { DiscoveredEval, EvalResult } from "../types.ts";
-import type { AgentRun } from "./types.ts";
+import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
+import type { AgentRun, FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
   prepareRunSandboxes,
@@ -23,11 +22,17 @@ import {
   type SandboxRunPlanningError,
 } from "./sandbox-selection.ts";
 import {
+  compareFingerprints,
   manifestDeltas,
   OPAQUE_SELECTOR,
   type EvalManifest,
+  type FingerprintComparison,
   type FingerprintDelta,
 } from "./manifest.ts";
+import {
+  FINGERPRINT_ALGORITHM_VERSION,
+  FINGERPRINT_COVERAGE_VERSION,
+} from "../record/manifest.ts";
 import {
   configIdentityPaths,
   configIdentityForRun,
@@ -69,27 +74,23 @@ export type FingerprintProjection =
   | {
       readonly _tag: "Current";
       readonly identity: ConfigIdentity;
-      readonly carryEpoch: string;
     }
   | {
       readonly _tag: "Counterfactual";
       readonly identity: ConfigIdentity;
-      readonly carryEpoch: string;
     };
 
 function currentFingerprintProjection(
   pair: PreparedRunPair,
   identity: ConfigIdentity = configIdentityForRun(pair.run, pair.plan),
-  carryEpoch: string = randomUUID(),
 ): FingerprintProjection {
-  return Object.freeze({ _tag: "Current", identity, carryEpoch });
+  return Object.freeze({ _tag: "Current", identity });
 }
 
 function counterfactualFingerprintProjection(
   identity: ConfigIdentity,
-  carryEpoch: string,
 ): FingerprintProjection {
-  return Object.freeze({ _tag: "Counterfactual", identity, carryEpoch });
+  return Object.freeze({ _tag: "Counterfactual", identity });
 }
 
 /**
@@ -113,7 +114,7 @@ async function fingerprintPreparedPair(
   sourceCache?: Map<string, Promise<string>>,
   projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
-  const { evalDef, run, plan } = pair;
+  const { evalDef, run } = pair;
   const identity = projection.identity;
   const configHash = hashConfigIdentity(identity);
   const source = await sourceClosure(evalDef, sourceCache);
@@ -149,9 +150,6 @@ async function fingerprintPreparedPair(
       tags: evalDef.tags ?? [],
       metadata: evalDef.metadata ?? {},
     },
-    ...(plan._tag === "Sandbox" && !linkedRunCarryEligible(plan)
-      ? { sandboxCommandCarryEpoch: projection.carryEpoch }
-      : {}),
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
     // 一次性作废,而它们的判据面本来什么都没变。
@@ -165,6 +163,8 @@ async function fingerprintPreparedPair(
   //
   // 清单与哈希同一份原料:源码面把内容换成内容哈希,数据面直接沿用已经算好的哈希/内容。
   const manifest: EvalManifest = Object.freeze({
+    algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+    coverageVersion: FINGERPRINT_COVERAGE_VERSION,
     config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
     plan: pair.identity,
     source: Object.freeze(Object.fromEntries(source.map(([path, content]) => [path, hashText(content)]))),
@@ -270,8 +270,8 @@ export interface DispatchGroup {
   readonly reason: DispatchReason;
   /** 这组原因覆盖的 attempt 序号(0-based,升序)。 */
   readonly attempts: readonly number[];
-  /** 指纹门的差异明细(manifest 相减);历史侧缺清单时是唯一一条 `opaque:no-manifest`。 */
-  readonly deltas?: readonly FingerprintDelta[];
+  /** 指纹门的比较解释；不等时只能是非空 changed 或带闭集原因的 unexplained。 */
+  readonly comparison?: FingerprintComparison;
   /** 当前 pair 的跨 Run 携带资格被阻断时，来自 linked pair/provider plan 的具体原因。 */
   readonly blockers?: readonly SandboxCarryBlocker[];
 }
@@ -302,6 +302,8 @@ export interface CarryPlan {
   readonly carriedResults: readonly EvalResult[];
   /** 仅 `--accept` 授权放行的历史条目 → 它跨过的那几条差异(留痕落到条目的 `carriedAccepting`)。 */
   readonly carriedAcceptingByResult: ReadonlyMap<EvalResult, readonly FingerprintDelta[]>;
+  /** 已知旧 opaque carryEpoch → 当前确定性指纹的自动迁移来源。 */
+  readonly migratedFromByResult: ReadonlyMap<EvalResult, FingerprintMigration>;
   /**
    * `cacheKey(run, evalId)` → 本行要派发的 attempt 按未携带原因分组(升序、同一门聚一组)。
    * 全部携带的行不出现在表里。`--dry` 的逐条作废原因读它。
@@ -465,6 +467,51 @@ export function carriableAttempts(
   return out;
 }
 
+/** 只认旧版本、等价 manifest 与 plan opaque marker 三项同时成立的已知迁移路径。 */
+function knownOpaqueCarryEpochMigration(
+  fingerprint: string | undefined,
+  historical: EvalManifest | undefined,
+  current: EvalManifest,
+  historicalConfig?: globalThis.Record<string, JsonValue>,
+): FingerprintMigration | undefined {
+  if (fingerprint === undefined || fingerprint.length === 0 || historical === undefined) return undefined;
+  if (historical.algorithmVersion !== 0 || historical.coverageVersion !== 0) return undefined;
+  if (
+    current.algorithmVersion !== FINGERPRINT_ALGORITHM_VERSION ||
+    current.coverageVersion !== FINGERPRINT_COVERAGE_VERSION
+  ) return undefined;
+  if (manifestDeltas(historical, current, historicalConfig).length > 0) return undefined;
+  if (!containsOpaquePlanMarker(current.plan)) return undefined;
+  return Object.freeze({
+    kind: "opaque-carry-epoch" as const,
+    fingerprint,
+    algorithmVersion: historical.algorithmVersion,
+    coverageVersion: historical.coverageVersion,
+  });
+}
+
+function containsOpaquePlanMarker(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some((entry) => containsOpaquePlanMarker(entry));
+  if (!isRecord(value)) return false;
+  if (
+    value.kind === "opaque" &&
+    isPlanOwner(value.owner) &&
+    typeof value.index === "number" &&
+    (value.phase === undefined || value.phase === "setup" || value.phase === "teardown")
+  ) return true;
+  return Object.values(value).some((entry) => containsOpaquePlanMarker(entry));
+}
+
+function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPlanOwner(value: unknown): boolean {
+  return isRecord(value) &&
+    (value.kind === "eval" || value.kind === "experiment") &&
+    typeof value.id === "string";
+}
+
 /**
  * 算出这一批 (agentRun × eval) 的指纹,并据此从 priorResults 里筛出可以携入(跳过重跑)的结果。
  * run.ts 与 cli.ts(live 表格构建)必须共用这同一份计算 —— 否则两边一旦对"哪些携入"的判断
@@ -517,9 +564,7 @@ async function planCarryPrepared(
   // 组合,与 plannedFingerprints 的 key 语义一致。
   const plannedTimeoutMs = new Map<string, number>();
   const acceptable = new Map<string, Set<string>>();
-  // 同一次携带规划内保持稳定；下一次 Invocation 必然变化，使无法解析 FROM digest 的环境
-  // 永不命中历史指纹，同时不妨碍本次 fresh result 使用同一个计划指纹落盘。
-  const carryEpoch = randomUUID();
+  // 当前指纹是确定性的；旧 opaque carryEpoch 只通过下面的显式迁移判据被识别。
   // key → 这个组合的 (run, evalDef);下面三趟(反事实重算、携带判定、逐条原因)都按 key 取回
   // 同一对,不再各自 find 一遍。
   const entries = new Map<string, {
@@ -541,7 +586,7 @@ async function planCarryPrepared(
           const { fingerprint: fp, manifest } = await fingerprintWithManifest(
             pair,
             sourceCache,
-            currentFingerprintProjection(pair, identity, carryEpoch),
+            currentFingerprintProjection(pair, identity),
           );
           plannedFingerprints.set(key, fp);
           manifestsByKey.set(key, manifest);
@@ -566,6 +611,8 @@ async function planCarryPrepared(
   // 数据面算不出,合并成一条 `opaque:no-manifest` 由人显式采信;配置面落盘在 `run.json`,
   // 从条目重建后照常给具名差异。
   const deltasByResult = new Map<EvalResult, readonly FingerprintDelta[]>();
+  const comparisonByResult = new Map<EvalResult, FingerprintComparison>();
+  const migratedFromByResult = new Map<EvalResult, FingerprintMigration>();
   const availableBySelector = new Map<string, FingerprintDelta>();
   for (const [key, priors] of priorsByKey) {
     const current = manifestsByKey.get(key);
@@ -573,13 +620,38 @@ async function planCarryPrepared(
       throw new Error(`Missing current manifest for ${JSON.stringify(key)}.`);
     }
     for (const prior of priors) {
-      if (prior.fingerprint !== undefined && prior.fingerprint === plannedFingerprints.get(key)) continue;
       const priorIdentity = configIdentityFromResult(prior);
-      const deltas = manifestDeltas(
-        options.priorManifests?.get(key),
+      const historical = options.priorManifests?.get(key);
+      const historicalConfig = priorIdentity === undefined
+        ? undefined
+        : Object.fromEntries(configIdentityPaths(priorIdentity));
+      const comparison = compareFingerprints(
+        prior.fingerprint,
+        plannedFingerprints.get(key)!,
+        historical,
         current,
-        priorIdentity === undefined ? undefined : Object.fromEntries(configIdentityPaths(priorIdentity)),
+        historicalConfig,
       );
+      if (comparison === undefined) continue;
+      const migration = knownOpaqueCarryEpochMigration(
+        prior.fingerprint,
+        historical,
+        current,
+        historicalConfig,
+      );
+      if (migration !== undefined) {
+        const acceptableFingerprints = acceptable.get(key);
+        if (acceptableFingerprints === undefined) {
+          throw new Error(`Missing acceptable fingerprint set for ${JSON.stringify(key)}.`);
+        }
+        acceptableFingerprints.add(prior.fingerprint!);
+        migratedFromByResult.set(prior, migration);
+        continue;
+      }
+      comparisonByResult.set(prior, comparison);
+      const deltas = comparison.kind === "changed"
+        ? comparison.deltas
+        : manifestDeltas(historical, current, historicalConfig);
       if (deltas.length === 0) continue;
       deltasByResult.set(prior, deltas);
       for (const delta of deltas) {
@@ -621,7 +693,7 @@ async function planCarryPrepared(
         const fp = await computeFingerprint(
           pair,
           sourceCache,
-          counterfactualFingerprintProjection(counterfactual, carryEpoch),
+          counterfactualFingerprintProjection(counterfactual),
         );
         const acceptedFingerprints = acceptable.get(key);
         if (acceptedFingerprints === undefined) {
@@ -684,7 +756,7 @@ async function planCarryPrepared(
       gate: CarryGate;
       reason: DispatchReason;
       attempts: number[];
-      deltas?: readonly FingerprintDelta[];
+      comparison?: FingerprintComparison;
       blockers?: readonly SandboxCarryBlocker[];
     };
     const groups: MutableDispatchGroup[] = [];
@@ -731,8 +803,8 @@ async function planCarryPrepared(
       let group = indexOfGroup.get(groupKey);
       if (group === undefined) {
         group = { gate: blocked.gate, reason: blocked.reason, attempts: [] };
-        const deltas = prior !== undefined && blocked.gate === "fingerprint" ? deltasByResult.get(prior) : undefined;
-        if (deltas !== undefined && deltas.length > 0) group.deltas = deltas;
+        const comparison = prior !== undefined && blocked.gate === "fingerprint" ? comparisonByResult.get(prior) : undefined;
+        if (comparison !== undefined) group.comparison = comparison;
         indexOfGroup.set(groupKey, group);
         groups.push(group);
       }
@@ -742,7 +814,7 @@ async function planCarryPrepared(
       dispatchByKey.set(key, Object.freeze(groups.map((group) => Object.freeze({
         ...group,
         attempts: Object.freeze([...group.attempts]),
-        ...(group.deltas === undefined ? {} : { deltas: Object.freeze([...group.deltas]) }),
+        ...(group.comparison === undefined ? {} : { comparison: freezeFingerprintComparison(group.comparison) }),
         ...(group.blockers === undefined ? {} : { blockers: Object.freeze([...group.blockers]) }),
       }))));
     }
@@ -763,6 +835,9 @@ async function planCarryPrepared(
     carriedResults: Object.freeze([...carriedResults]),
     carriedAcceptingByResult: readonlyMapSnapshot(
       [...carriedAcceptingByResult].map(([result, deltas]) => [result, Object.freeze([...deltas])] as const),
+    ),
+    migratedFromByResult: readonlyMapSnapshot(
+      [...migratedFromByResult].map(([result, migration]) => [result, migration] as const),
     ),
     dispatchByKey: readonlyMapSnapshot(dispatchByKey),
     manifestsByKey: readonlyMapSnapshot(manifestsByKey),
@@ -803,6 +878,19 @@ function readonlySetSnapshot<Value>(values: Iterable<Value>): ReadonlySet<Value>
     [Symbol.iterator]: () => snapshot[Symbol.iterator](),
   };
   return Object.freeze(view);
+}
+
+function freezeFingerprintComparison(comparison: FingerprintComparison): FingerprintComparison {
+  if (comparison.kind === "changed") {
+    const first = comparison.deltas[0];
+    if (first === undefined) throw new Error("A changed fingerprint comparison requires at least one delta.");
+    const deltas: [FingerprintDelta, ...FingerprintDelta[]] = [first, ...comparison.deltas.slice(1)];
+    return Object.freeze({
+      kind: "changed" as const,
+      deltas: Object.freeze(deltas),
+    });
+  }
+  return Object.freeze({ ...comparison });
 }
 
 function hash(value: unknown): string {

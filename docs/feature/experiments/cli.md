@@ -121,7 +121,7 @@ niceeval accept @a1b2c3d4
 niceeval accept @a1b2c3d4 @e5f6g7h8
 ```
 
-命令先验证全部 locator。任一条失败时零写入；全部通过后写一个 snapshot，并逐条打印来源 locator、新 locator 与当前指纹摘要。`exp --accept`、selector 参数与 `accept --all-stale` 都不存在。
+同一条命令里的 locator 必须属于同一 experiment。命令先验证全部 locator；任一条失败时零写入，全部通过后写一个 snapshot，并逐条打印来源 locator、新 locator 与当前指纹摘要。跨 experiment 时分开调用。`exp --accept`、selector 参数与 `accept --all-stale` 都不存在。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 

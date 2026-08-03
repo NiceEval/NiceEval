@@ -23,7 +23,14 @@ import {
   planCarry as planCarryEffect,
   type CarryPlan,
 } from "./fingerprint.ts";
-import { manifestDeltas, type EvalManifest } from "./manifest.ts";
+import {
+  compareFingerprints,
+  FINGERPRINT_ALGORITHM_VERSION,
+  FINGERPRINT_COVERAGE_VERSION,
+  manifestDeltas,
+  type EvalManifest,
+} from "./manifest.ts";
+import { parseRunManifests } from "../record/manifest.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { discoverEval, type AgentRun, type DiscoveredEval } from "./types.ts";
 import type { EvalResult, JudgeConfig } from "../types.ts";
@@ -147,6 +154,71 @@ async function fingerprintWithManifestFor(evalDef: DiscoveredEval, run: AgentRun
 async function configHashFor(evalDef: DiscoveredEval, run: AgentRun): Promise<string> {
   return computeConfigHash(await preparedPair(evalDef, run));
 }
+
+describe("fingerprint manifest comparison", () => {
+  it("新清单持久化独立的 algorithm/coverage 版本", async () => {
+    const { manifest } = await fingerprintWithManifestFor(makeEval("e"), makeRun("exp", ["e"], 1));
+
+    expect(manifest.algorithmVersion).toBe(FINGERPRINT_ALGORITHM_VERSION);
+    expect(manifest.coverageVersion).toBe(FINGERPRINT_COVERAGE_VERSION);
+  });
+
+  it("旧清单缺少版本字段时按 legacy 0 读取", () => {
+    const manifests = parseRunManifests({
+      e: { config: {}, source: {}, data: {} },
+    });
+
+    expect(manifests.e).toMatchObject({ algorithmVersion: 0, coverageVersion: 0 });
+  });
+
+  it("相同版本有具名差异时产出非空 changed comparison", () => {
+    const historical: EvalManifest = {
+      algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+      coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+      config: { model: "old" },
+      source: {},
+      data: {},
+    };
+    const current: EvalManifest = { ...historical, config: { model: "new" } };
+
+    expect(compareFingerprints("old", "new", historical, current)).toEqual({
+      kind: "changed",
+      deltas: [{ _tag: "Changed", selector: "config:model", from: "old", to: "new" }],
+    });
+  });
+
+  it("manifestDeltas 为空但 fingerprint 不同时产出 unexplained", () => {
+    const manifest: EvalManifest = {
+      algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+      coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+      config: {},
+      source: {},
+      data: {},
+    };
+
+    expect(compareFingerprints("old", "new", manifest, manifest)).toEqual({
+      kind: "unexplained",
+      reason: "fingerprint-invariant-violation",
+    });
+  });
+
+  it("版本不同时产出闭集的 fingerprint-version-changed reason", () => {
+    const current: EvalManifest = {
+      algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
+      coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+      config: {},
+      source: {},
+      data: {},
+    };
+
+    expect(compareFingerprints("old", "new", { ...current, algorithmVersion: 0, coverageVersion: 0 }, current)).toEqual({
+      kind: "unexplained",
+      reason: "fingerprint-version-changed",
+      fromVersion: 0,
+      toVersion: FINGERPRINT_ALGORITHM_VERSION,
+    });
+  });
+});
 
 describe("按需构建进入指纹", () => {
   it("Dockerfile context 内容变化会改变 fingerprint，阻止携带旧环境结果", async () => {
@@ -715,10 +787,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         gate: "fingerprint",
         reason: "stale",
         attempts: [0],
-        deltas: [
-          { _tag: "Changed", selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" },
-          { _tag: "Unknown", selector: "opaque:no-manifest" },
-        ],
+        comparison: { kind: "unexplained", reason: "manifest-missing" },
       },
     ]);
 
@@ -855,7 +924,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
         gate: "fingerprint",
         reason: "stale",
         attempts: [2],
-        deltas: [{ _tag: "Unknown", selector: "opaque:no-manifest" }],
+        comparison: { kind: "unexplained", reason: "manifest-missing" },
       },
       { gate: "missing", reason: "new", attempts: [3] },
     ]);
@@ -909,6 +978,67 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     ]);
   });
 
+  it("只迁移 v0 opaque carryEpoch 到当前确定性指纹并保存来源", async () => {
+    const opaqueCommand = async (): Promise<void> => {};
+    const evalDef = makeEval("opaque", {
+      sandbox: sandboxFactories.dockerImageSandbox({ image: `node@sha256:${"a".repeat(64)}` })
+        .prepare(opaqueCommand),
+    });
+    const run = makeSandboxRun("exp", ["opaque"], 1);
+    const current = await fingerprintWithManifestFor(evalDef, run);
+    const legacyManifest: EvalManifest = {
+      ...current.manifest,
+      algorithmVersion: 0,
+      coverageVersion: 0,
+    };
+    const prior = result({ id: "opaque", attempt: 0, verdict: "passed", fingerprint: "legacy-opaque-fingerprint" });
+
+    const plan = await planCarry([evalDef], [run], [prior], undefined, {
+      priorManifests: new Map([["exp|opaque", legacyManifest]]),
+    });
+
+    expect([...((plan.carriedAttemptsByKey.get("exp|opaque")) ?? [])]).toEqual([0]);
+    expect(plan.dispatchByKey.get("exp|opaque")).toBeUndefined();
+    expect(plan.migratedFromByResult?.get(prior)).toEqual({
+      kind: "opaque-carry-epoch",
+      fingerprint: "legacy-opaque-fingerprint",
+      algorithmVersion: 0,
+      coverageVersion: 0,
+    });
+  });
+
+  it("其它 v0 manifest 即使等价也不自动放行", async () => {
+    const evalDef = makeEval("e");
+    const run = makeRun("exp", ["e"], 1);
+    const current = await fingerprintWithManifestFor(evalDef, run);
+    const legacyManifest: EvalManifest = {
+      ...current.manifest,
+      algorithmVersion: 0,
+      coverageVersion: 0,
+    };
+    const prior = result({ id: "e", attempt: 0, verdict: "passed", fingerprint: "legacy-v0-fingerprint" });
+
+    const plan = await planCarry([evalDef], [run], [prior], undefined, {
+      priorManifests: new Map([["exp|e", legacyManifest]]),
+    });
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+    expect(plan.migratedFromByResult?.get(prior)).toBeUndefined();
+    expect(plan.dispatchByKey.get("exp|e")).toEqual([
+      {
+        gate: "fingerprint",
+        reason: "stale",
+        attempts: [0],
+        comparison: {
+          kind: "unexplained",
+          reason: "fingerprint-version-changed",
+          fromVersion: 0,
+          toVersion: FINGERPRINT_ALGORITHM_VERSION,
+        },
+      },
+    ]);
+  });
+
   it("有历史但格式读不动的坐标标 incompatible,不与真没跑过的 new 混为一谈", async () => {
     const evals = [makeEval("e"), makeEval("f")];
     const run = makeRun("exp", ["e", "f"], 1, 600_000);
@@ -946,7 +1076,10 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
         gate: "fingerprint",
         reason: "stale",
         attempts: [0],
-        deltas: [{ _tag: "Removed", selector: "config:flags.endpoint", from: "https://old.example" }],
+        comparison: {
+          kind: "changed",
+          deltas: [{ _tag: "Removed", selector: "config:flags.endpoint", from: "https://old.example" }],
+        },
       },
     ]);
   });

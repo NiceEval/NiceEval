@@ -261,12 +261,14 @@ export async function loadCarryInputs(
   root = ".niceeval",
 ): Promise<{
   results: EvalResult[];
+  evidenceStatesByAttempt: Map<string, "local" | "borrowed" | "dangling">;
   flagBagsByExperiment: Map<string, globalThis.Record<string, JsonValue>[]>;
   manifestsByEvalKey: Map<string, EvalManifest>;
   incompatibleHistory: Set<string>;
 }> {
   const results = await openRecord(root);
   const out: EvalResult[] = [];
+  const evidenceStatesByAttempt = new Map<string, "local" | "borrowed" | "dangling">();
   const flagBagsByExperiment = new Map<string, globalThis.Record<string, JsonValue>[]>();
   for (const exp of results.experiments) {
     const bags: globalThis.Record<string, JsonValue>[] = [];
@@ -291,7 +293,13 @@ export async function loadCarryInputs(
       for (const ev of run.evals) {
         if (claimed.has(ev.id)) continue;
         takenThisSnapshot.add(ev.id);
-        for (const attempt of ev.attempts) out.push(withArtifactBase(attempt));
+        for (const attempt of ev.attempts) {
+          out.push(withArtifactBase(attempt));
+          evidenceStatesByAttempt.set(
+            `${run.experimentId}|${ev.id}|${attempt.result.attempt}`,
+            attempt.evidenceState,
+          );
+        }
       }
       // 清单只读这一份 Run 的:结果取自它,解释也必须取自它。有条目被取用才读盘。
       if (takenThisSnapshot.size > 0) {
@@ -306,6 +314,7 @@ export async function loadCarryInputs(
   }
   return {
     results: out,
+    evidenceStatesByAttempt,
     flagBagsByExperiment,
     manifestsByEvalKey,
     incompatibleHistory: await scanIncompatibleHistory(root, results.unreadable),
