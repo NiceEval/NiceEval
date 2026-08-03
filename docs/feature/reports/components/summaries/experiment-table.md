@@ -22,6 +22,14 @@ Experiment
   题目级结论按 attempt 折叠：任一 attempt passed 即通过，重试先挂后过的题照样算通过（text 面的同一语义见[默认报告的重试例](../../show/default-report.md)）。
 - Attempt 行显示该次判定词，判定符与语义色同下表。
 
+## 身份格与行数
+
+Experiment 身份格只显示 experiment id，例如 `compare/codex`。Eval 数、Attempt 数和来源快照不占首列：它们不改变读者在此表中比较模型、Agent、通过率、耗时与成本的判断，窄屏下反而挤掉实验名。路径段组行仍写 `downshift (6 evals)`，因为该数字说明这条组行包含的实体范围。
+
+因此一个路径段只占一条组行，组名和题数不可拆成 `downshift` 与下一行 `6 evals`。首格因可用宽度折行时，那仍是同一个格与同一实体行；折行、缩进和行高由 `Table` 的通用排版处理。
+
+Eval 与 Attempt 不因只有一次 attempt 合并。Eval 行说明题目级折叠结论，Attempt 行保留可下钻的 locator、该次结论、耗时、成本与失败摘要；把两者揉成一行会抹掉重试、携带与题目级通过语义。覆盖缺口仍是一条 Eval 占位行，没有 Attempt 子行。
+
 Experiment 行另有 agent、model、耗时、主读数、tokens 与成本。
 模型、agent、主读数与 tokens 只有实验口径，Eval 与 Attempt 行显示 `—`；耗时与成本列每层显示自己口径的值：题目行是该题聚合，attempt 行是该次实测。
 

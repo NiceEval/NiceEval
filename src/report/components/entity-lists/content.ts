@@ -84,6 +84,11 @@ function textCell(text: string, detail?: string): Cell {
   return detail ? { kind: "text", text, detail } : { kind: "text", text };
 }
 
+/** 层级实体的计数属于身份说明，必须留在同一个首格而不是渲染成续行。 */
+function identityCell(name: string, metadata: string): Cell {
+  return textCell(`${name} (${metadata})`);
+}
+
 function attemptMetricValue(
   value: number | null,
   unit: "ms" | "$",
@@ -233,9 +238,8 @@ function tallyEvalVerdicts(evalRows: readonly ExperimentListEvalRow[]): Experime
   return tallyVerdicts(evalRows.map((row) => row.verdict));
 }
 
-function groupEntityDetail(evals: number, knownEvals: number, attempts: number): string {
-  const evalPart = knownEvals > evals ? `${evals}/${knownEvals} evals` : `${evals} evals`;
-  return attempts > evals ? `${evalPart} · ${attempts} attempts` : evalPart;
+function groupEntityDetail(evals: number, knownEvals: number): string {
+  return knownEvals > evals ? `${evals}/${knownEvals} evals` : `${evals} evals`;
 }
 
 /** 组内零样本读数格是 missing(本该有却没跑到),不是 —(对这一行没有意义)。 */
@@ -335,7 +339,6 @@ function groupTableRow(
   const evalRows = memberEvalRows(members);
   const knownEvals = members.length;
   const evals = evalRows.length;
-  const attempts = evalRows.reduce((sum, row) => sum + row.attempts.length, 0);
   const passRate = groupPassRate(evalRows);
   const totalScore = sumCells(evalRows.map((row) => row.totalScore));
   const durationMs = meanCells(
@@ -350,7 +353,7 @@ function groupTableRow(
   const evalVerdicts = tallyEvalVerdicts(evalRows);
 
   const bag: CellBag = {
-    entity: textCell(segment, groupEntityDetail(evals, knownEvals, attempts)),
+    entity: identityCell(segment, groupEntityDetail(evals, knownEvals)),
     durationMs: groupMetricValue(evalRows, durationMs),
     passRate: groupMetricValue(evalRows, passRate),
     totalScore: groupMetricValue(evalRows, totalScore),
@@ -451,7 +454,7 @@ function experimentSubRows(item: ExperimentListItem, view: HierarchyView): Table
 
 function experimentRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
   const bag: CellBag = {
-    entity: textCell(item.experimentId, `${item.evals} evals · ${item.attempts} attempts`),
+    entity: textCell(item.experimentId),
     model: item.model ? textCell(item.model) : { kind: "notApplicable" },
     agent: textCell(item.agent),
     durationMs: measureCell(item.durationMs),

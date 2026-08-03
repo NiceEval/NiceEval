@@ -16,6 +16,8 @@
 每个 experiment 的 eval 数与读数分母来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不补成失败。
 实验列表保持 experiment → Eval → Attempt 层级。
 
+Experiment、路径段组与 Eval / Attempt 各是一条实体行。Experiment 首格只显示 experiment id，例如 `compare/codex`；路径段组行显示自己的题数，例如 `downshift (6 evals)`。Experiment 的 Eval 数、Attempt 数与携带来源不在首格重复；表中的结果与读数列承担比较所需的信息。
+
 Sample 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：
 
 ```sh

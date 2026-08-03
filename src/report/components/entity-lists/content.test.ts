@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 「数据源」行:`experimentRows` 的 Eval 分组层——按 evalId 目录前缀分区、两条收起条件、
-// 无 `/` 题与组行同级、组行读数聚合而占位行不进分母、子行去前缀但 key 仍是完整 evalId;
+// 无 `/` 题与组行同级、身份格内联实体计数、组行读数聚合而占位行不进分母、子行去前缀但 key 仍是完整 evalId;
 // attempt 行 duration/cost 走 measure 格式化(table.md 渲染契约)。
 // 断言面是 Content,不经浏览器。
 
@@ -104,11 +104,6 @@ function entityText(cell: Cell | undefined): string {
   return "";
 }
 
-function entityDetail(cell: Cell | undefined): string | undefined {
-  if (cell?.kind === "text") return cell.detail;
-  return undefined;
-}
-
 describe("experimentListContent Eval 分组层", () => {
   it("按目录前缀分区:组行带聚合读数,子行去掉前缀但 key 仍是完整 evalId", () => {
     const content = experimentListContent([
@@ -126,8 +121,8 @@ describe("experimentListContent Eval 分组层", () => {
     expect(sub.map((row) => row.variant)).toEqual(["group", "group"]);
     expect(sub.map((row) => row.key)).toEqual(["group:downshift", "group:weather"]);
     // 两组通过率都是 50%,按 groupKey 字典序收口
-    expect(entityText(sub[0]!.cells.entity)).toBe("downshift");
-    expect(entityDetail(sub[0]!.cells.entity)).toBe("2 evals");
+    expect(entityText(sub[0]!.cells.entity)).toBe("downshift (2 evals)");
+    expect(sub[0]!.cells.entity).toEqual({ kind: "text", text: "downshift (2 evals)" });
     expect(sub[0]!.cells.passRate).toMatchObject({ kind: "metric", metric: { value: 0.5 } });
     expect(sub[0]!.cells.model).toEqual({ kind: "notApplicable" });
     expect(sub[0]!.cells.agent).toEqual({ kind: "notApplicable" });
@@ -206,7 +201,7 @@ describe("experimentListContent Eval 分组层", () => {
     expect(sub.map((row) => row.key)).toEqual(["group:weather", "group:ghost"]);
 
     const weather = sub[0]!;
-    expect(entityDetail(weather.cells.entity)).toBe("2/3 evals");
+    expect(entityText(weather.cells.entity)).toBe("weather (2/3 evals)");
     // 占位不进通过率分母:仍是 1 passed / 1 failed = 50%,不是 /3
     expect(weather.cells.passRate).toMatchObject({ kind: "metric", metric: { value: 0.5, total: 2 } });
     expect(weather.subRows!.some((row) => row.variant === "placeholder" && row.key.endsWith("weather/gap:missing"))).toBe(
@@ -215,7 +210,7 @@ describe("experimentListContent Eval 分组层", () => {
     expect(entityText(weather.subRows!.find((row) => row.variant === "placeholder")!.cells.entity)).toBe("gap");
 
     const ghost = sub[1]!;
-    expect(entityDetail(ghost.cells.entity)).toBe("0/2 evals");
+    expect(entityText(ghost.cells.entity)).toBe("ghost (0/2 evals)");
     expect(ghost.cells.passRate).toEqual({ kind: "missing", code: "noSamples" });
     expect(ghost.cells.durationMs).toEqual({ kind: "missing", code: "noSamples" });
     expect(ghost.cells.costUSD).toEqual({ kind: "missing", code: "noSamples" });
@@ -225,6 +220,27 @@ describe("experimentListContent Eval 分组层", () => {
     // missing.code 经 locale 映射,中文面与空 measure 格同文「无数据」,不落英文 no data
     expect(formatCellText(ghost.cells.passRate, "zh-CN")).toBe("无数据");
     expect(formatCellText(ghost.cells.passRate, "en")).toBe("no data");
+  });
+
+  it("Experiment 身份格只显示实验名,路径段计数留在所属组行", () => {
+    const content = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("downshift/a", "passed", [attempt("downshift/a", "passed")]),
+          evalRow("downshift/b", "failed", [attempt("downshift/b", "failed"), attempt("downshift/b", "passed", { attempt: 1 })]),
+          evalRow("weather/a", "passed", [attempt("weather/a", "passed")]),
+          evalRow("weather/b", "failed", [attempt("weather/b", "failed")]),
+        ],
+        missingEvalIds: [],
+        historicalAttempts: 1,
+      }),
+    ]);
+
+    expect(content.rows[0]!.cells.entity).toEqual({
+      kind: "text",
+      text: "exp/x",
+    });
+    expect(content.rows[0]!.subRows![0]!.cells.entity).toEqual({ kind: "text", text: "downshift (2 evals)" });
   });
 
   it("组行 tokens / totalScore 走统一格式化入口,不落裸数字", () => {
@@ -281,7 +297,7 @@ describe("experimentListContent Eval 分组层", () => {
     const sub = content.rows[0]!.subRows!;
     // 顶层只有 pkg → 剥壳;下层 sub/other 各两题 → 插组
     expect(sub.map((row) => row.key)).toEqual(["group:pkg/other", "group:pkg/sub"]);
-    expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["other", "sub"]);
+    expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["other (2 evals)", "sub (2 evals)"]);
     const subGroup = sub.find((row) => row.key === "group:pkg/sub")!;
     expect(subGroup.subRows!.map((row) => row.key)).toEqual(["pkg/sub/a", "pkg/sub/b"]);
     expect(subGroup.subRows!.map((row) => entityText(row.cells.entity))).toEqual(["a", "b"]);
