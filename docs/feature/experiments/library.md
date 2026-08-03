@@ -215,7 +215,9 @@ export default defineExperiment({
 ```
 
 直接传入的 callback 不增加可追踪 identity，也不阻断跨 Run 携带。昂贵评测不会因漏写 identity 而永久重跑；需要让 callback 的实现或动态输入变化自动作废结果时，使用 `defineSandboxCommand()`（见 [Sandbox Layer](../sandbox/layers.md#稳定-identity-与-opaque-callback)）。
-跨 Attempt 的实际 Sandbox 目录、服务或快照不写进 prepare command，也不放进 Experiment 顶层字段。实际 Sandbox 创建后的 `setup()` 负责恢复，实例退休前的 `teardown()` 负责回存；`sandboxReuse: true` 保留同一个物理实例，需要固定顺序时再显式声明 `maxConcurrency: 1`。
+跨 Attempt 的实际 Sandbox 目录、服务或快照不写进 prepare command。实际 Sandbox 创建后的 `setup()` 负责恢复，实例退休前的 `teardown()` 负责回存；`sandboxReuse: true` 保留本 Invocation 的物理实例，需要固定顺序时再显式声明 `maxConcurrency: 1`。
+
+多个 Invocation 会读写同一 checkpoint 时，顶层 `sharedState: { key }` 只声明这份外部状态的独占身份；它不搬运数据，也不替代 lifecycle Hook。
 
 一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级 Hook 对里;逐 Attempt 的沙箱写入在 `sandbox` layer 的 prepare 命令里,经闭包消费实验级产物;agent 怎么连自己、eval 的题目准备各在 agent 定义与 Eval 文件里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
 
@@ -284,7 +286,8 @@ export default defineExperiment({
   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(nowledge.writeEnv()),
   setup: nowledge.setup,
   teardown: nowledge.teardown,
-  maxConcurrency: 1,          // 中心化记忆库,attempt 串行累积
+  maxConcurrency: 1,          // 本 Invocation 内串行累积
+  sharedState: { key: "nowledge/codex/cohort-a" },
 });
 
 // experiments/compare/claude-dp-v4--nowledge.ts —— 同套启停,另一个 agent,自己的实例
@@ -295,6 +298,7 @@ export default defineExperiment({
   setup: nowledge.setup,
   teardown: nowledge.teardown,
   maxConcurrency: 1,
+  sharedState: { key: "nowledge/claude/cohort-a" },
 });
 ```
 

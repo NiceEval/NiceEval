@@ -1,6 +1,6 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -35,6 +35,15 @@ Runner 不能因为安装内容看起来稳定，就改变 Agent Hook 的调用�
 Provider 中立接口无法完整清理这些状态。
 因此，Sandbox 复用必须写进 Experiment 并进入配置哈希。
 结果按普通携带判据进入结果沿用；CI 可以运行这个已签入的 Experiment。
+
+## Invocation 不共享运行中 Sandbox
+
+每条 Invocation 有自己的 Scope、Run 记录与 Provider finalizer。
+把运行中 Sandbox handle 交给另一个进程需要跨进程 handle 恢复、Scope 所有权转移与单一 finalizer，不是现有 Provider Case 契约。
+因此多个 Invocation 各自维护 Sandbox 复用池；可以共享的是明确声明的外部状态身份，不是 Sandbox 实例。
+
+文件租约只能协调共享同一记录根和时钟的进程。
+不同机器、不同工作副本或外部服务的全局单例仍需要外部编排。
 
 ## Provider 限制
 

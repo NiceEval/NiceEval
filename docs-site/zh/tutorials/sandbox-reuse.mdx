@@ -54,6 +54,27 @@ export default defineExperiment({
 不要调大 `timeoutMs`——那会同时放宽对卡死 Agent 的保护。`lifetimeMs` 的上限
 由 Provider 账号档位决定（例如 e2b 免费档是 1 小时），超了会在创建时报 Provider 的原话。
 
+## 多开终端时 Sandbox 不共享
+
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池；NiceEval 不把运行中的 Sandbox handle 交给另一个进程。
+
+如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。两边都会在 Sandbox `setup()` 恢复同一 checkpoint，并在 `teardown()` 回存时，再给实验声明稳定的非密 key：
+
+```typescript
+export default defineExperiment({
+  sandbox: e2bSandbox({ template: "mempal" })
+    .setup(restoreMempal)
+    .teardown(saveMempal),
+  sandboxReuse: true,
+  maxConcurrency: 1,
+  sharedState: { key: "mempal/codex/cohort-a" },
+});
+```
+
+NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox；对方完成后先重新判断结果沿用，已经齐了就直接结束。
+
+key 会进入结果的配置身份；换 key 表示换了状态 cohort，旧结果不会混入。这个租约只协调共享同一 `.niceeval` 记录根的进程；不同机器或工作副本需要外部分布式互斥。
+
 ## 生命周期：谁跑几次
 
 | 阶段 | 复用时跑几次 |

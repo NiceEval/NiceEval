@@ -147,7 +147,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排边界;可调度多个 Experiment,不是持久化实体 | [Runner](runner.md) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
-| 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
+| 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
 | 有效宽度 | Effective width | 全局并发位和实验并发限制共同允许的同时执行数 | [Runner](runner.md) |
 | 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
 | 完成状态 | CompletionStatus | 独立于 Verdict 的 `complete` / `incomplete` / `interrupted` 结论 | [Runner](runner.md) |
@@ -177,6 +177,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 结果沿用 | Result carry-forward | 合格的历史 Attempt 直接并入本次 Run、不重跑 | [Cache](feature/experiments/cache.md) |
 | 配置哈希 | `configHash` | 指纹的 Run 级配置层,同时担保跨 Run 可比 | [Cache](feature/experiments/cache.md) |
 | 用例锁 | Eval lock | 按 `(experimentId, evalId)` 取的派发租约,避免并行 Invocation 重复执行 | [Experiments architecture](feature/experiments/architecture.md) |
+| 共享状态租约 | Shared-state lease | `ExperimentDefinition.sharedState.key` 标识的跨 Invocation 独占边界，覆盖共享状态的完整恢复、执行与回存 | [Experiments architecture](feature/experiments/architecture.md#并发-invocation用例锁与共享状态租约) |
 
 ### Observability
 

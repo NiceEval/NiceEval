@@ -1,11 +1,13 @@
 # 并发 —— 用例
 
-先区分两个控制面：Experiment 的 `maxConcurrency` 约束一个实验并跨 Invocation 生效；CLI `--max-concurrency` 约束本次 Invocation 的全局吞吐。
+先区分四个控制面：CLI `--max-concurrency` 约束本 Invocation 的全局吞吐，Experiment `maxConcurrency` 约束本 Invocation 内该实验的宽度。
+用例锁防止同一 Eval 双跑；`sharedState.key` 独占跨 Invocation 的可变状态窗口。
 
 | 目标 | 用例 |
 |---|---|
 | Eval 互相独立，追求默认吞吐 | [独立评测并行执行](独立评测并行执行.md) |
 | 跨 Attempt 读写同一份状态 | [串行保护共享状态](串行保护共享状态.md) |
+| 多开终端时区分独立 Sandbox 与共享 checkpoint | [并行 Invocation 与状态边界](../../../sandbox/use-case/Sandbox复用/并行Invocation与状态边界.md) |
 | 后一道 Eval 依赖前一道的结果 | [固定执行顺序](固定执行顺序.md) |
 | 只有一个 Experiment 撞服务限额 | [限制单个实验](限制单个实验.md) |
 | 重复运行必须按结果决定下一次 | [严格顺序重试](严格顺序重试.md) |

@@ -51,20 +51,20 @@
 |---|---|---|
 | 管什么 | 正确性,以及本实验自己的节奏 | 吞吐 |
 | 什么时候取 | 进入 attempt(先于沙箱创建与两层作者 layer 的 `sandbox.prepare` 链) | 真正开始执行时 |
-| 什么时候还 | 收尾完成(收尾链、沙箱销毁)之后 | 执行结束,或进入内部等待时 |
+| 什么时候还 | Attempt 收尾完成之后 | 执行结束,或进入内部等待时 |
 | 内部等待(退避睡眠、等实验级 `setup`) | 不释放 | 让位给别的 attempt |
-| 名额域 | 该实验,跨 Invocation 共享 | 每条 Invocation 自己 |
+| 名额域 | 该实验,每条 Invocation 自己 | 每条 Invocation 自己 |
 | 撞限流时对外的压力 | 不向本实验放行更多 attempt | 让出的位立刻派给排队者,总压力不降 |
 
 由此得到三条语义:
 
-- `maxConcurrency: 1` 是严格的临界区保证——上一个 attempt 的回存收尾没跑完,下一个 attempt 的载入不会开始。
+- `maxConcurrency: 1` 保证本 Invocation 内上一条 Attempt 收尾后才开始下一条。
 - 实验级闸只让该实验自己的 attempt 排队,同批其它实验照常并发。
   串行化有共享状态的实验(如跨 eval 累积记忆)不拖慢整批基线。
-- 名额域**跨 Invocation 共享**:同一工作副本上并行的多条 Invocation 从同一实验的同一批名额取位(租约文件机制见[Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)),临界区保证在多开下同样成立。
+- 两条 Invocation 的实验并发限制不互相夹低。需要保护跨 Invocation checkpoint 时声明 `sharedState`，它取的是整段状态租约，不是 Attempt 名额。
 
 全局位是纯调度参数,不承诺任何互斥语义。
-「被限流时不加压」是实验级闸的语义,不是全局位的。
+「被限流时不加压」是单条 Invocation 内实验级闸的语义。多开终端后对外服务的总压力是各 Invocation 之和，配额仍归用户或外部编排。
 
 报告回调走 **permit=1 的信号量串行化**,不阻塞执行 fiber。
 结果最后按**发现顺序**排序(而非完成顺序),让输出稳定可 diff。
@@ -166,7 +166,8 @@ onSlotFree():   # 初始 globalMaxConcurrency 个并发位视为同样多次空�
   指纹命中而[携带](#缓存携带上一轮的结果)的 attempt 不派发,不进这条队列。
 
 所以「`01-` 跑完再跑 `02-`」靠的是实验的 `maxConcurrency: 1`,加上这个实验只有一条 Invocation 在跑;命名只决定这条串行队列怎么排。
-多开终端时实验级闸仍保证同时只有一条 attempt,但两条 Invocation 各按自己的队列认领 eval,合起来的先后不再由发现顺序决定(见[并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁))。
+多开终端时两条 Invocation 各按自己的队列认领 eval,合起来的先后不再由发现顺序决定。
+`sharedState` 可以防止两段 restore/save 交错，但不会合并两个选择集(见[并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁与共享状态租约))。
 全局 `--max-concurrency 1` 只压当次 Invocation,压不住这一点。
 
 搭配与前提见[固定执行顺序](feature/experiments/use-case/并发/固定执行顺序.md)。

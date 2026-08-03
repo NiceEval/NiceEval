@@ -198,6 +198,8 @@ interface ExperimentRunInfo {
   maxConcurrency?: number;
   /** 是否允许多条 Attempt 共用 Sandbox；进 configHash，省略等价于 false。 */
   sandboxReuse?: boolean;
+  /** 跨 Invocation 共享可变状态的租约身份；进 configHash。 */
+  sharedState?: { key: string };
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**

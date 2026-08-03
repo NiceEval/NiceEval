@@ -91,7 +91,7 @@ Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列
 不兼容的落盘按格式规则整份不解析,所以这一档只按目录认坐标——认得出「这条 eval 跑过」,认不出它当时是过还是败。
 
 全部携带的行标 `carried`,不标原因。
-正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
+正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁与共享状态租约));`--dry` 只读锁目录,不取锁、不等待。
 
 `stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于“已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。
 
@@ -326,7 +326,7 @@ progress 只更新 live 面板当前 active 行的次要文本，非 TTY 文本�
 
 ### 等待并发 run 的显示
 
-多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。
+多条 Invocation 并行时,撞上[用例锁或共享状态租约](architecture.md#并发-invocation用例锁与共享状态租约)的 Attempt 在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。
 `elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook 共用同一套机制:
 
 - **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验 Hook 行之后、attempt 行之前,参与同一套稳定 slot 规则。
@@ -347,6 +347,20 @@ progress 只更新 live 面板当前 active 行的次要文本，非 TTY 文本�
 - 锁释放后,携入的用例从 `elsewhere` 迁入 `reused`——`progress` 事件与 live 面板首行的 `reused` 因此可以在运行中增长;转为自跑的从 `elsewhere` 迁入 `queued`,照常经 `running` 落进四项结局之一。
   任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - 接管过期锁不走这条通道:它是一条去重后的 `warning` 事件(code `lock-taken-over`)。
+
+共享状态等待是 Experiment 级行，不冒充用例锁或 concurrency slot。
+它要点名 state key 与持有方；等待期间 Experiment setup 不运行、Sandbox 不创建：
+
+```text
+│ ● waiting for shared state · mempal/codex/cohort-a   1m 02s  compare/codex · pid 41267 │
+```
+
+非 TTY 与 JSON 使用独立的 `state_lease_wait` 起止事件。释放后重做整个 Experiment 的携带规划；`carried` 表示已无需派发，`acquired` 表示本进程取得租约并继续创建自己的 Sandbox。
+
+```json
+{"event":"state_lease_wait","experimentId":"compare/codex","stateKey":"mempal/codex/cohort-a","status":"started","holderPid":41267,"holderHost":"mba.local"}
+{"event":"state_lease_wait","experimentId":"compare/codex","stateKey":"mempal/codex/cohort-a","status":"resolved","resolution":"carried","waitedMs":94000}
+```
 
 ### 输出流和落盘节奏
 
@@ -434,7 +448,7 @@ human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区
 live 面板只展示当前状态,不保存历史帧:
 
 - 上边框标题是本次命令,右侧嵌已运行时间;下边框右侧嵌本次新派发的累计成本;
-- 框内首行固定使用 `total / reused / running / elsewhere / queued / passed / failed / errored / skipped`;`total` 之后的八项是互斥状态且总和等于 `total`;四项结局(`passed` / `failed` / `errored` / `skipped`)恒显示,零值也不省略——「0 errored」是一句有价值的肯定,而「不知道错了几个」不是;`elsewhere`([别人在运行](#等待并发-run-的显示):正被并行 Invocation 持锁、本次在等待的用例的 attempt)只在非零时出现,没有并发 run 的场景首行少一项;
+- 框内首行固定使用 `total / reused / running / elsewhere / queued / passed / failed / errored / skipped`;`total` 之后的八项是互斥状态且总和等于 `total`;四项结局(`passed` / `failed` / `errored` / `skipped`)恒显示,零值也不省略——「0 errored」是一句有价值的肯定,而「不知道错了几个」不是;`elsewhere`([别人在运行](#等待并发-run-的显示):正等待并行 Invocation 的用例锁或共享状态租约的 attempt)只在非零时出现,没有并发 run 的场景首行少一项;
 - 首行是仪表不是摘要,它跟随终端全宽、不受 100 列上限约束,九项写满也只占一行:长度不构成压缩它的理由,任何一项都不因为「行太长」被折叠进上位计数。
   终端窄到放不下时按[面板降级规则](#框线体裁)处理——先丢弃值为零的结局项(顺序 `skipped` → `errored` → `passed`),非零结局项与 `failed` 永不丢弃,不换行撑高面板;
 - `ACTIVE` 小节使用稳定 slot:一项完成前不因为其它项更新而换位置,完成后才由下一项补位;实验级 setup / teardown 的运行级行排在 attempt 行前面(见 [实验级 Hook 的显示](#实验级-hook-的显示)),等待 setup 的 attempt 计入 `queued`;
@@ -452,6 +466,10 @@ live 面板只展示当前状态,不保存历史帧:
 
 任一选中实验声明了 `maxConcurrency` 时,在全局值后逐个附注实验的上限, 形如 `concurrency 19 (from flag) · mempal ≤1 · nowledge ≤4`;未声明的实验不列。
 附注存在的理由:实验闸让这些实验的[有效宽度](../../concepts.md)小于全局值, 只印全局值会被读成「这批要开 19 路」。
+这些上限都是本 Invocation 的值，不因其它进程的声明而取最小值。
+
+声明了 `sharedState` 的 Experiment 另列 `state <key>` 附注。
+它说明真正派发前可能等待跨 Invocation 状态租约，不与 `concurrency` 合成一个数：`mempal ≤1 · state mempal/codex/cohort-a`。
 
 `--json` 的对应字段是 `start` 事件的 `experimentConcurrency`;全局值的来源不进 `--json`——与超时消息的[来源标注](#timeoutbudget-与基础设施错误)同一条裁决: 给人排查的一层原因写进人读面,不另立结构化字段。
 
@@ -511,7 +529,7 @@ eval 闸同形,文案是 `✗ eval halted: <message>`:
 `niceeval show @12h8m4k1` 展开结构化错误、cause、stack、发生过的阶段与 diagnostics;有 trace 时再用 `--execution` 看执行树。
 没有 trace 时直接说明 unavailable,不能因此丢失错误详情。
 
-`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt。`passed` / `failed` / `errored` 是本次派发后已有 Verdict 的对应计数；`skipped` 计数同时容纳两种不冒充失败的结束：已派发的 `t.skip(reason)` 会写出 `verdict: "skipped"`，首过即停与 budget 未派发则没有 Attempt Verdict。
+`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正等待并行 Invocation 的用例锁或共享状态租约、本次尚未派发的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt。`passed` / `failed` / `errored` 是本次派发后已有 Verdict 的对应计数；`skipped` 计数同时容纳两种不冒充失败的结束：已派发的 `t.skip(reason)` 会写出 `verdict: "skipped"`，首过即停与 budget 未派发则没有 Attempt Verdict。
 任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
 
 已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止失败几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。
@@ -686,7 +704,7 @@ niceeval exp compare --json
 {"event":"result","status":"failed","passed":22,"failed":1,"errored":1,"reused":18,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>",".niceeval/compare/claude/<run>",".niceeval/compare/claude-e2b/<run>"]}
 ```
 
-事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `judge_precheck` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `result`。
+事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `judge_precheck` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `state_lease_wait` / `result`。
 消费方按 `event` 字段分发,忽略未知事件与未知字段;`schemaVersion` 只在破坏性形状变更时递增。
 
 `--json` 固定满足:
@@ -724,6 +742,8 @@ interface StartEvent {
   concurrency: number;
   /** 声明了 maxConcurrency 的实验 → 各自的上限;未声明的实验不出现,没有任何实验声明时省略整个字段。 */
   experimentConcurrency?: Record<string, number>;
+  /** 声明了 sharedState 的实验 → 稳定状态 key。 */
+  sharedState?: Record<string, string>;
   /** 缓存携入、预计不会重新派发的 attempt 数。 */
   reused: number;
 }
@@ -734,7 +754,7 @@ interface ProgressEvent {
   total: number;
   reused: number;
   running: number;
-  /** 正被并行 Invocation 持锁运行、本次等待中的用例的 attempt 数(用例锁,见 lock_wait 事件)。 */
+  /** 正等待并行 Invocation 的用例锁或共享状态租约的 attempt 数。 */
   elsewhere: number;
   queued: number;
   /** 以下四项是本次派发并已了结的 attempt 按 verdict 的划分;携入结果的 verdict 留在 `reused`。 */
@@ -869,6 +889,18 @@ interface LockWaitEvent {
   waitedMs?: number;
 }
 
+interface StateLeaseWaitEvent {
+  event: "state_lease_wait";
+  experimentId: string;
+  stateKey: string;
+  status: "started" | "resolved";
+  holderPid?: number;
+  holderHost?: string;
+  /** carried = 重规划后无需派发；acquired = 已取得租约并继续。 */
+  resolution?: "carried" | "acquired";
+  waitedMs?: number;
+}
+
 interface ResultEvent {
   event: "result";
   /**
@@ -905,6 +937,7 @@ type ExpEvent =
   | ExperimentSetupEvent
   | ExperimentTeardownEvent
   | LockWaitEvent
+  | StateLeaseWaitEvent
   | ResultEvent;
 ```
 

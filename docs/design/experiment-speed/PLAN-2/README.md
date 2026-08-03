@@ -19,7 +19,7 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，
 
 - Sandbox 创建与 SandboxSpec `setup` 只支付一次。
 - 同一 workdir 不会出现并发写入。
-- `sandboxReuse: true` 与 `maxConcurrency: 1` 可以直接表达。
+- `sandboxReuse: true` 与 `maxConcurrency: 1` 可以直接表达本 Invocation 的单 Sandbox 池。
 
 ## 缺点
 
@@ -47,4 +47,4 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，
 
 ## 结论
 
-本方案是[方案 3](../PLAN-3/README.md)同时最多维护一个 Sandbox 时的行为，不单独建立 Feature 或调度规则。
+本方案是[方案 4](../PLAN-4/README.md)在单 Invocation 内最多维护一个 Sandbox 时的行为，不单独建立 Feature 或调度规则。

@@ -37,8 +37,8 @@ waiting on another run · compare/codex (2 evals, pid 41267)
 ## 两层并发上限
 
 CLI `--max-concurrency` 只限制当前 Invocation，所以两个值为 2 的 Invocation 可以合计给出四个并发。
- Experiment `maxConcurrency` 是跨 Invocation 的业务闸：若实验声明 `maxConcurrency: 3`，两条命令合计仍至多运行三条 Attempt。
-它继续保护共享状态与实验自己的服务限额。
+Experiment `maxConcurrency` 也只在当前 Invocation 生效：两条命令都声明 3 时，合计最多运行六条该 Experiment 的 Attempt。
+需要为同一 checkpoint 串行整段生命周期时声明 `sharedState.key`，不用 `maxConcurrency` 冒充跨进程锁。
 
 ## 边界
 
@@ -47,12 +47,12 @@ CLI `--max-concurrency` 只限制当前 Invocation，所以两个值为 2 的 In
 - 协作范围是同一工作副本与同一 `.niceeval` 记录根。
   不同机器、不同工作副本或不共享文件系统时，各自独立运行。
 - Experiment `setup` / `teardown` 每个 Invocation 各执行一次。
-  用例锁不把实验级 Hook 变成跨进程单例；需要全局单例的服务交给外部编排。
+  用例锁不把实验级 Hook 变成跨进程单例；`sharedState` 只做独占互斥，需要跨进程复用同一服务实例时仍交给外部编排。
 - 两个 Invocation 的 CLI 上限会相加，但 Provider 容量不会因此增加。
   临时扩容前仍要确认本机、 Sandbox Provider 与 Agent 服务有余量。
 
 ## 相关阅读
 
-- [并发 Invocation 架构](../../architecture.md#并发-invocation用例锁) —— 锁、心跳、接管与锁后重判。
+- [并发 Invocation 架构](../../architecture.md#并发-invocation用例锁与共享状态租约) —— 用例锁、状态租约、心跳、接管与重判。
 - [缓存与结果沿用](../../cache.md#并发-invocation取到锁之后重做一次规划) —— 为什么必须在取锁后重判。
 - [限制全局并发](限制全局并发.md) —— 单个 Invocation 的吞吐上限。

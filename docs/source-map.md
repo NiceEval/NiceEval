@@ -149,6 +149,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | Eval 源码捕获、folder-local 目录入口 base id、loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
 | 普通本地上传的 transfer manifest 与动态泄漏比对 | `src/sandbox/` 上传包装、`src/runner/attempt.ts`、fingerprint/carry planner 与 materializer closure 记录;契约见 `docs/feature/eval/use-case/criteria-files.md` |
 | 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |
+| 并发 Invocation 协作(用例锁防双跑；`maxConcurrency` 只限本 Invocation；`sharedState.key` 按完整 Experiment/Sandbox lifecycle 独占外部状态) | `src/runner/run.ts`、`src/runner/eval-lock.ts`、`src/runner/state-lease.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换、Agent Ensure 调用) | `src/runner/attempt.ts` |
 | 两层时间模型(`PhaseTiming` / `TimingActivity` / `TimingOrigin`:锚点 enter / 失败标记 / 收尾段测量 / hook 与命令子节点;Run 级 `RunMeta.timings` 的双时钟 recorder) | `src/runner/timing.ts`(`TimingRecorder`;attempt 侧接线在 `src/runner/attempt.ts`,Run 侧接线在 `src/runner/run.ts`);类型在 `src/runner/types.ts` / `src/record/types.ts` |
 | 变更分类账(workdir 外私有 git dir、锚点冻结排除清单、eval/agent 归因 commit、整相一条命令导出全部 send 窗口) | `src/runner/ledger.ts`(+ 同目录 `.test.ts`) |

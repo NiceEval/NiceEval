@@ -11,7 +11,7 @@ Runner 按现有并发限制维护一个或多个 Sandbox。
 SandboxSpec 生命周期每个 Sandbox 一次；Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
 
 Experiment 用 `sandboxReuse: true` 声明复用。
-现有并发限制决定同时执行数；`maxConcurrency: 1` 表达同时最多运行一个 Sandbox。
+现有并发限制决定单 Invocation 内的同时执行数；`maxConcurrency: 1` 表达本 Invocation 同时最多运行一个 Sandbox。
 
 派发前检查 Sandbox 复用寿命。
 不足时先续期；不能续期时停止旧 Sandbox，创建并准备替代 Sandbox，再派发 Attempt。

@@ -6,7 +6,7 @@
 
 | 场景 | 为什么 | 需要的能力 | 真实例子 |
 |---|---|---|---|
-| 共享状态必须成对恢复和回存 | 两条 Attempt 交错会覆盖同一份状态 | 保持 `maxConcurrency: 1`，任何提速方式都不能绕开 | MemoryBench `codex-2.0-flash--mempal.ts` |
+| 共享状态必须成对恢复和回存 | 两条 Invocation 的 Sandbox 交错恢复与回存会覆盖同一份状态 | 用 `sharedState.key` 独占完整状态窗口 | MemoryBench `codex-2.0-flash--mempal.ts` |
 | 累积记忆要求 Eval 顺序确定 | 并发写入会改变后续 Eval 看到的历史 | 整个 Experiment 串行 | MemoryBench `claude-2.0-flash--nowledge.ts` |
 | 共享服务允许并发读写 | 服务自身处理冲突，实验接受并发写入顺序 | 保留 Experiment 已声明的并行 | MemoryBench `codex-2.0-flash--nowledge.ts` |
 | Attempt 相互独立 | 只有 Provider 与本机容量限制同时执行数 | 使用有界并发，不应为了复用 Sandbox 强制串行 | NiceEval-Eval 的安装实验 |
@@ -14,7 +14,8 @@
 | 批次长于一个 Sandbox 能保证的存活时间 | Sandbox 可能在 Agent 执行中途停止 | 派发前确认下一条 Attempt 能跑完，不能确认时停止或更换 Sandbox | 云 Sandbox 长批次 |
 
 因此，“只复用一个 Sandbox”是 Sandbox 复用的一种运行方式，不是所有实验的默认答案。
-Runner 仍须服从 Experiment 的 `maxConcurrency`；Sandbox 复用不能把必须串行的实验改成并行。
+Runner 仍须服从本 Invocation 的 Experiment `maxConcurrency`；Sandbox 复用不能把必须串行的队列改成并行。
+多个 Invocation 指向同一 checkpoint 时，另由 `sharedState.key` 保护跨 Sandbox 复用池的 restore/run/save 窗口。
 
 ## 真实耗时限制了方案收益
 
@@ -43,7 +44,8 @@ MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbo
 上表同时列出非 `errored` Attempt，避免早期失败压低 Agent 执行占比。
 
 本目录重新评估如何缩短实验总耗时，并把原 [Sandbox 复用](../../feature/sandbox/reuse.md)设计放回候选方案比较。
-最终选择不是把所有实验改成串行复用，而是分层提速：默认运行先少跑、保留并行并使用预制环境；能接受题间状态边界的 Experiment 用 `sandboxReuse: true` 声明 Attempt 共用 Sandbox。
+最终选择是分层提速：默认运行先少跑、保留并行并使用预制环境。
+能接受题间状态边界的 Experiment 用 `sandboxReuse: true` 声明本 Invocation 的 Attempt 共用 Sandbox，跨 Invocation checkpoint 另用 `sharedState.key` 协调。
 完整边界见 [DECISION](DECISION.md)。
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)

@@ -190,7 +190,23 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **`ctx.fact()` 的作用域归属**：sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的落进对应 attempt 的 `EvalResult.facts`（不落进任何其它 attempt）；experiment setup/teardown（含收尾自愈路径 `recoverStaleTeardownRegistration`）经 `ctx.fact()` 上报的累积进该 Experiment 的 `experiment:complete` 事件 `facts` 字段，按 experimentId 分桶、不同 Experiment 不串桶；两级互不混淆，runner 按当前回调所处生命周期自动归属，调用方不能指定层级。
   同一作用域内同 key 后写覆盖先写（跨 setup/send/teardown 三个不同回调仍是同一 attempt 作用域）。
   key 不匹配 `[a-z0-9._-]{1,64}` 或 value 非标量（对象/数组/`null`/`undefined`）时抛错，错误信息带上具体 key/value 与修正提示；合法调用不受影响。
-- **用例锁与并发 Invocation**：取锁时机——派发时刻逐用例非阻塞取锁、排队用例不持锁（以「锁目录条目数不超过在跑用例数」为断言面）、全携带用例不取锁、等锁用例不触发实验级 setup、`--dry` 只读锁目录不取锁（计划行 `locked` 标注）；等待语义——撞新鲜锁的用例挂起、并发位转派给下一条未被锁的用例（以在飞峰值与启动集合为断言面），挂起用例不占全局并发位，计入独立的 `elsewhere` 计数且与 `queued` 互斥、计数恒等式成立；多开分工——两条 runEvals 指向同一 `niceevalRoot`、选择重叠时各自认领不同用例并行推进（两边真实派发的用例集不相交、并集覆盖选择集、总在飞峰值可达两边全局上限之和）；实验闸租约——声明 `maxConcurrency` 的实验名额域跨 runEvals 共享（同一 `niceevalRoot` 两条并行 runEvals 且 `maxConcurrency: 1` 时该实验总在飞峰值恒为 1；租约条目的心跳/过期/rename 接管复用用例锁纪律；两边解析出的 N 不一致时生效名额为最小值；撞满名额报一条按实验折叠的 `gate-lease-waiting` warning，同时给出**生效名额**与**本次运行声明的 N**——两者不等即 min-N 被别的运行夹低，这是「声明了 3 却只跑 1 条」的唯一解释）；取锁后重查携带——取到锁即重做携带规划，**无条件**、不附加「等过锁 / 接管过」之类前置判据（干净取锁：对方跑完并释放锁后，本进程第二波取到空锁的用例不得重跑对方已落盘的 attempt；派发路径上按用例数各读一次收窄读取面、不走全树扫描）；重查结论与派发前的携带规划共用同一份资格判据，两处不分叉；重查后的计数迁移——指纹匹配携入且计数 `elsewhere` 迁 `reused`、不匹配转 `queued` 自跑、`attempts` 部分携入部分补跑，三面都要有区分力场景；心跳与接管——续租与等待轮询按注入 clock 推进、过期判据（心跳落后超过阈值）、接管 rename 的互斥（两个竞争者恰一个获得执行权、输者转入等待）、接管产生去重的 `lock-taken-over` warning；释放路径——正常收尾、中断、实验 setup 抛错各路径锁文件都被删除，遗留过期锁被下一次运行接管（不需要手工清理）；执行模式组合——`--rerun all` 等待后全部自跑；`sandboxReuse: true` 的 Experiment 等待后按普通携带判据消费可携带结果； `lock_wait` 起止事件与 `elsewhere` 计数归约进反馈状态，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
+- **用例锁与并发 Invocation**：
+
+  - 派发时刻逐用例非阻塞取锁。排队用例不持锁；全携带用例不取锁；等锁用例不触发实验级 setup。
+  - `--dry` 只读锁目录不取锁，计划行标注 `locked`。锁目录条目数不超过在跑用例数。
+  - 撞新鲜锁的用例挂起，并发位转派给下一条未被锁的用例。挂起用例计入 `elsewhere`，不占全局位，并与 `queued` 互斥。
+  - 两条 runEvals 指向同一 `niceevalRoot`、选择重叠时，各自认领不同用例。两边声明不同 `maxConcurrency` 时各自生效，总在飞峰值可达两边宽度之和。
+  - 取锁后无条件重做携带规划。覆盖全携入、全自跑与部分补跑三种计数迁移。
+  - 心跳、过期、rename 接管、正常收尾、中断与 setup 抛错的释放路径按用例锁纪律覆盖。`lock_wait` 起止事件归约进反馈状态。
+
+  **共享状态租约**：
+
+  - 同 key 的两条 runEvals 只有一条能进入 Experiment/Sandbox lifecycle。
+  - 租约在 Experiment setup、Sandbox create 和 lifecycle setup 前取得，在 Sandbox teardown、Provider finalizer 与 Experiment teardown 后释放。
+  - 等待方不占全局位、不创建 Sandbox、不提前持有 Eval 锁。释放后先重做整个 Experiment 的携带规划。
+  - 覆盖全携带不取新租约，以及仍有工作时取得租约两面。同 Invocation 的两个 Experiment id 共用 key 也串行；不同 key 可并行。
+  - 心跳过期后接管产生 `state-lease-taken-over` diagnostic，但不伪造外部状态已回滚的事实。`--rerun all` 不跳过租约。
+  - `state_lease_wait` 起止事件与 `elsewhere` 计数归约进反馈状态。字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
   锁文件走隔离 `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用 `TestClock`，不做真实等待。
   逐条目原子文件原语（命名、tmp→fsync→rename→fsync 目录写、损坏跳过的全目录扫描、rename 墓碑认领互斥）抽在 `src/shared/entry-file-store.ts`（用例锁、收尾登记、留存清单三个消费方共用），由 `src/shared/entry-file-store.test.ts` 独立覆盖：写入/读取往返、全目录扫描跳过损坏条目与点文件、缺失目录不抛错、认领在两个并发调用者之间互斥（恰一个拿到 `true`）。
 - **early exit**：只有 `passed` 触发、只作用于同一 eval、省略计入 `earlyExitUnstarted`、事件只在实际省略时发出；确定性错误的 run 级 fail-fast 与瞬态 errored 的区分。

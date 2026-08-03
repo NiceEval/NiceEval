@@ -125,6 +125,7 @@ npx niceeval exp prompts/concise
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
+| `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key；只协调状态，不提供存储 |
 | `sandbox` | 一条 `SandboxLayer`；具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
 | `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
@@ -207,7 +208,9 @@ export default defineExperiment({
   sandbox: e2bSandbox({ template: "fasteval-agents" })
     .setup(mempalSetup("codex"))        // 预检、写动态配置、预热、载入状态
     .teardown(mempalTeardown("codex")), // 回存状态
-  maxConcurrency: 1,                    // 载入和回存之间不能并发，声明串行
+  sandboxReuse: true,
+  maxConcurrency: 1,                    // 本 Invocation 内串行
+  sharedState: { key: "mempal/codex/cohort-a" },
 });
 ```
 
@@ -231,7 +234,8 @@ let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
 export default defineExperiment({
   agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
   evals: ["memory/"],
-  maxConcurrency: 1, // [载入…回存] 是临界区，声明式串行
+  maxConcurrency: 1,
+  sharedState: { key: "nowledge/claude/cohort-a" },
   sandbox: e2bSandbox({ template: "niceeval-agents" })
     .setup(async (sandbox, ctx) => {
       // 每沙箱一次，晚于实验级 setup：把宿主机侧坐标写进沙箱

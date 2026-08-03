@@ -29,7 +29,9 @@ export default defineExperiment({
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
-需要同一条连续实例时声明 `sandboxReuse: true`；结果依赖固定顺序时再显式声明 `maxConcurrency: 1`。跨 run checkpoint 的恢复与回存始终放在该物理 Sandbox 的 `setup()` / `teardown()`，不新增 Experiment 字段。
+需要同一条连续实例时声明 `sandboxReuse: true`；结果依赖固定顺序时再显式声明 `maxConcurrency: 1`。
+跨 run checkpoint 的恢复与回存始终放在该物理 Sandbox 的 `setup()` / `teardown()`；多个 Invocation 指向同一 checkpoint 时再用 Experiment `sharedState.key` 标识独占边界。
+
 如果 Attempt 不能接受 workdir 之外的状态残留，就不能声明 `sandboxReuse`。
 这里允许的是**已经成功 settle 的命令有意留下的任务服务**，不是超时或取消后失控的命令树。异常命令树必须先确认终止；Provider 做不到时整台 Sandbox 退休，绝不进入复用池。
 
@@ -46,6 +48,17 @@ export default defineExperiment({
 每个 Sandbox 同时只承接一条 Attempt。
 不同 Sandbox 可以并行；同时执行数仍受全局并发位和 Experiment `maxConcurrency` 限制。
 Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会使用的数量。
+
+### 并行 Invocation
+
+Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 Sandbox handle。
+两条 Invocation 同时选中一个只声明 `sandboxReuse: true` 与 `maxConcurrency: 1` 的 Experiment 时，各自可创建一个 Sandbox 并串行处理自己认领的 Eval。
+`maxConcurrency` 只约束本 Invocation 的池宽，不让两个进程共享 Sandbox，也不为独立的 Sandbox 建立跨进程名额。
+
+两个池都会读写同一 checkpoint 时，Experiment 必须另行声明 `sharedState: { key }`。
+共享状态租约在创建任何 Sandbox 之前取得，并一直持有到所有 Sandbox lifecycle `teardown()` 和 Provider finalizer 完成。
+等待方不创建 Sandbox；租约释放后它先重做整个 Experiment 的结果沿用规划，全部可携带时不取新租约、不触发 lifecycle。
+完整场景见[并行 Invocation 与状态边界](use-case/Sandbox复用/并行Invocation与状态边界.md)。
 
 ### 各阶段次数
 

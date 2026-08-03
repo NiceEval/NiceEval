@@ -18,7 +18,7 @@ ExperimentDefinition(运行配置 + 实验级 setup Hook,experiments/ 下一文�
   装 Agent CLI 归 Adapter 的 Agent layer,连 agent 归 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
 - 同一次 `niceeval exp` Invocation 可以同时跑多个实验（文件夹展开），但每个实验各自开 Run 目录，没有跨实验成员关系或聚合落盘。
   Invocation 是瞬时编排边界，不分配持久化 id。
-  多条 Invocation 也可以对同一仓库并行运行：Run 互不覆盖，同一条 `(experiment, eval)` 不被双跑由[用例锁](#并发-invocation用例锁)保证。
+  多条 Invocation 也可以对同一仓库并行运行：Run 互不覆盖，同一条 `(experiment, eval)` 不被双跑由[用例锁](#并发-invocation用例锁与共享状态租约)保证。
 
 ## 配置解析链：一次求值，处处同源
 
@@ -79,8 +79,10 @@ export default defineExperiment({
 
   maxConcurrency: 2,
   sandboxReuse: true,
-  //  实验级并发闸,先过它再占全局并发位;名额与 attempt 同生命周期(沙箱创建到销毁全程持有,
-  //  turn 退避等内部等待不释放)。名额域是该实验所有并行 Invocation 共用的,多开不叠加 N
+  //  本 Invocation 内的实验并发限制；另一个 Invocation 有自己的限制与 Sandbox 复用池
+
+  sharedState: { key: "mempal/codex/default" },
+  //  只在多个 Invocation 共享同一份可变状态时声明；按 key 独占完整 restore → run → save 窗口
 
   earlyExit: true,   // 只由 passed 触发的首过即停;errored 不中止其余样本,走 run 级 fail-fast
   budget: 50,        // 按已完成 attempt 的实测花费停止派发的安全网
@@ -91,7 +93,8 @@ export default defineExperiment({
 });
 ```
 
-`maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。
+`maxConcurrency` 用来串行化本 Invocation 的 Attempt，或给撞限额的实验单独降速。
+`sharedState.key` 是跨 Invocation 共享状态的身份；它与 Sandbox 复用池分属两个生命周期，完整租约机制见[并发 Invocation](#并发-invocation用例锁与共享状态租约)。
 `sandboxReuse` 决定 Sandbox Case 是逐 Attempt 创建还是跨 Attempt 复用,并进入配置哈希;每条 Attempt 都重放两层 prepare,完整顺序见 [Sandbox 复用](../sandbox/reuse.md)。
 `timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
 这些字段的调度语义单点在 [Runner](../../runner.md)。
@@ -183,7 +186,7 @@ export default defineExperiment({
   teardown 抛错记 diagnostic 并退出 1，失败后不回写登记，重试入口仍是 `--teardown`。
   与 eval 前缀位置参数组合报用法错误——这个 flag 选择的是「只收尾」这种跑法,不参与 eval 选择。
 
-## 并发 Invocation:用例锁
+## 并发 Invocation:用例锁与共享状态租约
 
 `.niceeval` 的 Run 目录天然支持多开——每条 Invocation 各开自己的 Run 目录,互不覆盖。
 多终端并行跑几条 `niceeval exp` 时,唯一要守住的是**同一条 `(experiment, eval)` 不被两条 Invocation 同时派发**:双跑烧双份沙箱与 token,还会并发踩踏有共享状态的实验。
@@ -226,14 +229,24 @@ export default defineExperiment({
   声明 `sandboxReuse: true` 的 Experiment 与普通 Experiment 一样重做结果沿用判据；可携带的 Attempt 不派发，其余 Attempt 才进入本次的复用生命周期。
   [`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于其它 Experiment。
   `--dry` 不取锁、不等待，只读锁目录把撞锁用例如实标进计划（见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状)）。
-- **实验级 `maxConcurrency` 的名额域跨 Invocation。**
-  声明了 `maxConcurrency` 的实验,其 N 个名额是**该实验所有并行 Invocation 共用的**:名额落成 `.niceeval/locks/` 下按 `(experimentId, slot)` 逐条目的租约文件,心跳、过期判据与 rename 接管和用例锁同一套纪律;名额与 attempt 同生命周期的持有规则不变(见 [Runner · 调度](../../runner.md#调度有界并发))。
-  这让 `maxConcurrency: 1` 作为共享状态实验的正确性声明在多开下依然成立——两条 Invocation 各选同一实验不同 eval 子集时,attempt 仍严格互斥;给撞限额实验降速的 N 也不因多开叠加对 agent 的压力。
-  未声明 `maxConcurrency` 的实验没有名额域,不产生任何跨进程协调。
-  两边解析出的 N 不一致(配置漂移)时,取在场声明中的最小值——正确性从紧。
+- **实验级 `maxConcurrency` 不跨 Invocation。**
+  它只决定本 Invocation 内该实验的 Attempt 宽度和 Sandbox 复用池宽，不写租约文件。
+  两个进程分别解析出 1 与 3 时各自生效，不取最小值；多开后的 Provider 和 Agent 服务总压力归用户或外部编排。
+- **`sharedState.key` 是独占的状态事务身份。**
+  两个 Experiment 即使 `experimentId` 不同，指向同一 checkpoint、中心数据库或远程记忆 cohort 时也声明同一 key。
+  租约文件落在 `.niceeval/locks/`，权威内容为 `{ key, experimentId, runId, pid, host, startedAt, heartbeatAt }`；文件名只由 key 的 slug 与哈希构成。
+- **租约覆盖完整恢复与回存窗口。**
+  Runner 在 Experiment `setup`、Sandbox 创建与 lifecycle `setup()` 之前取租约，在本实验所有 Sandbox lifecycle `teardown()`、Provider finalizer 和 Experiment `teardown` 完成后释放。
+  同一 Invocation 选中多个使用同一 key 的 Experiment 时也串行这些窗口。
+- **等待不占资源，也不提前取用例锁。**
+  等待者不跑 Experiment `setup`、不创建 Sandbox、不占全局并发位，也不持有任何 Eval 的用例锁，避免与状态租约形成环路等待。
+  租约释放后先重做整个 Experiment 的携带规划；若已无需派发的 Attempt，直接携带并结束，不再取租约。
+- **强杀只恢复互斥，不自动修复状态。**
+  心跳、过期和原子 rename 接管复用用例锁纪律，接管记 `state-lease-taken-over` diagnostic。
+  作者必须让 Attempt 终态成为原子提交边界；无法回滚强杀中的半成品时，换新 key 与干净 cohort 重建，不把接管后的续跑当成完整样本。
 
-**非目标**:用例锁与实验闸不把**全局**并发位扩展到跨进程——`--max-concurrency` 是每条 Invocation 自己的吞吐旋钮,两条并行 Invocation 对 provider 与模型接口的总压力是各自之和,配额分配归用户(各自调低 `--max-concurrency`)。
-同一实验被两条 Invocation 选中时,实验级 `setup` 在每条 Invocation 各执行一次,跨进程共享服务的互斥仍归外部编排。
+**非目标**:用例锁与共享状态租约不把**全局**并发位扩展到跨进程——`--max-concurrency` 是每条 Invocation 自己的吞吐旋钮,两条并行 Invocation 对 provider 与模型接口的总压力是各自之和,配额分配归用户(各自调低 `--max-concurrency`)。
+同一实验被两条 Invocation 选中且未声明 `sharedState` 时,实验级 `setup` 在每条 Invocation 各执行一次；需要跨进程共享单例服务时仍交给外部编排。
 它也不是跨机分布式锁:判据依赖同一份文件系统与同一只时钟,不同工作副本各有各的 `.niceeval`,天然不共享锁域。
 
 ## Session 登记

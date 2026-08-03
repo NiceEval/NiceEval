@@ -37,7 +37,7 @@ Runner 内部把每条判定表达为 `Eligible | Blocked`；`Blocked` 才携带
 指纹按**每条 eval** 各算一份(`runner/fingerprint.ts`),由两层嵌套构成:
 
 ```text
-configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse,
+configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse, sharedState.key,
                    Experiment sandbox layer 身份, strict, judge)
 fingerprint = hash(configHash, eval 源码闭包, evalId / tags / metadata,
                    pair-owned ProviderPlan(含 template owner、目标 platform/libc 与物理身份),
@@ -75,6 +75,8 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
   `judge` 进的是解析后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
 - **`sandboxReuse` 进。**
   复用改变 Case 创建次数和题间状态边界，因此属于可比性配置；它不改变已完成结果能否按相同指纹携带。省略等价于 `false`。
+- **`sharedState.key` 进。**
+  key 决定这批结果属于哪一条持久状态轨迹；换 key 等于换 cohort，旧结果不能与新轨迹混合。省略表示未声明跨 Invocation 共享状态。
 
 ### manifest:哈希做索引,清单做解释
 
@@ -154,6 +156,9 @@ export default defineExperiment({
   earlyExit: false,                 // 改 → 一条不动
   maxConcurrency: 2,                // 改 → 一条不动
   budget: 50,                       // 改 → 一条不动。这三个是调度参数,不改变结果
+
+  sharedState: { key: "mempal/codex/cohort-a" },
+  //  换 key → 36 条全部重跑；状态轨迹变了，不能沿用另一 cohort 的结果
 
   sandbox: sandboxLayer().prepare(shell("npm i -g some-cli")),
   //  这个实验的 layer 是 command-only,起点由各条 eval 自带(见下一块)
@@ -347,7 +352,7 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 **取到锁之后一律重做一次携带规划**:别的 Invocation 已跑完并落盘的终态, 每一道门都过就携入,仍缺的 attempt 序号才自己跑。
 这次重判无条件发生在取锁之后,两条选择有交集的 Invocation 因此不论时序怎样交错, 各自结束时都拿到完整结果集,交集部分只花一份成本。
-锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](architecture.md#并发-invocation用例锁)。
+锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](architecture.md#并发-invocation用例锁与共享状态租约)。
 
 ## 执行模式划走的一块
 

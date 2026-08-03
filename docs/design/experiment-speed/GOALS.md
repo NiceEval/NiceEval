@@ -1,6 +1,6 @@
 # 目标与要求
 
-**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -17,7 +17,8 @@
 - 默认运行保持 Attempt 间隔离，并允许结果进入结果沿用、CI 和正式报告。
 - Sandbox 复用必须由 Experiment 显式声明，并进入配置哈希。
   结果仍按普通携带判据进入结果沿用，可以按该 Experiment 的声明进入 CI。
-- Experiment 的 `maxConcurrency` 表达业务正确性时，任何加速方式都不能绕开它。
+- Experiment 的 `maxConcurrency` 表达本 Invocation 的宽度，不隐式变成跨进程名额。
+- 跨 Invocation 共享 checkpoint 时，独占边界覆盖完整的恢复、执行、回存与 Provider finalizer。
 - 可以并行的 Attempt 不应因为 Sandbox 复用被强制改成整批串行。
 - Runner 只依赖 Provider 能力，不按 Docker、E2B 或 Vercel 的名字分支。
 - 生命周期 Hook 的次数由所属层决定，不能为了提速改变 Agent 或 Eval Hook 的次数。
@@ -39,19 +40,21 @@
 8. 如果采用 Sandbox 预热，只能在计划确定后按近期派发量创建。
 9. 如果采用 Sandbox 复用，必须能说明实际分摊了哪些阶段。
 10. 候选方案必须分别说明只用一个 Sandbox 与同时使用多个 Sandbox 的并行影响。
+11. 候选方案必须说明多个 Invocation 是各自拥有 Sandbox 复用池，还是共享运行中实例。
+12. 共享持久状态的方案必须定义租约 key、持有期、结果沿用与强杀边界。
 
 ### Sandbox 寿命
 
-11. 采用 Sandbox 复用时，Runner 派发前要确认 Sandbox 能覆盖 Attempt deadline 与收尾。
-12. 候选方案必须说明不能续期时是更换 Sandbox，还是停止 Run。
-13. Provider 无法确认 Sandbox 复用寿命时，候选方案不能假设它会持续存活。
-14. reset、续期或 SandboxSpec `setup` 失败后，该 Sandbox 不再承接 Attempt。
+13. 采用 Sandbox 复用时，Runner 派发前要确认 Sandbox 能覆盖 Attempt deadline 与收尾。
+14. 候选方案必须说明不能续期时是更换 Sandbox，还是停止 Run。
+15. Provider 无法确认 Sandbox 复用寿命时，候选方案不能假设它会持续存活。
+16. reset、续期或 SandboxSpec `setup` 失败后，该 Sandbox 不再承接 Attempt。
 
 ### 反馈
 
-15. 计划与结束反馈至少展示少跑数量、实际并行数、Sandbox 创建数和复用次数。
-16. Attempt 时间树只记录本 Attempt 的工作；共用的创建与 SandboxSpec `setup` 记为 Run 级开销。
-17. 基准至少区分 Sandbox 创建、SandboxSpec `setup`、Agent 准备、Agent 执行与评分。
+17. 计划与结束反馈至少展示少跑数量、实际并行数、Sandbox 创建数和复用次数。
+18. Attempt 时间树只记录本 Attempt 的工作；共用的创建与 SandboxSpec `setup` 记为 Run 级开销。
+19. 基准至少区分 Sandbox 创建、SandboxSpec `setup`、Agent 准备、Agent 执行与评分。
 
 ## 不在范围内
 

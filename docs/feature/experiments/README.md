@@ -53,8 +53,9 @@ export default defineExperiment({
   sandbox?: SandboxLayer;                    // 本实验向主 Sandbox 贡献的一层:template-bearing factory 产物,
                                             // 或 sandboxLayer() 的命令链;省略等价于空的 command-only layer
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
+  sharedState?: { readonly key: string };    // 共享 checkpoint / 数据库的跨 Invocation 独占身份
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
-  maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
+  maxConcurrency?: number;                   // 只限制本 Invocation 内该实验的 attempt
   classifyFailure?: AttemptFailureClassifier; // 识别本实验共享基建的失败形态,为止损闸声明波及范围
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;     // 实验级生命周期:整场一次、宿主机侧(见下)
   teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;  // 全部 attempt 收尾后执行;setup 时点走到过才触发
@@ -71,9 +72,17 @@ export default defineExperiment({
 两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。
 三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
-`maxConcurrency` 是**实验自己的并发闸**:只限流本实验的 attempt,同批其它实验照常按全局并发跑。
-名额从沙箱创建前一直握到 `teardown` 与沙箱销毁完成,中途不松手——所以 `maxConcurrency: 1` 的实验里,上一个 attempt 的回存 Hook 没跑完,下一个 attempt 的载入不会开始,共享状态的正确性只靠这一行声明,Hook 里不需要自己加锁。
+`maxConcurrency` 是本 Invocation 内的**实验并发限制**:只让该实验的 Attempt 排队,同批其它实验照常按全局并发跑。
+它可以表达一次运行内严格串行、严格重试或只维护 N 个可复用 Sandbox，但不会因为另一个终端也选了同一 Experiment 而共享名额。
 什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
+
+`sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
+Runner 在同一记录根内按 `key` 独占整个状态窗口。
+窗口从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
+这个字段只提供互斥，不代替 checkpoint 存储、原子提交或强杀恢复。
+
+同一 Experiment 的独立 Sandbox 不共享可变状态时省略它；两个 Experiment 确实指向同一 checkpoint 时使用同一 `key`。
+key 是会进入 Run 记录的稳定非密字符串，必须匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；不把 token、账号或其它凭据编进 key。
 
 `classifyFailure` 是实验作者识别共享基建死因的纯分类器。
 它只声明失败是否可重试、以及死因波及 attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。
@@ -113,7 +122,8 @@ export default defineExperiment({
 需要严格串行时声明 `maxConcurrency: 1`。
 完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
 
-新的 run 需要从 checkpoint 起步时，同样在实际 Sandbox 创建后的 `setup()` 恢复，并在该实例退休前的 `teardown()` 回存。需要同一条连续实例时声明 `sandboxReuse: true`；需要固定顺序时另行声明 `maxConcurrency: 1`。
+新的 run 需要从 checkpoint 起步时，同样在实际 Sandbox 创建后的 `setup()` 恢复，并在该实例退休前的 `teardown()` 回存。
+需要同一条连续实例时声明 `sandboxReuse: true`；本 Invocation 需要固定顺序时另行声明 `maxConcurrency: 1`；多个 Invocation 指向同一 checkpoint 时再声明 `sharedState`。
 完整的物理 Sandbox 生命周期与复用次数见 [Sandbox 生命周期](../sandbox/lifecycle.md) 与 [Sandbox 复用](../sandbox/reuse.md)。
 
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
