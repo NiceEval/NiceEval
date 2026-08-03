@@ -131,8 +131,15 @@ const doc = await targetDoc(w, target, { hosting: "directory-root" });
 | `report.attempt(locator)` | attempt 对象,可继续按身份下钻 | [show 的 attempt 面](../../feature/reports/show/attempt.md) |
 | `attempt.executionNodes()` | `Observed<string[]>`,执行树节点身份 | [show --execution](../../feature/reports/show/execution.md) |
 | `attempt.timingGaps()` | `Observed<string[]>`,缺时间注释的节点身份 | 同上 |
+| `attempt.conversation()` | Web Attempt 的执行对话对象；不存在时仍返回可定位 reader，由状态词区分缺失 | [AttemptDetail](../../feature/reports/components/attempt-detail/README.md) |
+| `conversation.entryKinds()` | `Observed<string[]>`，按显示顺序返回 `assistant`、`tool` 等公开 entry kind | 同上 |
+| `conversation.toolNames()` | `Observed<string[]>`，按执行顺序返回对话中的公开工具身份 | 同上 |
+| `attempt.executionEvidenceState()` | `Observed<"available" \| "unavailable">`；根据 Conversation 或契约 warning 判定，不从 artifact 路径旁读 | 同上 |
+| `attempt.calloutTitles()` | `Observed<string[]>`，按显示顺序返回 Attempt 详情的公开 callout 标题 | 同上 |
 
-导出 HTML 与浏览器读面共享这批词;只有各媒介独有的能力单独立词,例如 `doc.disclosure(名称).isExpanded()` 与 `table.visibleRows()`。
+导出 HTML 与浏览器读面共享这批词；`targetDoc(...).attempt()` 与 `ui.dialog().attempt()` 必须产生相同的
+Attempt reader。只有各媒介独有的能力单独立词，例如 `doc.disclosure(名称).isExpanded()` 与
+`table.visibleRows()`。reader 不读取 Record artifact 来补页面缺失；否则 renderer 丢内容时测试会用旁路真值把缺陷遮住。
 
 ### 断言:`expectObserved`
 

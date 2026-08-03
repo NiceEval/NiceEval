@@ -87,6 +87,7 @@ Report 参数化页的全集 census、Chromium 代表矩阵与 hosting 路径见
 |---|---|
 | `src/view/**`、Report target / page / hosting、`enhance.js` | 单元结构 census + `report-target-closure` |
 | Report compute / renderer | 对应 compute contract + text/web 代表 E2E |
+| AttemptDetails / Conversation / attempt result view | `reports.attempt-execution-evidence`；共享 Show projection 改动再追加 `reports.evidence-slices-roundtrip` |
 | CLI / process output | 真实子进程、流与 exit Behavior；Show 证据切片改动追加 `reports.evidence-slices-roundtrip` |
 | scheduler / retry / BuildKey | 可控 barrier 单元 + timeline 代表 E2E |
 | cleanup / sandbox ownership | cleanup 单元 + 串行生命周期 lane |
@@ -98,8 +99,13 @@ CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 
 影响图同样绑定稳定 Behavior id，但只登记能够改变该公开任务的精确 path set，不用顶层目录制造全量误跑。
 Show 的 flag、切片宿主、attempt evidence 读取、对应组件装配和候选包入口由
 [`reports.evidence-slices-roundtrip`](use-case/evidence-slices-roundtrip.md#变更触发路径)共同守护；
-producer 路径只有在改变落盘 evidence 契约时才进入这条闭环。重命名按 diff 新旧路径匹配，共享 helper
-按 import graph 扩一跳，确保“文件挪走所以规则不再命中”本身不能绕过门禁。
+
+Web Attempt 对 source、events、Conversation 与缺失 warning 的组合由
+[`reports.attempt-execution-evidence`](use-case/attempt-execution-evidence.md#变更触发路径)守护。
+
+共享 projection 只有实际改变对应公开读面时才触发一条或两条 Behavior。producer 路径只有在改变落盘
+evidence 契约时才进入闭环。重命名按 diff 新旧路径匹配，共享 helper 按 import graph 扩一跳，确保
+“文件挪走所以规则不再命中”本身不能绕过门禁。
 
 ## Proof 准入门槛
 

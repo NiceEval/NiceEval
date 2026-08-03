@@ -86,6 +86,16 @@ fix parent 或最小逆补丁验证记录。
 - **最早失败**：observe / outcome；消息列领域路径、输入桶、独立推导和两面实际值。
 - **成本**：compute contract 每 PR；一个官方 Report 组合 E2E 每 PR，无模型。
 
+### A7b · Attempt 执行证据不被源码区块遮蔽
+
+- **覆盖**：source capability 存在时 Web AttemptDetails 跳过 Conversation，以及 events 缺失时静默零输出 `5a4d01a9`。
+- **fixture**：两个 source 形状相同的 Attempt；一个同时发布 assistant / tool events 与具名工具，另一个不发布 events artifact。
+- **动作**：从候选 tarball 导出 Report；禁用 JavaScript 读取独立 attempt 文档，再从 `clean-url-subpath` 宿主打开同一 attempt dialog。
+- **公开 oracle**：有 events 时 Source 与 Conversation 同时可见，assistant / tool 身份及工具名完整；缺 events 时 Source 仍可见，并显示 `Execution evidence unavailable` warning。
+- **区分性**：恢复 `5a4d01a9^` 的 source / conversation 互斥条件必须失败；只测 `show --execution`、组件 snapshot、target 存在或 dialog 打开不能通过。
+- **最早失败**：invoke（导出或 target 打不开）、observe（领域 reader 无法解析）、outcome（证据区块或缺失状态错误）；附 locator、artifact 状态、target URL、实际 entry kind、HTML evidence 与截图。
+- **成本**：每 PR与发布 tag，本地确定性，无模型 / 公网；完整设计见 [`reports.attempt-execution-evidence`](../use-case/attempt-execution-evidence.md)。
+
 ### A8 · 浏览器 target / enhancement / hosting 闭合
 
 - **覆盖**：

@@ -130,11 +130,14 @@ renderer、flag 表或 evidence compute helper。
 | `show-cli-entry` | `bin/niceeval.js`、`package.json` 的 `bin` / `files` / lifecycle scripts、`src/cli.ts` | 能让命令或 flag 在安装包、解析、预扫、校验、派发任一处消失 |
 | `show-slice-host` | `src/show/**` | 决定 locator 范围、切片互斥、summary/full 档位、文本/JSON 宿主输出 |
 | `attempt-evidence-read` | `src/record/locator.ts`、`src/record/open.ts`、`src/record/attempt-evidence.ts`、`src/record/attempt-source.ts`、`src/record/annotated-source.ts` 及其直接拆分文件 | 决定 locator 能否回读，以及四类 artifact 是否被装配成同一个 attempt evidence |
-| `attempt-evidence-components` | `src/report/components/attempt-detail/**`、`src/report/tasks.ts`、`src/report/runtime/host.ts`、`src/report/runtime/page-render.ts`、`src/report/definition/primitives/diff-lines.ts` | 决定 evidence 到 source / execution / timing / diff 领域数据的映射、宿主装配与 diff 文本 |
+| `attempt-evidence-components` | `src/report/components/attempt-detail/compute.ts`、`validate.tsx`、`src/report/model/conversions.ts`、`src/report/tasks.ts`、`src/report/definition/primitives/diff-lines.ts` 中被 Show 切片消费的导出及其直接拆分文件 | 决定 evidence 到 source / execution / timing / diff 领域数据的映射与 diff 文本 |
 | `candidate-package` | `e2e/scripts/injection.ts`、`e2e/scripts/run.ts`、`package.json` 的发布文件清单与 lifecycle scripts、`tsconfig.report-build.json`、`scripts/prune-report-dist.mjs` | 防止源码测试绿、实际 tarball 缺入口、缺预编译 Report runtime 或装入旧产物 |
 
 以下路径不默认触发整条 proof：
 
+- AttemptDetails、Conversation 和 result view 等 Web 组合路径由
+  [`reports.attempt-execution-evidence`](attempt-execution-evidence.md#变更触发路径)守护；共享 conversion / task
+  导出改变 Show 切片时才同时触发本 Behavior；
 - `src/report/**` 的其它 summary、chart、layout 和 web-only 组件不影响证据切片，走各自 Behavior；
 - `src/runner/**`、`src/context/**`、`src/o11y/**`、`src/sandbox/**` 改变的是证据**生产**，先跑对应
   unit / adapter proof。只有改动同时触及落盘 evidence schema、artifact registry 或 Show 读取契约时，
