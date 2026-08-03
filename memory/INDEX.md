@@ -145,6 +145,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [incomplete-summary-hides-unstarted](incomplete-summary-hides-unstarted.md) — 止损闸后 human 结论只显示 `INCOMPLETE`、隐藏 `completion.unstarted`，计划与 verdict 平白少数；修为结论行显式列 `N unstarted`，保持「未执行」身份不冒充 skipped
 - 已修 [experiment-fatal-presented-as-user-interrupt](experiment-fatal-presented-as-user-interrupt.md) — 多实验并跑时一条泳道的 `ExperimentFatalError` 正文被吞、只剩 interrupted+130 与 Ctrl+C 无法区分,且无关实验一并被拖垮(2026-07-31 真机,曾被误诊为用户手滑);根因两处叠加:复用池 `acquire()` 的拒绝经 `Effect.promise` 变成 defect 炸穿 forEach,`Cause.isInterrupted` 又把「die + 兄弟 interrupt」的合成 cause 当成用户中断;修法=租借失败接回本地走空间轴回执 + `errored`,判中断改 `isInterruptedOnly`(`src/runner/run.ts`、`src/runner/attempt.ts` 新导出 `attemptFailureDeclaration`)
 - 已修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
 - 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))

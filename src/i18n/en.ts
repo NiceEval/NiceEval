@@ -361,6 +361,8 @@ export const en = {
   "feedback.human.resultsMore": "… {{count}} more",
   "feedback.human.reuse": "{{reused}} of {{total}} carried in from cache · {{toRun}} to run",
   "feedback.human.summaryLine": "{{passed}} passed · {{failed}} failed · {{errored}} errored  ({{reused}} reused)",
+  "feedback.human.summaryIncompleteLine":
+    "{{passed}} passed · {{failed}} failed · {{errored}} errored · {{unstarted}} unstarted  ({{reused}} reused)",
   "feedback.human.summaryAllReusedLine": "{{passed}} passed · {{failed}} failed · {{errored}} errored  (all {{reused}} reused)",
   "feedback.human.suppressedFailures": "… {{count}} more failures suppressed",
   "feedback.human.trace": "Trace:   niceeval show {{locator}} --execution",

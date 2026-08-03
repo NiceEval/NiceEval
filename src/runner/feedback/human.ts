@@ -351,10 +351,15 @@ function buildSummaryLines(
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
-      text: t(fullReuse ? "feedback.human.summaryAllReusedLine" : "feedback.human.summaryLine", {
+      text: t(completion.unstarted > 0
+        ? "feedback.human.summaryIncompleteLine"
+        : fullReuse
+          ? "feedback.human.summaryAllReusedLine"
+          : "feedback.human.summaryLine", {
         passed: summary.passed,
         failed: summary.failed,
         errored: summary.errored,
+        unstarted: completion.unstarted,
         reused: state.reused,
       }),
     },

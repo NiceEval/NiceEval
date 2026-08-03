@@ -353,6 +353,8 @@ export const zhCN = {
   "feedback.human.resultsMore": "… 还有 {{count}} 个",
   "feedback.human.reuse": "{{total}} 中 {{reused}} 条来自缓存 · {{toRun}} 待跑",
   "feedback.human.summaryLine": "{{passed}} 通过 · {{failed}} 失败 · {{errored}} 出错  (复用 {{reused}})",
+  "feedback.human.summaryIncompleteLine":
+    "{{passed}} 通过 · {{failed}} 失败 · {{errored}} 出错 · {{unstarted}} 未派发  (复用 {{reused}})",
   "feedback.human.summaryAllReusedLine": "{{passed}} 通过 · {{failed}} 失败 · {{errored}} 出错  (全部 {{reused}} 条复用)",
   "feedback.human.suppressedFailures": "… 还有 {{count}} 条失败被折叠",
   "feedback.human.trace": "Trace:   niceeval show {{locator}} --execution",

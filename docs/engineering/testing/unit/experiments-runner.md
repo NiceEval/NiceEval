@@ -137,6 +137,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   区分力要覆盖有/无 `dedupeKey`、有/无作者 `data`、`data` 里带一个冒充 `phase` 三面。
   `--json` 侧同一份 `code`/`phase` 的透出归「形态解析与 `--json` 流不变量」类别，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。
 - **human renderer 的面板接线到 `panel.ts`（`runner/feedback/human.ts`）**：面板几何本身由 [Reports 的「面板几何」类别](reports.md#覆盖规范)覆盖，这里只证明 `renderDurableLines`/live dashboard 真的把内容交给 `renderPanel` 而不是各自拼框字符——`panelCapabilityOf(io)` 按 `io.stderr.isTTY` 与 `io.env.NO_COLOR` 正确算出 `mode`；`plan`/`summary`/`saved` 三类事件在 `mode: "boxed"` 时产生可识别的框线字符（`╭`/`├`/`╰`）且面板顺序与分隔（FAILED/PASSED → FAILURES → KEPT SANDBOXES，各自独立成框、之间空行分隔；NEXT 面板内嵌 RESULTS 横隔）符合声明；同一状态在 `mode: "plain"` 或非 TTY 下不产生任何框字符，内容仍完整。
+  结论内容覆盖 `complete` 与带非零 `unstarted` 的 `incomplete` 两面；后者必须把数量投影到结论行，证明未派发的 Attempt 不会只留一个没有原因或规模的 `INCOMPLETE` 标题（`// bug: memory/incomplete-summary-hides-unstarted.md`）。
   不断言具体字节内容或列宽算术——那是 panel.ts 自己的几何测试与 [E2E · CLI](../e2e/cli.md)「反馈输出格式」的职责。
 - **live 面板的宽度与 ACTIVE 列分配（`runner/feedback/human.ts`）**：
   - 必须包含宽终端场景，例如 fake IO 的 `columns: 200`。

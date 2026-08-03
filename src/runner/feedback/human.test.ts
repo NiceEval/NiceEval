@@ -162,6 +162,20 @@ describe("renderDurableLines — 面板事件接线到 panel.ts", () => {
     expect(lines[0]).toMatch(/^╭─ PASSED /);
   });
 
+  // bug: memory/incomplete-summary-hides-unstarted.md
+  it("INCOMPLETE 结论行给出未派发数量,不让操作者手算计划与 verdict 的差", () => {
+    const state = createInitialRunFeedbackState();
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 91, failed: 9, errored: 1 }),
+      completion: completion({ status: "incomplete", unstarted: 7 }),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 82 }).join("\n");
+
+    expect(text).toContain("91 passed · 9 failed · 1 errored · 7 unstarted");
+  });
+
   it("saved 事件产生 NEXT 面板,内嵌 RESULTS 横隔(不是独立的第二个框)", () => {
     const state = stateWithFailureAndKept();
     const event: DurableFeedbackEvent = {
