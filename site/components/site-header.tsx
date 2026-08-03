@@ -5,8 +5,6 @@ import { githubUrl, otherLocale, withLocale, type Dictionary, type Locale } from
 import { track } from "../src/analytics";
 import { LogoMark } from "./logo";
 
-const LOCALE_COOKIE = "niceeval-locale";
-
 // 仅 header 导航指向 introduction;首页的 docsUrl 引用保持 quickstart。
 const headerDocsUrl: Record<Locale, string> = {
   en: "https://niceeval.com/docs/introduction",
@@ -20,14 +18,6 @@ export function routeHref(locale: Locale, route: Route) {
   if (route.name === "blog") return withLocale(locale, "blog");
   if (route.name === "post") return withLocale(locale, `blog/${route.slug}`);
   return withLocale(locale);
-}
-
-export function rememberLocale(locale: Locale) {
-  try {
-    document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000`;
-  } catch {
-    // Language switching still works for this navigation even if the cookie can't be set.
-  }
 }
 
 export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; route: Route }) {
@@ -75,7 +65,6 @@ export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; ro
           href={routeHref(nextLocale, route)}
           onClick={() => {
             track("Switch Language", { from: locale, to: nextLocale });
-            rememberLocale(nextLocale);
           }}
         >
           {nextLocale === "zh" ? "中文" : "EN"}

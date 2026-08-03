@@ -4,7 +4,7 @@ import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { notFound } from "next/navigation";
-import { getDictionary, hasLocale, locales } from "../../lib/content";
+import { getDictionary, hasLocale, locales, siteOrigin } from "../../lib/content";
 
 type LangParams = Promise<{ lang: string }>;
 
@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: { params: LangParams }) {
   if (!hasLocale(lang)) return {};
   const t = getDictionary(lang);
   return {
-    metadataBase: new URL("https://niceeval.com"),
+    metadataBase: new URL(siteOrigin),
     title: {
       default: "NiceEval",
       template: "%s | NiceEval",

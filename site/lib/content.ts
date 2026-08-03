@@ -1,6 +1,7 @@
 export const locales = ["en", "zh"] as const;
 export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = "en";
+export const siteOrigin = "https://niceeval.com";
 
 export function hasLocale(locale: string): locale is Locale {
   return (locales as readonly string[]).includes(locale);
@@ -10,9 +11,14 @@ export function otherLocale(locale: Locale): Locale {
   return locale === "en" ? "zh" : "en";
 }
 
-// 拼语言前缀路径:withLocale("en") -> "/en", withLocale("en", "blog/foo") -> "/en/blog/foo"
+// 拼正式语言路径:英文使用根路径,中文保留 /zh 前缀。
 export function withLocale(locale: Locale, path = "") {
+  if (locale === "en") return path ? `/${path}` : "/";
   return path ? `/${locale}/${path}` : `/${locale}`;
+}
+
+export function absoluteUrl(path: string) {
+  return path === "/" ? siteOrigin : `${siteOrigin}${path}`;
 }
 
 export const githubUrl = "https://github.com/CorrectRoadH/niceeval";
@@ -34,7 +40,7 @@ export const initPrompt =
 export const copy = {
   en: {
     // 页面级 <title>:每页独特、带功能描述,避免整站共用 "NiceEval" 被判重复内容。
-    titleHome: "NiceEval — Agent-Native Eval Framework and Eval harness for AI Applications",
+    titleHome: "NiceEval: Agent-Native Evaluation Framework",
     titleBlog: "Agent Eval Blog",
     meta: "NiceEval is a framework-agnostic agent eval tool, giving you a complete closed loop for building evals for your agents or coding agents.",
     navStart: "Start",

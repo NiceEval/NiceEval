@@ -1,48 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://niceeval.com/en</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en" />
+    <loc>https://niceeval.com/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/" />
     <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/" />
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://niceeval.com/zh</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/" />
     <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/" />
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://niceeval.com/en/blog</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en/blog" />
+    <loc>https://niceeval.com/blog</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/blog" />
     <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog" />
-    <lastmod>2026-07-02</lastmod>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/blog" />
+    <lastmod>2026-07-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://niceeval.com/zh/blog</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en/blog" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/blog" />
     <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog" />
-    <lastmod>2026-07-02</lastmod>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/blog" />
+    <lastmod>2026-07-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://niceeval.com/en/blog/why-we-need-evals</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en/blog/why-we-need-evals" />
-    <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog/why-we-need-evals" />
-    <lastmod>2026-07-02</lastmod>
+    <loc>https://niceeval.com/blog/prompt-evaluation-vs-agent-evaluation</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/blog/prompt-evaluation-vs-agent-evaluation" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog/prompt-evaluation-vs-agent-evaluation" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/blog/prompt-evaluation-vs-agent-evaluation" />
+    <lastmod>2026-07-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://niceeval.com/zh/blog/why-we-need-evals</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/en/blog/why-we-need-evals" />
-    <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog/why-we-need-evals" />
-    <lastmod>2026-07-02</lastmod>
+    <loc>https://niceeval.com/zh/blog/prompt-evaluation-vs-agent-evaluation</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://niceeval.com/blog/prompt-evaluation-vs-agent-evaluation" />
+    <xhtml:link rel="alternate" hreflang="zh" href="https://niceeval.com/zh/blog/prompt-evaluation-vs-agent-evaluation" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://niceeval.com/blog/prompt-evaluation-vs-agent-evaluation" />
+    <lastmod>2026-07-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import BlogArticleClient from "../../../../components/site-blog-article-client";
 import { getAllBlogPosts, getBlogPostBySlug } from "../../../../lib/blog";
-import { getDictionary, hasLocale, locales } from "../../../../lib/content";
+import { absoluteUrl, getDictionary, hasLocale, locales, withLocale } from "../../../../lib/content";
 import { JsonLd } from "../../../../lib/json-ld";
 
 type BlogPostParams = Promise<{ lang: string; slug: string }>;
@@ -20,22 +20,23 @@ export async function generateMetadata({ params }: { params: BlogPostParams }) {
   }
 
   const postCopy = post[lang];
+  const path = withLocale(lang, `blog/${slug}`);
   return {
     title: postCopy.title,
     description: postCopy.description,
     alternates: {
-      canonical: `/${lang}/blog/${slug}`,
+      canonical: path,
       languages: {
-        en: `/en/blog/${slug}`,
-        zh: `/zh/blog/${slug}`,
-        "x-default": `/en/blog/${slug}`,
+        en: withLocale("en", `blog/${slug}`),
+        zh: withLocale("zh", `blog/${slug}`),
+        "x-default": withLocale("en", `blog/${slug}`),
       },
     },
     openGraph: {
       title: `${postCopy.title} | NiceEval`,
       description: postCopy.description,
       type: "article",
-      url: `/${lang}/blog/${slug}`,
+      url: path,
       siteName: "NiceEval",
       locale: lang === "zh" ? "zh_CN" : "en_US",
       publishedTime: postCopy.date,
@@ -62,8 +63,8 @@ export default async function BlogPostPage({ params }: { params: BlogPostParams 
           description: postCopy.description,
           datePublished: postCopy.date,
           articleSection: postCopy.category,
-          image: post.cover ? `https://niceeval.com${post.cover}` : undefined,
-          url: `https://niceeval.com/${lang}/blog/${slug}`,
+          image: post.cover ? absoluteUrl(post.cover) : undefined,
+          url: absoluteUrl(withLocale(lang, `blog/${slug}`)),
           author: { "@type": "Organization", name: "NiceEval" },
           publisher: { "@type": "Organization", name: "NiceEval" },
         }}
