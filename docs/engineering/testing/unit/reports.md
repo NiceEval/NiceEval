@@ -435,18 +435,20 @@ const scope = reportScopeFixture({
   - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`，facts 只验收读取后的数据投影。
    attempt 首页 `usage:` / `facts:` 行、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
-  - timing、失败命令、Agent 事件与 Attempt error 在落盘前按 `CommandOptions.sensitiveValues` 脱敏。
+  - timing、非零命令、Agent 事件与 Attempt error 在落盘前按 `CommandOptions.sensitiveValues` 脱敏。
     summary/full、`--expand`、`--grep` 与 JSON 只能消费 `<redacted>`，不得从其它 artifact 补回。
     旧 artifact 与未登记自由文本不在 renderer 用 key-name regex 猜测。
+  - unchecked 命令的非零分类为 `observed`，不带失败样式；checked 命令因非零抛出才分类为 `failed`。
+    两类命令都保留原始 exit code 与输出，并在独立 lifecycle 区块按 timing 顺序展示，不进入 `Conversation`。
   - 预览按段截断。
-    普通卡正文、TOOL 的 input/result、失败命令的命令行/stdout/stderr 分别计段。
+    普通卡正文、TOOL 的 input/result、命令证据的命令行/stdout/stderr 分别计段。
   - 每段最多三行，并有 1 KiB 的 UTF-8 字节回退。
     骨架标签不占正文预算。
   - 卡尾只出现一条截断提示，汇总被折叠的行数和字符数。
-  - Agent 卡与失败命令卡的句柄从事件序确定性派生。
+  - Agent 卡与命令证据卡的句柄从事件序确定性派生。
     相同 Fixture 两次派生必须同值。
   - `--expand` 恢复完整落盘值；句柄越界时报告实际范围。
-  - `--grep` 搜索角色文本、工具名、input、result，以及失败命令的 display/stdout/stderr。
+  - `--grep` 搜索角色文本、工具名、input、result，以及命令证据的 display/stdout/stderr。
   - 命中卡片仍受预览预算约束。
     完整可见输出由 Report E2E 验收。
 
