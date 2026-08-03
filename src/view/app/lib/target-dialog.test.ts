@@ -4,6 +4,7 @@
 // (attempt 形态与 experiment 形态)证明拦截 / 路由不写死具体实体。
 import { describe, expect, it } from "vitest";
 import {
+  createTargetRequestGate,
   hashForTarget,
   hrefForTarget,
   parseTargetDocument,
@@ -12,6 +13,19 @@ import {
 } from "./target-dialog.ts";
 
 const PARAM_PAGE_IDS = ["attempt", "experiment"];
+
+describe("target request gate", () => {
+  it("旧响应不能覆盖新目标，关闭后最后一次响应也失效", () => {
+    const gate = createTargetRequestGate();
+    const old = gate.begin({ pageId: "attempt", key: "@old" });
+    const latest = gate.begin({ pageId: "experiment", key: "agents/codex" });
+
+    expect(gate.accepts(old)).toBe(false);
+    expect(gate.accepts(latest)).toBe(true);
+    gate.invalidate();
+    expect(gate.accepts(latest)).toBe(false);
+  });
+});
 
 describe("hrefForTarget / targetFromHref", () => {
   it("attempt 形态的 pageId 互为逆运算(编码/解码往返)", () => {

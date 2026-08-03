@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { detectLocale, makeTranslator, persistLocale, setDocumentLocale } from "./i18n.ts";
 import type { Locale, LocalizedText, ReportSlotHtml, Tab, ViewData, ViewReportPageMeta } from "./types.ts";
 import {
+  createTargetRequestGate,
   hashForTarget,
   hrefForTarget,
   parseTargetDocument,
@@ -103,6 +104,7 @@ export function App({
   data,
   reportPages,
   onActiveView,
+  targetRevision,
 }: {
   data: ViewData;
   reportPages: globalThis.Record<string, ReportSlotHtml>;
@@ -111,6 +113,8 @@ export function App({
    * (docs/feature/reports/view.md「只渲染看得见的那一块」);静态产物不传这个回调。
    */
   onActiveView?: (view: { page: string; locale: Locale }) => void;
+  /** 本地重建版本；静态导出不传，因此不会重复获取参数化页。 */
+  targetRevision?: number;
 }) {
   const [locale, setLocale] = useState<Locale>(() => detectLocale());
   const t = useMemo(() => makeTranslator(locale), [locale]);
@@ -141,6 +145,9 @@ export function App({
   // true → UI 关闭走 history.back(),前进键还能重新打开;false(深链直接落地)→ 原地抹 hash,
   // 免得 back 把用户弹出站外。
   const dialogOwnsHistory = useRef(false);
+  const requestedDialog = useRef<{ target: PageTarget; ownsHistory: boolean } | null>(null);
+  const targetRequestGate = useRef(createTargetRequestGate());
+  const previousTargetRevision = useRef(targetRevision);
 
   useEffect(() => {
     setDocumentLocale(locale);
@@ -166,11 +173,14 @@ export function App({
    * 链接命中同一个点击拦截器,状态替换即完成「嵌套下钻」(view.md「参数化页的 dialog 摆放」)。
    */
   const openTarget = useCallback(async (target: PageTarget, ownsHistory: boolean) => {
+    requestedDialog.current = { target, ownsHistory };
+    const request = targetRequestGate.current.begin(target);
     try {
       const res = await fetch(hrefForTarget(target.pageId, target.key));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const content = parseTargetDocument(await res.text());
       if (!content) throw new Error("response is not a recognized target document");
+      if (!targetRequestGate.current.accepts(request)) return;
       dialogOwnsHistory.current = ownsHistory;
       setDialogTarget(target);
       setDialogContent(content);
@@ -181,7 +191,18 @@ export function App({
     }
   }, []);
 
+  // 一次成功重建也会更新已打开的参数化页。失败时保留旧内容；请求闸阻止
+  // 旧目标的迟到响应覆盖随后打开的新目标。
+  useEffect(() => {
+    if (targetRevision === undefined || previousTargetRevision.current === targetRevision) return;
+    previousTargetRevision.current = targetRevision;
+    const requested = requestedDialog.current;
+    if (requested) void openTarget(requested.target, requested.ownsHistory);
+  }, [targetRevision, openTarget]);
+
   const closeDialog = useCallback(() => {
+    requestedDialog.current = null;
+    targetRequestGate.current.invalidate();
     setDialogTarget(null);
     setDialogContent(null);
     if (dialogOwnsHistory.current) {
@@ -218,6 +239,8 @@ export function App({
         void openTarget(target, true);
         return;
       }
+      requestedDialog.current = null;
+      targetRequestGate.current.invalidate();
       setDialogTarget(null);
       setDialogContent(null);
       const routed = tabFromHash(location.hash, pages);

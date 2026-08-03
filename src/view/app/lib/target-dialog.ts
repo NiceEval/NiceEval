@@ -21,6 +21,30 @@ export interface PageTarget {
   key: string;
 }
 
+export interface TargetRequestToken {
+  readonly revision: number;
+  readonly target: PageTarget;
+}
+
+/** 只允许最后一次、且目标仍匹配的参数化页请求写回 dialog。 */
+export function createTargetRequestGate() {
+  let revision = 0;
+  let target: PageTarget | null = null;
+  return {
+    begin(next: PageTarget): TargetRequestToken {
+      target = next;
+      return { revision: ++revision, target: next };
+    },
+    invalidate(): void {
+      target = null;
+      revision++;
+    },
+    accepts(token: TargetRequestToken): boolean {
+      return revision === token.revision && target?.pageId === token.target.pageId && target.key === token.target.key;
+    },
+  };
+}
+
 /** `<pageId>/<key>.html` 形态的相对 href(相对于当前文档),与 encodeURIComponent(key) 对应。 */
 const HREF_PATTERN = /^([a-z0-9-]+)\/(.+)\.html$/;
 

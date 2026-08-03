@@ -44,6 +44,7 @@ function Live() {
   const [blocks, setBlocks] = useState<globalThis.Record<string, ReportSlotHtml>>(() => readBakedBlocks(initialData));
   const [failure, setFailure] = useState<string | null>(null);
   const [view, setView] = useState<{ page: string; locale: Locale } | null>(null);
+  const [targetRevision, setTargetRevision] = useState(0);
 
   const onActiveView = useCallback((next: { page: string; locale: Locale }) => {
     setView((prev) => (prev && prev.page === next.page && prev.locale === next.locale ? prev : next));
@@ -83,6 +84,7 @@ function Live() {
       };
       setFailure(null);
       setData(patch.viewData);
+      setTargetRevision((revision) => revision + 1);
       // 这次重建让其余块全部作废:只留新到的这一块,切过去时按新产物重新取。
       setBlocks({ [patch.page]: { [patch.locale]: patch.html } });
     });
@@ -96,7 +98,7 @@ function Live() {
 
   return (
     <>
-      <App data={data} reportPages={blocks} onActiveView={onActiveView} />
+      <App data={data} reportPages={blocks} onActiveView={onActiveView} targetRevision={targetRevision} />
       {failure ? <pre className="view-rebuild-error">{`View rebuild failed; serving the previous site.\n${failure}`}</pre> : null}
     </>
   );
