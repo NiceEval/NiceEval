@@ -308,6 +308,9 @@ export const en = {
   "cli.view.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval view`.\n",
   "cli.view.incompatibleForeign": "{{dir}}: written by {{name}} {{version}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nOpen this report with the tool that produced it.\n",
   "cli.view.urls": "niceeval view — open in a browser:\n{{urls}}\n",
+  "codex.envPathManaged":
+    "codexAgent config.env.PATH is not supported: PATH is a Sandbox-managed variable, so silently dropping or overriding it would break hooks and child processes without any error. " +
+    "Prepend directories to it with the Sandbox factory's pathPrepend option instead (see docs/feature/sandbox/library.md).",
   "context.capabilityMissing":
     "Agent \"{{agent}}\" is not sandbox-backed (built with defineSandboxAgent), so t.{{method}} is unavailable. Use an agent built with defineSandboxAgent, or drop this assertion.\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-agent.mdx",

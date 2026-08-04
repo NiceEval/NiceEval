@@ -303,6 +303,7 @@ export function materializeDockerComposeProviderPlan(
     mainService: plan.workspaceService,
     ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
     env: plan.env,
+    pathPrepend: plan.pathPrepend,
     collection: plan.collection,
     caseKey: context.plan.providerPlan.build.caseKey,
     identity: context.plan.providerPlan.identity,
@@ -348,6 +349,7 @@ export function materializeDockerfileProviderPlan(
           image: resolved.locator,
           ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
           lifetimeMs: configuredLifetime(plan.lifetime),
+          pathPrepend: plan.pathPrepend,
           feedback: context.feedback,
           provisionToken,
           runIdentity: currentRunIdentity(),
@@ -508,6 +510,7 @@ export function materializeDockerImageProviderPlan(
         image: plan.image,
         ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
         lifetimeMs: configuredLifetime(plan.lifetime),
+        pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
         provisionToken,
         runIdentity: currentRunIdentity(),
@@ -536,6 +539,7 @@ export function materializeE2BProviderPlan(
         template: plan.template,
         ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
         lifetime,
+        pathPrepend: plan.pathPrepend,
         provisionToken,
         runIdentity: currentRunIdentity(),
       }),
@@ -560,6 +564,7 @@ export function materializeVercelProviderPlan(
         runtime: "node24",
         snapshotId: plan.snapshotId,
         lifetimeMs: configuredLifetime(plan.lifetime),
+        pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
       }),
       classifyProvisionError,
@@ -577,7 +582,11 @@ export function materializeLocalProviderPlan(
   return materializationEffect(context, async () => {
     const { LocalSandbox } = await import("./local.ts");
     return wrapSingleSandbox(
-      await LocalSandbox.create({ ...deadlineOptions(context.deadline), dir: plan.directory }),
+      await LocalSandbox.create({
+        ...deadlineOptions(context.deadline),
+        dir: plan.directory,
+        pathPrepend: plan.pathPrepend,
+      }),
       context,
       { directory: plan.directory },
     );

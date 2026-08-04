@@ -61,7 +61,7 @@ export default defineExperiment({
 ### codex
 
 - **鉴权**：`CODEX_API_KEY`（工厂参数 `apiKey` 可覆盖，不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL`（工厂参数 `baseUrl`）接 OpenAI 兼容代理。
-- **Agent 进程环境**：`env` 会注入每次 `codex exec` 与 `codex exec resume`。Codex 启动的 Session 生命周期 Hook、MCP 动态请求头和命令子进程都会继承。值不会拼进 shell 文本或写入安装清单，并按潜在敏感值从 timing、execution 与错误证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或宿主环境提供，并覆盖 `env` 里的同名键。
+- **Agent 进程环境**：`env` 会注入每次 `codex exec` 与 `codex exec resume`。Codex 启动的 Session 生命周期 Hook、MCP 动态请求头和命令子进程都会继承。值不会拼进 shell 文本或写入安装清单，并按潜在敏感值从 timing、execution 与错误证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或宿主环境提供，并覆盖 `env` 里的同名键。`PATH` 是 Sandbox 受管变量，不接受经 `env` 声明——出现即在 `codexAgent()` 调用时报错，改用 Sandbox 的 `pathPrepend`（见 [Sandbox provider](/zh/tutorials/sandbox-providers)）。
 - **装 MCP server**：`mcpServers` 配置项，`setup` 阶段追加进 `~/.codex/config.toml` 的 `[mcp_servers.<name>]` 段。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）；远程 Streamable HTTP 端点写 `url`（可带 `headers`，写成 `[mcp_servers.<name>.http_headers]` 子表）。`url` 要 Sandbox 内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
 
   <Warning>

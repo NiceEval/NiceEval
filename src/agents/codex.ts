@@ -93,6 +93,8 @@ export interface CodexConfig {
    * 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
    * 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
    * 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
+   * `PATH` 是 Sandbox 受管变量，不接受经这里声明——出现即在 factory 构造时报错，改用
+   * Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library.md）。
    */
   env?: Readonly<globalThis.Record<string, string>>;
   /**
@@ -257,6 +259,12 @@ function codexPlatformPackage(
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
+  // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
+  // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+  if (config?.env && "PATH" in config.env) {
+    throw new TypeError(t("codex.envPathManaged"));
+  }
   // factory 构造时快照：一份 Agent 配置服务并发 attempt，不能让调用方随后改原对象造成
   // 不同 run/resume 轮拿到不同 Space。值不进入 shell 或 manifest，只交给 command options。
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });

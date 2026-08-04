@@ -78,6 +78,9 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 执行身份默认沿用环境声明：未覆盖时 docker exec 不注入 `--user`，镜像 `USER` 与 Compose service `user:` 原样生效。
     factory `user` 覆盖后命令与 agent 都以它跑，npm 全局目录、`PATH` 与上传后 `chown` 按该身份解析；`user` 值进入 command identity 与 template fingerprint。
   - 不支持面明确报错：`vercelSandbox` factory 不收 `user`，Vercel 命令级只认 `"root"`（映射 `sudo`），local 对任何 `user` 在调用前报错。
+- **PATH 与 pathPrepend**：PATH 是 Sandbox 受管变量，声明面拒绝、运行面按序前置。
+  - docker provider：factory `pathPrepend` 按声明顺序前置到受管 PATH（npm 全局 bin + 系统默认路径之前），验证顺序而不只验证包含关系；省略时受管 PATH 与不带 `pathPrepend` 的既有行为逐字节一致。
+  - `pathPrepend` 进入 template identity（改值使旧结果失效），Compose/Dockerfile/Image 三个 docker-based 工厂共用同一条 `DockerSandbox` 消费路径,只覆盖其中一个即可证明。
 - **E2B command completion framing**：
   - 测试把生产 wrapper 交给真实 `/bin/bash` 执行，再把 bash 的真实 stdout/stderr chunk 送进生产 parser。
   - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk，以及 Codex 形状的长命令/heredoc。
@@ -85,8 +88,8 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 人工从 script 提取 prefix/suffix 后直接拼合法数字 marker 的 fake 不能充当这条契约的证明。
   - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK/bash 边界与单元层一致。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
-- **命令退出证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
-  证据与同一次 timing command node 共用 id；成功命令不登记输出，provider 内部转调不重复。
+- **命令证据包装**：四个公开 `run*` 方法最外层调用无论成功还是非零退出，都先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
+  证据与同一次 timing command node 共用 id；provider 内部转调不重复登记。
   调用方处理非零结果并继续也不撤销证据。stdout/stderr 保留原换行与首部根因，不能先 tail-only 再交 writer。
   fixture 必须让 Eval 随后把错误 `.slice(-500)`，仍能从登记项读到前部根因，证明捕获时点正确。
 - **命令证据的已知敏感值脱敏**：用合成 API key/header/env 值证明 provider 与运行时结果仍拿原值。

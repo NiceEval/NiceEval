@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/adapters.md
-// bug: memory/codex-agent-process-env-not-forwarded.md
+// bug: memory/codex-agent-process-env-not-forwarded.md, memory/sandbox-path-managed-pathprepend.md
 import { describe, expect, it } from "vitest";
 import { createAgentSession } from "../context/session.ts";
 import type { CommandOptions, CommandResult, Sandbox, SandboxAgentContext } from "../types.ts";
@@ -54,6 +54,13 @@ describe("codexAgent process env", () => {
     expect(agent.installers[0]?.progress).toEqual({
       installing: `installing official OpenAI Codex CLI ${DEFAULT_CODEX_CLI_VERSION}`,
     });
+  });
+
+  it("config.env.PATH 在 codexAgent() 构造时同步报错，指向 pathPrepend", () => {
+    expect(() => codexAgent({ env: { PATH: "/opt/tools/bin" } })).toThrow(/pathPrepend/);
+    expect(() => codexAgent({ env: { PATH: "/opt/tools/bin", NMEM_SPACE: "x" } })).toThrow(/pathPrepend/);
+    // 不含 PATH 的 env 不受影响。
+    expect(() => codexAgent({ env: { NMEM_SPACE: "x" } })).not.toThrow();
   });
 
   it("首轮与 resume 只经 Sandbox options 注入同一环境，并登记全部潜在敏感值", async () => {

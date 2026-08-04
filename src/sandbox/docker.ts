@@ -129,6 +129,11 @@ export interface DockerSandboxOptions {
    * Compose service `user:` 或其镜像 `USER`。
    */
   user?: string;
+  /**
+   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+   * 「PATH:受管变量与 pathPrepend」)。
+   */
+  pathPrepend?: readonly string[];
 }
 
 /** `stop()` 时是否销毁容器。Compose 主容器由资源组 `compose down` 回收,附着句柄只松绑。 */
@@ -157,12 +162,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
   private readonly userOverride?: string;
+  /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
+  private readonly pathPrepend: readonly string[];
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
   private defaultHome = "/root";
   private defaultUserName = "root";
   private defaultIsRoot = true;
   private npmGlobalDir = "/root/.npm-global";
-  private sandboxPath = "/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+  private sandboxPath: string;
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),
     appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
@@ -183,6 +190,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
+    this.pathPrepend = options.pathPrepend ?? [];
+    this.sandboxPath = this.managedPath(this.npmGlobalDir);
+  }
+
+  /** 受管 PATH:`pathPrepend` 按声明顺序前置到 npm 全局 bin + 系统默认路径。 */
+  private managedPath(npmGlobalDir: string): string {
+    const base = `${npmGlobalDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+    return this.pathPrepend.length > 0 ? `${this.pathPrepend.join(":")}:${base}` : base;
   }
 
   /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
@@ -351,7 +366,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.defaultUserName = name !== "" ? name : (this.defaultIsRoot ? ROOT_USER : (this.userOverride ?? uid));
     this.defaultHome = home !== "" ? home : (this.defaultIsRoot ? "/root" : `/home/${this.defaultUserName}`);
     this.npmGlobalDir = `${this.defaultHome}/.npm-global`;
-    this.sandboxPath = `${this.npmGlobalDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+    this.sandboxPath = this.managedPath(this.npmGlobalDir);
   }
 
   /** chown 目标:factory 覆盖时原样复用(接受 name / uid[:gid]),否则用探测出的用户名。 */

@@ -178,6 +178,8 @@ env?: Readonly<globalThis.Record<string, string>>;
 值只经 Sandbox command options 传入，不拼进 shell 文本或写入 setup manifest，并全部按
 潜在敏感值从 timing / execution / error 证据中脱敏。`CODEX_API_KEY` 仍由 `apiKey` 或
 宿主同名环境变量提供，Adapter 的鉴权值会覆盖这里的同名键。
+`PATH` 是 Sandbox 受管变量，不接受经这里声明——出现即在 factory 构造时报错，改用
+Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library.md）。
 
 #### `mcpServers`
 

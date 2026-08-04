@@ -798,6 +798,7 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly mainService: string;
   readonly user?: string;
   readonly env: Readonly<Record<string, string>>;
+  readonly pathPrepend?: readonly string[];
   readonly projectName?: string;
   readonly collection: ComposeBuildCollection;
   readonly caseKey: import("./identity.ts").CaseKey;
@@ -911,6 +912,7 @@ export async function materializeDockerComposeProviderCase(
           feedback: opts.feedback,
           releaseMode: "detach",
           ...(plan.user !== undefined ? { user: plan.user } : {}),
+          ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
         }));
     const sandbox = await attach(containerId);
 

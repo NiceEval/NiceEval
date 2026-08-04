@@ -13,6 +13,7 @@ import type {
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
+import { shellQuote } from "./shell.ts";
 import { commandLimit } from "./deadline.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
@@ -61,6 +62,8 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private lifetimeMs?: number;
   private sessionCreatedAt: number;
   private runtime: string;
+  /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
+  private readonly pathPrepend: readonly string[];
   readonly sandboxId: string;
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),
@@ -75,6 +78,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     id: string,
     commandTimeoutMs: number | undefined,
     runtime: string,
+    pathPrepend: readonly string[] = [],
     lifetimeMs?: number,
     deadlineAt?: number,
   ) {
@@ -84,6 +88,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.deadlineAt = deadlineAt;
     this.sessionCreatedAt = Date.now();
     this.runtime = runtime;
+    this.pathPrepend = pathPrepend;
     this.lifetimeMs = lifetimeMs;
   }
 
@@ -102,6 +107,11 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       /** 实例 session 寿命；由当前 Vercel project plan 在 create 时真实校验。 */
       lifetimeMs?: number;
       feedback?: import("../types.ts").ScopedFeedback;
+      /**
+       * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+       * 「PATH:受管变量与 pathPrepend」)。
+       */
+      pathPrepend?: readonly string[];
     } = {},
   ): Promise<VercelSandbox> {
     // Vercel 支持 node22/node24/node26/python3.13;node20 回退到 node22。
@@ -131,7 +141,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
     // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
     const id = vsb.name;
-    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.lifetimeMs, opts.deadlineAt);
+    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.pathPrepend ?? [], opts.lifetimeMs, opts.deadlineAt);
   }
 
   // 当前 session 的真实剩余寿命不足以覆盖即将执行的命令时，拍快照并请求一条新 session。
@@ -227,6 +237,27 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
+    // pathPrepend 只能在 bash 里靠 `$PATH` 展开;直接 exec 的 cmd/args 不经 shell,
+    // 因此路过 runShell 走同一条 bash -c 通道(与 docker `opts.stream` 的 tee 重路由同构)。
+    if (this.pathPrepend.length > 0) {
+      const joined = [cmd, ...args.map(shellQuote)].join(" ");
+      return this.runShell(joined, opts);
+    }
+    return this.execDirect(cmd, args, opts);
+  }
+
+  async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
+    // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
+    // env 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
+    // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+    const scriptWithPath = this.pathPrepend.length > 0
+      ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
+      : script;
+    return this.execDirect("bash", ["-c", scriptWithPath], opts);
+  }
+
+  /** 实际发起 Vercel `runCommand` 调用的唯一出口;`runCommand`/`runShell` 都收敛到这里。 */
+  private async execDirect(cmd: string, args: readonly string[], opts: CommandOptions): Promise<CommandResult> {
     // Vercel 命令级只认 `user: "root"`(映射 `sudo: true`);其它显式值报错,省略 = `sudo: false`
     // (见 docs/feature/sandbox/library.md「执行身份」)。
     if (opts.user !== undefined && opts.user !== "root") {
@@ -259,10 +290,6 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       stderr,
       exitCode: finished.exitCode,
     };
-  }
-
-  async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
-    return this.runCommand("bash", ["-c", script], opts);
   }
 
   async runCommandOrThrow(

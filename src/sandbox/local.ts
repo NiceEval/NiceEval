@@ -41,6 +41,11 @@ export interface LocalSandboxOptions {
   /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限(见 deadline.ts)。 */
   deadlineAt?: number;
   /**
+   * 按序前置到宿主 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+   * 「PATH:受管变量与 pathPrepend」)。
+   */
+  pathPrepend?: readonly string[];
+  /**
    * 内部测试用:覆盖「当前目录」的解析起点(省略 `dir` 时向上找 git 根、显式 `dir` 时的相对路径
    * 基准都从它算)。生产路径(runtime.ts 的 provider materializer)从不传这个字段,恒用
    * `process.cwd()`——不是公开 spec 的一部分,`localSandbox()` 工厂不暴露它。
@@ -182,6 +187,8 @@ export class LocalSandbox implements SandboxProviderBackend {
   private readonly timeout?: number;
   private deadlineAt?: number;
   private readonly ledgerBase: string;
+  /** factory `pathPrepend`;按声明顺序前置到宿主 PATH,省略 = 空数组。 */
+  private readonly pathPrepend: readonly string[];
   readonly capabilities = {
     rootCommands: unsupportedBackendCapability,
     appendLog: unsupportedBackendCapability,
@@ -190,9 +197,16 @@ export class LocalSandbox implements SandboxProviderBackend {
     setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
   };
 
-  private constructor(workdir: string, ledgerBase: string, timeout?: number, deadlineAt?: number) {
+  private constructor(
+    workdir: string,
+    ledgerBase: string,
+    pathPrepend: readonly string[],
+    timeout?: number,
+    deadlineAt?: number,
+  ) {
     this.workdir = workdir;
     this.ledgerBase = ledgerBase;
+    this.pathPrepend = pathPrepend;
     this.timeout = timeout;
     this.deadlineAt = deadlineAt;
     this.sandboxId = `local-${randomUUID().slice(0, 8)}`;
@@ -202,7 +216,7 @@ export class LocalSandbox implements SandboxProviderBackend {
   static async create(options: LocalSandboxOptions = {}): Promise<LocalSandbox> {
     const workdir = await resolveWorkdir(options.dir, options.cwd ?? process.cwd());
     const ledgerBase = await mkdtemp(join(tmpdir(), "niceeval-local-ledger-"));
-    const sandbox = new LocalSandbox(workdir, ledgerBase, options.timeout, options.deadlineAt);
+    const sandbox = new LocalSandbox(workdir, ledgerBase, options.pathPrepend ?? [], options.timeout, options.deadlineAt);
     // runner/ledger.ts 按 sandboxId 读取这份登记——本地档的"沙箱"是宿主机本身,固定的宿主路径
     // 会在同机多次运行之间互相踩踏,每实例必须有自己的一份(见文件头注释)。
     registerLedgerPaths(sandbox.sandboxId, {
@@ -217,12 +231,20 @@ export class LocalSandbox implements SandboxProviderBackend {
     this.deadlineAt = deadlineAt;
   }
 
+  /** 宿主 env:`process.env` 叠加 `pathPrepend` 前置后的 PATH,`opts.env` 仍可覆盖任意键(含 PATH)。 */
+  private hostEnv(opts: CommandOptions): NodeJS.ProcessEnv {
+    const pathBase = this.pathPrepend.length > 0
+      ? { PATH: [...this.pathPrepend, ...(process.env.PATH ?? "").split(":")].join(":") }
+      : {};
+    return { ...process.env, ...pathBase, ...opts.env };
+  }
+
   async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     if (opts.user !== undefined) throw new Error(t("local.userUnsupported", { user: opts.user }));
     const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned(cmd, [...args], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      env: { ...process.env, ...opts.env },
+      env: this.hostEnv(opts),
       ...(limit.timeoutMs !== undefined ? { timeout: limit.timeoutMs } : {}),
       explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,
@@ -236,7 +258,7 @@ export class LocalSandbox implements SandboxProviderBackend {
     const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned("bash", ["-c", script], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      env: { ...process.env, ...opts.env },
+      env: this.hostEnv(opts),
       ...(limit.timeoutMs !== undefined ? { timeout: limit.timeoutMs } : {}),
       explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,

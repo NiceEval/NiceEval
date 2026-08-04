@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import * as tar from "tar-stream";
 import { DockerSandbox } from "./docker.ts";
 
@@ -102,6 +102,71 @@ describe("DockerSandbox runner tools", () => {
 
     await expect(sandbox.ensureRunnerTools()).rejects.toThrow(
       /prepare Docker runner tools failed.*no supported package manager/,
+    );
+  });
+});
+
+/** 给 DockerSandbox 注入一个 fake container.exec:即时结束、退出码 0,只用于捕获
+ *  传给 `docker exec` 的 `Env`——不连真实 daemon。 */
+function withFakeExec(sandbox: DockerSandbox): { calls: Array<{ Env?: string[] }> } {
+  const calls: Array<{ Env?: string[] }> = [];
+  (sandbox as unknown as {
+    container: { exec: (opts: { Env?: string[] }) => Promise<{
+      start: () => Promise<NodeJS.ReadableStream>;
+      inspect: () => Promise<{ ExitCode: number }>;
+    }> };
+  }).container = {
+    exec: async (opts) => {
+      calls.push(opts);
+      return {
+        start: async () => {
+          const stream = new PassThrough();
+          queueMicrotask(() => stream.end());
+          return stream;
+        },
+        inspect: async () => ({ ExitCode: 0 }),
+      };
+    },
+  };
+  return { calls };
+}
+
+/** 从 `docker exec` 的 `Env`(`"KEY=value"` 数组)里取出 `PATH` 的值。 */
+function pathOf(env: string[] | undefined): string | undefined {
+  return env?.find((entry) => entry.startsWith("PATH="))?.slice("PATH=".length);
+}
+
+describe("DockerSandbox managed PATH", () => {
+  it("keeps the existing managed PATH byte-for-byte when pathPrepend is omitted", async () => {
+    const sandbox = new DockerSandbox();
+    const { calls } = withFakeExec(sandbox);
+
+    await sandbox.runCommand("true");
+
+    expect(pathOf(calls[0]?.Env)).toBe(
+      "/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    );
+  });
+
+  it("prepends pathPrepend directories, in declared order, ahead of the provider defaults", async () => {
+    const sandbox = new DockerSandbox({ pathPrepend: ["/opt/tools/bin", "/opt/more/bin"] });
+    const { calls } = withFakeExec(sandbox);
+
+    await sandbox.runCommand("true");
+
+    expect(pathOf(calls[0]?.Env)).toBe(
+      "/opt/tools/bin:/opt/more/bin:/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    );
+  });
+
+  it("stays Sandbox-managed: opts.env.PATH cannot override the pathPrepend-derived PATH", async () => {
+    const sandbox = new DockerSandbox({ pathPrepend: ["/opt/tools/bin"] });
+    const { calls } = withFakeExec(sandbox);
+
+    await sandbox.runCommand("true", [], { env: { PATH: "/should/not/win" } });
+
+    expect(pathOf(calls[0]?.Env)).toBe(
+      "/opt/tools/bin:/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
   });
 });

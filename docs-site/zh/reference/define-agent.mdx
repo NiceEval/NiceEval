@@ -453,7 +453,10 @@ readonly sensitiveValues?: readonly string[];
 readonly env?: Readonly<globalThis.Record<string, string>>;
 ```
 
-追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。
+追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
+受管变量,各 provider 保留自己算出的 `PATH`,不保证能被这里覆盖;需要扩展 PATH 用
+Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library.md「PATH:受管变量与
+pathPrepend」)。
 
 #### `cwd`
 

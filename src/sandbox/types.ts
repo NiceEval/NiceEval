@@ -57,7 +57,12 @@ export interface CommandOptions {
    * 调用方编码或拆分，应把实际会出现在命令/输出里的编码形态一并登记。
    */
   readonly sensitiveValues?: readonly string[];
-  /** 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。 */
+  /**
+   * 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
+   * 受管变量,各 provider 保留自己算出的 `PATH`,不保证能被这里覆盖;需要扩展 PATH 用
+   * Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library.md「PATH:受管变量与
+   * pathPrepend」)。
+   */
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。 */
   readonly cwd?: string;

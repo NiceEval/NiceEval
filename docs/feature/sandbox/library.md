@@ -134,6 +134,32 @@ await sandbox.runShell("pnpm build");                  // 上限 = deadline 剩�
 await sandbox.runCommand("pnpm", ["test"], { timeoutMs: 60_000 }); // 这条最多 60 秒
 ```
 
+## PATH:受管变量与 pathPrepend
+
+`PATH` 由 Sandbox 计算并维护(npm 全局安装目录、系统默认路径……),不接受经 `runCommand` / `runShell` 的 `env` 覆盖——这条契约对所有内置 provider 一致。
+Adapter 声明的进程环境(如 [Codex CLI 的 `env`](../adapters/sdk/codex-cli/README.md#agent-进程环境))若含 `PATH` 键,在 `codexAgent()` 调用时同步报错,不留到 setup 才发现值被静默丢弃。
+
+需要扩展 PATH(装了私有工具链、要把它排在 agent 找到的可执行文件前面),用 Sandbox factory 的 `pathPrepend`:
+
+```typescript
+sandbox: dockerImageSandbox({
+  image: "niceeval-agents:node24",
+  pathPrepend: ["/opt/toolchain/bin"], // 排在受管 PATH 最前面
+}),
+```
+
+语义:
+
+- 按声明顺序前置到受管 PATH,作用于该 Sandbox 内**全部**受管命令——agent 进程、两层 `prepare()`、`agent.ensure` 的 probe/install/复检——hooks 与子进程经这些命令继承,不需要另外声明。
+- 属于 Sandbox 配置,进 template identity;改值会让携带的历史结果失效,与改 `image` / `user` 同一类。
+- 各内置 provider(docker / e2b / vercel / local)一致支持;`defineSandbox` 自定义 provider 里,PATH 完全是 `create()` 返回的实例自己的事,niceeval 不替它管。
+
+```typescript
+e2bSandbox({ template: "niceeval-agents", pathPrepend: ["/opt/toolchain/bin"] })
+vercelSandbox({ snapshotId: "snap_xxx", pathPrepend: ["/opt/toolchain/bin"] })
+localSandbox({ pathPrepend: ["/opt/toolchain/bin"] }) // 前置到宿主 PATH 前面
+```
+
 ## Provider 选择:template 带出,没有默认值
 
 Provider 由 template-bearing factory 原子带出:factory 声明完整起点,同时选定兑现它的 Provider,**不接受未包装字符串,也不会自动探测环境替你选一个**。

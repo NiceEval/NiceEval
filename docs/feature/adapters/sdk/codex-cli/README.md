@@ -55,6 +55,8 @@ const agent = codexAgent({
 环境变量只经 Sandbox 命令 options 注入，不拼进 shell 文本，也不进入安装 manifest。Adapter 把全部声明值按潜在敏感值登记；timing、execution 与错误证据落盘前会脱敏。
 `CODEX_API_KEY` 仍由 `apiKey` 或宿主同名环境变量提供，Adapter 的鉴权值覆盖 `env` 里的同名键。
 
+唯一的例外是 `PATH`：它是 Sandbox 受管变量，`env` 里出现 `PATH` 键在 `codexAgent()` 调用时同步报错，不留到 setup 才发现值被静默丢弃。需要扩展 PATH 时改用 Sandbox factory 的 `pathPrepend`（见 [Sandbox · PATH：受管变量与 pathPrepend](../../../sandbox/library.md#path受管变量与-pathprepend)）。
+
 `configFile` 是运行 niceeval 的机器上的本地路径，不是 Sandbox 内路径；它相对本地项目根解析，指向一份完整的 Codex `config.toml`：
 
 ```ts

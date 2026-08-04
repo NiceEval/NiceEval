@@ -21,12 +21,13 @@ import { digestOf } from "./identity.ts";
 function imageTemplateIdentity(image: string) {
   const lifetime = { _tag: "ProviderDefault" as const };
   const user = { _tag: "EnvironmentDefault" as const };
+  const pathPrepend: string[] = [];
   return {
     version: 2,
     provider: "docker",
     kind: "image",
-    publishable: { source: "configured-image", user, lifetime },
-    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image, user, lifetime }),
+    publishable: { source: "configured-image", user, lifetime, pathPrepend },
+    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image, user, lifetime, pathPrepend }),
   };
 }
 

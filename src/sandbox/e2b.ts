@@ -284,6 +284,11 @@ interface E2BSandboxCreateOptions {
   readonly template?: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
   readonly user?: string;
+  /**
+   * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
+   * 「PATH:受管变量与 pathPrepend」)。
+   */
+  readonly pathPrepend?: readonly string[];
   readonly provisionToken?: string;
   /** 运行时已解析的实例寿命；bounded attempt 不能退回 E2B 的 SDK 默认值。 */
   readonly lifetime: E2BSandboxLifetime;
@@ -360,6 +365,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   private lifetime: E2BSandboxLifetime;
   /** 起点覆盖(factory `user`);省略 = 沿用 template 的默认用户。 */
   private readonly userOverride?: string;
+  /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
+  private readonly pathPrepend: readonly string[];
   readonly sandboxId: string;
 
   private deadlineAt?: number;
@@ -377,6 +384,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     commandTimeoutMs: number | undefined,
     lifetime: E2BSandboxLifetime,
     userOverride: string | undefined,
+    pathPrepend: readonly string[] = [],
     deadlineAt?: number,
   ) {
     this.sbx = sbx;
@@ -384,6 +392,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     this.commandTimeoutMs = commandTimeoutMs;
     this.lifetime = lifetime;
     this.userOverride = userOverride;
+    this.pathPrepend = pathPrepend;
     this.deadlineAt = deadlineAt;
   }
 
@@ -477,7 +486,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.user, opts.deadlineAt);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.user, opts.pathPrepend ?? [], opts.deadlineAt);
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;
@@ -494,7 +503,13 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // 覆盖后的身份,否则 template 默认用户)—— 跨 provider 语义一致
     // (见 docs/feature/sandbox/library.md「执行身份」)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
-    const completion = new E2BCommandCompletion(script, opts);
+    // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
+    // envs 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
+    // (见 docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
+    const scriptWithPath = this.pathPrepend.length > 0
+      ? `PATH=${shellQuote(this.pathPrepend.join(":"))}:"$PATH"\n${script}`
+      : script;
+    const completion = new E2BCommandCompletion(scriptWithPath, opts);
     // Attach a rejection handler before starting the SDK command. A malformed marker can reject while
     // commands.run() is still delivering its initial events; keeping this outcome fulfilled avoids an
     // unhandled rejection before the command handle is returned.

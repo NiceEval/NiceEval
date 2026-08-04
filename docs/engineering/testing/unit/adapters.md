@@ -76,6 +76,7 @@ function scriptedInstaller(steps: {
 - **官方 Agent 进程环境**：factory 声明的额外环境只经 Sandbox 命令 options 注入，不拼进 shell 文本。
   Codex 首轮 `exec` 与后续 `exec resume` 必须取得同一份声明；CLI 启动的 lifecycle Hook 与子进程因此继承同一环境。
   所有声明值按潜在敏感值登记，避免命令输出或失败证据把它们带进 timing、execution 与错误记录。
+  `env` 里出现 `PATH` 键在 `codexAgent()` 调用时同步报错（不留到 `setup()` 才炸），错误指向 Sandbox factory 的 `pathPrepend`（见 [sandbox.md](sandbox.md)「PATH 与 pathPrepend」）。
 - **断网题不改网络**：
 
   - 故障 DNS / `extra_hosts` / 被替换工具在 ensure 循环前后逐字保持。

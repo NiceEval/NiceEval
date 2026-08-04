@@ -300,6 +300,9 @@ export const zhCN = {
   "cli.view.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval view`。\n",
   "cli.view.incompatibleForeign": "{{dir}}: 由 {{name}} {{version}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n请用写出它的那个工具查看这份报告。\n",
   "cli.view.urls": "niceeval view 可在浏览器打开：\n{{urls}}\n",
+  "codex.envPathManaged":
+    "codexAgent config.env.PATH 不支持:PATH 是 Sandbox 受管变量,静默丢弃或覆盖它会让 hooks 与子进程读到错误的可执行文件,且零报错。" +
+    "改用 Sandbox factory 的 pathPrepend 选项前置目录(见 docs/feature/sandbox/library.md)。",
   "context.capabilityMissing":
     "agent \"{{agent}}\" 不是沙箱型(defineSandboxAgent 构造),t.{{method}} 这类断言只有沙箱型 agent 可用。换用 defineSandboxAgent 构造的 agent,或去掉这条断言。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/sandbox-agent.mdx",
