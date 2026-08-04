@@ -505,7 +505,28 @@ async function readSnapshotDir(dir: string, meta: RunMeta, state: ScanState): Pr
     ev.attempts.sort((a, b) => a.result.attempt - b.result.attempt || (a.result.startedAt ?? "").localeCompare(b.result.startedAt ?? ""));
   }
   run.attempts = run.evals.flatMap((ev) => ev.attempts);
+  // 回退推导:run.json 缺 configHash(旧存量落盘,exp 写入面在这条修法之前从不写它)时,
+  // 若该快照全部 attempt 的 result.configHash 一致,取之为 Run 的 configHash——让存量记录
+  // 不重跑即痊愈。任一 attempt 缺失或值不一致就如实保持 undefined,不猜一个可能错的值
+  // (见 docs/feature/record/library.md「configHash:配置身份只算一次」)。
+  if (run.configHash === undefined) {
+    const derived = deriveConfigHashFromAttempts(run.attempts);
+    if (derived !== undefined) run.configHash = derived;
+  }
   return run;
+}
+
+/** `readSnapshotDir` 的 configHash 回退推导:全部 attempt 都带且相等才取用,否则 undefined。 */
+function deriveConfigHashFromAttempts(attempts: readonly AttemptHandle[]): string | undefined {
+  if (attempts.length === 0) return undefined;
+  let hash: string | undefined;
+  for (const attempt of attempts) {
+    const value = attempt.result.configHash;
+    if (value === undefined) return undefined;
+    if (hash === undefined) hash = value;
+    else if (hash !== value) return undefined;
+  }
+  return hash;
 }
 
 function makeAttempt(run: Run, snapshotDir: string, attemptDir: string, record: EvalResult): AttemptHandle {

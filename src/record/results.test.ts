@@ -207,6 +207,38 @@ describe("openRecord · 实验 → 快照 → eval → attempt 分层", () => {
   });
 });
 
+describe("openRecord · configHash 回退推导", () => {
+  // cases: docs/engineering/testing/unit/record.md「configHash 读取面回退推导」
+  // bug: memory/exp-runjson-missing-confighash-breaks-current-sample.md
+  it("run.json 缺 configHash 时,全部 attempt 的 result.configHash 一致才回退推导为 Run 的值;不一致则保持缺失", async () => {
+    const root = await makeRoot();
+    // meta() 不设置 configHash——模拟 exp 写入面在这条修法之前遗留的存量落盘。
+    const consistentDir = await writeSnapshot(
+      root,
+      "compare_a",
+      "2026-07-01T08-00-00-000Z-a1b2",
+      meta({ experimentId: "compare/a", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z" }),
+    );
+    await writeResultFile(consistentDir, "q1/a1", record({ id: "q1", attempt: 1, configHash: "same-hash" }));
+    await writeResultFile(consistentDir, "q2/a1", record({ id: "q2", attempt: 1, configHash: "same-hash" }));
+
+    const inconsistentDir = await writeSnapshot(
+      root,
+      "compare_b",
+      "2026-07-01T08-00-00-000Z-c3d4",
+      meta({ experimentId: "compare/b", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z" }),
+    );
+    await writeResultFile(inconsistentDir, "q1/a1", record({ id: "q1", attempt: 1, configHash: "hash-a" }));
+    await writeResultFile(inconsistentDir, "q2/a1", record({ id: "q2", attempt: 1, configHash: "hash-b" }));
+
+    const results = await openRecord(root);
+    const a = results.experiments.find((e) => e.id === "compare/a")!;
+    const b = results.experiments.find((e) => e.id === "compare/b")!;
+    expect(a.latestRun.configHash).toBe("same-hash");
+    expect(b.latestRun.configHash).toBeUndefined();
+  });
+});
+
 describe("record · migratedFrom", () => {
   it("读写保留旧 opaque carryEpoch 的迁移来源", async () => {
     const root = await makeRoot();
@@ -524,6 +556,34 @@ describe("createWriter", () => {
     expect(JSON.parse(await readFile(join(snap.dir, "run.json"), "utf-8")).completedAt).toBeUndefined();
   });
 
+  // cases: docs/engineering/testing/unit/record.md「configHash 写入面」
+  // bug: memory/exp-runjson-missing-confighash-breaks-current-sample.md
+  it("configHash:writeAttemptFor 的隐式声明按 WriterOptions.configHashes 取值(exp 路径不必显式声明)", async () => {
+    const root = await makeRoot();
+    const writer = createWriter(root, {
+      producer: { name: "niceeval", version: "0.12.0" },
+      configHashes: new Map([["compare/a", "cfg-hash-v1"]]),
+    });
+    await writer.writeAttemptFor({
+      id: "q1",
+      experimentId: "compare/a",
+      agent: "codex",
+      verdict: "passed",
+      attempt: 0,
+      startedAt: "2026-07-01T08:00:00.000Z",
+      durationMs: 10,
+      assertions: [],
+    });
+    await finishAll(writer);
+
+    const dir = writer.snapshotDirs().find((s) => s.experimentId === "compare/a")!.dir;
+    const meta = JSON.parse(await readFile(join(dir, "run.json"), "utf-8"));
+    expect(meta.configHash).toBe("cfg-hash-v1");
+
+    const results = await openRecord(root);
+    expect(results.experiments[0]!.latestRun.configHash).toBe("cfg-hash-v1");
+  });
+
   it("没有清单的 Run 不生成 manifests.json(读取面如实为缺失,不合成一份空清单)", async () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
@@ -611,8 +671,8 @@ describe("createWriter", () => {
     expect(JSON.parse(await readFile(copied, "utf-8"))).toEqual(manifest);
   });
 
-  // cases: docs/engineering/testing/unit/record.md「Usage、facts 与失败命令证据落盘」
-  it("commands:落成 commands.json(不内联进 result.json),artifacts 含 commands;懒加载读回原样往返;没有非零命令的 attempt 恒 null;publish 缺省携带", async () => {
+  // cases: docs/engineering/testing/unit/record.md「命令证据落盘」
+  it("commands:落成 commands.json(不内联进 result.json),artifacts 含 commands;懒加载读回原样往返;没有 Sandbox 命令的 attempt 恒 null;publish 缺省携带", async () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
     const evidence = [
@@ -657,18 +717,19 @@ describe("createWriter", () => {
     expect(JSON.parse(await readFile(copied, "utf-8"))).toEqual(evidence);
   });
 
-  it("commands:超 256 KiB 的失败输出不参与逐值截断,全量原样往返(起因在前段、summary 在尾部两端都要在)", async () => {
-    const { ARTIFACT_VALUE_MAX_BYTES } = await import("./truncate.ts");
+  it("commands:stdout/stderr 各自超 64 KiB 时独立截断并打结构化 truncated 标记,未超限的流原样往返", async () => {
+    const { COMMAND_STREAM_MAX_BYTES } = await import("./truncate.ts");
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
-    // 真实形状:头部是失败起因,中段是几百 KB 噪声,尾部是 runner 的 summary——截哪一端都毁掉另一半。
-    const hugeStdout = `E   assert 429 == 200\n${"collecting …\n".repeat(Math.ceil(ARTIFACT_VALUE_MAX_BYTES / 13))}2 failed, 14 passed in 3.41s\n`;
-    const hugeStderr = `Prepared 5 packages\n${"e".repeat(ARTIFACT_VALUE_MAX_BYTES + 500)}\nInstalled 5 packages`;
-    expect(Buffer.byteLength(hugeStdout, "utf-8")).toBeGreaterThan(ARTIFACT_VALUE_MAX_BYTES);
+    // 真实形状:stdout 超限、stderr 未超限——两条流各自独立判定,不因一条超限就一起截。
+    const hugeStdout = `E   assert 429 == 200\n${"collecting …\n".repeat(Math.ceil(COMMAND_STREAM_MAX_BYTES / 13))}2 failed, 14 passed in 3.41s\n`;
+    const shortStderr = "Prepared 5 packages\nInstalled 5 packages";
+    const hugeStdoutBytes = Buffer.byteLength(hugeStdout, "utf-8");
+    expect(hugeStdoutBytes).toBeGreaterThan(COMMAND_STREAM_MAX_BYTES);
 
     const snap = await writer.run({ experimentId: "huge/output", agent: "bub", startedAt: "2026-07-11T08:00:00.000Z" });
     const evidence = [
-      { timingNodeId: "n1", phase: "eval.run" as const, display: "uv run pytest", exitCode: 1, checked: true, stdout: hugeStdout, stderr: hugeStderr },
+      { timingNodeId: "n1", phase: "eval.run" as const, display: "uv run pytest", exitCode: 1, checked: true, stdout: hugeStdout, stderr: shortStderr },
     ];
     await snap.writeAttempt({ id: "q1", verdict: "errored", attempt: 1, durationMs: 10, assertions: [] }, { commands: evidence });
     await finishAll(writer);
@@ -676,10 +737,10 @@ describe("createWriter", () => {
     const results = await openRecord(root);
     const q1 = results.experiments[0].latestRun.attempts[0]!;
     const [readBack] = (await q1.commands())!;
-    expect(readBack.stdout).toBe(hugeStdout); // 逐字节相等,没有 marker 行、没有丢尾部 summary
-    expect(readBack.stderr).toBe(hugeStderr);
-    expect(JSON.stringify(readBack)).not.toContain("[niceeval] truncated");
-    expect((readBack as { truncated?: unknown }).truncated).toBeUndefined(); // 不再产出 truncated 字段
+    expect(Buffer.byteLength(readBack.stdout, "utf-8")).toBeLessThanOrEqual(COMMAND_STREAM_MAX_BYTES + 100);
+    expect(readBack.stdout).toContain(`[niceeval] truncated ${hugeStdoutBytes} →`);
+    expect(readBack.stderr).toBe(shortStderr); // 未超限的流逐字节原样往返,不被同伴截断牵连
+    expect(readBack.truncated).toEqual([{ path: "stdout", originalBytes: hugeStdoutBytes }]);
   });
 
   it("每个 Run 各自独立封口:两个 Experiment 各自不同的 completedAt 与 diagnostics 不串味,空 diagnostics 省略字段", async () => {

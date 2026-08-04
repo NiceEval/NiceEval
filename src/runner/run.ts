@@ -577,18 +577,36 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // onInvocationStart 报「本次实际要跑的 eval」(过滤 + 去重),不是发现到的全部 —— 否则计数误导。
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
   const runningEvals = [...runningIds].map((id) => ({ id }));
-  // 指纹输入清单按 experiment 分组交给落盘面(Artifacts → createWriter),Run 目录建成那一刻
-  // 与 run.json 同批写出。分组不切 `${experimentId}|${evalId}` 这个字符串键,而是按同一份
-  // (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
+  // 指纹输入清单与规划期 configHash 都按 experiment 分组交给落盘面(Artifacts → createWriter),
+  // Run 目录建成那一刻与 run.json 同批写出。分组不切 `${experimentId}|${evalId}` 这个字符串键,
+  // 而是按同一份 (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
   const manifestsByExperiment = new Map<string, RunManifests>();
+  const configHashesByExperiment = new Map<string, string>();
   for (const run of opts.agentRuns) {
     if (!run.experimentId) continue;
     for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
-      const manifest = manifestsByKey?.get(cacheKey(run, evalDef.id));
-      if (manifest === undefined) continue;
-      const bucket = manifestsByExperiment.get(run.experimentId) ?? {};
-      bucket[evalDef.id] = manifest;
-      manifestsByExperiment.set(run.experimentId, bucket);
+      const key = cacheKey(run, evalDef.id);
+      const manifest = manifestsByKey?.get(key);
+      if (manifest !== undefined) {
+        const bucket = manifestsByExperiment.get(run.experimentId) ?? {};
+        bucket[evalDef.id] = manifest;
+        manifestsByExperiment.set(run.experimentId, bucket);
+      }
+      const configHash = plannedConfigHashes.get(key);
+      if (configHash !== undefined) {
+        // configHash 是 Run 级单值(不依赖逐 eval 的物理 provider plan,见
+        // config-identity.ts 的 configIdentityForRun);同一 experiment 下每条 eval 算出的值
+        // 必须相等,否则说明规划期哪里让物理 plan 混进了配置身份,不能硬写一个值掩盖过去。
+        const existing = configHashesByExperiment.get(run.experimentId);
+        if (existing !== undefined && existing !== configHash) {
+          throw new Error(
+            `Planned config hash differs across evals within experiment ${JSON.stringify(run.experimentId)} ` +
+              `(${JSON.stringify(existing)} vs ${JSON.stringify(configHash)} for eval ${JSON.stringify(evalDef.id)}). ` +
+              "configHash is a Run-level value and must be identical for every eval scheduled under the same experiment.",
+          );
+        }
+        configHashesByExperiment.set(run.experimentId, configHash);
+      }
     }
   }
   const shape: InvocationShape = {
@@ -599,6 +617,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     snapshotStartedAt,
     runIds,
     ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
+    ...(configHashesByExperiment.size > 0 ? { configHashes: configHashesByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
   // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集

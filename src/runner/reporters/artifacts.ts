@@ -45,6 +45,9 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
         // 指纹输入清单同样由 runner 显式递来(规划期算出),writer 在建 Run 目录时与
         // run.json 同批写出;这里只转手,不持有清单怎么算的知识。
         ...(shape?.manifests ? { manifests: shape.manifests } : {}),
+        // configHash 同理:规划期按 experiment 分组算好(见 InvocationShape.configHashes),
+        // 这里只转手,不重新推导配置身份。
+        ...(shape?.configHashes ? { configHashes: shape.configHashes } : {}),
       });
       finishedByEvent.clear();
     },
@@ -62,8 +65,14 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
     // Invocation 级事实(interrupted、reporter error)不走这条事件,不会误落进任一 Run。
     async onEvent(event: ReporterEvent) {
       if (event.type !== "experiment:complete" || !writer) return;
+      // 携带条目确实进了这份快照,它们的 eval id 因此也是「这份快照声明覆盖的题集」的一部分
+      // (见 docs/feature/record/architecture.md「selectedEvalIds」);随手收集,下面并给 finish()。
+      const carriedEvalIds: string[] = [];
       for (const result of event.carriedResults) {
-        if (result.artifactBase !== undefined) await writer.writeAttemptFor(result);
+        if (result.artifactBase !== undefined) {
+          await writer.writeAttemptFor(result);
+          carriedEvalIds.push(result.id);
+        }
       }
       const runs = await writer.snapshotWriters();
       const target = runs.find((s) => s.experimentId === event.experimentId);
@@ -75,6 +84,7 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
         ...(event.facts ? { facts: { ...event.facts } } : {}),
         ...(event.timings?.length ? { timings: [...event.timings] } : {}),
         ...(event.sandboxBuilds?.length ? { sandboxBuilds: [...event.sandboxBuilds] } : {}),
+        ...(carriedEvalIds.length ? { carriedEvalIds } : {}),
         name: event.name,
       });
     },
@@ -84,14 +94,26 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
     // 「未收尾」状态的 Run。先补写携带条目(summary.results 里带 artifactBase 的那些)。
     async onInvocationComplete(summary) {
       if (!writer) return;
+      const carriedEvalIdsByExperiment = new Map<string, string[]>();
       for (const result of summary.results) {
-        if (result.artifactBase !== undefined) await writer.writeAttemptFor(result);
+        if (result.artifactBase === undefined) continue;
+        await writer.writeAttemptFor(result);
+        if (!result.experimentId) continue;
+        const bucket = carriedEvalIdsByExperiment.get(result.experimentId) ?? [];
+        bucket.push(result.id);
+        carriedEvalIdsByExperiment.set(result.experimentId, bucket);
       }
       const runs = await writer.snapshotWriters();
       await Promise.all(
         runs
           .filter(({ experimentId }) => !finishedByEvent.has(experimentId))
-          .map(({ writer: snap }) => snap.finish({ name: summary.name })),
+          .map(({ experimentId, writer: snap }) => {
+            const carriedEvalIds = carriedEvalIdsByExperiment.get(experimentId);
+            return snap.finish({
+              name: summary.name,
+              ...(carriedEvalIds?.length ? { carriedEvalIds } : {}),
+            });
+          }),
       );
     },
   };

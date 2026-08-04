@@ -64,7 +64,11 @@ interface AttemptSpec {
   每类坏数据用形成该分类的最小文件构造。
 - **身份**：身份键四字段全部可从数据读到（`experimentId` / `evalId` 直达，`attempt` / `startedAt` 在 `attempt.result`）；reader 忠实保留携带产生的重复、不擅自去重；「缺才补」的字段拼合优先级； `ref` 指向条目所在落盘。
   去重算法本身归 [sample.md](sample.md)。
-- **`configHash` 与携带资格**：`configHash` 落在 `run.json` 上、缺失时读取面如实为 `undefined`；`schemaVersion` 不同的历史 Run 不参与携带。
+- **`configHash` 写入面**：exp 路径的 `writeAttemptFor` 隐式声明按 `WriterOptions.configHashes` 写入 `run.json`，不必像 `niceeval accept` 那样显式声明。
+  `RunDeclaration.configHash` 显式给出时优先。
+- **`configHash` 读取面回退推导**：`run.json` 声明缺失时，`openRecord()` 按该快照全部 attempt 的 `result.configHash` 回退推导——全部一致才取用，否则保持缺失、只与自己可比。
+  区分力格覆盖「全部 attempt 一致」与「存在分歧」两种落盘。
+- **携带资格**：`schemaVersion` 不同的历史 Run 不参与携带。
 - **schema 14 与覆盖分词**：writer 必须写完整 `AttemptRecord.evidenceCoverage`，reader 不接受缺字段或旧 `coverage` 冒充它；`sample.coverage` 仍只属于 Sample，不因持久化字段改名而改变。格式头示例与常量均为 14。
   另外三条各自成立：
   - **进 configHash 的每个字段都在 `run.json` 上找得到。**

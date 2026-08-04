@@ -107,8 +107,11 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
 - **`attempts` / `earlyExit` / `maxConcurrency` / `selectedEvalIds` / `labels` 不进。**
   编排与选题字段决定跑哪些、跑几次,不改变单题被测行为;`labels` 是报告坐标。
 
-`configHash` 落在 `run.json` 上,是格式的一部分:第三方转换器写入时同样声明它,不声明的 Run 只能与自己比较。
-Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。
+`configHash` 落在 `run.json` 上,是格式的一部分:niceeval 自己的写入面按规划期算出的配置身份把它写进 `run.json`,`niceeval exp` 与 `niceeval accept` 都在这条路径上。
+第三方转换器可以不声明这个字段。
+Run 级字段缺失时,`openRecord()` 按该快照全部 attempt 的 `result.configHash` 回退推导——全部 attempt 都带且相等才取用,否则保持缺失,这份 Run 只与自己可比。
+
+这份推导只发生在 Record 层,Sample 层跨 Run 拼接时只读 `run.configHash`(声明值或推导值),不重新推导配置——推导逻辑一旦有第二份实现,两份就会分叉。
 反过来,进 configHash 的字段必须在 `run.json` 上找得到,顶层或 `ExperimentRunInfo` 二选一:拿历史 Run 重算配置身份是解释配置面差异的前提,少落一个字段,那条路径就只能靠猜。
 
 [`niceeval accept @<locator>...`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 是这条可比性担保上唯一的人为出口:它只让显式列出的历史条目重锚到当前口径。

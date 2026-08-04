@@ -207,7 +207,7 @@ interface ExperimentRunInfo {
    * `apiKeyEnv` 只指向凭据变量,不落盘。
    */
   judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
-  /** 本次运行解析后实际选中的 eval id 全集——evals 过滤器(含函数形式)的求值结果,不存过滤器本身。 */
+  /** 这份快照声明覆盖的 eval id 全集:本次运行 evals 过滤器(含函数形式)的求值结果,并入携带合入条目的 eval id;不存过滤器本身。 */
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
   evalFilterFingerprint?: string;
@@ -224,7 +224,10 @@ interface ExperimentRunInfo {
 
 - **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。
-  `selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
+- **`selectedEvalIds` 是这份快照声明覆盖的题集**,不只是选择器求值的原始结果。
+  写入面把本次运行 evals 过滤器(含函数形式)的求值结果与携带合入条目的 eval id 取并集写入这个字段。
+  携带条目确实进了这份快照,不并入会让它们在覆盖判断里凭空消失。
+  [Sample 的现刻水位选择](../sample/library.md#缝合的前提confighash-相等)按它逐 Run 过滤贡献范围,报告直接读取它,不从 experiment 路径推断另一层集合。
 - **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
   `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
 - **ProviderPlan 只含 provider 明确构造的可发布纯数据。** token、凭据值、runtime callback 与私有路径不进入 plan；

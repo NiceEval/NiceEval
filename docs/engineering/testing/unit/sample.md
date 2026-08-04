@@ -57,6 +57,9 @@ interface RunSpec {
   `configHash` 与基准不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；不合成报告专用 Run。
   fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash` 不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。
 - **缺 `configHash` 的 Run**：只与自己可比，不参与任何拼接；这条与「configHash 相等」是两个分支，不合并成一个 case。
+- **exp 写入面的 selectedEvalIds 并入携带条目**：收窄重跑一题、其余题携带合入同一份快照时，`experiment.selectedEvalIds` 并入携带 eval id 后，`currentSample` 从这份快照单独看到全部题，不塌成单题。
+  fixture 经真实 `createWriter`/`writeAttemptFor`/`finish({ carriedEvalIds })` 走一遍，不手写 run.json 的 selectedEvalIds。
+  这是 memory 条目点名的收窄跑一题 + 携带合入真实盘面。
 - **覆盖事实**：`knownEvalIds` 用并集分母（本地历史 ∪ 各 Run 携带的 `knownEvalIds`），不是「优先字段」——fixture 要构造「本地并集比 Run 携带的更大」的情形，证明优先字段实现会让分母缩水。
   `missingEvalIds` 与命令行范围求交。
 

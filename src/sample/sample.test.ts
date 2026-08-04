@@ -484,6 +484,84 @@ describe("时效:carried 投影与 fresh 口径", () => {
   });
 });
 
+// ───────────────────────── selectedEvalIds 并入携带条目(exp 写入面) ─────────────────────────
+
+describe("currentSample · selectedEvalIds 并入携带条目", () => {
+  // cases: docs/engineering/testing/unit/sample.md「exp 写入面的 selectedEvalIds 并入携带条目」
+  // bug: memory/exp-runjson-missing-confighash-breaks-current-sample.md
+  it("收窄跑一题 + 携带合入:experiment.selectedEvalIds 并入携带 eval id 后,currentSample 看到全部条目,不塌成单题", async () => {
+    const root = await makeRoot();
+    const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
+
+    // 本次收窄只重跑了 algebra/q1(narrow rerun 的正常姿势);q2/q3 携带合入同一份快照。
+    const experimentInfo = {
+      attempts: 1,
+      earlyExit: true,
+      selectedEvalIds: ["algebra/q1"],
+      sandboxLayer: {},
+      sandboxPlansByEval: {},
+      agentInstalls: [],
+    };
+    await writer.writeAttemptFor({
+      id: "algebra/q1",
+      experimentId: "compare/bub",
+      experiment: experimentInfo,
+      agent: "bub",
+      model: "gpt-5.4",
+      verdict: "passed",
+      fingerprint: "fp-q1",
+      attempt: 1,
+      startedAt: "2026-08-04T08:00:00.000Z",
+      durationMs: 100,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+    });
+    await writer.writeAttemptFor({
+      id: "algebra/q2",
+      experimentId: "compare/bub",
+      agent: "bub",
+      model: "gpt-5.4",
+      verdict: "passed",
+      fingerprint: "fp-q2",
+      attempt: 1,
+      startedAt: "2026-08-03T08:00:00.000Z",
+      durationMs: 100,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+      artifactBase: "compare_bub/2026-08-03T08-00-00-000Z-aaaa/algebra/q2/a1",
+    });
+    await writer.writeAttemptFor({
+      id: "algebra/q3",
+      experimentId: "compare/bub",
+      agent: "bub",
+      model: "gpt-5.4",
+      verdict: "passed",
+      fingerprint: "fp-q3",
+      attempt: 1,
+      startedAt: "2026-08-03T08:00:00.000Z",
+      durationMs: 100,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+      artifactBase: "compare_bub/2026-08-03T08-00-00-000Z-aaaa/algebra/q3/a1",
+    });
+
+    // artifacts.ts 的 experiment:complete 处理程序在这一步把携带条目的 eval id 交给 finish()。
+    const runs = await writer.snapshotWriters();
+    await runs[0]!.writer.finish({
+      completedAt: "2026-08-04T08:05:00.000Z",
+      carriedEvalIds: ["algebra/q2", "algebra/q3"],
+    });
+
+    const results = await openRecord(root);
+    const runMeta = JSON.parse(await readFile(join(results.experiments[0]!.latestRun.dir, "run.json"), "utf-8"));
+    expect(runMeta.experiment.selectedEvalIds.sort()).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
+
+    const sample = currentSample(results);
+    expect(sample.attempts.map((a) => a.evalId).sort()).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
+    expect(sample.coverage.find((c) => c.experimentId === "compare/bub")!.missingEvalIds).toEqual([]);
+  });
+});
+
 // ───────────────────────── 身份键去重 ─────────────────────────
 
 function fakeSnapshot(over: { experimentId: string; startedAt: string; dir: string }): Run {

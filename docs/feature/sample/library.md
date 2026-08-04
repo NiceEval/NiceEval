@@ -43,7 +43,10 @@ const current = currentSample(record, { experiments: "compare/" });
 改过 model、flags 或 sandbox 后只补跑部分 eval 时,旧配置 Run 覆盖的其余题**不冒充**新配置的水位——它们进入 `coverage.missingEvalIds`,在实验列表上呈现为占位行,下一步就是重跑补全。
 这条前提保证一个 experiment 在样本里只对应一套配置,报表把一行标成单一 agent / model / flags 永远不是谎言。
 
-Run 缺 `configHash`(第三方转换器没声明)时只与自己可比,不与任何别的 Run 拼接。
+`run.configHash` 是 Record 层已经解析过的值:niceeval 自己的写入面按规划期算出的配置身份声明它。
+声明缺失时,Record 层按该快照全部 attempt 的 `result.configHash` 回退推导(见 [Record · configHash](../record/library.md#confighash配置身份只算一次))。
+Sample 层只读这个已解析值,不重新推导,也不关心它是声明来的还是推导来的。
+仍然缺失时(第三方转换器未声明,且推导不出唯一值)这份 Run 只与自己可比,不与任何别的 Run 拼接。
 
 ## 一份 Sample 上有什么
 

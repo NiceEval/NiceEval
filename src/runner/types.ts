@@ -555,6 +555,15 @@ export interface InvocationShape {
    * 省略只出现在没有携带规划的直调场景。
    */
   manifests?: ReadonlyMap<string, RunManifests>;
+  /**
+   * 本次规划期按 experimentId 算好的 Run 级配置身份(见
+   * `config-identity.ts` 的 `configIdentityForRun` / `hashConfigHash`)。同一 experiment 内
+   * 全部 eval 共享一个值(configHash 只依赖 run 与 Experiment 作者 layer,不依赖逐 eval 的
+   * 物理 provider plan);落盘面据此在建 Run 目录时把它写进 `run.json.configHash`,不再只有
+   * `niceeval accept` 显式声明。与 `manifests` 同一条路径:runner 显式递给 reporter,
+   * 不由落盘面自己猜。省略只出现在没有携带规划的直调场景。
+   */
+  configHashes?: ReadonlyMap<string, string>;
 }
 
 export interface Reporter {
