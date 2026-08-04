@@ -281,7 +281,7 @@ export const zhCN = {
   "cli.experimentGroup": "路径",
   "cli.fallbackCleanupTimeout": "\ngraceful 清理超时,强制清理沙箱…\n",
   "cli.forceCleanupExit": "\n强制清理沙箱并退出…\n",
-  "cli.init.done": "已就绪:evals/、niceeval.config.ts,以及 AGENTS.md 里的 niceeval agent 指引区块(指向 node_modules/niceeval/docs-site/zh)。\n",
+  "cli.init.done": "已就绪:evals/、niceeval.config.ts,以及 AGENTS.md 里的 niceeval agent 指引区块(要求 coding agent 写 eval 前先读随包文档)。\n",
   "cli.init.esmHint":
     "提示:项目 package.json 没有 \"type\": \"module\"。niceeval 两种形态都能跑,但 CommonJS 形态下 config / eval 文件用不了顶层 await——建议在 package.json 加上 \"type\": \"module\"。\n",
   "cli.interruptCleanup": "\n收到中断,正在清理沙箱容器…(再按一次强制清理并退出)\n",
