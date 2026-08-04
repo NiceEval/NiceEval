@@ -12,6 +12,7 @@ import {
 import type { JsonValue, Sandbox, SandboxAgent, SandboxHookContext, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { CLEANUP_TIMEOUT_MS } from "./cleanup-timeout.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
+import { firstLine, formatThrown } from "../util.ts";
 import { Effect, Either, Exit, Scope } from "effect";
 
 export interface ReusableSandboxLease {
@@ -215,6 +216,15 @@ export class ReusableSandboxPool {
     }
     const prepared = yield* Effect.gen(this, function* () {
       const ledger = yield* externalPromise(() => createChangeLedger(sandbox));
+      // root 执行身份下题间 reset 永不安全(Agent 能读上一条 Attempt 留下的私有分类账对象);
+      // 在实例进池、第一条 Attempt 派发前就拒绝,而不是等到归还时才在 resetToAnchor() 里
+      // 暴露(那样首条 Attempt 已经跑完,失败还可能被静默退休吞掉)。
+      if (ledger.rootExecutionIdentity) {
+        return yield* Effect.fail(new Error(
+          `sandboxReuse cannot reuse the "${capabilities.provider}" sandbox: the Agent's execution identity is root and could read private ledger objects left by earlier attempts; ` +
+            "use a non-root execution user (declare USER in the image) or disable sandboxReuse",
+        ));
+      }
       // 建分类账会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
       // 反复创建同样的替代实例只会反复烧同样的时间(见 reuse.md「派发前确认」)。
       const afterSetup = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs));
@@ -269,8 +279,16 @@ export class ReusableSandboxPool {
           yield* this.retire(entry);
         } else if (entry.lifecycle._tag !== "Retired") {
           const reset = yield* Effect.either(externalPromise(() => entry.ledger.resetToAnchor()));
-          if (Either.isLeft(reset)) yield* this.retire(entry);
-          else entry.lifecycle = { _tag: "Idle" };
+          if (Either.isLeft(reset)) {
+            this.feedback.diagnostic({
+              code: "sandbox-reset-failed",
+              level: "warning",
+              message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.left))}`,
+            });
+            yield* this.retire(entry);
+          } else {
+            entry.lifecycle = { _tag: "Idle" };
+          }
         }
         this.wake();
       })).pipe(Effect.as(lease));

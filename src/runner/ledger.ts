@@ -128,6 +128,12 @@ export interface ChangeLedger {
   exportWindows(): Promise<DiffArtifact>;
   /** 回到创建时的题间锚点，并保留归因排除清单排除的动态环境。 */
   resetToAnchor(): Promise<void>;
+  /**
+   * 建账时探测到的执行身份是否为 root(仅当 provider 支持 root ledger 命令时才探测得到,
+   * 否则恒为 false)。sandboxReuse 复用池据此在实例进池前拒绝(见 docs/feature/sandbox/reuse.md);
+   * `resetToAnchor()` 内的同款判断作纵深防御保留。
+   */
+  readonly rootExecutionIdentity: boolean;
 }
 
 interface LedgerOptions {
@@ -299,6 +305,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   ensureCommandSucceeded(anchor, "create change ledger anchor", rootCommands);
 
   return {
+    rootExecutionIdentity: ordinaryUid === "0",
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
       const result = await sandbox.runShell(`${addAll} && (git diff --cached --quiet || git commit -q -m ${shellQuote(`eval ${label}`)})${lockPrivateLedger}`, {

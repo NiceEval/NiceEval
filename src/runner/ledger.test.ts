@@ -285,6 +285,7 @@ describe("createChangeLedger", () => {
     };
     const ledger = await createChangeLedger(sandbox);
 
+    expect(ledger.rootExecutionIdentity).toBe(true);
     await expect(ledger.resetToAnchor()).rejects.toThrow(
       /cannot safely reuse a root-agent sandbox.*private ledger objects.*non-root execution user/,
     );
@@ -314,6 +315,8 @@ describe("createChangeLedger", () => {
     const sandbox = hostSandbox(workdir, ledgerDir);
     const ledger = await createChangeLedger(sandbox);
 
+    // provider 不支持 root 命令时无法探测执行身份,恒为 false(不误判成 root)。
+    expect(ledger.rootExecutionIdentity).toBe(false);
     // workdir 保持素净:分类账的 git 目录在 workdir 外。
     expect(await readdir(workdir)).not.toContain(".git");
 

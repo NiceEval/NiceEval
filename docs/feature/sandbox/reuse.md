@@ -112,12 +112,16 @@ Sandbox Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间�
 Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外路径的文件,全局安装、包管理器缓存、build/cache 和后台进程都会保留,Provider 或作者显式清理的状态除外。
 这些残留可能是有意复用的加速状态,也可能污染后续 Attempt,不能把 reset 当成完整隔离。
 
+复用假设 Agent 读不到上一条 Attempt 留在私有分类账里的对象;这个假设只在执行身份不是 root 时成立。
+声明 `sandboxReuse: true` 且执行身份为 root 的 Experiment,在第一条 Attempt 派发前报错,指向非 root 执行身份(镜像声明 `USER`)或关闭 `sandboxReuse` 两条出路。
+报错时点与下文「派发前确认」里 Provider 缺 `ensureLifetime` 能力的报错时点同构。
+
 大型持久 build/cache 由作者负责生命周期治理。
 作者必须选择容量上限、达到上限前的可解释阈值告警、清理或轮换策略,以及无法安全清理时退休 Sandbox 的策略。
 正常的容量、缓存大小、版本和命中状态记录为 `facts`;只有达到明确风险阈值才报 `diagnostic`,清理或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
 
 reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
-reset 失败后,该 Sandbox 不再承接 Attempt。
+reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 diagnostic(`sandbox-reset-failed`,点名实例编号与失败原文)。
 后续 Attempt 等待其它 Sandbox,或由 Runner 创建替代 Sandbox。
 
 ## 两种时间不能混用
@@ -217,7 +221,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - prepare 命令失败：当前 Attempt `errored`，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
 - 领域判定 failed：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
 - Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
-- reset 或寿命确认失败：停止该 Sandbox，后续 Attempt 等待替代 Sandbox。
+- reset 或寿命确认失败：停止该 Sandbox 并追加一条运行级 diagnostic（`sandbox-reset-failed`），后续 Attempt 等待替代 Sandbox。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
 - Invocation 中断不会替外部持久状态提供事务回滚；`teardown` 能否排除中断 Attempt 的半成品写入由作者契约决定。
 - cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。

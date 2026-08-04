@@ -137,10 +137,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 重放：两层作者 `prepare()` 每 Attempt 重放,要有「第二条 Attempt 重新执行且 probe 命中快速返回」的区分力场景;`agent.ensure` 与 Agent runtime 每 Attempt 执行。
   - 重置：题间 reset 尊重排除清单，重置点仍是归因锚点。
   - 调度：覆盖 `maxConcurrency: 1`、并行复用、按需创建和派发前续期。
-  - 寿命：覆盖 `lifetimeMs` 不足时更换、reset 失败淘汰和中途消失不静默重跑；E2B 的 bounded Attempt 未声明时以 deadline 加收尾预留创建，显式较短值在远端创建前失败。
+  - 寿命：覆盖 `lifetimeMs` 不足时更换；reset 失败发一条运行级 `sandbox-reset-failed` diagnostic（带实例编号与失败原文）并淘汰该实例，后续 Attempt 由替代实例承接，不静默换新；中途消失不静默重跑。E2B 的 bounded Attempt 未声明时以 deadline 加收尾预留创建，显式较短值在远端创建前失败。
   - 能力归属：`SandboxReuseCapability` 只能来自 Provider 实现。
     要有「provider 没有该能力 + `sandboxReuse: true` → 第一条 Attempt 派发前硬失败」的区分力场景。
     不允许任何通用记账层让它静默通过。
+  - 执行身份：题间 reset 假设 Agent 读不到上一条 Attempt 留下的私有分类账对象；执行身份是 root 时这个假设不成立，复用池在实例进池、第一条 Attempt 派发前就拒绝。报错时点与上一条「provider 缺该能力」的派发前失败同构，不是等归还时才在 `resetToAnchor()` 里现形。
   - 调度事实：`sandbox.provider` / `sandboxId` / `reused` / `reuseSandbox` / `reuseOrdinal` 在租借时刻确定。
     Eval `setup` 失败与超时的 attempt 记录同样带全这些键。
     fixture 要造 setup 阶段失败的场景，断言字段在场。
