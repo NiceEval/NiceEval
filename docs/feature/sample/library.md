@@ -109,7 +109,7 @@ sample.coverage[0];
 - **新执行**:属于该实验在样本中最新 Run、且非携带的 attempt——最新一次运行里真实跑出来的。
 - **历史执行**:其余两种出身——携带条目(`attempt.carried === true`,fingerprint 未变、上一轮终态合入本 Run),与 `currentSample` 从旧 Run 拼入的 attempt(所属 Run 早于该实验在样本中的最新 Run)。
 
-两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效标注呈现(实体名后 `↩` + 人话时距,契约见[实体数据源 · 时效标注](../reports/library.md#时效标注));机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
+两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效呈现:locator 后的相对时距、降饱和样式与 web 面 hover 说明(契约见[实验表 · 时效不写字](../reports/components/summaries/experiment-table.md#时效不写字));机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
 
 历史执行不是异常:携带是 fingerprint 担保下的正常缓存(「旧但有效」,语义见 [Experiments · 缓存与携带](../experiments/cache.md)),跨 Run 拼接受 configHash 前提保护。
 所以它不进 issues——时效是每行数字的出身属性,跟着数字走,不是 Sample 级 Issue。
