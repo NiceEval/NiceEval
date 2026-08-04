@@ -55,6 +55,21 @@ Eval 与 Experiment 都没声明 template-bearing layer 时，link planning 会�
 
 漏装时不会静默失败：NiceEval 在创建 sandbox 的那一刻报错并直接给出上面的安装命令，例如 `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`。
 
+### Docker Compose：`workspaceService` 指定主 Sandbox
+
+一道题需要不止一个容器时（比如应用容器加一个数据库），用 `dockerComposeSandbox` 声明整份 Compose 环境：
+
+```ts
+import { dockerComposeSandbox } from "niceeval/sandbox";
+
+sandbox: dockerComposeSandbox({
+  file: new URL("docker-compose.yaml", import.meta.url),
+  workspaceService: "client", // 主 Sandbox
+})
+```
+
+`workspaceService` 指定 Compose 文件里哪个 service 是主 Sandbox。Agent、`t.sandbox` 的命令与文件操作、`workdir`、变更 diff，全部只落在这一个容器上；Compose 文件里的其它 service（数据库、mock server 之类）是伴随资源，不经过 `Sandbox` 接口——不能对它们 `runCommand`、上传或读写文件，也看不到它们的 diff。要用到这些伴随 service，只能靠题目自己的网络访问，例如从 `client` 容器里用 Compose 内置 DNS 访问 `db:5432`。
+
 ## 生命周期
 
 `dockerImageSandbox({ image })` / `vercelSandbox({ snapshotId })` / `e2bSandbox({ template })` 返回的 `SandboxLayer` 有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 链式方法。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。
