@@ -5,6 +5,7 @@
       "name": "correctroads-default-team/niceeval-claude-code",
       "versionTag": "v0.6.1",
       "agentVersion": "2.1.207",
+      "supersededBy": "2.1.207-r4",
       "templateId": "k710teqtjmv03pfcgyt7",
       "buildId": "bad8ccdf-a1b5-4c71-8728-2981722d5cb0",
       "publishedAt": "2026-07-13T10:07:00Z"
@@ -13,6 +14,7 @@
       "name": "correctroads-default-team/niceeval-codex",
       "versionTag": "v0.6.1",
       "agentVersion": "0.144.1",
+      "supersededBy": "0.144.1-r5",
       "templateId": "trocggdwkcjgdtn3syrd",
       "buildId": "281a434b-5bf3-4745-9589-3e7b479e5554",
       "publishedAt": "2026-07-13T10:07:00Z"
@@ -22,7 +24,7 @@
       "versionTag": "v0.6.1",
       "agentVersion": "0.3.10.dev+86fbd0fe",
       "installMarker": "83770925b77a",
-      "supersededBy": "0.4.0-r1",
+      "supersededBy": "0.4.0-r2",
       "templateId": "7lf2vc2cweienpn1ragk",
       "buildId": "c9a947b4-fe47-4d6b-904d-ac14fa897ce5",
       "publishedAt": "2026-07-13T10:07:00Z"

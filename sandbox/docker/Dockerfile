@@ -13,14 +13,26 @@
 # NiceEval 不再静默把执行身份换成非 root，镜像自己必须声明 USER。安装步骤都以 root 执行（base
 # 未声明 USER，继承 Docker 默认 root）；每个 target 收尾前切到 slim 基础镜像自带的 node 用户
 # （UID 1000），version smoke test 在切换后跑，顺带验证该用户能直接调用装好的 CLI。
+#
+# 跨 provider 基线工具面契约（与 E2B 侧 src/sandbox/e2b-agent-template.ts 的
+# withNodeToolContract / verifyE2BNodeToolContract 同一份契约，见
+# docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」）：
+# 包管理器只保证 npm 与 corepack，不预装 yarn 实体；系统 python3 保证存在。两条都在 base 里
+# 一次性落地，六个 target 全部继承，是发布前的构建自检项之一（见 ../../.github/workflows/docker-image.yml）。
 
 FROM node:24-slim AS base
 
-# 各 target 共用的系统依赖:git/curl(git+https 安装、uv 安装脚本)、ca-certificates。
-# build-essential / python3 只留给需要它们的 target，避免 npm 型 image 背上多余工具链。
+# 各 target 共用的系统依赖:git/curl(git+https 安装、uv 安装脚本)、ca-certificates、python3
+# （跨 provider 基线工具面统一，见上）。build-essential 仍只留给需要编译原生依赖的 target
+# （目前只有 bub），避免其余 npm 型 image 背上用不到的工具链。
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git curl ca-certificates \
+ && apt-get install -y --no-install-recommends git curl ca-certificates python3 \
  && rm -rf /var/lib/apt/lists/*
+
+# node:24-slim 自带 yarn 1.22(/usr/local/bin/{yarn,yarnpkg} 符号链接指向 /opt/yarn-v*)；
+# 官方基线的包管理器只保证 npm 与 corepack,要 yarn 的派生项目自己 corepack enable 或安装。
+# glob 匹配 /opt/yarn-v* 以容忍基础镜像升级后的版本号变化。
+RUN rm -rf /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 
 FROM base AS codex
 
@@ -59,12 +71,8 @@ RUN openclaw --version
 
 FROM base AS hermes
 
-# Hermes 装到 $HOME/.local（与 Adapter 运行时回退同一路径）；系统 python3 供
-# sessions export 失败时的 sqlite 旁读。以运行时的 node 用户安装。
-USER root
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 \
- && rm -rf /var/lib/apt/lists/*
+# Hermes 装到 $HOME/.local（与 Adapter 运行时回退同一路径）；系统 python3 现由跨 target 基线
+# 统一提供（sessions export 失败时的 sqlite 旁读用得到）。以运行时的 node 用户安装。
 USER node
 ARG HERMES_VERSION=0.19.0
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \

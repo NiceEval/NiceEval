@@ -59,10 +59,24 @@ describe("e2bCodingAgentTemplate", () => {
       // Agent 安装步骤仍是各自那套,横切层不接管它们。
       expect(steps.indexOf(prepare!)).toBeLessThan(steps.length - 1);
       expect(steps.indexOf(prepare!)).toBeLessThan(steps.indexOf(prefix!));
+
+      // 跨 provider 基线工具面:官方起点若带 yarn 实体就移除(root,可能装在系统目录),
+      // 并断言 python3 存在(运行用户,只 fail fast 不安装)。两步都在 prefix 之后、
+      // Agent 自己的安装步骤之前。
+      const yarnRemoval = steps.find((step) => step.command.includes("yarnpkg"));
+      expect(yarnRemoval?.user).toBe("root");
+      expect(yarnRemoval?.command).toContain("command -v");
+      expect(steps.indexOf(prefix!)).toBeLessThan(steps.indexOf(yarnRemoval!));
+
+      const python3Assert = steps.find((step) => step.command.includes("python3"));
+      expect(python3Assert?.user).toBe("user");
+      expect(python3Assert?.command).toContain("exit 1");
+      expect(steps.indexOf(yarnRemoval!)).toBeLessThan(steps.indexOf(python3Assert!));
+      expect(steps.indexOf(python3Assert!)).toBeLessThan(steps.length - 1);
     },
   );
 
-  it("asserts prefix, PATH and writability as the run user before a build publishes", async () => {
+  it("asserts prefix, PATH, writability and the baseline tool surface as the run user before a build publishes", async () => {
     const steps = await runSteps(verifyE2BNodeToolContract(e2bCodingAgentTemplate("claude-code")));
     const check = steps.at(-1)!;
 
@@ -71,6 +85,9 @@ describe("e2bCodingAgentTemplate", () => {
     expect(check.command).toContain("$PATH");
     expect(check.command).toContain(`test -w ${E2B_NODE_TOOL_PREFIX}/bin`);
     expect(check.command).toContain(`test -w ${E2B_NODE_TOOL_PREFIX}/lib/node_modules`);
+    // 跨 provider 基线工具面收在同一份最终自检里:不存在 yarn、python3 可用。
+    expect(check.command).toContain("command -v yarn");
+    expect(check.command).toContain("command -v python3");
     // 漂移必须让 build 失败,不能只打印一行警告。
     expect(check.command).toContain("exit 1");
   });

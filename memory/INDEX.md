@@ -45,6 +45,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [sandbox-injection-deleted-o11y-host-side](sandbox-injection-deleted-o11y-host-side.md) — 裁决(2026-07-29):沙箱零框架文件零框架 env,行为断言收宿主侧 `t.o11y`,manifest 内存转运;起因是下游 `git clone <url> .` 撞上 `__niceeval__` exit 128;中间态 NICEEVAL_RESULTS env 当日翻案
 - [no-official-fixture-loading-api](no-official-fixture-loading-api.md) — 裁决(2026-07-29):fixture 装载留给用户 shell,否决官方 cloneRepo API;「先拆自己造的地雷,不配官方绕行 API」判据成文进 api-design.md「哪些能力进公开 API」
 - [layer-state-on-hooks-not-on-layer](layer-state-on-hooks-not-on-layer.md) — 裁决(2026-07-31):层状态挂 spec Hook 链,否决层自带 `state:{load,save}`(空层测试:纯状态条件不该被迫写空层);同场收敛环境层 roadmap 五条待裁决与复用窗口落档义务
+- [official-baseline-tool-surface-unified](official-baseline-tool-surface-unified.md) — 裁决(2026-08-04):六个 Docker target 与三个 E2B template 统一基线工具面——只保证 npm/corepack、不预装 yarn,补齐 python3;Docker/E2B 版本位各自 bump,`published.json` 补 `supersededBy` 承认 E2B 侧未发布分叉;翻案 Dockerfile「python3 只留给需要它的 target」
 
 ### 台账
 

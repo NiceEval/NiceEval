@@ -66,7 +66,7 @@ sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 
 `niceeval/sandbox/e2b-template` 提供一个很薄的 **E2B 专属** factory `e2bCodingAgentTemplate(agent)`,从官方 coding agent 起点派生并返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以"官方基线"不会成为改不动的封闭件:
 
-Factory 同时收敛三条基线的 Node 工具安装面：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。`verifyE2BNodeToolContract(template)` 把这三条断言链进 build，任一项漂移时模板在写入 registry 前构建失败——这也是[官方公共基线](#官方-coding-agent-起点)的发布门槛。
+Factory 同时收敛三条基线的 Node 工具安装面：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。同一层还收敛[跨 provider 基线工具面](#跨-provider-基线工具面)：官方起点若带 yarn 实体就移除，python3 存在与否被断言。`verifyE2BNodeToolContract(template)` 把这些断言链进 build，任一项漂移时模板在写入 registry 前构建失败——这也是[官方公共基线](#官方-coding-agent-起点)的发布门槛。
 
 ```typescript
 // scripts/build-e2b-template.ts
@@ -128,6 +128,16 @@ NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Doc
 | [OpenClaw](../../adapters/sdk/openclaw/README.md) | — | `niceeval/openclaw` | Docker 烘焙 `openclaw`;Adapter 检测 PATH 上的 `openclaw` |
 
 Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
+
+### 跨 provider 基线工具面
+
+六个 Docker target 与三个 E2B template 共用同一份基线工具面契约,与各自装的 Agent CLI 版本无关:
+
+- **保证 npm 与 corepack,不预装 yarn 实体**。node:24-slim 自带 yarn 1.22,E2B 官方 `claude`/`codex` 起点的现状不与 Docker 侧一致;统一之后官方基线一律不再提供现成的 yarn 二进制,要 yarn 的派生项目自己 `corepack enable` 或安装。
+- **保证 python3**。Docker 侧的 npm 型 target(claude-code / codex / opencode / openclaw)原先没有系统 python3,E2B 官方起点已经带;统一方向只能是两侧都装——E2B 侧的配方只能在官方起点上叠加,没有"卸载"路径。
+- 两条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检:Docker 侧由 CI 的构建自检步骤断言(`command -v yarn` 必须为空、`python3 --version` 必须成功),E2B 侧由 `verifyE2BNodeToolContract` 断言同样两条。任一项不过,配方不写入 registry、不推送 tag。
+
+这条契约与「版本号跟着被装的 Agent 走」共用同一条规则:配方变了(包括这次的工具面收敛)就 bump `-r`,内容没变不重建。
 
 ### 版本号跟着被装的 Agent 走
 

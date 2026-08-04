@@ -96,8 +96,12 @@ const NODE_TOOL_BIN = `${E2B_NODE_TOOL_PREFIX}/bin`;
 const NODE_TOOL_MODULES = `${E2B_NODE_TOOL_PREFIX}/lib/node_modules`;
 
 /**
- * 横切在三条 Agent 配方之上的 Node 工具契约:准备运行用户可写的全局目录,并把它的
- * npm prefix 写进 user 级 npmrc(user config 优先级高于 builtin/global,不依赖登录 shell)。
+ * 横切在三条 Agent 配方之上的 Node 工具契约:准备运行用户可写的全局目录,把它的
+ * npm prefix 写进 user 级 npmrc(user config 优先级高于 builtin/global,不依赖登录 shell),
+ * 并收敛跨 provider 基线工具面(与 Docker 侧 sandbox/docker/Dockerfile 的 base target 同一份
+ * 契约,见 docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」):
+ * 官方起点若带 yarn 实体就移除(包管理器只保证 npm 与 corepack),并断言 python3 存在
+ * (E2B 官方起点已带,这里只是 fail fast——不是安装步骤)。
  */
 function withNodeToolContract(template: TemplateBuilder): TemplateBuilder {
   return template
@@ -105,15 +109,25 @@ function withNodeToolContract(template: TemplateBuilder): TemplateBuilder {
       `mkdir -p ${NODE_TOOL_BIN} ${NODE_TOOL_MODULES} && chown ${E2B_RUN_USER} ${NODE_TOOL_BIN} ${NODE_TOOL_MODULES}`,
       { user: "root" },
     )
-    .runCmd(`npm config set prefix ${E2B_NODE_TOOL_PREFIX}`, { user: E2B_RUN_USER });
+    .runCmd(`npm config set prefix ${E2B_NODE_TOOL_PREFIX}`, { user: E2B_RUN_USER })
+    .runCmd(
+      `for bin in yarn yarnpkg; do path=$(command -v "$bin" 2>/dev/null) && rm -f "$path"; done; true`,
+      { user: "root" },
+    )
+    .runCmd(
+      `command -v python3 >/dev/null 2>&1 || { echo "python3 missing from official coding-agent baseline" >&2; exit 1; }`,
+      { user: E2B_RUN_USER },
+    );
 }
 
 /**
  * Assert the shared Node tooling contract inside a template build, as the sandbox run user.
  *
- * 校验 npm global prefix、`PATH` 与两个全局目录的写权限。任一项漂移时 build 在写入 registry
- * 前失败,不会发布一份「Agent CLI 能启动、但 `npm install -g` 必挂」的模板。构建脚本应在
- * 全部安装步骤之后链这一步。
+ * 校验 npm global prefix、`PATH`、两个全局目录的写权限,以及跨 provider 基线工具面
+ * (不存在 yarn 实体、python3 存在)。任一项漂移时 build 在写入 registry 前失败,不会发布一份
+ * 「Agent CLI 能启动、但 `npm install -g` 必挂」或「工具面与 Docker 侧基线不一致」的模板。
+ * 构建脚本应在全部安装步骤之后链这一步——用户在 `e2bCodingAgentTemplate()` 之后继续叠加的
+ * `.aptInstall()` / `.runCmd()` 也会被这里的最终检查覆盖到。
  */
 export function verifyE2BNodeToolContract(template: TemplateBuilder): TemplateBuilder {
   return template.runCmd(
@@ -122,6 +136,8 @@ export function verifyE2BNodeToolContract(template: TemplateBuilder): TemplateBu
       `case ":$PATH:" in *":${NODE_TOOL_BIN}:"*) ;; *) echo "${NODE_TOOL_BIN} is missing from PATH: $PATH" >&2; exit 1 ;; esac`,
       `test -w ${NODE_TOOL_BIN} || { echo "${NODE_TOOL_BIN} is not writable by $(id -un)" >&2; exit 1; }`,
       `test -w ${NODE_TOOL_MODULES} || { echo "${NODE_TOOL_MODULES} is not writable by $(id -un)" >&2; exit 1; }`,
+      `command -v yarn >/dev/null 2>&1 && { echo "yarn must not be preinstalled in the official baseline, found: $(command -v yarn)" >&2; exit 1; } || true`,
+      `command -v python3 >/dev/null 2>&1 || { echo "python3 missing from official coding-agent baseline" >&2; exit 1; }`,
     ],
     { user: E2B_RUN_USER },
   );

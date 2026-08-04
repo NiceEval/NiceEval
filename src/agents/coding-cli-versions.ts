@@ -53,16 +53,24 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
 export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
   // r3: Dockerfile 里 npm 全局装完后显式 `USER node`——运行时不再强加执行身份,
   // 改为沿用镜像自己声明的 USER,非 root 必须由配方自己声明(见 docs/feature/sandbox/library.md「执行身份」)
-  "claude-code": 3,
+  // r4: 跨 provider 基线工具面统一——不预装 yarn 实体,补齐 python3
+  // (docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」)
+  "claude-code": 4,
   // r3: staged 安装改用自带运行时的原生平台包(不再要求沙箱里有 node / npm)
   // r4: 同上「USER node」配方变更
-  codex: 4,
-  bub: 1,
+  // r5: 同上「跨 provider 基线工具面统一」配方变更
+  codex: 5,
+  // r2: 跨 provider 基线工具面统一(同上)
+  bub: 2,
   // r2: 同上「USER node」配方变更
-  opencode: 2,
-  hermes: 1,
+  // r3: 同上「跨 provider 基线工具面统一」配方变更
+  opencode: 3,
+  // r2: 跨 provider 基线工具面统一——本 target 原本单独装的 python3 现由 base 统一提供,
+  // 配方内容变了但不预装 yarn 不改变行为(同上)
+  hermes: 2,
   // r2: 同上「USER node」配方变更
-  openclaw: 2,
+  // r3: 同上「跨 provider 基线工具面统一」配方变更
+  openclaw: 3,
 };
 
 /**
