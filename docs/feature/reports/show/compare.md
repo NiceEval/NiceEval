@@ -28,7 +28,7 @@ memory/swelancer-manager-proposals  ✗    621.0k   $0.83        ✓    298.4k  
 memory/terminal-cancel-async-tasks  ✓    455.7k   $0.63        ✓ 2d 402.0k   $0.55          -53.7k   -$0.08
 memory/terminal-pypi-server         ✗    890.1k   $1.21        ✗    910.4k   $1.30          +20.3k   +$0.09
 memory/tool-call-observability      ✓    102.6k   $0.14        ✓     98.2k   $0.13           -4.4k   -$0.01
-memory/uv-lock-refresh              — ✓ 12d                    ✓    511.8k   $0.70               —        —
+memory/uv-lock-refresh              — ✓ 12d   —       —        ✓    511.8k   $0.70               —        —
 memory/flaky-retry ×2               ✗    731.5k   $0.99        ✓    644.0k   $0.87    ⇄     -87.5k   -$0.12
 
 汇总                                4/7 通过   4.0M   $5.46    7/8 通过   3.9M   $5.38
@@ -38,7 +38,7 @@ memory/flaky-retry ×2               ✗    731.5k   $0.99        ✓    644.0k 
 - 头两行报条件数、配对身份、基准与配对覆盖（共同 / 仅某条件的 eval 数）。
 - 条件超过两个时，每个非基准条件各带自己的 `Δ` 列组，全部对第一个 `--exp` 求差；输出变宽是允许的，宽内容交给终端横向滚动，不为省列宽合并语义。
 - 数值列跟随 Sample 主读数映射（[题型构成与主读数](../library/measures.md#题型构成与主读数)）：通过制显示 verdict，计分制在 verdict 位显示挣分（如 `3 pt`；计分制没有满分声明），混型按题型分段。
-- `memory/uv-lock-refresh` 在基准条件下只有过期结论，所以那一格是 `— ✓ 12d`：配对覆盖照记「仅 claude-mempal 1」，`Δ` 与 `汇总` 都不动。
+- `memory/uv-lock-refresh` 在基准条件下只有过期结论，所以那一格是 `— ✓ 12d`，该条件的 tokens 与成本列显示 `—`：配对覆盖照记「仅 claude-mempal 1」，`Δ` 与 `汇总` 都不动。
 
 聚合口径——翻转标记、占位与时效、每格的折叠规则、`汇总` 与 `共同题对基准` 的计算方式、混型分段——单源在公开 `comparisonResult()`；本页只保留 CLI 呈现行为与示例。
 
