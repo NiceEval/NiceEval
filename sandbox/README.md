@@ -82,6 +82,12 @@ pnpm tsx sandbox/e2b/build-agent-template.mts bub
 Bub / Hermes 与运行时 Adapter 使用相同的 `$HOME/.local` 布局；Bub 另写安装规格指纹。
 各 Agent 的版本都固定，升级后应重建一个新 tag。
 
+每个 target 在收尾前都声明非 root `USER node`：Codex / Claude Code / OpenCode / OpenClaw
+装完全局 CLI（root，写 `/usr/local/bin`）后切换身份；Bub / Hermes 本就以 `node` 用户安装，
+无需额外切换。非 root 是预制环境自己的义务，不是 runner 的强加——Claude Code 在 root 下拒绝
+`--dangerously-skip-permissions`；完整契约见
+[执行身份](../docs/feature/sandbox/library.md#执行身份)。
+
 NiceEval 维护公开镜像：
 [`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
 [`niceeval/codex`](https://hub.docker.com/r/niceeval/codex)、

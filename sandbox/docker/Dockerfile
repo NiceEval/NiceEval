@@ -8,6 +8,11 @@
 # Codex / Claude Code / OpenCode / OpenClaw 装到 /usr/local/bin；Bub / Hermes 按
 # Docker provider 的标准 node 用户装到 $HOME/.local。Bub 另写 NiceEval 安装规格指纹，
 # Adapter 只有在指纹完全匹配时才跳过安装。
+#
+# 非 root 是预制环境的义务，不是 runner 的强加（docs/feature/sandbox/library.md「执行身份」）：
+# NiceEval 不再静默把执行身份换成非 root，镜像自己必须声明 USER。安装步骤都以 root 执行（base
+# 未声明 USER，继承 Docker 默认 root）；每个 target 收尾前切到 slim 基础镜像自带的 node 用户
+# （UID 1000），version smoke test 在切换后跑，顺带验证该用户能直接调用装好的 CLI。
 
 FROM node:24-slim AS base
 
@@ -19,30 +24,37 @@ RUN apt-get update \
 
 FROM base AS codex
 
-# npm 全局安装 → /usr/local/bin/codex。
+# npm 全局安装(root)→ /usr/local/bin/codex,该路径对所有用户可执行。收尾切到 node
+# 用户;version smoke test 在切换后跑,顺带验证非 root 身份能直接调用装好的 CLI。
 ARG CODEX_VERSION=0.144.1
 RUN npm install -g @openai/codex@${CODEX_VERSION}
+USER node
 RUN codex --version
 
 FROM base AS claude-code
 
-# npm 全局安装 → /usr/local/bin/claude。
+# npm 全局安装(root)→ /usr/local/bin/claude。Claude Code 在 root 下拒绝
+# --dangerously-skip-permissions,收尾必须声明非 root USER,不能只装完就结束。
 ARG CLAUDE_CODE_VERSION=2.1.207
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+USER node
 RUN claude --version
 
 FROM base AS opencode
 
-# npm 全局安装 → /usr/local/bin/opencode（包名 opencode-ai）。
+# npm 全局安装(root)→ /usr/local/bin/opencode（包名 opencode-ai）。收尾切到 node 用户。
 ARG OPENCODE_VERSION=1.18.5
 RUN npm install -g opencode-ai@${OPENCODE_VERSION}
+USER node
 RUN opencode --version
 
 FROM base AS openclaw
 
-# npm 全局安装 → /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=22.22.3 或 >=24。
+# npm 全局安装(root)→ /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=22.22.3 或
+# >=24。收尾切到 node 用户。
 ARG OPENCLAW_VERSION=2026.7.1-2
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
+USER node
 RUN openclaw --version
 
 FROM base AS hermes
