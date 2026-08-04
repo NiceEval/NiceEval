@@ -340,7 +340,7 @@ const scope = reportScopeFixture({
   - 报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced import，不复用陈旧模块缓存）。
   - `resolveViewInput` 的输入校验、外壳导航与标题在真实站点上的呈现，归 [E2E 功能域 · 报告与读面](../e2e/report.md)。
 - **持续重建（view 本地模式）**：watch 输入闭集的判定——有效根内的记录变更、报告文件与它的项目内 import 图（含自定义组件文件）、主题文件、`niceeval.config.ts` 触发重建；有效根之外的记录与依赖目录里的包不触发。
-  本地 server 缺省监听全部 IPv4 网卡，并列出可访问的本机与局域网 URL；显式 `host` 时只绑定并公布该地址。
+  本地 server 默认监听全部 IPv4 网卡，并列出可访问的本机与局域网 URL；显式 `host` 时只绑定并公布该地址。
   重建是整条管线重跑，同一页同一语言的报告块与 `--out` 逐字节一致（这一格是「增量拼接」错误算法唯一会红的地方，fixture 要让新落盘的 attempt 改变覆盖分母）。
   连续事件去抖后合成一次，重建期间到达的事件在本次结束后再建一次、不堆积。
   装载失败时保留上一份可用产物并推出结构化错误，`--out` 下同样的错误按非零退出。
@@ -372,14 +372,14 @@ const scope = reportScopeFixture({
    `AttemptDetails` 组合件的展开树构成与二选一规则； attempt page 缺 locator 的完整反馈。
   渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要 `pnpm run build:report`，改动 view 壳 / dialog 摆放后需要 `pnpm run view:build`。
 - **源码调用树的数据语义**：源码证据按 entry 角色确定主干，不按断言命中数猜测。
-  跨文件 `loc` 在没有 callers 时进入 detached，有 callers 时挂回最内层主干帧。
-  package 与 unavailable 中间段不吞掉更深节点；正文存在但定位行越界同样保留 unavailable；只有没有 `loc` 的记录进入 unmapped。
-  passed / failed / unavailable、挣分 / 显式满分与中止自底向上汇总，unavailable 不计成 failed；send / assertion / score 按统一发生序交错排列。
-  完整树不受展示预算影响。
-  行选择只在 default、full、file 与 web 的投影函数发生：主干 / 子树上下文半径为 3 / 2，无关段折叠阈值为 8 / 4。
-  full 展开全部调用边但节点内部仍折行；default 超过 400 行时先收深层，同层先 soft 后 gate。
-  web 保留全部路径并只设置默认 open；file 按捕获路径后缀唯一匹配并显示全文。零命中与多命中都是可分辨的用法错误。
-  text、web 与 ShowJson 消费同一个 `AnnotatedSourceResult`，旧的按命中数猜单文件投影不得再出现在公开或内部读取路径。
+
+  - 跨文件 `loc` 在没有 callers 时进入 detached，有 callers 时挂回最内层主干帧。
+  - package 与 unavailable 中间段不吞掉更深节点；正文存在但定位行越界同样保留 unavailable；只有没有 `loc` 的记录进入 unmapped。
+  - passed / failed / unavailable、挣分 / 显式满分与中止自底向上汇总，unavailable 不计成 failed；send / assertion / score 按统一发生序交错排列。
+  - 完整树不受展示预算影响。行选择只在 default、full、file 与 web 的投影函数发生：主干 / 子树上下文半径为 3 / 2，无关段折叠阈值为 8 / 4。
+  - full 展开全部调用边但节点内部仍折行；default 超过 400 行时先收深层，同层先 soft 后 gate。
+  - web 保留全部路径并只设置默认 open；file 按捕获路径后缀唯一匹配并显示全文。零命中与多命中都是可分辨的用法错误。
+  - text、web 与 ShowJson 消费同一个 `AnnotatedSourceResult`，旧的按命中数猜单文件投影不得再出现在公开或内部读取路径。
 - **`attemptAssertions` 的计分制字段**：
   - `.points` 挣分随所在 `AssertionResult` 一起出现，包括「失败的检查点挣 0 分」。
   - **得分点不参与 passed 收纳**：passed 的得分点逐条进平铺列表、不折进 `passedGroups` 计数（[收纳豁免](../../../feature/assertions/library/display.md#计分制points-与给分记录)）。

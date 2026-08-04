@@ -49,7 +49,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 位置参数只有一种含义：eval id 前缀，与 `show` 一致。
 记录根用 `--record <dir>` 传入，单开一份 Run 用 `--run <file>`——文件与目录都不进位置参数，位置参数的含义不随文件系统状态改变。
 
-本地 server 默认监听全部 IPv4 网卡（等价于 `--host 0.0.0.0`）；启动后会列出本机 `127.0.0.1` 与每个局域网 IPv4 地址，直接点其中符合访问位置的一条即可。`--host [address]` 可改为只监听指定地址；裸写 `--host` 与不传值同样监听全部网卡。
+本地 server 默认监听全部 IPv4 网卡（等价于 `--host 0.0.0.0`）；启动后会列出本机 `127.0.0.1` 与每个局域网 IPv4 地址，直接点其中符合访问位置的一条即可。`--host [address]` 可改为只监听指定地址；只写 `--host` 不带地址时，与省略该 flag 同样监听全部网卡。
 默认让操作系统随机分配端口；`--port <n>` 指定首选端口，被占用时从 n 起向上顺延最多 20 个，全被占用才报错。
 
 不带选项的 `niceeval view` 默认把记录根中的完整 Sample 作为各页 `load` 的 base。
@@ -240,16 +240,22 @@ site/
 多页报告仍只用一个 `index.html`：导航页是 `#/<pageId>` 路由，托管方不需要为每页配置路径。
 参数化页不同：基线目标链接直接指向 `<pageId>/<key>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。
 所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。
-托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**解析相对引用会少一层——`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它解析：路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。
+托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**解析相对引用会少一层。
+`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它解析。
+`<base>` 在路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。
 `index.html` 按构造恒是站点根，这条判定不需要托管方配置。
 参数化页文档住在真实的 `<pageId>/` 目录下，相对引用天然对齐，不参与这套归一。
+
 `assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。
 `head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。
 导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。
-attempt 页面的基线内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch；`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基线内容的数据来源。
+
+attempt 页面的基线内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch。
+`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基线内容的数据来源。
 因此不提供“单个 HTML”导出：站点仍需要 `assets/`（样式 / 脚本）与 `artifact/`（独立证据文件）等外部文件，这是站点由多个物理文件构成的结构性原因，与页面是否需要联网取数无关。
 
-导出没有档位：`view --out` 不做体积取舍，收窄范围内存在且前端会读取的证据文件——`sources.json` 及其引用的 Run 级 `sources/<sha256>.json` 正文、`commands.json`、`events.json`、`trace.json`、`diff.json`——全部随站复制，缺的在对应证据位置如实显示缺失，不猜也不冒充。
+导出没有档位：`view --out` 把收窄范围内存在且前端会读取的证据文件全部随站复制，不做体积取舍。
+这批文件是 `sources.json` 及其引用的 Run 级 `sources/<sha256>.json` 正文、`commands.json`、`events.json`、`trace.json` 与 `diff.json`；缺的在对应证据位置如实显示缺失，不猜也不冒充。
 体积取舍不在导出层做：要瘦站点，在构建发布根时用 [`publish({ artifacts })`](../record/library.md#发布publish) 决定带什么（其默认不带 diff）。
 唯一永不复制的是 `o11y.json`——报告数字在导出时已烘进 HTML，浏览器不读它，这是「前端读什么带什么」规则的推论，不是一个档位。
 
