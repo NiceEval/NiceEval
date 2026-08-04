@@ -3,7 +3,6 @@
 // MetricValue.format 可覆盖；公开入口是 formatMetricValue / formatAxisTick。
 
 import type { Verdict } from "../../types.ts";
-import { gapParts } from "../../sample/index.ts";
 import {
   DEFAULT_REPORT_LOCALE,
   DISPLAY_LOCALES,
@@ -160,6 +159,7 @@ const MISSING_CODE_KEYS = {
   noSamples: "cell.missing",
   notRun: "cell.notRun",
   unscorable: "cell.unscorable",
+  noCurrentResult: "cell.noCurrentResult",
 } as const;
 
 /**
@@ -290,17 +290,40 @@ export function formatReportDateTimeRange(
   };
 }
 
-// ── 实体列表(ExperimentList / EvalList / AttemptList)共用的时效标注 ──
+// ── 实体列表(ExperimentList / EvalList / AttemptList)共用的相对时距 ──
+
+/** 时距词表按区间取的单位;`{n}` 插值,en 是紧凑后缀,zh-CN 带空格接量词。 */
+const TIME_DISTANCE_KEYS = {
+  minute: "timeDistance.minute",
+  hour: "timeDistance.hour",
+  day: "timeDistance.day",
+  month: "timeDistance.month",
+} as const;
+
+const MS_PER_MINUTE = 60_000;
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
+const MS_PER_MONTH = MS_PER_DAY * 30;
 
 /**
- * 历史执行的紧凑时距("3d" / "2h" / "5m" / "10s"):自 `startedAt` 起算,渲染时刻由调用方
- * 传入(`nowIso` 缺省当前时刻)——粒度阈值复用 `gapParts`(与曾经的 stale-run message
- * 同一套单源,见 `results/select.ts`),只是这里的呈现是紧凑单字母,不是完整单词
- * (docs/feature/reports/library.md「时效标注」)。
+ * 一段时长(毫秒) → 当前 locale 的紧凑相对时距("12d" / "12 天")。按区间选粒度最大的单位
+ * 取整,结果恒不小于一个单位(docs/feature/reports/library/presentation.md「相对时距是数据,
+ * 不是文案」):不足 1 小时→分钟,不足 1 天→小时,不足 30 天→天,30 天及以上→月。
+ * `locator` 格与占位行参考的 `staleSinceMs` 都经这一个入口,不各写各的措辞;不加箭头、回环
+ * 之类的装饰记号——记号不携带时长,读者还要先学会它。
  */
-export function formatHistoricalGap(startedAtIso: string, nowIso: string = new Date().toISOString()): string {
-  const { n, unit } = gapParts(startedAtIso, nowIso);
-  return `${n}${unit[0]}`;
+export function formatTimeDistance(ms: number, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
+  const abs = Math.max(0, ms);
+  if (abs < MS_PER_HOUR) {
+    return localeText(locale, TIME_DISTANCE_KEYS.minute, { n: Math.max(1, Math.round(abs / MS_PER_MINUTE)) });
+  }
+  if (abs < MS_PER_DAY) {
+    return localeText(locale, TIME_DISTANCE_KEYS.hour, { n: Math.max(1, Math.round(abs / MS_PER_HOUR)) });
+  }
+  if (abs < MS_PER_MONTH) {
+    return localeText(locale, TIME_DISTANCE_KEYS.day, { n: Math.max(1, Math.round(abs / MS_PER_DAY)) });
+  }
+  return localeText(locale, TIME_DISTANCE_KEYS.month, { n: Math.max(1, Math.round(abs / MS_PER_MONTH)) });
 }
 
 // ── 实体列表(ExperimentList / EvalList / AttemptList)共用的判定符 ──

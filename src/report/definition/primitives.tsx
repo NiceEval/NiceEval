@@ -44,7 +44,7 @@ import {
   type TableContentRow,
 } from "./cell.ts";
 import { MetricCellView } from "../components/cell.tsx";
-import { verdictMark } from "../model/format.ts";
+import { formatTimeDistance, missingText, verdictMark } from "../model/format.ts";
 
 
 function childArray(children: ReportNode): ReportNode[] {
@@ -776,8 +776,41 @@ function renderCellWeb(
   switch (cell.kind) {
     case "notApplicable":
       return <span className="niceeval-missing">{MISSING_MARK}</span>;
-    case "missing":
-      return <span className="niceeval-missing">{formatCellText(cell, ctx.locale)}</span>;
+    case "missing": {
+      const reference = cell.reference;
+      let body: ReactNode;
+      if (reference) {
+        const mark = (
+          <span className="niceeval-locator-mark" aria-hidden="true">
+            {verdictMark(reference.verdict === "skipped" ? "skipped" : reference.verdict)}
+          </span>
+        );
+        const distance = <span className="niceeval-stale-distance">{formatTimeDistance(reference.staleSinceMs, ctx.locale)}</span>;
+        const title = localeText(ctx.locale, "experimentList.staleReferenceTooltip");
+        const href = ctx.href(reference.locator);
+        body = href !== undefined ? (
+          <a className="niceeval-locator niceeval-stale" href={href} title={title}>
+            {mark}
+            {reference.locator}
+            {distance}
+          </a>
+        ) : (
+          <span className="niceeval-locator niceeval-stale" title={title}>
+            {mark}
+            {reference.locator}
+            {distance}
+          </span>
+        );
+      } else {
+        body = <span className="niceeval-missing-reason">{missingText(cell.code, ctx.locale)}</span>;
+      }
+      return (
+        <span className="niceeval-missing">
+          {body}
+          {cell.detail ? <small className="niceeval-cell-detail">{cell.detail}</small> : null}
+        </span>
+      );
+    }
     case "text":
       return (
         <span className="niceeval-cell-text">
@@ -789,20 +822,34 @@ function renderCellWeb(
       // 判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
       // (docs/feature/reports/components/summaries/experiment-table.md)。
       const verdict = cell.verdict;
-      const className = verdict === undefined ? "niceeval-locator" : `niceeval-locator niceeval-verdict-${verdict}`;
+      const stale = cell.staleSinceMs !== undefined;
+      const className = cx(
+        "niceeval-locator",
+        verdict !== undefined ? `niceeval-verdict-${verdict}` : undefined,
+        stale ? "niceeval-stale" : undefined,
+      );
       const mark = verdict === undefined ? null : (
         <span className="niceeval-locator-mark" aria-hidden="true">
           {verdictMark(verdict === "skipped" ? "skipped" : verdict)}
         </span>
       );
+      const distance = stale ? (
+        <span className="niceeval-stale-distance">{formatTimeDistance(cell.staleSinceMs!, ctx.locale)}</span>
+      ) : null;
+      const title = stale ? localeText(ctx.locale, "experimentList.historicalTooltip") : undefined;
       const href = ctx.href(cell.locator);
       return href !== undefined ? (
-        <a className={className} href={href}>
+        <a className={className} href={href} title={title}>
           {mark}
           {cell.locator}
+          {distance}
         </a>
       ) : (
-        <span className={className}>{formatCellText(cell, ctx.locale)}</span>
+        <span className={className} title={title}>
+          {mark}
+          {cell.locator}
+          {distance}
+        </span>
       );
     }
     case "summary":
@@ -839,6 +886,26 @@ function renderCellWeb(
           locale={ctx.locale}
         />
       );
+    case "composition": {
+      // web 面画成一条分段条,hover 一段给出它的名字与计数;段的业务含义住在投影里,
+      // 这里只按声明序给一条位置驱动的渐隐色阶(docs/feature/reports/components/primitives/table.md「构成格」)。
+      const total = cell.segments.reduce((sum, segment) => sum + segment.count, 0);
+      if (total === 0) return <span className="niceeval-missing">{MISSING_MARK}</span>;
+      return (
+        <span className="niceeval-composition">
+          {cell.segments.map((segment, i) =>
+            segment.count > 0 ? (
+              <span
+                key={i}
+                className="niceeval-composition-segment"
+                style={{ width: `${(segment.count / total) * 100}%`, "--composition-step": i } as CSSProperties}
+                title={`${resolveLocalizedText(segment.label, ctx.locale)}: ${segment.count}`}
+              />
+            ) : null,
+          )}
+        </span>
+      );
+    }
     default: {
       const _e: never = cell;
       return _e;

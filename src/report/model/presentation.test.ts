@@ -7,7 +7,7 @@ import * as report from "../index.ts";
 import * as reportReact from "../react/index.tsx";
 import { formatCellText, type Cell } from "../definition/cell.ts";
 import { isCalculation } from "./calculation.ts";
-import { formatAxisTick, formatInstant, formatMetricValue, missingText } from "./format.ts";
+import { formatAxisTick, formatInstant, formatMetricValue, formatTimeDistance, missingText } from "./format.ts";
 
 describe("formatMetricValue", () => {
   it("五支 unit 各折一种读法;tokens 的 46500 不是裸数字", () => {
@@ -56,6 +56,26 @@ describe("formatAxisTick", () => {
   });
 });
 
+describe("formatTimeDistance", () => {
+  // cases: docs/engineering/testing/unit/reports.md「formatTimeDistance 的读法与导出面」。
+  it("四区间读法:不足 1 小时→分钟,不足 1 天→小时,不足 30 天→天,30 天及以上→月;不足一个单位取一个单位不打零", () => {
+    expect(formatTimeDistance(45 * 60_000, "en")).toBe("45m");
+    expect(formatTimeDistance(20_000, "en")).toBe("1m"); // 不足一分钟仍取一个单位,不打 0m
+    expect(formatTimeDistance(6 * 3_600_000, "en")).toBe("6h");
+    expect(formatTimeDistance(12 * 86_400_000, "en")).toBe("12d");
+    expect(formatTimeDistance(4 * 86_400_000 * 30, "en")).toBe("4mo");
+  });
+
+  it("区分力场景:90 分钟按区间分派成 2h,不是恒定按天取整的 1d", () => {
+    expect(formatTimeDistance(90 * 60_000, "en")).toBe("2h");
+  });
+
+  it("zh-CN 同一区间是另一份文案,不是英文单位换皮", () => {
+    expect(formatTimeDistance(6 * 3_600_000, "zh-CN")).toBe("6 小时");
+    expect(formatTimeDistance(12 * 86_400_000, "zh-CN")).toBe("12 天");
+  });
+});
+
 describe("missingText / formatCellText", () => {
   // @ts-expect-error missing 完成态只携带 code，不开放未归一的任意 data。
   const invalidMissingCell: Cell = { kind: "missing", code: "noSamples", data: { reason: "opaque" } };
@@ -81,6 +101,7 @@ describe("呈现工具箱导出面", () => {
     expect(report.formatMetricValue).toBe(formatMetricValue);
     expect(report.formatAxisTick).toBe(formatAxisTick);
     expect(report.formatInstant).toBe(formatInstant);
+    expect(report.formatTimeDistance).toBe(formatTimeDistance);
     expect(report.formatCellText).toBe(formatCellText);
     expect(report.missingText).toBe(missingText);
     expect(report.presentDimension).toBeTypeOf("function");
@@ -89,6 +110,7 @@ describe("呈现工具箱导出面", () => {
     expect(reportReact.formatMetricValue).toBe(report.formatMetricValue);
     expect(reportReact.formatAxisTick).toBe(report.formatAxisTick);
     expect(reportReact.formatInstant).toBe(report.formatInstant);
+    expect(reportReact.formatTimeDistance).toBe(report.formatTimeDistance);
     expect(reportReact.formatCellText).toBe(report.formatCellText);
     expect(reportReact.missingText).toBe(report.missingText);
     expect(reportReact.presentDimension).toBe(report.presentDimension);

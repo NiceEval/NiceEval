@@ -12,7 +12,7 @@
 // 例外:Table 的列 / 行 key 校验目前只长在 web()/text() 两个渲染面函数体内(没有独立导出的纯
 // 校验函数),要触发它只能经 renderNodeToText;断言对象仍是抛出的 Error,不是渲染内容本身。
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../types.ts";
 import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
@@ -42,7 +42,7 @@ import { targetHref } from "./target.ts";
 import type { ChartTargetPoint } from "../definition/primitives/chart.tsx";
 import type { ReportTarget } from "../definition/report.ts";
 import { renderSamplePage } from "./page-render.ts";
-import { ExperimentTable, FailureList } from "../components/entity-lists/index.tsx";
+import { ExperimentTable, ExperimentTableView, FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
 import { ExperimentScatter, SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
 import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Table, Tabs, Text, Waterfall } from "../definition/primitives.tsx";
@@ -991,6 +991,42 @@ describe("SampleOverview(组合组件)", () => {
       </Col>
     ));
     expect(await resolveTree(<SampleOverview />, scope)).toEqual(await resolveTree(<Handwritten />, scope));
+  });
+
+  describe("「只看新执行」的重投影(experiment-table.md「只看新执行」)", () => {
+    it("Sample 里有历史执行时,ExperimentTable 交给 ExperimentTableView 两份 Content;fresh 态与 freshOnly() 重投影结果深相等,列集同规则", async () => {
+      // staleSinceMs 按 Date.now() 现算(格式化契约见 presentation.md「相对时距」);冻结系统时刻,
+      // 避免同一断言里两次独立计算因几毫秒漂移误判成「不相等」。
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-05T00:00:00.000Z"));
+      try {
+        const carried = res("b", "passed", { artifactBase: "exp/toggle/old-snap/b/a0" });
+        const scope = scopeOf([snap({ experimentId: "exp/toggle", results: [res("a", "passed"), carried] })]);
+        const resolved = await resolveTree(<ExperimentTable />, scope);
+        expect(collectElementsByType(resolved, Table)).toHaveLength(0);
+        const views = collectElementsByType(resolved, ExperimentTableView);
+        expect(views).toHaveLength(1);
+        const { fullContent, freshContent } = views[0]!.props as {
+          fullContent: ReturnType<typeof experimentListContent>;
+          freshContent: ReturnType<typeof experimentListContent> | null;
+        };
+        expect(freshContent).not.toBeNull();
+        // 口径不在组件里另算一遍:fresh 态与同一 Sample 走 freshOnly() 再投影的结果深相等。
+        expect(freshContent).toEqual(experimentListContent(await toExperimentRows(scope.freshOnly())));
+        expect(fullContent).toEqual(experimentListContent(await toExperimentRows(scope)));
+        // Table 的输入只是行集:两态下的列集同规则,原语侧没有任何按时效分叉的属性。
+        expect(freshContent!.columns.map((c) => c.key)).toEqual(fullContent.columns.map((c) => c.key));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("Sample 里既无历史执行也无过期结论时不产出开关:ExperimentTable 直接交给 Table 而不绕 ExperimentTableView", async () => {
+      const scope = scopeOf([snap({ experimentId: "exp/plain", results: [res("a", "passed")] })]);
+      const resolved = await resolveTree(<ExperimentTable />, scope);
+      expect(collectElementsByType(resolved, ExperimentTableView)).toHaveLength(0);
+      expect(collectElementsByType(resolved, Table)).toHaveLength(1);
+    });
   });
 });
 

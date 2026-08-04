@@ -273,7 +273,7 @@ export interface DeltaCell {
   attempts: readonly AttemptLocator[];
   totalTokens?: number;
   totalCostUSD?: number;
-  /** true 时该格来自跨快照携带的历史执行,渲染为 ↩ 时效标注。 */
+  /** true 时该格来自跨快照携带的历史执行(时效标注见 experiment-table.md「时效不写字」)。 */
   historical: boolean;
 }
 

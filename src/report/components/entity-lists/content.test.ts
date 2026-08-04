@@ -94,6 +94,7 @@ function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentLi
     evals: partial.evalRows.length,
     attempts: partial.evalRows.reduce((sum, row) => sum + row.attempts.length, 0),
     historicalAttempts: 0,
+    staleReferences: {},
     lastRunAt: "2026-07-01T00:00:00Z",
     ...partial,
   };

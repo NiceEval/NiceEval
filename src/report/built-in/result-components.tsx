@@ -22,6 +22,7 @@ import {
 import { HeroCard } from "../components/site-components/index.tsx";
 import { AttemptSummary } from "../components/attempt-detail/index.tsx";
 import { experimentListContent } from "../components/entity-lists/content.ts";
+import { ExperimentTableView } from "../components/entity-lists/index.tsx";
 import {
   attemptAssertionsContent,
   attemptConversationContent,
@@ -135,6 +136,7 @@ export const StandardOverviewResultView = defineComponent<{
   result: StandardOverviewResult;
 }>(async ({ result }, ctx) => {
   const table = experimentListContent(result.experiments);
+  const freshTable = result.freshExperiments ? experimentListContent(result.freshExperiments) : null;
   const hasPassRate = table.columns.some((column) => column.key === "passRate");
   const hasTotalScore = table.columns.some((column) => column.key === "totalScore");
   const defaultSort = hasPassRate === hasTotalScore
@@ -178,7 +180,11 @@ export const StandardOverviewResultView = defineComponent<{
           ),
         )}
       </Col>
-      <TableContentView data={table} sort={defaultSort} searchable />
+      {freshTable === null ? (
+        <TableContentView data={table} sort={defaultSort} searchable />
+      ) : (
+        <ExperimentTableView fullContent={table} freshContent={freshTable} sort={defaultSort} searchable />
+      )}
     </Col>
   );
 });

@@ -109,6 +109,7 @@ describe("validateExperimentListData", () => {
       attempts: 1,
       historicalAttempts: 0,
       missingEvalIds: [],
+      staleReferences: {},
       lastRunAt: "2026-07-01T00:00:00Z",
       evalRows: [validEvalRow],
     },
@@ -148,5 +149,13 @@ describe("validateExperimentListData", () => {
   it("[i].historicalAttempts 非数字报错;[i].missingEvalIds 非字符串数组报错", () => {
     expect(validateExperimentListData([{ ...valid[0], historicalAttempts: "0" }])).toMatch(/"data\[0\]\.historicalAttempts"/);
     expect(validateExperimentListData([{ ...valid[0], missingEvalIds: [1] }])).toMatch(/"data\[0\]\.missingEvalIds\[0\]"/);
+  });
+
+  it("[i].staleReferences 非对象报错;条目缺 staleSinceMs 定位到该 evalId", () => {
+    expect(validateExperimentListData([{ ...valid[0], staleReferences: [] }])).toMatch(/"data\[0\]\.staleReferences"/);
+    const bad = [
+      { ...valid[0], staleReferences: { q1: { locator: "@1abcdef2", verdict: "passed" } } },
+    ];
+    expect(validateExperimentListData(bad)).toMatch(/"data\[0\]\.staleReferences\.q1\.staleSinceMs"/);
   });
 });

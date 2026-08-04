@@ -481,19 +481,3 @@ export function filterExperiments(experiments: Experiment[], filter?: string | s
   const matched = new Set(prefixes.flatMap((p) => matchExperimentSelector(ids, p)));
   return experiments.filter((exp) => matched.has(exp.id));
 }
-
-/**
- * 时效标注(`↩` + 人话时距)的粒度选择:选粒度最大的单位,四舍五入。结构化形态是单源——
- * entity-lists 渲染面的紧凑时距("3d")与曾经的 stale-run message 用同一套阈值,
- * 阈值不写两份(docs/feature/reports/library.md「时效标注」)。
- */
-export function gapParts(fromIso: string, toIso: string): { n: number; unit: "second" | "minute" | "hour" | "day" } {
-  const ms = Math.max(0, Date.parse(toIso) - Date.parse(fromIso));
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 90) return { n: seconds, unit: "second" };
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 90) return { n: minutes, unit: "minute" };
-  const hours = Math.round(minutes / 60);
-  if (hours < 36) return { n: hours, unit: "hour" };
-  return { n: Math.round(hours / 24), unit: "day" };
-}

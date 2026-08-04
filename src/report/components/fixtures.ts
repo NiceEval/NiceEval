@@ -306,6 +306,7 @@ export const experimentListItems: ExperimentListItem[] = [
     attempts: 3,
     historicalAttempts: 0,
     missingEvalIds: [],
+    staleReferences: {},
     lastRunAt: "2026-07-01T10:00:00Z",
     evalRows: [
       {
@@ -346,6 +347,7 @@ export const experimentListItems: ExperimentListItem[] = [
     attempts: 1,
     historicalAttempts: 0,
     missingEvalIds: [],
+    staleReferences: {},
     lastRunAt: "2026-07-01T11:30:00Z",
     evalRows: [
       {

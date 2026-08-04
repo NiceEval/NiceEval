@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
-import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricValue, formatTimeDistance, missingText, verdictMark } from "../model/format.ts";
 import {
   DEFAULT_REPORT_LOCALE,
   localeText,
@@ -49,7 +49,26 @@ export type Cell =
     }
   | { readonly kind: "text"; readonly text: string; readonly detail?: string }
   | { readonly kind: "notApplicable" }
-  | { readonly kind: "missing"; readonly code: string };
+  | {
+      readonly kind: "missing";
+      readonly code: string;
+      /** 补上这一格的命令,可直接复制(如 `niceeval exp <experimentId>`)。 */
+      readonly detail?: string;
+      /**
+       * 记录里存在、但与当前基准不可比的最近一条判定;不进任何计数,两面都降饱和显示,
+       * 只提供 locator 下钻(docs/feature/reports/library/presentation.md「missing 格的完整形状」)。
+       */
+      readonly reference?: {
+        readonly locator: AttemptLocator;
+        readonly verdict: Verdict | "skipped";
+        readonly staleSinceMs: number;
+      };
+    }
+  | {
+      readonly kind: "composition";
+      /** 段名由投影按 locale 给出;Table 不认识段的业务含义,只按声明序渲染,计数为零的段不显示。 */
+      readonly segments: readonly { readonly label: LocalizedText; readonly count: number }[];
+    };
 
 export interface ColumnSpec {
   readonly key: string;
@@ -88,12 +107,18 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
   switch (cell.kind) {
     case "notApplicable":
       return "—";
-    case "missing":
-      return missingText(cell.code, locale ?? DEFAULT_REPORT_LOCALE);
+    case "missing": {
+      const loc = locale ?? DEFAULT_REPORT_LOCALE;
+      // 带参考时用参考替代原因文案——参考本身已经说明这一格为什么空着,不把同一句话说两遍。
+      const reason = cell.reference
+        ? `${verdictMark(cell.reference.verdict === "skipped" ? "skipped" : cell.reference.verdict)} ${cell.reference.locator} ${formatTimeDistance(cell.reference.staleSinceMs, loc)}`
+        : missingText(cell.code, loc);
+      return cell.detail ? `${reason} · ${cell.detail}` : reason;
+    }
     case "text":
       return cell.detail ? `${cell.text}\n  ${cell.detail}` : cell.text;
     case "locator": {
-      const stale = cell.staleSinceMs !== undefined ? ` ↩ ${formatStale(cell.staleSinceMs)}` : "";
+      const stale = cell.staleSinceMs !== undefined ? ` ${formatTimeDistance(cell.staleSinceMs, locale ?? DEFAULT_REPORT_LOCALE)}` : "";
       const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict === "skipped" ? "skipped" : cell.verdict)} ` : "";
       return `${mark}${cell.locator}${stale}`;
     }
@@ -121,6 +146,14 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
     case "metric": {
       const m = cell.metric;
       return formatMetricValue(m.value, m.unit, m.format, locale ?? DEFAULT_REPORT_LOCALE);
+    }
+    case "composition": {
+      const loc = locale ?? DEFAULT_REPORT_LOCALE;
+      // text 面退化成与判定计票同构的计数串,与「计数为零的段不出现」同一条规则。
+      const parts = cell.segments
+        .filter((segment) => segment.count > 0)
+        .map((segment) => `${segment.count} ${resolveLocalizedText(segment.label, loc)}`);
+      return parts.join(" · ") || "—";
     }
     default: {
       const _exhaustive: never = cell;
@@ -160,9 +193,4 @@ export function flattenTableContentForText(
   };
   for (const row of content.rows) walk(row, 0);
   return { columns, rows };
-}
-
-function formatStale(ms: number): string {
-  const days = Math.max(1, Math.round(ms / 86_400_000));
-  return `${days}d`;
 }

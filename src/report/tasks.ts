@@ -67,7 +67,7 @@ import {
   attemptTraceData,
   usageTableData,
 } from "./components/attempt-detail/compute.ts";
-import { experimentListData } from "./components/entity-lists/compute.ts";
+import { experimentListData, hasHistoricalOrStale } from "./components/entity-lists/compute.ts";
 import { sampleSummary } from "./components/summaries/compute.ts";
 import { evaluationKindComposition } from "./model/evaluation-kind.ts";
 import {
@@ -109,6 +109,11 @@ export interface StandardOverviewResult {
   summary: SampleSummaryContent;
   charts: readonly StandardOverviewChartResult[];
   experiments: readonly ExperimentListItem[];
+  /**
+   * 「只看新执行」开关的另一态(experiment-table.md「只看新执行」);Sample 里既无历史执行
+   * 也无过期结论时为 null——一个永远不改变行集的控件只会让人怀疑自己看漏了什么。
+   */
+  freshExperiments: readonly ExperimentListItem[] | null;
 }
 
 export interface ComparisonCoverageResult {
@@ -321,7 +326,8 @@ export async function standardOverviewResult(sample: Sample): Promise<StandardOv
     experimentListData(sample),
     Promise.all(chartPromises),
   ]);
-  return { hero, notices, diagnostics, fixPrompt, summary, charts, experiments };
+  const freshExperiments = hasHistoricalOrStale(experiments) ? await experimentListData(sample.freshOnly()) : null;
+  return { hero, notices, diagnostics, fixPrompt, summary, charts, experiments, freshExperiments };
 }
 
 export async function comparisonResult(

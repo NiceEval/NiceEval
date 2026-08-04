@@ -3,13 +3,14 @@
 // (docs/feature/reports/library.md「Eval 分组层」)。
 
 import type { Cell, ColumnSpec, TableContent, TableContentRow } from "../../definition/cell.ts";
-import { localizedMessage } from "../../model/locale.ts";
+import { localizedMessage, type LocalizedText } from "../../model/locale.ts";
 import type {
   AttemptListItem,
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
   EvaluationKindComposition,
+  StaleConclusionReference,
 } from "../../model/types.ts";
 import type { MetricValue } from "../../model/calculation.ts";
 import { experimentListEvaluationKindComposition } from "../../model/format.ts";
@@ -17,6 +18,10 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 
 /** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
 const GROUP_NO_SAMPLES = "noSamples";
+/** 覆盖缺口两档占位行共用的原因码——两档说的是同一个事实,`code` 相同。 */
+const NO_CURRENT_RESULT = "noCurrentResult";
+/** 覆盖构成四段的声明序:新执行 → 历史执行 → 过期结论 → 未跑到(段序即声明序)。 */
+const COVERAGE_SEGMENT_KEYS = ["coverage.fresh", "coverage.historical", "coverage.stale", "coverage.notRun"] as const;
 
 /** 三张实体表共用的列表头。文案单源在 locale 字典,这里只烤成随列走的 LocalizedText。 */
 const HEADER = {
@@ -32,6 +37,7 @@ const HEADER = {
   verdict: localizedMessage("experimentList.status"),
   result: localizedMessage("experimentList.result"),
   score: localizedMessage("experimentList.totalScore"),
+  coverage: localizedMessage("experimentList.coverage"),
 };
 
 /**
@@ -122,7 +128,7 @@ function attemptCells(item: AttemptListItem): CellBag {
     entity: {
       kind: "locator",
       locator: item.locator,
-      staleSinceMs: item.historical ? 1 : undefined,
+      staleSinceMs: item.staleSinceMs,
       verdict,
     },
     verdict: { kind: "verdict", verdict },
@@ -268,15 +274,26 @@ function evalRow(
   };
 }
 
+/**
+ * 覆盖缺口的两档占位行(docs/feature/reports/components/summaries/experiment-table.md
+ * 「覆盖缺口的两档占位行」):`code` 与补跑命令两档相同——都是「当前配置下没有结果」这同一个
+ * 事实;差别只在有没有 `reference`,带参考时它替代原因文案,不把同一句话说两遍。
+ */
 function placeholderRow(
   experimentId: string,
   evalId: string,
   label: string,
   columns: readonly ColumnSpec[],
+  reference: StaleConclusionReference | undefined,
 ): TableContentRow {
   const bag: CellBag = {
     entity: textCell(label),
-    result: textCell("No result for current config", `niceeval exp ${experimentId}`),
+    record: {
+      kind: "missing",
+      code: NO_CURRENT_RESULT,
+      detail: `niceeval exp ${experimentId}`,
+      ...(reference ? { reference } : {}),
+    },
   };
   return {
     key: `${experimentId}:${evalId}:missing`,
@@ -324,7 +341,7 @@ function leafTableRow(
 ): TableContentRow {
   return member.kind === "eval"
     ? evalRow(member.row, view, label)
-    : placeholderRow(item.experimentId, member.evalId, label, view.columns);
+    : placeholderRow(item.experimentId, member.evalId, label, view.columns, item.staleReferences[member.evalId]);
 }
 
 function groupTableRow(
@@ -443,6 +460,25 @@ function nestLevel(
   return [...rows, ...flat];
 }
 
+/**
+ * 覆盖构成的四段计数(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」):
+ * 新执行 / 历史执行 = 有 attempt 的题按其中是否有非历史(新执行)划分;过期结论 = 缺口题里
+ * `staleReferences` 命中的那些;未跑到 = 缺口题里剩下的那些。四段互斥且合计等于已知题数。
+ */
+function coverageSegments(item: ExperimentListItem): { label: LocalizedText; count: number }[] {
+  let fresh = 0;
+  for (const row of item.evalRows) {
+    if (row.attempts.some((a) => !a.historical)) fresh += 1;
+  }
+  const historical = item.evalRows.length - fresh;
+  const stale = Object.keys(item.staleReferences).length;
+  const notRun = item.missingEvalIds.length - stale;
+  return COVERAGE_SEGMENT_KEYS.map((key, i) => ({
+    label: localizedMessage(key),
+    count: [fresh, historical, stale, notRun][i]!,
+  }));
+}
+
 /** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows。 */
 function experimentSubRows(item: ExperimentListItem, view: HierarchyView): TableContentRow[] {
   const members: LeafMember[] = [
@@ -463,6 +499,9 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     tokens: measureCell(item.tokens),
     costUSD: measureCell(item.costUSD),
     record: verdictCell(item.evalVerdicts),
+    // 覆盖构成是 experiment 这一行独有的事实(experiment-table.md「覆盖构成」),Eval / Attempt /
+    // 路径段组行没有这一格——projectCells 按列集自动填 notApplicable,不额外分支。
+    coverage: { kind: "composition", segments: coverageSegments(item) },
   };
   return {
     key: item.experimentId,
@@ -483,6 +522,7 @@ function experimentColumns(composition: EvaluationKindComposition): ColumnSpec[]
     { key: "tokens", better: "lower", header: HEADER.tokens },
     { key: "costUSD", better: "lower", header: HEADER.costUSD },
     { key: "record", header: HEADER.record },
+    { key: "coverage", header: HEADER.coverage },
   ];
 }
 

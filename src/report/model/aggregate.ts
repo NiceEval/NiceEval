@@ -40,13 +40,25 @@ export function resolveInput(input: ReportInput): {
   attempts: readonly AttemptHandle[];
   issues: readonly SampleIssue[];
   coverage: readonly SampleCoverage[];
+  /** 同一总体内按 locator 去重的完整历史 attempt;裸 `Run[]` 没有挑选过程,取全部。 */
+  historyAttempts: readonly AttemptHandle[];
+  /** 是否只保留新执行的 attempt;裸 `Run[]` 没有这个口径,恒为 false。 */
+  fresh: boolean;
 } {
   if (Array.isArray(input)) {
     const runs = input as readonly Run[];
-    return { runs, attempts: runs.flatMap((s) => s.attempts), issues: [], coverage: [] };
+    const attempts = runs.flatMap((s) => s.attempts);
+    return { runs, attempts, issues: [], coverage: [], historyAttempts: attempts, fresh: false };
   }
   const scope = input as Sample;
-  return { runs: scope.runs, attempts: scope.attempts, issues: scope.issues, coverage: scope.coverage };
+  return {
+    runs: scope.runs,
+    attempts: scope.attempts,
+    issues: scope.issues,
+    coverage: scope.coverage,
+    historyAttempts: scope.historyAttempts,
+    fresh: scope.fresh,
+  };
 }
 
 /**

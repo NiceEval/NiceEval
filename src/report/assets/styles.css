@@ -61,6 +61,38 @@
 .niceeval-report .niceeval-locator.niceeval-verdict-skipped { color: var(--soft); }
 .niceeval-report .niceeval-locator-mark { font-weight: 650; }
 
+/* ---- 时效:降饱和样式,与判定色同一条路径(experiment-table.md「时效不写字」) ----
+   历史执行(locator 格 staleSinceMs 在场)与覆盖缺口的过期结论参考共用同一条降饱和纪律:
+   判定色与 currentColor 混入中性 --soft,不额外发明第二套色板。 */
+.niceeval-report .niceeval-locator.niceeval-stale,
+.niceeval-report .niceeval-locator.niceeval-stale .niceeval-locator-mark {
+  color: color-mix(in oklch, currentColor, var(--soft) 55%);
+}
+.niceeval-report .niceeval-stale-distance {
+  margin-left: 2px;
+  font-variant-numeric: tabular-nums;
+  color: var(--soft);
+}
+.niceeval-report .niceeval-missing-reason { color: var(--muted); }
+
+/* ---- 构成格:一条分段条,按计数占比分宽,hover 出段名与计数(table.md「构成格」) ----
+   段的业务含义住在投影层,这里只按声明序给一条位置驱动的渐隐色阶,不认识任何段名。 */
+.niceeval-report .niceeval-composition {
+  display: flex;
+  align-items: stretch;
+  height: 8px;
+  min-width: 72px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+.niceeval-report .niceeval-composition-segment {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: color-mix(in oklch, var(--accent), var(--soft) calc(var(--composition-step, 0) * 22%));
+}
+
 /* ---- 维度键上色:同一个 key 在任何块里同色(文字) ---- */
 .niceeval-report .niceeval-c0 { color: var(--c0); }
 .niceeval-report .niceeval-c1 { color: var(--c1); }
@@ -160,6 +192,23 @@ table.niceeval-report,
 }
 .niceeval-table-wrap > .niceeval-filter:focus { border-color: var(--line-strong); }
 .niceeval-table-wrap > .niceeval-filter::placeholder { color: var(--soft); }
+
+/* ---- 「只看新执行」开关(experiment-table.md「只看新执行」) ----
+   增强层:初始 HTML 是关闭态的完整表(niceeval-fresh-all 可见,niceeval-fresh-only 隐藏),
+   开关只切换这两块的可见性,不重新请求或重新计算任何数据。 */
+.niceeval-report .niceeval-fresh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.niceeval-report .niceeval-fresh-toggle input[type="checkbox"] { margin: 0; }
+.niceeval-report .niceeval-fresh-only { display: none; }
+.niceeval-report.niceeval-experiment-table:has(.niceeval-fresh-toggle input:checked) .niceeval-fresh-all { display: none; }
+.niceeval-report.niceeval-experiment-table:has(.niceeval-fresh-toggle input:checked) .niceeval-fresh-only { display: block; }
 .niceeval-report .niceeval-cell-text { display: block; min-width: 0; }
 .niceeval-report .niceeval-cell-detail {
   display: block;

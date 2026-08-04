@@ -56,12 +56,20 @@ const en = {
   /** AttemptSummary 的重试序号(0 起的 identity.attempt 显示前 +1)。 */
   "attemptSummary.attempt": "attempt {n}",
 
+  /** formatTimeDistance 的四区间读法(presentation.md「相对时距是数据,不是文案」)。 */
+  "timeDistance.minute": "{n}m",
+  "timeDistance.hour": "{n}h",
+  "timeDistance.day": "{n}d",
+  "timeDistance.month": "{n}mo",
+
   /** 全 null / 无样本的统一文案,绝不画 0。 */
   "cell.missing": "no data",
   /** missing 格 code=`notRun`:固定题集里这道题没有 attempt。 */
   "cell.notRun": "not run",
   /** missing 格 code=`unscorable`:有 attempt,但读数测不出。 */
   "cell.unscorable": "unscorable",
+  /** missing 格 code=`noCurrentResult`:当前配置下这道题没有结果(覆盖缺口占位行)。 */
+  "cell.noCurrentResult": "no result for current config",
   "cell.measuredTitle": "{samples}/{total} attempts measured",
   "cell.noneMeasurableTitle": "0/{total} attempts measurable",
   "cell.coverageTitle": "coverage {samples}/{total}: this metric is null for the remaining attempts",
@@ -90,6 +98,7 @@ const en = {
   "experimentList.cost": "Cost",
   "experimentList.result": "Record",
   "experimentList.status": "Status",
+  "experimentList.coverage": "Coverage",
   "experimentList.evalAttempt": "Eval / Attempt",
   "experimentList.duration": "Duration",
   "experimentList.filterPlaceholder": "Filter experiments…",
@@ -182,10 +191,20 @@ const en = {
   "issues.details.other": "{n} issues",
   "issues.badge.unfinishedSnapshot": "unfinished",
 
-  /** 覆盖缺口(scope.coverage)与时效标注(见 entity-lists.md「时效标注」「ExperimentList」)。 */
+  /** 覆盖缺口(scope.coverage)。 */
   "overview.evalsCountPartial": "{covered}/{total} evals",
-  "experimentList.historicalAttempts": "↩ {n}/{m} attempts",
-  "experimentList.noResultsForConfig": "no results under the current configuration",
+
+  /** 覆盖构成四段的段名(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」)。 */
+  "coverage.fresh": "fresh",
+  "coverage.historical": "historical",
+  "coverage.stale": "stale",
+  "coverage.notRun": "not run",
+  /** locator 格历史执行时距的 hover 说明(三条通道见「时效不写字」)。 */
+  "experimentList.historicalTooltip": "Historical execution — carried over or pulled in from an earlier run; still counts toward every total.",
+  /** 覆盖缺口占位行参考的 hover 说明。 */
+  "experimentList.staleReferenceTooltip": "Reference only — not comparable with the current configuration, does not count toward any total.",
+  /** 「只看新执行」开关的 web 面文案(experiment-table.md「只看新执行」)。 */
+  "experimentTable.freshOnlyToggle": "Fresh executions only",
 
   /** Hero / HeroCard 的运行 meta(hero.noRuns 是 latestStartedAt 为 null 时的内置文案)。 */
   "hero.lastRun": "Last run {time}",
@@ -251,9 +270,15 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
 
   "attemptSummary.attempt": "第 {n} 次",
 
+  "timeDistance.minute": "{n} 分钟",
+  "timeDistance.hour": "{n} 小时",
+  "timeDistance.day": "{n} 天",
+  "timeDistance.month": "{n} 个月",
+
   "cell.missing": "无数据",
   "cell.notRun": "未跑到",
   "cell.unscorable": "测不出",
+  "cell.noCurrentResult": "当前配置下无结果",
   "cell.measuredTitle": "{samples}/{total} 次 attempt 测得",
   "cell.noneMeasurableTitle": "0/{total} 次 attempt 可测",
   "cell.coverageTitle": "覆盖率 {samples}/{total}:其余 attempt 测不了这个指标",
@@ -281,6 +306,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "experimentList.cost": "成本",
   "experimentList.result": "结果",
   "experimentList.status": "状态",
+  "experimentList.coverage": "覆盖构成",
   "experimentList.evalAttempt": "题目 / Attempt",
   "experimentList.duration": "耗时",
   "experimentList.filterPlaceholder": "筛选实验…",
@@ -364,8 +390,14 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "issues.badge.unfinishedSnapshot": "未收尾",
 
   "overview.evalsCountPartial": "{covered}/{total} 个 Eval",
-  "experimentList.historicalAttempts": "↩ {n}/{m} attempts",
-  "experimentList.noResultsForConfig": "当前配置下无结果",
+
+  "coverage.fresh": "新执行",
+  "coverage.historical": "历史执行",
+  "coverage.stale": "过期结论",
+  "coverage.notRun": "未跑到",
+  "experimentList.historicalTooltip": "历史执行——携带自上一轮或跨 Run 拼入的结果；仍计入所有汇总。",
+  "experimentList.staleReferenceTooltip": "仅作参考——与当前配置不可比，不进任何计数。",
+  "experimentTable.freshOnlyToggle": "只看新执行",
 
   "hero.lastRun": "最后运行 {time}",
   "hero.noRuns": "暂无运行",

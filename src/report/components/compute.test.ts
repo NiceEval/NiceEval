@@ -16,6 +16,10 @@ import type { AssertionResult, AttemptError, EvalResult, O11ySummary, Verdict } 
 import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
+import { makeSample } from "../../sample/index.ts";
+import { encodeAttemptLocator } from "../../record/locator.ts";
+import { experimentListContent } from "./entity-lists/content.ts";
+import { formatCellText, type Cell } from "../definition/cell.ts";
 import type { Record } from "../../record/types.ts";
 import {
   assistantTurns,
@@ -709,6 +713,192 @@ describe("实体列表 data", () => {
       evals: 0,
       attempts: 0,
       evalRows: [],
+    });
+  });
+
+  // ─────── 覆盖缺口的两档占位与过期结论参考(experiment-table.md「覆盖缺口的两档占位行」) ───────
+
+  describe("覆盖缺口的两档占位与过期结论参考", () => {
+    /**
+     * 区分力场景:evalId "b" 只在两份旧 configHash 快照下跑过(与当前基准不可比,过期结论候选
+     * 多于一条),"c" 从未在任何快照出现过(未跑到)。`current` 是当前基准,只贡献 "a"。
+     */
+    function staleScope(opts: { fresh?: boolean } = {}): { scope: Sample; older: Run; newerStale: Run } {
+      const current = snap({ experimentId: "exp/stale", results: [res("a", "passed")] });
+      current.configHash = "cfg-2";
+      const older = snap({
+        experimentId: "exp/stale",
+        results: [res("b", "failed")],
+        runStartedAt: "2026-01-01T00:00:00.000Z",
+      });
+      older.configHash = "cfg-1";
+      const newerStale = snap({
+        experimentId: "exp/stale",
+        results: [res("b", "passed")],
+        runStartedAt: "2026-02-01T00:00:00.000Z",
+      });
+      newerStale.configHash = "cfg-1"; // 同样不可比,但比 older 晚出现——参考要取这一条
+      const coverage = [
+        { experimentId: "exp/stale", run: current, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["b", "c"] },
+      ];
+      const scope = makeSample(
+        "current",
+        [current],
+        [...current.attempts],
+        [],
+        coverage,
+        opts.fresh ?? false,
+        [...current.attempts, ...older.attempts, ...newerStale.attempts],
+      );
+      return { scope, older, newerStale };
+    }
+
+    function recordCellOf(row: { cells: Readonly<globalThis.Record<string, Cell>> }): Cell {
+      return row.cells.record!;
+    }
+
+    it("两档占位行的结果格都是 missing 且都带补跑命令;只有过期结论的那档带 reference,取候选中最新的一条", async () => {
+      const { scope, newerStale } = staleScope();
+      const items = await experimentListData(scope);
+      const content = experimentListContent(items);
+      const sub = content.rows[0]!.subRows!;
+      const staleRow = sub.find((row) => row.key.endsWith("b:missing"))!;
+      const notRunRow = sub.find((row) => row.key.endsWith("c:missing"))!;
+      expect(staleRow.variant).toBe("placeholder");
+      expect(notRunRow.variant).toBe("placeholder");
+
+      const staleCell = recordCellOf(staleRow);
+      const notRunCell = recordCellOf(notRunRow);
+      if (staleCell.kind !== "missing" || notRunCell.kind !== "missing") throw new Error("expected missing cells");
+      expect(staleCell.code).toBe("noCurrentResult");
+      expect(notRunCell.code).toBe("noCurrentResult");
+      expect(staleCell.detail).toBe("niceeval exp exp/stale");
+      expect(notRunCell.detail).toBe("niceeval exp exp/stale");
+      expect(notRunCell.reference).toBeUndefined();
+      expect(staleCell.reference).toBeDefined();
+      // 两档必须给出不同的格——把两档折成同一种占位的实现在这里失败。
+      expect(staleCell).not.toEqual(notRunCell);
+      // 候选多于一条(older 与 newerStale 都不可比)时取最新那条:newerStale 的判定是 "passed"。
+      expect(staleCell.reference!.verdict).toBe("passed");
+      expect(staleCell.reference!.locator).toBe(
+        encodeAttemptLocator({ runId: newerStale.runId, evalId: "b", attempt: 0 }),
+      );
+
+      // text 面:带参考时用参考替代原因文案,不把「当前配置下无结果」再说一遍。
+      expect(formatCellText(staleCell, "en")).toMatch(/^✓ /);
+      expect(formatCellText(notRunCell, "en")).toBe("no result for current config · niceeval exp exp/stale");
+      expect(formatCellText(notRunCell, "zh-CN")).toBe("当前配置下无结果 · niceeval exp exp/stale");
+    });
+
+    it("reference 不进任何计数:带参考前后,该 experiment 的判定计票、通过率与覆盖分母逐字不变", async () => {
+      const { scope } = staleScope();
+      const [item] = await experimentListData(scope);
+      // 分母只数 "a" 这一道有 attempt 的题,"b" 的参考不进 evals/attempts/passRate 分母。
+      expect(item!.evals).toBe(1);
+      expect(item!.attempts).toBe(1);
+      expect(item!.endToEndPassRate).toMatchObject({ value: 1, samples: 1, total: 1 });
+      expect(item!.evalVerdicts).toEqual({ passed: 1, failed: 0, errored: 0, skipped: 0 });
+    });
+
+    it("sample.fresh 为 true 时两档占位行都不带 reference", async () => {
+      const nonFresh = experimentListContent(await experimentListData(staleScope({ fresh: false }).scope));
+      const fresh = experimentListContent(await experimentListData(staleScope({ fresh: true }).scope));
+      const staleCellNonFresh = recordCellOf(nonFresh.rows[0]!.subRows!.find((row) => row.key.endsWith("b:missing"))!);
+      const staleCellFresh = recordCellOf(fresh.rows[0]!.subRows!.find((row) => row.key.endsWith("b:missing"))!);
+      if (staleCellNonFresh.kind !== "missing" || staleCellFresh.kind !== "missing") throw new Error("expected missing cells");
+      expect(staleCellNonFresh.reference).toBeDefined();
+      expect(staleCellFresh.reference).toBeUndefined();
+    });
+  });
+
+  // ─────── 覆盖构成的四段与两面(experiment-table.md「覆盖构成」) ───────
+
+  describe("覆盖构成的四段与两面", () => {
+    /**
+     * 区分力场景:"retry" 重试两次,第一次携带(历史执行)、第二次新执行——按 attempt 计数的
+     * 错误实现会让合计超过题数;"solo" 只有历史执行;"stale" 只有过期结论;"gone" 未跑到。
+     */
+    function compositionScope(): Sample {
+      const current = snap({
+        experimentId: "exp/composition",
+        results: [
+          res("retry", "passed", { artifactBase: "exp/composition/old/retry/a0" }), // 携带,attempt 0
+          res("retry", "passed", { attempt: 1 }), // 新执行,attempt 1
+          res("solo", "passed", { artifactBase: "exp/composition/old/solo/a0" }),
+        ],
+      });
+      current.configHash = "cfg-current";
+      const staleRun = snap({ experimentId: "exp/composition", results: [res("stale", "failed")] });
+      staleRun.configHash = "cfg-old";
+      const coverage = [
+        {
+          experimentId: "exp/composition",
+          run: current,
+          knownEvalIds: ["retry", "solo", "stale", "gone"],
+          missingEvalIds: ["stale", "gone"],
+        },
+      ];
+      return makeSample("current", [current], [...current.attempts], [], coverage, false, [
+        ...current.attempts,
+        ...staleRun.attempts,
+      ]);
+    }
+
+    it("四段互斥且合计等于已知题数;一题同时有新执行与携带 attempt 时只落新执行段", async () => {
+      const [item] = await experimentListData(compositionScope());
+      const content = experimentListContent([item!]);
+      const coverageCell = content.rows[0]!.cells.coverage;
+      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
+      const byLabel = new Map(
+        coverageCell.segments.map((segment) => [
+          typeof segment.label === "string" ? segment.label : segment.label.en,
+          segment.count,
+        ]),
+      );
+      expect(byLabel.get("fresh")).toBe(1); // retry 只落新执行段,不因为它也有携带 attempt 而重复计
+      expect(byLabel.get("historical")).toBe(1); // solo
+      expect(byLabel.get("stale")).toBe(1); // stale
+      expect(byLabel.get("not run")).toBe(1); // gone
+      const total = [...coverageCell.segments].reduce((sum, s) => sum + s.count, 0);
+      expect(total).toBe(4); // 合计 = knownEvalIds 数,不是 attempts 数
+    });
+
+    it("计数为零的段不出现在两面输出里,与判定计票同一条规则", async () => {
+      const s = snap({ experimentId: "exp/all-fresh", results: [res("q", "passed")] });
+      const [item] = await experimentListData([s]);
+      const content = experimentListContent([item!]);
+      const coverageCell = content.rows[0]!.cells.coverage;
+      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
+      expect(coverageCell.segments.filter((s) => s.count > 0)).toHaveLength(1);
+      expect(formatCellText(coverageCell, "en")).toBe("1 fresh");
+      expect(formatCellText(coverageCell, "zh-CN")).toBe("1 新执行");
+    });
+
+    it("段名走 LocalizedText:zh-CN 与 en 取同一份 segments,只有文案不同,计数与段序逐字相同", async () => {
+      const [item] = await experimentListData(compositionScope());
+      const content = experimentListContent([item!]);
+      const coverageCell = content.rows[0]!.cells.coverage;
+      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
+      const en = formatCellText(coverageCell, "en");
+      const zh = formatCellText(coverageCell, "zh-CN");
+      expect(en).toBe("1 fresh · 1 historical · 1 stale · 1 not run");
+      expect(zh).toBe("1 新执行 · 1 历史执行 · 1 过期结论 · 1 未跑到");
+      expect(coverageCell.segments.map((s) => s.count)).toEqual([1, 1, 1, 1]);
+    });
+
+    it("构成格不携带业务语义:Eval / Attempt 行没有这一格(notApplicable),换一套无关段名照常渲染", async () => {
+      const [item] = await experimentListData(compositionScope());
+      const content = experimentListContent([item!]);
+      const evalRow = content.rows[0]!.subRows!.find((row) => row.key === "retry")!;
+      expect(evalRow.cells.coverage).toEqual({ kind: "notApplicable" });
+      const attemptRow = evalRow.subRows![0]!;
+      expect(attemptRow.cells.coverage).toEqual({ kind: "notApplicable" });
+
+      const arbitrarySegments: Cell = {
+        kind: "composition",
+        segments: [{ label: "x", count: 2 }, { label: "y", count: 0 }],
+      };
+      expect(formatCellText(arbitrarySegments)).toBe("2 x");
     });
   });
 

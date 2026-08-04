@@ -61,6 +61,7 @@ export type {
   SampleIssue,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
+  StaleConclusionReference,
   TraceSpanSummary,
   TraceWaterfallRow,
   UsageTableData,
@@ -71,7 +72,7 @@ export { formatCellText } from "../definition/cell.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 
 // 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):自有 React 页面与报告面同实现。
-export { formatAxisTick, formatInstant, formatMetricValue, missingText } from "../model/format.ts";
+export { formatAxisTick, formatInstant, formatMetricValue, formatTimeDistance, missingText } from "../model/format.ts";
 export { presentDimension, shortestUniqueLabels } from "../presentation.ts";
 export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "../presentation.ts";
 

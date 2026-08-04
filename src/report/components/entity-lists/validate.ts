@@ -34,7 +34,18 @@ function attemptListItemProblem(value: unknown, path: string): string | null {
   if (!(value.costUSD === null || typeof value.costUSD === "number")) return `"${path}.costUSD" must be a number or null`;
   if (typeof value.startedAt !== "string") return `"${path}.startedAt" must be a string`;
   if (typeof value.historical !== "boolean") return `"${path}.historical" must be a boolean`;
+  if (!(value.staleSinceMs === undefined || typeof value.staleSinceMs === "number")) {
+    return `"${path}.staleSinceMs" must be a number or omitted`;
+  }
   if (typeof value.locator !== "string") return `"${path}.locator" must be a string`;
+  return null;
+}
+
+function staleConclusionReferenceProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an object`;
+  if (typeof value.locator !== "string") return `"${path}.locator" must be a string`;
+  if (typeof value.verdict !== "string") return `"${path}.verdict" must be a string`;
+  if (typeof value.staleSinceMs !== "number") return `"${path}.staleSinceMs" must be a number`;
   return null;
 }
 
@@ -64,6 +75,11 @@ export const validateExperimentListData: Validator = (data) =>
       typeof id === "string" ? null : `"${idPath}" must be a string`,
     );
     if (missingProblem !== null) return missingProblem;
+    if (!isObject(item.staleReferences)) return `"${path}.staleReferences" must be an object`;
+    for (const [evalId, reference] of Object.entries(item.staleReferences)) {
+      const referenceProblem = staleConclusionReferenceProblem(reference, `${path}.staleReferences.${evalId}`);
+      if (referenceProblem !== null) return referenceProblem;
+    }
     if (typeof item.lastRunAt !== "string") return `"${path}.lastRunAt" must be a string`;
     return arrayProblem(item.evalRows, `${path}.evalRows`, (row, rowPath) => {
       if (!isObject(row) || typeof row.evalId !== "string") {
