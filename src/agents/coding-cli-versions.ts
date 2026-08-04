@@ -51,13 +51,18 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
  * 一个 Agent 的 E2B 与 Docker 制品共用这个号：一个版本号 = 一套基线配方，两侧同步重建。
  */
 export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
-  "claude-code": 2,
+  // r3: Dockerfile 里 npm 全局装完后显式 `USER node`——运行时不再强加执行身份,
+  // 改为沿用镜像自己声明的 USER,非 root 必须由配方自己声明(见 docs/feature/sandbox/library.md「执行身份」)
+  "claude-code": 3,
   // r3: staged 安装改用自带运行时的原生平台包(不再要求沙箱里有 node / npm)
-  codex: 3,
+  // r4: 同上「USER node」配方变更
+  codex: 4,
   bub: 1,
-  opencode: 1,
+  // r2: 同上「USER node」配方变更
+  opencode: 2,
   hermes: 1,
-  openclaw: 1,
+  // r2: 同上「USER node」配方变更
+  openclaw: 2,
 };
 
 /**
