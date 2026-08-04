@@ -14,7 +14,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 裁决
 
 - [docker-image-lifecycle-gap](docker-image-lifecycle-gap.md) — 构建复用有、产物退役无:BuildKey 换代后旧镜像与 BuildKit 缓存永不回收,数天吃掉 700G;候选上游 feature:niceeval gc 按 BuildKey 引用回收 + 磁盘水位 fail-fast + 共享基底
-- [compose-case-identity-digest-flap](compose-case-identity-digest-flap.md) — Compose caseIdentity 收本地镜像 digest,并行 docker 活动使指纹在 accept 与 --dry 间抖动;候选修正:digest 钉在声明或首次解析
+- 已修 [compose-case-identity-digest-flap](compose-case-identity-digest-flap.md) — 复核后代码从未把本地解析 digest 写进 caseIdentity,真实缺陷是字段名 `serviceImageDigests` 与 case.md CaseKey 公式的措辞跟「只收声明值」的实际行为矛盾;改名 `serviceImageRefs` + 文档订正 + 回归测试锁定跨规划身份稳定,12 题批量抖动的具体触发路径未复现,遗留排查方向见正文
 - [execution-user-follows-environment-declaration](execution-user-follows-environment-declaration.md) — 裁决(2026-08-04):执行身份默认沿用环境声明(镜像 `USER` 等),runner 不再强加 UID 1000;factory 与命令统一收 `user`,`root: true` 与 compose `executionUser: "image"` 哨兵退役;起因是 Terminal-Bench 约 150/238 attempt 因静默换用户 Permission denied
 - [sandbox-layer-model-adopted](sandbox-layer-model-adopted.md) — 裁决(2026-08-01 定稿):环境模型采纳 PLAN-10 的 SandboxLayer:配对级 template XOR、template owner 先的固定顺序、普通 command 只有逐 Attempt prepare;命名并回 template 词族(否决 root/extension);否决 PLAN-9 双 scope 与 Requirement 族
 - [prepare-commands-adopted](prepare-commands-adopted.md) — 裁决(2026-08-01):采纳内置 prepare 命令 checkout/installTool 与 --dry 复用成本视图(否决意图分类字段与纯惯用法);命名弃用 helper/ensure;部分翻案「不配官方 fixture 装载 API」——动机换成复用缓存与稳定 identity,test 期装载 API 仍不做
