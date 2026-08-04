@@ -221,7 +221,8 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - prepare 命令失败：当前 Attempt `errored`，执行已登记 cleanup；reset 成功后 Sandbox 可以继续承接。
 - 领域判定 failed：照常执行 Agent 与 cleanup 收尾；命令树静止且 reset 成功后 Sandbox 可以继续。
 - Attempt 超时、取消、interruption 或 `agent-send-failed`：先确认 Agent driver 与受管命令树终止；任一项无法证明就停止该 Sandbox，不进入 reset / 复用。
-- reset 或寿命确认失败：停止该 Sandbox 并追加一条运行级 diagnostic（`sandbox-reset-failed`），后续 Attempt 等待替代 Sandbox。
+- reset 失败：停止该 Sandbox 并追加一条运行级 diagnostic（`sandbox-reset-failed`），后续 Attempt 等待替代 Sandbox。
+- 寿命确认不通过：按「派发前确认」轮换——停止该 Sandbox、创建替代 Sandbox，这是正常调度而不是异常，不发 diagnostic。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
 - Invocation 中断不会替外部持久状态提供事务回滚；`teardown` 能否排除中断 Attempt 的半成品写入由作者契约决定。
 - cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。
