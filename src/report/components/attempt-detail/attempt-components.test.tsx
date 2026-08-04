@@ -36,6 +36,7 @@ import {
   attemptDiagnosticsData,
   attemptDiffData,
   attemptErrorData,
+  attemptFactsData,
   attemptFixPromptData,
   attemptSummaryData,
   attemptTimelineData,
@@ -485,11 +486,17 @@ describe("AttemptCommandEvidence:命令与 Conversation 分离、错误提示只
     stderr: "",
   };
   const failed = { ...observed, timingNodeId: "failed-command", checked: true };
+  const succeeded = { ...observed, timingNodeId: "succeeded-command", exitCode: 0, checked: false };
 
   it("无 events 时 Conversation 仍为空,独立命令证据保留并排序", () => {
     const evidence = evidenceOf({ commands: [failed, observed] });
     expect(attemptConversationData(evidence)).toBeNull();
     expect(attemptCommandEvidenceData(evidence)?.commands.map((command) => command.classification)).toEqual(["failed", "observed"]);
+  });
+
+  it("exitCode 0 分类为 succeeded,即使 checked 为 true 也不推导成 failed", () => {
+    const evidence = evidenceOf({ commands: [succeeded, { ...succeeded, timingNodeId: "checked-zero", checked: true }] });
+    expect(attemptCommandEvidenceData(evidence)?.commands.map((command) => command.classification)).toEqual(["succeeded", "succeeded"]);
   });
 
   it("observed 非零不触发截断错误摘要提示,failed 才触发", () => {
@@ -504,6 +511,23 @@ describe("AttemptCommandEvidence:命令与 Conversation 分离、错误提示只
       result: resultOf({ error: { code: "turn-failed", message: "output tail", origin: { scope: "attempt", phase: "eval.run" } } }),
     }));
     expect(failedError?.commandEvidenceHint).toBe(true);
+  });
+});
+
+describe("attemptFactsData:facts 完整键值表投影", () => {
+  it("按落盘 key 插入顺序投影为数组;没有 facts 或空对象时返回 null,不摆空表", () => {
+    expect(attemptFactsData(evidenceOf())).toBeNull();
+    expect(attemptFactsData(evidenceOf({ result: resultOf({ facts: {} }) }))).toBeNull();
+    const withFacts = evidenceOf({
+      result: resultOf({ facts: { "memory.notesLoaded": 73, "nowledge.endpoint": "https://tunnel.example", ready: true } }),
+    });
+    expect(attemptFactsData(withFacts)).toEqual({
+      facts: [
+        { key: "memory.notesLoaded", value: 73 },
+        { key: "nowledge.endpoint", value: "https://tunnel.example" },
+        { key: "ready", value: true },
+      ],
+    });
   });
 });
 
@@ -552,6 +576,23 @@ describe("standardAttemptRender:执行证据投影", () => {
     const evidence = sourceConversationEvidence();
     const tree = await resolveOnAttemptPage(<AttemptDetails />, evidence);
     expectEmbeddedConversationHtml(renderAttemptHtml(tree));
+  });
+
+  it("有 facts 时标准结果视图与公开 AttemptDetails 都渲染完整键值表;没有 facts 时零输出", async () => {
+    const withFacts = evidenceOf({ result: resultOf({ facts: { "memory.notesLoaded": 73 } }) });
+    const standardTree = await resolveOnAttemptPage(await standardAttemptRender(withFacts), withFacts);
+    const standardText = renderNodeToText(standardTree, createTextContext({ width: 120 }));
+    expect(standardText).toContain("memory.notesLoaded");
+    expect(standardText).toContain("73");
+
+    const publicTree = await resolveOnAttemptPage(<AttemptDetails />, withFacts);
+    const publicText = renderNodeToText(publicTree, createTextContext({ width: 120 }));
+    expect(publicText).toContain("memory.notesLoaded");
+    expect(publicText).toContain("73");
+
+    const withoutFacts = evidenceOf();
+    const emptyTree = await resolveOnAttemptPage(await standardAttemptRender(withoutFacts), withoutFacts);
+    expect(renderNodeToText(emptyTree, createTextContext({ width: 120 }))).not.toContain("notesLoaded");
   });
 });
 // 「Attempt 证据数据源」——timeline / trace 投影的时间树语义

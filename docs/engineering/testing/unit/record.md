@@ -106,8 +106,9 @@ interface AttemptSpec {
 - **facts 落盘**：sandbox hook 与 agent 上下文写入 `AttemptRecord.facts`，experiment hook 写入 `RunMeta.facts`。Runner 自动决定层级。
   - 测试覆盖同 key 后写覆盖、key 词法、非标量值报错，以及 experiment facts 与 `completedAt` 同批封口。
   - facts 不参与 verdict、指纹或 `configHash`；读取面把两级 facts 原样读回，不合并。
-- **命令退出证据落盘**：`commands.json` 只在有 Sandbox 命令时生成，文件存在性与 `AttemptRecord.artifacts` 一致。
-  - evidence 的 timingNodeId、phase、display、exitCode、checked、stdout、stderr 按 Runner 封口后的值原样往返：未登记内容不改，`CommandOptions.sensitiveValues` 命中的子串已经是 `<redacted>`。超过 256 KiB 的输出也不复用 events 的逐值截断。
+- **命令证据落盘**：`commands.json` 只在有 Sandbox 命令时生成，文件存在性与 `AttemptRecord.artifacts` 一致；成功与非零退出的命令都记录。
+  - evidence 的 timingNodeId、phase、display、exitCode、checked、stdout、stderr 按 Runner 封口后的值原样往返：未登记内容不改，`CommandOptions.sensitiveValues` 命中的子串已经是 `<redacted>`。
+  - stdout / stderr 各自独立按 64 KiB（`COMMAND_STREAM_MAX_BYTES`）截断，超限的流打结构化 `truncated` 标记并保留原始字节数；未超限的流原样往返，一条流超限不牵连另一条。
   - 携带按 artifactBase 懒加载；`publish({ artifacts: ["commands"] })` 解引用复制后不留回退指针。
 - **publish 与 resolveLocator**：目标非空时报错，预检失败不留半成品；文件大小预检报告整体失败与明细。
   产物经解引用、去重并补 `knownEvalIds` 后自包含，复制条目的 `evidenceState` 恒为 `local`。

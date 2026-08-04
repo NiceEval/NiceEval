@@ -174,6 +174,7 @@ describe("validateConversationData — AttemptConversationReply 判别联合", (
       ],
     };
     expect(validateCommandEvidenceData(withCommands)).toBeNull();
+    expect(validateCommandEvidenceData({ ...withCommands, commands: [{ ...withCommands.commands[0], exitCode: 0, classification: "succeeded" }] })).toBeNull();
     expect(validateCommandEvidenceData({ ...withCommands, commands: [{ ...withCommands.commands[0], classification: "unknown" }] })).toMatch(/"commands\[0\]\.classification"/);
     expect(validateCommandEvidenceData({ ...withCommands, commands: [{ ...withCommands.commands[0], exitCode: "1" }] })).toMatch(/"commands\[0\]\.exitCode"/);
   });

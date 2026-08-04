@@ -242,7 +242,9 @@ function commandEvidenceProblem(value: unknown, path: string): string | null {
   if (typeof value.phase !== "string") return `"${path}.phase" must be a string`;
   if (typeof value.display !== "string") return `"${path}.display" must be a string`;
   if (typeof value.exitCode !== "number") return `"${path}.exitCode" must be a number`;
-  if (value.classification !== "observed" && value.classification !== "failed") return `"${path}.classification" must be observed | failed`;
+  if (value.classification !== "succeeded" && value.classification !== "observed" && value.classification !== "failed") {
+    return `"${path}.classification" must be succeeded | observed | failed`;
+  }
   if (value.durationMs !== undefined && typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
   if (typeof value.stdout !== "string") return `"${path}.stdout" must be a string`;
   if (typeof value.stderr !== "string") return `"${path}.stderr" must be a string`;

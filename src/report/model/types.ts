@@ -515,7 +515,20 @@ export interface AttemptListItem {
   startedAt: string;
   /** 历史执行:携带条目,或来自该实验在 Sample 中最新快照之外的快照;false = 最新一次运行实测。 */
   historical: boolean;
+  /** `historical` 为 true 时,距今的毫秒数(渲染时刻起算);新执行时省略,不伪造 0。 */
+  staleSinceMs?: number;
   locator: AttemptLocator;
+}
+
+/**
+ * 覆盖缺口占位行的参考:记录里存在、但与当前基准 configHash 不可比的最近一条判定
+ * (docs/feature/reports/components/summaries/experiment-table.md「覆盖缺口的两档占位行」)。
+ * 它不进任何计数,只提供下钻入口。
+ */
+export interface StaleConclusionReference {
+  readonly locator: AttemptLocator;
+  readonly verdict: Verdict | "skipped";
+  readonly staleSinceMs: number;
 }
 
 /**
@@ -578,10 +591,16 @@ export interface ExperimentListItem {
   evals: number;
   /** 这个 experiment 覆盖的 attempt 总数(原始计数,含多轮重试)。 */
   attempts: number;
-  /** 历史执行的 attempt 数(分母是 attempts);时效标注「↩ n/m attempts」的数据源。 */
+  /** 历史执行的 attempt 数(分母是 attempts)。 */
   historicalAttempts: number;
   /** 已知 eval 并集里、当前口径下没有任何 attempt 的题(来自 `scope.coverage`);渲染为占位行。 */
   missingEvalIds: string[];
+  /**
+   * `missingEvalIds` 里、记录中存在不可比历史判定的那些题的参考(evalId → 参考);
+   * 其余缺口题没有条目,占位行只给「当前配置下无结果」。`sample.fresh` 为 true 时整份为空——
+   * 读者已声明只看新执行,占位行就不再把被排除的历史结论请回来。
+   */
+  staleReferences: Readonly<globalThis.Record<string, StaleConclusionReference>>;
   /** 所含快照中最近的 startedAt。 */
   lastRunAt: string;
   evalRows: ExperimentListEvalRow[];
@@ -724,8 +743,8 @@ export interface AttemptConversationData {
 /** 独立的生命周期命令证据项;不属于 Conversation 的轮次或消息。 */
 export interface AttemptCommandEvidence extends CommandExitEvidence {
   key: string;
-  /** 消费层由 checked + 非零 exitCode 推导,不落盘。 */
-  classification: "observed" | "failed";
+  /** 消费层由 checked + exitCode 推导,不落盘:exitCode 为 0 是 "succeeded";非零时 checked 才是 "failed",否则是 "observed"。 */
+  classification: "succeeded" | "observed" | "failed";
   /** 从关联 timing node 派生,缺少 timing 时省略。 */
   durationMs?: number;
 }
@@ -767,6 +786,15 @@ export interface UsageTableData {
   toolCalls?: number;
   usage?: Usage;
   estimatedCostUSD?: number;
+}
+
+/**
+ * `AttemptFacts` 的 data:attempt 作用域 `ctx.fact()` 上报的运行事实完整键值表
+ * (见 docs/feature/record/architecture.md#facts运行事实)，按落盘的 key 插入顺序排列。
+ * `AttemptRecord.facts` 缺失或为空对象时整个 data 为 null,不渲染空表。
+ */
+export interface AttemptFactsData {
+  facts: { key: string; value: string | number | boolean }[];
 }
 
 /** `AttemptTrace` 的 data:不与 runner 节点合并的原始 OTel span 列表;没有 trace 时 null。 */

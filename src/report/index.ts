@@ -47,6 +47,7 @@ export type {
 } from "./model/calculation.ts";
 export {
   toAttemptAssertions,
+  toAttemptFacts,
   toAttemptFixPrompt,
   toAttemptListRows,
   toAttemptNotices,
@@ -386,6 +387,7 @@ export type {
   AttemptDiagnosticsData,
   AttemptDiffData,
   AttemptErrorData,
+  AttemptFactsData,
   AttemptFixPromptData,
   AttemptSummaryData,
   AttemptTimelineData,

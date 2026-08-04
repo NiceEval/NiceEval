@@ -27,11 +27,11 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 默认详情按稳定顺序呈现：
 
 1. locator、Experiment、Eval、Attempt 与 verdict。
-2. 开始时间、耗时、成本、得分与 usage。
+2. 开始时间、耗时、成本、得分、usage 与 [facts](attempt-facts.md)（`ctx.fact()` 运行事实的完整键值表，有才显示）。
 3. 基础设施问题和持久化 diagnostics。
 4. 标注 Eval 源码；没有源码时显示断言表。
 5. 可行动失败的修复 prompt。
-6. 执行时间树、按生命周期定位的非零命令证据、未映射的对话证据、trace 与 [文件差异](attempt-diff.md)。
+6. 执行时间树、按生命周期定位的 Sandbox 命令证据（成功与非零退出都记）、未映射的对话证据、trace 与 [文件差异](attempt-diff.md)。
 
 某类证据缺失时对应区块零输出或显示明确缺失，不伪造空值。
 全部数值由同一 AttemptEvidence 投影，`show` 切片与详情页不各算一份。
@@ -43,7 +43,7 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 这些轮不在源码后重复渲染；没有源码位置的轮仍留在页面级 `Conversation`。
 源码不可用时，全部对话按原顺序显示在页面级 `Conversation`。
 
-非零 Sandbox 命令不归入任何 `Conversation`。Attempt 详情将 `checked` 调用事实与非零 exitCode 在消费层投影为独立的 lifecycle 命令区块，并按 timing 顺序放在对应阶段：setup 命令先于 Turn，teardown 命令后于 Turn。`checked: false` 的命令使用中性 `observed` 样式；只有 `checked: true` 的命令使用失败样式。
+Sandbox 命令（成功与非零退出都记）不归入任何 `Conversation`。Attempt 详情将 `checked` 调用事实与 exitCode 在消费层投影为独立的 lifecycle 命令区块，并按 timing 顺序放在对应阶段：setup 命令先于 Turn，teardown 命令后于 Turn。`exitCode === 0` 使用中性 `succeeded` 样式；非零时 `checked: false` 使用中性 `observed` 样式；只有 `checked: true` 的非零命令使用失败样式。
 
 结果为 `null` 时在 Web 与 Text 两面渲染 warning `Callouts`。
 标题为 `Execution evidence unavailable`，内容为 `The events artifact is missing or was not published.`
@@ -91,6 +91,7 @@ dialog 只换摆放位置，不建立第二份内容实现。
 ## 相关阅读
 
 - [Attempt diff](attempt-diff.md) —— 文件差异的来源、可用性与 `DiffResult` 形状。
+- [Attempt facts](attempt-facts.md) —— `ctx.fact()` 运行事实的完整键值表。
 - [Library · Attempt 详情](../../library.md#attempt-详情)
 - [Architecture · Attempt 详情](../../architecture.md#attempt-详情)
 - [show attempt](../../show/attempt.md)

@@ -963,6 +963,7 @@ table.niceeval-report,
 }
 .niceeval-command-evidence--failed { border-left-color: var(--bad); }
 .niceeval-command-evidence--observed { border-left-color: var(--muted); }
+.niceeval-command-evidence--succeeded { border-left-color: var(--good); }
 .niceeval-command-evidence-card .niceeval-conversation-turn-head {
   display: flex;
   flex-wrap: wrap;

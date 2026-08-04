@@ -342,6 +342,7 @@ export const zhCN = {
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.exampleLocator": "例如 {{locator}}",
+  "feedback.human.failureFacts": "facts ×{{count}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "已发生 {{count}} 条",
   "feedback.human.failuresTotalKinds": "共 {{total}} 条 · {{kinds}} 种形态",

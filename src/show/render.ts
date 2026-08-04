@@ -605,14 +605,14 @@ interface TurnSection {
   cards: AgentCard[];
 }
 
-/** 失败 Sandbox 命令卡:句柄 `cmd<序号>`,按关联 timing 节点的 startOffsetMs 排序后从 1 编号。 */
+/** Sandbox 命令卡(成功、observed、failed 三态):句柄 `cmd<序号>`,按关联 timing 节点的 startOffsetMs 排序后从 1 编号。 */
 interface CommandCard {
   handle: string;
   command: CommandExitEvidence;
   timingNode?: TimingActivity;
 }
 
-/** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有命令退出时 evidence.commands 为空。 */
+/** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有 Sandbox 命令时 evidence.commands 为空。 */
 function commandExitsOf(evidence: ConversationResult): readonly CommandExitEvidence[] {
   return evidence.commands;
 }
@@ -771,7 +771,10 @@ function commandCardParts(command: CommandExitEvidence): CardParts {
 
 function commandCardHeader(entry: CommandCard): string {
   const duration = entry.timingNode ? ` · ${formatDurationMs(entry.timingNode.durationMs)}` : "";
-  const title = entry.command.checked && entry.command.exitCode !== 0 ? "FAILED COMMAND" : "NON-ZERO COMMAND · observed";
+  const title =
+    entry.command.exitCode === 0 ? "COMMAND"
+    : entry.command.checked ? "FAILED COMMAND"
+    : "NON-ZERO COMMAND · observed";
   return `${title} · ${entry.command.phase} · exit ${entry.command.exitCode}${duration}`;
 }
 

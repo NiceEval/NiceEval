@@ -456,17 +456,20 @@ const scope = reportScopeFixture({
   用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/分析/终端跨条件归因.md)。
   口径单源见 [Measure Views](../../../feature/reports/components/charts/README.md)。
 
-- **usage 组装与 facts 投影**：口径单源见 [Attempt Usage](../../../feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源)。
+- **usage 组装**：口径单源见 [Attempt Usage](../../../feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源)。
   - turns/toolCalls 来自事件流，token 来自桶互斥的 `Usage`。
   - 只有 `cacheReadTokens` 在场才显示 "uncached in"；`requests` 缺失时省略整段。
-  - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`，facts 只验收读取后的数据投影。
-   attempt 首页 `usage:` / `facts:` 行、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
+  - 含 `—` 的合计列标不完整。断言面是 `attemptUsage`。
+- **facts 完整键值表投影**：口径单源见 [Attempt Facts](../../../feature/reports/components/attempt-detail/attempt-facts.md)。
+  - `attemptFactsData` 按 `AttemptRecord.facts` 落盘 key 的插入顺序投影为 `{ key, value }[]`；facts 缺失或为空对象时返回 `null`，不摆空表。
+  - 断言面是 `attemptFactsData` 的返回值，以及 `standardAttemptRender`（内建 `show` 默认页）与公开 `AttemptDetails` 组件两条渲染路径各自的 text 面输出——两条路径分别组装数据，只测一条会漏另一条忘记接线的回归。
+   attempt 首页 `usage:` / `facts` 表、`--usage` 表、缺失占位与分节怎样被用户看到，统一由 Report E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
   - timing、非零命令、Agent 事件与 Attempt error 在落盘前按 `CommandOptions.sensitiveValues` 脱敏。
     summary/full、`--expand`、`--grep` 与 JSON 只能消费 `<redacted>`，不得从其它 artifact 补回。
     旧 artifact 与未登记自由文本不在 renderer 用 key-name regex 猜测。
-  - 命令证据只保存 `checked` 调用事实；unchecked（`checked: false`）的非零由消费层推导为 `observed`、不带失败样式，checked（`checked: true`）的非零才推导为 `failed`。
-    两类命令都保留原始 exit code 与输出，并在独立 lifecycle 区块按 timing 顺序展示，不进入 `Conversation`。
+  - 命令证据只保存 `checked` 调用事实；`exitCode === 0` 由消费层推导为中性的 `succeeded`，非零时 unchecked（`checked: false`）推导为 `observed`、不带失败样式，checked（`checked: true`）才推导为 `failed`。三态各一条区分力场景。
+    成功、observed、failed 三类命令都保留原始 exit code 与输出，并在独立 lifecycle 区块按 timing 顺序展示，不进入 `Conversation`。
   - 预览按段截断。
     普通卡正文、TOOL 的 input/result、命令证据的命令行/stdout/stderr 分别计段。
   - 每段最多三行，并有 1 KiB 的 UTF-8 字节回退。

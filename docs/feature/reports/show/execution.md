@@ -33,11 +33,16 @@ full OTel trace: .niceeval/.../trace.json
 ```
 
 `--execution` 以「做了什么」为主，时间只是事件旁的上下文注释；它不负责阶段聚合，也不把未关联 span 猜到某条事件上。
-除了 Agent 事件，它还显示 NiceEval 直接观察到的非零 Sandbox 命令（`commands.json`）。命令证据是独立的 lifecycle 区块，不拼进 Agent conversation，也不统一追加到所有 Turn 之后。区块按 timing `startOffsetMs` 排序；setup 类阶段位于 Turn 之前，收尾阶段位于 Turn 之后。
+除了 Agent 事件，它还显示 NiceEval 直接观察到的全部 Sandbox 命令（`commands.json`，成功与非零退出都记）。受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）成功时的输出同样可查，不必靠 `--keep-sandbox` 进现场。命令证据是独立的 lifecycle 区块，不拼进 Agent conversation，也不统一追加到所有 Turn 之后。区块按 timing `startOffsetMs` 排序；setup 类阶段位于 Turn 之前，收尾阶段位于 Turn 之后。
 
-`commands.json` 只保存公开调用事实 `checked`。unchecked 命令（`checked: false`）由 renderer + 非零 exitCode 推导为中性的 `NON-ZERO COMMAND · observed`，不能使用红色失败样式；checked 命令（`checked: true`）因非零抛出时才推导为 `FAILED COMMAND`。两类标题都带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr：
+`commands.json` 只保存公开调用事实 `checked`。`exitCode === 0` 由 renderer 推导为中性的 `COMMAND`。非零时 unchecked 命令（`checked: false`）推导为中性的 `NON-ZERO COMMAND · observed`，不能使用红色失败样式；checked 命令（`checked: true`）因非零抛出时才推导为 `FAILED COMMAND`。三类标题都带 lifecycle phase、exit code 与 timing node 耗时，正文分 stdout / stderr：
 
 ```text
+  COMMAND · sandbox.prepare.eval · exit 0 · 1.1s
+    apt-get install -y jq
+    stdout
+      Setting up jq (1.6-2.1) ...
+
   NON-ZERO COMMAND · observed · agent.setup · exit 1 · 0.3s
     codex plugin marketplace remove nowledge-community
     stderr

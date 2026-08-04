@@ -1,28 +1,36 @@
 // 落盘大值截断(见 docs/feature/record/architecture.md「大值截断」)。
 // 运行时全量,落盘截断:落点唯一在 snap.writeAttempt(writer.ts)——不在 adapter、不在 OTLP
 // 解析、不在事件归一化里做。适用范围:events.json 的事件字段与 trace.json 的 span 属性里的
-// 任意字符串值;commands.json 不在适用范围内(失败诊断的完整语义单位,全量原样落盘)。
+// 任意字符串值,按 256 KiB 上限;commands.json 的 stdout/stderr 各自按 64 KiB 上限独立截断
+// (见「commandsjson」)——上限更小是因为现在成功命令也记录,体量不再天然有界于失败命令数。
 // 没有 flag、没有配置项;截断永远不影响判决(落盘是证据,不是评分输入)。
 
-import type { JsonValue, StreamEvent, TraceSpan, Truncation } from "../types.ts";
+import type { CommandExitEvidence, JsonValue, StreamEvent, TraceSpan, Truncation } from "../types.ts";
 
-/** 每个字符串值的落盘上限(UTF-8 字节)。 */
+/** events.json / trace.json 每个字符串值的落盘上限(UTF-8 字节)。 */
 export const ARTIFACT_VALUE_MAX_BYTES = 256 * 1024;
+
+/** commands.json 每条命令 stdout / stderr 各自的落盘上限(UTF-8 字节)。 */
+export const COMMAND_STREAM_MAX_BYTES = 64 * 1024;
 
 const encoder = new TextEncoder();
 
 /** 截断到 maxBytes(按 UTF-8 字符边界回退,不切断多字节字符),末尾追加人可读 marker。 */
-function truncateString(value: string, originalBytes: number): string {
+function truncateToBytes(value: string, originalBytes: number, maxBytes: number): string {
   // 按字节预算切:先按「字节数 ≥ 字符数」粗切,再逐步回退到不超预算的字符边界。
-  let sliceLen = Math.min(value.length, ARTIFACT_VALUE_MAX_BYTES);
+  let sliceLen = Math.min(value.length, maxBytes);
   let head = value.slice(0, sliceLen);
-  while (encoder.encode(head).length > ARTIFACT_VALUE_MAX_BYTES && sliceLen > 0) {
+  while (encoder.encode(head).length > maxBytes && sliceLen > 0) {
     // 超出量 ÷ 4(UTF-8 最长 4 字节)是安全的最小回退步长;循环兜底处理边界。
-    sliceLen -= Math.max(1, Math.ceil((encoder.encode(head).length - ARTIFACT_VALUE_MAX_BYTES) / 4));
+    sliceLen -= Math.max(1, Math.ceil((encoder.encode(head).length - maxBytes) / 4));
     head = value.slice(0, sliceLen);
   }
   const kept = encoder.encode(head).length;
   return `${head}\n[niceeval] truncated ${originalBytes} → ${kept} bytes`;
+}
+
+function truncateString(value: string, originalBytes: number): string {
+  return truncateToBytes(value, originalBytes, ARTIFACT_VALUE_MAX_BYTES);
 }
 
 /**
@@ -87,5 +95,22 @@ export function truncateSpans(spans: readonly TraceSpan[]): TraceSpan[] {
       : span.attributes;
     if (out.length === 0) return span;
     return { ...span, attributes, truncated: [...(span.truncated ?? []), ...out] };
+  });
+}
+
+/** commands.json 落盘前的截断:stdout / stderr 各自独立按 `COMMAND_STREAM_MAX_BYTES` 截断。 */
+export function truncateCommands(commands: readonly CommandExitEvidence[]): CommandExitEvidence[] {
+  return commands.map((command) => {
+    const out: Truncation[] = [];
+    const next: { stdout?: string; stderr?: string } = {};
+    for (const path of ["stdout", "stderr"] as const) {
+      const value = command[path];
+      const bytes = encoder.encode(value).length;
+      if (bytes <= COMMAND_STREAM_MAX_BYTES) continue;
+      out.push({ path, originalBytes: bytes });
+      next[path] = truncateToBytes(value, bytes, COMMAND_STREAM_MAX_BYTES);
+    }
+    if (out.length === 0) return command;
+    return { ...command, ...next, truncated: [...(command.truncated ?? []), ...out] };
   });
 }

@@ -126,19 +126,23 @@ describe("Conversation", () => {
 describe("CommandEvidence", () => {
   const commands: CommandEvidenceContent = {
     commands: [
+      { key: "cmd0", timingNodeId: "n0", phase: "sandbox.prepare.eval", display: "apt-get update", exitCode: 0, classification: "succeeded", stdout: "Reading package lists..." },
       { key: "cmd1", timingNodeId: "n1", phase: "sandbox.prepare.eval", display: "npm ci", exitCode: 2, classification: "observed", stderr: "EACCES" },
       { key: "cmd2", timingNodeId: "n2", phase: "eval.run", display: "npm test", exitCode: 1, classification: "failed", stderr: "test failed" },
     ],
   };
 
-  it("observed 使用中性文案/样式,failed 才使用失败文案/样式", async () => {
+  it("succeeded 使用中性成功文案/样式,observed 使用中性非零文案/样式,failed 才使用失败文案/样式", async () => {
     const tree = await resolve(<CommandEvidence data={commands} />);
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
+    expect(text).toContain("COMMAND · sandbox.prepare.eval · exit 0");
+    expect(text).not.toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 0");
     expect(text).toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 2");
     expect(text).toContain("FAILED COMMAND · eval.run · exit 1");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain("niceeval-command-evidence");
+    expect(html).toContain("niceeval-command-evidence--succeeded");
     expect(html).toContain("niceeval-command-evidence--observed");
     expect(html).toContain("niceeval-command-evidence--failed");
     expect(html).not.toContain("niceeval-conversation-failed-command");

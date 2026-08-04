@@ -16,6 +16,7 @@ import type {
   AttemptDiagnosticsData,
   AttemptDiffData,
   AttemptErrorData,
+  AttemptFactsData,
   AttemptFixPromptData,
   AttemptSummaryData,
   AttemptTimelineData,
@@ -80,8 +81,9 @@ function looksLikeTruncatedCommandTail(message: string, commands: readonly Comma
 }
 
 /** 展示层唯一的命令分类规则;Record 只保存 checked 与 exitCode。 */
-function commandClassification(command: Pick<CommandExitEvidence, "checked" | "exitCode">): "observed" | "failed" {
-  return command.checked && command.exitCode !== 0 ? "failed" : "observed";
+function commandClassification(command: Pick<CommandExitEvidence, "checked" | "exitCode">): "succeeded" | "observed" | "failed" {
+  if (command.exitCode === 0) return "succeeded";
+  return command.checked ? "failed" : "observed";
 }
 
 export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | null {
@@ -430,6 +432,22 @@ export function usageTableData(evidence: AttemptEvidence): UsageTableData | null
     ...(usage !== undefined ? { usage } : {}),
     ...(estimatedCostUSD !== null ? { estimatedCostUSD } : {}),
   };
+}
+
+// ───────────────────────── AttemptFacts ─────────────────────────
+
+/**
+ * attempt 级 `ctx.fact()` 运行事实的完整键值表;`AttemptRecord.facts` 缺失或为空对象时返回
+ * null,不渲染空表(与其余叶子同一条「没有证据时零输出」规则)。
+ * `facts` 落盘就是 `Record<string, string | number | boolean>`,JS 对象的字符串键天然保留
+ * 写入顺序,这里按该顺序投影成数组,不重新排序。
+ */
+export function attemptFactsData(evidence: AttemptEvidence): AttemptFactsData | null {
+  const facts = evidence.result.facts;
+  if (!facts) return null;
+  const entries = Object.entries(facts);
+  if (entries.length === 0) return null;
+  return { facts: entries.map(([key, value]) => ({ key, value })) };
 }
 
 // ───────────────────────── AttemptTrace ─────────────────────────

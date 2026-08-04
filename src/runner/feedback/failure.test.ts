@@ -87,3 +87,18 @@ describe("failureDetailFromResult 的 errored reason 收口", () => {
     expect(detail?.reason.endsWith("…")).toBe(true);
   });
 });
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「结束反馈的失败形态聚合与
+// WARNINGS 汇总」的 facts 摘要提示小节。
+describe("failureDetailFromResult 的 factsCount 投影", () => {
+  it("facts 非空时 factsCount 等于键数;facts 缺失或为空对象时该字段整个省略", () => {
+    const withFacts = failureDetailFromResult({
+      ...erroredResult("boom"),
+      facts: { "memory.notesLoaded": 73, "nowledge.endpoint": "https://tunnel.example" },
+    });
+    expect(withFacts?.factsCount).toBe(2);
+
+    expect(failureDetailFromResult(erroredResult("boom"))?.factsCount).toBeUndefined();
+    expect(failureDetailFromResult({ ...erroredResult("boom"), facts: {} })?.factsCount).toBeUndefined();
+  });
+});

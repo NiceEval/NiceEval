@@ -15,13 +15,14 @@ import {
   Waterfall,
 } from "../../definition/primitives.tsx";
 import type { CommandEvidenceContent } from "../../definition/primitives/conversation.tsx";
-import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
+import type { AttemptFactsData, AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
 import { cx, type ValueProps } from "../shared.ts";
 import type { PageContext } from "../../definition/tree.ts";
 import {
   toAttemptAssertions,
+  toAttemptFacts,
   toAttemptFixPrompt,
   toAttemptNotices,
   toAttemptSource,
@@ -154,6 +155,33 @@ const AttemptUsage = defineComponent<UsageProps>({
 });
 AttemptUsage.displayName = "AttemptUsage";
 
+type FactsProps = ValueProps<AttemptFactsData | null, { className?: string }>;
+
+/** attempt 级 `ctx.fact()` 运行事实的完整键值表(docs/feature/record/architecture.md#facts运行事实);
+ *  没有 facts 时零输出,不摆空表。 */
+const AttemptFacts = defineComponent<FactsProps>({
+  dimensions: () => ({}),
+  web(props) {
+    const d = props.data;
+    if (d === null || d === undefined || d.facts.length === 0) return null;
+    return (
+      <Grid className={cx("niceeval-facts-table", props.className)}>
+        {d.facts.map(({ key, value }) => (
+          <Kpi key={key} label={key} value={String(value)} />
+        ))}
+      </Grid>
+    );
+  },
+  text(props) {
+    const d = props.data;
+    if (d === null || d === undefined || d.facts.length === 0) return "";
+    const lines = ["facts:"];
+    for (const { key, value } of d.facts) lines.push(`  ${key}  ${value}`);
+    return lines.join("\n");
+  },
+});
+AttemptFacts.displayName = "AttemptFacts";
+
 function evidenceOf(props: { attempt?: AttemptEvidence }, ctx: { page: PageContext }): AttemptEvidence {
   if (props.attempt !== undefined) return props.attempt;
   const input = ctx.page.input;
@@ -208,7 +236,7 @@ AttemptAssessment.displayName = "AttemptAssessment";
 export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
   const evidence = evidenceOf(props, ctx);
   const hasSource = evidence.capabilities.source;
-  const [notices, source, assertions, summary, fixPrompt, timeline, usage, commandEvidence, conversation, diff] = await Promise.all([
+  const [notices, source, assertions, summary, fixPrompt, timeline, usage, facts, commandEvidence, conversation, diff] = await Promise.all([
     toAttemptNotices(evidence),
     hasSource ? toAttemptSource(evidence) : Promise.resolve(null),
     hasSource ? Promise.resolve(null) : toAttemptAssertions(evidence),
@@ -216,6 +244,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
     toAttemptFixPrompt(evidence),
     toTimelineNodes(evidence),
     toAttemptUsage(evidence),
+    toAttemptFacts(evidence),
     toCommandEvidence(evidence),
     toConversationTurns(evidence),
     toDiffFiles(evidence),
@@ -240,6 +269,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
         title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
       />
       <AttemptUsage data={usage} />
+      <AttemptFacts data={facts} />
       {conversation === null ? (
         <Callouts items={executionEvidenceUnavailableCallouts} />
       ) : embedded.conversation !== null ? (

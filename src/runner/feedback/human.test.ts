@@ -1149,6 +1149,47 @@ describe("结束反馈的失败形态聚合与 WARNINGS 汇总", () => {
     expect(text).not.toMatch(/×1\b/);
   });
 
+  it("facts 摘要提示:size=1 组的身份行尾追加 facts ×N;没有 facts 时不追加", () => {
+    const singleFailureEvent: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 1, errored: 0 }),
+      completion: completion(),
+    };
+    const withFacts: RunFeedbackState = {
+      ...createInitialRunFeedbackState(),
+      total: 1,
+      failures: [failedNotice({ factsCount: 2 })],
+    };
+    const withFactsText = renderDurableLines(singleFailureEvent, withFacts, { mode: "plain", width: 100 }).join("\n");
+    expect(withFactsText).toContain("✗ @1bwcxxiy  memory/x  [compare/codex]  facts ×2");
+
+    const withoutFacts: RunFeedbackState = { ...createInitialRunFeedbackState(), total: 1, failures: [failedNotice()] };
+    const withoutFactsText = renderDurableLines(singleFailureEvent, withoutFacts, { mode: "plain", width: 100 }).join("\n");
+    expect(withoutFactsText).not.toContain("facts ×");
+  });
+
+  it("facts 摘要提示:size>1 组行尾按代表 locator(组内首现)的 factsCount 追加提示", () => {
+    const state: RunFeedbackState = {
+      ...createInitialRunFeedbackState(),
+      total: 2,
+      failures: [
+        failedNotice({ locator: locator("@f1"), factsCount: 3 }),
+        failedNotice({ locator: locator("@f2") }),
+      ],
+    };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 2, errored: 0 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain("×2");
+    expect(text).toContain("@f1"); // 组内首现的代表 locator
+    expect(text).toContain("facts ×3");
+  });
+
   it("errored 按 phase · code 分组,与 failed 分属不同的组(不同形态互不聚合)", () => {
     const failed = [failedNotice({ locator: locator("@f1") }), failedNotice({ locator: locator("@f2") })];
     const errored = [

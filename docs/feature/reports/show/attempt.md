@@ -7,10 +7,11 @@
 
 1. locator、Experiment、Eval、Attempt 与 verdict。
 2. 开始时间、耗时、成本、得分与 usage。
-3. 结构化 error 与 persisted diagnostics。
-4. 标注 Eval 源码；源码不可用时显示断言表。
-5. 生命周期 timing。
-6. 对话、trace 与 diff 的紧凑摘要。
+3. facts：`ctx.fact()` 上报的运行事实完整键值表，有才显示。
+4. 结构化 error 与 persisted diagnostics。
+5. 标注 Eval 源码；源码不可用时显示断言表。
+6. 生命周期 timing。
+7. 对话、trace 与 diff 的紧凑摘要。
 
 每类证据各自决定是否有内容。
 缺失时整块省略或显示明确缺失，不留下空标题，也不猜一个零值。
@@ -32,6 +33,20 @@ usage: 6 turns · 21 tool calls · 62.3k uncached in
 ```
 
 某段事实缺失时对应片段整段省略；全部缺失时 usage 行不出现。
+
+## Facts
+
+`factsResult(attempt)` 是详情与 JSON 的共同结果，把 `AttemptRecord.facts`（[运行时观测](../../record/architecture.md#facts运行事实)）投影成完整键值表——facts 是开放键集合，不像 Usage 有固定小字段，因此渲染整张表而不是压成一行摘要。
+
+```text
+facts:
+  memory.notesLoaded       73
+  nowledge.endpoint        https://tunnel.example
+```
+
+没有 `ctx.fact()` 上报过任何事实时整块省略，不摆空表。
+按落盘 key 的插入顺序显示，不重新排序。
+组装口径单源见 [Attempt Facts](../components/attempt-detail/attempt-facts.md)。
 
 ## 断言与源码
 

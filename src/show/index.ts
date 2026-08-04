@@ -628,26 +628,6 @@ async function renderUsageCompareSlice(
 }
 
 /**
- * attempt 诊断首页在 `usage:` 行后追加的 `facts:` 行(docs/feature/reports/show/attempt.md
- * 「facts: 行」)。`usage:`、`facts:`、`trace:` 都是「一个事实的摘要」,本来就不是
- * `Section`——两行紧邻、中间不空行,与文档示例的排版一致。facts 不是报告组件的公开面(源码
- * 边界:本节点不动 `src/report/**`),`usage:` 行已经由内建 `UsageTable` 产出,这里只做
- * 字符串级别的紧邻插入,不重新实现 `usage:` 的组装。没有 facts 时原样返回 pageText——
- * 与「没有证据的块不出现」同一条规则。找不到 `usage:` 行时退而找 `trace:` 行前插入(两者都
- * 不在时追加到页尾),保持 AttemptDetail 声明顺序(Timeline → Diagnostics → UsageTable →
- * Conversation → Trace → Diff)里 facts 应处的相对位置。
- */
-function insertFactsLine(pageText: string, facts: globalThis.Record<string, string | number | boolean> | undefined): string {
-  if (!facts) return pageText;
-  const entries = Object.entries(facts);
-  if (entries.length === 0) return pageText;
-  const line = `facts: ${entries.map(([key, value]) => `${key}=${value}`).join(" · ")}`;
-  if (/^usage: .*$/m.test(pageText)) return pageText.replace(/^(usage: .*)$/m, `$1\n${line}`);
-  if (/^trace: .*$/m.test(pageText)) return pageText.replace(/^(trace: .*)$/m, `${line}\n\n$1`);
-  return `${pageText}\n\n${line}`;
-}
-
-/**
  * `--exp` 的范围校验(docs/feature/reports/show.md「选择结果范围」):0/1 个沿用前缀收窄
  * (可能匹配多个 experiment,如目录前缀);2 个以上进入对照语义,每个必须恰好解析到一个
  * experiment——零命中按现有的 noExperimentMatch 报,命中多个列出全部候选 id,不猜测意图。
@@ -931,7 +911,7 @@ async function show(
       { results, report: meta, dimensionPins: report.dimensionPins },
       { width: io.width, locale, panelMode: io.panelMode },
     );
-    io.out(insertFactsLine(text, attemptEvidence.result.facts) + "\n");
+    io.out(text + "\n");
     return;
   }
 

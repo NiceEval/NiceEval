@@ -91,7 +91,7 @@ export interface AttemptEvidence {
   diff: DiffData | null;
   /** OTel spans(`--timing` 把 turn 节点下的 agent/model/tool spans 挂回时间树);没有 trace 就是 null。 */
   trace: import("../types.ts").TraceSpan[] | null;
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(`--execution` 的独立命令卡);原样透传 attempt.commands()。 */
+  /** Sandbox 命令(成功与非零退出都记)的 stdout/stderr 证据(`--execution` 的独立命令卡);原样透传 attempt.commands()。 */
   commands: readonly CommandExitEvidence[] | null;
   artifactPaths: EvidencePaths;
   capabilities: AttemptEvidenceCapabilities;

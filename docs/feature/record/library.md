@@ -49,7 +49,7 @@ attempt.carried;               // true = 携带条目:fingerprint 未变、上�
                                // startedAt 是原执行时刻
 attempt.evidenceState;         // "local" | "borrowed" | "dangling" —— artifact 在哪,见下
 await attempt.events();        // StreamEvent[] | null —— 重 artifact 全部懒加载
-await attempt.commands();      // CommandExitEvidence[] | null —— 非零 Sandbox 命令、checked 调用事实与 stdout/stderr
+await attempt.commands();      // CommandExitEvidence[] | null —— Sandbox 命令(成功与非零退出都记)、checked 调用事实与 stdout/stderr
 await attempt.trace();         // TraceSpan[] | null(span 属性同样受 256 KiB 值上限约束)
 await attempt.o11y();          // O11ySummary | null
 await attempt.agentSetup();    // AgentSetupManifest | null
@@ -251,14 +251,14 @@ await publish(latestRunSample(record), "site/data/run", {
 `o11y` 在默认携带之列。
 「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置读数](../reports/library/measures.md#内置读数)) 就是它的消费者,且 `o11y.json` 实测几 KB 一个。
 
-逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`commands` / `events` / `trace` 的 256 KiB 上限会切断一条失控输出被重复落盘的常见爆炸链,但一个文件可以含很多正常值, 不能据此宣称文件大小有界。
+逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`events` / `trace` 的 256 KiB 上限与 `commands` 的 64 KiB 上限会切断一条失控输出被重复落盘的常见爆炸链,但一个文件可以含很多正常值, 不能据此宣称文件大小有界。
 `diff`、源码 blob 与历史版本的 artifact 也可能超过 Git host 的单文件限制。
 因此 `.niceeval/` 是本地事实根,不是默认可提交目录。
 
-记录数据分**两类**:`.niceeval/` 是**本地事实根**——prompt、工具参数、非零命令输出、Agent 输出、源码全在里面;任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。
+记录数据分**两类**:`.niceeval/` 是**本地事实根**——prompt、工具参数、命令输出、Agent 输出、源码全在里面;任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。
 可信边界内搬运事实根不是发布——把整个 `.niceeval/` 作为 CI job artifact 在 job 间传递或取回本机,就是搬一个普通目录,搬到哪里那里就是记录根,`--record` 直接打开。
 没有更细的档位:体积取舍由 `artifacts` 字段声明,导出层不做二次裁剪。
-发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:运行环境注入的 env 值不落盘,命令 display 脱敏;但非零退出进程写到 stdout/stderr 的内容会进入 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。
+发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:运行环境注入的 env 值不落盘,命令 display 脱敏;但进程写到 stdout/stderr 的内容(成功与非零退出都算)会进入 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。
 复制忠实于源:artifact 原字节复制,不重新序列化、不改写。
 契约细节:
 

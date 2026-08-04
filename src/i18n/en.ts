@@ -350,6 +350,7 @@ export const en = {
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.exampleLocator": "e.g. {{locator}}",
+  "feedback.human.failureFacts": "facts ×{{count}}",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.failuresSoFar": "{{count}} so far",
   "feedback.human.failuresTotalKinds": "{{total}} total · {{kinds}} kinds",

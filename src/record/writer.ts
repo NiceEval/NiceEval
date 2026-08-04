@@ -17,7 +17,7 @@ import { RESULT_FILE, RUN_FILE, artifactFileOf, attemptDirOf, experimentDirOf } 
 import { encodeAttemptLocator } from "./locator.ts";
 import { MANIFESTS_FILE, type RunManifests } from "./manifest.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
-import { truncateEvents, truncateSpans } from "./truncate.ts";
+import { truncateCommands, truncateEvents, truncateSpans } from "./truncate.ts";
 import type { Producer, RunMeta } from "./types.ts";
 
 export interface WriterOptions {
@@ -426,12 +426,11 @@ async function writeAttemptFiles(
 
   const writes: Promise<void>[] = [];
   // 大值截断只发生在这里(序列化的那一刻):events 的事件字段与 trace 的 span 属性里的任意
-  // 字符串值按 ARTIFACT_VALUE_MAX_BYTES 截断并留结构化 truncated 标记;运行时(断言 / o11y
-  // 派生)看到的始终是完整值。commands、sources 与 diff 不截断——失败命令的 stdout/stderr 是
-  // 一个完整的诊断语义单位,截哪一端都毁掉另一半(见 docs/feature/record/architecture.md
-  // 的证据 registry)。
+  // 字符串值按 ARTIFACT_VALUE_MAX_BYTES 截断,commands 的 stdout/stderr 各自按
+  // COMMAND_STREAM_MAX_BYTES 截断,均留结构化 truncated 标记;运行时(断言 / o11y 派生)看到的
+  // 始终是完整值。sources 与 diff 不截断(见 docs/feature/record/architecture.md 的证据 registry)。
   if (hasCommands)
-    writes.push(writeFile(join(attemptDir, artifactFileOf("commands")), JSON.stringify(artifacts!.commands!), "utf-8"));
+    writes.push(writeFile(join(attemptDir, artifactFileOf("commands")), JSON.stringify(truncateCommands(artifacts!.commands!)), "utf-8"));
   if (hasEvents)
     writes.push(writeFile(join(attemptDir, "events.json"), JSON.stringify(truncateEvents(artifacts!.events!)), "utf-8"));
   if (hasSources) writes.push(writeSourcesRef(snapDir, attemptDir, artifacts!.sources!, sourceStore));

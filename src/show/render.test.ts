@@ -433,7 +433,7 @@ describe("--expand:句柄未命中报实际 turn/卡片数,不猜相邻卡片", 
   });
 });
 
-describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派生", () => {
+describe("--execution:Sandbox 命令卡 cmd<N> 按 timing node 时序派生", () => {
   function commandsEvidence(): AttemptEvidence {
     const phases: PhaseTiming[] = [
       {
@@ -481,6 +481,28 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
     const evidence = evidenceOf({ execution: buildExecutionTree(twoTurnEvents(), []), result: resultOf({ phases: twoTurnPhases() }) });
     const { text } = executionText(evidence, OPTS);
     expect(text).not.toContain("FAILED COMMAND");
+  });
+
+  it("exitCode 0 的成功命令也渲染命令卡,标题为中性 COMMAND(不是 NON-ZERO 或 FAILED)", () => {
+    const phases: PhaseTiming[] = [
+      {
+        name: "sandbox.prepare" as PhaseTiming["name"],
+        durationMs: 50,
+        children: [{ id: "ok-command", key: "sandbox.command", label: "apt", startOffsetMs: 0, durationMs: 15, command: { display: "apt-get update", exitCode: 0, checked: false } }],
+      },
+    ];
+    const evidence = evidenceOf({
+      execution: null,
+      result: resultOf({ phases }),
+      commands: [
+        { timingNodeId: "ok-command", phase: "sandbox.prepare.eval", display: "apt-get update", exitCode: 0, checked: false, stdout: "Reading package lists...", stderr: "" },
+      ],
+    });
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain("COMMAND · sandbox.prepare.eval · exit 0 · 15ms");
+    expect(text).not.toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 0");
+    expect(text).not.toContain("FAILED COMMAND · sandbox.prepare.eval · exit 0");
+    expect(text).toContain("Reading package lists...");
   });
 
   it("observed 命令保持中性且按 lifecycle timing 独立安插,只有 failed 使用失败文案", () => {

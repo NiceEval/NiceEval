@@ -14,5 +14,5 @@ text 面按时间顺序输出紧凑对话；web 面输出语义化消息列表�
 折叠与复制是渐进增强，初始 HTML 保留完整可读内容。
 
 Sandbox lifecycle 命令不是 Agent 消息，不进入 `Conversation`。
-Attempt 详情把 `commands.json` 的 `checked` 调用事实与非零 exitCode 在消费层推导成独立命令证据区块。
-unchecked 是中性 observed，checked 才是 failed。这样 setup 命令不会被追加在所有 Turn 之后，也不会借用对话卡片冒充 Agent 行为。
+Attempt 详情把 `commands.json` 的 `checked` 调用事实与 exitCode 在消费层推导成独立命令证据区块——成功、非零两种情况都记，不再只有失败才可见。
+`exitCode === 0` 是中性 succeeded，非零时 unchecked 是中性 observed，checked 才是 failed。这样 setup 命令不会被追加在所有 Turn 之后，也不会借用对话卡片冒充 Agent 行为。

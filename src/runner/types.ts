@@ -3,7 +3,7 @@
 
 import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact, Verdict } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
-import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
+import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
@@ -209,10 +209,10 @@ export interface PhaseTiming {
 
 /**
  * `commands.json` 的一条落盘记录(见 docs/feature/record/architecture.md「commandsjson」):
- * 四个公开 `Sandbox.run*()` 方法的最外层调用返回非零 `exitCode` 时,Runner 在
- * `CommandResult` 交还调用方**之前**登记的完整证据——Eval 后续即使只把 `.slice(-N)` 拼进
- * 异常消息,这份证据仍然完整。只记非零退出;成功命令的输出不进第二份 artifact,provider 内部
- * 实现步骤与 Agent 自己调用的 shell 不经过这层包装,不伪装成这里的命令。
+ * 四个公开 `Sandbox.run*()` 方法的最外层调用返回时,Runner 在 `CommandResult` 交还调用方
+ * **之前**登记的完整证据——Eval 后续即使只把 `.slice(-N)` 拼进异常消息,这份证据仍然完整。
+ * 成功与非零退出都记录;provider 内部实现步骤与 Agent 自己调用的 shell 不经过这层包装,
+ * 不伪装成这里的命令。
  */
 export interface CommandExitEvidence {
   /** 与 `PhaseTiming.children` 中 `key === "sandbox.command"` 的 `TimingActivity.id` 相同,唯一关联命令证据卡与 `--timing` 的 command 节点。 */
@@ -224,10 +224,14 @@ export interface CommandExitEvidence {
   exitCode: number;
   /** 是否由 checked run*OrThrow 公开调用产生;非零 + checked 才是失败展示语义。 */
   checked: boolean;
-  /** 不截断落盘；`CommandOptions.sensitiveValues` 命中的已知值已替换为 `<redacted>`。 */
+  /** `CommandOptions.sensitiveValues` 命中的已知值已替换为 `<redacted>`;超过每流 64 KiB 时
+   *  在落盘序列化时截断,见 `truncated`。 */
   stdout: string;
-  /** 不截断落盘，同 `stdout` 的已知敏感值边界。 */
+  /** 同 `stdout` 的已知敏感值边界与截断规则。 */
   stderr: string;
+  /** `stdout` / `stderr` 超过每流上限时的结构化截断标记(`path` 为 `"stdout"` 或 `"stderr"`);
+   *  只由 writer 在落盘时刻写入,运行时与调用方拿到的仍是完整值。 */
+  truncated?: Truncation[];
 }
 
 /** `commands.json` 的落盘形状。 */
@@ -448,7 +452,7 @@ export interface EvalResult {
   };
   /** agent 归因增量:逐 send 窗口的 delta 序列(落盘为 diff.json;文件级视图由读取面派生)。 */
   diff?: DiffArtifact;
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(落盘为 commands.json);只记非零退出,见 `CommandExitEvidence`。 */
+  /** Sandbox 命令的 stdout/stderr 证据(落盘为 commands.json);成功与非零退出都记录,见 `CommandExitEvidence`。 */
   commands?: CommandExitEvidence[];
   rawTranscript?: string;
   /** 携带条目(--resume 合入)专用:artifact 目录(相对结果根目录),指向原快照里的落盘。 */
@@ -1376,6 +1380,9 @@ export interface FailureDetail {
   code?: string;
   /** 完整时间归属；attempt 形态同时投影上面的 phase，run 形态保留共享 timing node。 */
   origin?: TimingOrigin;
+  /** 该 attempt 的 `AttemptRecord.facts` 键数；缺失或为空对象时省略。结束反馈的 FAILURES 面板
+   *  只据此给一条行内提示(有才提示),完整键值表留给 `niceeval show @<locator>`。 */
+  factsCount?: number;
 }
 
 /** 带发生时间的失败通知；复用失败以 FailureDetail 静态进入 plan，不伪装成刚发生的事件。 */

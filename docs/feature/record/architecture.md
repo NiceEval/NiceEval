@@ -20,7 +20,7 @@
         <sha256>.json                # { content }:一份源码文本,Run 内多少 attempt 引用它都只存一份
       <evalId>/a<attempt>/           # 单个 eval attempt 的目录
         result.json                  # 判定、断言、用量、locator —— attempt 完成时一次写成
-        commands.json                # 非零 Sandbox 命令的 stdout/stderr 证据
+        commands.json                # Sandbox 命令的 stdout/stderr 证据(成功与非零退出都记)
         events.json
         sources.json                 # 引用 sources/ 里的条目,不内联源码内容(见下)
         trace.json
@@ -659,10 +659,10 @@ interface DiagnosticRecord {
 `sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经四个公开 `Sandbox.run*()` 方法发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
 命令摘要先按 `CommandOptions.sensitiveValues` 的显式 provenance 精确替换，再截断；env 只允许保留 key。
-非零退出命令的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。Record 同时保存 `checked` 调用事实；普通方法的非零由消费层推导为 `observed`，节点不标 `failed`；checked 方法的非零由消费层推导为 `failed`，节点同步标 `failed: true`。
+每条公开调用（成功与非零退出都算）的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。Record 同时保存 `checked` 调用事实；普通方法的非零由消费层推导为 `observed`，节点不标 `failed`；checked 方法的非零由消费层推导为 `failed`，节点同步标 `failed: true`；`exitCode === 0` 由消费层推导为中性的成功语义。
 
 敏感值集合只驻留当前 Attempt 内存。最终 result 封口再覆盖 timing、events/trace、retryAttempts、diagnostics 与 error，所有 show/JSON 读面共享同一边界。未登记自由文本与旧 artifact 不做键名正则猜测。
-成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
+成功命令的输出同样复制进 `commands.json`；Agent 内部工具命令（不经公开 Sandbox 包装）仍只由 `events.json` 承载，不重复落一份。
 
 `agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为错误 / 诊断 origin 的归因锚点出现，不在 `phases` 里单列。
 每次 send 由 runner 产生一个 `agent.turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。
@@ -767,7 +767,7 @@ interface Usage {
   与上一条不矛盾:**条件是你写下的,坐标是跑出来的**,判据与三个家的分工见 [Experiments · 运行时坐标不进配置](../experiments/library.md#运行时坐标不进配置三个家)。
 - **要它跟着单条结果走就报在 attempt 作用域**:`AttemptRecord.facts` 随[携带条目](#resultjson)原样携带,携带来的那条读到的仍是产出它那一轮的观测,不被本轮的新值冒名顶替;`RunMeta.facts` 记的是本次运行整场的观测,携带条目不继承它。
   按 fact 分组的报告因此只读 attempt 级。
-- **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
+- **读取面原样转发**:facts 在 show 详情的完整键值表([Facts](../reports/show/attempt.md#facts))、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
 
 ## 证据 registry
 
@@ -778,7 +778,7 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 | artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 默认 | 内容职责 |
 |---|---|---|---|---|---|---|
 | `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威记录 |
-| `commands.json` | `commands` | attempt 级,按需 | `CommandExitEvidence[]` | 不截(命令退出的完整语义单位) | 带 | 非零 Sandbox 命令的公开调用事实与 stdout/stderr |
+| `commands.json` | `commands` | attempt 级,按需 | `CommandExitEvidence[]` | 截(stdout/stderr 各自独立,64 KiB) | 带 | Sandbox 命令(成功与非零退出都记)的公开调用事实与 stdout/stderr |
 | `events.json` | `events` | attempt 级,按需 | `StreamEvent[]` | 截 | 带 | 归一化标准事件流 |
 | `trace.json` | `trace` | attempt 级,按需 | `TraceSpan[]` | 截 | 带 | OTel span 树 |
 | `o11y.json` | `o11y` | attempt 级,按需 | `O11ySummary` | 不适用(派生缓存) | 带 | 行为计数缓存(见其小节) |
@@ -795,7 +795,7 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 
 ### `commands.json`
 
-Runner 对四个公开 `Sandbox.run*()` 方法的最外层调用自动记录**非零退出命令**。
+Runner 对四个公开 `Sandbox.run*()` 方法的最外层调用自动记录**每一次调用**，成功与非零退出都记。
 证据在 `CommandResult` 返回调用方之前写入内存。因此 Eval 后续即使只把 `.slice(-500)` 拼进异常，NiceEval 仍保有完整输出。
 `CommandOptions.sensitiveValues` 登记的已知值例外：记录副本在此处替换成 `<redacted>`，运行时返回结果不变。
 文件形状：
@@ -810,21 +810,25 @@ interface CommandExitEvidence {
   exitCode: number;
   /** 是否由 checked run*OrThrow 调用产生；展示层以 checked + 非零退出推导失败语义。 */
   checked: boolean;
+  /** 超过每流 64 KiB 时在落盘时截断，见 truncated。 */
   stdout: string;
   stderr: string;
+  /** stdout / stderr 各自独立的结构化截断标记；path 为 "stdout" 或 "stderr"。 */
+  truncated?: Truncation[];
 }
 
 type CommandsArtifact = CommandExitEvidence[];
 ```
 
-- 只记录 `exitCode !== 0`；成功输出既可能巨大又通常没有诊断价值，不复制进第二份 artifact。
-- stdout / stderr 不截断、保留原换行落盘；唯一内容变换是替换调用方显式登记的已知敏感值。失败输出的起因常在前段，测试 runner 的 summary 惯例在尾部，截哪一端都毁掉另一半诊断。
-  只记非零退出已让体量天然有界，进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
-- 记录不改变公开方法的返回 / 抛错语义。Record 只保存调用事实 `checked`；普通方法的非零在消费层显示为 `observed`，checked 方法抛出的非零才显示为 `failed`。
+- 每条公开调用都记录一条证据，不再只记非零退出；成功命令此前是唯一的盲区——受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）成功时的输出此前只能靠 `--keep-sandbox` 进现场查看，现在与失败命令同样落盘可查（见 [Sandbox CLI](../sandbox/cli.md)）。
+- stdout / stderr 各自独立按 64 KiB(`COMMAND_STREAM_MAX_BYTES`)截断，规则与[大值截断](#大值截断)的落点、marker 与结构化 `truncated` 字段同构，只是上限更小、逐流独立判定——一条流超限不牵连另一条。上限收窄是因为体量不再天然有界于失败命令数：全量记录后一条高频循环里的成功命令能反复产出大输出。
+  截断只发生在落盘序列化那一刻;调用方与 Eval 运行时看到的始终是完整值。进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
+- 记录不改变公开方法的返回 / 抛错语义。Record 只保存调用事实 `checked`；普通方法的非零在消费层显示为 `observed`，checked 方法抛出的非零才显示为 `failed`，`exitCode === 0` 显示为中性的成功语义。
 - 调用方在普通方法返回后手工抛错，不把命令记录追改为 `failed`。Attempt error 说明调用方怎样解释结果，命令证据只说明该次公开调用本身采用哪种退出策略。
 - provider 内部实现步骤、Agent 自己调用的 shell 不经过公开 Sandbox 包装，不伪装成这里的命令；前者只进 provider timing，后者来自 `events.json`。
 - 携带条目按 `artifactBase` 读取原文件；发布携带与截断策略按[证据 registry](#证据-registry) 的 `commands` 行处理。
   `AttemptRecord.artifacts` 含 `commands` 只表示 writer 确实写过该文件。
+- `niceeval show @<locator> --execution` 按 timing 顺序下钻全部命令卡（成功、observed、failed 三态），详见 [`--execution`](../reports/show/execution.md)。
 
 ### `events.json`
 
@@ -992,17 +996,18 @@ OTLP instrumentation 又常把同一份工具结果原样挂进 span 属性。
 
 - **落点唯一**:`run.writeAttempt()`(见 [Library](library.md))。
   不在 adapter、不在 OTLP 解析、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
-- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段与 `trace.json` 的 span 属性里的**任意字符串值**。
+- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性里的**任意字符串值**,以及 `commands.json` 每条记录的 `stdout` / `stderr`。
   不只工具输出——`thinking` 文本、`error` 消息同样可能爆。
   registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。
-  `commands.json` 不截断:非零命令的关键信息可能在输出前段,测试 runner 的 summary 惯例在尾部,截哪一端都毁掉另一半诊断,且它只收非零退出命令,体量天然有界。
   `sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。
   `diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。
   未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
-- **上限**:每个字符串值 256 KiB(UTF-8 字节),常量 `ARTIFACT_VALUE_MAX_BYTES`。
-  截断按 UTF-8 字符边界回退,不切断多字节字符。
+- **上限分两档**:`events.json` / `trace.json` 每个字符串值 256 KiB(UTF-8 字节,常量 `ARTIFACT_VALUE_MAX_BYTES`)。
+  `commands.json` 每条记录的 `stdout` / `stderr` 各自独立 64 KiB(常量 `COMMAND_STREAM_MAX_BYTES`)。
+  两档截断按 UTF-8 字符边界回退,不切断多字节字符。
+  commands 上限更小,因为它现在记录每一次公开调用(成功与非零退出都算),不再只靠「只收非零退出」让体量天然有界——高频循环里反复出现的成功命令输出需要一个更紧的逐值上限。
 - **没有 flag、没有配置项。**
-  「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令 256 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。
+  「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令或输出 256 KiB / 64 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。
   给旋钮只会让某天有人把它调大、再把仓库塞爆。
 
 被截断的值保留前 256 KiB,末尾追加一行人可读 marker:
@@ -1013,16 +1018,18 @@ OTLP instrumentation 又常把同一份工具结果原样挂进 span 属性。
 ```
 
 marker 只服务直接 `cat` / `jq` 的人。
-程序判断走结构化字段——`StreamEvent` 与 `TraceSpan` 各多一个可选 `truncated`:
+程序判断走结构化字段——`StreamEvent`、`TraceSpan` 与 `CommandExitEvidence` 各多一个可选 `truncated`:
 
 ```typescript
 interface Truncation {
-  /** 被截断的位置:事件里是字段名，span 里是 attribute key。 */
+  /** 被截断的位置:事件里是字段名，span 里是 attribute key，commands.json 里是 "stdout" 或 "stderr"。 */
   path: string;
   /** 截断前的 UTF-8 字节数。 */
   originalBytes: number;
 }
 ```
+
+`commands.json` 用同一套 marker 格式与 `Truncation` 形状,只是阈值换成 64 KiB;`stdout` / `stderr` 各自独立判定,一条流超限不截断另一条。
 
 view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Sample Issue](../sample/library.md#issue-code-全集) 是同一条原则。
 

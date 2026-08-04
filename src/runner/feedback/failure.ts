@@ -43,6 +43,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   // `code`——human 单行事实行拼 `errored · <phase> · <code>` 时按它作稳定词法,assertion-unavailable
   // 造成的 errored 已经有更具体的断言摘要可展示,不需要也没有这个字段(见 types.ts 的字段注释)。
   const code = result.verdict === "errored" && assertion === undefined ? result.error?.code : undefined;
+  const factsCount = result.facts === undefined ? undefined : Object.keys(result.facts).length;
 
   return {
     locator,
@@ -54,5 +55,6 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     ...(phase !== undefined ? { phase } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
+    ...(factsCount !== undefined && factsCount > 0 ? { factsCount } : {}),
   };
 }

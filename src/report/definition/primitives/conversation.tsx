@@ -38,7 +38,7 @@ export interface CommandEvidenceItem {
   phase: string;
   display: string;
   exitCode: number;
-  classification: "observed" | "failed";
+  classification: "succeeded" | "observed" | "failed";
   durationMs?: number;
   stdout?: string;
   stderr?: string;
@@ -207,7 +207,10 @@ function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLoca
 }
 
 function commandEvidenceTitle(command: CommandEvidenceItem): string {
-  const title = command.classification === "failed" ? "FAILED COMMAND" : "NON-ZERO COMMAND · observed";
+  const title =
+    command.classification === "succeeded" ? "COMMAND"
+    : command.classification === "failed" ? "FAILED COMMAND"
+    : "NON-ZERO COMMAND · observed";
   return `${title} · ${command.phase} · exit ${command.exitCode}${command.durationMs === undefined ? "" : ` · ${command.durationMs}ms`}`;
 }
 
@@ -267,8 +270,8 @@ function assertCommandEvidenceContent(data: unknown): CommandEvidenceContent | n
     if (typeof command.phase !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].phase" must be a string`);
     if (typeof command.display !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].display" must be a string`);
     if (typeof command.exitCode !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].exitCode" must be a number`);
-    if (command.classification !== "observed" && command.classification !== "failed") {
-      throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].classification" must be observed | failed`);
+    if (command.classification !== "succeeded" && command.classification !== "observed" && command.classification !== "failed") {
+      throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].classification" must be succeeded | observed | failed`);
     }
     if (command.durationMs !== undefined && typeof command.durationMs !== "number") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].durationMs" must be a number`);
     if (command.stdout !== undefined && typeof command.stdout !== "string") throw dataShapeError("CommandEvidence", "commandEvidenceData", "CommandEvidenceContent", `"data.commands[${index}].stdout" must be a string`);

@@ -41,6 +41,7 @@ import {
   attemptDiagnosticsData,
   attemptDiffData,
   attemptErrorData,
+  attemptFactsData,
   attemptFixPromptData,
   attemptSummaryData,
   attemptTimelineData,
@@ -142,4 +143,8 @@ export async function toAttemptFixPrompt(attempt: AttemptEvidence): Promise<Copy
 
 export async function toAttemptUsage(attempt: AttemptEvidence) {
   return usageTableData(attempt);
+}
+
+export async function toAttemptFacts(attempt: AttemptEvidence) {
+  return attemptFactsData(attempt);
 }

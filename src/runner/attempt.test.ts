@@ -12,9 +12,9 @@
 // 怎么办」这段编排逻辑,不是 adapter 侧的 manifest 构造规则(那部分已在 agents/skills.test.ts
 // 覆盖)。
 //
-// cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」——公开 `run*` 最外层调用
-// 非零退出时,在把 `CommandResult` 交还调用方前登记 `CommandExitEvidence`
-// 并与同一次 timing command 节点共用 id;成功命令不登记;调用方处理非零结果并继续不撤销证据,
+// cases: docs/engineering/testing/unit/sandbox.md「命令证据包装」——公开 `run*` 最外层调用
+// 无论成功还是非零退出,都在把 `CommandResult` 交还调用方前登记 `CommandExitEvidence`
+// 并与同一次 timing command 节点共用 id;调用方处理非零结果并继续不撤销证据,
 // 即使随后只把 stderr 尾部拼进自己的诊断。见文件末尾专用 describe 块。
 
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
@@ -1147,7 +1147,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
   });
 });
 
-// cases: docs/engineering/testing/unit/sandbox.md「失败命令证据包装」
+// cases: docs/engineering/testing/unit/sandbox.md「命令证据包装」
 describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed 与 checked failed)", () => {
   /** runCommand 恒返回同一个非零 CommandResult;runShell 沿用 FakeSandbox 的恒成功语义
    *  (供 workspace.baseline 的 git 初始化用,不产生额外的失败命令证据)。 */
@@ -1186,10 +1186,12 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
     expect(observedExitCode).toBe(243);
     expect(observedStderrTail).not.toContain("EACCES"); // 调用方自己截掉的尾部确实丢了根因
 
-    // wrapper 登记的证据仍然完整——Eval 的自我阉割不影响它。
+    // wrapper 登记的证据仍然完整——Eval 的自我阉割不影响它。其它生命周期背景命令(agent.ensure
+    // 的平台探测、workspace.baseline 的 ledger anchor)现在也成功登记,按 phase 定位这条 eval.run
+    // 命令而不是假设数组只有一条。
     expect(result.commands).toBeDefined();
-    expect(result.commands).toHaveLength(1);
-    const evidence = result.commands![0];
+    const evidence = result.commands!.find((c) => c.phase === "eval.run")!;
+    expect(evidence).toBeDefined();
     expect(evidence.exitCode).toBe(243);
     expect(evidence.stderr).toBe(fullStderr);
     expect(evidence.stderr).toContain("EACCES");
@@ -1209,7 +1211,7 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
     expect(node?.command).not.toHaveProperty("classification");
   });
 
-  it("成功命令(exitCode 0)不登记输出:EvalResult.commands 整个不出现", async () => {
+  it("成功命令(exitCode 0)也登记输出:证据带 exit 0 与 checked 调用事实,不是失败样式", async () => {
     const box = new FakeSandbox(); // runCommand 恒返回 exitCode 0
     const agent = defineSandboxAgent({
       name: "fake-agent-successful-command",
@@ -1223,7 +1225,13 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
       },
     });
     expect(result.error).toBeUndefined();
-    expect(result.commands).toBeUndefined();
+    // 其它生命周期背景命令(agent.ensure 的平台探测、workspace.baseline 的 ledger anchor)
+    // 也成功登记;按 phase 定位这条 eval.run 命令而不是假设数组只有一条。
+    const evidence = result.commands!.find((c) => c.phase === "eval.run")!;
+    expect(evidence).toBeDefined();
+    expect(evidence.exitCode).toBe(0);
+    expect(evidence.checked).toBe(false);
+    expect(evidence.display).toContain("echo ok");
   });
 
   // bug: memory/command-evidence-known-secret-redaction.md
@@ -1306,7 +1314,9 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
     const persistedShowSources = JSON.stringify(result);
     expect(persistedShowSources).not.toContain(sensitive);
     expect(persistedShowSources).toContain("<redacted>");
-    expect(result.commands?.[0]).toMatchObject({
+    // 其它生命周期背景命令(agent.ensure 的平台探测、workspace.baseline/eval.run 的 ledger
+    // commit)也成功登记;按 display 定位这条 send 期间发出的命令而不是假设数组只有一条。
+    expect(result.commands?.find((c) => c.display.startsWith("synthetic-cli"))).toMatchObject({
       display: "synthetic-cli --token <redacted>",
       stdout: "stdout echoed <redacted>",
       stderr: "stderr rejected <redacted>",
@@ -1373,7 +1383,9 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
     const result = await runOnce(agent, new CheckedFailureSandbox());
 
     expect(result.verdict).toBe("errored");
-    expect(result.commands).toEqual([
+    // 其它生命周期背景命令(agent.ensure 的平台探测、workspace.baseline 的 ledger anchor)也
+    // 成功登记;断言这条 checked 命令存在于数组中,而不是假设数组只有它一条。
+    expect(result.commands).toEqual(expect.arrayContaining([
       expect.objectContaining({
         display: "checked-command <redacted>",
         exitCode: 19,
@@ -1381,8 +1393,8 @@ describe("runAttemptEffect · 命令退出证据包装(区分 unchecked observed
         stdout: "checked stdout <redacted>",
         stderr: "checked stderr <redacted>",
       }),
-    ]);
-    const checkedEvidence = result.commands![0]!;
+    ]));
+    const checkedEvidence = result.commands!.find((c) => c.checked)!;
     const checkedNode = result.phases
       ?.flatMap((phase) => phase.children ?? [])
       .find((node) => node.id === checkedEvidence.timingNodeId);

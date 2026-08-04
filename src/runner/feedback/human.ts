@@ -569,15 +569,25 @@ function failureShapeOf(failure: FailureNotice): { key: string; shapeText: strin
   };
 }
 
+/** 行内 facts 摘要提示(cli.md「人看的结束反馈」):有 `ctx.fact()` 上报的运行事实才提示,
+ *  只给键数,不展开值——完整键值表留给 `niceeval show @<locator>`,面板保持密度不展开。 */
+function factsHint(factsCount: number | undefined): string {
+  return factsCount !== undefined && factsCount > 0 ? `  ${t("feedback.human.failureFacts", { count: factsCount })}` : "";
+}
+
 function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number): PanelRow {
   const countToken = padStartDisplay(`${FAILURE_SYMBOL} ×${group.size}`, countWidth);
-  return { kind: "line", text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}` };
+  return {
+    kind: "line",
+    text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}${factsHint(group.representative.factsCount)}`,
+  };
 }
 
 /** size = 1 组的两行:身份行(`✗ @locator  evalId  [who]`)+ 悬挂到身份内容起始列的单行压缩
- *  摘要——与 `buildFailureFactLine` 共用同一套 info 组装逻辑,只是拆成两行而不是塞进一行。 */
+ *  摘要——与 `buildFailureFactLine` 共用同一套 info 组装逻辑,只是拆成两行而不是塞进一行。
+ *  facts 摘要提示挂在身份行尾(有 facts 才出现)。 */
 function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: number): PanelRow[] {
-  const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]`;
+  const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]${factsHint(failure.factsCount)}`;
   const indent = stringWidth(`${FAILURE_SYMBOL} `);
   const budget = Math.max(0, contentWidth - indent);
   const info = failure.assertion

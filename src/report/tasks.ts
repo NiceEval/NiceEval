@@ -41,6 +41,7 @@ import type {
   AttemptDiagnosticsData,
   AttemptDiffData,
   AttemptErrorData,
+  AttemptFactsData,
   AttemptFixPromptData,
   AttemptSummaryData,
   AttemptTraceData,
@@ -60,6 +61,7 @@ import {
   attemptDiagnosticsData,
   attemptDiffData,
   attemptErrorData,
+  attemptFactsData,
   attemptFixPromptData,
   attemptSummaryData,
   attemptTraceData,
@@ -254,6 +256,7 @@ export interface AttemptDetailsResult {
   conversation: ConversationResult;
   diagnostics: AttemptDiagnosticsData | null;
   usage: UsageResult;
+  facts: AttemptFactsData | null;
   trace: AttemptTraceData | null;
   diff: DiffResult;
 }
@@ -537,6 +540,7 @@ export async function attemptDetailsResult(
     conversation,
     diagnostics: attemptDiagnosticsData(attempt),
     usage,
+    facts: attemptFactsData(attempt),
     trace: attemptTraceData(attempt),
     diff,
   };

@@ -306,8 +306,8 @@ export function runAttemptEffect(
   // 收尾时并入结果;dedupeKey 相同的并发诊断折叠成一条并累计 count。
   const diagnostics: DiagnosticRecord[] = [];
   const dedupeIndex = new Map<string, DiagnosticRecord>();
-  // 非零 Sandbox 命令证据的累加器(与 diagnostics/facts 同一种「共享容器」模式):
-  // withCommandTiming 在 CommandResult 交还调用方之前把每条非零退出命令 push 进来,
+  // Sandbox 命令证据的累加器(与 diagnostics/facts 同一种「共享容器」模式):
+  // withCommandTiming 在 CommandResult 交还调用方之前把每条命令(成功与非零退出都算)push 进来,
   // runAttemptBody 的 finally 与本函数的超时/中断兜底分支都读同一个数组引用
   // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
   // 调用方之前写入内存」)。
@@ -433,7 +433,7 @@ export function runAttemptEffect(
             ...(retryAttempts !== undefined && retryAttempts.length > 0
               ? { retryAttempts: retryAttempts.map((attempt) => ({ ...attempt })) }
               : {}),
-            // 超时前已经登记的非零命令证据(见 withCommandTiming)不因中断而丢失——它们在
+            // 超时前已经登记的命令证据(见 withCommandTiming)不因中断而丢失——它们在
             // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
             ...(commands.length > 0 ? { commands: [...commands] } : {}),
           };
@@ -1001,7 +1001,7 @@ interface AttemptResources {
    */
   facts: globalThis.Record<string, FactValue>;
   /**
-   * attempt 级非零 Sandbox 命令证据累加(runAttemptEffect 持有的同一个数组引用,与
+   * attempt 级 Sandbox 命令证据累加(runAttemptEffect 持有的同一个数组引用,与
    * diagnostics/facts 同一种「共享容器」模式):`withCommandTiming` 往这里 push,
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
@@ -1695,9 +1695,9 @@ function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlyS
 /**
  * 命令时间树包装:四个公开 run* 方法的最外层调用各记一个 command 子节点
  * (有界脱敏摘要 + exitCode;env 值不进入时间树)。Proxy 拦截 checked 与 unchecked 两组方法,
- * provider 内部 `this.runCommand(...)` 转调不经过它——不形成重复节点。非零退出的命令额外
- * 把已按已知敏感值脱敏的 `CommandResult` 登记进 `commands` 累加器,登记发生在把结果交还
- * 调用方**之前**
+ * provider 内部 `this.runCommand(...)` 转调不经过它——不形成重复节点。每条命令(成功与非零
+ * 退出都算)额外把已按已知敏感值脱敏的 `CommandResult` 登记进 `commands` 累加器,登记发生在
+ * 把结果交还调用方**之前**
  * (docs/feature/record/architecture.md「commandsjson」);登记不改变 `runCommand` 的
  * 返回/抛错语义,调用方可以处理非零退出并继续,证据仍保留。checked 方法抛出的
  * `SandboxCommandExitError` 自带 `CommandResult`,同样登记；没有结果的 transport 错误只落
@@ -1717,7 +1717,7 @@ function withCommandTiming(
     result: { exitCode: number; stdout?: unknown; stderr?: unknown },
     checked: boolean,
   ): void => {
-    if (!node || result.exitCode === 0) return;
+    if (!node) return;
     commands.push({
       timingNodeId: node.id,
       phase: getPhase() ?? "eval.run",
@@ -1766,7 +1766,7 @@ function withCommandTiming(
             : {}),
         }),
       );
-      if (typeof exitCode === "number" && nonZero) {
+      if (typeof exitCode === "number") {
         recordCommandExit(node, display, {
           exitCode,
           ...(result as { stdout?: unknown; stderr?: unknown }),

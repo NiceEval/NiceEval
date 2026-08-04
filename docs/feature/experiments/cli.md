@@ -583,6 +583,7 @@ live 面板靠相对光标回跳原地重绘,行数记账要求它是终端上�
 - 同一形态的组只占一行:右对齐的 `×N` 计数、形态摘要、一条代表 locator(组内首现)。
 - 组按条数降序排;组数超过展开上限(10)时收进尾行 `+K more kinds — niceeval view`,总数与形态数嵌上边框右侧。
 - 只有一条的组展开成两行:身份行加悬挂的单行压缩摘要。失败少的时候读者想多看一眼,失败多的时候逐条展开只是噪声;两档由组的大小自然区分,不设第二套开关。
+- 该 attempt(size = 1 是它自己,size > 1 是组内首现的代表)有 [facts](../record/architecture.md#facts运行事实) 时,行尾追加 `facts ×N`(N 是键数);没有 facts 时不追加。面板保持密度不展开——这是行内提示,不是完整键值表,值本身要下钻 `niceeval show @<locator>` 看。
 
 一次 205 条失败的 terminal-bench 运行,`FAILURES` 收成三行:
 
@@ -609,6 +610,15 @@ live 面板靠相对光标回跳原地重绘,行数记账要求它是终端上�
 
 ╭─ FAILURES ─────────────────────────────────────────────────────────────────────╮
 │ ✗ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]              │
+│              Issue 15193: selected proposal matches… · expected 4 · received 3 │
+╰────────────────────────────────────────────────────────────────────────────────╯
+```
+
+这条 attempt 若上报过 facts(如记忆库起步条数、恢复自哪份 checkpoint),身份行尾追加 `facts ×N`:
+
+```text
+╭─ FAILURES ─────────────────────────────────────────────────────────────────────╮
+│ ✗ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]  facts ×2    │
 │              Issue 15193: selected proposal matches… · expected 4 · received 3 │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ```

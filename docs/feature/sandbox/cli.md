@@ -1,10 +1,12 @@
 # Sandbox —— CLI:留存现场与清理
 
-跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../record/architecture.md))。但有三类问题 artifact 结构性地回答不了,只能靠留住活现场:
+跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../record/architecture.md))。受管命令(两层 prepare、lifecycle 命令、`ensure` / `install`)经四个公开 `Sandbox.run*()` 方法发出的每一次调用,无论成功还是非零退出,都落进 `commands.json`。`niceeval show @<locator> --execution` 能按 timing 顺序下钻——「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
+但仍有两类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
-- **环境类 `errored` 恰好证据最薄**——准备链装包失败、agent CLI 起不来时,agent 根本没跑,`events.json` / `trace.json` 不存在,手里只有 error 摘要和 phases 计时;而这正是最需要进环境里手动重跑一遍命令的场景。
 - **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 窗口归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
-- **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设重跑一轮太慢;留下的现场把这个循环压到秒级。
+- **复现成本是分钟级**——冷启动 + 安装每轮几分钟,每验证一个假设(如换一条命令参数重试)重跑一轮太慢;留下的现场把这个循环压到秒级。
+
+真正没有留下任何命令证据的环境类 `errored`(agent CLI 进程本身没起来、SDK/网络传输失败,不是某条受管命令非零退出)仍然只有 error 摘要和 phases 计时——这类场景仍然最需要进环境里手动重跑一遍命令。
 
 为此 CLI 提供一对能力,合起来是留存沙箱的完整生命周期:`--keep-sandbox` 在 run 侧**留下**现场,`niceeval sandbox` 命令组在事后**查看与销毁**它们。
 
