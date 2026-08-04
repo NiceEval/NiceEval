@@ -561,10 +561,10 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.assertion) {
     const shapeText = compactAssertionSummary({ ...failure.assertion, received: undefined, additionalFailures: 0 });
-    return { key: `assertion ${failure.assertion.assertion} ${failure.assertion.matcher ?? ""}`, shapeText };
+    return { key: `assertion\u0000${failure.assertion.assertion}\u0000${failure.assertion.matcher ?? ""}`, shapeText };
   }
   return {
-    key: `errored ${failure.phase ?? "?"} ${failure.code ?? "?"}`,
+    key: `errored\u0000${failure.phase ?? "?"}\u0000${failure.code ?? "?"}`,
     shapeText: buildErroredInfo(failure.phase, failure.code, ""),
   };
 }
