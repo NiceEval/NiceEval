@@ -134,9 +134,9 @@ Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker
 六个 Docker target 与三个 E2B template 共用同一份基线工具面契约,与各自装的 Agent CLI 版本无关:
 
 - **保证 npm 与 corepack,不预装 yarn 实体**。node:24-slim 自带 yarn 1.22,E2B 官方 `claude`/`codex` 起点的现状不与 Docker 侧一致;统一之后官方基线一律不再提供现成的 yarn 二进制,要 yarn 的派生项目自己 `corepack enable` 或安装。
-- **保证 python3**。Docker 侧的 npm 型 target(claude-code / codex / opencode / openclaw)原先没有系统 python3,E2B 官方起点已经带;统一方向只能是两侧都装——E2B 侧的配方只能在官方起点上叠加,没有"卸载"路径。
-- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。Docker 侧全局 CLI 由 root 装完才切到非 root `node`(执行身份契约见[执行身份](../library.md#执行身份)),切换前这两个目录一直归 root,运行期 `corepack enable` 或 `npm install -g` 会直接 EACCES。E2B 侧 `withNodeToolContract` 早已 chown 给运行用户,两侧现状不一致。统一方向是 Docker base 构建期一并 chown 给 `node`,六个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承。
-- 三条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检。Docker 侧由 CI 的构建自检步骤断言:`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 侧由 `verifyE2BNodeToolContract` 断言同样三条,可写性断言在该函数里本就存在,不是新增。任一项不过,配方不写入 registry、不推送 tag。
+- **保证 python3**。两侧基线都带系统 python3。取两侧都装是因为 E2B 配方只能在官方起点上叠加、没有"卸载"路径,而运行时安装步骤(node-gyp、rustup 一类)普遍依赖它。
+- **保证 `/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写**。基线的全局 CLI 在构建期以 root 安装,执行身份是非 root `node`(执行身份契约见[执行身份](../library.md#执行身份));这两个目录必须交给运行用户,否则运行期 `corepack enable` 与 `npm install -g` 直接 EACCES。Docker 侧由 base 构建期 chown 给 `node`,六个 target(含只用 `$HOME/.local` 的 bub / hermes)全部继承;E2B 侧由 `withNodeToolContract` 保证同一条。
+- 三条都是发布门槛,与「[官方 coding agent 起点](#官方-coding-agent-起点)」的其余契约同一批构建自检。Docker 侧由 CI 的构建自检步骤断言:`command -v yarn` 必须为空、`python3 --version` 必须成功、以镜像默认用户执行 `corepack enable && yarn --version` 必须成功。E2B 侧由 `verifyE2BNodeToolContract` 断言同样三条。任一项不过,配方不写入 registry、不推送 tag。
 
 这条契约与「版本号跟着被装的 Agent 走」共用同一条规则:配方变了(包括这次的工具面收敛)就 bump `-r`,内容没变不重建。
 
