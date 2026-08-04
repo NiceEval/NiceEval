@@ -113,6 +113,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [sandbox-path-managed-pathprepend](sandbox-path-managed-pathprepend.md) — `docker.ts` 的 `runCommand` 把受管 `PATH` 无条件覆盖 `opts.env.PATH`,与 codex-cli README「`env` 追加环境变量、无例外」的声明矛盾,静默丢弃零报错;修为 `codexAgent({ env })` 构造期同步拒绝 `PATH` 键 + 新增 Sandbox factory `pathPrepend` 显式前置入口(四个内置 provider 一致支持,进 template identity)(`src/agents/codex.ts`、`src/sandbox/layer.ts`、`src/sandbox/{docker,e2b,vercel,local,compose,runtime}.ts`)
 
 - 设计裁决 [sandbox-native-escape-hatch-rejected](sandbox-native-escape-hatch-rejected.md) — 否决 sandbox.native 原生出口与「透明转发未知方法」;窄契约=内部能力显式建模+包装层保留义务;native 绕开 deadline/timing/资源组且鼓励跨 provider cast(2026-07-31)
+- 已修 [docker-baseline-usr-local-not-writable](docker-baseline-usr-local-not-writable.md) — Node 工具契约第三条(`/usr/local` 对运行用户可写)只有 E2B factory 归一,Docker 六个 target 切到 `USER node` 后 corepack/npm install -g 必 EACCES;MemoryBench 实测撞到(react-datepicker 等题连环 errored),修为 base target 里 `chown node:node /usr/local/bin /usr/local/lib/node_modules` + CI 自检新增 corepack 断言
 
 ## Runner · 调度 · CLI · 生命周期
 

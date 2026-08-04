@@ -17,7 +17,8 @@
 # 跨 provider 基线工具面契约（与 E2B 侧 src/sandbox/e2b-agent-template.ts 的
 # withNodeToolContract / verifyE2BNodeToolContract 同一份契约，见
 # docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」）：
-# 包管理器只保证 npm 与 corepack，不预装 yarn 实体；系统 python3 保证存在。两条都在 base 里
+# 包管理器只保证 npm 与 corepack，不预装 yarn 实体；系统 python3 保证存在；
+# /usr/local/bin 与 /usr/local/lib/node_modules 对运行用户（node）可写。三条都在 base 里
 # 一次性落地，六个 target 全部继承，是发布前的构建自检项之一（见 ../../.github/workflows/docker-image.yml）。
 
 FROM node:24-slim AS base
@@ -33,6 +34,15 @@ RUN apt-get update \
 # 官方基线的包管理器只保证 npm 与 corepack,要 yarn 的派生项目自己 corepack enable 或安装。
 # glob 匹配 /opt/yarn-v* 以容忍基础镜像升级后的版本号变化。
 RUN rm -rf /opt/yarn-v* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
+# 每个 target 装完全局 CLI(root)后都切到非 root node 用户收尾(执行身份契约见
+# docs/feature/sandbox/library.md「执行身份」)。切换前这两个目录一直归 root,运行期
+# node 身份的 corepack enable / npm install -g 会直接 EACCES —— 与 E2B 侧
+# withNodeToolContract 已经把同名目录 chown 给运行用户的现状不一致(Node 工具契约见
+# docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」)。
+# 统一方向是 Docker base 也在构建期一次性 chown 给 node,六个 target(含只用
+# $HOME/.local 的 bub / hermes)全部继承同一份可写性,不必各自补。
+RUN chown node:node /usr/local/bin /usr/local/lib/node_modules
 
 FROM base AS codex
 

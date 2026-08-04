@@ -119,7 +119,9 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         # 跨 provider 基线工具面契约(docs/feature/sandbox/library/prebuilt-environments.md
         # 「跨 provider 基线工具面」):包管理器只保证 npm 与 corepack,不预装 yarn 实体;
-        # python3 保证存在。两条不过,配方不发布。
+        # python3 保证存在;/usr/local/bin 与 /usr/local/lib/node_modules 对运行用户
+        # (镜像默认 USER,即 node)可写。三条不过,配方不发布。corepack enable 断言放最后——
+        # 它会在 /usr/local/bin 落一个 yarn shim,顺序早于「无 yarn」检查会把后者测红。
         run: |
           docker run --rm niceeval/${{ matrix.image }}:selfcheck sh -c '
             if command -v yarn >/dev/null 2>&1; then
@@ -127,6 +129,7 @@ jobs:
               exit 1
             fi
             python3 --version
+            corepack enable && yarn --version
           '
 
       - name: Build and push multi-platform image

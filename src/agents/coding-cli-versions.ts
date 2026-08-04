@@ -50,26 +50,29 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
  * Agent 版本一变归 1。已发布的 tag 不可原地覆盖，配方变更必须在版本里有位置表达。
  * 一个 Agent 的 E2B 与 Docker 制品共用这个号：一个版本号 = 一套基线配方，两侧同步重建。
  */
+// r4/r5(视 Agent 而定)未发布过镜像:补的「/usr/local/bin 与 /usr/local/lib/node_modules
+// 对运行用户可写」(跨 provider 基线工具面第三条)并进这次未发布修订,不再额外 +1。
 export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
   // r3: Dockerfile 里 npm 全局装完后显式 `USER node`——运行时不再强加执行身份,
   // 改为沿用镜像自己声明的 USER,非 root 必须由配方自己声明(见 docs/feature/sandbox/library.md「执行身份」)
-  // r4: 跨 provider 基线工具面统一——不预装 yarn 实体,补齐 python3
-  // (docs/feature/sandbox/library/prebuilt-environments.md「跨 provider 基线工具面」)
+  // r4: 跨 provider 基线工具面统一——不预装 yarn 实体,补齐 python3,
+  // 并补 /usr/local 对运行用户可写(docs/feature/sandbox/library/prebuilt-environments.md
+  // 「跨 provider 基线工具面」)
   "claude-code": 4,
   // r3: staged 安装改用自带运行时的原生平台包(不再要求沙箱里有 node / npm)
   // r4: 同上「USER node」配方变更
-  // r5: 同上「跨 provider 基线工具面统一」配方变更
+  // r5: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
   codex: 5,
-  // r2: 跨 provider 基线工具面统一(同上)
+  // r2: 跨 provider 基线工具面统一(同上,含可写性)
   bub: 2,
   // r2: 同上「USER node」配方变更
-  // r3: 同上「跨 provider 基线工具面统一」配方变更
+  // r3: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
   opencode: 3,
   // r2: 跨 provider 基线工具面统一——本 target 原本单独装的 python3 现由 base 统一提供,
-  // 配方内容变了但不预装 yarn 不改变行为(同上)
+  // 配方内容变了但不预装 yarn 不改变行为(同上,含可写性)
   hermes: 2,
   // r2: 同上「USER node」配方变更
-  // r3: 同上「跨 provider 基线工具面统一」配方变更
+  // r3: 同上「跨 provider 基线工具面统一」配方变更(含可写性)
   openclaw: 3,
 };
 
