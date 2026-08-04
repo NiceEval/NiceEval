@@ -1,0 +1,157 @@
+---
+title: "把报告站发布上线"
+sidebarTitle: "报告站上线"
+description: "把 .niceeval 直接提交进仓库、配一份排除运行时状态的 .gitignore,再用不装整仓依赖的 CI 脚本和 Vercel CLI,在打 tag 时把报告站发布上线。"
+---
+
+[通过 CI 发布报告](/zh/tutorials/publish-report)讲的是用 `publish()` 剪出一份经过单文件大小预检的瘦身目录,适合结果要脱离原始记录根、按需挑选证据的场景——它会挡住任何一个超过 50 MiB 的文件,包括极端情况下过大的 `events.json` / `trace.json`。这一页讲另一条更直接的路:把 `.niceeval` 原样提交进仓库(排除几类不该提交的运行时状态),用一份不依赖仓库自身 `node_modules` 的构建脚本,让 CI 只在你打 tag 时把它发布到 Vercel。这条路跳过了 `publish()` 的体积预检,适合单条 Attempt 的证据体积在实践中稳定可控的项目;不确定会不会撞见罕见的超大输出,或者想要一份和原始记录根解耦的瘦身目录,选前一条路。
+
+## `.niceeval/` 里,哪些是站点要的数据
+
+`.niceeval/` 下同时混着结果数据和几类运行时状态,只有第一类是报告站要读的东西:
+
+- **每个实验的 Run 目录**(`<实验>/<时间戳-后缀>/`)是评估结果本身——`run.json`、每条 Attempt 的 `result.json` 与证据文件。这是站点数据源。
+- **`.niceeval/locks/`** 是并发跑评估用例时的用例锁,一条 `(experiment, eval)` 一个心跳文件。持有者每 10 秒重写一次心跳,全部 Attempt 正常收尾后自己删掉锁,不需要手工清理。被 `kill -9` 或断电打断的运行不会释放锁——文件会留在磁盘上,但不是需要主动清理的垃圾:心跳落后 30 秒即视为过期,下一次运行会自动接管。它是进程运行时状态,不是评估结果,提交进仓库既没用也会造成误导(读到一份早已作废的心跳文件)。
+- **`.niceeval/sessions/`** 是一次 `niceeval exp` 调度留下的清单,只被 `niceeval session list` / `session show` 读取,回答"这批调度还在不在跑"。构建报告站的 `niceeval view` 不读它。
+
+`diff.json` 单独说体积。Agent 一次工具调用能产生任意大的输出,diff 归因逐窗口落盘、不做跨窗口压缩也不截断,单条 Attempt 的 `diff.json` 因此可能到上百 MB。它确实会被 `niceeval view` 用到——存在时,对应 Attempt 详情页的"文件差异"区块会显示它;但报告首页、实验对比这些聚合视图不需要它。缺失时"文件差异"区块如实显示证据未提供,不影响页面其余部分——为体积把它排除在提交范围之外是划算的取舍,不是功能损失。
+
+## 推荐的 `.gitignore`
+
+```gitignore
+# .niceeval/ 提交进仓库,是报告站的数据源。只排除运行时状态:
+.niceeval/**/diff.json   # 单条 Attempt 可达上百 MB,只服务 Attempt 详情页的文件差异区块
+.niceeval/locks/         # 用例锁,进程运行时状态;强杀后的残留文件靠心跳过期自动接管,不用清理
+.niceeval/sessions/      # niceeval exp 的调度清单,只被 session list 读取,站点不读它
+```
+
+其余结果数据——`run.json`、`result.json`、`events.json`、`trace.json`、`sources.json`、`o11y.json`、`agent-setup.json`——原样提交。
+
+## CI 构建:不装整仓依赖
+
+评估用例相关的依赖(Docker / E2B SDK、各家 model provider)体积大且与报告构建无关,CI 没必要为了生成一个静态站跑一遍仓库自己的 `install`。做法是在临时目录单独装 `niceeval` 和它默认内建报告要用到的 `react`、`react-dom`,再把这份 `node_modules` 链接回仓库根:
+
+```bash
+#!/usr/bin/env bash
+# scripts/build-report.sh
+set -euo pipefail
+
+REPO="$PWD"
+BUILD_DIR=/tmp/niceeval-build
+
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+npm init -y >/dev/null
+npm i --no-audit --no-fund niceeval@latest react react-dom
+
+# Vercel 的 build cache 会把上一次部署的 node_modules 原样恢复到仓库根(里面是旧版
+# niceeval);ln -sfn 对已存在的目录会把链接建到目录内部而不是替换它,必须先清掉。
+# 本地跑这份脚本时不动真实 node_modules,直接拒绝,避免误删开发环境。
+if [ -e "$REPO/node_modules" ] && [ ! -L "$REPO/node_modules" ]; then
+  if [ "${VERCEL:-}" = "1" ]; then
+    rm -rf "$REPO/node_modules"
+  else
+    echo "refusing to replace real $REPO/node_modules; run in a clean clone" >&2
+    exit 1
+  fi
+fi
+ln -sfn "$BUILD_DIR/node_modules" "$REPO/node_modules"
+
+cd "$REPO"
+node_modules/.bin/niceeval view --record .niceeval --out site
+```
+
+链接回仓库根这一步不只是为了能在仓库根用相对路径 `node_modules/.bin/niceeval` 调用:后续如果传自定义 `--report reports/xxx.tsx`,`tsx` 会用仓库自己的 `tsconfig`(`jsx: "react-jsx"`)编译这个文件,文件里的 `import "niceeval/report"` 按文件位置解析——resolve 得从仓库根的 `node_modules` 找起。不管当下用不用自定义报告,这一步都值得做,省得以后加了自定义报告才发现构建脚本要重写。
+
+`vercel.json` 指向这份脚本,并跳过 Vercel 默认的 install 步骤:
+
+```json
+{
+  "installCommand": "echo 'skip: 报告构建自己装依赖,不用仓库的 node_modules'",
+  "buildCommand": "bash scripts/build-report.sh",
+  "outputDirectory": "site",
+  "git": {
+    "deploymentEnabled": false
+  }
+}
+```
+
+`git.deploymentEnabled: false` 关掉 Vercel 对这个仓库的自动部署——不设它,Vercel 的原生 Git 集成会在每次 push 时自动构建部署,和下一节"只在打 tag 时发布"的意图冲突。
+
+## 只在打 tag 时发布
+
+`vercel.json` 关掉自动部署后,发布动作交给一条只在 push tag 时触发的 GitHub Actions workflow:
+
+```yaml
+# .github/workflows/deploy-report.yml
+name: deploy-report
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: deploy-report
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      # push tags 事件默认检出 tag 指向的 commit,不需要额外指定 ref。
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm i -g vercel@latest
+
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+```
+
+<Warning>
+  不要用 Vercel 的 Deploy Hook 替代这条 workflow。Deploy Hook 部署的是"触发那一刻分支上的最新 commit",不是 tag 指向的 commit——打完 tag 后如果分支上又有新提交,Hook 部署的会是那条新提交,线上内容和你发布的版本号对不上。这条 workflow 用 Vercel CLI 的 prebuilt 流程(`pull` → `build --prod` → `deploy --prebuilt --prod`),在 checkout 到 tag 之后才构建,发布内容与 tag 精确对应。
+</Warning>
+
+<Steps>
+  <Step title="生成 VERCEL_ORG_ID 与 VERCEL_PROJECT_ID">
+    本地在项目根目录运行一次 `vercel link`,把项目关联到 Vercel;生成的 `.vercel/project.json` 里就是这两个值。
+  </Step>
+  <Step title="生成 VERCEL_TOKEN">
+    在 Vercel 账号的 Settings → Tokens 建一个新 token。
+  </Step>
+  <Step title="把三个值加进仓库 secrets">
+    `VERCEL_TOKEN`、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID` 三个都要配,workflow 里都用到了。
+  </Step>
+</Steps>
+
+日常发布流程是:结果数据更新后提交并 push;确认线上要跟着换版本时,打一个 tag 并 push 到远程——这一步才真正触发部署。
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+## 接着看
+
+<CardGroup cols={2}>
+  <Card title="通过 CI 发布报告" icon="rotate-right" href="/zh/tutorials/publish-report">
+    另一条路:用 publish() 剪出瘦身、经过大小预检的发布目录。
+  </Card>
+  <Card title="在 CI 中运行 NiceEval" icon="gear" href="/zh/tutorials/ci-integration">
+    把评估用例本身接进 GitHub Actions。
+  </Card>
+  <Card title="查看结果" icon="database" href="/zh/tutorials/viewing-results">
+    `niceeval view` 的本地用法与导出细节。
+  </Card>
+  <Card title="自定义报告" icon="flask" href="/zh/tutorials/custom-reports">
+    传给 `--report` 的报告文件怎么写。
+  </Card>
+</CardGroup>

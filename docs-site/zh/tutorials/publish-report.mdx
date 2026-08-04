@@ -4,7 +4,7 @@ sidebarTitle: "CI 发布报告"
 description: "把经过 publish 大小预检的记录目录提交进仓库,CI 用一行 view --record 导出报告站;超大文件在 commit 前就会得到可执行错误。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、Run 列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。CI 发布只需要让记录数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `publish` 生成经过 50 MiB 单文件预检的发布记录根，再提交这个目录。
+`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、Run 列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。CI 发布只需要让记录数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `publish` 生成经过 50 MiB 单文件预检的发布记录根，再提交这个目录。不需要这层预检、想直接提交 `.niceeval` 本身的，见[把报告站发布上线](/zh/tutorials/deploy-report-site)。
 
 ## 生成可提交的结果目录
 
