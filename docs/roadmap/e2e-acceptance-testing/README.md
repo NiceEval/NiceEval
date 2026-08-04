@@ -91,6 +91,8 @@ NiceEval 仍只有 unit 与 E2E 两种执行层，不新增第三种测试类型
 Recipe 产生可校验身份的只读 World；需要修改输入的 Behavior 使用私有 clone 和登记过的 mutation action。
 并发由 read-only、mutable-clone、service 与 exclusive-external 四种资源类别决定。
 
+支持面是 Linux CI 与 macOS 本地；Windows 不在支持面内。PTY 读面只在 Linux 与 macOS 上提供。
+
 类型、数据流、并发规则和失败折叠单源在 [Architecture](architecture.md)。
 Report 参数化页的全集 census、Chromium 代表矩阵与 hosting 路径见
 [Report target 闭环](use-case/report-target-closure.md)。
@@ -108,7 +110,13 @@ Report 参数化页的全集 census、Chromium 代表矩阵与 hosting 路径见
 | scheduler / retry / BuildKey | 可控 barrier 单元 + timeline 代表 E2E |
 | cleanup / sandbox ownership | cleanup 单元 + 串行生命周期 lane |
 
-CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 E2E 仓库；本方案额外要求确定性 Behavior 不依赖 secret，因而本机也能在提交前执行。未 push 的本地提交不能以“CI 将来会跑”代替本地变更卡。
+单元结构 census 双向比对两个来源：产品侧 `enumerate()` / `planSite` 输出的 pageId 集合，与 `docs/feature/reports/` 声明的 target 种类登记表。代码新增 pageId 种类而 docs 未登记，或 docs 登记而 census 未覆盖，两种漂移都判红；[综合分层与试点顺序](bugs/synthesis.md)的 U9 行同步这条约束。
+
+CI 的 push / PR workflow 仍通过根命令注入候选 tarball并运行所属 E2E 仓库；本方案额外要求确定性 Behavior 不依赖 secret，因而本机也能在提交前执行。未 push 的本地提交不能以“CI 将来会跑”代替本地变更卡。CI 的 path-filter 规则从试点第一批就挂上，不等 Registry 落成才接入。
+
+`risk: release-blocking` 的 Behavior 集合是一份签入清单文件；任何把成员移出 PR cadence 的动作——降 `scheduled`、隔离或代表收缩——都必须先修改这份清单才能过门禁。
+
+PR lane 有预算：runner 每次运行把耗时读数落成 JSON，一条静态守护断言读数存在且不超预算。初始预算取首批冷跑实测的 1.5 倍，硬上限 15 分钟。预算收缩允许把矩阵项降出 PR lane，但不得使任何 pageId 类别在 PR lane 失去代表；便宜替代是给该类别配一条无 JS 的 HTML 可达性验证。
 
 高风险跨层 coverage category 直接绑定 PLAN-2 的稳定 Behavior id。Behavior 声明已经持有 `task`、`contract`、`risk`、`primary.target` 与 `primary.execution`；所属 E2E 仓库的执行登记再为 Behavior id 指定 cadence 与并发 class。机器守护只核对覆盖类别、主证明与执行登记的双向存在，不把具体 scenario 清单复制进文档。这样 Feature 从 attempt 升级为 target 时，旧 Behavior 不能只凭“文件还在”继续冒充覆盖。
 
@@ -120,7 +128,7 @@ Web Attempt 对 drive 调用、行内返回、unmapped Conversation 与缺失 wa
 [`reports.attempt-execution-evidence`](use-case/attempt-execution-evidence.md#变更触发路径)守护。
 
 共享 projection 只有实际改变对应公开读面时才触发一条或两条 Behavior。producer 路径只有在改变落盘
-evidence 契约时才进入闭环。重命名按 diff 新旧路径匹配，共享 helper 按 import graph 扩一跳，确保
+evidence 契约时才进入闭环。重命名按 diff 新旧路径匹配，共享 helper 取完整传递闭包，确保
 “文件挪走所以规则不再命中”本身不能绕过门禁。
 
 ## Proof 准入门槛
@@ -169,4 +177,4 @@ docs/engineering/testing/
 
 1. Behavior 选择是扩展根 `e2e/scripts/run.ts` 的 `--behavior`，还是只透传给仓库自己的命令；唯一要求是本地、CI 与远程执行仍走同一入口。
 2. mutable clone 复制整个结果根还是只复制声明写集；第一个 mutation recipe 用真实体积数据裁决。
-3. 浏览器三个 hosting 是否在每个 PR 全跑，还是 `directory-root` 每 PR、另外两种按影响路径运行；`clean-url-subpath` 对 view/Report 路径改动必须是硬门禁。
+3. 浏览器三个 hosting 是否在每个 PR 全跑，还是 `directory-root` 每 PR、另外两种按影响路径运行；`clean-url-subpath` 对 view/Report 路径改动必须是硬门禁。无论选哪种频率，收缩都不得使任何 pageId 类别在 PR lane 失去代表。

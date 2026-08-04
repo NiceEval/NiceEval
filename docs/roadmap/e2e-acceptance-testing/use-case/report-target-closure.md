@@ -45,6 +45,8 @@ export default defineEvidenceRecipe({
 
 ## Behavior
 
+`data-page-id` 由 [View · 参数化页的 dialog 摆放](../../../feature/reports/view.md#参数化页的-dialog-摆放)声明为参数化页的公开身份契约；本 Behavior 对 `data-page-id` 的断言以该声明为前提。
+
 结构 census 先证明全集闭合，Chromium 只跑有区分力的代表。
 
 ```ts
@@ -100,6 +102,14 @@ reportBehavior({
     await ui.targetLink(target).click();
     await expect(ui.dialog()).toBeVisible();
     await expect(ui.dialog()).toHaveAttribute("data-page-id", target.pageId);
+
+    if (name === "experiment") {
+      await expect(ui.table("Attempts").visibleRows()).not.toHaveCount(0);
+    }
+    if (name === "custom") {
+      await expect(ui.region("Checkout regression")).toBeVisible();
+    }
+
     await ui.closeDialog("escape");
   }
 
@@ -110,6 +120,8 @@ reportBehavior({
   expectObserved(ui.consoleErrors()).toShowExactRows([]);
 });
 ```
+
+dialog 标题与内容组件树来自两条独立装配路径：标题对、内容错挂（例如 custom 页被装进 attempt 树）在 `data-page-id` 之外未必显形。上面两条内容派生断言因此不是补充细节，而是让身份由被挂载组件自己盖章的直接证据。
 
 ## 执行登记
 

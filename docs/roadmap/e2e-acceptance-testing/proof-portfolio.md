@@ -106,6 +106,8 @@ retireProofs({
 - 新主证明没有 retirement declaration，也没有声明 `netNewReason`；
 - 一个 proof 同时被两个 replacement 宣称替代。
 
+新增 coverage category 时“首个 owner 免 Retirement Declaration”的快速通道，以及该通道随 contract anchor 复用而失效的铸币税规则，单源在 [Architecture · Portfolio Registry](architecture.md#portfolio-registry)，此处只引用。
+
 ## 数量预算
 
 数量预算按 proof 与 scenario matrix 计算，不按 `it()` 或文件行数计算。表驱动展开的十个 case 是一个矩阵，
@@ -125,17 +127,25 @@ retireProofs({
 不设置“每个 Feature 最多 N 条测试”的机械上限。硬门禁是唯一 owner、保留理由与 duplicated matrix 为 0。
 Feature 新增真实用户能力时可以净增加；纯实现重构的净 proof delta 必须小于等于 0。
 
+fixture blast radius 的读数来自一次固定演练，安排在每个 release tag 之前：在临时工作树里给目标 production DTO 加一个哨兵必填字段，记录因此报错或需要改动的测试 owner 数。演练结束后读数进 memory 台账，工作树随之丢弃。
+
 ## Escape Audit
 
-一个 bug 逃逸时先升级现有 owner，不默认新增测试：
+一个 bug 逃逸时，默认落点是把这次 bug commit 登记进现有 Behavior 的 `bugs`，并在该 Behavior 现有的 owner 矩阵内补一个区分 case，不默认新增测试：
 
 1. 找到本应捕获它的 Behavior 或机制矩阵；
 2. 若 owner 命题过窄，扩大命题并删除被替代 proof；
 3. 若 observer 假绿，修 reader / matcher，自测 malformed 输入；
 4. 只有现有 owner 无法表达第二个独立错误算法时，才新增 proof；
-5. 在旧 bug 逆补丁上验证升级后的 proof 失败，在非契约扰动上仍通过。
+5. 补的区分 case 必须当场通过不可豁免的验收：在本 bug 的 fix parent 或最小历史逆补丁上必须失败，在非契约扰动上仍通过。杀不死这条历史 bug 就自动升级为覆盖命题审查，不允许带着假阴性的 case 收尾。
 
 每个 bug 一个回归测试的策略被禁止。历史 commit 可以登记到同一个 Behavior 的 `bugs`，不增加主证明数量。
+
+## Behavior 欠账
+
+半天到一天量级的完整 Behavior 流程无法与十分钟量级的 unit 补测正面竞争。新能力允许 unit 先行落地，条件是同批在 portfolio registry 清单里记一条显式 Behavior debt，声明尚缺的用户结果与预期何时补齐。
+
+一条静态守护断言 debt 条数不超过上限，且最老条目的存续天数不超过上限；超限即红。这把原本会下沉成影子测试分叉的缺口留在有红绿的台面上，不放任它无人认领地存在。
 
 ## Review 问题
 

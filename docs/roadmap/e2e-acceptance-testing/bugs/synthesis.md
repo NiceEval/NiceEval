@@ -65,7 +65,7 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 | Report compute contract | 三种可区分公式、failure reason 优先级、跨 experiment identity | 计算层最早失败；用户 E2E 只留一个代表组合题 |
 | runnable example census | 每个公开键 / flag 至少有一个真实 consumer case | 这是覆盖完整性，不是单个页面渲染行为 |
 | producer symbol closure | Report host 不加载第二份 record / locator 实现 | 防测试 recipe 自己选错入口制造假红假绿 |
-| Report target 结构 census | 最终 page 清单、`enumerate()`、内部链接与导出文件双向闭合 | 全量集合在计划层最早失败；浏览器只留 attempt / experiment / custom 代表 |
+| Report target 结构 census | 最终 page 清单、`enumerate()` / `planSite` 输出与 `docs/feature/reports/` 登记表双向全集比对、内部链接与导出文件双向闭合 | 全量集合在计划层最早失败；浏览器只留 attempt / experiment / custom 代表 |
 
 ### 仍需框架机制
 
@@ -125,8 +125,8 @@ radius。`duplicated matrix` 必须为 0；纯实现重构的 `net proof delta` 
 
 | 批次 | 内容 | 进入下一批的可判定标准 |
 |---|---|---|
-| 0：Portfolio 与验收器内核 | proof inventory、matrix owner、retirement audit、`world()`、`cli()`、`Observed`、失败阶段 | duplicated matrix 可检测；退役旧 proof 仍存在时必红；设施自测能区分 invoke / observe / outcome；无产品 E2E |
-| 1：便宜高收益 | 题 A1 进程 / pipe、A2 consumer matrix、A3 locator roundtrip | 三题当前版绿；对应旧 commit / 逆补丁红在预期阶段；化妆性扰动仍绿 |
+| 0：加固版 walking skeleton | 手写 prepare 脚本端到端落一条瘦版 `reports.target-closure`：脚本产出 manifest JSON，manifest 记录 fixture 目录与脚本内容 hash、candidate sha256，`world()` 读取时重算比对、失配拒绝读取；Playwright 原生动作词只准出现在单个 support 模块内，测试正文只调用领域函数名；hosting 仅 `directory-root` | CI path-filter 硬门禁与本批同批挂上；极简退役守护生效——一份签入 JSON 清单（Behavior id → 覆盖地面 → 待退役旧 proof 文件路径）配一条 vitest，清单中待退役文件仍存在即红；缺失 experiment 文档的逆补丁在 observe 阶段必红；冷跑成本读数落盘（`clean-url-subpath` 逆补丁归浏览器批次） |
+| 1：便宜高收益 | 题 A1 进程 / pipe、A2 consumer matrix、A3 locator roundtrip；三个真实消费者落地后提取并冻结 `WorldManifest` schema v1，冻结动作是写进 `docs/`，schema 含 digest 链字段（允许值 `"unhardened"`）；热缓存预算从本批起算 | 三题当前版绿；对应旧 commit / 逆补丁红在预期阶段；化妆性扰动仍绿；`WorldManifest` schema v1 已写入 `docs/` 且含 digest 链字段 |
 | 2：事件与计算 | A4 timeline、A6 artifact boundary、A7 Report semantics | 不用 sleep；每题至少区分两个错误实现；失败消息只靠公开身份定位 |
 | 3：浏览器 | A8 generic target / clean-url / enhancement / hot reload | target census 全集闭合；attempt / experiment / custom 三类代表可达；三种 hosting recipe 隔离；缺 DOM、网络 404、服务提前退分别可诊断；无公网 |
 | 4：高成本生命周期 | A5 外部 adapter identity、A9 cleanup ownership | pinned 外部输入；串行 lane；无论成功失败都执行异常清理；下一次运行证明无残留 |
