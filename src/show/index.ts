@@ -38,7 +38,7 @@ import { detectLocale, t } from "../i18n/index.ts";
 import { currentSample, filterExperiments } from "../sample/index.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
 import { panelCapabilityOf } from "../report/model/panel.ts";
-import { formatMetricValue, formatUSD, verdictMark } from "../report/model/format.ts";
+import { formatMetricValue, formatTimeDistance, formatUSD, verdictMark } from "../report/model/format.ts";
 import { renderAlignedRows, type ColumnAlign } from "../report/model/text-layout.ts";
 import {
   annotatedSourceResult,
@@ -396,7 +396,7 @@ async function renderCompareSlice(
     id: "compare",
     title: "Compare",
     navigation: true,
-    render: () => ({ type: Table, props: { data: deltaTableContent(data) } }),
+    render: () => ({ type: Table, props: { data: deltaTableContent(data, io.locale) } }),
   };
   const table = await renderHostPageText(
     page,
@@ -570,9 +570,10 @@ function usageMatrixCellOf(rows: readonly UsageResult[]): UsageMatrixCell {
   };
 }
 
-/** 一格的 7 列文案;`historical` 时在最后一列(成本)追加 `↩`——与 `DeltaTable` 把 `↩` 叠在
- *  同一格末尾同一条排版纪律(faces.ts `deltaConditionCellText`),不是新发明的标注位置。 */
-function usageMatrixCellText(cell: UsageMatrixCell, historical: boolean): string[] {
+/** 一格的 7 列文案;`staleSinceMs` 在场时在最后一列(成本)追加相对时距(experiment-table.md
+ *  「时效不写字」——时距是这一格的数据,不是叠加的装饰符号),与 `DeltaTable` 的历史执行标注
+ *  同一条排版纪律、同一份 `formatTimeDistance` 入口。 */
+function usageMatrixCellText(cell: UsageMatrixCell, staleSinceMs: number | undefined): string[] {
   const cost = cell.costUSD !== undefined ? formatUSD(cell.costUSD) : MISSING_MARK;
   return [
     cell.turns !== undefined ? String(cell.turns) : MISSING_MARK,
@@ -581,15 +582,15 @@ function usageMatrixCellText(cell: UsageMatrixCell, historical: boolean): string
     cell.cacheRead !== undefined ? formatMetricValue(cell.cacheRead) : MISSING_MARK,
     cell.out !== undefined ? formatMetricValue(cell.out) : MISSING_MARK,
     cell.requests !== undefined ? String(cell.requests) : MISSING_MARK,
-    historical ? `${cost} ↩` : cost,
+    staleSinceMs !== undefined ? `${cost} ${formatTimeDistance(staleSinceMs)}` : cost,
   ];
 }
 
 /**
  * `--usage` 在对照范围(`--exp` 出现两次以上)下的逐 eval 用量矩阵
  * (docs/feature/reports/show/usage.md「范围化的用量表」)。配对身份、缺席占位、跨快照携带的
- * `↩` 时效标注,复用 `deltaTableData` 已经算好的这份判定——与 `renderCompareSlice` 消费同一次
- * 计算(条件解析、eval id 配对、watermark/carried 派生的 `historical`),不重新实现一遍;这个
+ * 相对时距标注,复用 `deltaTableData` 已经算好的这份判定——与 `renderCompareSlice` 消费同一次
+ * 计算(条件解析、eval id 配对、watermark/carried 派生的 `historical`/`staleSinceMs`),不重新实现一遍;这个
  * pivot 只在它之上叠一层用量字段的逐条件合计,数据源是 `usageRowsOf` 已有的逐 attempt 行,按
  * experimentId + evalId 分组求和。每个条件一组 7 列(`USAGE_MATRIX_METRIC_COLUMNS`),缺席
  * 条件整组落 `—`。
@@ -618,7 +619,7 @@ async function renderUsageCompareSlice(
       const deltaCell = row.cells[condition];
       if (!deltaCell) return USAGE_MATRIX_METRIC_COLUMNS.map(() => MISSING_MARK);
       const usageCell = usageMatrixCellOf(byConditionByEval.get(`${condition}\u0000${row.key}`) ?? []);
-      return usageMatrixCellText(usageCell, deltaCell.historical);
+      return usageMatrixCellText(usageCell, deltaCell.historical ? deltaCell.staleSinceMs : undefined);
     });
     return [row.key, ...cellsText];
   });

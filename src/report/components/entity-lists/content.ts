@@ -37,7 +37,6 @@ const HEADER = {
   verdict: localizedMessage("experimentList.status"),
   result: localizedMessage("experimentList.result"),
   score: localizedMessage("experimentList.totalScore"),
-  coverage: localizedMessage("experimentList.coverage"),
 };
 
 /**
@@ -479,13 +478,35 @@ function coverageSegments(item: ExperimentListItem): { label: LocalizedText; cou
   }));
 }
 
-/** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows。 */
+/** 覆盖构成副行的 key 前缀;测试与消费方靠它把这一行从 Eval / 组行里筛出去。 */
+export const COVERAGE_ROW_PREFIX = "coverage:";
+
+/**
+ * 覆盖构成副行(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」):
+ * experiment 行 subRows 的最后一条,把已知题按结论出身分成四段互斥的构成格,交给中立的
+ * `composition` 格——渲染在同一个 `record` 列位置(与 Eval / Attempt 行的判定构成、占位行的
+ * missing 格同一个槽位,三种形态各自对应不同的行语义,不是同一行的三种读法)。
+ * 它不是 Eval / 组行,没有身份(entity 是 notApplicable),不参与嵌套排序或收起判定。
+ */
+function coverageRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
+  const bag: CellBag = {
+    entity: { kind: "notApplicable" },
+    record: { kind: "composition", segments: coverageSegments(item) },
+  };
+  return {
+    key: `${COVERAGE_ROW_PREFIX}${item.experimentId}`,
+    cells: projectCells(bag, view.columns),
+  };
+}
+
+/** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows,末尾追加覆盖构成副行。 */
 function experimentSubRows(item: ExperimentListItem, view: HierarchyView): TableContentRow[] {
   const members: LeafMember[] = [
     ...item.evalRows.map((row): LeafMember => ({ kind: "eval", row })),
     ...item.missingEvalIds.map((evalId): LeafMember => ({ kind: "missing", evalId })),
   ];
-  return nestLevel(members, "", "", item, view);
+  const nested = nestLevel(members, "", "", item, view);
+  return members.length > 0 ? [...nested, coverageRow(item, view)] : nested;
 }
 
 function experimentRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
@@ -499,9 +520,6 @@ function experimentRow(item: ExperimentListItem, view: HierarchyView): TableCont
     tokens: measureCell(item.tokens),
     costUSD: measureCell(item.costUSD),
     record: verdictCell(item.evalVerdicts),
-    // 覆盖构成是 experiment 这一行独有的事实(experiment-table.md「覆盖构成」),Eval / Attempt /
-    // 路径段组行没有这一格——projectCells 按列集自动填 notApplicable,不额外分支。
-    coverage: { kind: "composition", segments: coverageSegments(item) },
   };
   return {
     key: item.experimentId,
@@ -522,7 +540,6 @@ function experimentColumns(composition: EvaluationKindComposition): ColumnSpec[]
     { key: "tokens", better: "lower", header: HEADER.tokens },
     { key: "costUSD", better: "lower", header: HEADER.costUSD },
     { key: "record", header: HEADER.record },
-    { key: "coverage", header: HEADER.coverage },
   ];
 }
 

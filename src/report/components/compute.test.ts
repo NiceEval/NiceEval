@@ -18,7 +18,7 @@ import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
 import { makeSample } from "../../sample/index.ts";
 import { encodeAttemptLocator } from "../../record/locator.ts";
-import { experimentListContent } from "./entity-lists/content.ts";
+import { COVERAGE_ROW_PREFIX, experimentListContent } from "./entity-lists/content.ts";
 import { formatCellText, type Cell } from "../definition/cell.ts";
 import type { Record } from "../../record/types.ts";
 import {
@@ -844,10 +844,16 @@ describe("实体列表 data", () => {
       ]);
     }
 
+    /** experiment 行的覆盖构成副行(subRows 末尾,key 以 `coverage:` 起头)的 record 格。 */
+    function coverageCellOf(content: ReturnType<typeof experimentListContent>, experimentId: string): Cell {
+      const row = content.rows[0]!.subRows!.find((r) => r.key === `${COVERAGE_ROW_PREFIX}${experimentId}`)!;
+      return row.cells.record!;
+    }
+
     it("四段互斥且合计等于已知题数;一题同时有新执行与携带 attempt 时只落新执行段", async () => {
       const [item] = await experimentListData(compositionScope());
       const content = experimentListContent([item!]);
-      const coverageCell = content.rows[0]!.cells.coverage;
+      const coverageCell = coverageCellOf(content, "exp/composition");
       if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
       const byLabel = new Map(
         coverageCell.segments.map((segment) => [
@@ -867,7 +873,7 @@ describe("实体列表 data", () => {
       const s = snap({ experimentId: "exp/all-fresh", results: [res("q", "passed")] });
       const [item] = await experimentListData([s]);
       const content = experimentListContent([item!]);
-      const coverageCell = content.rows[0]!.cells.coverage;
+      const coverageCell = coverageCellOf(content, "exp/all-fresh");
       if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
       expect(coverageCell.segments.filter((s) => s.count > 0)).toHaveLength(1);
       expect(formatCellText(coverageCell, "en")).toBe("1 fresh");
@@ -877,7 +883,7 @@ describe("实体列表 data", () => {
     it("段名走 LocalizedText:zh-CN 与 en 取同一份 segments,只有文案不同,计数与段序逐字相同", async () => {
       const [item] = await experimentListData(compositionScope());
       const content = experimentListContent([item!]);
-      const coverageCell = content.rows[0]!.cells.coverage;
+      const coverageCell = coverageCellOf(content, "exp/composition");
       if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
       const en = formatCellText(coverageCell, "en");
       const zh = formatCellText(coverageCell, "zh-CN");
@@ -886,13 +892,13 @@ describe("实体列表 data", () => {
       expect(coverageCell.segments.map((s) => s.count)).toEqual([1, 1, 1, 1]);
     });
 
-    it("构成格不携带业务语义:Eval / Attempt 行没有这一格(notApplicable),换一套无关段名照常渲染", async () => {
+    it("构成格不携带业务语义:它是 experiment 副行独有的格,换一套无关段名照常渲染,渲染面不认识段含义", async () => {
       const [item] = await experimentListData(compositionScope());
       const content = experimentListContent([item!]);
-      const evalRow = content.rows[0]!.subRows!.find((row) => row.key === "retry")!;
-      expect(evalRow.cells.coverage).toEqual({ kind: "notApplicable" });
-      const attemptRow = evalRow.subRows![0]!;
-      expect(attemptRow.cells.coverage).toEqual({ kind: "notApplicable" });
+      // 副行紧跟在 Eval / 组行之后,key 前缀把它与题目行区分开——它不是又一道 "retry" 之类的题。
+      const rowKeys = content.rows[0]!.subRows!.map((r) => r.key);
+      expect(rowKeys.at(-1)).toBe(`${COVERAGE_ROW_PREFIX}exp/composition`);
+      expect(rowKeys).toContain("retry");
 
       const arbitrarySegments: Cell = {
         kind: "composition",

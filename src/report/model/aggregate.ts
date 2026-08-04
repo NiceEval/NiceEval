@@ -19,6 +19,7 @@ import type {
   NumericAxis,
   ReportInput,
   SeriesInput,
+  StaleConclusionReference,
 } from "./types.ts";
 import { flagValueOf, labelValueOf, runConfigValueOf } from "./flag.ts";
 import { metricDisplay } from "./format.ts";
@@ -90,6 +91,31 @@ export function evalIdOf(item: Item): string {
  */
 export function historicalOf(item: Item): boolean {
   return item.attempt.carried || item.run.startedAt < item.watermark.startedAt;
+}
+
+/** 一个 ISO 时刻距渲染时刻(`Date.now()`)的毫秒数,恒不小于 0。 */
+export function msSince(iso: string): number {
+  return Math.max(0, Date.now() - Date.parse(iso));
+}
+
+/**
+ * 覆盖缺口 / 对照矩阵缺席格的「过期结论」参考(docs/feature/reports/components/summaries/
+ * experiment-table.md「覆盖缺口的两档占位行」、show/compare.md 同一套口径):候选已经是与
+ * 当前基准 configHash 不可比的那些,取其中最近一条;两个消费方(entity-lists 的占位行、
+ * DeltaTable 的缺席格)共用同一份「取最新」判据,不各自实现一遍。
+ */
+export function staleReferenceOf(candidates: readonly AttemptHandle[]): StaleConclusionReference | undefined {
+  if (candidates.length === 0) return undefined;
+  const newest = candidates.reduce((a, b) => ((a.result.startedAt ?? "") >= (b.result.startedAt ?? "") ? a : b));
+  const startedAt = newest.result.startedAt;
+  if (!startedAt) return undefined; // 无时刻的 legacy 落盘算不出时距,不伪造参考
+  return {
+    locator:
+      newest.locator ??
+      encodeAttemptLocator({ runId: newest.run.runId, evalId: newest.evalId, attempt: newest.result.attempt }),
+    verdict: newest.result.verdict,
+    staleSinceMs: msSince(startedAt),
+  };
 }
 
 /** 快照键:"<experimentId> @ <startedAt>"("run" 维度与手挑快照数组的对比用)。 */

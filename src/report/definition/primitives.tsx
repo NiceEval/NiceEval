@@ -870,11 +870,16 @@ function renderCellWeb(
         );
       }
       const verdict = cell.verdict ?? "skipped";
+      const stale = cell.staleSinceMs !== undefined;
       // 判定符走 verdictMark 单源,与 locator 格同一张表(errored 是 `!`,不并到 `✗`)。
       return (
-        <span className={`niceeval-verdict niceeval-verdict-${verdict}`}>
-          {verdictMark(verdict === "skipped" ? "skipped" : verdict)}{" "}
-          {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "skipped" : verdict}`)}
+        <span
+          className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`, stale ? "niceeval-stale" : undefined)}
+          title={stale ? localeText(ctx.locale, "experimentList.historicalTooltip") : undefined}
+        >
+          {verdictMark(verdict === "skipped" ? "skipped" : verdict)}
+          {!cell.bare ? <>{" "}{localeText(ctx.locale, `verdict.${verdict === "skipped" ? "skipped" : verdict}`)}</> : null}
+          {stale ? <span className="niceeval-stale-distance">{formatTimeDistance(cell.staleSinceMs!, ctx.locale)}</span> : null}
         </span>
       );
     }

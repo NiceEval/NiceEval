@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MetricValue } from "../../model/types.ts";
-import { attemptListContent, evalListContent, experimentListContent } from "./content.ts";
+import { attemptListContent, COVERAGE_ROW_PREFIX, evalListContent, experimentListContent } from "./content.ts";
 import type { Cell, TableContentRow } from "../../definition/cell.ts";
 import { resolveLocalizedText } from "../../model/locale.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
@@ -105,6 +105,11 @@ function entityText(cell: Cell | undefined): string {
   return "";
 }
 
+/** experiment 行的 subRows 排除末尾的覆盖构成副行,只留 Eval / 组行(Eval 分组层的断言面)。 */
+function realSubRows(row: TableContentRow): TableContentRow[] {
+  return (row.subRows ?? []).filter((r) => !r.key.startsWith(COVERAGE_ROW_PREFIX));
+}
+
 describe("experimentListContent Eval 分组层", () => {
   it("按目录前缀分区:组行带聚合读数,子行去掉前缀但 key 仍是完整 evalId", () => {
     const content = experimentListContent([
@@ -118,7 +123,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     expect(sub.map((row) => row.variant)).toEqual(["group", "group"]);
     expect(sub.map((row) => row.key)).toEqual(["group:downshift", "group:weather"]);
     // 两组通过率都是 50%,按 groupKey 字典序收口
@@ -145,7 +150,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     expect(sub.every((row) => row.variant !== "group")).toBe(true);
     expect(sub.map((row) => row.key)).toEqual(["algebra/retry", "algebra/simple"]);
     expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["algebra/retry", "algebra/simple"]);
@@ -161,7 +166,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     expect(sub.every((row) => row.variant !== "group")).toBe(true);
     expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["algebra/retry", "weather/tool"]);
   });
@@ -177,7 +182,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     expect(sub.map((row) => row.key)).toEqual(["group:downshift", "standalone"]);
     expect(sub[0]!.variant).toBe("group");
     expect(sub[1]!.variant).toBeUndefined();
@@ -197,7 +202,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: ["weather/gap", "ghost/a", "ghost/b"],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     // weather 有 2 道实题 + 1 占位 → 保留组;ghost 两道全缺失也保留组
     expect(sub.map((row) => row.key)).toEqual(["group:weather", "group:ghost"]);
 
@@ -295,7 +300,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     // 顶层只有 pkg → 剥壳;下层 sub/other 各两题 → 插组
     expect(sub.map((row) => row.key)).toEqual(["group:pkg/other", "group:pkg/sub"]);
     expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["other (2 evals)", "sub (2 evals)"]);
@@ -314,7 +319,7 @@ describe("experimentListContent Eval 分组层", () => {
         missingEvalIds: [],
       }),
     ]);
-    const sub = content.rows[0]!.subRows!;
+    const sub = realSubRows(content.rows[0]!);
     expect(sub.every((row) => row.variant !== "group")).toBe(true);
     expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["111/111/aaa", "111/111/bbb"]);
   });

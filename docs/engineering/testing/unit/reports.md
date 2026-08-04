@@ -203,6 +203,13 @@ const scope = reportScopeFixture({
 - **`formatTimeDistance` 的读法与导出面** （[契约](../../../feature/reports/library/presentation.md#相对时距是数据不是文案)）：断言面是函数返回值。
   四个区间各一条，`en` 与 `zh-CN` 各取一条代表场景；不足一个单位的时长取一个单位，不打零。
   区分力场景是 90 分钟——只有按区间分派才区别于恒定按天取整的 `1d`。
+- **对照矩阵的时效与过期结论参考** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
+  逐项覆盖：
+
+  - `DeltaCell.historical` 为 true 时带 `staleSinceMs`（同一格内折叠多条历史执行时取最旧一条的距今毫秒数），text 面经 `formatTimeDistance` 投影出相对时距，不再是布尔叠加 `↩` 符号。
+  - 缺席格（该条件下这道题没有 attempt）带过期结论参考时，`DeltaData.rows[i].references[condition]` 给出那次判定的判定符、locator 与相对时距；参考取该题 `historyAttempts` 里与该 experiment 当前基准 configHash 不可比的最近一条判定，候选多于一条时取最新那条，口径与 experiment-table 两档占位行一致。CLI text 面在该格落 `—` 后接参考的判定符与时距（compare.md 的 `— ✓ 12d` 形态）；逐字节对齐该行其余空白列不在断言面里，只断言这三个信息片段都出现且顺序正确。
+  - 参考不进 `汇总`、`Δ` 与配对覆盖三处聚合的任何一个数。区分力场景是「参考侧有更优判定」——把参考计入聚合的错误实现会在汇总格露馅（汇总的通过数/分母、`Δ` 与共同题计数都必须与没有这条参考时逐字相同）。
+  - `--usage` 对照矩阵与 `renderCompareSlice` 的 text 输出不出现 `↩`；historical 格与缺席参考格的信息片段（判定符、时距、tokens、成本）经 `formatMetricValue`/`formatTimeDistance` 正确格式化，不落原始数字字符串。
 - **`formatInstant` 的读法与回落** （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：断言面是函数返回值。
   覆盖 ISO 折到分钟的人读时间（不含原样 ISO 片段）、不可解析输入原样返回，以及它从 `niceeval/report` 与 `niceeval/report/react` 同引用导出。
    Attempt 摘要格实际调用了哪个入口是渲染产物，归 [E2E 报告域](../e2e/report.md)。

@@ -275,6 +275,8 @@ export interface DeltaCell {
   totalCostUSD?: number;
   /** true 时该格来自跨快照携带的历史执行(时效标注见 experiment-table.md「时效不写字」)。 */
   historical: boolean;
+  /** `historical` 为 true 时,距今的毫秒数(渲染时刻起算);新执行时省略,不伪造 0。 */
+  staleSinceMs?: number;
 }
 
 export interface DeltaData {
@@ -292,6 +294,12 @@ export interface DeltaData {
     cells: globalThis.Record<string, DeltaCell>;
     /** 键是非基准条件值;任一侧缺数据时无键——delta 不把缺失当 0。 */
     delta?: globalThis.Record<string, { score?: number; tokens?: number; costUSD?: number }>;
+    /**
+     * 键是条件值,只在该条件缺席这道题(`cells` 无键)且记录里存在不可比历史判定时才有条目
+     * (docs/feature/reports/show/compare.md「— ✓ 12d」);它不进 `totals`、`delta` 与配对覆盖的
+     * 任何一个数,只提供 locator 下钻。
+     */
+    references?: globalThis.Record<string, StaleConclusionReference>;
   }>;
   /** 各条件自身覆盖面的描述,分母是该条件有结果的 eval 数;不用于跨条件直接归因。 */
   totals: globalThis.Record<

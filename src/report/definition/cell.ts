@@ -37,6 +37,10 @@ export type Cell =
       readonly refs?: readonly AttemptLocator[];
       // 两种形态:counts = 判定构成计票(experiment / Eval 行);verdict = 单判定(attempt 行)。
       // 格子只带值,计票怎么来的(折叠、分桶)在实体投影侧,渲染面不算数。
+      /** 单判定形态历史执行的距今毫秒数;新执行时省略,不伪造 0(与 locator 格同一条纪律)。 */
+      readonly staleSinceMs?: number;
+      /** 单判定形态省略判定词、只留判定符(如对照矩阵逐格只放得下一个符号的场景)。 */
+      readonly bare?: boolean;
     }
   | { readonly kind: "score"; readonly earned: number; readonly possible?: number }
   | { readonly kind: "summary"; readonly text: string; readonly more?: number }
@@ -138,8 +142,11 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       }
       if (cell.verdict !== undefined) {
         const v = cell.verdict === "skipped" ? "skipped" : cell.verdict;
+        const stale = cell.staleSinceMs !== undefined ? ` ${formatTimeDistance(cell.staleSinceMs, loc)}` : "";
         // 判定符与判定词同场,与 locator 格、web 面同一条纪律:单色打印下照样读得出。
-        return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}`;
+        // bare 省略判定词,只留判定符(+ 可选时距),供逐格空间紧张的场景(如对照矩阵)使用。
+        if (cell.bare) return `${verdictMark(v)}${stale}`;
+        return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}${stale}`;
       }
       return "—";
     }

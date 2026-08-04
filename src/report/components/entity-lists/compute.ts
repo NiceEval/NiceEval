@@ -18,7 +18,6 @@ import type {
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
 import type { AttemptHandle, Run } from "../../../record/types.ts";
-import { encodeAttemptLocator } from "../../../record/locator.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
 import { foldEvalVerdict } from "../../../shared/verdict.ts";
 import {
@@ -30,7 +29,9 @@ import {
   groupItems,
   historicalOf,
   locatorOf,
+  msSince,
   resolveInput,
+  staleReferenceOf,
   type Item,
 } from "../../model/aggregate.ts";
 import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
@@ -95,14 +96,9 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     costUSD: attemptCostUSD(result),
     startedAt,
     historical,
-    ...(historical ? { staleSinceMs: staleSinceMsOf(startedAt) } : {}),
+    ...(historical ? { staleSinceMs: msSince(startedAt) } : {}),
     locator: locatorOf(item),
   };
-}
-
-/** 一个 ISO 时刻距渲染时刻(`Date.now()`)的毫秒数,恒不小于 0。 */
-function staleSinceMsOf(startedAtIso: string): number {
-  return Math.max(0, Date.now() - Date.parse(startedAtIso));
 }
 
 /**
@@ -238,18 +234,8 @@ function staleReferencesFor(
   }
   const out: globalThis.Record<string, StaleConclusionReference> = {};
   for (const [evalId, candidates] of candidatesByEval) {
-    const newest = candidates.reduce((a, b) =>
-      (a.result.startedAt ?? "") >= (b.result.startedAt ?? "") ? a : b,
-    );
-    const startedAt = newest.result.startedAt;
-    if (!startedAt) continue; // 无时刻的 legacy 落盘算不出时距,不伪造参考
-    out[evalId] = {
-      locator:
-        newest.locator ??
-        encodeAttemptLocator({ runId: newest.run.runId, evalId: newest.evalId, attempt: newest.result.attempt }),
-      verdict: newest.result.verdict,
-      staleSinceMs: staleSinceMsOf(startedAt),
-    };
+    const reference = staleReferenceOf(candidates);
+    if (reference) out[evalId] = reference;
   }
   return out;
 }

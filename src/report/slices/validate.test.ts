@@ -173,6 +173,35 @@ describe("validateDeltaData", () => {
     const bad = { ...valid, pairedDelta: { "agents-md": { commonEvalIds: "coding/a" } } };
     expect(validateDeltaData(bad)).toMatch(/"pairedDelta\.agents-md\.commonEvalIds"/);
   });
+
+  it("cells.<condition>.staleSinceMs 非数字报错;rows[i].references 缺 verdict 定位到该条件", () => {
+    const badStale = {
+      ...valid,
+      rows: [{ ...valid.rows[0], cells: { ...valid.rows[0].cells, baseline: { ...validDeltaCell, staleSinceMs: "2d" } } }],
+    };
+    expect(validateDeltaData(badStale)).toMatch(/"rows\[0\]\.cells\.baseline\.staleSinceMs"/);
+
+    const badReference = {
+      ...valid,
+      rows: [{ ...valid.rows[0], references: { baseline: { locator: "@1abcdef2", staleSinceMs: 1000 } } }],
+    };
+    expect(validateDeltaData(badReference)).toMatch(/"rows\[0\]\.references\.baseline\.verdict"/);
+  });
+
+  it("rows[i].references 合规时通过", () => {
+    const withReference = {
+      ...valid,
+      rows: [
+        {
+          key: "coding/b",
+          flipped: false,
+          cells: {},
+          references: { baseline: { locator: "@1abcdef2", verdict: "passed", staleSinceMs: 1_036_800_000 } },
+        },
+      ],
+    };
+    expect(validateDeltaData(withReference)).toBeNull();
+  });
 });
 
 describe("validateStabilityMatrixData", () => {

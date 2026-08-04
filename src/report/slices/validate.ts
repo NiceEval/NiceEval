@@ -91,6 +91,15 @@ function deltaCellProblem(value: unknown, path: string): string | null {
   if (value.totalTokens !== undefined && typeof value.totalTokens !== "number") return `"${path}.totalTokens" must be a number`;
   if (value.totalCostUSD !== undefined && typeof value.totalCostUSD !== "number") return `"${path}.totalCostUSD" must be a number`;
   if (typeof value.historical !== "boolean") return `"${path}.historical" must be a boolean`;
+  if (value.staleSinceMs !== undefined && typeof value.staleSinceMs !== "number") return `"${path}.staleSinceMs" must be a number`;
+  return null;
+}
+/** 缺席格的过期结论参考(与 experiment-table 占位行同一份 StaleConclusionReference 形状)。 */
+function staleReferenceProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an object { locator, verdict, staleSinceMs }`;
+  if (typeof value.locator !== "string") return `"${path}.locator" must be a string`;
+  if (typeof value.verdict !== "string") return `"${path}.verdict" must be a string`;
+  if (typeof value.staleSinceMs !== "number") return `"${path}.staleSinceMs" must be a number`;
   return null;
 }
 function deltaTotalsProblem(value: unknown, path: string): string | null {
@@ -146,6 +155,13 @@ export const validateDeltaData: Validator = (data) => {
         if (d.score !== undefined && typeof d.score !== "number") return `"${path}.delta.${condition}.score" must be a number`;
         if (d.tokens !== undefined && typeof d.tokens !== "number") return `"${path}.delta.${condition}.tokens" must be a number`;
         if (d.costUSD !== undefined && typeof d.costUSD !== "number") return `"${path}.delta.${condition}.costUSD" must be a number`;
+      }
+    }
+    if (row.references !== undefined) {
+      if (!isObject(row.references)) return `"${path}.references" must be an object`;
+      for (const [condition, reference] of Object.entries(row.references)) {
+        const problem = staleReferenceProblem(reference, `${path}.references.${condition}`);
+        if (problem !== null) return problem;
       }
     }
     return null;
