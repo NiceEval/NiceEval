@@ -70,13 +70,6 @@ export interface DockerComposeSandboxOptions {
     globalThis.Record<string, { readonly value: string; readonly revision?: string }>
   >;
   readonly lifetimeMs?: number;
-  /**
-   * 按序前置到受管 `PATH` 的目录;作用于本 Sandbox 内全部受管命令(agent 进程、两层 prepare、
-   * ensure/install),hooks 与子进程自然继承。PATH 本身是受管变量,不接受经 `env` 覆盖——
-   * 需要扩展 PATH 用这个字段(见 docs/feature/sandbox/library.md「PATH:受管变量与
-   * pathPrepend」)。省略 = 不改 PATH。
-   */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface DockerfileSandboxOptions {
@@ -86,8 +79,6 @@ export interface DockerfileSandboxOptions {
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用构建出的镜像 `USER`。 */
   readonly user?: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface DockerImageSandboxOptions {
@@ -95,8 +86,6 @@ export interface DockerImageSandboxOptions {
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)。 */
   readonly user?: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface E2BSandboxOptions {
@@ -104,21 +93,15 @@ export interface E2BSandboxOptions {
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
   readonly user?: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface VercelSandboxOptions {
   readonly snapshotId: string;
   readonly lifetimeMs?: number;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface LocalSandboxOptions {
   readonly dir?: string;
-  /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
-  readonly pathPrepend?: readonly string[];
 }
 
 export interface CustomProviderSandboxOptions {
@@ -583,13 +566,6 @@ function nonEmptyString(value: unknown, path: string): string {
   return value;
 }
 
-/** `pathPrepend`:省略即空;否则必须是非空字符串数组,按声明顺序前置到受管 PATH。 */
-function pathPrependList(value: unknown, path: string): readonly string[] {
-  if (value === undefined) return Object.freeze([]);
-  if (!Array.isArray(value)) throw new TypeError(`${path} must be an array of strings`);
-  return Object.freeze(value.map((entry, index) => nonEmptyString(entry, `${path}[${index}]`)));
-}
-
 function location(value: unknown, path: string): SandboxLocation {
   if (value instanceof URL) return Object.freeze({ _tag: "Url", value: value.href });
   return Object.freeze({ _tag: "Path", value: nonEmptyString(value, path) });
@@ -835,7 +811,6 @@ export interface DockerComposeProviderPlan {
   readonly env: Readonly<Record<string, string>>;
   readonly collection: ComposeBuildCollection;
   readonly lifetime: SandboxProviderLifetime;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface DockerfileProviderPlan {
@@ -847,32 +822,27 @@ export interface DockerfileProviderPlan {
   readonly buildKey: BuildKey;
   readonly platform: string;
   readonly lifetime: SandboxProviderLifetime;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface DockerImageProviderPlan {
   readonly image: string;
   readonly user: SandboxExecutionUser;
   readonly lifetime: SandboxProviderLifetime;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface E2BProviderPlan {
   readonly template: string;
   readonly user: SandboxExecutionUser;
   readonly lifetime: SandboxProviderLifetime;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface VercelProviderPlan {
   readonly snapshotId: string;
   readonly lifetime: SandboxProviderLifetime;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface LocalProviderPlan {
   readonly directory: string;
-  readonly pathPrepend: readonly string[];
 }
 
 export interface CustomProviderPlan {
@@ -1036,7 +1006,7 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerComposeSandbox options");
       assertOnlyKeys(
         options,
-        ["file", "workspaceService", "build", "user", "env", "credentialEnv", "lifetimeMs", "pathPrepend"],
+        ["file", "workspaceService", "build", "user", "env", "credentialEnv", "lifetimeMs"],
         "dockerComposeSandbox options",
       );
       if (options.build !== undefined && options.build !== "on-demand" && options.build !== "prebuilt") {
@@ -1064,7 +1034,6 @@ export function createBuiltinSandboxFactories(
         ...Object.fromEntries(Object.entries(credentialEnv).map(([name, credential]) => [name, credential.value])),
       };
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerComposeSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "dockerComposeSandbox options.pathPrepend");
       const identity: JsonValue = {
         provider: "docker",
         kind: "compose",
@@ -1075,7 +1044,6 @@ export function createBuiltinSandboxFactories(
         env: { ...env },
         credentialEnv: credentialIdentity,
         lifetime: plannedLifetime,
-        pathPrepend,
       };
       return defineSandboxTemplate({
         provider: "docker",
@@ -1087,7 +1055,6 @@ export function createBuiltinSandboxFactories(
           envKeys: Object.keys(env).sort(),
           credentialEnv: credentialIdentity,
           lifetime: plannedLifetime,
-          pathPrepend,
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Compose", file, workspaceService },
@@ -1109,7 +1076,6 @@ export function createBuiltinSandboxFactories(
             env: { ...env },
             credentialEnv: credentialIdentity,
             lifetime: plannedLifetime,
-            pathPrepend,
             plannedBuildKeys: [...collection.buildKeys].sort(),
             plannedCaseIdentityDigest: digestOf(caseIdentity),
           };
@@ -1138,7 +1104,6 @@ export function createBuiltinSandboxFactories(
               env: Object.freeze({ ...runtimeEnv }),
               collection,
               lifetime: plannedLifetime,
-              pathPrepend,
             }),
             publishableIdentity: {
               workspaceService,
@@ -1147,7 +1112,6 @@ export function createBuiltinSandboxFactories(
               envKeys: Object.keys(env).sort(),
               credentialEnv: credentialIdentity,
               lifetime: plannedLifetime,
-              pathPrepend,
               ...(caseIdentity as Record<string, JsonValue>),
             },
             privateFingerprintIdentity: {
@@ -1169,7 +1133,7 @@ export function createBuiltinSandboxFactories(
 
     dockerfileSandbox(options: DockerfileSandboxOptions) {
       assertRecord(options, "dockerfileSandbox options");
-      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "user", "lifetimeMs", "pathPrepend"], "dockerfileSandbox options");
+      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "user", "lifetimeMs"], "dockerfileSandbox options");
       const context = location(options.context, "dockerfileSandbox options.context");
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
@@ -1179,7 +1143,6 @@ export function createBuiltinSandboxFactories(
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerfileSandbox options.user") };
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "dockerfileSandbox options.pathPrepend");
       const identity: JsonValue = {
         provider: "docker",
         kind: "dockerfile",
@@ -1188,7 +1151,6 @@ export function createBuiltinSandboxFactories(
         buildArgs: { ...buildArgs },
         user,
         lifetime: plannedLifetime,
-        pathPrepend,
       };
       return defineSandboxTemplate({
         provider: "docker",
@@ -1197,7 +1159,6 @@ export function createBuiltinSandboxFactories(
           buildArgKeys: Object.keys(buildArgs).sort(),
           user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
           lifetime: plannedLifetime,
-          pathPrepend,
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
@@ -1219,7 +1180,6 @@ export function createBuiltinSandboxFactories(
             user,
             plannedBuildKey: build.buildKey,
             lifetime: plannedLifetime,
-            pathPrepend,
           };
           return sandboxProviderPlan({
             provider: "docker",
@@ -1243,14 +1203,12 @@ export function createBuiltinSandboxFactories(
               buildKey: build.buildKey,
               platform: plannedTargetPlatform(target),
               lifetime: plannedLifetime,
-              pathPrepend,
             }),
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
               user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
               buildKey: build.buildKey,
               lifetime: plannedLifetime,
-              pathPrepend,
             },
             privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey, lifetime: plannedLifetime },
             identityMarker: build.providerIdentityMarker,
@@ -1268,19 +1226,18 @@ export function createBuiltinSandboxFactories(
 
     dockerImageSandbox(options: DockerImageSandboxOptions) {
       assertRecord(options, "dockerImageSandbox options");
-      assertOnlyKeys(options, ["image", "user", "lifetimeMs", "pathPrepend"], "dockerImageSandbox options");
+      assertOnlyKeys(options, ["image", "user", "lifetimeMs"], "dockerImageSandbox options");
       const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerImageSandbox options.user") };
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "dockerImageSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "docker", kind: "image", image, user, lifetime: plannedLifetime, pathPrepend };
+      const identity: JsonValue = { provider: "docker", kind: "image", image, user, lifetime: plannedLifetime };
       const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
-        publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime, pathPrepend },
+        publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
@@ -1295,11 +1252,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "docker-image-1",
               buildKeys: [],
-              caseParams: { image, user, lifetime: plannedLifetime, pathPrepend },
+              caseParams: { image, user, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ image, user: Object.freeze({ ...user }), lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime, pathPrepend },
-            privateFingerprintIdentity: { image, user, lifetime: plannedLifetime, pathPrepend },
+            runtimePlan: Object.freeze({ image, user: Object.freeze({ ...user }), lifetime: plannedLifetime }),
+            publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime },
+            privateFingerprintIdentity: { image, user, lifetime: plannedLifetime },
             identityMarker: looksLikeDigestRef(image)
               ? undefined
               : unresolvedProviderFingerprintMarker(
@@ -1313,19 +1270,18 @@ export function createBuiltinSandboxFactories(
 
     e2bSandbox(options: E2BSandboxOptions) {
       assertRecord(options, "e2bSandbox options");
-      assertOnlyKeys(options, ["template", "user", "lifetimeMs", "pathPrepend"], "e2bSandbox options");
+      assertOnlyKeys(options, ["template", "user", "lifetimeMs"], "e2bSandbox options");
       const template = nonEmptyString(options.template, "e2bSandbox options.template");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "e2bSandbox options.user") };
       const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
       const plannedLifetime = lifetime(options.lifetimeMs, "e2bSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "e2bSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "e2b", kind: "template", template, user, lifetime: plannedLifetime, pathPrepend };
+      const identity: JsonValue = { provider: "e2b", kind: "template", template, user, lifetime: plannedLifetime };
       return defineSandboxTemplate({
         provider: "e2b",
         kind: "template",
-        publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, pathPrepend },
+        publishableIdentity: { user: publishedUser, lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
@@ -1340,11 +1296,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "e2b-template-1",
               buildKeys: [],
-              caseParams: { template, user, lifetime: plannedLifetime, pathPrepend },
+              caseParams: { template, user, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ template, user: Object.freeze({ ...user }), lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { user: publishedUser, lifetime: plannedLifetime, pathPrepend },
-            privateFingerprintIdentity: { template, user, lifetime: plannedLifetime, pathPrepend },
+            runtimePlan: Object.freeze({ template, user: Object.freeze({ ...user }), lifetime: plannedLifetime }),
+            publishableIdentity: { user: publishedUser, lifetime: plannedLifetime },
+            privateFingerprintIdentity: { template, user, lifetime: plannedLifetime },
           }));
         },
       });
@@ -1352,15 +1308,14 @@ export function createBuiltinSandboxFactories(
 
     vercelSandbox(options: VercelSandboxOptions) {
       assertRecord(options, "vercelSandbox options");
-      assertOnlyKeys(options, ["snapshotId", "lifetimeMs", "pathPrepend"], "vercelSandbox options");
+      assertOnlyKeys(options, ["snapshotId", "lifetimeMs"], "vercelSandbox options");
       const snapshotId = nonEmptyString(options.snapshotId, "vercelSandbox options.snapshotId");
       const plannedLifetime = lifetime(options.lifetimeMs, "vercelSandbox options.lifetimeMs");
-      const pathPrepend = pathPrependList(options.pathPrepend, "vercelSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "vercel", kind: "snapshot", snapshotId, lifetime: plannedLifetime, pathPrepend };
+      const identity: JsonValue = { provider: "vercel", kind: "snapshot", snapshotId, lifetime: plannedLifetime };
       return defineSandboxTemplate({
         provider: "vercel",
         kind: "snapshot",
-        publishableIdentity: { lifetime: plannedLifetime, pathPrepend },
+        publishableIdentity: { lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
@@ -1375,11 +1330,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "vercel-snapshot-1",
               buildKeys: [],
-              caseParams: { snapshotId, lifetime: plannedLifetime, pathPrepend },
+              caseParams: { snapshotId, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { lifetime: plannedLifetime, pathPrepend },
-            privateFingerprintIdentity: { snapshotId, lifetime: plannedLifetime, pathPrepend },
+            runtimePlan: Object.freeze({ snapshotId, lifetime: plannedLifetime }),
+            publishableIdentity: { lifetime: plannedLifetime },
+            privateFingerprintIdentity: { snapshotId, lifetime: plannedLifetime },
           }));
         },
       });
@@ -1387,19 +1342,18 @@ export function createBuiltinSandboxFactories(
 
     localSandbox(options: LocalSandboxOptions = {}) {
       assertRecord(options, "localSandbox options");
-      assertOnlyKeys(options, ["dir", "pathPrepend"], "localSandbox options");
+      assertOnlyKeys(options, ["dir"], "localSandbox options");
       const directory = options.dir === undefined
         ? Object.freeze({ _tag: "AuthorBaseDir" as const })
         : Object.freeze({
             _tag: "Configured" as const,
             value: nonEmptyString(options.dir, "localSandbox options.dir"),
           });
-      const pathPrepend = pathPrependList(options.pathPrepend, "localSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "local", kind: "directory", directory, pathPrepend };
+      const identity: JsonValue = { provider: "local", kind: "directory", directory };
       return defineSandboxTemplate({
         provider: "local",
         kind: "directory",
-        publishableIdentity: { directory: { _tag: directory._tag }, pathPrepend },
+        publishableIdentity: { directory: { _tag: directory._tag } },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: ({ authorBaseDir }) => {
@@ -1417,11 +1371,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "local-directory-1",
               buildKeys: [],
-              caseParams: { directory: configured, pathPrepend },
+              caseParams: { directory: configured },
             }),
-            runtimePlan: Object.freeze({ directory: configured, pathPrepend }),
-            publishableIdentity: { directory: { _tag: directory._tag }, pathPrepend },
-            privateFingerprintIdentity: { directory: configured, pathPrepend },
+            runtimePlan: Object.freeze({ directory: configured }),
+            publishableIdentity: { directory: { _tag: directory._tag } },
+            privateFingerprintIdentity: { directory: configured },
           }));
         },
       });
