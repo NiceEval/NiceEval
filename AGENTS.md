@@ -25,6 +25,7 @@
 - 保持 core 中立。具体边界以 [`docs/architecture.md`](docs/architecture.md) 为准。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
 - 需要新增仓库级机器守护时，优先写进 `test/` 下的 Vitest 测试，按验证对象放进 `test/unit/`、`test/docs/` 或 `test/docs-site/`（分别复用 `pnpm test`、`pnpm test:docs`、`pnpm test:docs-site`），不另造脚本、命令或 hook。
+- 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
 - 测试求质不求量：先声明后写测——测试只实现对应 Feature 测试文档「覆盖规范」已声明的类别，新类别先补文档条目再动手（[`docs/engineering/testing/unit/registry.md`](docs/engineering/testing/unit/registry.md)）；答不出「证明哪条契约、删了会放走哪类错误」的测试不写，同一场景的第二条测试是维护负担。
 
 ## Git 与协作安全
