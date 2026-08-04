@@ -46,6 +46,8 @@ import {
   resolveOutputForm,
   createFeedbackCoordinator,
   createNodeFeedbackIO,
+  createInputGuard,
+  createNodeInputGuardStdin,
   createHumanRenderer,
   createJsonRenderer,
   renderHumanDryPlan,
@@ -1588,6 +1590,7 @@ async function main(): Promise<void> {
     if (forcing) return;
     forcing = true;
     void (async () => {
+      inputGuard.stop();
       await Promise.all([coordinator.stopDynamic(), stopAllSandboxes()]);
       const settled = Promise.allSettled([
         ...(runInFlight ? [runInFlight] : []),
@@ -1624,10 +1627,26 @@ async function main(): Promise<void> {
         reportActivity(t("cli.forceCleanupExit").trimEnd());
         forceCleanupAndExit(130);
       } else {
+        inputGuard.stop();
         process.exit(130); // 第三次:硬退
       }
     });
   }
+
+  // live 面板期间的键盘接管与终端自愈(docs/feature/experiments/cli.md「键盘输入与画面自愈」):
+  // 只在 stdin/stderr 都是 TTY(human dashboard 真的在画)时接线;`\x03` 合成上面刚注册的
+  // SIGINT 事件,复用同一条中断路径,不在 input-guard 里重新实现一遍清理逻辑;SIGWINCH/回车
+  // 都走 coordinator.forceRedraw() 整帧重绘。process "exit" 兜底一层——显式收尾路径(见下)
+  // 之外的任何退出都不能把用户终端留在 raw mode。
+  const inputGuard = createInputGuard({
+    stdin: createNodeInputGuardStdin(),
+    stderrIsTTY: io.stderr.isTTY,
+    coordinator,
+    onInterrupt: () => {
+      process.emit("SIGINT");
+    },
+  });
+  process.once("exit", () => inputGuard.stop());
 
   // reporter 只剩正交的机器/artifact 出口:human/json 的展示完全由上面的 coordinator +
   // renderer 负责,不再有 Console/Live/Quiet 这类兼职当 reporter 的展示层(见 docs 的
@@ -1667,7 +1686,9 @@ async function main(): Promise<void> {
     runInFlight = inFlight;
     summary = await inFlight;
   } catch (e) {
-    // 真崩溃前先撤下 dashboard,不让半帧 ANSI 状态和下面 main().catch 打印的错误交织。
+    // 真崩溃前先撤下 dashboard,不让半帧 ANSI 状态和下面 main().catch 打印的错误交织;
+    // 同时释放键盘接管,不把终端留在 raw mode。
+    inputGuard.stop();
     await coordinator.stopDynamic();
     await sessionTracker.close({ status: "incomplete" }).catch(() => undefined);
     throw e;
@@ -1709,6 +1730,7 @@ async function main(): Promise<void> {
   );
   await sessionTracker.close({ status: completion.status, completion, paths: pathsByExperiment });
 
+  inputGuard.stop();
   await coordinator.finish({ summary, completion, paths, junit: junitPath });
 
   // 退出码统一走 CompletionStatus 驱动的语义(interrupted → 130、incomplete/required reporter

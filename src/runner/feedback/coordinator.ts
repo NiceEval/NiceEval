@@ -83,6 +83,14 @@ export interface FeedbackCoordinator extends FeedbackSink {
    */
   emit(event: RunFeedbackEvent): void;
   /**
+   * 键盘/终端自愈重绘的唯一入口(见 docs/feature/experiments/cli.md「键盘输入与画面自愈」):
+   * 清除动态区域后立即整帧重绘,绕过 renderer 自己的「同帧不写」判断——`input-guard.ts` 收到
+   * 回车或 SIGWINCH 时调用这个方法,而不是直接拿着 renderer 去调 clearDynamic/redrawDynamic:
+   * 这里经内部 `queue` 排队执行,与正常永久事件的 clear→append→redraw 三步共用同一条串行队列,
+   * 不会与它们交错写终端。只在 "active" 阶段(dashboard 存在)有意义;其它阶段静默 no-op。
+   */
+  forceRedraw(): void;
+  /**
    * 关闭顺序第 1-2 步:停止 tick 定时器、清空 dynamic 区域(见 docs「明确 sink 关闭顺序」)。
    * 之后 `diagnostic()`/`activity()` 仍可调用(reporter 收尾阶段可能还有诊断要报),但不会
    * 再触发 clearDynamic/redrawDynamic —— 只是纯追加,不会有 timer 再驱动一次重画。幂等:
@@ -188,6 +196,19 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     }
   }
 
+  function forceRedraw(): void {
+    if (phase !== "active") return; // 没有活跃 dashboard 可重绘(idle/dynamicStopped/finished)
+    const run = state;
+    queue.push(async () => {
+      try {
+        await renderer.clearDynamic?.();
+        await renderer.redrawDynamic?.(run);
+      } catch (e) {
+        onRendererError(e, "forceRedraw", undefined);
+      }
+    });
+  }
+
   function activity(text: string): void {
     if (!guardWritable()) return;
     const bracket = phase === "active"; // 同上,入队瞬间捕获。
@@ -231,6 +252,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       reason: input.reason,
       ...(input.assertion !== undefined ? { assertion: input.assertion } : {}),
       ...(input.phase !== undefined ? { phase: input.phase } : {}),
+      ...(input.code !== undefined ? { code: input.code } : {}),
       ...(input.origin !== undefined ? { origin: input.origin } : {}),
     });
   }
@@ -410,6 +432,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     },
     start,
     emit,
+    forceRedraw,
     activity,
     diagnostic,
     interrupted,

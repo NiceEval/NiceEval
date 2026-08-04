@@ -12,8 +12,18 @@ import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import { stringWidth } from "../../report/model/text-layout.ts";
 import { en } from "../../i18n/en.ts";
 import { zhCN } from "../../i18n/zh-CN.ts";
-import type { DurableFeedbackEvent, InvocationCompletion, InvocationSummary, RunFeedbackPlan, RunFeedbackState } from "../types.ts";
+import { t } from "../../i18n/index.ts";
+import type {
+  DiagnosticNotice,
+  DurableFeedbackEvent,
+  FailureNotice,
+  InvocationCompletion,
+  InvocationSummary,
+  RunFeedbackPlan,
+  RunFeedbackState,
+} from "../types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
+import type { PrimaryAssertionSummary } from "../../assertions/types.ts";
 
 function locator(raw: string): AttemptLocator {
   return raw as AttemptLocator;
@@ -251,6 +261,30 @@ describe("live dashboard — 接线到 panel.ts", () => {
     expect(plain).toMatch(/├─ ACTIVE ─+┤/);
     expect(plain).toMatch(/╰─+ \$0\.84\d* ─╯/);
     expect(plain).toContain("memory/agent-029-use-cac".slice(0, 10)); // 身份列可能因窄宽被截断,只核对前缀
+  });
+
+  // cases: docs/engineering/testing/unit/experiments-runner.md「live 面板的键盘接管与自愈重绘」——
+  // 区分力:回车重绘必须在 lastFrameText 未变化时也真的写出一帧。input-guard.ts 收到回车/
+  // SIGWINCH 时经 coordinator.forceRedraw() 调用 clearDynamic() → redrawDynamic(state),
+  // clearDynamic() 把 lastFrameText 置 undefined,天然绕过「真实内容没变化就不写」的判断。
+  it("clearDynamic() 之后重新 redrawDynamic(相同 state)仍然真的写出一帧,不被「同帧不写」吞掉", () => {
+    const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 100, rows: 30 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
+    const state: RunFeedbackState = { ...createInitialRunFeedbackState(), total: 45, reused: 6, running: 19, queued: 20 };
+
+    renderer.redrawDynamic?.(state);
+    const firstWriteCount = stderr.writes.length;
+    expect(firstWriteCount).toBeGreaterThan(0);
+
+    // 同一份 state 再画一次:内容没变化,正常应该被「同帧不写」吞掉,写入次数不增长。
+    renderer.redrawDynamic?.(state);
+    expect(stderr.writes.length).toBe(firstWriteCount);
+
+    // 回车手势:先 clearDynamic()(重置 lastFrameText),再用同一份 state 重画——这次必须
+    // 真的写出新的一帧,而不是被同帧判断挡住。
+    renderer.clearDynamic?.();
+    renderer.redrawDynamic?.(state);
+    expect(stderr.writes.length).toBeGreaterThan(firstWriteCount);
   });
 
   it("非 TTY(append-only 变体)不产生任何框字符——同一 renderDurableLines 但走 plain 能力", () => {
@@ -767,33 +801,22 @@ describe("诊断行:标题是「阶段标签 · code」,止损闸落闸是一行
     expect(lines![1]).toContain("took over a stale lock");
   });
 
-  it("同一 key 再次出现时标题带 ×N 折叠计数(非止损闸诊断保持既有形态)", () => {
+  it("同一 key 再次出现时人读运行中流静默:只有首次完整打印两行(见 cli.md「什么动态更新,什么逐条追加」)", () => {
     const rounds = replayDiagnostic(
       { type: "diagnostic", at: 0, key: "memory-warmup-degraded", severity: "warning", message: "cold index" },
       3,
     );
-    expect(rounds[0]![0]).toBe("! memory-warmup-degraded");
-    expect(rounds[2]![0]).toBe("! memory-warmup-degraded (3 attempts)");
+    expect(rounds[0]).toEqual(["! memory-warmup-degraded", "  cold index"]);
+    expect(rounds[1]).toEqual([]);
+    expect(rounds[2]).toEqual([]);
   });
 
-  it("attempt 级诊断的标题是「阶段标签 · code」,阶段标签与失败行同一投影", () => {
-    // 失败行已有的 ` · <阶段标签>` 段是同一个投影的既有出口:拿它当参照,断言诊断行没有
-    // 另写一份阶段词表(不硬编码语言,en/zh-CN 两种 locale 下都成立)。
-    const failureLines = renderDurableLines(
-      {
-        type: "failure",
-        at: 0,
-        locator: locator("@1bwcxxiy"),
-        identity: { experimentId: "compare/codex", evalId: "memory/x", attempt: 1 },
-        who: "codex",
-        verdict: "errored",
-        reason: "boom",
-        phase: "sandbox.prepare",
-      },
-      createInitialRunFeedbackState(),
-      { mode: "plain", width: 100 },
-    );
-    const label = failureLines[0]!.split("\n")[0]!.split(" · ")[1]!;
+  it("attempt 级诊断的标题是「阶段标签 · code」,阶段标签走人读短语投影(不是原始 LifecyclePhase 字面量)", () => {
+    // 与失败行的 errored 信息段故意不同:诊断标题是给人读的散文,用 phaseLabel() 的翻译短语;
+    // 失败行的 `errored · <phase> · <code>` 是给人对照机器面的,用未翻译的原始字面量
+    // (见 buildErroredInfo 的注释)。这里直接取翻译值,不依赖失败行反推,不硬编码语言
+    // (en/zh-CN 两种 locale 下都成立)。
+    const label = t("feedback.phase.sandboxPrepare");
 
     const rounds = replayDiagnostic(
       {
@@ -807,11 +830,14 @@ describe("诊断行:标题是「阶段标签 · code」,止损闸落闸是一行
         identity: { experimentId: "compare/codex", evalId: "memory/x", attempt: 1 },
         data: { phase: "sandbox.prepare" },
       },
-      12,
+      3,
     );
-    expect(rounds[0]![0]).toBe(`! ${label} · memory-warmup-degraded`);
-    expect(rounds[11]![0]).toBe(`! ${label} · memory-warmup-degraded (12 attempts)`);
-    expect(rounds[11]![1]).toBe("  Memory warmup failed; continuing with a cold index");
+    expect(rounds[0]).toEqual([
+      `! ${label} · memory-warmup-degraded`,
+      "  Memory warmup failed; continuing with a cold index",
+    ]);
+    expect(rounds[1]).toEqual([]);
+    expect(rounds[2]).toEqual([]);
   });
 
   it("运行级诊断没有 phase:标题只有 code,不留空的 · 分隔符", () => {
@@ -861,6 +887,373 @@ describe("诊断行:标题是「阶段标签 · code」,止损闸落闸是一行
     );
     expect(rounds[0]).toEqual(["✗ eval halted: fixture db is empty; run scripts/seed.ts"]);
     expect(rounds.slice(1).flat()).toEqual([]);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 分区「失败的单行投影与 live FAILURES 分节」:契约见
+// docs/feature/experiments/cli.md#框线体裁 与 #运行中的-live-面板。
+describe("失败的单行投影与 live FAILURES 分节", () => {
+  // 没有 group 的原始 `equals(4)` 断言:matcher 与标题相同时省略 matcher 字段(见
+  // docs/feature/assertions/library/display.md「单行压缩形态」),单行压缩形态因此不带
+  // `gate:`/`soft:` 前缀——这是绝大多数无 `t.group(...)` 断言的常见形态,用它做单行投影的
+  // 默认 fixture 能直接对照 compactAssertionSummary 的字面输出,不需要在测试里重算前缀规则。
+  function assertionSummary(overrides: Partial<PrimaryAssertionSummary> = {}): PrimaryAssertionSummary {
+    return {
+      severity: "gate",
+      assertion: "equals(4)",
+      expected: "4",
+      received: "3",
+      additionalFailures: 0,
+      ...overrides,
+    };
+  }
+
+  function failureEvent(
+    overrides: Partial<DurableFeedbackEvent & { type: "failure" }> = {},
+  ): DurableFeedbackEvent & { type: "failure" } {
+    return {
+      type: "failure",
+      at: 0,
+      locator: locator("@1bwcxxiy"),
+      identity: { experimentId: "compare", evalId: "memory/x", attempt: 0 },
+      who: "codex",
+      verdict: "failed",
+      reason: "gate failed",
+      assertion: assertionSummary(),
+      ...overrides,
+    };
+  }
+
+  it("failed 单行投影是 ✗ @locator  evalId  [who]  单行压缩摘要", () => {
+    const state = { ...createInitialRunFeedbackState(), freshFailureCount: 1 };
+    const lines = renderDurableLines(failureEvent(), state, { mode: "plain", width: 300 });
+    expect(lines).toEqual(["✗ @1bwcxxiy  memory/x  [codex]  equals(4) · expected 4 · received 3"]);
+  });
+
+  it("errored(没有主断言摘要的结构化执行错误)单行投影是 errored · <原始 phase 字面量> · <code>,余量够再接 message", () => {
+    const state = { ...createInitialRunFeedbackState(), freshFailureCount: 1 };
+    const event = failureEvent({
+      verdict: "errored",
+      assertion: undefined,
+      reason: "allocation failed",
+      phase: "sandbox.create",
+      code: "sandbox-rate-limit",
+    });
+    const lines = renderDurableLines(event, state, { mode: "plain", width: 300 });
+    expect(lines).toEqual([
+      "✗ @1bwcxxiy  memory/x  [codex]  errored · sandbox.create · sandbox-rate-limit: allocation failed",
+    ]);
+  });
+
+  it("errored 且是 assertion-unavailable 造成的(有主断言摘要)时走断言摘要投影,不套 errored · phase · code 语法", () => {
+    const state = { ...createInitialRunFeedbackState(), freshFailureCount: 1 };
+    const event = failureEvent({
+      verdict: "errored",
+      assertion: assertionSummary({
+        assertion: 'closedQA("修改是否聚焦问题?")',
+        expected: undefined,
+        received: undefined,
+        reason: "judge-model-unresolved",
+      }),
+      reason: "judge-model-unresolved",
+      phase: "assertions.evaluate",
+    });
+    const lines = renderDurableLines(event, state, { mode: "plain", width: 300 });
+    expect(lines[0]).toContain('closedQA("修改是否聚焦问题?")');
+    expect(lines[0]).not.toContain("errored ·");
+  });
+
+  it("非 TTY 单流固定 100 字符预算:渲染行恒不超过预算,即便 received 很长", () => {
+    const state = { ...createInitialRunFeedbackState(), freshFailureCount: 1 };
+    const event = failureEvent({
+      assertion: assertionSummary({
+        received: "a".repeat(400),
+      }),
+    });
+    // 非 TTY 追加流没有可依赖的终端宽度,固定用 100——传入的 width 只影响面板体裁探测,
+    // 不改变这条单行事实行自己的预算(与 TTY live 面板按帧内容宽传入是两条不同的口径)。
+    const lines = renderDurableLines(event, state, { mode: "plain", width: 300 });
+    expect(stringWidth(lines[0]!)).toBeLessThanOrEqual(100);
+  });
+
+  it("TTY live 面板按当帧内容宽传入预算,窄终端 + CJK 长 received 也不超过预算(按显示列量,不是字符数)", () => {
+    const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 40, rows: 30 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
+    let state = createInitialRunFeedbackState();
+    state = reduceRunFeedback(state, { type: "plan", at: 0, plan: plan() });
+    state = reduceRunFeedback(
+      state,
+      failureEvent({
+        identity: { experimentId: "compare", evalId: "eval-id", attempt: 0 },
+        who: "who",
+        assertion: assertionSummary({
+          assertion: "标题",
+          expected: undefined,
+          received: "中文很长的接收值一二三四五六七八九十一二三四五六七八九十".repeat(3),
+        }),
+      }),
+    );
+    renderer.redrawDynamic?.(state);
+
+    const written = stderr.writes.join("");
+    // eslint-disable-next-line no-control-regex
+    const plainLines = written.replace(/\x1B\[[0-9]*[A-Za-z]/g, "").split("\n");
+    const failureLine = plainLines.find((l) => l.includes("eval-id"));
+    expect(failureLine).toBeDefined();
+    // 渲染行(含边框)恒不超过终端宽度——按显示列量;字符数口径下这条 CJK 长 received
+    // 会明显超宽,只有按 stringWidth 收口才能保证这个不变量。
+    expect(stringWidth(failureLine!)).toBeLessThanOrEqual(40);
+  });
+
+  it("TTY live 面板:counts 行与 ACTIVE 之间插入 FAILURES 分节,滚动保留最近 5 条本次新发生的失败,横隔 meta 是累计数", () => {
+    const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 100, rows: 30 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
+    let state = createInitialRunFeedbackState();
+    state = reduceRunFeedback(state, {
+      type: "plan",
+      at: 0,
+      plan: plan({
+        reusedFailures: [
+          {
+            locator: locator("@carry0000"),
+            identity: { experimentId: "compare", evalId: "memory/carried", attempt: 0 },
+            who: "compare/codex",
+            verdict: "failed",
+            reason: "carried failure",
+            assertion: assertionSummary({ assertion: "carried" }),
+          },
+        ],
+      }),
+    });
+    for (let i = 0; i < 7; i++) {
+      state = reduceRunFeedback(state,
+        failureEvent({
+          at: i,
+          locator: locator(`@fresh${i}`),
+          identity: { experimentId: "compare", evalId: `memory/fresh-${i}`, attempt: 0 },
+        }),
+      );
+    }
+    renderer.redrawDynamic?.(state);
+
+    const written = stderr.writes.join("");
+    // eslint-disable-next-line no-control-regex
+    const plainText = written.replace(/\x1B\[[0-9]*[A-Za-z]/g, "");
+    expect(plainText).toMatch(/├─ FAILURES/);
+    expect(plainText).toContain(t("feedback.human.failuresSoFar", { count: 7 }));
+    // 只保留最近 5 条(fresh4..fresh6 之外,早发生的 fresh0/fresh1 已滚出分节)。
+    expect(plainText).not.toContain("memory/fresh-0");
+    expect(plainText).not.toContain("memory/fresh-1");
+    expect(plainText).toContain("memory/fresh-2");
+    expect(plainText).toContain("memory/fresh-6");
+    // carry 携入失败不进分节。
+    expect(plainText).not.toContain("memory/carried");
+  });
+
+  it("TTY appendDurable 对 failure 直接返回,不写 scrollback 永久行(由下一帧的 FAILURES 分节显现)", () => {
+    const { io, stdout, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 100, rows: 30 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
+    const state = { ...createInitialRunFeedbackState(), freshFailureCount: 1 };
+    renderer.appendDurable(failureEvent(), state);
+    expect(stdout.writes).toEqual([]);
+    expect(stderr.writes).toEqual([]);
+  });
+
+  it("矮终端先减 ACTIVE 可见项,再减 FAILURES 分节的可见条数", () => {
+    const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 100, rows: 12 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
+    let state = createInitialRunFeedbackState();
+    state = reduceRunFeedback(state, { type: "plan", at: 0, plan: plan() });
+    // 5 条 fresh 失败(占满 FAILURES 分节的滚动上限)。
+    for (let i = 0; i < 5; i++) {
+      state = reduceRunFeedback(state,
+        failureEvent({ at: i, locator: locator(`@fresh${i}`), identity: { experimentId: "compare", evalId: `memory/fresh-${i}`, attempt: 0 } }),
+      );
+    }
+    // 8 条 active attempt——矮终端(12 行)容不下全部,ACTIVE 应该先被压缩。
+    for (let i = 0; i < 8; i++) {
+      const identity = { experimentId: "compare", evalId: `memory/active-${i}`, attempt: 0 };
+      state = reduceRunFeedback(state, { type: "attempt:start", at: 0, identity, who: "compare/codex", phase: "eval.run" });
+      renderer.onLifecycle?.({ type: "attempt:start", at: 0, identity, who: "compare/codex", phase: "eval.run" }, state);
+    }
+    renderer.redrawDynamic?.(state);
+
+    const written = stderr.writes.join("");
+    // eslint-disable-next-line no-control-regex
+    const plainText = written.replace(/\x1B\[[0-9]*[A-Za-z]/g, "");
+    // FAILURES 分节的 5 条全部保留。
+    for (let i = 0; i < 5; i++) expect(plainText).toContain(`memory/fresh-${i}`);
+    // ACTIVE 被压缩,出现「还有 N 项运行中」的折叠提示。
+    expect(plainText).toMatch(/more active/);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 分区「结束反馈的失败形态聚合与 WARNINGS 汇总」:契约见
+// docs/feature/experiments/cli.md#人看的结束反馈。
+describe("结束反馈的失败形态聚合与 WARNINGS 汇总", () => {
+  function failedNotice(overrides: Partial<FailureNotice> = {}): FailureNotice {
+    return {
+      at: 0,
+      locator: locator("@1bwcxxiy"),
+      identity: { experimentId: "compare", evalId: "memory/x", attempt: 0 },
+      who: "compare/codex",
+      verdict: "failed",
+      reason: "gate failed",
+      assertion: {
+        severity: "gate",
+        assertion: "tests pass after fix",
+        matcher: "commandSucceeded()",
+        expected: "exit 0",
+        additionalFailures: 0,
+      },
+      ...overrides,
+    };
+  }
+
+  it("205 条同 matcher 失败聚成一行,右对齐 ×N,代表 locator 是组内首现那条", () => {
+    const failures: FailureNotice[] = [];
+    for (let i = 0; i < 205; i++) {
+      failures.push(
+        failedNotice({ locator: locator(`@f${String(i).padStart(4, "0")}`), identity: { experimentId: "compare", evalId: `memory/x-${i}`, attempt: 0 } }),
+      );
+    }
+    const state: RunFeedbackState = { ...createInitialRunFeedbackState(), total: 205, failures };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 205, errored: 0 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain("×205");
+    expect(text).toContain("commandSucceeded() · expected exit 0");
+    expect(text).toContain("@f0000"); // 组内首现的代表 locator
+    expect(text).not.toContain("@f0001"); // 其余 204 条不逐条铺开
+    expect(text).toContain(t("feedback.human.failuresTotalKinds", { total: 205, kinds: 1 }));
+  });
+
+  it("只有一条失败时展开成完整身份两行(悬挂单行摘要),不折成 ×1 的组行", () => {
+    const state: RunFeedbackState = { ...createInitialRunFeedbackState(), total: 1, failures: [failedNotice()] };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 1, errored: 0 }),
+      completion: completion(),
+    };
+    const lines = renderDurableLines(event, state, { mode: "plain", width: 100 });
+    const text = lines.join("\n");
+    expect(text).toContain("✗ @1bwcxxiy  memory/x  [compare/codex]");
+    expect(text).toContain("commandSucceeded() · expected exit 0");
+    expect(text).not.toMatch(/×1\b/);
+  });
+
+  it("errored 按 phase · code 分组,与 failed 分属不同的组(不同形态互不聚合)", () => {
+    const failed = [failedNotice({ locator: locator("@f1") }), failedNotice({ locator: locator("@f2") })];
+    const errored = [
+      failedNotice({
+        locator: locator("@e1"),
+        verdict: "errored",
+        assertion: undefined,
+        reason: "boom",
+        phase: "workspace.diff",
+        code: "diff-export-failed",
+      }),
+      failedNotice({
+        locator: locator("@e2"),
+        verdict: "errored",
+        assertion: undefined,
+        reason: "boom again",
+        phase: "workspace.diff",
+        code: "diff-export-failed",
+      }),
+      failedNotice({
+        locator: locator("@e3"),
+        verdict: "errored",
+        assertion: undefined,
+        reason: "different",
+        phase: "sandbox.create",
+        code: "sandbox-rate-limit",
+      }),
+    ];
+    const state: RunFeedbackState = {
+      ...createInitialRunFeedbackState(),
+      total: 5,
+      failures: [...failed, ...errored],
+    };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 2, errored: 3 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain(t("feedback.human.failuresTotalKinds", { total: 5, kinds: 3 }));
+    expect(text).toContain("×2  errored · workspace.diff · diff-export-failed");
+  });
+
+  it("超过 10 个形态组时收进「+K more kinds」尾行", () => {
+    const failures: FailureNotice[] = [];
+    for (let i = 0; i < 12; i++) {
+      // 每个形态自己只出现一次(assertion 标题各不相同),制造 12 个 size=1 的组。
+      failures.push(
+        failedNotice({
+          locator: locator(`@k${String(i).padStart(2, "0")}`),
+          identity: { experimentId: "compare", evalId: `memory/k-${i}`, attempt: 0 },
+          assertion: {
+            severity: "gate",
+            assertion: `kind ${i}`,
+            matcher: "commandSucceeded()",
+            expected: "exit 0",
+            additionalFailures: 0,
+          },
+        }),
+      );
+    }
+    const state: RunFeedbackState = { ...createInitialRunFeedbackState(), total: 12, failures };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 0, failed: 12, errored: 0 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain(t("feedback.human.moreFailureKinds", { count: 2 }));
+  });
+
+  it("WARNINGS 面板按 code 汇总本次去重后的诊断,有诊断才出现,位于 FAILURES 与 KEPT SANDBOXES 之后", () => {
+    const diagnostics: DiagnosticNotice[] = [
+      { at: 0, key: "lock-taken-over:compare/codex|a", code: "lock-taken-over", severity: "warning", message: "took over an expired case lock for codex/term…", count: 4 },
+      { at: 1, key: "lock-taken-over:compare/codex|b", code: "lock-taken-over", severity: "warning", message: "took over an expired case lock for another…", count: 3 },
+      { at: 2, key: "workspace-diff-unavailable", code: "workspace-diff-unavailable", severity: "warning", message: "workspace diff export failed; continuing with…", count: 1 },
+    ];
+    const state: RunFeedbackState = { ...createInitialRunFeedbackState(), diagnostics };
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 45, failed: 0, errored: 0 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain("WARNINGS");
+    // 同 code 的两条不同折叠 key 的诊断汇总成一行,次数相加。
+    expect(text).toContain("lock-taken-over ×7");
+    expect(text).toContain("took over an expired case lock for codex/term…");
+    expect(text).toContain("workspace-diff-unavailable");
+    expect(text).not.toMatch(/workspace-diff-unavailable ×/); // count=1 不带 ×N
+  });
+
+  it("没有诊断时不画空的 WARNINGS 面板", () => {
+    const state: RunFeedbackState = createInitialRunFeedbackState();
+    const event: DurableFeedbackEvent = {
+      type: "summary",
+      at: 0,
+      summary: summary({ passed: 45, failed: 0, errored: 0 }),
+      completion: completion(),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).not.toContain("WARNINGS");
   });
 });
 

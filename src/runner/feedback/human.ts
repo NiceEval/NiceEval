@@ -12,14 +12,19 @@
 // 完成页/失败行/诊断行的实际文案在两种模式下完全一致,只有「要不要用 ANSI 维护一块动态区域」
 // 不同 —— 不是两套平行的文案实现。
 //
+// 一条失败/errored 的终端投影恒为单行事实行(buildFailureFactLine):TTY 下滚动显示在 live
+// 面板内嵌的 FAILURES 分节(最近 5 条本次新发生的失败,carry 携入失败不进分节,不写
+// scrollback);非 TTY 单流逐条追加同一投影。结束反馈的 FAILURES 面板改按失败形态聚合
+// (buildFailuresPanelRows),不再逐条铺开;新增的 WARNINGS 面板按 code 汇总本次去重后的诊断。
+// 详见 docs/feature/experiments/cli.md「运行中的 live 面板」与「人看的结束反馈」。
+//
 // 完成页(summary/saved 两个永久事件)不再调用 `./reporters/table.ts` 的 `renderRunReport()`
 // 大表:失败优先摘要 + locator + show/view 下一步 + 折叠后的快照路径,完整对比留给
 // `niceeval show` / `niceeval view`(见 docs 的「人看的结束反馈」)。
 
 import { t } from "../../i18n/index.ts";
-import { verdictSymbol } from "../reporters/shared.ts";
 import { formatCost } from "../../shared/format.ts";
-import { assertionSummaryLines } from "../../assertions/display.ts";
+import { compactAssertionSummary, fitCompactAssertionSummary } from "../../assertions/display.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import {
   panelCapabilityOf as panelCapability,
@@ -28,7 +33,7 @@ import {
   type PanelMode,
   type PanelRow,
 } from "../../report/model/panel.ts";
-import { stringWidth } from "../../report/model/text-layout.ts";
+import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth } from "../../report/model/text-layout.ts";
 import type {
   ActiveAttempt,
   ActiveExperimentHook,
@@ -36,7 +41,10 @@ import type {
   ActivePrecheck,
   ActiveRunActivity,
   AttemptKey,
+  AttemptRef,
+  DiagnosticNotice,
   ExperimentHookName,
+  FailureNotice,
   LifecyclePhase,
   DurableFeedbackEvent,
   RunFeedbackPlan,
@@ -45,6 +53,7 @@ import type {
 import type { FeedbackRenderer } from "./renderer.ts";
 import type { FeedbackIO } from "./io.ts";
 import type { JsonValue } from "../../shared/types.ts";
+import type { PrimaryAssertionSummary } from "../../assertions/types.ts";
 
 interface HumanFingerprintDelta {
   selector: string;
@@ -88,8 +97,18 @@ function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: n
   return panelCapability({ isTTY: io.stderr.isTTY, noColor: io.env.NO_COLOR, width: io.stderr.columns });
 }
 
-/** 失败/errored 默认展开上限(见 cli.md「'立即追加'也必须有上限」表:human 前 10 条)。 */
+/** 失败/errored 默认展开上限(见 cli.md「'立即追加'也必须有上限」表:human 前 10 条)。
+ *  只管非 TTY 追加流的展开条数;TTY live 面板的 FAILURES 分节用 LIVE_FAILURES_VISIBLE,
+ *  结束反馈的 FAILURES 面板用 FAILURE_GROUPS_CAP(按失败形态的组数,不是原始条数)。 */
 const HUMAN_FAILURE_CAP = 10;
+/** live 面板 FAILURES 分节滚动保留的条数(见 cli.md「运行中的 live 面板」)。 */
+const LIVE_FAILURES_VISIBLE = 5;
+/** 结束反馈 FAILURES 面板按失败形态聚合后,展开的组数上限;超出收进
+ *  `+K more kinds — niceeval view` 尾行(见 cli.md「人看的结束反馈」)。 */
+const FAILURE_GROUPS_CAP = 10;
+/** 非 TTY / `--json` 没有可依赖的终端宽度,失败单行投影用固定预算(见
+ *  docs/feature/assertions/library/display.md「一条摘要怎样排版」)。 */
+const NON_TTY_FAILURE_LINE_MAX_CHARS = 100;
 /** 快照结果路径超过这个数量才折叠成「前 N 个 + … 还有 M 个」,不是 cli.md 的强制数字 ——
  *  docs 的两个完成页示例(FAILED / PASSED)对同样 5 条路径给了两种不同的排版,契约本身只要求
  *  「多时折叠,不逐行刷满几十个」,这里选一个单一、可预测的算法同时满足两边。 */
@@ -135,8 +154,12 @@ export function renderDurableLines(
       // 的第一条给一次 suppressed 提示(让人立刻知道开始折叠了);再往后的每一条都静默 ——
       // 不然「追加一次」会变成每条失败都重复一遍「还剩多少条」,完成页的 FAILURES 区块才是
       // 最终准确总数的权威来源。
+      // 只服务非 TTY 退化流:TTY dashboard 的 appendDurable 对 "failure" 直接返回(不写
+      // scrollback),这条投影只由下一帧的 live 面板 FAILURES 分节显现(见 cli.md「运行中的
+      // live 面板」)。非 TTY 单流逐条追加同一份单行事实投影,预算固定 100(没有可依赖的
+      // 终端宽度)。
       const count = state.freshFailureCount;
-      if (count <= HUMAN_FAILURE_CAP) return [buildFailureLine(event)];
+      if (count <= HUMAN_FAILURE_CAP) return [buildFailureFactLine(event, NON_TTY_FAILURE_LINE_MAX_CHARS)];
       if (count === HUMAN_FAILURE_CAP + 1) {
         return [t("feedback.human.suppressedFailures", { count: 1 })];
       }
@@ -290,38 +313,93 @@ function buildPlanLines(plan: RunFeedbackPlan, panel: { mode: PanelMode; width: 
   return renderPanel({ title: t("feedback.human.planHeader"), rows, width: panel.width, mode: panel.mode });
 }
 
-function buildFailureLine(event: DurableFeedbackEvent & { type: "failure" }): string {
-  const phaseSuffix = event.phase ? ` · ${phaseLabel(event.phase)}` : "";
-  const summary = event.assertion ? assertionSummaryLines(event.assertion) : [event.reason];
-  const body = summary.map((line, index) => `${index === 0 ? "    " : "        "}${line}`).join("\n");
-  return `${verdictSymbol(event.verdict)} ${event.locator} ${event.identity.evalId} [${event.who}]${phaseSuffix}\n${body}`;
+/** 失败/errored 的最小事实面:TTY live 面板 FAILURES 分节、非 TTY 追加流与结束 FAILURES 面板
+ *  的 size=1 组三处共用同一个形状,不各自重复摘一遍字段。 */
+interface FailureFact {
+  readonly locator: string;
+  readonly identity: AttemptRef;
+  readonly who: string;
+  readonly verdict: "failed" | "errored";
+  readonly reason: string;
+  readonly assertion?: PrimaryAssertionSummary;
+  readonly phase?: LifecyclePhase;
+  readonly code?: string;
+}
+
+/** exp 失败/errored 单行事实行与 FAILURES 面板组行的行首符号:`failed`/`errored` 两种 verdict
+ *  都用 `✗`(见 cli.md 全部失败行示例,含 errored)——不复用报告表通用的 `verdictSymbol()`,
+ *  那张表把 `errored` 记成 `!`,是留给诊断/警告行的符号,混进失败行会和诊断行的行首混淆。 */
+const FAILURE_SYMBOL = "✗";
+
+/**
+ * 一条失败/errored 的单行事实投影(cli.md「框线体裁」:`✗ @<locator>  <evalId>  [<who>]
+ * <单行压缩摘要>`)。TTY live 面板 FAILURES 分节与非 TTY 追加流共用这一份,唯一的差别是
+ * `maxWidth`:TTY 按当帧面板内容宽传入,非 TTY 固定 100(见
+ * docs/feature/assertions/library/display.md「一条摘要怎样排版」)。
+ */
+function buildFailureFactLine(failure: FailureFact, maxWidth: number): string {
+  const prefix = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]  `;
+  const budget = Math.max(0, maxWidth - stringWidth(prefix));
+  const info = failure.assertion
+    ? fitCompactAssertionSummary(failure.assertion, budget)
+    : buildErroredInfo(failure.phase, failure.code, failure.reason);
+  return prefix + clipDisplayWidth(info, budget);
+}
+
+/**
+ * errored 且没有主断言摘要(真正的结构化执行错误,不是 assertion-unavailable)时的信息段:
+ * `errored · <phase> · <code>`,余量够再接 `: <message>`。`phase`/`code` 用未翻译的原始字面量
+ * (`LifecyclePhase` 枚举值 / `AttemptError.code`),不走 `phaseLabel()` 的人读短语 —— 这一段
+ * 是给读者对照 `--json` `error` 事件、`result.json` 与 `show` 里同一个字面量用的,不是散文。
+ */
+function buildErroredInfo(phase: LifecyclePhase | undefined, code: string | undefined, reason: string): string {
+  const parts = ["errored", ...(phase ? [phase] : []), ...(code ? [code] : [])];
+  const base = parts.join(" · ");
+  return reason ? `${base}: ${reason}` : base;
+}
+
+/** 按显示列硬夹紧,超宽尾部截断补 `…`。`fitCompactAssertionSummary` 的截断口径是字符数,不是
+ *  显示列(见该函数注释「显示宽度的精确裁剪仍归渲染面」);这里补上那道显示宽度的硬夹紧,
+ *  堵住 CJK 内容"按字符数收口仍超显示列"的缝,保证渲染行恒不超过预算。 */
+function clipDisplayWidth(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (stringWidth(text) <= maxWidth) return text;
+  if (maxWidth === 1) return "…";
+  let out = "";
+  let width = 0;
+  for (const ch of text) {
+    const w = charDisplayWidth(ch.codePointAt(0)!);
+    if (width + w > maxWidth - 1) break;
+    out += ch;
+    width += w;
+  }
+  return `${out}…`;
 }
 
 function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic" }, state: RunFeedbackState): string[] {
   // count 从 state.diagnostics 读(reducer 已经按 key 去重累加),不在这里自己维护第二份计数。
+  // 人读运行中流对每个 code 至多完整打印一次(见 cli.md「什么动态更新,什么逐条追加」):
+  // 第一条给标题与 message 两行,同 code 的后续条目(哪怕 dedupeKey 不同)一律静默 ——
+  // 跨用例撞上同一类状况时,读者需要的是「这类事发生了 N 次」,不是 N 段几乎相同的文字;
+  // 逐 code 的次数与首条 message 由结束反馈的 WARNINGS 面板汇总(buildWarningsPanelRows)。
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
+  if (count > 1) return [];
   const sym = event.severity === "error" ? "✗" : "!";
   if (event.code === HALT_DIAGNOSTIC_CODE) {
     // 止损闸落闸:一行 error 级通知,文案已经是完整的一句话(`experiment halted
     // (dispatch-halted): <message>` / `eval halted: <message>`,见 docs/feature/
-    // error-classification/architecture.md「观察面」),不再加标题行、也不加 ×N 后缀——
-    // emitter 对每条未派发 attempt 都刷一次这条诊断以更新 data.unstarted,逐次打印就是
-    // 同一页文档明令禁止的「被中止的等待集 attempt 逐条刷屏」;未派发的数量由完成状态的
-    // `unstarted` 回答,不在这行重复。因此只在第一次出现时落一行(与 json profile 的
-    // isFirstOccurrence 同一条去重纪律)。
-    if (count > 1) return [];
+    // error-classification/architecture.md「观察面」),不再加标题行。
     return [`${sym} ${event.message}`];
   }
   // 标题用稳定词法(`code`),不是把折叠身份一起编进去的去重 key —— 人读的一行要能一眼认出
   // 「这是哪一类诊断」,`compare/codex|memory/x` 那串身份属于 message 与机器面的具名字段。
-  const suffix = count > 1 ? ` (${count} attempts)` : "";
-  // 阶段标签走与失败行(`buildFailureLine`)同一个 `phaseLabel()` 投影:「在哪一步降级的」是
-  // 读者的第一个问题,message 里未必答得上。attempt 级诊断的 phase 由运行器写进 `data`
-  // (见 attempt.ts 的 recordDiagnostic);运行级诊断(止损闸、锁接管、budget)不属于任何
-  // 单条 attempt,天然没有 phase,标题退化成只有 code 一段。
+  // 阶段标签走与 buildFailureFactLine 不同的投影:诊断标题用人读短语 `phaseLabel()`(散文),
+  // 失败行的 errored 信息段用未翻译的原始 LifecyclePhase 字面量(对照机器面)——两者故意不同。
+  // attempt 级诊断的 phase 由运行器写进 `data`(见 attempt.ts 的 recordDiagnostic);运行级诊断
+  // (止损闸、锁接管、budget)不属于任何单条 attempt,天然没有 phase,标题退化成只有 code 一段。
   const phase = typeof event.data?.phase === "string" ? (event.data.phase as LifecyclePhase) : undefined;
   const heading = phase !== undefined ? `${phaseLabel(phase)} · ${event.code ?? event.key}` : (event.code ?? event.key);
-  return [`${sym} ${heading}${suffix}`, `  ${event.message}`];
+  return [`${sym} ${heading}`, `  ${event.message}`];
 }
 
 /** 结束结论(`FAILED`/`PASSED`/…)+ `FAILURES`(有失败才出现)+ `KEPT SANDBOXES`(有留存才
@@ -370,22 +448,10 @@ function buildSummaryLines(
   ];
 
   // 全通过时(state.failures 为空)不留空 FAILURES 面板。fresh 失败来自 durable event，carry
-  // 失败由 plan 静态注入；reducer 把两者按 locator 收进同一清单，这里不从 InvocationSummary 再造。
+  // 失败由 plan 静态注入；reducer 把两者按 locator 收进同一清单，这里不从 InvocationSummary 再造 ——
+  // 整套结果集(含携入)都要出现在这里,不只是本次派发的那部分(见 cli.md「计数口径…」)。
   if (state.failures.length > 0) {
-    const shown = state.failures.slice(0, HUMAN_FAILURE_CAP);
-    const failureRows: PanelRow[] = [
-      { kind: "line", text: shown.map((f) => buildFailureLine({ ...f, type: "failure" })).join("\n\n") },
-    ];
-    if (state.failures.length > HUMAN_FAILURE_CAP) {
-      failureRows.push({
-        kind: "line",
-        text: t("feedback.human.suppressedFailures", { count: state.failures.length - HUMAN_FAILURE_CAP }),
-      });
-    }
-    const meta =
-      state.failures.length > HUMAN_FAILURE_CAP
-        ? `${state.failures.length} total · showing ${HUMAN_FAILURE_CAP}`
-        : undefined;
+    const { rows: failureRows, meta } = buildFailuresPanelRows(state.failures, panel);
     blocks.push(
       renderPanel({ title: t("feedback.human.failuresHeader"), meta, rows: failureRows, width: panel.width, mode: panel.mode }),
     );
@@ -417,7 +483,137 @@ function buildSummaryLines(
     );
   }
 
+  // `WARNINGS`(有诊断才出现,位于 FAILURES 与 NEXT 之间,见 cli.md「人看的结束反馈」):
+  // 按 code 汇总本次去重后的诊断,运行中同 code 只完整打印过第一条,这里是「这类事一共
+  // 发生了几次」的权威答案。
+  const warningsRows = buildWarningsPanelRows(state.diagnostics);
+  if (warningsRows) {
+    blocks.push(
+      renderPanel({ title: t("feedback.human.warningsHeader"), rows: warningsRows, width: panel.width, mode: panel.mode }),
+    );
+  }
+
   return blocks.flatMap((block, i) => (i === 0 ? block : ["", ...block]));
+}
+
+/**
+ * `FAILURES` 面板的内容:未通过的 attempt 按失败形态分组(见 cli.md「人看的结束反馈」)。
+ * `failed` 的组 key 是主失败断言的标题 + 检查方式,`errored`(没有主断言摘要的结构化执行错误)
+ * 的组 key 是 `phase · code`;`received`/message 各条不同,不进 key 也不进组行。size > 1 的组
+ * 只占一行(右对齐 `×N` + 形态摘要 + 组内首现的代表 locator);size = 1 的组展开成身份行 +
+ * 悬挂的单行压缩摘要两行。组按条数降序,超过 `FAILURE_GROUPS_CAP` 收进尾行。
+ */
+function buildFailuresPanelRows(
+  failures: readonly FailureNotice[],
+  panel: { mode: PanelMode; width: number },
+): { rows: PanelRow[]; meta: string } {
+  const groups = groupFailuresByShape(failures);
+  const contentWidth = panelContentWidth(panel.width, panel.mode);
+  const shown = groups.slice(0, FAILURE_GROUPS_CAP);
+  const multi = shown.filter((g) => g.size > 1);
+  const countWidth = Math.max(0, ...multi.map((g) => stringWidth(`${FAILURE_SYMBOL} ×${g.size}`)));
+
+  const rows: PanelRow[] = [];
+  for (const group of shown) {
+    if (group.size === 1) {
+      rows.push(...buildSingleFailureGroupRows(group.representative, contentWidth));
+    } else {
+      rows.push(buildMultiFailureGroupRow(group, countWidth));
+    }
+  }
+  if (groups.length > FAILURE_GROUPS_CAP) {
+    rows.push({
+      kind: "line",
+      text: t("feedback.human.moreFailureKinds", { count: groups.length - FAILURE_GROUPS_CAP }),
+    });
+  }
+  return { rows, meta: t("feedback.human.failuresTotalKinds", { total: failures.length, kinds: groups.length }) };
+}
+
+/** 一个失败形态组:同一 key 下的全部失败共享同一条 `shapeText`(已经剥掉 `received`/message
+ *  这类逐条不同的字段),`representative` 是组内首现的那一条(给 `e.g. <locator>`)。 */
+interface FailureShapeGroup {
+  readonly key: string;
+  readonly size: number;
+  readonly representative: FailureNotice;
+  readonly shapeText: string;
+}
+
+function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeGroup[] {
+  const groups = new Map<string, { size: number; representative: FailureNotice; shapeText: string }>();
+  for (const failure of failures) {
+    const { key, shapeText } = failureShapeOf(failure);
+    const existing = groups.get(key);
+    if (existing) {
+      groups.set(key, { ...existing, size: existing.size + 1 });
+    } else {
+      groups.set(key, { size: 1, representative: failure, shapeText });
+    }
+  }
+  return [...groups.entries()]
+    .map(([key, g]) => ({ key, ...g }))
+    .sort((a, b) => b.size - a.size);
+}
+
+/** 组 key 与形态摘要文本共用同一个"剥掉 received 的断言摘要"投影(有主断言摘要时,`failed`
+ *  与 assertion-unavailable 造成的 `errored` 都走这条);没有主断言摘要的 `errored`(真正的
+ *  结构化执行错误)按 `phase · code` 分组,摘要文本复用 `buildErroredInfo`(不带 message)。 */
+function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
+  if (failure.assertion) {
+    const shapeText = compactAssertionSummary({ ...failure.assertion, received: undefined, additionalFailures: 0 });
+    return { key: `assertion ${failure.assertion.assertion} ${failure.assertion.matcher ?? ""}`, shapeText };
+  }
+  return {
+    key: `errored ${failure.phase ?? "?"} ${failure.code ?? "?"}`,
+    shapeText: buildErroredInfo(failure.phase, failure.code, ""),
+  };
+}
+
+function buildMultiFailureGroupRow(group: FailureShapeGroup, countWidth: number): PanelRow {
+  const countToken = padStartDisplay(`${FAILURE_SYMBOL} ×${group.size}`, countWidth);
+  return { kind: "line", text: `${countToken}  ${group.shapeText}  ${t("feedback.human.exampleLocator", { locator: group.representative.locator })}` };
+}
+
+/** size = 1 组的两行:身份行(`✗ @locator  evalId  [who]`)+ 悬挂到身份内容起始列的单行压缩
+ *  摘要——与 `buildFailureFactLine` 共用同一套 info 组装逻辑,只是拆成两行而不是塞进一行。 */
+function buildSingleFailureGroupRows(failure: FailureNotice, contentWidth: number): PanelRow[] {
+  const identityLine = `${FAILURE_SYMBOL} ${failure.locator}  ${failure.identity.evalId}  [${failure.who}]`;
+  const indent = stringWidth(`${FAILURE_SYMBOL} `);
+  const budget = Math.max(0, contentWidth - indent);
+  const info = failure.assertion
+    ? fitCompactAssertionSummary(failure.assertion, budget)
+    : buildErroredInfo(failure.phase, failure.code, failure.reason);
+  return [
+    { kind: "line", text: identityLine },
+    { kind: "line", text: `${" ".repeat(indent)}${clipDisplayWidth(info, budget)}` },
+  ];
+}
+
+/** `WARNINGS` 面板:`state.diagnostics` 已经按去重 key 折叠,这里再按对外稳定词法 `code` 二次
+ *  聚合(同一 code 可能有多个不同折叠 key,如逐用例的锁接管);没有诊断时返回 undefined,
+ *  调用方据此不画空面板。 */
+function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): PanelRow[] | undefined {
+  if (diagnostics.length === 0) return undefined;
+  const byCode = new Map<string, { count: number; message: string; severity: "warning" | "error" }>();
+  for (const d of diagnostics) {
+    const code = d.code ?? d.key;
+    const existing = byCode.get(code);
+    if (existing) {
+      byCode.set(code, { ...existing, count: existing.count + d.count });
+    } else {
+      byCode.set(code, { count: d.count, message: d.message, severity: d.severity });
+    }
+  }
+  const entries = [...byCode.entries()];
+  const labelWidth = Math.max(0, ...entries.map(([code, v]) => stringWidth(warningCodeLabel(code, v.count))));
+  return entries.map(([code, v]) => ({
+    kind: "line",
+    text: `${v.severity === "error" ? "✗" : "!"} ${padDisplay(warningCodeLabel(code, v.count), labelWidth)}  ${v.message}`,
+  }));
+}
+
+function warningCodeLabel(code: string, count: number): string {
+  return count > 1 ? `${code} ×${count}` : code;
 }
 
 /** `NEXT` 面板(docs/feature/experiments/cli.md「人看的结束反馈」):下钻命令(只给第一条
@@ -624,6 +820,16 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     // live-dashboard-active-row-width-clamp-mismatch.md 的根因类别。
     const contentWidth = panelContentWidth(capability.width, capability.mode, false);
     const rows: PanelRow[] = [{ kind: "line", text: countsText(state) }];
+
+    // FAILURES 分节(cli.md「运行中的 live 面板」):插在 counts 行与 ACTIVE 横隔之间,滚动
+    // 保留最近 LIVE_FAILURES_VISIBLE 条本次新发生的失败——state.failures 是「carry(plan 静态
+    // 注入)+ fresh(本次事件追加)」按发生序拼起来的同一份清单,fresh 段恒是尾部
+    // freshFailureCount 条(carry 只在 "plan" 时一次性写入、之后只追加,不重排),因此按长度
+    // 切片就能拿到"本次新发生的失败",不需要给 FailureNotice 再加一个 origin 标记。横隔 meta
+    // 用累计数(如 `12 so far`),不是"这一帧展示了几条"。
+    const freshFailures = state.failures.slice(Math.max(0, state.failures.length - state.freshFailureCount));
+    const maxFailureRows = Math.min(LIVE_FAILURES_VISIBLE, freshFailures.length);
+
     // 运行级行(judge 预检 + Run activity + 实验钩子 + 用例锁等待)排在 attempt 行前面:
     // 它们解释了为什么后面的 attempt 还停在 queued。预检排最前(发生在任何 attempt 派发
     // 之前),其次共享准备(sandbox.build 等),再是实验钩子,再是锁等待。Map 按插入序迭代,
@@ -634,6 +840,27 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     // 只有仍在等待(waiting 非空)的实验才占运行级行;窗口已关闭(全部 resolved)的条目只是
     // 给非 TTY 聚合收尾行留的历史计数,TTY 不展示。
     const lockWaitRows = [...state.lockWaits.values()].filter((w) => w.waiting.size > 0);
+
+    // 矮终端先减 ACTIVE 可见项,再减 FAILURES 分节的可见条数(cli.md「运行中的 live 面板」):
+    // FAILURES 分节按"全量意愿"优先占位,ACTIVE 拿剩下的;只有终端矮到连 FAILURES 分节自己
+    // 都放不下时才反过来压缩它。固定开销:上下边框(2)+ counts 行(1)。
+    const restBudget = Math.max(0, io.stderr.rows - 3 - DASHBOARD_ROW_RESERVE);
+    const failuresDesired = maxFailureRows > 0 ? 1 + maxFailureRows : 0; // 横隔 + 条目
+    const shownFailureCount =
+      maxFailureRows > 0 ? Math.min(maxFailureRows, Math.max(0, failuresDesired <= restBudget ? maxFailureRows : restBudget - 1)) : 0;
+    if (shownFailureCount > 0) {
+      rows.push({
+        kind: "divider",
+        title: t("feedback.human.failuresHeader"),
+        meta: t("feedback.human.failuresSoFar", { count: state.freshFailureCount }),
+      });
+      for (const failure of freshFailures.slice(-shownFailureCount)) {
+        rows.push({ kind: "line", text: buildFailureFactLine(failure, contentWidth) });
+      }
+    }
+    const failuresRowsUsed = shownFailureCount > 0 ? 1 + shownFailureCount : 0;
+    const activeSectionBudget = Math.max(0, restBudget - failuresRowsUsed);
+
     if (
       activeOrder.length > 0 ||
       runActivityRows.length > 0 ||
@@ -642,9 +869,8 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       precheck
     ) {
       rows.push({ kind: "divider", title: t("feedback.human.active") });
-      // 固定开销:上边框 + counts 行 + ACTIVE 横隔 + 下边框(boxed);plain 时同样按 4 行估算,
-      // 差一两行不影响「窄/矮终端先减 active slots」这条大方向。
-      const rowBudget = Math.max(0, io.stderr.rows - 4 - DASHBOARD_ROW_RESERVE);
+      // ACTIVE 横隔自己也占一行,从分给 ACTIVE 小节的预算里再扣一行,剩下的才是内容行数。
+      const rowBudget = Math.max(0, activeSectionBudget - 1);
       const precheckCount = precheck ? 1 : 0;
       const total =
         precheckCount + runActivityRows.length + hookRows.length + lockWaitRows.length + activeOrder.length;
@@ -744,11 +970,17 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       // redrawDynamic 会画出来),不写 scrollback 永久行(见 cli.md「judge 预检的显示」)。用例锁
       // 等待同理:TTY 下由 state.lockWaits 驱动运行级 active 行(见 cli.md「等待并发 run 的显示」)。
       // Run 级 activity(共享构建等)同理:TTY 下由 state.runActivities 驱动,不占 attempt slot。
+      // 失败(verdict failed/errored)同理:TTY 下失败不进 scrollback 流,只更新 state.failures/
+      // freshFailureCount,由下一帧 buildFrameLines 的 FAILURES 分节显现(见 cli.md「框线体裁」
+      // 「一条失败的多行证据…不进终端,细节的家是 show」)——reducer 已经在 emit() 里同步更新过
+      // state,这里的 no-op 只是不写字节;coordinator 仍会围着这次投递做 clear→append→redraw,
+      // redraw 读到的是已经含这条失败的最新 state。
       if (
         event.type === "experiment-hook" ||
         event.type === "precheck" ||
         event.type === "lock-wait" ||
-        event.type === "run-activity"
+        event.type === "run-activity" ||
+        event.type === "failure"
       ) {
         return;
       }

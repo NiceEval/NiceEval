@@ -39,6 +39,10 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
       : summaryText(firstLine(result.error?.message ?? result.verdict));
   const origin = result.verdict === "errored" ? result.error?.origin : undefined;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
+  // 只在真正的结构化执行错误(没有主断言摘要,即 assertion-unavailable 之外的 errored)上携带
+  // `code`——human 单行事实行拼 `errored · <phase> · <code>` 时按它作稳定词法,assertion-unavailable
+  // 造成的 errored 已经有更具体的断言摘要可展示,不需要也没有这个字段(见 types.ts 的字段注释)。
+  const code = result.verdict === "errored" && assertion === undefined ? result.error?.code : undefined;
 
   return {
     locator,
@@ -48,6 +52,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     reason,
     ...(assertion !== undefined ? { assertion } : {}),
     ...(phase !== undefined ? { phase } : {}),
+    ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
   };
 }

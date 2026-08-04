@@ -8,6 +8,7 @@
 // - sink.ts      —— 供尚未拿到 coordinator 引用的底层模块(sandbox provider、budget 记账、
 //                    reporter 兜底……)使用的迁移出口。
 // - io.ts        —— 可注入的终端 I/O 面;testing.ts(仅测试用,不在这个条形码出口里)提供假实现。
+// - input-guard.ts —— live 面板期间的键盘接管与终端自愈(raw mode、回车重绘、Ctrl+C/Ctrl+Z、SIGWINCH)。
 
 export { resolveOutputForm, type ResolveOutputFormInput } from "./profile.ts";
 export { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
@@ -41,6 +42,15 @@ export {
   type FeedbackClock,
   type FeedbackTimerHandle,
 } from "./io.ts";
+export {
+  createInputGuard,
+  createNodeInputGuardStdin,
+  type InputGuard,
+  type InputGuardOptions,
+  type InputGuardStdin,
+  type InputGuardCoordinator,
+  type InputGuardProcess,
+} from "./input-guard.ts";
 export {
   createHumanRenderer,
   renderDurableLines,

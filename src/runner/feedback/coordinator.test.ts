@@ -192,6 +192,57 @@ describe("createFeedbackCoordinator: durable 事件的 clear→append→redraw �
   });
 });
 
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 分区「live 面板的键盘接管与自愈重绘」:`forceRedraw()` 是 input-guard.ts 收到回车/SIGWINCH
+// 时的唯一入口,契约见 docs/feature/experiments/cli.md「键盘输入与画面自愈」。
+describe("createFeedbackCoordinator: forceRedraw()(键盘/终端自愈重绘)", () => {
+  it("经内部串行队列执行 clear→redraw,与正常 durable 事件的三步共用同一条队列(不交错)", async () => {
+    const { io } = createFakeFeedbackIO();
+    const { calls, renderer } = recordingRenderer();
+    const coordinator = createFeedbackCoordinator({ profile: "human", renderer, io });
+    coordinator.start(plan());
+    coordinator.forceRedraw();
+    await flush();
+    expect(calls).toEqual(["clear", "durable:plan", "redraw", "clear", "redraw"]);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("即便状态自上一帧起没有变化,也真的调用 clear→redraw——不会被 renderer 自己的「同帧不写」判断吞掉", async () => {
+    // 区分力:forceRedraw() 与普通 durable 事件的关键差别正是"状态没变也要重画"。这里用
+    // recordingRenderer 断言 coordinator 侧确实每次都转发了 clear/redraw 调用;renderer 自己
+    // 是否真的重写字节(如 human.ts 靠 clearDynamic 清空 lastFrameText 绕过判断)由 human.test.ts
+    // 覆盖,这里只证明 coordinator 不会因为"看起来没有新状态"就跳过转发。
+    const { io } = createFakeFeedbackIO();
+    const { calls, renderer } = recordingRenderer();
+    const coordinator = createFeedbackCoordinator({ profile: "human", renderer, io });
+    coordinator.start(plan());
+    await flush();
+    calls.length = 0;
+    coordinator.forceRedraw();
+    coordinator.forceRedraw();
+    await flush();
+    expect(calls).toEqual(["clear", "redraw", "clear", "redraw"]);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("dynamicStopped/finished 阶段调用是安全的 no-op(结束路径的迟到按键不再触发重绘)", async () => {
+    const { io } = createFakeFeedbackIO();
+    const { calls, renderer } = recordingRenderer();
+    const coordinator = createFeedbackCoordinator({ profile: "human", renderer, io });
+    coordinator.start(plan());
+    await coordinator.stopDynamic();
+    calls.length = 0;
+    coordinator.forceRedraw();
+    await flush();
+    expect(calls).toEqual([]);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+    calls.length = 0;
+    coordinator.forceRedraw();
+    await flush();
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("createFeedbackCoordinator: tick 与 heartbeat 节奏", () => {
   it("tick 定时器按注入的 clock 周期性触发,elapsedMs 相对 start() 时刻计算", async () => {
     const fake = createFakeFeedbackIO();
