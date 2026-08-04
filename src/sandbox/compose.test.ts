@@ -11,6 +11,7 @@ import {
   assertComposeBlacklist,
   buildComposeOverlay,
   collectComposeBuilds,
+  composeCollectionIdentity,
   COMPOSE_MATERIALIZER_REVISION,
   detectDockerBuildPlatform,
   dockerComposeBuildProvider,
@@ -19,7 +20,7 @@ import {
   leakGateHintsFromComposeFile,
   materializeDockerComposeProviderCase,
 } from "./compose.ts";
-import { computeCaseKey } from "./identity.ts";
+import { computeCaseKey, digestOf } from "./identity.ts";
 import type { Sandbox } from "./types.ts";
 
 const tmpDirs: string[] = [];
@@ -247,6 +248,30 @@ services:
     ]);
     expect(collection.imageRefs).toEqual({ db: "postgres:15" });
     expect(collection.works[0]!.provider).toBe("docker");
+  });
+
+  it("未钉 digest 的 image ref 只收声明值,重复规划两次身份不漂移", async () => {
+    const root = await makeRoot();
+    await writeFile(
+      join(root, "docker-compose.yaml"),
+      `
+services:
+  client:
+    image: python:3.11
+`,
+      "utf-8",
+    );
+
+    // 模拟 accept 重锚后立即 --dry:两次各自独立的 physical planning 调用,
+    // 中间不共享任何进程内缓存(见 memory/compose-case-identity-digest-flap.md)。
+    const first = await collectComposeBuilds({ file: join(root, "docker-compose.yaml"), mainService: "client" });
+    const second = await collectComposeBuilds({ file: join(root, "docker-compose.yaml"), mainService: "client" });
+
+    expect(first.imageRefs).toEqual({ client: "python:3.11" });
+    expect(second.imageRefs).toEqual({ client: "python:3.11" });
+    // 声明值本身,不是本地 daemon 解析出的 sha256 digest。
+    expect(first.imageRefs.client).not.toMatch(/^sha256:|@sha256:/);
+    expect(digestOf(composeCollectionIdentity(first))).toBe(digestOf(composeCollectionIdentity(second)));
   });
 
   it("typed provider planning 直接从 Compose 声明抽出 works", async () => {

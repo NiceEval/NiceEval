@@ -46,7 +46,12 @@ export interface CaseKeyInput {
   readonly composeBytes?: string;
   readonly overlayBytes?: string;
   readonly buildKeys: readonly BuildKey[];
-  readonly serviceImageDigests?: Readonly<globalThis.Record<string, string>>;
+  /**
+   * 无 build 的 Compose service 的声明 image ref(已 pin 时含 digest,未 pin 时是原始 tag 文本)。
+   * 只收声明值——不得填入 `docker inspect` 等本地 daemon 解析出的实际 digest,否则并行 docker
+   * 活动会让身份在两次独立规划之间漂移(见 memory/compose-case-identity-digest-flap.md)。
+   */
+  readonly serviceImageRefs?: Readonly<globalThis.Record<string, string>>;
   readonly bindMountDigests?: Readonly<globalThis.Record<string, string>>;
   /** env_file / config / secret 的非敏感内容(或内容摘要)。 */
   readonly configContents?: Readonly<globalThis.Record<string, string>>;
@@ -111,7 +116,7 @@ export function computeCaseKey(input: CaseKeyInput): CaseKey {
     ...(input.composeBytes !== undefined ? { composeBytes: digestBytes(input.composeBytes) } : {}),
     ...(input.overlayBytes !== undefined ? { overlayBytes: digestBytes(input.overlayBytes) } : {}),
     buildKeys: [...input.buildKeys].sort(),
-    serviceImageDigests: input.serviceImageDigests ?? {},
+    serviceImageRefs: input.serviceImageRefs ?? {},
     bindMountDigests: input.bindMountDigests ?? {},
     configContents: input.configContents ?? {},
     caseParams: input.caseParams ?? null,

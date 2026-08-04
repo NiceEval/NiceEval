@@ -156,7 +156,7 @@ CaseKey
  = case kind + materializer revision
  + Compose / overlay bytes
  + 所有 BuildKey
- + service image digest
+ + 无 build 的 service 的声明 image ref(已 pin 时含 digest,未 pin 时是原始 tag 文本;不是本地 daemon 解析出的实际 digest)
  + 相对 bind mount 源文件或目录内容
  + env_file / config / secret 的非敏感内容
  + 影响主执行空间、网络与就绪语义的规范化 case 参数
@@ -188,6 +188,9 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 浮动 image tag 若 provider 不能解析成 digest,仍把原始 tag 作为身份声明；可以运行并记录 tag 与实际事实，但同名 tag 后来指向别的内容时不会自动作废旧结果。
 同理，未 pin 的 `FROM`、Compose image / `FROM`、checkout 浮动 ref 与 opaque provider callback 的外部变化都需要作者提升 revision、改变声明，或使用 `--rerun all`。
 凭据值不落盘、不进身份:凭据轮换不改变环境语义时只记录引用名;凭据同时选择了不同租户、数据集或权限面时,用户必须提供非敏感 `revision` 进入身份,不靠 secret 值自动推断。
+
+身份只收声明,不收本地 daemon 的易变解析状态——`docker inspect` 等查询只产出运行事实(见上文 BuildKey 一节),永不回填进 BuildKey / CaseKey。
+同一份声明因此在两次独立规划之间(如 accept 后立即 `--dry`)必须算出相同身份,不随宿主机上并行的 docker 构建或拉取漂移。
 
 身份解析是 fingerprint 的输入，不另设 provider carry eligibility 状态；未 pin 或未登记的值可以用原始声明或 opaque marker 表达，变化不会被自动观察。
 

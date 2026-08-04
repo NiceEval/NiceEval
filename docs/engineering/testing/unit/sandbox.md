@@ -85,8 +85,8 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 人工从 script 提取 prefix/suffix 后直接拼合法数字 marker 的 fake 不能充当这条契约的证明。
   - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK/bash 边界与单元层一致。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
-- **命令退出证据包装**：四个公开 `run*` 方法最外层调用非零退出时，先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
-  证据与同一次 timing command node 共用 id；成功命令不登记输出，provider 内部转调不重复。
+- **命令证据包装**：四个公开 `run*` 方法最外层调用无论成功还是非零退出，都先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
+  证据与同一次 timing command node 共用 id；provider 内部转调不重复登记。
   调用方处理非零结果并继续也不撤销证据。stdout/stderr 保留原换行与首部根因，不能先 tail-only 再交 writer。
   fixture 必须让 Eval 随后把错误 `.slice(-500)`，仍能从登记项读到前部根因，证明捕获时点正确。
 - **命令证据的已知敏感值脱敏**：用合成 API key/header/env 值证明 provider 与运行时结果仍拿原值。
@@ -124,6 +124,9 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。
   不能只测 Agent CLI 可执行——不同官方基线的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。
+- **跨 provider 基线工具面（E2B 侧）**：三条配方共用同一份契约——官方起点若带 yarn 实体就移除，python3 存在与否被断言。
+  结构测试读取 `Template.toJSON()` 证明 `withNodeToolContract` 里有一步会在存在时移除 yarn。
+  `verifyE2BNodeToolContract` 最终自检数组里两条新增命令(不存在 yarn、python3 可用)与已有的 prefix/PATH/写权限断言同构,都是失败时 `exit 1`,不是打印警告。
 - **官方基线 image / template 的版本与发布台账**：公共 E2B template 与 Docker image 的版本 tag 是 `<Agent 版本>-r<配方修订>`，版本位取自与 Adapter 运行时回退安装同一批的版本常量，niceeval 自身的版本不出现在 tag 里；同一个 Agent 在已发布的 provider 上共用同一个版本号。
   Docker 侧覆盖全部 `CodingAgentBaseline`；E2B 侧是子集（`E2BCodingAgent`），未进台账的 Agent 不导出 E2B 常量。
   导出的具名常量必须指向**已发布**的 image / template：E2B 侧逐 agent 与 `sandbox/e2b/published.json` 的台账逐字段核对（tag、name、台账记录的 Agent 版本与源码版本常量一致，bub 另核对安装指纹），版本常量走在发布前面时这一格红；唯一的放行方式是台账条目显式写下待发布的 tag（`supersededBy`），默不作声的分叉必须红——那正是「常量指着装了旧 Agent 的 image / template」而全绿的形态。
@@ -162,6 +165,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 每类 case 只返回一个主 `Sandbox`；Agent、Eval、文件 API、workdir、分类账与 diff 观察同一执行空间。
   - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 的纯数据 identity 进入 fingerprint，opaque provider callback 不成为 carry blocker。
     pinned / floating image、Dockerfile `FROM`、Compose image / `FROM` 与 custom provider 都要有可携带终态的区分力场景。
+  - Compose 未 build 的 service 身份只收声明 image ref,不得混入本地 daemon 解析出的实际 digest。同一份声明重复两次独立 physical planning(模拟 accept 后立即 `--dry`)必须得到完全相同的 `composeCollectionIdentity`。
 - **command identity 与内置 prepare 命令**：
 
   - `command()` / `shell()` 的纯数据 identity 进入 fingerprint；直接传入的 callback 不增加 identity，默认不阻断携带。要用跨 Run fixture 证明 callback 未登记时旧结果携带，并用 callback 改为 `defineSandboxCommand()`、改变 revision / inputs 的方向证明旧结果作废。prepare command identity 不进入同一 Run 的物理复用池键；另用两个 Eval 声明不同 prepare、但 Provider physical plan / Agent ensure / lifecycle owner 相同的场景，证明它们共用实例且每条命令在各自 Attempt 仍重放。
