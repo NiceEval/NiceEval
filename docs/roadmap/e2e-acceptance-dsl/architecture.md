@@ -22,7 +22,7 @@ DSL 分成五组模块：
 - process adapter 执行真实子进程，保存 argv、cwd、流、exit 和 signal。
 - medium adapter 解析一种公开媒介，不跨媒介猜测缺失事实。
 - domain view 用 Report、Attempt、Table、Chart、Target 等公开身份寻址。
-- `Observed<T>` 把值、来源、提取路径和对象身份绑定为一个不可伪造观察。
+- `Observed<T>` 把值、来源、提取路径和对象身份绑定在一起,类型层阻止测试正文绕过 adapter 直接构造或解包。
 - matcher 比较独立预期并产出带证据的 Outcome Assertion。
 
 ## 通用内核与产品 dialect
@@ -63,6 +63,7 @@ interface WorldReader {
 
 构造时先校验 Behavior execution binding、recipe identity、candidate digest 和权限。
 World reader 不运行 producer，不寻找“最近”的结果根，也不依赖进程全局 cwd。
+与权限模型一致：world 恒只读，写权限按 clone 与 Behavior 登记，不存在 world 级的单一读写模式。
 
 ## Observation 数据模型
 
@@ -104,7 +105,8 @@ interface Observed<T> {
 }
 ```
 
-`observedValue` 是 adapter 与 matcher 共享的私有 symbol，不从测试支持包导出。测试作者不能直接解包观察值。
+`observedValue` 是 adapter 与 matcher 共享的私有 symbol，不从测试支持包导出，测试作者不能通过公开入口直接解包观察值。
+这层护栏是类型系统加 lint 规则，不是运行时不可绕过的机制：同一仓库内 import adapter 内部路径在技术上仍能拿到这个 symbol，是已知的软边界；lint 规则禁止从 adapter 内部路径 import，把绕过挡在制度层面。
 关系 matcher 接收多个 `Observed` 时，单个 assertion 同时记录全部 evidence。
 
 观察结果需要成为下一条用户动作的输入时使用 `shellArg(observed)`。

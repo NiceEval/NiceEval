@@ -96,8 +96,9 @@ DSL 只执行两条边界：身份或 digest 不匹配时拒绝读取；未授�
   每例全新 BrowserContext 与 Page;静态 HTML 读面禁用 JS 且只准本地网络,交互 proof 才启用 JS。
   producer identity 与 verifier identity 分开记录,`verify` 因此能分辨「导出站是旧的」与「浏览器版本变了」。
 
-结构解析器读取的排版概念以 [Library · 排版原语](../../feature/reports/library/layout.md)的**文档声明**为规范,是渲染契约的第二实现。
+结构解析器读取的排版概念以 [Library · 排版原语](../../feature/reports/library/layout.md)的**文档声明**为规范,是渲染契约的第二实现,范围限于已声明 Behavior 实际消费的结构。
 渲染器输出解析不出文档声明的结构时,不是测试脆,是渲染器或解析器有一方违反了契约——这类失配是真发现。
+`layout.md` 的示例块被产品仓单元测试与解析器自测两侧共同消费,文档与 renderer 的失配由单元测试暴露;细节单源在 [Library · stdout 结构解析器](library.md#stdout-结构解析器),这里只留结论。
 
 ### 逐字比对的适用面
 

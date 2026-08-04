@@ -22,25 +22,40 @@ import "../verify/matchers";
 继承[验收脚本写法](../../engineering/testing/e2e/verification.md)的两条约定:命令以 **shell 原文**出现(可整句复制到终端复现),预期非零退出是一等场景。
 
 ```ts
-const { stdout } = await cli("pnpm exec niceeval show weather --history");
-const fail = await cli("pnpm exec niceeval exp deliberate-fail --force --json", { expect: "nonzero" });
-fail.stdout; fail.stderr; fail.combined; fail.exitCode(); fail.signal();
-fail.stdoutText(); fail.stderrText(); fail.combinedText();
+const sep = await cli("pnpm exec niceeval exp x --json");                  // separate + file 捕获
+const pip = await cli("pnpm exec niceeval show --json", { pipe: true });   // separate + 真实管道
+const mix = await cli("pnpm exec niceeval exp x", { streams: "merged" });  // 单管道保序(shell 2>&1)
 ```
 
 - `expect: 0 | number | "nonzero"`,不符即抛断言错误,消息含命令原文、实际退出码与 stderr 尾部。
 - `cwd`:执行目录,默认仓库根;消费边界一类的场景用它切到 world 里的临时项目目录。
-- `pipe: true`:stdout 接真实管道而不是文件,验收「输出喂给下游工具」的场景用它。
+- `pipe` 与 `streams` 互斥,共同决定 fd 捕获形态;省略两者时默认 separate + 文件捕获:
+  - `pipe: true`:separate 模式的真实管道形态,stdout 接真实管道而不是文件。pipe 截断类历史缺陷(d8d5a84b)只在管道形态可触发,文件捕获永远复现不了,所以保留这个专门形态,验收「输出喂给下游工具」的场景用它。
+  - `streams: "merged"`:单管道形态,用 shell `2>&1` 把 stdout 与 stderr 接到同一个文件描述符,按真实写入顺序落盘。POSIX 一次 write 只落一个 fd,单管道合并因此必然丢失流归属。两路各自捕获再事后拼接得到的顺序是测试设施自己编的,不是 shell 的真实写入序,合流与分流因此是互斥的两个模式,不能同时声明。
 - 每次调用把命令与输出追加到证据日志(供 `e2e.ts` 的基础设施故障分类扫描),路径来自 world manifest。
-- `exitCode()` 与 `signal()` 返回 `Observed`,让进程结果与 JSON / JUnit 关系进入同一条 Outcome Assertion。
-- `stdoutText()`、`stderrText()` 与 `combinedText()` 只用于逐字承诺；结构 adapter 直接消费对应 evidence stream。
+
+返回值按捕获形态给出对应字段:
+
+```ts
+sep.stdout; sep.stderr; sep.exitCode(); sep.signal();
+sep.stdoutText(); sep.stderrText();
+
+mix.combined; mix.exitCode(); mix.signal();
+mix.combinedText();
+```
+
+- separate 模式(默认与 `pipe: true`)提供 `stdout` / `stderr` 两路及对应的 `stdoutText()` / `stderrText()`;访问 `combined` 或 `combinedText()` 在返回的包装读面上抛 `unsupported-observation`。
+- merged 模式只提供 `combined` / `combinedText()`;访问 `stdout` 或 `stderr` 同样抛 `unsupported-observation`。
+- `exitCode()` 与 `signal()` 两种模式都提供,返回 `Observed`,让进程结果与 JSON / JUnit 关系进入同一条 Outcome Assertion。
+- `stdoutText()`、`stderrText()` 与 `combinedText()` 只用于逐字承诺;结构 adapter 直接消费对应 evidence stream。
 
 **输出流归属是一等事实,断言要点名读哪一路。**
 [用法错误与无匹配提示写 stderr](../../../memory/cli-usage-errors-go-to-stderr.md) 是公开契约,把两路合起来查子串的写法对这条契约没有区分力:文案回退到 stdout 时断言照样通过。
-所以断文案的 proof 读 `stdout` 或 `stderr` 各自那一份,`combined` 只用于「人读输出整流后保序」这类以顺序为契约的场景。
+所以断文案的 proof 读 separate 模式的 `stdout` 或 `stderr` 各自那一份,merged 模式只用于「人读输出整流后保序」这类以顺序为契约的场景,拿它断[非 TTY 单流保序](../../feature/experiments/cli.md#输出流和落盘节奏)才对应产品的真实写入路径。
 
-`combined` 必须是单管道捕获——两路在同一个文件描述符上按真实写入顺序合并,不是两份缓冲事后拼接。
-拼接出来的顺序是测试设施自己编的,拿它断[非 TTY 单流保序](../../feature/experiments/cli.md#输出流和落盘节奏),证明的是拼接代码而不是产品行为。
+**需要流归属与保序两个事实时发两次调用。**
+一次 separate 调用与一次 merged 调用各证一个边缘事实,不构成「同一次执行上联合成立」的合取断言。
+只读命令(不写 resultsRoot)可以对同一个 world 连续两次调用;会写入的命令(carry / reuse 语义下同命令重复运行不幂等)每次调用各用一个私有 clone。
 
 ### `world()`
 
@@ -56,9 +71,13 @@ w.target("failed-attempt");     // prepare 命名的 { pageId, key },不把 targ
 w.exportDir("branded");         // 命名导出站目录
 w.artifact("junit");            // 命名机器出口或其它文件 artifact
 w.consumerDir("react-jsx");     // prepare 搭好的临时消费方项目目录
-w.process("main-run");          // prepare 真实执行并封口的命名进程结果
+w.process("main-run");          // prepare 真实执行并封口的命名进程结果,返回带模式核对的包装读面
 w.logPath;                      // 证据日志(cli() 自动追加的那份)
 ```
+
+manifest 里的 `PreparedProcess` 是纯数据,按捕获模式只携带 `stdout` / `stderr` 或 `combined` 对应的路径字段。
+`w.process(name)` 返回的不是这份纯数据,而是一层包装读面:模式核对与抛错发生在这一层,访问未声明模式的字段抛 `unsupported-observation`。
+`exitCode()` 与 `signal()` 同样经这层包装返回 `Observed`,与「matcher 只接受 `Observed<T>`」的规则一致。
 
 要改结果的场景不碰共享 world,先取自己的私有 clone:
 
@@ -87,7 +106,14 @@ const doc = await targetDoc(w, w.target("failed-attempt"), { hosting: "file-url"
 const ui = await openSite(w.exportDir("site"), { hosting: "directory-root" }); // 浏览器会话,启用 JS
 ```
 
-构造函数与 Behavior 声明的 `observations` 一一对应:声明了 `stdout` 却构造 `ptyScreen`,静态守护直接红。
+构造函数与 Behavior 声明的 `observations` 一一对应,核对分两层,都发生在运行时而不是静态分析。
+
+入口核对:Behavior 包装器把声明的 observations 集合写入 AsyncLocalStorage;每个读面构造函数在入口读取该集合,自己的媒介不在集合内即抛 `unsupported-observation`。
+store 缺失是硬错误,不静默放行。
+事件回调(如浏览器 `console` 收集)用 `AsyncResource.bind` 显式绑回发起 Behavior 的上下文,保证异步产生的观察仍能核对到正确声明。
+
+事后核对:Behavior 执行完成时,包装器比对声明集合与实际构造集合;声明了 `stdout` 却全程没构造对应读面,同样使该次 outcome 失败。
+入口核对堵住「用了没声明的媒介」,事后核对堵住「声明了却没真的用」,两层合起来才能防住声明与实际观察面走样。
 
 ### 托管形态
 
@@ -258,21 +284,39 @@ experiment 与自定义参数化页不得新增平行的 `experimentLink()` / `c
 ### stdout 结构解析器
 
 `parseTerminal(text)` 先 strip ANSI,再按 [Library · 排版原语](../../feature/reports/library/layout.md)声明的 **non-TTY 形态**识别结构。
-解析器是渲染契约的第二实现,不含 niceeval 组件名:
+解析器是渲染契约的第二实现,不含 niceeval 组件名,范围限于已声明 Behavior 实际消费的结构:词随消费的 Behavior 增长,新结构先有 Behavior 声明消费,解析器才补对应的词,不预先建设全量排版的第二实现。
+
+当前已声明消费的结构:
 
 | 结构 | non-TTY 形态 | 身份取值 |
 |---|---|---|
 | 面板(`Section`) | 标题成行,正文整体缩进两列 | 标题文字 |
 | 表(`Table` / `Grid`) | 连续行按列对齐的纯文本,首行为表头 | 表头折叠文本 |
 | 表行 | 表内数据行,层级由首列缩进表达 | 首列的身份文本 |
-| 同级重复块 | 单独的标题行,正文全宽 | 标题文字 |
+| 历史行 | `report.history()` 分节内的逐 attempt 记录行,列对齐但不取首列身份 | 时间戳与 verdict 的组合 |
 | 逐条流事件 | 无标注,逐行原样 | 行折叠文本 |
 
 框线字符不参与识别。
 [量测与降级](../../feature/reports/library/layout.md#量测与降级)声明 non-TTY 下三种线一起消失、字段与顺序逐字相同、脚本不解析框字符;解析器读框线就等于把 TTY 形态当成 stdout 契约的一部分,而那恰恰是 PTY 读面的对象。
 
-「折叠文本」等于空白折叠(连续空白折成单空格、去首尾)后的行文本;格内折行按 layout.md 的续行缩进规则并回原行。
+「折叠文本」等于空白折叠(连续空白折成单空格、去首尾)后的行文本,用于表头与身份的匹配口径;格内折行按 layout.md 的续行缩进规则并回原行。
 显示宽度口径(CJK 记 2 列)只服务解析,不暴露为断言面——它是 PTY 读面的断言对象。
+
+**fixture 来源是 layout.md 的 fenced 示例块,不是解析器自己造的输入。**
+`layout.md` 为每种 non-TTY 结构配一段带 info-string 标注的 fenced 示例块(info-string 形如 `niceeval-layout`),块内含可 JSON 化的组件树语义输入与渲染文本两段。
+fence 内文本逐字节比对,不做空白折叠——layout 契约里空白就是语义,和上面用于身份匹配的折叠文本是两回事。
+
+**双向验证覆盖 renderer、文档与解析器三方。**
+NiceEval 仓库内一条单元测试把示例块的语义输入喂给真实 renderer,输出与示例的渲染文本段逐字节比对;unit 层可以 import renderer,不违反 E2E oracle 独立。
+E2E 侧解析器自测消费同一批示例块,验证解析器识别出的结构与身份和示例一致。
+两条边合起来,renderer、文档与解析器三方传递闭合,E2E 侧全程不 import 候选代码。
+
+**「逐条流事件」类别有预算。**
+它不能静默吞掉未声明的结构:至少一条代表 Behavior 断言该类别的行数为 0,或断言它只匹配一份显式白名单。
+结构本身自相矛盾(如声明是表却缺表头)仍然是 parse failure,不会被归类进「逐条流事件」类别掩盖。
+
+**准入 mutation 叫 fixture mutation,和解析器容差表成对声明。**
+它施加在抽取文本上,证明的是解析器拒收畸形结构,而不是解析器容忍到什么程度;mutation 集与解析器逐结构容差表写在同一处,防止准入判据和容差判据各说各话。
 
 ### 匹配口径
 
@@ -344,4 +388,4 @@ Evidence:
 - world manifest 在 globalSetup 校验身份与形状,失配时整个 vitest run 快速失败并指向 prepare 步骤。
 - Behavior 文件按用户任务组织(`test/behavior/analyze/compare-experiments.test.ts`),vitest 原生标题统一带 `[Behavior ID]` 前缀。
 - 单例重跑走仓库唯一入口:`pnpm e2e -- verify --world <manifest> --behavior <id>`,底层 `-t` 仍可按稳定 ID 定位同一测试。
-- `e2e.ts` 对 vitest 的退出码按既有规则折叠:非零一律回归,除非证据日志扫描确证外部故障(退 `75`)。
+- `e2e.ts` 对 vitest 退出码的折叠规则,以及 `candidate-install` 单列 stepKind 归产品侧、无归属失败一律判回归等出处分类,单源在[测试方案 Architecture · 失败与诊断](../e2e-acceptance-testing/architecture.md#失败与诊断),本文件不复制规则正文。
