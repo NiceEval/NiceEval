@@ -148,6 +148,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [failure-chain-experiment-before-adapter](failure-chain-experiment-before-adapter.md) — 裁决(2026-07-24):失败分类链实验分类器前移到 adapter 之前——先到先得的链序下 adapter 的纯时间轴答案会遮蔽实验的 scope 声明,证据门救不了空间轴,止损闸旗舰场景失效;按轴合并因复杂度未采纳
 - [json-warning-count-dropped-ruling](json-warning-count-dropped-ruling.md) — 裁决(2026-07-24):`--json` 的 `WarningEvent` 删 `count`——去重后只追加首次一条与「显示折叠次数」在 append-only 流里不可兼得,计数归 human 诊断行与 snapshot 诊断;否决「收尾补一条带终值 count 的 warning」(同 code 两种语义、消费方要维护状态机,且止损闸诊断本就没有终值);零代码改动,json renderer 从来没写过这个字段
 - [judge-precheck-run-level-line-not-transient](judge-precheck-run-level-line-not-transient.md) — 裁决(2026-07-24):judge 预检从「运行级瞬时通知」升格为运行级生命周期行(ACTIVE 区 `● prechecking judge config <elapsed>`,新增 `precheck` 事件+`activePrecheck` 状态,不复用 experiment-hook 伪造 id);起因=慢判分网关(x1api.top ~14s)让面板冻在 `1 queued` 像卡死;同批给 `probeJudge` fetch 加 20s 超时(TimeoutError→专门的「无响应」错误,根治「永久挂」)
+- [accept-cross-experiment-batch-ruling](accept-cross-experiment-batch-ruling.md) — 裁决(2026-08-04):`accept` 多 locator 放开跨 experiment,按 locator 解析出的 experiment 分组各自封口一个 snapshot;原「必须同一 experiment」是把 writer 侧「批量 commit 只建一个 snapshot」的实现细节误当产品规则去校验和文档化,与批量 planning OOM 修法([[accept-batch-per-locator-planning-oom]])同批完成
 
 ### 台账
 
@@ -199,6 +200,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history.md) — 升 schemaVersion 把存量语料整批打成不可携带(下次全量重跑),只有删/改名/改类型/换判别方式才算破坏兼容;13 按此复核确认真破坏(TimingNode→TimingActivity、phase→origin),不回滚
 - [linked-dev-tree-producer-version-placeholder](linked-dev-tree-producer-version-placeholder.md) — 发现(未修):link 开发树落盘的 `producer.version` 恒是占位 `0.4.6`(CI 发版才写真号),不兼容提示里的 `npx niceeval@0.4.6` 不可执行,修法方向三选一留待裁决
 - 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)
+- 已修 [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning-oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按 experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8 并发小池(`src/runner/accept.ts`)
 
 ## 报告 · view
 

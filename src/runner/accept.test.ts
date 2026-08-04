@@ -2,7 +2,7 @@
 // `accept` 的资格门与重锚落盘：只复制一条历史终态，不派发 Agent/Sandbox。
 
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,9 +10,11 @@ import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { defineDirectAgent, defineEval, defineExperiment } from "../define.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
+import { MANIFESTS_FILE } from "../record/manifest.ts";
 import type { AttemptHandle, Run } from "../record/types.ts";
 import { createWriter } from "../record/writer.ts";
 import {
+  acceptLocators,
   acceptPreparedAttempt,
   AcceptError,
   prepareAcceptedAttempt,
@@ -32,16 +34,17 @@ const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 function makePair(
-  over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan: unknown }> = {},
+  over: Partial<{ sandboxReuse: boolean; timeoutMs: number; plan: unknown; experimentId: string; agentName: string }> = {},
   evalId = "e",
 ) {
+  const experimentId = over.experimentId ?? "exp";
   const run = {
-    agent: { name: "current-agent" },
+    agent: { name: over.agentName ?? "current-agent" },
     flags: {},
     attempts: 1,
     earlyExit: false,
     selectedEvalIds: [evalId],
-    experimentId: "exp",
+    experimentId,
     experimentBaseDir: "/project",
     experimentSourcePath: "/project/experiments/exp.ts",
     ...(over.sandboxReuse === undefined ? {} : { sandboxReuse: over.sandboxReuse }),
@@ -52,7 +55,7 @@ function makePair(
     ...(over.timeoutMs === undefined ? {} : { timeoutMs: undefined }),
   } as unknown as DiscoveredEval;
   return {
-    key: "exp|e",
+    key: `${experimentId}|${evalId}`,
     run,
     evalDef,
     plan: over.plan ?? ({} as never),
@@ -60,11 +63,11 @@ function makePair(
   } as never;
 }
 
-function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle {
+function makeSource(root: string, over: Partial<EvalResult> = {}, experimentId = "exp"): AttemptHandle {
   const evalId = over.id ?? "e";
   const run = {
     runId: "old-run",
-    experimentId: "exp",
+    experimentId,
     startedAt: "2026-01-01T00:00:00.000Z",
     agent: "old-agent",
     producer: { name: "niceeval" },
@@ -75,7 +78,7 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
   } as unknown as Run;
   const result = {
     id: evalId,
-    experimentId: "exp",
+    experimentId,
     agent: "old-agent",
     verdict: "passed",
     fingerprint: "old-fingerprint",
@@ -89,9 +92,9 @@ function makeSource(root: string, over: Partial<EvalResult> = {}): AttemptHandle
   } as EvalResult;
   const source: AttemptHandle = {
     evalId,
-    experimentId: "exp",
+    experimentId,
     result,
-    ref: { run: "exp/old-run", attempt: "e/a0" },
+    ref: { run: `${experimentId}/old-run`, attempt: "e/a0" },
     run,
     locator: encodeAttemptLocator({ runId: "old-run", evalId, attempt: result.attempt }),
     carried: false,
@@ -369,5 +372,221 @@ describe("prepareAcceptLocator · 与 planCarry 同口径的 Judge 解析链", (
     // 下一次不带参数的 exp 命中这条新结果——证明接受是重锚而不是一次豁免。
     const nextPlan = await planCarry([evalDef], [prepared.pair.run], [accepted.attempt.result]);
     expect([...(nextPlan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「`niceeval accept @<locator>...` 的对象与资格」
+// 多 locator 不再要求同一 experiment(docs/feature/experiments/cache.md「accept」)：命令按 experiment
+// 分组，每组各自封口一个 snapshot。本组证明分组后快照级字段(agent/configHash/manifests)互不串仓、
+// 返回值顺序与调用方传入的 prepared 顺序一致(分组会打乱内部处理顺序)。
+describe("writeAcceptedAttempts · 跨 experiment 分组提交", () => {
+  it("按 experiment 分组各自封口 snapshot,快照级字段互不串仓,返回值顺序与入参一致", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-cross-experiment-write-"));
+    roots.push(root);
+    // 同名 eval id "e"分属两个不同 experiment——真实案例(toggl-cli/04-billing-doc)正是这种形状。
+    const sourceA = makeSource(root, { id: "e" }, "exp-a");
+    const sourceB = makeSource(root, { id: "e" }, "exp-b");
+    const manifestA = { algorithmVersion: 2, coverageVersion: 1, config: { "agent.name": "agent-a" }, source: {}, data: {} };
+    const manifestB = { algorithmVersion: 2, coverageVersion: 1, config: { "agent.name": "agent-b" }, source: {}, data: {} };
+
+    const preparedA = await prepareAcceptedAttempt({
+      recordRoot: root,
+      source: sourceA,
+      pair: makePair({ experimentId: "exp-a", agentName: "agent-a" }, "e"),
+      currentFingerprint: "current-a",
+      currentManifest: manifestA,
+      currentConfigHash: "config-a",
+      knownEvalIds: ["e"],
+      now: () => "2026-01-02T00:00:00.000Z",
+    });
+    const preparedB = await prepareAcceptedAttempt({
+      recordRoot: root,
+      source: sourceB,
+      pair: makePair({ experimentId: "exp-b", agentName: "agent-b" }, "e"),
+      currentFingerprint: "current-b",
+      currentManifest: manifestB,
+      currentConfigHash: "config-b",
+      knownEvalIds: ["e"],
+      now: () => "2026-01-02T00:00:00.000Z",
+    });
+
+    // 传入顺序 B, A——返回值必须还原成 B, A,不能被内部按 experiment 分组打乱。
+    const accepted = await writeAcceptedAttempts([preparedB, preparedA]);
+
+    expect(accepted).toHaveLength(2);
+    expect(accepted[0]!.sourceLocator).toBe(preparedB.sourceLocator);
+    expect(accepted[1]!.sourceLocator).toBe(preparedA.sourceLocator);
+    expect(accepted[0]!.run.runId).not.toBe(accepted[1]!.run.runId);
+    expect(accepted[0]!.run.dir).not.toBe(accepted[1]!.run.dir);
+    expect(accepted[0]!.run.agent).toBe("agent-b");
+    expect(accepted[1]!.run.agent).toBe("agent-a");
+    expect(accepted[0]!.run.configHash).toBe("config-b");
+    expect(accepted[1]!.run.configHash).toBe("config-a");
+
+    const manifestsB = JSON.parse(await readFile(join(accepted[0]!.run.dir, MANIFESTS_FILE), "utf8")) as Record<string, unknown>;
+    const manifestsA = JSON.parse(await readFile(join(accepted[1]!.run.dir, MANIFESTS_FILE), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(manifestsB)).toEqual(["e"]);
+    expect(Object.keys(manifestsA)).toEqual(["e"]);
+    expect(manifestsB.e).not.toEqual(manifestsA.e);
+  });
+});
+
+function discoverFixture(sourcePath: string, evalId: string, experimentId: string, agentName: string) {
+  const evalSource: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
+  const evalDef = discoverEval(defineEval({ test() {} }), {
+    id: evalId,
+    baseDir: "/project",
+    sourcePath,
+    source: evalSource,
+    loaderDataPaths: [],
+    criteriaPaths: [],
+    privatePaths: [],
+  });
+  const experiment = discoverExperiment(defineExperiment({
+    agent: defineDirectAgent({
+      name: agentName,
+      evidenceCoverage: completeEvidenceCoverage,
+      send: async () => ({ events: [], status: "completed" }),
+    }),
+    evals: "*",
+  }), { id: experimentId, baseDir: "/project", sourcePath });
+  return { evalDef, experiment };
+}
+
+async function seedHistoricalPassed(root: string, experimentId: string, evalId: string, agent: string): Promise<string> {
+  const runId = `${experimentId}-historical`;
+  const writer = createWriter(root, { producer: { name: "niceeval" } });
+  const run = await writer.run({ runId, experimentId, agent, startedAt: "2026-01-01T00:00:00.000Z" });
+  await run.writeAttempt({
+    id: evalId,
+    verdict: "passed",
+    fingerprint: "stale-fingerprint",
+    configHash: "stale-config",
+    attempt: 0,
+    durationMs: 5,
+    executionMs: 5,
+    assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
+  });
+  await run.finish();
+  return encodeAttemptLocator({ runId, evalId, attempt: 0 });
+}
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「`niceeval accept @<locator>...` 的对象与资格」
+// bug: memory/accept-batch-per-locator-planning-oom.md
+// acceptLocators 曾在多 locator 时逐条并发重跑一遍完整 discovery + sandbox planning，137 条
+// locator 撑爆 4GB 堆；本组证明 discovery 只 hoist 一次、sandbox planning 按 experiment
+// 记忆化后，端到端接受跨 experiment 的批次仍能正确按 experiment 分组，且同名 eval 跨
+// experiment 不误判重复(toggl-cli/04 的真实形状)。
+describe("acceptLocators · 跨 experiment 批量", () => {
+  it("跨 experiment 的同名 eval 各自独立接受,不判重复,discovery 与 planning 只 hoist 一次", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-locators-cross-experiment-"));
+    roots.push(root);
+    const sourcePath = fileURLToPath(import.meta.url);
+    const { evalDef: evalA, experiment: experimentA } = discoverFixture(sourcePath, "e", "exp-a", "agent-a");
+    const { evalDef: evalB, experiment: experimentB } = discoverFixture(sourcePath, "e", "exp-b", "agent-b");
+
+    const locatorA = await seedHistoricalPassed(root, "exp-a", "e", "old-agent-a");
+    const locatorB = await seedHistoricalPassed(root, "exp-b", "e", "old-agent-b");
+
+    const accepted = await acceptLocators({
+      cwd: root,
+      recordRoot: root,
+      locators: [locatorA, locatorB],
+      config: {},
+      evals: [evalA, evalB],
+      experiments: [experimentA, experimentB],
+      now: () => "2026-01-02T00:00:00.000Z",
+    });
+
+    expect(accepted).toHaveLength(2);
+    expect(accepted[0]!.sourceLocator).toBe(locatorA);
+    expect(accepted[1]!.sourceLocator).toBe(locatorB);
+    expect(accepted[0]!.run.runId).not.toBe(accepted[1]!.run.runId);
+    expect(accepted[0]!.attempt.run.agent).toBe("agent-a");
+    expect(accepted[1]!.attempt.run.agent).toBe("agent-b");
+  });
+
+  it("同一 experiment 内两个 locator 解析到同一个当前 (eval, attempt) 目标仍拒绝为重复", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-locators-same-experiment-duplicate-"));
+    roots.push(root);
+    const sourcePath = fileURLToPath(import.meta.url);
+    const { evalDef, experiment } = discoverFixture(sourcePath, "e", "exp", "agent");
+
+    // 两条历史结果各自跑在不同的旧 run 下，但都会重锚到同一个当前 (exp, e, attempt 0) 目标。
+    // writer.run() 按 experimentId 记忆化同一个 RunWriter,两条历史各自需要独立 finish(),
+    // 因此每次 seed 都建一个新 writer(与 seedHistoricalPassed 同一纪律)。
+    async function seed(runId: string): Promise<string> {
+      const writer = createWriter(root, { producer: { name: "niceeval" } });
+      const run = await writer.run({ runId, experimentId: "exp", agent: "old-agent", startedAt: "2026-01-01T00:00:00.000Z" });
+      await run.writeAttempt({
+        id: "e",
+        verdict: "passed",
+        fingerprint: `stale-${runId}`,
+        configHash: "stale-config",
+        attempt: 0,
+        durationMs: 5,
+        executionMs: 5,
+        assertions: [],
+        evidenceCoverage: completeEvidenceCoverage,
+      });
+      await run.finish();
+      return encodeAttemptLocator({ runId, evalId: "e", attempt: 0 });
+    }
+    const locatorFirst = await seed("historical-1");
+    const locatorSecond = await seed("historical-2");
+
+    await expect(acceptLocators({
+      cwd: root,
+      recordRoot: root,
+      locators: [locatorFirst, locatorSecond],
+      config: {},
+      evals: [evalDef],
+      experiments: [experiment],
+      now: () => "2026-01-02T00:00:00.000Z",
+    })).rejects.toMatchObject({ name: "AcceptError", code: "batch-mismatch" });
+  });
+
+  it("跨 experiment 批里任一条不合格(errored)时整批零写入", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-locators-cross-experiment-atomic-"));
+    roots.push(root);
+    const sourcePath = fileURLToPath(import.meta.url);
+    const { evalDef: evalA, experiment: experimentA } = discoverFixture(sourcePath, "e", "exp-a", "agent-a");
+    const { evalDef: evalB, experiment: experimentB } = discoverFixture(sourcePath, "e", "exp-b", "agent-b");
+
+    const locatorA = await seedHistoricalPassed(root, "exp-a", "e", "old-agent-a");
+    const writerB = createWriter(root, { producer: { name: "niceeval" } });
+    const runB = await writerB.run({ runId: "exp-b-historical", experimentId: "exp-b", agent: "old-agent-b", startedAt: "2026-01-01T00:00:00.000Z" });
+    await runB.writeAttempt({
+      id: "e",
+      verdict: "errored",
+      fingerprint: "stale-fingerprint-b",
+      configHash: "stale-config-b",
+      attempt: 0,
+      durationMs: 5,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+    });
+    await runB.finish();
+    const locatorB = encodeAttemptLocator({ runId: "exp-b-historical", evalId: "e", attempt: 0 });
+
+    // 两个 experiment 目录此刻各自只有一份历史(seed 用的)快照;接受失败后不应该多出新的。
+    const beforeA = await readdir(join(root, "exp-a"));
+    const beforeB = await readdir(join(root, "exp-b"));
+
+    await expect(acceptLocators({
+      cwd: root,
+      recordRoot: root,
+      locators: [locatorA, locatorB],
+      config: {},
+      evals: [evalA, evalB],
+      experiments: [experimentA, experimentB],
+      now: () => "2026-01-02T00:00:00.000Z",
+    })).rejects.toMatchObject({ name: "AcceptError", code: "not-terminal" });
+
+    // exp-a 本可以独立成功,但跨 experiment 批的预检仍是全批原子:一条不合格,整批零写入,
+    // 即使不合格的那一条属于另一个 experiment。
+    expect(await readdir(join(root, "exp-a"))).toEqual(beforeA);
+    expect(await readdir(join(root, "exp-b"))).toEqual(beforeB);
   });
 });

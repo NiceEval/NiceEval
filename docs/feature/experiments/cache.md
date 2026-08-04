@@ -312,7 +312,7 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每条来源对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
 接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。`--all-stale` 不存在：范围会随当前发现结果漂移，不能代表逐条授权。
-多个 locator 必须属于同一 experiment，才能合成该 experiment 的一个原子 snapshot；跨 experiment 时按 experiment 分开调用。它不把共同差异扩散到未列出的结果。
+多个 locator 可以跨 experiment：命令按每条 locator 解析出的 experiment 分组，为每个 experiment 各自合成一个原子 snapshot。同一 experiment 内，两个 locator 解析到同一个当前 (eval, attempt) 目标视为重复选择，直接拒绝；跨 experiment 时，同名 eval 各自独立，不算重复。它不把某个 experiment 内部的共同差异扩散到其它 experiment 或未列出的结果。
 
 写盘前先对全部 locator 验证下列条件:
 
@@ -324,7 +324,7 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 
 缺失序号、`errored`、`skipped` 与留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。Provider identity 未 pin 或 callback opaque 属于 fingerprint 输入，不单独作为 carry blocker。
 
-任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后只封口一个 snapshot；输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
+任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后按 experiment 分组，每组各自封口一个 snapshot；输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
 
 `accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 

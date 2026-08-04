@@ -198,7 +198,7 @@ npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
 ╰─────────────────────────────────────────────────╯
 ```
 
-接受会写出使用当前指纹的新结果，并记下各自的来源 locator、旧/新指纹和差异摘要。多个显式 locator 先全部验证，任一条失败时零写入；全部通过时只生成一个 snapshot。命令不会因为共同差异接受未列出的结果，也没有 `--all-stale`。
+接受会写出使用当前指纹的新结果，并记下各自的来源 locator、旧/新指纹和差异摘要。多个显式 locator 先全部验证，任一条失败时零写入；全部通过后按 locator 各自所属的 experiment 分组，每组生成一个 snapshot——多个 experiment 可以在一条命令里一起接受。命令不会因为共同差异接受未列出的结果，也没有 `--all-stale`。
 
 NiceEval 已知且能证明等价的 fingerprint 版本迁移会自动携带，并留下 `migratedFrom`；无法证明的迁移才显示 `stale` 并要求接受或重跑。输出不会使用含义不清的 `details unavailable`。
 
