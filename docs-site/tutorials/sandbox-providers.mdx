@@ -264,7 +264,7 @@ import { dockerImageSandbox } from "niceeval/sandbox";
 sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
-The Docker Sandbox runs commands as the non-root `node` user (UID 1000) by default and puts `/usr/local/bin` on the PATH, so global binaries installed with `npm install -g` are visible out of the box. If an agent installs somewhere else (for example into `~/.local/bin`), remember to put that directory on the PATH. `dockerImageSandbox` requires an explicit image; stable CI should reference an immutable tag.
+The Docker Sandbox follows whatever execution identity the image itself declares: the Dockerfile above never sets `USER`, so the container runs commands as root by default, and `/usr/local/bin` is already on root's PATH, so global binaries installed with `npm install -g` are visible out of the box. When you need a non-root identity (for example, Claude Code refuses `--dangerously-skip-permissions` under root), add `USER node` to the Dockerfile (the `node:24-slim` image already has that user), or override it explicitly with `dockerImageSandbox({ image, user: "node" })`. If an agent installs somewhere else (for example into `~/.local/bin`), remember to put that directory on the PATH. `dockerImageSandbox` requires an explicit image; stable CI should reference an immutable tag.
 
 #### Vercel: snapshot the official runtime
 
@@ -351,7 +351,7 @@ Three things to keep in mind before you use it:
 - The local directory runs only one attempt at a time (forced serial); `--max-concurrency` cannot raise it.
 - When you run several evals back to back, one eval's changes stay on the working tree and become the starting point for the next. Use a container provider when you need a clean starting point for every eval.
 
-`{ root: true }` and `--keep-sandbox` are unavailable for the local directory and fail immediately: NiceEval does not escalate privileges on your machine, and there is nothing to "retain" — the workspace already sits exactly where it was.
+`{ user: "..." }` and `--keep-sandbox` are unavailable for the local directory and fail immediately: NiceEval does not escalate privileges or switch identity on your machine, and there is nothing to "retain" — the workspace already sits exactly where it was.
 
 ## Custom provider
 
@@ -383,9 +383,9 @@ export default defineSandbox({
 
 The return value just has to implement the `Sandbox` interface. Do not write the provider SDK's raw logs straight to the host process's `stdout` / `stderr`. Short-lived status goes through `feedback.progress`, problems worth keeping go through `feedback.diagnostic`, and if the environment cannot be created, throw. That keeps the human dashboard from being torn apart by logs and keeps CI output single and ordered.
 
-## Permissions and root
+## Permissions and execution identity
 
-Providers differ in what they allow around root access, networking, the file system, and process lifecycle. When writing Fixtures, avoid depending on the host machine's environment; put dependencies in `package.json` or in Fixture setup.
+Providers differ in what they allow around execution identity, networking, the file system, and process lifecycle. When writing Fixtures, avoid depending on the host machine's environment; put dependencies in `package.json` or in Fixture setup.
 
 ## Performance advice
 

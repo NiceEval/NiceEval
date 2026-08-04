@@ -218,7 +218,7 @@ export class LocalSandbox implements SandboxProviderBackend {
   }
 
   async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
-    if (opts.root) throw new Error(t("local.rootUnsupported"));
+    if (opts.user !== undefined) throw new Error(t("local.userUnsupported", { user: opts.user }));
     const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned(cmd, [...args], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
@@ -232,7 +232,7 @@ export class LocalSandbox implements SandboxProviderBackend {
   }
 
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
-    if (opts.root) throw new Error(t("local.rootUnsupported"));
+    if (opts.user !== undefined) throw new Error(t("local.userUnsupported", { user: opts.user }));
     const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned("bash", ["-c", script], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),

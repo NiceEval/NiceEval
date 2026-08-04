@@ -227,6 +227,11 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   async runCommand(cmd: string, args: readonly string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
+    // Vercel 命令级只认 `user: "root"`(映射 `sudo: true`);其它显式值报错,省略 = `sudo: false`
+    // (见 docs/feature/sandbox/library.md「执行身份」)。
+    if (opts.user !== undefined && opts.user !== "root") {
+      throw new Error(t("vercel.userUnsupported", { user: opts.user }));
+    }
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
     // 普通 provider 调用或显式的单命令 timeout 只是这条命令的执行上限，不能为此读取
@@ -237,7 +242,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       args: [...args],
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: opts.env,
-      sudo: opts.root ?? false,
+      sudo: opts.user === "root",
       // per-command 上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值);
       // 没有 deadline 就不设,provider 层不发明一条自己的线。
       ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),

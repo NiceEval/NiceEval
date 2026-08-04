@@ -261,7 +261,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const rootCommands = sandboxSupportsRootCommands(sandbox);
   // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown
   // workdir，Agent 命令仍沿标准非 root 身份；不支持提权的 provider 保持既有用户态路径。
-  const commandOptions = rootCommands ? { env, root: true as const } : { env };
+  const commandOptions = rootCommands ? { env, user: "root" as const } : { env };
   const captureMetadata = rootCommands ? ` && ${captureBaselineMetadataScript()}` : "";
   const lockPrivateLedger = rootCommands ? ' && chmod go-rwx "$GIT_DIR"' : "";
   let ordinaryUid: string | undefined;
@@ -336,7 +336,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
 async function exportAgentWindows(
   sandbox: Sandbox,
-  commandOptions: { readonly env: globalThis.Record<string, string>; readonly root?: true },
+  commandOptions: { readonly env: globalThis.Record<string, string>; readonly user?: "root" },
   exportDir: string,
   rootCommands: boolean,
 ): Promise<DiffArtifact> {

@@ -14,7 +14,7 @@ export type SandboxBackendSupport<T> =
   | { readonly _tag: "Unsupported" };
 
 export interface SandboxBackendCapabilities {
-  /** Provider 能否兑现 CommandOptions.root 的提权语义；runner 私有基础设施按这项能力选择身份。 */
+  /** Provider 能否兑现 CommandOptions.user 的 root 覆盖；runner 私有基础设施按这项能力选择身份。 */
   readonly rootCommands: SandboxBackendSupport<true>;
   readonly appendLog: SandboxBackendSupport<(line: string) => Promise<void>>;
   readonly suspend: SandboxBackendSupport<() => Promise<void>>;

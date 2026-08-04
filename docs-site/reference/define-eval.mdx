@@ -110,8 +110,8 @@ setup?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
 ```
 
 Eval-level preparation: receives the Sandbox (after the workspace is uploaded and the git baseline is set, before dependencies are installed).
-Commands run as non-root by default (the agent's natural environment); when installing system dependencies, pass `{ root: true }`
-to `runCommand` (e.g. `runCommand("apt-get", ["install", …], { root: true })`) — semantics are consistent across providers.
+Commands default to the environment's own declared identity (the Docker image `USER`, the Compose service `user:`, and so on); when installing system dependencies, pass `{ user: "root" }`
+to `runCommand` (e.g. `runCommand("apt-get", ["install", …], { user: "root" })`) — semantics are consistent across providers.
 The second parameter is a narrow context bound to `eval.setup` (`ctx.progress` / `ctx.diagnostic`,
 see docs/feature/eval/README.md). `setup` returns no value; to pass an artifact through to `teardown`,
 key it off the `sandbox` instance (concurrent attempts share the same module, so a plain module-level variable would get overwritten by other attempts).

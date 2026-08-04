@@ -161,6 +161,70 @@ describe("E2BSandbox.downloadDirectory", () => {
   });
 });
 
+// cases: docs/engineering/testing/unit/sandbox.md「命令执行」——执行身份默认沿用环境声明。
+// e2b commands.run 直接透传同名 user 参数;省略时不注入(沿用 template 默认用户),factory `user`
+// 覆盖后的身份是 Sandbox 默认值,单条命令的 opts.user 再覆盖它(见 docs/feature/sandbox/library.md
+// 「执行身份」)。这里只证明 `commandOptions.user` 的解析,不需要真实 bash 完成协议。
+describe("E2BSandbox.runShell · 执行身份", () => {
+  function makeSandboxWithUser(sbx: unknown, userOverride?: string): E2BSandbox {
+    const Ctor = E2BSandbox as unknown as new (
+      sbx: unknown,
+      id: string,
+      timeoutMs: number,
+      lifetime: { readonly _tag: "ProviderDefault" },
+      userOverride: string | undefined,
+    ) => E2BSandbox;
+    return new Ctor(sbx, "test-sandbox", 5_000, { _tag: "ProviderDefault" }, userOverride);
+  }
+
+  function capturingSandbox(userOverride: string | undefined, capture: (user: string | undefined) => void): E2BSandbox {
+    return makeSandboxWithUser({
+      commands: {
+        run: async (_script: string, opts: FakeE2BRunOptions & { user?: string }) => {
+          capture(opts.user);
+          return { wait: () => new Promise<never>(() => {}), disconnect: async () => {} };
+        },
+      },
+    }, userOverride);
+  }
+
+  it("省略 factory user 与命令级 user 时不注入 user(沿用 template 默认身份)", async () => {
+    let captured: string | undefined = "not-called";
+    const sandbox = capturingSandbox(undefined, (user) => {
+      captured = user;
+    });
+
+    void sandbox.runShell("id");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(captured).toBeUndefined();
+  });
+
+  it("factory user 覆盖后,省略命令级 user 时沿用它", async () => {
+    let captured: string | undefined;
+    const sandbox = capturingSandbox("agent", (user) => {
+      captured = user;
+    });
+
+    void sandbox.runShell("id");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(captured).toBe("agent");
+  });
+
+  it("命令级 user 覆盖 factory 默认身份,只这一条命令换身份", async () => {
+    let captured: string | undefined;
+    const sandbox = capturingSandbox("agent", (user) => {
+      captured = user;
+    });
+
+    void sandbox.runShell("apt-get update", { user: "root" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(captured).toBe("root");
+  });
+});
+
 // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
 // `ready: true` 的唯一合法依据是远端真实到期时刻:两次都读 `getInfo().endAt`,不复读我们
 // 请求给 `setTimeout` 的值——e2b 的账号档位会把请求值压短(见 e2b.ts 的 ensureLifetime 注释)。

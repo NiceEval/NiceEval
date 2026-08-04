@@ -40,10 +40,10 @@ async function putContentBytes(
     // permission denial with root; transport failures and deterministic non-permission exits must
     // retain their original identity and error.
     asRoot = true;
-    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath], { root: true });
-    await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir], { root: true });
+    await sandbox.runCommandOrThrow("rm", ["-rf", partsDir, mergedPath], { user: "root" });
+    await sandbox.runCommandOrThrow("mkdir", ["-p", partsDir], { user: "root" });
   }
-  let commandOptions = asRoot ? { root: true as const } : undefined;
+  let commandOptions = asRoot ? { user: "root" as const } : undefined;
 
   try {
     let index = 0;
@@ -66,7 +66,7 @@ async function putContentBytes(
       // In a sticky directory (for example /tmp), staging can be user-owned while an existing target
       // is root-owned and cannot be replaced. Escalate only that proven final replacement failure.
       asRoot = true;
-      commandOptions = { root: true };
+      commandOptions = { user: "root" };
       await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath], commandOptions);
     }
     await sandbox.runCommandOrThrow("rm", ["-rf", partsDir], commandOptions);
@@ -130,7 +130,7 @@ async function ensureContentDirectory(sandbox: SandboxOperations, path: string):
     // putContent is a host transfer primitive. Prefer the sandbox user so normal
     // workdir fixtures stay editable, but a caller may have prepared the target
     // parent as root immediately before transfer (for example under /tmp).
-    await sandbox.runCommandOrThrow("mkdir", ["-p", path], { root: true });
+    await sandbox.runCommandOrThrow("mkdir", ["-p", path], { user: "root" });
   }
 }
 

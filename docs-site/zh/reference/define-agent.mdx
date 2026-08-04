@@ -492,19 +492,20 @@ readonly onStderr?: (chunk: string) => void | Promise<void>;
 
 `onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。
 
-#### `root`
+#### `user`
 
 ```ts
-readonly root?: boolean;
+readonly user?: string;
 ```
 
-以 root 跑本命令。默认 `false` —— 命令以 Sandbox 的标准**非 root** 用户跑(agent 的自然环境)。
-给 setup 阶段装系统依赖用(`apt-get install …`、`pip install --break-system-packages …`)。
+覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
+Compose service `user:`、E2B template 默认用户、宿主当前用户,见
+docs/feature/sandbox/library.md「执行身份」)。
 
-语义跨 provider 一致:"本命令以 root 跑,否则以标准非 root 用户跑"。各 provider 映射到自己的原生机制
-(docker:`exec --user root`;E2B:`{ user: "root" }`;Vercel:`{ sudo: true }`;Daytona:`{ user }`)。
-本就全程 root 的 provider(如 Modal)视作 no-op;完全无法提权的 provider 可不支持(抛错)—— 但**默认值与
-语义保持一致**,不因 provider 而变。
+语义跨 provider 一致,各 provider 映射到自己的原生机制(docker:`exec --user`;E2B:
+`{ user }`;Vercel:只认 `"root"`,映射 `{ sudo: true }`,其它值报错;local:任何值都报错)。
+本就全程 root 的 provider视作 no-op;完全无法换身份的 provider 可不支持(抛错)—— 但**省略与
+显式值的语义保持一致**,不因 provider 而变。
 
 #### `timeoutMs`
 

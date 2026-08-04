@@ -86,20 +86,16 @@ const CONTAINER_WORKDIR = "/home/sandbox/workspace";
 // 容器「主日志」文件:PID1 tail 它 → `docker logs` 实时显示;agent 命令的 stream 输出 tee 进来。
 const CONTAINER_LOG = "/tmp/niceeval-agent.log";
 
-// 命令默认以非 root 的 node 用户跑:安全 + 兼容(如 Claude Code 在 root 下拒绝
-// --dangerously-skip-permissions)。node:*-slim 镜像自带 UID/GID 1000 的 node 用户。
-// 需要 root 的命令(setup 装系统依赖)走 runCommand 的 `{ root: true }`;此默认非 root + 按需提
-// root 的模型与 E2B / Vercel / Daytona 一致(见 types.ts 的 CommandOptions.root)。
-const SANDBOX_UID = 1000;
-const SANDBOX_GID = 1000;
-const SANDBOX_USER = `${SANDBOX_UID}:${SANDBOX_GID}`;
+// 命令默认沿用环境自己声明的执行身份:省略 `user` 时 docker exec 不注入 `--user`,
+// 镜像 `USER` 原样生效(未声明按 Docker 语义是 root)。需要别的身份走 factory `user`
+// (整个 Sandbox 的默认身份)或 runCommand 的 `{ user: "root" }`(只这一条命令)——
+// 见 docs/feature/sandbox/library.md「执行身份」。
 const ROOT_USER = "root";
 
-// npm 全局包安装目录(非 root 可写)。
-const NPM_GLOBAL_DIR = "/home/node/.npm-global";
-
-// 命令执行时注入的 PATH:把 npm 全局 bin 放最前。
-const SANDBOX_PATH = `${NPM_GLOBAL_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+/** `user` 取值是否等价于 root(数字 uid 0、`0:0` 或字面量 `root`)。 */
+function isRootLikeUserSpec(value: string): boolean {
+  return value === "0" || value === "0:0" || value === ROOT_USER;
+}
 
 /** 创建 Docker 沙箱的选项。 */
 export interface DockerSandboxOptions {
@@ -129,10 +125,10 @@ export interface DockerSandboxOptions {
    */
   workdir?: string;
   /**
-   * 默认执行身份。`"image"` = 容器镜像声明的 USER(空则 root)——Terminal-Bench 等
-   * 需要改系统文件的 Compose main 必须用它;省略 = 内置非 root `SANDBOX_USER`。
+   * 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)、
+   * Compose service `user:` 或其镜像 `USER`。
    */
-  executionUser?: "image" | string;
+  user?: string;
 }
 
 /** `stop()` 时是否销毁容器。Compose 主容器由资源组 `compose down` 回收,附着句柄只松绑。 */
@@ -159,10 +155,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private provisionToken?: string;
   private runIdentity?: RunIdentity;
   private releaseMode: DockerSandboxReleaseMode = "destroy";
-  /** 默认 docker exec User;`opts.root` 仍可提到 root。 */
-  private defaultUser: string = SANDBOX_USER;
-  private defaultHome: string = "/home/node";
-  private defaultUserName: string = "node";
+  /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
+  private readonly userOverride?: string;
+  /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
+  private defaultHome = "/root";
+  private defaultUserName = "root";
+  private defaultIsRoot = true;
+  private npmGlobalDir = "/root/.npm-global";
+  private sandboxPath = "/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),
     appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
@@ -182,19 +182,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
-    if (options.executionUser === "image") {
-      // 镜像未声明 USER 时 Docker 默认 root。
-      this.defaultUser = ROOT_USER;
-      this.defaultHome = "/root";
-      this.defaultUserName = "root";
-    } else if (options.executionUser !== undefined && options.executionUser !== "") {
-      this.defaultUser = options.executionUser;
-      // 非 root 显式身份时仍用 node 家目录约定;调用方可再传 env 覆盖。
-      if (options.executionUser === "0" || options.executionUser === "0:0" || options.executionUser === "root") {
-        this.defaultHome = "/root";
-        this.defaultUserName = "root";
-      }
-    }
+    this.userOverride = options.user === "" ? undefined : options.user;
   }
 
   /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
@@ -230,21 +218,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     sandbox.container = container;
     sandbox._containerId = info.Id ?? containerId;
     sandbox.releaseMode = options.releaseMode ?? "detach";
-    if (options.executionUser === "image") {
-      const imageUser = typeof info.Config?.User === "string" ? info.Config.User.trim() : "";
-      if (imageUser === "" || imageUser === "0" || imageUser === "0:0" || imageUser === "root") {
-        sandbox.defaultUser = ROOT_USER;
-        sandbox.defaultHome = "/root";
-        sandbox.defaultUserName = "root";
-      } else {
-        sandbox.defaultUser = imageUser;
-        sandbox.defaultHome = "/home/node";
-        sandbox.defaultUserName = imageUser.split(":")[0] || imageUser;
-      }
-    }
     // Compose template 是题目的镜像，不能假设预装了 runner 私有分类账所需的 git。
     // 这属于 provider 兑现 Sandbox 契约的初始化，不应让每条 Eval 改自己的 Dockerfile。
     await sandbox.ensureRunnerTools();
+    await sandbox.resolveDefaultIdentity();
     return sandbox;
   }
 
@@ -340,16 +317,46 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // slim 镜像可能缺 CA 证书和 git,补装。
     await this.ensureRunnerTools();
 
-    // 工作目录交给非 root 用户(node:node)。node 用户(UID 1000)在 slim 镜像里已存在。
+    // 探测默认执行身份(镜像 USER,或 factory 的 `user` 覆盖)的 home 目录,后续 chown 与
+    // npm 全局前缀都按它解析,不硬编码 UID/家目录(见 docs/feature/sandbox/library.md「执行身份」)。
+    await this.resolveDefaultIdentity();
+
+    // 工作目录交给默认执行身份。
     await this.runCommandAsRoot("mkdir", ["-p", this.workdir]);
-    await this.runCommandAsRoot("chown", ["-R", SANDBOX_USER, this.workdir]);
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir]);
 
-    // 为非 root 全局安装准备 npm 目录。
-    await this.runCommandAsRoot("mkdir", ["-p", NPM_GLOBAL_DIR]);
-    await this.runCommandAsRoot("chown", ["-R", SANDBOX_USER, NPM_GLOBAL_DIR]);
+    // 为非 root 全局安装准备 npm 目录;root 身份下这一步是无害的自有目录。
+    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir]);
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir]);
 
-    // 让 npm 用这个目录当全局前缀(默认非 root,配置落在 node 家目录,供 agent 全局装 CLI 用)。
-    await this.runCommand("npm", ["config", "set", "prefix", NPM_GLOBAL_DIR]);
+    // 让 npm 用这个目录当全局前缀(配置落在默认身份的家目录,供 agent 全局装 CLI 用)。
+    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir]);
+  }
+
+  /**
+   * 探测 Sandbox 默认执行身份(`this.userOverride` 未设置时即容器/镜像的默认身份)的
+   * uid、用户名与家目录:省略 `User` 字段的 exec 沿用容器默认身份,`$HOME` 由容器内
+   * `/etc/passwd` 解析,不在 runner 侧维护一张 UID → 家目录的映射表。
+   */
+  private async resolveDefaultIdentity(): Promise<void> {
+    const probe = await this.execCommand("sh", [
+      "-c",
+      'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"',
+    ], { user: this.userOverride });
+    const [rawUid = "", rawName = "", rawHome = ""] = probe.stdout.split("\n");
+    const uid = rawUid.trim();
+    const name = rawName.trim();
+    const home = rawHome.trim();
+    this.defaultIsRoot = uid === "0";
+    this.defaultUserName = name !== "" ? name : (this.defaultIsRoot ? ROOT_USER : (this.userOverride ?? uid));
+    this.defaultHome = home !== "" ? home : (this.defaultIsRoot ? "/root" : `/home/${this.defaultUserName}`);
+    this.npmGlobalDir = `${this.defaultHome}/.npm-global`;
+    this.sandboxPath = `${this.npmGlobalDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
+  }
+
+  /** chown 目标:factory 覆盖时原样复用(接受 name / uid[:gid]),否则用探测出的用户名。 */
+  private chownTarget(): string {
+    return this.userOverride ?? this.defaultUserName;
   }
 
   /** 确保镜像在本地,缺了就拉。 */
@@ -434,8 +441,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /**
-   * 在容器里跑一条命令。默认以非 root 的 node 用户跑;`opts.root` 为真则以 root 跑
-   * (setup 装系统依赖用)。
+   * 在容器里跑一条命令。默认沿用 Sandbox 的默认执行身份(factory `user` 覆盖后的身份,
+   * 否则镜像声明的 USER);`opts.user` 只覆盖这一条命令。
    */
   async runCommand(
     cmd: string,
@@ -450,7 +457,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         env: opts.env,
         cwd: opts.cwd,
         stream: true,
-        root: opts.root,
+        user: opts.user,
         ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         signal: opts.signal,
         onStdout: opts.onStdout,
@@ -458,24 +465,26 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       });
     }
 
-    // 保证 npm 全局 bin 在 PATH 里;固定 HOME/USER,让 codex(~/.codex)、npm 全局、
-    // bash 的 ~ 展开都落在当前身份的家目录,不依赖 docker exec 是否注入 HOME。
-    const isRoot = opts.root === true || this.defaultUser === ROOT_USER;
+    // 省略 `user` 时不注入 --user,沿用容器默认身份(factory `user` 覆盖后的身份,否则镜像
+    // 声明的 USER);这时 HOME/USER/LOGNAME 用探测出的默认身份家目录,让 codex(~/.codex)、
+    // npm 全局、bash 的 ~ 展开都落在正确的地方。显式覆盖时把 HOME 决定权交还 docker exec
+    // 自己按容器 /etc/passwd 解析,不代它猜一个可能错的家目录。
+    const isRootUser = opts.user !== undefined ? isRootLikeUserSpec(opts.user) : this.defaultIsRoot;
     const env = {
-      HOME: isRoot ? "/root" : this.defaultHome,
-      USER: isRoot ? "root" : this.defaultUserName,
-      LOGNAME: isRoot ? "root" : this.defaultUserName,
+      ...(opts.user === undefined
+        ? { HOME: this.defaultHome, USER: this.defaultUserName, LOGNAME: this.defaultUserName }
+        : {}),
       ...opts.env,
-      PATH: SANDBOX_PATH,
+      PATH: this.sandboxPath,
       // root 跑 npm 时让 install 脚本也以 root 跑(否则 npm 会把脚本降权到目录属主,可能写不进)。
       // 非 root 时此变量无影响。
-      ...(isRoot ? { npm_config_unsafe_perm: "true" } : {}),
+      ...(isRootUser ? { npm_config_unsafe_perm: "true" } : {}),
     };
 
     return this.execCommand(cmd, [...args], {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      user: isRoot ? ROOT_USER : this.defaultUser,
+      user: opts.user ?? this.userOverride,
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
@@ -498,7 +507,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** 把目录属主收敛回默认执行身份(putArchive 以 root 解包后用)。 */
   private async chownToSandboxUser(path: string): Promise<void> {
-    await this.runCommandAsRoot("chown", ["-R", this.defaultUser, path]);
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), path]);
   }
 
   /** 真正在容器里 exec 一条命令,demux stdout/stderr 并带超时。 */
@@ -619,7 +628,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       return this.runCommand("bash", ["-c", wrapped], {
         env: opts.env,
         cwd: opts.cwd,
-        root: opts.root,
+        user: opts.user,
         ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         signal: opts.signal,
         onStdout: opts.onStdout,

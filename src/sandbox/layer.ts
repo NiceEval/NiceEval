@@ -62,7 +62,8 @@ export interface DockerComposeSandboxOptions {
   readonly file: string | URL;
   readonly workspaceService: string;
   readonly build?: "on-demand" | "prebuilt";
-  readonly executionUser?: string;
+  /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 Compose service `user:` 或其镜像 `USER`。 */
+  readonly user?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** Compose 插值所需凭据；value 只进私有 runtime binding，identity 只认变量名与 revision。 */
   readonly credentialEnv?: Readonly<
@@ -75,16 +76,22 @@ export interface DockerfileSandboxOptions {
   readonly context: string | URL;
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用构建出的镜像 `USER`。 */
+  readonly user?: string;
   readonly lifetimeMs?: number;
 }
 
 export interface DockerImageSandboxOptions {
   readonly image: string;
+  /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)。 */
+  readonly user?: string;
   readonly lifetimeMs?: number;
 }
 
 export interface E2BSandboxOptions {
   readonly template: string;
+  /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
+  readonly user?: string;
   readonly lifetimeMs?: number;
 }
 
@@ -789,7 +796,7 @@ function nonEmptyBuildKeys(
 }
 
 export type SandboxExecutionUser =
-  | { readonly _tag: "ImageDefault" }
+  | { readonly _tag: "EnvironmentDefault" }
   | { readonly _tag: "Configured"; readonly value: string };
 
 export type SandboxProviderLifetime =
@@ -800,7 +807,7 @@ export interface DockerComposeProviderPlan {
   readonly file: SandboxLocation;
   readonly workspaceService: string;
   readonly build: "on-demand" | "prebuilt";
-  readonly executionUser: SandboxExecutionUser;
+  readonly user: SandboxExecutionUser;
   readonly env: Readonly<Record<string, string>>;
   readonly collection: ComposeBuildCollection;
   readonly lifetime: SandboxProviderLifetime;
@@ -810,6 +817,7 @@ export interface DockerfileProviderPlan {
   readonly context: SandboxLocation;
   readonly dockerfile: string;
   readonly buildArgs: Readonly<Record<string, string>>;
+  readonly user: SandboxExecutionUser;
   readonly build: DockerfileBuildIdentity;
   readonly buildKey: BuildKey;
   readonly platform: string;
@@ -818,11 +826,13 @@ export interface DockerfileProviderPlan {
 
 export interface DockerImageProviderPlan {
   readonly image: string;
+  readonly user: SandboxExecutionUser;
   readonly lifetime: SandboxProviderLifetime;
 }
 
 export interface E2BProviderPlan {
   readonly template: string;
+  readonly user: SandboxExecutionUser;
   readonly lifetime: SandboxProviderLifetime;
 }
 
@@ -996,7 +1006,7 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerComposeSandbox options");
       assertOnlyKeys(
         options,
-        ["file", "workspaceService", "build", "executionUser", "env", "credentialEnv", "lifetimeMs"],
+        ["file", "workspaceService", "build", "user", "env", "credentialEnv", "lifetimeMs"],
         "dockerComposeSandbox options",
       );
       if (options.build !== undefined && options.build !== "on-demand" && options.build !== "prebuilt") {
@@ -1005,9 +1015,9 @@ export function createBuiltinSandboxFactories(
       const file = location(options.file, "dockerComposeSandbox options.file");
       const workspaceService = nonEmptyString(options.workspaceService, "dockerComposeSandbox options.workspaceService");
       const build = options.build === undefined ? "on-demand" : options.build;
-      const executionUser: SandboxExecutionUser = options.executionUser === undefined
-        ? { _tag: "ImageDefault" }
-        : { _tag: "Configured", value: nonEmptyString(options.executionUser, "dockerComposeSandbox options.executionUser") };
+      const user: SandboxExecutionUser = options.user === undefined
+        ? { _tag: "EnvironmentDefault" }
+        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerComposeSandbox options.user") };
       const env = stringRecord(options.env, "dockerComposeSandbox options.env");
       const credentialEnv = credentialEnvRecord(options.credentialEnv, "dockerComposeSandbox options.credentialEnv");
       for (const key of Object.keys(credentialEnv)) {
@@ -1030,7 +1040,7 @@ export function createBuiltinSandboxFactories(
         file,
         workspaceService,
         build,
-        executionUser,
+        user,
         env: { ...env },
         credentialEnv: credentialIdentity,
         lifetime: plannedLifetime,
@@ -1041,7 +1051,7 @@ export function createBuiltinSandboxFactories(
         publishableIdentity: {
           workspaceService,
           build,
-          executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
+          user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
           envKeys: Object.keys(env).sort(),
           credentialEnv: credentialIdentity,
           lifetime: plannedLifetime,
@@ -1062,7 +1072,7 @@ export function createBuiltinSandboxFactories(
             file: plannedFile,
             workspaceService,
             build,
-            executionUser,
+            user,
             env: { ...env },
             credentialEnv: credentialIdentity,
             lifetime: plannedLifetime,
@@ -1090,7 +1100,7 @@ export function createBuiltinSandboxFactories(
               file: plannedFile,
               workspaceService,
               build,
-              executionUser: Object.freeze({ ...executionUser }),
+              user: Object.freeze({ ...user }),
               env: Object.freeze({ ...runtimeEnv }),
               collection,
               lifetime: plannedLifetime,
@@ -1098,7 +1108,7 @@ export function createBuiltinSandboxFactories(
             publishableIdentity: {
               workspaceService,
               build,
-              executionUser: { _tag: options.executionUser === undefined ? "ImageDefault" : "Configured" },
+              user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
               envKeys: Object.keys(env).sort(),
               credentialEnv: credentialIdentity,
               lifetime: plannedLifetime,
@@ -1123,12 +1133,15 @@ export function createBuiltinSandboxFactories(
 
     dockerfileSandbox(options: DockerfileSandboxOptions) {
       assertRecord(options, "dockerfileSandbox options");
-      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "lifetimeMs"], "dockerfileSandbox options");
+      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "user", "lifetimeMs"], "dockerfileSandbox options");
       const context = location(options.context, "dockerfileSandbox options.context");
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
         : nonEmptyString(options.dockerfile, "dockerfileSandbox options.dockerfile");
       const buildArgs = stringRecord(options.buildArgs, "dockerfileSandbox options.buildArgs");
+      const user: SandboxExecutionUser = options.user === undefined
+        ? { _tag: "EnvironmentDefault" }
+        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerfileSandbox options.user") };
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
       const identity: JsonValue = {
         provider: "docker",
@@ -1136,6 +1149,7 @@ export function createBuiltinSandboxFactories(
         context,
         dockerfile,
         buildArgs: { ...buildArgs },
+        user,
         lifetime: plannedLifetime,
       };
       return defineSandboxTemplate({
@@ -1143,6 +1157,7 @@ export function createBuiltinSandboxFactories(
         kind: "dockerfile",
         publishableIdentity: {
           buildArgKeys: Object.keys(buildArgs).sort(),
+          user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
           lifetime: plannedLifetime,
         },
         privateFingerprintIdentity: identity,
@@ -1162,6 +1177,7 @@ export function createBuiltinSandboxFactories(
             context: plannedContext,
             dockerfile,
             buildArgs: { ...buildArgs },
+            user,
             plannedBuildKey: build.buildKey,
             lifetime: plannedLifetime,
           };
@@ -1182,6 +1198,7 @@ export function createBuiltinSandboxFactories(
               context: plannedContext,
               dockerfile,
               buildArgs,
+              user: Object.freeze({ ...user }),
               build,
               buildKey: build.buildKey,
               platform: plannedTargetPlatform(target),
@@ -1189,6 +1206,7 @@ export function createBuiltinSandboxFactories(
             }),
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
+              user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
               buildKey: build.buildKey,
               lifetime: plannedLifetime,
             },
@@ -1208,14 +1226,18 @@ export function createBuiltinSandboxFactories(
 
     dockerImageSandbox(options: DockerImageSandboxOptions) {
       assertRecord(options, "dockerImageSandbox options");
-      assertOnlyKeys(options, ["image", "lifetimeMs"], "dockerImageSandbox options");
+      assertOnlyKeys(options, ["image", "user", "lifetimeMs"], "dockerImageSandbox options");
       const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
+      const user: SandboxExecutionUser = options.user === undefined
+        ? { _tag: "EnvironmentDefault" }
+        : { _tag: "Configured", value: nonEmptyString(options.user, "dockerImageSandbox options.user") };
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
-      const identity: JsonValue = { provider: "docker", kind: "image", image, lifetime: plannedLifetime };
+      const identity: JsonValue = { provider: "docker", kind: "image", image, user, lifetime: plannedLifetime };
+      const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
-        publishableIdentity: { source: "configured-image", lifetime: plannedLifetime },
+        publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
@@ -1230,11 +1252,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "docker-image-1",
               buildKeys: [],
-              caseParams: { image, lifetime: plannedLifetime },
+              caseParams: { image, user, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ image, lifetime: plannedLifetime }),
-            publishableIdentity: { source: "configured-image", lifetime: plannedLifetime },
-            privateFingerprintIdentity: { image, lifetime: plannedLifetime },
+            runtimePlan: Object.freeze({ image, user: Object.freeze({ ...user }), lifetime: plannedLifetime }),
+            publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime },
+            privateFingerprintIdentity: { image, user, lifetime: plannedLifetime },
             identityMarker: looksLikeDigestRef(image)
               ? undefined
               : unresolvedProviderFingerprintMarker(
@@ -1248,14 +1270,18 @@ export function createBuiltinSandboxFactories(
 
     e2bSandbox(options: E2BSandboxOptions) {
       assertRecord(options, "e2bSandbox options");
-      assertOnlyKeys(options, ["template", "lifetimeMs"], "e2bSandbox options");
+      assertOnlyKeys(options, ["template", "user", "lifetimeMs"], "e2bSandbox options");
       const template = nonEmptyString(options.template, "e2bSandbox options.template");
+      const user: SandboxExecutionUser = options.user === undefined
+        ? { _tag: "EnvironmentDefault" }
+        : { _tag: "Configured", value: nonEmptyString(options.user, "e2bSandbox options.user") };
+      const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
       const plannedLifetime = lifetime(options.lifetimeMs, "e2bSandbox options.lifetimeMs");
-      const identity: JsonValue = { provider: "e2b", kind: "template", template, lifetime: plannedLifetime };
+      const identity: JsonValue = { provider: "e2b", kind: "template", template, user, lifetime: plannedLifetime };
       return defineSandboxTemplate({
         provider: "e2b",
         kind: "template",
-        publishableIdentity: { lifetime: plannedLifetime },
+        publishableIdentity: { user: publishedUser, lifetime: plannedLifetime },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => {
@@ -1270,11 +1296,11 @@ export function createBuiltinSandboxFactories(
               caseKind: "prebuilt",
               materializerRevision: "e2b-template-1",
               buildKeys: [],
-              caseParams: { template, lifetime: plannedLifetime },
+              caseParams: { template, user, lifetime: plannedLifetime },
             }),
-            runtimePlan: Object.freeze({ template, lifetime: plannedLifetime }),
-            publishableIdentity: { lifetime: plannedLifetime },
-            privateFingerprintIdentity: { template, lifetime: plannedLifetime },
+            runtimePlan: Object.freeze({ template, user: Object.freeze({ ...user }), lifetime: plannedLifetime }),
+            publishableIdentity: { user: publishedUser, lifetime: plannedLifetime },
+            privateFingerprintIdentity: { template, user, lifetime: plannedLifetime },
           }));
         },
       });

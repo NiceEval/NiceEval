@@ -10,7 +10,7 @@ export type MaybePromise<T> = T | Promise<T>;
 export interface SandboxCommandOptions {
   readonly cwd?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
-  readonly root?: boolean;
+  readonly user?: string;
   readonly timeoutMs?: number;
   readonly stdin?: string;
 }
@@ -94,7 +94,7 @@ export type SandboxCommandDeclaration =
     }
   | { readonly kind: "opaque"; readonly command: SandboxCommand };
 
-const STABLE_COMMAND_KEYS = new Set(["cwd", "env", "root", "timeoutMs", "stdin"]);
+const STABLE_COMMAND_KEYS = new Set(["cwd", "env", "user", "timeoutMs", "stdin"]);
 
 function assertRecord(value: unknown, path: string): asserts value is globalThis.Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -123,16 +123,13 @@ function normalizeCommandOptions(value: unknown, path: string): Readonly<Sandbox
   const normalized: {
     cwd?: string;
     env?: Readonly<globalThis.Record<string, string>>;
-    root?: boolean;
+    user?: string;
     timeoutMs?: number;
     stdin?: string;
   } = {};
 
   if (value.cwd !== undefined) normalized.cwd = nonEmptyString(value.cwd, `${path}.cwd`);
-  if (value.root !== undefined) {
-    if (typeof value.root !== "boolean") throw new TypeError(`${path}.root must be a boolean`);
-    normalized.root = value.root;
-  }
+  if (value.user !== undefined) normalized.user = nonEmptyString(value.user, `${path}.user`);
   if (value.timeoutMs !== undefined) {
     if (typeof value.timeoutMs !== "number" || !Number.isFinite(value.timeoutMs) || value.timeoutMs <= 0) {
       throw new TypeError(`${path}.timeoutMs must be a positive finite number`);

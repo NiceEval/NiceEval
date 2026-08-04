@@ -75,6 +75,52 @@ describe("VercelSandbox.downloadDirectory", () => {
   });
 });
 
+// cases: docs/engineering/testing/unit/sandbox.md「命令执行」——不支持面明确报错。
+// Vercel 命令级只认 { user: "root" }(映射 sudo: true);其它显式值在调用 provider 前报错,
+// 省略时 sudo: false(见 docs/feature/sandbox/library.md「执行身份」)。
+describe("VercelSandbox.runCommand · 执行身份", () => {
+  it('user: "root" 映射为 sudo: true', async () => {
+    let capturedSudo: boolean | undefined;
+    const sandbox = makeSandbox({
+      runCommand: async (opts: { sudo: boolean }) => {
+        capturedSudo = opts.sudo;
+        return { exitCode: 0, stdout: async () => "", stderr: async () => "" };
+      },
+    });
+
+    await sandbox.runCommand("id", [], { user: "root" });
+
+    expect(capturedSudo).toBe(true);
+  });
+
+  it("省略 user 时 sudo: false", async () => {
+    let capturedSudo: boolean | undefined;
+    const sandbox = makeSandbox({
+      runCommand: async (opts: { sudo: boolean }) => {
+        capturedSudo = opts.sudo;
+        return { exitCode: 0, stdout: async () => "", stderr: async () => "" };
+      },
+    });
+
+    await sandbox.runCommand("id");
+
+    expect(capturedSudo).toBe(false);
+  });
+
+  it("其它 user 值在调用 provider 前报错,不静默降级", async () => {
+    let called = false;
+    const sandbox = makeSandbox({
+      runCommand: async (opts: { sudo: boolean }) => {
+        called = true;
+        return { exitCode: 0, stdout: async () => "", stderr: async () => "" };
+      },
+    });
+
+    await expect(sandbox.runCommand("id", [], { user: "node" })).rejects.toThrow(/root/);
+    expect(called).toBe(false);
+  });
+});
+
 // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
 // 寿命只从当前 session 的远端元数据读(createdAt + timeout),续期走 SDK 的 extendTimeout;
 // plan 上限拒绝续期时如实报 ready:false,不把请求值当成已生效(见 vercel.ts 的注释)。

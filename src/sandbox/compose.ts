@@ -796,7 +796,7 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly evalId: string;
   readonly profile: string;
   readonly mainService: string;
-  readonly executionUser?: string;
+  readonly user?: string;
   readonly env: Readonly<Record<string, string>>;
   readonly projectName?: string;
   readonly collection: ComposeBuildCollection;
@@ -910,7 +910,7 @@ export async function materializeDockerComposeProviderCase(
           lifetimeMs: opts.lifetimeMs,
           feedback: opts.feedback,
           releaseMode: "detach",
-          ...(plan.executionUser !== undefined ? { executionUser: plan.executionUser as "image" | string } : {}),
+          ...(plan.user !== undefined ? { user: plan.user } : {}),
         }));
     const sandbox = await attach(containerId);
 

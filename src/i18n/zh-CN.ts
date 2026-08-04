@@ -413,7 +413,7 @@ export const zhCN = {
   "local.dirNotWritable": "本地沙箱目录不可写:{{dir}}({{message}})",
   "local.notARepo":
     "当前目录(及其上级目录)都不在任何 git 仓库内,localSandbox() 没有确定的 workdir 可用。cd 进要跑的仓库再执行,或显式传 localSandbox({ dir: \"/path/to/repo\" })。",
-  "local.rootUnsupported": "本地 provider 不支持 { root: true }——niceeval 不会在你的机器上提权。需要 root 的步骤请改用容器 provider(docker / e2b / vercel)。",
+  "local.userUnsupported": "本地 provider 不支持切换执行身份,收到 { user: \"{{user}}\" }——niceeval 不会在你的机器上提权或换身份。需要别的身份请改用容器 provider(docker / e2b / vercel)。",
   "report.assertionThreshold": " (得分 {{score}} < {{threshold}})",
   "report.error": "错误",
   "report.errored": "错误",
@@ -516,6 +516,8 @@ export const zhCN = {
   "vercel.fileNotFound": "File not found: {{path}}",
   "vercel.rotateFailed": "[VercelSandbox] session rotate failed ({{seconds}}s): {{error}}",
   "vercel.rotated": "[VercelSandbox] session rotated after {{seconds}}s → {{sessionId}}",
+  "vercel.userUnsupported":
+    "Vercel Sandbox provider 的命令级 user 只认 { user: \"root\" }(映射 sudo: true),收到 { user: \"{{user}}\" }。需要别的身份请改用容器 provider(docker / e2b)。",
 } as const;
 
 export type MessageKey = keyof typeof zhCN;

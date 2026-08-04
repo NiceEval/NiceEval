@@ -282,6 +282,8 @@ interface E2BSandboxCreateOptions {
   readonly deadlineAt?: number;
   readonly runtime?: "node20" | "node24";
   readonly template?: string;
+  /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
+  readonly user?: string;
   readonly provisionToken?: string;
   /** 运行时已解析的实例寿命；bounded attempt 不能退回 E2B 的 SDK 默认值。 */
   readonly lifetime: E2BSandboxLifetime;
@@ -356,6 +358,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   private retired = false;
   /** 已实际请求的实例寿命;复用下续期一律续到这个值(滑动窗口)。 */
   private lifetime: E2BSandboxLifetime;
+  /** 起点覆盖(factory `user`);省略 = 沿用 template 的默认用户。 */
+  private readonly userOverride?: string;
   readonly sandboxId: string;
 
   private deadlineAt?: number;
@@ -372,12 +376,14 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     id: string,
     commandTimeoutMs: number | undefined,
     lifetime: E2BSandboxLifetime,
+    userOverride: string | undefined,
     deadlineAt?: number,
   ) {
     this.sbx = sbx;
     this.sandboxId = id;
     this.commandTimeoutMs = commandTimeoutMs;
     this.lifetime = lifetime;
+    this.userOverride = userOverride;
     this.deadlineAt = deadlineAt;
   }
 
@@ -471,7 +477,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.deadlineAt);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetime, opts.user, opts.deadlineAt);
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;
@@ -484,8 +490,9 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   }
 
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
-    // e2b commands.run 经 bash 执行 → 支持 && / 管道 / $()。root 用户映射到 { user: "root" },
-    // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
+    // e2b commands.run 直接透传同名 user 参数;省略时沿用 Sandbox 默认身份(factory `user`
+    // 覆盖后的身份,否则 template 默认用户)—— 跨 provider 语义一致
+    // (见 docs/feature/sandbox/library.md「执行身份」)。
     const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     const completion = new E2BCommandCompletion(script, opts);
     // Attach a rejection handler before starting the SDK command. A malformed marker can reject while
@@ -536,7 +543,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       const commandOptions = {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
         envs: opts.env,
-        user: opts.root ? "root" : undefined,
+        user: opts.user ?? this.userOverride,
         ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
         onStdout: completion.onStdout,
         onStderr: completion.onStderr,

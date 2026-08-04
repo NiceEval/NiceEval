@@ -92,6 +92,14 @@ maxConcurrency?: number;
 
 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。
 
+#### `maxBuildConcurrency`
+
+```ts
+maxBuildConcurrency?: number;
+```
+
+Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。
+
 #### `timeoutMs`
 
 ```ts

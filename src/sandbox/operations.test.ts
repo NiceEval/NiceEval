@@ -217,7 +217,7 @@ describe("SandboxCommandTarget.putContent", () => {
       if (command !== "mkdir" || args?.[0] !== "-p" || path === undefined) {
         throw new Error(`unexpected command: ${command} ${args?.join(" ") ?? ""}`);
       }
-      const asRoot = options?.root === true;
+      const asRoot = options?.user === "root";
       io.push(`mkdir:${asRoot ? "root" : "user"}:${path}`);
       if (directories.has(path)) return commandResult() as ReturnType<typeof successfulCommandResult>;
       if (!asRoot && rootOwned.has(posix.dirname(path))) {
@@ -294,7 +294,7 @@ describe("SandboxCommandTarget.putContent", () => {
     const writes: number[] = [];
 
     operations.runCommandOrThrow = async (command, args, options) => {
-      const asRoot = options?.root === true;
+      const asRoot = options?.user === "root";
       commands.push({ command, args: args ?? [], root: asRoot });
       if (command === "mkdir" && !asRoot) {
         throw new SandboxCommandExitError({
@@ -338,7 +338,7 @@ describe("SandboxCommandTarget.putContent", () => {
     const commands: Array<{ command: string; root: boolean }> = [];
 
     operations.runCommandOrThrow = async (command, _args, options) => {
-      const asRoot = options?.root === true;
+      const asRoot = options?.user === "root";
       commands.push({ command, root: asRoot });
       if (command === "mv" && !asRoot) {
         throw new SandboxCommandExitError({
@@ -380,7 +380,7 @@ describe("SandboxCommandTarget.putContent", () => {
     });
 
     operations.runCommandOrThrow = async (command, _args, options) => {
-      rootsUsed.push(options?.root === true);
+      rootsUsed.push(options?.user === "root");
       if (command === "mv") throw failure;
       return commandResult() as ReturnType<typeof successfulCommandResult>;
     };

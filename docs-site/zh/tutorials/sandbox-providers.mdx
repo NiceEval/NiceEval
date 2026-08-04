@@ -286,7 +286,7 @@ import { dockerImageSandbox } from "niceeval/sandbox";
 sandbox: dockerImageSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
-Docker Sandbox 默认以非 root 的 `node` 用户（UID 1000）跑命令，并把 `/usr/local/bin` 放进 PATH，所以 `npm install -g` 装的全局二进制天然可见；要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。`dockerImageSandbox` 要求显式 image；稳定 CI 引用不可变 tag。
+Docker Sandbox 沿用镜像自己声明的执行身份：上面这份 Dockerfile 没写 `USER`，容器就默认以 root 跑命令，`/usr/local/bin` 已经在 root 的 PATH 上，`npm install -g` 装的全局二进制天然可见。需要非 root 身份时（比如 Claude Code 在 root 下会拒绝 `--dangerously-skip-permissions`），在 Dockerfile 里加一行 `USER node`（`node:24-slim` 镜像自带这个用户），或者用 `dockerImageSandbox({ image, user: "node" })` 显式覆盖。要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。`dockerImageSandbox` 要求显式 image；稳定 CI 引用不可变 tag。
 
 #### Vercel：从官方 runtime 拍快照
 
@@ -376,7 +376,7 @@ NiceEval 只观察、不还原：Agent 改了什么会真实落在你的工作�
 - 本地目录同一时刻只跑一个 Attempt（强制串行），`--max-concurrency` 抬不高它。
 - 连续跑多个评估用例时，前一个的改动会留在工作树上，成为后一个的起点。要每题干净起点，用容器 Provider。
 
-`{ root: true }` 和 `--keep-sandbox` 对本地目录不可用，会直接报错：NiceEval 不在你的机器上提权，也不需要「留存」一个本来就在你工作树里的现场。
+`{ user: "..." }` 和 `--keep-sandbox` 对本地目录不可用，会直接报错：NiceEval 不在你的机器上提权或换身份，也不需要「留存」一个本来就在你工作树里的现场。
 
 ## 自定义 Provider
 
@@ -408,9 +408,9 @@ export default defineSandbox({
 
 返回值实现 `Sandbox` 接口即可。Provider SDK 的原始日志不要直接写宿主进程的 `stdout` / `stderr`；短期状态走 `feedback.progress`，需要保留的问题走 `feedback.diagnostic`，无法创建环境时抛错。这样 Human dashboard 不会被日志打散，CI 也能保持单一有序输出。
 
-## 权限和 root
+## 权限和执行身份
 
-不同 provider 对 root 权限、网络、文件系统和进程生命周期的约束不同。编写 fixture 时尽量避免依赖宿主机环境，把依赖写进 `package.json` 或 fixture setup。
+不同 provider 对执行身份、网络、文件系统和进程生命周期的约束不同。编写 fixture 时尽量避免依赖宿主机环境，把依赖写进 `package.json` 或 fixture setup。
 
 ## 性能建议
 

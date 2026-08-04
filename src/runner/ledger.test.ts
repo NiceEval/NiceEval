@@ -88,7 +88,7 @@ function rootCapableHostSandbox(
   const sandbox = {
     ...base,
     async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
-      if (opts.root !== true) return base.runShell(script, opts);
+      if (opts.user !== "root") return base.runShell(script, opts);
       const original = await stat(restrictedPath);
       await chmod(restrictedPath, 0o755);
       try {
@@ -140,8 +140,8 @@ describe("createChangeLedger", () => {
     expect(after.mode & 0o777).toBe(0o311);
     expect(counters.shellOptions).toHaveLength(4);
     expect(counters.shells[0]).toBe("command -p id -u");
-    expect(counters.shellOptions[0]?.root).not.toBe(true);
-    expect(counters.shellOptions.slice(1).every((options) => options.root === true)).toBe(true);
+    expect(counters.shellOptions[0]?.user).not.toBe("root");
+    expect(counters.shellOptions.slice(1).every((options) => options.user === "root")).toBe(true);
     expect(counters.downloads).toEqual(["/tmp/.niceeval-ledger-export/export.bin"]);
   });
 
@@ -196,8 +196,8 @@ describe("createChangeLedger", () => {
     const resetAt = counters.shells.findIndex((script) => script.includes("git reset -q --hard"));
     expect(resetAt).toBeGreaterThanOrEqual(0);
     expect(counters.shellOptions.filter((_options, index) => counters.shells[index] !== "command -p id -u")
-      .every((options) => options.root === true)).toBe(true);
-    expect(counters.shellOptions[counters.shells.indexOf("command -p id -u")]?.root).not.toBe(true);
+      .every((options) => options.user === "root")).toBe(true);
+    expect(counters.shellOptions[counters.shells.indexOf("command -p id -u")]?.user).not.toBe("root");
     const anchorScript = counters.shells.find((script) => script.includes('git commit -q --allow-empty -m "anchor"'));
     expect(anchorScript).toContain("niceeval-baseline-metadata");
     expect(anchorScript).toContain('chmod go-rwx "$GIT_DIR"');
@@ -240,7 +240,7 @@ describe("createChangeLedger", () => {
       counters.shells[index]?.includes("niceeval-meta-restore")
     );
     expect(restoreOptions).toHaveLength(1);
-    expect(restoreOptions[0]?.root).toBe(true);
+    expect(restoreOptions[0]?.user).toBe("root");
   });
 
   it("root-capable reset 可恢复 file 与 directory 的双向替换", async () => {
@@ -276,7 +276,7 @@ describe("createChangeLedger", () => {
     const sandbox = rootCapableHostSandbox(workdir, ledgerDir, restrictedPath, counters);
     const originalRunShell = sandbox.runShell.bind(sandbox);
     sandbox.runShell = async (script, options = {}) => {
-      if (script === "command -p id -u" && options.root !== true) {
+      if (script === "command -p id -u" && options.user !== "root") {
         counters.shells.push(script);
         counters.shellOptions.push(options);
         return { stdout: "0\n", stderr: "", exitCode: 0 };

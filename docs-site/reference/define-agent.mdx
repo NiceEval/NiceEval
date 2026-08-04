@@ -599,19 +599,19 @@ readonly onStderr?: (chunk: string) => void | Promise<void>;
 
 The stderr counterpart to `onStdout`; the complete stderr is still retained in `CommandResult`.
 
-#### `root`
+#### `user`
 
 ```ts
-readonly root?: boolean;
+readonly user?: string;
 ```
 
-Run this command as root. Defaults to `false` — the command runs as the sandbox's standard **non-root** user (the agent's natural environment).
-Use this for installing system dependencies during setup (`apt-get install …`, `pip install --break-system-packages …`).
+Overrides the execution identity for this command; omit it to use the Sandbox's default identity (whatever the environment itself declares — the Docker image `USER`,
+the Compose service `user:`, the E2B template's default user, or the host's current user).
 
-Semantics stay consistent across providers: "this command runs as root, otherwise as the standard non-root user." Each provider maps this to its own native mechanism
-(docker: `exec --user root`; E2B: `{ user: "root" }`; Vercel: `{ sudo: true }`; Daytona: `{ user }`).
-Providers that always run as root (e.g. Modal) treat it as a no-op; providers with no privilege escalation at all may not support it (throw) — but **the default value and
-semantics stay consistent** regardless of provider.
+Semantics stay consistent across providers, and each provider maps this to its own native mechanism
+(docker: `exec --user`; E2B: `{ user }`; Vercel: only accepts `"root"`, mapped to `{ sudo: true }`, other values throw; local: any value throws).
+Providers that always run as root treat it as a no-op; providers with no way to switch identity at all may not support it (throw) — but **the semantics for omission and
+explicit values stay consistent** regardless of provider.
 
 #### `timeoutMs`
 

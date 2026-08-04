@@ -2,7 +2,7 @@
 // Local provider(docs/feature/sandbox/local.md)的四条声明覆盖:
 // - 仓库根解析(省略 dir 时从 cwd 向上找到 git 根,含从子目录起步)与仓库外报错(给出两条出路)
 // - 只观察不还原:LocalSandbox 自身的操作不触碰用户真实 .git 的 HEAD/索引,stop() 不删工作树
-// - 不提权:{ root: true } 对 runCommand / runShell 都报错,不是静默降级成非 root
+// - 不换身份:{ user: "..." } 对 runCommand / runShell 都报错,不是静默忽略
 // - 与 --keep-sandbox 组合在创建沙箱前报错(与自定义 provider 不支持留存同一形态)
 //
 // 用真实临时 git 仓库(mkdtemp + git init)当 workdir,不 mock 文件系统或 git——本地档的正确性
@@ -127,18 +127,18 @@ describe("LocalSandbox · 只观察不还原", () => {
   });
 });
 
-describe("LocalSandbox · 不提权", () => {
-  it("runCommand({ root: true }) 报错,不静默降级成非 root", async () => {
-    const dir = await makeTmpDir("niceeval-local-root-");
+describe("LocalSandbox · 不换身份", () => {
+  it("runCommand({ user }) 报错,不静默忽略", async () => {
+    const dir = await makeTmpDir("niceeval-local-user-");
     const sandbox = await LocalSandbox.create({ dir });
-    await expect(sandbox.runCommand("id", [], { root: true })).rejects.toThrow(/root/i);
+    await expect(sandbox.runCommand("id", [], { user: "root" })).rejects.toThrow(/user/i);
     await sandbox.stop();
   });
 
-  it("runShell({ root: true }) 同样报错", async () => {
-    const dir = await makeTmpDir("niceeval-local-root-shell-");
+  it("runShell({ user }) 同样报错", async () => {
+    const dir = await makeTmpDir("niceeval-local-user-shell-");
     const sandbox = await LocalSandbox.create({ dir });
-    await expect(sandbox.runShell("id", { root: true })).rejects.toThrow(/root/i);
+    await expect(sandbox.runShell("id", { user: "root" })).rejects.toThrow(/user/i);
     await sandbox.stop();
   });
 });

@@ -113,7 +113,7 @@ describe("SandboxLayer 声明与 command identity", () => {
       file: new URL("file:///fixtures/compose.yaml"),
       workspaceService: "client",
       build: "on-demand",
-      executionUser: "node",
+      user: "node",
       env: { NODE_ENV: "test" },
     });
     const dockerfile = dockerfileSandbox({
@@ -130,7 +130,7 @@ describe("SandboxLayer 声明与 command identity", () => {
         publishable: {
           workspaceService: "client",
           build: "on-demand",
-          executionUser: { _tag: "Configured" },
+          user: { _tag: "Configured" },
           envKeys: ["NODE_ENV"],
           credentialEnv: {},
         },
@@ -195,7 +195,7 @@ describe("SandboxLayer 声明与 command identity", () => {
     const stable = command("tool", args, {
       cwd: "workspace",
       env,
-      root: true,
+      user: "root",
       timeoutMs: 500,
       stdin: "payload",
     });
@@ -212,7 +212,7 @@ describe("SandboxLayer 声明与 command identity", () => {
         options: {
           cwd: "workspace",
           env: { MODE: "before" },
-          root: true,
+          user: "root",
           timeoutMs: 500,
           stdin: "payload",
         },

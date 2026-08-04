@@ -422,8 +422,8 @@ export const en = {
   "local.dirNotWritable": "local sandbox directory is not writable: {{dir}} ({{message}})",
   "local.notARepo":
     "the current directory (and its parents) is not inside a git repository, so localSandbox() has no deterministic root to run in. cd into the repository you want to evaluate, or pass an explicit directory: localSandbox({ dir: \"/path/to/repo\" }).",
-  "local.rootUnsupported":
-    "the local sandbox provider does not support { root: true } — niceeval does not escalate privileges on your machine. Use a container provider (docker / e2b / vercel) for steps that need root.",
+  "local.userUnsupported":
+    'the local sandbox provider does not support execution identity overrides, got { user: "{{user}}" } — niceeval does not escalate or switch identity on your machine. Use a container provider (docker / e2b / vercel) for steps that need a different user.',
   "report.assertionThreshold": " (got {{score}} < {{threshold}})",
   "report.error": "error",
   "report.errored": "errored",
@@ -518,4 +518,6 @@ export const en = {
   "vercel.fileNotFound": "File not found: {{path}}",
   "vercel.rotateFailed": "[VercelSandbox] session rotate failed ({{seconds}}s): {{error}}",
   "vercel.rotated": "[VercelSandbox] session rotated after {{seconds}}s -> {{sessionId}}",
+  "vercel.userUnsupported":
+    'the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "{{user}}" }. Use a container provider (docker / e2b) for other identities.',
 } satisfies Messages;
