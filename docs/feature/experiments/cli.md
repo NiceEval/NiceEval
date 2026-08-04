@@ -93,7 +93,7 @@ Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列
 全部携带的行标 `carried`,不标原因。
 正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁与共享状态租约));`--dry` 只读锁目录,不取锁、不等待。
 
-`stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于“已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。
+`stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于”已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。长值改动两侧对齐到第一处差异字符显示,不各自独立截断成两份看似相同的省略串。
 
 ```text
 compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
@@ -1079,7 +1079,7 @@ interface ExpPlanDelta {
   selector: string;
   /** 明确的差异方向；消费者不得从 from/to 是否存在反推。 */
   kind: "added" | "removed" | "changed" | "unknown";
-  /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
+  /** 配置 / 计划字段是完整值,内容哈希固定取 12 位十六进制前缀;opaque 与新增/删除侧按缺省略。 */
   from?: string;
   to?: string;
 }

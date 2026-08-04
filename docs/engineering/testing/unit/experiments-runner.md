@@ -264,6 +264,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
 
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
+- **差异值的完整性边界**：`configDeltas` / `manifestDeltas` 产出完整的 from/to 值，不做长度截断。`acceptedFrom.differences`、`carriedAccepting` 与 `--dry --json` 的 delta 投影落盘/透传时直接复用这份完整值，不做二次截断。
+  截断只发生在人读渲染(`formatDryDelta`)：Changed 双侧对齐到第一处不同字符,公共前缀过长时压缩显示，从差异点起两侧各留一个有界窗口。fixture 要选两个长度相近、差异点落在窗口之外才出现的字符串，证明两侧输出仍然互相区分，不会被压成同一份省略串;Added / Removed 单侧值仍按简单长度上限截断。
 - **fingerprint 版本迁移**：已知等价迁移自动携带并落 `migratedFrom`，不伪装成人工 `acceptedFrom`；具名差异继续走 `changed`；未知迁移走 `unexplained/fingerprint-version-changed`。迁移必须校验 from/to 版本，不能只凭 manifest 相同放行。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
   九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。

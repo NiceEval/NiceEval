@@ -301,7 +301,7 @@ export interface DiagnosticRecord {
 
 /**
  * `--accept` 跨过的一条具名差异(`EvalResult.carriedAccepting` 的成员)。
- * `selector` 与 CLI 上写下的那个字面量同一个词表,`from` / `to` 是有界值摘要;
+ * `selector` 与 CLI 上写下的那个字面量同一个词表,`from` / `to` 是完整值的字符串投影;
  * 某一侧没有这个键(新增 / 删除)时该侧省略。
  */
 export interface CarriedAcceptance {
@@ -333,7 +333,7 @@ export interface AcceptedResult {
   fingerprint: string;
   /** 当前项目按本次配置重算出的指纹。 */
   acceptedFingerprint: string;
-  /** 新旧 manifest/config 的有界差异摘要。 */
+  /** 新旧 manifest/config 的完整差异清单。 */
   differences: AcceptedDifference[];
 }
 

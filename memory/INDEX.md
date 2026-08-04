@@ -201,6 +201,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [linked-dev-tree-producer-version-placeholder](linked-dev-tree-producer-version-placeholder.md) — 发现(未修):link 开发树落盘的 `producer.version` 恒是占位 `0.4.6`(CI 发版才写真号),不兼容提示里的 `npx niceeval@0.4.6` 不可执行,修法方向三选一留待裁决
 - 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)
 - 已修 [accept-batch-per-locator-planning-oom](accept-batch-per-locator-planning-oom.md) — 批量 `acceptLocators` 曾让每条 locator 各自并发重跑一遍完整 discovery + sandbox planning,137 条撑爆 4GB 堆;修为 discovery 只 hoist 一次、sandbox planning 按 experiment 记忆化、指纹计算共享 sourceCache、prepare 阶段加 8 并发小池(`src/runner/accept.ts`)
+- 已修 [config-delta-value-truncated-before-diff](config-delta-value-truncated-before-diff.md) — `configDeltas`/`manifestDeltas` 在构造点就把差异值截到 80 字符,长值公共前缀相同时两侧被截成同一份省略串(`config:sandboxLayer changed`/`plan:physical changed` 真机复现,`--dry --json` 与 accept 落盘同样受影响);修为构造侧只做完整值字符串投影,有界呈现搬到人读渲染点 `formatDryDelta` 的 `windowChangedDeltaValues`(对齐差异点的有界窗口)(`src/runner/config-identity.ts`、`src/runner/manifest.ts`、`src/runner/feedback/human.ts`)
 
 ## 报告 · view
 

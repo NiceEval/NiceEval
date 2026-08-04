@@ -85,17 +85,16 @@ export function shortHash(hash: string): string {
   return hash.slice(0, 12);
 }
 
-/** 值摘要:与 `config-identity.ts` 的同名口径一致,单条不铺满一行终端。 */
-function summarize(value: JsonValue): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+/** 值的字符串投影:与 `config-identity.ts` 的同名口径一致,完整值——有界呈现是人读 renderer 的职责。 */
+function serializeValue(value: JsonValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function planDelta(historical: EvalManifest, current: EvalManifest): ConfigFieldDelta[] {
   if (JSON.stringify(historical.plan) === JSON.stringify(current.plan)) return [];
-  if (historical.plan === undefined) return [addedConfigField("plan:physical", summarize(current.plan!))];
-  if (current.plan === undefined) return [removedConfigField("plan:physical", summarize(historical.plan))];
-  return [changedConfigField("plan:physical", summarize(historical.plan), summarize(current.plan))];
+  if (historical.plan === undefined) return [addedConfigField("plan:physical", serializeValue(current.plan!))];
+  if (current.plan === undefined) return [removedConfigField("plan:physical", serializeValue(historical.plan))];
+  return [changedConfigField("plan:physical", serializeValue(historical.plan), serializeValue(current.plan))];
 }
 
 /**
@@ -113,12 +112,12 @@ export function manifestDeltas(
 ): FingerprintDelta[] {
   if (historical === undefined) {
     return [
-      ...(historicalConfig === undefined ? [] : faceDeltas("config", historicalConfig, current.config ?? {}, summarize)),
+      ...(historicalConfig === undefined ? [] : faceDeltas("config", historicalConfig, current.config ?? {}, serializeValue)),
       opaqueManifestDelta(),
     ];
   }
   return [
-    ...faceDeltas("config", historical.config ?? {}, current.config ?? {}, summarize),
+    ...faceDeltas("config", historical.config ?? {}, current.config ?? {}, serializeValue),
     ...planDelta(historical, current),
     ...faceDeltas("source", historical.source ?? {}, current.source ?? {}, shortHash),
     ...faceDeltas("data", historical.data ?? {}, current.data ?? {}, shortHash),

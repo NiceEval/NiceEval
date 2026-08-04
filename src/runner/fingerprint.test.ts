@@ -1379,4 +1379,28 @@ describe("planCarry · manifest 相减:配置面之外的源码面与数据面",
     expect(entries.length).toBeGreaterThan(0);
     for (const [, hash] of entries) expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it("config 面与 plan:physical 的差异值是完整值,不做 80 字符截断——独立截断会把两侧压成同一份省略串", async () => {
+    // bug: memory/config-delta-value-truncated-before-diff.md
+    const evalDef = makeEval("e");
+    const run = makeRun("exp", ["e"], 1);
+    const { manifest } = await fingerprintWithManifestFor(evalDef, run);
+    const sharedPrefix = "x".repeat(90);
+
+    const historicalConfig = mutated(manifest, {
+      config: { ...manifest.config, sandboxLayer: `${sharedPrefix}-old-layer` },
+    });
+    const currentConfig = { ...manifest, config: { ...manifest.config, sandboxLayer: `${sharedPrefix}-new-layer` } };
+    const [configDelta] = manifestDeltas(historicalConfig, currentConfig).filter((d) => d.selector === "config:sandboxLayer");
+    expect(configDelta?.from).toBe(`${sharedPrefix}-old-layer`);
+    expect(configDelta?.to).toBe(`${sharedPrefix}-new-layer`);
+    expect(configDelta?.from).not.toBe(configDelta?.to); // 旧的 80 字符截断在这一格会红
+
+    const historicalPlan = mutated(manifest, { plan: `${sharedPrefix}-old-plan` });
+    const currentPlan = { ...manifest, plan: `${sharedPrefix}-new-plan` };
+    const [planDelta] = manifestDeltas(historicalPlan, currentPlan).filter((d) => d.selector === "plan:physical");
+    expect(planDelta?.from).toBe(`${sharedPrefix}-old-plan`);
+    expect(planDelta?.to).toBe(`${sharedPrefix}-new-plan`);
+    expect(planDelta?.from).not.toBe(planDelta?.to);
+  });
 });

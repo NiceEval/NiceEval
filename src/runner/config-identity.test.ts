@@ -172,6 +172,31 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
   it("落盘缺 ExperimentRunInfo 时配置面无从重建,差异算不出", () => {
     expect(configIdentityFromResult(makeResult({ experiment: undefined }))).toBeUndefined();
   });
+
+  it("差异值是完整值,不做 80 字符截断——独立截断会把两侧压成同一份省略串", async () => {
+    // bug: memory/config-delta-value-truncated-before-diff.md
+    const sharedPrefix = "x".repeat(90);
+    const from = `${sharedPrefix}-old-value`;
+    const to = `${sharedPrefix}-new-value`;
+    const historical = configIdentityFromResult(
+      makeResult({
+        model: "opus",
+        experiment: {
+          ...DIRECT_RUN_INFO,
+          attempts: 1,
+          earlyExit: false,
+          selectedEvalIds: ["e"],
+          flags: { endpoint: from },
+        },
+      }),
+    )!;
+    const current = await identityFor(makeRun({ model: "opus", flags: { endpoint: to } }));
+
+    const [delta] = configDeltas(historical, current).filter((d) => d.selector === "config:flags.endpoint");
+    expect(delta?.from).toBe(from);
+    expect(delta?.to).toBe(to);
+    expect(delta?.from).not.toBe(delta?.to); // 旧的 80 字符截断在这一格会红:两侧都截在差异点之前
+  });
 });
 
 describe("counterfactualConfigIdentity:只动被点名的字段", () => {

@@ -5,7 +5,7 @@
 // boxed 能力下产生可识别的框线字符与正确的面板顺序/分隔,plain/非 TTY 下不产生任何框字符。
 
 import { afterEach, describe, expect, it } from "vitest";
-import { createHumanRenderer, renderDurableLines, renderHumanDryPlan } from "./human.ts";
+import { createHumanRenderer, renderDurableLines, renderHumanDryPlan, windowChangedDeltaValues } from "./human.ts";
 import { createFakeFeedbackIO } from "./testing.ts";
 import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
@@ -1590,5 +1590,92 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [{ experimentId: "compare/codex", evalId: "memory/a", locked: true, dispatch: [{ reason: "new" }] }],
     });
     expect(rowOf(text, "memory/a")).toMatch(/\blocked$/);
+  });
+});
+
+describe("差异值的完整性边界:构造侧完整值,人读渲染对齐差异点", () => {
+  const lineFor = (text: string, evalId: string): string => text.trim().split("\n").find((l) => l.includes(evalId))!;
+
+  it("windowChangedDeltaValues 把两侧对齐到第一处不同字符,公共前缀过长时压缩显示", () => {
+    const sharedPrefix = "x".repeat(90);
+    const from = `${sharedPrefix}-old-value`;
+    const to = `${sharedPrefix}-new-value`;
+    const [windowedFrom, windowedTo] = windowChangedDeltaValues(from, to);
+    // 各自从头独立截断(如简单的「超 80 字符切 79 位补 …」)在这一格会红:两侧的差异点都落在
+    // 共同前缀之后,会被切成同一份省略串,读者分不清哪里变了。
+    expect(windowedFrom).not.toBe(windowedTo);
+    expect(windowedFrom).toContain("old-value");
+    expect(windowedTo).toContain("new-value");
+  });
+
+  it("公共前缀不长时原样保留,不强行压缩", () => {
+    expect(windowChangedDeltaValues("short-old", "short-new")).toEqual(["short-old", "short-new"]);
+  });
+
+  it("差异点之后的尾部超出窗口时补 …", () => {
+    const from = `a-${"1".repeat(100)}`;
+    const to = `a-${"2".repeat(100)}`;
+    const [windowedFrom, windowedTo] = windowChangedDeltaValues(from, to);
+    expect(windowedFrom.endsWith("…")).toBe(true);
+    expect(windowedTo.endsWith("…")).toBe(true);
+  });
+
+  it("renderHumanDryPlan 的 stale 行对 Changed 差异应用同一份对齐窗口,差异点两侧仍互不相同", () => {
+    // bug: memory/config-delta-value-truncated-before-diff.md
+    const sharedPrefix = "x".repeat(90);
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "memory/long-value",
+        dispatch: [{
+          reason: "stale",
+          comparison: {
+            kind: "changed",
+            deltas: [{
+              selector: "config:sandboxLayer",
+              kind: "changed",
+              from: `${sharedPrefix}-old-layer`,
+              to: `${sharedPrefix}-new-layer`,
+            }],
+          },
+        }],
+      }],
+    });
+
+    const line = lineFor(text, "memory/long-value");
+    expect(line).toContain("old-layer");
+    expect(line).toContain("new-layer");
+    const match = /changed \((.*) → (.*)\)/.exec(line);
+    expect(match?.[1]).not.toBe(match?.[2]);
+    // 两侧都被窗口裁过,不是构造侧完整值(100+ 字符)原样铺满一行:证明 renderer 真的接线到
+    // windowChangedDeltaValues,不是绕开它直接透传。「不裁剪、原样打印完整值」的实现在这一格会红。
+    expect(match?.[1]?.length ?? 0).toBeLessThan(sharedPrefix.length);
+    expect(match?.[2]?.length ?? 0).toBeLessThan(sharedPrefix.length);
+  });
+
+  it("Added / Removed 单侧值超过 80 字符时仍按简单上限截断", () => {
+    const longValue = "y".repeat(100);
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{
+        experimentId: "compare/codex",
+        evalId: "memory/added",
+        dispatch: [{
+          reason: "stale",
+          comparison: { kind: "changed", deltas: [{ selector: "config:flags.x", kind: "added", to: longValue }] },
+        }],
+      }],
+    });
+
+    const line = lineFor(text, "memory/added");
+    expect(line).toContain("…");
+    expect(line).not.toContain(longValue);
   });
 });

@@ -1352,6 +1352,37 @@ function formatFingerprintComparison(comparison: NonNullable<HumanDryPlanRow["di
   return comparison.diagnostic.summary;
 }
 
+const DELTA_COMMON_PREFIX_CAP = 24;
+const DELTA_DIFF_WINDOW = 56;
+const DELTA_SINGLE_SIDE_CAP = 80;
+
+/**
+ * Changed 差异的双侧值对齐到第一处不同字符,而不是各自从头独立截断——独立截断在长公共前缀下
+ * 会把两侧都截在差异点之前,读者看到的是两份相同的省略串,分不清到底哪里变了。差异点起两侧
+ * 各留一个有界窗口,公共前缀过长时压缩显示但保留其尾部作为定位上下文。
+ */
+export function windowChangedDeltaValues(from: string, to: string): [string, string] {
+  if (from === to) return [from, to];
+  const max = Math.min(from.length, to.length);
+  let shared = 0;
+  while (shared < max && from[shared] === to[shared]) shared += 1;
+  const prefix = shared > DELTA_COMMON_PREFIX_CAP
+    ? `…${from.slice(shared - DELTA_COMMON_PREFIX_CAP, shared)}`
+    : from.slice(0, shared);
+  return [
+    `${prefix}${boundedDiffTail(from.slice(shared))}`,
+    `${prefix}${boundedDiffTail(to.slice(shared))}`,
+  ];
+}
+
+function boundedDiffTail(text: string): string {
+  return text.length > DELTA_DIFF_WINDOW ? `${text.slice(0, DELTA_DIFF_WINDOW)}…` : text;
+}
+
+function boundedSingleSide(text: string): string {
+  return text.length > DELTA_SINGLE_SIDE_CAP ? `${text.slice(0, DELTA_SINGLE_SIDE_CAP - 1)}…` : text;
+}
+
 function formatDryDelta(delta: {
   selector: string;
   _tag?: "Added" | "Removed" | "Changed" | "Unknown";
@@ -1371,14 +1402,15 @@ function formatDryDelta(delta: {
             : undefined
   );
   switch (kind) {
-    case "added": return `${delta.selector} added (${delta.to ?? ""})`;
-    case "removed": return `${delta.selector} removed (was ${delta.from ?? ""})`;
+    case "added": return `${delta.selector} added (${boundedSingleSide(delta.to ?? "")})`;
+    case "removed": return `${delta.selector} removed (was ${boundedSingleSide(delta.from ?? "")})`;
     case "unknown": return `${delta.selector}`;
     case "changed":
-    default:
-      return delta.from !== undefined || delta.to !== undefined
-        ? `${delta.selector} changed (${delta.from ?? ""} → ${delta.to ?? ""})`
-        : delta.selector;
+    default: {
+      if (delta.from === undefined && delta.to === undefined) return delta.selector;
+      const [from, to] = windowChangedDeltaValues(delta.from ?? "", delta.to ?? "");
+      return `${delta.selector} changed (${from} → ${to})`;
+    }
   }
 }
 

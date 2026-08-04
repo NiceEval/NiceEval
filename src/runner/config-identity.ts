@@ -232,10 +232,9 @@ export function configIdentityPaths(identity: ConfigIdentity): Array<[string, Js
   return [...flatten(identity)];
 }
 
-/** 有界值摘要:差异明细与 `carriedAccepting` 留痕共用,单条不铺满一行终端。 */
-function summarize(value: JsonValue): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+/** 值的字符串投影:差异明细与 `carriedAccepting` 留痕共用完整值,有界呈现是人读 renderer(`feedback/human.ts`)的职责,不在构造点做。 */
+function serializeValue(value: JsonValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 /**
@@ -255,9 +254,9 @@ export function configDeltas(historical: ConfigIdentity, current: ConfigIdentity
     if (hasFrom && fromValue === undefined) throw new Error(`Missing historical config value for ${path}.`);
     if (hasTo && toValue === undefined) throw new Error(`Missing current config value for ${path}.`);
     const selector = `config:${path}`;
-    if (!hasFrom) out.push(addedConfigField(selector, summarize(toValue!)));
-    else if (!hasTo) out.push(removedConfigField(selector, summarize(fromValue!)));
-    else out.push(changedConfigField(selector, summarize(fromValue!), summarize(toValue!)));
+    if (!hasFrom) out.push(addedConfigField(selector, serializeValue(toValue!)));
+    else if (!hasTo) out.push(removedConfigField(selector, serializeValue(fromValue!)));
+    else out.push(changedConfigField(selector, serializeValue(fromValue!), serializeValue(toValue!)));
   }
   return out;
 }
