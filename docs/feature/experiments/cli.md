@@ -194,7 +194,7 @@ Session 的存储、心跳和失活判定单源在 [Architecture · Session 登�
 
 - 当前计数从 `running=19` 变成 `running=18` 后,旧计数没有保留价值,所以动态覆盖。
 - attempt 从“启动 sandbox”进入“运行测试”后,旧阶段没有保留价值,所以动态覆盖。
-- 一条 eval 失败并得到 locator 后,后续状态不能替代这条证据,所以只追加一次。
+- 一条 eval 失败并得到 locator 后,后续状态不能替代这条证据;但证据的权威记录是 Run 与结束反馈,终端运行中只需回答「最近失败了什么」——TTY 下进 live 面板的 `FAILURES` 分节滚动显示,非 TTY 单流里追加一次。
 - 一次 retry、spinner 帧或成功完成只是高频过程,既不值得保留历史,也不需要逐条追加。
 
 两种形态的具体规则(人读文本列里,「动态覆盖」只发生在 TTY live 面板;非 TTY 文本没有动态区域,动态项直接不输出、永久项照常追加):
@@ -209,13 +209,13 @@ Session 的存储、心跳和失活判定单源在 [Architecture · Session 登�
 | 运行级瞬时通知(provider 一次性通知……) | 永久追加一行 | 不输出 |
 | waiting 队列 | 只显示数量,不逐项追加 | `progress` 事件里给数量 |
 | passed attempt | 只增加动态计数 | 不输出(题目级结论走 `eval` 事件) |
-| failed / errored + locator | 撤下 live 面板后永久追加一次 | `failure` / `error` 事件立即一行 |
+| failed / errored + locator | live 面板 `FAILURES` 分节滚动最近 5 条(TTY);非 TTY 逐条追加单行;结束聚合进 `FAILURES` 面板 | `failure` / `error` 事件立即一行 |
 | provisioning retry / backoff | 可见 active slot 内动态更新 | 不逐次输出 |
-| retry 耗尽、降级、budget 不可执行、止损闸落闸 | 去重后永久追加一次 | 去重后追加 `warning` 事件 |
+| retry 耗尽、降级、budget 不可执行、止损闸落闸 | 同 `code` 首条完整追加,后续静默计数,结束 `WARNINGS` 汇总 | 去重后追加 `warning` 事件 |
 | budget 耗尽、用户中断、reporter 写失败 | 永久追加一次 | 各自事件追加一次 |
-| 最终结论和结果路径 | 永久追加(结论、`FAILURES`、`NEXT` 面板) | `result` 事件 |
+| 最终结论和结果路径 | 永久追加(结论、`FAILURES`、`WARNINGS`、`NEXT` 面板) | `result` 事件 |
 
-“立即追加”也必须有上限,防止失败风暴淹没**人读**输出:人读文本默认展开前 10 条失败,超过后只追加一次 `N more failures suppressed`,持续更新总失败数。
+“立即追加”也必须有上限,防止失败风暴淹没**人读**输出:TTY 下 `FAILURES` 分节只显示最近 5 条,风暴被面板几何天然封顶;非 TTY 单流默认追加前 10 条失败,超过后只追加一次 `N more failures suppressed`。
 `--json` 不做 suppression——每条失败一个有界事件,机器不需要注意力保护;完整证据仍在 Run,由 `show` 读取。
 上限限制的是终端展开数,不是结果记录数。
 
@@ -406,8 +406,11 @@ human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区
 
 框线的几何、嵌套、降级与量测规则单源在[排版原语 · 区域框](../reports/library/layout.md#区域框text-面的框线体裁),`exp` 与 `show` 用同一套,这里只声明 `exp` 特有的部分。
 
-哪些是面板固定为:计划(`PLAN`)、运行中的 live 面板、结束结论(`PASSED` / `FAILED`)、`FAILURES`、`NEXT`(含 `RESULTS` 小节),以及发生留存时的 [`KEPT SANDBOXES`](../sandbox/cli.md#run-收尾输出)。
-失败行、错误摘要、诊断和运行级瞬时通知是流事件,以无框行追加进 scrollback——它们逐条到达、条数不可预知,而且每条失败最终都会在 `FAILURES` 面板里被再收拢一次。
+哪些是面板固定为:计划(`PLAN`)、运行中的 live 面板、结束结论(`PASSED` / `FAILED`)、`FAILURES`、`WARNINGS`、`NEXT`(含 `RESULTS` 小节),以及发生留存时的 [`KEPT SANDBOXES`](../sandbox/cli.md#run-收尾输出)。
+
+TTY 下失败不进 scrollback 流:已发生的失败以单行滚动显示在 live 面板内嵌的 `FAILURES` 分节里(见[运行中的 live 面板](#运行中的-live-面板)),结束时由聚合的 `FAILURES` 面板一次收拢——失败始终在框里,与面板重画互不污染。
+诊断(每个 `code` 只有首条)和运行级瞬时通知是流事件,以无框单行或两行追加进 scrollback;它们是过程记录,条数被聚合规则收得很小。
+任何一条失败的多行证据(expected / received 展开、message 全文、stack)都不进终端,细节的家是 `niceeval show @<locator>`,结束反馈把命令递到手边。
 
 `exp` 另外还有一个 `show` 没有的维度:live 面板是原地重绘的,不是打印一次。
 因此——
@@ -422,19 +425,20 @@ human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区
 
 ### 运行中的 live 面板
 
-计划面板、已经发生的失败留在 scrollback,其下方才是在 `stderr` 原地维护的 live 面板:
+计划面板留在 scrollback,其下方是在 `stderr` 原地维护的 live 面板。
+已发生的失败以单行滚动显示在面板内嵌的 `FAILURES` 分节:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
 │ 45 attempts · 9 evals × 5 configs · concurrency 19 (from flag)                 │
 │ 6 of 45 carried in from cache · 39 to run                                      │
 ╰────────────────────────────────────────────────────────────────────────────────╯
-✗ @1bwcxxiy memory/swelancer-manager-15193 [dev-e2b/claude-e2b]
-    gate: Issue 15193: selected proposal matches the accepted proposal
-          equals(4) · expected 4 · received 3
 
 ╭─ niceeval exp compare ────────────────────────────────────────────────────────────── 2m 14s ─╮
 │ 45 total · 6 reused · 19 running · 12 queued · 6 passed · 2 failed · 0 errored · 0 skipped   │
+├─ FAILURES ──────────────────────────────────────────────────────────────────────── 2 so far ─┤
+│ ✗ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]  Issue 15193: selected p…  │
+│ ✗ @1czntzel  memory/agent-029-use-cache-dir…  [codex--mempal]  Catalog reads use use-cache…  │
 ├─ ACTIVE ─────────────────────────────────────────────────────────────────────────────────────┤
 │ ● memory/agent-029-use-cache  compare/bub-e2b  1m 42s  tool: pnpm vitest run                 │
 │ ● memory/agent-030-app-route  compare/codex    1m 18s  assistant: editing src…               │
@@ -442,6 +446,9 @@ human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区
 │ … 16 more active                                                                             │
 ╰────────────────────────────────────────────────────────────────────────────────────── $0.84 ─╯
 ```
+
+`FAILURES` 分节滚动保留最近 5 条、只增不删地更新横隔右侧的累计数;更早的行滚出分节,不进 scrollback——运行中它回答「最近失败了什么」,权威清单在结束反馈与 Run。
+有失败才出现这个分节;矮终端先减 `ACTIVE` 可见项,再减这里的可见条数,失败计数始终留在首行仪表里。
 
 同一帧在 200 列终端里,身份列宽度不变,detail 段放宽到 ~130 列——adapter 压出的流式预览(完整的 `tool:` 命令行、`assistant:` 消息开头)整段可见,不再被截成几个词。
 
@@ -456,7 +463,7 @@ live 面板只展示当前状态,不保存历史帧:
   身份两列(eval id、experiment)按**实际出现过的最长值**定宽——短 id 不垫空格,列宽只放宽不回缩(帧间不抖动),各自封顶内容宽的 40% / 20%,超宽截尾补 `…`;剩余宽度**全部**给行尾的 phase/detail——它是这一行存在的理由,任何一帧都不允许 detail 被挤到不可见。
   `elapsed` 从这条 attempt 被派发起算,阶段推进只换 phase/detail、不重置它(见 [Attempt 阶段](#attempt-阶段));
 - 行内容按面板实际内容宽排版,与外框用同一个宽度值——不允许出现「行按终端宽排、框按上限截」导致行尾被框吃掉的错位;
-- 中间 retry 只改变 active 行尾;失败、错误或 retry 耗尽先撤下整个面板,在上方追加无框流事件,再重建面板;
+- 中间 retry 只改变 active 行尾;失败、错误只更新计数与 `FAILURES` 分节,由下一帧显现,不撤面板;只有要进 scrollback 的流事件(诊断首条、运行级瞬时通知)才先撤下面板、追加、再重建;
 - 终端变窄时先减少可见项,再截断消息,不能换行撑高面板;面板整体高度不超过终端高度;
 - 没有真实状态变化时不重画;历史帧不得进入 scrollback;
 - 独立诊断出现时先撤下面板,打印诊断,再在其下方重建。
@@ -481,34 +488,31 @@ live 与结束反馈是「回答成败、指向失败」的地方,不是缓存�
 | Attempt verdict | 运行中永久行 | 结束反馈(`FAILURES` 面板 / `RESULT` block) |
 |---|---|---|
 | `passed` | 不逐条打印；只更新 live 面板计数 | 只进 passed 汇总，不进入 failures |
-| `failed` | locator / eval / experiment + [Assertions 定义的主失败断言摘要](../assertions/library/display.md#契约一结果摘要) | failures 中重复同一摘要，并给 `show @locator` / `--source` 下钻 |
-| `errored` | locator / eval / experiment + `error.phase` / code / message | failures 中给同一层错误摘要；cause / stack / diagnostics 下钻 |
+| `failed` | 单行:locator / eval / experiment + [主失败断言的单行压缩摘要](../assertions/library/display.md#单行压缩形态) | `FAILURES` 按失败形态聚合成行(见[人看的结束反馈](#人看的结束反馈)),`show @locator` / `--source` 下钻 |
+| `errored` | 单行:locator / eval / experiment + `errored · <phase> · <code>` | `FAILURES` 按 `phase · code` 聚合成行;cause / stack / diagnostics 下钻 |
 | `skipped` | 不冒充失败；只有需要用户行动的 skip 才以 diagnostic 留痕 | 只进 skipped / completion 汇总 |
 
 `received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。
 这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、退格符等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。
 剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。
-`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
+
+一条失败的终端投影是**单行事实行**:`✗ @<locator>  <evalId>  [<experiment>]  <单行压缩摘要>`。
+TTY 下它出现在 live 面板的 `FAILURES` 分节里,非 TTY 单流里逐条追加,两处同一份投影函数。
+摘要用 [Assertions 的单行压缩形态](../assertions/library/display.md#单行压缩形态),预算是身份列之后的行内剩余宽度,按显示列量;空间不足按解释力让位,`expected` / `received` 最后截。
+一条失败恒占一行,渲染行恒不超过可用宽——排版不依赖终端把超长行硬折:
 
 ```text
-✗ @1czntzel memory/agent-029-use-cache-directive [codex-gpt-5.6-luna--mempal]
-    gate: Catalog reads use use-cache directive and products cache tag
-          includes(/['"]use cache['"];?/) · expected matches /['"]use cache['"];?/
-          received: // next.config.ts import type { NextConfig } from "next"; c…
-+2 more failures
+✗ @1czntzel  memory/agent-029-use-cache-directive  [codex--mempal]  Catalog reads use use-cache dir… · received // next.config…
 ```
 
-只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。
-源码不在这里内联，结束反馈给 `show @locator --source`。
-排版细则见 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)。
+只展示一条主失败,其余折进行尾的 `+N more failures`;不得把全部 assertion name 逐条铺开。
+expected / received 的多行展开、源码内联都属于 `niceeval show @<locator>`,不进终端。
 
-执行错误即时输出一层可行动摘要,不把 stack 或 provider SDK response 全部灌进 scrollback。
-摘要固定包含 locator、eval/experiment、正式 phase、稳定 code 和 message:
+执行错误同样是单行事实行,不把 message 多行、stack 或 provider SDK response 灌进终端。
+行内固定给 locator、eval/experiment、`errored`、正式 phase 与稳定 code;行宽余量够时行尾带 message 首行,余量不够先截 message:
 
 ```text
-✗ @12h8m4k1 memory/agent-029-use-cache [compare/claude-e2b] errored · sandbox.create
-    sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts
-    Inspect: niceeval show @12h8m4k1
+✗ @12h8m4k1  memory/agent-029-use-cache  [compare/claude-e2b]  errored · sandbox.create · sandbox-rate-limit: E2B sandbox allocation failed after 5 att…
 ```
 
 非致命 diagnostic 使用 warning/error 标记但不冒充 verdict;行首那个稳定词是诊断的 `code`,同一 `dedupeKey` 并发出现时只留一条并显示次数——折叠到多细由 dedupeKey 决定(身份可以编进它),展示与分支用的稳定词法始终是 `code`:
@@ -517,6 +521,10 @@ live 与结束反馈是「回答成败、指向失败」的地方,不是缓存�
 ! sandbox prepare · memory-warmup-degraded (12 attempts)
   Memory warmup failed; continuing with a cold index
 ```
+
+人读运行中流对每个 `code` 至多完整打印一次:第一条给标题与 message 两行,同 `code` 的后续条目(哪怕 dedupeKey 不同,比如逐用例的锁接管)静默计数,不逐条刷屏。
+跨用例撞上同一类状况时,读者需要的是「这类事发生了 N 次」,不是 N 段几乎相同的文字;逐 code 的次数与首条 message 由结束反馈的 [`WARNINGS` 面板](#人看的结束反馈)汇总。
+`--json` 不受此约束,仍按 dedupeKey 去重逐条给 `warning` 事件。
 
 止损闸落闸(见[执行失败分类 · 止损执行体](../error-classification/architecture.md#止损执行体))走同一条诊断通道,`code` 是 `dispatch-halted`、level 是 `error`。
 它的 message 自成完整一句话,所以按诊断体裁只给 error 符号加这一句,不另起标题行、也不带折叠计数——闸落下后每条被拦住的 attempt 都会刷新同一条诊断,逐次打印就会把 scrollback 刷满同一句话;被拦住的数量由结束反馈的 `unstarted` 回答。
@@ -539,17 +547,59 @@ eval 闸同形,文案是 `✗ eval halted: <message>`:
 计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。
 首行的四项结局因此是**本次派发**的口径:携入结果的 verdict 留在 `reused` 里,不摊进 `passed` / `failed`——两个口径混在一行,`reused` 就会同时既是状态又是来源,恒等式失去意义。
 整套结果集(含携入)的通过 / 失败数是结束反馈的事:结论面板的 `44 passed · 1 failed · 0 errored   (6 reused)` 覆盖全部 45 条,携入的失败照常进 `FAILURES` 面板并给下钻命令。
-携入的失败不在运行中逐条追加进 scrollback——它们不是本次发生的事,流事件承载的是「刚刚发生了什么」。
+
+携入的失败不进运行中的 `FAILURES` 分节——分节回答「本次刚刚失败了什么」,历史结果不是;结束聚合照常把它们收拢进 `FAILURES` 面板。
 
 结束反馈第二行的时长是本次运行的真实 wall-clock,tok 与 $ 只统计**本次新派发**的 attempt;reused 携入结果的历史成本不加进这一行,否则会出现「`0s` 却 `$7.04`」这类时长记本次、成本记累计的自相矛盾行。
 因此 `6 reused + 39 run` 的运行,`1.2M tok · $1.37` 指那 39 次的开销;全部命中缓存、零派发的运行这一行是 `0s · 0 new tok · $0.00`。
 复用结果各自的原始成本保留在它们的 Run 里,要看整套结果集(含 reused)的累计成本用 `niceeval view` / `niceeval show`。
 
+### 键盘输入与画面自愈
+
+live 面板靠相对光标回跳原地重绘,行数记账要求它是终端上唯一的写入者。
+键盘回显是记账之外的写入者:一次回车就把光标顶下一行,此后每一帧都画在错位的位置,旧帧残片持续泄进 scrollback,画面看起来既乱又「不刷新」。
+
+所以 live 面板存在期间,CLI 接管键盘:
+
+- stdin 是 TTY 时进入 raw mode 并关闭回显。普通按键不落屏、不进 scrollback,面板位置回到只有 renderer 一个写入者。
+- **回车是主动重绘手势**:收到 `\r` / `\n` 时清除面板并整帧重绘,绕过「同帧不写」判断。
+  它回答「它还活着吗」,也是画面被外部干扰(SSH 重连、终端故障、别的进程误写)弄乱后的自愈出口。
+- **Ctrl+C 语义不变**:raw mode 下终端自己不发信号,CLI 收到 `\x03` 时走与 SIGINT 完全相同的中断路径。
+  收到 `\x1a`(Ctrl+Z)转发挂起,恢复运行后重新进入 raw mode 并整帧重绘。
+- 终端 resize 同样按「清除 + 整帧重绘」自愈,与[框线体裁](#框线体裁)声明的 resize 重绘是同一条机制。
+- live 面板撤下(结束、中断、异常退出)时恢复终端模式;任何退出路径都不能把用户终端留在 raw mode。
+  接管不阻止进程自然退出;stdin 不是 TTY(管道喂入)时不读不接管,管道数据一个字节都不消费。
+- 非 TTY 输出与 `--json` 没有 live 面板,也就没有键盘接管。
+
 ### 人看的结束反馈
 
-结束后清除 live 面板,依次打印结论、失败、下一步三个面板。
-终端不再打印整张 experiment × eval 明细表——大矩阵在 scrollback 里不可读,加了框也不会变得可读,完整对比属于 `niceeval show` / `niceeval view`。
-`FAILURES` 面板装的是失败清单,不是结果矩阵:
+结束后清除 live 面板,依次打印结论、失败、警告(有才出现)、下一步几个面板。
+终端不打印整张 experiment × eval 明细表,也不逐条铺任何失败的多行证据——结束反馈回答「失败了多少、失败成什么样、下一步敲什么命令」,完整证据属于 `niceeval show` / `niceeval view`。
+
+`FAILURES` 面板装的是**失败形态清单**,不是结果矩阵,也不是逐条报错的堆场。
+未通过的 attempt 按失败形态分组,规则如下:
+
+- 组 key:`failed` 用主失败断言的标题与检查方式;`errored` 用 `phase · code`。`received` 各条不同,不进 key 也不进组行。
+- 同一形态的组只占一行:右对齐的 `×N` 计数、形态摘要、一条代表 locator(组内首现)。
+- 组按条数降序排;组数超过展开上限(10)时收进尾行 `+K more kinds — niceeval view`,总数与形态数嵌上边框右侧。
+- 只有一条的组展开成两行:身份行加悬挂的单行压缩摘要。失败少的时候读者想多看一眼,失败多的时候逐条展开只是噪声;两档由组的大小自然区分,不设第二套开关。
+
+一次 205 条失败的 terminal-bench 运行,`FAILURES` 收成三行:
+
+```text
+╭─ FAILED ─────────────────────────────────────────────────────────── 46m 37s ─╮
+│ 33 passed · 178 failed · 27 errored   (155 reused)                           │
+│ 3.3M new tok · $1.97                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ FAILURES ───────────────────────────────────────────── 205 total · 3 kinds ─╮
+│ ✗ ×166  commandSucceeded() · expected exit 0           e.g. @13VY37M9CMKXX   │
+│  ✗ ×27  errored · workspace.diff · diff-export-failed  e.g. @16QCGZ81YB4RS   │
+│  ✗ ×12  tests pass after fix · filesMatch(out/…)       e.g. @1AQFWS38J7WBB   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+只有一条失败时,同一套规则给出的是完整身份与摘要:
 
 ```text
 ╭─ FAILED ────────────────────────────────────────────────────────────── 3m 48s ─╮
@@ -558,9 +608,18 @@ eval 闸同形,文案是 `✗ eval halted: <message>`:
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ FAILURES ─────────────────────────────────────────────────────────────────────╮
-│ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]                │
-│   gate: Issue 15193: selected proposal matches the accepted proposal           │
-│         equals(4) · expected 4 · received 3                                    │
+│ ✗ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]              │
+│              Issue 15193: selected proposal matches… · expected 4 · received 3 │
+╰────────────────────────────────────────────────────────────────────────────────╯
+```
+
+`WARNINGS` 面板按 `code` 汇总本次去重后的诊断,有诊断才出现,位于 `FAILURES` 与 `NEXT` 之间。
+每个 `code` 一行:次数与首条 message 的截断——运行中同 `code` 只完整打印过第一条,这里是「这类事一共发生了几次」的权威答案:
+
+```text
+╭─ WARNINGS ─────────────────────────────────────────────────────────────────────╮
+│ ! lock-taken-over ×7           took over an expired case lock for codex/term…  │
+│ ! workspace-diff-unavailable   workspace diff export failed; continuing with…  │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ NEXT ─────────────────────────────────────────────────────────────────────────╮
@@ -612,7 +671,7 @@ Attempt Verdict,所以显示为 `unstarted`,不冒充 `skipped`:
 
 选择的 attempt 全部可复用时(`reused = total`,其余八项全为零),没有 attempt 派发,不出 live 面板,`PLAN` 面板之后直接打印结束反馈。
 复用不改变 verdict 折叠:携入的 `failed` 仍然是 `failed`,照常进 `FAILURES` 并给下钻命令与 `Retry:` 行——不能因为「这次没重跑」就把失败藏起来只丢一句计数;这一档下 `Retry:` 尤其是操作者要的那条命令,携入的失败正是靠它重新派发。
-结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;失败条数超过终端展开上限时,总数与展开数嵌进 `FAILURES` 的上边框右侧:
+结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;`FAILURES` 照常按失败形态聚合,总数与形态数嵌上边框右侧:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
@@ -625,13 +684,9 @@ Attempt Verdict,所以显示为 `unstarted`,不冒充 `skipped`:
 │ 0 new tok · $0.00                                                              │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ FAILURES ───────────────────────────────────────────── 17 total · showing 10 ─╮
-│ @1bwcxxiy  memory/swelancer-manager-15193  [dev-e2b/claude-e2b]                │
-│   gate: Issue 15193: selected proposal matches the accepted proposal           │
-│         equals(4) · expected 4 · received 1                                    │
-│                                                                                │
-│ … 9 more failures shown, then:                                                 │
-│ +7 more failures — niceeval view                                               │
+╭─ FAILURES ────────────────────────────────────────────── 17 total · 2 kinds ───╮
+│ ✗ ×13  Issue 15193: selected proposal matches… · equals(4)   e.g. @1bwcxxiy    │
+│  ✗ ×4  memory retention holds after restart · atLeast(0.8)   e.g. @1m3qz8vw    │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ NEXT ─────────────────────────────────────────────────────────────────────────╮

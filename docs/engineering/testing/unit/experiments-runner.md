@@ -151,6 +151,24 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 断言渲染帧的行数组与列位置，不断言内部计算公式。
 
+- **失败的单行投影与 live `FAILURES` 分节（`runner/feedback/human.ts` + `assertions/display.ts`）**：契约见 [CLI · 框线体裁](../../../feature/experiments/cli.md#框线体裁)与「运行中的 live 面板」。
+  - 一条失败的终端投影恒为单行 `✗ @<locator>  <evalId>  [<who>]  <单行压缩摘要>`；errored 给 `errored · <phase> · <code>`，余量够再带 message 首行。
+  - TTY 帧内出现在 counts 行与 `ACTIVE` 之间的 `FAILURES` 横隔分节：滚动保留最近 5 条，横隔 meta 给累计数，失败不写 scrollback。
+  - 非 TTY 单流逐条追加同一投影，10 条后一次 suppressed 提示。
+  - 摘要行预算由渲染面按内容宽扣掉身份列传入，按显示列量，渲染行恒不超过预算。`--json` 与非 TTY 用固定 100 字符预算（[Assertions · 一条摘要怎样排版](../../../feature/assertions/library/display.md#一条摘要怎样排版)）。
+  - 区分力：`received` 长值单行收口不溢出；CJK 值按显示列不破框；矮终端先减 `ACTIVE` 可见项再减分节条数。
+- **结束反馈的失败形态聚合与 `WARNINGS` 汇总（`runner/feedback/human.ts`）**：契约见 [CLI · 人看的结束反馈](../../../feature/experiments/cli.md#人看的结束反馈)。
+  - 组 key：`failed` 用主失败断言标题 + 检查方式；`errored` 用 `phase · code`；`received` 不进 key。
+  - size > 1 的组一行：右对齐 `×N` + 形态摘要 + 组内首现的代表 locator。size = 1 的组两行：身份行 + 悬挂单行摘要。
+  - 组按条数降序；超过 10 组收进 `+K more kinds — niceeval view` 尾行；总数与形态数嵌上边框 meta。
+  - 人读运行中每个诊断 `code` 至多完整打印一次，同 `code` 后续静默计数；结束时 `WARNINGS` 面板每 code 一行（`! <code> ×N` + 首条 message 截断），无诊断不出面板。
+  - 区分力：205 条同 matcher 失败聚成一行且代表 locator 是首现那条；1 条失败展开成完整身份两行；`--json` 的 `failure`/`warning` 事件仍逐条。
+- **live 面板的键盘接管与自愈重绘（`runner/feedback/input-guard.ts` + coordinator 接线）**：契约见 [CLI · 键盘输入与画面自愈](../../../feature/experiments/cli.md#键盘输入与画面自愈)。
+  - stdin 与 stderr 都是 TTY 时，live 期间 stdin 进入 raw mode 且不回显，普通字节不透传。
+  - 收到 `\r` / `\n` 触发 clear → 整帧重绘且绕过「同帧不写」判断。收到 `\x03` 走与 SIGINT 相同的中断路径。
+  - 结束与中断路径都恢复终端模式并释放 stdin，不阻止进程退出。stdin 非 TTY 时一个字节都不读。
+  - 区分力：回车重绘必须在 `lastFrameText` 未变化时也真的写出一帧；恢复终端模式在正常 finish 与中断两条路径都要发生。
+
 - **执行错误 message 的一层摘要投影（`agents/shared.ts` 的 diagnose 组装 + `runner/feedback/failure.ts` 的失败事实投影）**：diagnose 组合消息的首行恒为一层可行动摘要（exit code · transcript 状态 · 最后一条 error 事件的首行），output tail 从第二行起按原始换行保留——被测 CLI 输出里的 traceback 框线不得混进首行（docs/feature/experiments/cli.md「运行反馈」：执行错误即时输出一层摘要）；失败事实的 reason 对多行 error message 只取首行、剥控制字节并按摘要上限截断收口，后续行（tail）不进 scrollback。
   区分力：单行 message 原样保留与多行 message 折首行两面都要有；tail 缺失（stdout/stderr 全空）时消息只有首行、不带空尾巴。
 - **实验级生命周期**：setup 整场至多一次；无派发时不执行。

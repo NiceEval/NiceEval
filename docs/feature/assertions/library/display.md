@@ -79,11 +79,15 @@ HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
 例如，`commandSucceeded()` 的整段 pytest stdout 会折成 `exit 1 · “… 2 failed, 14 passed”`。
 `+N more failures` 不参与截断，也不拼进被截断的值；否则无法判断 `…` 后面是值还是计数。
 
+合并判断与截断都在一条行预算内完成，预算由渲染面给：面板面按自己的内容宽扣掉悬挂缩进；`--json` 与非 TTY 追加流没有可依赖的终端宽度，用固定 100 字符。
+预算按显示列量（CJK 记 2 列），渲染出的行恒不超过预算。
+排版不依赖终端把超长行硬折——硬折的续行顶到行首，悬挂缩进表达的层级就毁了。
+
 剥控制字节只改变展示投影。
 落盘 `AssertionResult` 与 artifact 保存原始字节，完整证据不失真。
 落盘的 256 KiB 上限只管 artifact 体积，见 [Results · 大值截断](../../record/architecture.md#大值截断)；它与展示宽度无关。
 
-`exp` 的人读永久行 / `FAILURES` 面板与 `--json` `failure` 事件的文本字段用同一套排版。
+`exp` 的人读失败行(live 面板 `FAILURES` 分节、非 TTY 追加流、结束 `FAILURES` 的单条组展开)用[单行压缩形态](#单行压缩形态);两行 / 三行排版属于 `show` 的断言详情面;`--json` `failure` 事件的文本字段与单行压缩形态同一套语法。
 这里的领域标题必须由 eval 作者通过 `t.group(“Issue 15193: …”, fn)`（或断言自身的语义 name）明确提供；renderer 不读取变量名、源码表达式或 prompt 猜标题。
 没有 group 的原始 `t.check(value, equals(4))` 仍能可靠显示 `equals(4) · expected 4 · received 3`，只是没有足够事实生成 “selected proposal” 这层语义。
 
