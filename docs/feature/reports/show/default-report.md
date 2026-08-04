@@ -16,7 +16,7 @@
 每个 experiment 的 eval 数与读数分母来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不补成失败。
 实验列表保持 experiment → Eval → Attempt 层级。
 
-Experiment、路径段组与 Eval / Attempt 各是一条实体行。Experiment 首格只显示 experiment id，例如 `compare/codex`；路径段组行显示自己的题数，例如 `downshift (6 evals)`。Experiment 的 Eval 数、Attempt 数与携带来源不在首格重复；表中的结果与读数列承担比较所需的信息。
+Experiment、路径段组与 Eval / Attempt 各是一条实体行。Experiment 首格只显示 experiment id，例如 `compare/codex`；路径段组行显示自己的题数，例如 `downshift (6 evals)`。Experiment 的 Eval 数、Attempt 数与覆盖构成不在首格重复，它们在表下的副行给出；表中的结果与读数列承担比较所需的信息。
 
 Sample 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：
 
@@ -100,7 +100,7 @@ A   dev-e2b/codex-e2b   $0.03   66.7%
 ├───────────────────┼──────────────┼───────┼──────────┼────────┼─────────────────┼────────┼───────┤
 │ dev-e2b/codex-e2b │ gpt-5.4-mini │ codex │   1m 58s │  66.7% │ 4 通过 · 2 失败 │ 198.9k │ $0.17 │
 ╰───────────────────┴──────────────┴───────┴──────────┴────────┴─────────────────┴────────┴───────╯
-6/7 个 Eval · 6 次 attempt · ↩ 1/6 attempts · 2026-07-12T10:08:29.361Z
+6/8 个 Eval · 6 次 attempt · 5 新执行 · 1 历史执行 · 1 过期结论 · 1 未跑到 · 2026-07-12T10:08:29.361Z
 
 dev-e2b/codex-e2b
 ╭────────┬────────────────────────────────────┬────────────────────────────────────────────────────┬────────┬───────╮
@@ -112,13 +112,14 @@ dev-e2b/codex-e2b
 │ ✓      │   └─ @1sxmo0m1                     │ —                                                  │ 2m 58s │ $0.57 │
 │ ✗ 失败 │ memory/swelancer-manager-proposals │                                                    │        │       │
 │ ✗      │   └─ @1qrdcfq8                     │ equals(4) · received 3                             │  50.0s │ $0.05 │
-│ ✓ 通过 │ memory/terminal-cancel-async-tasks │ ↩ 2d                                               │        │       │
-│ ✓      │   └─ @1pcdj0az   ↩ 2d              │ —                                                  │ 2m 48s │ $0.13 │
+│ ✓ 通过 │ memory/terminal-cancel-async-tasks │                                                    │        │       │
+│ ✓      │   └─ @1pcdj0az 2d                  │ —                                                  │ 2m 48s │ $0.13 │
 │ ✗ 失败 │ memory/terminal-pypi-server        │                                                    │        │       │
 │ ✗      │   └─ @13wrnsc4                     │ commandSucceeded() · received exit 1 · "…1 failed" │ 2m 53s │ $0.19 │
 │ ✓ 通过 │ memory/tool-call-observability     │                                                    │        │       │
 │ ✓      │   └─ @18etnsw5                     │ —                                                  │  18.1s │ $0.02 │
-│ —      │ memory/uv-lock-refresh             │ 当前配置下无结果 · niceeval exp dev-e2b/codex-e2b  │        │       │
+│ —      │ memory/uv-lock-refresh             │ ✓ @1sk3lq02 12d · niceeval exp dev-e2b/codex-e2b   │        │       │
+│ —      │ memory/webhook-retry-budget        │ 当前配置下无结果 · niceeval exp dev-e2b/codex-e2b  │        │       │
 ╰────────┴────────────────────────────────────┴────────────────────────────────────────────────────┴────────┴───────╯
 
 其余页：
@@ -134,9 +135,11 @@ dev-e2b/codex-e2b
   ✓       └─ @1second2                            —                                           21.4s     $0.03
 ```
 
-携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总 `↩ n/m attempts`。
-覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与读数分母。
-实体 rows 由公开 `toExperimentRows(sample)` 产生；时效标注与覆盖占位都在这个立即转换中确定。
+携带或跨 Run 拼入的历史执行在 locator 后紧跟一个相对时距，行上不另写「历史」这类词标；同一条时效在 web 面还降饱和并给 hover 说明（三条通道见[实验表](../components/summaries/experiment-table.md#时效不写字)）。
+Experiment 副行把已知题按结论出身分成[覆盖构成](../components/summaries/experiment-table.md#覆盖构成)四段，四段合计就是这一行的分母。
+覆盖缺口渲染成占位行，不参与读数分母，并按记录里有没有可参考的结论分两档：有过期结论的给出那次判定的判定符、locator 与时距，其余的只给「当前配置下无结果」。
+两档都附可直接复制的补跑命令。
+实体 rows 由公开 `toExperimentRows(sample)` 产生；时效、覆盖构成与两档占位都在这个立即转换中确定。
 
 locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。
 Result 单元格使用 [Assertions 定义的主失败断言摘要](../../assertions/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。

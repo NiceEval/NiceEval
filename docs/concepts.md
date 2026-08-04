@@ -229,6 +229,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
 | 有效根 | Effective root | 记录根经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
 | 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
+| 覆盖构成 | Coverage composition (`composition`) | 一个 Experiment 的已知题按当前结论出身分出的互斥段 | [Experiment table](feature/reports/components/summaries/experiment-table.md#覆盖构成) |
+| 过期结论 | Stale conclusion | 记录里存在、但 configHash 与当前基准不可比的历史判定;只作参考,不进任何计数 | [Experiment table](feature/reports/components/summaries/experiment-table.md#覆盖缺口的两档占位行) |
+| 相对时距 | Time distance (`formatTimeDistance`) | 一条结论距锚点多久的紧凑人读读法,如 `12d` | [Presentation](feature/reports/library/presentation.md#相对时距是数据不是文案) |
 | 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 装载的内建普通 Report | [Default report](feature/reports/show/default-report.md) |
 | 报告槽位 | Report slot(内部代号) | 宿主中可被 `--report` 整体替换的部分 | [Reports architecture](feature/reports/architecture.md) |
 

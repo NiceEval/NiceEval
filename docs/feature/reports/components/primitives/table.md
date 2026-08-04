@@ -61,6 +61,24 @@ web 面输出真实 `<table>`；text 面输出[数据格框](../../library/layou
 
 公开 rows 形态的表头同一规则：默认原样显示字段名，传 `label` 覆盖。
 
+### 构成格
+
+`composition` 格显示一组带计数的段：
+
+```ts
+{
+  kind: "composition",
+  segments: readonly { label: LocalizedText; count: number }[],
+}
+```
+
+段名是投影给的 `LocalizedText`，两面按当前 locale 解析同一份。
+`Table` 不知道段代表什么，也不知道段之间是什么关系：它只按声明序渲染，计数为零的段不显示。
+web 面画成一条分段条，每段的宽度按计数占比，hover 出该段的名字与计数；text 面输出 `5 新执行 · 1 历史执行` 这样的计数串，与判定计票同构。
+
+段的业务含义住在产出这个格的投影里——[实验表的覆盖构成](../summaries/experiment-table.md#覆盖构成)是它的第一个消费者。
+原语不为某个消费者增加分支：换一套分段只改投影，渲染面逐字不变。
+
 ## 相关阅读
 
 - [组件目录](../README.md)

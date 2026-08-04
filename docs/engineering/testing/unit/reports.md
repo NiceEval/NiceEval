@@ -97,7 +97,7 @@ const scope = reportScopeFixture({
   - 组合组件与手写组合严格等价。
   - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图。
   - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table， Attempt locator 保留给 web 宿主下钻。
-    Experiment 与路径段组的计数、携带摘要内联在身份格；它们不能成为另一条 detail 续行。
+    路径段组的题数内联在身份格；它不能成为另一条 detail 续行。
   - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
   - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`； text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。
@@ -177,6 +177,32 @@ const scope = reportScopeFixture({
   - Attempt 行的判定构成格是该次判定；同题下 failed 与 errored 两行的格不同，证明没有折成「非 passed」一档。
   - 格子落在层级表列集存在的 key 上：experiment 列集渲染后 Eval 与 Attempt 行的判定构成列不是 `—` （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
   - 两面显示同源：计票与单判定的 text 面经 `formatCellText` 按 locale 取判定词，单判定带 `verdictMark` 判定符；web 面同一格带 `niceeval-verdict-*` 语义 class。
+- **占位行的两档与过期结论参考** （[契约](../../../feature/reports/components/summaries/experiment-table.md#覆盖缺口的两档占位行)）：断言面是 `experimentListContent` 产出的 Cell 树与 text 面输出字符串。
+  逐项覆盖：
+
+  - 两档占位行的结果格都是 `missing` 格且都带补跑命令；只有记录里有不可比历史判定的那一档带 `reference`。
+    区分力场景是「同一个 Sample 里一道题从未跑过、另一道题只有旧 configHash 的结果」——两行必须给出不同的格，把两档折成同一种占位的实现在这里失败。
+  - `reference` 取该题 `historyAttempts` 里最近的一条不可比判定，并带 locator、判定与距今时长；候选多于一条时取最新那条。
+  - 参考不进任何计数：带参考的占位行前后，该 experiment 的判定计票、通过率与覆盖分母逐字不变。
+  - `sample.fresh` 为 `true` 时两档占位行都不带 `reference`。
+    区分力场景是同一份记录的 fresh 与非 fresh 两次投影——只有 fresh 那次的格没有参考。
+- **覆盖构成的四段与两面** （[契约](../../../feature/reports/components/summaries/experiment-table.md#覆盖构成)）：断言面是构成格的 `segments` 与两面输出字符串。
+  逐项覆盖：
+
+  - 四段互斥且合计等于该实验的已知题数；一道题同时有新执行与携带 attempt 时只落新执行段。
+    区分力场景是「一道题重试两次、第一次是携带」——按 attempt 计数的错误实现会让合计超过题数。
+  - 计数为零的段不出现在两面输出里，与判定计票同一条规则。
+  - 段名走 `LocalizedText`：zh-CN 与 en 两次渲染取同一份 `segments`，只有文案不同，计数与段序逐字相同。
+  - 构成格不携带业务语义：同一个格换一组无关段名照常渲染，渲染面没有分支认识「新执行」这类词。
+- **只看新执行的重投影** （[契约](../../../feature/reports/components/summaries/experiment-table.md#只看新执行)）：断言面是开关两态下 `ExperimentTable` 交给 `Table` 的两份 Content。
+  逐项覆盖：
+
+  - 打开开关后的行集与同一 Sample 走 `freshOnly()` 再投影的结果深相等；口径不在组件里另算一遍。
+  - `Table` 的输入只是行集：两态下的 `columns` 与行形状同规则，原语侧没有任何按时效分叉的属性。
+  - Sample 里既无历史执行也无过期结论时不产出这个开关。
+- **`formatTimeDistance` 的读法与导出面** （[契约](../../../feature/reports/library/presentation.md#相对时距是数据不是文案)）：断言面是函数返回值。
+  四个区间各一条，`en` 与 `zh-CN` 各取一条代表场景；不足一个单位的时长取一个单位，不打零。
+  区分力场景是 90 分钟——只有按区间分派才区别于恒定按天取整的 `1d`。
 - **`formatInstant` 的读法与回落** （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：断言面是函数返回值。
   覆盖 ISO 折到分钟的人读时间（不含原样 ISO 片段）、不可解析输入原样返回，以及它从 `niceeval/report` 与 `niceeval/report/react` 同引用导出。
    Attempt 摘要格实际调用了哪个入口是渲染产物，归 [E2E 报告域](../e2e/report.md)。

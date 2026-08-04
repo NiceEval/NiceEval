@@ -188,7 +188,7 @@ current.coverage[0];
 实验级 teardown 失败、预算没法执行这类记录跟着所属 Run 写盘。
 报告用 `toRunDiagnostics(sample)` 产生 Notice items，再交给 `Callouts`。
 
-每条结果还带**时效**：携带条目（缓存命中、上一轮的结果合入本 Run）`attempt.carried` 为 true，默认报告在这类行后标 `↩` 加时距（如 `↩ 3d`）——旧但有效，fingerprint 担保过没改，所以是行内标注不是警告。只想看相对锚点的新执行，用 `latestRunSample(record, { fresh: true })` / `currentSample(record, { fresh: true })` 或 CLI 的 `--fresh`，被排除的题会转成占位行，不会静默消失。
+每条结果还带**时效**：携带条目（缓存命中、上一轮的结果合入本 Run）`attempt.carried` 为 true，默认报告在这类行的 locator 后紧跟一个相对时距（如 `3d`），并把这一格降饱和——旧但有效，fingerprint 担保过没改，所以是行上的出身信息不是警告。行上不写「历史」这类字：时距是数据、降饱和是样式，web 面 hover 再给完整解释。只想看相对锚点的新执行，用 `latestRunSample(record, { fresh: true })` / `currentSample(record, { fresh: true })` 或 CLI 的 `--fresh`，被排除的题会转成占位行，不会静默消失。
 
 Sample 是[自定义报告](/zh/tutorials/custom-reports)和下文 `publish` 的通用输入。
 coverage 与 issues 随行，`toExperimentRows(sample)` 生成覆盖缺口占位行，

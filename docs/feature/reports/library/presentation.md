@@ -16,6 +16,7 @@ JSON 保留数值与格式元数据，两个展示面必须从这份数据按各
 |---|---|---|---|
 | 格式化 | `formatMetricValue` | `(value: number \| null, unit?: string, format?: MetricFormat, locale?: ReportLocale) => string` | renderer 按当前 locale 把终值折成展示字符串 |
 | 格式化 | `formatInstant` | `(iso: string, locale?: ReportLocale) => string` | ISO 时刻按当前 locale 折成人读时间 |
+| 格式化 | `formatTimeDistance` | `(ms: number, locale?: ReportLocale) => string` | 一段时长按当前 locale 折成紧凑相对时距 |
 | 格式化 | `formatAxisTick` | `(value: number, step: number, unit?: string) => string` | 轴刻度，精度跟随步长 |
 | 格式化 | `formatCellText` | `(cell: Cell \| null, locale?: ReportLocale) => string` | 把任意 `Cell` 折成一行文本 |
 | 缺数据 | `missingText` | `(code: string, locale?: ReportLocale) => string` | `missing` 格的本地化原因 |
@@ -123,6 +124,21 @@ formatInstant(attempt.result.startedAt, locale);
 `formatAxisTick(value, step, unit)` 的精度跟随刻度步长，不跟随值本身：步长 `0.25` 的刻度打 `0.25` / `0.5` / `0.75`，而 `formatMetricValue` 会把它们缩写掉。
 自定义图表组件画轴用它，不自己 `toFixed`。
 
+### 相对时距是数据，不是文案
+
+「这条结论距今多久」是格里的一个值，两个面都要显示，所以它走格式化入口而不是各写各的措辞。
+`formatTimeDistance(ms, locale)` 的输入是一段时长的毫秒数——[locator 格](../components/primitives/table.md)的 `staleSinceMs` 与占位行参考的 `staleSinceMs` 都是它。
+
+| 区间 | en | zh-CN |
+|---|---|---|
+| 不足 1 小时 | `45m` | `45 分钟` |
+| 不足 1 天 | `6h` | `6 小时` |
+| 不足 30 天 | `12d` | `12 天` |
+| 30 天及以上 | `4mo` | `4 个月` |
+
+取整到该区间的单位，结果恒不小于一个单位：不足一分钟的时长打 `1m`，不打 `0m` 或秒。
+时距紧贴它描述的那个 locator，不加箭头、回环之类的装饰记号——记号不携带时长，读者还要先学会它。
+
 ## 缺数据、不适用与占位
 
 三种空格是三件不同的事，各有自己的文案来源，不互相顶替：
@@ -141,12 +157,39 @@ formatInstant(attempt.result.startedAt, locale);
 | `noSamples` | 这一格覆盖的 attempt 读数全部为 `null` | `no data` | `无数据` |
 | `notRun` | 固定题集里这道题没有 attempt | `not run` | `未跑到` |
 | `unscorable` | 有 attempt，但读数测不出 | `unscorable` | `测不出` |
+| `noCurrentResult` | 当前配置下这道题没有结果 | `no result for current config` | `当前配置下无结果` |
 
 `missingText(code, locale)` 是两个面共用的入口，`formatCellText` 的 `missing` 分支调它。
 词表未命中时原样返回 `code`，两面都照常显示——自定义数据源的原因不会被静默吞掉。
 
 **把英文文案写进 `code` 会在中文报告里留下一格英文。**
 `code` 只进词表，文案只进词典；一格 `no data` 挨着一格「无数据」，读者会以为它们是两种状态。
+
+### `missing` 格的完整形状
+
+一格缺数据除了原因，还可能带下一步和一条参考：
+
+```ts
+{
+  kind: "missing",
+  code: string,
+  /** 补上这一格的命令，可直接复制。 */
+  detail?: string,
+  /** 记录里存在、但与当前基准不可比的最近一条判定。 */
+  reference?: {
+    locator: AttemptLocator;
+    verdict: Verdict | "skipped";
+    staleSinceMs: number;
+  },
+}
+```
+
+`detail` 让「缺什么」和「怎么补」留在同一格里，读者不必去别处找命令。
+`reference` 是一条参考而不是一个结果：它不进任何计数，两面都降饱和显示，只提供 locator 下钻。
+带 `reference` 时用参考替代原因文案——参考本身已经说明这一格为什么空着，再打一遍原因是同一句话说两次。
+
+这一格不解释参考为什么不可比。
+原因归产出它的投影所在的领域命令，格只负责把判定符、locator 与[相对时距](#相对时距是数据不是文案)摆出来；[实验表的两档占位行](../components/summaries/experiment-table.md#覆盖缺口的两档占位行)是它的第一个消费者。
 
 ## 文本排版
 
