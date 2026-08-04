@@ -171,6 +171,25 @@ describe("SandboxLayer 声明与 command identity", () => {
     expect(Object.isFrozen(sandboxLayerStateOf(compose).template)).toBe(true);
   });
 
+  // 可选配置字段的缺省值不进身份序列化(absent ≡ default):省略 pathPrepend 与显式传空数组
+  // 必须产出逐字节相同的 template identity,否则同一个作者意图会因为写法不同分裂出两份
+  // digest,对使用者是无法解释的差异(docs/feature/sandbox/library.md「PATH:受管变量与
+  // pathPrepend」)。非空时才计入摘要,值本身仍受保护(见下面 docker.test.ts 的顺序覆盖)。
+  it("pathPrepend 省略与显式空数组产出同一份 template identity;非空时才改变它", () => {
+    const omitted = sandboxLayerStateOf(dockerImageSandbox({ image: "node:24" })).template.identity;
+    const explicitEmpty = sandboxLayerStateOf(
+      dockerImageSandbox({ image: "node:24", pathPrepend: [] }),
+    ).template.identity;
+    const nonEmpty = sandboxLayerStateOf(
+      dockerImageSandbox({ image: "node:24", pathPrepend: ["/opt/tools/bin"] }),
+    ).template.identity;
+
+    expect(explicitEmpty).toEqual(omitted);
+    expect(JSON.stringify(omitted)).not.toContain("pathPrepend");
+    expect(nonEmpty).not.toEqual(omitted);
+    expect(JSON.stringify(nonEmpty)).toContain("pathPrepend");
+  });
+
   it("factory 的运行时入口拒绝缺失、空值、额外字段和无效寿命", () => {
     expect(() => e2bSandbox({} as never)).toThrow(/template must be a non-empty string/);
     expect(() => dockerImageSandbox({ image: "" })).toThrow(/image must be a non-empty string/);

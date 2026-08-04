@@ -81,6 +81,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **PATH 与 pathPrepend**：PATH 是 Sandbox 受管变量，声明面拒绝、运行面按序前置。
   - docker provider：factory `pathPrepend` 按声明顺序前置到受管 PATH（npm 全局 bin + 系统默认路径之前），验证顺序而不只验证包含关系；省略时受管 PATH 与不带 `pathPrepend` 的既有行为逐字节一致。
   - `pathPrepend` 进入 template identity（改值使旧结果失效），Compose/Dockerfile/Image 三个 docker-based 工厂共用同一条 `DockerSandbox` 消费路径,只覆盖其中一个即可证明。
+  - **absent ≡ default**：省略 `pathPrepend` 与显式传空数组产出同一份 template identity（同一份 digest，序列化里都不出现这个键）——可选配置字段的默认值不进身份序列化是通用规则，`pathPrepend` 是它当前唯一有实例的字段。
 - **E2B command completion framing**：
   - 测试把生产 wrapper 交给真实 `/bin/bash` 执行，再把 bash 的真实 stdout/stderr chunk 送进生产 parser。
   - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk，以及 Codex 形状的长命令/heredoc。

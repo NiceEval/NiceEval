@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { Effect, Cause, Data, Either, Exit, Option } from "effect";
 import { probeJudge } from "../assertions/judge.ts";
 import { t } from "../i18n/index.ts";
-import { cacheKey, carriableAttempts, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
+import { cacheKey, carriableAttempts, computeConfigHash, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
 import {
   agentInstallPlansForRun,
   configDeltas,
@@ -592,11 +592,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         bucket[evalDef.id] = manifest;
         manifestsByExperiment.set(run.experimentId, bucket);
       }
-      const configHash = plannedConfigHashes.get(key);
-      if (configHash !== undefined) {
-        // configHash 是 Run 级单值(不依赖逐 eval 的物理 provider plan,见
-        // config-identity.ts 的 configIdentityForRun);同一 experiment 下每条 eval 算出的值
-        // 必须相等,否则说明规划期哪里让物理 plan 混进了配置身份,不能硬写一个值掩盖过去。
+      const prepared = preparedPairsByKey.get(key);
+      if (prepared !== undefined) {
+        // run.json 的 configHash 只有一槽/experiment,因此必须是真正的 Run 级值——只含
+        // agent/model/flags/sandboxLayer 等在 defineExperiment 层面就固定的字段。
+        // plannedConfigHashes(fingerprint.ts)按 experiment > eval > config 链逐字段解析
+        // judge 后混入携带判据,一条 eval 自己声明 judge 时(docs/feature/experiments/cache.md
+        // 「指纹:两个哈希嵌套」)会让它单独跑出不同的值——这是刻意的携带正确性,不是配置身份
+        // 分叉,不能拿它来校验/落盘 Run 级值。这里改用不带 judge 覆盖的
+        // computeConfigHash(等价 configIdentityForRun(run, plan) 默认单层 run.judge)重算,
+        // 校验的是它——真正应当逐 eval 恒等的那部分,不一致时才说明物理 plan 混进了配置身份。
+        const configHash = computeConfigHash(prepared);
         const existing = configHashesByExperiment.get(run.experimentId);
         if (existing !== undefined && existing !== configHash) {
           throw new Error(

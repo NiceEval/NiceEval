@@ -105,6 +105,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   这条链没有 CLI flag，多出一层就是回归。
   断言面取 judge 断言实际请求到的 model 与端点。
   `judge` 的 `model` / `baseUrl` 进 configHash、`apiKeyEnv` 不进，归下面的指纹输入类别。
+- **run.json 落盘的 Run 级 configHash 不逐 eval 分叉**：`run.json` 每个 experiment 只有一槽 `configHash`，不能是逐 eval 分叉的值。
+  - 同一 Experiment 下一个 eval 声明 `judge`、其余不声明时，`runEvals` 写进 `InvocationShape.configHashes`（继而落进 `run.json`）的值必须与其余 eval 相同。它只取 Run 级 `judge`，不叠加 `experiment > eval > config` 的逐字段解析链（`configIdentityForRun` 默认单层）。
+  - 反例：那条 eval 自己的 `result.configHash`（携带判据读 `plannedConfigHashes`）仍按完整解析链算出。它可以与 Run 级值不同——这是刻意的携带正确性（docs/feature/experiments/cache.md「指纹:两个哈希嵌套」），不是要抹平的分叉。
+  - 反面回归：曾直接拿 `plannedConfigHashes` 当 Run 级值汇总。任意 eval 声明自己的 `judge` 就让规划期硬抛错，见 memory/config-hash-forks-per-eval-judge-declaration。
 - **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→ `zh-CN`。
   断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C` / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` / `NICEEVAL_LOCALE`）在场也不参与。
 - **并发**：全局与实验级上限、全局上限的三层解析与 Provider 推荐值、exclusive Provider 强制串行。

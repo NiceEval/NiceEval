@@ -2190,6 +2190,67 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
   });
 });
 
+// 回归守护:config-identity.ts 的 configIdentityForRun 按 experiment > eval > config 逐字段
+// 解析 judge(docs/feature/experiments/cache.md「指纹:两个哈希嵌套」),一条 eval 自己声明
+// judge 时它自己的 configHash 因此正确地与同 experiment 里不声明 judge 的 eval 不同——这是
+// 携带正确性的一部分。但 run.json 每个 experiment 只有一槽 configHash(docs/feature/record/
+// library.md「configHash:配置身份只算一次」),不能直接拿逐 eval 的值去比对/落盘,否则这种
+// 合法分叉会被误判成「物理 plan 混进配置身份」的 bug 而报错。
+// bug: memory/config-hash-forks-per-eval-judge-declaration.md
+describe("runEvals · run.json 的 Run 级 configHash 不因单条 eval 自带 judge 分叉", () => {
+  /** judge 预检按源码文本的 /\bjudge\b/ 启发式触发(run.ts 的 judgeProbePlan);写一份不含这个
+   *  词的真实文件,证明这组测试与 judge 预检无关,不需要 mock fetch/env(与 evalWithSource
+   *  同一条理由,见「判分预检失败只作废含 judge 的 eval」describe 块)。 */
+  async function plainEval(id: string, judge?: JudgeConfig): Promise<DiscoveredEval> {
+    const dir = await makeRoot();
+    const path = join(dir, `${id}.eval.ts`);
+    await writeFile(path, 'test("plain", async (t) => { t.check("ok", equals("ok")); });', "utf-8");
+    return discoverEval(defineEval({ test: (t) => { t.check("ok", equals("ok")); }, ...(judge === undefined ? {} : { judge }) }), {
+      id,
+      baseDir: "/project",
+      sourcePath: path,
+      loaderDataPaths: Object.freeze([]),
+      criteriaPaths: Object.freeze([]),
+      privatePaths: Object.freeze([]),
+      source,
+    });
+  }
+
+  it("一条 eval 自己声明 judge 不再让规划期报 configHash 分裂;run.json 落盘的是不含它的 Run 级值", async () => {
+    const withJudge = await plainEval("with-judge", { model: "eval-model", baseUrl: "http://judge.fixture/v1" });
+    const plain = await plainEval("plain");
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-judge-uniform"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxLayer(),
+      timeoutMs: 5_000,
+      selectedEvalIds: [withJudge.id, plain.id],
+      experimentId: "judge-uniform-exp",
+    };
+
+    // 回归的原始症状是规划期直接抛错(见 run.ts 的 configHashesByExperiment 汇总);
+    // 不 reject 本身就是这条回归的核心断言。
+    const { summary, root } = await run([withJudge, plain], [agentRun]);
+    const byId = new Map(summary.results.map((r) => [r.id, r]));
+    expect(byId.get("plain")?.verdict).toBe("passed");
+    expect(byId.get("with-judge")?.verdict).toBe("passed");
+
+    // 每条 eval 自己的 configHash 仍按完整 experiment > eval > config 链解析,携带正确性不受影响:
+    // 声明了 judge 的那条与不声明的那条本该不同。
+    expect(byId.get("with-judge")?.configHash).not.toBe(byId.get("plain")?.configHash);
+
+    // run.json 只有一槽/experiment,写进去的必须是真正的 Run 级值——与不声明 judge 那条 eval
+    // 自己的值相同(它没有偏离 Run 级 judge,两者本该一致),而不是任选其一或直接报错。
+    const record = await openRecord(root);
+    const runInfo = record.experiments.find((e) => e.id === "judge-uniform-exp")?.latestRun;
+    expect(runInfo?.configHash).toBeDefined();
+    expect(runInfo?.configHash).toBe(byId.get("plain")?.configHash);
+    expect(runInfo?.configHash).not.toBe(byId.get("with-judge")?.configHash);
+  });
+});
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 }

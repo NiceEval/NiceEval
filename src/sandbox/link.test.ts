@@ -18,16 +18,17 @@ import {
 } from "./link.ts";
 import { digestOf } from "./identity.ts";
 
+// pathPrepend 省略即空数组，identity 序列化里 absent ≡ default，两者都不带这个键
+// (docs/feature/sandbox/library.md「PATH:受管变量与 pathPrepend」)。
 function imageTemplateIdentity(image: string) {
   const lifetime = { _tag: "ProviderDefault" as const };
   const user = { _tag: "EnvironmentDefault" as const };
-  const pathPrepend: string[] = [];
   return {
     version: 2,
     provider: "docker",
     kind: "image",
-    publishable: { source: "configured-image", user, lifetime, pathPrepend },
-    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image, user, lifetime, pathPrepend }),
+    publishable: { source: "configured-image", user, lifetime },
+    privateIdentityDigest: digestOf({ provider: "docker", kind: "image", image, user, lifetime }),
   };
 }
 

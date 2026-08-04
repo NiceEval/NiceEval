@@ -152,6 +152,8 @@ sandbox: dockerImageSandbox({
 
 - 按声明顺序前置到受管 PATH,作用于该 Sandbox 内**全部**受管命令——agent 进程、两层 `prepare()`、`agent.ensure` 的 probe/install/复检——hooks 与子进程经这些命令继承,不需要另外声明。
 - 属于 Sandbox 配置,进 template identity;改值会让携带的历史结果失效,与改 `image` / `user` 同一类。
+  **省略与显式传空数组是同一份 identity**(absent ≡ default):身份序列化只在非空时带上这个键,作者不声明 `pathPrepend` 和显式写 `pathPrepend: []` 不会因为写法不同分裂出两份 digest。
+  这是可选配置字段的通用规则,不是 `pathPrepend` 专属。任何新增的可选 factory 字段,值等于默认值时都不进身份序列化,只有偏离默认值才计入摘要;`pathPrepend` 是这条规则唯一落地的字段。
 - 各内置 provider(docker / e2b / vercel / local)一致支持;`defineSandbox` 自定义 provider 里,PATH 完全是 `create()` 返回的实例自己的事,niceeval 不替它管。
 
 ```typescript
