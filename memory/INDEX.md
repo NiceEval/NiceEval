@@ -197,6 +197,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [results-schema-version-history](results-schema-version-history.md) — Results Format schemaVersion 逐版差异台账（1→14），正文只声明当前版本，升版时来这里追加一行
 - [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history.md) — 升 schemaVersion 把存量语料整批打成不可携带(下次全量重跑),只有删/改名/改类型/换判别方式才算破坏兼容;13 按此复核确认真破坏(TimingNode→TimingActivity、phase→origin),不回滚
 - [linked-dev-tree-producer-version-placeholder](linked-dev-tree-producer-version-placeholder.md) — 发现(未修):link 开发树落盘的 `producer.version` 恒是占位 `0.4.6`(CI 发版才写真号),不兼容提示里的 `npx niceeval@0.4.6` 不可执行,修法方向三选一留待裁决
+- 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)
 
 ## 报告 · view
 

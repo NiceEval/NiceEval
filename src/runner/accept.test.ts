@@ -5,16 +5,28 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
+import { defineDirectAgent, defineEval, defineExperiment } from "../define.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import type { AttemptHandle, Run } from "../record/types.ts";
+import { createWriter } from "../record/writer.ts";
 import {
   acceptPreparedAttempt,
   AcceptError,
   prepareAcceptedAttempt,
+  prepareAcceptLocator,
   writeAcceptedAttempts,
 } from "./accept.ts";
+import { planCarry as planCarryEffect } from "./fingerprint.ts";
+import { discoverEval, discoverExperiment } from "./types.ts";
 import type { AgentRun, DiscoveredEval, EvalResult } from "./types.ts";
+import type { CapturedEvalSource } from "./eval-source.ts";
+
+function planCarry(...args: Parameters<typeof planCarryEffect>) {
+  return Effect.runPromise(planCarryEffect(...args));
+}
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
@@ -270,5 +282,92 @@ describe("acceptPreparedAttempt", () => {
     const error = new AcceptError("timeout", "too slow");
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe("timeout");
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「接受的重锚与留痕」
+// bug: memory/accept-drops-eval-level-judge-from-fingerprint.md
+// prepareAcceptLocator 必须与 planCarry(fingerprint.ts)用同一份 Judge 解析链(experiment >
+// eval > config)重算当前身份;只有 experiment 级 judge 走默认单层投影时,eval 级(或 config
+// 级)judge 会在 accept 落盘的 fingerprint/configHash 里悄悄消失,下一次 exp 用完整链重算出
+// 不同指纹,accept 之后立刻又被判 stale——本组证明接受的新结果与 planCarry 独立算出的口径
+// 完全相同,因此真的会被下一轮携带,而不是一次性豁免。
+describe("prepareAcceptLocator · 与 planCarry 同口径的 Judge 解析链", () => {
+  it("只有 eval 级 judge(experiment/config 都未声明)时,accept 的指纹仍与 planCarry 一致并被下一轮携带", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-accept-judge-chain-"));
+    roots.push(root);
+
+    const sourcePath = fileURLToPath(import.meta.url);
+    const source: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
+    const evalDef = discoverEval(defineEval({
+      judge: { model: "eval-model", baseUrl: "https://eval.example/v1" },
+      test() {},
+    }), {
+      id: "e",
+      baseDir: "/project",
+      sourcePath,
+      source,
+      loaderDataPaths: [],
+      criteriaPaths: [],
+      privatePaths: [],
+    });
+    const experiment = discoverExperiment(defineExperiment({
+      agent: defineDirectAgent({
+        name: "agent-exp",
+        evidenceCoverage: completeEvidenceCoverage,
+        send: async () => ({ events: [], status: "completed" }),
+      }),
+      evals: "*",
+    }), {
+      id: "exp",
+      baseDir: "/project",
+      sourcePath,
+    });
+
+    // 一条早已 stale 的历史结果:指纹与配置身份都是任意旧值,人打算 accept 它。
+    const historicalRunId = "historical-run-id";
+    const historicalLocator = encodeAttemptLocator({ runId: historicalRunId, evalId: "e", attempt: 0 });
+    const historicalWriter = createWriter(root, { producer: { name: "niceeval" } });
+    const historicalRun = await historicalWriter.run({
+      runId: historicalRunId,
+      experimentId: "exp",
+      agent: "old-agent",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await historicalRun.writeAttempt({
+      id: "e",
+      verdict: "passed",
+      fingerprint: "stale-fingerprint",
+      configHash: "stale-config",
+      attempt: 0,
+      durationMs: 5,
+      executionMs: 5,
+      assertions: [],
+      evidenceCoverage: completeEvidenceCoverage,
+    });
+    await historicalRun.finish();
+
+    const prepared = await prepareAcceptLocator({
+      cwd: root,
+      recordRoot: root,
+      locator: historicalLocator,
+      config: {},
+      evals: [evalDef],
+      experiments: [experiment],
+      now: () => "2026-01-02T00:00:00.000Z",
+    });
+
+    // planCarry 是调度真正会走的路径;`prepared.pair.run` 就是 accept 内部按 experiment 派生出的
+    // 同一个 AgentRun,喂给 planCarry 重算一次,得到的指纹/配置哈希必须与 accept 落盘的完全相同。
+    const independentPlan = await planCarry([evalDef], [prepared.pair.run], undefined);
+    expect(prepared.currentFingerprint).toBe(independentPlan.plannedFingerprints.get("exp|e"));
+    expect(prepared.currentConfigHash).toBe(independentPlan.plannedConfigHashes.get("exp|e"));
+
+    const [accepted] = await writeAcceptedAttempts([prepared]);
+    if (accepted === undefined) throw new Error("expected one accepted attempt");
+
+    // 下一次不带参数的 exp 命中这条新结果——证明接受是重锚而不是一次豁免。
+    const nextPlan = await planCarry([evalDef], [prepared.pair.run], [accepted.attempt.result]);
+    expect([...(nextPlan.carriedAttemptsByKey.get("exp|e") ?? [])]).toEqual([0]);
   });
 });

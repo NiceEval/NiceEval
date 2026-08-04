@@ -12,11 +12,16 @@ import { loadConfigFile } from "../load-config.ts";
 import { discoverEvals, discoverExperiments } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import {
-  computeConfigHash,
   fingerprintWithManifest,
+  hashConfigIdentity,
   resolvedTimeoutMsForCarry,
 } from "./fingerprint.ts";
-import { configIdentityFromResult, configIdentityPaths } from "./config-identity.ts";
+import {
+  configIdentityForRun,
+  configIdentityFromResult,
+  configIdentityPaths,
+} from "./config-identity.ts";
+import { resolveJudge } from "./judge-config.ts";
 import { compareFingerprints, type FingerprintDelta } from "./manifest.ts";
 import { experimentRunInfo } from "./attempt.ts";
 import { resolveRunTimeout } from "./timeout.ts";
@@ -204,8 +209,17 @@ export async function prepareAcceptLocator(options: AcceptLocatorOptions): Promi
   if (pair === undefined) {
     throw new AcceptError("pair-mismatch", `No current planning pair for ${experiment.id} × ${targetEval.id}.`);
   }
-  const { fingerprint, manifest } = await fingerprintWithManifest(pair);
-  const configHash = computeConfigHash(pair);
+  // 与 planCarry(fingerprint.ts)同一口径重算配置身份:Judge 走 experiment > eval > config
+  // 逐字段解析,而不是 configIdentityForRun 默认的单层 run.judge——否则这里落盘的
+  // fingerprint/configHash 只含 experiment 级 judge,下一次 exp 用完整链重算出不同指纹,
+  // 形成 accept → stale 死循环(docs/feature/experiments/cache.md「Judge 的解析链」)。
+  const resolvedJudge = resolveJudge(run.judge, targetEval.judge, config.judge);
+  const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
+  const { fingerprint, manifest } = await fingerprintWithManifest(pair, undefined, {
+    _tag: "Current",
+    identity,
+  });
+  const configHash = hashConfigIdentity(identity);
   const sandboxPlansByEval: globalThis.Record<string, JsonValue> = {};
   for (const candidate of prepared) sandboxPlansByEval[candidate.evalDef.id] = linkedRunRecordIdentity(candidate.plan);
   const currentExperiment = experimentRunInfo(
