@@ -50,7 +50,8 @@ interface CommandOptions {
   readonly sensitiveValues?: readonly string[];
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
-  readonly root?: boolean;
+  /** 覆盖本条命令的执行身份;省略 = Sandbox 默认身份(见 Library · 执行身份)。 */
+  readonly user?: string;
   readonly stream?: boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;

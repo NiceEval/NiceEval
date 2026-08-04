@@ -83,7 +83,6 @@ export default defineEval({
     file: new URL("docker-compose.yaml", import.meta.url),
     workspaceService: "client",
     build: "on-demand",
-    executionUser: "image",
   }),
   async test(t) { /* send 后直接用普通 Sandbox API 上传并跑测 */ },
 });

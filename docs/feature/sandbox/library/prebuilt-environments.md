@@ -115,6 +115,7 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 ## 官方 coding agent 起点
 
 "没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。
+官方镜像与模板都在配方里声明非 root 用户(`USER`):执行身份是预制环境自己的声明([Library · 执行身份](../library.md#执行身份)),Claude Code 等 agent 在 root 下会拒绝 `--dangerously-skip-permissions`;自己写预制环境时同样在配方里声明。
 NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Docker image 六家齐全；E2B template 覆盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进台账，不导出常量）；配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |

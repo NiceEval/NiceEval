@@ -81,32 +81,45 @@ await t.send(`参考 ${t.sandbox.workdir}/docs/CONVENTIONS.md 里的约定实现
 
 另一条路是让所有 provider 都真的提供 `/workspace`(mkdir + symlink 到真实 workdir)。
 不走这条:`/workspace` 不是 agent 实际的 cwd,agent 的日志、工具输出、报错里出现的全是真实路径,伪造的统一路径会让用户在对照时更糊涂;云 provider(vercel/e2b)对用户目录之外的文件系统权限也未必允许。
-这与「用户与 root」一节是同一处理哲学:**语义跨 provider 一致(相对路径→workdir),物理值诚实暴露差异(`workdir` 属性)**,不假装统一。
+这与「执行身份」一节是同一处理哲学:**语义跨 provider 一致(相对路径→workdir),物理值诚实暴露差异(`workdir` 属性)**,不假装统一。
 
 实现细节(路径解析规则收敛在哪个文件、一份实现如何跨 provider 共用)见 [Architecture · 实现纪律](architecture.md#实现纪律)。
 
-## 用户与 root
+## 执行身份
 
-**默认非 root,按需提 root** ——命令默认以沙箱的标准**非 root** 用户跑(agent 的自然环境:安全,且 Claude Code 等在 root 下会拒绝 `--dangerously-skip-permissions`)。
-需要 root 的准备命令(安装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
+**默认沿用环境自己声明的身份** ——命令与 agent 以起点环境声明的用户跑:Docker 镜像的 `USER`(未声明时按 Docker 语义是 root)、Compose service 的 `user:` 或其镜像的 `USER`、E2B template 的默认用户、宿主机的当前用户([本地执行](local.md))。
+环境是题目作者写的:Dockerfile 里的 `USER` 就是题目对执行身份的声明。
+runner 静默换用户不产生任何报错,只表现为一片 `Permission denied`,所以 NiceEval 不覆盖环境声明的身份。
+
+要别的身份,用两个显式入口,粒度不同:
+
+- **起点覆盖**:template factory 传 `user`,整个 Sandbox 的默认身份换成它(agent 也以它跑),值进入 fingerprint。
+- **单条命令覆盖**:`runCommand` / `runShell` 传 `{ user: "root" }`,只这一条命令换身份。
 
 ```typescript
-// eval setup:只有装系统依赖这步提 root;其余(含 agent、验证)默认非 root。
-await sandbox.runCommand("apt-get", ["install", "-y", "openjdk-17-jdk"], { root: true });
-await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 workdir
+// 起点:镜像未声明 USER(默认 root),显式让 agent 以非 root 跑
+sandbox: dockerImageSandbox({ image: "node:24-slim", user: "node" }),
+
+// 命令:只有装系统依赖这步提 root;其余(含 agent、验证)保持 Sandbox 默认身份
+await sandbox.runCommand("apt-get", ["install", "-y", "openjdk-17-jdk"], { user: "root" });
+await sandbox.runCommand("npm", ["install"]);   // 默认身份,cwd 默认 workdir
 ```
 
-**这套语义跨 provider 一致**,且与主流沙箱服务同构 ——三个内置 provider 各自把 `{ root: true }` 映射到自己的原生机制:
+**这套语义跨 provider 一致**——各 provider 把 `user` 映射到自己的原生机制:
 
-| provider | 默认用户 | `{ root: true }` 映射 |
+| provider | 省略时的默认身份 | `user` 映射 |
 | --- | --- | --- |
-| docker | `node`(UID 1000) | `exec --user root` |
-| E2B | 非 root(`user`) | `commands.run(cmd, { user: "root" })` |
-| Vercel Sandbox | 非 root(`vercel-sandbox`) | `runCommand(cmd, { sudo: true })` |
-| local | 宿主当前用户 | 不支持,报错(niceeval 不在你的机器上提权,见[本地执行](local.md)) |
+| docker(image / Dockerfile / Compose) | 镜像 `USER` 或 Compose service `user:`;未声明按 Docker 语义是 root | factory 与命令都支持任意用户(`exec --user`) |
+| E2B | template 的默认用户(`user`) | factory 与命令都支持(`commands.run` 的同名参数) |
+| Vercel Sandbox | `vercel-sandbox` | 只支持命令级 `{ user: "root" }`(映射 `sudo: true`);其它值报错,factory 不收 `user` |
+| local | 宿主当前用户 | 不支持,报错(niceeval 不在你的机器上提权或换身份,见[本地执行](local.md)) |
 
-约定:**默认值(非 root)与 `root` 的语义在所有 provider 保持一致**,不因 provider 而变——自定义 provider(`defineSandbox()`)接哪个服务都照这条约定映射到该服务的原生机制。
-本就全程 root 的服务把提 root 视作 no-op;完全无法提 root 的服务可不支持(抛错)——但这是"不支持",不是"语义不同"。
+**非 root 是预制环境的义务,不是 runner 的强加。**
+Claude Code 等 agent 在 root 下拒绝 `--dangerously-skip-permissions`,所以官方 coding agent 镜像与模板都自带非 root 用户并在配方里声明(见[预制环境](library/prebuilt-environments.md));自己写预制环境时同样在 Dockerfile / template 里声明 `USER`。
+把安全默认放进可发布产物,身份对 `docker run` 一类原生工具同样可见;藏在 runner 运行时里的换用户对谁都不可见。
+
+约定:**省略(环境默认)与 `user` 的语义在所有 provider 保持一致**,不因 provider 而变——自定义 provider(`defineSandbox()`)接哪个服务都照这条约定映射到该服务的原生机制。
+本就全程 root 的服务把 `{ user: "root" }` 视作 no-op;完全无法换身份的服务可不支持(抛错)——但这是"不支持",不是"语义不同"。
 eval 因此不必感知底下是哪个 provider。
 
 ## 命令上限:`timeout`

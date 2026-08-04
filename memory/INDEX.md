@@ -13,6 +13,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [execution-user-follows-environment-declaration](execution-user-follows-environment-declaration.md) — 裁决(2026-08-04):执行身份默认沿用环境声明(镜像 `USER` 等),runner 不再强加 UID 1000;factory 与命令统一收 `user`,`root: true` 与 compose `executionUser: "image"` 哨兵退役;起因是 Terminal-Bench 约 150/238 attempt 因静默换用户 Permission denied
 - [sandbox-layer-model-adopted](sandbox-layer-model-adopted.md) — 裁决(2026-08-01 定稿):环境模型采纳 PLAN-10 的 SandboxLayer:配对级 template XOR、template owner 先的固定顺序、普通 command 只有逐 Attempt prepare;命名并回 template 词族(否决 root/extension);否决 PLAN-9 双 scope 与 Requirement 族
 - [prepare-commands-adopted](prepare-commands-adopted.md) — 裁决(2026-08-01):采纳内置 prepare 命令 checkout/installTool 与 --dry 复用成本视图(否决意图分类字段与纯惯用法);命名弃用 helper/ensure;部分翻案「不配官方 fixture 装载 API」——动机换成复用缓存与稳定 identity,test 期装载 API 仍不做
 - [pure-adapter-official-installer](pure-adapter-official-installer.md) — 裁决(2026-08-01 用户定案):Adapter 纯适配,只留 ensure 声明(identity+probe),安装拆出为官方 AgentInstaller 按 identity 配对;相位 agent.provision 更名 agent.ensure;probe/install/ensure 词族统一;部分翻案 AgentProvisioner 原子值对象裁决

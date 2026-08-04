@@ -73,7 +73,7 @@ experiment 里写了 `dockerImageSandbox({ image })`、本地想直跑,改的是
 | 面 | 本地档 |
 | --- | --- |
 | `runCommand` / `runShell` | 在 `workdir` 起宿主进程;语义与其它 provider 一致(argv 不经 shell / 整段交给 shell),`env` 叠加在宿主默认环境之上 |
-| `{ root: true }` | 不支持,报错——niceeval 不在你的机器上提权;需要 root 的 eval 用容器 provider(约定见 [Library · 用户与 root](library.md#用户与-root)) |
+| `{ user: … }` | 不支持,报错——niceeval 不在你的机器上提权或换身份;需要 root 的 eval 用容器 provider(约定见 [Library · 执行身份](library.md#执行身份)) |
 | `stop()` | 只清理 runner 自有资源(私有 GIT_DIR 等),不删除、不还原工作树的任何文件 |
 | `otlpHost` | 宿主本机(`localhost`),tracing 直连 |
 | 预制环境参数 | 无 `image` / `template` / `snapshotId`——你的机器本身就是环境 |
@@ -91,6 +91,6 @@ experiment 里写了 `dockerImageSandbox({ image })`、本地想直跑,改的是
 ## 相关阅读
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择。
+- [Library](library.md) —— 路径与 workdir、执行身份、provider 选择。
 - [Architecture](architecture.md) —— 变更分类账、provisioning 重试、留存与注册表。
 - [Runner](../../runner.md) —— 有界并发与全局并发上限解析。

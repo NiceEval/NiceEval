@@ -87,7 +87,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 |---|---|
 | `SandboxOperations` 单一词汇与语义、`Sandbox` / `EvalSandbox` / `SandboxCommandTarget` 三个能力视图、`CommandOptions` / `CommandResult` | `src/sandbox/types.ts` |
 | Docker provider(dockerode,node:24-slim,非 root,tar 上传) | `src/sandbox/docker.ts`(编排)+ `src/sandbox/docker-stream.ts`(exec 流解复用 / tar 工具) |
-| Local provider(宿主机本地目录、零隔离;仓库根解析 / 显式 `dir`;`{ root: true }` 报错;`downloadDirectory` 复用 vercel/e2b 的 find+read 模板) | `src/sandbox/local.ts`(`LocalSandbox`) |
+| Local provider(宿主机本地目录、零隔离;仓库根解析 / 显式 `dir`;`{ user }` 报错;`downloadDirectory` 复用 vercel/e2b 的 find+read 模板) | `src/sandbox/local.ts`(`LocalSandbox`) |
 | 变更分类账 GIT_DIR / 导出目录的按 sandboxId 覆盖登记(local 用宿主侧每实例私有临时目录,避免同机多次运行互相踩踏;其余 provider 用固定沙箱内路径,不登记) | `src/sandbox/ledger-paths.ts`;消费端在 `src/runner/ledger.ts`(`gitEnv` / `createChangeLedger` / `buildExportScript`) |
 | provider 级调度 lane 与独占 admission（local 与自定义 provider 都在 physical planning 完成态声明；运行参数不解除独占约束） | `src/sandbox/layer.ts`(`SandboxProviderScheduling` / provider modules)、`src/runner/sandbox-selection.ts`(`schedulingForPreparedPairs`)、`src/runner/run.ts` |
 | 三 provider 共享工具(shellQuote / find 脚本构造 / 宿主文件遍历) | `src/sandbox/shell.ts`、`src/sandbox/local-files.ts` |

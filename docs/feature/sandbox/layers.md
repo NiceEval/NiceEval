@@ -113,7 +113,7 @@ interface DockerComposeSandboxOptions {
   readonly file: string | URL;
   readonly workspaceService: string;
   readonly build?: "on-demand" | "prebuilt";
-  readonly executionUser?: string;
+  readonly user?: string;
   readonly env?: Readonly<Record<string, string>>;
   readonly credentialEnv?: Readonly<Record<string, {
     readonly value: string;
@@ -125,14 +125,17 @@ interface DockerfileSandboxOptions {
   readonly context: string | URL;
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<Record<string, string>>;
+  readonly user?: string;
 }
 
 interface DockerImageSandboxOptions {
   readonly image: string;
+  readonly user?: string;
 }
 
 interface E2BSandboxOptions {
   readonly template: string;
+  readonly user?: string;
   readonly lifetimeMs?: number;
 }
 
@@ -160,6 +163,7 @@ declare function vercelSandbox(
 declare function sandboxLayer(): SandboxLayer<"command-only">;
 ```
 
+`user` 覆盖整个 Sandbox 的默认执行身份,省略时沿用环境自己声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
 `env` 只放会改变环境语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
 `credentialEnv`：`value` 只交给本次 runtime binding，不进入 plan、record 或 fingerprint；变量名与可选
 `revision` 进入身份。凭据选择了不同租户、数据集或权限面时必须更新 `revision`。同一个变量名不能同时出现在
@@ -446,7 +450,7 @@ interface SandboxCommandIdentity {
 interface SandboxCommandOptions {
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
-  readonly root?: boolean;
+  readonly user?: string;
   readonly timeoutMs?: number;
   readonly stdin?: string;
 }
@@ -481,11 +485,11 @@ declare function registerSandboxContent(
 
 ```typescript
 sandboxLayer()
-  .prepare(command("apt-get", ["install", "-y", "git"], { root: true }))
+  .prepare(command("apt-get", ["install", "-y", "git"], { user: "root" }))
   .prepare(shell("pnpm install --frozen-lockfile"));
 ```
 
-`command()` / `shell()` 由纯数据参数生成稳定 identity,identity 覆盖 executable / script、argv、cwd、env、root 与 stdin。
+`command()` / `shell()` 由纯数据参数生成稳定 identity,identity 覆盖 executable / script、argv、cwd、env、user 与 stdin。
 复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
 需要稳定 identity 的 helper 用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
@@ -518,6 +522,6 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 
 - [三方准备时序](lifecycle.md) —— owner 顺序、fresh / reuse 次数、身份与错误归属。
 - [Sandbox Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
-- [Library](library.md) —— 运行中 Sandbox 的路径、root 用户、超时与自定义 Provider。
+- [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重放、reset 与寿命确认。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。

@@ -74,7 +74,10 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - argv 传参不经 shell；含分号或美元符的参数原样送达。参数透传必须能发现错误的 shell 拼接，不能只断言 mock 被调一次。
   - `runCommand` / `runShell` 非零时返回 CommandResult；`runCommandOrThrow` / `runShellOrThrow` 才抛携带完整结果的 exit error。
   - exit error 的默认 message 带控制字符清理、长度有界的 stderr 尾部，stderr 为空时回落 stdout；完整结果不截断。
-  - env 叠加不清空；覆盖 root 的映射与不支持时报错、`timeoutMs` / signal 合并，以及执行入口不隐式重试。
+  - env 叠加不清空；命令级 `user` 的各 provider 映射与不支持值报错、`timeoutMs` / signal 合并，以及执行入口不隐式重试。
+  - 执行身份默认沿用环境声明：未覆盖时 docker exec 不注入 `--user`，镜像 `USER` 与 Compose service `user:` 原样生效。
+    factory `user` 覆盖后命令与 agent 都以它跑，npm 全局目录、`PATH` 与上传后 `chown` 按该身份解析；`user` 值进入 command identity 与 template fingerprint。
+  - 不支持面明确报错：`vercelSandbox` factory 不收 `user`，Vercel 命令级只认 `"root"`（映射 `sudo`），local 对任何 `user` 在调用前报错。
 - **E2B command completion framing**：
   - 测试把生产 wrapper 交给真实 `/bin/bash` 执行，再把 bash 的真实 stdout/stderr chunk 送进生产 parser。
   - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk，以及 Codex 形状的长命令/heredoc。

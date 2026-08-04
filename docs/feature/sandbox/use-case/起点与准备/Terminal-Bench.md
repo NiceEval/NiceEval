@@ -16,14 +16,13 @@ export default defineEval({
     file: new URL("docker-compose.yaml", import.meta.url),
     workspaceService: "client",
     build: "on-demand",
-    executionUser: "image",
   }),
   async test(t) {
     await t.send("完成任务并把答案写入指定文件。");
 
     await t.sandbox.uploadDirectory(new URL("tests/", import.meta.url), "/tests");
     const result = await t.sandbox.runShell("bash /tests/run-tests.sh", {
-      root: true,
+      user: "root",
     });
     t.check(result, commandSucceeded());
   },
