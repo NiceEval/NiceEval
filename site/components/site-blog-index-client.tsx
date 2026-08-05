@@ -26,8 +26,6 @@ export default function BlogIndexClient({
     }
   }, []);
 
-  const post = blogPosts[0];
-
   return (
     <>
       <Header locale={locale} t={t} route={{ name: "blog" }} />
@@ -41,34 +39,44 @@ export default function BlogIndexClient({
           <div className="blog-section-head">
             <h2>{t.blogPage.latest}</h2>
           </div>
-          {post ? (
-            <article className="blog-card">
-              {post.cover ? (
-                <div className="blog-card-art">
-                  <Image src={post.cover} alt={post[locale].title} fill sizes="(max-width: 900px) 100vw, 40vw" priority />
-                </div>
-              ) : (
-                <div className="blog-card-art" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              )}
-              <div className="blog-card-copy">
-                <span className="post-kicker">{post[locale].category}</span>
-                <h2>{post[locale].title}</h2>
-                <p>{post[locale].description}</p>
-                <PostMeta postCopy={post[locale]} t={t} />
-                <Link
-                  className="button primary"
-                  href={withLocale(locale, `blog/${post.slug}`)}
-                  onClick={() => track("Open Blog Post", { slug: post.slug, locale })}
-                >
-                  {t.blogPage.read}
-                  <ChevronRight size={15} />
-                </Link>
-              </div>
-            </article>
+          {blogPosts.length > 0 ? (
+            <div className="blog-list">
+              {blogPosts.map((post, index) => (
+                <article className="blog-card" key={post.slug}>
+                  {post.cover ? (
+                    <div className="blog-card-art">
+                      <Image
+                        src={post.cover}
+                        alt={post[locale].title}
+                        fill
+                        sizes="(max-width: 900px) 100vw, 40vw"
+                        priority={index === 0}
+                      />
+                    </div>
+                  ) : (
+                    <div className="blog-card-art" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  )}
+                  <div className="blog-card-copy">
+                    <span className="post-kicker">{post[locale].category}</span>
+                    <h2>{post[locale].title}</h2>
+                    <p>{post[locale].description}</p>
+                    <PostMeta postCopy={post[locale]} t={t} />
+                    <Link
+                      className="button primary"
+                      href={withLocale(locale, `blog/${post.slug}`)}
+                      onClick={() => track("Open Blog Post", { slug: post.slug, locale })}
+                    >
+                      {t.blogPage.read}
+                      <ChevronRight size={15} />
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
           ) : (
             <p className="blog-empty">{t.blogPage.empty}</p>
           )}

@@ -1184,11 +1184,16 @@ h1 {
   font-size: 15px;
 }
 
+.blog-list {
+  display: grid;
+  gap: 28px;
+  margin-top: 28px;
+}
+
 .blog-card {
   display: grid;
   grid-template-columns: minmax(240px, 0.72fr) minmax(0, 1fr);
   gap: clamp(26px, 5vw, 72px);
-  margin-top: 28px;
   padding: clamp(22px, 4vw, 42px);
   border: 1px solid var(--line-strong);
   background: var(--panel);
@@ -1415,6 +1420,17 @@ h1 {
   padding: 2px 5px;
   border: 1px solid var(--line);
   background: var(--panel-2);
+}
+
+.article-body a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+
+.article-body a:hover {
+  text-decoration-color: var(--soft);
 }
 
 .article-table {

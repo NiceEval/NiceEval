@@ -331,10 +331,21 @@ function parseMarkdownBlocks(source: string): MarkdownBlock[] {
 }
 
 function formatInline(text: string): ReactNode[] {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
+  // code / bold / markdown link；顺序靠 split 捕获组，三者互不嵌套的常见写法都能处理
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\))/g).filter(Boolean);
   return parts.map((part, index) => {
     if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+    if (link) {
+      const [, label, href] = link;
+      const external = /^https?:\/\//.test(href);
+      return (
+        <a key={index} href={href} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+          {label}
+        </a>
+      );
+    }
     return part;
   });
 }
