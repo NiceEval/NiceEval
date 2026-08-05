@@ -186,14 +186,24 @@ describe("acceptPreparedAttempt", () => {
     roots.push(root);
     const currentManifest = { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} };
     const sources = [makeSource(root, { id: "e" }), makeSource(root, { id: "f" })];
+    // 模拟 prepareAcceptTarget 的真实形状:每条 locator 的 currentExperiment.selectedEvalIds
+    // 只有自己那一题(cliPatterns 单 id),sandboxPlansByEval 也只有自己。
     const prepared = await Promise.all(sources.map((source) => prepareAcceptedAttempt({
       recordRoot: root,
       source,
       pair: makePair({}, source.evalId),
       currentFingerprint: `current-${source.evalId}`,
       currentManifest,
-      currentConfigHash: `config-${source.evalId}`,
-      knownEvalIds: ["e", "f"],
+      currentConfigHash: "shared-config",
+      currentExperiment: {
+        attempts: 1,
+        earlyExit: true,
+        selectedEvalIds: [source.evalId],
+        sandboxLayer: {},
+        sandboxPlansByEval: { [source.evalId]: { plan: source.evalId } },
+        agentInstalls: [],
+      },
+      knownEvalIds: [source.evalId],
       now: () => "2026-01-02T00:00:00.000Z",
     })));
 
@@ -206,6 +216,22 @@ describe("acceptPreparedAttempt", () => {
       accepted.map((entry) => entry.sourceLocator),
     );
     expect(accepted[0]!.record.experiments[0]!.runs).toHaveLength(1);
+
+    // 快照级覆盖声明必须是整组,不能只剩 groupFirst 的单题——否则 currentSample / view 塌成 1 题。
+    const runMeta = JSON.parse(
+      await readFile(join(accepted[0]!.run.dir, "run.json"), "utf-8"),
+    ) as {
+      experiment?: { selectedEvalIds?: string[]; sandboxPlansByEval?: globalThis.Record<string, unknown> };
+      knownEvalIds?: string[];
+    };
+    expect(runMeta.experiment?.selectedEvalIds?.slice().sort()).toEqual(["e", "f"]);
+    expect(Object.keys(runMeta.experiment?.sandboxPlansByEval ?? {}).sort()).toEqual(["e", "f"]);
+    expect(runMeta.knownEvalIds?.slice().sort()).toEqual(["e", "f"]);
+
+    // 读面:currentSample 必须看到两条,不能按错误收窄的 selectedEvalIds 只留第一条。
+    const { currentSample } = await import("../sample/index.ts");
+    const sample = currentSample(accepted[0]!.record);
+    expect(sample.attempts.map((a) => a.evalId).sort()).toEqual(["e", "f"]);
   });
 
   it("批量 prepare 中任一条失败时不创建 snapshot", async () => {

@@ -520,7 +520,7 @@ export async function writeAcceptedAttempts(
   // 返回值必须按调用方传入的 preparedAttempts 顺序还原;分组打乱了处理顺序,用引用做索引。
   const locatorByPrepared = new Map<PreparedAcceptedAttempt, AttemptLocator>();
   for (const [experimentId, group] of groups) {
-    // 快照级字段(agent/model/configHash/currentExperiment/name)按本组取,不再从全批 first 拿——
+    // 快照级字段(agent/model/configHash/name)按本组取,不再从全批 first 拿——
     // 否则跨 experiment 批次会把另一个 experiment 的身份写进这个 experiment 的 run.json。
     const groupFirst = group[0]!;
     // manifests 是这个 experiment 自己的袋子;不同 experiment 各自独立,不共享同一个对象,
@@ -529,15 +529,21 @@ export async function writeAcceptedAttempts(
     const knownEvalIds = new Set<string>();
     for (const prepared of group) {
       manifests[prepared.source.evalId] = prepared.currentManifest;
+      knownEvalIds.add(prepared.source.evalId);
       for (const evalId of prepared.knownEvalIds ?? []) knownEvalIds.add(evalId);
     }
+    // prepare 阶段每条 locator 单独按「只选中自己那一题」重算指纹,currentExperiment.selectedEvalIds
+    // 因此只有一个 id。快照级覆盖声明必须是本 experiment 组**全部**接受的题——currentSample
+    // 按 selectedEvalIds 过滤贡献范围,只写 groupFirst 会让批量 accept 的 view/show 塌成 1 题
+    // (MemoryBench: 36 条 result.json 在盘、首页 1/36)。
+    const experiment = experimentForAcceptedGroup(group);
     const snapshot = await writer.run({
       experimentId,
       agent: groupFirst.pair.run.agent.name,
       ...(groupFirst.pair.run.model !== undefined ? { model: groupFirst.pair.run.model } : {}),
       startedAt: now,
       configHash: groupFirst.currentConfigHash,
-      ...(groupFirst.currentExperiment === undefined ? {} : { experiment: groupFirst.currentExperiment }),
+      ...(experiment === undefined ? {} : { experiment }),
       ...(knownEvalIds.size === 0 ? {} : { knownEvalIds: [...knownEvalIds] }),
       manifests,
       ...(groupFirst.name === undefined ? {} : { name: groupFirst.name }),
@@ -568,6 +574,39 @@ export async function writeAcceptedAttempts(
       fingerprint: prepared.currentFingerprint,
     };
   });
+}
+
+/**
+ * 把同 experiment 一批 accept 的覆盖声明合成快照级 `ExperimentRunInfo`。
+ * 单条 prepare 的 `currentExperiment.selectedEvalIds` / `sandboxPlansByEval` 只含自己那题
+ * (指纹重算需要);封口时必须扩成整组,否则 Sample 读面按 selectedEvalIds 过滤会丢掉其余题。
+ */
+function experimentForAcceptedGroup(
+  group: readonly PreparedAcceptedAttempt[],
+): EvalResult["experiment"] | undefined {
+  const bases = group
+    .map((prepared) => prepared.currentExperiment)
+    .filter((experiment): experiment is NonNullable<typeof experiment> => experiment !== undefined);
+  const base = bases[0];
+  if (base === undefined) return undefined;
+
+  const selectedEvalIds = new Set<string>(base.selectedEvalIds);
+  const sandboxPlansByEval: globalThis.Record<string, JsonValue> = {
+    ...base.sandboxPlansByEval,
+  };
+  for (const prepared of group) {
+    selectedEvalIds.add(prepared.source.evalId);
+    const plans = prepared.currentExperiment?.sandboxPlansByEval;
+    if (plans === undefined) continue;
+    for (const [evalId, plan] of Object.entries(plans)) {
+      sandboxPlansByEval[evalId] = plan;
+    }
+  }
+  return {
+    ...base,
+    selectedEvalIds: [...selectedEvalIds],
+    sandboxPlansByEval,
+  };
 }
 
 function acceptedResultFor(

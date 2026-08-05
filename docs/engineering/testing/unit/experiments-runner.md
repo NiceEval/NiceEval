@@ -257,6 +257,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 坏 locator、重复 locator、`errored` / `skipped`、留存 Sandbox 的结果各有失败测试；带 `sandbox.reused` 的来源和当前 `sandboxReuse: true` 都有成功测试。
   - 多 locator 先全量预检，任一失败时 writer 零调用；该原子性同时覆盖单 experiment 与跨 experiment 两种批形状。
   - 全部通过后按 locator 解析出的 experiment 分组，每组各自封口一个 snapshot，每条结果保留独立 `acceptedFrom`。
+  - **批量 accept 的快照覆盖声明**：prepare 阶段每条 locator 的 `currentExperiment.selectedEvalIds` / `sandboxPlansByEval` 可以只有自己那一题（指纹重算口径）；封口时 `run.json` 的 `experiment.selectedEvalIds`、`sandboxPlansByEval` 与 `knownEvalIds` 必须扩成**本组全部接受的 eval**。fixture 用两条各自只声明自己 id 的 prepared 写入，断言落盘 selected 含 `e`+`f`，且 `currentSample` 看到两条 attempt——不能只剩 groupFirst 单题（否则 view 首页把 36 条塌成 1/36）。
   - 同一 experiment 内两个 locator 解析到同一个当前 (eval, attempt) 目标仍判重复拒绝；跨 experiment 的同名 eval 不算重复。
 - **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
 - **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制来源结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返来源 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。

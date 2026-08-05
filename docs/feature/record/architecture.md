@@ -227,6 +227,7 @@ interface ExperimentRunInfo {
 - **`selectedEvalIds` 是这份快照声明覆盖的题集**,不只是选择器求值的原始结果。
   写入面把本次运行 evals 过滤器(含函数形式)的求值结果与携带合入条目的 eval id 取并集写入这个字段。
   携带条目确实进了这份快照,不并入会让它们在覆盖判断里凭空消失。
+  [`niceeval accept`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 批量封口时同理:覆盖声明是本组**全部**接受的 eval,不是 prepare 时为重算指纹而临时收窄到单题的那份。
   [Sample 的现刻水位选择](../sample/library.md#缝合的前提confighash-相等)按它逐 Run 过滤贡献范围,报告直接读取它,不从 experiment 路径推断另一层集合。
 - **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
   `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。

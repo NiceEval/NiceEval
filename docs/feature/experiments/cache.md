@@ -325,6 +325,7 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 缺失序号、`errored`、`skipped` 与留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。Provider identity 未 pin 或 callback opaque 属于 fingerprint 输入，不单独作为 carry blocker。
 
 任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后按 experiment 分组，每组各自封口一个 snapshot；输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
+该 snapshot 的 `experiment.selectedEvalIds`（与 `sandboxPlansByEval` / `knownEvalIds`）覆盖**本组全部接受的 eval**，不是 prepare 时为重算指纹而临时收窄到单题的那份——Sample 的现刻水位按 `selectedEvalIds` 过滤贡献，声明缺一题就会让 view / 默认 show 把已落盘结果静默丢掉。
 
 `accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
