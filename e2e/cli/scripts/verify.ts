@@ -283,7 +283,8 @@ function acceptanceCommandContracts(): void {
   const selector = shResult("pnpm --silent exec niceeval exp deliberate-fail --accept config:flags.endpoint", "nonzero");
   assert.equal(selector.stdout, "", "exp --accept selector usage error must not write stdout");
   assert.match(selector.stderr, /unknown option ['\"]--accept['\"]/i);
-  assert.match(selector.stderr, /fix:/i);
+  // util.parseArgs 的未知 flag 文案给 --help，不再走 i18n 的 "fix:" 模板。
+  assert.match(selector.stderr, /--help|usage/i);
   assert.doesNotMatch(selector.combined, /\"event\":\"start\"/);
 
   // locator 语法与索引错误都要在 acceptance 动作自身报出，不应退化成一次 exp 或 show。
