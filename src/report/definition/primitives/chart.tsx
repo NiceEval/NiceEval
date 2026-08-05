@@ -187,13 +187,19 @@ function seriesColorClass(presentation: DimensionPresentation | undefined): stri
   if (!presentation) return "niceeval-series-none";
   if (presentation.kind === "color") return seriesClassFromColorVar(presentation.color);
   if (presentation.kind !== "series") return "niceeval-series-none";
-  if (presentation.mark === "bar" || presentation.mark === "area") {
-    // 只要色类,不要 HTML 专用的 fill-vN(SVG 用 url(#pattern))。
-    const classes = seriesClassesFromFill(presentation.fill).split(" ");
-    return classes.find((c) => c.startsWith("niceeval-series-c") || c === "niceeval-series-none") ?? "niceeval-series-none";
+  // switch 按 mark 收窄;Fill 的 mark 是 "bar"|"area" 联合,if/|| 在部分 TS 版本下剔不干净。
+  switch (presentation.mark) {
+    case "bar":
+    case "area": {
+      // 只要色类,不要 HTML 专用的 fill-vN(SVG 用 url(#pattern))。
+      const classes = seriesClassesFromFill(presentation.fill).split(" ");
+      return classes.find((c) => c.startsWith("niceeval-series-c") || c === "niceeval-series-none") ?? "niceeval-series-none";
+    }
+    case "line":
+      return seriesClassFromColorVar(presentation.stroke);
+    case "scatter":
+      return seriesClassFromColorVar(presentation.marker.fill);
   }
-  if (presentation.mark === "line") return seriesClassFromColorVar(presentation.stroke);
-  return seriesClassFromColorVar(presentation.marker.fill);
 }
 
 /** HTML 横向柱:色类 + fill-vN 图案类(CSS repeating-linear-gradient 等效 SVG pattern)。 */
@@ -265,7 +271,7 @@ function legendSwatch(presentation: DimensionPresentation | undefined, mark: Map
   if (!presentation || presentation.kind !== "series") {
     return <span className={cx("niceeval-chart-legend-swatch", "niceeval-series-none")} />;
   }
-  // 图例方块跟 mark 取义:柱/面用填充图案,线用 dash+marker,散点用 marker 形状。
+  // 图例方块跟 series mark 取义:柱/面用填充图案,线用 dash+marker,散点用 marker 形状。
   if (mark === "bar" || mark === "area") {
     const fillClass =
       presentation.mark === "bar" || presentation.mark === "area"
@@ -273,38 +279,56 @@ function legendSwatch(presentation: DimensionPresentation | undefined, mark: Map
         : seriesColorClass(presentation);
     return <span className={cx("niceeval-chart-legend-swatch", fillClass)} />;
   }
-  if (presentation.mark === "line" || mark === "line" || mark === "area") {
-    const stroke = presentation.mark === "line" ? presentation.stroke : presentation.marker.fill;
-    const dash = presentation.mark === "line" ? presentation.strokeDasharray : "";
-    const marker = presentation.marker;
+  if (mark === "line") {
+    // 线系图例需要 stroke + marker;presentation 可能是 line 或 scatter(by 切分后 mark 对齐)。
+    if (presentation.mark === "line") {
+      return (
+        <svg className="niceeval-chart-legend-swatch-svg" width="16" height="10" aria-hidden="true">
+          <line
+            x1="0"
+            y1="5"
+            x2="16"
+            y2="5"
+            stroke={presentation.stroke}
+            strokeWidth={2}
+            strokeDasharray={presentation.strokeDasharray || undefined}
+          />
+          <path
+            d={presentation.marker.path}
+            transform="translate(8 5) scale(0.55) translate(-6 -6)"
+            fill={presentation.marker.fill}
+          />
+        </svg>
+      );
+    }
+    if (presentation.mark === "scatter") {
+      return (
+        <svg className="niceeval-chart-legend-swatch-svg" width="16" height="10" aria-hidden="true">
+          <line x1="0" y1="5" x2="16" y2="5" stroke={presentation.marker.fill} strokeWidth={2} />
+          <path
+            d={presentation.marker.path}
+            transform="translate(8 5) scale(0.55) translate(-6 -6)"
+            fill={presentation.marker.fill}
+          />
+        </svg>
+      );
+    }
+    // fill presentation 配 line mark 的退化:只画色块。
+    return <span className={cx("niceeval-chart-legend-swatch", seriesColorClass(presentation))} />;
+  }
+  // mark === "scatter"
+  if (presentation.mark === "scatter" || presentation.mark === "line") {
     return (
-      <svg className="niceeval-chart-legend-swatch-svg" width="16" height="10" aria-hidden="true">
-        <line
-          x1="0"
-          y1="5"
-          x2="16"
-          y2="5"
-          stroke={stroke}
-          strokeWidth={2}
-          strokeDasharray={dash || undefined}
-        />
+      <svg className="niceeval-chart-legend-swatch-svg" width="10" height="10" aria-hidden="true">
         <path
-          d={marker.path}
-          transform="translate(8 5) scale(0.55) translate(-6 -6)"
-          fill={marker.fill}
+          d={presentation.marker.path}
+          transform="translate(5 5) scale(0.7) translate(-6 -6)"
+          fill={presentation.marker.fill}
         />
       </svg>
     );
   }
-  return (
-    <svg className="niceeval-chart-legend-swatch-svg" width="10" height="10" aria-hidden="true">
-      <path
-        d={presentation.marker.path}
-        transform="translate(5 5) scale(0.7) translate(-6 -6)"
-        fill={presentation.marker.fill}
-      />
-    </svg>
-  );
+  return <span className={cx("niceeval-chart-legend-swatch", seriesColorClass(presentation))} />;
 }
 
 function metricDisplay(
