@@ -1,5 +1,8 @@
 # Proof Portfolio 与测试退役
 
+**审查注记（ChatGPT Pro，2026-08-05）：** Portfolio 与「一 Behavior 一主证明」是本方案最强部分。  
+Mechanism proof 必须满足 README G2 硬规则；迁移期每个旧测四选一（behavior / mechanism / retire / delete），CI 强制 retirement declaration（README G4）。
+
 ## 目标
 
 测试组合的优化目标不是覆盖率最大，也不是测试文件最少，而是：每个会静默进入发布的错误都有最早、稳定、
@@ -15,7 +18,7 @@ Portfolio 以 Behavior 和机制风险为单位管理全部 unit、structure 与
 | 身份 | 存在资格 | 数量规则 |
 |---|---|---|
 | Behavior 主证明 | 证明一个稳定用户结果；从最低成本的完整公开边界进入 | 每个 Behavior 恰好一个 |
-| Mechanism proof | 主证明无法确定制造或无法直接定位的机制错误算法 | 每个具名机制风险一个矩阵 owner |
+| Mechanism proof | 主证明无法确定制造或无法直接定位的机制错误算法；须声明错误算法集 + 为何 Primary 不足 | 每个具名机制风险一个矩阵 owner |
 
 boundary proof 是主证明缺少真实边界时的补充角色，不获得复制产品矩阵的资格。supporting proof 是已有
 mechanism proof 与 Behavior 的诊断关联，也不因此新增测试。

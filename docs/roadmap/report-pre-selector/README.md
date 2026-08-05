@@ -1,10 +1,12 @@
 # 报告收窄靠前置选择器，不在界面上二次筛选
 
+**审查状态（ChatGPT Pro，2026-08-05）：主案可定稿。** 删除报告 UI 内改变 Sample 贡献集合的切口径能力；fresh 仅在宿主 / CLI / 构建前置；一页只绑一份 Sample。
+
 [Reading](../../feature/reading/README.md) 已把读面拆成 Record → Sample → Reports。
 收窄（哪些 experiment / eval / 是否只要新执行）在契约上属于 **Sample 与宿主命令行**，不是呈现组件的本地状态。
-本主题记录现行 web 面「只看新执行」表头开关带来的误读，并候选：**报告按前置 Sample 重算整页，禁止在报告 UI 内再切口径**。
+本主题记录现行 web 面「只看新执行」表头开关带来的误读，并定稿方向：**报告按前置 Sample 重算整页，禁止在报告 UI 内再切口径**。
 
-Feature 现行仍含 [实验表 · 只看新执行](../../feature/reports/components/summaries/experiment-table.md#只看新执行) 的 web 开关；本页是尚未定稿的产品/架构候选。
+Feature 现行仍含 [实验表 · 只看新执行](../../feature/reports/components/summaries/experiment-table.md#只看新执行) 的 web 开关；迁入 Feature 前本页是拟定稿契约。
 
 ## 解决的问题
 
@@ -57,8 +59,9 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 - **换口径 = 换 Sample 再生成报告**（CLI 重跑 show/view、站点重建、或未来的「选择器页 → 深链」），不是表头勾选。
 - **时效仍可呈现**：历史执行用时距、降饱和、tooltip（[时效不写字](../../feature/reports/components/summaries/experiment-table.md#时效不写字)）；那是**解释出身**，不是**再滤一层贡献集**。
 - **CLI `--fresh` 可保留**为作者工具：`niceeval show --fresh` / `view --fresh` 在**装载边界**注入 `fresh: true`，整页只有一套行集。
+- **报告实例生命周期内只绑定一个 Sample**。任何改变贡献集合、覆盖范围、计票分母的操作必须重新创建 Sample 并重新 render。
 
-## 候选契约
+## 拟定稿契约
 
 ### 报告不提供「口径开关」
 
@@ -69,7 +72,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 
 ### 前置选择器放哪里
 
-| 入口 | 候选形状 |
+| 入口 | 形状 |
 |---|---|
 | CLI | 保持 `--exp` / eval 前缀 / `--fresh` / `--record`（与 [Reading](../../feature/reading/README.md) 一致） |
 | 静态站点 | 构建时参数钉死一份 Sample；要另一口径 = 另一构建或另一路径产物，不是运行时 checkbox |
@@ -78,7 +81,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 ### 与「不画开关」现行规则的关系
 
 现行 Feature：「无历史且无过期 → 不画开关」。  
-本候选更强：**即使有历史，报告 UI 也不提供切换**；历史用行级时效表达。  
+本主题更强：**即使有历史，报告 UI 也不提供切换**；历史用行级时效表达。  
 「不画」从「控件无意义时隐藏」升级为「呈现层根本不承担口径选择」。
 
 ### 明确保留
@@ -90,7 +93,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 ### 明确不包含
 
 - 是否删除 CLI `--fresh`（默认保留）。
-- [现刻水位物理优先](../sample-contribution-physical/README.md)（贡献规则翻案，与本主题正交，可并行定稿）。
+- [现刻水位物理优先](../sample-contribution-physical/README.md)（贡献规则翻案，与本主题正交；方向一致，可并行定稿迁入）。
 - 报告主题、布局、多页导航（页切换不是 Sample 口径）。
 
 ## 触发记录（台账）
@@ -103,20 +106,17 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 | 真实 | 前置应是 current 水位；fresh 是另一套 Sample |
 | 关联 | MemoryBench 线上报告；与 selectedEvalIds 声明写窄导致的 1/36 是另一条线 |
 
-## 待裁决
+## 已裁决
 
 1. **web 开关处置**  
-   - A：Feature 删除 web 开关与 `freshExperiments` 双态（推荐）。  
-   - B：仅当存在「至少一条新执行」且混有历史时才画（减轻全 carry 空表，仍保留表内切口径）。  
-   本候选倾向 A；B 仍违反「口径不在报告内选」。
+   **选 A**：Feature 删除 web 开关与 `freshExperiments` 双态。  
+   **否决 B**（仅当存在新执行时才画）：仍是呈现层越权，只是降低触发概率。
 
 2. **静态站如何提供 fresh 视图**  
-   - 不做（只用 CLI）。  
-   - 构建两份 out（默认 current + 可选 `site-fresh/`）。  
-   - 未来壳层选择器 + 重建（超出当前静态 view 范围）。
+   **默认不做运行时切换**；作者用 CLI `--fresh`。若产品需要第二视图：构建两份 out，或未来壳层选择器触发**整页重建**——禁止同页 checkbox。
 
 3. **JSON / 导出**  
-   `show --json` 是否继续暴露与 `--fresh` 绑定的单一 `fresh` 字段即可；禁止导出「同页两态」结构。
+   `show --json` 只暴露**当前** Sample 的单一结果；与 `--fresh` 绑定的是另一次调用。禁止导出「同页两态」（`current` + `fresh` 并列）结构。
 
 ## 否决
 
@@ -128,7 +128,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 
 - [`experiment-table.md` · 只看新执行](../../feature/reports/components/summaries/experiment-table.md#只看新执行)
 - [`reports` 内建首页任务 / `StandardOverviewResult`](../../feature/reports/library/built-in.md)（`freshExperiments`）
-- [Reading · 收窄](../../feature/reading/README.md)（补一句：报告 UI 不二次收窄贡献集）
+- [Reading · 收窄](../../feature/reading/README.md)（补一句：报告 UI 不二次收窄贡献集；一报告实例只绑一个 Sample）
 - [engineering/testing/unit/reports.md](../../engineering/testing/unit/reports.md)「只看新执行的重投影」——删或改为「仅宿主前置 fresh」
 
 ## 相关阅读

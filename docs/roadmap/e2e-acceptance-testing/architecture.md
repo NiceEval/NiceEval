@@ -4,6 +4,9 @@
 [PLAN-2](../../design/user-readable-testing/PLAN-2/README.md)，媒介解析与领域断言单源在
 [E2E 验收 DSL](../e2e-acceptance-dsl/README.md)。
 
+**审查注记（ChatGPT Pro，2026-08-05）：** 分层正确；定稿前按 [README · 治理裁决](README.md#治理裁决pro-review--定稿前必收口) 收口 G1–G5。  
+`WorldManifest` 须逻辑拆分 Identity / Resource / Evidence（见下节补强）；`repo-acceptance` 归 Recipe backend 而非平行顶层。
+
 ## 实体关系
 
 ```text
@@ -40,8 +43,8 @@ MechanismRisk ──恰有一个──▶ MatrixOwner ┘          │
 - World Manifest 是某次 prepare 的纯数据收据，不包含运行时代码。
 - Execution Registration 决定 Behavior 以哪个频率和资源类别运行。
 - Behavior Outcome 记录某次验证的执行结论与证据，不反写静态声明。
-- Mechanism Risk 表示主证明无法稳定制造或定位的具名错误算法，不等于源码函数或分支。
-- Retirement Declaration 是一次迁移的临时静态输入，证明新 owner 已替代、合并或明确保留旧 proof。
+- Mechanism Risk 表示主证明无法稳定制造或定位的具名错误算法，不等于源码函数或分支；每个 mechanism proof 必须声明「删了放走哪类错」与「为何 Primary 抓不到」（README G2）。
+- Retirement Declaration 是一次迁移的临时静态输入，证明新 owner 已替代、合并或明确保留旧 proof；旧测不得长期 `unknown`（README G4）。
 
 ## Recipe 与 World
 
@@ -120,6 +123,10 @@ interface WorldDraft {
   targets?: Readonly<Record<string, { pageId: string; key: string }>>;
 }
 
+// 逻辑分区（schema 可仍是单对象；字段归属不得混用生命周期）：
+// Identity  — recipe.digest / candidate.digest / producer.sourceDigest / worldId
+// Resource  — roots、processes 租约、ports、cleanup 相关
+// Evidence  — locators / targets / 可读索引（不反写 Identity）
 interface WorldManifest {
   schemaVersion: 1;
   worldId: string;

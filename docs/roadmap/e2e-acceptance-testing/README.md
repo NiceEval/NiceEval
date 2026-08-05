@@ -2,6 +2,9 @@
 
 还没定为当前契约的候选设计，见 [Roadmap 约定](../README.md)。
 
+**审查状态（ChatGPT Pro，2026-08-05）：方向自洽，进入定稿收敛；成败在迁移治理，不是再扩 DSL。**  
+分层 PLAN-2 → Portfolio → Recipe/World → DSL 可保留；定稿前须收口下方「治理裁决」五条，并**冻结 DSL 词表扩张**。
+
 ## 定位
 
 本方案重构 NiceEval 的完整测试体系，不是在现有 unit 之上追加一层 E2E。它决定：
@@ -173,7 +176,54 @@ docs/engineering/testing/
 
 采用必须同步改写 [现行 testing 文档清单](current-system-gaps.md#对现行-testing-文档的采用改动)，不能只移动目录或增加索引链接。
 
-## 待裁决分歧
+## 治理裁决（Pro review · 定稿前必收口）
+
+下列条目优先于功能面扩展；**在收口前不新增 DSL 领域名词、不扩大 Behavior 面**。
+
+### G1. `repo-acceptance-testing` 的身份
+
+| 选项 | 含义 |
+|---|---|
+| **A（推荐）** | 不是顶层第二体系；其「消费方仓库 / 真 CLI / 真包」能力 = 本方案 **Recipe + Consumer World 的一种 execution backend** |
+| B | 独立 acceptance 子系统（**否决方向**——易与 Behavior E2E 双入口） |
+
+定稿时必须在 [repo-acceptance-testing](../repo-acceptance-testing/README.md) 与本 README 互相写明：**合并为 backend，或明确淘汰**，禁止「部分采用、未来融合」悬空。
+
+### G2. Mechanism proof 硬规则
+
+每个 mechanism proof 必须声明：
+
+1. 若删除该 proof，哪一类错误算法会重新进入 release；
+2. 为何 Primary Behavior 无法稳定制造或区分该错误算法。
+
+禁止「觉得重要就加 unit」而无错误算法集合。
+
+### G3. WorldManifest 职责边界
+
+`WorldManifest` 不得无限兼任 cache 身份、权限、资源租约与 evidence 索引。  
+schema 层至少逻辑拆分：**Identity**（candidate/recipe digest）· **Resource**（port/process/lease）· **Evidence**（可读索引）。生命周期变化速度不同，避免 cleanup 细节污染 recipe 身份。
+
+### G4. 迁移完成定义与旧测四选一
+
+每个旧测试必须进入且仅进入：
+
+```text
+behavior-id | mechanism-id | retire | delete
+```
+
+禁止长期 `unknown`。迁移完成 = 旧测 100% 映射，且 retirement declaration 在 CI 强制（缺 declaration 不得合入新主证明）。详见 [proof-portfolio](proof-portfolio.md)。
+
+### G5. Behavior 增长规则
+
+新增 Behavior 必须同时具备：
+
+1. 用户任务边界（PLAN-2 锚点）；
+2. release 风险（删了放走什么）；
+3. 公开契约锚点（CLI / 包导出 / 文档）。
+
+禁止「一个 Feature 默认一个 Behavior」膨胀。
+
+## 实现细节待裁决
 
 1. Behavior 选择是扩展根 `e2e/scripts/run.ts` 的 `--behavior`，还是只透传给仓库自己的命令；唯一要求是本地、CI 与远程执行仍走同一入口。
 2. mutable clone 复制整个结果根还是只复制声明写集；第一个 mutation recipe 用真实体积数据裁决。

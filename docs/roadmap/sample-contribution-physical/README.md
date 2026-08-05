@@ -1,10 +1,13 @@
 # 现刻水位贡献：物理结果优先于 selectedEvalIds
 
+**审查状态（ChatGPT Pro，2026-08-05）：主案可定稿（breaking semantic），定稿前三条契约已收口。**  
+`currentSample` 按可比 Run 上的物理 attempt 贡献；`selectedEvalIds` 降为规划/审计元数据；Reports/CLI 禁止二次 selected 过滤。
+
 [Sample](../../feature/sample/README.md) 的 `currentSample` 回答「每道题当前可用的判定」。
 一个 experiment 的水位通常由**多次** `exp` / `accept` 落盘共同形成：全量跑、局部补跑、携带合入、指纹重锚。
-本主题候选把读面贡献规则从「按 Run 的 `selectedEvalIds` 过滤」改为「可比 Run 上的物理 attempt 原样取新」，把 `selectedEvalIds` 降为规划与审计元数据。
+本主题把读面贡献规则从「按 Run 的 `selectedEvalIds` 过滤」改为「可比 Run 上的物理 attempt 原样取新」，把 `selectedEvalIds` 降为规划与审计元数据。
 
-Feature 里的现行契约仍以 [`selectedEvalIds` 过滤贡献](../../feature/record/architecture.md) 为准；本页是尚未定稿的翻案候选。
+Feature 里的现行契约仍以 [`selectedEvalIds` 过滤贡献](../../feature/record/architecture.md) 为准；本页是**拟定稿翻案**，迁入 Feature 前实现与单测仍以现行为准。
 
 ## 解决的问题
 
@@ -43,16 +46,16 @@ Feature 里的现行契约仍以 [`selectedEvalIds` 过滤贡献](../../feature/
 ### 触发复盘的现场形状
 
 MemoryBench 一类仓库：批量 accept 或携带合入后，最新 Run 物理 36 条 `result.json`（含 `acceptedFrom` / `artifactBase`），`run.json` 的 `selectedEvalIds` 只有 1 个 id。
-规划面 36 carried；默认首页 1 通过。根因分析见对话与写入侧修复（accept 封口扩成整组 selected）；本候选追问的是：**读面是否根本不该依赖那份声明做贡献过滤**。
+规划面 36 carried；默认首页 1 通过。根因分析见对话与写入侧修复（accept 封口扩成整组 selected）；本主题追问的是：**读面是否根本不该依赖那份声明做贡献过滤**。
 
 ## 核心心智
 
 三层分工不变：Record 无判断，Sample 有口径，Reports 有呈现。
-本候选只改 Sample 的**贡献集合**怎么从 Run 上取 attempt。
+本主题只改 Sample 的**贡献集合**怎么从 Run 上取 attempt。
 
-| 概念 | 归谁 | 候选职责 |
+| 概念 | 归谁 | 职责 |
 |---|---|---|
-| 物理 attempt | Record | 某 Run 目录下真实存在的 `result.json` / `AttemptHandle` |
+| 物理 attempt | Record | 某 Run 的 **合法 AttemptHandle / attempt registry** 上存在的终态（不是任意路径扫盘） |
 | 可比性 | Sample | 仅 `configHash` 与基准相等的历史 Run 可参与拼接（现行缝合前提保留） |
 | 现刻贡献 | Sample | 每个 experiment × eval：在可比 Run 上**按时间新→旧取第一条物理 attempt**，不看 `selectedEvalIds` |
 | 覆盖分母 | Sample | 仍用 `knownEvalIds` 并集；缺物理结果的题进 `missingEvalIds` |
@@ -61,58 +64,68 @@ MemoryBench 一类仓库：批量 accept 或携带合入后，最新 Run 物理 
 
 一句话：**水位跟物理终态与可比性走；选择声明跟规划与审计走。**
 
-## 候选契约
+## 拟定稿契约
 
 ### 贡献规则（替代现行 selected 过滤）
 
 `currentSample`（及报告中凡「从 Sample.attempts 计票」的路径）：
 
 1. 按 experiment 取可比 Run 序列（最新 configHash 为基准；缺失 configHash 的 Run 只与自己可比——现行前提保留）。
-2. 每个 Run 对其 `run.evals` 中**每一个**有 attempt 的 eval 均可贡献（不再查 `selectedEvalIds`）。
+2. 每个 Run 对其 **attempt registry 中每一个**有 attempt 的 eval 均可贡献（不再查 `selectedEvalIds`）。
 3. 同一 eval 只保留最先遇到的（即最新可比来源上的）attempt 集合。
-4. `latestRunSample` 单位仍是最新 Run：只收该 Run 上的物理 attempt，同样不按 selected 再滤一层。
+4. `latestRunSample` 与 `currentSample` **同一贡献规则**：只收该 Run 上的物理 attempt，同样不按 selected 再滤一层。
 
-第三方 harness 未写 `selectedEvalIds` 时，现行已退化为「实际 evals」；候选下与本方 writer **同一规则**，退化分支消失。
+第三方 harness 未写 `selectedEvalIds` 时，现行已退化为「实际 evals」；拟定稿下与本方 writer **同一规则**，退化分支消失。
 
-### `selectedEvalIds` 保留什么
+### 条款 1：物理优先的来源等级
 
-落盘字段不删。写入面仍宜诚实：
+> Sample 只消费 Record 暴露的合法 `AttemptHandle` / attempt 注册表，**不**递归扫描磁盘上任意 `result.json`。  
+> 「物理优先」指 **registry 上的物理 attempt 优先于声明字段**，不是 filesystem walk。
 
-- exp：本次选择 ∪ 携带合入的 eval id（与现行「覆盖声明」一致，方便人读 run.json）。
+夹带脏文件的防线是 writer 校验与 registry，不是读面静默丢证据。
+
+### 条款 2：声明 ⊂ 物理时发 warning 级 SampleIssue
+
+落盘字段 `selectedEvalIds` 不删。写入面仍宜诚实：
+
+- exp：本次选择 ∪ 携带合入的 eval id。
 - accept：封口时本组全部接受的 eval（prepare 单题收窄只用于指纹，不污染快照声明）。
 
 读面**不再**因声明缺 id 而丢弃物理 result。
-声明与物理不一致时：
 
-| 情况 | 候选行为 |
+| 情况 | 行为 |
 |---|---|
-| 物理有、声明无 | 贡献收物理；可选 SampleIssue / diagnostic「声明窄于物理」（待裁决是否做、严重度） |
-| 声明有、物理无 | 不贡献 attempt；若该题在 known 分母内则进 `missingEvalIds`（与今日缺口语义一致） |
+| 物理有、声明无 | 贡献收物理；发 **warning** 级 SampleIssue（如 `selected-narrower-than-physical`），带 experimentId 与差集，避免写入漂移不可见 |
+| 声明有、物理无 | 不贡献 attempt；若该题在 known 分母内则进 `missingEvalIds` |
 
-### 覆盖与报告
+Issue **不**升级为 error（结果仍可用）；不阻塞 show/view。
 
-- 分母：`knownEvalIds` 并集（本地历史 ∪ Run 携带的 known），不改为「最新 Run 的 selected」。
-- `toExperimentRows` / `standardOverviewResult` 等凡今日二次读 `selectedEvalIdsOf` 砍 attempt 的，与 `sample.attempts` 对齐为同一贡献集，禁止第二套过滤。
-- 默认 show / view 首页与 `--stats` / `--history` 在「有哪些题进入当前水位」上不再因 selected 写窄而分裂；`--fresh` 仍可故意变窄。
+### 条款 3：禁止二次 selected 过滤
+
+- 分母：`knownEvalIds` 并集，不改为「最新 Run 的 selected」。
+- `toExperimentRows` / `standardOverviewResult` 等凡今日二次读 `selectedEvalIdsOf` 砍 attempt 的，与 `sample.attempts` 对齐为同一贡献集。
+- 默认 show / view / `--stats` 在「有哪些题进入当前水位」上同源；`--fresh` 仍可故意变窄（fresh 是 Sample 变换，不是 selected）。
+- `exp --dry` 等**规划面**继续用 selected 描述「本意跑谁」——与水位贡献分离。
 
 ### 明确不改
 
 - 指纹、携带六道门、`accept` 资格与 `acceptedFrom` 留痕。
 - configHash 缝合前提与「不可比旧结果不填缺口」。
 - `attempt.carried` / 时效呈现 / `fresh` 语义。
-- 用 `selectedEvalIds` 描述**本次规划选题**的 CLI / dry 矩阵（那是规划面，不是水位贡献）。
+- 用 `selectedEvalIds` 描述**本次规划选题**的 CLI / dry 矩阵。
 
 ## 与现行 Feature 的差分
 
-| 点 | Feature 现行 | 本候选 |
+| 点 | Feature 现行 | 本拟定稿 |
 |---|---|---|
-| 贡献闸 | `selectedEvalIds`（缺则退化为物理 evals） | 仅物理 attempt + configHash |
-| 声明 ⊂ 物理 | 多出的物理不进水位（有单测锁） | 多出的物理进水位；声明错误不删数 |
+| 贡献闸 | `selectedEvalIds`（缺则退化为物理 evals） | 仅物理 attempt（registry）+ configHash |
+| 声明 ⊂ 物理 | 多出的物理不进水位（有单测锁） | 多出的物理进水位；warning issue 暴露不一致 |
 | 声明 ⊃ 物理 | 缺口 / 不贡献 | 同左（靠 known / missing） |
 | accept 必须写全 selected | 读面正确性依赖 | 降为元数据诚实；读面不依赖 |
-| 防「夹带」脏 result | 靠 selected 静默丢 | 靠 writer 纪律；可选 issue 暴露不一致 |
+| 防「夹带」脏 result | 靠 selected 静默丢 | 靠 writer + registry；issue 暴露不一致 |
+| 语义变更性质 | — | **breaking**：selected 从「声明 + 贡献闸」变为「仅声明」 |
 
-定稿时需改写的 Feature 锚点（不在本页改契约正文）：
+定稿迁入时需改写的 Feature 锚点（不在本页改 Feature 正文）：
 
 - [`docs/feature/record/architecture.md`](../../feature/record/architecture.md) · `selectedEvalIds`
 - [`docs/feature/sample/library.md`](../../feature/sample/library.md) · 贡献与覆盖
@@ -125,53 +138,36 @@ MemoryBench 一类仓库：批量 accept 或携带合入后，最新 Run 物理 
 
 - Sample 贡献规则翻案与报告同源投影对齐。
 - `selectedEvalIds` 角色重划（元数据 vs 贡献闸）。
+- SampleIssue（声明窄于物理）。
 - 与多轮 exp / accept / 携带并存时的读面一致性目标。
-- 待裁决分歧与否决项。
 
 **不包含**
 
-- 是否删除 `selectedEvalIds` 字段（候选默认保留）。
+- 是否删除 `selectedEvalIds` 字段（默认保留）。
 - Record v2 整体重划（见 [record-v2](../record-v2/README.md)）；本主题可独立定稿。
 - 实验改名 / 跨 experimentId 搬家（见 [experiment-rename](../experiment-rename/README.md)）。
-- 写入面 accept 整组 selected 的修补（那是现行契约下的正确实现，与本翻案正交；翻案后仍建议保留作诚实元数据）。
-
-## 待裁决
-
-1. **声明 ⊂ 物理时是否发 SampleIssue**  
-   候选 A：只收物理、不报（最简）。  
-   候选 B：warning 级 issue，带 experimentId 与差集，方便抓写入 bug。  
-   建议默认 B，避免「修了读面又看不见写入漂移」。
-
-2. **`latestRunSample` 是否与 `currentSample` 同一贡献规则**  
-   建议是：最新 Run 上的物理 attempt 全收，不按 selected 滤。  
-   若保留 latest 上的 selected 过滤，两选择器会再分叉，否决。
-
-3. **报告分母是否仍可读最新 Run 的 `selectedEvalIds`**  
-   Feature 有「eval 数来自 selectedEvalIds」的表述。  
-   候选：计票分母与行集合一律来自 Sample（attempts + coverage），selected 不再当报告分母。  
-   需与 [default-report](../../feature/reports/show/default-report.md) 对齐后定稿。
-
-4. **存量盘**  
-   翻案后无需改历史 `run.json` 即可恢复水位。  
-   在 Feature 仍生效期间，存量可继续靠扩写 selected 或重 accept 止血——属于运维，不进本候选契约。
+- 写入面 accept 整组 selected 的修补（与本翻案正交；翻案后仍建议保留作诚实元数据）。
 
 ## 否决（本主题内）
 
 - **读面 `selected ∪ 物理` 并集当长期语义**  
-  两套规则搅在一起，测试与文档无法单源；要么声明优先（现行），要么物理优先（本候选）。
+  两套规则搅在一起，测试与文档无法单源；要么声明优先（现行），要么物理优先（本主题）。
 - **删掉 `selectedEvalIds` 落盘**  
   规划审计与「这次本意盖了谁」仍有用；先解除贡献耦合，再谈字段去留。
 - **用重新跑全量实验代替读面修正**  
   不回答「多轮合成水位」的模型问题。
+- **静默收物理、不报 mismatch**  
+  写入 bug 会从「用户看到错误结果」变成「内部悄悄漂移」；必须 warning issue。
 
 ## 验收场景（定稿后实现用）
 
-1. 最新 Run `selectedEvalIds=[a]`，物理有 `a,b,c` 三条 result → `currentSample.attempts` 含 a,b,c。  
+1. 最新 Run `selectedEvalIds=[a]`，物理有 `a,b,c` 三条 result → `currentSample.attempts` 含 a,b,c，并有 warning issue。  
 2. 最新 Run 物理仅 `a`，旧可比 Run 有 `b` → 水位 a 来自最新、b 来自旧 Run（与今日缝合一致，且不要求最新 selected 列出 b）。  
 3. 批量 accept 36 题但声明误写 1 题 → 水位仍 36（不依赖写入补丁，但写入仍应写全声明）。  
 4. 声明含 `d`、物理无 `d`、known 含 `d` → `d` 在 missing，不进 attempts。  
 5. `fresh: true` 仍排除 carried 与跨 Run 拼入；与 selected 无关。  
-6. 报告首页通过数 / eval 数与 `sample.attempts` 一致，不再出现「散点 86% · 摘要 1 eval」。
+6. 报告首页通过数 / eval 数与 `sample.attempts` 一致，不再出现「散点 86% · 摘要 1 eval」。  
+7. `latestRunSample` 与 `currentSample` 对 selected 的态度一致（均不滤）。
 
 ## 相关阅读
 
@@ -180,3 +176,4 @@ MemoryBench 一类仓库：批量 accept 或携带合入后，最新 Run 物理 
 - [缓存与携带 · accept](../../feature/experiments/cache.md) —— 重锚与快照封口
 - [局部补跑用例](../../feature/sample/use-case/partial-rerun.md) —— 多 Run 合成动机
 - [Reading](../../feature/reading/README.md) —— 三层分工
+- [报告收窄靠前置选择器](../report-pre-selector/README.md) —— 正交：Reports 不二次切口径

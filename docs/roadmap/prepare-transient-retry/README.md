@@ -1,10 +1,13 @@
 # Prepare 阶段瞬时失败自愈
 
+**审查状态（ChatGPT Pro，2026-08-05）：定稿方向为候选 A。**  
+官方内置 prepare 命令自拥网络瞬时重试；**拒绝**第三条全局 retry 消费点；确定性缺依赖零重试。
+
 [执行失败分类](../../feature/error-classification/README.md)用两轴回答「能不能换个时机再试」与「死因波及多远」。
 时间轴 `retryable` 的消费点只有两处：包住 `agent.send` 的重试执行体，以及 sandbox provisioning 内部重试。
 `sandbox.prepare` 命令与 `test(t)` 体内的失败，无论分类结果如何，都不进任何重试执行体。
 
-本主题讨论是否、以及怎样把**可证明瞬时、且重放安全**的 prepare 失败纳入 attempt 内自愈，而不是一律落成 `errored` 再靠整次 invocation 续跑。
+本主题把**可证明瞬时、且重放安全**的 prepare 失败纳入 attempt 内自愈，而不是一律落成 `errored` 再靠整次 invocation 续跑——且**不**把 `retryable` 扩成第三条 Runner 生命周期消费点。
 
 ## 解决的问题
 
@@ -30,82 +33,71 @@
 
 ## 与已定稿契约的关系
 
-| 已定稿点 | 当前纪律 | 本主题要动哪里 |
+| 已定稿点 | 当前纪律 | 本主题裁定 |
 |---|---|---|
-| [消费点是位置性的](../../feature/error-classification/README.md#消费点是位置性的) | prepare / `test` 无重试执行体；分类链在这些位置不产时间轴 | 是否新增第三条消费点，或把重试收进命令自身 |
-| [已创建 Sandbox 的文件 IO 重试](../../feature/sandbox/architecture.md#已创建-sandbox-的文件-io-重试) | `runCommand` / `runShell` **永远不**隐式重试（副作用未知） | 不推翻通用命令纪律；只讨论有界、幂等的官方面 |
-| [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) | `checkout` / `installTool` 有检查与 identity，失败即 `sandbox.prepare.<owner>` | 是否由命令自己拥有网络瞬时重试（它最清楚幂等边界） |
-| [Provisioning 失败与重试](../../feature/sandbox/architecture.md#provisioning-失败与重试) | 只覆盖 `createSandbox` | 不扩展到 prepare；两层只共享词表与退避形状 |
-| [空间轴 scope](../../feature/error-classification/README.md#分类) | 确定性兄弟必死可落闸 | 缺依赖类可用 `EvalFatalError` / `ExperimentFatalError` 或 `classifyFailure`，**不**靠重试 |
-| [运行中观察](../live-run-observation/README.md) | 候选把 `infra.network` 等 kind 标在旁路面 | 观察词表可对齐；自愈策略仍归本主题 / error-classification |
+| [消费点是位置性的](../../feature/error-classification/README.md#消费点是位置性的) | prepare / `test` 无重试执行体 | **不**新增第三条消费点；自愈是**命令内部行为** |
+| [已创建 Sandbox 的文件 IO 重试](../../feature/sandbox/architecture.md#已创建-sandbox-的文件-io-重试) | `runCommand` / `runShell` **永远不**隐式重试 | 不推翻；仅官方幂等 prepare 命令自拥重试 |
+| [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) | 失败即 `sandbox.prepare.<owner>` | `checkout` / `installTool` 等对网络瞬时失败有界重试 |
+| [Provisioning 失败与重试](../../feature/sandbox/architecture.md#provisioning-失败与重试) | 只覆盖 `createSandbox` | 与 prepare **分层独立**；可共享退避形状与词表 |
+| [空间轴 scope](../../feature/error-classification/README.md#分类) | 确定性兄弟必死可落闸 | 缺依赖类止损，**不**靠重试 |
+| [运行中观察](../live-run-observation/README.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
 
 作者面已有出路：「prepare 里想容忍抖动，自己 try 一次即可」（[error-classification · library](../../feature/error-classification/library.md)）。
-本主题问的是：**官方是否应对最常见的网络准备面给出零配置自愈**，避免每条 eval 手写相同退避。
+本主题给官方最常见网络准备面**零配置自愈**，避免每条 eval 手写相同退避。
 
 ## 核心心智
 
-1. **`errored` 仍是基建结论，不改成 `failed`。**
+1. **`errored` 仍是基建结论，不改成 `failed`。**  
    自愈成功则结果零痕迹（与 send 重试一致）；耗尽后仍是 `errored`，message 带重试摘要。
 
-2. **时间轴判据仍是重放安全性，不是「看起来像网络」。**
-   能证明「整条 prepare 命令可安全重放」才可重试。
-   半截写过 workdir、装过一半且不可重入的脚本，歧义一律不重试——与 send 的受理证据门同向。
+2. **时间轴判据仍是重放安全性，不是「看起来像网络」。**  
+   能证明「整条 prepare 命令可安全重放」才可重试。  
+   半截写过 workdir、装过一半且不可重入的脚本，歧义一律不重试。
 
-3. **空间轴与时间轴继续正交。**
+3. **空间轴与时间轴继续正交。**  
    瞬时网络先被 attempt 内吸收；确定性缺依赖、坏 fixture、实验共享服务死亡走 scope 闸或修环境。
-   可重试失败耗尽后默认仍不扩 scope（与 provisioning 瞬时耗尽一致）。
 
-4. **通用 `runCommand` 默认仍不隐式重试。**
-   框架不知道作者 shell 的副作用。
-   自愈挂在「声明了幂等边界」的面上，而不是打开所有命令的自动重试。
+4. **通用 `runCommand` 默认仍不隐式重试。**  
+   自愈挂在「声明了幂等边界」的**官方命令**上，而不是打开所有命令的自动重试。
 
-## 候选方案
+5. **Prepare 的问题不是「框架不知道什么时候重试」，而是「框架不知道某个 prepare 动作是否安全重放」。**  
+   因此重试权限属于命令实现，不属于 Runner 生命周期执行体。
 
-### 候选 A：内置 prepare 命令自带瞬时重试（推荐起点）
+## 主案：内置 prepare 命令自带瞬时重试（原候选 A）
 
-`checkout()` 与（可选）`installTool()` 的 `install` 步在命令实现内对网络瞬时失败做有界退避重试。
-Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变。
+`checkout()` 与 `installTool()` 的 install 步在**命令实现内**对网络瞬时失败做有界退避重试。
+Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-classification 的 `retryable` 消费点仍只有 send 与 provisioning。
 
-| 项 | 候选契约 |
+| 项 | 契约 |
 |---|---|
 | 识别 | stderr / exit 形态命中内建瞬时表：GnuTLS recv、early EOF、ECONNRESET、fetch aborted、registry 超时等；确定性失败（ref 不存在、鉴权 401/403、磁盘满、`command not found`）第一次抛出 |
 | 重放单元 | **整条**内置命令（checkout 从干净目标或官方镜像缓存语义重来；installTool 的 install 步重跑后复检 probe） |
 | 预算 | 与 provisioning / send 同形的小封顶（例如至多 3 次尝试 + 指数全抖动），参数固定、零配置 |
 | 观察 | activity：`prepare retry 2/3 (network) — checkout`；耗尽 message 带 `retries exhausted` |
-| 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 不享受 |
+| 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 与裸 `shell("yarn install")` **不**享受 |
 
-优点：改动面最小，直接覆盖 checkout TLS 与「用 installTool 包住的安装」；不打开通用 shell 重试的副作用闸。
+优点：改动面最小，直接覆盖 checkout TLS 与 installTool 安装；不打开通用 shell 重试的副作用闸。  
 代价：作者手写 `shell("yarn install")` 仍不自愈，除非改写为 `installTool` 或自写 try。
 
-### 候选 B：prepare 链级重试执行体（第三条时间轴消费点）
+## 否决：候选 B（第三条时间轴消费点）
 
-在 Runner 执行两层 `prepare()` 时，对**单条** `StableSandboxCommand` 失败走与 send 同形的分类链 + 有界重试。
-`retryable` 在生命周期阶段失败链上开始有消费点。
+曾讨论：在 Runner 执行两层 `prepare()` 时，对单条 `StableSandboxCommand` 失败走与 send 同形的分类链 + 有界重试，使 `retryable` 在 prepare 生命周期阶段上有消费点。
 
-| 项 | 候选契约 |
-|---|---|
-| 谁可重试 | 仅 `StableSandboxCommand`（`command` / `shell` / `defineSandboxCommand` / 内置命令）；opaque callback 仍不重试 |
-| 分类 | 命令失败文本过保守瞬时分类器；作者可在命令 identity 旁声明 `retryPolicy: "network-idempotent"`（名字待裁）才打开，**默认关闭** |
-| 重放 | 失败命令整段重跑；已成功的前序 prepare 不重放 |
-| 与 IO 重试 | 仍不碰 `runCommand` 包装层；重试在 prepare 调度层 |
+**否决理由：**
 
-优点：覆盖 MemoryBench 一类 `shell("yarn install --immutable")` 惯用法。
-代价：默认关闭则作者仍要声明；默认打开则半装失败的 shell 可能把 workdir 弄得更脏，需严格「仅瞬时 + 作者背书幂等」。
+- 破坏 error-classification「消费点是位置性的、由拥有重放安全知识的执行体消费」。
+- Runner 不知道任意 `shell` / 作者命令是否幂等。
+- 默认打开会弄脏半状态 workdir；默认关闭则与「作者自己 try」等价，不值得扩契约面。
 
-### 候选 C：仅观察与补跑策略，attempt 内不重试
+**1.0 不做 B。** 远期若需要，只能作为**显式 opt-in 的命令级声明**单独设计，且仍不得成为第三条全局消费点；不在本主题 1.0 范围。
 
-不新增 prepare 重试。强化：
+## 否决：候选 C（attempt 内永不重试）
 
-- 终态 / 运行中把 `infra.network` 与 `env.missing` 分开（对齐 [live-run-observation](../live-run-observation/README.md)）；
-- 文档与 CLI 明确「网络 `errored` 可 `--rerun` 补跑，缺依赖先修镜像」；
-- 确定性缺依赖在 prepare 用 `EvalFatalError` 停同 eval 剩余 attempt。
-
-优点：零副作用风险，契约面不动。
-代价：批跑外网抖动继续按 attempt 粒度付冷启动；与用户「有些应该允许再试」的诉求不对齐。
+仅观察 + 外层补跑不足以覆盖批跑外网抖动的成本诉求；在 A 的有界幂等前提下不采用 C。
 
 ## 确定性缺依赖（不进时间轴）
 
-下列失败**禁止**标 `retryable: true`，无论候选 A/B 还是 C：
+下列失败**禁止**标可重试，**零次**被 A 重试：
 
 - `python3: command not found`、`rustc: command not found` 等基线 / 配方缺口；
 - fixture 路径缺失、template 不存在、凭据缺失；
@@ -113,37 +105,35 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变。
 
 处置：
 
-1. **修环境**：官方基线保证 python3；题面需要的编译链进预制产物或 prepare 的显式安装，不靠重试撞运气。
-2. **空间轴**：同 eval / 同实验必复现时，prepare 抛 `EvalFatalError` / `ExperimentFatalError`，或实验 `classifyFailure` 给出 `scope`，避免 5 次 attempt 同因全灭。
-3. **读数**：报告与补跑工具把此类与 `infra.network` 分开，避免自动 `--rerun=errored` 把确定性死题刷成重复账单。
+1. **修环境**：官方基线保证 python3；题面需要的编译链进预制产物或 prepare 的显式安装。
+2. **空间轴**：同 eval / 同实验必复现时，prepare 抛 `EvalFatalError` / `ExperimentFatalError`，或实验 `classifyFailure` 给出 `scope`。
+3. **读数**：报告与补跑工具把此类与网络瞬时分开，避免自动 `--rerun=errored` 把确定性死题刷成重复账单。
 
 ## 范围
 
-**包含（待裁决）**
+**包含（1.0）**
 
-- prepare 相位网络瞬时失败是否 attempt 内自愈，以及挂在内置命令还是链级执行体；
-- 瞬时识别表与「重放安全」边界（整命令重跑 vs 禁止半状态续跑）；
-- 观察面：activity 行、耗尽摘要、与 `FailureClass.reason`（如 `network`）对齐；
-- 与续跑 / 指纹的关系：自愈成功不进 `errored`；耗尽后仍不进缓存，续跑语义不变。
+- 内置 prepare 命令对网络瞬时失败的 attempt 内自愈；
+- 瞬时识别表与「整命令重放」边界（半状态：checkout 失败后清目标或走缓存路径——实现层细节，见下）；
+- 观察面：activity 行、耗尽摘要；与 live-run 的 phase 对齐；
+- 与续跑 / 指纹：自愈成功不进 `errored`；耗尽后仍不进缓存，续跑语义不变。
 
 **不包含**
 
-- 改 `AttemptError.code` 公开形状或 `failed` / `errored` 判定；
+- 第三条 `retryable` 全局消费点（原候选 B）；
 - 给通用 `runCommand` / `runShell` 打开隐式重试；
-- 用 `attempts` 当基建抖动预算（仍是通过率分母）；
-- agent send 中途断流的重试纪律（仍归受理证据门）；
-- 官方基线是否装 python3 / 是否预装 yarn（已在预制环境契约定稿）；
-- 领域 `failed`（judge、gate）的重试或自动补跑。
+- 改 `AttemptError.code` 公开形状或 `failed` / `errored` 判定；
+- 用 `attempts` 当基建抖动预算；
+- agent send 中途断流的重试纪律；
+- 为 prepare 新建平行 failure kind 词表（用既有 reason / message 即可）；
+- 领域 `failed` 的重试。
 
-## 待裁决分歧
+## 实现前仍开放的细节（不改主案）
 
-1. **挂载点**：只做候选 A（内置命令），还是 A + 可选 B（声明幂等的 Stable 命令）？
-2. **默认开还是声明开**：`checkout` 是否默认重试；作者 `shell("pnpm i")` 是否必须 opt-in。
-3. **识别权威**：只认 exit + 有界 stderr 模式，是否允许命令声明 `classifyPrepareFailure`？
-4. **半状态**：checkout 失败后目标目录半写，重试前是否强制清目标 / 仅依赖镜像缓存路径？
-5. **预算数字**：与 send（4）或 IO（3）对齐，还是 prepare 单独更短（外网慢、deadline 紧）？
-6. **槽位**：prepare 退避是否释放全局并发位（与 send / provisioning 同形）？
-7. **词表**：耗尽后 `FailureClass` 是否携带 `reason: "network"` 供 reading / live 使用，且仍 `retryable: false`（已耗尽）？
+1. **半状态**：checkout 失败后目标目录半写，重试前强制清目标 vs 仅依赖镜像缓存路径——实现选型，须保证重放等价。
+2. **预算数字**：与 send（4）或 IO（3）对齐，还是 prepare 单独更短（外网慢、deadline 紧）。
+3. **槽位**：prepare 退避是否释放全局并发位（与 send / provisioning 同形）。
+4. **识别表演进**：只认 exit + 有界 stderr 模式；命令级 `classifyPrepareFailure` 非 1.0 必需。
 
 ## 成功标准（设计层）
 
@@ -151,11 +141,12 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变。
 2. `python3: command not found` 类确定性失败**零**次被重试，且文案或 scope 指向修镜像 / 配方。
 3. 通用 `runCommand` 公共纪律不被打开；无幂等声明的 opaque prepare 行为与今日一致。
 4. 读者能从 message / activity 区分：从未重试、重试耗尽、领域 `failed`。
+5. error-classification 文档仍写「retryable 消费点只有两处」。
 
 ## 入口
 
-- 本文件：问题、与 error-classification 的缺口、候选与分歧
-- 定稿后：补丁进 [error-classification](../../feature/error-classification/README.md)（消费点与自愈阶梯）与 [sandbox prepare-commands](../../feature/sandbox/prepare-commands.md) / [architecture](../../feature/sandbox/architecture.md)；不另立平行词表
+- 本文件：问题、主案 A、否决 B/C、与 error-classification 边界
+- 定稿后：补丁进 [error-classification](../../feature/error-classification/README.md)（澄清：命令内部重试不是新消费点）与 [sandbox prepare-commands](../../feature/sandbox/prepare-commands.md) / [architecture](../../feature/sandbox/architecture.md)
 
 ## 相关阅读
 
@@ -164,5 +155,5 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变。
 - [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) —— `checkout` / `installTool`
 - [Sandbox · 命令不自动重试](../../feature/sandbox/library/operations.md) —— 副作用边界
 - [跨 provider 基线工具面](../../feature/sandbox/library/prebuilt-environments.md#跨-provider-基线工具面) —— python3 / yarn 基线
-- [运行中观察](../live-run-observation/README.md) —— `infra.network` 观察候选
+- [运行中观察](../live-run-observation/README.md) —— phase 观察
 - [缓存与携带](../../feature/experiments/cache.md) —— `errored` 不进指纹、续跑只补失败

@@ -17,14 +17,14 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它等待上游稳定的候选接入
-- [NiceEval 测试体系重构](e2e-acceptance-testing/README.md) —— 统一 Behavior 主证明、机制 unit、旧测试退役、数量预算、evidence world 与历史缺陷题库；路径沿用早期 E2E 设计名，review 完成前不迁入 Engineering
+- [NiceEval 测试体系重构](e2e-acceptance-testing/README.md) —— Behavior 主证明 / 机制 unit / 退役 / evidence world；**Pro review：收敛治理 G1–G5，冻结扩 DSL**；路径沿用早期 E2E 名，迁入 Engineering 前仍是 Roadmap
 - [E2E 验收 DSL](e2e-acceptance-dsl/README.md) —— 把 stdout、PTY、JSON、HTML 与浏览器变成领域读面的媒介词表与 vitest 装配
-- [Repo 验收](repo-acceptance-testing/README.md) —— 上两项在组织机制上的替代候选：加题走消费方仓库，断言同时读过程与结果；继承题库、准入门槛与分层归属
+- [Repo 验收](repo-acceptance-testing/README.md) —— 与测试体系重构的组织替代候选；**Pro：宜归并为 Recipe backend，勿双顶层**
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
-- [运行中观察](live-run-observation/README.md) —— 给旁路 agent / 非 TTY 补齐 attempt phase 与 `watch` 附着面，消除「只能 docker exec 或读盘」的盯跑路径
+- [运行中观察](live-run-observation/README.md) —— `watch` + 增强 `exp --json`；**Pro：v1 收紧事件，可定稿**
 - [实验改名与结果重绑](experiment-rename/README.md) —— 文件名即 experimentId 时显式迁移历史结果（如 TB `codex` → `codex-5.6-luna`），与 accept 的指纹重锚分工
-- [现刻水位贡献：物理优先](sample-contribution-physical/README.md) —— `currentSample` 是否不再按 `selectedEvalIds` 过滤贡献，改为可比 Run 上物理 attempt 原样取新（多轮 exp / accept 合成水位）
-- [报告收窄靠前置选择器](report-pre-selector/README.md) —— 报告 UI 不再做「只看新执行」等口径开关；换 Sample 在宿主/CLI/构建前置，整页重算
-- [Record v2](record-v2/README.md) —— 将运行观测、输入溯源、当时裁决与可重算投影拆开，建立可审计记录模型
-- [注入凭据的转写脱敏](credential-redaction/README.md) —— 对全部落盘转写面做已知值精确替换，堵住 agent 转写把注入凭据带进 `events.json` 的落盘面
-- [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 网络抖动死在 `sandbox.prepare` 时是否 attempt 内重试；对齐 error-classification 第三条消费点与确定性缺依赖止损
+- [现刻水位贡献：物理优先](sample-contribution-physical/README.md) —— 物理 attempt 贡献；selected 降为审计；**Pro：拟定稿 + SampleIssue**
+- [报告收窄靠前置选择器](report-pre-selector/README.md) —— 删 web 切口径；fresh 仅宿主前置；**Pro：主案可定稿**
+- [Record v2](record-v2/README.md) —— 权威三类 + 非权威投影；**Pro：分阶段，禁磁盘大爆炸**
+- [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知值精确替换；**Pro：归属 Record 写盘边界**
+- [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令自拥瞬时重试；**Pro：定稿 A，否决第三条消费点**

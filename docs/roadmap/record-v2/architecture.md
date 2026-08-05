@@ -1,13 +1,16 @@
 # Record v2 —— 架构候选
 
+**审查状态：** 与 [README](README.md) 一致——分阶段；权威三类；Projection 非权威。
+
 ## 信息模型先于文件模型
 
 Writer 写入任何字段前必须回答两个问题：这个值属于哪类信息；删除它后能否只用同一份 Record 中的其它内容确定性恢复。
 
-能恢复的值是 Projection。
-不能恢复的运行观测是 Observation；解释观测所需的输入是 Provenance；根据二者作出的结论是 Claim。
+能恢复的值是 Projection（**非权威**，默认可不落盘）。
+不能恢复的运行观测是 Observation；解释观测所需的输入是 Provenance（Input）；根据二者作出的结论是 Claim（Verdict）。
 
 文件拆分和 schema 版本只服务这套分类，不能代替分类本身。
+**禁止**以「四个平级持久化对象 + 一次目录重写」作为第一落点；Phase 1 先在类型/模块边界落地同一分类。
 
 ## Observation：不可重建的运行观测
 
@@ -105,7 +108,7 @@ Verdict Claim 引用 assertion、judge、致命错误和 strict 输入；它不�
 成本分两种：provider 返回的实际账单是 Observation；NiceEval 根据 usage 与价格表计算的成本是 Claim。
 估算 Claim 必须引用 usage、价格表快照和计价算法，不能只保存一个无法解释的数字。
 
-## Projection：可删除的索引与聚合
+## Projection：可删除的索引与聚合（非 Record 权威）
 
 Projection 只加速读取或方便消费：
 
@@ -116,8 +119,8 @@ Projection 只加速读取或方便消费：
 - 通过数、失败数、成本合计和覆盖摘要。
 - Reports 需要的行、分组与图表数据。
 
-Projection 必须声明生成器和输入摘要。
-任一输入摘要变化、生成器版本不匹配或缓存损坏时，reader 删除或忽略缓存并重算。
+**默认归属 Sample / Reports 内存计算。**  
+若落盘缓存，必须声明生成器和输入摘要；任一输入摘要变化、生成器版本不匹配或缓存损坏时，reader 删除或忽略缓存并重算。
 
 ```ts
 interface ProjectionRef extends ObservationRef {
@@ -126,8 +129,8 @@ interface ProjectionRef extends ObservationRef {
 }
 ```
 
-Projection 不进入 `publish()` 的默认事实集。
-发布端可以重新生成需要的索引，也可以携带缓存，但缓存缺失不能让记录不可读。
+Projection **不**进入 `publish()` 的默认事实集，**不**参与事实兼容判断。
+缓存缺失不能让记录不可读。
 
 ## 稳定容器
 
@@ -183,10 +186,19 @@ Reports 消费 Sample 和可用 Claim，所有行、表、总计都是内存 Pro
 结果携带不是 Record 的基础读取能力。
 携带规划检查所需 Observation、Provenance 和 Claim 是否齐全，并用当前规则从 Provenance 重算 fingerprint；diff 或报告缓存不参与携带资格。
 
+## 分阶段落地
+
+| 阶段 | 目标 |
+|---|---|
+| Phase 1 | 冻结语义；`EvalResult` / 模块内部拆分 Input · Observation · Verdict；Projection API 迁出权威路径；**磁盘目录可仍兼容 v14** |
+| Phase 2 | 需要时 bump 事实 schema；Claim 带 evaluator / basedOn；legacy decoder 归类旧字段 |
+| Phase 3 | 可选投影缓存；携带规划只检查权威三类是否齐全 |
+
+不在任何阶段默认执行：整仓历史盘 bulk rewrite、改 carry 语义、为四类各开一套互不关联的强制 schemaVersion。
+
 ## 兼容与过渡
 
-新 writer 只写四分类格式。
-新 reader 为当前 v14 提供隔离的 legacy decoder，把旧字段显式归入四类；无法指出依据的历史结论转成 `opaque-claim`，不能伪造 `basedOn`。
+新 reader 为当前 v14 提供隔离的 legacy decoder，把旧字段显式归入权威三类；无法指出依据的历史结论转成 `opaque-claim`，不能伪造 `basedOn`。
 
 v1–v13 继续提供对应 producer 版本的读取提示。
 若增加离线转换命令，它只能写入新目录并保留原字节；转换生成的 Claim 必须标记 legacy 来源，不能把推测补成事实。
@@ -195,7 +207,7 @@ v1–v13 继续提供对应 producer 版本的读取提示。
 
 1. 它是不可重建的观测、复核所需输入、当时裁决，还是便利投影。
 2. 如果是 Claim，它引用了哪些输入，由哪个 evaluator 产生。
-3. 如果是 Projection，删除它能否只靠同一份 Record 确定性恢复。
+3. 如果是 Projection，删除它能否只靠同一份 Record 确定性恢复——且它**不应**升级事实 schema。
 4. 它的变化会影响哪些消费能力，为什么需要扩大到其它文档。
 
-答不出分类的字段不得进入 Record schema。
+答不出分类的字段不得进入 Record 权威 schema。
