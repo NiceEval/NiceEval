@@ -5,7 +5,6 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
-import { Template } from "e2b";
 import type { SandboxBuildExecutionContext, SandboxBuildProvider, SandboxBuildWork } from "./build-coordinator.ts";
 import { detectDockerBuildPlatform, normalizeBuildPlatform } from "./compose.ts";
 import { computeCaseKey, type BuildKey, type CaseKey } from "./identity.ts";
@@ -202,6 +201,8 @@ async function defaultRunDockerBuild(
 }
 
 async function defaultE2BTemplateExists(name: string, signal: AbortSignal): Promise<boolean> {
+  // e2b 是 optional peer；仅 E2B Dockerfile 构建路径加载。
+  const { Template } = await import("e2b");
   return await Template.exists(name, { signal });
 }
 
@@ -216,6 +217,8 @@ async function defaultBuildE2BTemplate(
   if (details.target !== undefined) {
     throw new Error("E2B Dockerfile builds do not support a target stage; make the desired stage the final stage");
   }
+  // e2b 是 optional peer；仅 E2B Dockerfile 构建路径加载。
+  const { Template } = await import("e2b");
   const ignore = await dockerIgnorePatterns(details.contextDir);
   const template = Template({
     fileContextPath: details.contextDir,

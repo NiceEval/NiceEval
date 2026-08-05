@@ -1,7 +1,6 @@
 // ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
-import Docker from "dockerode";
 import { Data, Effect, Option, type Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
@@ -366,6 +365,8 @@ export function materializeDockerfileProviderPlan(
 
 async function defaultDockerImageExists(locator: string): Promise<boolean> {
   try {
+    // dockerode 是 optional peer；只在 Dockerfile Agent 缓存路径真查镜像时加载。
+    const { default: Docker } = await import("dockerode");
     await new Docker().getImage(locator).inspect();
     return true;
   } catch {
@@ -452,6 +453,8 @@ const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionSe
     return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
   },
   commit: async (sandboxId: string, derivedLocator: string) => {
+    // dockerode 是 optional peer；commit 派生镜像时才加载（与 keep/orphans 同模式）。
+    const { default: Docker } = await import("dockerode");
     await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
   },
 });

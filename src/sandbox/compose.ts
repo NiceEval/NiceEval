@@ -25,7 +25,6 @@ import type {
   SandboxResourceGroup,
   ServiceController,
 } from "./case-types.ts";
-import { classifyProvisionError, DockerSandbox } from "./docker.ts";
 import {
   computeBuildKey,
   digestOf,
@@ -865,6 +864,9 @@ export async function materializeDockerComposeProviderCase(
       await finalizer();
       throw abortError(opts.ctx.signal);
     }
+
+    // dockerode 是 optional peer：compose 实现在 materialize 热路径才加载 docker.ts。
+    const { classifyProvisionError, DockerSandbox } = await import("./docker.ts");
 
     // 构建:协调器 locator 命中时仍跑一次 compose build——BuildKit cache 很快,
     // 且把 BuildKey tag 对齐回本 eval 的 image: 插值名(避免多题共用 provider env 时串镜像)。
