@@ -30,6 +30,14 @@
     {
       "source": "/showcase/memory/:match*",
       "destination": "https://coding-agent-memory-evals.vercel.app/:match*"
+    },
+    {
+      "source": "/showcase/terminal-bench",
+      "destination": "https://terminal-bench-gray.vercel.app"
+    },
+    {
+      "source": "/showcase/terminal-bench/:match*",
+      "destination": "https://terminal-bench-gray.vercel.app/:match*"
     }
   ]
 }
