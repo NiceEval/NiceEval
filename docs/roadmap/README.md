@@ -25,3 +25,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [实验改名与结果重绑](experiment-rename/README.md) —— 文件名即 experimentId 时显式迁移历史结果（如 TB `codex` → `codex-5.6-luna`），与 accept 的指纹重锚分工
 - [Record v2](record-v2/README.md) —— 将运行观测、输入溯源、当时裁决与可重算投影拆开，建立可审计记录模型
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 对全部落盘转写面做已知值精确替换，堵住 agent 转写把注入凭据带进 `events.json` 的落盘面
+- [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 网络抖动死在 `sandbox.prepare` 时是否 attempt 内重试；对齐 error-classification 第三条消费点与确定性缺依赖止损

@@ -70,7 +70,8 @@ docs/
 │   └── reports/                         show、view 与报告组件
 │
 ├── roadmap/                             尚未定稿的功能设计
-│   └── multi-agent/                     多 Agent Eval 场景
+│   ├── multi-agent/                     多 Agent Eval 场景
+│   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
