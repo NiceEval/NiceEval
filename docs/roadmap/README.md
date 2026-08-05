@@ -22,5 +22,6 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Repo 验收](repo-acceptance-testing/README.md) —— 上两项在组织机制上的替代候选：加题走消费方仓库，断言同时读过程与结果；继承题库、准入门槛与分层归属
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
 - [运行中观察](live-run-observation/README.md) —— 给旁路 agent / 非 TTY 补齐 attempt phase 与 `watch` 附着面，消除「只能 docker exec 或读盘」的盯跑路径
+- [实验改名与结果重绑](experiment-rename/README.md) —— 文件名即 experimentId 时显式迁移历史结果（如 TB `codex` → `codex-5.6-luna`），与 accept 的指纹重锚分工
 - [Record v2](record-v2/README.md) —— 将运行观测、输入溯源、当时裁决与可重算投影拆开，建立可审计记录模型
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 对全部落盘转写面做已知值精确替换，堵住 agent 转写把注入凭据带进 `events.json` 的落盘面
