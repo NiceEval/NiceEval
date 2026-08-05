@@ -24,6 +24,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [运行中观察](live-run-observation/README.md) —— 给旁路 agent / 非 TTY 补齐 attempt phase 与 `watch` 附着面，消除「只能 docker exec 或读盘」的盯跑路径
 - [实验改名与结果重绑](experiment-rename/README.md) —— 文件名即 experimentId 时显式迁移历史结果（如 TB `codex` → `codex-5.6-luna`），与 accept 的指纹重锚分工
 - [现刻水位贡献：物理优先](sample-contribution-physical/README.md) —— `currentSample` 是否不再按 `selectedEvalIds` 过滤贡献，改为可比 Run 上物理 attempt 原样取新（多轮 exp / accept 合成水位）
+- [报告收窄靠前置选择器](report-pre-selector/README.md) —— 报告 UI 不再做「只看新执行」等口径开关；换 Sample 在宿主/CLI/构建前置，整页重算
 - [Record v2](record-v2/README.md) —— 将运行观测、输入溯源、当时裁决与可重算投影拆开，建立可审计记录模型
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 对全部落盘转写面做已知值精确替换，堵住 agent 转写把注入凭据带进 `events.json` 的落盘面
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 网络抖动死在 `sandbox.prepare` 时是否 attempt 内重试；对齐 error-classification 第三条消费点与确定性缺依赖止损
