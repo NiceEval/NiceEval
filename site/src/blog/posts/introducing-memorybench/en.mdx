@@ -10,27 +10,22 @@ readMinutes: "7"
 status: "published"
 ---
 
-Today we're releasing MemoryBench: a benchmark that hooks mainstream memory products onto an agent and puts them to the test on real coding tasks.
+Today we're releasing [MemoryBench](https://niceeval.com/showcase/memory): a benchmark for evaluating how memory products perform on real coding tasks.
 
 Over the past two years, single-shot model capabilities have been measured to death: Q&A, code generation, single-file edits — leaderboards stacked wall to wall. But what actually pushes agents into production is a different question: when a task spans multiple repositories and runs for hours, does the agent still remember what it did, what it looked up, and why it made each decision?
 
 That's the question MemoryBench answers. Same model, same tasks, one variable: whether a memory layer is attached. We quantify how much the memory mechanism actually helps across continuous, real-world development tasks.
 
-## Why agent memory suddenly matters
+## Why agent memory matters
+[Rent the Intelligence. Own the Memory. A Manifesto](https://x.com/wey_gu/article/2083118261601005612)
+
+Intelligence is rented; memory is owned. But which memory products actually help an agent remember things and perform better on continuous work?
 
 Look at what's happening. Agent usage is shifting fast: from single-turn Q&A and single-file completion to cross-repo investigation, fixing bugs in sequence, and running multi-hour, multi-step engineering tasks. At that scale, no context window can hold the full history — the agent has to store information and retrieve it later.
 
 That makes the memory layer a critical component of long-horizon work. Memory products like mem0, Zep, Letta, and MemGPT have exploded over the past year, each pitching its own storage strategy, compression algorithm, and retrieval scheme. The problem: these designs all look great in demos, but once hooked up to a real agent facing real tasks, which ones actually work?
 
 That's the missing piece today: products are iterating fast, but evaluation has stayed stuck.
-
-## Existing memory benchmarks measure the wrong thing
-
-Current memory benchmarks, like LoCoMo and LongMemEval, measure recall accuracy: feed a long conversation, then ask whether the model can dig out a specific fact, timestamp, or constraint.
-
-Recall accuracy matters, but it answers a question about memory fidelity, not memory usefulness. A memory system that can recite every sentence of a 100K-token conversation won't necessarily save the agent a wrong turn in the next repo or help it fix a bug faster. Memory in real development is meant to be used: the API conventions you looked up, the functions you changed, the pitfalls you hit, the plan for the next step. It counts only when that information is retrieved correctly at the moment it matters.
-
-In other words, high recall accuracy doesn't mean the next bug gets fixed faster. We need a benchmark that answers "how much does memory help in real development," not "how much does memory store."
 
 ## What MemoryBench is
 
@@ -41,6 +36,7 @@ The tasks aren't single-turn. The agent works across multiple repositories, solv
 Short-task benchmarks ask "can it do the job?" MemoryBench asks "does memory make continuous work better?" It shares a lineage with Terminal-Bench Challenges: both are long-horizon, token-intensive evaluations that run in real environments — except MemoryBench treats the memory layer itself as the variable under test.
 
 ## How we measure: task design and metrics
+[Evolving Memory Systems - An Eval-First Approach](https://linghao.io/posts/memory-systems-should-be-evolved)
 
 The task pool is made of real development tasks: multi-repo continuous tasks, bug fixes, and implementing features from issues. Every task has to run through to verification in a real environment; agent output is checked automatically, not graded by human eyes.
 
@@ -71,7 +67,7 @@ Third, product rankings don't fully match recall-accuracy rankings. The products
 
 ## How to participate
 
-We welcome any memory solution to come and be tested. Submission works the same way as Terminal-Bench Challenges: share a public repository containing the final output artifact and full agent logs, describe the memory product you used, how you integrated it, and your runtime configuration, and we'll rerun the same task set and update the leaderboard.
+We welcome any memory solution to come and be tested. Submit via PR.
 
 The leaderboard will keep evolving. As the task pool grows, historical results may re-rank as the task set changes; we keep the full logs of every run to guarantee reproducibility.
 
