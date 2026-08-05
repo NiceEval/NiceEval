@@ -1,0 +1,78 @@
+---
+title: "Introducing MemoryBench: Benchmarking Agent Memory on Real Coding Tasks"
+date: "2026-08-05"
+category: "Product thinking"
+description: "Same model, same tasks, one variable: the memory layer. MemoryBench measures how much agent memory actually helps across continuous, real-world coding tasks."
+seoDescription: "MemoryBench is a benchmark for agent memory: same model, same agent framework, same tasks, with the only variable being whether a memory layer is attached. It quantifies the delta memory brings on continuous multi-repo coding tasks — unlike recall-accuracy benchmarks, it answers whether memory actually helps in real development."
+tags: ["MemoryBench", "Agent Memory", "AI Evaluation", "NiceEval"]
+author: "NiceEval"
+readMinutes: "7"
+status: "published"
+---
+
+Today we're releasing MemoryBench: a benchmark that hooks mainstream memory products onto an agent and puts them to the test on real coding tasks.
+
+Over the past two years, single-shot model capabilities have been measured to death: Q&A, code generation, single-file edits — leaderboards stacked wall to wall. But what actually pushes agents into production is a different question: when a task spans multiple repositories and runs for hours, does the agent still remember what it did, what it looked up, and why it made each decision?
+
+That's the question MemoryBench answers. Same model, same tasks, one variable: whether a memory layer is attached. We quantify how much the memory mechanism actually helps across continuous, real-world development tasks.
+
+## Why agent memory suddenly matters
+
+Look at what's happening. Agent usage is shifting fast: from single-turn Q&A and single-file completion to cross-repo investigation, fixing bugs in sequence, and running multi-hour, multi-step engineering tasks. At that scale, no context window can hold the full history — the agent has to store information and retrieve it later.
+
+That makes the memory layer a critical component of long-horizon work. Memory products like mem0, Zep, Letta, and MemGPT have exploded over the past year, each pitching its own storage strategy, compression algorithm, and retrieval scheme. The problem: these designs all look great in demos, but once hooked up to a real agent facing real tasks, which ones actually work?
+
+That's the missing piece today: products are iterating fast, but evaluation has stayed stuck.
+
+## Existing memory benchmarks measure the wrong thing
+
+Current memory benchmarks, like LoCoMo and LongMemEval, measure recall accuracy: feed a long conversation, then ask whether the model can dig out a specific fact, timestamp, or constraint.
+
+Recall accuracy matters, but it answers a question about memory fidelity, not memory usefulness. A memory system that can recite every sentence of a 100K-token conversation won't necessarily save the agent a wrong turn in the next repo or help it fix a bug faster. Memory in real development is meant to be used: the API conventions you looked up, the functions you changed, the pitfalls you hit, the plan for the next step. It counts only when that information is retrieved correctly at the moment it matters.
+
+In other words, high recall accuracy doesn't mean the next bug gets fixed faster. We need a benchmark that answers "how much does memory help in real development," not "how much does memory store."
+
+## What MemoryBench is
+
+MemoryBench is built for exactly that. Its core setup is one rule: same model, same agent framework, same sequence of continuous tasks, with the only variable being whether a memory layer is attached.
+
+The tasks aren't single-turn. The agent works across multiple repositories, solving real development tasks and fixing real bugs, in a process that spans many steps and many codebases. Under this setup we compare a bare agent against one with a memory layer, and measure the delta the memory mechanism actually brings.
+
+Short-task benchmarks ask "can it do the job?" MemoryBench asks "does memory make continuous work better?" It shares a lineage with Terminal-Bench Challenges: both are long-horizon, token-intensive evaluations that run in real environments — except MemoryBench treats the memory layer itself as the variable under test.
+
+## How we measure: task design and metrics
+
+The task pool is made of real development tasks: multi-repo continuous tasks, bug fixes, and implementing features from issues. Every task has to run through to verification in a real environment; agent output is checked automatically, not graded by human eyes.
+
+Controlled variables are the core of the design. The model is fixed, the agent framework is fixed, the task order is fixed. The only thing that changes is the memory layer, so any observed difference can be attributed to the memory mechanism itself.
+
+We focus on three metrics: task completion rate, whether tasks get finished; first-pass success rate, how often a task is done right the first time; and bugs fixed, how many get resolved per unit of time. Concrete numbers will be released gradually in future versions — this post covers directional findings.
+
+```mermaid
+flowchart LR
+  A["Task pool: multi-repo continuous tasks & bug fixes"] --> B["Same model & agent framework"]
+  B --> C{"Memory layer attached?"}
+  C -->|"Bare agent"| D["Execute tasks in sequence"]
+  C -->|"With memory"| E["Execute tasks in sequence"]
+  D --> F["Automated verification & metrics"]
+  E --> F
+  F --> G["Compare the delta memory brings"]
+```
+
+## Initial findings (directional)
+
+The first batch of results already points in a few directions; specific numbers will come later.
+
+First, memory does improve completion rates, but the effect varies by task type. On cross-repo tasks that require repeatedly revisiting past information, the memory layer's gain is most obvious; on single-file, one-shot tasks, the gain approaches zero.
+
+Second, there are counterintuitive cases: on some tasks memory actually slows the agent down. Retrieving irrelevant information, or treating stale memories as current facts, makes the agent spend extra time in the wrong direction. Memory isn't automatically better when added — quality and timing matter just as much.
+
+Third, product rankings don't fully match recall-accuracy rankings. The products that score highest on recall-style benchmarks don't always bring the biggest gains on real tasks. That's a side confirmation: recalling accurately and using well are two different things.
+
+## How to participate
+
+We welcome any memory solution to come and be tested. Submission works the same way as Terminal-Bench Challenges: share a public repository containing the final output artifact and full agent logs, describe the memory product you used, how you integrated it, and your runtime configuration, and we'll rerun the same task set and update the leaderboard.
+
+The leaderboard will keep evolving. As the task pool grows, historical results may re-rank as the task set changes; we keep the full logs of every run to guarantee reproducibility.
+
+We look forward to seeing more memory products and more integration approaches on the board. Memory is the next bottleneck for long-horizon agent work — let's measure it properly together.
