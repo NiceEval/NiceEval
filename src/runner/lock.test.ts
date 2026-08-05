@@ -25,9 +25,34 @@ import {
 // 推进假时钟触发到期的定时器回调,不等待回调里新发起的真实 fs I/O(线程池完成通过事件循环的
 // poll 阶段回来,micro-task 级的 process.nextTick 不足以放行)真正 settle。用真实 setTimeout
 // 排一次宏任务,才能确定性地让真实 I/O 有机会在下一步推进前落地。
+// CI 上 unit 项目并行时 fs 线程池会饿,flush 要给够真实 wall-clock,不能只靠 10×5ms。
 const realSetTimeout = globalThis.setTimeout;
 function realDelay(ms: number): Promise<void> {
   return new Promise((resolve) => realSetTimeout(resolve, ms));
+}
+/** 推进假时钟后放行真实 fs I/O;rounds/ms 按 CI 并行饿载调高。 */
+async function flushRealIo(rounds = 50, ms = 10): Promise<void> {
+  for (let i = 0; i < rounds; i += 1) {
+    await realDelay(ms);
+  }
+}
+async function stepAndFlush(advanceMs: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(advanceMs);
+  await flushRealIo();
+}
+/** 推进一轮后等谓词成立(仍用真实时间轮询),避免「I/O 晚几拍」的假失败。 */
+async function stepUntil(
+  advanceMs: number,
+  predicate: () => boolean,
+  opts: { rounds?: number; ms?: number } = {},
+): Promise<void> {
+  await vi.advanceTimersByTimeAsync(advanceMs);
+  const rounds = opts.rounds ?? 100;
+  const ms = opts.ms ?? 20;
+  for (let i = 0; i < rounds; i += 1) {
+    if (predicate()) return;
+    await realDelay(ms);
+  }
 }
 
 let roots: string[] = [];
@@ -310,23 +335,18 @@ describe("acquireCaseLock: 等待路径", () => {
           },
         },
       );
-      resultPromise.then(() => {
-        resolved = true;
-      });
+      // 吞掉提前失败时的 reject,避免 afterEach 清目录后 in-flight 轮询变成 unhandled rejection。
+      resultPromise.then(
+        () => {
+          resolved = true;
+        },
+        () => {},
+      );
 
       const holder = await firstWaitStartPromise; // 纯微任务同步点,不依赖假时钟
       expect(holder.pid).toBe(1);
       expect(waitHolderPid).toBe(1);
       expect(waitStartCalls).toBe(1);
-
-      async function stepAndFlush(ms: number): Promise<void> {
-        await vi.advanceTimersByTimeAsync(ms);
-        // 真实 setTimeout(0) 排宏任务,给真实 fs I/O 的线程池完成回调机会真正落地;多轮小
-        // 步比一次性大延时更快、也更贴近"刚好够用"的量。
-        for (let i = 0; i < 10; i += 1) {
-          await realDelay(5);
-        }
-      }
 
       // 第一步推进 25s:仍在 30s 阈值内,应继续等待,onWaitStart 不重复触发
       await stepAndFlush(pollIntervalMs);
@@ -334,7 +354,7 @@ describe("acquireCaseLock: 等待路径", () => {
       expect(waitStartCalls).toBe(1);
 
       // 第二步再推进 25s(累计 50s,越过 30s 阈值):应该取得并标记为接管
-      await stepAndFlush(pollIntervalMs);
+      await stepUntil(pollIntervalMs, () => resolved);
       expect(resolved).toBe(true);
 
       const result = await resultPromise;
@@ -425,12 +445,14 @@ describe("acquireCaseLock / claim.release: 释放", () => {
 });
 
 describe("acquireCaseLock / claim.release: 释放与在飞心跳的竞态", () => {
-  it("回归 memory/lock-heartbeat-resurrects-released-lock.md:释放时若有一次心跳已读完记录、还没写回,写回不会把已删的锁文件复活", async () => {
+  it(
+    "回归 memory/lock-heartbeat-resurrects-released-lock.md:释放时若有一次心跳已读完记录、还没写回,写回不会把已删的锁文件复活",
+    async () => {
     // 心跳的「读—改—写」与 release() 的 `rm` 之间原本没有互斥:心跳读完记录、还没来得及
     // writeEntryFile 写回时,release() 先把文件 rm 掉,随后心跳的写回会把原路径重新创建
     // 出来。极短心跳周期(1ms)让每次释放大概率撞上一次在飞的心跳,配合真实定时器重复
     // 多轮,能稳定复现(台账记录:修复前 40 次释放 39 次复活)。这里断言修复后不管重复
-    // 多少轮,释放后锁目录始终为空。
+    // 多少轮,释放后锁目录始终为空。CI 并行时 40 轮真实 I/O 可能超过默认 5s。
     const root = await makeRoot();
     const niceevalRoot = join(root, ".niceeval");
 
@@ -448,7 +470,9 @@ describe("acquireCaseLock / claim.release: 释放与在飞心跳的竞态", () =
     }
 
     expect(await readdir(locksDirOf(niceevalRoot))).toEqual([]);
-  });
+  },
+  30_000,
+  );
 });
 
 describe("drainHeldCaseLocks / pendingHeldCaseLockCount", () => {

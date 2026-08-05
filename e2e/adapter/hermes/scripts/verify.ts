@@ -37,7 +37,7 @@ function latestAttemptLine(evalId: string): string {
 export async function runVerify(): Promise<void> {
   ensureDirs();
   console.log(`[verify] niceeval: ${sh("pnpm exec niceeval --version").trim()}`);
-  sh("pnpm --silent exec niceeval exp ci --force --json --junit junit.xml");
+  sh("pnpm --silent exec niceeval exp ci --rerun all --json --junit junit.xml");
   const junitXml = readFileSync("junit.xml", "utf8");
   assert.ok(!junitXml.includes("<failure") && !junitXml.includes("<error"), `JUnit 有 failure/error:\n${junitXml}`);
 

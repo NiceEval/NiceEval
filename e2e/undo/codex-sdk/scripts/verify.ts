@@ -30,10 +30,10 @@ export default async function runVerify(): Promise<void> {
   rmSync("logs", { recursive: true, force: true });
   mkdirSync("logs", { recursive: true });
 
-  // 用例一:跑实验,断言退出码。--force 保证真实新跑,--json 把 NDJSON 事件流打到 stdout
+  // 用例一:跑实验,断言退出码。--rerun all 保证真实新跑,--json 把 NDJSON 事件流打到 stdout
   // 供 e2e.ts 的故障分类解析结构化 error 事件(`--output` 已经从 CLI 整个删除),--junit 落
   // CI 出口;`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
-  const runLog = sh("pnpm --silent exec niceeval exp --force --json --junit junit.xml");
+  const runLog = sh("pnpm --silent exec niceeval exp --rerun all --json --junit junit.xml");
   writeFileSync("logs/exp-ci.log", runLog, "utf8");
 
   // 用例二:show 默认报告——应发现的 Eval 都实际运行了(少排用例不能全绿)。

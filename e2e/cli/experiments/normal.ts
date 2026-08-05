@@ -17,7 +17,7 @@ const agent = aiSdkAgent<ModelMessage>({
 });
 
 // 正常路径:两条正例(greet/、tool/ 两个 id 前缀),断言按 Eval 级折叠后整体退出 0。
-// 同时是缓存三步验收的基线实验——scripts/verify.ts 对它先 --force 再不带 --force 再 --force。
+// 同时是缓存三步验收的基线实验——scripts/verify.ts 对它先 --rerun all 再不带 --rerun all 再 --rerun all。
 export default defineExperiment({
   description: "normal:真实 Chat Completions 网关,问候 + 工具调用两条正例",
   agent,

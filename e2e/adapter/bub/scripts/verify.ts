@@ -6,7 +6,7 @@
 // 不递归扫 `.niceeval/`(README §4.2)。
 //
 // 验收顺序:
-//   1. 真实跑 ci 实验(--force),全部 Eval 通过(退出 0),同时把组合输出写进
+//   1. 真实跑 ci 实验(--rerun all),全部 Eval 通过(退出 0),同时把组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
 //   2. show 默认报告——四条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到每条 Eval 的 locator。
@@ -71,11 +71,11 @@ function latestAttemptLine(evalId: string): string {
 }
 
 function runExperiment(): void {
-  console.log("\n=== 1. run the ci experiment for real (--force) ===");
+  console.log("\n=== 1. run the ci experiment for real (--rerun all) ===");
   // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除),落进 CI_LOG 供
   // e2e.ts 的 infra/regression 分类解析结构化 error 事件;`pnpm --silent exec` 防止 pnpm 自己
   // 的 preamble 行混进 stdout 污染 NDJSON。
-  sh("pnpm --silent exec niceeval exp ci --force --json --junit junit.xml");
+  sh("pnpm --silent exec niceeval exp ci --rerun all --json --junit junit.xml");
   const junitXml = readFileSync("junit.xml", "utf8");
   assert.ok(
     !junitXml.includes("<failure") && !junitXml.includes("<error"),
@@ -164,7 +164,7 @@ function timingShowsRealPhaseTimeline(locators: Record<string, string>): void {
  */
 function legacyVersionLanePasses(): void {
   console.log("\n=== 6. legacy version lane: bub 0.3.9 + matching OTel plugin ===");
-  sh("pnpm --silent exec niceeval exp legacy coding-task --force --json --junit junit-legacy.xml");
+  sh("pnpm --silent exec niceeval exp legacy coding-task --rerun all --json --junit junit-legacy.xml");
   const junitXml = readFileSync("junit-legacy.xml", "utf8");
   assert.ok(
     !junitXml.includes("<failure") && !junitXml.includes("<error"),

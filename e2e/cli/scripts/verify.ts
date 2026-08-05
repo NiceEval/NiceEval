@@ -8,7 +8,7 @@
 //        给下一步命令);eval id 前缀收窄实际计划(--dry,零网络成本)。
 //   4-7. 退出码折叠——deliberate-fail(<failure>)、deliberate-error(<error>)、
 //        normal(真实 DeepSeek 调用,按 Eval 级折叠后退出 0)+ 一次 CLI 读回。
-//   8.   缓存三步——同一个 normal 实验先 --force 建基线,不带 --force 复用,再 --force 真新跑。
+//   8.   缓存三步——同一个 normal 实验先 --rerun all 建基线,不带 --rerun all 复用,再 --rerun all 真新跑。
 
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
@@ -110,7 +110,7 @@ function selectionExperimentUnmatched(): void {
 }
 
 // experiment 选择器本身命中(normal 存在),但尾随 eval id 前缀在该实验的 evals 里零命中——
-// 与上面「experiment 选择器零命中」是判然有别的另一条用法错误路径(No evals selected,见
+// 与上面「experiment 选择器零命中」是判然有别的另一条用法错误路径(No eval matched prefix,见
 // docs/feature/experiments/cli.md「实验选择器怎样解析」与 use-case/selector-narrowing.md
 // 「边界」)。--dry 零网络成本。
 function selectionEvalUnmatched(): void {
@@ -118,12 +118,12 @@ function selectionEvalUnmatched(): void {
   // 用法错误的输出契约不随形态改变,同一条理由不需要 --output;--dry 只是保留零网络成本。
   const out = sh("pnpm exec niceeval exp normal totally-bogus-eval-prefix-zzz --dry", "nonzero");
   assert.ok(
-    out.includes("No evals selected"),
-    `experiment 命中但 eval 前缀零命中时没有给出 "No evals selected"——用法错误的输出契约变了:\n${out.slice(-1000)}`,
+    out.includes("No eval matched prefix"),
+    `experiment 命中但 eval 前缀零命中时没有给出 "No eval matched prefix"——用法错误的输出契约变了:\n${out.slice(-1000)}`,
   );
   assert.ok(
-    out.includes("Run `niceeval exp"),
-    `"No evals selected" 没有给出下一步命令——cli.md 要求"错误信息给出下一步":\n${out.slice(-1000)}`,
+    out.includes("niceeval exp"),
+    `"No eval matched prefix" 没有给出下一步命令——cli.md 要求"错误信息给出下一步":\n${out.slice(-1000)}`,
   );
 }
 
@@ -237,7 +237,7 @@ function cliFlagAndDryContracts(): void {
 
 function exitCodeFoldingDeliberateFail(): void {
   console.log("\n=== 5. exit-code folding: deliberate-fail → failed, <failure> ===");
-  sh("pnpm exec niceeval exp deliberate-fail --force --junit junit/fail.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-fail --rerun all --junit junit/fail.xml", "nonzero");
   const failXml = readFileSync("junit/fail.xml", "utf8");
   assert.ok(
     failXml.includes("<failure"),
@@ -253,7 +253,7 @@ function exitCodeFoldingDeliberateFail(): void {
 
 function exitCodeFoldingDeliberateError(): void {
   console.log("\n=== 6. exit-code folding: deliberate-error → errored, <error> ===");
-  sh("pnpm exec niceeval exp deliberate-error --force --junit junit/error.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-error --rerun all --junit junit/error.xml", "nonzero");
   const errorXml = readFileSync("junit/error.xml", "utf8");
   assert.ok(
     errorXml.includes("<error"),
@@ -348,7 +348,7 @@ interface NormalBaseline {
 /** 正常路径全部通过(真实 DeepSeek 调用),同时建立缓存三步的基线计数。 */
 function exitCodeFoldingNormal(): NormalBaseline {
   console.log("\n=== 7. exit-code folding: normal (real DeepSeek calls) → passed, exit 0 ===");
-  sh("pnpm exec niceeval exp normal --force --junit junit/normal.xml");
+  sh("pnpm exec niceeval exp normal --rerun all --junit junit/normal.xml");
   const normalXml = readFileSync("junit/normal.xml", "utf8");
   assert.ok(
     !normalXml.includes("<failure") && !normalXml.includes("<error"),
@@ -393,10 +393,10 @@ function feedbackOutputFormats(): void {
   assert.match(human.stdout, /PASSED/);
   assert.doesNotMatch(human.stdout, /"event":"result"/, "human output must not silently switch to NDJSON");
 
-  // --force:上面两次调用已经复用了第 7 步缓存下的 passed 结果(全程 0 running),而全量
+  // --rerun all:上面两次调用已经复用了第 7 步缓存下的 passed 结果(全程 0 running),而全量
   // 命中缓存时刻意不画 dashboard(src/runner/feedback/human.ts 的「不画一块只有 0 running
   // 的 dashboard」)——这次调用需要真实在跑的 attempt,才有活的东西可断言。
-  const tty = shPty("pnpm --silent exec niceeval exp normal --force");
+  const tty = shPty("pnpm --silent exec niceeval exp normal --rerun all");
   assert.ok(tty.includes(ESC), "real PTY run did not emit dashboard cursor/control sequences");
   assert.match(tty, /[╭╮╰╯]/, "real PTY run did not render boxed dashboard panels");
   assert.match(tty, /PASSED/, "real PTY run did not reach the same passed completion state");
@@ -405,29 +405,29 @@ function feedbackOutputFormats(): void {
 
 function cacheThreeStep(baseline: NormalBaseline): void {
   console.log("\n=== 10. cache three-step dance ===");
-  const second = sh("pnpm exec niceeval exp normal"); // 不带 --force:复用
+  const second = sh("pnpm exec niceeval exp normal"); // 不带 --rerun all:复用
   assert.ok(second.includes("reused"), `第二次运行的摘要没有报告复用——缓存没生效:\n${second}`);
   assert.equal(
     attemptCount("greet/hello"),
     baseline.greet,
-    "不带 --force 对 greet/hello 产生了新 attempt——缓存复用没有生效",
+    "不带 --rerun all 对 greet/hello 产生了新 attempt——缓存复用没有生效",
   );
   assert.equal(
     attemptCount("tool/weather"),
     baseline.tool,
-    "不带 --force 对 tool/weather 产生了新 attempt——缓存复用没有生效",
+    "不带 --rerun all 对 tool/weather 产生了新 attempt——缓存复用没有生效",
   );
 
-  sh("pnpm exec niceeval exp normal --force"); // 再带 --force:真实新 attempt
+  sh("pnpm exec niceeval exp normal --rerun all"); // 再带 --rerun all:真实新 attempt
   assert.equal(
     attemptCount("greet/hello"),
     baseline.greet + 1,
-    "--force 没有对 greet/hello 产生新 attempt——强制重跑失效",
+    "--rerun all 没有对 greet/hello 产生新 attempt——强制重跑失效",
   );
   assert.equal(
     attemptCount("tool/weather"),
     baseline.tool + 1,
-    "--force 没有对 tool/weather 产生新 attempt——强制重跑失效",
+    "--rerun all 没有对 tool/weather 产生新 attempt——强制重跑失效",
   );
 }
 
@@ -446,7 +446,7 @@ export async function runVerify(): Promise<void> {
   const baseline = exitCodeFoldingNormal();
   cliReadBack(baseline.greetLine);
   feedbackOutputFormats();
-  // feedbackOutputFormats() 的 PTY smoke 调用带 --force(见其内部注释),所以 attempt 计数
+  // feedbackOutputFormats() 的 PTY smoke 调用带 --rerun all(见其内部注释),所以 attempt 计数
   // 基线要在它之后重新采样,不能沿用它之前的值。
   cacheThreeStep({
     greet: attemptCount("greet/hello"),

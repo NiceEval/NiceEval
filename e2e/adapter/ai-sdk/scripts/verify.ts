@@ -33,7 +33,7 @@ export async function runVerify(): Promise<void> {
   // <path>` file sinks are both gone from the CLI — see docs/feature/experiments/cli.md「机器
   // 怎么读:--json」); `pnpm --silent exec` keeps pnpm's own preamble line out of stdout so the
   // captured log stays valid NDJSON.
-  const runCmd = "pnpm --silent exec niceeval exp --force --json --junit junit.xml";
+  const runCmd = "pnpm --silent exec niceeval exp --rerun all --json --junit junit.xml";
   const res = spawnSync(runCmd, { shell: true, encoding: "utf8" });
   writeFileSync("logs/exp-ci.log", `${res.stdout}\n${res.stderr}`, "utf8");
   assert.equal(

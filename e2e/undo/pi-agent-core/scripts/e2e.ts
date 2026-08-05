@@ -6,7 +6,7 @@
 //   1. 打印实际解析到的 niceeval 版本/路径(诊断用,核验义务在编排器,见 README §3.2)。
 //   2. 清理上一次运行的 .niceeval/ 与 logs/。
 //   3. 起被测应用(src/server.ts 的真实 HTTP+SSE 服务),等 /healthz 就绪。
-//   4. 以 --force 跑 experiments/ci.ts,写 JUnit。
+//   4. 以 --rerun all 跑 experiments/ci.ts,写 JUnit。
 //   5. 跑 scripts/verify.ts 做 CLI 黑盒读回。
 //   6. 无论成败都停服务;按 verification.md 的规则把失败分类成 75(EX_TEMPFAIL,可确证的
 //      外部故障)或其它非零(回归)。
@@ -83,13 +83,13 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] app ready at http://127.0.0.1:${PORT}`);
 
-    console.log("[e2e] running: pnpm --silent exec niceeval exp ci --force --json --junit junit.xml");
+    console.log("[e2e] running: pnpm --silent exec niceeval exp ci --rerun all --json --junit junit.xml");
     const expLog = join(ROOT, "logs", "exp-ci.log");
     // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除);`--silent` 防止
     // pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
     const exp = spawnSync(
       "pnpm",
-      ["--silent", "exec", "niceeval", "exp", "ci", "--force", "--json", "--junit", "junit.xml"],
+      ["--silent", "exec", "niceeval", "exp", "ci", "--rerun", "all", "--json", "--junit", "junit.xml"],
       { cwd: ROOT, encoding: "utf8" },
     );
     writeFileSync(expLog, `${exp.stdout ?? ""}\n${exp.stderr ?? ""}`, "utf8");

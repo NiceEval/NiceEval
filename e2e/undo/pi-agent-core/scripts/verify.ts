@@ -1,6 +1,6 @@
 // CLI 黑盒验收(docs/engineering/testing/e2e/verification.md 的写法):只起 niceeval 子进程、
 // 断言退出码与 stdout,不 import niceeval 库代码,不递归扫 .niceeval/。假定
-// scripts/e2e.ts 已经用 --force 跑过 experiments/ci.ts,这里只做「新产出的结果读回」。
+// scripts/e2e.ts 已经用 --rerun all 跑过 experiments/ci.ts,这里只做「新产出的结果读回」。
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";

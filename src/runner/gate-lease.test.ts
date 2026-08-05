@@ -24,9 +24,32 @@ import {
 // 在任何测试调用 vi.useFakeTimers() 之前捕获真实的 setTimeout:vi.advanceTimersByTimeAsync 只
 // 推进假时钟触发到期的定时器回调,不等待回调里新发起的真实 fs I/O 真正 settle(踩坑同
 // lock.test.ts 顶部注释)。用真实 setTimeout 排一次宏任务放行真实 I/O。
+// CI 并行时 fs 线程池会饿,flush 要给够真实 wall-clock。
 const realSetTimeout = globalThis.setTimeout;
 function realDelay(ms: number): Promise<void> {
   return new Promise((resolve) => realSetTimeout(resolve, ms));
+}
+async function flushRealIo(rounds = 50, ms = 10): Promise<void> {
+  for (let i = 0; i < rounds; i += 1) {
+    await realDelay(ms);
+  }
+}
+async function stepAndFlush(advanceMs: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(advanceMs);
+  await flushRealIo();
+}
+async function stepUntil(
+  advanceMs: number,
+  predicate: () => boolean,
+  opts: { rounds?: number; ms?: number } = {},
+): Promise<void> {
+  await vi.advanceTimersByTimeAsync(advanceMs);
+  const rounds = opts.rounds ?? 100;
+  const ms = opts.ms ?? 20;
+  for (let i = 0; i < rounds; i += 1) {
+    if (predicate()) return;
+    await realDelay(ms);
+  }
 }
 
 const EXP = "compare/bub-e2b";
@@ -355,28 +378,25 @@ describe("acquireGateSlot: 等待路径", () => {
           },
         },
       );
-      resultPromise.then(() => {
-        resolved = true;
-      });
+      // 吞掉提前失败时的 reject,避免 afterEach 清目录后 in-flight 轮询变成 unhandled rejection。
+      resultPromise.then(
+        () => {
+          resolved = true;
+        },
+        () => {},
+      );
 
       const holders = await firstWaitStartPromise; // 纯微任务同步点,不依赖假时钟
       expect(holders).toHaveLength(1);
       expect(holders[0]!.pid).toBe(1);
       expect(waitStartCalls).toBe(1);
 
-      async function stepAndFlush(ms: number): Promise<void> {
-        await vi.advanceTimersByTimeAsync(ms);
-        for (let i = 0; i < 10; i += 1) {
-          await realDelay(5);
-        }
-      }
-
       await stepAndFlush(pollIntervalMs); // 累计 25s,仍在阈值内:继续等,onWaitStart 不重复触发
       expect(resolved).toBe(false);
       expect(waitStartCalls).toBe(1);
       expect(waitHolders).toHaveLength(1);
 
-      await stepAndFlush(pollIntervalMs); // 累计 50s,越过 30s 阈值:接管取位
+      await stepUntil(pollIntervalMs, () => resolved); // 累计 50s,越过 30s 阈值:接管取位
       expect(resolved).toBe(true);
 
       const result = await resultPromise;
@@ -486,12 +506,14 @@ describe("acquireGateSlot / claim.release: 释放", () => {
 });
 
 describe("acquireGateSlot / claim.release: 释放与在飞心跳的竞态", () => {
-  it("回归 memory/lock-heartbeat-resurrects-released-lock.md:释放时若有一次心跳已读完记录、还没写回,写回不会把已删的租约文件复活", async () => {
+  it(
+    "回归 memory/lock-heartbeat-resurrects-released-lock.md:释放时若有一次心跳已读完记录、还没写回,写回不会把已删的租约文件复活",
+    async () => {
     // 与用例锁(lock.ts)同一条竞态:心跳的「读—改—写」与 release() 的 `rm` 之间原本没有
     // 互斥。极短心跳周期(1ms)配合真实定时器重复多轮,让每轮释放大概率撞上一次在飞的
     // 心跳,能稳定复现(台账记录:修复前 40 次释放 39 次复活)。这里断言修复后不管重复
     // 多少轮,释放后租约目录始终为空。每轮用不同的 slot(经不同 experimentId)避免相邻
-    // 轮次互相抢位排队,纯粹考验单条持有者的释放-心跳竞态。
+    // 轮次互相抢位排队,纯粹考验单条持有者的释放-心跳竞态。CI 并行时 40 轮可能超过默认 5s。
     const root = await makeRoot();
 
     for (let i = 0; i < 40; i += 1) {
@@ -508,7 +530,9 @@ describe("acquireGateSlot / claim.release: 释放与在飞心跳的竞态", () =
     }
 
     expect(await leaseFileCount(root)).toBe(0);
-  });
+  },
+  30_000,
+  );
 });
 
 describe("drainHeldGateLeases / pendingHeldGateLeaseCount", () => {

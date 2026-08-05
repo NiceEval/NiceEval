@@ -8,7 +8,7 @@
 // 启动/健康检查/关闭属于 scripts/e2e.ts,这里只假设它已经在跑。
 //
 // 验收顺序:
-//   1. 真实跑全部 6 个 experiments(--force),全部通过(退出 0),组合输出写进
+//   1. 真实跑全部 6 个 experiments(--rerun all),全部通过(退出 0),组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
 //   2. show 默认报告——6 条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到 locator。
@@ -71,11 +71,11 @@ function latestAttemptLine(evalId: string): string {
 }
 
 function runExperiments(): void {
-  console.log("\n=== 1. run all 6 experiments for real (--force) ===");
+  console.log("\n=== 1. run all 6 experiments for real (--rerun all) ===");
   // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除),落进 CI_LOG 供
   // e2e.ts 的 isInfraFailure() 解析结构化 error 事件;`pnpm --silent exec` 防止 pnpm 自己的
   // preamble 行混进 stdout 污染 NDJSON。
-  sh("pnpm --silent exec niceeval exp --force --json --junit junit.xml");
+  sh("pnpm --silent exec niceeval exp --rerun all --json --junit junit.xml");
   const junitXml = readFileSync("junit.xml", "utf8");
   assert.ok(
     !junitXml.includes("<failure") && !junitXml.includes("<error"),
