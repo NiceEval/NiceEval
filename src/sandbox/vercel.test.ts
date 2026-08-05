@@ -3,7 +3,7 @@
 // download-directory.test.ts;这里只证明 vercel provider 自己的接线,不重新验证模板本身的
 // ignore/剥离/写盘逻辑)。fake `vsb.runCommand` / `vsb.readFileToBuffer`,不连真实 Vercel
 // API——真实 Vercel Sandbox 行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,7 @@ import { VercelSandbox } from "./vercel.ts";
 
 let roots: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(roots.map((r) => rm(r, { recursive: true, force: true })));
   roots = [];
 });
@@ -124,6 +125,8 @@ describe("VercelSandbox.runCommand · 执行身份", () => {
 // cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
 // 寿命只从当前 session 的远端元数据读(createdAt + timeout),续期走 SDK 的 extendTimeout;
 // plan 上限拒绝续期时如实报 ready:false,不把请求值当成已生效(见 vercel.ts 的注释)。
+// remainingMs = createdAt + timeout - Date.now();CI 并行下 wall clock 在 before/after 两次
+// 读数之间只要前进就会把刚好够的续期压到 ready:false——用假时钟固定 Date.now。
 describe("VercelSandbox.ensureLifetime", () => {
   function sessionFake(opts: { timeout: number; createdAtOffsetMs?: number; extend?: (ms: number) => void }) {
     const session = { createdAt: new Date(Date.now() - (opts.createdAtOffsetMs ?? 0)), timeout: opts.timeout };
@@ -138,6 +141,8 @@ describe("VercelSandbox.ensureLifetime", () => {
   }
 
   it("当前 session 的远端剩余时间够时直接确认,不调 extendTimeout", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     let extended = 0;
     const sandbox = makeSandbox(sessionFake({ timeout: 1_200_000, extend: () => (extended += 1) }));
 
@@ -148,7 +153,10 @@ describe("VercelSandbox.ensureLifetime", () => {
   });
 
   it("剩余不够时按缺口续期,续到够就确认", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const asked: number[] = [];
+    // timeout 10min,已活 9min → 剩余 1min;要 2min → 按缺口续 1min。
     const sandbox = makeSandbox(
       sessionFake({ timeout: 600_000, createdAtOffsetMs: 540_000, extend: (ms) => asked.push(ms) }),
     );
@@ -156,11 +164,12 @@ describe("VercelSandbox.ensureLifetime", () => {
     const result = await sandbox.ensureLifetime(120_000);
 
     expect(result.ready).toBe(true);
-    expect(asked).toHaveLength(1);
-    expect(asked[0]).toBeGreaterThan(0);
+    expect(asked).toEqual([60_000]);
   });
 
   it("plan 拒绝续期(HTTP 400)时报 ready:false 并带上 provider 理由", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const sandbox = makeSandbox(sessionFake({ timeout: 600_000, createdAtOffsetMs: 590_000 }));
 
     const result = await sandbox.ensureLifetime(1_800_000);
