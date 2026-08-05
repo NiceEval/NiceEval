@@ -110,6 +110,41 @@
 .niceeval-report .niceeval-series-c5 { --series: var(--c5); }
 .niceeval-report .niceeval-series-none { --series: var(--muted); }
 
+/*
+ * HTML 横向柱的 variant 填充图案(CSS 等效 SVG <pattern>)。
+ * variant 1 = 实心(默认 .niceeval-chart-bar-fill);2 对角斜线 / 3 水平条纹 / 4 点阵。
+ * 颜色始终读 --series,换主题令牌自动换色,不写死 hex。
+ */
+.niceeval-report .niceeval-series-fill-v2 {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--series) 78%, var(--panel)),
+    color-mix(in srgb, var(--series) 78%, var(--panel)) 2px,
+    color-mix(in srgb, var(--series) 28%, var(--panel)) 2px,
+    color-mix(in srgb, var(--series) 28%, var(--panel)) 5px
+  );
+}
+.niceeval-report .niceeval-series-fill-v3 {
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--series) 78%, var(--panel)),
+    color-mix(in srgb, var(--series) 78%, var(--panel)) 2px,
+    color-mix(in srgb, var(--series) 28%, var(--panel)) 2px,
+    color-mix(in srgb, var(--series) 28%, var(--panel)) 5px
+  );
+}
+.niceeval-report .niceeval-series-fill-v4 {
+  background-color: color-mix(in srgb, var(--series) 28%, var(--panel));
+  background-image: radial-gradient(
+    circle at 25% 25%,
+    color-mix(in srgb, var(--series) 88%, var(--panel)) 1.2px,
+    transparent 1.3px
+  );
+  background-size: 6px 6px;
+}
+
 /* ---- 表格通用:圆角 panel、细分隔线、tabular-nums 数字、uppercase 小标签 ---- */
 table.niceeval-report,
 .niceeval-report table {
@@ -1183,12 +1218,19 @@ table.niceeval-report,
   align-items: center;
   gap: 5px;
 }
-.niceeval-chart .niceeval-chart-legend-item::before {
-  content: "";
-  width: 6px;
-  height: 6px;
+/* 图例色块由 renderer 显式输出(含 variant 图案 / 线型 / marker),不再用 ::before 单色方块。 */
+.niceeval-chart .niceeval-chart-legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
   border-radius: var(--radius);
-  background: var(--series);
+  background: color-mix(in srgb, var(--series) 74%, var(--panel));
+}
+.niceeval-chart .niceeval-chart-legend-swatch-svg {
+  display: block;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 .niceeval-chart .niceeval-chart-missing {
   max-width: 880px;

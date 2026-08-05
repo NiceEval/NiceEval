@@ -136,8 +136,9 @@ export interface WebContext {
   /** chrome 文案的 locale;官方组件渲染面经上下文读取,宿主外默认 "en"。 */
   locale: ReportLocale;
   /**
-   * 取本组件 `dimensions()` 声明的某个句柄在这一页的呈现面(含 `seriesSlot` / 色板下标 /
-   * 形状变体)。查别的组件的句柄或没声明的句柄抛 `UndeclaredDimensionValueError`。
+   * 取本组件 `dimensions()` 声明的某个句柄在这一页的呈现面(label / color / series 的
+   * fill·stroke·marker 等可直接使用的值)。查别的组件的句柄或没声明的句柄抛
+   * `UndeclaredDimensionValueError`。
    */
   dimension(handle: string): PresentedDimension;
 }
@@ -203,6 +204,8 @@ export type ReportComponent<P extends object> = ((props: P) => ReactNode) & {
  */
 export interface PageDimensions {
   dimension(props: object, handle: string): PresentedDimension;
+  /** 维度 name → 值 → seriesSlot；测试与调试观察槽位分配，组件渲染不读槽号。 */
+  readonly slotsByDimension: ReadonlyMap<string, ReadonlyMap<string, number>>;
 }
 
 /** 渲染上下文上挂当前页分配结果的内部键;不是契约字段,只在宿主与渲染遍历之间传递。 */
@@ -331,6 +334,7 @@ export function collectPageDimensions(
 
   const plan = allocatePageDimensions(handles, pins, { face });
   return {
+    slotsByDimension: plan.slotsByDimension,
     dimension(props: object, handle: string): PresentedDimension {
       const entry = byProps.get(props);
       const key = entry?.keys.get(handle);

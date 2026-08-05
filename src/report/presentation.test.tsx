@@ -2,9 +2,9 @@
 // 页级呈现分配(两个 keyset、槽位分配、容量拒绝)、`dimensions` 必填与查询封闭性、text 面
 // 降级、外壳 `dimensionPins` 的占位语义,以及公开 helper `presentDimension` 与页内分配同源。
 //
-// 断言面是映射本身(值 → 标签 / seriesSlot / 色板下标 / 形状变体)与抛出的错误对象,不断言
-// 渲染出的颜色值;需要证明「两个 renderer 都跑到」时才走 renderReportToText /
-// renderReportToStaticHtml,断言的仍是探针组件打印出的映射文本。
+// 断言面是映射本身(值 → 标签 / seriesSlot / 色板通道 / 可直接使用的 fill·stroke·marker)与
+// 抛出的错误对象,不断言渲染出的像素色;需要证明「两个 renderer 都跑到」时才走
+// renderReportToText / renderReportToStaticHtml,断言的仍是探针组件打印出的映射文本。
 
 import { describe, expect, it } from "vitest";
 
@@ -24,14 +24,17 @@ import {
   VISUAL_SLOT_COUNT,
   type DimensionEncoding,
   type DimensionPins,
+  type DimensionPresentation,
   type PresentedDimension,
 } from "./presentation.ts";
+import { seriesFill, seriesStrokeDasharray } from "./assets/series-encoding.tsx";
 import { renderReportToText } from "./runtime/text.ts";
 import { renderReportToStaticHtml } from "./runtime/web.ts";
 
 // ───────────────────────── 探针组件 ─────────────────────────
 
 const SERIES: DimensionEncoding = { kind: "series", mark: "line" };
+const FILL: DimensionEncoding = { kind: "series", mark: "bar" };
 const LABEL_ONLY: DimensionEncoding = { kind: "label" };
 
 interface ProbeProps {
@@ -44,12 +47,59 @@ interface ProbeProps {
   query?: string;
 }
 
+/** 从呈现值还原槽位通道,便于探针打印与槽位断言同源。 */
+function channelsOf(at: DimensionPresentation): { colorIndex: string; variant: string; detail: string } {
+  if (at.kind === "label") return { colorIndex: "-", variant: "-", detail: "label" };
+  if (at.kind === "color") {
+    const m = /^var\(--niceeval-color-series-([1-6])\)$/.exec(at.color);
+    return { colorIndex: m?.[1] ?? "?", variant: "1", detail: at.color };
+  }
+  if (at.kind === "series" && at.mark === "line") {
+    // 反查 24 槽里哪个 (color, variant) 产出这份 stroke + dash
+    for (let slot = 1; slot <= VISUAL_SLOT_COUNT; slot++) {
+      const ch = seriesChannelsOf(slot);
+      if (
+        at.stroke === `var(--niceeval-color-series-${ch.colorIndex})` &&
+        at.strokeDasharray === seriesStrokeDasharray(ch.variant)
+      ) {
+        return { colorIndex: String(ch.colorIndex), variant: String(ch.variant), detail: at.strokeDasharray || "solid" };
+      }
+    }
+    return { colorIndex: "?", variant: "?", detail: at.stroke };
+  }
+  if (at.kind === "series" && (at.mark === "bar" || at.mark === "area")) {
+    for (let slot = 1; slot <= VISUAL_SLOT_COUNT; slot++) {
+      const ch = seriesChannelsOf(slot);
+      if (at.fill === seriesFill(ch.colorIndex, ch.variant)) {
+        return { colorIndex: String(ch.colorIndex), variant: String(ch.variant), detail: at.fill };
+      }
+    }
+    return { colorIndex: "?", variant: "?", detail: at.fill };
+  }
+  if (at.kind === "series" && at.mark === "scatter") {
+    for (let slot = 1; slot <= VISUAL_SLOT_COUNT; slot++) {
+      const ch = seriesChannelsOf(slot);
+      if (at.marker.fill === `var(--niceeval-color-series-${ch.colorIndex})`) {
+        // scatter 同色四 variant 靠 path 区分;用 path 末段粗判
+        return { colorIndex: String(ch.colorIndex), variant: String(ch.variant), detail: at.marker.path.slice(0, 12) };
+      }
+    }
+  }
+  return { colorIndex: "?", variant: "?", detail: "?" };
+}
+
 /** `值|标签|槽|色板下标|形状变体`,槽面缺席时打 `-`——两个 renderer 打同一行,好逐字比。 */
-function probeLine(props: ProbeProps, presented: PresentedDimension): string {
+function probeLine(
+  props: ProbeProps,
+  presented: PresentedDimension,
+  slots?: ReadonlyMap<string, number>,
+): string {
   return props.values
-    .map((_value, index) => {
+    .map((value, index) => {
       const at = presented.at(index);
-      return `${at.value}|${at.label}|${at.seriesSlot ?? "-"}|${at.colorIndex ?? "-"}|${at.variant ?? "-"}`;
+      const slot = slots?.get(value);
+      const ch = channelsOf(at);
+      return `${at.value}|${at.label}|${slot ?? "-"}|${ch.colorIndex}|${ch.variant}`;
     })
     .join(";");
 }
@@ -63,7 +113,26 @@ const Probe = defineComponent<ProbeProps>({
     },
   }),
   text: (props, ctx) => probeLine(props, ctx.dimension(props.query ?? props.handle ?? "keys")),
-  web: (props, ctx) => <span data-probe={probeLine(props, ctx.dimension(props.query ?? props.handle ?? "keys"))} />,
+  web: (props, ctx) => {
+    // web 探针从页级 plan 拿槽位,呈现值本身不再暴露 seriesSlot。
+    const presented = ctx.dimension(props.query ?? props.handle ?? "keys");
+    // slots 只能从 at 反推的 color/variant 对不上唯一槽时(多值同通道不该发生)——
+    // 这里用 channels 反查唯一槽:24 组 (color,variant) 两两不同。
+    const slots = new Map<string, number>();
+    props.values.forEach((value, index) => {
+      const at = presented.at(index);
+      if (at.kind === "label") return;
+      for (let slot = 1; slot <= VISUAL_SLOT_COUNT; slot++) {
+        const ch = seriesChannelsOf(slot);
+        const recovered = channelsOf(at);
+        if (recovered.colorIndex === String(ch.colorIndex) && recovered.variant === String(ch.variant)) {
+          slots.set(value, slot);
+          break;
+        }
+      }
+    });
+    return <span data-probe={probeLine(props, presented, slots)} />;
+  },
 });
 Probe.displayName = "Probe";
 
@@ -75,12 +144,12 @@ function elementOf(node: unknown): ReportElement {
 function slotsOf(node: ReportNode, element: ReportElement, pins: DimensionPins = {}): Map<string, number> {
   const plan = collectPageDimensions(node, pins, "web");
   const props = element.props as unknown as ProbeProps;
-  const presented = plan.dimension(element.props, props.handle ?? "keys");
+  const byValue = plan.slotsByDimension.get(props.dimension) ?? new Map();
   const out = new Map<string, number>();
-  props.values.forEach((value, index) => {
-    const slot = presented.at(index).seriesSlot;
+  for (const value of props.values) {
+    const slot = byValue.get(value);
     if (slot !== undefined) out.set(value, slot);
-  });
+  }
   return out;
 }
 
@@ -95,11 +164,11 @@ describe("页级呈现分配", () => {
     const plan = collectPageDimensions([table, chart], {}, "web");
 
     const tableKeys = plan.dimension(table.props, "keys");
-    expect(tableKeys.at(0)).toEqual({ value: "alpha", label: "alpha" });
-    expect(tableKeys.at(1).seriesSlot).toBeUndefined();
+    expect(tableKeys.at(0)).toEqual({ kind: "label", value: "alpha", label: "alpha" });
+    expect(tableKeys.at(1).kind).toBe("label");
 
     const chartKeys = plan.dimension(chart.props, "keys");
-    expect(chartKeys.at(0).seriesSlot).toBeGreaterThanOrEqual(1);
+    expect(chartKeys.at(0).kind).toBe("series");
     // label keyset 收了三个值,visual keyset 只有 gamma —— 标签面两组都在
     expect([...chartKeys.labels.keys()].sort()).toEqual(["alpha", "beta", "gamma"]);
   });
@@ -116,11 +185,12 @@ describe("页级呈现分配", () => {
     const chart = elementOf(<Probe dimension="agent" values={chartValues} />);
     const plan = collectPageDimensions([table, chart], {}, "web");
     const chartKeys = plan.dimension(chart.props, "keys");
+    const slots = plan.slotsByDimension.get("agent")!;
 
     // visual keyset 只有 3 个成员:容量按 3 算,不按 30 算
-    const slots = chartValues.map((_v, i) => chartKeys.at(i).seriesSlot!);
-    expect(new Set(slots).size).toBe(3);
-    expect(slots.every((slot) => slot >= 1 && slot <= VISUAL_SLOT_COUNT)).toBe(true);
+    const slotList = chartValues.map((v) => slots.get(v)!);
+    expect(new Set(slotList).size).toBe(3);
+    expect(slotList.every((slot) => slot >= 1 && slot <= VISUAL_SLOT_COUNT)).toBe(true);
 
     // label keyset 是 30 个值:one / two / three 三处重名,标签被逼长到两段
     expect(chartValues.map((_v, i) => chartKeys.at(i).label)).toEqual(["alpha/one", "beta/two", "gamma/three"]);
@@ -132,13 +202,16 @@ describe("页级呈现分配", () => {
     const chart = elementOf(<Probe dimension="agent" values={["acme/codex", "acme/claude"]} />);
     const legend = elementOf(<Probe dimension="agent" handle="legend" values={["acme/claude"]} />);
     const plan = collectPageDimensions([chart, legend], {}, "web");
+    const slots = plan.slotsByDimension.get("agent")!;
 
+    expect(slots.get("acme/claude")).toBe(slots.get("acme/claude"));
     const fromChart = plan.dimension(chart.props, "keys").at(1);
     const fromLegend = plan.dimension(legend.props, "legend").at(0);
-    expect(fromLegend.seriesSlot).toBe(fromChart.seriesSlot);
     expect(fromLegend.label).toBe("claude");
     // 取键用完整值:缩短后的 "claude" 不是另一个身份
     expect(fromLegend.value).toBe("acme/claude");
+    // 两处呈现同一视觉身份(stroke 相等)
+    expect(fromLegend).toEqual(fromChart);
   });
 
   it("24 个值全部落槽且两两不同,24 个 (色, variant) 组合也两两不同", () => {
@@ -158,6 +231,19 @@ describe("页级呈现分配", () => {
     expect(channels.size).toBe(VISUAL_SLOT_COUNT);
   });
 
+  it("槽序表:1–6 第一变体、7–12 第二变体,与 docs 一致", () => {
+    expect(seriesChannelsOf(1)).toEqual({ colorIndex: 1, variant: 1 });
+    expect(seriesChannelsOf(6)).toEqual({ colorIndex: 6, variant: 1 });
+    expect(seriesChannelsOf(7)).toEqual({ colorIndex: 1, variant: 2 });
+    expect(seriesChannelsOf(14)).toEqual({ colorIndex: 2, variant: 3 });
+    expect(seriesChannelsOf(20)).toEqual({ colorIndex: 2, variant: 4 });
+    // baseline/obelisk 撞色根因:同 colorIndex 不同 variant,fill 必须可辨
+    expect(seriesFill(2, 1)).toBe("var(--niceeval-color-series-2)");
+    expect(seriesFill(2, 3)).toBe("url(#niceeval-series-pat-v3-c2)");
+    expect(seriesFill(2, 4)).toBe("url(#niceeval-series-pat-v4-c2)");
+    expect(seriesFill(2, 3)).not.toBe(seriesFill(2, 4));
+  });
+
   it("visual keyset 超过 24 按完整用户反馈拒绝该页,fix 行不提 dimensionPins", () => {
     const values = Array.from({ length: 27 }, (_, i) => `agent-${i}`);
     const chart = elementOf(<Probe dimension="agent" values={values} />);
@@ -171,6 +257,40 @@ describe("页级呈现分配", () => {
     expect(message).toContain('dimension "agent" has 27 series, but the built-in encoding supports 24');
     expect(message).toContain("fix: filter the series, or split them into facets/pages");
     expect(message).not.toContain("dimensionPins");
+  });
+
+  it("FillSeriesPresentation 按 mark 产出可直接用的 fill(含 pattern url)", () => {
+    const chart = elementOf(
+      <Probe dimension="memory" encoding={FILL} values={["baseline", "obelisk"]} />,
+    );
+    const plan = collectPageDimensions(chart, {}, "web");
+    const presented = plan.dimension(chart.props, "keys");
+    const slots = plan.slotsByDimension.get("memory")!;
+    // 复现真实撞色对:同页散列后 baseline=14 / obelisk=20 时 color 同 variant 不同
+    for (const value of ["baseline", "obelisk"] as const) {
+      // 不强钉槽位,只断言呈现是 fill 支且 fill 可区分
+      const at = presented.at(["baseline", "obelisk"].indexOf(value));
+      expect(at.kind).toBe("series");
+      if (at.kind === "series" && (at.mark === "bar" || at.mark === "area")) {
+        expect(at.fill.startsWith("var(") || at.fill.startsWith("url(#niceeval-series-pat-")).toBe(true);
+        expect(at.stroke).toMatch(/^var\(--niceeval-color-series-[1-6]\)$/);
+      }
+    }
+    // 若两值恰好同色不同 variant,fill 字符串必须不同
+    const a = presented.at(0);
+    const b = presented.at(1);
+    if (
+      a.kind === "series" &&
+      b.kind === "series" &&
+      (a.mark === "bar" || a.mark === "area") &&
+      (b.mark === "bar" || b.mark === "area")
+    ) {
+      const sa = slots.get("baseline")!;
+      const sb = slots.get("obelisk")!;
+      if (seriesChannelsOf(sa).colorIndex === seriesChannelsOf(sb).colorIndex) {
+        expect(a.fill).not.toBe(b.fill);
+      }
+    }
   });
 });
 
@@ -307,8 +427,48 @@ describe("presentDimension", () => {
     const chart = elementOf(<Probe dimension="agent" values={values} />);
     const inPage = slotsOf(chart, chart);
     const standalone = presentDimension({ dimension: "agent", encoding: SERIES, values });
+    // standalone 没有暴露 seriesSlot,用 stroke/dash 与页内对照
     for (const [index, value] of values.entries()) {
-      expect(standalone.at(index).seriesSlot).toBe(inPage.get(value));
+      const pageSlot = inPage.get(value)!;
+      const at = standalone.at(index);
+      expect(at.kind).toBe("series");
+      if (at.kind === "series" && at.mark === "line") {
+        const ch = seriesChannelsOf(pageSlot);
+        expect(at.stroke).toBe(`var(--niceeval-color-series-${ch.colorIndex})`);
+        expect(at.strokeDasharray).toBe(seriesStrokeDasharray(ch.variant));
+      }
     }
+  });
+});
+
+// ───────────────────────── MemoryBench 可辨性自检 ─────────────────────────
+
+describe("MemoryBench leaderboard 五条件可辨", () => {
+  it("memory 五值拿到两两可辨的 fill 身份(baseline 与 obelisk 同色不同 variant)", () => {
+    const values = ["baseline", "mempal", "nowledge", "obelisk", "remem"] as const;
+    const chart = elementOf(<Probe dimension="memory" encoding={FILL} values={values} />);
+    const slots = slotsOf(chart, chart);
+    const presented = presentDimension({
+      dimension: "memory",
+      encoding: { kind: "series", mark: "bar" },
+      values,
+    });
+    const fills = new Map<string, string>();
+    for (const [index, value] of values.entries()) {
+      const at = presented.at(index);
+      expect(at.kind).toBe("series");
+      if (at.kind === "series" && at.mark === "bar") {
+        fills.set(value, at.fill);
+      }
+    }
+    // 五个 fill 两两不同
+    expect(new Set(fills.values()).size).toBe(5);
+    // 与截图复算一致:baseline slot 14 → c2 v3 pattern;obelisk slot 20 → c2 v4 pattern
+    expect(slots.get("baseline")).toBe(14);
+    expect(slots.get("obelisk")).toBe(20);
+    expect(seriesChannelsOf(14)).toEqual({ colorIndex: 2, variant: 3 });
+    expect(seriesChannelsOf(20)).toEqual({ colorIndex: 2, variant: 4 });
+    expect(fills.get("baseline")).toBe("url(#niceeval-series-pat-v3-c2)");
+    expect(fills.get("obelisk")).toBe("url(#niceeval-series-pat-v4-c2)");
   });
 });

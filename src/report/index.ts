@@ -69,7 +69,17 @@ export {
   toTraceNodes,
 } from "./model/conversions.ts";
 export { presentDimension, shortestUniqueLabels } from "./presentation.ts";
-export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "./presentation.ts";
+export type {
+  ColorPresentation,
+  DimensionDeclaration,
+  DimensionEncoding,
+  DimensionPresentation,
+  FillSeriesPresentation,
+  LabelPresentation,
+  LineSeriesPresentation,
+  PresentedDimension,
+  ScatterSeriesPresentation,
+} from "./presentation.ts";
 export { flag, label, numericFlag, numericLabel, numericRunConfig, runConfig } from "./model/flag.ts";
 export { evaluationKindComposition } from "./model/evaluation-kind.ts";
 

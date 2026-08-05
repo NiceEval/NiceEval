@@ -74,7 +74,17 @@ export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/
 // 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):自有 React 页面与报告面同实现。
 export { formatAxisTick, formatInstant, formatMetricValue, formatTimeDistance, missingText } from "../model/format.ts";
 export { presentDimension, shortestUniqueLabels } from "../presentation.ts";
-export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "../presentation.ts";
+export type {
+  ColorPresentation,
+  DimensionDeclaration,
+  DimensionEncoding,
+  DimensionPresentation,
+  FillSeriesPresentation,
+  LabelPresentation,
+  LineSeriesPresentation,
+  PresentedDimension,
+  ScatterSeriesPresentation,
+} from "../presentation.ts";
 
 // locale(官方组件 chrome 文案的语言;LocalizedText 的按 locale 解析也用它)
 export {

@@ -88,7 +88,10 @@ const scope = reportScopeFixture({
 - **MetricValue 与缺数据**：字段构成与序列化不丢值；`validateContent` 递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛TypeError；缺 artifact 时返回 null 不猜值。
 - **动态行的解析入口**（[编译期作者契约 · 动态数据](../../../feature/compile-time-contracts/library.md#动态数据经过独立解析函数)）：`parseEvidenceRow` / `parseEvidenceRows` 对 `unknown` 完成 `evidenceRow()` 在类型层完成的同一条证明——至少一个 MetricValue 字段、其余字段是维度可用的标量，失败消息点名字段。
   区分力场景是「只有维度字段的行」与「MetricValue 结构不完整的行」各自报出自己的字段名,不折成同一句。
-- **报告作者静态契约**（[编译期作者契约](../../../feature/compile-time-contracts/README.md)）：由 `pnpm run typecheck` 运行带 `@ts-expect-error` 的 fixture。普通页与参数化页 union 保住 Params / Input，参数化页缺 `load` 或保留导航、`aggregate()` 的重名 / `refs` 键、只有维度的 `evidenceRow()`、图表的错误字段 / `refs` / 不可排序字段都不能编译；`ReportDefinition` 与 `ThemeDefinition` 只能由各自 factory 构造。
+- **报告作者静态契约**（[编译期作者契约](../../../feature/compile-time-contracts/README.md)）：由 `pnpm run typecheck` 运行带 `@ts-expect-error` 的 fixture。
+  普通页与参数化页 union 保住 Params / Input。
+  参数化页缺 `load` 或保留导航、`aggregate()` 的重名 / `refs` 键、只有维度的 `evidenceRow()`、图表的错误字段 / `refs` / 不可排序字段都不能编译。
+  `ReportDefinition` 与 `ThemeDefinition` 只能由各自 factory 构造。
   动态 config 值跨 source → dist host 边界时不靠类型断言：host 用 factory predicate 重新证明品牌，伪造对象必须得到完整用户反馈。
 - **站点组件与内建报告**：
   - `standard` / `failures` / `stability` 的构成与具名导出同引用；各一张导航页，pages 里的详情页与 `standardAttemptPage` 同引用。
@@ -206,8 +209,11 @@ const scope = reportScopeFixture({
 - **对照矩阵的时效与过期结论参考** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
   逐项覆盖：
 
-  - `DeltaCell.historical` 为 true 时带 `staleSinceMs`（同一格内折叠多条历史执行时取最旧一条的距今毫秒数），text 面经 `formatTimeDistance` 投影出相对时距，不再是布尔叠加 `↩` 符号。
-  - 缺席格（该条件下这道题没有 attempt）带过期结论参考时，`DeltaData.rows[i].references[condition]` 给出那次判定的判定符、locator 与相对时距；参考取该题 `historyAttempts` 里与该 experiment 当前基准 configHash 不可比的最近一条判定，候选多于一条时取最新那条，口径与 experiment-table 两档占位行一致。CLI text 面在该格落 `—` 后接参考的判定符与时距（compare.md 的 `— ✓ 12d` 形态）；逐字节对齐该行其余空白列不在断言面里，只断言这三个信息片段都出现且顺序正确。
+  - `DeltaCell.historical` 为 true 时带 `staleSinceMs`（同一格内折叠多条历史执行时取最旧一条的距今毫秒数），text 面经 `formatTimeDistance` 投影出相对时距，形态是时距文案而不是布尔叠加 `↩` 符号。
+  - 缺席格（该条件下这道题没有 attempt）带过期结论参考时，`DeltaData.rows[i].references[condition]` 给出那次判定的判定符、locator 与相对时距。
+    参考取该题 `historyAttempts` 里与该 experiment 当前基准 configHash 不可比的最近一条判定；候选多于一条时取最新那条，口径与 experiment-table 两档占位行一致。
+    CLI text 面在该格落 `—` 后接参考的判定符与时距（compare.md 的 `— ✓ 12d` 形态）。
+    逐字节对齐该行其余空白列不在断言面里，只断言这三个信息片段都出现且顺序正确。
   - 参考不进 `汇总`、`Δ` 与配对覆盖三处聚合的任何一个数。区分力场景是「参考侧有更优判定」——把参考计入聚合的错误实现会在汇总格露馅（汇总的通过数/分母、`Δ` 与共同题计数都必须与没有这条参考时逐字相同）。
   - `--usage` 对照矩阵与 `renderCompareSlice` 的 text 输出不出现 `↩`；historical 格与缺席参考格的信息片段（判定符、时距、tokens、成本）经 `formatMetricValue`/`formatTimeDistance` 正确格式化，不落原始数字字符串。
 - **`formatInstant` 的读法与回落** （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：断言面是函数返回值。
@@ -275,7 +281,13 @@ const scope = reportScopeFixture({
   - 区分力场景是「同页一张 27 值的 label-only 表加一张 3 值的图」：三个值仍落 1–3 槽，而它们的标签按 27 值的 keyset 算最短唯一后缀。
   - 同一键在同页多个组件得到同一个槽；撞槽按显示键字典序线性探测；缩短后的显示名不参与取键。
   - 24 槽序列的 `(色, variant)` 两两不同。
+  - 槽序表对齐 [视觉编码容量](../../../feature/reports/components/README.md#视觉编码容量24-个身份)：1–6 第一变体、7–12 第二变体。
+  - `variant = floor((slot-1)/6) + 1`。
   - visual keyset 超过 24 按完整用户反馈拒绝该页，且 fix 行不提 `dimensionPins`。
+  - `ctx.dimension().at()` 返回 [呈现家族](../../../feature/reports/library/presentation.md#实验颜色与维度呈现)的 `label` / `color` / `series` 值。
+  - 呈现值可直接作 fill / stroke / marker；不暴露 `colorIndex` 与 `seriesSlot`。
+  - 同色不同 variant 的 fill 字符串两两不同。
+  - 区分力场景是 MemoryBench leaderboard 五个 `memory` 值：baseline 与 obelisk 同色不同 variant，五个 fill 两两可辨。
 
 - **`dimensions` 必填与查询封闭性**：缺 `dimensions` 的组件定义按完整用户反馈拒绝， `dimensions: () => ({})` 合法。
    renderer 查询未声明的句柄、越界下标或与声明编码不符的用法，抛 `UndeclaredDimensionValueError`，不临时分配。
@@ -287,6 +299,7 @@ const scope = reportScopeFixture({
 
 - **公开呈现 helper**：`shortestUniqueLabels` 与 `presentDimension` 从 `niceeval/report` 顶层导出，并与内部定义同一引用。
    `presentDimension(declaration)` 与报告树内 `ctx.dimension(handle)` 对同一份声明返回相同槽位。
+  对照面是 stroke / fill 通道；呈现值本身不带槽号。
 
 - **公开 `to*` 转换**（[Library · 实体转换](../../../feature/reports/library.md)）：顶层导出含 `toExperimentRows`、`toEvalRows`、`toAttemptRows`、`toSampleNotices`、`toTraceNodes` 与 `toAttemptSource` 等。
   断言面是返回的普通值形状，不是组件树。

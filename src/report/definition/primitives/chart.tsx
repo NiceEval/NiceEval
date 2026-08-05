@@ -1,10 +1,15 @@
 // Chart 原语:消费 Dataset,用 x/y 与 <Series> 映射坐标与 mark(docs/feature/reports/components/charts/README.md)。
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
+import {
+  SeriesPatternDefs,
+  seriesClassFromColorVar,
+  seriesClassesFromFill,
+} from "../../assets/series-encoding.tsx";
 import { defineComponent, type ReportNode, type TextContext, type WebContext } from "../tree.ts";
 import type { ReportTarget } from "../report.ts";
-import type { DimensionDeclarations } from "../../presentation.ts";
+import type { DimensionDeclarations, DimensionPresentation } from "../../presentation.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { countText, localeText, resolveLocalizedText, type ReportLocale as RL } from "../../model/locale.ts";
@@ -155,12 +160,13 @@ function chartFieldLabel(field: string, meta: DatasetField, locale: RL): string 
   return meta.unit ? `${base}(${meta.unit})` : base;
 }
 
-function seriesClass(
+/** 解析点所属 series 句柄与下标;单系列隐式图不声明视觉身份。 */
+function seriesPresentationOf(
   mapped: MappedSeries[],
   series: MappedSeries,
   point: MappedSeries["points"][number],
   ctx: WebContext,
-): string {
+): DimensionPresentation | undefined {
   let handle: string;
   let index: number;
   if (series.byField !== undefined && point.seriesValue !== undefined) {
@@ -168,12 +174,137 @@ function seriesClass(
     index = seriesDimensionValues(mapped, series.byField).indexOf(point.seriesValue);
   } else {
     const ids = mapped.filter((item) => !item.hidden && item.byField === undefined).map((item) => item.id);
-    if (ids.length < 2) return "niceeval-series-none";
+    if (ids.length < 2) return undefined;
     handle = IMPLICIT_SERIES_HANDLE;
     index = ids.indexOf(series.id);
   }
-  const colorIndex = ctx.dimension(handle).at(index).colorIndex;
-  return colorIndex === undefined ? "niceeval-series-none" : `niceeval-series-c${colorIndex - 1}`;
+  if (index < 0) return undefined;
+  return ctx.dimension(handle).at(index);
+}
+
+/** SVG 路径:只挂 series-cN 设 --series;pattern 由 fill 属性 / style 承载。 */
+function seriesColorClass(presentation: DimensionPresentation | undefined): string {
+  if (!presentation) return "niceeval-series-none";
+  if (presentation.kind === "color") return seriesClassFromColorVar(presentation.color);
+  if (presentation.kind !== "series") return "niceeval-series-none";
+  if (presentation.mark === "bar" || presentation.mark === "area") {
+    // 只要色类,不要 HTML 专用的 fill-vN(SVG 用 url(#pattern))。
+    const classes = seriesClassesFromFill(presentation.fill).split(" ");
+    return classes.find((c) => c.startsWith("niceeval-series-c") || c === "niceeval-series-none") ?? "niceeval-series-none";
+  }
+  if (presentation.mark === "line") return seriesClassFromColorVar(presentation.stroke);
+  return seriesClassFromColorVar(presentation.marker.fill);
+}
+
+/** HTML 横向柱:色类 + fill-vN 图案类(CSS repeating-linear-gradient 等效 SVG pattern)。 */
+function seriesHtmlBarClass(presentation: DimensionPresentation | undefined): string {
+  if (!presentation) return "niceeval-series-none";
+  if (presentation.kind === "series" && (presentation.mark === "bar" || presentation.mark === "area")) {
+    return seriesClassesFromFill(presentation.fill);
+  }
+  return seriesColorClass(presentation);
+}
+
+/**
+ * 作者在 `<Series line>` 上显式声明的 dashed/dotted **优先于** 页级 variant 的 strokeDasharray。
+ * 未声明时消费 LineSeriesPresentation / FillSeriesPresentation 的 strokeDasharray(空串 = 实线)。
+ */
+function resolveStrokeDasharray(
+  series: MappedSeries,
+  presentation: DimensionPresentation | undefined,
+): string | undefined {
+  if (series.line !== undefined) return lineDash(series.line);
+  if (presentation?.kind === "series" && "strokeDasharray" in presentation) {
+    return presentation.strokeDasharray || undefined;
+  }
+  return undefined;
+}
+
+/** SVG 柱/面:pattern fill 必须用 style 压过 `.niceeval-chart-bar { fill: var(--series) }`。 */
+function seriesSvgFillStyle(presentation: DimensionPresentation | undefined): CSSProperties | undefined {
+  if (presentation?.kind !== "series") return undefined;
+  if (presentation.mark !== "bar" && presentation.mark !== "area") return undefined;
+  if (!presentation.fill.startsWith("url(")) return undefined;
+  return { fill: presentation.fill };
+}
+
+function renderMarkerShape(
+  presentation: DimensionPresentation | undefined,
+  px: number,
+  py: number,
+  colorClass: string,
+  title: ReactNode,
+): ReactNode {
+  const marker =
+    presentation?.kind === "series" && (presentation.mark === "scatter" || presentation.mark === "line")
+      ? presentation.marker
+      : undefined;
+  if (!marker) {
+    return (
+      <circle className={cx("niceeval-chart-dot", colorClass)} cx={px} cy={py} r={4.5}>
+        {title}
+      </circle>
+    );
+  }
+  // path 在 0..12 viewBox;缩放到 ~9px 并居中到 (px, py)。
+  return (
+    <path
+      className={cx("niceeval-chart-dot", colorClass)}
+      d={marker.path}
+      transform={`translate(${px} ${py}) scale(0.75) translate(-6 -6)`}
+      fill={marker.fill}
+      stroke="var(--panel)"
+      strokeWidth={1.6}
+    >
+      {title}
+    </path>
+  );
+}
+
+function legendSwatch(presentation: DimensionPresentation | undefined, mark: MappedSeries["mark"]): ReactNode {
+  if (!presentation || presentation.kind !== "series") {
+    return <span className={cx("niceeval-chart-legend-swatch", "niceeval-series-none")} />;
+  }
+  // 图例方块跟 mark 取义:柱/面用填充图案,线用 dash+marker,散点用 marker 形状。
+  if (mark === "bar" || mark === "area") {
+    const fillClass =
+      presentation.mark === "bar" || presentation.mark === "area"
+        ? seriesClassesFromFill(presentation.fill)
+        : seriesColorClass(presentation);
+    return <span className={cx("niceeval-chart-legend-swatch", fillClass)} />;
+  }
+  if (presentation.mark === "line" || mark === "line" || mark === "area") {
+    const stroke = presentation.mark === "line" ? presentation.stroke : presentation.marker.fill;
+    const dash = presentation.mark === "line" ? presentation.strokeDasharray : "";
+    const marker = presentation.marker;
+    return (
+      <svg className="niceeval-chart-legend-swatch-svg" width="16" height="10" aria-hidden="true">
+        <line
+          x1="0"
+          y1="5"
+          x2="16"
+          y2="5"
+          stroke={stroke}
+          strokeWidth={2}
+          strokeDasharray={dash || undefined}
+        />
+        <path
+          d={marker.path}
+          transform="translate(8 5) scale(0.55) translate(-6 -6)"
+          fill={marker.fill}
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg className="niceeval-chart-legend-swatch-svg" width="10" height="10" aria-hidden="true">
+      <path
+        d={presentation.marker.path}
+        transform="translate(5 5) scale(0.7) translate(-6 -6)"
+        fill={presentation.marker.fill}
+      />
+    </svg>
+  );
 }
 
 function metricDisplay(
@@ -210,15 +341,9 @@ function renderLegend(
             : implicitIds.indexOf(series.id);
           const presentation = handle ? ctx.dimension(handle).at(index) : undefined;
           const label = presentation?.label ?? (series.label ? resolveLocalizedText(series.label, locale) : series.id);
-          const colorClass =
-            presentation?.colorIndex === undefined
-              ? "niceeval-series-none"
-              : `niceeval-series-c${presentation.colorIndex - 1}`;
           return (
-            <li
-              key={`${series.id}:${value}`}
-              className={cx("niceeval-chart-legend-item", colorClass)}
-            >
+            <li key={`${series.id}:${value}`} className="niceeval-chart-legend-item">
+              {legendSwatch(presentation, series.mark)}
               {label}
             </li>
           );
@@ -251,6 +376,8 @@ function renderHorizontalBarsWeb(
         options.className,
       )}
     >
+      {/* 横向 HTML 柱不引用 pattern,但同页可能另有 SVG 图;defs 全局一份无害。 */}
+      <SeriesPatternDefs />
       <div className="niceeval-chart-bars-heading">
         {chartFieldLabel(axes.yField, axes.yMeta, locale)}
       </div>
@@ -260,7 +387,8 @@ function renderHorizontalBarsWeb(
           const label = labels.get(rawLabel) ?? rawLabel;
           const display = metricDisplay(point, "y", axes.yMeta, locale);
           const href = pointHref(point, ctx, options.pointTarget);
-          const colorClass = seriesClass(mapped, series, point, ctx);
+          const presentation = seriesPresentationOf(mapped, series, point, ctx);
+          const colorClass = seriesHtmlBarClass(presentation);
           const ratio = max > 0 ? Math.max(0, Math.min(1, point.y / max)) : 0;
           const value = (
             <span className="niceeval-chart-bar-value">
@@ -374,14 +502,18 @@ function renderChartWeb(
   const yLabel = chartFieldLabel(axes.yField, axes.yMeta, locale);
 
   const drawable = visible.flatMap((series) =>
-    series.points.map((point) => ({
-      ...point,
-      sourceSeriesId: series.id,
-      label: labelByKey.get(point.pointLabel) ?? point.pointLabel,
-      px: xScale.scale(point.x),
-      py: yScale.scale(point.y),
-      seriesClass: seriesClass(mapped, series, point, ctx),
-    })),
+    series.points.map((point) => {
+      const presentation = seriesPresentationOf(mapped, series, point, ctx);
+      return {
+        ...point,
+        sourceSeriesId: series.id,
+        label: labelByKey.get(point.pointLabel) ?? point.pointLabel,
+        px: xScale.scale(point.x),
+        py: yScale.scale(point.y),
+        presentation,
+        seriesClass: seriesColorClass(presentation),
+      };
+    }),
   );
 
   const labels = placePointLabels(
@@ -391,6 +523,7 @@ function renderChartWeb(
 
   return (
     <figure className={cx("niceeval-report", "niceeval-chart", "niceeval-chart--scatter", options.className)}>
+      <SeriesPatternDefs />
       <svg className="niceeval-chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${axes.xField} × ${axes.yField}`}>
         {options.grid !== false ? (
           <g className="niceeval-chart-grid">
@@ -457,7 +590,8 @@ function renderChartWeb(
                 (series.byField === undefined || p.seriesValue === value),
             );
             const ordered = series.connect ? [...seriesPoints].sort((a, b) => a.x - b.x) : seriesPoints;
-            const seriesClass = ordered[0]?.seriesClass ?? "niceeval-series-none";
+            const seriesClassName = ordered[0]?.seriesClass ?? "niceeval-series-none";
+            const seriesPresentation = ordered[0]?.presentation;
             const baseline = yScale.scale(0);
             const barGroups = [...new Set(
               visible
@@ -468,15 +602,18 @@ function renderChartWeb(
             const groupIndex = Math.max(0, barGroups.indexOf(barGroup));
             const totalBarWidth = Math.max(8, Math.min(48, PLOT_W / Math.max(1, allPoints.length)));
             const barWidth = totalBarWidth / Math.max(1, barGroups.length);
+            const dash = resolveStrokeDasharray(series, seriesPresentation);
+            const areaFillStyle = seriesSvgFillStyle(seriesPresentation);
             return (
               <g
                 key={`${series.id}:${value}`}
-                className={cx("niceeval-chart-series", seriesClass)}
+                className={cx("niceeval-chart-series", seriesClassName)}
                 data-series={`${series.id}:${value}`}
               >
               {series.mark === "area" && ordered.length > 1 ? (
                 <polygon
                   className="niceeval-chart-area"
+                  style={areaFillStyle}
                   points={[
                     `${ordered[0]!.px},${baseline}`,
                     ...ordered.map((point) => `${point.px},${point.py}`),
@@ -488,7 +625,7 @@ function renderChartWeb(
                 <polyline
                   className="niceeval-chart-line"
                   points={ordered.map((p) => `${p.px},${p.py}`).join(" ")}
-                  strokeDasharray={lineDash(series.line)}
+                  strokeDasharray={dash}
                 />
               ) : null}
               {ordered.map((p) => {
@@ -502,6 +639,7 @@ function renderChartWeb(
                   shape = (
                     <rect
                       className={cx("niceeval-chart-bar", p.seriesClass)}
+                      style={seriesSvgFillStyle(p.presentation)}
                       x={p.px - totalBarWidth / 2 + groupIndex * barWidth}
                       y={Math.min(topY, baseY)}
                       width={barWidth}
@@ -511,10 +649,12 @@ function renderChartWeb(
                     </rect>
                   );
                 } else {
-                  shape = (
-                  <circle className={cx("niceeval-chart-dot", p.seriesClass)} cx={p.px} cy={p.py} r={4.5}>
-                    <title>{`${p.pointLabel}\n${axes.xField}: ${metricDisplay(p, "x", axes.xMeta, locale)}\n${axes.yField}: ${metricDisplay(p, "y", axes.yMeta, locale)}`}</title>
-                  </circle>
+                  shape = renderMarkerShape(
+                    p.presentation,
+                    p.px,
+                    p.py,
+                    p.seriesClass,
+                    <title>{`${p.pointLabel}\n${axes.xField}: ${metricDisplay(p, "x", axes.xMeta, locale)}\n${axes.yField}: ${metricDisplay(p, "y", axes.yMeta, locale)}`}</title>,
                   );
                 }
                 return (
@@ -798,7 +938,8 @@ export const Chart = defineComponent<ChartProps>({
       if (values.length === 0) continue;
       decls[spec.by] = {
         dimension: spec.by,
-        encoding: { kind: "series", mark: spec.mark === "area" ? "line" : spec.mark },
+        // area 是 FillSeriesPresentation(填充图案),不再折叠成 line。
+        encoding: { kind: "series", mark: spec.mark },
         values,
       };
     }

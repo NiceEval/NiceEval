@@ -1,4 +1,10 @@
 import { shortestUniqueLabels as labels } from "./model/format.ts";
+import {
+  seriesColorVar,
+  seriesFill,
+  seriesMarker,
+  seriesStrokeDasharray,
+} from "./assets/series-encoding.tsx";
 
 export type DimensionEncoding =
   | { readonly kind: "label" }
@@ -21,7 +27,11 @@ export const VISUAL_SLOT_COUNT = 24;
 
 export type SeriesVariant = 1 | 2 | 3 | 4;
 
-/** 槽 1..24 → (色板下标 1..6, 形状变体 1..4)，与 README 槽序表逐项对应。 */
+/**
+ * 槽 1..24 → (色板下标 1..6, 形状变体 1..4)。
+ * 与 components/README「视觉编码容量」槽序表一致:1–6 第一变体、7–12 第二变体,依此类推。
+ * `colorIndex = (slot-1) % 6 + 1`,`variant = floor((slot-1)/6) + 1`。
+ */
 export function seriesChannelsOf(slot: number): { colorIndex: number; variant: SeriesVariant } {
   if (!Number.isInteger(slot) || slot < 1 || slot > VISUAL_SLOT_COUNT) {
     throw new Error(`seriesSlot must be an integer in [1, ${VISUAL_SLOT_COUNT}], got ${slot}.`);
@@ -29,21 +39,78 @@ export function seriesChannelsOf(slot: number): { colorIndex: number; variant: S
   const zero = slot - 1;
   return {
     colorIndex: (zero % 6) + 1,
-    variant: ((((zero % 4) + Math.floor(zero / 12)) % 4) + 1) as SeriesVariant,
+    variant: (Math.floor(zero / 6) + 1) as SeriesVariant,
   };
 }
 
-export interface PresentedValue {
+// ─── docs/feature/reports/library/presentation.md 的呈现家族 ───
+
+export interface PresentationIdentity {
+  /** 完整维度值，作为排序、筛选、React key 与证据身份。 */
   readonly value: string;
+  /** 当前页完整 label keyset 内生成的显示名。 */
   readonly label: string;
-  readonly seriesSlot?: number;
-  readonly colorIndex?: number;
-  readonly variant?: SeriesVariant;
 }
 
+export interface LabelPresentation extends PresentationIdentity {
+  readonly kind: "label";
+}
+
+export interface ColorPresentation extends PresentationIdentity {
+  readonly kind: "color";
+  /** `var(--niceeval-color-series-N)`。 */
+  readonly color: string;
+}
+
+export interface LineSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "line";
+  readonly stroke: string;
+  readonly strokeDasharray: string;
+  readonly marker: {
+    readonly path: string;
+    readonly viewBox: string;
+    readonly fill: string;
+    readonly stroke: string;
+  };
+}
+
+export interface ScatterSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "scatter";
+  readonly marker: LineSeriesPresentation["marker"];
+}
+
+export interface FillSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "bar" | "area";
+  /** 颜色，或可直接使用的 `url(#pattern-id)`。 */
+  readonly fill: string;
+  readonly stroke: string;
+  readonly strokeDasharray: string;
+}
+
+export type DimensionPresentation =
+  | LabelPresentation
+  | ColorPresentation
+  | LineSeriesPresentation
+  | ScatterSeriesPresentation
+  | FillSeriesPresentation;
+
+export type PresentationFor<E extends DimensionEncoding> = E extends { kind: "label" }
+  ? LabelPresentation
+  : E extends { kind: "color" }
+    ? ColorPresentation
+    : LineSeriesPresentation | ScatterSeriesPresentation | FillSeriesPresentation;
+
+/**
+ * 句柄上的呈现面。`at(i)` 返回可直接交给 SVG/CSS 的值;text 面恒为 label 支。
+ * `labels` 是本维度整页 label keyset 的最短唯一后缀表,便于探针与调试。
+ */
 export interface PresentedDimension {
+  readonly length: number;
   readonly labels: ReadonlyMap<string, string>;
-  at(index: number): PresentedValue;
+  at(index: number): DimensionPresentation;
 }
 
 export class UndeclaredDimensionValueError extends Error {
@@ -81,6 +148,41 @@ export interface PageDimensionPlan {
   /** 维度 name → 值 → seriesSlot（仅 visual keyset）。 */
   readonly slotsByDimension: ReadonlyMap<string, ReadonlyMap<string, number>>;
   dimension(handle: string): PresentedDimension;
+}
+
+function presentChannels(
+  value: string,
+  label: string,
+  seriesSlot: number,
+  encoding: DimensionEncoding,
+): DimensionPresentation {
+  const { colorIndex, variant } = seriesChannelsOf(seriesSlot);
+  if (encoding.kind === "color") {
+    return { kind: "color", value, label, color: seriesColorVar(colorIndex) };
+  }
+  if (encoding.kind !== "series") {
+    return { kind: "label", value, label };
+  }
+  const stroke = seriesColorVar(colorIndex);
+  const strokeDasharray = seriesStrokeDasharray(variant);
+  const marker = seriesMarker(colorIndex, variant);
+  switch (encoding.mark) {
+    case "line":
+      return { kind: "series", mark: "line", value, label, stroke, strokeDasharray, marker };
+    case "scatter":
+      return { kind: "series", mark: "scatter", value, label, marker };
+    case "bar":
+    case "area":
+      return {
+        kind: "series",
+        mark: encoding.mark,
+        value,
+        label,
+        fill: seriesFill(colorIndex, variant),
+        stroke,
+        strokeDasharray,
+      };
+  }
 }
 
 /**
@@ -134,8 +236,9 @@ export function allocatePageDimensions(
     const values = declaration.values;
     const encoding = declaration.encoding;
     byHandle.set(handle, {
+      length: values.length,
       labels: dimLabels,
-      at(index: number): PresentedValue {
+      at(index: number): DimensionPresentation {
         const value = values[index];
         if (value === undefined) {
           throw new UndeclaredDimensionValueError(
@@ -145,8 +248,9 @@ export function allocatePageDimensions(
           );
         }
         const label = dimLabels.get(value) ?? value;
+        // text 面恒返回 label 支:不上 ANSI 色,拿不到颜色、线型或 pattern。
         if (options.face === "text" || encoding.kind === "label") {
-          return { value, label };
+          return { kind: "label", value, label };
         }
         const seriesSlot = slots?.get(value);
         if (seriesSlot === undefined) {
@@ -156,8 +260,7 @@ export function allocatePageDimensions(
             index,
           );
         }
-        const channels = seriesChannelsOf(seriesSlot);
-        return { value, label, seriesSlot, colorIndex: channels.colorIndex, variant: channels.variant };
+        return presentChannels(value, label, seriesSlot, encoding);
       },
     });
   }
