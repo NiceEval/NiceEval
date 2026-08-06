@@ -40,7 +40,7 @@
 | [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) | 失败即 `sandbox.prepare.<owner>` | `checkout` / `installTool` 等对网络瞬时失败有界重试 |
 | [Provisioning 失败与重试](../../feature/sandbox/architecture.md#provisioning-失败与重试) | 只覆盖 `createSandbox` | 与 prepare **分层独立**；可共享退避形状与词表 |
 | [空间轴 scope](../../feature/error-classification/README.md#分类) | 确定性兄弟必死可落闸 | 缺依赖类止损，**不**靠重试 |
-| [运行中观察](../live-run-observation/README.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
+| [运行观测协议](../observation-protocol/README.md) | 旁路 phase / 可选 kind | 观察可对齐 `phase` 与既有 reason；**不**为本主题新造 failure kind 词表 |
 
 作者面已有出路：「prepare 里想容忍抖动，自己 try 一次即可」（[error-classification · library](../../feature/error-classification/library.md)）。
 本主题给官方最常见网络准备面**零配置自愈**，避免每条 eval 手写相同退避。
@@ -74,7 +74,7 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-cla
 | 重放单元 | **整条**内置命令（checkout 从干净目标或官方镜像缓存语义重来；installTool 的 install 步重跑后复检 probe） |
 | 预算 | 与 provisioning / send 同形的小封顶（例如至多 3 次尝试 + 指数全抖动），参数固定、零配置 |
 | 观察 | activity：`prepare retry 2/3 (network) — checkout`；耗尽 message 带 `retries exhausted` |
-| 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 与裸 `shell("yarn install")` **不**享受 |
+| 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 与直接调用 `shell("yarn install")` **不**享受 |
 
 优点：改动面最小，直接覆盖 checkout TLS 与 installTool 安装；不打开通用 shell 重试的副作用闸。  
 代价：作者手写 `shell("yarn install")` 仍不自愈，除非改写为 `installTool` 或自写 try。
@@ -155,5 +155,5 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-cla
 - [内置 prepare 命令](../../feature/sandbox/prepare-commands.md) —— `checkout` / `installTool`
 - [Sandbox · 命令不自动重试](../../feature/sandbox/library/operations.md) —— 副作用边界
 - [跨 provider 基线工具面](../../feature/sandbox/library/prebuilt-environments.md#跨-provider-基线工具面) —— python3 / yarn 基线
-- [运行中观察](../live-run-observation/README.md) —— phase 观察
+- [运行观测协议](../observation-protocol/README.md) —— phase 观察
 - [缓存与携带](../../feature/experiments/cache.md) —— `errored` 不进指纹、续跑只补失败
