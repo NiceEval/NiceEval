@@ -660,7 +660,7 @@ export interface JsonPlanRow {
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
-  /** stale 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */
+  /** previous-result 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */
   prior?: readonly {
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";

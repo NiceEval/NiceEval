@@ -44,8 +44,7 @@ import {
   type TableContentRow,
 } from "./cell.ts";
 import { MetricCellView } from "../components/cell.tsx";
-import { formatTimeDistance, missingText, verdictMark } from "../model/format.ts";
-
+import { missingText, verdictMark } from "../model/format.ts";
 
 function childArray(children: ReportNode): ReportNode[] {
   if (children === null || children === undefined || typeof children === "boolean") return [];
@@ -777,36 +776,27 @@ function renderCellWeb(
     case "notApplicable":
       return <span className="niceeval-missing">{MISSING_MARK}</span>;
     case "missing": {
-      const reference = cell.reference;
-      let body: ReactNode;
-      if (reference) {
-        const mark = (
-          <span className="niceeval-locator-mark" aria-hidden="true">
-            {verdictMark(reference.verdict === "skipped" ? "skipped" : reference.verdict)}
-          </span>
-        );
-        const distance = <span className="niceeval-stale-distance">{formatTimeDistance(reference.staleSinceMs, ctx.locale)}</span>;
-        const title = localeText(ctx.locale, "experimentList.staleReferenceTooltip");
-        const href = ctx.href(reference.locator);
-        body = href !== undefined ? (
-          <a className="niceeval-locator niceeval-stale" href={href} title={title}>
-            {mark}
-            {reference.locator}
-            {distance}
+      const previous = cell.previous;
+      // 原因文案与 previous locator 同场:locator 是可操作入口,不替代「为什么没结果」。
+      const reason = <span className="niceeval-missing-reason">{missingText(cell.code, ctx.locale)}</span>;
+      let locator: ReactNode = null;
+      if (previous) {
+        const title = localeText(ctx.locale, "experimentTable.previousResultTooltip");
+        const href = ctx.href(previous.locator);
+        locator = href !== undefined ? (
+          <a className="niceeval-locator" href={href} title={title}>
+            {previous.locator}
           </a>
         ) : (
-          <span className="niceeval-locator niceeval-stale" title={title}>
-            {mark}
-            {reference.locator}
-            {distance}
+          <span className="niceeval-locator" title={title}>
+            {previous.locator}
           </span>
         );
-      } else {
-        body = <span className="niceeval-missing-reason">{missingText(cell.code, ctx.locale)}</span>;
       }
       return (
         <span className="niceeval-missing">
-          {body}
+          {reason}
+          {locator ? <>{" "}{locator}</> : null}
           {cell.detail ? <small className="niceeval-cell-detail">{cell.detail}</small> : null}
         </span>
       );
@@ -822,33 +812,25 @@ function renderCellWeb(
       // 判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
       // (docs/feature/reports/components/summaries/experiment-table.md)。
       const verdict = cell.verdict;
-      const stale = cell.staleSinceMs !== undefined;
       const className = cx(
         "niceeval-locator",
         verdict !== undefined ? `niceeval-verdict-${verdict}` : undefined,
-        stale ? "niceeval-stale" : undefined,
       );
       const mark = verdict === undefined ? null : (
         <span className="niceeval-locator-mark" aria-hidden="true">
           {verdictMark(verdict === "skipped" ? "skipped" : verdict)}
         </span>
       );
-      const distance = stale ? (
-        <span className="niceeval-stale-distance">{formatTimeDistance(cell.staleSinceMs!, ctx.locale)}</span>
-      ) : null;
-      const title = stale ? localeText(ctx.locale, "experimentList.historicalTooltip") : undefined;
       const href = ctx.href(cell.locator);
       return href !== undefined ? (
-        <a className={className} href={href} title={title}>
+        <a className={className} href={href}>
           {mark}
           {cell.locator}
-          {distance}
         </a>
       ) : (
-        <span className={className} title={title}>
+        <span className={className}>
           {mark}
           {cell.locator}
-          {distance}
         </span>
       );
     }
@@ -870,16 +852,11 @@ function renderCellWeb(
         );
       }
       const verdict = cell.verdict ?? "skipped";
-      const stale = cell.staleSinceMs !== undefined;
       // 判定符走 verdictMark 单源,与 locator 格同一张表(errored 是 `!`,不并到 `✗`)。
       return (
-        <span
-          className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`, stale ? "niceeval-stale" : undefined)}
-          title={stale ? localeText(ctx.locale, "experimentList.historicalTooltip") : undefined}
-        >
+        <span className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`)}>
           {verdictMark(verdict === "skipped" ? "skipped" : verdict)}
           {!cell.bare ? <>{" "}{localeText(ctx.locale, `verdict.${verdict === "skipped" ? "skipped" : verdict}`)}</> : null}
-          {stale ? <span className="niceeval-stale-distance">{formatTimeDistance(cell.staleSinceMs!, ctx.locale)}</span> : null}
         </span>
       );
     }
@@ -891,26 +868,6 @@ function renderCellWeb(
           locale={ctx.locale}
         />
       );
-    case "composition": {
-      // web 面画成一条分段条,hover 一段给出它的名字与计数;段的业务含义住在投影里,
-      // 这里只按声明序给一条位置驱动的渐隐色阶(docs/feature/reports/components/primitives/table.md「构成格」)。
-      const total = cell.segments.reduce((sum, segment) => sum + segment.count, 0);
-      if (total === 0) return <span className="niceeval-missing">{MISSING_MARK}</span>;
-      return (
-        <span className="niceeval-composition">
-          {cell.segments.map((segment, i) =>
-            segment.count > 0 ? (
-              <span
-                key={i}
-                className="niceeval-composition-segment"
-                style={{ width: `${(segment.count / total) * 100}%`, "--composition-step": i } as CSSProperties}
-                title={`${resolveLocalizedText(segment.label, ctx.locale)}: ${segment.count}`}
-              />
-            ) : null,
-          )}
-        </span>
-      );
-    }
     default: {
       const _e: never = cell;
       return _e;

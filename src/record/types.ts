@@ -6,7 +6,7 @@
 // 命名约定:Experiment / Run / Eval 是纯数据,不带 Handle 后缀;
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
-import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
+import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity, Verdict } from "../types.ts";
 import type { CommandExitEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
@@ -223,7 +223,7 @@ export interface Record {
 
 /**
  * 一个实验的覆盖事实:已知 eval 并集(分母)与当前口径下没有任何 attempt 的题。
- * `missingEvalIds` 永远被算出来,不静默——渲染面把它转成覆盖占位行
+ * `missing` 永远被算出来,不静默——渲染面把它转成覆盖占位行
  * (见 docs/feature/sample/library.md「选择快照」「时效:新执行与历史执行」)。
  *
  * `run` 是该 Experiment 的锚点 Run:零 attempt 的 Eval 按 agent / model / flags 归组时
@@ -236,8 +236,21 @@ export interface SampleCoverage {
   run: Run;
   /** 分母:本地历史 ∪ 各快照携带的 knownEvalIds,交命令行范围(与 `exp.knownEvalIds` 同源)。 */
   knownEvalIds: string[];
-  /** 当前口径下没有任何 attempt 的题(含 `fresh: true` 排除历史执行后新产生的缺口)。 */
-  missingEvalIds: string[];
+  /** 当前配置下没有物理 Attempt 的题，以及帮助用户决定下一步的缺口原因。 */
+  missing: SampleMissing[];
+}
+
+/** 当前结果缺口；原因只解释下一步，不构成另一种结果状态。 */
+export interface SampleMissing {
+  evalId: string;
+  /** 从未有物理 Attempt，或有历史结果但没有一条能代表当前配置。 */
+  reason: "never-run" | "previous-result";
+  /** 最近一条旧结果的审计入口；它不参与当前统计，也不保证一定满足 accept 资格。 */
+  previous?: {
+    locator: AttemptLocator;
+    verdict: Verdict;
+    startedAt: string;
+  };
 }
 
 /**
@@ -248,8 +261,6 @@ export interface SampleCoverage {
 export interface Sample {
   /** 这份 Sample 的口径,字面写在数据上。 */
   mode: "latest-run" | "current";
-  /** 是否只保留各 Experiment 锚点中真实执行的 attempt。 */
-  fresh: boolean;
   runs: Run[];
   /**
    * 按口径物化的 attempt 全集:消费 attempts 就自动正确,不需要自己 flatten runs,
@@ -268,7 +279,6 @@ export interface Sample {
    */
   scope(options: { experiments?: string | string[]; evals?: string | string[] }): Sample;
   filter(predicate: (attempt: AttemptHandle) => boolean): Sample;
-  freshOnly(): Sample;
 }
 
 /**

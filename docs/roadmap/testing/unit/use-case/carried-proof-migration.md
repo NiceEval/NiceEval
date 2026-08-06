@@ -41,11 +41,11 @@ runnerBehavior({
 ```
 
 Recipe 在私有 clone 中运行三步：第一次产生完整结果；第二次只选择一个 Eval；第三次恢复完整选择并只改变另一
-Eval 的一个 fingerprint 输入。主证明只观察 started / carried 的 attempt 身份、最终 locator 与公开 stale 分类。
+Eval 的一个 fingerprint 输入。主证明只观察 started / carried 的 attempt 身份、最终 locator 与公开 previous-result 分类。
 它不读取 `EvalManifest`、`FingerprintComparison`、planner dispatch group 或 formatter 输入对象。
 
 `deltas` 改成 `comparison`、内部 ADT 改名或 manifest builder 换实现时，这条 Behavior 不修改。只有用户公开的
-carry 决策、JSON schema 或 stale 分类契约改变时才版本化 Behavior 预期。
+carry 决策、JSON schema 或 previous-result 分类契约改变时才版本化 Behavior 预期。
 
 ## 唯一机制矩阵
 
@@ -87,7 +87,7 @@ const legacy = manifestFixture.legacy({
   config: { model: "old" },
 });
 
-const stale = dryPlanFixture.stale({
+const previousResult = dryPlanFixture.previousResult({
   locator: "@1A1B2C3D4E5F",
   comparison: comparisonFixture.changed({
     selector: "config:model",
@@ -100,7 +100,7 @@ const stale = dryPlanFixture.stale({
 `manifestFixture.current()` 拥有当前 algorithm / coverage 的机械默认值。只有版本迁移 owner 使用 `.legacy()` 或
 显式版本。生产 DTO 加一个无关字段时，修改 builder 一处；record、accept、human 测试不跟改。
 
-`dryPlanFixture.stale()` 接受领域 comparison，不暴露 `HumanDryPlanRow` 的其它默认字段。Human 与 JSON 可以共享
+`dryPlanFixture.previousResult()` 接受领域 comparison，不暴露 `HumanDryPlanRow` 的其它默认字段。Human 与 JSON 可以共享
 机械 comparison fixture，但不能共享期望 formatter 文案或 JSON 对象。
 
 ## Retirement 计划

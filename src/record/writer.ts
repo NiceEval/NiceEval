@@ -137,14 +137,6 @@ export interface RunWriter {
     timings?: TimingActivity[];
     sandboxBuilds?: SandboxBuildRecord[];
     name?: LocalizedText;
-    /**
-     * 本 Run 携带合入的 eval id(见 `experiment:complete` 事件的 `carriedResults`)。并入
-     * `experiment.selectedEvalIds`,使这份快照声明的覆盖题集包含携带条目——`selectedEvalIds`
-     * 的语义是「这份快照声明覆盖的题集」(本次选择 ∪ 携带条目),不止是本次选择器求值的结果
-     * (见 docs/feature/record/architecture.md「selectedEvalIds」)。省略或没有 `experiment`
-     * 声明时不产生任何效果。
-     */
-    carriedEvalIds?: readonly string[];
   }): Promise<void>;
 }
 
@@ -165,21 +157,6 @@ export interface Writer {
    * 的懒建语义。
    */
   snapshotWriters(): Promise<{ experimentId: string; writer: RunWriter }[]>;
-}
-
-/**
- * `finish()` 的 `carriedEvalIds` 并入 `experiment.selectedEvalIds`;没有 `experiment` 声明
- * 或没有携带 id 时原样返回,不凭空合成一份 `ExperimentRunInfo`。
- */
-function mergeCarriedEvalIds(
-  experiment: ExperimentRunInfo | undefined,
-  carriedEvalIds: readonly string[] | undefined,
-): ExperimentRunInfo | undefined {
-  if (experiment === undefined || !carriedEvalIds?.length) return experiment;
-  const merged = new Set(experiment.selectedEvalIds);
-  for (const id of carriedEvalIds) merged.add(id);
-  if (merged.size === experiment.selectedEvalIds.length) return experiment;
-  return { ...experiment, selectedEvalIds: [...merged] };
 }
 
 interface SnapshotState {
@@ -252,14 +229,13 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
         state.finished = true;
         const completedAt = finishOpts?.completedAt ?? state.declCompletedAt ?? new Date().toISOString();
         const name = finishOpts?.name ?? state.declName;
-        const experiment = mergeCarriedEvalIds(state.meta.experiment, finishOpts?.carriedEvalIds);
         const finalMeta: RunMeta = {
           format: state.meta.format,
           schemaVersion: state.meta.schemaVersion,
           producer: state.meta.producer,
           runId: state.meta.runId,
           experimentId: state.meta.experimentId,
-          ...(experiment !== undefined ? { experiment } : {}),
+          ...(state.meta.experiment !== undefined ? { experiment: state.meta.experiment } : {}),
           agent: state.meta.agent,
           ...(state.meta.model !== undefined ? { model: state.meta.model } : {}),
           startedAt: state.meta.startedAt,

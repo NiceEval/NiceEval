@@ -61,7 +61,6 @@ export type {
   SampleIssue,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
-  StaleConclusionReference,
   TraceSpanSummary,
   TraceWaterfallRow,
   UsageTableData,

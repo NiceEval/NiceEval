@@ -67,8 +67,8 @@ const locatorIndexByResults = new WeakMap<Record, LocatorIndex<AttemptHandle>>()
 export class LocatorNotFoundError extends Error {
   constructor(public readonly locator: string) {
     super(
-      `No attempt found for locator "${locator}" in this results root. It may be stale ` +
-        "(the run was deleted, or publish didn't include it) or mistyped.",
+      `No attempt found for locator "${locator}" in this results root. It may refer to an older record ` +
+        "(the run was deleted, or publish didn't include it) or be mistyped.",
     );
     this.name = "LocatorNotFoundError";
   }

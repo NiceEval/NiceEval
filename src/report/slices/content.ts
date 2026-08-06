@@ -1,10 +1,10 @@
 // 指标视图 TableContent 投影:compute *Data → Table 原语可直接消费的形状。
 
 import type { Cell, TableContent, TableContentRow } from "../definition/cell.ts";
-import type { DeltaData, StabilityMatrixCell, StabilityMatrixData, StaleConclusionReference } from "../model/types.ts";
+import type { DeltaData, StabilityMatrixCell, StabilityMatrixData } from "../model/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, localizedMessage, type ReportLocale } from "../model/locale.ts";
-import { formatMetricValue, formatPlainNumber, formatPoints, formatTimeDistance, verdictMark } from "../model/format.ts";
+import { formatMetricValue, formatPlainNumber, formatPoints } from "../model/format.ts";
 
 /**
  * 带符号的美元/tokens 差值:复用 `formatMetricValue` 折终值(内建 unit 格式不分 locale,
@@ -24,22 +24,15 @@ function signedPointsText(value: number): string {
 }
 
 /**
- * 一格的判定读法(docs/feature/reports/show/compare.md):有数据时通过制只留判定符(`bare`,
- * 历史执行再接相对时距)、计分制显示挣分;该条件缺席这道题时,记录里有过期结论参考才给
- * `— <判定符> <时距>`(`—` 不被参考替换,它标记「这一格没有可聚合的结果」,参考只是附注),
- * 没有参考就是纯 `notApplicable`。参考不进任何计数——它压根不出现在 `cells` 里,只在这一格
- * 的显示上多一句附注。
+ * 一格的判定读法(docs/feature/reports/show/compare.md):有数据时通过制只留判定符(`bare`)、
+ * 计分制显示挣分;该条件缺席这道题时是纯 `notApplicable`——对照矩阵只呈现各条件自己的当前
+ * 覆盖,不把旧配置结果以参考的形式请回当前表格。
  */
 function conditionVerdictCell(
   cell: DeltaData["rows"][number]["cells"][string] | undefined,
-  reference: StaleConclusionReference | undefined,
   locale: ReportLocale,
 ): Cell {
-  if (!cell) {
-    if (!reference) return { kind: "notApplicable" };
-    const mark = verdictMark(reference.verdict === "skipped" ? "skipped" : reference.verdict);
-    return { kind: "text", text: `— ${mark} ${formatTimeDistance(reference.staleSinceMs, locale)}` };
-  }
+  if (!cell) return { kind: "notApplicable" };
   if (cell.evaluationKind === "points") {
     return { kind: "text", text: cell.totalScore !== undefined ? formatPoints(cell.totalScore) : "—" };
   }
@@ -47,7 +40,6 @@ function conditionVerdictCell(
     kind: "verdict",
     verdict: cell.verdict,
     bare: true,
-    ...(cell.historical && cell.staleSinceMs !== undefined ? { staleSinceMs: cell.staleSinceMs } : {}),
   };
 }
 
@@ -71,7 +63,7 @@ export function deltaTableContent(data: DeltaData, locale: ReportLocale = DEFAUL
       };
       for (const condition of data.conditions) {
         const cell = row.cells[condition];
-        cells[`${condition}:verdict`] = conditionVerdictCell(cell, row.references?.[condition], locale);
+        cells[`${condition}:verdict`] = conditionVerdictCell(cell, locale);
         cells[`${condition}:tokens`] =
           cell?.totalTokens !== undefined
             ? { kind: "metric", metric: { value: cell.totalTokens, unit: "tokens", basis: "eval", samples: 1, total: 1, refs: cell.attempts } }

@@ -526,7 +526,7 @@ describe("createWriter", () => {
 
     const coverage = latestRunSample(results).coverage.find((c) => c.experimentId === "compare/a")!;
     expect(coverage.knownEvalIds).toHaveLength(3);
-    expect(coverage.missingEvalIds).toHaveLength(1);
+    expect(coverage.missing).toHaveLength(1);
   });
 
   // cases: docs/engineering/testing/unit/record.md「manifests.json 落盘」「超时归属落盘」
@@ -922,10 +922,10 @@ describe("createWriter", () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
 
-    const fresh: EvalResult = {
+    const current: EvalResult = {
       id: "algebra/q1",
       experimentId: "compare/bub",
-      experiment: { flags: { style: "concise" }, attempts: 1, earlyExit: true, selectedEvalIds: ["algebra/q1"], sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
+      experiment: { flags: { style: "concise" }, attempts: 1, earlyExit: true, sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
       agent: "bub",
       model: "gpt-5.4",
       verdict: "passed",
@@ -960,7 +960,7 @@ describe("createWriter", () => {
       artifacts: ["events", "sources"],
     };
 
-    await writer.writeAttemptFor(fresh);
+    await writer.writeAttemptFor(current);
     await writer.writeAttemptFor(carried);
     await finishAll(writer);
 
@@ -974,7 +974,7 @@ describe("createWriter", () => {
     }
     // startedAt 是 attempt 级事实(每条各异,view 靠它显示「何时跑的」),正常条目也原样落盘。
     expect(freshRecord.startedAt).toBe("2026-07-01T08:01:00.000Z");
-    // 顺序与证据 registry 一致(commands/events/trace/o11y/agentSetup/diff/sources);fresh 没写 agentSetup。
+    // 顺序与证据 registry 一致(commands/events/trace/o11y/agentSetup/diff/sources);当前条目没写 agentSetup。
     expect(freshRecord.artifacts).toEqual(["commands", "events", "trace", "o11y", "diff", "sources"]);
     expect(await readFile(join(snapDir, "algebra/q1/a1/events.json"), "utf-8")).toBe('[{"type":"message","role":"assistant","text":"hi"}]');
     expect(await readFile(join(snapDir, "algebra/q1/a1/o11y.json"), "utf-8")).toBe('{"toolCalls":2}');
@@ -1059,7 +1059,7 @@ describe("publish", () => {
     const republished = await openRecord(dest);
     expect(republished.experiments[0].knownEvalIds).toEqual(["q1", "q2"]);
     const coverage = latestRunSample(republished).coverage.find((c) => c.experimentId === "compare/bub")!;
-    expect(coverage).toMatchObject({ knownEvalIds: ["q1", "q2"], missingEvalIds: ["q2"] });
+    expect(coverage).toMatchObject({ knownEvalIds: ["q1", "q2"], missing: [{ evalId: "q2", reason: "never-run" }] });
   });
 
   it("目标目录非空即报错;artifacts 非法值报错;无快照报错;同实验多快照选中 → 取最新 + warning", async () => {

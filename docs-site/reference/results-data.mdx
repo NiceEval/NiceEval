@@ -164,24 +164,27 @@ current.coverage;              // per-experiment coverage facts
 current.issues;                // structured issues, not pre-rendered text
 ```
 
-"Latest" can be incomplete: rerunning just one question is a normal debugging move, and the latest Run it produces covers only that one question. The selector compares the evals covered by each experiment's selected policy against that experiment's known union (`exp.knownEvalIds`) and records the gap on `coverage`:
+The current state can be incomplete: rerunning just one question is a normal debugging move. The selector composes compatible physical Attempts and compares them with that experiment's known union (`exp.knownEvalIds`), then records any remaining gap on `coverage`:
 
 ```typescript
 current.coverage[0];
 // {
 //   experimentId: "midterm/bub-gpt-5.4",
 //   knownEvalIds: ["algebra/quadratic", …],   // denominator: every eval this experiment has ever seen
-//   missingEvalIds: ["geometry/area", …],     // evals with no attempt under the current policy
+//   missing: [
+//     { evalId: "geometry/area", reason: "never-run" },
+//     { evalId: "proof/lemma", reason: "previous-result", previous: { locator: "@abc…", … } },
+//   ],
 // }
 ```
 
-The gap is a per-eval fact, so it's rendered at the eval's own row: `niceeval show` / `view` turn a missing eval into a "no result under the current config" placeholder row in the report, next to a copy-pasteable rerun command — you see the denominator gap right in the table you're already looking at. Programmatic checks are just as direct: a CI check like "fail if coverage shrinks" tests `coverage.some((c) => c.missingEvalIds.length > 0)`, no text parsing needed. The gap is always computed, never silent.
+The gap is a per-eval fact, so `niceeval show` / `view` render it at the eval's own row. `never-run` means no physical Attempt has ever existed; `previous-result` means an older, incompatible result exists but does not count. Programmatic checks test `coverage.some((c) => c.missing.length > 0)`, with no text parsing.
 
 `issues` holds completeness problems that cannot pin to a single eval: a selected Run that never wrapped up (interrupted process), or an unreadable store. Each carries judgable structured fields and a pre-rendered English `message` — print it as-is if you want to display it.
 
 `run.diagnostics` and `issues` answer different questions: issues describe how this batch of data got picked, while `diagnostics` describes what went wrong during one particular experiment run. Experiment-level teardown failures and unenforceable budgets are written with the Run they belong to. Reports use `toRunDiagnostics(sample)` to produce Notice items, then hand them to `Callouts`.
 
-Every attempt also carries **staleness**: a carried entry (a cache hit — last round's result folded forward into this Run) has `attempt.carried === true`, and the default report prints a relative time distance right after the locator on those rows (e.g. `3d`) and desaturates the cell — old but valid, since the fingerprint guaranteed nothing changed, so it states where the row came from rather than warning about it. No word label goes on the row: the distance is data, the desaturation is style, and the web face adds a hover explanation. To see only new executions relative to the anchor, use `latestRunSample(record, { fresh: true })` / `currentSample(record, { fresh: true })` or the CLI's `--fresh`; excluded evals turn into placeholder rows instead of silently disappearing.
+Every Attempt keeps its provenance: a cache hit has `attempt.carried === true`. This can explain artifact origin in Attempt details, but it does not create another report state, change counting, or desaturate current results. To inspect one physical Run or the cross-run timeline, use the explicit Run and History journeys.
 
 Sample is the common input for both [Custom Reports](/tutorials/custom-reports) and `publish` below. Coverage and issues ride along; `toExperimentRows(sample)` produces coverage-gap placeholder rows, and `toSampleNotices(sample)` explains read-time Issues. A filtered Sample trims Attempts, Runs, coverage, and issues together and keeps provenance. `filter` only ever trims down; **replacing** a pick means selecting a Sample again.
 

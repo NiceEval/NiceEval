@@ -1319,7 +1319,7 @@ describe("renderHumanDryPlan: locked 标注", () => {
 describe("renderHumanDryPlan: 逐条未携带原因", () => {
   const rowOf = (text: string, evalId: string): string => text.trim().split("\n").find((l) => l.includes(evalId))!;
 
-  it("要派发的行标出门的人读词,stale 行逐条引用 locator,全携带的行标 carried", () => {
+  it("要派发的行标出门的人读词,previous-result 行逐条引用 locator,全携带的行标 carried", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 4,
       evals: 4,
@@ -1329,8 +1329,8 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [
         {
           experimentId: "compare/codex",
-          evalId: "memory/stale",
-          dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [{ selector: "config:judge.model" }] } }],
+          evalId: "memory/previous",
+          dispatch: [{ reason: "previous-result", comparison: { kind: "changed", deltas: [{ selector: "config:judge.model" }] } }],
         },
         { experimentId: "compare/codex", evalId: "memory/fresh", dispatch: [{ reason: "new" }] },
         { experimentId: "compare/codex", evalId: "memory/carried", dispatch: [] },
@@ -1342,7 +1342,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       ],
     });
 
-    expect(rowOf(text, "memory/stale")).toContain("stale: config:judge.model");
+    expect(rowOf(text, "memory/previous")).toContain("previous-result: config:judge.model");
     expect(rowOf(text, "memory/fresh")).toMatch(/\bnew$/);
     expect(rowOf(text, "memory/carried")).toMatch(/\bcarried$/);
     // 同一行卡在两道门上时逐组连排,不折成一个笼统的词。
@@ -1424,7 +1424,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(rowOf(text, "memory/partial")).toContain("carried 2/4 (1 passed · 1 failed) · errored 1/4 · new 1/4");
   });
 
-  it("stale 行显示历史 verdict、具名差异与独立 accept 命令", () => {
+  it("previous-result 行显示历史 verdict、具名差异与独立 accept 命令", () => {
     const delta = { selector: "config:judge.model", kind: "changed" as const, from: "gpt-5.6", to: "gpt-5.6-sol" };
     const text = renderHumanDryPlan({
       totalAttempts: 3,
@@ -1432,17 +1432,17 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       configs: 1,
       attempts: 1,
       rows: [
-        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
-        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
+        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "previous-result", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
+        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "previous-result", comparison: { kind: "changed", deltas: [delta] } }], prior: [{ locator: "@1E5F6G7H8J9K", verdict: "failed", acceptance: "available", comparison: { kind: "changed", deltas: [delta] } }] },
         { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "keep-sandbox" }] },
       ],
     });
 
-    expect(text).toContain("compare/codex  baseline01  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)");
+    expect(text).toContain("compare/codex  baseline01  previous-result passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)");
     expect(text).toContain("prior:  @1A1B2C3D4E5F (passed · evidence available)");
     expect(text).toContain("accept: niceeval accept @1A1B2C3D4E5F");
     expect(text).toContain("prior:  @1E5F6G7H8J9K (failed · evidence available)");
-    expect(text).not.toContain("baseline04  stale"); // keep-sandbox 无 prior,不提供接受入口
+    expect(text).not.toContain("baseline04  previous-result"); // keep-sandbox 无 prior,不提供接受入口
   });
 
   it("unexplained 用开放 code 与递归 cause 通用投影,并区分 observedDeltas 三态", () => {
@@ -1461,7 +1461,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
         experimentId: "compare/codex",
         evalId: "future-diagnostic",
         dispatch: [{
-          reason: "stale",
+          reason: "previous-result",
           comparison: {
             kind: "unexplained",
             diagnostic: {
@@ -1485,7 +1485,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       }],
     });
 
-    expect(text).toContain("stale passed: future producer needs review");
+    expect(text).toContain("previous-result passed: future producer needs review");
     expect(text).toContain("producer.future-code: future producer needs review");
     expect(text).toContain("mode: opaque");
     expect(text).toContain("data:field-0 changed (old → new)");
@@ -1525,7 +1525,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [{
         experimentId: "compare/codex",
         evalId: "budgeted-diagnostic",
-        dispatch: [{ reason: "stale", comparison: { kind: "unexplained", diagnostic } }],
+        dispatch: [{ reason: "previous-result", comparison: { kind: "unexplained", diagnostic } }],
         prior: [{
           locator: "@1A2B3C4D5E6F",
           verdict: "passed",
@@ -1557,7 +1557,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           experimentId: "compare/codex",
           evalId: "from-old-a",
           dispatch: [{
-            reason: "stale",
+            reason: "previous-result",
             comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-a", to: "current" }] },
           }],
           prior: [{ locator: "@1A1B2C3D4E5F", verdict: "passed", acceptance: "available" }],
@@ -1566,7 +1566,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           experimentId: "compare/codex",
           evalId: "from-old-b-1",
           dispatch: [{
-            reason: "stale",
+            reason: "previous-result",
             comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }] },
           }],
           prior: [{ locator: "@1E5F6G7H8J9K", verdict: "passed", acceptance: "available" }],
@@ -1575,7 +1575,7 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
           experimentId: "compare/codex",
           evalId: "from-old-b-2",
           dispatch: [{
-            reason: "stale",
+            reason: "previous-result",
             comparison: { kind: "changed", deltas: [{ selector: "config:judge.model", kind: "changed", from: "old-b", to: "current" }] },
           }],
           prior: [{ locator: "@1J9K0L1M2N3P", verdict: "passed", acceptance: "available" }],
@@ -1583,8 +1583,8 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       ],
     });
 
-    // 每条结果既有矩阵行尾的 stale 原因，也有带 prior/accept 的详细行。
-    expect(text.match(/^compare\/codex  from-old-.*stale passed:/gm)).toHaveLength(6);
+    // 每条结果既有矩阵行尾的 previous-result 原因，也有带 prior/accept 的详细行。
+    expect(text.match(/^compare\/codex  from-old-.*previous-result passed:/gm)).toHaveLength(6);
     expect(text).toContain("prior:  @1A1B2C3D4E5F");
     expect(text).toContain("prior:  @1E5F6G7H8J9K");
     expect(text).toContain("prior:  @1J9K0L1M2N3P");
@@ -1600,17 +1600,17 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
       rows: [{
         experimentId: "compare/codex",
         evalId: "legacy",
-        dispatch: [{ reason: "stale", comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] } }],
+        dispatch: [{ reason: "previous-result", comparison: { kind: "changed", deltas: [{ selector: "config:state", kind: "removed", from: '{"_tag":"Stateless"}' }] } }],
         prior: [{ locator: "@1rtu4f1f", verdict: "passed", acceptance: "legacy-locator" }],
       }],
     });
 
-    expect(text).toContain("stale passed: config:state removed (was {\"_tag\":\"Stateless\"})");
+    expect(text).toContain("previous-result passed: config:state removed (was {\"_tag\":\"Stateless\"})");
     expect(text).toContain("accept: unavailable (legacy locator; rerun to create an acceptable result)");
     expect(text).not.toContain("niceeval accept @1rtu4f1f");
   });
 
-  it("没有 stale 行时整块不打印", () => {
+  it("没有 previous-result 行时整块不打印", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 1,
       evals: 1,
@@ -1661,7 +1661,7 @@ describe("差异值的完整性边界:构造侧完整值,人读渲染对齐差�
     expect(windowedTo.endsWith("…")).toBe(true);
   });
 
-  it("renderHumanDryPlan 的 stale 行对 Changed 差异应用同一份对齐窗口,差异点两侧仍互不相同", () => {
+  it("renderHumanDryPlan 的 previous-result 行对 Changed 差异应用同一份对齐窗口,差异点两侧仍互不相同", () => {
     // bug: memory/config-delta-value-truncated-before-diff.md
     const sharedPrefix = "x".repeat(90);
     const text = renderHumanDryPlan({
@@ -1673,7 +1673,7 @@ describe("差异值的完整性边界:构造侧完整值,人读渲染对齐差�
         experimentId: "compare/codex",
         evalId: "memory/long-value",
         dispatch: [{
-          reason: "stale",
+          reason: "previous-result",
           comparison: {
             kind: "changed",
             deltas: [{
@@ -1709,7 +1709,7 @@ describe("差异值的完整性边界:构造侧完整值,人读渲染对齐差�
         experimentId: "compare/codex",
         evalId: "memory/added",
         dispatch: [{
-          reason: "stale",
+          reason: "previous-result",
           comparison: { kind: "changed", deltas: [{ selector: "config:flags.x", kind: "added", to: longValue }] },
         }],
       }],

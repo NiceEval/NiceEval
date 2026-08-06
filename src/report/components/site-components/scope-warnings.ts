@@ -100,7 +100,7 @@ function dedupeCommand(members: readonly SampleIssueNotice[]): string | null {
 /**
  * 按「用户要做什么」组织,不按发生顺序:带 experimentId 且登记了徽标模板的 kind 按实验聚合,
  * 其余(含未登记 kind)按 kind 聚合。组排序:实验作用域组在前(按实验 id 字典序),
- * 非实验作用域组在后(按 kind);类别两档制(integrity / freshness)已随 stale-run /
+ * 非实验作用域组在后(按 kind);类别两档制(integrity / freshness)已随旧 Run /
  * partial-coverage 一并删除——三种 warning kind 都是同一类完整性事实,不再需要档位区分
  * (docs/feature/reports/components/summaries/sample-notices.md「聚合轴是动作,不是发生顺序」)。
  */

@@ -13,6 +13,7 @@ import type {
   Sample,
   SampleCoverage,
   SampleIssue,
+  SampleMissing,
   UnreadableRun,
   Run,
 } from "../record/types.ts";
@@ -27,10 +28,9 @@ import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregat
  */
 export function latestRunSample(
   record: Pick<Record, "experiments" | "unreadable" | "root">,
-  opts?: { experiments?: string | string[]; fresh?: boolean },
+  opts?: { experiments?: string | string[] },
 ): Sample {
   const selected = filterExperiments(record.experiments, opts?.experiments);
-  const fresh = opts?.fresh === true;
   const issues: SampleIssue[] = [];
   const coverage: SampleCoverage[] = [];
   const runs: Run[] = [];
@@ -38,24 +38,18 @@ export function latestRunSample(
 
   for (const exp of selected) {
     const raw = exp.latestRun;
-    runs.push(raw); // 真实 Run,原样保留,不重建
-    // fresh: true 只保留新执行的 attempt——在 latest() 口径下,选中集合永远只有这一份
-    // 快照,「所属快照早于该实验在 Sample 中最新快照」这条历史出身天生不成立(只有它自己),
-    // 唯一的历史出身是携带条目(attempt.carried)。只过滤显式物化的 attempts 集,不克隆/
-    // 改写来源 Run 的 evals(见 docs/feature/record/library.md「选择快照」)。
-    const picked = fresh ? raw.attempts.filter((a) => !a.carried) : raw.attempts;
+    const picked = raw.attempts;
+    if (picked.length > 0) runs.push(raw); // 只保留实际贡献 Attempt 的真实 Run,不重建
     attempts.push(...picked);
 
     // 覆盖事实:分母 = 该实验已知 eval 并集(本地历史 ∪ 各快照携带的 knownEvalIds),
-    // 分子 = 当前口径(可能已被 fresh 收窄)下有 attempt 的题。位置参数允许只重跑一道题、
-    // fresh 允许全部结果都是携带 —— 两种情况都不能安静吞下,统一进 missingEvalIds。
+    // 分子 = 当前口径下有物理 Attempt 的题。位置参数允许只重跑一道题,缺口不能安静吞下。
     const knownEvalIds = exp.knownEvalIds;
-    const coveredIds = new Set(picked.map((a) => a.evalId));
     coverage.push({
       experimentId: exp.id,
       run: raw,
       knownEvalIds: [...knownEvalIds],
-      missingEvalIds: knownEvalIds.filter((id) => !coveredIds.has(id)),
+      missing: missingFor(knownEvalIds, picked, exp.runs.flatMap((run) => run.attempts)),
     });
 
     if (!raw.completedAt) {
@@ -73,7 +67,7 @@ export function latestRunSample(
   const historyAttempts = dedupeAttempts(
     selected.flatMap((exp) => exp.runs.flatMap((run) => run.attempts)),
   ).attempts;
-  return makeSample("latest-run", runs, selectedAttempts, issues, coverage, fresh, historyAttempts);
+  return makeSample("latest-run", runs, selectedAttempts, issues, coverage, historyAttempts);
 }
 
 /** currentSample 的范围输入:experiment id 前缀与 eval id 前缀,都可缺省。 */
@@ -82,8 +76,6 @@ export interface SampleOptions {
   experiments?: string | string[];
   /** eval id 前缀(位置参数),收窄 Sample 覆盖的 eval;覆盖事实分母同步收窄到范围内。 */
   evals?: string | string[];
-  /** 只保留新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题进 coverage.missingEvalIds。 */
-  fresh?: boolean;
 }
 
 // ───────────────────────── 可比性配置 ─────────────────────────
@@ -91,7 +83,7 @@ export interface SampleOptions {
 /**
  * current() 跨快照拼接的可比性前提所比较的字段集(docs/feature/record/library.md
  * 「官方现刻水位」):会改变单题被测行为或判定的字段。runs / earlyExit / maxConcurrency /
- * selectedEvalIds / evalFilterFingerprint / description 是编排与选题字段,不参与比较。
+ * 运行期选题与 description 不参与比较，也不落进 Record 的结果配置。
  */
 export interface ComparabilityConfig {
   agent: string;
@@ -138,15 +130,6 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
 }
 
 /**
- * 一个快照实际选中的 eval id 全集:优先读落盘的 `experiment.selectedEvalIds`(niceeval 自己的
- * 写入面必有此字段);第三方 harness 未实现该字段时退化为该快照实际写出的 `evals`,不把整份
- * 来源排除在外(见 docs/feature/record/architecture.md「selectedEvalIds」)。
- */
-export function selectedEvalIdsOf(run: Run): readonly string[] {
-  return run.experiment?.selectedEvalIds ?? run.evals.map((ev) => ev.id);
-}
-
-/**
  * 两个宿主(show / view)共用的现刻水位选择器:每个 experiment × eval 取「包含该 eval 的
  * 最新快照」里的全部 attempt,跨 run 拼出当前判定水位。results.latest() 只挑「每实验最新
  * 快照」,带 eval 前缀的局部重跑会产出残缺快照;现刻水位承诺「不会因为一次局部重跑变残缺」,
@@ -157,7 +140,7 @@ export function selectedEvalIdsOf(run: Run): readonly string[] {
  * **可比性前提**:每个 experiment 以最新快照的可比性配置(agent / model / reasoningEffort /
  * flags / budget / timeoutMs / sandbox)为基准,只有配置与基准深相等的历史快照才参与补齐;
  * 改过配置后只补跑部分 eval 时,旧配置快照覆盖的其余题不冒充新配置的水位,进
- * `coverage.missingEvalIds` 如实呈现。这保证 current() 产出的每个 experiment 只对应一套配置。
+ * `coverage.missing` 如实呈现。这保证 current() 产出的每个 experiment 只对应一套配置。
  *
  * 同一 eval 的全部 attempts 必须整批取自包含它的最新快照,不把历史快照的 attempts 平铺后
  * 按 eval 聚合——否则会把不同运行的重试混成一次虚构运行。
@@ -168,26 +151,29 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
       ? evalPrefixPredicate(Array.isArray(scope.evals) ? scope.evals : [scope.evals])
       : () => true;
   const experiments = filterExperiments(record.experiments, scope.experiments);
-  const fresh = scope.fresh === true;
-
   const runs: Run[] = [];
   const attempts: AttemptHandle[] = [];
   const issues: SampleIssue[] = [];
   const coverage: SampleCoverage[] = [];
 
   for (const exp of experiments) {
+    if (exp.latestRun.completedAt === undefined) {
+      issues.push({
+        code: "unfinished-run",
+        experimentId: exp.id,
+        startedAt: exp.latestRun.startedAt,
+        dir: exp.latestRun.dir,
+      });
+    }
+
     // 可比性基准 = 该实验最新快照的可比性配置;不一致的旧快照整份跳过,不贡献 attempt。
     const baseline = exp.latestRun.configHash;
     // 逐题取最新:快照按最新在前,首个出现即最新判定
     const taken = new Map<string, { ev: Eval; run: Run }>();
     for (const run of exp.runs) {
       if (run !== exp.latestRun && (baseline === undefined || run.configHash !== baseline)) continue;
-      // 一个来源快照只贡献它自己选中的 eval——不在其 selectedEvalIds(或第三方退化后的实际
-      // evals)内的历史 attempt 不进入现刻水位,即使它恰好出现在 run.evals 里。第三方
-      // 无该字段时 selectedEvalIdsOf 退化为快照实际 evals,这里的过滤天然是 no-op。
-      const selectedIds = new Set(selectedEvalIdsOf(run));
       for (const ev of run.evals) {
-        if (!selectedIds.has(ev.id) || !match(ev.id) || taken.has(ev.id)) continue;
+        if (ev.attempts.length === 0 || !match(ev.id) || taken.has(ev.id)) continue;
         taken.set(ev.id, { ev, run });
       }
     }
@@ -200,7 +186,7 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
           experimentId: exp.id,
           run: exp.latestRun,
           knownEvalIds,
-          missingEvalIds: [...knownEvalIds],
+          missing: missingFor(knownEvalIds, [], exp.runs.flatMap((run) => run.attempts)),
         });
       }
       continue;
@@ -209,24 +195,11 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
     // attempts 按 eval id 字典序物化(与旧 evals 顺序同一口径),不随贡献来源的快照分布而变。
     const picks = [...taken.values()].sort((a, b) => a.ev.id.localeCompare(b.ev.id));
 
-    // 水位基准:贡献来源(fresh 过滤前)里 startedAt 最新的一个——用于判断"新执行"阈值与
-    // 该实验现刻是否收尾,不受 fresh 是否连它自己的数据都排除影响。
-    let watermark: Run = picks[0]!.run;
-    for (const pick of picks) {
-      if (pick.run.startedAt > watermark.startedAt) watermark = pick.run;
-    }
-
-    // fresh 只过滤显式物化的 attempts 集,不克隆/改写来源 Run 的 evals——真实 Run
-    // 原样留在 `runs` 里。保留该实验「新执行」的 attempt:属于水位基准快照
-    // (startedAt 就是它的 startedAt)且非携带;历史执行整条排除,题内全部历史执行时该题
-    // 在 `attempts` 里自然消失,由下面的覆盖事实计算转入 missingEvalIds。
-    const pickedAttempts = fresh
-      ? picks.flatMap((pick) => pick.ev.attempts.filter((a) => !a.carried && a.run.startedAt >= watermark.startedAt))
-      : picks.flatMap((pick) => pick.ev.attempts);
+    const pickedAttempts = picks.flatMap((pick) => pick.ev.attempts);
     attempts.push(...pickedAttempts);
 
-    // 真实贡献 Run:只收物化进 `pickedAttempts` 的来源——fresh 排除掉的来源不再列入,
-    // `Sample.runs` 里每个成员都真正 backs 至少一条 `Sample.attempts`。按 exp.runs
+    // 真实贡献 Run:只收物化进 `pickedAttempts` 的来源,`Sample.runs` 里每个成员都真正 backs 至少一条
+    // `Sample.attempts`。按 exp.runs
     // 既有的最新在前顺序去重,原对象身份保留。
     const usedSnapshots = new Set(pickedAttempts.map((a) => a.run));
     const contributing = exp.runs.filter((s) => usedSnapshots.has(s));
@@ -234,25 +207,16 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
 
     // 覆盖事实:分母收窄到范围内(--exp / 位置参数),不让范围外的缺口刷屏;跨快照补齐后
     // 仍缺的题——「历史上见过却从未在可比配置的可读落盘里出现」(含改配置后未补跑的题)、
-    // 或被 fresh 排除的题——统一进 missingEvalIds,不静默。
+    // 或当前配置没有结果的题——统一进 missing,不静默。
     const knownEvalIds = exp.knownEvalIds.filter(match);
-    const coveredIds = new Set(pickedAttempts.map((a) => a.evalId));
     coverage.push({
       experimentId: exp.id,
       // 可比性基准即最新 Run:分组读 agent/model/flags 时与「这套配置」对齐。
       run: exp.latestRun,
       knownEvalIds,
-      missingEvalIds: knownEvalIds.filter((id) => !coveredIds.has(id)),
+      missing: missingFor(knownEvalIds, pickedAttempts, exp.runs.flatMap((run) => run.attempts)),
     });
 
-    if (watermark.completedAt === undefined) {
-      issues.push({
-        code: "unfinished-run",
-        experimentId: exp.id,
-        startedAt: watermark.startedAt,
-        dir: watermark.dir,
-      });
-    }
   }
 
   issues.push(...unreadableSnapshotWarnings(record.unreadable, record.root));
@@ -263,7 +227,35 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
       exp.runs.flatMap((run) => run.attempts).filter((attempt) => match(attempt.evalId))
     ),
   ).attempts;
-  return makeSample("current", runs, selectedAttempts, issues, coverage, fresh, historyAttempts);
+  return makeSample("current", runs, selectedAttempts, issues, coverage, historyAttempts);
+}
+
+function missingFor(
+  knownEvalIds: readonly string[],
+  currentAttempts: readonly AttemptHandle[],
+  historyAttempts: readonly AttemptHandle[],
+): SampleMissing[] {
+  const covered = new Set(currentAttempts.map((attempt) => attempt.evalId));
+  return knownEvalIds.flatMap((evalId): SampleMissing[] => {
+    if (covered.has(evalId)) return [];
+    const candidates = historyAttempts.filter((attempt) => attempt.evalId === evalId);
+    if (candidates.length === 0) return [{ evalId, reason: "never-run" }];
+    const previous = candidates.reduce((latest, candidate) => {
+      if (isNewerSnapshot(candidate.run, latest.run)) return candidate;
+      if (isNewerSnapshot(latest.run, candidate.run)) return latest;
+      const latestAt = latest.result.startedAt ?? latest.run.startedAt;
+      const candidateAt = candidate.result.startedAt ?? candidate.run.startedAt;
+      return candidateAt > latestAt ? candidate : latest;
+    });
+    const startedAt = previous.result.startedAt ?? previous.run.startedAt;
+    return [{
+      evalId,
+      reason: "previous-result",
+      ...(previous.locator !== undefined
+        ? { previous: { locator: previous.locator, verdict: previous.result.verdict, startedAt } }
+        : {}),
+    }];
+  });
 }
 
 function danglingEvidenceIssues(attempts: readonly AttemptHandle[]): SampleIssue[] {
@@ -323,7 +315,7 @@ function unreadableSnapshotWarnings(unreadable: readonly UnreadableRun[], _root:
  *
  * `filter` 只删不换:按快照删减,`attempts` 只保留 `attempt.run` 仍属于幸存快照的
  * 条目;`coverage` 逐 experiment 用原始 `knownEvalIds`(删减前的分母不变)与幸存 `attempts`
- * 重新计算 `missingEvalIds`——同一 experiment 删掉部分贡献来源、保留其它来源时,只有被删
+ * 重新计算 `missing`——同一 experiment 删掉部分贡献来源、保留其它来源时,只有被删
  * 来源独占贡献的 eval 转入缺口,不是连带清空或保留整个 experiment;该 experiment 全部来源
  * 都被删除时连同 coverage 项一并丢弃,不留一条「100% 缺失」的假账,但没有快照可依附的
  * coverage 项(如 current() 里全无可比配置贡献的实验)不受快照删减影响,原样保留。
@@ -336,7 +328,6 @@ export function makeSample(
   attempts: AttemptHandle[],
   issues: SampleIssue[],
   coverage: SampleCoverage[] = [],
-  fresh = false,
   historyAttempts = attempts,
 ): Sample {
   const rebuild = (
@@ -344,32 +335,29 @@ export function makeSample(
     nextHistory: AttemptHandle[],
     nextIssues = issues,
     nextCoverage = coverage,
-    nextFresh = fresh,
   ): Sample => {
     const runSet = new Set(nextAttempts.map((attempt) => attempt.run));
     const nextRuns = runs.filter((run) => runSet.has(run));
-    const coveredByExperiment = new Map<string, Set<string>>();
-    for (const attempt of nextAttempts) {
-      const covered = coveredByExperiment.get(attempt.experimentId) ?? new Set<string>();
-      covered.add(attempt.evalId);
-      coveredByExperiment.set(attempt.experimentId, covered);
-    }
     const rebuiltCoverage = nextCoverage.map((item) => ({
       ...item,
-      missingEvalIds: item.knownEvalIds.filter((id) => !coveredByExperiment.get(item.experimentId)?.has(id)),
+      missing: missingFor(
+        item.knownEvalIds,
+        nextAttempts.filter((attempt) => attempt.experimentId === item.experimentId),
+        nextHistory.filter((attempt) => attempt.experimentId === item.experimentId),
+      ),
     }));
     const scopedIssues = nextIssues.filter((issue) => {
       if (!("experimentId" in issue)) return true;
-      return nextRuns.some((run) => run.experimentId === issue.experimentId);
+      return nextRuns.some((run) => run.experimentId === issue.experimentId)
+        || nextCoverage.some((item) => item.experimentId === issue.experimentId);
     });
-    return makeSample(mode, nextRuns, nextAttempts, scopedIssues, rebuiltCoverage, nextFresh, nextHistory);
+    return makeSample(mode, nextRuns, nextAttempts, scopedIssues, rebuiltCoverage, nextHistory);
   };
   return {
     mode,
     runs,
     attempts,
     historyAttempts,
-    fresh,
     coverage,
     issues,
     scope(options): Sample {
@@ -401,15 +389,6 @@ export function makeSample(
     },
     filter(predicate): Sample {
       return rebuild(attempts.filter(predicate), historyAttempts.filter(predicate));
-    },
-    freshOnly(): Sample {
-      return rebuild(
-        attempts.filter((attempt) => !attempt.carried && attempt.run === runs.find((run) => run.experimentId === attempt.experimentId)),
-        historyAttempts,
-        issues,
-        coverage,
-        true,
-      );
     },
   };
 }

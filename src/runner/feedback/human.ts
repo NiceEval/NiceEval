@@ -1187,7 +1187,7 @@ export interface HumanDryPlanRow {
     attempts?: readonly number[];
     comparison?: HumanFingerprintComparison;
   }[];
-  /** stale 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
+  /** previous-result 行对应的历史结果；旧格式 locator 会明确显示为不可接受。 */
   prior?: readonly {
     attempt?: number;
     locator: string;
@@ -1249,23 +1249,23 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
       : dryPlanReasonSuffix(row.dispatch, row.prior, row.carried, row.attempts ?? input.attempts);
     lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
   }
-  const staleBlocks = renderStaleDeltaGroups(input);
-  if (staleBlocks.length > 0) lines.push("", ...staleBlocks);
+  const previousResultBlocks = renderPreviousResultDeltaGroups(input);
+  if (previousResultBlocks.length > 0) lines.push("", ...previousResultBlocks);
   return `${lines.join("\n")}\n`;
 }
 
-/** stale 行逐条列出历史 locator；接受命令永远只影响这一条结果，不按 selector 聚合。 */
-function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
+/** previous-result 行逐条列出历史 locator；接受命令永远只影响这一条结果，不按 selector 聚合。 */
+function renderPreviousResultDeltaGroups(input: HumanDryPlanInput): string[] {
   const out: string[] = [];
   for (const row of input.rows) {
     if (!row.prior || row.prior.length === 0) continue;
     for (const prior of row.prior) {
-      const staleGroup = row.dispatch?.find((group) => group.reason === "stale" && group.comparison !== undefined);
-      const comparison = prior.comparison ?? staleGroup?.comparison;
+      const previousResultGroup = row.dispatch?.find((group) => group.reason === "previous-result" && group.comparison !== undefined);
+      const comparison = prior.comparison ?? previousResultGroup?.comparison;
       const summary = comparison === undefined
         ? "fingerprint comparison explanation unavailable"
         : formatFingerprintComparison(comparison);
-      out.push(`${row.experimentId}  ${row.evalId}  stale ${prior.verdict}: ${summary}`);
+      out.push(`${row.experimentId}  ${row.evalId}  previous-result ${prior.verdict}: ${summary}`);
       if (comparison !== undefined) out.push(...renderFingerprintComparisonDetails(comparison, "  "));
       const evidence = prior.evidenceState === "dangling" ? "evidence unavailable" : "evidence available";
       out.push(`  prior:  ${prior.locator} (${prior.verdict} · ${evidence})`);
@@ -1298,7 +1298,7 @@ function foldIds(ids: string[]): string {
 }
 
 /**
- * `stale: config:judge.model · new` —— 同一行的多组原因按门的出现序连排,stale 附差异 selector。
+ * `previous-result: config:judge.model · new` —— 同一行的多组原因按门的出现序连排，旧结果附差异 selector。
  * 当一行有多个 attempt 时,每个派发组带 `N/total`;携入组只在部分携入时带这个分数,避免把
  * `carried` 的来源判定折叠成一个没有 verdict 的总数。
  */
@@ -1346,11 +1346,13 @@ function formatDispatchGroup(
   const comparison = group.comparison;
   const relevantPrior = (prior ?? []).filter((result) =>
     group.attempts === undefined || result.attempt === undefined || group.attempts.includes(result.attempt));
-  const staleVerdicts = group.reason === "stale"
+  const previousResultVerdicts = group.reason === "previous-result"
     ? (["passed", "failed", "errored", "skipped"] as const).filter((verdict) =>
         relevantPrior.some((result) => result.verdict === verdict))
     : [];
-  const reason = staleVerdicts.length > 0 ? `stale ${staleVerdicts.join("/")}` : group.reason;
+  const reason = previousResultVerdicts.length > 0
+    ? `previous-result ${previousResultVerdicts.join("/")}`
+    : group.reason;
   if (comparison !== undefined) return `${reason}${countSuffix}: ${formatFingerprintComparison(comparison)}`;
   return `${reason}${countSuffix}`;
 }

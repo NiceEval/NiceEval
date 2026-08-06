@@ -152,8 +152,6 @@ export interface ViewScanOptions {
   config?: { cwd: string };
   /** --page:多页报告的初始页 id;未命中任何页按用法错误退出并列出可用页 id。 */
   page?: string;
-  /** --fresh:报告槽 Selection 只含新执行的 attempt;不改变有效根的收窄(见 view.md「打开与收窄」)。 */
-  fresh?: boolean;
   /**
    * 单页渲染失败的处置(docs/feature/reports/architecture.md「管线以页为单位执行」):
    * 本地 server 传 "embed"(该页显示完整错误反馈,其它页照常可读);静态导出与启动前预检
@@ -421,7 +419,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   }
 
   // 报告槽 Selection:恒经现刻水位选择器合成,与 show 裸跑同口径(两扇门判定不分叉)。
-  const selection = currentSample(results, { experiments: opts.experiment, evals: patterns, fresh: opts.fresh });
+  const selection = currentSample(results, { experiments: opts.experiment, evals: patterns });
 
   if (patterns.length > 0 && selection.runs.every((s) => s.evals.length === 0)) {
     const known = [
@@ -470,7 +468,6 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     dedupedAttempts,
     [],
     selection.coverage,
-    false,
     dedupedAttempts,
   );
 
@@ -928,7 +925,7 @@ function noReadableResults(target: string, unreadable: UnreadableRun[]): string 
   return [
     `No readable results under ${target} — ${runs} unreadable:`,
     ...lines,
-    "Re-run your experiments with this niceeval to produce fresh results.",
+    "Re-run your experiments with this niceeval to produce new results.",
   ].join("\n");
 }
 

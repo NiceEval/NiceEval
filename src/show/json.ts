@@ -36,7 +36,6 @@ export interface ShowJsonSample {
   evalPrefix?: string;
   /** 解析后的 experiment id 全集;对照视图下顺序即条件顺序,首个是基准。 */
   experiments: string[];
-  fresh: boolean;
 }
 
 interface ShowJsonBase {
@@ -86,13 +85,11 @@ export function buildShowSample(input: {
   resultsRoot: string;
   patterns: readonly string[];
   experiments: readonly string[];
-  fresh: boolean;
 }): ShowJsonSample {
   return {
     resultsRoot: input.resultsRoot,
     ...(input.patterns.length > 0 ? { evalPrefix: input.patterns.join(",") } : {}),
     experiments: [...input.experiments],
-    fresh: input.fresh,
   };
 }
 

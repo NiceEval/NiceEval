@@ -57,8 +57,6 @@ interface SnapshotOpts {
   /** 缺省 = 已收尾(completedAt = startedAt);置 true 则不写 completedAt,模拟中断快照。 */
   unfinished?: boolean;
   knownEvalIds?: string[];
-  /** 声明这份快照实际选中的 eval id 全集;省略 = 第三方 harness 未实现该字段。 */
-  selectedEvalIds?: string[];
   /** 编排字段覆盖(runs / earlyExit / maxConcurrency / description…),叠在默认 { attempts: 1, earlyExit: true } 上。 */
   experiment?: globalThis.Record<string, unknown>;
   configHash?: string;
@@ -85,7 +83,7 @@ async function writeSnapshot(
     configHash: opts.configHash ?? "fixture-config",
     ...(opts.unfinished ? {} : { completedAt: opts.startedAt }),
     ...(opts.knownEvalIds ? { knownEvalIds: opts.knownEvalIds } : {}),
-    ...(opts.selectedEvalIds !== undefined || opts.experiment !== undefined
+    ...(opts.experiment !== undefined
       ? {
           experiment: {
             attempts: 1,
@@ -93,7 +91,6 @@ async function writeSnapshot(
             sandboxLayer: {},
             sandboxPlansByEval: {},
             agentInstalls: [],
-            ...(opts.selectedEvalIds !== undefined ? { selectedEvalIds: opts.selectedEvalIds } : {}),
             ...opts.experiment,
           },
         }
@@ -133,7 +130,7 @@ type NormWarning =
 interface NormCoverage {
   experimentId: string;
   knownEvalIds: string[];
-  missingEvalIds: string[];
+  missing: string[];
 }
 interface NormSelection {
   issues: NormWarning[];
@@ -149,9 +146,6 @@ function normalizeWarning(w: SampleIssue): NormWarning {
     case "unreadable-run":
       // dir 是宿主机绝对路径,归一化掉;这个 kind 本就非实验作用域,没有 experimentId 可比。
       return { kind: w.code, reason: w.reason };
-    case "missing-startedAt":
-      // 不透出到 Sample.issues(只由 dedupeAttempts 直调返回),两宿主的 Selection 不会带上它。
-      throw new Error("unexpected missing-startedAt in Sample.issues");
   }
 }
 
@@ -174,7 +168,7 @@ function normalizeSelection(selection: Sample): NormSelection {
   return {
     issues: selection.issues.map(normalizeWarning),
     coverage: selection.coverage
-      .map((c) => ({ experimentId: c.experimentId, knownEvalIds: c.knownEvalIds, missingEvalIds: c.missingEvalIds }))
+      .map((c) => ({ experimentId: c.experimentId, knownEvalIds: c.knownEvalIds, missing: c.missing.map((item) => item.evalId) }))
       .sort((a, b) => a.experimentId.localeCompare(b.experimentId)),
     experiments: [...byExperiment.entries()].map(([experimentId, evals]) => ({
       experimentId,
@@ -184,8 +178,8 @@ function normalizeSelection(selection: Sample): NormSelection {
 }
 
 /** 两个宿主构造给选择器的 scope 完全同形:验证读源无误,避免"我以为它们一样"。 */
-function hostScope(evals: string[], experiment?: string, fresh?: boolean): SampleOptions {
-  return { experiments: experiment, ...(evals.length > 0 ? { evals } : {}), fresh };
+function hostScope(evals: string[], experiment?: string): SampleOptions {
+  return { experiments: experiment, ...(evals.length > 0 ? { evals } : {}) };
 }
 
 /** 周一全量(q1 通过、q2 失败)+ 周二只补跑 q1(仍通过):现刻水位 = q1 周二 + q2 周一,50%。 */
@@ -214,7 +208,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
     const results = await openRecord(root);
     expect(normalizeSelection(currentSample(results))).toEqual({
       issues: [],
-      coverage: [{ experimentId: "solo/bub", knownEvalIds: ["q1"], missingEvalIds: [] }],
+      coverage: [{ experimentId: "solo/bub", knownEvalIds: ["q1"], missing: [] }],
       experiments: [
         {
           experimentId: "solo/bub",
@@ -229,7 +223,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
     const results = await openRecord(root);
     expect(normalizeSelection(currentSample(results))).toEqual({
       issues: [],
-      coverage: [{ experimentId: "compare/bub", knownEvalIds: ["q1", "q2"], missingEvalIds: [] }],
+      coverage: [{ experimentId: "compare/bub", knownEvalIds: ["q1", "q2"], missing: [] }],
       experiments: [
         {
           experimentId: "compare/bub",
@@ -243,44 +237,40 @@ describe("currentSample · 现刻水位结构化身份", () => {
     } satisfies NormSelection);
     // 对照:latestRunSample(results) 只挑周二快照,是残缺的(这正是宿主要合成现刻水位的原因)——
     // coverage 承载这份残缺事实,不再是 warning。
-    expect(latestRunSample(results).coverage.some((c) => c.missingEvalIds.length > 0)).toBe(true);
+    expect(latestRunSample(results).coverage.some((c) => c.missing.length > 0)).toBe(true);
   });
 
-  it("show / view 两宿主注入同一个 fresh 口径(hostScope({ fresh: true })):跨快照拼入的 q2 被排除,分母缺口进 coverage", async () => {
+  it("show / view 两宿主共享 current 口径:跨快照拼入的 q2 与最新 q1 都进入当前结果", async () => {
     const root = await seedPartialRerun();
     const results = await openRecord(root);
-    // 两宿主都用同一个 hostScope(...) 构造 SampleOptions 传给 currentSample——这里直接验证
-    // 该共享函数收到 fresh: true 后的行为,即两宿主实际得到的是同一份口径(show/index.ts 与
-    // view/data.ts 都把各自的 --fresh flag 原样透传成这个字段,不做任何宿主特有的加工)。
-    const fresh = currentSample(results, hostScope([], undefined, true));
-    // q1 来自周二(新执行),q2 只在周一跑过、被周二"补齐"进来——是跨快照拼入的历史执行,fresh 排除它。
-    expect(fresh.attempts.map((a) => a.evalId)).toEqual(["q1"]);
-    expect(fresh.coverage.find((c) => c.experimentId === "compare/bub")!.missingEvalIds).toEqual(["q2"]);
-    // q2 唯一的来源(周一快照)不再贡献任何 attempts,不该继续出现在 runs 里。
-    expect(fresh.runs.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
+    // 两宿主都用同一个 hostScope(...) 构造 SampleOptions 传给 currentSample。
+    const sample = currentSample(results, hostScope([]));
+    expect(sample.attempts.map((a) => a.evalId)).toEqual(["q1", "q2"]);
+    expect(sample.coverage.find((c) => c.experimentId === "compare/bub")!.missing).toEqual([]);
+    expect(sample.runs.map((s) => s.startedAt).sort()).toEqual([
+      "2026-07-01T08:00:00.000Z",
+      "2026-07-02T08:00:00.000Z",
+    ]);
   });
 
-  it("两个真实贡献 Run 各自保留对象身份,不合并成一个带重建 selectedEvalIds 的对象(q1 新快照 + q2 旧快照补齐)", async () => {
+  it("两个真实贡献 Run 各自保留对象身份,不合并成一个重建对象(q1 新快照 + q2 旧快照补齐)", async () => {
     const root = await makeRoot();
     await writeSnapshot(
       root,
       "2026-07-01T08-00-00-000Z",
-      { experimentId: "compare/carry", startedAt: "2026-07-01T08:00:00.000Z", selectedEvalIds: ["q1", "q2"] },
+      { experimentId: "compare/carry", startedAt: "2026-07-01T08:00:00.000Z" },
       [res("q1", "passed"), res("q2", "failed")],
     );
     await writeSnapshot(
       root,
       "2026-07-02T08-00-00-000Z",
-      { experimentId: "compare/carry", startedAt: "2026-07-02T08:00:00.000Z", selectedEvalIds: ["q1"] },
+      { experimentId: "compare/carry", startedAt: "2026-07-02T08:00:00.000Z" },
       [res("q1", "passed")],
     );
     const results = await openRecord(root);
     const scope = currentSample(results);
-    // 两个来源各自原样保留:各自的 selectedEvalIds 是它自己落盘的那份,不是合并/重建的产物。
+    // 两个来源各自原样保留,不是合并/重建的产物。
     expect(scope.runs).toHaveLength(2);
-    const byStartedAt = new Map(scope.runs.map((s) => [s.startedAt, s]));
-    expect(byStartedAt.get("2026-07-01T08:00:00.000Z")!.experiment!.selectedEvalIds).toEqual(["q1", "q2"]);
-    expect(byStartedAt.get("2026-07-02T08:00:00.000Z")!.experiment!.selectedEvalIds).toEqual(["q1"]);
     // 但物化的 attempts 只取现刻水位实际选中的那份:q1 来自周二,q2 来自周一补齐。
     expect(scope.attempts.map((a) => `${a.evalId}@${a.run.startedAt}`).sort()).toEqual([
       "q1@2026-07-02T08:00:00.000Z",
@@ -288,27 +278,27 @@ describe("currentSample · 现刻水位结构化身份", () => {
     ]);
   });
 
-  it("来源快照声明 selectedEvalIds:[q1] 却夹带 q2 的历史 attempt,现刻水位不含该 q2(真实 Run 的 evals 原样保留 q2,只是不物化进 attempts)", async () => {
+  it("来源快照的物理 evals 是 currentSample 的唯一输入,夹带 q2 也进入现刻水位", async () => {
     const root = await makeRoot();
     await writeSnapshot(
       root,
       "2026-07-01T08-00-00-000Z",
-      { experimentId: "compare/leaky", startedAt: "2026-07-01T08:00:00.000Z", selectedEvalIds: ["q1"] },
-      [res("q1", "passed"), res("q2", "passed")], // q2 落盘了,但没被这次实验选中
+      { experimentId: "compare/leaky", startedAt: "2026-07-01T08:00:00.000Z" },
+      [res("q1", "passed"), res("q2", "passed")],
     );
     const results = await openRecord(root);
     const scope = currentSample(results);
-    expect(scope.attempts.map((a) => a.evalId)).toEqual(["q1"]);
-    // 真实 Run 原样保留:q2 仍在它自己的 evals 里,select.ts 没有克隆/裁剪来源对象。
+    expect(scope.attempts.map((a) => a.evalId)).toEqual(["q1", "q2"]);
+    // 真实 Run 原样保留,q2 也物化进 attempts。
     expect(scope.runs[0]!.evals.map((ev) => ev.id).sort()).toEqual(["q1", "q2"]);
   });
 
-  it("第三方快照缺 experiment.selectedEvalIds 时按其实际 evals 退化,不整份排除;与本方快照混合时各自按自己口径收窄", async () => {
+  it("第三方快照没有运行期选题字段时按其实际物理 evals 读取", async () => {
     const root = await makeRoot();
     await writeSnapshot(
       root,
       "2026-07-01T08-00-00-000Z",
-      { experimentId: "third-party/harness", startedAt: "2026-07-01T08:00:00.000Z" }, // 无 selectedEvalIds
+      { experimentId: "third-party/harness", startedAt: "2026-07-01T08:00:00.000Z" },
       [res("q1", "passed"), res("q2", "passed")],
     );
     const results = await openRecord(root);
@@ -354,8 +344,8 @@ describe("currentSample · 现刻水位结构化身份", () => {
     // 每个 experiment 只跟自己的历史比,不跟 Sample 里其它 experiment 比,两者都无警告、无缺口。
     expect(norm.issues).toEqual([]);
     expect(norm.coverage).toEqual([
-      { experimentId: "compare/bub", knownEvalIds: ["q1"], missingEvalIds: [] },
-      { experimentId: "compare/codex", knownEvalIds: ["q1"], missingEvalIds: [] },
+      { experimentId: "compare/bub", knownEvalIds: ["q1"], missing: [] },
+      { experimentId: "compare/codex", knownEvalIds: ["q1"], missing: [] },
     ] satisfies NormCoverage[]);
     expect(norm.experiments.map((e) => e.experimentId)).toEqual(["compare/bub", "compare/codex"]);
   });
@@ -371,7 +361,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
     ] satisfies NormWarning[]);
   });
 
-  it("场景6 历史已知 eval 从未有可读结果:coverage.missingEvalIds 列出真残缺", async () => {
+  it("场景6 历史已知 eval 从未有可读结果:coverage.missing 列出真残缺", async () => {
     const root = await makeRoot();
     // knownEvalIds 声明 q1 与 q2,但 q2 从未落盘 —— 跨快照补齐后仍缺,这是真残缺。
     await writeSnapshot(
@@ -385,11 +375,11 @@ describe("currentSample · 现刻水位结构化身份", () => {
     expect(norm.experiments[0].evals.map((e) => e.evalId)).toEqual(["q1"]);
     expect(norm.issues).toEqual([]);
     expect(norm.coverage).toEqual([
-      { experimentId: "compare/bub", knownEvalIds: ["q1", "q2"], missingEvalIds: ["q2"] },
+      { experimentId: "compare/bub", knownEvalIds: ["q1", "q2"], missing: ["q2"] },
     ] satisfies NormCoverage[]);
   });
 
-  it("可比性前提:配置(model)不一致的旧快照不贡献 attempt,缺口进 coverage.missingEvalIds", async () => {
+  it("可比性前提:配置(model)不一致的旧快照不贡献 attempt,缺口进 coverage.missing", async () => {
     const root = await makeRoot();
     await writeSnapshot(
       root,
@@ -414,7 +404,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
     ] satisfies NormExperiment[]);
     expect(norm.issues).toEqual([]);
     expect(norm.coverage).toEqual([
-      { experimentId: "compare/cfg", knownEvalIds: ["q1", "q2"], missingEvalIds: ["q2"] },
+      { experimentId: "compare/cfg", knownEvalIds: ["q1", "q2"], missing: ["q2"] },
     ] satisfies NormCoverage[]);
   });
 
@@ -426,7 +416,6 @@ describe("currentSample · 现刻水位结构化身份", () => {
       {
         experimentId: "compare/orch",
         startedAt: "2026-07-01T08:00:00.000Z",
-        selectedEvalIds: ["q1", "q2"],
         experiments: { attempts: 3, earlyExit: true, maxConcurrency: 2, description: "old" },
       },
       [res("q1", "passed"), res("q2", "passed")],
@@ -437,7 +426,6 @@ describe("currentSample · 现刻水位结构化身份", () => {
       {
         experimentId: "compare/orch",
         startedAt: "2026-07-02T08:00:00.000Z",
-        selectedEvalIds: ["q1"],
         experiments: { attempts: 1, earlyExit: false, description: "new" },
       },
       [res("q1", "failed")],
@@ -455,7 +443,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
       },
     ] satisfies NormExperiment[]);
     expect(norm.coverage).toEqual([
-      { experimentId: "compare/orch", knownEvalIds: ["q1", "q2"], missingEvalIds: [] },
+      { experimentId: "compare/orch", knownEvalIds: ["q1", "q2"], missing: [] },
     ] satisfies NormCoverage[]);
   });
 
@@ -479,7 +467,7 @@ describe("currentSample · 现刻水位结构化身份", () => {
     // 分母 = {weather/brooklyn, weather/queens} ∩ 范围 = 2,缺 queens → 1/2;algebra 的缺口不进来。
     expect(weather.issues).toEqual([]);
     expect(weather.coverage).toEqual([
-      { experimentId: "compare/bub", knownEvalIds: ["weather/brooklyn", "weather/queens"], missingEvalIds: ["weather/queens"] },
+      { experimentId: "compare/bub", knownEvalIds: ["weather/brooklyn", "weather/queens"], missing: ["weather/queens"] },
     ] satisfies NormCoverage[]);
 
     // algebra 范围:该题有结果,范围内无缺口 → 不刷 weather 的残缺屏。

@@ -59,4 +59,4 @@ Record 是最下面那层,**只回答「盘上有什么」,不回答「该看哪
 - [Architecture](architecture.md) —— 磁盘上的格式规范。
 - [Sample](../sample/README.md) —— 从记录选出一份可比较的样本。
 - [Reports](../reports/README.md) —— 建立在样本之上的终端、网页和自定义报告。
-- [Experiments](../experiments/README.md) —— experimentId 与 `selectedEvalIds` 从哪来。
+- [Experiments](../experiments/README.md) —— experimentId、运行期选题计划与物理 Attempt 从哪来。

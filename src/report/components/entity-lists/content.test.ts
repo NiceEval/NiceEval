@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MetricValue } from "../../model/types.ts";
-import { attemptListContent, COVERAGE_ROW_PREFIX, evalListContent, experimentListContent } from "./content.ts";
+import { attemptListContent, evalListContent, experimentListContent } from "./content.ts";
 import type { Cell, TableContentRow } from "../../definition/cell.ts";
 import { resolveLocalizedText } from "../../model/locale.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
@@ -39,7 +39,6 @@ function attempt(
     durationMs: 385_652,
     costUSD: 0.077336,
     startedAt: "2026-07-01T00:00:00Z",
-    historical: false,
     locator: locator(`@1${id}01`),
     ...overrides,
   };
@@ -80,7 +79,7 @@ function evalRow(
   };
 }
 
-function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentListItem, "evalRows" | "missingEvalIds">): ExperimentListItem {
+function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentListItem, "evalRows" | "missing">): ExperimentListItem {
   return {
     experimentId: "exp/x",
     agent: "codex",
@@ -93,8 +92,7 @@ function experimentItem(partial: Partial<ExperimentListItem> & Pick<ExperimentLi
     tokens: emptyCell,
     evals: partial.evalRows.length,
     attempts: partial.evalRows.reduce((sum, row) => sum + row.attempts.length, 0),
-    historicalAttempts: 0,
-    staleReferences: {},
+    knownEvalIds: [],
     lastRunAt: "2026-07-01T00:00:00Z",
     ...partial,
   };
@@ -105,9 +103,9 @@ function entityText(cell: Cell | undefined): string {
   return "";
 }
 
-/** experiment 行的 subRows 排除末尾的覆盖构成副行,只留 Eval / 组行(Eval 分组层的断言面)。 */
-function realSubRows(row: TableContentRow): TableContentRow[] {
-  return (row.subRows ?? []).filter((r) => !r.key.startsWith(COVERAGE_ROW_PREFIX));
+/** experiment 行的 Eval / 组行。 */
+function realSubRows(row: TableContentRow): readonly TableContentRow[] {
+  return row.subRows ?? [];
 }
 
 describe("experimentListContent Eval 分组层", () => {
@@ -120,7 +118,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")]),
           evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -147,7 +145,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("algebra/retry", "passed", [attempt("algebra/retry", "passed")]),
           evalRow("algebra/simple", "failed", [attempt("algebra/simple", "failed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -163,7 +161,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("algebra/retry", "passed", [attempt("algebra/retry", "passed")]),
           evalRow("weather/tool", "failed", [attempt("weather/tool", "failed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -179,7 +177,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("downshift/b", "failed", [attempt("downshift/b", "failed")]),
           evalRow("standalone", "passed", [attempt("standalone", "passed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -199,7 +197,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")]),
           evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")]),
         ],
-        missingEvalIds: ["weather/gap", "ghost/a", "ghost/b"],
+        missing: ["weather/gap", "ghost/a", "ghost/b"].map((evalId) => ({ evalId, reason: "never-run" as const })),
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -237,8 +235,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("weather/a", "passed", [attempt("weather/a", "passed")]),
           evalRow("weather/b", "failed", [attempt("weather/b", "failed")]),
         ],
-        missingEvalIds: [],
-        historicalAttempts: 1,
+        missing: [],
       }),
     ]);
 
@@ -271,7 +268,7 @@ describe("experimentListContent Eval 分组层", () => {
             totalScore: { value: 0, basis: "eval", samples: 1, total: 1, refs: [] },
           }),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const downshift = content.rows[0]!.subRows!.find((row) => row.key === "group:downshift")!;
@@ -297,7 +294,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("pkg/other/c", "passed", [attempt("pkg/other/c", "passed")]),
           evalRow("pkg/other/d", "failed", [attempt("pkg/other/d", "failed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -316,7 +313,7 @@ describe("experimentListContent Eval 分组层", () => {
           evalRow("111/111/aaa", "passed", [attempt("111/111/aaa", "passed")]),
           evalRow("111/111/bbb", "failed", [attempt("111/111/bbb", "failed")]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const sub = realSubRows(content.rows[0]!);
@@ -341,7 +338,7 @@ describe("attempt 行 measure 格式化", () => {
     const nested = experimentListContent([
       experimentItem({
         evalRows: [evalRow("q", "failed", [attempt("q", "failed", { durationMs: 385_652, costUSD: 0.007336 })])],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]).rows[0]!.subRows![0]!.subRows![0]!;
     expect(nested.cells.durationMs).toMatchObject({
@@ -371,7 +368,7 @@ describe("attempt 行的判定长在 locator 上", () => {
             attempt("q", "errored", { locator: locator("@1bbbbb01") }),
           ]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]).rows[0]!.subRows![0]!.subRows!;
     // 区分力:两行的判定不同,没有被折成「非 passed」一档
@@ -416,7 +413,7 @@ describe("行形状与列集同源", () => {
           evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")]),
           evalRow("standalone", "passed", [attempt("standalone", "passed")]),
         ],
-        missingEvalIds: ["weather/gap"],
+        missing: [{ evalId: "weather/gap", reason: "never-run" }],
       }),
     ]);
     // 组行、占位行与两层子行都在这棵树里
@@ -455,7 +452,7 @@ describe("行形状与列集同源", () => {
   it("区分力:同一个 attempt 在两种列集下各自成行,不是一份格子四处塞", () => {
     const item = attempt("q", "failed", { locator: locator("@1aaaaa01") });
     const nested = experimentListContent([
-      experimentItem({ evalRows: [evalRow("q", "failed", [item])], missingEvalIds: [] }),
+      experimentItem({ evalRows: [evalRow("q", "failed", [item])], missing: [] }),
     ]);
     const flat = attemptListContent([item]);
     const nestedAttempt = nested.rows[0]!.subRows![0]!.subRows![0]!;
@@ -472,7 +469,7 @@ describe("行形状与列集同源", () => {
 
   it("不适用的列是显式 notApplicable 格:Eval 行的 model / agent / tokens 在场且渲染成 —", () => {
     const content = experimentListContent([
-      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missing: [] }),
     ]);
     const evalCells = content.rows[0]!.subRows![0]!.cells;
     for (const key of ["model", "agent", "tokens"]) {
@@ -484,14 +481,14 @@ describe("行形状与列集同源", () => {
 
   it("列集随 composition 变时行跟着变:纯计分制没有 passRate 列,行上也没有那一格", () => {
     const points = experimentListContent([
-      experimentItem({ evaluationKind: "points", evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+      experimentItem({ evaluationKind: "points", evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missing: [] }),
     ]);
     expect(columnKeys(points)).not.toContain("passRate");
     expect(points.rows[0]!.cells.passRate).toBeUndefined();
     assertRowShapes(points);
 
     const pass = experimentListContent([
-      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missing: [] }),
     ]);
     expect(columnKeys(pass)).not.toContain("totalScore");
     expect(pass.rows[0]!.cells.totalScore).toBeUndefined();
@@ -513,7 +510,7 @@ describe("行形状与列集同源", () => {
           evalRow("plain", "failed", [plainAttempt]),
           evalRow("score", "passed", [scoreAttempt], { evaluationKind: "points", totalScore: cell(5) }),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     expect(columnKeys(content)).toEqual(expect.arrayContaining(["passRate", "totalScore"]));
@@ -535,7 +532,7 @@ describe("列表头长在列声明上", () => {
   // cases: docs/engineering/testing/unit/reports.md「表头长在列声明上」。
   it("层级表各列自带 header,两种语言各解析一份", () => {
     const content = experimentListContent([
-      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missing: [] }),
     ]);
     const headerOf = (key: string, locale: string): string =>
       resolveLocalizedText(content.columns.find((column) => column.key === key)!.header!, locale);
@@ -558,7 +555,7 @@ describe("判定构成列每层都有值", () => {
             attempt("q", "passed", { attempt: 1, locator: locator("@1bbbbb01") }),
           ]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]).rows;
     expect(rows[0]!.subRows![0]!.cells.record).toEqual({
@@ -576,7 +573,7 @@ describe("判定构成列每层都有值", () => {
             attempt("q", "errored", { attempt: 1, locator: locator("@1bbbbb01") }),
           ]),
         ],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]).rows[0]!.subRows![0]!.subRows!;
     expect(nested[0]!.cells.record).toEqual({ kind: "verdict", verdict: "failed" });
@@ -587,7 +584,7 @@ describe("判定构成列每层都有值", () => {
     const content = experimentListContent([
       experimentItem({
         evalRows: [evalRow("q", "passed", [attempt("q", "passed")])],
-        missingEvalIds: [],
+        missing: [],
       }),
     ]);
     const recordColumn = content.columns.find((column) => column.key === "record");

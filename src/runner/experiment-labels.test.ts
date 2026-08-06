@@ -86,7 +86,6 @@ describe("ExperimentDef.labels", () => {
         experiment: {
           attempts: 1,
           earlyExit: true,
-          selectedEvalIds: [],
           flags: { web: true },
           ...(labels !== undefined ? { labels } : {}),
         },

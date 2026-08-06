@@ -98,7 +98,6 @@ async function makeFixture(marker = "FIRST", head: { tag: string; children?: str
       experiment: {
         attempts: 1,
         earlyExit: true,
-        selectedEvalIds: ["e1"],
         sandboxLayer: {},
         sandboxPlansByEval: {},
         agentInstalls: [],

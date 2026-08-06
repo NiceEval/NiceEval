@@ -180,42 +180,24 @@ const scope = reportScopeFixture({
   - Attempt 行的判定构成格是该次判定；同题下 failed 与 errored 两行的格不同，证明没有折成「非 passed」一档。
   - 格子落在层级表列集存在的 key 上：experiment 列集渲染后 Eval 与 Attempt 行的判定构成列不是 `—` （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
   - 两面显示同源：计票与单判定的 text 面经 `formatCellText` 按 locale 取判定词，单判定带 `verdictMark` 判定符；web 面同一格带 `niceeval-verdict-*` 语义 class。
-- **占位行的两档与过期结论参考** （[契约](../../../feature/reports/components/summaries/experiment-table.md#覆盖缺口的两档占位行)）：断言面是 `experimentListContent` 产出的 Cell 树与 text 面输出字符串。
+- **占位行的两类缺口** （[契约](../../../feature/reports/components/summaries/experiment-table.md#缺口原因与动作)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串；web 面只断言原因与可操作 locator 同场，不断言浏览器布局。
   逐项覆盖：
 
-  - 两档占位行的结果格都是 `missing` 格且都带补跑命令；只有记录里有不可比历史判定的那一档带 `reference`。
+  - 两类占位行都来自 `SampleCoverage.missing`，结果格都是 `missing` 且带补跑命令；`previous-result` 可带 Sample 已提供的 previous locator，`never-run` 不带。
     区分力场景是「同一个 Sample 里一道题从未跑过、另一道题只有旧 configHash 的结果」——两行必须给出不同的格，把两档折成同一种占位的实现在这里失败。
-  - `reference` 取该题 `historyAttempts` 里最近的一条不可比判定，并带 locator、判定与距今时长；候选多于一条时取最新那条。
-  - 参考不进任何计数：带参考的占位行前后，该 experiment 的判定计票、通过率与覆盖分母逐字不变。
-  - `sample.fresh` 为 `true` 时两档占位行都不带 `reference`。
-    区分力场景是同一份记录的 fresh 与非 fresh 两次投影——只有 fresh 那次的格没有参考。
-- **覆盖构成的四段与两面** （[契约](../../../feature/reports/components/summaries/experiment-table.md#覆盖构成)）：断言面是构成格的 `segments` 与两面输出字符串。
-  逐项覆盖：
-
-  - 四段互斥且合计等于该实验的已知题数；一道题同时有新执行与携带 attempt 时只落新执行段。
-    区分力场景是「一道题重试两次、第一次是携带」——按 attempt 计数的错误实现会让合计超过题数。
-  - 计数为零的段不出现在两面输出里，与判定计票同一条规则。
-  - 段名走 `LocalizedText`：zh-CN 与 en 两次渲染取同一份 `segments`，只有文案不同，计数与段序逐字相同。
-  - 构成格不携带业务语义：同一个格换一组无关段名照常渲染，渲染面没有分支认识「新执行」这类词。
-- **只看新执行的重投影** （[契约](../../../feature/reports/components/summaries/experiment-table.md#只看新执行)）：断言面是开关两态下 `ExperimentTable` 交给 `Table` 的两份 Content。
-  逐项覆盖：
-
-  - 打开开关后的行集与同一 Sample 走 `freshOnly()` 再投影的结果深相等；口径不在组件里另算一遍。
-  - `Table` 的输入只是行集：两态下的 `columns` 与行形状同规则，原语侧没有任何按时效分叉的属性。
-  - Sample 里既无历史执行也无过期结论时不产出这个开关。
-- **`formatTimeDistance` 的读法与导出面** （[契约](../../../feature/reports/library/presentation.md#相对时距是数据不是文案)）：断言面是函数返回值。
+  - Reports 不遍历 `historyAttempts` 自行寻找替代判定；删除 Sample 的 `previous` 后，报告不得从历史补回 reference。
+  - previous 只解释缺口，不进任何计数：带 previous 的占位行前后，该 experiment 的判定计票、通过率与覆盖分母逐字不变。
+- **报告只有一份当前输入**：`ExperimentTable`、默认首页任务和导出模型只消费传入的同一份 `Sample.attempts`。
+  fixture 在 Run 元数据放入与 attempts 冲突的旧 `selectedEvalIds`，断言行、聚合与导出仍完整；组件树中不存在 fresh toggle 或第二份 Content。
+- **`formatTimeDistance` 的读法与导出面** （[契约](../../../feature/reports/library/presentation.md#显式历史中的相对时距)）：断言面是函数返回值。
   四个区间各一条，`en` 与 `zh-CN` 各取一条代表场景；不足一个单位的时长取一个单位，不打零。
   区分力场景是 90 分钟——只有按区间分派才区别于恒定按天取整的 `1d`。
-- **对照矩阵的时效与过期结论参考** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
+- **对照矩阵的当前结果同源** （[契约](../../../feature/reports/show/compare.md)）：断言面是 `deltaTableData` 产出的 `DeltaCell`/`DeltaData` 与 CLI text 输出字符串。
   逐项覆盖：
 
-  - `DeltaCell.historical` 为 true 时带 `staleSinceMs`（同一格内折叠多条历史执行时取最旧一条的距今毫秒数），text 面经 `formatTimeDistance` 投影出相对时距，形态是时距文案而不是布尔叠加 `↩` 符号。
-  - 缺席格（该条件下这道题没有 attempt）带过期结论参考时，`DeltaData.rows[i].references[condition]` 给出那次判定的判定符、locator 与相对时距。
-    参考取该题 `historyAttempts` 里与该 experiment 当前基准 configHash 不可比的最近一条判定；候选多于一条时取最新那条，口径与 experiment-table 两档占位行一致。
-    CLI text 面在该格落 `—` 后接参考的判定符与时距（compare.md 的 `— ✓ 12d` 形态）。
-    逐字节对齐该行其余空白列不在断言面里，只断言这三个信息片段都出现且顺序正确。
-  - 参考不进 `汇总`、`Δ` 与配对覆盖三处聚合的任何一个数。区分力场景是「参考侧有更优判定」——把参考计入聚合的错误实现会在汇总格露馅（汇总的通过数/分母、`Δ` 与共同题计数都必须与没有这条参考时逐字相同）。
-  - `--usage` 对照矩阵与 `renderCompareSlice` 的 text 输出不出现 `↩`；historical 格与缺席参考格的信息片段（判定符、时距、tokens、成本）经 `formatMetricValue`/`formatTimeDistance` 正确格式化，不落原始数字字符串。
+  - 每个条件只从同一 Sample 的 attempts 取值；携带条目照常参与，旧配置 history 不补入缺席格。
+  - 缺席格保持 `—`，不得带旧 verdict/reference；结构化 missing 原因在覆盖/占位行解释，不改变对照聚合。
+  - `--usage` 对照矩阵与 `renderCompareSlice` 不出现来源、时间或 `↩` 状态标记。
 - **`formatInstant` 的读法与回落** （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：断言面是函数返回值。
   覆盖 ISO 折到分钟的人读时间（不含原样 ISO 片段）、不可解析输入原样返回，以及它从 `niceeval/report` 与 `niceeval/report/react` 同引用导出。
    Attempt 摘要格实际调用了哪个入口是渲染产物，归 [E2E 报告域](../e2e/report.md)。
@@ -364,7 +346,7 @@ const scope = reportScopeFixture({
   - 每个 tab 起一条隔条，名称后带 `n/m` 位次；`Tabs` 自己不画框。
   - tab 正文不缩进：同一张宽表在 tab 里与直接放在页上的输出逐字相同。
   - 区分力：tab 里放 `Section` 时框由那个 `Section` 画，输出里只有一层边框。
-- **宿主装载等价**：不带选项的 `show`/`view` 与 `--report` 在装载边界消费同一份 definition（同引用）与同规则选出的 Sample（深等）；`--fresh` 在两宿主注入同一个 `fresh` 口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
+- **宿主装载等价**：不带选项的 `show`/`view` 与 `--report` 在装载边界消费同一份 definition（同引用）与同规则选出的当前 Sample（深等）；两宿主都不提供来源过滤或第二套当前结果口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
 - **报告取值链与 `--report` 值判别**：两宿主共用的解析函数，断言面是解析出的 definition 引用与错误对象，不经渲染。
   - 三档取值链按 `--report` → `config.report` → 内建 `standard` 逐档回落。
     每档产出的 definition 与直接 import 该定义同引用。

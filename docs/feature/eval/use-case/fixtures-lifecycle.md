@@ -22,18 +22,18 @@ export default defineEval({
 1. 动态任务素材的准备放 `sandbox` layer 的 `.prepare()`——命令在每条 Attempt 进入 `test(t)` 之前执行，写入算 eval 归因、不进 agent diff：
 
    ```typescript
-   // evals/pr-review/close-stale.eval.ts
+   // evals/pr-review/close-outdated.eval.ts
    import { defineEval } from "niceeval";
    import { sandboxLayer } from "niceeval/sandbox";
 
    export default defineEval({
      sandbox: sandboxLayer().prepare(async (sandbox, context) => {
        context.progress({ message: "seeding fixture repo" });
-       const fixture = await createFixtureRepo("pr-review/close-stale");  // 沙箱外的临时资源
+       const fixture = await createFixtureRepo("pr-review/close-outdated");  // Sandbox 外的临时资源
        context.onCleanup(() => fixture.destroy());                        // 取得成功后就地登记回收
        await sandbox.runCommand("git", ["clone", fixture.repoUrl, "."]);  // 被测 checkout 直接落 workdir 根
      }),
-     async test(t) { /* 驱动 agent 清理 stale PR,断言 */ },
+     async test(t) { /* 驱动 agent 清理过期 PR,断言 */ },
    });
    ```
 

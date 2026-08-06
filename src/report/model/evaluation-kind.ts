@@ -7,7 +7,6 @@
 
 import { collectItems, resolveInput } from "./aggregate.ts";
 import type { EvaluationKindComposition, ReportInput } from "./types.ts";
-import { selectedAttemptsOnly } from "../components/shared-compute.ts";
 
 /**
  * `input` 内出现的题型构成,取自快照记录的定义期 `evaluationKind` 事实(`EvalDescriptor.evaluationKind`,
@@ -28,7 +27,7 @@ import { selectedAttemptsOnly } from "../components/shared-compute.ts";
  */
 export async function evaluationKindComposition(input: ReportInput): Promise<EvaluationKindComposition> {
   const { runs, attempts } = resolveInput(input);
-  const items = collectItems(runs, selectedAttemptsOnly(attempts));
+  const items = collectItems(runs, attempts);
   const hasPoints = items.some((item) => item.attempt.result.evaluationKind === "points");
   const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "points");
   return hasPoints && hasPass ? "mixed" : hasPoints ? "points" : "pass";

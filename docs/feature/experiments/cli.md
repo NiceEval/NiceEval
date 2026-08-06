@@ -50,7 +50,7 @@ niceeval exp compare/codex --dry
 ```text
 plan: 4 attempts · 1 eval × 4 configs · attempts 1
 1 of 4 carried in from cache · 3 to run
-compare/codex-gpt-5.6-luna              memory/commit0-cachetool   stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
+compare/codex-gpt-5.6-luna              memory/commit0-cachetool   previous-result passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
 compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool   new
 compare/codex-gpt-5.6-luna--mempal     memory/commit0-cachetool   carried (passed)
 compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
@@ -69,7 +69,7 @@ compare/codex  memory/mixed   carried 2/3 (1 passed · 1 failed) · errored 1/3
 ```
 
 Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列。
-`stale` 仍先显示历史 Verdict，再显示差异摘要；分数来自该原因组的 Attempt 序号，不把其它组的历史结果混入。
+`previous-result` 先显示历史 Verdict，再显示差异摘要；分数来自该原因组的 Attempt 序号，不把其它组的历史结果混入。
 
 默认不带 `--rerun` 时，历史 `passed` 与 `failed` 都是已确定判定，满足其它携带门就携入；历史 `errored` 与 `skipped` 不携入，本次自动派发。
 单独写 `--rerun` 等同于 `--rerun failed`，主动复验历史 `failed`，同时继续携入 `passed`。
@@ -79,7 +79,7 @@ Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列
 
 | 标注 | 对应的门 |
 |---|---|
-| `stale` | 指纹门 |
+| `previous-result` | 指纹门 |
 | `errored` | 终态门,从不携带 |
 | `exceeds-timeout` | 资格门 |
 | `rerun` | 口径门 |
@@ -93,10 +93,10 @@ Attempt 总数大于 1 时，多个派发原因按 `reason N/total` 依次排列
 全部携带的行标 `carried`,不标原因。
 正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁与共享状态租约));`--dry` 只读锁目录,不取锁、不等待。
 
-`stale` 行先标明历史终态（如 `stale passed` 或 `stale failed`）：它表示已有一个过期的历史结论，**不**等于”已有可复用的解”。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。长值改动两侧对齐到第一处差异字符显示,不各自独立截断成两份看似相同的省略串。
+`previous-result` 行先标明历史终态（如 `previous-result passed` 或 `previous-result failed`）。它表示已有旧结果，但当前指纹下不能直接携带。能比较时会进一步标明差异方向（`added`、`removed (was …)`、`changed (… → …)`）。不能解释时必须给出有类型的原因，不使用 `details unavailable` 这类没有说明哪种细节的失败回退文案。长值改动两侧对齐到第一处差异字符显示,不各自独立截断成两份看似相同的省略串。
 
 ```text
-compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
+compare/codex-gpt-5.6-luna  memory/commit0-cachetool  previous-result passed: config:judge.model changed (gpt-5.6 → gpt-5.6-sol)
   prior:  @1A1B2C3D4E5F (passed)
   accept: niceeval accept @1A1B2C3D4E5F
 ```
@@ -107,7 +107,7 @@ compare/codex-gpt-5.6-luna  memory/commit0-cachetool  stale passed: config:judge
 执行证据是否存在与指纹差异能否解释是两条轴。`prior` 行从记录读取面投影 `evidenceState`，不得因 manifest 缺失而把 execution / diff / timing 说成不可用。
 
 ```text
-compare/codex  memory/task  stale passed: current fingerprint cannot be proven equivalent to the prior result
+compare/codex  memory/task  previous-result passed: current fingerprint cannot be proven equivalent to the prior result
   algorithm: 0 → 2
   coverage: 0 → 1
   observed inputs: no differences in comparable manifest fields
@@ -119,11 +119,11 @@ compare/codex  memory/task  stale passed: current fingerprint cannot be proven e
 
 `observed inputs` 只有在诊断显式携带 `observedDeltas` 时才出现：空数组投影为上例的限定说法，非空数组逐条投影具名差异，字段省略则显示输入差异不可用。它只报告 manifest 的观察结果，不把「没有观察到」写成「输入没有变化」。未知诊断沿同一层级递归展示 `cause`，renderer 不需要认识其 `code`。
 
-人读 renderer 对所有 `FingerprintDiagnostic` 使用同一套布局。矩阵行只显示 `summary`，每条 stale 历史结果的详情块按 `code → facts → observedDeltas → limitations → causes` 展开；cause 递归缩进，数组顺序保持 producer 给出的因果顺序。renderer 不按 `code` 选择模板。终端详情最多展开 4 层 cause、16 个诊断节点与每组前 8 条 observed delta，超出时显示剩余数量；`--dry --json` 保留完整有界结构，不套终端展示预算。
+人读 renderer 对所有 `FingerprintDiagnostic` 使用同一套布局。矩阵行只显示 `summary`，每条 previous-result 的详情块按 `code → facts → observedDeltas → limitations → causes` 展开；cause 递归缩进，数组顺序保持 producer 给出的因果顺序。renderer 不按 `code` 选择模板。终端详情最多展开 4 层 cause、16 个诊断节点与每组前 8 条 observed delta，超出时显示剩余数量；`--dry --json` 保留完整有界结构，不套终端展示预算。
 
 诊断 producer 必须给出有限、无环的 cause 树。单条 `summary`、fact label 和 limitation 都是已经脱敏的有界文本；fact value 只能是 `JsonValue`。指纹 owner 只可从 manifest 安全摘要和版本元数据构造这些字段，不能把凭据、文件正文、Error 对象或 stack 放进去。
 
-`review` / `accept` 不是 diagnostic 自带动作。CLI 根据 stale 条目的 locator 与 evidence / acceptance 资格统一生成，避免底层比较器拼命令。证据可读时先给 `review: niceeval show @…`；locator 可接受时再给 `accept: niceeval accept @…`，旧 locator 继续显示 unavailable。
+`review` / `accept` 不是 diagnostic 自带动作。CLI 根据 previous-result 条目的 locator 与 evidence / acceptance 资格统一生成，避免底层比较器拼命令。证据可读时先给 `review: niceeval show @…`；locator 可接受时再给 `accept: niceeval accept @…`，旧 locator 继续显示 unavailable。
 
 ### `niceeval accept @<locator>...`
 
@@ -134,7 +134,7 @@ niceeval accept @a1b2c3d4
 niceeval accept @a1b2c3d4 @e5f6g7h8
 ```
 
-同一条命令里的 locator 必须属于同一 experiment。命令先验证全部 locator；任一条失败时零写入，全部通过后写一个 snapshot，并逐条打印来源 locator、新 locator 与当前指纹摘要。跨 experiment 时分开调用。`exp --accept`、selector 参数与 `accept --all-stale` 都不存在。
+同一条命令里的 locator 必须属于同一 experiment。命令先验证全部 locator；任一条失败时零写入，全部通过后写一个 snapshot，并逐条打印来源 locator、新 locator 与当前指纹摘要。跨 experiment 时分开调用。`exp --accept`、selector 参数与批量接受选项都不存在。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 
@@ -164,7 +164,7 @@ TTY 只决定人读文本用哪种版式(live 面板还是追加流),不改变�
 
 ## Session 查询
 
-每次 `niceeval exp …` 调度都创建一个 Session。它把这条命令选中的多个 Experiment Run 放进同一个可查询单元；Run 仍是一条 Experiment 的结果快照，Attempt 仍是一个 Eval 的一轮执行。Session 不是 agent 的对话 session，agent 的 session / turn 只属于 Attempt 的 execution 证据。
+每次 `niceeval exp …` 调度都创建一个调度 Session。它把这条命令选中的多个 Experiment Run 放进同一个可查询单元；Run 仍是一条 Experiment 的结果快照，Attempt 仍是一个 Eval 的一轮执行。调度 Session 不是 agent 的对话 session，agent 的 session / turn 只属于 Attempt 的 execution 证据。
 
 `niceeval session list [--all] [<experiment-prefix>]` 是同一记录根内的只读查询：默认列出有有效心跳的 Session，`--all` 还列出已结束 Session。它不发现 Experiment 源码、不加载配置、不启动 agent 或 Sandbox：
 
@@ -177,14 +177,14 @@ niceeval session show s_01J5R0H3K8
 
 不带 selector 时列出全部 Session；带 selector 时按 Session 记录中的 `experimentId` 路径前缀收窄，零命中正常显示空清单。`session show <sessionId>` 要求完整 id 或唯一前缀；歧义时列出候选，不猜测。一个 Session 选中了多个 Experiment 时，结果按 Session 分组、组内一行一个 Experiment。活动行固定包含 `experimentId`、`runId` 短写、运行级状态和 `running` / `queued` / `elsewhere` 计数；状态只能是 `setup`、`running`、`waiting` 或 `teardown`。结束行给出 completion 与各 Run 路径。
 
-Human text 先打印 `ACTIVE SESSIONS`，`--all` 再追加 `COMPLETED SESSIONS` 与可选的 `STALE SESSIONS`。过期心跳的 Session 不是正在运行的事实，绝不并入 ACTIVE、`running` 或 `elsewhere`；它只给出 session id、pid、最后心跳时刻和「重新运行原命令」的下一步。活动行不展开 agent detail、命令或 Attempt locator，避免把 Session 索引变成第二套 execution 输出。
+Human text 先打印 `ACTIVE SESSIONS`，`--all` 再追加 `COMPLETED SESSIONS` 与可选的 `EXPIRED SESSIONS`。过期心跳的 Session 不是正在运行的事实，绝不并入 ACTIVE、`running` 或 `elsewhere`；它只给出 session id、pid、最后心跳时刻和「重新运行原命令」的下一步。活动行不展开 agent detail、命令或 Attempt locator，避免把 Session 索引变成第二套 execution 输出。
 
-`session list --json` 与 `session show --json` 都输出单个 JSON 文档，不是 `exp --json` 的 NDJSON 事件流。列表根对象固定为 `{ format: "niceeval.sessions", schemaVersion: 1, sessions, stale }`。
+`session list --json` 与 `session show --json` 都输出单个 JSON 文档，不是 `exp --json` 的 NDJSON 事件流。列表根对象固定为 `{ format: "niceeval.sessions", schemaVersion: 2, sessions, expired }`。
 
 - 每个 Session 必有 `sessionId`、`pid`、`startedAt`、`status`、`experiments`。
 - 活动 Session 另有 `heartbeatAt`。
 - 每个 experiment 项必有 `experimentId`、`runId`。活动项另有 `state`、`running`、`queued`、`elsewhere`；结束项另有 Run 的 `path`。
-- `stale` 项只保留身份与最后心跳，不携带可被误读为当前状态的计数。未知字段必须忽略。
+- `expired` 项只保留身份与最后心跳，不携带可被误读为当前状态的计数。未知字段必须忽略。
 
 Session 的存储、心跳和失活判定单源在 [Architecture · Session 登记](architecture.md#session-登记)；完整操作路径见[用例手册 · 查看活跃实验](use-case/并发/查看活跃实验.md)。
 
@@ -1031,7 +1031,7 @@ interface ExpPlanRow {
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
-  /** stale 历史条目的机器可行动身份；没有 stale 条目时省略。 */
+  /** previous-result 历史条目的机器可行动身份；没有这类条目时省略。 */
   prior?: Array<{
     locator: string;
     verdict: "passed" | "failed" | "errored" | "skipped";

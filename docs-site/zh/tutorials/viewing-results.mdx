@@ -4,7 +4,7 @@ sidebarTitle: "查看结果"
 description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估用例源码、执行记录与 diff，对照多个条件、看稳定性与用量、跨 Attempt 搜索执行记录，或用 niceeval view 在网页中查看同一份证据。"
 ---
 
-每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的 **Run** 目录 `.niceeval/<experiment>/<run>/`。Run 记录本次运行实际选择的 `selectedEvalIds`；`show` / `view` 直接比较当前 Sample 中的 experiments。
+每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的 **Run** 目录 `.niceeval/<experiment>/<run>/`。Run 记录实际产生的物理 Attempts 与已知题分母；`show` / `view` 直接比较当前 Sample 中的 experiments。
 
 ## 控制台输出
 
@@ -87,7 +87,7 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 
 ### 默认分组比较报告
 
-不带 flag 的 `niceeval show` 直接输出当前 Sample 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母读取其 Run `selectedEvalIds`；未选择的评估用例不补成失败。
+不带 flag 的 `niceeval show` 直接输出当前 Sample 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母来自当前 Sample 的物理 Attempts 与已知题覆盖；运行期选择计划不会在报告层二次过滤。
 
 实验列表先给固定列汇总，再按 experiment → 评估用例 → Attempt 展开。locator 只保留 `@<id>`；完整断言和 evidence 留在 `niceeval show @<locator>`。只有一个 experiment 时散点仍显示单点。
 

@@ -2,7 +2,7 @@
 
 import type { Sample } from "../../../record/types.ts";
 import { defineComponent } from "../../definition/tree.ts";
-import { Col, Grid, Scatter, Stat, Text } from "../../definition/primitives.tsx";
+import { Col, Grid, Scatter, Stat } from "../../definition/primitives.tsx";
 import type { ChartTargetPoint } from "../../definition/primitives/chart.tsx";
 import type { ReportTarget } from "../../definition/report.ts";
 import type { SeriesInput } from "../../model/types.ts";
@@ -20,7 +20,6 @@ import {
 } from "../../model/calculation.ts";
 import { evaluationKindComposition } from "../../model/evaluation-kind.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
-import { formatInstant, formatReportDateTimeRange } from "../../model/format.ts";
 import type { ChromeProps } from "../shared.ts";
 import { toSummaryItems } from "../../model/conversions.ts";
 import { ExperimentTable } from "../entity-lists/index.tsx";
@@ -39,10 +38,6 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
   const votes = props.votes ?? "eval";
   const tally = votes === "attempt" ? snapshot.attemptVerdicts : snapshot.evalVerdicts;
-  const formattedRange =
-    snapshot.range.earliestStartedAt !== null && snapshot.range.latestStartedAt !== null
-      ? formatReportDateTimeRange(snapshot.range.earliestStartedAt, snapshot.range.latestStartedAt, locale)
-      : null;
 
   return (
     <Col className={["niceeval-sample-summary", props.className].filter(Boolean).join(" ")}>
@@ -81,18 +76,6 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
           }
         />
       </Grid>
-      {snapshot.range.latestStartedAt !== null ? (
-        <Text className="niceeval-sample-summary-range">
-          {snapshot.range.earliestStartedAt !== null && snapshot.range.earliestStartedAt !== snapshot.range.latestStartedAt
-            ? localeText(locale, "scopeSummary.runRange", {
-                from: formattedRange!.from,
-                to: formattedRange!.to,
-              })
-            : localeText(locale, "scopeSummary.lastRun", {
-                time: formatInstant(snapshot.range.latestStartedAt, locale),
-              })}
-        </Text>
-      ) : null}
     </Col>
   );
 });

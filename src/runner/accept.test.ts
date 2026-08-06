@@ -186,8 +186,7 @@ describe("acceptPreparedAttempt", () => {
     roots.push(root);
     const currentManifest = { algorithmVersion: 2, coverageVersion: 1, config: {}, source: {}, data: {} };
     const sources = [makeSource(root, { id: "e" }), makeSource(root, { id: "f" })];
-    // 模拟 prepareAcceptTarget 的真实形状:每条 locator 的 currentExperiment.selectedEvalIds
-    // 只有自己那一题(cliPatterns 单 id),sandboxPlansByEval 也只有自己。
+    // 模拟 prepareAcceptTarget 的真实形状:每条 locator 的 currentExperiment 只带自己的 pair plan。
     const prepared = await Promise.all(sources.map((source) => prepareAcceptedAttempt({
       recordRoot: root,
       source,
@@ -198,7 +197,6 @@ describe("acceptPreparedAttempt", () => {
       currentExperiment: {
         attempts: 1,
         earlyExit: true,
-        selectedEvalIds: [source.evalId],
         sandboxLayer: {},
         sandboxPlansByEval: { [source.evalId]: { plan: source.evalId } },
         agentInstalls: [],
@@ -221,14 +219,15 @@ describe("acceptPreparedAttempt", () => {
     const runMeta = JSON.parse(
       await readFile(join(accepted[0]!.run.dir, "run.json"), "utf-8"),
     ) as {
-      experiment?: { selectedEvalIds?: string[]; sandboxPlansByEval?: globalThis.Record<string, unknown> };
+      experiment?: { sandboxPlansByEval?: globalThis.Record<string, unknown> };
       knownEvalIds?: string[];
     };
-    expect(runMeta.experiment?.selectedEvalIds?.slice().sort()).toEqual(["e", "f"]);
+    expect(runMeta.experiment).not.toHaveProperty("selectedEvalIds");
+    expect(runMeta.experiment).not.toHaveProperty("evalFilterFingerprint");
     expect(Object.keys(runMeta.experiment?.sandboxPlansByEval ?? {}).sort()).toEqual(["e", "f"]);
     expect(runMeta.knownEvalIds?.slice().sort()).toEqual(["e", "f"]);
 
-    // 读面:currentSample 必须看到两条,不能按错误收窄的 selectedEvalIds 只留第一条。
+    // 读面:currentSample 必须看到两条,只消费物理 attempts。
     const { currentSample } = await import("../sample/index.ts");
     const sample = currentSample(accepted[0]!.record);
     expect(sample.attempts.map((a) => a.evalId).sort()).toEqual(["e", "f"]);

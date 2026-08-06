@@ -3,7 +3,6 @@
 // sandbox 查表、fingerprint/carry、attempt 展开、hook ctx、快照)只消费返回的
 // selectedEvalIds,不重新调用用户谓词(见 docs/feature/experiments/library.md「evals」)。
 
-import { createHash } from "node:crypto";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentAuthorFields } from "./types.ts";
 
@@ -113,20 +112,6 @@ export function splitByEvaluationKind(selectedEvals: readonly DiscoveredEval[]):
     (evalDef.evaluationKind === "points" ? points : pass).push(evalDef.id);
   }
   return { pass, points };
-}
-
-/**
- * `evals` 选择器的审计指纹(数组内容 / 函数体哈希),进 `ExperimentRunInfo.evalFilterFingerprint`,
- * 供「配置没变」判断;不存选择器本身、不参与报告选题(选题权威是 `selectedEvalIds`)。
- */
-export function fingerprintEvalsFilter(evals: ExperimentAuthorFields["evals"], patterns: readonly string[]): string {
-  const basis =
-    evals === undefined || evals === "*"
-      ? "*"
-      : Array.isArray(evals)
-        ? JSON.stringify([...evals].sort())
-        : evals.toString();
-  return createHash("sha256").update(JSON.stringify({ basis, patterns })).digest("hex").slice(0, 16);
 }
 
 /** 所有消费者按已解析的 `selectedEvalIds` 取 eval;不持有、不调用用户谓词。 */

@@ -11,7 +11,7 @@ import type { CompletionStatus, InvocationCompletion, RunFeedbackEvent, RunFeedb
 import type { AgentRun } from "./types.ts";
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 10_000;
-export const SESSION_STALE_MS = 30_000;
+export const SESSION_EXPIRY_MS = 30_000;
 
 export type SessionExperimentState = "setup" | "running" | "waiting" | "teardown";
 export type SessionStatus = "active" | "completed" | "incomplete" | "interrupted";
@@ -37,7 +37,7 @@ export interface SessionRecord {
   completion?: InvocationCompletion;
 }
 
-export interface StaleSessionRecord {
+export interface ExpiredSessionRecord {
   sessionId: string;
   pid: number;
   startedAt: string;
@@ -46,16 +46,16 @@ export interface StaleSessionRecord {
 
 export interface SessionListDocument {
   format: "niceeval.sessions";
-  schemaVersion: 1;
+  schemaVersion: 2;
   sessions: SessionRecord[];
-  stale: StaleSessionRecord[];
+  expired: ExpiredSessionRecord[];
 }
 
 export interface SessionShowDocument {
   format: "niceeval.session";
-  schemaVersion: 1;
-  session: SessionRecord | StaleSessionRecord;
-  stale?: boolean;
+  schemaVersion: 2;
+  session: SessionRecord | ExpiredSessionRecord;
+  expired?: boolean;
 }
 
 export interface SessionStartInput {
@@ -338,13 +338,13 @@ export class SessionTracker {
   }
 }
 
-export function isSessionStale(record: SessionRecord, nowMs = Date.now()): boolean {
+export function isSessionExpired(record: SessionRecord, nowMs = Date.now()): boolean {
   if (record.status !== "active") return false;
   const heartbeatMs = Date.parse(record.heartbeatAt ?? "");
-  return !Number.isFinite(heartbeatMs) || nowMs - heartbeatMs > SESSION_STALE_MS;
+  return !Number.isFinite(heartbeatMs) || nowMs - heartbeatMs > SESSION_EXPIRY_MS;
 }
 
-function staleProjection(record: SessionRecord): StaleSessionRecord {
+function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
   return {
     sessionId: record.sessionId,
     pid: record.pid,
@@ -367,16 +367,16 @@ export function sessionListDocument(
     (experiment) => experiment.experimentId.startsWith(selector),
   );
   const sessions: SessionRecord[] = [];
-  const stale: StaleSessionRecord[] = [];
+  const expired: ExpiredSessionRecord[] = [];
   for (const record of records) {
     if (!matches(record)) continue;
-    if (isSessionStale(record, options.nowMs)) {
-      stale.push(staleProjection(record));
+    if (isSessionExpired(record, options.nowMs)) {
+      expired.push(expiredProjection(record));
     } else if (record.status === "active" || options.all === true) {
       sessions.push(cloneRecord(record));
     }
   }
-  return { format: "niceeval.sessions", schemaVersion: 1, sessions, stale };
+  return { format: "niceeval.sessions", schemaVersion: 2, sessions, expired };
 }
 
 export async function listSessions(
@@ -397,12 +397,12 @@ export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: 
 
 export async function showSession(niceevalRoot: string, prefix: string, nowMs = Date.now()): Promise<SessionShowDocument> {
   const record = resolveSessionPrefix(await readSessions(niceevalRoot), prefix);
-  const stale = isSessionStale(record, nowMs);
+  const expired = isSessionExpired(record, nowMs);
   return {
     format: "niceeval.session",
-    schemaVersion: 1,
-    session: stale ? staleProjection(record) : record,
-    ...(stale ? { stale: true } : {}),
+    schemaVersion: 2,
+    session: expired ? expiredProjection(record) : record,
+    ...(expired ? { expired: true } : {}),
   };
 }
 
@@ -446,10 +446,10 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
       lines.push(`${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`);
       lines.push(...session.experiments.map(renderExperimentLine));
     }
-    if (document.stale.length > 0) {
-      lines.push(`STALE SESSIONS (${document.stale.length})`);
-      for (const stale of document.stale) {
-        lines.push(`${stale.sessionId} · pid ${stale.pid} · heartbeat ${stale.heartbeatAt ?? "unknown"} · 重新运行原命令`);
+    if (document.expired.length > 0) {
+      lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
+      for (const expired of document.expired) {
+        lines.push(`${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · 重新运行原命令`);
       }
     }
   }
@@ -458,9 +458,9 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
 
 export function renderSessionShowText(document: SessionShowDocument): string {
   const session = document.session;
-  const lines = [`SESSION ${session.sessionId}${document.stale ? " · STALE" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
+  const lines = [`SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
   if ("status" in session) lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
   if ("experiments" in session) lines.push(...session.experiments.map(renderExperimentLine));
-  if (document.stale) lines.push("NEXT 重新运行原命令");
+  if (document.expired) lines.push("NEXT 重新运行原命令");
   return `${lines.join("\n")}\n`;
 }

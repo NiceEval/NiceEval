@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
-import { formatMetricValue, formatTimeDistance, missingText, verdictMark } from "../model/format.ts";
+import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
 import {
   DEFAULT_REPORT_LOCALE,
   localeText,
@@ -37,8 +37,6 @@ export type Cell =
       readonly refs?: readonly AttemptLocator[];
       // 两种形态:counts = 判定构成计票(experiment / Eval 行);verdict = 单判定(attempt 行)。
       // 格子只带值,计票怎么来的(折叠、分桶)在实体投影侧,渲染面不算数。
-      /** 单判定形态历史执行的距今毫秒数;新执行时省略,不伪造 0(与 locator 格同一条纪律)。 */
-      readonly staleSinceMs?: number;
       /** 单判定形态省略判定词、只留判定符(如对照矩阵逐格只放得下一个符号的场景)。 */
       readonly bare?: boolean;
     }
@@ -47,7 +45,6 @@ export type Cell =
   | {
       readonly kind: "locator";
       readonly locator: AttemptLocator;
-      readonly staleSinceMs?: number;
       /** 有判定的 attempt 行:判定长在 locator 上(判定符 + 语义色),没有判定就省略。 */
       readonly verdict?: Verdict | "skipped";
     }
@@ -59,19 +56,11 @@ export type Cell =
       /** 补上这一格的命令,可直接复制(如 `niceeval exp <experimentId>`)。 */
       readonly detail?: string;
       /**
-       * 记录里存在、但与当前基准不可比的最近一条判定;不进任何计数,两面都降饱和显示,
-       * 只提供 locator 下钻(docs/feature/reports/library/presentation.md「missing 格的完整形状」)。
+       * 缺口题的最近旧结果 locator:审计与授权入口(`niceeval accept @<locator>`),
+       * 不进任何计数、不携带旧判定或时距
+       * (docs/feature/reports/components/summaries/experiment-table.md「缺口原因与动作」)。
        */
-      readonly reference?: {
-        readonly locator: AttemptLocator;
-        readonly verdict: Verdict | "skipped";
-        readonly staleSinceMs: number;
-      };
-    }
-  | {
-      readonly kind: "composition";
-      /** 段名由投影按 locale 给出;Table 不认识段的业务含义,只按声明序渲染,计数为零的段不显示。 */
-      readonly segments: readonly { readonly label: LocalizedText; readonly count: number }[];
+      readonly previous?: { readonly locator: AttemptLocator };
     };
 
 export interface ColumnSpec {
@@ -113,18 +102,18 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return "—";
     case "missing": {
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
-      // 带参考时用参考替代原因文案——参考本身已经说明这一格为什么空着,不把同一句话说两遍。
-      const reason = cell.reference
-        ? `${verdictMark(cell.reference.verdict === "skipped" ? "skipped" : cell.reference.verdict)} ${cell.reference.locator} ${formatTimeDistance(cell.reference.staleSinceMs, loc)}`
-        : missingText(cell.code, loc);
-      return cell.detail ? `${reason} · ${cell.detail}` : reason;
+      // 原因文案永远在场;previous 只追加 @locator(审计与授权入口),不替代原因——
+      // locator 不带判定,「为什么没结果」必须由 code 说清楚。
+      const parts = [missingText(cell.code, loc)];
+      if (cell.previous) parts.push(`@${cell.previous.locator}`);
+      if (cell.detail) parts.push(cell.detail);
+      return parts.join(" · ");
     }
     case "text":
       return cell.detail ? `${cell.text}\n  ${cell.detail}` : cell.text;
     case "locator": {
-      const stale = cell.staleSinceMs !== undefined ? ` ${formatTimeDistance(cell.staleSinceMs, locale ?? DEFAULT_REPORT_LOCALE)}` : "";
       const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict === "skipped" ? "skipped" : cell.verdict)} ` : "";
-      return `${mark}${cell.locator}${stale}`;
+      return `${mark}${cell.locator}`;
     }
     case "summary": {
       const more = cell.more && cell.more > 0 ? ` +${cell.more} more` : "";
@@ -142,25 +131,16 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       }
       if (cell.verdict !== undefined) {
         const v = cell.verdict === "skipped" ? "skipped" : cell.verdict;
-        const stale = cell.staleSinceMs !== undefined ? ` ${formatTimeDistance(cell.staleSinceMs, loc)}` : "";
         // 判定符与判定词同场,与 locator 格、web 面同一条纪律:单色打印下照样读得出。
-        // bare 省略判定词,只留判定符(+ 可选时距),供逐格空间紧张的场景(如对照矩阵)使用。
-        if (cell.bare) return `${verdictMark(v)}${stale}`;
-        return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}${stale}`;
+        // bare 省略判定词,只留判定符,供逐格空间紧张的场景(如对照矩阵)使用。
+        if (cell.bare) return `${verdictMark(v)}`;
+        return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}`;
       }
       return "—";
     }
     case "metric": {
       const m = cell.metric;
       return formatMetricValue(m.value, m.unit, m.format, locale ?? DEFAULT_REPORT_LOCALE);
-    }
-    case "composition": {
-      const loc = locale ?? DEFAULT_REPORT_LOCALE;
-      // text 面退化成与判定计票同构的计数串,与「计数为零的段不出现」同一条规则。
-      const parts = cell.segments
-        .filter((segment) => segment.count > 0)
-        .map((segment) => `${segment.count} ${resolveLocalizedText(segment.label, loc)}`);
-      return parts.join(" · ") || "—";
     }
     default: {
       const _exhaustive: never = cell;

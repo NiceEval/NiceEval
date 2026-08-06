@@ -33,7 +33,6 @@ niceeval view weather                  # eval id 前缀，只收窄报告槽
 niceeval view --exp agents/codex       # 按 experiment id 路径收窄
 niceeval view --exp agents/codex/gpt-5.4 # 只看一个 experiment
 niceeval view --record site-data/run  # 换记录根
-niceeval view --fresh                  # 只统计最新一次运行实测的 attempt
 niceeval view --run .niceeval/dev-e2b_codex-e2b/2026-07-12T10-08/run.json
                                        # 只打开这一份 Run
 niceeval view --no-open                # 只打印 URL
@@ -54,7 +53,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 
 不带选项的 `niceeval view` 默认把记录根中的完整 Sample 作为各页 `load` 的 base。
 `--exp` 按 experiment id 路径收窄，位置参数按 eval id 前缀收窄；两者可组合取交集。
-`--fresh` 注入只含新执行 attempt 的 [`fresh` 口径](../sample/library.md#时效新执行与历史执行)，被排除的题按覆盖事实转为占位行。
+携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`view` 不提供按来源切换当前结果集的开关。
 目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在当前结果集里的历史 attempt 也能打开；收窄之外的实例不可达。
 同一份收窄交给 `--out` 时决定出站内容。
 
@@ -159,7 +158,7 @@ Run 尚未补写 `completedAt` 是这个场景的常态，按[未收尾 Run](../
   浏览器标题、外壳链接、页脚与资产按[外壳契约](library/shell.md#行为约束)消费；hero、Notice 和 Run 诊断都是 page 内的[站点组件](components/site/README.md)。
 - **默认报告页（内建首页）：** 页首是 `Hero`，随后是首页任务函数产出的 Notice、摘要、成本 × 主读数 points 和 Experiment rows。
   实验表可展开查看 Eval 与 attempt 证据。
-  每个 experiment 的 eval 集取 Run 记录的 `selectedEvalIds`，未选择项不进入分母。
+  每个 experiment 直接消费当前 Sample 的物理 attempts；运行期选择计划不在报告层二次筛选结果。
   散点有 `line` label 时按线归类并连线，否则按 agent 归类且不连线。
   `--report` 用自定义报告替换整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
 - **Attempts 页（内建）：** `toAttemptRows(sample.attempts)` 把范围内所有 Attempt 投影成 rows，再交给带过滤的 `Table`。

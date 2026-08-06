@@ -690,7 +690,6 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         flags: run.flags,
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: ["e"],
         ...(run.judge !== undefined
           ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl, timeoutMs: run.judge.timeoutMs } }
           : {}),
@@ -819,7 +818,6 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         flags: oldRun.flags,
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: ["e"],
         judge: { model: "gpt-5.6" },
       },
     });
@@ -830,7 +828,7 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
     expect(dry.dispatchByKey.get("exp|e")).toMatchObject([
       {
         gate: "fingerprint",
-        reason: "stale",
+        reason: "previous-result",
         attempts: [0],
         comparison: {
           kind: "unexplained",
@@ -874,7 +872,6 @@ describe("planCarry · --accept:授权跨过一条精确差异", () => {
         flags: oldRun.flags,
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: ["e"],
         judge: { model: "gpt-5.6" },
       },
     });
@@ -976,7 +973,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
       // 这条 fixture 没有历史清单(手写的落盘),差异如实算不出。
       {
         gate: "fingerprint",
-        reason: "stale",
+        reason: "previous-result",
         attempts: [2],
         comparison: {
           kind: "unexplained",
@@ -1165,7 +1162,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     expect(plan.dispatchByKey.get("exp|e")).toMatchObject([
       {
         gate: "fingerprint",
-        reason: "stale",
+        reason: "previous-result",
         attempts: [0],
         comparison: {
           kind: "unexplained",
@@ -1203,7 +1200,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
       fingerprint: old.fingerprint,
       configHash: await configHashFor(evals[0]!, oldRun),
       agent: base.agent.name,
-      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false },
     });
 
     const plan = await planCarry(evals, [run], [prior], undefined, {
@@ -1213,7 +1210,7 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     expect(plan.dispatchByKey.get("exp|e")).toEqual([
       {
         gate: "fingerprint",
-        reason: "stale",
+        reason: "previous-result",
         attempts: [0],
         comparison: {
           kind: "changed",
@@ -1268,7 +1265,7 @@ describe("非 TTY 下不带值的 --accept:报错列出本次可授权的原因"
       fingerprint: old.fingerprint,
       configHash: await configHashFor(evals[0]!, oldRun),
       agent: base.agent.name,
-      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { ...DIRECT_RUN_INFO, flags: oldRun.flags, attempts: 1, earlyExit: false },
     });
 
     const plan = await planCarry(evals, [run], [prior], undefined, {

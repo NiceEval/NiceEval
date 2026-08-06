@@ -128,7 +128,7 @@ pnpm e2e -- verify \
 - `state === "frozen"`、文件树 digest 与全部 artifact；
 - prepare evidence 均位于匹配 world root；verify 新产物只写入匹配 Verification Run root。
 
-任一项不匹配都以 stale-evidence 失败，列出差异并提示重新执行完整 `pnpm e2e`。
+任一项不匹配都以 expired-evidence 失败，列出差异并提示重新执行完整 `pnpm e2e`。
 Reuse 绝不静默 prepare、调用模型或改写 manifest。
 
 ## Fresh / Reuse 次数

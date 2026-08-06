@@ -11,8 +11,7 @@ import type { ReportInput, SampleSummaryContent } from "../../model/types.ts";
 import { collectItems, computeCell, resolveInput } from "../../model/aggregate.ts";
 import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { evaluationKindComposition } from "../../model/evaluation-kind.ts";
-import { selectedAttemptsOnly, summarizeItems, tallyOf } from "../shared-compute.ts";
-
+import { summarizeItems, tallyOf } from "../shared-compute.ts";
 // ───────────────────────── sampleSummary ─────────────────────────
 
 /** costUSD 的求和投影:两级都 sum(题内多轮求和 + 跨题求和 = 全量求和)。 */
@@ -32,7 +31,7 @@ const totalCostMetric = {
  */
 export async function sampleSummary(input: ReportInput): Promise<SampleSummaryContent> {
   const { runs, attempts: scopeAttempts } = resolveInput(input);
-  const items = collectItems(runs, selectedAttemptsOnly(scopeAttempts));
+  const items = collectItems(runs, scopeAttempts);
 
   let earliest: string | null = null;
   let latest: string | null = null;

@@ -5,4 +5,4 @@
 
 ## 选择结果范围
 
-- [局部补跑之后,两个口径分别给出什么](partial-rerun.md) ——用三次 Run 理解 `latestRunSample`、 `currentSample`、覆盖缺口与 `fresh`。
+- [局部补跑之后，当前结果怎样形成](partial-rerun.md) —— 用三次 Run 理解 `latestRunSample`、`currentSample`、兼容携带与结构化覆盖缺口。

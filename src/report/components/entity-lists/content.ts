@@ -1,27 +1,28 @@
 // 实体列表 Table Content 投影(docs/feature/reports/components/entity-lists/)。
-// Eval 分组层在这里从扁平 evalRows + missingEvalIds 投影成 TableContent.subRows
+// Eval 分组层在这里从扁平 evalRows + missing(SampleCoverage 的缺口数组)投影成
+// TableContent.subRows
 // (docs/feature/reports/library.md「Eval 分组层」)。
 
 import type { Cell, ColumnSpec, TableContent, TableContentRow } from "../../definition/cell.ts";
-import { localizedMessage, type LocalizedText } from "../../model/locale.ts";
+import { localizedMessage } from "../../model/locale.ts";
 import type {
   AttemptListItem,
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
   EvaluationKindComposition,
-  StaleConclusionReference,
 } from "../../model/types.ts";
+import type { SampleMissing } from "../../../record/types.ts";
 import type { MetricValue } from "../../model/calculation.ts";
 import { experimentListEvaluationKindComposition } from "../../model/format.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 
 /** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
 const GROUP_NO_SAMPLES = "noSamples";
-/** 覆盖缺口两档占位行共用的原因码——两档说的是同一个事实,`code` 相同。 */
-const NO_CURRENT_RESULT = "noCurrentResult";
-/** 覆盖构成四段的声明序:新执行 → 历史执行 → 过期结论 → 未跑到(段序即声明序)。 */
-const COVERAGE_SEGMENT_KEYS = ["coverage.fresh", "coverage.historical", "coverage.stale", "coverage.notRun"] as const;
+/** 覆盖缺口「尚未运行」占位行的原因码(history 里从未出现这道题的物理 Attempt)。 */
+const NEVER_RUN = "neverRun";
+/** 覆盖缺口「当前配置下没有结果」占位行的原因码(历史里有结果,但不在当前可比集合)。 */
+const PREVIOUS_RESULT = "previousResult";
 
 /** 三张实体表共用的列表头。文案单源在 locale 字典,这里只烤成随列走的 LocalizedText。 */
 const HEADER = {
@@ -127,7 +128,6 @@ function attemptCells(item: AttemptListItem): CellBag {
     entity: {
       kind: "locator",
       locator: item.locator,
-      staleSinceMs: item.staleSinceMs,
       verdict,
     },
     verdict: { kind: "verdict", verdict },
@@ -275,27 +275,27 @@ function evalRow(
 
 /**
  * 覆盖缺口的两档占位行(docs/feature/reports/components/summaries/experiment-table.md
- * 「覆盖缺口的两档占位行」):`code` 与补跑命令两档相同——都是「当前配置下没有结果」这同一个
- * 事实;差别只在有没有 `reference`,带参考时它替代原因文案,不把同一句话说两遍。
+ * 「缺口原因与动作」):`never-run` 与 `previous-result` 都表示「当前配置下没有结果」,
+ * 都不进任何聚合读数;差别在原因文案与是否带最近旧 locator(审计与授权入口,
+ * 不把旧 verdict、时距或样式混入当前结果)。
  */
 function placeholderRow(
   experimentId: string,
-  evalId: string,
+  missing: SampleMissing,
   label: string,
   columns: readonly ColumnSpec[],
-  reference: StaleConclusionReference | undefined,
 ): TableContentRow {
   const bag: CellBag = {
     entity: textCell(label),
     record: {
       kind: "missing",
-      code: NO_CURRENT_RESULT,
+      code: missing.reason === "never-run" ? NEVER_RUN : PREVIOUS_RESULT,
       detail: `niceeval exp ${experimentId}`,
-      ...(reference ? { reference } : {}),
+      ...(missing.previous !== undefined ? { previous: { locator: missing.previous.locator } } : {}),
     },
   };
   return {
-    key: `${experimentId}:${evalId}:missing`,
+    key: `${experimentId}:${missing.evalId}:missing`,
     variant: "placeholder",
     cells: projectCells(bag, columns),
   };
@@ -338,9 +338,14 @@ function leafTableRow(
   item: ExperimentListItem,
   view: HierarchyView,
 ): TableContentRow {
-  return member.kind === "eval"
-    ? evalRow(member.row, view, label)
-    : placeholderRow(item.experimentId, member.evalId, label, view.columns, item.staleReferences[member.evalId]);
+  if (member.kind === "eval") return evalRow(member.row, view, label);
+  const missing = item.missing.find((entry) => entry.evalId === member.evalId);
+  return placeholderRow(
+    item.experimentId,
+    missing ?? { evalId: member.evalId, reason: "never-run" },
+    label,
+    view.columns,
+  );
 }
 
 function groupTableRow(
@@ -459,54 +464,13 @@ function nestLevel(
   return [...rows, ...flat];
 }
 
-/**
- * 覆盖构成的四段计数(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」):
- * 新执行 / 历史执行 = 有 attempt 的题按其中是否有非历史(新执行)划分;过期结论 = 缺口题里
- * `staleReferences` 命中的那些;未跑到 = 缺口题里剩下的那些。四段互斥且合计等于已知题数。
- */
-function coverageSegments(item: ExperimentListItem): { label: LocalizedText; count: number }[] {
-  let fresh = 0;
-  for (const row of item.evalRows) {
-    if (row.attempts.some((a) => !a.historical)) fresh += 1;
-  }
-  const historical = item.evalRows.length - fresh;
-  const stale = Object.keys(item.staleReferences).length;
-  const notRun = item.missingEvalIds.length - stale;
-  return COVERAGE_SEGMENT_KEYS.map((key, i) => ({
-    label: localizedMessage(key),
-    count: [fresh, historical, stale, notRun][i]!,
-  }));
-}
-
-/** 覆盖构成副行的 key 前缀;测试与消费方靠它把这一行从 Eval / 组行里筛出去。 */
-export const COVERAGE_ROW_PREFIX = "coverage:";
-
-/**
- * 覆盖构成副行(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」):
- * experiment 行 subRows 的最后一条,把已知题按结论出身分成四段互斥的构成格,交给中立的
- * `composition` 格——渲染在同一个 `record` 列位置(与 Eval / Attempt 行的判定构成、占位行的
- * missing 格同一个槽位,三种形态各自对应不同的行语义,不是同一行的三种读法)。
- * 它不是 Eval / 组行,没有身份(entity 是 notApplicable),不参与嵌套排序或收起判定。
- */
-function coverageRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
-  const bag: CellBag = {
-    entity: { kind: "notApplicable" },
-    record: { kind: "composition", segments: coverageSegments(item) },
-  };
-  return {
-    key: `${COVERAGE_ROW_PREFIX}${item.experimentId}`,
-    cells: projectCells(bag, view.columns),
-  };
-}
-
-/** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows,末尾追加覆盖构成副行。 */
+/** experiment 的 evalRows + missing → 递归嵌套的 subRows。 */
 function experimentSubRows(item: ExperimentListItem, view: HierarchyView): TableContentRow[] {
   const members: LeafMember[] = [
     ...item.evalRows.map((row): LeafMember => ({ kind: "eval", row })),
-    ...item.missingEvalIds.map((evalId): LeafMember => ({ kind: "missing", evalId })),
+    ...item.missing.map((entry): LeafMember => ({ kind: "missing", evalId: entry.evalId })),
   ];
-  const nested = nestLevel(members, "", "", item, view);
-  return members.length > 0 ? [...nested, coverageRow(item, view)] : nested;
+  return nestLevel(members, "", "", item, view);
 }
 
 function experimentRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {

@@ -27,7 +27,6 @@ import type { DatasetField,
   ScoreboardData,
   SeriesInput,
   StabilityMatrixData,
-  StaleConclusionReference,
 } from "../model/types.ts";
 import type { JsonValue, Verdict } from "../../types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
@@ -48,21 +47,17 @@ import {
   filterItems,
   fullEvalKey,
   groupItems,
-  historicalOf,
   locatorOf,
-  msSince,
   refDisplayKey,
   resolveInput,
   seriesKey,
   seriesName,
-  staleReferenceOf,
   toColumn,
   type Item,
 } from "../model/aggregate.ts";
 import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore as totalScoreMetric } from "../model/metrics.ts";
 import { formatMetricValue, formatPlainNumber, formatPoints } from "../model/format.ts";
 import type { LocalizedText } from "../model/locale.ts";
-import { selectedAttemptsOnly } from "../components/shared-compute.ts";
 import { metricFieldOf } from "../model/dataset.ts";
 
 // ───────────────────────── measureRowsData ─────────────────────────
@@ -567,11 +562,6 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   const evaluationKind: "pass" | "points" = items[0]!.attempt.result.evaluationKind === "points" ? "points" : "pass";
   const verdict: Verdict = foldEvalVerdict(items.map((item) => ({ verdict: item.attempt.result.verdict })));
   const refs = new Set<AttemptLocator>();
-  let historical = false;
-  // 距今最久的历史执行决定这一格的时距——多个 attempt 折进同一格时,时距说的是「这批结论里
-  // 最旧的证据有多旧」,不是最新那条(与 experiment-table 的 attempt 行时距同一份数据来源,
-  // 只是这里先跨 attempt 折叠成一格)。
-  let staleStartedAt: string | undefined;
   let scoreSum = 0;
   let scoreCount = 0;
   let tokensSum = 0;
@@ -580,11 +570,6 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   let costCount = 0;
   for (const item of items) {
     refs.add(locatorOf(item));
-    if (historicalOf(item)) {
-      historical = true;
-      const startedAt = item.attempt.result.startedAt ?? item.run.startedAt;
-      if (staleStartedAt === undefined || startedAt < staleStartedAt) staleStartedAt = startedAt;
-    }
     if (evaluationKind === "points") {
       const value = await evaluateMetric(totalScoreMetric, item.attempt);
       if (value !== null) {
@@ -612,23 +597,11 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
     attempts: [...refs].sort(),
     ...(tokensCount > 0 ? { totalTokens: tokensSum } : {}),
     ...(costCount > 0 ? { totalCostUSD: costSum } : {}),
-    historical,
-    ...(staleStartedAt !== undefined ? { staleSinceMs: msSince(staleStartedAt) } : {}),
   };
 }
 
-/** 每个 experiment 当前基准的 configHash:该 experiment 在 `runs` 里最新快照的 configHash。 */
-function latestConfigHashByExperiment(runs: readonly Run[]): Map<string, string | undefined> {
-  const latest = new Map<string, Run>();
-  for (const run of runs) {
-    const existing = latest.get(run.experimentId);
-    if (existing === undefined || run.startedAt > existing.startedAt) latest.set(run.experimentId, run);
-  }
-  return new Map([...latest].map(([id, run]) => [id, run.configHash]));
-}
-
 export async function deltaTableData(input: ReportInput, options: DeltaTableOptions): Promise<DeltaData> {
-  const { runs, attempts, historyAttempts, fresh } = resolveInput(input);
+  const { runs, attempts } = resolveInput(input);
   const items = filterItems(collectItems(runs, attempts), options.evals);
 
   let conditions: string[];
@@ -695,14 +668,6 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
   for (const byEval of byConditionByEval.values()) for (const evalId of byEval.keys()) evalIdsSet.add(evalId);
   const knownEvalIds = [...evalIdsSet].sort();
 
-  // 每个条件背后的 experiment id 集合(by: "experiment" 时条件字符串本身通常就是唯一一个 id);
-  // 过期结论参考按各自 experiment 的当前基准 configHash 判定。
-  const experimentIdsByCondition = new Map<string, Set<string>>();
-  for (const [condition, conditionItems] of itemsByCondition) {
-    experimentIdsByCondition.set(condition, new Set(conditionItems.map((item) => experimentIdOf(item))));
-  }
-  const anchorConfigHashByExperiment = latestConfigHashByExperiment(runs);
-
   const baseline = conditions[0];
   const rows: DeltaData["rows"] = [];
   for (const evalId of knownEvalIds) {
@@ -732,31 +697,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
       }
     }
 
-    // 过期结论参考(show/compare.md「— ✓ 12d」):只在该条件缺席这道题、且记录里存在与该
-    // experiment 当前基准不可比的历史判定时才给,口径与 experiment-table 两档占位行一致——
-    // `fresh` 为 true 时不给参考,读者已声明只看新执行。它只写进 references,不进 cells,
-    // 因此天然不参与 totals / delta / 配对覆盖的任何一个数。
-    let references: DeltaData["rows"][number]["references"] | undefined;
-    if (!fresh) {
-      for (const condition of conditions) {
-        if (cells[condition] !== undefined) continue;
-        const experimentIds = experimentIdsByCondition.get(condition);
-        if (!experimentIds || experimentIds.size === 0) continue;
-        const candidates = historyAttempts.filter(
-          (a) =>
-            experimentIds.has(a.experimentId) &&
-            a.evalId === evalId &&
-            a.run.configHash !== anchorConfigHashByExperiment.get(a.experimentId),
-        );
-        const reference = staleReferenceOf(candidates);
-        if (reference) {
-          references ??= {};
-          references[condition] = reference;
-        }
-      }
-    }
-
-    rows.push({ key: evalId, flipped, cells, ...(delta ? { delta } : {}), ...(references ? { references } : {}) });
+    rows.push({ key: evalId, flipped, cells, ...(delta ? { delta } : {}) });
   }
 
   // 各条件自身覆盖面:分母是该条件有结果的 eval 数,不看其它条件是否也覆盖了这道题。

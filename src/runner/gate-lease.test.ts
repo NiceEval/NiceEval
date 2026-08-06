@@ -12,9 +12,9 @@ import {
   acquireGateSlot,
   drainHeldGateLeases,
   GATE_LEASE_HEARTBEAT_INTERVAL_MS,
-  GATE_LEASE_STALE_MS,
+  GATE_LEASE_EXPIRY_MS,
   gateLeasesDirOf,
-  isGateLeaseStale,
+  isGateLeaseExpired,
   pendingHeldGateLeaseCount,
   readGateLeases,
   tryAcquireGateSlotOnce,
@@ -249,7 +249,7 @@ describe("min-N:配置漂移下生效名额取在场声明的最小值", () => {
 
   it("过期租约的声明不参与 min-N:残留的窄声明不把名额永久钉死", async () => {
     const root = await makeRoot();
-    const nowMs = GATE_LEASE_STALE_MS + 1;
+    const nowMs = GATE_LEASE_EXPIRY_MS + 1;
     await seed(root, lease({ slot: 0, declaredN: 1, pid: 1, heartbeatAt: new Date(0).toISOString() }));
 
     // 生效名额按自己的 3 算(过期声明被忽略):两个空槽先用完,全满之后才接管过期的 slot 0
@@ -263,17 +263,17 @@ describe("min-N:配置漂移下生效名额取在场声明的最小值", () => {
   });
 });
 
-describe("isGateLeaseStale: 30s 边界(与用例锁同参数)", () => {
+describe("isGateLeaseExpired: 30s 边界(与用例锁同参数)", () => {
   it("恰好落后 30_000ms 不算过期(严格大于,不是 >=)", () => {
-    expect(isGateLeaseStale(lease({ heartbeatAt: new Date(0).toISOString() }), GATE_LEASE_STALE_MS)).toBe(false);
+    expect(isGateLeaseExpired(lease({ heartbeatAt: new Date(0).toISOString() }), GATE_LEASE_EXPIRY_MS)).toBe(false);
   });
 
   it("落后 30_001ms 算过期", () => {
-    expect(isGateLeaseStale(lease({ heartbeatAt: new Date(0).toISOString() }), GATE_LEASE_STALE_MS + 1)).toBe(true);
+    expect(isGateLeaseExpired(lease({ heartbeatAt: new Date(0).toISOString() }), GATE_LEASE_EXPIRY_MS + 1)).toBe(true);
   });
 
   it("无法解析的 heartbeatAt 一律视为过期", () => {
-    expect(isGateLeaseStale(lease({ heartbeatAt: "not-a-date" }), 0)).toBe(true);
+    expect(isGateLeaseExpired(lease({ heartbeatAt: "not-a-date" }), 0)).toBe(true);
   });
 });
 
@@ -283,7 +283,7 @@ describe("过期租约的 rename 接管", () => {
     const staleAt = new Date(0).toISOString();
     await seed(root, lease({ slot: 0, declaredN: 1, pid: 1, host: "dead-host", startedAt: staleAt, heartbeatAt: staleAt }));
 
-    const nowMs = GATE_LEASE_STALE_MS + 1;
+    const nowMs = GATE_LEASE_EXPIRY_MS + 1;
     const result = await tryAcquireGateSlotOnce(root, EXP, 1, { pid: 999, host: "new-host" }, nowMs);
     expect(result).toMatchObject({ kind: "acquired", slot: 0, takenOver: true });
     if (result.kind === "acquired") {
@@ -301,7 +301,7 @@ describe("过期租约的 rename 接管", () => {
     const staleAt = new Date(0).toISOString();
     await seed(root, lease({ slot: 0, declaredN: 1, pid: 1, host: "dead-host", startedAt: staleAt, heartbeatAt: staleAt }));
 
-    const nowMs = GATE_LEASE_STALE_MS + 1;
+    const nowMs = GATE_LEASE_EXPIRY_MS + 1;
     const results = await Promise.all([
       tryAcquireGateSlotOnce(root, EXP, 1, { pid: 100, host: "host-a" }, nowMs),
       tryAcquireGateSlotOnce(root, EXP, 1, { pid: 200, host: "host-b" }, nowMs),
@@ -495,7 +495,7 @@ describe("acquireGateSlot / claim.release: 释放", () => {
     const root = await makeRoot();
     const { claim } = await acquireGateSlot(root, EXP, 1, { pid: 1, host: "h" });
     // 模拟本进程假死到过期、槽被另一条 Invocation 接管
-    const taken = await tryAcquireGateSlotOnce(root, EXP, 1, { pid: 2, host: "taker" }, Date.now() + GATE_LEASE_STALE_MS + 1);
+    const taken = await tryAcquireGateSlotOnce(root, EXP, 1, { pid: 2, host: "taker" }, Date.now() + GATE_LEASE_EXPIRY_MS + 1);
     expect(taken).toMatchObject({ kind: "acquired", takenOver: true });
 
     await claim.release();

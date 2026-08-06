@@ -47,8 +47,6 @@ export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): Js
     case "timeoutMs": return info.timeoutMs;
     case "budget": return info.budget;
     case "maxConcurrency": return info.maxConcurrency;
-    case "selectedEvalIds": return info.selectedEvalIds;
-    case "evalFilterFingerprint": return info.evalFilterFingerprint;
     case "sandboxLayer": return info.sandboxLayer;
     case "sandboxPlansByEval": return info.sandboxPlansByEval;
     case "sandboxReuse": return info.sandboxReuse;

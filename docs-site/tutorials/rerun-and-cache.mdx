@@ -82,9 +82,9 @@ sandboxSetup(): SandboxHook {
 
 Carried results retain the address they actually used. A newly started Attempt records its new address.
 
-## Inspect and authorize an exact difference
+## Move a key without rerunning the previous batch
 
-If a runtime coordinate was already stored in `flags`, moving it to `ctx.fact()` changes the flags bag and invalidates the earlier results. Preview the decision first:
+If a runtime coordinate was already stored in `flags`, moving it to `ctx.fact()` changes the flags bag and invalidates the earlier results. Run `--dry` first to see why the whole batch would rerun:
 
 ```bash
 npx niceeval exp compare --dry
@@ -94,37 +94,33 @@ npx niceeval exp compare --dry
 plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
-stale  config:flags.tunnelUrl  https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com
-       affects 36 evals · baseline 01/02/03/05/06
-       accept:  niceeval exp compare --accept config:flags.tunnelUrl
+compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
+  prior:  @1A1B2C3D4E5F (passed)
+  accept: niceeval accept @1A1B2C3D4E5F
 ```
 
-Copy the `accept:` command when you know that exact difference does not invalidate those results:
+`previous-result passed` means that the historical verdict passed, but the current fingerprint has changed, so the result cannot be carried from cache yet. The difference explanation and execution evidence are separate: `fingerprint version changed` only means that the input difference cannot be expanded from the current manifest. It does not mean that execution, diff, or timing evidence is gone. Open the locator, verify that the verdict still holds, and then accept it:
 
 ```bash
-npx niceeval exp compare --accept config:flags.tunnelUrl
+npx niceeval show @1A1B2C3D4E5F --timing
+npx niceeval accept @1A1B2C3D4E5F
+npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
 ```
 
-An accepted result is re-fingerprinted under the current Run. The next invocation naturally matches without repeating `--accept`, while `carriedAccepting` records the selector and its old/new summaries for audit.
+```text
+╭─ PLAN ─────────────────────────────────────────────╮
+│ Accepted @1A1B2C3D4E5F as @1D4C3B2A1F5E          │
+│ Current fingerprint: 5f3b…                      │
+╰──────────────────────────────────────────────────╯
+```
 
-Selectors come from the manifest difference:
+Acceptance writes a new result under the current fingerprint and records its source locator, old and new fingerprints, and difference summary. When you pass several explicit locators, NiceEval validates all of them before writing anything. If any locator fails, it writes nothing. Otherwise it groups them by experiment and creates one snapshot per experiment. One command may accept results from several experiments, but it never accepts unlisted results merely because they share the same difference, and there is no bulk-accept option.
 
-| Selector | Difference |
-| --- | --- |
-| `config:<field path>` | A resolved configuration field changed |
-| `source:<path>` | A source-closure file changed |
-| `data:<path>` | A registered data file changed |
-| `opaque:no-manifest` | The historical Run has no manifest, so its source/data difference cannot be named |
+Fingerprint-version migrations that NiceEval knows and can prove equivalent carry automatically and record `migratedFrom`. Migrations that cannot be proven appear as `previous-result` and require acceptance or a rerun. The output does not use the ambiguous phrase `details unavailable`.
 
-Authorization is all-or-nothing per historical entry. If an entry has two differences and you authorize only one, it reruns; the other difference cannot hitch a ride through the fingerprint gate.
+Very old records may contain locators that do not follow the current format. In that case, `--dry` prints `accept: unavailable (legacy locator …)` instead of suggesting a command that must fail. Rerun that eval to produce a new locator that can be accepted.
 
-One selector authorizes every old-value-to-new-value transition for that path inside the selected scope. `--dry` still prints separate blocks for separate transitions, and each carried entry records its own transition. Narrow the scope with positional eval selectors when only part of the batch should be trusted.
-
-When the historical Run has no manifest, NiceEval reconstructs its configuration identity from `run.json` and recomputes a counterfactual fingerprint with the current source/data inputs. If that fingerprint matches, named `config:` authorizations are sufficient. If it does not, add `opaque:no-manifest` only when you have independently established that the unnamed source/data change is safe.
-
-An unknown selector is a usage error. NiceEval lists the selectors that genuinely occur in this plan rather than silently doing nothing.
-
-In a TTY, `--accept` without a value opens an interactive selector helper. Choosing rerun grants no authorization. NiceEval prints the equivalent command with explicit selector values before executing it. Outside a TTY, a selector value is required.
+Historical `passed` and `failed` results can be accepted. Whether a result came from Sandbox reuse, or whether the current experiment declares `sandboxReuse: true`, does not affect eligibility. Results with `errored` or `skipped` verdicts cannot be accepted, and neither can execution modes that require a real Sandbox to remain available. The command explains the reason instead of silently running the experiment.
 
 ## Force revalidation outside the fingerprint
 

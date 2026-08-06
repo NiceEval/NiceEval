@@ -13,9 +13,10 @@
 4. Attempt：按 locator 参数化、`navigation: false` 的详情页。
 5. Experiment：按 experiment id 参数化、`navigation: false` 的详情页。
 
-首页先用公开任务函数计算结果，再把同一份值交给图和表。
+首页先用公开任务函数消费宿主提供的唯一一份 Sample，再把同一份值交给图和表。
 质量—成本前沿是首页旁的普通数组算法，不是公共数据源或 Calculation。
 题型与主读数的选择也由首页任务函数显式完成。
+页面和组件不得调用 Sample 转换生成另一套贡献集合；范围变化由宿主重新创建 Sample 并重新渲染整份报告。
 
 ## 公开复用单位
 

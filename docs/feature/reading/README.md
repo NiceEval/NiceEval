@@ -23,7 +23,7 @@
 
 Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdict；它把目录列入 `record.unreadable`，Sample 将其呈现为 `unreadable-run` warning。未派发 Attempt 只存在于 Invocation 的 `unstarted` 计数中，不创建 `result.json`；两者都不能冒充 `skipped`。
 
-**Sample 有判断,但判断必须写进返回值。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
+**Sample 有判断,但判断必须写进返回值。** current 选择、覆盖与缺口原因都写在返回值上；Reports 不从 Run、历史或运行期计划重建另一份贡献集合。
 
 **Reports 的判断是呈现判断。** 值怎么算归[读数](../reports/library/measures.md),两级折叠归 `perEval` / `acrossEvals`,长什么样归组件与主题。
 
@@ -52,7 +52,7 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 | 要加的东西 | 落哪层 | 判据 |
 |---|---|---|
 | 一种新的证据文件 | Record | 它是磁盘上的字节;加一行[证据 registry](../record/architecture.md#证据-registry) |
-| 「只看最近七天」 | Sample | 这是口径,要连覆盖一起交代 |
+| 「结果最多有效七天」 | 携带资格或 fingerprint | 时效要求决定结果是否仍能成为 current，不在报告里临时过滤 |
 | 「排掉一个坏掉的实验」 | Sample 的 `pipe` 算子 | 只删减,不替换、不重挑 |
 | 「按 agent 分组算 p90」 | Reports 的指标 | 值怎么算、两级怎么折叠归呈现层 |
 | 一个通过率字段 | 哪层都不落 | 聚合永远在消费方 |
@@ -65,7 +65,11 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 
 `show` 与 `view` 是两个宿主 —— 打开记录、挑 Sample、渲染报告的那一侧。它们装载同一份报告定义,走同一条 `装载 → resolve → validate → render` 管线,没有宿主特权。
 
-**收窄是选择层的事,写在命令行上。** 两个宿主的位置参数与 flag 是同一套:位置参数是 eval id 前缀,`--exp` 按 experiment id 路径段匹配,`--fresh` 只留新执行,`--record` / `--run` 换输入。它们合起来把记录根滤成一份有效根,再交给选择器。命令行表达不了的挑选走 [`publish()`](../record/library.md#发布publish) 构一个新的记录根,而不是给 CLI 加谓词语法。
+**收窄是选择层的事,写在命令行上。** 两个宿主的位置参数与 flag 是同一套:位置参数是 eval id 前缀,`--exp` 按 experiment id 路径段匹配,`--record` / `--run` 换输入。它们合起来把记录根滤成一份有效根,再交给选择器。命令行表达不了的挑选走 [`publish()`](../record/library.md#发布publish) 构一个新的记录根,而不是给 CLI 加谓词语法。
+
+一个报告实例只绑定宿主创建的一份 Sample。
+报告组件可以折叠或排序同一批行，但不能调用 Sample 转换改变贡献集合、覆盖分母或导出值。
+要看单次执行事实进入 Run，要看历次变化进入 History；两种旅途都不改变 current 报告。
 
 **出站有两条,共用一条站点管线。** [`niceeval view`](../reports/view.md) 建一次站点再盯着输入 [持续重建](../reports/view.md#持续重建),`niceeval view --out <dir>` 建完就退出、产物写进目录。
 同一份收窄下两者逐字节一致 —— 本地看到的就是发出去的。

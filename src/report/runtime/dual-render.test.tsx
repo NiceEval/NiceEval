@@ -42,7 +42,7 @@ import { targetHref } from "./target.ts";
 import type { ChartTargetPoint } from "../definition/primitives/chart.tsx";
 import type { ReportTarget } from "../definition/report.ts";
 import { renderSamplePage } from "./page-render.ts";
-import { ExperimentTable, ExperimentTableView, FailureList } from "../components/entity-lists/index.tsx";
+import { ExperimentTable, FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
 import { ExperimentScatter, SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
 import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Table, Tabs, Text, Waterfall } from "../definition/primitives.tsx";
@@ -781,7 +781,7 @@ describe("SampleOverview(组合组件)", () => {
   it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时 Series.by=line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const withLine = snap({ experimentId: "series/with-line", results: [res("q", "passed", withCost)] });
-    withLine.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
+    withLine.experiment = experimentInfo({ attempts: 1, earlyExit: false, labels: { line: "codex" } });
     const withoutLine = snap({ experimentId: "series/plain", results: [res("q", "passed", withCost)] });
 
     const seriesByOf = (node: unknown): string | undefined => {
@@ -811,9 +811,9 @@ describe("SampleOverview(组合组件)", () => {
   it("connect 缺省跟随 series 解析:默认 line 时同 series 两点连线,默认 agent 时不连线", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const lineA = snap({ experimentId: "connect/a", agent: "codex", results: [res("q", "passed", withCost)] });
-    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
+    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, labels: { line: "codex" } });
     const lineB = snap({ experimentId: "connect/b", agent: "codex", results: [res("q", "failed", withCost)] });
-    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } });
+    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, labels: { line: "codex" } });
 
     const connectOf = async (node: unknown): Promise<boolean | undefined> => {
       const charts = collectElementsByType(node, Chart);
@@ -842,9 +842,9 @@ describe("SampleOverview(组合组件)", () => {
 
   it("line 缺省对整个 Sample 生效:混入一个声明 line 的实验后,没声明的实验落 (missing) 而非回退 agent;显式 series 覆盖全部", async () => {
     const lineA = snap({ experimentId: "mem/codex-baseline", agent: "codex", results: [res("q", "passed")] });
-    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "baseline" } });
+    lineA.experiment = experimentInfo({ attempts: 1, earlyExit: false, labels: { line: "codex", memory: "baseline" } });
     const lineB = snap({ experimentId: "mem/codex-mempal", agent: "codex", results: [res("q", "failed")] });
-    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "mempal" } });
+    lineB.experiment = experimentInfo({ attempts: 1, earlyExit: false, labels: { line: "codex", memory: "mempal" } });
     const plain = snap({ experimentId: "dev/one", agent: "codex", results: [res("q", "passed")] });
     const all = [lineA, lineB, plain];
 
@@ -991,42 +991,6 @@ describe("SampleOverview(组合组件)", () => {
       </Col>
     ));
     expect(await resolveTree(<SampleOverview />, scope)).toEqual(await resolveTree(<Handwritten />, scope));
-  });
-
-  describe("「只看新执行」的重投影(experiment-table.md「只看新执行」)", () => {
-    it("Sample 里有历史执行时,ExperimentTable 交给 ExperimentTableView 两份 Content;fresh 态与 freshOnly() 重投影结果深相等,列集同规则", async () => {
-      // staleSinceMs 按 Date.now() 现算(格式化契约见 presentation.md「相对时距」);冻结系统时刻,
-      // 避免同一断言里两次独立计算因几毫秒漂移误判成「不相等」。
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-07-05T00:00:00.000Z"));
-      try {
-        const carried = res("b", "passed", { artifactBase: "exp/toggle/old-snap/b/a0" });
-        const scope = scopeOf([snap({ experimentId: "exp/toggle", results: [res("a", "passed"), carried] })]);
-        const resolved = await resolveTree(<ExperimentTable />, scope);
-        expect(collectElementsByType(resolved, Table)).toHaveLength(0);
-        const views = collectElementsByType(resolved, ExperimentTableView);
-        expect(views).toHaveLength(1);
-        const { fullContent, freshContent } = views[0]!.props as {
-          fullContent: ReturnType<typeof experimentListContent>;
-          freshContent: ReturnType<typeof experimentListContent> | null;
-        };
-        expect(freshContent).not.toBeNull();
-        // 口径不在组件里另算一遍:fresh 态与同一 Sample 走 freshOnly() 再投影的结果深相等。
-        expect(freshContent).toEqual(experimentListContent(await toExperimentRows(scope.freshOnly())));
-        expect(fullContent).toEqual(experimentListContent(await toExperimentRows(scope)));
-        // Table 的输入只是行集:两态下的列集同规则,原语侧没有任何按时效分叉的属性。
-        expect(freshContent!.columns.map((c) => c.key)).toEqual(fullContent.columns.map((c) => c.key));
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("Sample 里既无历史执行也无过期结论时不产出开关:ExperimentTable 直接交给 Table 而不绕 ExperimentTableView", async () => {
-      const scope = scopeOf([snap({ experimentId: "exp/plain", results: [res("a", "passed")] })]);
-      const resolved = await resolveTree(<ExperimentTable />, scope);
-      expect(collectElementsByType(resolved, ExperimentTableView)).toHaveLength(0);
-      expect(collectElementsByType(resolved, Table)).toHaveLength(1);
-    });
   });
 });
 

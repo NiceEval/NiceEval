@@ -153,7 +153,6 @@ export const deltaData: DeltaData = {
           attempts: [locator("@1abcdef2")],
           totalTokens: 512300,
           totalCostUSD: 0.71,
-          historical: false,
         },
         "compare/agents-md": {
           evaluationKind: "pass",
@@ -161,7 +160,6 @@ export const deltaData: DeltaData = {
           attempts: [locator("@1abcdef3")],
           totalTokens: 305100,
           totalCostUSD: 0.44,
-          historical: false,
         },
       },
       delta: { "compare/agents-md": { tokens: -207200, costUSD: -0.27 } },
@@ -177,7 +175,6 @@ export const deltaData: DeltaData = {
           attempts: [locator("@2abcdef2")],
           totalTokens: 621000,
           totalCostUSD: 0.83,
-          historical: false,
         },
         "compare/agents-md": {
           evaluationKind: "pass",
@@ -185,7 +182,6 @@ export const deltaData: DeltaData = {
           attempts: [locator("@2abcdef3")],
           totalTokens: 298400,
           totalCostUSD: 0.41,
-          historical: false,
         },
       },
       delta: { "compare/agents-md": { tokens: -322600, costUSD: -0.42 } },
@@ -201,7 +197,6 @@ export const deltaData: DeltaData = {
           attempts: [locator("@3abcdef3")],
           totalTokens: 511800,
           totalCostUSD: 0.7,
-          historical: false,
         },
       },
     },
@@ -239,7 +234,6 @@ const failedAttempt: AttemptListItem = {
   durationMs: 32_000,
   costUSD: 0.12,
   startedAt: "2026-07-01T09:58:00Z",
-  historical: false,
   locator: locator("@1a4a4a4a"),
 };
 
@@ -258,7 +252,6 @@ const erroredAttempt: AttemptListItem = {
   durationMs: 4_500,
   costUSD: null,
   startedAt: "2026-07-01T11:29:00Z",
-  historical: false,
   locator: locator("@1c1c1c1c"),
 };
 
@@ -283,7 +276,6 @@ const passedAttempt: AttemptListItem = {
   durationMs: 5_000,
   costUSD: 0.02,
   startedAt: "2026-07-01T09:59:00Z",
-  historical: false,
   locator: locator("@1d2d2d2d"),
 };
 
@@ -304,9 +296,8 @@ export const experimentListItems: ExperimentListItem[] = [
     tokens: { value: null, basis: "eval", samples: 0, total: 2, refs: [] },
     evals: 2,
     attempts: 3,
-    historicalAttempts: 0,
-    missingEvalIds: [],
-    staleReferences: {},
+    knownEvalIds: [],
+    missing: [],
     lastRunAt: "2026-07-01T10:00:00Z",
     evalRows: [
       {
@@ -345,9 +336,8 @@ export const experimentListItems: ExperimentListItem[] = [
     tokens: { value: null, basis: "eval", samples: 0, total: 1, refs: [] },
     evals: 1,
     attempts: 1,
-    historicalAttempts: 0,
-    missingEvalIds: [],
-    staleReferences: {},
+    knownEvalIds: [],
+    missing: [],
     lastRunAt: "2026-07-01T11:30:00Z",
     evalRows: [
       {

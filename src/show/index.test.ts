@@ -44,7 +44,6 @@ async function makeRecord(): Promise<string> {
       experiment: {
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: [evalId],
         sandboxLayer: {},
         sandboxPlansByEval: {},
         agentInstalls: [],

@@ -39,18 +39,8 @@ export default defineExperiment({
 
 谓词对发现出的每条 eval 求值:上例选中带 `coding` 标签的 `coding/` 题目,跳过带 `gpu` 标签的题目;tag 的声明侧见 [Eval Library](../eval/library.md)。参数是发现并生成 attempt后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。测试集生成 attempt已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
 
-选择结果随 Run 保存，报告不再重跑表达式：
-
-```json
-{
-  "experimentId": "agents/codex/coding",
-  "experiment": {
-    "selectedEvalIds": ["coding/fix-button"]
-  }
-}
-```
-
-另一个 experiment 可以记录另一组 id。报告分别按各自的 `selectedEvalIds` 读取，不取交集，也不把没选的 eval 算失败。
+选择结果只形成 Runner 的这次运行计划：调度、dry 输出与 lifecycle context 共享同一组已解析 id，不在 `ExperimentRunInfo` 里持久化。
+Run 记录实际产生的物理 Attempt，并用 `knownEvalIds` 保留覆盖分母；报告直接消费当前 Sample，不重新运行表达式，也不读取规划字段二次筛选。
 
 ## labels:声明归类坐标,不进运行时
 
@@ -450,8 +440,8 @@ export default defineExperiment({
 ```
 
 - 路径只生成 id，并支持 `niceeval exp agents/codex` 按目录批量选择；任意深度都按完整相对路径处理。
-- 每个 experiment 跑哪些 eval 只看自己的 `evals`；解析后的结果作为 `selectedEvalIds` 随 Run 落盘。
-- 默认报告直接比较当前 Sample 里的 experiments。每个 experiment 按自己的 `selectedEvalIds` 计算 eval 数与分母，不自动取交集、不把未选择的 eval 当失败。要同分母比较，就给这些 experiments 写相同的 `evals`。
+- 每个 experiment 跑哪些 eval 只看自己的 `evals`；解析结果是本次 invocation 的运行期计划。
+- 默认报告直接比较当前 Sample 里的 experiments，以物理 attempts 与 `knownEvalIds` 计算结果和缺口。要同分母比较，就给这些 experiments 写相同的 `evals`，让它们形成相同的已知题集。
 
 ### 一文件一配置
 
@@ -486,7 +476,7 @@ export default defineExperiment({
 ## 与 config 的关系
 
 - **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`。config 不含 `sandbox` 字段;起点声明只在 Eval 与 Experiment 的 `sandbox` 字段,每个实际配对恰好一方带 template(见 [Sandbox Layer](../sandbox/layers.md))。配对双方都没有 template 时报 `sandbox.template-missing`,不探测环境或选择内置 Provider 默认值。
-- **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
+- **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成运行期选题计划(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
 配置解析以 [Architecture · 配置解析链](architecture.md#配置解析链一次求值处处同源) 为单源。
 `timeoutMs` 按 CLI flag → experiment → eval → config → 内置默认解析；Judge 按单条 `{ model }` → experiment → eval → config 逐字段解析且没有 CLI flag；其它字段只经过各自声明的层级。

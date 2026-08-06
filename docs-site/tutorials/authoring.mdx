@@ -147,7 +147,7 @@ Most Fixtures do not need `teardown` — starting files written into the Sandbox
 Multiple Attempts of the same eval (`attempts` greater than 1, or several experiments in the same batch running the same eval) run concurrently and share the same module, so a `setup` handle cannot live in a plain module variable — a later concurrent Attempt would overwrite it. Key it off the `sandbox` instance instead (`WeakMap`): a sandbox maps one-to-one to an Attempt, so it is a natural per-attempt key:
 
 ```ts
-// evals/pr-review/close-stale.eval.ts
+// evals/pr-review/close-outdated.eval.ts
 import { defineEval } from "niceeval";
 import type { Sandbox } from "niceeval/sandbox";
 
@@ -157,14 +157,14 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 export default defineEval({
   async setup(sandbox, ctx) {
     ctx.progress({ message: "seeding fixture repo" });
-    const fixture = await createFixtureRepo("pr-review/close-stale"); // a temporary resource outside the sandbox
+    const fixture = await createFixtureRepo("pr-review/close-outdated"); // a temporary resource outside the sandbox
     fixtures.set(sandbox, fixture);
     await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
   },
   async teardown(sandbox) {
     await fixtures.get(sandbox)?.destroy(); // also reached when setup throws: skip if nothing was created
   },
-  async test(t) { /* drive the agent to clean up the stale PR, assert */ },
+  async test(t) { /* drive the agent to clean up the outdated PR, assert */ },
 });
 ```
 

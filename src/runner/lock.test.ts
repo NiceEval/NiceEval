@@ -11,9 +11,9 @@ import { claimEntryFile, slugHashEntryId, writeEntryFile } from "../shared/entry
 import {
   acquireCaseLock,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
-  CASE_LOCK_STALE_MS,
+  CASE_LOCK_EXPIRY_MS,
   drainHeldCaseLocks,
-  isCaseLockStale,
+  isCaseLockExpired,
   locksDirOf,
   pendingHeldCaseLockCount,
   readCaseLock,
@@ -167,20 +167,20 @@ describe("tryAcquireCaseLockOnce: 撞上新鲜锁", () => {
   });
 });
 
-describe("isCaseLockStale: 30s 边界", () => {
+describe("isCaseLockExpired: 30s 边界", () => {
   it("恰好落后 30_000ms 不算过期(严格大于,不是 >=)", () => {
     const r = record({ heartbeatAt: new Date(0).toISOString() });
-    expect(isCaseLockStale(r, CASE_LOCK_STALE_MS)).toBe(false);
+    expect(isCaseLockExpired(r, CASE_LOCK_EXPIRY_MS)).toBe(false);
   });
 
   it("落后 30_001ms 算过期", () => {
     const r = record({ heartbeatAt: new Date(0).toISOString() });
-    expect(isCaseLockStale(r, CASE_LOCK_STALE_MS + 1)).toBe(true);
+    expect(isCaseLockExpired(r, CASE_LOCK_EXPIRY_MS + 1)).toBe(true);
   });
 
   it("无法解析的 heartbeatAt 一律视为过期", () => {
     const r = record({ heartbeatAt: "not-a-date" });
-    expect(isCaseLockStale(r, 0)).toBe(true);
+    expect(isCaseLockExpired(r, 0)).toBe(true);
   });
 });
 
@@ -193,7 +193,7 @@ describe("tryAcquireCaseLockOnce: 过期锁的接管", () => {
     const staleHeartbeat = new Date(0).toISOString();
     await writeEntryFile(dir, id, record({ pid: 1, host: "dead-host", heartbeatAt: staleHeartbeat, startedAt: staleHeartbeat }));
 
-    const nowMs = CASE_LOCK_STALE_MS + 1; // 落后严格大于 30s,过期
+    const nowMs = CASE_LOCK_EXPIRY_MS + 1; // 落后严格大于 30s,过期
     const result = await tryAcquireCaseLockOnce(
       niceevalRoot,
       "compare/bub-e2b",
@@ -225,7 +225,7 @@ describe("过期锁在真实并发下的互斥", () => {
       record({ pid: 1, host: "dead-host", heartbeatAt: staleHeartbeat, startedAt: staleHeartbeat }),
     );
 
-    const nowMs = CASE_LOCK_STALE_MS + 1;
+    const nowMs = CASE_LOCK_EXPIRY_MS + 1;
     const [a, b] = await Promise.all([
       tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, { pid: 100, host: "host-a" }, nowMs),
       tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, { pid: 200, host: "host-b" }, nowMs),

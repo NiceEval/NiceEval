@@ -158,7 +158,8 @@ export default defineReport({
 
 ## 输入就是 Sample
 
-宿主先完成 `--record`、`--exp`、Eval 位置参数与 `--fresh` 的选择，再把同一份 Sample 传给被请求的 sample page render。
+宿主先完成 `--record`、`--exp` 与 Eval 位置参数的范围选择，再把同一份当前 Sample 传给被请求的 sample page render。
+携带来源不改变成员资格；报告文件也不能根据运行期选择计划或来源再造第二套当前结果集。
 
 作者继续使用 Sample 已有转换：
 
@@ -750,7 +751,7 @@ function AttemptList({ attempts }: AttemptListProps) {
 
 前者显示成本 × 主读数散点；后者显示 Experiment → Eval → Attempt 的层级详情。
 
-时效、覆盖构成与两档占位行都在 `toExperimentRows(sample)` 这一步定下来：计票与读数只算当前结果集，与当前基准不可比的历史判定只作占位行上的参考。
+两类缺口行都在 `toExperimentRows(sample)` 这一步从同一份 Sample 投影：计票与读数只算当前 attempts，旧配置判定不补进报告。
 完整契约见[实验表](components/summaries/experiment-table.md)。
 
 ## 组件接具体值

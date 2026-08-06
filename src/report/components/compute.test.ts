@@ -4,7 +4,7 @@
 // skipped=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
 // 身份键去重、现刻水位、自定义指标 where/aggregate、evalGroup 完整父路径、verdict 权威、
 // MetricValue 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
-// sampleSummary 两级计票、experimentListData/sampleSummary 的 selectedEvalIds 投影、conditionsByFlag、
+// sampleSummary 两级计票、experimentListData/sampleSummary 只消费 sample.attempts、conditionsByFlag、
 // MetricLine 点身份、空数组反馈、measureRowsData sort、series 配色的确定性索引计算(colorIndexForKey /
 // colorIndicesForKeys,纯函数,不断言渲染出的颜色值)。Scatter 的 text 面(`scatterText`)本身是
 // 终端排版渲染——图例分配、connect 位移摘要的字符串产物归 E2E 报告域(docs/engineering/testing/e2e/
@@ -18,7 +18,7 @@ import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
 import { makeSample } from "../../sample/index.ts";
 import { encodeAttemptLocator } from "../../record/locator.ts";
-import { COVERAGE_ROW_PREFIX, experimentListContent } from "./entity-lists/content.ts";
+import { experimentListContent } from "./entity-lists/content.ts";
 import { formatCellText, type Cell } from "../definition/cell.ts";
 import type { Record } from "../../record/types.ts";
 import {
@@ -655,32 +655,19 @@ describe("实体列表 data", () => {
     await expect(experimentListData(clean)).resolves.toHaveLength(1);
   });
 
-  it("时效字段:attemptListData.historical 是 carried 的投影;experimentListData.historicalAttempts 计入携带的 attempt", async () => {
-    const carriedB = res("b", "passed", { artifactBase: "exp/hist/old-snap/b/a0" });
-    const s = snap({ experimentId: "exp/hist", results: [res("a", "passed"), carriedB] });
-    const attempts = await attemptListData([s]);
-    expect(attempts.find((item) => item.evalId === "a")!.historical).toBe(false);
-    expect(attempts.find((item) => item.evalId === "b")!.historical).toBe(true); // 携带条目
-
-    const items = await experimentListData([s]);
-    expect(items[0]!.historicalAttempts).toBe(1);
-    expect(items[0]!.attempts).toBe(2); // historicalAttempts 是子集,不改变 attempts 总数口径
-  });
-
-  it("current() 下跨快照拼入的历史执行(非携带)以水位基准比较标 historical;run 维度按真实来源分组、显示真实 startedAt", async () => {
-    // 两个真实贡献 Run:周一(旧,贡献 q2)与周二(新,贡献 q1)——不用 artifactBase/carried,
-    // 单纯是「所属快照早于该 experiment 的水位基准」这条 historicalOf 的第二个分支。
+  it("current() 下跨快照拼入的 attempt 与本次执行同等计票;run 维度按真实来源分组、显示真实 startedAt", async () => {
+    // 两个真实贡献 Run:周一(旧,贡献 q2)与周二(新,贡献 q1)——不设携带,两者都是 current 结果,
+    // 同等进入计票,没有任何「历史执行」降格。
     const monday = snap({ experimentId: "exp/multi", results: [res("q2", "passed")], runStartedAt: "2026-07-01T08:00:00.000Z" });
     const tuesday = snap({ experimentId: "exp/multi", results: [res("q1", "passed")], runStartedAt: "2026-07-02T08:00:00.000Z" });
     const scope = scopeOf([monday, tuesday]);
 
     const attempts = await attemptListData(scope);
-    expect(attempts.find((item) => item.evalId === "q2")!.historical).toBe(true); // 来自旧快照,非携带
-    expect(attempts.find((item) => item.evalId === "q1")!.historical).toBe(false); // 来自水位基准本身
+    expect(attempts.map((item) => item.evalId).sort()).toEqual(["q1", "q2"]);
 
     const items = await experimentListData(scope);
-    expect(items[0]!.historicalAttempts).toBe(1);
     expect(items[0]!.attempts).toBe(2);
+    expect(items[0]!.evals).toBe(2);
 
     // run 维度按真实来源分组:两条 attempt 各自的真实 startedAt 不同,不被合并成一个键。
     const table = await measureRowsData(scope, { dimensions: ["run"], measures: [passRate] });
@@ -690,56 +677,82 @@ describe("实体列表 data", () => {
     ]);
   });
 
-  it("占位行数据:missingEvalIds 来自 scope.coverage,不参与 evals/attempts 计数或任何指标聚合", async () => {
+  it("占位行数据:missing 来自 scope.coverage,不参与 evals/attempts 计数或任何指标聚合", async () => {
     const s = snap({ experimentId: "exp/gap", results: [res("a", "passed"), res("b", "failed")] });
-    const scope = scopeOf([s], [], [{ experimentId: "exp/gap", run: s, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["c"] }]);
+    const scope = scopeOf([s], [], [{
+      experimentId: "exp/gap",
+      run: s,
+      knownEvalIds: ["a", "b", "c"],
+      missing: [{ evalId: "c", reason: "never-run" as const }],
+    }]);
     const items = await experimentListData(scope);
-    expect(items[0]!.missingEvalIds).toEqual(["c"]);
+    expect(items[0]!.missing).toEqual([{ evalId: "c", reason: "never-run" as const }]);
     // 占位行(c)不冒充有 attempt 的题:evals/attempts 分母仍是 2 道有 attempt 的题,不是 3。
     expect(items[0]!.evals).toBe(2);
     expect(items[0]!.attempts).toBe(2);
     expect(items[0]!.evalRows.map((row) => row.evalId)).toEqual(["a", "b"]); // 占位行不在 evalRows 里(占位行只在渲染面合成)
   });
 
-  it("coverage-only 实验也产生覆盖占位行；--fresh 清空全部 attempt 时缺口不再静默消失", async () => {
-    const anchor = snap({ experimentId: "exp/fresh", results: [] });
-    const scope = scopeOf([], [], [{ experimentId: "exp/fresh", run: anchor, knownEvalIds: ["a", "b"], missingEvalIds: ["a", "b"] }]);
+  it("coverage-only 实验也产生覆盖占位行；全缺口实验的缺口不再静默消失", async () => {
+    const anchor = snap({ experimentId: "exp/coverage-only", results: [] });
+    const scope = scopeOf([], [], [{
+      experimentId: "exp/coverage-only",
+      run: anchor,
+      knownEvalIds: ["a", "b"],
+      missing: [{ evalId: "a", reason: "never-run" }, { evalId: "b", reason: "never-run" }],
+    }]);
     const items = await experimentListData(scope);
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      experimentId: "exp/fresh",
+      experimentId: "exp/coverage-only",
       agent: "agent-x",
-      missingEvalIds: ["a", "b"],
+      missing: [{ evalId: "a", reason: "never-run" }, { evalId: "b", reason: "never-run" }],
       evals: 0,
       attempts: 0,
       evalRows: [],
     });
   });
 
-  // ─────── 覆盖缺口的两档占位与过期结论参考(experiment-table.md「覆盖缺口的两档占位行」) ───────
+  // ─────── 覆盖缺口的两档占位(experiment-table.md「缺口原因与动作」) ───────
 
-  describe("覆盖缺口的两档占位与过期结论参考", () => {
+  describe("覆盖缺口的两档占位", () => {
     /**
-     * 区分力场景:evalId "b" 只在两份旧 configHash 快照下跑过(与当前基准不可比,过期结论候选
-     * 多于一条),"c" 从未在任何快照出现过(未跑到)。`current` 是当前基准,只贡献 "a"。
+     * 区分力场景:evalId "b" 只在旧 configHash 快照下跑过(previous-result,可附最近旧 locator),
+     * "c" 从未在任何快照出现过(never-run)。`current` 是当前基准,只贡献 "a"。
      */
-    function staleScope(opts: { fresh?: boolean } = {}): { scope: Sample; older: Run; newerStale: Run } {
-      const current = snap({ experimentId: "exp/stale", results: [res("a", "passed")] });
+    function gapScope(): { scope: Sample; newerStale: Run } {
+      const current = snap({ experimentId: "exp/gap", results: [res("a", "passed")] });
       current.configHash = "cfg-2";
       const older = snap({
-        experimentId: "exp/stale",
+        experimentId: "exp/gap",
         results: [res("b", "failed")],
         runStartedAt: "2026-01-01T00:00:00.000Z",
       });
       older.configHash = "cfg-1";
       const newerStale = snap({
-        experimentId: "exp/stale",
+        experimentId: "exp/gap",
         results: [res("b", "passed")],
         runStartedAt: "2026-02-01T00:00:00.000Z",
       });
-      newerStale.configHash = "cfg-1"; // 同样不可比,但比 older 晚出现——参考要取这一条
+      newerStale.configHash = "cfg-1"; // 同样不可比,但比 older 晚出现——previous 要取这一条
       const coverage = [
-        { experimentId: "exp/stale", run: current, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["b", "c"] },
+        {
+          experimentId: "exp/gap",
+          run: current,
+          knownEvalIds: ["a", "b", "c"],
+          missing: [
+            {
+              evalId: "b",
+              reason: "previous-result" as const,
+              previous: {
+                locator: encodeAttemptLocator({ runId: newerStale.runId, evalId: "b", attempt: 0 }),
+                verdict: "passed" as const,
+                startedAt: "2026-02-01T00:00:00.000Z",
+              },
+            },
+            { evalId: "c", reason: "never-run" as const },
+          ],
+        },
       ];
       const scope = makeSample(
         "current",
@@ -747,164 +760,60 @@ describe("实体列表 data", () => {
         [...current.attempts],
         [],
         coverage,
-        opts.fresh ?? false,
         [...current.attempts, ...older.attempts, ...newerStale.attempts],
       );
-      return { scope, older, newerStale };
+      return { scope, newerStale };
     }
 
     function recordCellOf(row: { cells: Readonly<globalThis.Record<string, Cell>> }): Cell {
       return row.cells.record!;
     }
 
-    it("两档占位行的结果格都是 missing 且都带补跑命令;只有过期结论的那档带 reference,取候选中最新的一条", async () => {
-      const { scope, newerStale } = staleScope();
+    it("两档占位行的结果格都是 missing 且都带补跑命令;previous-result 带最近旧 locator,never-run 不带", async () => {
+      const { scope, newerStale } = gapScope();
       const items = await experimentListData(scope);
       const content = experimentListContent(items);
       const sub = content.rows[0]!.subRows!;
-      const staleRow = sub.find((row) => row.key.endsWith("b:missing"))!;
-      const notRunRow = sub.find((row) => row.key.endsWith("c:missing"))!;
-      expect(staleRow.variant).toBe("placeholder");
-      expect(notRunRow.variant).toBe("placeholder");
+      const previousRow = sub.find((row) => row.key.endsWith("b:missing"))!;
+      const neverRunRow = sub.find((row) => row.key.endsWith("c:missing"))!;
+      expect(previousRow.variant).toBe("placeholder");
+      expect(neverRunRow.variant).toBe("placeholder");
 
-      const staleCell = recordCellOf(staleRow);
-      const notRunCell = recordCellOf(notRunRow);
-      if (staleCell.kind !== "missing" || notRunCell.kind !== "missing") throw new Error("expected missing cells");
-      expect(staleCell.code).toBe("noCurrentResult");
-      expect(notRunCell.code).toBe("noCurrentResult");
-      expect(staleCell.detail).toBe("niceeval exp exp/stale");
-      expect(notRunCell.detail).toBe("niceeval exp exp/stale");
-      expect(notRunCell.reference).toBeUndefined();
-      expect(staleCell.reference).toBeDefined();
+      const previousCell = recordCellOf(previousRow);
+      const neverRunCell = recordCellOf(neverRunRow);
+      if (previousCell.kind !== "missing" || neverRunCell.kind !== "missing") throw new Error("expected missing cells");
+      expect(previousCell.code).toBe("previousResult");
+      expect(neverRunCell.code).toBe("neverRun");
+      expect(previousCell.detail).toBe("niceeval exp exp/gap");
+      expect(neverRunCell.detail).toBe("niceeval exp exp/gap");
+      expect(neverRunCell.previous).toBeUndefined();
+      // previous 只带 locator(审计与授权入口),不携带旧 verdict 或时距混入当前结果。
+      expect(previousCell.previous).toEqual({
+        locator: encodeAttemptLocator({ runId: newerStale.runId, evalId: "b", attempt: 0 }),
+      });
       // 两档必须给出不同的格——把两档折成同一种占位的实现在这里失败。
-      expect(staleCell).not.toEqual(notRunCell);
-      // 候选多于一条(older 与 newerStale 都不可比)时取最新那条:newerStale 的判定是 "passed"。
-      expect(staleCell.reference!.verdict).toBe("passed");
-      expect(staleCell.reference!.locator).toBe(
-        encodeAttemptLocator({ runId: newerStale.runId, evalId: "b", attempt: 0 }),
-      );
+      expect(previousCell).not.toEqual(neverRunCell);
 
-      // text 面:带参考时用参考替代原因文案,不把「当前配置下无结果」再说一遍。
-      expect(formatCellText(staleCell, "en")).toMatch(/^✓ /);
-      expect(formatCellText(notRunCell, "en")).toBe("no result for current config · niceeval exp exp/stale");
-      expect(formatCellText(notRunCell, "zh-CN")).toBe("当前配置下无结果 · niceeval exp exp/stale");
+      // text 面:原因文案 + @locator(审计入口) + 补跑命令三者都在场,locator 不替代原因。
+      const oldLocator = encodeAttemptLocator({ runId: newerStale.runId, evalId: "b", attempt: 0 });
+      expect(formatCellText(previousCell, "en")).toBe(
+        `no result for current config · @${oldLocator} · niceeval exp exp/gap`,
+      );
+      expect(formatCellText(previousCell, "zh-CN")).toBe(
+        `当前配置下没有结果 · @${oldLocator} · niceeval exp exp/gap`,
+      );
+      expect(formatCellText(neverRunCell, "en")).toBe("not run yet · niceeval exp exp/gap");
+      expect(formatCellText(neverRunCell, "zh-CN")).toBe("尚未运行 · niceeval exp exp/gap");
     });
 
-    it("reference 不进任何计数:带参考前后,该 experiment 的判定计票、通过率与覆盖分母逐字不变", async () => {
-      const { scope } = staleScope();
+    it("previous 不进任何计数:带旧 locator 前后,该 experiment 的判定计票、通过率与覆盖分母逐字不变", async () => {
+      const { scope } = gapScope();
       const [item] = await experimentListData(scope);
-      // 分母只数 "a" 这一道有 attempt 的题,"b" 的参考不进 evals/attempts/passRate 分母。
+      // 分母只数 "a" 这一道有 attempt 的题,"b" 的 previous 不进 evals/attempts/passRate 分母。
       expect(item!.evals).toBe(1);
       expect(item!.attempts).toBe(1);
       expect(item!.endToEndPassRate).toMatchObject({ value: 1, samples: 1, total: 1 });
       expect(item!.evalVerdicts).toEqual({ passed: 1, failed: 0, errored: 0, skipped: 0 });
-    });
-
-    it("sample.fresh 为 true 时两档占位行都不带 reference", async () => {
-      const nonFresh = experimentListContent(await experimentListData(staleScope({ fresh: false }).scope));
-      const fresh = experimentListContent(await experimentListData(staleScope({ fresh: true }).scope));
-      const staleCellNonFresh = recordCellOf(nonFresh.rows[0]!.subRows!.find((row) => row.key.endsWith("b:missing"))!);
-      const staleCellFresh = recordCellOf(fresh.rows[0]!.subRows!.find((row) => row.key.endsWith("b:missing"))!);
-      if (staleCellNonFresh.kind !== "missing" || staleCellFresh.kind !== "missing") throw new Error("expected missing cells");
-      expect(staleCellNonFresh.reference).toBeDefined();
-      expect(staleCellFresh.reference).toBeUndefined();
-    });
-  });
-
-  // ─────── 覆盖构成的四段与两面(experiment-table.md「覆盖构成」) ───────
-
-  describe("覆盖构成的四段与两面", () => {
-    /**
-     * 区分力场景:"retry" 重试两次,第一次携带(历史执行)、第二次新执行——按 attempt 计数的
-     * 错误实现会让合计超过题数;"solo" 只有历史执行;"stale" 只有过期结论;"gone" 未跑到。
-     */
-    function compositionScope(): Sample {
-      const current = snap({
-        experimentId: "exp/composition",
-        results: [
-          res("retry", "passed", { artifactBase: "exp/composition/old/retry/a0" }), // 携带,attempt 0
-          res("retry", "passed", { attempt: 1 }), // 新执行,attempt 1
-          res("solo", "passed", { artifactBase: "exp/composition/old/solo/a0" }),
-        ],
-      });
-      current.configHash = "cfg-current";
-      const staleRun = snap({ experimentId: "exp/composition", results: [res("stale", "failed")] });
-      staleRun.configHash = "cfg-old";
-      const coverage = [
-        {
-          experimentId: "exp/composition",
-          run: current,
-          knownEvalIds: ["retry", "solo", "stale", "gone"],
-          missingEvalIds: ["stale", "gone"],
-        },
-      ];
-      return makeSample("current", [current], [...current.attempts], [], coverage, false, [
-        ...current.attempts,
-        ...staleRun.attempts,
-      ]);
-    }
-
-    /** experiment 行的覆盖构成副行(subRows 末尾,key 以 `coverage:` 起头)的 record 格。 */
-    function coverageCellOf(content: ReturnType<typeof experimentListContent>, experimentId: string): Cell {
-      const row = content.rows[0]!.subRows!.find((r) => r.key === `${COVERAGE_ROW_PREFIX}${experimentId}`)!;
-      return row.cells.record!;
-    }
-
-    it("四段互斥且合计等于已知题数;一题同时有新执行与携带 attempt 时只落新执行段", async () => {
-      const [item] = await experimentListData(compositionScope());
-      const content = experimentListContent([item!]);
-      const coverageCell = coverageCellOf(content, "exp/composition");
-      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
-      const byLabel = new Map(
-        coverageCell.segments.map((segment) => [
-          typeof segment.label === "string" ? segment.label : segment.label.en,
-          segment.count,
-        ]),
-      );
-      expect(byLabel.get("fresh")).toBe(1); // retry 只落新执行段,不因为它也有携带 attempt 而重复计
-      expect(byLabel.get("historical")).toBe(1); // solo
-      expect(byLabel.get("stale")).toBe(1); // stale
-      expect(byLabel.get("not run")).toBe(1); // gone
-      const total = [...coverageCell.segments].reduce((sum, s) => sum + s.count, 0);
-      expect(total).toBe(4); // 合计 = knownEvalIds 数,不是 attempts 数
-    });
-
-    it("计数为零的段不出现在两面输出里,与判定计票同一条规则", async () => {
-      const s = snap({ experimentId: "exp/all-fresh", results: [res("q", "passed")] });
-      const [item] = await experimentListData([s]);
-      const content = experimentListContent([item!]);
-      const coverageCell = coverageCellOf(content, "exp/all-fresh");
-      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
-      expect(coverageCell.segments.filter((s) => s.count > 0)).toHaveLength(1);
-      expect(formatCellText(coverageCell, "en")).toBe("1 fresh");
-      expect(formatCellText(coverageCell, "zh-CN")).toBe("1 新执行");
-    });
-
-    it("段名走 LocalizedText:zh-CN 与 en 取同一份 segments,只有文案不同,计数与段序逐字相同", async () => {
-      const [item] = await experimentListData(compositionScope());
-      const content = experimentListContent([item!]);
-      const coverageCell = coverageCellOf(content, "exp/composition");
-      if (coverageCell.kind !== "composition") throw new Error("expected composition cell");
-      const en = formatCellText(coverageCell, "en");
-      const zh = formatCellText(coverageCell, "zh-CN");
-      expect(en).toBe("1 fresh · 1 historical · 1 stale · 1 not run");
-      expect(zh).toBe("1 新执行 · 1 历史执行 · 1 过期结论 · 1 未跑到");
-      expect(coverageCell.segments.map((s) => s.count)).toEqual([1, 1, 1, 1]);
-    });
-
-    it("构成格不携带业务语义:它是 experiment 副行独有的格,换一套无关段名照常渲染,渲染面不认识段含义", async () => {
-      const [item] = await experimentListData(compositionScope());
-      const content = experimentListContent([item!]);
-      // 副行紧跟在 Eval / 组行之后,key 前缀把它与题目行区分开——它不是又一道 "retry" 之类的题。
-      const rowKeys = content.rows[0]!.subRows!.map((r) => r.key);
-      expect(rowKeys.at(-1)).toBe(`${COVERAGE_ROW_PREFIX}exp/composition`);
-      expect(rowKeys).toContain("retry");
-
-      const arbitrarySegments: Cell = {
-        kind: "composition",
-        segments: [{ label: "x", count: 2 }, { label: "y", count: 0 }],
-      };
-      expect(formatCellText(arbitrarySegments)).toBe("2 x");
     });
   });
 
@@ -1119,13 +1028,14 @@ describe("sampleSummary", () => {
   });
 });
 
-// ───────────────────────── experimentListData / sampleSummary 的 selectedEvalIds 投影 ─────────────────────────
+// ───────────────────────── experimentListData / sampleSummary 只消费 sample.attempts ─────────────────────────
 // SampleOverview 是普通组合组件(把同一个 input 原样透传给 SampleSummary /
 // ExperimentScatter / ExperimentTable,不再有自己的 data 形态);经它展开后与直接调用这三个
-// 函数深等的验证挪到 dual-render.test.tsx(需要 resolve 管线)。这里只测三个函数自己的
-// selectedEvalIds 投影契约。
+// 函数深等的验证挪到 dual-render.test.tsx(需要 resolve 管线)。这里只测 Reports 的计算函数
+// 只消费传入的 attempts,绝不按运行期选题(selectedEvalIds)二次过滤(docs/feature/sample/
+// library.md「selectedEvalIds 是 Runner 的运行期计划,不属于贡献规则」)。
 
-describe("experimentListData / sampleSummary 的 selectedEvalIds 投影", () => {
+describe("experimentListData / sampleSummary 只消费 sample.attempts", () => {
   it("不同深度目录的 experiments 一律进同一份 data,不按父路径分组比较", async () => {
     const g1a = snap({ experimentId: "compare/a", agent: "bub", results: [res("q", "passed")] });
     const g1b = snap({ experimentId: "compare/b", agent: "codex", results: [res("q", "failed")] });
@@ -1140,32 +1050,31 @@ describe("experimentListData / sampleSummary 的 selectedEvalIds 投影", () => 
     ]);
   });
 
-  it("每个 experiment 只保留自己选择的 eval:A 声明 selectedEvalIds:[q1] 但夹带 q2 attempt,B 只选 q2;q2 不污染 A", async () => {
+  it("快照里跑过的 attempt 全部计入,不按任何运行期选题二次过滤:夹带题与声明题同等计数", async () => {
+    // 快照实际跑了 q1 与 q2;无论运行期曾选过哪些题,Reports 只看 sample.attempts 的物化结果。
     const a = snap({
       experimentId: "exp/a",
       results: [res("q1", "passed"), res("q2", "failed")],
-      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: ["q1"] },
     });
     const b = snap({
       experimentId: "exp/b",
       results: [res("q2", "passed")],
-      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: ["q2"] },
     });
 
     const items = await experimentListData([a, b]);
     const rowA = items.find((e) => e.experimentId === "exp/a")!;
     const rowB = items.find((e) => e.experimentId === "exp/b")!;
-    expect(rowA.evals).toBe(1); // 只统计 q1,夹带的 q2 attempt 不计入
-    expect(rowA.evalRows.map((r) => r.evalId)).toEqual(["q1"]);
+    expect(rowA.evals).toBe(2); // q1 与 q2 都真实跑过,都计入
+    expect(rowA.evalRows.map((r) => r.evalId)).toEqual(["q1", "q2"]);
     expect(rowB.evals).toBe(1);
     expect(rowB.evalRows.map((r) => r.evalId)).toEqual(["q2"]);
 
-    // 汇总口径同样不被污染:全 Sample 只有 2 个 eval(exp/a·q1、exp/b·q2),不是 3 个。
+    // 汇总口径同样:全 Sample 共 3 个 eval。
     const summary = await sampleSummary([a, b]);
-    expect(summary.evals).toBe(2);
+    expect(summary.evals).toBe(3);
   });
 
-  it("第三方快照缺 experiment 信息时仍可见,按其实际 evals 参与(selectedEvalIdsOf 退化)", async () => {
+  it("第三方快照缺 experiment 信息时仍可见,按其实际 evals 参与", async () => {
     const thirdParty = snap({ experimentId: "third-party/exp", results: [res("q", "passed")] });
     expect(thirdParty.experiment).toBeUndefined();
 
@@ -1200,7 +1109,7 @@ describe("metricMatrixData / measureRowsData", () => {
     const withFlag = snap({
       experimentId: "f/on",
       results: [res("a", "passed")],
-      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "mempal" } },
+      experiment: { attempts: 1, earlyExit: false, flags: { memory: "mempal" } },
     });
     const withoutFlag = snap({ experimentId: "f/off", results: [res("a", "failed")] });
     const table = await measureRowsData([withFlag, withoutFlag], {
@@ -1257,7 +1166,6 @@ describe("metricLineData", () => {
       experiment: {
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: [],
         ...(budget !== undefined ? { flags: { budget } } : {}),
       },
     });
@@ -1436,7 +1344,6 @@ describe("labels 维度、series 归类与 connect", () => {
       experiment: {
         attempts: 1,
         earlyExit: false,
-        selectedEvalIds: verdicts.map((_, i) => `q${i}`),
         ...(labels ? { labels } : {}),
       },
     });
@@ -1510,12 +1417,12 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
     const withFlag = snap({
       experimentId: "compare/withflag",
       results: [res("q1", "passed")],
-      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "on" } },
+      experiment: { attempts: 1, earlyExit: false, flags: { memory: "on" } },
     });
     const withoutFlag = snap({
       experimentId: "compare/noflag",
       results: [res("q1", "failed")],
-      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: {} },
+      experiment: { attempts: 1, earlyExit: false, flags: {} },
     });
     const deltaScope = scopeOf([withFlag, withoutFlag]);
     const delta = await deltaTableData(deltaScope, { by: "experiment", conditions: conditionsByFlag("memory") });

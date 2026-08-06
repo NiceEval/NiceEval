@@ -159,7 +159,8 @@ const MISSING_CODE_KEYS = {
   noSamples: "cell.missing",
   notRun: "cell.notRun",
   unscorable: "cell.unscorable",
-  noCurrentResult: "cell.noCurrentResult",
+  neverRun: "cell.neverRun",
+  previousResult: "cell.previousResult",
 } as const;
 
 /**
@@ -309,8 +310,8 @@ const MS_PER_MONTH = MS_PER_DAY * 30;
  * 一段时长(毫秒) → 当前 locale 的紧凑相对时距("12d" / "12 天")。按区间选粒度最大的单位
  * 取整,结果恒不小于一个单位(docs/feature/reports/library/presentation.md「相对时距是数据,
  * 不是文案」):不足 1 小时→分钟,不足 1 天→小时,不足 30 天→天,30 天及以上→月。
- * `locator` 格与占位行参考的 `staleSinceMs` 都经这一个入口,不各写各的措辞;不加箭头、回环
- * 之类的装饰记号——记号不携带时长,读者还要先学会它。
+ * 这是 History 旅途里相对时距的单一入口;不加箭头、回环之类的装饰记号——记号不携带时长,
+ * 读者还要先学会它。
  */
 export function formatTimeDistance(ms: number, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const abs = Math.max(0, ms);

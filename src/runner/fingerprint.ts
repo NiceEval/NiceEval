@@ -251,7 +251,7 @@ export type CarryGate = "terminal" | "fingerprint" | "eligibility" | "rerun" | "
  */
 export type DispatchReason =
   | "errored"
-  | "stale"
+  | "previous-result"
   | "exceeds-timeout"
   | "rerun"
   | "keep-sandbox"
@@ -407,7 +407,7 @@ export function carryGateFor(
     r.fingerprint === undefined ||
     !fingerprints.has(r.fingerprint) ||
     (r.configHash !== undefined && r.configHash !== configHash && !options.accept?.length)
-  ) return carryBlocked("fingerprint", "stale");
+  ) return carryBlocked("fingerprint", "previous-result");
   // `durationMs` 在 `EvalResult` 上是必填字段,正常落盘不会缺失;这里的 `typeof` 防御只处理
   // 磁盘数据损坏等异常情形——保守地判不可携带,而不是当 0 处理(当 0 会让所有旧记录都通过
   // 判据,把「数据缺失」悄悄伪装成「跑得很快」)。

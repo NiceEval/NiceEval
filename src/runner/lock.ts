@@ -60,7 +60,7 @@ function decodeCaseLockRecord(experimentId: string, evalId: string) {
 /** 持有者续租心跳的周期。 */
 export const CASE_LOCK_HEARTBEAT_INTERVAL_MS = 10_000;
 /** `heartbeatAt` 落后当前时间超过这个阈值(三个心跳周期)即视为持有者已死。 */
-export const CASE_LOCK_STALE_MS = 30_000;
+export const CASE_LOCK_EXPIRY_MS = 30_000;
 
 export function locksDirOf(niceevalRoot: string): string {
   return join(niceevalRoot, "locks");
@@ -85,10 +85,10 @@ export async function readCaseLock(
 
 /** 过期判据:只看心跳时间戳,不看 pid(容器/跨用户场景下 pid 判活不可靠)。
  * 落后严格大于阈值才算过期(`>`,不是 `>=`);无法解析的 `heartbeatAt` 一律视为过期。 */
-export function isCaseLockStale(record: CaseLockRecord, nowMs: number): boolean {
+export function isCaseLockExpired(record: CaseLockRecord, nowMs: number): boolean {
   const heartbeatMs = Date.parse(record.heartbeatAt);
   if (Number.isNaN(heartbeatMs)) return true;
-  return nowMs - heartbeatMs > CASE_LOCK_STALE_MS;
+  return nowMs - heartbeatMs > CASE_LOCK_EXPIRY_MS;
 }
 
 export interface CaseLockClaim {
@@ -161,7 +161,7 @@ export async function tryAcquireCaseLockOnce(
     await claimEntryFile(dir, id);
     return tryAcquireCaseLockOnce(niceevalRoot, experimentId, evalId, identity, nowMs);
   }
-  if (!isCaseLockStale(existing, nowMs)) {
+  if (!isCaseLockExpired(existing, nowMs)) {
     return { kind: "waiting", holder: existing };
   }
 

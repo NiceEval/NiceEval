@@ -18,7 +18,7 @@ fixture 是一个已接入 niceeval 且跑出过结果的用户项目切片：�
 | 特征 | 支撑的题面 |
 |---|---|
 | 多 experiment group | 组间隔离与「先选对 scope」 |
-| 视图由多 Run 组成、含 stale-verdict 警告（flagged experiments） | 警告语义与重跑建议 |
+| 视图由多 Run 组成、含 previous-result 警告（flagged experiments） | 警告语义与重跑建议 |
 | failed 与 errored 并存 | 断言失败与 sandbox / 运行错误是两类不同诊断 |
 | 成本、时长、通过率跨度大 | 横向对比题的区分度 |
 | attempt execution 有实质内容（thinking、工具调用、失败线索在 transcript 里） | 深挖题的答案落点 |

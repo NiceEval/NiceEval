@@ -71,7 +71,6 @@ async function writeSnapshot(root: string, snapDirName: string, opts: SnapshotOp
     experiment: {
       attempts: 1,
       earlyExit: true,
-      selectedEvalIds: results.map((result) => result.id),
       sandboxLayer: {},
       sandboxPlansByEval: {},
       agentInstalls: [],
@@ -131,7 +130,7 @@ describe("--json envelope 形状", () => {
     expect(doc.schemaVersion).toBe(1);
     expect(doc.view).toBe("leaderboard");
     expect(doc.sample.resultsRoot).toBe(root);
-    expect(doc.sample.fresh).toBe(false);
+    expect(doc.sample).not.toHaveProperty("fresh");
     expect(doc.sample.experiments.sort()).toEqual(["dev-e2b/claude", "dev-e2b/codex"]);
     expect(doc.sample.evalPrefix).toBeUndefined();
   });
@@ -147,12 +146,6 @@ describe("--json envelope 形状", () => {
     const root = await seedTwoExperimentsRoot();
     const { doc } = await showJson(root, ["weather/brooklyn"]);
     expect(doc.sample.evalPrefix).toBe("weather/brooklyn");
-  });
-
-  it("--fresh 回显进 sample.fresh", async () => {
-    const root = await seedTwoExperimentsRoot();
-    const { doc } = await showJson(root, [], { fresh: true });
-    expect(doc.sample.fresh).toBe(true);
   });
 
   it("usage:view 为 usage,sample.experiments 反映 --exp 收窄", async () => {

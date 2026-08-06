@@ -1641,6 +1641,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "carriedAccepting",
   "migratedFrom",
   "acceptedFrom",
+  "renamedFrom",
   "artifacts",
 ] as const satisfies readonly (keyof EvalResult)[];
 
@@ -1896,8 +1897,6 @@ export function experimentRunInfo(
     ...(runLevelTimeoutMs !== undefined ? { timeoutMs: runLevelTimeoutMs } : {}),
     ...(run.budget !== undefined ? { budget: run.budget } : {}),
     ...(run.maxConcurrency !== undefined ? { maxConcurrency: run.maxConcurrency } : {}),
-    selectedEvalIds: [...run.selectedEvalIds],
-    ...(run.evalFilterFingerprint !== undefined ? { evalFilterFingerprint: run.evalFilterFingerprint } : {}),
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),

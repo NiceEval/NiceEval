@@ -5,12 +5,11 @@
 
 收窄是选择层的事,所以两个宿主用的是同一套输入 —— 在 `show` 上学会的写法,`view` 上原样成立。
 
-## 四种收窄输入
+## 三种收窄输入
 
 ```sh
 niceeval show memory/                       # 位置参数:eval id 前缀
 niceeval show --exp compare/codex           # experiment id 路径段
-niceeval show --fresh                       # 只留最新一次运行实测的 attempt
 niceeval show --record tmp/published-run    # 换一个记录根
 niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同义
 ```
@@ -19,7 +18,6 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 |---|---|---|
 | 位置参数 | 哪些题 | eval id 前缀 |
 | `--exp` | 哪些实验 | experiment id 路径段 |
-| `--fresh` | 哪一轮的数据 | 排除携带条目与跨 Run 拼入的历史执行 |
 | `--record` / `--run` | 从哪读 | 换记录根 / 只开一份 Run |
 
 位置参数永远只有「eval id 前缀」一种含义,文件与目录走 `--record` / `--run` —— 位置参数的含义不随文件系统里有没有同名目录而改变。
@@ -27,14 +25,12 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 
 ## 收窄之后分母跟着变
 
-这是最容易被误读的一点:**收窄掉的题不会静默消失,它们变成覆盖缺口。
-**
-
-`--fresh` 排除掉的题、`--exp` 之外的实验,都在[覆盖事实](../../sample/library.md#覆盖是逐行的事实) 里留下 `missingEvalIds`,在实验列表上呈现为占位行。
-所以一屏上的通过率永远配着一个说得清的分母, 不会出现「筛着筛着只剩一道题,分数还是 100%」。
+收窄会先改变 Sample 的总体，再让覆盖事实随同一范围重算。
+当前范围内没有结果的题进入结构化 `coverage[].missing`，原因明确区分为 `never-run` 或 `previous-result`；范围之外的实验与题不再属于这份 Sample。
+所以一屏上的通过率永远配着一个说得清的当前分母，不会用旧配置结论补数。
 
 跨历史拼题另有前提:`currentSample` 只把 `configHash` 相同的 Run 拼进来。
-改过 model 或 flags 之后只补跑了一部分题,旧配置那些题不冒充新配置的结果集,直接进缺口。
+改过 model 或 flags 之后只补跑了一部分题,旧配置那些题不冒充新配置的当前结果,直接进缺口。
 
 ## 两个 `--exp` 是对照,不是并集
 

@@ -3,8 +3,8 @@
 这是 Feature、Roadmap 与 Design 候选共用的起始模板。
 复制到下面任一位置后,按所属目录的成熟度规则写作:
 
-- `docs/feature/<name>/`:已定稿的目标契约。
-- `docs/roadmap/<name>/`:尚未定稿的候选契约。
+- `docs/feature/<name>/`:已经落地并验收的目标契约。
+- `docs/roadmap/<name>/`:已经定稿、尚未落地的目标契约。
 - `docs/design/<decision>/PLAN-N/`:参与同一决策比较的自包含候选。
 
 只有 `README.md` 必备。
@@ -22,7 +22,7 @@
 ## 范围
 
 写清包含什么、不包含什么。
-Roadmap 在这里列待裁决分歧;Design 候选在这里说明相对其它 PLAN 的边界与代价。
+Design 候选在这里说明相对其它 PLAN 的边界与代价；Feature 与 Roadmap 都只写最终边界。
 
 ## 入口
 

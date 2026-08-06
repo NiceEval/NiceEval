@@ -28,11 +28,11 @@ const sample = currentSample(record, { experiments: "compare/" });
 所以门禁先判覆盖:
 
 ```typescript
-const shrunk = sample.coverage.some((c) => c.missingEvalIds.length > 0);
+const shrunk = sample.coverage.some((c) => c.missing.length > 0);
 if (shrunk) process.exit(1);
 ```
 
-缺口是具体哪几道题,不是一个布尔值,报错时直接列出来,读的人不用再去猜。
+缺口是具体哪几道题,不是一个布尔值；每项还用 `never-run` 或 `previous-result` 说明是真没跑过，还是只剩不兼容的旧结果。
 
 ## 两条最常踩的线
 

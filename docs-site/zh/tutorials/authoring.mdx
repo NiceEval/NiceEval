@@ -194,7 +194,7 @@ export default defineEval({
 同一条评估用例的多个 Attempt（`attempts` 大于 1、或同批多个实验跑同一条评估用例）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
 
 ```ts
-// evals/pr-review/close-stale.eval.ts
+// evals/pr-review/close-outdated.eval.ts
 import { defineEval } from "niceeval";
 import type { Sandbox } from "niceeval/sandbox";
 
@@ -204,14 +204,14 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 export default defineEval({
   async setup(sandbox, ctx) {
     ctx.progress({ message: "seeding fixture repo" });
-    const fixture = await createFixtureRepo("pr-review/close-stale"); // 沙箱外的临时资源
+    const fixture = await createFixtureRepo("pr-review/close-outdated"); // Sandbox 外的临时资源
     fixtures.set(sandbox, fixture);
     await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
   },
   async teardown(sandbox) {
     await fixtures.get(sandbox)?.destroy(); // setup 抛错也会进来：没建成就跳过
   },
-  async test(t) { /* 驱动 agent 清理 stale PR，断言 */ },
+  async test(t) { /* 驱动 agent 清理过期 PR，断言 */ },
 });
 ```
 

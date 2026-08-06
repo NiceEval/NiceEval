@@ -81,8 +81,9 @@ Pass `--report standard` to switch back to the built-in report for one run.
 
 ## Narrow the Sample
 
-The host applies `--record`, `--exp`, eval positional arguments, and `--fresh` first,
+The host applies `--record`, `--exp`, and eval positional arguments first,
 then hands the Sample to the report.
+Carried and newly executed Attempts are equal members of that one current Sample.
 
 Keep using Sample methods inside the report:
 

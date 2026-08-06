@@ -67,7 +67,7 @@ niceeval show weather/brooklyn --history      # Cross-run timeline: flakiness an
 
 Sandbox creation, setup, and teardown errors don't depend on a trace. `result.json` stores the error's `code`, `message`, lifecycle phase (`phase`), a bounded cause/stack, and diagnostics; the trace only adds call relationships and timing when it exists. An attempt is sealed and written only after cleanup, teardown, and sandbox stop have finished, so wrap-up diagnostics are still there to review.
 
-Running the same experiment more than once leaves multiple results behind. The default view — without an `@<locator>` — shows the latest verdict for each experiment × eval pair, and may compose results across multiple runs of the same experiment. When a prefix rerun only touches part of the evals, the rest of the evals' verdicts are backfilled from earlier runs. Every verdict carries the time it was produced, so you can tell where a composed result came from. A composed result can mix different versions of the system under test, so treat a `--force` full rerun as the final word.
+Running the same experiment more than once leaves multiple results behind. The default view — without an `@<locator>` — shows the current result for each experiment × eval pair, and may compose compatible physical Attempts across runs of the same experiment. A prefix rerun can therefore update only part of the evals while compatible carried or earlier-run Attempts continue to count. A different configuration is never backfilled implicitly; it leaves a structured current gap until you rerun or explicitly `accept` the previous result.
 
 When narrowing by eval id prefix, every attempt of a matching eval is listed in order — there's no default expansion of just one of them. To look at one specific attempt, copy that row's `@<locator>` and `show` it directly. `--exp compare` narrows the sample by path-segment prefix to the whole `compare` group, `--exp compare/bub` keeps just one experiment; `--record <dir>` swaps the record root, `--run <run.json>` opens one specific stored Run, and `--history` shows the cross-run trend. `--report <file>` replaces the default report for both `show` and `view`. Positional prefixes, `--record`, and `--exp` all apply to custom reports too; `--history` and `--report` are mutually exclusive.
 
@@ -86,7 +86,7 @@ Every view in `niceeval view` has a terminal equivalent:
 
 ### Default grouped comparison report
 
-Bare `niceeval show`, with no flags, prints the current Scope's cost × end-to-end pass-rate chart and experiment list directly. Each experiment's eval count and metric denominator come from its snapshot's `selectedEvalIds`; evals that weren't selected are not backfilled as failures.
+Bare `niceeval show`, with no flags, prints the current Scope's cost × end-to-end pass-rate chart and experiment list directly. Each experiment's eval count and metric denominator come from the current Sample's physical Attempts and known-eval coverage; runtime selection plans do not filter the report a second time.
 
 The experiment list gives a fixed-column summary first, then expands by experiment → eval → attempt. The locator column keeps only `@<id>`; full assertions and evidence stay behind `niceeval show @<locator>`. A single experiment still shows a single point on the scatter plot.
 

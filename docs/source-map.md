@@ -154,7 +154,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 两层时间模型(`PhaseTiming` / `TimingActivity` / `TimingOrigin`:锚点 enter / 失败标记 / 收尾段测量 / hook 与命令子节点;Run 级 `RunMeta.timings` 的双时钟 recorder) | `src/runner/timing.ts`(`TimingRecorder`;attempt 侧接线在 `src/runner/attempt.ts`,Run 侧接线在 `src/runner/run.ts`);类型在 `src/runner/types.ts` / `src/record/types.ts` |
 | 变更分类账(workdir 外私有 git dir、锚点冻结排除清单、eval/agent 归因 commit、整相一条命令导出全部 send 窗口) | `src/runner/ledger.ts`(+ 同目录 `.test.ts`) |
 | 指纹缓存((eval 源码闭包 + 运行配置) 哈希,携带以 attempt 为粒度——`planCarry` 逐条比较每个 attempt 自己的终态 + 指纹,产出 `carriedAttemptsByKey`(具体序号集合,不是整段 key 命中就携入);`run.ts` 的调度按这个具体序号集合跳过,缺失序号真实派发) | `src/runner/fingerprint.ts`(`planCarry`)、`src/runner/run.ts`(attempt 展开处按 `carriedAttemptsByKey.get(carryKey)?.has(i)` 跳过) |
-| 强杀后的收尾登记(`.niceeval/teardowns/` 逐条目原子文件,与留存注册表同纪律)+ 启动自愈(触发 setup 前核对本实验自己的遗留登记、同宿主 pid 已死则先补执行一次 teardown 再走本次 setup、反馈标注 `recovery: true`)+ `--teardown` 独立入口 | `src/runner/teardown-registry.ts`(登记表原子写/读/删)、`src/runner/run.ts`(`recoverStaleTeardownRegistration` / `ensureExperimentSetup` / `runExperimentTeardown` 的磁盘镜像写入与删除)、`src/cli.ts`(`--teardown` 分支 + 未选中实验的遗留提醒) |
+| 强杀后的收尾登记(`.niceeval/teardowns/` 逐条目原子文件,与留存注册表同纪律)+ 启动自愈(触发 setup 前核对本实验自己的遗留登记、同宿主 pid 已死则先补执行一次 teardown 再走本次 setup、反馈标注 `recovery: true`)+ `--teardown` 独立入口 | `src/runner/teardown-registry.ts`(登记表原子写/读/删)、`src/runner/run.ts`(`recoverOrphanedTeardownRegistration` / `ensureExperimentSetup` / `runExperimentTeardown` 的磁盘镜像写入与删除)、`src/cli.ts`(`--teardown` 分支 + 未选中实验的遗留提醒) |
 | reporter 编排 + 运行级汇总 + eval 级 reporter 作用域(scopeReporter / filterSummary)+ required/best-effort 兜错(runReporter) | `src/runner/report.ts` |
 | remote 占位 Sandbox / eval 级本地路径视图(Proxy) | `src/runner/remote-sandbox.ts` |
 | 反馈 coordinator(形态解析、纯 reducer、human/json renderer、终端 sink、可注入 FeedbackIO);Run 级共享 activity 行与未知 activity key 的通用 label 投影 | `src/runner/feedback/{profile,reducer,renderer,human,json,sink,coordinator,io,testing,index}.ts` |
@@ -165,7 +165,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 实验改名与结果重绑(`exp rename`:同 fingerprint 的跨 experimentId 审计迁移、整批预检与单 snapshot 写入) | `src/runner/rename-experiment.ts`(资格门、计划与写入)、`src/cli.ts`(命令解析与人读/JSON 反馈)、`src/runner/types.ts`(`RenamedResult` / `EvalResult.renamedFrom`) |
 | `EvalResult.evaluationKind`(直接取 factory 固定的 `evalDef.evaluationKind`；缺失定义拒绝进入运行)与 `scoreEntries`(仅 `evaluationKind: "points"` 时落) | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态解析;调度项没有环境变量层,见[配置与凭据边界](architecture.md#配置从代码来凭据从环境来)) | `src/cli.ts` |
-| `niceeval show` 终端宿主(Sample 合成「当前结果集」、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 attempt 级 timing 树、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
+| `niceeval show` 终端宿主(Sample 合成当前结果集、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 attempt 级 timing 树、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
 | 测试集与判据文件加载器(loadJson / loadYaml / loadText) | `src/loaders/index.ts` |
 
 ## Record / Sample Lib 与 Reports

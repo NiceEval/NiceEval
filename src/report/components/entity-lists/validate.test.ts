@@ -23,7 +23,6 @@ const validAttemptItem = {
   durationMs: 1000,
   costUSD: 0.01,
   startedAt: "2026-07-01T00:00:00Z",
-  historical: false,
   locator: "@1abcdef2",
 };
 
@@ -46,10 +45,9 @@ describe("validateAttemptListData", () => {
     expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.verdict"/);
   });
 
-  it("[i].startedAt 缺失报错;[i].historical 非布尔报错", () => {
+  it("[i].startedAt 缺失报错", () => {
     const { startedAt: _startedAt, ...withoutStartedAt } = validAttemptItem;
     expect(validateAttemptListData([withoutStartedAt])).toMatch(/"data\[0\]\.startedAt"/);
-    expect(validateAttemptListData([{ ...validAttemptItem, historical: "yes" }])).toMatch(/"data\[0\]\.historical"/);
   });
 });
 
@@ -107,9 +105,8 @@ describe("validateExperimentListData", () => {
       tokens: validCell,
       evals: 1,
       attempts: 1,
-      historicalAttempts: 0,
-      missingEvalIds: [],
-      staleReferences: {},
+      knownEvalIds: ["q1"],
+      missing: [],
       lastRunAt: "2026-07-01T00:00:00Z",
       evalRows: [validEvalRow],
     },
@@ -146,16 +143,14 @@ describe("validateExperimentListData", () => {
     expect(validateExperimentListData(valid)).toBeNull();
   });
 
-  it("[i].historicalAttempts 非数字报错;[i].missingEvalIds 非字符串数组报错", () => {
-    expect(validateExperimentListData([{ ...valid[0], historicalAttempts: "0" }])).toMatch(/"data\[0\]\.historicalAttempts"/);
-    expect(validateExperimentListData([{ ...valid[0], missingEvalIds: [1] }])).toMatch(/"data\[0\]\.missingEvalIds\[0\]"/);
-  });
-
-  it("[i].staleReferences 非对象报错;条目缺 staleSinceMs 定位到该 evalId", () => {
-    expect(validateExperimentListData([{ ...valid[0], staleReferences: [] }])).toMatch(/"data\[0\]\.staleReferences"/);
-    const bad = [
-      { ...valid[0], staleReferences: { q1: { locator: "@1abcdef2", verdict: "passed" } } },
-    ];
-    expect(validateExperimentListData(bad)).toMatch(/"data\[0\]\.staleReferences\.q1\.staleSinceMs"/);
+  it("[i].knownEvalIds 非字符串数组报错;[i].missing 的 reason 用闭集且 previous 缺 locator 定位", () => {
+    expect(validateExperimentListData([{ ...valid[0], knownEvalIds: [1] }])).toMatch(/"data\[0\]\.knownEvalIds\[0\]"/);
+    expect(validateExperimentListData([{ ...valid[0], missing: [1] }])).toMatch(/"data\[0\]\.missing\[0\]"/);
+    expect(
+      validateExperimentListData([{ ...valid[0], missing: [{ evalId: "q2", reason: "expired" }] }]),
+    ).toMatch(/"data\[0\]\.missing\[0\]\.reason"/);
+    expect(
+      validateExperimentListData([{ ...valid[0], missing: [{ evalId: "q2", reason: "previous-result", previous: {} }] }]),
+    ).toMatch(/"data\[0\]\.missing\[0\]\.previous"/);
   });
 });

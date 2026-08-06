@@ -94,7 +94,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 配置面另有出处:它落盘在 `run.json`,从条目重建后照常给具名差异。
 
 fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 payload / 编码口径，`coverageVersion` 标识 manifest 覆盖的输入集合；旧记录未声明时按 legacy 版本 `0` 读取。
-任何进入 fingerprint 的输入都必须有同源 manifest 投影。当前版本内出现 fingerprint 不同、manifest 相同，属于 `fingerprint-invariant-violation`，不能退化成没有原因的 stale。
+任何进入 fingerprint 的输入都必须有同源 manifest 投影。当前版本内出现 fingerprint 不同、manifest 相同，属于 `fingerprint-invariant-violation`，不能退化成没有差异说明的 `previous-result`。
 
 跨版本先查显式迁移注册表。迁移只返回三种决策：已证明等价、具名差异、无法证明。
 已证明等价时结果自动携带，并在新条目记 `migratedFrom`；具名差异照常进入指纹门；无法证明时阻断携带，交给人检查证据后接受或重跑。
@@ -124,7 +124,7 @@ fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 pa
 
 ```typescript
 // experiments/compare/codex-nowledge.ts
-//   ↑ 改文件名 → experimentId 跟着变 → 36 条全部重跑(相当于开了一个新实验)
+//   ↑ 改文件名 → experimentId 跟着变；默认是新实验，需要时用 `niceeval exp rename` 显式重绑
 
 export default defineExperiment({
   description: "codex + nowledge 对照",
@@ -311,7 +311,7 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 
 显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每条来源对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
-接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。`--all-stale` 不存在：范围会随当前发现结果漂移，不能代表逐条授权。
+接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。命令不提供批量接受选项：范围会随当前发现结果漂移，不能代表逐条授权。
 多个 locator 可以跨 experiment：命令按每条 locator 解析出的 experiment 分组，为每个 experiment 各自合成一个原子 snapshot。同一 experiment 内，两个 locator 解析到同一个当前 (eval, attempt) 目标视为重复选择，直接拒绝；跨 experiment 时，同名 eval 各自独立，不算重复。它不把某个 experiment 内部的共同差异扩散到其它 experiment 或未列出的结果。
 
 写盘前先对全部 locator 验证下列条件:
@@ -326,11 +326,10 @@ niceeval accept @a1b2c3d4 @e5f6g7h8
 
 任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后按 experiment 分组，每组各自封口一个 snapshot。
 输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
-该 snapshot 的 `experiment.selectedEvalIds`（与 `sandboxPlansByEval` / `knownEvalIds`）覆盖**本组全部接受的 eval**。
-它不是 prepare 时为重算指纹而临时收窄到单题的那份。
-Sample 的当前结果集按 `selectedEvalIds` 过滤贡献；声明缺一题就会让 view / 默认 show 把已落盘结果静默丢掉。
+该 Run 的 `sandboxPlansByEval` 与 `knownEvalIds` 覆盖本组全部接受的 Eval。
+prepare 时为重算指纹而临时形成的单题计划只存在于运行期，不落盘为读面贡献声明；Sample 直接选择本组写出的物理 Attempt。
 
-`accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然 stale。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
+`accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然显示 `previous-result`。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
 新条目记录 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
 

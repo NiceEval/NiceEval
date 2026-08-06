@@ -78,7 +78,7 @@ fix parent 或最小逆补丁验证记录。
 
 ### A7 · Report 公式与双面语义
 
-- **覆盖**：visual migration 的 passRate、failure reason、GroupSummary 漂移 `d0b6718` / `f98713ae`；层级 record 特例形态 `f1f4efd6`。24 个 series identity 撞成 6 种 mark `89307454`；compare stale / reference parity 与 coverage composition 错位 `7fae6b5e`。
+- **覆盖**：visual migration 的 passRate、failure reason、GroupSummary 漂移 `d0b6718` / `f98713ae`；层级 record 特例形态 `f1f4efd6`。24 个 series identity 撞成 6 种 mark `89307454`；compare previous-result / reference parity 与 coverage composition 错位 `7fae6b5e`。
 - **fixture**：attempt 数不等且含 partial credit / skipped；同一 result 同时含 error、两个失败 gate 与失败 soft；跨 experiment 同名 eval、null cost 与全 skipped 组；一个含至少 7 个 series 的可视编码代表。
 - **动作**：同一结果分别经 non-TTY text 和真实 Chromium web 读取。
 - **公开 oracle**：题面独立推导的 `83.3%`、failure reason 优先级、组计票 / cost / 无数据语义；两面逐字段相同；7 个 series 都有可区分的公开视觉身份。

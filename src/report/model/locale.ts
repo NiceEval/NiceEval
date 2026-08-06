@@ -68,8 +68,10 @@ const en = {
   "cell.notRun": "not run",
   /** missing 格 code=`unscorable`:有 attempt,但读数测不出。 */
   "cell.unscorable": "unscorable",
-  /** missing 格 code=`noCurrentResult`:当前配置下这道题没有结果(覆盖缺口占位行)。 */
-  "cell.noCurrentResult": "no result for current config",
+  /** missing 格 code=`neverRun`:history 里从未出现这道题的物理 Attempt(覆盖缺口占位行)。 */
+  "cell.neverRun": "not run yet",
+  /** missing 格 code=`previousResult`:历史里有结果,但不在当前可比集合(覆盖缺口占位行)。 */
+  "cell.previousResult": "no result for current config",
   "cell.measuredTitle": "{samples}/{total} attempts measured",
   "cell.noneMeasurableTitle": "0/{total} attempts measurable",
   "cell.coverageTitle": "coverage {samples}/{total}: this metric is null for the remaining attempts",
@@ -126,8 +128,6 @@ const en = {
   "scopeSummary.passRate": "Pass rate",
   "scopeSummary.totalScore": "Total score",
   "scopeSummary.totalCost": "Total cost",
-  "scopeSummary.lastRun": "Last run · {time}",
-  "scopeSummary.runRange": "Run range · {from} – {to}",
   "scopeSummary.costCoverage": "Cost available for {samples}/{total} attempts",
   "scopeSummary.votesEval": "Eval results",
   "scopeSummary.votesAttempt": "Attempt results",
@@ -193,17 +193,8 @@ const en = {
   /** 覆盖缺口(scope.coverage)。 */
   "overview.evalsCountPartial": "{covered}/{total} evals",
 
-  /** 覆盖构成四段的段名(docs/feature/reports/components/summaries/experiment-table.md「覆盖构成」)。 */
-  "coverage.fresh": "fresh",
-  "coverage.historical": "historical",
-  "coverage.stale": "stale",
-  "coverage.notRun": "not run",
-  /** locator 格历史执行时距的 hover 说明(三条通道见「时效不写字」)。 */
-  "experimentList.historicalTooltip": "Historical execution — carried over or pulled in from an earlier run; still counts toward every total.",
-  /** 覆盖缺口占位行参考的 hover 说明。 */
-  "experimentList.staleReferenceTooltip": "Reference only — not comparable with the current configuration, does not count toward any total.",
-  /** 「只看新执行」开关的 web 面文案(experiment-table.md「只看新执行」)。 */
-  "experimentTable.freshOnlyToggle": "Fresh executions only",
+  /** 占位行 previous locator 的 hover 说明:旧结果是审计与授权入口,不进任何计数。 */
+  "experimentTable.previousResultTooltip": "Previous result — audit and accept entry only; does not count toward any total.",
 
   /** Hero / HeroCard 的运行 meta(hero.noRuns 是 latestStartedAt 为 null 时的内置文案)。 */
   "hero.lastRun": "Last run {time}",
@@ -277,7 +268,8 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "cell.missing": "无数据",
   "cell.notRun": "未跑到",
   "cell.unscorable": "测不出",
-  "cell.noCurrentResult": "当前配置下无结果",
+  "cell.neverRun": "尚未运行",
+  "cell.previousResult": "当前配置下没有结果",
   "cell.measuredTitle": "{samples}/{total} 次 attempt 测得",
   "cell.noneMeasurableTitle": "0/{total} 次 attempt 可测",
   "cell.coverageTitle": "覆盖率 {samples}/{total}:其余 attempt 测不了这个指标",
@@ -328,8 +320,6 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "scopeSummary.passRate": "通过率",
   "scopeSummary.totalScore": "总分",
   "scopeSummary.totalCost": "总成本",
-  "scopeSummary.lastRun": "最近运行 · {time}",
-  "scopeSummary.runRange": "运行范围 · {from} – {to}",
   "scopeSummary.costCoverage": "{samples}/{total} 次有成本数据",
   "scopeSummary.votesEval": "Eval 结果",
   "scopeSummary.votesAttempt": "Attempt 结果",
@@ -389,13 +379,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
 
   "overview.evalsCountPartial": "{covered}/{total} 个 Eval",
 
-  "coverage.fresh": "新执行",
-  "coverage.historical": "历史执行",
-  "coverage.stale": "过期结论",
-  "coverage.notRun": "未跑到",
-  "experimentList.historicalTooltip": "历史执行——携带自上一轮或跨 Run 拼入的结果；仍计入所有汇总。",
-  "experimentList.staleReferenceTooltip": "仅作参考——与当前配置不可比，不进任何计数。",
-  "experimentTable.freshOnlyToggle": "只看新执行",
+  "experimentTable.previousResultTooltip": "旧结果——仅供审计与授权入口，不进任何计数。",
 
   "hero.lastRun": "最后运行 {time}",
   "hero.noRuns": "暂无运行",

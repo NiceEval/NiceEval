@@ -80,7 +80,7 @@ import { withCleanupTimeout } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
 import {
-  isStaleTeardownRegistration,
+  isOrphanedTeardownRegistration,
   readTeardownRegistrations,
   removeTeardownRegistrationIfPresent,
   teardownEntryId,
@@ -88,7 +88,7 @@ import {
 } from "./teardown-registry.ts";
 import {
   acquireCaseLock,
-  isCaseLockStale,
+  isCaseLockExpired,
   readCaseLock,
   CASE_LOCK_HEARTBEAT_INTERVAL_MS,
   type CaseLockClaim,
@@ -1132,7 +1132,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * ctx.selectedEvalIds 从登记恢复,不依赖已丢失的 setup 产物)。失败只记诊断,不阻断、
    * 不重试本次 run 的调度——recovery 补偿的是上一次的泄漏,不是这一次的前提条件。
    */
-  const recoverStaleTeardownRegistration = async (run: AgentRun, experimentId: string): Promise<void> => {
+  const recoverOrphanedTeardownRegistration = async (run: AgentRun, experimentId: string): Promise<void> => {
     if (!run.experimentId || !run.teardown) return;
     let registrations;
     try {
@@ -1141,7 +1141,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       return;
     }
     for (const { id, entry } of registrations) {
-      if (entry.experimentId !== run.experimentId || !isStaleTeardownRegistration(entry, currentHost)) continue;
+      if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost)) continue;
       const claimed = await removeTeardownRegistrationIfPresent(niceevalRoot, id).catch(() => false);
       if (!claimed) continue; // 已被另一个进程抢先删除,义务已被别处接手
       reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
@@ -1228,7 +1228,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」):
       // 先核对并补执行本实验自己的遗留登记,再原子写入本次的登记——两步都先于 setup。
       if (run.teardown && run.experimentId) {
-        await recoverStaleTeardownRegistration(run, experimentId);
+        await recoverOrphanedTeardownRegistration(run, experimentId);
         await writeTeardownRegistration(niceevalRoot, {
           experimentId: run.experimentId,
           selectedEvalIds: run.selectedEvalIds,
@@ -1300,7 +1300,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const run of opts.agentRuns) {
     if (!run.experimentId || !run.teardown || recoveredExperimentIds.has(run.experimentId)) continue;
     recoveredExperimentIds.add(run.experimentId);
-    await recoverStaleTeardownRegistration(run, run.experimentId);
+    await recoverOrphanedTeardownRegistration(run, run.experimentId);
   }
 
   // ─────────────────────── 派发许可链(docs/runner.md「调度:有界并发」) ───────────────────────
@@ -1806,7 +1806,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         await delayOrAbort(CASE_LOCK_HEARTBEAT_INTERVAL_MS, waitSignal);
         if (waitSignal.aborted || dispatchClosed) break;
         const record = await readCaseLock(niceevalRoot, st.experimentId, st.evalId).catch(() => undefined);
-        if (record === undefined || isCaseLockStale(record, Date.now())) break;
+        if (record === undefined || isCaseLockExpired(record, Date.now())) break;
       }
       await recheckCarry(st, startedAt, holder);
     })();

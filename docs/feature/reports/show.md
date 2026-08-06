@@ -9,7 +9,7 @@ show 的输入沿三条正交轴组合。
 三条轴各自独立取值，组合语义由各轴自己的规则决定，不为特定组合发明特例命令：
 
 - **范围**选出一批 attempt。
-  eval id 前缀位置参数、`@<locator>` 位置参数、`--exp`（可重复）、`--fresh` 与 `--record` 都是范围输入；`@<locator>` 是恰好命中一个 attempt 的最小范围，不是某些切片的专属入口。
+  eval id 前缀位置参数、`@<locator>` 位置参数、`--exp`（可重复）与 `--record` 都是范围输入；`@<locator>` 是恰好命中一个 attempt 的最小范围，不是某些切片的专属入口。
 - **切片**选择一个公开任务函数与 text 组件。
   默认切片按范围形态选择： [默认报告](show/default-report.md)调用首页任务函数， [对照矩阵](show/compare.md)调用 `comparisonResult()`， [失败诊断首页](show/attempt.md)调用 Attempt 详情任务函数； [`--stats`](show/stats.md)调用 `stabilityResult()`。
   其它显式 flag 也各有一个结果函数。
@@ -79,15 +79,14 @@ niceeval show --record tmp/published-results
 niceeval show --exp dev-e2b           # experiment id 路径前缀
 niceeval show --exp dev-e2b/codex-e2b
 niceeval show memory/swelancer --exp dev-e2b/codex-e2b
-niceeval show --fresh                 # 只统计最新一次运行实测的 attempt
 niceeval show --report reports/exam.tsx
 niceeval show --report reports/site.tsx --page exam
 niceeval show --report standard        # 内建视图名，回到默认报告
 ```
 
 `--record` 改变记录根；`--exp` 按 experiment id 路径段匹配，eval id 位置参数直接按前缀过滤。
-`--fresh` 把口径收窄成只含新执行的 attempt——排除携带条目与跨 Run 拼入的历史执行，被排除的题按覆盖事实转为覆盖占位行，不静默消失（语义见 [Record · 时效](../sample/library.md#时效新执行与历史执行)）。
-`--fresh` 与其它范围输入作用于所有切片与两个形态，不是默认报告专属。
+携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`show` 不按来源再提供第二种当前结果口径。
+需要检查某次运行或旧配置结果时，使用 `--run`、`--history` 或 locator 的显式旅途。
 
 `--exp` 出现两次以上时进入对照语义：每个 `--exp` 是一个对照条件，必须恰好解析到一个 experiment；某个 `--exp` 前缀匹配到多个 experiment 时按用法错误退出并列出全部候选 id，不猜测意图（契约见[对照矩阵](show/compare.md)）。
 `@<locator>` 位置参数与重复 `--exp` 互斥——locator 已经唯一确定了 experiment，再给对照条件没有可执行的语义。

@@ -88,7 +88,7 @@ describe("toBraintrustEvent", () => {
         model: "gpt-5.2",
         attempt: 1,
         verdict: "failed",
-        experiment: { flags: { tape: true }, attempts: 1, earlyExit: true, selectedEvalIds: [], sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
+        experiment: { flags: { tape: true }, attempts: 1, earlyExit: true, sandboxLayer: {}, sandboxPlansByEval: {}, agentInstalls: [] },
         assertions: [{ name: "compiles", severity: "gate", score: 0, outcome: "failed" as const, detail: "tsc failed" }],
       }),
     );

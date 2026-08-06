@@ -231,7 +231,7 @@ async function prepareAcceptTarget(
   // 与 planCarry(fingerprint.ts)同一口径重算配置身份:Judge 走 experiment > eval > config
   // 逐字段解析,而不是 configIdentityForRun 默认的单层 run.judge——否则这里落盘的
   // fingerprint/configHash 只含 experiment 级 judge,下一次 exp 用完整链重算出不同指纹,
-  // 形成 accept → stale 死循环(docs/feature/experiments/cache.md「Judge 的解析链」)。
+  // 形成 accept → previous-result 死循环(docs/feature/experiments/cache.md「Judge 的解析链」)。
   const resolvedJudge = resolveJudge(run.judge, targetEval.judge, ctx.config.judge);
   const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
   const { fingerprint, manifest } = await fingerprintWithManifest(pair, ctx.sourceCache, {
@@ -532,10 +532,9 @@ export async function writeAcceptedAttempts(
       knownEvalIds.add(prepared.source.evalId);
       for (const evalId of prepared.knownEvalIds ?? []) knownEvalIds.add(evalId);
     }
-    // prepare 阶段每条 locator 单独按「只选中自己那一题」重算指纹,currentExperiment.selectedEvalIds
-    // 因此只有一个 id。快照级覆盖声明必须是本 experiment 组**全部**接受的题——currentSample
-    // 按 selectedEvalIds 过滤贡献范围,只写 groupFirst 会让批量 accept 的 view/show 塌成 1 题
-    // (MemoryBench: 36 条 result.json 在盘、首页 1/36)。
+    // prepare 阶段每条 locator 单独按「只选中自己那一题」重算指纹,但快照级 pair plan
+    // 不承担报告选题。快照级覆盖声明必须是本 experiment 组**全部**接受的题；currentSample
+    // 只消费物理 attempts,只写 groupFirst 的 plans 也不能让批量 accept 的 view/show 塌成 1 题。
     const experiment = experimentForAcceptedGroup(group);
     const snapshot = await writer.run({
       experimentId,
@@ -576,11 +575,7 @@ export async function writeAcceptedAttempts(
   });
 }
 
-/**
- * 把同 experiment 一批 accept 的覆盖声明合成快照级 `ExperimentRunInfo`。
- * 单条 prepare 的 `currentExperiment.selectedEvalIds` / `sandboxPlansByEval` 只含自己那题
- * (指纹重算需要);封口时必须扩成整组,否则 Sample 读面按 selectedEvalIds 过滤会丢掉其余题。
- */
+/** 把同 experiment 一批 accept 的逐 Eval Sandbox plan 合成 Run 级投影。 */
 function experimentForAcceptedGroup(
   group: readonly PreparedAcceptedAttempt[],
 ): EvalResult["experiment"] | undefined {
@@ -590,12 +585,10 @@ function experimentForAcceptedGroup(
   const base = bases[0];
   if (base === undefined) return undefined;
 
-  const selectedEvalIds = new Set<string>(base.selectedEvalIds);
   const sandboxPlansByEval: globalThis.Record<string, JsonValue> = {
     ...base.sandboxPlansByEval,
   };
   for (const prepared of group) {
-    selectedEvalIds.add(prepared.source.evalId);
     const plans = prepared.currentExperiment?.sandboxPlansByEval;
     if (plans === undefined) continue;
     for (const [evalId, plan] of Object.entries(plans)) {
@@ -604,7 +597,6 @@ function experimentForAcceptedGroup(
   }
   return {
     ...base,
-    selectedEvalIds: [...selectedEvalIds],
     sandboxPlansByEval,
   };
 }

@@ -33,19 +33,21 @@ function attemptListItemProblem(value: unknown, path: string): string | null {
   if (typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
   if (!(value.costUSD === null || typeof value.costUSD === "number")) return `"${path}.costUSD" must be a number or null`;
   if (typeof value.startedAt !== "string") return `"${path}.startedAt" must be a string`;
-  if (typeof value.historical !== "boolean") return `"${path}.historical" must be a boolean`;
-  if (!(value.staleSinceMs === undefined || typeof value.staleSinceMs === "number")) {
-    return `"${path}.staleSinceMs" must be a number or omitted`;
-  }
   if (typeof value.locator !== "string") return `"${path}.locator" must be a string`;
   return null;
 }
 
-function staleConclusionReferenceProblem(value: unknown, path: string): string | null {
+function sampleMissingProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
-  if (typeof value.locator !== "string") return `"${path}.locator" must be a string`;
-  if (typeof value.verdict !== "string") return `"${path}.verdict" must be a string`;
-  if (typeof value.staleSinceMs !== "number") return `"${path}.staleSinceMs" must be a number`;
+  if (typeof value.evalId !== "string") return `"${path}.evalId" must be a string`;
+  if (value.reason !== "never-run" && value.reason !== "previous-result") {
+    return `"${path}.reason" must be "never-run" or "previous-result"`;
+  }
+  if (value.previous !== undefined) {
+    if (!isObject(value.previous) || typeof value.previous.locator !== "string") {
+      return `"${path}.previous" must be an object with a string "locator"`;
+    }
+  }
   return null;
 }
 
@@ -70,16 +72,12 @@ export const validateExperimentListData: Validator = (data) =>
     if (tokensProblem !== null) return tokensProblem;
     if (typeof item.evals !== "number") return `"${path}.evals" must be a number`;
     if (typeof item.attempts !== "number") return `"${path}.attempts" must be a number`;
-    if (typeof item.historicalAttempts !== "number") return `"${path}.historicalAttempts" must be a number`;
-    const missingProblem = arrayProblem(item.missingEvalIds, `${path}.missingEvalIds`, (id, idPath) =>
+    const knownProblem = arrayProblem(item.knownEvalIds, `${path}.knownEvalIds`, (id, idPath) =>
       typeof id === "string" ? null : `"${idPath}" must be a string`,
     );
+    if (knownProblem !== null) return knownProblem;
+    const missingProblem = arrayProblem(item.missing, `${path}.missing`, sampleMissingProblem);
     if (missingProblem !== null) return missingProblem;
-    if (!isObject(item.staleReferences)) return `"${path}.staleReferences" must be an object`;
-    for (const [evalId, reference] of Object.entries(item.staleReferences)) {
-      const referenceProblem = staleConclusionReferenceProblem(reference, `${path}.staleReferences.${evalId}`);
-      if (referenceProblem !== null) return referenceProblem;
-    }
     if (typeof item.lastRunAt !== "string") return `"${path}.lastRunAt" must be a string`;
     return arrayProblem(item.evalRows, `${path}.evalRows`, (row, rowPath) => {
       if (!isObject(row) || typeof row.evalId !== "string") {

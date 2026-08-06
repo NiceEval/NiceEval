@@ -80,8 +80,9 @@ export default defineConfig({
 
 ## 收窄 Sample
 
-宿主先处理 `--record`、`--exp`、评估位置参数和 `--fresh`，
+宿主先处理 `--record`、`--exp` 和评估位置参数，
 再把 Sample 交给报告。
+携带与本次执行的 Attempt 同等属于这一份当前 Sample。
 
 报告内继续使用 Sample 方法：
 

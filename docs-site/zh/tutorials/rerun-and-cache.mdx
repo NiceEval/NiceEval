@@ -178,12 +178,12 @@ npx niceeval exp compare --dry
 plan: 36 attempts · 36 evals × 1 configs · attempts 1
 0 carried in from cache · 36 to run
 
-compare/baseline  01  stale passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
+compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
   prior:  @1A1B2C3D4E5F (passed)
   accept: niceeval accept @1A1B2C3D4E5F
 ```
 
-`stale passed` 说明历史结论是通过的、但当前指纹已变化；它还不能被缓存直接携带。差异解释与执行证据是两条轴：`fingerprint version changed` 只说明输入差异无法按当前 manifest 展开，不表示 execution、diff 或 timing 丢失。先用 locator 打开证据，确认结论仍然成立后接受它：
+`previous-result passed` 说明历史结论是通过的、但当前指纹已变化；它还不能被缓存直接携带。差异解释与执行证据是两条轴：`fingerprint version changed` 只说明输入差异无法按当前 manifest 展开，不表示 execution、diff 或 timing 丢失。先用 locator 打开证据，确认结论仍然成立后接受它：
 
 ```bash
 npx niceeval show @1A1B2C3D4E5F --timing
@@ -198,9 +198,9 @@ npx niceeval accept @1A1B2C3D4E5F @5E6F7G8H9J0K
 ╰─────────────────────────────────────────────────╯
 ```
 
-接受会写出使用当前指纹的新结果，并记下各自的来源 locator、旧/新指纹和差异摘要。多个显式 locator 先全部验证，任一条失败时零写入；全部通过后按 locator 各自所属的 experiment 分组，每组生成一个 snapshot——多个 experiment 可以在一条命令里一起接受。命令不会因为共同差异接受未列出的结果，也没有 `--all-stale`。
+接受会写出使用当前指纹的新结果，并记下各自的来源 locator、旧/新指纹和差异摘要。多个显式 locator 先全部验证，任一条失败时零写入；全部通过后按 locator 各自所属的 experiment 分组，每组生成一个 snapshot——多个 experiment 可以在一条命令里一起接受。命令不会因为共同差异接受未列出的结果，也没有批量接受选项。
 
-NiceEval 已知且能证明等价的 fingerprint 版本迁移会自动携带，并留下 `migratedFrom`；无法证明的迁移才显示 `stale` 并要求接受或重跑。输出不会使用含义不清的 `details unavailable`。
+NiceEval 已知且能证明等价的 fingerprint 版本迁移会自动携带，并留下 `migratedFrom`；无法证明的迁移才显示 `previous-result` 并要求接受或重跑。输出不会使用含义不清的 `details unavailable`。
 
 很早的落盘可能带有不符合当前 locator 格式的旧值。此时 `--dry` 会显示 `accept: unavailable (legacy locator …)`，不会给出一个必然失败的命令；重新运行该 eval 即可生成新的可接受 locator。
 

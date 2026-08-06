@@ -384,7 +384,7 @@ pnpm e2e -- verify \
 ```
 
 `scripts/e2e.ts` 解析参数，并先比对当前候选、producer、fixture、prepare config 和适用环境 identity。
-不匹配时以 stale-evidence 失败并提示重新执行 `pnpm e2e`，不静默 prepare。
+不匹配时以 expired-evidence 失败并提示重新执行 `pnpm e2e`，不静默 prepare。
 
 读回迁移或修复测试从 `report-scoreboard@<digest>` 创建单例私有的 mutable clone。
 普通验证的 cwd、日志、browser profile 与 trace 全在 world 外；每例前后复核文件树 digest。

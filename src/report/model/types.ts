@@ -3,7 +3,7 @@
 // 这些不是持久化格式,没有 format / schemaVersion 信封,兼容性跟随 npm 版本
 // (组件消费 data 时校验结构,不符按完整用户反馈报错并提示版本漂移)。
 
-import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, Run } from "../../record/types.ts";
+import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, SampleMissing, Run } from "../../record/types.ts";
 import type { AttemptIdentity, AttemptLocator } from "../../record/locator.ts";
 import type { AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 import type {
@@ -273,10 +273,6 @@ export interface DeltaCell {
   attempts: readonly AttemptLocator[];
   totalTokens?: number;
   totalCostUSD?: number;
-  /** true 时该格来自跨快照携带的历史执行(时效标注见 experiment-table.md「时效不写字」)。 */
-  historical: boolean;
-  /** `historical` 为 true 时,距今的毫秒数(渲染时刻起算);新执行时省略,不伪造 0。 */
-  staleSinceMs?: number;
 }
 
 export interface DeltaData {
@@ -294,12 +290,6 @@ export interface DeltaData {
     cells: globalThis.Record<string, DeltaCell>;
     /** 键是非基准条件值;任一侧缺数据时无键——delta 不把缺失当 0。 */
     delta?: globalThis.Record<string, { score?: number; tokens?: number; costUSD?: number }>;
-    /**
-     * 键是条件值,只在该条件缺席这道题(`cells` 无键)且记录里存在不可比历史判定时才有条目
-     * (docs/feature/reports/show/compare.md「— ✓ 12d」);它不进 `totals`、`delta` 与配对覆盖的
-     * 任何一个数,只提供 locator 下钻。
-     */
-    references?: globalThis.Record<string, StaleConclusionReference>;
   }>;
   /** 各条件自身覆盖面的描述,分母是该条件有结果的 eval 数;不用于跨条件直接归因。 */
   totals: globalThis.Record<
@@ -519,24 +509,9 @@ export interface AttemptListItem {
   durationMs: number;
   /** 缺失为 null(测不了),不伪造 0;attempt 级条目的缺失一律用 null,不用省略字段。 */
   costUSD: number | null;
-  /** 执行时刻(携带条目为原执行时刻)。时效标注的时距从这里起算。 */
+  /** 执行时刻(携带条目为原执行时刻)。 */
   startedAt: string;
-  /** 历史执行:携带条目,或来自该实验在 Sample 中最新快照之外的快照;false = 最新一次运行实测。 */
-  historical: boolean;
-  /** `historical` 为 true 时,距今的毫秒数(渲染时刻起算);新执行时省略,不伪造 0。 */
-  staleSinceMs?: number;
   locator: AttemptLocator;
-}
-
-/**
- * 覆盖缺口占位行的参考:记录里存在、但与当前基准 configHash 不可比的最近一条判定
- * (docs/feature/reports/components/summaries/experiment-table.md「覆盖缺口的两档占位行」)。
- * 它不进任何计数,只提供下钻入口。
- */
-export interface StaleConclusionReference {
-  readonly locator: AttemptLocator;
-  readonly verdict: Verdict | "skipped";
-  readonly staleSinceMs: number;
 }
 
 /**
@@ -599,16 +574,13 @@ export interface ExperimentListItem {
   evals: number;
   /** 这个 experiment 覆盖的 attempt 总数(原始计数,含多轮重试)。 */
   attempts: number;
-  /** 历史执行的 attempt 数(分母是 attempts)。 */
-  historicalAttempts: number;
-  /** 已知 eval 并集里、当前口径下没有任何 attempt 的题(来自 `scope.coverage`);渲染为占位行。 */
-  missingEvalIds: string[];
+  /** 覆盖分母:来自 `scope.coverage` 的 knownEvalIds,与缺口共同组成已知题全集。 */
+  knownEvalIds: readonly string[];
   /**
-   * `missingEvalIds` 里、记录中存在不可比历史判定的那些题的参考(evalId → 参考);
-   * 其余缺口题没有条目,占位行只给「当前配置下无结果」。`sample.fresh` 为 true 时整份为空——
-   * 读者已声明只看新执行,占位行就不再把被排除的历史结论请回来。
+   * 当前配置下没有 Attempt 的题(来自 `scope.coverage` 的 `SampleMissing` 数组);
+   * 原因只解释下一步,不构成另一种结果状态,也不进入任何聚合读数。
    */
-  staleReferences: Readonly<globalThis.Record<string, StaleConclusionReference>>;
+  missing: readonly SampleMissing[];
   /** 所含快照中最近的 startedAt。 */
   lastRunAt: string;
   evalRows: ExperimentListEvalRow[];
@@ -626,7 +598,7 @@ export interface ExperimentListItem {
  */
 export interface ExperimentDetailsData {
   experiment: ExperimentListItem;
-  /** `experiment.missingEvalIds` 非空时的补跑命令(`niceeval exp <experimentId>`);否则 null。 */
+  /** `experiment.missing` 非空时的补跑命令(`niceeval exp <experimentId>`);否则 null。 */
   catchUpCommand: string | null;
   /** experiment 收窄后的挑选警告(scope warnings)。 */
   notices: readonly CalloutGroup[];

@@ -1,7 +1,7 @@
 # `--history`：一个 eval 的执行时间轴
 
 `niceeval show <eval 前缀> --history` 回答「这道题历次跑下来发生了什么」。
-默认报告只呈现当前 Sample 的汇总结果集；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
+默认报告只呈现当前 Sample 的汇总；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
 
 ## 分节与行内字段
 

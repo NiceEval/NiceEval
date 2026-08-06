@@ -94,7 +94,6 @@ async function writeSnapshot(
     experiment: {
       attempts: 1,
       earlyExit: true,
-      selectedEvalIds: results.map((result) => result.id),
       sandboxLayer: {},
       sandboxPlansByEval: {},
       agentInstalls: [],

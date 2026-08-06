@@ -10,8 +10,8 @@
 
 - 每个 `--exp` 是一个对照条件，按出现顺序排列，**第一个是基准**。
   每个 `--exp` 必须恰好解析到一个 experiment；前缀匹配到多个时按用法错误退出并列出全部候选 id。
-- 携带与跨 Run 拼入的历史执行在判定后紧跟[相对时距](../library/presentation.md#相对时距是数据不是文案)，判定与时距一起降饱和；`--fresh` 照常收窄。
-- 某个条件下这道题没有结果时那一格是 `—`；记录里有[过期结论](../components/summaries/experiment-table.md#覆盖缺口的两档占位行)时，`—` 后面再给那次的判定符与时距作参考。
+- 携带结果在判定后可紧跟[相对时距](../library/presentation.md#相对时距是数据不是文案)，作为来源信息；它与本次执行结果同等计入当前对照。
+- 某个条件下这道题没有当前结果时那一格是 `—`；旧配置判定不补入对照，缺口原因由同一 Sample 的 coverage 解释。
   参考不进 `汇总`、`Δ` 与配对覆盖的任何一个数——它是不可比的结论，只回答「这道题以前跑出过什么」。
 
 ## 输出
@@ -25,10 +25,10 @@ eval                                claude-baseline            claude-mempal    
 memory/agent-037-updatetag-cache    ✓    512.3k   $0.71        ✓    305.1k   $0.44         -207.2k   -$0.27
 memory/repomod-hello-world-api      ✓    688.9k   $0.95        ✓    701.2k   $0.98          +12.3k   +$0.03
 memory/swelancer-manager-proposals  ✗    621.0k   $0.83        ✓    298.4k   $0.41    ⇄    -322.6k   -$0.42
-memory/terminal-cancel-async-tasks  ✓    455.7k   $0.63        ✓ 2d 402.0k   $0.55          -53.7k   -$0.08
+memory/terminal-cancel-async-tasks  ✓    455.7k   $0.63        ✓    402.0k   $0.55          -53.7k   -$0.08
 memory/terminal-pypi-server         ✗    890.1k   $1.21        ✗    910.4k   $1.30          +20.3k   +$0.09
 memory/tool-call-observability      ✓    102.6k   $0.14        ✓     98.2k   $0.13           -4.4k   -$0.01
-memory/uv-lock-refresh              — ✓ 12d   —       —        ✓    511.8k   $0.70               —        —
+memory/uv-lock-refresh              —        —       —        ✓    511.8k   $0.70               —        —
 memory/flaky-retry ×2               ✗    731.5k   $0.99        ✓    644.0k   $0.87    ⇄     -87.5k   -$0.12
 
 汇总                                4/7 通过   4.0M   $5.46    7/8 通过   3.9M   $5.38
@@ -38,9 +38,9 @@ memory/flaky-retry ×2               ✗    731.5k   $0.99        ✓    644.0k 
 - 头两行报条件数、配对身份、基准与配对覆盖（共同 / 仅某条件的 eval 数）。
 - 条件超过两个时，每个非基准条件各带自己的 `Δ` 列组，全部对第一个 `--exp` 求差；输出变宽是允许的，宽内容交给终端横向滚动，不为省列宽合并语义。
 - 数值列跟随 Sample 主读数映射（[题型构成与主读数](../library/measures.md#题型构成与主读数)）：通过制显示 verdict，计分制在 verdict 位显示挣分（如 `3 pt`；计分制没有满分声明），混型按题型分段。
-- `memory/uv-lock-refresh` 在基准条件下只有过期结论，所以那一格是 `— ✓ 12d`，该条件的 tokens 与成本列显示 `—`：配对覆盖照记「仅 claude-mempal 1」，`Δ` 与 `汇总` 都不动。
+- `memory/uv-lock-refresh` 在基准条件下没有当前结果，所以那一格及该条件的 tokens、成本列都是 `—`：配对覆盖照记「仅 claude-mempal 1」，`Δ` 与 `汇总` 都不动；旧判定只在 History/accept 旅途出现。
 
-聚合口径——翻转标记、占位与时效、每格的折叠规则、`汇总` 与 `共同题对基准` 的计算方式、混型分段——单源在公开 `comparisonResult()`；本页只保留 CLI 呈现行为与示例。
+聚合口径——翻转标记、缺席格、每格的折叠规则、`汇总` 与 `共同题对基准` 的计算方式、混型分段——单源在公开 `comparisonResult()`；本页只保留 CLI 呈现行为与示例。
 
 ## 与切片、形态组合
 

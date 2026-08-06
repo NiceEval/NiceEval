@@ -199,7 +199,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-concurrency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与 experimentId+pid 条目键
 - 已修 [eval-reserved-word-breaks-predicate-example](eval-reserved-word-breaks-predicate-example.md) — `eval` 是 strict mode 保留绑定标识符,不能当参数名;`ExperimentDef.evals` 类型签名与 docs 示例原写成 `(eval) => eval.id...` 会让用户抄示例直接语法报错,统一改参数名为 `e`(`src/runner/types.ts` + `docs/feature/experiments/{library,README}.md`)
 - [experiment-teardown-missed-once-in-batch](experiment-teardown-missed-once-in-batch.md) — 实验级 teardown 在一次 72-attempt 批跑中未触发(间歇,根因未定位,候选已排除清单在正文);兜底修法:run 收尾幂等扫尾 + `experiment-teardown-late` 诊断探针,看到该诊断请回填本条
-- [results-schema-version-history](results-schema-version-history.md) — Results Format schemaVersion 逐版差异台账（1→14），正文只声明当前版本，升版时来这里追加一行
+- [results-schema-version-history](results-schema-version-history.md) — Results Format schemaVersion 逐版差异台账（1→15），正文只声明当前版本，升版时来这里追加一行
 - [schema-bump-invalidates-all-history](schema-bump-invalidates-all-history.md) — 升 schemaVersion 把存量语料整批打成不可携带(下次全量重跑),只有删/改名/改类型/换判别方式才算破坏兼容;13 按此复核确认真破坏(TimingNode→TimingActivity、phase→origin),不回滚
 - [linked-dev-tree-producer-version-placeholder](linked-dev-tree-producer-version-placeholder.md) — 发现(未修):link 开发树落盘的 `producer.version` 恒是占位 `0.4.6`(CI 发版才写真号),不兼容提示里的 `npx niceeval@0.4.6` 不可执行,修法方向三选一留待裁决
 - 已修 [accept-drops-eval-level-judge-from-fingerprint](accept-drops-eval-level-judge-from-fingerprint.md) — `accept` 重算指纹时对 judge 用默认单层投影(缺 eval/config 级),与 `planCarry` 完整 `resolveJudge` 链口径不同,带 eval 级 judge 的结果 accept 后立刻又被判 stale;修为 `prepareAcceptLocator` 改走同一份 `configIdentityForRun(...resolvedJudge)` 身份(`src/runner/accept.ts`)
@@ -211,6 +211,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [current-result-single-state-ruling](current-result-single-state-ruling.md) — 裁决(2026-08-06)：默认报告只保留单一 current；carried 是 provenance，旧配置结果形成 never-run / previous-result 缺口，fresh/stale 状态与 persisted selected 退役
 - [command-evidence-includes-successful-runs](command-evidence-includes-successful-runs.md) — 裁决(2026-08-04):`commands.json` 从只记非零退出翻案为成功与失败都记,推翻 2026-07-30 的「不截」裁决,改为 stdout/stderr 各自独立 64 KiB 截断;show --execution 新增中性 `COMMAND` 三态;起因=受管命令成功输出此前只能靠 --keep-sandbox 进现场查看
 - [attempt-facts-table-replaces-text-splice-hack](attempt-facts-table-replaces-text-splice-hack.md) — 裁决(2026-08-04):show 详情新增 facts 完整键值表组件,取代 2026-07-23 遗留的 `insertFactsLine` 字符串级单行拼接 hack(曾一度双重渲染);exp 收尾 FAILURES 面板新增 facts 摘要提示(`facts ×N`,不展开值)
 - [report-target-neutral-parameterized-pages](report-target-neutral-parameterized-pages.md) — 裁决(2026-07-31):page 收敛为单形状 `{params?,load?,render}`,下钻统一 `ReportTarget`+`ctx.href` 唯一通道,`targetOfRefs()` 单 ref 才成链;否决 `input:"attempt"` 封闭枚举与 `ctx.attemptHref`(core 认识实体词、chart 取 refs[0] 乱指)、否决判别联合目标(attempt 仍特权)、否决 SamplePageContext 可选 scope(撞 optional-field 坑);新增 standardExperimentPage/ExperimentDetails,散点实验点默认下钻实验详情

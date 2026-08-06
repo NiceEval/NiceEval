@@ -14,7 +14,7 @@ import {
   slugHashEntryId,
   writeEntryFile,
 } from "../shared/entry-file-store.ts";
-import { CASE_LOCK_HEARTBEAT_INTERVAL_MS, CASE_LOCK_STALE_MS, locksDirOf } from "./lock.ts";
+import { CASE_LOCK_EXPIRY_MS, CASE_LOCK_HEARTBEAT_INTERVAL_MS, locksDirOf } from "./lock.ts";
 
 /** 逐槽租约文件的 JSON 形状。身份的权威在内容,文件名只须无碰撞、不承载解析。 */
 export interface GateLeaseRecord {
@@ -81,7 +81,7 @@ function decodeGateLeaseRecord(
 /** 持有者续租心跳的周期。与用例锁同参数。 */
 export const GATE_LEASE_HEARTBEAT_INTERVAL_MS = CASE_LOCK_HEARTBEAT_INTERVAL_MS;
 /** `heartbeatAt` 落后当前时间超过这个阈值(三个心跳周期)即视为持有者已死。 */
-export const GATE_LEASE_STALE_MS = CASE_LOCK_STALE_MS;
+export const GATE_LEASE_EXPIRY_MS = CASE_LOCK_EXPIRY_MS;
 
 export interface GateLeaseClaim {
   /** 实际取到的槽位序号。 */
@@ -116,10 +116,10 @@ export async function readGateLeases(niceevalRoot: string, experimentId: string)
 }
 
 /** 过期判据:只看心跳时间戳,不看 pid。落后严格大于阈值才算过期;无法解析一律视为过期。 */
-export function isGateLeaseStale(record: GateLeaseRecord, nowMs: number): boolean {
+export function isGateLeaseExpired(record: GateLeaseRecord, nowMs: number): boolean {
   const heartbeatMs = Date.parse(record.heartbeatAt);
   if (Number.isNaN(heartbeatMs)) return true;
-  return nowMs - heartbeatMs > GATE_LEASE_STALE_MS;
+  return nowMs - heartbeatMs > GATE_LEASE_EXPIRY_MS;
 }
 
 /** 本进程声明的 N:非法值(非有限、小于 1)一律收敛到 1,避免生效名额算成 0 造成永久满位。 */
@@ -136,7 +136,7 @@ function normalizeN(n: number): number {
 function effectiveSlotCount(maxConcurrency: number, leases: readonly GateLeaseRecord[], nowMs: number): number {
   let n = normalizeN(maxConcurrency);
   for (const lease of leases) {
-    if (isGateLeaseStale(lease, nowMs)) continue;
+    if (isGateLeaseExpired(lease, nowMs)) continue;
     const declared = normalizeN(lease.declaredN);
     if (declared < n) n = declared;
   }
@@ -222,7 +222,7 @@ export async function tryAcquireGateSlotOnce(
       if (!(await createLeaseFileExclusive(dir, id, record))) continue;
       return { kind: "acquired", slot, takenOver: false, record };
     }
-    if (!isGateLeaseStale(current, nowMs)) continue;
+    if (!isGateLeaseExpired(current, nowMs)) continue;
     if (!(await claimEntryFile(dir, id))) continue;
     const record = recordFor(slot);
     if (!(await createLeaseFileExclusive(dir, id, record))) continue;
@@ -230,7 +230,7 @@ export async function tryAcquireGateSlotOnce(
   }
 
   const holders = (await readGateLeases(niceevalRoot, experimentId)).filter(
-    (lease) => !isGateLeaseStale(lease, nowMs),
+    (lease) => !isGateLeaseExpired(lease, nowMs),
   );
   return { kind: "full", holders };
 }

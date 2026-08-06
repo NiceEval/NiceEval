@@ -49,7 +49,6 @@ async function writeSnapshot(root: string, expDirName: string, experimentId: str
       experiment: {
         attempts: 1,
         earlyExit: true,
-        selectedEvalIds: [evalId],
         sandboxLayer: {},
         sandboxPlansByEval: {},
         agentInstalls: [],

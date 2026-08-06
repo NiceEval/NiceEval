@@ -88,7 +88,7 @@ evals: (eval) =>
   eval.environment !== "gpu"
 ```
 
-`eval.id` 是文件路径推导出的项目内 ID，不是绝对路径，可以直接用 `startsWith` / `includes` 判断。在[评估用例](/zh/tutorials/authoring#tags-与-environment)里的两个例子中，`coding/fix-button` 会被选中，`research/gpu-literature` 不会。实验快照记录解析后的 `selectedEvalIds`；报告直接读取它。
+`eval.id` 是文件路径推导出的项目内 ID，不是绝对路径，可以直接用 `startsWith` / `includes` 判断。在[评估用例](/zh/tutorials/authoring#tags-与-environment)里的两个例子中，`coding/fix-button` 会被选中，`research/gpu-literature` 不会。解析结果形成本次运行计划；报告读取实际物理 Attempts 与覆盖事实。
 
 ## 设计 experiment 的建议
 
@@ -99,4 +99,4 @@ evals: (eval) =>
 
 ## 与普通运行的关系
 
-`npx niceeval exp <路径或 id>` 按文件身份运行；每个文件的 `evals` 决定它覆盖哪些评估用例，结果以 `selectedEvalIds` 落盘。
+`npx niceeval exp <路径或 id>` 按文件身份运行；每个文件的 `evals` 决定本次派发哪些评估用例，Run 落盘实际物理 Attempts 与已知题分母。

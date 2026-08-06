@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // 覆盖「实验级生命周期」声明的「收尾登记的落盘与启动自愈」一行里,登记表本身的原子写/读/删纪律
-// 与遗留义务判定(isStaleTeardownRegistration);run.ts 里"补执行"这半的调度编排由
+// 与遗留义务判定(isOrphanedTeardownRegistration);run.ts 里"补执行"这半的调度编排由
 // run.test.ts 的受控 fixture 覆盖(见 docs/feature/experiments/architecture.md「强杀后的收尾兜底」)。
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,11 +8,11 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir, hostname } from "node:os";
 import { join } from "node:path";
 import {
-  isStaleTeardownRegistration,
+  isOrphanedTeardownRegistration,
   readTeardownRegistration,
   readTeardownRegistrations,
   removeTeardownRegistrationIfPresent,
-  staleTeardownReminder,
+  orphanedTeardownReminder,
   teardownEntryId,
   teardownsDirOf,
   writeTeardownRegistration,
@@ -128,29 +128,29 @@ describe("teardown registry: 逐条目文件的原子写 / 读 / 删", () => {
   });
 });
 
-describe("isStaleTeardownRegistration: 遗留义务判定", () => {
+describe("isOrphanedTeardownRegistration: 遗留义务判定", () => {
   it("同宿主且 pid 不存活 → 遗留义务(true)", () => {
-    expect(isStaleTeardownRegistration(registration({ host: hostname(), pid: 999_999_999 }), hostname())).toBe(true);
+    expect(isOrphanedTeardownRegistration(registration({ host: hostname(), pid: 999_999_999 }), hostname())).toBe(true);
   });
 
   it("同宿主且 pid 存活 → 不是遗留义务(可能是并发 run,不触碰)", () => {
-    expect(isStaleTeardownRegistration(registration({ host: hostname(), pid: process.pid }), hostname())).toBe(false);
+    expect(isOrphanedTeardownRegistration(registration({ host: hostname(), pid: process.pid }), hostname())).toBe(false);
   });
 
   it("异宿主 → 不是遗留义务,即使 pid 数值上确实不存在于本机", () => {
-    expect(isStaleTeardownRegistration(registration({ host: "some-other-host", pid: 999_999_999 }), hostname())).toBe(
+    expect(isOrphanedTeardownRegistration(registration({ host: "some-other-host", pid: 999_999_999 }), hostname())).toBe(
       false,
     );
   });
 });
 
-describe("staleTeardownReminder: 选中但已删除 teardown 的实验仍须提醒", () => {
+describe("orphanedTeardownReminder: 选中但已删除 teardown 的实验仍须提醒", () => {
   it("只排除会由 runner 自愈的实验，避免无 teardown 定义的遗留义务静默", async () => {
     const root = await makeRoot();
     const niceevalRoot = join(root, ".niceeval");
     await writeTeardownRegistration(niceevalRoot, registration());
 
-    const reminder = await staleTeardownReminder(niceevalRoot, new Set(), hostname());
+    const reminder = await orphanedTeardownReminder(niceevalRoot, new Set(), hostname());
     expect(reminder).toContain('niceeval exp compare/bub-e2b --teardown');
   });
 });

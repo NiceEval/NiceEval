@@ -33,7 +33,7 @@ export async function experimentDetailsData(sample: Sample): Promise<ExperimentD
   const experiment = items[0]!;
   return {
     experiment,
-    catchUpCommand: experiment.missingEvalIds.length > 0 ? `niceeval exp ${experiment.experimentId}` : null,
+    catchUpCommand: experiment.missing.length > 0 ? `niceeval exp ${experiment.experimentId}` : null,
     notices,
     diagnostics,
   };

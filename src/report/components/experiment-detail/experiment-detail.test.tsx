@@ -104,13 +104,18 @@ describe("ExperimentDetails:六区块投影同一份转换结果", () => {
     };
     const run = snap({ experimentId: "agents/codex", results: [res("q1", "passed"), res("q2", "failed")] });
     run.diagnostics = [{ code: "slow-teardown", level: "warning", detail: "teardown took 12s" }];
-    const coverage: SampleCoverage = { experimentId: "agents/codex", run, knownEvalIds: ["q1", "q2", "q3"], missingEvalIds: ["q3"] };
+    const coverage: SampleCoverage = {
+      experimentId: "agents/codex",
+      run,
+      knownEvalIds: ["q1", "q2", "q3"],
+      missing: [{ evalId: "q3", reason: "never-run" }],
+    };
     const scope = scopeOf([run], [issue], [coverage]);
 
     const data = await experimentDetailsData(scope);
     expect(data.experiment.experimentId).toBe("agents/codex");
     expect(data.experiment.evalVerdicts).toEqual({ passed: 1, failed: 1, errored: 0, skipped: 0 });
-    expect(data.experiment.missingEvalIds).toEqual(["q3"]);
+    expect(data.experiment.missing).toEqual([{ evalId: "q3", reason: "never-run" }]);
     expect(data.catchUpCommand).toBe("niceeval exp agents/codex");
     expect(data.notices).toEqual(await sampleNoticesContent(scope));
     expect(data.diagnostics).toEqual(await runNoticesContent(scope));

@@ -383,7 +383,6 @@ export type {
   SeriesInput,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
-  StaleConclusionReference,
   TraceSpanSummary,
   TraceWaterfallRow,
   VerdictTally,

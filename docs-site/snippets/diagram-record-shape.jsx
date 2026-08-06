@@ -1,15 +1,15 @@
 /*
- * 图：磁盘上是 Record ⊃ experiment ⊃ Run ⊃ attempt，两个官方口径各自从里面挑出哪些结果。
+ * 图：磁盘上是 Record ⊃ experiment ⊃ Run ⊃ attempt，分别展示当前结果集与单 Run 审计。
  * 一图一个组件，内容写死在组件里。切面板的机制与 Picker 共用（styles/tabs.css），
  * 这张图自己的样式在 styles/diagram-record-shape.css。
  *
  * 写法约束同 snippets/widgets.jsx：只写箭头函数、不写 import、模块作用域里不放未导出的
- * 变量。两个口径各画一份完整的 Record，选哪个就显示哪一份。
+ * 变量。两个用户旅途各画一份完整的 Record，选哪个就显示哪一份。
  */
 export const RecordShape = () => (
   <div className="ne-w ne-rec">
     <div className="ne-hd">
-      同一份 Record，两个口径
+      同一份 Record：当前结果集与单 Run 审计
       <span className="ne-hd-hint">周一跑了整组，周二只重跑了 q/sum</span>
     </div>
 
@@ -68,7 +68,7 @@ export const RecordShape = () => (
         <div className="ne-rec-gap">
           <span className="ne-rec-when" />
           <span className="ne-warn">
-            <span className="ne-mono">!</span> missingEvalIds: q/area、q/limit
+            <span className="ne-mono">!</span> missing: q/area(previous-result)、q/limit(previous-result)
           </span>
         </div>
 
@@ -82,14 +82,15 @@ export const RecordShape = () => (
 
         <p className="ne-why">
           每个实验最新一次 Run 实际产出了什么：bub 的最新 Run 是周二那次，里面只有一道题，
-          缺的两道写进 <code>coverage.missingEvalIds</code>，报告渲染成占位行加补跑命令，不静默。
+          缺的两道写进 <code>coverage.missing</code> 并区分旧结果与从未运行，报告渲染成占位行，不把旧判定计入。
         </p>
       </div>
     </div>
 
     <div className="ne-ft">
       Run 就是 <code>.niceeval/&lt;experiment&gt;/&lt;run&gt;/</code> 这个目录，没有更低一层；
-      两个口径都返回一个 Sample，Attempt、贡献 Run、<code>coverage</code> 与 <code>issues</code> 绑在一起走。
+      默认报告只使用 currentSample；latestRunSample 服务单 Run 审计与发布。两者都让 Attempt、贡献 Run、
+      <code>coverage</code> 与 <code>issues</code> 绑在一起走。
     </div>
   </div>
 );

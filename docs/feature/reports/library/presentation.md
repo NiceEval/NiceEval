@@ -124,10 +124,10 @@ formatInstant(attempt.result.startedAt, locale);
 `formatAxisTick(value, step, unit)` 的精度跟随刻度步长，不跟随值本身：步长 `0.25` 的刻度打 `0.25` / `0.5` / `0.75`，而 `formatMetricValue` 会把它们缩写掉。
 自定义图表组件画轴用它，不自己 `toFixed`。
 
-### 相对时距是数据，不是文案
+### 显式历史中的相对时距
 
-「这条结论距今多久」是格里的一个值，两个面都要显示，所以它走格式化入口而不是各写各的措辞。
-`formatTimeDistance(ms, locale)` 的输入是一段时长的毫秒数——[locator 格](../components/primitives/table.md)的 `staleSinceMs` 与占位行参考的 `staleSinceMs` 都是它。
+History、稳定性等显式时间旅途需要显示「这次执行距今多久」时，两面都调用 `formatTimeDistance(ms, locale)`，不各写一套措辞。
+当前报告不根据 Attempt 来源追加时距或降饱和；相对时距不是 current 状态字段。
 
 | 区间 | en | zh-CN |
 |---|---|---|
@@ -155,9 +155,9 @@ formatInstant(attempt.result.startedAt, locale);
 | `code` | 含义 | en | zh-CN |
 |---|---|---|---|
 | `noSamples` | 这一格覆盖的 attempt 读数全部为 `null` | `no data` | `无数据` |
-| `notRun` | 固定题集里这道题没有 attempt | `not run` | `未跑到` |
+| `neverRun` | 历史中从未出现这道题的物理 Attempt | `not run yet` | `尚未运行` |
+| `previousResult` | 有旧但不兼容的结果，当前配置下仍无结果 | `no result for current config` | `当前配置下无结果` |
 | `unscorable` | 有 attempt，但读数测不出 | `unscorable` | `测不出` |
-| `noCurrentResult` | 当前配置下这道题没有结果 | `no result for current config` | `当前配置下无结果` |
 
 `missingText(code, locale)` 是两个面共用的入口，`formatCellText` 的 `missing` 分支调它。
 词表未命中时原样返回 `code`，两面都照常显示——自定义数据源的原因不会被静默吞掉。
@@ -167,7 +167,7 @@ formatInstant(attempt.result.startedAt, locale);
 
 ### `missing` 格的完整形状
 
-一格缺数据除了原因，还可能带下一步和一条参考：
+一格缺数据除了原因，还可能带下一步和旧结果 locator：
 
 ```ts
 {
@@ -175,21 +175,17 @@ formatInstant(attempt.result.startedAt, locale);
   code: string,
   /** 补上这一格的命令，可直接复制。 */
   detail?: string,
-  /** 记录里存在、但与当前基准不可比的最近一条判定。 */
-  reference?: {
+  /** Sample 已确认存在旧结果时提供的审计与显式 accept 入口。 */
+  previous?: {
     locator: AttemptLocator;
-    verdict: Verdict | "skipped";
-    staleSinceMs: number;
   },
 }
 ```
 
 `detail` 让「缺什么」和「怎么补」留在同一格里，读者不必去别处找命令。
-`reference` 是一条参考而不是一个结果：它不进任何计数，两面都降饱和显示，只提供 locator 下钻。
-带 `reference` 时用参考替代原因文案——参考本身已经说明这一格为什么空着，再打一遍原因是同一句话说两次。
-
-这一格不解释参考为什么不可比。
-原因归产出它的投影所在的领域命令，格只负责把判定符、locator 与[相对时距](#相对时距是数据不是文案)摆出来；[实验表的两档占位行](../components/summaries/experiment-table.md#覆盖缺口的两档占位行)是它的第一个消费者。
+`previous` 不是结果或参考判定：它不进任何计数，也不显示旧 verdict，只提供 locator 下钻与 `accept` 授权入口。
+缺口原因由 Sample 的 `never-run` / `previous-result` 决定；格只投影这份结构化判断。
+[实验表的缺口行](../components/summaries/experiment-table.md#缺口原因与动作)是它的第一个消费者。
 
 ## 文本排版
 

@@ -1,16 +1,15 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「show 的范围 × 切片正交」deltaTableData 判据段,与「对照矩阵的时效与过期结论参考」判据段。
+// 「show 的范围 × 切片正交」deltaTableData 判据段,与「对照矩阵的缺席格」判据段。
 // deltaTableData(对照矩阵):配对身份是 eval id、翻转标记的数据面、逐行 Δ 为原始差值且缺失不为
 // 0、runs>1 的格内折叠(verdict 按默认报告口径、tokens/成本合计)、totals 与 pairedDelta 两个不同分母
 // 的口径(fixture 让两侧覆盖不同,抓出直接相减各自 totals 的错误算法)、混型分段、conditionsByFlag
-// 派生(单一可比性桶、0 候选空态、by 非 experiment 报错)、historical 格的 staleSinceMs 与缺席格的
-// 过期结论参考(不进任何聚合)。show/compare.md 示例数字复算作 fixture。
+// 派生(单一可比性桶、0 候选空态、by 非 experiment 报错)、缺席格的纯 notApplicable 形态(不把
+// 旧配置结论请回当前表格,也不进任何聚合)。show/compare.md 示例数字复算作 fixture。
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../types.ts";
 import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import type { AttemptHandle, Run } from "../../record/index.ts";
-import { encodeAttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import { makeSample } from "../../sample/index.ts";
 import { conditionsByFlag, deltaTableData } from "./compute.ts";
@@ -187,129 +186,62 @@ describe("deltaTableData", () => {
     expect(row.delta?.["exp/cond"]).toMatchObject({ score: 4 });
   });
 
-  it("historical:格来自跨快照携带的历史执行时 historical 为 true(真实来源早于该实验的水位基准)", async () => {
-    const older = snap("exp/cond", [res("q", "passed", { usage: usage(100, 0.1) })], { runStartedAt: "2026-01-01T00:00:00.000Z" });
-    const newer = snap("exp/cond", [res("q2", "passed")], { runStartedAt: "2026-02-01T00:00:00.000Z" });
-    const base = snap("exp/base", [res("q", "passed", { usage: usage(90, 0.09) })]);
-    // 裸 Run[] 输入:watermark 取该 experiment 在 runs 里 startedAt 最新者(newer)。
-    const data = await deltaTableData([base, older, newer], { by: "experiment", conditions: ["exp/base", "exp/cond"] });
+  describe("对照矩阵的缺席格(show/compare.md)", () => {
+    it("通过制判定格只留判定符,不带判定词", async () => {
+      const older = snap("exp/cond", [res("q", "passed", { usage: usage(100, 0.1) })], { runStartedAt: "2026-01-01T00:00:00.000Z" });
+      const newer = snap("exp/cond", [res("q2", "passed")], { runStartedAt: "2026-02-01T00:00:00.000Z" });
+      const base = snap("exp/base", [res("q", "passed", { usage: usage(90, 0.09) })]);
+      // 裸 Run[] 输入:跨快照贡献的 attempt 与最新一次同等计票,没有任何时效分叉。
+      const data = await deltaTableData([base, older, newer], { by: "experiment", conditions: ["exp/base", "exp/cond"] });
 
-    expect(data.rows.find((r) => r.key === "q")!.cells["exp/cond"]!.historical).toBe(true);
-  });
-
-  describe("对照矩阵的时效与过期结论参考(show/compare.md)", () => {
-    it("historical 格带 staleSinceMs;text 面经 formatTimeDistance 投影,不再是布尔叠加的 ↩ 符号", async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-01-03T00:00:00.000Z"));
-      try {
-        // res() 默认 startedAt 是固定的 fixture 常量,时距断言需要显式指定 startedAt。
-        const older = snap("exp/cond", [res("q", "passed", { startedAt: "2026-01-01T00:00:00.000Z" })], {
-          runStartedAt: "2026-01-01T00:00:00.000Z",
-        });
-        const newer = snap("exp/cond", [res("q2", "passed")], { runStartedAt: "2026-01-02T00:00:00.000Z" });
-        const base = snap("exp/base", [res("q", "passed")]);
-        const data = await deltaTableData([base, older, newer], { by: "experiment", conditions: ["exp/base", "exp/cond"] });
-
-        const cell = data.rows.find((r) => r.key === "q")!.cells["exp/cond"]!;
-        expect(cell.historical).toBe(true);
-        expect(cell.staleSinceMs).toBe(2 * 86_400_000); // 2026-01-01 → 2026-01-03,恰好 2 天
-
-        const content = deltaTableContent(data, "en");
-        const row = content.rows.find((r) => r.key === "q")!;
-        const text = formatCellText(row.cells["exp/cond:verdict"], "en");
-        expect(text).not.toContain("↩");
-        expect(text).toBe("✓ 2d"); // 只留判定符 + 相对时距,不带判定词
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("同一格内折叠多条历史执行时取最旧一条的距今毫秒数", async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
-      try {
-        const veryOld = snap("exp/cond", [res("q", "failed", { attempt: 0, startedAt: "2026-01-01T00:00:00.000Z" })], {
-          runStartedAt: "2026-01-01T00:00:00.000Z",
-        });
-        const lessOld = snap("exp/cond", [res("q", "passed", { attempt: 1, startedAt: "2026-01-08T00:00:00.000Z" })], {
-          runStartedAt: "2026-01-08T00:00:00.000Z",
-        });
-        const newest = snap("exp/cond", [res("other", "passed")], { runStartedAt: "2026-01-09T00:00:00.000Z" });
-        const base = snap("exp/base", [res("q", "passed")]);
-        const data = await deltaTableData([base, veryOld, lessOld, newest], { by: "experiment", conditions: ["exp/base", "exp/cond"] });
-
-        const cell = data.rows.find((r) => r.key === "q")!.cells["exp/cond"]!;
-        expect(cell.historical).toBe(true);
-        // 两条都历史执行(早于水位基准 newest);取更旧的 veryOld(2026-01-01)算距今,不是 lessOld(2026-01-08)。
-        expect(cell.staleSinceMs).toBe(9 * 86_400_000);
-      } finally {
-        vi.useRealTimers();
-      }
+      const content = deltaTableContent(data, "en");
+      const row = content.rows.find((r) => r.key === "q")!;
+      expect(formatCellText(row.cells["exp/cond:verdict"], "en")).toBe("✓");
     });
 
     /**
-     * 区分力场景:evalId "b" 只在 exp/base 一份旧 configHash 快照下跑过(与当前基准不可比),
-     * 且那次判定是 "passed"——比 exp/base 真实结果(仅 "a" failed)更「好看」。把它计入聚合的
-     * 错误实现会让 exp/base 的 totals 多算出一次 passed、commonEvalIds 多算出一道共同题。
+     * 区分力场景:evalId "b" 只在 exp/base 一份旧 configHash 快照下跑过(与当前基准不可比)。
+     * 对照矩阵只呈现各条件自己的当前覆盖:该条件缺席这道题时,格子是纯 notApplicable,
+     * 不把旧配置结论以参考形式请回当前表格。
      */
-    function referenceScope(opts: { fresh?: boolean } = {}): { scope: import("../../record/index.ts").Sample; staleForB: Run } {
+    function referenceScope(): import("../../record/index.ts").Sample {
       const current = snap("exp/base", [res("a", "failed")]);
       current.configHash = "cfg-current";
       const cond = snap("exp/cond", [res("a", "passed"), res("b", "passed")]);
       const staleForB = snap("exp/base", [res("b", "passed", { startedAt: "2026-01-01T00:00:00.000Z" })]);
       staleForB.configHash = "cfg-old";
-      const scope = makeSample(
+      return makeSample(
         "current",
         [current, cond],
         [...current.attempts, ...cond.attempts],
         [],
         [],
-        opts.fresh ?? false,
         [...current.attempts, ...cond.attempts, ...staleForB.attempts],
       );
-      return { scope, staleForB };
     }
 
-    it("缺席格带过期结论参考:判定符、locator 与相对时距俱全,text 面按 — ✓ 12d 形态渲染", async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-01-13T00:00:00.000Z"));
-      try {
-        const { scope, staleForB } = referenceScope();
-        const data = await deltaTableData(scope, { by: "experiment", conditions: ["exp/base", "exp/cond"] });
-
-        const rowB = data.rows.find((r) => r.key === "b")!;
-        expect(rowB.cells["exp/base"]).toBeUndefined();
-        const reference = rowB.references?.["exp/base"];
-        expect(reference).toBeDefined();
-        expect(reference!.verdict).toBe("passed");
-        expect(reference!.locator).toBe(encodeAttemptLocator({ runId: staleForB.runId, evalId: "b", attempt: 0 }));
-        expect(reference!.staleSinceMs).toBe(12 * 86_400_000);
-
-        const content = deltaTableContent(data, "en");
-        const text = formatCellText(content.rows.find((r) => r.key === "b")!.cells["exp/base:verdict"], "en");
-        expect(text).toBe("— ✓ 12d");
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("参考不进 汇总、Δ 与配对覆盖三处聚合的任何一个数", async () => {
-      const { scope } = referenceScope();
+    it("缺席格不带任何参考:即使历史里存在旧配置结果,格子仍是纯 notApplicable(text 面 —)", async () => {
+      const scope = referenceScope();
       const data = await deltaTableData(scope, { by: "experiment", conditions: ["exp/base", "exp/cond"] });
 
-      // 汇总:exp/base 只有 "a" 一道真实结果(failed),分母是 1、passed 是 0——参考的 "passed" 没被计入
-      // (错误实现会把它算成 passed:1、denominator:2)。
+      const rowB = data.rows.find((r) => r.key === "b")!;
+      expect(rowB.cells["exp/base"]).toBeUndefined();
+      expect("references" in rowB).toBe(false);
+
+      const content = deltaTableContent(data, "en");
+      expect(formatCellText(content.rows.find((r) => r.key === "b")!.cells["exp/base:verdict"], "en")).toBe("—");
+    });
+
+    it("缺席格不进 汇总、Δ 与配对覆盖三处聚合的任何一个数", async () => {
+      const scope = referenceScope();
+      const data = await deltaTableData(scope, { by: "experiment", conditions: ["exp/base", "exp/cond"] });
+
+      // 汇总:exp/base 只有 "a" 一道真实结果(failed),分母是 1、passed 是 0——旧配置的 "passed" 没被计入。
       expect(data.totals["exp/base"]).toMatchObject({ passed: 0, denominator: 1 });
       // 配对覆盖:共同题只有 "a"，"b" 因为 exp/base 侧没有真实结果而不算共同。
       expect(data.pairedDelta["exp/cond"]!.commonEvalIds).toEqual(["a"]);
-      // Δ:"b" 这一行任一侧缺数据本就不产出 delta,参考不能让它凭空出现。
+      // Δ:"b" 这一行任一侧缺数据本就不产出 delta。
       expect(data.rows.find((r) => r.key === "b")!.delta).toBeUndefined();
-    });
-
-    it("sample.fresh 为 true 时缺席格不带过期结论参考", async () => {
-      const { scope } = referenceScope({ fresh: true });
-      const data = await deltaTableData(scope, { by: "experiment", conditions: ["exp/base", "exp/cond"] });
-      expect(data.rows.find((r) => r.key === "b")!.references).toBeUndefined();
     });
 
     it("deltaTableContent 的文本形态:计分制显示挣分、tokens/成本经 formatMetricValue 折算,不落原始数字字符串", async () => {

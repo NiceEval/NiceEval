@@ -2,7 +2,7 @@
 // cases: docs/engineering/testing/unit/sample.md
 // 选择层(niceeval/scope)的单测:在临时目录里构造最小落盘树,直接调选择器,
 // 覆盖定稿契约(docs/feature/sample/library.md):两个选择口径、覆盖缺口(coverage)、
-// 时效与 fresh、Sample 的删减语义与四面同步重算、身份键去重、警告 kind 全集。
+// Attempt 来源与 Sample 的删减语义、四面同步重算、身份键去重、警告 kind 全集。
 // fixture 的目录名/artifact 路径手写(不 import 库的路径函数),让测试独立于实现充当口径基准。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { currentSample, latestRunSample } from "./index.ts";
@@ -60,7 +60,6 @@ function meta(over: { experimentId: string; agent: string; startedAt: string } &
     experiment: over.experiment ?? {
       attempts: 1,
       earlyExit: true,
-      selectedEvalIds: [],
       sandboxLayer: {},
       sandboxPlansByEval: {},
       agentInstalls: [],
@@ -84,23 +83,6 @@ async function writeResultFile(snapDir: string, relAttemptDir: string, r: unknow
   await mkdir(dir, { recursive: true });
   const path = join(dir, "result.json");
   await writeFile(path, JSON.stringify(r, null, 2), "utf-8");
-  // 手写 fixture 也要像当前 runner 一样，把已解析的 eval 集合与 pair plan 投影放在
-  // run.json，而不是留一个会使 currentSample 误判成「没有选题」的空壳。
-  const runPath = join(snapDir, "run.json");
-  const run = JSON.parse(await readFile(runPath, "utf-8")) as {
-    experiment?: { selectedEvalIds?: string[]; sandboxPlansByEval?: globalThis.Record<string, unknown> };
-  };
-  const result = r as { id?: unknown };
-  if (typeof result.id === "string" && run.experiment !== undefined) {
-    const selectedEvalIds = run.experiment.selectedEvalIds ?? [];
-    if (!selectedEvalIds.includes(result.id)) selectedEvalIds.push(result.id);
-    run.experiment.selectedEvalIds = selectedEvalIds;
-    run.experiment.sandboxPlansByEval = {
-      ...(run.experiment.sandboxPlansByEval ?? {}),
-      [result.id]: run.experiment.sandboxPlansByEval?.[result.id] ?? {},
-    };
-    await writeFile(runPath, JSON.stringify(run, null, 2), "utf-8");
-  }
   return path;
 }
 
@@ -126,9 +108,12 @@ async function exists(path: string): Promise<boolean> {
 describe("latestRunSample(results) · Selection", () => {
   it("每个实验取最新快照;experiments 前缀过滤同 CLI 语义(尾斜杠等价)", async () => {
     const root = await makeRoot();
-    await writeSnapshot(root, "mid_a", "s1", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
-    await writeSnapshot(root, "mid_b", "s1", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
+    const mondayA = await writeSnapshot(root, "mid_a", "s1", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
+    await writeResultFile(mondayA, "q1/a1", record({ id: "q1", attempt: 1 }));
+    const mondayB = await writeSnapshot(root, "mid_b", "s1", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
+    await writeResultFile(mondayB, "q1/a1", record({ id: "q1", attempt: 1 }));
     const tuesday = await writeSnapshot(root, "mid_b", "s2", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
+    await writeResultFile(tuesday, "q1/a1", record({ id: "q1", attempt: 1 }));
 
     const results = await openRecord(root);
     const latest = latestRunSample(results);
@@ -142,7 +127,7 @@ describe("latestRunSample(results) · Selection", () => {
     expect(latestRunSample(results, { experiments: "mid/a" }).runs[0].experimentId).toBe("mid/a"); // 不误配 "mid/ab"
   });
 
-  it("coverage:最新快照覆盖 < 已知并集时,missingEvalIds 列出缺的题;分母是 knownEvalIds", async () => {
+  it("coverage:最新快照覆盖 < 已知并集时,missing 列出缺的题;分母是 knownEvalIds", async () => {
     const root = await makeRoot();
     const mondayDir = await writeSnapshot(root, "midterm", "2026-07-01T08-00-00-000Z", meta({ experimentId: "midterm/bub-gpt-5.4", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(mondayDir, "algebra/q1/a1", record({ id: "algebra/q1", attempt: 1 }));
@@ -158,7 +143,8 @@ describe("latestRunSample(results) · Selection", () => {
     expect(latest.issues.filter((w) => w.code !== "unreadable-run")).toHaveLength(0);
     const coverage = latest.coverage.find((c) => c.experimentId === "midterm/bub-gpt-5.4")!;
     expect(coverage.knownEvalIds).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
-    expect(coverage.missingEvalIds).toEqual(["algebra/q2", "algebra/q3"]);
+    expect(coverage.missing.map((item) => item.evalId)).toEqual(["algebra/q2", "algebra/q3"]);
+    expect(coverage.missing.map((item) => item.reason)).toEqual(["previous-result", "previous-result"]);
     // 锚点是最新 Run：分组读 agent 时与 friday 对齐，不必出现在 missing 题的 attempt 上。
     expect(coverage.run.dir).toBe(fridayDir);
     expect(coverage.run.agent).toBe("bub");
@@ -192,7 +178,7 @@ describe("latestRunSample(results) · Selection", () => {
     expect(current.runs).toHaveLength(0);
     expect(current.attempts).toHaveLength(0);
     const coverage = current.coverage.find((c) => c.experimentId === "gap/e")!;
-    expect(coverage.missingEvalIds).toEqual(["q1", "q2"]);
+    expect(coverage.missing.map((item) => item.evalId)).toEqual(["q1", "q2"]);
     // 锚点是确定可比性配置的最新 Run（周二），不是周一。
     expect(coverage.run.dir).toBe(tuesdayDir);
     expect(coverage.run.agent).toBe("codex");
@@ -200,7 +186,7 @@ describe("latestRunSample(results) · Selection", () => {
     // latest 口径锚最新 Run，同样有缺口。
     const latest = latestRunSample(await openRecord(root));
     expect(latest.coverage[0]!.run.dir).toBe(tuesdayDir);
-    expect(latest.coverage[0]!.missingEvalIds).toEqual(["q1", "q2"]);
+    expect(latest.coverage[0]!.missing.map((item) => item.evalId)).toEqual(["q1", "q2"]);
   });
 
   it("unfinished-run:选中快照缺 completedAt", async () => {
@@ -224,14 +210,14 @@ describe("latestRunSample(results) · Selection", () => {
     await writeResultFile(aDir, "q2/a1", record({ id: "q2", attempt: 1 }));
 
     const latest = latestRunSample(await openRecord(root));
-    expect(latest.coverage.find((c) => c.experimentId === "mid/a")!.missingEvalIds).toEqual([]);
+    expect(latest.coverage.find((c) => c.experimentId === "mid/a")!.missing.map((item) => item.evalId)).toEqual([]);
 
     const filtered = latest.filter((attempt) => attempt.evalId === "q1");
     expect(filtered.runs.map((s) => s.experimentId)).toEqual(["mid/a"]);
     expect(filtered.coverage.map((c) => c.experimentId)).toEqual(["mid/a"]);
     expect(filtered.attempts.map((attempt) => attempt.evalId)).toEqual(["q1"]);
     expect(filtered.coverage.find((c) => c.experimentId === "mid/a")!.knownEvalIds).toEqual(["q1", "q2"]);
-    expect(filtered.coverage.find((c) => c.experimentId === "mid/a")!.missingEvalIds).toEqual(["q2"]);
+    expect(filtered.coverage.find((c) => c.experimentId === "mid/a")!.missing.map((item) => item.evalId)).toEqual(["q2"]);
     expect(latest.attempts.map((attempt) => attempt.evalId)).toEqual(["q1", "q2"]);
   });
 
@@ -248,16 +234,16 @@ describe("latestRunSample(results) · Selection", () => {
     const current = currentSample(await openRecord(root));
     expect(current.runs.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
     expect(current.attempts.map((a) => a.evalId).sort()).toEqual(["q1", "q2"]);
-    expect(current.coverage.find((c) => c.experimentId === "multi/e")!.missingEvalIds).toEqual([]);
+    expect(current.coverage.find((c) => c.experimentId === "multi/e")!.missing.map((item) => item.evalId)).toEqual([]);
 
     // 删掉周一(q2 唯一来源),周二(q1 来源)保留:不是整实验全留或全删。
     const filtered = current.filter((s) => s.run.startedAt !== "2026-07-01T08:00:00.000Z");
     expect(filtered.runs.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
     expect(filtered.attempts.map((a) => a.evalId)).toEqual(["q1"]);
-    // knownEvalIds(分母)不变,只有被删来源独占贡献的 q2 转入 missingEvalIds。
+    // knownEvalIds(分母)不变,只有被删来源独占贡献的 q2 转入 missing。
     const filteredCoverage = filtered.coverage.find((c) => c.experimentId === "multi/e")!;
     expect(filteredCoverage.knownEvalIds).toEqual(["q1", "q2"]);
-    expect(filteredCoverage.missingEvalIds).toEqual(["q2"]);
+    expect(filteredCoverage.missing.map((item) => item.evalId)).toEqual(["q2"]);
     // 原 Sample 不被改动。
     expect(current.runs).toHaveLength(2);
     expect(current.attempts).toHaveLength(2);
@@ -266,7 +252,7 @@ describe("latestRunSample(results) · Selection", () => {
     const otherWay = current.filter((s) => s.run.startedAt !== "2026-07-02T08:00:00.000Z");
     expect(otherWay.runs.map((s) => s.startedAt)).toEqual(["2026-07-01T08:00:00.000Z"]);
     expect(otherWay.attempts.map((a) => a.evalId)).toEqual(["q2"]);
-    expect(otherWay.coverage.find((c) => c.experimentId === "multi/e")!.missingEvalIds).toEqual(["q1"]);
+    expect(otherWay.coverage.find((c) => c.experimentId === "multi/e")!.missing.map((item) => item.evalId)).toEqual(["q1"]);
 
     // attempt.run 原样指回真实来源(不是过滤时重建的新对象)。
     for (const attempt of filtered.attempts) {
@@ -359,7 +345,6 @@ describe("latestRunSample(results) / currentSample(results) · unreadable-run", 
 function assertScopeWarningKindExhaustive(kind: import("../record/types.ts").SampleIssue["kind"]): void {
   switch (kind) {
     case "unfinished-run":
-    case "missing-startedAt":
     case "unreadable-run":
       return;
     default: {
@@ -370,10 +355,10 @@ function assertScopeWarningKindExhaustive(kind: import("../record/types.ts").Sam
 }
 void assertScopeWarningKindExhaustive;
 
-// ───────────────────────── 时效:attempt.carried 与 fresh 口径 ─────────────────────────
+// ───────────────────────── Attempt 来源与当前口径 ─────────────────────────
 
-describe("时效:carried 投影与 fresh 口径", () => {
-  it("historyAttempts 对 carry 副本按稳定身份去重，且 fresh 不裁历史总体", async () => {
+describe("Attempt 来源与当前口径", () => {
+  it("carried Attempt 与本次执行 Attempt 同样进入 latest/current,历史按稳定身份去重", async () => {
     const root = await makeRoot();
     const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({
       experimentId: "e",
@@ -398,23 +383,22 @@ describe("时效:carried 投影与 fresh 口径", () => {
       startedAt: "2026-07-01T08:01:00.000Z",
       artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1",
     }));
+    await writeResultFile(tuesday, "q2/a1", record({ id: "q2", attempt: 1 }));
 
     const results = await openRecord(root);
-    const latest = latestRunSample(results, { fresh: true });
-    expect(latest.attempts).toEqual([]);
-    expect(latest.historyAttempts).toHaveLength(1);
+    const latest = latestRunSample(results);
+    expect(latest.attempts.map((attempt) => attempt.evalId)).toEqual(["q1", "q2"]);
+    expect(latest.attempts.find((attempt) => attempt.evalId === "q1")!.carried).toBe(true);
+    expect(latest.historyAttempts).toHaveLength(2);
     expect(latest.historyAttempts[0]!.run.dir).toBe(tuesday);
 
     const current = currentSample(results);
-    expect(current.historyAttempts).toHaveLength(1);
+    expect(current.attempts.map((attempt) => attempt.evalId)).toEqual(["q1", "q2"]);
+    expect(current.historyAttempts).toHaveLength(2);
     expect(current.historyAttempts[0]!.run.dir).toBe(tuesday);
-    const fresh = current.freshOnly();
-    expect(fresh.attempts).toEqual([]);
-    expect(fresh.runs).toEqual([]);
-    expect(fresh.historyAttempts).toEqual(current.historyAttempts);
   });
 
-  it("latest({ fresh: true }):排除携带条目,被排除的题进 coverage.missingEvalIds", async () => {
+  it("latest 统计携带与本次执行 Attempt,来源 Run 仍保留原始 evals", async () => {
     const root = await makeRoot();
     const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(monday, "q1/a1", record({ id: "q1", attempt: 1 }));
@@ -425,18 +409,14 @@ describe("时效:carried 投影与 fresh 口径", () => {
     await writeResultFile(tuesday, "q2/a1", record({ id: "q2", attempt: 1 }));
 
     const results = await openRecord(root);
-    const notFresh = latestRunSample(results);
-    expect(notFresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
-    expect(notFresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual([]);
-
-    const fresh = latestRunSample(results, { fresh: true });
-    expect(fresh.attempts.map((a) => a.evalId)).toEqual(["q2"]); // q1 是携带条目,被排除
-    expect(fresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual(["q1"]);
-    // 真实 Run 原样保留:q1 仍在它自己的 evals 里,fresh 没有克隆/裁剪来源对象。
-    expect(fresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
+    const sample = latestRunSample(results);
+    expect(sample.attempts.map((a) => a.evalId)).toEqual(["q1", "q2"]);
+    expect(sample.coverage.find((c) => c.experimentId === "e")!.missing).toEqual([]);
+    // 真实 Run 原样保留:q1 仍在它自己的 evals 里,carried 不是报告过滤状态。
+    expect(sample.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
   });
 
-  it("current({ fresh: true }):同时排除携带条目与跨快照拼入的历史执行,区分力 fixture ——「只排携带 / 只排旧快照 / 两者都排」三种候选算法各给出不同答案", async () => {
+  it("current 同时计入 carried 与可比旧 Run 的物理 Attempt", async () => {
     const root = await makeRoot();
     // 周一:q1、q2 真实执行。
     const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
@@ -451,45 +431,85 @@ describe("时效:carried 投影与 fresh 口径", () => {
     await writeResultFile(tuesday, "q3/a1", record({ id: "q3", attempt: 1 }));
 
     const results = await openRecord(root);
-    const notFresh = currentSample(results);
-    expect(notFresh.attempts.map((a) => a.evalId).sort()).toEqual(["q1", "q2", "q3"]);
-    expect(notFresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual([]);
+    const sample = currentSample(results);
+    expect(sample.attempts.map((a) => a.evalId).sort()).toEqual(["q1", "q2", "q3"]);
+    expect(sample.coverage.find((c) => c.experimentId === "e")!.missing).toEqual([]);
     // 两个真实来源都在场:q2 唯一来自周一,q1/q3 来自周二——不是一个合并对象。
-    expect(notFresh.runs.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
-
-    const fresh = currentSample(results, { fresh: true });
-    // 只有 q3(本次快照真实执行、非携带)是新执行;q1(携带)与 q2(跨快照拼入)都被排除。
-    expect(fresh.attempts.map((a) => a.evalId)).toEqual(["q3"]);
-    expect(fresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds.sort()).toEqual(["q1", "q2"]);
-    // 周一(q2 唯一来源)不再贡献任何 fresh attempt,退出 runs;周二仍在,即便它自己的
-    // evals 里仍然原样带着被排除的 q1(真实 Run 不被裁剪)。
-    expect(fresh.runs.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
-    expect(fresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q3"]);
+    expect(sample.runs.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
   });
 
-  it("fresh 清空全部 attempt 后 Sample 只剩 coverage 事实;filter 不拿 runs 当 coverage 的存续代理", async () => {
+  it("current 对缺口区分 never-run/previous-result,并保留 carried 与 unfinished issue", async () => {
     const root = await makeRoot();
-    const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
-    await writeResultFile(monday, "q1/a1", record({ id: "q1", attempt: 1 }));
-    // 周二唯一的条目是携带复印件:fresh 把它排除后,这个实验没有任何新执行。
-    const tuesday = await writeSnapshot(root, "e", "2026-07-02T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
-    await writeResultFile(tuesday, "q1/a1", record({ id: "q1", attempt: 1, startedAt: "2026-07-01T08:00:00.000Z", artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1" }));
-
-    const fresh = currentSample(await openRecord(root), { fresh: true });
-    expect(fresh.attempts).toEqual([]);
-    const coverage = fresh.coverage.find((c) => c.experimentId === "e")!;
-    expect(coverage.missingEvalIds).toEqual(["q1"]);
-    // coverage-only 实验(零 run 贡献)经 filter 后覆盖缺口不静默消失——覆盖占位行的上游事实。
-    expect(fresh.filter(() => true).coverage).toEqual(fresh.coverage);
+    const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({
+      experimentId: "e",
+      agent: "bub",
+      startedAt: "2026-07-01T08:00:00.000Z",
+      completedAt: "2026-07-01T08:10:00.000Z",
+      configHash: "old-config",
+    }));
+    await writeResultFile(monday, "q1/a1", record({
+      id: "q1",
+      attempt: 1,
+      verdict: "failed",
+      startedAt: "2026-07-01T08:01:00.000Z",
+    }));
+    const mondayLater = await writeSnapshot(root, "e", "2026-07-01T09-00-00-000Z", meta({
+      experimentId: "e",
+      agent: "bub",
+      startedAt: "2026-07-01T09:00:00.000Z",
+      completedAt: "2026-07-01T09:10:00.000Z",
+      configHash: "old-config",
+    }));
+    await writeResultFile(mondayLater, "q1/a1", record({
+      id: "q1",
+      attempt: 1,
+      verdict: "passed",
+      startedAt: "2026-07-01T09:01:00.000Z",
+    }));
+    // 新配置的 Run 没有物理 Attempt；q1 只有不同 configHash 的旧 Attempt,q2 从未有物理 Attempt。
+    const tuesday = await writeSnapshot(root, "e", "2026-07-02T08-00-00-000Z", meta({
+      experimentId: "e",
+      agent: "bub",
+      startedAt: "2026-07-02T08:00:00.000Z",
+      configHash: "new-config",
+      knownEvalIds: ["q1", "q2"],
+    }));
+    const sample = currentSample(await openRecord(root));
+    expect(sample.attempts).toEqual([]);
+    expect(sample.runs).toEqual([]);
+    const oldAttempt = sample.historyAttempts.find((attempt) => attempt.run.dir === mondayLater)!;
+    expect(sample.coverage.find((c) => c.experimentId === "e")!.missing).toEqual([
+      {
+      evalId: "q1",
+      reason: "previous-result",
+      previous: {
+        locator: oldAttempt.locator,
+        verdict: "passed",
+        startedAt: "2026-07-01T09:01:00.000Z",
+      },
+      },
+      { evalId: "q2", reason: "never-run" },
+    ]);
+    expect(sample.issues).toContainEqual({
+      code: "unfinished-run",
+      experimentId: "e",
+      startedAt: "2026-07-02T08:00:00.000Z",
+      dir: tuesday,
+    });
+    expect(sample.filter(() => true).issues).toContainEqual({
+      code: "unfinished-run",
+      experimentId: "e",
+      startedAt: "2026-07-02T08:00:00.000Z",
+      dir: tuesday,
+    });
   });
 });
 
-// ───────────────────────── selectedEvalIds 并入携带条目(exp 写入面) ─────────────────────────
+// ───────────────────────── 物理 Attempt 并入携带条目(exp 写入面) ─────────────────────────
 
-describe("currentSample · selectedEvalIds 并入携带条目", () => {
-  // cases: docs/engineering/testing/unit/sample.md「exp 写入面的 selectedEvalIds 并入携带条目」
+describe("currentSample · 物理 Attempt 并入携带条目", () => {
   // bug: memory/exp-runjson-missing-confighash-breaks-current-sample.md
-  it("收窄跑一题 + 携带合入:experiment.selectedEvalIds 并入携带 eval id 后,currentSample 看到全部条目,不塌成单题", async () => {
+  it("收窄跑一题 + 携带合入:不依赖 persisted 选题字段,currentSample 看到全部条目", async () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
 
@@ -497,7 +517,6 @@ describe("currentSample · selectedEvalIds 并入携带条目", () => {
     const experimentInfo = {
       attempts: 1,
       earlyExit: true,
-      selectedEvalIds: ["algebra/q1"],
       sandboxLayer: {},
       sandboxPlansByEval: {},
       agentInstalls: [],
@@ -545,20 +564,19 @@ describe("currentSample · selectedEvalIds 并入携带条目", () => {
       artifactBase: "compare_bub/2026-08-03T08-00-00-000Z-aaaa/algebra/q3/a1",
     });
 
-    // artifacts.ts 的 experiment:complete 处理程序在这一步把携带条目的 eval id 交给 finish()。
     const runs = await writer.snapshotWriters();
     await runs[0]!.writer.finish({
       completedAt: "2026-08-04T08:05:00.000Z",
-      carriedEvalIds: ["algebra/q2", "algebra/q3"],
     });
 
     const results = await openRecord(root);
     const runMeta = JSON.parse(await readFile(join(results.experiments[0]!.latestRun.dir, "run.json"), "utf-8"));
-    expect(runMeta.experiment.selectedEvalIds.sort()).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
+    expect(runMeta.experiment).not.toHaveProperty("selectedEvalIds");
+    expect(runMeta.experiment).not.toHaveProperty("evalFilterFingerprint");
 
     const sample = currentSample(results);
     expect(sample.attempts.map((a) => a.evalId).sort()).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
-    expect(sample.coverage.find((c) => c.experimentId === "compare/bub")!.missingEvalIds).toEqual([]);
+    expect(sample.coverage.find((c) => c.experimentId === "compare/bub")!.missing).toEqual([]);
   });
 });
 

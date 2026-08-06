@@ -145,6 +145,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 运行器 | Runner | 负责发现、有界并发、重试、缓存与结果交付的调度引擎 | [Runner](runner.md) |
 | 生命周期 Hook | Hook | Experiment 与 Agent 层的成对 `setup` / `teardown` 回调;Sandbox 与 Eval 的准备走 layer 的 `prepare()` | [Runner](runner.md) |
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排与 live 聚合边界;可打开多个 Run,不进入 Record | [Runner](runner.md) |
+| 调度 Session | Invocation session | 一次 `niceeval exp` 调度的可查询索引，可包含多个 Experiment Run；与 Attempt 内的 Agent Session 不同 | [Session 查询](feature/experiments/cli.md#session-查询) |
+| 失活调度 Session | Expired invocation session (`expired`) | 心跳超过阈值的调度 Session 记录；只供诊断，不证明进程仍在运行 | [Session 查询](feature/experiments/cli.md#session-查询) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
 | 实验并发限制 | Experiment concurrency limit | `ExperimentDefinition.maxConcurrency` 对本 Invocation 内一个实验的 Attempt 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
@@ -174,7 +176,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希;未变且判定确定的结果默认沿用 | [Cache](feature/experiments/cache.md) |
-| 结果沿用 | Result carry-forward | 合格的历史 Attempt 直接并入本次 Run、不重跑 | [Cache](feature/experiments/cache.md) |
+| 结果沿用 | Result carry-forward (`carried`) | 合格的历史 Attempt 直接并入本次 Run、不重跑；`carried` 只记录来源，不是结果状态 | [Cache](feature/experiments/cache.md) |
 | 配置哈希 | `configHash` | 指纹的 Run 级配置层,同时担保跨 Run 可比 | [Cache](feature/experiments/cache.md) |
 | 用例锁 | Eval lock | 按 `(experimentId, evalId)` 取的派发租约,避免并行 Invocation 重复执行 | [Experiments architecture](feature/experiments/architecture.md) |
 | 共享状态租约 | Shared-state lease | `ExperimentDefinition.sharedState.key` 标识的跨 Invocation 独占边界，覆盖共享状态的完整恢复、执行与回存 | [Experiments architecture](feature/experiments/architecture.md#并发-invocation用例锁与共享状态租约) |
@@ -212,6 +214,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Sample(样本) | Sample | 挑好的 Attempt、覆盖事实与结构化挑选警告;`pipe` 只删减 | [Sample](feature/sample/README.md) |
 | 当前结果集 | Current result set | 当前 `configHash` 下每个 Experiment × Eval 的有效物理 Attempt 集合；来源不改变计票 | [Sample](feature/sample/README.md#唯一心智) |
 | 样本覆盖 | Sample coverage (`sample.coverage`) | 一份 Sample 对已知 Eval 总体覆盖了哪些、缺哪些；与 Adapter 的 evidence coverage 无关 | [Sample](feature/sample/library.md#覆盖是逐行的事实) |
+| 结果缺口 | Result gap (`SampleMissing`) | 当前结果集没有某道题的 Attempt；`never-run` 表示从未运行，`previous-result` 表示只有不可比的旧结果 | [Sample](feature/sample/README.md#缺口不是第二套结果) |
+| 执行历史 | History | 记录里的历次物理 Attempt，用于回看稳定性和旧结果，不是另一套当前状态 | [Sample](feature/sample/README.md#常见用途) |
 
 ### 报告
 
@@ -230,8 +234,6 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
 | 有效根 | Effective root | 记录根经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
 | 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
-| 覆盖构成 | Coverage composition (`composition`) | 一个 Experiment 的已知题按当前结论出身分出的互斥段 | [Experiment table](feature/reports/components/summaries/experiment-table.md#覆盖构成) |
-| 过期结论 | Stale conclusion | 记录里存在、但 configHash 与当前基准不可比的历史判定;只作参考,不进任何计数 | [Experiment table](feature/reports/components/summaries/experiment-table.md#覆盖缺口的两档占位行) |
 | 相对时距 | Time distance (`formatTimeDistance`) | 一条结论距锚点多久的紧凑人读读法,如 `12d` | [Presentation](feature/reports/library/presentation.md#相对时距是数据不是文案) |
 | 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 装载的内建普通 Report | [Default report](feature/reports/show/default-report.md) |
 | 报告槽位 | Report slot(内部代号) | 宿主中可被 `--report` 整体替换的部分 | [Reports architecture](feature/reports/architecture.md) |

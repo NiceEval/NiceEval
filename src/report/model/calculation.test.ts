@@ -204,7 +204,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const sample = scopeOf(
       [run],
       [],
-      [{ experimentId: "exam", run, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["c"] }],
+      [{ experimentId: "exam", run, knownEvalIds: ["a", "b", "c"], missing: [{ evalId: "c", reason: "never-run" }] }],
     );
     const rows = await aggregate(sample, {
       by: { experiment },
@@ -238,8 +238,8 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
       [bub],
       [],
       [
-        { experimentId: "compare/bub", run: bub, knownEvalIds: ["q1"], missingEvalIds: [] },
-        { experimentId: "compare/codex", run: codexGap, knownEvalIds: ["q1"], missingEvalIds: ["q1"] },
+        { experimentId: "compare/bub", run: bub, knownEvalIds: ["q1"], missing: [] },
+        { experimentId: "compare/codex", run: codexGap, knownEvalIds: ["q1"], missing: [{ evalId: "q1", reason: "never-run" }] },
       ],
     );
     const rows = await aggregate(sample, {
@@ -263,7 +263,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const sample = scopeOf(
       [run],
       [],
-      [{ experimentId: "e", run, knownEvalIds: ["q1"], missingEvalIds: [] }],
+      [{ experimentId: "e", run, knownEvalIds: ["q1"], missing: [] }],
     );
     const rows = await aggregate(sample, {
       by: { model },
@@ -277,7 +277,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const sample = scopeOf(
       [run],
       [],
-      [{ experimentId: "e", run, knownEvalIds: ["q1"], missingEvalIds: [] }],
+      [{ experimentId: "e", run, knownEvalIds: ["q1"], missing: [] }],
     );
     await expect(
       aggregate(sample, {
@@ -302,7 +302,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const sample = scopeOf(
       [run],
       [],
-      [{ experimentId: "e", run, knownEvalIds: ["q1", "q2"], missingEvalIds: [] }],
+      [{ experimentId: "e", run, knownEvalIds: ["q1", "q2"], missing: [] }],
     );
     const rows = await aggregate(sample, {
       by: {
@@ -345,7 +345,7 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const sample = scopeOf(
       [run],
       [],
-      [{ experimentId: "exam", run, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["c"] }],
+      [{ experimentId: "exam", run, knownEvalIds: ["a", "b", "c"], missing: [{ evalId: "c", reason: "never-run" }] }],
     );
     const rows = await aggregate(sample, { by: { experiment }, values: { score: calc } });
     // a within min([1,0])=0；b=1；across max → 1

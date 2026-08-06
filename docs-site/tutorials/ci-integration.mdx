@@ -102,7 +102,7 @@ npx niceeval show --json > .niceeval/ci-summary.json
   If the repo uses pnpm, swap that command for `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`. `pnpm exec` prints a startup banner to stdout by default, which ends up inside the redirected JSON file; `--silent` turns that banner off.
 </Tip>
 
-`show --json` reads the results root's current state (including carried-forward and historical snapshots); on a fresh CI checkout that's the same as this run, but when the results root persists across runs (for example a nightly job reusing `.niceeval/`), narrow it to this run's conditions and fresh executions with `--exp` / `--fresh`.
+`show --json` reads the results root's single current state, including compatible carried results. Narrow by experiment with `--exp`; when CI must audit one physical Run rather than the current waterline, address that Run explicitly instead of filtering current results by provenance.
 
 The `--json` / `--junit` output the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
 

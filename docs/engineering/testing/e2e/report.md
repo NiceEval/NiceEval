@@ -19,7 +19,7 @@
 ### 2. 公开读取面
 
 `openRecord()` 遍历出的 Run、diagnostics、attempt 与推导聚合和盘上文件一致——读取面是落盘事实的忠实投影，不是第二份口径。
-`current()` 的 Sample 保留贡献结果集的真实 Run，diagnostics 只随这些 Run 透传，不聚合进 Sample 或 Attempt。
+`current()` 的 Sample 保留构成当前结果集的真实 Run，diagnostics 只随这些 Run 透传，不聚合进 Sample 或 Attempt。
 
 ### 3. 机器出口
 

@@ -104,7 +104,7 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
   一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟上限下是同一个事实。
   把它们放入配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量重跑。
   两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`executionMs` ≤ 当前上限),止损闸管覆盖缺口(被掐掉的题没有结果,如实进 [`coverage`](../sample/library.md#覆盖是逐行的事实))。
-- **`attempts` / `earlyExit` / `maxConcurrency` / `selectedEvalIds` / `labels` 不进。**
+- **`attempts` / `earlyExit` / `maxConcurrency` / `labels` 不进。**
   编排与选题字段决定跑哪些、跑几次,不改变单题被测行为;`labels` 是报告坐标。
 
 `configHash` 落在 `run.json` 上,是格式的一部分:niceeval 自己的写入面按规划期算出的配置身份把它写进 `run.json`,`niceeval exp` 与 `niceeval accept` 都在这条路径上。
@@ -312,4 +312,4 @@ for (const exp of record.experiments) {
 - [参考方案](reference/README.md) —— 这一层的形状从哪些系统学来。
 - [Sample](../sample/library.md) —— 选口径、覆盖、时效与转换算子。
 - [Reports](../reports/README.md) —— 建立在样本之上的指标与组件。
-- [Experiments](../experiments/README.md) —— experimentId 与 `selectedEvalIds` 从哪来。
+- [Experiments](../experiments/README.md) —— experimentId、运行期选题计划与物理 Attempt 从哪来。

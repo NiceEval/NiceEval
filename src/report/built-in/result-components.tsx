@@ -16,13 +16,11 @@ import {
   SourceView,
   Stat,
   TableContentView,
-  Text,
   Waterfall,
 } from "../definition/primitives.tsx";
 import { HeroCard } from "../components/site-components/index.tsx";
 import { AttemptSummary } from "../components/attempt-detail/index.tsx";
 import { experimentListContent } from "../components/entity-lists/content.ts";
-import { ExperimentTableView } from "../components/entity-lists/index.tsx";
 import {
   attemptAssertionsContent,
   attemptConversationContent,
@@ -35,10 +33,6 @@ import {
   attemptTimelineContent,
 } from "../components/attempt-detail/content.tsx";
 import { stabilityMatrixContent } from "../slices/content.ts";
-import {
-  formatInstant,
-  formatReportDateTimeRange,
-} from "../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../model/locale.ts";
 import type { AttemptFactsData, Dataset, UsageTableData } from "../model/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
@@ -72,14 +66,6 @@ function experimentTarget(point: { key: string }): ReportTarget {
 function summaryView(result: StandardOverviewResult, locale: ReportLocale) {
   const snapshot = result.summary;
   const tally = snapshot.evalVerdicts;
-  const formattedRange =
-    snapshot.range.earliestStartedAt !== null && snapshot.range.latestStartedAt !== null
-      ? formatReportDateTimeRange(
-          snapshot.range.earliestStartedAt,
-          snapshot.range.latestStartedAt,
-          locale,
-        )
-      : null;
   return (
     <Col className="niceeval-sample-summary">
       <Grid>
@@ -115,19 +101,6 @@ function summaryView(result: StandardOverviewResult, locale: ReportLocale) {
           }
         />
       </Grid>
-      {snapshot.range.latestStartedAt !== null ? (
-        <Text className="niceeval-sample-summary-range">
-          {snapshot.range.earliestStartedAt !== null &&
-          snapshot.range.earliestStartedAt !== snapshot.range.latestStartedAt
-            ? localeText(locale, "scopeSummary.runRange", {
-                from: formattedRange!.from,
-                to: formattedRange!.to,
-              })
-            : localeText(locale, "scopeSummary.lastRun", {
-                time: formatInstant(snapshot.range.latestStartedAt, locale),
-              })}
-        </Text>
-      ) : null}
     </Col>
   );
 }
@@ -136,7 +109,6 @@ export const StandardOverviewResultView = defineComponent<{
   result: StandardOverviewResult;
 }>(async ({ result }, ctx) => {
   const table = experimentListContent(result.experiments);
-  const freshTable = result.freshExperiments ? experimentListContent(result.freshExperiments) : null;
   const hasPassRate = table.columns.some((column) => column.key === "passRate");
   const hasTotalScore = table.columns.some((column) => column.key === "totalScore");
   const defaultSort = hasPassRate === hasTotalScore
@@ -180,11 +152,7 @@ export const StandardOverviewResultView = defineComponent<{
           ),
         )}
       </Col>
-      {freshTable === null ? (
-        <TableContentView data={table} sort={defaultSort} searchable />
-      ) : (
-        <ExperimentTableView fullContent={table} freshContent={freshTable} sort={defaultSort} searchable />
-      )}
+      <TableContentView data={table} sort={defaultSort} searchable />
     </Col>
   );
 });

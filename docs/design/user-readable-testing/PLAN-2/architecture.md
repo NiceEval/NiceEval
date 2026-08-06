@@ -645,7 +645,7 @@ pnpm e2e -- verify \
 - prepare 输入 evidence 是否都位于对应 world root；verify 新产物是否都位于对应 Verification Run root。
 
 缺少、重复或 recipe ID 不符都在执行测试前失败。
-任一项不匹配都以 stale-evidence 失败，并打印重新运行 `pnpm e2e` 完整 prepare 的命令。
+任一项不匹配都以 expired-evidence 失败，并打印重新运行 `pnpm e2e` 完整 prepare 的命令。
 它绝不静默创建新 world、调用模型或改写 manifest。
 
 ## 媒介边界

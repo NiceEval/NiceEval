@@ -14,10 +14,9 @@ import type {
   ExperimentListItem,
   ReportInput,
   EvaluationKindComposition,
-  StaleConclusionReference,
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
-import type { AttemptHandle, Run } from "../../../record/types.ts";
+import type { AttemptHandle, Run, SampleMissing } from "../../../record/types.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
 import { foldEvalVerdict } from "../../../shared/verdict.ts";
 import {
@@ -27,17 +26,14 @@ import {
   experimentIdOf,
   fullEvalKey,
   groupItems,
-  historicalOf,
   locatorOf,
-  msSince,
   resolveInput,
-  staleReferenceOf,
   type Item,
 } from "../../model/aggregate.ts";
 import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
 import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
-import { selectedAttemptsOnly, summarizeItems } from "../shared-compute.ts";
+import { summarizeItems } from "../shared-compute.ts";
 
 /**
  * 一次 attempt 的单行结果摘要(断言摘要契约):failed 取主失败断言摘要(不含
@@ -76,11 +72,6 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
 async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
   const result = item.attempt.result;
   const { summary, more } = failureSummaryOf(result);
-  const historical = historicalOf(item);
-  // 缺 startedAt(legacy / 第三方落盘)时退化到所属快照的 startedAt——时效标注宁可粗一档
-  // 时距,不留空字段(与 dedupeAttempts「缺才不去重」同一条「不伪造」纪律,这里伪造的只是
-  // 展示粒度,不影响身份判定)。
-  const startedAt = result.startedAt ?? item.run.startedAt;
   return {
     experimentId: experimentIdOf(item),
     evalId: evalIdOf(item),
@@ -94,24 +85,9 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     totalScore: await computeCell(totalScore, [item]),
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
-    startedAt,
-    historical,
-    ...(historical ? { staleSinceMs: msSince(startedAt) } : {}),
+    startedAt: result.startedAt ?? item.run.startedAt,
     locator: locatorOf(item),
   };
-}
-
-/**
- * 「只看新执行」开关在场的判据(docs/feature/reports/components/summaries/experiment-table.md
- * 「只看新执行」):Sample 里既没有历史执行也没有过期结论时不画开关——一个永远不改变行集的
- * 控件只会让人怀疑自己看漏了什么。`ExperimentTable` 与内建默认报告共用同一条判据。
- */
-export function hasHistoricalOrStale(items: readonly ExperimentListItem[]): boolean {
-  return items.some(
-    (item) =>
-      Object.keys(item.staleReferences).length > 0 ||
-      item.evalRows.some((row) => row.attempts.some((attempt) => attempt.historical)),
-  );
 }
 
 /** 已选出的 AttemptHandle[] → 列表行；顺序保持传入顺序（不再次按 Sample 去重）。 */
@@ -209,38 +185,6 @@ function byMetricDescThenId(
 }
 
 /**
- * 覆盖缺口两档占位的「过期结论」参考(docs/feature/reports/components/summaries/experiment-table.md
- * 「覆盖缺口的两档占位行」):`missingEvalIds` 里、`historyAttempts` 中存在与 `anchorConfigHash`
- * 不可比判定的题,取其中最近一条。`fresh` 为 true 时整份不给参考——读者已声明只看新执行,
- * 占位行就不再把被排除的历史结论请回来。
- */
-function staleReferencesFor(
-  experimentId: string,
-  missingEvalIds: readonly string[],
-  historyAttempts: readonly AttemptHandle[],
-  anchorConfigHash: string | undefined,
-  fresh: boolean,
-): Readonly<globalThis.Record<string, StaleConclusionReference>> {
-  if (fresh || missingEvalIds.length === 0) return {};
-  const missing = new Set(missingEvalIds);
-  const candidatesByEval = new Map<string, AttemptHandle[]>();
-  for (const attempt of historyAttempts) {
-    if (attempt.experimentId !== experimentId) continue;
-    if (!missing.has(attempt.evalId)) continue;
-    if (attempt.run.configHash === anchorConfigHash) continue; // 可比,不是「过期结论」候选
-    const list = candidatesByEval.get(attempt.evalId);
-    if (list) list.push(attempt);
-    else candidatesByEval.set(attempt.evalId, [attempt]);
-  }
-  const out: globalThis.Record<string, StaleConclusionReference> = {};
-  for (const [evalId, candidates] of candidatesByEval) {
-    const reference = staleReferenceOf(candidates);
-    if (reference) out[evalId] = reference;
-  }
-  return out;
-}
-
-/**
  * `experimentListData(input)`:每个 experiment 一项,展开到每道 Eval;初始排序按这份列表
  * 自身的题型构成选择主读数——纯通过制沿用端到端通过率降序,纯计分制改按总分降序(缺数据
  * 沉底,同值按 id 收口);两者都出现时两种读数不能互相排名,退回 experiment id 字典序
@@ -250,7 +194,7 @@ function staleReferencesFor(
  * 看跨配置演化用 run 维度或 MetricLine,不把两套配置拼成一行冒充单一配置。
  */
 export async function experimentListData(input: ReportInput): Promise<ExperimentListItem[]> {
-  const { runs, attempts, coverage, historyAttempts, fresh } = resolveInput(input);
+  const { runs, attempts, coverage } = resolveInput(input);
   const coverageByExperiment = new Map(coverage.map((c) => [c.experimentId, c]));
 
   // 可比性配置单义检查:同一 experiment 的输入快照必须共享一套可比性配置。
@@ -270,7 +214,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     }
   }
 
-  const items = collectItems(runs, selectedAttemptsOnly(attempts));
+  const items = collectItems(runs, attempts);
   const groups = groupItems(items, "experiment");
   const out: ExperimentListItem[] = [];
   for (const [experimentId, group] of groups) {
@@ -301,7 +245,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     }
     const experiment = newest.run.experiment ?? newest.attempt.result.experiment;
     const model = newest.attempt.result.model ?? newest.run.model;
-    const missingEvalIds = coverageByExperiment.get(experimentId)?.missingEvalIds ?? [];
+    const coverageEntry = coverageByExperiment.get(experimentId);
     out.push({
       experimentId,
       agent: newest.run.agent || newest.attempt.result.agent,
@@ -316,21 +260,14 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       tokens: await computeCell(tokens, group),
       evals: stats.evals,
       attempts: stats.attempts,
-      historicalAttempts: group.filter(historicalOf).length,
-      missingEvalIds,
-      staleReferences: staleReferencesFor(
-        experimentId,
-        missingEvalIds,
-        historyAttempts,
-        coverageByExperiment.get(experimentId)?.run.configHash,
-        fresh,
-      ),
+      knownEvalIds: coverageEntry?.knownEvalIds ?? [],
+      missing: coverageEntry?.missing ?? [],
       lastRunAt: stats.lastRunAt!,
       evalRows,
     });
   }
-  // coverage 不是 attempt 的附属品：--fresh 和 current() 都可能让一个实验当前口径下
-  // 零 attempt。仍然给它一行，让 missingEvalIds 的占位题可达，不能把整实验静默吞掉。
+  // coverage 不是 attempt 的附属品:current() 可能让一个实验当前口径下零 attempt。仍然给它
+  // 一行,让 missing 的占位题可达,不能把整实验静默吞掉。
   for (const coverageEntry of coverage) {
     if (groups.has(coverageEntry.experimentId)) continue;
     const emptyItems: Item[] = [];
@@ -353,15 +290,8 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       tokens: await computeCell(tokens, emptyItems),
       evals: 0,
       attempts: 0,
-      historicalAttempts: 0,
-      missingEvalIds: coverageEntry.missingEvalIds,
-      staleReferences: staleReferencesFor(
-        coverageEntry.experimentId,
-        coverageEntry.missingEvalIds,
-        historyAttempts,
-        anchor.configHash,
-        fresh,
-      ),
+      knownEvalIds: coverageEntry.knownEvalIds,
+      missing: coverageEntry.missing,
       lastRunAt: anchor.startedAt,
       evalRows: [],
     });

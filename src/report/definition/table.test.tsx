@@ -19,6 +19,7 @@ import { buildReportMeta, defineReport } from "./report.ts";
 import { Section, Table, TableContentView } from "./primitives.tsx";
 import { stringWidth } from "../model/text-layout.ts";
 import type { TableContent } from "./cell.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 import { stabilityMatrixContent } from "../slices/content.ts";
@@ -166,6 +167,61 @@ describe("Table Content", () => {
     // 单判定:判定符走 verdictMark 单源,errored 是 `!` 不并到 `✗`
     expect(html).toContain("niceeval-verdict-errored");
     expect(html).toContain("! 错误");
+  });
+
+  it("missing 格带 previous:web 面原因与可操作 locator 同场,text 面原因 + @locator + 命令", async () => {
+    // cases: docs/engineering/testing/unit/reports.md「缺口原因与动作」:
+    // previous-result 的原因文案与旧 locator 同场,locator 不替代原因;never-run 只有原因。
+    const gaps: TableContent = {
+      columns: [{ key: "entity" }, { key: "record" }],
+      rows: [
+        {
+          key: "exp/gap:b:missing",
+          variant: "placeholder",
+          cells: {
+            entity: { kind: "text", text: "b" },
+            record: {
+              kind: "missing",
+              code: "previousResult",
+              detail: "niceeval exp exp/gap",
+              previous: { locator: "exp/gap@cfg-1/b@0" as AttemptLocator },
+            },
+          },
+        },
+        {
+          key: "exp/gap:c:missing",
+          variant: "placeholder",
+          cells: {
+            entity: { kind: "text", text: "c" },
+            record: { kind: "missing", code: "neverRun", detail: "niceeval exp exp/gap" },
+          },
+        },
+      ],
+    };
+    const resolved = await resolve(<TableContentView data={gaps} />);
+    const webCtx = {
+      locale: "en",
+      href: (target: { params: unknown }) => {
+        const params = target.params as { locator?: unknown } | undefined;
+        return `#/attempt/${String(params?.locator ?? "")}`;
+      },
+      dimension: () => {
+        throw new UndeclaredDimensionValueError("unexpected", "x");
+      },
+    } as WebContext;
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
+    // previous-result:原因文案 + locator 链接 + 补跑命令三者同场
+    expect(html).toContain("no result for current config");
+    expect(html).toContain('href="#/attempt/exp/gap@cfg-1/b@0"');
+    expect(html).toContain("niceeval exp exp/gap");
+    // never-run:只有原因文案,不带 locator 链接
+    expect(html).toContain("not run yet");
+    expect(html).not.toMatch(/href="#\/attempt\/exp\/gap@cfg-1\/c/);
+
+    // text 面:原因 + @locator(审计入口) + 命令;never-run 不出现 @locator
+    const text = textOf(<TableContentView data={gaps} />);
+    expect(text).toContain("no result for current config · @exp/gap@cfg-1/b@0 · niceeval exp exp/gap");
+    expect(text).toContain("not run yet · niceeval exp exp/gap");
   });
 
   it("同层重复行 key 在两面都报完整错误", () => {

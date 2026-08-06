@@ -19,7 +19,6 @@ import type {
   NumericAxis,
   ReportInput,
   SeriesInput,
-  StaleConclusionReference,
 } from "./types.ts";
 import { flagValueOf, labelValueOf, runConfigValueOf } from "./flag.ts";
 import { metricDisplay } from "./format.ts";
@@ -43,13 +42,11 @@ export function resolveInput(input: ReportInput): {
   coverage: readonly SampleCoverage[];
   /** 同一总体内按 locator 去重的完整历史 attempt;裸 `Run[]` 没有挑选过程,取全部。 */
   historyAttempts: readonly AttemptHandle[];
-  /** 是否只保留新执行的 attempt;裸 `Run[]` 没有这个口径,恒为 false。 */
-  fresh: boolean;
 } {
   if (Array.isArray(input)) {
     const runs = input as readonly Run[];
     const attempts = runs.flatMap((s) => s.attempts);
-    return { runs, attempts, issues: [], coverage: [], historyAttempts: attempts, fresh: false };
+    return { runs, attempts, issues: [], coverage: [], historyAttempts: attempts };
   }
   const scope = input as Sample;
   return {
@@ -58,16 +55,15 @@ export function resolveInput(input: ReportInput): {
     issues: scope.issues,
     coverage: scope.coverage,
     historyAttempts: scope.historyAttempts,
-    fresh: scope.fresh,
   };
 }
 
 /**
  * 展平后的一条样本:`run` 始终是 attempt 的真实来源(= `attempt.run`,快照维度/
  * refs/locator 都读它);`watermark` 是该 attempt 所属 experiment 在这份输入里的水位基准
- * Run(贡献来源中 startedAt 最新者,latest() 口径下与 `run` 是同一个对象)——
- * `historicalOf` 拿它跟真实来源比较,读取「这一行该显示哪个 agent/model/flags」等整组
- * 代表性字段时也读它(docs/feature/reports/architecture.md「Sample 是计算入口」)。
+ * Run(贡献来源中 startedAt 最新者,latest() 口径下与 `run` 是同一个对象)——读取
+ * 「这一行该显示哪个 agent/model/flags」等整组代表性字段时读它
+ * (docs/feature/reports/architecture.md「Sample 是计算入口」)。
  */
 export interface Item {
   run: Run;
@@ -81,41 +77,6 @@ export function experimentIdOf(item: Item): string {
 
 export function evalIdOf(item: Item): string {
   return item.attempt.evalId || item.attempt.result.id;
-}
-
-/**
- * 历史执行判定(docs/feature/sample/library.md「时效:新执行与历史执行」):携带条目,或
- * 真实来源(`item.run`)早于该实验在这份输入里的水位基准(`item.watermark`)——
- * latest() 口径下二者是同一个对象,比较恒假,只剩 carried 生效;current() 口径下贡献
- * 来源可能有多个,水位基准是其中 startedAt 最新的一个。
- */
-export function historicalOf(item: Item): boolean {
-  return item.attempt.carried || item.run.startedAt < item.watermark.startedAt;
-}
-
-/** 一个 ISO 时刻距渲染时刻(`Date.now()`)的毫秒数,恒不小于 0。 */
-export function msSince(iso: string): number {
-  return Math.max(0, Date.now() - Date.parse(iso));
-}
-
-/**
- * 覆盖缺口 / 对照矩阵缺席格的「过期结论」参考(docs/feature/reports/components/summaries/
- * experiment-table.md「覆盖缺口的两档占位行」、show/compare.md 同一套口径):候选已经是与
- * 当前基准 configHash 不可比的那些,取其中最近一条;两个消费方(entity-lists 的占位行、
- * DeltaTable 的缺席格)共用同一份「取最新」判据,不各自实现一遍。
- */
-export function staleReferenceOf(candidates: readonly AttemptHandle[]): StaleConclusionReference | undefined {
-  if (candidates.length === 0) return undefined;
-  const newest = candidates.reduce((a, b) => ((a.result.startedAt ?? "") >= (b.result.startedAt ?? "") ? a : b));
-  const startedAt = newest.result.startedAt;
-  if (!startedAt) return undefined; // 无时刻的 legacy 落盘算不出时距,不伪造参考
-  return {
-    locator:
-      newest.locator ??
-      encodeAttemptLocator({ runId: newest.run.runId, evalId: newest.evalId, attempt: newest.result.attempt }),
-    verdict: newest.result.verdict,
-    staleSinceMs: msSince(startedAt),
-  };
 }
 
 /** 快照键:"<experimentId> @ <startedAt>"("run" 维度与手挑快照数组的对比用)。 */

@@ -1,4 +1,4 @@
-# 局部补跑之后,两个口径分别给出什么
+# 局部补跑之后，当前结果怎样形成
 
 ## 解决什么问题
 
@@ -20,9 +20,9 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 
 ## 全流程
 
-1. **看最近一次执行。**
+1. **审计最近一份 Run。**
    `latestRunSample(record)`。
-   `baseline` 只返回 `R3` 里的 `a`,并通过 `coverage.missingEvalIds` 报告 `b` 缺失。
+   `baseline` 只返回 `R3` 里的 `a`,并通过 `coverage.missing` 报告 `b` 缺失。
    它不会从旧 Run 拼入 `b`——这个口径的单位就是 Run。
 
 2. **看当前结果集。**
@@ -34,13 +34,9 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 3. **拒绝不可比的旧结果。**
    `R1` 里也有 `b`,但配置是 `model: old`,configHash 与基准不等。
    `currentSample` 不用它填补缺口。
-   若 `R2` 不存在,`b` 留在 `coverage.missingEvalIds`——缺数据比混入错误条件更诚实。
+   若 `R2` 不存在,`b` 留在 `coverage.missing`，原因为 `previous-result`，可附上 `R1` 的 locator 作为解释与显式 accept 入口——旧判定不计入当前结果。
 
-4. **只看本次新执行。**
-   任一口径加 `fresh: true`,排除携带条目与从旧 Run 拼入的 attempt。
-   被排除的 Eval 仍进入覆盖缺口,不会静默消失。
-
-5. **继续收窄。**
+4. **继续收窄。**
    `sample.pipe(dropExperiments(…))` 等算子只删减已有来源。
    删掉 `R2` 这个来源后, 来自 `R3` 的 `a` 仍保留,`b` 回到覆盖缺口——分母用原始 `knownEvalIds`,不随删减缩水。
    `pipe` 返回新 Sample,原样本不变。
@@ -50,6 +46,7 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 - `latestRunSample` 的单位是 Run,不是逐 Eval 找最新。
 - `currentSample` 可以保留同一 Experiment 的多个来源 Run。
 - 跨 Run 拼接只在 configHash 相等时发生。
+- 携带条目与本次执行条目同等属于 current；来源只留在 Attempt 明细。
 - attempt 始终指向真实来源。
   Sample 不重写 locator,也不制造合成来源。
 - 要看历史趋势,不要用 `currentSample` 代替时间序列。

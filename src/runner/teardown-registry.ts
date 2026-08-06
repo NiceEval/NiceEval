@@ -119,7 +119,7 @@ function isPidAlive(pid: number): boolean {
 }
 
 /** 遗留义务判定:同宿主且 pid 不存活。pid 存活或异宿主可能属于并发 run,不触碰。 */
-export function isStaleTeardownRegistration(entry: TeardownRegistration, currentHost: string): boolean {
+export function isOrphanedTeardownRegistration(entry: TeardownRegistration, currentHost: string): boolean {
   return entry.host === currentHost && !isPidAlive(entry.pid);
 }
 
@@ -128,7 +128,7 @@ export function isStaleTeardownRegistration(entry: TeardownRegistration, current
  * 在本次选择且仍声明 teardown 的遗留义务由 run.ts 在调度前自动补执行,不出现在这里
  * (见 docs/feature/experiments/architecture.md「强杀后的收尾兜底」)。
  */
-export async function staleTeardownReminder(
+export async function orphanedTeardownReminder(
   niceevalRoot: string,
   recoveringExperimentIds: ReadonlySet<string>,
   currentHost: string,
@@ -136,10 +136,10 @@ export async function staleTeardownReminder(
   const registrations = await readTeardownRegistrations(niceevalRoot);
   const lines: string[] = [];
   for (const { entry } of registrations) {
-    if (!isStaleTeardownRegistration(entry, currentHost)) continue;
+    if (!isOrphanedTeardownRegistration(entry, currentHost)) continue;
     if (recoveringExperimentIds.has(entry.experimentId)) continue;
     lines.push(
-      `stale experiment teardown for "${entry.experimentId}" from a killed run — niceeval exp ${entry.experimentId} --teardown\n`,
+      `unfinished experiment teardown for "${entry.experimentId}" from a killed run — niceeval exp ${entry.experimentId} --teardown\n`,
     );
   }
   return lines.length > 0 ? lines.join("") : undefined;

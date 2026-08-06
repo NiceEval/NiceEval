@@ -263,7 +263,7 @@ Run 仍是一条 Experiment 的结果快照，Attempt 仍是一条 Eval 的一�
 - **Session 记录跨过结束点。**
   正常完成、启动期失败与中断都封口同一份 Session，而不是删除它。`session list` 默认只列有效心跳的活动 Session，`--all` 才读历史；这份轻量索引不复制 Attempt 的 verdict、usage、事件或 artifact，完整结果继续从每个 Run 读取。
 - **心跳表示活动，不表示锁。**
-  活动 Session 每 10s 原子更新一次，`heartbeatAt` 落后当前时间超过 30s 即失活。失活 Session 只能作为 `STALE` 诊断展示，不能证明进程仍在、不能挡住派发，也不能作为用例锁或实验级名额租约的依据。
+  活动 Session 每 10s 原子更新一次，`heartbeatAt` 落后当前时间超过 30s 即失活。失活 Session 只能作为 `EXPIRED` 诊断展示，不能证明进程仍在、不能挡住派发，也不能作为用例锁或实验级名额租约的依据。
   用例锁与名额租约继续各自判断心跳和接管，不能因为 Session 存在就跳过它们。
 - **一份 Session 覆盖多个 Run。**
   一条 `exp` 选中多个 Experiment 时共用一个 `sessionId`，但每个 Experiment 保留自己的 `runId`、运行状态和结果路径。这让查询既能回答「哪条命令还活着」，又能精确回答「哪些 Experiment 在跑」，不伪造跨 Experiment 的 Run。

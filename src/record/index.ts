@@ -100,6 +100,7 @@ export {
   type UnreadableRun,
   type Run,
   type RunMeta,
+  type SampleMissing,
 } from "../record/types.ts";
 
 // 结果数据类型的家还没搬(facade 迁移是下一波);先从这里 re-export,
