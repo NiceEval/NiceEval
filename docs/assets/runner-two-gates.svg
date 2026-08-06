@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
-  <title id="figTitle">双级闸的持有期不同</title>
-  <desc id="figDesc">实验级闸从 Attempt 进入到收尾始终持有，而全局并发位只在执行时持有，退避等待会释放给其它 Attempt。</desc>
+  <title id="figTitle">两级并发限制的持有期不同</title>
+  <desc id="figDesc">实验并发限制从 Attempt 进入到收尾始终持有，而全局并发位只在执行时持有，退避等待会释放给其它 Attempt。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -36,12 +36,12 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
-  <text x="32" y="48" class="title">双级闸：实验闸守临界区，全局位保吞吐</text>
+  <text x="32" y="48" class="title">两级并发限制：实验并发限制守临界区，全局位保吞吐</text>
   <text x="32" y="80" class="note">时间 →</text>
   <path d="M160 88 H1192" class="rule-strong" />
   <text x="32" y="128" class="label mono">Attempt A</text>
   <rect x="160.5" y="104.5" width="1031" height="136" class="box" />
-  <text x="176" y="134" class="label">实验级闸：全程持有</text>
+  <text x="176" y="134" class="label">实验并发限制：全程持有</text>
   <rect x="192.5" y="160.5" width="191" height="48" class="box-2" /><text x="212" y="190">等 setup</text>
   <rect x="400.5" y="160.5" width="239" height="48" class="box-2 c0-s" /><text x="420" y="190" class="mono">send 1</text>
   <rect x="656.5" y="160.5" width="191" height="48" class="box-2 warn-s" /><text x="676" y="190" class="warn">退避：让位</text>
@@ -49,7 +49,7 @@
   <text x="1112" y="190" class="note">收尾</text>
   <text x="32" y="296" class="label mono">Attempt B</text>
   <rect x="160.5" y="264.5" width="1031" height="104" class="box" />
-  <text x="176" y="294">同实验：仍被实验闸挡住</text>
+  <text x="176" y="294">同实验：仍受实验并发限制</text>
   <rect x="656.5" y="312.5" width="191" height="40" class="box-2 c1-s" /><text x="676" y="338" class="mono">其它实验执行</text>
   <path d="M400 224 V416 M640 224 V416 M864 224 V416 M1104 224 V416" class="dash" />
   <path d="M400 416 H640 M864 416 H1104" class="c0-s rule-strong" />

@@ -1,9 +1,7 @@
 # NiceEval 测试体系重构
 
-本目录描述尚未落地的目标测试体系，遵守 [Roadmap 约定](../README.md)。
-候选比较与取舍在 [Design](../../design/user-readable-testing/README.md)，这里仅保留已经选定的
-“真实场景 Repo + 原生结果断言”方案；落地前不改变现行
-[`docs/engineering/testing/`](../../engineering/testing/README.md) 契约。
+目标测试体系采用“真实场景 Repo + 原生结果断言”，并遵守 [Roadmap 约定](../README.md)。
+候选比较与取舍依据见 [Design](../../design/user-readable-testing/README.md)；本目录只定义选定方案的最终形状。
 
 ## 目标
 
@@ -36,7 +34,7 @@
 | 风险 | 最早且完整的证明边界 | 示例 |
 |---|---|---|
 | 公式、选择、聚合、schema | Unit | Report 聚合口径、fingerprint 输入矩阵 |
-| lock、retry、clock、并发闸 | barrier / fake clock Unit | backoff 期间不释放并发槽 |
+| lock、retry、clock、并发限制 | barrier / fake clock Unit | backoff 期间不释放并发槽 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | `init → list` 在 CommonJS 项目可用 |
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | `show --json` 经 pipe 不截断 |
 | show / view、导出、HTTP、浏览器动作 | Report 场景 Repo | 导出 target 可达且打开正确实体 |
@@ -101,13 +99,11 @@ pnpm e2e --lane main --repo codex-sdk
 - [可读代码 Example](example/README.md) —— CLI、Report、Adapter、Journey 与 Unit 的目标测试正文；
 - [历史缺陷题库](reference/bugs/README.md) —— 已逃逸 bug 的研究材料。
 
-## 采用顺序
+## 目标闭包
 
-1. 先实现候选 tarball、场景 Repo 隔离、原始进程收据和单文件重跑；
-2. 迁移三条已知 escape：JSON pipe、CommonJS package、adapter 工具身份；
-3. 拆分 Report 线性脚本为只读 Result 文件，并把会修改证据的流程放进独立 Repo；
-4. 加第一条跨 CLI / Report Journey；
-5. 接入 PR、main、nightly、release lane；
-6. 每批证明新测试能杀死旧 bug 后，删除被替代旧测试，不长期保留双份体系。
-
-稳定后把本目录契约整体迁入 `docs/engineering/testing/`，Design 候选和历史研究继续留在原处。
+- 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
+- JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
+- Report Result 只读消费证据；会修改配置、结果或服务的流程拥有独立 Repo 与结果根。
+- Journey 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
+- PR、main、nightly 与 release lane 共用同一发现、注入、执行、分类和 artifact 协议。
+- 新 owner 通过公开契约、历史错误 kill 与单项重跑后接管，同批删除被替代 owner，不长期保留双份体系。

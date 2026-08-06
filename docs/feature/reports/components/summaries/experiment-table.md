@@ -41,8 +41,8 @@ Attempt 行身份格只有 locator，判定长在 locator 上：前面一个判�
 模型与 Agent 只有 Experiment 口径；主读数只在 Experiment 与路径段组显示。
 耗时、成本与 Tokens 在 Experiment、路径段组、Eval、Attempt 四层各显示自己的口径：
 
-- Experiment：先对每个 Eval 的 Attempts 取平均，再对所有 Eval 取宏平均。
-- 路径段组：只在该组覆盖的 Eval 上取同样的宏平均。
+- Experiment：先对每个 Eval 的 Attempts 取平均，再让所有 Eval 等权参与总体平均。
+- 路径段组：只在该组覆盖的 Eval 上执行同样的两级平均。
 - Eval：该题所有 Attempts 的平均。
 - Attempt：该次 Attempt 的精确值；单样本也沿用同一列，因此列名统一为“平均耗时”“平均 Tokens”“平均成本”。
 

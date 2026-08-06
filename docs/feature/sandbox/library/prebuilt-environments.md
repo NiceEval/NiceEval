@@ -116,7 +116,7 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 
 "没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。
 官方镜像与模板都在配方里声明非 root 用户(`USER`):执行身份是预制环境自己的声明([Library · 执行身份](../library.md#执行身份)),Claude Code 等 agent 在 root 下会拒绝 `--dangerously-skip-permissions`;自己写预制环境时同样在配方里声明。
-NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Docker image 六家齐全；E2B template 覆盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进台账，不导出常量）；配方同源、版本号共用：
+NiceEval 为内置 coding Agent 维护公共 Docker image 与 E2B template：Docker image 六家齐全；E2B template 覆盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进发布记录，不导出常量）；配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
 |---|---|---|---|
@@ -179,7 +179,7 @@ dockerImageSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 
 每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生 image / template 要把起点身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
 
-常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布台账](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布门槛(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的 image / template 不写进 registry。
+常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布记录](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布条件(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的 image / template 不写进 registry。
 
 Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel，选择权属于 template-bearing Sandbox factory；反过来，Sandbox 也不猜要运行哪个 Agent。
 预装只是 ensure probe 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 probe 语义见各自接入页（上表链接）。

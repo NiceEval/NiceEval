@@ -19,7 +19,7 @@
 Experiment、路径段组与 Eval / Attempt 各是一条实体行。Experiment 首格只显示 experiment id，例如 `compare/codex`；路径段组行显示自己的题数，例如 `downshift (6 evals)`。表中的结果与读数列承担比较所需的信息。
 
 “平均 Tokens”列计算完整模型流量：uncached input、cache read、cache creation 与 output 全部计入。
-Experiment 与路径段组显示各自范围内跨 Eval 的宏平均，Eval 显示该题 Attempts 的平均，Attempt 显示该次精确值。
+Experiment 与路径段组先分别计算每个 Eval 的 Attempts 平均，再让范围内每个 Eval 等权参与总体平均。Eval 显示该题 Attempts 的平均，Attempt 显示该次精确值。
 “平均成本”采用同一层级口径。两列都不是范围总量；总量与缓存明细由 `niceeval show ... --usage` 提供。
 
 Sample 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：

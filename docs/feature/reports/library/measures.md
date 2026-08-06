@@ -87,7 +87,7 @@ renderer 根据 `value + format + locale` 格式化，计算函数不生成 disp
 
 `tokens` 的 Attempt 值固定为 `inputTokens + cacheReadTokens + cacheCreationTokens + outputTokens`。
 缓存桶缺失按零处理；`inputTokens` 或 `outputTokens` 缺失时返回 null，不拿局部数据冒充完整流量。
-其 `perEval` reducer 对同题 Attempts 取平均，`acrossEvals` reducer 再对题级值取宏平均。
+其 `perEval` reducer 对同题 Attempts 取平均，`acrossEvals` reducer 再让各题级值等权参与总体平均。
 报告中的“平均 Tokens”因而是可比读数，不是范围总量。
 总量与缓存桶属于 usage 审计面，由 `niceeval show ... --usage` 提供。
 

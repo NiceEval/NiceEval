@@ -1,15 +1,14 @@
 # 注入凭据的转写脱敏
 
-**审查状态（ChatGPT Pro，2026-08-05）：原则通过，修改后可作 P0/P1 安全能力。**  
-已知值精确替换方向正确；**脱敏归属 Record 写盘边界**，不是 o11y normalize 的语义职责。
+已知值精确替换归属 **Record 写盘边界**，不是 o11y normalize 的语义职责。
 
 NiceEval 的凭据只从环境变量来，变量名由 adapter 或 sandbox 工厂声明（[配置从代码来，凭据从环境来](../../architecture.md#配置从代码来凭据从环境来)）。
 Sandbox 命令已经有已知敏感值的精确脱敏：调用方在自己发起的命令里登记会出现的值，Runner 把命令摘要、timing、execution 与错误证据里的同一个值替换成 `<redacted>`（[已知敏感值与记录边界](../../feature/sandbox/library/operations.md#已知敏感值与记录边界)）。
 
 这条边界只覆盖 Runner 自己发起的 Sandbox 命令。
 Agent 主进程按官方变量名收到凭据后，它启动的 shell 工具子进程继承同一份进程环境——[Codex CLI 的 Agent 进程环境](../../feature/adapters/sdk/codex-cli/README.md#agent-进程环境)已经声明命令子进程从该进程继承。
-Agent 自己驱动、经 Transcript 归一化进入标准事件流的工具调用内容不经过 `CommandOptions.sensitiveValues` 登记，落在已知敏感值脱敏的记录边界之外。
-本篇要补的正是这一段落盘面。
+Agent 自己驱动、经 Transcript 归一化进入标准事件流的工具调用内容同样受 Attempt 已知敏感值集合保护。
+过滤发生在这些内容进入 Record artifact 之前，不要求 o11y 理解凭据语义。
 
 ## 问题
 
@@ -23,12 +22,12 @@ o11y 把这份工具输出逐字归一化进标准事件流；若在写盘前不
 ## 核心心智
 
 已知值脱敏与既有的命令级脱敏遵循同一条原则：Runner 精确知道自己写下的凭据值是什么，落盘前做精确字符串替换，不需要猜测哪一段文本像凭据。
-这条原则延伸到全部落盘转写面后，脱敏范围从「Runner 自己发起的命令」扩大到「进入 artifact 之前的全部记录输出」。
+全部落盘转写面共用这条原则：进入 artifact 之前的记录输出都经过同一个已知值过滤器。
 
 **NiceEval 不负责发现秘密，只负责保护自己已注入的秘密。**  
 不新增 credential provider / secret manager / 第二套配置体系。
 
-## 主案：已知值脱敏（Record 写盘边界）
+## 已知值脱敏
 
 ### 谁持有什么
 
@@ -38,7 +37,7 @@ o11y 把这份工具输出逐字归一化进标准事件流；若在写盘前不
 | o11y | Transcript 归一化 → 标准事件流；**不**持有 secret 语义，不负责「哪些值是凭据」 |
 | Record 写盘 / serializer | 在字符串进入 `events.json`、`trace.json`、日志类 artifact 之前，对 map 中的值做精确替换 |
 
-推荐数据流：
+固定数据流：
 
 ```text
 Transcript
@@ -48,27 +47,26 @@ Transcript
     → events.json / trace.json / 日志 artifact
 ```
 
-不推荐把 `redactKnownSecrets` 嵌进 o11y 内核：否则 o11y 会反向依赖 adapter 凭据表，破坏「归一化中立」边界。
+`redactKnownSecrets` 不进入 o11y 内核。o11y 只归一化协议，Record writer 才持有 Attempt 的凭据值集合并执行过滤。
 
 ### 算法
 
 1. **精确字符串替换**：只匹配完整已知值，无启发式、无「像 key 的字段名」猜测。
 2. **最长匹配优先**：避免短 token 嵌在长 token 时替换次序错误。
 3. **仅处理字符串面**：不猜结构、不递归改写未知二进制。
-4. **占位形状**：默认 `[REDACTED:<VAR_NAME>]`，便于排查是哪一个注入源；实现须评估变量名本身是否构成敏感元数据（若产品要求更严，可改为无名字通用占位，但 1.0 推荐带名以便 dogfood）。
+4. **占位形状**：统一替换成 `<redacted>`，不把变量名或其它凭据来源元数据写进 artifact。
 5. **credential map 生命周期**：与 Attempt 注入同步建立、随 Attempt 结束丢弃；不写入 fingerprint、不进缓存身份、不进 configHash 输入。
 
 ### 覆盖面
 
 脱敏范围覆盖全部落盘转写面：`events.json`、`trace.json`，以及日志类 artifact。  
-与既有 `CommandOptions.sensitiveValues` 命令级脱敏并存：命令级继续服务 Runner 自己发起的命令摘要；本主案封死 agent 转写路径。
+它与既有 `CommandOptions.sensitiveValues` 命令级脱敏共用 `<redacted>` 占位和最长匹配算法。
+命令级登记 Runner 发起的命令内容，Attempt 凭据集合覆盖 Agent 转写路径。
 
-## 候选记录（非主案）
+## 排除边界
 
-| 候选 | 定位 | 一句话 |
-|---|---|---|
-| 代理注入 | 记为候选，不展开 | Agent 经本地代理访问 API，凭据只留在代理进程里；彻底但重，适合要公开发布 Transcript 的场景 |
-| 发布/导出层的启发式扫描告警 | 记为纵深防御，不能作为主案 | 模式扫描必有漏网，只能补在已知值脱敏之外 |
+- 不引入本地凭据代理；Agent 仍通过既有进程环境取得凭据。
+- 不用发布或导出阶段的启发式扫描代替已知值过滤。模式扫描无法证明没有漏网值，也不改写 artifact。
 
 ## 范围
 
@@ -85,11 +83,11 @@ Transcript
 - 新的凭据配置体系或从文本「发现」秘密；
 - 把脱敏结果或 credential map 写入指纹 / 缓存身份。
 
-## 定稿后需改写的锚点
+## 相关契约
 
-- [architecture · 凭据从环境来](../../architecture.md#配置从代码来凭据从环境来)
-- [sandbox · 已知敏感值与记录边界](../../feature/sandbox/library/operations.md#已知敏感值与记录边界)
-- Record / o11y 写盘路径（实现与 source-map）
+- [Architecture · 凭据从环境来](../../architecture.md#配置从代码来凭据从环境来)定义凭据来源。
+- [Sandbox · 已知敏感值与记录边界](../../feature/sandbox/library/operations.md#已知敏感值与记录边界)定义命令级登记与占位形状。
+- Record writer 负责落盘前过滤，o11y 保持协议归一化中立；源码落点由 [Source Map](../../source-map.md)定位。
 
 ## 相关阅读
 

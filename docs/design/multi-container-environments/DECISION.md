@@ -95,7 +95,7 @@ PLAN-4 正文遗留的含糊处,按下面裁定并已写回
   image 或 template 组合矩阵不存在。两个主题的 PLAN-4 互为前提,一起采纳。
 
 上一轮对 PLAN-1 的正反双向评审
-([memory 台账](../../../memory/multi-container-design-review-ledger.md))
+([memory 复盘](../../../memory/multi-container-design-review-ledger.md))
 结论继续有效,修正项按新形态安置。清单:预算与 deadline
 口径、整组回收与孤儿核对、并行启动与依赖排闸、浮动 tag
 先解析 digest、`fromEnv` 间接 secrets、全量 `skipped`

@@ -284,7 +284,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 已裁决不许出现在 `docs/` 正文里的写法登记在[`writing-rules.json`](writing-rules.json) 的 `bannedTerms` 里,不写成表格——这份清单的用途是被脚本读:一条记录带 `term` / `use` / `why` 三个字段,`pnpm test:docs` 命中时原样打印 `use` 和 `why`,改的人不必回来翻文档。
 
 裁决一个新术语时同批往那份 JSON 加一条:`why` 写清为什么这个词会误导读者,不写"统一一下"。
-扫描规则、句长段长的台账与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
+扫描规则、句长段长的存量上限与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
 
 ## 相关阅读
 

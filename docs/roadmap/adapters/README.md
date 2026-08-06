@@ -1,16 +1,17 @@
-# Adapter 路线图
+# Adapter 准入目标
 
-这里记录仍需外部稳定性、契约未定的接入候选。
-已定稿对象的契约页位于[`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)。
+NiceEval 只为拥有稳定程序化驱动面和结构化事件契约的上游提供官方 Adapter。
+Adapter 必须通过受支持的 CLI、SDK 或 API 驱动，不使用 GUI 自动化或私有逆向接口。
+已经满足准入条件的对象在[`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)定义完整契约。
 
-## 观察
+## 目标接入
 
-| 对象 | 启动条件 |
+| 对象 | 准入契约 |
 |---|---|
-| Cursor Agent SDK | API 稳定；真实示例覆盖 session、HITL 和 usage；转换器无需依赖整个 SDK 包 |
-| vm0 | 官方提供稳定结构化事件和会话恢复契约 |
+| Cursor Agent SDK | 稳定 API 覆盖 session、HITL 与 usage；真实示例证明这些能力；转换器不强制消费方安装完整 SDK 包 |
+| vm0 | 官方接口提供稳定结构化事件与会话恢复契约 |
 
-## 不接
+## 排除边界
 
-Alma 没有稳定程序化驱动面。
-niceeval 不通过 GUI 自动化或私有逆向接口制造 Adapter；未来出现受支持的 CLI、SDK 或 API 后再重新评估。
+Alma 只有 GUI 或非公开驱动面，因此不属于官方 Adapter 目标。
+任何上游都必须先满足同一套受支持接口条件，不能用专属自动化旁路降低准入标准。

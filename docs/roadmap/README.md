@@ -12,7 +12,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 - `README.md` 必备，写问题、最终心智与范围。
 - `library.md`、`cli.md`、`architecture.md`、`lifecycle.md` 与 `use-case/` 按需使用,体裁与 Feature 完全相同。
-- Roadmap 正文不写审查状态、候选方案、开放问题、实现进度或“定稿后”清单。
+- Roadmap 正文不写`审查状态`、候选方案、开放问题、`实现进度`或“定稿后”清单。
 
 一个方向出现多个需要正式比较的候选时,移入 [`../design/`](../design/README.md),让每个候选成为独立 `PLAN-N/`。
 

@@ -127,13 +127,13 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
     Managed release 与默认 stop 互斥，不得 double-stop。
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。
-  不能只测 Agent CLI 可执行——不同官方基线的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。
-- **跨 provider 基线工具面（E2B 侧）**：三条配方共用同一份契约——官方起点若带 yarn 实体就移除，python3 存在与否被断言。
+  不能只测 Agent CLI 可执行——不同官方起点的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。
+- **跨 provider 工具契约（E2B 侧）**：三条配方共用同一份契约——官方起点若带 yarn 实体就移除，python3 存在与否被断言。
   结构测试读取 `Template.toJSON()` 证明 `withNodeToolContract` 里有一步会在存在时移除 yarn。
   `verifyE2BNodeToolContract` 最终自检数组里两条新增命令(不存在 yarn、python3 可用)与已有的 prefix/PATH/写权限断言同构,都是失败时 `exit 1`,不是打印警告。
-- **官方基线 image / template 的版本与发布台账**：公共 E2B template 与 Docker image 的版本 tag 是 `<Agent 版本>-r<配方修订>`，版本位取自与 Adapter 运行时回退安装同一批的版本常量，niceeval 自身的版本不出现在 tag 里；同一个 Agent 在已发布的 provider 上共用同一个版本号。
-  Docker 侧覆盖全部 `CodingAgentBaseline`；E2B 侧是子集（`E2BCodingAgent`），未进台账的 Agent 不导出 E2B 常量。
-  导出的具名常量必须指向**已发布**的 image / template：E2B 侧逐 agent 与 `sandbox/e2b/published.json` 的台账逐字段核对（tag、name、台账记录的 Agent 版本与源码版本常量一致，bub 另核对安装指纹），版本常量走在发布前面时这一格红；唯一的放行方式是台账条目显式写下待发布的 tag（`supersededBy`），默不作声的分叉必须红——那正是「常量指着装了旧 Agent 的 image / template」而全绿的形态。
+- **官方起点 image / template 的版本与发布记录**：公共 E2B template 与 Docker image 的版本 tag 是 `<Agent 版本>-r<配方修订>`，版本位取自与 Adapter 运行时回退安装同一批的版本常量，niceeval 自身的版本不出现在 tag 里；同一个 Agent 在已发布的 provider 上共用同一个版本号。
+  Docker 侧覆盖全部 `CodingAgentBaseline`；E2B 侧是子集（`E2BCodingAgent`），未进发布记录的 Agent 不导出 E2B 常量。
+  导出的具名常量必须指向**已发布**的 image / template：E2B 侧逐 agent 与 `sandbox/e2b/published.json` 的发布记录逐字段核对（tag、name、记录中的 Agent 版本与源码版本常量一致，bub 另核对安装指纹），版本常量走在发布前面时这一格红；唯一的放行方式是记录条目显式写下待发布的 tag（`supersededBy`），默不作声的分叉必须红——那正是「常量指着装了旧 Agent 的 image / template」而全绿的形态。
   Bub 的安装指纹要证明 `version` 与 `otelPlugin` 都参与：换任一个都换指纹（否则预装环境的 marker 会在配方已变时继续命中，装到上一代）。
   跨语言的同源值（`sandbox/docker/Dockerfile` 的 `ARG` 默认值、`bub-override.txt`、镜像里写死的 marker）不能导入 TypeScript，因此逐个与源码常量比对——漂移只在真实构建时才暴露，类型检查一次都拦不住。
   OpenClaw 的版本位是 calver（如 `2026.7.1-2`），tag 形如 `2026.7.1-2-r1`，守护正则必须覆盖这种形态，不能只认三段 semver。

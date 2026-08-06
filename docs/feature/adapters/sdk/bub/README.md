@@ -32,7 +32,7 @@ bubAgent({                                          // 往回钉一代:插件要
 - **NiceEval 总是钉一个确定版本**，不装 latest：被测对象的版本必须能从实验配置读出来，否则两次跑分不可比。
 - **`otelPlugin` 与 `version` 同代才有 tracing。**
   行为轨来自 Bub tape，时间轨来自 `bub-tapestore-otel` 插件，插件按 tape 协议的形态读数据：新插件从 `bub.tape` 取类型（要求 Bub ≥ 0.3.10），旧插件按 republic 的类型校验（配 Bub ≤ 0.3.9）。
-  配错代不会安装失败，而是 span 全被拒、时间轨静默为空——所以往回钉 `version` 时必须同批钉配套的 `otelPlugin`（台账见 [memory](../../../../../memory/bub-tapestore-otel-tapeentry-drift.md)）。
+  配错代不会安装失败，而是 span 全被拒、时间轨静默为空——所以往回钉 `version` 时必须同批钉配套的 `otelPlugin`（复盘见 [memory](../../../../../memory/bub-tapestore-otel-tapeentry-drift.md)）。
 - **插件靠 override 装。**
   插件所在 workspace 把 `bub` 声明成 git 依赖，不写 override 的话每次安装都会去拉 Bub 主干——版本失控。
   Adapter 因此总是先写一份把 `bub` 钉成 `bub==<version>` 的 override 文件再安装，用户不需要知道这个细节。

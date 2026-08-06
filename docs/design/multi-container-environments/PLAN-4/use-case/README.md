@@ -11,10 +11,8 @@
    检查→必要时安装放在哪一步。
 
 样例核对自 [harbor-framework/terminal-bench](https://github.com/harbor-framework/terminal-bench) 的
-`d28711d0da2675d0bb1d56de45ae5df6082438a3`。下文 API 是
-PLAN-4 的候选调用面，不代表当前版本已经实现。
-
-Terminal-Bench 的最终迁移布局与作者调用面以
+`d28711d0da2675d0bb1d56de45ae5df6082438a3`。下文 API 展开 PLAN-4 的四道题映射；Terminal-Bench
+的最终布局与作者调用面以
 [环境模型 PLAN-6 的 Terminal-Bench 用例](../../../environment-model/PLAN-6/use-case/Terminal-Bench.md)
 为准。本页保留四道多容器真题对 Provider Case、BuildKey、CaseKey、主 Sandbox 与 ready/cleanup 的证据；推荐迁移入口是 PLAN-6 的单文件 dataset adapter,下面的逐目录 wrapper 只展开单题映射。
 

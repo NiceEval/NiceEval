@@ -132,16 +132,11 @@ Release job 先按最终版本生成 tarball 与 digest，所有 release Repo �
 
 这保证“CI 测过的代码”和“registry 收到的包”是同一字节，而不是两个相近 checkout。
 
-## 从现行系统迁移时必须补的缺口
+## 待测包与 CI 闭包
 
-目标 runner 可以复用现有 pack、SRI / integrity、lockfile 回读和 exit 75 基础设施协议。
-这些基础不等于目标状态已经落地，仍须补齐：
-
-- 当前 `e2e/report/e2e.json` 把真实模型 secrets 设为整个 Repo 的前置，确定性 Report tests 尚不能进入无密钥 PR；
-- 当前 workflow 没有 fork-safe 的确定性 E2E lane，也没有按同一 tarball 聚合 release preflight；
-- 当前 artifact collector 对嵌套 glob 的支持有限，目标 manifest 的每个 pattern 必须先做收集器契约测试；
-- 当前注入核验失败与候选包不可消费的分类尚未完全分开；
-- 当前 adapter / report 多为线性脚本，尚不能稳定按原生文件与标题分片。
-
-第一批实现先用 CLI、Report、Package 三个无密钥 Repo 打通 pack → plan → run → artifact，再迁移 live adapter；
-不能为了接 CI 先在 workflow 复制一套临时选择和注入逻辑。
+- 确定性 Report tests 不声明真实模型 secret，并进入 fork-safe 的无密钥 PR lane。
+- Release preflight 聚合同一 tarball 的全部 blocking Repo；通过后发布同一字节与 digest。
+- Manifest 的每个 artifact pattern 都由收集器契约测试证明，嵌套 glob 与空匹配行为不能依赖 workflow 猜测。
+- 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
+- Adapter 与 Report Repo 使用原生测试文件和标题分片，不把多个命题压进线性脚本。
+- CLI、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。

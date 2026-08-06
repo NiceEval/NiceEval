@@ -45,7 +45,7 @@ const scope = reportScopeFixture({
 3. **计算与格式化分别可断言**（`value` 与 `display` 独立），不从渲染字符串反推计算正确。
 
 校验器测试按**规则类别**预算，不按字段清单枚举：一个共享的必填字符串、optional number、nullable 字段或嵌套路径规则各保留一条有区分力的代表场景；判别联合的每个分支可以各有一条，因为分支实现彼此独立。
-新增字段若只是复用已有规则，由数据语义测试与类型检查承接，不再为“这个字段也调用了同一个 validator helper”复制一条 case；只有引入新的 literal 约束、递归容器或联合分支时才新增校验器 case。
+新增字段若只是复用已有规则，由数据语义测试与类型检查承接，不再为“这个字段也调用了同一个校验函数”复制一条 case；只有引入新的 literal 约束、递归容器或联合分支时才新增校验器 case。
 
 ## 覆盖规范
 
@@ -83,7 +83,8 @@ const scope = reportScopeFixture({
   - `formatAxisTick` 的精度跟随步长：步长 `0.25` 打 `0.25`，同一个值经 `formatMetricValue` 走缩写。
 - **缺数据词表**（[缺数据、不适用与占位](../../../feature/reports/library/presentation.md#缺数据不适用与占位)）：三个内建 code 在 `en` / `zh-CN` 各有文案，`formatCellText` 与 web 面读同一份；未命中词表的 code 原样显示不被吞掉。
   区分力场景是 `zh-CN` 报告里的 `missing` 格不出现英文文案。
-- **呈现工具箱的导出面**（[公开函数总表](../../../feature/reports/library/presentation.md#公开函数总表)）：总表里的函数从 `niceeval/report` 导出，前四组同时从 `niceeval/report/react` 导出且与内部定义同引用；色板数组、槽位号与取色 helper 不在任一公开面上。
+- **呈现工具箱的导出面**（[公开函数总表](../../../feature/reports/library/presentation.md#公开函数总表)）：总表里的函数从 `niceeval/report` 导出，前四组同时从 `niceeval/report/react` 导出且与内部定义同引用。
+  色板数组、槽位号与取色函数不在任一公开面上。
   只需一个代表场景，不为每个函数复制一条。
 - **MetricValue 与缺数据**：字段构成与序列化不丢值；`validateContent` 递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛TypeError；缺 artifact 时返回 null 不猜值。
 - **动态行的解析入口**（[编译期作者契约 · 动态数据](../../../feature/compile-time-contracts/library.md#动态数据经过独立解析函数)）：`parseEvidenceRow` / `parseEvidenceRows` 对 `unknown` 完成 `evidenceRow()` 在类型层完成的同一条证明——至少一个 MetricValue 字段、其余字段是维度可用的标量，失败消息点名字段。
@@ -99,9 +100,13 @@ const scope = reportScopeFixture({
   - `defineReport` 复用别处页的数组展开（页等值、外壳不沿用）。
   - 组合组件与手写组合严格等价。
   - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图。
-  - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table， Attempt locator 保留给 web 宿主下钻。
+  - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table。
+    Attempt locator 保留给 web 宿主下钻。
     路径段组的题数内联在身份格；它不能成为另一条 detail 续行。
-    Tokens 列的四层口径必须可区分：Experiment / 路径段组是各自范围内跨 Eval 的宏平均，Eval 是该题 Attempts 的平均，Attempt 是该次精确值；完整流量计入 uncached input、cache read、cache creation 与 output，表头明确为平均 Tokens；成本列使用同样的四层聚合口径，表头明确为平均成本。
+    Tokens 列必须区分四层口径。Experiment / 路径段组先分别计算每个 Eval 的 Attempts 平均，
+    再让范围内每个 Eval 等权参与总体平均。Eval 取该题 Attempts 的平均，Attempt 取该次精确值。
+    完整流量计入 uncached input、cache read、cache creation 与 output，表头明确为平均 Tokens。
+    成本列使用同样的四层聚合口径，表头明确为平均成本。
   - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
   - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`； text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。
@@ -280,7 +285,7 @@ const scope = reportScopeFixture({
 - **text 面的呈现降级**：text renderer 的 `ctx.dimension()` 恒返回 label 面，拿不到颜色、 `strokeDasharray` 或 pattern。
   容量拒绝只发生在 web 编码规划，同一份超容量报告的 text 面照常输出。
 
-- **公开呈现 helper**：`shortestUniqueLabels` 与 `presentDimension` 从 `niceeval/report` 顶层导出，并与内部定义同一引用。
+- **公开呈现函数**：`shortestUniqueLabels` 与 `presentDimension` 从 `niceeval/report` 顶层导出，并与内部定义同一引用。
    `presentDimension(declaration)` 与报告树内 `ctx.dimension(handle)` 对同一份声明返回相同槽位。
   对照面是 stroke / fill 通道；呈现值本身不带槽号。
 
@@ -447,7 +452,7 @@ const scope = reportScopeFixture({
   - `flipped` 只表示判定不一致。
     逐行差值使用原始值；任一侧缺失时，差值也缺失。
   - 每个条件的 totals 描述自身覆盖面。
-     paired delta 只聚合基线与候选共同拥有的 Eval。
+     paired delta 只聚合对照组与候选共同拥有的 Eval。
      Fixture 必须让两侧覆盖不同，防止实现直接相减两个 totals。
   - 混合题型按通过制与计分制分段，各自使用独立分母。
     断言面是 `deltaRows`。

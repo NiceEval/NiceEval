@@ -135,7 +135,7 @@ Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Ho
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
 完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
 
-一次逻辑 `send` 的窗口覆盖首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试台账；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
+一次逻辑 `send` 的窗口覆盖首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试记录；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
 
 HITL `waiting` 可以保留等待输入的 Agent 状态，但它必须静止。把日志写到 workdir 外，或把路径加入 `diff.ignore`，都不能代替静止证明。
 

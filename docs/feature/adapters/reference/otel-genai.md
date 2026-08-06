@@ -93,7 +93,7 @@ OTel 兼容的另一套约定,核心是每条 span 必带 `openinference.span.ki
 ### Langfuse —— trace + 观测树,建在 OTel 上
 
 LLM 工程平台的数据模型:`Trace`(一次请求)+ 嵌套 `Observation`(span / generation / event 几类),外加 `Session`(聚合多 trace 的多轮会话)和 `Score`(评分挂到 trace/observation 上)。
-底层已改为 OTel。
+底层使用 OTel。
 对照价值:它的 `Session → Trace → Observation` 三层和 niceeval 的 `run → session → turn → events` 作用域链是同构的;`Score` 挂在任意层的设计对应 niceeval "断言作用域由接收者决定"。
 
 ## 汇总对照

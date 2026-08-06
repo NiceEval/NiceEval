@@ -347,7 +347,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 第二层把 `runShell` 交给真实 `/bin/sh`，并让 `writeText` / `writeBytes` 真实落盘。
     它证明脚本语法、端口监听和 POST 200，也证明采集器立即退出时不会耗完整轮等待预算。
 
-相关台账：
+相关记录：
 [insandbox-otlp-port-wait-3s-no-retry](../../../../memory/insandbox-otlp-port-wait-3s-no-retry.md)。
 
 - **共享 Run activity 不占 attempt 位**（[Run 级共享准备](../../../feature/experiments/architecture.md#run-级共享准备构建协调的预算)）：

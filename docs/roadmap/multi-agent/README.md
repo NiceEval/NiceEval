@@ -10,24 +10,16 @@
 | **B. eval 编排多个 agent 对手戏** | 主被测 agent 对着另一个 agent(模拟用户、谈判对手)你来我往 | ✅ 次之 |
 | **C. 同一 eval 跑多个 agent 对比** | claude-code vs codex 谁做得好 | ❌ 已有,走 [experiments](../../feature/experiments/README.md) 矩阵,不在本文 |
 
-## 现状与差距
+## 统一模型
 
-事件词汇里已经有委派:kind 为 `subagent` 的 `operation.started` / `operation.finished`(`operationId` 配对),断言有 `calledSubagent(name, match?)`,`noFailedActions` 也覆盖子 agent 失败。但只能评到「委派发生了」这一层:
+多 Agent Eval 使用三个正交概念：
 
-```ts
-// 今天能写到的极限
-export default defineEval({
-  description: "研究报告要走 researcher",
-  async test(t) {
-    await t.send("调研 WebGPU 生态并写一页纸报告");
-    t.calledSubagent("researcher");   // 委派发生了 ✅
-    // researcher 里面调了什么工具?writer 有没有偷偷联网?—— 评不到:
-    // 事件没有归属字段,子 agent 的行为要么不可见,要么混在主流里分不清谁干的。
-  },
-});
-```
+- **归属**：每条行为事件声明由哪个 agent 产生，既有断言可以按 agent 过滤。
+- **交接**：`handoff` 表达控制权单向转移，与有调用和返回配对的 subagent 委派分开。
+- **对手戏**：Eval 通过第二个 Session 驱动场景 agent，主被测与对手的事件、成本和 Verdict 归属保持分离。
 
-差距有三个:**归属**(每条事件是谁干的)、**交接**(控制权单向转移,和委派的调用-返回是两回事)、**对手戏**(eval 里驱动第二个 agent)。
+`operation.started` / `operation.finished` 继续用 `operationId` 表达 subagent 调用。
+`calledSubagent(name, match?)` 与 `noFailedActions` 保留既有语义，agent 归属只增加过滤维度，不创造另一套断言词汇。
 
 ## 场景 A:被测对象内部是多 agent
 
@@ -69,23 +61,19 @@ export default defineEval({
 });
 ```
 
-`newSession` 已经返回带 `send` / `reply` / 作用域断言的 session,加一个可选 `{ agent }` 参数就够——不需要第二套驱动 API。主被测与对手 agent 的 CLI 层区分见 [cli.md](cli.md);对手事件的聚合与成本处理见 [architecture.md](architecture.md)。
+`newSession` 返回带 `send` / `reply` / 作用域断言的 session，并接受可选 `{ agent }` 参数。
+主被测与对手 agent 的 CLI 层区分见 [cli.md](cli.md)；对手事件的聚合与成本处理见 [architecture.md](architecture.md)。
 
 ## 非目标
 
 - 跨 agent 对比评分:experiments 矩阵已有(场景 C)。
 - A2A / ACP 等 agent 间协议对接:那是某个 adapter 的活,core 不认协议。
 - agent 间消息内容的自动评分:judge 已覆盖,不需要新机制。
-- 多轮对手戏的循环语法糖(`converse(agent, { maxTurns })` 之类):先直接用循环写三条真实 eval,形状稳定了再提,不提前抽象。
+- 多轮对手戏的循环语法糖(`converse(agent, { maxTurns })` 之类)：普通 TypeScript 循环是完整表达，不提供第二种控制流 API。
 
-## 分期
+## 跨场景裁决
 
-1. **归属**:`StreamEvent.agent` 字段 + `t.agent()` 过滤 + `agentObservability` 能力位 + `DerivedFacts.agents`。claude-code 的 subagent 归属立刻能吃上,是最小可用切片。
-2. **交接**:`handoff` 事件 + `handedOff` / `agentOrder` 断言。首个消费者:OpenAI Agents SDK 参考 adapter。
-3. **对手戏**:`newSession({ agent })` + 聚合例外 + 成本分列。
-
-## 未决问题
-
-- `newSession({ agent })` 的对手要不要吃实验矩阵的 `model`?倾向不吃(对手是场景常量),但缺真实用例佐证。
-- `agentOrder` 在循环交接(A→B→A→B)下取「首现子序」;要断完整轨迹用 `eventsSatisfy`,是否够用待验证。
-- 对手 session 的 `handoff` / 归属字段是否有意义(对手自己也是多 agent 时),先按「有就收、不特殊处理」。
+- `StreamEvent.agent`、`t.agent()`、`agentObservability` 与 `DerivedFacts.agents` 共同表达归属。
+- `handoff`、`handedOff` 与 `agentOrder` 表达交接；`agentOrder` 匹配 agent 首次出现形成的子序列，完整轨迹使用 `eventsSatisfy`。
+- `newSession({ agent })` 的对手是场景常量，不消费 Experiment 矩阵的 `model`。
+- 对手 Session 可以拥有自己的 subagent 与 `handoff` 事件。归属名在 Session 内解释，聚合时同时保留 Session 身份，不设特殊分支。

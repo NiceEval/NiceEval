@@ -1,13 +1,11 @@
-# 旧 Use Case 入口
+# E2E Use Case
 
-旧稿把每个场景展开成 Behavior / Recipe / World / DSL 设计。该候选已移到
-[Design · PLAN-2](../../../../design/user-readable-testing/PLAN-2/README.md)，不再属于目标 Roadmap。
+E2E 用例按原生 Result 与 Journey 呈现。每篇直接描述用户动作、公开观察与稳定结果，不引入 Behavior / Recipe / World / DSL。
 
-选定方案的用例按原生 Result 与 Journey 呈现：
-
+- [读取 Attempt 执行证据](attempt-execution-evidence.md)
+- [证据切片保持同一身份](evidence-slices-roundtrip.md)
 - [E2E 总则](../README.md)
 - [真实场景 Repo](../scenario-repos.md)
 - [可读代码 Example](../../example/README.md)
-- [历史 Bug 题库](../../reference/bugs/README.md)
 
-本目录只保留少量兼容链接，避免旧研究文档链接失效。
+未采用模型的比较依据见[Design · PLAN-2](../../../../design/user-readable-testing/PLAN-2/README.md)。

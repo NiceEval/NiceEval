@@ -3,18 +3,15 @@
 结果携带与 Sandbox 复用是两套正交机制。
 [缓存与携带](../../feature/experiments/cache.md)复用历史 Attempt 的判定与证据；[Sandbox 复用](../../feature/sandbox/reuse.md)让本次 Invocation 的多条 Attempt 共用运行环境，但每条 Attempt 仍真实执行。
 
-Feature 已定稿两套机制的行为边界。
-本主题只保留两项尚未定稿的反馈问题：结果携带仍在部分表面叫 `reused`，Sandbox 复用缺少运行级汇总。
+两套机制的行为边界继续由 Feature 契约定义。
+本主题统一结果携带的公开名字，并为 Sandbox 复用定义运行级汇总。
 
 ## 结果携带统一叫 `carried`
 
-记录读取面已经使用 `attempt.carried`，`PLAN` 也显示 `carried in from cache`。
-live 面板、结束反馈与机器输出仍使用 `reused`，而 Attempt 记录中的 `sandbox.reused` 表示 Sandbox 复用。
-同一个词因此同时表示「没有执行」和「在共用环境里真实执行」。
+所有公开反馈把结果携带称为 `carried`。
+`sandbox.reused` 只表示 Attempt 在共用 Sandbox 中真实执行，两个概念不共享字段名。
 
-候选契约把结果携带的公开名字统一为 `carried`：
-
-| 表面 | 候选形状 |
+| 表面 | 目标形状 |
 |---|---|
 | live 面板与结束反馈 | `6 carried` |
 | `niceeval.exp` JSONL | `carried: number` |
@@ -23,14 +20,13 @@ live 面板、结束反馈与机器输出仍使用 `reused`，而 Attempt 记录
 | Attempt 的 Sandbox 调度事实 | 保持 `sandbox.reused` |
 
 字段改名不保留 `reused` 别名。
-待裁决：`niceeval.exp` 与 `niceeval.exp-plan` 是否同时递增 `schemaVersion`，以及第三方 reducer 的迁移错误怎样点名旧字段。
+`niceeval.exp` 事件流升为 schemaVersion 2，`niceeval.exp-plan` 升为 schemaVersion 4。
+消费方先按版本分流；旧 reducer 收到不支持的版本时报告 `unsupported schemaVersion`，不探测 `reused` 猜版本。
 
 ## Sandbox 复用增加运行级汇总
 
-Attempt 已记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号，收尾也会诊断后续承接集中失败的污染迹象。
-运行中仍看不到一个 Experiment 创建了多少 Sandbox、已经承接多少 Attempt，以及是否因 reset 或寿命不足更换过实例。
-
-候选契约为声明 `sandboxReuse` 的 Experiment 增加四个运行级量：
+Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
+声明 `sandboxReuse` 的 Experiment 按复用组提供四个运行级量：
 
 | 量 | 口径 |
 |---|---|
@@ -39,15 +35,15 @@ Attempt 已记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接�
 | `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 prepare 失败或超时仍计入 |
 | `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出池后，成功建立替代 Sandbox 的累计数 |
 
-live 面板按 Experiment 显示当前值；结束反馈显示最终累计值。
-多个复用 Experiment 不合成一组总数，否则无法判断哪一个 Experiment 在轮换实例。
-机器输出使用与人读面同口径的逐 Experiment 数组；逐实例承接明细继续归 `niceeval view` / `show`，不进入运行流。
+live 面板按 Experiment 与 Sandbox 复用组恒定显示 `active`、`created` 与 `assignments`，`replacements` 只在非零时显示。
+结束反馈显示四项最终值。
+多个组不合成一组总数，否则无法判断哪一个组在轮换实例。
+机器输出在既有 `progress` 与 `result` 事件上附加逐 Experiment、逐 group 的 `sandboxReuse` 数组，不增加独立事件。
+数组每项带 `experimentId`、group 身份与四个量；机器面四项恒定存在。
+逐实例承接明细继续归 `niceeval view` / `show`，不进入运行流。
 
-待裁决：
-
-1. live 面板只显示非零 `replacements`，还是四项恒定显示。
-2. 机器输出把汇总附在既有 `progress` / `result` 事件，还是使用独立的 `sandbox_reuse` 事件。
-3. `created` 是否需要再拆成成功进入池与就绪失败两个量；后者已有阶段错误，重复计数可能制造第二套失败口径。
+`created` 只计成功进入池并承接首条 Attempt 的实例，不再拆就绪失败计数。
+就绪失败沿既有 phase 错误与 diagnostic 反馈，避免汇总复制第二套失败口径。
 
 ## 不在本主题里的问题
 

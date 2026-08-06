@@ -8,7 +8,7 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 - Roadmap 中的 API、CLI、目录或行为可以先于代码存在。
 - Feature 与代码不一致时视为实现回归；Roadmap 与代码不一致表示目标尚未落地。
 - 文档正文不写 `已实现` / `未实现` / `目前代码还是` / `之后再做` 等实现状态。
-- 只有设计本身改变时才改契约；实现进度、变更审计和历史过程不改变契约措辞。
+- 只有设计本身改变时才改契约；`实现进度`、变更审计和历史过程不改变契约措辞。
 
 讨论或修改设计时，目标状态一律以 docs 的声明为准；docs 未声明的行为视为未定稿，先在对话或 Design 中裁决，不从源码反推。
 只有进入实现与核对阶段，才使用 [Source Map](source-map.md) 定位源码并直接检查实现。
@@ -51,14 +51,14 @@ docs/
 ├── source-map.md                        目标契约 → 源码落点
 ├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
 ├── writing-rules.json                   句长、段长规则与禁词库，pnpm test:docs 读它
-├── writing-baseline.json                现存命中数台账，只许变小
+├── writing-baseline.json                现存命中数上限，只许变小
 │
 ├── feature/                             已落地并验收的功能契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── eval/                            编写 Eval：defineEval
 │   ├── experiments/                     组织运行配置：defineExperiment
-│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸
+│   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级停止派发
 │   ├── sandbox/                         隔离运行环境
 │   ├── state/                           跨 Attempt checkpoint:固定 revision 与滚动序列
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
@@ -241,10 +241,10 @@ pnpm test:docs
 - **非首选同义词**：一格里并列多个写法、其中一个加粗时，粗体那个是首选，其余出现在正文即提示改用首选。
   没有粗体的多写法格是几个并列词条，不是同义词，不产生裁决。
 
-[`writing-baseline.json`](writing-baseline.json) 是**待清理台账**，记着每个文件现存多少处，死词记词表而不是数量——换一个词死掉、原来的活过来，数量不变但问题换了一个。
-新写的正文一处都不许命中；台账只许变小，改好了跑一次 `pnpm test:docs -u` 收紧。
-把台账改大来换绿灯，等于把这条规矩作废——所以有回归时 `-u` 不写台账，先红给你看。
-新增一条规则时首批存量命中不走 `-u`，手写进台账，让「放宽」这个动作留在 diff 里给人看见。
+[`writing-baseline.json`](writing-baseline.json) 是**待清理存量上限**，记录每个文件现存多少处；禁词按词分别计数，不能只记总数，否则一个词消失、另一个词新增时数量不变，问题却换了。
+新写的正文一处都不许命中；存量上限只许变小，改好后运行 `pnpm test:docs -u` 收紧。
+把存量上限改大来换绿灯，等于把这条规矩作废。因此有回归时 `-u` 不写入新数值，而是先报告失败。
+新增规则时，首批存量命中不走 `-u`，要手写进 `writing-baseline.json`，让「放宽」这个动作留在 diff 里接受检查。
 
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 

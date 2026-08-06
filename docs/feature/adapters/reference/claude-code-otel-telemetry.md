@@ -89,7 +89,7 @@ OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场
 
 ## 跟现有采集矩阵的关系
 
-**已落地(2026-07)**:下文"升级档"描述的接线已经实现——`claudeCodeAgent` 的 `tracing.env` 注入本页这组 env,与 bub/codex 一样默认开启(见 `src/agents/claude-code.ts`)。
+`claudeCodeAgent` 的 `tracing.env` 注入本页这组 env，并与 Bub、Codex 一样默认开启，源码入口见 `src/agents/claude-code.ts`。
 span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcript 旁读,与下文结论一致。
 
 ## 结论:这条路径值不值得接
