@@ -43,14 +43,15 @@ Record 的权威内容只有三类：
 Projection 是从三类权威内容计算出的读模型。
 执行树、时间树、usage、diff、Assertion 与 Verdict 读面都属于 Projection。
 Projector 是产生 Projection 的纯函数，不是新的存储 owner。
-Record manifest 不包含 Projection 文档、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
+Record root 与 catalog 不包含 Projection object、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
 
 trace、Agent 对话、Sandbox 命令、源码与 workspace change 都是用户会下钻复核的真实证据。
 它们一旦被采集为 durable Observation 或 Provenance，就必须按各自的 durable schema 全部留在本地 Record；不能因为文件大而删掉整类证据。
 事件 schema 仍可对单个失控值实施有标记的预算，但物理文件大小由 Record 分段解决，不由证据丢弃解决。
 
 Report artifact 只携带本次报告实际消费的依据。
-导出宿主执行全部页面与 Projector，收集每个可用 Projection 的 `basedOn`，再复制这组引用的传递闭包。
+导出宿主先枚举全部页面实例与 Projector 请求形成 Export Plan，再执行计划并收集每个可用 Projection 的 `basedOn`。
+发布阶段复制这组引用的传递闭包，页面不能在计划外临时打开 Record 查询。
 报告使用 trace Projector 时，已经存在的全部 trace 依据都属于强制闭包；复制不完整必须让导出失败，不能降级成“未发布”。
 报告根本不使用 trace 时，Report artifact 可以不携带它，但本地 Record 仍保留原事实。
 
@@ -94,7 +95,7 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 - Observation envelope、事件身份、作用域、排序、版本与重放规则。
 - Agent 的增量事件生产契约及终态 Outcome。
 - durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
-- Record 的稳定容器、独立文档版本和未知事件保留规则。
+- Record 与 Report 共用的 typed-object 容器、独立对象版本和未知对象保留规则。
 - Observation stream 的固定大小分段、大型 evidence blob 分块与 Report 证据闭包。
 - `watch`、`exp --json`、Invocation snapshot 与旁路附着语义。
 - OTel 导入、关联和导出的补充地位。
@@ -110,11 +111,13 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 
 Record reader 只接受本主题定义的容器格式。
 契约不提供旧格式 decoder、离线迁移、双写或兼容读取路径。
-Report v2 同样是精确版本协议，不承诺向前兼容未来 Report schema。
-读取器遇到非 `niceeval.report/2` 版本、未知字段或未知 evidence 引用类型时直接报 unsupported，不保留、不猜测，也不降级读取。
+这次切换不兼容旧 Record 或旧 Report；v2 落地后则是一条长期追加演进的协议线。
+旧 v2 reader 必须保留未知 typed object 的原始字节并继续读取已知对象，新 reader 把旧数据没有采集的新事实交代为 unavailable。
+普通功能不得推动容器升版；只有根入口、对象寻址、完整性或封口语义无法继续解析时才允许提出 v3。
 
 ## 入口
 
 - [Architecture](architecture.md) —— 事件模型、Hub、Record、OTel、重放与 schema 演进。
 - [Library](library.md) —— Agent 事件流、Record 读取与 Projector API。
 - [CLI](cli.md) —— `watch`、`exp --json`、snapshot 与附着协议。
+- [Reference](reference/README.md) —— Projector 命名来源、容器先例、历史 schema 反事实回放与代码对照。

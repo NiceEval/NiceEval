@@ -117,7 +117,7 @@ snapshot 由共享 reducer 产生。
 Invocation 索引、TTY 面板与 JSON 输出都不能自行维护另一套 counters 或 active Attempt 状态。
 snapshot 是 live transport 的有界状态副本，不是 Record 文档或 Projector 磁盘缓存。
 实现可以为了活动 Invocation 恢复而在 Record 外保存 snapshot，但必须连同 reducer 版本和 `basis` 保存；不匹配时从 durable 事件重建。
-执行 `watch --json --once` 只读取或计算 snapshot，不向 Run 或 Attempt manifest 写入任何内容。
+执行 `watch --json --once` 只读取或计算 snapshot，不向 Record root 或 catalog 写入任何内容。
 
 ## 一致附着与重连
 

@@ -144,6 +144,7 @@ Report、show 与 view 不直接按事件名或 schema 分支，而是使用 pro
 
 Projector 是带稳定身份的普通函数值。
 它把一个 AttemptHandle 转成带 availability 和依据的中性读模型，不创建新的持久化实体。
+这个名称借自 Event Sourcing/CQRS 的 Projector，但 NiceEval 采用的是只读纯函数特化；来源与差异见 [Reference](reference/README.md#projector-与-projection)。
 
 ```ts
 type EvidenceRef = Claim["basedOn"][number];
@@ -151,6 +152,7 @@ type EvidenceRef = Claim["basedOn"][number];
 type UnavailableReason =
   | "not-recorded"
   | "unsupported-schema"
+  | "unsupported-capability"
   | "incomplete"
   | "corrupt"
   | "redacted";
@@ -192,7 +194,7 @@ Projector 可以组合其它 projector，但必须合并 `basedOn`，不能把 u
 同一 Projector 版本对相同输入必须返回相同结果。
 
 Projector 版本用于区分派生语义，并写入明确导出的 Report artifact 元数据。
-Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 manifest 引用或把 Projection 交给 Record writer。
+Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 Record catalog 引用或把 Projection 交给 Record writer。
 `Availability<T>` 中的 `T` 是 Library API 类型，不是 Record schema；不兼容变化只产生新的 Projector 版本，不改写 Record。
 
 Claim evaluator 使用 Projection 时，必须把它的 `basedOn` 展开成底层 EvidenceRef。
@@ -219,27 +221,46 @@ const changedLines = rollup(async (attempt) => {
 只有新的 projector 证明缺少不可重建事实时，才需要增加独立 Observation schema。
 
 用户明确保存的 HTML、JSON 或其它 Report artifact 属于 Reports 输出。
-它可以记录 generator 版本与输入 Record 摘要，但不进入 Run 或 Attempt manifest，也不被 `openRecord()` 读取。
+它可以记录 generator 版本与输入 Record 摘要，但不进入本地 Record catalog，也不被 `openRecord()` 读取。
 
 ## Report artifact 的证据闭包
 
-Report 导出宿主必须执行全部静态页面，并枚举每个参数化页面实例。
-宿主收集渲染过程中取得的 `Availability.state === "available"` 结果，再对其中的 `basedOn` 求传递闭包。
+Report 导出不能靠渲染时碰巧观察到的函数调用猜依赖。
+报告定义必须先枚举全部静态页面、参数化页面实例与 Projector 请求，形成确定的 Export Plan。
 
 ```ts
-interface ReportArtifactManifest {
-  format: "niceeval.report";
-  schema: "niceeval.report/2";
-  generator: { name: "niceeval"; version?: string; commit?: string };
-  inputs: Array<{ runId: string; manifestSha256: string }>;
-  projectors: Array<{ name: string; version: string }>;
-  evidence: readonly EvidenceRef[];
+interface ReportExportPlan {
+  report: {
+    name: string;
+    version: string;
+    parameters: JsonValue;
+  };
+  inputs: readonly {
+    recordId: string;
+    root: Digest;
+  }[];
+  projections: readonly {
+    id: string;
+    attempt: { recordId: string; attemptId: string };
+    projector: { name: string; version: string };
+    parameters?: JsonValue;
+  }[];
+  pages: readonly {
+    route: string;
+    projectionIds: readonly string[];
+  }[];
 }
 ```
 
-Report v2 reader 只接受上面的精确 manifest schema。
-它不忽略未知字段，不接受未来 `schema` 值，也不把未知 evidence 引用保存成 opaque 数据；这些输入都返回 unsupported。
-需要改变 manifest 结构或 evidence 引用类型时定义新 Report 版本，由对应 reader 明确实现，不在 v2 中预埋兼容分支。
+页面渲染只消费 plan 中已经求值的 Projection。
+组件不能在条件分支、客户端懒加载或网络回调里打开新的 Record 查询。
+宿主对全部 available 结果的 `basedOn` 求传递闭包，再分别写出 Export Plan、entrypoints、页面资源与 evidence closure typed object。
+这些对象通过 [Architecture 的通用 Report root](architecture.md#catalog-与领域关系)进入 catalog，不扩张根 manifest。
+
+增加页面、Projector、报告参数、资源类型或 evidence 种类只增加 catalog entry 与 typed object。
+旧 v2 reader 可以校验并原字节复制未知对象；新 reader 读取缺少这些对象的旧 artifact 时，只缺对应功能。
+已有 media type 可以增加语义独立、缺失含义明确的可选字段。
+字段不能改名、删除、改类型或改变语义；需要不兼容的业务形状时使用新的 media type，不升级容器。
 
 闭包不是 artifact 文件名白名单。
 一个 trace Projection 引用了 telemetry stream，就必须复制该 stream 的全部 segment，以及事件引用的全部 blob。

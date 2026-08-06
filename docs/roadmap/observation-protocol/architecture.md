@@ -11,12 +11,12 @@ Writer、Live 和 Report 在接收一个值前都要先判断它属于哪类信�
 | Claim | 当时由 evaluator 根据依据作出的结论 | Assertion、judge、Verdict、估算成本、证据覆盖结论 |
 | Projection | Projector 从同一份 Record 确定性计算出的中性读模型 | 执行树、时间树、usage、diff、Assertion 与 Verdict 读面 |
 
-Projector 取名自 event sourcing 中的 projection：它把完整事实投射成一个消费面需要的有限视图。
+Projector 取名自 Event Sourcing/CQRS 中从事件产生读模型的组件，直接先例与 NiceEval 的纯函数特化见 [Reference](reference/README.md#projector-与-projection)。
 Projector 是函数，Projection 是这次函数调用产生的普通值；两者都不是 Record 实体。
 本契约只把 Projector 输出称为 Projection；Reducer 输出称为 snapshot，Reports 输出称为计算结果或 artifact。
 
-只有前三类进入 Record 的权威业务内容；manifest 另行保存稳定身份、父子关系、封口状态与文档引用。
-Projection 默认只存在于读取进程的内存中，Record writer 不写 Projection 文档，manifest 也不提供 Projection 引用或缓存槽位。
+只有前三类进入 Record 的权威业务内容；root 与 catalog 另行保存稳定身份、关系、封口状态与 typed object 引用。
+Projection 默认只存在于读取进程的内存中，Record writer 不写 Projection object，Record catalog 也不提供 Projection 引用或缓存槽位。
 
 面向读取的可重建结果只有以下两种落盘例外，且都位于 Record 之外：
 
@@ -32,7 +32,7 @@ Report artifact 可以独立定义面向消费者的格式，但改变该格式�
 ## Observation envelope
 
 所有 durable 事件共用一个稳定 envelope。
-事件业务字段只存在于自己的 `body` schema；新增事件种类不会扩大其它事件或 Run manifest 的 schema。
+事件业务字段只存在于自己的 `body` schema；新增事件种类不会扩大其它事件、Record root 或 Layout schema。
 
 ```ts
 type ObservationScope =
@@ -175,7 +175,7 @@ Producer 与断言在内存中读取未截断事件。
 Record、Live 和 OTel exporter 共享这份转写后的 durable envelope，不能各自实现脱敏或截断规则。
 
 序列化后的单个 Observation envelope 最大为 1 MiB。
-事件 schema 必须把更大的完整 payload 写成 `BlobRef`，或按该 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
+事件 schema 必须把更大的完整 payload 写成 Descriptor 引用的大型对象，或按该 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
 这个预算只约束一条事件的编码，不限制一个 stream 能保存多少事件。
 
 Attempt 只有在 finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整记录。
@@ -214,6 +214,27 @@ Provenance 保存复核运行所需、但不能用读取时环境替代的输入
 Record 可以用哈希寻址或校验文档，但同时保存完整输入与算法身份；configHash、fingerprint 或索引值不能代替输入本身。
 
 ```ts
+type Digest = `${string}:${string}`;
+
+type EvidenceRef =
+  | {
+      kind: "event";
+      recordId: string;
+      streamId: string;
+      eventId: string;
+    }
+  | {
+      kind: "object";
+      recordId: string;
+      digest: Digest;
+      selector?: string;
+    }
+  | {
+      kind: "claim";
+      recordId: string;
+      claimId: string;
+    };
+
 interface Claim<T extends JsonValue = JsonValue> {
   id: string;
   kind: string;
@@ -224,14 +245,13 @@ interface Claim<T extends JsonValue = JsonValue> {
     version: string;
     model?: string;
   };
-  basedOn: Array<
-    | { kind: "event"; streamId: string; eventId: string }
-    | { kind: "document"; key: string; sha256: string; selector?: string }
-    | { kind: "claim"; claimId: string }
-  >;
+  basedOn: EvidenceRef[];
   producedAt: string;
 }
 ```
+
+`recordId` 限定 EvidenceRef 的权威范围。
+Report 可以同时消费多个 Run；只写 `streamId`、`claimId` 或文档 key 会在不同 Record 之间发生碰撞，不能作为发布闭包的身份。
 
 确定性 Assertion 也保存为 Claim。
 Reader 可以使用相同 evaluator 复核，但不能用读取时规则静默覆盖历史结论。
@@ -245,152 +265,175 @@ NiceEval 根据 usage 和价格表计算的金额是 Claim，必须引用 usage 
 
 ## Record 容器
 
-### 事实完整性与物理文件
+### v2 是 typed-object 容器
 
-`run.json` 与 `attempt.json` 只保存稳定身份、父子关系、封口状态和文档引用。
-它们不承载报告摘要、总用量、通过数或宽配置对象。
-
-Record 的逻辑文档不与单个物理文件绑定。
-所有物理文件都受固定的 `RECORD_FILE_MAX_BYTES = 16 * 1024 * 1024` 约束；这个上限没有 flag，也不能由项目放宽。
-16 MiB 为常见 Git 托管的单文件警告和拒绝线保留充足余量，也避免证据增长到发布阶段才第一次失败。
-普通 JSON 文档必须在上限内封口，大型 payload 使用 `BlobRef` 分块，Observation stream 使用 NDJSON 分段。
+v2 不把 Run、Attempt、trace、Claim 或 Report 页面做成根 manifest 的字段。
+它只定义一个固定入口和一种内容描述符；所有领域内容都是描述符指向的独立 typed object。
+这个形状借用 OCI Content Descriptor 的 `mediaType + digest + size`，但不采用 OCI 的 image、config 或 layer 语义。
 
 ```ts
-interface FileRef {
-  path: string;
-  sha256: string;
-  bytes: number; // <= RECORD_FILE_MAX_BYTES
-}
+type CapabilityId = `${string}/${number}`;
 
-type DocumentRef =
-  | {
-      state: "open";
-      key: string;
-      schema: string;
-      path: string;
-      mediaType: "application/json";
-    }
-  | {
-      state: "sealed";
-      key: string;
-      schema: string;
-      mediaType: "application/json";
-      file: FileRef;
-    };
-
-type ObservationStreamRef =
-  | {
-      state: "open";
-      key: string;
-      schema: string;
-      path: string;
-      mediaType: "application/x-ndjson";
-      segmentCount: number;
-      throughSequence?: number;
-    }
-  | {
-      state: "sealed";
-      key: string;
-      schema: string;
-      path: string;
-      mediaType: "application/x-ndjson";
-      segmentCount: number;
-      throughSequence: number;
-      sha256: string;
-      bytes: number;
-    };
-
-interface BlobRef {
-  format: "niceeval.blob";
+interface Descriptor {
   mediaType: string;
-  path: string;
-  chunkCount: number;
-  sha256: string;
-  bytes: number;
+  artifactType?: string;
+  digest: Digest;
+  size: number; // 精确落盘字节数，且 <= RECORD_FILE_MAX_BYTES
+  requires?: readonly CapabilityId[];
+  annotations?: Readonly<Record<string, string>>;
 }
 
-interface RunManifest {
-  format: "niceeval.record";
-  schema: "niceeval.record/2";
-  state: "open" | "sealed";
-  producer: { name: string; version?: string; commit?: string };
-  runId: string;
-  experimentId: string;
-  attempts: Array<{
-    attemptId: string;
-    evalId: string;
-    attempt: number;
-    path: string;
-  }>;
-  provenance: Record<string, DocumentRef>;
-  observationStreams: Record<string, ObservationStreamRef>;
-  claims: Record<string, DocumentRef>;
+interface LayoutV2 {
+  format: "niceeval";
+  schema: "niceeval.layout/2";
+  kind: "record" | "report";
+  root: Descriptor;
+  requiredCapabilities?: readonly CapabilityId[];
+  annotations?: Readonly<Record<string, string>>;
 }
 ```
 
-Attempt manifest 使用相同的 `format`、`schema`、`state` 与三组文档引用。
-它额外保存 `runId`、`attemptId`、`evalId` 和 Attempt 序号。
-Run manifest 的 attempts 只指向 Attempt manifest，不把 Attempt 文档复制到 Run 层。
+`digest` 自带算法名，例如 `sha256:<hex>`；算法不能靠 reader 的当前默认值猜。
+`size` 和 `digest` 总是描述取得的原始落盘字节，验证发生在解压、解密或业务解析之前。
+`mediaType` 描述落盘表示；使用压缩或其它 wrapper 时，`artifactType` 标明解码后的逻辑类型。
+对象按 digest 放进内容寻址仓库，目录布局由 digest 确定，不进入领域引用身份。
 
-manifest 与普通 JSON 文档超过 16 MiB 时不能封口。
-产生这种文档的 owner 必须把无界集合建模为 Observation stream，或把大型值改为 `BlobRef`；writer 不做无语义的字节切割。
+`annotations` 只允许展示和检索 metadata，key 必须带命名空间。
+annotation 不能改变解码、完整性、权限、Verdict 或其它已知字段的含义，旧 reader 可以安全忽略它。
 
-### Observation stream 分段
+`LayoutV2.requiredCapabilities` 只声明无法安全解析 root、验证完整性或判断封口时所需的能力。
+压缩、加密和具体 typed object decoder 属于 `Descriptor.requires`；不支持时只让该对象及依赖它的 Projector unavailable。
+`kind: "record"` 的 root media type 固定为 `application/vnd.niceeval.record-root.v1+json`。
+`kind: "report"` 则固定为 `application/vnd.niceeval.report-root.v1+json`；两者的 catalog 必须指向已知 Catalog page media type。
 
-Observation stream 是一条逻辑 NDJSON 序列，物理上存放在 ref 的 `path` 目录中。
-文件名从 `000000.ndjson` 连续递增，每行仍是一个完整 envelope，一条事件不会跨文件。
+### Catalog 与领域关系
 
-Writer 在追加下一行会超过 16 MiB 时封口当前段，再创建下一段。
-stream 的 `sha256` 按全部规范化行顺序计算，不包含段边界；同一事件序列无论怎样分段都有相同事实身份。
-`bytes` 是全部段的总字节数，可以大于单文件上限。
+root 只保存对象身份、封口状态和一个有界 catalog 入口。
+Catalog page 同时表达实体挂载的对象与跨实体的有类型关系，不把世界限制成一棵 parent-child 树。
 
-Reader 按段号与事件 sequence 同时检查连续性。
-缺段、缺行、sequence gap、摘要错误或 open ref 都把对应 stream 标为 incomplete 或 corrupt，不能补造丢失事件。
+```ts
+interface EntityRef {
+  kind: string;
+  id: string;
+}
 
-这条规则同样适用于 trace。
-收到的每个 OTLP span 都作为 durable Observation 保存；span 多只会产生更多 segment，不能触发整类 trace 丢弃。
-单个巨大 attribute 仍服从事件 schema 的值预算，结构化 `truncated` 或 `BlobRef` 会如实交代证据边界。
+type CatalogTarget =
+  | { kind: "object"; object: Descriptor }
+  | { kind: "entity"; entity: EntityRef };
 
-### 大型 evidence blob
+interface CatalogEntryV1 {
+  subject: EntityRef;
+  relation: string;
+  target: CatalogTarget;
+}
 
-源码、workspace change、模型原始响应或 telemetry payload 超过普通文档预算时使用 `BlobRef`。
-blob 目录中的 chunk 从 `000000.bin` 连续递增，每个 chunk 不超过 16 MiB；`sha256` 针对拼接后的原始字节。
-分块不改变 media type、内容摘要或引用身份，Projector 读取时得到原始连续字节。
+interface CatalogPageV1 {
+  entries: readonly CatalogEntryV1[];
+  children?: readonly Descriptor[];
+}
 
-### 封口与格式接受
+interface RecordRootV1 {
+  recordId: string;
+  state: "open" | "sealed";
+  catalog: Descriptor;
+}
 
-sealed manifest 只能引用 sealed document、sealed stream 和摘要完整的 blob。
-open manifest 可以读取已经完整落盘的事件，但不能产生完整 Verdict、携带资格或 terminal snapshot。
+interface ReportRootV1 {
+  reportId: string;
+  state: "sealed";
+  catalog: Descriptor;
+}
+```
 
-容器版本只在身份、父子关系、封口规则或文档引用无法继续解析时改变。
-Provenance、Observation 与 Claim 文档按自己的 schema 演进，不共享一个 Run 级业务版本。
+`layout.json` 是唯一按原子替换更新的入口；它始终指向一份不可变 root object。
+活动 Record 每次 checkpoint 写新 catalog page 与 `state: "open"` root，再原子替换入口中的 root Descriptor。
+封口时 writer 先验证 root 可达的全部对象与引用，再写 `state: "sealed"` root 并原子替换入口。
+open root 可以提供已经完整落盘的事实，但不能产生完整 Verdict、携带资格或 terminal snapshot。
+Report artifact 只有 sealed root；失败的导出不发布新的入口。
 
-Reader 只接受 `format: "niceeval.record"` 与 `schema: "niceeval.record/2"`。
-其它容器格式直接作为 unsupported input 报错；没有旧格式 decoder、离线迁移、双写或兼容读取路径。
-未知 Observation schema 仍按 opaque event 保存，这是本格式内部的开放事件规则，不是旧容器兼容机制。
+`kind` 与 `relation` 都是开放、带命名空间的机器名。
+Run 包含 Attempt、重试来源、携带、人工接受、跨 Run 对比与 Claim 依据都通过关系表达。
+一个结论可以有多个 `derivedFrom` link，不需要伪造唯一 parent。
 
-Run 与 Attempt manifest 不允许增加 Projection、Report 摘要、统计宽表或它们的引用。
+Catalog page 与它的 child page 都是普通 Descriptor，因此无界集合能递归分页。
+根文件、catalog page、index、segment、chunk 和 Report asset 都受固定的 `RECORD_FILE_MAX_BYTES = 16 * 1024 * 1024` 约束。
+16 MiB 为常见 Git 托管限制保留余量，也避免证据增长到发布阶段才第一次失败。
+
+未知领域 object 必须是叶对象。
+它依赖的其它 object 必须通过 catalog relation 或容器已知的 chunk-index 声明，不能把 Descriptor 藏进只有业务 decoder 才看得懂的 payload。
+因此 generic copier 不解码未知业务对象，也能遍历和复制完整依赖闭包。
+
+typed object 使用独立 media type，例如：
+
+- `application/vnd.niceeval.run.v1+json`
+- `application/vnd.niceeval.attempt.v1+json`
+- `application/vnd.niceeval.observation-stream-index.v1+json`
+- `application/vnd.niceeval.claim.v1+json`
+- `application/vnd.niceeval.report-export-plan.v1+json`
+- `application/vnd.niceeval.report-entrypoints.v1+json`
+- `application/vnd.niceeval.evidence-closure.v1+json`
+- `application/vnd.niceeval.chunk-index.v1+json`
+
+新增事实、证据、页面或 Report metadata 只能增加 typed object、namespaced relation、annotation 或语义独立的可选字段。
+可选字段只有在移除后不改变任何旧字段的含义和正确性时才能沿用同一 media type。
+它们不能给 `LayoutV2`、Descriptor 或 root 增加业务字段。
+
+### Observation stream 与大型对象
+
+Observation stream index 指向按 sequence 排列的 NDJSON segment Descriptor。
+Writer 在下一条完整 envelope 会使 segment 超过 16 MiB 时封口当前 segment，再创建一个新对象。
+一条事件不能跨 segment，Reader 同时验证 event sequence、segment digest 与 index 连续性。
+
+stream index 另存针对规范化事件序列计算的 logical digest。
+这个摘要不包含 segment 边界；重新分段可以改变物理 Descriptor，但不能改变事件身份、logical digest 或 Projector 结果。
+
+trace 使用同一种 Observation stream。
+收到的每个 OTLP span 都进入 durable Observation；span 多只产生更多 segment，不能触发整类 trace 丢弃。
+单个巨大 attribute 仍服从事件 schema 的值预算，并通过 `truncated` 或大型对象引用交代边界。
+
+源码、workspace change、模型原始响应与 telemetry payload 使用 chunk-index object。
+每个叶 chunk 都有独立 Descriptor，index 本身也能递归分页；对象数量再多也不会生成无界 manifest。
+Projector 按 index 顺序得到连续原始字节，分块不改变逻辑 media type 或内容摘要。
+
+### 未知对象与 v2 演进
+
+这次切换不读取旧 Record 或旧 Report，也不提供迁移、双写或兼容 decoder。
+v2 落地后的演进则遵守以下兼容矩阵：
+
+| 输入变化 | 旧 v2 reader | 新 v2 reader 读取旧数据 |
+|---|---|---|
+| 新增 namespaced annotation | 忽略，已知结果不变 | 字段缺失等价于未声明 |
+| 已有 typed object 增加语义独立的可选字段 | 忽略且原字节保留 | 缺失按 schema 声明解释为 absent 或 unavailable |
+| 新增未知 typed object | 校验、列举并原字节复制，不解码 | 新功能缺对象时返回 `not-recorded` |
+| 新增对象级 capability | 只把该对象标为 `unsupported-capability` | 旧对象按原能力读取 |
+| 新增 Projector 或 Report 页面 | 不提供该功能，但保留全部对象 | 根据旧事实计算，缺事实则 unavailable |
+| 改变已有 media type 的字段或语义 | 协议违规 | 协议违规 |
+
+sealed object 永不原地修改，已发布 media type 永不复用为另一种含义。
+同一 media type 可以增加具有明确缺失语义的可选字段；不能删除、改名、改类型或重定义既有字段。
+Generic copier 只按 Descriptor 复制原始字节；它不能把未知 JSON parse 后重新序列化，否则会丢字段或改变 digest。
+小型 JSON index 使用 RFC 8785 JCS 规范化；超过 JSON 安全整数范围的计数和 offset 使用十进制字符串。
+
+普通功能不得提出 v3。
+只有 root 入口、Descriptor 寻址、对象图遍历、可信 object ID 或封口完整性无法继续按 v2 解释时，才允许讨论新的容器版本。
+每个提案必须先通过 [schema 演进防火墙](reference/schema-evolution.md#版本升级防火墙)；不能证明必须改变容器公理，就留在 v2。
 
 ### Record 发布与 Report 导出
 
 Record 发布与 Report 导出是两种不同操作。
 
-- `publish()` 复制选中 Run 的完整 Provenance、Observation 与 Claim，并解开全部内部引用。
-  它不接受按 evidence 种类排除文件的选项，也不能把已存在的 trace、diff 或源码改成缺失。
-- Report 导出执行选中报告的全部页面与参数实例，收集所有可用 Projection 的 `basedOn`。
-  导出物携带这些引用的传递闭包，并在 manifest 中记录 generator、Projector 版本、输入 Record 摘要与依据集合。
+- `publish()` 复制选中 Record root 可达的完整 Provenance、Observation 与 Claim 对象图。
+  它不接受按 evidence 种类排除对象的选项，也不能把已存在的 trace、diff 或源码改成缺失。
+- Report 导出先生成确定的 Export Plan，再执行其中声明的全部页面实例与 Projector 请求。
+  宿主收集可用 Projection 的 `basedOn`，复制这些引用的传递闭包，并写成 Report catalog。
 
 Report 根本没有消费某类事实时，导出物可以不带该事实。
-一旦 Projector 的 `basedOn` 引用了某个 stream、Claim、Provenance 文档或 blob，导出就必须完整复制它；大小不能成为删除依据。
-引用复制失败时整次导出失败，不生成把“复制失败”伪装成“运行时未采集”的 Report artifact。
+一旦 Projector 引用了 stream、Claim、Provenance 或大型对象，导出就必须复制完整闭包；大小不能成为删除依据。
+引用复制失败时整次导出失败，不能把发布故障伪装成运行时未采集。
 
-每个 Record segment、blob chunk 与 Report artifact 文件都必须通过相同的 16 MiB 物理文件检查。
-导出可以报告总字节数，但不设置会静默删证据的总量预算；托管目标需要更小产物时，应选择更窄的 Report，而不是破坏已选页面的证据闭包。
-HTML 页面只内嵌有界 Projection；大型 trace、diff 与源码证据保持为分段文件，由页面按需加载，不能为了生成一个自包含页面而重新拼成超大单文件。
-
-Report v2 只接受 `format: "niceeval.report"` 与 `schema: "niceeval.report/2"` 的精确结构。
-它不提供旧 Report decoder，也不向前接受未来版本、未知字段或未知 evidence 引用类型；任何这类输入都以 unsupported 失败。
-Projector 版本与 evidence schema 的隔离用于减少 Report schema 变化，不构成 Report v2 的兼容承诺。
+HTML 只内嵌有界 Projection。
+大型 trace、diff 与源码保持为 content-addressed segment 或 chunk，由页面按需加载，不能重新拼成超大单文件。
+导出可以报告总字节数，但不设置会静默删证据的总量预算。
 
 ## OTel 边界
 
@@ -439,7 +482,7 @@ evaluator 版本必须覆盖它依赖的 Projector 语义，使依赖变化产�
 - Record 没有采集该事实时返回 unavailable，不使其它能力或整份 Run 失效。
 
 Report 行、图表点、通过率、p90、汇总成本和执行树都不进入 Record 权威 schema。
-用户导出的 HTML、JSON 或其它 Report artifact 写入 Reports 负责的目标位置，不登记进 Run 或 Attempt manifest。
+用户导出的 HTML、JSON 或其它 Report artifact 写入 Reports 负责的目标位置，不登记进本地 Record catalog。
 artifact 的 generator 版本和输入摘要只解释这份交付物，不把它提升成历史事实。
 
 ## 重放不变量
@@ -448,11 +491,13 @@ artifact 的 generator 版本和输入摘要只解释这份交付物，不把它
 2. Live 在终态 cursor 上的 snapshot 必须等于从 Record 重放得到的同版本 snapshot。
 3. 丢失或合并 ephemeral progress 不得改变终态 snapshot、Claim 或 Verdict。
 4. OTel 缺失不得改变 Agent 行为节点、执行错误和 Verdict，只允许 timing 能力降级。
-5. Reader 必须保留未知事件；不知道一种事件不能让已知事件不可读。
+5. Reader 必须保留未知事件与未知 typed object 的原始字节；不知道一种 schema 不能让已知内容不可读。
 6. Projector 升级不得改写历史 Claim，也不得要求重写原始 Observation。
 7. 每条 Claim 的全部 `basedOn` 必须能解析到同一份已封口 Record；解析失败时该 Claim 不可用。
 8. Record sink 未确认的 Attempt 不能作为完整结果进入 Sample。
 9. Record 可读性不得依赖曾经计算出的 Projection；删除 snapshot、索引与 Report artifact 后，sealed Record 仍能重新产生同版本 Projection。
-10. Observation stream 的分段边界不得改变事件 sequence、stream 摘要或任何 Projector 结果。
+10. Observation stream 的分段边界不得改变事件 sequence、logical digest 或任何 Projector 结果。
 11. Report artifact 必须包含所有已用 Projection 的完整 `basedOn` 传递闭包；复制失败不能降级为证据未采集。
 12. trace 已被采集且被报告引用时，全部 trace segment 与 blob 都属于强制发布依据。
+13. Generic copier 必须按 Descriptor 原字节复制未知对象，不能通过 JSON parse 与重新序列化搬运 sealed 内容。
+14. 新事实、新关系、新页面、新 Projector 与新 evidence 类型不得改变 `LayoutV2`、Descriptor 或 root schema。
