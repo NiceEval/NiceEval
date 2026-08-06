@@ -43,7 +43,7 @@ Record 的权威内容只有三类：
 Projection 是从三类权威内容计算出的读模型。
 执行树、时间树、usage、diff、Assertion 与 Verdict 读面都属于 Projection。
 Projector 是产生 Projection 的纯函数，不是新的存储 owner。
-Record root 与 catalog 不包含 Projection object、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
+Record graph 不包含 Projection object、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
 
 trace、Agent 对话、Sandbox 命令、源码与 workspace change 都是用户会下钻复核的真实证据。
 它们一旦被采集为 durable Observation 或 Provenance，就必须按各自的 durable schema 全部留在本地 Record；不能因为文件大而删掉整类证据。
@@ -95,7 +95,7 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 - Observation envelope、事件身份、作用域、排序、版本与重放规则。
 - Agent 的增量事件生产契约及终态 Outcome。
 - durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
-- Record 与 Report 共用的 typed-object 容器、独立对象版本和未知对象保留规则。
+- Record 与 Report 共用的 frozen graph core、独立 payload 版本、强依赖和未知对象保留规则。
 - Observation stream 的固定大小分段、大型 evidence blob 分块与 Report 证据闭包。
 - `watch`、`exp --json`、Invocation snapshot 与旁路附着语义。
 - OTel 导入、关联和导出的补充地位。
@@ -112,8 +112,9 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 Record reader 只接受本主题定义的容器格式。
 契约不提供旧格式 decoder、离线迁移、双写或兼容读取路径。
 这次切换不兼容旧 Record 或旧 Report；v2 落地后则是一条长期追加演进的协议线。
-旧 v2 reader 必须保留未知 typed object 的原始字节并继续读取已知对象，新 reader 把旧数据没有采集的新事实交代为 unavailable。
-普通功能不得推动容器升版；只有根入口、对象寻址、完整性或封口语义无法继续解析时才允许提出 v3。
+旧 v2 reader 必须沿 frozen strong edge 保留未知 typed payload 的完整原始闭包，并继续读取已知对象。
+新 reader 把旧数据没有采集的新事实交代为 unavailable，不能补造默认字段。
+普通功能不得推动容器升版；只有 frozen bootstrap、typed reference、强闭包、Graph root 封口或 core 信任语义无法继续解析时才允许提出 v3。
 
 ## 入口
 

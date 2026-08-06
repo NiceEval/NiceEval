@@ -112,6 +112,7 @@ interface AgentContext {
 ```ts
 interface AttemptHandle {
   readonly identity: AttemptIdentity;
+  readonly record: RecordGraphRef;
   readonly run: RunHandle;
   provenance(): Promise<ProvenanceSet>;
   observations(): Promise<ObservationSet>;
@@ -137,6 +138,9 @@ Reader 验证 envelope、sequence、摘要和 Claim 引用。
 它不从事件计算通过数，不用新 evaluator 改写历史 Claim，也不因未知事件丢弃整个 stream。
 物理 segment 对这个 API 完全透明；`events()` 跨段连续迭代，一条逻辑 stream 不因文件滚动变成多个 stream。
 
+`openRecord()` 只读取一次 `layout.json.head`，随后所有 handle 都固定到同一个 `RecordGraphRef`。
+活动 writer 更新 head 或迟到事实产生新 Graph root 时，已打开 handle 不得静默切换；调用方重新打开才读取新版本。
+
 第三方需要审计原始事实时可以直接读取 ObservationSet。
 Report、show 与 view 不直接按事件名或 schema 分支，而是使用 projector。
 
@@ -147,12 +151,13 @@ Projector 是带稳定身份的普通函数值。
 这个名称借自 Event Sourcing/CQRS 的 Projector，但 NiceEval 采用的是只读纯函数特化；来源与差异见 [Reference](reference/README.md#projector-与-projection)。
 
 ```ts
-type EvidenceRef = Claim["basedOn"][number];
-
 type UnavailableReason =
   | "not-recorded"
   | "unsupported-schema"
   | "unsupported-capability"
+  | "unsupported-digest"
+  | "missing-object"
+  | "resource-limit"
   | "incomplete"
   | "corrupt"
   | "redacted";
@@ -194,10 +199,10 @@ Projector 可以组合其它 projector，但必须合并 `basedOn`，不能把 u
 同一 Projector 版本对相同输入必须返回相同结果。
 
 Projector 版本用于区分派生语义，并写入明确导出的 Report artifact 元数据。
-Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 Record catalog 引用或把 Projection 交给 Record writer。
+Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 Record graph 引用或把 Projection 交给 Record writer。
 `Availability<T>` 中的 `T` 是 Library API 类型，不是 Record schema；不兼容变化只产生新的 Projector 版本，不改写 Record。
 
-Claim evaluator 使用 Projection 时，必须把它的 `basedOn` 展开成底层 EvidenceRef。
+Claim evaluator 使用 Projection 时，必须确认全部 EvidenceRef 来自当前 Record graph，再把 `target` 写成 Claim 的底层 EvidenceTarget。
 Projection 自身不是 EvidenceRef，也不能成为 Claim、另一个 Record 或后续 Report 的权威输入。
 evaluator 版本必须覆盖所调用 Projector 的语义版本，不能让依赖变化静默改写同一 evaluator 身份。
 
@@ -221,7 +226,7 @@ const changedLines = rollup(async (attempt) => {
 只有新的 projector 证明缺少不可重建事实时，才需要增加独立 Observation schema。
 
 用户明确保存的 HTML、JSON 或其它 Report artifact 属于 Reports 输出。
-它可以记录 generator 版本与输入 Record 摘要，但不进入本地 Record catalog，也不被 `openRecord()` 读取。
+它可以记录 generator 版本与输入 Record Graph root，但不进入本地 Record graph，也不被 `openRecord()` 读取。
 
 ## Report artifact 的证据闭包
 
@@ -236,12 +241,13 @@ interface ReportExportPlan {
     parameters: JsonValue;
   };
   inputs: readonly {
+    id: string;
     recordId: string;
-    root: Digest;
+    graph: GraphRootRefV1;
   }[];
   projections: readonly {
     id: string;
-    attempt: { recordId: string; attemptId: string };
+    attempt: { inputId: string; attemptId: string };
     projector: { name: string; version: string };
     parameters?: JsonValue;
   }[];
@@ -255,11 +261,15 @@ interface ReportExportPlan {
 页面渲染只消费 plan 中已经求值的 Projection。
 组件不能在条件分支、客户端懒加载或网络回调里打开新的 Record 查询。
 宿主对全部 available 结果的 `basedOn` 求传递闭包，再分别写出 Export Plan、entrypoints、页面资源与 evidence closure typed object。
-这些对象通过 [Architecture 的通用 Report root](architecture.md#catalog-与领域关系)进入 catalog，不扩张根 manifest。
+这些对象各自成为 Graph node，并通过 strong edge 进入新的 sealed Report Graph root，不扩张 bootstrap。
 
-增加页面、Projector、报告参数、资源类型或 evidence 种类只增加 catalog entry 与 typed object。
-旧 v2 reader 可以校验并原字节复制未知对象；新 reader 读取缺少这些对象的旧 artifact 时，只缺对应功能。
-已有 media type 可以增加语义独立、缺失含义明确的可选字段。
+每个 EvidenceRef 还必须携带 source Graph root 到 target 的 membership proof。
+导出器保存 proof 路径上的原始 GraphRootV1、GraphNodeV1 与 EdgePageV1 bytes，再用 wrapper node 把它们纳入 Report 强闭包。
+Report reader 校验这些 bytes 的 DescriptorV1 与相邻引用；无关 sibling payload 不需要随报告复制。
+
+增加页面、Projector、报告参数、资源类型或 evidence 种类只增加 node、strong edge 与 typed payload。
+旧 v2 reader 可以校验并复制未知 node 的完整强闭包；新 reader 读取缺少这些对象的旧 artifact 时，只缺对应功能。
+已有 payload media type 可以增加语义独立、缺失含义明确的可选字段。
 字段不能改名、删除、改类型或改变语义；需要不兼容的业务形状时使用新的 media type，不升级容器。
 
 闭包不是 artifact 文件名白名单。

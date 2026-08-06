@@ -278,6 +278,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | Projector | Projector | 从 sealed Record 确定性计算一种中性读模型的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#report-与-projector-边界) |
 | Projection | Projection | Projector 一次求值得到的普通值;可重建,不进入 Record | [运行观测协议](roadmap/observation-protocol/architecture.md#report-与-projector-边界) |
 | Observation Hub | Observation Hub | 一次 Invocation 内校验、排序并分发 Observation 的唯一入口 | [运行观测协议](roadmap/observation-protocol/architecture.md#observation-hub-与-sink) |
+| Graph root | `GraphRootV1` | `layout.json.head` 指向的不可变对象图入口；只声明 open/sealed 与 subject，不等同于 Reducer snapshot | [运行观测协议](roadmap/observation-protocol/architecture.md#graph-rootmutable-head-与封口) |
+| Graph node | `GraphNodeV1` | 把一个 opaque typed payload 与它的容器强依赖分开的内容寻址节点 | [运行观测协议](roadmap/observation-protocol/architecture.md#强依赖与通用遍历) |
+| strong edge | `StrongEdgeV1` | copier、verifier、GC 与 Report exporter 都必须跟随的容器依赖；不代替领域 relation | [运行观测协议](roadmap/observation-protocol/architecture.md#强依赖与通用遍历) |
 
 ## 禁用写法
 

@@ -64,7 +64,7 @@ v2 容器不是凭空设计，也不靠预先猜完全部字段。
 |---|---|---|
 | OCI Image Spec | `mediaType + digest + size` Descriptor 与内容寻址 DAG | image、config、layer 的容器镜像业务语义 |
 | Git object database | 不可变内容对象与引用分离 | Git 的少量固定对象类型和 packfile |
-| Protocol Buffers | 追加字段、未知内容保留、删除字段身份不复用 | ProtoJSON 无法无损 round-trip unknown fields |
+| Protocol Buffers | payload 追加字段、未知内容保留、删除字段身份不复用 | ProtoJSON 无法无损 round-trip unknown fields；NiceEval frozen core 不开放字段追加 |
 | CloudEvents | 小型稳定 envelope、独立 data schema、namespaced extension | 传输绑定和云事件业务语义 |
 | OpenTelemetry Schema | 已发布 schema 身份不可原地改写 | 通用 rename/migration 引擎 |
 | RFC 8785 JCS | 小型 JSON 索引的规范字节 | 大型 blob 与 NDJSON payload |
@@ -79,9 +79,9 @@ v2 容器不是凭空设计，也不靠预先猜完全部字段。
 - [OpenTelemetry schemas](https://opentelemetry.io/docs/specs/otel/schemas/) 为已发布 schema 提供不可变身份和显式转换。
 - [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) 定义 JSON Canonicalization Scheme。
 
-NiceEval 的关键差异是对象级 capability。
-Generic verifier 即使不懂一个 media type，也能验证和复制它；只有依赖该对象的 Projector 或页面 unavailable。
-容器级 capability 只用于 root、寻址、完整性与封口，不能成为普通功能的捷径。
+NiceEval 的关键差异是把 Graph node 与 strong edge 冻结成通用遍历层。
+Generic verifier 即使不懂 payload media type，也能验证并复制完整强闭包；只有依赖该 payload 的 Projector 或页面 unavailable。
+codec、加密与签名使用 wrapper 或 attestation payload，不进入 DescriptorV1，也不能成为修改 frozen core 的捷径。
 
 ## 证明材料
 
