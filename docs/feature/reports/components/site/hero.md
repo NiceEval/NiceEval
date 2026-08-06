@@ -1,6 +1,6 @@
 # `Hero`
 
-`Hero` 显示站点标题、最后运行时间、Run 合成来源与品牌行。
+`Hero` 在 web 面显示站点标题与品牌行；text 面另外显示最后运行时间与 Run 合成来源。
 它从当前 page 的 `Sample` 计算这些普通值；也可以用 `input` 显式传入另一份 `Sample`：
 
 ```tsx

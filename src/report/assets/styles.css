@@ -513,11 +513,6 @@ table.niceeval-report,
   border-color: var(--accent);
   background: color-mix(in oklch, var(--accent), transparent 84%);
 }
-.niceeval-hero .niceeval-hero-meta {
-  margin: 14px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-}
 .niceeval-powered-by {
   margin: 10px 0 0;
   font-size: 12px;
