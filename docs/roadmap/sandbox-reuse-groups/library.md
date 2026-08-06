@@ -1,28 +1,44 @@
 # 分组 Sandbox 复用 —— Library
 
 契约总纲见 [README](README.md)。
-评估作者在 `evals/` 中声明哪些 Eval 可以共用一台 Sandbox。
+评估作者在 `evals/` 中声明哪些 Eval 必须共用一台 Sandbox。
 
 ## `defineSandboxGroup()`
 
 ```ts
 import { defineSandboxGroup } from "niceeval";
+import capacityPolicy from "./01-capacity-policy/eval.ts";
+import capacityWeekly from "./02-capacity-weekly/eval.ts";
+import capacityPolicyUpdate from "./03-capacity-policy-update/eval.ts";
 
 export default defineSandboxGroup({
   evals: [
-    "./01-capacity-policy",
-    "./02-capacity-weekly",
-    "./03-capacity-policy-update",
+    capacityPolicy,
+    capacityWeekly,
+    capacityPolicyUpdate,
   ],
   onUnavailable: "stop-group",
 });
 ```
 
-公开形状只有显式成员与实例失效策略：
+`evals` 接受 `defineEval()` / `defineScoreEval()` 的原始产物，不接受字符串 id。
+成员类型保留 Eval 的 Sandbox 所有权：
 
 ```ts
+type EvalSandboxOwnership = "none" | "prepare-only" | "instance";
+
+type AnyEvalDefinition<
+  Ownership extends EvalSandboxOwnership = EvalSandboxOwnership,
+> =
+  | EvalDefinition<"pass", TestContext, Ownership>
+  | EvalDefinition<"points", ScoreTestContext, Ownership>;
+
+type SandboxGroupMember = AnyEvalDefinition<
+  "none" | "prepare-only"
+>;
+
 interface SandboxGroupInput {
-  readonly evals: readonly [string, ...string[]];
+  readonly evals: readonly [SandboxGroupMember, ...SandboxGroupMember[]];
   readonly onUnavailable: "stop-group" | "replace-sandbox";
 }
 
@@ -36,13 +52,65 @@ function defineSandboxGroup(input: SandboxGroupInput): SandboxGroupDefinition;
 ```
 
 没有字段拥有隐式默认值。
-`evals` 非空且只接受完整 Eval 引用；不接受前缀、glob、函数、tag 或 metadata 选择器。
+`evals` 非空，不接受字符串、前缀、glob、函数、tag 或 metadata 选择器。
+导入语句同时让成员来源和目录关系对用户可见；数组顺序不参与调度，发现后按 Eval id 排序成成员集合。
 
-以 `./` 开头的引用相对组模块所在目录解析；不以 `./` 开头的引用是从 `evals/` 起算的完整 Eval id。
-相对引用不能包含 `..`，完整 id 不能包含 `.` 或 `..` 路径段。
-两种写法都必须精确解析到一个既有 Eval；新增同目录 Eval 不会自动加入组。
-`"./"` 可以精确引用组模块同目录的 `eval.ts` 入口。
-数组顺序不参与调度；发现结果按 Eval id 排序成成员集合，重排声明不会改变定义身份。
+## Eval Layer 的类型边界
+
+Sandbox Layer 增加实例所有权 type-state：
+
+```ts
+type SandboxLayerScope = "attempt-only" | "instance-lifecycle";
+
+interface SandboxLayer<
+  Kind extends "command-only" | "template-bearing",
+  Scope extends SandboxLayerScope,
+> {
+  prepare(command: SandboxCommand): SandboxLayer<Kind, Scope>;
+  setup(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
+  teardown(hook: SandboxHook): SandboxLayer<Kind, "instance-lifecycle">;
+}
+```
+
+`defineEval()` 与 `defineScoreEval()` 用条件类型把作者输入保留到产物：
+
+```ts
+type OwnershipOf<Sandbox> =
+  Sandbox extends undefined
+    ? "none"
+    : Sandbox extends SandboxLayer<"command-only", "attempt-only">
+      ? "prepare-only"
+      : "instance";
+
+function defineEval<const Sandbox extends SandboxLayer | undefined>(
+  input: EvalInput<Sandbox>,
+): EvalDefinition<"pass", TestContext, OwnershipOf<Sandbox>>;
+```
+
+`defineScoreEval()` 使用同一份 `OwnershipOf`，只把 evaluation kind 与 test context 换成计分制。
+因此跨文件 default import 不会把精确状态扩大成普通 `SandboxLayer`。
+
+作者可见的结果是：
+
+- 省略 `sandbox` → `"none"`，可以加入组；
+- `sandboxLayer().prepare(...)` → `"prepare-only"`，可以加入组；
+- template-bearing Layer → `"instance"`，不能加入组；
+- command-only Layer 一旦调用 `setup()` 或 `teardown()` → `"instance"`，不能加入组。
+
+因此错误直接落在组定义处：
+
+```ts
+import ownsTemplate from "./owns-template/eval.ts";
+
+defineSandboxGroup({
+  evals: [ownsTemplate],
+  //     ^ TypeScript: template-bearing Eval cannot join a Sandbox reuse group
+  onUnavailable: "stop-group",
+});
+```
+
+不把整个 Eval Layer 禁掉，因为每题仍需要自己的 prepare。
+边界只禁止成员拥有跨 Attempt 的物理实例或生命周期。
 
 ## 文件发现与身份
 
@@ -75,56 +143,40 @@ evals/experiment/migrate-0.9.eval.ts
 evals/experiment/current-project.sandbox-group.ts
 ```
 
-组文件中的 `evals: ["./run-existing", "./repair-failing"]` 是完整边界；第三道题不会因共址而入组。
+组文件显式导入 `runExisting` 与 `repairFailing`，再写 `evals: [runExisting, repairFailing]`。
+第三道题不会因共址而入组。
 
 ## 分组校验
 
-发现期完成以下校验：
+Runner 先发现所有 Eval，再导入 Sandbox Group 模块。
+它用 definition 对象身份把成员映射回路径派生 Eval id；这样 Eval 顶层 loader capture 不会因组模块提前 import 而丢失。
 
-- 每个引用精确解析到一条 Eval；
-- 同一组内不重复引用；
+TypeScript 先拒绝不合类型的成员；发现期再为 JavaScript、类型断言与手写逃逸完成以下运行时复核：
+
+- 每个 definition 恰好对应一条已发现 Eval；
+- 同一 definition 没有被多个 Eval id 复用；
+- 同一组内不重复成员；
 - 一条 Eval 不被两个组引用；
-- 相对引用不越出组模块目录，完整 id 仍限制在本项目 `evals/` 根；
+- 成员没有 template-bearing Layer；
+- 成员的 command-only Layer 没有 `setup()` 或 `teardown()`；
 - 组定义不包含 template、Provider、prepare、Agent 或 Experiment 配置。
 
-运行规划再校验每个已启用组中本次选中成员的物理复用身份一致。
+运行规划要求配对 Experiment 提供 template-bearing Layer。
+同一 Experiment 的 template、Agent ensure identity 与 lifecycle owner 对组内成员天然相同；Runner 仍保留物理 plan identity 断言，防守自定义 Provider 的不透明规划。
 
 ## 选择与未分组 Eval
 
-Experiment 与 CLI 继续使用普通 Eval id 选择题目，不增加“运行组”的第二套选题命令。
-Experiment 另用完整组 id 启用已经定义好的复用边界：
-
-```ts
-export default defineExperiment({
-  evals: ["toggl-cli-evolution/", "react-hook-form/"],
-  sandboxReuse: {
-    groups: ["toggl-cli-evolution"],
-  },
-  // agent、model、sandbox layer 等保持原样
-});
-```
-
-公开形状不接受 `true`、成员数组或选择器：
-
-```ts
-interface SandboxReuseInput {
-  readonly groups: readonly [string, ...string[]];
-}
-
-interface ExperimentConfig {
-  readonly sandboxReuse?: SandboxReuseInput;
-}
-```
-
-`groups` 每项都是完整 Sandbox group id，不接受前缀或 glob，也不自动启用同目录的其它组。
-每个 id 必须精确命中定义，并至少覆盖本 Experiment 选中的一个 Eval；重复 id 是配置错误。
-数组顺序不参与调度或身份；规划时按 group id 排序成启用集合。
+Experiment 与 CLI 继续只用普通 Eval id 选择题目，不增加“运行组”的第二套选择配置或命令。
+选中的 Eval 若属于 Sandbox Group，就自动进入该组队列；Experiment 不能关闭、覆盖或重新分组。
 
 Experiment 的 `evals` 仍是付费范围。
-组里未被选中的成员不运行，也不会被组引用自动补入选择；选中且属于已启用组的成员才进入共享队列。
+组里未被选中的成员不运行，也不会被组定义自动补入选择。
 
-未被任何组引用的 Eval，以及属于未启用组的 Eval，都保持 fresh。
+未被任何组引用的 Eval 保持 fresh。
 框架不建立隐式的“其它”组，也不因为多个 Eval 解析出相同 Layer 就共享实例。
+
+组定义没有“仅允许复用”的弱语义。
+若某个 Experiment 必须让同一 Eval fresh，该 Eval 就不能属于强制复用组；框架不提供 Experiment 侧 opt-out 来掩盖这项冲突。
 
 ## 实例不可用策略
 
@@ -154,7 +206,7 @@ Sequence Invocation 每一步都真实派发，并禁止结果携带。
 Experiment `maxConcurrency` 与 Invocation 全局并发共同形成总有效宽度。
 每个活跃组同时最多运行一条 Attempt；不同组与 fresh Attempt 竞争总并发位。
 
-Experiment 的 `attempts` 大于 1 时，已启用成员的每个真实 Attempt 都进入同一个组队列，不按 Attempt 序号隐式拆出多台 Sandbox。
+Experiment 的 `attempts` 大于 1 时，组成员的每个真实 Attempt 都进入同一个组队列，不按 Attempt 序号隐式拆出多台 Sandbox。
 需要互相隔离的重复轨迹时，应使用各自拥有实例与状态身份的 Experiment，而不是把复用组解释成隐藏的 lane 池。
 
 组内 Sandbox 在两个 Attempt 之间空闲时不占并发位。

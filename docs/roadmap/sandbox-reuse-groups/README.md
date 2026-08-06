@@ -1,7 +1,7 @@
 # 分组 Sandbox 复用
 
-评估作者在 `evals/` 中声明 Sandbox 复用组，Experiment 只按组 id 决定本条件启用哪些组。
-已启用组的 Eval 轮流使用该组的一台活跃 Sandbox；不同组绝不共用实例，其余 Eval 使用全新 Sandbox。
+评估作者在 `evals/` 中用 Sandbox 复用组声明一条强制运行边界。
+同组 Eval 一旦被选中，就轮流使用该组的一台活跃 Sandbox；不同组绝不共用实例，未分组 Eval 使用全新 Sandbox。
 
 ## 解决的问题
 
@@ -12,26 +12,29 @@
 
 | 项目 | 真实边界 | 配置结论 |
 |---|---|---|
-| MemoryBench | 记忆条件需要共用环境，baseline 对同一批题仍要 fresh 并行 | 在记忆链目录声明一组，只由记忆 Experiment 启用 |
-| Terminal-Bench | 238 个题各自声明环境并独立判分 | 不声明组，每条 Attempt 使用全新 Sandbox |
-| NiceEval-Eval | 两道当前项目题可复用安装缓存，迁移题仍可独立运行 | 在 `experiment/` 中定义具名组，并由对应 Experiment 启用 |
+| MemoryBench | 纵向记忆链 Eval 只有 command-only prepare；不同记忆条件各自提供 template | 这些 Eval 可以在编译期组成一组，各 Experiment 分别拥有实例 |
+| Terminal-Bench | 238 个 Eval 各自拥有 Dockerfile / Compose template | template-owning Eval 不能入组，每条 Attempt 使用全新 Sandbox |
+| NiceEval-Eval | 两道当前项目题不拥有 Sandbox Layer，可复用 Node 条件的安装缓存 | 在 `experiment/` 中定义只含这两道题的具名组 |
 
 ## 核心心智
 
-Sandbox Layer 与复用组正交：
+Sandbox Layer 与复用组按所有权组合：
 
 - Layer 回答“一条 Eval 最终需要什么 Sandbox，以及按什么顺序 prepare”；
 - 复用组回答“哪些已经完成 link 的 Eval 轮流使用同一物理实例”。
 
-Runner 先按既有 Layer 契约完成 Eval × Experiment link，再校验每个已启用组中本次选中成员的物理复用身份完全一致。
-已选成员解析出不同 template、Provider plan、Agent ensure identity 或 lifecycle owner 时，框架在创建资源前报错，不猜测也不拆组。
+组成员不能拥有 template 或 `setup()` / `teardown()` 实例生命周期，只能省略 Sandbox Layer，或声明每 Attempt 重放的 command-only `prepare()`。
+Experiment 是组实例唯一的 template 与 lifecycle owner；现有 Layer link 顺序不变。
+
+这个限制进入 `defineEval()` 产物的类型状态。
+`defineSandboxGroup()` 接收导入的 Eval definition，而不是字符串 id，因此 TypeScript 会直接拒绝带 template 或实例 hook 的成员；动态 JavaScript 与显式类型逃逸仍由发现期再次校验。
 
 组定义位于 `evals/` 下的 `*.sandbox-group.ts` 或 `<group>/sandbox-group.ts`，与 Eval 的文件入口、目录入口对称。
 定义文件所在目录只提供引用锚点，文件路径只生成稳定组 id，不自动决定成员。
-文件必须用 `defineSandboxGroup()` 明确列出每个 Eval；新增文件不会因为碰巧放在同一目录就进入共享环境。
+文件必须导入 Eval definition，并用 `defineSandboxGroup()` 明确列出每个成员；新增文件不会因为碰巧放在同一目录就进入共享环境。
 
-Experiment 使用 `sandboxReuse: { groups: [...] }` 精确引用组 id。
-这只是启用已有边界，不允许在 Experiment 内追加、删除或覆盖成员；省略时本条件全部 fresh。
+`defineSandboxGroup()` 本身就表示成员需要 Sandbox reuse，不再等待 Experiment 二次启用。
+Experiment 只照常选择 Eval，不能追加、删除、覆盖或关闭成员的分组归属。
 
 每个组只有一台活跃 Sandbox，因此组内 Attempt 串行。
 不同组和未分组 Attempt 继续在 Experiment 与 Invocation 的并发上限内并行。
@@ -44,20 +47,21 @@ Experiment 使用 `sandboxReuse: { groups: [...] }` 精确引用组 id。
 
 ## 设计结论
 
-1. `defineSandboxGroup()` 是唯一成员定义入口；Experiment 只引用组 id，不重复成员，也不提供全实验复用布尔值。
-2. 一个 Eval 至多属于一个组；组身份来自目录中的显式定义，不从目录内容、tag、metadata 或 Layer 自动推导。
-3. 同组只有一台活跃 Sandbox；不同组即使物理配置相同也不共享实例。
-4. 未分组 Eval 与本 Experiment 未启用的组成员都使用全新 Sandbox，并可与任一已启用组并行。
-5. 每个组必须明确声明实例不可用时停止还是替换。
-6. 已启用组的所有真实 Attempt 都进入所属组的同一串行队列；要得到彼此隔离的重复轨迹，使用独立 Experiment 与独立状态身份。
-7. 已启用的组定义与完整成员关系只进入其成员 pair 的指纹；未启用组和未分组 Eval 不影响本 Experiment。
+1. `defineSandboxGroup()` 同时声明成员与必须复用；Experiment 不引用组、不重复成员，也不提供全实验复用布尔值。
+2. 一个 Eval 至多属于一个组；成员来自导入 definition 的显式数组，不从目录内容、tag、metadata 或 Layer 自动推导。
+3. 组成员的 Eval Layer 只能省略或保持 prepare-only；Experiment 独占 template 与实例 lifecycle。
+4. 同组只有一台活跃 Sandbox；不同组即使物理配置相同也不共享实例。
+5. 未分组 Eval 使用全新 Sandbox，并可与任一复用组并行。
+6. 每个组必须明确声明实例不可用时停止还是替换。
+7. 组成员的所有真实 Attempt 都进入所属组的同一串行队列；要得到彼此隔离的重复轨迹，使用独立 Experiment 与独立状态身份。
+8. 组定义与完整成员关系只进入成员 pair 的指纹；未分组 Eval 不因无关组变化而失效。
 
 ## 范围
 
 本功能包含：
 
-- `evals/` 内的 `defineSandboxGroup()`、文件入口与目录入口发现，以及 Experiment 的显式组引用；
-- 显式成员、重叠检查、Layer link 后的物理身份预检；
+- `evals/` 内的 `defineSandboxGroup()`、文件入口与目录入口发现；
+- definition 成员引用、Layer type-state、重叠检查与发现期运行时复核；
 - 组内单实例调度、显式替换策略、失败传播和运行记录；
 - `--dry`、live 与结束反馈中的组和实例归属。
 

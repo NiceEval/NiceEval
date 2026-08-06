@@ -5,7 +5,10 @@
 ## Sandbox Layer 与复用组
 
 Sandbox Group Definition 不提供 template、Provider 或 prepare 命令。
-每个 Eval × Experiment pair 仍先按 [Sandbox Layer](../../feature/sandbox/layers.md)完成普通 link：双方恰好一方提供 template，两层 prepare 顺序保持不变。
+组成员的 Eval Layer 只能省略，或是没有实例 hook 的 command-only prepare Layer；Experiment 必须提供 template-bearing Layer，并成为唯一 lifecycle owner。
+
+每个 Eval × Experiment pair 仍按 [Sandbox Layer](../../feature/sandbox/layers.md)完成普通 link。
+Experiment 作为 template owner 先 prepare，当前 Eval 的 command-only prepare 随后重放；现有两层顺序不变。
 
 link 完成后，physical planning 产生既有复用身份：
 
@@ -13,8 +16,11 @@ link 完成后，physical planning 产生既有复用身份：
 (Provider physical plan identity, Agent ensure identity, lifecycle owner marker)
 ```
 
-Runner 再把每个已启用组中本次选中成员的身份逐项比较。
-全部一致才建立组；任一项不同就报 `sandbox-reuse-group-incompatible`，并显示相关 Eval、Layer owner 与不一致字段。
+Provider physical plan 与 lifecycle owner 都来自同一个 Experiment，Agent ensure identity 也在 Experiment 内恒定。
+Eval 只能贡献不进入物理复用键的 Attempt prepare，因此正常类型路径在结构上已经保证组内身份一致。
+
+Runner 仍逐项比较最终 identity。
+自定义 Provider 或动态 JavaScript 绕过结构约束后若产生差异，报 `sandbox-reuse-group-incompatible`，不猜测也不拆组。
 
 组 id 进入运行时复用键。
 两个组即使解析出完全相同的物理身份，也必须创建各自的 Sandbox，不能跨组借用。
@@ -39,11 +45,19 @@ type SandboxAssignment =
     };
 ```
 
-assignment 由发现结果、Experiment 引用的组 id 与当前 Eval id 确定，不读取 Experiment 回调、运行时抢占顺序或 Sandbox id。
+assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配置、回调、运行时抢占顺序或 Sandbox id。
+
+## 编译期与发现期
+
+`defineEval()` 产物保留 `none`、`prepare-only` 或 `instance` Sandbox 所有权。
+`defineSandboxGroup()` 的 tuple 只接受前两种，普通 TypeScript 项目在加载 NiceEval 前就能指出具体不合法成员。
+
+发现顺序固定为 Eval 在前、Sandbox Group 在后。
+组模块导入的 definition 必须按对象身份恰好命中一条已发现 Eval；Runner 随后读取 Layer 私有状态复核 template 与 hook，不能把类型断言当成权限。
 
 ## 调度
 
-本次选择命中已启用组的成员时，Runner 为该组建立一个互斥队列和至多一台活跃 Sandbox：
+本次选择命中组成员时，Runner 为该组建立一个互斥队列和至多一台活跃 Sandbox：
 
 1. 组内下一条工作取得全局与 Experiment 并发位；
 2. 首条工作创建 Sandbox，后续工作领取同一活跃实例；
@@ -57,9 +71,9 @@ assignment 由发现结果、Experiment 引用的组 id 与当前 Eval id 确定
 ## 指纹与结果携带
 
 `definitionHash` 哈希组 id、按 Eval id 排序的完整成员集合与 `onUnavailable`。
-组上下文进入本 Experiment 已启用成员 pair 的指纹；组成员或策略变化会让这些结果重新判定携带资格。
+组上下文进入每个成员 pair 的指纹；组成员或策略变化会让这些结果重新判定携带资格。
 
-未分组 pair 和未启用组的 pair 不包含任何组定义，因此无关组变化不会作废它的结果。
+未分组 pair 不包含任何组定义，因此无关组变化不会作废它的结果。
 所有 assignment 仍逐 Attempt 判断结果携带；被携带的 Attempt 不领取 Sandbox，也不执行 lifecycle、reset 或 prepare。
 
 Sequence 上下文仍按[有序 Eval 序列](../ordered-sequences/architecture.md)进入 Attempt 指纹。
@@ -102,11 +116,11 @@ fresh Attempt 省略 `groupId`，并使用自己的 `sandboxNumber`。
 
 | code | 阶段与条件 |
 |---|---|
-| `sandbox-group-member-missing` | 发现期：成员引用没有精确解析到 Eval |
+| `sandbox-group-member-unresolved` | 发现期：definition 没有恰好对应一条已发现 Eval |
 | `sandbox-group-member-overlap` | 发现期：一条 Eval 被重复引用或属于多个组 |
-| `sandbox-group-member-outside` | 发现期：相对引用越出组模块目录，或完整 id 越出项目 Eval 根 |
-| `sandbox-reuse-group-reference` | 计划期：Experiment 组 id 未精确命中、重复，或没有覆盖任何已选 Eval |
-| `sandbox-reuse-group-incompatible` | 计划期：已启用组中本次选中成员的 Layer link 或物理复用身份不同 |
+| `sandbox-group-member-layer` | 发现期：成员拥有 template 或 instance lifecycle hook |
+| `sandbox-reuse-group-template-missing` | 计划期：配对 Experiment 没有提供 template-bearing Layer |
+| `sandbox-reuse-group-incompatible` | 计划期：组中本次选中成员的 Layer link 或物理复用身份不同 |
 
 错误消息必须列出 group id、相关 Eval id 与修正方向。
 配置错误不降级成 fresh，也不自动拆组。

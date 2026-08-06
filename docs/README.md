@@ -73,7 +73,7 @@ docs/
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
-│   ├── sandbox-reuse-groups/            Eval 侧定义复用组，Experiment 按 id 启用
+│   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策

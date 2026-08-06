@@ -8,41 +8,45 @@
 ```ts
 // evals/toggl-cli-evolution/sandbox-group.ts
 import { defineSandboxGroup } from "niceeval";
+import capacityPolicy from "./01-capacity-policy/eval.ts";
+import capacityWeekly from "./02-capacity-weekly/eval.ts";
+import capacityPolicyUpdate from "./03-capacity-policy-update/eval.ts";
+import capacityMonthly from "./04-capacity-monthly/eval.ts";
+import capacityFixedException from "./05-capacity-fixed-exception/eval.ts";
+import capacityProjects from "./06-capacity-projects/eval.ts";
+import capacityExceptionRevoked from "./07-capacity-exception-revoked/eval.ts";
+import capacityQuarterly from "./08-capacity-quarterly/eval.ts";
 
 export default defineSandboxGroup({
   evals: [
-    "./01-capacity-policy",
-    "./02-capacity-weekly",
-    "./03-capacity-policy-update",
-    "./04-capacity-monthly",
-    "./05-capacity-fixed-exception",
-    "./06-capacity-projects",
-    "./07-capacity-exception-revoked",
-    "./08-capacity-quarterly",
+    capacityPolicy,
+    capacityWeekly,
+    capacityPolicyUpdate,
+    capacityMonthly,
+    capacityFixedException,
+    capacityProjects,
+    capacityExceptionRevoked,
+    capacityQuarterly,
   ],
   onUnavailable: "stop-group",
 });
 ```
 
-组定义与题目共址，所有 Agent/model Experiment 使用同一成员边界。
-需要连续实例的记忆 Experiment 只启用这个 id，不复制八个成员：
+八道 Eval 的 `evolutionSandbox()` 只调用 `sandboxLayer().prepare(...)`，所以产物类型是 `prepare-only`，可以加入组。
+若其中一道改用 Dockerfile template 或增加 `setup()`，这份组文件立即出现 TypeScript 错误。
 
-```ts
-export default defineExperiment({
-  evals: ["toggl-cli-evolution/", "react-hook-form/"],
-  sandboxReuse: {
-    groups: ["toggl-cli-evolution"],
-  },
-  // memory agent、model、sandbox layer 等保持原样
-});
-```
+组定义与题目共址，并直接要求所有 Agent/model Experiment 对这八道题使用复用组。
+每个 Experiment 各自创建组实例；baseline 与 mempal 不共享同一台 Sandbox，也不共享运行状态。
 
-baseline Experiment 省略 `sandboxReuse`。
-因此相同八道题在 baseline 中仍各用 fresh Sandbox 并行，不会因组文件与题目共址而被迫复用。
+baseline 的 E2B template 与 mempal 的 template、checkpoint lifecycle 都继续由各自 Experiment 声明。
+组内每道 Eval 的 Rust 安装与仓库准备仍作为第二层 prepare 逐 Attempt 重放。
+
+baseline 没有 memory Agent、Skill 或外部状态，只是使用相同的物理复用边界。
+如果 baseline 的测量契约要求这八道题逐题 fresh，就不能把共同 Eval 定义成强制复用组；Experiment 不能关闭 Eval 侧要求。
 
 ## 运行
 
-启用该组的普通混合批次里，八个组成员轮流使用一台 Sandbox。
+普通混合批次里，八个组成员轮流使用本 Experiment 的一台 Sandbox。
 其它 PR 修复题未被任何组引用，因此使用 fresh Sandbox，并可与组内当前 Attempt 并行。
 
 组定义不把文件名数字升级为执行契约。

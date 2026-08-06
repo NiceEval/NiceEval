@@ -49,8 +49,8 @@ Runner 追加 `sandbox-reuse-group-stopped` diagnostic。
 
 ## carry 与零资源路径
 
-已启用的组成员可携带时，Runner 不为它领取 Sandbox、不运行 lifecycle hook，也不占并发位。
-只有本 Invocation 中真实派发、且所属组被本 Experiment 启用的成员才共享实例。
+组成员可携带时，Runner 不为它领取 Sandbox、不运行 lifecycle hook，也不占并发位。
+只有本 Invocation 中真实派发的组成员才共享实例。
 
 Sequence Invocation 每一步都 fresh dispatch。
 它与 `stop-group` 组合时，从首步建立实例并一直使用到序列封口；外部 cohort 是否干净仍由 lifecycle 与 `sharedState` 保证。
@@ -71,6 +71,6 @@ Invocation 中断时，Runner 停止派发新工作，并按以下顺序收尾�
 ## 与留存现场互斥
 
 `--keep-sandbox` 要求一条 Attempt 独占一台可留存 Sandbox。
-选中并启用复用组时在计划期报错，不把组实例留给其中一条 Attempt，也不把后续成员迁到新实例。
+选中复用组成员时在计划期报错，不把组实例留给其中一条 Attempt，也不把后续成员迁到新实例。
 
 `localSandbox()` 没有可恢复的隔离边界，同样不能加入复用组。
