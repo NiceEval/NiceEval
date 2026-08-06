@@ -72,6 +72,7 @@ docs/
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
+│   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策

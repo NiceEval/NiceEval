@@ -25,3 +25,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [运行观测协议](observation-protocol/README.md) —— Agent 事件流、Live、Record、OTel 与 Report 投影共用一份事实协议
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
+- [有序 Eval 序列](ordered-sequences/README.md) —— 用独立 Sequence 声明现有 Eval 的顺序、完整重放与执行 lineage

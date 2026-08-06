@@ -269,6 +269,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
+| Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不可变事实 | [运行观测协议](roadmap/observation-protocol/README.md) |
 | Claim | Claim | evaluator 根据明确依据在当时作出的结论 | [运行观测协议](roadmap/observation-protocol/architecture.md#provenance-与-claim) |
 | Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |
