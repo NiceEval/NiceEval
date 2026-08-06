@@ -79,6 +79,7 @@ docs/
 ├── design/                              需要对比候选方案的架构 / 技术决策
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
 │   ├── environment-model/               环境模型：Sandbox 起点与三方准备顺序
+│   ├── eval-suite-sharing/              原生 NiceEval 题集跨项目零发布改造复用
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
