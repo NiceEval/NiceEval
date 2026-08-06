@@ -9,15 +9,19 @@
 发布方不写 `defineEvalSuite()`、`suite.ts`、manifest 或专用 package export。
 它只维护原本就能运行的 NiceEval 项目，并通过普通 package、Git dependency、tarball 或 workspace 交付现有文件。
 
-NiceEval 增加四件事：
+NiceEval 增加六件事：
 
 1. `defineConfig({ evalRoots })` 用 package、root 与挂载 key 引用外部 Eval 根。
-2. 发现器合并本地与外部根，并把外部 package root 作为源码捕获边界。
-3. 外部 Eval 内的 NiceEval import 绑定消费运行时，保证原生定义只有一个契约实例。
-4. CLI 检查挂载并显示逐 Eval package 来源，不负责安装或升级依赖。
+2. 发现器合并本地与外部根，并把 owner root capability 贯穿 loader、源码、Sandbox 与 transfer 路径。
+3. Node >=22.15 的同步模块查找 hook 把外部 owner 内 NiceEval import 绑定消费运行时，保证原生定义只有一个契约实例。
+4. 真实模块 DAG 把共享运行期模块的源码、loader、criteria 与 private 事实投影到每条 Eval。
+5. fingerprint 投影逐 Eval 可达 dependency、NiceEval runtime revision 与可重验 transfer manifest。
+6. CLI 和 Record 显示精确 installed identity，并区分 definition origin 与 execution origin；不负责安装或升级依赖。
 
 不新增 `eval.lock`。
-项目 package lock 固定外部 Eval 与依赖，NiceEval fingerprint 和 manifest 继续负责逐 Eval 身份与携带。
+项目 package lock 固定外部 Eval 与依赖选择，NiceEval fingerprint 和 manifest 只读投影逐 Eval 身份与携带。
+
+在 loader、owner capability、dependency projection 与 transfer manifest 四个正确性前置项完成并通过安装矩阵前，不批准只实现“多扫描一个目录”的缩水版本。
 
 ## 为什么不是 PLAN-1
 
@@ -46,14 +50,19 @@ package name、version、repository 与 license 可从现有 `package.json` 取�
 ## 精确失效的裁决
 
 Package lock 按 package 固定安装内容，但不决定结果是否携带。
-NiceEval 对挂载后的每条 Eval 分别捕获源码闭包和资产输入。
+NiceEval 对挂载后的每条 Eval 分别捕获源码闭包、可达 dependency、runtime revision、Sandbox 与 transfer 输入。
 
 依赖升级时：
 
 - 单题源码、Fixture、判据或 Sandbox 输入改变，只作废受影响 Eval。
 - 一个项目内模块改变，只作废静态 import 它的 Eval。
+- 一个 bare dependency 改变，只作废可达它的 Eval。
+- `test(t)` 上传的判据内容改变，作废引用历史 transfer manifest 的 Eval。
 - 与 Eval 闭包无关的文件改变，不作废结果。
 - 挂载前缀改变会改变 Eval id，因此形成新的项目内结果身份。
+
+动态依赖或运行期路径无法在计划期完整重验时保守重跑。
+Terminal-Bench 10 条带随机 Compose env 的题也采用这一正确性优先裁决；零发布改造保证能运行，不保证它们跨进程携带。
 
 ## 结果边界
 

@@ -12,11 +12,13 @@
 
 ## 核心要求
 
-### 发布方零新增
+### 发布方零共享协议新增
 
 1. 一个已能运行的 NiceEval 项目不需要新增共享入口、manifest、配置字段或生成产物。
 2. 发布方现有的 `defineEval`、`defineScoreEval`、Sandbox、Assertion、项目内依赖模块与资产原样运行。
 3. 发布项目自己的 `niceeval.config.ts`、Experiment 与 Agent 不进入共享契约。
+
+所选 Git/package 内容仍必须自包含，普通运行期 dependency 仍须正确声明；这属于可安装项目的基本条件，不是共享专用 API。
 
 ### 消费方零转换
 
@@ -32,15 +34,15 @@
 
 ### 可复现
 
-10. 外部 Eval 代码、资产与传递依赖由消费项目的 package manager 和 lockfile 固定。
+10. 外部 Eval 代码、资产与传递依赖由消费项目的 package manager 和 lockfile 固定，并把逐 Eval 可达身份投影进 NiceEval manifest。
 11. 普通运行不联网、不更新依赖，也不改写声明文件。
-12. Run 能指出一条 Eval 来自哪个 package、哪个 package version、哪个 root 和挂载点。
+12. Run 能指出一条 Eval 来自哪个 dependency、精确 commit/integrity、哪个 root 和挂载点，并区分 definition provenance 与 execution provenance。
 
 ### 精确失效
 
-13. 依赖升级只让输入闭包改变的 Eval 失去携带资格。
+13. 依赖升级只让 source、可达 dependency、runtime、Sandbox 或 transfer 输入改变的 Eval 失去携带资格。
 14. 只改 README、发布项目配置或另一条无关 Eval，不作废当前 Eval 的结果。
-15. 外部根中一个项目内模块改变时，只作废静态 import 它的 Eval。
+15. 外部根中一个项目内模块改变时，只作废静态 import 它的 Eval；无法完备查明的动态依赖保守地禁用携带。
 
 ### 组合
 
@@ -50,9 +52,9 @@
 
 ### 原生兼容
 
-19. 外部 Eval 内的 `niceeval` 与 `niceeval/*` import 使用消费项目正在运行的 NiceEval 实例。
+19. 在受支持的 Node/模块矩阵内，外部 owner 中的 `niceeval` 与 `niceeval/*` import 使用消费项目正在运行的 NiceEval 实例。
 20. 发布项目不能因本地 devDependency 或 workspace link 意外带入第二个 NiceEval 运行时。
-21. 外部 Eval 使用了消费版本不存在的 API 时，发现阶段按来源文件报兼容错误，不把它误报成格式不兼容。
+21. Node linker 能识别缺失 export 时，发现阶段按 package 文件报兼容错误；运行期动态访问保留带 package provenance 的普通错误。
 
 ### 安全与归属
 
