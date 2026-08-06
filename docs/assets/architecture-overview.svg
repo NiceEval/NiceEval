@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 544" role="img" aria-labelledby="figTitle figDesc">
   <title id="figTitle">niceeval 的产品架构总览</title>
-  <desc id="figDesc">Eval 由 Discovery 发现，Runner 通过统一 Agent 接口驱动 Direct 或 Sandbox Adapter，Assertions 与 Verdict 共享，最后由 Reporters 写入 niceeval 记录。</desc>
+  <desc id="figDesc">Eval 由 Discovery 发现，Runner 通过统一 Agent 接口驱动 Direct 或 Sandbox Adapter，Assertions 与 Verdict 共享，最后由 Reporters 写入 niceeval 事实层。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />

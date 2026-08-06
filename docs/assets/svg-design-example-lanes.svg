@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 392"
      role="img" aria-labelledby="laneTitle laneDesc">
   <title id="laneTitle">复用前后的 Attempt 时间线</title>
-  <desc id="laneDesc">不复用时每条 Attempt 重放一整套沙箱层准备；复用时沙箱层只跑一次，之后每条 Attempt 从题间重置点起跑，省下的是重复的准备时间。</desc>
+  <desc id="laneDesc">不复用时每条 Attempt 再次执行一整套沙箱层准备；复用时沙箱层只跑一次，之后每条 Attempt 从题间重置点起跑，省下的是重复的准备时间。</desc>
   <defs>
     <style>
       /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */

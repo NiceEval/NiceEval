@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560" role="img" aria-labelledby="figTitle figDesc">
   <title id="figTitle">复用 Sandbox 的并行与生命周期</title>
-  <desc id="figDesc">两个 Sandbox 可以并行，每个 Sandbox 内的 Attempt 严格串行；createSandbox 与题间重置点每个 Sandbox 一次，两层 prepare 与 Agent 每条 Attempt 重放。</desc>
+  <desc id="figDesc">两个 Sandbox 可以并行，每个 Sandbox 内的 Attempt 严格串行；createSandbox 与题间重置点每个 Sandbox 一次，两层 prepare 与 Agent 每条 Attempt 再次执行。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -48,9 +48,9 @@
   <text x="32" y="320" class="label mono">Sandbox B</text>
   <rect x="176.5" y="280.5" width="1015" height="144" class="box" />
   <rect x="192.5" y="304.5" width="175" height="96" class="box-2 good-s" /><text x="212" y="334" class="mono">createSandbox</text><text x="212" y="358">每 Sandbox 一次</text><text x="212" y="382" class="note">只付一次</text>
-  <rect x="384.5" y="304.5" width="239" height="96" class="box-2" /><text x="404" y="334" class="label mono">Attempt 2</text><text x="404" y="358">prepare → Agent → test</text><text x="404" y="382" class="note">重放两层 prepare</text>
+  <rect x="384.5" y="304.5" width="239" height="96" class="box-2" /><text x="404" y="334" class="label mono">Attempt 2</text><text x="404" y="358">prepare → Agent → test</text><text x="404" y="382" class="note">再次执行两层 prepare</text>
   <rect x="640.5" y="304.5" width="239" height="96" class="box-2" /><text x="660" y="334" class="label mono">Attempt 4</text><text x="660" y="358">prepare → Agent → test</text><text x="660" y="382" class="note">同沙箱不重叠</text>
   <text x="912" y="334" class="mono">stop</text><text x="912" y="358">每 Sandbox 一次</text><text x="912" y="382" class="note">不再承接后停止</text>
   <path d="M384 456 V496 H880 V456" class="good-s rule-strong" />
-  <text x="400" y="528" class="note">两层 prepare 与 Agent 每 Attempt 重放；createSandbox / stop 每条 lane 一次</text>
+  <text x="400" y="528" class="note">两层 prepare 与 Agent 每 Attempt 再次执行；createSandbox / stop 每条 lane 一次</text>
 </svg>

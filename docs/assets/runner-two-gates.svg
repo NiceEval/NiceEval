@@ -54,5 +54,5 @@
   <path d="M400 224 V416 M640 224 V416 M864 224 V416 M1104 224 V416" class="dash" />
   <path d="M400 416 H640 M864 416 H1104" class="c0-s rule-strong" />
   <path d="M656 432 H848" class="c1-s rule-strong" />
-  <text x="400" y="456" class="note">全局位只覆盖真正执行段；A 等待时，位交给其它实验</text>
+  <text x="400" y="456" class="note">全局位只约束真正执行段；A 等待时，位交给其它实验</text>
 </svg>

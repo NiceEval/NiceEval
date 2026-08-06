@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
   <title id="figTitle">并发 send 的 span 归属</title>
-  <desc id="figDesc">两个 Attempt 的 send 窗口大面积重叠，按时间窗口会把重叠区 span 混入两边；traceparent 通过 traceId 精确分组，不受窗口重叠影响。</desc>
+  <desc id="figDesc">两个 Attempt 的 send 区间大面积重叠，按时间区间筛选会把重叠区 span 混入两边；traceparent 通过 traceId 精确分组，不受区间重叠影响。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
@@ -36,11 +36,11 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
-  <text x="32" y="48" class="title">span 归属：窗口重叠会混流，traceparent 不会</text>
+  <text x="32" y="48" class="title">span 归属：send 区间重叠会混流，traceparent 不会</text>
   <text x="32" y="80" class="note">时间 →</text><path d="M176 88 H1192" class="rule-strong" />
   <text x="32" y="136" class="label mono">Attempt A</text><rect x="176.5" y="104.5" width="735" height="72" class="box c0-s" /><text x="196" y="134">send window A</text><circle cx="288" cy="156" r="6" class="c0" /><circle cx="568" cy="156" r="6" class="c0" /><circle cx="824" cy="156" r="6" class="c0" />
   <text x="32" y="232" class="label mono">Attempt B</text><rect x="448.5" y="200.5" width="743" height="72" class="box c1-s" /><text x="468" y="230">send window B</text><circle cx="520" cy="252" r="6" class="c1" /><circle cx="736" cy="252" r="6" class="c1" /><circle cx="1080" cy="252" r="6" class="c1" />
-  <rect x="448.5" y="296.5" width="463" height="48" class="box-2 bad-s" /><text x="468" y="326" class="bad">窗口法：重叠区同时命中 A 与 B</text>
+  <rect x="448.5" y="296.5" width="463" height="48" class="box-2 bad-s" /><text x="468" y="326" class="bad">按时间筛选：重叠区同时命中 A 与 B</text>
   <path d="M448 96 V360 M912 96 V360" class="dash" />
   <rect x="176.5" y="376.5" width="431" height="64" class="box" /><circle cx="204" cy="408" r="6" class="c0" /><text x="224" y="414" class="mono">traceId A → 只归 A</text>
   <rect x="760.5" y="376.5" width="431" height="64" class="box" /><circle cx="788" cy="408" r="6" class="c1" /><text x="808" y="414" class="mono">traceId B → 只归 B</text>

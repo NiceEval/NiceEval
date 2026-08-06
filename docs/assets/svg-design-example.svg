@@ -43,7 +43,7 @@
 
   <rect x="32.5" y="88.5" width="359" height="104" class="box" />
   <text x="52" y="118" class="label mono">sandbox.prepare</text>
-  <text x="52" y="142">每条 Attempt 重放</text>
+  <text x="52" y="142">每条 Attempt 再次执行</text>
   <text x="52" y="166" class="note">Runner 自动调度</text>
 
   <path d="M400 140 H432" class="arrow" />

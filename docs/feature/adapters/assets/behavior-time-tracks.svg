@@ -42,7 +42,7 @@
   <rect x="336.5" y="96.5" width="335" height="112" class="box c0-s" /><text x="356" y="126" class="label">行为轨</text><text x="356" y="158" class="mono">reducer → StreamEvent[]</text><text x="356" y="182" class="note">内容与顺序的权威</text>
   <rect x="336.5" y="232.5" width="335" height="112" class="box c1-s" /><text x="356" y="262" class="label">时间轨</text><text x="356" y="294" class="mono">mapper → canonical spans</text><text x="356" y="318" class="note">结构与计时，可降级</text>
   <path d="M672 152 H752 M672 288 H752" class="arrow" />
-  <rect x="760.5" y="96.5" width="447" height="112" class="box" /><text x="780" y="126" class="label mono">assertions</text><text x="780" y="158">只读 Turn.events</text><text x="780" y="182" class="note">不完整会影响结论可信度</text>
+  <rect x="760.5" y="96.5" width="447" height="112" class="box" /><text x="780" y="126" class="label mono">assertions</text><text x="780" y="158">只读 Turn.events</text><text x="780" y="182" class="note">不完整会影响 Verdict 可信度</text>
   <rect x="760.5" y="232.5" width="447" height="112" class="box" /><text x="780" y="262" class="label mono">trace waterfall</text><text x="780" y="294">只读 canonical spans</text><text x="780" y="318" class="note">缺失只使报告降级</text>
   <path d="M704 88 V352" class="rule-strong" /><text x="688" y="376" class="note">不互补</text>
 </svg>

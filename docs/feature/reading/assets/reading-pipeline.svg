@@ -39,9 +39,9 @@
   <text x="32" y="48" class="title">读取面：事实被包住，选择写进返回值，聚合留在消费方</text>
   <rect x="32.5" y="80.5" width="199" height="128" class="box" /><text x="52" y="110" class="label mono">.niceeval/</text><text x="52" y="142">run.json</text><text x="52" y="166">result.json</text><text x="52" y="190" class="note">大证据按需读</text>
   <path d="M232 144 H280" class="arrow" />
-  <rect x="288.5" y="80.5" width="247" height="128" class="box" /><text x="308" y="110" class="label mono">Record</text><rect x="308.5" y="128.5" width="207" height="56" class="box-2" /><text x="328" y="158" class="mono">AttemptHandle</text><text x="328" y="178" class="note">来源 + 懒读函数</text>
+  <rect x="288.5" y="80.5" width="247" height="128" class="box" /><text x="308" y="110" class="label mono">Record</text><rect x="308.5" y="128.5" width="207" height="56" class="box-2" /><text x="328" y="158" class="mono">AttemptHandle</text><text x="328" y="178" class="note">provenance + 懒读函数</text>
   <path d="M536 144 H584" class="arrow" />
-  <rect x="592.5" y="80.5" width="247" height="128" class="box" /><text x="612" y="110" class="label mono">Sample</text><text x="612" y="142">口径 · 覆盖 · 时效</text><text x="612" y="166">仍持有句柄</text><text x="612" y="190" class="note">选择被写在数据上</text>
+  <rect x="592.5" y="80.5" width="247" height="128" class="box" /><text x="612" y="110" class="label mono">Sample</text><text x="612" y="142">口径 · 命中范围 · 时效</text><text x="612" y="166">仍持有句柄</text><text x="612" y="190" class="note">选择被写在数据上</text>
   <path d="M840 144 H888" class="arrow" />
   <rect x="896.5" y="80.5" width="311" height="128" class="box" /><text x="916" y="110" class="label mono">sample.attempts</text><text x="916" y="142">逐 Attempt 求值</text><text x="916" y="166" class="note">每个数字保留 refs</text>
   <path d="M1052 208 V248" class="arrow" />
