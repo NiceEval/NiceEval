@@ -34,7 +34,7 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 所以一屏上的通过率永远配着一个说得清的分母, 不会出现「筛着筛着只剩一道题,分数还是 100%」。
 
 跨历史拼题另有前提:`currentSample` 只把 `configHash` 相同的 Run 拼进来。
-改过 model 或 flags 之后只补跑了一部分题,旧配置那些题不冒充新配置的水位,直接进缺口。
+改过 model 或 flags 之后只补跑了一部分题,旧配置那些题不冒充新配置的结果集,直接进缺口。
 
 ## 两个 `--exp` 是对照,不是并集
 

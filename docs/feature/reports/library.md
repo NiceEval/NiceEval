@@ -750,7 +750,7 @@ function AttemptList({ attempts }: AttemptListProps) {
 
 前者显示成本 × 主读数散点；后者显示 Experiment → Eval → Attempt 的层级详情。
 
-时效、覆盖构成与两档占位行都在 `toExperimentRows(sample)` 这一步定下来：计票与读数只算当前水位，与当前基准不可比的历史判定只作占位行上的参考。
+时效、覆盖构成与两档占位行都在 `toExperimentRows(sample)` 这一步定下来：计票与读数只算当前结果集，与当前基准不可比的历史判定只作占位行上的参考。
 完整契约见[实验表](components/summaries/experiment-table.md)。
 
 ## 组件接具体值

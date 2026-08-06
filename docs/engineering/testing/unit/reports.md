@@ -378,7 +378,7 @@ const scope = reportScopeFixture({
   - fresh import 让装载入口及其项目内 import 子图失效；改报告文件或它 import 的组件后下一次装载读到新内容。
 - **view 数据装载（ViewScan）**：`loadViewScan` 的数据层语义以返回结构、Map/Set 内容与错误对象为断言面。
   - unreadable 的三种原因如实进 `viewData`（producer 感知的升级提示）。
-  - 报告槽 Sample 是现刻水位口径（与 show 同一 `currentSample`，`composedRuns` 反映跨快照合成）。
+  - 报告槽 Sample 是当前结果集口径（与 show 同一 `currentSample`，`composedRuns` 反映跨快照合成）。
   - 跨快照按 attempt 身份键去重；`--resume` 复印件不给证据室索引灌票。
   - 新布局落盘直接可读（写入面 / 读取面同一契约）；零可读结果直说不渲染空页面。
   - `viewData` 只含证据室元信息，不携带统计产物。

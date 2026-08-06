@@ -102,7 +102,7 @@ npx niceeval show --json > .niceeval/ci-summary.json
   仓库用 pnpm 时把上面这条换成 `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进重定向的 JSON 文件；`--silent` 关掉这段前缀。
 </Tip>
 
-`show --json` 读的是结果根当前的水位（含携带与历史快照）；fresh checkout 的 CI 上等于本次运行，结果根跨运行持久（比如 nightly 复用 `.niceeval/`）时用 `--exp` / `--fresh` 收窄到本次条件与新执行。
+`show --json` 读的是结果根当前的结果集（含携带与历史快照）；fresh checkout 的 CI 上等于本次运行，结果根跨运行持久（比如 nightly 复用 `.niceeval/`）时用 `--exp` / `--fresh` 收窄到本次条件与新执行。
 
 CLI 显式要求的 `--json` / `--junit` 输出和默认 results artifact 都是 required 输出：写入失败必须让 job 判红，不能只留 warning 后退出 0。把结果同时上报到 Braintrust 等实验平台的配置见 [Reporter 上报](./reporters)。
 

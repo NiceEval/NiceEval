@@ -12,7 +12,7 @@ Feature 现行仍含 [实验表 · 只看新执行](../../feature/reports/compon
 
 ### 现象（已复盘）
 
-MemoryBench 一类工作流：批量 `accept` + `exp` 携带后，现刻水位几乎全是 **historical**（`carried`）。
+MemoryBench 一类工作流：批量 `accept` + `exp` 携带后，当前结果集几乎全是 **historical**（`carried`）。
 
 按现行契约：
 
@@ -43,7 +43,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 
 | 点 | 说明 |
 |---|---|
-| 默认真相被第二态盖住 | 榜单默认应是现刻水位；fresh 是作者/调试口径，不是读者默认 |
+| 默认真相被第二态盖住 | 榜单默认应是当前结果集；fresh 是作者/调试口径，不是读者默认 |
 | 全 carry 时开关几乎无有效「开」态 | 打开 = 空或残表，控件「能改行集」但改完不可用 |
 | 与 dry/stats 叙事冲突 | 规划与历史面仍满，只有 web 表在 fresh 下空 |
 | 组件双份 Content | 表体两套 DOM，维护与测试要锁「投影 ≡ freshOnly()」 |
@@ -68,7 +68,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 1. **删除（或永不增加）** 报告组件内会改变 Sample 贡献集合的控件：  
    包括但不限于实验表「只看新执行」、以及未来任何「只看 failed / 只看某 agent」的表内 filter——除非它只是 **视觉折叠** 且不改变计票分母与导出 JSON。
 2. 内建首页任务函数 **只消费一份** `Sample`；不再计算并下发 `freshExperiments` 双态 Content。
-3. 需要 fresh 水位时：宿主前置 `fresh: true`（CLI flag 或 view 构建参数），**整站/整次 show 重算**。
+3. 需要 fresh 结果集时：宿主前置 `fresh: true`（CLI flag 或 view 构建参数），**整站/整次 show 重算**。
 
 ### 前置选择器放哪里
 
@@ -93,7 +93,7 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 ### 明确不包含
 
 - 是否删除 CLI `--fresh`（默认保留）。
-- [现刻水位物理优先](../sample-contribution-physical/README.md)（贡献规则翻案，与本主题正交；方向一致，可并行定稿迁入）。
+- [当前结果集物理优先](../sample-contribution-physical/README.md)（贡献规则翻案，与本主题正交；方向一致，可并行定稿迁入）。
 - 报告主题、布局、多页导航（页切换不是 Sample 口径）。
 
 ## 触发记录（台账）
@@ -101,9 +101,9 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 | 项 | 内容 |
 |---|---|
 | 表面 | web 实验表 `.niceeval-fresh-toggle`「只看新执行」 |
-| 场景 | accept + carry 后水位几乎全 historical；打开开关表空 |
+| 场景 | accept + carry 后结果集几乎全 historical；打开开关表空 |
 | 误读 | 结果被删 / accept 失败 |
-| 真实 | 前置应是 current 水位；fresh 是另一套 Sample |
+| 真实 | 前置应是 current 结果集；fresh 是另一套 Sample |
 | 关联 | MemoryBench 线上报告；与 selectedEvalIds 声明写窄导致的 1/36 是另一条线 |
 
 ## 已裁决
@@ -136,4 +136,4 @@ web 表头开关却在 **Reports 呈现层** 再投影一份 `freshOnly` 行集�
 - [实验表 · 只看新执行](../../feature/reports/components/summaries/experiment-table.md#只看新执行) —— 现行开关契约
 - [Sample · fresh](../../feature/sample/library.md#时效新执行与历史执行) —— 选择层口径
 - [Reading](../../feature/reading/README.md) —— 收窄归宿主与 Sample
-- [现刻水位贡献：物理优先](../sample-contribution-physical/README.md) —— 贡献集怎么取（正交）
+- [当前结果集贡献：物理优先](../sample-contribution-physical/README.md) —— 贡献集怎么取（正交）

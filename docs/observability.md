@@ -224,7 +224,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 
 ## Artifact 落盘
 
-落盘单位是**结果 Run**(一个 Experiment 的执行水位):默认 `Artifacts()` reporter 把每个实验写进独立的 Run 目录,当前目录结构是:
+落盘单位是**结果 Run**(一个 Experiment 的持久化执行批次):默认 `Artifacts()` reporter 把每个实验写进独立的 Run 目录,当前目录结构是:
 
 ```text
 .niceeval/

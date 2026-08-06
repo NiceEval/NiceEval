@@ -22,7 +22,7 @@ Projection 默认只存在于读取进程的内存中，Record writer 不写 Pro
 
 | 可重建输出 | 落盘目的 | 必须携带 | 失效处理 |
 |---|---|---|---|
-| 运行期 snapshot 或索引 | 支持活动 Session 附着、进程恢复和有界读取 | reducer 版本与 stream basis | 删除并从 durable 事件重建 |
+| 运行期 snapshot 或索引 | 支持活动 Invocation 附着、进程恢复和有界读取 | reducer 版本与 stream basis | 删除并从 durable 事件重建 |
 | 用户导出的 Report artifact | 保存一次明确请求的交付结果 | generator 版本与输入 Record 摘要 | 重新导出，不回写 Record |
 
 写入磁盘的副本不能作为 Observation、Claim 的 `basedOn` 或其它 Projector 的事实输入。
@@ -35,6 +35,22 @@ Report artifact 可以独立定义面向消费者的格式，但改变该格式�
 事件业务字段只存在于自己的 `body` schema；新增事件种类不会扩大其它事件或 Run manifest 的 schema。
 
 ```ts
+type ObservationScope =
+  | {
+      kind: "run";
+      runId: string;
+      experimentId: string;
+    }
+  | {
+      kind: "attempt";
+      runId: string;
+      experimentId: string;
+      attemptId: string;
+      evalId: string;
+      agentSessionId?: string;
+      turnId?: string;
+    };
+
 interface ObservationEvent<T extends JsonValue = JsonValue> {
   format: "niceeval.observation";
   id: string;
@@ -44,15 +60,7 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
     id: string;
     sequence: number;
   };
-  scope: {
-    sessionId: string;
-    invocationId?: string;
-    runId?: string;
-    experimentId?: string;
-    attemptId?: string;
-    evalId?: string;
-    turnId?: string;
-  };
+  scope: ObservationScope;
   time: {
     observedAt: string;
     monotonicOffsetNs: string;
@@ -77,8 +85,11 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
 `name` 是开放、带命名空间的语义名，例如 `niceeval.attempt.started`、`niceeval.agent.operation.started`。
 `schema` 标识该事件 body 的独立版本，例如 `niceeval.agent.operation.started/1`。
 
+durable scope 只有 Run 与 Attempt 两种穷尽形状。
+Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt，`turnId` 存在时必须同时存在 `agentSessionId`。
+
 `stream.id` 标识一个可独立封口和重放的流。
-Attempt 事件使用 Attempt stream；Run 级 setup、teardown 与共享 activity 使用 Run stream；Session 调度使用 Session stream。
+Attempt 事件使用 Attempt stream；Run 级调度、setup、teardown 与共享 activity 使用 Run stream。
 每个 stream 的 `sequence` 从零连续递增，顺序由 Observation Hub 收到事件的次序决定，不用墙钟推断并发事件的先后。
 
 `observedAt` 是 Hub 接收事件时的墙钟，`monotonicOffsetNs` 是相对 stream 起点的本地单调时钟。
@@ -109,7 +120,7 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 
 | 域 | durable 事件 | 说明 |
 |---|---|---|
-| Runner | Session、Run、Attempt、phase 与 activity 边界 | 生命周期阶段只使用 `LifecyclePhase` |
+| Runner | Run、Attempt、phase 与 activity 边界 | 生命周期阶段只使用 `LifecyclePhase` |
 | Agent | Turn、message、operation、Skill、HITL、compaction 与 Agent error | 由 Adapter 归一，按 Turn 声明证据完整性 |
 | Sandbox | command、退出状态、stdout/stderr、workspace change 与 cleanup | 大值由 Record sink 统一截断并显式标记 |
 | Telemetry | 实际收到的 OTLP log、span 与采集 Diagnostic | 原始 name/attributes 保留，canonical kind 是投影 |
@@ -178,8 +189,8 @@ type Reducer<State> = (
 ) => State;
 ```
 
-Session 索引、TTY 面板、`watch` snapshot 与 `exp --json` 共享同一个运行状态 reducer。
-Session writer 只序列化 reducer 的有界 snapshot，不再实现 queued、running、waiting 或终态计数迁移。
+Invocation 索引、TTY 面板、`watch` snapshot 与 `exp --json` 共享同一个运行状态 reducer。
+Invocation writer 只序列化 reducer 的有界 snapshot，不再实现 queued、running、waiting 或终态计数迁移。
 Live renderer 可以在这份权威状态上叠加 ephemeral progress 的最新值，但 overlay 不能修改 phase、计数或终态。
 
 snapshot 必须声明它折叠到哪个 stream sequence。
@@ -189,7 +200,7 @@ snapshot 必须声明它折叠到哪个 stream sequence。
 
 Provenance 保存复核运行所需、但不能用读取时环境替代的输入：
 
-- Run、Attempt、Experiment、Eval、Session 与 Turn 身份。
+- Run、Attempt、Experiment、Eval、Agent Session 与 Turn 身份。
 - 实际使用的 Agent、Adapter、model、reasoning effort 与 provider。
 - 运行配置、Eval 源码、判据、Sandbox 输入与安装清单。
 - strict、judge、价格表和 Claim evaluator 等求值算法身份。

@@ -25,7 +25,7 @@ Record 保存需要审计的 durable 事件；Live 读取同一事件流的有�
 Runner 生命周期 ─┐
 Agent 行为 ──────┼─> Observation Hub ─┬─> Record：权威事件流
 Sandbox 命令 ────┤                    ├─> Live：watch / exp --json
-OTel 遥测 ───────┘                    └─> Reducer：snapshot / Session 索引
+OTel 遥测 ───────┘                    └─> Reducer：snapshot / Invocation 索引
 
 Provenance ─────────────────────────────> Record
 Observation + Provenance ─> Claim ─────> Record
@@ -45,9 +45,24 @@ Projection 是从三类权威内容计算出的读模型。
 Projector 是产生 Projection 的纯函数，不是新的存储 owner。
 Record manifest 不包含 Projection 文档、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
 
-运行期 snapshot 或 Session 索引可以为了附着与恢复写入活动 Session 存储，但它们位于 Record 之外，并声明重放依据。
+运行期 snapshot 或 Invocation 索引可以为了附着与恢复写入活动 Invocation 存储，但它们位于 Record 之外，并声明重放依据。
 用户明确导出的 Report 也可以落盘，但它是可删除、可重新生成的交付物，不能成为 Observation、Claim 或下一次 Report 的事实来源。
 snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参与 Record 的事实兼容判断。
+
+运行身份只有一棵树：
+
+```text
+Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
+├─ Run（一个 Experiment 的持久化执行批次）
+│  ├─ Attempt（一个 Eval 的一次独立执行与最小状态机）
+│  │  └─ Agent Session（一条对话线）
+│  │     └─ Turn（一次逻辑 send 的可信 Outcome）
+│  └─ Attempt
+└─ Run
+```
+
+一次 Invocation 可以打开多个 Run，但一个 Run 只属于一个 Experiment，并由创建它的 Invocation 封口。
+每个 Attempt 独立拥有生命周期事件、finalizer 与 Verdict；Agent Session 和 Turn 只细分 Attempt 内的 Agent 行为，不与 Attempt 竞争执行身份。
 
 ## 所有者边界
 
@@ -71,7 +86,7 @@ snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参�
 - Agent 的增量事件生产契约及终态 Outcome。
 - durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
 - Record 的稳定容器、独立文档版本和未知事件保留规则。
-- `watch`、`exp --json`、Session snapshot 与旁路附着语义。
+- `watch`、`exp --json`、Invocation snapshot 与旁路附着语义。
 - OTel 导入、关联和导出的补充地位。
 - Report 通过 projector 读取事实的依赖方向。
 
@@ -81,7 +96,7 @@ snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参�
 - 把全文 stdout、逐 token delta 或 Agent 原始秘密放进 live 流。
 - 用 OTel collector 代替 NiceEval 的 Record writer。
 - 为每一种报告预计算并持久化宽表。
-- 远程 Web 仪表盘与跨机器 Session 控制。
+- 远程 Web 仪表盘与跨机器 Invocation 控制。
 
 ## 入口
 

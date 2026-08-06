@@ -1,17 +1,17 @@
-# 现刻水位贡献：物理结果优先于 selectedEvalIds
+# 当前结果集贡献：物理结果优先于 selectedEvalIds
 
 **审查状态（ChatGPT Pro，2026-08-05）：主案可定稿（breaking semantic），定稿前三条契约已收口。**  
 `currentSample` 按可比 Run 上的物理 attempt 贡献；`selectedEvalIds` 降为规划/审计元数据；Reports/CLI 禁止二次 selected 过滤。
 
 [Sample](../../feature/sample/README.md) 的 `currentSample` 回答「每道题当前可用的判定」。
-一个 experiment 的水位通常由**多次** `exp` / `accept` 落盘共同形成：全量跑、局部补跑、携带合入、指纹重锚。
+一个 experiment 的结果集通常由**多次** `exp` / `accept` 落盘共同形成：全量跑、局部补跑、携带合入、指纹重锚。
 本主题把读面贡献规则从「按 Run 的 `selectedEvalIds` 过滤」改为「可比 Run 上的物理 attempt 原样取新」，把 `selectedEvalIds` 降为规划与审计元数据。
 
 Feature 里的现行契约仍以 [`selectedEvalIds` 过滤贡献](../../feature/record/architecture.md) 为准；本页是**拟定稿翻案**，迁入 Feature 前实现与单测仍以现行为准。
 
 ## 解决的问题
 
-### 产品事实：水位是多轮落盘的合成
+### 产品事实：结果集是多轮落盘的合成
 
 合法路径包括：
 
@@ -34,13 +34,13 @@ Feature 里的现行契约仍以 [`selectedEvalIds` 过滤贡献](../../feature/
 ```
 
 `selectedEvalIds` 在 Record 上的名义是「这份快照**声明覆盖**的题集」（本次选择 ∪ 携带）。
-读面再把它当作**贡献闸**：声明里没有的 eval，即使 `result.json` 在盘上也不进水位。
+读面再把它当作**贡献闸**：声明里没有的 eval，即使 `result.json` 在盘上也不进结果集。
 
 后果：
 
 1. **声明写窄 → 静默丢数**。写入面任一路把 `selectedEvalIds` 收成单题（例如批量 accept 误用 groupFirst 的 prepare 口径），view / 默认 show 塌成 1/36，而 `exp --dry`、`--stats`、`--history` 仍满——同一盘数据三套观感。
 2. **正确写入时过滤几乎是恒等**。纪律正确时，凡写出的 result 的 eval 本应 ⊆ 声明；此时 `物理 ∩ 声明 ≈ 物理`。滤声明只在「声明 ⊂ 物理」时改变答案，而那正是写入 bug 或脏盘，用静默丢掉合法物理结果当防护，攻防比不对。
-3. **与 Record「忠实磁盘」拧着**。事实层承诺返回值能指回字节；选择层用声明把已落盘终态藏起来，读者无法从「盘上有 result」推出「水位里有数」。
+3. **与 Record「忠实磁盘」拧着**。事实层承诺返回值能指回字节；选择层用声明把已落盘终态藏起来，读者无法从「盘上有 result」推出「结果集里有数」。
 4. **分母与贡献职责搅在一起**。缺口本该由 `knownEvalIds` / `coverage` 表达；用 selected 砍掉已有 attempt 是在用「规划元数据」做「删证据」。
 
 ### 触发复盘的现场形状
@@ -59,10 +59,10 @@ MemoryBench 一类仓库：批量 accept 或携带合入后，最新 Run 物理 
 | 可比性 | Sample | 仅 `configHash` 与基准相等的历史 Run 可参与拼接（现行缝合前提保留） |
 | 现刻贡献 | Sample | 每个 experiment × eval：在可比 Run 上**按时间新→旧取第一条物理 attempt**，不看 `selectedEvalIds` |
 | 覆盖分母 | Sample | 仍用 `knownEvalIds` 并集；缺物理结果的题进 `missingEvalIds` |
-| `selectedEvalIds` | Record 元数据 | 记录「这次 invocation / 这份声明本意盖了谁」；供调试、dry、审计；**不决定**某条物理 result 是否进入水位 |
+| `selectedEvalIds` | Record 元数据 | 记录「这次 invocation / 这份声明本意盖了谁」；供调试、dry、审计；**不决定**某条物理 result 是否进入结果集 |
 | `fresh` | Sample | 仍排除携带与跨 Run 拼入；与 selected 无关 |
 
-一句话：**水位跟物理终态与可比性走；选择声明跟规划与审计走。**
+一句话：**结果集跟物理终态与可比性走；选择声明跟规划与审计走。**
 
 ## 拟定稿契约
 
@@ -104,8 +104,8 @@ Issue **不**升级为 error（结果仍可用）；不阻塞 show/view。
 
 - 分母：`knownEvalIds` 并集，不改为「最新 Run 的 selected」。
 - `toExperimentRows` / `standardOverviewResult` 等凡今日二次读 `selectedEvalIdsOf` 砍 attempt 的，与 `sample.attempts` 对齐为同一贡献集。
-- 默认 show / view / `--stats` 在「有哪些题进入当前水位」上同源；`--fresh` 仍可故意变窄（fresh 是 Sample 变换，不是 selected）。
-- `exp --dry` 等**规划面**继续用 selected 描述「本意跑谁」——与水位贡献分离。
+- 默认 show / view / `--stats` 在「有哪些题进入当前结果集」上同源；`--fresh` 仍可故意变窄（fresh 是 Sample 变换，不是 selected）。
+- `exp --dry` 等**规划面**继续用 selected 描述「本意跑谁」——与结果集贡献分离。
 
 ### 明确不改
 
@@ -119,7 +119,7 @@ Issue **不**升级为 error（结果仍可用）；不阻塞 show/view。
 | 点 | Feature 现行 | 本拟定稿 |
 |---|---|---|
 | 贡献闸 | `selectedEvalIds`（缺则退化为物理 evals） | 仅物理 attempt（registry）+ configHash |
-| 声明 ⊂ 物理 | 多出的物理不进水位（有单测锁） | 多出的物理进水位；warning issue 暴露不一致 |
+| 声明 ⊂ 物理 | 多出的物理不进结果集（有单测锁） | 多出的物理进结果集；warning issue 暴露不一致 |
 | 声明 ⊃ 物理 | 缺口 / 不贡献 | 同左（靠 known / missing） |
 | accept 必须写全 selected | 读面正确性依赖 | 降为元数据诚实；读面不依赖 |
 | 防「夹带」脏 result | 靠 selected 静默丢 | 靠 writer + registry；issue 暴露不一致 |
@@ -129,7 +129,7 @@ Issue **不**升级为 error（结果仍可用）；不阻塞 show/view。
 
 - [`docs/feature/record/architecture.md`](../../feature/record/architecture.md) · `selectedEvalIds`
 - [`docs/feature/sample/library.md`](../../feature/sample/library.md) · 贡献与覆盖
-- [`docs/engineering/testing/unit/sample.md`](../../engineering/testing/unit/sample.md) · 「夹带不进水位」类 case 翻案
+- [`docs/engineering/testing/unit/sample.md`](../../engineering/testing/unit/sample.md) · 「夹带不进结果集」类 case 翻案
 - 报告侧 `selectedEvalIdsOf` 二次过滤（`shared-compute` 等）
 
 ## 范围
@@ -155,15 +155,15 @@ Issue **不**升级为 error（结果仍可用）；不阻塞 show/view。
 - **删掉 `selectedEvalIds` 落盘**  
   规划审计与「这次本意盖了谁」仍有用；先解除贡献耦合，再谈字段去留。
 - **用重新跑全量实验代替读面修正**  
-  不回答「多轮合成水位」的模型问题。
+  不回答「多轮合成结果集」的模型问题。
 - **静默收物理、不报 mismatch**  
   写入 bug 会从「用户看到错误结果」变成「内部悄悄漂移」；必须 warning issue。
 
 ## 验收场景（定稿后实现用）
 
 1. 最新 Run `selectedEvalIds=[a]`，物理有 `a,b,c` 三条 result → `currentSample.attempts` 含 a,b,c，并有 warning issue。  
-2. 最新 Run 物理仅 `a`，旧可比 Run 有 `b` → 水位 a 来自最新、b 来自旧 Run（与今日缝合一致，且不要求最新 selected 列出 b）。  
-3. 批量 accept 36 题但声明误写 1 题 → 水位仍 36（不依赖写入补丁，但写入仍应写全声明）。  
+2. 最新 Run 物理仅 `a`，旧可比 Run 有 `b` → 结果集 a 来自最新、b 来自旧 Run（与今日缝合一致，且不要求最新 selected 列出 b）。
+3. 批量 accept 36 题但声明误写 1 题 → 结果集仍 36（不依赖写入补丁，但写入仍应写全声明）。
 4. 声明含 `d`、物理无 `d`、known 含 `d` → `d` 在 missing，不进 attempts。  
 5. `fresh: true` 仍排除 carried 与跨 Run 拼入；与 selected 无关。  
 6. 报告首页通过数 / eval 数与 `sample.attempts` 一致，不再出现「散点 86% · 摘要 1 eval」。  

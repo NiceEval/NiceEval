@@ -28,8 +28,8 @@ const current = currentSample(record, { experiments: "compare/" });
 
 **为什么是两个而不是一个。**
 位置参数允许只重跑一道题(`niceeval exp midterm algebra/quadratic` 是正常的 debug 姿势)。
-这时「最近一次 Run」只有一道题,而「每道题当前水位」要跨历史把其余题拼回来。
-两种都是正当需求,而且**谁也不能替谁**:发布要的是一次执行的自包含产物,看水位要的是完整分母。
+这时「最近一次 Run」只有一道题,而「每道题当前结果集」要跨历史把其余题拼回来。
+两种都是正当需求,而且**谁也不能替谁**:发布要的是一次执行的自包含产物,看结果集要的是完整分母。
 `current` 指观察时刻成立的状态,不等于时间最大的 Run。
 一道题的判定可能不是这次跑出来的,而是来自可比的旧 Run。
 这一步有前提,紧接着一节说清。
@@ -40,7 +40,7 @@ const current = currentSample(record, { experiments: "compare/" });
 判据只有一条:**[`run.configHash`](../record/library.md#confighash配置身份只算一次) 相等**。
 每个 experiment 以其最新 Run 的 configHash 为基准,只有基准一致的历史 Run 参与该实验的逐题选择。
 
-改过 model、flags 或 sandbox 后只补跑部分 eval 时,旧配置 Run 覆盖的其余题**不冒充**新配置的水位——它们进入 `coverage.missingEvalIds`,在实验列表上呈现为占位行,下一步就是重跑补全。
+改过 model、flags 或 sandbox 后只补跑部分 eval 时,旧配置 Run 覆盖的其余题**不冒充**新配置的结果集——它们进入 `coverage.missingEvalIds`,在实验列表上呈现为占位行,下一步就是重跑补全。
 这条前提保证一个 experiment 在样本里只对应一套配置,报表把一行标成单一 agent / model / flags 永远不是谎言。
 
 `run.configHash` 是 Record 层已经解析过的值:niceeval 自己的写入面按规划期算出的配置身份声明它。

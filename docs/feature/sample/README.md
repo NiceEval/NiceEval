@@ -42,7 +42,7 @@ sample.issues;      // 读取与选择时发现的结构化问题
 | 用途 | API |
 |---|---|
 | 看每个实验最近一次跑出了什么 | `latestRunSample(record)` |
-| 看每道题当前的判定水位 | `currentSample(record)` |
+| 看每道题当前结果集 | `currentSample(record)` |
 | 只看最新一次真实执行的 | 任一选择器 + `{ fresh: true }` |
 | 只比较一部分实验或题目 | `sample.scope({ experiments: …, evals: … })` |
 | 按数据质量条件删减观测 | `sample.filter(…)` |

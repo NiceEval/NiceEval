@@ -7,7 +7,7 @@
 interface HeroContent {
   /** Sample 中最新 Run 的开始时间；空 Sample 为 null，不编造当前时间。 */
   latestStartedAt: string | null;
-  /** 贡献当前水位的 Run 数；大于 1 时 web 面标注「由 N 次运行合成」。 */
+  /** 构成当前结果集的 Run 数；大于 1 时 web 面标注「由 N 次运行合成」。 */
   runs: number;
 }
 

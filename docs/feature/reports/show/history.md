@@ -1,7 +1,7 @@
 # `--history`：一个 eval 的执行时间轴
 
 `niceeval show <eval 前缀> --history` 回答「这道题历次跑下来发生了什么」。
-默认报告只呈现当前 Sample 的汇总水位；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
+默认报告只呈现当前 Sample 的汇总结果集；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
 
 ## 分节与行内字段
 
@@ -34,9 +34,9 @@ $ niceeval show memory/swelancer --history
 结果摘要列与默认报告同一口径：passed 固定为 `—`，failed 只显示主失败断言的单行压缩，errored 显示结构化 error 的一层摘要；超宽先折单行再按列宽截断，绝不逐行铺开命令输出。
 时间轴上任意一行都可下钻：复制行尾 locator，`niceeval show @1qrdcfq8` 打开这次执行的诊断首页，继续看断言、对话、时间树与 diff（[失败诊断首页](attempt.md)）。
 
-## 与现刻水位的分工
+## 与当前结果集的分工
 
-默认报告的聚合走 `currentSample()` 的[可比性前提](../../sample/library.md#两个选择器)：改过 model、flags 或 sandbox 后，旧配置 Run 覆盖的题不再拼入当前水位，只以覆盖占位行提示补跑。
+默认报告的聚合走 `currentSample()` 的[可比性前提](../../sample/library.md#两个选择器)：改过 model、flags 或 sandbox 后，旧配置 Run 覆盖的题不再拼入当前结果集，只以覆盖占位行提示补跑。
 `--history` 站在这层过滤之外——时间轴不设可比性门槛，旧配置下的执行同样按时间在轴上。
 两个读数配合区分「时好时坏」的两种病因：红绿交替发生在同一套配置内，是 agent 行为不稳定，下钻对比失败与通过的两次执行；红绿分界正对配置改动，是 Run 级趋势，不归 `--history`，用报告库的[历史示例](../library/examples.md#历史一个实验的逐次 Run 走势)。
 
@@ -48,7 +48,7 @@ $ niceeval show memory/swelancer --history
 ## 相关阅读
 
 - [`--stats`](stats.md) —— 同一证据面聚合成的 eval × experiment 稳定性矩阵。
-- [不带选项的 `show` 的默认报告](default-report.md) —— 现刻水位与 Result 摘要口径。
+- [不带选项的 `show` 的默认报告](default-report.md) —— 当前结果集与 Result 摘要口径。
 - [失败诊断首页](attempt.md) —— 从时间轴一行的 locator 打开一次 attempt。
 - [Library · 布局](../library/layout.md#区域框text-面的框线体裁) —— 区域框的单源体裁。
 - [用例 · 时好时坏](../use-case/调试/查看不稳定历史.md) —— 排查 flaky eval 的全流程叙事。

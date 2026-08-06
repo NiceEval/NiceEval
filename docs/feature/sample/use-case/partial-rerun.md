@@ -25,7 +25,7 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
    `baseline` 只返回 `R3` 里的 `a`,并通过 `coverage.missingEvalIds` 报告 `b` 缺失。
    它不会从旧 Run 拼入 `b`——这个口径的单位就是 Run。
 
-2. **看当前判定水位。**
+2. **看当前结果集。**
    `currentSample(record)`。
    `a` 来自 `R3`,`b` 来自 `R2`。
    两条 attempt 的 `run.configHash` 与基准(`R3`)一致,因此可以组成当前样本。

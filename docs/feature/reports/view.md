@@ -55,7 +55,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 不带选项的 `niceeval view` 默认把记录根中的完整 Sample 作为各页 `load` 的 base。
 `--exp` 按 experiment id 路径收窄，位置参数按 eval id 前缀收窄；两者可组合取交集。
 `--fresh` 注入只含新执行 attempt 的 [`fresh` 口径](../sample/library.md#时效新执行与历史执行)，被排除的题按覆盖事实转为占位行。
-目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在现刻水位里的历史 attempt 也能打开；收窄之外的实例不可达。
+目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在当前结果集里的历史 attempt 也能打开；收窄之外的实例不可达。
 同一份收窄交给 `--out` 时决定出站内容。
 
 ## 持续重建

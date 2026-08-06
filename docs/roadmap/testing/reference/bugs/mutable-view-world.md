@@ -36,7 +36,7 @@ reportBehavior(viewReloadsAChangedReportDependency, async () => {
 `service()` 只负责真实子进程生命周期、公开 URL 就绪、提前退出诊断与无条件收尾；DOM 等待仍用 Playwright 的自动重试。
 它不暴露 watcher 或 rebuild 内部状态，不接受固定 sleep，也不把某条日志文案当 ready。
 
-## 同形反证：验收自身改写了共享当前水位
+## 同形反证：验收自身改写了共享当前结果集
 
 report E2E 的 `verifyReadback` 会在共享 `resultsRoot` 追加两次真实快照。
 它之后运行的只读模块若现场调用 `show` / `view`，读到的是新 current scope，因而找不到 prepare 阶段保存的旧 locator。

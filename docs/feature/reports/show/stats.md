@@ -9,7 +9,7 @@
 ## 口径
 
 - 证据面与 [`--history`](history.md) 相同：跨 Run 按 [attempt 身份键](../../record/library.md#身份键与去重)去重后的历次执行，不设可比性门槛——旧配置下的执行也计入。
-  它回答「这道题曾经怎样」，不是默认报告的现刻水位；两个口径的分工同 history 篇。
+  它回答「这道题曾经怎样」，不是默认报告的当前结果集；两个口径的分工同 history 篇。
 - `--fresh` 照常收窄（只统计新执行）；eval 前缀与 `--exp` 照常收窄行与列。
   `--stats` 与 `--history` 是同一份事实的两个投影：矩阵行是时间轴节的聚合，从矩阵格下钻用 `<eval 前缀> --history` 摊开逐次执行。
 
@@ -37,12 +37,12 @@ downshift/pr-1502                     ✓2 ✗0 !1        —               ✓1
 ## 边界
 
 - 与 `--report` 互斥（零配置装配，不经用户显式报告树）；与 `@<locator>` 组合是用法错误——单 attempt 没有稳定性可言。
-- 要看某一格的逐次执行与失败原因，下钻 `niceeval show <eval 前缀> --history`；要看现刻水位对比，用[对照矩阵](compare.md)。
+- 要看某一格的逐次执行与失败原因，下钻 `niceeval show <eval 前缀> --history`；要看当前结果集对比，用[对照矩阵](compare.md)。
 - 发布用的可靠性报告可以复用 `stabilityResult()`，并排 `passRate` / `taskPassRate` / `executionReliability` 归因损失来源； `--stats` 服务终端里的即时诊断。
 
 ## 相关阅读
 
 - [计算边界](../calculations.md#stability-不是内核) ——稳定性公式为什么不进入公共内核。
 - [`--history`](history.md) ——同一证据面的逐次执行时间轴。
-- [对照矩阵](compare.md) ——现刻水位的逐题对照。
+- [对照矩阵](compare.md) ——当前结果集的逐题对照。
 - [`--json`](json.md) ——信封与逐视图指针。

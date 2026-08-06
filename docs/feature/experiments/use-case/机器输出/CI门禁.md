@@ -22,7 +22,7 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 4. 归档产物:`--junit` 是整次运行的最终聚合,收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件,要么不存在。
    attempt 级 Run 逐个原子落盘,进程中断时已完成的照常可读(见 [CLI · 输出流和落盘节奏](../../cli.md#输出流和落盘节奏))。
    需要 JSON 汇总交给自建看板时,运行后 `niceeval show --json > summary.json`——读结果面拿到的比任何运行期汇总文件都全。
-   注意口径:`show --json` 读的是记录根的现刻水位(含携带与历史 Run),fresh checkout 的 CI 上等于本次运行;记录根跨运行持久(nightly 缓存 `.niceeval/`)时,用 `--exp` / `--fresh` 收窄到本次条件与新执行。
+   注意口径:`show --json` 读的是记录根的当前结果集(含携带与历史 Run),fresh checkout 的 CI 上等于本次运行;记录根跨运行持久(nightly 缓存 `.niceeval/`)时,用 `--exp` / `--fresh` 收窄到本次条件与新执行。
 5. JUnit 交给平台做测试注解;完整记录以文件和 Run 为准。
 
 ## 边界

@@ -6,7 +6,7 @@
 ## 目录结构
 
 默认输出根目录是 `.niceeval/`。
-**落盘单位是 Run**(Run = 一个 Experiment 的一次执行水位):实验目录在外层,run 目录在实验目录下。
+**落盘单位是 Run**(Run = 一个 Experiment 的一次持久化执行批次):实验目录在外层,run 目录在实验目录下。
 每个 Run 创建时生成一个 UUID v4 `runId`，它是移动、发布或重命名目录后仍不变的权威身份。
 一次 CLI Invocation 可同时打开多个 Run，但 Invocation 不是持久化实体：格式不保存 `invocationId` 或跨实验成员关系。
 

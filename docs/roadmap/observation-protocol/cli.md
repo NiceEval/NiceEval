@@ -7,7 +7,7 @@
 
 ```bash
 niceeval watch
-niceeval watch s_01ac42f0
+niceeval watch inv_01ac42f0
 niceeval watch --exp compare/codex
 niceeval watch --json
 niceeval watch --json --once
@@ -21,18 +21,18 @@ niceeval watch --json --once
 | `watch --json --once` | 只输出一致 snapshot 后退出 |
 | `exp --json` | 在既有机器输出中追加同形 Observation、Claim 与 snapshot record |
 
-`watch` 只读已经存在的 Session，不启动调度，不占用被观察进程的 stdin，也不抢 TTY。
+`watch` 只读已经存在的 Invocation，不启动调度，不占用被观察进程的 stdin，也不抢 TTY。
 
 ## 附着选择
 
-selector 可以是 Session ID 或 Experiment ID。
-Session 已结束时，命令输出终态 snapshot，并指向 `show --exp <id> --history`，退出码为零。
+selector 可以是 Invocation ID 或 Experiment ID。
+Invocation 已结束时，命令输出终态 snapshot，并指向 `show --exp <id> --history`，退出码为零。
 
-没有 selector 且只有一个 active Session 时自动附着。
-存在多个 active Session 时列出候选并非零退出；命令不能静默选择最新或最早的一项。
+没有 selector 且只有一个 active Invocation 时自动附着。
+存在多个 active Invocation 时列出候选并非零退出；命令不能静默选择最新或最早的一项。
 
-未知 Session、没有 live 通道的生产者和权限不足使用不同的结构化错误码。
-错误必须给出可执行的下一步，例如改用 `session list` 或终态 `show`。
+未知 Invocation、没有 live 通道的生产者和权限不足使用不同的结构化错误码。
+错误必须给出可执行的下一步，例如改用 `invocation list` 或终态 `show`。
 
 ## 机器输出
 
@@ -66,14 +66,14 @@ type LiveRecord =
 `observation` 与 `claim` 逐字使用 Record 协议形状，不另定义 `attempt_start`、`phase_event` 或 `result_summary` schema。
 `snapshot` 与 `heartbeat` 是 live transport record，不进入 Record 权威事实。
 
-cursor 是 Session live channel 发出的不透明续读位置。
+cursor 是 Invocation live channel 发出的不透明续读位置。
 客户端只能原样回传，不能解析 cursor 来猜 stream 或 sequence。
 
 ## Live snapshot
 
 ```ts
 interface LiveSnapshot {
-  sessionId: string;
+  invocationId: string;
   status: "active" | "complete" | "incomplete" | "interrupted";
   observedAt: string;
   elapsedMs: number;
@@ -114,9 +114,9 @@ total = reused + running + elsewhere + queued
 ```
 
 snapshot 由共享 reducer 产生。
-Session 索引、TTY 面板与 JSON 输出都不能自行维护另一套 counters 或 active Attempt 状态。
+Invocation 索引、TTY 面板与 JSON 输出都不能自行维护另一套 counters 或 active Attempt 状态。
 snapshot 是 live transport 的有界状态副本，不是 Record 文档或 Projector 磁盘缓存。
-实现可以为了活动 Session 恢复而在 Record 外保存 snapshot，但必须连同 reducer 版本和 `basis` 保存；不匹配时从 durable 事件重建。
+实现可以为了活动 Invocation 恢复而在 Record 外保存 snapshot，但必须连同 reducer 版本和 `basis` 保存；不匹配时从 durable 事件重建。
 执行 `watch --json --once` 只读取或计算 snapshot，不向 Run 或 Attempt manifest 写入任何内容。
 
 ## 一致附着与重连
@@ -152,16 +152,16 @@ live channel 可以只保留有界历史。
 全文 message、thinking、工具 input/output、stdout、stderr 与 workspace diff 默认不进入 live 通道。
 这些内容继续进入 Record，并通过 `show @<locator> --execution`、`--timing`、`--diff` 或其它终态切片读取。
 
-## `session show`
+## `invocation show`
 
-活动 Session 的 `session show` 和 `--json` 显示共享 snapshot 的有界副本：
+活动 Invocation 的 `invocation show` 和 `--json` 显示共享 snapshot 的有界副本：
 
 - 每个 running Experiment 的 `runningEvalIds`。
 - active Attempt 的 `LifecyclePhase`、短 detail 与 elapsed。
 - passed、failed、errored、skipped、queued、running 与 elsewhere 计数。
 - snapshot basis 与 observedAt。
 
-`session list` 仍只做 Session 索引，不提供事件 tail，也不扩张成监控总线。
+`invocation list` 仍只做 Invocation 索引，不提供事件 tail，也不扩张成监控总线。
 
 ## 人读反馈
 

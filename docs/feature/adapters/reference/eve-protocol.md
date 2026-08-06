@@ -57,7 +57,7 @@ niceeval 的位置一句话:**契约形状学 eve(强类型事件、callId、`re
 | **subagent** | `subagent.called` | `{ callId, childSessionId, sessionId, name, toolName, workflowId, remote?: { url } }` |
 | | `subagent.started` / `subagent.completed` | completed 带 `{ callId, output }` |
 | | `subagent.event` | `{ callId, subagentName, event: HandleMessageStreamEvent }`——**子 agent 的事件递归嵌套转发**,保留归属 |
-| **压缩** | `compaction.requested` / `compaction.completed` | requested 带 `usageInputTokens`(触发时的上下文水位) |
+| **压缩** | `compaction.requested` / `compaction.completed` | requested 带 `usageInputTokens`(触发时的 input token 数) |
 
 ### `RuntimeActionRequest`:action 是 kind 判别联合
 
