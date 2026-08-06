@@ -1,7 +1,7 @@
 # ⚡ NiceEval 设计文档
 
-`docs/` 保存 NiceEval 的最终功能契约与形成这些契约的设计材料。
-Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决记录。
+`docs/` 保存 NiceEval 的最终功能契约、形成这些契约的设计材料，以及带日期的外部产品研究。
+Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决记录，Research 只提供决策输入而不构成目标契约。
 
 因此：
 
@@ -28,6 +28,7 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 | 设计或评审公开 API | [API 设计](api-design.md) |
 | 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型结论 | [Design](design/README.md) |
+| 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
@@ -86,6 +87,9 @@ docs/
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
 │   └── user-readable-testing/           测试作者面:多方案比较与真实场景 Repo 决策
 │
+├── research/                            带观察日期的外部产品研究，不构成目标契约
+│   └── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
+│
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
@@ -113,6 +117,7 @@ docs/
 | 已落地并验收的功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
 | 已裁决但尚未落地的目标功能 | `docs/roadmap/` |
 | 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
+| 带日期的外部产品事实、竞品映射与产品启发 | `docs/research/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
 | 用户如何完成任务 | `docs-site/zh/` |
 | 设计翻案、被否决方案、踩坑与反直觉修法 | `memory/` |
