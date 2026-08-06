@@ -101,7 +101,7 @@ const scope = reportScopeFixture({
   - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图。
   - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table， Attempt locator 保留给 web 宿主下钻。
     路径段组的题数内联在身份格；它不能成为另一条 detail 续行。
-    Tokens 列的四层口径必须可区分：Experiment / 路径段组是各自范围内跨 Eval 的宏平均，Eval 是该题 Attempts 的平均，Attempt 是该次精确值；只计 input + output、不计缓存读写，表头明确为平均 Tokens。
+    Tokens 列的四层口径必须可区分：Experiment / 路径段组是各自范围内跨 Eval 的宏平均，Eval 是该题 Attempts 的平均，Attempt 是该次精确值；完整流量计入 uncached input、cache read、cache creation 与 output，表头明确为平均 Tokens；成本列使用同样的四层聚合口径，表头明确为平均成本。
   - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
   - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`； text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。
