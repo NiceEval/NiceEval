@@ -22,6 +22,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
 - [NiceEval 测试体系重构](testing/README.md) —— 真实场景 Repo + 原生 Result / Journey；含 Unit、E2E、本地 / Docker / CI、历史问题对账与可读 TypeScript Example
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
+- [分组 Sandbox 复用](sandbox-reuse-groups/README.md) —— Eval 侧显式列出成员，Experiment 按组 id 启用，组外 Attempt 保持 fresh 并行
 - [运行观测协议](observation-protocol/README.md) —— Agent 事件流、Live、Record、OTel 与 Report 投影共用一份事实协议
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试

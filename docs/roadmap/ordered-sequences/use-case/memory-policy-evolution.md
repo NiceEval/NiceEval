@@ -67,12 +67,18 @@ export default defineExperiment({
   sandbox: e2bSandbox({ template: mempalTemplate })
     .setup(restoreKnownCohort)
     .teardown(saveCommittedCohort),
-  sandboxReuse: true,
+  sandboxReuse: {
+    groups: ["toggl-cli-evolution"],
+  },
 });
 ```
 
+Sandbox 共用成员由 `evals/toggl-cli-evolution/sandbox-group.ts` 声明，mempal Experiment 只按 id 启用。
+完整成员写法见[分组 Sandbox 复用的 MemoryBench 用例](../../sandbox-reuse-groups/use-case/MemoryBench.md)。
+
 Sequence 不要求两边使用相同状态实现。
-它只保证两边收到相同的有序任务历史；baseline 每步仍可使用全新 Sandbox，mempal 可以在复用 Sandbox 或外部服务中延续状态。
+它只保证两边收到相同的有序任务历史；mempal 的复用组保证八步使用同一活跃实例，baseline 仍可省略组引用并保持 fresh。
+memory 状态仍由 Agent 与 lifecycle 决定。
 
 ## 预览并运行
 

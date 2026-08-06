@@ -65,5 +65,6 @@ Experiment 的 `evals` 选择必须覆盖 Sequence 的全部成员。
 Sequence Invocation 要求解析后的 `attempts` 为 1。
 多次重复需要彼此隔离的状态起点，不能在没有状态实例模型时把 `attempts: N` 解释成 N 条独立 Sequence。
 
-`sandboxReuse` 不由 Sequence 强制设置。
-连续物理 Sandbox、外部服务或无状态基线都可以承载同一条 Sequence；具体状态位置仍归 Experiment 和 Sandbox lifecycle。
+Sequence 不创建 Sandbox 复用组。
+成员被 [`sandbox-group.ts`](../sandbox-reuse-groups/library.md)引用、且本轮 Experiment 启用该组时使用共享实例；其余成员继续使用 fresh Sandbox。
+外部服务或无状态基线都可以承载同一条 Sequence；具体状态位置仍归 Experiment 和 Sandbox lifecycle。
