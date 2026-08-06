@@ -262,10 +262,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 ## 候选术语
 
-以下原语属于已经定稿、等待落地的运行观测协议。它们不会替换 Invocation、Run、Attempt、Agent Session 或 Turn，只描述事实流及其读取方式。
+以下原语属于已经定稿、等待落地的 Roadmap 契约。
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
+| Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不可变事实 | [运行观测协议](roadmap/observation-protocol/README.md) |
 | Claim | Claim | evaluator 根据明确依据在当时作出的结论 | [运行观测协议](roadmap/observation-protocol/architecture.md#provenance-与-claim) |
 | Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |

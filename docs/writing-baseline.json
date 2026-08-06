@@ -94,7 +94,6 @@
   "bannedTerms": {},
   "deadTerms": [
     "报告槽位 / Report slot(内部代号) / Report slot / 内部代号",
-    "断言范围 / Assertion scope",
     "致命错误熔断 / Fatal-error circuit breaker",
     "调度波次 / Scheduling waves"
   ]

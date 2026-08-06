@@ -69,6 +69,7 @@ docs/
 │   └── reports/                         show、view 与报告组件
 │
 ├── roadmap/                             已定稿、尚未落地的目标契约
+│   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │

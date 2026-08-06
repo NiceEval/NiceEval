@@ -17,6 +17,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 一个方向出现多个需要正式比较的候选时,移入 [`../design/`](../design/README.md),让每个候选成为独立 `PLAN-N/`。
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 场景
+- [Agent-as-Judge](agent-as-judge/README.md) —— 用独立 Direct 或 Sandbox Agent 调查证据并执行 Judge Assertion
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
 - [NiceEval 测试体系重构](testing/README.md) —— 真实场景 Repo + 原生 Result / Journey；含 Unit、E2E、本地 / Docker / CI、历史问题对账与可读 TypeScript Example
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
