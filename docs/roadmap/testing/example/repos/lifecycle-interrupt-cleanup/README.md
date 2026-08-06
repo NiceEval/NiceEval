@@ -1,0 +1,47 @@
+# lifecycle-interrupt-cleanup 场景 Repo（docs 示例）
+
+中断与资源终结语义的独立消费 Repo：`experiments/slow.ts` 的实验级 `setup` / `teardown`
+Hook 对**拥有一个 backend 进程**。该进程由 `fixtures/backend.mjs` 提供本地 HTTP 服务，
+并把 pid 与动态端口写进仓库根的 `backend.info`。`experiments/smoke.ts` 是中断后的下一消费者。
+
+本 Repo 等 owned backend **真启动**（`/health` 返回 200）后再发 SIGINT。
+进程退出码为 130，`result` 折叠成 `interrupted`，实验级 teardown 照常执行
+（`experiment_teardown` 事件）。随后 owned 资源消失：backend 自己的 pid
+（不是父进程 pid）与端口都不可达；下一消费者仍可正常启动。
+无 orphan 的判断以 owned 资源本身为准，只查父 PID 不算数。
+
+## 怎么跑
+
+```sh
+# NiceEval 根目录
+pnpm e2e --repo lifecycle-interrupt-cleanup
+
+# 已安装候选包的隔离 Repo 根目录
+pnpm test
+```
+
+测试运行 `pnpm exec niceeval exp slow --json`，等待 `backend.info` 与 `/health`，再发送 SIGINT。
+它核对收据与资源消失后运行 `exp smoke --rerun all --json`。
+完整命令都在调用点，不读 `.niceeval/` 私有布局；`backend.info` 是本 Repo 自己的 fixture 文件。
+
+## lockfile 规则（正式）
+
+- 本目录是 docs 示例，**不签入、不手写** `pnpm-lock.yaml`：文档里手写的 lockfile 必然
+  过期，只制造"看起来可复现"。真实实现时 `pnpm install` 生成 lockfile 并随代码签入。
+- 根 runner 在**临时副本**里把 `niceeval` 依赖替换成候选 tarball，安装后核对实际 executable
+  到的包与 tarball 指纹一致；独立 checkout 不注入候选时，测的就是 lockfile 锁定的
+  已发布的对照版本（本示例依赖声明 `niceeval ^0.4.6`）。
+- 本目录不是 pnpm workspace 成员；真实 e2e Repo 需要自带只含 `packages: []` 的
+  `pnpm-workspace.yaml`，让自己成为 workspace root、不向上并入父级。
+
+## 内容
+
+| 路径 | 角色 |
+|---|---|
+| `agents/fixture.ts` | 本地确定性 agent 与慢速 agent（一轮睡 60s，留出发送 SIGINT 的时间段） |
+| `evals/suite/{slow,smoke}.eval.ts` | 慢速 eval 与下一消费者的快速通过 eval |
+| `experiments/slow.ts` | `setup` 起 owned backend（写 `backend.info`）、`teardown` 收掉（SIGTERM → SIGKILL 升级） |
+| `experiments/smoke.ts` | 中断后的下一消费者实验 |
+| `fixtures/backend.mjs` | owned backend：本地 HTTP 服务，`/health` 200 |
+| `test/sigint-teardown-orphan.test.ts` | 130 / teardown / 资源消失 / 下一消费者 |
+| `test/support/` | 本 Repo 自有的进程收据（含信号）与机械断言辅助 |

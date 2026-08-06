@@ -10,10 +10,12 @@ e2e/
 ├── cli/
 ├── report/
 ├── package-commonjs/
+├── runner-carry/
+├── runner-history/
 ├── adapter/
 │   ├── ai-sdk/
-│   ├── codex-sdk/
-│   └── codex-cli/
+│   ├── codex-cli/
+│   └── local-protocol/
 ├── journey-first-eval-to-debug/
 ├── lifecycle-interrupt-cleanup/
 └── scripts/                         # 发现、pack、注入、executor、artifact
@@ -35,6 +37,11 @@ test/
 目录不必为了形式把所有项目拆得很小；一组 Result 能只读消费同一次昂贵证据时，可以留在一个 Repo。
 会修改当前结果或生命周期状态的 Journey 必须独立。
 
+`adapter/` 是 Repo collection，不能把所有 adapter test 放入同一个叶子项目。
+`ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
+凭据边界、结果根与公开 readback。
+无密钥的 `local-protocol/` 只拥有确定性 transport / fault / cleanup，不得用它的 canned event 宣称 live adapter 兼容。
+
 ## Repo Manifest
 
 `e2e.json` 只描述编排条件：
@@ -54,6 +61,7 @@ interface E2ERepoManifest {
     | "runner"
     | "adapter"
     | "sandbox"
+    | "lifecycle"
   )[];
   lanes: readonly ("pr" | "main" | "nightly" | "release")[];
   executor: Executor;
@@ -65,6 +73,7 @@ interface E2ERepoManifest {
     externalNetwork?: boolean;
     platforms?: readonly ("linux" | "darwin")[];
     runtimes?: readonly string[];
+    browsers?: readonly ("chromium" | "firefox" | "webkit")[];
   };
   paths: readonly string[];
   artifacts: readonly string[];
@@ -82,11 +91,15 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 2. 计算 tarball 字节 digest；
 3. 把每个选中 Repo 复制到新的临时目录；
 4. 只在副本中把 `niceeval` dependency 改为 tarball；
-5. 安装后核对 lockfile、解析路径和实际版本来自该 tarball；
+5. 安装后核对 lockfile、executable 路径和实际版本来自该 tarball；
 6. 把 digest、Repo ID 和复现命令写入摘要。
 
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。
+
+测试正文也不能临时新建一个只写了 `package.json`、却没有安装候选包的嵌套 consumer，然后在里面运行
+`pnpm exec niceeval`。Package 场景优先让叶子 Repo 本身就是目标 consumer；确实需要二级 consumer 时，runner 必须在那个目录
+重复候选注入、安装和 executable 身份核验，并把两级收据都写入 artifact。
 
 Release 必须发布通过 preflight 的同一 tarball；验收后重新 pack 会切断信任链。
 
@@ -120,12 +133,13 @@ Executor 回答测试进程在哪里运行：
 - Vitest 文件默认不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
 - 需要写的测试使用独立结果根 / 项目副本，或独占的 Journey Repo；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
-- 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后清理；
-- secret 只进子进程环境，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。
+- 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
+- secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。
 
 ## Adapter Repo
 
-每个 adapter Repo 应包含最小而真实的 Eval / Experiment 集：
+Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。每个 adapter Repo 应包含最小而真实的
+Eval / Experiment 集：
 
 - 一个正常消息往返；
 - 一个该 adapter 独有能力，例如工具、session、MCP、usage 或 sandbox；
@@ -135,6 +149,7 @@ Executor 回答测试进程在哪里运行：
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
 本地协议 backend 固定版本和响应，可进入 PR；真实 provider 版本、模型和 CLI 身份写入 artifact，进入可信 lane。
+二者应是不同叶子 Repo，避免共享依赖、结果与子进程变量后把本地 fixture 误报成某个 live adapter 的证明。
 
 ## Repo 准入
 
@@ -145,5 +160,5 @@ Executor 回答测试进程在哪里运行：
 3. expected 不来自候选；
 4. 失败报告含阶段和原始收据；
 5. 无密钥 Repo 能在 PR lane 运行，live Repo 缺 secret 时启动前明确失败；
-6. 历史 bug case 能杀死旧实现；
+6. 标成 `regression` 的历史 bug case 能杀死对应旧实现；只能证明相似风险的 case 不挂该 commit；
 7. 被替代旧测试在同批删除。

@@ -1,0 +1,4 @@
+.niceeval/
+node_modules/
+junit.xml
+backend.info

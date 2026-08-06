@@ -1170,10 +1170,6 @@
       "解析": 1,
       "记录": 1
     },
-    "docs/design/user-readable-testing/PLAN-4/use-case/README.md": {
-      "环境": 1,
-      "覆盖": 2
-    },
     "docs/design/user-readable-testing/README.md": {
       "helper": 1,
       "解析": 1
@@ -2713,49 +2709,6 @@
     "docs/roadmap/sandbox-reuse-groups/use-case/Terminal-Bench.md": {
       "产物": 2,
       "环境": 1
-    },
-    "docs/roadmap/testing/README.md": {
-      "helper": 2,
-      "解析": 1
-    },
-    "docs/roadmap/testing/architecture.md": {
-      "helper": 4,
-      "清理": 1,
-      "覆盖": 2,
-      "解析": 4
-    },
-    "docs/roadmap/testing/e2e/README.md": {
-      "helper": 2,
-      "覆盖": 3
-    },
-    "docs/roadmap/testing/e2e/execution.md": {
-      "产物": 1,
-      "环境": 1,
-      "结论": 1,
-      "解析": 2
-    },
-    "docs/roadmap/testing/e2e/scenario-repos.md": {
-      "清理": 1,
-      "环境": 1,
-      "解析": 1
-    },
-    "docs/roadmap/testing/example/README.md": {
-      "helper": 1,
-      "覆盖": 1,
-      "解析": 2
-    },
-    "docs/roadmap/testing/history-problems.md": {
-      "helper": 2,
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 3,
-      "解析": 2,
-      "记录": 3
-    },
-    "docs/roadmap/testing/portfolio.md": {
-      "helper": 1,
-      "基线": 1,
-      "覆盖": 3
     },
     "docs/roadmap/testing/reference/README.md": {
       "helper": 1,

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "runner-carry",
+  "areas": [
+    "runner"
+  ],
+  "lanes": [
+    "pr",
+    "main",
+    "release"
+  ],
+  "executor": {
+    "kind": "host"
+  },
+  "command": [
+    "pnpm",
+    "test"
+  ],
+  "timeoutMinutes": 8,
+  "secrets": [],
+  "paths": [
+    "src/runner/**",
+    "src/sample/**",
+    "src/record/**"
+  ],
+  "artifacts": [
+    ".niceeval/**",
+    "junit.xml"
+  ]
+}

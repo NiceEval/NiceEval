@@ -33,7 +33,7 @@ e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → e
                                         artifact + 阶段摘要 + cleanup
 ```
 
-编排层不读取 `.niceeval/`，不解析 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
+编排层不读取 `.niceeval/`，不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
 
 ## 从风险选择测试形态
 
@@ -66,7 +66,23 @@ test("导出报告能打开失败 Attempt", async () => {
 ```
 
 场景 Repo 的复制、依赖安装和服务启动属于 `prepare`，由 runner 和项目 fixture 明确报告。
-`cleanup` 无条件执行，失败附加到更早的错误，不能覆盖原始 outcome。
+`cleanup` 无条件执行，失败附加到更早的错误，不能遮蔽原始 outcome。
+
+## 单文件可读性契约
+
+Result / Journey 文件从上到下保持同一信息顺序：
+
+| 位置 | 保留的信息 | 不放入这里的内容 |
+|---|---|---|
+| 文件头 | Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
+| 局部类型 | 本测试实际读取的公开字段 | 完整生产 DTO、候选导出的 schema 常量 |
+| 局部函数 | process、parse、唯一项查找、资源关闭等机械操作 | scenario 名到用户动作的映射、领域 expected |
+| 测试标题与注释 | 长期用户结果；历史 kill 用 `regression:` 单独注明 | 临时实现函数名、当前 DOM 结构 |
+| 测试正文 | 完整 argv 或紧邻的具名 argv、公开观察、字面 expected、最近接缝断言 | 从 actual 反推 expected、无解释的整页 snapshot |
+
+读者只打开这个文件，就应能回答“在哪个 Repo 跑、用户执行什么、预期是什么、最早会在哪一步失败”。
+为满足这一点保留两三次相似 argv 是合理成本；只有两个 Repo 已出现相同且稳定的机械协议时才上移复用实现。
+抽取后测试标题、argv、sentinel、verdict 和历史回归理由仍留在 owner 文件。
 
 ## Oracle 独立性
 
@@ -76,21 +92,21 @@ test("导出报告能打开失败 Attempt", async () => {
 - 动态 locator 可以从公开 `show --history --json` 取得，再用于下一条公开命令；
 - 不调用候选的 `enumerate()` 生成“应该存在的全集”，再验证候选自己的输出；
 - 不从候选导出的 schema 常量给手写 fixture 自动升版；公开格式升级要显式修改 fixture；
-- 不把产品 parser 复制到 helper；必须解析复杂公开格式时，parser 留在对应 Repo 并有 malformed case。
+- 不把产品 parser 复制到通用命令执行器；必须解码复杂公开格式时，parser 留在对应 Repo 并有 malformed case。
 
 允许从运行 A 取得事实，再与运行 B 的独立出口比较；不允许让被测出口同时产生 actual 和 expected。
 
-## Helper 预算
+## 复用设施预算
 
-共享 helper 只允许拥有机械能力：
+共享设施只允许拥有机械能力：
 
-- 创建 / 清理临时目录和隔离副本；
+- 创建 / 删除临时目录和隔离副本；
 - 无 shell 拼接地启动进程或 PTY，捕获 argv、cwd、exit、signal、stdout、stderr 和耗时；
-- 启停 HTTP server、Docker service 和浏览器；
-- 严格解析 JSON、NDJSON、XML，保存 trace、screenshot 与 service log；
+- 启停 HTTP server、Docker service；浏览器场景默认由 Playwright Test fixture 启停 browser / context；
+- 严格解码 JSON、NDJSON、XML，保存 trace、screenshot 与 service log；
 - 等待端口、URL 或显式状态，并无条件 cleanup。
 
-helper 不得：
+复用设施不得：
 
 - 根据 scenario 名隐藏完整用户动作；
 - 根据候选结果计算 target、verdict、identity 或期望集合；
@@ -99,6 +115,8 @@ helper 不得：
 - 在断言阶段悄悄修改共享 evidence。
 
 两个 Repo 出现同一稳定机械 parser 后才提取共享实现；领域预期仍留在测试文件。
+专用 browser fixture 不是默认能力；只有大量场景共享远端 browser 的性能收益已经测量并且 Playwright Test fixture
+无法表达时才引入，不能为了少写两行就由 Vitest 手动包装 `chromium.launch()`。
 
 ## 进程收据
 
@@ -123,8 +141,10 @@ interface ProcessResult {
 ## 结构化输出与浏览器
 
 - JSON / NDJSON / XML 必须严格 parse 后比较身份字段、集合和关系；格式错误属于 `observe`，不能变成“缺 substring”。
-- 大输出同时断言字节规模、文档可解析和尾部 sentinel，避免只证明“有一些 JSON”。
-- HTML 先验证文件 / URL 与 HTTP，再验证目标实体；Playwright 使用 role、label、可见文本和 web-first assertion。
+- 大输出同时断言字节规模、文档可解码和尾部 sentinel，避免只证明“有一些 JSON”。
+- HTML 先从用户实际拿到的链接读取 `href`，验证该 URL 与 HTTP 后再验证目标实体；不能根据 locator 猜导出路径再证明自己猜的路径存在。
+- Playwright 优先使用产品已声明的 role、label、可见文本和 web-first assertion。role / label 本身也必须由产品契约提供。
+  缺少稳定可访问身份时，该 Result 明确报告产品可测试性缺口，不能在测试里发明 `aria-label` 或 `role="tooltip"`。
 - 固定 sleep、实现 CSS class、任意未展开节点探测循环和“有一个 dialog”都不是用户结果。
 - screenshot 是诊断 artifact，不是默认 oracle；只有视觉契约才使用稳定的视觉 diff。
 
@@ -133,8 +153,14 @@ interface ProcessResult {
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
 - 一个 Result 项目可以在 `beforeAll` 生成一次昂贵证据，随后只读测试并行消费。
 - 会改变“当前结果”的验证必须获得自己的结果根或独立 Repo，不能靠文件调用顺序保护共享状态。
+- 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
+  `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
 - Journey 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。
-- 第一版不跨提交复用 `.niceeval`、`node_modules` 或导出站。只缓存包管理器 store 和 Docker layer。
+- 场景 Repo 不跨提交复用 `.niceeval`、`node_modules` 或导出站，只缓存包管理器 store 和 Docker layer。
+
+Lifecycle 的 cleanup oracle 必须观察被管理资源本身：带 run ID 的 container / network / volume、backend active-session、
+sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没有子进程或远端 orphan；发 signal 前也必须先等资源进入
+可观察的 ready 状态，最后再让一个独立消费者证明资源可重新取得。
 
 ## 失败分类
 
@@ -147,7 +173,7 @@ interface ProcessResult {
 
 判不清按 Regression。超时不是自动基础设施错误；cleanup 失败也不能靠重试漂绿。
 
-## 覆盖关系不是运行时平台
+## 证明关系不是运行时平台
 
 测试文件和标题是执行身份；[Portfolio](portfolio.md) 只维护人可审查的稳定结果、owner、lane 和历史 bug 链接。
 它不生成测试代码，也不要求测试重复登记一份元数据。

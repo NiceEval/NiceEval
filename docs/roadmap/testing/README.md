@@ -15,6 +15,8 @@
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
 测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
+其中 `adapter/` 是 collection：AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
+各自安装候选包并拥有结果根；不能把本地 canned backend 当成多个 live adapter 的共同替身。
 
 ## 两条分类轴
 
@@ -49,11 +51,12 @@ human、JSON、DOM 和 snapshot 各测一遍。
 
 - 短 Result 的一个 `test()` 只承诺一个用户可观察结果；Journey 的一个 `test()` 只承诺一个完整用户目标。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
-- 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解析后再生成自己的 expected。
+- 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
-- 浏览器断言 URL、HTTP、可访问身份和可见结果，不断言隐藏 class、偶然 DOM 层级或固定 sleep。
+- 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
+  role / label；不稳定能力先记产品缺口。
 - 历史回归写 `regression: <fix commit / memory>`，但标题仍描述长期结果；新 case 必须能杀死旧实现。
-- helper 只拥有临时目录、进程、server、parser、浏览器、artifact 和 cleanup 等机械能力。
+- 复用设施只拥有临时目录、进程、server、parser、artifact 和 cleanup 等机械能力；浏览器生命周期默认交给 Playwright Test。
 
 ## 失败怎样定位
 
@@ -89,7 +92,7 @@ pnpm e2e --lane main --repo codex-sdk
 
 ## 入口
 
-- [Architecture](architecture.md) —— 数据流、分类、oracle、失败与 helper 边界；
+- [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
 - [测试组合与退役](portfolio.md) —— owner、矩阵去重、历史 bug 与迁移规则；
 - [Unit](unit/README.md) —— Mechanism 测试的存在资格和写法；
 - [E2E](e2e/README.md) —— Result、Journey、Adapter 与 Lifecycle；

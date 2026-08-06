@@ -14,7 +14,10 @@ pnpm e2e --repo report --executor docker
 pnpm e2e --repo report -- --run test/exported-targets.test.ts
 
 # 显式 live；缺 secret 在 prepare 前一次列清
-pnpm e2e --lane main --repo codex-sdk
+pnpm e2e --lane main --repo adapter/codex-cli
+
+# 本地无密钥 adapter transport / fault；与 live Repo 分开选择
+pnpm e2e --lane pr --repo adapter/local-protocol
 ```
 
 内部可以拆成 `pack`、`plan`、`run` 三个子动作供 CI 分布式执行；本地默认命令包装同一实现：
@@ -36,13 +39,17 @@ discover → select → pack → isolate → install → prepare → test → co
 | 阶段 | Owner | 失败输出 |
 |---|---|---|
 | discover / select | 根 runner | manifest 路径、lane、为何选择 / 排除 |
-| pack / install | 根 runner | tarball digest、lockfile、实际解析路径 |
+| pack / install | 根 runner | tarball digest、lockfile、实际 executable 路径 |
 | prepare | Repo fixture | backend、端口、容器 / 服务日志 |
 | test | Vitest / Playwright | 文件、标题、argv、ProcessResult、trace |
 | collect / cleanup | 根 runner + Repo | artifact 清单、脱敏、残留资源 |
 | summarize | 根 runner | 状态、阶段、耗时、重现命令 |
 
 失败、取消和 signal 都必须走 collect / cleanup。`--keep-workdir` 仅供显式本地诊断。
+
+阶段收据保存产生结果的进程本身的 exit / signal。验证不得用 `command | head`、`command | tail` 后读取管道末端退出码；
+需要裁剪控制台输出时，先把 producer 的完整 stdout / stderr 与退出状态落入 artifact，再只裁剪展示副本。Repo 启动的 view、mock、
+backend、container 与 browser 都必须登记 owned handle；`finally` 做有界终止，超时后升级信号，并用 pid、端口或 provider 身份确认资源消失。
 
 ## Lane
 
@@ -76,7 +83,7 @@ Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store 
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
 
 Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管理器 store 依赖自身内容寻址；PR 不使用会把
-其它候选测试产物带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
+其它候选测试文件带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
 
 PR path filter 来自 manifest `paths`，只是省时提示：plan 无法可靠求 diff、共享 runner / package 入口变化或 manifest 自身变化时，
 运行该 lane 全集。Release 不用 path filter。
@@ -85,7 +92,7 @@ PR path filter 来自 manifest `paths`，只是省时提示：plan 无法可靠�
 
 使用 Docker 的合理原因：
 
-- 固定 Linux / 系统包 / 浏览器环境；
+- 固定 Linux / 系统包 / 浏览器运行条件；
 - 启动被测服务、sandbox 或多容器网络；
 - 验证 host 无法表达的进程、用户、PATH、signal 或文件权限边界。
 
@@ -109,9 +116,9 @@ Docker daemon 故障。以下情况不重试：断言失败、测试超时、par
 
 重试摘要保留第一次失败，不能只展示最终绿色；同一个断言第二次碰巧过仍需标记 flaky regression。
 
-候选注入失败要再分一层：runner 没把指定 tarball 注入进去、digest / 实际解析身份不一致属于 harness failure；候选已经正确
-注入，但它的 package metadata、exports、bin 或安装脚本让真实项目不可消费属于 product regression。两类都不得判绿，
-只有前者在确认临时 runner / registry 故障时才可能按 infrastructure 重试。
+候选注入失败要再分一层。runner 没把指定 tarball 注入进去，或 digest / 实际 executable 身份不一致，属于 harness failure。
+候选已经正确注入，但它的 package metadata、exports、bin 或安装脚本让真实项目不可消费，属于 product regression。
+两类都不得判绿；只有前者在确认临时 runner / registry 故障时才可能按 infrastructure 重试。
 
 ## Artifact 与脱敏
 
@@ -128,7 +135,7 @@ Docker daemon 故障。以下情况不重试：断言失败、测试超时、par
 ## Release 信任链
 
 Release job 先按最终版本生成 tarball 与 digest，所有 release Repo 安装该 artifact；通过后发布同一文件。
-任何重新 pack、identity 不一致、blocking Repo 无结论或 artifact 丢失都阻止发布。
+任何重新 pack、identity 不一致、blocking Repo 没有 pass / fail 状态或 artifact 丢失都阻止发布。
 
 这保证“CI 测过的代码”和“registry 收到的包”是同一字节，而不是两个相近 checkout。
 

@@ -16,6 +16,17 @@ E2E 只负责必须穿过真实公开边界的 Result、Journey、Adapter 和 Li
 它不能从 workspace 相对路径 import NiceEval 源码，也不能用“生成过 evidence”代替断言。完整规则见
 [真实场景 Repo](scenario-repos.md)。
 
+## 框架分工：复用 runner，只写产品 harness
+
+- CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
+- Report 与包含浏览器的 Journey 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
+- 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- Repo 的命令执行器和 Fixture 工厂只补进程、临时项目和本地 backend 等机械能力，完整 `niceeval` argv 与领域 expected 留在测试正文。
+
+这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
+再为自身的真实项目、CLI、server 或候选构建写薄的产品 fixture。NiceEval 不另造 assertion DSL、browser runner
+或第二套测试调度器。
+
 ## Result：短结果测试
 
 Result 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
@@ -36,7 +47,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 });
 ```
 
-进程、parser 和 artifact helper 可以复用；阈值、sentinel 和成功条件不能藏进 helper。
+命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
 
 ## Journey：长用户流程
 
@@ -53,7 +64,20 @@ Journey 使用独立项目副本和结果根。失败后保留副本时，摘要
 
 ## Adapter
 
-每个官方 adapter 自己拥有场景 Repo，分两类互补测试：
+`e2e/adapter/` 是 collection；每个官方 adapter 自己拥有叶子 Repo，另有独立的本地协议 Repo。不能在一个
+`adapter/test/` 目录里用不同 fixture 名字冒充多个消费项目：
+
+```text
+e2e/adapter/
+├── ai-sdk/          # live SDK 与该 SDK 独有的 telemetry / session 证据
+├── codex-cli/       # live CLI、隔离 HOME / config 与规范工具身份
+├── local-protocol/  # 无密钥的 transport、故障分类与 cleanup
+├── claude-code/
+├── opencode/
+└── bub/
+```
+
+两类叶子 Repo 提供互补测试：
 
 | 测试 | 证明 | Lane |
 |---|---|---|
@@ -66,6 +90,9 @@ Repo 各取有区分力的真实边界代表。
 Adapter Result 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
 以及失败时的阶段和可行动诊断。不能只断言命令 exit 0。
 
+Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox.list()` 的 SDK paginator 形状归直接使用真实 SDK 类型的
+Mechanism unit；把它改写成自造 HTTP cursor 后，即使有两页数据也不能引用 E2B 的历史回归。
+
 ## Report
 
 Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
@@ -76,11 +103,12 @@ Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 - 自定义 Report：外部 cwd 的 TSX 编译、公开组件和页面目标。
 
 浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。
+默认直接使用 Playwright Test；只有经测量证明需要跨大量场景共享远端 browser 时，才允许引入专用 browser fixture。
 
 ## Package 与 CLI
 
-Package Repo 使用真实 `package.json` 形态覆盖 CJS、ESM、无 `type`、optional peer 缺席、外部 Report 和公开 example。
-CLI Repo 覆盖 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / NDJSON / JUnit。两者都执行安装后的 binary，
+Package Repo 使用真实 `package.json` 形态验证 CJS、ESM、无 `type`、optional peer 缺席、外部 Report 和公开 example。
+CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / NDJSON / JUnit。两者都执行安装后的 binary，
 不能直接调用 `src/cli.ts` 或 mock commander / parseArgs 后宣称公开命令已通过。
 
 ## Lifecycle
@@ -91,7 +119,7 @@ Lifecycle Repo 串行运行，拥有自己的进程组、容器和 sandbox。它
 - teardown 与 lease 结束；
 - 没有 orphan 或残留容器；
 - 下一次独立消费者可以正常启动；
-- cleanup 失败不会覆盖原始失败。
+- cleanup 失败不会遮蔽原始失败。
 
 ## 单项重跑
 

@@ -34,25 +34,23 @@ E2E 只证明安装后公开命令的用户结果，不复制矩阵。
 ## C2、C3：Report 目标能打开并且身份正确
 
 ```ts
-test.each([
-  ["attempt", fixture.attemptLocator],
-  ["experiment", "report-targets"],
-  ["case", "checkout-regression"],
-])("导出站能打开 %s target", async (pageId, key) => {
+test("导出站沿实际 href 打开失败 Attempt", async ({ page }) => {
+  const locator = failedAttemptFromPublicHistory.locator;
   await page.goto(siteUrl);
 
-  const link = page.getByRole("link", { name: `${pageId}:${key}` });
+  const link = page.getByRole("link", { name: /onboarding\/fails/ }).first();
   const href = await link.getAttribute("href");
-  expect(await httpStatus(new URL(href!, siteUrl))).toBe(200);
+  if (href === null) throw new Error("onboarding/fails target 缺 href");
+  expect(await httpStatus(new URL(href, siteUrl))).toBe(200);
 
   await link.click();
-  await expect(page.getByRole("dialog")).toHaveAttribute("data-page-id", pageId);
-  await expect(page.getByRole("dialog")).toContainText(key);
+  expect(page.url()).toBe(new URL(href, siteUrl).href);
+  await expect(page.getByText(locator, { exact: true })).toBeVisible();
 });
 ```
 
-预期三类 target 来自签入 fixture，不从候选导出的链接集合反推。
-HTTP 失败指向导出 / hosting；HTTP 正常但 dialog 错误指向 browser routing / enhancement。
+locator 来自上一条公开 `show --history --json`；链接目标来自页面实际 `href`，测试不根据 locator 猜文件路径。
+HTTP 失败指向导出 / hosting；HTTP 正常但 URL 或 locator 错误指向 browser routing / enhancement。
 
 ## C4：调度机制
 
@@ -103,14 +101,16 @@ test("Codex 工具调用读回为规范 shell 身份", async () => {
 ```
 
 这条测试在对应 adapter 的真实场景 Repo 运行。
-Docker 协议 fixture 可以覆盖确定性断流与错误分类，但不能替代这条 live SDK / CLI 兼容性证明。
+Docker 协议 fixture 可以复现确定性断流与错误分类，但不能替代这条 live SDK / CLI 兼容性证明。
 
 ## C7：真实包消费方
 
 ```ts
 // regression: b44420d3
 test("CommonJS 项目 init 后可以立即 list", async () => {
-  const project = await consumerProject({ packageType: "commonjs" });
+  // 这个叶子 Repo 本身就是已安装候选 tarball 的 CommonJS consumer；
+  // 不在 test 内另造一个没有执行 pnpm install 的空目录。
+  const project = await scenarioRepo("package-commonjs");
 
   const init = await runProcess(
     ["pnpm", "--silent", "exec", "niceeval", "init"],
@@ -123,12 +123,12 @@ test("CommonJS 项目 init 后可以立即 list", async () => {
     { cwd: project.root },
   );
   expect(list.exitCode, list.diagnostic()).toBe(0);
-  expect(list.stdout).toContain("No experiments found");
+  expect(list.stdout).toMatch(/(?:Discovered 0 evals|发现 0 个 eval)/);
 });
 ```
 
-`consumerProject()` 只建目录和写 `package.json`；安装后的完整 binary argv 仍留在测试正文。
-它不提供产品断言。
+根 runner 已在这个 Repo 的隔离副本里注入、安装并核对候选身份；完整 binary argv 仍留在测试正文。
+`list` 列的是 Eval，`exp list` 才列 Experiment，因此不能用 `No experiments found` 作为这里的 expected。
 
 ## C8：Bug 回归归属
 
@@ -139,15 +139,16 @@ test("CommonJS 项目 init 后可以立即 list", async () => {
 
 ## C9：本地与 CI 同构
 
-Report 项目的 manifest 同时声明 `pr`、`main` 与 `release`，使用 pinned Playwright Docker executor。
+Report 项目的 manifest 同时声明 `pr`、`main` 与 `release`，默认使用 host executor，并显式声明 Chromium capability。
 开发者和 Actions 都运行：
 
 ```sh
 pnpm e2e --repo report
 ```
 
-Actions 只额外提供 matrix 环境和上传 artifact。
-若 Docker executor 与 host executor 都受支持，二者必须是 manifest 中两条显式 scenario；CI 不自动切换，本地也不静默 fallback。
+Actions 只额外提供 matrix runner 条件和上传 artifact。
+需要固定 Linux 系统包或验证容器边界时再增加 pinned Docker executor；若 host 与 Docker 都受支持，二者必须是 manifest 中
+两条显式 scenario，CI 不自动切换，本地也不静默 fallback。
 
 ## 长流程 Journey：从初始化到定位失败并导出报告
 
@@ -203,4 +204,4 @@ test("新项目能运行评测、定位失败 Attempt 并交付静态报告", as
 ```
 
 `init`、plan、run、history、detail、export 任一接缝出错都会在最近检查点停止，并保留该命令的收据。
-Journey 不复制每个域的完整边界矩阵；它只覆盖跨域组合才会出现的断裂。
+Journey 不复制每个域的完整边界矩阵；它只验证跨域组合才会出现的断裂。

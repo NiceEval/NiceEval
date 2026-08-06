@@ -1,187 +1,86 @@
-# 可读测试 Example
+# 测试代码 Example
 
-这里展示选定方案的**测试正文**，不是另一个框架实现。四个文件分别代表四个独立场景 Repo；为了并排比较作者体验，
-文档把它们集中在本目录。实现时每个文件放回自己的真实用户项目，与 package、lockfile、config、Eval、Experiment、Report
-和 `e2e.json` 一起运行。
+这里不是一叠脱离现场的 test，也不是一套新的 E2E 框架。`repos/` 下每个叶子都是一个独立用户项目：
+它拥有自己的 `package.json`、`e2e.json`、config、Eval、Experiment、fixture 和测试文件。正式实现时，
+这些叶子分别放进 `e2e/<repo-id>/`；这里集中展示代码，只是便于设计评审。
 
-旧 example 用 15 个文件表达一条 Report 结果，读者要依次理解 Behavior、Recipe、World、Execution、Observed、Registry 和
-Retirement。现在从测试文件开始读即可：完整命令、实际结果、独立预期、bug 引用和失败检查点都在一屏内。
+测试运行器直接复用成熟工具：非浏览器场景使用 Vitest，报告与浏览器 Journey 使用 Playwright Test。
+NiceEval 只实现外侧的薄 runner：选择 Repo、打候选 tarball、复制到隔离目录、安装并核验候选身份、准备
+Docker / secret、收集 artifact 和执行 cleanup。它不解码产品结果，也不替测试计算 expected。
 
-## 先读哪几个文件
+## 一条测试到底在哪里运行
 
-| 文件 | 回答的问题 | 历史 bug / 风险 |
-|---|---|---|
-| [`cli-show-json-pipe.test.ts`](result/cli-show-json-pipe.test.ts) | 大 JSON 经真实 pipe 是否完整交付 | `d8d5a84b` |
-| [`report-chart-tooltip.test.ts`](result/report-chart-tooltip.test.ts) | 静态报告中的真实 hover 是否产生用户可见结果 | `d489dfd4` |
-| [`adapter-tool-identity.test.ts`](result/adapter-tool-identity.test.ts) | 真实 SDK 工具事件能否从公开出口读回规范身份 | `060a6a05` |
-| [`first-eval-to-report.test.ts`](journey/first-eval-to-report.test.ts) | plan、run、debug、export 的跨域用户目标是否闭合 | 长 Journey |
+以 [`runner-carry/test/carry-reuse.test.ts`](repos/runner-carry/test/carry-reuse.test.ts) 为例：
 
-[`support/process.ts`](support/process.ts) 只有 spawn、严格 JSON / NDJSON parse 和诊断，不知道 NiceEval 的 verdict、target 或正确答案。
+```sh
+# cwd = NiceEval 根目录；runner 复制 runner-carry、注入候选 tarball，再把参数传给 Vitest
+pnpm e2e --repo runner-carry -- --run test/carry-reuse.test.ts
 
-## 每个文件实际住在哪种 Repo
-
-```text
-e2e/
-├── cli-large-show/
-│   ├── package.json
-│   ├── pnpm-lock.yaml
-│   ├── e2e.json
-│   ├── niceeval.config.ts
-│   ├── agents/deterministic.ts
-│   ├── evals/large-output/payload.eval.ts
-│   ├── experiments/large-show.ts
-│   └── test/show-json-pipe.test.ts
-├── report-charts/
-│   ├── package.json + pnpm-lock.yaml + e2e.json
-│   ├── niceeval.config.ts
-│   ├── evals/ + experiments/charts.ts
-│   ├── reports/charts.tsx
-│   └── test/chart-tooltip.test.ts
-├── adapter/codex-sdk/
-│   ├── package.json + pnpm-lock.yaml + e2e.json
-│   ├── niceeval.config.ts
-│   ├── evals/tool-call/shell.eval.ts
-│   ├── experiments/tool-call.ts
-│   └── test/tool-identity.test.ts
-└── journey-first-eval-to-debug/
-    ├── package.json + pnpm-lock.yaml + e2e.json
-    ├── evals/onboarding/{passes,fails}.eval.ts
-    ├── experiments/onboarding.ts
-    └── test/first-eval-to-report.test.ts
+# cwd = 已安装候选包的 runner-carry 隔离 Repo 根目录
+pnpm test --run test/carry-reuse.test.ts
 ```
 
-真实实现必须签入生成的 lockfile；这里不手写一份会过期的示意 lockfile。根 runner 只在临时副本里把 `niceeval` dependency
-替换成候选 tarball，并在安装后核对解析身份。
+测试正文随后从该 Repo 根目录执行完整用户命令：
 
-## 最小 package 与 Manifest
-
-每个 Repo 都是普通项目，不依赖 workspace：
-
-```json
-{
-  "name": "niceeval-e2e-cli-large-show",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "vitest run" },
-  "dependencies": { "niceeval": "^0.10.2" },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.4"
-  }
-}
+```sh
+pnpm --silent exec niceeval exp smoke --rerun all --json
+pnpm --silent exec niceeval exp smoke --dry --json
+pnpm --silent exec niceeval exp smoke --json
 ```
 
-```json
-{
-  "schemaVersion": 1,
-  "id": "cli-large-show",
-  "areas": ["cli", "report"],
-  "lanes": ["pr", "main", "release"],
-  "executor": { "kind": "host" },
-  "command": ["pnpm", "test"],
-  "timeoutMinutes": 8,
-  "secrets": [],
-  "paths": ["src/cli.ts", "src/show/**", "src/report/tasks.ts"],
-  "artifacts": ["artifacts/**", "test-results/**"]
-}
-```
+因此 `cwd`、Repo、测试入口和被测 CLI 都可见。需要改 config / eval 的 case 只改 runner 创建的私有副本，
+不会改完再写回共享文件。
 
-manifest 不描述“要看到 tail sentinel”；这个 expected 只在测试文件。
+## 三种可读代码形状
 
-## CLI Result：真实 pipe 与大结果
+- [CLI Result](repos/cli/test/cli-results.test.ts)：完整 argv 后立即检查 exit / stream，再 parse 结构化结果；历史 bug 的
+  `regression:` 与长期测试标题分开。
+- [Runner 状态变化](repos/runner-carry/test/carry-reuse.test.ts)：具名 argv 在文件头可见，mutation 发生在私有副本，
+  每次 dry / run 都在最近一步比较 reused 身份。
+- [长 Journey](repos/journey-first-eval-to-debug/test/first-eval-to-report.test.ts)：不用一条最终页面断言概括整段流程，
+  而是在 list、dry、run、history、execution、href 各接缝留下检查点。
 
-`cli-large-show` 使用确定性 agent；Eval 不调用模型，而是产生足以超过 128 KiB 的断言结果，最后一个预期包含
-`tail-sentinel`。这是真实 NiceEval Eval / Experiment，不是预烘 `.niceeval`：
+维护时先判断公开结果是否改变。若只改了内部 DTO、目录、CSS 或 executor，以上测试的 expected 不应跟着改；若公开契约有意变化，
+只修改该结果的唯一 owner。新 bug 先加强 owner 并验证旧实现会红，不以复制一条相似测试代替。完整判断表见
+[Portfolio · 修改测试的决策门](../portfolio.md#修改测试的决策门)，首轮错误草稿对账见 [REVIEW](REVIEW.md)。
 
-```ts
-// evals/large-output/payload.eval.ts
-import { defineEval } from "niceeval";
-import { equals } from "niceeval/expect";
+## 场景 Repo 索引
 
-export default defineEval({
-  test(t) {
-    for (let index = 0; index < 5_000; index += 1) {
-      const expected = index === 4_999 ? "tail-sentinel" : `expected-${index}`;
-      t.check(`actual-${index}`, equals(expected));
-    }
-  },
-});
-```
+| 类型 | 独立 Repo 与代表代码 | 根目录命令 | 主要证明 |
+|---|---|---|---|
+| CLI | [`repos/cli/test/cli-results.test.ts`](repos/cli/test/cli-results.test.ts) | `pnpm e2e --repo cli` | 选择、exit/stdout/stderr、大 JSON pipe 完整性 |
+| Report | [`repos/report/test/exported-navigation.spec.ts`](repos/report/test/exported-navigation.spec.ts) | `pnpm e2e --repo report` | history → locator → 导出页实际 href → 正确 Attempt |
+| Package | [`repos/package-commonjs/test/commonjs-init-list.test.ts`](repos/package-commonjs/test/commonjs-init-list.test.ts) | `pnpm e2e --repo package-commonjs` | 候选包安装到 CommonJS consumer 后 `init → list` |
+| Runner / carry | [`repos/runner-carry/test/carry-reuse.test.ts`](repos/runner-carry/test/carry-reuse.test.ts) | `pnpm e2e --repo runner-carry` | dry plan 与真实 dispatch 一致；配置变化与部分补跑 |
+| Runner / history | [`repos/runner-history/test/history-dedup.test.ts`](repos/runner-history/test/history-dedup.test.ts) | `pnpm e2e --repo runner-history` | attempt 身份追加与携入去重 |
+| Lifecycle | [`repos/lifecycle-interrupt-cleanup/test/sigint-teardown-orphan.test.ts`](repos/lifecycle-interrupt-cleanup/test/sigint-teardown-orphan.test.ts) | `pnpm e2e --repo lifecycle-interrupt-cleanup` | SIGINT、teardown、owned backend 消失、下一消费者 |
+| Journey | [`repos/journey-first-eval-to-debug/test/first-eval-to-report.test.ts`](repos/journey-first-eval-to-debug/test/first-eval-to-report.test.ts) | `pnpm e2e --repo journey-first-eval-to-debug` | `init → list → dry → exp → show → view → browser` |
+| Adapter / live AI SDK | [`repos/adapter/ai-sdk/test/tool-identity.test.ts`](repos/adapter/ai-sdk/test/tool-identity.test.ts) | `pnpm e2e --repo adapter/ai-sdk` | 真实 SSE / model / tool identity；main/nightly |
+| Adapter / live Codex CLI | [`repos/adapter/codex-cli/test/tool-identity.test.ts`](repos/adapter/codex-cli/test/tool-identity.test.ts) | `pnpm e2e --repo adapter/codex-cli` | 真实 CLI / Docker / canonical tool；main/nightly |
+| Adapter / local protocol | [`repos/adapter/local-protocol/test/local-backend-failure.test.ts`](repos/adapter/local-protocol/test/local-backend-failure.test.ts) | `pnpm e2e --repo adapter/local-protocol` | 无密钥 HTTP 5xx 传输与错误分类；PR |
+| Mechanism unit | [`mechanism-unit/`](mechanism-unit/) | `pnpm exec vitest run --config docs/roadmap/testing/example/mechanism-unit/vitest.config.ts` | 真实 SDK 类型形状或纯映射，不冒充 E2E |
 
-测试先真实运行 `pnpm exec niceeval exp` 产生结果，再用真实子进程 pipe 调 `show --json`。它同时检查字节规模、JSON 可解析、
-信封身份和尾部 sentinel；只检查 exit 0 或只检查输出长度都抓不住截断。
+每个 Repo 的 README 还给出“进入隔离 Repo 后”的直接命令。正式 Repo 会签入安装生成的 lockfile；
+这里不手写一份注定过期的示意 lockfile。
 
-## Report Result：真实用户动作
+## Adapter 为什么是多个 Repo
 
-[`report-chart-tooltip.test.ts`](result/report-chart-tooltip.test.ts) 的 expected 是 fixture 里签入的
-`main / task-a / 0.75`，不是从候选导出的图表点反推。测试依次证明：
+Adapter 不是一个平铺测试文件夹。[`repos/adapter/`](repos/adapter/README.md) 是 collection，
+`ai-sdk`、`codex-cli`、`local-protocol` 各自是独立 consumer、依赖图、secret 条件和结果根。
+以后增加 Claude Code、OpenCode、Bub 或 E2B 时，按同一形状增加叶子 Repo；不把多个适配器写入一份
+package 与一份 `.niceeval` 结果中。示例只表达结构和 oracle，不要求为了读文档真的搭完所有付费后端。
 
-1. Experiment 真实运行成功；
-2. `view --out` 真实导出成功；
-3. 浏览器能按可访问身份找到该数据点；
-4. hover 后 tooltip 可见且包含三个业务值。
+## 浏览器为什么不用自写生命周期
 
-它不读取 `.niceeval-chart-dot`、不 `waitForTimeout(100)`，也不因为页面“有一个 tooltip DOM”就通过。
+Report 与带浏览器的 Journey 直接由 Playwright Test 执行：测试接收 `page` fixture，使用 web-first assertion，
+失败时保留 trace / screenshot，browser context 与 worker cleanup 交给 Playwright。测试只保留 NiceEval 领域动作：
+运行 `exp/show/view`、读取页面实际 `href`、点击并核对同一个 locator。
 
-## Adapter Result：真实协议身份
+只有将来出现 Vite 那类“大量 playground 共用远端浏览器与自有 dev server”的明确性能需求，才考虑专用
+browser fixture；当前不应由 Vitest 再包一层 `chromium.launch()`。
 
-[`adapter-tool-identity.test.ts`](result/adapter-tool-identity.test.ts) 位于 Codex SDK live Repo：
+## 从错误草稿学到了什么
 
-- 真正运行 `pnpm exec niceeval exp tool-call`，不是把 SDK event 手写进 E2E；
-- 通过公开 history 确认预期 Eval 被调度且 passed，避免 discovery 少排后假绿；
-- 把公开 locator 交给 `show --execution --json`；
-- 断言规范 `tool` 包含字面量 `shell`，且不退化成 `unknown`。
-
-同一 bug 还应在根仓库保留一条小型 transformer Unit，用手写上游事件精确定位 mapping。Unit 拥有完整事件种类矩阵，
-live Result 只证明真实 SDK 接线。
-
-Adapter Repo 的 manifest 进入 `main / nightly / release` 并声明 secrets；另一个无密钥 Docker protocol Repo 在 PR 中注入断流和 5xx。
-两者不能互相冒充。
-
-## Journey：从运行到定位再到报告
-
-[`first-eval-to-report.test.ts`](journey/first-eval-to-report.test.ts) 保留用户真实顺序：
-
-```text
-pnpm exec niceeval init
-pnpm exec niceeval exp onboarding --dry --json
-pnpm exec niceeval exp onboarding --rerun all --json
-pnpm exec niceeval show onboarding/fails --history --json
-pnpm exec niceeval show @locator --execution --json
-pnpm exec niceeval view --out artifacts/site --no-open
-浏览器打开失败 Eval，并看到同一个 locator
-```
-
-它不是把所有 CLI 矩阵再测一次。独有命题是：plan 选中的身份能进入 run，run 产生的 locator 能跨到 show，再进入导出报告。
-每个接缝立即断言，因此不会把“根本没排到 Eval”最后报成“页面缺链接”。
-
-Journey Repo 的初始状态刻意没有 config，由 `init` 生成；Eval / Experiment 是签入的用户源码。该 Repo 独占自己的结果根，
-不与 CLI / Report Result 共享 `.niceeval`，所以不存在“这段必须排在最后”。
-
-## Unit：同一个 Bug 怎样更快定位
-
-Adapter live Result 报“公开证据没有 shell”时，下面的 Mechanism owner 进一步区分纯转换算法：
-
-```ts
-// wrong algorithm: command_execution 只保留 raw name，没有 canonical tool。
-// live E2E 能发现接线坏了，但无法穷举四种 ThreadItem；这里拥有完整转换矩阵。
-test.each([
-  ["command_execution", "shell"],
-  ["file_change", "file_edit"],
-  ["web_search", "web_search"],
-])("Codex %s 映射为 %s", (rawType, expectedTool) => {
-  expect(canonicalToolForCodexItem(rawType)).toBe(expectedTool);
-});
-```
-
-Result 指出坏在“真实 SDK → NiceEval 公开 readback”边界，Unit 指出坏在规范化映射；不在 E2E 里增加内部探针。
-
-## 为什么这个 Example 更中立
-
-- 真实 Repo 只是用户现场，不宣称自己是覆盖模型；
-- 原生断言可直接评审，也允许将来换 runner；
-- 候选 manifest 只拥有运行条件，不能替测试生成答案；
-- 示例同时展示短结果和长 Journey，不把一种粒度强行套全部风险；
-- 代价写清楚：没有机器生成的全仓 Behavior 图，多个 Repo 会重复少量进程 helper，live Adapter 仍有成本和波动；
-- 只有重复 parser 确实造成误诊后才提取更强抽象，不先建设平台再寻找用途。
+[`REVIEW.md`](REVIEW.md) 逐条说明首轮草稿为什么会假绿、难读或反复改 test，以及这些问题如何变成
+当前设计规则。完整历史证据保存在
+[`memory/readable-test-examples-false-green-review.md`](../../../../memory/readable-test-examples-false-green-review.md)。

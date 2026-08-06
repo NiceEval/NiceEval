@@ -53,7 +53,7 @@ reader 与 fixture 可以一起错而测试仍绿。
 **新防线**：expected 只来自签入 fixture、公开契约或测试字面量；动态 locator 可以从上一步公开命令取得，但 verdict、sentinel、
 page 类别和规范工具名不能从候选反推。
 
-**验收**：把候选常量或 enumerator 故意改错，新测试必须红；只改 helper 不能让 actual 与 expected 一起移动。
+**验收**：把候选常量或 enumerator 故意改错，新测试必须红；只改复用设施不能让 actual 与 expected 一起移动。
 
 ### 3. 名叫 E2E，实际没有经过发布包和外部宿主
 
@@ -65,9 +65,9 @@ page 类别和规范工具名不能从候选反推。
 在下一条 `list` 就装载失败。当时新增的 `test/package-exports.test.ts` 只能守住 exports 条件和双 loader hook；
 真实 `init → list` 仍需要外部消费项目证明。
 
-**根因**：根仓库源码、workspace 解析和 mock 宿主掩盖了安装、bin、loader、exports 与外部 cwd 的组合边界。
+**根因**：根仓库源码、workspace package resolution 和 mock 宿主掩盖了安装、bin、loader、exports 与外部 cwd 的组合边界。
 
-**新防线**：每个场景 Repo 有独立 package / lockfile；根 runner 复制后注入候选 tarball，核对实际解析身份；Package Journey
+**新防线**：每个场景 Repo 有独立 package / lockfile；根 runner 复制后注入候选 tarball，核对实际 executable 身份；Package Journey
 直接执行 `pnpm exec niceeval init` 和 `pnpm exec niceeval list`。
 
 **验收**：把 Repo 复制到仓库外仍能运行；禁止 workspace link、相邻源码 import 和直接执行 `src/cli.ts`。
@@ -80,7 +80,7 @@ page 类别和规范工具名不能从候选反推。
 
 **根因**：mock 由测试自行发明第三方形状，actual 和 fixture 共享同一个错误假设；只有 happy-path 单页数据也无法区分遍历算法。
 
-**新防线**：Adapter Mechanism contract 直接从真实 SDK `ReturnType` 派生 mock 类型，至少覆盖两页；禁止双重类型断言重写上游接口。
+**新防线**：Adapter Mechanism contract 直接从真实 SDK `ReturnType` 派生 mock 类型，至少包含两页；禁止双重类型断言重写上游接口。
 真实 provider Repo 另证鉴权、版本和远端协议，确定性 fault proxy 证错误处理，两者不替代类型 / 分页矩阵。
 
 **验收**：安装支持下限与当前 SDK 都做 typecheck / contract test；把 paginator 错改成数组遍历时 Unit 立即红，live E2E 失败仍保留
@@ -89,7 +89,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 ### 5. 宿主单测与真实读面重复，长期跟着外壳改
 
 `022c0adc test: show/view 宿主单测退役,用法错误矩阵移交 e2e/report` 删除
-`src/show/show.test.ts` 662 行和 `src/view/view-report.test.ts` 444 行；memory 记录它们当时的跟改率为 42/44、35/37。
+`src/show/show.test.ts` 662 行和 `src/view/view-report.test.ts` 444 行；memory 给出它们当时的跟改率为 42/44、35/37。
 零 token 的 CLI 用法错误矩阵迁入真实 `e2e/report`，只有 dev server 模块重载这类 E2E 无法区分的机制留在
 `src/view/data.test.ts`。
 
@@ -102,7 +102,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 
 ### 6. 共享可变 evidence 让测试依赖调用顺序
 
-`031ce196` 记录并修正了一次 Report E2E 顺序问题：`verifyReadback` 末尾额外执行两次 `niceeval exp main`，改变“当前”快照；
+`031ce196` 描述并修正了一次 Report E2E 顺序问题：`verifyReadback` 末尾额外执行两次 `niceeval exp main`，改变“当前”快照；
 晚于它运行的只读验证因此找不到原 locator。修复只能把 `verifyRenderStructure` 排在 mutation 之前，并写注释保护顺序。
 
 **根因**：一个线性脚本把只读验证和会改变共享 `.niceeval` 的动作放在同一个隐式世界，文件顺序成了隐藏契约。
@@ -117,7 +117,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 `9fddf75d` 建立 Report component scenarios。后续 `35fa0937`、`f4f8d6d8`、`a008903e` 等页面 / 样式变更
 继续触及同一批场景。
 [`memory/e2e-browser-scenario-probe-loop-brittleness.md`](../../../memory/e2e-browser-scenario-probe-loop-brittleness.md)
-记录了四种具体症状：
+列出了四种具体症状：
 
 - 探测任意未展开节点；
 - 断言 `.niceeval-row-hidden`；
@@ -137,14 +137,41 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 一个简单的 Report target example 被拆成 15 个文件，分别承载 Behavior、Recipe、World、Execution、Observed、Registry、
 Retirement 等对象。读者需要跨文件后才能看到真实动作与结果；示例也没有自己的 package、lockfile、manifest 或 CI lane。
 
-`998ebeef` 也曾通过删除重复的逐 case 文档清单净删 1,862 行，说明“把覆盖关系复制到更多登记文件”本身会形成维护面。
+`998ebeef` 也曾通过删除重复的逐 case 文档清单净删 1,862 行，说明“把证明关系复制到更多登记文件”本身会形成维护面。
 
-**根因**：用元模型同时解决覆盖、缓存、并发、作者体验与治理，测试正文反而退居末端。
+**根因**：用元模型同时管理证明范围、缓存、并发、作者体验与治理，测试正文反而退居末端。
 
-**新防线**：多方案只留在 [Design](../../design/user-readable-testing/README.md)；Roadmap 只写选定方案。运行 manifest 只管环境，
+**新防线**：多方案只留在 [Design](../../design/user-readable-testing/README.md)；Roadmap 只写选定方案。运行 manifest 只管宿主条件，
 Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试文件。Example 直接按 CLI、Report、Adapter、Journey 展示。
 
 **验收**：读者只打开一个测试文件，就能指出 argv、actual、expected、旧 bug 和失败检查点；单文件可由原生 test filter 重跑。
+
+### 9. “真实 Repo”必须是独立消费者
+
+文件数量与目录外观不能证明测试拥有真实消费边界。下列六类写法都会让场景 Repo 假绿或无法独立运行：
+
+- 三种 adapter 断言平铺在一个 `adapter/` 下，本地 HTTP cursor 还错误引用了 E2B SDK paginator 的历史 commit；
+- CommonJS test 在临时目录只写 `package.json`，没有安装候选包就调用 `pnpm exec niceeval`，并把 `list` 错当成 Experiment 列表；
+- Report test 根据 locator 自己拼 target 路径，或使用现行页面不存在的 `aria-label` / `role="tooltip"`；
+- Runner test 直接改共享 `niceeval.config.ts`，再依赖 `finally` 写回；
+- Lifecycle test 只确认父 PID 消失，却把 Claim 写成“无 orphan”，而且发 SIGINT 时资源可能尚未启动；
+- 多条 case 只因“风险相似”就挂历史 commit，没有证明对应 fix parent 会被该断言杀死。
+- 验证脚本把 `tsc` 管给 `head` 后读取 `$?`，真实类型错误被管道末端的 `0` 掩盖；调试时启动的 view / mock server 也可能没有收尾。
+
+这些不是 TypeScript 写法瑕疵，而是 proof boundary 错了：目录看似像 E2E，实际没有独立 package / install / state；断言看似精确，
+实际观察的是测试自己合成的身份；注释看似有历史依据，实际没有因果证据。
+
+**新防线**：
+
+- `adapter/` 固定为 collection，每个公开 adapter、local protocol fixture 各自一个叶子 Repo；
+- 叶子 Repo 自己就是候选包 consumer。二级 consumer 也必须重复注入、安装和 executable 身份核验；
+- HTML target 只沿用户实际拿到的 `href` 走；可访问 selector 必须先是产品契约，缺失就登记产品 gap；
+- mutation 只在私有副本，lifecycle 观察带 run ID 的 owned resource 并由下一消费者闭环；
+- 验证收据保留 producer 的 exit / signal，所有临时服务与进程都进入同一 collect / cleanup 生命周期；
+- 只有实际历史 kill 才写 `regression:`；同形但未验证的补充测试写 `risk:`，不能借 commit 增加可信度。
+
+**验收**：先审 Repo 是否能独立安装和单跑，再审测试数量。把任一 live adapter Repo 删除时，本地 fixture 不能继续声称该 adapter
+兼容。让父进程退出但留下 backend / container 时 Lifecycle 必须红。去掉产品可访问身份时，browser 样例不能靠自造 selector 继续绿。
 
 ## 防反复跟改的 Review 规则
 
@@ -154,7 +181,7 @@ Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试�
 |---|---|
 | 用户结果 / 公开契约改变 | 修改对应 owner，并链接契约 diff |
 | 历史 bug 暴露旧 owner 无区分力 | 扩大 owner，做旧实现 kill，删除重复测试 |
-| 内部 DTO、函数、DOM class、目录移动 | Result / Journey 不应改；修 fixture / helper 边界 |
+| 内部 DTO、函数、DOM class、目录移动 | Result / Journey 不应改；修 fixture / 复用设施边界 |
 | 候选常量变化 | 不自动同步 expected；先判断公开契约是否改变 |
 | 共享测试顺序变化 | 隔离状态，不加“必须最后”注释 |
 | CI 与本地表现不同 | 修统一 runner / executor，不在 workflow 复制分支 |
@@ -169,6 +196,6 @@ PR 对测试的说明至少包含：用户结果或具名机制风险、owner、
 4. 新历史回归在 fix parent / 临时 worktree / 最小逆补丁上做 kill；
 5. 随机打乱只读测试顺序，确认没有共享 mutation；
 6. 检查 pseudo-E2E、candidate-derived expected、固定 sleep 和完整 DTO fixture 是否重新出现；
-7. 把结论写进 testing memory，并据此删除或迁移 owner。
+7. 把复核发现写进 testing memory，并据此删除或迁移 owner。
 
 Churn 是滞后诊断，不进 CI；历史 kill、候选 identity、单文件重跑和结果断言才是每批迁移的准入证据。

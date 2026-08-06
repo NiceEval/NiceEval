@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/local-protocol",
+  "areas": ["adapter"],
+  "lanes": ["pr"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "test"],
+  "timeoutMinutes": 8,
+  "secrets": [],
+  "paths": [
+    "src/agents/ui-message-stream.ts",
+    "src/context/send-failures.ts",
+    "src/shared/external-cause.ts",
+    "src/shared/failure-class.ts"
+  ],
+  "artifacts": [".niceeval/**", "junit.xml"]
+}
