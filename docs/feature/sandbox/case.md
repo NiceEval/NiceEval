@@ -1,7 +1,7 @@
-# Sandbox Case —— 一份环境声明的完整运行单位
+# Sandbox 运行单元 —— 一份声明的完整运行单位
 
-一条 eval 声明它要的任务环境,provider 把这份声明翻译成一个 **sandbox case**:从环境输入到主 Sandbox、伴随资源、身份、证据与清理的完整故事。
-本页是 sandbox case 的单一契约入口;provider 的实现要点见 [Architecture](architecture.md),使用侧 API 见 [Library](library.md)。
+一条 eval 声明所需的任务条件，provider 把这份声明翻译成一个 **Sandbox 运行单元**：从输入到主 Sandbox、伴随资源、身份、证据与 finalizer 的完整故事。
+本页是 Sandbox 运行单元的单一契约入口；provider 的实现要点见 [Architecture](architecture.md)，使用侧 API 见 [Library](library.md)。
 
 ```text
 Eval 或 Experiment 的 template-bearing layer

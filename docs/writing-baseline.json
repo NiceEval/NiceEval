@@ -137,6 +137,7 @@
       "覆盖": 4
     },
     "docs/architecture.md": {
+      "sandbox case": 1,
       "产物": 3,
       "来源": 2,
       "环境": 16,
@@ -158,10 +159,11 @@
       "闸": 1
     },
     "docs/concepts.md": {
+      "sandbox case": 6,
       "产物": 1,
       "来源": 2,
       "清理": 1,
-      "环境": 5,
+      "环境": 4,
       "窗口": 2,
       "结论": 3,
       "覆盖": 7,
@@ -212,6 +214,7 @@
     },
     "docs/design/agent-install-recipe/PLAN-4/README.md": {
       "helper": 4,
+      "sandbox case": 2,
       "产物": 15,
       "来源": 3,
       "环境": 31,
@@ -225,6 +228,7 @@
     },
     "docs/design/environment-model/CASES.md": {
       "helper": 3,
+      "sandbox case": 2,
       "产物": 3,
       "来源": 2,
       "环境": 10,
@@ -246,6 +250,7 @@
     },
     "docs/design/environment-model/GOALS.md": {
       "helper": 2,
+      "sandbox case": 1,
       "产物": 1,
       "清理": 1,
       "环境": 2,
@@ -256,6 +261,7 @@
     },
     "docs/design/environment-model/LIMITS.md": {
       "helper": 3,
+      "sandbox case": 3,
       "产物": 3,
       "清理": 2,
       "环境": 2,
@@ -273,6 +279,7 @@
       "记录": 1
     },
     "docs/design/environment-model/PLAN-1/architecture.md": {
+      "sandbox case": 1,
       "产物": 1,
       "清理": 1,
       "环境": 3,
@@ -328,6 +335,7 @@
       "环境": 4
     },
     "docs/design/environment-model/PLAN-10/README.md": {
+      "sandbox case": 3,
       "清理": 1,
       "窗口": 1,
       "结论": 1,
@@ -337,6 +345,7 @@
     },
     "docs/design/environment-model/PLAN-10/architecture.md": {
       "helper": 2,
+      "sandbox case": 3,
       "产物": 1,
       "窗口": 4,
       "覆盖": 1,
@@ -372,11 +381,13 @@
       "解析": 3
     },
     "docs/design/environment-model/PLAN-10/use-case/混合模板矩阵.md": {
+      "sandbox case": 1,
       "环境": 1,
       "解析": 1
     },
     "docs/design/environment-model/PLAN-11/README.md": {
       "helper": 1,
+      "sandbox case": 3,
       "产物": 1,
       "来源": 1,
       "环境": 3,
@@ -386,6 +397,7 @@
       "记录": 1
     },
     "docs/design/environment-model/PLAN-11/architecture.md": {
+      "sandbox case": 5,
       "产物": 3,
       "来源": 4,
       "清理": 1,
@@ -397,6 +409,7 @@
     },
     "docs/design/environment-model/PLAN-11/library.md": {
       "helper": 3,
+      "sandbox case": 4,
       "产物": 1,
       "来源": 1,
       "环境": 2,
@@ -406,6 +419,7 @@
       "记录": 2
     },
     "docs/design/environment-model/PLAN-11/lifecycle.md": {
+      "sandbox case": 1,
       "清理": 3,
       "环境": 20,
       "窗口": 13,
@@ -433,6 +447,7 @@
       "记录": 1
     },
     "docs/design/environment-model/PLAN-2/README.md": {
+      "sandbox case": 2,
       "来源": 1,
       "清理": 1,
       "结论": 2,
@@ -440,6 +455,7 @@
       "解析": 3
     },
     "docs/design/environment-model/PLAN-2/architecture.md": {
+      "sandbox case": 2,
       "来源": 2,
       "环境": 1,
       "解析": 4,
@@ -451,6 +467,7 @@
       "解析": 2
     },
     "docs/design/environment-model/PLAN-2/lifecycle.md": {
+      "sandbox case": 3,
       "清理": 2,
       "环境": 3,
       "窗口": 7,
@@ -468,6 +485,7 @@
     },
     "docs/design/environment-model/PLAN-3/README.md": {
       "helper": 2,
+      "sandbox case": 5,
       "产物": 2,
       "来源": 1,
       "清理": 2,
@@ -478,6 +496,7 @@
       "记录": 1
     },
     "docs/design/environment-model/PLAN-3/architecture.md": {
+      "sandbox case": 3,
       "来源": 1,
       "环境": 2,
       "窗口": 4,
@@ -487,11 +506,13 @@
     },
     "docs/design/environment-model/PLAN-3/library.md": {
       "helper": 2,
+      "sandbox case": 3,
       "来源": 1,
       "环境": 1,
       "解析": 1
     },
     "docs/design/environment-model/PLAN-3/lifecycle.md": {
+      "sandbox case": 2,
       "产物": 3,
       "清理": 1,
       "环境": 80,
@@ -501,12 +522,14 @@
       "解析": 1
     },
     "docs/design/environment-model/PLAN-3/use-case/README.md": {
+      "sandbox case": 4,
       "环境": 7,
       "窗口": 1,
       "覆盖": 2
     },
     "docs/design/environment-model/PLAN-4/README.md": {
       "helper": 1,
+      "sandbox case": 6,
       "产物": 2,
       "环境": 3,
       "窗口": 1,
@@ -514,6 +537,7 @@
       "解析": 1
     },
     "docs/design/environment-model/PLAN-4/architecture.md": {
+      "sandbox case": 2,
       "环境": 4,
       "窗口": 3,
       "覆盖": 4,
@@ -522,12 +546,14 @@
     },
     "docs/design/environment-model/PLAN-4/library.md": {
       "helper": 1,
+      "sandbox case": 4,
       "产物": 1,
       "环境": 2,
       "解析": 2,
       "记录": 1
     },
     "docs/design/environment-model/PLAN-4/lifecycle.md": {
+      "sandbox case": 4,
       "产物": 2,
       "环境": 5,
       "窗口": 12,
@@ -552,6 +578,7 @@
     },
     "docs/design/environment-model/PLAN-6/README.md": {
       "helper": 5,
+      "sandbox case": 3,
       "环境": 6,
       "结论": 1,
       "覆盖": 1,
@@ -560,6 +587,7 @@
     },
     "docs/design/environment-model/PLAN-6/architecture.md": {
       "helper": 6,
+      "sandbox case": 2,
       "产物": 4,
       "覆盖": 1,
       "解析": 3,
@@ -567,6 +595,7 @@
     },
     "docs/design/environment-model/PLAN-6/library.md": {
       "helper": 6,
+      "sandbox case": 1,
       "产物": 2,
       "环境": 4,
       "覆盖": 2,
@@ -575,6 +604,7 @@
     },
     "docs/design/environment-model/PLAN-6/lifecycle.md": {
       "helper": 3,
+      "sandbox case": 1,
       "产物": 1,
       "环境": 4,
       "窗口": 8,
@@ -594,10 +624,12 @@
       "重放": 1
     },
     "docs/design/environment-model/PLAN-6/use-case/Terminal-Bench.md": {
+      "sandbox case": 1,
       "环境": 2,
       "覆盖": 1
     },
     "docs/design/environment-model/PLAN-7/README.md": {
+      "sandbox case": 1,
       "产物": 1,
       "环境": 2,
       "窗口": 3,
@@ -616,6 +648,7 @@
       "记录": 3
     },
     "docs/design/environment-model/PLAN-7/lifecycle.md": {
+      "sandbox case": 1,
       "清理": 1,
       "环境": 1,
       "窗口": 3,
@@ -634,6 +667,7 @@
       "记录": 2
     },
     "docs/design/environment-model/PLAN-8/README.md": {
+      "sandbox case": 3,
       "产物": 1,
       "清理": 1,
       "结论": 1,
@@ -642,6 +676,7 @@
     },
     "docs/design/environment-model/PLAN-8/architecture.md": {
       "helper": 2,
+      "sandbox case": 1,
       "产物": 3,
       "清理": 1,
       "环境": 1,
@@ -660,6 +695,7 @@
     },
     "docs/design/environment-model/PLAN-8/lifecycle.md": {
       "helper": 3,
+      "sandbox case": 1,
       "产物": 4,
       "清理": 1,
       "环境": 2,
@@ -683,6 +719,7 @@
       "记录": 2
     },
     "docs/design/environment-model/PLAN-9/README.md": {
+      "sandbox case": 4,
       "产物": 2,
       "清理": 1,
       "窗口": 5,
@@ -691,6 +728,7 @@
     },
     "docs/design/environment-model/PLAN-9/architecture.md": {
       "helper": 1,
+      "sandbox case": 2,
       "产物": 1,
       "清理": 1,
       "窗口": 13,
@@ -700,6 +738,7 @@
     },
     "docs/design/environment-model/PLAN-9/library.md": {
       "helper": 4,
+      "sandbox case": 1,
       "产物": 3,
       "清理": 1,
       "窗口": 8,
@@ -728,6 +767,7 @@
       "记录": 1
     },
     "docs/design/environment-model/README.md": {
+      "sandbox case": 3,
       "环境": 1,
       "结论": 1,
       "覆盖": 1,
@@ -842,6 +882,7 @@
       "记录": 1
     },
     "docs/design/multi-container-environments/DECISION.md": {
+      "sandbox case": 4,
       "产物": 2,
       "清理": 1,
       "环境": 5,
@@ -894,6 +935,7 @@
       "解析": 1
     },
     "docs/design/multi-container-environments/PLAN-4/README.md": {
+      "sandbox case": 10,
       "产物": 10,
       "来源": 2,
       "清理": 8,
@@ -905,6 +947,7 @@
     },
     "docs/design/multi-container-environments/PLAN-4/use-case/README.md": {
       "helper": 3,
+      "sandbox case": 2,
       "产物": 1,
       "环境": 10,
       "窗口": 1,
@@ -913,6 +956,7 @@
       "闸": 1
     },
     "docs/design/multi-container-environments/README.md": {
+      "sandbox case": 1,
       "产物": 1,
       "环境": 9,
       "结论": 1,
@@ -1233,6 +1277,7 @@
     },
     "docs/engineering/testing/unit/README.md": {
       "helper": 3,
+      "sandbox case": 2,
       "产物": 6,
       "来源": 2,
       "清理": 2,
@@ -1243,6 +1288,7 @@
       "记录": 3
     },
     "docs/engineering/testing/unit/adapters.md": {
+      "sandbox case": 1,
       "产物": 2,
       "来源": 1,
       "环境": 11,
@@ -1313,6 +1359,7 @@
     },
     "docs/engineering/testing/unit/sandbox.md": {
       "helper": 1,
+      "sandbox case": 3,
       "产物": 2,
       "来源": 1,
       "清理": 7,
@@ -1349,6 +1396,7 @@
       "闸": 1
     },
     "docs/feature/adapters/architecture/agent-ensure.md": {
+      "sandbox case": 1,
       "产物": 6,
       "来源": 1,
       "环境": 19,
@@ -1536,6 +1584,7 @@
       "记录": 1
     },
     "docs/feature/compile-time-contracts/README.md": {
+      "sandbox case": 1,
       "产物": 6,
       "基线": 1,
       "覆盖": 1,
@@ -1548,6 +1597,7 @@
       "结论": 1
     },
     "docs/feature/compile-time-contracts/library.md": {
+      "sandbox case": 1,
       "产物": 2,
       "清理": 1,
       "结论": 1,
@@ -1594,6 +1644,7 @@
       "闸": 2
     },
     "docs/feature/eval/README.md": {
+      "sandbox case": 1,
       "来源": 1,
       "清理": 1,
       "环境": 1,
@@ -1635,6 +1686,7 @@
       "记录": 2
     },
     "docs/feature/eval/use-case/fixtures-lifecycle.md": {
+      "sandbox case": 1,
       "清理": 3,
       "结论": 2,
       "记录": 1,
@@ -1674,6 +1726,7 @@
       "闸": 1
     },
     "docs/feature/experiments/architecture.md": {
+      "sandbox case": 2,
       "产物": 2,
       "来源": 9,
       "清理": 2,
@@ -1883,6 +1936,7 @@
     },
     "docs/feature/record/architecture.md": {
       "helper": 1,
+      "sandbox case": 1,
       "产物": 1,
       "来源": 7,
       "清理": 1,
@@ -2182,12 +2236,14 @@
       "覆盖": 1
     },
     "docs/feature/sandbox/README.md": {
+      "sandbox case": 1,
       "产物": 1,
       "清理": 1,
       "环境": 5,
       "解析": 1
     },
     "docs/feature/sandbox/architecture.md": {
+      "sandbox case": 3,
       "产物": 2,
       "来源": 4,
       "清理": 8,
@@ -2201,11 +2257,12 @@
     },
     "docs/feature/sandbox/case.md": {
       "helper": 1,
+      "sandbox case": 4,
       "产物": 10,
       "基线": 2,
       "来源": 1,
-      "清理": 7,
-      "环境": 21,
+      "清理": 6,
+      "环境": 18,
       "窗口": 1,
       "覆盖": 1,
       "解析": 6,
@@ -2223,6 +2280,7 @@
     },
     "docs/feature/sandbox/layers.md": {
       "helper": 4,
+      "sandbox case": 2,
       "产物": 2,
       "来源": 2,
       "清理": 2,
@@ -2234,6 +2292,7 @@
     },
     "docs/feature/sandbox/library.md": {
       "helper": 1,
+      "sandbox case": 1,
       "产物": 7,
       "清理": 5,
       "环境": 28,
@@ -2246,12 +2305,14 @@
       "窗口": 4
     },
     "docs/feature/sandbox/library/operations.md": {
+      "sandbox case": 1,
       "清理": 1,
       "解析": 4,
       "记录": 2,
       "锚点": 1
     },
     "docs/feature/sandbox/library/prebuilt-environments.md": {
+      "sandbox case": 2,
       "产物": 19,
       "基线": 18,
       "环境": 22,
@@ -2261,6 +2322,7 @@
     },
     "docs/feature/sandbox/lifecycle.md": {
       "helper": 1,
+      "sandbox case": 3,
       "清理": 3,
       "环境": 2,
       "窗口": 9,
@@ -2289,6 +2351,7 @@
       "重放": 4
     },
     "docs/feature/sandbox/reuse.md": {
+      "sandbox case": 1,
       "来源": 1,
       "清理": 4,
       "环境": 3,
@@ -2854,6 +2917,7 @@
       "helper": 1
     },
     "docs/runner.md": {
+      "sandbox case": 1,
       "基线": 1,
       "来源": 1,
       "清理": 2,
@@ -2869,6 +2933,7 @@
     },
     "docs/source-map.md": {
       "helper": 1,
+      "sandbox case": 1,
       "产物": 1,
       "来源": 5,
       "环境": 5,

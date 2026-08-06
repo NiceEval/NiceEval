@@ -91,7 +91,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | `t.sandbox` | EvalSandbox (`t.sandbox`) | 沙箱型 eval 的文件 IO、宿主传输、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
 | Sandbox template | SandboxTemplate | 同时选择 Provider 并由其启动完整 Sandbox Case 的唯一起点；可以是 Compose、Dockerfile、image、E2B template 或 snapshot | [Sandbox Layer](feature/sandbox/layers.md#template-bearing-factory) |
-| sandbox case | sandbox case | 一份环境声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
+| Sandbox 运行单元 | Sandbox runtime unit | 一份 Sandbox 声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox 运行单元](feature/sandbox/case.md) |
 | 主 Sandbox | —(`workspaceService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox Case](feature/sandbox/case.md#主-sandbox-不变量) |
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |

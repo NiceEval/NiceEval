@@ -175,7 +175,7 @@
     },
     {
       "term": "环境",
-      "use": "按对象写 environment profile、Sandbox case、子进程变量集合、宿主运行条件或 Provider 资源",
+      "use": "按对象写 environment profile、Sandbox 运行单元、子进程变量集合、宿主运行条件或 Provider 资源",
       "why": "声明期配置、已启动隔离资源、进程变量与宿主条件分属不同生命周期和所有者"
     },
     {
@@ -207,6 +207,11 @@
       "term": "记录",
       "use": "按词性和对象写 Record 事实对象、写入事件、持久化事实、日志条目或问题条目",
       "why": "可导航的数据对象、producer 写入动作和普通日志条目混用，读者无法判断保存位置与所有者"
+    },
+    {
+      "term": "sandbox case",
+      "use": "正文写 Sandbox 运行单元；只谈已启动资源时写资源组；既有 API 标识符放进反引号",
+      "why": "case 是项目自造的壳词，既看不出主 Sandbox、伴随资源与生命周期边界，又容易和测试 case 混淆"
     },
     {
       "term": "已实现",
