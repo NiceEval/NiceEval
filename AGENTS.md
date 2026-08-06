@@ -28,6 +28,16 @@
 - 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
 - 测试求质不求量：先声明后写测——测试只实现对应 Feature 测试文档「覆盖规范」已声明的类别，新类别先补文档条目再动手（[`docs/engineering/testing/unit/registry.md`](docs/engineering/testing/unit/registry.md)）；答不出「证明哪条契约、删了会放走哪类错误」的测试不写，同一场景的第二条测试是维护负担。
 
+## 摩擦随手记（frog）
+
+本仓库用 [frog](https://github.com/wevm/frog) 记录工作摩擦，条目落在 `.agents/friction-log/` 下、随代码提交。本仓库作为上游已开启 inbound（config.json），接受下游仓库上报的摩擦。
+
+- **遇到摩擦当场记**：`pnpx frog log`（工具、文档、API、测试、约定等 papercut）。只记「可复现、该修」的摩擦，不加全局、系统或内部摩擦（那是 memory 的活）。
+- **先查重**：`pnpx frog list` 看是否已知，别堆重复条目。
+- 可复现素材放进该条目的 `artifacts/` 并在写记里引用；下一任跑复现，不重新搭现场。
+- **收尾的 DX 反思环节必须对账**：跑一遍 `pnpx frog list`，把过程中「绕过去了但没记」的摩擦补 `pnpx frog log`。这条是兜底——即时记录会漏，收尾对账不漏。
+- 条目上报成 GitHub issue 靠 `frog publish`；issue 关闭后 `frog sync` 删条目，日志只留未解决的。未配 workflow 时手动跑即可。
+
 ## Git 与协作安全
 
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
