@@ -119,7 +119,8 @@ fresh Attempt 省略 `groupId`，并使用自己的 `sandboxNumber`。
 | `sandbox-group-member-unresolved` | 发现期：definition 没有恰好对应一条已发现 Eval |
 | `sandbox-group-member-overlap` | 发现期：一条 Eval 被重复引用或属于多个组 |
 | `sandbox-group-member-layer` | 发现期：成员拥有 template 或 instance lifecycle hook |
-| `sandbox-reuse-group-template-missing` | 计划期：配对 Experiment 没有提供 template-bearing Layer |
+| `sandbox-reuse-group-direct-agent` | 计划期：配对 Experiment 使用 Direct Agent，没有可复用 Sandbox |
+| `sandbox-reuse-group-template-missing` | 计划期：Sandbox Agent Experiment 没有提供 template-bearing Layer |
 | `sandbox-reuse-group-incompatible` | 计划期：组中本次选中成员的 Layer link 或物理复用身份不同 |
 
 错误消息必须列出 group id、相关 Eval id 与修正方向。

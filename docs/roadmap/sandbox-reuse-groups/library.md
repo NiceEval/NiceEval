@@ -161,7 +161,7 @@ TypeScript 先拒绝不合类型的成员；发现期再为 JavaScript、类型�
 - 成员的 command-only Layer 没有 `setup()` 或 `teardown()`；
 - 组定义不包含 template、Provider、prepare、Agent 或 Experiment 配置。
 
-运行规划要求配对 Experiment 提供 template-bearing Layer。
+运行规划要求配对 Experiment 使用 Sandbox Agent，并提供 template-bearing Layer。
 同一 Experiment 的 template、Agent ensure identity 与 lifecycle owner 对组内成员天然相同；Runner 仍保留物理 plan identity 断言，防守自定义 Provider 的不透明规划。
 
 ## 选择与未分组 Eval
