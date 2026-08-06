@@ -63,7 +63,7 @@ Runner 测试文档有 58 个覆盖 bullet。
 [测试总纲](../../engineering/testing/README.md)与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 设为 E2E 的唯一验收面。
 [`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 产物断言。
 
-[Report 读面 adapter](../../roadmap/e2e-acceptance-dsl/README.md) 的候选设计要靠同一次裁决定三处边界：结构按哪份声明识别、prepare 之后能否再写共享 evidence、验收器发不发公共包。
+[Report 读面 adapter](../../roadmap/testing/dsl/README.md) 的候选设计要靠同一次裁决定三处边界：结构按哪份声明识别、prepare 之后能否再写共享 evidence、验收器发不发公共包。
 三处各自都有现成的正式契约可依（[排版契约](../../feature/reports/library/layout.md)的 non-TTY 声明、E2E 总纲的仓库自治），缺的是把它们统一应用到测试作者面的那次裁决。
 
 这些冲突说明，媒介 parser 的稳定性只是问题的一部分。

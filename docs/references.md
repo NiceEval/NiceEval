@@ -167,7 +167,7 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 ## 相关阅读
 
 - [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`sources.measure.delta`](feature/reports/calculations.md))按 run 维度承担。
-- [Report 读面 adapter](roadmap/e2e-acceptance-dsl/README.md) —— 借鉴 aria-snapshot 匹配语义与 trycmd 容差词表,把这里的调研落成媒介读面与 vitest 装配的候选契约。
+- [Report 读面 adapter](roadmap/testing/dsl/README.md) —— 借鉴 aria-snapshot 匹配语义与 trycmd 容差词表,把这里的调研落成媒介读面与 vitest 装配的候选契约。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
 - [agent-eval 适配笔记](feature/adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读记录。
 - [OTel GenAI 等标准参考](feature/adapters/reference/otel-genai.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。

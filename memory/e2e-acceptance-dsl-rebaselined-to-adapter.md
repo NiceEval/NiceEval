@@ -2,7 +2,7 @@
 
 ## 裁决
 
-2026-08-01,`docs/roadmap/e2e-acceptance-dsl/` 按[测试作者面决策](../docs/design/user-readable-testing/DECISION.md)整体重定基线:
+2026-08-01,现位于 `docs/roadmap/testing/dsl/` 的方案按[测试作者面决策](../docs/design/user-readable-testing/DECISION.md)整体重定基线:
 它设计的是 [PLAN-2](../docs/design/user-readable-testing/PLAN-2/README.md) 领域读面**底下**的 adapter,不是测试作者面本身。
 测试正文只出现 Report 领域对象与 `Observed<T>`;`section`、`row`、`line`、YAML 结构期望、role locator 与正则全部降进 adapter 内部。
 

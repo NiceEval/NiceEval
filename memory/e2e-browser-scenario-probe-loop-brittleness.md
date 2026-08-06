@@ -27,7 +27,7 @@
 
 ## 修法
 
-写法规则沉淀为 `docs/roadmap/e2e-acceptance-dsl/README.md`「浏览器交互」五条：
+写法规则现位于 `docs/roadmap/testing/dsl/README.md`「浏览器交互」五条：
 步骤确定不探测、前置条件先行断言、断言可见效果不断言机制、等待只等状态、
 选择器方言收敛进库。生态调研裁决「引擎全部现成，不自建」——寻址用
 getByRole / 可见文本官方优先序、等待用 web-first assertion 自动重试、结构用
