@@ -18,8 +18,8 @@ Ori Eval 与 NiceEval 属于同一竞品类别，但产品切面不同。
 Ori 把“从仓库发现评估面、询问成功标准、挑候选模型、生成临时评估、跑完后排名”做成一条很强的短路径。
 NiceEval 的边界更宽，重点是 Eval、Experiment、Adapter、Sandbox、Record、Sample 与报告之间的长期契约。
 
-最值得 NiceEval 学的不是 Ori 的 TypeScript API，而是它把“我该用哪个模型”这种结果导向意图包装成了可安装 Skill。
-NiceEval 应优先考虑一个 `create-niceeval-eval` Skill，复用现有 `INIT.md` 和随包 `INDEX.md`，而不是把另一套 API 教程复制进 Skill。
+最值得 NiceEval 学的不是 Ori 的 TypeScript API，而是它怎样把评估面、真实数据、成功判据、运行约束、候选范围和下一步变成一条结果导向工作流。
+NiceEval 不需要为此再造一个 `create-niceeval-eval` Skill：`INIT.md` 加随包 `INDEX.md` 已经位于同一个产品入口，并把“安装”定义成写出、跑通和交接第一条真实 Eval。
 
 ## 一手来源
 
@@ -78,7 +78,7 @@ CLI 负责运行整个候选矩阵，也能输出 Markdown、JUnit 和相对历�
 | 语义评分 | `setupJudge` 与 LLM Judge | Judge Assertion | 两者都要求 Judge 与候选角色可区分 |
 | 重复与比较 | 候选模型、排名、baseline | Experiment、Attempt、Sample、Report | NiceEval 的记录、携带和可比较性契约更细 |
 | 自动选候选 | OpenRouter live model catalog | 用户或 Experiment 作者声明 | Ori 的 OpenRouter 垂直整合更顺滑，NiceEval 更中立 |
-| 自动接入 | 可安装 Skill 完成访谈、生成与运行 | `INIT.md` 安装后路由随包文档 | NiceEval 已有引导内容，但缺少结果导向的可安装工作流 |
+| 自动接入 | 可安装 Skill 完成访谈、生成与运行 | `INIT.md` 安装后路由随包文档 | 两者处于同一入口位置；NiceEval 应补强现有工作流的定题和交接，而不是复制一层 Skill |
 | 临时转长期 | 结果后由用户决定是否迁入 | 通常直接在项目中形成三件套 | Ori 优化一次性选型，NiceEval 优化持续评估资产 |
 
 Ori 是 NiceEval 在“模型或 Agent 选择”场景中的直接竞品。
@@ -86,7 +86,7 @@ Ori 是 NiceEval 在“模型或 Agent 选择”场景中的直接竞品。
 
 ## NiceEval 的自动安装入口
 
-NiceEval 的 `INIT.md` 已经具备 Skill 的一部分特征，但它仍是一份通过 URL 读取的安装与接入说明。
+NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口，只是它以 URL 引导和版本化随包文档分层实现，而不是以 Agent Skill 包分发。
 它的现有路径是：
 
 1. 判断 NiceEval 应装在 JavaScript 宿主根部，还是非 JavaScript 项目的独立 ESM 子目录。
@@ -97,7 +97,7 @@ NiceEval 的 `INIT.md` 已经具备 Skill 的一部分特征，但它仍是一�
 6. 用 `niceeval show` 检查结果，再向用户说明更深接入的选择。
 
 这条路径比普通安装脚本多做了两件重要的事：版本对齐的文档路由，以及把“装上依赖”提升为“跑通真实 Eval”。
-它与 Ori Skill 的差距不在知识量，而在触发方式、会话状态、成本计划、临时试验和结果汇总这些编排能力。
+它与 Ori 的差距不在是否拥有 create-eval 入口，而在现有入口有没有稳定完成定题、成本计划、候选确认和结果交接。
 
 ## NiceEval-Eval 如何评这个入口
 
@@ -121,6 +121,7 @@ NiceEval 的 `INIT.md` 已经具备 Skill 的一部分特征，但它仍是一�
 | 维度 | 取证方式 | 判定性质 |
 |---|---|---|
 | 动手前的交互 | 第一轮是否等待输入；四条独立 Judge 判据检查接口、OTel、变体和三档 Tier | 加分，不是 gate |
+| 首次评估定题 | 第一轮是否核对核心评估面、真实数据、成功判据、运行约束和候选范围 | 五条独立 Judge 加分 |
 | 安装可用性 | 精确版本、配置存在、受管指引、`niceeval list`、`exp --dry --json`、必要时 TypeScript 检查 | gate |
 | 真实执行过程 | Agent 是否真的调用 `niceeval init`、真实 `niceeval exp` 和 `niceeval show` | 加分 |
 | 安装最佳实践 | devDependency、受管区块、非 JS 项目独立目录、ESM | 加分 |
@@ -129,6 +130,7 @@ NiceEval 的 `INIT.md` 已经具备 Skill 的一部分特征，但它仍是一�
 | Adapter 源码实践 | 真实传输、取消信号、模型和会话透传、工厂配置、反馈通道、完整事件映射 | 加分 |
 | Eval 作者实践 | 使用正式断言 API、宽容的语义或结构判定、不在 Eval 内管理被测进程 | 加分 |
 | 评估内容质量 | 核心用例、具体结果断言、真实负例、Experiment 与 Eval 指向同一系统 | 四条独立 Judge 加分 |
+| 完成交接 | 最终回复是否交代文件、复现命令、真实首跑结果，并把继续加深的选择交还用户 | 两条独立 Judge 加分 |
 | 文档路由 | 从 Agent 的命令输入确认是否读取随包 `INDEX.md`、任务页，以及是否绕去在线文档 | 加分 |
 | Sandbox 成熟度 | Provider、配套 SDK、预构建环境引用、官方公共 image 或 template、不可变版本引用 | `advance/` 专属 gate 与加分 |
 
@@ -155,28 +157,28 @@ CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 记�
 1. 安装矩阵只有两题且每格一次 Attempt，难以区分稳定行为和单次 Agent 随机性。
 2. 被测宿主固定为 Codex，模型固定为 `gpt-5.6-luna`，尚未证明同一入口对其它 Skill 宿主同样有效。
 3. 加分式评分不声明统一满分，不同题型启用的评分项也不同；它适合在同一路径内比较版本，不适合跨 install 与 advance 排名。
-4. 四条内容质量与四条澄清质量依赖 LLM Judge，正式结论需要同时固定 Judge 配置并观察重复运行方差。
-5. 交互评分奖励固定的四类提问，但随包 onboarding 同时要求“先读代码，仓库能回答的不要问”。现有判据主要检查问没问，尚未单独奖励减少可由仓库回答的问题。
+4. 内容质量、澄清、首次定题与完成交接依赖 LLM Judge，正式结论需要固定 Judge 配置并观察重复运行方差。
+5. 新增定题判据要求 agent 先陈述仓库中已确认的事实，只询问会改变有效性或成本的未知项；仍需用实跑检查 Judge 能否稳定区分“先探索”与“把探索甩给用户”。
 6. 较重的 advance 项目为了成本和稳定性，不都执行真实在线 Adapter gate。它们可以证明源码和执行证据形状，却不能替代完整服务链路的持续回归。
 7. 当前结果不可由现行 CLI 直接比较，所有效果结论都应等待一批按当前 schema 产生、可由 `niceeval show` 读取的运行。
 
 这些缺口不否定现有矩阵。
-它们说明 NiceEval-Eval 现在更适合回答“版本化 onboarding 是否让同一 Codex 在同一题上做对更多事”，还不能单独证明一个跨 Agent、跨项目的通用 Skill 已经成立。
+它们说明 NiceEval-Eval 现在更适合回答“版本化 onboarding 是否让同一 Codex 在同一题上做对更多事”，还不能单独证明这条入口跨 Agent、跨项目都稳定成立。
 
-## NiceEval 应学成什么 Skill
+## NiceEval 应怎样增强现有入口
 
-### 优先方案：`create-niceeval-eval`
+### 入口就是 `INIT.md` 与随包 `INDEX.md`
 
-这个 Skill 的触发意图应是结果导向的：
+这条入口的触发意图已经是结果导向的：
 
 - “这个 Agent 应该用哪个模型？”
 - “比较两个 Agent、模型、prompt 或 feature flag。”
 - “给当前 Agent 加一条能抓回归的 Eval。”
 - “先做一次小规模试验，再决定是否把评估资产放进仓库。”
 
-纯单元测试不触发它；仓库里已经有目标 Eval 时，直接运行现有 Experiment，不重新生成。
+纯单元测试不应走这条路径；仓库里已经有目标 Eval 时，应直接运行现有 Experiment，不重新生成。
 
-Skill 的核心不是替用户写一份巨大教程，而是把以下状态机可靠地跑完：
+现有入口应把以下状态机可靠地跑完：
 
 1. **定位模式**：用户要一次性选型时进入临时试验；用户要持续回归时进入仓库接入。
 2. **版本化启动**：未安装时走 `INIT.md`；已安装时从随包 `INDEX.md` 读取对应任务页，不复制 API 细节。
@@ -188,7 +190,7 @@ Skill 的核心不是替用户写一份巨大教程，而是把以下状态机�
 8. **证据化汇报**：用 `niceeval show` 和 locator 切片报告 verdict、失败正文、执行证据、时间与成本；没有生产参照模型或不可比时不宣布赢家。
 9. **临时转长期**：临时模式的资产默认在仓库外；结果出来后，由用户决定丢弃、保留临时工作区，还是把 Eval、Experiment 和 Adapter 提升进仓库。
 
-### Skill 应借鉴 Ori 的地方
+### 现有入口应借鉴 Ori 的地方
 
 - 用自然语言意图触发完整评估，而不是要求用户先知道 CLI 和文件结构。
 - 每次读取当前 CLI 帮助和随包文档，避免 Skill 内复制会过期的 API。
@@ -208,24 +210,22 @@ Skill 的核心不是替用户写一份巨大教程，而是把以下状态机�
 - 不把 Eval 和候选模型矩阵揉成一个长期文件。NiceEval 的 Eval、Experiment 分离是可复用和可比较的基础。
 - 不默认开始一个可能超额消费的运行。dry plan 与成本确认应发生在付费派发之前。
 
-### `setup-niceeval` 的定位
+### 不新增第二份入口
 
-也可以把现有 `INIT.md` 包成一个很薄的 `setup-niceeval` Skill，用于提高 Agent Skill 生态中的可发现性。
-但它不应成为另一份安装规范，只负责触发 `INIT.md`、维护恢复状态和把用户路由到随包 `INDEX.md`。
+把 `INIT.md` 原样再包成 `setup-niceeval` 或 `create-niceeval-eval` Skill 会产生两份安装和定题规范。
+需要提高 Agent Skill 生态可发现性时，Skill 最多只能是跳转到 `INIT.md` 的薄触发器，不能拥有独立步骤、API 文案或完成标准。
 
-这个薄 Skill 的优先级低于 `create-niceeval-eval`。
-NiceEval 已经能完成自动安装，真正缺少的是从“我要判断哪个候选更好”到“得到可复查结果”的结果导向编排。
+产品改进应直接落在 `INIT.md`、随包 onboarding 页面和 NiceEval-Eval 的隐藏判据中。
 
 ## 建议的验证顺序
 
-如果决定继续设计 Skill，先不要直接发布。
-建议按以下证据顺序验证：
+建议按以下证据顺序验证现有入口：
 
-1. 在 NiceEval-Eval 新增 Skill 宿主维度，至少覆盖两种支持 Agent Skill 的 coding agent。
-2. 保留 DB-GPT 与 GPT Researcher 作为持久接入题，再新增一条临时模型选择题，分别验证两种模式。
+1. 保留 DB-GPT 与 GPT Researcher，在同一安装 Attempt 中检查评估面、真实数据、成功判据、运行约束、候选范围和完成交接。
+2. 增加第二种 coding agent 宿主，确认 URL 入口和随包文档不只对 Codex 有效。
 3. 每格提高到至少两次 Attempt，并固定 Judge 配置，观察澄清、产物质量和最终 verdict 的方差。
 4. 单独记录首次接入的提问轮数、墙钟时间、authoring 成本、Eval 运行成本和用户需要做的决策数。
-5. 对比三组入口：只给 `INIT.md`、薄 `setup-niceeval` Skill、完整 `create-niceeval-eval` Skill。
-6. 只有在完整 Skill 稳定减少人工提示、没有降低 Eval 有效性，并且成本可接受时，才把工作流写成目标契约。
+5. 对比不同版本 `INIT.md` 与随包文档，在 Agent、模型、题目和 Judge 固定时观察新增判据是否改善。
+6. 只有在入口稳定减少人工提示、没有降低 Eval 有效性，并且成本可接受时，才把新增行为写成目标契约。
 
-这组实验能回答最关键的问题：Skill 带来的提升究竟来自更好的发现和编排，还是只是用了更多 Agent 轮次与更多 token。
+这组实验能回答最关键的问题：入口改版带来的提升究竟来自更好的发现和编排，还是只是用了更多 Agent 轮次与更多 token。
