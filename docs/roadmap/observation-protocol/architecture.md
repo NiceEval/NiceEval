@@ -174,6 +174,10 @@ Producer 与断言在内存中读取未截断事件。
 字节进入 Record 或离开 NiceEval 进程前，Record serialization policy 对 Runner 已知凭据做精确替换，再按事件 schema 的预算截断大值并写入 `truncated`。
 Record、Live 和 OTel exporter 共享这份转写后的 durable envelope，不能各自实现脱敏或截断规则。
 
+序列化后的单个 Observation envelope 最大为 1 MiB。
+事件 schema 必须把更大的完整 payload 写成 `BlobRef`，或按该 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
+这个预算只约束一条事件的编码，不限制一个 stream 能保存多少事件。
+
 Attempt 只有在 finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整记录。
 进程中断留下的未封口 stream 保留为 incomplete evidence；Reader 不补造 Outcome、Verdict 或缺失事件。
 
@@ -241,27 +245,69 @@ NiceEval 根据 usage 和价格表计算的金额是 Claim，必须引用 usage 
 
 ## Record 容器
 
+### 事实完整性与物理文件
+
 `run.json` 与 `attempt.json` 只保存稳定身份、父子关系、封口状态和文档引用。
 它们不承载报告摘要、总用量、通过数或宽配置对象。
 
+Record 的逻辑文档不与单个物理文件绑定。
+所有物理文件都受固定的 `RECORD_FILE_MAX_BYTES = 16 * 1024 * 1024` 约束；这个上限没有 flag，也不能由项目放宽。
+16 MiB 为常见 Git 托管的单文件警告和拒绝线保留充足余量，也避免证据增长到发布阶段才第一次失败。
+普通 JSON 文档必须在上限内封口，大型 payload 使用 `BlobRef` 分块，Observation stream 使用 NDJSON 分段。
+
 ```ts
+interface FileRef {
+  path: string;
+  sha256: string;
+  bytes: number; // <= RECORD_FILE_MAX_BYTES
+}
+
 type DocumentRef =
   | {
       state: "open";
       key: string;
       schema: string;
       path: string;
-      mediaType: "application/json" | "application/x-ndjson";
+      mediaType: "application/json";
+    }
+  | {
+      state: "sealed";
+      key: string;
+      schema: string;
+      mediaType: "application/json";
+      file: FileRef;
+    };
+
+type ObservationStreamRef =
+  | {
+      state: "open";
+      key: string;
+      schema: string;
+      path: string;
+      mediaType: "application/x-ndjson";
+      segmentCount: number;
+      throughSequence?: number;
     }
   | {
       state: "sealed";
       key: string;
       schema: string;
       path: string;
-      mediaType: "application/json" | "application/x-ndjson";
+      mediaType: "application/x-ndjson";
+      segmentCount: number;
+      throughSequence: number;
       sha256: string;
       bytes: number;
     };
+
+interface BlobRef {
+  format: "niceeval.blob";
+  mediaType: string;
+  path: string;
+  chunkCount: number;
+  sha256: string;
+  bytes: number;
+}
 
 interface RunManifest {
   format: "niceeval.record";
@@ -277,37 +323,74 @@ interface RunManifest {
     path: string;
   }>;
   provenance: Record<string, DocumentRef>;
-  observationStreams: Record<string, DocumentRef>;
+  observationStreams: Record<string, ObservationStreamRef>;
   claims: Record<string, DocumentRef>;
 }
 ```
 
-Attempt manifest 使用相同的 `format`、`schema`、`state` 与文档引用字段，并额外保存 `runId`、`attemptId`、`evalId` 和 Attempt 序号。
-Run manifest 的 attempts 只负责指向 Attempt manifest，不把 Attempt 文档复制到 Run 层。
+Attempt manifest 使用相同的 `format`、`schema`、`state` 与三组文档引用。
+它额外保存 `runId`、`attemptId`、`evalId` 和 Attempt 序号。
+Run manifest 的 attempts 只指向 Attempt manifest，不把 Attempt 文档复制到 Run 层。
 
-Observation stream 使用 NDJSON，每行一个完整 envelope。
-Writer 开始写 stream 时登记 open ref，封口后计算摘要并替换成 sealed ref。
-Reader 发现缺行、sequence gap、摘要错误或 open ref 时，把对应能力标为不可用。
+manifest 与普通 JSON 文档超过 16 MiB 时不能封口。
+产生这种文档的 owner 必须把无界集合建模为 Observation stream，或把大型值改为 `BlobRef`；writer 不做无语义的字节切割。
 
-sealed manifest 只能引用 sealed document。
-open manifest 允许读取已经完整落盘的事件，但不能产生完整 Verdict、携带资格或 terminal snapshot。
+### Observation stream 分段
+
+Observation stream 是一条逻辑 NDJSON 序列，物理上存放在 ref 的 `path` 目录中。
+文件名从 `000000.ndjson` 连续递增，每行仍是一个完整 envelope，一条事件不会跨文件。
+
+Writer 在追加下一行会超过 16 MiB 时封口当前段，再创建下一段。
+stream 的 `sha256` 按全部规范化行顺序计算，不包含段边界；同一事件序列无论怎样分段都有相同事实身份。
+`bytes` 是全部段的总字节数，可以大于单文件上限。
+
+Reader 按段号与事件 sequence 同时检查连续性。
+缺段、缺行、sequence gap、摘要错误或 open ref 都把对应 stream 标为 incomplete 或 corrupt，不能补造丢失事件。
+
+这条规则同样适用于 trace。
+收到的每个 OTLP span 都作为 durable Observation 保存；span 多只会产生更多 segment，不能触发整类 trace 丢弃。
+单个巨大 attribute 仍服从事件 schema 的值预算，结构化 `truncated` 或 `BlobRef` 会如实交代证据边界。
+
+### 大型 evidence blob
+
+源码、workspace change、模型原始响应或 telemetry payload 超过普通文档预算时使用 `BlobRef`。
+blob 目录中的 chunk 从 `000000.bin` 连续递增，每个 chunk 不超过 16 MiB；`sha256` 针对拼接后的原始字节。
+分块不改变 media type、内容摘要或引用身份，Projector 读取时得到原始连续字节。
+
+### 封口与格式接受
+
+sealed manifest 只能引用 sealed document、sealed stream 和摘要完整的 blob。
+open manifest 可以读取已经完整落盘的事件，但不能产生完整 Verdict、携带资格或 terminal snapshot。
 
 容器版本只在身份、父子关系、封口规则或文档引用无法继续解析时改变。
 Provenance、Observation 与 Claim 文档按自己的 schema 演进，不共享一个 Run 级业务版本。
 
+Reader 只接受 `format: "niceeval.record"` 与 `schema: "niceeval.record/2"`。
+其它容器格式直接作为 unsupported input 报错；没有旧格式 decoder、离线迁移、双写或兼容读取路径。
+未知 Observation schema 仍按 opaque event 保存，这是本格式内部的开放事件规则，不是旧容器兼容机制。
+
 Run 与 Attempt manifest 不允许增加 Projection、Report 摘要、统计宽表或它们的引用。
-`publish()`、结果携带与 Record 转换因此只处理 Provenance、Observation、Claim 和容器关系，不需要理解任何 Report 字段。
 
-## 既有格式读取
+### Record 发布与 Report 导出
 
-Reader 为每一种既有 Record schema 使用隔离 decoder，再把可证明的信息归入 Provenance、Observation 与 Claim。
-decoder 不能根据读取时配置补造历史输入，也不能为无法指出依据的结论伪造 `basedOn`。
+Record 发布与 Report 导出是两种不同操作。
 
-既有字段能确认结论、但不能恢复依据时，decoder 产生明确的 opaque Claim。
-缺少新事件只让依赖它的 projector 返回 unavailable，不让其它 artifact 或整份 Run 失效。
+- `publish()` 复制选中 Run 的完整 Provenance、Observation 与 Claim，并解开全部内部引用。
+  它不接受按 evidence 种类排除文件的选项，也不能把已存在的 trace、diff 或源码改成缺失。
+- Report 导出执行选中报告的全部页面与参数实例，收集所有可用 Projection 的 `basedOn`。
+  导出物携带这些引用的传递闭包，并在 manifest 中记录 generator、Projector 版本、输入 Record 摘要与依据集合。
 
-离线转换若存在，只能写入新目录并保留原 Record。
-转换生成的文档必须声明来源 schema 和 decoder 版本；转换不会把推测升级成 Observation。
+Report 根本没有消费某类事实时，导出物可以不带该事实。
+一旦 Projector 的 `basedOn` 引用了某个 stream、Claim、Provenance 文档或 blob，导出就必须完整复制它；大小不能成为删除依据。
+引用复制失败时整次导出失败，不生成把“复制失败”伪装成“运行时未采集”的 Report artifact。
+
+每个 Record segment、blob chunk 与 Report artifact 文件都必须通过相同的 16 MiB 物理文件检查。
+导出可以报告总字节数，但不设置会静默删证据的总量预算；托管目标需要更小产物时，应选择更窄的 Report，而不是破坏已选页面的证据闭包。
+HTML 页面只内嵌有界 Projection；大型 trace、diff 与源码证据保持为分段文件，由页面按需加载，不能为了生成一个自包含页面而重新拼成超大单文件。
+
+Report v2 只接受 `format: "niceeval.report"` 与 `schema: "niceeval.report/2"` 的精确结构。
+它不提供旧 Report decoder，也不向前接受未来版本、未知字段或未知 evidence 引用类型；任何这类输入都以 unsupported 失败。
+Projector 版本与 evidence schema 的隔离用于减少 Report schema 变化，不构成 Report v2 的兼容承诺。
 
 ## OTel 边界
 
@@ -315,6 +398,9 @@ OTel 是补充遥测协议，不是 NiceEval 的状态机或 Record writer。
 
 OTLP 接收器保存实际收到的原始 span 名、attributes、时间与父子关系。
 Adapter mapper 可以产生 canonical GenAI kind 供瀑布图和跨 Agent 对比，但 mapper 结果必须带版本，并且属于可重算 Projection。
+
+trace Projector 引用构成结果的全部 telemetry Observation 与外部 payload。
+Report 使用这份 Projection 时，导出闭包必须携带这些依据的全部 segment 和 blob；不能只保存瀑布图节点摘要。
 
 行为树始终以 Agent 标准事件为骨架。
 span 只能通过显式 correlation ID 叠加时间和父子关系；无法唯一关联的 span 作为 telemetry-only 节点保留，不按名称、文本或时间接近度猜测。
@@ -350,7 +436,7 @@ evaluator 版本必须覆盖它依赖的 Projector 语义，使依赖变化产�
 - 已有 Observation 或 Claim 足够时，只增加或组合 projector。
 - 只改变聚合、命名、分组或图表时，只改变 Reports。
 - 确实缺少无法重建的事实时，增加独立 Observation 事件 schema。
-- 旧 Record 没有该事实时返回 unavailable，不使其它能力或整份 Run 失效。
+- Record 没有采集该事实时返回 unavailable，不使其它能力或整份 Run 失效。
 
 Report 行、图表点、通过率、p90、汇总成本和执行树都不进入 Record 权威 schema。
 用户导出的 HTML、JSON 或其它 Report artifact 写入 Reports 负责的目标位置，不登记进 Run 或 Attempt manifest。
@@ -367,3 +453,6 @@ artifact 的 generator 版本和输入摘要只解释这份交付物，不把它
 7. 每条 Claim 的全部 `basedOn` 必须能解析到同一份已封口 Record；解析失败时该 Claim 不可用。
 8. Record sink 未确认的 Attempt 不能作为完整结果进入 Sample。
 9. Record 可读性不得依赖曾经计算出的 Projection；删除 snapshot、索引与 Report artifact 后，sealed Record 仍能重新产生同版本 Projection。
+10. Observation stream 的分段边界不得改变事件 sequence、stream 摘要或任何 Projector 结果。
+11. Report artifact 必须包含所有已用 Projection 的完整 `basedOn` 传递闭包；复制失败不能降级为证据未采集。
+12. trace 已被采集且被报告引用时，全部 trace segment 与 blob 都属于强制发布依据。

@@ -135,6 +135,7 @@ interface ObservationStream {
 
 Reader 验证 envelope、sequence、摘要和 Claim 引用。
 它不从事件计算通过数，不用新 evaluator 改写历史 Claim，也不因未知事件丢弃整个 stream。
+物理 segment 对这个 API 完全透明；`events()` 跨段连续迭代，一条逻辑 stream 不因文件滚动变成多个 stream。
 
 第三方需要审计原始事实时可以直接读取 ObservationSet。
 Report、show 与 view 不直接按事件名或 schema 分支，而是使用 projector。
@@ -145,6 +146,8 @@ Projector 是带稳定身份的普通函数值。
 它把一个 AttemptHandle 转成带 availability 和依据的中性读模型，不创建新的持久化实体。
 
 ```ts
+type EvidenceRef = Claim["basedOn"][number];
+
 type UnavailableReason =
   | "not-recorded"
   | "unsupported-schema"
@@ -177,6 +180,7 @@ interface AttemptProjector<T> {
 ```ts
 execution(attempt);   // Availability<ExecutionTree>
 timing(attempt);      // Availability<TimingTree>
+trace(attempt);       // Availability<TraceTree>
 usage(attempt);       // Availability<Usage>
 diff(attempt);        // Availability<WorkspaceDiff>
 assertions(attempt);  // Availability<readonly AssertionClaim[]>
@@ -189,7 +193,7 @@ Projector 可以组合其它 projector，但必须合并 `basedOn`，不能把 u
 
 Projector 版本用于区分派生语义，并写入明确导出的 Report artifact 元数据。
 Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 manifest 引用或把 Projection 交给 Record writer。
-`Availability<T>` 中的 `T` 是 Library API 类型，不是 Record schema；不兼容变化升级 Projector 版本，不迁移历史 Record。
+`Availability<T>` 中的 `T` 是 Library API 类型，不是 Record schema；不兼容变化只产生新的 Projector 版本，不改写 Record。
 
 Claim evaluator 使用 Projection 时，必须把它的 `basedOn` 展开成底层 EvidenceRef。
 Projection 自身不是 EvidenceRef，也不能成为 Claim、另一个 Record 或后续 Report 的权威输入。
@@ -216,3 +220,35 @@ const changedLines = rollup(async (attempt) => {
 
 用户明确保存的 HTML、JSON 或其它 Report artifact 属于 Reports 输出。
 它可以记录 generator 版本与输入 Record 摘要，但不进入 Run 或 Attempt manifest，也不被 `openRecord()` 读取。
+
+## Report artifact 的证据闭包
+
+Report 导出宿主必须执行全部静态页面，并枚举每个参数化页面实例。
+宿主收集渲染过程中取得的 `Availability.state === "available"` 结果，再对其中的 `basedOn` 求传递闭包。
+
+```ts
+interface ReportArtifactManifest {
+  format: "niceeval.report";
+  schema: "niceeval.report/2";
+  generator: { name: "niceeval"; version?: string; commit?: string };
+  inputs: Array<{ runId: string; manifestSha256: string }>;
+  projectors: Array<{ name: string; version: string }>;
+  evidence: readonly EvidenceRef[];
+}
+```
+
+Report v2 reader 只接受上面的精确 manifest schema。
+它不忽略未知字段，不接受未来 `schema` 值，也不把未知 evidence 引用保存成 opaque 数据；这些输入都返回 unsupported。
+需要改变 manifest 结构或 evidence 引用类型时定义新 Report 版本，由对应 reader 明确实现，不在 v2 中预埋兼容分支。
+
+闭包不是 artifact 文件名白名单。
+一个 trace Projection 引用了 telemetry stream，就必须复制该 stream 的全部 segment，以及事件引用的全部 blob。
+一个报告没有执行 trace Projector，则它的 Report artifact 不需要携带 trace；这不改变本地 Record，也不把 trace 定义成可牺牲证据。
+
+Record 已采集某项依据，但导出时打不开、校验失败或复制失败，整次导出必须失败。
+只有原 Record 本来就没有采集该项事实时，Projector 才能返回 `not-recorded`，报告再按自己的缺失口径呈现。
+导出宿主不能把发布故障伪装成 `not-recorded`。
+
+Report artifact 中的 evidence 文件沿用 Record 的 16 MiB segment 与 blob chunk 上限。
+宿主可以在完成消息里报告文件数和总字节数，但不能为了满足总量目标自动删掉闭包中的依据。
+HTML 只保存有界 Projection 与 evidence 引用；trace 等大型证据从分段文件按需加载，不在构建时重新合并进单个页面。

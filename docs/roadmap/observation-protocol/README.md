@@ -45,6 +45,15 @@ Projection 是从三类权威内容计算出的读模型。
 Projector 是产生 Projection 的纯函数，不是新的存储 owner。
 Record manifest 不包含 Projection 文档、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
 
+trace、Agent 对话、Sandbox 命令、源码与 workspace change 都是用户会下钻复核的真实证据。
+它们一旦被采集为 durable Observation 或 Provenance，就必须按各自的 durable schema 全部留在本地 Record；不能因为文件大而删掉整类证据。
+事件 schema 仍可对单个失控值实施有标记的预算，但物理文件大小由 Record 分段解决，不由证据丢弃解决。
+
+Report artifact 只携带本次报告实际消费的依据。
+导出宿主执行全部页面与 Projector，收集每个可用 Projection 的 `basedOn`，再复制这组引用的传递闭包。
+报告使用 trace Projector 时，已经存在的全部 trace 依据都属于强制闭包；复制不完整必须让导出失败，不能降级成“未发布”。
+报告根本不使用 trace 时，Report artifact 可以不携带它，但本地 Record 仍保留原事实。
+
 运行期 snapshot 或 Invocation 索引可以为了附着与恢复写入活动 Invocation 存储，但它们位于 Record 之外，并声明重放依据。
 用户明确导出的 Report 也可以落盘，但它是可删除、可重新生成的交付物，不能成为 Observation、Claim 或下一次 Report 的事实来源。
 snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参与 Record 的事实兼容判断。
@@ -76,7 +85,7 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 | OTel 接入 | 导入或导出时间、父子关系与跨进程关联 | 决定行为事实、执行错误或 Verdict |
 | Sample | 选择可比较的 Attempt 并交代覆盖 | 改写历史 Claim |
 | Projector | 从权威内容按需计算带依据的读模型 | 写 Record、保存 Projection 或读取未记录的外部状态 |
-| Reports | 组合读模型并呈现或导出交付物 | 读取原始事件 schema，或让 Report 字段进入 Record |
+| Reports | 组合读模型，按 `basedOn` 收集发布依据并导出交付物 | 读取原始事件 schema、丢弃已引用证据，或让 Report 字段进入 Record |
 
 ## 范围
 
@@ -86,6 +95,7 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 - Agent 的增量事件生产契约及终态 Outcome。
 - durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
 - Record 的稳定容器、独立文档版本和未知事件保留规则。
+- Observation stream 的固定大小分段、大型 evidence blob 分块与 Report 证据闭包。
 - `watch`、`exp --json`、Invocation snapshot 与旁路附着语义。
 - OTel 导入、关联和导出的补充地位。
 - Report 通过 projector 读取事实的依赖方向。
@@ -97,6 +107,11 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 - 用 OTel collector 代替 NiceEval 的 Record writer。
 - 为每一种报告预计算并持久化宽表。
 - 远程 Web 仪表盘与跨机器 Invocation 控制。
+
+Record reader 只接受本主题定义的容器格式。
+契约不提供旧格式 decoder、离线迁移、双写或兼容读取路径。
+Report v2 同样是精确版本协议，不承诺向前兼容未来 Report schema。
+读取器遇到非 `niceeval.report/2` 版本、未知字段或未知 evidence 引用类型时直接报 unsupported，不保留、不猜测，也不降级读取。
 
 ## 入口
 
