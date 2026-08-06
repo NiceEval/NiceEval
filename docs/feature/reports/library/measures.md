@@ -85,7 +85,8 @@ renderer 根据 `value + format + locale` 格式化，计算函数不生成 disp
 每个官方 Calculation 都声明 unit、better、bounds 与两个 reducer。
 超时样本的耗时下界进入专用耗时 Calculation，不能当作精确 `durationMs` 参与普通均值。
 
-`tokens` 的 Attempt 值固定为 `inputTokens + outputTokens`，不含 `cacheReadTokens` 与 `cacheCreationTokens`。
+`tokens` 的 Attempt 值固定为 `inputTokens + cacheReadTokens + cacheCreationTokens + outputTokens`。
+缓存桶缺失按零处理；`inputTokens` 或 `outputTokens` 缺失时返回 null，不拿局部数据冒充完整流量。
 其 `perEval` reducer 对同题 Attempts 取平均，`acrossEvals` reducer 再对题级值取宏平均。
 报告中的“平均 Tokens”因而是可比读数，不是范围总量。
 总量与缓存桶属于 usage 审计面，由 `niceeval show ... --usage` 提供。

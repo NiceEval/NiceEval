@@ -33,6 +33,7 @@ const HEADER = {
   passRate: localizedMessage("experimentList.passRate"),
   totalScore: localizedMessage("experimentList.totalScore"),
   tokens: localizedMessage("experimentList.avgTokens"),
+  avgCost: localizedMessage("experimentList.avgCost"),
   costUSD: localizedMessage("experimentList.cost"),
   record: localizedMessage("experimentList.result"),
   verdict: localizedMessage("experimentList.status"),
@@ -504,7 +505,7 @@ function experimentColumns(composition: EvaluationKindComposition): ColumnSpec[]
     ...(composition !== "points" ? [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }] : []),
     ...(composition !== "pass" ? [{ key: "totalScore", better: "higher" as const, header: HEADER.totalScore }] : []),
     { key: "tokens", better: "lower", header: HEADER.tokens },
-    { key: "costUSD", better: "lower", header: HEADER.costUSD },
+    { key: "costUSD", better: "lower", header: HEADER.avgCost },
     { key: "record", header: HEADER.record },
   ];
 }

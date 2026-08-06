@@ -181,19 +181,24 @@ export const durationMs = attemptMetric({
 export const tokens = attemptMetric({
   name: "tokens",
   label: { en: "Tokens", "zh-CN": "Tokens" },
-  description: "Input + output tokens (cache reads/writes excluded).",
+  description: "Complete model traffic: input + cache read + cache creation + output tokens.",
   better: "lower",
   unit: "tokens",
   bounds: { min: 0 },
   value(a) {
     if (a.result.verdict === "skipped") return null;
     const usage = a.result.usage;
-    // input/output 缺失(协议没提供)→ null,不拿 0 冒充「实测就是 0」
-    // (docs/feature/record/architecture.md#usage)。
+    // input/output 缺失(协议没提供)→ null:缺了主干桶,剩下缓存明细只是局部数据,
+    // 拿它冒充完整流量比编 0 更误导(docs/feature/record/architecture.md#usage)。
     if (!usage || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
-    // 只加 input + output:缓存读写量大但便宜,计进去会把缓存热的 agent 画成 token 大户;
-    // 花钱多少本来就有 costUSD 负责。
-    return usage.inputTokens + usage.outputTokens;
+    // 四个桶恒互斥(缓存命中已在归一阶段从 inputTokens 扣出),求和即完整模型流量;
+    // 缓存桶是独立计价桶,agent 不上报时按 0,与 usage 审计面口径一致。
+    return (
+      usage.inputTokens +
+      (usage.cacheReadTokens ?? 0) +
+      (usage.cacheCreationTokens ?? 0) +
+      usage.outputTokens
+    );
   },
 });
 

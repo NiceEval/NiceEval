@@ -646,7 +646,7 @@ describe("实体列表 data", () => {
     expect(items[1]!.evals).toBe(2);
   });
 
-  it("tokens 保留 Attempt 精确值，并按 Eval 内平均、Experiment 跨 Eval 宏平均折叠；缓存读写不计入", async () => {
+  it("tokens 保留 Attempt 精确值，并按 Eval 内平均、Experiment 跨 Eval 宏平均折叠；缓存桶计入、桶缺失按 0、input/output 缺失为 null", async () => {
     const s = snap({
       experimentId: "exp/tokens",
       results: [
@@ -661,17 +661,27 @@ describe("实体列表 data", () => {
         res("q2", "passed", {
           usage: { inputTokens: 30, outputTokens: 6, cacheReadTokens: 5_000, cacheCreationTokens: 6_000 },
         }),
+        // input/output 缺失 → null：缓存明细只是局部数据，不冒充完整流量
+        res("q3", "passed", { usage: { cacheReadTokens: 500, cacheCreationTokens: 300 } }),
+        // 缓存桶缺失按 0：5 + 1 = 6
+        res("q4", "passed", { usage: { inputTokens: 5, outputTokens: 1 } }),
       ],
     });
 
     const [item] = await experimentListData([s]);
     const q1 = item!.evalRows.find((row) => row.evalId === "q1")!;
     const q2 = item!.evalRows.find((row) => row.evalId === "q2")!;
-    expect(q1.attempts.map((attempt) => attempt.tokens.value)).toEqual([12, 24]);
-    expect(q1.tokens.value).toBe(18);
-    expect(q2.tokens.value).toBe(36);
-    // 宏平均 mean(18, 36) = 27；若错误地展平三次 attempt 会得到 24。
-    expect(item!.tokens.value).toBe(27);
+    const q3 = item!.evalRows.find((row) => row.evalId === "q3")!;
+    const q4 = item!.evalRows.find((row) => row.evalId === "q4")!;
+    // Attempt 精确值 = input + cacheRead + cacheCreation + output
+    expect(q1.attempts.map((attempt) => attempt.tokens.value)).toEqual([3_012, 7_024]);
+    expect(q1.tokens.value).toBe(5_018);
+    expect(q2.tokens.value).toBe(11_036);
+    expect(q3.tokens.value).toBeNull();
+    expect(q4.tokens.value).toBe(6);
+    // 宏平均 mean(5018, 11036, 6) = 16060/3；若错误地展平四个 attempt 会得到 5269.5
+    expect(item!.tokens.value).toBeCloseTo(16060 / 3);
+    expect(item!.tokens.value).not.toBeCloseTo(5_269.5);
   });
 
   it("同一 experiment 的输入含不一致可比性配置时按完整用户反馈失败,指引 run 维度 / MetricLine", async () => {

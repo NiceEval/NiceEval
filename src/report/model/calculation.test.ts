@@ -13,6 +13,7 @@ import type { DimensionRef } from "./types.ts";
 import {
   aggregate,
   agent,
+  evalId,
   evidenceRow,
   experiment,
   max,
@@ -26,6 +27,7 @@ import {
   percentile,
   rollup,
   sum,
+  tokens,
 } from "./calculation.ts";
 
 function assertReportCalculationStaticContracts(sample: Sample): void {
@@ -350,5 +352,52 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     const rows = await aggregate(sample, { by: { experiment }, values: { score: calc } });
     // a within min([1,0])=0；b=1；across max → 1
     expect(rows[0]!.score).toMatchObject({ value: 1, samples: 2, total: 3, basis: "eval" });
+  });
+
+  it("tokens 单 Attempt 计完整模型流量：缓存桶计入、缺失按 0，input/output 缺失为 null，两级 mean", async () => {
+    const run = snap({
+      experimentId: "exp/tokens",
+      knownEvalIds: ["a", "b", "c", "d", "e"],
+      results: [
+        // a：两轮实测 → within mean (3012 + 7024) / 2 = 5018
+        res("a", "passed", {
+          attempt: 0,
+          usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 1_000, cacheCreationTokens: 2_000 },
+        }),
+        res("a", "failed", {
+          attempt: 1,
+          usage: { inputTokens: 20, outputTokens: 4, cacheReadTokens: 3_000, cacheCreationTokens: 4_000 },
+        }),
+        // b：只报一个缓存桶，另一桶缺失按 0 → 30 + 5000 + 0 + 6 = 5036；skipped 轮 null
+        res("b", "passed", { usage: { inputTokens: 30, outputTokens: 6, cacheReadTokens: 5_000 } }),
+        res("b", "skipped", { attempt: 1 }),
+        // c：coverage 缺口 → 只抬 total
+        // d：只报缓存明细、缺 input/output → null，不拿 150 冒充完整流量
+        res("d", "passed", { usage: { cacheReadTokens: 100, cacheCreationTokens: 50 } }),
+        // e：两个缓存桶都不报 → 按 0，5 + 1 = 6
+        res("e", "passed", { usage: { inputTokens: 5, outputTokens: 1 } }),
+      ],
+    });
+    const sample = scopeOf(
+      [run],
+      [],
+      [{ experimentId: "exp/tokens", run, knownEvalIds: ["a", "b", "c", "d", "e"], missing: [{ evalId: "c", reason: "never-run" }] }],
+    );
+
+    // Eval 内 mean：a / b / e 各自折叠(题内两轮取平均,5018 = mean(3012, 7024),和会是 10036)，
+    // d 为 null cell、c 只抬 total
+    const perEval = await aggregate(sample, { by: { evalId }, values: { tokens } });
+    const byId = new Map(perEval.map((row) => [row.evalId, row.tokens]));
+    expect(byId.get("a")!).toMatchObject({ value: 5018, samples: 1, total: 1, basis: "eval", unit: "tokens" });
+    expect(byId.get("b")!).toMatchObject({ value: 5036, samples: 1, total: 1 });
+    expect(byId.get("d")!).toMatchObject({ value: null, samples: 0, total: 1 });
+    expect(byId.get("e")!).toMatchObject({ value: 6, samples: 1, total: 1 });
+    expect(byId.get("c")!).toMatchObject({ value: null, samples: 0, total: 1 });
+
+    // 跨 Eval 宏平均 mean(5018, 5036, 6) = 10060/3；若错误地展平 4 个 attempt 会得 3769.5
+    const rows = await aggregate(sample, { by: { experiment }, values: { tokens } });
+    expect(rows[0]!.tokens.value).toBeCloseTo(10060 / 3);
+    expect(rows[0]!.tokens.value).not.toBeCloseTo(3769.5);
+    expect(rows[0]!.tokens).toMatchObject({ samples: 3, total: 5, basis: "eval", unit: "tokens" });
   });
 });

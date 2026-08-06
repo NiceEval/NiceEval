@@ -44,9 +44,10 @@ Attempt 行身份格只有 locator，判定长在 locator 上：前面一个判�
 - Experiment：先对每个 Eval 的 Attempts 取平均，再对所有 Eval 取宏平均。
 - 路径段组：只在该组覆盖的 Eval 上取同样的宏平均。
 - Eval：该题所有 Attempts 的平均。
-- Attempt：该次 Attempt 的精确值；单样本也沿用同一列，因此列名统一为“平均耗时”“平均 Tokens”。
+- Attempt：该次 Attempt 的精确值；单样本也沿用同一列，因此列名统一为“平均耗时”“平均 Tokens”“平均成本”。
 
-Tokens 只计 `inputTokens + outputTokens`，不含 `cacheReadTokens` 或 `cacheCreationTokens`。
+Tokens 表示完整模型流量，计算为 `inputTokens + cacheReadTokens + cacheCreationTokens + outputTokens`。
+两个缓存桶未提供时按零处理；`inputTokens` 或 `outputTokens` 未提供时，该 Attempt 的 Tokens 为缺数据。
 它是用于横向比较的平均量，不是范围总量；需要总用量与缓存明细时使用 `niceeval show ... --usage`。
 
 `searchable` 默认为 `true`。

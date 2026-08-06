@@ -114,7 +114,7 @@ better → upper right
 bub    A compare/bub-gpt-5.4
 codex  B compare/codex-gpt-5.4
 
-Exp.            Model     Agent     Avg   Pass   Results          Tokens    Cost
+Exp.            Model     Agent     Avg   Pass   Results      Avg. tokens   Avg. cost
 bub-gpt-5.4     gpt-5.4   bub       38s   100%   1 passed      9k tokens   $0.03
 codex-gpt-5.4   gpt-5.4   codex   40.2s     0%   1 failed   12.9k tokens   $0.04
   bub-gpt-5.4: 1 evals · 1 attempts · 2026-07-09T08:00:00.000Z
@@ -141,6 +141,8 @@ Other pages:
 ```
 
 `compare/bub-gpt-5.4` has just one attempt (`@14617z2e`); `compare/codex-gpt-5.4` expands all three attempts (`@14m0duci`, `@1rxhuidh`, `@1jwsgp2j`), each on its own line with its own verdict, duration, cost, and failure summary — a truncated `received` value ends with `…`. Copy any row's `@<locator>` and `niceeval show @<locator>` opens that attempt's diagnosis page with the full assertions and evidence.
+
+The resource columns use one hierarchy throughout: Experiment and path-group rows are macro means across evals, Eval rows are means across attempts, and Attempt rows are exact values. `Avg. tokens` counts uncached input, cache reads, cache creation, and output. These are comparison means, not totals; use `niceeval show ... --usage` for totals and billing-bucket details.
 
 ### `@<locator>`: one attempt's overview
 

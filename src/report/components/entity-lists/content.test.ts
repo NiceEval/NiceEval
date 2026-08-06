@@ -571,8 +571,15 @@ describe("列表头长在列声明上", () => {
     expect(headerOf("passRate", "zh-CN")).toBe("通过率");
     expect(headerOf("tokens", "en")).toBe("Avg. tokens");
     expect(headerOf("tokens", "zh-CN")).toBe("平均 Tokens");
-    expect(headerOf("costUSD", "zh-CN")).toBe("成本");
+    expect(headerOf("costUSD", "en")).toBe("Avg. cost");
+    expect(headerOf("costUSD", "zh-CN")).toBe("平均成本");
     expect(headerOf("record", "zh-CN")).toBe("结果");
+
+    const flat = attemptListContent([attempt("q", "passed")]);
+    const flatHeaderOf = (key: string, locale: string): string =>
+      resolveLocalizedText(flat.columns.find((column) => column.key === key)!.header!, locale);
+    expect(flatHeaderOf("costUSD", "en")).toBe("Cost");
+    expect(flatHeaderOf("costUSD", "zh-CN")).toBe("成本");
   });
 });
 

@@ -393,7 +393,13 @@ export const tokens = rollup(
     if (attempt.result.verdict === "skipped") return null;
     const usage = attempt.result.usage;
     if (!usage || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
-    return usage.inputTokens + usage.outputTokens;
+    // 四个桶恒互斥:求和即完整模型流量;缓存桶是独立计价桶,缺失按 0。
+    return (
+      usage.inputTokens +
+      (usage.cacheReadTokens ?? 0) +
+      (usage.cacheCreationTokens ?? 0) +
+      usage.outputTokens
+    );
   },
   {
     withinEval: mean,

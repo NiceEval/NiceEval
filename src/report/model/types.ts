@@ -506,7 +506,7 @@ export interface AttemptListItem {
   examScore: MetricValue;
   /** 当前 attempt 的挣分(totalScore 指标);通过制 eval 为 null cell(不适用,不是缺数据)。 */
   totalScore: MetricValue;
-  /** 当前 attempt 的 input + output tokens；缓存读写不计入。 */
+  /** 当前 attempt 的完整模型 tokens：uncached input、cache read、cache creation 与 output。 */
   tokens: MetricValue;
   durationMs: number;
   /** 缺失为 null(测不了),不伪造 0;attempt 级条目的缺失一律用 null,不用省略字段。 */

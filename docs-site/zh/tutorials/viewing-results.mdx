@@ -115,7 +115,7 @@ better → upper right
 bub    A compare/bub-gpt-5.4
 codex  B compare/codex-gpt-5.4
 
-Exp.            Model     Agent     Avg   Pass   Results          Tokens    Cost
+Exp.            Model     Agent     Avg   Pass   Results      Avg. tokens   Avg. cost
 bub-gpt-5.4     gpt-5.4   bub       38s   100%   1 passed      9k tokens   $0.03
 codex-gpt-5.4   gpt-5.4   codex   40.2s     0%   1 failed   12.9k tokens   $0.04
   bub-gpt-5.4: 1 evals · 1 attempts · 2026-07-09T08:00:00.000Z
@@ -142,6 +142,8 @@ Other pages:
 ```
 
 `compare/bub-gpt-5.4` 下只有一次 Attempt（`@14617z2e`）；`compare/codex-gpt-5.4` 下三次 Attempt 全部展开（`@14m0duci`、`@1rxhuidh`、`@1jwsgp2j`），逐行给出各自的判定、耗时、成本与失败摘要，被截断的 `received` 值末尾带 `…`。复制其中任意一行的 `@<locator>` 继续 `niceeval show @<locator>`，就能打开那一次 Attempt 的诊断首页看完整断言与证据。
+
+资源列在整张层级表里使用同一口径：Experiment 与路径组是跨 Eval 宏平均，Eval 是 Attempts 平均，Attempt 是精确值。“平均 Tokens”计入 uncached input、cache read、cache creation 与 output。这里显示的是比较均值，不是总量；总量与计价桶明细使用 `niceeval show ... --usage` 查看。
 
 ### `@<locator>`：一次 Attempt 的摘要
 
