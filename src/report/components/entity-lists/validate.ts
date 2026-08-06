@@ -30,6 +30,8 @@ function attemptListItemProblem(value: unknown, path: string): string | null {
   if (examScoreProblem !== null) return examScoreProblem;
   const totalScoreProblem = cellProblem(value.totalScore, `${path}.totalScore`);
   if (totalScoreProblem !== null) return totalScoreProblem;
+  const tokensProblem = cellProblem(value.tokens, `${path}.tokens`);
+  if (tokensProblem !== null) return tokensProblem;
   if (typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
   if (!(value.costUSD === null || typeof value.costUSD === "number")) return `"${path}.costUSD" must be a number or null`;
   if (typeof value.startedAt !== "string") return `"${path}.startedAt" must be a string`;

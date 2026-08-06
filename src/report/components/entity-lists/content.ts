@@ -32,7 +32,7 @@ const HEADER = {
   durationMs: localizedMessage("experimentList.avgDuration"),
   passRate: localizedMessage("experimentList.passRate"),
   totalScore: localizedMessage("experimentList.totalScore"),
-  tokens: localizedMessage("experimentList.tokens"),
+  tokens: localizedMessage("experimentList.avgTokens"),
   costUSD: localizedMessage("experimentList.cost"),
   record: localizedMessage("experimentList.result"),
   verdict: localizedMessage("experimentList.status"),
@@ -114,7 +114,7 @@ function attemptMetricValue(
 }
 
 /**
- * attempt 行的格子原料。层级表取 entity / record / durationMs / costUSD,
+ * attempt 行的格子原料。层级表取 entity / record / durationMs / tokens / costUSD,
  * 平铺表取 entity / verdict / result / durationMs / costUSD / score;
  * 两张表各自裁自这一份,不各写一份构造。
  */
@@ -135,6 +135,7 @@ function attemptCells(item: AttemptListItem): CellBag {
     // 层级表(experimentListContent)的判定构成列:该次判定,与 verdict 格同值。
     record: { kind: "verdict", verdict },
     durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
+    tokens: measureCell(item.tokens),
     costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
     ...(item.evaluationKind === "points" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
   };
@@ -264,6 +265,7 @@ function evalRow(
     // 判定构成列:该题 attempts 的计票,与 experiment 行数题的计票同一形态。
     record: verdictCell(tallyVerdicts(row.attempts.map((attempt) => attempt.verdict))),
     durationMs: measureCell(row.durationMs),
+    tokens: measureCell(row.tokens),
     costUSD: measureCell(row.costUSD),
   };
   return {

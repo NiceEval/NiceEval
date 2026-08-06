@@ -646,6 +646,34 @@ describe("实体列表 data", () => {
     expect(items[1]!.evals).toBe(2);
   });
 
+  it("tokens 保留 Attempt 精确值，并按 Eval 内平均、Experiment 跨 Eval 宏平均折叠；缓存读写不计入", async () => {
+    const s = snap({
+      experimentId: "exp/tokens",
+      results: [
+        res("q1", "passed", {
+          attempt: 0,
+          usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 1_000, cacheCreationTokens: 2_000 },
+        }),
+        res("q1", "failed", {
+          attempt: 1,
+          usage: { inputTokens: 20, outputTokens: 4, cacheReadTokens: 3_000, cacheCreationTokens: 4_000 },
+        }),
+        res("q2", "passed", {
+          usage: { inputTokens: 30, outputTokens: 6, cacheReadTokens: 5_000, cacheCreationTokens: 6_000 },
+        }),
+      ],
+    });
+
+    const [item] = await experimentListData([s]);
+    const q1 = item!.evalRows.find((row) => row.evalId === "q1")!;
+    const q2 = item!.evalRows.find((row) => row.evalId === "q2")!;
+    expect(q1.attempts.map((attempt) => attempt.tokens.value)).toEqual([12, 24]);
+    expect(q1.tokens.value).toBe(18);
+    expect(q2.tokens.value).toBe(36);
+    // 宏平均 mean(18, 36) = 27；若错误地展平三次 attempt 会得到 24。
+    expect(item!.tokens.value).toBe(27);
+  });
+
   it("同一 experiment 的输入含不一致可比性配置时按完整用户反馈失败,指引 run 维度 / MetricLine", async () => {
     const a = snap({ experimentId: "exp/mixed", model: "gpt-a", results: [res("x", "passed")] });
     const b = snap({ experimentId: "exp/mixed", model: "gpt-b", results: [res("y", "passed")] });

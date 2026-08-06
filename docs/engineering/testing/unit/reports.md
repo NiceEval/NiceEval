@@ -101,6 +101,7 @@ const scope = reportScopeFixture({
   - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图。
   - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table， Attempt locator 保留给 web 宿主下钻。
     路径段组的题数内联在身份格；它不能成为另一条 detail 续行。
+    Tokens 列的四层口径必须可区分：Experiment / 路径段组是各自范围内跨 Eval 的宏平均，Eval 是该题 Attempts 的平均，Attempt 是该次精确值；只计 input + output、不计缓存读写，表头明确为平均 Tokens。
   - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
   - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`； text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。
@@ -147,7 +148,7 @@ const scope = reportScopeFixture({
 
   - 行 cells key 集合与列集相等，两个方向各一条：多写一个列集外的 key、漏写一个声明列，错误都指到行 key 与列 key；各层 subRows 与 placeholder / group 行同规则。
   - 区分力场景是「同一个 attempt 行构造函数被层级表与平铺表两种列集消费」——两张表各自通过校验，证明行按消费它的列集填格，不是一份格子四处塞（[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
-  - 不适用的列是显式 notApplicable 格：层级表里 Eval 行的 model / agent / tokens 格存在且渲染成 `—`，与「缺格」在校验层可区分。
+  - 不适用的列是显式 notApplicable 格：层级表里 Eval 行的 model / agent 格存在且渲染成 `—`，与「缺格」在校验层可区分；tokens 是四层都有值的比较读数，不属于不适用列。
 - **表头长在列声明上** （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：断言面是两面输出字符串。
   逐项覆盖：
 

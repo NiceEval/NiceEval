@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 「数据源」行:`experimentRows` 的 Eval 分组层——按 evalId 目录前缀分区、两条收起条件、
 // 无 `/` 题与组行同级、身份格内联实体计数、组行读数聚合而占位行不进分母、子行去前缀但 key 仍是完整 evalId;
-// attempt 行 duration/cost 走 measure 格式化(table.md 渲染契约)。
+// attempt 行 duration/tokens/cost 走 measure 格式化(table.md 渲染契约)。
 // 断言面是 Content,不经浏览器。
 
 import { describe, expect, it } from "vitest";
@@ -17,6 +17,10 @@ const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
 function cell(value: number, total = 1): MetricValue {
   return { value, samples: 1, total, basis: "eval", refs: [] };
+}
+
+function tokenCell(value: number, total = 1): MetricValue {
+  return { ...cell(value, total), unit: "tokens", better: "lower", bounds: { min: 0 } };
 }
 
 function attempt(
@@ -36,6 +40,7 @@ function attempt(
     moreFailures: 0,
     examScore: emptyCell,
     totalScore: emptyCell,
+    tokens: tokenCell(10_000),
     durationMs: 385_652,
     costUSD: 0.077336,
     startedAt: "2026-07-01T00:00:00Z",
@@ -467,16 +472,41 @@ describe("行形状与列集同源", () => {
     expect(nestedAttempt.cells.durationMs).toEqual(flatAttempt.cells.durationMs);
   });
 
-  it("不适用的列是显式 notApplicable 格:Eval 行的 model / agent / tokens 在场且渲染成 —", () => {
+  it("不适用的列是显式 notApplicable 格:Eval 行的 model / agent 在场且渲染成 —", () => {
     const content = experimentListContent([
       experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missing: [] }),
     ]);
     const evalCells = content.rows[0]!.subRows![0]!.cells;
-    for (const key of ["model", "agent", "tokens"]) {
+    for (const key of ["model", "agent"]) {
       // 与「缺格」在校验层可区分:格子在场,值是 notApplicable
       expect(evalCells[key]).toEqual({ kind: "notApplicable" });
       expect(formatCellText(evalCells[key], "zh-CN")).toBe("—");
     }
+  });
+
+  it("Tokens 四层都有值：Experiment / 组 / Eval 显示各自聚合，Attempt 显示该次精确值", () => {
+    const first = attempt("suite/a", "passed", { tokens: tokenCell(30_000), locator: locator("@1aaaaa01") });
+    const second = attempt("suite/a", "failed", { attempt: 1, tokens: tokenCell(54_000), locator: locator("@1bbbbb01") });
+    const other = attempt("suite/b", "passed", { tokens: tokenCell(18_000), locator: locator("@1cccccc1") });
+    const content = experimentListContent([
+      experimentItem({
+        tokens: tokenCell(30_000),
+        evalRows: [
+          evalRow("suite/a", "passed", [first, second], { tokens: tokenCell(42_000) }),
+          evalRow("suite/b", "passed", [other], { tokens: tokenCell(18_000) }),
+        ],
+        missing: [],
+      }),
+    ]);
+
+    const experiment = content.rows[0]!;
+    const evalA = experiment.subRows!.find((row) => row.key === "suite/a")!;
+    expect(formatCellText(experiment.cells.tokens, "zh-CN")).toBe("30k tokens");
+    expect(formatCellText(evalA.cells.tokens, "zh-CN")).toBe("42k tokens");
+    expect(evalA.subRows!.map((row) => formatCellText(row.cells.tokens, "zh-CN"))).toEqual([
+      "30k tokens",
+      "54k tokens",
+    ]);
   });
 
   it("列集随 composition 变时行跟着变:纯计分制没有 passRate 列,行上也没有那一格", () => {
@@ -539,6 +569,8 @@ describe("列表头长在列声明上", () => {
     expect(headerOf("entity", "en")).toBe("Experiment");
     expect(headerOf("entity", "zh-CN")).toBe("实验");
     expect(headerOf("passRate", "zh-CN")).toBe("通过率");
+    expect(headerOf("tokens", "en")).toBe("Avg. tokens");
+    expect(headerOf("tokens", "zh-CN")).toBe("平均 Tokens");
     expect(headerOf("costUSD", "zh-CN")).toBe("成本");
     expect(headerOf("record", "zh-CN")).toBe("结果");
   });

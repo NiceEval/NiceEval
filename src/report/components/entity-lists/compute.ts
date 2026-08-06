@@ -83,6 +83,7 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     moreFailures: more,
     examScore: await computeCell(examScore, [item]),
     totalScore: await computeCell(totalScore, [item]),
+    tokens: await computeCell(tokens, [item]),
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
     startedAt: result.startedAt ?? item.run.startedAt,

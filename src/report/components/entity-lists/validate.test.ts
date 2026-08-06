@@ -20,6 +20,7 @@ const validAttemptItem = {
   moreFailures: 0,
   examScore: validCell,
   totalScore: validCell,
+  tokens: validCell,
   durationMs: 1000,
   costUSD: 0.01,
   startedAt: "2026-07-01T00:00:00Z",
@@ -38,6 +39,11 @@ describe("validateAttemptListData", () => {
   it("[i].examScore 结构错误定位到嵌套 MetricValue 字段", () => {
     const bad = [{ ...validAttemptItem, examScore: { value: 1 } }];
     expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.examScore\.samples"/);
+  });
+
+  it("[i].tokens 结构错误定位到嵌套 MetricValue 字段", () => {
+    const bad = [{ ...validAttemptItem, tokens: { value: 1 } }];
+    expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.tokens\.samples"/);
   });
 
   it("[i].verdict 非字符串报错", () => {

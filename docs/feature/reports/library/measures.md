@@ -85,6 +85,11 @@ renderer 根据 `value + format + locale` 格式化，计算函数不生成 disp
 每个官方 Calculation 都声明 unit、better、bounds 与两个 reducer。
 超时样本的耗时下界进入专用耗时 Calculation，不能当作精确 `durationMs` 参与普通均值。
 
+`tokens` 的 Attempt 值固定为 `inputTokens + outputTokens`，不含 `cacheReadTokens` 与 `cacheCreationTokens`。
+其 `perEval` reducer 对同题 Attempts 取平均，`acrossEvals` reducer 再对题级值取宏平均。
+报告中的“平均 Tokens”因而是可比读数，不是范围总量。
+总量与缓存桶属于 usage 审计面，由 `niceeval show ... --usage` 提供。
+
 需要报告特有公式时，在报告旁写普通函数。
 delta、stability、scoreboard 与 frontier 不因出现在内建报告里就成为公共 Calculation。
 

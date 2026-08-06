@@ -231,6 +231,7 @@ const failedAttempt: AttemptListItem = {
   examScore: { value: 0, basis: "eval", samples: 1, total: 1, refs: [locator("@1a4a4a4a")] },
   // 通过制 eval:totalScore 不适用,null cell(与 examScore 并存不互斥)
   totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [locator("@1a4a4a4a")] },
+  tokens: { value: 46_500, unit: "tokens", better: "lower", bounds: { min: 0 }, basis: "eval", samples: 1, total: 1, refs: [locator("@1a4a4a4a")] },
   durationMs: 32_000,
   costUSD: 0.12,
   startedAt: "2026-07-01T09:58:00Z",
@@ -249,6 +250,7 @@ const erroredAttempt: AttemptListItem = {
   moreFailures: 0,
   examScore: { value: 0, basis: "eval", samples: 1, total: 1, refs: [locator("@1c1c1c1c")] },
   totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [locator("@1c1c1c1c")] },
+  tokens: { value: null, unit: "tokens", better: "lower", bounds: { min: 0 }, basis: "eval", samples: 0, total: 1, refs: [locator("@1c1c1c1c")] },
   durationMs: 4_500,
   costUSD: null,
   startedAt: "2026-07-01T11:29:00Z",
@@ -273,6 +275,7 @@ const passedAttempt: AttemptListItem = {
   moreFailures: 0,
   examScore: { value: 1, basis: "eval", samples: 1, total: 1, refs: [locator("@1d2d2d2d")] },
   totalScore: { value: null, basis: "eval", samples: 0, total: 1, refs: [locator("@1d2d2d2d")] },
+  tokens: { value: 18_000, unit: "tokens", better: "lower", bounds: { min: 0 }, basis: "eval", samples: 1, total: 1, refs: [locator("@1d2d2d2d")] },
   durationMs: 5_000,
   costUSD: 0.02,
   startedAt: "2026-07-01T09:59:00Z",
