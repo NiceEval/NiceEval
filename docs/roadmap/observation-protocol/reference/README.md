@@ -6,7 +6,7 @@
 ## Projector 与 Projection
 
 `Projector` 不是 NiceEval 自造的名称。
-Event Sourcing/CQRS 软件已经用它表示“消费事件并产生读模型的组件”，而 `Projection` 表示产生的读模型或运行单元。
+Event Sourcing/CQRS 软件已经用它表示“消费事件并产生读模型的组件”，而 `Projection` 表示产生的读模型或持续消费进程。
 
 | 软件 | 官方名称 | 实际语义 | NiceEval 的关系 |
 |---|---|---|---|
@@ -25,7 +25,7 @@ Event Sourcing/CQRS 软件已经用它表示“消费事件并产生读模型的
 - [Spatie：Writing your first projector](https://spatie.be/docs/laravel-event-sourcing/v7/using-projectors/writing-your-first-projector/) 区分处理事件的 Projector 与写出的 Projection。
 - [Neos 的 Event Sourcing 定义](https://docs.neos.io/guide/contributing-to-neos/event-sourced-content-repository/how-we-understand-event-sourcing) 把 Projector 描述为确定、无副作用的纯函数。
 - [Python eventsourcing Application](https://eventsourcing.readthedocs.io/en/stable/topics/application.html) 公开使用 `projector_func` 从事件重建对象。
-- [Akka Projection overview](https://doc.akka.io/libraries/akka-projection/current/overview.html) 把带 offset 的消费运行单元称为 Projection。
+- [Akka Projection overview](https://doc.akka.io/libraries/akka-projection/current/overview.html) 把带 offset 的持续消费进程称为 Projection。
 - [KurrentDB Projection introduction](https://docs.kurrent.io/server/v26.1/features/projections/intro) 展示持续运行、checkpoint 与 reset 后重放。
 
 NiceEval 只采用“权威历史经确定性计算得到读模型”这部分。

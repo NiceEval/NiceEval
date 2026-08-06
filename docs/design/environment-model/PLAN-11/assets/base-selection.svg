@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560"
      role="img" aria-labelledby="baseTitle baseDesc">
   <title id="baseTitle">PLAN-11 如何为每条 Eval 选择唯一 Base Case</title>
-  <desc id="baseDesc">Runner 先判断 Eval 是否自带完整 Sandbox 运行单元，再判断 Experiment 是否声明条件基底；四种组合分别选择 SandboxSpec 默认 case、Experiment 条件基底、Eval Base 或精确 profile 的融合 case。</desc>
+  <desc id="baseDesc">Runner 先判断 Eval 是否自带完整 Sandbox 配置，再判断 Experiment 是否声明条件基底；四种组合分别选择 SandboxSpec 默认配置、Experiment 条件基底、Eval Base 或精确 profile 的融合配置。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
             markerWidth="8" markerHeight="8" orient="auto-start-reverse">
@@ -39,12 +39,12 @@
   </defs>
 
   <rect x="0.5" y="0.5" width="1239" height="559" class="canvas" />
-  <text x="32" y="48" class="title">每条 Eval 只启动一个完整 Sandbox 运行单元</text>
+  <text x="32" y="48" class="title">每条 Eval 只启动一个主 Sandbox 实例</text>
   <text x="1208" y="48" class="note" text-anchor="end">Agent 与安装条件不参与 Base 竞争</text>
 
   <rect x="32.5" y="184.5" width="319" height="103" class="box" />
   <text x="52" y="216" class="label">Eval Base</text>
-  <text x="52" y="248">当前 Eval 自带完整 Sandbox 运行单元吗</text>
+  <text x="52" y="248">当前 Eval 自带完整 Sandbox 配置吗</text>
 
   <rect x="464.5" y="88.5" width="319" height="103" class="box" />
   <text x="484" y="120" class="label">Experiment 条件基底</text>
@@ -90,5 +90,5 @@
   <path d="M784 352 H840 V448 H888" class="arrow" />
   <text x="808" y="372" class="note">有</text>
 
-  <text x="32" y="528" class="note">选择只回答“从哪个 Sandbox 运行单元启动”；Eval、Experiment 与 Agent 的检查随后都要执行。</text>
+  <text x="32" y="528" class="note">选择只回答“使用哪份 Sandbox 配置”；Eval、Experiment 与 Agent 的检查随后都要执行。</text>
 </svg>

@@ -175,7 +175,7 @@
     },
     {
       "term": "环境",
-      "use": "按对象写 environment profile、Sandbox 运行单元、子进程变量集合、宿主运行条件或 Provider 资源",
+      "use": "按对象写 environment profile、Sandbox 实例、子进程变量集合、宿主运行条件或 Provider 资源",
       "why": "声明期配置、已启动隔离资源、进程变量与宿主条件分属不同生命周期和所有者"
     },
     {
@@ -210,8 +210,18 @@
     },
     {
       "term": "sandbox case",
-      "use": "正文写 Sandbox 运行单元；只谈已启动资源时写资源组；既有 API 标识符放进反引号",
+      "use": "正文按事实写 Sandbox 实例，或主 Sandbox 实例及伴随资源；既有 API 标识符放进反引号",
       "why": "case 是项目自造的壳词，既看不出主 Sandbox、伴随资源与生命周期边界，又容易和测试 case 混淆"
+    },
+    {
+      "term": "运行单元",
+      "use": "按实际对象写实例、进程、任务、调度项、读模型或主 Sandbox 实例及伴随资源",
+      "why": "这个抽象名没有说明什么在运行、由谁拥有或按什么边界创建和销毁"
+    },
+    {
+      "term": "资源组",
+      "use": "逐项写主 Sandbox 实例、sidecar、网络、volume、服务句柄或 Provider 资源",
+      "why": "组字掩盖了实际成员和生命周期；单 Sandbox、Compose 与云 Provider 所谓的组并不是同一种对象"
     },
     {
       "term": "已实现",

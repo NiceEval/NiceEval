@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 620"
      role="img" aria-labelledby="figTitle figDesc">
-  <title id="figTitle">PLAN-3 怎样从 Eval 与 SandboxSpec 选出唯一 Sandbox 运行单元</title>
-  <desc id="figDesc">Eval 有题目 profile 时选择匹配的 profile 预制 Case，否则现场构建 Eval 自带 Sandbox source；Eval 无题目 profile 时选择 SandboxSpec 默认 case，否则使用 Provider 中性 case，四条路径最终汇入唯一 Sandbox 运行单元。</desc>
+  <title id="figTitle">PLAN-3 怎样从 Eval 与 SandboxSpec 选出唯一 Sandbox 起点</title>
+  <desc id="figDesc">Eval 有题目 profile 时选择匹配的 profile 预制起点，否则现场构建 Eval 自带 Sandbox source；Eval 无题目 profile 时选择 SandboxSpec 默认起点，否则使用 Provider 默认起点，四条路径最终启动一个主 Sandbox 实例。</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
             markerWidth="8" markerHeight="8" orient="auto-start-reverse">
@@ -39,7 +39,7 @@
   </defs>
 
   <rect x="0.5" y="0.5" width="1239" height="619" class="canvas" />
-  <text x="32" y="48" class="title">PLAN-3 怎样选出唯一 Sandbox 运行单元</text>
+  <text x="32" y="48" class="title">PLAN-3 怎样选出唯一 Sandbox 起点</text>
 
   <rect x="32.5" y="96.5" width="223" height="103" class="box" />
   <text x="52" y="126" class="label">Eval 声明 Sandbox profile</text>
@@ -55,7 +55,7 @@
   <path d="M568 148 H592 V236 H616" class="arrow" />
 
   <rect x="624.5" y="64.5" width="239" height="103" class="box" />
-  <text x="644" y="94" class="label">profile 预制 Case</text>
+  <text x="644" y="94" class="label">profile 预制起点</text>
   <text x="644" y="122">匹配时直接使用</text>
 
   <rect x="624.5" y="184.5" width="239" height="103" class="box" />
@@ -69,19 +69,19 @@
   <path d="M256 452 H296" class="arrow" />
 
   <rect x="304.5" y="400.5" width="263" height="103" class="box" />
-  <text x="324" y="430" class="label">SandboxSpec 配置默认 case</text>
+  <text x="324" y="430" class="label">普通默认起点</text>
   <text x="324" y="458">存在吗？</text>
 
   <path d="M568 452 H592 V412 H616" class="arrow" />
   <path d="M568 452 H592 V532 H616" class="arrow" />
 
   <rect x="624.5" y="360.5" width="239" height="103" class="box" />
-  <text x="644" y="390" class="label">SandboxSpec 默认 case</text>
+  <text x="644" y="390" class="label">SandboxSpec 默认起点</text>
   <text x="644" y="418">已配置时使用</text>
 
   <rect x="624.5" y="480.5" width="239" height="103" class="box" />
-  <text x="644" y="510" class="label">Provider 中性 case</text>
-  <text x="644" y="538">未配置默认 case 时使用</text>
+  <text x="644" y="510" class="label">Provider 默认起点</text>
+  <text x="644" y="538">未配置默认起点时使用</text>
 
   <path d="M864 116 H880 V272 H920" class="arrow" />
   <path d="M864 236 H896 V296 H920" class="arrow" />
@@ -89,7 +89,7 @@
   <path d="M864 532 H880 V344 H920" class="arrow" />
 
   <rect x="928.5" y="248.5" width="279" height="111" class="box" />
-  <text x="948" y="278" class="label"><tspan class="good">唯一</tspan> Sandbox 运行单元</text>
+  <text x="948" y="278" class="label"><tspan class="good">一个</tspan> 主 Sandbox 实例</text>
   <text x="948" y="306">负责 build、start</text>
   <text x="948" y="330">以及 services ready</text>
 

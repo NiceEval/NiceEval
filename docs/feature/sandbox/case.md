@@ -1,15 +1,15 @@
-# Sandbox 运行单元 —— 一份声明的完整运行单位
+# Sandbox 实例、伴随资源与生命周期
 
-一条 eval 声明所需的任务条件，provider 把这份声明翻译成一个 **Sandbox 运行单元**：从输入到主 Sandbox、伴随资源、身份、证据与 finalizer 的完整故事。
-本页是 Sandbox 运行单元的单一契约入口；provider 的实现要点见 [Architecture](architecture.md)，使用侧 API 见 [Library](library.md)。
+一条 eval 声明所需的任务条件，provider 据此启动主 Sandbox 实例和全部伴随资源，并返回可选能力句柄。
+这些对象共享身份、证据与 finalizer，并同时接受留存或销毁。本页定义从声明到这些对象的完整契约；provider 的实现要点见 [Architecture](architecture.md)，使用侧 API 见 [Library](library.md)。
 
 ```text
 Eval 或 Experiment 的 template-bearing layer
  → template 绑定的 Provider planner
  → provider-specific SandboxCase 构建产物并启动运行实例
- → 主 Sandbox + 可选能力句柄 + 资源组
+ → 主 Sandbox 实例 + 可选能力句柄 + 伴随资源
  → 现有 Agent / Eval / `assertions.evaluate` 生命周期
- → case 自己采证、留存或整组销毁
+ → provider planner 采证、留存或同时销毁
 ```
 
 template 由具体 factory 声明并同时选定 Provider;哪一侧带 template 由配对决定,规则见 [Sandbox Layer](layers.md)。
@@ -17,8 +17,8 @@ NiceEval 不承诺同一道题自动跨 Provider 迁移:项目自己裁定两份
 
 ## 主 Sandbox 不变量
 
-每个 sandbox case 只返回**唯一一个主 `Sandbox`**。
-Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff 观察同一个执行空间——这条不变量对所有 case 成立,没有例外。
+每次启动只返回**唯一一个主 `Sandbox` 实例**。
+Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff 观察同一个执行空间——这条不变量对所有 provider 成立,没有例外。
 
 单容器 case 里主 Sandbox 就是那个容器或微 VM。
 Compose case 里主 Sandbox 是 `workspaceService` 对应的容器。
@@ -52,7 +52,7 @@ interface ServiceController {
 }
 
 interface SandboxRetention {
-  /** suspend 成功后写入注册表、可跨进程恢复的资源组定位。 */
+  /** suspend 成功后写入注册表、可跨进程恢复的主实例及伴随资源定位。 */
   readonly entry: SandboxGroupEntry;
   suspend(): Promise<void>;
 }
@@ -66,7 +66,7 @@ interface DetachedSandboxRetention {
 ```
 
 Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制时检查 `services` 能力,普通单 Sandbox eval 完全不接触这层。
-`retention` 负责本进程把运行中资源组提交为留存现场；`DetachedSandboxRetention` 是 CLI 跨进程 inspect / wake / suspend / destroy 的 provider 通道。`wake` 表示从任意 provider 的 dormant 状态恢复成活动 Case，不暗示原进程对象可原地 `resume()`。
+`retention` 负责本进程把运行中的主实例及伴随资源提交为留存现场；`DetachedSandboxRetention` 是 CLI 跨进程 inspect / wake / suspend / destroy 的 provider 通道。`wake` 表示从任意 provider 的 dormant 状态恢复成活动实例，不暗示原进程对象可原地 `resume()`。
 以后 GPU、动态网络策略或整组 checkpoint 也按独立能力扩展,不合并成一个「高级 Sandbox」布尔值，更不挂 `sandbox.suspend?` 这类隐藏成员。
 
 ## 声明形态:template factory 一次到位
@@ -164,7 +164,7 @@ CaseKey
 
 **BuildKey 负责构建产物复用,CaseKey 负责完整 attempt 环境身份与 fingerprint。**
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果;逐 attempt 的容器名、临时目录和随机 project name 不进 CaseKey,只作为本次启动的运行事实记录。
-Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
+Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
 Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不改变上面的任务身份语义:
 
@@ -208,7 +208,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 预算分两层,口径不混:
 
 - **Run 级共享准备**:BuildKey 构建、共享拉取或发布受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发位。构建并发由 `maxBuildConcurrency` / `--max-build-concurrency` 控制，默认 2；它与 `maxConcurrency` / `--max-concurrency` 正交。
-- **attempt 级启动**:从 image / template / snapshot 启动 Sandbox、创建资源组、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到产物并开始启动 Sandbox 时起算。
+- **attempt 级启动**:从 image / template / snapshot 启动主 Sandbox 实例和伴随资源、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到产物并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份记录里只出现一次时间。
 构建计时落 `RunMeta.timings` 的 `sandbox.build` activity,provenance 落 `sandboxBuilds`,两者经 `timingNodeId` 关联。
@@ -247,7 +247,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 
 - **DinD**:在云 Sandbox 内启动 daemon 与 Compose,主容器包装成返回的 Sandbox;外层 template 只预装 daemon、Compose 与共享基础 cache,不预烘每一道题。
 - **Pod**:一个 Pod 里 main + sidecars,由 provider API 实现逐容器 exec、文件和日志。
-- **原生组网**:多个实例接入 provider 私网,由 materializer 建立稳定服务名和资源组。
+- **原生组网**:多个实例接入 provider 私网,由 materializer 建立稳定服务名并保存网络与实例定位。
 
 三种实现都必须满足相同的结果不变量:
 
@@ -255,7 +255,7 @@ Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或�
 2. 服务名在 Agent 与校验命令中解析一致。
 3. 服务 ready 后才进入 Agent 生命周期。
 4. 判分结束前服务存活;异常退出得到环境错误和证据。
-5. 成功、失败、中断与超时都能按资源组回收。
+5. 成功、失败、中断与超时都能同时回收主实例和伴随资源。
 
 实现若只能启动多实例、却不能让文件 API 指向 main 执行空间,就没有完成该 case,不能只开一个 `services` 布尔位。
 把依赖 DNS、`extra_hosts` 或 sidecar 文件隔离的题改成单 template 不算支持——环境变化已经破坏题目判据。
@@ -291,7 +291,7 @@ defineSandboxCase({
 - `services`、`materialize` 结果中的 services 与 facts 都是完整 ADT/必填值。
   不用 optional 字段表示领域状态；`materialize` 返回 typed Effect。
 - 声明了某项能力就承担对应完整契约测试。
-- 自定义 case 的公开扩展面当前只允许主 Sandbox、资源组与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 case 在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
+- 自定义 Sandbox 定义的公开扩展面当前只允许主实例、伴随资源与 `services`；不能为 `defineSandboxCase` callback 声明跨进程留存，因为函数本身没有可发现的 provider identity 与 detached 实现。`--keep-sandbox` 与自定义 Sandbox 定义在创建前报错。未来若开放 provider plugin，必须先让 plugin 提供稳定 identity 与 `DetachedSandboxRetention`，不能仅加一个布尔 capability。
 
 ## 错误归属:五类互不冒充
 
@@ -309,7 +309,7 @@ Agent 完成任务但断言未达标才是 `failed`。
 
 ## 清理、留存与注册表
 
-运行期以主 Sandbox 为 Agent 锚点,但清理和留存针对 case 返回的**资源组**。
+运行期以主 Sandbox 为 Agent 锚点,但 cleanup callback 和留存同时作用于 provider 返回的**主实例及伴随资源**。
 注册表不硬编码 `services[]`、`network` 或 Kubernetes namespace 字段,只存:
 
 ```typescript
@@ -324,7 +324,7 @@ interface SandboxGroupEntry {
 
 `resources` 是 provider 自己可序列化、可 detached stop 的定位数据。
 `sandbox enter` 仍进入 `primary`;`sandbox stop` 把整组交回对应 provider 销毁。
-单 Sandbox case 的资源组只有 primary,现有行为是新模型的严格子集;单实例留存的注册表纪律与各 provider 的休眠语义见 [Architecture · 留存与注册表](architecture.md#留存keep与注册表)。
+provider 只返回 primary 时没有伴随资源,现有行为是新模型的严格子集;单实例留存的注册表纪律与各 provider 的休眠语义见 [Architecture · 留存与注册表](architecture.md#留存keep与注册表)。
 
 Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后重过 ready 门、失败时保留可再次清理的注册项。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
@@ -353,8 +353,8 @@ folder eval 的测试文件与环境输入共址时，materializer 与普通上�
 | Vercel Sandbox | snapshot | 不声明 | 不声明 |
 | Local | 宿主机即环境,无产物参数 | 不声明 | 不声明 |
 
-云 provider 不因为「是完整 Linux VM」就自动进入云端 Compose case;未通过契约测试就不声明。selector 应在运行前排除不支持的配对；若仍选中，physical planning 聚合报错并保持整个 Run 零资源，而不是把配置错误记成 `skipped`。
-没有声明 Compose 能力的 provider 仍完整支持单 Sandbox case;外部编排继续作为 provider 无对应 case 时的用户侧退路(见 [Library · 环境预置放哪](library.md#环境预置放哪))。
+云 provider 不因为「是完整 Linux VM」就自动支持云端 Compose；未通过契约测试就不声明。selector 应在运行前排除不支持的配对；若仍选中，physical planning 聚合报错并保持整个 Run 零资源，而不是把配置错误记成 `skipped`。
+没有声明 Compose 能力的 provider 仍完整支持单 Sandbox 实例；外部编排继续作为 provider 无对应实现时的用户侧退路(见 [Library · 环境预置放哪](library.md#环境预置放哪))。
 
 ## 相关阅读
 

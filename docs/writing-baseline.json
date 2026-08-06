@@ -159,7 +159,6 @@
       "闸": 1
     },
     "docs/concepts.md": {
-      "sandbox case": 6,
       "产物": 1,
       "来源": 2,
       "清理": 1,
@@ -276,7 +275,8 @@
       "环境": 12,
       "覆盖": 2,
       "解析": 1,
-      "记录": 1
+      "记录": 1,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-1/architecture.md": {
       "sandbox case": 1,
@@ -286,7 +286,8 @@
       "窗口": 1,
       "覆盖": 1,
       "解析": 8,
-      "记录": 4
+      "记录": 4,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-1/library.md": {
       "helper": 1,
@@ -341,6 +342,7 @@
       "结论": 1,
       "覆盖": 1,
       "解析": 4,
+      "资源组": 1,
       "重放": 2
     },
     "docs/design/environment-model/PLAN-10/architecture.md": {
@@ -364,6 +366,7 @@
       "窗口": 7,
       "解析": 2,
       "记录": 3,
+      "资源组": 1,
       "重放": 2
     },
     "docs/design/environment-model/PLAN-10/use-case/MemoryBench.md": {
@@ -394,7 +397,8 @@
       "窗口": 5,
       "覆盖": 13,
       "解析": 2,
-      "记录": 1
+      "记录": 1,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-11/architecture.md": {
       "sandbox case": 5,
@@ -405,7 +409,8 @@
       "窗口": 22,
       "覆盖": 4,
       "解析": 13,
-      "记录": 11
+      "记录": 11,
+      "资源组": 2
     },
     "docs/design/environment-model/PLAN-11/library.md": {
       "helper": 3,
@@ -416,7 +421,8 @@
       "窗口": 6,
       "覆盖": 1,
       "解析": 1,
-      "记录": 2
+      "记录": 2,
+      "资源组": 2
     },
     "docs/design/environment-model/PLAN-11/lifecycle.md": {
       "sandbox case": 1,
@@ -459,7 +465,8 @@
       "来源": 2,
       "环境": 1,
       "解析": 4,
-      "记录": 2
+      "记录": 2,
+      "资源组": 2
     },
     "docs/design/environment-model/PLAN-2/library.md": {
       "来源": 1,
@@ -474,14 +481,16 @@
       "结论": 1,
       "覆盖": 1,
       "解析": 2,
-      "记录": 1
+      "记录": 1,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-2/use-case/README.md": {
       "产物": 1,
       "来源": 1,
       "环境": 5,
       "窗口": 1,
-      "覆盖": 2
+      "覆盖": 2,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-3/README.md": {
       "helper": 2,
@@ -534,7 +543,8 @@
       "环境": 3,
       "窗口": 1,
       "覆盖": 13,
-      "解析": 1
+      "解析": 1,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-4/architecture.md": {
       "sandbox case": 2,
@@ -672,7 +682,8 @@
       "清理": 1,
       "结论": 1,
       "覆盖": 1,
-      "解析": 2
+      "解析": 2,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-8/architecture.md": {
       "helper": 2,
@@ -682,7 +693,8 @@
       "环境": 1,
       "窗口": 2,
       "解析": 4,
-      "记录": 4
+      "记录": 4,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-8/library.md": {
       "产物": 1,
@@ -691,7 +703,8 @@
       "窗口": 1,
       "覆盖": 1,
       "解析": 1,
-      "记录": 2
+      "记录": 2,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-8/lifecycle.md": {
       "helper": 3,
@@ -701,7 +714,8 @@
       "环境": 2,
       "窗口": 6,
       "解析": 2,
-      "记录": 1
+      "记录": 1,
+      "资源组": 2
     },
     "docs/design/environment-model/PLAN-8/use-case/MemoryBench.md": {
       "覆盖": 1
@@ -724,7 +738,8 @@
       "清理": 1,
       "窗口": 5,
       "结论": 1,
-      "解析": 4
+      "解析": 4,
+      "资源组": 1
     },
     "docs/design/environment-model/PLAN-9/architecture.md": {
       "helper": 1,
@@ -734,7 +749,8 @@
       "窗口": 13,
       "覆盖": 3,
       "解析": 5,
-      "记录": 8
+      "记录": 8,
+      "资源组": 4
     },
     "docs/design/environment-model/PLAN-9/library.md": {
       "helper": 4,
@@ -751,7 +767,8 @@
       "窗口": 20,
       "覆盖": 1,
       "解析": 4,
-      "记录": 2
+      "记录": 2,
+      "资源组": 2
     },
     "docs/design/environment-model/PLAN-9/use-case/MemoryBench.md": {
       "窗口": 3,
@@ -774,23 +791,21 @@
       "解析": 2
     },
     "docs/design/eval-suite-sharing/CASES.md": {
-      "来源": 2
+      "来源": 1
     },
     "docs/design/eval-suite-sharing/DECISION.md": {
-      "来源": 1,
       "结论": 1,
       "解析": 1
     },
     "docs/design/eval-suite-sharing/GOALS.md": {
       "产物": 1,
-      "来源": 3,
+      "来源": 2,
       "覆盖": 1,
       "解析": 1
     },
     "docs/design/eval-suite-sharing/LIMITS.md": {
-      "来源": 7,
-      "环境": 1,
-      "解析": 1
+      "来源": 5,
+      "环境": 1
     },
     "docs/design/eval-suite-sharing/PLAN-1/README.md": {
       "来源": 3,
@@ -805,39 +820,19 @@
       "解析": 1
     },
     "docs/design/eval-suite-sharing/PLAN-3/README.md": {
-      "来源": 9,
+      "来源": 8,
       "解析": 1
     },
     "docs/design/eval-suite-sharing/PLAN-3/architecture.md": {
-      "来源": 26,
-      "覆盖": 2,
-      "解析": 8
-    },
-    "docs/design/eval-suite-sharing/PLAN-3/cli.md": {
-      "来源": 11
+      "覆盖": 2
     },
     "docs/design/eval-suite-sharing/PLAN-3/library.md": {
-      "来源": 12,
-      "环境": 1,
-      "覆盖": 1,
-      "解析": 4,
-      "记录": 1
-    },
-    "docs/design/eval-suite-sharing/PLAN-3/lifecycle.md": {
-      "来源": 11,
-      "清理": 1,
-      "覆盖": 1,
-      "记录": 1
-    },
-    "docs/design/eval-suite-sharing/PLAN-3/use-case/terminal-bench.md": {
-      "来源": 8,
-      "环境": 1,
-      "解析": 1
+      "覆盖": 1
     },
     "docs/design/eval-suite-sharing/README.md": {
       "来源": 4,
       "解析": 1,
-      "记录": 2
+      "记录": 1
     },
     "docs/design/experiment-speed/DECISION.md": {
       "环境": 3,
@@ -943,6 +938,7 @@
       "覆盖": 3,
       "解析": 10,
       "记录": 10,
+      "资源组": 5,
       "锚点": 1
     },
     "docs/design/multi-container-environments/PLAN-4/use-case/README.md": {
@@ -1365,6 +1361,7 @@
       "覆盖": 19,
       "解析": 7,
       "记录": 9,
+      "资源组": 2,
       "重放": 4,
       "锚点": 4
     },
@@ -1584,13 +1581,15 @@
       "产物": 6,
       "基线": 1,
       "覆盖": 1,
-      "解析": 2
+      "解析": 2,
+      "资源组": 1
     },
     "docs/feature/compile-time-contracts/architecture.md": {
       "产物": 2,
       "基线": 1,
       "来源": 1,
-      "结论": 1
+      "结论": 1,
+      "资源组": 1
     },
     "docs/feature/compile-time-contracts/library.md": {
       "sandbox case": 1,
@@ -1598,7 +1597,8 @@
       "清理": 1,
       "结论": 1,
       "覆盖": 3,
-      "解析": 2
+      "解析": 2,
+      "资源组": 2
     },
     "docs/feature/compile-time-contracts/use-case/three-levels.md": {
       "覆盖": 2,
@@ -1732,6 +1732,7 @@
       "覆盖": 9,
       "解析": 16,
       "记录": 3,
+      "资源组": 1,
       "重放": 1,
       "锚点": 1,
       "闸": 4
@@ -2248,16 +2249,16 @@
       "覆盖": 9,
       "解析": 12,
       "记录": 9,
+      "资源组": 5,
       "锚点": 5,
       "闸": 1
     },
     "docs/feature/sandbox/case.md": {
       "helper": 1,
-      "sandbox case": 4,
       "产物": 10,
       "基线": 2,
       "来源": 1,
-      "清理": 6,
+      "清理": 5,
       "环境": 18,
       "窗口": 1,
       "覆盖": 1,
@@ -2272,6 +2273,7 @@
       "窗口": 8,
       "解析": 1,
       "记录": 2,
+      "资源组": 2,
       "锚点": 1
     },
     "docs/feature/sandbox/layers.md": {
@@ -2324,6 +2326,7 @@
       "窗口": 9,
       "覆盖": 1,
       "记录": 3,
+      "资源组": 1,
       "重放": 3
     },
     "docs/feature/sandbox/local.md": {
@@ -2502,7 +2505,7 @@
       "来源": 5,
       "环境": 4,
       "结论": 4,
-      "覆盖": 6,
+      "覆盖": 5,
       "解析": 2,
       "记录": 6
     },
@@ -2726,6 +2729,7 @@
       "覆盖": 18,
       "解析": 5,
       "记录": 3,
+      "资源组": 1,
       "闸": 3
     },
     "docs/roadmap/testing/reference/bugs/acceptance-bank.md": {
@@ -2766,7 +2770,8 @@
       "清理": 5,
       "窗口": 1,
       "结论": 1,
-      "解析": 2
+      "解析": 2,
+      "资源组": 1
     },
     "docs/roadmap/testing/reference/bugs/composition-closure.md": {
       "结论": 1,
@@ -2894,6 +2899,7 @@
       "覆盖": 2,
       "解析": 10,
       "记录": 9,
+      "资源组": 1,
       "锚点": 3
     },
     "docs/user-story.md": {
