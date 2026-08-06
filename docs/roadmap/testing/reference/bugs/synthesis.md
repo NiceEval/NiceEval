@@ -1,5 +1,9 @@
 # 最终综合：用最少公开行为覆盖历史缺陷
 
+> 本篇是 PLAN-2 阶段的研究综合，保留 world、proof 与领域 matcher 词汇，不是最终作者 API。
+> 选定方案把这里的历史缺陷形态映射到原生 Result / Journey、Mechanism unit 和真实场景 Repo；
+> 最终规则见 [测试 Roadmap](../../README.md)。
+
 ## 结论
 
 七轮抽样覆盖 CLI、runner、record、report、browser、provider、sandbox、adapter、构建与文档消费方。

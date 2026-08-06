@@ -1,5 +1,9 @@
 # 现行测试体系为什么既漏产品回归又持续膨胀
 
+> 本篇在 PLAN-2 研究期使用 Behavior、proof portfolio、Recipe / World 解释缺口。
+> 这些是问题分析词，不是最终实现要求；选定方案见 [测试 Roadmap](../README.md)和
+> [Design 决策](../../../design/user-readable-testing/DECISION.md)。
+
 本篇对照当前 [`docs/engineering/testing/`](../../../engineering/testing/README.md) 与实际 `e2e/report`，解释为什么已经有大量测试、每个逃逸 bug 也会补回归文件，仍然需要靠用户在真实 Report 中发现“链接存在但 modal 打不开”。
 
 ## 结论

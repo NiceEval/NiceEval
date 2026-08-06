@@ -85,4 +85,4 @@ agent 的 send 终态、命令树终止与正常任务服务寿命是所有候�
   维持[环境预置放哪](../../feature/sandbox/library.md#环境预置放哪)
   的「外部编排」行,不进本决策。
 - **对导出报告断言环境行为** —— 归
-  [E2E 验收 DSL](../../roadmap/testing/dsl/README.md)。
+  [E2E 本地 / Docker / CI 执行契约](../../roadmap/testing/e2e/execution.md)。

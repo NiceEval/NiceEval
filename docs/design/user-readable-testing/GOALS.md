@@ -1,11 +1,11 @@
 # 目标与要求
 
-**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 ## 目的与范围
 
 本决策定义 niceeval 仓库与自治 E2E 仓库的测试作者面。
-它回答用户行为怎样登记、测试正文怎样表达、失败怎样诊断，以及行为证明与机制证明怎样关联。
+它回答用户结果怎样组织、测试正文怎样表达、失败怎样诊断，以及结果测试与机制测试怎样关联。
 
 它不重写产品契约，不增加第三个执行层，也不规定所有测试必须使用同一种语法。
 
@@ -13,7 +13,7 @@
 
 ### G1：一屏读懂用户任务
 
-行为主证明必须就地展示前置事实、用户动作、带身份的结果和关键负例。
+结果测试必须就地展示前置事实、用户动作、带身份的结果和关键负例。
 读者不读生产源码，也能复述用户完成了什么任务。
 
 ### G2：标题与证明强度一致
@@ -23,12 +23,12 @@
 
 ### G3：行为证明与机制证明各用合适语言
 
-用户行为主证明从公开能力和用户结果进入。
+Result / Journey 从公开能力和用户结果进入。
 调度、并发、锁、时钟、解析与代数定律等机制证明可以直接使用内部精确词汇，不伪装成用户故事。
 
 ### G4：产品契约只有一个来源
 
-行为规格同时引用已有用户任务锚点与对应 Feature 契约，不复制语义定义。
+测试在需要解释命题时引用已有用户任务锚点与对应 Feature 契约，不复制语义定义。
 任务优先来自 `docs/feature/*/use-case/`；某个能力尚无 Use Case 时，引用它现有的唯一用户入口，例如 Getting Started。
 测试目录与 `docs/engineering/testing/` 不再维护另一份逐场景产品清单。
 
@@ -39,13 +39,13 @@ Fixture 必须区分正确实现与至少一种常见错误实现。
 
 ### G6：变化预算可解释
 
-内部重构只影响机制证明时，用户行为主证明不应变化。
-公开契约变化时，受影响的行为身份、主证明和真实边界证明可以被准确列出。
+内部重构只影响机制证明时，Result / Journey 不应变化。
+公开契约变化时，受影响的 owner 和真实边界可以被准确列出。
 
 ### G7：失败可定位、可单独重跑
 
-失败输出至少包含 Behavior ID、用户结果、固定身份和观察面。
-任一行为可以按稳定 ID 选择，并在不重跑昂贵模型任务的前提下复用已有证据。
+失败输出至少包含 Repo、测试文件 / 标题、用户结果、候选身份、阶段和原始收据。
+任一测试可以按 Repo、文件和标题选择；同一次运行内的昂贵只读证据可以复用。
 
 ### G8：保留真实边界与确定性
 
@@ -57,19 +57,26 @@ Fixture 必须区分正确实现与至少一种常见错误实现。
 方案必须能先覆盖高风险用户路径，再按证据扩展。
 它不能要求一次性重写约 1,900 个现有测试，也不能把高 churn 本身当成低质量证据。
 
+### G10：本地与 CI 使用同一条执行链
+
+开发者本地、GitHub Actions 与 release preflight 必须运行同一个根命令、同一种候选包注入和同一份消费项目。
+Host、Docker 与 live provider 的边界要显式，不能靠环境自动切换后仍声称证明同一个条件。
+
 ## 可验证要求
 
-- 每个用户行为有稳定 ID、任务链接、契约链接和且仅有一个主证明；关系型行为的主证明可以观察多个媒介。
-- 公开入口、观察媒介与真实边界分开声明；每个显式要求的真实边界都有对应 proof，unit 主证明不能让这项要求变成可选。
-- 主证明和每个必需边界证明都至少有一个带 evidence、提取路径和对象身份的结果断言；只断言数量或 exit code 的场景不能通过评审。
-- 机制证明可以选择关联 Behavior ID，但不要求每条都登记。
-- E2E prepare 完成后，普通验收只读命名且不可变的 evidence world；冻结必须由路径守卫、权限和前后 digest 强制。
-- 每个 E2E proof 显式绑定 recipe 与 read-only / mutable-clone 模式；reuse 分开校验 candidate、recipe、producer、fixture、外部依赖和 producer environment。
+- 每个稳定用户结果只有一个主 owner；关系型结果可在一条测试中观察多个媒介。
+- 真实边界由场景 Repo 明确经过；unit 通过不能让安装、进程、浏览器或真实协议变成可选。
+- 每条 Result / Journey 至少有一个按对象身份读取的结果断言；只断言数量或 exit code 的场景不能通过评审。
+- 每条 Mechanism 测试说明它排除的错误算法，以及为何 Result 无法稳定制造或区分。
+- E2E prepare 完成后，共享 evidence 只读；会修改结果的测试使用独立结果根或独立 Repo，不靠顺序保护。
+- 每个 E2E Repo 分开核对 candidate、fixture、lockfile、backend 与 executor 身份；第一版不跨提交复用结果。
 - JSON 与 XML 按语义结构比较；只有明确承诺逐字稳定的短文本使用 golden。
 - 非 TTY 输出与 PTY 布局是两个显式观察面，不能由隐式解析器混为一体。
-- 静态 HTML 在禁 JS、仅本地网络的真实 Chromium 中验收；交互 proof 才启用 JS，并记录 Verification Run provenance。
+- 静态 HTML 在禁 JS、仅本地网络的真实 Chromium 中验收；交互 Result 才启用 JS，并记录浏览器与候选身份。
 - 真实协议映射比较同次调用的独立上下游观察或稳定不变量，不签入会随 provider 漂移的固定 token 数。
-- 新的共享 verifier 只有出现至少两个独立消费者和稳定重用边界后，才进入公共包。
+- 新的共享 parser / helper 只有出现至少两个独立消费者和稳定重用边界后，才进入公共包。
+- PR 必须有不接触 secrets 的确定性 E2E；真实 adapter 只在可信 main、nightly、手动或 release lane 获取最小密钥集。
+- release 必须测试随后发布的同一份 tarball，而不是验收后重新构建另一份包。
 
 ## 非目标
 

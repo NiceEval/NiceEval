@@ -1,23 +1,23 @@
 # 现状与历史证据
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md) · [旧问题对账](../../roadmap/testing/history-problems.md)
 
 本页记录本次决策审阅过的测试结构、代表性实现和历史提交。
 数字用于说明规模与结构，不作为质量分数。
 
-## 当前切面
+## 审计基线切面
 
-静态统计得到约 152 个 tracked 测试文件、40,938 行测试，以及 1,927 个 `it` / `test`。
-Runner 约占 13,250 行、482 个测试；Report 约占 10,445 行、555 个测试。
+在 `c12aeeb27d4f` 对 tracked `*.test.ts(x)` 做静态统计：190 个文件、52,624 行，以及 2,227 个
+`it` / `test`。Runner 约占 18,567 行、623 个测试；Report 约占 11,706 行、590 个测试。
+这不是会自动更新的“当前数字”，而是本次决策可复算的历史基线。
 
-单个 [`src/runner/run.test.ts`](../../../src/runner/run.test.ts) 有 4,587 行和约 94 个测试。
+单个 [`src/runner/run.test.ts`](../../../src/runner/run.test.ts) 在该基线有 5,319 行和约 106 个测试。
 它同时包含大型 FakeSandbox、RunOptions 装配、全局 fake timer，以及捕获真实墙钟的双时钟协议。
 
 [`test/docs/cases-registry.test.ts`](../../../test/docs/cases-registry.test.ts)只校验测试文件前 20 行的一条 `// cases:`。
 因此，测试文件与 Feature 测试文档有连接，但场景、覆盖类别与具体证明没有机器映射。
 
-Runner 测试文档有 58 个覆盖 bullet。
-[`用例锁与并发 Invocation`](../../engineering/testing/unit/experiments-runner.md)一项已经膨胀成无法导航的场景串。
+Runner 测试文档按粗粒度覆盖类别组织，无法替代具体结果 owner 与原生测试标题之间的连接。
 
 ## 代表性提交
 
@@ -36,6 +36,9 @@ Runner 测试文档有 58 个覆盖 bullet。
 | `17222e0c` | E2E 因散点标题不匹配而失败，随后读取 renderer 输出并放宽 regex | 从当前实现学习期望会把测试降成实现镜像 |
 | `ac571d96` | 为负载 flaky，在全局 fake timer 中捕获真实 `setTimeout` 并按墙钟推进 | 修复了症状，却形成难读的双时钟协议；机制证明需要显式 TestClock 与 barrier |
 | `022c0adc` | 删除 1,106 行 show / view 单测，把用法错误矩阵迁到真实 CLI E2E | 用户可见错误由真实 CLI 证明后，测试更接近用户任务 |
+| `84d46091` | evidence schema 升版同时修改 20 个测试文件 | 完整生产 DTO fixture 会把内部字段变化扩散到无关测试 |
+| `031ce196` | Report E2E 必须把只读验证排在会追加快照的 readback 之前 | 共享可变结果把调用顺序变成隐藏测试契约 |
+| `32f2df7f` | 一次增加 71 个测试方案 / 示例文件、5,519 行 | Behavior / World / DSL 元平台压过测试正文，不适合作为每条测试的必经层 |
 
 ## 已被历史反复验证的原则
 
@@ -63,8 +66,9 @@ Runner 测试文档有 58 个覆盖 bullet。
 [测试总纲](../../engineering/testing/README.md)与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 设为 E2E 的唯一验收面。
 [`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 产物断言。
 
-[Report 读面 adapter](../../roadmap/testing/dsl/README.md) 的候选设计要靠同一次裁决定三处边界：结构按哪份声明识别、prepare 之后能否再写共享 evidence、验收器发不发公共包。
-三处各自都有现成的正式契约可依（[排版契约](../../feature/reports/library/layout.md)的 non-TTY 声明、E2E 总纲的仓库自治），缺的是把它们统一应用到测试作者面的那次裁决。
+[Report 读面 DSL](../../roadmap/testing/dsl/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。
+该抽象已随 PLAN-2 留在 Design；选定方案只提取机械 parser / browser helper，并把领域 expected 留在原生测试。
+排版仍遵守[排版契约](../../feature/reports/library/layout.md)，场景 Repo 仍遵守 E2E 自治，两者不需要一套新的产品对象模型才能成立。
 
 这些冲突说明，媒介 parser 的稳定性只是问题的一部分。
 测试作者面还需要先裁决证明对象、主证明所有者和 evidence 生命周期。

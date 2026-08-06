@@ -1,6 +1,6 @@
-# 方案 2：用户任务规格与类型化可观察读面（推荐）
+# 方案 2：用户任务规格与类型化可观察读面
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [旧 Example 归档](example.md) · [DECISION](../DECISION.md)
 
 ## 解决的问题
 

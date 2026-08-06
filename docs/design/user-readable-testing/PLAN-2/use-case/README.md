@@ -2,7 +2,7 @@
 
 **相关文档**：[方案](../README.md) · [Architecture](../architecture.md) · [Lifecycle](../lifecycle.md) · [共同 Cases](../../CASES.md)
 
-本页按共同 Cases 展示推荐方案的完整作者路径。
+本页按共同 Cases 展示本候选的完整作者路径。
 契约语义仍以各 Feature 文档为准。
 
 ## C1：缓存复用

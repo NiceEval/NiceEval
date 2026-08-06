@@ -1,8 +1,8 @@
 # 约束与候选
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
-本页只记录三个候选共同面对的契约、现状和历史事实。
+本页只记录四个候选共同面对的契约、现状和历史事实。
 
 ## 共同约束
 
@@ -18,14 +18,15 @@
 
 ### L3：测试规模不适合逐条人工登记
 
-当前 tracked 测试约有 152 个文件、40,938 行和 1,927 个 `it` / `test`。
-Runner 约有 482 个测试，Report 约有 555 个测试。
+在本次 Git 历史审计基线 `c12aeeb27d4f`，tracked `*.test.ts(x)` 共 190 个文件、52,624 行和
+2,227 个 `it` / `test`；其中 Runner 有 623 个测试，Report 有 590 个测试。数字必须与 commit 一起引用，
+避免仓库继续演进后把旧读数误写成“当前规模”。
 任何要求维护者为每条机制测试手填业务元数据的方案，都会把登记本身变成主要成本。
 
 ### L4：现有 registry 只有文件粒度
 
 [`cases-registry.test.ts`](../../../test/docs/cases-registry.test.ts)只检查文件前 20 行的一条 `// cases:`。
-一个 4,587 行测试文件和一篇 58 类覆盖文档之间，没有可执行的场景映射。
+一个 5,319 行测试文件和一篇粗粒度覆盖文档之间，没有可执行的场景映射。
 
 ### L5：历史否决了两种重复源
 
@@ -42,8 +43,8 @@ Runner 约有 482 个测试，Report 约有 555 个测试。
 ### L7：昂贵证据一次生产，多面消费
 
 一次真实模型运行可以同时支撑 CLI、JSON、HTML 与浏览器验收。
-prepare 之后的验证器必须只读；需要迁移、修复或追加结果的场景，要使用独立派生 world 或隔离副本。
-“只读”必须由原子发布、路径守卫、权限和文件树 digest 强制，不能只靠 manifest 里的布尔字段。
+prepare 之后共享给多个测试的证据必须只读；需要迁移、修复或追加结果的场景，要使用独立结果根或隔离 Repo。
+不能只靠调用顺序或 manifest 里的布尔字段保护共享状态。
 
 当前 Report E2E 仍靠执行顺序保护共享记录根。
 这属于候选都必须消除的现状约束，不能当成可复用协议。
@@ -80,11 +81,22 @@ Effect 路径可以采用 `@effect/vitest`、`it.effect`、`TestClock` 与 Layer
 niceeval 仍处于 beta，公开契约快速演进会让高质量测试一起变化。
 候选只能分别观察契约变更、内部重构、失败诊断和维护成本，不能用总跟改次数证明方案优劣。
 
+### L13：GitHub PR 不能安全运行带密钥的任意代码
+
+fork PR 拿不到仓库 secrets；同仓 PR 代码同样可能读取它收到的任何密钥。
+候选必须提供完整的无密钥 PR lane，把 live provider 放到可信 main、nightly、手动或 release 环境。
+不能用 `pull_request_target` 检出并执行 PR 代码来绕过这条安全边界。
+
+本机与 `ubuntu-latest` 都可使用 Docker，但 Docker 可能是测试 executor，也可能只是被测 sandbox / service。
+候选必须区分这两个角色，并说明没有 Docker 时哪些测试可运行。
+
 ## 候选清单
 
 - [PLAN-1：场景元数据与媒介语义 matcher](PLAN-1/README.md)。
   保留现有测试位置和写法，用最小协议补上身份、索引与稳定观察。
-- [PLAN-2：用户任务规格与类型化可观察读面](PLAN-2/README.md)（推荐）。
+- [PLAN-2：用户任务规格与类型化可观察读面](PLAN-2/README.md)。
   建立用户行为主证明视图，同时让机制证明继续靠近源码。
 - [PLAN-3：声明式 Acceptance Case](PLAN-3/README.md)。
   把前置、动作和结果建模成数据，再由 unit 或 E2E driver 选择性执行。
+- [PLAN-4：真实场景 Repo 与原生结果断言](PLAN-4/README.md)（推荐）。
+  用原生 Vitest 保留完整用户动作与独立预期，只让 repo manifest 负责本地 / CI 编排。

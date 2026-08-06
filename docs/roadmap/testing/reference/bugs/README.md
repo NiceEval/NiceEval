@@ -1,7 +1,11 @@
 # 历史缺陷研究与证据账本
 
-这里是 [NiceEval 测试体系重构](../../README.md)的历史证据账本，用已经修复的真实缺陷反推 Behavior、机制矩阵、分层、recipe、退役范围与运行频率。
-具体断言词由 [E2E 验收 DSL](../../dsl/README.md)提供；账本可以要求一种观察能力，但不拥有 matcher API。
+> 本账本形成于 PLAN-2 研究期，正文保留 Behavior、proof、recipe / world 与 DSL 词汇以保存推导现场。
+> 最终实现映射为原生 Result / Journey、Mechanism unit、真实场景 Repo 与局部机械 helper；以
+> [目标 Roadmap](../../README.md)和[决策](../../../../design/user-readable-testing/DECISION.md)为准。
+
+这里是 [NiceEval 测试体系重构](../../README.md)的历史证据账本，用已经修复的真实缺陷反推结果 owner、机制矩阵、分层、
+隔离范围、退役范围与运行频率。账本可以要求一种观察能力，但不拥有 matcher API。
 每条结论同时核对 memory、fix commit、fix 前代码与当时已有测试；memory 只负责找到案例，不单独充当证据。
 
 研究只接受用户已经拥有的入口和用法。

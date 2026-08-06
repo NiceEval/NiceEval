@@ -18,7 +18,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 场景
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
-- [NiceEval 测试体系重构](testing/README.md) —— 统一的 Portfolio / Recipe / World 方案；`dsl/`、`e2e/`、`unit/`、历史证据与完整 TypeScript Example 分层组织
+- [NiceEval 测试体系重构](testing/README.md) —— 真实场景 Repo + 原生 Result / Journey；含 Unit、E2E、本地 / Docker / CI、历史问题对账与可读 TypeScript Example
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
 - [运行观测协议](observation-protocol/README.md) —— Agent 事件流、Live、Record、OTel 与 Report 投影共用一份事实协议
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
