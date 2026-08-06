@@ -15,3 +15,5 @@
 | 主题 | 结论入口 |
 |---|---|
 | OpenRouter `spawn-ori-eval` 与 Ori Eval | [Skill、评估框架与 NiceEval 的关系](ori-eval.md) |
+| Git、Cargo、Deno、pnpm、OpenTofu 与 kubectl | [复杂 CLI 测试体系对照](cli-testing/README.md) |
+| Vite、Vitest 与 Playwright | [框架工具自身的 E2E 对照](framework-e2e/README.md) |
