@@ -80,6 +80,11 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 ## 覆盖规范
 
+- **实验改名与结果重绑**：一对一改名生成单个新 snapshot。新结果使用目标 experimentId、新 locator 与目标当前 fingerprint。
+  `renamedFrom` 与 `artifactBase` 保留来源身份和证据。
+  旧 fingerprint 与目标当前值不同也迁移，并把旧值留在 `renamedFrom`；目标冲突、不可读来源与 artifact 不可用在整批写入前拒绝。目标未选中的旧 eval 只列为 excluded；`errored` / `skipped` 不迁移。
+  dry 与正式执行共用同一计划，且 dry 零写入。fixture 必须同时证明旧树在成功和失败路径都不被修改。
+
 - **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals` 字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈。
   template 配对 link 的同源消费(check / --dry / 正常运行同一 linker),以及 conflict / missing 的全矩阵前置报错。
   选择类契约的每条规则都要有"命中"与"不误配"两面。
@@ -257,7 +262,9 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 坏 locator、重复 locator、`errored` / `skipped`、留存 Sandbox 的结果各有失败测试；带 `sandbox.reused` 的来源和当前 `sandboxReuse: true` 都有成功测试。
   - 多 locator 先全量预检，任一失败时 writer 零调用；该原子性同时覆盖单 experiment 与跨 experiment 两种批形状。
   - 全部通过后按 locator 解析出的 experiment 分组，每组各自封口一个 snapshot，每条结果保留独立 `acceptedFrom`。
-  - **批量 accept 的快照覆盖声明**：prepare 阶段每条 locator 的 `currentExperiment.selectedEvalIds` / `sandboxPlansByEval` 可以只有自己那一题（指纹重算口径）；封口时 `run.json` 的 `experiment.selectedEvalIds`、`sandboxPlansByEval` 与 `knownEvalIds` 必须扩成**本组全部接受的 eval**。fixture 用两条各自只声明自己 id 的 prepared 写入，断言落盘 selected 含 `e`+`f`，且 `currentSample` 看到两条 attempt——不能只剩 groupFirst 单题（否则 view 首页把 36 条塌成 1/36）。
+  - **批量 accept 的快照覆盖**：prepare 阶段每条 locator 的 `currentExperiment.sandboxPlansByEval` 可以只有自己那一题。
+    封口时，`sandboxPlansByEval`、`knownEvalIds` 与物理 registry 必须覆盖本组全部接受的 eval。
+    fixture 用两条 prepared 写入，断言 `currentSample` 看到两条 attempt，不能只剩 groupFirst 单题。
   - 同一 experiment 内两个 locator 解析到同一个当前 (eval, attempt) 目标仍判重复拒绝；跨 experiment 的同名 eval 不算重复。
 - **eligible opaque:no-manifest accept 回归**：carry eligibility Eligible 的普通历史缺 manifest 场景仍允许 accept，差异保持为 `opaque:no-manifest`。
 - **接受的重锚与留痕**：接受命令新建并封口一个结果快照，复制来源结果为当前 fingerprint/configHash；新条目的 `acceptedFrom` 往返来源 locator、旧/新指纹和 manifest 差异摘要。下一次不带参数的 `exp` 命中这条新结果，证明接受是重锚而不是一次豁免。
@@ -274,7 +281,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   截断只发生在人读渲染(`formatDryDelta`)：Changed 双侧对齐到第一处不同字符,公共前缀过长时压缩显示，从差异点起两侧各留一个有界窗口。fixture 要选两个长度相近、差异点落在窗口之外才出现的字符串，证明两侧输出仍然互相区分，不会被压成同一份省略串;Added / Removed 单侧值仍按简单长度上限截断。
 - **fingerprint 版本迁移**：已知等价迁移自动携带并落 `migratedFrom`，不伪装成人工 `acceptedFrom`；具名差异继续走 `changed`；未知迁移走 `unexplained/fingerprint-version-changed`。迁移必须校验 from/to 版本，不能只凭 manifest 相同放行。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是五道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
-  九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
+  九个原因各要一条能把它与相邻原因区分开的 fixture,`previous-result` 行另要断言显示历史 verdict、带方向的差异摘要和对应的 `niceeval accept @<locator>`；legacy locator 必须明确不可接受，不能输出必然失败的 accept 命令。
 - **`--dry` 的 carried Verdict 投影**：Human 计划行要证明携入 Verdict 不被隐藏。
   单 Attempt 分别显示 `carried (passed)` 与 `carried (failed)`，多 Attempt 按 `passed` / `failed` 汇总。
 - **`--dry` 的部分携入计数**：要保留 `carried N/total (… verdict …)`。
@@ -306,7 +313,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   它靠两件事成立——按项目根相对路径排序、循环导入按解析后绝对路径去重。
   任缺一条哈希都会随环境漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)` 最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
-- **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成记录；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动记录放入 `stale`，`--all` 保留完成项。
+- **Session 登记与查询**：每次真实派发在启动期原子创建 Session 文件，按反馈维护 queued/running/elsewhere 计数与状态，收尾后保留完成记录；查询只读投影默认过滤已完成项，并把超过心跳阈值的活动记录放入 `expired`，`--all` 保留完成项。
 - **启动期错误格式**：coordinator 激活前的错误恒为 `error:` + `fix:` 两行、两种输出形态同形；库错误类的下一步原样透传。
 - **用户 `.ts` 装载与宿主模块形态**（`bin/niceeval.js` + 包 `exports` 表）：CLI 装载用户 `.ts` 不受宿主 `package.json` 的 `type` 影响（契约见 [docs/cli.md「装载用户 .ts」](../../../cli.md)）。
   单元层以数据面守护两条不变量：exports 每个带 `import` 条件的出口同时带 `require` 条件、且两者指向真实存在的文件；bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。

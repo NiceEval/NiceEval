@@ -98,7 +98,7 @@ export const en = {
   "cli.dry.unit.configs": "configs",
   "cli.dry.affects": "affects {{evals}} · {{ids}}",
   "cli.dry.acceptHint": "accept:  {{command}}",
-  "cli.accept.choiceHeader": "stale  {{selector}}{{change}}  ({{evals}} evals)\n",
+  "cli.accept.choiceHeader": "previous-result  {{selector}}{{change}}  ({{evals}} evals)\n",
   "cli.accept.prompt": "  reuse these results? [y/N] ",
   "cli.accept.nothingToAccept":
     "No difference in this plan can be accepted (nothing is blocked by the fingerprint gate).\n" +
@@ -114,10 +114,47 @@ export const en = {
   "cli.accept.failed": "error: could not accept result: {{error}}\n",
   "cli.accept.done":
     "Accepted {{sourceLocator}}. New result locator: {{locator}}. Current fingerprint: {{fingerprint}}\n",
+  "cli.rename.usage":
+    "error: niceeval exp rename expects exactly two arguments: an old id and a new id\n" +
+    "  fix: niceeval exp rename <oldId> <newId> [--dry] [--json]\n",
+  "cli.rename.flagUnsupported":
+    "error: {{flag}} is not valid with niceeval exp rename\n" +
+    "  fix: pass only <oldId> <newId>, optionally --dry / --json\n",
+  "cli.rename.previewHeader": "exp rename preview: {{oldId}} -> {{newId}}\n",
+  "cli.rename.blocked": "  blocked (nothing will be written): {{reason}}\n",
+  "cli.rename.migratingHeader": "  {{count}} terminal results will migrate:\n",
+  "cli.rename.migratingRow": "    {{evalId}}  {{sourceLocator}} -> {{newId}}\n",
+  "cli.rename.excludedHeader": "  {{count}} excluded (not migrated, does not block):\n",
+  "cli.rename.excludedRow": "    {{evalId}}  {{reason}}\n",
+  "cli.rename.doneHeader":
+    "exp rename done: rebound {{count}} terminal results from {{oldId}} to {{newId}}.\n",
+  "cli.rename.snapshotPath": "  new snapshot: {{path}}\n",
+  "cli.rename.doneRow": "    {{evalId}}  {{sourceLocator}} -> {{locator}}\n",
+  "cli.rename.error.sourceEmpty":
+    "error: {{oldId}} has no readable terminal history to migrate to {{newId}}.\n" +
+    "  fix: restore and verify {{oldId}}'s real results before retrying; with no old results, run `niceeval exp {{newId}}` and do not rename.\n" +
+    "       exp rename does not move experiment source, nor delete or rewrite the old result tree.\n",
+  "cli.rename.error.targetNotFound":
+    "error: new id \"{{newId}}\" is not discovered under this project's experiments/.\n" +
+    "  fix: create or rename the experiment in experiments/ first (e.g. `git mv experiments/{{oldId}}.ts experiments/{{newId}}.ts`), then rerun.\n",
+  "cli.rename.error.targetHasResults":
+    "error: {{newId}} already has terminal results for these evals; rename never overwrites existing results.\n" +
+    "  fix: keep the target results, or explicitly clean the target history and re-preview; the command deletes nothing itself.\n",
+  "cli.rename.error.sourceUnreadable":
+    "error: the Record for {{oldId}} is unreadable; cannot migrate to {{newId}}.\n" +
+    "  fix: view this record with a niceeval version that reads its schemaVersion.\n",
+  "cli.rename.error.artifactUnavailable":
+    "error: source evidence cannot be preserved ({{evalId}}); nothing will be written.\n" +
+    "  fix: make the artifact reference and source locator readable, or rerun this eval.\n",
+  "cli.rename.error.nothingToMigrate":
+    "error: nothing to migrate under {{oldId}}: no terminal passed/failed still selected by {{newId}}, or all excluded.\n" +
+    "  fix: check that {{newId}}'s evals selector covers the old experiment's results.\n",
+  "cli.rename.conflicting": "  conflicting evals: {{evals}}\n",
+  "cli.rename.failed": "error: exp rename failed: {{error}}\n",
   "cli.error": "niceeval error: {{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept needs a selector, for example --accept config:judge.model\n" +
-    "  fix: run `niceeval exp <selection> --dry` first; every `stale` line prints the selectors it can accept, copy one verbatim\n" +
+    "  fix: run `niceeval exp <selection> --dry` first; every `previous-result` line prints the selectors it can accept, copy one verbatim\n" +
     "  differences you can accept in this plan: {{available}}\n",
   "cli.flag.acceptWithRerunAll":
     "--accept cannot be combined with --rerun all: one says trust nothing from cache, the other says trust this difference anyway.\n" +
@@ -141,9 +178,9 @@ export const en = {
   "runner.teardownRegistrationWriteFailed":
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
   "runner.lockTakenOver":
-    "took over an expired case lock for {{experimentId}}/{{evalId}} (previously held by pid {{pid}} on {{host}}; its heartbeat went stale) — that run likely died without releasing it; this run now owns dispatching this case.\n",
+    "took over an expired case lock for {{experimentId}}/{{evalId}} (previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns dispatching this case.\n",
   "runner.gateLeaseTakenOver":
-    "took over an expired concurrency-slot lease for experiment {{experimentId}} (slot {{slot}}, previously held by pid {{pid}} on {{host}}; its heartbeat went stale) — that run likely died without releasing it; this run now owns the slot.\n",
+    "took over an expired concurrency-slot lease for experiment {{experimentId}} (slot {{slot}}, previously held by pid {{pid}} on {{host}}; its heartbeat expired) — that run likely died without releasing it; this run now owns the slot.\n",
   "runner.gateLeaseWaiting":
     "waiting on another run for experiment {{experimentId}}'s concurrency slots: all {{effectiveN}} in use ({{holders}}). Concurrent runs share this experiment's slots, and the smallest maxConcurrency in play wins — this run declared {{declaredN}}. Nothing dispatches until a slot frees up; the other run's slots release when its attempts finish, or 30s after it dies.\n",
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
@@ -170,6 +207,8 @@ export const en = {
     "Usage:\n" +
     "  niceeval exp [path|experiment] [eval-id-prefix…]    run experiments\n" +
     "  niceeval exp list [experiment-prefix]               list runnable configs (no dispatch)\n" +
+    "  niceeval exp rename <oldId> <newId>                 rebind terminal results from old to new id\n" +
+    "      --dry   preview without writing; --json   one JSON document\n" +
     "      --teardown   recover a killed run: run only the selected experiments'\n" +
     "        teardown (no attempts, no setup); combining it with eval id prefixes is an error\n" +
     "  niceeval accept @<locator>...                      accept explicit historical results\n" +
@@ -199,8 +238,6 @@ export const en = {
     "      --record <dir>    pin a record root     --exp <id>   repeatable; 2+ compares conditions\n" +
     "      --report <file>   custom report    --page <id>   pick the initial page (multi-page\n" +
     "        reports render it, then list the rest as a page index with copyable commands)\n" +
-    "      --fresh   only count freshly executed attempts (excludes carried-over and\n" +
-    "        historical stitched-in attempts); excluded evals show up as placeholder rows\n" +
     "  niceeval list                                       list discovered evals\n" +
     "  niceeval session list [--all] [experiment-prefix]    query Sessions (read-only)\n" +
     "  niceeval session show <sessionId>                   show one Session (read-only)\n" +
@@ -209,7 +246,6 @@ export const en = {
     "      (same file as show); --page <id> picks the initial page;\n" +
     "      --record <dir> pins a record root; --run <file> opens exactly\n" +
     "      one run; --exp <id> (repeatable) narrows to those experiments;\n" +
-    "      --fresh only new executions\n" +
     "      --out <dir> exports a static site: index.html plus the viewer\n" +
     "      artifacts, ready for any static host\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +

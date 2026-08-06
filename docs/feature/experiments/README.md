@@ -19,7 +19,9 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-  每个实验文件钉一个单一配置；报告直接比较当前 Sample 里的 experiments，并读取各 Run 记录的 `selectedEvalIds`。
+  每个实验文件钉一个单一配置；报告直接比较当前 Sample 里的 experiments，并只读取 Sample 已经选好的 Attempt。
+
+实验文件改名会改变 `experimentId`。需要保留旧结果时，使用[实验改名与结果重绑](rename.md)显式迁移并留下来源审计，不手工修改 Record。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## `defineExperiment` 的形状

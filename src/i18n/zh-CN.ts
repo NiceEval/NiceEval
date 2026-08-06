@@ -96,7 +96,7 @@ export const zhCN = {
   "cli.dry.unit.configs": "个运行配置",
   "cli.dry.affects": "影响 {{evals}} · {{ids}}",
   "cli.dry.acceptHint": "accept:  {{command}}",
-  "cli.accept.choiceHeader": "stale  {{selector}}{{change}}  ({{evals}} 条 eval)\n",
+  "cli.accept.choiceHeader": "previous-result  {{selector}}{{change}}  ({{evals}} 条 eval)\n",
   "cli.accept.prompt": "  复用这些结果吗? [y/N] ",
   "cli.accept.nothingToAccept":
     "本次计划里没有可授权的差异(没有条目卡在指纹门上)。\n" +
@@ -112,10 +112,46 @@ export const zhCN = {
   "cli.accept.failed": "error: 接受结果失败:{{error}}\n",
   "cli.accept.done":
     "已接受 {{sourceLocator}}。新结果 locator: {{locator}}。当前指纹:{{fingerprint}}\n",
+  "cli.rename.usage":
+    "error: niceeval exp rename 需要恰好两个参数:旧 id 和新 id\n" +
+    "  fix: niceeval exp rename <oldId> <newId> [--dry] [--json]\n",
+  "cli.rename.flagUnsupported":
+    "error: {{flag}} 不能用于 niceeval exp rename\n" +
+    "  fix: 只传 <oldId> <newId>,可选 --dry / --json\n",
+  "cli.rename.previewHeader": "exp rename 预览:{{oldId}} → {{newId}}\n",
+  "cli.rename.blocked": "  整批阻断,零写入:{{reason}}\n",
+  "cli.rename.migratingHeader": "  将迁移 {{count}} 条终态结果:\n",
+  "cli.rename.migratingRow": "    {{evalId}}  {{sourceLocator}} → {{newId}}\n",
+  "cli.rename.excludedHeader": "  排除 {{count}} 条(不迁移,不阻断):\n",
+  "cli.rename.excludedRow": "    {{evalId}}  {{reason}}\n",
+  "cli.rename.doneHeader": "exp rename 完成:把 {{oldId}} 的 {{count}} 条终态结果重绑到 {{newId}}。\n",
+  "cli.rename.snapshotPath": "  新 snapshot:{{path}}\n",
+  "cli.rename.doneRow": "    {{evalId}}  {{sourceLocator}} → {{locator}}\n",
+  "cli.rename.error.sourceEmpty":
+    "error: {{oldId}} 下没有可读的终态历史,无法迁移到 {{newId}}。\n" +
+    "  fix: 恢复并确认 {{oldId}} 的真实结果后重试;没有旧结果时直接运行 `niceeval exp {{newId}}`,不要再执行 rename。\n" +
+    "       exp rename 不移动实验源码,也不删除或改写旧结果树。\n",
+  "cli.rename.error.targetNotFound":
+    "error: 新 id \"{{newId}}\" 没有被当前项目的 experiments/ 发现。\n" +
+    "  fix: 先在 experiments/ 创建或改名出新实验(如 `git mv experiments/{{oldId}}.ts experiments/{{newId}}.ts`),再重跑本命令。\n",
+  "cli.rename.error.targetHasResults":
+    "error: {{newId}} 下已有这些 eval 的终态结果,改名不覆盖已有结果。\n" +
+    "  fix: 保留目标结果继续用,或显式清理目标历史后重新预览;命令自身不删除数据。\n",
+  "cli.rename.error.sourceUnreadable":
+    "error: {{oldId}} 的 Record 读不动,无法迁移到 {{newId}}。\n" +
+    "  fix: 用能读该 schemaVersion 的 niceeval 版本查看这份记录。\n",
+  "cli.rename.error.artifactUnavailable":
+    "error: 来源证据无法保留({{evalId}}),整批零写入。\n" +
+    "  fix: 先确认 artifact 引用与来源 locator 可读,或对这条 eval 重新运行。\n",
+  "cli.rename.error.nothingToMigrate":
+    "error: {{oldId}} 下没有可迁移的 eval:没有 {{newId}} 仍选中的终态 passed/failed,或全部被排除。\n" +
+    "  fix: 检查 {{newId}} 的 evals 选择器是否覆盖旧实验结果。\n",
+  "cli.rename.conflicting": "  冲突 eval:{{evals}}\n",
+  "cli.rename.failed": "error: exp rename 失败:{{error}}\n",
   "cli.error": "niceeval 出错:{{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept 必须带 selector,例如 --accept config:judge.model\n" +
-    "  fix: 先跑 `niceeval exp <选择> --dry`,每条 `stale` 行都打出了它可授权的 selector,原样复制一条\n" +
+    "  fix: 先跑 `niceeval exp <选择> --dry`,每条 `previous-result` 行都打出了它可授权的 selector,原样复制一条\n" +
     "  本次计划里可以授权的差异:{{available}}\n",
   "cli.flag.acceptWithRerunAll":
     "--accept 不能与 --rerun all 同用:一边全不采信缓存,一边又要采信这条差异,方向自相矛盾。\n" +
@@ -167,6 +203,8 @@ export const zhCN = {
     "用法:\n" +
     "  niceeval exp [路径|实验] [eval-id 前缀…]   跑实验\n" +
     "  niceeval exp list [实验前缀]              列出可运行的实验配置(不派发)\n" +
+    "  niceeval exp rename <旧 id> <新 id>        把旧实验的终态结果重绑到新 id(显式审计迁移)\n" +
+    "      --dry   只预览不写盘;--json   输出单份 JSON 文档\n" +
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval accept @<locator>...           接受明确列出的历史结果\n" +
@@ -193,8 +231,6 @@ export const zhCN = {
     "      --record <目录>  钉死记录根   --exp <id> 可重复,两个以上进入对照\n" +
     "      --report <文件> 自定义报告   --page <id> 定初始页(多页报告渲染该页,\n" +
     "        尾部再附其余页索引)\n" +
-    "      --fresh   只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);\n" +
-    "        被排除的题转成占位行\n" +
     "  niceeval list                            列出发现到的 eval\n" +
     "  niceeval session list [--all] [实验前缀]  查询 Session(只读)\n" +
     "  niceeval session show <sessionId>         查看一个 Session(只读)\n" +
@@ -202,7 +238,6 @@ export const zhCN = {
     "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
     "      --page <id> 定初始页   --record <目录> 钉死记录根\n" +
     "      --run <文件> 只打开这一份快照   --exp <id>(可重复)收窄到这些实验;\n" +
-    "      --fresh 只看新执行\n" +
     "      --out <目录> 静态导出:index.html 连同查看器 artifact,可直接静态托管\n" +
     "  niceeval sandbox list|enter|history|diff|stop  查看与销毁 --keep-sandbox 留下的现场\n" +
     "  niceeval sandbox list --orphans / prune         核对并收回被强杀留下的无主实例\n" +

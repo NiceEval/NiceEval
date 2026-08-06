@@ -162,6 +162,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 机器 / 平台 reporter(Artifacts / Json / JUnit(同目录 temp→rename 原子写)/ Braintrust) | `src/runner/reporters/{artifacts,json,braintrust,index}.ts` |
 | eval 级折叠 / 计票口径(CLI 退出码与 view 共用) | `src/shared/verdict.ts` |
 | 本地结果保存格式(Run 目录 `.niceeval/<experiment>/<run>/run.json` + attempt 级 `result.json` / JSON artifact;runner 调度前预分配 `runId`,按 `{runId,evalId,attempt}` 生成并登记 fresh `locator`,Artifacts writer 原样写入同一 `runId` 与 `locatorRunId`;carry 保留来源身份;reader 折叠同来源副本、保留不同来源多候选并区分 malformed / not-found / ambiguous) | `src/runner/run.ts`(Run 身份分配、locator 生成与记录根碰撞预检)、`src/runner/reporters/artifacts.ts`(reporter 薄壳,转交预分配 Run 身份并按 experimentId 路由)、`src/record/locator.ts`(60-bit Crockford 编码、多候选索引与写入登记检查)、`src/record/open.ts`(`locatorRunId` / `artifactBase` 来源回溯与 `resolveLocator` 三类失败)、`src/record/writer.ts`(`createWriter`;写入面收窄类型 `AttemptEntry = Omit<EvalResult, …>`)、`src/record/types.ts`(`RunMeta` / `AttemptHandle.locatorIdentity`)、`src/runner/types.ts`(`EvalResult`——architecture.md `result.json` 一节里的 `AttemptRecord` 是该持久化形状的文档概念名,对应的运行时类型就是它;同文件的 `RECORD_SCHEMA_VERSION` / `RECORD_FORMAT` 常量随 `EvalResult` 同址声明,经 `src/types.ts` facade 转出给 `src/record/` 域 import,不在 `src/record/types.ts` 里重新声明) |
+| 实验改名与结果重绑(`exp rename`:同 fingerprint 的跨 experimentId 审计迁移、整批预检与单 snapshot 写入) | `src/runner/rename-experiment.ts`(资格门、计划与写入)、`src/cli.ts`(命令解析与人读/JSON 反馈)、`src/runner/types.ts`(`RenamedResult` / `EvalResult.renamedFrom`) |
 | `EvalResult.evaluationKind`(直接取 factory 固定的 `evalDef.evaluationKind`；缺失定义拒绝进入运行)与 `scoreEntries`(仅 `evaluationKind: "points"` 时落) | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态解析;调度项没有环境变量层,见[配置与凭据边界](architecture.md#配置从代码来凭据从环境来)) | `src/cli.ts` |
 | `niceeval show` 终端宿主(Sample 合成「现刻水位」、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--timing/--diff;Run 级与 attempt 级 timing 树、未知 activity key 通用 label 投影、sandboxBuild 专用卡读 provenance) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
@@ -212,7 +213,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 |---|---|
 | `openRecord`:实验/Run/eval 分层、版本分流(三种 unreadable 原因)、懒加载(attempt 目录→artifactBase 携带条目回退);`RunMeta.timings` / `sandboxBuilds` 与 attempt activity 子树原样读回 | `src/record/open.ts` |
 | 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/record/format.ts` |
-| `latestRunSample(record)` / `currentSample(record)`、`Sample.scope` / `.filter` / `.freshOnly`、`dedupeAttempts` 与 `SampleIssue` | `src/sample/index.ts` |
+| `latestRunSample(record)` / `currentSample(record)`、`Sample.scope` / `.filter`、结构化 coverage missing、`dedupeAttempts` 与 `SampleIssue` | `src/sample/index.ts` |
 | `createWriter`(Run 目录独占创建、Run 级元数据落盘含 `timings` / `sandboxBuilds`、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt` 并原子封口 Run timings) | `src/record/writer.ts` |
 | `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记;`timings` / `sandboxBuilds` / origin 引用忠实保留) | `src/record/copy.ts` |
 | 发布预算常量(50 MiB 单文件预检上限) | `src/record/publish.ts` |

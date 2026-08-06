@@ -21,7 +21,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("record schema 15 evidenceCoverage + command call facts", () => {
+describe("current record schema evidenceCoverage + command call facts", () => {
   it("writer writes the required six-channel field under its new name", async () => {
     expect(RECORD_SCHEMA_VERSION).toBe(15);
     const root = await makeRoot();

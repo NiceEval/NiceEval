@@ -33,3 +33,6 @@
 - `14`(2026-08-02,commit c9e7d21f)`result.json` 的 `coverage` 改名为必填的
   `evidenceCoverage`,并收紧为六条证据通道的完整 `EvidenceCoverage`。旧 reader 找不到改名后的
   字段,新 reader 也拒绝缺少新字段的 v14 记录,故破坏兼容。
+- `15`(2026-08-05)`commands.json` 的命令退出事实新增必填 `checked`，区分公开 checked 与 unchecked 调用。
+
+2026-08-06 曾在未提交工作树里把可选 `renamedFrom` 和删除运行期选题投影误判为破坏性变化，临时把版本推进到 17；两项都不妨碍当前 reader 读取 schema 15，故在落入正式历史前撤销，版本继续为 15。

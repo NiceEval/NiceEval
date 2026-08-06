@@ -1,17 +1,16 @@
 # ⚡ NiceEval 设计文档
 
-`docs/` 保存 NiceEval 的目标功能契约与形成这些契约的设计材料。
-Feature 和未归类的产品页描述**已经定稿、希望产品最终满足的状态**;Roadmap 保存尚未定稿的候选,Design 保存多方案比较与裁决记录。
-它们都是设计工作的输入,不是当前代码的说明书。
+`docs/` 保存 NiceEval 的最终功能契约与形成这些契约的设计材料。
+Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决记录。
 
 因此：
 
-- 文档中的 API、CLI、目录或行为可以先于代码存在。
-- 代码与文档不一致时，默认动作是让代码实现文档，而不是把文档改回当前代码。
+- Roadmap 中的 API、CLI、目录或行为可以先于代码存在。
+- Feature 与代码不一致时视为实现回归；Roadmap 与代码不一致表示目标尚未落地。
 - 文档正文不写 `已实现` / `未实现` / `目前代码还是` / `之后再做` 等实现状态。
 - 只有设计本身改变时才改契约；实现进度、变更审计和历史过程不改变契约措辞。
 
-讨论或修改设计时，现状一律以 docs 的声明为准；docs 未声明的行为视为未定稿，先补契约，不从源码反推。
+讨论或修改设计时，目标状态一律以 docs 的声明为准；docs 未声明的行为视为未定稿，先在对话或 Design 中裁决，不从源码反推。
 只有进入实现与核对阶段，才使用 [Source Map](source-map.md) 定位源码并直接检查实现。
 要记录实现踩坑或设计翻案，进入 [`memory/INDEX.md`](../memory/INDEX.md)。
 
@@ -27,7 +26,7 @@ Feature 和未归类的产品页描述**已经定稿、希望产品最终满足�
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 设计或评审公开 API | [API 设计](api-design.md) |
-| 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
+| 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型结论 | [Design](design/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
@@ -53,7 +52,7 @@ docs/
 ├── writing-rules.json                   句长、段长规则与禁词库，pnpm test:docs 读它
 ├── writing-baseline.json                现存命中数台账，只许变小
 │
-├── feature/                             已定稿的目标功能契约
+├── feature/                             已落地并验收的功能契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
 │   ├── compile-time-contracts/          作者输入与派生事实分离:阶段类型、穷尽联合与私有品牌
 │   ├── eval/                            编写 Eval：defineEval
@@ -69,7 +68,7 @@ docs/
 │   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换
 │   └── reports/                         show、view 与报告组件
 │
-├── roadmap/                             尚未定稿的功能设计
+├── roadmap/                             已定稿、尚未落地的目标契约
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
@@ -106,8 +105,8 @@ docs/
 
 | 内容 | 归属 |
 |---|---|
-| 已裁决的目标功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
-| 尚未裁决、仍存在开放分歧的候选设计 | `docs/roadmap/` |
+| 已落地并验收的功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
+| 已裁决但尚未落地的目标功能 | `docs/roadmap/` |
 | 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
 | 用户如何完成任务 | `docs-site/zh/` |
@@ -129,7 +128,7 @@ Feature、Roadmap 与 Design 的每个候选使用同一套 [`_template/feature-
 - `use-case/`:按用户目标组织的完整路径。
 
 只有 `README.md` 必备,其余页面按功能形态选用。
-三类目录只改变契约成熟度:Feature 是已定稿契约,Roadmap 是未定稿候选,Design 的 `PLAN-N/` 是参与同一裁决的自包含候选。
+三类目录区分落地阶段与裁决职责：Feature 是已落地契约，Roadmap 是已定稿待落地契约，Design 的 `PLAN-N/` 是参与同一裁决的自包含候选。
 Design 主题外层另用 [`_template/design-decision/`](_template/design-decision/README.md) 保存 Goals、Limits、Cases 与 Decision。
 
 ## 写目标状态
@@ -139,8 +138,8 @@ Design 主题外层另用 [`_template/design-decision/`](_template/design-decisi
 - 用声明句写产品应当是什么、输入输出是什么、错误如何反馈。
 - 可以写稳定理由，例如为什么使用组件树；理由帮助约束实现。
 - 不写时间线或差分句，例如 `之前是`、`现已改为`、`删除 X 后`、`新版不再`。
-- 不在正文保留“要不要”“再议”等开放问题。
-  未裁决内容留在 Roadmap 或对话中。
+- 不在 Feature 或 Roadmap 正文保留“要不要”“再议”等开放问题。
+  未裁决内容留在 Design 或对话中。
 - 设计变化时重写受影响小节，不在旧段落后追加修正说明。
 - 不用当前类型或当前输出反向限制目标设计。
   示例展示的是期望 API 与期望反馈。
@@ -198,11 +197,11 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 一次设计迭代按以下顺序完成：
 
-1. 在对话中裁决分歧；未裁决内容不写进 Feature 契约。
-2. 先按目标状态重写 `docs/`；涉及公开任务路径时同步 `docs-site/zh/`。
-3. 修改代码，使实现满足契约。
-4. 按 [Source Map](source-map.md) 和对应功能入口核对相关实现、测试与公开文档。
-5. 有翻案或反直觉修法时写入 `memory/` 并更新索引；本次变更原因写进 commit。
+1. 在对话或 Design 中裁决分歧；未裁决内容不写进 Roadmap 或 Feature。
+2. 按最终状态写入 Roadmap；涉及公开任务路径时同步规划公开文档改动。
+3. 修改代码、测试与公开文档，使实现满足契约。
+4. 按 [Source Map](source-map.md) 和对应功能入口核对实现与验收。
+5. 验收完成后把契约并入 Feature 并删除 Roadmap 入口；有翻案或反直觉修法时写入 `memory/`。
 
 文档先于实现并不表示可以留下永久漂移。
 目标一旦定稿，后续工作应以完成实现和验证为终点。

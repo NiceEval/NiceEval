@@ -43,10 +43,6 @@ export interface ExperimentRunInfo {
   timeoutMs?: number;
   budget?: number;
   maxConcurrency?: number;
-  /** 本次运行解析后实际选中的 eval id 全集——evals 过滤器(含函数形式)的求值结果,不存过滤器本身。 */
-  selectedEvalIds: string[];
-  /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
-  evalFilterFingerprint?: string;
   /** Experiment SandboxLayer 的纯数据身份；Direct 也以 command-only 的完整身份记录。 */
   sandboxLayer: JsonValue;
   /** 每个已选择 Eval 的完整 pair-owned physical plan；Direct 也有显式投影。 */
@@ -341,6 +337,18 @@ export interface AcceptedResult {
   differences: AcceptedDifference[];
 }
 
+/** `niceeval exp rename` 写入新结果的来源与身份审计记录。 */
+export interface RenamedResult {
+  /** 被重绑结果原属的 experimentId。 */
+  experimentId: string;
+  /** 被重绑结果在旧结果树中的 locator。 */
+  locator: string;
+  /** 迁移前结果的 fingerprint。 */
+  fingerprint: string;
+  /** 发生重绑的时刻。 */
+  at: string;
+}
+
 /** 自动重试吸收的一次物理 send 失败；不进入逻辑会话事件流。 */
 export interface RetryAttemptRecord {
   sessionIndex: number;
@@ -471,6 +479,8 @@ export interface EvalResult {
    * 读取旧记录时不做迁移。
    */
   acceptedFrom?: AcceptedResult;
+  /** 实验身份改变但 fingerprint 保持不变时的重绑来源审计。 */
+  renamedFrom?: RenamedResult;
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在
    * docs/feature/record/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
@@ -507,6 +517,8 @@ export const RECORD_FORMAT = "niceeval.results";
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
  * 旧版 commands.json 不做兼容读取。
+ * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
+ * 两者都不是破坏性格式变化，因此不递增版本。
  */
 export const RECORD_SCHEMA_VERSION = 15;
 
@@ -862,7 +874,7 @@ export interface ExperimentAuthorFields {
   /**
    * 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
    * 只读 `EvalDescriptor`,不暴露路径 / 执行字段);省略等价于 `"*"`。谓词对本次 invocation 的
-   * 候选 eval 各求值一次,解析结果作为 `selectedEvalIds` 落进快照——不是运行时反复调用的过滤器
+   * 候选 eval 各求值一次,解析结果作为内存中的 `selectedEvalIds` 计划——不是运行时反复调用的过滤器
    * (见 docs/feature/eval/library.md「EvalDescriptor」、docs/feature/experiments/library.md
    * 「evals:遍历发现结果,自定义选择」)。
    */
@@ -1114,8 +1126,6 @@ export interface AgentRun {
   readonly description?: string;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
   readonly labels?: Readonly<globalThis.Record<string, string | number>>;
-  /** evals 过滤器的指纹(数组内容 / 函数体哈希),进 ExperimentRunInfo.evalFilterFingerprint。 */
-  readonly evalFilterFingerprint?: string;
   /**
    * 本次 invocation 解析后实际选中的 eval id 全集——CLI 在构造 AgentRun 时对候选 eval 各求值
    * 一次算好(见 `eval-selection.ts` 的 `resolveExperimentEvals()`),下游(dry-run、sandbox 查表、

@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve as resolvePath } from "node:path";
+import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { Effect } from "effect";
@@ -20,7 +20,7 @@ import { runEvals, type AgentRun } from "./runner/run.ts";
 import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import type { FingerprintComparison, FingerprintDelta, FingerprintDiagnostic } from "./runner/manifest.ts";
 import { ATTEMPT_LOCATOR_PREFIX, decodeAttemptLocator } from "./record/locator.ts";
-import { fingerprintEvalsFilter, resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
+import { resolveExperimentEvals, selectedEvalsForRun } from "./runner/eval-selection.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { formatSandboxLayerLinkError, SandboxLayerLinkError } from "./sandbox/link.ts";
@@ -29,11 +29,19 @@ import {
   SandboxPhysicalPlanningError,
 } from "./sandbox/plan.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
-import { drainHeldCaseLocks, isCaseLockStale, readCaseLock } from "./runner/lock.ts";
+import { drainHeldCaseLocks, isCaseLockExpired, readCaseLock } from "./runner/lock.ts";
 import { drainHeldGateLeases } from "./runner/gate-lease.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./runner/cleanup-timeout.ts";
 import { resolveRunTimeout } from "./runner/timeout.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
+import type {
+  ExperimentRenameBlocked,
+  ExperimentRenamePlan,
+  ExperimentRenameReason,
+  ExperimentRenameRejected,
+  RenamedExperiment,
+} from "./runner/rename-experiment.ts";
+import { ExperimentRenameError } from "./runner/rename-experiment.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
 import {
@@ -76,6 +84,7 @@ import {
 import { ReportLoadError } from "../dist/report/runtime/load.js";
 import { runShow } from "./show/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
+import type { MessageKey } from "./i18n/zh-CN.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
 import {
   SessionTracker,
@@ -109,7 +118,7 @@ function exitOnViewUserError(e: unknown): never {
   throw e;
 }
 
-interface Flags {
+export interface Flags {
   agent?: string;
   model?: string;
   attempts?: number;
@@ -159,7 +168,6 @@ interface Flags {
   report?: string;
   page?: string;
   theme?: string;
-  fresh: boolean;
   /** `sandbox list` 专用:核对强杀路径留下的无主实例。 */
   orphans: boolean;
   /** `exp` 命令专用:只对选中实验各执行一次实验级 teardown,不派发 attempt、不跑 setup。 */
@@ -246,8 +254,6 @@ const FLAG_OPTIONS = {
   theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
-  /** `show` / `view` 命令专用:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题按覆盖事实转为覆盖占位行,不静默消失。 */
-  fresh: { type: "boolean" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 */
@@ -448,7 +454,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     report: values.report as string | undefined,
     page: values.page as string | undefined,
     theme: values.theme as string | undefined,
-    fresh: values.fresh === true,
     orphans: values.orphans === true,
     teardown: values.teardown === true,
   };
@@ -520,7 +525,7 @@ function planRowInputs(
         ?? (carriedCount >= run.attempts
           ? []
           : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
-      const stalePrior = dispatch.flatMap((group) => group.reason === "stale"
+      const previousResults = dispatch.flatMap((group) => group.reason === "previous-result"
         ? group.attempts.flatMap((attempt) => {
             const prior = priorByKeyAttempt.get(`${run.experimentId ?? ""}|${e.id}|${attempt}`);
             return prior === undefined ? [] : [{ ...prior, ...(group.comparison !== undefined ? { comparison: group.comparison } : {}) }];
@@ -533,7 +538,7 @@ function planRowInputs(
         reused: carriedCount >= run.attempts,
         carried,
         dispatch,
-        ...(stalePrior.length > 0 ? { prior: stalePrior } : {}),
+        ...(previousResults.length > 0 ? { prior: previousResults } : {}),
       });
     }
   }
@@ -602,7 +607,6 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.report !== undefined) return { flag: "--report", command: BOTH };
   if (flags.theme !== undefined) return { flag: "--theme", command: VIEW };
   if (flags.page !== undefined) return { flag: "--page", command: BOTH };
-  if (flags.fresh) return { flag: "--fresh", command: BOTH };
   if (flags.run !== undefined) return { flag: "--run", command: VIEW };
   if (flags.out !== undefined) return { flag: "--out", command: VIEW };
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
@@ -662,7 +666,6 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--report", flags.report],
     ["--page", flags.page],
     ["--theme", flags.theme],
-    ["--fresh", flags.fresh],
     ["--orphans", flags.orphans],
     ["--teardown", flags.teardown],
   ];
@@ -701,6 +704,250 @@ async function runAcceptCommand(cwd: string, locators: readonly string[], record
       locator: result.locator,
       fingerprint: result.fingerprint ?? "—",
     }));
+  }
+}
+
+// ── exp rename:CLI 契约与纯解析/格式化 ──────────────────────────────────────
+// 核心在 src/runner/rename-experiment.ts(planExperimentRename / renameExperiment,
+// 资格门与写入都在那里,见 docs/source-map.md 与 docs/feature/experiments/rename.md);
+// CLI 只做:解析 `exp rename <oldId> <newId>`、递选项进核心、把核心返回的计划/结果按
+// 形态渲染。稳定 reason、计划与结果文档都是核心导出的契约,CLI 不在渲染层重建资格算法。
+
+export const EXPERIMENT_RENAME_FORMAT = "niceeval.experimentRename" as const;
+export const EXPERIMENT_RENAME_SCHEMA_VERSION = 1 as const;
+
+/**
+ * exp rename 的机器文档:单份 JSON,按 status 判别。
+ * - `plan`(核心计划,可含 `blocked` 阻断原因);
+ * - `rejected`(核心 `renameExperiment` 抛 `ExperimentRenameError` 时的整批拒绝);
+ * - `done`(核心 `RenamedExperiment` = 成功文档)。
+ */
+export type ExperimentRenameJsonDocument = ExperimentRenamePlan | ExperimentRenameRejected | RenamedExperiment;
+
+const EXPERIMENT_RENAME_REASON_MESSAGE: Record<ExperimentRenameReason, MessageKey> = {
+  "source-empty": "cli.rename.error.sourceEmpty",
+  "target-not-found": "cli.rename.error.targetNotFound",
+  "target-has-results": "cli.rename.error.targetHasResults",
+  "source-unreadable": "cli.rename.error.sourceUnreadable",
+  "artifact-unavailable": "cli.rename.error.artifactUnavailable",
+  "nothing-to-migrate": "cli.rename.error.nothingToMigrate",
+};
+
+/**
+ * 解析 exp rename 的位置参数:必须恰好两个(一个旧 id、一个新 id)。
+ * 纯函数,CLI 与测试共用。
+ */
+export function parseExperimentRenamePositionals(
+  args: readonly string[],
+): { ok: true; oldId: string; newId: string } | { ok: false; kind: "usage" } {
+  if (args.length !== 2 || args[0] === undefined || args[1] === undefined) {
+    return { ok: false, kind: "usage" };
+  }
+  return { ok: true, oldId: args[0], newId: args[1] };
+}
+
+/**
+ * exp rename 只允许 --dry / --json;返回第一个被误用的 flag,没有误用返回 undefined。
+ * 与 accept 同一套纪律:node:util parseArgs 已经报未知 flag,这里拒绝那些全局已知、
+ * 但会改变运行/查看语义的 flag。
+ */
+export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | undefined {
+  const unsupported: Array<[string, unknown]> = [
+    ["--agent", flags.agent],
+    ["--model", flags.model],
+    ["--attempts", flags.attempts],
+    ["--max-concurrency", flags.maxConcurrency],
+    ["--max-build-concurrency", flags.maxBuildConcurrency],
+    ["--timeout", flags.timeout],
+    ["--budget", flags.budget],
+    ["--tag", flags.tag],
+    ["--junit", flags.junit],
+    ["--force", flags.force],
+    ["--rerun", flags.rerun],
+    ["--strict", flags.strict],
+    ["--early-exit/--no-early-exit", flags.earlyExit],
+    ["--open/--no-open", flags.open],
+    ["--source", flags.source],
+    ["--execution", flags.execution],
+    ["--diff", flags.diff || flags.diffPath !== undefined],
+    ["--grep", flags.grep],
+    ["--expand", flags.expand],
+    ["--timing", flags.timing],
+    ["--keep-sandbox", flags.keepSandbox],
+    ["--all", flags.all],
+    ["--window", flags.window],
+    ["--path", flags.sandboxPath],
+    ["--leave-running", flags.leaveRunning],
+    ["--history", flags.history],
+    ["--usage", flags.usage],
+    ["--stats", flags.stats],
+    ["--exp", flags.experiment],
+    ["--record", flags.record],
+    ["--run", flags.run],
+    ["--report", flags.report],
+    ["--page", flags.page],
+    ["--theme", flags.theme],
+    ["--orphans", flags.orphans],
+    ["--teardown", flags.teardown],
+    ["--out", flags.out],
+    ["--port", flags.port],
+    ["--host", flags.host],
+  ];
+  const bad = unsupported.find(([flag, value]) => {
+    // `--no-open` / `--no-early-exit` 表现为 false,但仍是显式 flag,在 rename 上同样非法。
+    if (flag === "--open/--no-open" || flag === "--early-exit/--no-early-exit") return value !== undefined;
+    return value !== undefined && value !== false && (!Array.isArray(value) || value.length > 0);
+  });
+  return bad?.[0];
+}
+
+/** 人读面:核心计划 → 预览文本。逐条列出迁移与排除;有 `blocked` 时点名阻断原因。 */
+export function renderExperimentRenamePlanHuman(plan: ExperimentRenamePlan): string {
+  const lines = [t("cli.rename.previewHeader", { oldId: plan.oldId, newId: plan.newId })];
+  if (plan.blocked !== undefined) {
+    lines.push(t("cli.rename.blocked", { reason: plan.blocked.reason }));
+    lines.push(...renderExperimentRenameBlockedDetail(plan.blocked));
+  }
+  if (plan.migrations.length > 0) {
+    lines.push(t("cli.rename.migratingHeader", { count: plan.migrations.length }));
+    for (const entry of plan.migrations) {
+      lines.push(t("cli.rename.migratingRow", {
+        evalId: entry.evalId,
+        sourceLocator: entry.sourceLocator,
+        newId: plan.newId,
+      }));
+    }
+  }
+  if (plan.excluded.length > 0) {
+    lines.push(t("cli.rename.excludedHeader", { count: plan.excluded.length }));
+    for (const entry of plan.excluded) {
+      lines.push(t("cli.rename.excludedRow", { evalId: entry.evalId, reason: entry.reason }));
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** 拒绝的人读面:先给 reason 专属文案(点名旧 id、新 id、受影响 eval 与下一步),再补冲突清单。 */
+export function renderExperimentRenameRejectedHuman(rejected: ExperimentRenameRejected): string {
+  const lines = [
+    t(EXPERIMENT_RENAME_REASON_MESSAGE[rejected.reason], {
+      oldId: rejected.oldId,
+      newId: rejected.newId,
+      evalId: rejected.evalId ?? "",
+    }),
+  ];
+  lines.push(...renderExperimentRenameRejectedDetail(rejected));
+  return `${lines.join("\n")}\n`;
+}
+
+/** 成功的人读面:新 snapshot 路径 + 逐条新 locator。 */
+export function renderExperimentRenameDoneHuman(done: RenamedExperiment): string {
+  const lines = [
+    t("cli.rename.doneHeader", { oldId: done.oldId, newId: done.newId, count: done.migrated.length }),
+    t("cli.rename.snapshotPath", { path: done.snapshotPath }),
+  ];
+  for (const entry of done.migrated) {
+    lines.push(t("cli.rename.doneRow", {
+      evalId: entry.evalId,
+      sourceLocator: entry.sourceLocator,
+      locator: entry.locator,
+    }));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** 阻断的逐条事实:冲突 eval 逐行列出，并保留底层读取详情。 */
+function renderExperimentRenameBlockedDetail(blocked: ExperimentRenameBlocked): string[] {
+  const lines: string[] = [];
+  for (const evalId of blocked.conflictingEvals ?? []) {
+    lines.push(`  ${evalId}`);
+  }
+  if (blocked.detail !== undefined) lines.push(`  ${blocked.detail}`);
+  return lines;
+}
+
+function renderExperimentRenameRejectedDetail(rejected: ExperimentRenameRejected): string[] {
+  const lines: string[] = [];
+  const conflicting = rejected.conflictingEvals ?? [];
+  if (conflicting.length > 0) {
+    lines.push(t("cli.rename.conflicting", { evals: conflicting.join(", ") }));
+  }
+  return lines;
+}
+
+/** 机器面:单份 JSON 文档,不混入人读文本(见 rename.md「命令」)。 */
+export function renderExperimentRenameJson(document: ExperimentRenameJsonDocument): string {
+  return `${JSON.stringify({
+    format: EXPERIMENT_RENAME_FORMAT,
+    schemaVersion: EXPERIMENT_RENAME_SCHEMA_VERSION,
+    ...document,
+  })}\n`;
+}
+
+/** 把 renameExperiment 抛出的资格错误投影成 rejected 文档(JSON 与拒绝人读共用)。 */
+export function experimentRenameRejectedFromError(error: ExperimentRenameError): ExperimentRenameRejected {
+  const plan = error.plan;
+  const blocked = plan?.blocked;
+  return {
+    status: "rejected",
+    oldId: plan?.oldId ?? "",
+    newId: plan?.newId ?? "",
+    reason: error.reason,
+    ...(blocked?.evalId === undefined ? {} : { evalId: blocked.evalId }),
+    ...(blocked?.conflictingEvals === undefined ? {} : { conflictingEvals: blocked.conflictingEvals }),
+    ...(blocked?.detail === undefined ? {} : { detail: blocked.detail }),
+  };
+}
+
+/** 退出码:可迁移预览与成功执行为 0;blocked 预览 / rejected 整批零写入按失败退出。 */
+export function experimentRenameExitCode(document: ExperimentRenameJsonDocument): number {
+  if (document.status === "done") return 0;
+  if (document.status === "plan") return document.blocked === undefined ? 0 : 1;
+  return 1;
+}
+
+/**
+ * exp rename 的 CLI 执行:解析 → 核心 → 渲染 → 退出码。核心契约见
+ * src/runner/rename-experiment.ts(planExperimentRename / renameExperiment)。
+ * renameExperiment 对资格失败抛 ExperimentRenameError,CLI 把它投影成 rejected 文档。
+ */
+async function runExperimentRenameCommand(cwd: string, args: readonly string[], flags: Flags): Promise<number> {
+  const parsed = parseExperimentRenamePositionals(args);
+  if (!parsed.ok) {
+    process.stderr.write(t("cli.rename.usage"));
+    return 1;
+  }
+  const unsupported = firstExperimentRenameUnsupportedFlag(flags);
+  if (unsupported !== undefined) {
+    process.stderr.write(t("cli.rename.flagUnsupported", { flag: unsupported }));
+    return 1;
+  }
+  const { oldId, newId } = parsed;
+  const mod = await import("./runner/rename-experiment.ts") as unknown as {
+    planExperimentRename(options: { cwd: string; oldId: string; newId: string }): Promise<ExperimentRenamePlan>;
+    renameExperiment(options: { cwd: string; oldId: string; newId: string }): Promise<RenamedExperiment>;
+  };
+  if (flags.dry) {
+    const plan = await mod.planExperimentRename({ cwd, oldId, newId });
+    if (flags.json) process.stdout.write(renderExperimentRenameJson(plan));
+    else process.stdout.write(renderExperimentRenamePlanHuman(plan));
+    return experimentRenameExitCode(plan);
+  }
+  try {
+    const renamed = await mod.renameExperiment({ cwd, oldId, newId });
+    if (flags.json) process.stdout.write(renderExperimentRenameJson(renamed));
+    else process.stdout.write(renderExperimentRenameDoneHuman(renamed));
+    return 0;
+  } catch (e) {
+    // ExperimentRenameError 携带稳定 reason 与 rejected plan;其它异常按通用失败兜底。
+    if (e instanceof ExperimentRenameError) {
+      const rejected = experimentRenameRejectedFromError(e);
+      if (flags.json) process.stdout.write(renderExperimentRenameJson(rejected));
+      else process.stdout.write(renderExperimentRenameRejectedHuman(rejected));
+      return 1;
+    }
+    process.stderr.write(t("cli.rename.failed", { error: e instanceof Error ? e.message : String(e) }));
+    return 1;
   }
 }
 
@@ -982,7 +1229,6 @@ async function main(): Promise<void> {
       ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
       ...(existsSync(join(cwd, "niceeval.config.ts")) ? { config: { cwd } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
-      ...(flags.fresh ? { fresh: true } : {}),
     };
     if (flags.out) {
       const out = await buildView({ input: viewInput.input, out: flags.out, scan }).catch(exitOnViewUserError);
@@ -1089,7 +1335,6 @@ async function main(): Promise<void> {
       report: flags.report,
       configReport,
       page: flags.page,
-      fresh: flags.fresh,
       json: flags.json,
     });
     // show 的 JSON 常被管给 jq/python。直接 process.exit 会丢弃 pipe 中尚未 flush 的
@@ -1109,6 +1354,13 @@ async function main(): Promise<void> {
     process.stdout.write(t("cli.init.done"));
     if (!hostPrefersEsm(cwd)) process.stdout.write(t("cli.init.esmHint"));
     process.exit(0);
+  }
+
+  // exp rename 是 exp 的保留子命令(list 同例):只读迁移坐标,不进 exp 的选择/调度路径,
+  // 不装载项目 config / 发现 eval。旧 id 从 Record 读取、newId 发现与资格门都在核心。
+  if (command === "exp" && positionals[0] === "rename") {
+    const code = await runExperimentRenameCommand(cwd, positionals.slice(1), flags);
+    process.exit(code);
   }
 
   const config = await loadConfig(cwd);
@@ -1229,26 +1481,26 @@ async function main(): Promise<void> {
       if (reminder) process.stderr.write(reminder);
       const orphans = await orphanReminder(cwd).catch(() => undefined);
       if (orphans) process.stderr.write(orphans);
-      const { staleTeardownReminder } = await import("./runner/teardown-registry.ts");
-      const staleReminder = await staleTeardownReminder(
+      const { orphanedTeardownReminder } = await import("./runner/teardown-registry.ts");
+      const teardownReminder = await orphanedTeardownReminder(
         resolvePath(cwd, ".niceeval"),
         new Set(selected.filter((e) => e.teardown).map((e) => e.id)),
         hostname(),
       ).catch(() => undefined);
-      if (staleReminder) process.stderr.write(staleReminder);
+      if (teardownReminder) process.stderr.write(teardownReminder);
     }
 
     // `--teardown`:只对选中的实验各执行一次实验级 teardown(新进程语义),不派发任何 attempt、
     // 不跑 setup;与 eval 前缀位置参数组合是用法错误(这个 flag 选择的是「只收尾」这种跑法,
     // 不参与 eval 选择)。启动自愈(选中实验里遗留登记的补执行)发生在 runEvals() 内部
-    // 触发 setup 之前,不需要这里重复处理(见 run.ts 的 recoverStaleTeardownRegistration)。
+    // 触发 setup 之前,不需要这里重复处理(见 run.ts 的 recoverOrphanedTeardownRegistration)。
     if (flags.teardown) {
       if (extraPatterns.length > 0) {
         process.stderr.write(t("cli.exp.teardownNoEvalPatterns"));
         process.exit(1);
       }
       const niceevalRootForTeardown = resolvePath(cwd, ".niceeval");
-      const { isStaleTeardownRegistration, readTeardownRegistrations, removeTeardownRegistrationIfPresent } =
+      const { isOrphanedTeardownRegistration, readTeardownRegistrations, removeTeardownRegistrationIfPresent } =
         await import("./runner/teardown-registry.ts");
       let anyFailed = false;
       for (const exp of selected) {
@@ -1276,7 +1528,7 @@ async function main(): Promise<void> {
         // 已有登记时，只有抢到某一条原子删除的路径可以执行；没有登记才保留手动兜底的一次执行。
         const claimed = await Promise.all(
           matching
-            .filter(({ entry }) => isStaleTeardownRegistration(entry, hostname()))
+            .filter(({ entry }) => isOrphanedTeardownRegistration(entry, hostname()))
             .map(async ({ id }) => (await removeTeardownRegistrationIfPresent(niceevalRootForTeardown, id).catch(() => false)) ? id : undefined),
         );
         const executions = matching.length === 0 ? [undefined] : claimed.filter((id): id is string => id !== undefined);
@@ -1331,7 +1583,6 @@ async function main(): Promise<void> {
         experimentSourcePath: exp.sourcePath,
         description: exp.description,
         labels: exp.labels,
-        evalFilterFingerprint: fingerprintEvalsFilter(exp.evals, extraPatterns),
         strict: flags.strict,
         // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
         // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
@@ -1455,7 +1706,7 @@ async function main(): Promise<void> {
       rowInputs.map(async (row) => {
         if (!row.experimentId) return false;
         const lock = await readCaseLock(niceevalRootForDry, row.experimentId, row.evalId).catch(() => undefined);
-        return lock !== undefined && !isCaseLockStale(lock, now);
+        return lock !== undefined && !isCaseLockExpired(lock, now);
       }),
     );
     const matrix: JsonPlanRow[] = rowInputs.map((row, i) => ({
@@ -1494,7 +1745,7 @@ async function main(): Promise<void> {
           configs: agentRuns.length,
           attempts: dryRuns,
           reused: carryPlan?.carriedResults.length ?? 0,
-          // stale 行逐条提供历史 locator；接受动作通过顶层 `niceeval accept @<locator>` 完成。
+          // previous-result 行逐条提供历史 locator；接受动作通过顶层 `niceeval accept @<locator>` 完成。
           command: ["niceeval", command, ...positionals].join(" "),
           rows: rowInputs.map((row, i) => ({
             experimentId: row.experimentId,
@@ -1744,19 +1995,25 @@ async function main(): Promise<void> {
   process.exit(exitCode);
 }
 
-main().catch(async (e) => {
-  process.stderr.write(
-    e instanceof SandboxLayerLinkError
-      ? `${formatSandboxLayerLinkError(e)}\n`
-      : e instanceof SandboxPhysicalPlanningError
-        ? `${formatSandboxPhysicalPlanningError(e)}\n`
-      : t("cli.error", { error: formatThrown(e) }),
-  );
-  // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表、用例锁与
-  // 实验闸租约,再退。
-  await stopAllSandboxes();
-  await drainExperimentTeardowns();
-  await drainHeldCaseLocks();
-  await drainHeldGateLeases();
-  process.exit(2);
-});
+// 只有经 bin/niceeval.js 启动时才运行 main();测试直接 import 本文件的纯函数(exp rename 的
+// 解析与格式化)时不能让 main() 运行——单元层不起 CLI 进程,进程行为归 E2E。入口判断基于
+// argv,不读环境变量:src/ 的环境变量白名单守护不允许新增测试专用变量
+// (见 test/unit/config-env-boundary.test.ts),而 vitest 的 argv[1] 永远不会是 bin/niceeval.js。
+if (process.argv[1]?.endsWith(`${sep}bin${sep}niceeval.js`)) {
+  main().catch(async (e) => {
+    process.stderr.write(
+      e instanceof SandboxLayerLinkError
+        ? `${formatSandboxLayerLinkError(e)}\n`
+        : e instanceof SandboxPhysicalPlanningError
+          ? `${formatSandboxPhysicalPlanningError(e)}\n`
+        : t("cli.error", { error: formatThrown(e) }),
+    );
+    // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表、用例锁与
+    // 实验闸租约,再退。
+    await stopAllSandboxes();
+    await drainExperimentTeardowns();
+    await drainHeldCaseLocks();
+    await drainHeldGateLeases();
+    process.exit(2);
+  });
+}

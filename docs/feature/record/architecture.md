@@ -69,7 +69,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。
+当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。`renamedFrom` 是可选审计字段，删除运行期选题投影也不影响当前 reader 读取旧记录，因此两项都不升版。
 历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -207,10 +207,6 @@ interface ExperimentRunInfo {
    * `apiKeyEnv` 只指向凭据变量,不落盘。
    */
   judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
-  /** 这份快照声明覆盖的 eval id 全集:本次运行 evals 过滤器(含函数形式)的求值结果,并入携带合入条目的 eval id;不存过滤器本身。 */
-  selectedEvalIds: string[];
-  /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
-  evalFilterFingerprint?: string;
   /** Experiment 作者 layer 的完整纯数据身份；Direct/command-only 同样显式记录。 */
   sandboxLayer: JsonValue;
   /** 本次所有 selected Eval 的完整 pair-owned ProviderPlan 身份；Direct 也有显式项。 */
@@ -224,11 +220,9 @@ interface ExperimentRunInfo {
 
 - **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。
-- **`selectedEvalIds` 是这份快照声明覆盖的题集**,不只是选择器求值的原始结果。
-  写入面把本次运行 evals 过滤器(含函数形式)的求值结果与携带合入条目的 eval id 取并集写入这个字段。
-  携带条目确实进了这份快照,不并入会让它们在覆盖判断里凭空消失。
-  [`niceeval accept`](../experiments/cache.md#niceeval-accept-locator接受一条或多条结果) 批量封口时同理:覆盖声明是本组**全部**接受的 eval,不是 prepare 时为重算指纹而临时收窄到单题的那份。
-  [Sample 的现刻水位选择](../sample/library.md#缝合的前提confighash-相等)按它逐 Run 过滤贡献范围,报告直接读取它,不从 experiment 路径推断另一层集合。
+- **运行期选题不落进结果配置。** Runner 在内存中解析本次计划并供 dry、调度与实验生命周期使用；Run 的事实面只记录实际物理 Attempt 与 `knownEvalIds` 分母。
+- **`evals` 过滤器及其指纹不属于结果身份。** 它决定这一 invocation 派发哪些题，不改变已经产生的单题结果；调度解释由运行期计划负责。
+  Sample 按物理 Attempt 与 `configHash` 选择 current，Reports 只消费 Sample，不从计划字段推断贡献范围。
 - **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
   `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
 - **ProviderPlan 只含 provider 明确构造的可发布纯数据。** token、凭据值、runtime callback 与私有路径不进入 plan；
@@ -525,6 +519,8 @@ interface AttemptRecord {
    * 省略等价于「这条结果不是人工接受而来」。
    */
   acceptedFrom?: AcceptedResult;
+  /** 实验身份改变但 fingerprint 不变时的来源审计。 */
+  renamedFrom?: RenamedResult;
   /** 已知 fingerprint 迁移证明等价后自动携带的来源；与 acceptedFrom 互斥。 */
   migratedFrom?: MigratedResult;
   /**
@@ -541,6 +537,14 @@ interface AcceptedResult {
   fingerprint: string;
   acceptedFingerprint: string;
   differences: AcceptedDifference[];
+}
+
+/** `niceeval exp rename` 重绑 Experiment 身份时写进新条目的来源审计。 */
+interface RenamedResult {
+  experimentId: string;
+  locator: string;
+  fingerprint: string;
+  at: string;
 }
 
 interface MigratedResult {
