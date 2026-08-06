@@ -62,14 +62,11 @@ t.judge.agent(
 
 ## 裁判执行配置
 
-既有 `JudgeConfig` 保留裁判模型字段，并增加独立的 `agent` 槽位：
+`JudgeConfig` 为 LLM Judge 与 Agent Judge 提供独立槽位：
 
 ```ts
 interface JudgeConfig {
-  model?: string;
-  baseUrl?: string;
-  apiKeyEnv?: string;
-  timeoutMs?: number;
+  llm?: LlmJudgeConfig;
   agent?: AgentJudgeConfig;
 }
 
@@ -83,7 +80,7 @@ interface AgentJudgeConfig {
 }
 ```
 
-`JudgeConfig` 顶层的 model、端点、凭据与超时只服务 LLM-as-Judge。
+`judge.llm` 的 profile、Provider 与材料协议由[原生 LLM Judge Runtime](../llm-judge-runtime/library.md)定义。
 `judge.agent` 是一份原子配置，服务 `t.judge.agent()`；两种 Judge 可以在同一 Eval 中并存。
 
 Agent Judge 配置按 Experiment → Eval → 项目配置选择最近一份完整声明，不逐字段合并。
