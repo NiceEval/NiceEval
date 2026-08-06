@@ -1,6 +1,6 @@
 # 运行观测协议 —— Library
 
-本页定义 Adapter 怎样增量产生 Agent 事件，以及读取面怎样把 Observation 投影成 Report 可消费的值。
+本页定义 Adapter 怎样增量产生 Agent 事件，以及读取面怎样按需把 Observation 投影成 Report 可消费的值。
 磁盘 envelope 与 Record 容器单源在 [Architecture](architecture.md)。
 
 ## Agent Turn stream
@@ -142,7 +142,7 @@ Report、show 与 view 不直接按事件名或 schema 分支，而是使用 pro
 ## Projector
 
 Projector 是带稳定身份的普通函数值。
-它把一个 AttemptHandle 转成带 availability 和依据的中性读模型。
+它把一个 AttemptHandle 转成带 availability 和依据的中性读模型，不创建新的持久化实体。
 
 ```ts
 type UnavailableReason =
@@ -184,7 +184,16 @@ verdict(attempt);     // Availability<VerdictClaim>
 ```
 
 Projector 可以组合其它 projector，但必须合并 `basedOn`，不能把 unavailable 变成猜测值。
-Projector 版本改变只使自己的可选缓存失效，不改变 Record 容器或历史 Claim。
+它只能依赖 sealed Record、显式参数和其它 Projector，不能读取当前环境或未记录配置。
+同一 Projector 版本对相同输入必须返回相同结果。
+
+Projector 版本用于区分派生语义，并写入明确导出的 Report artifact 元数据。
+Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓存、增加 manifest 引用或把 Projection 交给 Record writer。
+`Availability<T>` 中的 `T` 是 Library API 类型，不是 Record schema；不兼容变化升级 Projector 版本，不迁移历史 Record。
+
+Claim evaluator 使用 Projection 时，必须把它的 `basedOn` 展开成底层 EvidenceRef。
+Projection 自身不是 EvidenceRef，也不能成为 Claim、另一个 Record 或后续 Report 的权威输入。
+evaluator 版本必须覆盖所调用 Projector 的语义版本，不能让依赖变化静默改写同一 evaluator 身份。
 
 ## Reports 的依赖方向
 
@@ -204,3 +213,6 @@ const changedLines = rollup(async (attempt) => {
 
 新报告若只组合已有 projector，不会产生新的持久化字段。
 只有新的 projector 证明缺少不可重建事实时，才需要增加独立 Observation schema。
+
+用户明确保存的 HTML、JSON 或其它 Report artifact 属于 Reports 输出。
+它可以记录 generator 版本与输入 Record 摘要，但不进入 Run 或 Attempt manifest，也不被 `openRecord()` 读取。

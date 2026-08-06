@@ -16,10 +16,10 @@
 
 ## 核心心智
 
-运行过程是追加事实，运行状态是这些事实的投影。
+运行过程是追加事实，运行状态是 Reducer 对这些事实归约出的 snapshot。
 
 Runner 与 Agent 产生不可变事件，Observation Hub 为事件分配身份和顺序，再交给不同消费者。
-Record 保存需要审计的 durable 事件；Live 读取同一事件流的有界切片；Reducer 从事件重建 snapshot；Reports 只读取带依据的投影。
+Record 保存需要审计的 durable 事件；Live 读取同一事件流的有界切片；Reducer 从事件重建 snapshot；Projector 按需产生 Reports 使用的读模型。
 
 ```text
 Runner 生命周期 ─┐
@@ -41,7 +41,13 @@ Record 的权威内容只有三类：
 | Claim | 当时依据哪些事实作出了什么结论 | 不能恢复当时结论，只能重新求值 |
 
 Projection 是从三类权威内容计算出的读模型。
-snapshot、通过率、汇总用量、执行树、报告行和图表数据都属于 Projection，不参与 Record 的事实兼容判断。
+执行树、时间树、usage、diff、Assertion 与 Verdict 读面都属于 Projection。
+Projector 是产生 Projection 的纯函数，不是新的存储 owner。
+Record manifest 不包含 Projection 文档、引用或缓存入口；读取面按需重算，并且只在当前进程内复用结果。
+
+运行期 snapshot 或 Session 索引可以为了附着与恢复写入活动 Session 存储，但它们位于 Record 之外，并声明重放依据。
+用户明确导出的 Report 也可以落盘，但它是可删除、可重新生成的交付物，不能成为 Observation、Claim 或下一次 Report 的事实来源。
+snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参与 Record 的事实兼容判断。
 
 ## 所有者边界
 
@@ -54,7 +60,8 @@ snapshot、通过率、汇总用量、执行树、报告行和图表数据都属
 | Live | 订阅同一事件流并提供有界 snapshot | 成为第二份 execution log 或终态权威 |
 | OTel 接入 | 导入或导出时间、父子关系与跨进程关联 | 决定行为事实、执行错误或 Verdict |
 | Sample | 选择可比较的 Attempt 并交代覆盖 | 改写历史 Claim |
-| Projector / Reports | 从权威内容计算读模型并呈现 | 要求投影字段进入 Record 权威 schema |
+| Projector | 从权威内容按需计算带依据的读模型 | 写 Record、保存 Projection 或读取未记录的外部状态 |
+| Reports | 组合读模型并呈现或导出交付物 | 读取原始事件 schema，或让 Report 字段进入 Record |
 
 ## 范围
 
@@ -62,7 +69,7 @@ snapshot、通过率、汇总用量、执行树、报告行和图表数据都属
 
 - Observation envelope、事件身份、作用域、排序、版本与重放规则。
 - Agent 的增量事件生产契约及终态 Outcome。
-- durable Observation、ephemeral progress、Provenance、Claim 与 Projection 的边界。
+- durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
 - Record 的稳定容器、独立文档版本和未知事件保留规则。
 - `watch`、`exp --json`、Session snapshot 与旁路附着语义。
 - OTel 导入、关联和导出的补充地位。

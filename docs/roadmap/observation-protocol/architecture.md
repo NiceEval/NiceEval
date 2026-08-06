@@ -9,10 +9,25 @@ Writer、Live 和 Report 在接收一个值前都要先判断它属于哪类信�
 | Provenance | 解释运行与求值所需，不能用读取时的环境替代 | 输入清单、Agent 与 model、配置、源码摘要、算法版本 |
 | Observation | 运行后无法重新取得，只陈述发生了什么 | Agent 事件、命令输出、workspace 变化、耗时、实际账单、错误 |
 | Claim | 当时由 evaluator 根据依据作出的结论 | Assertion、judge、Verdict、估算成本、证据覆盖结论 |
-| Projection | 能从同一份 Record 确定性重建 | snapshot、执行树、汇总用量、通过率、报告行、索引 |
+| Projection | Projector 从同一份 Record 确定性计算出的中性读模型 | 执行树、时间树、usage、diff、Assertion 与 Verdict 读面 |
 
-Projection 可以作为带版本的缓存存在，但缓存缺失、损坏或过期不能让权威记录不可读。
-只有前三类进入 Record 的默认发布事实集。
+Projector 取名自 event sourcing 中的 projection：它把完整事实投射成一个消费面需要的有限视图。
+Projector 是函数，Projection 是这次函数调用产生的普通值；两者都不是 Record 实体。
+本契约只把 Projector 输出称为 Projection；Reducer 输出称为 snapshot，Reports 输出称为计算结果或 artifact。
+
+只有前三类进入 Record 的权威业务内容；manifest 另行保存稳定身份、父子关系、封口状态与文档引用。
+Projection 默认只存在于读取进程的内存中，Record writer 不写 Projection 文档，manifest 也不提供 Projection 引用或缓存槽位。
+
+面向读取的可重建结果只有以下两种落盘例外，且都位于 Record 之外：
+
+| 可重建输出 | 落盘目的 | 必须携带 | 失效处理 |
+|---|---|---|---|
+| 运行期 snapshot 或索引 | 支持活动 Session 附着、进程恢复和有界读取 | reducer 版本与 stream basis | 删除并从 durable 事件重建 |
+| 用户导出的 Report artifact | 保存一次明确请求的交付结果 | generator 版本与输入 Record 摘要 | 重新导出，不回写 Record |
+
+写入磁盘的副本不能作为 Observation、Claim 的 `basedOn` 或其它 Projector 的事实输入。
+一个 Projector 可以在内存中调用另一个 Projector，但必须继续从 Record 求值并合并底层依据。
+Report artifact 可以独立定义面向消费者的格式，但改变该格式只升级 Reports，不升级 Record。
 
 ## Observation envelope
 
@@ -164,7 +179,7 @@ type Reducer<State> = (
 ```
 
 Session 索引、TTY 面板、`watch` snapshot 与 `exp --json` 共享同一个运行状态 reducer。
-Session writer 只序列化 reducer 的有界投影，不再实现 queued、running、waiting 或终态计数迁移。
+Session writer 只序列化 reducer 的有界 snapshot，不再实现 queued、running、waiting 或终态计数迁移。
 Live renderer 可以在这份权威状态上叠加 ephemeral progress 的最新值，但 overlay 不能修改 phase、计数或终态。
 
 snapshot 必须声明它折叠到哪个 stream sequence。
@@ -177,11 +192,11 @@ Provenance 保存复核运行所需、但不能用读取时环境替代的输入
 - Run、Attempt、Experiment、Eval、Session 与 Turn 身份。
 - 实际使用的 Agent、Adapter、model、reasoning effort 与 provider。
 - 运行配置、Eval 源码、判据、Sandbox 输入与安装清单。
-- strict、judge、价格表和 projector 等算法身份。
+- strict、judge、价格表和 Claim evaluator 等求值算法身份。
 - Adapter 声明及每 Turn 实际形成的证据覆盖。
 
-哈希值是输入在指定算法下的 Projection。
-Record 保存参与哈希的完整输入与算法身份；configHash、fingerprint 或索引值不能代替输入本身。
+哈希值是输入在指定算法下的派生标识，不是 Projector 读模型。
+Record 可以用哈希寻址或校验文档，但同时保存完整输入与算法身份；configHash、fingerprint 或索引值不能代替输入本身。
 
 ```ts
 interface Claim<T extends JsonValue = JsonValue> {
@@ -237,16 +252,6 @@ type DocumentRef =
       bytes: number;
     };
 
-interface SealedDocumentRef {
-  state: "sealed";
-  key: string;
-  schema: string;
-  path: string;
-  mediaType: "application/json" | "application/x-ndjson";
-  sha256: string;
-  bytes: number;
-}
-
 interface RunManifest {
   format: "niceeval.record";
   schema: "niceeval.record/2";
@@ -263,12 +268,6 @@ interface RunManifest {
   provenance: Record<string, DocumentRef>;
   observationStreams: Record<string, DocumentRef>;
   claims: Record<string, DocumentRef>;
-  projections?: Record<string, ProjectionRef>;
-}
-
-interface ProjectionRef extends SealedDocumentRef {
-  generatedBy: { name: string; version: string };
-  basedOn: Array<{ document: string; sha256: string }>;
 }
 ```
 
@@ -285,8 +284,8 @@ open manifest 允许读取已经完整落盘的事件，但不能产生完整 Ve
 容器版本只在身份、父子关系、封口规则或文档引用无法继续解析时改变。
 Provenance、Observation 与 Claim 文档按自己的 schema 演进，不共享一个 Run 级业务版本。
 
-Projection 缓存不进入默认 `publish()` 事实集，也不参与携带资格。
-缓存的任一输入摘要或 projector 版本不匹配时，Reader 忽略缓存并从权威内容重算。
+Run 与 Attempt manifest 不允许增加 Projection、Report 摘要、统计宽表或它们的引用。
+`publish()`、结果携带与 Record 转换因此只处理 Provenance、Observation、Claim 和容器关系，不需要理解任何 Report 字段。
 
 ## 既有格式读取
 
@@ -321,7 +320,19 @@ Record reader 只验证文档、返回已知中性类型，并把未知、损坏
 Sample 只选择 Attempt、建立比较口径和呈现覆盖。
 
 Projector 是从 AttemptHandle 到带依据读模型的纯函数。
+这里的纯函数允许读取句柄指向的 sealed Record，但不允许读取当前时间、网络、进程环境、随机数或未记录配置。
+同一份 Record、同一 Projector 版本与相同参数必须得到相同结果。
+
+Projection 没有 Record identity、封口生命周期或文档引用。
+读取面按需计算，并且可以在一个 AttemptHandle 的生命周期内按 Projector 版本与参数 memoize；关闭句柄后结果即可丢弃。
 执行树、时间树、usage、diff、Assertion、Verdict 与报告指标各有独立 projector；Report 不读取 manifest 字段、原始事件名或 OTel attributes。
+
+Projection 类型属于 Library API，不是磁盘 document schema。
+不兼容的读模型变化使用新的 Projector 版本；它可以继续读取同一份 sealed Record，不触发 Record decoder、转换或重写。
+
+Claim evaluator 可以调用 Projector，但保存 Claim 时必须把 Projection 的 `basedOn` 展开为底层 Observation、Provenance 与 Claim 引用。
+Claim 不能引用一个 Projection 值、Report artifact 或运行期 snapshot。
+evaluator 版本必须覆盖它依赖的 Projector 语义，使依赖变化产生新的 Claim evaluator 身份。
 
 新增 Report 时：
 
@@ -331,6 +342,8 @@ Projector 是从 AttemptHandle 到带依据读模型的纯函数。
 - 旧 Record 没有该事实时返回 unavailable，不使其它能力或整份 Run 失效。
 
 Report 行、图表点、通过率、p90、汇总成本和执行树都不进入 Record 权威 schema。
+用户导出的 HTML、JSON 或其它 Report artifact 写入 Reports 负责的目标位置，不登记进 Run 或 Attempt manifest。
+artifact 的 generator 版本和输入摘要只解释这份交付物，不把它提升成历史事实。
 
 ## 重放不变量
 
@@ -342,3 +355,4 @@ Report 行、图表点、通过率、p90、汇总成本和执行树都不进入 
 6. Projector 升级不得改写历史 Claim，也不得要求重写原始 Observation。
 7. 每条 Claim 的全部 `basedOn` 必须能解析到同一份已封口 Record；解析失败时该 Claim 不可用。
 8. Record sink 未确认的 Attempt 不能作为完整结果进入 Sample。
+9. Record 可读性不得依赖曾经计算出的 Projection；删除 snapshot、索引与 Report artifact 后，sealed Record 仍能重新产生同版本 Projection。
