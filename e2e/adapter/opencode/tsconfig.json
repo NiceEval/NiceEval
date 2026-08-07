@@ -3,15 +3,25 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
-    "noUncheckedIndexedAccess": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["niceeval.config.ts", "docker", "evals", "experiments", "test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "evals",
+    "experiments",
+    "scripts",
+    "test/**/*.ts",
+    "vitest.config.ts",
+    "niceeval.config.ts"
+  ]
 }
