@@ -13,10 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # version 缺省时 pnpm/action-setup 读取根 package.json 的 packageManager，
+      # 不在 workflow 重复版本真源。
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -46,10 +46,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # version 缺省时 pnpm/action-setup 读取根 package.json 的 packageManager，
+      # 不在 workflow 重复版本真源。
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       # mint CLI 要 LTS Node；这个 job 与 package job 并行，慢在拉 mint@latest 上，
       # 不拖住代码侧反馈。
