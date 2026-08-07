@@ -18,6 +18,11 @@ description: "根据任务信任边界选择 Docker socket、raw privileged DinD
 但不需要自定义 NiceEval `ENTRYPOINT`。NiceEval负责启动与监督 inner daemon、
 Sandbox保活、容器内 TTL和 `docker info`探活，不会向任意镜像动态安装 Docker。
 
+不能直接把未经派生的 `docker:<version>-dind`写成 `source.image`。该镜像没有 NiceEval supervisor
+需要的 Node，也没有被测 Agent的工具；创建时会以
+`dind-image-incompatible: missing node`失败。请使用下面的 Dockerfile，或先发布等价的派生镜像，
+再让 `source`引用它。
+
 ## 方案一：直接挂 Docker socket
 
 先准备只有 CLI、Node和评估工具的镜像：

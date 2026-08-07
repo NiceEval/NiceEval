@@ -15,6 +15,14 @@ entry needs a concrete before example, after example, and user impact. Usage
 examples must include the public owner that consumes the value; do not show an
 isolated factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
+
+Inventory every environment variable added, removed, renamed, given a new
+default, or used in a new scope. Include user-facing variables, CI secrets,
+test-only switches, container injection, systemd/service variables, and
+variables consumed by packaging scripts. Prefer an explicit API, CLI flag,
+configuration file, argument, or constant whenever the value does not need an
+ambient deployment boundary. "Convenient" is not sufficient justification for
+a new environment variable.
 -->
 
 ## Problem
@@ -59,6 +67,18 @@ isolated factory result when real usage belongs inside `defineEval()`,
 - Before example: <concrete input and observed result>
 - After example: <the same input, or its replacement, and observed result>
 - User impact: <what changes for users, stored data, or automation>
+
+## Environment variables
+
+### `<VARIABLE_NAME>`
+
+- Change: `added | removed | renamed | default changed | semantics changed`
+- Scope: `user-facing | CI secret | test-only | container-internal | host service | packaging`
+- Before usage: `<copyable shell/config example or "not available">`
+- After usage: `<copyable shell/config example or "removed">`
+- Producer and consumer: <who sets it, who reads it, and whether child processes inherit it>
+- Necessity: <why an explicit API, CLI flag, config file, argument, or constant cannot own this value>
+- User and security impact: <default, validation, precedence, secret exposure, migration, or "none">
 
 ## Package scripts
 

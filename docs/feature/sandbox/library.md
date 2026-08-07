@@ -271,6 +271,8 @@ runner，不宣称隔离。managed DinD通过 profile验证 rootless daemon、�
 NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD
 只接受从固定版本官方 `docker:<version>-dind`派生的兼容镜像，并要额外带 `node`、
 `docker-init`、`dockerd-entrypoint.sh`、`timeout` 与 `tail`。
+直接把未经派生的 `docker:<version>-dind`作为 `source.image`会以
+`dind-image-incompatible: missing node`创建失败；作者必须提供 Dockerfile或已发布的兼容派生镜像。
 
 用户不写 NiceEval 专用 `ENTRYPOINT`，也不负责接收或执行 NiceEval 传入的 `Cmd`。
 当 `dockerAccess.mode` 为
