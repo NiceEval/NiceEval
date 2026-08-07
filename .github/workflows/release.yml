@@ -1,16 +1,22 @@
 name: Release
 
-# 发版到 npm只有一条路:打 v* 标签、push 到 origin。标签号就是发布版本号,
+# 发版到 npm 只有一条路:打 v* 标签、push 到 origin。标签号就是发布版本号,
 # CI 自己从标签名解析版本号,在 runner 本地写入 package.json(不写回仓库),
-# 然后直接发布。不要求 main 分支上预先提交版本号变更。
+# 然后构建、pnpm pack 恰好一次生成待发 tarball 并保存 sha256。Package/CLI/Report
+# preflight 与当前 Node / Node 18 的原生脚本 smoke 全部安装同一份 tgz;全部通过后
+# npm publish 直接发布这份 tarball —— 不重新 prepare、不重新 pack、不改写 exports,
+# registry 收到的字节与 preflight 验证过的字节一致(docs/engineering/testing/e2e/package.md
+# 「安装与身份」、docs/engineering/testing/e2e/execution.md「Release 信任链」)。
+# 不要求 main 分支上预先提交版本号变更。
 #
 # 前置:在仓库 Settings → Secrets → Actions 配好 NPM_TOKEN(npm automation token)。
-# 包大部分发 TypeScript 源码(package.json files: src + bin,消费侧用 tsx 加载,无 build 步骤);
-# 唯一例外是 src/report/**(报告 web 面用到 JSX,tsx 的 JSX 编译按调用进程 cwd 找 tsconfig,
-# niceeval 被 link 消费时会退化成 classic JSX、产物引用未定义的全局 React)—— 这部分改发预编译
-# ESM(`pnpm run build:report` 产出 dist/report/**,tsconfig.report-build.json),不受消费方
-# cwd/tsconfig 影响。`pnpm install`/`pnpm publish` 会经 prepare 生命周期自动触发这一步;下面的
-# Build 仍显式跑一遍,方便 CI 失败时定位,也让 Typecheck 针对真实构建产物跑。
+# 构建统一走 pnpm run build:package(runtime 预编译面 + 类型声明 + 随包索引),
+# 产物经 pnpm pack 进 tarball;消费侧不依赖 checkout、workspace link 或 tsx 包住自己。
+# `pnpm install` 的 prepare 生命周期仍会为本地开发构建一次,发布本身不再触发
+# prepare —— npm publish 接收的是已经 pack 好的 tarball,不执行生命周期脚本。
+#
+# smoke 脚本是纯原生 Node(ESM import 与 CJS require 遍历安装后的全部公开 exports),
+# 不经过 tsx;它在当前 release Node 与 Node 18(engines 下限)各跑一遍。
 
 on:
   push:
@@ -34,6 +40,7 @@ jobs:
     if: github.event_name == 'push'
     name: Publish to npm
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,23 +65,152 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 唯一构建入口:runtime 预编译面、类型声明与随包索引都在 build:package 里产出。
+      # 发布路径从这里开始就与 tarball 保持同一份产物,不允许 CI 再拼第二套构建。
       - name: Build
-        run: pnpm run build:report
+        run: pnpm run build:package
 
       - name: Typecheck
         run: pnpm run typecheck
 
       # 发版闸门只看包自身对不对:代码单测 + docs/memory 守护。docs-site 的 mint 校验
       # (test:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
-      # 随包 INDEX.md 的生成失败由 prepare 里的 build:index 直接报错。
+      # 随包 INDEX.md 的生成失败由 build:package 里的 build:index 直接报错。
       - name: Test
         run: pnpm test
 
       - name: Test docs guards
         run: pnpm run test:docs
 
-      - name: Publish
+      # pack exactly once:产出待发 tarball 并立即写 sha256。此后 preflight、smoke
+      # 与 publish 都只消费这个文件;任何重新 pack 都会破坏同 tgz 链。
+      - name: Pack exactly once
+        id: pack
         run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          out_dir="${RUNNER_TEMP}/niceeval-pack"
+          mkdir -p "$out_dir"
+          tgz="${out_dir}/niceeval-${VERSION}.tgz"
+          pnpm e2e pack --out "$tgz" | tee "${out_dir}/pack.json"
+          test -f "$tgz"
+          sha256="$(jq -r '.sha256' "${out_dir}/pack.json")"
+          if [ -z "$sha256" ] || [ "$sha256" = "null" ]; then
+            echo "::error::pack did not emit sha256"
+            exit 1
+          fi
+          recomputed="$(sha256sum "$tgz" | awk '{print $1}')"
+          if [ "$recomputed" != "$sha256" ]; then
+            echo "::error::sha256 mismatch: pack=${sha256} recomputed=${recomputed}"
+            exit 1
+          fi
+          echo "$sha256" > "${tgz}.sha256"
+          {
+            echo "tgz=${tgz}"
+            echo "sha256=${sha256}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[release] packed ${tgz} sha256=${sha256}"
+
+      # 发布 preflight:Package / CLI / Report 三个 Repo 安装上面这一份 tarball,
+      # 在仓库外、无 checkout、无 tsx 包装的消费者中跑各自场景(根 runner 负责
+      # 安装、注入与失败分类,workflow 不复制选择或注入逻辑)。--candidate 与
+      # publish 引用同一个 steps.pack.outputs.tgz 表达式,保证同 tgz 链。
+      - name: Preflight Package/CLI/Report on the packed tarball
+        run: |
+          set -euo pipefail
+          artifact_root="${RUNNER_TEMP}/niceeval-e2e-release-artifacts"
+          mkdir -p "$artifact_root"
+          for repo in package cli report; do
+            echo "[release] preflight repo=${repo}"
+            pnpm e2e run --candidate "${{ steps.pack.outputs.tgz }}" --repo "$repo" \
+              --artifact-root "$artifact_root/${repo}"
+          done
+
+      # 原生脚本 smoke:把 tarball 装进干净临时项目,用 raw Node 遍历 exports
+      # 全部公开入口(ESM import + CJS require),并跑一次安装后的 niceeval binary。
+      # 不经过 tsx,直接证明 dist 产物在 Node 18 / 22 下可装载。
+      - name: Native smoke on release Node
+        env:
+          CANDIDATE: ${{ steps.pack.outputs.tgz }}
+        run: |
+          set -euo pipefail
+          smoke_dir="${RUNNER_TEMP}/niceeval-smoke"
+          rm -rf "$smoke_dir"
+          mkdir -p "$smoke_dir"
+          cd "$smoke_dir"
+          npm init -y >/dev/null
+          npm install "$CANDIDATE" --no-audit --no-fund --silent
+          cat > smoke.mjs <<'SMOKE_EOF'
+          import { createRequire } from "node:module";
+          import { readFileSync } from "node:fs";
+          import { dirname, join } from "node:path";
+          import { fileURLToPath } from "node:url";
+
+          const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "node_modules", "niceeval");
+          const { exports: exportsMap } = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
+          const require = createRequire(import.meta.url);
+          const failures = [];
+          for (const [subpath, target] of Object.entries(exportsMap ?? {})) {
+            if (typeof target !== "object" || target === null) continue;
+            const specifier = subpath === "." ? "niceeval" : `niceeval${subpath}`;
+            if ("import" in target) {
+              try {
+                const mod = await import(specifier);
+                if (mod === undefined || mod === null) throw new Error("import resolved to nothing");
+                console.log(`[smoke] import ok: ${specifier}`);
+              } catch (error) {
+                failures.push(`import ${specifier}: ${error?.stack ?? error}`);
+              }
+            }
+            if ("require" in target) {
+              try {
+                const mod = require(specifier);
+                if (mod === undefined || mod === null) throw new Error("require resolved to nothing");
+                console.log(`[smoke] require ok: ${specifier}`);
+              } catch (error) {
+                failures.push(`require ${specifier}: ${error?.stack ?? error}`);
+              }
+            }
+          }
+          if (failures.length > 0) {
+            console.error(failures.join("\n"));
+            process.exit(1);
+          }
+          console.log(`[smoke] all ${Object.keys(exportsMap).length} export entries load natively`);
+          SMOKE_EOF
+          node smoke.mjs
+          ./node_modules/.bin/niceeval --help >/dev/null
+          echo "[release] native smoke passed on node $(node --version)"
+
+      # engines 下限:同一份 smoke 在 Node 18 重跑,产物必须对支持范围的最小版本也可装载。
+      - name: Set up Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Native smoke on Node 18
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/niceeval-smoke"
+          test -f smoke.mjs
+          test -d node_modules/niceeval
+          node smoke.mjs
+          ./node_modules/.bin/niceeval --help >/dev/null
+          echo "[release] native smoke passed on node $(node --version)"
+
+      # 回切发布 Node;npm publish 直接消费 preflight 通过的那份 tarball,
+      # 不触发 prepare、不重新构建工作目录,发布前再核对一次 sha256。
+      - name: Restore release Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify digest and publish the exact tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
           # 预发布版(含 - )发到对应 dist-tag(如 alpha/beta/rc),正式版发 latest。
           if [[ "$VERSION" == *-* ]]; then
@@ -83,10 +219,13 @@ jobs:
           else
             DIST_TAG="latest"
           fi
-          echo "Publishing niceeval@$VERSION with dist-tag $DIST_TAG"
-          pnpm publish --no-git-checks --provenance --access public --tag "$DIST_TAG"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          actual="$(sha256sum "${{ steps.pack.outputs.tgz }}" | awk '{print $1}')"
+          if [ "$actual" != "${{ steps.pack.outputs.sha256 }}" ]; then
+            echo "::error::tarball sha256 changed since preflight: expected=${{ steps.pack.outputs.sha256 }} actual=${actual}"
+            exit 1
+          fi
+          echo "Publishing niceeval@$VERSION with dist-tag $DIST_TAG from the preflight tarball (${{ steps.pack.outputs.tgz }})"
+          npm publish "${{ steps.pack.outputs.tgz }}" --no-git-checks --provenance --access public --tag "$DIST_TAG"
 
       - name: Create GitHub Release
         env:
@@ -99,6 +238,14 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           gh release create "$TAG" --title "$TAG" --generate-notes $PRERELEASE_FLAG
+
+      - name: Upload tarball and digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-release-tgz
+          path: ${{ runner.temp }}/niceeval-pack/
+          if-no-files-found: error
+          retention-days: 30
 
   verify-existing-release:
     if: github.event_name == 'workflow_dispatch'
