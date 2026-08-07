@@ -66,25 +66,25 @@
 [x] T2A 建立测试私有依赖机器守护（depends on T0.4；parallel with T1/T2）
 ├─ [x] T2A.1 扫描结果层测试，拒绝 root src、候选内部子路径与生产类型 import
 ├─ [x] T2A.2 拒绝私有 .niceeval 路径、hydration 全局量、template ID、DOM class 与拼接 attempt 路径作为 oracle
-├─ [ ] T2A.3 重写场景依赖守护：源 manifest/lock 拒绝 Testkit，临时副本只允许已验证内容寻址 tgz
+├─ [x] T2A.3 重写场景依赖守护：源 manifest/lock 拒绝 Testkit，临时副本只允许已验证内容寻址 tgz
 └─ [x] T2A.4 把守护放入 test/docs 或 test/unit，复用现有命令
 
 [ ] T3 把 Testkit 转为 monorepo 内部包（depends on T0/T1；多路并行，T3.7 串行收口）
 ├─ [x] T3.1 重写正式 docs 并通过 Sol design_grill
 │      owner: docs/engineering/testing/**, plan/testing-system-rebuild.md
-├─ [ ] T3.2 并入根 workspace 并取消发布面（parallel with T3.3/T3.5）
+├─ [x] T3.2 并入根 workspace 并取消发布面（parallel with T3.3/T3.5）
 │      owner: pnpm-workspace.yaml, pnpm-lock.yaml, package.json, packages/testkit/**, .github/workflows/release-testkit.yml
 │      work: private:true；删局部 workspace/lock、publishConfig/workflow；clean build；禁止反向依赖
-├─ [ ] T3.3 runner 自动 pack/注入/收据（parallel with T3.2/T3.5）
+├─ [x] T3.3 runner 自动 pack/注入/收据（parallel with T3.2/T3.5）
 │      owner: e2e/scripts/**, test/unit/e2e-runner/**
 │      work: harness.testkit schema；内容寻址 tgz；SHA-256/SRI/唯一 resolution/path；durable exact-replay artifact
 ├─ [ ] T3.4 迁移全部 scenario（depends on T3.3 contract；parallel by disjoint Repo）
 │      owner: e2e/<repo>/{e2e.json,package.json,pnpm-lock.yaml}
 │      work: 源 package/lock 删 Testkit；manifest 声明 capability；直跑引导根 runner
-├─ [ ] T3.5 CI 两 tgz 单一生产者（parallel with T3.2/T3.3）
+├─ [x] T3.5 CI 两 tgz 单一生产者（parallel with T3.2/T3.3）
 │      owner: .github/workflows/e2e.yml
 │      work: package job 验收并 pack Testkit once；matrix 下载/重算同一 digest；变更动态选全部 consumer
-├─ [ ] T3.6 双 tarball 边界机器守护（depends on T3.2；parallel with T3.4）
+├─ [x] T3.6 双 tarball 边界机器守护（depends on T3.2；parallel with T3.4）
 │      owner: test/docs/**
 │      acceptance: Testkit allowlist + Node18 ESM/CJS + .mts/.cts；NiceEval tgz 不含/不依赖 Testkit；拒绝局部 lock/workspace
 └─ [ ] T3.7 父侧串行验收（depends on T3.2–T3.6）
