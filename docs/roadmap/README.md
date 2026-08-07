@@ -25,6 +25,7 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [分组 Sandbox 复用](sandbox-reuse-groups/README.md) —— Eval 侧显式列出必须共用 Sandbox 的成员，选中即生效，组外 Attempt 保持 fresh 并行
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC
 - [Docker 执行配置](docker-profiles/README.md) —— 官方 Docker Sandbox 的可验证执行 profile、rootless privileged 单容器 DinD、跨进程硬配额与故障回收
+- [Provider Cache 生命周期](materialization-cache/README.md) —— 让 NiceEval 创建的 provider cache 可盘点、可解释并可安全回收
 - [运行观测协议](observation-protocol/README.md) —— Agent 事件流、Live、Record、OTel 与 Report 投影共用一份事实协议
 - [注入凭据的转写脱敏](credential-redaction/README.md) —— 已知凭据值的精确替换
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
