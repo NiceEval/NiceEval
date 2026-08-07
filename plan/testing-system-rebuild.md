@@ -89,7 +89,7 @@
 │      proof: 外部副本安装同一 candidate → 执行公开 CLI → 严格读回结果
 ├─ [x] T4.5 做重构免疫审查
 │      acceptance: 测试不 import candidate 类型或源码，不读取私有结果布局，不断言内部调用与当前 DTO
-├─ [ ] T4.6 注入 selector 忽略、failed/errored 交换、NDJSON 截断三类错误并确认 pilot 红在公开阶段
+├─ [x] T4.6 注入 selector 忽略、failed/errored 交换、NDJSON 截断三类错误并确认 pilot 红在公开阶段
 ├─ [x] T4.7 删除被替代 scripts/e2e.ts、scripts/verify.ts 与真实模型配置
 └─ [x] T4.8 验收 Repo、文件、标题三种重跑
        acceptance: pnpm e2e --repo cli -- --run test/<pilot>.test.ts -t <title>
