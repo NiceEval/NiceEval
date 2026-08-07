@@ -1,18 +1,12 @@
 #!/usr/bin/env -S npx tsx
 // scripts/e2e.ts — cli 唯一执行入口(docs/engineering/testing/e2e/README.md §3.1)。
-// 检查 secrets → 装依赖 → 清理上次运行的临时结果 → 跑验收(scripts/verify.ts,内含全部
-// niceeval exp / show 调用)→ 按「能确证的外部故障退 75,其余一律回归」折叠退出码。
-// 本仓库没有需要起停的被测服务（Direct Agent 直连真实网关）。
+// 装依赖 → 清理上次运行的临时结果 → 跑验收(scripts/verify.ts,内含全部
+// niceeval exp / show 调用)。本仓库使用签入确定性 Agent,不需要 secret 或被测服务。
 
-import "dotenv/config";
-
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 import { runVerify } from "./verify.ts";
-
-const EX_TEMPFAIL = 75;
-const REQUIRED_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
 function runInherited(cmd: string, args: string[]): number {
   const res = spawnSync(cmd, args, { stdio: "inherit" });
@@ -20,16 +14,7 @@ function runInherited(cmd: string, args: string[]): number {
 }
 
 async function main(): Promise<void> {
-  // 1. secrets fail-fast——本仓库实际用到的只有这两个;judge 两个未用到(见仓库 README),
-  //    不在此校验,只在 e2e.json.secrets 里保留声明供编排器一致性核对。
-  const missing = REQUIRED_SECRETS.filter((name) => !process.env[name]);
-  if (missing.length > 0) {
-    console.error(`[cli] missing required secret(s): ${missing.join(", ")} — see .env.example`);
-    process.exitCode = 1;
-    return;
-  }
-
-  // 2. 安装依赖——候选包注入由根编排器完成(见 e2e/scripts/injection.ts);这里只保证
+  // 1. 安装依赖——候选包注入由根编排器完成(见 e2e/scripts/injection.ts);这里只保证
   //    独立跑(`cd e2e/cli && pnpm e2e`)时 node_modules 存在。
   if (!existsSync("node_modules")) {
     console.log("[cli] installing dependencies ...");
@@ -41,18 +26,18 @@ async function main(): Promise<void> {
     const code = runInherited("pnpm", ["install", "--no-frozen-lockfile", "--ignore-workspace"]);
     if (code !== 0) {
       console.error(`[cli] pnpm install failed (exit ${code})`);
-      process.exitCode = EX_TEMPFAIL;
+      process.exitCode = 1;
       return;
     }
   }
 
-  // 3. 清理上一次运行的临时结果——缓存三步的基线计数必须从这次 pnpm e2e 调用开始重新数,
+  // 2. 清理上一次运行的临时结果——缓存三步的基线计数必须从这次 pnpm e2e 调用开始重新数,
   //    不能被上一次运行遗留的 attempt 历史污染。
   rmSync(".niceeval", { recursive: true, force: true });
 
-  // 4. 无被测服务需要起停。
+  // 3. 无被测服务需要起停。
 
-  // 5-6. 验收(选择、退出码折叠、缓存三步、CLI 读回),把预期非零退出转换成通过/失败判定。
+  // 4. 验收(选择、退出码折叠、缓存三步、CLI 读回),把预期非零退出转换成通过/失败判定。
   try {
     await runVerify();
     console.log("\n[cli] all assertions passed.");
@@ -60,19 +45,7 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error("\n[cli] verification failed:");
     console.error(err);
-
-    let ciLog = "";
-    try {
-      ciLog = readFileSync("logs/exp-ci.log", "utf8");
-    } catch {
-      // 日志还没写出(极早期失败),留空即可,走回归分类。
-    }
-
-    // 能确证的外部故障:provider 429/5xx/网络错误,或本网关特有的结构化「key 被禁用」信号
-    // (API_KEY_DISABLED——网关明确返回的结构化状态,不是 niceeval 或本仓库自己的断言失败,
-    // 见 memory 台账)。判不准就按回归退出——宁可误报回归,不可把回归漏报成环境问题。
-    const infra = /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT|API_KEY_DISABLED)/.test(ciLog);
-    process.exitCode = infra ? EX_TEMPFAIL : 1;
+    process.exitCode = 1;
   }
 }
 

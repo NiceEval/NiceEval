@@ -6,6 +6,6 @@ export default defineConfig({
   // 所以本地中文环境和 CI 上跑出来的输出一致。
   locale: "en",
   timeoutMs: 60_000,
-  // 全是 Direct Agent 直连真实网关（单次 HTTP 往返），不需要高并发。
+  // 所有 Experiment 使用签入的进程内确定性 Direct Agent，不依赖网络或凭据。
   maxConcurrency: 4,
 });

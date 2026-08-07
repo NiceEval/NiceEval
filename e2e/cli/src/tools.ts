@@ -1,12 +1,6 @@
-import { tool, type ToolSet } from "ai";
-import { z } from "zod";
-
-export function weatherTools(): ToolSet {
-  return {
-    get_weather: tool({
-      description: "Get the current weather for a city.",
-      inputSchema: z.object({ city: z.string() }),
-      execute: async ({ city }) => ({ city, condition: "sunny", temperatureC: 24 }),
-    }),
-  };
-}
+/** 签入 Agent/backend 共享的公开天气结果，不含 provider 或网络依赖。 */
+export const weatherFixture = Object.freeze({
+  city: "Brooklyn",
+  condition: "sunny",
+  temperatureC: 24,
+});
