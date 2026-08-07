@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "record",
+  "areas": ["record"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 10,
+  "secrets": [],
+  "requires": {},
+  "paths": ["e2e/record/**", "package.json", "pnpm-lock.yaml"],
+  "artifacts": []
+}
