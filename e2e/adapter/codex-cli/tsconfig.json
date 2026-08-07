@@ -13,5 +13,5 @@
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["niceeval.config.ts", "agents", "evals", "experiments", "scripts"]
+  "include": ["niceeval.config.ts", "agents", "evals", "experiments", "test/**/*.ts", "vitest.config.ts"]
 }

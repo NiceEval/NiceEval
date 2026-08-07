@@ -4,8 +4,7 @@
   "type": "module",
   "description": "niceeval E2E adapter repo: Codex CLI (codexAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/codex-cli.md",
   "scripts": {
-    "e2e": "tsx scripts/e2e.ts",
-    "verify": "tsx scripts/verify.ts",
+    "e2e": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,10 +14,10 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
     "@types/dockerode": "^3.3.31",
     "@types/node": "^22.0.0",
-    "dotenv": "^17.4.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }
