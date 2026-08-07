@@ -108,6 +108,7 @@
 │      owner: e2e/runner/**
 ├─ [ ] T6.2 package：CJS/ESM/exports/外部 cwd
 │      owner: e2e/package/**
+│      blocked: candidate exports 指向 node_modules 内 TS 源文件，Node 24 的真实 ESM/CJS 消费均报 ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING
 ├─ [x] T6.3 report：确定性 evidence + Playwright
 │      owner: e2e/report/**
 ├─ [ ] T6.4 record：公开 Record API/格式；不拥有私有存储布局
