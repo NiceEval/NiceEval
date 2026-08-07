@@ -1,7 +1,7 @@
 # E2E：真实场景 Repo
 
 E2E 只负责必须穿过真实公开边界的行为：候选包、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
-signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey。CLI、Runner、Report、Package 与 Lifecycle 使用
+signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey。CLI、Runner、Record、Report、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 兼容性 Repo。
 
 ## Repo 是载体，不是测试模型
@@ -111,6 +111,10 @@ Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox
 
 ## Report
 
+`e2e/record/` 是公开 `niceeval/record` API 与已声明磁盘格式的唯一 owner。它可以使用签入的公开格式 fixture；未在
+Record 契约逐项声明的 `.niceeval` 位置与文件布局仍是私有实现。改变公开 Record 格式会修改这个 owner；只改变私有存储组织
+或 reader 实现，不得修改 Report E2E。
+
 Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 
 - `show`：text / JSON 的身份、范围、切片和大输出；
@@ -162,6 +166,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 
 - [Adapter](adapter/README.md)：官方 Adapter 与真实协议的兼容性 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
-- [Report](report.md)：落盘、公开读面、HTTP、导出与浏览器行为。
+- [Record](record.md)：公开 Record API 与已声明磁盘格式；
+- [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。

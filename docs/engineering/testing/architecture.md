@@ -35,7 +35,21 @@ e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → e
 
 编排层不读取 `.niceeval/`，不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
 
-E2E 有两组隔离 Repo。`cli`、`runner`、`report`、`package` 与 `lifecycle` 是功能场景，使用确定性本地 fixture 验收
+## 三层观察白名单
+
+测试证据分成三层，不能把“为了诊断而收集”误当成“可以据此判对错”：
+
+| 层 | 可以读取 | 可以影响 verdict |
+|---|---|---|
+| Harness attestation | tarball digest、包实际加载路径、lock identity、Testkit version / integrity | 是；只判断被测身份与设施可信度 |
+| Outcome oracle | 公开 CLI、JSON / NDJSON / JUnit、package exports、Record API、HTTP、真实 href、已声明的可访问身份与视觉结果 | 是；判断用户结果 |
+| Diagnostic only | 私有存储、完整日志、trace 与内部 artifact | 否；只进入失败附件 |
+
+Outcome 测试不得 import 根 `src/`、候选内部子路径或生产类型，不得读取私有 `.niceeval` 路径、内部 DTO、函数与调用顺序。
+浏览器断言不得依赖内部 hydration 全局量、template ID、DOM class、布局实现属性，或自行拼接 attempt 文件路径。
+私有 artifact 删除、改名或改变布局时，测试 verdict 必须不变。
+
+E2E 有两组隔离 Repo。`cli`、`runner`、`record`、`report`、`package` 与 `lifecycle` 是功能场景，使用确定性本地 fixture 验收
 NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对应真实 SDK / CLI 或协议故障端。两组只共用机械 Testkit，
 不共用依赖图、fixture、secret、结果根或领域 expected。
 
@@ -104,6 +118,10 @@ E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在第一行，让 owner 不�
 - 不把产品 parser 复制到通用命令执行器；必须解码复杂公开格式时，parser 留在对应 Repo 并有 malformed case。
 
 允许从运行 A 取得事实，再与运行 B 的独立出口比较；不允许让被测出口同时产生 actual 和 expected。
+
+动态 locator 先由公开出口 A 返回；测试必须先用签入 sentinel、Eval ID 或 verdict 验证 A，再把 locator 作为用户输入交给
+公开出口 B。两个可能共同出错的候选出口互相比对，不构成独立 oracle。确定性 Agent / backend 使用签入协议 fixture 和独立
+请求 ledger，不调用候选内部函数计算答案。
 
 ## 复用设施预算
 

@@ -29,6 +29,9 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report
 ```
 
 `plan --json` 只输出 Repo、executor、能力和分片，不包含产品断言。
+本地默认顺序是 plan → pack → run；无 Repo 被选择或 manifest 非法时不 pack。CI 的 plan 与 pack 可以并行，run 同时消费
+二者的收据。`plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；`run --candidate` 不隐式重新 pack。
+原生测试参数在 `--` 后原样且只传一次。
 
 功能 Repo 与 Adapter Repo 永远是不同的 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
 `adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。`main` / `release` lane

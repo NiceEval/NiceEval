@@ -375,6 +375,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - 不需要 switch 穷尽；未知 key 不改变计数恒等式、verdict 折叠或 attempt active 位。
   - 锚点本地化标签只覆盖 `LifecyclePhase` 闭集。
   - fixture 塞一个官方未列 key，断言仍可见且不进锚点标签表。
+- **E2E repo manifest schema 与发现（`e2e/scripts/manifest.ts`、`discovery.ts`）**：`e2e.json` 严格按 schemaVersion 1 校验。必需字段缺失、未知字段与非法 enum 值都整份拒绝；adapter collection 的 id 使用 `adapter/<leaf>`。id 与顶层功能 Repo 一起全局唯一；发现只扫 adapter collection 与顶层功能 Repo，目录结构与 id 无关。测试只断言 manifest 稳定契约与发现结果，不锁实现函数拆分。
 
 ## 不这样测
 

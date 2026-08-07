@@ -115,6 +115,21 @@ Bug escape 后按顺序处理：
 
 新旧测试不能无限期并行。新 owner 只有通过当前候选、历史 bug kill 和本地单项重跑后才接管；接管同批删除旧 owner。
 
+## 重构免疫演练
+
+结果层 E2E，以及只依赖已声明稳定语义 seam 的 Unit，遵守同一保证：公开输入与公开结果契约不变时，测试源码、fixture
+与 expected 无需修改。import 私有函数、锁调用顺序或模块路径的 Unit 不具有这项保证；它要么改走稳定语义 seam，要么明确
+排除在演练之外，不能据此宣称整个 Unit 树对任意重构免疫。
+
+Report、Runner、Record 的新 owner 接管前各做一次 contract-preserving perturbation：
+
+- Report 改内部 DTO、组件树、class 与渲染实现，保留公开输出、可访问身份和视觉结果；
+- Runner 改调度器、内部 receipt DTO 与模块布局，保留公开 CLI 和结果；
+- Record 改私有存储组织与 reader 实现，保留公开 Record API 与 show 输出。
+
+演练前后，测试源码、fixture 与 expected 必须零 diff，同一外部 candidate tarball 原样全绿，私有依赖守护仍通过。
+还要注入一个真正改变公开结果的 mutation，让对应 owner 变红；否则“重构免疫”可能只是测试没有区分力。
+
 ## 可读性 Review
 
 评审测试按下面顺序读，不需要先找其它声明：
