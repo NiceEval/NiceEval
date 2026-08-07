@@ -41,6 +41,10 @@ function inspectImports(problems: Problem[], root: string, file: string, source:
   for (const match of source.matchAll(importPattern)) {
     const specifier = match[1];
     if (specifier === undefined) continue;
+    if (specifier.startsWith("@niceeval/testkit/") || specifier.includes("packages/testkit")) {
+      add(problems, root, file, "testkit-root-export-only", specifier);
+      continue;
+    }
     if (/^niceeval\/(?:src|dist|internal)(?:\/|$)/.test(specifier)) {
       add(problems, root, file, "candidate-internal-import", specifier);
       continue;
@@ -61,6 +65,7 @@ function inspectOutcomeSource(problems: Problem[], root: string, file: string, s
     ["private-template-id", /(?:__NICEEVAL_[A-Z_]*TEMPLATE|templateId)/],
     ["dom-class-or-id-oracle", /(?:locator|querySelector|querySelectorAll)\(\s*["'`][.#][A-Za-z_-]/],
     ["constructed-attempt-path", /attempt\/\s*(?:\$\{|["'`]\s*\+)/],
+    ["testkit-private-layout", /(?:dist\/(?:esm|cjs)|receipt\.json)/],
   ];
   for (const [rule, pattern] of rules) {
     const match = source.match(pattern);
@@ -136,6 +141,23 @@ describe("E2E 公开结果边界守护", () => {
             "dom-class-or-id-oracle",
             "constructed-attempt-path",
           ]),
+        );
+      },
+    );
+  });
+
+  it("拒绝 Testkit 子路径、源码路径与私有产物布局", () => {
+    withFixture(
+      {
+        "e2e/cli/test/private.spec.ts": `
+          import { command } from "@niceeval/testkit/process";
+          import { hidden } from "../../../packages/testkit/src/process.ts";
+          readFile("receipt.json");
+        `,
+      },
+      (root) => {
+        expect(collectE2EBoundaryProblems(root).map((problem) => problem.rule)).toEqual(
+          expect.arrayContaining(["testkit-root-export-only", "testkit-private-layout"]),
         );
       },
     );
