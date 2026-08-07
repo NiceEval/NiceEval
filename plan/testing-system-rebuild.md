@@ -119,8 +119,8 @@
 └─ [ ] T6.7 live adapters：每个 adapter/<id> 独立迁移，彼此 parallel
    ├─ [x] T6.7.1 ai-sdk
    ├─ [x] T6.7.2 codex-cli
-   ├─ [ ] T6.7.3 claude-code
-   ├─ [ ] T6.7.4 bub
+   ├─ [x] T6.7.3 claude-code
+   ├─ [x] T6.7.4 bub
    ├─ [ ] T6.7.5 hermes
    ├─ [ ] T6.7.6 openclaw
    └─ [ ] T6.7.7 opencode
