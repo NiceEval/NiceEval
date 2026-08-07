@@ -165,6 +165,7 @@ CaseKey
 **BuildKey 负责构建产物复用,CaseKey 负责完整 attempt 环境身份与 fingerprint。**
 只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果。
 逐 attempt 的容器名、临时目录和随机 project name 由 Provider 生成,不进 CaseKey,只作为本次启动的运行事实记录。
+
 作者不能用 `container_name` 固定任一 service 的容器名；这会绕开受管 project namespace,让并发 Case 争用同一个宿主资源。
 Agent 身份与 Sandbox 实例身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
