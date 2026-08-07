@@ -18,3 +18,4 @@
 | Git、Cargo、Deno、pnpm、OpenTofu 与 kubectl | [复杂 CLI 测试体系对照](cli-testing/README.md) |
 | Vite、Vitest 与 Playwright | [框架工具自身的 E2E 对照](framework-e2e/README.md) |
 | TanStack Table、TanStack Charts 与 NiceEval Reports | [Headless 内核、双面呈现与渐进增强](tanstack-table-charts.md) |
+| Harbor 与 Docker / Agent Sandbox 框架 | [容器启动、keeper、命令执行与 DinD 进程模型](docker-sandbox-process-models.md) |
