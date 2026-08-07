@@ -14,84 +14,152 @@
   "bin": {
     "niceeval": "bin/niceeval.js"
   },
-  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts",
-      "require": "./src/index.ts"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./sandbox": {
-      "types": "./src/sandbox/index.ts",
-      "import": "./src/sandbox/index.ts",
-      "require": "./src/sandbox/index.ts"
+      "import": {
+        "types": "./dist/sandbox/index.d.mts",
+        "default": "./dist/sandbox/index.mjs"
+      },
+      "require": {
+        "types": "./dist/sandbox/index.d.cts",
+        "default": "./dist/sandbox/index.cjs"
+      }
     },
     "./sandbox/e2b-template": {
-      "types": "./src/sandbox/e2b-agent-template.ts",
-      "import": "./src/sandbox/e2b-agent-template.ts",
-      "require": "./src/sandbox/e2b-agent-template.ts"
+      "import": {
+        "types": "./dist/sandbox/e2b-agent-template.d.mts",
+        "default": "./dist/sandbox/e2b-agent-template.mjs"
+      },
+      "require": {
+        "types": "./dist/sandbox/e2b-agent-template.d.cts",
+        "default": "./dist/sandbox/e2b-agent-template.cjs"
+      }
     },
     "./adapter": {
-      "types": "./src/agents/index.ts",
-      "import": "./src/agents/index.ts",
-      "require": "./src/agents/index.ts"
+      "import": {
+        "types": "./dist/agents/index.d.mts",
+        "default": "./dist/agents/index.mjs"
+      },
+      "require": {
+        "types": "./dist/agents/index.d.cts",
+        "default": "./dist/agents/index.cjs"
+      }
     },
     "./adapter/otel": {
-      "types": "./src/agents/ai-sdk-otel.ts",
-      "import": "./src/agents/ai-sdk-otel.ts",
-      "require": "./src/agents/ai-sdk-otel.ts"
+      "import": {
+        "types": "./dist/agents/ai-sdk-otel.d.mts",
+        "default": "./dist/agents/ai-sdk-otel.mjs"
+      },
+      "require": {
+        "types": "./dist/agents/ai-sdk-otel.d.cts",
+        "default": "./dist/agents/ai-sdk-otel.cjs"
+      }
     },
     "./expect": {
-      "types": "./src/expect/index.ts",
-      "import": "./src/expect/index.ts",
-      "require": "./src/expect/index.ts"
+      "import": {
+        "types": "./dist/expect/index.d.mts",
+        "default": "./dist/expect/index.mjs"
+      },
+      "require": {
+        "types": "./dist/expect/index.d.cts",
+        "default": "./dist/expect/index.cjs"
+      }
     },
     "./reporters": {
-      "types": "./src/runner/reporters/index.ts",
-      "import": "./src/runner/reporters/index.ts",
-      "require": "./src/runner/reporters/index.ts"
+      "import": {
+        "types": "./dist/runner/reporters/index.d.mts",
+        "default": "./dist/runner/reporters/index.mjs"
+      },
+      "require": {
+        "types": "./dist/runner/reporters/index.d.cts",
+        "default": "./dist/runner/reporters/index.cjs"
+      }
     },
     "./loaders": {
-      "types": "./src/loaders/index.ts",
-      "import": "./src/loaders/index.ts",
-      "require": "./src/loaders/index.ts"
+      "import": {
+        "types": "./dist/loaders/index.d.mts",
+        "default": "./dist/loaders/index.mjs"
+      },
+      "require": {
+        "types": "./dist/loaders/index.d.cts",
+        "default": "./dist/loaders/index.cjs"
+      }
     },
     "./record": {
-      "types": "./src/record/index.ts",
-      "import": "./src/record/index.ts",
-      "require": "./src/record/index.ts"
+      "import": {
+        "types": "./dist/record/index.d.mts",
+        "default": "./dist/record/index.mjs"
+      },
+      "require": {
+        "types": "./dist/record/index.d.cts",
+        "default": "./dist/record/index.cjs"
+      }
     },
     "./sample": {
-      "types": "./src/sample/index.ts",
-      "import": "./src/sample/index.ts",
-      "require": "./src/sample/index.ts"
+      "import": {
+        "types": "./dist/sample/index.d.mts",
+        "default": "./dist/sample/index.mjs"
+      },
+      "require": {
+        "types": "./dist/sample/index.d.cts",
+        "default": "./dist/sample/index.cjs"
+      }
     },
     "./report": {
-      "types": "./dist/report/index.d.ts",
-      "import": "./dist/report/index.js",
-      "require": "./dist/report/index.js"
+      "import": {
+        "types": "./dist/report/index.d.mts",
+        "default": "./dist/report/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/index.d.cts",
+        "default": "./dist/report/index.cjs"
+      }
     },
     "./report/react": {
-      "types": "./dist/report/react/index.d.ts",
-      "import": "./dist/report/react/index.js",
-      "require": "./dist/report/react/index.js"
+      "import": {
+        "types": "./dist/report/react/index.d.mts",
+        "default": "./dist/report/react/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/react/index.d.cts",
+        "default": "./dist/report/react/index.cjs"
+      }
     },
     "./report/built-in": {
-      "types": "./dist/report/built-in/index.d.ts",
-      "import": "./dist/report/built-in/index.js",
-      "require": "./dist/report/built-in/index.js"
+      "import": {
+        "types": "./dist/report/built-in/index.d.mts",
+        "default": "./dist/report/built-in/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/built-in/index.d.cts",
+        "default": "./dist/report/built-in/index.cjs"
+      }
     },
     "./report/extension": {
-      "types": "./dist/report/extension/index.d.ts",
-      "import": "./dist/report/extension/index.js",
-      "require": "./dist/report/extension/index.js"
+      "import": {
+        "types": "./dist/report/extension/index.d.mts",
+        "default": "./dist/report/extension/index.mjs"
+      },
+      "require": {
+        "types": "./dist/report/extension/index.d.cts",
+        "default": "./dist/report/extension/index.cjs"
+      }
     },
-    "./report/react/styles.css": "./src/report/assets/styles.css",
-    "./report/react/enhance.js": "./src/report/assets/enhance.js"
+    "./report/react/styles.css": "./dist/report/assets/styles.css",
+    "./report/react/enhance.js": "./dist/report/assets/enhance.js"
   },
   "files": [
     "INDEX.md",
-    "src",
     "bin",
     "dist",
     "docs-site/zh",
@@ -106,9 +174,10 @@
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",
     "view:build": "vite build --config src/view/app/vite.config.ts",
-    "build:report": "node scripts/prune-report-dist.mjs --clean && tsc -p tsconfig.report-build.json && node scripts/prune-report-dist.mjs",
+    "build:report": "pnpm run build:package",
+    "build:package": "pnpm run view:build && node scripts/package-runtime/build.mjs",
     "build:index": "tsx scripts/generate-reference.ts --bundled-index",
-    "prepare": "pnpm run view:build && pnpm run build:report && pnpm run build:index",
+    "prepare": "pnpm run build:package && pnpm run build:index",
     "site:dev": "cd site && node scripts/dev.mjs",
     "site:build": "cd site && next build && cd .. && tsx scripts/submit-indexnow.ts",
     "docs:dev": "node scripts/docs-dev.mjs",
@@ -153,6 +222,7 @@
     "clsx": "^2.1.1",
     "dockerode": "^4.0.2",
     "e2b": "^2.31.0",
+    "esbuild": "^0.28.1",
     "lucide-react": "^1.21.0",
     "mixpanel-browser": "^2.80.0",
     "motion": "^12.42.2",

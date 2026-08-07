@@ -30,10 +30,10 @@ import {
 } from "../record/index.ts";
 // ReportLoadError must come from the SAME module instance the report runtime is built
 // against — `instanceof` is keyed by declaration site, so a raw src copy and the compiled
-// dist copy of "the same" class are two different types. The package-owned report runtime
-// ships as precompiled ESM (dist/report/**, built by `pnpm run build:report`); all report
-// loading/rendering goes through ../report/runtime/host.ts (the shared contact surface).
-import { ReportLoadError } from "../../dist/report/runtime/load.js";
+// The package-owned report runtime and this host share one canonical module graph; a second
+// source-vs-dist copy would make otherwise identical classes different types. All report
+// loading/rendering therefore goes through ../report/runtime/host.ts (the shared contact surface).
+import { ReportLoadError } from "../report/runtime/load.ts";
 import { detectLocale, t } from "../i18n/index.ts";
 import { currentSample, filterExperiments } from "../sample/index.ts";
 import { matchExperimentSelector } from "../shared/aggregate.ts";
@@ -385,7 +385,7 @@ async function renderCompareSlice(
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
   const [{ Table }, { deltaTableContent }] = await Promise.all([
-    import("../../dist/report/definition/primitives.js"),
+    import("../report/definition/primitives.tsx"),
     import("../report/slices/content.ts"),
   ]);
   const report = await loadHostReport(cwd, undefined);
@@ -422,7 +422,7 @@ async function renderStatsSlice(
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
   const [{ Table }, { stabilityMatrixContent }] = await Promise.all([
-    import("../../dist/report/definition/primitives.js"),
+    import("../report/definition/primitives.tsx"),
     import("../report/slices/content.ts"),
   ]);
   // 只给渲染管线占位用的 Sample——Table 走 data 形态,不重新消费它;单独调用
