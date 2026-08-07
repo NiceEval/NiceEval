@@ -4,19 +4,22 @@
 // Consumes an already-built candidate tarball once, then for each selected
 // repo: copies it into an ephemeral working directory under scratchRoot/runs/,
 // points its niceeval dependency at the candidate, installs, verifies
-// injection via lockfile integrity only, runs its command, collects declared
-// artifacts into an independent durable artifactRoot/<repo-id>/ (never back
-// into the source repo, never under scratchRoot), writes a structured receipt
-// there, and always deletes the isolated working copy. scratchRoot is removed
-// at process end; artifactRoot is retained and its absolute path is logged for
-// workflow upload. A non-zero exit code is a regression; this runner does not
-// guess infrastructure from a numeric exit code. Non-host executors are
-// rejected as unsupported.
+// injection via lockfile integrity + installed identity, runs its command,
+// collects declared artifacts into an independent durable artifactRoot/<repo-id>/
+// (never back into the source repo, never under scratchRoot), writes a
+// structured receipt there, and always deletes the isolated working copy.
+// scratchRoot is removed at process end; artifactRoot is retained and its
+// absolute path is logged for workflow upload. A non-zero exit code is a
+// regression; this runner does not guess infrastructure from a numeric exit
+// code. Non-host executors are rejected as unsupported.
 //
-// An optional --testkit <exact-tgz> explicitly injects a locally packed
-// @niceeval/testkit tarball into the isolated copies (identity + sha256
-// verified, never the source repo). Without it — the CI and default case —
-// repos keep the exact registry version pinned by their checked-in lockfile.
+// An explicit `--testkit <exact-tgz>` is reserved for CI / exact replay and
+// NEVER triggers a repack: the given tarball is identity + sha256 verified,
+// materialized under artifactRoot/testkit/niceeval-testkit-<sha256>.tgz as
+// the durable artifact, and injected only into repos that declare
+// `harness.testkit: true`. A selected repo declaring it without any testkit
+// tarball fails before any test runs (declared-but-not-injected); repos that
+// do not declare it must not import @niceeval/testkit (prepared per repo).
 //
 // This script must never hardcode SDK names, ports, or expected eval/verdict
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
@@ -29,6 +32,7 @@ import { parseArgs } from "node:util";
 
 import { discoverAllRepos, e2eRootDir } from "./discovery.ts";
 import { readCandidateTarball, readTestkitTarball, type TestkitTarball } from "./injection.ts";
+import { ensureTestkitForHarnessConsumers, materializeTestkitArtifact } from "./testkit.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, runRepo, type RepoRunResult } from "./run-repo.ts";
@@ -185,9 +189,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
     console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
+    let durableTestkit: TestkitTarball | undefined;
     if (testkit !== undefined) {
+      durableTestkit = await materializeTestkitArtifact(artifactRoot, testkit);
       console.log(`[e2e] testkit tarball: ${testkit.path}`);
       console.log(`[e2e] testkit fingerprint: ${testkit.integrity} (sha256:${testkit.sha256})`);
+      console.log(`[e2e] durable testkit artifact: ${durableTestkit.path}`);
     }
 
     const { repos, errors } = discoverAllRepos(e2eRootDir());
@@ -204,6 +211,13 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return;
     }
 
+    // Declared-but-not-injected must fail before any test: a harness consumer
+    // without its Testkit would silently run whatever the registry resolves.
+    const harnessErrors = ensureTestkitForHarnessConsumers(selected, durableTestkit);
+    if (harnessErrors.length > 0) {
+      throw new Error(harnessErrors.join("; "));
+    }
+
     const allSecretNames = new Set<string>();
     for (const r of repos) for (const s of r.manifest.secrets) allSecretNames.add(s);
 
@@ -217,7 +231,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         artifactRoot,
         allSecretNames,
         cli.nativeArgs,
-        testkit,
+        durableTestkit,
       );
       console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
       console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);

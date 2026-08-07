@@ -107,6 +107,21 @@ describe("e2e.json 合法 manifest", () => {
       browsers: ["chromium"],
     });
   });
+
+  it("harness.testkit: true 声明消费意图并原样保留", () => {
+    const result = parseManifest(validManifest({ harness: { testkit: true } }), "cli/e2e.json");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.harness).toEqual({ testkit: true });
+  });
+
+  it("harness 缺省或 harness.testkit: false 解析为不消费", () => {
+    expect(parseManifest(validManifest(), "cli/e2e.json").ok).toBe(true);
+    const result = parseManifest(validManifest({ harness: { testkit: false } }), "cli/e2e.json");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.harness).toEqual({ testkit: false });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -175,6 +190,20 @@ describe("e2e.json 未知字段", () => {
       parseManifest(validManifest({ executor: { kind: "host", cpus: 2 } }), "a/e2e.json"),
     );
     expect(errors.some((e) => e.includes("unknown field") && e.includes('"cpus"'))).toBe(true);
+  });
+
+  it("harness 内未知字段报错", () => {
+    const errors = errorsOf(
+      parseManifest(validManifest({ harness: { sandbox: true } }), "a/e2e.json"),
+    );
+    expect(errors.some((e) => e.includes("unknown field") && e.includes('"sandbox"'))).toBe(true);
+  });
+
+  it("harness 不是对象或 harness.testkit 不是布尔时拒绝", () => {
+    const notObject = errorsOf(parseManifest(validManifest({ harness: true }), "a/e2e.json"));
+    expect(notObject.some((e) => e.includes('"harness"'))).toBe(true);
+    const notBoolean = errorsOf(parseManifest(validManifest({ harness: { testkit: "yes" } }), "a/e2e.json"));
+    expect(notBoolean.some((e) => e.includes('"harness.testkit"'))).toBe(true);
   });
 });
 

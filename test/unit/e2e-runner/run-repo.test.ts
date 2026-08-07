@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
@@ -27,14 +27,19 @@ import {
   extractTestkitIntegrity,
   readCandidateTarball,
   readTestkitTarball,
+  verifyTestkitLockResolution,
 } from "../../../e2e/scripts/injection.ts";
+import {
+  checkTestkitSourceClean,
+  injectTestkitTarball,
+  scanForTestkitImports,
+} from "../../../e2e/scripts/testkit.ts";
 import { classifyFromReceipt, type StageReceipt } from "../../../e2e/scripts/receipt.ts";
 import { buildSummary } from "../../../e2e/scripts/run.ts";
 import {
   appendNativeArgs,
   copyRepoIsolated,
   pointAtCandidateTarball,
-  pointAtTestkitTarball,
   runCommand,
   runRepo,
   type RepoRunResult,
@@ -136,7 +141,8 @@ function writeFixtureRepo(
     artifacts?: readonly string[];
     executor?: E2ERepoManifest["executor"];
     timeoutMinutes?: number;
-    testkitVersion?: string;
+    /** e2e.json declares harness.testkit: true (injection intent). */
+    harnessTestkit?: boolean;
   },
 ): DiscoveredRepo {
   mkdirSync(root, { recursive: true });
@@ -147,9 +153,6 @@ function writeFixtureRepo(
     type: "module",
     dependencies: { niceeval: "0.0.0-test" },
   };
-  if (opts.testkitVersion !== undefined) {
-    pkg.devDependencies = { "@niceeval/testkit": opts.testkitVersion };
-  }
   writeFileSync(join(root, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
   writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
   // Seed a pre-existing marker that must never be modified by the runner.
@@ -165,6 +168,7 @@ function writeFixtureRepo(
     secrets: [],
     paths: ["**"],
     artifacts: opts.artifacts ?? ["logs/**", ".niceeval/**"],
+    ...(opts.harnessTestkit === undefined ? {} : { harness: { testkit: opts.harnessTestkit } }),
   };
   writeFileSync(join(root, "e2e.json"), JSON.stringify(manifest, null, 2) + "\n");
   return { dir: root, manifest };
@@ -218,38 +222,96 @@ describe("external artifacts and zero source writes", () => {
 });
 
 describe("local Testkit tarball injection", () => {
-  it("pointAtTestkitTarball replaces the copy's declared devDependency only", async () => {
+  it("injectTestkitTarball 只在隔离副本新增 file: devDependency 与内容寻址 tgz", async () => {
     await withTempDir(async (dir) => {
       const source = join(dir, "source");
       const copy = join(dir, "copy");
-      const tarball = writeMinimalTestkit(dir);
-      writeFixtureRepo(source, {
-        id: "tk-mut",
-        command: ["node", "-e", "process.exit(0)"],
-        testkitVersion: "0.0.0-test",
-      });
+      const tarball = await readTestkitTarball(writeMinimalTestkit(dir));
+      writeFixtureRepo(source, { id: "tk-mut", command: ["node", "-e", "process.exit(0)"] });
       const before = fingerprintTree(source);
 
       await copyRepoIsolated(source, copy);
-      await pointAtTestkitTarball(copy, tarball);
+      await injectTestkitTarball(copy, tarball);
 
       const copyPkg = JSON.parse(readFileSync(join(copy, "package.json"), "utf8")) as {
         devDependencies: { "@niceeval/testkit": string };
       };
-      expect(copyPkg.devDependencies["@niceeval/testkit"]).toBe(`file:${tarball}`);
+      const fileName = `niceeval-testkit-${tarball.sha256}.tgz`;
+      expect(copyPkg.devDependencies["@niceeval/testkit"]).toBe(`file:./${fileName}`);
+      expect(existsSync(join(copy, fileName))).toBe(true);
+      expect(readFileSync(join(copy, fileName))).toEqual(readFileSync(tarball.path));
       expect(fingerprintTree(source)).toEqual(before);
     });
   });
 
-  it("repo without a declared @niceeval/testkit dependency fails loudly, never silently adds one", async () => {
+  it("checkTestkitSourceClean 拒绝源 package.json 声明 Testkit 与源 lock 的 Testkit/workspace:/file:", async () => {
     await withTempDir(async (dir) => {
-      const source = join(dir, "source");
-      const copy = join(dir, "copy");
-      const tarball = writeMinimalTestkit(dir);
-      writeFixtureRepo(source, { id: "tk-undeclared", command: ["node", "-e", "process.exit(0)"] });
-      await copyRepoIsolated(source, copy);
+      const dirty = join(dir, "dirty");
+      writeFixtureRepo(dirty, { id: "dirty", command: ["node", "-e", "process.exit(0)"] });
+      const pkg = JSON.parse(readFileSync(join(dirty, "package.json"), "utf8")) as Record<string, unknown>;
+      pkg.devDependencies = { "@niceeval/testkit": "0.1.0" };
+      writeFileSync(join(dirty, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+      const lock = join(dirty, "pnpm-lock.yaml");
+      writeFileSync(
+        lock,
+        [
+          "lockfileVersion: '9.0'",
+          "  '@niceeval/testkit@0.1.0':",
+          "    resolution: {integrity: sha512-ABC==}",
+          "  x@1.0.0:",
+          "    resolution: {integrity: sha512-XYZ==}",
+        ].join("\n") + "\n",
+      );
 
-      await expect(pointAtTestkitTarball(copy, tarball)).rejects.toThrow(/@niceeval\/testkit/);
+      const violations = checkTestkitSourceClean(dirty);
+      expect(violations.some((v) => v.includes('"@niceeval/testkit"'))).toBe(true);
+      expect(violations.some((v) => v.includes("pnpm-lock.yaml") && v.includes("testkit"))).toBe(true);
+
+      const workspaceOnly = join(dir, "workspace-only");
+      writeFixtureRepo(workspaceOnly, { id: "ws-only", command: ["node", "-e", "process.exit(0)"] });
+      writeFileSync(
+        join(workspaceOnly, "pnpm-lock.yaml"),
+        ["lockfileVersion: '9.0'", "  foo@workspace:*:", "    resolution: {directory: foo, type: directory}"].join("\n") + "\n",
+      );
+      const wsViolations = checkTestkitSourceClean(workspaceOnly);
+      expect(wsViolations.some((v) => v.includes("workspace:"))).toBe(true);
+
+      const fileOnly = join(dir, "file-only");
+      writeFixtureRepo(fileOnly, { id: "file-only", command: ["node", "-e", "process.exit(0)"] });
+      writeFileSync(
+        join(fileOnly, "pnpm-lock.yaml"),
+        ["lockfileVersion: '9.0'", "  bar@file:../vendor/bar:", "    resolution: {directory: ../vendor/bar, type: directory}"].join("\n") + "\n",
+      );
+      const fileViolations = checkTestkitSourceClean(fileOnly);
+      expect(fileViolations.some((v) => v.includes("file:"))).toBe(true);
+
+      const clean = join(dir, "clean");
+      writeFixtureRepo(clean, { id: "clean", command: ["node", "-e", "process.exit(0)"] });
+      expect(checkTestkitSourceClean(clean)).toEqual([]);
+    });
+  });
+
+  it("scanForTestkitImports 只命中 import 形态,跳过 package.json/lock 与排除目录", async () => {
+    await withTempDir(async (dir) => {
+      const root = join(dir, "repo");
+      writeFixtureRepo(root, { id: "scan", command: ["node", "-e", "process.exit(0)"] });
+      mkdirSync(join(root, "test"), { recursive: true });
+      writeFileSync(
+        join(root, "test", "uses.test.ts"),
+        'import { runProcess } from "@niceeval/testkit";\n',
+      );
+      mkdirSync(join(root, "test", "nested"), { recursive: true });
+      writeFileSync(
+        join(root, "test", "nested", "dyn.mts"),
+        'const tk = await import("@niceeval/testkit");\n',
+      );
+      writeFileSync(join(root, "README.md"), "from \"@niceeval/testkit\" 只是一段说明文字\n");
+      writeFileSync(join(root, "package.json"), '{"dependencies":{"@niceeval/testkit":"0.1.0"}}\n');
+      mkdirSync(join(root, "node_modules", "@niceeval", "testkit"), { recursive: true });
+      writeFileSync(join(root, "node_modules", "@niceeval", "testkit", "index.js"), 'from "@niceeval/testkit"\n');
+
+      const matches = scanForTestkitImports(root);
+      expect(matches).toEqual(["test/nested/dyn.mts", "test/uses.test.ts"]);
     });
   });
 
@@ -301,6 +363,22 @@ describe("local Testkit tarball injection", () => {
       ok +
       "  @niceeval/testkit@file:/tmp/tk2.tgz:\n    resolution: {integrity: sha512-DEF==}\n";
     expect(() => extractTestkitIntegrity(two)).toThrow(/expected exactly one/);
+  });
+
+  it("verifyTestkitLockResolution 校验唯一 resolution、包名与 SRI 一致", () => {
+    const ok =
+      "  '@niceeval/testkit@file:./niceeval-testkit-abc.tgz':\n    resolution: {integrity: sha512-ABC==}\n";
+    expect(verifyTestkitLockResolution(ok, "sha512-ABC==")).toEqual({
+      ok: true,
+      key: "@niceeval/testkit@file:./niceeval-testkit-abc.tgz",
+      integrity: "sha512-ABC==",
+    });
+    // SRI 与注入字节不一致 → harness failure。
+    expect(verifyTestkitLockResolution(ok, "sha512-XYZ==")).toMatchObject({ ok: false });
+    // 零 entry / 多个 entry / 非 testkit key 都拒绝。
+    expect(verifyTestkitLockResolution("  other@1.0.0:\n    resolution: {integrity: sha512-XYZ==}\n", "sha512-ABC==")).toMatchObject({ ok: false });
+    const two = ok + "  '@niceeval/testkit@file:./tk2.tgz':\n    resolution: {integrity: sha512-DEF==}\n";
+    expect(verifyTestkitLockResolution(two, "sha512-ABC==")).toMatchObject({ ok: false });
   });
 });
 
@@ -358,7 +436,7 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
       expect(written.category).toBe("pass");
       // ① Final on-disk receipt must include cleanup after working-copy removal.
       const writtenStages = written.stages.map((s) => s.stage);
-      expect(writtenStages).toEqual(["install", "injection", "test", "collect", "cleanup"]);
+      expect(writtenStages).toEqual(["prepare", "install", "injection", "test", "collect", "cleanup"]);
       expect(written.stages.find((s) => s.stage === "cleanup")?.ok).toBe(true);
 
       const stageNames = result.receipt.stages.map((s) => s.stage);
@@ -486,12 +564,12 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
         category: string;
       };
       expect(onDisk.category).toBe("infra");
-      expect(onDisk.stages.map((s) => s.stage)).toEqual(["install", "injection", "cleanup"]);
+      expect(onDisk.stages.map((s) => s.stage)).toEqual(["prepare", "install", "injection", "cleanup"]);
       expect(existsSync(join(scratch, "runs", "inj-fail"))).toBe(false);
     });
   }, 120_000);
 
-  it("explicit testkit injection passes and the receipt keeps a stable diagnostic with sha256", async () => {
+  it("显式注入 testkit 通过:prepare 声明、注入、唯一 resolution、安装路径与收据齐全", async () => {
     await withTempDir(async (dir) => {
       const source = join(dir, "source");
       const scratch = join(dir, "scratch");
@@ -505,7 +583,7 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
       const repo = writeFixtureRepo(source, {
         id: "tk-pass",
         command: ["node", "-e", "process.exit(0)"],
-        testkitVersion: "0.0.0-test",
+        harnessTestkit: true,
       });
       const before = fingerprintTree(source);
 
@@ -514,15 +592,48 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
       expect(fingerprintTree(source)).toEqual(before);
       expect(result.category).toBe("pass");
       expect(result.exitCode).toBe(0);
+      const prepare = result.receipt.stages.find((s) => s.stage === "prepare");
+      expect(prepare?.ok).toBe(true);
+      expect(prepare?.detail).toContain("harness.testkit declared");
       const injection = result.receipt.stages.find((s) => s.stage === "injection");
       expect(injection?.ok).toBe(true);
       expect(injection?.detail).toContain("testkit tarball");
       expect(injection?.detail).toContain(testkit.sha256);
+      expect(injection?.detail).toContain("@niceeval/testkit");
       expect(result.receipt.stages.find((s) => s.stage === "test")?.ok).toBe(true);
+
+      // Receipt 保存 version(诊断)/sha256/SRI/resolved path/durable artifact 相对路径/复现命令。
+      const tk = result.receipt.testkit;
+      expect(tk).toBeDefined();
+      expect(tk?.version).toBe("0.0.0-test");
+      expect(tk?.sha256).toBe(testkit.sha256);
+      expect(tk?.integrity).toBe(testkit.integrity);
+      expect(tk?.resolvedPath).toBe(join(scratch, "runs", "tk-pass", "node_modules", "@niceeval", "testkit"));
+      const candidateArtifact = join(artifactRoot, "candidate", `niceeval-candidate-${candidate.sha256}.tgz`);
+      const testkitArtifact = join(artifactRoot, "testkit", `niceeval-testkit-${testkit.sha256}.tgz`);
+      expect(tk?.artifactPath).toBe(relative(artifactRoot, testkitArtifact));
+      expect(tk?.candidateArtifactPath).toBe(relative(artifactRoot, candidateArtifact));
+      expect(tk?.reproduce).toContain("--testkit");
+      expect(tk?.reproduce).toContain(candidateArtifact);
+      expect(tk?.reproduce).toContain(testkitArtifact);
+      expect(tk?.reproduce).toContain("--repo tk-pass");
+      expect(tk?.exactReplay).toBe(true);
+      expect(existsSync(candidateArtifact)).toBe(true);
+      expect(existsSync(testkitArtifact)).toBe(true);
+
       const onDisk = JSON.parse(readFileSync(result.receiptPath, "utf8")) as {
-        stages: Array<{ stage: string; ok: boolean }>;
+        stages: Array<{ stage: string }>;
+        testkit: { sha256: string; artifactPath: string };
       };
-      expect(onDisk.stages.map((s) => s.stage)).toEqual(["install", "injection", "test", "collect", "cleanup"]);
+      expect(onDisk.stages.map((s) => s.stage)).toEqual([
+        "prepare",
+        "install",
+        "injection",
+        "test",
+        "collect",
+        "cleanup",
+      ]);
+      expect(onDisk.testkit.sha256).toBe(testkit.sha256);
     });
   }, 120_000);
 
@@ -547,7 +658,7 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
           "-e",
           `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.exit(0)`,
         ],
-        testkitVersion: "0.0.0-test",
+        harnessTestkit: true,
       });
 
       const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), [], badTestkit);
@@ -561,7 +672,7 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
     });
   }, 120_000);
 
-  it("testkit injection into a repo that does not consume testkit fails before install", async () => {
+  it("candidate 或 Testkit 不再位于 durable artifact root 时绝不声称 exact replay", async () => {
     await withTempDir(async (dir) => {
       const source = join(dir, "source");
       const scratch = join(dir, "scratch");
@@ -570,24 +681,144 @@ describe("runRepo receipts, external artifacts, cleanup", () => {
       mkdirSync(artifactRoot, { recursive: true });
       const candidate = readCandidateTarball(writeMinimalCandidate(dir));
       const testkit = await readTestkitTarball(writeMinimalTestkit(dir));
-      const marker = join(dir, "tk-undeclared-ran.marker");
+      const candidateArtifact = join(artifactRoot, "candidate", `niceeval-candidate-${candidate.sha256}.tgz`);
+      const testkitArtifact = join(artifactRoot, "testkit", `niceeval-testkit-${testkit.sha256}.tgz`);
       const repo = writeFixtureRepo(source, {
-        id: "tk-undeclared-run",
+        id: "tk-no-replay",
+        command: [
+          "node",
+          "-e",
+          `require('fs').rmSync(${JSON.stringify(candidateArtifact)}); process.exit(0)`,
+        ],
+        harnessTestkit: true,
+      });
+
+      const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), [], testkit);
+
+      expect(result.category).toBe("pass");
+      expect(existsSync(candidateArtifact)).toBe(false);
+      expect(existsSync(testkitArtifact)).toBe(true);
+      expect(result.receipt.testkit?.reproduce).toContain(candidateArtifact);
+      expect(result.receipt.testkit?.reproduce).toContain(testkitArtifact);
+      expect(result.receipt.testkit?.exactReplay).toBe(false);
+    });
+  }, 120_000);
+
+  it("声明了 harness.testkit 却没注入 tgz → prepare 失败,install/test 都不发生", async () => {
+    await withTempDir(async (dir) => {
+      const source = join(dir, "source");
+      const scratch = join(dir, "scratch");
+      const artifactRoot = join(dir, "artifact-root");
+      mkdirSync(scratch, { recursive: true });
+      mkdirSync(artifactRoot, { recursive: true });
+      const candidate = readCandidateTarball(writeMinimalCandidate(dir));
+      const marker = join(dir, "tk-declared-ran.marker");
+      const repo = writeFixtureRepo(source, {
+        id: "tk-declared",
+        command: [
+          "node",
+          "-e",
+          `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.exit(0)`,
+        ],
+        harnessTestkit: true,
+      });
+
+      const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), []);
+
+      expect(result.category).toBe("infra");
+      expect(result.detail).toMatch(/declared/i);
+      expect(result.detail).toMatch(/testkit/i);
+      expect(existsSync(marker)).toBe(false);
+      expect(result.receipt.stages.map((s) => s.stage)).toEqual(["prepare", "cleanup"]);
+      expect(result.receipt.stages.find((s) => s.stage === "prepare")?.ok).toBe(false);
+      expect(result.receipt.stages.some((s) => s.stage === "install")).toBe(false);
+      expect(result.receipt.stages.some((s) => s.stage === "test")).toBe(false);
+      expect(result.receipt.stages.find((s) => s.stage === "cleanup")?.ok).toBe(true);
+      expect(result.receipt.testkit).toBeUndefined();
+    });
+  }, 120_000);
+
+  it("未声明 harness.testkit 却 import Testkit → prepare 失败,test 前停住", async () => {
+    await withTempDir(async (dir) => {
+      const source = join(dir, "source");
+      const scratch = join(dir, "scratch");
+      const artifactRoot = join(dir, "artifact-root");
+      mkdirSync(scratch, { recursive: true });
+      mkdirSync(artifactRoot, { recursive: true });
+      const candidate = readCandidateTarball(writeMinimalCandidate(dir));
+      const testkit = await readTestkitTarball(writeMinimalTestkit(dir));
+      const marker = join(dir, "tk-import-ran.marker");
+      const repo = writeFixtureRepo(source, {
+        id: "tk-import",
         command: [
           "node",
           "-e",
           `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.exit(0)`,
         ],
       });
+      mkdirSync(join(source, "test"), { recursive: true });
+      writeFileSync(join(source, "test", "uses.test.ts"), 'import { runProcess } from "@niceeval/testkit";\n');
 
       const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), [], testkit);
 
       expect(result.category).toBe("infra");
-      expect(result.detail).toMatch(/@niceeval\/testkit/);
+      expect(result.detail).toMatch(/without declaring harness\.testkit/i);
       expect(existsSync(marker)).toBe(false);
+      expect(result.receipt.stages.find((s) => s.stage === "prepare")?.ok).toBe(false);
+      expect(result.receipt.stages.some((s) => s.stage === "install")).toBe(false);
       expect(result.receipt.stages.some((s) => s.stage === "test")).toBe(false);
-      expect(result.receipt.stages.map((s) => s.stage)).toEqual(["install", "cleanup"]);
-      expect(existsSync(join(scratch, "runs", "tk-undeclared-run"))).toBe(false);
+      expect(result.receipt.testkit).toBeUndefined();
+    });
+  }, 120_000);
+
+  it("不消费 Testkit 的 repo 即使显式传了 tgz 也不注入、照常通过", async () => {
+    await withTempDir(async (dir) => {
+      const source = join(dir, "source");
+      const scratch = join(dir, "scratch");
+      const artifactRoot = join(dir, "artifact-root");
+      mkdirSync(scratch, { recursive: true });
+      mkdirSync(artifactRoot, { recursive: true });
+      const candidate = readCandidateTarball(writeMinimalCandidate(dir));
+      const testkit = await readTestkitTarball(writeMinimalTestkit(dir));
+      const repo = writeFixtureRepo(source, {
+        id: "tk-nonconsumer",
+        command: ["node", "-e", "process.exit(0)"],
+      });
+
+      const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), [], testkit);
+
+      expect(result.category).toBe("pass");
+      expect(existsSync(join(scratch, "runs", "tk-nonconsumer"))).toBe(false);
+      expect(result.receipt.testkit).toBeUndefined();
+      expect(result.receipt.stages.find((s) => s.stage === "prepare")?.detail).toContain("no testkit declared");
+    });
+  }, 120_000);
+
+  it("源 package.json 声明 @niceeval/testkit → prepare 失败(源污染)", async () => {
+    await withTempDir(async (dir) => {
+      const source = join(dir, "source");
+      const scratch = join(dir, "scratch");
+      const artifactRoot = join(dir, "artifact-root");
+      mkdirSync(scratch, { recursive: true });
+      mkdirSync(artifactRoot, { recursive: true });
+      const candidate = readCandidateTarball(writeMinimalCandidate(dir));
+      const testkit = await readTestkitTarball(writeMinimalTestkit(dir));
+      const repo = writeFixtureRepo(source, {
+        id: "tk-src-dirty",
+        command: ["node", "-e", "process.exit(0)"],
+        harnessTestkit: true,
+      });
+      const pkg = JSON.parse(readFileSync(join(source, "package.json"), "utf8")) as Record<string, unknown>;
+      pkg.devDependencies = { "@niceeval/testkit": "0.1.0" };
+      writeFileSync(join(source, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+
+      const result = await runRepo(repo, candidate, scratch, artifactRoot, new Set(), [], testkit);
+
+      expect(result.category).toBe("infra");
+      expect(result.detail).toMatch(/source package\.json declares/i);
+      expect(result.receipt.stages.find((s) => s.stage === "prepare")?.ok).toBe(false);
+      expect(result.receipt.stages.some((s) => s.stage === "install")).toBe(false);
+      expect(result.receipt.stages.some((s) => s.stage === "test")).toBe(false);
     });
   }, 120_000);
 });

@@ -31,7 +31,7 @@ export interface CandidateTarball {
   version: string;
 }
 
-function runInherited(cmd: string, args: string[], cwd: string, quiet: boolean): Promise<number> {
+export function runInherited(cmd: string, args: string[], cwd: string, quiet: boolean): Promise<number> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: quiet ? "ignore" : "inherit" });
     child.on("error", reject);
@@ -215,6 +215,27 @@ export async function readTestkitTarball(tarballPath: string): Promise<TestkitTa
   };
 }
 
+export interface TestkitLockEntry {
+  /** The package key as pnpm wrote it, e.g. "@niceeval/testkit@file:./niceeval-testkit-<sha>.tgz". */
+  key: string;
+  /** The SRI pnpm recorded for the tarball resolution: "sha512-<base64>". */
+  integrity: string;
+}
+
+/**
+ * Collect every `@niceeval/testkit@...` package entry pnpm wrote into a
+ * pnpm-lock.yaml, with the entry key and its resolution.integrity. Zero
+ * matches mean the isolated copy never resolved the injected tarball; more
+ * than one means an ambiguous/partial injection. Callers decide the failure
+ * shape; this function only reports what is in the lockfile.
+ */
+export function extractTestkitLockEntries(lockfileText: string): TestkitLockEntry[] {
+  // pnpm quotes scoped file: keys in pnpm-lock.yaml ("@..." starts with the
+  // YAML-reserved @), so the key may or may not be quoted.
+  const entryRe = /^ {2}('?)(@niceeval\/testkit@[^\n]*?)\1:\n {4}resolution:\s*\{[^}\n]*integrity:\s*(sha512-[A-Za-z0-9+/=]+)/gm;
+  return [...lockfileText.matchAll(entryRe)].map((m) => ({ key: m[2]!, integrity: m[3]! }));
+}
+
 /**
  * Extract the `resolution.integrity` pnpm recorded for the
  * `@niceeval/testkit@file:...` package entry in a pnpm-lock.yaml. Throws if
@@ -223,22 +244,19 @@ export async function readTestkitTarball(tarballPath: string): Promise<TestkitTa
  * partial injection.
  */
 export function extractTestkitIntegrity(lockfileText: string): string {
-  // pnpm quotes scoped file: keys in pnpm-lock.yaml ("@..." starts with the
-  // YAML-reserved @), so the key may or may not be quoted.
-  const entryRe = /^ {2}'?@niceeval\/testkit@[^\n]*'?:\n {4}resolution:\s*\{[^}\n]*integrity:\s*(sha512-[A-Za-z0-9+/=]+)/gm;
-  const matches = [...lockfileText.matchAll(entryRe)];
+  const entries = extractTestkitLockEntries(lockfileText);
 
-  if (matches.length === 0) {
+  if (entries.length === 0) {
     throw new Error(
       'no "@niceeval/testkit@..." package entry with a resolution.integrity found in pnpm-lock.yaml — @niceeval/testkit may not have resolved to the injected local tarball at all',
     );
   }
-  if (matches.length > 1) {
+  if (entries.length > 1) {
     throw new Error(
-      `found ${matches.length} "@niceeval/testkit@..." package entries in pnpm-lock.yaml — expected exactly one; a partial or ambiguous injection`,
+      `found ${entries.length} "@niceeval/testkit@..." package entries in pnpm-lock.yaml — expected exactly one; a partial or ambiguous injection`,
     );
   }
-  return matches[0][1];
+  return entries[0]!.integrity;
 }
 
 export type InjectionVerdict = { ok: true } | { ok: false; reason: string };
@@ -266,22 +284,48 @@ export function verifyInjection(lockfileText: string, expectedIntegrity: string)
 }
 
 /**
- * Same lockfile-integrity comparison for an explicitly injected local
- * @niceeval/testkit tarball. Only runs when --testkit was passed; without it
- * the repo keeps its lockfile's exact registry version and nothing changes.
+ * Verify the isolated copy's own pnpm-lock.yaml resolved @niceeval/testkit to
+ * exactly one entry whose SRI matches the injected tarball bytes. Package
+ * identity comes from the lock entry key; the actual installed path and
+ * installed package name are verified separately by the runner against
+ * node_modules (see run-repo.ts). A mismatch is a harness failure (infra) —
+ * never silently install another version and keep running.
  */
-export function verifyTestkitInjection(lockfileText: string, expectedIntegrity: string): InjectionVerdict {
-  let actual: string;
+export function verifyTestkitLockResolution(
+  lockfileText: string,
+  expectedIntegrity: string,
+): { ok: true; key: string; integrity: string } | { ok: false; reason: string } {
+  let entries: TestkitLockEntry[];
   try {
-    actual = extractTestkitIntegrity(lockfileText);
+    entries = extractTestkitLockEntries(lockfileText);
   } catch (err) {
     return { ok: false, reason: (err as Error).message };
   }
-  if (actual !== expectedIntegrity) {
+  if (entries.length === 0) {
     return {
       ok: false,
-      reason: `installed @niceeval/testkit integrity (${actual}) does not match the local tarball integrity (${expectedIntegrity}) — the resolved testkit is not the injected tarball`,
+      reason:
+        'no "@niceeval/testkit@..." package entry found in pnpm-lock.yaml — the isolated copy never resolved the injected testkit tarball',
     };
   }
-  return { ok: true };
+  if (entries.length > 1) {
+    return {
+      ok: false,
+      reason: `found ${entries.length} "@niceeval/testkit@..." package entries in pnpm-lock.yaml — expected exactly one; a partial or ambiguous injection`,
+    };
+  }
+  const entry = entries[0]!;
+  if (!entry.key.startsWith("@niceeval/testkit@")) {
+    return {
+      ok: false,
+      reason: `testkit lock entry has an unexpected package key ${JSON.stringify(entry.key)} — expected a "@niceeval/testkit@..." key`,
+    };
+  }
+  if (entry.integrity !== expectedIntegrity) {
+    return {
+      ok: false,
+      reason: `installed @niceeval/testkit integrity (${entry.integrity}) does not match the injected tarball integrity (${expectedIntegrity}) — the resolved testkit is not the injected artifact`,
+    };
+  }
+  return { ok: true, key: entry.key, integrity: entry.integrity };
 }
