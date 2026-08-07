@@ -71,6 +71,10 @@ function inspectOutcomeSource(problems: Problem[], root: string, file: string, s
     const match = source.match(pattern);
     if (match) add(problems, root, file, rule, match[0]);
   }
+  const relativeFile = relative(root, file).replaceAll(sep, "/");
+  if (relativeFile.startsWith("e2e/adapter/") && /\b(?:describe|it|test)\.(?:skip|skipIf)\b/.test(source)) {
+    add(problems, root, file, "live-adapter-must-not-skip", source.match(/\b(?:describe|it|test)\.(?:skip|skipIf)\b/)?.[0] ?? "skip");
+  }
 }
 
 function inspectTestkitDependency(problems: Problem[], root: string, file: string): void {
@@ -159,6 +163,22 @@ describe("E2E 公开结果边界守护", () => {
         expect(collectE2EBoundaryProblems(root).map((problem) => problem.rule)).toEqual(
           expect.arrayContaining(["testkit-root-export-only", "testkit-private-layout"]),
         );
+      },
+    );
+  });
+
+  it("拒绝 live Adapter 在测试内把缺能力跳过成绿色", () => {
+    withFixture(
+      {
+        "e2e/adapter/ai-sdk/test/live.test.ts": `
+          import { test } from "vitest";
+          test.skipIf(!process.env.OPENAI_API_KEY)("live", () => {});
+        `,
+      },
+      (root) => {
+        expect(collectE2EBoundaryProblems(root)).toEqual([
+          expect.objectContaining({ rule: "live-adapter-must-not-skip" }),
+        ]);
       },
     );
   });
