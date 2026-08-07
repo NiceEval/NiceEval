@@ -406,12 +406,13 @@ describe("DockerSandbox.ensureLifetime", () => {
     if (!result.ready) expect(result.reason).toContain("not started");
   });
 
-  it("confirms while the burned-in TTL still covers the next attempt", async () => {
+  it("confirms while the burned-in TTL still covers the next attempt, and reports the real expiry", async () => {
     const sandbox = withExpiry(new DockerSandbox({ lifetimeMs: 4 * 60 * 60_000 }), Date.now() + 60 * 60_000);
 
     const result = await sandbox.ensureLifetime(20 * 60_000);
 
     expect(result.ready).toBe(true);
+    expect(result.ready === true ? result.expiresAt : undefined).toBeDefined();
   });
 
   it("says the TTL cannot be extended instead of pretending it can", async () => {
@@ -426,45 +427,5 @@ describe("DockerSandbox.ensureLifetime", () => {
       expect(result.reason).toContain("cannot be extended");
       expect(result.reason).toContain("1200s");
     }
-  });
-});
-
-// cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
-// 容器的 dead-man TTL 烧在 PID1 的 `timeout` 里:到期真的会被杀,但没有续期通道。
-// 所以这条能力只确认、不续期,剩余不够就如实说不够,由 runner 轮换实例。
-describe("DockerSandbox.ensureLifetime", () => {
-  /** initialize() 才会算 expiresAtMs(要起真实容器);这里直接注入那一刻的结果。 */
-  function makeStarted(lifetimeMs: number | undefined, remainingMs: number): DockerSandbox {
-    const sandbox = new DockerSandbox(lifetimeMs === undefined ? {} : { lifetimeMs });
-    (sandbox as unknown as { expiresAtMs?: number }).expiresAtMs = Date.now() + remainingMs;
-    return sandbox;
-  }
-
-  it("容器 TTL 剩得够时确认,并给出真实到期时刻", async () => {
-    const result = await makeStarted(4 * 3_600_000, 3_600_000).ensureLifetime(600_000);
-
-    expect(result.ready).toBe(true);
-    expect(result.ready === true ? result.expiresAt : undefined).toBeDefined();
-  });
-
-  it("容器 TTL 剩得不够时如实报 ready:false(TTL 没有续期通道)", async () => {
-    const result = await makeStarted(4 * 3_600_000, 60_000).ensureLifetime(600_000);
-
-    expect(result.ready).toBe(false);
-    expect(result.ready === false ? result.reason : "").toContain("cannot be extended");
-  });
-
-  it("没有声明 lifetimeMs 时不假装能复用", async () => {
-    const result = await makeStarted(undefined, 3_600_000).ensureLifetime(1_000);
-
-    expect(result.ready).toBe(false);
-    expect(result.ready === false ? result.reason : "").toContain("lifetimeMs");
-  });
-
-  it("容器还没起来时不猜寿命", async () => {
-    const result = await new DockerSandbox({ lifetimeMs: 3_600_000 }).ensureLifetime(1_000);
-
-    expect(result.ready).toBe(false);
-    expect(result.ready === false ? result.reason : "").toContain("not started");
   });
 });
