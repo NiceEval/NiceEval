@@ -44,7 +44,7 @@
 └─ [x] T1.7 验收候选包内容
        acceptance: test/pack 全绿；仓库外 ESM/CJS consumer 在 Node >=18 导入成功；根 lockfile 零 diff
 
-[ ] T2 重构根 E2E runner（depends on T0；parallel with T1）
+[x] T2 重构根 E2E runner（depends on T0；parallel with T1）
 ├─ [x] T2.1 用正式 schema 替换 group manifest
 │      owner: e2e/scripts/manifest.ts, e2e/scripts/discovery.ts
 │      contract: schemaVersion/id/areas/lanes/executor/command/timeoutMinutes/secrets/requires/paths/artifacts
@@ -52,13 +52,13 @@
 │      owner: e2e/scripts/pack.ts, e2e/scripts/injection.ts
 ├─ [x] T2.3 实现 plan 的 lane/repo/path/capability 选择与 JSON 输出
 │      owner: e2e/scripts/plan.ts
-├─ [ ] T2.4 实现 run 的 isolate/install/test/collect/cleanup/summary
+├─ [x] T2.4 实现 run 的 isolate/install/test/collect/cleanup/summary
 │      owner: e2e/scripts/run-repo.ts, e2e/scripts/receipt.ts, e2e/scripts/artifacts.ts
 ├─ [x] T2.5 让入口支持 pack、plan、run；无子命令等价 plan → pack → run
 │      owner: e2e/scripts/e2e.ts, package.json
 ├─ [x] T2.6 删除 --group 与 exit 75 猜测式 infra 兼容
 │      owner: e2e/scripts/run.ts, e2e/scripts/list.ts
-├─ [ ] T2.7 为 schema、选择、注入、artifact、cleanup 和分类写 Unit
+├─ [x] T2.7 为 schema、选择、注入、artifact、cleanup 和分类写 Unit
 │      owner: test/unit/e2e-runner/**
 └─ [x] T2.8 验收纯计划不 pack、不安装、不读 secret
        acceptance: pnpm e2e plan --lane pr --json
