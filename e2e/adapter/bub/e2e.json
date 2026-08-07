@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/bub",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 35,
+  "secrets": ["BUB_API_KEY", "BUB_API_BASE"],
+  "requires": { "docker": true, "runtimes": ["python>=3.11"] },
+  "paths": ["e2e/adapter/bub/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml", "junit-legacy.xml", "logs/**"]
+}

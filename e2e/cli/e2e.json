@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "cli",
+  "areas": ["cli"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 15,
+  "secrets": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "NICEEVAL_JUDGE_KEY"
+  ],
+  "paths": ["e2e/cli/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [
+    ".niceeval/**",
+    "junit/**",
+    "logs/**"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "report",
+  "areas": ["report"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 10,
+  "secrets": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "NICEEVAL_JUDGE_KEY",
+    "NICEEVAL_JUDGE_BASE"
+  ],
+  "requires": {
+    "runtimes": [
+      "node>=22"
+    ]
+  },
+  "paths": ["e2e/report/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [
+    ".niceeval/**",
+    "site-export/**",
+    "main.xml",
+    "fail.xml",
+    "error.xml",
+    "main.ndjson",
+    "logs/**"
+  ]
+}
