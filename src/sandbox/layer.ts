@@ -991,13 +991,8 @@ function dockerRuntimeIdentity(
   };
 }
 
-function dockerRequiresDestroyOnly(
-  access: Readonly<DockerSandboxAccess> | undefined,
-  resources: Readonly<DockerSandboxResources>,
-): boolean {
-  const hasEphemeralFilesystem = resources.readOnlyRootfs === true || resources.tmpfs !== undefined;
-  if (!hasEphemeralFilesystem) return false;
-  return !(access?.mode === "dind" && access.isolation === "raw-privileged");
+function dockerRequiresDestroyOnly(resources: Readonly<DockerSandboxResources>): boolean {
+  return resources.readOnlyRootfs === true || resources.tmpfs !== undefined;
 }
 
 function stringRecord(value: unknown, path: string): Readonly<globalThis.Record<string, string>> {
@@ -1695,7 +1690,7 @@ export function createBuiltinSandboxFactories(
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerRequiresDestroyOnly(access, resources)
+            module: dockerRequiresDestroyOnly(resources)
               ? dockerfileEphemeralProviderModule
               : dockerfileProviderModule,
             build: providerBuildPlan({
@@ -1830,7 +1825,7 @@ export function createBuiltinSandboxFactories(
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerRequiresDestroyOnly(access, resources)
+            module: dockerRequiresDestroyOnly(resources)
               ? dockerImageEphemeralProviderModule
               : dockerImageProviderModule,
             build: providerBuildPlan({

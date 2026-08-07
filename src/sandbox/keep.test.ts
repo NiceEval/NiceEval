@@ -91,6 +91,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const k of CLOUD_ENV_KEYS) {
     if (savedEnv[k] === undefined) delete process.env[k];
     else process.env[k] = savedEnv[k];
@@ -232,6 +233,63 @@ describe("wakeDetached", () => {
         Cmd: ["docker", "info"],
         User: "node",
       }));
+    });
+
+    it("DinD docker info stream 永不结束时在总 30 秒 deadline 销毁 stream 并报可行动错误", async () => {
+      vi.useFakeTimers();
+      const stream = new Readable({ read() {} });
+      const destroy = vi.spyOn(stream, "destroy");
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn(),
+      };
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: { Labels: { "niceeval.docker-access": "dind" } },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec: vi.fn().mockResolvedValue(execution),
+      });
+
+      const waking = wakeDetached("docker", "abc");
+      const wakeFailure = expect(waking).rejects.toThrow(
+        /Docker DinD sandbox did not become ready after wake as user "root"/,
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await wakeFailure;
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(execution.inspect).not.toHaveBeenCalled();
+    });
+
+    it("DinD docker info stream 报错时清除该轮 deadline timer", async () => {
+      vi.useFakeTimers();
+      const stream = new Readable({ read() {} });
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn(),
+      };
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: { Labels: { "niceeval.docker-access": "dind" } },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec: vi.fn().mockResolvedValue(execution),
+      });
+
+      const waking = wakeDetached("docker", "abc");
+      const wakeFailure = expect(waking).rejects.toThrow(/did not become ready after wake/);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(execution.start).toHaveBeenCalledTimes(1);
+
+      stream.emit("error", new Error("connection reset"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await wakeFailure;
     });
   });
 

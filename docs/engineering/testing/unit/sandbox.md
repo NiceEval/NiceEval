@@ -86,7 +86,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - readiness的总 deadline同时限制每次 exec；单次 `docker info`卡住不得越过 `timeoutMs`。
   - DinD provider-owned launcher是常量协议：替换原 Entrypoint/Cmd、预留 supervisor grace、逐项检查工具，并把协议修订进入 identity。
   - launcher中的用户值只能作为 argv，不得拼进 shell source。
-  - raw DinD在 tmpfs存在时仍是 `Suspendable`；managed DinD的只读或 tmpfs配置仍是 `DestroyOnly`。
+  - 不含临时文件系统的 raw DinD是 `Suspendable`；任意 Docker sandbox只要使用 `tmpfs`或只读 rootfs就是 `DestroyOnly`。不得把 stop/start后会丢失的 workspace、inner image、container、volume或 cache伪装成可保留。
   - opt-in真实 Docker测试使用**无自定义 ENTRYPOINT**的官方 dind派生镜像，证明 raw与 managed DinD能启动 inner daemon并运行子容器。
   - 同一真机测试拒绝 2375与 2376 listener。managed profile不可用时只跳过 managed分支。
   - socket path和 profile alias是宿主本地 binding，不进可分享 identity；socket、raw DinD和 managed DinD的模式语义必须进入 identity。

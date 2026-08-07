@@ -238,11 +238,31 @@ async function waitForDetachedDockerReadiness(
         AttachStderr: true,
       });
       const stream = await execution.start({});
-      await new Promise<void>((resolvePromise, reject) => {
-        stream.on("end", resolvePromise);
+      const destroyStream = () => (stream as NodeJS.ReadableStream & { destroy(): void }).destroy();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        destroyStream();
+        break;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const completed = new Promise<"completed">((resolvePromise, reject) => {
+        stream.on("end", () => resolvePromise("completed"));
         stream.on("error", reject);
         stream.resume();
       });
+      const timedOut = new Promise<"timed-out">((resolvePromise) => {
+        timer = setTimeout(() => {
+          destroyStream();
+          resolvePromise("timed-out");
+        }, remaining);
+      });
+      let outcome: "completed" | "timed-out";
+      try {
+        outcome = await Promise.race([completed, timedOut]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+      if (outcome === "timed-out") break;
       lastExit = (await execution.inspect()).ExitCode;
       if (lastExit === 0) return;
     } catch {
