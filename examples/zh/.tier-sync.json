@@ -70,7 +70,7 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "025e08e8acee5c467dc81a49bee0b93046fea830"
+      "baseTree": "2914769066e414d51b8d08cc0eff13a8584bbfe7"
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
