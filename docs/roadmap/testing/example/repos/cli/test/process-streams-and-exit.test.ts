@@ -1,10 +1,10 @@
+// feature: docs/feature/experiments/cli.md
 import { resolve } from "node:path";
 import { command, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 // NiceEval 根目录：pnpm e2e --repo cli -- --run test/process-streams-and-exit.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/process-streams-and-exit.test.ts
-// feature: docs/feature/experiments/cli.md
 
 interface ExpEvent {
   event: string;

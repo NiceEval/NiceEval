@@ -21,12 +21,14 @@
 ```text
 host / Actions runner
 └─ Vitest
-   └─ pnpm exec niceeval exp slow
-      └─ node fixtures/backend.mjs <unique-temp-path>
+   └─ per-case project copy
+      └─ pnpm exec niceeval exp slow
+         └─ node fixtures/backend.mjs <unique-temp-path>
 ```
 
-本 Repo 保留 Vitest 默认的文件级并行，不设全 Repo 串行闸。当前只有一个测试文件，因此没有可并行的兄弟文件。
-以后新增文件时，每条 case 必须拥有控制文件、进程组和资源身份；会改当前结果的 case 再使用独立结果根或项目副本。
+本 Repo 保留 Vitest 默认的文件级并行，不设全 Repo 串行限制。当前只有一个测试文件，因此没有可并行的兄弟文件。
+根 runner 的副本隔离不同 Repo invocation；测试正文的 `withProjectCopy()` 继续隔离同一 Vitest 进程里未来可能并行的 case，
+两层不能互相替代。每条 case 还必须拥有控制文件、进程组和资源身份。
 
 本 Repo 等 owned backend **真启动**（`/health` 返回 200）后再发 SIGINT。
 进程退出码为 130，`result` 折叠成 `interrupted`，实验级 teardown 照常执行

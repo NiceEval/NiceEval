@@ -59,6 +59,9 @@ Playwright 用 `tests/<product-area>/*.spec.ts`。三者都用产品域与行为
 E2E 文件直接链接长期契约，优先使用 `docs/feature/**`；安装后 CLI 等内部边界可以链接其稳定 owner 文档。
 历史缺陷链接 `memory/**`。公开 issue 只有真实存在时才追加，不能单独充当依据。
 
+E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在文件第一行。若一个文件含多个 case，`// regression:` 或 `// bug:`
+紧贴对应的 `test()` / `it()`；只有整文件唯一 case 时，才可与 owner 一起放在文件头。
+
 ```ts
 // feature: docs/feature/reports/show/json.md
 // regression: memory/show-json-pipe-truncated-at-128k.md

@@ -60,6 +60,14 @@ function scriptedInstaller(steps: {
   - `defineAgent` 固定产出 `kind: "direct"`，并保留 Direct Agent 的公开定义字段。
   - `defineDirectAgent` 是指向 `defineAgent` 的 deprecated 兼容 alias，不建立第二套构造逻辑。
   - 动态 JavaScript 输入违反必填契约时，错误统一指向 canonical `defineAgent`。
+- **原始工具名与规范分类**（[标准事件模型](../../../feature/adapters/architecture/events.md)）：
+
+  - 上游提供的工具名在 `StreamEvent.operation.name` 原样保存；归一函数只计算旁边的 `tool: ToolName`，不能改写原名。
+  - 通用复合别名按大小写无关规则映射为 `ToolName`；进入规范化流程后仍不认识时保留原始 `name`，并把 `tool` 分类为 `unknown`。
+    不承诺分类任意应用工具的协议可以省略 `tool`，但仍必须保留原始 `name`。
+  - `search`、`run` 等可能属于被测应用的单字动词不能由通用表猜成系统工具。
+  - Unit 只展开这张 NiceEval 自有的确定性基表。某个 SDK / CLI 是否同时写入正确原始名与规范分类，
+    仍由对应 Adapter E2E 证明，不在这里复制上游 wire fixture。
 - **probe 命中、staged 安装、复检失败**（[Agent Ensure](../../../feature/adapters/architecture/agent-ensure.md)）：
 
   - probe 命中 → 记录命中的安装事实，不调用 install。

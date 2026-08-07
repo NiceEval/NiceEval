@@ -42,6 +42,10 @@ export interface DisposeOptions {
 }
 
 export interface StartOptions extends RunOptions {
+  /**
+   * 只改变异常终结范围：为 true 时，dispose()/timeout 终结向整个进程组发送信号，
+   * 异常终结时回收命令的派生子进程；它不改变产品刺激——signal() 永远只发根 PID。
+   */
   processGroup?: boolean;
   dispose?: DisposeOptions;
 }
@@ -51,6 +55,11 @@ export interface ProcessHandle {
   readonly pid: number | undefined;
   readonly stdout: NodeJS.ReadableStream | null;
   readonly stderr: NodeJS.ReadableStream | null;
+  /**
+   * 产品刺激：永远只向根 PID 发送信号，不扩散到派生子进程。
+   * 需要连同整个进程组一起异常终结时，用 processGroup + dispose()/timeout，
+   * 不能靠这里补发多次。
+   */
   signal(signal: NodeJS.Signals): boolean;
   dispose(): Promise<void>;
 }

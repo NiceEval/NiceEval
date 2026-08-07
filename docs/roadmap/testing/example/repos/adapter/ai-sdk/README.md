@@ -3,8 +3,10 @@
 live 适配器 Repo：`experiments/tool-call.ts` 使用真实官方工厂 `uiMessageStreamAgent`
 （`niceeval/adapter`）。它只经 HTTP 边界接入**本仓库自带的被测应用**（`src/backend/`）。
 该应用是 `useChat` 形状的 UI Message Stream SSE 后端，真实模型经 `@ai-sdk/openai` 接入。
-本 Repo 证明：真实协议下工具调用发生了，并以不带命名空间的工具名出现。公开执行证据
-（`niceeval show --execution --json`）能够读回该工具名。它进入 main / nightly / release lane
+
+本 Repo 证明：真实协议下工具调用发生了，并以不带命名空间的原始工具名出现。公开执行证据
+（`niceeval show --execution --json`）能够读回该 `name`；UI Message Stream 不承诺为任意应用工具补 `tool` 分类。
+它进入 main / nightly / release lane
 （见 `e2e.json.lanes`），需要真实 provider 凭据。
 
 ## 怎么跑
@@ -16,6 +18,9 @@ pnpm e2e --repo adapter/ai-sdk
 # 已安装候选包的独立 ai-sdk Repo 根目录；测试自己启停被测应用
 pnpm test
 ```
+
+根 runner 的临时副本隔离不同 invocation；每条会写 `.niceeval` 的 case 还使用自己的项目副本，
+让同一 Repo 以后增加测试文件时仍可保留 Vitest 默认并行。被测应用继续使用动态端口，不共享固定监听地址。
 
 ## lockfile 规则（正式）
 
@@ -34,4 +39,4 @@ pnpm test
 | `src/backend/` | 被测应用：UI Message Stream SSE 后端（`get_weather` / `calculate` 工具） |
 | `experiments/tool-call.ts` | `uiMessageStreamAgent`，URL 读 `AI_SDK_URL`（测试注入） |
 | `evals/tool-call/weather.eval.ts` | 天气 prompt → `calledTool("get_weather")`，`notCalledTool("calculate")` |
-| `test/tool-identity.test.ts` | 起应用 → `exp` → `show --history` → `show --execution`：工具名与入参保真读回 |
+| `test/tool-identity.test.ts` | 起应用 → 私有项目副本里的 `exp` / `show`：原始工具名与入参保真读回 |

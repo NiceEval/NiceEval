@@ -1,3 +1,5 @@
+// feature: docs/cli.md
+// regression: memory/tsx-dynamic-import-require-cycle.md
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { command, withProjectCopy } from "@niceeval/testkit";
@@ -9,8 +11,6 @@ const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 //   pnpm e2e --repo package -- --run test/commonjs-init-list.test.ts
 // Isolated repo:
 //   pnpm test --run test/commonjs-init-list.test.ts
-// feature: docs/feature/compile-time-contracts/library.md
-// regression: memory/tsx-dynamic-import-require-cycle.md
 // init 会改写共享 config，因此整条 case 在私有副本里执行，不碰 Repo 根现场。
 const PROJECT_COPY = {
   from: process.cwd(),

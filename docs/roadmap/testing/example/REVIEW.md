@@ -8,7 +8,7 @@
 | 用 `mechanism-unit/` 或 `cli-results.test.ts` 给一组异质测试命名 | 名字只说抽象类别，看不出 owner、用户动作或失败边界；同目录会持续吸入无关 case | 顶层只分 `unit/` 与 E2E `repos/`；Unit 按 Feature、E2E 文件按行为命名，CLI 已拆为 selection、streams-and-exit、show-json-pipe |
 | 多个 adapter 共用一个 package / 结果根 | 不能证明各自真实依赖、安装、secret 与协议 | 每个 adapter 一个叶子 Repo；local protocol 不冒充 live |
 | 通用功能借用 `ai-sdk` / `codex-cli` Repo | 功能回归会被上游凭据、网络和版本漂移污染；Adapter 兼容性检查又会被误算成功能证据 | CLI、Runner、Report、Package、Lifecycle 使用自己的功能 Repo；`adapter/<id>` 只证明对应协议兼容性 |
-| 把相似风险都标成历史 regression | 新测试可能杀不死历史旧实现 | 只有存在旧实现 kill 证据才写 `regression:`，否则写 `risk:` |
+| 把相似风险都标成历史 regression | 新测试可能杀不死历史旧实现 | 只有存在旧实现 kill 证据才写 `regression:`；否则只写 Feature，相关 memory 只作解释 |
 | 把功能测试和 Bug 测试拆成两套目录 | 同一长期行为出现两个 owner；issue 关闭后目录名也失去语义 | 文件始终按 Feature 与结果命名；旧实现 kill 只用 `regression: memory/**` 附在 owner 上 |
 | Experiment 或测试文件只叫 `smoke` / `basic` | 名字只表示作者觉得它便宜或简单，读者看不出输入、结果和失败边界 | 标识符写业务阶段与预期结果，例如 `post-interrupt-consumer`；口袋名只允许出现在研究分类正文 |
 | CommonJS test 在 `/tmp` 临时造未安装项目 | `pnpm exec niceeval` 的实际 binary owner 不确定 | CommonJS 叶子本身就是 consumer，由 runner 注入候选 tarball |

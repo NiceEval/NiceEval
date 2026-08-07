@@ -1,3 +1,4 @@
+// feature: docs/feature/reports/view.md
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
@@ -9,7 +10,6 @@ import { expect, test } from "@playwright/test";
 //   pnpm e2e --repo report -- --grep "actual href"
 // Isolated repo:
 //   pnpm test -- --grep "actual href"
-// feature: docs/feature/reports/view.md
 
 interface HistoryDocument {
   format: "niceeval.show";

@@ -17,7 +17,7 @@
 | 严格 NDJSON | 5 | 接收 |
 | `only` / `defined` | 7 | 接收 |
 | 长驻 process + readiness + cleanup | AI SDK、Lifecycle | 接收窄接口 |
-| 项目副本 / 临时目录 | Runner、Report Journey | 接收显式策略 API |
+| 项目副本 / 临时目录 | CLI、Runner、Report、Package、Lifecycle、Adapter | 接收显式策略 API |
 | HTTP server lifecycle | Local protocol | 接收通用 callback API；0.x 暂定 |
 | Browser lifecycle | Report | 继续使用 Playwright Test |
 | stdin / PTY | 尚无两个相同消费者 | 暂不接收 |
@@ -107,7 +107,7 @@ export function withProcess<T>(
 `withProcess()` 是默认入口。readiness 失败、轮询超时、断言异常和正常返回都会进入幂等 cleanup；默认按
 TERM → grace period → KILL 结束 owned process。正文已经让进程退出时，cleanup 是 no-op。
 
-`handle.signal()` 永远只向启动的根进程 PID 发送产品刺激。`processGroup: true` 只改变 `dispose()` 与 timeout 的兜底范围，
+`handle.signal()` 永远只向启动的根进程 PID 发送产品刺激。`processGroup: true` 只改变 `dispose()` 与 timeout 的异常终结范围，
 让它们终止整组后代。两者不能混成一个动作：Lifecycle 测试若把 SIGINT 直接发给整组，就会由 Testkit 杀掉 backend，
 即使产品 teardown 已失效，资源断言也可能假绿。
 

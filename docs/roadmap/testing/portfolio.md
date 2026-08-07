@@ -70,6 +70,9 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 公开 issue 可以追加一行 `issue:`，但不能替代仓库内的 memory。issue 可能改标题、关闭或迁移；memory 必须保存复现条件、
 fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能区分旧实现。
 
+单边界 E2E 指向它唯一跨过的契约。Journey 跨多个产品域时只登记最终用户结果的 owner；中间步骤的次级契约留在步骤旁的
+普通注释。这样 `feature:` 仍能回答“这条长流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
+
 ```ts
 // feature: docs/feature/reports/show/json.md
 // regression: memory/show-json-pipe-truncated-at-128k.md
@@ -80,7 +83,8 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 ```
 
 没有历史 Bug 的功能测试只写功能归属。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
-若只能证明同类风险而没有 kill 收据，则写 `risk:` 或只链接 Feature 契约。
+若只能证明同类风险而没有 kill 收据，仍只链接 Feature 契约。相关 memory 可以在普通解释注释或 Repo README 中写成
+“相关风险”，但不再发明一行看似可机器追踪、实际没有 kill 资格的 `risk:` 元数据。
 
 ## 历史 Bug 回归
 
@@ -95,8 +99,8 @@ Bug escape 后按顺序处理：
 
 无法杀死旧实现的 case 只能叫补充验证，不能宣称“防住了这个历史 bug”。
 按现象类比也不够：HTTP 两页 cursor 不能代替 SDK paginator，普通 5xx 不能代替 pseudo-E2E 的候选包边界，locator 往返也不能
-代替共享 mutation 的顺序 bug。`regression` 指向的 memory 需要同时保存旧实现失败的断言与最早失败阶段；没有 kill 收据时写
-`risk:` 或公开契约链接，不只挂历史 commit 或 issue。
+代替共享 mutation 的顺序 bug。`regression` 指向的 memory 需要同时保存旧实现失败的断言与最早失败阶段；没有 kill 收据时
+只保留公开契约链接，相关历史只能作为解释材料，不能只挂 commit 或 issue 冒充回归证明。
 
 ## 迁移与退役
 
