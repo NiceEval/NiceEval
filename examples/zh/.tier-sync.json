@@ -46,7 +46,11 @@
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "6474bd669026476ffab92fdbb62b79f7c04110fe"
+      "baseTree": "6474bd669026476ffab92fdbb62b79f7c04110fe",
+      "pending": {
+        "upstreamTree": "77293c8f98239919669d3ad23f1046b50461a079",
+        "needsInstall": false
+      }
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
