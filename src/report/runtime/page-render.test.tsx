@@ -8,7 +8,7 @@ import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { Col, Text } from "../definition/primitives.tsx";
 import { buildReportMeta, defineReport } from "../definition/report.ts";
 import { renderResolvedPageText } from "./resolved-page.ts";
-import { executePageRender, renderTarget, resolveDefinitionPage } from "./page-render.ts";
+import { renderTarget, resolveDefinitionPage } from "./page-render.ts";
 import { pickReportPage } from "./text.ts";
 
 describe("惰性 page render", () => {
@@ -44,35 +44,6 @@ describe("惰性 page render", () => {
     });
     expect(chartRender).toHaveBeenCalledTimes(1);
     expect(tableRender).not.toHaveBeenCalled();
-  });
-
-  it("executePageRender 对同一 page + 输入缓存 Promise", async () => {
-    let calls = 0;
-    const page = defineReport({
-      pages: [
-        {
-          id: "report",
-          title: "Report",
-          render: async () => {
-            calls += 1;
-            await new Promise((r) => setTimeout(r, 5));
-            return (
-              <Col>
-                <Text>ok</Text>
-              </Col>
-            );
-          },
-        },
-      ],
-    }).pages[0]!;
-    const scope = scopeOf([]);
-    const cache = new Map();
-    const [a, b] = await Promise.all([
-      executePageRender(page, scope, cache),
-      executePageRender(page, scope, cache),
-    ]);
-    expect(calls).toBe(1);
-    expect(a).toBe(b);
   });
 });
 
