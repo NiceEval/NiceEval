@@ -15,6 +15,8 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { createGunzip } from "node:zlib";
+import * as tar from "tar-stream";
 
 export interface CandidateTarball {
   /** Absolute path to the built .tgz. */
@@ -122,6 +124,123 @@ export function extractNiceevalIntegrity(lockfileText: string): string {
   return matches[0][1];
 }
 
+export interface TestkitTarball {
+  /** Absolute path to the local @niceeval/testkit .tgz. */
+  path: string;
+  /** SRI-form integrity of the tarball's own bytes: "sha512-<base64>". */
+  integrity: string;
+  /** Short sha256 hex, for human-readable logs only — not used for comparison. */
+  shortHash: string;
+  /** Full sha256 hex, independently recomputed from the tarball bytes. */
+  sha256: string;
+  /** npm package name; verified to be exactly "@niceeval/testkit". */
+  name: string;
+  version: string;
+}
+
+/**
+ * Stream a gzipped tarball and capture only `package/package.json` — the npm
+ * package identity — while discarding every other entry. The runner never
+ * reads Testkit source or internal files, so Testkit's internal volume and
+ * layout stay freely refactorable and never load into memory here.
+ */
+export async function extractPackageJsonFromTarball(tarballBytes: Buffer): Promise<Buffer | undefined> {
+  return new Promise((resolvePromise, reject) => {
+    let found: Buffer | undefined;
+    const extract = tar.extract();
+    const gunzip = createGunzip();
+
+    extract.on("entry", (header, stream, next) => {
+      if (header.name === "package/package.json") {
+        const chunks: Buffer[] = [];
+        stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+        stream.on("end", () => {
+          found = Buffer.concat(chunks);
+          next();
+        });
+      } else {
+        stream.resume();
+        stream.on("end", () => next());
+      }
+      stream.on("error", (err: unknown) => reject(err));
+    });
+    extract.on("finish", () => resolvePromise(found));
+    extract.on("error", (err: unknown) => reject(err));
+    gunzip.on("error", (err: unknown) => reject(err));
+
+    gunzip.pipe(extract);
+    gunzip.end(tarballBytes);
+  });
+}
+
+/**
+ * Read a local @niceeval/testkit tarball for explicit local injection:
+ * resolvable exact path, non-empty bytes, and npm package identity checked
+ * against the tarball's own `package/package.json` `name` field. Anything
+ * else — wrong package name, missing package.json, non-tgz, empty bytes —
+ * fails loudly instead of guessing. This never reads Testkit source or
+ * internal files, so Testkit internals stay freely refactorable.
+ */
+export async function readTestkitTarball(tarballPath: string): Promise<TestkitTarball> {
+  const resolvedPath = resolve(tarballPath);
+  if (!resolvedPath.endsWith(".tgz")) {
+    throw new Error(`testkit must be a .tgz file, got ${tarballPath}`);
+  }
+  const bytes = readFileSync(resolvedPath);
+  if (bytes.length === 0) throw new Error(`testkit tarball is empty: ${resolvedPath}`);
+
+  const packageJsonEntry = await extractPackageJsonFromTarball(bytes);
+  if (packageJsonEntry === undefined) {
+    throw new Error(
+      `testkit tarball ${resolvedPath} has no package/package.json — cannot verify npm package identity`,
+    );
+  }
+  let pkg: { name?: unknown; version?: unknown };
+  try {
+    pkg = JSON.parse(packageJsonEntry.toString("utf8")) as { name?: unknown; version?: unknown };
+  } catch (err) {
+    throw new Error(
+      `testkit tarball ${resolvedPath} has an unreadable package/package.json: ${(err as Error).message}`,
+    );
+  }
+  if (pkg.name !== "@niceeval/testkit") {
+    throw new Error(
+      `testkit tarball must contain package @niceeval/testkit, got ${JSON.stringify(pkg.name)} (${resolvedPath})`,
+    );
+  }
+  return {
+    ...fingerprint(bytes, resolvedPath),
+    name: pkg.name,
+    version: typeof pkg.version === "string" ? pkg.version : "unknown",
+  };
+}
+
+/**
+ * Extract the `resolution.integrity` pnpm recorded for the
+ * `@niceeval/testkit@file:...` package entry in a pnpm-lock.yaml. Throws if
+ * there isn't exactly one such entry — zero means the isolated copy never
+ * resolved the local testkit tarball, more than one means an ambiguous or
+ * partial injection.
+ */
+export function extractTestkitIntegrity(lockfileText: string): string {
+  // pnpm quotes scoped file: keys in pnpm-lock.yaml ("@..." starts with the
+  // YAML-reserved @), so the key may or may not be quoted.
+  const entryRe = /^ {2}'?@niceeval\/testkit@[^\n]*'?:\n {4}resolution:\s*\{[^}\n]*integrity:\s*(sha512-[A-Za-z0-9+/=]+)/gm;
+  const matches = [...lockfileText.matchAll(entryRe)];
+
+  if (matches.length === 0) {
+    throw new Error(
+      'no "@niceeval/testkit@..." package entry with a resolution.integrity found in pnpm-lock.yaml — @niceeval/testkit may not have resolved to the injected local tarball at all',
+    );
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `found ${matches.length} "@niceeval/testkit@..." package entries in pnpm-lock.yaml — expected exactly one; a partial or ambiguous injection`,
+    );
+  }
+  return matches[0][1];
+}
+
 export type InjectionVerdict = { ok: true } | { ok: false; reason: string };
 
 /**
@@ -141,6 +260,27 @@ export function verifyInjection(lockfileText: string, expectedIntegrity: string)
     return {
       ok: false,
       reason: `installed niceeval integrity (${actual}) does not match candidate tarball integrity (${expectedIntegrity}) — the resolved package is not the injected candidate`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Same lockfile-integrity comparison for an explicitly injected local
+ * @niceeval/testkit tarball. Only runs when --testkit was passed; without it
+ * the repo keeps its lockfile's exact registry version and nothing changes.
+ */
+export function verifyTestkitInjection(lockfileText: string, expectedIntegrity: string): InjectionVerdict {
+  let actual: string;
+  try {
+    actual = extractTestkitIntegrity(lockfileText);
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message };
+  }
+  if (actual !== expectedIntegrity) {
+    return {
+      ok: false,
+      reason: `installed @niceeval/testkit integrity (${actual}) does not match the local tarball integrity (${expectedIntegrity}) — the resolved testkit is not the injected tarball`,
     };
   }
   return { ok: true };

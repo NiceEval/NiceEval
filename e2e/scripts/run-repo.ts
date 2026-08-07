@@ -9,8 +9,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import type { DiscoveredRepo } from "./discovery.ts";
-import type { CandidateTarball } from "./injection.ts";
-import { verifyInjection } from "./injection.ts";
+import type { CandidateTarball, TestkitTarball } from "./injection.ts";
+import { verifyInjection, verifyTestkitInjection } from "./injection.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
 import {
@@ -70,6 +70,60 @@ export async function pointAtCandidateTarball(copyDir: string, tarballPath: stri
   }
 
   await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Point the isolated copy's declared @niceeval/testkit dependency at a local
+ * tarball — copy only, never the checked-in repo. A repo that does not
+ * declare @niceeval/testkit fails loudly here: silently adding an oracular
+ * dependency would change what the repo proves.
+ */
+export async function pointAtTestkitTarball(copyDir: string, tarballPath: string): Promise<void> {
+  const pkgPath = join(copyDir, "package.json");
+  const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as Record<string, unknown>;
+  const spec = `file:${tarballPath}`;
+
+  let found = false;
+  for (const field of ["dependencies", "devDependencies"]) {
+    const deps = pkg[field];
+    if (
+      deps &&
+      typeof deps === "object" &&
+      Object.prototype.hasOwnProperty.call(deps, "@niceeval/testkit")
+    ) {
+      (deps as Record<string, string>)["@niceeval/testkit"] = spec;
+      found = true;
+    }
+  }
+  if (!found) {
+    throw new Error(
+      `${copyDir}/package.json declares no "@niceeval/testkit" dependency (checked dependencies and devDependencies) — refusing to inject a local testkit tarball into a repo that does not consume the testkit`,
+    );
+  }
+
+  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Verify candidate (and, when explicitly injected, testkit) actually resolved
+ * to the tarballs from the isolated copy's own lockfile. Any mismatch is a
+ * harness failure: never run an unproven product package, and never silently
+ * run a testkit that is not the injected artifact.
+ */
+function verifyAllInjections(
+  lockfileText: string,
+  candidate: CandidateTarball,
+  testkit: TestkitTarball | undefined,
+): { ok: true; testkitDetail?: string } | { ok: false; reason: string } {
+  const candidateVerdict = verifyInjection(lockfileText, candidate.integrity);
+  if (!candidateVerdict.ok) return { ok: false, reason: candidateVerdict.reason };
+  if (testkit === undefined) return { ok: true };
+  const testkitVerdict = verifyTestkitInjection(lockfileText, testkit.integrity);
+  if (!testkitVerdict.ok) return { ok: false, reason: testkitVerdict.reason };
+  return {
+    ok: true,
+    testkitDetail: `testkit tarball (@niceeval/testkit@${testkit.version}, sha256:${testkit.sha256}) integrity matches lockfile`,
+  };
 }
 
 /**
@@ -143,6 +197,7 @@ export async function runRepo(
   artifactRoot: string,
   allSecretNames: ReadonlySet<string>,
   nativeArgs: readonly string[],
+  testkit?: TestkitTarball,
 ): Promise<RepoRunResult> {
   const repoId = repo.manifest.id;
   const copyDir = join(scratchRoot, "runs", repoId);
@@ -160,6 +215,9 @@ export async function runRepo(
       await copyRepoIsolated(repo.dir, copyDir);
       copyCreated = true;
       await pointAtCandidateTarball(copyDir, candidate.path);
+      if (testkit !== undefined) {
+        await pointAtTestkitTarball(copyDir, testkit.path);
+      }
 
       // --- install ---
       const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
@@ -198,10 +256,12 @@ export async function runRepo(
             injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
           } else {
             const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
-            const verdict = verifyInjection(lockText, candidate.integrity);
+            const verdict = verifyAllInjections(lockText, candidate, testkit);
             injectionOk = verdict.ok;
             injectionDetail = verdict.ok
-              ? "candidate integrity matches lockfile"
+              ? testkit === undefined
+                ? "candidate integrity matches lockfile"
+                : `candidate integrity matches lockfile; ${verdict.testkitDetail}`
               : `injection verification failed: ${verdict.reason}`;
           }
         } catch (err) {

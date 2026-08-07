@@ -52,6 +52,15 @@ describe("E2E candidate and command entry contracts", () => {
       .toBe(resolve("out/e2e"));
   });
 
+  it("显式 run 接受可选 --testkit 精确 tgz；不传时保持 undefined", () => {
+    expect(parseRunCli(["--candidate", "candidate.tgz"]).testkitPath).toBeUndefined();
+    expect(
+      parseRunCli(["--candidate", "candidate.tgz", "--testkit", "packages/testkit/artifacts/testkit.tgz"])
+        .testkitPath,
+    ).toBe("packages/testkit/artifacts/testkit.tgz");
+    expect(parseRunCli(["--candidate", "candidate.tgz", "--testkit", ""]).testkitPath).toBeUndefined();
+  });
+
   it("-- 后的原生参数保持顺序，并只追加一次到 manifest command", () => {
     const parsed = parseRunCli([
       "--candidate",

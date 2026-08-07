@@ -34,6 +34,27 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifa
 `run --artifact-root` 让 CI 指定独立于临时工作副本的证据根；runner 删除副本后保留其中的 `summary.json`、Repo receipt 与声明附件。
 原生测试参数在 `--` 后原样且只传一次。
 
+### 本地 Testkit 注入
+
+本地开发可以显式把本地打包的 Testkit tarball 注入隔离 Repo，让场景直接安装当前 checkout
+打包出的 `@niceeval/testkit`：
+
+```sh
+pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
+  --testkit packages/testkit/artifacts/niceeval-testkit-0.1.0.tgz --repo report
+```
+
+- `--testkit <exact-tgz>` 只属于显式 `run`，是可选参数。默认 `pnpm e2e` 与 CI 不传时，
+  每个场景 Repo 仍严格使用签入 lockfile 的 registry 精确 Testkit 版本，注入路径零改动。
+- runner 只按 npm 包身份消费该 tarball：校验 `package/package.json` 的 `name` 为 `@niceeval/testkit`、
+  独立重算 sha256 并写入诊断，从不读 Testkit 源码或内部文件；Testkit 内部布局可自由重构。
+- 注入只改写隔离副本的 `@niceeval/testkit` devDependency（`file:` 指向该 tarball），不写源 Repo；
+  未声明 `@niceeval/testkit` 的 Repo 在注入前明确失败，不会悄悄新增裁判依赖。
+- 安装后从副本 lockfile 核对 testkit integrity 与 candidate 注入同一条信任链：身份或完整性不一致属于
+  harness failure（infra），不静默安装其它版本继续跑测试。
+- 本地 Testkit 注入不改变 candidate 注入与失败分类语义，也不进入 release 信任链：
+  发布仍只使用 registry 已发布的精确版本 Testkit。
+
 功能 Repo 与 Adapter Repo 永远是不同的 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
 `adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。`main` / `release` lane
 可以同时选择两组 Repo，但它们仍分别安装、执行、收集 artifact 和 cleanup。
