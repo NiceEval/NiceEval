@@ -3,8 +3,8 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "vitest/globals"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,5 +13,14 @@
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["niceeval.config.ts", "agents", "evals", "experiments", "scripts", "reports"]
+  "include": [
+    "niceeval.config.ts",
+    "agents",
+    "evals",
+    "experiments",
+    "reports",
+    "test",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
 }

@@ -1,26 +1,24 @@
 {
-  "name": "niceeval-e2e-results",
+  "name": "niceeval-e2e-report",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "report E2E repo — validates on-disk Record format/openRecord() parity/--json/--junit folding, read-face CLI behavior, and show/view rendering (structure, terminal typography, browser visual & interaction) against real attempts (docs/engineering/testing/e2e/report.md).",
+  "description": "Report E2E consumer: public show/view/export and one browser journey",
   "scripts": {
-    "e2e": "tsx scripts/e2e.ts",
+    "e2e": "vitest run && playwright test",
     "typecheck": "tsc --noEmit",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.5",
-    "ai": "^7.0.9",
     "niceeval": "^0.10.2",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "zod": "^4.1.8"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0",
-    "@types/node": "^22.0.0",
-    "dotenv": "^16.4.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "@niceeval/testkit": "0.1.0",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }
