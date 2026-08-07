@@ -182,7 +182,7 @@ dockerImageSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布记录](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布条件(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的 image / template 不写进 registry。
 
 Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel，选择权属于 template-bearing Sandbox factory；反过来，Sandbox 也不猜要运行哪个 Agent。
-预装只是 ensure probe 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 probe 语义见各自接入页（上表链接）。
+预装只是 ensure 探测 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 探测 语义见各自接入页（上表链接）。
 
 ## 新 provider 的预制环境义务
 

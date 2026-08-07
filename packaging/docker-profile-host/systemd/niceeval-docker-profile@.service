@@ -1,0 +1,66 @@
+[Unit]
+Description=NiceEval managed rootless dockerd for profile %i
+Documentation=file:///usr/share/niceeval/docker-profile-host/config/network-policy.md
+After=network-online.target local-fs.target niceeval-docker-profile-storage@%i.service
+Wants=network-online.target
+Requires=niceeval-docker-profile-%i.slice
+After=niceeval-docker-profile-%i.slice
+ConditionPathExists=/etc/niceeval/docker-profiles/%i.host.json
+
+[Service]
+Type=notify
+NotifyAccess=all
+User=niceeval-dp-%i
+Group=niceeval-dp-%i
+SupplementaryGroups=
+Slice=niceeval-docker-profile-%i.slice
+Delegate=yes
+
+# Dedicated HOME + XDG_RUNTIME_DIR (not a login shell account)
+Environment=HOME=/var/lib/niceeval/docker-profiles/%i/home
+Environment=XDG_RUNTIME_DIR=/run/niceeval/docker-profiles/%i
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR=/run/niceeval/docker-profiles/%i/dockerd-rootless
+# Fail-closed rootlesskit contract (architecture): no host loopback, port driver OFF.
+# builtin port driver is forbidden: it yields 198.18/15 synthetic endpoints where
+# TCP connect can succeed despite enable_icc=false.
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=true
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=none
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_DETACH_NETNS=true
+
+# newuidmap/newgidmap from host wrappers
+Environment=PATH=/usr/bin:/bin
+# On NixOS the module injects a full PATH including dockerd-rootless + rootlesskit.
+
+WorkingDirectory=/var/lib/niceeval/docker-profiles/%i/home
+BindReadOnlyPaths=/etc/niceeval/docker-profiles/%i.resolv.conf:/etc/resolv.conf
+RuntimeDirectory=niceeval/docker-profiles/%i
+RuntimeDirectoryMode=0750
+UMask=0007
+
+# Requires dockerd-rootless from moby/docker package on PATH.
+ExecStart=/usr/bin/dockerd-rootless \
+  --config-file=/etc/niceeval/docker-profiles/%i.daemon.json \
+  -H unix:///run/niceeval/docker-profiles/%i/docker.sock
+
+# Socket ACL for access group, then fail-closed netns policy (198.18 REJECT).
+ExecStartPost=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /run/niceeval/docker-profiles/%i/docker.sock ] && break; sleep 0.5; done; chmod 660 /run/niceeval/docker-profiles/%i/docker.sock; chgrp niceeval-dp-%i-access /run/niceeval/docker-profiles/%i/docker.sock'
+ExecStartPost=/usr/libexec/niceeval/apply-rootless-network-policy --profile %i --state-dir /run/niceeval/docker-profiles/%i/dockerd-rootless --runtime-dir /run/niceeval/docker-profiles/%i --dns-server 1.1.1.1 --dns-server 9.9.9.9 --blocked-cidr 0.0.0.0/8 --blocked-cidr 10.0.0.0/8 --blocked-cidr 100.64.0.0/10 --blocked-cidr 127.0.0.0/8 --blocked-cidr 169.254.0.0/16 --blocked-cidr 172.16.0.0/12 --blocked-cidr 192.0.0.0/24 --blocked-cidr 192.0.2.0/24 --blocked-cidr 192.168.0.0/16 --blocked-cidr 198.18.0.0/15 --blocked-cidr 198.51.100.0/24 --blocked-cidr 203.0.113.0/24 --blocked-cidr 224.0.0.0/4 --blocked-cidr 240.0.0.0/4 --blocked-cidr ::/0
+
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=2
+TimeoutStartSec=0
+TimeoutStopSec=120
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+OOMScoreAdjust=-500
+KillMode=mixed
+
+NoNewPrivileges=false
+# rootlesskit needs newuidmap (file caps / setuid wrappers)
+
+[Install]
+WantedBy=multi-user.target

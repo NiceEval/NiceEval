@@ -59,7 +59,7 @@ Claude Code 的原生 OTel 内容默认可能脱敏；行为断言仍以 transcr
 
 ## 预制环境
 
-Adapter 的必填 ensure 用 PATH 上 `claude` 的精确版本作 probe；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
+Adapter 的必填 ensure 用 PATH 上 `claude` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 `setup` 只写本 Attempt 的鉴权、原生配置与扩展。预装只是快速路径，不是正确性前提。
 E2B 官方 `claude` template 与 NiceEval 公共模板 `correctroads-default-team/niceeval-claude-code`（CI 钉 release tag）都是可用起点；构建项目自己的镜像/模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
 

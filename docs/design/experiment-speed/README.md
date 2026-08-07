@@ -40,7 +40,7 @@ Rust build 或 fetch 占 4.2%，中位数为 82.2 秒。
 NiceEval-Eval 的时间树看不到 Agent CLI 内部执行的所有 shell 命令，不能算出其中 `pnpm install` 的准确占比。
 因此，MemoryBench 的 8.2%不外推到该仓库。
 
-MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbox.setup`；这些主要是 Nowledge tunnel 或 server probe 的连接错误，不是安装失败。
+MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbox.setup`；这些主要是 Nowledge tunnel 或 server 探测 的连接错误，不是安装失败。
 上表同时列出非 `errored` Attempt，避免早期失败压低 Agent 执行占比。
 
 本目录重新评估如何缩短实验总耗时，并把原 [Sandbox 复用](../../feature/sandbox/reuse.md)设计放回候选方案比较。

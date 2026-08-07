@@ -329,7 +329,7 @@ Sandbox 在命令返回后消失、导致 diff 导出失败时，Runner 保留�
 | 实验级 setup | `ExperimentDefinition.setup` | 第一个可派发 Attempt 之前;全部 Attempt 共用,宿主机侧 |
 | Sandbox Case 创建 | Provider 按配对唯一的 template 做 build / start / ready | 实验级 setup 之后;复用窗口内的后续 Attempt 改为 reset 到题间重置点 |
 | 两层作者 prepare | Eval 与 Experiment `sandbox` layer 的 `prepare()` 命令 | Case 就绪之后,每条 Attempt 完整重放;template owner 的命令先,另一 owner 随后 |
-| Agent 安装 | agent.ensure 循环(`agent.ensure`) | 两层作者 prepare 之后;probe、缺失时配对安装层 install、复检 |
+| Agent 安装 | agent.ensure 循环(`agent.ensure`) | 两层作者 prepare 之后;探测、缺失时配对安装层 install、复检 |
 | 变更分类账锚点 | `workspace.baseline` | Agent CLI 就绪之后;锚点之后的写入才进入归因视图 |
 | agent runtime setup | `SandboxAgent.setup`(`agent.setup`) | 锚点之后;`test(t)` 之前 |
 | Eval 主体 | `test(t)` | 作者按普通顺序上传文件、驱动 Agent、运行命令与断言;send 窗口决定归因 |

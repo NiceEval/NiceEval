@@ -183,6 +183,14 @@ attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{eval
 最常用、最便宜:无需任何云 token,本地有 Docker 即可。要点:
 
 - **保活容器** —— 用 `node:24-slim` 起一个 tail 日志文件的长生命周期容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时清理)。
+- **DinD 是 provider-owned 启动协议** —— `dockerAccess.mode: "dind"` 显式替换派生镜像原有 `Entrypoint` / `Cmd`。
+- **DinD 使用真正的 init** —— bootstrap 校验官方 dind 工具面，再执行 `docker-init -- node ...`。Node supervisor 同时持有 dockerd 与既有 keeper。
+- **DinD 子进程共用一个终止协议** —— spawn error、子进程提前退出或 TERM / INT 都只提交一次 shutdown。
+- **DinD daemon 不能单独死亡** —— daemon 意外退出使 outer container 非零退出。
+- **DinD 时间边界** —— dockerd shutdown timeout 为 2 秒，supervisor grace 为 3 秒，`docker stop` 为 5 秒，provider cleanup watchdog 为 8 秒。
+- **DinD TTL 预留关闭时间** —— keeper 的 timeout 从真实容器 TTL 中扣除 3 秒。`ensureLifetime` 仍以含 grace 的真实 cutoff 答复，不依赖 Runner 活着。
+- **DinD 诊断在删除前获取** —— daemon 日志只保留有界尾部。bootstrap 失败、daemon 提前退出或 readiness timeout 都先收集日志，再删除创建失败的容器。
+- **Agent 日志语义不变** —— `appendLog` 与 streamed output 仍由 keeper 写入 `docker logs`。
 - **执行身份沿用镜像声明** —— 默认以镜像 `USER` 声明的用户跑命令(未声明按 Docker 语义是 root);factory `user` 覆盖整个 Sandbox 的默认身份,命令传 `{ user: "root" }` 时只这一条换身份(见 [Library · 执行身份](library.md#执行身份))。npm 全局目录与 `PATH` 注入按实际执行身份的 home 解析,不硬编码 UID。
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 到执行身份修正属主(putArchive 以 root 写入)。
@@ -248,7 +256,7 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 各内置 provider 的对账通道与重试面:
 
 - **Docker** —— 容器创建时即带 provision token label(与留存候选的 `niceeval.keep-candidate` 标签同一机制),对账 = 按 label 查询本地容器、force remove(容器已不存在视作对账完成)。create 闭包在容器创建后还有 start、基础工具安装、工作区属主一串 exec,这些步骤失败由 kill-on-failure 直接 force remove。拒绝类主要是拉镜像限流(发生在容器创建之前)。
-- **Docker Compose** —— build 与 up 都复用同一套瞬时分类和退避。build 以同一 BuildKey 重建即可收敛；up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行独立于 Attempt signal 的有界 `compose down --volumes --remove-orphans`，清掉半启动服务后再 up。附着主服务后由 Docker provider probe 分类账所需的 git；题目镜像没带时以 root 通过已有的 apt/apk/dnf/yum 补齐，而不是要求每条 Eval 修改 Dockerfile。整个 case 最终仍由资源组 finalizer 回收；即使前向工作已经 timeout/cancel，finalizer 也拿新的 8s cleanup signal。只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` diagnostic、保留 project labels 供同轮强清重试或 `sandbox prune` 事后认领，不改写原 Attempt verdict。
+- **Docker Compose** —— build 与 up 都复用同一套瞬时分类和退避。build 以同一 BuildKey 重建即可收敛；up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行独立于 Attempt signal 的有界 `compose down --volumes --remove-orphans`，清掉半启动服务后再 up。附着主服务后由 Docker provider 探测 分类账所需的 git；题目镜像没带时以 root 通过已有的 apt/apk/dnf/yum 补齐，而不是要求每条 Eval 修改 Dockerfile。整个 case 最终仍由资源组 finalizer 回收；即使前向工作已经 timeout/cancel，finalizer 也拿新的 8s cleanup signal。只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` diagnostic、保留 project labels 供同轮强清重试或 `sandbox prune` 事后认领，不改写原 Attempt verdict。
 - **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例见 memory 的 e2b-provision-429-duplicate-sandbox 条目)——都由重试前对账兜住。
 - **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴;SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
@@ -309,7 +317,7 @@ provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传�
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
-  Case create / ready 每复用窗口一次;两层作者 prepare、agent.ensure 循环与 Agent runtime 仍每 Attempt 执行,昂贵准备靠 probe 命中快速返回。
+  Case create / ready 每复用窗口一次;两层作者 prepare、agent.ensure 循环与 Agent runtime 仍每 Attempt 执行,昂贵准备靠 探测 命中快速返回。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
   完整契约见 [Sandbox 复用](reuse.md)。
 

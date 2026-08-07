@@ -674,6 +674,7 @@
                   "zh/tutorials/connect-otel",
                   "zh/tutorials/sandbox-agent",
                   "zh/tutorials/sandbox-providers",
+                  "zh/tutorials/docker-in-docker",
                   "zh/tutorials/sandbox-reuse"
                 ]
               },

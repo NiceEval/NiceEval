@@ -66,11 +66,11 @@ interface CommandOptions {
 
 方法名同时是命令证据的解释边界。Record 只保存公开调用事实 `checked` 与退出结果：普通方法的非零（`checked: false`）由消费层显示为尚未解释的 `observed`，不能标成失败；checked 方法的非零（`checked: true`）才显示为 `failed`。调用方拿到普通结果后再决定继续、重试或抛出，不会反向改写已经结束的命令节点；Attempt error 与命令退出事实分别保留各自的权威语义。
 
-因此 probe、best-effort cleanup 与“目标不存在即已收敛”的删除动作使用普通方法。确实要求零退出的安装、构建与验证使用 checked 方法。不要通过 `|| true` 抹掉原始退出码，也不另设退出码白名单让 Runner 猜调用方业务语义。
+因此 探测、best-effort cleanup 与“目标不存在即已收敛”的删除动作使用普通方法。确实要求零退出的安装、构建与验证使用 checked 方法。不要通过 `|| true` 抹掉原始退出码，也不另设退出码白名单让 Runner 猜调用方业务语义。
 
 command-exit error 的默认 message 除 exit code 外，还要带经过控制字符清理与长度收口的 stderr 尾部；stderr 为空时才回落 stdout。fixture/build 的直接死因因此无需下钻 execution 就可见。完整、未截断的 stdout/stderr 仍只保存在 error 携带的 `CommandResult` 与命令证据中。
 
-没有 `tryCommand()` / `tryShell()`：如果普通方法叫 `runCommand`，它就不应暗含“必须成功”；checked 语义只放在 `OrThrow` 后缀上。同一段 probe 因此直写：
+没有 `tryCommand()` / `tryShell()`：如果普通方法叫 `runCommand`，它就不应暗含“必须成功”；checked 语义只放在 `OrThrow` 后缀上。同一段 探测 因此直写：
 
 ```ts
 const probe = await sandbox.runCommand("git", ["--version"]);

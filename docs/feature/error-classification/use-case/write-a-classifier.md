@@ -6,7 +6,7 @@
 两个真实场景:
 
 - **实验作者**:探活只在 setup 阶段跑。
-  实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「probe failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。
+  实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「探测 failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。
   回退看不出这是实验级死因(连接错误千千万),adapter 也不认识(它懂自家 CLI 协议,不懂你的实验拓扑)——知道「这个 host 是全实验共享的隧道」的只有你。
   挂载点:`ExperimentDefinition.classifyFailure`。
 - **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。
@@ -85,7 +85,7 @@ adapter factory 上只认协议短语(完整写法与要点见 [Library](../libr
 - **别复述回退。
   ** 429、DNS 失败、拒连这些通用形状回退已认得,分类器只写私有知识,其余一律 `undefined` 回落。
 - **与抛出点声明互补不是二选一。
-  ** probe 兜「起跑就死」,分类器兜「中途死」;共享服务型实验两个都写,才没有窗口。
+  ** 探测 兜「起跑就死」,分类器兜「中途死」;共享服务型实验两个都写,才没有窗口。
 
 ## 相关阅读
 

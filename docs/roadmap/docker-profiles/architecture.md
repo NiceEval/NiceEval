@@ -73,14 +73,20 @@ interface DockerExecutionProfileV1 {
     };
   };
   readonly capacity: {
+    /** 已扣除 daemon、build、watchdog 与 recovery headroom，可授予 Attempt 的容量。 */
     readonly cpus: number;
     readonly memoryBytes: number;
     readonly memorySwapBytes: 0;
     readonly pids: number;
     readonly maxContainers: number;
     readonly maxBuilds: number;
-    readonly reservedMemoryBytes: number;
-    readonly reservedPids: number;
+    /** systemd aggregate cgroup 的硬上限；必须不小于 allocatable + headroom。 */
+    readonly aggregate: {
+      readonly cpus: number;
+      readonly memoryBytes: number;
+      readonly memorySwapBytes: 0;
+      readonly pids: number;
+    };
   };
   readonly policy: {
     readonly hostLoopback: false;
@@ -127,7 +133,7 @@ VM不能成为该 profile的后端。
 
 ## Attestation
 
-CLI加载可信评测 module并收集 `dockerSandbox({ profile })`后，在任何 Docker discovery/build前
+CLI加载可信评测 module并收集 managed DinD的 `dockerAccess.profile`后，在任何 Docker discovery/build前
 完成以下检查：
 
 1. descriptor不是 symlink，owner/mode正确，所有父目录不可由 runtime access group写；
@@ -140,7 +146,7 @@ CLI加载可信评测 module并收集 `dockerSandbox({ profile })`后，在任�
 6. Docker info中的 daemon ID、DockerRootDir、rootless、cgroup v2/systemd driver与 attestation相同；
 7. backend filesystem identity、mount与可见硬容量匹配；
 8. 本机 systemd事实或 VM control evidence与 aggregate descriptor一致，controllers没有退化；
-9. daemon、containerd/buildkit、shim以及 doctor probe的 cgroup路径均为 `aggregatePath`的严格
+9. daemon、containerd/buildkit、shim以及 doctor 探测的 cgroup路径均为 `aggregatePath`的严格
    backend aggregate path后代，不是同 slice下的 sibling；
 10. watchdog journal、Docker labels、active leases与 reservations可对账。
 
@@ -231,6 +237,26 @@ preflight立即失败；暂时无余量则进入跨进程公平队列，不超�
 Experiment/global `maxConcurrency` 先限制本进程派发，watchdog admission再限制全机；两者都通过才
 create。
 
+四路初始配置中每个 Attempt 请求 4 CPU，因此 allocatable 至少是 16 CPU；aggregate 硬上限至少是
+20 CPU，并另提供 4 CPU 给 daemon、BuildKit、watchdog 与回收。八路晋升的 allocatable 至少是
+32 CPU、48 GiB memory 与 16384 PID；aggregate 至少是 40 CPU、64 GiB memory 与 20480 PID。
+descriptor 与 CLI 输出中的 `capacity` 一律指 allocatable，`capacity.aggregate` 才指 cgroup 硬上限，
+两者不能混称。
+
+## Outer 网络隔离
+
+watchdog 为每个 Attempt 创建独占的 user-defined bridge network。network ID 与 container ID 作为
+同一个 journal-first 生命周期单元管理。network 允许经 rootless NAT 访问公网 DNS/HTTPS 与拉取
+依赖，但禁用 inter-container communication。不同 Attempt 的容器不得接入彼此 network。
+
+managed profile 禁止使用 Docker 默认 bridge、host network、host gateway、published port，亦禁止把
+outer Docker/control socket 注入容器。容器不得访问宿主 loopback、宿主控制 endpoint 或任一 sibling；
+inner dockerd 与 Compose 只能存在于自己的 outer namespace。
+
+create、CLI 断连或 SIGKILL 后，watchdog 以 profile ID、Invocation ID、Attempt ID、provision token
+labels 对账 container 与 network。两者按同一生命周期单元回收；不能只删容器而遗留 network，亦不能
+误删 active sibling。
+
 admission是协调边界，aggregate cgroup与 bounded filesystem才是即使可信 CLI有 bug时仍成立的
 硬边界。doctor必须用真实 process cgroup路径证明 container scope位于 aggregate之下。
 
@@ -246,7 +272,7 @@ attested daemon target platform
   -> eval container create
 ```
 
-不能在 materialize看到 `privileged`后临时换 daemon。`privileged: "rootless"`、规范化 resources、
+不能在 materialize看到 Docker access后临时换 daemon。managed rootless DinD、规范化 resources、
 target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Attempt fingerprint。
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。
@@ -285,13 +311,13 @@ Docker HostConfig精确设置 `NanoCpus`、`Memory`、`MemorySwap=Memory`、`Pid
 
 ## 单容器 DinD readiness
 
-评估 image的 root entrypoint负责：
+官方 Docker provider注入的 root bootstrap / supervisor负责：
 
 1. 初始化有界 home/workspace；
 2. 只监听同容器 Unix socket启动 inner dockerd；
 3. 等待 root身份 `docker info`；
-4. 把 socket交给显式 agent group/user；
-5. exec NiceEval注入的 PID 1 command。
+4. 以镜像中已加入 `docker`组的 Agent用户执行 readiness；
+5. 同时监督 daemon、keeper、日志与容器内 TTL。
 
 outer container进入 Running后，官方 Docker provider仍重试作者声明的 readiness command。只有
 `user: node`实际完成 `docker info`才算 create成功。Agent能使用 inner socket即拥有评估容器内

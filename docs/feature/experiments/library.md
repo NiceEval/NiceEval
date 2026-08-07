@@ -168,7 +168,7 @@ export default defineExperiment({
 
 隧道起失败时这个实验的每条 attempt 都记 `errored`(`experiment-setup-failed`)、逐条进报告,同批其它实验照常跑——环境起不来不该伪装成绿,也不该连坐别人。
 
-`teardown` 里资源释放是必达底线,观测类动作(probe、指标上报)是 best-effort:给观测自己的短超时、失败不阻断,且在 `ctx.signal.aborted` 时直接跳过——中断路径上,一次可能挂起的观测不该挡在「拆容器、退租约」前面;无论观测成败,释放必须执行(`try/finally`)。
+`teardown` 里资源释放是必达底线,观测类动作(探测、指标上报)是 best-effort:给观测自己的短超时、失败不阻断,且在 `ctx.signal.aborted` 时直接跳过——中断路径上,一次可能挂起的观测不该挡在「拆容器、退租约」前面;无论观测成败,释放必须执行(`try/finally`)。
 
 `setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的准备(装二进制、预热)写 `sandbox` layer 的 `prepare()` 命令,题目材料写 Eval layer 的 `prepare()` 或 `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 prepare command 里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
 

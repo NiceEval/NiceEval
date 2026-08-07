@@ -1,6 +1,6 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 `dockerSandbox({ profile })`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
+运行命令从 managed DinD的 `dockerAccess.profile`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
 只读发现与 doctor。宿主部署由 NixOS module、systemd host package或 macOS VM package完成。
 
 ## 运行
@@ -24,12 +24,16 @@ discovery、link与用户选题在 profile查找前完成，而且不发起 Prov
 声明了当前机器不存在的 profile也不报错；只有实际选中 pair引用的别名参加 attestation与 lease。
 
 一次 Invocation可以使用多个 profile。每个 Docker Sandbox始终路由到自己声明的 profile，build与
-create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent env不能替换已绑定 endpoint。
+create不能跨 profile复用连接。Provider的 build、create和生命周期调用始终使用 attestation绑定的
+endpoint，不从 Experiment或 Agent子进程变量改写它。
+
+容器内 Agent之后显式选择远端 endpoint不属于 Provider路由保证。managed模式以网络策略约束其
+可达范围。
 
 未声明 profile时：
 
 - 非 privileged Docker继续使用既有 Docker endpoint查找规则；
-- `privileged: "rootless"`在 factory求值阶段报 `sandbox.docker-profile-required`；
+- managed DinD缺 `profile`在 factory求值阶段报配置错误；
 - 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
 
 声明 profile的普通或 rootless privileged分支都必须提供完整 CPU、memory、PID与只读 rootfs。
@@ -75,15 +79,15 @@ niceeval docker profile doctor default --json
 - daemon security options含 rootless，且无 TCP listener、host socket或 host loopback开放；
 - daemon ID、generation、DockerRootDir与 runtime attestation一致；
 - cgroup v2 controllers、systemd driver、aggregate properties与 policy revision一致；
-- daemon、buildkit、containerd/shim和 probe container的 cgroup path都是 aggregate path的后代；
+- daemon、buildkit、containerd/shim和 探测 container的 cgroup path都是 aggregate path的后代；
 - data-root的 filesystem identity与硬容量证明匹配；
 - watchdog protocol、durable journal、active Invocation/reservation与 orphan状态一致。
 
 VM profile由 control service返回同一组 remote evidence，并用宿主 package建立的 machine identity核验。
-本机 CLI不能直接读取 VM中的 `/proc`，但 smoke仍须从 probe container读取真实 cgroup文件，并由
+本机 CLI不能直接读取 VM中的 `/proc`，但 smoke仍须从 探测 container读取真实 cgroup文件，并由
 control service证明它们属于 VM aggregate subtree。
 
-`--smoke`创建短命 rootless privileged probe，设置2 CPU、512 MiB、0 extra swap、256 PID、只读
+`--smoke`创建短命 rootless privileged 探测，设置2 CPU、512 MiB、0 extra swap、256 PID、只读
 rootfs与64 MiB tmpfs，并从容器读取：
 
 ```text
@@ -93,7 +97,7 @@ memory.swap.max
 pids.max
 ```
 
-四项必须与请求一致，probe cgroup必须处于 aggregate subtree。probe随后运行最小 nested Alpine，
+四项必须与请求一致，探测 cgroup必须处于 aggregate subtree。探测随后运行最小 nested Alpine，
 再验证 outer container、inner process、mount、label与 reservation全部消失。Docker inspect中的
 HostConfig不是限额生效证据。
 
@@ -133,11 +137,16 @@ services.niceeval.dockerProfiles.default = {
   enable = true;
   accessUsers = [ "ctrdh" ];
   capacity = {
-    cpus = 14;
+    cpus = 16;
     memory = "28G";
-    pids = 9216;
-    maxContainers = 8;
+    pids = 8192;
+    maxContainers = 4;
     maxBuilds = 2;
+  };
+  aggregate = {
+    cpus = 20;
+    memory = "32G";
+    pids = 12288;
   };
   storage = {
     size = "30G";
@@ -165,7 +174,7 @@ cgroup和 watchdog，再把受认证的 Docker/control Unix endpoint提供给宿
 `default`，由 launchd管理 VM生命周期与开机恢复。
 
 共享 Docker Desktop仍可服务省略 profile的普通非 privileged Docker Sandbox。它不能满足
-`privileged: "rootless"`，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
+managed rootless DinD，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
 daemon，无法兑现 profile的隔离和 watchdog所有权。
 
 ### External profile
@@ -180,9 +189,10 @@ human plan按实际用到的每个 profile显示一段摘要：
 
 ```text
 DOCKER PROFILE  default · managed-rootless/v1 · policy 8f31c0d2
-  aggregate 14 CPU · 28 GiB memory · 0 swap · 9216 PID · 30 GiB disk · max 8
+  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · max 4
+  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 30 GiB disk
   this invocation up to 4 containers · 4 CPU / 6 GiB / 2048 PID each
-  shared admission 3 active invocations · 6/8 containers reserved
+  shared admission 3 active invocations · 3/4 containers reserved
 ```
 
 可发布 JSON只包含 security level、semantic policy revision、aggregate公开容量、单容器请求与有效

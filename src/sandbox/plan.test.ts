@@ -233,7 +233,7 @@ describe("provider-neutral Sandbox planning", () => {
     expect(JSON.stringify(plans.map(({ identity }) => identity))).not.toContain("undefined");
   });
 
-  it("Docker tmpfs/只读 rootfs 选择 DestroyOnly provider，并推进资源覆盖 revision", async () => {
+  it("Docker tmpfs/只读 rootfs 一律选择 DestroyOnly provider，raw DinD 无临时文件系统才 Suspendable", async () => {
     const root = await builtInRoot();
     const outputs = await Effect.runPromise(planLinkedRuns([
       {
@@ -255,18 +255,59 @@ describe("provider-neutral Sandbox planning", () => {
         authorBaseDirs: { eval: root, experiment: root },
         requirements: [],
       },
+      {
+        pair: linked(factories.dockerImageSandbox({
+          image: "docker:29-dind",
+          dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
+      {
+        pair: linked(factories.dockerImageSandbox({
+          image: "docker:29-dind",
+          dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+          resources: { tmpfs: { "/var/lib/docker": { sizeBytes: 1024 } } },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
+      {
+        pair: linked(factories.dockerImageSandbox({
+          image: "docker:29-dind",
+          dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+          resources: { readOnlyRootfs: true },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
     ]));
     const plans = outputs.map(({ plan }) => {
       if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
       return plan.providerPlan;
     });
 
-    expect(plans.map((plan) => plan.plannerRevision)).toEqual(["dockerfile-3", "docker-image-2"]);
+    expect(plans.map((plan) => plan.plannerRevision)).toEqual([
+      "dockerfile-4",
+      "docker-image-3",
+      "docker-image-3",
+      "docker-image-3",
+      "docker-image-3",
+    ]);
     expect(plans.map((plan) => Option.getOrThrow(sandboxProviderBindingOf(plan)).moduleId)).toEqual([
       "niceeval/dockerfile-ephemeral",
       "niceeval/docker-image-ephemeral",
+      "niceeval/docker-image",
+      "niceeval/docker-image-ephemeral",
+      "niceeval/docker-image-ephemeral",
     ]);
-    expect(plans.map((plan) => plan.capabilities.retention._tag)).toEqual(["DestroyOnly", "DestroyOnly"]);
+    expect(plans.map((plan) => plan.capabilities.retention._tag)).toEqual([
+      "DestroyOnly",
+      "DestroyOnly",
+      "Suspendable",
+      "DestroyOnly",
+      "DestroyOnly",
+    ]);
   });
 
   it("link 与 Direct planning 均不调用 provider planner", () => {

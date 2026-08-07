@@ -126,7 +126,7 @@ interface DockerfileSandboxOptions {
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<Record<string, string>>;
   readonly user?: string;
-  readonly privileged?: "rootless";
+  readonly dockerAccess?: DockerSandboxAccess;
   readonly resources?: DockerSandboxResources;
   readonly lifetimeMs?: number;
 }
@@ -134,10 +134,19 @@ interface DockerfileSandboxOptions {
 interface DockerImageSandboxOptions {
   readonly image: string;
   readonly user?: string;
-  readonly privileged?: "rootless";
+  readonly dockerAccess?: DockerSandboxAccess;
   readonly resources?: DockerSandboxResources;
   readonly lifetimeMs?: number;
 }
+
+type DockerSandboxAccess =
+  | { readonly mode: "socket"; readonly socketPath: string }
+  | { readonly mode: "dind"; readonly isolation: "raw-privileged" }
+  | {
+      readonly mode: "dind";
+      readonly isolation: "managed-rootless";
+      readonly profile: string;
+    };
 
 interface DockerSandboxResources {
   readonly cpus?: number;
@@ -183,9 +192,10 @@ declare function sandboxLayer(): SandboxLayer<"command-only">;
 ```
 
 `user` 覆盖整个 Sandbox 的默认执行身份,省略时沿用环境自己声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
-Docker image/Dockerfile 还可声明结构化 `resources`。`privileged: "rootless"` 是 fail-closed
-能力：只接受显式、带身份与 data-root attestation、使用 systemd cgroup v2 的 rootless Unix
-daemon；它不是通用的裸 `privileged: true`。完整边界见 [Library · privileged Docker](library.md#privileged-docker)。
+
+Docker image/Dockerfile 还可声明结构化 `resources`与 `dockerAccess`。socket、raw privileged DinD和
+managed rootless DinD是不可互相降级的判别分支；完整边界见 [Library · Docker access](library.md#docker-access)。
+
 `env` 只放会改变环境语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
 `credentialEnv`：`value` 只交给本次 runtime binding，不进入 plan、record 或 fingerprint；变量名与可选
 `revision` 进入身份。凭据选择了不同租户、数据集或权限面时必须更新 `revision`。同一个变量名不能同时出现在
@@ -533,8 +543,8 @@ Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行
 
 ## Agent layer
 
-每个 Sandbox Agent Adapter 声明自己的 ensure(目标 identity 加只读 probe);官方 Agent 安装层按 identity 配对,Runner 由两者组装出一个 command-only 的 Agent layer。
-它排在两方作者 layer 之后进入同一条准备时间线,但它的节点是 ensure 循环(probe → 缺失才 install → 复检),保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
+每个 Sandbox Agent Adapter 声明自己的 ensure(目标 identity 加只读 探测);官方 Agent 安装层按 identity 配对,Runner 由两者组装出一个 command-only 的 Agent layer。
+它排在两方作者 layer 之后进入同一条准备时间线,但它的节点是 ensure 循环(探测 → 缺失才 install → 复检),保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
 
 Agent layer 由 Runner 组装,没有作者可导入的组装 API;Adapter 与 Eval / Experiment 作者都不手工排列安装组件。
 Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eval 或 Experiment 必须显式提供兼容 template,link 与 physical planning 用 Adapter 声明的 capability requirement 检查它。

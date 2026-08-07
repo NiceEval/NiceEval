@@ -68,7 +68,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
 | `SandboxLayer.setup()` / `teardown()` | 每个实际 Sandbox 成对一次；仅 Experiment hook 可跨 Eval 共用，Eval hook 隔离该 Eval |
 | 两层作者 layer 的 `prepare()` 与已登记 cleanup | 每 Attempt 成对 |
-| agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
+| agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
 | `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
 
@@ -80,7 +80,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 Runner 不把 `prepare()` 提升成每个 Sandbox 一次；只有作者显式声明的 `setup()` / `teardown()` 是物理 Sandbox 的生命周期。
 稳定 Agent CLI 应进入预制环境;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重放成本。
 
-Agent CLI 先由 ensure 重新 probe；缺失或 identity 不符时由配对 Installer 安装并复检。
+Agent CLI 先由 ensure 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
 随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
 「可重复执行」的作者义务只覆盖作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
 
@@ -176,6 +176,16 @@ Provider 可以在 `ensureLifetime` 内续期，也可以只确认现有时间�
 - `ready: true`：Sandbox 可以承接 Attempt。
 - `ready: false`：停止旧 Sandbox，创建并准备替代 Sandbox。
 - Provider 没有该能力：Experiment 在第一条 Attempt 派发前报错。
+
+不含临时文件系统的 Docker raw DinD 是 `Suspendable`：`docker stop` 会停止 outer container 与 inner daemon，
+之后的 `docker start` 会重新执行同一个 provider-owned supervisor。唤醒不以
+`container.start()` 返回为完成边界；detached `enter` / history / diff 在继续前必须
+以 Agent 默认用户重新执行 `docker info` readiness。唤醒失败时保留注册表所有权与
+可恢复诊断，不把条目删掉或冒充成已唤醒。
+
+任意 Docker sandbox只要使用只读 rootfs或
+`tmpfs`就是 `DestroyOnly`，不对会丢失的 workspace或 inner state声称可恢复；managed
+DinD同样遵守这条边界。
 
 替代 Sandbox 就绪后再次检查。
 如果替代创建已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。

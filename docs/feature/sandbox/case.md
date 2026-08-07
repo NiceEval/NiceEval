@@ -178,7 +178,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 - miss 时从干净 task image 创建临时 Docker sandbox。
 - 临时 sandbox 照常执行 Agent ensure、staged install 与复检。
 - 只提交临时 sandbox 为 `niceeval-agent:<derived-key 前 32 位>`，随后销毁它。attempt 容器绝不作为派生镜像提交对象。
-- attempt 从派生 locator 启动，但仍执行正常 `runAgentEnsure` 并记录 probe hit。
+- attempt 从派生 locator 启动，但仍执行正常 `runAgentEnsure` 并记录 探测 hit。
 - 其它 provider 或不满足 opt-in 条件时直接回落 task image。
 
 身份解析发生在携带决策之前。

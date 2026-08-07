@@ -47,7 +47,7 @@ export default defineSandboxAgent({
 
 ## 生命周期
 
-[Agent Ensure](../architecture/agent-ensure.md)（probe 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在两方作者 prepare command 之后。
+[Agent Ensure](../architecture/agent-ensure.md)（探测 精确身份、缺失时由配对安装层安装、复检）由 Runner 在 `agent.ensure` 相位按 Adapter 的 ensure 声明执行，排在两方作者 prepare command 之后。
 `setup` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI，失败直接抛出并使 attempt errored。
 `send` 只执行一轮任务，多轮时会重复调用。只有协议给出完整可信终态才返回 Turn。
 

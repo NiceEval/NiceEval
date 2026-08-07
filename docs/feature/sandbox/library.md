@@ -150,7 +150,7 @@ sandbox: dockerImageSandbox({
 
 语义:
 
-- 按声明顺序前置到受管 PATH,作用于该 Sandbox 内**全部**受管命令——agent 进程、两层 `prepare()`、`agent.ensure` 的 probe/install/复检——hooks 与子进程经这些命令继承,不需要另外声明。
+- 按声明顺序前置到受管 PATH,作用于该 Sandbox 内**全部**受管命令——agent 进程、两层 `prepare()`、`agent.ensure` 的 探测/install/复检——hooks 与子进程经这些命令继承,不需要另外声明。
 - 属于 Sandbox 配置,进 template identity;改值会让携带的历史结果失效,与改 `image` / `user` 同一类。
   **省略与显式传空数组是同一份 identity**(absent ≡ default):身份序列化只在非空时带上这个键,作者不声明 `pathPrepend` 和显式写 `pathPrepend: []` 不会因为写法不同分裂出两份 digest。
   这是可选配置字段的通用规则,不是 `pathPrepend` 专属。任何新增的可选 factory 字段,值等于默认值时都不进身份序列化,只有偏离默认值才计入摘要;`pathPrepend` 是这条规则唯一落地的字段。
@@ -228,14 +228,28 @@ e2bSandbox({
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### privileged Docker
+### Docker access
 
-需要在单个评估容器里运行 Docker-in-Docker 时，Docker image/Dockerfile factory 可以显式声明：
+Agent需要运行 Docker时，Docker image/Dockerfile factory显式选择三种模式之一：
 
 ```typescript
-dockerfileSandbox({
-  context: new URL("./sandbox/", import.meta.url),
-  privileged: "rootless",
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: { mode: "socket", socketPath: "/var/run/docker.sock" },
+})
+
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+})
+
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: {
+    mode: "dind",
+    isolation: "managed-rootless",
+    profile: "default",
+  },
   resources: {
     cpus: 4,
     memoryBytes: 6 * 1024 ** 3,
@@ -249,18 +263,35 @@ dockerfileSandbox({
 })
 ```
 
-`privileged` 故意不是 boolean。NiceEval 只会把它交给一个显式 `DOCKER_HOST=unix://…` 的
-rootless daemon，并在创建容器前验证：daemon 报告 rootless、cgroup v2 + systemd driver、
-daemon ID 等于 `NICEEVAL_ROOTLESS_DOCKER_ID`、data-root 等于
-`NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT`。任何字段缺失或不匹配都会在 pull/build/create 前失败，
-不会回退到 `/var/run/docker.sock` 或 TCP。
+socket模式显式挂载作者给出的 Unix socket，适合可信 Agent；Agent拥有该 daemon的完整控制权，
+rootful socket通常等价宿主 root。raw DinD给 outer container设置 privileged，适合一次性 VM或专用
+runner，不宣称隔离。managed DinD通过 profile验证 rootless daemon、资源容量和 watchdog，适合
+共享宿主与不可信 Agent。managed失败绝不降级为 raw privileged。
+
+NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD
+只接受从固定版本官方 `docker:<version>-dind`派生的兼容镜像，并要额外带 `node`、
+`docker-init`、`dockerd-entrypoint.sh`、`timeout` 与 `tail`。
+直接把未经派生的 `docker:<version>-dind`作为 `source.image`会以
+`dind-image-incompatible: missing node`创建失败；作者必须提供 Dockerfile或已发布的兼容派生镜像。
+
+用户不写 NiceEval 专用 `ENTRYPOINT`，也不负责接收或执行 NiceEval 传入的 `Cmd`。
+当 `dockerAccess.mode` 为
+`"dind"` 时，provider 显式替换镜像原有 `Entrypoint` / `Cmd`，注入自己版本化的
+bootstrap 与 supervisor，同时监督 inner dockerd、Sandbox keeper、日志与容器内 TTL。
+这是 DinD 模式的明确镜像协议，不是对任意 service image 的 OCI 启动兼容承诺。
+
+bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
+`docker info` 仍以 factory `user` 执行，未声明 factory `user` 时沿用镜像 `USER`。
+合规派生镜像应在构建期把该 Agent 用户加入 `docker` 组；NiceEval 不会把
+`/var/run/docker.sock` 放宽为 `0666`，也不会硬编码 `node` 用户名。CLI、daemon、
+镜像协议或 socket 权限不满足时，Sandbox 在执行 setup / prepare / Agent 前创建失败。
 
 `memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
 带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
 的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
 这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
 
-Rootless privileged 模式不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
+Managed rootless DinD不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
 不可用；受信任 supervisor 默认阻断 host loopback。这样 trace 不会被静默发往一个其实只指向
 嵌套网络的假“宿主”。需要观测时应先提供受控代理，再单独扩展该契约。
 
@@ -402,7 +433,7 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内环境(工具检查与安装、小配置、预检) | Experiment layer 的 [`prepare()`](layers.md):每 Attempt 执行,昂贵动作靠真实检查快速命中 | `context.onCleanup()` 就地登记,逆序执行;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`prepare()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;要清沙箱外的东西用 `context.onCleanup()` / `try/finally` |
-| Agent CLI 的精确版本(每 Attempt probe) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 probe、缺失时安装、复检 | 安装失败归 `agent.ensure`；产物随 Sandbox 销毁或题间复用策略处理 |
+| Agent CLI 的精确版本(每 Attempt 探测) | Adapter 必填 `ensure` + identity 匹配的 [`AgentInstaller`](../adapters/architecture/agent-ensure.md)；Runner 负责 探测、缺失时安装、复检 | 安装失败归 `agent.ensure`；产物随 Sandbox 销毁或题间复用策略处理 |
 | 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装产物的后置脚本走 factory 的 [`postSetup`](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
 | 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | modern `SandboxLayer.setup()` / `.teardown()`；setup 接收 `(sandbox, { experimentId, signal, progress, diagnostic, fact })` | teardown 在 Agent teardown 与 Attempt cleanup 后、provider stop 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |

@@ -25,7 +25,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
-      - name: Run agent
+      # Keep inspection and reporting in one agent invocation so the final
+      # review uses the same PR context and evidence gathered during inspection.
+      - name: Inspect pull request and report review
         uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}

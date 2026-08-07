@@ -75,6 +75,7 @@ docs/
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
+│   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   ├── sandbox-reuse-groups/            Eval 侧强制复用组与组外并行
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选
 │
