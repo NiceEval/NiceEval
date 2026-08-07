@@ -50,6 +50,9 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.22.4
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@ai-sdk/otel':
         specifier: ^1.0.9

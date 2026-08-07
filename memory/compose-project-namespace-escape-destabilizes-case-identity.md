@@ -6,7 +6,7 @@
 
 显式 `container_name` 还绕开 Compose project namespace。两个并发 Case 会在 Docker 宿主争用全局容器名，遗留容器也会阻断下一次启动。同类逃逸还包括受管 network、volume、config 与 secret 的固定全局 `name`。
 
-**修法**：Docker Compose physical planning 用两个不同哨兵 project 求值 Compose 有效模型。任一 service 的 `container_name` 都拒绝；非 external 受管资源必须随哨兵分别派生为 `<project>_<logical-key>`。外部 `include` 与 `extends.file` 因内容未进入 CaseKey 输入闭包而拒绝。同文件 anchor、merge、插值与 service extends 由 Compose 自己展开，避免极简 YAML inspection 被语法旁路。
+**修法**：Docker Compose physical planning 用两个不同哨兵 project 求值 Compose 有效模型。任一 service 的 `container_name` 都拒绝；非 external 受管资源必须随哨兵分别派生为 `<project>_<logical-key>`。顶层 `include` 与任意 `extends.file` 因第二文件入口未进入 CaseKey 输入闭包而拒绝。同文件 anchor、merge、插值与不带 `file` 的 service extends 由 Compose 自己展开，避免极简 YAML inspection 被语法旁路。
 
 Terminal-Bench 删除 10 份活动 Compose 的 `container_name` 与 helper 中的随机容器名字段。题目脚本只按 Compose service DNS 寻址，NiceEval 也按 project 与 service 查询主容器，因此删除字段不改变题目语义。
 
