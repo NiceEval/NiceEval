@@ -1,20 +1,9 @@
 import { rmSync } from "node:fs";
 import { beforeEach, expect, test } from "vitest";
-import { parseJson, parseNdjson, runProcess } from "./support/process.ts";
+import { parseJson, runProcess } from "./support/process.ts";
 
-// NiceEval 根目录：pnpm e2e --repo cli -- --run test/cli-results.test.ts
-// 已安装候选包的隔离 Repo 根：pnpm test --run test/cli-results.test.ts
-
-interface PlanDocument {
-  format: "niceeval.exp-plan";
-  schemaVersion: number;
-  matrix: Array<{ experimentId: string; evalId: string }>;
-}
-
-interface ExpEvent {
-  event: string;
-  status?: string;
-}
+// NiceEval 根目录：pnpm e2e --repo cli -- --run test/show-json-pipe.test.ts
+// 已安装候选包的隔离 Repo 根：pnpm test --run test/show-json-pipe.test.ts
 
 interface HistoryDocument {
   format: "niceeval.show";
@@ -34,48 +23,6 @@ interface AttemptDocument {
 }
 
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
-
-test("exp --dry --json distinguishes an exact experiment from its sibling prefix", async () => {
-  const result = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "compare/base", "--dry", "--json",
-  ]);
-  expect(result.exitCode, result.diagnostic()).toBe(0);
-  expect(result.stderr).toBe("");
-
-  const plan = parseJson<PlanDocument>(result.stdout, result.diagnostic());
-  expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3 });
-  expect(plan.matrix.map((row) => row.experimentId)).toEqual(["compare/base"]);
-  expect(plan.matrix.map((row) => row.evalId)).toEqual(["smoke/passes"]);
-});
-
-test("stdout, stderr and exit code keep their public roles", async () => {
-  const passed = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "passing", "--rerun", "all", "--json",
-  ]);
-  expect(passed.exitCode, passed.diagnostic()).toBe(0);
-  expect(passed.stderr).toBe("");
-  expect(parseNdjson<ExpEvent>(passed.stdout, passed.diagnostic()).at(-1))
-    .toMatchObject({ event: "result", status: "passed" });
-
-  const failed = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "failing", "--rerun", "all", "--json",
-  ]);
-  expect(failed.exitCode, failed.diagnostic()).toBe(1);
-  expect(failed.stderr).toBe("");
-  expect(parseNdjson<ExpEvent>(failed.stdout, failed.diagnostic()).at(-1))
-    .toMatchObject({ event: "result", status: "failed" });
-
-  const usageError = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "show", "missing-eval", "--json",
-  ]);
-  expect(usageError.exitCode, usageError.diagnostic()).not.toBe(0);
-  expect(usageError.stdout).toBe("");
-  expect(usageError.stderr).toContain("No results matched");
-});
 
 // regression: d8d5a84b — process.exit() truncated piped JSON near 128 KiB.
 test("show --json through a real pipe still contains the signed tail sentinel", async () => {
