@@ -55,6 +55,14 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 - **自定义报告的用户操作回归**：渲染验收不只对内建 `standard` 报告做。
   仓库签入一组代表性自定义报告文件（`pages: [...standard.pages]` 叠外壳、自定义多页、自定义组件与 attempt page），对每份用 `show --report` / `view --report` 走同一条读面与渲染验收：页导航与 `--page` 索引、折叠展开、过滤框、locator 深链与下钻命令在真实浏览器里逐项操作可达。
   用户改一份报告文件就能踩到的路径，回归也要踩到。
+  最小浏览器 Journey 以一个 `test()` 连续验收同一用户目标：
+
+  - 展开自定义 `CopyBlock` 并确认复制结果；
+  - 使用可见 `Attempts` tab；
+  - 沿表格真实 `href` 下钻 failed 与 passed/tool-call attempt；
+  - 在详情页看到判定与 assistant 对话证据。
+
+  这条 Journey 接管结果后，Unit 不再保留对应 HTML、DOM 或剪贴板替身断言。
 - **候选包的外部消费边界**：把编排器注入的候选 `niceeval` tarball 链接进临时消费方项目，以独立 Node 进程从该项目 cwd 执行 `niceeval show --report`，对同一份真实 Record 分别覆盖消费方无 `tsconfig.json`、classic JSX 与 `react-jsx` 三种配置。
   三种场景都必须从 `niceeval/report/built-in` 成功装载 package-owned 预编译 ESM 并渲染真实证据，不得受消费方 JSX 配置影响或依赖全局 `React`；这个 case 证明的是发布包模块边界，不重复组件渲染断言。
 

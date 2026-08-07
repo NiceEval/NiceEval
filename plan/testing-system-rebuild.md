@@ -160,18 +160,18 @@
 
 [ ] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
 ├─ [x] T8.1 修正测试 owner 分类：Feature Unit 保留 `// cases:`；runner receipt 直属 E2E execution；examples 与产品站守护分别迁入 docs / docs-site lane
-├─ [ ] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
+├─ [x] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
 │  ├─ [x] T8.2.1 experiments-runner：44 files / 约 19.2k lines
 │  │      验收结论：零删除；现有测试均为纯选择、指纹、调度、锁、renderer 与 reducer 矩阵，真实 CLI 与 carry/history Journey 已只留在 E2E
-│  ├─ [ ] T8.2.2 reports：60 files / 约 15.2k lines
-│  │      删除浏览器、DOM/HTML 最终表现与 show/view 进程重复；保留公开 task Result 的纯投影与公式 owner
-│  ├─ [ ] T8.2.3 sandbox：44 files / 约 12.3k lines
-│  │      删除真实 signal/HTTP/进程生命周期重复；保留 fake provider、资源状态机、retry/lock 与命令分类
+│  ├─ [x] T8.2.2 reports：60 files / 约 15.2k lines
+│  │      已删除 705 行重复 web/DOM、主题 token 与私有 render cache 断言；单一浏览器 Journey 接管 CopyBlock 剪贴板、真实 href 与 Conversation 可见结果，公式、普通值转换与报告树语义仍由 Unit 拥有
+│  ├─ [x] T8.2.3 sandbox：44 files / 约 12.3k lines
+│  │      已合并 Docker ensureLifetime 的第二份四格矩阵；其余 signal 均为受控取消竞态，真实 Provider 矩阵尚未被 E2E 接管，故不冒进删除
 │  ├─ [x] T8.2.4 adapters + record：20 files / 约 4.6k lines
 │  │      验收结论：零删除；现存 fixture 均为 NiceEval 自有归一、错误分类或 Record 变换的唯一矩阵 owner，未发现复制上游 wire shape 且已由 E2E 接管的重复
 │  └─ [x] T8.2.5 assertions + eval + sample：15 files / 约 4.6k lines
 │         已合并同一 0/1 matcher、默认超时与 send live-state 的重复场景；其余矩阵均能区分不同错误算法
-├─ [ ] T8.3 每个删除批次说明“删了会放走什么错误”；答不出的旧测试不因历史存在而保留
+├─ [x] T8.3 每个删除批次说明“删了会放走什么错误”；答不出的旧测试不因历史存在而保留
 └─ [ ] T8.4 收口：Unit 全量无网络/容器/凭据，60 秒内；文档 cases 守护与对应 E2E 同时通过
 ```
 
