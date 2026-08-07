@@ -33,8 +33,10 @@ experiments/
 test/
 ```
 
-`package.json` 把 `@niceeval/testkit` 声明为精确版本的 devDependency，lockfile 固定其 integrity。
-它不是 workspace link，也不会由产品 gate 临时替换。
+场景源 `package.json` 和签入 lockfile 不声明 `@niceeval/testkit`；`e2e.json` 的 `harness.testkit: true`
+是消费意图的唯一真源。根 runner 只在隔离副本中注入当次内容寻址 tgz，场景不使用 workspace link。
+直接进入场景执行 `pnpm test` 不是正式入口；它必须非零退出并引导用户在根目录运行
+`pnpm e2e --repo <id>`。manifest `command` 直接调用原生 Vitest / Playwright 命令，仅由完成双 tgz 注入的根 runner 执行。
 
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
 目录不必为了形式把每个子功能拆成 Repo。`runner/carry-reuse.test.ts` 与 `runner/history-dedup.test.ts` 可以消费相同的
@@ -87,6 +89,7 @@ interface E2ERepoManifest {
   executor: Executor;
   command: readonly [string, ...string[]];
   timeoutMinutes: number;
+  harness?: { testkit?: boolean };
   secrets: readonly string[];
   requires?: {
     docker?: boolean;
@@ -107,19 +110,19 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 
 根 runner 对每次本地整组或 CI workflow：
 
-1. 从待测 checkout pack 一份候选 tarball；
-2. 计算 tarball 字节 digest；
-3. 把每个选中 Repo 复制到新的临时目录；
-4. 只在副本中把 `niceeval` dependency 改为 tarball；
-5. 安装后核对 executable 路径和实际版本来自该 tarball；
-6. 核对 Testkit 的精确版本与 lockfile integrity 没有变化；
-7. 把产品 digest、Testkit 版本、Repo ID 和复现命令写入摘要。
+1. 从待测 checkout pack 一份 NiceEval candidate tgz；
+2. 对当前 workspace Testkit meta-test/typecheck，删除 `dist/` 并完整构建后只 pack 一份 Testkit tgz；
+3. 计算两份 tgz 的 SHA-256 与 SRI，用 Testkit SHA-256 命名其内容寻址文件；
+4. 把每个选中 Repo 复制到新的临时目录；
+5. 只在副本中把 `niceeval` 指向 candidate，并为 `harness.testkit: true` 的 Repo 新增 Testkit tgz devDependency；
+6. 安装后核对 NiceEval executable、Testkit 实际包名/路径、唯一 lock resolution 与两份 tgz integrity；
+7. 把两份 digest、Testkit version（诊断）、Repo ID、artifact 路径和复现命令写入摘要。
 
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。
 
-产品 E2E 不测试当前 checkout 的 Testkit candidate。Testkit 升级先走自己的 meta-test 与 known-good NiceEval pilot，
-发布后再由独立依赖升级提交更新场景 Repo。一个 gate 不能同时改变被测产品与裁判。
+Testkit 先用非 NiceEval fixture 完成 meta-test，再以独立 tgz 形态进入产品 E2E。产品断言不得从 Testkit 或 candidate
+派生 expected；receipt 必须让任何失败都能区分两份字节身份。
 
 测试正文也不能临时新建一个只写了 `package.json`、却没有安装候选包的嵌套 consumer，然后在里面运行
 `pnpm exec niceeval`。Package 场景优先让叶子 Repo 本身就是目标 consumer；确实需要二级 consumer 时，runner 必须在那个目录
@@ -127,8 +130,8 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 
 Release 必须发布通过 preflight 的同一 tarball；验收后重新 pack 会切断信任链。
 
-产品场景中的 Testkit 必须来自 registry 精确版本。扫描发现 `workspace:`、`file:`、本地 tarball、Git SHA、`latest` 或版本范围时，
-runner 在 prepare 前失败。每次 run receipt 保存 Testkit version、registry source 与 integrity；NiceEval candidate 注入前后必须一致。
+场景源 manifest/lock 出现 `@niceeval/testkit`、`workspace:` 或 checkout 相对路径时，runner 在 prepare 前失败。
+`file:` 只允许由 runner 在临时副本中指向已验证的内容寻址 tgz，不得指向 workspace 目录或非收据字节。
 
 ## Executor 与被测 Backend 分开
 

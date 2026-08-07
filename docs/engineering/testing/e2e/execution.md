@@ -29,31 +29,32 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifa
 ```
 
 `plan --json` 只输出 Repo、executor、能力和分片，不包含产品断言。
-本地默认顺序是 plan → pack → run；无 Repo 被选择或 manifest 非法时不 pack。CI 的 plan 与 pack 可以并行，run 同时消费
-二者的收据。`plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；`run --candidate` 不隐式重新 pack。
+本地默认顺序是 plan → pack NiceEval → build/pack Testkit → run；无 Repo 被选择或 manifest 非法时不 pack。
+CI 的 plan 与上游 package job 可以并行，run 同时消费 plan 和两份 tgz 收据。`plan` 不 pack、不安装、不读 secret、
+不创建 Repo 副本；已显式给出 `run --candidate --testkit` 时不隐式重新 pack。
+
 `run --artifact-root` 让 CI 指定独立于临时工作副本的证据根；runner 删除副本后保留其中的 `summary.json`、Repo receipt 与声明附件。
 原生测试参数在 `--` 后原样且只传一次。
 
-### 本地 Testkit 注入
+### Testkit 构建与注入
 
-本地开发可以显式把本地打包的 Testkit tarball 注入隔离 Repo，让场景直接安装当前 checkout
-打包出的 `@niceeval/testkit`：
+`pnpm e2e --repo <id>` 自动删除 Testkit `dist/` 并完整构建，对本次 invocation 只 pack 一次，再把同一份 tgz
+注入所有声明 `harness.testkit: true` 的隔离 Repo。显式 `--testkit` 只用于 CI 和重现指定字节：
 
 ```sh
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
   --testkit packages/testkit/artifacts/niceeval-testkit-0.1.0.tgz --repo report
 ```
 
-- `--testkit <exact-tgz>` 只属于显式 `run`，是可选参数。默认 `pnpm e2e` 与 CI 不传时，
-  每个场景 Repo 仍严格使用签入 lockfile 的 registry 精确 Testkit 版本，注入路径零改动。
+- `--testkit <exact-tgz>` 只属于显式 `run`。本地默认命令自动产生 tgz；CI 必须显式传入上游唯一 tgz。
 - runner 只按 npm 包身份消费该 tarball：校验 `package/package.json` 的 `name` 为 `@niceeval/testkit`、
-  独立重算 sha256 并写入诊断，从不读 Testkit 源码或内部文件；Testkit 内部布局可自由重构。
-- 注入只改写隔离副本的 `@niceeval/testkit` devDependency（`file:` 指向该 tarball），不写源 Repo；
-  未声明 `@niceeval/testkit` 的 Repo 在注入前明确失败，不会悄悄新增裁判依赖。
-- 安装后从副本 lockfile 核对 testkit integrity 与 candidate 注入同一条信任链：身份或完整性不一致属于
+  独立重算 SHA-256 与 SRI，并使用 `niceeval-testkit-<sha256>.tgz` 内容寻址文件名。
+- 注入只在隔离副本的 devDependencies 中新增指向该 tgz 的 `file:`，不写源 Repo。未声明
+  `harness.testkit: true` 却 import Testkit，或声明了但没有注入，都在 test 前失败。
+- 安装后要求副本 lockfile 只有一个 Testkit resolution，其 SRI 与当前 tgz 字节一致，再核对实际安装包名/路径。不一致属于
   harness failure（infra），不静默安装其它版本继续跑测试。
-- 本地 Testkit 注入不改变 candidate 注入与失败分类语义，也不进入 release 信任链：
-  发布仍只使用 registry 已发布的精确版本 Testkit。
+- tgz 和 receipt 保留在 durable artifact root。receipt 同时保存 version（仅诊断）、SHA-256、SRI、实际安装路径
+  与复现命令；tgz 已被删除后，该收据只能追责，不得声称 exact replay。
 
 功能 Repo 与 Adapter Repo 永远是不同的 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
 `adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。`main` / `release` lane
@@ -76,8 +77,8 @@ discover → select → pack → isolate → install → prepare → test → co
 
 失败、取消和 signal 都必须走 collect / cleanup。`--keep-workdir` 仅供显式本地诊断。
 
-每次安装还要核对 Repo 锁定的 Testkit 版本与 integrity。普通产品运行只替换 NiceEval candidate；Testkit candidate
-由固定 runner 和非 NiceEval fixture 单独验收，再用 pinned known-good NiceEval 做兼容 pilot。两条升级链不能合并成一个 release gate。
+每次安装同时核对 NiceEval 与 Testkit 两份 tgz 身份。Testkit 先由非 NiceEval fixture 自测，然后才作为机械设施进入产品场景；
+这不改变产品断言的独立性，但要求收据显式保存两份字节身份。
 
 阶段收据保存产生结果的进程本身的 exit / signal。验证不得用 `command | head`、`command | tail` 后读取管道末端退出码；
 需要裁剪控制台输出时，先把 producer 的完整 stdout / stderr 与退出状态落入 artifact，再只裁剪展示副本。Repo 启动的 view、mock、
@@ -152,7 +153,7 @@ Docker daemon 故障。以下情况不重试：断言失败、测试超时、par
 候选注入失败要再分一层。runner 没把指定 tarball 注入进去，或 digest / 实际 executable 身份不一致，属于 harness failure。
 候选已经正确注入，但它的 package metadata、exports、bin 或安装脚本让真实项目不可消费，属于 product regression。
 两类都不得判绿；只有前者在确认临时 runner / registry 故障时才可能按 infrastructure 重试。
-Testkit 版本或 integrity 偏离 Repo lockfile 同样属于 harness failure，不能静默安装 `latest` 后继续。
+Testkit digest、SRI、唯一 resolution 或实际安装路径偏离收据同样属于 harness failure。
 
 ## Artifact 与脱敏
 
@@ -171,7 +172,8 @@ Testkit 版本或 integrity 偏离 Repo lockfile 同样属于 harness failure，
 Release job 先按最终版本生成 tarball 与 digest，所有 release Repo 安装该 artifact；通过后发布同一文件。
 任何重新 pack、identity 不一致、blocking Repo 没有 pass / fail 状态或 artifact 丢失都阻止发布。
 
-Release 使用已经发布且精确锁定的 Testkit，不从待发布 checkout 构建裁判。Testkit 自己的发布与升级走独立变更。
+Release 的上游 package job 从同一 checkout 对 Testkit meta-test/typecheck，再只 build/pack 一次；所有 release Repo
+消费同一 Testkit tgz。发布的 NiceEval tgz 必须另行证明不包含、也不依赖 Testkit。
 
 这保证“CI 测过的代码”和“registry 收到的包”是同一字节，而不是两个相近 checkout。
 

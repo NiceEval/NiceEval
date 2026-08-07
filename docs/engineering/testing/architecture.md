@@ -125,8 +125,8 @@ E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在第一行，让 owner 不�
 
 ## 复用设施预算
 
-跨 Repo 的稳定机械能力由独立的 [官方 Testkit](testkit.md) 承载。它按 stable-outer / candidate-inner 使用：
-场景 Repo 精确锁定 Testkit，根 runner 只替换待测 NiceEval tarball。能力是否上移按机械契约的消费者判断，不能因为
+跨 Repo 的稳定机械能力由内部 [官方 Testkit](testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
+消费本次 runner 生成的内容寻址 tgz；不通过 workspace link 或 checkout 路径运行。能力是否上移按机械契约的消费者判断，不能因为
 功能与 Adapter 属于不同 Repo 集合，就复制两份 process 或严格 JSON 实现。
 
 共享设施只允许拥有机械能力：
