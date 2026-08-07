@@ -9,6 +9,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative as relativePath, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseDocument } from "yaml";
 import type { JsonValue } from "../shared/types.ts";
 import {
   attachLeakGateHints,
@@ -38,10 +39,20 @@ import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 
-/** materializer / BuildKey 的 builder revision;改 overlay 或黑名单语义时递增。 */
+/**
+ * materializer / BuildKey 的 builder revision，只对成功输入定义：它决定成功输入得到什么
+ * 构建字节、物理计划与身份。安全校验只把破坏所有权不变量的输入改为规划失败，不改变任何
+ * 成功输入的结果，因此新增校验不得递增本 revision（memory/compose-project-namespace-escape-destabilizes-case-identity.md）。
+ */
 export const COMPOSE_MATERIALIZER_REVISION = "docker-compose-2";
 
 const BUILDER_KIND = "docker-compose";
+
+/**
+ * physical planning 安全校验用的两个固定哨兵 project：同一份 file + env 分别求值有效模型，
+ * 受管资源名必须随哨兵各自变化，写死其中一个哨兵名会在另一个模型失败。
+ */
+const COMPOSE_PLAN_SENTINEL_PROJECTS = ["niceeval-plan-a", "niceeval-plan-b"] as const;
 
 /** Provider stop 的 TERM 边界；再加 1s KILL grace 后仍严格短于 runner 的 8s 看门狗。 */
 const COMPOSE_STOP_TIMEOUT_MS = 6_500;
@@ -395,6 +406,205 @@ function normalizePath(p: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// 安全校验:合成声明 + 双哨兵有效模型(case.md「Docker Compose case」黑名单)
+// ---------------------------------------------------------------------------
+
+interface ComposeSecurityViolation {
+  readonly field: string;
+  readonly reason: string;
+}
+
+/**
+ * 用正式 YAML parser(含 anchor/merge 展开)检测合成声明:
+ * - 顶层 `include`:外部文件不在当前 CaseKey 输入闭包;
+ * - 任何经 inline / anchor / merge 出现的 `services.*.extends.file`:该语法引入第二个文件入口，
+ *   当前 CaseKey 没有为它建立输入闭包；同文件复用请使用 service-only extends。
+ * 同文件 anchor、merge、插值与 service-only extends 不在这里拒绝,交给 Compose 有效模型求值。
+ */
+function assertComposeSyntheticScope(raw: string): void {
+  let json: unknown;
+  try {
+    json = parseDocument(raw, { merge: true }).toJSON();
+  } catch {
+    // 解析失败时 docker compose config 也会失败,由有效模型阶段给出安全错误,这里不跳过检查。
+    json = undefined;
+  }
+  const violations: ComposeSecurityViolation[] = [];
+  if (json !== null && typeof json === "object" && !Array.isArray(json)) {
+    const root = json as Readonly<Record<string, unknown>>;
+    if ("include" in root) {
+      violations.push({
+        field: "include",
+        reason:
+          "top-level include pulls external Compose files into the run without entering the CaseKey input closure",
+      });
+    }
+    const services = root.services;
+    if (services !== null && typeof services === "object" && !Array.isArray(services)) {
+      for (const [name, svc] of Object.entries(services as Readonly<Record<string, unknown>>)) {
+        if (svc === null || typeof svc !== "object" || Array.isArray(svc)) continue;
+        const ext = (svc as Readonly<Record<string, unknown>>).extends;
+        if (ext === null || typeof ext !== "object" || Array.isArray(ext)) continue;
+        if (!("file" in (ext as Readonly<Record<string, unknown>>))) continue;
+        violations.push({
+          field: `services.${name}.extends.file`,
+          reason:
+            "introduces a Compose file entry that is not part of the CaseKey input closure; use in-file anchors/merges or service-only extends",
+        });
+      }
+    }
+  }
+  if (violations.length === 0) return;
+  throw new Error(
+    `Compose security validation rejected ${violations.length} declaration(s):\n` +
+      violations.map((v) => `  ${v.field}: ${v.reason}`).join("\n"),
+  );
+}
+
+interface ComposeEffectiveResource {
+  readonly name?: unknown;
+  readonly external?: unknown;
+}
+
+interface ComposeEffectiveModel {
+  readonly services?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly networks?: Readonly<Record<string, ComposeEffectiveResource>>;
+  readonly volumes?: Readonly<Record<string, ComposeEffectiveResource>>;
+  readonly configs?: Readonly<Record<string, ComposeEffectiveResource>>;
+  readonly secrets?: Readonly<Record<string, ComposeEffectiveResource>>;
+}
+
+const COMPOSE_MANAGED_RESOURCE_KINDS = ["networks", "volumes", "configs", "secrets"] as const;
+
+function composeConfigRunner(
+  composePath: string,
+  env?: Readonly<globalThis.Record<string, string>>,
+): (projectName: string) => Promise<ComposeCommandResult> {
+  return (projectName) =>
+    runDockerCompose(
+      ["-p", projectName, "-f", composePath, "config", "--format", "json"],
+      {
+        cwd: dirname(composePath),
+        env: { ...env, COMPOSE_PROJECT_NAME: projectName },
+        allowNonZero: true,
+      },
+    );
+}
+
+/**
+ * 双哨兵有效模型校验(case.md 黑名单):
+ * - 任一有效模型的 `services.*.container_name` 拒绝(绕开受管 project namespace);
+ * - networks/volumes/configs/secrets 的 key 与 external 标记在两个哨兵模型间必须一致;
+ * - 非 external 资源的有效名必须分别严格为 `<哨兵>_<logical-key>`——`${COMPOSE_PROJECT_NAME}_<key>`
+ *   自然通过,写死全局名或写死某一个哨兵名会在另一模型失败;
+ * - `external: true` 的资源保留外部名,接受。
+ * 模型只在内存解码;config 失败只报安全阶段与 exit code,绝不带 stdout/stderr/模型原文。
+ */
+async function assertComposeEffectiveModelSecurity(opts: {
+  readonly composePath: string;
+  readonly env?: Readonly<globalThis.Record<string, string>>;
+  readonly runComposeConfig?: (projectName: string) => Promise<ComposeCommandResult>;
+}): Promise<void> {
+  const runConfig = opts.runComposeConfig ?? composeConfigRunner(opts.composePath, opts.env);
+  const models = new Map<string, ComposeEffectiveModel>();
+  for (const project of COMPOSE_PLAN_SENTINEL_PROJECTS) {
+    let result: ComposeCommandResult;
+    try {
+      result = await runConfig(project);
+    } catch {
+      throw new Error(
+        `Compose security validation failed at effective-model resolution for project ${project}; refused to plan without a valid model.`,
+      );
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Compose security validation failed at effective-model resolution for project ${project} ` +
+          `(docker compose config exited ${result.exitCode}); refused to plan without a valid model.`,
+      );
+    }
+    let model: unknown;
+    try {
+      model = JSON.parse(result.stdout);
+    } catch {
+      throw new Error(
+        `Compose security validation failed at effective-model decoding for project ${project}; refused to plan without a valid model.`,
+      );
+    }
+    if (model === null || typeof model !== "object" || Array.isArray(model)) {
+      throw new Error(
+        `Compose security validation failed at effective-model decoding for project ${project}; refused to plan without a valid model.`,
+      );
+    }
+    models.set(project, model as ComposeEffectiveModel);
+  }
+
+  const [sentinelA, sentinelB] = COMPOSE_PLAN_SENTINEL_PROJECTS as readonly [string, string];
+  const modelA = models.get(sentinelA)!;
+  const modelB = models.get(sentinelB)!;
+  const violations: ComposeSecurityViolation[] = [];
+
+  for (const model of models.values()) {
+    for (const [name, svc] of Object.entries(model.services ?? {})) {
+      if (svc === null || typeof svc !== "object") continue;
+      if (typeof svc.container_name === "string") {
+        violations.push({
+          field: `services.${name}.container_name`,
+          reason:
+            "fixes the container name outside the managed Compose project namespace; concurrent cases would collide on the same host resource",
+        });
+      }
+    }
+  }
+
+  for (const kind of COMPOSE_MANAGED_RESOURCE_KINDS) {
+    const resourcesA = modelA[kind] ?? {};
+    const resourcesB = modelB[kind] ?? {};
+    const keysA = Object.keys(resourcesA).sort();
+    const keysB = Object.keys(resourcesB).sort();
+    if (keysA.join("\u0000") !== keysB.join("\u0000")) {
+      const differing =
+        keysA.find((k) => !keysB.includes(k)) ?? keysB.find((k) => !keysA.includes(k)) ?? keysA[0] ?? keysB[0]!;
+      violations.push({
+        field: `${kind}.${differing}`,
+        reason: `resource key set differs between the two sentinel project evaluations (${sentinelA}/${sentinelB}); the two models must be consistent`,
+      });
+      continue;
+    }
+    for (const key of keysA) {
+      const resourceA = resourcesA[key];
+      const resourceB = resourcesB[key];
+      const externalA = resourceA?.external === true;
+      const externalB = resourceB?.external === true;
+      if (externalA !== externalB) {
+        violations.push({
+          field: `${kind}.${key}`,
+          reason: `external marker differs between the two sentinel project evaluations (${sentinelA}/${sentinelB}); the two models must be consistent`,
+        });
+        continue;
+      }
+      if (externalA) continue;
+      const nameA = typeof resourceA?.name === "string" ? resourceA.name : undefined;
+      const nameB = typeof resourceB?.name === "string" ? resourceB.name : undefined;
+      if (nameA !== `${sentinelA}_${key}` || nameB !== `${sentinelB}_${key}`) {
+        violations.push({
+          field: `${kind}.${key}.name`,
+          reason:
+            `does not track the Compose project namespace (expected ${sentinelA}_${key} / ${sentinelB}_${key} across sentinel projects); ` +
+            "declare it external or derive the name from ${COMPOSE_PROJECT_NAME}_<key>",
+        });
+      }
+    }
+  }
+
+  if (violations.length === 0) return;
+  const unique = [...new Map(violations.map((v) => [v.field, v])).values()];
+  throw new Error(
+    `Compose security validation rejected ${unique.length} declaration(s) that escape the managed Compose project namespace:\n` +
+      unique.map((v) => `  ${v.field}: ${v.reason}`).join("\n"),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 泄题门:build contexts + 相对 bind mounts
 // ---------------------------------------------------------------------------
 
@@ -509,8 +719,7 @@ export function composeCollectionIdentity(collection: ComposeBuildCollection): J
   };
 }
 
-/** 从 Compose 声明收集 BuildKey 与协调器 works(仅有 `build:` 的服务)。 */
-export async function collectComposeBuilds(opts: {
+interface ComposeBuildCollectionOptions {
   readonly file: string | URL;
   readonly mainService: string;
   readonly baseDir?: string;
@@ -519,10 +728,36 @@ export async function collectComposeBuilds(opts: {
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 注入平台探测通道(测试用)。 */
   readonly platformProbe?: () => Promise<string | undefined>;
-}): Promise<ComposeBuildCollection> {
+}
+
+/** 从 Compose 声明收集 BuildKey 与协调器 works(仅有 `build:` 的服务)。 */
+export async function collectComposeBuilds(opts: ComposeBuildCollectionOptions): Promise<ComposeBuildCollection> {
+  return collectComposeBuildsInternal(opts);
+}
+
+/** @internal 单测注入有效模型求值通道；不从 `niceeval/sandbox` 对外导出。 */
+export async function collectComposeBuildsForTest(
+  opts: ComposeBuildCollectionOptions,
+  runComposeConfig: (projectName: string) => Promise<ComposeCommandResult>,
+): Promise<ComposeBuildCollection> {
+  return collectComposeBuildsInternal(opts, runComposeConfig);
+}
+
+async function collectComposeBuildsInternal(
+  opts: ComposeBuildCollectionOptions,
+  runComposeConfig?: (projectName: string) => Promise<ComposeCommandResult>,
+): Promise<ComposeBuildCollection> {
   const { hints, inspection, composePath } = await leakGateHintsFromComposeFile(opts.file, {
     mainService: opts.mainService,
     baseDir: opts.baseDir,
+  });
+  // physical planning 安全门:合成声明 + 双哨兵有效模型,早于 BuildKey 收集与任何携带决策。
+  const raw = await readFile(composePath, "utf-8");
+  assertComposeSyntheticScope(raw);
+  await assertComposeEffectiveModelSecurity({
+    composePath,
+    env: opts.env,
+    runComposeConfig,
   });
   const composeBytes = inspection.raw;
   const composeDir = dirname(composePath);

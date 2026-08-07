@@ -242,15 +242,16 @@ Compose 自己处理 `depends_on`、healthcheck、网络 DNS、`extra_hosts`、v
 - 让 main 容器脱离受管网络、覆盖受管 workdir,或让任一 service 挂载 Docker socket；
 - 为任一 service 声明固定 `container_name`；
 - 让非 `external` 的 network、volume、config 或 secret 使用不随 Compose project 变化的全局名称；
-- 顶层 `include`,以及引用外部文件的 `services.*.extends.file`。
+- 顶层 `include`,以及任意 `services.*.extends.file`。
 
 命名空间检查以 Compose 合成后的有效模型为准,涵盖同文件 anchor、merge、插值与 service extends。
 Provider 用两个不同的哨兵 project 求值同一份 file 与 env；受管资源的有效名称必须在两份模型中分别按 `<project>_<logical-key>` 变化。
+
 完整模型只驻留规划内存,不落盘、不进入日志或错误正文,避免展开后的 credential env 值泄漏。
 无法取得有效模型或解码其 JSON 时规划失败,不能跳过检查。
 
 `external: true` 明确表示资源不归本 Case 创建和回收,因此保留其外部名称。
-外部 Compose 文件则不属于当前 CaseKey 的输入闭包；`include` 与 `extends.file` 必须拒绝,不能读取后仍用主文件身份携带结果。
+Compose 的第二文件入口不属于当前 CaseKey 的输入闭包；`include` 与任意 `extends.file` 必须拒绝,不能读取后仍用主文件身份携带结果。同文件复用用 anchor、merge 或不带 `file` 的 service extends。
 
 `dns`、`extra_hosts`、自定义 networks 与 sidecar 隔离可以直接构成题目语义,Docker case 不把它们归一化掉。
 Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或受控的判分采证接口可见——把 sidecar 合并进主 Sandbox 会改变题目,不属于合法降级。
