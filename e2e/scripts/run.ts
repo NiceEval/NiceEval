@@ -1,32 +1,35 @@
 #!/usr/bin/env -S npx tsx
 // Root E2E orchestrator (docs/engineering/testing/e2e/README.md §5).
 //
-// Builds the current niceeval checkout into a candidate tarball once, then
-// for each selected repo (discovered across every collection under e2e/ —
-// `adapter/<id>/` plus standalone repos, see discovery.ts): copies it into an isolated
-// temp working directory, points its niceeval dependency at the candidate
-// tarball, installs there, injects only its own declared secrets, runs its
-// single command, and — before trusting the exit code — independently
-// verifies the isolated copy actually resolved the candidate tarball (not a
-// lockfile-pinned baseline). Exit code 75 (EX_TEMPFAIL) gets one retry in a
-// fresh copy; any other non-zero exit code is a regression and is never
-// retried or downgraded.
+// Consumes an already-built candidate tarball once, then for each selected
+// repo: copies it into an ephemeral working directory under scratchRoot/runs/,
+// points its niceeval dependency at the candidate, installs, verifies
+// injection via lockfile integrity only, runs its command, collects declared
+// artifacts into an independent durable artifactRoot/<repo-id>/ (never back
+// into the source repo, never under scratchRoot), writes a structured receipt
+// there, and always deletes the isolated working copy. scratchRoot is removed
+// at process end; artifactRoot is retained and its absolute path is logged for
+// workflow upload. A non-zero exit code is a regression; this runner does not
+// guess infrastructure from a numeric exit code. Non-host executors are
+// rejected as unsupported.
 //
 // This script must never hardcode SDK names, ports, or expected eval/verdict
-// counts, and must never read a repo's .niceeval/.
+// counts, and must never parse a repo's .niceeval/ for pass/fail.
 
-import { spawn } from "node:child_process";
-import { basename, join } from "node:path";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
-import { discoverAllRepos, repoRootDir, e2eRootDir, GROUPS, type DiscoveredRepo, type Group } from "./discovery.ts";
-import { buildCandidateTarball, verifyInjection, type CandidateTarball } from "./injection.ts";
-import { buildChildEnv } from "./secrets.ts";
+import { discoverAllRepos, e2eRootDir } from "./discovery.ts";
+import { readCandidateTarball } from "./injection.ts";
+import { selectRepos } from "./plan.ts";
+import { LANES, type Lane } from "./manifest.ts";
+import { appendNativeArgs, runRepo, type RepoRunResult } from "./run-repo.ts";
 
-const EX_TEMPFAIL = 75;
+export { appendNativeArgs } from "./run-repo.ts";
+export type { RepoRunResult } from "./run-repo.ts";
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -34,328 +37,138 @@ const EX_TEMPFAIL = 75;
 
 interface Cli {
   repoIds: string[];
-  group?: Group;
+  lane?: Lane;
+  capability?: string;
+  diffPaths?: string[];
+  candidatePath: string;
+  nativeArgs: string[];
 }
 
-function parseCli(argv: string[]): Cli {
+function splitNativeArgs(argv: readonly string[]): { optionArgs: readonly string[]; nativeArgs: string[] } {
+  const separator = argv.indexOf("--");
+  if (separator < 0) return { optionArgs: argv, nativeArgs: [] };
+  return { optionArgs: argv.slice(0, separator), nativeArgs: [...argv.slice(separator + 1)] };
+}
+
+export function parseRunCli(argv: readonly string[]): Cli {
+  const { optionArgs, nativeArgs } = splitNativeArgs(argv);
   const { values } = parseArgs({
-    args: argv,
+    args: [...optionArgs],
     options: {
+      candidate: { type: "string" },
       repo: { type: "string", multiple: true, default: [] },
-      group: { type: "string" },
+      lane: { type: "string" },
+      capability: { type: "string" },
+      "diff-path": { type: "string", multiple: true },
     },
     allowPositionals: false,
     strict: true,
   });
 
-  const group = values.group as string | undefined;
-  if (group !== undefined && !(GROUPS as readonly string[]).includes(group)) {
-    throw new Error(`--group must be one of ${GROUPS.join("|")}, got "${group}"`);
+  if (typeof values.candidate !== "string" || values.candidate.length === 0) {
+    throw new Error("run requires --candidate <tgz>");
   }
 
-  return { repoIds: (values.repo as string[]) ?? [], group: group as Group | undefined };
-}
-
-function selectRepos(all: DiscoveredRepo[], cli: Cli): DiscoveredRepo[] {
-  if (cli.repoIds.length === 0 && !cli.group) return all;
-
-  if (cli.repoIds.length > 0) {
-    const byId = new Map(all.map((r) => [r.manifest.id, r] as const));
-    const missing = cli.repoIds.filter((id) => !byId.has(id));
-    if (missing.length > 0) {
-      const known = all.map((r) => r.manifest.id).join(", ") || "(none discovered)";
-      throw new Error(`--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${known}`);
-    }
-    let selected = cli.repoIds.map((id) => byId.get(id)!);
-    if (cli.group) selected = selected.filter((r) => r.manifest.group === cli.group);
-    return selected;
+  const laneValue = values.lane;
+  if (laneValue !== undefined && (typeof laneValue !== "string" || !(LANES as readonly string[]).includes(laneValue))) {
+    throw new Error(`--lane must be one of ${LANES.join("|")}, got ${JSON.stringify(laneValue)}`);
   }
 
-  return all.filter((r) => r.manifest.group === cli.group);
-}
-
-// ---------------------------------------------------------------------------
-// Process helpers
-// ---------------------------------------------------------------------------
-
-function runInherited(cmd: string, args: string[], cwd: string): Promise<number> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: "inherit" });
-    child.on("error", reject);
-    child.on("exit", (code) => resolvePromise(code ?? 1));
-  });
-}
-
-interface CommandOutcome {
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  timedOut: boolean;
-}
-
-function runWithTimeout(
-  command: string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  timeoutMs: number,
-): Promise<CommandOutcome> {
-  return new Promise((resolvePromise, reject) => {
-    const [cmd, ...args] = command;
-    const child = spawn(cmd, args, { cwd, env, stdio: "inherit" });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("exit", (code, signal) => {
-      clearTimeout(timer);
-      resolvePromise({ exitCode: code, signal, timedOut });
-    });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Per-repo isolated run
-// ---------------------------------------------------------------------------
-
-const EXCLUDED_FROM_COPY = new Set(["node_modules", ".niceeval", ".git"]);
-
-async function copyRepoIsolated(sourceDir: string, destDir: string): Promise<void> {
-  await cp(sourceDir, destDir, {
-    recursive: true,
-    filter: (src) => !EXCLUDED_FROM_COPY.has(basename(src)),
-  });
-}
-
-/** Mutates only the isolated copy's package.json — never the checked-in repo. */
-async function pointAtCandidateTarball(copyDir: string, tarballPath: string): Promise<void> {
-  const pkgPath = join(copyDir, "package.json");
-  const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as Record<string, unknown>;
-  const spec = `file:${tarballPath}`;
-
-  let found = false;
-  for (const field of ["dependencies", "devDependencies"]) {
-    const deps = pkg[field];
-    if (deps && typeof deps === "object" && Object.prototype.hasOwnProperty.call(deps, "niceeval")) {
-      (deps as Record<string, string>).niceeval = spec;
-      found = true;
-    }
-  }
-  if (!found) {
-    throw new Error(
-      `${copyDir}/package.json declares no "niceeval" dependency (checked dependencies and devDependencies) — nothing to inject the candidate tarball into`,
-    );
-  }
-
-  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-}
-
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern.split("*").map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return new RegExp(`^${escaped.join(".*")}$`);
-}
-
-/**
- * Copies e2e.json's declared `artifacts` out of the isolated copy and back into the repo's
- * real directory, regardless of pass/fail/timeout — the isolated copy is deleted afterward
- * (see `runRepoOnce`'s caller), so CI/crabbox can only collect evidence that lands here.
- * Supports the two shapes actually used by e2e.json today: a directory glob ("dir/**",
- * copied recursively) and a single-path-segment filename glob ("junit.xml", "*.xml",
- * "junit-*.xml") matched against copyDir's own top-level entries. Patterns with a "/" that
- * aren't a bare "dir/**" are not supported and are skipped (log a warning) rather than
- * silently matching nothing subtly wrong — this orchestrator doesn't need a full glob
- * implementation for the patterns real repos declare.
- */
-async function collectArtifacts(copyDir: string, destDir: string, patterns: readonly string[]): Promise<void> {
-  for (const pattern of patterns) {
-    if (pattern.endsWith("/**")) {
-      const dirName = pattern.slice(0, -3);
-      const src = join(copyDir, dirName);
-      if (existsSync(src)) {
-        await cp(src, join(destDir, dirName), { recursive: true, force: true });
-      }
-      continue;
-    }
-    if (pattern.includes("/")) {
-      console.warn(`[e2e] artifacts pattern "${pattern}" has an unsupported shape (only "dir/**" or a top-level filename glob are supported) — skipping`);
-      continue;
-    }
-    const regex = globToRegExp(pattern);
-    let entries: string[];
-    try {
-      entries = await readdir(copyDir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (regex.test(name)) {
-        await cp(join(copyDir, name), join(destDir, name), { recursive: true, force: true });
-      }
-    }
-  }
-}
-
-interface AttemptResult {
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  timedOut: boolean;
-  injectionOk: boolean;
-  injectionReason?: string;
-}
-
-async function runRepoOnce(
-  repo: DiscoveredRepo,
-  candidate: CandidateTarball,
-  scratchRoot: string,
-  allSecretNames: ReadonlySet<string>,
-  attemptLabel: string,
-): Promise<AttemptResult> {
-  const copyDir = join(scratchRoot, "runs", repo.manifest.id, attemptLabel);
-  await mkdir(copyDir, { recursive: true });
-
-  await copyRepoIsolated(repo.dir, copyDir);
-  await pointAtCandidateTarball(copyDir, candidate.path);
-
-  // Each repo self-roots as its own workspace (empty `packages: []` in its
-  // pnpm-workspace.yaml, README §2.1) and declares its own `allowBuilds` there — that's
-  // the source of truth for which native builds run, not a blanket CLI override. pnpm 10.33+
-  // translates allowBuilds into onlyBuiltDependencies, and a `--config.dangerouslyAllowAllBuilds`
-  // override collides with it (pnpm sets neverBuiltDependencies to an empty-but-truthy array,
-  // which pnpm's own guard rejects alongside a non-empty onlyBuiltDependencies).
-  const installCode = await runInherited("pnpm", ["install", "--no-frozen-lockfile"], copyDir);
-  if (installCode !== 0) {
-    return {
-      exitCode: null,
-      signal: null,
-      timedOut: false,
-      injectionOk: false,
-      injectionReason: `pnpm install failed (exit ${installCode}) in the isolated copy — see output above`,
-    };
-  }
-
-  const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
-  const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
-  const outcome = await runWithTimeout(repo.manifest.command, copyDir, childEnv, timeoutMs);
-
-  // Regardless of pass/fail/timeout — the isolated copy is deleted once this function
-  // returns, so this is the only chance to hand evidence back to the real repo directory
-  // for CI/crabbox to collect (README §5 point 6, §6.1).
-  await collectArtifacts(copyDir, repo.dir, repo.manifest.artifacts);
-
-  let injectionOk: boolean;
-  let injectionReason: string | undefined;
-  try {
-    const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
-    const verdict = verifyInjection(lockText, candidate.integrity);
-    injectionOk = verdict.ok;
-    if (!verdict.ok) injectionReason = verdict.reason;
-  } catch (err) {
-    injectionOk = false;
-    injectionReason = `could not read isolated copy's pnpm-lock.yaml: ${(err as Error).message}`;
-  }
-
+  const repoIds = Array.isArray(values.repo) ? values.repo.filter((value): value is string => typeof value === "string") : [];
+  const diffPaths = Array.isArray(values["diff-path"])
+    ? values["diff-path"].filter((value): value is string => typeof value === "string")
+    : [];
   return {
-    exitCode: outcome.exitCode,
-    signal: outcome.signal,
-    timedOut: outcome.timedOut,
-    injectionOk,
-    injectionReason,
+    repoIds,
+    lane: typeof laneValue === "string" ? (laneValue as Lane) : undefined,
+    capability: typeof values.capability === "string" ? values.capability : undefined,
+    diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
+    candidatePath: values.candidate,
+    nativeArgs,
   };
 }
 
-type Category = "pass" | "regression" | "infra";
-
-function classify(a: AttemptResult): { category: Category; detail: string } {
-  if (a.exitCode === null && !a.timedOut) {
-    return { category: "infra", detail: a.injectionReason ?? "command never produced an exit code" };
-  }
-  if (a.timedOut) {
-    return { category: "regression", detail: "exceeded e2e.json timeoutMinutes; process killed" };
-  }
-  if (!a.injectionOk) {
-    return { category: "infra", detail: `injection verification failed: ${a.injectionReason}` };
-  }
-  if (a.exitCode === 0) {
-    return { category: "pass", detail: "clean pass" };
-  }
-  if (a.exitCode === EX_TEMPFAIL) {
-    return { category: "infra", detail: `EX_TEMPFAIL (exit ${EX_TEMPFAIL})` };
-  }
-  return { category: "regression", detail: `exit ${a.exitCode}` };
-}
-
-interface RepoResult {
-  id: string;
-  group: Group;
-  exitCode: number | null;
-  category: Category;
-  detail: string;
-  attempts: number;
-}
-
-async function runRepoWithRetry(
-  repo: DiscoveredRepo,
-  candidate: CandidateTarball,
-  scratchRoot: string,
-  allSecretNames: ReadonlySet<string>,
-): Promise<RepoResult> {
-  const first = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-1");
-
-  if (first.exitCode === EX_TEMPFAIL) {
-    console.log(
-      `[e2e] ${repo.manifest.id}: exit ${EX_TEMPFAIL} (EX_TEMPFAIL) — retrying once with a fresh isolated copy`,
-    );
-    const second = await runRepoOnce(repo, candidate, scratchRoot, allSecretNames, "attempt-2");
-    const c = classify(second);
-    return { id: repo.manifest.id, group: repo.manifest.group, exitCode: second.exitCode, category: c.category, detail: c.detail, attempts: 2 };
-  }
-
-  const c = classify(first);
-  return { id: repo.manifest.id, group: repo.manifest.group, exitCode: first.exitCode, category: c.category, detail: c.detail, attempts: 1 };
-}
-
 // ---------------------------------------------------------------------------
-// Summary
+// Summary (structured paths for workflow upload)
 // ---------------------------------------------------------------------------
 
-function printSummary(results: RepoResult[]): void {
+export interface RunSummary {
+  artifactRoot: string;
+  summaryPath: string;
+  results: Array<{
+    id: string;
+    exitCode: number | null;
+    category: string;
+    detail: string;
+    artifactDir: string;
+    receiptPath: string;
+  }>;
+  passed: number;
+  regression: number;
+  infra: number;
+  total: number;
+}
+
+/** Build structured run summary with absolute artifactDir/receiptPath per repo. */
+export function buildSummary(artifactRoot: string, results: readonly RepoRunResult[]): RunSummary {
+  const summaryPath = join(artifactRoot, "summary.json");
+  return {
+    artifactRoot,
+    summaryPath,
+    results: results.map((r) => ({
+      id: r.id,
+      exitCode: r.exitCode,
+      category: r.category,
+      detail: r.detail,
+      artifactDir: r.artifactDir,
+      receiptPath: r.receiptPath,
+    })),
+    passed: results.filter((r) => r.category === "pass").length,
+    regression: results.filter((r) => r.category === "regression").length,
+    infra: results.filter((r) => r.category === "infra").length,
+    total: results.length,
+  };
+}
+
+function printSummary(summary: RunSummary): void {
   console.log("\n=== e2e summary ===");
-  const idWidth = Math.max(2, ...results.map((r) => r.id.length));
-  for (const r of results) {
+  console.log(`artifactRoot: ${summary.artifactRoot}`);
+  console.log(`summaryPath:  ${summary.summaryPath}`);
+  const idWidth = Math.max(2, ...summary.results.map((r) => r.id.length));
+  for (const r of summary.results) {
     const codeStr = r.exitCode === null ? "-" : String(r.exitCode);
     console.log(
-      `${r.id.padEnd(idWidth)}  exit=${codeStr.padEnd(4)} category=${r.category.padEnd(10)} attempts=${r.attempts}  ${r.detail}`,
+      `${r.id.padEnd(idWidth)}  exit=${codeStr.padEnd(4)} category=${r.category.padEnd(10)}  ${r.detail}`,
     );
+    console.log(`${"".padEnd(idWidth)}  artifactDir=${r.artifactDir}`);
+    console.log(`${"".padEnd(idWidth)}  receiptPath=${r.receiptPath}`);
   }
-  const passed = results.filter((r) => r.category === "pass").length;
-  const regression = results.filter((r) => r.category === "regression").length;
-  const infra = results.filter((r) => r.category === "infra").length;
-  console.log(`\n${passed} passed, ${regression} regression, ${infra} infra (of ${results.length} selected)`);
+  console.log(
+    `\n${summary.passed} passed, ${summary.regression} regression, ${summary.infra} infra (of ${summary.total} selected)`,
+  );
+  console.log(`[e2e] durable artifactRoot retained (not deleted): ${summary.artifactRoot}`);
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-  const root = repoRootDir();
-  const scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-"));
-  console.log(`[e2e] scratch root: ${scratchRoot}`);
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  // Ephemeral working copies only — always deleted.
+  let scratchRoot: string | undefined;
+  // Durable artifacts + receipts — never deleted by this runner.
+  let artifactRoot: string | undefined;
 
   try {
-    // a. Build the candidate tarball once, before anything else — including
-    //    before CLI/discovery validation, per the orchestrator's step order.
-    console.log(`[e2e] building candidate niceeval tarball from ${root} ...`);
-    const candidate = await buildCandidateTarball(root, join(scratchRoot, "tarball"));
+    const cli = parseRunCli(argv);
+    const candidate = readCandidateTarball(cli.candidatePath);
+    scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-scratch-"));
+    artifactRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
+    console.log(`[e2e] scratch root (ephemeral): ${scratchRoot}`);
+    console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
-    console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.shortHash})`);
+    console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
 
-    // b. Parse CLI args + discover/validate + select.
-    const cli = parseCli(process.argv.slice(2));
     const { repos, errors } = discoverAllRepos(e2eRootDir());
     if (errors.length > 0) {
       console.error(`[e2e] repo discovery found ${errors.length} problem(s):\n`);
@@ -373,23 +186,41 @@ async function main(): Promise<void> {
     const allSecretNames = new Set<string>();
     for (const r of repos) for (const s of r.manifest.secrets) allSecretNames.add(s);
 
-    // c-g. Isolated copy, install, inject env, spawn, verify, retry-on-75 — per repo.
-    const results: RepoResult[] = [];
+    const results: RepoRunResult[] = [];
     for (const repo of selected) {
-      console.log(`\n[e2e] === ${repo.manifest.id} (${repo.manifest.group}) ===`);
-      results.push(await runRepoWithRetry(repo, candidate, scratchRoot, allSecretNames));
+      console.log(`\n[e2e] === ${repo.manifest.id} ===`);
+      const result = await runRepo(
+        repo,
+        candidate,
+        scratchRoot,
+        artifactRoot,
+        allSecretNames,
+        cli.nativeArgs,
+      );
+      console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
+      console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
+      results.push(result);
     }
 
-    // h. Aggregate.
-    printSummary(results);
+    const summary = buildSummary(artifactRoot, results);
+    await writeFile(summary.summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+    printSummary(summary);
+
     const anyNotClean = results.some((r) => r.category !== "pass");
     process.exitCode = anyNotClean ? 1 : 0;
   } catch (err) {
     console.error(`[e2e] ${(err as Error).message}`);
     process.exitCode = 1;
   } finally {
-    await rm(scratchRoot, { recursive: true, force: true });
+    // Only the ephemeral scratch tree is removed. artifactRoot is retained.
+    if (scratchRoot !== undefined) {
+      await rm(scratchRoot, { recursive: true, force: true }).catch((err: unknown) => {
+        console.error(`[e2e] scratch cleanup failed: ${(err as Error).message}`);
+      });
+    }
   }
 }
 
-main();
+if (process.argv[1] !== undefined && new URL(import.meta.url).pathname === process.argv[1]) {
+  void main();
+}
