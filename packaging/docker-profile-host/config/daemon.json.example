@@ -1,0 +1,22 @@
+{
+  "hosts": ["unix:///run/niceeval/docker-profiles/default/docker.sock"],
+  "data-root": "/var/lib/niceeval/docker-profiles/default/data/docker",
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "bridge": "none",
+  "iptables": true,
+  "ip-forward": true,
+  "ip6tables": false,
+  "ipv6": false,
+  "dns": ["1.1.1.1", "9.9.9.9"],
+  "live-restore": false,
+  "userland-proxy": false,
+  "default-address-pools": [
+    {
+      "base": "172.31.0.0/16",
+      "size": 28
+    }
+  ],
+  "features": {
+    "containerd-snapshotter": true
+  }
+}

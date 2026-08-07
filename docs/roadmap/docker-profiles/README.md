@@ -4,8 +4,8 @@ Coding agent经常需要在 Sandbox里运行 `docker build`、`docker run`与 `d
 `/var/run/docker.sock`挂进评估容器，会让不受信任的 Agent取得宿主 root等价能力。把评估容器
 直接交给宿主 rootful daemon并开启 privileged，同样没有可接受的隔离边界。
 
-本主题扩展现有官方 `dockerSandbox()`。评测代码在 factory中声明起始镜像、profile别名、
-rootless privileged、单容器资源与 readiness。profile后端可以是本机 rootless daemon、专用宿主
+本主题扩展 NiceEval内建的 `dockerSandbox()`。评测代码在 factory中声明起始镜像、managed
+rootless DinD、单容器资源与 readiness。profile后端可以是本机 rootless daemon、专用宿主
 或 VM，但它不是新的 Sandbox provider，也不是 DinD专用抽象。
 
 首个本地 Linux后端由专用 OS UID持有 rootless Docker daemon。macOS后端使用专用 Linux VM，
@@ -23,7 +23,10 @@ rootless privileged、单容器资源与 readiness。profile后端可以是本�
   -> 本机别名 default
 
 可信评测代码
-  dockerSandbox({ source: {...}, profile: "default", privileged: "rootless" })
+  dockerSandbox({
+    source: {...},
+    dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" }
+  })
   -> NiceEval加载声明
   -> 在任何 Docker I/O、build与模型调用前 attest profile
   -> discovery、physical planning、build、run全程使用同一 daemon
@@ -47,13 +50,14 @@ container。
 `dockerSandbox()`声明：
 
 - `source.type: "image" | "dockerfile"`；
-- 宿主 profile别名；
-- `privileged: "rootless"`；
-- 每容器 CPU、memory、PID；
-- 只读 rootfs与逐路径有界 tmpfs；
+- `dockerAccess.mode: "dind"`；
+- `isolation: "managed-rootless"`与宿主 profile别名；
+- 必填的每容器 CPU、memory、PID和只读 rootfs；
+- 逐路径有界 tmpfs；
 - inner daemon readiness。
 
-不带限定的 `privileged: true`不存在。`dockerComposeSandbox()`不接受这组单容器字段；这里的
+managed分支不会接受含糊的 `privileged: true`。需要 raw privileged DinD时必须显式写
+`isolation: "raw-privileged"`。`dockerComposeSandbox()`不接受这组单容器字段；这里的
 Compose是 Agent在单个评估容器内连接 inner dockerd后运行的 Compose，不是 outer sidecar。
 
 ### 信任边界
@@ -81,13 +85,14 @@ socket ACL、有界 filesystem、aggregate cgroup、daemon与 watchdog。日常 
 
 ## Profile选择
 
-`profile: "default"`是 Docker factory中的宿主本地别名。NixOS、Ubuntu和 macOS可以各自把合适
+managed DinD中的 `profile: "default"`是宿主本地别名。NixOS、Ubuntu和 macOS可以各自把合适
 后端登记成 `default`，所以同一份 Experiment不需要按操作系统分支。别名不是结果 identity；实际
 profile的 semantic policy revision才表示执行语义。
 
-普通非 privileged `dockerSandbox()`可以省略 profile并沿用既有 Docker endpoint查找规则。请求
-rootless privileged时必须声明 profile；不存在、无法 attest或安全级别不符均在 Docker build与
-模型调用前失败，不能回退到宿主 rootful socket。
+普通 `dockerSandbox()`可以省略 `dockerAccess`，此时Agent拿不到任何 Docker socket。socket模式与
+raw privileged DinD不使用 profile；managed rootless DinD必须声明 profile。managed Sandbox必须给出完整 CPU、memory、
+PID、只读 rootfs和显式可写 tmpfs。profile不存在、无法 attest或安全级别不符，均在 Docker build
+与模型调用前失败，不能回退到宿主 rootful socket。
 
 ## 安全保证
 
@@ -118,7 +123,7 @@ profile。
 本主题包含：
 
 - 统一的 `dockerSandbox()`与 image/Dockerfile source联合；
-- factory上的 `profile`、rootless privileged、resources与 readiness；
+- factory上的三种 Docker access、profile、resources与 readiness；
 - 只读的 `niceeval docker profile list|doctor`；
 - callback-free profile schema、稳定 profile ID与语义 policy revision；
 - 官方 NixOS module、通用 systemd host package与 macOS专用 VM package；

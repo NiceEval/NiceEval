@@ -1,6 +1,6 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 `dockerSandbox({ profile })`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
+运行命令从 managed DinD的 `dockerAccess.profile`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
 只读发现与 doctor。宿主部署由 NixOS module、systemd host package或 macOS VM package完成。
 
 ## 运行
@@ -20,14 +20,25 @@ Docker discovery、pull、build、create或模型调用前，NiceEval对每个�
 4. 为该 profile创建带随机 UUID的 Invocation lease；
 5. 把 Docker endpoint、stable profile ID与 policy revision绑定到对应 ProviderPlan。
 
+discovery、link与用户选题在 profile查找前完成，而且不发起 Provider I/O。未选中的 Experiment即使
+声明了当前机器不存在的 profile也不报错；只有实际选中 pair引用的别名参加 attestation与 lease。
+
 一次 Invocation可以使用多个 profile。每个 Docker Sandbox始终路由到自己声明的 profile，build与
-create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent env不能替换已绑定 endpoint。
+create不能跨 profile复用连接。Provider的 build、create和生命周期调用始终使用 attestation绑定的
+endpoint，不从 Experiment或 Agent子进程变量改写它。
+
+容器内 Agent之后显式选择远端 endpoint不属于 Provider路由保证。managed模式以网络策略约束其
+可达范围。
 
 未声明 profile时：
 
 - 非 privileged Docker继续使用既有 Docker endpoint查找规则；
-- `privileged: "rootless"`在 factory求值阶段报 `sandbox.docker-profile-required`；
+- managed DinD缺 `profile`在 factory求值阶段报配置错误；
 - 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
+
+声明 profile的普通或 rootless privileged分支都必须提供完整 CPU、memory、PID与只读 rootfs。
+缺少任一字段在连接 daemon前报 `sandbox.docker-profile-resources-required`，不能以零值或无界值进入
+admission。
 
 macOS、Windows或非 systemd主机不能因 `docker info`显示 `rootless`就自动满足能力。rootless
 privileged必须引用已经登记、且支持完整 attestation/control protocol的 profile。
@@ -126,11 +137,16 @@ services.niceeval.dockerProfiles.default = {
   enable = true;
   accessUsers = [ "ctrdh" ];
   capacity = {
-    cpus = 14;
+    cpus = 16;
     memory = "28G";
-    pids = 9216;
-    maxContainers = 8;
+    pids = 8192;
+    maxContainers = 4;
     maxBuilds = 2;
+  };
+  aggregate = {
+    cpus = 20;
+    memory = "32G";
+    pids = 12288;
   };
   storage = {
     size = "30G";
@@ -158,7 +174,7 @@ cgroup和 watchdog，再把受认证的 Docker/control Unix endpoint提供给宿
 `default`，由 launchd管理 VM生命周期与开机恢复。
 
 共享 Docker Desktop仍可服务省略 profile的普通非 privileged Docker Sandbox。它不能满足
-`privileged: "rootless"`，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
+managed rootless DinD，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
 daemon，无法兑现 profile的隔离和 watchdog所有权。
 
 ### External profile
@@ -173,9 +189,10 @@ human plan按实际用到的每个 profile显示一段摘要：
 
 ```text
 DOCKER PROFILE  default · managed-rootless/v1 · policy 8f31c0d2
-  aggregate 14 CPU · 28 GiB memory · 0 swap · 9216 PID · 30 GiB disk · max 8
+  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · max 4
+  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 30 GiB disk
   this invocation up to 4 containers · 4 CPU / 6 GiB / 2048 PID each
-  shared admission 3 active invocations · 6/8 containers reserved
+  shared admission 3 active invocations · 3/4 containers reserved
 ```
 
 可发布 JSON只包含 security level、semantic policy revision、aggregate公开容量、单容器请求与有效

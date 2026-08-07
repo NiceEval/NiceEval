@@ -73,14 +73,20 @@ interface DockerExecutionProfileV1 {
     };
   };
   readonly capacity: {
+    /** 已扣除 daemon、build、watchdog 与 recovery headroom，可授予 Attempt 的容量。 */
     readonly cpus: number;
     readonly memoryBytes: number;
     readonly memorySwapBytes: 0;
     readonly pids: number;
     readonly maxContainers: number;
     readonly maxBuilds: number;
-    readonly reservedMemoryBytes: number;
-    readonly reservedPids: number;
+    /** systemd aggregate cgroup 的硬上限；必须不小于 allocatable + headroom。 */
+    readonly aggregate: {
+      readonly cpus: number;
+      readonly memoryBytes: number;
+      readonly memorySwapBytes: 0;
+      readonly pids: number;
+    };
   };
   readonly policy: {
     readonly hostLoopback: false;
@@ -127,7 +133,7 @@ VM不能成为该 profile的后端。
 
 ## Attestation
 
-CLI加载可信评测 module并收集 `dockerSandbox({ profile })`后，在任何 Docker discovery/build前
+CLI加载可信评测 module并收集 managed DinD的 `dockerAccess.profile`后，在任何 Docker discovery/build前
 完成以下检查：
 
 1. descriptor不是 symlink，owner/mode正确，所有父目录不可由 runtime access group写；
@@ -190,6 +196,32 @@ interface DockerProfileReservationV1 {
 }
 ```
 
+任何绑定 profile的 `dockerSandbox()`都在类型与运行时两层要求完整 CPU、memory、PID和只读 rootfs。
+因此 container reservation始终有确定向量，managed policy没有无界 create路径。省略 profile的普通
+Docker沿用既有 provider行为，不进入该 profile的 admission或安全承诺。
+
+Build reservation另有持久 operation：
+
+```ts
+interface DockerProfileBuildOperationV1 {
+  readonly buildOperationId: string;
+  readonly reservationId: string;
+  readonly invocationId: string;
+  readonly buildKey: string;
+  readonly daemonGeneration: string;
+  readonly provisionalImageRef: string;
+  readonly state: "streaming" | "building" | "cancelling" | "terminated";
+}
+```
+
+managed profile的 Dockerfile build不由 CLI直接向 daemon发送。官方 provider把规范化 build请求和
+context stream交给 control service；watchdog持有 daemon build connection、BuildKit session与
+provisional image ref。这样 CLI断连后，持久 owner仍能取消在飞 build。
+
+build slot只有在以下事实都成立后才释放：daemon build请求已终止，BuildKit不再报告该 session，
+对应 process/cgroup活动已消失，provisional ref已提交为完成 digest或已移除。无法证明终止时，
+reservation保持占用并让 doctor报告 degraded，不能先释放 slot再让后台 build继续运行。
+
 watchdog在一个事务中检查所有活跃 Invocation 的已授予向量：
 
 ```text
@@ -204,6 +236,26 @@ allocatable容量已扣除 daemon、watchdog、build和宿主 recovery headroom�
 preflight立即失败；暂时无余量则进入跨进程公平队列，不超卖。client取消排队不留 reservation。
 Experiment/global `maxConcurrency` 先限制本进程派发，watchdog admission再限制全机；两者都通过才
 create。
+
+四路初始配置中每个 Attempt 请求 4 CPU，因此 allocatable 至少是 16 CPU；aggregate 硬上限至少是
+20 CPU，并另提供 4 CPU 给 daemon、BuildKit、watchdog 与回收。八路晋升的 allocatable 至少是
+32 CPU、48 GiB memory 与 16384 PID；aggregate 至少是 40 CPU、64 GiB memory 与 20480 PID。
+descriptor 与 CLI 输出中的 `capacity` 一律指 allocatable，`capacity.aggregate` 才指 cgroup 硬上限，
+两者不能混称。
+
+## Outer 网络隔离
+
+watchdog 为每个 Attempt 创建独占的 user-defined bridge network。network ID 与 container ID 作为
+同一个 journal-first 生命周期单元管理。network 允许经 rootless NAT 访问公网 DNS/HTTPS 与拉取
+依赖，但禁用 inter-container communication。不同 Attempt 的容器不得接入彼此 network。
+
+managed profile 禁止使用 Docker 默认 bridge、host network、host gateway、published port，亦禁止把
+outer Docker/control socket 注入容器。容器不得访问宿主 loopback、宿主控制 endpoint 或任一 sibling；
+inner dockerd 与 Compose 只能存在于自己的 outer namespace。
+
+create、CLI 断连或 SIGKILL 后，watchdog 以 profile ID、Invocation ID、Attempt ID、provision token
+labels 对账 container 与 network。两者按同一生命周期单元回收；不能只删容器而遗留 network，亦不能
+误删 active sibling。
 
 admission是协调边界，aggregate cgroup与 bounded filesystem才是即使可信 CLI有 bug时仍成立的
 硬边界。doctor必须用真实 process cgroup路径证明 container scope位于 aggregate之下。
@@ -220,12 +272,30 @@ attested daemon target platform
   -> eval container create
 ```
 
-不能在 materialize看到 `privileged`后临时换 daemon。`privileged: "rootless"`、规范化 resources、
+不能在 materialize看到 Docker access后临时换 daemon。managed rootless DinD、规范化 resources、
 target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Attempt fingerprint。
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。
 
-profile选择名、stable ID、endpoint locator、owner UID、filesystem路径、aggregate容量、daemon ID和
+语义 identity之外另有不公开的物理执行域：
+
+```ts
+interface DockerMaterializationDomain {
+  readonly profileId: string;
+  readonly daemonGeneration: string;
+}
+```
+
+BuildKey描述“应构建哪些 bytes”，build realization按
+`(DockerMaterializationDomain, BuildKey)`隔离。相同 BuildKey在两个 daemon各自保证本地 image存在，
+不能把 daemon A的完成事实交给 daemon B。Sandbox复用池同样把 domain加入 CaseKey之外的物理 pool
+key，禁止跨 profile或 generation复用 container。
+
+materialization domain只存在于当前进程的 build coordinator、Sandbox pool和资源 registry。它不
+进入 fingerprint或可分享结果，因此 daemon restart不会使既有结果失去携带资格；restart后的
+新 Invocation仍会在新 domain重新确认 image realization。
+
+profile选择名、stable ID、endpoint locator、transport/backend UID、filesystem路径、aggregate容量、daemon ID和
 generation不进入可分享 identity。daemon ID/generation属于连接审计；stable ID属于 detached资源
 路由；semantic policy revision才表示可比较的执行语义。
 
@@ -241,13 +311,13 @@ Docker HostConfig精确设置 `NanoCpus`、`Memory`、`MemorySwap=Memory`、`Pid
 
 ## 单容器 DinD readiness
 
-评估 image的 root entrypoint负责：
+官方 Docker provider注入的 root bootstrap / supervisor负责：
 
 1. 初始化有界 home/workspace；
 2. 只监听同容器 Unix socket启动 inner dockerd；
 3. 等待 root身份 `docker info`；
-4. 把 socket交给显式 agent group/user；
-5. exec NiceEval注入的 PID 1 command。
+4. 以镜像中已加入 `docker`组的 Agent用户执行 readiness；
+5. 同时监督 daemon、keeper、日志与容器内 TTL。
 
 outer container进入 Running后，官方 Docker provider仍重试作者声明的 readiness command。只有
 `user: node`实际完成 `docker info`才算 create成功。Agent能使用 inner socket即拥有评估容器内

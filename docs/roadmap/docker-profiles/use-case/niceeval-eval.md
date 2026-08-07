@@ -4,7 +4,7 @@ NiceEval-Eval用 coding agent实际安装、迁移和操作 NiceEval。Agent必�
 的 `docker`与 `docker compose`，但 outer Sandbox不应因此变成 Compose sidecar或宿主 root。
 
 这不是新的 DinD Sandbox类型。NiceEval-Eval使用统一的官方 `dockerSandbox()`，选择 Dockerfile
-source，并声明 profile、rootless privileged、结构化资源和 readiness。
+source，并声明 managed rootless DinD、结构化资源和 readiness。
 
 ## 目录
 
@@ -12,7 +12,6 @@ source，并声明 profile、rootless privileged、结构化资源和 readiness�
 NiceEval-Eval/
   sandbox/
     Dockerfile
-    niceeval-dind-entrypoint.sh
   experiments/
     shared.ts
     install/*.ts
@@ -25,6 +24,29 @@ NiceEval-Eval/
 Docker CLI/daemon与 Compose plugin。每个 Eval仍是完整 folder-local题包；不会为 DinD增加 outer
 `docker-compose.yaml`，也不会增加启动宿主 daemon的下游 shell wrapper。
 
+## DinD镜像
+
+下面用浮动 tag保持示例可读；真实评估仓库必须把 `FROM`钉到审核过的 digest：
+
+```dockerfile
+FROM docker:29-dind
+
+RUN apk add --no-cache ca-certificates git nodejs npm python3 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node \
+  && addgroup node docker
+```
+
+项目不提供 NiceEval专用 `ENTRYPOINT`。`dockerAccess.mode: "dind"`让 provider替换镜像原有
+Entrypoint/Cmd，并检查官方 dind工具面。
+
+provider用 `docker-init` 与受管 Node supervisor同时启动 dockerd 和 Sandbox keeper。
+dockerd 只监听 `unix:///var/run/docker.sock`，并使用 2 秒关闭时限。
+启动协议、日志、TTL、错误诊断和版本都归 NiceEval，不要求下游脚本 `exec "$@"`。
+
+这里的 inner daemon只监听容器内的 Unix socket；不要给它增加 TCP listener，也不要把 outer或宿主
+socket mount进来。
+
 ## 单容器
 
 每条 Attempt只有一台 outer eval container：
@@ -33,67 +55,74 @@ Docker CLI/daemon与 Compose plugin。每个 Eval仍是完整 folder-local题包
 official Docker Sandbox provider
   -> selected managed-rootless profile
        -> privileged outer eval container
-            -> root entrypoint / PID 1
+            -> docker-init PID 1 + provider supervisor
             -> inner dockerd (Unix socket only)
             -> node coding agent
             -> agent-created inner containers / Compose projects
 ```
 
-root entrypoint准备有界 home，启动 inner dockerd并等待 root probe。官方 Docker provider随后以
+provider bootstrap准备日志与 keeper，启动 inner dockerd。官方 Docker provider随后以
 `node`运行作者声明的 `docker info` readiness；只有普通 agent用户真实能连接 inner socket才进入
 Sandbox lifecycle setup。
 
 inner socket没有离开 eval container。Agent拥有 inner root等价能力，但看不到 outer daemon、其它
 Attempt、宿主 project/HOME/凭据或 rootful socket。
 
-## Experiment共用声明
+## Experiment声明
 
 ```ts
+import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
 import { dockerSandbox } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 const MiB = 1024 ** 2;
 
-export const EVAL_MAX_CONCURRENCY = 4;
-export const agentUnderTest = codexAgent();
-
-export const sandbox = dockerSandbox({
-  source: {
-    type: "dockerfile",
-    context: new URL("../sandbox/", import.meta.url),
-  },
-  profile: "default",
-  user: "node",
-  privileged: "rootless",
-  resources: {
-    cpus: 4,
-    memoryBytes: 6 * GiB,
-    pidsLimit: 2048,
-    readOnlyRootfs: true,
-    tmpfs: {
-      "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
-      "/home/sandbox/workspace": {
-        sizeBytes: 2 * GiB,
-        mode: 0o755,
-        uid: 1000,
-        gid: 1000,
-        executable: true,
-      },
-      "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
-      "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
-      "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  maxConcurrency: 4,
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
     },
-  },
-  readiness: {
-    command: ["docker", "info"],
+    dockerAccess: {
+      mode: "dind",
+      isolation: "managed-rootless",
+      profile: "default",
+    },
     user: "node",
-    timeoutMs: 30_000,
-  },
+    resources: {
+      cpus: 4,
+      memoryBytes: 6 * GiB,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: {
+        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
+        "/home/sandbox/workspace": {
+          sizeBytes: 2 * GiB,
+          mode: 0o755,
+          uid: 1000,
+          gid: 1000,
+          executable: true,
+        },
+        "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
+        "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
+        "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+      },
+    },
+    readiness: {
+      command: ["docker", "info"],
+      user: "node",
+      timeoutMs: 30_000,
+    },
+  }),
 });
 ```
 
-每个 Experiment显式写 `maxConcurrency: EVAL_MAX_CONCURRENCY`。这不是把全仓并发降到1；多个
+`sandbox`由 Experiment直接持有，并应用到该 Experiment选择的 Eval；它不是一段脱离
+`defineExperiment()`的独立配置。每个 Experiment显式写 `maxConcurrency: 4`。这不是把全仓并发降到1；多个
 Invocation和每个 Invocation内的 Attempt都可并发，profile watchdog只在 aggregate容量不足时排队。
 
 ## 宿主与运行
@@ -105,12 +134,13 @@ services.niceeval.dockerProfiles.default = {
   enable = true;
   accessUsers = [ "ctrdh" ];
   capacity = {
-    cpus = 14;
+    cpus = 16;
     memory = "28G";
-    pids = 9216;
-    maxContainers = 8;
+    pids = 8192;
+    maxContainers = 4;
     maxBuilds = 2;
   };
+  aggregate = { cpus = 20; memory = "32G"; pids = 12288; };
   storage = { size = "30G"; backing = "loop-ext4"; };
 };
 ```
@@ -132,6 +162,20 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 
 ## 验收
 
+本页定义 NiceEval-Eval应承接的真实 Docker E2E契约，不表示相邻仓库当前具备或跑过这些场景。
+在下游补齐并给出通过证据前，本仓删除子进程变量门控的本机 Docker测试所留下的真实协作缺口仍然存在。
+
+### Docker access矩阵
+
+- socket：显式挂入可信 Unix socket，普通用户可运行 child container；镜像预设 endpoint/context时在
+  Agent启动前失败；
+- raw DinD：官方 dind兼容派生镜像能 build/run child container，2375/2376无 listener，停止/恢复后
+  inner daemon可用，daemon退出时 outer container非零退出；
+- managed DinD：完成 profile attestation、资源准入、sibling隔离、nested Docker与 watchdog回收，
+  attestation失败不得降级到 raw或 socket；
+- Compose：Agent在 inner daemon内执行 `docker compose up`、访问服务并 `down`，成功、失败、timeout与
+  中断后都没有遗留 container、network、volume或 reservation。
+
 ### 单路
 
 - `id -u`是1000；
@@ -143,6 +187,8 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - outer container cgroup是 profile aggregate path的严格后代；
 - rootfs只读，所有可写路径容量可核对；
 - outer socket、control socket、lease token与 host gateway在容器内均不可见；
+- 每个 Attempt 使用独占 user-defined outer bridge；TCP、UDP、ICMP 与私网扫描均不能到达 sibling，
+  也不能到达宿主 loopback/control endpoint，但公网 DNS/HTTPS 与 inner Compose 必须可用；
 - 结束后 outer container、inner process与 inner mount全部消失，profile daemon generation不变。
 
 ### 四路与两个 Invocation
@@ -156,12 +202,19 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - profile无遗留 active/provisioning NiceEval container或 reservation；
 - sibling没有因单条填盘、OOM或 PID storm失效；
 - cleanup p95低于 Runner看门狗边界。
+- 四个 outer container有至少120秒共同活动区间；每一路在该区间内都必须有真实 coding agent、已
+  build/run/healthy的 inner Compose和持续增长的 CPU activity。排队、sleep、readiness或只创建容器
+  不算 active。
 
 ### SIGKILL
 
 在四路运行中 SIGKILL其中一个 CLI，不启动第二次 doctor/exp来触发资源回收。持久 watchdog必须自行
 发现 lost lease、排除另一 Invocation与 kept registry、按 journal + labels删除 orphan并释放准确
 reservation。另一个 Invocation继续运行，installed daemon/data mount保持在线且 generation不变。
+
+另一路在 Dockerfile build进行中 SIGKILL CLI。watchdog必须取消对应 BuildKit session；build slot在
+daemon请求、session和 process/cgroup活动全部终止前保持占用，不能让后续 build造成 `maxBuilds`
+超卖。
 
 随后运行 doctor只是核对恢复事实，不承担恢复动作。
 
@@ -177,11 +230,15 @@ reservation。另一个 Invocation继续运行，installed daemon/data mount保�
 8路不是只改一个常量。相同任务矩阵必须先通过4路参照运行，再在实际宿主证明8个 outer scope都在
 aggregate cgroup内、硬资源与 headroom仍成立、跨进程 admission无超卖。宿主 module把
 `maxContainers`声明为8后，Experiment才可同步上调；只改 `maxConcurrency`不能越过 profile。
+八路 allocatable 至少是32 CPU、48 GiB memory与16384 PID；aggregate硬上限至少是40 CPU、
+64 GiB memory与20480 PID。八路也必须满足同一个不少于120秒的真实共同活动区间。
 
-### 两种官方宿主集成
+### 三种官方宿主集成
 
 - NixOS VM test从零 rebuild、reboot、doctor、nested Docker、SIGKILL recovery全通过；
 - 通用 systemd Linux真实安装 host package，使用管理员提供的 bounded mount，完成同一 smoke与
   reboot recovery；
-- 两种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
+- macOS从零安装专用 VM package，验证 launchd reboot、host/guest machine identity、nested Docker、
+  多 Invocation admission与 CLI SIGKILL recovery；
+- 三种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
   shell脚本。

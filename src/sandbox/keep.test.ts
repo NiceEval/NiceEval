@@ -91,6 +91,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const k of CLOUD_ENV_KEYS) {
     if (savedEnv[k] === undefined) delete process.env[k];
     else process.env[k] = savedEnv[k];
@@ -203,6 +204,92 @@ describe("wakeDetached", () => {
       });
       await wakeDetached("docker", "abc");
       expect(start).toHaveBeenCalledTimes(1);
+    });
+
+    it("DinD 唤醒后以 Agent 用户等待 inner daemon readiness", async () => {
+      const stream = Readable.from([]);
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 }),
+      };
+      const exec = vi.fn().mockResolvedValue(execution);
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: {
+            Labels: {
+              "niceeval.docker-access": "dind",
+              "niceeval.dind-readiness-user": "node",
+            },
+          },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec,
+      });
+
+      await wakeDetached("docker", "abc");
+
+      expect(exec).toHaveBeenCalledWith(expect.objectContaining({
+        Cmd: ["docker", "info"],
+        User: "node",
+      }));
+    });
+
+    it("DinD docker info stream 永不结束时在总 30 秒 deadline 销毁 stream 并报可行动错误", async () => {
+      vi.useFakeTimers();
+      const stream = new Readable({ read() {} });
+      const destroy = vi.spyOn(stream, "destroy");
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn(),
+      };
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: { Labels: { "niceeval.docker-access": "dind" } },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec: vi.fn().mockResolvedValue(execution),
+      });
+
+      const waking = wakeDetached("docker", "abc");
+      const wakeFailure = expect(waking).rejects.toThrow(
+        /Docker DinD sandbox did not become ready after wake as user "root"/,
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await wakeFailure;
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(execution.inspect).not.toHaveBeenCalled();
+    });
+
+    it("DinD docker info stream 报错时清除该轮 deadline timer", async () => {
+      vi.useFakeTimers();
+      const stream = new Readable({ read() {} });
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn(),
+      };
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: { Labels: { "niceeval.docker-access": "dind" } },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec: vi.fn().mockResolvedValue(execution),
+      });
+
+      const waking = wakeDetached("docker", "abc");
+      const wakeFailure = expect(waking).rejects.toThrow(/did not become ready after wake/);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(execution.start).toHaveBeenCalledTimes(1);
+
+      stream.emit("error", new Error("connection reset"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await wakeFailure;
     });
   });
 

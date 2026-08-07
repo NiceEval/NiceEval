@@ -135,6 +135,8 @@ export interface Flags {
   junit?: string;
   /** `exp` 命令专用:机器面(NDJSON 事件流)。省略即人读文本(见 `resolveOutputForm`)。 */
   json: boolean;
+  /** `docker profile doctor` 专用：运行一次真实嵌套 Docker 冒烟。 */
+  smoke: boolean;
   open?: boolean;
   out?: string;
   port?: number;
@@ -213,6 +215,8 @@ const FLAG_OPTIONS = {
   junit: { type: "string" },
   /** `exp` 命令专用:机器面——stdout 上单一有序的 NDJSON 事件流(一行一个 JSON 对象),供 coding agent、CI annotation adapter 或脚本消费;`--dry --json` 输出单个 JSON 计划文档而不是流。省略即人读文本(TTY live 面板 / 非 TTY 追加流)。`show` 命令专用:任何切片的结构化形态——同一范围、同一切片选出的同一批实体,输出成一个 JSON 文档到 stdout;与 `--report`、`--expand` 互斥,多个证据 flag(`--source`/`--execution`/`--timing`/`--diff`)只能选一个。 */
   json: { type: "boolean" },
+  /** `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 */
+  smoke: { type: "boolean" },
   /** `view` 命令专用:把结果查看器静态导出到指定目录。 */
   out: { type: "string" },
   /** `view` 命令专用:指定本地服务器监听端口。 */
@@ -287,7 +291,7 @@ function numberFlag(name: string, raw: string | undefined): number | undefined {
   return n;
 }
 
-const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox", "session"] as const;
+const CLI_COMMANDS = ["check", "exp", "accept", "show", "list", "view", "clean", "init", "run", "sandbox", "session", "docker"] as const;
 type CliCommand = (typeof CLI_COMMANDS)[number];
 
 function isCliCommand(candidate: string): candidate is CliCommand {
@@ -422,6 +426,7 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     tag: values.tag as string | undefined,
     junit: values.junit as string | undefined,
     json: values.json === true,
+    smoke: values.smoke === true,
     out: values.out as string | undefined,
     port: numberFlag("port", values.port as string | undefined),
     host: values.host as string | undefined,
@@ -1174,11 +1179,13 @@ async function packageVersion(): Promise<string> {
 
 async function main(): Promise<void> {
   const cwd = process.cwd();
-  await loadDotenv(cwd);
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
-  // Session 查询必须是纯读取路径：连界面 locale 也不从 niceeval.config.ts 装载，
+  // Session / Docker profile 查询必须是纯读取路径：连 dotenv 与界面 locale 也不从项目装载，
   // 否则一个有副作用/损坏的 config 会让 `session list` 违背「不加载配置」契约。
-  if (command !== "session") await applyConfiguredLocale(cwd);
+  if (command !== "session" && command !== "docker") {
+    await loadDotenv(cwd);
+    await applyConfiguredLocale(cwd);
+  }
 
   // --help / --version 不需要 config,先于一切命令处理。
   if (flags.help) {
@@ -1189,6 +1196,11 @@ async function main(): Promise<void> {
   if (flags.version) {
     process.stdout.write(`${await packageVersion()}\n`);
     process.exit(0);
+  }
+
+  if (command === "docker") {
+    const { runDockerProfileCommand } = await import("./sandbox/docker-profile/cli.ts");
+    process.exit(await runDockerProfileCommand(positionals, { json: flags.json, smoke: flags.smoke }));
   }
 
   if (command === "accept") {

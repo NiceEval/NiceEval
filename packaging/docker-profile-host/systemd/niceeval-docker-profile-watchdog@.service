@@ -1,0 +1,40 @@
+[Unit]
+Description=NiceEval docker profile watchdog/admission (%i)
+Documentation=file:///usr/share/niceeval/docker-profile-host/config/default.host.json.example
+After=network.target niceeval-docker-profile@%i.service
+Wants=niceeval-docker-profile@%i.service
+Requires=niceeval-docker-profile-%i.slice
+After=niceeval-docker-profile-%i.slice
+ConditionPathExists=/etc/niceeval/docker-profiles/%i.host.json
+
+[Service]
+Type=simple
+User=niceeval-dp-%i
+Group=niceeval-dp-%i
+Slice=niceeval-docker-profile-%i.slice
+Delegate=yes
+
+Environment=HOME=/var/lib/niceeval/docker-profiles/%i/home
+Environment=XDG_RUNTIME_DIR=/run/niceeval/docker-profiles/%i
+WorkingDirectory=/var/lib/niceeval/docker-profiles/%i/journal
+
+ExecStart=/usr/libexec/niceeval/docker-profile-watchdog \
+  --control-socket=/run/niceeval/docker-profiles/%i/control.sock \
+  --descriptor=/etc/niceeval/docker-profiles/%i.json \
+  --docker-socket=/run/niceeval/docker-profiles/%i/docker.sock \
+  --journal=/var/lib/niceeval/docker-profiles/%i/journal/events.ndjson \
+  --socket-mode=0o660 \
+  --ready-file=/run/niceeval/docker-profiles/%i/watchdog.ready
+
+ExecStartPost=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /run/niceeval/docker-profiles/%i/control.sock ] && break; sleep 0.2; done; chmod 660 /run/niceeval/docker-profiles/%i/control.sock; chgrp niceeval-dp-%i-access /run/niceeval/docker-profiles/%i/control.sock'
+
+Restart=always
+RestartSec=1
+TimeoutStopSec=30
+KillMode=mixed
+
+# Journal dir is dedicated-UID owned; parent not writable by access group.
+ReadWritePaths=/var/lib/niceeval/docker-profiles/%i/journal /run/niceeval/docker-profiles/%i
+
+[Install]
+WantedBy=multi-user.target

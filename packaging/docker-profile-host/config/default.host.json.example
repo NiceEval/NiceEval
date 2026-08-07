@@ -1,0 +1,49 @@
+{
+  "name": "default",
+  "userName": "niceeval-dp-default",
+  "userGroup": "niceeval-dp-default",
+  "accessGroup": "niceeval-dp-default-access",
+  "dockerSocket": "/run/niceeval/docker-profiles/default/docker.sock",
+  "controlSocket": "/run/niceeval/docker-profiles/default/control.sock",
+  "dataMount": "/var/lib/niceeval/docker-profiles/default/data",
+  "dockerRootDir": "/var/lib/niceeval/docker-profiles/default/data/docker",
+  "journalDir": "/var/lib/niceeval/docker-profiles/default/journal",
+  "aggregateCgroupPath": "/sys/fs/cgroup/niceeval-docker-profile-default.slice",
+  "capacity": {
+    "cpus": 16,
+    "memory": "28G",
+    "pids": 8192,
+    "maxContainers": 4,
+    "maxBuilds": 2,
+    "memorySwapBytes": 0
+  },
+  "aggregate": {
+    "cpus": 20,
+    "memory": "32G",
+    "pids": 12288,
+    "memorySwapBytes": 0
+  },
+  "storage": {
+    "size": "30G",
+    "backing": "loop-ext4"
+  },
+  "policy": {
+    "hostLoopback": false,
+    "tcpDockerEndpoint": false
+  },
+  "networkPolicy": {
+    "rootlessPortDriver": "none",
+    "dnsServers": ["1.1.1.1", "9.9.9.9"],
+    "blockedCidrs": [
+      "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+      "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16",
+      "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
+      "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4",
+      "240.0.0.0/4", "::/0"
+    ],
+    "ipv6": "disabled",
+    "defaultBridge": "none",
+    "exclusiveAttemptNetwork": true,
+    "interContainerCommunication": false
+  }
+}

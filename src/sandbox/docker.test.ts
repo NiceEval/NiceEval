@@ -3,15 +3,56 @@
 // find+read 模板,见 download-directory.test.ts)。这里 fake 容器的 getArchive,不连真实
 // daemon——真实容器行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import * as tar from "tar-stream";
-import { assertRootlessPrivilegedDaemon, dockerHostConfig, DockerSandbox } from "./docker.ts";
+import {
+  assertRootlessPrivilegedDaemon,
+  dockerHostConfig,
+  DOCKER_ACCESS_COMPATIBILITY_COMMAND,
+  dockerManagedNetworkOptions,
+  DockerSandbox,
+  resolveDockerSocketMount,
+} from "./docker.ts";
 
 describe("Docker privileged boundary and resources", () => {
+  it("Docker access不向容器注入endpoint环境，并在作者readiness之前锁定默认Unix endpoint", () => {
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND).toEqual([
+      "sh",
+      "-ec",
+      expect.stringContaining('test -z "${DOCKER_HOST+x}"'),
+    ]);
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain('test -z "${DOCKER_CONTEXT+x}"');
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain('docker context show');
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain("docker --host=unix:///var/run/docker.sock info");
+  });
+
+  it("作者自定义readiness不能绕过Docker access compatibility门", async () => {
+    const sandbox = new DockerSandbox({
+      dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+      readiness: { command: ["author-ready"], timeoutMs: 8, intervalMs: 1 },
+    });
+    const calls: string[] = [];
+    const internals = sandbox as unknown as {
+      container: { inspect: () => Promise<unknown> };
+      execCommand: (command: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+      waitForReadiness: () => Promise<void>;
+    };
+    internals.container = { inspect: async () => ({ State: { Running: true } }) };
+    internals.execCommand = async (command) => {
+      calls.push(command);
+      return { exitCode: 1, stdout: "", stderr: "daemon starting" };
+    };
+
+    await expect(internals.waitForReadiness()).rejects.toThrow(/Docker access compatibility timed out/);
+    expect(calls).toContain("sh");
+    expect(calls).not.toContain("author-ready");
+  });
+
   it("rootless-only privileged 拒绝默认/rootful/TCP daemon，只接受显式 rootless Unix socket", () => {
     const rootless = {
       ID: "daemon-123",
@@ -61,9 +102,10 @@ describe("Docker privileged boundary and resources", () => {
       memoryBytes: 4_294_967_296,
       pidsLimit: 2048,
       readOnlyRootfs: true,
-      tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711, uid: 0, gid: 0 } },
-    })).toMatchObject({
+      tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711, uid: 0, gid: 0, executable: true } },
+    }, ["1.1.1.1", "9.9.9.9"])).toMatchObject({
       Privileged: true,
+      Dns: ["1.1.1.1", "9.9.9.9"],
       NanoCpus: 2_500_000_000,
       Memory: 4_294_967_296,
       MemorySwap: 4_294_967_296,
@@ -77,6 +119,54 @@ describe("Docker privileged boundary and resources", () => {
       ExtraHosts: ["host.docker.internal:host-gateway"],
     });
     expect(new DockerSandbox({ privileged: "rootless" }).otlpHost).toBeNull();
+  });
+
+  it("socket access把规范Unix socket挂到固定目标并按数值GID授权", async () => {
+    const dir = await makeLocalDir();
+    const socket = join(dir, "daemon.sock");
+    const alias = join(dir, "docker.sock");
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socket, resolve);
+    });
+    try {
+      await symlink(socket, alias);
+      const mount = await resolveDockerSocketMount(alias);
+      expect(mount.source).toBe(socket);
+      expect(dockerHostConfig("disabled", {}, [], mount)).toMatchObject({
+        Mounts: [{ Type: "bind", Source: socket, Target: "/var/run/docker.sock" }],
+        GroupAdd: [String(mount.gid)],
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("socket access拒绝最终目标不是Unix socket", async () => {
+    const dir = await makeLocalDir();
+    await expect(resolveDockerSocketMount(dir)).rejects.toThrow(/not a Unix socket/);
+  });
+
+  it("raw privileged只设置Privileged且不伪造managed DNS", () => {
+    expect(dockerHostConfig("raw", {})).toMatchObject({ Privileged: true });
+    expect(dockerHostConfig("raw", {})).not.toHaveProperty("Dns");
+    expect(dockerHostConfig("raw", {})).not.toHaveProperty("ExtraHosts");
+  });
+
+  it("为每个 managed privileged Attempt 声明独占且禁止 sibling 互通的 bridge", () => {
+    expect(dockerManagedNetworkOptions("provision-1", "attempt-1")).toEqual({
+      Name: "niceeval-attempt-attempt-1",
+      CheckDuplicate: false,
+      Driver: "bridge",
+      Internal: false,
+      Attachable: false,
+      Options: { "com.docker.network.bridge.enable_icc": "false" },
+      Labels: {
+        "niceeval.managed-network": "true",
+        "niceeval.provision-token": "provision-1",
+      },
+    });
   });
 });
 

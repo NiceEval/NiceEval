@@ -78,6 +78,19 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 执行身份默认沿用环境声明：未覆盖时 docker exec 不注入 `--user`，镜像 `USER` 与 Compose service `user:` 原样生效。
     factory `user` 覆盖后命令与 agent 都以它跑，npm 全局目录、`PATH` 与上传后 `chown` 按该身份解析；`user` 值进入 command identity 与 template fingerprint。
   - 不支持面明确报错：`vercelSandbox` factory 不收 `user`，Vercel 命令级只认 `"root"`（映射 `sudo`），local 对任何 `user` 在调用前报错。
+- **Docker access三分支**：普通、socket、raw DinD与 managed DinD的声明不能互相降级。
+  - socket路径必须显式、绝对且规范；runtime对 symlink执行 `realpath`，最终目标必须是 Unix socket。HostConfig把规范 source挂到固定 `/var/run/docker.sock`，并用数值 GID加入补充组。
+  - Agent readiness前的 endpoint兼容检查要求默认用户没有预设 endpoint或 context、当前 context为 `default`，且默认 `docker info`与显式 Unix socket指向同一 daemon；它与 readiness共用总 deadline。这只证明启动时默认路由一致，不阻止 Agent之后显式指定其它 endpoint。
+  - raw DinD只有显式 `isolation: "raw-privileged"`才产生 `Privileged: true`；`mode: "dind"`缺 isolation在配置期失败。
+  - managed DinD缺 profile或完整 resources时在 Docker I/O前失败；profile resolution或 attestation失败绝不重试成 raw privileged。
+  - 三种 access都默认得到以 Sandbox默认用户执行的 `docker info` readiness；用户声明可替换探针但不能关闭。
+  - readiness的总 deadline同时限制每次 exec；单次 `docker info`卡住不得越过 `timeoutMs`。
+  - DinD provider-owned launcher是常量协议：替换原 Entrypoint/Cmd、预留 supervisor grace、逐项检查工具，并把协议修订进入 identity。
+  - launcher中的用户值只能作为 argv，不得拼进 shell source。
+  - 不含临时文件系统的 raw DinD是 `Suspendable`；任意 Docker sandbox只要使用 `tmpfs`或只读 rootfs就是 `DestroyOnly`。不得把 stop/start后会丢失的 workspace、inner image、container、volume或 cache伪装成可保留。
+  - 仓库单元层保留 mount/GID/plan、fail-closed分支、endpoint兼容检查、supervisor Unix-only参数、readiness deadline/诊断、retention与 doctor Cmd契约；不使用子进程变量门控的本机 Docker测试。
+  - raw、managed、socket与 Compose的真实 Docker矩阵归 NiceEval-Eval E2E套件承接；在该套件完成迁移前，不把它记作本仓库已经获得的验证证据。
+  - socket path和 profile alias是宿主本地 binding，不进可分享 identity；socket、raw DinD和 managed DinD的模式语义必须进入 identity。
 - **PATH 与 pathPrepend**：PATH 是 Sandbox 受管变量，声明面拒绝、运行面按序前置。
   - docker provider：factory `pathPrepend` 按声明顺序前置到受管 PATH（npm 全局 bin + 系统默认路径之前），验证顺序而不只验证包含关系；省略时受管 PATH 与不带 `pathPrepend` 的既有行为逐字节一致。
   - `pathPrepend` 进入 template identity（改值使旧结果失效），Compose/Dockerfile/Image 三个 docker-based 工厂共用同一条 `DockerSandbox` 消费路径,只覆盖其中一个即可证明。

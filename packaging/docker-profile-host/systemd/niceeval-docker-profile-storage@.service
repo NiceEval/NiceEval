@@ -1,0 +1,19 @@
+[Unit]
+Description=NiceEval docker profile loop-ext4 storage (%i)
+Documentation=file:///usr/share/niceeval/docker-profile-host/config/default.host.json.example
+DefaultDependencies=no
+After=local-fs-pre.target
+Before=local-fs.target niceeval-docker-profile@%i.service
+ConditionPathExists=/etc/niceeval/docker-profiles/%i.host.json
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Admin must install helpers to /usr/libexec/niceeval or adjust paths.
+ExecStart=/usr/libexec/niceeval/prepare-loop-storage --image /var/lib/niceeval/docker-profiles/%i.img --size-human 30G --mount /var/lib/niceeval/docker-profiles/%i/data
+# Mount is expected via fstab/systemd mount unit pointing at the image with loop options.
+# Example:
+#   /var/lib/niceeval/docker-profiles/%i.img  /var/lib/niceeval/docker-profiles/%i/data  ext4  loop,noatime  0  2
+
+[Install]
+WantedBy=multi-user.target

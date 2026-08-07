@@ -179,6 +179,10 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
       const container = new Docker().getContainer(sandboxId);
       const info = await container.inspect();
       if (!info.State?.Running) await container.start();
+      if (info.Config?.Labels?.["niceeval.docker-access"] === "dind") {
+        const user = info.Config.Labels["niceeval.dind-readiness-user"] || "root";
+        await waitForDetachedDockerReadiness(container, user);
+      }
       return;
     }
     case "e2b": {
@@ -212,6 +216,66 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
     default:
       throw new Error(`provider "${provider}" has no wake channel`);
   }
+}
+
+async function waitForDetachedDockerReadiness(
+  container: {
+    exec(options: globalThis.Record<string, unknown>): Promise<{
+      start(options: globalThis.Record<string, unknown>): Promise<NodeJS.ReadableStream>;
+      inspect(): Promise<{ ExitCode?: number | null }>;
+    }>;
+  },
+  user: string,
+): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastExit: number | null | undefined;
+  while (Date.now() <= deadline) {
+    try {
+      const execution = await container.exec({
+        Cmd: ["docker", "info"],
+        User: user,
+        AttachStdout: true,
+        AttachStderr: true,
+      });
+      const stream = await execution.start({});
+      const destroyStream = () => (stream as NodeJS.ReadableStream & { destroy(): void }).destroy();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        destroyStream();
+        break;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const completed = new Promise<"completed">((resolvePromise, reject) => {
+        stream.on("end", () => resolvePromise("completed"));
+        stream.on("error", reject);
+        stream.resume();
+      });
+      const timedOut = new Promise<"timed-out">((resolvePromise) => {
+        timer = setTimeout(() => {
+          destroyStream();
+          resolvePromise("timed-out");
+        }, remaining);
+      });
+      let outcome: "completed" | "timed-out";
+      try {
+        outcome = await Promise.race([completed, timedOut]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+      if (outcome === "timed-out") break;
+      lastExit = (await execution.inspect()).ExitCode;
+      if (lastExit === 0) return;
+    } catch {
+      lastExit = undefined;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, Math.min(250, remaining)));
+  }
+  throw new Error(
+    `Docker DinD sandbox did not become ready after wake as user ${JSON.stringify(user)}` +
+    (lastExit === undefined ? "" : ` (docker info exit ${lastExit ?? "unknown"})`),
+  );
 }
 
 /** 送回休眠(enter 退出后 / history、diff 读完后)。 */

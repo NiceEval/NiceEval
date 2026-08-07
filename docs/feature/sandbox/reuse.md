@@ -177,6 +177,16 @@ Provider 可以在 `ensureLifetime` 内续期，也可以只确认现有时间�
 - `ready: false`：停止旧 Sandbox，创建并准备替代 Sandbox。
 - Provider 没有该能力：Experiment 在第一条 Attempt 派发前报错。
 
+不含临时文件系统的 Docker raw DinD 是 `Suspendable`：`docker stop` 会停止 outer container 与 inner daemon，
+之后的 `docker start` 会重新执行同一个 provider-owned supervisor。唤醒不以
+`container.start()` 返回为完成边界；detached `enter` / history / diff 在继续前必须
+以 Agent 默认用户重新执行 `docker info` readiness。唤醒失败时保留注册表所有权与
+可恢复诊断，不把条目删掉或冒充成已唤醒。
+
+任意 Docker sandbox只要使用只读 rootfs或
+`tmpfs`就是 `DestroyOnly`，不对会丢失的 workspace或 inner state声称可恢复；managed
+DinD同样遵守这条边界。
+
 替代 Sandbox 就绪后再次检查。
 如果替代创建已消耗过多时间，本次 Run 报错，不反复创建同样的替代 Sandbox。
 

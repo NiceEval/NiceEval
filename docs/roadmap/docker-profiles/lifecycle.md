@@ -2,7 +2,7 @@
 
 ## 宿主部署
 
-NixOS module、通用 systemd host package或 macOS VM package完成一次宿主事务：
+NixOS module或通用 systemd host package完成本机 Linux事务：
 
 ```text
 validate Linux/systemd/cgroup v2/admin authority
@@ -17,6 +17,19 @@ validate Linux/systemd/cgroup v2/admin authority
   -> commit deployment
 ```
 
+macOS VM package完成另一条宿主事务：
+
+```text
+validate virtualization + launchd + admin authority
+  -> create dedicated VM identity and bounded disk
+  -> boot Linux guest
+  -> provision guest UID/subids/cgroup/daemon/watchdog
+  -> install host Unix transport and root-owned descriptor
+  -> attest host/guest machine identity pair
+  -> run host-to-guest smoke doctor
+  -> commit deployment
+```
+
 失败按 host deployment journal逆序回滚本轮新建资源。已有 user、unit、mount、filesystem或 profile
 只在稳定 identity和 intent完全匹配时收养；同名异主资源拒绝替换。
 
@@ -28,12 +41,12 @@ daemon、watchdog、data mount与 aggregate cgroup可以常驻。日常 Invocati
 
 ```text
 import trusted Eval/config/Experiment modules
-  -> collect dockerSandbox profile aliases
+  -> pure discovery + link + user selection, with zero Provider I/O
+  -> collect profile aliases from selected dockerSandbox declarations
   -> load root-owned descriptors
   -> connect watchdog and attest profile
   -> create one Invocation UUID and per-profile leases
-  -> bind each Docker Sandbox to its profile context
-  -> discover selected Eval/Experiment pairs
+  -> bind each selected Docker Sandbox to its profile context
   -> physical plan
   -> validate every request can fit profile
   -> begin build/admission scheduling
@@ -51,14 +64,19 @@ image/container，但仍完成 profile attestation、短命 Invocation lease和�
 ```text
 request build reservation
   -> watchdog grant maxBuilds slot
+  -> persist build operation + provisional image ref
   -> re-attest profile ID + daemon generation
-  -> resolve/pull/build on bound daemon
-  -> publish image digest
+  -> stream normalized build request through control service
+  -> watchdog owns daemon/BuildKit session
+  -> publish image digest or cancel session
+  -> prove session/process activity terminated
   -> release build reservation
 ```
 
 同一 BuildKey仍走 NiceEval既有 build协调；watchdog额外限制不同进程、不同 BuildKey的总 build数。
-build取消或失败释放 reservation。generation在 build中变化时结果不提交，Invocation进入 draining。
+build取消或失败先进入 `cancelling`。只有 daemon请求结束、BuildKit session消失、相关 process/cgroup
+活动归零且 provisional ref已提交或移除，watchdog才释放 reservation。generation在 build中变化时
+结果不提交，Invocation进入 draining。
 
 ## Attempt create
 
@@ -68,7 +86,7 @@ request {cpu,memory,pids,container=1} reservation
   -> re-attest profile ID + daemon generation
   -> create outer container with labels + hard resources
   -> commit reservation to container ID
-  -> start root entrypoint
+  -> start provider-owned root bootstrap / supervisor
   -> retry readiness as agent user
   -> initialize workspace/tools
   -> commit active
@@ -115,6 +133,7 @@ SIGKILL没有进程内 cleanup保证，owner必须是持久 watchdog，而不是
 
 - 随机 Invocation UUID、lease token digest与 authenticated control connection；
 - reservation、provision token、container ID和 state transition；
+- build operation ID、BuildKit session、provisional image ref与 build reservation；
 - profile ID、daemon generation、Attempt identity与 dead-man deadline labels；
 - kept registry的独立原子提交事实。
 
@@ -122,11 +141,12 @@ watchdog检测 control connection断开和 heartbeat停止后，把 lease转为 
 辅助诊断。经过有界 grace后按固定顺序恢复：
 
 1. 停止为该 Invocation授予新 reservation；
-2. 对账 durable journal、Docker labels与当前 daemon generation；
-3. 排除已经原子登记的 `kept`资源；
-4. running/provisioning outer container先 force remove，stopped container直接 remove；
-5. 重复枚举并验证相关 cgroup/process/mount消失；
-6. 释放匹配 reservation并把 lease提交为 `recovered`。
+2. 取消在飞 BuildKit session，并在终止证据齐全后释放 build reservation；
+3. 对账 durable journal、Docker labels与当前 daemon generation；
+4. 排除已经原子登记的 `kept`资源；
+5. running/provisioning outer container先 force remove，stopped container直接 remove；
+6. 重复枚举并验证相关 cgroup/process/mount消失；
+7. 释放匹配 container reservation并把 lease提交为 `recovered`。
 
 没有 profile ID + Invocation UUID + provision token + journal事实的完整匹配不自动删除。无法枚举或
 删除时保持 recovery占用，profile仍可在剩余容量内服务其它 Invocation，但不能重用该 reservation；
@@ -141,10 +161,11 @@ watchdog service被杀或重启时：
 
 1. systemd立即重启 service；
 2. service从 durable journal、Docker labels和 kept registry重建状态；
-3. 在对账完成前停止新 admission；
-4. 活跃 CLI失去 control generation后停止新 build/create并重连；
-5. 能用原 lease token证明连续性的 CLI恢复 session，其它 lease按 SIGKILL路径回收；
-6. reservation总和与实际 resource set完全一致后重新开放 admission。
+3. 对每个 build operation重新连接或取消 BuildKit session，终止前保留 slot；
+4. 在对账完成前停止新 admission；
+5. 活跃 CLI失去 control generation后停止新 build/create并重连；
+6. 能用原 lease token证明连续性的 CLI恢复 session，其它 lease按 SIGKILL路径回收；
+7. reservation总和与实际 resource set完全一致后重新开放 admission。
 
 重启不能把 active误判成 orphan，也不能把 committed kept资源删除。
 
@@ -157,6 +178,7 @@ watchdog发现 restart后停止 admission并对账：
 
 - 所有活跃 CLI收到 generation失效，停止派发；
 - 已产生模型成本的 Attempt不自动重跑；
+- 在飞 build进入 cancelling，终止证据齐全前不释放 build slot；
 - 按 stable profile ID + Invocation labels在新 daemon视图枚举可见资源；
 - 资源状态不完整的 Invocation标为 environment-level incomplete；
 - journal、labels、reservation与 daemon视图收敛后更新 runtime attestation并恢复新 Invocation。
@@ -165,9 +187,10 @@ daemon常驻连续性是验收项：正常 CLI结束不改变 generation；只�
 
 ## Host reboot 与断电
 
-开机顺序是 bounded filesystem → aggregate cgroup → watchdog recovery → rootless daemon → profile
-ready。watchdog在 profile ready前对账上次 boot未提交的 journal。旧 boot中的 process必然消失，
-但 lease不会仅凭 PID消失就清除；只有 resource枚举、kept registry和 journal全部收敛才释放容量。
+本机 Linux开机顺序是 bounded filesystem → aggregate cgroup → watchdog recovery → rootless daemon →
+profile ready。macOS先由 launchd确认 dedicated VM machine identity，再进入 VM内相同顺序。watchdog
+在 profile ready前对账上次 boot未提交的 journal。旧 process消失不直接授权释放 lease；只有
+build session、resource枚举、kept registry和 journal全部收敛才释放容量。
 
 ## 跨进程并发验收
 
@@ -183,3 +206,9 @@ ready。watchdog在 profile ready前对账上次 boot未提交的 journal。旧 
 先跑4路 task-shaped Attempt作为参照；8路必须在相同故障矩阵、宿主 headroom和硬上限内实测通过，
 才允许宿主 profile把 `maxContainers`声明为8。Experiment可以把 `maxConcurrency`设得更大，但不能
 越过 watchdog admission。
+
+四路每个 Attempt 为4 CPU，所以 allocatable 不得低于16 CPU，aggregate 不得低于20 CPU。八路
+allocatable 不得低于32 CPU、48 GiB memory与16384 PID，aggregate不得低于40 CPU、64 GiB
+memory与20480 PID。两种规模都要保存不少于120秒的共同活动区间：每一路必须同时有真实 coding
+agent、已 build/run/healthy 的 inner Compose 与持续增长的 CPU activity；排队、readiness、sleep
+或仅存在 container 都不计入 active。

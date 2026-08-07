@@ -56,6 +56,14 @@ import type { JsonValue, Sandbox, SandboxHook, SandboxHookContext, ScopedFeedbac
 import type { AgentIdentity, SandboxAgent } from "../agents/types.ts";
 import type { DockerSandbox } from "./docker.ts";
 import type { E2BSandboxLifetime } from "./e2b.ts";
+import {
+  acquireDockerProfileReservation,
+  commitDockerProfileReservation,
+  createDockerProfileLease,
+  releaseDockerProfileReservation,
+  type DockerProfileLease,
+  type DockerProfileRuntimeBinding,
+} from "./docker-profile/runtime.ts";
 
 export type SandboxRuntimeDeadline = SandboxRuntimeDeadlineDeclaration;
 
@@ -186,6 +194,50 @@ function configuredLifetime(
   value: SandboxProviderLifetime,
 ): number | undefined {
   return value._tag === "Configured" ? value.milliseconds : undefined;
+}
+
+async function managedContainerSession(
+  binding: DockerProfileRuntimeBinding,
+  resources: Readonly<import("./layer.ts").DockerSandboxResources>,
+): Promise<{
+  readonly lease: DockerProfileLease;
+  readonly reservation: import("./docker-profile/runtime.ts").DockerProfileReservation;
+  readonly labels: Readonly<Record<string, string>>;
+  readonly finish: () => Promise<void>;
+}> {
+  const lease = await createDockerProfileLease(binding);
+  try {
+    const reservation = await acquireDockerProfileReservation(lease, "container", {
+      cpus: resources.cpus ?? 0,
+      memoryBytes: resources.memoryBytes ?? 0,
+      pids: resources.pidsLimit ?? 0,
+      containers: 1,
+    });
+    const labels = Object.freeze({
+      "niceeval.profile-id": binding.profile.profileId,
+      "niceeval.invocation-id": lease.invocationId,
+      "niceeval.reservation-id": reservation.reservationId,
+      "niceeval.provision-token": reservation.provisionToken,
+    });
+    let finished = false;
+    return {
+      lease,
+      reservation,
+      labels,
+      finish: async () => {
+        if (finished) return;
+        finished = true;
+        try {
+          await releaseDockerProfileReservation(lease, reservation.reservationId);
+        } finally {
+          await lease.stopHeartbeat();
+        }
+      },
+    };
+  } catch (error) {
+    await lease.stopHeartbeat().catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -356,26 +408,54 @@ export function materializeDockerfileProviderPlan(
       const resolved = await resolveDockerfileAgentImage(plan, context, locator);
       context.hookContext.fact("agent.image.cache", resolved.status);
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
-      const provisionToken = randomUUID();
-      const backend = await withProvisionRetry(
-        () => DockerSandbox.create({
+      const managed = plan.profileBinding === undefined
+        ? undefined
+        : await managedContainerSession(plan.profileBinding, plan.resources);
+      const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
+      let backend: DockerSandbox;
+      try {
+        backend = await withProvisionRetry(
+          () => DockerSandbox.create({
           ...deadlineOptions(context.deadline),
           runtime: "node24",
           image: resolved.locator,
           ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
           privileged: plan.privileged,
+          ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
           resources: plan.resources,
+          ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
           lifetimeMs: configuredLifetime(plan.lifetime),
           pathPrepend: plan.pathPrepend,
           feedback: context.feedback,
           provisionToken,
           runIdentity: currentRunIdentity(),
+          ...(plan.profileBinding === undefined ? {} : {
+            dockerSocketPath: plan.profileBinding.dockerSocketPath,
+            dns: plan.profileBinding.profile.policy.network.dns.servers,
+            managedLabels: managed?.labels,
+            rootlessAttestation: {
+              daemonId: plan.profileBinding.daemonId,
+              dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
+            },
+            afterStop: managed?.finish,
+          }),
         }),
         classifyProvisionError,
         boundProvisionSlot(context),
         context.feedback,
-        () => reconcileProvision(provisionToken),
-      );
+          () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+        );
+        if (managed !== undefined) {
+          await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
+            containerId: backend.sandboxId,
+            ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
+            attemptId: context.evalId,
+          });
+        }
+      } catch (error) {
+        await managed?.finish().catch(() => undefined);
+        throw error;
+      }
       return wrapSingleSandbox(backend, context, { image: resolved.locator });
     }),
   });
@@ -397,6 +477,11 @@ async function resolveDockerfileAgentImage(
   context: SandboxRuntimeMaterializeContext,
   taskLocator: string,
 ): Promise<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }> {
+  // Derived Agent image coordination is still bound to the default Docker endpoint.
+  // A profile Dockerfile must never cross daemons, so consume the task image directly.
+  if (plan.profileBinding !== undefined || plan.dockerAccess !== undefined) {
+    return { status: "unsupported", locator: taskLocator };
+  }
   const request = dockerfileAgentCacheRequest(
     plan,
     context.agent,
@@ -523,26 +608,54 @@ export function materializeDockerImageProviderPlan(
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError> {
   return materializationEffect(context, async () => {
     const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts");
-    const provisionToken = randomUUID();
-    const backend = await withProvisionRetry(
-      () => DockerSandbox.create({
+    const managed = plan.profileBinding === undefined
+      ? undefined
+      : await managedContainerSession(plan.profileBinding, plan.resources);
+    const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
+    let backend: DockerSandbox;
+    try {
+      backend = await withProvisionRetry(
+        () => DockerSandbox.create({
         ...deadlineOptions(context.deadline),
         runtime: "node24",
         image: plan.image,
         ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
         privileged: plan.privileged,
+        ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
         resources: plan.resources,
+        ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
         lifetimeMs: configuredLifetime(plan.lifetime),
         pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
         provisionToken,
         runIdentity: currentRunIdentity(),
+        ...(plan.profileBinding === undefined ? {} : {
+          dockerSocketPath: plan.profileBinding.dockerSocketPath,
+          dns: plan.profileBinding.profile.policy.network.dns.servers,
+          managedLabels: managed?.labels,
+          rootlessAttestation: {
+            daemonId: plan.profileBinding.daemonId,
+            dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
+          },
+          afterStop: managed?.finish,
+        }),
       }),
       classifyProvisionError,
       boundProvisionSlot(context),
       context.feedback,
-      () => reconcileProvision(provisionToken),
-    );
+        () => reconcileProvision(provisionToken, plan.profileBinding?.dockerSocketPath),
+      );
+      if (managed !== undefined) {
+        await commitDockerProfileReservation(managed.lease, managed.reservation.reservationId, {
+          containerId: backend.sandboxId,
+          ...(backend.managedNetworkId === undefined ? {} : { networkId: backend.managedNetworkId }),
+          attemptId: context.evalId,
+        });
+      }
+    } catch (error) {
+      await managed?.finish().catch(() => undefined);
+      throw error;
+    }
     return wrapSingleSandbox(backend, context, { image: plan.image });
   });
 }
@@ -842,13 +955,69 @@ export function collectDockerfileProviderBuildPreparation(
         buildArgs: plan.buildArgs,
         platform: plan.platform,
         expected: plan.build,
+        ...(plan.profileBinding === undefined ? {} : { dockerSocketPath: plan.profileBinding.dockerSocketPath }),
       });
       if (collection.buildKey !== plan.buildKey) {
         throw new Error("Dockerfile build inputs changed after physical planning. Restart the Run to plan the new inputs.");
       }
+      const provider = dockerfileBuildProvider([collection]);
+      const managedProvider: SandboxBuildProvider = plan.profileBinding === undefined ? provider : {
+        lookup: (work, signal) => provider.lookup(work, signal),
+        async build(work, buildContext) {
+          const lease = await createDockerProfileLease(plan.profileBinding!);
+          let reservation: import("./docker-profile/runtime.ts").DockerProfileReservation | undefined;
+          let network: import("dockerode").Network | undefined;
+          try {
+            reservation = await acquireDockerProfileReservation(lease, "build", {
+              cpus: 0, memoryBytes: 0, pids: 0, containers: 0,
+            });
+            const labels = Object.freeze({
+              "niceeval.profile-id": plan.profileBinding!.profile.profileId,
+              "niceeval.invocation-id": lease.invocationId,
+              "niceeval.reservation-id": reservation.reservationId,
+              "niceeval.provision-token": reservation.provisionToken,
+            });
+            const [{ default: Docker }, { dockerManagedNetworkOptions }] = await Promise.all([
+              import("dockerode"),
+              import("./docker.ts"),
+            ]);
+            const docker = new Docker({ socketPath: plan.profileBinding!.dockerSocketPath });
+            network = await docker.createNetwork(
+              dockerManagedNetworkOptions(reservation.provisionToken, randomUUID(), labels),
+            );
+            await commitDockerProfileReservation(lease, reservation.reservationId, { networkId: network.id });
+            const buildCollection = Object.freeze({
+              ...collection,
+              details: Object.freeze({ ...collection.details, dockerNetworkMode: network.id }),
+            });
+            const locator = await dockerfileBuildProvider([buildCollection]).build(work, buildContext);
+            await network.remove();
+            network = undefined;
+            await releaseDockerProfileReservation(lease, reservation.reservationId, {
+              daemonRequestTerminated: true,
+              buildkitSessionGone: true,
+              processActivityZero: true,
+              provisionalRefResolvedOrRemoved: true,
+            });
+            return locator;
+          } finally {
+            await network?.remove().catch(() => undefined);
+            if (reservation !== undefined) {
+              await releaseDockerProfileReservation(lease, reservation.reservationId, {
+                daemonRequestTerminated: true,
+                buildkitSessionGone: true,
+                processActivityZero: true,
+                provisionalRefResolvedOrRemoved: true,
+              }).catch(() => undefined);
+            }
+            await lease.stopHeartbeat().catch(() => undefined);
+          }
+        },
+        ...(provider.cancel === undefined ? {} : { cancel: (work) => provider.cancel!(work) }),
+      };
       return Option.some({
         works: [collection.work],
-        provider: dockerfileBuildProvider([collection]),
+        provider: managedProvider,
       });
     },
     catch: (cause) => buildFailure(published, "sandbox.build-input-drift", cause),

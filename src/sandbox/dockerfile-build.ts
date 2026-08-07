@@ -25,6 +25,9 @@ interface DockerfileBuildDetails {
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
   readonly target?: string;
   readonly platform: string;
+  readonly dockerSocketPath?: string;
+  /** managed profile 在 daemon bridge=none 时为本次 build 创建的独占 bridge。 */
+  readonly dockerNetworkMode?: string;
 }
 
 export interface DockerfileBuildCollection {
@@ -44,6 +47,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
   readonly buildArgs: Readonly<Record<string, string>>;
   readonly platform: string;
   readonly expected: DockerfileBuildIdentity;
+  readonly dockerSocketPath?: string;
 }): Promise<DockerfileBuildCollection> {
   const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
   const identity = await resolveDockerfileBuildIdentity({
@@ -70,6 +74,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
     dockerfile: identity.dockerfile,
     buildArgs: input.buildArgs,
     platform: input.platform,
+    ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
   };
   return Object.freeze({
     buildKey: identity.buildKey,
@@ -94,7 +99,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
 }
 
 interface DockerfileProviderHooks {
-  readonly dockerImageExists?: (tag: string) => Promise<boolean>;
+  readonly dockerImageExists?: (tag: string, dockerSocketPath?: string) => Promise<boolean>;
   readonly runDockerBuild?: (
     details: DockerfileBuildDetails,
     tag: string,
@@ -132,7 +137,7 @@ export function dockerfileBuildProvider(
       const detail = detailFor(work);
       if (detail.provider === "docker") {
         const tag = dockerBuildTag(work.buildKey);
-        return (await imageExists(tag)) ? tag : undefined;
+        return (await imageExists(tag, detail.dockerSocketPath)) ? tag : undefined;
       }
       const name = e2bBuildName(work.buildKey);
       return (await templateExists(name, signal)) ? name : undefined;
@@ -176,8 +181,11 @@ function e2bBuildName(buildKey: BuildKey): string {
   return `niceeval-build-${buildKey.slice(0, 40)}`;
 }
 
-async function defaultDockerImageExists(tag: string): Promise<boolean> {
-  return await commandSucceeded("docker", ["image", "inspect", tag]);
+async function defaultDockerImageExists(tag: string, dockerSocketPath?: string): Promise<boolean> {
+  return await commandSucceeded("docker", [
+    ...(dockerSocketPath === undefined ? [] : ["--host", `unix://${dockerSocketPath}`]),
+    "image", "inspect", tag,
+  ]);
 }
 
 async function defaultRunDockerBuild(
@@ -185,8 +193,8 @@ async function defaultRunDockerBuild(
   tag: string,
   ctx: SandboxBuildExecutionContext,
 ): Promise<void> {
-  const args = [
-    "build",
+  const connection = details.dockerSocketPath === undefined ? [] : ["--host", `unix://${details.dockerSocketPath}`];
+  const buildArgs = [
     "--platform",
     details.platform,
     "--file",
@@ -197,7 +205,36 @@ async function defaultRunDockerBuild(
     ...(details.target !== undefined ? ["--target", details.target] : []),
     details.contextDir,
   ];
-  await runBuildCommand("docker", args, ctx.signal);
+  if (details.dockerNetworkMode === undefined) {
+    await runBuildCommand("docker", [...connection, "build", ...buildArgs], ctx.signal);
+    return;
+  }
+
+  // managed daemon 关闭默认 bridge。现代 BuildKit 不接受任意 network ID 作为
+  // `docker build --network`，所以为 reservation 建短生命周期 docker-container builder，
+  // 把 builder 自身绑定到 watchdog 所有的独占网络，并将结果显式 load 回 profile daemon。
+  const builderName = `niceeval-${details.dockerNetworkMode.slice(0, 24)}`;
+  await runBuildCommand("docker", [
+    ...connection,
+    "buildx", "create",
+    "--driver", "docker-container",
+    "--driver-opt", `network=${details.dockerNetworkMode}`,
+    "--name", builderName,
+  ], ctx.signal);
+  try {
+    await runBuildCommand("docker", [
+      ...connection,
+      "buildx", "build",
+      "--builder", builderName,
+      "--load",
+      ...buildArgs,
+    ], ctx.signal);
+  } finally {
+    await runBuildCommand("docker", [
+      ...connection,
+      "buildx", "rm", "--force", builderName,
+    ], new AbortController().signal).catch(() => undefined);
+  }
 }
 
 async function defaultE2BTemplateExists(name: string, signal: AbortSignal): Promise<boolean> {

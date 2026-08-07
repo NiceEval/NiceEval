@@ -1,0 +1,18 @@
+[Unit]
+Description=NiceEval docker profile control socket (%i)
+Documentation=file:///usr/share/niceeval/docker-profile-host/config/default.host.json.example
+# Socket unit documents the control endpoint path. The watchdog currently binds
+# the path itself instead of consuming socket-activation FDs; this unit provides
+# a stable enablement entry and ordering hook for administrators.
+
+[Socket]
+ListenStream=/run/niceeval/docker-profiles/%i/control.sock
+SocketUser=niceeval-dp-%i
+SocketGroup=niceeval-dp-%i-access
+SocketMode=0660
+DirectoryMode=0750
+# Accept=false; service binds/manages the socket currently.
+Accept=false
+
+[Install]
+WantedBy=sockets.target

@@ -3,7 +3,8 @@
 //(runShell/runCommand 的 opts 一律是选项对象,不再用位置参数)。
 
 import { basename, dirname, join } from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
 import type {
   CommandResult,
@@ -28,7 +29,8 @@ import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
-import type { DockerSandboxResources } from "./layer.ts";
+import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
+import { dindContainerCommand } from "./dind-supervisor.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -48,8 +50,8 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
  * 硬前置,静默放行等于盲重试(见 docs/feature/sandbox/architecture.md);唯一的例外:
  * 容器已不存在(404),视作对账完成。
  */
-export async function reconcileProvision(token: string): Promise<void> {
-  const docker = new Docker();
+export async function reconcileProvision(token: string, socketPath?: string): Promise<void> {
+  const docker = new Docker(socketPath === undefined ? undefined : { socketPath });
   const containers = await docker.listContainers({
     all: true,
     filters: { label: [`niceeval.provision-token=${token}`] },
@@ -92,6 +94,26 @@ const CONTAINER_LOG = "/tmp/niceeval-agent.log";
 // (整个 Sandbox 的默认身份)或 runCommand 的 `{ user: "root" }`(只这一条命令)——
 // 见 docs/feature/sandbox/library.md「执行身份」。
 const ROOT_USER = "root";
+const DOCKER_ACCESS_SOCKET = "unix:///var/run/docker.sock";
+
+/**
+ * This is intentionally provider-owned.  It proves the Agent's *initial default*
+ * endpoint without pretending to constrain commands the Agent may issue later.
+ */
+export const DOCKER_ACCESS_COMPATIBILITY_COMMAND = Object.freeze([
+  "sh",
+  "-ec",
+  [
+    'test -z "${DOCKER_HOST+x}" || { echo "DOCKER_HOST must be unset" >&2; exit 1; }',
+    'test -z "${DOCKER_CONTEXT+x}" || { echo "DOCKER_CONTEXT must be unset" >&2; exit 1; }',
+    'context="$(docker context show)"',
+    'test "$context" = "default" || { echo "docker context must be default (got $context)" >&2; exit 1; }',
+    'default_daemon="$(docker info --format \'{{.ID}}\')"',
+    `unix_daemon="$(docker --host=${DOCKER_ACCESS_SOCKET} info --format '{{.ID}}')"`,
+    'test -n "$default_daemon" || { echo "bare docker info returned no daemon ID" >&2; exit 1; }',
+    'test "$default_daemon" = "$unix_daemon" || { echo "bare and Unix Docker endpoints reached different daemons" >&2; exit 1; }',
+  ].join("\n"),
+] as const satisfies readonly [string, ...string[]]);
 
 /** `user` 取值是否等价于 root(数字 uid 0、`0:0` 或字面量 `root`)。 */
 function isRootLikeUserSpec(value: string): boolean {
@@ -130,10 +152,22 @@ export interface DockerSandboxOptions {
    * Compose service `user:` 或其镜像 `USER`。
    */
   user?: string;
-  /** `rootless` = 请求 privileged，但只允许连接显式 rootless Unix daemon。 */
-  privileged?: "disabled" | "rootless";
+  /** raw = 直接请求 privileged；rootless = 只允许受管 rootless daemon。 */
+  privileged?: "disabled" | "raw" | "rootless";
+  /** Agent在Sandbox内访问Docker的模式；socket模式会显式挂载宿主Unix socket。 */
+  dockerAccess?: Readonly<DockerSandboxAccess>;
   /** 创建容器时交给 daemon 强制执行的资源边界。 */
   resources?: Readonly<DockerSandboxResources>;
+  /** PID 1 启动后、任何 setup/prepare/agent 命令之前必须通过的作者声明探针。 */
+  readiness?: Readonly<DockerSandboxReadiness>;
+  /** profile-bound provider fixes every Docker I/O to the attested Unix endpoint. */
+  dockerSocketPath?: string;
+  /** Descriptor-pinned public resolvers; managed privileged mode never invents defaults. */
+  dns?: readonly string[];
+  /** Durable watchdog ownership labels, copied to both container and exclusive network. */
+  managedLabels?: Readonly<Record<string, string>>;
+  rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
+  afterStop?: () => Promise<void>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
    * 「PATH:受管变量与 pathPrepend」)。
@@ -149,11 +183,8 @@ export function assertRootlessPrivilegedDaemon(
     readonly CgroupDriver?: string;
     readonly CgroupVersion?: string;
   },
-  dockerHost = process.env.DOCKER_HOST,
-  expected = {
-    daemonId: process.env.NICEEVAL_ROOTLESS_DOCKER_ID,
-    dataRoot: process.env.NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT,
-  },
+  dockerHost: string | undefined,
+  expected: { readonly daemonId?: string; readonly dataRoot?: string } | undefined,
 ): void {
   if (dockerHost === undefined || !dockerHost.startsWith("unix://")) {
     throw new Error(
@@ -174,7 +205,7 @@ export function assertRootlessPrivilegedDaemon(
       `version=${info.CgroupVersion ?? "unknown"}, driver=${info.CgroupDriver ?? "unknown"}`,
     );
   }
-  if (expected.daemonId === undefined || expected.daemonId === "") {
+  if (expected?.daemonId === undefined || expected.daemonId === "") {
     throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_ID attestation");
   }
   if (info.ID !== expected.daemonId) {
@@ -183,7 +214,7 @@ export function assertRootlessPrivilegedDaemon(
       `(expected ${expected.daemonId}, got ${info.ID ?? "unknown"})`,
     );
   }
-  if (expected.dataRoot === undefined || expected.dataRoot === "") {
+  if (expected?.dataRoot === undefined || expected.dataRoot === "") {
     throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT attestation");
   }
   if (info.DockerRootDir !== expected.dataRoot) {
@@ -210,8 +241,10 @@ function benignRemoveError(error: unknown): boolean {
 }
 
 export function dockerHostConfig(
-  privileged: "disabled" | "rootless",
+  privileged: "disabled" | "raw" | "rootless",
   resources: Readonly<DockerSandboxResources>,
+  dns: readonly string[] = [],
+  socketMount?: { readonly source: string; readonly gid: number },
 ): Docker.HostConfig {
   const nanoCpus = resources.cpus === undefined ? undefined : Math.round(resources.cpus * 1_000_000_000);
   if (nanoCpus !== undefined && !Number.isSafeInteger(nanoCpus)) {
@@ -223,7 +256,7 @@ export function dockerHostConfig(
         path,
         [
           "rw",
-          "exec",
+          options.executable === true ? "exec" : "noexec",
           "nosuid",
           "nodev",
           `size=${options.sizeBytes}`,
@@ -234,15 +267,55 @@ export function dockerHostConfig(
       ]));
   return {
     AutoRemove: false,
-    // Privileged rootless supervisor 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
+    // Privileged DinD modes 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
     ...(privileged === "disabled" ? { ExtraHosts: ["host.docker.internal:host-gateway"] } : {}),
-    ...(privileged === "rootless" ? { Privileged: true } : {}),
+    ...(privileged !== "disabled"
+      ? { Privileged: true, ...(dns.length === 0 ? {} : { Dns: [...dns] }) }
+      : {}),
+    ...(socketMount === undefined
+      ? {}
+      : {
+          Mounts: [{ Type: "bind", Source: socketMount.source, Target: "/var/run/docker.sock" }],
+          GroupAdd: [String(socketMount.gid)],
+        }),
     ...(nanoCpus === undefined ? {} : { NanoCpus: nanoCpus }),
     ...(resources.memoryBytes === undefined ? {} : { Memory: resources.memoryBytes }),
     ...(resources.memoryBytes === undefined ? {} : { MemorySwap: resources.memoryBytes }),
     ...(resources.pidsLimit === undefined ? {} : { PidsLimit: resources.pidsLimit }),
     ...(resources.readOnlyRootfs === true ? { ReadonlyRootfs: true } : {}),
     ...(tmpfs === undefined ? {} : { Tmpfs: tmpfs }),
+  };
+}
+
+export async function resolveDockerSocketMount(
+  socketPath: string,
+): Promise<{ readonly source: string; readonly gid: number }> {
+  const source = await realpath(socketPath);
+  const info = await stat(source);
+  if (!info.isSocket()) throw new TypeError(`Docker socket path is not a Unix socket: ${socketPath}`);
+  return Object.freeze({ source, gid: info.gid });
+}
+
+/** managed privileged Attempt 的独占 outer network；允许 NAT 出站，但禁止 sibling 互通。 */
+export function dockerManagedNetworkOptions(
+  provisionToken: string | undefined,
+  nonce: string = randomUUID(),
+  managedLabels: Readonly<Record<string, string>> = {},
+): Docker.NetworkCreateOptions {
+  return {
+    Name: `niceeval-attempt-${nonce}`,
+    CheckDuplicate: false,
+    Driver: "bridge",
+    Internal: false,
+    Attachable: false,
+    Options: {
+      "com.docker.network.bridge.enable_icc": "false",
+    },
+    Labels: {
+      "niceeval.managed-network": "true",
+      ...(provisionToken === undefined ? {} : { "niceeval.provision-token": provisionToken }),
+      ...managedLabels,
+    },
   };
 }
 
@@ -258,6 +331,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly otlpHost: string | null;
   private docker: Docker;
   private container: Docker.Container | null = null;
+  private network: Docker.Network | null = null;
   private _containerId = "";
   private timeout?: number;
   private deadlineAt?: number;
@@ -272,10 +346,19 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
   private readonly userOverride?: string;
-  private readonly privileged: "disabled" | "rootless";
+  private readonly privileged: "disabled" | "raw" | "rootless";
+  private readonly dockerAccess?: Readonly<DockerSandboxAccess>;
   private readonly resources: Readonly<DockerSandboxResources>;
+  private readonly readiness?: Readonly<DockerSandboxReadiness>;
+  private readonly dockerSocketPath?: string;
+  private readonly dns: readonly string[];
+  private readonly managedLabels: Readonly<Record<string, string>>;
+  private readonly rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
+  private readonly afterStop?: () => Promise<void>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
+  /** DinD 覆盖容器 User 为 root 后，仍用镜像 USER 作为 Agent 默认身份。 */
+  private imageDefaultUser?: string;
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
   private defaultHome = "/root";
   private defaultUserName = "root";
@@ -291,7 +374,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   };
 
   constructor(options: DockerSandboxOptions = {}) {
-    this.docker = new Docker();
+    this.docker = new Docker(options.dockerSocketPath === undefined ? undefined : { socketPath: options.dockerSocketPath });
     this.workdir = options.workdir ?? CONTAINER_WORKDIR;
     this.timeout = options.timeout;
     this.deadlineAt = options.deadlineAt;
@@ -303,8 +386,15 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
     this.privileged = options.privileged ?? "disabled";
-    this.otlpHost = this.privileged === "rootless" ? null : "host.docker.internal";
+    this.dockerAccess = options.dockerAccess;
+    this.otlpHost = this.privileged === "disabled" ? "host.docker.internal" : null;
     this.resources = options.resources ?? {};
+    this.readiness = options.readiness;
+    this.dockerSocketPath = options.dockerSocketPath;
+    this.dns = Object.freeze([...(options.dns ?? [])]);
+    this.managedLabels = Object.freeze({ ...(options.managedLabels ?? {}) });
+    this.rootlessAttestation = options.rootlessAttestation;
+    this.afterStop = options.afterStop;
     this.pathPrepend = options.pathPrepend ?? [];
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
   }
@@ -383,9 +473,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     try {
       await sandbox.initialize();
     } catch (e) {
+      const initializationError = await sandbox.withInitializationDiagnostics(e);
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
       // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+      const cleanupErrors: unknown[] = [];
       try {
         await sandbox.container?.remove({ force: true });
         sandbox.container = null;
@@ -393,19 +485,66 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         if (benignRemoveError(cleanupError)) {
           sandbox.container = null;
         } else {
-          throw new AggregateError(
-            [e, cleanupError],
-            "Docker sandbox initialization failed and its partially created container could not be removed",
-          );
+          cleanupErrors.push(cleanupError);
         }
       }
-      throw e;
+      try {
+        await sandbox.network?.remove();
+        sandbox.network = null;
+      } catch (cleanupError) {
+        if (dockerStatusCode(cleanupError) === 404) {
+          sandbox.network = null;
+        } else {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [initializationError, ...cleanupErrors],
+          "Docker sandbox initialization failed and its partial container/network could not be fully removed",
+        );
+      }
+      throw initializationError;
     }
     return sandbox;
   }
 
+  /** DinD 容器 kill-on-failure 前收集有界诊断，普通 Docker 保持原错误形状。 */
+  private async withInitializationDiagnostics(error: unknown): Promise<unknown> {
+    if (this.dockerAccess?.mode !== "dind" || this.container === null) return error;
+    const sections: string[] = [];
+    try {
+      const logs = await this.container.logs({ stdout: true, stderr: true, tail: 256 });
+      const bytes = Buffer.isBuffer(logs)
+        ? logs
+        : await readableToBuffer(logs as unknown as NodeJS.ReadableStream);
+      const tail = bytes.subarray(Math.max(0, bytes.length - 256 * 1024)).toString("utf-8").trim();
+      if (tail !== "") sections.push(`docker logs (tail):\n${tail}`);
+    } catch {
+      // 诊断采集是 best effort；不能覆盖初始化原错误。
+    }
+    try {
+      const state = await this.container.inspect();
+      if (state.State?.Running === true) {
+        const daemonTail = await this.execCommand("tail", ["-c", String(256 * 1024), "/tmp/dockerd.log"], {
+          user: ROOT_USER,
+        });
+        const tail = (daemonTail.stderr || daemonTail.stdout).trim();
+        if (tail !== "") sections.push(`dockerd.log (tail):\n${tail}`);
+      }
+    } catch {
+      // daemon 提前退出时 supervisor 已把有界 tail 写入 docker logs。
+    }
+    if (sections.length === 0) return error;
+    const message = error instanceof Error ? error.message : String(error);
+    return new Error(`${message}\n${sections.join("\n")}`, { cause: error });
+  }
+
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
   private async initialize(): Promise<void> {
+    const socketMount = this.dockerAccess?.mode === "socket"
+      ? await resolveDockerSocketMount(this.dockerAccess.socketPath)
+      : undefined;
     // 显式 image(预制模板)优先;否则按 runtime 选默认 node:*-slim。
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
@@ -413,11 +552,29 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     }
 
     if (this.privileged === "rootless") {
-      assertRootlessPrivilegedDaemon(await this.docker.info());
+      assertRootlessPrivilegedDaemon(
+        await this.docker.info(),
+        this.dockerSocketPath === undefined ? undefined : `unix://${this.dockerSocketPath}`,
+        this.rootlessAttestation === undefined ? undefined : {
+          daemonId: this.rootlessAttestation.daemonId,
+          dataRoot: this.rootlessAttestation.dataRoot,
+        },
+      );
+      if (this.dns.length === 0) throw new Error("managed rootless Docker requires descriptor-pinned DNS servers");
+      this.network = await this.docker.createNetwork(
+        dockerManagedNetworkOptions(this.provisionToken, randomUUID(), this.managedLabels),
+      );
     }
 
     // 确保镜像在本地。
     await this.ensureImage(imageName);
+
+    const isDind = this.dockerAccess?.mode === "dind";
+    if (isDind) {
+      const inspectedImage = await this.docker.getImage(imageName).inspect();
+      const declaredUser = inspectedImage.Config?.User?.trim();
+      this.imageDefaultUser = declaredUser === "" ? undefined : declaredUser;
+    }
 
     // 起容器(先以 root 做初始化,之后命令切到非 root 用户)。
     // PID1 改成 tail 一个日志文件(而非 sleep infinity):这样容器「主日志」= 这个文件,
@@ -429,32 +586,49 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // TTL 一旦烧进 PID1 的 `timeout` 就改不了(容器没有续期通道),所以这里把真实到期时刻记下来,
     // 供 ensureLifetime 如实回答;不够用时由 runner 轮换实例,而不是让容器在 attempt 中途消失。
     this.expiresAtMs = Date.now() + ttlSec * 1000;
+    const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     this.container = await this.docker.createContainer({
       Image: imageName,
-      Cmd: [
-        "sh",
-        "-c",
-        `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
-      ],
+      ...(dindCommand === undefined
+        ? {
+            Cmd: [
+              "sh",
+              "-c",
+              `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
+            ],
+          }
+        : { Entrypoint: [...dindCommand.Entrypoint], Cmd: [...dindCommand.Cmd], User: ROOT_USER }),
       WorkingDir: this.workdir,
       // provision token:歧义类失败的对账通道(按 label 查询本地容器);
       // keep-candidate:留存候选标记(异常硬退时核对未完成提交的候选)。
       Labels: {
         "niceeval.keep-candidate": "true",
+        ...(isDind
+          ? {
+              "niceeval.docker-access": "dind",
+              "niceeval.dind-readiness-user": this.userOverride ?? this.imageDefaultUser ?? ROOT_USER,
+            }
+          : {}),
         ...(this.provisionToken ? { "niceeval.provision-token": this.provisionToken } : {}),
         ...(this.runIdentity ? dockerRunIdentityLabels(this.runIdentity) : {}),
+        ...this.managedLabels,
       },
       Tty: true,
       // 不带 AutoRemove:留存意图必须在创建期传入(--keep-sandbox 的 suspend = docker stop,
       // 停驻容器的文件系统落盘持久)。默认路径的销毁由 stop() 显式 stop + remove,行为等价;
       // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
       // host.docker.internal 供容器回连宿主 OTLP；Linux 显式映到 host-gateway。
-      HostConfig: dockerHostConfig(this.privileged, this.resources),
+      HostConfig: {
+        ...dockerHostConfig(this.privileged, this.resources, this.dns, socketMount),
+        ...(this.network === null ? {} : { NetworkMode: this.network.id }),
+      },
     });
 
     this._containerId = this.container.id;
 
     await this.container.start();
+
+    await this.waitForReadiness();
 
     // slim 镜像可能缺 CA 证书和 git,补装。
     await this.ensureRunnerTools();
@@ -475,6 +649,76 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir]);
   }
 
+  /** Docker start 只代表 PID 1 存活；Docker access 先证明默认端点，再跑作者 readiness。 */
+  private async waitForReadiness(): Promise<void> {
+    const readiness = this.readiness;
+    if (readiness === undefined) return;
+    const deadline = Date.now() + readiness.timeoutMs;
+    const readinessUser = readiness.user ?? this.userOverride ??
+      (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
+    if (this.dockerAccess !== undefined) {
+      await this.waitForReadinessProbe({
+        command: DOCKER_ACCESS_COMPATIBILITY_COMMAND,
+        user: readinessUser,
+        intervalMs: readiness.intervalMs,
+        deadline,
+        phase: "Docker access compatibility",
+        timeoutMs: readiness.timeoutMs,
+      });
+    }
+    await this.waitForReadinessProbe({
+      command: readiness.command,
+      user: readinessUser,
+      intervalMs: readiness.intervalMs,
+      deadline,
+      phase: "Docker sandbox readiness",
+      timeoutMs: readiness.timeoutMs,
+    });
+  }
+
+  private async waitForReadinessProbe(input: {
+    readonly command: readonly [string, ...string[]];
+    readonly user: string | undefined;
+    readonly intervalMs: number | undefined;
+    readonly deadline: number;
+    readonly phase: string;
+    readonly timeoutMs: number;
+  }): Promise<void> {
+    const [command, ...args] = input.command;
+    let lastFailure = "probe has not run";
+    while (Date.now() <= input.deadline) {
+      const state = await this.container?.inspect();
+      if (state?.State?.Running !== true) {
+        throw new Error(
+          `Docker sandbox exited before ${input.phase.toLowerCase()} completed ` +
+          `(state=${state?.State?.Status ?? "missing"})`,
+        );
+      }
+      try {
+        const result = await this.execCommand(command, args, {
+          user: input.user,
+          timeoutMs: Math.max(1, input.deadline - Date.now()),
+          timeoutRetirement: "stop",
+        });
+        if (result.exitCode === 0) return;
+        lastFailure = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
+      } catch (error) {
+        lastFailure = error instanceof Error ? error.message : String(error);
+      }
+      const remaining = input.deadline - Date.now();
+      if (remaining <= 0) break;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(input.intervalMs ?? 250, remaining)));
+    }
+    const diagnosticUser = input.user ?? this.imageDefaultUser ?? ROOT_USER;
+    const permissionHelp = this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
+      ? `; DinD user ${JSON.stringify(diagnosticUser)} must belong to the docker group ` +
+        `(the inner socket remains root:docker 0660)`
+      : "";
+    throw new Error(
+      `${input.phase} timed out after ${input.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
+    );
+  }
+
   /**
    * 探测 Sandbox 默认执行身份(`this.userOverride` 未设置时即容器/镜像的默认身份)的
    * uid、用户名与家目录:省略 `User` 字段的 exec 沿用容器默认身份,`$HOME` 由容器内
@@ -484,7 +728,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const probe = await this.execCommand("sh", [
       "-c",
       'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"',
-    ], { user: this.userOverride });
+    ], {
+      user: this.userOverride ??
+        (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined),
+    });
     const [rawUid = "", rawName = "", rawHome = ""] = probe.stdout.split("\n");
     const uid = rawUid.trim();
     const name = rawName.trim();
@@ -662,6 +909,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       user?: string;
       /** 这条命令的显式上限;省略 = 按 attempt deadline 的剩余量。 */
       timeoutMs?: number;
+      /** create/readiness 失败需在删除前采集日志，因此只先停容器。 */
+      timeoutRetirement?: "destroy" | "stop";
       onStdout?: (chunk: string) => void | Promise<void>;
       onStderr?: (chunk: string) => void | Promise<void>;
       signal?: AbortSignal;
@@ -709,12 +958,27 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
       // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
       const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
-      let terminating = false;
+      let settled = false;
+      let drainTimer: ReturnType<typeof setTimeout> | undefined;
+      let completionPoll: ReturnType<typeof setInterval> | undefined;
+      let pollInFlight = false;
+      const cleanup = (): void => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        if (completionPoll !== undefined) clearInterval(completionPoll);
+        if (drainTimer !== undefined) clearTimeout(drainTimer);
+        opts.signal?.removeEventListener("abort", onAbort);
+      };
       const retireAndReject = (error: Error): void => {
-        if (terminating) return;
-        terminating = true;
+        if (settled) return;
+        settled = true;
+        cleanup();
         stream.destroy();
-        void this.stop().then(() => reject(error), reject);
+        const retirement = opts.timeoutRetirement === "stop"
+          ? this.container?.stop({ t: 5 }).catch((stopError) => {
+              if (!benignStopError(stopError)) throw stopError;
+            }) ?? Promise.resolve()
+          : this.stop();
+        void retirement.then(() => reject(error), reject);
       };
       const timeoutMs = limit.timeoutMs;
       const timeoutId = timeoutMs === undefined
@@ -733,30 +997,43 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       if (opts.signal?.aborted) onAbort();
 
-      stream.on("end", async () => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        opts.signal?.removeEventListener("abort", onAbort);
-        if (terminating) return;
-        const stdout = demuxer.stdout();
-        const stderr = demuxer.stderr();
-
+      const finish = async (known?: Awaited<ReturnType<typeof exec.inspect>>): Promise<void> => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        stream.destroy();
         try {
           await callbackChain;
-          const inspection = await exec.inspect();
+          const inspection = known ?? await exec.inspect();
           resolve({
-            stdout,
-            stderr,
+            stdout: demuxer.stdout(),
+            stderr: demuxer.stderr(),
             exitCode: inspection.ExitCode ?? 0,
           });
         } catch (error) {
           reject(error);
         }
-      });
+      };
+
+      // rootless Docker 偶尔在 exec 已退出且 ExecIDs 已清空后仍不关闭 hijacked HTTP 流。
+      // 不能只等 `end`：同时以 daemon 的 exec inspect 为完成事实，留 100ms drain 尾帧后收口。
+      completionPoll = setInterval(() => {
+        if (settled || pollInFlight || drainTimer !== undefined) return;
+        pollInFlight = true;
+        void exec.inspect().then((inspection) => {
+          if (!settled && inspection.Running === false && drainTimer === undefined) {
+            drainTimer = setTimeout(() => { void finish(inspection); }, 100);
+          }
+        }).catch(() => undefined).finally(() => { pollInFlight = false; });
+      }, 250);
+      completionPoll.unref();
+
+      stream.on("end", () => { void finish(); });
 
       stream.on("error", (error: Error) => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-        opts.signal?.removeEventListener("abort", onAbort);
-        if (terminating) return;
+        if (settled) return;
+        settled = true;
+        cleanup();
         reject(error);
       });
     });
@@ -840,6 +1117,18 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
     await this.runCommandAsRoot("mkdir", ["-p", targetPath]);
 
+    // Docker 对 ReadonlyRootfs 容器会无条件拒绝 putArchive，即便目标实际位于可写 tmpfs。
+    // 这类 sandbox 逐文件走 exec stdin；路径仍由 resolveSandboxPath 收敛在受管目录内。
+    if (this.resources.readOnlyRootfs === true) {
+      for (const file of files) {
+        const destination = resolveSandboxPath(targetPath, file.path);
+        await this.runCommandAsRoot("mkdir", ["-p", dirname(destination)]);
+        await this.writeBytesViaExec(destination, Buffer.from(file.content));
+      }
+      await this.chownToSandboxUser(targetPath);
+      return;
+    }
+
     // putArchive 以 root 身份解包到目标目录。
     await this.container.putArchive(pack, { path: targetPath });
 
@@ -875,8 +1164,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const localDir = resolveLocalPath(undefined, targetDir);
     const absTargetDir = resolveSandboxPath(this.workdir, sourceDir);
-    const stream = await (this.container as Docker.Container).getArchive({ path: absTargetDir });
-    const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
+    const tarBuf = await this.readArchiveBytes(absTargetDir);
     const files = await extractFilesFromTar(tarBuf);
     const ignore = new Set(opts.ignore ?? []);
 
@@ -897,9 +1185,28 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    */
   async readBytes(path: string): Promise<Uint8Array> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
-    const stream = await (this.container as Docker.Container).getArchive({ path: resolveSandboxPath(this.workdir, path) });
-    const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
+    const tarBuf = await this.readArchiveBytes(resolveSandboxPath(this.workdir, path));
     return extractFileFromTar(tarBuf);
+  }
+
+  /**
+   * Docker getArchive 对 ReadonlyRootfs 容器中的 tmpfs 会错误返回 404，即使 exec 能看到文件。
+   * readonly 模式改由容器内 tar，再把二进制归档编码成 ASCII 经 exec 流取回。
+   */
+  private async readArchiveBytes(absPath: string): Promise<Buffer> {
+    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    if (this.resources.readOnlyRootfs !== true) {
+      const stream = await (this.container as Docker.Container).getArchive({ path: absPath });
+      return readableToBuffer(stream as NodeJS.ReadableStream);
+    }
+    const result = await this.runShell(
+      `tar -C ${shellQuote(dirname(absPath))} -cf - -- ${shellQuote(basename(absPath))} | base64`,
+      { user: ROOT_USER },
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(`failed to archive ${absPath} inside read-only Docker sandbox: ${result.stderr.trim()}`);
+    }
+    return Buffer.from(result.stdout.replace(/\s+/g, ""), "base64");
   }
 
   /**
@@ -915,10 +1222,69 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   async writeBytes(destPath: string, content: Uint8Array): Promise<void> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const absPath = resolveSandboxPath(this.workdir, destPath);
-    const pack = packFilesToTar([{ name: basename(absPath), content: Buffer.from(content) }]);
     await this.runCommandAsRoot("mkdir", ["-p", dirname(absPath)]);
+    if (this.resources.readOnlyRootfs === true) {
+      await this.writeBytesViaExec(absPath, Buffer.from(content));
+      await this.chownToSandboxUser(absPath);
+      return;
+    }
+    const pack = packFilesToTar([{ name: basename(absPath), content: Buffer.from(content) }]);
     await (this.container as Docker.Container).putArchive(pack, { path: dirname(absPath) });
     await this.chownToSandboxUser(absPath);
+  }
+
+  /** readonly rootfs 下向可写 tmpfs 投递字节；Docker exec stdin 不触发 putArchive 的 blanket 拒绝。 */
+  private async writeBytesViaExec(absPath: string, content: Buffer): Promise<void> {
+    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    const exec = await this.container.exec({
+      Cmd: ["sh", "-c", 'cat > "$1"', "niceeval-write", absPath],
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      User: ROOT_USER,
+    });
+    const stream = await exec.start({ hijack: true, stdin: true });
+    const inspection = await new Promise<Awaited<ReturnType<typeof exec.inspect>>>((resolve, reject) => {
+      let settled = false;
+      let pollInFlight = false;
+      const cleanup = (): void => {
+        clearInterval(poll);
+        clearTimeout(timeout);
+      };
+      const finish = (value: Awaited<ReturnType<typeof exec.inspect>>): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        stream.destroy();
+        resolve(value);
+      };
+      const inspectAndFinish = (): void => {
+        if (settled || pollInFlight) return;
+        pollInFlight = true;
+        void exec.inspect().then((value) => {
+          if (value.Running === false) finish(value);
+        }).catch(reject).finally(() => { pollInFlight = false; });
+      };
+      const poll = setInterval(inspectAndFinish, 100);
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        stream.destroy();
+        reject(new Error(`timed out writing ${absPath} inside read-only Docker sandbox`));
+      }, 30_000);
+      stream.on("error", (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      });
+      stream.on("end", inspectAndFinish);
+      stream.end(content);
+    });
+    if ((inspection.ExitCode ?? 0) !== 0) {
+      throw new Error(`failed to write ${absPath} inside read-only Docker sandbox`);
+    }
   }
 
   async downloadFile(sourcePath: string, target: string | URL): Promise<void> {
@@ -956,9 +1322,28 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       }
     }
     if (removed && this.container === container) this.container = null;
+    if (removed && this.network !== null) {
+      const network = this.network;
+      try {
+        await network.remove();
+        if (this.network === network) this.network = null;
+      } catch (error) {
+        if (dockerStatusCode(error) === 404) {
+          if (this.network === network) this.network = null;
+        } else {
+          cleanupErrors.push(error);
+        }
+      }
+    }
     if (cleanupErrors.length > 0) {
       throw new AggregateError(cleanupErrors, `failed to destroy Docker sandbox ${this.sandboxId}`);
     }
+    await this.afterStop?.();
+  }
+
+  /** Watchdog commit records container + exclusive network as one lifecycle unit. */
+  get managedNetworkId(): string | undefined {
+    return this.network?.id;
   }
 
   /**
