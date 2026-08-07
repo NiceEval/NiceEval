@@ -80,8 +80,9 @@
 [ ] T4 迁移 CLI 确定性 pilot（depends on T1.6, T2.5；最终 gate depends on T3.4）
 ├─ [ ] T4.1 把 e2e/cli/e2e.json 改为 pr lane 的正式 manifest
 │      owner: e2e/cli/e2e.json
-├─ [ ] T4.2 用签入确定性 Agent/backend 替换真实模型与 secret
-│      owner: e2e/cli/agents/**, e2e/cli/src/**, e2e/cli/niceeval.config.ts
+├─ [x] T4.2 用签入确定性 Agent/backend 替换真实模型与 secret
+│      owner: e2e/cli/agents/**, e2e/cli/src/**, e2e/cli/experiments/**,
+│             e2e/cli/evals/**, e2e/cli/{niceeval.config.ts,e2e.json,package.json,pnpm-lock.yaml,scripts/e2e.ts}
 ├─ [ ] T4.3 改成原生 Vitest 文件并使用 @niceeval/testkit
 │      owner: e2e/cli/test/**, e2e/cli/package.json, e2e/cli/vitest.config.ts
 ├─ [ ] T4.4 只保留一个垂直命题
