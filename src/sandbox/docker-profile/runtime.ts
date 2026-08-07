@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { lstat, readFile, readdir, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { dirname, join, parse } from "node:path";
-import Docker from "dockerode";
 import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEntry } from "./registry.ts";
 import type { DockerExecutionProfileV1 } from "./schema.ts";
 
@@ -132,6 +131,9 @@ async function attestEntry(entry: ResolvedDockerProfileEntry): Promise<DockerPro
       challenge.backendMachineIdentity !== profile.backend.machineIdentity) {
     throw new Error(`Docker profile ${entry.alias} control attestation does not match its descriptor`);
   }
+  // dockerode 是 optional peer；只有用户实际使用 Docker profile 时才加载。
+  // 保持这里为热路径动态 import，避免不使用 Docker 的最小安装仅因 CLI 启动就崩溃。
+  const { default: Docker } = await import("dockerode");
   const docker = new Docker({ socketPath: profile.transport.dockerSocket.path });
   const info = await docker.info();
   if (!rootlessSecurityOptions(info)) throw new Error(`Docker profile ${entry.alias} daemon is not rootless`);

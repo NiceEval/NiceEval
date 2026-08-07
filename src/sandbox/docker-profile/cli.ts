@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import Docker from "dockerode";
+import type Docker from "dockerode";
 import {
   acquireDockerProfileReservation,
   attestDockerProfile,
@@ -58,7 +58,9 @@ async function smokeProfile(alias: string): Promise<Check[]> {
     "niceeval.provision-token": reservation.provisionToken,
     "niceeval.attempt-id": "doctor-smoke",
   };
-  const docker = new Docker({ socketPath: binding.dockerSocketPath });
+  // doctor 的非 smoke 路径也不应要求安装 optional dockerode peer。
+  const { default: DockerClient } = await import("dockerode");
+  const docker = new DockerClient({ socketPath: binding.dockerSocketPath });
   let container: Docker.Container | undefined;
   let network: Docker.Network | undefined;
   try {
