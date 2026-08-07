@@ -4,8 +4,9 @@
   "areas": ["adapter"],
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
-  "command": ["pnpm", "e2e"],
+  "command": ["pnpm", "exec", "vitest", "run"],
   "timeoutMinutes": 15,
+  "harness": { "testkit": true },
   "secrets": [
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
