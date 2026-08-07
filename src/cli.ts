@@ -78,10 +78,9 @@ import {
   ViewInputError,
 } from "./view/index.ts";
 // load.ts 本身没有 JSX,但它的 ReportDefinition/ReportLoadError 要和 view 报告槽实际装载
-// --report 用的那份(dist/report/**,见 tsconfig.report-build.json)是同一个模块实例——
-// `unique symbol` 品牌与 class 的 instanceof 都按声明处的模块身份判定,raw src 和编译产物
-// 是两份不同源码位置,即使运行时同名同形,TS 类型与 instanceof 都不认。
-import { ReportLoadError } from "../dist/report/runtime/load.js";
+// --report 与 CLI 同属一个 canonical runtime graph。`unique symbol` 品牌与 class 的
+// instanceof 必须从同一份模块实例读取，不能再混用源码与另一份预编译图。
+import { ReportLoadError } from "./report/runtime/load.ts";
 import { runShow } from "./show/index.ts";
 import { setConfiguredLocale, t } from "./i18n/index.ts";
 import type { MessageKey } from "./i18n/zh-CN.ts";
@@ -2011,7 +2010,10 @@ async function main(): Promise<void> {
 // 解析与格式化)时不能让 main() 运行——单元层不起 CLI 进程,进程行为归 E2E。入口判断基于
 // argv,不读环境变量:src/ 的环境变量白名单守护不允许新增测试专用变量
 // (见 test/unit/config-env-boundary.test.ts),而 vitest 的 argv[1] 永远不会是 bin/niceeval.js。
-if (process.argv[1]?.endsWith(`${sep}bin${sep}niceeval.js`)) {
+if (
+  process.argv[1]?.endsWith(`${sep}bin${sep}niceeval.js`) ||
+  process.argv[1]?.endsWith(`${sep}.bin${sep}niceeval`)
+) {
   main().catch(async (e) => {
     process.stderr.write(
       e instanceof SandboxLayerLinkError

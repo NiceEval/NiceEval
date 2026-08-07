@@ -1,33 +1,26 @@
 // 报告装载与逐页渲染的中性宿主 facade:show 与 view 共用(docs/feature/reports/architecture.md
 // 「共享内核与两个宿主的代码边界」「单一 report runtime 身份」)。ReportDefinition / ReportPage /
 // ReportMeta 的类型体系,以及装载规范化、resolve、text/web render 全部住在 niceeval/report 的
-// 构建单元(src/report/**,经 `pnpm run build:report` 编译进 dist/report/**);这里只做两个
-// 宿主都需要、但只属于宿主编排的一件事——文件 vs 内建报告的装载分流、逐页渲染——不重复声明
-// 任何报告类型或规范化逻辑。终端专属的可复制命令拼装(`showCommand`)不在这里,只有 show 需要,
-// 住在 src/show/command.ts。
-//
-// 本文件物理上住在 src/report/runtime/(host facade 的架构归属),但**不**参与
-// tsconfig.report-build.json 的编译单元(见该文件的 exclude 注释):它是调用方经 tsx 直接执行的
-// raw TypeScript,内部一律动态 import 兄弟 dist/report/** 产物——不是所有 show / view 命令都
-// 渲染报告,静态 import 会让不需要报告的命令也背上 react / react-dom 依赖(web.ts 静态 import
-// react-dom/server);同一进程也不能混用 raw src/report/** 与 dist/report/** 的同一状态模块,
-// 所以值和类型都从同一批 dist 模块拿,不从本文件的兄弟源码拿。
+// 本文件与报告定义、show、view 一起编进同一个 canonical runtime graph。它只做两个宿主都需要、
+// 但属于宿主编排的一件事——文件 vs 内建报告的装载分流、逐页渲染——不重复声明任何报告类型或
+// 规范化逻辑。终端专属的可复制命令拼装(`showCommand`)不在这里,只有 show 需要,住在
+// src/show/command.ts。动态装载仍保留可选 web 依赖的按需边界，但绝不跳入第二份 report 图。
 
 import type { Record, Sample } from "../../record/index.ts";
 import { resolveLocator, loadAttemptEvidence } from "../../record/index.ts";
 import type { LocalizedText } from "../../types.ts";
-import type { PageContext } from "../../../dist/report/definition/tree.js";
+import type { PageContext } from "../definition/tree.ts";
 import type {
   PageLoadContext,
   ReportDefinition,
   ReportMeta,
   ReportPage,
   ReportTarget,
-} from "../../../dist/report/definition/report.js";
-import type { ThemeDefinition } from "../../../dist/report/theme.js";
-import type { DimensionPins } from "../../../dist/report/presentation.js";
+} from "../definition/report.ts";
+import type { ThemeDefinition } from "../theme.ts";
+import type { DimensionPins } from "../presentation.ts";
 
-export type { PageContext } from "../../../dist/report/definition/tree.js";
+export type { PageContext } from "../definition/tree.ts";
 export type {
   HeadTag,
   ReportAsset,
@@ -39,9 +32,9 @@ export type {
   PageDefinition,
   PageParams,
   PageLoadContext,
-} from "../../../dist/report/definition/report.js";
-export type { ThemeDefinition } from "../../../dist/report/theme.js";
-export type { ResolvedPage } from "../../../dist/report/runtime/resolved-page.js";
+} from "../definition/report.ts";
+export type { ThemeDefinition } from "../theme.ts";
+export type { ResolvedPage } from "./resolved-page.ts";
 
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
@@ -49,10 +42,10 @@ export class HostReportError extends Error {}
 /**
  * 项目 config 是动态模块；它的 `report` 字段不能因为 `loadConfigFile()` 的静态返回注解而
  * 被当成已经验证过的 ReportDefinition。这里是 source → dist 的唯一收口点：只把同一份
- * dist factory 打过品牌的值交给宿主后续长期持有的 report 槽。
+ * 同一 canonical factory 打过品牌的值交给宿主后续长期持有的 report 槽。
  */
 async function normalizeConfiguredReport(value: unknown): Promise<ReportDefinition> {
-  const { isReportDefinition } = await import("../../../dist/report/definition/report.js");
+  const { isReportDefinition } = await import("../definition/report.ts");
   if (!isReportDefinition(value)) {
     throw new HostReportError(
       'The project default report (the "report" field in niceeval.config.ts) must be the result of defineReport(...) from "niceeval/report".',
@@ -61,9 +54,9 @@ async function normalizeConfiguredReport(value: unknown): Promise<ReportDefiniti
   return value;
 }
 
-/** 与 report 同理：动态 config 值只有通过 dist factory 品牌后才成为 ThemeDefinition。 */
+/** 与 report 同理：动态 config 值只有通过 canonical factory 品牌后才成为 ThemeDefinition。 */
 async function normalizeConfiguredTheme(value: unknown): Promise<ThemeDefinition> {
-  const { isThemeDefinition } = await import("../../../dist/report/theme.js");
+  const { isThemeDefinition } = await import("../theme.ts");
   if (!isThemeDefinition(value)) {
     throw new HostReportError(
       'The project default theme (the "theme" field in niceeval.config.ts) must be the result of defineTheme(...) from "niceeval/report".',
@@ -86,13 +79,13 @@ export async function loadHostReport(
   options?: { freshImport?: boolean },
 ): Promise<ReportDefinition> {
   if (reportPath !== undefined) {
-    const { isExplicitModulePath, loadBuiltInReport, loadReportFile } = await import("../../../dist/report/runtime/load.js");
+    const { isExplicitModulePath, loadBuiltInReport, loadReportFile } = await import("./load.ts");
     return (isExplicitModulePath(reportPath) ? loadReportFile(cwd, reportPath, options) : loadBuiltInReport(reportPath)) as Promise<ReportDefinition>;
   }
   if (configuredReport !== undefined) {
     return normalizeConfiguredReport(configuredReport);
   }
-  const { standard } = await import("../../../dist/report/built-in/index.js");
+  const { standard } = await import("../built-in/index.tsx");
   return standard as ReportDefinition;
 }
 
@@ -112,7 +105,7 @@ export function describeReportSource(reportPath: string | undefined, configuredR
  * 没声明时仍保留官方 AttemptDetails，避免组合组件的 locator 因换了首页而退化成不可点击文本。
  */
 export async function loadDefaultHostAttemptPage(): Promise<ReportPage> {
-  const { standard } = await import("../../../dist/report/built-in/index.js");
+  const { standard } = await import("../built-in/index.tsx");
   const page = standard.pages.find((candidate) => candidate.id === "attempt");
   if (page === undefined) throw new Error('The built-in report is missing its "attempt" page.');
   return page;
@@ -123,13 +116,13 @@ export async function loadDefaultHostAttemptPage(): Promise<ReportPage> {
  * 其余是内建名。view 的 watch 闭集按同一条判别决定盯不盯文件,不另写一套字符串规则。
  */
 export async function isHostModulePath(value: string): Promise<boolean> {
-  const { isExplicitModulePath } = await import("../../../dist/report/runtime/load.js");
+  const { isExplicitModulePath } = await import("./load.ts");
   return isExplicitModulePath(value);
 }
 
 /** ctx.report 的构建(不携带当前页——那是 HostRenderContext.page 的事)。 */
 export async function buildHostReportMeta(definition: ReportDefinition, scope: Sample): Promise<ReportMeta> {
-  const { buildReportMeta } = await import("../../../dist/report/definition/report.js");
+  const { buildReportMeta } = await import("../definition/report.ts");
   return buildReportMeta(definition, scope);
 }
 
@@ -140,7 +133,7 @@ export async function resolveHostTheme(
   configTheme: unknown,
   options?: { freshImport?: boolean },
 ): Promise<ThemeDefinition> {
-  const { isExplicitModulePath, loadBuiltInTheme, loadThemeFile } = await import("../../../dist/report/runtime/load.js");
+  const { isExplicitModulePath, loadBuiltInTheme, loadThemeFile } = await import("./load.ts");
   if (cliTheme !== undefined) return (isExplicitModulePath(cliTheme) ? loadThemeFile(cwd, cliTheme, options) : loadBuiltInTheme(cliTheme)) as Promise<ThemeDefinition>;
   if (reportTheme !== undefined) return reportTheme;
   if (configTheme !== undefined) return normalizeConfiguredTheme(configTheme);
@@ -148,7 +141,7 @@ export async function resolveHostTheme(
 }
 
 export async function hostThemeStylesheet(theme: ThemeDefinition): Promise<string> {
-  const { themeStylesheet } = await import("../../../dist/report/theme.js");
+  const { themeStylesheet } = await import("../theme.ts");
   return themeStylesheet(theme);
 }
 
@@ -214,24 +207,20 @@ export async function renderHostPageText(
   ctx: HostRenderContext,
   options: HostTextRenderOptions,
 ): Promise<string> {
-  const { renderReportTreeToText } = await import("../../../dist/report/runtime/text.js");
-  const { resolveDefinitionPage } = await import("../../../dist/report/runtime/page-render.js");
+  const { renderReportTreeToText } = await import("./text.ts");
+  const { resolveDefinitionPage } = await import("./page-render.ts");
   const resolved = await resolveDefinitionPage(page, ctx);
-  const { renderResolvedPageText } = await import("../../../dist/report/runtime/resolved-page.js");
+  const { renderResolvedPageText } = await import("./resolved-page.ts");
   return renderResolvedPageText(resolved, options);
 }
 
 /**
  * 宿主专属懒加载来源的唯一装配点:按 locator 装配 AttemptEvidence(经 `loadAttemptEvidence`
  * 管线),供 `renderHostTarget` 的 `page.load` 调用。**不**委托给
- * `dist/report/runtime/page-render.js` 的同名 helper——那份编译产物按 tsconfig
- * report-build.json 的编译单元静态 import 了它自己的 `dist/record/open.js`,与本文件(raw
- * src,经 tsx 直接执行)以及 show/view 用来构造 `results` 的 `../../record/index.ts` 是两个
- * 完全不同的模块实例:`resolveLocator` 的 locator 索引挂在 `openRecord()` 内部按 `results`
- * 对象身份建的 WeakMap 上,只有构造 `results` 的那份模块实例的索引里才查得到它,换一份编译产物
- * 的 `resolveLocator` 一律查不到、报 LocatorNotFoundError(真 bug,由 `standardExperimentPage`
- * 落地后的真机冒烟——`show @<locator> --report standard` 暴露)。这里直接用与 show/view 同一份
- * raw src record 模块实现 `PageLoadContext`,保证索引同源。
+ * `page-render.ts` 的同名 helper：它和 show/view 都在同一份 canonical record 模块图中运行。
+ * `resolveLocator` 的 locator 索引按 `results` 对象身份建 WeakMap，必须由构造 `results` 的同一
+ * 模块实例读取；共享图保证 `show @<locator> --report standard` 不会因双份 runtime 而误报
+ * LocatorNotFoundError。这里直接用这份 record 模块实现 `PageLoadContext`，保证索引同源。
  */
 export async function createHostPageLoadContext(results: Record): Promise<PageLoadContext> {
   return {
@@ -261,9 +250,9 @@ export async function renderHostTarget(
   host: HostTargetContext,
   options: HostTextRenderOptions,
 ): Promise<string> {
-  const { renderTarget } = await import("../../../dist/report/runtime/page-render.js");
+  const { renderTarget } = await import("./page-render.ts");
   const resolved = await renderTarget(definition, target, base, ctx, host);
-  const { renderResolvedPageText } = await import("../../../dist/report/runtime/resolved-page.js");
+  const { renderResolvedPageText } = await import("./resolved-page.ts");
   return renderResolvedPageText(resolved, options);
 }
 
@@ -271,18 +260,18 @@ export async function renderHostTarget(
 export async function resolveHostPage(
   page: ReportPage,
   ctx: HostRenderContext,
-  options?: { renderCache?: Map<string, Promise<import("../../../dist/report/definition/tree.js").ReportNode>> },
-): Promise<import("../../../dist/report/runtime/resolved-page.js").ResolvedPage> {
-  const { resolveDefinitionPage } = await import("../../../dist/report/runtime/page-render.js");
+  options?: { renderCache?: Map<string, Promise<import("../definition/tree.ts").ReportNode>> },
+): Promise<import("./resolved-page.ts").ResolvedPage> {
+  const { resolveDefinitionPage } = await import("./page-render.ts");
   return resolveDefinitionPage(page, ctx, options);
 }
 
 /** 从 ResolvedPage 同步渲染 web 面(静态 HTML);动态 import dist 产物,render 本身无 await。 */
 export async function renderHostPageFromResolved(
-  resolved: import("../../../dist/report/runtime/resolved-page.js").ResolvedPage,
+  resolved: import("./resolved-page.ts").ResolvedPage,
   options: { locale: string; href?: (target: ReportTarget) => string | undefined },
 ): Promise<string> {
-  const { renderResolvedPageWeb } = await import("../../../dist/report/runtime/resolved-page.js");
+  const { renderResolvedPageWeb } = await import("./resolved-page.ts");
   return renderResolvedPageWeb(resolved, options);
 }
 
@@ -292,11 +281,11 @@ export async function renderHostPageFromResolved(
  * 条件分支里没有出现的 renderer 也不应进入产物。
  */
 export async function materializeHostPageRendererAssets(
-  resolved: import("../../../dist/report/runtime/resolved-page.js").ResolvedPage,
-): Promise<import("../../../dist/report/extension/types.js").PageRendererAssets> {
+  resolved: import("./resolved-page.ts").ResolvedPage,
+): Promise<import("../extension/types.ts").PageRendererAssets> {
   const { readFile } = await import("node:fs/promises");
   const { collectRendererAssetDeclarations, materializeRendererAssets } =
-    await import("../../../dist/report/extension/index.js");
+    await import("../extension/index.ts");
   const declarations = collectRendererAssetDeclarations(resolved.tree);
   return materializeRendererAssets(declarations, readFile);
 }
