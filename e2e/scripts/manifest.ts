@@ -3,8 +3,11 @@
 // Contract: docs/engineering/testing/e2e/scenario-repos.md「Repo Manifest」.
 // This is the stable contract between the root orchestrator and every e2e
 // repo: schemaVersion/id/areas/lanes/executor/command/timeoutMinutes/secrets/
-// requires/paths/artifacts. Unknown fields are rejected, never ignored, and
-// there is no legacy `group` compatibility.
+// requires/harness/paths/artifacts. Unknown fields are rejected, never
+// ignored, and there is no legacy `group` compatibility. `harness.testkit:
+// true` is the only true source of Testkit consumption intent — scenario
+// source package.json/lockfiles never declare @niceeval/testkit
+// (docs/engineering/testing/testkit.md「构建与采用门禁」6).
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -39,6 +42,11 @@ export interface RepoRequires {
   browsers?: readonly Browser[];
 }
 
+export interface RepoHarness {
+  /** Declares that the repo consumes @niceeval/testkit; injection intent. */
+  testkit?: boolean;
+}
+
 export interface E2ERepoManifest {
   schemaVersion: 1;
   id: string;
@@ -49,6 +57,7 @@ export interface E2ERepoManifest {
   timeoutMinutes: number;
   secrets: readonly string[];
   requires?: RepoRequires;
+  harness?: RepoHarness;
   paths: readonly string[];
   artifacts: readonly string[];
 }
@@ -67,6 +76,7 @@ const TOP_LEVEL_FIELDS = new Set([
   "timeoutMinutes",
   "secrets",
   "requires",
+  "harness",
   "paths",
   "artifacts",
 ]);
@@ -79,6 +89,7 @@ const REQUIRES_FIELDS = new Set([
   "runtimes",
   "browsers",
 ]);
+const HARNESS_FIELDS = new Set(["testkit"]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -261,6 +272,24 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
     }
   }
 
+  let harness: RepoHarness | undefined;
+  if (raw.harness !== undefined) {
+    if (!isPlainObject(raw.harness)) {
+      errors.push(`${source}: "harness" must be an object when present, got ${JSON.stringify(raw.harness)}`);
+    } else {
+      const h = raw.harness;
+      errors.push(...unknownFields(HARNESS_FIELDS, h, source));
+      harness = {};
+      if (h.testkit !== undefined) {
+        if (typeof h.testkit !== "boolean") {
+          errors.push(`${source}: "harness.testkit" must be a boolean, got ${JSON.stringify(h.testkit)}`);
+        } else {
+          harness.testkit = h.testkit;
+        }
+      }
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   const ex = raw.executor as Record<string, unknown>;
@@ -279,6 +308,7 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
       timeoutMinutes: raw.timeoutMinutes as number,
       secrets: raw.secrets as string[],
       requires,
+      ...(harness === undefined ? {} : { harness }),
       paths: raw.paths as string[],
       artifacts: raw.artifacts as string[],
     },

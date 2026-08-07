@@ -1,9 +1,11 @@
 // Structured per-stage receipts for one isolated repo run.
-// Stages: install → injection → test → collect → cleanup.
-// Command failures retain stdout/stderr/timeout; receipts never decide a
-// product verdict from .niceeval contents.
+// Stages: prepare → install → injection → test → collect → cleanup.
+// prepare covers the harness-side pre-flight guards (source cleanliness,
+// declared-but-not-injected, undeclared-but-imported) that must fail before
+// any test runs. Command failures retain stdout/stderr/timeout; receipts
+// never decide a product verdict from .niceeval contents.
 
-export type StageName = "install" | "injection" | "test" | "collect" | "cleanup";
+export type StageName = "prepare" | "install" | "injection" | "test" | "collect" | "cleanup";
 
 export type Category = "pass" | "regression" | "infra";
 
@@ -38,6 +40,44 @@ export interface RepoReceipt {
   exitCode: number | null;
   category: Category;
   detail: string;
+  /** The candidate tarball identity retained for this run, when materialized. */
+  candidate: CandidateReceipt;
+  /** Present when a verified Testkit tgz was injected into this repo. */
+  testkit?: TestkitReceipt;
+}
+
+/** Candidate identity; digest/SRI are authoritative, never its file name. */
+export interface CandidateReceipt {
+  sha256: string;
+  integrity: string;
+  /** Content-addressed path relative to artifactRoot; absent if persistence failed. */
+  artifactPath?: string;
+}
+
+/**
+ * Testkit identity + durability record
+ * (docs/engineering/testing/testkit.md「构建与采用门禁」7). version is
+ * diagnostic only — digest and SRI are the identity. artifactPath is relative
+ * to the durable artifact root; exactReplay is only true while that tgz still
+ * exists.
+ */
+export interface TestkitReceipt {
+  /** Package version, diagnostic only — never identity. */
+  version: string;
+  /** Full sha256 hex of the injected tarball bytes. */
+  sha256: string;
+  /** SRI of the tarball bytes: "sha512-<base64>". */
+  integrity: string;
+  /** Actual installed path inside the (now removed) isolated copy. */
+  resolvedPath: string;
+  /** Content-addressed tgz path relative to the durable artifact root. */
+  artifactPath: string;
+  /** Content-addressed NiceEval candidate path relative to the durable artifact root. */
+  candidateArtifactPath: string;
+  /** Command that reproduces this exact repo run with the same bytes. */
+  reproduce: string;
+  /** True only while both durable candidate and Testkit tgz artifacts remain. */
+  exactReplay: boolean;
 }
 
 export function commandFailedCapture(capture: CommandCapture): boolean {
@@ -62,6 +102,8 @@ function stageFailureDetail(stage: StageReceipt, fallback: string): string {
 /**
  * Classify a completed receipt (all stages that ran, including cleanup).
  *
+ * - prepare failure (source violation / declared-but-not-injected /
+ *   undeclared-but-imported) → infra, before any install or test
  * - install / injection failure → infra
  * - test timeout / non-zero → regression
  * - test pass + collect or cleanup failure → infra (cannot pass)
@@ -72,6 +114,7 @@ export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detai
   detail: string;
 } {
   const byStage = new Map(receipt.stages.map((s) => [s.stage, s] as const));
+  const prepare = byStage.get("prepare");
   const install = byStage.get("install");
   const injection = byStage.get("injection");
   const test = byStage.get("test");
@@ -81,7 +124,10 @@ export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detai
   let category: Category;
   let detail: string;
 
-  if (install && !install.ok) {
+  if (prepare && !prepare.ok) {
+    category = "infra";
+    detail = stageFailureDetail(prepare, "prepare failed");
+  } else if (install && !install.ok) {
     category = "infra";
     detail = stageFailureDetail(install, "install failed");
   } else if (injection && !injection.ok) {

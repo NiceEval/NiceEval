@@ -71,13 +71,38 @@ describe("E2E plan selection", () => {
     ]);
   });
 
-  it("候选源码、共享 runner 或 workflow 变化时 fail-open 跑完整 lane", () => {
-    for (const path of ["src/cli.ts", "e2e/scripts/run.ts", ".github/workflows/e2e.yml"]) {
+  it("候选源码、共享 runner、Testkit、根 workspace/lock 或 workflow 变化时 fail-open 跑完整 lane", () => {
+    for (const path of [
+      "src/cli.ts",
+      "e2e/scripts/run.ts",
+      "packages/testkit/src/index.ts",
+      "pnpm-workspace.yaml",
+      "pnpm-lock.yaml",
+      ".github/workflows/e2e.yml",
+    ]) {
       expect(selectRepos(repos, { lane: "pr", diffPaths: [path] }).map((repo) => repo.manifest.id)).toEqual([
         "cli",
         "report",
         "always",
       ]);
+    }
+  });
+
+  it("Testkit/workspace/注入契约变化时动态选中全部 harness.testkit 消费者", () => {
+    const consumers = [
+      repo("tk-consumer-a", { areas: ["runner"], lanes: ["pr"], paths: ["e2e/tk-a/**"], harness: { testkit: true } }),
+      repo("tk-consumer-b", { areas: ["report"], lanes: ["pr"], paths: ["e2e/tk-b/**"], harness: { testkit: true } }),
+    ];
+    const set = [...repos, ...consumers];
+    // 只有无关文件变化时,path 过滤仍然收窄,与声明无关的消费者不进场。
+    expect(
+      selectRepos(set, { lane: "pr", diffPaths: ["e2e/cli/cmd.ts"] }).map((r) => r.manifest.id),
+    ).toEqual(["cli", "always"]);
+    // 根 workspace、Testkit 源码或注入契约变化时,path 优化整体失效,全部消费者被选中。
+    for (const path of ["pnpm-workspace.yaml", "packages/testkit/src/index.ts", "e2e/scripts/injection.ts"]) {
+      const ids = selectRepos(set, { lane: "pr", diffPaths: [path] }).map((r) => r.manifest.id);
+      expect(ids).toContain("tk-consumer-a");
+      expect(ids).toContain("tk-consumer-b");
     }
   });
 

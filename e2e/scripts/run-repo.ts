@@ -2,15 +2,35 @@
 // durable artifacts+receipt under independent artifactRoot, unconditional
 // copy cleanup. Never writes the e2e source tree. Never parses .niceeval
 // for verdict.
+//
+// Harness pre-flight (prepare stage): scenario source package.json/lockfile
+// must not contain @niceeval/testkit, `workspace:` or `file:` references; a
+// repo declaring harness.testkit: true must receive the injected tgz; a repo
+// that does not declare it must not import @niceeval/testkit. All three fail
+// before any install or test. Injection only ever adds the content-addressed
+// tgz as a `file:` devDependency inside the isolated copy; after install the
+// lockfile must hold exactly one Testkit resolution whose SRI matches the
+// injected bytes, and the installed package name/path must verify.
 
 import { spawn } from "node:child_process";
-import { basename, join } from "node:path";
+import { createHash } from "node:crypto";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import type { DiscoveredRepo } from "./discovery.ts";
 import type { CandidateTarball, TestkitTarball } from "./injection.ts";
-import { verifyInjection, verifyTestkitInjection } from "./injection.ts";
+import {
+  verifyInjection,
+  verifyTestkitLockResolution,
+} from "./injection.ts";
+import {
+  checkTestkitSourceClean,
+  injectTestkitTarball,
+  materializeTestkitArtifact,
+  scanForTestkitImports,
+  testkitInstallPath,
+} from "./testkit.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
 import {
@@ -20,7 +40,35 @@ import {
   type CommandCapture,
   type RepoReceipt,
   type StageReceipt,
+  type TestkitReceipt,
 } from "./receipt.ts";
+
+function candidateTarballFileName(sha256: string): string {
+  return `niceeval-candidate-${sha256}.tgz`;
+}
+
+async function materializeCandidateArtifact(
+  artifactRoot: string,
+  candidate: CandidateTarball,
+): Promise<string> {
+  const targetDir = join(artifactRoot, "candidate");
+  const target = join(targetDir, candidateTarballFileName(candidate.sha256));
+  await mkdir(targetDir, { recursive: true });
+  const sha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
+  if (!existsSync(target) || sha256(target) !== candidate.sha256) {
+    await copyFile(candidate.path, target);
+  }
+  if (sha256(target) !== candidate.sha256) {
+    throw new Error(`durable candidate artifact at ${target} does not match sha256:${candidate.sha256}`);
+  }
+  return target;
+}
+
+function isRetainedArtifact(artifactRoot: string, tarballPath: string): boolean {
+  const root = resolve(artifactRoot);
+  const target = resolve(tarballPath);
+  return target.startsWith(`${root}${sep}`) && existsSync(target);
+}
 
 export interface RepoRunResult {
   id: string;
@@ -73,56 +121,51 @@ export async function pointAtCandidateTarball(copyDir: string, tarballPath: stri
 }
 
 /**
- * Point the isolated copy's declared @niceeval/testkit dependency at a local
- * tarball — copy only, never the checked-in repo. A repo that does not
- * declare @niceeval/testkit fails loudly here: silently adding an oracular
- * dependency would change what the repo proves.
- */
-export async function pointAtTestkitTarball(copyDir: string, tarballPath: string): Promise<void> {
-  const pkgPath = join(copyDir, "package.json");
-  const pkg = JSON.parse(await readFile(pkgPath, "utf8")) as Record<string, unknown>;
-  const spec = `file:${tarballPath}`;
-
-  let found = false;
-  for (const field of ["dependencies", "devDependencies"]) {
-    const deps = pkg[field];
-    if (
-      deps &&
-      typeof deps === "object" &&
-      Object.prototype.hasOwnProperty.call(deps, "@niceeval/testkit")
-    ) {
-      (deps as Record<string, string>)["@niceeval/testkit"] = spec;
-      found = true;
-    }
-  }
-  if (!found) {
-    throw new Error(
-      `${copyDir}/package.json declares no "@niceeval/testkit" dependency (checked dependencies and devDependencies) — refusing to inject a local testkit tarball into a repo that does not consume the testkit`,
-    );
-  }
-
-  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-}
-
-/**
- * Verify candidate (and, when explicitly injected, testkit) actually resolved
- * to the tarballs from the isolated copy's own lockfile. Any mismatch is a
- * harness failure: never run an unproven product package, and never silently
- * run a testkit that is not the injected artifact.
+ * Verify candidate (and, for declared consumers, testkit) actually resolved
+ * to the tarballs from the isolated copy's own lockfile and node_modules. Any
+ * mismatch is a harness failure: never run an unproven product package, and
+ * never silently run a testkit that is not the injected artifact.
+ *
+ * Testkit verification covers the full post-install identity set: exactly one
+ * lock resolution whose SRI matches the injected bytes, the entry key's
+ * package name, and the actually installed package's name/path.
  */
 function verifyAllInjections(
   lockfileText: string,
   candidate: CandidateTarball,
   testkit: TestkitTarball | undefined,
+  copyDir: string,
 ): { ok: true; testkitDetail?: string } | { ok: false; reason: string } {
   const candidateVerdict = verifyInjection(lockfileText, candidate.integrity);
   if (!candidateVerdict.ok) return { ok: false, reason: candidateVerdict.reason };
   if (testkit === undefined) return { ok: true };
-  const testkitVerdict = verifyTestkitInjection(lockfileText, testkit.integrity);
-  if (!testkitVerdict.ok) return { ok: false, reason: testkitVerdict.reason };
+
+  const verdict = verifyTestkitLockResolution(lockfileText, testkit.integrity);
+  if (!verdict.ok) return { ok: false, reason: verdict.reason };
+
+  const installedPkgJson = join(testkitInstallPath(copyDir), "package.json");
+  if (!existsSync(installedPkgJson)) {
+    return {
+      ok: false,
+      reason: `installed testkit metadata missing at ${installedPkgJson} — @niceeval/testkit did not actually install`,
+    };
+  }
+  let installedName: unknown;
+  try {
+    installedName = (JSON.parse(readFileSync(installedPkgJson, "utf8")) as { name?: unknown }).name;
+  } catch (err) {
+    return { ok: false, reason: `installed testkit package.json is unreadable: ${(err as Error).message}` };
+  }
+  if (installedName !== "@niceeval/testkit") {
+    return {
+      ok: false,
+      reason: `installed package at ${installedPkgJson} has name ${JSON.stringify(installedName)}, expected "@niceeval/testkit"`,
+    };
+  }
+
   return {
     ok: true,
-    testkitDetail: `testkit tarball (@niceeval/testkit@${testkit.version}, sha256:${testkit.sha256}) integrity matches lockfile`,
+    testkitDetail: `testkit tarball (@niceeval/testkit@${testkit.version}, sha256:${testkit.sha256}) integrity matches lockfile; installed name/path verified at ${testkitInstallPath(copyDir)}`,
   };
 }
 
@@ -206,72 +249,115 @@ export async function runRepo(
   const stages: StageReceipt[] = [];
   let testExitCode: number | null = null;
   let copyCreated = false;
+  let testkitInjected = false;
+  let durableCandidatePath = candidate.path;
+  let durableTestkit: TestkitTarball | undefined;
 
   try {
+    durableCandidatePath = await materializeCandidateArtifact(artifactRoot, candidate);
     if (repo.manifest.executor.kind !== "host") {
       const detail = unsupportedExecutorDetail(repo);
       stages.push({ stage: "install", ok: false, detail });
     } else {
       await copyRepoIsolated(repo.dir, copyDir);
       copyCreated = true;
-      await pointAtCandidateTarball(copyDir, candidate.path);
-      if (testkit !== undefined) {
-        await pointAtTestkitTarball(copyDir, testkit.path);
-      }
 
-      // --- install ---
-      const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
-      let installCapture: CommandCapture;
-      try {
-        installCapture = await runCommand(installCmd, copyDir, process.env, 30 * 60_000);
-      } catch (err) {
-        installCapture = {
-          exitCode: null,
-          signal: null,
-          timedOut: false,
-          stdout: "",
-          stderr: (err as Error).message,
-        };
+      // --- prepare: harness pre-flight guards (fail before any install/test) ---
+      const consumesTestkit = repo.manifest.harness?.testkit === true;
+      const prepareViolations = checkTestkitSourceClean(copyDir);
+      if (consumesTestkit && testkit === undefined) {
+        prepareViolations.push(
+          "harness.testkit: true declared but no testkit tarball was injected (missing --testkit) — declared-but-not-injected must fail before test",
+        );
       }
-      const installOk = installCapture.exitCode === 0 && !installCapture.timedOut;
+      if (!consumesTestkit) {
+        const imports = scanForTestkitImports(copyDir);
+        if (imports.length > 0) {
+          prepareViolations.push(
+            `repo imports @niceeval/testkit without declaring harness.testkit: true (${imports.join(", ")}) — undeclared imports must fail before test`,
+          );
+        }
+      }
+      const prepareOk = prepareViolations.length === 0;
       stages.push({
-        stage: "install",
-        ok: installOk,
-        command: [...installCmd],
-        capture: retainCapture(installCapture, installOk),
-        detail: installOk
-          ? "pnpm install ok"
-          : installCapture.timedOut
-            ? "pnpm install timed out"
-            : `pnpm install failed (exit ${installCapture.exitCode}) in the isolated copy`,
+        stage: "prepare",
+        ok: prepareOk,
+        detail: prepareOk
+          ? consumesTestkit
+            ? "source clean; harness.testkit declared"
+            : "source clean; no testkit declared"
+          : `prepare failed: ${prepareViolations.join("; ")}`,
       });
 
-      if (installOk) {
-        // --- injection (lockfile integrity only; never .niceeval) ---
-        let injectionOk = false;
-        let injectionDetail: string;
-        try {
-          if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
-            injectionOk = false;
-            injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
-          } else {
-            const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
-            const verdict = verifyAllInjections(lockText, candidate, testkit);
-            injectionOk = verdict.ok;
-            injectionDetail = verdict.ok
-              ? testkit === undefined
-                ? "candidate integrity matches lockfile"
-                : `candidate integrity matches lockfile; ${verdict.testkitDetail}`
-              : `injection verification failed: ${verdict.reason}`;
-          }
-        } catch (err) {
-          injectionOk = false;
-          injectionDetail = `could not read isolated copy's pnpm-lock.yaml: ${(err as Error).message}`;
+      if (prepareOk) {
+        await pointAtCandidateTarball(copyDir, durableCandidatePath);
+        if (consumesTestkit) {
+          const durable = await materializeTestkitArtifact(artifactRoot, testkit as TestkitTarball);
+          // Keep the caller's expected SRI for the post-install verification;
+          // only its path changes to the durable byte copy.
+          durableTestkit = { ...(testkit as TestkitTarball), path: durable.path };
+          await injectTestkitTarball(copyDir, durableTestkit);
+          testkitInjected = true;
         }
-        stages.push({ stage: "injection", ok: injectionOk, detail: injectionDetail });
 
-        // Never run an unproven candidate: skip test (and collect) when injection fails.
-        if (injectionOk) {
+        // --- install ---
+        const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
+        let installCapture: CommandCapture;
+        try {
+          installCapture = await runCommand(installCmd, copyDir, process.env, 30 * 60_000);
+        } catch (err) {
+          installCapture = {
+            exitCode: null,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: (err as Error).message,
+          };
+        }
+        const installOk = installCapture.exitCode === 0 && !installCapture.timedOut;
+        stages.push({
+          stage: "install",
+          ok: installOk,
+          command: [...installCmd],
+          capture: retainCapture(installCapture, installOk),
+          detail: installOk
+            ? "pnpm install ok"
+            : installCapture.timedOut
+              ? "pnpm install timed out"
+              : `pnpm install failed (exit ${installCapture.exitCode}) in the isolated copy`,
+        });
+
+        if (installOk) {
+          // --- injection (lockfile integrity + installed identity; never .niceeval) ---
+          let injectionOk = false;
+          let injectionDetail: string;
+          try {
+            if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
+              injectionOk = false;
+              injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
+            } else {
+              const lockText = readFileSync(join(copyDir, "pnpm-lock.yaml"), "utf8");
+              const verdict = verifyAllInjections(
+                lockText,
+                candidate,
+                testkitInjected ? durableTestkit : undefined,
+                copyDir,
+              );
+              injectionOk = verdict.ok;
+              injectionDetail = verdict.ok
+                ? testkitInjected
+                  ? `candidate integrity matches lockfile; ${verdict.testkitDetail}`
+                  : "candidate integrity matches lockfile"
+                : `injection verification failed: ${verdict.reason}`;
+            }
+          } catch (err) {
+            injectionOk = false;
+            injectionDetail = `could not read isolated copy's pnpm-lock.yaml: ${(err as Error).message}`;
+          }
+          stages.push({ stage: "injection", ok: injectionOk, detail: injectionDetail });
+
+          // Never run an unproven candidate: skip test (and collect) when injection fails.
+          if (injectionOk) {
           // --- test ---
           const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
           const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
@@ -326,12 +412,17 @@ export async function runRepo(
               detail: `collect failed: ${(err as Error).message}`,
             });
           }
+          }
         }
       }
     }
   } catch (err) {
     stages.push({
-      stage: stages.some((s) => s.stage === "install") ? "test" : "install",
+      stage: stages.some((s) => s.stage === "injection")
+        ? "injection"
+        : stages.some((s) => s.stage === "install")
+          ? "install"
+          : "prepare",
       ok: false,
       detail: (err as Error).message,
     });
@@ -359,6 +450,20 @@ export async function runRepo(
   // Classify and persist only after cleanup is on the stages list so receipt.json
   // always includes the final cleanup stage under durable artifactDir.
   const classified = classifyFromReceipt({ stages, detail: "" });
+  const candidateRetained = isRetainedArtifact(artifactRoot, durableCandidatePath);
+  const testkitReceipt: TestkitReceipt | undefined =
+    testkitInjected && durableTestkit !== undefined
+      ? {
+          version: durableTestkit.version,
+          sha256: durableTestkit.sha256,
+          integrity: durableTestkit.integrity,
+          resolvedPath: testkitInstallPath(copyDir),
+          artifactPath: relative(artifactRoot, durableTestkit.path),
+          candidateArtifactPath: relative(artifactRoot, durableCandidatePath),
+          reproduce: `pnpm e2e run --candidate ${durableCandidatePath} --testkit ${durableTestkit.path} --repo ${repoId}`,
+          exactReplay: candidateRetained && isRetainedArtifact(artifactRoot, durableTestkit.path),
+        }
+      : undefined;
   const receipt: RepoReceipt = {
     repoId,
     artifactDir,
@@ -367,6 +472,12 @@ export async function runRepo(
     exitCode: testExitCode,
     category: classified.category,
     detail: classified.detail,
+    candidate: {
+      sha256: candidate.sha256,
+      integrity: candidate.integrity,
+      ...(candidateRetained ? { artifactPath: relative(artifactRoot, durableCandidatePath) } : {}),
+    },
+    ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
   };
 
   try {

@@ -84,7 +84,7 @@ describe("E2E candidate and command entry contracts", () => {
     ]);
   });
 
-  it("默认入口先 plan，成功后只 pack 一次，再用同一 candidate run", async () => {
+  it("默认入口先 plan，成功后只 pack 一次、build Testkit 一次，再用同一 candidate+testkit run", async () => {
     const stages: string[] = [];
     const plannedArgs: string[][] = [];
     const runArgs: string[][] = [];
@@ -93,12 +93,17 @@ describe("E2E candidate and command entry contracts", () => {
       plan: async (args) => {
         stages.push("plan");
         plannedArgs.push([...args]);
-        return true;
+        return 1;
       },
+      hasTestkitConsumer: async () => true,
       pack: async (out) => {
         stages.push("pack");
         expect(out).toBe("/tmp/default-candidate.tgz");
         return { path: out };
+      },
+      buildTestkit: async () => {
+        stages.push("buildTestkit");
+        return { path: "/tmp/testkit/niceeval-testkit-abc.tgz", sha256: "abc" };
       },
       run: async (args) => {
         stages.push("run");
@@ -107,23 +112,86 @@ describe("E2E candidate and command entry contracts", () => {
     });
 
     expect(result).toBe(true);
-    expect(stages).toEqual(["plan", "pack", "run"]);
+    expect(stages).toEqual(["plan", "pack", "buildTestkit", "run"]);
     expect(plannedArgs).toEqual([["--lane", "pr", "--repo", "cli"]]);
-    expect(runArgs).toEqual([["--candidate", "/tmp/default-candidate.tgz", "--lane", "pr", "--repo", "cli", "--", "--run", "file"]]);
+    expect(runArgs).toEqual([
+      [
+        "--candidate",
+        "/tmp/default-candidate.tgz",
+        "--testkit",
+        "/tmp/testkit/niceeval-testkit-abc.tgz",
+        "--lane",
+        "pr",
+        "--repo",
+        "cli",
+        "--",
+        "--run",
+        "file",
+      ],
+    ]);
   });
 
-  it("plan 失败时默认入口不 pack/run", async () => {
+  it("plan 失败时默认入口不 pack/run,也不 build Testkit", async () => {
     const pack = vi.fn(async (_out: string) => ({ path: _out }));
+    const buildTestkit = vi.fn(async () => ({ path: "/tmp/tk.tgz", sha256: "x" }));
     const run = vi.fn(async (_args: readonly string[]) => undefined);
     const result = await executeDefault(["--lane", "pr"], {
       candidatePath: "/tmp/default-candidate.tgz",
-      plan: async () => false,
+      plan: async () => -1,
+      hasTestkitConsumer: async () => true,
       pack,
+      buildTestkit,
       run,
     });
     expect(result).toBe(false);
     expect(pack).not.toHaveBeenCalled();
+    expect(buildTestkit).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("plan 选中 0 个 repo 时同样不 pack/不 build Testkit/不 run", async () => {
+    const pack = vi.fn(async (_out: string) => ({ path: _out }));
+    const buildTestkit = vi.fn(async () => ({ path: "/tmp/tk.tgz", sha256: "x" }));
+    const run = vi.fn(async (_args: readonly string[]) => undefined);
+    const result = await executeDefault(["--lane", "pr"], {
+      candidatePath: "/tmp/default-candidate.tgz",
+      plan: async () => 0,
+      hasTestkitConsumer: async () => true,
+      pack,
+      buildTestkit,
+      run,
+    });
+    expect(result).toBe(false);
+    expect(pack).not.toHaveBeenCalled();
+    expect(buildTestkit).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("选中的 repo 没有 harness.testkit consumer 时不 build 或 pack Testkit", async () => {
+    const stages: string[] = [];
+    const buildTestkit = vi.fn(async () => ({ path: "/tmp/tk.tgz", sha256: "x" }));
+    const run = vi.fn(async (args: readonly string[]) => {
+      stages.push("run");
+      expect(args).toEqual(["--candidate", "/tmp/default-candidate.tgz", "--lane", "pr"]);
+    });
+    const result = await executeDefault(["--lane", "pr"], {
+      candidatePath: "/tmp/default-candidate.tgz",
+      plan: async () => {
+        stages.push("plan");
+        return 1;
+      },
+      hasTestkitConsumer: async () => false,
+      pack: async (out) => {
+        stages.push("pack");
+        return { path: out };
+      },
+      buildTestkit,
+      run,
+    });
+
+    expect(result).toBe(true);
+    expect(stages).toEqual(["plan", "pack", "run"]);
+    expect(buildTestkit).not.toHaveBeenCalled();
   });
 
   it("packCandidate 只调用一次 pack，并把唯一产物移动到 exact out", async () => {
@@ -164,9 +232,17 @@ describe("E2E candidate and command entry contracts", () => {
       selectionArgs: ["--lane", "pr"],
       nativeArgs: ["--run", "file"],
     });
-    expect(buildDefaultRunArgs("candidate.tgz", ["--lane", "pr"], [])).toEqual([
+    expect(buildDefaultRunArgs("candidate.tgz", undefined, ["--lane", "pr"], [])).toEqual([
       "--candidate",
       "candidate.tgz",
+      "--lane",
+      "pr",
+    ]);
+    expect(buildDefaultRunArgs("candidate.tgz", "/tmp/tk.tgz", ["--lane", "pr"], [])).toEqual([
+      "--candidate",
+      "candidate.tgz",
+      "--testkit",
+      "/tmp/tk.tgz",
       "--lane",
       "pr",
     ]);

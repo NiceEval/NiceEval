@@ -87,7 +87,12 @@ function hasChangedPath(repo: DiscoveredRepo, diffPaths: readonly string[]): boo
   return repo.manifest.paths.some((pattern) => diffPaths.some((path) => pathMatches(pattern, path)));
 }
 
-/** Changes to the candidate or shared harness invalidate every repo path optimization. */
+/**
+ * Changes to the candidate, the shared harness, the Testkit, the root
+ * workspace/lock or the injection contract invalidate every repo path
+ * optimization: plan must fail open and select every harness consumer (and
+ * the whole lane) instead of silently running fewer repos.
+ */
 export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
   return diffPaths.some((rawPath) => {
     const path = normalizePath(rawPath);
@@ -98,6 +103,7 @@ export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
       path === ".github/workflows/e2e.yml" ||
       path === "package.json" ||
       path === "pnpm-lock.yaml" ||
+      path === "pnpm-workspace.yaml" ||
       /^tsconfig(?:\.[^/]+)?\.json$/.test(path)
     );
   });
@@ -226,7 +232,13 @@ function printHumanPlan(entries: readonly PlanEntry[], lane: Lane): void {
   }
 }
 
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<boolean> {
+/**
+ * `pnpm e2e plan` entry. Returns the number of selected entries on success
+ * and a negative number on failure, so the default flow can skip pack/run
+ * when nothing was selected (execution.md: 无 Repo 被选择或 manifest 非法时不
+ * pack). Also sets process.exitCode for direct CLI use.
+ */
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   try {
     const cli = parsePlanCli(argv);
     const e2eRoot = e2eRootDir();
@@ -235,7 +247,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       console.error(`[e2e] repo discovery found ${errors.length} problem(s):\n`);
       for (const error of errors) console.error(`  - ${error}`);
       process.exitCode = 1;
-      return false;
+      return -1;
     }
 
     const diffPaths = cli.diffPaths ?? tryReadDiffPaths(resolve(e2eRoot, ".."));
@@ -251,11 +263,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     } else {
       printHumanPlan(entries, cli.lane);
     }
-    return true;
+    return entries.length;
   } catch (error) {
     console.error(`[e2e] ${(error as Error).message}`);
     process.exitCode = 1;
-    return false;
+    return -1;
   }
 }
 
