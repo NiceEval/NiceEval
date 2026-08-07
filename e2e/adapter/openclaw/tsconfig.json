@@ -20,6 +20,8 @@
     "evals",
     "experiments",
     "scripts",
-    "niceeval.config.ts"
+    "niceeval.config.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
   ]
 }
