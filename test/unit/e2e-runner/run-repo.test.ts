@@ -271,7 +271,15 @@ describe("local Testkit tarball injection", () => {
       writeFixtureRepo(workspaceOnly, { id: "ws-only", command: ["node", "-e", "process.exit(0)"] });
       writeFileSync(
         join(workspaceOnly, "pnpm-lock.yaml"),
-        ["lockfileVersion: '9.0'", "  foo@workspace:*:", "    resolution: {directory: foo, type: directory}"].join("\n") + "\n",
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "  .:",
+          "    dependencies:",
+          "      foo:",
+          "        specifier: workspace:*",
+          "        version: link:../foo",
+        ].join("\n") + "\n",
       );
       const wsViolations = checkTestkitSourceClean(workspaceOnly);
       expect(wsViolations.some((v) => v.includes("workspace:"))).toBe(true);
@@ -280,13 +288,38 @@ describe("local Testkit tarball injection", () => {
       writeFixtureRepo(fileOnly, { id: "file-only", command: ["node", "-e", "process.exit(0)"] });
       writeFileSync(
         join(fileOnly, "pnpm-lock.yaml"),
-        ["lockfileVersion: '9.0'", "  bar@file:../vendor/bar:", "    resolution: {directory: ../vendor/bar, type: directory}"].join("\n") + "\n",
+        [
+          "lockfileVersion: '9.0'",
+          "importers:",
+          "  .:",
+          "    dependencies:",
+          "      bar:",
+          "        specifier: file:../vendor/bar",
+          "        version: file:../vendor/bar",
+          "packages:",
+          "  bar@file:../vendor/bar:",
+          "    resolution: {directory: ../vendor/bar, type: directory}",
+        ].join("\n") + "\n",
       );
       const fileViolations = checkTestkitSourceClean(fileOnly);
       expect(fileViolations.some((v) => v.includes("file:"))).toBe(true);
 
       const clean = join(dir, "clean");
       writeFixtureRepo(clean, { id: "clean", command: ["node", "-e", "process.exit(0)"] });
+      writeFileSync(
+        join(clean, "pnpm-lock.yaml"),
+        [
+          "lockfileVersion: '9.0'",
+          "settings:",
+          "  excludeLinksFromLockfile: false",
+          "importers:",
+          "  .:",
+          "    dependencies:",
+          "      ordinary-file-package:",
+          "        specifier: ^1.0.0",
+          "        version: 1.0.0",
+        ].join("\n") + "\n",
+      );
       expect(checkTestkitSourceClean(clean)).toEqual([]);
     });
   });
