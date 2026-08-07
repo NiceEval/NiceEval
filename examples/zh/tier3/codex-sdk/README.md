@@ -49,7 +49,7 @@ read-only 变体下 `create-file`(要写盘)预期变红,沙箱拦下写操作�
 
 ## 接入验证过什么
 
-`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`defineAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
 `createCodexThreadEventStream` 完整转换 `ThreadEvent`，因此使用
 `completeEvidenceCoverage`。能力仍从 `send` 实际做到的事、`events` 里的证据自然成立：
 
