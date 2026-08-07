@@ -155,10 +155,10 @@
 ├─ [x] T7.1 每个新 owner 接管时同批删除线性 scripts、group 字段、共享真实模型 fixture 或私有 oracle
 ├─ [x] T7.2 重写 e2e/README.md，使其只描述当前已落地入口
 ├─ [x] T7.3 更新 lockfile、源码注释、AGENTS 与链接
-├─ [ ] T7.4 pnpm test、pnpm test:docs、pnpm run typecheck
+├─ [x] T7.4 pnpm test、pnpm test:docs、pnpm run typecheck
 └─ [ ] T7.5 pr lane 全绿；main/nightly 未选择项在 plan 中可见而非伪装 pass
 
-[ ] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
+[x] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
 ├─ [x] T8.1 修正测试 owner 分类：Feature Unit 保留 `// cases:`；runner receipt 直属 E2E execution；examples 与产品站守护分别迁入 docs / docs-site lane
 ├─ [x] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
 │  ├─ [x] T8.2.1 experiments-runner：44 files / 约 19.2k lines
@@ -172,7 +172,7 @@
 │  └─ [x] T8.2.5 assertions + eval + sample：15 files / 约 4.6k lines
 │         已合并同一 0/1 matcher、默认超时与 send live-state 的重复场景；其余矩阵均能区分不同错误算法
 ├─ [x] T8.3 每个删除批次说明“删了会放走什么错误”；答不出的旧测试不因历史存在而保留
-└─ [ ] T8.4 收口：Unit 全量无网络/容器/凭据，60 秒内；文档 cases 守护与对应 E2E 同时通过
+└─ [x] T8.4 收口：Unit 全量在 offline、无云凭据、无 Docker socket 环境下 21.46 秒通过（182 files / 2255 tests）；文档 cases 守护与 report E2E 同时通过
 ```
 
 ## 当前并行占用
