@@ -1,3 +1,7 @@
 packages: []
 allowBuilds:
+  braintrust: false
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
