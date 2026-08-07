@@ -29,8 +29,8 @@ Fake 规则见[单元测试边界](README.md#fake-边界mock-什么测哪一层)
 ## Fixture 规范
 
 ensure 测试不连真实包管理器或 registry。
-探测 的命中与未命中由 Sandbox fixture 按脚本返回退出码；安装层 fixture 记录 install 调用，按脚本成功或抛错。
-Sandbox fixture 记录 `runCommand` / 文件 API，默认 stub 对意外调用抛错（规则见 [Harness](harness.md)）。
+probe 的命中与未命中由 Sandbox fixture 按脚本返回退出码；安装层 fixture 记录 install 调用，按脚本成功或抛错。
+Sandbox fixture 记录 `runCommand` / 文件 API，默认 stub 对意外调用抛错（规则见 [Fixture 与 Harness](README.md#fixture-与-harness)）。
 
 ```ts
 function scriptedInstaller(steps: {

@@ -1,5 +1,5 @@
 // Reports 家族共享的 Sample / Record 机械构造器(harness,规则见
-// docs/engineering/testing/unit/harness.md):只做「Run[] → Sample / Record」的无场景
+// docs/engineering/testing/unit/README.md「Fixture 与 Harness」):只做「Run[] → Sample / Record」的无场景
 // 语义包装,场景输入(snap()/res() 等 fixture)留在各测试文件里。makeSample / Sample 形状变更
 // 只改这一处,不再在每个 report 测试文件里各改一份副本。
 // 不进 dist/report 产物(tsconfig.report-build.json 按 *.harness.ts 排除)。

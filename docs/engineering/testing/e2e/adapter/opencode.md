@@ -1,6 +1,6 @@
 # opencode 仓库
 
-仓库 ID `opencode`，group `sandbox`，`e2e.json.requires.docker: true`。
+Repo ID 是 `adapter/opencode`；manifest 声明 `areas: ["adapter"]`、live lanes、Docker 与 external network。
 被测对象是 `openCodeAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [OpenCode 契约页](../../../../feature/adapters/sdk/opencode/README.md)）。
 
 ## Eval 闭环

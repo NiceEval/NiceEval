@@ -64,8 +64,7 @@ basalt 也因此不需要自带一行 CSS。
 | SVG 图示的样式段、用语与色值不漂移 | `pnpm test:docs`（`test/docs/`） |
 
 stylesheet 类名与组件发射类名是否对齐不设 src 层守护：样式断没断只有真实产物能证明，
-验收归 e2e 报告域对导出站的计算样式与几何断言（候选断言词表见
-[testing/dsl](docs/roadmap/testing/dsl/README.md)）。
+验收归 [E2E 报告域](docs/engineering/testing/e2e/report.md)对导出站的计算样式与几何断言。
 
 改色的唯一动线：改 `src/report/theme.ts` 的 basalt → 按守护红灯同步 CSS 兜底与
 SVG 共用样式段。反向（先改 CSS 再回填主题）不成立，守护会拦。

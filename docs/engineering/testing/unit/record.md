@@ -17,7 +17,7 @@ Record 测试分为落盘格式、读取分类、身份、artifact 懒加载、w
 ## Fixture 规范
 
 **内存记录图**用于身份与聚合前对账测试。
-Builder 必须要求写出会影响身份与选择的字段——`startedAt` 不由全局自增器偷偷生成，因为它是去重身份的一部分；测试读者必须能从 case 看出两条记录应该相同还是不同（规则见 [Harness](harness.md)）：
+Builder 必须要求写出会影响身份与选择的字段——`startedAt` 不由全局自增器偷偷生成，因为它是去重身份的一部分；测试读者必须能从 case 看出两条记录应该相同还是不同（规则见 [Fixture 与 Harness](README.md#fixture-与-harness)）：
 
 ```ts
 interface AttemptSpec {

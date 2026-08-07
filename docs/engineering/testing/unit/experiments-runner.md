@@ -54,7 +54,7 @@ const scenario = runnerFixture({
 `runnerFixture` 提供受控 barrier、记录型 Reporter、fake Agent/Sandbox 和结果读取方法。
 它不自行决定 early exit、budget 或调度顺序；这些必须由生产 Runner 决定。
 fixture 里的 `costUSD` 是输入证据（该 attempt 完成后结算的实测成本），不复制 Runner 的任何计费逻辑。
-所有权与稳定性规则见 [Harness](harness.md)。
+所有权与稳定性规则见 [Fixture 与 Harness](README.md#fixture-与-harness)。
 
 时序纪律：并发与调度用 barrier 观察"在飞"状态，不用 `setTimeout` 猜测调度是否已经发生；重试和 backoff 用 `TestClock.adjust` 推进，不做真实等待。
 Effect 程序用 `it.effect` 让测试运行时持有 Scope；保存状态的 Layer 要求每例隔离时用独立 `it.layer(...)`。
@@ -377,6 +377,25 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - fixture 塞一个官方未列 key，断言仍可见且不进锚点标签表。
 
 ## 不这样测
+
+### Carry 的跨层职责
+
+Carry 的完整 fingerprint 输入矩阵由本篇对应的 Unit owner 展开；真实 Runner 场景 Repo 只证明安装后的计划与派发接线。
+两层的职责如下：
+
+| 风险 | 唯一 owner | 不复制的内容 |
+|---|---|---|
+| config、source、data、algorithm 与 coverage version 是否参与身份 | fingerprint 表驱动 Unit | CLI、Human、JSON 不再各列一张输入矩阵 |
+| manifest 缺失、未知版本与 migration audit | fingerprint / Record Unit | E2E 不手写内部 manifest |
+| `full → partial → full` 后未变化 Eval 仍可携入 | Runner 单边界 E2E | Unit 不模拟外部 cwd 与三次 CLI 运行 |
+| dry plan 与真实 dispatch 的携入身份一致 | Runner 单边界 E2E | formatter Unit 只留 schema 或文案差异 |
+| 取锁后重查、lease 与 retry 时序 | barrier / fake clock Unit | 不并入 fingerprint 输入矩阵 |
+
+Runner E2E 从公开 `--dry --json` 与 `--json` 事件流观察结果，不读取 `EvalManifest`、planner dispatch group 或
+`.niceeval/` 私有布局。修改 config、Eval 或当前结果的 case 必须使用私有项目副本与结果根。
+
+Fixture builder 只补合法输入的机械默认值，不计算 comparison、delta 或 expected。
+给生产 DTO 增加无关字段时，应只影响 builder；若所有 case 都必须同步补字段，说明 Fixture 边界仍绑定了生产结构。
 
 - 不用 `sleep(100)` 等待调度"应该已经发生"。
 - 不断言内部 `Effect.forEach`、Semaphore 或 AbortController 被调用几次。

@@ -16,7 +16,7 @@ Sample 测试分为当前选择、单 Run 审计、覆盖缺口、来源事实�
 
 **内存记录图**是本篇的主要输入。
 Builder 必须要求写出会影响选择与身份的字段——`startedAt` 不由全局自增器偷偷生成（它是去重身份的一部分），`configHash` 不由 builder 默认填成同一个值（它是跨 Run 拼接的唯一判据）。
-测试读者必须能从 case 看出两个 Run 该不该拼在一起、两条 attempt 该不该合并（规则见 [Harness](harness.md)）：
+测试读者必须能从 case 看出两个 Run 该不该拼在一起、两条 attempt 该不该合并（规则见 [Fixture 与 Harness](README.md#fixture-与-harness)）：
 
 ```ts
 interface RunSpec {

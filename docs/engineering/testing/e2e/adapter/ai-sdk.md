@@ -1,6 +1,6 @@
 # ai-sdk 仓库
 
-仓库 ID `ai-sdk`，group `sdk`。
+Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes 与 external network。
 被测应用是仓库自带的 AI SDK 应用：一个暴露 UI Message Stream 的`useChat` 后端 HTTP 服务——覆盖[AI SDK 契约页](../../../../feature/adapters/sdk/ai-sdk/README.md)声明的官方 HTTP Agent 工厂`uiMessageStreamAgent`。
 应用接入官方 `@ai-sdk/otel`集成，把 span 发到 niceeval 固定端口收的 OTLP 接收器，同时承担矩阵中 direct-agent telemetry 路径的证明。
 
@@ -24,5 +24,5 @@
   usage 非空这条机制事实由 `results`仓库承担（本仓库的 UI Message Stream 协议帧不带 token 计数，属于诚实的`unavailable`，不在此断言）。
 - **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`执行树出现不带命名空间的工具名调用节点，节点带 span 时间注释。
 - **OTel**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`），span 发到`niceeval.config.ts` 的 `telemetry.port`固定端口——执行树的时间注释就是记录成立的展示证明；本仓库承担矩阵中 direct-agent telemetry 路径的证明。
-  `show --timing` 的 per-turn OTel 子树是已知缺口（`memory/ai-sdk-agent-otel-timing-subtree-unlinked.md`），验收脚本非 gating。
+  `show --timing` 的 per-turn OTel 子树必须与事件调用靠显式 correlation 对齐；断裂按协议回归判红。
   OTel 只生成 trace，不成为事件来源；判分断言仍只读事件流。

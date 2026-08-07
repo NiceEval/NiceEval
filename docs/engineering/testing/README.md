@@ -1,114 +1,122 @@
 # 测试体系
 
-这篇是 niceeval 仓库测试体系的唯一总纲：定义有哪几层、每层测什么与不测什么、每层的运行契约，以及"测试老在改"这件事怎样被当成缺陷治理。两个子目录各自回答"这一层具体怎么做"：
+niceeval 的测试体系采用“真实场景 Repo + 原生结果断言”。
+本目录是仓库测试机制的唯一正式入口，不再维护并行的 Roadmap、候选方案或代码原型。
 
-- [`unit/`](unit/README.md)：单元测试——fixture 驱动的确定性测试，证明契约中的语义、不变量和失败反馈。
-- [`e2e/`](e2e/README.md)：E2E——真实模型、真实协议、真实沙箱的全链路验收，以独立测试仓库为边界。
+## 目标
 
-## 分层：谁负责证明什么
+新体系同时优化四件事：
 
-体系只有两层，判据是**证明对象**，不是快慢：
+- **测结果**：从公开 Library、安装后的 CLI、HTTP、浏览器或真实 adapter 协议进入，断言用户拿到的结果；
+- **能定位**：短测试只跨一条公开边界，Journey 在每个跨域接缝检查，失败报告标出阶段和原始收据；
+- **易阅读**：命令、动作、独立预期和历史 bug 引用留在同一个原生测试文件；
+- **少跟改**：内部 DTO、DOM class 或候选算法变化不能迫使无关结果测试同步改写。
 
-| 层                      | 证明对象                                                                                                    | 运行时依赖                 |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------- |
-| 单元测试（`pnpm test`） | niceeval 自己的**确定性语义**：评分判定、调度、归一、选择、聚合、计算口径、装载校验、错误反馈文案、类型契约 | 无网络、无容器、无 API key |
-| E2E（`pnpm e2e`）       | niceeval 作为**完整产品的可观察行为**：真实 SDK 协议、真实模型、真实沙箱、真实安装与进程、CLI 输出与渲染面  | 真实 provider 凭据         |
+真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
+`package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
+测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
-E2E 层内部按测什么分三个验收域，`e2e/` 的布局平铺、目录名就是域名：
+功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
+`adapter/` 是兼容性 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
+各自安装候选包并拥有结果根。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
 
-| 域（目录）     | 测什么                                                                                             | 仓库                                        |
-| -------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `e2e/adapter/` | **官方适配器的协议验收**：每个官方 Agent 工厂一个仓库，证明真实协议下调用发生了、被完整记录了      | `ai-sdk`、`claude-code`、`codex-cli`、`bub` |
-| `e2e/cli/`     | **CLI 可观察行为**：选择、退出码折叠、缓存复用                                                     | `cli` 仓库自身                              |
-| `e2e/report/`  | **报告与读面**：结果落盘与出口、show/view 读面行为、渲染面——覆盖内建报告与自定义报告的用户操作回归 | `report` 仓库自身                           |
+## 两层与两种 E2E 体裁
 
-E2E 的边界是**公开可观察契约**，不是“只能看屏幕像素”。它可以断言 CLI 的参数、退出码、 stdout/stderr、公开文件格式、HTTP 响应、浏览器语义结构与交互，以及文档声明的 package API。
+目录只使用业界已有的两个执行层名称，不再增加 `Mechanism` 或 `Result` 这种项目内分类：
 
-测试必须从候选包的公开入口进入，不能 import 内部 renderer、数据源实现或 compute helper 来替用户走捷径。预期值由签入的 Eval、fixture 与公开文档共同给出；不能从候选实现导入常量或调用候选算法现算，否则实现和预期会一起错，测试仍然全绿。
+| 层 | 证明什么 | 典型位置 |
+|---|---|---|
+| Unit | 纯计算、schema、错误分类、可控竞态和确定性状态变化 | 根仓库 unit |
+| E2E | 安装后的候选包经过真实公开边界后交付的用户结果 | 独立场景 Repo |
 
-### 单元层的边界
+E2E 再按流程范围选择两种写法：单边界 E2E 只承诺一个公开结果；Journey E2E 串起多个产品域，逐接缝检查并断言终态。
+`Journey` 是测试体裁，不是第三层。`Result` 已是 NiceEval 产品里的领域名，不再同时拿来命名测试类型。
 
-单元层的观察面是**数据**：输入数据 → 输出数据（判定、聚合值、规范化结构、错误对象与文案）。纯函数算法（几何布局、显示宽度、聚合口径）属于这一层——它们是确定性语义，只是恰好服务于展示。
+另一条轴只回答“哪个产品域负责”：CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
+目录按执行层和产品域找 owner，文件名按可观察行为命名，测试标题写长期结果。
 
-单元层只有两种手段：
+## 分层裁决
 
-1. 构造输入数据；
-2. 在自有稳定接口上 fake 下一层，例如 Agent、Sandbox、Reporter、Judge 传输和时钟。
+| 风险 | 最早且完整的证明边界 | 示例 |
+|---|---|---|
+| 公式、选择、聚合、schema | Unit | Report 聚合口径、fingerprint 输入矩阵 |
+| lock、retry、clock、并发限制 | barrier / fake clock Unit | backoff 期间不释放并发槽 |
+| 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | `init → list` 在 CommonJS 项目可用 |
+| argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | `show --json` 经 pipe 不截断 |
+| show / view、导出、HTTP、浏览器动作 | Report 场景 Repo | 导出 target 可达且打开正确实体 |
+| SDK / CLI / provider 兼容性 | 对应 Adapter 场景 Repo | 真实工具事件读回规范身份 |
+| 跨域完整目标 | 最终结果 owner 的 Journey 测试文件 | Report Repo 中初始化、运行、定位失败、导出报告 |
+| signal、teardown、orphan | Lifecycle 场景 Repo | 中断后无孤儿且下一次运行可用 |
 
-外部协议接口不 fake。文件系统使用每例隔离的真实实例。完整边界见 [单元测试 · Fake 边界](unit/README.md#fake-边界mock-什么测哪一层)。
+一条风险只在一个位置展开完整矩阵。其它层只有在能排除不同错误实现时才留一个接线代表，不能把同一场景换成
+human、JSON、DOM 和 snapshot 各测一遍。
 
-单元层**不做**以下事情，它们一律归 E2E 功能仓库：
+## 测试正文约束
 
-- **不断言渲染产物**：终端排版输出、HTML/DOM 结构、Run、样式与交互。渲染面对着一次真实运行的产物在 E2E `report` 仓库验收——那里同一份断言顺带证明了归一、落盘、读取整条链，而在单元层锁渲染输出只会让每次实现调整都变红。
-- **不起 CLI 进程**：退出码、选择行为、缓存复用、`--json`/`--junit` 出口在 E2E `cli` / `report` 仓库对真实进程验收；单元层只测这些行为背后的纯函数语义（选择算法、折叠规则、格式化函数）。
-- **不测协议归一**：SDK 事件转换没有单元层 wire fixture 测试——fixture 是协议的二手复制，会随上游版本漂移，测得再全也只证明「和自己采的样本一致」。协议正确性（事件归一、session、usage、证据完整性）整体归 `e2e/adapter/` 的真实运行；单元层保留的是归一之后与协议无关的确定性派生（成本估算、执行树投影）。
+- 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
+- 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
+- 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
+- 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
+- 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
+  role / label；不稳定能力先记产品缺口。
+- 每条测试先归属稳定 Feature；历史回归再写 `regression: memory/<条目>.md`，标题仍描述长期结果。新 case 必须能杀死旧实现。
+- 复用设施只拥有临时目录、进程、server、parser、artifact 和 cleanup 等机械能力；浏览器生命周期默认交给 Playwright Test。
 
-**真实优先**：凡是要证明“与外部世界协作正确”或“用户看到的东西正确”，就直接使用真实对象。E2E 没有离线档、mock 模式或为节省 API 调用而存在的替身分支。模型调用成本不构成测试设计约束。
+## 失败怎样定位
 
-`cli`、`report` 功能仓库只花一次真实运行的成本产出证据，再对这份产物做大量确定性断言。渲染与 CLI 行为的每条断言不需要各自重复模型调用。
+E2E 不承诺指出生产源码行，但要把问题收窄到最近的公开接缝：
 
-单元层使用 fixture 与 fake，理由不是省钱，而是**确定性与区分力**——受控时钟、受控 barrier 和有区分力的证据图才能证明调度与判定语义；这些性质真实模型给不了。两层各用各的手段，不存在"用便宜 mock 凑合一下集成"的中间形态。
+1. `prepare`：项目、依赖、fixture、Docker service 或 secret 未就绪；
+2. `invoke`：安装后的命令、HTTP 请求或浏览器动作没执行成功；
+3. `observe`：stdout、JSON、HTML、协议事件或 artifact 不可读；
+4. `outcome`：观察合法，但用户结果错误；
+5. `cleanup`：进程、容器、sandbox 或临时目录未释放。
 
-### 守护的取舍：流程守护留，结构复检删
+单边界 E2E 用于指出坏在哪条公开边界，Journey E2E 用最近检查点指出坏在哪个域间接缝；需要源码级区分力时，
+再配一条最小 Unit。禁止为了定位在产品里加入测试专用探针。
 
-`test/` 下的仓库守护按验证对象分进三个目录，各自挂一个入口：`test/unit/` 归 `pnpm test`，`test/docs/` 归 `pnpm test:docs`，`test/docs-site/` 归 `pnpm test:docs-site`（分工见[套件边界与仓库守护](unit/README.md#套件边界与仓库守护)）。
-一条守护该不该存在，按一条判据取舍：**它守的约束是否还有别的执行路径能暴露**。
+## 本地与 GitHub CI
 
-- **留：流程守护。**
-  `test/docs/cases-registry.test.ts`（测试文档挂钩——src 测试必须声明所属 Feature 测试文档、每篇文档必须有测试实现、`// bug:` memory 引用必须真实）与索引覆盖、链接真实性、生成区块漂移这类守护，守的是"先登记后写测""文档索引不烂"这些**流程契约**——没有任何运行路径会替它们报警，失守只会静默腐坏。
-- **删：结构复检。** 不为 E2E 仓库的目录形状、`e2e.json` schema 或 import 边界写离线元测试——测试仓库能否独立安装、执行、验收，编排器每次隔离运行本身就在证明，发现器读 `e2e.json` 时就会 fail-fast；离线复检一遍只是第二份会漂移的口径。
+本地与 CI 共用根入口和同一个候选 tarball 注入链：
 
-## 变更预算：无关测试变红是缺陷
+```sh
+pnpm e2e --lane pr
+pnpm e2e --repo report
+pnpm e2e --repo report -- --run test/exported-targets.test.ts
+pnpm e2e --lane main --repo adapter/codex-cli
+```
 
-测试体系的质量读数是**一次改动允许触碰的测试范围**：
+- PR lane 无密钥，运行 unit、CLI、Runner、Report、Package 与确定性 host / Docker Repo；
+- main 跑 PR 全集和低成本真实 Adapter 兼容性检查；nightly 跑完整 Adapter、Sandbox 与 Lifecycle；
+- release 先生成最终 tarball，验收通过后发布同一字节与 digest；
+- workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
+- 不使用 `pull_request_target` 执行 PR 代码并读取 secret。
 
-- 一次改动允许变化的测试 = 该次**契约 diff 的影响面**。契约变了，引用该契约的测试、对应 Feature 测试文档的覆盖规范随之重写，这是合法变更，和改文档同一批完成。
-- 实现重构不改契约时，任何测试都不应变红。变红说明该测试锁定了实现细节而不是契约——按缺陷处理：改写测试，并把绑定实现的原因记入 `memory/`。锁定渲染产物的单元测试是这类缺陷最常见的形态，处置方式是把它挪去 E2E 功能仓库的验收面，而不是在单元层修补断言。
-- 新功能只新增**已声明覆盖类别**的测试：覆盖类别随契约同批定稿在对应 Feature 测试文档的「覆盖规范」里，测试只实现已声明的类别，不顺手改无关断言（先声明后写测，见[覆盖登记](unit/registry.md)）；review 时对照覆盖规范核对影响面。
-- 修 bug 的第一步是确认暴露该 bug 的行为在对应 Feature 测试文档里有覆盖类别——逃逸到真实使用中的 bug 就是覆盖规范的缺口。补类别、写测试、修实现同批完成，并同步写入 memory；锁定该修复的测试加 `// bug: memory/<条目>.md` 引用对应条目，让修法从测试可反查现象与根因（规则见[覆盖登记](unit/registry.md)）。
-
-每篇 Feature 测试文档的「覆盖规范」就是这个影响面的登记面：一条契约由哪些类别的行为证明，改这条契约时哪些测试要动，一目了然。测试文档与测试套件的整册对应关系有机器守护（见[单元测试 · 套件边界与仓库守护](unit/README.md#套件边界与仓库守护)）。
-
-这条规则的回溯口径是**测试跟改率**：用 git 历史统计过去改功能时哪些测试文件老是跟着一起改，按次数排序定位不稳定测试——度量命令与排查动作见[测试跟改率](churn.md)。
-
-## 运行契约
-
-"好跑"是验收标准，不是愿望：
-
-- `pnpm test` 全量在开发机 60 秒内完成，单个测试文件 5 秒内。不出网、不起容器、不需要任何环境变量或 key；允许使用每例独立的临时目录。超预算的测试要么改设计（通常是 fixture 层级选高了），要么它证明的其实是真实协作——挪去 E2E。
-- `pnpm test <路径或名称过滤>` 可以只跑一个 Feature 切片；写测试的人应当能在秒级回路里迭代。
-- `pnpm e2e --repo <id>` 是 E2E 的本机回路：注入真实 key 后单仓库直接跑，行为与 CI、crabbox 完全一致。E2E 的耗时预算由每个测试仓库的 `e2e.json` 自己声明。
-
-## 操作卡：改了什么，跑什么
-
-| 改动落点                                                | 必跑                                             | 追加验收                                                                         |
-| ------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `src/assertions/`、`src/expect/`                         | `pnpm test`                                      | 判定语义变化时跑任一 SDK E2E 仓库确认真实证据下判定一致                          |
-| `src/runner/`、`src/context/`                           | `pnpm test`                                      | 调度/缓存行为变化 → `pnpm e2e --repo cli`                                        |
-| `src/agents/`、`src/o11y/`（协议归一）                  | `pnpm test`（数据派生与守护）                    | `pnpm e2e --repo <对应 SDK 仓库>`——协议归一的唯一验收面                          |
-| `src/sandbox/`                                          | `pnpm test`                                      | `pnpm e2e --group sandbox`                                                       |
-| `src/report/`、`src/show/`、`src/view/`（渲染面与读面） | `pnpm test`（计算与装载语义）                    | `pnpm e2e --repo report`（渲染与读面验收）                                       |
-| Results 落盘格式或读取面                                | `pnpm test`                                      | `pnpm e2e --repo report`                                                         |
-| CLI flag、发现、退出码                                  | `pnpm test` + `pnpm run niceeval -- <命令>` 冒烟 | `pnpm e2e --repo cli`                                                            |
-| niceeval 公开 API 破坏性变更                            | `pnpm test`                                      | 按 [E2E 矩阵修复顺序](e2e/README.md#71-破坏性变更的矩阵修复)逐组修复全部测试仓库 |
-
-`pnpm test` 永远是第一道；E2E 按影响面选仓库，不需要每次全矩阵。
+完整执行契约见 [本地与 CI](e2e/execution.md)。
 
 ## 文档地图
 
-```text
-engineering/testing/
-├── README.md                本篇:分层职责、变更预算、运行契约、操作卡
-├── churn.md                 测试跟改率:用 git 历史定位不稳定测试
-├── unit/
-│   ├── README.md            方法论:核心判据、从契约得到测试、分层、反模式
-│   ├── registry.md          覆盖登记:先声明后写测、场景预算
-│   ├── harness.md           共享测试构造器的所有权与稳定性契约
-│   └── <feature>.md         每个 Feature 一篇:观察面、fixture 规范、覆盖规范、反模式
-└── e2e/
-    ├── README.md            总则:独立测试仓库、统一执行协议、CI/crabbox、矩阵修复
-    ├── adapter/             适配器域(e2e/adapter/):每个官方适配器一篇验收说明
-    ├── report.md            功能域·报告与读面(e2e/report/):落盘、出口、读面与渲染验收
-    ├── cli.md               功能域·CLI(e2e/cli/):选择、退出码与缓存验收
-    └── verification.md      验收脚本写法:执行 niceeval 命令与断言用例
-```
+- [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
+- [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
+- [测试组合与退役](portfolio.md) —— owner、矩阵去重、历史 bug 与迁移规则；
+- [Unit](unit/README.md) —— 确定性语义测试的存在资格和写法；
+- [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
+- [E2E 测试正文](e2e/authoring.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
+- [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
+- [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
+- [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
+- [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 覆盖类别、Fixture 与矩阵 owner；
+- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+
+历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
+正式测试义务只由本目录的 owner 文档与对应产品契约定义。
+
+## 目标闭包
+
+- 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
+- 场景 Repo 精确锁定稳定 Testkit；产品 gate 只注入 NiceEval candidate，不让外层裁判与被测对象一起变化。
+- JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
+- Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有私有项目副本与结果根。
+- Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
+- PR、main、nightly 与 release lane 共用同一发现、注入、执行、分类和 artifact 协议。
+- 新 owner 通过公开契约、历史错误 kill 与单项重跑后接管，同批删除被替代 owner，不长期保留双份体系。
