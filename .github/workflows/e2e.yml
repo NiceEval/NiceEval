@@ -1,70 +1,58 @@
 name: e2e
 
-# 独立测试仓库矩阵的 CI 编排(docs/engineering/testing/e2e/README.md §6.1)。
+# E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
+# 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
 #
-# 设计原则:本 workflow 不重新实现根编排逻辑——`discover` job 只做「发现 + 按触发层级
-# 过滤」,真正的每仓库执行永远是同一条命令 `pnpm e2e --repo <id>`(§5),与开发者本机、
-# crabbox 完全一致。matrix 由 `e2e/scripts/list.ts --json` 动态生成,不写死仓库列表;
-# runner 规格、python 环境、需要哪些 secrets、上传哪些 artifact 全部读自每个仓库自己的
-# `e2e.json`,中央 workflow 不内置任何仓库专属知识(README §5「编排器不得」)。
+# package → pack 一次 candidate.tgz + sha256，上传 exact tgz
+# plan    → pnpm e2e plan --lane <lane> --json
+# e2e     → 下载同一 tgz；pnpm e2e run --candidate <exact> --repo <id>
+#           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
+# aggregate → 汇总 cell receipt/summary
 #
-# 触发层级(README §6.1):
-#   1. PR 门禁    — pull_request + push(main):sdk、cli、report 组,仓库自己 Experiment
-#                    声明的便宜档位。
-#   2. 路径门禁   — sandbox 组(Docker 仓库),仅当改动触及沙箱相关路径时随 1 一起跑。
-#   3. Nightly    — 全量矩阵(全部 group),schedule + workflow_dispatch(可选 --repo/--group)。
-#
-# fork PR 说明:`pull_request` 事件下,来自 fork 的 PR 按 GitHub 的安全模型拿不到本仓库
-# secrets;各测试仓库自己的 fail-fast secret 检查会让这类运行直接判红(退出 1)。这是
-# GitHub 平台边界,不在本 workflow 解决——同代码库直接在 main 上开发的场景下影响有限。
+# Lane: PR=pr(无 secret) | push main=main | schedule=nightly | dispatch=输入
+# 可信 lane 挂 GitHub Environment（与 lane 同名），不复制 Repo 选择逻辑。
 
 on:
   pull_request:
   push:
     branches: [main]
   schedule:
-    # 03:17 UTC——避开整点堆积的 GitHub Actions 高峰;具体时间点没有强约束,人工可按需调整。
     - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
-      repo:
-        description: "只跑这一个仓库 id(留空则按 group 选择;覆盖下面的 group 输入)"
-        required: false
-        type: string
-      group:
-        description: "留空 repo 时按此 group 选择;all = 全量矩阵"
-        required: false
+      lane:
+        description: "显式 lane"
+        required: true
         type: choice
         options:
-          - all
-          - sdk
-          - sandbox
-          - cli
-          - report
-        default: all
+          - pr
+          - main
+          - nightly
+          - release
+        default: pr
+      repo:
+        description: "只跑一个 Repo id（留空=该 lane 全集）"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  # 发现 e2e/ 平铺布局(adapter/<id>/ 与独立仓库 cli/、report/)里的 e2e.json,按本次触发层级
-  # 过滤成最终 matrix。
-  # 不读取、不解释任何仓库的 .niceeval/、Eval 或 Experiment 内容(README §5 编排边界)。
-  discover:
-    name: discover e2e matrix
+  package:
+    name: package candidate
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency:
-      group: e2e-discover-${{ github.ref }}
-      cancel-in-progress: true
+    timeout-minutes: 20
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-      has-jobs: ${{ steps.matrix.outputs.has-jobs }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      tgz-name: ${{ steps.pack.outputs.tgz-name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 路径门禁判定需要和 base commit 做 diff,浅克隆下不一定有那个提交
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -77,107 +65,169 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Install dependencies (for tsx)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 只在 stdout 打印紧凑 JSON 数组——list.ts --json 的契约就是「stdout 只有 JSON,
-      # 别的都走 stderr」,下面用文件重定向而不是命令替换,方便解析失败时直接查文件内容。
-      - name: Run list.ts --json
-        run: npx tsx e2e/scripts/list.ts --json > "$RUNNER_TEMP/e2e-repos.json"
+      - name: Pack candidate once
+        id: pack
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/niceeval-pack"
+          mkdir -p "$out_dir"
+          tgz_name="niceeval-candidate.tgz"
+          out="${out_dir}/${tgz_name}"
+          pnpm e2e pack --out "$out" | tee "${out_dir}/pack.json"
+          test -f "$out"
+          sha256="$(jq -r '.sha256' "${out_dir}/pack.json")"
+          if [ -z "$sha256" ] || [ "$sha256" = "null" ]; then
+            echo "::error::pack did not emit sha256"
+            exit 1
+          fi
+          recomputed="$(sha256sum "$out" | awk '{print $1}')"
+          if [ "$recomputed" != "$sha256" ]; then
+            echo "::error::sha256 mismatch: pack=${sha256} recomputed=${recomputed}"
+            exit 1
+          fi
+          echo "$sha256" > "${out_dir}/niceeval-candidate.sha256"
+          {
+            echo "sha256=${sha256}"
+            echo "tgz-name=${tgz_name}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] packed ${tgz_name} sha256=${sha256}"
 
-      # push/pull_request 下判断本次改动是否触及 sandbox 组关心的路径:该组仓库自己的
-      # 目录(从上一步 list.ts --json 的输出里动态取 group=="sandbox" 的 id,不写死
-      # 仓库名——中央 workflow 不内置仓库专属知识这条原则同样适用于路径门禁)、niceeval
-      # 里被这些仓库依赖的 Agent/Sandbox 源码,以及编排脚本自身。判不出来一律当命中
-      # (fail-open)——宁可多跑一次沙箱矩阵,不静默漏掉验证。
-      - name: Detect sandbox-relevant path changes
-        id: sandbox-paths
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+      - name: Upload exact candidate tgz
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-candidate
+          path: |
+            ${{ runner.temp }}/niceeval-pack/niceeval-candidate.tgz
+            ${{ runner.temp }}/niceeval-pack/niceeval-candidate.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  plan:
+    name: plan matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has-jobs: ${{ steps.plan.outputs.has-jobs }}
+      lane: ${{ steps.lane.outputs.lane }}
+      inject-secrets: ${{ steps.lane.outputs.inject-secrets }}
+      environment: ${{ steps.lane.outputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve lane and environment
+        id: lane
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DISPATCH_LANE: ${{ github.event.inputs.lane }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) lane=pr ;;
+            schedule) lane=nightly ;;
+            workflow_dispatch) lane="${DISPATCH_LANE:-pr}" ;;
+            push)
+              if [ "$REF" = "refs/heads/main" ]; then lane=main; else lane=pr; fi
+              ;;
+            *) lane=pr ;;
+          esac
+          case "$lane" in
+            pr)
+              inject=false
+              environment=
+              ;;
+            main|nightly|release)
+              inject=true
+              environment="$lane"
+              ;;
+            *)
+              echo "::error::unknown lane ${lane}"
+              exit 1
+              ;;
+          esac
+          {
+            echo "lane=${lane}"
+            echo "inject-secrets=${inject}"
+            echo "environment=${environment}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] lane=${lane} inject-secrets=${inject} environment=${environment:-"(none)"}"
+
+      - name: Run e2e plan --json
+        id: plan
+        env:
+          LANE: ${{ steps.lane.outputs.lane }}
+          DISPATCH_REPO: ${{ github.event.inputs.repo }}
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
-            echo "base commit unavailable (new branch, force-push, or shallow history) — defaulting to hit=true"
-            echo "hit=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          set -euo pipefail
+          args=(--lane "$LANE" --json)
+          repo="$(printf '%s' "${DISPATCH_REPO:-}" | tr -d '[:space:]')"
+          if [ -n "$repo" ]; then
+            args+=(--repo "$repo")
           fi
-          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          echo "changed files:"
-          echo "$changed"
-
-          sandbox_ids=$(jq -r '[.[] | select(.group == "sandbox") | .id] | join("|")' "$RUNNER_TEMP/e2e-repos.json")
-          pattern='^(src/agents/|src/sandbox/|e2e/scripts/|\.github/workflows/e2e\.yml)'
-          if [ -n "$sandbox_ids" ]; then
-            pattern="^(e2e/adapter/($sandbox_ids)/|src/agents/|src/sandbox/|e2e/scripts/|\\.github/workflows/e2e\\.yml)"
+          # 能求 diff 时交给 plan 做 path 省时；否则 fail-open 跑 lane 全集
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "push" ]; then
+            if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
+              while IFS= read -r path; do
+                [ -n "$path" ] && args+=(--diff-path "$path")
+              done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+            else
+              echo "[e2e] base unavailable — full lane (fail-open)"
+            fi
           fi
-
-          if echo "$changed" | grep -qE "$pattern"; then
-            echo "hit=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "hit=false" >> "$GITHUB_OUTPUT"
+          plan_file="${RUNNER_TEMP}/e2e-plan.json"
+          pnpm e2e plan "${args[@]}" > "$plan_file"
+          if ! jq -e 'type == "array"' "$plan_file" >/dev/null; then
+            echo "::error::plan --json did not emit a JSON array"
+            cat "$plan_file" || true
+            exit 1
           fi
+          count="$(jq 'length' "$plan_file")"
+          {
+            echo "matrix=$(jq -c '.' "$plan_file")"
+            if [ "$count" -gt 0 ]; then
+              echo "has-jobs=true"
+            else
+              echo "has-jobs=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] plan lane=${LANE} selected ${count}: $(jq -r '[.[].id] | join(", ")' "$plan_file")"
 
-      # 按事件类型选出本次要跑的仓库子集,写成紧凑 JSON 供下游 matrix 用 fromJson(...) 消费。
-      - name: Build matrix for this trigger tier
-        id: matrix
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          SANDBOX_HIT: ${{ steps.sandbox-paths.outputs.hit }}
-          DISPATCH_REPO: ${{ github.event.inputs.repo }}
-          DISPATCH_GROUP: ${{ github.event.inputs.group }}
-          REPOS_JSON_PATH: ${{ runner.temp }}/e2e-repos.json
-        run: |
-          node <<'NODE_EOF'
-          const fs = require("fs");
-
-          const repos = JSON.parse(fs.readFileSync(process.env.REPOS_JSON_PATH, "utf8"));
-          const event = process.env.EVENT_NAME;
-          const sandboxHit = process.env.SANDBOX_HIT === "true";
-          const dispatchRepo = (process.env.DISPATCH_REPO || "").trim();
-          const dispatchGroup = (process.env.DISPATCH_GROUP || "all").trim();
-
-          let selected;
-          if (event === "workflow_dispatch" && dispatchRepo) {
-            selected = repos.filter((r) => r.id === dispatchRepo);
-          } else if (event === "workflow_dispatch") {
-            selected = dispatchGroup === "all" ? repos : repos.filter((r) => r.group === dispatchGroup);
-          } else if (event === "schedule") {
-            selected = repos; // nightly: full matrix, all groups
-          } else {
-            // pull_request / push(main): sdk + cli + report always, sandbox only on path hit
-            selected = repos.filter((r) => r.group === "sdk" || r.group === "cli" || r.group === "report" || (r.group === "sandbox" && sandboxHit));
-          }
-
-          const matrixLine = `matrix=${JSON.stringify(selected)}\n`;
-          const hasJobsLine = `has-jobs=${selected.length > 0 ? "true" : "false"}\n`;
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, matrixLine + hasJobsLine);
-
-          console.log(`[e2e] event=${event} selected ${selected.length} repo(s): ${selected.map((r) => r.id).join(", ") || "(none)"}`);
-          NODE_EOF
-
-  # 每个 matrix cell 只运行一个测试仓库(README §6.1)。真正的执行永远只有一条命令:
-  # `pnpm e2e --repo <id>`——本 job 不重新实现候选包注入、secrets 过滤或退出码分类,
-  # 那些都是 e2e/scripts/run.ts 的职责,本地、CI、crabbox 共用同一条命令。
   e2e:
-    name: e2e (${{ matrix.repo.id }})
-    needs: discover
-    if: needs.discover.outputs.has-jobs == 'true'
+    name: e2e (${{ matrix.id }})
+    needs: [package, plan]
+    if: needs.plan.outputs.has-jobs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    # PR: null（不挂 Environment）；main/nightly/release: 同名 Environment
+    environment: ${{ needs.plan.outputs.inject-secrets == 'true' && needs.plan.outputs.environment || fromJSON('null') }}
     strategy:
       fail-fast: false
       matrix:
-        repo: ${{ fromJson(needs.discover.outputs.matrix) }}
-    runs-on: ubuntu-latest
-    # 当前矩阵里的 requires 只出现 docker 与 runtimes(node/python),没有仓库要求
-    # arch 或 memoryGB 超出标准 runner——ubuntu-latest 自带 Docker,统一用它比为空
-    # 需求发明 runner 标签更简单(README §6.1 + requires 字段核对,见任务报告)。
-    timeout-minutes: 150
-    concurrency:
-      # sandbox 组单仓库可能跑 20-40 分钟(且内部对 75 退出码重跑一次),被连续 push
-      # 顶掉就永远验证不完;sdk/cli/report 组便宜,新 push 顶掉旧的没问题。按仓库 id
-      # 分组是因为同一仓库不该并发跑两份,不同仓库之间本就没有互斥必要。
-      group: e2e-${{ matrix.repo.id }}-${{ github.ref }}
-      cancel-in-progress: ${{ matrix.repo.group != 'sandbox' }}
+        include: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -193,134 +243,126 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # 只有 requires.runtimes 声明了 python 的仓库才需要——用 toJson 兜底 requires
-      # 整体缺省的情况(undefined 序列化成 "null",contains 自然是 false)。
+      - name: Install orchestrator dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Set up Python
-        if: contains(toJSON(matrix.repo.requires), 'python')
+        if: contains(toJSON(matrix.requires), 'python')
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 根仓库自己的依赖(tsx、run.ts 需要的一切)——每个测试仓库自己的依赖由
-      # `pnpm e2e --repo <id>` 内部在隔离拷贝里装,这里不代劳。
-      - name: Install orchestrator dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Set up Playwright browsers
+        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
+        run: pnpm exec playwright install --with-deps
 
-      # 读这个仓库自己的 e2e.json,只取本 job 需要的三件事:声明的 secret 名(用于
-      # 下一步最小化过滤注入)、artifact glob(用于上传前定位文件)、以及供
-      # actions/upload-artifact 直接消费的仓库前缀路径列表。不重复 run.ts 的
-      # discoverAllRepos/schema 校验——那条校验已经在 discover job 的 list.ts 里跑过。
-      # REPO_DIR 来自 list.ts --json 的 `dir` 字段(相对 e2e/ 的路径,如
-      # "adapter/claude-agent-sdk"、"report")——不能假设每个仓库都挂在
-      # `e2e/adapter/<id>` 下,仓库的物理位置(adapter/<id>/ 或 e2e/ 直挂)由发现结果
-      # 给出,本 workflow 不重新猜测。
-      - name: Read repo manifest
-        id: manifest
+      - name: Derive safe artifact id
+        id: safe
         env:
-          REPO_DIR: e2e/${{ matrix.repo.dir }}
+          REPO_ID: ${{ matrix.id }}
         run: |
-          manifest="$REPO_DIR/e2e.json"
-          echo "secrets=$(jq -c '.secrets' "$manifest")" >> "$GITHUB_OUTPUT"
-          echo "artifacts=$(jq -c '.artifacts' "$manifest")" >> "$GITHUB_OUTPUT"
-          {
-            echo "artifact-paths<<E2E_ARTIFACT_PATHS_EOF"
-            jq -r --arg dir "$REPO_DIR" '.artifacts[] | "\($dir)/\(.)"' "$manifest"
-            echo "E2E_ARTIFACT_PATHS_EOF"
-          } >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          safe="$(printf '%s' "$REPO_ID" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          echo "id=${safe}" >> "$GITHUB_OUTPUT"
+          echo "artifact-root=${RUNNER_TEMP}/niceeval-e2e-artifacts/${safe}" >> "$GITHUB_OUTPUT"
 
-      # 标准安全模式(README §6.1 第 3 点):把全部 secrets 塞进这一步自己的 env 作为
-      # 一个 JSON blob,再按 e2e.json.secrets 过滤成这个仓库自己声明的最小子集,写进
-      # $GITHUB_ENV 供本 job 后续步骤使用——本 job 只运行一个仓库,所以「注入到本
-      # job 的环境」和「注入到这个仓库」是一回事,不会有其它仓库的 secret 混进来。
-      # 用 <<marker 形式写 GITHUB_ENV 是为了不对 secret 值本身的换行/特殊字符做任何
-      # 假设;不手动 echo 或 ::add-mask:: 任何值——那样反而会先把值打进日志。
-      - name: Inject this repo's declared secrets only
+      - name: Download candidate tgz
+        uses: actions/download-artifact@v4
+        with:
+          name: niceeval-candidate
+          path: ${{ runner.temp }}/niceeval-candidate
+
+      - name: Verify candidate sha256
+        id: candidate
+        env:
+          EXPECTED_SHA256: ${{ needs.package.outputs.sha256 }}
+          TGZ_NAME: ${{ needs.package.outputs.tgz-name }}
+        run: |
+          set -euo pipefail
+          candidate="${RUNNER_TEMP}/niceeval-candidate/${TGZ_NAME}"
+          test -f "$candidate"
+          actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          if [ -n "$EXPECTED_SHA256" ] && [ "$actual" != "$EXPECTED_SHA256" ]; then
+            echo "::error::candidate sha256 mismatch: expected=${EXPECTED_SHA256} actual=${actual}"
+            exit 1
+          fi
+          echo "path=${candidate}" >> "$GITHUB_OUTPUT"
+          echo "[e2e] candidate ${candidate} sha256=${actual}"
+
+      - name: Inject secrets for trusted lane
+        if: needs.plan.outputs.inject-secrets == 'true'
         env:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
-          SECRET_NAMES_JSON: ${{ steps.manifest.outputs.secrets }}
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
         run: |
+          set -euo pipefail
           node <<'NODE_EOF'
           const fs = require("fs");
-
-          const all = JSON.parse(process.env.ALL_SECRETS_JSON);
-          const names = JSON.parse(process.env.SECRET_NAMES_JSON);
-
+          const all = JSON.parse(process.env.ALL_SECRETS_JSON || "{}");
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
           const lines = [];
           let injected = 0;
-          for (const name of names) {
+          for (const name of manifest.secrets) {
             const value = all[name];
             if (typeof value !== "string" || value.length === 0) continue;
             const marker = `E2E_SECRET_${name}_${Math.random().toString(36).slice(2)}`;
             lines.push(`${name}<<${marker}`, value, marker);
-            injected++;
+            injected += 1;
           }
           if (lines.length > 0) {
             fs.appendFileSync(process.env.GITHUB_ENV, lines.join("\n") + "\n");
           }
-          console.log(`[e2e] injected ${injected} of ${names.length} declared secret(s) for this repo`);
+          console.log(`[e2e] injected ${injected}/${manifest.secrets.length} declared secret(s)`);
           NODE_EOF
 
-      # CI 不重新实现编排逻辑——本地、CI、crabbox 三处永远是这一条命令(README §6.1/§6.2)。
-      - name: Run e2e for ${{ matrix.repo.id }}
-        run: pnpm e2e --repo ${{ matrix.repo.id }}
-
-      # 无论成败都收集(README §6.1):对声明的 artifact glob 命中的每个文件,把本次
-      # 注入的 secret 值原地替换成 <redacted:VAR_NAME> 再上传——真实 Agent/服务日志可能
-      # 回显环境变量,脱敏由这一层兜底,不指望每个仓库的日志纪律。
-      #
-      # run.ts 在隔离拷贝里跑完命令后(无论成败)把声明的 artifacts 拷回这里的
-      # $REPO_DIR(e2e/adapter/<id>/ 或 e2e/<id>/),再删 scratch 目录——
-      # 下面两步读到的就是这份拷回的证据。
-      - name: Redact secret values from collected artifacts
-        if: always()
+      - name: Run e2e for ${{ matrix.id }}
         env:
-          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
-          SECRET_NAMES_JSON: ${{ steps.manifest.outputs.secrets }}
-          ARTIFACTS_JSON: ${{ steps.manifest.outputs.artifacts }}
-          REPO_DIR: e2e/${{ matrix.repo.dir }}
+          CANDIDATE: ${{ steps.candidate.outputs.path }}
+          REPO_ID: ${{ matrix.id }}
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
         run: |
-          shopt -s globstar dotglob nullglob
-          mapfile -t patterns < <(node -e 'process.stdout.write(JSON.parse(process.env.ARTIFACTS_JSON).join("\n"))')
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_ROOT"
+          pnpm e2e run \
+            --candidate "$CANDIDATE" \
+            --repo "$REPO_ID" \
+            --artifact-root "$ARTIFACT_ROOT"
 
-          matched="$RUNNER_TEMP/e2e-artifact-files.txt"
-          : > "$matched"
-          if [ -d "$REPO_DIR" ]; then
-            pushd "$REPO_DIR" > /dev/null
-            for p in "${patterns[@]}"; do
-              for f in $p; do
-                [ -f "$f" ] && echo "$f" >> "$matched"
-              done
-            done
-            popd > /dev/null
-          fi
-
-          count=$(wc -l < "$matched" | tr -d ' ')
-          echo "[e2e] $count artifact file(s) matched declared globs"
-          if [ "$count" -eq 0 ]; then
-            echo "[e2e] nothing to redact"
+      - name: Redact secrets in artifactRoot
+        if: always() && needs.plan.outputs.inject-secrets == 'true'
+        env:
+          ALL_SECRETS_JSON: ${{ needs.plan.outputs.inject-secrets == 'true' && toJSON(secrets) || '{}' }}
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$ARTIFACT_ROOT" ]; then
+            echo "[e2e] no artifactRoot to redact"
             exit 0
           fi
-
-          MATCHED_FILE="$matched" node <<'NODE_EOF'
+          node <<'NODE_EOF'
           const fs = require("fs");
           const path = require("path");
-
-          const repoDir = process.env.REPO_DIR;
-          const files = fs.readFileSync(process.env.MATCHED_FILE, "utf8").split("\n").filter(Boolean);
-          const names = JSON.parse(process.env.SECRET_NAMES_JSON);
-          const all = JSON.parse(process.env.ALL_SECRETS_JSON);
-          const replacements = names
-            .map((name) => ({ name, value: all[name] }))
-            .filter(({ value }) => typeof value === "string" && value.length > 0);
-
+          const root = process.env.ARTIFACT_ROOT;
+          const all = JSON.parse(process.env.ALL_SECRETS_JSON || "{}");
+          const replacements = Object.entries(all)
+            .filter(([, value]) => typeof value === "string" && value.length > 0)
+            .map(([name, value]) => ({ name, value }));
+          function walk(dir, files = []) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const abs = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(abs, files);
+              else if (entry.isFile()) files.push(abs);
+            }
+            return files;
+          }
+          const files = walk(root);
           let hits = 0;
-          for (const rel of files) {
-            const abs = path.join(repoDir, rel);
+          for (const abs of files) {
             let text;
             try {
               text = fs.readFileSync(abs, "utf8");
             } catch {
-              continue; // not UTF-8 text (or vanished mid-scan) — leave as-is, still uploaded
+              continue;
             }
             let next = text;
             for (const { name, value } of replacements) {
@@ -331,15 +373,111 @@ jobs:
             }
             if (next !== text) fs.writeFileSync(abs, next, "utf8");
           }
-          console.log(`[e2e] redaction scan: ${hits} secret-value occurrence(s) replaced across ${files.length} file(s)`);
+          console.log(`[e2e] redaction: ${hits} occurrence(s) across ${files.length} file(s)`);
           NODE_EOF
 
-      - name: Upload artifacts
+      - name: Upload cell artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-${{ matrix.repo.id }}
-          path: ${{ steps.manifest.outputs.artifact-paths }}
+          name: e2e-${{ steps.safe.outputs.id }}
+          path: ${{ steps.safe.outputs.artifact-root }}
           retention-days: 14
           if-no-files-found: warn
           include-hidden-files: true
+
+  aggregate:
+    name: aggregate e2e
+    needs: [package, plan, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check upstream outcomes
+        env:
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          HAS_JOBS: ${{ needs.plan.outputs.has-jobs }}
+          LANE: ${{ needs.plan.outputs.lane }}
+          SHA256: ${{ needs.package.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          echo "[e2e] lane=${LANE:-unknown}"
+          echo "[e2e] candidate sha256=${SHA256:-unknown}"
+          echo "[e2e] package=${PACKAGE_RESULT} plan=${PLAN_RESULT} e2e=${E2E_RESULT:-skipped} has-jobs=${HAS_JOBS:-}"
+          if [ "$PACKAGE_RESULT" != "success" ]; then
+            echo "::error::package job failed"
+            exit 1
+          fi
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "::error::plan job failed"
+            exit 1
+          fi
+          if [ "${HAS_JOBS}" != "true" ]; then
+            echo "[e2e] no matrix cells — aggregate ok"
+            exit 0
+          fi
+
+      - name: Download all cell artifacts
+        if: needs.plan.outputs.has-jobs == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-*
+          path: ${{ runner.temp }}/e2e-cells
+          merge-multiple: false
+
+      - name: Summarize cells
+        if: needs.plan.outputs.has-jobs == 'true'
+        env:
+          CELLS_ROOT: ${{ runner.temp }}/e2e-cells
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$CELLS_ROOT" ]; then
+            echo "::error::no cell artifacts downloaded"
+            exit 1
+          fi
+          echo "=== e2e aggregate ==="
+          echo "candidate sha256: ${{ needs.package.outputs.sha256 }}"
+          echo "lane: ${{ needs.plan.outputs.lane }}"
+          echo
+          cells=0
+          receipts=0
+          summaries=0
+          junit_files=0
+          while IFS= read -r -d '' dir; do
+            cells=$((cells + 1))
+            rel="${dir#"$CELLS_ROOT"/}"
+            echo "--- cell: ${rel} ---"
+            if [ -f "${dir}/summary.json" ]; then
+              summaries=$((summaries + 1))
+              jq -c '{passed, regression, infra, total, results: [.results[] | {id, exitCode, category, detail}]}' \
+                "${dir}/summary.json" || cat "${dir}/summary.json"
+            fi
+            while IFS= read -r -d '' receipt; do
+              receipts=$((receipts + 1))
+              echo "receipt: ${receipt#"$dir"/}"
+              jq -c '{repoId, exitCode, category, detail, stages: [.stages[]? | .stage + "=" + (if .ok then "ok" else "fail" end)]}' \
+                "$receipt" 2>/dev/null || jq -c '.' "$receipt" 2>/dev/null || echo "(unreadable receipt)"
+            done < <(find "$dir" -type f -name receipt.json -print0 | sort -z)
+            while IFS= read -r -d '' junit; do
+              junit_files=$((junit_files + 1))
+              echo "junit: ${junit#"$dir"/}"
+            done < <(find "$dir" -type f \( -iname 'junit*.xml' -o -path '*/junit/*.xml' \) -print0 | sort -z)
+            echo
+          done < <(find "$CELLS_ROOT" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+          echo "cells=${cells} summaries=${summaries} receipts=${receipts} junit=${junit_files}"
+          echo "matrix job result: ${E2E_RESULT}"
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "::error::one or more e2e matrix cells failed (result=${E2E_RESULT})"
+            exit 1
+          fi
+          if [ "$cells" -eq 0 ]; then
+            echo "::error::expected cell artifacts but found none"
+            exit 1
+          fi
+          if [ "$summaries" -ne "$cells" ] || [ "$receipts" -lt "$cells" ]; then
+            echo "::error::incomplete execution evidence: cells=${cells} summaries=${summaries} receipts=${receipts}"
+            exit 1
+          fi

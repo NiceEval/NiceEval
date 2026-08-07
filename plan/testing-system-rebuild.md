@@ -93,13 +93,13 @@
 └─ [ ] T4.8 验收 Repo、文件、标题三种重跑
        acceptance: pnpm e2e --repo cli -- --run test/<pilot>.test.ts -t <title>
 
-[ ] T5 改造 GitHub E2E 编排（depends on T2.3；parallel with T4）
-├─ [ ] T5.1 package job 只生成一次 niceeval candidate 与 sha256
-├─ [ ] T5.2 plan job 产出正式 matrix
-├─ [ ] T5.3 matrix job 下载同一 tarball并调用 e2e run
-├─ [ ] T5.4 aggregate job 汇总 JUnit、receipt 与 artifact
-├─ [ ] T5.5 PR 无 secret；main/nightly/release 使用对应 Environment
-└─ [ ] T5.6 workflow 不再解释 group、Repo expected 或重试
+[x] T5 改造 GitHub E2E 编排（depends on T2.3；parallel with T4）
+├─ [x] T5.1 package job 只生成一次 niceeval candidate 与 sha256
+├─ [x] T5.2 plan job 产出正式 matrix
+├─ [x] T5.3 matrix job 下载同一 tarball并调用 e2e run
+├─ [x] T5.4 aggregate job 汇总 JUnit、receipt 与 artifact
+├─ [x] T5.5 PR 无 secret；main/nightly/release 使用对应 Environment
+└─ [x] T5.6 workflow 不再解释 group、Repo expected 或重试
        owner: .github/workflows/e2e.yml
 
 [ ] T6 迁移其余场景 Repo（depends on T4 pilot；各叶子互相 parallel）
