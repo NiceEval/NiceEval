@@ -3,7 +3,8 @@ import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // Feature 测试文档与测试套件的双向挂钩由测试守护(契约见
-// docs/engineering/testing/unit/README.md「矩阵与覆盖登记」),不引入脚本:
+// docs/engineering/testing/unit/README.md「矩阵与覆盖登记」与
+// docs/engineering/testing/unit/registry.md),不引入脚本:
 // 1. src/ 下每个测试文件头部声明所属文档(// cases: docs/engineering/testing/unit/<feature>.md),
 //    且声明指向真实存在的测试文档——没有这条,新增测试可以绕开覆盖登记存在,
 //    「先声明后写测」的预算闸门静默失效;
@@ -14,8 +15,8 @@ import { describe, expect, it } from "vitest";
 // test/ 下的仓库守护测试没有 Feature 文档可指,不做 cases 声明(例外已写进上述文档)。
 const ROOT = resolve(import.meta.dirname, "../..");
 
-// unit/ 下只有 README 不是 Feature 测试文档。
-const NON_FEATURE_DOCS = new Set(["README.md"]);
+// 方法论、覆盖登记规则与 harness 契约不是 Feature owner 文档。
+const NON_FEATURE_DOCS = new Set(["README.md", "registry.md", "harness.md"]);
 
 function walk(dir: string, match: (name: string) => boolean): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((name) => {

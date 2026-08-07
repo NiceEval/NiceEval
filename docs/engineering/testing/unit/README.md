@@ -38,6 +38,8 @@ Unit 的观察面是确定性数据与状态，不是安装后的进程、终端
 
 ## Fixture 与 Harness
 
+共享构造器的所有权与稳定性细则见 [Harness](harness.md)。
+
 Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值，但不计算 verdict、delta、summary 或 expected。
 
 - 输入受测试控制，决策归生产代码；
@@ -49,6 +51,8 @@ Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值�
 - Harness 复杂到需要独立测试时，应拆薄，而不是再建一套测试。
 
 ## 矩阵与覆盖登记
+
+“先声明、后写测”的准入流程与类别预算见 [风险类别登记](registry.md)。
 
 每个 Feature 测试文档的“覆盖规范”只登记稳定风险类别、唯一矩阵 owner 与 Fixture 特例，不复述产品契约或逐 case 清单。
 
