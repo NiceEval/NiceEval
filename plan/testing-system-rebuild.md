@@ -108,7 +108,18 @@
 │      owner: e2e/runner/**
 ├─ [ ] T6.2 package：CJS/ESM/exports/外部 cwd
 │      owner: e2e/package/**
-│      blocked: candidate exports 指向 node_modules 内 TS 源文件，Node 24 的真实 ESM/CJS 消费均报 ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING
+│      contract: docs/engineering/testing/e2e/package.md
+│      design: 单一可互操作 runtime identity；ESM/CJS 与各自 NodeNext 类型入口同源生成，不把双格式编译成两套私有状态
+│  ├─ [ ] T6.2.1 runtime build / exports / bin（parallel with T6.2.2, T6.2.3）
+│  │      owner: package.json, bin/**, scripts/package-runtime/**, tsconfig.package-*.json
+│  │      worker: DP V4
+│  ├─ [ ] T6.2.2 外部 ESM/CJS、混合宿主与 NodeNext consumer（parallel with T6.2.1, T6.2.3）
+│  │      owner: e2e/package/**
+│  │      worker: Terra
+│  ├─ [ ] T6.2.3 release preflight 与发布产物机器守护（parallel with T6.2.1, T6.2.2）
+│  │      owner: .github/workflows/release.yml, test/docs/package-artifacts.test.ts
+│  │      worker: DP V4
+│  └─ [ ] T6.2.4 父侧串行验收：同一 tgz、Node 18/22/24、identity Journey、类型两面、release digest
 ├─ [x] T6.3 report：确定性 evidence + Playwright
 │      owner: e2e/report/**
 ├─ [x] T6.4 record：公开 Record API/格式；不拥有私有存储布局
