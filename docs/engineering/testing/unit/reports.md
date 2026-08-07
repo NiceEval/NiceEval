@@ -2,7 +2,7 @@
 
 契约来源：[Reports](../../../feature/reports/README.md)、[Architecture](../../../feature/reports/architecture.md)、[Library](../../../feature/reports/library.md)、[Show](../../../feature/reports/show.md)、[View](../../../feature/reports/view.md)、[Observability](../../../observability.md)。
 
-单元层证明 Reports 的**数据语义**：`rollup` / `aggregate()`、公开 `to*` 转换、 page render 与装载规范化、报告定义的校验反馈。
+单元层证明 Reports 的**数据语义**：`rollup` / `aggregate()`、公开 `to*` 转换、报告树规范化与报告定义的校验反馈。
 观察面是规范化结构、普通值形状、错误对象与文案。
 本篇的缝：构造 Sample / evidence fixture 作输入，测其上的计算与装载逻辑；缝的真实侧（真实产物上的出口与渲染）由 [E2E 功能域 · 报告与读面](../e2e/report.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 渲染出来的终端排版、DOM 结构、双面比对、样式与交互不在本层，归 [E2E 功能域 · 报告与读面](../e2e/report.md)对真实运行的产物验收。
@@ -41,7 +41,7 @@ const scope = reportScopeFixture({
 ## 观察面：数据级断言
 
 1. **计算结果的事实**：数值、覆盖率、排序、缺失行为，全部在 `MetricValue` / `EvidenceRow` / 表格行级断言。
-2. **装载与 page render**：`defineReport` 规范化、`page.render` Promise 缓存、非法输入的完整用户反馈——断言规范化结构与错误对象，不断言渲染结果。
+2. **装载与 page render**：`defineReport` 规范化、装载不执行 render、只解析被请求的 page、非法输入的完整用户反馈——断言规范化结构与错误对象，不断言渲染结果或私有缓存策略。
 3. **计算与格式化分别可断言**（`value` 与 `display` 独立），不从渲染字符串反推计算正确。
 
 校验器测试按**规则类别**预算，不按字段清单枚举：一个共享的必填字符串、optional number、nullable 字段或嵌套路径规则各保留一条有区分力的代表场景；判别联合的每个分支可以各有一条，因为分支实现彼此独立。
@@ -138,15 +138,14 @@ const scope = reportScopeFixture({
 - **主题钉色**（[钉色](../../../feature/reports/library/shell.md#钉色)）：报告外壳 `dimensionPins` 的键原样占位、自动分配只在剩余槽里探测、多个值钉同一下标不触发探测、钉了但页内未出现的键不占槽；非法维度 name / 值键 / 下标按完整用户反馈拒绝并指到 `dimensionPins.<维度>.<值>`。
   区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
 - **Chart 呈现覆盖**：`Chart.series` 只能覆盖已有 series key 的线型、点形、标签与可见性，不能改变 mark、绑定或聚合；未知 key 给出完整用户反馈。
-- **`Markdown` 的解析与两面投影** （[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。
+- **`Markdown` 的解析与 text 投影** （[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与 text 输出，不经浏览器。
   覆盖每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）。
-  原始 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出。
+  原始 HTML 块与行内 HTML 一律转义成可见文本；web 最终输出由 E2E 验收。
   表格语法按完整用户反馈报错并指引 `Table`。
   折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）。
    `LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
-- **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）： `subRows` 在 text / web 两面逐层渲染；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
-  两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
-  行 key 判重按层级同层进行：不同父行下的同名子行在两面都合法，同层重复 key 才报错。
+- **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）： `subRows` 的 Content 与 text 投影逐层保留；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
+  行 key 判重按层级同层进行：不同父行下的同名子行合法，同层重复 key 才报错；web 的展开与布局由 E2E 验收。
   区分力场景是「两个父行各带一个同名子行」——只有把展平行当同层判重的错误实现会在 text 面误报。
 - **表格行形状与列集同源** （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：断言面是校验错误对象。
   逐项覆盖：
@@ -154,38 +153,36 @@ const scope = reportScopeFixture({
   - 行 cells key 集合与列集相等，两个方向各一条：多写一个列集外的 key、漏写一个声明列，错误都指到行 key 与列 key；各层 subRows 与 placeholder / group 行同规则。
   - 区分力场景是「同一个 attempt 行构造函数被层级表与平铺表两种列集消费」——两张表各自通过校验，证明行按消费它的列集填格，不是一份格子四处塞（[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
   - 不适用的列是显式 notApplicable 格：层级表里 Eval 行的 model / agent 格存在且渲染成 `—`，与「缺格」在校验层可区分；tokens 是四层都有值的比较读数，不属于不适用列。
-- **表头长在列声明上** （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：断言面是两面输出字符串。
+- **表头长在列声明上** （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：断言面是 Content 与 text 输出。
   逐项覆盖：
 
-  - 声明了 `header` 的列在 text / web 两面按 locale 解析同一份表头；区分力场景是 zh-CN 下稳定性矩阵首列表头是「题目」、attempt 断言表四列有中文文案——只有表头走列声明解析才区别于原样打出英文 key。
-  - 未声明 `header` 的维度值列（条件名、实验 id）在两面原样显示 key。
+  - 声明了 `header` 的列在 text 面按 locale 解析表头；区分力场景是 zh-CN 下稳定性矩阵首列表头是「题目」、attempt 断言表四列有中文文案——只有表头走列声明解析才区别于原样打出英文 key。
+  - 未声明 `header` 的维度值列（条件名、实验 id）原样显示 key。
   - 同一个 key 在两份投影里声明不同 `header` 时各显各的，证明表头只来自列声明，原语不携带列名词表。
-- **`Grid` 的换列规则与体裁**（[换列规则](../../../feature/reports/library/layout.md#换列规则)、 [体裁与体量](../../../feature/reports/library/layout.md#体裁与体量)）：断言面是列数纯函数的产出、text 面输出字符串与 web 面的 HTML，不经浏览器。
+- **`Grid` 的换列规则与体裁**（[换列规则](../../../feature/reports/library/layout.md#换列规则)、 [体裁与体量](../../../feature/reports/library/layout.md#体裁与体量)）：Unit 断言列数纯函数与 text 输出；web 的响应式结果由 E2E 验收。
   逐项覆盖：
 
   - 摊匀这一步：给定格数与容量列数产出实际列数，区分力场景是「6 格、容量 5 列排成 3 + 3」——只有摊匀会让结果区别于容量列数本身；7 格、容量 5 列排成 4 + 3 覆盖不整除。
   - 摊匀后的列数从不超过容量列数，因此从不把格子挤到最小格宽以下。
   - 最后一行只剩一格时那一格铺满整行；短于一行但不止一格时按上面各行的格宽左对齐，不拉伸。
   - text 面从格数向一列尝试，每格达不到最小可读内容宽度就降列，一列是无条件 fallback。
-  - web 面的 `data-cells` 与随身 `@container` 规则只由格数决定：同格数的两个 Grid 规则文本逐字相同，各断点等于该列数下的最小格宽与格线合计，每条断点同时声明列数与 `--grid-columns` ——体量插值靠后者，规则里不出现留白或字号的具体值。
   - text 面画的是一张格线：列间 `│`、行间 `─`、交点 `┼`，格线之外不画外框；末行短于一行时，它上面那条行间线在缺格的位置收成 `┴`。
-- **Callouts / Waterfall / SourceView / Conversation / DiffView / CopyBlock 的两面投影与维度封闭性**：每个原语各一条类别。
-  断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
-- **Attempt 行的判定长在 locator 上** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。
+- **Callouts / Waterfall / SourceView / Conversation / DiffView / CopyBlock 的数据投影与维度封闭性**：每个原语只保留能区分数据错误的代表。
+  Unit 断言 Content、text 投影与未声明维度的错误；web 呈现与交互由 Report E2E 的真实页面 owner 验收，不能在这里复制 HTML 断言。
+- **Attempt 行的判定长在 locator 上** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：Unit 断言 `experimentListContent` 产出的 Cell 树与 text 投影；web 语义由 Report E2E 验收。
   逐项覆盖：
 
-  - attempt 行的 locator 格携带该次判定，三态各产出自己的判定符与语义 class。
-  - 区分力场景是「同一道题下 failed 与 errored 各一次 attempt」——两行的 class 与判定符都不同，证明判定没有被折成「非 passed」一档。
-  - 判定符与色同场：两面输出里判定符都在，不靠 class 单独表意。
-  - 没有判定的 locator 格（`--history` 等场景）不带判定 class，也不凭空补判定符。
-- **判定构成列每层都有值** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。
+  - attempt 行的 locator 格携带该次判定，三态各产出自己的判定数据与判定符。
+  - 区分力场景是「同一道题下 failed 与 errored 各一次 attempt」——两行的判定数据与判定符都不同，证明判定没有被折成「非 passed」一档。
+  - 没有判定的 locator 格（`--history` 等场景）不凭空补判定符。
+- **判定构成列每层都有值** （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：断言面是 `experimentListContent` 产出的 Cell 树与 text 投影。
   逐项覆盖：
 
   - Eval 行的判定构成格是该题 attempts 的计票，与 experiment 行数题的计票同一 Cell 形态。
     区分力场景是「先 failed 后 passed 的重试」——计票是 `1 通过 · 1 失败`，只按题目级折叠判定填格的错误实现在这一格丢掉失败那一票。
   - Attempt 行的判定构成格是该次判定；同题下 failed 与 errored 两行的格不同，证明没有折成「非 passed」一档。
   - 格子落在层级表列集存在的 key 上：experiment 列集渲染后 Eval 与 Attempt 行的判定构成列不是 `—` （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
-  - 两面显示同源：计票与单判定的 text 面经 `formatCellText` 按 locale 取判定词，单判定带 `verdictMark` 判定符；web 面同一格带 `niceeval-verdict-*` 语义 class。
+  - text 投影经 `formatCellText` 按 locale 取判定词，单判定带 `verdictMark` 判定符；web 的可见判定与可访问身份由 E2E 验收。
 - **占位行的两类缺口** （[契约](../../../feature/reports/components/summaries/experiment-table.md#缺口原因与动作)）：断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串；web 面只断言原因与可操作 locator 同场，不断言浏览器布局。
   逐项覆盖：
 
@@ -311,10 +308,6 @@ const scope = reportScopeFixture({
   快照模块随报告 import 图进 watch 与缓存身份。
   区分力：改冻结快照文件触发 view 重建； page render 读时钟 / 网络按完整用户反馈拒绝。
 
-- **`ResolvedPage` 单次解析多面投影**：`resolveDefinitionPage` 一次产出 `ResolvedPage`。
-  之后 `renderResolvedPageText` / `renderResolvedPageWeb(en)` / `renderResolvedPageWeb(zh-CN)` 都从同一 `ResolvedPage` 同步投影。
-  断言面是 `page.render` 调用计数仍为 1（含并发 text/web/locale 投影）。
-   view 对每个 page / locator 只调用一次 `resolveDefinitionPage`。
 - **双面组件协议**：内置原语与 `defineRenderer` 都只接受 `{ dimensions, text, web, enhance?, styles? }`；携带 `resolve` 或函数形态定义时按完整用户反馈拒绝。
    renderer 参数是已算好的 value、options 与呈现 context，无法触达 Sample 或 artifact IO。
   缺 `dimensions` / `text` / `web` 时失败。
@@ -429,8 +422,8 @@ const scope = reportScopeFixture({
   没有 `loc` 的得分点与给分记录进入 unmapped，并按 `groupPath` 分组；分组算法与 `attemptAssertions` 相同。
 - **外壳与页面装载**：规范化产物、`pages` 非空、单页 `defineReport(render)` → id `report`、外壳穷尽 title / theme / dimensionPins / head / pages、输入 `"sample"` / `"attempt"`。
   断言装载结果或错误对象。
-- **惰性 page render** （[Architecture · 执行模型](../../../feature/reports/architecture.md#执行模型)）：装载不执行 render；打开一页不执行兄弟页；同一实例 text/web/locale 共用一次 render Promise。
-  区分力：多页 + 调用计数。
+- **惰性 page render** （[Architecture · 执行模型](../../../feature/reports/architecture.md#执行模型)）：装载不执行 render；打开一页不执行兄弟页。
+  区分力：多页 fixture 中只有被请求页产生可观察结果。跨投影是否共用某个 Promise 属于私有缓存策略，不设 Unit owner。
 - **show 终端宿主的文案纯函数**：`show` 的纯函数以返回值为断言面，不依赖终端排版。
   `verdictReasonLine` 把多行 `error.message` 收为首行并移除控制字节；完整 message 只在 attempt 详情块展开。
   `showCommand` / `otherPagesText` 按 `HostCommandContext` 生成可复现的页 / 组索引命令，只列未渲染页并携带完整上下文。
