@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "tsx scripts/e2e.ts",
-    "eval": "niceeval"
+    "e2e": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -17,11 +17,13 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
     "@types/dockerode": "^3.3.31",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",
     "dotenv": "^16.4.7",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }
