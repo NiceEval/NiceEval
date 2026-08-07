@@ -1,11 +1,10 @@
 {
-  "name": "e2e-repo-opencode",
+  "name": "opencode-e2e",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "niceeval E2E adapter repo: OpenCode CLI (openCodeAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/opencode.md",
   "scripts": {
-    "e2e": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "e2e": "vitest run"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
@@ -16,7 +15,7 @@
   "devDependencies": {
     "@niceeval/testkit": "0.1.0",
     "@types/dockerode": "^3.3.31",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.9"
   }
