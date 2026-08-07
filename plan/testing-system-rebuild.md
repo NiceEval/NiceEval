@@ -144,6 +144,22 @@
 ├─ [x] T7.3 更新 lockfile、源码注释、AGENTS 与链接
 ├─ [ ] T7.4 pnpm test、pnpm test:docs、pnpm run typecheck
 └─ [ ] T7.5 pr lane 全绿；main/nightly 未选择项在 plan 中可见而非伪装 pass
+
+[ ] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
+├─ [ ] T8.1 修正 9 个首行无 `// cases:` owner 的 Unit；无法归属稳定风险类别的直接删除
+├─ [ ] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
+│  ├─ [ ] T8.2.1 experiments-runner：44 files / 约 19.2k lines
+│  │      删除 CLI 真实进程、终端最终排版、carry/history Journey 重复；保留选择、指纹、调度、锁与 reducer 等确定性矩阵
+│  ├─ [ ] T8.2.2 reports：60 files / 约 15.2k lines
+│  │      删除浏览器、DOM/HTML 最终表现与 show/view 进程重复；保留公开 task Result 的纯投影与公式 owner
+│  ├─ [ ] T8.2.3 sandbox：44 files / 约 12.3k lines
+│  │      删除真实 signal/HTTP/进程生命周期重复；保留 fake provider、资源状态机、retry/lock 与命令分类
+│  ├─ [ ] T8.2.4 adapters + record：20 files / 约 4.6k lines
+│  │      删除复制上游 wire shape 的 fixture；保留 NiceEval 自有稳定事件词表、归一与 Record 变换
+│  └─ [ ] T8.2.5 assertions + eval + sample：15 files / 约 4.6k lines
+│         每张等价类矩阵只留唯一 owner 和能杀死另一种错误算法的最小代表
+├─ [ ] T8.3 每个删除批次说明“删了会放走什么错误”；答不出的旧测试不因历史存在而保留
+└─ [ ] T8.4 收口：Unit 全量无网络/容器/凭据，60 秒内；文档 cases 守护与对应 E2E 同时通过
 ```
 
 ## 当前并行占用
