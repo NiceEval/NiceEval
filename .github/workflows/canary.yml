@@ -35,10 +35,10 @@ jobs:
         with:
           ref: main
 
+      # version 缺省时 pnpm/action-setup 读取根 package.json 的 packageManager，
+      # 不在 workflow 重复版本真源。
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v4
