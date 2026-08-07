@@ -38,7 +38,7 @@ Experiment 可以只替换 Agent Judge 来做可复现的裁判 A/B，但不能�
 
 Sandbox Agent Judge 不进入被测 Sandbox。
 需要查看最终仓库时，Runner 在判分边界捕获被测 workdir，并把副本导入全新的裁判 Sandbox。
-裁判的写入、命令和失败因此不会改变被测工作区、后续 Assertion 或 Sandbox 留存现场。
+裁判的写入、命令和失败因此不会改变被测工作区、后续 Assertion 或被测 Sandbox 的 retention policy。
 
 Direct Agent Judge 不创建也不伪造 Sandbox。
 它从默认断言范围或显式 `{ on }` 取得材料，适合不需要文件系统工具的判分。

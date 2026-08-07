@@ -63,7 +63,7 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 2. 首条工作创建 Sandbox，后续工作领取同一活跃实例；
 3. Runner reset workdir，并重放两层 prepare 与 agent.ensure；
 4. Attempt 封口和 cleanup 完成后，实例回到该组；
-5. 组结束后执行 lifecycle teardown 与 Provider finalizer。
+5. 组结束后执行 lifecycle teardown，再按 physical release policy 停驻或销毁。
 
 公平调度仍使用全局调度波次。
 一个组不能因为持有 Sandbox 就连续抢占全部并发位；其它组、其它 Experiment 与 fresh Attempt 仍有机会运行。
@@ -84,7 +84,7 @@ Sequence 上下文仍按[有序 Eval 序列](../ordered-sequences/architecture.m
 Sandbox 在以下任一条件下不可继续：reset 失败、派发前寿命无法保证、实例中途消失，或收尾后无法证明命令树已经终止。
 
 - `stop-group`：中止该组尚未派发的工作，Run 记为 incomplete；其它组和 fresh Attempt 继续。
-- `replace-sandbox`：完成旧实例可执行的 teardown 与 finalizer，再创建新实例继续尚未派发的工作。
+- `replace-sandbox`：完成旧实例可执行的 teardown 与 physical release，再创建新实例继续尚未派发的工作。
 
 两条路径都记录原始失败阶段和 Provider 原文。
 `replace-sandbox` 记录替换，但不把新实例描述成连续状态。

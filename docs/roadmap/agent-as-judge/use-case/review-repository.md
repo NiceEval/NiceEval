@@ -60,7 +60,7 @@ export default defineEval({
 ```
 
 Runner 封口被测 send 窗口后捕获 workdir，再把副本导入全新的裁判 Sandbox。
-裁判可以运行测试并修改自己的副本；原 workdir、被测 diff 与 `--keep-sandbox` 现场保持不变。
+裁判可以运行测试并修改自己的副本；原 workdir、被测 diff 与被测 Sandbox 的 retention policy 保持不变。
 
 裁判返回的 evidence 可以引用 `src/session.ts:88`、测试文件和具体命令结果。
 读取面把这些引用挂在 Agent Judge execution 下，不把裁判产生的新 diff 算给被测 Agent。
@@ -70,4 +70,3 @@ Runner 封口被测 send 窗口后捕获 workdir，再把副本导入全新的�
 - `workspace: "snapshot"` 的合法组合见 [Library · 默认材料与工作区](../library.md#默认材料与工作区)。
 - 文件树复制规则见 [Architecture · workdir 快照](../architecture.md#workdir-快照)。
 - 创建、导入与清理顺序见 [Lifecycle · Sandbox Agent Judge](../lifecycle.md#sandbox-agent-judge)。
-

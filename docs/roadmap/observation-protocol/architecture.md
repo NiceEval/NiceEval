@@ -123,7 +123,7 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 |---|---|---|
 | Runner | Run、Attempt、phase 与 activity 边界 | 生命周期阶段只使用 `LifecyclePhase` |
 | Agent | Turn、message、operation、Skill、HITL、compaction 与 Agent error | 由 Adapter 归一，按 Turn 声明证据完整性 |
-| Sandbox | command、退出状态、stdout/stderr、workspace change 与 cleanup | 大值由 Record sink 统一截断并显式标记 |
+| Sandbox | command、退出状态、workspace change、cleanup 与 physical release | 大值由 Record sink 统一截断并显式标记 |
 | Telemetry | 实际收到的 OTLP log、span 与采集 Diagnostic | 原始 name/attributes 保留，canonical kind 是投影 |
 | Usage | provider 或 Agent 实际返回的 token 与账单 | 估算成本不属于 Observation |
 
@@ -180,8 +180,16 @@ Record、Live 和 OTel exporter 共享这份转写后的 durable envelope，不�
 另一种允许形态是按事件 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
 这个预算只约束一条事件的编码，不限制一个 stream 能保存多少事件。
 
-Attempt 只有在 finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整记录。
+Attempt 只有在 Attempt-scoped finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整记录。
 进程中断留下的未封口 stream 保留为 incomplete evidence；Reader 不补造 Outcome、Verdict 或缺失事件。
+
+Attempt-scoped finalizer 包含 Agent teardown、已登记 cleanup 与 Sandbox lifecycle teardown。
+物理 Sandbox 的 suspend / destroy 随后进入 Invocation resource completion。
+release failure 不改写 Verdict Claim 或已封口 Attempt Record，但会让 Invocation completion 为 incomplete。
+
+Run stream 用 `niceeval.sandbox.release.finished` 写入每台物理资源的终态。
+body 穷尽为 `suspended`、`destroyed` 或 `managed-error`，并携带 `retentionId` 与 checkpoint kind。
+Reducer 只从该事件折叠 retained 数和 resource errors，不能从 Diagnostic 文案推断资源状态。
 
 ## Reducer 与 snapshot
 

@@ -50,7 +50,7 @@ assertions.evaluate
   → optional correction send
   → judge agent.teardown
   → judge sandbox teardown
-  → destroy judge Sandbox
+  → resolve judge Sandbox physical release
   → finalize execution
   → emit AssertionResult
 ```
@@ -64,10 +64,14 @@ Agent Ensure 与 setup 随后运行，使裁判 CLI 和鉴权不被快照覆盖�
 ## 失败与清理
 
 生命周期一旦创建资源，就按创建顺序逆序执行全部已登记 finalizer。
-send、decision 校验或协议修正失败都不跳过 Agent teardown 与 Sandbox 销毁。
+send、decision 校验或协议修正失败都不跳过 Agent teardown、Sandbox teardown 与 physical release。
 
 被测 Sandbox 在快照捕获后仍由原 Attempt 生命周期所有。
-裁判失败不能销毁、退休或修改被测 Sandbox，也不能改变 `--keep-sandbox` 对被测现场的处理。
+裁判失败不能销毁、退休或修改被测 Sandbox，也不能改变原 owner 的 retention policy。
+
+裁判 Sandbox 是独立 fresh 物理资源。
+它按 [Sandbox 默认停驻与回收](../sandbox-retention/README.md)求值 release；provenance 标出 `purpose: "judge"` 与父 locator。
+裁判执行 unavailable 或 cleanup incomplete 时进入失败类候选，不能借父 Attempt Verdict 猜选中结果。
 
 用户中断同时取消在飞的裁判 Agent 与裁判 Sandbox 命令树。
 无法证明裁判 driver 与命令树已经静止时，必须销毁裁判 Sandbox；Direct Agent 则把 execution 记 unavailable，并完成 Adapter 能提供的 teardown。
@@ -83,7 +87,7 @@ send、decision 校验或协议修正失败都不跳过 Agent teardown 与 Sandb
 | 首次 `send` | 1 |
 | 协议修正 `send` | 0 或 1 |
 | Agent setup / teardown | 各 1 |
-| 裁判 Sandbox 销毁 | 创建后 1 |
+| 裁判 Sandbox physical release | 创建后 1 |
 
 一次协议修正不重新调查，也不新建 Session。
 Agent 若自行在首次任务中多轮调用模型或工具，那些物理动作属于 Adapter 内部行为，全部记录在同一个裁判 execution。

@@ -72,7 +72,9 @@ Invocation（一次 CLI 调用，只存在于运行期与 live 通道）
 ```
 
 一次 Invocation 可以打开多个 Run，但一个 Run 只属于一个 Experiment，并由创建它的 Invocation 封口。
-每个 Attempt 独立拥有生命周期事件、finalizer 与 Verdict；Agent Session 和 Turn 只细分 Attempt 内的 Agent 行为，不与 Attempt 竞争执行身份。
+每个 Attempt 独立拥有生命周期事件、Attempt-scoped finalizer 与 Verdict。
+物理 Sandbox release 属于 Invocation resource completion，不反写已经封口的 Verdict。
+Agent Session 和 Turn 只细分 Attempt 内的 Agent 行为，不与 Attempt 竞争执行身份。
 
 ## 所有者边界
 

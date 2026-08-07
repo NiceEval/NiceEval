@@ -138,7 +138,8 @@ live channel 可以只保留有界历史。
 |---|---|---|
 | `niceeval.attempt.started` | Attempt 租到并发位 | 建立 active Attempt |
 | `niceeval.attempt.phase.changed` | `LifecyclePhase` 改变 | 更新 phase 与短 detail |
-| `niceeval.attempt.finished` | finalizer 与 Attempt Record 封口完成 | 移除 active Attempt，并引用终态 Claim |
+| `niceeval.attempt.finished` | Attempt-scoped finalizer 与 Attempt Record 封口完成 | 移除 active Attempt，并引用终态 Claim |
+| `niceeval.sandbox.release.finished` | 物理 Sandbox release 收敛或持久化 resource error | 更新 retained 数与 Invocation resource completion |
 | `niceeval.diagnostic.observed` | 形成 durable Diagnostic | 显示近期问题 |
 | `Claim(kind: "verdict")` | Verdict Claim 形成 | 更新 passed、failed、errored 或 skipped |
 
@@ -159,6 +160,7 @@ live channel 可以只保留有界历史。
 - 每个 running Experiment 的 `runningEvalIds`。
 - active Attempt 的 `LifecyclePhase`、短 detail 与 elapsed。
 - passed、failed、errored、skipped、queued、running 与 elsewhere 计数。
+- suspended Sandbox 数、未收敛 resource errors 与 `sandbox list` 入口。
 - snapshot basis 与 observedAt。
 
 `invocation list` 仍只做 Invocation 索引，不提供事件 tail，也不扩张成监控总线。
