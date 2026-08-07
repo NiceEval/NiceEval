@@ -13,6 +13,11 @@
 // guess infrastructure from a numeric exit code. Non-host executors are
 // rejected as unsupported.
 //
+// An optional --testkit <exact-tgz> explicitly injects a locally packed
+// @niceeval/testkit tarball into the isolated copies (identity + sha256
+// verified, never the source repo). Without it — the CI and default case —
+// repos keep the exact registry version pinned by their checked-in lockfile.
+//
 // This script must never hardcode SDK names, ports, or expected eval/verdict
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
 
@@ -23,7 +28,7 @@ import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
 import { discoverAllRepos, e2eRootDir } from "./discovery.ts";
-import { readCandidateTarball } from "./injection.ts";
+import { readCandidateTarball, readTestkitTarball, type TestkitTarball } from "./injection.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, runRepo, type RepoRunResult } from "./run-repo.ts";
@@ -41,6 +46,8 @@ interface Cli {
   capability?: string;
   diffPaths?: string[];
   candidatePath: string;
+  /** Optional explicit local @niceeval/testkit tarball for local development. */
+  testkitPath?: string;
   artifactRoot: string | undefined;
   nativeArgs: string[];
 }
@@ -57,6 +64,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
     args: [...optionArgs],
     options: {
       candidate: { type: "string" },
+      testkit: { type: "string" },
       repo: { type: "string", multiple: true, default: [] },
       lane: { type: "string" },
       capability: { type: "string" },
@@ -86,6 +94,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
     capability: typeof values.capability === "string" ? values.capability : undefined,
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     candidatePath: values.candidate,
+    testkitPath: typeof values.testkit === "string" && values.testkit.length > 0 ? values.testkit : undefined,
     artifactRoot: typeof values["artifact-root"] === "string"
       ? resolve(values["artifact-root"])
       : undefined,
@@ -167,6 +176,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   try {
     const cli = parseRunCli(argv);
     const candidate = readCandidateTarball(cli.candidatePath);
+    const testkit: TestkitTarball | undefined =
+      cli.testkitPath !== undefined ? await readTestkitTarball(cli.testkitPath) : undefined;
     scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-scratch-"));
     artifactRoot = cli.artifactRoot ?? mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
     await mkdir(artifactRoot, { recursive: true });
@@ -174,6 +185,10 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
     console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
+    if (testkit !== undefined) {
+      console.log(`[e2e] testkit tarball: ${testkit.path}`);
+      console.log(`[e2e] testkit fingerprint: ${testkit.integrity} (sha256:${testkit.sha256})`);
+    }
 
     const { repos, errors } = discoverAllRepos(e2eRootDir());
     if (errors.length > 0) {
@@ -202,6 +217,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         artifactRoot,
         allSecretNames,
         cli.nativeArgs,
+        testkit,
       );
       console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
       console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
