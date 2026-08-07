@@ -11,6 +11,7 @@ Docker / secret、收集 artifact 和执行 cleanup。它不解码产品结果�
 
 ```text
 example/
+├── testkit/                       # 跨测试类型的目标 API 与正文草案；不是场景 Repo
 ├── unit/
 │   ├── record/tool-name-normalization.test.ts
 │   └── sandbox/e2b-detached-state.test.ts
@@ -36,6 +37,9 @@ example/
 这与已调研项目的结构一致：Vite 用 `playground/<project>/__tests__`，Vitest 用 `test/e2e/fixtures/<project>`。
 Playwright 用 `tests/<product-area>/*.spec.ts`。三者都用产品域与行为定位测试，没有建立名为 `mechanism` 的测试层。
 证据见 [框架工具自身的 E2E 对照](../../../research/framework-e2e/README.md)。
+
+跨 Repo 已经重复的机械能力会收进独立 [官方 Testkit](../testkit.md)，而不是再造产品 DSL。
+四种 runner 的目标代码见 [`testkit/`](testkit/README.md)；正式场景 Repo 仍要从精确锁定的 package 导入。
 
 ## 一条测试到底在哪里运行
 
@@ -79,6 +83,7 @@ pnpm --silent exec niceeval exp smoke --json
 
 | 类型 | 独立 Repo 与代表代码 | 根目录命令 | 主要证明 |
 |---|---|---|---|
+| Testkit 目标形状 | [`testkit/README.md`](testkit/README.md) | 设计期只做类型与可读性验收 | CLI、Runner、长驻进程、Playwright 怎样复用机械原语 |
 | CLI | [`experiment-selection.test.ts`](repos/cli/test/experiment-selection.test.ts)、[`process-streams-and-exit.test.ts`](repos/cli/test/process-streams-and-exit.test.ts)、[`show-json-pipe.test.ts`](repos/cli/test/show-json-pipe.test.ts) | `pnpm e2e --repo cli` | 选择、exit/stdout/stderr、大 JSON pipe 完整性 |
 | Report | [`repos/report/test/exported-navigation.spec.ts`](repos/report/test/exported-navigation.spec.ts) | `pnpm e2e --repo report` | history → locator → 导出页实际 href → 正确 Attempt |
 | Package | [`repos/package-commonjs/test/commonjs-init-list.test.ts`](repos/package-commonjs/test/commonjs-init-list.test.ts) | `pnpm e2e --repo package-commonjs` | 候选包安装到 CommonJS consumer 后 `init → list` |
@@ -94,6 +99,8 @@ pnpm --silent exec niceeval exp smoke --json
 
 每个 Repo 的 README 还给出“进入隔离 Repo 后”的直接命令。正式 Repo 会签入安装生成的 lockfile；
 这里不手写一份注定过期的示意 lockfile。
+
+移动或删除示例后，收尾要检查并删除本次产生的空目录，避免目录树继续展示已经不存在的分类。
 
 ## Adapter 为什么是多个 Repo
 

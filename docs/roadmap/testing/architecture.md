@@ -98,6 +98,9 @@ E2E 文件从上到下保持同一信息顺序：
 
 ## 复用设施预算
 
+跨 Repo 的稳定机械能力由独立的 [官方 Testkit](testkit.md) 承载。它按 stable-outer / candidate-inner 使用：
+场景 Repo 精确锁定 Testkit，根 runner 只替换待测 NiceEval tarball。Repo 只有一个消费者的 fixture 继续留在本地。
+
 共享设施只允许拥有机械能力：
 
 - 创建 / 删除临时目录和隔离副本；
@@ -115,6 +118,8 @@ E2E 文件从上到下保持同一信息顺序：
 - 在断言阶段悄悄修改共享 evidence。
 
 两个 Repo 出现同一稳定机械 parser 后才提取共享实现；领域预期仍留在测试文件。
+这份允许清单不是 Testkit v1 的实现清单。HTTP server、项目复制、浏览器和 stdin 当前仍留在各 Repo；
+v1 只接收已有两个独立消费者的进程、严格 JSON / NDJSON、等待、断言选择与临时目录原语。
 专用 browser fixture 不是默认能力；只有大量场景共享远端 browser 的性能收益已经测量并且 Playwright Test fixture
 无法表达时才引入，不能为了少写两行就由 Vitest 手动包装 `chromium.launch()`。
 

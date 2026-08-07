@@ -11,6 +11,7 @@
 - Unit 用最小 fixture 证明纯逻辑、错误分类、schema 与可控竞态。
 - 每个场景 Repo 都是自包含 NiceEval 用户项目，拥有真实 config、Eval、Experiment、Report 与必要服务。
 - 场景 Repo 安装候选 tarball，只从公开入口进入，以原生 Vitest 写单边界 E2E 或 Journey E2E。
+- 跨 Repo 的机械能力由精确锁定、独立于产品 artifact 的 Testkit 提供；产品 gate 只替换 NiceEval candidate。
 - Repo 是执行现场，不是测试语义；测试命题仍按用户结果、历史 bug 与产品域组织。
 - Repo manifest 只拥有 lane、executor、能力、命令与 artifact。
 - 历史 bug 在对应长期 E2E 中留下 `regression` 引用，并用旧 commit 或逆补丁做 kill 验证。
@@ -97,6 +98,7 @@ PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection
 - 本地、Docker 与 GitHub Actions 的统一执行链；
 - 历史 bug escape audit；
 - CLI、Report、Package 与 Adapter 的可读代码示例。
+- 独立 Testkit 的 stable-outer 信任链、最小 API 与迁移门槛。
 
 PLAN-2 专用的 World、DSL、Portfolio Registry 与 execution registration 不进入 Roadmap。
 

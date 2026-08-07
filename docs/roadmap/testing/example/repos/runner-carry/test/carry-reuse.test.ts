@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { defined, only } from "./support/assert.ts";
 import { parseJson, parseNdjson, runProcess } from "./support/process.ts";
-import { copyProject } from "./support/project.ts";
+import { withProjectCopy } from "./support/project.ts";
 
 // 场景 Repo：e2e/runner-carry（本设计稿位于 example/repos/runner-carry）。
 // 从 NiceEval 根目录运行：pnpm e2e --repo runner-carry -- --run test/carry-reuse.test.ts
@@ -40,9 +41,8 @@ async function runAndReadReused(argv: readonly [string, ...string[]], cwd?: stri
   const result = await runProcess(argv, cwd ? { cwd } : undefined);
   expect(result.exitCode, result.diagnostic()).toBe(0);
   const events = parseNdjson<ExpEvent>(result.stdout, result.diagnostic());
-  const start = events.find((item) => item.event === "start");
-  expect(start, result.diagnostic()).toBeDefined();
-  return start?.reused ?? 0;
+  const start = only(events, (item) => item.event === "start", result.diagnostic());
+  return defined(start.reused, result.diagnostic());
 }
 
 // 指纹命中时默认 rerun 全携入：dry plan 预测的携入数与真实 run 的携入数不得分叉
@@ -61,8 +61,7 @@ test("dry plan 预测的携入数与真实 run 一致且全部命中", async () 
 // （cache.md「指纹门」）。本测试只改隔离副本里的 config，不改共享现场、不写回；
 // judge.model 进 configHash，labels 不进（docs/feature/experiments/library.md「labels」）。
 test("修改 config 后 dry plan 不再预测任何携入", async () => {
-  const copy = copyProject("niceeval-e2e-carry-config-");
-  try {
+  await withProjectCopy("niceeval-e2e-carry-config-", async (copy) => {
     expect(await runAndReadReused(RUN_ALL, copy.root)).toBe(0);
 
     const configPath = join(copy.root, "niceeval.config.ts");
@@ -81,17 +80,14 @@ test("修改 config 后 dry plan 不再预测任何携入", async () => {
     expect(planned.reused).toBe(0);
 
     expect(await runAndReadReused(RUN, copy.root)).toBe(0);
-  } finally {
-    copy.cleanup();
-  }
+  });
 });
 
 // 部分补跑不得抹掉更早 run 的携入结果：完整 run 后只改一条 eval，下一次整组运行
 // 时未变化的 eval 仍从第一次 run 携入（regression: 85cafd7d）。全部在隔离副本里
 // 完成 full → partial → full，不碰共享现场。
 test("full → partial → full：部分补跑后未变化 eval 仍从更早 run 携入", async () => {
-  const copy = copyProject("niceeval-e2e-carry-partial-");
-  try {
+  await withProjectCopy("niceeval-e2e-carry-partial-", async (copy) => {
     expect(await runAndReadReused(RUN_ALL, copy.root)).toBe(0);
 
     const alphaPath = join(copy.root, "evals", "simple", "alpha.eval.ts");
@@ -99,10 +95,10 @@ test("full → partial → full：部分补跑后未变化 eval 仍从更早 run
     writeFileSync(alphaPath, alphaV2, "utf8");
 
     const partialPlan = await readPlan(DRY, copy.root);
-    const alpha = partialPlan.matrix.find((row) => row.evalId === "simple/alpha");
-    const beta = partialPlan.matrix.find((row) => row.evalId === "simple/beta");
-    expect(alpha?.reused).toBe(false);
-    expect(beta?.reused).toBe(true);
+    const alpha = only(partialPlan.matrix, (row) => row.evalId === "simple/alpha", "partial plan");
+    const beta = only(partialPlan.matrix, (row) => row.evalId === "simple/beta", "partial plan");
+    expect(alpha.reused).toBe(false);
+    expect(beta.reused).toBe(true);
     expect(partialPlan.reused).toBe(1);
 
     expect(await runAndReadReused(RUN, copy.root)).toBe(1);
@@ -112,7 +108,5 @@ test("full → partial → full：部分补跑后未变化 eval 仍从更早 run
     expect(fullPlan.matrix.every((row) => row.reused)).toBe(true);
 
     expect(await runAndReadReused(RUN, copy.root)).toBe(fullPlan.reused);
-  } finally {
-    copy.cleanup();
-  }
+  });
 });

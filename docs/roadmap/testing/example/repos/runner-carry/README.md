@@ -6,7 +6,7 @@
 部分补跑不抹掉更早 run 的携入结果（`85cafd7d`）。
 
 会修改 config 或 eval 的场景全部在**隔离副本**（`test/support/project.ts` 的
-`copyProject`）里完成，不碰共享现场，也不「改完再写回」。
+`withProjectCopy`）里完成，不碰共享现场，也不「改完再写回」。
 
 ## 怎么跑
 
@@ -41,7 +41,11 @@ pnpm test --run test/carry-reuse.test.ts
 | `experiments/smoke.ts` | `defineExperiment({ agent, evals: ["simple/"] })` |
 | `niceeval.config.ts` | 声明 `judge.model`（进 configHash，config 变化场景改它） |
 | `test/carry-reuse.test.ts` | dry/run 携入一致、指纹门、full → partial → full（隔离副本） |
-| `test/support/` | 本 Repo 自有的进程收据、隔离副本与机械断言辅助 |
+| `test/support/` | 当前 Repo 自有的进程收据、隔离副本与机械断言辅助 |
+
+`withProjectCopy()` 保持 Repo-local，因为排除项、目录结构和 `node_modules` 链接只属于 carry。
+进程收据、严格 JSON / NDJSON 与唯一项选择已有多个独立消费者，目标迁入
+[`@niceeval/testkit` 示例](../../testkit/runner-carry.example.ts)。稳定 package 尚未完成前，本 Repo 不提前删除现有 support。
 
 ## 为什么是本地 fixture agent
 

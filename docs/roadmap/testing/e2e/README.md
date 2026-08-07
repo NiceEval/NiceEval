@@ -9,6 +9,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 
 - 自己的 `package.json` 与签入 lockfile；
 - NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
+- 精确版本的 `@niceeval/testkit` devDependency，由 lockfile 固定为稳定外层裁判；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
 - 原生 Vitest / Playwright 测试；
 - 只描述运行条件的 `e2e.json`。
@@ -21,7 +22,8 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
-- Repo 的命令执行器和 Fixture 工厂只补进程、临时项目和本地 backend 等机械能力，完整 `niceeval` argv 与领域 expected 留在测试正文。
+- 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；单 Repo fixture 仍留在本地；
+- 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
 这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
 再为自身的真实项目、CLI、server 或候选构建写薄的产品 fixture。NiceEval 不另造 assertion DSL、browser runner
@@ -48,6 +50,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 ```
 
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
+多种 runner 的目标代码见 [Testkit Example](../example/testkit/README.md)。
 
 ## Journey E2E：长用户流程
 

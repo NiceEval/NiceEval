@@ -1,6 +1,6 @@
 # 测试作者面与 E2E 组织方式
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md) · [TESTKIT](TESTKIT.md)
 
 niceeval 已经有 unit 与 E2E，却没有同时解决四个问题：
 
@@ -62,6 +62,7 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 
 这里的 helper 只启动进程和解析 JSON。
 阈值、sentinel 与成功条件都在测试文件里，候选实现无法替测试生成答案。
+跨 Repo 共享这些机械能力时，交付物与待测包的信任边界见 [TESTKIT](TESTKIT.md)。
 
 ## 阅读顺序
 
@@ -69,3 +70,4 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 - 用固定真实场景核对候选：[CASES](CASES.md)、[EVIDENCE](EVIDENCE.md)。
 - 看各候选完整形态：[PLAN-1](PLAN-1/README.md)、[PLAN-2](PLAN-2/README.md)、[PLAN-3](PLAN-3/README.md)、[PLAN-4](PLAN-4/README.md)。
 - 最终选择与迁移边界见 [DECISION](DECISION.md)。
+- 共享测试设施的包边界、稳定外层与公开门槛见 [TESTKIT](TESTKIT.md)。

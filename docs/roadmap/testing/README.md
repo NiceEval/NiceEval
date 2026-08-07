@@ -95,6 +95,7 @@ pnpm e2e --lane main --repo codex-sdk
 ## 入口
 
 - [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
+- [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
 - [测试组合与退役](portfolio.md) —— owner、矩阵去重、历史 bug 与迁移规则；
 - [Runner carry 的测试职责](carry-ownership.md) —— 同一能力在 Unit 与 Runner E2E 之间怎样分工；
 - [Unit](unit/README.md) —— 确定性语义测试的存在资格和写法；
@@ -108,6 +109,7 @@ pnpm e2e --lane main --repo codex-sdk
 ## 目标闭包
 
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
+- 场景 Repo 精确锁定稳定 Testkit；产品 gate 只注入 NiceEval candidate，不让外层裁判与被测对象一起变化。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
 - Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有独立 Repo 与结果根。
 - Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。

@@ -47,6 +47,9 @@ discover → select → pack → isolate → install → prepare → test → co
 
 失败、取消和 signal 都必须走 collect / cleanup。`--keep-workdir` 仅供显式本地诊断。
 
+每次安装还要核对 Repo 锁定的 Testkit 版本与 integrity。普通产品运行只替换 NiceEval candidate；Testkit candidate
+由固定 runner 和非 NiceEval fixture 单独验收，再用 pinned known-good NiceEval 做兼容 pilot。两条升级链不能合并成一个 release gate。
+
 阶段收据保存产生结果的进程本身的 exit / signal。验证不得用 `command | head`、`command | tail` 后读取管道末端退出码；
 需要裁剪控制台输出时，先把 producer 的完整 stdout / stderr 与退出状态落入 artifact，再只裁剪展示副本。Repo 启动的 view、mock、
 backend、container 与 browser 都必须登记 owned handle；`finally` 做有界终止，超时后升级信号，并用 pid、端口或 provider 身份确认资源消失。
@@ -119,6 +122,7 @@ Docker daemon 故障。以下情况不重试：断言失败、测试超时、par
 候选注入失败要再分一层。runner 没把指定 tarball 注入进去，或 digest / 实际 executable 身份不一致，属于 harness failure。
 候选已经正确注入，但它的 package metadata、exports、bin 或安装脚本让真实项目不可消费，属于 product regression。
 两类都不得判绿；只有前者在确认临时 runner / registry 故障时才可能按 infrastructure 重试。
+Testkit 版本或 integrity 偏离 Repo lockfile 同样属于 harness failure，不能静默安装 `latest` 后继续。
 
 ## Artifact 与脱敏
 
@@ -136,6 +140,8 @@ Docker daemon 故障。以下情况不重试：断言失败、测试超时、par
 
 Release job 先按最终版本生成 tarball 与 digest，所有 release Repo 安装该 artifact；通过后发布同一文件。
 任何重新 pack、identity 不一致、blocking Repo 没有 pass / fail 状态或 artifact 丢失都阻止发布。
+
+Release 使用已经发布且精确锁定的 Testkit，不从待发布 checkout 构建裁判。Testkit 自己的发布与升级走独立变更。
 
 这保证“CI 测过的代码”和“registry 收到的包”是同一字节，而不是两个相近 checkout。
 

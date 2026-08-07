@@ -36,3 +36,34 @@ export function copyProject(prefix = "niceeval-e2e-carry-"): TempProject {
   symlinkSync(resolve("node_modules"), join(project.root, "node_modules"), "dir");
   return project;
 }
+
+/**
+ * Repo-local wrapper：copy 的排除项和 node_modules 链接仍由 runner-carry 拥有，
+ * 这里只确保正文异常与目录清理异常不会互相遮蔽。
+ */
+export async function withProjectCopy<T>(
+  prefix: string,
+  body: (project: TempProject) => Promise<T>,
+): Promise<T> {
+  const project = copyProject(prefix);
+  let bodyError: unknown;
+  try {
+    return await body(project);
+  } catch (error) {
+    bodyError = error;
+    throw error;
+  } finally {
+    try {
+      project.cleanup();
+    } catch (cleanupError) {
+      if (bodyError !== undefined) {
+        throw new AggregateError(
+          [bodyError, cleanupError],
+          "runner-carry 正文和项目副本清理同时失败",
+          { cause: bodyError },
+        );
+      }
+      throw cleanupError;
+    }
+  }
+}

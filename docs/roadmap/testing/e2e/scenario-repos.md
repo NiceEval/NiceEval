@@ -33,6 +33,9 @@ experiments/
 test/
 ```
 
+`package.json` 把 `@niceeval/testkit` 声明为精确版本的 devDependency，lockfile 固定其 integrity。
+它不是 workspace link，也不会由产品 gate 临时替换。
+
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
 目录不必为了形式把所有项目拆得很小；一组只读 E2E 能消费同一次昂贵证据时，可以留在一个 Repo。
 会修改当前结果或生命周期状态的 Journey E2E 必须独立。
@@ -91,11 +94,15 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 2. 计算 tarball 字节 digest；
 3. 把每个选中 Repo 复制到新的临时目录；
 4. 只在副本中把 `niceeval` dependency 改为 tarball；
-5. 安装后核对 lockfile、executable 路径和实际版本来自该 tarball；
-6. 把 digest、Repo ID 和复现命令写入摘要。
+5. 安装后核对 executable 路径和实际版本来自该 tarball；
+6. 核对 Testkit 的精确版本与 lockfile integrity 没有变化；
+7. 把产品 digest、Testkit 版本、Repo ID 和复现命令写入摘要。
 
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。
+
+产品 E2E 不测试当前 checkout 的 Testkit candidate。Testkit 升级先走自己的 meta-test 与 known-good NiceEval pilot，
+发布后再由独立依赖升级提交更新场景 Repo。一个 gate 不能同时改变被测产品与裁判。
 
 测试正文也不能临时新建一个只写了 `package.json`、却没有安装候选包的嵌套 consumer，然后在里面运行
 `pnpm exec niceeval`。Package 场景优先让叶子 Repo 本身就是目标 consumer；确实需要二级 consumer 时，runner 必须在那个目录
