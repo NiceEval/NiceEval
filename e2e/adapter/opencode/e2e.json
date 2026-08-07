@@ -1,9 +1,13 @@
 {
-  "id": "opencode",
-  "group": "sandbox",
+  "schemaVersion": 1,
+  "id": "adapter/opencode",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
   "command": ["pnpm", "e2e"],
   "timeoutMinutes": 40,
   "secrets": ["BUB_API_KEY", "BUB_API_BASE"],
-  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
-  "requires": { "docker": true }
+  "requires": { "docker": true },
+  "paths": ["e2e/adapter/opencode/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"]
 }

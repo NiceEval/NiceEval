@@ -1,21 +1,22 @@
 {
-  "id": "openclaw",
-  "group": "sandbox",
-  "command": [
-    "pnpm",
-    "e2e"
-  ],
+  "schemaVersion": 1,
+  "id": "adapter/openclaw",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
   "timeoutMinutes": 50,
   "secrets": [
     "BUB_API_KEY",
     "BUB_API_BASE"
   ],
+  "requires": {
+    "docker": true
+  },
+  "paths": ["e2e/adapter/openclaw/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [
     ".niceeval/**",
     "junit.xml",
     "logs/**"
-  ],
-  "requires": {
-    "docker": true
-  }
+  ]
 }

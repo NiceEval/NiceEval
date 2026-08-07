@@ -1,9 +1,13 @@
 {
+  "schemaVersion": 1,
   "id": "pi-agent-core",
-  "group": "sdk",
+  "areas": ["adapter"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
   "command": ["pnpm", "e2e"],
   "timeoutMinutes": 15,
   "secrets": ["DEEPSEEK_API_KEY", "AGENT_MODEL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
-  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
-  "requires": { "runtimes": ["node>=22"] }
+  "requires": { "runtimes": ["node>=22"] },
+  "paths": ["e2e/undo/pi-agent-core/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"]
 }

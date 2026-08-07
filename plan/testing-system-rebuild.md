@@ -60,7 +60,7 @@
 │      owner: e2e/scripts/run.ts, e2e/scripts/list.ts
 ├─ [ ] T2.7 为 schema、选择、注入、artifact、cleanup 和分类写 Unit
 │      owner: test/unit/e2e-runner/**
-└─ [ ] T2.8 验收纯计划不 pack、不安装、不读 secret
+└─ [x] T2.8 验收纯计划不 pack、不安装、不读 secret
        acceptance: pnpm e2e plan --lane pr --json
 
 [x] T2A 建立测试私有依赖机器守护（depends on T0.4；parallel with T1/T2）
@@ -70,10 +70,10 @@
 └─ [x] T2A.4 把守护放入 test/docs 或 test/unit，复用现有命令
 
 [ ] T3 建立 Testkit 发布链（depends on T1；parallel with T2.3–T2.8）
-├─ [ ] T3.1 新增 testkit-v* tag workflow
+├─ [x] T3.1 新增 testkit-v* tag workflow
 │      owner: .github/workflows/release-testkit.yml
-├─ [ ] T3.2 workflow 只在 packages/testkit 内 install/typecheck/test/pack/publish
-├─ [ ] T3.3 发布后核对 npm version、tarball integrity 与 provenance
+├─ [x] T3.2 workflow 只在 packages/testkit 内 install/typecheck/test/pack/publish
+├─ [x] T3.3 发布后核对 npm version、tarball integrity 与 provenance
 └─ [ ] T3.4 首次发布 @niceeval/testkit，并记录精确版本
        acceptance: npm view @niceeval/testkit@<version> version
 

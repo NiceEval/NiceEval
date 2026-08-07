@@ -1,6 +1,9 @@
 {
-  "id": "ai-sdk",
-  "group": "sdk",
+  "schemaVersion": 1,
+  "id": "adapter/ai-sdk",
+  "areas": ["adapter"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
   "command": ["pnpm", "e2e"],
   "timeoutMinutes": 15,
   "secrets": [
@@ -8,6 +11,7 @@
     "OPENAI_BASE_URL",
     "NICEEVAL_JUDGE_KEY"
   ],
-  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
-  "requires": { "runtimes": ["node>=22"] }
+  "requires": { "runtimes": ["node>=22"] },
+  "paths": ["e2e/adapter/ai-sdk/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"]
 }
