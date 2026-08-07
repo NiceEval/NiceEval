@@ -179,28 +179,44 @@ describe("package 打包产物与 release 同 tgz 链", () => {
 
   beforeAll(async () => {
     pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-    const tmp = mkdtempSync(join(tmpdir(), "niceeval-pack-guard-"));
-    try {
-      const pack = spawnSync("pnpm", ["pack", "--pack-destination", tmp], {
-        cwd: ROOT,
-        encoding: "utf8",
-        timeout: 600_000,
-      });
-      if (pack.status !== 0) {
-        throw new Error(
-          `pnpm pack failed (exit ${pack.status}):\n${pack.stdout}\n${pack.stderr}`,
-        );
+    const candidate = process.env.NICEEVAL_CANDIDATE_TGZ;
+    if (candidate) {
+      // 正式链:release workflow 在 Pack exactly once 之后注入同一份 tgz,这里
+      // 只读清单,禁止再次 pnpm pack(子进程会触发 prepare/build,切断同 tgz 链)。
+      if (!existsSync(candidate)) {
+        throw new Error(`NICEEVAL_CANDIDATE_TGZ 指向的文件不存在: ${candidate}`);
       }
-      const tgz = readdirSync(tmp).find((name) => name.endsWith(".tgz"));
-      if (!tgz) throw new Error(`pnpm pack produced no .tgz in ${tmp}`);
-      const entries = await listTarballEntries(join(tmp, tgz));
+      const entries = await listTarballEntries(candidate);
       packed = new Set(
         entries
           .map((name) => name.replace(/^package\//, ""))
           .filter((name) => name.length > 0),
       );
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
+    } else {
+      // 本地 fallback:无 env 时临时 pack 一次供守护阅读。
+      const tmp = mkdtempSync(join(tmpdir(), "niceeval-pack-guard-"));
+      try {
+        const pack = spawnSync("pnpm", ["pack", "--pack-destination", tmp], {
+          cwd: ROOT,
+          encoding: "utf8",
+          timeout: 600_000,
+        });
+        if (pack.status !== 0) {
+          throw new Error(
+            `pnpm pack failed (exit ${pack.status}):\n${pack.stdout}\n${pack.stderr}`,
+          );
+        }
+        const tgz = readdirSync(tmp).find((name) => name.endsWith(".tgz"));
+        if (!tgz) throw new Error(`pnpm pack produced no .tgz in ${tmp}`);
+        const entries = await listTarballEntries(join(tmp, tgz));
+        packed = new Set(
+          entries
+            .map((name) => name.replace(/^package\//, ""))
+            .filter((name) => name.length > 0),
+        );
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
     }
     workflow = parseYaml(
       readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8"),
@@ -435,6 +451,30 @@ describe("package 打包产物与 release 同 tgz 链", () => {
       );
       expect(packRuns).toHaveLength(1);
       expect(packRuns[0]).toMatch(/sha256/);
+    });
+
+    it("pack 关闭生命周期脚本,docs guard 在 pack 后消费同一份 tgz", () => {
+      const steps = publishSteps();
+      const packIndex = steps.findIndex((s) =>
+        /\bpnpm e2e pack --out\b/.test(s.run ?? ""),
+      );
+      expect(packIndex, "找不到 Pack exactly once 步骤").toBeGreaterThan(-1);
+      expect(
+        steps[packIndex].env?.["PNPM_CONFIG_IGNORE_SCRIPTS"],
+        "pack 必须设置 PNPM_CONFIG_IGNORE_SCRIPTS=true,防止 pnpm pack 触发 prepare/build",
+      ).toBe("true");
+      const docsStep = steps.find((s) => /\bpnpm run test:docs\b/.test(s.run ?? ""));
+      expect(docsStep, "缺少 test:docs 步骤").toBeTruthy();
+      expect(
+        steps.indexOf(docsStep!),
+        "docs guard 必须位于 pack 之后,消费正式 tgz 而非本地临时 pack",
+      ).toBeGreaterThan(packIndex);
+      const docsRef = normalizeTgzRef(
+        String(docsStep!.env?.["NICEEVAL_CANDIDATE_TGZ"] ?? ""),
+      );
+      expect(docsRef, "docs guard 必须引用 steps.pack.outputs.tgz 同一表达式").toBe(
+        "{{steps.pack.outputs.tgz}}",
+      );
     });
 
     it("Package/CLI/Report preflight 安装同一 tgz", () => {

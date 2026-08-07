@@ -79,13 +79,14 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Test docs guards
-        run: pnpm run test:docs
-
-      # pack exactly once:产出待发 tarball 并立即写 sha256。此后 preflight、smoke
-      # 与 publish 都只消费这个文件;任何重新 pack 都会破坏同 tgz 链。
+      # pack exactly once:产出待发 tarball 并立即写 sha256。此后 docs guard、
+      # preflight、smoke 与 publish 都只消费这个文件;任何重新 pack 都会破坏同 tgz 链。
+      # PNPM_CONFIG_IGNORE_SCRIPTS 关闭 e2e pack 子进程里 pnpm pack 的生命周期
+      # (prepare/build),确保发布路径不因 pack 重建工作目录。
       - name: Pack exactly once
         id: pack
+        env:
+          PNPM_CONFIG_IGNORE_SCRIPTS: "true"
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
@@ -110,6 +111,13 @@ jobs:
             echo "sha256=${sha256}"
           } >> "$GITHUB_OUTPUT"
           echo "[release] packed ${tgz} sha256=${sha256}"
+
+      # docs/memory 守护在拿到正式 tarball 后运行:package-artifacts 守护消费
+      # NICEEVAL_CANDIDATE_TGZ 里同一份 tgz,不再本地 pnpm pack;其余 docs 守护照常。
+      - name: Test docs guards
+        env:
+          NICEEVAL_CANDIDATE_TGZ: ${{ steps.pack.outputs.tgz }}
+        run: pnpm run test:docs
 
       # 发布 preflight:Package / CLI / Report 三个 Repo 安装上面这一份 tarball,
       # 在仓库外、无 checkout、无 tsx 包装的消费者中跑各自场景(根 runner 负责
