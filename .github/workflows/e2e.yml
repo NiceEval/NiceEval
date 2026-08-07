@@ -56,16 +56,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          version: 10
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+          runtime: node@22
+          cache: true
+          install: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -153,13 +150,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # 只运行直接读取这两份 upload 前 tgz 的 guard。全量 test:docs 还包含独立的
+      # 文档写作台账，不能让其无关失败阻断 artifact 身份 gate。
       - name: Guard exact E2E tarballs before upload
         env:
           NICEEVAL_CANDIDATE_TGZ: ${{ steps.pack.outputs.candidate_path }}
           NICEEVAL_TESTKIT_TGZ: ${{ steps.pack.outputs.testkit_path }}
           NICEEVAL_TESTKIT_NODE18: ${{ steps.node18.outputs.path }}
           NICEEVAL_EXACT_E2E_TARBALLS: "true"
-        run: pnpm run test:docs
+        run: pnpm exec vitest run --project docs test/docs/e2e-testkit-ci-guards.test.ts
 
       - name: Upload exact E2E tarballs
         uses: actions/upload-artifact@v4
@@ -189,16 +188,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          version: 10
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+          runtime: node@22
+          cache: true
+          install: false
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -300,16 +295,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
         with:
-          version: 10
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
+          runtime: node@22
+          cache: true
+          install: false
 
       - name: Install orchestrator dependencies
         run: pnpm install --frozen-lockfile

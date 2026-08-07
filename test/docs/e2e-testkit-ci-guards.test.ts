@@ -409,9 +409,13 @@ describe("E2E Testkit 双 tgz 与 workspace 机器守护", () => {
       testkit_tgz_name: "${{ steps.pack.outputs.testkit_tgz_name }}",
     });
 
-    const guard = steps.find((step) => /\bpnpm run test:docs\b/.test(step.run ?? ""));
-    expect(guard, "缺少 upload 前的双 tarball docs guard").toBeTruthy();
-    expect(guard?.env).toMatchObject({
+    const exactGuard = steps.find((step) => /e2e-testkit-ci-guards\.test\.ts/.test(step.run ?? ""));
+    expect(exactGuard, "缺少 upload 前的双 tarball docs guard").toBeTruthy();
+    expect(exactGuard?.run).toBe(
+      "pnpm exec vitest run --project docs test/docs/e2e-testkit-ci-guards.test.ts",
+    );
+    expect(exactGuard?.run).not.toMatch(/\btest:docs\b|package-artifacts\.test\.ts/);
+    expect(exactGuard?.env).toMatchObject({
       NICEEVAL_CANDIDATE_TGZ: "${{ steps.pack.outputs.candidate_path }}",
       NICEEVAL_TESTKIT_TGZ: "${{ steps.pack.outputs.testkit_path }}",
       NICEEVAL_TESTKIT_NODE18: "${{ steps.node18.outputs.path }}",
@@ -429,6 +433,22 @@ describe("E2E Testkit 双 tgz 与 workspace 机器守护", () => {
       ),
       "docs guard 必须获得 raw Node 18 consumer",
     ).toBe(true);
+  });
+
+  it("CI 的 pnpm 只从根 packageManager 读取版本", () => {
+    const packageManager = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+      packageManager?: unknown;
+    }).packageManager;
+    expect(packageManager).toMatch(/^pnpm@11\.18\.0$/);
+
+    for (const jobName of ["package", "plan", "e2e"] as const) {
+      const steps = workflow.jobs?.[jobName]?.steps ?? [];
+      const pnpmSetup = steps.filter((step) => step.uses === "pnpm/setup@v1");
+      expect(pnpmSetup, `${jobName} 应只安装一次 pnpm/setup`).toHaveLength(1);
+      expect(pnpmSetup[0].with).toMatchObject({ runtime: "node@22", cache: true, install: false });
+      expect(pnpmSetup[0].with?.version, `${jobName} 不得重复 pin pnpm version`).toBeUndefined();
+      expect(steps.some((step) => step.uses?.startsWith("pnpm/action-setup@") ?? false)).toBe(false);
+    }
   });
 
   it("每个动态 matrix cell 下载、重算并传递同一双 tgz，自己绝不 pack", () => {
