@@ -6,11 +6,12 @@
     "lib": ["ES2023"],
     "types": ["node"],
     "strict": true,
+    "noUncheckedIndexedAccess": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["agents", "evals", "experiments", "scripts", "skills", "niceeval.config.ts"]
+  "include": ["niceeval.config.ts", "agents", "evals", "experiments", "scripts", "test/**/*.ts", "vitest.config.ts"]
 }
