@@ -36,7 +36,7 @@ judge 分与回复长度的差异。pi 每轮请求都重建 Agent(历史经 `op
 
 ## 接入验证过什么
 
-`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`defineAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
 `createPiAgentEventStream` 完整转换原生 `AgentEvent`，因此使用
 `completeEvidenceCoverage`。能力仍从 `send` 实际做到的事自然成立：
 

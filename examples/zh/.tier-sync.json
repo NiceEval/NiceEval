@@ -76,7 +76,7 @@
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "bbb0c5cc9bd0645f62bd66a025696fc7e2cb4903"
+      "baseTree": "a888b3cb10ab56ad3ad7310c4e1668902f171063"
     }
   ]
 }
