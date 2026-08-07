@@ -65,7 +65,7 @@ function inspectOutcomeSource(problems: Problem[], root: string, file: string, s
     ["private-template-id", /(?:__NICEEVAL_[A-Z_]*TEMPLATE|templateId)/],
     ["dom-class-or-id-oracle", /(?:locator|querySelector|querySelectorAll)\(\s*["'`][.#][A-Za-z_-]/],
     ["constructed-attempt-path", /attempt\/\s*(?:\$\{|["'`]\s*\+)/],
-    ["testkit-private-layout", /(?:dist\/(?:esm|cjs)|receipt\.json)/],
+    ["testkit-private-layout", /(?:dist\/(?:esm|cjs)|["'`]receipt\.json["'`])/],
   ];
   for (const [rule, pattern] of rules) {
     const match = source.match(pattern);
@@ -189,6 +189,7 @@ describe("E2E 公开结果边界守护", () => {
         "e2e/report/test/public.spec.ts": `
           import { openRecord } from "niceeval/record";
           const receipt = await runProcess(["pnpm", "exec", "niceeval", "show", "--json"]);
+          const document = receipt.json();
           const href = await page.getByRole("link", { name: "Attempt" }).getAttribute("href");
           const response = await fetch(new URL(href, origin));
           expect(receipt.exitCode).toBe(0);
