@@ -162,6 +162,20 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 
 ## 验收
 
+本页定义 NiceEval-Eval应承接的真实 Docker E2E契约，不表示相邻仓库当前具备或跑过这些场景。
+在下游补齐并给出通过证据前，本仓删除子进程变量门控的本机 Docker测试所留下的真实协作缺口仍然存在。
+
+### Docker access矩阵
+
+- socket：显式挂入可信 Unix socket，普通用户可运行 child container；镜像预设 endpoint/context时在
+  Agent启动前失败；
+- raw DinD：官方 dind兼容派生镜像能 build/run child container，2375/2376无 listener，停止/恢复后
+  inner daemon可用，daemon退出时 outer container非零退出；
+- managed DinD：完成 profile attestation、资源准入、sibling隔离、nested Docker与 watchdog回收，
+  attestation失败不得降级到 raw或 socket；
+- Compose：Agent在 inner daemon内执行 `docker compose up`、访问服务并 `down`，成功、失败、timeout与
+  中断后都没有遗留 container、network、volume或 reservation。
+
 ### 单路
 
 - `id -u`是1000；

@@ -169,8 +169,9 @@ Docker 不保证 entrypoint 会执行这些参数。
 3. readiness、初始化、Agent 与任务命令都通过 Docker exec 执行。
 4. 流式 Agent stdout 与 `appendLog` 写入日志文件，再由 PID 1 的 tail 暴露给 `docker logs`。
 
-观察日的 DinD 真机测试在 [`src/sandbox/docker-access.docker.test.ts`](../../src/sandbox/docker-access.docker.test.ts) 中构建派生镜像。
-它用自定义 entrypoint 后台启动 `dockerd-entrypoint.sh dockerd`，等待 ready，修改 socket 权限，再 `exec "$@"` 进入 NiceEval keeper。
+观察日曾有一条 DinD真机测试构建派生镜像：它用自定义 entrypoint后台启动
+`dockerd-entrypoint.sh dockerd`，等待 ready，修改 socket权限，再 `exec "$@"`进入 NiceEval keeper。
+该子进程变量门控测试后来删除；这段只保留为历史观察，不是当前验证证据。
 
 | NiceEval 做法 | 样本中的对应 | 判断 |
 |---|---|---|

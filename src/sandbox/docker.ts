@@ -94,6 +94,26 @@ const CONTAINER_LOG = "/tmp/niceeval-agent.log";
 // (整个 Sandbox 的默认身份)或 runCommand 的 `{ user: "root" }`(只这一条命令)——
 // 见 docs/feature/sandbox/library.md「执行身份」。
 const ROOT_USER = "root";
+const DOCKER_ACCESS_SOCKET = "unix:///var/run/docker.sock";
+
+/**
+ * This is intentionally provider-owned.  It proves the Agent's *initial default*
+ * endpoint without pretending to constrain commands the Agent may issue later.
+ */
+export const DOCKER_ACCESS_COMPATIBILITY_COMMAND = Object.freeze([
+  "sh",
+  "-ec",
+  [
+    'test -z "${DOCKER_HOST+x}" || { echo "DOCKER_HOST must be unset" >&2; exit 1; }',
+    'test -z "${DOCKER_CONTEXT+x}" || { echo "DOCKER_CONTEXT must be unset" >&2; exit 1; }',
+    'context="$(docker context show)"',
+    'test "$context" = "default" || { echo "docker context must be default (got $context)" >&2; exit 1; }',
+    'default_daemon="$(docker info --format \'{{.ID}}\')"',
+    `unix_daemon="$(docker --host=${DOCKER_ACCESS_SOCKET} info --format '{{.ID}}')"`,
+    'test -n "$default_daemon" || { echo "bare docker info returned no daemon ID" >&2; exit 1; }',
+    'test "$default_daemon" = "$unix_daemon" || { echo "bare and Unix Docker endpoints reached different daemons" >&2; exit 1; }',
+  ].join("\n"),
+] as const satisfies readonly [string, ...string[]]);
 
 /** `user` 取值是否等价于 root(数字 uid 0、`0:0` 或字面量 `root`)。 */
 function isRootLikeUserSpec(value: string): boolean {
@@ -569,7 +589,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     this.container = await this.docker.createContainer({
       Image: imageName,
-      ...(socketMount === undefined && !isDind ? {} : { Env: ["DOCKER_HOST=unix:///var/run/docker.sock"] }),
       ...(dindCommand === undefined
         ? {
             Cmd: [
@@ -630,26 +649,55 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir]);
   }
 
-  /** Docker start 只代表 PID 1 存活；DinD 等 entrypoint 服务须由声明探针证明 ready。 */
+  /** Docker start 只代表 PID 1 存活；Docker access 先证明默认端点，再跑作者 readiness。 */
   private async waitForReadiness(): Promise<void> {
     const readiness = this.readiness;
     if (readiness === undefined) return;
     const deadline = Date.now() + readiness.timeoutMs;
-    const [command, ...args] = readiness.command;
-    let lastFailure = "readiness command has not run";
-    while (Date.now() <= deadline) {
+    const readinessUser = readiness.user ?? this.userOverride ??
+      (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
+    if (this.dockerAccess !== undefined) {
+      await this.waitForReadinessProbe({
+        command: DOCKER_ACCESS_COMPATIBILITY_COMMAND,
+        user: readinessUser,
+        intervalMs: readiness.intervalMs,
+        deadline,
+        phase: "Docker access compatibility",
+        timeoutMs: readiness.timeoutMs,
+      });
+    }
+    await this.waitForReadinessProbe({
+      command: readiness.command,
+      user: readinessUser,
+      intervalMs: readiness.intervalMs,
+      deadline,
+      phase: "Docker sandbox readiness",
+      timeoutMs: readiness.timeoutMs,
+    });
+  }
+
+  private async waitForReadinessProbe(input: {
+    readonly command: readonly [string, ...string[]];
+    readonly user: string | undefined;
+    readonly intervalMs: number | undefined;
+    readonly deadline: number;
+    readonly phase: string;
+    readonly timeoutMs: number;
+  }): Promise<void> {
+    const [command, ...args] = input.command;
+    let lastFailure = "probe has not run";
+    while (Date.now() <= input.deadline) {
       const state = await this.container?.inspect();
       if (state?.State?.Running !== true) {
         throw new Error(
-          `Docker sandbox exited before readiness completed (state=${state?.State?.Status ?? "missing"})`,
+          `Docker sandbox exited before ${input.phase.toLowerCase()} completed ` +
+          `(state=${state?.State?.Status ?? "missing"})`,
         );
       }
       try {
-        const readinessUser = readiness.user ?? this.userOverride ??
-          (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
         const result = await this.execCommand(command, args, {
-          user: readinessUser,
-          timeoutMs: Math.max(1, deadline - Date.now()),
+          user: input.user,
+          timeoutMs: Math.max(1, input.deadline - Date.now()),
           timeoutRetirement: "stop",
         });
         if (result.exitCode === 0) return;
@@ -657,17 +705,17 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       } catch (error) {
         lastFailure = error instanceof Error ? error.message : String(error);
       }
-      const remaining = deadline - Date.now();
+      const remaining = input.deadline - Date.now();
       if (remaining <= 0) break;
-      await new Promise((resolve) => setTimeout(resolve, Math.min(readiness.intervalMs ?? 250, remaining)));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(input.intervalMs ?? 250, remaining)));
     }
-    const readinessUser = readiness.user ?? this.userOverride ?? this.imageDefaultUser ?? ROOT_USER;
+    const diagnosticUser = input.user ?? this.imageDefaultUser ?? ROOT_USER;
     const permissionHelp = this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
-      ? `; DinD user ${JSON.stringify(readinessUser)} must belong to the docker group ` +
+      ? `; DinD user ${JSON.stringify(diagnosticUser)} must belong to the docker group ` +
         `(the inner socket remains root:docker 0660)`
       : "";
     throw new Error(
-      `Docker sandbox readiness timed out after ${readiness.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
+      `${input.phase} timed out after ${input.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
     );
   }
 

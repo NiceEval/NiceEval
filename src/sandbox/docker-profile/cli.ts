@@ -20,6 +20,29 @@ interface Check {
   readonly detail: string;
 }
 
+/** Keep Docker's official entrypoint, but bypass its automatic TCP/TLS selection. */
+export const DOCKER_PROFILE_DOCTOR_DIND_CMD = Object.freeze([
+  "dockerd",
+  "--host=unix:///var/run/docker.sock",
+  "--shutdown-timeout=2",
+] as const);
+
+/** `/proc/net/tcp{,6}` exposes listening sockets without requiring an extra image tool. */
+export const DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK = Object.freeze([
+  "sh",
+  "-ec",
+  [
+    "for table in /proc/net/tcp /proc/net/tcp6; do",
+    "  [ -r \"$table\" ] || continue",
+    "  awk '$4 == \"0A\" && ($2 ~ /:0947$/ || $2 ~ /:0948$/) { found = 1 } END { exit found ? 1 : 0 }' \"$table\"",
+    "done",
+  ].join("\n"),
+] as const satisfies readonly [string, ...string[]]);
+
+export function dockerProfileDoctorDindConfig(): { Cmd: string[] } {
+  return Object.freeze({ Cmd: [...DOCKER_PROFILE_DOCTOR_DIND_CMD] });
+}
+
 async function pull(docker: Docker, image: string): Promise<void> {
   try {
     await docker.getImage(image).inspect();
@@ -73,7 +96,7 @@ async function smokeProfile(alias: string): Promise<Check[]> {
     });
     container = await docker.createContainer({
       Image: "docker:29-dind",
-      Env: ["DOCKER_TLS_CERTDIR="],
+      ...dockerProfileDoctorDindConfig(),
       Labels: labels,
       HostConfig: {
         Privileged: true,
@@ -104,11 +127,16 @@ async function smokeProfile(alias: string): Promise<Check[]> {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     if (!ready) throw new Error("inner dockerd did not become ready within 30 seconds");
+    const unixOnly = await exec(container, [...DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK]);
+    if (unixOnly.code !== 0) {
+      throw new Error(`inner dockerd unexpectedly listens on TCP 2375 or 2376: ${unixOnly.output}`);
+    }
     const limits = await exec(container, ["sh", "-c", "cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/pids.max"]);
     if (limits.code !== 0) throw new Error(`cgroup probe failed: ${limits.output}`);
     const nested = await exec(container, ["docker", "run", "--rm", "alpine:3.20", "true"]);
     if (nested.code !== 0) throw new Error(`nested Docker failed: ${nested.output}`);
     return [
+      { name: "Unix-only Docker endpoint", status: "PASS", detail: "no TCP listener on 2375 or 2376" },
       { name: "outer hard limits", status: "PASS", detail: limits.output.trim().replace(/\n/g, " · ") },
       { name: "nested Docker", status: "PASS", detail: "docker:29-dind ran alpine:3.20" },
     ];

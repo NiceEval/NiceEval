@@ -150,6 +150,97 @@ else
 fi
 
 echo
+echo "== host script env isolation contracts =="
+VSI=packaging/docker-profile-host/scripts/verify-sibling-isolation.sh
+PLS=packaging/docker-profile-host/scripts/prepare-loop-storage.sh
+HD=packaging/docker-profile-host/scripts/host-doctor.sh
+
+if grep -q 'DOCKER_HOST' "$VSI"; then
+  fail "verify-sibling-isolation must not read/export DOCKER_HOST"
+else
+  pass "verify-sibling-isolation never consults DOCKER_HOST"
+fi
+
+if grep -q 'NICEEVAL_NETCHECK_IMAGE' "$VSI"; then
+  fail "NICEEVAL_NETCHECK_IMAGE still referenced"
+else
+  pass "no NICEEVAL_NETCHECK_IMAGE in verify-sibling-isolation"
+fi
+
+if grep -q 'IMAGE="docker.io/library/alpine:3.20"' "$VSI"; then
+  pass "default netcheck image is a constant"
+else
+  fail "default netcheck image not a constant"
+fi
+
+if grep -q 'NICEEVAL_DOCKER_PROFILE_REGISTRY' "$HD"; then
+  fail "host-doctor registry override still present"
+else
+  pass "no NICEEVAL_DOCKER_PROFILE_REGISTRY in host-doctor"
+fi
+
+if grep -q 'REGISTRY_DIR="/etc/niceeval/docker-profiles"' "$HD"; then
+  pass "host-doctor registry fixed to /etc/niceeval/docker-profiles"
+else
+  fail "host-doctor registry not fixed"
+fi
+
+if grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER' "$HD" &&
+   grep -q 'DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK' "$HD"; then
+  pass "host-doctor retains RootlessKit upstream env contract"
+else
+  fail "host-doctor dropped RootlessKit upstream env vars"
+fi
+
+if grep -q 'FORCE_RECREATE' "$PLS"; then
+  fail "FORCE_RECREATE still present in prepare-loop-storage"
+else
+  pass "no FORCE_RECREATE in prepare-loop-storage"
+fi
+
+if grep -qE 'rm (-f|--force) ' "$PLS" || grep -qE '\bunlink\b' "$PLS"; then
+  fail "prepare-loop-storage still has an unlink/recreate path"
+else
+  pass "prepare-loop-storage never unlinks an existing image"
+fi
+
+if grep -q -- '--force' "$PLS"; then
+  fail "prepare-loop-storage gained a --force flag"
+else
+  pass "no --force flag in prepare-loop-storage"
+fi
+
+# every docker invocation must go through the explicit --host wrapper
+if python3 - "$VSI" <<'PY'
+import re, sys
+bad = []
+for i, ln in enumerate(open(sys.argv[1]).read().splitlines(), 1):
+    if re.search(r'(^|;|&&|\|\|)\s*docker(\s|$)', ln):
+        if re.match(r'docker --host "\$DOCKER_SOCK"', ln.strip()):
+            continue
+        bad.append((i, ln))
+assert not bad, bad
+print("ok")
+PY
+then
+  pass "every docker call goes through explicit --host wrapper"
+else
+  fail "bare docker invocation not routed through --host"
+fi
+
+# strict flag parsing: missing value and unknown flag must fail
+if bash "$VSI" --image >/dev/null 2>&1; then
+  fail "--image without a value must fail"
+else
+  pass "--image without a value fails"
+fi
+if bash "$VSI" --definitely-bogus >/dev/null 2>&1; then
+  fail "unknown flag must fail"
+else
+  pass "unknown flag fails"
+fi
+
+echo
 echo "== descriptor generator (offline, fake user via -- dry run of pure helpers) =="
 # generate-descriptor needs real passwd entries; only test stable id helper via python snippet
 python3 - <<'PY'

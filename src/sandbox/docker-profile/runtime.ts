@@ -7,10 +7,6 @@ import type { DockerExecutionProfileV1 } from "./schema.ts";
 
 export const DOCKER_PROFILE_REGISTRY_DIR = "/etc/niceeval/docker-profiles";
 
-function configuredRegistryDir(): string {
-  return process.env.NICEEVAL_DOCKER_PROFILE_REGISTRY ?? DOCKER_PROFILE_REGISTRY_DIR;
-}
-
 export interface DockerProfileRuntimeBinding {
   readonly alias: string;
   readonly profile: DockerExecutionProfileV1;
@@ -51,8 +47,9 @@ async function parentModes(path: string): Promise<number[]> {
   return result;
 }
 
-export async function loadDockerProfileRegistry(
-  registryDir: string = configuredRegistryDir(),
+/** Production registry location is fixed; tests may exercise descriptor I/O at an explicit directory. */
+export async function loadDockerProfileRegistryAt(
+  registryDir: string,
 ): Promise<ReturnType<typeof indexDockerProfiles>> {
   const names = (await readdir(registryDir)).filter((name) =>
     name.endsWith(".json") && !name.endsWith(".host.json") && !name.endsWith(".daemon.json")
@@ -73,6 +70,10 @@ export async function loadDockerProfileRegistry(
     };
   }));
   return indexDockerProfiles(entries, { expectedOwnerUid: 0 });
+}
+
+export async function loadDockerProfileRegistry(): Promise<ReturnType<typeof indexDockerProfiles>> {
+  return loadDockerProfileRegistryAt(DOCKER_PROFILE_REGISTRY_DIR);
 }
 
 function controlRequest<T>(path: string, request: Readonly<Record<string, unknown>>): Promise<T> {

@@ -13,12 +13,46 @@ import * as tar from "tar-stream";
 import {
   assertRootlessPrivilegedDaemon,
   dockerHostConfig,
+  DOCKER_ACCESS_COMPATIBILITY_COMMAND,
   dockerManagedNetworkOptions,
   DockerSandbox,
   resolveDockerSocketMount,
 } from "./docker.ts";
 
 describe("Docker privileged boundary and resources", () => {
+  it("Docker access不向容器注入endpoint环境，并在作者readiness之前锁定默认Unix endpoint", () => {
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND).toEqual([
+      "sh",
+      "-ec",
+      expect.stringContaining('test -z "${DOCKER_HOST+x}"'),
+    ]);
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain('test -z "${DOCKER_CONTEXT+x}"');
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain('docker context show');
+    expect(DOCKER_ACCESS_COMPATIBILITY_COMMAND[2]).toContain("docker --host=unix:///var/run/docker.sock info");
+  });
+
+  it("作者自定义readiness不能绕过Docker access compatibility门", async () => {
+    const sandbox = new DockerSandbox({
+      dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+      readiness: { command: ["author-ready"], timeoutMs: 8, intervalMs: 1 },
+    });
+    const calls: string[] = [];
+    const internals = sandbox as unknown as {
+      container: { inspect: () => Promise<unknown> };
+      execCommand: (command: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+      waitForReadiness: () => Promise<void>;
+    };
+    internals.container = { inspect: async () => ({ State: { Running: true } }) };
+    internals.execCommand = async (command) => {
+      calls.push(command);
+      return { exitCode: 1, stdout: "", stderr: "daemon starting" };
+    };
+
+    await expect(internals.waitForReadiness()).rejects.toThrow(/Docker access compatibility timed out/);
+    expect(calls).toContain("sh");
+    expect(calls).not.toContain("author-ready");
+  });
+
   it("rootless-only privileged 拒绝默认/rootful/TCP daemon，只接受显式 rootless Unix socket", () => {
     const rootless = {
       ID: "daemon-123",

@@ -35,8 +35,7 @@ RUN apk add --no-cache ca-certificates git nodejs npm python3 \
   && adduser -D -u 1000 -G node node
 ```
 
-在 Experiment里显式填写宿主 Unix socket。NiceEval不会从 `DOCKER_HOST`或 Docker context猜这个
-路径：
+在 Experiment里显式填写宿主 Unix socket。NiceEval不会从进程环境或 Docker context猜这个路径：
 
 ```ts title="experiments/docker-socket.ts"
 import { defineExperiment } from "niceeval";
@@ -61,8 +60,12 @@ export default defineExperiment({
 ```
 
 NiceEval会解析 symlink、确认最终目标是 Unix socket，把它挂到 Sandbox内固定的
-`/var/run/docker.sock`，设置 `DOCKER_HOST`，并按 socket的数值 GID给 `node`添加补充组。随后默认以
-Sandbox用户执行 `docker info`；CLI缺失或用户无法访问 socket时，Sandbox创建失败。
+`/var/run/docker.sock`，并按 socket的数值 GID给 `node`添加补充组。启动 Agent前，NiceEval会确认
+镜像没有预设 Docker endpoint或 context，而且默认 `docker info`与显式访问这个 Unix socket得到同一个
+daemon；CLI缺失、用户无法访问 socket或镜像把默认 endpoint改到别处时，Sandbox创建失败。
+
+这项检查只固定 Agent启动时的默认用法，不是安全边界。Agent之后仍可显式传 `docker --host`访问另一个
+endpoint；不可信任务需要依赖 managed模式的网络策略，而不是依赖 Docker CLI的默认值。
 
 <Warning>
   这不是隔离方案。Agent可以通过 socket创建 privileged容器、挂宿主目录，并操作同一 daemon上的

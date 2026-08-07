@@ -37,8 +37,6 @@ const ALLOWED = new Set([
   "VERCEL_API_TOKEN",
   "VERCEL_TEAM_ID",
   "VERCEL_PROJECT_ID",
-  // Host integration test / portable packaging override; production registry remains /etc/niceeval/docker-profiles.
-  "NICEEVAL_DOCKER_PROFILE_REGISTRY",
   // 终端环境事实
   "NO_COLOR",
   "LC_ALL",

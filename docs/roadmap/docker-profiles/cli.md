@@ -24,7 +24,11 @@ discovery、link与用户选题在 profile查找前完成，而且不发起 Prov
 声明了当前机器不存在的 profile也不报错；只有实际选中 pair引用的别名参加 attestation与 lease。
 
 一次 Invocation可以使用多个 profile。每个 Docker Sandbox始终路由到自己声明的 profile，build与
-create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent env不能替换已绑定 endpoint。
+create不能跨 profile复用连接。Provider的 build、create和生命周期调用始终使用 attestation绑定的
+endpoint，不从 Experiment或 Agent子进程变量改写它。
+
+容器内 Agent之后显式选择远端 endpoint不属于 Provider路由保证。managed模式以网络策略约束其
+可达范围。
 
 未声明 profile时：
 

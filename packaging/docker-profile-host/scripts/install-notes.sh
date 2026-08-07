@@ -59,8 +59,8 @@ Hard constraints (must hold)
 
 Sibling isolation proof (live, after enable)
 --------------------------------------------
-  DOCKER_HOST=unix:///run/niceeval/docker-profiles/<alias>/docker.sock \
-    niceeval-docker-profile-verify-sibling-isolation <alias>
+  niceeval-docker-profile-verify-sibling-isolation --profile <alias> \
+    --image docker.io/library/alpine:3.20
   # TCP connect to sibling name, 198.18.0.1, and cross-network IP must all FAIL
 
 Example sudo enable sequence (admin only; not run by this script)

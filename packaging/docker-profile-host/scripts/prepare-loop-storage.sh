@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Prepare or adopt a loop-backed ext4 image for a docker profile data root.
-# Idempotent. Refuses to reformat an existing image of unexpected size unless
-# FORCE_RECREATE=1. Does not mount; a separate mount unit / fileSystems entry
+# Idempotent. Fails closed on any existing image whose size does not match the
+# requested size: the operator must stop the unit, unmount, and move the old
+# image away explicitly. Never unlinks or reformats an existing image of
+# unexpected size. Does not mount; a separate mount unit / fileSystems entry
 # attaches the image.
 set -euo pipefail
 
@@ -11,6 +13,9 @@ Usage: prepare-loop-storage.sh --image PATH --size BYTES|--size-human 30G [--mou
 
 Creates a sparse loop image and mkfs.ext4 when missing. When --mount is given,
 also ensures the mountpoint directory exists (0755 root:root).
+An existing image whose size differs from --size is left untouched and the
+script fails closed; stop the unit, unmount, and move the old image away
+explicitly to recreate.
 EOF
 }
 
@@ -69,11 +74,13 @@ if [[ -e "$IMAGE" ]]; then
     fi
     echo "image has no filesystem; formatting ext4"
   else
-    if [[ "${FORCE_RECREATE:-0}" != "1" ]]; then
-      echo "refusing to recreate $IMAGE: size $current != expected $SIZE_BYTES (set FORCE_RECREATE=1)" >&2
-      exit 1
-    fi
-    rm -f "$IMAGE"
+    echo "error: $IMAGE exists with size $current, expected $SIZE_BYTES" >&2
+    echo "failing closed: refusing to delete or reformat an existing image" >&2
+    echo "stop the profile unit, unmount the image, and move it away explicitly:" >&2
+    echo "  systemctl stop niceeval-docker-profile-storage-<profile>" >&2
+    echo "  umount <mountpoint>" >&2
+    echo "  mv '$IMAGE' '$IMAGE.old'" >&2
+    exit 1
   fi
 fi
 

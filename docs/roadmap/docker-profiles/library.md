@@ -111,14 +111,18 @@ declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
 
 | 模式 | NiceEval负责 | 镜像负责 | 适用场景 | 权限边界 |
 | --- | --- | --- | --- | --- |
-| `socket` | 校验并 bind显式 Unix socket、补充 socket GID、设置 `DOCKER_HOST`、执行 readiness | Docker CLI | 可信 Agent、个人开发机、已有 daemon且优先启动速度 | Agent拥有该 daemon的完整控制权；rootful socket通常等价宿主 root |
+| `socket` | 校验并 bind显式 Unix socket、补充 socket GID、检查默认 endpoint并执行 readiness | Docker CLI | 可信 Agent、个人开发机、已有 daemon且优先启动速度 | Agent拥有该 daemon的完整控制权；rootful socket通常等价宿主 root |
 | `dind/raw-privileged` | 给 outer container设置 `Privileged: true`、注入受管 supervisor、启动 daemon并执行 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 一次性 VM或专用 runner，需要独立 inner image/network/cache | outer privileged继承所选 daemon/宿主的风险，不宣称 rootless隔离或跨进程容量保证 |
 | `dind/managed-rootless` | profile attestation、rootless privileged、资源准入、独占网络、watchdog恢复、受管 supervisor和 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 不可信 Agent、共享宿主、并发评估和强杀恢复 | privileged限制在受管 rootless user namespace或专用 VM内；仍不是 kernel/VM逃逸防护 |
 
-socket模式必须显式写宿主绝对路径，不读取 `DOCKER_HOST`、Docker context或 Provider当前 endpoint。
+socket模式必须显式写宿主绝对路径，不从 NiceEval进程变量、Docker context或 Provider当前 endpoint推断路径。
 NiceEval对路径执行 `realpath`，要求最终目标是 Unix socket，并把规范路径 bind到容器内固定的
 `/var/run/docker.sock`。它读取 socket GID并用 Docker `GroupAdd`授予 Sandbox默认用户访问权；路径
 不可读、目标不是 socket、补充组无法生效或默认用户仍无法执行 `docker info`时，Sandbox创建失败。
+
+Agent启动前还会拒绝镜像预设的 endpoint/context，并确认默认 `docker info`与显式 Unix socket访问的是
+同一 daemon。这是启动兼容性检查，不阻止 Agent随后显式选择其它 endpoint；安全边界由宿主与 managed
+网络策略提供。
 
 symlink只作为可信宿主配置的便捷入口，最终 bind的是求值时得到的规范目标；NiceEval不承诺防御
 可信宿主在检查与 create之间替换该路径。
@@ -266,7 +270,8 @@ NiceEval受管命令和 coding agent使用 `user`，例如 `node`。能访问 in
 容器内拥有 root等价能力；普通用户身份用于工具兼容，不是容器内安全边界。
 
 outer profile socket、control endpoint与 lease token不以 mount、子进程变量或文件形式进入评估
-容器。容器内 `DOCKER_HOST`只能指向 inner Unix socket。
+容器。默认 Docker CLI必须访问 inner Unix socket；NiceEval不为此注入 endpoint变量。Agent仍可显式
+选择其它 endpoint，managed模式依靠网络策略限制其可达范围。
 
 ## 观测
 

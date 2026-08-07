@@ -9,7 +9,7 @@ if [[ -z "$NAME" ]]; then
   exit 2
 fi
 
-REGISTRY_DIR="${NICEEVAL_DOCKER_PROFILE_REGISTRY:-/etc/niceeval/docker-profiles}"
+REGISTRY_DIR="/etc/niceeval/docker-profiles"
 DESC="${REGISTRY_DIR}/${NAME}.json"
 HOST_CFG="${REGISTRY_DIR}/${NAME}.host.json"
 RUNTIME="/run/niceeval/docker-profiles/${NAME}"
