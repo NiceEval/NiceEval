@@ -306,7 +306,8 @@ const scope = reportScopeFixture({
 
 - **外部业务数据经 import 冻结** （[Architecture](../../../feature/reports/architecture.md#外部业务数据经-import-冻结)）：无 `--data` / `config.reportData` / `ctx.data`。
   快照模块随报告 import 图进 watch 与缓存身份。
-  区分力：改冻结快照文件触发 view 重建； page render 读时钟 / 网络按完整用户反馈拒绝。
+  Unit 只证明报告定义没有第二套动态数据入口，以及 page render 读时钟 / 网络时给出完整用户反馈。
+  config import 图变化后的 watch 与 HTTP 结果归 Report E2E 的长期运行 server Journey。
 
 - **双面组件协议**：内置原语与 `defineRenderer` 都只接受 `{ dimensions, text, web, enhance?, styles? }`；携带 `resolve` 或函数形态定义时按完整用户反馈拒绝。
    renderer 参数是已算好的 value、options 与呈现 context，无法触达 Sample 或 artifact IO。
