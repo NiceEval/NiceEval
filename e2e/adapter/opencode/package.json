@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "vitest run"
+    "e2e": "vitest run",
+    "test": "node scripts/test-guard.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
@@ -13,7 +15,6 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@niceeval/testkit": "0.1.0",
     "@types/dockerode": "^3.3.31",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
