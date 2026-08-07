@@ -1,11 +1,11 @@
 // feature: docs/engineering/testing/e2e/report.md
 //
-// 这个单一 Journey 只跨公开边界：确定性 exp → show text/JSON → view --out → HTTP。
+// 这个单一 Journey 只跨公开边界：确定性 exp → show text/JSON → view --out / local server → HTTP。
 // locator 只从上一步公开的 --json 事件取得；测试不读取 .niceeval 私有布局。
 
-import { command, withHttpServer } from "@niceeval/testkit";
+import { command, pollUntil, waitForOutput, withHttpServer, withProcess } from "@niceeval/testkit";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
@@ -44,6 +44,28 @@ function staticSiteHandler(root: string) {
       return new Response("not found", { status: 404 });
     }
   };
+}
+
+async function htmlWithMarker(url: string, marker: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(url);
+    if (response.status !== 200) return undefined;
+    const html = await response.text();
+    return html.includes(marker) ? html : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function withConfigReport(config: string): string {
+  const imported = config.replace(
+    'import { defineConfig } from "niceeval";',
+    'import { defineConfig } from "niceeval";\nimport report from "./reports/config-reload.ts";',
+  );
+  if (imported === config) throw new Error("report fixture config no longer has its defineConfig import");
+  const configured = imported.replace('  locale: "en",', '  locale: "en",\n  report,');
+  if (configured === imported) throw new Error("report fixture config no longer has its locale field");
+  return configured;
 }
 
 it("安装后的 niceeval 交付确定性 Report evidence 到公开 JSON、导出站与 HTTP", async () => {
@@ -148,4 +170,66 @@ it("安装后的 niceeval 交付确定性 Report evidence 到公开 JSON、导�
     expect(response.status).toBe(200);
     expect(await response.text()).toBe(indexHtml);
   });
+
+  // invoke/observe：不带 --report 时，真实长期运行的 view 从项目 config import 默认报告。
+  // --port 0 让 OS 分配端口；withProcess 无论断言成功或失败都会 finally 终结 server。
+  const configPath = join(process.cwd(), "niceeval.config.ts");
+  const reloadReportPath = join(process.cwd(), "reports", "config-reload.ts");
+  const originalConfig = await readFile(configPath, "utf8");
+  const originalReloadReport = await readFile(reloadReportPath, "utf8");
+  try {
+    await writeFile(configPath, withConfigReport(originalConfig), "utf8");
+    await withProcess(
+      [
+        join(process.cwd(), "node_modules", ".bin", "niceeval"),
+        "view",
+        "--record",
+        recordRoot,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "0",
+        "--no-open",
+      ],
+      { cwd: process.cwd(), timeoutMs: 60_000 },
+      async (view) => {
+        const startup = await waitForOutput(view, "stdout", /http:\/\/127\.0\.0\.1:\d+\//, {
+          timeoutMs: 30_000,
+          label: "config report view URL",
+        });
+        const url = startup.match(/http:\/\/127\.0\.0\.1:\d+\//)?.[0];
+        expect(url, startup).toBeDefined();
+        const origin = url!;
+
+        await pollUntil(
+          async () => {
+            try {
+              return (await fetch(`${origin}healthz`)).status === 200 ? true : undefined;
+            } catch {
+              return undefined;
+            }
+          },
+          { timeoutMs: 15_000, intervalMs: 100, label: "config report view readiness" },
+        );
+
+        const first = await pollUntil(
+          () => htmlWithMarker(origin, "CFG_FIRST"),
+          { timeoutMs: 15_000, intervalMs: 100, label: "config report initial render" },
+        );
+        expect(first).not.toContain("CFG_SECOND");
+
+        expect(originalReloadReport).toContain("CFG_FIRST");
+        await writeFile(reloadReportPath, originalReloadReport.replace("CFG_FIRST", "CFG_SECOND"), "utf8");
+
+        const second = await pollUntil(
+          () => htmlWithMarker(origin, "CFG_SECOND"),
+          { timeoutMs: 15_000, intervalMs: 100, label: "config report reload" },
+        );
+        expect(second).not.toContain("CFG_FIRST");
+      },
+    );
+  } finally {
+    await writeFile(configPath, originalConfig, "utf8");
+    await writeFile(reloadReportPath, originalReloadReport, "utf8");
+  }
 }, 120_000);
