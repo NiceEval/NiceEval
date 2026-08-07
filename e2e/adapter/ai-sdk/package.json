@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "e2e": "tsx scripts/e2e.ts",
+    "e2e": "vitest run",
     "start": "tsx src/backend/server.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -19,12 +19,14 @@
     "zod": "^4.1.8"
   },
   "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
     "@types/node": "^22.10.0",
     "dotenv": "^16.4.5",
     "niceeval": "^0.4.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }
