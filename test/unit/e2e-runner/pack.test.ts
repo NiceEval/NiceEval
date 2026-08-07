@@ -48,6 +48,8 @@ describe("E2E candidate and command entry contracts", () => {
       expect(candidate.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
     });
     expect(() => parseRunCli(["--repo", "cli"])).toThrow(/requires --candidate/);
+    expect(parseRunCli(["--candidate", "candidate.tgz", "--artifact-root", "out/e2e"]).artifactRoot)
+      .toBe(resolve("out/e2e"));
   });
 
   it("-- 后的原生参数保持顺序，并只追加一次到 manifest command", () => {
