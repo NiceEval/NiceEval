@@ -87,6 +87,22 @@ function hasChangedPath(repo: DiscoveredRepo, diffPaths: readonly string[]): boo
   return repo.manifest.paths.some((pattern) => diffPaths.some((path) => pathMatches(pattern, path)));
 }
 
+/** Changes to the candidate or shared harness invalidate every repo path optimization. */
+export function hasGlobalImpact(diffPaths: readonly string[]): boolean {
+  return diffPaths.some((rawPath) => {
+    const path = normalizePath(rawPath);
+    return (
+      path.startsWith("src/") ||
+      path.startsWith("packages/testkit/") ||
+      path.startsWith("e2e/scripts/") ||
+      path === ".github/workflows/e2e.yml" ||
+      path === "package.json" ||
+      path === "pnpm-lock.yaml" ||
+      /^tsconfig(?:\.[^/]+)?\.json$/.test(path)
+    );
+  });
+}
+
 function collectRepoIds(repoIds: readonly string[]): string[] {
   return [...new Set(repoIds)].filter((id) => id.length > 0);
 }
@@ -109,7 +125,10 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
   }
 
   const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;
-  const diffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
+  const requestedDiffPaths = options.diffPaths && options.diffPaths.length > 0 ? options.diffPaths : undefined;
+  const diffPaths = requestedDiffPaths !== undefined && !hasGlobalImpact(requestedDiffPaths)
+    ? requestedDiffPaths
+    : undefined;
 
   return all.filter((repo) => {
     const manifest = repo.manifest;

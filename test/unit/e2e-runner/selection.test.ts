@@ -36,9 +36,9 @@ describe("E2E plan selection", () => {
   });
 
   const repos = [
-    repo("cli", { areas: ["cli"], lanes: ["pr"], paths: ["src/cli/**"] }),
-    repo("report", { areas: ["report"], lanes: ["pr", "main"], paths: ["src/report/**"] }),
-    repo("live", { areas: ["adapter"], lanes: ["main"], paths: ["src/agents/**"] }),
+    repo("cli", { areas: ["cli"], lanes: ["pr"], paths: ["e2e/cli/**"] }),
+    repo("report", { areas: ["report"], lanes: ["pr", "main"], paths: ["e2e/report/**"] }),
+    repo("live", { areas: ["adapter"], lanes: ["main"], paths: ["e2e/adapter/live/**"] }),
     repo("always", { areas: ["lifecycle"], lanes: ["pr"], paths: [] }),
   ];
 
@@ -52,7 +52,7 @@ describe("E2E plan selection", () => {
 
   it("capability 匹配 manifest areas，path 匹配命中才收窄", () => {
     expect(selectRepos(repos, { lane: "pr", capability: "report" }).map((r) => r.manifest.id)).toEqual(["report"]);
-    expect(selectRepos(repos, { lane: "pr", diffPaths: ["src/report/show.ts"] }).map((r) => r.manifest.id)).toEqual([
+    expect(selectRepos(repos, { lane: "pr", diffPaths: ["e2e/report/show.ts"] }).map((r) => r.manifest.id)).toEqual([
       "report",
       "always",
     ]);
@@ -69,6 +69,16 @@ describe("E2E plan selection", () => {
       "report",
       "always",
     ]);
+  });
+
+  it("候选源码、共享 runner 或 workflow 变化时 fail-open 跑完整 lane", () => {
+    for (const path of ["src/cli.ts", "e2e/scripts/run.ts", ".github/workflows/e2e.yml"]) {
+      expect(selectRepos(repos, { lane: "pr", diffPaths: [path] }).map((repo) => repo.manifest.id)).toEqual([
+        "cli",
+        "report",
+        "always",
+      ]);
+    }
   });
 
   it("plan 投影只含 matrix 所需信息，不触碰执行字段", () => {
