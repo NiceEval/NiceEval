@@ -1,11 +1,13 @@
 <!--
 Title: <type>(<scope>): <imperative outcome>
-Example: feat(sandbox): add managed rootless Docker profiles
+Example: feat(sandbox): add managed rootless Docker-in-Docker
 
 Types: feat, fix, docs, refactor, test, ci, chore.
 Choose the type from the PR's final outcome, not its first commit. Update the
-title when the scope changes, keep one dominant outcome, and aim for 72
-characters or fewer. PR titles and descriptions must be written in English.
+title when the scope changes. Name the user-visible capability or behavior, not
+an internal mechanism such as its registry, protocol, or storage model. Keep one
+dominant outcome and aim for 72 characters or fewer. PR titles and descriptions
+must be written in English.
 
 Keep every section below. Write "None" when that surface does not change.
 Repeat the entry block when a section contains multiple changes. Every changed

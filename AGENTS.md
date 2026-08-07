@@ -42,7 +42,7 @@
 ## Git 与协作安全
 
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
-- PR 标题、PR 正文与 commit message 一律使用英语。
+- PR 标题、PR 正文与 commit message 一律使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - PR 正文不写泛化 Summary 或验证流水账。固定按 Public API、CLI commands、Report components、Observable behavior and data contracts、Package scripts、Tests 分类；未变化的分类写 `None`，每个变化条目都给出 before/after example 与 user impact。测试条目用代表场景说明旧测试会放走什么、新测试守住什么。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。
