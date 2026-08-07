@@ -115,7 +115,7 @@
 │      owner: e2e/record/**
 ├─ [ ] T6.5 lifecycle：signal/cleanup/下一消费者
 │      owner: e2e/lifecycle/**
-├─ [ ] T6.6 adapter/local-protocol：PR transport/fault
+├─ [x] T6.6 adapter/local-protocol：PR transport/fault
 │      owner: e2e/adapter/local-protocol/**
 └─ [x] T6.7 live adapters：每个 adapter/<id> 独立迁移，彼此 parallel
    ├─ [x] T6.7.1 ai-sdk
