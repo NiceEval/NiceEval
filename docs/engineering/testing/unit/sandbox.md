@@ -96,11 +96,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - `pathPrepend` 进入 template identity（改值使旧结果失效），Compose/Dockerfile/Image 三个 docker-based 工厂共用同一条 `DockerSandbox` 消费路径,只覆盖其中一个即可证明。
   - **absent ≡ default**：省略 `pathPrepend` 与显式传空数组产出同一份 template identity（同一份 digest，序列化里都不出现这个键）——可选配置字段的默认值不进身份序列化是通用规则，`pathPrepend` 是它当前唯一有实例的字段。
 - **E2B command completion framing**：
-  - 测试把生产 wrapper 交给真实 `/bin/bash` 执行，再把 bash 的真实 stdout/stderr chunk 送进生产 parser。
-  - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk，以及 Codex 形状的长命令/heredoc。
+  - Unit 只把生产 wrapper 交给确定性的 transport fake：fake 从 wrapper 解码真实 prefix / suffix 字节，再把声明的 stdout / stderr 正文与完成 frame 分块送进生产 parser；不启动 shell、SDK 或远端实例。
+  - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk、伪 marker 后继续扫描、两路 exit 不一致，以及 Codex 形状的长命令/heredoc。
   - wrapper 源码或带反斜线的转义诊断即使同时包含 prefix/suffix 也不得完成命令。
-  - 人工从 script 提取 prefix/suffix 后直接拼合法数字 marker 的 fake 不能充当这条契约的证明。
-  - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK/bash 边界与单元层一致。
+  - fake 必须消费生产 wrapper 生成的 marker 字节，不能另造一套 token；它证明的是 frame parser、双通道聚合与 transport 收尾，不证明 shell 自身会执行 wrapper。
+  - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK / shell 边界与单元层声明的协议一致。
 - **命令树寿命**：正常命令结束后关闭 transport / PTY 不杀命令有意启动的服务；timeout、取消、Attempt interruption 与 Agent runtime cancellation 必须在 Promise settle 前确认受管命令树终止，不能只关输出流。Provider 无法精确终止时停止 Sandbox，且该实例不得再进 reuse / keep。逻辑 send 的窗口跨全部重试，ledger 与 retryAttempts 记账、driver 静止都发生在 settle 前。
 - **命令证据包装**：四个公开 `run*` 方法最外层调用无论成功还是非零退出，都先登记一次 `CommandExitEvidence`（含 `checked` 调用事实），再把结果交还调用方。
   证据与同一次 timing command node 共用 id；provider 内部转调不重复登记。
