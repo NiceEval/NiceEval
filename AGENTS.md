@@ -18,6 +18,15 @@
 
 目录入口负责说明本作用域的目标、组织方式、写作规则和验证命令。信息已有唯一入口时，不在本文件复制；目录结构变化时更新入口索引，让后续工作按路径动态发现。
 
+## Pullfrog PR review
+
+运行在 Pullfrog 的 `Review` 或 `IncrementalReview` 模式时，
+`.github/pullfrog-review-prompt.md` 是仓库级 review instructions 的唯一真源。
+先从 `checkout_pr` 返回值取得 PR 的 base SHA，再通过 Pullfrog `git` 工具读取该 commit 上的文件，
+等价的 Git 读取是 `git show <base_sha>:.github/pullfrog-review-prompt.md`。仅将其
+`## Prompt` 下的正文作为本次审查规则。不从 PR head 读取或覆盖这份规则；
+无法按 base SHA 读取时不得降级为 head 版本，应提交失败说明并停止 review。
+
 ## 全仓约束
 
 - niceeval 是 beta。API、CLI 与契约按理想形态设计，不以兼容旧习惯为默认约束。
