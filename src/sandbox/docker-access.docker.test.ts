@@ -120,13 +120,19 @@ describe.runIf(runDocker)("Docker access real project images", () => {
       }
 
       const startedAt = Date.now();
-      await expect(DockerSandbox.create({
+      const startupError = await DockerSandbox.create({
         image: built.image,
         user: "node",
         privileged: "raw",
         dockerAccess: { mode: "dind", isolation: "raw-privileged" },
         readiness: { command: ["sh", "-c", "sleep 60"], user: "node", timeoutMs: 100 },
-      })).rejects.toThrow(/readiness timed out after 100ms/);
+      }).then(
+        () => new Error("expected readiness timeout"),
+        (error: unknown) => error,
+      );
+      const startupMessage = startupError instanceof Error ? startupError.message : String(startupError);
+      expect(startupMessage).toMatch(/readiness timed out after 100ms/);
+      expect(startupMessage).toContain("--- dockerd.log (tail) ---");
       expect(Date.now() - startedAt).toBeLessThan(10_000);
     } finally {
       await built.remove();
