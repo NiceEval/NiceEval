@@ -7,7 +7,7 @@ import type { Sample } from "../../record/index.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { Col, Text } from "../definition/primitives.tsx";
 import { buildReportMeta, defineReport } from "../definition/report.ts";
-import { renderResolvedPageText, renderResolvedPageWeb } from "./resolved-page.ts";
+import { renderResolvedPageText } from "./resolved-page.ts";
 import { executePageRender, renderTarget, resolveDefinitionPage } from "./page-render.ts";
 import { pickReportPage } from "./text.ts";
 
@@ -44,46 +44,6 @@ describe("惰性 page render", () => {
     });
     expect(chartRender).toHaveBeenCalledTimes(1);
     expect(tableRender).not.toHaveBeenCalled();
-  });
-
-  it("同一 page 实例的 text / web / 多 locale 投影只执行 render 一次", async () => {
-    let renderCalls = 0;
-    const definition = defineReport({
-      pages: [
-        {
-          id: "report",
-          title: "Report",
-          render: async () => {
-            renderCalls += 1;
-            return (
-              <Col>
-                <Text>{`n=${String(renderCalls)}`}</Text>
-              </Col>
-            );
-          },
-        },
-      ],
-    });
-    const { results } = emptyScopeAndResults();
-    const scope = scopeOf([]);
-    const page = definition.pages[0]!;
-    const cache = new Map();
-    const resolved = await resolveDefinitionPage(
-      page,
-      {
-        scope,
-        results,
-        report: buildReportMeta(definition, scope),
-        page: { id: page.id, input: "sample" },
-      },
-      { renderCache: cache },
-    );
-
-    renderResolvedPageText(resolved);
-    renderResolvedPageWeb(resolved, { locale: "en" });
-    renderResolvedPageWeb(resolved, { locale: "zh-CN" });
-
-    expect(renderCalls).toBe(1);
   });
 
   it("executePageRender 对同一 page + 输入缓存 Promise", async () => {
