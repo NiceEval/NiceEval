@@ -39,7 +39,7 @@ gap:`@ai-sdk/otel` 对 `needsApproval` 工具的审批链路不产 `execute_tool
 
 ## 能力从哪来
 
-新契约下没有 `capabilities` 标志位；`defineDirectAgent` 只要求如实声明
+新契约下没有 `capabilities` 标志位；`defineAgent` 只要求如实声明
 `evidenceCoverage`。`uiMessageStreamAgent` 已在工厂内声明协议帧完整覆盖的事件、动作、消息和
 状态，并把协议不含的 usage 标为 unavailable；`t` 上能判什么仍取决于 adapter 实际接到的证据。
 这个示例能验证到：
