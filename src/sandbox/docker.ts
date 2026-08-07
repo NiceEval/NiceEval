@@ -647,7 +647,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       try {
         const readinessUser = readiness.user ?? this.userOverride ??
           (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
-        const result = await this.execCommand(command, args, { user: readinessUser });
+        const result = await this.execCommand(command, args, {
+          user: readinessUser,
+          timeoutMs: Math.max(1, deadline - Date.now()),
+        });
         if (result.exitCode === 0) return;
         lastFailure = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
       } catch (error) {

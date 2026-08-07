@@ -83,6 +83,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - raw DinD只有显式 `isolation: "raw-privileged"`才产生 `Privileged: true`；`mode: "dind"`缺 isolation在配置期失败。
   - managed DinD缺 profile或完整 resources时在 Docker I/O前失败；profile resolution或 attestation失败绝不重试成 raw privileged。
   - 三种 access都默认得到以 Sandbox默认用户执行的 `docker info` readiness；用户声明可替换探针但不能关闭。
+  - readiness的总 deadline同时限制每次 exec；单次 `docker info`卡住不得越过 `timeoutMs`。
   - DinD provider-owned launcher是常量协议：替换原 Entrypoint/Cmd、预留 supervisor grace、逐项检查工具，并把协议修订进入 identity。
   - launcher中的用户值只能作为 argv，不得拼进 shell source。
   - raw DinD在 tmpfs存在时仍是 `Suspendable`；managed DinD的只读或 tmpfs配置仍是 `DestroyOnly`。
