@@ -22,8 +22,15 @@ Node 在 stdout 为 pipe 时写入是异步的,`process.exit()` 不等缓冲 flu
 裸调 `process.exit(0)`(653 / 658 / 689 一带)。stdout 为 TTY 或文件时写入同步,所以只有
 管道坏。单测收集的是字符串、e2e 若重定向文件也测不出,只有真管道路径会红。
 
-## 修法(未修)
+## 修法（已修）
 
-大输出后不要裸 `process.exit()`:改设 `process.exitCode` 让进程自然退出,或显式等待
-stdout write 回调 / `drain` 后再退。修的时候全查 `src/cli.ts` 里所有「先写大输出、后
-`process.exit`」的路径(show / view 数据导出同形),并配一条真开管道子进程的回归用例。
+`d8d5a84b`（2026-07-31）把 show 路径的裸 `process.exit(code)` 改为设置 `process.exitCode` 后返回，
+让事件循环自然冲完 stdout。修复注释与代码都落在 `src/cli.ts` 的 show 分支。
+
+## 回归 kill 收据
+
+旧实现的真机收据已经记录在上方：同一份 505081 字节 JSON 经 pipe 只交付 131072 字节，最早在 JSON parse 失败；
+重定向文件则完整。目标 E2E owner 是
+`docs/roadmap/testing/example/repos/cli/test/show-json-pipe.test.ts`：它让安装后的 CLI stdout 进入父进程 pipe，
+同时断言字节数超过旧阈值、严格 JSON 可解析，并读到尾部独立 sentinel。恢复 `d8d5a84b^` 的裸 `process.exit(code)` 时，
+该测试会在 parse 或尾部 sentinel 处失败，而不是只用“命令退出 0”冒充完整交付。

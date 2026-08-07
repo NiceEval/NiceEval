@@ -78,7 +78,7 @@ E2E 文件从上到下保持同一信息顺序：
 
 | 位置 | 保留的信息 | 不放入这里的内容 |
 |---|---|---|
-| 文件头 | Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
+| 文件头 | 第一行的 `feature:` / `cases:`、Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
 | 局部类型 | 本测试实际读取的公开字段 | 完整生产 DTO、候选导出的 schema 常量 |
 | 局部函数 | process、parse、唯一项查找、资源关闭等机械操作 | scenario 名到用户动作的映射、领域 expected |
 | 测试标题与注释 | 长期用户结果；`feature:` 写契约归属，历史 kill 用 `regression:` 指向 memory | 临时实现函数名、当前 DOM 结构 |
@@ -89,7 +89,8 @@ E2E 文件从上到下保持同一信息顺序：
 抽取后测试标题、argv、sentinel、verdict 和历史回归理由仍留在 owner 文件。
 
 Feature 是每条测试的长期归属，Bug 不是第三种执行层。目录、文件名与标题按功能和可观察结果命名；
-`regression:` 只是已证明能杀死旧实现时附加的历史凭据。Unit 的 `// cases:` / `// bug:` 与 E2E 的
+E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在第一行，让 owner 不依赖 import 排列。一个文件含多个 case 时，
+`regression:` / `bug:` 紧贴真正能杀死旧实现的那个 case，不能把整文件的其它测试也伪装成回归。Unit 的 `// cases:` / `// bug:` 与 E2E 的
 `feature:` / `regression:` 怎样对应，统一见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性
@@ -127,7 +128,8 @@ Feature 是每条测试的长期归属，Bug 不是第三种执行层。目录�
 - 在断言阶段悄悄修改共享 evidence。
 
 两个 Repo 出现同一稳定机械 parser 后才提取共享实现；领域预期仍留在测试文件。
-项目复制已经由 Runner mutation 与 Report Journey 两个功能 Repo 消费，因此 Testkit 接收显式策略 API。
+项目复制已经被多类会写结果、配置或导出目录的 case 消费，因此 Testkit 接收显式策略 API；调用点仍明确写出复制源、
+排除项和链接策略，不能把 CLI、Runner、Report、Package、Lifecycle 或 Adapter 的领域动作收进 Testkit。
 
 HTTP server lifecycle 暂时只有 Local protocol 一个消费者，只作为 0.x callback API 试用；path、status、body 和错误阶段仍在
 Adapter 测试正文。浏览器和 stdin 不进入 Testkit；Playwright Test 继续拥有 browser / context / page。

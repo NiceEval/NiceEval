@@ -168,7 +168,8 @@ Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试�
 - HTML target 只沿用户实际拿到的 `href` 走；可访问 selector 必须先是产品契约，缺失就登记产品 gap；
 - mutation 只在私有副本，lifecycle 观察带 run ID 的 owned resource 并由下一消费者闭环；
 - 验证收据保留 producer 的 exit / signal，所有临时服务与进程都进入同一 collect / cleanup 生命周期；
-- 只有实际历史 kill 才写 `regression: memory/<条目>.md`；同形但未验证的补充测试写 `risk:`，不能借 commit 或 issue 增加可信度。
+- 只有实际历史 kill 才写 `regression: memory/<条目>.md`；同形但未验证的补充测试只写 Feature，相关 memory 只作解释，
+  不能借 commit 或 issue 增加可信度。
 
 **验收**：先审 Repo 是否能独立安装和单跑，再审测试数量。把任一 live adapter Repo 删除时，本地 fixture 不能继续声称该 adapter
 兼容。让父进程退出但留下 backend / container 时 Lifecycle 必须红。去掉产品可访问身份时，browser 样例不能靠自造 selector 继续绿。

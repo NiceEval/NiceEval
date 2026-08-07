@@ -1,3 +1,4 @@
+// cases: docs/engineering/testing/unit/sandbox.md
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Sandbox, SandboxInfo, SandboxPaginator } from "e2b";
 import { inspectDetached } from "../../../../../../src/sandbox/keep.ts";
@@ -13,7 +14,6 @@ vi.mock("e2b", () => ({
   },
 }));
 
-// cases: docs/engineering/testing/unit/sandbox.md
 // 单元层只驱动 inspectDetached 的领域状态分类；live SDK 可用性由真实 E2B E2E 拥有。
 const sandboxInfoDefaults = {
   templateId: "niceeval-test-template",

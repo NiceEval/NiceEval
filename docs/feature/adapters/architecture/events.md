@@ -31,7 +31,9 @@ type StreamEvent =
 2. tool 与 subagent 共用 `operation.started` / `operation.finished`，用稳定 operation ID 配对。
    ID 只需在**一次 started→finished 配对内**稳定,不要求跨轮唯一。
    同一个 ID 在 finished 后再次 started 是新操作,core 新建记录而非覆盖。
-3. tool operation 的 `name` 保留原始工具名，`tool` 保存跨 Agent 规范名。
+3. tool operation 的 `name` 保留上游原始工具名；可选的 `tool` 保存跨 Agent 的闭集规范分类。
+   进入规范化流程后仍无法识别时，`tool` 写 `unknown`；不承诺分类任意应用工具的协议也可以省略 `tool`。
+   两种情况都不能丢掉或改写 `name`，读者始终能看到真实协议值。
    `operation.finished.kind` 必须与对应 started 的 `operation.kind` 相同。
 4. 人工拒绝是 `rejected`，执行故障是 `failed`。
 5. Skill 加载只产 `skill.loaded`，不重复计入工具调用。
@@ -70,6 +72,10 @@ interface InputRequest {
 
 `deriveRunFacts(events)` 统一折叠工具调用、subagent 调用、待输入请求、parked、消息数、压缩次数与 `context.injected` 次数（`contextInjections`）。
 Adapter 不预计算断言结果。
+
+折叠后的 `ToolCall.name` 是规范分类，`ToolCall.originalName` 继续保存事件里的原始 `operation.name`；Report 的 conversation
+同样分别交付原始 `name` 与可选 `tool`。因此 `unknown` 只表示分类结果，不会让上游名称从 Record 或公开读回中消失。
+
 折叠按 `operationId` 把 started 与 finished 对成一条操作：配上 finished 的取其状态；只有 started、尚未等到 finished 的操作状态是 **`pending`**——HITL 停在审批上的工具调用就以这个状态被断言，不是容错分支。
 只有 finished、没配上 started 才属于 core 容错，不是正常映射契约。
 

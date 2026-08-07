@@ -20,6 +20,9 @@ pnpm test
 随后从 `niceeval show local/roundtrip --history --json` 读回 errored verdict。
 完整命令都在调用点，不读 `.niceeval/` 私有布局。
 
+根 runner 的临时副本隔离不同 invocation；每条会写 `.niceeval` 的 case 还使用自己的项目副本，
+让同一 Repo 以后增加测试文件时仍可保留 Vitest 默认并行。HTTP fixture 监听动态端口，不共享固定地址。
+
 ## lockfile 规则（正式）
 
 - 本目录是 docs 示例，**不签入、不手写** `pnpm-lock.yaml`：文档里手写的 lockfile 必然

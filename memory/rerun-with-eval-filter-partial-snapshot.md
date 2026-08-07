@@ -16,3 +16,13 @@ carry(resume)机制的作用域是「本次计划内的 eval」:`src/runner/run.
 - 带位置参数补跑只适合「本地快速验证某道题」,其结果不该被当作实验的最新快照发布。
 - **已修(第二层根因)**:carry 基线原来只取「最近一个 run」(`loadMostRecentResults` 的 `loaded[0]`),部分补跑 run 一旦成为最新,任何后续续跑都携带不到东西,`exp <组>` 补齐随之失效。已改为跨历史每 `(experimentId, evalId)` 取最新一份(`src/view/loader.ts` 的 `loadLatestResultsPerEval`,配套 `loader.test.ts`)。
 - 设计层面待议:carry 是否应无视位置参数、把计划外的 prior passed 也携入 summary(「跑哪些」与「报什么」分离)。若做,需在 docs/cli.md 与 view/reports 口径一并声明。
+
+## 回归 kill 收据
+
+`85cafd7d` 的 fix parent 只读取最新一个 Run。先产生含 alpha、beta 的完整 Run，再用 eval selector 只补跑 alpha，
+随后对完整 Experiment 做 dry：旧实现只能看见最新部分 Run，beta 被判为不可携入；修复实现会分别从部分 Run 取 alpha、
+从更早完整 Run 取 beta。修复提交的 `src/view/loader.test.ts` 已用这组两层历史证明旧算法与新算法的差异。
+
+目标 E2E owner 是 `docs/roadmap/testing/example/repos/runner/test/carry-reuse.test.ts`。它必须真的执行
+`full → 带 eval selector 的 partial → full dry/run`，并在 full dry 处断言 alpha、beta 都携入；若第二步只是再次运行完整
+Experiment，就杀不死旧实现，也没有资格写 `regression:`。

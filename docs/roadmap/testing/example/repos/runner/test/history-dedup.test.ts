@@ -1,10 +1,10 @@
+// feature: docs/feature/reports/show/history.md
 import { resolve } from "node:path";
 import { command, only, withProjectCopy, type ProcessReceipt } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 // NiceEval 根目录：pnpm e2e --repo runner -- --run test/history-dedup.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/history-dedup.test.ts
-// feature: docs/feature/reports/show/history.md
 
 interface HistorySection {
   experimentId: string;
@@ -54,7 +54,7 @@ function locators(attempts: HistorySection["attempts"]): string[] {
   return attempts.map((attempt) => attempt.locator);
 }
 
-// risk: history 跨快照去重。身份就是 locator，断言用身份集合而不是行数猜测；
+// 相关风险：history 跨快照去重。身份就是 locator，断言用身份集合而不是行数猜测；
 // 这不是 031ce196 的因果回归，因此不冒充 historical regression。
 // 结果根属于本 case 的私有副本，不与 carry 的副本共享。
 test("--rerun all 追加新 attempt，全携入 run 按身份键去重不重复行", async () => {

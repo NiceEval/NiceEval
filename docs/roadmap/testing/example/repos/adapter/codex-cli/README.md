@@ -2,7 +2,7 @@
 
 live 适配器 Repo：`experiments/tool-call.ts` 用真实官方工厂 `codexAgent`
 （`niceeval/adapter`）在 Docker Sandbox 里跑真实 `codex exec --json`。本 Repo 证明：
-真实命令调用被归一为规范 `shell` 工具、调用与结果配对成立、且从公开执行证据读回
+真实命令调用同时保留协议原名 `command_execution` 与规范分类 `shell`、调用与结果配对成立、且从公开执行证据读回
 （`niceeval show --execution --json`）可见。进入 main / nightly / release lane
 （见 `e2e.json.lanes`），需要真实凭据与 Docker。
 
@@ -15,6 +15,9 @@ pnpm e2e --repo adapter/codex-cli
 # 已安装候选包的独立 codex-cli Repo 根目录
 pnpm test            # 需要 CODEX_API_KEY / CODEX_BASE_URL 与 Docker
 ```
+
+根 runner 的临时副本隔离不同 invocation；每条会写 `.niceeval` 的 case 还使用自己的项目副本，
+让同一 Repo 以后增加测试文件时仍可保留 Vitest 默认并行。Docker 资源身份也必须由该 case 独占。
 
 ## lockfile 规则（正式）
 
@@ -32,7 +35,7 @@ pnpm test            # 需要 CODEX_API_KEY / CODEX_BASE_URL 与 Docker
 |---|---|
 | `experiments/tool-call.ts` | `codexAgent`，凭据读 `CODEX_API_KEY` / `CODEX_BASE_URL` |
 | `evals/tool-call/shell.eval.ts` | `echo` 任务 → `calledTool("shell")` + `noFailedActions` |
-| `test/tool-identity.test.ts` | `exp` → `show --history` → `show --execution`：规范 `shell` 与命令入参保真读回 |
+| `test/tool-identity.test.ts` | 私有项目副本里的 `exp` / `show`：原始 `command_execution`、规范 `shell` 与命令入参读回 |
 
 Codex CLI 事件解码路径（`src/o11y/parsers/codex.ts`）自始带规范名。
 identity 丢失的故障家族写在 `memory/sdk-stream-transformers-missing-canonical-tool.md`

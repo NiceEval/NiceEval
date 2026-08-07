@@ -14,3 +14,11 @@
 - `package.json` exports 全部出口补 `"require"` 条件指向同一文件(`.ts` 由 tsx CJS hook 转译)。
 
 复现方法(scratchpad symlink 本仓库为安装包):CJS 宿主 `init`+`list` 走通、eval 文件 import `niceeval/expect` 子路径走通、ESM 宿主行为不变。另有体验兜底:`init` 检测最近 `package.json` 非 ESM 时输出一行建议(`cli.init.esmHint`,只提示不改文件,CJS 编译面用不了顶层 await 所以 ESM 仍是推荐形态);INIT.md 教 agent 新建 `package.json` 时写 `"type": "module"`。契约落在 docs/cli.md「装载用户 .ts:宿主模块形态无关」,守护测试 `test/unit/package-exports.test.ts`(exports require 条件 + bin 双 hook 两条不变量)。
+
+## 回归 kill 收据
+
+`b44420d3` 的 fix parent 在无 `"type": "module"` 的宿主中可完成 `niceeval init`，但紧接的 `niceeval list`
+最早因未转译 TS 或缺少 `require` export 失败；只补任一半也仍失败。修复提交的真机收据覆盖 CJS `init → list`、
+子路径 import 与 ESM 对照。目标 Package E2E owner 是
+`docs/roadmap/testing/example/repos/package/test/commonjs-init-list.test.ts`：叶子 Repo 本身声明 `"type": "commonjs"`，
+先由 candidate 执行 `init`，再由新的 CLI 进程执行 `list`。恢复任一旧半边实现时，最早失败点固定在 `list` 的 exit / diagnostic。

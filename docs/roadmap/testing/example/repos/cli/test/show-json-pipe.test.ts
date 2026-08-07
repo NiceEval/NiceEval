@@ -1,11 +1,11 @@
+// feature: docs/feature/reports/show/json.md
+// regression: memory/show-json-pipe-truncated-at-128k.md
 import { resolve } from "node:path";
 import { command, defined, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 // NiceEval 根目录：pnpm e2e --repo cli -- --run test/show-json-pipe.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/show-json-pipe.test.ts
-// feature: docs/feature/reports/show/json.md
-// regression: memory/show-json-pipe-truncated-at-128k.md
 
 interface HistoryDocument {
   format: "niceeval.show";
