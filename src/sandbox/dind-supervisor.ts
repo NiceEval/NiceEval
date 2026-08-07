@@ -88,7 +88,7 @@ if (keeperArgv.length === 0) {
   });
 }
 
-process.on("SIGTERM", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0, true));
 process.on("SIGINT", () => shutdown(0));
 `;
 

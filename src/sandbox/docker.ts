@@ -650,6 +650,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         const result = await this.execCommand(command, args, {
           user: readinessUser,
           timeoutMs: Math.max(1, deadline - Date.now()),
+          timeoutRetirement: "stop",
         });
         if (result.exitCode === 0) return;
         lastFailure = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
@@ -860,6 +861,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       user?: string;
       /** 这条命令的显式上限;省略 = 按 attempt deadline 的剩余量。 */
       timeoutMs?: number;
+      /** create/readiness 失败需在删除前采集日志，因此只先停容器。 */
+      timeoutRetirement?: "destroy" | "stop";
       onStdout?: (chunk: string) => void | Promise<void>;
       onStderr?: (chunk: string) => void | Promise<void>;
       signal?: AbortSignal;
@@ -922,7 +925,12 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         settled = true;
         cleanup();
         stream.destroy();
-        void this.stop().then(() => reject(error), reject);
+        const retirement = opts.timeoutRetirement === "stop"
+          ? this.container?.stop({ t: 5 }).catch((stopError) => {
+              if (!benignStopError(stopError)) throw stopError;
+            }) ?? Promise.resolve()
+          : this.stop();
+        void retirement.then(() => reject(error), reject);
       };
       const timeoutMs = limit.timeoutMs;
       const timeoutId = timeoutMs === undefined

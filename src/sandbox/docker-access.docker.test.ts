@@ -95,27 +95,40 @@ describe.runIf(runDocker)("Docker access real project images", () => {
 
   it("starts a project-owned daemon in a raw privileged outer container", async () => {
     const built = await buildImage(dindDockerfile);
-    const sandbox = await DockerSandbox.create({
-      image: built.image,
-      user: "node",
-      privileged: "raw",
-      dockerAccess: { mode: "dind", isolation: "raw-privileged" },
-      readiness: { command: ["docker", "info"], user: "node", timeoutMs: 30_000 },
-    });
     try {
-      await expectNestedDocker(sandbox);
-      await expectNoUnauthenticatedTcpDaemon(sandbox);
-      await sandbox.suspend();
-      await wakeDetached("docker", sandbox.sandboxId);
-      const resumed = await DockerSandbox.attach(sandbox.sandboxId, { user: "node" });
+      const sandbox = await DockerSandbox.create({
+        image: built.image,
+        user: "node",
+        privileged: "raw",
+        dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+        readiness: { command: ["docker", "info"], user: "node", timeoutMs: 30_000 },
+      });
       try {
-        await expectNestedDocker(resumed);
+        await expectNestedDocker(sandbox);
+        await expectNoUnauthenticatedTcpDaemon(sandbox);
+        await sandbox.suspend();
+        await wakeDetached("docker", sandbox.sandboxId);
+        const resumed = await DockerSandbox.attach(sandbox.sandboxId, { user: "node" });
+        try {
+          await expectNestedDocker(resumed);
+        } finally {
+          await resumed.stop();
+        }
+        await expectOuterStopsAfterDaemonExit(sandbox);
       } finally {
-        await resumed.stop();
+        await sandbox.stop();
       }
-      await expectOuterStopsAfterDaemonExit(sandbox);
+
+      const startedAt = Date.now();
+      await expect(DockerSandbox.create({
+        image: built.image,
+        user: "node",
+        privileged: "raw",
+        dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+        readiness: { command: ["sh", "-c", "sleep 60"], user: "node", timeoutMs: 100 },
+      })).rejects.toThrow(/readiness timed out after 100ms/);
+      expect(Date.now() - startedAt).toBeLessThan(10_000);
     } finally {
-      await sandbox.stop();
       await built.remove();
     }
   }, 180_000);
