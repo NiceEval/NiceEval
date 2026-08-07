@@ -113,7 +113,7 @@
 │      owner: e2e/report/**
 ├─ [x] T6.4 record：公开 Record API/格式；不拥有私有存储布局
 │      owner: e2e/record/**
-├─ [ ] T6.5 lifecycle：signal/cleanup/下一消费者
+├─ [x] T6.5 lifecycle：signal/cleanup/下一消费者
 │      owner: e2e/lifecycle/**
 ├─ [x] T6.6 adapter/local-protocol：PR transport/fault
 │      owner: e2e/adapter/local-protocol/**

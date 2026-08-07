@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "lifecycle",
+  "areas": ["lifecycle"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 10,
+  "secrets": [],
+  "requires": { "runtimes": ["node>=22"] },
+  "paths": ["e2e/lifecycle/**", "src/cli.ts", "src/runner/**", "src/agents/**"],
+  "artifacts": [".niceeval/**"]
+}
