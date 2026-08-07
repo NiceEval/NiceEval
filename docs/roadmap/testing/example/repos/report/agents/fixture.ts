@@ -1,6 +1,6 @@
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export const fixtureAgent = defineDirectAgent({
+export const fixtureAgent = defineAgent({
   name: "fixture",
   evidenceCoverage: completeEvidenceCoverage,
   async send() {

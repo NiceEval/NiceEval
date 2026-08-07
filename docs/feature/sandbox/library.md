@@ -228,6 +228,46 @@ e2bSandbox({
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
+### privileged Docker
+
+需要在单个评估容器里运行 Docker-in-Docker 时，Docker image/Dockerfile factory 可以显式声明：
+
+```typescript
+dockerfileSandbox({
+  context: new URL("./sandbox/", import.meta.url),
+  privileged: "rootless",
+  resources: {
+    cpus: 4,
+    memoryBytes: 6 * 1024 ** 3,
+    pidsLimit: 2048,
+    readOnlyRootfs: true,
+    tmpfs: {
+      "/var/lib/docker": { sizeBytes: 3 * 1024 ** 3, mode: 0o711 },
+      "/home/sandbox/workspace": { sizeBytes: 2 * 1024 ** 3, uid: 1000, gid: 1000 },
+    },
+  },
+})
+```
+
+`privileged` 故意不是 boolean。NiceEval 只会把它交给一个显式 `DOCKER_HOST=unix://…` 的
+rootless daemon，并在创建容器前验证：daemon 报告 rootless、cgroup v2 + systemd driver、
+daemon ID 等于 `NICEEVAL_ROOTLESS_DOCKER_ID`、data-root 等于
+`NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT`。任何字段缺失或不匹配都会在 pull/build/create 前失败，
+不会回退到 `/var/run/docker.sock` 或 TCP。
+
+`memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
+带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
+的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
+这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
+
+Rootless privileged 模式不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
+不可用；受信任 supervisor 默认阻断 host loopback。这样 trace 不会被静默发往一个其实只指向
+嵌套网络的假“宿主”。需要观测时应先提供受控代理，再单独扩展该契约。
+
+这仍是共享宿主内核的容器级隔离，不是 VM 安全边界。daemon 的启动、Unix socket 权限、
+无 TCP listener、外层 data-root 总容量，以及运行后的真实 `cpu.max` / `memory.max` /
+`memory.swap.max` / `pids.max` 验证，由部署该 daemon 的受信任 supervisor 负责。
+
 ### 可发布预制环境
 
 稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布产物,attempt 从产物起实例:Docker 的 image、E2B 的 template、Vercel 的 snapshot。

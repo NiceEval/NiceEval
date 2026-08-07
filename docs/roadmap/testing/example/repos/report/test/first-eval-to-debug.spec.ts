@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 // 场景 Repo：e2e/report；Journey 是测试文件体裁，不是另一份 Repo。
 // NiceEval 根目录：pnpm e2e --repo report -- --grep "新项目"
 // 已安装候选包的隔离 Repo 根：pnpm test -- --grep "新项目"
+// feature: docs/feature/experiments/cli.md
 
 interface ListDocument {
   format: "niceeval.experiments";

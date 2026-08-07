@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Codex, type CodexOptions, type ModelReasoningEffort, type Thread, type ThreadEvent } from "@openai/codex-sdk";
-import { completeEvidenceCoverage, defineDirectAgent, driveFrameStream, createCodexThreadEventStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, driveFrameStream, createCodexThreadEventStream } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -128,7 +128,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   });
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "codex-sdk",
   evidenceCoverage: completeEvidenceCoverage,
   send,

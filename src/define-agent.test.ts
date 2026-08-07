@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/adapters.md
 
 import { describe, expect, it } from "vitest";
-import { defineDirectAgent, defineSandboxAgent } from "./define.ts";
+import { defineAgent, defineDirectAgent, defineSandboxAgent } from "./agents/index.ts";
 import { makeSendFailure } from "./context/send-failures.ts";
 import { defineSandboxCommand } from "./sandbox/commands.ts";
 import { completeEvidenceCoverage } from "./assertions/coverage.ts";
@@ -28,9 +28,9 @@ const ensure = {
 };
 
 describe("public Agent factories", () => {
-  it("defineDirectAgent fixes kind and preserves classifySendFailure", () => {
+  it("defineAgent fixes kind and preserves classifySendFailure", () => {
     const classifySendFailure = () => ({ retryable: false as const, reason: "protocol" });
-    const agent = defineDirectAgent({
+    const agent = defineAgent({
       name: "service",
       evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
@@ -38,6 +38,10 @@ describe("public Agent factories", () => {
     });
     expect(agent.kind).toBe("direct");
     expect(agent.classifySendFailure).toBe(classifySendFailure);
+  });
+
+  it("keeps defineDirectAgent as the same compatibility alias", () => {
+    expect(defineDirectAgent).toBe(defineAgent);
   });
 
   it("defineSandboxAgent exposes the same failure-classifier mount", () => {
@@ -70,24 +74,24 @@ describe("public Agent factories", () => {
     })).toThrow(/defineSandboxAgent.*ensure/);
   });
 
-  it("names defineDirectAgent in construction errors", () => {
-    expect(() => defineDirectAgent({
+  it("names defineAgent in construction errors", () => {
+    expect(() => defineAgent({
       name: "",
       evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),
-    })).toThrow(/defineDirectAgent/);
+    })).toThrow(/defineAgent/);
   });
 
   it("requires all six evidence channels for dynamic JavaScript inputs", () => {
-    expect(() => defineDirectAgent({
+    expect(() => defineAgent({
       name: "service",
       evidenceCoverage: { events: { status: "complete" } },
       send: async () => ({ events: [], status: "completed" }),
-    } as never)).toThrow(/defineDirectAgent requires evidenceCoverage\.actions/);
+    } as never)).toThrow(/defineAgent requires evidenceCoverage\.actions/);
   });
 
   it("requires a non-empty reason for partial and unavailable channels", () => {
-    expect(() => defineDirectAgent({
+    expect(() => defineAgent({
       name: "service",
       evidenceCoverage: {
         ...completeEvidenceCoverage,

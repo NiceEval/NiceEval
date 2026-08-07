@@ -59,7 +59,7 @@ human、JSON、DOM 和 snapshot 各测一遍。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
 - 浏览器沿页面真实 `href` 断言 URL、HTTP、产品已声明的可访问身份和可见结果，不拼 target 路径，也不臆造不存在的
   role / label；不稳定能力先记产品缺口。
-- 历史回归写 `regression: <fix commit / memory>`，但标题仍描述长期结果；新 case 必须能杀死旧实现。
+- 每条测试先归属稳定 Feature；历史回归再写 `regression: memory/<条目>.md`，标题仍描述长期结果。新 case 必须能杀死旧实现。
 - 复用设施只拥有临时目录、进程、server、parser、artifact 和 cleanup 等机械能力；浏览器生命周期默认交给 Playwright Test。
 
 ## 失败怎样定位
@@ -87,7 +87,7 @@ pnpm e2e --lane main --repo adapter/codex-cli
 ```
 
 - PR lane 无密钥，运行 unit、CLI、Runner、Report、Package 与确定性 host / Docker Repo；
-- main 跑 PR 全集和便宜的真实 adapter smoke；nightly 跑完整 adapter、sandbox 与 lifecycle；
+- main 跑 PR 全集和低成本真实 Adapter 兼容性检查；nightly 跑完整 Adapter、Sandbox 与 Lifecycle；
 - release 先生成最终 tarball，验收通过后发布同一字节与 digest；
 - workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
 - 不使用 `pull_request_target` 执行 PR 代码并读取 secret。

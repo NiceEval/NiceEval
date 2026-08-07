@@ -200,6 +200,35 @@ describe("provider-owned Sandbox runtime materialization", () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it("provider stop 失败只追加 diagnostic，不把原 attempt release 改成失败", async () => {
+    let stopCalls = 0;
+    const stop = vi.fn(async () => {
+      stopCalls += 1;
+      if (stopCalls === 1) throw new Error("provider cleanup failed");
+    });
+    const diagnostics: Array<{ code: string; sandboxId?: unknown }> = [];
+    const plan = planned(customProviderSandbox({
+      name: "cleanup-diagnostic",
+      targetPlatform: linux,
+      create: () => Effect.succeed({ ...fakeSandbox("cleanup-diagnostic"), stop }),
+    }));
+
+    const materialized = await Effect.runPromise(Effect.scoped(materializeSandboxRunPlan({
+      ...input(plan, { _tag: "Live" }),
+      feedback: {
+        progress() {},
+        diagnostic(entry) {
+          diagnostics.push({ code: entry.code, sandboxId: entry.data?.sandboxId });
+        },
+      },
+    })));
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([{ code: "sandbox-stop-failed", sandboxId: "cleanup-diagnostic" }]);
+    await expect(materialized.group.stop()).resolves.toBeUndefined();
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
   it("在声明点拒绝非函数 lifecycle hook", () => {
     expect(() => sandboxLayer().setup(null as never)).toThrow("sandbox setup hook must be a function");
     expect(() => sandboxLayer().teardown(null as never)).toThrow("sandbox teardown hook must be a function");

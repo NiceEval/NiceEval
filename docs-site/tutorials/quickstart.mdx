@@ -40,9 +40,9 @@ The Adapter connects your Agent to [NiceEval](https://niceeval.com/). Three inte
 
 ```ts
 // agents/my-agent.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {

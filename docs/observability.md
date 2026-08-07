@@ -192,7 +192,7 @@ otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别�
 
 2. **span mapper(core o11y 侧)** ——「原生 span → canonical」。
    **纯数据变换,不碰沙箱**,和 transcript parser 一样住 core 的 o11y(`o11y/otlp/mappers/<agent>.ts`),可独立单测。
-   分派靠接口不靠名字:adapter 在 `defineSandboxAgent` / `defineDirectAgent` 里用 `spanMapper` 声明自己的 mapper,运行器只调 `agent.spanMapper`,未声明的走通用 heuristic 回退 —— core 不出现 agent 名字的行为分支。
+   分派靠接口不靠名字:adapter 在 `defineSandboxAgent` / `defineAgent` 里用 `spanMapper` 声明自己的 mapper,运行器只调 `agent.spanMapper`,未声明的走通用 heuristic 回退 —— core 不出现 agent 名字的行为分支。
 
 **为什么要分:** 导出配置是「沙箱里怎么发」,mapper 是「发回来怎么读」——一个需要沙箱、一个是纯函数,生命周期和测试方式都不同。
 混在 `setup`/`send` 里,既难单测 mapper、又让 adapter 把 otel 拼装逻辑揉进主流程。

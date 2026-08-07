@@ -514,10 +514,10 @@ report.tsx(2,25): error TS2322: Type '"refs"' is not assignable to type 'Evidenc
 
 ## Agent evidence coverage 必须穷尽
 
-`defineDirectAgent()` 与 `defineSandboxAgent()` 都要求完整的 `EvidenceCoverage`。全通道完整时使用常量：
+`defineAgent()` 与 `defineSandboxAgent()` 都要求完整的 `EvidenceCoverage`。全通道完整时使用常量：
 
 ```ts
-defineDirectAgent({
+defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
   send,
@@ -529,7 +529,7 @@ defineDirectAgent({
 下面两种输入都在调用点失败：
 
 ```ts
-defineDirectAgent({
+defineAgent({
   name: "support-bot",
   evidenceCoverage: {
     events: { status: "partial" }, // 缺 reason

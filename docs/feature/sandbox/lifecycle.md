@@ -231,7 +231,7 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 | Sandbox lifecycle setup | Attempt `errored`;已创建的物理实例仍依序运行 teardown 后停止 |
 | Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用窗口 |
-| Provider finalizer | 记录 Case cleanup 诊断,不覆盖原始 Attempt 判定 |
+| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败记录 `sandbox-stop-failed` Case cleanup 诊断并保留可重试/孤儿认领的资源所有权，不覆盖原始 Attempt 判定 |
 
 ## 相关阅读
 

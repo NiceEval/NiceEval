@@ -81,12 +81,16 @@ E2E 文件从上到下保持同一信息顺序：
 | 文件头 | Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
 | 局部类型 | 本测试实际读取的公开字段 | 完整生产 DTO、候选导出的 schema 常量 |
 | 局部函数 | process、parse、唯一项查找、资源关闭等机械操作 | scenario 名到用户动作的映射、领域 expected |
-| 测试标题与注释 | 长期用户结果；历史 kill 用 `regression:` 单独注明 | 临时实现函数名、当前 DOM 结构 |
+| 测试标题与注释 | 长期用户结果；`feature:` 写契约归属，历史 kill 用 `regression:` 指向 memory | 临时实现函数名、当前 DOM 结构 |
 | 测试正文 | 完整 argv 或紧邻的具名 argv、公开观察、字面 expected、最近接缝断言 | 从 actual 反推 expected、无解释的整页 snapshot |
 
 读者只打开这个文件，就应能回答“在哪个 Repo 跑、用户执行什么、预期是什么、最早会在哪一步失败”。
 为满足这一点保留两三次相似 argv 是合理成本；只有两个 Repo 已出现相同且稳定的机械协议时才上移复用实现。
 抽取后测试标题、argv、sentinel、verdict 和历史回归理由仍留在 owner 文件。
+
+Feature 是每条测试的长期归属，Bug 不是第三种执行层。目录、文件名与标题按功能和可观察结果命名；
+`regression:` 只是已证明能杀死旧实现时附加的历史凭据。Unit 的 `// cases:` / `// bug:` 与 E2E 的
+`feature:` / `regression:` 怎样对应，统一见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性
 

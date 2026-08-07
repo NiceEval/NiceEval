@@ -233,6 +233,42 @@ describe("provider-neutral Sandbox planning", () => {
     expect(JSON.stringify(plans.map(({ identity }) => identity))).not.toContain("undefined");
   });
 
+  it("Docker tmpfs/只读 rootfs 选择 DestroyOnly provider，并推进资源覆盖 revision", async () => {
+    const root = await builtInRoot();
+    const outputs = await Effect.runPromise(planLinkedRuns([
+      {
+        pair: linked(factories.dockerfileSandbox({
+          context: ".",
+          resources: {
+            readOnlyRootfs: true,
+            tmpfs: { "/workspace": { sizeBytes: 1024 } },
+          },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
+      {
+        pair: linked(factories.dockerImageSandbox({
+          image: `node@sha256:${"f".repeat(64)}`,
+          resources: { tmpfs: { "/tmp": { sizeBytes: 1024 } } },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
+    ]));
+    const plans = outputs.map(({ plan }) => {
+      if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
+      return plan.providerPlan;
+    });
+
+    expect(plans.map((plan) => plan.plannerRevision)).toEqual(["dockerfile-3", "docker-image-2"]);
+    expect(plans.map((plan) => Option.getOrThrow(sandboxProviderBindingOf(plan)).moduleId)).toEqual([
+      "niceeval/dockerfile-ephemeral",
+      "niceeval/docker-image-ephemeral",
+    ]);
+    expect(plans.map((plan) => plan.capabilities.retention._tag)).toEqual(["DestroyOnly", "DestroyOnly"]);
+  });
+
   it("link 与 Direct planning 均不调用 provider planner", () => {
     let calls = 0;
     const template = defineSandboxTemplate({

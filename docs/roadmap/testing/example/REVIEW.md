@@ -7,8 +7,10 @@
 |---|---|---|
 | 用 `mechanism-unit/` 或 `cli-results.test.ts` 给一组异质测试命名 | 名字只说抽象类别，看不出 owner、用户动作或失败边界；同目录会持续吸入无关 case | 顶层只分 `unit/` 与 E2E `repos/`；Unit 按 Feature、E2E 文件按行为命名，CLI 已拆为 selection、streams-and-exit、show-json-pipe |
 | 多个 adapter 共用一个 package / 结果根 | 不能证明各自真实依赖、安装、secret 与协议 | 每个 adapter 一个叶子 Repo；local protocol 不冒充 live |
-| 通用功能借用 `ai-sdk` / `codex-cli` Repo | 功能回归会被上游凭据、网络和版本漂移污染；Adapter smoke 又会被误算成功能证据 | CLI、Runner、Report、Package、Lifecycle 使用自己的功能 Repo；`adapter/<id>` 只证明对应协议兼容性 |
+| 通用功能借用 `ai-sdk` / `codex-cli` Repo | 功能回归会被上游凭据、网络和版本漂移污染；Adapter 兼容性检查又会被误算成功能证据 | CLI、Runner、Report、Package、Lifecycle 使用自己的功能 Repo；`adapter/<id>` 只证明对应协议兼容性 |
 | 把相似风险都标成历史 regression | 新测试可能杀不死历史旧实现 | 只有存在旧实现 kill 证据才写 `regression:`，否则写 `risk:` |
+| 把功能测试和 Bug 测试拆成两套目录 | 同一长期行为出现两个 owner；issue 关闭后目录名也失去语义 | 文件始终按 Feature 与结果命名；旧实现 kill 只用 `regression: memory/**` 附在 owner 上 |
+| Experiment 或测试文件只叫 `smoke` / `basic` | 名字只表示作者觉得它便宜或简单，读者看不出输入、结果和失败边界 | 标识符写业务阶段与预期结果，例如 `post-interrupt-consumer`；口袋名只允许出现在研究分类正文 |
 | CommonJS test 在 `/tmp` 临时造未安装项目 | `pnpm exec niceeval` 的实际 binary owner 不确定 | CommonJS 叶子本身就是 consumer，由 runner 注入候选 tarball |
 | 根据 locator 自己拼导出路径 | 测的是测试作者的猜测，不是页面交付 | 从真实 anchor 读取 `href`，导航并核对同一 locator |
 | 发明不存在的 aria / tooltip | selector 很精确，但产品根本没承诺 | 只用产品已有 role / label / 可见文本；缺失则报告可测试性 gap |
@@ -27,7 +29,7 @@
 |---|---|---|
 | 内部重构 | 保持 E2E expected 不变，修掉对 DTO、路径或 DOM 结构的耦合 | 顺手更新所有 snapshot |
 | 公开结果有意变化 | 先更新契约，再修改唯一 owner 和必要 fixture | 在多层复制同一新 expected |
-| 新 bug | 找现有 owner、补区分性断言、证明旧实现会红 | 只因现象相似就新增 `regression:` |
+| 新 bug | 找现有 owner、补区分性断言、写 memory 并证明旧实现会红 | 新建 `bugs/` 套件，或只因现象相似就新增 `regression:` |
 | Runner / Docker / CI 改动 | 修改外侧编排或资源收据，同一 Repo 测试正文继续运行 | 在 workflow 复制另一套产品断言 |
 | 测试反复受兄弟影响 | 给 mutation 私有副本或结果根 | 增加顺序依赖和固定 sleep |
 | 移动或退役测试 | 同批修索引、链接并删除本次产生的空目录 | 留下空分类让读者误以为仍有 owner |

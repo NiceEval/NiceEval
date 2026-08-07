@@ -839,7 +839,7 @@ export interface ExperimentAuthorFields {
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
   description?: string;
   /**
-   * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineDirectAgent 的产物)。运行配置的
+   * 必填:这个实验跑哪个 agent(defineSandboxAgent / defineAgent 的产物)。运行配置的
    * agent 归属完全由这里决定——EvalDefinition 不声明 agent。
    */
   agent: Agent;

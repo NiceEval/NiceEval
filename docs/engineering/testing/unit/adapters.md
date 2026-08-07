@@ -55,6 +55,11 @@ function scriptedInstaller(steps: {
 
 ## 覆盖规范
 
+- **Agent 构造入口**（[Adapter Library](../../../feature/adapters/library.md)）：
+
+  - `defineAgent` 固定产出 `kind: "direct"`，并保留 Direct Agent 的公开定义字段。
+  - `defineDirectAgent` 是指向 `defineAgent` 的 deprecated 兼容 alias，不建立第二套构造逻辑。
+  - 动态 JavaScript 输入违反必填契约时，错误统一指向 canonical `defineAgent`。
 - **probe 命中、staged 安装、复检失败**（[Agent Ensure](../../../feature/adapters/architecture/agent-ensure.md)）：
 
   - probe 命中 → 记录命中的安装事实，不调用 install。

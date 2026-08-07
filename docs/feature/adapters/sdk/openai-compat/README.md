@@ -6,13 +6,13 @@
 ```ts
 import {
   chatCompletionEvidenceCoverage,
-  defineDirectAgent,
+  defineAgent,
   turnFromChatCompletion,
   turnFromResponses,
 } from "niceeval/adapter";
 
 // Chat Completions 形状
-const agent = defineDirectAgent({
+const agent = defineAgent({
   name: "chat-completions-agent",
   evidenceCoverage: chatCompletionEvidenceCoverage,
   async send({ text }) {

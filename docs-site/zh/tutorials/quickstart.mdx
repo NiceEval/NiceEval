@@ -40,9 +40,9 @@ Adapter 连接 Agent 与 [NiceEval](https://niceeval.com/)。三种接入等级�
 
 ```ts
 // agents/my-agent.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {

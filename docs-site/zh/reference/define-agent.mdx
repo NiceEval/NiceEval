@@ -1,7 +1,7 @@
 ---
-title: "defineDirectAgent 和 defineSandboxAgent：Adapter 参考"
+title: "defineAgent 和 defineSandboxAgent：Adapter 参考"
 sidebarTitle: "定义 Adapter"
-description: "defineDirectAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 Sandbox helpers。"
+description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 Sandbox helpers。"
 ---
 
 import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
@@ -10,20 +10,22 @@ import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
 
 <TurnRoundtrip />
 
-## `defineDirectAgent`
+## `defineAgent`
 
 用于 direct agent 接入：
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 ```
 
-`defineDirectAgent` 产出的 `Agent.kind` 恒为 `"direct"`（内部判别字段，不用你声明）。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 Agent（`kind: "sandbox"`）上才有；其余由 `send` 实际返回的事件和 `ctx.session` 的使用决定，详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
+`defineAgent` 产出的 `Agent.kind` 恒为 `"direct"`（内部判别字段，不用你声明）。`t` 上没有需要声明才解锁的能力位——`t.sandbox` 这类文件系统断言只在 `defineSandboxAgent` 构造的 Agent（`kind: "sandbox"`）上才有；其余由 `send` 实际返回的事件和 `ctx.session` 的使用决定，详见[能力位参考](/zh/reference/capabilities)。字段全集见下方「Agent 与 Adapter Context 字段」。
+
+`defineDirectAgent` 是指向同一函数的 deprecated 兼容 alias。新代码使用 `defineAgent`。
 
 ### direct agent 示例
 
 ```ts
-export default defineDirectAgent({
+export default defineAgent({
   name: "echo",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
@@ -85,7 +87,7 @@ export default defineExperiment({
 
 ## Agent 与 Adapter Context 字段
 
-`defineDirectAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
+`defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
 以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
 
 {/* GENERATED:BEGIN agent-def */}

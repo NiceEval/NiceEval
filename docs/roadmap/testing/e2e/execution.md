@@ -63,7 +63,7 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 | 触发 | Lane | Secret | 内容 |
 |---|---|---|---|
 | 本地默认 / `pull_request` | `pr` | 无 | unit、CLI、Runner、Report、Package、本地 host / Docker fixture |
-| `push main` | `main` | GitHub Environment | PR 全集 + 便宜 live adapter smoke |
+| `push main` | `main` | GitHub Environment | PR 全集 + 低成本 live Adapter 兼容性检查 |
 | `schedule` | `nightly` | GitHub Environment | 全 adapter、sandbox、lifecycle、平台代表 |
 | release preflight | `release` | GitHub Environment | 精确待发布 tarball + blocking 矩阵 |
 | `workflow_dispatch` | 显式 | 按 environment | 单 Repo / lane 复现 |
@@ -111,10 +111,11 @@ PR path filter 来自 manifest `paths`，只是省时提示：plan 无法可靠�
 ## 并发
 
 - 无密钥 host Repo 可按 CPU 并行，每个 Repo 独立副本；
+- Repo 内保留 Vitest / Playwright 的默认文件级并行；短命控制文件、结果根、项目副本与资源名按 case 隔离；
 - Docker Repo 按 runner CPU / memory 设置 `max-parallel`；
 - live provider 按 provider / account 建 concurrency group，避免同一配额互相制造 429；
-- lifecycle 串行，防止兄弟任务污染 orphan / 下一次消费者判断；
-- 同一个 Repo 内会修改当前结果的测试不并发，共享证据只能在冻结后只读并发。
+- Lifecycle case 用独立进程组、动态端口和 run ID 核对自己的 orphan，不得因兄弟任务存在就误判；
+- 共享 evidence 只能在冻结后只读并行。无法拥有独立资源的 case 才局部串行，不把整个 Lifecycle 域降为串行。
 
 ## 重试
 

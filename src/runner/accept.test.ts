@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { defineDirectAgent, defineEval, defineExperiment } from "../define.ts";
+import { defineAgent, defineEval, defineExperiment } from "../define.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
 import { MANIFESTS_FILE } from "../record/manifest.ts";
 import type { AttemptHandle, Run } from "../record/types.ts";
@@ -340,7 +340,7 @@ describe("prepareAcceptLocator · 与 planCarry 同口径的 Judge 解析链", (
       privatePaths: [],
     });
     const experiment = discoverExperiment(defineExperiment({
-      agent: defineDirectAgent({
+      agent: defineAgent({
         name: "agent-exp",
         evidenceCoverage: completeEvidenceCoverage,
         send: async () => ({ events: [], status: "completed" }),
@@ -468,7 +468,7 @@ function discoverFixture(sourcePath: string, evalId: string, experimentId: strin
     privatePaths: [],
   });
   const experiment = discoverExperiment(defineExperiment({
-    agent: defineDirectAgent({
+    agent: defineAgent({
       name: agentName,
       evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),

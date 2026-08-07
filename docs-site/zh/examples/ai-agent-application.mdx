@@ -4,7 +4,7 @@ sidebarTitle: "AI Agent 应用"
 description: "一个可运行的 AI SDK v6 Web Agent 评测项目，覆盖自写 Adapter、工具调用、图片理解、多轮会话、模型对比和双路可观测。"
 ---
 
-这个项目演示如何用 `defineDirectAgent` 把已有 HTTP Agent 接入 NiceEval。它适合需要控制自有协议和事件映射的应用。
+这个项目演示如何用 `defineAgent` 把已有 HTTP Agent 接入 NiceEval。它适合需要控制自有协议和事件映射的应用。
 
 - [查看完整源码](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/ai-sdk)
 - 本地目录：`examples/zh/ai-sdk/`
@@ -18,7 +18,7 @@ description: "一个可运行的 AI SDK v6 Web Agent 评测项目，覆盖自写
 | 部分 | 实现 |
 | --- | --- |
 | 被测应用 | AI SDK v6 Web Agent，HTTP `POST /api/turn` |
-| Adapter | `defineDirectAgent` + 自定义 `AgentEvent` → `StreamEvent` 映射 |
+| Adapter | `defineAgent` + 自定义 `AgentEvent` → `StreamEvent` 映射 |
 | 评估用例 | 天气工具、图片理解、多轮文本、多轮图片上下文 |
 | Experiment | 每个文件固定一个模型，同组比较 DeepSeek 与 GPT |
 | 可观测 | 应用继续上报 Langfuse，同时把本轮 OTLP 数据发给 NiceEval |

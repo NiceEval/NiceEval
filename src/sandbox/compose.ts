@@ -43,6 +43,11 @@ export const COMPOSE_MATERIALIZER_REVISION = "docker-compose-2";
 
 const BUILDER_KIND = "docker-compose";
 
+/** Provider stop 的 TERM 边界；再加 1s KILL grace 后仍严格短于 runner 的 8s 看门狗。 */
+const COMPOSE_STOP_TIMEOUT_MS = 6_500;
+/** Compose 收到 TERM 后仍不退出时，升级成 KILL 并结束等待。 */
+const COMPOSE_ABORT_KILL_GRACE_MS = 1_000;
+
 // ---------------------------------------------------------------------------
 // 目标平台:构建事实(case.md「BuildKey 与 CaseKey」)
 // ---------------------------------------------------------------------------
@@ -842,21 +847,41 @@ export async function materializeDockerComposeProviderCase(
   };
   const runCompose = opts._testHooks?.runCompose ?? runDockerCompose;
 
+  // Attempt 的前向 signal 到这里往往已经 timeout/abort。收尾必须拿一条新的、独立且有界的
+  // signal；复用 opts.ctx.signal 会让 runDockerCompose 在真正执行 down 前立刻抛错，整组资源
+  // 原地变孤儿。--timeout 给服务 5s 优雅退出，剩余 1.5s 留给 CLI 与网络/volume 删除；
+  // runDockerCompose 再给 TERM 1s KILL grace，总上界 7.5s，严格短于 runner 的 8s 看门狗。
   const composeDown = () => runCompose(
-    ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "down", "--remove-orphans"],
-    { cwd, env, signal: opts.ctx.signal },
+    [
+      "-p",
+      overlay.projectName,
+      ...composeFileArgs(composeFiles),
+      "down",
+      "--timeout",
+      "5",
+      "--volumes",
+      "--remove-orphans",
+    ],
+    { cwd, env, signal: AbortSignal.timeout(COMPOSE_STOP_TIMEOUT_MS) },
   );
 
   let finalized = false;
+  let finalizing: Promise<void> | undefined;
   const finalizer = async () => {
     if (finalized) return;
-    finalized = true;
-    try {
+    if (finalizing !== undefined) return finalizing;
+    const pending = (async () => {
       await composeDown();
-    } catch {
-      // 尽力清理;最终再删 overlay 目录。
+      finalized = true;
+      await rm(overlayDir, { recursive: true, force: true }).catch(() => {});
+    })();
+    finalizing = pending;
+    try {
+      await pending;
+    } finally {
+      // 失败回 Open，保留 overlay 供 registry 强清路径重试；成功才永久封口。
+      if (finalizing === pending) finalizing = undefined;
     }
-    await rm(overlayDir, { recursive: true, force: true }).catch(() => {});
   };
 
   try {
@@ -972,7 +997,24 @@ export async function materializeDockerComposeProviderCase(
       },
     };
   } catch (e) {
-    await finalizer();
+    try {
+      await finalizer();
+    } catch (cleanupError) {
+      opts.feedback?.diagnostic({
+        code: "sandbox-stop-failed",
+        level: "warning",
+        message:
+          `Compose project ${overlay.projectName} cleanup failed after materialization error: ` +
+          `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}. ` +
+          "Inspect with `niceeval sandbox list --orphans`; remove with `niceeval sandbox prune`.",
+        data: {
+          provider: "docker",
+          projectName: overlay.projectName,
+          sandboxId: overlay.projectName,
+        },
+        dedupeKey: `sandbox-stop-failed:${overlay.projectName}`,
+      });
+    }
     if (isAbortError(e) || opts.ctx.signal?.aborted) throw abortError(opts.ctx.signal, e);
     throw await enrichComposeError(e, overlay.projectName, composeFiles, cwd, env, runCompose);
   }
@@ -1074,6 +1116,25 @@ export async function runDockerCompose(
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let aborting: Error | undefined;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      opts.signal?.removeEventListener("abort", onAbort);
+      if (killTimer !== undefined) clearTimeout(killTimer);
+    };
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const resolveOnce = (result: ComposeCommandResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
     child.stdout?.on("data", (c: Buffer) => {
       stdout += c.toString();
     });
@@ -1081,26 +1142,36 @@ export async function runDockerCompose(
       stderr += c.toString();
     });
     const onAbort = () => {
+      aborting = abortError(opts.signal);
       child.kill("SIGTERM");
+      // close 事件本身不是可靠边界：CLI 或子进程若卡死，最多再等这段 grace，然后 KILL 并
+      // 主动 reject，不能依赖一个可能永远不来的 close。
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+        rejectOnce(aborting ?? abortError(opts.signal));
+      }, COMPOSE_ABORT_KILL_GRACE_MS);
     };
     opts.signal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (err) => {
-      opts.signal?.removeEventListener("abort", onAbort);
-      reject(err);
+      rejectOnce(err);
     });
     child.on("close", (code) => {
-      opts.signal?.removeEventListener("abort", onAbort);
+      if (aborting !== undefined) {
+        rejectOnce(aborting);
+        return;
+      }
       const exitCode = code ?? 1;
       if (exitCode !== 0 && !opts.allowNonZero) {
-        reject(
+        rejectOnce(
           new Error(
             `docker compose ${args.join(" ")} failed (exit ${exitCode}):\n${stderr || stdout}`.trimEnd(),
           ),
         );
         return;
       }
-      resolve({ stdout, stderr, exitCode });
+      resolveOnce({ stdout, stderr, exitCode });
     });
+    if (opts.signal?.aborted) onAbort();
   });
 }
 

@@ -42,9 +42,9 @@ export default defineConfig({
 
 ```typescript
 // agents/weather-bot.ts —— 远程 agent,URL 是它的私事
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "weather-bot",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -87,10 +87,10 @@ AGENT_URL=https://my-agent.example.com npx niceeval exp local weather
 
 ```typescript
 // agents/classify.ts —— 进程内直调,仅用于纯函数单测场景
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import { classifyIntent } from "../src/agent.js";   // 你自己的代码
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "classify",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input) {

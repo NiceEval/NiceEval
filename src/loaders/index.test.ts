@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { relative } from "node:path";
-import { defineDirectAgent, defineEval } from "../define.ts";
+import { defineAgent, defineEval } from "../define.ts";
 import { t } from "../i18n/index.ts";
 import { computeFingerprint } from "../runner/fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
@@ -49,7 +49,7 @@ function makeEval(loaderDataPaths: readonly string[]): DiscoveredEval {
 }
 
 const run: AgentRun = {
-  agent: defineDirectAgent({
+  agent: defineAgent({
     name: "agent-exp",
     evidenceCoverage: completeEvidenceCoverage,
     send: async () => ({ events: [], status: "completed" }),

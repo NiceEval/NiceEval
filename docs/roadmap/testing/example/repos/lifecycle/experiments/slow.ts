@@ -1,12 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { defineExperiment } from "niceeval";
 import { slowFixtureAgent } from "../agents/fixture.ts";
 
-// owned backend 的信息文件路径：experiments/slow.ts 与 test/interrupt-cleanup.test.ts
-// 共同约定的仓库根相对位置（不是 .niceeval 的私有布局）。
-export const BACKEND_INFO_PATH = join(process.cwd(), "backend.info");
+const BACKEND_INFO_PATH_ENV = "NICEEVAL_BACKEND_INFO_PATH";
 
 interface BackendInfo {
   pid: number;
@@ -16,16 +13,22 @@ interface BackendInfo {
 let backend: BackendInfo | undefined;
 let backendProcess: ChildProcess | undefined;
 
-function waitForInfoFile(deadlineMs: number): Promise<BackendInfo> {
+function backendInfoPath(): string {
+  const path = process.env[BACKEND_INFO_PATH_ENV]?.trim();
+  if (!path) throw new Error(`${BACKEND_INFO_PATH_ENV} 必须指向本测试的私有控制文件`);
+  return path;
+}
+
+function waitForInfoFile(path: string, deadlineMs: number): Promise<BackendInfo> {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + deadlineMs;
-    const poll = (): void => {
+    const poll = async (): Promise<void> => {
       if (Date.now() > deadline) {
-        reject(new Error(`backend.info 在 ${deadlineMs}ms 内没有就绪`));
+        reject(new Error(`backend 信息文件在 ${deadlineMs}ms 内没有就绪`));
         return;
       }
       try {
-        const info = JSON.parse(readFileSync(BACKEND_INFO_PATH, "utf8")) as BackendInfo;
+        const info = JSON.parse(await readFile(path, "utf8")) as BackendInfo;
         if (typeof info.pid === "number" && typeof info.port === "number") {
           resolve(info);
           return;
@@ -33,9 +36,9 @@ function waitForInfoFile(deadlineMs: number): Promise<BackendInfo> {
       } catch {
         /* backend 还没写出来 */
       }
-      setTimeout(poll, 100);
+      setTimeout(() => void poll(), 100);
     };
-    poll();
+    void poll();
   });
 }
 
@@ -60,7 +63,8 @@ export default defineExperiment({
   evals: ["suite/slow"],
   timeoutMs: 120_000,
   setup: async (ctx) => {
-    const child = spawn(process.execPath, ["fixtures/backend.mjs", BACKEND_INFO_PATH], {
+    const infoPath = backendInfoPath();
+    const child = spawn(process.execPath, ["fixtures/backend.mjs", infoPath], {
       cwd: process.cwd(),
       stdio: "ignore",
     });
@@ -68,7 +72,7 @@ export default defineExperiment({
       throw new Error("owned backend 提前退出");
     }
     backendProcess = child;
-    const info = await waitForInfoFile(10_000);
+    const info = await waitForInfoFile(infoPath, 10_000);
     backend = info;
     ctx.fact("backend", `http://127.0.0.1:${info.port}`);
   },

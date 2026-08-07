@@ -2,7 +2,7 @@
 // 覆盖类别:
 // - Compose 主空间、服务 ready、证据、整组清理与泄题门
 //   (黑名单 / 规划与 BuildKey / 泄题门 / overlay / 整组 finalizer;真机 Compose 归 [X] 验收)
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +19,7 @@ import {
   inspectComposeYaml,
   leakGateHintsFromComposeFile,
   materializeDockerComposeProviderCase,
+  runDockerCompose,
 } from "./compose.ts";
 import { computeCaseKey, digestOf } from "./identity.ts";
 import type { Sandbox } from "./types.ts";
@@ -28,6 +29,26 @@ const tmpDirs: string[] = [];
 afterEach(async () => {
   // 测试目录留给 OS tmp 回收;不强制 rm,避免并行干扰。
   tmpDirs.length = 0;
+});
+
+describe("runDockerCompose abort boundary", () => {
+  it("命令忽略 TERM 时也会在 grace 后主动 reject", async () => {
+    const root = await makeRoot();
+    const fakeDocker = join(root, "docker");
+    await writeFile(fakeDocker, "#!/bin/sh\ntrap '' TERM\nwhile :; do sleep 1; done\n", "utf-8");
+    await chmod(fakeDocker, 0o755);
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    const running = runDockerCompose(["compose", "version"], {
+      cwd: root,
+      env: { PATH: `${root}:${process.env.PATH ?? ""}` },
+      signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(new Error("test timeout")), 25);
+    await expect(running).rejects.toThrow(/test timeout|aborted/i);
+    expect(Date.now() - startedAt).toBeLessThan(2_500);
+  }, 5_000);
 });
 
 async function makeRoot(): Promise<string> {
@@ -528,6 +549,93 @@ services:
     expect(downCount).toBe(1);
   });
 
+  it("attempt 已 abort 后仍用独立 signal 整组 down，并发 stop 共享一次执行", async () => {
+    const root = await makeRoot();
+    await writeFile(
+      join(root, "docker-compose.yaml"),
+      `
+services:
+  client:
+    image: alpine:3.20
+`,
+      "utf-8",
+    );
+    const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/abort-cleanup");
+    const attempt = new AbortController();
+    const downCalls: Array<{ args: readonly string[]; signal?: AbortSignal }> = [];
+    const materialized = await materializeDockerComposeProviderCase(plan, {
+      ctx: {
+        evalId: "tb/abort-cleanup",
+        profile: "tb-abort-cleanup",
+        signal: attempt.signal,
+        buildLocators: new Map(),
+      },
+      _testHooks: {
+        async runCompose(args, opts) {
+          if (args.includes("down")) {
+            downCalls.push({ args: [...args], signal: opts.signal });
+            await Promise.resolve();
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+        async resolveMainContainerId() {
+          return "abort-cleanup-container";
+        },
+        async attachMain() {
+          return stubSandbox("abort-cleanup-container");
+        },
+      },
+    });
+
+    attempt.abort(new Error("attempt timeout"));
+    await Promise.all([materialized.group.stop(), materialized.group.stop()]);
+
+    expect(downCalls).toHaveLength(1);
+    expect(downCalls[0]!.signal).not.toBe(attempt.signal);
+    expect(downCalls[0]!.signal?.aborted).toBe(false);
+    expect(downCalls[0]!.args).toEqual(expect.arrayContaining([
+      "down",
+      "--timeout",
+      "5",
+      "--volumes",
+      "--remove-orphans",
+    ]));
+  });
+
+  it("down 失败回到 Open，后续 stop 会真正重试", async () => {
+    const root = await makeRoot();
+    await writeFile(join(root, "docker-compose.yaml"), "services:\n  client:\n    image: alpine:3.20\n", "utf-8");
+    const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/cleanup-retry");
+    let downCount = 0;
+    const materialized = await materializeDockerComposeProviderCase(plan, {
+      ctx: {
+        evalId: "tb/cleanup-retry",
+        profile: "tb-cleanup-retry",
+        signal: new AbortController().signal,
+        buildLocators: new Map(),
+      },
+      _testHooks: {
+        async runCompose(args) {
+          if (args.includes("down")) {
+            downCount += 1;
+            if (downCount === 1) throw new Error("transient cleanup failure");
+          }
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+        async resolveMainContainerId() {
+          return "cleanup-retry-container";
+        },
+        async attachMain() {
+          return stubSandbox("cleanup-retry-container");
+        },
+      },
+    });
+
+    await expect(materialized.group.stop()).rejects.toThrow("transient cleanup failure");
+    await expect(materialized.group.stop()).resolves.toBeUndefined();
+    expect(downCount).toBe(2);
+  });
+
   it("部分启动失败也走整组 finalizer(down)", async () => {
     const root = await makeRoot();
     await writeFile(
@@ -565,6 +673,41 @@ services:
       }),
     ).rejects.toThrow(/Compose environment failed|service db failed/);
     expect(downCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("物化原始错误不被 cleanup 错误遮蔽，后者只追加 stop diagnostic", async () => {
+    const root = await makeRoot();
+    await writeFile(join(root, "docker-compose.yaml"), "services:\n  client:\n    image: alpine:3.20\n", "utf-8");
+    const plan = await composeProviderPlan(join(root, "docker-compose.yaml"), "tb/start-and-cleanup-fail");
+    const diagnostics: Array<{ code: string; projectName?: unknown }> = [];
+
+    await expect(materializeDockerComposeProviderCase(plan, {
+      ctx: {
+        evalId: "tb/start-and-cleanup-fail",
+        profile: "tb-start-and-cleanup-fail",
+        signal: new AbortController().signal,
+        buildLocators: new Map(),
+      },
+      feedback: {
+        progress() {},
+        diagnostic(entry) {
+          diagnostics.push({ code: entry.code, projectName: entry.data?.projectName });
+        },
+      },
+      _testHooks: {
+        async runCompose(args) {
+          if (args.includes("up")) throw new Error("original startup failure");
+          if (args.includes("down")) throw new Error("cleanup transport failure");
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+      },
+    })).rejects.toThrow(/original startup failure/);
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      code: "sandbox-stop-failed",
+      projectName: expect.stringMatching(/^ne-/),
+    });
   });
 
   it("up 遇到镜像拉取 EOF 时先对账同一 project 再重试", async () => {

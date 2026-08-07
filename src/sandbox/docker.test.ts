@@ -9,7 +9,124 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import * as tar from "tar-stream";
-import { DockerSandbox } from "./docker.ts";
+import { assertRootlessPrivilegedDaemon, dockerHostConfig, DockerSandbox } from "./docker.ts";
+
+describe("Docker privileged boundary and resources", () => {
+  it("rootless-only privileged 拒绝默认/rootful/TCP daemon，只接受显式 rootless Unix socket", () => {
+    const rootless = {
+      ID: "daemon-123",
+      SecurityOptions: ["name=seccomp,profile=builtin", "name=rootless"],
+      DockerRootDir: "/data",
+      CgroupDriver: "systemd",
+      CgroupVersion: "2",
+    };
+    const attestation = { daemonId: "daemon-123", dataRoot: "/data" };
+    expect(() => assertRootlessPrivilegedDaemon(
+      rootless,
+      "unix:///tmp/niceeval/docker.sock",
+      attestation,
+    )).not.toThrow();
+    expect(() => assertRootlessPrivilegedDaemon(rootless, undefined, attestation)).toThrow(
+      /explicit rootless Unix DOCKER_HOST/,
+    );
+    expect(() => assertRootlessPrivilegedDaemon(rootless, "unix:///var/run/docker.sock", attestation)).toThrow(
+      /rootful Docker socket/,
+    );
+    expect(() => assertRootlessPrivilegedDaemon(rootless, "tcp://127.0.0.1:2375", attestation)).toThrow(
+      /Unix DOCKER_HOST/,
+    );
+    expect(() => assertRootlessPrivilegedDaemon({
+      ...rootless,
+      SecurityOptions: ["name=seccomp,profile=builtin"],
+    }, "unix:///tmp/niceeval/docker.sock", attestation)).toThrow(/SecurityOptions report rootless/);
+    expect(() => assertRootlessPrivilegedDaemon({
+      ...rootless,
+      CgroupDriver: "none",
+    }, "unix:///tmp/niceeval/docker.sock", attestation)).toThrow(/delegated cgroup v2/);
+    expect(() => assertRootlessPrivilegedDaemon(
+      rootless,
+      "unix:///tmp/niceeval/docker.sock",
+      { daemonId: undefined, dataRoot: "/data" },
+    )).toThrow(/NICEEVAL_ROOTLESS_DOCKER_ID attestation/);
+    expect(() => assertRootlessPrivilegedDaemon(
+      rootless,
+      "unix:///tmp/niceeval/docker.sock",
+      { daemonId: "daemon-123", dataRoot: "/other" },
+    )).toThrow(/DockerRootDir does not match/);
+  });
+
+  it("把结构化限制精确映射为 Docker HostConfig", () => {
+    expect(dockerHostConfig("rootless", {
+      cpus: 2.5,
+      memoryBytes: 4_294_967_296,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711, uid: 0, gid: 0 } },
+    })).toMatchObject({
+      Privileged: true,
+      NanoCpus: 2_500_000_000,
+      Memory: 4_294_967_296,
+      MemorySwap: 4_294_967_296,
+      PidsLimit: 2048,
+      ReadonlyRootfs: true,
+      Tmpfs: { "/var/lib/docker": "rw,exec,nosuid,nodev,size=3221225472,mode=0711,uid=0,gid=0" },
+    });
+    expect(dockerHostConfig("disabled", {})).not.toHaveProperty("Privileged");
+    expect(dockerHostConfig("rootless", {})).not.toHaveProperty("ExtraHosts");
+    expect(dockerHostConfig("disabled", {})).toMatchObject({
+      ExtraHosts: ["host.docker.internal:host-gateway"],
+    });
+    expect(new DockerSandbox({ privileged: "rootless" }).otlpHost).toBeNull();
+  });
+});
+
+describe("DockerSandbox.stop cleanup ownership", () => {
+  function withCleanupContainer(
+    sandbox: DockerSandbox,
+    container: { stop: () => Promise<void>; remove: () => Promise<void> },
+  ): void {
+    (sandbox as unknown as { container: typeof container }).container = container;
+    (sandbox as unknown as { _containerId: string })._containerId = "abcdef1234567890";
+  }
+
+  it("只忽略 stopped/not-found，并完成幂等释放", async () => {
+    const sandbox = new DockerSandbox();
+    withCleanupContainer(sandbox, {
+      stop: async () => Promise.reject(Object.assign(new Error("already stopped"), { statusCode: 304 })),
+      remove: async () => Promise.reject(Object.assign(new Error("gone"), { statusCode: 404 })),
+    });
+
+    await expect(sandbox.stop()).resolves.toBeUndefined();
+    await expect(sandbox.stop()).resolves.toBeUndefined();
+  });
+
+  it("remove 失败时上报并保留句柄，供 registry 后续重试", async () => {
+    const sandbox = new DockerSandbox();
+    let removeCalls = 0;
+    withCleanupContainer(sandbox, {
+      stop: async () => {},
+      remove: async () => {
+        removeCalls += 1;
+        if (removeCalls === 1) throw Object.assign(new Error("daemon unavailable"), { statusCode: 500 });
+      },
+    });
+
+    await expect(sandbox.stop()).rejects.toThrow(/failed to destroy Docker sandbox abcdef123456/);
+    await expect(sandbox.stop()).resolves.toBeUndefined();
+    expect(removeCalls).toBe(2);
+  });
+
+  it("stop 异常即使 force remove 成功也如实上报，但第二次调用可完成登记解除", async () => {
+    const sandbox = new DockerSandbox();
+    withCleanupContainer(sandbox, {
+      stop: async () => Promise.reject(Object.assign(new Error("stop transport failed"), { statusCode: 500 })),
+      remove: async () => {},
+    });
+
+    await expect(sandbox.stop()).rejects.toThrow(/failed to destroy Docker sandbox abcdef123456/);
+    await expect(sandbox.stop()).resolves.toBeUndefined();
+  });
+});
 
 let roots: string[] = [];
 afterEach(async () => {

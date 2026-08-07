@@ -7,7 +7,7 @@ Unit；`repos/` 放 E2E 场景 Repo。`repos/` 下每个叶子都是一个独立
 
 测试运行器直接复用成熟工具：非浏览器场景使用 Vitest，报告与浏览器 Journey E2E 使用 Playwright Test。
 NiceEval 只实现外侧的薄 runner：选择 Repo、打候选 tarball、复制到隔离目录、安装并核验候选身份、准备
-Docker / secret、收集 artifact 和执行 cleanup。它不解码产品结果，也不替测试计算 expected。
+各 Repo manifest 要求的 Docker / secret、收集 artifact 和执行 cleanup。它不解码产品结果，也不替测试计算 expected。
 两套 Repo 的放置判断与依赖边界见 [`repos/README.md`](repos/README.md)。
 
 ```text
@@ -31,12 +31,16 @@ example/
 
 ## 命名规则
 
-命名只回答四件事，不再增加 `Mechanism` 或 `Result` 类型名：
+命名只回答五件事，不再增加 `Mechanism` 或 `Result` 类型名：
 
 1. 第一层目录写执行层：`unit` 或 E2E 的 `repos`；
 2. Unit 子目录写产品 owner；E2E Repo ID 写稳定消费现场，例如 `runner`、`report`、`adapter/codex-cli`；
 3. 子功能与 Journey 写进文件名，例如 `carry-reuse.test.ts`、`first-eval-to-debug.spec.ts`；
 4. `test()` 标题写场景与长期结果，不写被调用的私有辅助函数。
+5. Experiment、Eval、测试文件与标题写具体结果，不使用 `smoke`、`basic`、`happy-path`、`misc` 这类口袋名。
+
+例如 Lifecycle 的下一消费者叫 `post-interrupt-consumer`，因为这个名字直接说明它处于中断之后并负责证明后续运行可用。
+`smoke` 仍可在研究或 CI 分类的正文里描述一种低成本检查，因此不加入全局 prose 禁词；它只在测试标识符中禁用。
 
 新增**功能命题**若能共享 package graph、config、executor、lane 和隔离策略，就在对应功能 Repo 增加文件。
 新增**适配器命题**只能进入 `adapter/<id>`；每个真实 SDK / CLI 仍各自拥有叶子 Repo。
@@ -48,6 +52,24 @@ Playwright 用 `tests/<product-area>/*.spec.ts`。三者都用产品域与行为
 
 跨 Repo 已经重复的机械能力会收进独立 [官方 Testkit](../testkit.md)，而不是再造产品 DSL。
 各 Repo 已迁移后的代码与完整 API 草案见 [`testkit/`](testkit/README.md)。
+
+## 功能测试与 Bug 回归怎样共存
+
+每条测试都是功能 owner。Bug 回归不是另一类 Repo，也不放进 `bugs/`：它在原 owner 上增加一条可追溯注释。
+E2E 文件直接链接长期契约，优先使用 `docs/feature/**`；安装后 CLI 等内部边界可以链接其稳定 owner 文档。
+历史缺陷链接 `memory/**`。公开 issue 只有真实存在时才追加，不能单独充当依据。
+
+```ts
+// feature: docs/feature/reports/show/json.md
+// regression: memory/show-json-pipe-truncated-at-128k.md
+test("show --json 经 pipe 仍交付完整文档", async () => {
+  // 测试正文仍展示真实命令、公开观察和字面 expected。
+});
+```
+
+Unit 沿用现有机器检查格式：文件头的 `// cases:` 指向 `docs/engineering/testing/unit/**`，后者再链接 Feature 契约；
+修复历史缺陷的具体 case 用 `// bug: memory/<条目>.md`。两层语法不同，表达的是同一组关系：Feature 决定归属，memory 解释逃逸原因。
+完整裁决见 [Portfolio · 功能归属与 Bug 回归](../portfolio.md#功能归属与-bug-回归)。
 
 ## 一条测试到底在哪里运行
 
@@ -74,8 +96,8 @@ pnpm --silent exec niceeval exp carry --json
 
 ## 三种可读代码形状
 
-- [CLI pipe](repos/cli/test/show-json-pipe.test.ts)：完整 argv 后立即检查 exit / stream，再 parse 结构化结果；历史 bug 的
-  `regression:` 与长期测试标题分开。选择与进程出口分别在
+- [CLI pipe](repos/cli/test/show-json-pipe.test.ts)：完整 argv 后立即检查 exit / stream，再 parse 结构化结果；Feature 与
+  `regression:` 注释和长期测试标题各自回答归属、历史与行为。选择与进程出口分别在
   [`experiment-selection.test.ts`](repos/cli/test/experiment-selection.test.ts) 和
   [`process-streams-and-exit.test.ts`](repos/cli/test/process-streams-and-exit.test.ts)，不会因同属 CLI 就合并到一个宽泛文件。
 - [Runner 状态变化](repos/runner/test/carry-reuse.test.ts)：具名 argv 在文件头可见，mutation 发生在私有副本，

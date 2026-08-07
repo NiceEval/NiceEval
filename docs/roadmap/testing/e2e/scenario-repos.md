@@ -152,8 +152,9 @@ Executor 回答测试进程在哪里运行：
 ## 隔离规则
 
 - 根 runner 每个 Repo、每次重试都创建新副本；
-- Vitest 文件默认不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
+- Vitest 文件保留默认并行，且不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
 - 需要写的测试使用独立结果根 / 项目副本；只有运行世界也不同，才为 Journey 增加独立 Repo；
+- 短命控制文件位于 `withTempDir()` 创建的系统临时目录，每条 case 一份；需收集的 `.niceeval` / JUnit / trace 仍位于隔离 Repo 内；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
 - 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
 - secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。

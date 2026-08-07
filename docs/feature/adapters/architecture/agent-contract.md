@@ -51,7 +51,7 @@ interface Turn {
 }
 ```
 
-`kind` 由 `defineDirectAgent` / `defineSandboxAgent` 固定写入。
+`kind` 由 `defineAgent` / `defineSandboxAgent` 固定写入。
 `direct` 描述 runner 直接调用 Adapter，不描述目标进程的位置。
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 

@@ -100,7 +100,7 @@ export default defineExperiment({
 - **执行时机**：`setup` Hook 在 sandbox 创建后、git 基线之前最先跑——它写下的文件会进基线，不会被算进 agent 产出的 diff；`teardown` Hook 在 Adapter 的 `teardown` 之后、sandbox 销毁之前最后跑——把状态回存到外部正好用这个时机。
 - **触发规则**：`teardown` 当且仅当同一 Sandbox 的 `setup` 时点已经走到才执行——`setup` 抛错不豁免，收尾代码要对可能未赋值的句柄做防御；`setup` 没跑到（Sandbox 没创建成功）则 `teardown` 同样跳过。
 - **失败语义**：`setup` Hook 抛错，这次 Attempt 记为 `errored`（环境问题，不是 Agent 做错题）；`teardown` Hook 可以报告 diagnostic，默认不改变已经得到的判定。某个收尾动作是结果成立的必要条件时应抛错，由 runner 明确记录为致命错误。
-- **不带 Sandbox 的 Agent**：`defineDirectAgent` 构造的 Agent 没有 Sandbox，`sandbox` 字段对它不生效，Hook 自然不会跑。
+- **不带 Sandbox 的 Agent**：`defineAgent` 构造的 Agent 没有 Sandbox，`sandbox` 字段对它不生效，Hook 自然不会跑。
 
 ### 把 setup 的产物传给 teardown
 

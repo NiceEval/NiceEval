@@ -32,6 +32,7 @@ Adapter 测试中的 `exp`、`show` 与 Report readback 是观察协议证据的
 2. 命题依赖某个上游的真实事件、鉴权、usage、session、工具身份或版本：放进 `adapter/<id>`。
 3. 只是跨多个 NiceEval 功能的用户目标：放进最终结果 owner 的功能 Repo，并为 mutation 创建私有项目副本。
 4. 只有 package graph、secret、executor、lane 或资源所有权不同，才增加 Repo；子功能只增加行为命名的测试文件。
+5. 历史 Bug 不增加 Repo。先加强原 Feature owner；旧实现 kill 成立后，再用 `regression: memory/**` 附上历史凭据。
 
 两套 Repo 唯一共享的是机械能力：argv 收据、严格 JSON / NDJSON、等待、临时副本与资源 cleanup。任何
 `runExperiment()`、`expectCarry()`、`openAttempt()` 或 adapter 事件解释都不进入 Testkit。

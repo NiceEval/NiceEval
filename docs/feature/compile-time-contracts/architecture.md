@@ -41,7 +41,7 @@ linker 必须先聚合全部 template conflict 与 missing，再允许任何 Pro
 | aggregate 键冲突 | options 关系泛型 | `assertNoKeyCollision` |
 | EvidenceRow 至少一个读数 | `WithMetricField` 交叉诊断类型 | `evidenceRow` 与 `parseEvidenceRow` 结构校验 |
 | chart 字段角色 | 过滤键泛型 | `pointsToDataset` 跨行校验 |
-| Agent evidence coverage 穷尽性 | 必填对象 + 降级判别 union | `defineDirectAgent` / `defineSandboxAgent` 构造守卫 |
+| Agent evidence coverage 穷尽性 | 必填对象 + 降级判别 union | `defineAgent` / `defineSandboxAgent` 构造守卫 |
 | custom Sandbox 产物边界 | 固定返回形状 + `retention?: never` | `defineSandboxCase` 输入与 materialize 结果校验 |
 | factory 产物身份 | 私有 unique symbol | `isThemeDefinition` / `isReportDefinition` |
 | Sandbox template 恰好一份 | layer kind 私有品牌与 factory option 类型 | discovery 后的全矩阵 linker，早于 Provider 网络与资源 |

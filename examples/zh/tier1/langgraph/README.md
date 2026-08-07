@@ -43,7 +43,7 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
 ## 能力从哪来
 
 能力不是用 `capabilities` 标志位声明出来的，而是由构造和证据证明；不过
-`defineDirectAgent` 必须如实填写 `evidenceCoverage`。这个手写协议映射明确声明 events、actions、
+`defineAgent` 必须如实填写 `evidenceCoverage`。这个手写协议映射明确声明 events、actions、
 messages 与 status 完整，协议未提供的 usage 和 adapter 未产生的 `Turn.data` 标为 unavailable：
 
 - 多轮续接、`t.newSession()` 隔离——已验证：新会话线（`ctx.session.id` 是 `undefined`）不带

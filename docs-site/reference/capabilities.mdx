@@ -9,7 +9,7 @@ Capabilities answer two separate questions:
 1. **What can the runner construct or call?** Agent construction and runtime behavior provide Sandbox access, tracing, session continuation, and HITL.
 2. **What conclusions can assertions trust?** Every Agent declares the completeness of six evidence channels with the required `evidenceCoverage` field.
 
-There is no separate `capabilities` field on `defineDirectAgent` or `defineSandboxAgent`. That does **not** mean there is nothing to declare: `evidenceCoverage` is required on both definitions so missing evidence never becomes an implicit fourth state.
+There is no separate `capabilities` field on `defineAgent` or `defineSandboxAgent`. That does **not** mean there is nothing to declare: `evidenceCoverage` is required on both definitions so missing evidence never becomes an implicit fourth state.
 
 ## Construction and runtime capabilities
 
@@ -23,7 +23,7 @@ There is no separate `capabilities` field on `defineDirectAgent` or `defineSandb
 
 ## The required six-channel declaration
 
-`defineDirectAgent` and `defineSandboxAgent` both require an `EvidenceCoverage` value:
+`defineAgent` and `defineSandboxAgent` both require an `EvidenceCoverage` value:
 
 ```ts
 interface EvidenceCoverage {
@@ -88,7 +88,7 @@ Official converters guarantee only the protocol surface stated by their contract
 
 - [Events reference](/reference/events) — the standard event stream contract.
 - [Adapter concept](/explanation/adapter) — the full `ctx` / `Turn` contract.
-- [defineDirectAgent and defineSandboxAgent](/reference/define-agent) — Agent fields and examples.
+- [defineAgent and defineSandboxAgent](/reference/define-agent) — Agent fields and examples.
 - [Assertions](/explanation/assert) — unavailable, `.optional()`, and Verdict propagation.
 - [OTel integration](/tutorials/connect-otel) — why spans feed visualization rather than assertions.
 - [Built-in agent capabilities](/reference/builtin-agents) — what each built-in adapter captures.

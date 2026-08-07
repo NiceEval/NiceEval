@@ -190,6 +190,42 @@ describe("SandboxLayer 声明与 command identity", () => {
     expect(JSON.stringify(nonEmpty)).toContain("pathPrepend");
   });
 
+  it("Docker privileged/resources 默认不进 identity，显式值完整进入并拒绝裸 boolean", () => {
+    const omitted = sandboxLayerStateOf(dockerImageSandbox({ image: "node:24" })).template.identity as {
+      publishable: globalThis.Record<string, unknown>;
+    };
+    const configured = sandboxLayerStateOf(dockerImageSandbox({
+      image: "node:24",
+      privileged: "rootless",
+      resources: {
+        cpus: 4,
+        memoryBytes: 4_294_967_296,
+        pidsLimit: 2048,
+        readOnlyRootfs: true,
+        tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711 } },
+      },
+    })).template.identity as { publishable: globalThis.Record<string, unknown> };
+
+    expect(omitted.publishable).not.toHaveProperty("privileged");
+    expect(omitted.publishable).not.toHaveProperty("resources");
+    expect(configured.publishable).toMatchObject({
+      privileged: "rootless",
+      resources: {
+        cpus: 4,
+        memoryBytes: 4_294_967_296,
+        pidsLimit: 2048,
+        readOnlyRootfs: true,
+        tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711 } },
+      },
+    });
+    expect(configured).not.toEqual(omitted);
+    expect(() => dockerImageSandbox({ image: "node:24", privileged: true as never })).toThrow(/must be "rootless"/);
+    expect(() => dockerfileSandbox({
+      context: ".",
+      resources: { tmpfs: { "relative": { sizeBytes: 1 } } },
+    })).toThrow(/normalized absolute paths/);
+  });
+
   it("factory 的运行时入口拒绝缺失、空值、额外字段和无效寿命", () => {
     expect(() => e2bSandbox({} as never)).toThrow(/template must be a non-empty string/);
     expect(() => dockerImageSandbox({ image: "" })).toThrow(/image must be a non-empty string/);

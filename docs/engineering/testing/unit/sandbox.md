@@ -211,7 +211,12 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - `workspaceService`（或云端代理进 main）是唯一主 Sandbox；主容器 ready 后才进入 Agent。
   - 必需服务提前退出 → attempt `errored` 附服务状态与日志，不折叠成 Agent `failed`。
   - 成功、部分启动、中断、超时都走整组 finalizer，不留孤儿。
-  - 黑名单只拒脱管网络、覆盖受管 workdir、挂载 Docker socket；其余 Compose 字段原样生效。
+  - 黑名单拒绝脱管网络、覆盖受管 workdir、挂载 Docker socket，以及所有受管资源的 project namespace escape。
+    测试要验证 sidecar 直接声明 `container_name`、同文件 anchor/merge 产生固定容器名，以及写死其中一个规划哨兵名称。
+    network、volume、config、secret 的固定全局名称分别属于同一等价类。
+    两个不同哨兵 project 必须让非 external 资源分别得到 `<project>_<logical-key>`；`${COMPOSE_PROJECT_NAME}` 派生名称与 `external: true` 资源照常接受。
+  - 顶层 `include` 与 `extends.file` 在 physical planning 拒绝；同文件 anchor/merge 与 service extends 交给 Compose 有效模型求值。
+    模型求值失败是明确 planning error；有效模型不落盘、不进日志和错误正文。
   - 动态泄漏检查：普通本地上传 source 与全部 build context、相对 bind mount closure 交叉检查，命中则 Attempt `errored`。
   - 过滤规则进入 BuildKey；历史 transfer manifest 可在后续运行启动 Agent 前预检，首次运行只保证不采信泄题结果。
 

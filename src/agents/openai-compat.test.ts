@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { defineDirectAgent } from "../define.ts";
+import { defineAgent } from "../define.ts";
 import {
   chatCompletionEvidenceCoverage,
   responsesEvidenceCoverage,
@@ -22,8 +22,8 @@ describe("openai-compat evidence coverage", () => {
     expect(Object.isFrozen(responsesEvidenceCoverage)).toBe(true);
   });
 
-  it("adapter 入口导出的常量可直接用于 defineDirectAgent", () => {
-    const agent = defineDirectAgent({
+  it("adapter 入口导出的常量可直接用于 defineAgent", () => {
+    const agent = defineAgent({
       name: "chat-completions",
       evidenceCoverage: chatCompletionEvidenceCoverage,
       async send() {

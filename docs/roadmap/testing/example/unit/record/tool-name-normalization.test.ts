@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeToolName } from "../../../../../../src/o11y/tool-names.ts";
 
+// cases: docs/engineering/testing/unit/adapters.md
 // 本单元只证明 NiceEval 自己拥有的确定性规范名映射；真实 Codex SDK 接线由 adapter E2E 拥有。
 describe("normalizeToolName 的规范 ToolName 映射", () => {
   it("把确定性复合别名映射为 NiceEval 的规范工具名", () => {

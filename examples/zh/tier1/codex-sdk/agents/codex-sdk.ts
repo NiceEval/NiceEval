@@ -9,7 +9,7 @@
 //
 // 这是 Tier 1(只接 send):要 `niceeval view` 的调用瀑布图时升 Tier 2,见
 // ../../tier2/codex-sdk/——同一个文件加一行 spanMapper、config 加一行 telemetry,其它不变。
-import { completeEvidenceCoverage, defineDirectAgent, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { ThreadEvent } from "@openai/codex-sdk";
@@ -52,7 +52,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   });
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "codex-sdk",
   evidenceCoverage: completeEvidenceCoverage,
   send,

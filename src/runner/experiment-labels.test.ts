@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { defineDirectAgent, defineEval, defineExperiment } from "../define.ts";
+import { defineAgent, defineEval, defineExperiment } from "../define.ts";
 import { experimentRunInfo } from "./attempt.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../sample/index.ts";
 import type { Run } from "../record/types.ts";
@@ -15,7 +15,7 @@ import { discoverEval } from "./types.ts";
 import { prepareRunSandboxes } from "./sandbox-selection.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 
-const fakeAgent = defineDirectAgent({
+const fakeAgent = defineAgent({
   name: "fake",
   evidenceCoverage: completeEvidenceCoverage,
   async send() {

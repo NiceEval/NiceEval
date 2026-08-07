@@ -351,7 +351,7 @@ export const en = {
     "Agent \"{{agent}}\" is not sandbox-backed (built with defineSandboxAgent), so t.{{method}} is unavailable. Use an agent built with defineSandboxAgent, or drop this assertion.\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-agent.mdx",
   "context.skipEmpty": "skip() requires a non-empty reason.",
-  "define.agentNameRequired": "defineDirectAgent requires name.",
+  "define.agentNameRequired": "defineAgent requires name.",
   "define.evalIdRejected": "defineEval does not accept id; ids are derived from file paths.",
   "define.evalEnvironmentEmpty": "defineEval environment must be a non-empty profile id when provided.",
   "define.evalTestRequired": "defineEval requires an async test(t) function.",

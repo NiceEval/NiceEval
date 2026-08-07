@@ -11,7 +11,7 @@
 //
 // 这是 Tier 1(只接 send):要 `niceeval view` 的调用瀑布图时升 Tier 2,见
 // ../../tier2/langgraph/——config 加一行 telemetry、本文件加一段 span 收尾宽限,其它不变。
-import { createSessionSlot, defineDirectAgent, sseJsonFrames } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, EvidenceCoverage, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -177,7 +177,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return drainStream(sseJsonFrames<LanggraphFrame>(res.body), ctx);
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "langgraph",
   evidenceCoverage,
   send,

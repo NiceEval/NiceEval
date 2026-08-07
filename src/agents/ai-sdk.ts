@@ -16,7 +16,7 @@
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { randomUUID } from "node:crypto";
 
-import { defineDirectAgent } from "../define.ts";
+import { defineAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { normalizeJsonValue } from "../shared/json-value.ts";
@@ -484,7 +484,7 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
   }
   const sessions = new Map<string, SessionState>();
 
-  return defineDirectAgent({
+  return defineAgent({
     name: options.name ?? "ai-sdk",
     // 官方 SDK 完整 steps/output:全通道 complete(见 adapters/architecture/evidence.md)。
     evidenceCoverage: completeEvidenceCoverage,

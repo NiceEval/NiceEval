@@ -230,16 +230,24 @@ function wrapSingleSandbox(
   const sandbox = normalizeSandboxPaths(backend, provider);
   registerSandbox(sandbox);
   let stopped = false;
+  let stopping: Promise<void> | undefined;
   const group: SandboxResourceGroup = {
     primary: { sandboxId: sandbox.sandboxId, provider },
     resources: { kind: "single", provider, sandboxId: sandbox.sandboxId },
     async stop() {
       if (stopped) return;
-      stopped = true;
-      try {
+      if (stopping !== undefined) return stopping;
+      const pending = (async () => {
         await sandbox.stop();
-      } finally {
+        stopped = true;
         unregisterSandbox(sandbox);
+      })();
+      stopping = pending;
+      try {
+        await pending;
+      } finally {
+        // stop 失败回到 Open，保留 registry 所有权；成功则进入不可逆的 Stopped。
+        if (stopping === pending) stopping = undefined;
       }
     },
   };
@@ -264,15 +272,23 @@ function normalizeMaterialized(
   );
   registerSandbox(sandbox);
   let stopped = false;
+  let stopping: Promise<void> | undefined;
   const group: SandboxResourceGroup = {
     ...materialized.group,
     async stop() {
       if (stopped) return;
-      stopped = true;
-      try {
+      if (stopping !== undefined) return stopping;
+      const pending = (async () => {
         await materialized.group.stop();
-      } finally {
+        stopped = true;
         unregisterSandbox(sandbox);
+      })();
+      stopping = pending;
+      try {
+        await pending;
+      } finally {
+        // 失败回 Open 并保留 registry 所有权，让同轮强清或 orphan 恢复链真正重试。
+        if (stopping === pending) stopping = undefined;
       }
     },
   };
@@ -347,6 +363,8 @@ export function materializeDockerfileProviderPlan(
           runtime: "node24",
           image: resolved.locator,
           ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+          privileged: plan.privileged,
+          resources: plan.resources,
           lifetimeMs: configuredLifetime(plan.lifetime),
           pathPrepend: plan.pathPrepend,
           feedback: context.feedback,
@@ -512,6 +530,8 @@ export function materializeDockerImageProviderPlan(
         runtime: "node24",
         image: plan.image,
         ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+        privileged: plan.privileged,
+        resources: plan.resources,
         lifetimeMs: configuredLifetime(plan.lifetime),
         pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
@@ -873,8 +893,35 @@ async function runHooks(
 function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: MaterializedSandboxCase): Effect.Effect<void> {
   return Effect.promise(async () => {
     await runHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext, true);
-    if (input.release._tag === "Stop") await owned.group.stop();
-    else await Effect.runPromise(input.release.run(owned));
+    try {
+      if (input.release._tag === "Stop") await owned.group.stop();
+      else await Effect.runPromise(input.release.run(owned));
+    } catch (cause) {
+      const resources = owned.group.resources;
+      const projectName =
+        resources !== null && typeof resources === "object" && !Array.isArray(resources) &&
+          typeof (resources as globalThis.Record<string, JsonValue>).projectName === "string"
+          ? (resources as globalThis.Record<string, JsonValue>).projectName as string
+          : undefined;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      input.feedback.diagnostic({
+        code: "sandbox-stop-failed",
+        level: "warning",
+        message:
+          `Sandbox ${owned.sandbox.sandboxId} provider cleanup failed: ${message}.` +
+          (projectName === undefined
+            ? ""
+            : ` Compose project ${projectName} remains recoverable with \`niceeval sandbox list --orphans\` / \`niceeval sandbox prune\`.`),
+        data: {
+          provider: input.plan.providerPlan.provider,
+          sandboxId: owned.sandbox.sandboxId,
+          ...(projectName !== undefined ? { projectName } : {}),
+        },
+        dedupeKey: projectName === undefined
+          ? `sandbox-stop-failed:${owned.sandbox.sandboxId}`
+          : `sandbox-stop-failed:${projectName}`,
+      });
+    }
   });
 }
 

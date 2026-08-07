@@ -399,9 +399,9 @@ The span-normalizing function when the app has OTel (for the waterfall); the eve
 `turnFromChatCompletion(res)` / `turnFromResponses(res)` (exported from `niceeval/adapter`) map OpenAI's two response shapes — Chat Completions and Responses — from the whole response into a `Turn` with zero manual mapping: this is not limited to the official OpenAI API — any service that claims compatibility with either protocol shape works.
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent, turnFromChatCompletion } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, turnFromChatCompletion } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-openai-compat-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
@@ -473,9 +473,9 @@ The three Tier 1 examples (claude-sdk and pi-sdk use `driveFrameStream` plus typ
 `turnFromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed tool `operation.finished`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent, turnFromAiSdk } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, turnFromAiSdk } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-ai-sdk-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
@@ -500,5 +500,5 @@ The `status` comes from the converter: `"waiting"` when there is a tool approval
 
 - [Connect your agent](/tutorials/connect-your-agent) — how to implement each capability in your own adapter and which assertions it maps to.
 - [Sandbox Agent](/tutorials/sandbox-agent) — how to run the built-in sandbox agents and write your own.
-- [defineDirectAgent reference](/reference/define-agent) — full parameters of `defineDirectAgent` / `defineSandboxAgent`.
+- [defineAgent reference](/reference/define-agent) — full parameters of `defineAgent` / `defineSandboxAgent`.
 - [OTel integration](/tutorials/connect-otel) — send your app's spans to [NiceEval](https://niceeval.com/) in exchange for the call waterfall in `niceeval view`.

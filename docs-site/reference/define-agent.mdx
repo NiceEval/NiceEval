@@ -1,27 +1,29 @@
 ---
-title: "defineDirectAgent and defineSandboxAgent: adapter reference"
-sidebarTitle: "defineDirectAgent"
-description: "Reference for defineDirectAgent and defineSandboxAgent: AgentContext, AgentSession, the Sandbox interface, and shared sandbox helpers."
+title: "defineAgent and defineSandboxAgent: adapter reference"
+sidebarTitle: "defineAgent"
+description: "Reference for defineAgent and defineSandboxAgent: AgentContext, AgentSession, the Sandbox interface, and shared sandbox helpers."
 ---
 
 Every [NiceEval](https://niceeval.com/) agent is an adapter: code that knows how to drive a specific backend and translate its output into the standard event stream. The runner only calls `agent.send(input, ctx)`.
 
 ![Full round trip of one t.send: the eval calls t.send, the runner assembles TurnInput and ctx, the adapter returns a Turn with standard events.](/images/agent-turn-roundtrip-en.svg)
 
-## `defineDirectAgent`
+## `defineAgent`
 
 Use this for direct agent integrations:
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 ```
 
-`Agent.kind` produced by `defineDirectAgent` is always `"direct"` (an internal discriminant field you never declare). There are no capability bits on `t` that need declaring to unlock — filesystem assertions like `t.sandbox` exist only on agents constructed with `defineSandboxAgent` (`kind: "sandbox"`); everything else is judged by the events `send` actually returned and whether `ctx.session` was used. See the [capabilities reference](/reference/capabilities). The full field set is in "Agent and Adapter Context fields" below.
+`defineDirectAgent` remains available as a deprecated compatibility alias. It references the same function; use `defineAgent` in new code.
+
+`Agent.kind` produced by `defineAgent` is always `"direct"` (an internal discriminant field you never declare). There are no capability bits on `t` that need declaring to unlock — filesystem assertions like `t.sandbox` exist only on agents constructed with `defineSandboxAgent` (`kind: "sandbox"`); everything else is judged by the events `send` actually returned and whether `ctx.session` was used. See the [capabilities reference](/reference/capabilities). The full field set is in "Agent and Adapter Context fields" below.
 
 ### Direct agent example
 
 ```ts
-export default defineDirectAgent({
+export default defineAgent({
   name: "echo",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input) {
@@ -83,7 +85,7 @@ export default defineExperiment({
 
 ## Agent and Adapter Context fields
 
-Construction parameters for `defineDirectAgent` (`DirectAgentDef`) and `defineSandboxAgent` (`SandboxAgentDef`), plus the `ctx` (`AgentContext`) that both receive in `send(input, ctx)`:
+Construction parameters for `defineAgent` (`DirectAgentDef`) and `defineSandboxAgent` (`SandboxAgentDef`), plus the `ctx` (`AgentContext`) that both receive in `send(input, ctx)`:
 
 {/* GENERATED:BEGIN agent-def */}
 

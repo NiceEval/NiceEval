@@ -5,7 +5,7 @@
 //
 // 唯一非 LangGraphEventLike 的帧是 `{type: "session", sessionId}`(会话 id 回传,首轮才发,
 // 语义同其它 origin/* 示例)。
-import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, LangGraphEventLike, LangGraphStream, SseFrameCursor } from "niceeval/adapter";
 import type { StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -136,7 +136,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return drainStream(sseJsonFrames<ProtoFrame>(res.body), createLangGraphEventStream(), ctx);
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "langgraph",
   send,
   // 官方 createLangGraphEventStream() 转换器 + 自建 SSE transport 忠实转写 LangGraph 真实的

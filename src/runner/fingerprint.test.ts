@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineDirectAgent, defineEval, defineSandboxAgent } from "../define.ts";
+import { defineAgent, defineEval, defineSandboxAgent } from "../define.ts";
 import { defineSandboxCommand } from "../sandbox/commands.ts";
 import { createBuiltinSandboxFactories, customProviderSandbox, type SandboxLayer } from "../sandbox/layer.ts";
 import { SandboxPhysicalPlanningError } from "../sandbox/plan.ts";
@@ -91,7 +91,7 @@ function makeEval(id: string, options: EvalFixtureOptions = {}): DiscoveredEval 
 
 function makeRun(experimentId: string, selectedEvalIds: string[], attempts: number, timeoutMs?: number): AgentRun {
   return {
-    agent: defineDirectAgent({
+    agent: defineAgent({
       name: `agent-${experimentId}`,
       evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),

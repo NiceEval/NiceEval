@@ -101,6 +101,7 @@ export declare function pollUntil<T>(
   options: { timeoutMs: number; intervalMs: number; label: string },
 ): Promise<T>;
 
+/** 在系统临时目录下创建本次调用的唯一目录，并在 body 成功或失败后删除。 */
 export declare function withTempDir<T>(
   prefix: string,
   body: (root: string) => Promise<T>,

@@ -14,7 +14,7 @@
 // adapter 不接 OTel(见下),`tracing` 字段留空,执行树的时间注释因此显示 timing unavailable——
 // 覆盖声明只影响 calledTool/notCalledTool/maxTokens 这类断言的证据完整性判定,不影响 trace。
 import {
-  defineDirectAgent,
+  defineAgent,
   sseJsonFrames,
   createClaudeSdkEventStream,
   createSessionSlot,
@@ -114,7 +114,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, createClaudeSdkEventStream());
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "claude-agent-sdk",
   evidenceCoverage: completeEvidenceCoverage,
   send,

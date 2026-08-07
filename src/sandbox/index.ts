@@ -59,6 +59,8 @@ export type {
   DockerComposeSandboxOptions,
   DockerfileSandboxOptions,
   DockerImageSandboxOptions,
+  DockerSandboxResources,
+  DockerSandboxTmpfsOptions,
   E2BSandboxOptions,
   VercelSandboxOptions,
   LocalSandboxOptions,

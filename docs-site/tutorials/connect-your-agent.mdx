@@ -4,7 +4,7 @@ sidebarTitle: "Connect Agent"
 description: "Write an Adapter, configure an Experiment, and run the first eval; then pass configuration and parameters from the Experiment to the Adapter and the app under test."
 ---
 
-Connecting a subject under test to [NiceEval](https://niceeval.com/) requires an **Adapter**. `defineDirectAgent` wraps a `send` function: it receives the input, drives the Agent, and returns the turn's result.
+Connecting a subject under test to [NiceEval](https://niceeval.com/) requires an **Adapter**. `defineAgent` wraps a `send` function: it receives the input, drives the Agent, and returns the turn's result.
 
 This tutorial first gets a minimal integration running with an Adapter, an Experiment, and an eval, then explains how parameters flow from the Experiment to the Adapter and on to the app under test. Event streams, multi-turn, HITL, and tracing are optional capabilities, with the corresponding tutorials listed at the end.
 
@@ -30,9 +30,9 @@ Assume the project already has `npx niceeval init` run, so `niceeval.config.ts` 
 
 ```ts
 // agents/my-agent.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -116,15 +116,15 @@ Configuration belongs to exactly two channels; keep them separate and the integr
 1. **Static configuration goes through the Adapter factory.** Environment-level configuration such as URL, auth, and protocol details is written as factory parameters in the Experiment file. The `agent` field of `defineExperiment` receives an **already-configured instance**.
 2. **Per-turn dynamic values go through `ctx`.** The `model` and `flags` declared by the experiment are handed to `send` verbatim via `ctx` on every turn; the Adapter does not interpret their meaning, it only forwards them to the app with the request.
 
-Turn step 1's `my-agent` from an instance with a hardcoded URL into a factory that receives configuration. Change the default export to a function that returns `defineDirectAgent(...)`, and have `send` read the factory parameters. The `model` and `flags` declared by the Experiment arrive via `ctx` on every turn, and `send` forwards them with the request:
+Turn step 1's `my-agent` from an instance with a hardcoded URL into a factory that receives configuration. Change the default export to a function that returns `defineAgent(...)`, and have `send` read the factory parameters. The `model` and `flags` declared by the Experiment arrive via `ctx` on every turn, and `send` forwards them with the request:
 
 ```ts
 // agents/my-agent.ts — factory: static configuration goes into the closure
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 export function myAgent(options: { baseUrl: string }): Agent {
-  return defineDirectAgent({
+  return defineAgent({
     name: "my-agent",
     evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {

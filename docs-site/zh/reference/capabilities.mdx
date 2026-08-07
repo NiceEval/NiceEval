@@ -9,7 +9,7 @@ description: "Agent 的构造方式、运行时行为与必填的六通道 evide
 1. **Runner 能构造或调用什么？** Agent 的构造方式与运行时行为提供 Sandbox、tracing、会话续接和 HITL。
 2. **断言能相信什么结论？** 每个 Agent 都必须用 `evidenceCoverage` 声明六个证据通道的完整性。
 
-`defineDirectAgent` / `defineSandboxAgent` 上没有另一个 `capabilities` 字段。这不表示「什么都不用声明」：两种定义的 `evidenceCoverage` 都是必填字段，避免缺失证据变成含糊的第四种状态。
+`defineAgent` / `defineSandboxAgent` 上没有另一个 `capabilities` 字段。这不表示「什么都不用声明」：两种定义的 `evidenceCoverage` 都是必填字段，避免缺失证据变成含糊的第四种状态。
 
 ## 构造与运行时能力
 
@@ -23,7 +23,7 @@ description: "Agent 的构造方式、运行时行为与必填的六通道 evide
 
 ## 必填的六通道声明
 
-`defineDirectAgent` 与 `defineSandboxAgent` 都要求一个 `EvidenceCoverage`：
+`defineAgent` 与 `defineSandboxAgent` 都要求一个 `EvidenceCoverage`：
 
 ```ts
 interface EvidenceCoverage {
@@ -88,7 +88,7 @@ Judge 也遵守同一条 Verdict 规则，但有自己的不可用原因：Judge
 
 - [事件流参考](/zh/reference/events) —— 标准事件流契约。
 - [Adapter 概念](/zh/explanation/adapter) —— `ctx` / `Turn` 完整契约。
-- [defineDirectAgent 与 defineSandboxAgent](/zh/reference/define-agent) —— Agent 字段与示例。
+- [defineAgent 与 defineSandboxAgent](/zh/reference/define-agent) —— Agent 字段与示例。
 - [断言](/zh/explanation/assert) —— unavailable、`.optional()` 与 Verdict 传播。
 - [OTel 接入](/zh/tutorials/connect-otel) —— span 为什么只进可视化、不进断言。
 - [内置 Agent 能力](/zh/reference/builtin-agents) —— 各内置 Adapter 实际采到什么。

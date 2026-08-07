@@ -24,9 +24,9 @@ OTel span 用于生成 **`niceeval view` 中的调用瀑布图**。瀑布图按�
 
 ```ts
 // agents/support-bot.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -175,7 +175,7 @@ provider.register();
 - **写 `spanMapper`**：不方便动应用时，在 agent 上声明一个纯函数，渲染前把私有 span 翻成上表的语义。`tagSpan`（把判定写回 span，原有属性只增不改）和 `heuristicTag`（通用兜底判定）都从 `niceeval/adapter` 导出：
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent, tagSpan, heuristicTag } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, tagSpan, heuristicTag } from "niceeval/adapter";
 import type { TraceSpan } from "niceeval";
 
 function mapMySpans(spans: TraceSpan[]): TraceSpan[] {
@@ -191,7 +191,7 @@ function mapMySpans(spans: TraceSpan[]): TraceSpan[] {
   });
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-agent",
   evidenceCoverage: completeEvidenceCoverage,
   spanMapper: mapMySpans,

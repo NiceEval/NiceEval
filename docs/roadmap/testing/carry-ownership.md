@@ -18,7 +18,7 @@ Repo 中运行安装后的 `pnpm exec niceeval exp`，从公开 `--dry --json` �
 2. 下一次 dry plan 报告全部可携入；
 3. 正常运行的实际携入数与计划一致；
 4. 修改 config 后所有 Attempt 失去携入资格；
-5. `full → partial → full` 后，未变化 Eval 仍能从更早运行携入（`regression: 85cafd7d`）。
+5. `full → partial → full` 后，未变化 Eval 仍能从更早运行携入（`regression: memory/rerun-with-eval-filter-partial-snapshot.md`）。
 
 这组测试不读取 `EvalManifest`、`FingerprintComparison`、planner dispatch group 或 `.niceeval/` 私有布局。它只在公开边界
 上证明“用户最终复用了什么”，并在 dry、run、partial-run 三个接缝分别失败，而不是把所有错误折叠成最后一个计数。

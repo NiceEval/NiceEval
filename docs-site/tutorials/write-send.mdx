@@ -32,11 +32,11 @@ The minimal `send` does exactly three things: send `input.text` to the app's int
 
 ```ts
 // agents/chat-app.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";   // to switch the URL per experiment, make it a factory option: see the integration guide
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "chat-app",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -90,14 +90,14 @@ The storyline's interface is the former:
 
 ```ts
 // agents/chat-app.ts
-import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineAgent } from "niceeval/adapter";
 
 const BASE_URL = "http://localhost:8080";
 
 interface Msg { role: "user" | "assistant"; content: string | null }
 const historySlot = createSessionSlot<Msg[]>("chat-app/history");
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "chat-app",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -245,7 +245,7 @@ HITL almost always happens on streaming interfaces (pausing mid-stream), so this
 
 ```ts
 // agents/my-app.ts
-import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -270,7 +270,7 @@ function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: Pi
   });
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "my-app",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {

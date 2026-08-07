@@ -49,6 +49,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [compose-project-namespace-escape-destabilizes-case-identity](compose-project-namespace-escape-destabilizes-case-identity.md) — 10 个 Terminal-Bench Compose Eval 把逐次随机容器名塞进 fingerprinted env,导致 CaseKey/private identity 每次规划漂移；修法是 Provider 规划期拒绝受管资源逃逸 project namespace,下游删除 `container_name` nonce
 - [reuse-ensure-lifetime-generic-bookkeeping-fake](reuse-ensure-lifetime-generic-bookkeeping-fake.md) — resolve.ts 通用 ensureLifetime 本地时钟记账,e2b/vercel 对 lifetimeMs 零引用,E2B 30 分钟杀实例而 runner 一路 ready:true;修法=删通用包装,未实现 provider 派发前硬失败(reuse.md 契约已在)
 - [e2b-deadline-lifetime-default](e2b-deadline-lifetime-default.md) — bounded E2B Attempt 未声明 lifetimeMs 时曾落到 SDK 五分钟默认并在 diff/cleanup 前消失；修为 deadline + 30s 收尾预留的创建请求，显式较短值创建前失败，reuse/fresh 共用强类型解析入口
 - [one-shot-sandbox-misses-deadline-remaining](one-shot-sandbox-misses-deadline-remaining.md) — 发现(未修):`deadlineAt` 只有复用池传得下去,一次性沙箱每条命令各拿一整份 `timeoutMs` 而不是 deadline 剩余量;症状被 runner 的硬超时盖住,修法=`createMaterializedCase` 透传 deadlineAt

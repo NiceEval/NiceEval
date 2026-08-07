@@ -13,7 +13,7 @@
 // mcp__demo-tools__calculate 一个(应用 agent.ts 里的 GATED_TOOL_NAME,这里必须写死同一个
 // 字符串),`driveFrameStream` 的 onFrame 钩子扫 derived 事件认出它就返回 `{ pause }`;
 // 下一轮先打 /api/chat/approve 再继续读同一条流。
-import { completeEvidenceCoverage, createSessionSlot, defineDirectAgent, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionSlot, defineAgent, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, ClaudeSdkStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -112,7 +112,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, createClaudeSdkEventStream());
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "claude-sdk",
   evidenceCoverage: completeEvidenceCoverage,
   send,

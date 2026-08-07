@@ -98,7 +98,7 @@ The rules:
 - **Timing**: `setup` hooks run first — after the Sandbox is created and before the git baseline. The files they write go into the baseline and are not counted in the agent's diff. `teardown` hooks run last — after the Adapter's `teardown` and before the Sandbox is destroyed. That is exactly the right moment to save state to an external store.
 - **Trigger rule**: `teardown` runs if and only if the same Sandbox's `setup` point was reached — a `setup` throw does not exempt it, so cleanup code must defend against handles that may not have been assigned; if `setup` never ran (the Sandbox failed to be created), `teardown` is skipped too.
 - **Failure semantics**: if a `setup` hook throws, the attempt is recorded as `errored` (an environment problem, not the Agent getting the task wrong). A `teardown` hook can report a diagnostic and, by default, does not change the verdict you already have. If some cleanup action is a precondition for the result to be valid, throw — the runner records it explicitly as a fatal error.
-- **Agents without a sandbox**: an Agent built with `defineDirectAgent` has no sandbox, the `sandbox` field does not apply to it, and the hooks never run.
+- **Agents without a sandbox**: an Agent built with `defineAgent` has no sandbox, the `sandbox` field does not apply to it, and the hooks never run.
 
 ### Pass setup's output to teardown
 

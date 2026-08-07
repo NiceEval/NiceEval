@@ -5,12 +5,12 @@ Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合�
 
 ## Direct Agent
 
-被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineDirectAgent`：
+被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
 
 ```ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {
@@ -34,7 +34,7 @@ model、reasoning effort 与实验 flags 来自 `ctx`，由 experiment 决定。
 `setup`、`send`、`teardown` 中的 `ctx` 都提供 `progress` 与 `diagnostic`,runner 会把它们绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown`:
 
 ```ts
-export default defineDirectAgent({
+export default defineAgent({
   name: "support-bot",
   evidenceCoverage: completeEvidenceCoverage,
   async send(input, ctx) {

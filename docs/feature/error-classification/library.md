@@ -112,7 +112,7 @@ export function acmeAgent() {
 - **只声明决策与词,不碰策略**:重试几次、退避多久、闸怎么落都归执行体,对所有 agent 一致;`reason` 只出现在 activity 行与文案里(上例批跑时会看到 `turn retry 2/4 (acme_queue_full)`),不进任何分支；`acceptance !== "rejected"` 时[受理证据门](architecture.md#分类链)会否决可重试判断。
 - **歧义文案默认不归可重试**:流中断、响应中途重置、空事件或一句限流文案都不足以证明未受理；只有协议的 admission 状态、code 或 transport 阶段能给 `rejected`。判据全文见 [README · 分类](README.md#分类)。
 
-内置 adapter 与自定义 adapter(`defineDirectAgent` / `defineSandboxAgent`)同一挂载面,没有第二条注册通道。
+内置 adapter 与自定义 adapter(`defineAgent` / `defineSandboxAgent`)同一挂载面,没有第二条注册通道。
 
 ## 相关阅读
 

@@ -32,11 +32,13 @@ export function liveSandboxCount(): number {
 }
 
 /**
- * 带超时地停单个沙箱。成功 / 失败 / 超时都从登记表移除(失败的靠 provider 过期兜底),
- * 异常打到 stderr 不再静默吞。供 Sample finalizer 与兜底强清共用,避免重复实现 stop 语义。
+ * 带超时地停单个沙箱。只有真实成功才从登记表移除；失败 / 超时保留所有权，让同轮后续
+ * 强清可以重试，进程退出后也仍可由 provider 元数据认领。异常打到 stderr 不再静默吞。
+ * 供 Sample finalizer 与兜底强清共用,避免重复实现 stop 语义。
  */
 export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_MS): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
   try {
     await Promise.race([
       sb.stop(),
@@ -44,6 +46,7 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
         timer = setTimeout(() => reject(new Error(t("sandbox.stopTimeout", { timeoutMs }))), timeoutMs);
       }),
     ]);
+    stopped = true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // 稳定 key 不含具体 sandbox id:同一类失败(如 provider 限流导致大批 stop 超时)去重折叠成
@@ -56,7 +59,7 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
     });
   } finally {
     if (timer) clearTimeout(timer);
-    live.delete(sb);
+    if (stopped) live.delete(sb);
   }
 }
 

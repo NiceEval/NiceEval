@@ -1,4 +1,4 @@
-import { defineDirectAgent } from "niceeval/adapter";
+import { defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 import type { StreamEvent, ToolName, Usage } from "niceeval";
 import type { AgentEvent, AgentResponse } from "../src/protocol.ts";
@@ -31,7 +31,7 @@ export function webAgent(opts: WebAgentOptions): Agent {
   if (!opts.baseUrl) throw new Error("webAgent 需要 baseUrl —— 被测 web agent 跑在哪由调用方传入。");
   const baseUrl = opts.baseUrl.replace(/\/$/, "");
 
-  return defineDirectAgent({
+  return defineAgent({
     name: "web-agent",
     // 自建 HTTP 协议只证明服务已回传的帧；usage 可选，且 HTTP/传输错误不能证明服务端
     // 已给出可评分终态，因此显式降级相关通道，不能伪报为 complete。

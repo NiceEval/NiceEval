@@ -6,7 +6,7 @@
 import { Effect } from "effect";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { defineDirectAgent, defineEval } from "../define.ts";
+import { defineAgent, defineEval } from "../define.ts";
 import {
   configDeltas,
   configIdentityForRun,
@@ -28,7 +28,7 @@ const DIRECT_RUN_INFO = {
 
 function makeRun(over: Partial<AgentRun> = {}): AgentRun {
   return {
-    agent: defineDirectAgent({
+    agent: defineAgent({
       name: "codex",
       evidenceCoverage: completeEvidenceCoverage,
       send: async () => ({ events: [], status: "completed" }),

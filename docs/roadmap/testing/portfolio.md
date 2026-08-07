@@ -54,6 +54,34 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 
 目标不是测试永远不改，而是测试变化与公开契约变化同范围。
 
+## 功能归属与 Bug 回归
+
+“功能测试”和“Bug 测试”不是两套平行目录。每条长期测试都先属于一个稳定功能；历史 Bug 只给其中一条有区分力的测试增加回归凭据。
+因此不建立 `bugs/`、`issues/` 或按日期分组的套件，也不把 issue 编号写进文件名和 `test()` 标题。
+
+三类文档各自回答不同问题：
+
+| 文档 | 回答的问题 | 测试怎样指向它 |
+|---|---|---|
+| Feature 契约文档 | 用户长期得到什么行为 | E2E 文件头用 `feature:`；优先链接 `docs/feature/**`，内部 CLI / package 边界链接其稳定 owner 文档 |
+| `docs/engineering/testing/**` | 哪些等价类和边界由哪个测试拥有 | Unit 沿用机器检查的 `// cases:`；E2E owner 表只列文件与 lane |
+| `memory/**` | Bug 的现象、根因、修法和旧实现 kill 收据 | Unit 用 `// bug:`；E2E 用 `// regression:` |
+
+公开 issue 可以追加一行 `issue:`，但不能替代仓库内的 memory。issue 可能改标题、关闭或迁移；memory 必须保存复现条件、
+fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能区分旧实现。
+
+```ts
+// feature: docs/feature/reports/show/json.md
+// regression: memory/show-json-pipe-truncated-at-128k.md
+// issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
+test("show --json 经 pipe 仍交付完整文档", async () => {
+  // argv、公开观察和 expected 仍留在这里。
+});
+```
+
+没有历史 Bug 的功能测试只写功能归属。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
+若只能证明同类风险而没有 kill 收据，则写 `risk:` 或只链接 Feature 契约。
+
 ## 历史 Bug 回归
 
 Bug escape 后按顺序处理：
@@ -61,14 +89,14 @@ Bug escape 后按顺序处理：
 1. 找本应捕获它的现有 owner；
 2. owner 命题正确但 fixture / 断言无区分力时，修它，不并排建第二套；
 3. 只有现有 owner 无法表达独立错误算法或真实边界时，才新增测试；
-4. 在测试头写 `regression: <fix commit / memory>`，标题仍描述长期结果；
+4. 在测试头写 `regression: memory/<条目>.md`，标题仍描述长期结果；
 5. 用 fix parent、历史 worktree 或最小逆补丁确认新测试会红；当前候选应绿；
 6. 删除被替代的重复测试。
 
 无法杀死旧实现的 case 只能叫补充验证，不能宣称“防住了这个历史 bug”。
 按现象类比也不够：HTTP 两页 cursor 不能代替 SDK paginator，普通 5xx 不能代替 pseudo-E2E 的候选包边界，locator 往返也不能
-代替共享 mutation 的顺序 bug。`regression` 需要同时保存旧实现失败的断言与最早失败阶段；没有 kill 收据时写
-`risk:` 或公开契约链接，不挂历史 commit。
+代替共享 mutation 的顺序 bug。`regression` 指向的 memory 需要同时保存旧实现失败的断言与最早失败阶段；没有 kill 收据时写
+`risk:` 或公开契约链接，不只挂历史 commit 或 issue。
 
 ## 迁移与退役
 

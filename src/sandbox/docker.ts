@@ -28,6 +28,7 @@ import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
+import type { DockerSandboxResources } from "./layer.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -129,11 +130,120 @@ export interface DockerSandboxOptions {
    * Compose service `user:` 或其镜像 `USER`。
    */
   user?: string;
+  /** `rootless` = 请求 privileged，但只允许连接显式 rootless Unix daemon。 */
+  privileged?: "disabled" | "rootless";
+  /** 创建容器时交给 daemon 强制执行的资源边界。 */
+  resources?: Readonly<DockerSandboxResources>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md
    * 「PATH:受管变量与 pathPrepend」)。
    */
   pathPrepend?: readonly string[];
+}
+
+export function assertRootlessPrivilegedDaemon(
+  info: {
+    readonly ID?: string;
+    readonly SecurityOptions?: readonly string[];
+    readonly DockerRootDir?: string;
+    readonly CgroupDriver?: string;
+    readonly CgroupVersion?: string;
+  },
+  dockerHost = process.env.DOCKER_HOST,
+  expected = {
+    daemonId: process.env.NICEEVAL_ROOTLESS_DOCKER_ID,
+    dataRoot: process.env.NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT,
+  },
+): void {
+  if (dockerHost === undefined || !dockerHost.startsWith("unix://")) {
+    throw new Error(
+      'privileged Docker sandbox requires an explicit rootless Unix DOCKER_HOST; no default socket or TCP endpoint is allowed',
+    );
+  }
+  const socketPath = dockerHost.slice("unix://".length);
+  if (socketPath === "/var/run/docker.sock" || socketPath === "/run/docker.sock") {
+    throw new Error("privileged Docker sandbox refuses the host rootful Docker socket");
+  }
+  const securityOptions = info.SecurityOptions ?? [];
+  if (!securityOptions.some((entry) => /(?:^|[=,])rootless(?:$|[=,])/i.test(entry))) {
+    throw new Error("privileged Docker sandbox requires a daemon whose SecurityOptions report rootless");
+  }
+  if (info.CgroupVersion !== "2" || info.CgroupDriver !== "systemd") {
+    throw new Error(
+      `privileged Docker sandbox requires delegated cgroup v2 with the systemd driver; got ` +
+      `version=${info.CgroupVersion ?? "unknown"}, driver=${info.CgroupDriver ?? "unknown"}`,
+    );
+  }
+  if (expected.daemonId === undefined || expected.daemonId === "") {
+    throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_ID attestation");
+  }
+  if (info.ID !== expected.daemonId) {
+    throw new Error(
+      `privileged Docker sandbox daemon ID does not match NICEEVAL_ROOTLESS_DOCKER_ID ` +
+      `(expected ${expected.daemonId}, got ${info.ID ?? "unknown"})`,
+    );
+  }
+  if (expected.dataRoot === undefined || expected.dataRoot === "") {
+    throw new Error("privileged Docker sandbox requires NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT attestation");
+  }
+  if (info.DockerRootDir !== expected.dataRoot) {
+    throw new Error(
+      `privileged Docker sandbox DockerRootDir does not match NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT ` +
+      `(expected ${expected.dataRoot}, got ${info.DockerRootDir ?? "unknown"})`,
+    );
+  }
+}
+
+function dockerStatusCode(error: unknown): number | undefined {
+  return typeof error === "object" && error !== null && "statusCode" in error
+    ? (error as { readonly statusCode?: number }).statusCode
+    : undefined;
+}
+
+function benignStopError(error: unknown): boolean {
+  const status = dockerStatusCode(error);
+  return status === 304 || status === 404;
+}
+
+function benignRemoveError(error: unknown): boolean {
+  return dockerStatusCode(error) === 404;
+}
+
+export function dockerHostConfig(
+  privileged: "disabled" | "rootless",
+  resources: Readonly<DockerSandboxResources>,
+): Docker.HostConfig {
+  const nanoCpus = resources.cpus === undefined ? undefined : Math.round(resources.cpus * 1_000_000_000);
+  if (nanoCpus !== undefined && !Number.isSafeInteger(nanoCpus)) {
+    throw new TypeError("Docker sandbox resources.cpus is too large to encode as NanoCpus");
+  }
+  const tmpfs = resources.tmpfs === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(resources.tmpfs).map(([path, options]) => [
+        path,
+        [
+          "rw",
+          "exec",
+          "nosuid",
+          "nodev",
+          `size=${options.sizeBytes}`,
+          ...(options.mode === undefined ? [] : [`mode=${options.mode.toString(8).padStart(4, "0")}`]),
+          ...(options.uid === undefined ? [] : [`uid=${options.uid}`]),
+          ...(options.gid === undefined ? [] : [`gid=${options.gid}`]),
+        ].join(","),
+      ]));
+  return {
+    AutoRemove: false,
+    // Privileged rootless supervisor 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
+    ...(privileged === "disabled" ? { ExtraHosts: ["host.docker.internal:host-gateway"] } : {}),
+    ...(privileged === "rootless" ? { Privileged: true } : {}),
+    ...(nanoCpus === undefined ? {} : { NanoCpus: nanoCpus }),
+    ...(resources.memoryBytes === undefined ? {} : { Memory: resources.memoryBytes }),
+    ...(resources.memoryBytes === undefined ? {} : { MemorySwap: resources.memoryBytes }),
+    ...(resources.pidsLimit === undefined ? {} : { PidsLimit: resources.pidsLimit }),
+    ...(resources.readOnlyRootfs === true ? { ReadonlyRootfs: true } : {}),
+    ...(tmpfs === undefined ? {} : { Tmpfs: tmpfs }),
+  };
 }
 
 /** `stop()` 时是否销毁容器。Compose 主容器由资源组 `compose down` 回收,附着句柄只松绑。 */
@@ -145,7 +255,7 @@ export type DockerSandboxReleaseMode = "destroy" | "detach";
  */
 export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapability {
   readonly workdir: string;
-  readonly otlpHost = "host.docker.internal";
+  readonly otlpHost: string | null;
   private docker: Docker;
   private container: Docker.Container | null = null;
   private _containerId = "";
@@ -162,6 +272,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
   private readonly userOverride?: string;
+  private readonly privileged: "disabled" | "rootless";
+  private readonly resources: Readonly<DockerSandboxResources>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
@@ -190,6 +302,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
+    this.privileged = options.privileged ?? "disabled";
+    this.otlpHost = this.privileged === "rootless" ? null : "host.docker.internal";
+    this.resources = options.resources ?? {};
     this.pathPrepend = options.pathPrepend ?? [];
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
   }
@@ -271,7 +386,19 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
       // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
-      await sandbox.container?.remove({ force: true }).catch(() => {});
+      try {
+        await sandbox.container?.remove({ force: true });
+        sandbox.container = null;
+      } catch (cleanupError) {
+        if (benignRemoveError(cleanupError)) {
+          sandbox.container = null;
+        } else {
+          throw new AggregateError(
+            [e, cleanupError],
+            "Docker sandbox initialization failed and its partially created container could not be removed",
+          );
+        }
+      }
       throw e;
     }
     return sandbox;
@@ -283,6 +410,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
       throw new Error(t("docker.unsupportedRuntime", { runtime: this.runtime }));
+    }
+
+    if (this.privileged === "rootless") {
+      assertRootlessPrivilegedDaemon(await this.docker.info());
     }
 
     // 确保镜像在本地。
@@ -314,15 +445,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         ...(this.runIdentity ? dockerRunIdentityLabels(this.runIdentity) : {}),
       },
       Tty: true,
-      HostConfig: {
-        // 不带 AutoRemove:留存意图必须在创建期传入(--keep-sandbox 的 suspend = docker stop,
-        // 停驻容器的文件系统落盘持久)。默认路径的销毁由 stop() 显式 stop + remove,行为等价;
-        // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
-        AutoRemove: false,
-        // 容器经 host.docker.internal 回连宿主上的 OTLP 接收器(tracing agent 用)。
-        // Docker Desktop 自带这个名字;Linux 需显式映到 host-gateway,这里统一加上。
-        ExtraHosts: ["host.docker.internal:host-gateway"],
-      },
+      // 不带 AutoRemove:留存意图必须在创建期传入(--keep-sandbox 的 suspend = docker stop,
+      // 停驻容器的文件系统落盘持久)。默认路径的销毁由 stop() 显式 stop + remove,行为等价;
+      // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
+      // host.docker.internal 供容器回连宿主 OTLP；Linux 显式映到 host-gateway。
+      HostConfig: dockerHostConfig(this.privileged, this.resources),
     });
 
     this._containerId = this.container.id;
@@ -810,17 +937,28 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       this.container = null;
       return;
     }
+    const container = this.container;
+    const cleanupErrors: unknown[] = [];
     try {
-      await this.container.stop({ t: 0 }); // 立即停止
-    } catch {
-      // 容器可能已停止或被移除,忽略。
+      await container.stop({ t: 0 }); // 立即停止
+    } catch (error) {
+      if (!benignStopError(error)) cleanupErrors.push(error);
     }
+    let removed = false;
     try {
-      await this.container.remove({ force: true });
-    } catch {
-      // 已被移除,忽略。
+      await container.remove({ force: true });
+      removed = true;
+    } catch (error) {
+      if (benignRemoveError(error)) {
+        removed = true;
+      } else {
+        cleanupErrors.push(error);
+      }
     }
-    this.container = null;
+    if (removed && this.container === container) this.container = null;
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(cleanupErrors, `failed to destroy Docker sandbox ${this.sandboxId}`);
+    }
   }
 
   /**

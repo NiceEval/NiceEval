@@ -3,7 +3,6 @@
   "id": "lifecycle",
   "areas": [
     "runner",
-    "sandbox",
     "lifecycle"
   ],
   "lanes": [

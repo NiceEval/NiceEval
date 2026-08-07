@@ -132,7 +132,7 @@ export type EvidenceCoverageEntry =
 /**
  * 覆盖声明(EvidenceCoverage):完整性不是口头承诺,是随数据走的声明
  * (见 docs/feature/adapters/architecture/evidence.md)。两层:
- * - Agent 级默认(`defineDirectAgent` / `defineSandboxAgent` 的 `evidenceCoverage`)必须逐一声明
+ * - Agent 级默认(`defineAgent` / `defineSandboxAgent` 的 `evidenceCoverage`)必须逐一声明
  *   六个通道；官方 SDK 适配器可使用 `completeEvidenceCoverage`。
  * - Turn 级降级(`Turn.evidenceCoverage`)只用于相对 Agent 默认值降级。
  */
@@ -588,7 +588,7 @@ export interface SandboxAgentDef {
   teardown?: AgentTeardown;
 }
 
-/** `defineDirectAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
+/** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
 export interface DirectAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;

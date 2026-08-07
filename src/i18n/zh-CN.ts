@@ -342,7 +342,7 @@ export const zhCN = {
     "agent \"{{agent}}\" 不是沙箱型(defineSandboxAgent 构造),t.{{method}} 这类断言只有沙箱型 agent 可用。换用 defineSandboxAgent 构造的 agent,或去掉这条断言。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/sandbox-agent.mdx",
   "context.skipEmpty": "skip() 需要一个非空理由。",
-  "define.agentNameRequired": "defineDirectAgent 需要 name。",
+  "define.agentNameRequired": "defineAgent 需要 name。",
   "define.evalIdRejected": "defineEval 不接受 id —— id 由文件路径推导。",
   "define.evalEnvironmentEmpty": "defineEval 的 environment 如有提供，必须是非空的 profile id。",
   "define.evalTestRequired": "defineEval 需要一个 async test(t) 函数。",

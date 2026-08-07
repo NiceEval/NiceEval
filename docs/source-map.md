@@ -12,7 +12,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 公开导出(`niceeval`,eval 作者用的核心面) | `src/index.ts` |
 | 公开导出(`niceeval/adapter`,Agent/Adapter) | `src/agents/index.ts` |
 | 公开导出(`niceeval/sandbox`,Sandbox) | `src/sandbox/index.ts` |
-| `defineEval` / `defineConfig` / `defineExperiment` / `defineDirectAgent` / `defineSandboxAgent` / `defineSandbox` | `src/define.ts` |
+| `defineEval` / `defineConfig` / `defineExperiment` / `defineAgent` / deprecated alias `defineDirectAgent` / `defineSandboxAgent` / `defineSandbox` | `src/define.ts` |
 | `requireEnv` / 工具 | `src/util.ts` |
 
 ## Agents 与 Adapters([入口](feature/adapters/README.md) / [库用法](feature/adapters/library.md) / [架构](feature/adapters/architecture.md))
@@ -25,7 +25,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | `AgentContext.experimentId`(路径推导的实验 id,与结果归属同源;沙箱生命周期 Hook 按它隔离跨 attempt 状态) | `src/agents/types.ts`(`AgentContext.experimentId`) |
 | 能力调用守卫(缺声明的动作第一次调用即报清晰错误;conversation gate 第二轮起) | `src/context/context.ts`(`capabilityGuard`) |
 | 逐 API 适配义务(send / newSession / respond 的运行器侧翻译) | `src/context/session.ts`(`SessionManager` / `RunSession`)、`src/context/context.ts` |
-| `defineSandboxAgent` / `defineDirectAgent`(`kind: "sandbox" | "direct"`,无能力位字段) | `src/define.ts` |
+| `defineSandboxAgent` / `defineAgent`(`kind: "sandbox" | "direct"`,无能力位字段) / `defineDirectAgent` deprecated alias | `src/define.ts` |
 | `shared` 工具袋(会话定位、JSONL 提取、shell quoting、失败摘要与协议 parser；Sandbox IO 只用 `SandboxOperations`) | `src/agents/shared.ts` |
 | 采集矩阵(collection.md:每 agent 的通道 / 字段来源) | `src/agents/{claude-code,codex,bub}.ts`(采集)+ `src/o11y/parsers/*.ts`(字段提取) |
 | `turnFromAiSdk`(AI SDK 结果 → 标准事件流,v4/v5/v7 字段漂移兼容;v7 tool approval → `input.requested` + `status: "waiting"`) | `src/agents/ai-sdk.ts`(+ 同目录 `.test.ts`) |
@@ -49,7 +49,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 |---|---|
 | 两轴词表(`FailureScope` / `FailureClass` / `AttemptFailureInfo` / `AttemptFailureClassifier`)、 fatal 错误类(`ExperimentFatalError` / `EvalFatalError`)、结构守卫 `failureClassOf`、生命周期分类链(`resolveAttemptFailureClass` / `attemptFailureInfo`) | `src/shared/failure-class.ts`(全仓单源,零 effect 依赖;sandbox provisioning 分类共享这份词表) |
 | send 链决议 `resolveSendFailureClass`、保守回退分类器、`SendFailure.acceptance` 受理证据门、`sendFailureText`、`SendFailureClassifier` | `src/context/send-failures.ts` |
-| `Agent.classifySendFailure` 挂载面(`SandboxAgentDef` / `DirectAgentDef` / `Agent`) | `src/agents/types.ts`;经 `src/define.ts` 的 `defineSandboxAgent` / `defineDirectAgent` 透传 |
+| `Agent.classifySendFailure` 挂载面(`SandboxAgentDef` / `DirectAgentDef` / `Agent`) | `src/agents/types.ts`;经 `src/define.ts` 的 `defineSandboxAgent` / `defineAgent` 透传 |
 | 重试执行体 `sendWithTurnRetry`(两层预算、指数全抖动退避、`ConcurrencySlot` 槽位释放、activity 与耗尽摘要) | `src/context/send-retry.ts` |
 | 挂载点:包住 `agent.send(...)` 的那一次调用(非 otel / otel 两条路径) | `src/context/session.ts`(`SessionManager.sendSerialized` / `sendWithOtel`) |
 | `concurrencySlot`(globalSem / 实验级 runSem 的临时释放/收回)从 run 级信号量到 context 的透传 | `src/runner/run.ts` → `src/runner/attempt.ts`(`runAttemptEffect` / `AttemptResources`)→ `src/context/context.ts`(`ContextDeps.concurrencySlot`) |

@@ -1,6 +1,6 @@
 // niceeval/adapter 公开导出:「连到哪个 AI」相关的类型 + 内置 adapter + 自定义 adapter 的入口。
 
-export { defineDirectAgent, defineSandboxAgent } from "../define.ts";
+export { defineAgent, defineDirectAgent, defineSandboxAgent } from "../define.ts";
 export { createSessionSlot } from "./session-slot.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";

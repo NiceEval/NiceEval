@@ -44,7 +44,7 @@ E2E CI 同时证明以下行为：
 - 不 import 另一个测试仓库，也不 import niceeval 根仓中的 `e2e/shared`、`src/` 或测试辅助源码。
 - 不使用指向父目录的 `file:` / `link:` 依赖。
   待测 niceeval 由执行器通过候选包注入。
-- 不包含 `agents/` 或等价的本地 Adapter 实现层，不调用 `defineDirectAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent。
+- 不包含 `agents/` 或等价的本地 Adapter 实现层，不调用 `defineAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent。
   官方工厂不够用就是产品缺口，不在 E2E 中补胶水。
 - `.niceeval/`、服务日志和 JUnit 属于一次运行的临时证据，必须被 ignore，不得成为下一次运行的输入。
 - 从父目录复制到一个临时目录后，仍能在只注入候选包和 secrets 的条件下执行。
@@ -346,7 +346,7 @@ E2E 矩阵里不存在脚本化 Agent。
 无凭据环境的验证边界是 `pnpm test`。
 
 缺少完整官方工厂的 SDK 不进入矩阵：fixture 留在 `e2e/undo/`，覆盖缺口记录在[适配器域](adapter/README.md)。
-协议归一的验收只在真实运行里发生，E2E 不用本地 `defineDirectAgent` 把转换器包装成貌似完整的官方适配器；工厂落地前，该 SDK 的协议路径就是显式空白。
+协议归一的验收只在真实运行里发生，E2E 不用本地 `defineAgent` 把转换器包装成貌似完整的官方适配器；工厂落地前，该 SDK 的协议路径就是显式空白。
 
 ### 7.1 破坏性变更的矩阵修复
 

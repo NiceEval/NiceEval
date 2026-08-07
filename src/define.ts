@@ -59,9 +59,9 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
 }
 
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
-export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
+export function defineAgent(def: DirectAgentDef): DirectAgent {
   if (!def.name) throw new Error(t("define.agentNameRequired"));
-  assertEvidenceCoverage(def.evidenceCoverage, "defineDirectAgent");
+  assertEvidenceCoverage(def.evidenceCoverage, "defineAgent");
   return {
     name: def.name,
     kind: "direct",
@@ -74,6 +74,9 @@ export function defineDirectAgent(def: DirectAgentDef): DirectAgent {
     teardown: def.teardown,
   };
 }
+
+/** @deprecated Use {@link defineAgent}. */
+export const defineDirectAgent = defineAgent;
 
 /** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
 export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> {

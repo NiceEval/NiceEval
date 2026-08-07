@@ -77,7 +77,7 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 
 const dry = await niceeval.run([
-  "exp", "smoke", "--dry", "--json",
+  "exp", "carry", "--dry", "--json",
 ]);
 ```
 
@@ -106,6 +106,10 @@ export function withProcess<T>(
 
 `withProcess()` 是默认入口。readiness 失败、轮询超时、断言异常和正常返回都会进入幂等 cleanup；默认按
 TERM → grace period → KILL 结束 owned process。正文已经让进程退出时，cleanup 是 no-op。
+
+`handle.signal()` 永远只向启动的根进程 PID 发送产品刺激。`processGroup: true` 只改变 `dispose()` 与 timeout 的兜底范围，
+让它们终止整组后代。两者不能混成一个动作：Lifecycle 测试若把 SIGINT 直接发给整组，就会由 Testkit 杀掉 backend，
+即使产品 teardown 已失效，资源断言也可能假绿。
 
 正文和 cleanup 同时失败时抛 `AggregateError([bodyError, cleanupError])`，主错误排第一并作为 cause。只有 cleanup 失败时，
 直接抛 cleanup error。
@@ -151,6 +155,7 @@ export function pollUntil<T>(
 `waitForOutput` 先检查句柄从 spawn 起保存的字节，再订阅新 chunk，不能因 waiter 挂得稍晚而漏掉 readiness。
 `only` 只检查“恰好一个”，谓词与对象身份留在测试。`pollUntil` 只负责时间和最后一次错误；`/health`、信息文件、HTTP 状态等
 ready 条件由 Repo 提供。
+`withTempDir` 在系统临时目录下为每次调用创建唯一路径，并在正文成功或失败后删除。它用于短命 fixture 收据，不用于要收集的结果根、JUnit 或 trace。
 
 ### 隔离目录与本地 HTTP
 

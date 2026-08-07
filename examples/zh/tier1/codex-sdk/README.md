@@ -37,7 +37,7 @@ adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不
 
 ## 接入验证过什么
 
-`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`defineAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
 `createCodexThreadEventStream` 完整转换 `ThreadEvent`，因此使用
 `completeEvidenceCoverage`。能力仍从 `send` 实际做到的事、`events` 里的证据自然成立：
 

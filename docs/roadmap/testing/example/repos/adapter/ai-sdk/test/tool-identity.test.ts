@@ -11,6 +11,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 // Adapter 兼容性 Repo；exp/show 只是公开证据读回手段，不承担通用功能矩阵。
 // NiceEval 根目录：pnpm e2e --repo adapter/ai-sdk
 // 已安装候选包的独立 ai-sdk Repo 根：pnpm test
+// feature: docs/feature/adapters/sdk/ai-sdk/README.md
 
 interface HistorySection {
   experimentId: string;

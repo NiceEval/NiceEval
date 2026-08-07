@@ -65,7 +65,7 @@ export default defineConfig({
 
 按第 1 步选中的方向读完对应文档后，依次写：
 
-1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——用 `defineDirectAgent` 实现 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [Adapter 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身；**`evidenceCoverage` 必须按实际映射如实声明**——只把最终文本映射出来就不要用 `completeEvidenceCoverage`，声明会影响断言完整性，虚报比保守更糟。
+1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——用 `defineAgent` 实现 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [Adapter 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身；**`evidenceCoverage` 必须按实际映射如实声明**——只把最终文本映射出来就不要用 `completeEvidenceCoverage`，声明会影响断言完整性，虚报比保守更糟。
 2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`attempts` 等。模型对比写两个实验文件，各自钉一个 `model`；`evals: (eval) => boolean` 决定各自本次运行哪些评估用例。路径只负责 id 和批量运行，报告消费当前 Sample 的物理结果与覆盖事实。
 3. **评估用例**（`evals/*.eval.ts`）——**先探明这个应用是干嘛的，再写一条贴着它真实功能的评估用例**：读它的 README、路由、工具定义或系统提示，找出它的核心用例（客服机器人就问一条真实的客服问题、SQL agent 就给一个真实的查询任务），拿这个用例做第一条评估用例的输入和断言。两类输入都不合格：「你好」这种和应用无关的占位输入，以及「你是什么/你能做什么」这种**问被测系统它自己的元问题**——那不是用户拿它干活的用例。形式上仍从最小写起：一句输入，`t.succeeded()` + 一个针对预期回答的内容断言——但最小形式只是调通的脚手架，不是交付标准，收尾前还要满足两条：
    - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）；断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `t.judge` 做语义判定。

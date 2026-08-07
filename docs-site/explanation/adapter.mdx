@@ -24,7 +24,7 @@ The system under test's URL, auth, and protocol details are passed in through th
 
 ```ts
 // agents/web-agent.ts
-import { completeEvidenceCoverage, defineDirectAgent } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
 interface WebAgentOptions {
@@ -35,7 +35,7 @@ interface WebAgentOptions {
 export function webAgent(options: WebAgentOptions): Agent {
   const baseUrl = options.baseUrl.replace(/\/$/, "");
 
-  return defineDirectAgent({
+  return defineAgent({
     name: "web-agent",
     evidenceCoverage: completeEvidenceCoverage,
     async send(input, ctx) {

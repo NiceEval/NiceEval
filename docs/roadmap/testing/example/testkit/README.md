@@ -22,8 +22,8 @@
 
 - [CLI pipe](../repos/cli/test/show-json-pipe.test.ts)：`command()` 与收据的 `json()`；128 KiB、sentinel 和 bug 引用仍可见。
 - [Runner carry](../repos/runner/test/carry-reuse.test.ts)：`withProjectCopy()` 拥有副本生命周期；排除项、链接策略、
-  schemaVersion、reused 关系与 `85cafd7d` 留在正文。
-- [Lifecycle](../repos/lifecycle/test/interrupt-cleanup.test.ts)：单测试使用 `withProcess()`；
+  schemaVersion、reused 关系与对应 memory 留在正文。
+- [Lifecycle](../repos/lifecycle/test/interrupt-cleanup.test.ts)：`withTempDir()` 为每条 case 分配控制文件，`withProcess()` 拥有进程；
   signal、teardown、PID、端口和下一消费者仍由测试断言。
 - [Report](../repos/report/test/exported-navigation.spec.ts)：Testkit 只运行 CLI；浏览器仍使用 Playwright Test 的 `page` fixture。
 - [Journey](../repos/report/test/first-eval-to-debug.spec.ts)：与 Report 共用消费现场，`withProjectCopy()` 隔离新项目；
@@ -41,6 +41,9 @@
 两组调用点只共享 API 实现，不共享场景 Repo。功能测试不会从 `adapter/ai-sdk` 借 backend 或运行结果；Adapter 测试也不会
 通过 Testkit 获得 CLI、Report 或 Runner 的领域动作函数。
 
+`ProcessHandle.signal()` 只刺激根进程；`processGroup: true` 只让 `dispose()` 与 timeout 的兜底终止整组。
+Lifecycle 因此能证明 backend 是被产品 teardown 释放的，不会由 Testkit 提前杀掉被测资源。
+
 核心 Unit 不在这里套一层统一 DSL。[`example/unit/`](../unit/) 继续使用 Vitest、最小领域 fixture、fake clock 或 barrier；
 Testkit 不会仅为了让 Unit 与 E2E import 同一个包而接管这些能力。
 
@@ -57,7 +60,7 @@ const document = receipt.json<AttemptDocument>();
 不能抽取：
 
 ```ts
-await testkit.runCarryScenario("smoke");
+await testkit.runCarryScenario("carry");
 await testkit.expectAttemptPassed(locator);
 await testkit.openReportAttempt(page, locator);
 ```

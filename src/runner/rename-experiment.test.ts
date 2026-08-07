@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
-import { defineDirectAgent, defineEval, defineExperiment } from "../define.ts";
+import { defineAgent, defineEval, defineExperiment } from "../define.ts";
 import { createWriter } from "../record/writer.ts";
 import { openRecord } from "../record/open.ts";
 import { discoverEval, discoverExperiment } from "./types.ts";
@@ -51,7 +51,7 @@ function makeDefinitions(): { evals: readonly DiscoveredEval[]; experiments: rea
     privatePaths: [],
     source: { path: "evals/excluded.eval.ts", content: "fixture", sha256: "1".repeat(64) },
   });
-  const agent = defineDirectAgent({
+  const agent = defineAgent({
     name: "rename-agent",
     evidenceCoverage: completeEvidenceCoverage,
     send: async () => ({ events: [], status: "completed" }),

@@ -51,6 +51,11 @@ const SANDBOX_TEMPLATE_PLANNERS = new WeakMap<object, SandboxTemplatePlanner>();
 const SANDBOX_PROVIDER_BINDINGS = new WeakMap<object, SandboxProviderBinding>();
 const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-plan");
 
+// Runtime resource/privileged coverage changed without changing Dockerfile build bytes. Keep the
+// Dockerfile builder revision stable, but advance the provider-plan/fingerprint revision.
+const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-3";
+const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-2";
+
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
   prepare(command: SandboxCommand): SandboxLayer<Kind>;
@@ -85,6 +90,10 @@ export interface DockerfileSandboxOptions {
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用构建出的镜像 `USER`。 */
   readonly user?: string;
+  /** 仅允许在 rootless Docker daemon 上请求 privileged；rootful daemon 会在创建前拒绝。 */
+  readonly privileged?: "rootless";
+  /** 单容器的 CPU / 内存 / PID / tmpfs 硬边界。 */
+  readonly resources?: DockerSandboxResources;
   readonly lifetimeMs?: number;
   /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
   readonly pathPrepend?: readonly string[];
@@ -94,9 +103,29 @@ export interface DockerImageSandboxOptions {
   readonly image: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)。 */
   readonly user?: string;
+  /** 仅允许在 rootless Docker daemon 上请求 privileged；rootful daemon 会在创建前拒绝。 */
+  readonly privileged?: "rootless";
+  /** 单容器的 CPU / 内存 / PID / tmpfs 硬边界。 */
+  readonly resources?: DockerSandboxResources;
   readonly lifetimeMs?: number;
   /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
   readonly pathPrepend?: readonly string[];
+}
+
+export interface DockerSandboxTmpfsOptions {
+  readonly sizeBytes: number;
+  readonly mode?: number;
+  readonly uid?: number;
+  readonly gid?: number;
+}
+
+export interface DockerSandboxResources {
+  readonly cpus?: number;
+  readonly memoryBytes?: number;
+  readonly pidsLimit?: number;
+  /** 把镜像 rootfs 设为只读；需要写入的路径必须逐一声明为有界 tmpfs。 */
+  readonly readOnlyRootfs?: boolean;
+  readonly tmpfs?: Readonly<globalThis.Record<string, DockerSandboxTmpfsOptions>>;
 }
 
 export interface E2BSandboxOptions {
@@ -621,6 +650,90 @@ function lifetime(value: unknown, path: string): SandboxProviderLifetime {
   return Object.freeze({ _tag: "Configured", milliseconds: value });
 }
 
+function dockerPrivileged(value: unknown, path: string): "disabled" | "rootless" {
+  if (value === undefined) return "disabled";
+  if (value !== "rootless") throw new TypeError(`${path} must be \"rootless\" when configured`);
+  return "rootless";
+}
+
+function positiveFinite(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new TypeError(`${path} must be a positive finite number`);
+  }
+  return value;
+}
+
+function positiveSafeInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${path} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function nonNegativeSafeInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${path} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function dockerResources(value: unknown, path: string): Readonly<DockerSandboxResources> {
+  if (value === undefined) return Object.freeze({});
+  assertRecord(value, path);
+  assertOnlyKeys(value, ["cpus", "memoryBytes", "pidsLimit", "readOnlyRootfs", "tmpfs"], path);
+  if (value.readOnlyRootfs !== undefined && typeof value.readOnlyRootfs !== "boolean") {
+    throw new TypeError(`${path}.readOnlyRootfs must be a boolean`);
+  }
+  const tmpfs: globalThis.Record<string, DockerSandboxTmpfsOptions> = {};
+  if (value.tmpfs !== undefined) {
+    assertRecord(value.tmpfs, `${path}.tmpfs`);
+    for (const mountPath of Object.keys(value.tmpfs).sort()) {
+      if (!isAbsolute(mountPath) || resolve(mountPath) !== mountPath || mountPath === "/") {
+        throw new TypeError(`${path}.tmpfs keys must be normalized absolute paths other than /`);
+      }
+      const entry = value.tmpfs[mountPath];
+      assertRecord(entry, `${path}.tmpfs.${mountPath}`);
+      assertOnlyKeys(entry, ["sizeBytes", "mode", "uid", "gid"], `${path}.tmpfs.${mountPath}`);
+      const sizeBytes = positiveSafeInteger(entry.sizeBytes, `${path}.tmpfs.${mountPath}.sizeBytes`);
+      if (
+        entry.mode !== undefined &&
+        (typeof entry.mode !== "number" || !Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o7777)
+      ) {
+        throw new TypeError(`${path}.tmpfs.${mountPath}.mode must be an integer between 0 and 0o7777`);
+      }
+      const uid = entry.uid === undefined ? undefined : nonNegativeSafeInteger(entry.uid, `${path}.tmpfs.${mountPath}.uid`);
+      const gid = entry.gid === undefined ? undefined : nonNegativeSafeInteger(entry.gid, `${path}.tmpfs.${mountPath}.gid`);
+      tmpfs[mountPath] = Object.freeze({
+        sizeBytes,
+        ...(entry.mode === undefined ? {} : { mode: entry.mode }),
+        ...(uid === undefined ? {} : { uid }),
+        ...(gid === undefined ? {} : { gid }),
+      });
+    }
+  }
+  return Object.freeze({
+    ...(value.cpus === undefined ? {} : { cpus: positiveFinite(value.cpus, `${path}.cpus`) }),
+    ...(value.memoryBytes === undefined
+      ? {}
+      : { memoryBytes: positiveSafeInteger(value.memoryBytes, `${path}.memoryBytes`) }),
+    ...(value.pidsLimit === undefined
+      ? {}
+      : { pidsLimit: positiveSafeInteger(value.pidsLimit, `${path}.pidsLimit`) }),
+    ...(value.readOnlyRootfs === true ? { readOnlyRootfs: true } : {}),
+    ...(Object.keys(tmpfs).length === 0 ? {} : { tmpfs: Object.freeze(tmpfs) }),
+  });
+}
+
+function dockerRuntimeIdentity(
+  privileged: "disabled" | "rootless",
+  resources: Readonly<DockerSandboxResources>,
+): globalThis.Record<string, JsonValue> {
+  return {
+    ...(privileged === "disabled" ? {} : { privileged }),
+    ...(Object.keys(resources).length === 0 ? {} : { resources: resources as JsonValue }),
+  };
+}
+
 function stringRecord(value: unknown, path: string): Readonly<globalThis.Record<string, string>> {
   if (value === undefined) return Object.freeze({});
   assertRecord(value, path);
@@ -855,6 +968,8 @@ export interface DockerfileProviderPlan {
   readonly dockerfile: string;
   readonly buildArgs: Readonly<Record<string, string>>;
   readonly user: SandboxExecutionUser;
+  readonly privileged: "disabled" | "rootless";
+  readonly resources: Readonly<DockerSandboxResources>;
   readonly build: DockerfileBuildIdentity;
   readonly buildKey: BuildKey;
   readonly platform: string;
@@ -865,6 +980,8 @@ export interface DockerfileProviderPlan {
 export interface DockerImageProviderPlan {
   readonly image: string;
   readonly user: SandboxExecutionUser;
+  readonly privileged: "disabled" | "rootless";
+  readonly resources: Readonly<DockerSandboxResources>;
   readonly lifetime: SandboxProviderLifetime;
   readonly pathPrepend: readonly string[];
 }
@@ -937,6 +1054,16 @@ const dockerfileProviderModule = Object.freeze({
   ),
 } satisfies SandboxProviderModule<DockerfileProviderPlan>);
 
+/** tmpfs / 只读 rootfs 的状态不会跨 stop/restart 保留，不能向 --keep-sandbox 宣称 Suspendable。 */
+const dockerfileEphemeralProviderModule = Object.freeze({
+  ...dockerfileProviderModule,
+  id: "niceeval/dockerfile-ephemeral",
+  capabilities: Object.freeze({
+    ...dockerfileProviderModule.capabilities,
+    retention: Object.freeze({ _tag: "DestroyOnly" }),
+  }),
+} satisfies SandboxProviderModule<DockerfileProviderPlan>);
+
 const dockerImageProviderModule = Object.freeze({
   id: "niceeval/docker-image",
   capabilities: Object.freeze({
@@ -949,6 +1076,15 @@ const dockerImageProviderModule = Object.freeze({
     (runtime) => runtime.materializeDockerImageProviderPlan(plan, context),
   ),
   collectBuildPreparation: noBuildPreparation,
+} satisfies SandboxProviderModule<DockerImageProviderPlan>);
+
+const dockerImageEphemeralProviderModule = Object.freeze({
+  ...dockerImageProviderModule,
+  id: "niceeval/docker-image-ephemeral",
+  capabilities: Object.freeze({
+    ...dockerImageProviderModule.capabilities,
+    retention: Object.freeze({ _tag: "DestroyOnly" }),
+  }),
 } satisfies SandboxProviderModule<DockerImageProviderPlan>);
 
 const e2bProviderModule = Object.freeze({
@@ -1181,7 +1317,11 @@ export function createBuiltinSandboxFactories(
 
     dockerfileSandbox(options: DockerfileSandboxOptions) {
       assertRecord(options, "dockerfileSandbox options");
-      assertOnlyKeys(options, ["context", "dockerfile", "buildArgs", "user", "lifetimeMs", "pathPrepend"], "dockerfileSandbox options");
+      assertOnlyKeys(
+        options,
+        ["context", "dockerfile", "buildArgs", "user", "privileged", "resources", "lifetimeMs", "pathPrepend"],
+        "dockerfileSandbox options",
+      );
       const context = location(options.context, "dockerfileSandbox options.context");
       const dockerfile = options.dockerfile === undefined
         ? "Dockerfile"
@@ -1190,6 +1330,8 @@ export function createBuiltinSandboxFactories(
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerfileSandbox options.user") };
+      const privileged = dockerPrivileged(options.privileged, "dockerfileSandbox options.privileged");
+      const resources = dockerResources(options.resources, "dockerfileSandbox options.resources");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerfileSandbox options.pathPrepend");
       const identity: JsonValue = {
@@ -1199,6 +1341,7 @@ export function createBuiltinSandboxFactories(
         dockerfile,
         buildArgs: { ...buildArgs },
         user,
+        ...dockerRuntimeIdentity(privileged, resources),
         lifetime: plannedLifetime,
         ...pathPrependIdentityField(pathPrepend),
       };
@@ -1208,6 +1351,7 @@ export function createBuiltinSandboxFactories(
         publishableIdentity: {
           buildArgKeys: Object.keys(buildArgs).sort(),
           user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
+          ...dockerRuntimeIdentity(privileged, resources),
           lifetime: plannedLifetime,
           ...pathPrependIdentityField(pathPrepend),
         },
@@ -1229,28 +1373,39 @@ export function createBuiltinSandboxFactories(
             dockerfile,
             buildArgs: { ...buildArgs },
             user,
+            ...dockerRuntimeIdentity(privileged, resources),
             plannedBuildKey: build.buildKey,
             lifetime: plannedLifetime,
             ...pathPrependIdentityField(pathPrepend),
           };
           return sandboxProviderPlan({
             provider: "docker",
-            plannerRevision: DOCKERFILE_MATERIALIZER_REVISION,
+            plannerRevision: DOCKERFILE_PROVIDER_PLANNER_REVISION,
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerfileProviderModule,
+            module: resources.readOnlyRootfs === true || resources.tmpfs !== undefined
+              ? dockerfileEphemeralProviderModule
+              : dockerfileProviderModule,
             build: providerBuildPlan({
               caseKind: "on-demand-build",
               materializerRevision: DOCKERFILE_MATERIALIZER_REVISION,
               buildKeys: [build.buildKey],
-              caseParams: { provider: "docker", buildKey: build.buildKey, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              caseParams: {
+                provider: "docker",
+                buildKey: build.buildKey,
+                ...dockerRuntimeIdentity(privileged, resources),
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
             }),
             runtimePlan: Object.freeze({
               context: plannedContext,
               dockerfile,
               buildArgs,
               user: Object.freeze({ ...user }),
+              privileged,
+              resources,
               build,
               buildKey: build.buildKey,
               platform: plannedTargetPlatform(target),
@@ -1260,11 +1415,17 @@ export function createBuiltinSandboxFactories(
             publishableIdentity: {
               buildArgKeys: Object.keys(buildArgs).sort(),
               user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
+              ...dockerRuntimeIdentity(privileged, resources),
               buildKey: build.buildKey,
               lifetime: plannedLifetime,
               ...pathPrependIdentityField(pathPrepend),
             },
-            privateFingerprintIdentity: { runtimeIdentity, buildKey: build.buildKey, lifetime: plannedLifetime },
+            privateFingerprintIdentity: {
+              runtimeIdentity,
+              buildKey: build.buildKey,
+              ...dockerRuntimeIdentity(privileged, resources),
+              lifetime: plannedLifetime,
+            },
             identityMarker: build.providerIdentityMarker,
           });
           },
@@ -1280,38 +1441,85 @@ export function createBuiltinSandboxFactories(
 
     dockerImageSandbox(options: DockerImageSandboxOptions) {
       assertRecord(options, "dockerImageSandbox options");
-      assertOnlyKeys(options, ["image", "user", "lifetimeMs", "pathPrepend"], "dockerImageSandbox options");
+      assertOnlyKeys(
+        options,
+        ["image", "user", "privileged", "resources", "lifetimeMs", "pathPrepend"],
+        "dockerImageSandbox options",
+      );
       const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerImageSandbox options.user") };
+      const privileged = dockerPrivileged(options.privileged, "dockerImageSandbox options.privileged");
+      const resources = dockerResources(options.resources, "dockerImageSandbox options.resources");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerImageSandbox options.pathPrepend");
-      const identity: JsonValue = { provider: "docker", kind: "image", image, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) };
+      const identity: JsonValue = {
+        provider: "docker",
+        kind: "image",
+        image,
+        user,
+        ...dockerRuntimeIdentity(privileged, resources),
+        lifetime: plannedLifetime,
+        ...pathPrependIdentityField(pathPrepend),
+      };
       const publishedUser = { _tag: options.user === undefined ? "EnvironmentDefault" as const : "Configured" as const };
       return defineSandboxTemplate({
         provider: "docker",
         kind: "image",
-        publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+        publishableIdentity: {
+          source: "configured-image",
+          user: publishedUser,
+          ...dockerRuntimeIdentity(privileged, resources),
+          lifetime: plannedLifetime,
+          ...pathPrependIdentityField(pathPrepend),
+        },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
         plan: () => Effect.map(dockerTarget(), (target) => {
           return sandboxProviderPlan({
             provider: "docker",
-            plannerRevision: "docker-image-1",
+            plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: dockerImageProviderModule,
+            module: resources.readOnlyRootfs === true || resources.tmpfs !== undefined
+              ? dockerImageEphemeralProviderModule
+              : dockerImageProviderModule,
             build: providerBuildPlan({
               caseKind: "prebuilt",
-              materializerRevision: "docker-image-1",
+              materializerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
               buildKeys: [],
-              caseParams: { image, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+              caseParams: {
+                image,
+                user,
+                ...dockerRuntimeIdentity(privileged, resources),
+                lifetime: plannedLifetime,
+                ...pathPrependIdentityField(pathPrepend),
+              },
             }),
-            runtimePlan: Object.freeze({ image, user: Object.freeze({ ...user }), lifetime: plannedLifetime, pathPrepend }),
-            publishableIdentity: { source: "configured-image", user: publishedUser, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
-            privateFingerprintIdentity: { image, user, lifetime: plannedLifetime, ...pathPrependIdentityField(pathPrepend) },
+            runtimePlan: Object.freeze({
+              image,
+              user: Object.freeze({ ...user }),
+              privileged,
+              resources,
+              lifetime: plannedLifetime,
+              pathPrepend,
+            }),
+            publishableIdentity: {
+              source: "configured-image",
+              user: publishedUser,
+              ...dockerRuntimeIdentity(privileged, resources),
+              lifetime: plannedLifetime,
+              ...pathPrependIdentityField(pathPrepend),
+            },
+            privateFingerprintIdentity: {
+              image,
+              user,
+              ...dockerRuntimeIdentity(privileged, resources),
+              lifetime: plannedLifetime,
+              ...pathPrependIdentityField(pathPrepend),
+            },
             identityMarker: looksLikeDigestRef(image)
               ? undefined
               : unresolvedProviderFingerprintMarker(

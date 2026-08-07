@@ -24,7 +24,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { defineDirectAgent } from "../define.ts";
+import { defineAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
@@ -258,7 +258,7 @@ const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告�
  * ```
  */
 export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agent {
-  return defineDirectAgent({
+  return defineAgent({
     name: options.name ?? "ui-message-stream",
     evidenceCoverage: COVERAGE,
     tracing: options.tracing,

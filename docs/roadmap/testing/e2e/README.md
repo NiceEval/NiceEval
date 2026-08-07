@@ -35,7 +35,8 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
-// regression: d8d5a84b
+// feature: docs/feature/reports/show/json.md
+// regression: memory/show-json-pipe-truncated-at-128k.md
 test("show --json 经 pipe 仍交付完整文档", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
   const result = await niceeval.run(["show", locator, "--json"]);
@@ -69,7 +70,7 @@ Journey E2E 使用独立项目副本和结果根。失败后保留副本时，�
 
 功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
 或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
-昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter smoke 调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
+昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
 ## Adapter
 
@@ -93,7 +94,7 @@ e2e/adapter/
 | 本地协议 / Docker fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
 | Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | main / nightly / release |
 
-本地 fixture 不能替代 live 兼容性；live smoke 也不能替代可控错误注入。两者若断言同一纯转换矩阵，完整矩阵留 Unit，
+本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。两者若断言同一纯转换矩阵，完整矩阵留 Unit，
 Repo 各取有区分力的真实边界代表。
 
 Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
@@ -128,7 +129,8 @@ CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / ND
 
 ## Lifecycle
 
-Lifecycle Repo 串行运行，拥有自己的进程组、容器和 sandbox。它不仅检查第一条命令退出，还检查：
+Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景独占自己的进程组、容器或 Sandbox，不靠兄弟文件的执行顺序隔离。
+只有无法分配独立身份的外部资源才在局部关闭并行，并在 Repo README 说明限制。Lifecycle 不仅检查第一条命令退出，还检查：
 
 - signal 被送到正确进程；
 - teardown 与 lease 结束；
