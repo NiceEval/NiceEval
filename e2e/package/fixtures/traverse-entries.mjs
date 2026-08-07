@@ -5,6 +5,8 @@
 //   createRequire(import.meta.url)() 装载，断言两面公开导出 keys 一致；根入口再对
 //   两边同时存在的每个函数/类逐一断言引用 ===（同一进程内共享 runtime identity）。
 // - 纯字符串 exports 是静态 asset：只验证 import.meta.resolve + readFile 公开可达。
+//   解析目标统一为 filesystem path 消费，兼容 import.meta.resolve 的 file:// URL 与
+//   require.resolve fallback（Node 18.19 之前无 import.meta.resolve）的普通路径。
 // - 解析目标存在、但装载因缺失第三方依赖失败时，只有缺失包名命中安装后
 //   package.json 的 peerDependenciesMeta[name].optional===true（scoped 包按
 //   @scope/name 解析）才判为 dependency-gated 并跳过；其余缺失与其它失败
@@ -13,7 +15,9 @@
 // - 另从仓库外临时 cwd 执行安装后的 niceeval --help。
 //
 // 本文件只用 Node 18 内置 API，可由 Vitest（Journey A）与 smoke.mjs 复用，
-// 也可用 `node fixtures/traverse-entries.mjs` 直接运行。
+// 也可用 `node fixtures/traverse-entries.mjs` 直接运行。设置环境变量
+// NICEEVAL_TRAVERSE_USE_REQUIRE_RESOLVE=1 强制 require.resolve fallback，
+// 用于测试覆盖 import.meta.resolve 不可用的分支。
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
@@ -74,9 +78,13 @@ function optionalPeerNames(packageJson) {
   return names;
 }
 
-/** import.meta.resolve 在 Node 18.19+ 可用；不可用或不可用时退回 exports 感知的 require.resolve。 */
-function resolvePublicly(require, specifier) {
-  if (typeof import.meta.resolve === "function") {
+/**
+ * import.meta.resolve 在 Node 18.19+ 可用，返回 file:// URL；不可用或显式要求
+ * fallback（preferRequireResolve）时退回 exports 感知的 require.resolve，返回
+ * 普通 filesystem path。两者经 toFilePath 统一后消费。
+ */
+function resolvePublicly(require, specifier, preferRequireResolve) {
+  if (!preferRequireResolve && typeof import.meta.resolve === "function") {
     try {
       return import.meta.resolve(specifier);
     } catch (error) {
@@ -86,6 +94,14 @@ function resolvePublicly(require, specifier) {
     }
   }
   return require.resolve(specifier);
+}
+
+/** 统一 resolved target 为可读 filesystem path：兼容 file:// URL 与 require.resolve 路径。 */
+function toFilePath(target) {
+  if (typeof target === "string" && target.startsWith("file:")) {
+    return fileURLToPath(target);
+  }
+  return target;
 }
 
 /**
@@ -114,9 +130,9 @@ export function findInstalledPackageRoot(packageName, fromUrl) {
   }
 }
 
-function targetExists(resolvedUrl) {
+function targetExists(resolved) {
   try {
-    const stat = statSync(fileURLToPath(resolvedUrl), { throwIfNoEntry: false });
+    const stat = statSync(toFilePath(resolved), { throwIfNoEntry: false });
     return Boolean(stat && stat.isFile());
   } catch {
     return false;
@@ -151,10 +167,10 @@ function checkRootIdentity(esmModule, cjsModule) {
   return { checked: true, mismatches };
 }
 
-async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers) {
+async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers, preferRequireResolve) {
   let resolved;
   try {
-    resolved = resolvePublicly(require, specifier);
+    resolved = resolvePublicly(require, specifier, preferRequireResolve);
   } catch (error) {
     return { specifier, exportKey, status: "failed", error: describeError(error) };
   }
@@ -208,13 +224,13 @@ async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers) {
   return { specifier, exportKey, status: "failed", error: describeError(viaImport.error) };
 }
 
-function checkAsset(require, specifier, exportKey) {
+function checkAsset(require, specifier, exportKey, preferRequireResolve) {
   try {
-    const resolved = resolvePublicly(require, specifier);
+    const resolved = resolvePublicly(require, specifier, preferRequireResolve);
     if (!targetExists(resolved)) {
       throw new Error(`resolved asset target not found: ${resolved}`);
     }
-    const bytes = readFileSync(fileURLToPath(resolved));
+    const bytes = readFileSync(toFilePath(resolved));
     if (bytes.length === 0) {
       throw new Error(`asset is empty: ${specifier}`);
     }
@@ -269,8 +285,10 @@ function checkCli(require, packageName, packageRoot) {
 /**
  * 遍历安装后包的 exports，执行 Journey A 全部断言并返回结构化 report。
  * 不抛异常；失败全部收集进 report.failures（exit 非零由调用方决定）。
+ * preferRequireResolve 强制走 require.resolve fallback（普通 filesystem path），
+ * 用于覆盖 import.meta.resolve 不可用（Node 18.19 之前）的分支。
  */
-export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_NAME, fromUrl = import.meta.url } = {}) {
+export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_NAME, fromUrl = import.meta.url, preferRequireResolve = false } = {}) {
   let packageRoot = "";
   let packageVersion = "unknown";
   let require = null;
@@ -294,9 +312,9 @@ export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_N
     if (exportKey.includes("*")) continue;
     const specifier = specifierOf(packageName, exportKey);
     if (typeof value === "string") {
-      assets.push(checkAsset(require, specifier, exportKey));
+      assets.push(checkAsset(require, specifier, exportKey, preferRequireResolve));
     } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      entries.push(await checkRuntimeEntry(require, specifier, exportKey, optionalPeers));
+      entries.push(await checkRuntimeEntry(require, specifier, exportKey, optionalPeers, preferRequireResolve));
     }
   }
 
@@ -321,7 +339,8 @@ export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_N
 }
 
 async function main() {
-  const report = await traverseInstalledEntries();
+  const preferRequireResolve = process.env.NICEEVAL_TRAVERSE_USE_REQUIRE_RESOLVE === "1";
+  const report = await traverseInstalledEntries({ preferRequireResolve });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (!report.ok) {
     for (const failure of report.failures) {
