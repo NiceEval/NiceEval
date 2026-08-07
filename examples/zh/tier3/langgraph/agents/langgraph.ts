@@ -17,7 +17,7 @@
 // OTel 只管 `niceeval view` 的瀑布图:LangSmith OTel 导出的 span 发到钉住的接收端口
 // (环境变量在启动应用时给,见 README「跑起来」)——span 不喂断言,断言与 Tier 1 完全相同,
 // 埋点缺一块也只影响瀑布图。
-import { createSessionSlot, defineDirectAgent, sseJsonFrames } from "niceeval/adapter";
+import { createSessionSlot, defineAgent, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, EvidenceCoverage, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -207,7 +207,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return drainStream(sseJsonFrames<LanggraphFrame>(res.body), ctx);
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "langgraph",
   evidenceCoverage,
   send,
