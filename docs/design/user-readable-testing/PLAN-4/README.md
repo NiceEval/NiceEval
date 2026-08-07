@@ -7,11 +7,11 @@
 测试要先让维护者看见用户做了什么、得到了什么，再提供定位证据。
 当前候选把 Behavior、Recipe、World、Observed、Execution Registration 与 Portfolio 分散到多个文件，简单回归也要先理解一套新的测试平台。
 
-本方案只保留三种测试形态：
+本方案只保留两个执行层；E2E 再按流程范围选择两种体裁：
 
-- 根仓库中的原生 unit test，证明纯逻辑、可控竞态与错误分类；
-- 短结果测试，在真实场景 Repo 中用一组公开动作证明一个用户结果；
-- 长 Journey 测试，在同一个真实项目中连续执行多条用户命令，并断言关键过程节点和最终结果。
+- 根仓库中的原生 Unit，证明纯逻辑、可控竞态与错误分类；
+- 单边界 E2E，在真实场景 Repo 中用一组公开动作证明一个用户结果；
+- Journey E2E，在同一个真实项目中连续执行多条用户命令，并断言关键过程节点和最终结果。
 
 测试语义写在 Vitest 正文里。
 仓库级 manifest 只负责选择、运行环境、密钥和 artifact，不登记产品 Behavior，也不解释断言。
@@ -92,7 +92,7 @@ E2E 不能可靠指出生产源码的具体行，但必须把故障缩到公开�
 5. `cleanup`：资源没有释放。
 
 失败报告必须带测试项目、候选包 digest、backend、完整 argv、cwd、exit / signal，以及对应 stdout、stderr、trace、screenshot 或服务日志路径。
-需要源码级定位的风险，再配一条最小 unit mechanism test；不在 E2E 上堆内部探针。
+需要源码级定位的风险，再配一条最小 Unit；不在 E2E 上堆内部探针。
 
 ## 本地与 GitHub Actions
 
@@ -113,7 +113,7 @@ PR lane 不接触 secrets，只跑 unit 与确定性场景 Repo。
 
 ## 范围
 
-本方案包含测试分类、真实场景 Repo、短结果测试、长 Journey、候选包注入、host / Docker executor、CI lane、失败 artifact 与历史 bug 回归规则。
+本方案包含测试分类、真实场景 Repo、单边界 E2E、Journey E2E、候选包注入、host / Docker executor、CI lane、失败 artifact 与历史 bug 回归规则。
 
 本方案不包含：
 

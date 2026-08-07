@@ -5,6 +5,7 @@
 
 | 草稿问题 | 为什么会假绿或反复改 | 当前规则与代码 |
 |---|---|---|
+| 用 `mechanism-unit/` 或 `cli-results.test.ts` 给一组异质测试命名 | 名字只说抽象类别，看不出 owner、用户动作或失败边界；同目录会持续吸入无关 case | 顶层只分 `unit/` 与 E2E `repos/`；Unit 按 Feature、E2E 文件按行为命名，CLI 已拆为 selection、streams-and-exit、show-json-pipe |
 | 多个 adapter 共用一个 package / 结果根 | 不能证明各自真实依赖、安装、secret 与协议 | 每个 adapter 一个叶子 Repo；local protocol 不冒充 live |
 | 把相似风险都标成历史 regression | 新测试可能杀不死历史旧实现 | 只有存在旧实现 kill 证据才写 `regression:`，否则写 `risk:` |
 | CommonJS test 在 `/tmp` 临时造未安装项目 | `pnpm exec niceeval` 的实际 binary owner 不确定 | CommonJS 叶子本身就是 consumer，由 runner 注入候选 tarball |
@@ -21,7 +22,7 @@
 
 | 变化类型 | 先做什么 | 禁止的快捷处理 |
 |---|---|---|
-| 内部重构 | 保持 Result / Journey expected 不变，修掉对 DTO、路径或 DOM 结构的耦合 | 顺手更新所有 snapshot |
+| 内部重构 | 保持 E2E expected 不变，修掉对 DTO、路径或 DOM 结构的耦合 | 顺手更新所有 snapshot |
 | 公开结果有意变化 | 先更新契约，再修改唯一 owner 和必要 fixture | 在多层复制同一新 expected |
 | 新 bug | 找现有 owner、补区分性断言、证明旧实现会红 | 只因现象相似就新增 `regression:` |
 | Runner / Docker / CI 改动 | 修改外侧编排或资源收据，同一 Repo 测试正文继续运行 | 在 workflow 复制另一套产品断言 |

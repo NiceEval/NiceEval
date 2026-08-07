@@ -45,5 +45,5 @@ pnpm test --run test/carry-reuse.test.ts
 
 ## 为什么是本地 fixture agent
 
-携带语义是 runner 纯逻辑，与 provider 身份无关。用真实模型会让每条 Result 花钱且抖动；
+携带语义是 runner 纯逻辑，与 provider 身份无关。用真实模型会让每条 E2E case 花钱且抖动；
 本地 deterministic agent 让 Repo 无 secret、进 PR lane，verdict 由 eval 字面量决定。

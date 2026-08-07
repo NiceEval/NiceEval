@@ -19,7 +19,7 @@ niceeval 已经有 unit 与 E2E，却没有同时解决四个问题：
 | [PLAN-1](PLAN-1/README.md) | Behavior 元数据与媒介 matcher | 中 | 中 | 沿用现有 runner |
 | [PLAN-2](PLAN-2/README.md) | Behavior、typed view、World 与 Registry | 高 | 中低 | 需要新 world runtime |
 | [PLAN-3](PLAN-3/README.md) | 声明式 Acceptance Case 与 Projection | 很高 | 规格高、调试低 | 需要新 driver runtime |
-| [PLAN-4](PLAN-4/README.md)（推荐） | 真实场景 Repo 里的短结果与长 Journey 断言 | 低 | 高 | 同一根命令 + host / Docker executor |
+| [PLAN-4](PLAN-4/README.md)（推荐） | 真实场景 Repo 里的单边界 E2E 与 Journey E2E | 低 | 高 | 同一根命令 + host / Docker executor |
 
 前三个候选尝试用越来越强的声明模型连接测试身份、观察面和证据。
 PLAN-4 把机器协议缩到 repo 编排，测试语义保留在原生代码中。

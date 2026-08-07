@@ -24,8 +24,8 @@ interface AttemptDocument {
 
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
 
-// regression: d8d5a84b — process.exit() truncated piped JSON near 128 KiB.
-test("show --json through a real pipe still contains the signed tail sentinel", async () => {
+// regression: d8d5a84b — process.exit() 曾截断约 128 KiB 的 pipe JSON。
+test("show --json 经真实 pipe 仍包含签入 fixture 的尾部 sentinel", async () => {
   // Prepare：真实 Experiment 生成一份超过旧截断阈值的失败 Attempt。
   const seeded = await runProcess([
     "pnpm", "--silent", "exec", "niceeval",

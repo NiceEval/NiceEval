@@ -2871,9 +2871,6 @@
       "结论": 2,
       "覆盖": 17
     },
-    "docs/roadmap/testing/unit/use-case/carried-proof-migration.md": {
-      "helper": 1
-    },
     "docs/runner.md": {
       "sandbox case": 1,
       "基线": 1,

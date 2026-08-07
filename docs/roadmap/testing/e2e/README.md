@@ -1,7 +1,7 @@
 # E2E：真实场景 Repo
 
-E2E 只负责必须穿过真实公开边界的 Result、Journey、Adapter 和 Lifecycle：候选包、外部 cwd、子进程、文件、HTTP、
-浏览器、真实 SDK / CLI / provider、signal、sandbox 或下一次消费者。
+E2E 只负责必须穿过真实公开边界的行为：候选包、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
+signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey；Adapter、CLI、Report、Package 与 Lifecycle 是 owner 域。
 
 ## Repo 是载体，不是测试模型
 
@@ -19,7 +19,7 @@ E2E 只负责必须穿过真实公开边界的 Result、Journey、Adapter 和 Li
 ## 框架分工：复用 runner，只写产品 harness
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
-- Report 与包含浏览器的 Journey 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
+- Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - Repo 的命令执行器和 Fixture 工厂只补进程、临时项目和本地 backend 等机械能力，完整 `niceeval` argv 与领域 expected 留在测试正文。
 
@@ -27,9 +27,9 @@ E2E 只负责必须穿过真实公开边界的 Result、Journey、Adapter 和 Li
 再为自身的真实项目、CLI、server 或候选构建写薄的产品 fixture。NiceEval 不另造 assertion DSL、browser runner
 或第二套测试调度器。
 
-## Result：短结果测试
+## 单边界 E2E
 
-Result 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
+单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
 // regression: d8d5a84b
@@ -49,18 +49,18 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
 
-## Journey：长用户流程
+## Journey E2E：长用户流程
 
-Journey 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
+Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
 
 ```text
 init → exp --dry → exp → show --history → show @locator --execution → view --out → 浏览器打开
 ```
 
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
-Journey 同时保留过程检查点和最终目标，完整代码见 [Example](../example/README.md)。
+Journey E2E 同时保留过程检查点和最终目标，完整代码见 [Example](../example/README.md)。
 
-Journey 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
+Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
 ## Adapter
 
@@ -87,11 +87,11 @@ e2e/adapter/
 本地 fixture 不能替代 live 兼容性；live smoke 也不能替代可控错误注入。两者若断言同一纯转换矩阵，完整矩阵留 Unit，
 Repo 各取有区分力的真实边界代表。
 
-Adapter Result 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
+Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
 以及失败时的阶段和可行动诊断。不能只断言命令 exit 0。
 
 Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox.list()` 的 SDK paginator 形状归直接使用真实 SDK 类型的
-Mechanism unit；把它改写成自造 HTTP cursor 后，即使有两页数据也不能引用 E2B 的历史回归。
+最小 Unit；把它改写成自造 HTTP cursor 后，即使有两页数据也不能引用 E2B 的历史回归。
 
 ## Report
 
@@ -123,7 +123,7 @@ Lifecycle Repo 串行运行，拥有自己的进程组、容器和 sandbox。它
 
 ## 单项重跑
 
-任何 Result / Journey 必须能按 Repo、文件和标题重跑：
+任何 E2E 必须能按 Repo、文件和标题重跑：
 
 ```sh
 pnpm e2e --repo report

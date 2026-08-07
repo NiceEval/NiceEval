@@ -1,7 +1,7 @@
 # 最终综合：用最少公开行为覆盖历史缺陷
 
 > 本篇是 PLAN-2 阶段的研究综合，保留 world、proof 与领域 matcher 词汇，不是最终作者 API。
-> 选定方案把这里的历史缺陷形态映射到原生 Result / Journey、Mechanism unit 和真实场景 Repo；
+> 选定方案把这里的历史缺陷形态映射到 Unit、单边界 E2E、Journey E2E 和真实场景 Repo；
 > 最终规则见 [测试 Roadmap](../../README.md)。
 
 ## 结论
@@ -114,7 +114,7 @@ radius。`duplicated matrix` 必须为 0；纯实现重构的 `net proof delta` 
 可删时只需解释 `netNewReason`；不能为了满足删除数字而保留或制造迁移映射。
 
 具体规则与 carried 例子见 [Proof Portfolio](../../portfolio.md)和
-[Carried 测试组合迁移](../../unit/use-case/carried-proof-migration.md)。
+[Runner carry 的测试职责](../../carry-ownership.md)。
 
 ## 已删除的冗余或错误方案
 

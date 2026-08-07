@@ -36,11 +36,11 @@ CSS、候选常量、脚本顺序和元平台结构变化造成的无关跟改�
 
 **新防线**：
 
-- Mechanism unit 用最小领域 builder，只显式填写本 case 有语义的字段；
-- Result / Journey 不手写 Run / Attempt DTO，而是让真实 Eval / Experiment 经候选包产生结果；
+- Unit 用最小领域 builder，只显式填写本 case 有语义的字段；
+- E2E 不手写 Run / Attempt DTO，而是让真实 Eval / Experiment 经候选包产生结果；
 - 只有旧 Record 兼容性测试手写格式 fixture，并固定独立 schema version。
 
-**验收**：给生产 DTO 增加一个不参与公开结果的字段时，Result / Journey 不应修改；受影响 unit 只能是该字段的机制 owner。
+**验收**：给生产 DTO 增加一个不参与公开结果的字段时，E2E 不应修改；受影响 Unit 只能是该字段的语义 owner。
 
 ### 2. 测试与候选实现共享同一个答案
 
@@ -67,7 +67,7 @@ page 类别和规范工具名不能从候选反推。
 
 **根因**：根仓库源码、workspace package resolution 和 mock 宿主掩盖了安装、bin、loader、exports 与外部 cwd 的组合边界。
 
-**新防线**：每个场景 Repo 有独立 package / lockfile；根 runner 复制后注入候选 tarball，核对实际 executable 身份；Package Journey
+**新防线**：每个场景 Repo 有独立 package / lockfile；根 runner 复制后注入候选 tarball，核对实际 executable 身份；Package Journey E2E
 直接执行 `pnpm exec niceeval init` 和 `pnpm exec niceeval list`。
 
 **验收**：把 Repo 复制到仓库外仍能运行；禁止 workspace link、相邻源码 import 和直接执行 `src/cli.ts`。
@@ -80,7 +80,7 @@ page 类别和规范工具名不能从候选反推。
 
 **根因**：mock 由测试自行发明第三方形状，actual 和 fixture 共享同一个错误假设；只有 happy-path 单页数据也无法区分遍历算法。
 
-**新防线**：Adapter Mechanism contract 直接从真实 SDK `ReturnType` 派生 mock 类型，至少包含两页；禁止双重类型断言重写上游接口。
+**新防线**：Adapter Unit 直接从真实 SDK `ReturnType` 派生 mock 类型，至少包含两页；禁止双重类型断言重写上游接口。
 真实 provider Repo 另证鉴权、版本和远端协议，确定性 fault proxy 证错误处理，两者不替代类型 / 分页矩阵。
 
 **验收**：安装支持下限与当前 SDK 都做 typecheck / contract test；把 paginator 错改成数组遍历时 Unit 立即红，live E2E 失败仍保留
@@ -98,7 +98,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 **新防线**：CLI / Report 的参数、进程和宿主结果归场景 Repo；纯装载、计算和重载机制留 unit。每个矩阵只有一个 owner，
 不在宿主 unit 和 E2E 各抄一遍。
 
-**验收**：公共用法错误改动只修改对应 Result owner；内部 loader 重构只修改 module reload mechanism owner。
+**验收**：公共用法错误改动只修改对应场景 Repo 的 E2E 文件；内部 loader 重构只修改对应的 module reload Unit。
 
 ### 6. 共享可变 evidence 让测试依赖调用顺序
 
@@ -107,10 +107,10 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 
 **根因**：一个线性脚本把只读验证和会改变共享 `.niceeval` 的动作放在同一个隐式世界，文件顺序成了隐藏契约。
 
-**新防线**：只读 Result 可共享 prepare 后冻结的 evidence；会改变当前结果的测试使用自己的结果根或独立 Journey Repo；
+**新防线**：只读 E2E 可共享 prepare 后冻结的 evidence；会改变当前结果的测试使用自己的结果根或独立 Journey E2E 场景 Repo；
 每个 Repo 和每次重试都从新副本开始。
 
-**验收**：随机调整只读测试顺序仍绿；Journey 单独运行仍绿；任何测试不能靠“必须排最后”的注释维持正确性。
+**验收**：随机调整只读测试顺序仍绿；Journey E2E 单独运行仍绿；任何测试不能靠“必须排最后”的注释维持正确性。
 
 ### 7. 浏览器测试断言实现手段，页面重构就反复修改
 
@@ -129,7 +129,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 **新防线**：先检查 URL / HTTP，再用 role、label、实体身份和 web-first assertion 检查可见结果；固定 sleep、实现 class 和
 探测循环禁止进入新测试。
 
-**验收**：只改 CSS class 或无障碍语义不变的 DOM 包装，Result 不改；故意断开 target URL、路由或实体身份时，在最近检查点红。
+**验收**：只改 CSS class 或无障碍语义不变的 DOM 包装，E2E 不改；故意断开 target URL、路由或实体身份时，在最近检查点红。
 
 ### 8. 为管理测试再建一套比测试更大的平台
 
@@ -142,7 +142,7 @@ Retirement 等对象。读者需要跨文件后才能看到真实动作与结果
 **根因**：用元模型同时管理证明范围、缓存、并发、作者体验与治理，测试正文反而退居末端。
 
 **新防线**：多方案只留在 [Design](../../design/user-readable-testing/README.md)；Roadmap 只写选定方案。运行 manifest 只管宿主条件，
-Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试文件。Example 直接按 CLI、Report、Adapter、Journey 展示。
+Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试文件。Example 直接按 CLI、Report、Adapter 与 Journey E2E 展示。
 
 **验收**：读者只打开一个测试文件，就能指出 argv、actual、expected、旧 bug 和失败检查点；单文件可由原生 test filter 重跑。
 
@@ -181,18 +181,18 @@ Portfolio 只链接 owner，命令、expected 和 bug 引用留在原生测试�
 |---|---|
 | 用户结果 / 公开契约改变 | 修改对应 owner，并链接契约 diff |
 | 历史 bug 暴露旧 owner 无区分力 | 扩大 owner，做旧实现 kill，删除重复测试 |
-| 内部 DTO、函数、DOM class、目录移动 | Result / Journey 不应改；修 fixture / 复用设施边界 |
+| 内部 DTO、函数、DOM class、目录移动 | E2E 不应改；修 fixture / 复用设施边界 |
 | 候选常量变化 | 不自动同步 expected；先判断公开契约是否改变 |
 | 共享测试顺序变化 | 隔离状态，不加“必须最后”注释 |
 | CI 与本地表现不同 | 修统一 runner / executor，不在 workflow 复制分支 |
 
-PR 对测试的说明至少包含：用户结果或具名机制风险、owner、历史 bug（若有）、本地单项命令、CI lane，以及删除了哪些旧证明。
+PR 对测试的说明至少包含：用户结果或具名确定性风险、owner、历史 bug（若有）、本地单项命令、CI lane，以及删除了哪些旧证明。
 
 ## 持续复核
 
 1. 每次测试体系迁移前后和至少每半年运行一次 churn 命令；
 2. 对排行头部逐 commit 核对是否真有契约变化，不看绝对数字直接定罪；
-3. 抽查一个内部无关字段变化，确认没有批量触碰 Result / Journey；
+3. 抽查一个内部无关字段变化，确认没有批量触碰 E2E；
 4. 新历史回归在 fix parent / 临时 worktree / 最小逆补丁上做 kill；
 5. 随机打乱只读测试顺序，确认没有共享 mutation；
 6. 检查 pseudo-E2E、candidate-derived expected、固定 sleep 和完整 DTO fixture 是否重新出现；

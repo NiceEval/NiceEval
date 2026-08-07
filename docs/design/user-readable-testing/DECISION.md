@@ -10,10 +10,10 @@
 
 - Unit 用最小 fixture 证明纯逻辑、错误分类、schema 与可控竞态。
 - 每个场景 Repo 都是自包含 NiceEval 用户项目，拥有真实 config、Eval、Experiment、Report 与必要服务。
-- 场景 Repo 安装候选 tarball，只从公开入口进入，以原生 Vitest 写短结果测试或长 Journey。
+- 场景 Repo 安装候选 tarball，只从公开入口进入，以原生 Vitest 写单边界 E2E 或 Journey E2E。
 - Repo 是执行现场，不是测试语义；测试命题仍按用户结果、历史 bug 与产品域组织。
 - Repo manifest 只拥有 lane、executor、能力、命令与 artifact。
-- 历史 bug 在对应长期结果测试中留下 `regression` 引用，并用旧 commit 或逆补丁做 kill 验证。
+- 历史 bug 在对应长期 E2E 中留下 `regression` 引用，并用旧 commit 或逆补丁做 kill 验证。
 - 本地与 GitHub Actions 调用同一个根 runner；PR 无密钥，真实 adapter 在可信 lane 执行。
 
 ## 对照
@@ -22,7 +22,7 @@
 |---|---|---|---|---|
 | G1：一屏读懂任务 | 中 | 需要跨声明与 typed view | Case 紧凑、driver 分散 | 高；命令、动作、预期同文件 |
 | G2：标题与断言一致 | review + matcher | Registry + matcher | claim 可守护 | review + 原生断言 |
-| G3：机制测试精确 | 高 | 高 | 高 | 高 |
+| G3：Unit 精确 | 高 | 高 | 高 | 高 |
 | G4：产品契约单源 | 可满足 | 可满足 | 影子模型风险最高 | 高；测试只留链接 / bug 引用 |
 | G5：oracle 独立 | 取决于 matcher | typed view 容易藏计算 | driver 容易复制算法 | 高；预期在正文可审查 |
 | G6：变化预算 | 中 | 元模型也会跟改 | 联合变化面最大 | 高；按消费边界隔离 |
@@ -72,7 +72,7 @@ PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection
 | CLI 进程、pipe、PTY、exit、机器出口 | CLI 场景 Repo |
 | show / view、HTML、HTTP、浏览器语义与交互 | Report 场景 Repo |
 | 官方 adapter 的 SDK / CLI / provider 兼容性 | 每个 Adapter 的 live 场景 Repo |
-| 跨 CLI / Report 的完整用户目标 | Journey 场景 Repo |
+| 跨 CLI / Report 的完整用户目标 | Journey E2E 场景 Repo |
 | signal、teardown、orphan、下一次消费者 | Lifecycle 场景 Repo |
 
 本地协议 server 或 Docker fixture 可以证明 NiceEval 自有的 transport 与错误处理，但不能替代 live adapter 兼容性。

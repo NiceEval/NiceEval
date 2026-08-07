@@ -12,7 +12,7 @@ interface ExpEvent {
 
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
 
-test("stdout, stderr and exit code keep their public roles", async () => {
+test("JSON 模式保持 stdout、stderr 与 exit code 的公开分工", async () => {
   const passed = await runProcess([
     "pnpm", "--silent", "exec", "niceeval",
     "exp", "passing", "--rerun", "all", "--json",

@@ -34,8 +34,8 @@ test/
 ```
 
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
-目录不必为了形式把所有项目拆得很小；一组 Result 能只读消费同一次昂贵证据时，可以留在一个 Repo。
-会修改当前结果或生命周期状态的 Journey 必须独立。
+目录不必为了形式把所有项目拆得很小；一组只读 E2E 能消费同一次昂贵证据时，可以留在一个 Repo。
+会修改当前结果或生命周期状态的 Journey E2E 必须独立。
 
 `adapter/` 是 Repo collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
@@ -131,7 +131,7 @@ Executor 回答测试进程在哪里运行：
 
 - 根 runner 每个 Repo、每次重试都创建新副本；
 - Vitest 文件默认不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
-- 需要写的测试使用独立结果根 / 项目副本，或独占的 Journey Repo；
+- 需要写的测试使用独立结果根 / 项目副本，或独占的 Journey E2E 场景 Repo；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
 - 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
 - secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。

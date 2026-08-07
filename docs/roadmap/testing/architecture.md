@@ -6,14 +6,14 @@
 ## 依赖方向
 
 ```text
-公开契约 / 历史 bug / 具名机制风险
+公开契约 / 历史 bug / 具名确定性风险
                   │
                   ▼
        独立 fixture + 明确 expected
                   │
         ┌─────────┴─────────┐
         ▼                   ▼
-Mechanism unit       真实场景 Repo
+      Unit             E2E 场景 Repo
 纯逻辑 / barrier      pnpm exec niceeval …
         │                   │
         └─────────┬─────────┘
@@ -39,9 +39,9 @@ e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → e
 
 按下列顺序选择最早而完整的边界：
 
-1. 能用纯输入输出排除错误算法：写 Mechanism unit；
-2. 风险来自安装、进程、文件、HTTP、浏览器或协议边界：写短 Result；
-3. 风险只会在多个公开域串联时出现：写 Journey，并在每个域间接缝检查；
+1. 能用纯输入输出排除错误算法：写 Unit；
+2. 风险来自安装、进程、文件、HTTP、浏览器或协议边界：写单边界 E2E；
+3. 风险只会在多个公开域串联时出现：写 Journey E2E，并在每个域间接缝检查；
 4. 同一风险已经有完整 owner：扩大 owner 的等价类，不并排复制新测试。
 
 “代码在 `src/report`”不自动意味着写 unit；“测试放在 `e2e/`”也不自动意味着它证明了用户结果。
@@ -70,7 +70,7 @@ test("导出报告能打开失败 Attempt", async () => {
 
 ## 单文件可读性契约
 
-Result / Journey 文件从上到下保持同一信息顺序：
+E2E 文件从上到下保持同一信息顺序：
 
 | 位置 | 保留的信息 | 不放入这里的内容 |
 |---|---|---|
@@ -144,18 +144,18 @@ interface ProcessResult {
 - 大输出同时断言字节规模、文档可解码和尾部 sentinel，避免只证明“有一些 JSON”。
 - HTML 先从用户实际拿到的链接读取 `href`，验证该 URL 与 HTTP 后再验证目标实体；不能根据 locator 猜导出路径再证明自己猜的路径存在。
 - Playwright 优先使用产品已声明的 role、label、可见文本和 web-first assertion。role / label 本身也必须由产品契约提供。
-  缺少稳定可访问身份时，该 Result 明确报告产品可测试性缺口，不能在测试里发明 `aria-label` 或 `role="tooltip"`。
+  缺少稳定可访问身份时，该 E2E 明确报告产品可测试性缺口，不能在测试里发明 `aria-label` 或 `role="tooltip"`。
 - 固定 sleep、实现 CSS class、任意未展开节点探测循环和“有一个 dialog”都不是用户结果。
 - screenshot 是诊断 artifact，不是默认 oracle；只有视觉契约才使用稳定的视觉 diff。
 
 ## 隔离与证据复用
 
 - 每个 Repo 执行在新的副本中；重试也使用新副本。
-- 一个 Result 项目可以在 `beforeAll` 生成一次昂贵证据，随后只读测试并行消费。
+- 一个单边界 E2E Repo 可以在 `beforeAll` 生成一次昂贵证据，随后只读测试并行消费。
 - 会改变“当前结果”的验证必须获得自己的结果根或独立 Repo，不能靠文件调用顺序保护共享状态。
 - 会改配置或 fixture 的 mutation 必须发生在该测试的私有副本，并以新进程消费；禁止修改共享
   `niceeval.config.ts` 后在 `finally` 写回，因为崩溃、并行与 watcher 都会泄漏中间状态。
-- Journey 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。
+- Journey E2E 自己拥有一份可变项目，并按命令顺序立即检查；其它测试不读取它的中间状态。
 - 场景 Repo 不跨提交复用 `.niceeval`、`node_modules` 或导出站，只缓存包管理器 store 和 Docker layer。
 
 Lifecycle 的 cleanup oracle 必须观察被管理资源本身：带 run ID 的 container / network / volume、backend active-session、

@@ -1,7 +1,7 @@
 # 历史缺陷研究与证据账本
 
 > 本账本形成于 PLAN-2 研究期，正文保留 Behavior、proof、recipe / world 与 DSL 词汇以保存推导现场。
-> 最终实现映射为原生 Result / Journey、Mechanism unit、真实场景 Repo 与局部机械 helper；以
+> 最终实现映射为 Unit、单边界 E2E、Journey E2E、真实场景 Repo 与局部机械 helper；以
 > [目标 Roadmap](../../README.md)和[决策](../../../../design/user-readable-testing/DECISION.md)为准。
 
 这里是 [NiceEval 测试体系重构](../../README.md)的历史证据账本，用已经修复的真实缺陷反推结果 owner、机制矩阵、分层、

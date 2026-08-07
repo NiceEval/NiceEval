@@ -1,6 +1,6 @@
-# Unit：Mechanism 测试
+# Unit：确定性语义测试
 
-Unit 负责真实场景 Repo 无法稳定制造、无法廉价穷举或无法精确定位的机制风险。它不按源码目录机械补 line coverage。
+Unit 负责真实场景 Repo 无法稳定制造、无法廉价穷举或无法精确定位的确定性风险。它不按源码目录机械补 line coverage。
 
 ## 适合 Unit 的风险
 
@@ -15,10 +15,10 @@ Unit 负责真实场景 Repo 无法稳定制造、无法廉价穷举或无法精
 
 ## 存在资格
 
-每个机制矩阵在文件头或 `describe` 旁回答两句话：
+每个确定性矩阵在文件头或 `describe` 旁回答两句话：
 
 1. 删除它会让哪一类错误算法通过？
-2. 为什么对应 Result / Journey 无法稳定制造或区分？
+2. 为什么对应 E2E 无法稳定制造或区分？
 
 ```ts
 // wrong algorithm: retry backoff 时提前释放并发闸。

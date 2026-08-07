@@ -18,18 +18,20 @@
 其中 `adapter/` 是 collection：AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
 各自安装候选包并拥有结果根；不能把本地 canned backend 当成多个 live adapter 的共同替身。
 
-## 两条分类轴
+## 两层与两种 E2E 体裁
 
-第一条轴回答“为什么存在”：
+目录只使用业界已有的两个执行层名称，不再增加 `Mechanism` 或 `Result` 这种项目内分类：
 
-| 形态 | 证明什么 | 典型位置 |
+| 层 | 证明什么 | 典型位置 |
 |---|---|---|
-| Mechanism | 纯计算、schema、错误分类、可控竞态和唯一错误算法 | 根仓库 unit |
-| Result | 一组公开动作产生一个稳定用户结果 | 真实场景 Repo 的短 Vitest |
-| Journey | 多个产品域串成一个用户目标，逐接缝检查并断言终态 | 独立 Journey Repo |
+| Unit | 纯计算、schema、错误分类、可控竞态和确定性状态变化 | 根仓库 unit |
+| E2E | 安装后的候选包经过真实公开边界后交付的用户结果 | 独立场景 Repo |
 
-第二条轴回答“哪个产品域负责”：CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
-目录按产品域找 owner，测试标题按结果找命题；unit / E2E 只是执行边界，不再充当需求分类。
+E2E 再按流程范围选择两种写法：单边界 E2E 只承诺一个公开结果；Journey E2E 串起多个产品域，逐接缝检查并断言终态。
+`Journey` 是测试体裁，不是第三层。`Result` 已是 NiceEval 产品里的领域名，不再同时拿来命名测试类型。
+
+另一条轴只回答“哪个产品域负责”：CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
+目录按执行层和产品域找 owner，文件名按可观察行为命名，测试标题写长期结果。
 
 ## 分层裁决
 
@@ -41,7 +43,7 @@
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | `show --json` 经 pipe 不截断 |
 | show / view、导出、HTTP、浏览器动作 | Report 场景 Repo | 导出 target 可达且打开正确实体 |
 | SDK / CLI / provider 兼容性 | 对应 Adapter 场景 Repo | 真实工具事件读回规范身份 |
-| 跨域完整目标 | Journey 场景 Repo | 初始化、运行、定位失败、导出报告 |
+| 跨域完整目标 | Journey E2E 场景 Repo | 初始化、运行、定位失败、导出报告 |
 | signal、teardown、orphan | Lifecycle 场景 Repo | 中断后无孤儿且下一次运行可用 |
 
 一条风险只在一个位置展开完整矩阵。其它层只有在能排除不同错误实现时才留一个接线代表，不能把同一场景换成
@@ -49,7 +51,7 @@ human、JSON、DOM 和 snapshot 各测一遍。
 
 ## 测试正文约束
 
-- 短 Result 的一个 `test()` 只承诺一个用户可观察结果；Journey 的一个 `test()` 只承诺一个完整用户目标。
+- 单边界 E2E 的一个 `test()` 只承诺一个用户可观察结果；Journey E2E 的一个 `test()` 只承诺一个完整用户目标。
 - 完整 argv 留在调用点；允许 `runProcess()` 隐藏 spawn 细节，不允许 `runScenario("report")` 隐藏用户动作。
 - 预期来自公开契约、签入 fixture 或测试中字面量，不能从候选包枚举、解码后再生成自己的 expected。
 - 结构化输出先 parse，再按稳定身份比较；只有短且逐字承诺的反馈使用 golden。
@@ -68,8 +70,8 @@ E2E 不承诺指出生产源码行，但要把问题收窄到最近的公开接�
 4. `outcome`：观察合法，但用户结果错误；
 5. `cleanup`：进程、容器、sandbox 或临时目录未释放。
 
-Result 测试用于指出坏在哪条公开边界，Journey 用最近检查点指出坏在哪个域间接缝；需要源码级区分力时，再配一条
-最小 Mechanism unit。禁止为了定位在产品里加入测试专用探针。
+单边界 E2E 用于指出坏在哪条公开边界，Journey E2E 用最近检查点指出坏在哪个域间接缝；需要源码级区分力时，
+再配一条最小 Unit。禁止为了定位在产品里加入测试专用探针。
 
 ## 本地与 GitHub CI
 
@@ -94,19 +96,20 @@ pnpm e2e --lane main --repo codex-sdk
 
 - [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
 - [测试组合与退役](portfolio.md) —— owner、矩阵去重、历史 bug 与迁移规则；
-- [Unit](unit/README.md) —— Mechanism 测试的存在资格和写法；
-- [E2E](e2e/README.md) —— Result、Journey、Adapter 与 Lifecycle；
+- [Runner carry 的测试职责](carry-ownership.md) —— 同一能力在 Unit 与 Runner E2E 之间怎样分工；
+- [Unit](unit/README.md) —— 确定性语义测试的存在资格和写法；
+- [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
 - [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [新体系如何避免旧问题](history-problems.md) —— Git 历史证据、对应防线与复核方法；
-- [可读代码 Example](example/README.md) —— CLI、Report、Adapter、Journey 与 Unit 的目标测试正文；
+- [可读代码 Example](example/README.md) —— CLI、Report、Adapter、Journey E2E 与 Unit 的目标测试正文；
 - [历史缺陷题库](reference/bugs/README.md) —— 已逃逸 bug 的研究材料。
 
 ## 目标闭包
 
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
-- Report Result 只读消费证据；会修改配置、结果或服务的流程拥有独立 Repo 与结果根。
-- Journey 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
+- Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有独立 Repo 与结果根。
+- Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
 - PR、main、nightly 与 release lane 共用同一发现、注入、执行、分类和 artifact 协议。
 - 新 owner 通过公开契约、历史错误 kill 与单项重跑后接管，同批删除被替代 owner，不长期保留双份体系。

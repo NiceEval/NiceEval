@@ -132,8 +132,8 @@ test("CommonJS 项目 init 后可以立即 list", async () => {
 
 ## C8：Bug 回归归属
 
-- 公开结果逃逸：在对应场景 Repo 补或扩大一条长期结果测试，并在头部链接历史 bug。
-- 纯内部错误：只补最小 unit mechanism test。
+- 公开结果逃逸：在对应场景 Repo 补或扩大一条长期 E2E，并在头部链接历史 bug。
+- 纯内部错误：只补最小 Unit。
 - 已有测试本该捕获却没捕获：先修 fixture 或断言，不并排增加一个 bug 专用框架。
 - 新测试必须在 fix parent 或最小逆补丁上变红；否则不能宣称捕获了历史 bug。
 

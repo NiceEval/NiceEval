@@ -13,7 +13,7 @@ interface PlanDocument {
 
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
 
-test("exp --dry --json distinguishes an exact experiment from its sibling prefix", async () => {
+test("exp --dry --json 只选择精确 experiment，不误选同前缀兄弟", async () => {
   const result = await runProcess([
     "pnpm", "--silent", "exec", "niceeval",
     "exp", "compare/base", "--dry", "--json",

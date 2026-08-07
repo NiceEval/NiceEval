@@ -3,12 +3,12 @@
 本篇管理“哪些测试值得存在”，不建立运行时 Registry。目标不是测试最多或行命中率最高，而是每个会进入发布的
 错误都有一个最早、稳定、可读的 owner，并且同一矩阵不在多层复制。
 
-## 两种存在资格
+## 两层的存在资格
 
 | 身份 | 必须回答 | 数量规则 |
 |---|---|---|
-| Result / Journey | 删掉后会放走哪个稳定用户错误？为何更低层看不到真实边界？ | 每个结果一个主 owner |
-| Mechanism | 哪一类错误算法会通过？为何 Result 无法稳定制造或区分？ | 每个具名风险一个矩阵 owner |
+| E2E | 删掉后会放走哪个稳定用户错误？为何 Unit 看不到真实边界？ | 每个结果一个主 owner |
+| Unit | 哪一类错误算法会通过？为何 E2E 无法稳定制造或区分？ | 每个具名风险一个矩阵 owner |
 
 下列理由不能单独让测试存在：新增函数、分支、DTO 字段、DOM class、snapshot、line coverage，或“离实现近一点更放心”。
 
@@ -16,41 +16,41 @@
 
 每个产品域在自己的 testing 文档维护一张小表，目标形状如下：
 
-| 用户结果 / 机制风险 | 形态 | Owner | Lane | 历史 bug |
+| 用户结果 / 确定性风险 | 形态 | Owner | Lane | 历史 bug |
 |---|---|---|---|---|
-| `show --json` 经 pipe 完整交付 | Result | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
-| CJS 项目 `init → list` | Journey | `e2e/package-cjs/test/init-list.test.ts` | PR / release | `b44420d3` |
-| Codex SDK 工具事件规范化为 `shell` | Result + Unit | adapter Repo + transformer matrix | main / nightly | `060a6a05` |
+| `show --json` 经 pipe 完整交付 | 单边界 E2E | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
+| CJS 项目 `init → list` | Journey E2E | `e2e/package-cjs/test/init-list.test.ts` | PR / release | `b44420d3` |
+| Codex SDK 工具事件规范化为 `shell` | Adapter E2E + Unit | adapter Repo + 规范名映射矩阵 | main / nightly | `060a6a05` |
 
 表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
 
 ## 唯一矩阵 Owner
 
 一个等价类只在一个位置完整展开。例如 fingerprint 哪些输入参与身份由 unit 表驱动穷举；真实项目“只重跑发生变化的
-Eval”由一条 Result 证明接线。human、JSON、Report 和 runner 不再各复制一份 fingerprint 全矩阵。
+Eval”由一条单边界 E2E 证明接线。human、JSON、Report 和 runner 不再各复制一份 fingerprint 全矩阵。
 
 其它层若要保留代表，必须指出它排除的不同错误实现：
 
 - schema unit 证明编码形状；
-- CLI Result 证明安装后进程与落盘接线；
-- Journey 证明跨域的 locator 能继续交给 show / view；
+- CLI 单边界 E2E 证明安装后进程与落盘接线；
+- Journey E2E 证明跨域的 locator 能继续交给 show / view；
 - 三者不是因为“多测一层”，而是观察不同边界。
 
 ## Fixture 变化预算
 
 Unit fixture 只显式填写本 case 有语义的字段；机械默认值由测试专用 builder 补齐。builder 只造输入，不计算预期。
 
-Result / Journey 不手写内部 Run、Attempt 或 Report DTO；它们通过真实 Eval / Experiment 产生结果，再从公开 CLI、包导出、
+E2E 不手写内部 Run、Attempt 或 Report DTO；它们通过真实 Eval / Experiment 产生结果，再从公开 CLI、包导出、
 HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，才签入最小旧格式 fixture，并把 schema version 写成独立字面量。
 
 合理的变化预算：
 
 | 变化 | 允许修改的测试 |
 |---|---|
-| 内部重构、DTO 增加无关字段 | 不应修改 Result / Journey；只改真正依赖该机制的 unit |
+| 内部重构、DTO 增加无关字段 | 不应修改 E2E；只改真正依赖该语义的 Unit |
 | 公开输出新增可选字段 | 旧结果测试通常不改；新增结果需要新断言时才改 owner |
 | 公开格式破坏性升版 | 对应 contract owner 与显式旧版兼容 fixture |
-| 用户任务或结果改变 | 对应 Result / Journey 和产品文档 |
+| 用户任务或结果改变 | 对应 E2E owner 和产品文档 |
 
 目标不是测试永远不改，而是测试变化与公开契约变化同范围。
 
@@ -76,7 +76,7 @@ Bug escape 后按顺序处理：
 
 | 旧测试 | 判定 | 新 owner / 理由 |
 |---|---|---|
-| 线性 CLI 大脚本的一段 | 拆分 | 原生 Result 文件，可按标题单跑 |
+| 线性 CLI 大脚本的一段 | 拆分 | 按行为命名的 E2E 文件，可按标题单跑 |
 | 内部宿主模拟外部 cwd | 删除 | Package 场景 Repo 已从候选 tarball 证明 |
 | 完整 DTO snapshot | 删除 / 收窄 | 无公开契约；独有算法留最小 unit |
 | 会修改共享结果的 readback | 隔离 | 独立 Repo 或独立结果根，不靠顺序 |
@@ -104,19 +104,19 @@ Bug escape 后按顺序处理：
 
 | 问题 | 处理 |
 |---|---|
-| 公开结果没有变化 | Result / Journey 的 expected 不改；若它因 DTO、路径、CSS 或函数名失败，收窄它与实现的耦合 |
+| 公开结果没有变化 | E2E 的 expected 不改；若它因 DTO、路径、CSS 或函数名失败，收窄它与实现的耦合 |
 | 公开契约有意变化 | 先改产品契约，再只改该结果的唯一 owner；兼容性 owner 仍保留旧格式 fixture |
 | 新 bug 逃逸 | 先加强已有 owner 并证明能杀死旧实现；只有新边界无法由它表达时才新增测试 |
 | 运行设施变化 | 只改 candidate、process、server 或 cleanup 收据层；领域 expected 不随 executor 改写 |
 | Snapshot 大面积变化 | 先检查结构化字段和用户语义；只接受属于该 snapshot owner 的稳定表示变化，不批量确认 |
 | 测试需要依赖兄弟顺序 | 分配私有 Repo / 结果根；不增加 `serial` 或“必须最后”注释掩盖共享状态 |
 
-这套决策允许真正的契约变化修改测试，同时阻止内部重构把大量 Result / Journey 拖进同一个 diff。
+这套决策允许真正的契约变化修改测试，同时阻止内部重构把大量 E2E 拖进同一个 diff。
 
 ## 周期复核
 
 测试跟改率用于每次大迁移前后和至少每半年一次的人工诊断，不作为 CI 红绿门禁。固定命令、历史参照值和本方案如何
 针对旧问题见 [新体系如何避免旧问题](history-problems.md)。
 
-复核期待看到：内部重构不再批量触碰 Result / Journey；头部高跟改文件能解释为真实契约变化；被迁移的大脚本和 DTO
+复核期待看到：内部重构不再批量触碰 E2E；头部高跟改文件能解释为真实契约变化；被迁移的大脚本和 DTO
 fixture 不换名字重新长回来。若仍反复修改，优先检查 layer、oracle 和共享状态，不把门槛改成“多写几个测试”。
