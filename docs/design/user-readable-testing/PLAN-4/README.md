@@ -40,7 +40,7 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 ```
 
 读者不用先找声明文件就能回答：真实命令是什么、结果从哪里读、独立预期是什么、旧 bug 会在哪一步变红。
-`runProcess()` 只负责启动 argv 并保留原始收据；`parseJson()` 只负责解析并附加诊断。
+`runProcess()` 只负责启动 argv 并保留原始收据；`parseJson()` 只负责严格解码并附加诊断。
 两者都不能计算期望。
 
 ## 分类使用两条轴
@@ -50,10 +50,14 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 | 领域 | 代表场景 Repo | 主结果 |
 |---|---|---|
 | CLI | `e2e/cli/` | argv、stdout、stderr、exit、pipe、PTY、机器出口 |
+| Runner | `e2e/runner/` | dry plan、调度、carry、history 与真实运行的一致性 |
 | Report | `e2e/report/` | show/view、导出文件、HTTP、浏览器语义与交互 |
 | Package | `e2e/package/` | 安装、exports、CJS/ESM、外部 cwd、optional peer |
 | Adapter | `e2e/adapter/<id>/` | 真实协议、规范事件身份、usage、session、工具调用 |
 | Lifecycle | `e2e/lifecycle/` | signal、teardown、orphan、下一次消费者 |
+
+其中 CLI、Runner、Report、Package 与 Lifecycle 是功能场景 Repo；`e2e/adapter/<id>/` 是另一组兼容性 Repo。
+前者不借用真实 Adapter Repo 作为功能 fixture，后者也不接管 CLI / Report 的通用行为矩阵。
 
 第二条轴是边界：
 
@@ -102,7 +106,7 @@ E2E 不能可靠指出生产源码的具体行，但必须把故障缩到公开�
 pnpm e2e --lane pr
 pnpm e2e --repo report
 pnpm e2e --repo report -- --run test/exported-targets.test.ts
-pnpm e2e --lane main --repo codex-cli
+pnpm e2e --lane main --repo adapter/codex-cli
 ```
 
 根编排器构建一次候选 tarball，复制场景 Repo 到临时目录，注入候选并核验完整性，再按 manifest 选择 host 或 Docker executor。
@@ -129,7 +133,7 @@ PR lane 不接触 secrets，只跑 unit 与确定性场景 Repo。
 ## 代价
 
 - 没有一张机器生成的全仓 Behavior 图，覆盖审计依赖领域目录、历史缺陷表和 review。
-- 各场景 Repo 会重复少量进程 helper；这是保持项目可独立复制运行的显式成本。
+- 各场景 Repo 通过精确锁定的独立 Testkit 复用机械进程与解析原语；领域 fixture 与 expected 仍保持独立。
 - 同一公开结果若在多个媒介都有独有契约，需要分别写断言，不能由统一领域对象自动投影。
 - 本地没有 Docker、浏览器或密钥时，只能运行满足能力的子集。
 

@@ -12,6 +12,7 @@
     "niceeval": "^0.4.6"
   },
   "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
     "vitest": "^3.2.4"

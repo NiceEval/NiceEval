@@ -110,7 +110,7 @@ Docker 协议 fixture 可以复现确定性断流与错误分类，但不能替�
 test("CommonJS 项目 init 后可以立即 list", async () => {
   // 这个叶子 Repo 本身就是已安装候选 tarball 的 CommonJS consumer；
   // 不在 test 内另造一个没有执行 pnpm install 的空目录。
-  const project = await scenarioRepo("package-commonjs");
+  const project = await scenarioRepo("package");
 
   const init = await runProcess(
     ["pnpm", "--silent", "exec", "niceeval", "init"],
@@ -157,7 +157,8 @@ Journey 不是把多个短测试机械串起来，而是证明一个跨功能用
 
 ```ts
 test("新项目能运行评测、定位失败 Attempt 并交付静态报告", async () => {
-  const project = await scenarioRepo("journey-first-eval-to-debug");
+  // Journey 是 report 功能 Repo 中的一份测试；每例再取得私有项目副本。
+  const project = await scenarioRepo("report");
 
   const init = await runProcess(
     ["pnpm", "--silent", "exec", "niceeval", "init"],

@@ -19,8 +19,8 @@
 | 用户结果 / 确定性风险 | 形态 | Owner | Lane | 历史 bug |
 |---|---|---|---|---|
 | `show --json` 经 pipe 完整交付 | 单边界 E2E | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
-| CJS 项目 `init → list` | Journey E2E | `e2e/package-cjs/test/init-list.test.ts` | PR / release | `b44420d3` |
-| Codex SDK 工具事件规范化为 `shell` | Adapter E2E + Unit | adapter Repo + 规范名映射矩阵 | main / nightly | `060a6a05` |
+| CJS 项目 `init → list` | Journey E2E | `e2e/package/test/commonjs-init-list.test.ts` | PR / release | `b44420d3` |
+| Codex CLI 工具事件读回为 `shell` | Adapter E2E | `e2e/adapter/codex-cli/test/tool-identity.test.ts` | main / nightly | — |
 
 表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
 

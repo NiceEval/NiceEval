@@ -1,7 +1,8 @@
 # E2E：真实场景 Repo
 
 E2E 只负责必须穿过真实公开边界的行为：候选包、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
-signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey；Adapter、CLI、Report、Package 与 Lifecycle 是 owner 域。
+signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey。CLI、Runner、Report、Package 与 Lifecycle 使用
+功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 兼容性 Repo。
 
 ## Repo 是载体，不是测试模型
 
@@ -22,7 +23,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
-- 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；单 Repo fixture 仍留在本地；
+- 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
 这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
@@ -36,14 +37,13 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 ```ts
 // regression: d8d5a84b
 test("show --json 经 pipe 仍交付完整文档", async () => {
-  const result = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval", "show", locator, "--json",
-  ]);
+  const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
+  const result = await niceeval.run(["show", locator, "--json"]);
 
   expect(result.exitCode, result.diagnostic()).toBe(0);
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
-  const document = parseJson(result.stdout, result.diagnostic());
+  const document = result.json<AttemptDocument>();
   expect(document.format).toBe("niceeval.show");
   expect(document.data).toContainEqual(expect.objectContaining({ id: "tail-sentinel" }));
 });
@@ -64,6 +64,12 @@ init → exp --dry → exp → show --history → show @locator --execution → 
 Journey E2E 同时保留过程检查点和最终目标，完整代码见 [Example](../example/README.md)。
 
 Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
+
+## 功能 Repo 与 Adapter Repo 不混用
+
+功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
+或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
+昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter smoke 调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
 ## Adapter
 
@@ -107,6 +113,12 @@ Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 
 浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。
 默认直接使用 Playwright Test；只有经测量证明需要跨大量场景共享远端 browser 时，才允许引入专用 browser fixture。
+
+## Runner
+
+Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、carry 与 history 证据。`carry-reuse.test.ts`、
+`history-dedup.test.ts` 等子功能是同一 Repo 内的测试文件；修改 config、Eval 或当前结果的 case 使用私有项目副本。
+这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
 
 ## Package 与 CLI
 

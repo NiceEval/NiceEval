@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
+import { command, defined, only } from "@niceeval/testkit";
 import { beforeEach, expect, test } from "vitest";
-import { parseJson, runProcess } from "./support/process.ts";
 
 // NiceEval 根目录：pnpm e2e --repo cli -- --run test/show-json-pipe.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/show-json-pipe.test.ts
@@ -22,42 +22,38 @@ interface AttemptDocument {
   };
 }
 
+const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
+
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
 
 // regression: d8d5a84b — process.exit() 曾截断约 128 KiB 的 pipe JSON。
 test("show --json 经真实 pipe 仍包含签入 fixture 的尾部 sentinel", async () => {
   // Prepare：真实 Experiment 生成一份超过旧截断阈值的失败 Attempt。
-  const seeded = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "large-show", "--rerun", "all", "--json",
-  ]);
+  const seeded = await niceeval.run(["exp", "large-show", "--rerun", "all", "--json"]);
   expect(seeded.exitCode, seeded.diagnostic()).toBe(1);
 
   // Observe identity：locator 只能从公开 history 取得，测试不读取结果目录。
-  const history = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "show", "large-output/payload", "--history", "--json",
-  ]);
+  const history = await niceeval.run(["show", "large-output/payload", "--history", "--json"]);
   expect(history.exitCode, history.diagnostic()).toBe(0);
-  const historyDocument = parseJson<HistoryDocument>(history.stdout, history.diagnostic());
-  const section = historyDocument.data.sections.find((item) => item.evalId === "large-output/payload");
-  const locator = section?.attempts.at(-1)?.locator;
-  expect(locator, history.diagnostic()).toMatch(/^@/);
+  const section = only(
+    history.json<HistoryDocument>().data.sections,
+    (item) => item.evalId === "large-output/payload",
+    () => history.diagnostic(),
+  );
+  const locator = defined(section.attempts.at(-1)?.locator, () => history.diagnostic());
+  expect(locator).toMatch(/^@/);
 
   // Invoke：用用户得到的 locator 执行真实 installed CLI，并保留 producer 自身的流与退出状态。
-  const shown = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval", "show", locator as string, "--json",
-  ]);
+  const shown = await niceeval.run(["show", locator, "--json"]);
   expect(shown.exitCode, shown.diagnostic()).toBe(0);
   expect(Buffer.byteLength(shown.stdout)).toBeGreaterThan(128 * 1024);
 
   // Outcome：严格 parse 后检查尾部 fixture 的独立 sentinel；不是只断言“输出看起来像 JSON”。
-  const document = parseJson<AttemptDocument>(shown.stdout, shown.diagnostic());
-  const assertions = document.data.assertions;
-  expect(assertions, shown.diagnostic()).not.toBeNull();
+  const document = shown.json<AttemptDocument>();
+  const assertions = defined(document.data.assertions, () => shown.diagnostic());
   const rows = [
-    ...(assertions?.attention ?? []),
-    ...(assertions?.passedGroups.flatMap((group) => group.items) ?? []),
+    ...assertions.attention,
+    ...assertions.passedGroups.flatMap((group) => group.items),
   ];
   expect(rows).toContainEqual({ expected: '"tail-sentinel"', received: '"actual-4999"' });
 });

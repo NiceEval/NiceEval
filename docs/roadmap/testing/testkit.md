@@ -7,23 +7,27 @@
 
 ## 为什么值得试点
 
-当前 Example 有 10 个独立场景 Repo。复用按消费者而不是文件数判断：
+目标 Example 有 8 个独立场景 Repo：5 个功能 Repo 与 3 个 Adapter Repo。迁移前的长功能名拆分方式曾形成 10 个 Repo；
+当前复用按独立 Repo 消费者而不是测试文件数判断：
 
 | 能力 | 独立消费者 | v1 |
 |---|---:|---|
-| run + 完整 process receipt | 10 | 接收 |
-| 严格 JSON | 9 | 接收 |
-| 严格 NDJSON | 6 | 接收 |
+| run + 完整 process receipt | 8 | 接收 |
+| 严格 JSON | 6 | 接收 |
+| 严格 NDJSON | 5 | 接收 |
 | `only` / `defined` | 7 | 接收 |
 | 长驻 process + readiness + cleanup | AI SDK、Lifecycle | 接收窄接口 |
-| 临时目录 | Runner carry、Journey | 接收 |
-| HTTP fixture | Local protocol | 保留 Repo |
-| 项目复制规则 | Runner carry | 保留 Repo |
-| Browser lifecycle | Report、Journey | 继续使用 Playwright Test |
+| 项目副本 / 临时目录 | Runner、Report Journey | 接收显式策略 API |
+| HTTP server lifecycle | Local protocol | 接收通用 callback API；0.x 暂定 |
+| Browser lifecycle | Report | 继续使用 Playwright Test |
 | stdin / PTY | 尚无两个相同消费者 | 暂不接收 |
 
-第一批能替换 9 份 process、7 份 assertion、1 份 temp-dir support，共 741 行；CommonJS test 另有约 27 行内联 spawn。
-Runner carry 的 project copy 与 Local protocol 的 HTTP handler 共 101 行，连同 Playwright 页面动作和所有 expected 原样保留。
+迁移前的 19 份 support 共 842 行，CommonJS test 另有约 27 行内联 spawn。目标 Example 已全部改为 package API，
+并删除所有 `test/support`。Playwright 页面动作、HTTP 的 502 response、项目排除策略和所有 expected 原样保留在 owner 文件。
+
+项目复制已有 Runner mutation 与 Report Journey 两个独立功能 Repo 消费，进入正式试点。HTTP server 当前只有
+Local protocol 一个 Adapter Repo 消费，因此只承诺 0.x API 形状；callback 完整保留 Repo 策略，Testkit 只拥有通用 Node
+listener 生命周期。HTTP API 在稳定前仍要用第二个消费者或独立 fixture 校准。
 
 ## API 形状
 
@@ -148,6 +152,36 @@ export function pollUntil<T>(
 `only` 只检查“恰好一个”，谓词与对象身份留在测试。`pollUntil` 只负责时间和最后一次错误；`/health`、信息文件、HTTP 状态等
 ready 条件由 Repo 提供。
 
+### 隔离目录与本地 HTTP
+
+```ts
+export function withProjectCopy<T>(
+  options: {
+    from: string;
+    prefix: string;
+    omitTopLevel?: readonly string[];
+    links?: readonly {
+      from: string;
+      to: string;
+      type?: "file" | "dir" | "junction";
+    }[];
+  },
+  body: (project: { root: string }) => Promise<T>,
+): Promise<T>;
+
+export function withHttpServer<T>(
+  handler: (request: Request) => Response | Promise<Response>,
+  body: (server: { readonly url: string }) => Promise<T>,
+  options?: { hostname?: string; port?: number },
+): Promise<T>;
+```
+
+`withProjectCopy` 默认只执行逐字节复制，不猜 package manager 或 NiceEval 目录。`omitTopLevel` 只匹配起始目录的第一层名称；
+`links[].to` 必须是副本内的相对路径，不能越出临时根。成功、正文失败和链接失败都会删除整个副本。
+
+`withHttpServer` 默认监听 `127.0.0.1:0`，把实际 origin 作为 `url` 交给正文。handler 决定 path、status、header、body 与延迟；
+正文结束后 Testkit 关闭 listener，并在端口仍被占用时让测试失败。它不是 NiceEval provider mock。
+
 核心 Unit 不为了“统一写法”默认依赖 Testkit。纯函数 fixture、fake clock、barrier 和领域 factory 继续留在 Vitest Unit；
 只有它们与第二个独立消费者形成完全相同的机械契约时，才按同一准入规则评估。
 
@@ -176,6 +210,8 @@ Testkit candidate 不用 NiceEval 自测。固定 fixture process 分别产生�
 - body 成功 / 失败和 cleanup 成功 / 失败的四种组合；
 - POSIX process group 或声明过的 Windows capability；
 - 临时目录在成功、失败和 timeout 后都被回收。
+- 项目复制的排除项、链接越界拒绝、正文与删除同时失败；
+- HTTP handler 的动态端口、请求传递、正文失败与 listener 终止确认。
 
 关键 parser、timeout 与 cleanup 分支要做 mutation kill。Meta-test 通过后，再用 pinned known-good NiceEval 验证 Vitest、
 Playwright、run-only 与 long-lived process 四个 pilot。
@@ -184,8 +220,10 @@ Playwright、run-only 与 long-lived process 四个 pilot。
 
 1. 私有 packaged prototype：实现并跑 meta-tests，不进入产品 release gate；
 2. 发布精确版本 0.x，建立 provenance、ESM / CJS、Node 下限和 lockfile integrity；
-3. 先迁移 CLI、Report、AI SDK 与 Lifecycle 四种 pilot；
-4. 确认失败诊断不退化，再迁移其它 Repo，并同批删除被替代 support；
+3. 先分别迁移功能侧的 CLI / Report 与 Adapter 侧的 AI SDK，再迁移 Lifecycle；
+4. 确认两组 Repo 的失败诊断都不退化，再迁移其它 Repo，并同批删除被替代 support；
 5. 连续两个 release 稳定且出现两个仓库外消费者后，再决定公开稳定承诺。
+
+[`example/repos/`](example/repos/) 已按目标 API 全量迁移，目的是评审调用点，不表示可以跳过前两步。
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。

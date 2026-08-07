@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
+import { command } from "@niceeval/testkit";
 import { beforeEach, expect, test } from "vitest";
-import { parseJson, runProcess } from "./support/process.ts";
 
 // NiceEval 根目录：pnpm e2e --repo cli -- --run test/experiment-selection.test.ts
 // 已安装候选包的隔离 Repo 根：pnpm test --run test/experiment-selection.test.ts
@@ -11,17 +11,16 @@ interface PlanDocument {
   matrix: Array<{ experimentId: string; evalId: string }>;
 }
 
+const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
+
 beforeEach(() => rmSync(".niceeval", { recursive: true, force: true }));
 
 test("exp --dry --json 只选择精确 experiment，不误选同前缀兄弟", async () => {
-  const result = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "compare/base", "--dry", "--json",
-  ]);
+  const result = await niceeval.run(["exp", "compare/base", "--dry", "--json"]);
   expect(result.exitCode, result.diagnostic()).toBe(0);
   expect(result.stderr).toBe("");
 
-  const plan = parseJson<PlanDocument>(result.stdout, result.diagnostic());
+  const plan = result.json<PlanDocument>();
   expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3 });
   expect(plan.matrix.map((row) => row.experimentId)).toEqual(["compare/base"]);
   expect(plan.matrix.map((row) => row.evalId)).toEqual(["smoke/passes"]);

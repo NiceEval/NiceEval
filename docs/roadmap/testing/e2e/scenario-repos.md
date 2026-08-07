@@ -1,23 +1,22 @@
 # 真实场景 Repo
 
-场景 Repo 是测试的真实用户项目和隔离单位。它承载 NiceEval 依赖、Eval、Experiment、Report、adapter 与服务，
-但不承载第二套 Behavior / World 语义。
+场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
+CLI、Runner、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+第二套 Behavior / World 语义。
 
 ## 目录形状
 
 ```text
 e2e/
-├── cli/
-├── report/
-├── package-commonjs/
-├── runner-carry/
-├── runner-history/
-├── adapter/
+├── cli/                            # ┐
+├── runner/                         # │ 功能场景 Repo
+├── report/                         # │ 子功能与 Journey 用测试文件命名
+├── package/                        # │
+├── lifecycle/                      # ┘
+├── adapter/                        # Adapter 兼容性 Repo collection
 │   ├── ai-sdk/
 │   ├── codex-cli/
 │   └── local-protocol/
-├── journey-first-eval-to-debug/
-├── lifecycle-interrupt-cleanup/
 └── scripts/                         # 发现、pack、注入、executor、artifact
 ```
 
@@ -37,10 +36,26 @@ test/
 它不是 workspace link，也不会由产品 gate 临时替换。
 
 按需要增加 `agents/`、`reports/`、`src/`、`compose.yaml`、`Dockerfile` 和静态 fixture。
-目录不必为了形式把所有项目拆得很小；一组只读 E2E 能消费同一次昂贵证据时，可以留在一个 Repo。
-会修改当前结果或生命周期状态的 Journey E2E 必须独立。
+目录不必为了形式把每个子功能拆成 Repo。`runner/carry-reuse.test.ts` 与 `runner/history-dedup.test.ts` 可以消费相同的
+功能依赖图；`report/first-eval-to-debug.spec.ts` 可以在自己的项目副本里完成 Journey。只有依赖、secret、executor、lane
+或资源所有权改变时才增加 Repo；测试会写状态时先给它私有项目副本或结果根，不靠拉长 Repo 名隔离。
 
-`adapter/` 是 Repo collection，不能把所有 adapter test 放入同一个叶子项目。
+## 两套 Repo 的边界
+
+功能 Repo 与 Adapter Repo 可以共同依赖 `@niceeval/testkit` 的进程、严格解码与 cleanup 原语，除此之外不共享现场：
+
+| 边界 | 功能 Repo | Adapter Repo |
+|---|---|---|
+| 证明对象 | NiceEval 自己拥有的公开功能与跨功能 Journey | 一个外部 SDK / CLI 的真实协议兼容性 |
+| Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
+| 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
+| 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
+| 测试范围 | CLI、Runner、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
+
+功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
+绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
+
+`adapter/` 是独立于功能 Repo 的 collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
 凭据边界、结果根与公开 readback。
 无密钥的 `local-protocol/` 只拥有确定性 transport / fault / cleanup，不得用它的 canned event 宣称 live adapter 兼容。
@@ -138,7 +153,7 @@ Executor 回答测试进程在哪里运行：
 
 - 根 runner 每个 Repo、每次重试都创建新副本；
 - Vitest 文件默认不依赖顺序；同一 Repo 的共享 evidence 在 prepare 完成后只读；
-- 需要写的测试使用独立结果根 / 项目副本，或独占的 Journey E2E 场景 Repo；
+- 需要写的测试使用独立结果根 / 项目副本；只有运行世界也不同，才为 Journey 增加独立 Repo；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
 - 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
 - secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。
@@ -154,6 +169,9 @@ Eval / Experiment 集：
 - 公开 readback 能确认上游身份被正确保留 / 规范化。
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
+
+Adapter Repo 中出现 `exp`、`show` 或 `--execution` 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
+公开读面的最短路径；同一 CLI flag、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
 本地协议 backend 固定版本和响应，可进入 PR；真实 provider 版本、模型和 CLI 身份写入 artifact，进入可信 lane。
 二者应是不同叶子 Repo，避免共享依赖、结果与子进程变量后把本地 fixture 误报成某个 live adapter 的证明。

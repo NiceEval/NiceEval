@@ -107,8 +107,8 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 
 **根因**：一个线性脚本把只读验证和会改变共享 `.niceeval` 的动作放在同一个隐式世界，文件顺序成了隐藏契约。
 
-**新防线**：只读 E2E 可共享 prepare 后冻结的 evidence；会改变当前结果的测试使用自己的结果根或独立 Journey E2E 场景 Repo；
-每个 Repo 和每次重试都从新副本开始。
+**新防线**：只读 E2E 可共享 prepare 后冻结的 evidence；会改变当前结果的测试使用自己的结果根或项目副本。
+只有 package graph、executor 或资源所有权也不同，Journey 才增加 Repo；每个 Repo 和每次重试都从新副本开始。
 
 **验收**：随机调整只读测试顺序仍绿；Journey E2E 单独运行仍绿；任何测试不能靠“必须排最后”的注释维持正确性。
 

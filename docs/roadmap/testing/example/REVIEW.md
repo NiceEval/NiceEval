@@ -7,6 +7,7 @@
 |---|---|---|
 | 用 `mechanism-unit/` 或 `cli-results.test.ts` 给一组异质测试命名 | 名字只说抽象类别，看不出 owner、用户动作或失败边界；同目录会持续吸入无关 case | 顶层只分 `unit/` 与 E2E `repos/`；Unit 按 Feature、E2E 文件按行为命名，CLI 已拆为 selection、streams-and-exit、show-json-pipe |
 | 多个 adapter 共用一个 package / 结果根 | 不能证明各自真实依赖、安装、secret 与协议 | 每个 adapter 一个叶子 Repo；local protocol 不冒充 live |
+| 通用功能借用 `ai-sdk` / `codex-cli` Repo | 功能回归会被上游凭据、网络和版本漂移污染；Adapter smoke 又会被误算成功能证据 | CLI、Runner、Report、Package、Lifecycle 使用自己的功能 Repo；`adapter/<id>` 只证明对应协议兼容性 |
 | 把相似风险都标成历史 regression | 新测试可能杀不死历史旧实现 | 只有存在旧实现 kill 证据才写 `regression:`，否则写 `risk:` |
 | CommonJS test 在 `/tmp` 临时造未安装项目 | `pnpm exec niceeval` 的实际 binary owner 不确定 | CommonJS 叶子本身就是 consumer，由 runner 注入候选 tarball |
 | 根据 locator 自己拼导出路径 | 测的是测试作者的猜测，不是页面交付 | 从真实 anchor 读取 `href`，导航并核对同一 locator |

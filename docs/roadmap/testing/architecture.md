@@ -35,6 +35,10 @@ e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → e
 
 编排层不读取 `.niceeval/`，不解码 NiceEval 产品输出，不计算 expected，也不决定测试是否正确。
 
+E2E 有两组隔离 Repo。`cli`、`runner`、`report`、`package` 与 `lifecycle` 是功能场景，使用确定性本地 fixture 验收
+NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对应真实 SDK / CLI 或协议故障端。两组只共用机械 Testkit，
+不共用依赖图、fixture、secret、结果根或领域 expected。
+
 ## 从风险选择测试形态
 
 按下列顺序选择最早而完整的边界：
@@ -99,7 +103,8 @@ E2E 文件从上到下保持同一信息顺序：
 ## 复用设施预算
 
 跨 Repo 的稳定机械能力由独立的 [官方 Testkit](testkit.md) 承载。它按 stable-outer / candidate-inner 使用：
-场景 Repo 精确锁定 Testkit，根 runner 只替换待测 NiceEval tarball。Repo 只有一个消费者的 fixture 继续留在本地。
+场景 Repo 精确锁定 Testkit，根 runner 只替换待测 NiceEval tarball。能力是否上移按机械契约的消费者判断，不能因为
+功能与 Adapter 属于不同 Repo 集合，就复制两份 process 或严格 JSON 实现。
 
 共享设施只允许拥有机械能力：
 
@@ -118,8 +123,11 @@ E2E 文件从上到下保持同一信息顺序：
 - 在断言阶段悄悄修改共享 evidence。
 
 两个 Repo 出现同一稳定机械 parser 后才提取共享实现；领域预期仍留在测试文件。
-这份允许清单不是 Testkit v1 的实现清单。HTTP server、项目复制、浏览器和 stdin 当前仍留在各 Repo；
-v1 只接收已有两个独立消费者的进程、严格 JSON / NDJSON、等待、断言选择与临时目录原语。
+项目复制已经由 Runner mutation 与 Report Journey 两个功能 Repo 消费，因此 Testkit 接收显式策略 API。
+
+HTTP server lifecycle 暂时只有 Local protocol 一个消费者，只作为 0.x callback API 试用；path、status、body 和错误阶段仍在
+Adapter 测试正文。浏览器和 stdin 不进入 Testkit；Playwright Test 继续拥有 browser / context / page。
+
 专用 browser fixture 不是默认能力；只有大量场景共享远端 browser 的性能收益已经测量并且 Playwright Test fixture
 无法表达时才引入，不能为了少写两行就由 Vitest 手动包装 `chromium.launch()`。
 

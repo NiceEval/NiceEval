@@ -14,7 +14,7 @@ discover → select → pack → isolate → install → prepare → test → co
 4. `isolate` 为每个项目和每次重试建立全新副本。
 5. `install` 注入候选并核对实际解析身份。
 6. `prepare` 启动项目拥有的本地进程、Docker service、浏览器或 live provider preflight。
-7. `test` 运行项目的原生 Vitest 命令；过滤参数原样透传。
+7. `test` 运行项目的原生 Vitest 或 Playwright Test 命令；过滤参数原样透传。
 8. `collect` 无论成功失败都收集声明的 artifact，并执行 secret redaction。
 9. `cleanup` 停服务、关浏览器、删容器与临时目录；`--keep-workdir` 只供显式本地诊断。
 10. `summarize` 聚合 JUnit、阶段、耗时、候选 digest 与复现命令。
@@ -34,7 +34,7 @@ pnpm e2e --lane pr
 pnpm e2e --repo cli
 pnpm e2e --repo report --executor docker
 pnpm e2e --repo report -- --run test/exported-targets.test.ts
-pnpm e2e --lane main --repo ai-sdk
+pnpm e2e --lane main --repo adapter/ai-sdk
 ```
 
 默认本地命令选择无密钥 `pr` lane。

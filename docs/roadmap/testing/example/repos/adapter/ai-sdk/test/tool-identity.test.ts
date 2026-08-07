@@ -1,7 +1,14 @@
+import {
+  command,
+  defined,
+  only,
+  startProcess,
+  waitForOutput,
+  type ProcessHandle,
+} from "@niceeval/testkit";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { parseJson, runProcess, startProcess, waitForOutputLine } from "./support/process.ts";
-import { only } from "./support/assert.ts";
 
+// Adapter 兼容性 Repo；exp/show 只是公开证据读回手段，不承担通用功能矩阵。
 // NiceEval 根目录：pnpm e2e --repo adapter/ai-sdk
 // 已安装候选包的独立 ai-sdk Repo 根：pnpm test
 
@@ -37,48 +44,40 @@ interface ExecutionDocument {
   };
 }
 
+const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
 let backendUrl: string | undefined;
-let backend: ReturnType<typeof startProcess> | undefined;
+let backend: ProcessHandle | undefined;
 
 beforeAll(async () => {
   const proc = startProcess(["pnpm", "--silent", "start"], { env: { PORT: "0" } });
   backend = proc;
-  const stdout = proc.stdout;
-  expect(stdout, "被测应用 stdout 应可读").not.toBeNull();
-  const line = await waitForOutputLine(
-    stdout as NodeJS.ReadableStream,
+  backendUrl = await waitForOutput(
+    proc,
+    "stdout",
     /http:\/\/127\.0\.0\.1:\d+/,
-    20_000,
-    "pnpm start（ai-sdk 被测应用）",
+    { timeoutMs: 20_000, label: "pnpm start（ai-sdk 被测应用）" },
   );
-  backendUrl = line;
 }, 30_000);
 
 afterAll(async () => {
-  if (backend) {
-    backend.send("SIGTERM");
-    await backend.done;
-  }
+  await backend?.dispose();
 }, 15_000);
 
 // 契约：UI Message Stream 没有命名空间概念，协议原样的工具名就是规范身份——
 // 公开执行证据必须读到 get_weather，且 calculate（反例）不得出现。
 test("AI SDK 真实工具调用从公开执行证据读回为不带命名空间的工具名", async () => {
-  const url = backendUrl;
+  const url = defined(backendUrl, "被测应用应已就绪");
   expect(url, "被测应用应已就绪").toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
 
-  const run = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "exp", "tool-call", "--rerun", "all", "--json",
-  ], { env: { AI_SDK_URL: url } });
+  const run = await niceeval.run(
+    ["exp", "tool-call", "--rerun", "all", "--json"],
+    { env: { AI_SDK_URL: url } },
+  );
   expect(run.exitCode, run.diagnostic()).toBe(0);
 
-  const history = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "show", "tool-call/weather", "--history", "--json",
-  ]);
+  const history = await niceeval.run(["show", "tool-call/weather", "--history", "--json"]);
   expect(history.exitCode, history.diagnostic()).toBe(0);
-  const historyDocument = parseJson<HistoryDocument>(history.stdout, history.diagnostic());
+  const historyDocument = history.json<HistoryDocument>();
   const section = only(
     historyDocument.data.sections,
     (item) => item.evalId === "tool-call/weather",
@@ -86,12 +85,9 @@ test("AI SDK 真实工具调用从公开执行证据读回为不带命名空间�
   );
   const attempt = only(section.attempts, (item) => item.verdict === "passed", history.diagnostic());
 
-  const shown = await runProcess([
-    "pnpm", "--silent", "exec", "niceeval",
-    "show", attempt.locator, "--execution", "--json",
-  ]);
+  const shown = await niceeval.run(["show", attempt.locator, "--execution", "--json"]);
   expect(shown.exitCode, shown.diagnostic()).toBe(0);
-  const document = parseJson<ExecutionDocument>(shown.stdout, shown.diagnostic());
+  const document = shown.json<ExecutionDocument>();
   expect(document.view).toBe("execution");
   expect(document.data.locator).toBe(attempt.locator);
 

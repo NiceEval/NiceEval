@@ -1,5 +1,0 @@
-.niceeval/
-niceeval.config.ts
-node_modules/
-playwright-report/
-test-results/

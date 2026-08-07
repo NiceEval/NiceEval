@@ -30,6 +30,10 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report
 
 `plan --json` 只输出 Repo、executor、能力和分片，不包含产品断言。
 
+功能 Repo 与 Adapter Repo 永远是不同的 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
+`adapter/ai-sdk` Repo 来提供“更真实”的模型结果；`--repo adapter/ai-sdk` 也只运行该兼容性项目。`main` / `release` lane
+可以同时选择两组 Repo，但它们仍分别安装、执行、收集 artifact 和 cleanup。
+
 ## 一次运行
 
 ```text
@@ -58,7 +62,7 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 
 | 触发 | Lane | Secret | 内容 |
 |---|---|---|---|
-| 本地默认 / `pull_request` | `pr` | 无 | unit、CLI、Report、Package、本地 host / Docker fixture |
+| 本地默认 / `pull_request` | `pr` | 无 | unit、CLI、Runner、Report、Package、本地 host / Docker fixture |
 | `push main` | `main` | GitHub Environment | PR 全集 + 便宜 live adapter smoke |
 | `schedule` | `nightly` | GitHub Environment | 全 adapter、sandbox、lifecycle、平台代表 |
 | release preflight | `release` | GitHub Environment | 精确待发布 tarball + blocking 矩阵 |
@@ -152,4 +156,5 @@ Release 使用已经发布且精确锁定的 Testkit，不从待发布 checkout 
 - Manifest 的每个 artifact pattern 都由收集器契约测试证明，嵌套 glob 与空匹配行为不能依赖 workflow 猜测。
 - 注入身份核验失败与待测包不可消费使用不同失败分类，并保留各自的原始收据。
 - Adapter 与 Report Repo 使用原生测试文件和标题分片，不把多个命题压进线性脚本。
-- CLI、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
+- CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
+- 共用 runner 不等于共用 Repo；功能与 Adapter 始终是不同 matrix cell、依赖安装和结果根。

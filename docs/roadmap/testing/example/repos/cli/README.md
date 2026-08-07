@@ -1,6 +1,6 @@
 # CLI scenario repo
 
-这是无密钥、可放进 PR lane 的真实消费项目。根 runner 在临时副本中把 `niceeval` 改指候选 tarball 后运行
+这是 CLI 功能测试自己的无密钥消费项目，不借用任何 Adapter Repo。根 runner 在临时副本中把 `niceeval` 改指候选 tarball 后运行
 `pnpm test`；测试正文直接展示完整 `pnpm --silent exec niceeval …`、exit、stdout、stderr、JSON / NDJSON 与
 pipe 尾部 sentinel。它不读取 `.niceeval/` 私有文件。
 

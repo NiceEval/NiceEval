@@ -1,5 +1,6 @@
 # 适配器场景 Repo（docs 示例）
 
+这里是 Adapter 兼容性 Repo collection，不是 CLI、Runner、Report 等功能测试使用的 fixture 集。
 三个独立真实场景 Repo，每个都是完整用户项目（package.json / e2e.json /
 niceeval.config.ts / evals / experiments / test，按需 backend）：
 
@@ -15,3 +16,6 @@ tarball 注入与指纹核对）写在各叶子 Repo 的 README。
 `ai-sdk` 与 `codex-cli` 是可执行的 live contract 示例，但 docs 验收不会真的消耗 key、模型费用或搭建外部 CLI；
 本地与 PR 可直接跑的代表是 `adapter/local-protocol`。新增 Claude Code、OpenCode 或其它适配器时增加同形叶子，
 而不是继续加进某个共享 test 文件。
+
+Adapter Repo 只保留读回真实协议证据所需的最短 NiceEval 路径。通用 CLI 行为、carry、Report 导航和长用户 Journey
+分别由 `e2e/cli`、`e2e/runner` 与 `e2e/report` 功能 Repo 证明；不能把这里的 `exp` / `show` 调用算成那些功能的 owner。

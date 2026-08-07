@@ -1,8 +1,12 @@
 {
-  "name": "niceeval-testing-example-cli",
+  "name": "niceeval-example-runner",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "test": "vitest run" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": { "niceeval": "^0.4.6" },
   "devDependencies": {
     "@niceeval/testkit": "0.1.0",

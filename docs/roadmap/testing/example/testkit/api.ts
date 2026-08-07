@@ -55,6 +55,16 @@ export interface ProcessHandle {
   dispose(): Promise<void>;
 }
 
+export declare function runProcess(
+  argv: Argv,
+  options?: RunOptions,
+): Promise<ProcessReceipt>;
+
+export declare function startProcess(
+  argv: Argv,
+  options?: StartOptions,
+): ProcessHandle;
+
 export interface Command {
   run(args: readonly string[], options?: RunOptions): Promise<ProcessReceipt>;
   start(args: readonly string[], options?: StartOptions): ProcessHandle;
@@ -94,4 +104,30 @@ export declare function pollUntil<T>(
 export declare function withTempDir<T>(
   prefix: string,
   body: (root: string) => Promise<T>,
+): Promise<T>;
+
+export interface ProjectCopyOptions {
+  from: string;
+  prefix: string;
+  omitTopLevel?: readonly string[];
+  links?: readonly {
+    from: string;
+    to: string;
+    type?: "file" | "dir" | "junction";
+  }[];
+}
+
+export declare function withProjectCopy<T>(
+  options: ProjectCopyOptions,
+  body: (project: { root: string }) => Promise<T>,
+): Promise<T>;
+
+export interface HttpServerFixture {
+  readonly url: string;
+}
+
+export declare function withHttpServer<T>(
+  handler: (request: Request) => Response | Promise<Response>,
+  body: (server: HttpServerFixture) => Promise<T>,
+  options?: { hostname?: string; port?: number },
 ): Promise<T>;

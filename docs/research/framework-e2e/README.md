@@ -50,6 +50,10 @@ Vitest 让复杂 fixture 留在目录中，极小 case 才由 `useTmpFS` 就地�
 NiceEval 的测试文件因此可以保留少量重复 argv。把它们藏进 `runScenario("report")` 虽然行数更少，却会让评审者无法从
 一个文件判断用户做了什么、失败停在哪里，以及修改 expected 是否合理。
 
+**推断。** 功能 fixture project 与外部集成 fixture project 应是两组 Repo。Vite / Vitest 的产品功能 playground 不会因为
+都要启动进程，就与某个第三方兼容性项目共用 package graph。NiceEval 因此应让 `cli / runner / report / package / lifecycle`
+使用确定性功能 Repo，让 `adapter/<id>` 使用真实 SDK / CLI Repo；两组只共享不含领域语义的机械 Testkit。
+
 ## 对 NiceEval 的具体决策
 
 NiceEval 应采用 **Vitest + Playwright Test + 一个薄的、框架中立的 repo runner**，不应自建通用 E2E 框架。
@@ -94,7 +98,7 @@ NiceEval 应采用 **Vitest + Playwright Test + 一个薄的、框架中立的 r
 | `docs/roadmap/testing/e2e/execution.md` | 写清 Vitest 与 Playwright Test 的 lane ownership，以及共享 runner 的生命周期契约 |
 | `docs/roadmap/testing/e2e/scenario-repos.md` | 为 `CandidateReceipt`、consumer repo copy/install 与 failure preservation 定义机器可读字段 |
 | `docs/roadmap/testing/portfolio.md` | Browser Journey 归 Playwright；CLI/HTTP/local protocol 归 Vitest；同一风险不得跨 runner 复制 |
-| 各 scenario Repo 的 `test/support/process.ts` | 先展示 framework-neutral process handle，不 import Vitest 或 Playwright matcher；重复契约稳定后再上移 |
+| 独立 `@niceeval/testkit` | 用 framework-neutral process handle 同时服务功能与 Adapter 两组 Repo；精确锁版本且不 import Vitest / Playwright matcher |
 | 根 runner 的 server / resource support | readiness、日志、process-tree shutdown、端口释放与 `CleanupReceipt`，以普通 TypeScript API 同时服务两种 runner |
 | browser Journey example | 使用 Playwright Test 原生 fixture/trace，只调用共享 repo runner 准备 candidate 与后端 |
 | CLI scenario example | 使用 Vitest 原生 assertions，只调用同一 repo runner 安装候选并运行真实 CLI |

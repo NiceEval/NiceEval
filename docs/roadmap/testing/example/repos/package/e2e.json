@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "package",
+  "areas": ["package", "cli"],
+  "lanes": ["pr", "main", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "test"],
+  "timeoutMinutes": 5,
+  "secrets": [],
+  "paths": ["bin/**", "package.json", "src/cli.ts"],
+  "artifacts": []
+}

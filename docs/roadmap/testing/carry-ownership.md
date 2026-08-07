@@ -11,7 +11,7 @@
 ## 用户结果由 Runner 场景 Repo 证明
 
 Owner 是
-[`example/repos/runner-carry/test/carry-reuse.test.ts`](example/repos/runner-carry/test/carry-reuse.test.ts)。它在隔离的真实
+[`example/repos/runner/test/carry-reuse.test.ts`](example/repos/runner/test/carry-reuse.test.ts)。它在隔离的真实
 Repo 中运行安装后的 `pnpm exec niceeval exp`，从公开 `--dry --json` 与 `--json` 事件流观察结果：
 
 1. 强制完整运行时没有携入；
@@ -78,7 +78,7 @@ builder；需要 fixture 自己计算预期才能继续通过时，应先停下�
 | Human / JSON 各自复制 carry 矩阵 | 删除矩阵，只留各自输出差异 | 对应 formatter / schema Unit |
 | results / accept 手写完整 manifest | 改用最小 builder，不新增重复测试 | 原 Record / Accept Unit |
 | 完整运行中重复穷举 fingerprint 输入 | 只留计划与实际携入闭环 | Runner carry 场景 Repo |
-| 共享结果根中的 full / partial 顺序测试 | 移入隔离副本 | `runner-carry` 单边界 E2E |
+| 共享结果根中的 full / partial 顺序测试 | 移入隔离副本 | `runner/carry-reuse.test.ts` 单边界 E2E |
 
 迁移完成必须满足：
 

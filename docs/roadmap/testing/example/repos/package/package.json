@@ -1,7 +1,7 @@
 {
-  "name": "niceeval-testing-example-cli",
+  "name": "niceeval-testing-example-package",
   "private": true,
-  "type": "module",
+  "type": "commonjs",
   "scripts": { "test": "vitest run" },
   "dependencies": { "niceeval": "^0.4.6" },
   "devDependencies": {

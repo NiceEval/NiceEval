@@ -26,17 +26,23 @@ e2e.json → 选择项目 → 构建候选 tarball → 隔离安装 → executor
 
 ```text
 e2e/
-├── cli/
-├── report/
-├── package-commonjs/
-├── adapter/codex/
-├── journey-first-eval-to-debug/
-├── lifecycle-interrupt-cleanup/
+├── cli/                    # ┐
+├── runner/                 # │ 功能场景 Repo；子功能与 Journey 是测试文件
+├── report/                 # │
+├── package/                # │
+├── lifecycle/              # ┘
+├── adapter/                # 另一组 Adapter 兼容性 Repo
+│   ├── ai-sdk/
+│   ├── codex-cli/
+│   └── local-protocol/
 └── scripts/                 # 只做发现、注入、executor、artifact
 ```
 
 每个叶子项目都可以复制到仓库外执行，至少包含自己的 `package.json`、lockfile、`e2e.json`、fixture 与 `test/`。
 它不能通过 workspace link 或相对路径 import NiceEval 源码。
+
+功能 Repo 与 Adapter Repo 是两套独立消费项目。前者使用签入的确定性 fixture 验收 NiceEval 功能；后者使用真实 SDK / CLI
+或对应协议故障端验收兼容性。两者只共享机械 Testkit，不共享 package graph、fixture、secret、结果根或领域 expected。
 
 ## Repo manifest
 

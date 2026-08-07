@@ -10,6 +10,7 @@
 
 - Unit 用最小 fixture 证明纯逻辑、错误分类、schema 与可控竞态。
 - 每个场景 Repo 都是自包含 NiceEval 用户项目，拥有真实 config、Eval、Experiment、Report 与必要服务。
+- 功能 Repo 与 Adapter Repo 是两组消费项目；它们只共用根 runner 与机械 Testkit，不共享 fixture、依赖或结果。
 - 场景 Repo 安装候选 tarball，只从公开入口进入，以原生 Vitest 写单边界 E2E 或 Journey E2E。
 - 跨 Repo 的机械能力由精确锁定、独立于产品 artifact 的 Testkit 提供；产品 gate 只替换 NiceEval candidate。
 - Repo 是执行现场，不是测试语义；测试命题仍按用户结果、历史 bug 与产品域组织。
@@ -73,7 +74,7 @@ PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection
 | CLI 进程、pipe、PTY、exit、机器出口 | CLI 场景 Repo |
 | show / view、HTML、HTTP、浏览器语义与交互 | Report 场景 Repo |
 | 官方 adapter 的 SDK / CLI / provider 兼容性 | 每个 Adapter 的 live 场景 Repo |
-| 跨 CLI / Report 的完整用户目标 | Journey E2E 场景 Repo |
+| 跨 CLI / Report 的完整用户目标 | 最终结果 owner 功能 Repo 中的 Journey 测试文件 |
 | signal、teardown、orphan、下一次消费者 | Lifecycle 场景 Repo |
 
 本地协议 server 或 Docker fixture 可以证明 NiceEval 自有的 transport 与错误处理，但不能替代 live adapter 兼容性。
@@ -97,7 +98,7 @@ PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection
 - 真实场景 Repo 与 Journey 契约；
 - 本地、Docker 与 GitHub Actions 的统一执行链；
 - 历史 bug escape audit；
-- CLI、Report、Package 与 Adapter 的可读代码示例。
+- CLI、Runner、Report、Package、Lifecycle 与 Adapter 的可读代码示例。
 - 独立 Testkit 的 stable-outer 信任链、最小 API 与迁移门槛。
 
 PLAN-2 专用的 World、DSL、Portfolio Registry 与 execution registration 不进入 Roadmap。

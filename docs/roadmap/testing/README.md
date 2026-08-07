@@ -15,8 +15,10 @@
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
 测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
-其中 `adapter/` 是 collection：AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
-各自安装候选包并拥有结果根；不能把本地 canned backend 当成多个 live adapter 的共同替身。
+
+功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
+`adapter/` 是兼容性 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
+各自安装候选包并拥有结果根。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
 
 ## 两层与两种 E2E 体裁
 
@@ -43,7 +45,7 @@ E2E 再按流程范围选择两种写法：单边界 E2E 只承诺一个公开�
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | `show --json` 经 pipe 不截断 |
 | show / view、导出、HTTP、浏览器动作 | Report 场景 Repo | 导出 target 可达且打开正确实体 |
 | SDK / CLI / provider 兼容性 | 对应 Adapter 场景 Repo | 真实工具事件读回规范身份 |
-| 跨域完整目标 | Journey E2E 场景 Repo | 初始化、运行、定位失败、导出报告 |
+| 跨域完整目标 | 最终结果 owner 的 Journey 测试文件 | Report Repo 中初始化、运行、定位失败、导出报告 |
 | signal、teardown、orphan | Lifecycle 场景 Repo | 中断后无孤儿且下一次运行可用 |
 
 一条风险只在一个位置展开完整矩阵。其它层只有在能排除不同错误实现时才留一个接线代表，不能把同一场景换成
@@ -81,10 +83,10 @@ E2E 不承诺指出生产源码行，但要把问题收窄到最近的公开接�
 pnpm e2e --lane pr
 pnpm e2e --repo report
 pnpm e2e --repo report -- --run test/exported-targets.test.ts
-pnpm e2e --lane main --repo codex-sdk
+pnpm e2e --lane main --repo adapter/codex-cli
 ```
 
-- PR lane 无密钥，运行 unit、CLI、Report、Package 与确定性 host / Docker Repo；
+- PR lane 无密钥，运行 unit、CLI、Runner、Report、Package 与确定性 host / Docker Repo；
 - main 跑 PR 全集和便宜的真实 adapter smoke；nightly 跑完整 adapter、sandbox 与 lifecycle；
 - release 先生成最终 tarball，验收通过后发布同一字节与 digest；
 - workflow 只负责 checkout、运行时、矩阵、cache 和 artifact，选择、注入、executor、重试和失败分类都在根 runner；
@@ -103,7 +105,7 @@ pnpm e2e --lane main --repo codex-sdk
 - [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [新体系如何避免旧问题](history-problems.md) —— Git 历史证据、对应防线与复核方法；
-- [可读代码 Example](example/README.md) —— CLI、Report、Adapter、Journey E2E 与 Unit 的目标测试正文；
+- [可读代码 Example](example/README.md) —— CLI、Runner、Report、Package、Lifecycle、Adapter、Journey E2E 与 Unit 的目标测试正文；
 - [历史缺陷题库](reference/bugs/README.md) —— 已逃逸 bug 的研究材料。
 
 ## 目标闭包
@@ -111,7 +113,7 @@ pnpm e2e --lane main --repo codex-sdk
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
 - 场景 Repo 精确锁定稳定 Testkit；产品 gate 只注入 NiceEval candidate，不让外层裁判与被测对象一起变化。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
-- Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有独立 Repo 与结果根。
+- Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有私有项目副本与结果根。
 - Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。
 - PR、main、nightly 与 release lane 共用同一发现、注入、执行、分类和 artifact 协议。
 - 新 owner 通过公开契约、历史错误 kill 与单项重跑后接管，同批删除被替代 owner，不长期保留双份体系。
