@@ -25,7 +25,7 @@ async function buildImage(
   if (dockerfile.includes("niceeval-dind-entrypoint")) {
     await writeFile(join(root, "niceeval-dind-entrypoint.sh"), `#!/bin/sh
 set -eu
-dockerd-entrypoint.sh --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
+dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
 pid=$!
 attempt=0
 until docker info >/dev/null 2>&1; do
@@ -69,6 +69,14 @@ async function expectNestedDocker(sandbox: DockerSandbox): Promise<void> {
   expect(result.exitCode).toBe(0);
 }
 
+async function expectNoUnauthenticatedTcpDaemon(sandbox: DockerSandbox): Promise<void> {
+  const result = await sandbox.runCommand("sh", [
+    "-c",
+    "! docker --host=tcp://127.0.0.1:2375 info >/dev/null 2>&1",
+  ]);
+  expect(result.exitCode).toBe(0);
+}
+
 describe.runIf(runDocker)("Docker access real project images", () => {
   it("mounts an explicit host socket and runs a child container through its CLI image", async () => {
     const built = await buildImage(cliDockerfile);
@@ -100,6 +108,7 @@ describe.runIf(runDocker)("Docker access real project images", () => {
     });
     try {
       await expectNestedDocker(sandbox);
+      await expectNoUnauthenticatedTcpDaemon(sandbox);
     } finally {
       await sandbox.stop();
       await built.remove();
@@ -131,6 +140,7 @@ describe.runIf(runDocker && managedSocket !== undefined)("Managed rootless DinD 
     const sandbox = await DockerSandbox.create(common);
     try {
       await expectNestedDocker(sandbox);
+      await expectNoUnauthenticatedTcpDaemon(sandbox);
     } finally {
       await sandbox.stop();
     }

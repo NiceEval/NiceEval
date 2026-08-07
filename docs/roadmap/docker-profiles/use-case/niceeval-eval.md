@@ -49,7 +49,7 @@ ENTRYPOINT ["niceeval-dind-entrypoint"]
 #!/bin/sh
 set -eu
 
-dockerd-entrypoint.sh --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
+dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
 dockerd_pid=$!
 
 attempt=0
@@ -70,6 +70,13 @@ chown root:node /var/run/docker.sock
 chmod 660 /var/run/docker.sock
 exec "$@"
 ```
+
+`docker:<version>-dind`自带的 `dockerd-entrypoint.sh`负责 daemon的 iptables、PID清理与 init细节，
+但它假设 `dockerd`是容器前台进程。NiceEval传入的是以 `sh`开头的 Sandbox保活 `Cmd`，所以项目
+entrypoint必须在后台启动 daemon后再以前台 `exec "$@"`交还 NiceEval。调用官方入口时必须把
+`dockerd`作为第一个参数显式传入；若以 `--host`开头，官方入口会在 TLS关闭时加入默认的未认证
+TCP listener。完整的 `dockerd --host=unix:///var/run/docker.sock`参数保证 inner daemon只监听 Unix
+socket，而 daemon初始化仍复用官方镜像实现。
 
 这里的 inner daemon只监听容器内的 Unix socket；不要给它增加 TCP listener，也不要把 outer或宿主
 socket mount进来。

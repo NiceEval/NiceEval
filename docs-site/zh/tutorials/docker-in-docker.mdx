@@ -85,7 +85,7 @@ ENTRYPOINT ["niceeval-dind-entrypoint"]
 #!/bin/sh
 set -eu
 
-dockerd-entrypoint.sh --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
+dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
 dockerd_pid=$!
 
 attempt=0
@@ -102,6 +102,21 @@ chown root:node /var/run/docker.sock
 chmod 660 /var/run/docker.sock
 exec "$@"
 ```
+
+### 为什么还需要 NiceEval entrypoint
+
+Docker官方的 `docker:<version>-dind`镜像已经提供 `dockerd-entrypoint.sh`，NiceEval没有重新实现
+daemon的 iptables、PID清理或 init逻辑。区别在于进程契约：官方示例让 `dockerd`作为容器前台进程；
+NiceEval则必须把 Sandbox保活命令作为容器 `Cmd`传入。若直接保留官方 `ENTRYPOINT`，它收到以
+`sh`开头的 NiceEval `Cmd`后会直接执行该命令，不会同时启动 `dockerd`。
+
+因此这个薄包装只负责组合两套契约：在后台调用镜像内置的官方入口启动 daemon，等待
+`docker info`可用并把 socket交给 Sandbox用户，然后 `exec "$@"`运行 NiceEval传入的前台命令。
+调用中的显式 `dockerd`参数不能省略；如果只把 `--host`作为首个参数传给官方入口，它会进入默认
+参数模式，并在关闭 TLS时额外监听未认证的 `tcp://0.0.0.0:2375`。这里显式传入完整 daemon命令，
+保证 inner daemon只监听 Unix socket。参见 Docker的
+[privileged DinD说明](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
+和 [`dockerd-entrypoint.sh`官方源码](https://github.com/docker-library/docker/blob/master/dockerd-entrypoint.sh)。
 
 最后的 `exec "$@"`不能省略。NiceEval会把自己的保活命令作为容器 `Cmd`传给镜像；entrypoint先
 启动 inner `dockerd`，再执行这个 `Cmd`。inner daemon只监听 Unix socket，不要增加 TCP listener。
