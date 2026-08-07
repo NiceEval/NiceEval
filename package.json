@@ -158,7 +158,7 @@
     "lucide-react": "^1.21.0",
     "mixpanel-browser": "^2.80.0",
     "motion": "^12.42.2",
-    "next": "16.2.10",
+    "next": "16.3.0",
     "prism-react-renderer": "^2.4.1",
     "react-grab": "^0.1.48",
     "shiki": "^4.3.0",
