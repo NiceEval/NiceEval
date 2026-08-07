@@ -14,7 +14,7 @@
 // `spanMapper: mapCodexSpans`、config 加 `telemetry: { port }`。OTel 只管 `niceeval view`
 // 的瀑布图:codex CLI 原生 OTLP(config.toml [otel] 块)把 span 发到钉住的接收端口,
 // `mapCodexSpans` 归一语义——span 不喂断言,断言与 Tier 1 完全相同。
-import { completeEvidenceCoverage, defineDirectAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, defineAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { ThreadEvent } from "@openai/codex-sdk";
@@ -59,7 +59,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   });
 }
 
-export default defineDirectAgent({
+export default defineAgent({
   name: "codex-sdk",
   evidenceCoverage: completeEvidenceCoverage,
   // 瀑布图:config 配了 telemetry(固定端口)就走 run 级共享接收器,起应用时
