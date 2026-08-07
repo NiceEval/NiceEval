@@ -114,7 +114,7 @@ pnpm e2e --lane main --repo adapter/codex-cli
 ## 目标闭包
 
 - 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
-- 场景 Repo 精确锁定稳定 Testkit；产品 gate 只注入 NiceEval candidate，不让外层裁判与被测对象一起变化。
+- Testkit 跟随 checkout 自测并只 pack 一次；场景 Repo 隔离安装同一内容寻址 tgz，收据同时锁定 NiceEval 与 Testkit 字节身份。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。
 - Report 单边界 E2E 只读消费证据；会修改配置、结果或服务的流程拥有私有项目副本与结果根。
 - Journey E2E 跨 CLI、Report 等产品域，并在每个公开接缝立即检查身份与结果。

@@ -3,16 +3,16 @@
 本树直接表达依赖关系，不按阶段组织。`depends on` 未完成的节点不得宣称验收完成；标为 `parallel with` 的节点可由不同 worker 同时修改不重叠路径。
 
 ```text
-[x] T0 关闭 Testkit 与发布契约（串行根节点）
+[x] T0 关闭 Testkit 与隔离契约（串行根节点）
 ├─ [x] T0.1 在 docs/engineering/testing/testkit.md 定义仓库身份
 │      owner: docs/engineering/testing/testkit.md
-│      decision: packages/testkit；自带 pnpm-workspace.yaml/lockfile，不是根 workspace member；包名 @niceeval/testkit；独立 semver
-├─ [x] T0.2 定义独立发布身份
-│      owner: docs/engineering/testing/testkit.md, AGENTS.md
-│      decision: testkit-vX.Y.Z tag + 独立 workflow；产品 vX.Y.Z 不发布 Testkit
+│      decision: packages/testkit 是 private 根 workspace member；不发布，version 只作诊断
+├─ [x] T0.2 定义源码与场景隔离身份
+│      owner: docs/engineering/testing/{testkit,e2e/execution,e2e/scenario-repos}.md
+│      decision: monorepo 管源码/构建；内容寻址 tgz 管隔离安装；bytes 管身份
 ├─ [x] T0.3 定义 bootstrap
 │      owner: docs/engineering/testing/testkit.md
-│      decision: meta-test 后只 pack 一次；pilot 与 publish 消费同一字节；产品 gate 必须锁定 registry 已发布版本
+│      decision: 根 frozen install → Testkit meta-test/typecheck → clean build/pack once → scenario tgz injection；严格无环
 ├─ [x] T0.4 固定结果观察白名单与重构预算
 │      owner: docs/engineering/testing/{architecture,portfolio}.md
 │      layers: harness attestation / outcome oracle / diagnostic only
@@ -26,11 +26,11 @@
 │      owner: docs/engineering/testing/{architecture,portfolio}.md
 │      acceptance: Report/Runner/Record 各做一次 contract-preserving perturbation，测试源码/fixture/expected 零 diff
 └─ [x] T0.7 通过 design_grill
-       acceptance: Sol PASS；CONDITIONAL 的 C1–C8 已逐条满足并复审
+       acceptance: Sol PASS；批准 A′“monorepo 管源码与构建，tgz 管隔离消费，bytes 管身份”
 
 [x] T1 建立 @niceeval/testkit 包（depends on T0；parallel with T2）
-├─ [x] T1.1 建 package、exports、tsconfig、独立 lockfile 与 README
-│      owner: packages/testkit/**（含 package-local pnpm-workspace.yaml；不改根 workspace）
+├─ [x] T1.1 建 package、exports、tsconfig 与 README（workspace 迁移见 T3）
+│      owner: packages/testkit/**
 ├─ [x] T1.2 实现 argv、command、runProcess 与完整 ProcessReceipt
 │      owner: packages/testkit/src/process.ts
 ├─ [x] T1.3 实现 startProcess、withProcess、signal/dispose 与 cleanup 错误组合
@@ -41,8 +41,8 @@
 │      owner: packages/testkit/src/{project-copy,http-server}.ts
 ├─ [x] T1.6 用非 NiceEval fixture 完成 meta-tests
 │      owner: packages/testkit/test/**
-└─ [x] T1.7 验收候选包内容
-       acceptance: test/pack 全绿；仓库外 ESM/CJS consumer 在 Node >=18 导入成功；根 lockfile 零 diff
+└─ [x] T1.7 验收候选包基础内容
+       acceptance: test/pack 全绿；仓库外 ESM/CJS consumer 在 Node >=18 导入成功
 
 [x] T2 重构根 E2E runner（depends on T0；parallel with T1）
 ├─ [x] T2.1 用正式 schema 替换 group manifest
@@ -66,18 +66,31 @@
 [x] T2A 建立测试私有依赖机器守护（depends on T0.4；parallel with T1/T2）
 ├─ [x] T2A.1 扫描结果层测试，拒绝 root src、候选内部子路径与生产类型 import
 ├─ [x] T2A.2 拒绝私有 .niceeval 路径、hydration 全局量、template ID、DOM class 与拼接 attempt 路径作为 oracle
-├─ [x] T2A.3 扫描场景依赖，拒绝 Testkit 的 workspace/file/tarball/Git/latest/版本范围
+├─ [ ] T2A.3 重写场景依赖守护：源 manifest/lock 拒绝 Testkit，临时副本只允许已验证内容寻址 tgz
 └─ [x] T2A.4 把守护放入 test/docs 或 test/unit，复用现有命令
 
-[ ] T3 建立 Testkit 发布链（depends on T1；parallel with T2.3–T2.8）
-├─ [x] T3.1 新增 testkit-v* tag workflow
-│      owner: .github/workflows/release-testkit.yml
-├─ [x] T3.2 workflow 只在 packages/testkit 内 install/typecheck/test/pack/publish
-├─ [x] T3.3 发布后核对 npm version、tarball integrity 与 provenance
-└─ [ ] T3.4 首次发布 @niceeval/testkit，并记录精确版本
-       acceptance: npm view @niceeval/testkit@<version> version
+[ ] T3 把 Testkit 转为 monorepo 内部包（depends on T0/T1；多路并行，T3.7 串行收口）
+├─ [x] T3.1 重写正式 docs 并通过 Sol design_grill
+│      owner: docs/engineering/testing/**, plan/testing-system-rebuild.md
+├─ [ ] T3.2 并入根 workspace 并取消发布面（parallel with T3.3/T3.5）
+│      owner: pnpm-workspace.yaml, pnpm-lock.yaml, package.json, packages/testkit/**, .github/workflows/release-testkit.yml
+│      work: private:true；删局部 workspace/lock、publishConfig/workflow；clean build；禁止反向依赖
+├─ [ ] T3.3 runner 自动 pack/注入/收据（parallel with T3.2/T3.5）
+│      owner: e2e/scripts/**, test/unit/e2e-runner/**
+│      work: harness.testkit schema；内容寻址 tgz；SHA-256/SRI/唯一 resolution/path；durable exact-replay artifact
+├─ [ ] T3.4 迁移全部 scenario（depends on T3.3 contract；parallel by disjoint Repo）
+│      owner: e2e/<repo>/{e2e.json,package.json,pnpm-lock.yaml}
+│      work: 源 package/lock 删 Testkit；manifest 声明 capability；直跑引导根 runner
+├─ [ ] T3.5 CI 两 tgz 单一生产者（parallel with T3.2/T3.3）
+│      owner: .github/workflows/e2e.yml
+│      work: package job 验收并 pack Testkit once；matrix 下载/重算同一 digest；变更动态选全部 consumer
+├─ [ ] T3.6 双 tarball 边界机器守护（depends on T3.2；parallel with T3.4）
+│      owner: test/docs/**
+│      acceptance: Testkit allowlist + Node18 ESM/CJS + .mts/.cts；NiceEval tgz 不含/不依赖 Testkit；拒绝局部 lock/workspace
+└─ [ ] T3.7 父侧串行验收（depends on T3.2–T3.6）
+       acceptance: clean root frozen install；Testkit test/typecheck/build；本地单 Repo 自动注入；CI guard；同一双 digest 贯穿 receipt
 
-[ ] T4 迁移 CLI 确定性 pilot（depends on T1.6, T2.5；最终 gate depends on T3.4）
+[ ] T4 迁移 CLI 确定性 pilot（场景已接管；最终 gate depends on T3.7）
 ├─ [x] T4.1 把 e2e/cli/e2e.json 改为 pr lane 的正式 manifest
 │      owner: e2e/cli/e2e.json
 ├─ [x] T4.2 用签入确定性 Agent/backend 替换真实模型与 secret
@@ -110,13 +123,13 @@
 │      owner: e2e/package/**
 │      contract: docs/engineering/testing/e2e/package.md
 │      design: 单一可互操作 runtime identity；ESM/CJS 与各自 NodeNext 类型入口同源生成，不把双格式编译成两套私有状态
-│  ├─ [ ] T6.2.1 runtime build / exports / bin（parallel with T6.2.2, T6.2.3）
+│  ├─ [x] T6.2.1 runtime build / exports / bin（parallel with T6.2.2, T6.2.3）
 │  │      owner: package.json, bin/**, scripts/package-runtime/**, tsconfig.package-*.json
 │  │      worker: Terra（replacement；DP V4 首轮零 diff 已回收）
-│  ├─ [ ] T6.2.2 外部 ESM/CJS、混合宿主与 NodeNext consumer（parallel with T6.2.1, T6.2.3）
+│  ├─ [x] T6.2.2 外部 ESM/CJS exports 遍历、NodeNext consumer 与旧 Node18 fallback（parallel with T6.2.1, T6.2.3）
 │  │      owner: e2e/package/**
 │  │      worker: DP V4（replacement；Terra 首轮零 diff 已回收）
-│  ├─ [ ] T6.2.3 release preflight 与发布产物机器守护（parallel with T6.2.1, T6.2.2）
+│  ├─ [x] T6.2.3 release preflight 与发布产物机器守护（parallel with T6.2.1, T6.2.2）
 │  │      owner: .github/workflows/release.yml, test/docs/package-artifacts.test.ts
 │  │      worker: DP V4（首轮 diff 由 replacement 收口）
 │  └─ [ ] T6.2.4 父侧串行验收：同一 tgz、Node 18/22/24、identity Journey、类型两面、release digest
@@ -166,9 +179,10 @@
 
 | 执行线 | 首个写入范围 | 串行依赖 | 可并行对象 |
 |---|---|---|---|
-| Testkit | `packages/testkit/**` | T0 | Runner |
-| Runner | `e2e/scripts/**`, `test/unit/e2e-runner/**` | T0 | Testkit |
-| CLI pilot | `e2e/cli/**` | T1.6 + T2.5 | Workflow（进入等待前） |
-| Workflow | `.github/workflows/e2e.yml` | T2.3 | CLI pilot |
+| Workspace/Testkit | `pnpm-workspace.yaml`, root lock, `packages/testkit/**`, Testkit release workflow | T0/T1 | Runner, E2E workflow |
+| Runner 注入 | `e2e/scripts/**`, `test/unit/e2e-runner/**` | T0 | Workspace/Testkit, E2E workflow |
+| E2E workflow | `.github/workflows/e2e.yml` | T0 | Workspace/Testkit, Runner |
+| Scenario 迁移 | `e2e/<repo>/{e2e.json,package.json,pnpm-lock.yaml}` | T3.3 contract | 可按 Repo 互不重叠并行 |
+| Artifact 守护 | `test/docs/**` | T3.2 contract | Scenario 迁移 |
 
 父 agent 只在依赖满足后勾选节点；worker 的 `done` 不等于节点完成，必须核对 diff、运行该节点 acceptance 并确认没有带入其它路径。

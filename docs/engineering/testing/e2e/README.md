@@ -10,7 +10,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 
 - 自己的 `package.json` 与签入 lockfile；
 - NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
-- 精确版本的 `@niceeval/testkit` devDependency，由 lockfile 固定为稳定外层裁判；
+- `e2e.json` 的 `harness.testkit: true`；根 runner 在副本中注入当次唯一、内容寻址的 Testkit tgz；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
 - 原生 Vitest / Playwright 测试；
 - 只描述运行条件的 `e2e.json`。

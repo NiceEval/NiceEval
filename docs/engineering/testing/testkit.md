@@ -3,22 +3,22 @@
 `@niceeval/testkit` 是场景 Repo 共用的机械设施，不是 NiceEval 产品行为 DSL。它减少进程、数据解码和资源终结代码的复制，
 但不替测试决定用户做什么、什么结果算正确。
 
-Testkit 遵守 stable-outer / candidate-inner：场景 Repo 精确锁定 Testkit，产品 gate 只替换 NiceEval candidate。
+Testkit 的源码跟随当前 checkout，但场景 Repo 只消费根 runner 为本次运行产生的不可变 tarball。
+因此 monorepo 管源码与构建，tarball 管隔离安装，内容 digest 管身份；场景不通过 workspace symlink
+或 checkout 路径执行 Testkit。
 
-## 项目与发布身份
+## 项目与身份
 
-源码位于 `packages/testkit/`，但它是独立 pnpm 项目，不是根 workspace member。该目录拥有自己的
-`pnpm-workspace.yaml`、lockfile、`package.json`、构建与发布命令；在目录内执行 frozen install 不得改写根 lockfile。
-包名固定为 `@niceeval/testkit`，使用独立 semver，Node 下限为 18，同时发布 ESM 与 CJS exports。0.x 仍是实验性 API；
-达到本文末尾的稳定门槛前不建立稳定承诺。每次候选包验收都在仓库外创建 ESM 与 CJS consumer，并在 Node 18 导入公开入口。
+源码位于 `packages/testkit/`，是根 `pnpm-workspace.yaml` 的 `packages/*` 成员。根 workspace、根 lockfile 与根
+`packageManager` 是唯一安装权威；`packages/**` 下不得再出现局部 workspace 或 lockfile。`e2e/**` 和
+`examples/**` 不是 workspace member。
 
-`testkit-vX.Y.Z` 只触发 `.github/workflows/release-testkit.yml`，产品 `vX.Y.Z` 不发布 Testkit。发布链先用非 NiceEval fixture 完成 meta-test，
-再只 pack 一次 tarball。仓库外 pilot 把这份 tarball 与 registry 上精确版本的 known-good NiceEval 组合；publish 直接消费
-已经通过 pilot 的同一字节，不重新 pack。发布后核对 registry integrity、version、provenance commit 与 tag。
+包名固定为 `@niceeval/testkit`，`package.json` 必须声明 `"private": true`；version 只是收据中的诊断信息，
+不是身份、缓存键或稳定性承诺。Testkit 不发布 npm、不采用独立 semver/tag/workflow，也不对仓外消费者建立 API 承诺。
+若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
-Testkit 首次尚未发布时，NiceEval 产品 gate 明确阻塞；不能用 workspace、`file:` 或本地 tarball 把 Testkit candidate
-偷渡进产品验收。发布成功后，以普通依赖升级提交把场景 Repo 改到 registry 精确版本。坏版本不 unpublish；发布补丁版，
-消费者继续用精确 pin 回退。
+Node 下限为 18，tarball 同时提供 ESM、CJS 与对应类型入口。构建必须先删除 `dist/` 再完整重建，避免增量残留被 pack。
+Testkit 不依赖 NiceEval、根 runner 或 scenario；它的 meta-test 只消费固定的非 NiceEval fixture，保持 bootstrap 无环。
 
 ## 准入边界
 
@@ -223,18 +223,22 @@ Testkit candidate 不用 NiceEval 自测。固定 fixture process 分别产生�
 - 项目复制的排除项、链接越界拒绝、正文与删除同时失败；
 - HTTP handler 的动态端口、请求传递、正文失败与 listener 终止确认。
 
-关键 parser、timeout 与 cleanup 分支要做 mutation kill。Meta-test 通过后，再用 pinned known-good NiceEval 验证 Vitest、
-Playwright、run-only 与 long-lived process 四个 pilot。
+关键 parser、timeout 与 cleanup 分支要做 mutation kill。Meta-test 通过后，用即将注入场景的同一 tgz 做 clean-temp
+ESM/CJS 与类型入口验收，不再用 NiceEval 作 Testkit 的自测 oracle。
 
-## 发布与采用门禁
+## 构建与采用门禁
 
-1. 本地 meta-test 不使用 NiceEval；仓库外 pilot 只使用 registry known-good NiceEval，不使用产品 candidate；
-2. workflow 从 pilot 到 publish 保存同一 tarball SHA-512，且 registry `dist.integrity` 与之对应；
-3. 场景 Repo 只消费带 provenance、ESM / CJS、Node 下限和 lockfile integrity 的精确 registry 版本；
-4. 产品 run receipt 保存 Testkit version、registry source 与 integrity；注入 NiceEval 前后这些值逐字相同；
-5. 每次采用先由一个功能 Repo 与一个 Adapter Repo 校准失败诊断，再扩大消费者；
-6. 新 Testkit owner 接管时，同批删除被替代 support，不保留两套机械实现；
-7. 至少连续两个 release 稳定且出现两个仓库外消费者，才建立公开稳定承诺。
+1. `pnpm --filter @niceeval/testkit test` 与 `typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行它们。
+2. 本地每次根 runner invocation 对当前 Testkit build/pack 一次；CI 上游 package job 也只 build/pack 一次，matrix 只下载同一份。
+3. tarball 文件名包含 SHA-256；每个副本核对 SHA-256、SHA-512/SRI、唯一 lock resolution、实际包名与安装路径。
+4. Testkit tgz 的验收直接消费将被使用的同一字节：清单 allowlist、clean-temp install、Node 18 ESM/CJS，以及
+   `skipLibCheck: false` 的 `.mts` / `.cts` consumer；验收后禁止重新 pack。
+5. NiceEval candidate tgz 不得包含 `packages/testkit/**`，任何 dependency 字段也不得声明 `@niceeval/testkit`。
+6. 场景以 `e2e.json` 的 `harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit。
+7. receipt 保存 version（诊断）、SHA-256、SRI、实际安装路径和 tarball artifact 相对路径。只在 tgz 仍被保留时声称 exact replay；
+   tgz 已删除时只声称可追责。
+8. Testkit、根 workspace/lock 或注入契约变化时，plan 动态选中全部 `harness.testkit: true` 消费者。任何安装缓存键都必须
+   包含 NiceEval 与 Testkit 两份 tgz digest，版本号、pnpm store 或跨 run cache 不能代替身份。
 
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。
