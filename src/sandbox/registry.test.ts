@@ -1,3 +1,5 @@
+// cases: docs/engineering/testing/unit/sandbox.md
+
 import { describe, expect, it, vi } from "vitest";
 import type { Sandbox } from "./types.ts";
 import { liveSandboxCount, registerSandbox, stopSandbox } from "./registry.ts";

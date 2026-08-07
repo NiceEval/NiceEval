@@ -1,3 +1,4 @@
+// cases: docs/engineering/testing/unit/sandbox.md
 // 真机 Docker opt-in：NICEEVAL_DOCKER_TEST=1 pnpm exec vitest run --project unit src/sandbox/compose.docker.test.ts
 // 覆盖 attempt signal 已 abort 时的 Compose 整组回收，以及 owned/anonymous/external volume 边界。
 
