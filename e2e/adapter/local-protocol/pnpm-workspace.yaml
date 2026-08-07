@@ -1,0 +1,5 @@
+# 独立 workspace root：候选 niceeval / testkit tarball 注入时解析到本仓库 node_modules，
+# 不被父目录 workspace 吸收（见 docs/engineering/testing/e2e/scenario-repos.md）。
+packages: []
+allowBuilds:
+  esbuild: true
