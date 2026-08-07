@@ -90,7 +90,7 @@
 └─ [x] T3.7 父侧串行验收（depends on T3.2–T3.6）
        acceptance: clean root frozen install；Testkit test/typecheck/build；本地单 Repo 自动注入；CI guard；同一双 digest 贯穿 receipt
 
-[ ] T4 迁移 CLI 确定性 pilot（场景已接管；最终 gate depends on T3.7）
+[x] T4 迁移 CLI 确定性 pilot（场景已接管；最终 gate depends on T3.7）
 ├─ [x] T4.1 把 e2e/cli/e2e.json 改为 pr lane 的正式 manifest
 │      owner: e2e/cli/e2e.json
 ├─ [x] T4.2 用签入确定性 Agent/backend 替换真实模型与 secret
@@ -116,10 +116,10 @@
 └─ [x] T5.6 workflow 不再解释 group、Repo expected 或重试
        owner: .github/workflows/e2e.yml
 
-[ ] T6 迁移其余场景 Repo（depends on T4 pilot；各叶子互相 parallel）
+[x] T6 迁移其余场景 Repo（depends on T4 pilot；各叶子互相 parallel）
 ├─ [x] T6.1 runner：carry/history 与确定性调度证据
 │      owner: e2e/runner/**
-├─ [ ] T6.2 package：CJS/ESM/exports/外部 cwd
+├─ [x] T6.2 package：CJS/ESM/exports/外部 cwd
 │      owner: e2e/package/**
 │      contract: docs/engineering/testing/e2e/package.md
 │      design: 单一可互操作 runtime identity；ESM/CJS 与各自 NodeNext 类型入口同源生成，不把双格式编译成两套私有状态
@@ -132,7 +132,7 @@
 │  ├─ [x] T6.2.3 release preflight 与发布产物机器守护（parallel with T6.2.1, T6.2.2）
 │  │      owner: .github/workflows/release.yml, test/docs/package-artifacts.test.ts
 │  │      worker: DP V4（首轮 diff 由 replacement 收口）
-│  └─ [ ] T6.2.4 父侧串行验收：同一 tgz、Node 18/22/24、identity Journey、类型两面、release digest
+│  └─ [x] T6.2.4 父侧串行验收：同一 tgz、Node 18/22/24、identity Journey、类型两面、release digest
 ├─ [x] T6.3 report：确定性 evidence + Playwright
 │      owner: e2e/report/**
 ├─ [x] T6.4 record：公开 Record API/格式；不拥有私有存储布局
@@ -161,8 +161,8 @@
 [ ] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
 ├─ [ ] T8.1 修正 9 个首行无 `// cases:` owner 的 Unit；无法归属稳定风险类别的直接删除
 ├─ [ ] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
-│  ├─ [ ] T8.2.1 experiments-runner：44 files / 约 19.2k lines
-│  │      删除 CLI 真实进程、终端最终排版、carry/history Journey 重复；保留选择、指纹、调度、锁与 reducer 等确定性矩阵
+│  ├─ [x] T8.2.1 experiments-runner：44 files / 约 19.2k lines
+│  │      验收结论：零删除；现有测试均为纯选择、指纹、调度、锁、renderer 与 reducer 矩阵，真实 CLI 与 carry/history Journey 已只留在 E2E
 │  ├─ [ ] T8.2.2 reports：60 files / 约 15.2k lines
 │  │      删除浏览器、DOM/HTML 最终表现与 show/view 进程重复；保留公开 task Result 的纯投影与公式 owner
 │  ├─ [ ] T8.2.3 sandbox：44 files / 约 12.3k lines
