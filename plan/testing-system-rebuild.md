@@ -104,7 +104,7 @@
        owner: .github/workflows/e2e.yml
 
 [ ] T6 迁移其余场景 Repo（depends on T4 pilot；各叶子互相 parallel）
-├─ [ ] T6.1 runner：carry/history 与确定性调度证据
+├─ [x] T6.1 runner：carry/history 与确定性调度证据
 │      owner: e2e/runner/**
 ├─ [ ] T6.2 package：CJS/ESM/exports/外部 cwd
 │      owner: e2e/package/**
