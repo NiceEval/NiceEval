@@ -17,6 +17,13 @@ isolated factory result when real usage belongs inside `defineEval()`,
 `defineExperiment()`, report JSX, CLI invocation, or a package script.
 -->
 
+## Problem
+
+- User goal: <what the user is trying to accomplish>
+- Current limitation: <why the existing API or behavior cannot accomplish it safely or correctly>
+- Required capability: <why the supporting API, protocol, or internal mechanism is necessary>
+- User outcome: <what becomes possible after this PR>
+
 ## Public API
 
 ### `<package entry or symbol>`
