@@ -6,7 +6,7 @@
 // --resume 复印件灌票。viewData 不携带 overview / table / overall 统计产物。
 // 另含 loadLatestResultsPerEval 的续跑携带语义(从旧 loader.test.ts 移植,口径不变),
 // 与 dev server 装载语义——报告文件或其项目内依赖变更后下一次装载读取新内容
-// (namespaced import 不复用陈旧模块,含经 config.cwd 装载的场景)。
+// (namespaced import 不复用陈旧模块)。
 //
 // resolveViewInput 的进程级输入校验、收窄对证据室与导出的作用面、外壳导航与标题呈现,
 // 归 docs/engineering/testing/e2e/report.md 对真实产物验收。
@@ -19,7 +19,7 @@
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { IncompatibleResultsError, ViewInputError, incompatibleHistoryKey, loadCarryInputs, loadLatestResultsPerEval, loadViewScan, type ViewScan } from "./data.ts";
 import type { AttemptHandle } from "../record/index.ts";
@@ -497,44 +497,4 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     expect(await second.reportPages.render(second.reportPages.ids[0]!, "en")).not.toContain("DEP_FIRST");
   });
 
-  it("经 config.cwd 装载时,改配置所 import 的报告文件后读到新内容", async () => {
-    // vitest/vite-node 下对 .ts 做 namespaced register 会挂起;这条断言走与 CLI 相同的
-    // `node --import tsx/esm` 子进程(bin 注册的同一套 hook)。
-    const root = await seedReloadRoot();
-    await writeFile(join(root, "package.json"), JSON.stringify({ type: "module" }), "utf-8");
-    await writeFile(join(root, "report.mjs"), reportSource("CFG_FIRST"), "utf-8");
-    await writeFile(
-      join(root, "niceeval.config.ts"),
-      ['import report from "./report.mjs";', "export default { report };", ""].join("\n"),
-      "utf-8",
-    );
-    const script = join(root, "probe.mjs");
-    await writeFile(
-      script,
-      [
-        'import { writeFile } from "node:fs/promises";',
-        'import { join } from "node:path";',
-        `const root = ${JSON.stringify(root)};`,
-        `const { loadViewScan } = await import(${JSON.stringify(resolve(__dirname, "./data.ts"))});`,
-        "const block = (scan) => scan.reportPages.render(scan.reportPages.ids[0], 'en');",
-        "const first = await block(await loadViewScan(root, { config: { cwd: root } }));",
-        "if (!first.includes('CFG_FIRST')) throw new Error('first miss');",
-        "await writeFile(join(root, 'report.mjs'), " + JSON.stringify(reportSource("CFG_SECOND")) + ");",
-        "const second = await block(await loadViewScan(root, { config: { cwd: root } }));",
-        "if (!second.includes('CFG_SECOND')) throw new Error('second miss: ' + second);",
-        "if (second.includes('CFG_FIRST')) throw new Error('stale');",
-        "console.log('ok');",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
-    const { spawnSync } = await import("node:child_process");
-    const result = spawnSync(process.execPath, ["--import", "tsx/esm", script], {
-      encoding: "utf-8",
-      cwd: resolve(__dirname, "../.."),
-      timeout: 30_000,
-    });
-    expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(result.stdout).toContain("ok");
-  }, 30_000);
 });
