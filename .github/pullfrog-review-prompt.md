@@ -1,8 +1,12 @@
 # Pullfrog Review instructions
 
-将本文件 `Prompt` 标题下的正文完整复制到 Pullfrog Console 中本仓库的
-`Modes → Review → Instructions`。Pullfrog 的 Review instructions 目前保存在 Console，
-不会从仓库中的文件自动加载；本文件是便于版本审查和维护的镜像。
+本文件是 Pullfrog PR review instructions 的唯一真源。根 `AGENTS.md`
+要求 Pullfrog 的 `Review` / `IncrementalReview` 模式按 PR base SHA
+读取下方 `Prompt` 正文；修改本文件必须经过 PR review。
+
+Pullfrog Console 的 `Modes → Review → Instructions` 保持为空，不在 Console
+复制本文，避免出现不可审查的第二份配置。Console 仍负责开启自动 review；
+模型、provider 和执行权限由 `.github/workflows/pullfrog.yml` 管理。
 
 Review 模型已在 `.github/workflows/pullfrog.yml` 固定为
 `openai/gpt-5.6-sol`，只读取 GitHub Actions secret `OPENAI_API_KEY`。
