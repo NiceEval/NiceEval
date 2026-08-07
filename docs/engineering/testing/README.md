@@ -106,7 +106,7 @@ pnpm e2e --lane main --repo adapter/codex-cli
 - [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 覆盖类别、Fixture 与矩阵 owner；
-- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/record.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。

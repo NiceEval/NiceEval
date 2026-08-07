@@ -5,6 +5,21 @@
 
 Testkit 遵守 stable-outer / candidate-inner：场景 Repo 精确锁定 Testkit，产品 gate 只替换 NiceEval candidate。
 
+## 项目与发布身份
+
+源码位于 `packages/testkit/`，但它是独立 pnpm 项目，不是根 workspace member。该目录拥有自己的
+`pnpm-workspace.yaml`、lockfile、`package.json`、构建与发布命令；在目录内执行 frozen install 不得改写根 lockfile。
+包名固定为 `@niceeval/testkit`，使用独立 semver，Node 下限为 18，同时发布 ESM 与 CJS exports。0.x 仍是实验性 API；
+达到本文末尾的稳定门槛前不建立稳定承诺。每次候选包验收都在仓库外创建 ESM 与 CJS consumer，并在 Node 18 导入公开入口。
+
+`testkit-vX.Y.Z` 只触发 `.github/workflows/release-testkit.yml`，产品 `vX.Y.Z` 不发布 Testkit。发布链先用非 NiceEval fixture 完成 meta-test，
+再只 pack 一次 tarball。仓库外 pilot 把这份 tarball 与 registry 上精确版本的 known-good NiceEval 组合；publish 直接消费
+已经通过 pilot 的同一字节，不重新 pack。发布后核对 registry integrity、version、provenance commit 与 tag。
+
+Testkit 首次尚未发布时，NiceEval 产品 gate 明确阻塞；不能用 workspace、`file:` 或本地 tarball 把 Testkit candidate
+偷渡进产品验收。发布成功后，以普通依赖升级提交把场景 Repo 改到 registry 精确版本。坏版本不 unpublish；发布补丁版，
+消费者继续用精确 pin 回退。
+
 ## 准入边界
 
 能力按机械契约是否跨至少两个独立 Repo 稳定复用决定，不按测试文件数量决定。
@@ -213,11 +228,13 @@ Playwright、run-only 与 long-lived process 四个 pilot。
 
 ## 发布与采用门禁
 
-1. Testkit candidate 先通过独立 meta-tests，不进入 NiceEval 产品 release gate；
-2. 场景 Repo 只消费带 provenance、ESM / CJS、Node 下限和 lockfile integrity 的精确版本；
-3. 每次采用先由一个功能 Repo 与一个 Adapter Repo 校准失败诊断，再扩大消费者；
-4. 新 Testkit owner 接管时，同批删除被替代 support，不保留两套机械实现；
-5. 至少连续两个 release 稳定且出现两个仓库外消费者，才建立公开稳定承诺。
+1. 本地 meta-test 不使用 NiceEval；仓库外 pilot 只使用 registry known-good NiceEval，不使用产品 candidate；
+2. workflow 从 pilot 到 publish 保存同一 tarball SHA-512，且 registry `dist.integrity` 与之对应；
+3. 场景 Repo 只消费带 provenance、ESM / CJS、Node 下限和 lockfile integrity 的精确 registry 版本；
+4. 产品 run receipt 保存 Testkit version、registry source 与 integrity；注入 NiceEval 前后这些值逐字相同；
+5. 每次采用先由一个功能 Repo 与一个 Adapter Repo 校准失败诊断，再扩大消费者；
+6. 新 Testkit owner 接管时，同批删除被替代 support，不保留两套机械实现；
+7. 至少连续两个 release 稳定且出现两个仓库外消费者，才建立公开稳定承诺。
 
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。

@@ -1,7 +1,7 @@
 # 真实场景 Repo
 
 场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
-CLI、Runner、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+CLI、Runner、Record、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
 第二套 Behavior / World 语义。
 
 ## 目录形状
@@ -10,6 +10,7 @@ CLI、Runner、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 
 e2e/
 ├── cli/                            # ┐
 ├── runner/                         # │ 功能场景 Repo
+├── record/                         # │ 公开 Record API / 格式 owner
 ├── report/                         # │ 子功能与 Journey 用测试文件命名
 ├── package/                        # │
 ├── lifecycle/                      # ┘
@@ -50,7 +51,7 @@ test/
 | Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
 | 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
 | 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
-| 测试范围 | CLI、Runner、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
+| 测试范围 | CLI、Runner、Record、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
 绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
@@ -75,6 +76,7 @@ interface E2ERepoManifest {
   areas: readonly (
     | "cli"
     | "report"
+    | "record"
     | "package"
     | "runner"
     | "adapter"
@@ -124,6 +126,9 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 重复候选注入、安装和 executable 身份核验，并把两级收据都写入 artifact。
 
 Release 必须发布通过 preflight 的同一 tarball；验收后重新 pack 会切断信任链。
+
+产品场景中的 Testkit 必须来自 registry 精确版本。扫描发现 `workspace:`、`file:`、本地 tarball、Git SHA、`latest` 或版本范围时，
+runner 在 prepare 前失败。每次 run receipt 保存 Testkit version、registry source 与 integrity；NiceEval candidate 注入前后必须一致。
 
 ## Executor 与被测 Backend 分开
 
