@@ -9,7 +9,7 @@
 // 本 Journey 在副本根运行,开头只清理自己声明的结果/JUnit 路径,保证缓存基线从
 // 零开始;JUnit 与结果根因此留在隔离 Repo 内可收集。
 
-import { command, type ProcessReceipt } from "@niceeval/testkit";
+import { command, ProcessReceipt } from "@niceeval/testkit";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -78,6 +78,40 @@ interface ExpPlanDocument {
   matrix: ExpPlanRow[];
 }
 
+function expectSelectedEvalIds(plan: ExpPlanDocument, expected: string[]): void {
+  expect(plan.matrix.map((row) => row.evalId)).toEqual(expected);
+}
+
+function expectFailureOutcome(events: ExpEvent[], junit: string): void {
+  expect(events.at(-1)).toMatchObject({ event: "result", status: "failed", completion: "complete" });
+  expect(
+    events.some(
+      (event) => event.event === "failure" && (event as ExpFailureEvent).evalId === "deliberate-fail/broken",
+    ),
+  ).toBe(true);
+  expect(events.some((event) => event.event === "error")).toBe(false);
+  expect(junit).toContain("<failure");
+  expect(junit).not.toContain("<error");
+}
+
+function expectErrorOutcome(events: ExpEvent[], junit: string): void {
+  expect(events.at(-1)).toMatchObject({
+    event: "result",
+    status: "failed",
+    failed: 0,
+    errored: 1,
+    completion: "complete",
+  });
+  expect(
+    events.some(
+      (event) => event.event === "error" && (event as ExpErrorEvent).evalId === "deliberate-error/crash",
+    ),
+  ).toBe(true);
+  expect(events.some((event) => event.event === "failure")).toBe(false);
+  expect(junit).toContain("<error");
+  expect(junit).not.toContain("<failure");
+}
+
 /** --json 运行流的公开不变量:stdout 是单一 NDJSON 流,首行 start、末行 result,零 ANSI,stderr 空。 */
 function expectExpStream(receipt: ProcessReceipt, expectedExit: number | "nonzero"): ExpEvent[] {
   if (expectedExit === "nonzero") {
@@ -112,18 +146,21 @@ it("安装后的 niceeval 在选择、退出码折叠与缓存复用上符合 CL
   expect(greetPlanReceipt.exitCode, greetPlanReceipt.diagnostic()).toBe(0);
   const greetPlan = greetPlanReceipt.json<ExpPlanDocument>();
   expect(greetPlan.format).toBe("niceeval.exp-plan");
-  expect(greetPlan.matrix.map((row) => row.evalId)).toEqual(["greet/hello"]);
+  expectSelectedEvalIds(greetPlan, ["greet/hello"]);
   expect(greetPlan.matrix.some((row) => row.evalId === "tool/weather")).toBe(false);
 
   const toolPlanReceipt = await niceeval.run(["exp", "normal", "tool", "--dry", "--json"]);
   expect(toolPlanReceipt.exitCode, toolPlanReceipt.diagnostic()).toBe(0);
   const toolPlan = toolPlanReceipt.json<ExpPlanDocument>();
-  expect(toolPlan.matrix.map((row) => row.evalId)).toEqual(["tool/weather"]);
+  expectSelectedEvalIds(toolPlan, ["tool/weather"]);
 
   const allPlanReceipt = await niceeval.run(["exp", "normal", "--dry", "--json"]);
   expect(allPlanReceipt.exitCode, allPlanReceipt.diagnostic()).toBe(0);
   const allPlan = allPlanReceipt.json<ExpPlanDocument>();
-  expect(allPlan.matrix.map((row) => row.evalId).sort()).toEqual(["greet/hello", "tool/weather"]);
+  expectSelectedEvalIds(
+    { ...allPlan, matrix: [...allPlan.matrix].sort((a, b) => a.evalId.localeCompare(b.evalId)) },
+    ["greet/hello", "tool/weather"],
+  );
 
   // 未命中任何 Experiment 的选择器按用法错误退出,错误信息给出下一步(cli.md「用法错误」)。
   const noExperiment = await niceeval.run(["exp", "totally-bogus-selector-zzz", "--dry"]);
@@ -146,16 +183,8 @@ it("安装后的 niceeval 在选择、退出码折叠与缓存复用上符合 CL
   const failEvents = expectExpStream(fail, "nonzero");
   expect(fail.exitCode).not.toBe(0);
   expect(failEvents[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect(failEvents.at(-1)).toMatchObject({ event: "result", status: "failed", completion: "complete" });
-  expect(
-    failEvents.some(
-      (event) => event.event === "failure" && (event as ExpFailureEvent).evalId === "deliberate-fail/broken",
-    ),
-  ).toBe(true);
-  expect(failEvents.some((event) => event.event === "error")).toBe(false);
   const failJunit = readFileSync("junit/fail.xml", "utf8");
-  expect(failJunit).toContain("<failure");
-  expect(failJunit).not.toContain("<error");
+  expectFailureOutcome(failEvents, failJunit);
 
   // ── 3. 退出码折叠:deliberate-error → errored,非零退出,与 failed 判然有别 ──
   const error = await niceeval.run([
@@ -164,22 +193,8 @@ it("安装后的 niceeval 在选择、退出码折叠与缓存复用上符合 CL
   const errorEvents = expectExpStream(error, "nonzero");
   expect(error.exitCode).not.toBe(0);
   expect(errorEvents[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect(errorEvents.at(-1)).toMatchObject({
-    event: "result",
-    status: "failed",
-    failed: 0,
-    errored: 1,
-    completion: "complete",
-  });
-  expect(
-    errorEvents.some(
-      (event) => event.event === "error" && (event as ExpErrorEvent).evalId === "deliberate-error/crash",
-    ),
-  ).toBe(true);
-  expect(errorEvents.some((event) => event.event === "failure")).toBe(false);
   const errorJunit = readFileSync("junit/error.xml", "utf8");
-  expect(errorJunit).toContain("<error");
-  expect(errorJunit).not.toContain("<failure");
+  expectErrorOutcome(errorEvents, errorJunit);
 
   // ── 4. normal:断言全部通过,人读文本零 ANSI、单一 stdout 追加流,按 Eval 级折叠退出 0 ──
   // 这一步同时是缓存三步的基线(--rerun all 建干净基线)。
@@ -228,3 +243,71 @@ it("安装后的 niceeval 在选择、退出码折叠与缓存复用上符合 CL
   expect(await attemptCount("greet/hello")).toBe(baseline.greet + 1);
   expect(await attemptCount("tool/weather")).toBe(baseline.tool + 1);
 }, 240_000);
+
+it.each([
+  {
+    mutation: "selector 被忽略",
+    kill: () =>
+      expectSelectedEvalIds(
+        {
+          format: "niceeval.exp-plan",
+          schemaVersion: 1,
+          total: 2,
+          evals: 2,
+          configs: 1,
+          attempts: 2,
+          reused: 0,
+          matrix: [
+            { experimentId: "normal", evalId: "greet/hello", reused: false },
+            { experimentId: "normal", evalId: "tool/weather", reused: false },
+          ],
+        },
+        ["greet/hello"],
+      ),
+  },
+  {
+    mutation: "failed 与 errored 被交换",
+    kill: () =>
+      expectFailureOutcome(
+        [
+          {
+            event: "error",
+            locator: "@mutant",
+            evalId: "deliberate-error/crash",
+            experimentId: "deliberate-fail",
+            phase: "eval.run",
+            reason: "mutant swapped failure into error",
+          },
+          {
+            event: "result",
+            status: "failed",
+            passed: 0,
+            failed: 0,
+            errored: 1,
+            completion: "complete",
+            snapshots: [],
+          },
+        ],
+        "<testsuite><testcase><error/></testcase></testsuite>",
+      ),
+  },
+  {
+    mutation: "NDJSON 在 result 前截断",
+    kill: () =>
+      expectExpStream(
+        new ProcessReceipt({
+          argv: ["niceeval", "exp", "--json"],
+          cwd: process.cwd(),
+          exitCode: 0,
+          signal: null,
+          stdout: '{"event":"start","format":"niceeval.exp","schemaVersion":1}\n{"event":',
+          stderr: "",
+          durationMs: 1,
+          timedOut: false,
+        }),
+        0,
+      ),
+  },
+])("公开 Journey oracle 会杀死 $mutation", ({ kill }) => {
+  expect(kill).toThrow();
+});
