@@ -166,36 +166,20 @@ Table 不增加 `TableModel`。
 <Table rows={performance} />
 ```
 
-搜索和排序是顶层能力，不增加 `features` builder 或公开 table instance：
+同构的树形 rows 只需声明 child field：
 
 ```tsx
-const statusRank = {
-  errored: 0,
-  failed: 1,
-  passed: 2,
-} as const;
-
 <Table
-  rows={performance}
-  columns={[
-    "agent",
-    {
-      field: "costUSD",
-      header: { en: "Spend", "zh-CN": "花费" },
-    },
-    "passRate",
-    {
-      field: "status",
-      searchable: false,
-      sortValue: (status) => statusRank[status],
-    },
-  ]}
-  search={{
-    placeholder: { en: "Filter rows", "zh-CN": "筛选行" },
-  }}
+  rows={results}
+  subRows="children"
+  columns={["name", "passRate"]}
+  search
   sort={{ field: "passRate", direction: "desc" }}
 />
 ```
+
+[完整 Table 语法示例](example/README.md)集中展示 flat rows、自定义列、枚举排序和 nested rows。
+搜索和排序仍是顶层能力，不增加 `features` builder 或公开 table instance。
 
 `sort={true}` 启用交互并保留声明顺序；对象形态同时规定 text、无 JavaScript web 与增强首帧的顺序。
 `search` 总是从空 query 启动，并且只匹配 effective locale 下实际呈现的 cell 文本。
@@ -209,14 +193,21 @@ const statusRank = {
 web renderer 为每个 row 与 column 输出稳定 key，并在服务端生成 locale 对应的 sort rank 与 search token。
 controller 以 `TableViewState` 纯计算可见 row key，不读取 `textContent`，也不把当前 DOM 顺序当成状态。
 
+`subRows` 是和 `x="costUSD"` 相同的字段选择器，不是 callback。
+它只表达所有层级共用可见列的树；不同 schema 的子表与任意详情内容继续用组合组件表达。
+排序递归作用于每组 siblings，parent 与 descendants 不会混排。
+
 text 与无 JavaScript web 都从同一个 initial state 派生首屏顺序和可见 rows。
 默认 query 为空、父 row 全展开；启用脚本后的第一次投影不得重排或隐藏首屏内容。
 
 search token 与 query 都执行 NFKC、locale lower-case、首尾去空白和 Unicode 空白折叠。
 query 再按空格拆词，一行必须命中所有词。
+query 非空时只显示直接命中的 rows 及其 ancestors，不因 parent 命中而带出未命中的 subtree。
+搜索结果临时视为全部展开并隐藏 disclosure；清空 query 后恢复搜索前的折叠状态。
 
 排序表头使用可聚焦 button，`th` 同步 `aria-sort`。
-过滤输入有可访问名称；层级 disclosure 保留原生 button/`details` 键盘行为与展开状态。
+过滤输入有可访问名称。
+无 JavaScript 时所有层级 row 都是原生 `<tr>` 并完整可读，disclosure button 隐藏；增强后 button 通过 `aria-expanded` 暴露折叠状态并响应 Enter 与 Space。
 
 这是 beta breaking migration。
 顶层 `searchable` 改为 `search`，列的 `label` 改为 `header`，旧字符串 `sort` 改为布尔值或 `{ field, direction }`。

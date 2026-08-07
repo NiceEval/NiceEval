@@ -31,6 +31,9 @@ TanStack Table 的事实来自以下官方材料：
 - [Features Guide](https://tanstack.com/table/latest/docs/guide/features)
 - [Row Models Guide](https://tanstack.com/table/latest/docs/guide/row-models)
 - [Column Definitions Guide](https://tanstack.com/table/latest/docs/guide/column-defs)
+- [Data Guide](https://tanstack.com/table/latest/docs/guide/data)
+- [Expanding Guide](https://tanstack.com/table/latest/docs/guide/expanding)
+- [Column Filtering Guide](https://tanstack.com/table/latest/docs/guide/column-filtering)
 - [Table State Guide](https://tanstack.com/table/latest/docs/framework/react/guide/table-state)
 - [TanStack Table V9: Taking Form](https://tanstack.com/blog/tanstack-table-v9-taking-form)
 - [`@tanstack/table-core` npm 包](https://www.npmjs.com/package/@tanstack/table-core/v/9.0.0)
@@ -114,6 +117,21 @@ NiceEval 不公开 table instance，不按表格注册 plugin，也没有只能�
 
 真正值得借的是输入之间的正交性：能力、起始状态、列 identity 与算法各有明确字段，排序投影不进入 renderer。
 NiceEval 可以把这些边界压缩成组件 props，不需要保留 TanStack 的 builder 层级。
+
+### 两类嵌套都支持，但责任不同
+
+TanStack Table 把嵌套分成两类。
+同一列结构的树形 rows 通过 `getSubRows(row)` 递归取得 child rows，再交给 expanding row model、expanded state、排序、过滤和分页处理。
+任意详情区、不同 schema 的子表或其它 UI 则由使用方把普通 row 标为可展开，并在展开后渲染自定义 sub-component。
+
+树形 rows 还能选择从 leaf 向上过滤、限制过滤深度、只排序 siblings，或把展开与分页交给服务端。
+这些能力说明 expanding 是 row model 的一个派生阶段，不应被写死成 renderer 内的 DOM 开关。
+
+不过 TanStack 是 headless core。
+它不替使用方决定 child rows 的 HTML、disclosure 的可访问名称、无 JavaScript 行为，也不为自定义 sub-component 生成 text 表达。
+
+NiceEval 因此原生支持第一类：`subRows="children"` 声明同构层级字段，内部编译为现有 `TableContent.subRows`。
+第二类不进入 Table primitive；不同 schema 的子表或任意详情内容由 `Section`、另一只 `Table` 或未来同时定义 text/web 的组合原语表达，不开放 `renderSubComponent` callback。
 
 ### 它不替报告决定正确口径
 
@@ -335,6 +353,22 @@ NiceEval 的表格只需要排序、搜索和层级展开，不因此引入分�
 />
 ```
 
+同构层级 rows 也保持字段选择器心智，不把 TanStack 的 `getSubRows` callback 暴露给作者：
+
+```tsx
+<Table
+  rows={results}
+  subRows="children"
+  columns={["name", "passRate"]}
+  search
+  sort={{ field: "passRate", direction: "desc" }}
+/>
+```
+
+`subRows` 字段不成为可见列。
+排序递归作用于每一组 siblings，search 只保留直接命中的 rows 与它们的 ancestors。
+公开 API 不提供 `rowKey` 或 `expanded`；折叠是当前 Table 实例内的临时阅读状态，重新装载后回到全部展开。
+
 `sort={true}` 只启用可排序表头并保留声明顺序；对象形态同时声明所有 renderer 的首屏顺序。
 `search` 总是从空 query 启动，因此 text 与无 JavaScript web 不会因浏览器启动配置丢行。
 
@@ -400,5 +434,6 @@ Chart kernel 与 Table 浏览状态只共享以下跨组件约束：
 5. 浏览器验收检查 Table 键盘排序、`aria-sort`、命名 filter，以及 Chart pointer/keyboard 同点 focus、tooltip 与下钻。
 6. 静态导出在固定 locale、theme、dimension pins 与 size policy 下保持字节稳定。
 7. 增强后排序、搜索、折叠与 focus 不修改任何 MetricValue、coverage 文案或证据集合。
+8. 层级 Table fixture 验证 sibling-only 递归排序、直接命中加 ancestors 的搜索、深树预算、ancestor cycle 和共享对象的 occurrence identity。
 
 这组证据能把“headless”落实成可检查的中间结果，而不是把现有文件拆小后继续由 renderer 暗中决定语义。

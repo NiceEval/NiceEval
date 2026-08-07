@@ -642,10 +642,42 @@ controller 不读取 `<title>`、path d、DOM 顺序或 SVG 文本来猜 point �
 ## Table controller
 
 Table 的权威语义输入仍是 `TableContent`。
-普通 rows 的公开 API 是：
+公开 API 同时接受 flat rows 和同构 nested rows：
 
 ```ts
+type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+type StringKeyOfUnion<T> = Extract<KeysOfUnion<T>, string>;
+type ValueAt<T, K extends PropertyKey> = T extends unknown
+  ? K extends keyof T
+    ? T[K]
+    : undefined
+  : never;
+type IsAny<T> = 0 extends 1 & T ? true : false;
+type PresentAt<T, K extends PropertyKey> = Exclude<
+  ValueAt<T, K>,
+  null | undefined
+>;
+
+type ValidSubRowsKey<
+  Row extends object,
+  K extends StringKeyOfUnion<Row>,
+> = IsAny<PresentAt<Row, K>> extends true
+  ? never
+  : [PresentAt<Row, K>] extends [never]
+    ? never
+    : [PresentAt<Row, K>] extends [readonly Row[]]
+      ? K
+      : never;
+
+type TableSubRowsKey<Row extends object> = {
+  [K in StringKeyOfUnion<Row>]: ValidSubRowsKey<Row, K>;
+}[StringKeyOfUnion<Row>];
+
 type TableStringKey<Row> = Extract<keyof Row, string>;
+type TableVisibleKey<
+  Row,
+  Excluded extends PropertyKey = never,
+> = Exclude<TableStringKey<Row>, Extract<Excluded, string>>;
 type TableSortToken = string | number | boolean | null;
 
 type TableSearch =
@@ -655,15 +687,18 @@ type TableSearch =
       placeholder?: LocalizedText;
     };
 
-type TableSort<Row> =
+type TableSort<Row, Excluded extends PropertyKey = never> =
   | true
   | {
-      field: TableStringKey<Row>;
+      field: TableVisibleKey<Row, Excluded>;
       direction: "asc" | "desc";
     };
 
-type TableColumnDefinition<Row extends object> = {
-  [K in TableStringKey<Row>]: {
+type TableColumnDefinition<
+  Row extends object,
+  Excluded extends PropertyKey = never,
+> = {
+  [K in TableVisibleKey<Row, Excluded>]: {
     field: K;
     header?: LocalizedText;
     searchable?: boolean;
@@ -679,27 +714,87 @@ type TableColumnDefinition<Row extends object> = {
         sortValue?: never;
       }
   );
-}[TableStringKey<Row>];
+}[TableVisibleKey<Row, Excluded>];
 
-type TableColumn<Row extends object> =
-  | TableStringKey<Row>
-  | TableColumnDefinition<Row>;
+type TableColumn<
+  Row extends object,
+  Excluded extends PropertyKey = never,
+> =
+  | TableVisibleKey<Row, Excluded>
+  | TableColumnDefinition<Row, Excluded>;
 
-interface TableProps<Row extends object> {
-  rows: readonly Row[];
-  columns?: readonly TableColumn<Row>[];
-  search?: TableSearch;
-  sort?: TableSort<Row>;
+interface TablePresentationProps {
   locale?: ReportLocale;
   className?: string;
 }
+
+interface FlatTableProps<Row extends object>
+  extends TablePresentationProps {
+  rows: readonly Row[];
+  columns?: readonly TableColumn<Row>[];
+  subRows?: never;
+  search?: TableSearch;
+  sort?: TableSort<Row>;
+}
+
+interface NestedTableProps<
+  Row extends object,
+  K extends TableSubRowsKey<Row>,
+> extends TablePresentationProps {
+  rows: readonly Row[];
+  columns?: readonly TableColumn<Row, K>[];
+  subRows: K;
+  search?: TableSearch;
+  sort?: TableSort<Row, K>;
+}
+
+interface TableRuntimeProps extends TablePresentationProps {
+  rows: readonly object[];
+  columns?: readonly unknown[];
+  subRows?: string;
+  search?: TableSearch;
+  sort?: true | {
+    field: string;
+    direction: "asc" | "desc";
+  };
+}
+
+type TableComponentBase = Pick<
+  ReportComponent<TableRuntimeProps>,
+  typeof COMPONENT_FACES | "displayName"
+>;
+
+type TableComponent = TableComponentBase & {
+  <Row extends object, K extends TableSubRowsKey<Row>>(
+    props: NestedTableProps<Row, K>,
+  ): ReactNode;
+  <Row extends object>(props: FlatTableProps<Row>): ReactNode;
+};
+
+export const Table = TableImplementation as unknown as TableComponent;
 ```
 
+`TableSubRowsKey` 对 union 分支逐一读取字段，再要求所有 present value 都是 `readonly Row[]`。
+它接受自然的 branch/leaf discriminated union 与 optional recursive field，拒绝 scalar、`any`、`readonly object[]` 和含 null child 的数组。
+Nested overload 必须排在 flat overload 前，且 flat props 用 `subRows?: never` 关闭逃逸路径。
+
+`TableVisibleKey<Row, K>` 只保留所有 union 分支共有的 string key，并排除 child field。
+因此 `subRows` 不能同时出现在 columns 或 sort 中，variant-only field 也不能伪装成所有层级共有的可见列。
+`ReportComponent<TableRuntimeProps>` 的宽调用签名不能和泛型 overload 相交；`TableComponentBase` 只保留 faces metadata 与 displayName。
+
 mapped discriminated union 让 `field: K` 对应的 `sortValue` 参数精确为 `Row[K]`，不是所有字段值的 union。
-shorthand 与复杂列都只接受 string key。
+shorthand 与复杂列都只接受可见 string key。
+
+`subRows` 是字段选择器，不是 `getSubRows(row)` callback。
+它只表达所有层级共享同一组可见 columns 的树，并直接规范化为现有 `TableContent.subRows`；不增加 `NestedTableModel`。
+不同 schema 的子表、任意 detail panel 与 renderer callback 不属于 Table primitive，作者使用 `Section`、另一只 `Table` 或同时定义 text/web 的组合组件。
 
 显式 `columns` 定义全部可见列；省略 columns 时按第一行的稳定字段顺序推导。
-列重复、字段 absent 或值为 `undefined` 都在装载时失败，并指出 column field 与 `rows[index]`。
+Nested Table 自动推导时排除 `subRows`，并递归要求每个 row 的其余字段集合与第一个 root row 完全相同。
+不相同时错误给出结构路径并要求作者传显式 columns。
+
+显式 columns 可以忽略 variant-only extra fields，但每个 selected field 必须出现在每个 row。
+列重复、selected field absent 或值为 `undefined` 都在装载时失败，并指出 column field 与 `rows[0].children[2]` 形态的结构路径。
 
 `header` 只产生 text 表头与 web `<th>` 的本地化名称。
 column identity、sort 地址和 payload key 始终使用 `field`，不从 header 文本反推。
@@ -727,7 +822,7 @@ collator options 是 `{ usage: "sort", sensitivity: "base", numeric: true, ignor
 原 token 只在 page plan 中存在；编译器把升序结果固化成 numeric rank，相等 token 取得同一 rank。
 
 函数与原 token 都不进入浏览器 payload。
-null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始终按 declaration index 保持稳定顺序。
+null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始终按各 sibling set 的声明顺序保持稳定。
 
 `sortValue` 不能改变显示 Cell、MetricValue、coverage、refs 或 field identity。
 跨字段排序或计算列先在 page 中用普通函数产生显式字段。
@@ -735,7 +830,14 @@ null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始�
 public Table 不提供 `features`、`initialState`、`rowKey`、`expanded`、multi-sort、`better`、`hidden` 或列级 `label`。
 它也不提供通用 accessor、display/group column、renderer callback 或 controlled `state/onStateChange`。
 
-普通 rows 在一次 page plan 内按 declaration index 得到 opaque key；该 key 不承诺跨构建 identity。
+普通 rows 在当前 Table render instance 内按结构 occurrence 得到 opaque key；该 key 不承诺跨 remount、重新装载或构建的 identity。
+同一个对象出现在两个 parent 下是两个合法 occurrence，不共享展开状态。
+重新装载或 remount 后折叠状态重置为全部展开；public API 不提供持久化、deep link 或 live patch 契约。
+
+Nested rows 的装载校验使用显式 traversal stack，不依赖 JavaScript call stack。
+selected child field absent、null、undefined 或空数组表示 leaf；present non-null value 必须是 readonly Row array，其中每个 child 必须是 object。
+cycle detector 只检查当前 ancestor stack，因此 ancestor cycle 失败并给出结构路径，共享对象出现在另一个 branch 仍然合法。
+
 组合组件提供的 `TableContentRow.key` 继续承担层级行 identity，不进入普通 rows 作者 API。
 
 web renderer 产生初始 HTML 与以下浏览 payload：
@@ -750,6 +852,9 @@ interface TableEnhancementColumn {
 interface TableEnhancementRow {
   key: string;
   parentKey?: string;
+  depth: number;
+  siblingIndex: number;
+  hasChildren: boolean;
   declarationIndex: number;
   sortRanks?: Readonly<Record<string, number | null>>;
   searchToken?: string;
@@ -790,13 +895,14 @@ interface TableView {
 
 locale-aware formatter 在服务端生成 `sortRanks` 与 `searchToken`。
 按 locale 选出的 header 文案可以进入 payload 的 `header`，但不能充当 column key。
-`deriveTableView(payload, state)` 是纯函数；稳定排序用 `declarationIndex` 断开相同值。
+`deriveTableView(payload, state)` 是纯函数。
+排序递归作用于每一组 siblings，parent 与 descendants 永远不混排；null 始终在末尾，相同 rank 按 `siblingIndex` 保持声明顺序。
 
 `initialTableViewState(content, props, locale)` 把 Table 的 sort prop 换成 state，并让所有父 row 初始展开。
 search 启用时 query 固定为空；search 关闭时 state 中不存在 query slice。
 同一次 page plan 只建立一份 payload 与 initial state，text 和 web 都先调用 `deriveTableView`。
 
-text 按 `orderedRowKeys` 与 `visibleRowKeys` 输出；无 JavaScript web 使用相同 DOM 顺序，并为初始展开 row 写原生 `open`。
+text 按 `orderedRowKeys` 与 `visibleRowKeys` 输出；无 JavaScript web 使用相同 DOM 顺序，并把每个层级 row 写成真实 `<tbody>` 内的 `<tr>` 与 `<td>`。
 controller 启动时复用 payload.initial，第一次投影不得改变 row 顺序、可见性或 disclosure。
 
 search token 与 query 共用以下函数：
@@ -812,19 +918,30 @@ function normalizeTableSearch(value: string, locale: ReportLocale): string {
 ```
 
 query 规范化后按空格拆成 terms；row 必须让每个 term 都出现在 `searchToken` 中。
-空 query 命中所有 row；ancestor 的可见性仍由 child match 与 expanded state 共同决定。
+空 query 命中所有 row，并服从 underlying `expandedRowKeys`。
 
-匹配到 child row 时，其 ancestor 也保持可见。
-展开只改变 child 是否显示，不删除 payload 中的层级关系。
+非空 query 的结果是直接 matching rows 加上它们的全部 ancestors。
+parent 自身匹配不会带出未匹配 descendants；child 匹配会保留 ancestor。
+搜索期间结果树只读且视为全部展开，所有 disclosure button 都隐藏，underlying expanded state 不被改写。
+清空 query 后恢复搜索前的折叠状态；没有 included child 的 parent 在结果树中是临时 leaf，不显示无效控制。
 
 controller 用 row key 把 `TableView` 投影到已有元素。
-它不读取 cell `textContent`、当前 DOM index 或 `<details open>` 来重建权威状态。
+它不读取 cell `textContent`、当前 DOM index 或 DOM 展开属性来重建权威状态。
 
 每个可排序 `th` 内含原生 button。
 点击或键盘激活更新 `TableViewState.sort`，并把方向写到所属 `th[aria-sort]`。
 
 过滤输入由可见 label 或 `aria-label` 命名。
-层级 disclosure 使用原生 button/`details` 行为；启用脚本后，toggle 事件只把稳定 row key写入 `expandedRowKeys`。
+服务端把层级 disclosure button 放在第一格并保持 hidden，因此无 JavaScript 时没有无效控制且所有 rows 完整可读。
+enhancer 启动后显示有 child 的 button，以 `aria-expanded` 暴露状态，点击、Enter 或 Space 只更新 opaque row key 对应的 `expandedRowKeys`。
+
+层级 markup 不使用 `<td colSpan>` 包裹伪表格，也不使用 `<details>` 容纳 rows。
+所有层级共享同一组 `<th>`，浏览器的原生 table header/cell association 保持有效。
+第一格显示可见缩进，并包含 screen-reader-only 的层级文本。
+disclosure button 的可访问名称包含动作与该 row 的第一格文本；不生成 `aria-controls` 或 DOM id，因为行关系已在 payload 中表达，且 [WAI APG Disclosure Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) 把 `aria-controls` 定义为可选项。
+
+normalizer、row derivation 与 renderer 的层级遍历都使用 iterative algorithm。
+深树 fixture 必须证明不会因递归深度抛出 `RangeError`；宽树 fixture 同时报告 HTML 与 payload 的 raw/gzip bytes，并证明 payload 不复制 source row、cell display、MetricValue 或 refs object。
 
 ## Table 验收 fixture
 
@@ -839,13 +956,18 @@ fixture 在 `en` 与 `zh-CN` 下分别编译，并验收：
 - null 在两个方向始终位于末尾，相等 rank 始终保持 declaration order。
 - 浏览器只比较 numeric rank，不执行 `Intl.Collator` 或作者 `sortValue`。
 - search 只命中 effective locale 的可读 cell 文本，不命中 field、header、href、隐藏 refs 或其它 locale。
-- query 规范化、child 命中时保留 ancestor，以及 disclosure state 都服从同一 `deriveTableView`。
+- query 规范化、直接命中加 ancestors、parent 命中不带 subtree，以及搜索期间隐藏 disclosure 都服从同一 `deriveTableView`。
+- nested sort 只递归重排 siblings；相同 rank 保持各 sibling set 内的 declaration order。
+- 无 JavaScript hierarchy 使用真实 table rows、显示全部内容且没有可操作的 dead disclosure；增强后按钮支持 Enter、Space 与 `aria-expanded`。
+- 清空 query 恢复搜索前的折叠状态，remount 则重置为全部展开。
 - search 与 sort 不改变任何 Cell、MetricValue、coverage 或 refs。
 
 类型 fixture 证明 mapped union 会按 `field` 收窄 `sortValue` 参数。
+它接受 branch/leaf union 和 optional recursive child field，拒绝 scalar/`any`/含 null child 的 `subRows`，并拒绝把 child field 或 variant-only field用于 columns 与 sort。
 它也拒绝 symbol/number key、`sortable: false` 与 `sortValue` 并用，以及旧 `label`、`hidden`、`searchable` 顶层 prop 和字符串 `sort`。
 
-装载错误 fixture 逐项验证重复 field、absent/undefined field、死配置、不可排序的首屏 field、混合 token 类型和非有限 number。
+装载错误 fixture 逐项验证重复 field、absent/undefined selected field、自动列 shape mismatch、非法 child、ancestor cycle、死配置、不可排序的首屏 field、混合 token 类型和非有限 number。
+共享对象 fixture 证明不同 parent 下的 occurrence 拥有不同 opaque key；深树与宽树 fixture 验证 stack safety 和输出体积。
 spy 证明每个 present 值的 `sortValue` 只执行一次；函数与原 token 不出现在序列化 payload。
 
 ## 双面不变量
