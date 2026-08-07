@@ -17,8 +17,7 @@ e2e/
 ├── adapter/
 │   ├── local-protocol/     # 无密钥 transport 与可控故障
 │   └── <id>/               # 每个真实 SDK / CLI / provider 一个 live Repo
-├── scripts/                # 发现、计划、pack、注入、执行、收据与 artifact
-└── undo/                   # 未启用历史 fixture；没有 e2e.json，不参与发现
+└── scripts/                # 发现、计划、pack、注入、执行、收据与 artifact
 ```
 
 目录结构本身不决定测试身份；`e2e.json.id` 才是稳定 Repo id。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
