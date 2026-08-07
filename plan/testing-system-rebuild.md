@@ -151,12 +151,12 @@
    └─ [x] T6.7.7 opencode
           owner: e2e/adapter/<id>/**
 
-[ ] T7 删除旧体系（depends on 每个新 owner 接管；可随对应 T4/T6 节点串行收尾）
+[x] T7 删除旧体系（depends on 每个新 owner 接管；可随对应 T4/T6 节点串行收尾）
 ├─ [x] T7.1 每个新 owner 接管时同批删除线性 scripts、group 字段、共享真实模型 fixture 或私有 oracle
 ├─ [x] T7.2 重写 e2e/README.md，使其只描述当前已落地入口
 ├─ [x] T7.3 更新 lockfile、源码注释、AGENTS 与链接
 ├─ [x] T7.4 pnpm test、pnpm test:docs、pnpm run typecheck
-└─ [ ] T7.5 pr lane 全绿；main/nightly 未选择项在 plan 中可见而非伪装 pass
+└─ [x] T7.5 pr lane 全绿；main/nightly 未选择项在 plan 中可见而非伪装 pass（PR run 31191899437）
 
 [x] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
 ├─ [x] T8.1 修正测试 owner 分类：Feature Unit 保留 `// cases:`；runner receipt 直属 E2E execution；examples 与产品站守护分别迁入 docs / docs-site lane
