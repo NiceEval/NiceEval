@@ -16,9 +16,9 @@
 // This script must never hardcode SDK names, ports, or expected eval/verdict
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
@@ -41,6 +41,7 @@ interface Cli {
   capability?: string;
   diffPaths?: string[];
   candidatePath: string;
+  artifactRoot: string | undefined;
   nativeArgs: string[];
 }
 
@@ -59,6 +60,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
       repo: { type: "string", multiple: true, default: [] },
       lane: { type: "string" },
       capability: { type: "string" },
+      "artifact-root": { type: "string" },
       "diff-path": { type: "string", multiple: true },
     },
     allowPositionals: false,
@@ -84,6 +86,9 @@ export function parseRunCli(argv: readonly string[]): Cli {
     capability: typeof values.capability === "string" ? values.capability : undefined,
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     candidatePath: values.candidate,
+    artifactRoot: typeof values["artifact-root"] === "string"
+      ? resolve(values["artifact-root"])
+      : undefined,
     nativeArgs,
   };
 }
@@ -163,7 +168,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     const cli = parseRunCli(argv);
     const candidate = readCandidateTarball(cli.candidatePath);
     scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-scratch-"));
-    artifactRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
+    artifactRoot = cli.artifactRoot ?? mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
+    await mkdir(artifactRoot, { recursive: true });
     console.log(`[e2e] scratch root (ephemeral): ${scratchRoot}`);
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
