@@ -68,6 +68,14 @@ function scriptedInstaller(steps: {
   - `search`、`run` 等可能属于被测应用的单字动词不能由通用表猜成系统工具。
   - Unit 只展开这张 NiceEval 自有的确定性基表。某个 SDK / CLI 是否同时写入正确原始名与规范分类，
     仍由对应 Adapter E2E 证明，不在这里复制上游 wire fixture。
+- **probe 命中、staged 安装、复检失败**（[Agent Ensure](../../../feature/adapters/architecture/agent-ensure.md)）：
+
+  - 上游提供的工具名在 `StreamEvent.operation.name` 原样保存；归一函数只计算旁边的 `tool: ToolName`，不能改写原名。
+  - 通用复合别名按大小写无关规则映射为 `ToolName`；进入规范化流程后仍不认识时保留原始 `name`，并把 `tool` 分类为 `unknown`。
+    不承诺分类任意应用工具的协议可以省略 `tool`，但仍必须保留原始 `name`。
+  - `search`、`run` 等可能属于被测应用的单字动词不能由通用表猜成系统工具。
+  - Unit 只展开这张 NiceEval 自有的确定性基表。某个 SDK / CLI 是否同时写入正确原始名与规范分类，
+    仍由对应 Adapter E2E 证明，不在这里复制上游 wire fixture。
 - **探测 命中、staged 安装、复检失败**（[Agent Ensure](../../../feature/adapters/architecture/agent-ensure.md)）：
 
   - 探测 命中 → 记录命中的安装事实，不调用 install。
