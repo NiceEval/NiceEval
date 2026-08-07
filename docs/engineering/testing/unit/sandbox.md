@@ -97,7 +97,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - **absent ≡ default**：省略 `pathPrepend` 与显式传空数组产出同一份 template identity（同一份 digest，序列化里都不出现这个键）——可选配置字段的默认值不进身份序列化是通用规则，`pathPrepend` 是它当前唯一有实例的字段。
 - **E2B command completion framing**：
   - Unit 只把生产 wrapper 交给确定性的 transport fake：fake 从 wrapper 解码真实 prefix / suffix 字节，再把声明的 stdout / stderr 正文与完成 frame 分块送进生产 parser；不启动 shell、SDK 或远端实例。
-  - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk、伪 marker 后继续扫描、两路 exit 不一致，以及 Codex 形状的长命令/heredoc。
+  - 覆盖 exit 0、非零退出、两路正文、marker 跨 chunk、伪 marker 后继续扫描，以及 Codex 形状的长命令/heredoc。
   - wrapper 源码或带反斜线的转义诊断即使同时包含 prefix/suffix 也不得完成命令。
   - fake 必须消费生产 wrapper 生成的 marker 字节，不能另造一套 token；它证明的是 frame parser、双通道聚合与 transport 收尾，不证明 shell 自身会执行 wrapper。
   - 真实 E2B smoke 另覆盖 exit 0、非零退出和 Codex 长命令，证明 SDK / shell 边界与单元层声明的协议一致。
