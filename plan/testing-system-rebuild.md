@@ -69,7 +69,7 @@
 ├─ [x] T2A.3 重写场景依赖守护：源 manifest/lock 拒绝 Testkit，临时副本只允许已验证内容寻址 tgz
 └─ [x] T2A.4 把守护放入 test/docs 或 test/unit，复用现有命令
 
-[ ] T3 把 Testkit 转为 monorepo 内部包（depends on T0/T1；多路并行，T3.7 串行收口）
+[x] T3 把 Testkit 转为 monorepo 内部包（depends on T0/T1；多路并行，T3.7 串行收口）
 ├─ [x] T3.1 重写正式 docs 并通过 Sol design_grill
 │      owner: docs/engineering/testing/**, plan/testing-system-rebuild.md
 ├─ [x] T3.2 并入根 workspace 并取消发布面（parallel with T3.3/T3.5）
@@ -78,7 +78,7 @@
 ├─ [x] T3.3 runner 自动 pack/注入/收据（parallel with T3.2/T3.5）
 │      owner: e2e/scripts/**, test/unit/e2e-runner/**
 │      work: harness.testkit schema；内容寻址 tgz；SHA-256/SRI/唯一 resolution/path；durable exact-replay artifact
-├─ [ ] T3.4 迁移全部 scenario（depends on T3.3 contract；parallel by disjoint Repo）
+├─ [x] T3.4 迁移全部 scenario（depends on T3.3 contract；parallel by disjoint Repo）
 │      owner: e2e/<repo>/{e2e.json,package.json,pnpm-lock.yaml}
 │      work: 源 package/lock 删 Testkit；manifest 声明 capability；直跑引导根 runner
 ├─ [x] T3.5 CI 两 tgz 单一生产者（parallel with T3.2/T3.3）
@@ -87,7 +87,7 @@
 ├─ [x] T3.6 双 tarball 边界机器守护（depends on T3.2；parallel with T3.4）
 │      owner: test/docs/**
 │      acceptance: Testkit allowlist + Node18 ESM/CJS + .mts/.cts；NiceEval tgz 不含/不依赖 Testkit；拒绝局部 lock/workspace
-└─ [ ] T3.7 父侧串行验收（depends on T3.2–T3.6）
+└─ [x] T3.7 父侧串行验收（depends on T3.2–T3.6）
        acceptance: clean root frozen install；Testkit test/typecheck/build；本地单 Repo 自动注入；CI guard；同一双 digest 贯穿 receipt
 
 [ ] T4 迁移 CLI 确定性 pilot（场景已接管；最终 gate depends on T3.7）
