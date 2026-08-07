@@ -6,13 +6,19 @@ import {
   AttemptAssessment,
   AttemptSummary,
   Col,
+  Conversation,
+  CopyBlock,
   SampleOverview,
   Table,
   ATTEMPT_PAGE_ID,
   defineReport,
   toAttemptListRows,
   toAttemptSummary,
+  toConversationTurns,
 } from "niceeval/report";
+
+// 供浏览器验收的 CopyBlock 固定内容：标题与正文都是稳定字面量。
+const FIXTURE_COPY_TEXT = "niceeval report fixture copy text";
 
 function attemptRows(items: readonly AttemptListItem[]): Array<{
   key: string;
@@ -39,6 +45,10 @@ async function overviewRender(_sample: Sample) {
   return (
     <Col>
       <SampleOverview />
+      <CopyBlock
+        title={{ en: "Fixture copy block", "zh-CN": "Fixture copy block" }}
+        text={FIXTURE_COPY_TEXT}
+      />
     </Col>
   );
 }
@@ -61,6 +71,7 @@ async function reviewRender(attempt: AttemptEvidence) {
     <Col>
       <AttemptSummary data={await toAttemptSummary(attempt)} />
       <AttemptAssessment attempt={attempt} />
+      <Conversation data={await toConversationTurns(attempt)} />
     </Col>
   );
 }
