@@ -9,7 +9,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import * as tar from "tar-stream";
-import { assertRootlessPrivilegedDaemon, dockerHostConfig, DockerSandbox } from "./docker.ts";
+import {
+  assertRootlessPrivilegedDaemon,
+  dockerHostConfig,
+  dockerManagedNetworkOptions,
+  DockerSandbox,
+} from "./docker.ts";
 
 describe("Docker privileged boundary and resources", () => {
   it("rootless-only privileged 拒绝默认/rootful/TCP daemon，只接受显式 rootless Unix socket", () => {
@@ -61,9 +66,10 @@ describe("Docker privileged boundary and resources", () => {
       memoryBytes: 4_294_967_296,
       pidsLimit: 2048,
       readOnlyRootfs: true,
-      tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711, uid: 0, gid: 0 } },
-    })).toMatchObject({
+      tmpfs: { "/var/lib/docker": { sizeBytes: 3_221_225_472, mode: 0o711, uid: 0, gid: 0, executable: true } },
+    }, ["1.1.1.1", "9.9.9.9"])).toMatchObject({
       Privileged: true,
+      Dns: ["1.1.1.1", "9.9.9.9"],
       NanoCpus: 2_500_000_000,
       Memory: 4_294_967_296,
       MemorySwap: 4_294_967_296,
@@ -77,6 +83,21 @@ describe("Docker privileged boundary and resources", () => {
       ExtraHosts: ["host.docker.internal:host-gateway"],
     });
     expect(new DockerSandbox({ privileged: "rootless" }).otlpHost).toBeNull();
+  });
+
+  it("为每个 managed privileged Attempt 声明独占且禁止 sibling 互通的 bridge", () => {
+    expect(dockerManagedNetworkOptions("provision-1", "attempt-1")).toEqual({
+      Name: "niceeval-attempt-attempt-1",
+      CheckDuplicate: false,
+      Driver: "bridge",
+      Internal: false,
+      Attachable: false,
+      Options: { "com.docker.network.bridge.enable_icc": "false" },
+      Labels: {
+        "niceeval.managed-network": "true",
+        "niceeval.provision-token": "provision-1",
+      },
+    });
   });
 });
 

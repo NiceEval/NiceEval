@@ -133,11 +133,16 @@ services.niceeval.dockerProfiles.default = {
   enable = true;
   accessUsers = [ "ctrdh" ];
   capacity = {
-    cpus = 14;
+    cpus = 16;
     memory = "28G";
-    pids = 9216;
-    maxContainers = 8;
+    pids = 8192;
+    maxContainers = 4;
     maxBuilds = 2;
+  };
+  aggregate = {
+    cpus = 20;
+    memory = "32G";
+    pids = 12288;
   };
   storage = {
     size = "30G";
@@ -180,9 +185,10 @@ human plan按实际用到的每个 profile显示一段摘要：
 
 ```text
 DOCKER PROFILE  default · managed-rootless/v1 · policy 8f31c0d2
-  aggregate 14 CPU · 28 GiB memory · 0 swap · 9216 PID · 30 GiB disk · max 8
+  allocatable 16 CPU · 28 GiB memory · 0 swap · 8192 PID · max 4
+  aggregate hard limit 20 CPU · 32 GiB memory · 0 swap · 12288 PID · 30 GiB disk
   this invocation up to 4 containers · 4 CPU / 6 GiB / 2048 PID each
-  shared admission 3 active invocations · 6/8 containers reserved
+  shared admission 3 active invocations · 3/4 containers reserved
 ```
 
 可发布 JSON只包含 security level、semantic policy revision、aggregate公开容量、单容器请求与有效

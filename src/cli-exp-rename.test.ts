@@ -37,6 +37,7 @@ function makeFlags(over: Partial<Flags> = {}): Flags {
     tag: undefined,
     junit: undefined,
     json: false,
+    smoke: false,
     open: undefined,
     out: undefined,
     port: undefined,

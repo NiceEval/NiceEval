@@ -6,6 +6,7 @@ export { defineSandbox } from "../define.ts";
 export {
   CustomSandboxMaterializationError,
   sandboxLayer,
+  dockerSandbox,
   dockerComposeSandbox,
   dockerfileSandbox,
   dockerImageSandbox,
@@ -56,6 +57,13 @@ export {
 export type {
   SandboxLayer,
   SandboxLayerKind,
+  DockerImageSource,
+  DockerfileSource,
+  DockerSandboxSource,
+  DockerSandboxOptions,
+  DockerSandboxCommonOptions,
+  DockerSandboxReadiness,
+  ManagedDockerResources,
   DockerComposeSandboxOptions,
   DockerfileSandboxOptions,
   DockerImageSandboxOptions,
@@ -138,3 +146,56 @@ export type {
   SandboxBuildFailure,
   PrepareSandboxBuildsOptions,
 } from "./build-coordinator.ts";
+
+export {
+  DockerProfileError,
+  dockerProfileError,
+} from "./docker-profile/errors.ts";
+export type {
+  DockerProfileErrorCode,
+  DockerProfileErrorOptions,
+} from "./docker-profile/errors.ts";
+export {
+  DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION,
+  DOCKER_PROFILE_SCHEMA_VERSION,
+  DOCKER_PROFILE_NETWORK_POLICY_VERSION,
+  DOCKER_PROFILE_NETWORK_DENY_CIDRS,
+  DockerExecutionProfileV1Schema,
+  DockerExecutionProfileSchema,
+  createDockerExecutionProfileV1,
+  decodeDockerExecutionProfileV1,
+  dockerExecutionProfileSemanticPolicyRevisionOf,
+  dockerProfileSemanticPolicyRevisionOf,
+  dockerExecutionProfileV1Digest,
+  dockerProfileDigestOf,
+  dockerProfilePublicSummaryOf,
+  isDockerExecutionProfileV1,
+  makeDockerExecutionProfileV1,
+  parseDockerExecutionProfile,
+  parseDockerExecutionProfileV1,
+} from "./docker-profile/schema.ts";
+export type {
+  DockerExecutionProfileSecurityLevel,
+  DockerExecutionProfileV1,
+  DockerExecutionProfileV1Draft,
+  DockerProfileNetworkPolicy,
+  DockerProfilePublicSummary,
+  DockerProfileUnixEndpoint,
+} from "./docker-profile/schema.ts";
+export {
+  createDockerProfileRegistry,
+  indexDockerProfiles,
+  parseDockerProfileRegistry,
+  resolveDockerExecutionProfile,
+  resolveDockerProfile,
+  resolveDockerProfileAlias,
+  resolveDockerProfileSelector,
+} from "./docker-profile/registry.ts";
+export type {
+  DockerProfileRegistryEntry,
+  DockerProfileRegistryFileFacts,
+  DockerProfileRegistryIndex,
+  DockerProfileRegistryInput,
+  DockerProfileRegistryOptions,
+  ResolvedDockerProfileEntry,
+} from "./docker-profile/registry.ts";

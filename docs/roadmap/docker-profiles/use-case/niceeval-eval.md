@@ -105,12 +105,13 @@ services.niceeval.dockerProfiles.default = {
   enable = true;
   accessUsers = [ "ctrdh" ];
   capacity = {
-    cpus = 14;
+    cpus = 16;
     memory = "28G";
-    pids = 9216;
-    maxContainers = 8;
+    pids = 8192;
+    maxContainers = 4;
     maxBuilds = 2;
   };
+  aggregate = { cpus = 20; memory = "32G"; pids = 12288; };
   storage = { size = "30G"; backing = "loop-ext4"; };
 };
 ```
@@ -143,6 +144,8 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - outer container cgroup是 profile aggregate path的严格后代；
 - rootfs只读，所有可写路径容量可核对；
 - outer socket、control socket、lease token与 host gateway在容器内均不可见；
+- 每个 Attempt 使用独占 user-defined outer bridge；TCP、UDP、ICMP 与私网扫描均不能到达 sibling，
+  也不能到达宿主 loopback/control endpoint，但公网 DNS/HTTPS 与 inner Compose 必须可用；
 - 结束后 outer container、inner process与 inner mount全部消失，profile daemon generation不变。
 
 ### 四路与两个 Invocation
@@ -156,6 +159,9 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 - profile无遗留 active/provisioning NiceEval container或 reservation；
 - sibling没有因单条填盘、OOM或 PID storm失效；
 - cleanup p95低于 Runner看门狗边界。
+- 四个 outer container有至少120秒共同活动区间；每一路在该区间内都必须有真实 coding agent、已
+  build/run/healthy的 inner Compose和持续增长的 CPU activity。排队、sleep、readiness或只创建容器
+  不算 active。
 
 ### SIGKILL
 
@@ -181,6 +187,8 @@ daemon请求、session和 process/cgroup活动全部终止前保持占用，不�
 8路不是只改一个常量。相同任务矩阵必须先通过4路参照运行，再在实际宿主证明8个 outer scope都在
 aggregate cgroup内、硬资源与 headroom仍成立、跨进程 admission无超卖。宿主 module把
 `maxContainers`声明为8后，Experiment才可同步上调；只改 `maxConcurrency`不能越过 profile。
+八路 allocatable 至少是32 CPU、48 GiB memory与16384 PID；aggregate硬上限至少是40 CPU、
+64 GiB memory与20480 PID。八路也必须满足同一个不少于120秒的真实共同活动区间。
 
 ### 三种官方宿主集成
 

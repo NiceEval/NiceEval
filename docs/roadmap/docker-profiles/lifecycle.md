@@ -206,3 +206,9 @@ build session、resource枚举、kept registry和 journal全部收敛才释放�
 先跑4路 task-shaped Attempt作为参照；8路必须在相同故障矩阵、宿主 headroom和硬上限内实测通过，
 才允许宿主 profile把 `maxContainers`声明为8。Experiment可以把 `maxConcurrency`设得更大，但不能
 越过 watchdog admission。
+
+四路每个 Attempt 为4 CPU，所以 allocatable 不得低于16 CPU，aggregate 不得低于20 CPU。八路
+allocatable 不得低于32 CPU、48 GiB memory与16384 PID，aggregate不得低于40 CPU、64 GiB
+memory与20480 PID。两种规模都要保存不少于120秒的共同活动区间：每一路必须同时有真实 coding
+agent、已 build/run/healthy 的 inner Compose 与持续增长的 CPU activity；排队、readiness、sleep
+或仅存在 container 都不计入 active。

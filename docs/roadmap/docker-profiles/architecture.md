@@ -73,14 +73,20 @@ interface DockerExecutionProfileV1 {
     };
   };
   readonly capacity: {
+    /** 已扣除 daemon、build、watchdog 与 recovery headroom，可授予 Attempt 的容量。 */
     readonly cpus: number;
     readonly memoryBytes: number;
     readonly memorySwapBytes: 0;
     readonly pids: number;
     readonly maxContainers: number;
     readonly maxBuilds: number;
-    readonly reservedMemoryBytes: number;
-    readonly reservedPids: number;
+    /** systemd aggregate cgroup 的硬上限；必须不小于 allocatable + headroom。 */
+    readonly aggregate: {
+      readonly cpus: number;
+      readonly memoryBytes: number;
+      readonly memorySwapBytes: 0;
+      readonly pids: number;
+    };
   };
   readonly policy: {
     readonly hostLoopback: false;
@@ -230,6 +236,26 @@ allocatable容量已扣除 daemon、watchdog、build和宿主 recovery headroom�
 preflight立即失败；暂时无余量则进入跨进程公平队列，不超卖。client取消排队不留 reservation。
 Experiment/global `maxConcurrency` 先限制本进程派发，watchdog admission再限制全机；两者都通过才
 create。
+
+四路初始配置中每个 Attempt 请求 4 CPU，因此 allocatable 至少是 16 CPU；aggregate 硬上限至少是
+20 CPU，并另提供 4 CPU 给 daemon、BuildKit、watchdog 与回收。八路晋升的 allocatable 至少是
+32 CPU、48 GiB memory 与 16384 PID；aggregate 至少是 40 CPU、64 GiB memory 与 20480 PID。
+descriptor 与 CLI 输出中的 `capacity` 一律指 allocatable，`capacity.aggregate` 才指 cgroup 硬上限，
+两者不能混称。
+
+## Outer 网络隔离
+
+watchdog 为每个 Attempt 创建独占的 user-defined bridge network。network ID 与 container ID 作为
+同一个 journal-first 生命周期单元管理。network 允许经 rootless NAT 访问公网 DNS/HTTPS 与拉取
+依赖，但禁用 inter-container communication。不同 Attempt 的容器不得接入彼此 network。
+
+managed profile 禁止使用 Docker 默认 bridge、host network、host gateway、published port，亦禁止把
+outer Docker/control socket 注入容器。容器不得访问宿主 loopback、宿主控制 endpoint 或任一 sibling；
+inner dockerd 与 Compose 只能存在于自己的 outer namespace。
+
+create、CLI 断连或 SIGKILL 后，watchdog 以 profile ID、Invocation ID、Attempt ID、provision token
+labels 对账 container 与 network。两者按同一生命周期单元回收；不能只删容器而遗留 network，亦不能
+误删 active sibling。
 
 admission是协调边界，aggregate cgroup与 bounded filesystem才是即使可信 CLI有 bug时仍成立的
 硬边界。doctor必须用真实 process cgroup路径证明 container scope位于 aggregate之下。

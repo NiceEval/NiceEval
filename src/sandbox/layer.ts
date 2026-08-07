@@ -41,6 +41,8 @@ import type {
   SandboxRuntimeMaterializationError,
   SandboxRuntimeMaterializeContext,
 } from "./runtime.ts";
+import { dockerProfileError } from "./docker-profile/errors.ts";
+import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -88,12 +90,17 @@ export interface DockerfileSandboxOptions {
   readonly context: string | URL;
   readonly dockerfile?: string;
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  /** Docker profile v1 的宿主 alias；只保存为私有 runtime binding，不进入可分享 identity。 */
+  readonly profile?: string;
+  /** 起点构建的目标 stage。 */
+  readonly target?: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用构建出的镜像 `USER`。 */
   readonly user?: string;
   /** 仅允许在 rootless Docker daemon 上请求 privileged；rootful daemon 会在创建前拒绝。 */
   readonly privileged?: "rootless";
   /** 单容器的 CPU / 内存 / PID / tmpfs 硬边界。 */
   readonly resources?: DockerSandboxResources;
+  readonly readiness?: DockerSandboxReadiness;
   readonly lifetimeMs?: number;
   /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
   readonly pathPrepend?: readonly string[];
@@ -101,12 +108,15 @@ export interface DockerfileSandboxOptions {
 
 export interface DockerImageSandboxOptions {
   readonly image: string;
+  /** Docker profile v1 的宿主 alias；只保存为私有 runtime binding，不进入可分享 identity。 */
+  readonly profile?: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)。 */
   readonly user?: string;
   /** 仅允许在 rootless Docker daemon 上请求 privileged；rootful daemon 会在创建前拒绝。 */
   readonly privileged?: "rootless";
   /** 单容器的 CPU / 内存 / PID / tmpfs 硬边界。 */
   readonly resources?: DockerSandboxResources;
+  readonly readiness?: DockerSandboxReadiness;
   readonly lifetimeMs?: number;
   /** 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library.md)。 */
   readonly pathPrepend?: readonly string[];
@@ -117,6 +127,8 @@ export interface DockerSandboxTmpfsOptions {
   readonly mode?: number;
   readonly uid?: number;
   readonly gid?: number;
+  /** 默认 false；仅显式 true 时允许执行。 */
+  readonly executable?: boolean;
 }
 
 export interface DockerSandboxResources {
@@ -127,6 +139,55 @@ export interface DockerSandboxResources {
   readonly readOnlyRootfs?: boolean;
   readonly tmpfs?: Readonly<globalThis.Record<string, DockerSandboxTmpfsOptions>>;
 }
+
+export interface DockerImageSource {
+  readonly type: "image";
+  readonly image: string;
+}
+
+export interface DockerfileSource {
+  readonly type: "dockerfile";
+  readonly context: string | URL;
+  readonly file?: string;
+  readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  readonly target?: string;
+}
+
+export type DockerSandboxSource = DockerImageSource | DockerfileSource;
+
+export interface ManagedDockerResources extends DockerSandboxResources {
+  readonly cpus: number;
+  readonly memoryBytes: number;
+  readonly pidsLimit: number;
+  readonly readOnlyRootfs: true;
+}
+
+export interface DockerSandboxReadiness {
+  readonly command: readonly [string, ...string[]];
+  readonly user?: string;
+  readonly timeoutMs: number;
+  readonly intervalMs?: number;
+}
+
+export interface DockerSandboxCommonOptions {
+  readonly source: DockerSandboxSource;
+  readonly user?: string;
+  readonly readiness?: DockerSandboxReadiness;
+  readonly lifetimeMs?: number;
+  readonly pathPrepend?: readonly string[];
+}
+
+export type DockerSandboxOptions =
+  | (DockerSandboxCommonOptions & {
+      readonly profile?: undefined;
+      readonly privileged?: undefined;
+      readonly resources?: DockerSandboxResources;
+    })
+  | (DockerSandboxCommonOptions & {
+      readonly profile: string;
+      readonly privileged?: "rootless";
+      readonly resources: ManagedDockerResources;
+    });
 
 export interface E2BSandboxOptions {
   readonly template: string;
@@ -656,6 +717,90 @@ function dockerPrivileged(value: unknown, path: string): "disabled" | "rootless"
   return "rootless";
 }
 
+function dockerProfileAlias(value: unknown, path: string): string | undefined {
+  if (value === undefined) return undefined;
+  return nonEmptyString(value, path);
+}
+
+function dockerReadiness(value: unknown, path: string): Readonly<DockerSandboxReadiness> | undefined {
+  if (value === undefined) return undefined;
+  assertRecord(value, path);
+  assertOnlyKeys(value, ["command", "user", "timeoutMs", "intervalMs"], path);
+  if (!Array.isArray(value.command) || value.command.length === 0) {
+    throw new TypeError(`${path}.command must be a non-empty array of strings`);
+  }
+  const commandValues = value.command.map((entry, index) => nonEmptyString(entry, `${path}.command[${index}]`));
+  const first = commandValues[0];
+  if (first === undefined) throw new TypeError(`${path}.command must contain an executable`);
+  const command: readonly [string, ...string[]] = Object.freeze([first, ...commandValues.slice(1)]);
+  const user = value.user === undefined ? undefined : nonEmptyString(value.user, `${path}.user`);
+  const timeoutMs = positiveFinite(value.timeoutMs, `${path}.timeoutMs`);
+  const intervalMs = value.intervalMs === undefined
+    ? undefined
+    : positiveFinite(value.intervalMs, `${path}.intervalMs`);
+  return Object.freeze({
+    command,
+    ...(user === undefined ? {} : { user }),
+    timeoutMs,
+    ...(intervalMs === undefined ? {} : { intervalMs }),
+  });
+}
+
+function managedDockerResources(value: unknown, path: string): ManagedDockerResources {
+  if (value === undefined) {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-resources-required",
+      path,
+      message: "profile-bound Docker sandbox requires explicit CPU, memory, PID and readOnlyRootfs resources",
+    });
+  }
+  const resources = dockerResources(value, path);
+  if (
+    resources.cpus === undefined ||
+    resources.memoryBytes === undefined ||
+    resources.pidsLimit === undefined ||
+    resources.readOnlyRootfs !== true
+  ) {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-resources-required",
+      path,
+      message: "profile-bound Docker sandbox requires explicit CPU, memory, PID and readOnlyRootfs: true resources",
+    });
+  }
+  return Object.freeze({
+    ...resources,
+    cpus: resources.cpus,
+    memoryBytes: resources.memoryBytes,
+    pidsLimit: resources.pidsLimit,
+    readOnlyRootfs: true,
+  });
+}
+
+function dockerResourcesForProfile(
+  profile: string | undefined,
+  privileged: "disabled" | "rootless",
+  value: unknown,
+  path: string,
+): Readonly<DockerSandboxResources> {
+  if (profile === undefined && privileged === "rootless") {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-required",
+      path: `${path}.privileged`,
+      message: 'privileged: "rootless" requires an explicit Docker profile alias',
+    });
+  }
+  return profile === undefined ? dockerResources(value, path) : managedDockerResources(value, path);
+}
+
+function readinessIdentity(readiness: Readonly<DockerSandboxReadiness> | undefined): JsonValue {
+  return readiness === undefined
+    ? null
+    : {
+        command: [...readiness.command],
+        ...(readiness.user === undefined ? {} : { user: readiness.user }),
+      };
+}
+
 function positiveFinite(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new TypeError(`${path} must be a positive finite number`);
@@ -693,13 +838,16 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
       }
       const entry = value.tmpfs[mountPath];
       assertRecord(entry, `${path}.tmpfs.${mountPath}`);
-      assertOnlyKeys(entry, ["sizeBytes", "mode", "uid", "gid"], `${path}.tmpfs.${mountPath}`);
+      assertOnlyKeys(entry, ["sizeBytes", "mode", "uid", "gid", "executable"], `${path}.tmpfs.${mountPath}`);
       const sizeBytes = positiveSafeInteger(entry.sizeBytes, `${path}.tmpfs.${mountPath}.sizeBytes`);
       if (
         entry.mode !== undefined &&
         (typeof entry.mode !== "number" || !Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o7777)
       ) {
         throw new TypeError(`${path}.tmpfs.${mountPath}.mode must be an integer between 0 and 0o7777`);
+      }
+      if (entry.executable !== undefined && typeof entry.executable !== "boolean") {
+        throw new TypeError(`${path}.tmpfs.${mountPath}.executable must be a boolean`);
       }
       const uid = entry.uid === undefined ? undefined : nonNegativeSafeInteger(entry.uid, `${path}.tmpfs.${mountPath}.uid`);
       const gid = entry.gid === undefined ? undefined : nonNegativeSafeInteger(entry.gid, `${path}.tmpfs.${mountPath}.gid`);
@@ -708,6 +856,7 @@ function dockerResources(value: unknown, path: string): Readonly<DockerSandboxRe
         ...(entry.mode === undefined ? {} : { mode: entry.mode }),
         ...(uid === undefined ? {} : { uid }),
         ...(gid === undefined ? {} : { gid }),
+        ...(entry.executable === true ? { executable: true } : {}),
       });
     }
   }
@@ -967,6 +1116,10 @@ export interface DockerfileProviderPlan {
   readonly context: SandboxLocation;
   readonly dockerfile: string;
   readonly buildArgs: Readonly<Record<string, string>>;
+  readonly profile?: string;
+  readonly profileBinding?: DockerProfileRuntimeBinding;
+  readonly target?: string;
+  readonly readiness?: DockerSandboxReadiness;
   readonly user: SandboxExecutionUser;
   readonly privileged: "disabled" | "rootless";
   readonly resources: Readonly<DockerSandboxResources>;
@@ -979,6 +1132,9 @@ export interface DockerfileProviderPlan {
 
 export interface DockerImageProviderPlan {
   readonly image: string;
+  readonly profile?: string;
+  readonly profileBinding?: DockerProfileRuntimeBinding;
+  readonly readiness?: DockerSandboxReadiness;
   readonly user: SandboxExecutionUser;
   readonly privileged: "disabled" | "rootless";
   readonly resources: Readonly<DockerSandboxResources>;
@@ -1178,6 +1334,25 @@ export function createBuiltinSandboxFactories(
 ): BuiltinSandboxFactories {
   const dockerTarget = (): Effect.Effect<SandboxPlannedTarget, SandboxProviderPlanningError> =>
     Effect.flatMap(services.dockerBuildPlatform, targetFromDocker);
+  const dockerTargetForProfile = (
+    profile: string | undefined,
+  ): Effect.Effect<{
+    readonly target: SandboxPlannedTarget;
+    readonly profileBinding?: DockerProfileRuntimeBinding;
+  }, SandboxProviderPlanningError> => profile === undefined
+    ? Effect.map(dockerTarget(), (target) => ({ target }))
+    : Effect.flatMap(
+        Effect.tryPromise({
+          try: async () => (await import("./docker-profile/runtime.ts")).attestDockerProfile(profile),
+          catch: (cause) => providerPlanningError(
+            "sandbox.docker-profile-attestation-failed",
+            "docker",
+            cause instanceof Error ? cause.message : String(cause),
+            [`Run niceeval docker profile doctor ${profile}.`],
+          ),
+        }),
+        (profileBinding) => Effect.map(targetFromDocker(profileBinding.platform), (target) => ({ target, profileBinding })),
+      );
 
   return Object.freeze({
     dockerComposeSandbox(options: DockerComposeSandboxOptions) {
@@ -1319,7 +1494,7 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerfileSandbox options");
       assertOnlyKeys(
         options,
-        ["context", "dockerfile", "buildArgs", "user", "privileged", "resources", "lifetimeMs", "pathPrepend"],
+        ["context", "dockerfile", "buildArgs", "profile", "target", "user", "privileged", "resources", "readiness", "lifetimeMs", "pathPrepend"],
         "dockerfileSandbox options",
       );
       const context = location(options.context, "dockerfileSandbox options.context");
@@ -1327,11 +1502,16 @@ export function createBuiltinSandboxFactories(
         ? "Dockerfile"
         : nonEmptyString(options.dockerfile, "dockerfileSandbox options.dockerfile");
       const buildArgs = stringRecord(options.buildArgs, "dockerfileSandbox options.buildArgs");
+      const profile = dockerProfileAlias(options.profile, "dockerfileSandbox options.profile");
+      const targetStage = options.target === undefined
+        ? undefined
+        : nonEmptyString(options.target, "dockerfileSandbox options.target");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerfileSandbox options.user") };
       const privileged = dockerPrivileged(options.privileged, "dockerfileSandbox options.privileged");
-      const resources = dockerResources(options.resources, "dockerfileSandbox options.resources");
+      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerfileSandbox options.resources");
+      const readiness = dockerReadiness(options.readiness, "dockerfileSandbox options.readiness");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerfileSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerfileSandbox options.pathPrepend");
       const identity: JsonValue = {
@@ -1342,6 +1522,8 @@ export function createBuiltinSandboxFactories(
         buildArgs: { ...buildArgs },
         user,
         ...dockerRuntimeIdentity(privileged, resources),
+        ...(targetStage === undefined ? {} : { target: targetStage }),
+        readiness: readinessIdentity(readiness),
         lifetime: plannedLifetime,
         ...pathPrependIdentityField(pathPrepend),
       };
@@ -1352,12 +1534,14 @@ export function createBuiltinSandboxFactories(
           buildArgKeys: Object.keys(buildArgs).sort(),
           user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
           ...dockerRuntimeIdentity(privileged, resources),
+          ...(targetStage === undefined ? {} : { target: targetStage }),
+          readiness: readinessIdentity(readiness),
           lifetime: plannedLifetime,
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "Dockerfile", context, dockerfile },
-        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTarget(), (target) => Effect.tryPromise({
+        plan: ({ authorBaseDir }) => Effect.flatMap(dockerTargetForProfile(profile), ({ target, profileBinding }) => Effect.tryPromise({
           try: async () => {
           const plannedContext = plannedLocation(context, authorBaseDir);
           const build = await resolveDockerfileBuildIdentity({
@@ -1365,6 +1549,7 @@ export function createBuiltinSandboxFactories(
             context: plannedContext._tag === "Url" ? new URL(plannedContext.value) : plannedContext.value,
             dockerfile,
             buildArgs,
+            ...(targetStage === undefined ? {} : { target: targetStage }),
             platform: plannedTargetPlatform(target),
             label: "Dockerfile sandbox",
           });
@@ -1374,6 +1559,8 @@ export function createBuiltinSandboxFactories(
             buildArgs: { ...buildArgs },
             user,
             ...dockerRuntimeIdentity(privileged, resources),
+            ...(targetStage === undefined ? {} : { target: targetStage }),
+            readiness: readinessIdentity(readiness),
             plannedBuildKey: build.buildKey,
             lifetime: plannedLifetime,
             ...pathPrependIdentityField(pathPrepend),
@@ -1394,7 +1581,15 @@ export function createBuiltinSandboxFactories(
               caseParams: {
                 provider: "docker",
                 buildKey: build.buildKey,
+                ...(profileBinding === undefined ? {} : {
+                  dockerProfilePolicy: {
+                    securityLevel: profileBinding.profile.securityLevel,
+                    semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                  },
+                }),
+                ...(targetStage === undefined ? {} : { target: targetStage }),
                 ...dockerRuntimeIdentity(privileged, resources),
+                readiness: readinessIdentity(readiness),
                 lifetime: plannedLifetime,
                 ...pathPrependIdentityField(pathPrepend),
               },
@@ -1403,6 +1598,10 @@ export function createBuiltinSandboxFactories(
               context: plannedContext,
               dockerfile,
               buildArgs,
+              ...(profile === undefined ? {} : { profile }),
+              ...(profileBinding === undefined ? {} : { profileBinding }),
+              ...(targetStage === undefined ? {} : { target: targetStage }),
+              ...(readiness === undefined ? {} : { readiness }),
               user: Object.freeze({ ...user }),
               privileged,
               resources,
@@ -1417,6 +1616,12 @@ export function createBuiltinSandboxFactories(
               user: { _tag: options.user === undefined ? "EnvironmentDefault" : "Configured" },
               ...dockerRuntimeIdentity(privileged, resources),
               buildKey: build.buildKey,
+              ...(profileBinding === undefined ? {} : {
+                dockerProfile: {
+                  securityLevel: profileBinding.profile.securityLevel,
+                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                },
+              }),
               lifetime: plannedLifetime,
               ...pathPrependIdentityField(pathPrepend),
             },
@@ -1424,6 +1629,14 @@ export function createBuiltinSandboxFactories(
               runtimeIdentity,
               buildKey: build.buildKey,
               ...dockerRuntimeIdentity(privileged, resources),
+              ...(targetStage === undefined ? {} : { target: targetStage }),
+              readiness: readinessIdentity(readiness),
+              ...(profileBinding === undefined ? {} : {
+                dockerProfilePolicy: {
+                  securityLevel: profileBinding.profile.securityLevel,
+                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                },
+              }),
               lifetime: plannedLifetime,
             },
             identityMarker: build.providerIdentityMarker,
@@ -1443,15 +1656,17 @@ export function createBuiltinSandboxFactories(
       assertRecord(options, "dockerImageSandbox options");
       assertOnlyKeys(
         options,
-        ["image", "user", "privileged", "resources", "lifetimeMs", "pathPrepend"],
+        ["image", "profile", "user", "privileged", "resources", "readiness", "lifetimeMs", "pathPrepend"],
         "dockerImageSandbox options",
       );
       const image = nonEmptyString(options.image, "dockerImageSandbox options.image");
+      const profile = dockerProfileAlias(options.profile, "dockerImageSandbox options.profile");
       const user: SandboxExecutionUser = options.user === undefined
         ? { _tag: "EnvironmentDefault" }
         : { _tag: "Configured", value: nonEmptyString(options.user, "dockerImageSandbox options.user") };
       const privileged = dockerPrivileged(options.privileged, "dockerImageSandbox options.privileged");
-      const resources = dockerResources(options.resources, "dockerImageSandbox options.resources");
+      const resources = dockerResourcesForProfile(profile, privileged, options.resources, "dockerImageSandbox options.resources");
+      const readiness = dockerReadiness(options.readiness, "dockerImageSandbox options.readiness");
       const plannedLifetime = lifetime(options.lifetimeMs, "dockerImageSandbox options.lifetimeMs");
       const pathPrepend = pathPrependList(options.pathPrepend, "dockerImageSandbox options.pathPrepend");
       const identity: JsonValue = {
@@ -1460,6 +1675,7 @@ export function createBuiltinSandboxFactories(
         image,
         user,
         ...dockerRuntimeIdentity(privileged, resources),
+        readiness: readinessIdentity(readiness),
         lifetime: plannedLifetime,
         ...pathPrependIdentityField(pathPrepend),
       };
@@ -1471,12 +1687,13 @@ export function createBuiltinSandboxFactories(
           source: "configured-image",
           user: publishedUser,
           ...dockerRuntimeIdentity(privileged, resources),
+          readiness: readinessIdentity(readiness),
           lifetime: plannedLifetime,
           ...pathPrependIdentityField(pathPrepend),
         },
         privateFingerprintIdentity: identity,
         leakGate: { _tag: "None" },
-        plan: () => Effect.map(dockerTarget(), (target) => {
+        plan: () => Effect.map(dockerTargetForProfile(profile), ({ target, profileBinding }) => {
           return sandboxProviderPlan({
             provider: "docker",
             plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
@@ -1493,13 +1710,23 @@ export function createBuiltinSandboxFactories(
               caseParams: {
                 image,
                 user,
+                ...(profileBinding === undefined ? {} : {
+                  dockerProfilePolicy: {
+                    securityLevel: profileBinding.profile.securityLevel,
+                    semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                  },
+                }),
                 ...dockerRuntimeIdentity(privileged, resources),
+                readiness: readinessIdentity(readiness),
                 lifetime: plannedLifetime,
                 ...pathPrependIdentityField(pathPrepend),
               },
             }),
             runtimePlan: Object.freeze({
               image,
+              ...(profile === undefined ? {} : { profile }),
+              ...(profileBinding === undefined ? {} : { profileBinding }),
+              ...(readiness === undefined ? {} : { readiness }),
               user: Object.freeze({ ...user }),
               privileged,
               resources,
@@ -1510,6 +1737,13 @@ export function createBuiltinSandboxFactories(
               source: "configured-image",
               user: publishedUser,
               ...dockerRuntimeIdentity(privileged, resources),
+              readiness: readinessIdentity(readiness),
+              ...(profileBinding === undefined ? {} : {
+                dockerProfilePolicy: {
+                  securityLevel: profileBinding.profile.securityLevel,
+                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                },
+              }),
               lifetime: plannedLifetime,
               ...pathPrependIdentityField(pathPrepend),
             },
@@ -1517,6 +1751,13 @@ export function createBuiltinSandboxFactories(
               image,
               user,
               ...dockerRuntimeIdentity(privileged, resources),
+              readiness: readinessIdentity(readiness),
+              ...(profileBinding === undefined ? {} : {
+                dockerProfilePolicy: {
+                  securityLevel: profileBinding.profile.securityLevel,
+                  semanticPolicyRevision: profileBinding.profile.semanticPolicyRevision,
+                },
+              }),
               lifetime: plannedLifetime,
               ...pathPrependIdentityField(pathPrepend),
             },
@@ -1677,6 +1918,89 @@ export const dockerImageSandbox = LIVE_FACTORIES.dockerImageSandbox;
 export const e2bSandbox = LIVE_FACTORIES.e2bSandbox;
 export const vercelSandbox = LIVE_FACTORIES.vercelSandbox;
 export const localSandbox = LIVE_FACTORIES.localSandbox;
+
+function dockerSandboxDeclarationAlias(value: unknown, path: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw dockerProfileError({
+      code: "sandbox.docker-profile-schema-invalid",
+      path,
+      message: `${path} must be a non-empty profile alias`,
+    });
+  }
+  return value;
+}
+
+/**
+ * 统一的单容器 Docker factory。profile 只作为宿主 alias 保存到私有 runtime binding；本函数
+ * 不读取 registry、不连接 Docker，也不执行 descriptor 内容。provider/control 接线由后续层负责。
+ */
+export function dockerSandbox(options: DockerSandboxOptions): SandboxLayer<"template-bearing"> {
+  assertRecord(options, "dockerSandbox options");
+  assertOnlyKeys(
+    options,
+    ["source", "profile", "privileged", "resources", "user", "readiness", "lifetimeMs", "pathPrepend"],
+    "dockerSandbox options",
+  );
+  const source = options.source;
+  assertRecord(source, "dockerSandbox options.source");
+  if (source.type === "image") {
+    assertOnlyKeys(source, ["type", "image"], "dockerSandbox options.source");
+    const profile = dockerSandboxDeclarationAlias(options.profile, "dockerSandbox options.profile");
+    if (profile === undefined && options.privileged !== undefined) {
+      throw dockerProfileError({
+        code: "sandbox.docker-profile-required",
+        path: "dockerSandbox options.privileged",
+        message: 'privileged: "rootless" requires an explicit Docker profile alias',
+      });
+    }
+    const resources = profile === undefined
+      ? options.resources
+      : managedDockerResources(options.resources, "dockerSandbox options.resources");
+    return dockerImageSandbox({
+      image: nonEmptyString(source.image, "dockerSandbox options.source.image"),
+      ...(profile === undefined ? {} : { profile }),
+      ...(options.user === undefined ? {} : { user: options.user }),
+      ...(options.privileged === undefined ? {} : { privileged: options.privileged }),
+      ...(resources === undefined ? {} : { resources }),
+      ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
+      ...(options.lifetimeMs === undefined ? {} : { lifetimeMs: options.lifetimeMs }),
+      ...(options.pathPrepend === undefined ? {} : { pathPrepend: options.pathPrepend }),
+    });
+  }
+  if (source.type === "dockerfile") {
+    assertOnlyKeys(source, ["type", "context", "file", "buildArgs", "target"], "dockerSandbox options.source");
+    const profile = dockerSandboxDeclarationAlias(options.profile, "dockerSandbox options.profile");
+    if (profile === undefined && options.privileged !== undefined) {
+      throw dockerProfileError({
+        code: "sandbox.docker-profile-required",
+        path: "dockerSandbox options.privileged",
+        message: 'privileged: "rootless" requires an explicit Docker profile alias',
+      });
+    }
+    const resources = profile === undefined
+      ? options.resources
+      : managedDockerResources(options.resources, "dockerSandbox options.resources");
+    return dockerfileSandbox({
+      context: source.context,
+      ...(source.file === undefined ? {} : { dockerfile: source.file }),
+      ...(source.buildArgs === undefined ? {} : { buildArgs: source.buildArgs }),
+      ...(profile === undefined ? {} : { profile }),
+      ...(source.target === undefined ? {} : { target: source.target }),
+      ...(options.user === undefined ? {} : { user: options.user }),
+      ...(options.privileged === undefined ? {} : { privileged: options.privileged }),
+      ...(resources === undefined ? {} : { resources }),
+      ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
+      ...(options.lifetimeMs === undefined ? {} : { lifetimeMs: options.lifetimeMs }),
+      ...(options.pathPrepend === undefined ? {} : { pathPrepend: options.pathPrepend }),
+    });
+  }
+  throw dockerProfileError({
+    code: "sandbox.docker-profile-schema-invalid",
+    path: "dockerSandbox options.source.type",
+    message: `dockerSandbox source type ${JSON.stringify(source.type)} is unsupported`,
+  });
+}
 
 export function customProviderSandbox(
   options: CustomProviderSandboxOptions,

@@ -25,7 +25,8 @@
 - [ ] **R. 固定实现契约与文件所有权** `[S]`
   - [ ] 以 `docs/roadmap/docker-profiles/{library,cli,architecture,lifecycle}.md` 和 `use-case/niceeval-eval.md` 为唯一目标，逐项建立“契约 → owner → 证明”的核对表。
   - [ ] 冻结 v1 descriptor、control protocol、lease、reservation、build operation、错误码和 JSON 输出形状；实现不得从现有临时环境变量方案反推或削弱 Roadmap。
-  - [ ] 先消除资源算术冲突：当前示例每容器 4 CPU、目标 4 路同时 active，需要至少 16 个 allocatable CPU，但 NixOS 示例只有 14。必须在 Roadmap 中统一提高 allocatable 容量或降低单容器请求，并为 daemon/build/watchdog 另留 headroom；未裁决前不能宣称 4 路通过。
+  - [x] 资源算术已裁决：保持每容器 4 CPU；四路 allocatable/aggregate 至少 16/20 CPU，八路至少 32/40 CPU，并分别声明 memory/PID 与 recovery headroom。
+  - [x] outer 网络契约已裁决：每个 Attempt 独占 user-defined bridge，可出站 NAT，但 sibling、宿主 loopback/control endpoint、默认 bridge、published port、host network/host gateway 全部隔离；network 与 container 同组 journal-first 回收。
   - [ ] 为下面每个并行节点分配不重叠的文件所有权；`src/cli.ts`、`src/sandbox/layer.ts`、`src/sandbox/runtime.ts`、`src/runner/run.ts` 等共享入口只由对应汇合节点接线。
   - [ ] 记录 NiceEval 与 NiceEval-Eval 两个仓库的初始 `git status`、HEAD、现有未知改动和当前链接目标，作为后续范围审计基线。
   - 验收：每条 Roadmap 声明恰好有一个实现 owner 和至少一种证明；不存在“以后补宿主包/恢复协议”的空节点。

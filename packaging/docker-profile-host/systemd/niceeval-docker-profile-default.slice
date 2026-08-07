@@ -1,0 +1,10 @@
+[Unit]
+Description=NiceEval docker profile aggregate resource slice (default)
+Documentation=man:systemd.resource-control(5)
+
+[Slice]
+# aggregate hard limits (NOT allocatable capacity)
+CPUQuota=2000%
+MemoryMax=32G
+MemorySwapMax=0
+TasksMax=12288

@@ -196,6 +196,7 @@ describe("SandboxLayer 声明与 command identity", () => {
     };
     const configured = sandboxLayerStateOf(dockerImageSandbox({
       image: "node:24",
+      profile: "default",
       privileged: "rootless",
       resources: {
         cpus: 4,
