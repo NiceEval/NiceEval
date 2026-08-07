@@ -13,5 +13,12 @@
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["niceeval.config.ts", "docker", "evals", "experiments", "test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "evals",
+    "experiments",
+    "scripts",
+    "niceeval.config.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
+  ]
 }

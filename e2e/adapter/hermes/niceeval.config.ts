@@ -1,6 +1,6 @@
 import { defineConfig } from "niceeval";
 import { dockerImageSandbox } from "niceeval/sandbox";
-import { IMAGE_TAG } from "./docker/image.ts";
+import { IMAGE_TAG } from "./scripts/build-docker-env.ts";
 
 export default defineConfig({
   name: { "zh-CN": "hermes E2E", en: "hermes E2E" },

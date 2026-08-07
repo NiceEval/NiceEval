@@ -1,8 +1,8 @@
 {
-  "name": "e2e-repo-hermes",
+  "name": "hermes-e2e",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "niceeval E2E adapter repo: Hermes CLI (hermesAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/hermes.md",
   "scripts": {
     "e2e": "vitest run",
     "typecheck": "tsc --noEmit"
