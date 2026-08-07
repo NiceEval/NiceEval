@@ -86,7 +86,6 @@ docs/
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   ├── prepare-commands/                内置 prepare 命令:固定生命周期下的具体化声明与复用成本
 │   ├── report-authoring/                报告作者面:组件粒度与取数形态
-│   └── user-readable-testing/           测试作者面:多方案比较与真实场景 Repo 决策
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   └── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系

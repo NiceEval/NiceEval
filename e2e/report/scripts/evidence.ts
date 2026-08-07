@@ -124,7 +124,7 @@ function hasStructuredProviderFault(combined: string): boolean {
  * 和 `sh` 一样,但专用于那种预期退出码为 0 的命令(真实网关调用):
  * 当命令输出(`--json` 时是结构化 error 事件,否则是人读文本)证实是 provider 端故障
  * (429/5xx/网络问题)时——文档规定的「可确认的外部故障」信号(docs/engineering/testing/
- * e2e/verification.md「失败分类」)——这里出现意料之外的非零退出会抛出 InfraError,而不是
+ * e2e/authoring.md「失败分类」)——这里出现意料之外的非零退出会抛出 InfraError,而不是
  * 普通的 AssertionError。除此之外的情况一律视为回归问题。
  */
 function shExpectZero(cmd: string): string {

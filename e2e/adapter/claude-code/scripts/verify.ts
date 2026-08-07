@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // scripts/verify.ts — claude-code 的 CLI 黑盒验收
 // (docs/engineering/testing/e2e/adapter/claude-code.md「仓库验收」+
-// docs/engineering/testing/e2e/verification.md 写法)。
+// docs/engineering/testing/e2e/authoring.md 写法)。
 //
 // 只跑 `pnpm exec niceeval ...` shell 原文命令、断言退出码与文本输出;不 import niceeval
 // 库代码,不递归扫 `.niceeval/`(README §4.2)。本仓库自带的远程 HTTP MCP fixture 的

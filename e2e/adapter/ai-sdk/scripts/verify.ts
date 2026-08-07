@@ -1,4 +1,4 @@
-// CLI black-box verification (docs/engineering/testing/e2e/verification.md style): spawns
+// CLI black-box verification (docs/engineering/testing/e2e/authoring.md style): spawns
 // `niceeval` as a subprocess and asserts on stdout / --json / --junit — never imports
 // niceeval library code, never scans `.niceeval/` by hand.
 import { spawnSync } from "node:child_process";

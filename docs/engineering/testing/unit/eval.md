@@ -51,7 +51,7 @@ function scriptedAgent(turns: readonly Turn[]): ScriptedAgent {
 session 续接规则由生产 Context 决定，测试通过 `received` 断言 Context 发对了什么。
 
 `contextFixture({ agent })` 在 scriptedAgent 之上补齐 `createEvalContext` 需要的中性参数（recording Sandbox、空 flags、AbortSignal、静默 log），让单条测试只写与契约相关的输入。
-所有权与稳定性规则见[Harness](harness.md)。
+所有权与稳定性规则见[Fixture 与 Harness](README.md#fixture-与-harness)。
 
 能力由构造决定时，合法与非法调用分别放进 typecheck fixture：合法组合正常编译，禁止组合用 `@ts-expect-error` 锁住；运行时测试仍要覆盖从非类型化 JavaScript 或错误构造进入时的 capability guard。
 

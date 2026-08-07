@@ -3,7 +3,7 @@
 // passed attempt 上的 README §4.3 CLI 读回(show / show --execution)。
 // 消费 scripts/evidence.ts 产出的 Evidence 对象——自己不运行任何 Experiment
 // (docs/engineering/testing/e2e/README.md §4.2 明确把本仓库对第 1 点排除在 CLI-black-box 规则
-// 之外:format 本身就是被测对象)。风格遵循 docs/engineering/testing/e2e/verification.md:
+// 之外:format 本身就是被测对象)。风格遵循 docs/engineering/testing/e2e/authoring.md:
 // 通过 `sh()` 执行 shell 字面量命令,用 node:assert/strict,不用测试框架——遇到第一个被破坏的
 // 契约就直接抛出。
 //

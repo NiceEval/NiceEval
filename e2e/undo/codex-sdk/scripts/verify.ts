@@ -1,4 +1,4 @@
-// CLI 黑盒验收(docs/engineering/testing/e2e/verification.md):只跑 `pnpm exec niceeval ...`
+// CLI 黑盒验收(docs/engineering/testing/e2e/authoring.md):只跑 `pnpm exec niceeval ...`
 // 子进程、断言退出码与输出,不 import niceeval 库代码,不递归扫 `.niceeval/`。
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";

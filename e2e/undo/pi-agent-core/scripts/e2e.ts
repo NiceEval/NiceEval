@@ -8,7 +8,7 @@
 //   3. 起被测应用(src/server.ts 的真实 HTTP+SSE 服务),等 /healthz 就绪。
 //   4. 以 --rerun all 跑 experiments/ci.ts,写 JUnit。
 //   5. 跑 scripts/verify.ts 做 CLI 黑盒读回。
-//   6. 无论成败都停服务;按 verification.md 的规则把失败分类成 75(EX_TEMPFAIL,可确证的
+//   6. 无论成败都停服务;按 authoring.md 的规则把失败分类成 75(EX_TEMPFAIL,可确证的
 //      外部故障)或其它非零(回归)。
 import "dotenv/config";
 import { spawn, spawnSync } from "node:child_process";

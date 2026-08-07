@@ -1,7 +1,7 @@
 import { defineEval } from "niceeval";
 
 // deliberate-error 实验唯一的 eval:确定性执行错误(未捕获异常),验证 <error> 与 <failure>
-// 判然有别(见 docs/engineering/testing/e2e/cli.md「退出码折叠」、verification.md 用例六)。
+// 判然有别(见 docs/engineering/testing/e2e/cli.md「退出码折叠」、authoring.md 用例六)。
 export default defineEval({
   description: "deliberate-error/crash:确定性执行错误(未捕获异常),不依赖远程调用是否成功",
   async test() {

@@ -49,7 +49,7 @@ function recordingSandbox(results: readonly CommandResult[]): SandboxFixture {
 }
 ```
 
-默认 stub 抛出 `unexpected sandbox call`，不静默返回空值——生产代码意外增加一次文件读取时，测试会失败而不是用假数据继续通过（规则见[Harness](harness.md)）。
+默认 stub 抛出 `unexpected sandbox call`，不静默返回空值——生产代码意外增加一次文件读取时，测试会失败而不是用假数据继续通过（规则见[Fixture 与 Harness](README.md#fixture-与-harness)）。
 
 生命周期测试的 fixture 只记录事件序列，期望顺序以[Architecture](../../../feature/sandbox/architecture.md)的调用链为准，fixture 不自行排序。
 资源测试覆盖成功、setup 失败、test 失败和中断四条路径。

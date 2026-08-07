@@ -3,7 +3,7 @@
 // 发生在装载与渲染之前,不产生模型调用;对 evidence.resultsRoot 只读,可以排在 verifyReadback
 // 之前的任意位置(见 scripts/e2e.ts 文件头的顺序规则)。
 //
-// 风格遵循 docs/engineering/testing/e2e/verification.md:命令是开发者会敲的 shell 字面量,
+// 风格遵循 docs/engineering/testing/e2e/authoring.md:命令是开发者会敲的 shell 字面量,
 // 用 node:assert/strict,遇到第一个被破坏的契约就抛出。错误文案按英文断言,命令前缀固定
 // LC_ALL 让断言不随 CI 宿主机 locale 漂移。
 

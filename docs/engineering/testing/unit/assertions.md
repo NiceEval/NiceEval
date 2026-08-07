@@ -60,7 +60,7 @@ function assertionEvaluationContext(overrides: Partial<AssertionEvaluationContex
 }
 ```
 
-当测试"证据未知"时必须显式构造 unknown/incomplete 状态，不能复用上面的明确空 fixture——`events: []`不允许同时表示"确认没有"和"没采到"（规则见 [Harness](harness.md)）。
+当测试"证据未知"时必须显式构造 unknown/incomplete 状态，不能复用上面的明确空 fixture——`events: []`不允许同时表示"确认没有"和"没采到"（规则见 [Fixture 与 Harness](README.md#fixture-与-harness)）。
 
 Scope fixture 必须让三个接收者得到**不同答案**，才能发现 selector 被错误复用；三个 scope 都只含一个相同事件的 fixture 没有区分力。
 典型构造：事件只出现在某一个 session 的某一轮，使 turn 级、session 级、attempt 级判定互不相同。

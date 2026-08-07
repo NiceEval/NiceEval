@@ -1,4 +1,4 @@
-// CLI 黑盒验收(docs/engineering/testing/e2e/verification.md 的写法):只起 niceeval 子进程、
+// CLI 黑盒验收(docs/engineering/testing/e2e/authoring.md 的写法):只起 niceeval 子进程、
 // 断言退出码与 stdout,不 import niceeval 库代码,不递归扫 .niceeval/。假定
 // scripts/e2e.ts 已经用 --rerun all 跑过 experiments/ci.ts,这里只做「新产出的结果读回」。
 import "dotenv/config";
@@ -47,7 +47,7 @@ for (const id of EXPECTED_EVALS) {
 }
 
 // ── 用例三:show --execution——本仓库自有事实(工具节点、入参)穿透到展示面 ──
-// pi-agent-core 不声明 tracing 面(见 docs/engineering/testing/e2e/adapter/pi-agent-core.md),
+// pi-agent-core 不声明 tracing 面(见 docs/feature/adapters/sdk/pi-agent-core/README.md),
 // 所以每条 execution 的时间注释都应显示 "timing unavailable",不应出现真实耗时。
 function assertNoTracing(execution: string, evalId: string): void {
   assert.ok(

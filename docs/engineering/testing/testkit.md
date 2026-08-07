@@ -3,31 +3,22 @@
 `@niceeval/testkit` 是场景 Repo 共用的机械设施，不是 NiceEval 产品行为 DSL。它减少进程、数据解码和资源终结代码的复制，
 但不替测试决定用户做什么、什么结果算正确。
 
-交付方式的比较与 stable-outer 裁决见 [Design · Testkit](../../design/user-readable-testing/TESTKIT.md)。
+Testkit 遵守 stable-outer / candidate-inner：场景 Repo 精确锁定 Testkit，产品 gate 只替换 NiceEval candidate。
 
-## 为什么值得试点
+## 准入边界
 
-目标 Example 有 8 个独立场景 Repo：5 个功能 Repo 与 3 个 Adapter Repo。迁移前的长功能名拆分方式曾形成 10 个 Repo；
-当前复用按独立 Repo 消费者而不是测试文件数判断：
+能力按机械契约是否跨至少两个独立 Repo 稳定复用决定，不按测试文件数量决定。
 
-| 能力 | 独立消费者 | v1 |
-|---|---:|---|
-| run + 完整 process receipt | 8 | 接收 |
-| 严格 JSON | 6 | 接收 |
-| 严格 NDJSON | 5 | 接收 |
-| `only` / `defined` | 7 | 接收 |
-| 长驻 process + readiness + cleanup | AI SDK、Lifecycle | 接收窄接口 |
-| 项目副本 / 临时目录 | CLI、Runner、Report、Package、Lifecycle、Adapter | 接收显式策略 API |
-| HTTP server lifecycle | Local protocol | 接收通用 callback API；0.x 暂定 |
-| Browser lifecycle | Report | 继续使用 Playwright Test |
-| stdin / PTY | 尚无两个相同消费者 | 暂不接收 |
+| 能力 | 归属 |
+|---|---|
+| 命令执行、完整 ProcessReceipt、严格 JSON / NDJSON | Testkit |
+| 长驻进程、readiness、timeout 与资源终结 | Testkit 的窄接口 |
+| 临时目录与带显式策略的项目副本 | Testkit |
+| HTTP listener 生命周期 | Testkit；path、status、body 与错误阶段留在 Repo |
+| Browser、context、trace 与 screenshot | Playwright Test |
+| stdin / PTY 的产品语义 | 对应 CLI Repo，形成跨 Repo 稳定机械协议前不上移 |
 
-迁移前的 19 份 support 共 842 行，CommonJS test 另有约 27 行内联 spawn。目标 Example 已全部改为 package API，
-并删除所有 `test/support`。Playwright 页面动作、HTTP 的 502 response、项目排除策略和所有 expected 原样保留在 owner 文件。
-
-项目复制已有 Runner mutation 与 Report Journey 两个独立功能 Repo 消费，进入正式试点。HTTP server 当前只有
-Local protocol 一个 Adapter Repo 消费，因此只承诺 0.x API 形状；callback 完整保留 Repo 策略，Testkit 只拥有通用 Node
-listener 生命周期。HTTP API 在稳定前仍要用第二个消费者或独立 fixture 校准。
+Testkit 只接收稳定机械协议。页面动作、HTTP 响应策略、项目排除策略与领域 expected 始终留在 owner 文件。
 
 ## API 形状
 
@@ -201,8 +192,7 @@ export function withHttpServer<T>(
 - Docker、sandbox、backend、container 或 lease 的“已经释放”推断；
 - Playwright 的 browser、context、page、trace 与 screenshot 生命周期。
 
-这些内容一旦上移，测试会变短，但读者无法从正文看出命令、独立 oracle 和失败接缝。完整目标代码见
-[Testkit Example](example/testkit/README.md)。
+这些内容一旦上移，测试会变短，但读者无法从正文看出命令、独立 oracle 和失败接缝。
 
 ## Testkit 自测
 
@@ -221,14 +211,13 @@ Testkit candidate 不用 NiceEval 自测。固定 fixture process 分别产生�
 关键 parser、timeout 与 cleanup 分支要做 mutation kill。Meta-test 通过后，再用 pinned known-good NiceEval 验证 Vitest、
 Playwright、run-only 与 long-lived process 四个 pilot。
 
-## 迁移顺序
+## 发布与采用门禁
 
-1. 私有 packaged prototype：实现并跑 meta-tests，不进入产品 release gate；
-2. 发布精确版本 0.x，建立 provenance、ESM / CJS、Node 下限和 lockfile integrity；
-3. 先分别迁移功能侧的 CLI / Report 与 Adapter 侧的 AI SDK，再迁移 Lifecycle；
-4. 确认两组 Repo 的失败诊断都不退化，再迁移其它 Repo，并同批删除被替代 support；
-5. 连续两个 release 稳定且出现两个仓库外消费者后，再决定公开稳定承诺。
+1. Testkit candidate 先通过独立 meta-tests，不进入 NiceEval 产品 release gate；
+2. 场景 Repo 只消费带 provenance、ESM / CJS、Node 下限和 lockfile integrity 的精确版本；
+3. 每次采用先由一个功能 Repo 与一个 Adapter Repo 校准失败诊断，再扩大消费者；
+4. 新 Testkit owner 接管时，同批删除被替代 support，不保留两套机械实现；
+5. 至少连续两个 release 稳定且出现两个仓库外消费者，才建立公开稳定承诺。
 
-[`example/repos/`](example/repos/) 已按目标 API 全量迁移，目的是评审调用点，不表示可以跳过前两步。
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。

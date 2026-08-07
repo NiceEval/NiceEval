@@ -70,6 +70,6 @@ main()
     }
 
     // 判不准就按回归退出——宁可误报回归,不可把回归漏报成环境问题
-    // (docs/engineering/testing/e2e/verification.md「失败分类」)。
+    // (docs/engineering/testing/e2e/authoring.md「失败分类」)。
     process.exit(infra ? 75 : 1);
   });

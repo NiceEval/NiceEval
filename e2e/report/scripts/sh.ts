@@ -1,5 +1,5 @@
 // 本仓库 scripts/evidence.ts 及所有 scripts/verify-<domain>.ts 模块共用的 shell 命令执行辅助函数
-// (docs/engineering/testing/e2e/verification.md「执行 niceeval 命令」)。命令在调用方代码里以
+// (docs/engineering/testing/e2e/authoring.md「执行 niceeval 命令」)。命令在调用方代码里以
 // shell 字面量字符串的形式出现——就是开发者会敲的原样命令,可以直接复制出去手动重跑。这是唯一
 // 拥有 spawnSync 底层逻辑的地方,这样各个 domain 脚本就不用各自重新实现一遍。
 

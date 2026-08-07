@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // scripts/verify.ts — claude-agent-sdk 的 CLI 黑盒验收
-// (docs/engineering/testing/e2e/adapter/claude-agent-sdk.md「仓库验收」+
-// docs/engineering/testing/e2e/verification.md 写法)。
+// (docs/feature/adapters/sdk/claude-agent-sdk/README.md +
+// docs/engineering/testing/e2e/authoring.md 写法)。
 //
 // 只跑 `pnpm exec niceeval ...` shell 原文命令、断言退出码与文本输出;不 import niceeval
 // 库代码,不递归扫 `.niceeval/`(README §4.2)。被测应用的启动/健康检查/关闭属于
@@ -102,7 +102,7 @@ function executionShowsMcpCallAndNoTiming(locator: string): void {
     execution.includes("Brooklyn"),
     "TOOL 卡片的 input 里没有出现入参 Brooklyn——入参在归一或展示链路上被丢弃/改写",
   );
-  // 本适配器不声明 tracing 面(见 docs/engineering/testing/e2e/adapter/claude-agent-sdk.md「OTel」):
+  // 本适配器不声明 tracing 面(见 docs/feature/adapters/sdk/claude-agent-sdk/README.md):
   // 节点应显示 timing unavailable,而不是带 span 时间。
   assert.ok(
     execution.includes("timing unavailable"),

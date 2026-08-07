@@ -1,7 +1,7 @@
 #!/usr/bin/env -S npx tsx
 // scripts/verify.ts — cli 的 CLI 黑盒验收(docs/engineering/testing/e2e/cli.md)。
 // 只跑 `pnpm exec niceeval ...` shell 原文命令、断言退出码与文本输出;不 import niceeval
-// 库代码,不递归扫 `.niceeval/`(见 docs/engineering/testing/e2e/README.md §4.2、verification.md)。
+// 库代码,不递归扫 `.niceeval/`(见 docs/engineering/testing/e2e/README.md §4.2、authoring.md)。
 //
 // 验收顺序对齐 cli.md 的三段验收计划:
 //   1-3. 选择——未命中选择器的用法错误(Experiment 零命中、Eval 前缀零命中两条路径都

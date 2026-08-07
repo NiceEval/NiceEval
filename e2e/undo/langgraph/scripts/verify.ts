@@ -1,5 +1,5 @@
 #!/usr/bin/env -S npx tsx
-// CLI 黑盒验收(docs/engineering/testing/e2e/verification.md):只起 niceeval 子进程、断言退出码
+// CLI 黑盒验收(docs/engineering/testing/e2e/authoring.md):只起 niceeval 子进程、断言退出码
 // 与输出,不 import niceeval 库代码,不递归扫 .niceeval/。
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -64,7 +64,7 @@ export async function runVerify(): Promise<void> {
   }
 
   // 用例四:show --execution——工具调用节点、subagent 层级都出现,入参穿透到展示面;
-  // 本适配器不声明 tracing 面(docs/engineering/testing/e2e/adapter/langgraph.md),时间注释
+  // 本适配器不声明 tracing 面(docs/feature/adapters/sdk/langgraph/README.md),时间注释
   // 应显示 timing unavailable。
   const weatherExec = sh(`pnpm exec niceeval show ${locators["weather-tool"]} --execution`);
   assert.ok(

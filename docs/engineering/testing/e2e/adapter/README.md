@@ -4,7 +4,7 @@
 
 每个已启用工厂对应一个独立测试仓库和一篇 E2E 验收说明。
 仓库协议（`e2e.json`、`pnpm e2e`、候选包注入）见[总则](../README.md)。
-只有转换器、没有完整工厂的对象不进入矩阵，Fixture 暂存于 `e2e/undo/`。
+只有公开完整 Agent 工厂的对象进入矩阵。只有转换器的对象不在本目录保留验收页，也不计入协议兼容性证明。
 
 ## 验收说明的固定形状
 
@@ -17,27 +17,25 @@
    支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **经 CLI 展示核验接收完整性**：仓库验收脚本把同一份新结果交给读面 CLI——`niceeval show` 退出 0、默认报告列出本仓库每条 Eval 的 id 与 verdict、与 `--json` 口径一致；对一个通过的 attempt 跑 `show --execution`，执行树就是「适配器收到了什么」的用户可见投影，第 2 步断言过的那批调用应全部以节点出现，TOOL 卡片的 `input` 块含断言过的入参值——入参保真同样要穿到展示面。
    适配器有没有正常接收到各种信息，以 CLI 展示为断言面——这一条断言穿透整条链（归一 → 落盘 → 读取面 → 渲染），一次真实运行同时验收协议路径和 CLI 读面。
-   断言边界见[总则 · CLI 读回](../README.md#43-cli-读回)。
+   断言边界见[总则 · 公开读回](../README.md#公开读回)。
 4. **核验 OTel 记录**：调用是否记录到 OTel 同样以 CLI 展示断言——`show --execution` 的时间注释回答「记录了没有」（声明 tracing 面的适配器节点带 span 时间，未声明的显示 timing unavailable），`show --timing` 的 OTel 子树回答「记录成了什么」（model / tool span 与层级）。
    span 与事件的对应靠显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）成立、不靠名字猜——correlation 断裂的可见症状就是节点退回 timing unavailable。
    trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见[Observability](../../../../observability.md)）。
 
-第 2 步是 Eval 的判分断言，第 3、4 步是仓库验收脚本的机制断言，两层都在该仓库的所有权边界内。验收脚本的具体代码写法与断言用例见[验收脚本写法](../verification.md)。
+第 2 步是 Eval 的判分断言，第 3、4 步是原生测试文件的机制断言，两者都在该 Repo 的所有权边界内。
+测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
 ## 覆盖表
 
-| 适配器      | 仓库 ID       | group     | 入口                   | 验收说明                         |
-| ----------- | ------------- | --------- | ---------------------- | -------------------------------- |
-| AI SDK      | `ai-sdk`      | `sdk`     | `uiMessageStreamAgent` | [ai-sdk.md](ai-sdk.md)           |
-| Claude Code | `claude-code` | `sandbox` | `claudeCodeAgent`      | [claude-code.md](claude-code.md) |
-| Codex CLI   | `codex-cli`   | `sandbox` | `codexAgent`           | [codex-cli.md](codex-cli.md)     |
-| Bub         | `bub`         | `sandbox` | `bubAgent`             | [bub.md](bub.md)                 |
-| OpenCode    | `opencode`    | `sandbox` | `openCodeAgent`        | [opencode.md](opencode.md)       |
-| Hermes      | `hermes`      | `sandbox` | `hermesAgent`          | [hermes.md](hermes.md)           |
-| OpenClaw    | `openclaw`    | `sandbox` | `openClawAgent`        | [openclaw.md](openclaw.md)       |
-
-待补完整官方工厂：Claude Agent SDK、Codex SDK、pi-agent-core、LangGraph。
-它们的 Fixture 位于 `e2e/undo/`，对应验收说明保留在本目录；工厂落地前不参与发现、CI 或覆盖统计。
+| 适配器 | Repo ID | 执行能力 | 入口 | 验收说明 |
+|---|---|---|---|---|
+| AI SDK | `adapter/ai-sdk` | host + external network | `uiMessageStreamAgent` | [ai-sdk.md](ai-sdk.md) |
+| Claude Code | `adapter/claude-code` | Docker + external network | `claudeCodeAgent` | [claude-code.md](claude-code.md) |
+| Codex CLI | `adapter/codex-cli` | Docker + external network | `codexAgent` | [codex-cli.md](codex-cli.md) |
+| Bub | `adapter/bub` | Docker + Python + external network | `bubAgent` | [bub.md](bub.md) |
+| OpenCode | `adapter/opencode` | Docker + external network | `openCodeAgent` | [opencode.md](opencode.md) |
+| Hermes | `adapter/hermes` | Docker + external network | `hermesAgent` | [hermes.md](hermes.md) |
+| OpenClaw | `adapter/openclaw` | Docker + external network | `openClawAgent` | [openclaw.md](openclaw.md) |
 
 官方工厂清单以[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。
 协议归一（事件转换、session、usage、证据完整性）的唯一验收面就是本域仓库的真实运行，不以单元层 wire fixture 替代。
