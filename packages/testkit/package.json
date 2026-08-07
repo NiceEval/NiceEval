@@ -1,6 +1,7 @@
 {
   "name": "@niceeval/testkit",
   "version": "0.1.0",
+  "private": true,
   "description": "Mechanical test facilities for NiceEval scenario repositories",
   "license": "MIT",
   "repository": {
@@ -26,12 +27,8 @@
       "require": "./dist/cjs/index.js"
     }
   },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "scripts": {
-    "build": "tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
     "typecheck": "tsc6 -p tsconfig.json --noEmit",
     "test": "vitest run",
     "pack:check": "pnpm build && pnpm pack --pack-destination artifacts"
