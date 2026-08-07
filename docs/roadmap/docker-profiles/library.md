@@ -42,7 +42,7 @@ interface DockerSandboxResources {
   readonly tmpfs?: Readonly<Record<string, DockerSandboxTmpfsOptions>>;
 }
 
-interface ManagedPrivilegedDockerResources extends DockerSandboxResources {
+interface ManagedDockerResources extends DockerSandboxResources {
   readonly cpus: number;
   readonly memoryBytes: number;
   readonly pidsLimit: number;
@@ -59,7 +59,6 @@ interface DockerSandboxReadiness {
 interface DockerSandboxCommonOptions {
   readonly source: DockerSandboxSource;
   readonly user?: string;
-  readonly resources?: DockerSandboxResources;
   readonly readiness?: DockerSandboxReadiness;
   readonly lifetimeMs?: number;
   readonly pathPrepend?: readonly string[];
@@ -67,13 +66,14 @@ interface DockerSandboxCommonOptions {
 
 type DockerSandboxOptions =
   | (DockerSandboxCommonOptions & {
-      readonly profile?: string;
+      readonly profile?: undefined;
       readonly privileged?: undefined;
+      readonly resources?: DockerSandboxResources;
     })
   | (DockerSandboxCommonOptions & {
       readonly profile: string;
-      readonly privileged: "rootless";
-      readonly resources: ManagedPrivilegedDockerResources;
+      readonly privileged?: "rootless";
+      readonly resources: ManagedDockerResources;
     });
 
 declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
@@ -82,16 +82,16 @@ declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
 `source` 是穷尽联合：调用只能选择 image或 Dockerfile，不能同时提供，也不能都缺。Compose仍用
 `dockerComposeSandbox()`，因为它拥有多台容器、network与 volume，不是一台主容器的另一种 source。
 
-`profile` 是宿主 registry中的非空别名，例如 `"default"`。普通 Docker Sandbox可以省略它并沿用
-既有 Docker endpoint查找规则，也可以显式绑定 profile。`privileged: "rootless"` 必须同时声明
-`profile`，缺少时在 factory求值阶段报错。
+`profile`是宿主 registry中的非空别名，例如 `"default"`。普通 Docker Sandbox可以省略它并沿用
+既有 Docker endpoint查找规则。`privileged: "rootless"`必须同时声明 `profile`，缺少时在 factory
+求值阶段报错。
 
 `privileged` 不接受 boolean或 `rootful`。`"rootless"` 表示 profile必须证明 privileged被限制在
 rootless user namespace或独立 VM内。它不是把 Dockerode `HostConfig.Privileged`直接交给作者。
 
-managed privileged分支必须显式提供 CPU、memory、PID和 `readOnlyRootfs: true`。四项没有 profile
-默认值，也不能省略；watchdog因此总能在 create前取得完整 reservation向量。可写路径只能来自
-显式 `tmpfs`，省略 `tmpfs`表示容器没有额外可写路径。
+凡是声明 profile，无论是否 privileged，都必须显式提供 CPU、memory、PID和
+`readOnlyRootfs: true`。四项没有 profile默认值，也不能省略；watchdog因此总能在 create前取得
+完整 reservation向量。可写路径只能来自显式 `tmpfs`，省略 `tmpfs`表示容器没有额外可写路径。
 
 ## DinD 声明
 
@@ -161,7 +161,7 @@ Sandbox lifecycle setup、prepare、agent ensure或 Attempt命令前重试 readi
 
 - 普通 Docker省略 `profile` = 使用既有 endpoint查找规则；
 - 省略 `privileged` = 非 privileged；
-- 非 privileged分支省略 `resources` 与空对象相同；
+- 不带 profile的分支省略 `resources` 与空对象相同；
 - `readOnlyRootfs: false` 与省略相同；
 - 省略 `executable` = `false`；
 - 省略 `intervalMs` = 250 ms。

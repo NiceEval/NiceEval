@@ -49,8 +49,8 @@ container。
 - `source.type: "image" | "dockerfile"`；
 - 宿主 profile别名；
 - `privileged: "rootless"`；
-- 每容器 CPU、memory、PID；
-- 只读 rootfs与逐路径有界 tmpfs；
+- 必填的每容器 CPU、memory、PID和只读 rootfs；
+- 逐路径有界 tmpfs；
 - inner daemon readiness。
 
 不带限定的 `privileged: true`不存在。`dockerComposeSandbox()`不接受这组单容器字段；这里的
@@ -86,8 +86,9 @@ socket ACL、有界 filesystem、aggregate cgroup、daemon与 watchdog。日常 
 profile的 semantic policy revision才表示执行语义。
 
 普通非 privileged `dockerSandbox()`可以省略 profile并沿用既有 Docker endpoint查找规则。请求
-rootless privileged时必须声明 profile；不存在、无法 attest或安全级别不符均在 Docker build与
-模型调用前失败，不能回退到宿主 rootful socket。
+rootless privileged时必须声明 profile。任何声明 profile的 Sandbox都必须给出完整 CPU、memory、
+PID、只读 rootfs和显式可写 tmpfs。profile不存在、无法 attest或安全级别不符，均在 Docker build
+与模型调用前失败，不能回退到宿主 rootful socket。
 
 ## 安全保证
 

@@ -190,6 +190,32 @@ interface DockerProfileReservationV1 {
 }
 ```
 
+任何绑定 profile的 `dockerSandbox()`都在类型与运行时两层要求完整 CPU、memory、PID和只读 rootfs。
+因此 container reservation始终有确定向量，managed policy没有无界 create路径。省略 profile的普通
+Docker沿用既有 provider行为，不进入该 profile的 admission或安全承诺。
+
+Build reservation另有持久 operation：
+
+```ts
+interface DockerProfileBuildOperationV1 {
+  readonly buildOperationId: string;
+  readonly reservationId: string;
+  readonly invocationId: string;
+  readonly buildKey: string;
+  readonly daemonGeneration: string;
+  readonly provisionalImageRef: string;
+  readonly state: "streaming" | "building" | "cancelling" | "terminated";
+}
+```
+
+managed profile的 Dockerfile build不由 CLI直接向 daemon发送。官方 provider把规范化 build请求和
+context stream交给 control service；watchdog持有 daemon build connection、BuildKit session与
+provisional image ref。这样 CLI断连后，持久 owner仍能取消在飞 build。
+
+build slot只有在以下事实都成立后才释放：daemon build请求已终止，BuildKit不再报告该 session，
+对应 process/cgroup活动已消失，provisional ref已提交为完成 digest或已移除。无法证明终止时，
+reservation保持占用并让 doctor报告 degraded，不能先释放 slot再让后台 build继续运行。
+
 watchdog在一个事务中检查所有活跃 Invocation 的已授予向量：
 
 ```text
@@ -225,7 +251,25 @@ target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Atte
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。
 
-profile选择名、stable ID、endpoint locator、owner UID、filesystem路径、aggregate容量、daemon ID和
+语义 identity之外另有不公开的物理执行域：
+
+```ts
+interface DockerMaterializationDomain {
+  readonly profileId: string;
+  readonly daemonGeneration: string;
+}
+```
+
+BuildKey描述“应构建哪些 bytes”，build realization按
+`(DockerMaterializationDomain, BuildKey)`隔离。相同 BuildKey在两个 daemon各自保证本地 image存在，
+不能把 daemon A的完成事实交给 daemon B。Sandbox复用池同样把 domain加入 CaseKey之外的物理 pool
+key，禁止跨 profile或 generation复用 container。
+
+materialization domain只存在于当前进程的 build coordinator、Sandbox pool和资源 registry。它不
+进入 fingerprint或可分享结果，因此 daemon restart不会使既有结果失去携带资格；restart后的
+新 Invocation仍会在新 domain重新确认 image realization。
+
+profile选择名、stable ID、endpoint locator、transport/backend UID、filesystem路径、aggregate容量、daemon ID和
 generation不进入可分享 identity。daemon ID/generation属于连接审计；stable ID属于 detached资源
 路由；semantic policy revision才表示可比较的执行语义。
 

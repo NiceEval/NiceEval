@@ -163,6 +163,10 @@ semantic policy revision、Sandbox image digest或 per-container资源声明改�
 发现 lost lease、排除另一 Invocation与 kept registry、按 journal + labels删除 orphan并释放准确
 reservation。另一个 Invocation继续运行，installed daemon/data mount保持在线且 generation不变。
 
+另一路在 Dockerfile build进行中 SIGKILL CLI。watchdog必须取消对应 BuildKit session；build slot在
+daemon请求、session和 process/cgroup活动全部终止前保持占用，不能让后续 build造成 `maxBuilds`
+超卖。
+
 随后运行 doctor只是核对恢复事实，不承担恢复动作。
 
 ### Watchdog 与 daemon restart
@@ -178,10 +182,12 @@ reservation。另一个 Invocation继续运行，installed daemon/data mount保�
 aggregate cgroup内、硬资源与 headroom仍成立、跨进程 admission无超卖。宿主 module把
 `maxContainers`声明为8后，Experiment才可同步上调；只改 `maxConcurrency`不能越过 profile。
 
-### 两种官方宿主集成
+### 三种官方宿主集成
 
 - NixOS VM test从零 rebuild、reboot、doctor、nested Docker、SIGKILL recovery全通过；
 - 通用 systemd Linux真实安装 host package，使用管理员提供的 bounded mount，完成同一 smoke与
   reboot recovery；
-- 两种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
+- macOS从零安装专用 VM package，验证 launchd reboot、host/guest machine identity、nested Docker、
+  多 Invocation admission与 CLI SIGKILL recovery；
+- 三种部署产出的 descriptor/control protocol可由同一 NiceEval core消费，下游没有专用 daemon
   shell脚本。

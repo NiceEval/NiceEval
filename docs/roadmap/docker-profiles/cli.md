@@ -20,6 +20,9 @@ Docker discovery、pull、build、create或模型调用前，NiceEval对每个�
 4. 为该 profile创建带随机 UUID的 Invocation lease；
 5. 把 Docker endpoint、stable profile ID与 policy revision绑定到对应 ProviderPlan。
 
+discovery、link与用户选题在 profile查找前完成，而且不发起 Provider I/O。未选中的 Experiment即使
+声明了当前机器不存在的 profile也不报错；只有实际选中 pair引用的别名参加 attestation与 lease。
+
 一次 Invocation可以使用多个 profile。每个 Docker Sandbox始终路由到自己声明的 profile，build与
 create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent env不能替换已绑定 endpoint。
 
@@ -28,6 +31,10 @@ create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent en
 - 非 privileged Docker继续使用既有 Docker endpoint查找规则；
 - `privileged: "rootless"`在 factory求值阶段报 `sandbox.docker-profile-required`；
 - 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
+
+声明 profile的普通或 rootless privileged分支都必须提供完整 CPU、memory、PID与只读 rootfs。
+缺少任一字段在连接 daemon前报 `sandbox.docker-profile-resources-required`，不能以零值或无界值进入
+admission。
 
 macOS、Windows或非 systemd主机不能因 `docker info`显示 `rootless`就自动满足能力。rootless
 privileged必须引用已经登记、且支持完整 attestation/control protocol的 profile。
