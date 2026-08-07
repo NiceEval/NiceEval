@@ -60,11 +60,11 @@ Experiment E2B template
   -> Agent runtime
 ```
 
-`installTool` 每条 Attempt 都用 probe 检查实际版本。
+`installTool` 每条 Attempt 都用 探测 检查实际版本。
 template 已预装正确版本时首测即命中;缺失时现场安装并复检;template 名本身不代替实际检查。
 
 开启 Sandbox 复用后,Runner 每条 Attempt 仍先 reset,再重放 installTool、checkout 与 `agent.ensure`。
-mempal 装在 workdir 外,reset 后 probe 命中;`checkout()` 的镜像让第二条 Attempt 起零网络,只付本地写入。
+mempal 装在 workdir 外,reset 后 探测 命中;`checkout()` 的镜像让第二条 Attempt 起零网络,只付本地写入。
 逐 Attempt 的命令仍只有 `prepare()` 一种频次；物理实例的记忆目录则明确由 lifecycle hook 管理。
 
 Mempal 的 `$HOME` 目录属于实际 Sandbox，`setup()` 在实例 ready 后恢复一次，`teardown()` 在其退休、Provider finalizer 前封存一次。

@@ -79,15 +79,15 @@ niceeval docker profile doctor default --json
 - daemon security options含 rootless，且无 TCP listener、host socket或 host loopback开放；
 - daemon ID、generation、DockerRootDir与 runtime attestation一致；
 - cgroup v2 controllers、systemd driver、aggregate properties与 policy revision一致；
-- daemon、buildkit、containerd/shim和 probe container的 cgroup path都是 aggregate path的后代；
+- daemon、buildkit、containerd/shim和 探测 container的 cgroup path都是 aggregate path的后代；
 - data-root的 filesystem identity与硬容量证明匹配；
 - watchdog protocol、durable journal、active Invocation/reservation与 orphan状态一致。
 
 VM profile由 control service返回同一组 remote evidence，并用宿主 package建立的 machine identity核验。
-本机 CLI不能直接读取 VM中的 `/proc`，但 smoke仍须从 probe container读取真实 cgroup文件，并由
+本机 CLI不能直接读取 VM中的 `/proc`，但 smoke仍须从 探测 container读取真实 cgroup文件，并由
 control service证明它们属于 VM aggregate subtree。
 
-`--smoke`创建短命 rootless privileged probe，设置2 CPU、512 MiB、0 extra swap、256 PID、只读
+`--smoke`创建短命 rootless privileged 探测，设置2 CPU、512 MiB、0 extra swap、256 PID、只读
 rootfs与64 MiB tmpfs，并从容器读取：
 
 ```text
@@ -97,7 +97,7 @@ memory.swap.max
 pids.max
 ```
 
-四项必须与请求一致，probe cgroup必须处于 aggregate subtree。probe随后运行最小 nested Alpine，
+四项必须与请求一致，探测 cgroup必须处于 aggregate subtree。探测随后运行最小 nested Alpine，
 再验证 outer container、inner process、mount、label与 reservation全部消失。Docker inspect中的
 HostConfig不是限额生效证据。
 

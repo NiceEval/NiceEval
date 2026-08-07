@@ -154,7 +154,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **Local provider**：仓库根解析与仓库外报错；只观察不还原（用户 git 状态不被触碰、stop 不删工作树）；不提权；与 keep 组合创建前报错。
 - **Sandbox 复用**：
   - 配置：`sandboxReuse: true` 进入配置哈希，省略时每 Attempt 全新 Sandbox。
-  - 重放：两层作者 `prepare()` 每 Attempt 重放,要有「第二条 Attempt 重新执行且 probe 命中快速返回」的区分力场景;`agent.ensure` 与 Agent runtime 每 Attempt 执行。
+  - 重放：两层作者 `prepare()` 每 Attempt 重放,要有「第二条 Attempt 重新执行且 探测 命中快速返回」的区分力场景;`agent.ensure` 与 Agent runtime 每 Attempt 执行。
   - 重置：题间 reset 尊重排除清单，重置点仍是归因锚点。
   - 调度：覆盖 `maxConcurrency: 1`、并行复用、按需创建和派发前续期。
   - 寿命：覆盖 `lifetimeMs` 不足时更换；reset 失败发一条运行级 `sandbox-reset-failed` diagnostic（带实例编号与失败原文）并淘汰该实例，后续 Attempt 由替代实例承接，不静默换新；中途消失不静默重跑。E2B 的 bounded Attempt 未声明时以 deadline 加收尾预留创建，显式较短值在远端创建前失败。
@@ -189,7 +189,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - `defineSandboxCommand()` 的 id / revision / inputs 参与稳定身份;`registerSandboxContent()` 的 digest 折入 inputs。
   - `checkout()`:镜像按 `(repo, ref)` 键控,同一 Sandbox 第二次执行零网络。
     区分力场景是 mock 网络层后第二条 Attempt 不得发起 fetch;浮动 ref 记录解析出的 SHA,同名 ref 暗变需作者用 `--rerun all` 重验。
-  - `installTool()`:probe 命中快速返回、未命中 install 后复检、复检仍未命中计 errored;`tool` / `identity` / probe / install 任一变化使旧命中失效。
+  - `installTool()`:探测 命中快速返回、未命中 install 后复检、复检仍未命中计 errored;`tool` / `identity` / 探测 / install 任一变化使旧命中失效。
   - `--dry` 复用成本视图:内置命令标检查命中型,普通 command(含作者自建 `defineSandboxCommand()`)标每题重放;fresh 模式不展示该视图。
 - **BuildKey single-flight、失败向所有依赖项传播失败和预算**：
 

@@ -116,7 +116,7 @@ provider 操作和原始 cause，不退化成后续 Report 缺对象。
 
 `9fddf75d` 建立 Report component scenarios。后续 `35fa0937`、`f4f8d6d8`、`a008903e` 等页面 / 样式变更
 继续触及同一批场景。
-[`memory/e2e-browser-scenario-probe-loop-brittleness.md`](../../../memory/e2e-browser-scenario-probe-loop-brittleness.md)
+[对应的 memory 条目](../../../memory/e2e-browser-scenario-probe-loop-brittleness.md)
 列出了四种具体症状：
 
 - 探测任意未展开节点；

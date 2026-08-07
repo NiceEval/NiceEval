@@ -66,7 +66,7 @@ export default defineAgent({
 ## Sandbox Agent
 
 被测对象是在隔离环境中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
-CLI 身份写在必填 `ensure` 中，由 Runner 负责 probe、配对 Installer、安装与复检。
+CLI 身份写在必填 `ensure` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
 `setup` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
 ```ts
@@ -100,7 +100,7 @@ export default defineSandboxAgent({
 });
 ```
 
-第三方 Adapter 若不随包提供匹配 identity 的 Installer，probe 未命中会明确 `errored`；它不能把安装偷回 `setup`。
+第三方 Adapter 若不随包提供匹配 identity 的 Installer，探测 未命中会明确 `errored`；它不能把安装偷回 `setup`。
 
 内置 coding agents 见 [SDK 与 Agent 索引](sdk/README.md)，扩展配置见 [配置 Coding Agent 扩展](library/coding-agent-extensions.md)。
 

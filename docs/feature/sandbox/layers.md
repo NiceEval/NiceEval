@@ -543,8 +543,8 @@ Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行
 
 ## Agent layer
 
-每个 Sandbox Agent Adapter 声明自己的 ensure(目标 identity 加只读 probe);官方 Agent 安装层按 identity 配对,Runner 由两者组装出一个 command-only 的 Agent layer。
-它排在两方作者 layer 之后进入同一条准备时间线,但它的节点是 ensure 循环(probe → 缺失才 install → 复检),保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
+每个 Sandbox Agent Adapter 声明自己的 ensure(目标 identity 加只读 探测);官方 Agent 安装层按 identity 配对,Runner 由两者组装出一个 command-only 的 Agent layer。
+它排在两方作者 layer 之后进入同一条准备时间线,但它的节点是 ensure 循环(探测 → 缺失才 install → 复检),保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
 
 Agent layer 由 Runner 组装,没有作者可导入的组装 API;Adapter 与 Eval / Experiment 作者都不手工排列安装组件。
 Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eval 或 Experiment 必须显式提供兼容 template,link 与 physical planning 用 Adapter 声明的 capability requirement 检查它。

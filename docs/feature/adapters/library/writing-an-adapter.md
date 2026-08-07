@@ -16,7 +16,7 @@
 这五步表示 Adapter 文件实现了多少行为；Tier 1/2/3 表示接入需要对被测应用做多少修改。
 两套坐标彼此正交。
 
-被测对象是 Sandbox CLI 时，再加一份 ensure 声明（目标 identity 加只读 probe）——这是 Adapter 在 Sandbox 内的全部准备义务。
+被测对象是 Sandbox CLI 时，再加一份 ensure 声明（目标 identity 加只读 探测）——这是 Adapter 在 Sandbox 内的全部准备义务。
 第三方 Adapter 写协议加 ensure 声明就是完整的纯适配；安装由按 identity 配对的官方 Agent 安装层承担，需要自管分发渠道时随包导出自己的安装层（见 [Agent Ensure](../architecture/agent-ensure.md)）。
 
 ## 组织 `send`

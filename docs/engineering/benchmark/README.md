@@ -47,7 +47,7 @@ interface PhaseTiming {
 | `sandbox.queue` | 等待容器创建信号量(并发限流)的排队时间 | direct agent |
 | `sandbox.create` | provider 起沙箱(`createSandbox`) | direct agent |
 | `sandbox.prepare` | 两层作者 layer 的 `prepare()` 命令链,phase 级合计一条,`children` 逐 command 并继续展开沙箱命令 | direct agent / 两层都没有命令 |
-| `agent.ensure` | ensure 循环:probe、缺失时 install、复检(**安装基准的主角**) | direct agent |
+| `agent.ensure` | ensure 循环:探测、缺失时 install、复检(**安装基准的主角**) | direct agent |
 | `workspace.baseline` | 变更分类账锚点(runner 私有 git ledger 首笔 commit) | direct agent |
 | `agent.setup` | Agent runtime setup(写鉴权与运行时配置) | 没定义 |
 | `telemetry.configure` | tracing 出口配置(file-based OTLP) | 没配 tracing |

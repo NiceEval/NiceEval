@@ -21,7 +21,7 @@ turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失�
 
 2. **实验级死因被逐 attempt 反复撞**(空间轴)。
    实验共享的基建(隧道、mock server、共享凭据)死掉时,每条 attempt 各自创建沙箱、各自撞死、各自 `errored`——批跑常态是 `attempts: 1`,run 级 fail-fast 按「同一 eval 内同 code 连续复现」判定的 streak 永远凑不齐,几十条 eval 把同一个死隧道撞几十遍。
-   作者在 setup probe 里第一时间就知道死因是实验级的,却只能看着余量烧完。
+   作者在 setup 探测 里第一时间就知道死因是实验级的,却只能看着余量烧完。
    同构的浪费在 eval 粒度同样存在:fixture 损坏时 `attempts: 5` 的五次同因必死,作者第一次就知道。
 
 ## 分类
@@ -69,7 +69,7 @@ export type FailureClass =
 
 分类的附着点跟着知识走,所有通道产出同一份 `FailureClass`:
 
-- **抛出点声明**(作者拥有的错误):包根导出空间轴 fatal 错误类 `ExperimentFatalError` / `EvalFatalError`——作者写下 probe、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
+- **抛出点声明**(作者拥有的错误):包根导出空间轴 fatal 错误类 `ExperimentFatalError` / `EvalFatalError`——作者写下 探测、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
   fatal 错误类只开空间轴,不提供「可重试」的对应类:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试声明是一张永远无法兑现的支票。
 - **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因;adapter 的 `classifySendFailure` 识别自家协议 code(写法见 [Library](library.md#adapter-作者classifysendfailure));保守回退只识别结构化的 admission / transport 事实,不从自然语言猜受理状态。
 - **provisioning**:sandbox 层的分类自治(性质 + 后果两维不外泄),向外浮出的确定性配置死因附带按**声明 owner** 定档的 scope。

@@ -41,7 +41,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 原生配置文件替换(`settingsFile` / `configFile`:项目根内路径校验、上传替换、保留键冲突检测、SHA-256 进 checkpoint key) | `src/agents/native-config.ts`(共享层)+ `src/agents/{claude-code,codex}.ts`(各自保留键表) |
 | Marketplace 注册名回读校验(`marketplace add` 后回读列表,配置名对不上立刻报错) | `src/agents/marketplace.ts`(claude-code / codex 共用,回读命令由 adapter 传入) |
 | `AgentEnsure` / 判别联合 `AgentInstaller`、`prepareArtifact()`、安装模式(`staged` / `sandbox-network` / `verify-only`)与 payload/context 形状 | `src/agents/types.ts` |
-| Agent Ensure(agent.ensure 循环:probe、缺失时配对安装层 install、复检;staged payload 准备与共享 cache) | `src/agents/`(ensure 循环与内置安装层;内置 Agent 的声明在 `src/agents/{claude-code,codex,bub}.ts`);Run 级 staged payload 准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts` |
+| Agent Ensure(agent.ensure 循环:探测、缺失时配对安装层 install、复检;staged payload 准备与共享 cache) | `src/agents/`(ensure 循环与内置安装层;内置 Agent 的声明在 `src/agents/{claude-code,codex,bub}.ts`);Run 级 staged payload 准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts` |
 
 ## 执行失败分类:时间轴重试与空间轴止损([README](feature/error-classification/README.md) / [架构](feature/error-classification/architecture.md) / [库用法](feature/error-classification/library.md))
 

@@ -146,7 +146,7 @@ CLI加载可信评测 module并收集 managed DinD的 `dockerAccess.profile`后�
 6. Docker info中的 daemon ID、DockerRootDir、rootless、cgroup v2/systemd driver与 attestation相同；
 7. backend filesystem identity、mount与可见硬容量匹配；
 8. 本机 systemd事实或 VM control evidence与 aggregate descriptor一致，controllers没有退化；
-9. daemon、containerd/buildkit、shim以及 doctor probe的 cgroup路径均为 `aggregatePath`的严格
+9. daemon、containerd/buildkit、shim以及 doctor 探测的 cgroup路径均为 `aggregatePath`的严格
    backend aggregate path后代，不是同 slice下的 sibling；
 10. watchdog journal、Docker labels、active leases与 reservations可对账。
 

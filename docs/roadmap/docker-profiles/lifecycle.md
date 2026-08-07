@@ -93,7 +93,7 @@ request {cpu,memory,pids,container=1} reservation
   -> hand Sandbox to Attempt
 ```
 
-readiness前的 exec只用于 probe，不运行 setup/prepare/agent。create/readiness失败先提交 destroy intent，
+readiness前的 exec只用于 探测，不运行 setup/prepare/agent。create/readiness失败先提交 destroy intent，
 再 force remove并由 id + token证明资源消失，最后释放 reservation。无法证明回收时 reservation保持
 占用并由 watchdog接管，不能为了继续派发而只删账。
 

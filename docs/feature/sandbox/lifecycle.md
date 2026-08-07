@@ -15,7 +15,7 @@
 |---|---|---|
 | Eval layer | 可选 template、逐 Attempt 的 SandboxCommand、test | 题目起点、题目准备、Agent 交互与判分 |
 | Experiment layer | 可选 template、逐 Attempt 的 SandboxCommand | 实验起点或实验准备 |
-| Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、probe、payload、平台、安装与复检 |
+| Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、探测、payload、平台、安装与复检 |
 | Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并清理完整资源组 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
@@ -118,7 +118,7 @@ Agent CLI 与 Adapter 配置可以依赖 template 提供的系统能力,也可�
 普通题目准备不应依赖某个 Agent Adapter 的私有安装路径,否则同一 Eval 无法更换 Agent。
 
 因此 agent.ensure 循环是准备链最后一道强制屏障。
-循环完成 probe、缺失时的 install 与复检后,Runner 才进入 Agent runtime;作者不能把 Agent 提前,Adapter 也不能暗中替换 template。
+循环完成 探测、缺失时的 install 与复检后,Runner 才进入 Agent runtime;作者不能把 Agent 提前,Adapter 也不能暗中替换 template。
 
 ## 单一 Attempt prepare 频次
 
@@ -149,7 +149,7 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 | Case create / ready | 每 Attempt | 每复用窗口 |
 | reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
 | 两层作者 prepare commands | 每 Attempt | 每 Attempt 重放 |
-| agent.ensure 循环(probe、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
+| agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
 | Sandbox lifecycle hooks | 每物理实例一次 | 每台被复用的物理实例一次；纯 Experiment-owned hook 可跨 eval 共用，Eval-owned hook 按 eval 隔离 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
@@ -227,7 +227,7 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 | Provider build / start / ready | Attempt `errored`,归 Sandbox Case |
 | template owner 的作者 command | Attempt `errored`,归 `sandbox.prepare.<templateOwner>` |
 | 第二作者 layer 的 command | Attempt `errored`,归对应 owner 的 `sandbox.prepare` |
-| agent.ensure 循环的 probe 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
+| agent.ensure 循环的 探测 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
 | Sandbox lifecycle setup | Attempt `errored`;已创建的物理实例仍依序运行 teardown 后停止 |
 | Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用窗口 |

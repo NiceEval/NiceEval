@@ -69,7 +69,7 @@ Runner / SandboxLayer 协议不变；`runCommand` 公共纪律不变；error-cla
 | 项 | 契约 |
 |---|---|
 | 识别 | stderr / exit 形态命中内建瞬时表：GnuTLS recv、early EOF、ECONNRESET、fetch aborted、registry 超时等；确定性失败（ref 不存在、鉴权 401/403、磁盘满、`command not found`）第一次抛出 |
-| 重放单元 | **整条**内置命令（checkout 从干净目标或官方镜像缓存语义重来；installTool 的 install 步重跑后复检 probe） |
+| 重放单元 | **整条**内置命令（checkout 从干净目标或官方镜像缓存语义重来；installTool 的 install 步重跑后复检 探测） |
 | 预算 | 总计至多 3 次尝试；两次重试前分别等待 `uniform(0, 1s)` 与 `uniform(0, 2s)`；参数固定、零配置 |
 | 观察 | activity：`prepare retry 2/3 (network) — checkout`；耗尽 message 带 `retries exhausted` |
 | 副作用边界 | 仅官方命令承诺的幂等语义；作者 opaque `prepare()` callback 与直接调用 `shell("yarn install")` **不**享受 |
@@ -116,7 +116,7 @@ Runner 无法证明 opaque callback 或通用 shell 是否幂等，自动重放�
 ## 重放、槽位与识别
 
 - `checkout()` 每次尝试写入命令私有的 staging 目录。失败只删除该 staging 目录；成功后才把完整 checkout 原子放到目标位置。
-- `installTool()` 只重放官方声明为幂等的安装步骤，并在每次尝试后重新执行 probe。无法保证幂等的安装器第一次失败即抛出。
+- `installTool()` 只重放官方声明为幂等的安装步骤，并在每次尝试后重新执行 探测。无法保证幂等的安装器第一次失败即抛出。
 - 退避睡眠释放全局并发位，醒来后重新排队；Experiment `maxConcurrency` 的名额仍由 Attempt 持有。这与 send 和 provisioning 的槽位语义同形。
 - 识别器只读取 exit 形态与有界 stderr，并使用命令内部的固定瞬时错误表。未知形态、401 / 403、磁盘满、ref 不存在和缺命令都不重试。
 - Attempt deadline 覆盖全部尝试与等待，不因重试延长；中断可取消退避睡眠。

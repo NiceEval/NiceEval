@@ -1,7 +1,7 @@
 # 执行失败分类 —— 库用法
 
 重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。
-作者面的公开 API 有三个,各对应一处知识所在地:空间轴 fatal 错误类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDefinition.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifySendFailure`(adapter 作者教回退认不出的自家协议错误)。
+作者面的公开 API 有三个,各对应一处知识所在地:空间轴 fatal 错误类(实验/eval 作者声明自己 探测 出的死因)、`ExperimentDefinition.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifySendFailure`(adapter 作者教回退认不出的自家协议错误)。
 
 ## eval / 实验作者:你会看到什么
 
@@ -15,7 +15,7 @@
 
 ## 实验 / eval 作者:声明死因的波及范围
 
-写 probe、fixture 校验的人最清楚失败波及多远,在抛出点直接说:
+写 探测、fixture 校验的人最清楚失败波及多远,在抛出点直接说:
 
 ```ts
 import { ExperimentFatalError } from "niceeval";
@@ -49,7 +49,7 @@ sandbox: sandboxLayer().prepare(async (_sandbox, _context) => {
 }),
 ```
 
-服务在 run **中途**死掉时,死因会以第三方错误的形态浮出(对隧道 host 的拒连、turn 层连接错误),probe 看不见它;实验分类器认得自家 host:
+服务在 run **中途**死掉时,死因会以第三方错误的形态浮出(对隧道 host 的拒连、turn 层连接错误),探测 看不见它;实验分类器认得自家 host:
 
 ```ts
 // experiments/compare/codex-nowledge.ts
