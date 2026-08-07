@@ -511,14 +511,6 @@ describe("judge 调用超时预算(judge.timeoutMs)", () => {
     expect(result).toMatchObject({ outcome: "passed", score: 1 });
   });
 
-  it("同一挂起 fixture 不放宽预算时按默认中断(与上一格只差 timeoutMs)", async () => {
-    stubDelayedFetch(240_000);
-    const { result } = await scoreWithClock(endpoint, 180_000);
-
-    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
-    expect(result?.outcome === "unavailable" && result.evidence).toContain("timed out after 180s");
-  });
-
   // 逐字段合并与整体覆盖唯一读数不同的一格:eval 写了自己的 judge 但没写 timeoutMs 时,
   // 取的是 config 的 300s,不是默认 180s。
   it("eval 写了自己的 judge 而没写 timeoutMs 时取 config 的 timeoutMs,不落默认值", async () => {

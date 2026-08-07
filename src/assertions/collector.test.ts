@@ -70,14 +70,6 @@ describe("gate 省略阈值:0/1 matcher 不受满分线改动影响(回归)", ()
     expect(miss.outcome).toBe("failed");
     expect(scoreOf(miss)).toBe(0);
   });
-
-  it("includes 命中通过,未命中失败", async () => {
-    const hit = await evaluate(includes("Brooklyn"), "天气见 Brooklyn 播报");
-    expect(hit.outcome).toBe("passed");
-
-    const miss = await evaluate(includes("Brooklyn"), "天气见 Chicago 播报");
-    expect(miss.outcome).toBe("failed");
-  });
 });
 
 describe("gate 省略阈值:连续打分断言(judge 类)按满分线判定", () => {

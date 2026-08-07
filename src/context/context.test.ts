@@ -143,10 +143,12 @@ function tracingSandbox() {
 }
 
 describe("createEvalContext / TestContext live state", () => {
-  it("t.reply reflects the assistant's reply after send(), not the empty initial value", async () => {
+  it("send 后 reply/events/sessionId 反映本轮结果,不是初始空值或旧 Run", async () => {
     const { context } = makeContext(calculatorAgent());
     await context.send("1+1=?");
     expect(context.reply).toBe("1 + 1 = **2** 哦!😊");
+    expect(context.sessionId).toBe("sess-1");
+    expect(context.events.some((e) => e.type === "message" && e.role === "assistant")).toBe(true);
   });
 
   it("t.check(t.reply, includes(...)) passes when the reply contains the needle", async () => {
@@ -291,13 +293,6 @@ describe("createEvalContext / TestContext live state", () => {
     expect(lines.join("\n")).toContain("2 failed, 14 passed in 3.41s");
   });
 
-  it("t.events reflects the turn's events after send(), not an empty run", async () => {
-    const { context } = makeContext(calculatorAgent());
-    await context.send("1+1=?");
-    expect(context.events.length).toBeGreaterThan(0);
-    expect(context.events.some((e) => e.type === "message" && e.role === "assistant")).toBe(true);
-  });
-
   it("t.o11y 每次读取现算:send 前是空摘要,两轮之后反映累计到最近一次 send 的行为", async () => {
     const { context } = makeContext(calculatorAgent());
 
@@ -343,12 +338,6 @@ describe("createEvalContext / TestContext live state", () => {
     }
     // 行为断言的数据只在宿主侧,一份也没送进沙箱。
     expect(context.o11y.totalToolCalls).toBe(1);
-  });
-
-  it("t.sessionId reflects the id the agent assigned during send()", async () => {
-    const { context } = makeContext(calculatorAgent());
-    await context.send("1+1=?");
-    expect(context.sessionId).toBe("sess-1");
   });
 
   it("exposes sandbox workdir to eval authors", () => {
