@@ -11,7 +11,10 @@ must be written in English.
 
 Keep every section below. Write "None" when that surface does not change.
 Repeat the entry block when a section contains multiple changes. Every changed
-entry needs a concrete before example, after example, and user impact.
+entry needs a concrete before example, after example, and user impact. Usage
+examples must include the public owner that consumes the value; do not show an
+isolated factory result when real usage belongs inside `defineEval()`,
+`defineExperiment()`, report JSX, CLI invocation, or a package script.
 -->
 
 ## Public API
