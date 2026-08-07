@@ -1,11 +1,11 @@
 {
-  "name": "hermes-e2e",
-  "version": "0.1.0",
+  "name": "e2e-repo-hermes",
   "private": true,
   "type": "module",
+  "description": "niceeval E2E adapter repo: Hermes CLI (hermesAgent, Docker sandbox) — see docs/engineering/testing/e2e/adapter/hermes.md",
   "scripts": {
-    "e2e": "tsx scripts/e2e.ts",
-    "eval": "niceeval"
+    "e2e": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dockerode": "^4.0.2",
@@ -14,10 +14,10 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
     "@types/dockerode": "^3.3.31",
-    "@types/node": "^22.10.0",
-    "dotenv": "^16.4.7",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }
