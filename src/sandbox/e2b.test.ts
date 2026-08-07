@@ -4,13 +4,11 @@
 // ignore/剥离/写盘逻辑)。fake `sbx.commands.run` / `sbx.files.read`,不连真实 e2b API——
 // 真实 E2B 沙箱行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { E2BSandbox } from "./e2b.ts";
 import { SandboxCommandTimeoutError } from "./deadline.ts";
-import { shellQuote } from "./shell.ts";
 
 let roots: string[] = [];
 afterEach(async () => {
@@ -43,31 +41,33 @@ interface FakeE2BRunOptions {
   readonly onStderr?: (chunk: string) => void | Promise<void>;
 }
 
-interface LocalBashOptions {
-  readonly cwd?: string;
-  readonly xtrace?: boolean;
+interface ScriptedCommandScenario {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly exitCode: number;
   readonly chunkSize?: number;
   readonly onDisconnect?: () => void | Promise<void>;
 }
 
 /**
- * 只模拟 E2B 的 transport：生产 wrapper 原样交给本地 bash，bash 的真实两路输出再按小块
- * 送回生产 parser。这里不读取、提取或拼接 completion marker。
+ * 只模拟 E2B transport：从 wrapper 的 `printf %b` 单引号 `\\xHH` 字面量恢复 completion
+ * marker，再把约定的两路正文和 marker 分块交给生产 parser。不会执行测试脚本。
  */
-function localBashCommandHandle(
+function scriptedCommandHandle(
   script: string,
   opts: FakeE2BRunOptions,
-  options: LocalBashOptions = {},
+  scenario: ScriptedCommandScenario,
 ): { wait: () => Promise<{ stdout: string; stderr: string; exitCode: number }>; disconnect: () => Promise<void> } {
   expect(opts.background).toBe(true);
-  const child = spawn("/bin/bash", options.xtrace ? ["-x", "-c", script] : ["-c", script], {
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const chunkSize = options.chunkSize ?? 7;
-  let stdout = "";
-  let stderr = "";
-  let delivery = Promise.resolve();
+  const encodedMarkers = [...script.matchAll(
+    /__niceeval_e2b_command_(?:prefix|suffix)=\$\(printf '%b' '((?:\\x[0-9a-fA-F]{2})*)'\)/g,
+  )].map((match) => match[1]);
+  expect(encodedMarkers).toHaveLength(2);
+  const decode = (encoded: string): string => Buffer.from(
+    [...encoded.matchAll(/\\x([0-9a-fA-F]{2})/g)].map((match) => Number.parseInt(match[1], 16)),
+  ).toString("utf8");
+  const [prefix, suffix] = encodedMarkers.map(decode);
+  const chunkSize = scenario.chunkSize ?? 7;
   const deliver = async (
     callback: ((chunk: string) => void | Promise<void>) | undefined,
     text: string,
@@ -76,29 +76,18 @@ function localBashCommandHandle(
       await callback?.(text.slice(offset, offset + chunkSize));
     }
   };
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    stdout += chunk;
-    delivery = delivery.then(() => deliver(opts.onStdout, chunk));
-  });
-  child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
-    delivery = delivery.then(() => deliver(opts.onStderr, chunk));
-  });
-  const wait = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (exitCode) => {
-      void delivery.then(
-        () => resolve({ stdout, stderr, exitCode: exitCode ?? 1 }),
-        reject,
-      );
-    });
-  });
+  const wait = (async () => {
+    await deliver(opts.onStdout, `${scenario.stdout}${prefix}${scenario.exitCode}${suffix}`);
+    await deliver(opts.onStderr, `${scenario.stderr}${prefix}${scenario.exitCode}${suffix}`);
+    return scenario;
+  })();
   return {
-    wait: () => wait,
+    wait: async () => {
+      const { stdout, stderr, exitCode } = await wait;
+      return { stdout, stderr, exitCode };
+    },
     disconnect: async () => {
-      await options.onDisconnect?.();
+      await scenario.onDisconnect?.();
     },
   };
 }
@@ -106,14 +95,10 @@ function localBashCommandHandle(
 describe("E2BSandbox.downloadDirectory", () => {
   it("lists under the resolved remote dir, threads ignore into the find script, and writes exact bytes", async () => {
     const localDir = await makeLocalDir();
-    const remoteRoot = await makeLocalDir();
     const files = new Map<string, Buffer>([
       ["a.txt", Buffer.from("hello")],
       ["nested/b.bin", Buffer.from([0, 1, 2, 255])],
     ]);
-    await mkdir(join(remoteRoot, "out", "nested"), { recursive: true });
-    await writeFile(join(remoteRoot, "out", "a.txt"), files.get("a.txt")!);
-    await writeFile(join(remoteRoot, "out", "nested", "b.bin"), files.get("nested/b.bin")!);
     let capturedScript = "";
     let capturedCwd = "";
     const sandbox = makeSandbox({
@@ -121,7 +106,12 @@ describe("E2BSandbox.downloadDirectory", () => {
         run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedScript = script;
           capturedCwd = opts.cwd;
-          return localBashCommandHandle(script, opts, { cwd: join(remoteRoot, "out"), chunkSize: 3 });
+          return scriptedCommandHandle(script, opts, {
+            stdout: "./a.txt\n./nested/b.bin\n",
+            stderr: "",
+            exitCode: 0,
+            chunkSize: 3,
+          });
         },
       },
       files: {
@@ -144,12 +134,11 @@ describe("E2BSandbox.downloadDirectory", () => {
 
   it("resolves a relative source directory from workdir", async () => {
     let capturedCwd = "";
-    const remoteRoot = await makeLocalDir();
     const sandbox = makeSandbox({
       commands: {
         run: async (script: string, opts: FakeE2BRunOptions & { cwd: string }) => {
           capturedCwd = opts.cwd;
-          return localBashCommandHandle(script, opts, { cwd: remoteRoot, chunkSize: 3 });
+          return scriptedCommandHandle(script, opts, { stdout: "", stderr: "", exitCode: 0, chunkSize: 3 });
         },
       },
       files: { read: async () => new Uint8Array() },
@@ -362,15 +351,17 @@ describe("E2BSandbox command completion", () => {
       stdout: "nonzero stdout\n",
       stderr: "nonzero stderr\n",
     },
-  ])("真实 bash wrapper preserves $name output and exit code", async ({ source, exitCode, stdout, stderr }) => {
+  ])("scripted completion preserves $name output and exit code", async ({ source, exitCode, stdout, stderr }) => {
     let disconnects = 0;
     let sandboxKills = 0;
     const sandbox = makeSandbox({
       commands: {
         run: async (script: string, opts: FakeE2BRunOptions) => {
-          return localBashCommandHandle(script, opts, {
+          return scriptedCommandHandle(script, opts, {
+            stdout,
+            stderr,
+            exitCode,
             chunkSize: 3,
-            xtrace: true,
             onDisconnect: () => {
               disconnects += 1;
             },
@@ -379,6 +370,7 @@ describe("E2BSandbox command completion", () => {
       },
       kill: async () => {
         sandboxKills += 1;
+        return true;
       },
     });
     const streamedStdout: string[] = [];
@@ -402,8 +394,7 @@ describe("E2BSandbox command completion", () => {
     expect(sandboxKills).toBe(0);
   });
 
-  it("真实 bash 执行 Codex 形状的长命令/heredoc，源码诊断不截断真实完成帧", async () => {
-    const remoteRoot = await makeLocalDir();
+  it("长命令/heredoc 原样交给 completion wrapper，不截断完成帧", async () => {
     const body = [
       "# generated by codex",
       "const answer = 42;",
@@ -411,7 +402,7 @@ describe("E2BSandbox command completion", () => {
       "EOF-looking content is still ordinary heredoc text",
     ].join("\n");
     const source = [
-      `cd ${shellQuote(remoteRoot)} && cat > codex-output.txt <<'CODEX_EOF'`,
+      "cat > codex-output.txt <<'CODEX_EOF'",
       body,
       "CODEX_EOF",
       "printf 'codex stdout\\n'; printf 'codex stderr\\n' >&2; exit 7",
@@ -420,26 +411,31 @@ describe("E2BSandbox command completion", () => {
     let sandboxKills = 0;
     const sandbox = makeSandbox({
       commands: {
-        run: async (script: string, opts: FakeE2BRunOptions) => localBashCommandHandle(script, opts, {
-          chunkSize: 1,
-          xtrace: true,
-          onDisconnect: () => {
-            disconnects += 1;
-          },
-        }),
+        run: async (script: string, opts: FakeE2BRunOptions) => {
+          expect(script).toContain(body);
+          return scriptedCommandHandle(script, opts, {
+            stdout: "codex stdout\n",
+            stderr: "codex stderr\n",
+            exitCode: 7,
+            chunkSize: 1,
+            onDisconnect: () => {
+              disconnects += 1;
+            },
+          });
+        },
       },
       kill: async () => {
         sandboxKills += 1;
+        return true;
       },
     });
 
     const result = await sandbox.runShell(source);
     expect(result).toMatchObject({
       stdout: "codex stdout\n",
-      stderr: expect.stringContaining("codex stderr\n"),
+      stderr: "codex stderr\n",
       exitCode: 7,
     });
-    expect(await readFile(join(remoteRoot, "codex-output.txt"), "utf8")).toBe(body + "\n");
     expect(disconnects).toBe(1);
     expect(sandboxKills).toBe(0);
   });
