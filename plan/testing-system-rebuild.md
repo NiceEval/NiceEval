@@ -159,7 +159,7 @@
 └─ [ ] T7.5 pr lane 全绿；main/nightly 未选择项在 plan 中可见而非伪装 pass
 
 [ ] T8 收缩代码侧 Unit（formal docs 已完成；各 owner 在对应 E2E 接管后 parallel）
-├─ [ ] T8.1 修正 9 个首行无 `// cases:` owner 的 Unit；无法归属稳定风险类别的直接删除
+├─ [x] T8.1 修正测试 owner 分类：Feature Unit 保留 `// cases:`；runner receipt 直属 E2E execution；examples 与产品站守护分别迁入 docs / docs-site lane
 ├─ [ ] T8.2 按 Feature owner 并行删重，不设目标数量、不按覆盖率补测
 │  ├─ [x] T8.2.1 experiments-runner：44 files / 约 19.2k lines
 │  │      验收结论：零删除；现有测试均为纯选择、指纹、调度、锁、renderer 与 reducer 矩阵，真实 CLI 与 carry/history Journey 已只留在 E2E
