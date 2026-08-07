@@ -116,14 +116,14 @@
 │      owner: e2e/lifecycle/**
 ├─ [ ] T6.6 adapter/local-protocol：PR transport/fault
 │      owner: e2e/adapter/local-protocol/**
-└─ [ ] T6.7 live adapters：每个 adapter/<id> 独立迁移，彼此 parallel
+└─ [x] T6.7 live adapters：每个 adapter/<id> 独立迁移，彼此 parallel
    ├─ [x] T6.7.1 ai-sdk
    ├─ [x] T6.7.2 codex-cli
    ├─ [x] T6.7.3 claude-code
    ├─ [x] T6.7.4 bub
-   ├─ [ ] T6.7.5 hermes
-   ├─ [ ] T6.7.6 openclaw
-   └─ [ ] T6.7.7 opencode
+   ├─ [x] T6.7.5 hermes
+   ├─ [x] T6.7.6 openclaw
+   └─ [x] T6.7.7 opencode
           owner: e2e/adapter/<id>/**
 
 [ ] T7 删除旧体系（depends on 每个新 owner 接管；可随对应 T4/T6 节点串行收尾）
