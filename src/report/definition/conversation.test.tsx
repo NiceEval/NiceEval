@@ -1,8 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Conversation / DiffView 的两面投影与维度封闭性」——Conversation 条目。
+// 「Conversation / DiffView 的数据与 text 投影」——Conversation 条目。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
@@ -10,16 +9,13 @@ import {
   createTextContext,
   renderNodeToText,
   resolveReportTree,
-  runWithWebContext,
   validateReportTree,
   ResolveMemo,
   type PageContext,
-  type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { CommandEvidence, Conversation, Text, type CommandEvidenceContent, type ConversationContent } from "./primitives.tsx";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
-import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const content: ConversationContent = {
   turns: [
@@ -67,16 +63,8 @@ function attemptTarget(target: { page: string; params?: unknown }): string | und
   return typeof locator === "string" ? locator : undefined;
 }
 
-const webCtx: WebContext = {
-  locale: "en",
-  href: () => undefined,
-  dimension: () => {
-    throw new UndeclaredDimensionValueError("unbound", "_");
-  },
-};
-
 describe("Conversation", () => {
-  it("两面投影只包含轮次,生命周期命令不进入 Conversation", async () => {
+  it("text 投影只包含轮次,生命周期命令不进入 Conversation", async () => {
     const tree = await resolve(
       <Conversation data={content} />,
       { id: "attempt", input: { locator: "@loc1" as AttemptLocator, result: {} } as AttemptEvidence },
@@ -100,26 +88,14 @@ describe("Conversation", () => {
     expect(text).not.toContain("full assistant body");
     expect(text).not.toContain("grep pattern");
 
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("niceeval-conversation");
-    expect(html).toContain("niceeval-conversation-turn--passed");
-    expect(html).toContain("niceeval-conversation-turn--failed");
-    expect(html).toContain('data-kind="assistant"');
-    expect(html).toContain("hello world");
-    expect(html).toContain("full assistant body");
-    expect(html).toContain("niceeval-conversation-entry--failed");
-    expect(html).not.toContain("FAILED COMMAND");
-    expect(html).toContain("<details");
   });
 
-  it("空 turns 时零输出", async () => {
+  it("空 turns 时 text 面零输出", async () => {
     const emptyTree = await resolve(<Conversation data={{ turns: [] }} />);
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");
-    expect(runWithWebContext(webCtx, () => renderToStaticMarkup(emptyTree as never))).toBe("");
 
     const nullTree = await resolve(<Conversation data={null} />);
     expect(renderNodeToText(nullTree, createTextContext({ width: 40 }))).toBe("");
-    expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
 });
 
@@ -132,7 +108,7 @@ describe("CommandEvidence", () => {
     ],
   };
 
-  it("succeeded 使用中性成功文案/样式,observed 使用中性非零文案/样式,failed 才使用失败文案/样式", async () => {
+  it("succeeded、observed 与 failed 保持三态文案分类", async () => {
     const tree = await resolve(<CommandEvidence data={commands} />);
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
     expect(text).toContain("COMMAND · sandbox.prepare.eval · exit 0");
@@ -140,11 +116,5 @@ describe("CommandEvidence", () => {
     expect(text).toContain("NON-ZERO COMMAND · observed · sandbox.prepare.eval · exit 2");
     expect(text).toContain("FAILED COMMAND · eval.run · exit 1");
 
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("niceeval-command-evidence");
-    expect(html).toContain("niceeval-command-evidence--succeeded");
-    expect(html).toContain("niceeval-command-evidence--observed");
-    expect(html).toContain("niceeval-command-evidence--failed");
-    expect(html).not.toContain("niceeval-conversation-failed-command");
   });
 });

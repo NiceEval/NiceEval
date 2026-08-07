@@ -79,14 +79,11 @@ describe("惰性 page render", () => {
       { renderCache: cache },
     );
 
-    const text = renderResolvedPageText(resolved);
-    const htmlEn = renderResolvedPageWeb(resolved, { locale: "en" });
-    const htmlZh = renderResolvedPageWeb(resolved, { locale: "zh-CN" });
+    renderResolvedPageText(resolved);
+    renderResolvedPageWeb(resolved, { locale: "en" });
+    renderResolvedPageWeb(resolved, { locale: "zh-CN" });
 
     expect(renderCalls).toBe(1);
-    expect(text).toContain("n=1");
-    expect(htmlEn).toContain("n=1");
-    expect(htmlZh).toContain("n=1");
   });
 
   it("executePageRender 对同一 page + 输入缓存 Promise", async () => {

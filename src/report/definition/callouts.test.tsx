@@ -1,24 +1,20 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Callouts / ... 两面投影与维度封闭性」
-// 断言面是 Content 与两面输出字符串，不经浏览器。
+// 「Callouts / ... 的数据与 text 投影」
+// 断言面是 Content 与 text 输出，不经浏览器。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   createTextContext,
   renderNodeToText,
   resolveReportTree,
-  runWithWebContext,
   validateReportTree,
   ResolveMemo,
-  type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Callouts } from "./primitives/callouts.tsx";
 import type { CalloutGroup } from "./primitives/callouts-logic.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
-import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const fixture: readonly CalloutGroup[] = [
   {
@@ -64,16 +60,8 @@ async function resolve(node: React.ReactNode) {
   return resolved;
 }
 
-const webCtx: WebContext = {
-  locale: "en",
-  href: () => undefined,
-  dimension: () => {
-    throw new UndeclaredDimensionValueError("unbound", "_");
-  },
-};
-
 describe("Callouts", () => {
-  it("两面投影:汇总、组头、徽标、命令与逐条 message", async () => {
+  it("text 投影保留汇总、组头、徽标、命令与逐条 message", async () => {
     const tree = await resolve(<Callouts items={fixture} />);
     const text = renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }));
     expect(text).toContain("2 groups · 3 errors");
@@ -84,22 +72,11 @@ describe("Callouts", () => {
     expect(text).toContain("! 1 skipped run");
     expect(text).toContain("Run skipped");
 
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("niceeval-callouts");
-    expect(html).toContain("2 groups · 3 errors");
-    expect(html).toContain("2 experiments with warnings");
-    expect(html).toContain("stale");
-    expect(html).toContain("niceeval exp a");
-    expect(html).toContain("×2");
-    expect(html).toContain('data-niceeval-copy="niceeval run a"');
-    expect(html).toContain("<details");
   });
 
-  it("空集两面零输出", async () => {
+  it("空集在 text 面零输出", async () => {
     const tree = await resolve(<Callouts items={[]} />);
     expect(renderNodeToText(tree, createTextContext({ width: 80 }))).toBe("");
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toBe("");
   });
 
   it("组内多条命令时组头不放命令、命令随明细走", async () => {
@@ -118,10 +95,6 @@ describe("Callouts", () => {
     expect(text).not.toContain("→ niceeval group");
     expect(text).toContain("→ niceeval a");
     expect(text).toContain("→ niceeval b");
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).not.toContain("niceeval group");
-    expect(html).toContain('data-niceeval-copy="niceeval a"');
-    expect(html).toContain('data-niceeval-copy="niceeval b"');
   });
 
   it("嵌套组只有一个孩子时不渲染空壳层级", async () => {

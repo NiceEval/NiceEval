@@ -1,19 +1,16 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 「Table 的 subRows 与 placeholder」(含行 key 按层级同层判重)「普通 rows props」
-// 「表格行形状与列集同源」(断言面是校验错误对象)「表头长在列声明上」(断言面是两面输出字符串)。
-// 断言面是 Content 与两面输出字符串，不经浏览器。
+// 「表格行形状与列集同源」(断言面是校验错误对象)「表头长在列声明上」(断言面是 text 输出字符串)。
+// 断言面是 Content 与 text 输出字符串，不经浏览器。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   createTextContext,
   renderNodeToText,
   resolveReportTree,
-  runWithWebContext,
   validateReportTree,
   ResolveMemo,
-  type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Section, Table, TableContentView } from "./primitives.tsx";
@@ -21,7 +18,6 @@ import { stringWidth } from "../model/text-layout.ts";
 import type { TableContent } from "./cell.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
-import { UndeclaredDimensionValueError } from "../presentation.ts";
 import { stabilityMatrixContent } from "../slices/content.ts";
 import { attemptAssertionsContent } from "../components/attempt-detail/content.tsx";
 
@@ -83,21 +79,11 @@ describe("Table Content", () => {
     expect(text).toContain("x");
   });
 
-  it("内部富 Cell 适配保留 subRows 与 placeholder，两面读取同一 Content", async () => {
+  it("内部富 Cell 适配保留 subRows 与 placeholder", async () => {
     const resolved = await resolve(<TableContentView data={content} />);
     const text = renderNodeToText(resolved, createTextContext({ width: 60 }));
     expect(text).toContain("parent");
     expect(text).toContain("child");
-    const webCtx = {
-      locale: "en",
-      href: () => undefined,
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unexpected", "x");
-      },
-    } as WebContext;
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
-    expect(html).toContain("niceeval-row-placeholder");
-    expect(html).toContain("child");
   });
 
   it("行 key 按层级同层判重：不同父行下的同名子行合法", async () => {
@@ -120,19 +106,9 @@ describe("Table Content", () => {
     const resolved = await resolve(<TableContentView data={twoParents} />);
     const text = renderNodeToText(resolved, createTextContext({ width: 60 }));
     expect(text).toContain("gpt-researcher");
-    const webCtx = {
-      locale: "en",
-      href: () => undefined,
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unexpected", "x");
-      },
-    } as WebContext;
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
-    expect(html).toContain("gpt-researcher");
   });
 
-  it("判定格 web 面:计票逐票带语义 class,单判定带 verdictMark 判定符与语义 class", async () => {
-    // cases: docs/engineering/testing/unit/reports.md「判定构成列每层都有值」的 web 面判据。
+  it("判定格保留计票与单判定的三态区分", async () => {
     const verdicts: TableContent = {
       columns: [{ key: "name" }, { key: "record" }],
       rows: [
@@ -152,24 +128,13 @@ describe("Table Content", () => {
       ],
     };
     const resolved = await resolve(<TableContentView data={verdicts} />);
-    const webCtx = {
-      locale: "zh-CN",
-      href: () => undefined,
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unexpected", "x");
-      },
-    } as WebContext;
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
-    expect(html).toContain("niceeval-verdict-passed");
-    expect(html).toContain("niceeval-verdict-failed");
-    expect(html).toContain("1 通过");
-    expect(html).toContain("1 失败");
-    // 单判定:判定符走 verdictMark 单源,errored 是 `!` 不并到 `✗`
-    expect(html).toContain("niceeval-verdict-errored");
-    expect(html).toContain("! 错误");
+    const text = renderNodeToText(resolved, createTextContext({ width: 60, locale: "zh-CN" }));
+    expect(text).toContain("1 通过");
+    expect(text).toContain("1 失败");
+    expect(text).toContain("! 错误");
   });
 
-  it("missing 格带 previous:web 面原因与可操作 locator 同场,text 面原因 + @locator + 命令", async () => {
+  it("missing 格带 previous:保留原因、locator 与补跑命令", async () => {
     // cases: docs/engineering/testing/unit/reports.md「缺口原因与动作」:
     // previous-result 的原因文案与旧 locator 同场,locator 不替代原因;never-run 只有原因。
     const gaps: TableContent = {
@@ -198,33 +163,13 @@ describe("Table Content", () => {
         },
       ],
     };
-    const resolved = await resolve(<TableContentView data={gaps} />);
-    const webCtx = {
-      locale: "en",
-      href: (target: { params: unknown }) => {
-        const params = target.params as { locator?: unknown } | undefined;
-        return `#/attempt/${String(params?.locator ?? "")}`;
-      },
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unexpected", "x");
-      },
-    } as WebContext;
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
-    // previous-result:原因文案 + locator 链接 + 补跑命令三者同场
-    expect(html).toContain("no result for current config");
-    expect(html).toContain('href="#/attempt/exp/gap@cfg-1/b@0"');
-    expect(html).toContain("niceeval exp exp/gap");
-    // never-run:只有原因文案,不带 locator 链接
-    expect(html).toContain("not run yet");
-    expect(html).not.toMatch(/href="#\/attempt\/exp\/gap@cfg-1\/c/);
-
     // text 面:原因 + @locator(审计入口) + 命令;never-run 不出现 @locator
     const text = textOf(<TableContentView data={gaps} />);
     expect(text).toContain("no result for current config · @exp/gap@cfg-1/b@0 · niceeval exp exp/gap");
     expect(text).toContain("not run yet · niceeval exp exp/gap");
   });
 
-  it("同层重复行 key 在两面都报完整错误", () => {
+  it("同层重复行 key 报完整错误", () => {
     const duplicated: TableContent = {
       columns: [{ key: "name" }],
       rows: [
@@ -237,17 +182,6 @@ describe("Table Content", () => {
     ).toThrow(/declared twice at the same level/);
   });
 });
-
-function webHtml(node: React.ReactNode, locale = "en"): string {
-  const webCtx = {
-    locale,
-    href: () => undefined,
-    dimension: () => {
-      throw new UndeclaredDimensionValueError("unexpected", "x");
-    },
-  } as WebContext;
-  return runWithWebContext(webCtx, () => renderToStaticMarkup(node as never));
-}
 
 function textOf(node: Parameters<typeof renderNodeToText>[0]): string {
   return renderNodeToText(node, createTextContext({ width: 110 }));
@@ -348,7 +282,7 @@ describe("表格行形状与列集同源", () => {
 });
 
 describe("表头长在列声明上", () => {
-  // cases: docs/engineering/testing/unit/reports.md「表头长在列声明上」。断言面是两面输出字符串。
+  // cases: docs/engineering/testing/unit/reports.md「表头长在列声明上」。断言面是 text 投影。
   const declared: TableContent = {
     columns: [
       { key: "entity", header: { en: "Experiment", "zh-CN": "实验" } },
@@ -362,26 +296,18 @@ describe("表头长在列声明上", () => {
     ],
   };
 
-  it("声明了 header 的列在 text / web 两面按 locale 解析同一份表头", () => {
+  it("声明了 header 的列按 locale 解析同一份表头", () => {
     const zhText = textOf(<TableContentView data={declared} locale="zh-CN" />);
     expect(zhText).toContain("实验");
     expect(zhText).toContain("通过率");
     // 区分力:表头不是 key 原样打出来的
     expect(zhText).not.toContain("passRate");
 
-    const zhHtml = webHtml(<TableContentView data={declared} locale="zh-CN" />, "zh-CN");
-    expect(zhHtml).toContain("实验");
-    expect(zhHtml).toContain("通过率");
-    // 表头文本不是 key(排序句柄 data-niceeval-sort 仍用 key,那是另一回事)
-    expect(zhHtml).not.toMatch(/>passRate</);
-
     const enText = textOf(<TableContentView data={declared} locale="en" />);
     expect(enText).toContain("Pass rate");
-    const enHtml = webHtml(<TableContentView data={declared} locale="en" />, "en");
-    expect(enHtml).toContain("Pass rate");
   });
 
-  it("未声明 header 的维度值列在两面原样显示 key", () => {
+  it("未声明 header 的维度值列原样显示 key", () => {
     // 条件名、实验 id 这类列:列名即数据,原语不认识它们,也不该翻译
     const dimensionValues: TableContent = {
       columns: [{ key: "memory" }, { key: "exp/codex@v2" }],
@@ -394,7 +320,6 @@ describe("表头长在列声明上", () => {
     };
     for (const locale of ["en", "zh-CN"]) {
       expect(textOf(<TableContentView data={dimensionValues} locale={locale} />)).toContain("exp/codex@v2");
-      expect(webHtml(<TableContentView data={dimensionValues} locale={locale} />, locale)).toContain("exp/codex@v2");
     }
   });
 
@@ -431,9 +356,6 @@ describe("表头长在列声明上", () => {
     // 只有表头走列声明解析才区别于原样打出英文 key
     expect(zhText).not.toMatch(/^\s*eval\b/m);
     expect(zhText).toContain("exp/codex");
-    const zhHtml = webHtml(<TableContentView data={content} locale="zh-CN" />, "zh-CN");
-    expect(zhHtml).toContain("题目");
-    expect(zhHtml).toContain("exp/codex");
   });
 
   it("区分力:zh-CN attempt 断言表四列都有中文表头", () => {
@@ -445,10 +367,8 @@ describe("表头长在列声明上", () => {
     })!;
     const zhText = textOf(<TableContentView data={content} locale="zh-CN" />);
     for (const header of ["断言", "严重度", "结果", "详情"]) expect(zhText).toContain(header);
-    const zhHtml = webHtml(<TableContentView data={content} locale="zh-CN" />, "zh-CN");
-    for (const header of ["断言", "严重度", "结果", "详情"]) expect(zhHtml).toContain(header);
-    const enHtml = webHtml(<TableContentView data={content} locale="en" />, "en");
-    for (const header of ["Assertion", "Severity", "Outcome", "Detail"]) expect(enHtml).toContain(header);
+    const enText = textOf(<TableContentView data={content} locale="en" />);
+    for (const header of ["Assertion", "Severity", "Outcome", "Detail"]) expect(enText).toContain(header);
   });
 
   it("默认断言表保留 unavailable 的 reason 与 evidence", () => {

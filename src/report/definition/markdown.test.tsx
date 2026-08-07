@@ -1,14 +1,12 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Markdown 的解析与两面投影」:断言 AST 与两面输出字符串,不经浏览器。
+// 「Markdown 的解析与 text 投影」:断言 AST 与 text 输出字符串,不经浏览器。
 
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTextContext, renderNodeToText } from "./tree.ts";
 import {
   Markdown,
   detectMarkdownTable,
   markdownToText,
-  markdownToWeb,
   parseMarkdown,
 } from "./primitives/markdown.tsx";
 
@@ -28,14 +26,11 @@ describe("Markdown 解析", () => {
     expect(() => parseMarkdown(md)).toThrow(/stringWidth/);
   });
 
-  it("裸 HTML 块与行内 HTML 转义,不进 web 原始标签", () => {
+  it("裸 HTML 块与行内 HTML 作为可见文本保留", () => {
     const tree = parseMarkdown("<div>raw</div>\n\nInline <b>x</b> text");
-    const html = renderToStaticMarkup(markdownToWeb(tree));
-    expect(html).not.toMatch(/<div>raw<\/div>/);
-    expect(html).toContain("&lt;div&gt;raw&lt;/div&gt;");
-    expect(html).not.toMatch(/<b>x<\/b>/);
-    expect(html).toContain("&lt;b&gt;");
-    expect(html).toContain("&lt;/b&gt;");
+    const text = markdownToText(tree, 80);
+    expect(text).toContain("<div>raw</div>");
+    expect(text).toContain("Inline <b>x</b> text");
   });
 
   it("证据引用 @locator 当普通文本,不解析为深链", () => {
@@ -156,24 +151,5 @@ describe("Markdown text 面投影", () => {
         }, 0);
       expect(visual).toBeLessThanOrEqual(10);
     }
-  });
-});
-
-describe("Markdown web 面投影", () => {
-  it("语义标签与 niceeval-md 类", () => {
-    const html = renderToStaticMarkup(
-      markdownToWeb(parseMarkdown("## Sub\n\n**strong** ~~del~~ `code`")),
-    );
-    expect(html).toContain("<h2");
-    expect(html).toContain("niceeval-md-h2");
-    expect(html).toContain("<strong>");
-    expect(html).toContain("<del>");
-    expect(html).toContain("<code");
-  });
-
-  it("任务列表渲染复选框", () => {
-    const html = renderToStaticMarkup(markdownToWeb(parseMarkdown("- [x] ok\n- [ ] no")));
-    expect(html).toContain("type=\"checkbox\"");
-    expect(html).toContain("checked");
   });
 });

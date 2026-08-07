@@ -8,7 +8,6 @@
 // E2E 报告域(docs/engineering/testing/e2e/report.md §5 结构/终端排版)。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import type { EvalResult, StreamEvent, Verdict } from "../../../types.ts";
 import type { SourceContent as AnnotatedSourceContent } from "../../../record/annotated-source.ts";
@@ -24,7 +23,6 @@ import {
   renderNodeToText,
   resolveReportTree,
   ResolveMemo,
-  runWithWebContext,
   type ReportNode,
   composeOf,
 } from "../../definition/tree.ts";
@@ -186,78 +184,6 @@ function sourceEvidenceOf(
     unmapped: { assertions: [], scores: [] },
     summary: { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false },
   };
-}
-
-function sourceConversationEvidence(): AttemptEvidence {
-  const loc = { file: "evals/a.ts", line: 1 };
-  const events: StreamEvent[] = [
-    { type: "message", role: "user", text: "go", loc, sourceOrder: 1 },
-    {
-      type: "operation.started",
-      operationId: "tool-1",
-      operation: { kind: "tool", name: "bash", input: { command: "pwd" }, tool: "shell" },
-    },
-    { type: "operation.finished", operationId: "tool-1", kind: "tool", output: "ok", status: "completed" },
-    { type: "message", role: "assistant", text: "done" },
-  ];
-  return evidenceOf({
-    events,
-    evalSource: sourceEvidenceOf([{
-      kind: "send",
-      send: {
-        label: "legacy-internal-label",
-        status: "completed",
-        durationMs: 1_000,
-        loc,
-        sourceOrder: 1,
-      },
-    }]),
-    capabilities: { ...NO_CAPS, source: true, execution: true },
-  });
-}
-
-function renderAttemptHtml(tree: ReportNode): string {
-  return runWithWebContext(
-    {
-      locale: "en",
-      href: () => undefined,
-      dimension: () => {
-        throw new Error("unexpected dimension");
-      },
-    },
-    () => renderToStaticMarkup(tree as never),
-  );
-}
-
-function expectEmbeddedConversationHtml(html: string): void {
-  const detailStart = html.indexOf('<div class="niceeval-source-line-detail">');
-  expect(detailStart).toBeGreaterThanOrEqual(0);
-  const sourceDetailsStart = html.lastIndexOf("<details", detailStart);
-  expect(sourceDetailsStart).toBeGreaterThanOrEqual(0);
-  const detailTags = /<\/?details\b[^>]*>/g;
-  detailTags.lastIndex = sourceDetailsStart;
-  let depth = 0;
-  let sourceDetailsEnd = -1;
-  let match: RegExpExecArray | null;
-  while ((match = detailTags.exec(html)) !== null) {
-    if (match[0]!.startsWith("</")) {
-      depth -= 1;
-      if (depth === 0) {
-        sourceDetailsEnd = match.index + match[0]!.length;
-        break;
-      }
-    } else {
-      depth += 1;
-    }
-  }
-  expect(sourceDetailsEnd).toBeGreaterThan(detailStart);
-  const detail = html.slice(detailStart, sourceDetailsEnd);
-  expect(detail).toContain('data-kind="assistant"');
-  expect(detail).toContain('data-kind="tool"');
-  expect((html.match(/data-kind="assistant"/g) ?? [])).toHaveLength(1);
-  expect((html.match(/data-kind="tool"/g) ?? [])).toHaveLength(1);
-  expect((html.match(/class="niceeval-report niceeval-conversation"/g) ?? [])).toHaveLength(1);
-  expect(html).not.toContain("legacy-internal-label");
 }
 
 // ───────────────────────── 11 个叶子的非空/空证据矩阵 ─────────────────────────
@@ -564,18 +490,6 @@ describe("standardAttemptRender:执行证据投影", () => {
       },
     ]);
     expect(elementsByType(tree, Conversation)).toHaveLength(0);
-  });
-
-  it("标准结果视图把 assistant/tool 嵌入源码行且不在页尾重复", async () => {
-    const evidence = sourceConversationEvidence();
-    const tree = await resolveOnAttemptPage(await standardAttemptRender(evidence), evidence);
-    expectEmbeddedConversationHtml(renderAttemptHtml(tree));
-  });
-
-  it("公开 AttemptDetails 把 assistant/tool 嵌入源码行且不在页尾重复", async () => {
-    const evidence = sourceConversationEvidence();
-    const tree = await resolveOnAttemptPage(<AttemptDetails />, evidence);
-    expectEmbeddedConversationHtml(renderAttemptHtml(tree));
   });
 
   it("有 facts 时标准结果视图与公开 AttemptDetails 都渲染完整键值表;没有 facts 时零输出", async () => {

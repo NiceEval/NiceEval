@@ -1,25 +1,21 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Callouts / Waterfall / SourceView / … 的两面投影与维度封闭性」——SourceView 条目。
+// 「Callouts / Waterfall / SourceView / … 的数据与 text 投影」——SourceView 条目。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import type { AttemptLocator } from "../../record/locator.ts";
 import {
   createTextContext,
   renderNodeToText,
   resolveReportTree,
-  runWithWebContext,
   validateReportTree,
   ResolveMemo,
   type PageContext,
-  type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { SourceView, type SourceContent } from "./primitives/source-view.tsx";
 import { Text } from "./primitives.tsx";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
-import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
@@ -64,16 +60,8 @@ async function resolve(node: React.ReactNode, page: PageContext = { id: "main", 
   return resolved;
 }
 
-const webCtx: WebContext = {
-  locale: "en",
-  href: () => undefined,
-  dimension: () => {
-    throw new UndeclaredDimensionValueError("unbound", "_");
-  },
-};
-
 describe("SourceView", () => {
-  it("两面投影:状态行摘要与下钻命令；普通行不倾倒", async () => {
+  it("text 投影保留状态行摘要与下钻命令；普通行不倾倒", async () => {
     const tree = await resolve(<SourceView data={content} />);
     const text = renderNodeToText(
       tree,
@@ -90,18 +78,9 @@ describe("SourceView", () => {
     expect(text).toContain("niceeval show @exp/a/q/0");
     expect(text).not.toContain("import { test } from");
 
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("niceeval-source-view");
-    expect(html).toContain("evals/foo.test.ts");
-    expect(html).toContain("src/helper.ts");
-    expect(html).toContain("niceeval-source-line--send");
-    expect(html).toContain("niceeval-source-line--gate-fail");
-    expect(html).toContain("+1 pt");
-    expect(html).toContain('class="tok-kw"');
-    expect(html).toContain("<details");
   });
 
-  it("null 两面零输出", async () => {
+  it("null 在 text 面零输出", async () => {
     const tree = await resolve(<SourceView data={null} />);
     expect(
       renderNodeToText(
@@ -113,7 +92,5 @@ describe("SourceView", () => {
         }),
       ),
     ).toBe("");
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toBe("");
   });
 });

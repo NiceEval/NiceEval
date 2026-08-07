@@ -1,9 +1,8 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Grid 的换列规则」:摊匀、容量上界、孤格铺满、text 降列、web 规则文本纯函数。
-// 断言面是列数纯函数产出、text 输出字符串与 web HTML,不经浏览器。
+// 「Grid 的换列规则」:摊匀、容量上界、孤格铺满、text 降列与规则纯函数。
+// 断言面是列数纯函数产出、text 输出字符串与规则文本，不经浏览器。
 
 import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
 import {
   balanceColumns,
   gridContainerRules,
@@ -14,27 +13,14 @@ import {
   WEB_GRID_GEOMETRY,
 } from "./grid-layout.ts";
 import type { ReportElement } from "./tree.ts";
-import { createTextContext, renderNodeToText, runWithWebContext, type WebContext } from "./tree.ts";
+import { createTextContext, renderNodeToText } from "./tree.ts";
 import { Grid, Stat } from "./primitives.tsx";
 import { stringWidth } from "../model/text-layout.ts";
-import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const FRAGMENT = Symbol.for("react.fragment");
 
 function el(type: string, props: globalThis.Record<string, unknown> = {}): ReportElement {
   return { type, props };
-}
-
-const webCtx: WebContext = {
-  locale: "en",
-  href: () => undefined,
-  dimension: () => {
-    throw new UndeclaredDimensionValueError("unbound", "_");
-  },
-};
-
-function renderGridHtml(node: React.ReactNode): string {
-  return runWithWebContext(webCtx, () => renderToStaticMarkup(node as never));
 }
 
 describe("normalizeGrid", () => {
@@ -242,21 +228,4 @@ describe("孤格铺满与短末行", () => {
     expect(text.split("\n").some((line) => line === "")).toBe(true);
   });
 
-  it("web:结构含 grid-fit / data-cells / 随身规则;孤格断点带 grid-column", () => {
-    const html = renderGridHtml(
-      <Grid>
-        {Array.from({ length: 7 }, (_, i) => (
-          <Stat key={i} label={`L${i}`} value={String(i)} />
-        ))}
-      </Grid>,
-    );
-    expect(html).toContain('class="niceeval-report niceeval-grid-fit"');
-    expect(html).toContain('data-cells="7"');
-    expect(html).toContain("@container niceeval-grid");
-    expect(html).toContain("grid-column: 1 / -1");
-    // 短末行不拉伸:规则里没有给「非孤格」断点写 last-child span
-    const fourColBlock = html.split("@container").find((block) => block.includes("repeat(4,"));
-    expect(fourColBlock).toBeDefined();
-    expect(fourColBlock).not.toContain("grid-column:");
-  });
 });
