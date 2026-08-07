@@ -311,13 +311,13 @@ Docker HostConfig精确设置 `NanoCpus`、`Memory`、`MemorySwap=Memory`、`Pid
 
 ## 单容器 DinD readiness
 
-评估 image的 root entrypoint负责：
+官方 Docker provider注入的 root bootstrap / supervisor负责：
 
 1. 初始化有界 home/workspace；
 2. 只监听同容器 Unix socket启动 inner dockerd；
 3. 等待 root身份 `docker info`；
-4. 把 socket交给显式 agent group/user；
-5. exec NiceEval注入的 PID 1 command。
+4. 以镜像中已加入 `docker`组的 Agent用户执行 readiness；
+5. 同时监督 daemon、keeper、日志与容器内 TTL。
 
 outer container进入 Running后，官方 Docker provider仍重试作者声明的 readiness command。只有
 `user: node`实际完成 `docker info`才算 create成功。Agent能使用 inner socket即拥有评估容器内

@@ -12,7 +12,6 @@ source，并声明 managed rootless DinD、结构化资源和 readiness。
 NiceEval-Eval/
   sandbox/
     Dockerfile
-    niceeval-dind-entrypoint.sh
   experiments/
     shared.ts
     install/*.ts
@@ -34,49 +33,16 @@ FROM docker:29-dind
 
 RUN apk add --no-cache ca-certificates git nodejs npm python3 \
   && addgroup -g 1000 node \
-  && adduser -D -u 1000 -G node node
-
-ENV DOCKER_HOST=unix:///var/run/docker.sock
-ENV DOCKER_TLS_CERTDIR=""
-COPY --chmod=755 niceeval-dind-entrypoint.sh /usr/local/bin/niceeval-dind-entrypoint
-ENTRYPOINT ["niceeval-dind-entrypoint"]
+  && adduser -D -u 1000 -G node node \
+  && addgroup node docker
 ```
 
-`niceeval-dind-entrypoint.sh`必须保留 NiceEval传入的 `Cmd`。它不能只运行 `dockerd`，否则 Sandbox
-容器不会进入 NiceEval的保活生命周期：
+项目不提供 NiceEval专用 `ENTRYPOINT`。`dockerAccess.mode: "dind"`让 provider替换镜像原有
+Entrypoint/Cmd，并检查官方 dind工具面。
 
-```sh
-#!/bin/sh
-set -eu
-
-dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
-dockerd_pid=$!
-
-attempt=0
-until docker info >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if ! kill -0 "$dockerd_pid" 2>/dev/null; then
-    cat /tmp/dockerd.log >&2
-    exit 1
-  fi
-  if [ "$attempt" -ge 120 ]; then
-    cat /tmp/dockerd.log >&2
-    exit 1
-  fi
-  sleep 0.25
-done
-
-chown root:node /var/run/docker.sock
-chmod 660 /var/run/docker.sock
-exec "$@"
-```
-
-`docker:<version>-dind`自带的 `dockerd-entrypoint.sh`负责 daemon的 iptables、PID清理与 init细节，
-但它假设 `dockerd`是容器前台进程。NiceEval传入的是以 `sh`开头的 Sandbox保活 `Cmd`，所以项目
-entrypoint必须在后台启动 daemon后再以前台 `exec "$@"`交还 NiceEval。调用官方入口时必须把
-`dockerd`作为第一个参数显式传入；若以 `--host`开头，官方入口会在 TLS关闭时加入默认的未认证
-TCP listener。完整的 `dockerd --host=unix:///var/run/docker.sock`参数保证 inner daemon只监听 Unix
-socket，而 daemon初始化仍复用官方镜像实现。
+provider用 `docker-init` 与受管 Node supervisor同时启动 dockerd 和 Sandbox keeper。
+dockerd 只监听 `unix:///var/run/docker.sock`，并使用 2 秒关闭时限。
+启动协议、日志、TTL、错误诊断和版本都归 NiceEval，不要求下游脚本 `exec "$@"`。
 
 这里的 inner daemon只监听容器内的 Unix socket；不要给它增加 TCP listener，也不要把 outer或宿主
 socket mount进来。
@@ -89,13 +55,13 @@ socket mount进来。
 official Docker Sandbox provider
   -> selected managed-rootless profile
        -> privileged outer eval container
-            -> root entrypoint / PID 1
+            -> docker-init PID 1 + provider supervisor
             -> inner dockerd (Unix socket only)
             -> node coding agent
             -> agent-created inner containers / Compose projects
 ```
 
-root entrypoint准备有界 home，启动 inner dockerd并等待 root probe。官方 Docker provider随后以
+provider bootstrap准备日志与 keeper，启动 inner dockerd。官方 Docker provider随后以
 `node`运行作者声明的 `docker info` readiness；只有普通 agent用户真实能连接 inner socket才进入
 Sandbox lifecycle setup。
 

@@ -43,6 +43,7 @@ import type {
 } from "./runtime.ts";
 import { dockerProfileError } from "./docker-profile/errors.ts";
 import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
+import { dindSupervisorRevision } from "./dind-supervisor.ts";
 
 export type SandboxLayerKind = "template-bearing" | "command-only";
 
@@ -55,8 +56,8 @@ const SANDBOX_PROVIDER_PLAN: unique symbol = Symbol("niceeval.sandbox.provider-p
 
 // Runtime resource/privileged coverage changed without changing Dockerfile build bytes. Keep the
 // Dockerfile builder revision stable, but advance the provider-plan/fingerprint revision.
-const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-3";
-const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-2";
+const DOCKERFILE_PROVIDER_PLANNER_REVISION = "dockerfile-4";
+const DOCKER_IMAGE_PROVIDER_REVISION = "docker-image-3";
 
 export interface SandboxLayer<Kind extends SandboxLayerKind = SandboxLayerKind> {
   readonly [SANDBOX_LAYER]: Kind;
@@ -980,10 +981,23 @@ function dockerRuntimeIdentity(
       : {
           dockerAccess: access.mode === "socket"
             ? { mode: "socket" }
-            : { mode: "dind", isolation: access.isolation },
+            : {
+                mode: "dind",
+                isolation: access.isolation,
+                supervisorRevision: dindSupervisorRevision(),
+              },
         }),
     ...(Object.keys(resources).length === 0 ? {} : { resources: resources as JsonValue }),
   };
+}
+
+function dockerRequiresDestroyOnly(
+  access: Readonly<DockerSandboxAccess> | undefined,
+  resources: Readonly<DockerSandboxResources>,
+): boolean {
+  const hasEphemeralFilesystem = resources.readOnlyRootfs === true || resources.tmpfs !== undefined;
+  if (!hasEphemeralFilesystem) return false;
+  return !(access?.mode === "dind" && access.isolation === "raw-privileged");
 }
 
 function stringRecord(value: unknown, path: string): Readonly<globalThis.Record<string, string>> {
@@ -1681,7 +1695,7 @@ export function createBuiltinSandboxFactories(
             caseKind: "on-demand-build",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: resources.readOnlyRootfs === true || resources.tmpfs !== undefined
+            module: dockerRequiresDestroyOnly(access, resources)
               ? dockerfileEphemeralProviderModule
               : dockerfileProviderModule,
             build: providerBuildPlan({
@@ -1816,7 +1830,7 @@ export function createBuiltinSandboxFactories(
             caseKind: "prebuilt",
             target,
             scheduling: sharedScheduling("docker", 10),
-            module: resources.readOnlyRootfs === true || resources.tmpfs !== undefined
+            module: dockerRequiresDestroyOnly(access, resources)
               ? dockerImageEphemeralProviderModule
               : dockerImageProviderModule,
             build: providerBuildPlan({

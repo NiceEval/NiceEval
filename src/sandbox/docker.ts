@@ -30,6 +30,7 @@ import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
 import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
+import { dindContainerCommand } from "./dind-supervisor.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -336,6 +337,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private readonly afterStop?: () => Promise<void>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
+  /** DinD 覆盖容器 User 为 root 后，仍用镜像 USER 作为 Agent 默认身份。 */
+  private imageDefaultUser?: string;
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
   private defaultHome = "/root";
   private defaultUserName = "root";
@@ -450,6 +453,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     try {
       await sandbox.initialize();
     } catch (e) {
+      const initializationError = await sandbox.withInitializationDiagnostics(e);
       // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
       // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
       // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
@@ -476,13 +480,44 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       }
       if (cleanupErrors.length > 0) {
         throw new AggregateError(
-          [e, ...cleanupErrors],
+          [initializationError, ...cleanupErrors],
           "Docker sandbox initialization failed and its partial container/network could not be fully removed",
         );
       }
-      throw e;
+      throw initializationError;
     }
     return sandbox;
+  }
+
+  /** DinD 容器 kill-on-failure 前收集有界诊断，普通 Docker 保持原错误形状。 */
+  private async withInitializationDiagnostics(error: unknown): Promise<unknown> {
+    if (this.dockerAccess?.mode !== "dind" || this.container === null) return error;
+    const sections: string[] = [];
+    try {
+      const logs = await this.container.logs({ stdout: true, stderr: true, tail: 256 });
+      const bytes = Buffer.isBuffer(logs)
+        ? logs
+        : await readableToBuffer(logs as unknown as NodeJS.ReadableStream);
+      const tail = bytes.subarray(Math.max(0, bytes.length - 256 * 1024)).toString("utf-8").trim();
+      if (tail !== "") sections.push(`docker logs (tail):\n${tail}`);
+    } catch {
+      // 诊断采集是 best effort；不能覆盖初始化原错误。
+    }
+    try {
+      const state = await this.container.inspect();
+      if (state.State?.Running === true) {
+        const daemonTail = await this.execCommand("tail", ["-c", String(256 * 1024), "/tmp/dockerd.log"], {
+          user: ROOT_USER,
+        });
+        const tail = (daemonTail.stderr || daemonTail.stdout).trim();
+        if (tail !== "") sections.push(`dockerd.log (tail):\n${tail}`);
+      }
+    } catch {
+      // daemon 提前退出时 supervisor 已把有界 tail 写入 docker logs。
+    }
+    if (sections.length === 0) return error;
+    const message = error instanceof Error ? error.message : String(error);
+    return new Error(`${message}\n${sections.join("\n")}`, { cause: error });
   }
 
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
@@ -514,6 +549,13 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // 确保镜像在本地。
     await this.ensureImage(imageName);
 
+    const isDind = this.dockerAccess?.mode === "dind";
+    if (isDind) {
+      const inspectedImage = await this.docker.getImage(imageName).inspect();
+      const declaredUser = inspectedImage.Config?.User?.trim();
+      this.imageDefaultUser = declaredUser === "" ? undefined : declaredUser;
+    }
+
     // 起容器(先以 root 做初始化,之后命令切到非 root 用户)。
     // PID1 改成 tail 一个日志文件(而非 sleep infinity):这样容器「主日志」= 这个文件,
     // `docker logs` / Docker UI 的 Logs 标签页能实时显示我们 appendLog 进去的 agent 逐轮活动。
@@ -524,19 +566,30 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // TTL 一旦烧进 PID1 的 `timeout` 就改不了(容器没有续期通道),所以这里把真实到期时刻记下来,
     // 供 ensureLifetime 如实回答;不够用时由 runner 轮换实例,而不是让容器在 attempt 中途消失。
     this.expiresAtMs = Date.now() + ttlSec * 1000;
+    const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     this.container = await this.docker.createContainer({
       Image: imageName,
-      ...(socketMount === undefined ? {} : { Env: ["DOCKER_HOST=unix:///var/run/docker.sock"] }),
-      Cmd: [
-        "sh",
-        "-c",
-        `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
-      ],
+      ...(socketMount === undefined && !isDind ? {} : { Env: ["DOCKER_HOST=unix:///var/run/docker.sock"] }),
+      ...(dindCommand === undefined
+        ? {
+            Cmd: [
+              "sh",
+              "-c",
+              `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
+            ],
+          }
+        : { Entrypoint: [...dindCommand.Entrypoint], Cmd: [...dindCommand.Cmd], User: ROOT_USER }),
       WorkingDir: this.workdir,
       // provision token:歧义类失败的对账通道(按 label 查询本地容器);
       // keep-candidate:留存候选标记(异常硬退时核对未完成提交的候选)。
       Labels: {
         "niceeval.keep-candidate": "true",
+        ...(isDind
+          ? {
+              "niceeval.docker-access": "dind",
+              "niceeval.dind-readiness-user": this.userOverride ?? this.imageDefaultUser ?? ROOT_USER,
+            }
+          : {}),
         ...(this.provisionToken ? { "niceeval.provision-token": this.provisionToken } : {}),
         ...(this.runIdentity ? dockerRunIdentityLabels(this.runIdentity) : {}),
         ...this.managedLabels,
@@ -592,7 +645,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         );
       }
       try {
-        const result = await this.execCommand(command, args, { user: readiness.user ?? this.userOverride });
+        const readinessUser = readiness.user ?? this.userOverride ??
+          (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
+        const result = await this.execCommand(command, args, { user: readinessUser });
         if (result.exitCode === 0) return;
         lastFailure = result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
       } catch (error) {
@@ -602,8 +657,13 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       if (remaining <= 0) break;
       await new Promise((resolve) => setTimeout(resolve, Math.min(readiness.intervalMs ?? 250, remaining)));
     }
+    const readinessUser = readiness.user ?? this.userOverride ?? this.imageDefaultUser ?? ROOT_USER;
+    const permissionHelp = this.dockerAccess?.mode === "dind" && /permission denied/i.test(lastFailure)
+      ? `; DinD user ${JSON.stringify(readinessUser)} must belong to the docker group ` +
+        `(the inner socket remains root:docker 0660)`
+      : "";
     throw new Error(
-      `Docker sandbox readiness timed out after ${readiness.timeoutMs}ms: ${lastFailure}`,
+      `Docker sandbox readiness timed out after ${readiness.timeoutMs}ms: ${lastFailure}${permissionHelp}`,
     );
   }
 
@@ -616,7 +676,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const probe = await this.execCommand("sh", [
       "-c",
       'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"',
-    ], { user: this.userOverride });
+    ], {
+      user: this.userOverride ??
+        (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined),
+    });
     const [rawUid = "", rawName = "", rawHome = ""] = probe.stdout.split("\n");
     const uid = rawUid.trim();
     const name = rawName.trim();

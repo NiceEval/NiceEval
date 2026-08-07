@@ -112,8 +112,8 @@ declare function dockerSandbox(options: DockerSandboxOptions): SandboxLayer;
 | 模式 | NiceEval负责 | 镜像负责 | 适用场景 | 权限边界 |
 | --- | --- | --- | --- | --- |
 | `socket` | 校验并 bind显式 Unix socket、补充 socket GID、设置 `DOCKER_HOST`、执行 readiness | Docker CLI | 可信 Agent、个人开发机、已有 daemon且优先启动速度 | Agent拥有该 daemon的完整控制权；rootful socket通常等价宿主 root |
-| `dind/raw-privileged` | 给 outer container设置 `Privileged: true`、执行 readiness | Docker CLI、daemon和启动 daemon的 root entrypoint | 一次性 VM或专用 runner，需要独立 inner image/network/cache | outer privileged继承所选 daemon/宿主的风险，不宣称 rootless隔离或跨进程容量保证 |
-| `dind/managed-rootless` | profile attestation、rootless privileged、资源准入、独占网络、watchdog恢复和 readiness | Docker CLI、daemon和 root entrypoint | 不可信 Agent、共享宿主、并发评估和强杀恢复 | privileged限制在受管 rootless user namespace或专用 VM内；仍不是 kernel/VM逃逸防护 |
+| `dind/raw-privileged` | 给 outer container设置 `Privileged: true`、注入受管 supervisor、启动 daemon并执行 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 一次性 VM或专用 runner，需要独立 inner image/network/cache | outer privileged继承所选 daemon/宿主的风险，不宣称 rootless隔离或跨进程容量保证 |
+| `dind/managed-rootless` | profile attestation、rootless privileged、资源准入、独占网络、watchdog恢复、受管 supervisor和 readiness | 官方 dind兼容派生镜像、Docker CLI/daemon、Agent用户加入 `docker`组 | 不可信 Agent、共享宿主、并发评估和强杀恢复 | privileged限制在受管 rootless user namespace或专用 VM内；仍不是 kernel/VM逃逸防护 |
 
 socket模式必须显式写宿主绝对路径，不读取 `DOCKER_HOST`、Docker context或 Provider当前 endpoint。
 NiceEval对路径执行 `realpath`，要求最终目标是 Unix socket，并把规范路径 bind到容器内固定的
@@ -199,13 +199,14 @@ export default defineEval({
 });
 ```
 
-`dockerSandbox()`负责在 profile选择的外层 daemon上创建 privileged容器，并用 `readiness`确认普通
-Agent用户可以访问内层 Docker；它不会自行在容器里启动 `dockerd`。Dockerfile必须安装 Docker
-CLI/daemon，并用 root `ENTRYPOINT`先启动 inner dockerd、修正 Unix socket权限，再执行 NiceEval传入
-的 `Cmd`。完整的 Dockerfile、entrypoint和 Experiment写法见
+`dockerSandbox()`负责在 profile选择的外层 daemon上创建 privileged容器，替换原
+Entrypoint/Cmd，注入 provider-owned supervisor，并用 `readiness`确认普通 Agent用户可以访问内层 Docker。
+
+Dockerfile只需从官方 dind镜像派生、安装 Node与 Agent工具，并把 Agent用户
+加入 `docker`组；不需要 NiceEval专用 entrypoint。完整的 Dockerfile和 Experiment写法见
 [NiceEval-Eval单容器 DinD](use-case/niceeval-eval.md)。
 
-Docker `start` 只表示 PID 1已运行，不表示 entrypoint启动的 inner dockerd已 ready。NiceEval在任何
+Docker `start` 只表示 PID 1已运行，不表示 supervisor启动的 inner dockerd已 ready。NiceEval在任何
 Sandbox lifecycle setup、prepare、agent ensure或 Attempt命令前重试 readiness command。容器提前
 退出或超时归入 `sandbox.create`，随后执行整台容器的 Provider finalizer。
 

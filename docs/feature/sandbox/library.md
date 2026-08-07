@@ -268,9 +268,21 @@ rootful socket通常等价宿主 root。raw DinD给 outer container设置 privil
 runner，不宣称隔离。managed DinD通过 profile验证 rootless daemon、资源容量和 watchdog，适合
 共享宿主与不可信 Agent。managed失败绝不降级为 raw privileged。
 
-NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD镜像还要用 root
-entrypoint启动 inner daemon并执行 NiceEval传入的 `Cmd`。三种模式默认在 Sandbox用户下运行
-`docker info`，CLI、daemon或 socket权限不满足时 Sandbox创建失败。
+NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD
+只接受从固定版本官方 `docker:<version>-dind`派生的兼容镜像，并要额外带 `node`、
+`docker-init`、`dockerd-entrypoint.sh`、`timeout` 与 `tail`。
+
+用户不写 NiceEval 专用 `ENTRYPOINT`，也不负责接收或执行 NiceEval 传入的 `Cmd`。
+当 `dockerAccess.mode` 为
+`"dind"` 时，provider 显式替换镜像原有 `Entrypoint` / `Cmd`，注入自己版本化的
+bootstrap 与 supervisor，同时监督 inner dockerd、Sandbox keeper、日志与容器内 TTL。
+这是 DinD 模式的明确镜像协议，不是对任意 service image 的 OCI 启动兼容承诺。
+
+bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命令与默认
+`docker info` 仍以 factory `user` 执行，未声明 factory `user` 时沿用镜像 `USER`。
+合规派生镜像应在构建期把该 Agent 用户加入 `docker` 组；NiceEval 不会把
+`/var/run/docker.sock` 放宽为 `0666`，也不会硬编码 `node` 用户名。CLI、daemon、
+镜像协议或 socket 权限不满足时，Sandbox 在执行 setup / prepare / Agent 前创建失败。
 
 `memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
 带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs

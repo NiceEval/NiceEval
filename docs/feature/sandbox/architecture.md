@@ -183,6 +183,14 @@ attempt 的最终 `locator` 在调度前已经由预分配的 `runId` 与 `{eval
 最常用、最便宜:无需任何云 token,本地有 Docker 即可。要点:
 
 - **保活容器** —— 用 `node:24-slim` 起一个 tail 日志文件的长生命周期容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时清理)。
+- **DinD 是 provider-owned 启动协议** —— `dockerAccess.mode: "dind"` 显式替换派生镜像原有 `Entrypoint` / `Cmd`。
+- **DinD 使用真正的 init** —— bootstrap 校验官方 dind 工具面，再执行 `docker-init -- node ...`。Node supervisor 同时持有 dockerd 与既有 keeper。
+- **DinD 子进程共用一个终止协议** —— spawn error、子进程提前退出或 TERM / INT 都只提交一次 shutdown。
+- **DinD daemon 不能单独死亡** —— daemon 意外退出使 outer container 非零退出。
+- **DinD 时间边界** —— dockerd shutdown timeout 为 2 秒，supervisor grace 为 3 秒，`docker stop` 为 5 秒，provider cleanup watchdog 为 8 秒。
+- **DinD TTL 预留关闭时间** —— keeper 的 timeout 从真实容器 TTL 中扣除 3 秒。`ensureLifetime` 仍以含 grace 的真实 cutoff 答复，不依赖 Runner 活着。
+- **DinD 诊断在删除前获取** —— daemon 日志只保留有界尾部。bootstrap 失败、daemon 提前退出或 readiness timeout 都先收集日志，再删除创建失败的容器。
+- **Agent 日志语义不变** —— `appendLog` 与 streamed output 仍由 keeper 写入 `docker logs`。
 - **执行身份沿用镜像声明** —— 默认以镜像 `USER` 声明的用户跑命令(未声明按 Docker 语义是 root);factory `user` 覆盖整个 Sandbox 的默认身份,命令传 `{ user: "root" }` 时只这一条换身份(见 [Library · 执行身份](library.md#执行身份))。npm 全局目录与 `PATH` 注入按实际执行身份的 home 解析,不硬编码 UID。
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 到执行身份修正属主(putArchive 以 root 写入)。

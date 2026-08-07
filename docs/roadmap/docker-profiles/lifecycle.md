@@ -86,7 +86,7 @@ request {cpu,memory,pids,container=1} reservation
   -> re-attest profile ID + daemon generation
   -> create outer container with labels + hard resources
   -> commit reservation to container ID
-  -> start root entrypoint
+  -> start provider-owned root bootstrap / supervisor
   -> retry readiness as agent user
   -> initialize workspace/tools
   -> commit active

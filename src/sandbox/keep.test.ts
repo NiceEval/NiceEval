@@ -204,6 +204,35 @@ describe("wakeDetached", () => {
       await wakeDetached("docker", "abc");
       expect(start).toHaveBeenCalledTimes(1);
     });
+
+    it("DinD 唤醒后以 Agent 用户等待 inner daemon readiness", async () => {
+      const stream = Readable.from([]);
+      const execution = {
+        start: vi.fn().mockResolvedValue(stream),
+        inspect: vi.fn().mockResolvedValue({ ExitCode: 0 }),
+      };
+      const exec = vi.fn().mockResolvedValue(execution);
+      dockerGetContainerMock.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          State: { Running: false },
+          Config: {
+            Labels: {
+              "niceeval.docker-access": "dind",
+              "niceeval.dind-readiness-user": "node",
+            },
+          },
+        }),
+        start: vi.fn().mockResolvedValue(undefined),
+        exec,
+      });
+
+      await wakeDetached("docker", "abc");
+
+      expect(exec).toHaveBeenCalledWith(expect.objectContaining({
+        Cmd: ["docker", "info"],
+        User: "node",
+      }));
+    });
   });
 
   describe("e2b", () => {

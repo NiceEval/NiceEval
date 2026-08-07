@@ -83,7 +83,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - raw DinD只有显式 `isolation: "raw-privileged"`才产生 `Privileged: true`；`mode: "dind"`缺 isolation在配置期失败。
   - managed DinD缺 profile或完整 resources时在 Docker I/O前失败；profile resolution或 attestation失败绝不重试成 raw privileged。
   - 三种 access都默认得到以 Sandbox默认用户执行的 `docker info` readiness；用户声明可替换探针但不能关闭。
-  - opt-in真实 Docker测试用项目镜像证明 raw与 managed DinD能启动 inner daemon并运行子容器，同时拒绝未认证的 `tcp://127.0.0.1:2375` listener；managed profile不可用时只跳过 managed分支。
+  - DinD provider-owned launcher是常量协议：替换原 Entrypoint/Cmd、预留 supervisor grace、逐项检查工具，并把协议修订进入 identity。
+  - launcher中的用户值只能作为 argv，不得拼进 shell source。
+  - raw DinD在 tmpfs存在时仍是 `Suspendable`；managed DinD的只读或 tmpfs配置仍是 `DestroyOnly`。
+  - opt-in真实 Docker测试使用**无自定义 ENTRYPOINT**的官方 dind派生镜像，证明 raw与 managed DinD能启动 inner daemon并运行子容器。
+  - 同一真机测试拒绝 2375与 2376 listener。managed profile不可用时只跳过 managed分支。
   - socket path和 profile alias是宿主本地 binding，不进可分享 identity；socket、raw DinD和 managed DinD的模式语义必须进入 identity。
 - **PATH 与 pathPrepend**：PATH 是 Sandbox 受管变量，声明面拒绝、运行面按序前置。
   - docker provider：factory `pathPrepend` 按声明顺序前置到受管 PATH（npm 全局 bin + 系统默认路径之前），验证顺序而不只验证包含关系；省略时受管 PATH 与不带 `pathPrepend` 的既有行为逐字节一致。

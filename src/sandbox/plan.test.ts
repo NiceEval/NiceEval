@@ -255,18 +255,32 @@ describe("provider-neutral Sandbox planning", () => {
         authorBaseDirs: { eval: root, experiment: root },
         requirements: [],
       },
+      {
+        pair: linked(factories.dockerImageSandbox({
+          image: "docker:29-dind",
+          dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+          resources: { tmpfs: { "/var/lib/docker": { sizeBytes: 1024 } } },
+        })),
+        authorBaseDirs: { eval: root, experiment: root },
+        requirements: [],
+      },
     ]));
     const plans = outputs.map(({ plan }) => {
       if (plan._tag !== "Sandbox") throw new Error("expected sandbox plan");
       return plan.providerPlan;
     });
 
-    expect(plans.map((plan) => plan.plannerRevision)).toEqual(["dockerfile-3", "docker-image-2"]);
+    expect(plans.map((plan) => plan.plannerRevision)).toEqual(["dockerfile-4", "docker-image-3", "docker-image-3"]);
     expect(plans.map((plan) => Option.getOrThrow(sandboxProviderBindingOf(plan)).moduleId)).toEqual([
       "niceeval/dockerfile-ephemeral",
       "niceeval/docker-image-ephemeral",
+      "niceeval/docker-image",
     ]);
-    expect(plans.map((plan) => plan.capabilities.retention._tag)).toEqual(["DestroyOnly", "DestroyOnly"]);
+    expect(plans.map((plan) => plan.capabilities.retention._tag)).toEqual([
+      "DestroyOnly",
+      "DestroyOnly",
+      "Suspendable",
+    ]);
   });
 
   it("link 与 Direct planning 均不调用 provider planner", () => {
