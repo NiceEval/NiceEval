@@ -1,7 +1,7 @@
 // feature: docs/engineering/testing/e2e/report.md
 //
-// 唯一浏览器代表：只用可见 role/entity 和页面实际 href 操作 custom report，
-// 不拼 attempt 路径、不依赖 DOM class/id。
+// 唯一浏览器代表：一个连续 Journey 用可见 role/entity 和页面实际 href 操作
+// custom report，不拼 attempt 路径、不依赖 DOM class/id。
 
 import { withHttpServer } from "@niceeval/testkit";
 import { readFile } from "node:fs/promises";
@@ -32,58 +32,11 @@ function staticSiteHandler(root: string) {
   };
 }
 
-test("custom report 的可见导航与失败实体链接可达", async ({ page }) => {
+test("custom report Journey：CopyBlock 复制、Attempts 表导航与实体证据下钻", async ({ page }) => {
   await withHttpServer(staticSiteHandler(join(process.cwd(), "site-export")), async ({ url }) => {
+    // index：CopyBlock 标题（<summary> 以可见文本呈现，不臆造 button role）点开后
+    // 正文与 Copy 按钮可见，复制动作写入预期剪贴板。
     await page.goto(`${url}/index.html`);
-    // 外壳导航是可见 tab（view 外壳语义，非链接），按产品可访问身份操作。
-    const attemptsTab = page.getByRole("tab", { name: "Attempts", exact: true });
-    await expect(attemptsTab).toBeVisible();
-    await attemptsTab.click();
-
-    const failedRow = page.getByRole("row").filter({ hasText: "failed" }).first();
-    await expect(failedRow).toBeVisible();
-    const attemptLink = failedRow.getByRole("link").first();
-    const attemptHref = await attemptLink.getAttribute("href");
-    expect(attemptHref).toBeTruthy();
-
-    const detailUrl = new URL(attemptHref!, page.url()).href;
-    expect((await page.request.get(detailUrl)).status()).toBe(200);
-    await page.goto(detailUrl);
-    await expect(page.getByText("failed", { exact: true }).first()).toBeVisible();
-  });
-});
-
-test("从 Attempts 表实际 href 下钻 tool-call attempt，assistant 对话证据可见", async ({ page }) => {
-  await withHttpServer(staticSiteHandler(join(process.cwd(), "site-export")), async ({ url }) => {
-    await page.goto(`${url}/index.html`);
-    const attemptsTab = page.getByRole("tab", { name: "Attempts", exact: true });
-    await expect(attemptsTab).toBeVisible();
-    await attemptsTab.click();
-
-    // tool-call 是实验里唯一 passed 的 attempt：用可见判定文本定位其表行，
-    // 再沿行内实体链接的真实 href 进入详情，不拼 attempt 路径。
-    const passedRow = page.getByRole("row").filter({ hasText: "passed" });
-    await expect(passedRow).toBeVisible();
-    const toolCallLink = passedRow.getByRole("link").first();
-    const toolCallHref = await toolCallLink.getAttribute("href");
-    expect(toolCallHref).toBeTruthy();
-
-    const detailUrl = new URL(toolCallHref!, page.url()).href;
-    expect((await page.request.get(detailUrl)).status()).toBe(200);
-    await page.goto(detailUrl);
-
-    // 判定之外还交付了对话证据：assistant 角色标签与消息正文可见
-    // （tool-call 的 user 消息是带 loc 的开轮消息，正文即轮次标题，不重复渲染成条目）。
-    await expect(page.getByText("Deterministic report fixture response.", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("assistant", { exact: true }).first()).toBeVisible();
-  });
-});
-
-test("custom report 的 CopyBlock 标题与复制按钮可见，复制动作写入预期剪贴板", async ({ page }) => {
-  await withHttpServer(staticSiteHandler(join(process.cwd(), "site-export")), async ({ url }) => {
-    await page.goto(`${url}/index.html`);
-
-    // 标题以可见 <summary>（DisclosureTriangle，非 button role）呈现；点开后才露出正文与 Copy 按钮。
     const copyTitle = page.getByText("Fixture copy block", { exact: true });
     await expect(copyTitle).toBeVisible();
     await copyTitle.click();
@@ -96,5 +49,40 @@ test("custom report 的 CopyBlock 标题与复制按钮可见，复制动作写�
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe(FIXTURE_COPY_TEXT);
+
+    // Attempts tab（外壳导航的真实可访问身份）→ 表格内 failed 实体链接的真实 href 下钻。
+    const attemptsTab = page.getByRole("tab", { name: "Attempts", exact: true });
+    await expect(attemptsTab).toBeVisible();
+    await attemptsTab.click();
+
+    const failedRow = page.getByRole("row").filter({ hasText: "failed" }).first();
+    await expect(failedRow).toBeVisible();
+    const failedLink = failedRow.getByRole("link").first();
+    const failedHref = await failedLink.getAttribute("href");
+    expect(failedHref).toBeTruthy();
+
+    const failedUrl = new URL(failedHref!, page.url()).href;
+    expect((await page.request.get(failedUrl)).status()).toBe(200);
+    await page.goto(failedUrl);
+    await expect(page.getByText("failed", { exact: true }).first()).toBeVisible();
+
+    // 回到 index 再进 Attempts：passed（tool-call）实体链接的真实 href 下钻，
+    // 验证判定之外的对话证据（assistant 角色标签与消息正文可见）。
+    await page.goto(`${url}/index.html`);
+    const attemptsTabAgain = page.getByRole("tab", { name: "Attempts", exact: true });
+    await expect(attemptsTabAgain).toBeVisible();
+    await attemptsTabAgain.click();
+
+    const passedRow = page.getByRole("row").filter({ hasText: "passed" });
+    await expect(passedRow).toBeVisible();
+    const toolCallLink = passedRow.getByRole("link").first();
+    const toolCallHref = await toolCallLink.getAttribute("href");
+    expect(toolCallHref).toBeTruthy();
+
+    const toolCallUrl = new URL(toolCallHref!, page.url()).href;
+    expect((await page.request.get(toolCallUrl)).status()).toBe(200);
+    await page.goto(toolCallUrl);
+    await expect(page.getByText("Deterministic report fixture response.", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("assistant", { exact: true }).first()).toBeVisible();
   });
 });
