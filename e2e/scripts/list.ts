@@ -1,77 +1,78 @@
 #!/usr/bin/env -S npx tsx
-// Discover and print every e2e.json across the flat e2e/ layout — `adapter/<id>/`
-// plus standalone repos like `cli/`, `report/` (docs/engineering/testing/e2e/README.md §2.3).
-//
-// Exit codes:
-//   0   discovery clean (including the zero-repos case — that's expected,
-//       not an error, before the matrix repos land)
-//   1   at least one e2e.json is malformed, or an id collides
-//
-// `--json` (docs/engineering/testing/e2e/README.md §6.1): prints a compact JSON
-// array of `{ id, group, dir, requires }` for every discovered repo, and
-// nothing else on stdout — this is what CI's `discover` job feeds to
-// `fromJson(...)` to build the GitHub Actions matrix. `dir` is the repo's
-// path relative to e2e/ (e.g. "adapter/claude-agent-sdk", "report")
-// — CI needs it because a repo's collection is no longer implied by a fixed
-// "e2e/adapter/<id>" shape. Errors still go to stderr and the exit code
-// contract is unchanged; only the success-path stdout shape differs from
-// the default human-readable text mode.
+// Discover and print every e2e.json across the flat e2e/ layout.
 
-import { relative } from "node:path";
-import { discoverAllRepos, e2eRootDir, type DiscoveredRepo, type RepoRequires } from "./discovery.ts";
+import { fileURLToPath } from "node:url";
+import { relative, resolve } from "node:path";
+
+import {
+  discoverAllRepos,
+  e2eRootDir,
+  type DiscoveredRepo,
+  type E2ERepoManifest,
+  type RepoRequires,
+} from "./discovery.ts";
 
 function formatRequires(requires: RepoRequires | undefined): string {
-  if (!requires) return "(none declared — default: Node runtime + outbound network)";
+  if (!requires) return "(none declared)";
   const parts: string[] = [];
-  if (requires.runtimes) parts.push(`runtimes=${requires.runtimes.join(",")}`);
   if (requires.docker !== undefined) parts.push(`docker=${requires.docker}`);
-  if (requires.arch) parts.push(`arch=${requires.arch}`);
-  if (requires.memoryGB !== undefined) parts.push(`memoryGB=${requires.memoryGB}`);
+  if (requires.externalNetwork !== undefined) parts.push(`externalNetwork=${requires.externalNetwork}`);
+  if (requires.platforms !== undefined) parts.push(`platforms=${requires.platforms.join(",")}`);
+  if (requires.runtimes !== undefined) parts.push(`runtimes=${requires.runtimes.join(",")}`);
+  if (requires.browsers !== undefined) parts.push(`browsers=${requires.browsers.join(",")}`);
   return parts.length > 0 ? parts.join(", ") : "(empty object)";
+}
+
+function formatExecutor(executor: E2ERepoManifest["executor"]): string {
+  return executor.kind === "docker" ? `docker (${executor.image})` : "host";
 }
 
 function printRepo(repo: DiscoveredRepo): void {
   const { manifest } = repo;
-  console.log(`- ${manifest.id}  [${manifest.group}]`);
+  console.log(`- ${manifest.id}  [${manifest.areas.join(", ")}]`);
+  console.log(`    lanes:    ${manifest.lanes.join(", ")}`);
+  console.log(`    executor: ${formatExecutor(manifest.executor)}`);
   console.log(`    command:  ${manifest.command.join(" ")}`);
   console.log(`    requires: ${formatRequires(manifest.requires)}`);
 }
 
 interface MatrixEntry {
   id: string;
-  group: DiscoveredRepo["manifest"]["group"];
-  /** Path relative to e2e/, e.g. "adapter/claude-agent-sdk" or "report". */
   dir: string;
+  areas: E2ERepoManifest["areas"];
+  lanes: E2ERepoManifest["lanes"];
+  executor: E2ERepoManifest["executor"];
   requires?: RepoRequires;
+  paths: E2ERepoManifest["paths"];
 }
 
 function toMatrixEntry(repo: DiscoveredRepo, e2eRoot: string): MatrixEntry {
   return {
     id: repo.manifest.id,
-    group: repo.manifest.group,
     dir: relative(e2eRoot, repo.dir),
+    areas: repo.manifest.areas,
+    lanes: repo.manifest.lanes,
+    executor: repo.manifest.executor,
     requires: repo.manifest.requires,
+    paths: repo.manifest.paths,
   };
 }
 
-function main(): void {
-  const jsonMode = process.argv.includes("--json");
+export function main(argv: readonly string[] = process.argv.slice(2)): void {
+  const jsonMode = argv.includes("--json");
   const e2eRoot = e2eRootDir();
   const { repos, errors } = discoverAllRepos(e2eRoot);
 
   if (errors.length > 0) {
     console.error(`e2e repo discovery found ${errors.length} problem(s):\n`);
-    for (const e of errors) console.error(`  - ${e}`);
+    for (const error of errors) console.error(`  - ${error}`);
     process.exitCode = 1;
     return;
   }
 
-  const sorted = [...repos].sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
-
+  const sorted = [...repos].sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
   if (jsonMode) {
-    // Stdout carries only the JSON array — no banner, no trailing blank
-    // lines — so a CI step can pipe it straight into `fromJson(...)`.
-    console.log(JSON.stringify(sorted.map((r) => toMatrixEntry(r, e2eRoot))));
+    console.log(JSON.stringify(sorted.map((repo) => toMatrixEntry(repo, e2eRoot))));
     return;
   }
 
@@ -88,4 +89,6 @@ function main(): void {
   }
 }
 
-main();
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

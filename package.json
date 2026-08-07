@@ -104,7 +104,7 @@
     "test:docs": "vitest run --project docs",
     "test:docs-site": "vitest run --project docs-site && pnpm run docs:validate && pnpm run docs:links",
     "niceeval": "node bin/niceeval.js",
-    "e2e": "tsx e2e/scripts/run.ts",
+    "e2e": "tsx e2e/scripts/cli.ts",
     "gen:diff-code": "tsx scripts/gen-diff-code.ts",
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",

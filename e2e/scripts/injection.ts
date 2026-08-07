@@ -1,8 +1,9 @@
-// Candidate tarball build + content fingerprint + post-install injection
+// Candidate tarball fingerprint + optional pack helper + post-install injection
 // verification. See docs/engineering/testing/e2e/README.md §3.2 and §5 point 4.
 //
 // The trust chain is entirely local and independently re-derivable:
-//   1. We build the tarball ourselves (`pnpm pack`) and hash its bytes.
+//   1. We hash the exact candidate tarball bytes (pack.ts is the only caller
+//      that creates a new candidate).
 //   2. pnpm records that exact same hash as `resolution.integrity` in the
 //      lockfile of whatever project installs the tarball via a `file:`
 //      specifier pointing at it (verified empirically: the SRI string pnpm
@@ -13,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface CandidateTarball {
   /** Absolute path to the built .tgz. */
@@ -22,16 +23,42 @@ export interface CandidateTarball {
   integrity: string;
   /** Short sha256 hex, for human-readable logs only — not used for comparison. */
   shortHash: string;
+  /** Full sha256 hex, independently recomputed from the candidate bytes. */
+  sha256: string;
   name: string;
   version: string;
 }
 
-function runInherited(cmd: string, args: string[], cwd: string): Promise<number> {
+function runInherited(cmd: string, args: string[], cwd: string, quiet: boolean): Promise<number> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: "inherit" });
+    const child = spawn(cmd, args, { cwd, stdio: quiet ? "ignore" : "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => resolvePromise(code ?? 1));
   });
+}
+
+function fingerprint(bytes: Buffer, tarballPath: string): CandidateTarball {
+  const sha512 = createHash("sha512").update(bytes).digest("base64");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return {
+    path: tarballPath,
+    integrity: `sha512-${sha512}`,
+    shortHash: sha256.slice(0, 12),
+    sha256,
+    name: "unknown",
+    version: "unknown",
+  };
+}
+
+/** Recompute both digests from one existing .tgz file; never invokes pnpm. */
+export function readCandidateTarball(tarballPath: string): CandidateTarball {
+  const resolvedPath = resolve(tarballPath);
+  if (!resolvedPath.endsWith(".tgz")) {
+    throw new Error(`candidate must be a .tgz file, got ${tarballPath}`);
+  }
+  const bytes = readFileSync(resolvedPath);
+  if (bytes.length === 0) throw new Error(`candidate tarball is empty: ${resolvedPath}`);
+  return fingerprint(bytes, resolvedPath);
 }
 
 /**
@@ -40,10 +67,14 @@ function runInherited(cmd: string, args: string[], cwd: string): Promise<number>
  * fingerprint computed independently from the bytes on disk (not from
  * anything `pnpm pack` prints).
  */
-export async function buildCandidateTarball(repoRoot: string, destDir: string): Promise<CandidateTarball> {
+export async function buildCandidateTarball(
+  repoRoot: string,
+  destDir: string,
+  options: { quiet?: boolean } = {},
+): Promise<CandidateTarball> {
   mkdirSync(destDir, { recursive: true });
 
-  const code = await runInherited("pnpm", ["pack", "--pack-destination", destDir], repoRoot);
+  const code = await runInherited("pnpm", ["pack", "--pack-destination", destDir], repoRoot, options.quiet === true);
   if (code !== 0) {
     throw new Error(
       `pnpm pack failed (exit ${code}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
@@ -58,16 +89,14 @@ export async function buildCandidateTarball(repoRoot: string, destDir: string): 
   }
 
   const tarballPath = join(destDir, tgzFiles[0]);
-  const bytes = readFileSync(tarballPath);
-  const integrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
-  const shortHash = createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+  const candidate = readCandidateTarball(tarballPath);
 
   const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
     name: string;
     version: string;
   };
 
-  return { path: tarballPath, integrity, shortHash, name: pkg.name, version: pkg.version };
+  return { ...candidate, name: pkg.name, version: pkg.version };
 }
 
 /**
