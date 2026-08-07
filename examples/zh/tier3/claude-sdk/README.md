@@ -35,7 +35,7 @@ flags 恒定,变体之间不会串。
 
 ## 已验证的行为
 
-`defineDirectAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
+`defineAgent` 必须声明真实的 `evidenceCoverage`；这里的官方
 `createClaudeSdkEventStream` 完整转换原生 `SDKMessage`，因此使用
 `completeEvidenceCoverage`。
 
