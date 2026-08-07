@@ -4,7 +4,7 @@ NiceEval-Eval用 coding agent实际安装、迁移和操作 NiceEval。Agent必�
 的 `docker`与 `docker compose`，但 outer Sandbox不应因此变成 Compose sidecar或宿主 root。
 
 这不是新的 DinD Sandbox类型。NiceEval-Eval使用统一的官方 `dockerSandbox()`，选择 Dockerfile
-source，并声明 profile、rootless privileged、结构化资源和 readiness。
+source，并声明 managed rootless DinD、结构化资源和 readiness。
 
 ## 目录
 
@@ -114,9 +114,12 @@ export default defineExperiment({
       type: "dockerfile",
       context: new URL("../sandbox/", import.meta.url),
     },
-    profile: "default",
+    dockerAccess: {
+      mode: "dind",
+      isolation: "managed-rootless",
+      profile: "default",
+    },
     user: "node",
-    privileged: "rootless",
     resources: {
       cpus: 4,
       memoryBytes: 6 * GiB,

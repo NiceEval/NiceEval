@@ -60,6 +60,7 @@ export type {
   DockerImageSource,
   DockerfileSource,
   DockerSandboxSource,
+  DockerSandboxAccess,
   DockerSandboxOptions,
   DockerSandboxCommonOptions,
   DockerSandboxReadiness,

@@ -133,7 +133,7 @@ VM不能成为该 profile的后端。
 
 ## Attestation
 
-CLI加载可信评测 module并收集 `dockerSandbox({ profile })`后，在任何 Docker discovery/build前
+CLI加载可信评测 module并收集 managed DinD的 `dockerAccess.profile`后，在任何 Docker discovery/build前
 完成以下检查：
 
 1. descriptor不是 symlink，owner/mode正确，所有父目录不可由 runtime access group写；
@@ -272,7 +272,7 @@ attested daemon target platform
   -> eval container create
 ```
 
-不能在 materialize看到 `privileged`后临时换 daemon。`privileged: "rootless"`、规范化 resources、
+不能在 materialize看到 Docker access后临时换 daemon。managed rootless DinD、规范化 resources、
 target platform与 semantic policy revision进入 ProviderPlan、CaseKey和 Attempt fingerprint。
 Dockerfile BuildKey仍只认会改变 image bytes的 context、Dockerfile、args、platform与 base image；
 CPU/memory/tmpfs不误入 BuildKey。

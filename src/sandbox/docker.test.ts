@@ -3,8 +3,9 @@
 // find+read 模板,见 download-directory.test.ts)。这里 fake 容器的 getArchive,不连真实
 // daemon——真实容器行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -14,6 +15,7 @@ import {
   dockerHostConfig,
   dockerManagedNetworkOptions,
   DockerSandbox,
+  resolveDockerSocketMount,
 } from "./docker.ts";
 
 describe("Docker privileged boundary and resources", () => {
@@ -83,6 +85,39 @@ describe("Docker privileged boundary and resources", () => {
       ExtraHosts: ["host.docker.internal:host-gateway"],
     });
     expect(new DockerSandbox({ privileged: "rootless" }).otlpHost).toBeNull();
+  });
+
+  it("socket access把规范Unix socket挂到固定目标并按数值GID授权", async () => {
+    const dir = await makeLocalDir();
+    const socket = join(dir, "daemon.sock");
+    const alias = join(dir, "docker.sock");
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socket, resolve);
+    });
+    try {
+      await symlink(socket, alias);
+      const mount = await resolveDockerSocketMount(alias);
+      expect(mount.source).toBe(socket);
+      expect(dockerHostConfig("disabled", {}, [], mount)).toMatchObject({
+        Mounts: [{ Type: "bind", Source: socket, Target: "/var/run/docker.sock" }],
+        GroupAdd: [String(mount.gid)],
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("socket access拒绝最终目标不是Unix socket", async () => {
+    const dir = await makeLocalDir();
+    await expect(resolveDockerSocketMount(dir)).rejects.toThrow(/not a Unix socket/);
+  });
+
+  it("raw privileged只设置Privileged且不伪造managed DNS", () => {
+    expect(dockerHostConfig("raw", {})).toMatchObject({ Privileged: true });
+    expect(dockerHostConfig("raw", {})).not.toHaveProperty("Dns");
+    expect(dockerHostConfig("raw", {})).not.toHaveProperty("ExtraHosts");
   });
 
   it("为每个 managed privileged Attempt 声明独占且禁止 sibling 互通的 bridge", () => {

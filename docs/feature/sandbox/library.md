@@ -228,14 +228,28 @@ e2bSandbox({
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### privileged Docker
+### Docker access
 
-需要在单个评估容器里运行 Docker-in-Docker 时，Docker image/Dockerfile factory 可以显式声明：
+Agent需要运行 Docker时，Docker image/Dockerfile factory显式选择三种模式之一：
 
 ```typescript
-dockerfileSandbox({
-  context: new URL("./sandbox/", import.meta.url),
-  privileged: "rootless",
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: { mode: "socket", socketPath: "/var/run/docker.sock" },
+})
+
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+})
+
+dockerSandbox({
+  source: { type: "dockerfile", context: new URL("./sandbox/", import.meta.url) },
+  dockerAccess: {
+    mode: "dind",
+    isolation: "managed-rootless",
+    profile: "default",
+  },
   resources: {
     cpus: 4,
     memoryBytes: 6 * 1024 ** 3,
@@ -249,18 +263,21 @@ dockerfileSandbox({
 })
 ```
 
-`privileged` 故意不是 boolean。NiceEval 只会把它交给一个显式 `DOCKER_HOST=unix://…` 的
-rootless daemon，并在创建容器前验证：daemon 报告 rootless、cgroup v2 + systemd driver、
-daemon ID 等于 `NICEEVAL_ROOTLESS_DOCKER_ID`、data-root 等于
-`NICEEVAL_ROOTLESS_DOCKER_DATA_ROOT`。任何字段缺失或不匹配都会在 pull/build/create 前失败，
-不会回退到 `/var/run/docker.sock` 或 TCP。
+socket模式显式挂载作者给出的 Unix socket，适合可信 Agent；Agent拥有该 daemon的完整控制权，
+rootful socket通常等价宿主 root。raw DinD给 outer container设置 privileged，适合一次性 VM或专用
+runner，不宣称隔离。managed DinD通过 profile验证 rootless daemon、资源容量和 watchdog，适合
+共享宿主与不可信 Agent。managed失败绝不降级为 raw privileged。
+
+NiceEval不向镜像安装 Docker。三种模式的镜像都要带 Docker CLI；两种 DinD镜像还要用 root
+entrypoint启动 inner daemon并执行 NiceEval传入的 `Cmd`。三种模式默认在 Sandbox用户下运行
+`docker info`，CLI、daemon或 socket权限不满足时 Sandbox创建失败。
 
 `memoryBytes` 同时设置 memory 与 memory+swap 为同一数值，避免获得额外 swap；`tmpfs` 默认
 带 `exec,nosuid,nodev`，因为 DinD 的 inner rootfs 需要执行文件。使用 `tmpfs` 或只读 rootfs
 的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
 这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
 
-Rootless privileged 模式不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
+Managed rootless DinD不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
 不可用；受信任 supervisor 默认阻断 host loopback。这样 trace 不会被静默发往一个其实只指向
 嵌套网络的假“宿主”。需要观测时应先提供受控代理，再单独扩展该契约。
 

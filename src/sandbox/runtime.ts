@@ -421,6 +421,7 @@ export function materializeDockerfileProviderPlan(
           image: resolved.locator,
           ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
           privileged: plan.privileged,
+          ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
           resources: plan.resources,
           ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
           lifetimeMs: configuredLifetime(plan.lifetime),
@@ -478,7 +479,9 @@ async function resolveDockerfileAgentImage(
 ): Promise<{ readonly status: "hit" | "built" | "unsupported"; readonly locator: string }> {
   // Derived Agent image coordination is still bound to the default Docker endpoint.
   // A profile Dockerfile must never cross daemons, so consume the task image directly.
-  if (plan.profileBinding !== undefined) return { status: "unsupported", locator: taskLocator };
+  if (plan.profileBinding !== undefined || plan.dockerAccess !== undefined) {
+    return { status: "unsupported", locator: taskLocator };
+  }
   const request = dockerfileAgentCacheRequest(
     plan,
     context.agent,
@@ -618,6 +621,7 @@ export function materializeDockerImageProviderPlan(
         image: plan.image,
         ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
         privileged: plan.privileged,
+        ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
         resources: plan.resources,
         ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
         lifetimeMs: configuredLifetime(plan.lifetime),

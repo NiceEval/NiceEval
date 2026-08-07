@@ -4,7 +4,7 @@
 
 import { basename, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
 import type {
   CommandResult,
@@ -29,7 +29,7 @@ import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { supportedBackendCapability, type SandboxProviderBackend } from "./backend.ts";
-import type { DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
+import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -131,8 +131,10 @@ export interface DockerSandboxOptions {
    * Compose service `user:` 或其镜像 `USER`。
    */
   user?: string;
-  /** `rootless` = 请求 privileged，但只允许连接显式 rootless Unix daemon。 */
-  privileged?: "disabled" | "rootless";
+  /** raw = 直接请求 privileged；rootless = 只允许受管 rootless daemon。 */
+  privileged?: "disabled" | "raw" | "rootless";
+  /** Agent在Sandbox内访问Docker的模式；socket模式会显式挂载宿主Unix socket。 */
+  dockerAccess?: Readonly<DockerSandboxAccess>;
   /** 创建容器时交给 daemon 强制执行的资源边界。 */
   resources?: Readonly<DockerSandboxResources>;
   /** PID 1 启动后、任何 setup/prepare/agent 命令之前必须通过的作者声明探针。 */
@@ -218,9 +220,10 @@ function benignRemoveError(error: unknown): boolean {
 }
 
 export function dockerHostConfig(
-  privileged: "disabled" | "rootless",
+  privileged: "disabled" | "raw" | "rootless",
   resources: Readonly<DockerSandboxResources>,
   dns: readonly string[] = [],
+  socketMount?: { readonly source: string; readonly gid: number },
 ): Docker.HostConfig {
   const nanoCpus = resources.cpus === undefined ? undefined : Math.round(resources.cpus * 1_000_000_000);
   if (nanoCpus !== undefined && !Number.isSafeInteger(nanoCpus)) {
@@ -243,11 +246,17 @@ export function dockerHostConfig(
       ]));
   return {
     AutoRemove: false,
-    // Privileged rootless supervisor 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
+    // Privileged DinD modes 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
     ...(privileged === "disabled" ? { ExtraHosts: ["host.docker.internal:host-gateway"] } : {}),
-    ...(privileged === "rootless"
+    ...(privileged !== "disabled"
       ? { Privileged: true, ...(dns.length === 0 ? {} : { Dns: [...dns] }) }
       : {}),
+    ...(socketMount === undefined
+      ? {}
+      : {
+          Mounts: [{ Type: "bind", Source: socketMount.source, Target: "/var/run/docker.sock" }],
+          GroupAdd: [String(socketMount.gid)],
+        }),
     ...(nanoCpus === undefined ? {} : { NanoCpus: nanoCpus }),
     ...(resources.memoryBytes === undefined ? {} : { Memory: resources.memoryBytes }),
     ...(resources.memoryBytes === undefined ? {} : { MemorySwap: resources.memoryBytes }),
@@ -255,6 +264,15 @@ export function dockerHostConfig(
     ...(resources.readOnlyRootfs === true ? { ReadonlyRootfs: true } : {}),
     ...(tmpfs === undefined ? {} : { Tmpfs: tmpfs }),
   };
+}
+
+export async function resolveDockerSocketMount(
+  socketPath: string,
+): Promise<{ readonly source: string; readonly gid: number }> {
+  const source = await realpath(socketPath);
+  const info = await stat(source);
+  if (!info.isSocket()) throw new TypeError(`Docker socket path is not a Unix socket: ${socketPath}`);
+  return Object.freeze({ source, gid: info.gid });
 }
 
 /** managed privileged Attempt 的独占 outer network；允许 NAT 出站，但禁止 sibling 互通。 */
@@ -307,7 +325,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
   private readonly userOverride?: string;
-  private readonly privileged: "disabled" | "rootless";
+  private readonly privileged: "disabled" | "raw" | "rootless";
+  private readonly dockerAccess?: Readonly<DockerSandboxAccess>;
   private readonly resources: Readonly<DockerSandboxResources>;
   private readonly readiness?: Readonly<DockerSandboxReadiness>;
   private readonly dockerSocketPath?: string;
@@ -344,7 +363,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
     this.privileged = options.privileged ?? "disabled";
-    this.otlpHost = this.privileged === "rootless" ? null : "host.docker.internal";
+    this.dockerAccess = options.dockerAccess;
+    this.otlpHost = this.privileged === "disabled" ? "host.docker.internal" : null;
     this.resources = options.resources ?? {};
     this.readiness = options.readiness;
     this.dockerSocketPath = options.dockerSocketPath;
@@ -467,6 +487,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** 拉镜像、起容器、装基础工具、备好工作区与 npm 前缀。 */
   private async initialize(): Promise<void> {
+    const socketMount = this.dockerAccess?.mode === "socket"
+      ? await resolveDockerSocketMount(this.dockerAccess.socketPath)
+      : undefined;
     // 显式 image(预制模板)优先;否则按 runtime 选默认 node:*-slim。
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
@@ -503,6 +526,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.expiresAtMs = Date.now() + ttlSec * 1000;
     this.container = await this.docker.createContainer({
       Image: imageName,
+      ...(socketMount === undefined ? {} : { Env: ["DOCKER_HOST=unix:///var/run/docker.sock"] }),
       Cmd: [
         "sh",
         "-c",
@@ -523,7 +547,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
       // host.docker.internal 供容器回连宿主 OTLP；Linux 显式映到 host-gateway。
       HostConfig: {
-        ...dockerHostConfig(this.privileged, this.resources, this.dns),
+        ...dockerHostConfig(this.privileged, this.resources, this.dns, socketMount),
         ...(this.network === null ? {} : { NetworkMode: this.network.id }),
       },
     });

@@ -127,7 +127,10 @@ function errorCode(run: () => unknown): string {
   throw new Error("expected DockerProfileError");
 }
 
-function managedResources(): NonNullable<Extract<DockerSandboxOptions, { readonly profile: string }>["resources"]> {
+function managedResources(): NonNullable<Extract<
+  DockerSandboxOptions,
+  { readonly dockerAccess: { readonly isolation: "managed-rootless" } }
+>["resources"]> {
   return {
     cpus: 2,
     memoryBytes: 2 * GiB,
@@ -143,19 +146,22 @@ function templateOf(layer: ReturnType<typeof dockerSandbox>) {
   return sandboxLayerStateOf(layer).template;
 }
 
+function invokeDockerSandbox(options: unknown): ReturnType<typeof dockerSandbox> {
+  return Reflect.apply(dockerSandbox, undefined, [options]);
+}
+
 function typeContracts(): void {
   const source = { type: "image", image: "node:24" } as const;
   const ordinary: DockerSandboxOptions = { source };
   const managed: DockerSandboxOptions = {
     source,
-    profile: "default",
-    privileged: "rootless",
+    dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" },
     resources: managedResources(),
   };
-  // @ts-expect-error profile declares a managed branch and therefore requires all resource fields.
-  dockerSandbox({ source, profile: "default" });
-  // @ts-expect-error rootless privileged is never an unprofiled Docker branch.
-  dockerSandbox({ source, privileged: "rootless" });
+  // @ts-expect-error managed-rootless declares a managed branch and therefore requires all resource fields.
+  dockerSandbox({ source, dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" } });
+  // @ts-expect-error DinD has no default isolation and can never silently become raw privileged.
+  dockerSandbox({ source, dockerAccess: { mode: "dind" } });
   void ordinary;
   void managed;
 }
@@ -374,33 +380,74 @@ describe("dockerSandbox factory profile wiring", () => {
     })).kind).toBe("dockerfile");
   });
 
-  it("rootless 必须 profile，profile 必须完整资源；profile alias 不进入可分享 identity", () => {
-    expect(errorCode(() => dockerSandbox({
-      source: { type: "image", image: "node:24" },
+  it("socket与raw DinD是显式且不同的identity，socket宿主路径不进入可分享identity", () => {
+    const firstSocket = templateOf(dockerSandbox({
+      source: { type: "image", image: "docker:29-cli" },
+      dockerAccess: { mode: "socket", socketPath: "/var/run/docker.sock" },
+    }));
+    const secondSocket = templateOf(dockerSandbox({
+      source: { type: "image", image: "docker:29-cli" },
+      dockerAccess: { mode: "socket", socketPath: "/run/user/1000/docker.sock" },
+    }));
+    const raw = templateOf(dockerSandbox({
+      source: { type: "image", image: "docker:29-dind" },
+      dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+    }));
+
+    expect(firstSocket.identity).toEqual(secondSocket.identity);
+    expect(firstSocket.identity).toMatchObject({
+      publishable: {
+        dockerAccess: { mode: "socket" },
+        readiness: { command: ["docker", "info"] },
+      },
+    });
+    expect(raw.identity).toMatchObject({
+      publishable: {
+        dockerAccess: { mode: "dind", isolation: "raw-privileged" },
+        readiness: { command: ["docker", "info"] },
+      },
+    });
+    expect(raw.identity).not.toEqual(firstSocket.identity);
+  });
+
+  it("DinD没有默认isolation，socket路径必须规范，且新旧字段不能组合", () => {
+    expect(() => invokeDockerSandbox({
+      source: { type: "image", image: "docker:29-dind" },
+      dockerAccess: { mode: "dind" },
+    })).toThrow(/isolation/);
+    expect(() => dockerSandbox({
+      source: { type: "image", image: "docker:29-cli" },
+      dockerAccess: { mode: "socket", socketPath: "./docker.sock" },
+    })).toThrow(/normalized absolute path/);
+    expect(() => dockerImageSandbox({
+      image: "docker:29-dind",
+      dockerAccess: { mode: "dind", isolation: "raw-privileged" },
       privileged: "rootless",
-    } as never))).toBe("sandbox.docker-profile-required");
+    })).toThrow(/cannot be combined/);
+  });
+
+  it("managed DinD 必须 profile与完整资源，且profile alias不进入可分享identity", () => {
     expect(errorCode(() => dockerSandbox({
       source: { type: "image", image: "node:24" },
-      profile: "default",
+      dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" },
     } as never))).toBe("sandbox.docker-profile-resources-required");
 
     const first = templateOf(dockerSandbox({
       source: { type: "image", image: "node:24" },
-      profile: "default",
-      privileged: "rootless",
+      dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "default" },
       resources: managedResources(),
       readiness: { command: ["docker", "info"], user: "node", timeoutMs: 30_000, intervalMs: 250 },
     }));
     const second = templateOf(dockerSandbox({
       source: { type: "image", image: "node:24" },
-      profile: "another-machine-alias",
-      privileged: "rootless",
+      dockerAccess: { mode: "dind", isolation: "managed-rootless", profile: "another-machine-alias" },
       resources: managedResources(),
       readiness: { command: ["docker", "info"], user: "node", timeoutMs: 60_000, intervalMs: 1_000 },
     }));
     expect(first.identity).toEqual(second.identity);
     expect(first.identity).toMatchObject({
       publishable: {
+        dockerAccess: { mode: "dind", isolation: "managed-rootless" },
         resources: {
           cpus: 2,
           memoryBytes: 2 * GiB,

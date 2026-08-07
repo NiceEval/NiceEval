@@ -1,6 +1,6 @@
 # Docker 执行配置 —— CLI
 
-运行命令从 `dockerSandbox({ profile })`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
+运行命令从 managed DinD的 `dockerAccess.profile`取得 profile别名。CLI不要求额外 flag；它只提供 profile的
 只读发现与 doctor。宿主部署由 NixOS module、systemd host package或 macOS VM package完成。
 
 ## 运行
@@ -29,7 +29,7 @@ create不能跨 profile复用连接。`DOCKER_HOST`、Experiment env与 Agent en
 未声明 profile时：
 
 - 非 privileged Docker继续使用既有 Docker endpoint查找规则；
-- `privileged: "rootless"`在 factory求值阶段报 `sandbox.docker-profile-required`；
+- managed DinD缺 `profile`在 factory求值阶段报配置错误；
 - 禁止回退 `/var/run/docker.sock`、rootful daemon、TCP endpoint或日常 UID的 rootless daemon。
 
 声明 profile的普通或 rootless privileged分支都必须提供完整 CPU、memory、PID与只读 rootfs。
@@ -170,7 +170,7 @@ cgroup和 watchdog，再把受认证的 Docker/control Unix endpoint提供给宿
 `default`，由 launchd管理 VM生命周期与开机恢复。
 
 共享 Docker Desktop仍可服务省略 profile的普通非 privileged Docker Sandbox。它不能满足
-`privileged: "rootless"`，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
+managed rootless DinD，因为 privileged workload可以控制 Docker Desktop VM中的 sibling与
 daemon，无法兑现 profile的隔离和 watchdog所有权。
 
 ### External profile
