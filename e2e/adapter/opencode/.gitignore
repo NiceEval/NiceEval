@@ -1,6 +1,4 @@
 node_modules/
-.niceeval/
 .env
-logs/
+.niceeval/
 junit.xml
-junit-*.xml
