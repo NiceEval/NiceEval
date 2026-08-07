@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
+import { parse } from "yaml";
 
 import type { DiscoveredRepo } from "./discovery.ts";
 import {
@@ -163,6 +164,76 @@ export function ensureTestkitForHarnessConsumers(
 }
 
 const PACKAGE_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;
+const LOCK_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies"] as const;
+type LocalSpecifierScheme = "file" | "workspace";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function localSpecifierScheme(value: unknown): LocalSpecifierScheme | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.startsWith("file:")) return "file";
+  if (value.startsWith("workspace:")) return "workspace";
+  return undefined;
+}
+
+function collectLocalResolutionSchemes(value: unknown, schemes: Set<LocalSpecifierScheme>): void {
+  const direct = localSpecifierScheme(value);
+  if (direct !== undefined) {
+    schemes.add(direct);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectLocalResolutionSchemes(item, schemes);
+    return;
+  }
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) collectLocalResolutionSchemes(item, schemes);
+  }
+}
+
+/** Inspect only pnpm dependency specifiers and package resolutions, never arbitrary YAML fields. */
+function pnpmLocalSpecifierSchemes(lockText: string): Set<LocalSpecifierScheme> {
+  const schemes = new Set<LocalSpecifierScheme>();
+  let lock: unknown;
+  try {
+    lock = parse(lockText);
+  } catch {
+    return schemes;
+  }
+  if (!isRecord(lock)) return schemes;
+
+  const importers = lock.importers;
+  if (isRecord(importers)) {
+    for (const importer of Object.values(importers)) {
+      if (!isRecord(importer)) continue;
+      for (const field of LOCK_DEP_FIELDS) {
+        const dependencies = importer[field];
+        if (!isRecord(dependencies)) continue;
+        for (const dependency of Object.values(dependencies)) {
+          const direct = localSpecifierScheme(dependency);
+          if (direct !== undefined) schemes.add(direct);
+          if (!isRecord(dependency)) continue;
+          for (const key of ["specifier", "version"]) {
+            const scheme = localSpecifierScheme(dependency[key]);
+            if (scheme !== undefined) schemes.add(scheme);
+          }
+        }
+      }
+    }
+  }
+
+  for (const section of [lock.packages, lock.snapshots]) {
+    if (!isRecord(section)) continue;
+    for (const [key, entry] of Object.entries(section)) {
+      const keyScheme = key.match(/(?:^|@)(file|workspace):/)?.[1] as LocalSpecifierScheme | undefined;
+      if (keyScheme !== undefined) schemes.add(keyScheme);
+      if (isRecord(entry)) collectLocalResolutionSchemes(entry.resolution, schemes);
+    }
+  }
+  return schemes;
+}
 
 /**
  * Scenario source cleanliness (docs/engineering/testing/testkit.md「构建与
@@ -198,12 +269,13 @@ export function checkTestkitSourceClean(copyDir: string): string[] {
         'checked-in pnpm-lock.yaml contains an "@niceeval/testkit" resolution — scenario lockfiles must not declare testkit',
       );
     }
-    if (lock.includes("workspace:")) {
+    const localSchemes = pnpmLocalSpecifierSchemes(lock);
+    if (localSchemes.has("workspace")) {
       violations.push(
         'checked-in pnpm-lock.yaml contains a "workspace:" reference — scenarios must not use workspace links',
       );
     }
-    if (lock.includes("file:")) {
+    if (localSchemes.has("file")) {
       violations.push(
         'checked-in pnpm-lock.yaml contains a "file:" specifier — file: tarballs are only added by the runner inside the isolated copy',
       );
