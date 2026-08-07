@@ -1,6 +1,8 @@
-# examples/ 不属于本仓库的 monorepo —— 每个 example 是独立 npm 项目(自带 package.json,
-# 依赖发布版 niceeval),不作为本 workspace 的成员。
-packages: []
+# 根 workspace 只管理内部包；E2E 场景与示例各自维持隔离安装身份。
+packages:
+  - "packages/*"
+  - "!e2e/**"
+  - "!examples/**"
 
 allowBuilds:
   braintrust: false
