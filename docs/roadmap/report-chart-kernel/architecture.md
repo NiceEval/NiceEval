@@ -642,34 +642,139 @@ controller 不读取 `<title>`、path d、DOM 顺序或 SVG 文本来猜 point �
 ## Table controller
 
 Table 的权威语义输入仍是 `TableContent`。
+普通 rows 的公开 API 是：
+
+```ts
+type TableStringKey<Row> = Extract<keyof Row, string>;
+type TableSortToken = string | number | boolean | null;
+
+type TableSearch =
+  | true
+  | {
+      label?: LocalizedText;
+      placeholder?: LocalizedText;
+    };
+
+type TableSort<Row> =
+  | true
+  | {
+      field: TableStringKey<Row>;
+      direction: "asc" | "desc";
+    };
+
+type TableColumnDefinition<Row extends object> = {
+  [K in TableStringKey<Row>]: {
+    field: K;
+    header?: LocalizedText;
+    searchable?: boolean;
+  } & (
+    | {
+        sortable?: true;
+        sortValue?: (
+          value: Exclude<Row[K], null | undefined>,
+        ) => TableSortToken;
+      }
+    | {
+        sortable: false;
+        sortValue?: never;
+      }
+  );
+}[TableStringKey<Row>];
+
+type TableColumn<Row extends object> =
+  | TableStringKey<Row>
+  | TableColumnDefinition<Row>;
+
+interface TableProps<Row extends object> {
+  rows: readonly Row[];
+  columns?: readonly TableColumn<Row>[];
+  search?: TableSearch;
+  sort?: TableSort<Row>;
+  locale?: ReportLocale;
+  className?: string;
+}
+```
+
+mapped discriminated union 让 `field: K` 对应的 `sortValue` 参数精确为 `Row[K]`，不是所有字段值的 union。
+shorthand 与复杂列都只接受 string key。
+
+显式 `columns` 定义全部可见列；省略 columns 时按第一行的稳定字段顺序推导。
+列重复、字段 absent 或值为 `undefined` 都在装载时失败，并指出 column field 与 `rows[index]`。
+
+`header` 只产生 text 表头与 web `<th>` 的本地化名称。
+column identity、sort 地址和 payload key 始终使用 `field`，不从 header 文本反推。
+
+顶层 `search` 存在时才产生 query state、search token 与搜索控件。
+顶层 `sort` 存在时才产生 sort state、sort rank 与可排序表头。
+列级 `searchable`、`sortable` 或 `sortValue` 没有对应顶层能力时是死配置，装载必须拒绝而非忽略。
+
+`sort={true}` 的首屏 state 没有 sort，行保持声明顺序。
+对象形态把 `field` 与 `direction` 编入 initial state；field 不存在或 `sortable: false` 时装载失败。
+
+`search` 的 initial query 固定为空。
+它只匹配 effective locale 下由同一 Cell formatter 产生的用户可读文本，不匹配 field、header、href、隐藏 refs、其它 locale 或别名。
+
+`sortValue` 是 build-time-only 的纯 token projection，不接收整行。
+字段值为 `null` 时 callback 不执行并产生 missing；MetricValue 对象存在时 callback 可以读取整个对象。
+
+没有 `sortValue` 时，string、number、boolean 与 LocalizedText 使用内建 projection。
+MetricValue 使用自己的 `value`；其 value 为 null 时产生 missing rank。
+
+同一 column 的非 null token 必须都是同一种 primitive；number 必须 finite。
+boolean 按 false、true 排序，number 按数值排序，string 使用 effective locale 与固定 `Intl.Collator` options 排序。
+
+collator options 是 `{ usage: "sort", sensitivity: "base", numeric: true, ignorePunctuation: false }`。
+原 token 只在 page plan 中存在；编译器把升序结果固化成 numeric rank，相等 token 取得同一 rank。
+
+函数与原 token 都不进入浏览器 payload。
+null 或 missing rank 在升序和降序中始终位于末尾；相等 rank 始终按 declaration index 保持稳定顺序。
+
+`sortValue` 不能改变显示 Cell、MetricValue、coverage、refs 或 field identity。
+跨字段排序或计算列先在 page 中用普通函数产生显式字段。
+
+public Table 不提供 `features`、`initialState`、`rowKey`、`expanded`、multi-sort、`better`、`hidden` 或列级 `label`。
+它也不提供通用 accessor、display/group column、renderer callback 或 controlled `state/onStateChange`。
+
+普通 rows 在一次 page plan 内按 declaration index 得到 opaque key；该 key 不承诺跨构建 identity。
+组合组件提供的 `TableContentRow.key` 继续承担层级行 identity，不进入普通 rows 作者 API。
+
 web renderer 产生初始 HTML 与以下浏览 payload：
 
 ```ts
-type TableSortValue = string | number | boolean | null;
-
 interface TableEnhancementColumn {
   key: string;
   sortable: boolean;
-  label: string;
+  header: string;
 }
 
 interface TableEnhancementRow {
   key: string;
   parentKey?: string;
   declarationIndex: number;
-  sortValues: Readonly<Record<string, TableSortValue>>;
-  filterToken: string;
+  sortRanks?: Readonly<Record<string, number | null>>;
+  searchToken?: string;
+}
+
+interface TableSearchEnhancement {
+  label: string;
+  placeholder?: string;
+}
+
+interface TableSortEnhancement {
+  columnKeys: readonly string[];
 }
 
 interface TableEnhancementPayload {
   schema: "niceeval.table-enhancement/1";
   columns: readonly TableEnhancementColumn[];
   rows: readonly TableEnhancementRow[];
+  search?: TableSearchEnhancement;
+  sort?: TableSortEnhancement;
   initial: TableViewState;
 }
 
 interface TableViewState {
-  query: string;
+  query?: string;
   sort?: {
     columnKey: string;
     direction: "ascending" | "descending";
@@ -683,19 +788,21 @@ interface TableView {
 }
 ```
 
-locale-aware formatter 在服务端生成 `sortValues` 与 `filterToken`。
+locale-aware formatter 在服务端生成 `sortRanks` 与 `searchToken`。
+按 locale 选出的 header 文案可以进入 payload 的 `header`，但不能充当 column key。
 `deriveTableView(payload, state)` 是纯函数；稳定排序用 `declarationIndex` 断开相同值。
 
-`initialTableViewState(content, props, locale)` 把 Table 的 sort prop 换成 state，query 固定为空，并让所有父 row 初始展开。
+`initialTableViewState(content, props, locale)` 把 Table 的 sort prop 换成 state，并让所有父 row 初始展开。
+search 启用时 query 固定为空；search 关闭时 state 中不存在 query slice。
 同一次 page plan 只建立一份 payload 与 initial state，text 和 web 都先调用 `deriveTableView`。
 
 text 按 `orderedRowKeys` 与 `visibleRowKeys` 输出；无 JavaScript web 使用相同 DOM 顺序，并为初始展开 row 写原生 `open`。
 controller 启动时复用 payload.initial，第一次投影不得改变 row 顺序、可见性或 disclosure。
 
-filter token 与 query 共用以下函数：
+search token 与 query 共用以下函数：
 
 ```ts
-function normalizeTableFilter(value: string, locale: ReportLocale): string {
+function normalizeTableSearch(value: string, locale: ReportLocale): string {
   return value
     .normalize("NFKC")
     .toLocaleLowerCase(locale)
@@ -704,7 +811,7 @@ function normalizeTableFilter(value: string, locale: ReportLocale): string {
 }
 ```
 
-query 规范化后按空格拆成 terms；row 必须让每个 term 都出现在 `filterToken` 中。
+query 规范化后按空格拆成 terms；row 必须让每个 term 都出现在 `searchToken` 中。
 空 query 命中所有 row；ancestor 的可见性仍由 child match 与 expanded state 共同决定。
 
 匹配到 child row 时，其 ancestor 也保持可见。
@@ -718,6 +825,28 @@ controller 用 row key 把 `TableView` 投影到已有元素。
 
 过滤输入由可见 label 或 `aria-label` 命名。
 层级 disclosure 使用原生 button/`details` 行为；启用脚本后，toggle 事件只把稳定 row key写入 `expandedRowKeys`。
+
+## Table 验收 fixture
+
+普通 rows fixture 同时包含 string、number、boolean、LocalizedText、MetricValue、null 与枚举 status。
+两行具有相同排序 token，两行的 token 为 null；枚举列通过纯 `sortValue` 产生 numeric token。
+
+fixture 在 `en` 与 `zh-CN` 下分别编译，并验收：
+
+- `<Table rows={rows} />` 不产生搜索、排序 state 或浏览 payload 字段。
+- `sort={true}` 保持声明顺序，对每个可排序表头按 ascending、descending、未排序循环。
+- 对象 `sort` 让 text、无 JavaScript web 与 controller 首帧同序，第一次增强零重排。
+- null 在两个方向始终位于末尾，相等 rank 始终保持 declaration order。
+- 浏览器只比较 numeric rank，不执行 `Intl.Collator` 或作者 `sortValue`。
+- search 只命中 effective locale 的可读 cell 文本，不命中 field、header、href、隐藏 refs 或其它 locale。
+- query 规范化、child 命中时保留 ancestor，以及 disclosure state 都服从同一 `deriveTableView`。
+- search 与 sort 不改变任何 Cell、MetricValue、coverage 或 refs。
+
+类型 fixture 证明 mapped union 会按 `field` 收窄 `sortValue` 参数。
+它也拒绝 symbol/number key、`sortable: false` 与 `sortValue` 并用，以及旧 `label`、`hidden`、`searchable` 顶层 prop 和字符串 `sort`。
+
+装载错误 fixture 逐项验证重复 field、absent/undefined field、死配置、不可排序的首屏 field、混合 token 类型和非有限 number。
+spy 证明每个 present 值的 `sortValue` 只执行一次；函数与原 token 不出现在序列化 payload。
 
 ## 双面不变量
 

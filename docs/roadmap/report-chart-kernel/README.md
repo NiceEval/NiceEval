@@ -160,17 +160,67 @@ tooltip、focus marker、状态区和链接都读取同一份 `EnhancementPayloa
 Table 不增加 `TableModel`。
 公开 rows 仍先规范化为 `TableContent`，text 与 web 继续消费这份内容。
 
-web renderer 为每个 row 与 column 输出稳定 key，并在服务端生成 locale 对应的 sort value 与 filter token。
+普通作者的最短路径保持不变：
+
+```tsx
+<Table rows={performance} />
+```
+
+搜索和排序是顶层能力，不增加 `features` builder 或公开 table instance：
+
+```tsx
+const statusRank = {
+  errored: 0,
+  failed: 1,
+  passed: 2,
+} as const;
+
+<Table
+  rows={performance}
+  columns={[
+    "agent",
+    {
+      field: "costUSD",
+      header: { en: "Spend", "zh-CN": "花费" },
+    },
+    "passRate",
+    {
+      field: "status",
+      searchable: false,
+      sortValue: (status) => statusRank[status],
+    },
+  ]}
+  search={{
+    placeholder: { en: "Filter rows", "zh-CN": "筛选行" },
+  }}
+  sort={{ field: "passRate", direction: "desc" }}
+/>
+```
+
+`sort={true}` 启用交互并保留声明顺序；对象形态同时规定 text、无 JavaScript web 与增强首帧的顺序。
+`search` 总是从空 query 启动，并且只匹配 effective locale 下实际呈现的 cell 文本。
+
+列的 `field` 是唯一 identity，`header` 只提供本地化表头。
+`sortValue` 是构建期纯投影，不是通用 accessor；它不能读取整行、改变 Cell、coverage 或 refs。
+
+公开 API 不提供 controlled state、row model、算法注册表、display/group column 或 renderer callback。
+计算列与分组继续在 page 中用普通函数完成，浏览状态由静态 HTML 上的 controller 局部拥有。
+
+web renderer 为每个 row 与 column 输出稳定 key，并在服务端生成 locale 对应的 sort rank 与 search token。
 controller 以 `TableViewState` 纯计算可见 row key，不读取 `textContent`，也不把当前 DOM 顺序当成状态。
 
 text 与无 JavaScript web 都从同一个 initial state 派生首屏顺序和可见 rows。
 默认 query 为空、父 row 全展开；启用脚本后的第一次投影不得重排或隐藏首屏内容。
 
-filter token 与 query 都执行 NFKC、locale lower-case、首尾去空白和 Unicode 空白折叠。
+search token 与 query 都执行 NFKC、locale lower-case、首尾去空白和 Unicode 空白折叠。
 query 再按空格拆词，一行必须命中所有词。
 
 排序表头使用可聚焦 button，`th` 同步 `aria-sort`。
 过滤输入有可访问名称；层级 disclosure 保留原生 button/`details` 键盘行为与展开状态。
+
+这是 beta breaking migration。
+顶层 `searchable` 改为 `search`，列的 `label` 改为 `header`，旧字符串 `sort` 改为布尔值或 `{ field, direction }`。
+列的 `hidden` 不保留 alias；显式 `columns` 本身就是可见列集合。
 
 ## 扩展边界
 

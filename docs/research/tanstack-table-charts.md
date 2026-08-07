@@ -1,6 +1,6 @@
 # TanStack Table、TanStack Charts 与 NiceEval Reports
 
-> 观察日期：2026-08-06
+> 观察日期：2026-08-07
 >
 > 观察对象：TanStack Table 9.0.0、TanStack Charts 0.6.5、已归档的 TanStack React Charts，以及 NiceEval Reports 的表格与图表组件
 >
@@ -30,6 +30,7 @@ TanStack Table 的事实来自以下官方材料：
 - [Table 9 Overview](https://tanstack.com/table/latest/docs/overview)
 - [Features Guide](https://tanstack.com/table/latest/docs/guide/features)
 - [Row Models Guide](https://tanstack.com/table/latest/docs/guide/row-models)
+- [Column Definitions Guide](https://tanstack.com/table/latest/docs/guide/column-defs)
 - [Table State Guide](https://tanstack.com/table/latest/docs/framework/react/guide/table-state)
 - [TanStack Table V9: Taking Form](https://tanstack.com/blog/tanstack-table-v9-taking-form)
 - [`@tanstack/table-core` npm 包](https://www.npmjs.com/package/@tanstack/table-core/v/9.0.0)
@@ -82,6 +83,37 @@ Table 9 进一步把各 slice 放到独立 atom，renderer 只订阅自己消费
 
 这给 NiceEval 的启示不是引入 atom store。
 真正重要的是排序、过滤和展开应先成为有名字的语义状态，再投影到 DOM；DOM 顺序和 `textContent` 不应反过来保存状态。
+
+### API 把静态能力、状态和算法分开
+
+Table 9 要求先用 `tableFeatures()` 静态注册能力、row-model factory 和命名算法，再把结果交给 `useTable()`。
+列通过 field accessor 或 accessor function 提供语义值；该值同时供 filter、sort 和 group 使用。
+
+```tsx
+const features = tableFeatures({
+  columnFilteringFeature,
+  rowSortingFeature,
+  filteredRowModel: createFilteredRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  filterFns: { includesString: filterFn_includesString },
+  sortFns: { alphanumeric: sortFn_alphanumeric },
+});
+
+const table = useTable({
+  features,
+  data,
+  columns,
+  initialState: {
+    sorting: [{ id: "passRate", desc: true }],
+  },
+});
+```
+
+这套 API 对通用 headless data grid 很准确，但不是 NiceEval 报告作者的最短语法。
+NiceEval 不公开 table instance，不按表格注册 plugin，也没有只能在 React 中生效的受控 state callback。
+
+真正值得借的是输入之间的正交性：能力、起始状态、列 identity 与算法各有明确字段，排序投影不进入 renderer。
+NiceEval 可以把这些边界压缩成组件 props，不需要保留 TanStack 的 builder 层级。
 
 ### 它不替报告决定正确口径
 
@@ -239,7 +271,7 @@ text 与 web 共享 locale-neutral 的语义终值。
 它们只在本地化、空间规划和具体 markup 上分叉，不在缺失、series、typed value、证据目标或顺序上各做一遍。
 
 Table 不需要再增加一层同名 compile model。
-现有 `TableContent` 保持唯一语义输入，web renderer 只需为 controller 预编码稳定 key、sort value 与 filter token。
+现有 `TableContent` 保持唯一语义输入，web renderer 只需为 controller 预编码稳定 key、sort rank 与 search token。
 
 ### 2. 浏览状态、派生模型和 renderer 分开
 
@@ -285,10 +317,40 @@ NiceEval 的表格只需要排序、搜索和层级展开，不因此引入分�
 图表同样不因有 scene 就默认引入 Canvas、动画、brush、zoom、地图与复杂空间索引。
 每一项能力都必须先证明评测报告场景和诚实的 text 降级。
 
+### 7. 作者 API 学边界，不学 ceremony
+
+普通报告的最短路径仍应是 `<Table rows={rows} />`。
+启用浏览能力时，顶层 `search` 与 `sort` 比 `features={{ search: true, sort: true }}` 更短，也更诚实。
+
+```tsx
+<Table
+  rows={performance}
+  columns={[
+    "agent",
+    { field: "costUSD", header: "Spend" },
+    "passRate",
+  ]}
+  search
+  sort={{ field: "passRate", direction: "desc" }}
+/>
+```
+
+`sort={true}` 只启用可排序表头并保留声明顺序；对象形态同时声明所有 renderer 的首屏顺序。
+`search` 总是从空 query 启动，因此 text 与无 JavaScript web 不会因浏览器启动配置丢行。
+
+复杂列仍由 `field` 定位，`header` 只负责双面的表头文案。
+受限的 `sortValue(value)` 可以把枚举等显示值投影为构建期排序 token，但不能访问整行、改变显示值或进入浏览器 payload。
+
+不公开通用 accessor、display column、group column 或 `cell: () => ReactNode`。
+计算列继续由 page 的普通函数产生；任意 web cell callback 无法提供诚实 text 面，Table grouping 也不能保护 coverage 与 refs。
+
+不公开全局算法注册表。
+同一份列定义旁直接传纯 `sortValue` 更短；共享算法是普通 import，内部再把 token 编译成稳定 rank。
+
 ## 不应照搬的设计
 
 - 不让 Table grouping 或 aggregation 计算评测数字。它无法保护 Experiment × Eval 两级折叠、coverage 和 refs。
-- 不把 table instance、atom 或 row model 暴露给普通报告作者。`rows` 与 `columns` 已经是更短的报告输入。
+- 不把 table instance、atom 或 row model 暴露给普通报告作者。`rows`、`columns`、`search` 与 `sort` 已经是更短的报告输入。
 - 不把所有交互 state 提升成报告级 store。共享 Sample 范围仍在 page render 中显式产生，浏览器搜索不能联动并重算其它组件。
 - 不把 TanStack Charts 的 pre-alpha grammar 当成 NiceEval 稳定公开 API。它的版本风险会直接进入预编译 report runtime。
 - 不用 Canvas 或 virtualization 掩盖信息密度问题。报告应该先聚合、分面、截断并解释省略，而不是显示无法区分的百万个点。
@@ -331,9 +393,9 @@ Chart kernel 与 Table 浏览状态只共享以下跨组件约束：
 
 重构前后应使用同一组 family fixtures，而不是只比较 HTML snapshot：
 
-1. Table fixture 固定 `TableContent`、预编码 sort/filter token、initial state 与 expected visible row keys。
+1. Table fixture 固定 `TableContent`、预编码 sort rank/search token、initial state 与 expected visible row keys。
 2. Chart fixture 固定 marks、axes、MetricValue、missing、series identity、InteractionPoint、显示值与 expected targets。
-3. text 与 web 都消费同一份 compiled model，并证明数值、缺失、顺序、label、series 和 target 对应。
+3. Table 两面共享 `TableContent` 与 initial view，Chart 两面共享 model 与 facts；数值、缺失、顺序和 target 必须对应。
 4. 无 JavaScript HTML 证明标题、精确值、证据链接和层级内容仍可读。
 5. 浏览器验收检查 Table 键盘排序、`aria-sort`、命名 filter，以及 Chart pointer/keyboard 同点 focus、tooltip 与下钻。
 6. 静态导出在固定 locale、theme、dimension pins 与 size policy 下保持字节稳定。
