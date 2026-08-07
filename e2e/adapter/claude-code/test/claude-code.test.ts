@@ -3,8 +3,7 @@
 // 单文件 Journey：真实 Claude Code + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 OTel 记录。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
-// 本仓库自带的远程 HTTP MCP server fixture 由本测试启动/健康检查/关闭
-//（scripts/e2e.ts 时代的进程管理职责迁入 Vitest 生命周期）。
+// 本仓库自带的远程 HTTP MCP server fixture 由本测试启动、健康检查并关闭。
 
 import "dotenv/config";
 import {
