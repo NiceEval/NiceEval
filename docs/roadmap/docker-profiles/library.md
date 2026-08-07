@@ -96,57 +96,59 @@ rootless user namespace或独立 VM内。它不是把 Dockerode `HostConfig.Priv
 ## DinD 声明
 
 ```ts
+import { defineEval } from "niceeval";
 import { dockerSandbox } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 const MiB = 1024 ** 2;
 
-export const sandbox = dockerSandbox({
-  source: {
-    type: "dockerfile",
-    context: new URL("../sandbox/", import.meta.url),
-  },
-  profile: "default",
-  user: "node",
-  privileged: "rootless",
-  resources: {
-    cpus: 4,
-    memoryBytes: 6 * GiB,
-    pidsLimit: 2048,
-    readOnlyRootfs: true,
-    tmpfs: {
-      "/var/lib/docker": {
-        sizeBytes: 3 * GiB,
-        mode: 0o711,
-        uid: 0,
-        gid: 0,
-        executable: true,
-      },
-      "/home/sandbox/workspace": {
-        sizeBytes: 2 * GiB,
-        mode: 0o755,
-        uid: 1000,
-        gid: 1000,
-        executable: true,
-      },
-      "/home/node": {
-        sizeBytes: 512 * MiB,
-        mode: 0o700,
-        uid: 1000,
-        gid: 1000,
-      },
-      "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
-      "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+export default defineEval({
+  description: "Agent can operate a Docker Compose project",
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
     },
-  },
-  readiness: {
-    command: ["docker", "info"],
+    profile: "default",
     user: "node",
-    timeoutMs: 30_000,
-    intervalMs: 250,
+    privileged: "rootless",
+    resources: {
+      cpus: 4,
+      memoryBytes: 6 * GiB,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: {
+        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
+        "/home/sandbox/workspace": {
+          sizeBytes: 2 * GiB,
+          mode: 0o755,
+          uid: 1000,
+          gid: 1000,
+          executable: true,
+        },
+        "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
+        "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
+        "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+      },
+    },
+    readiness: {
+      command: ["docker", "info"],
+      user: "node",
+      timeoutMs: 30_000,
+      intervalMs: 250,
+    },
+  }),
+  async test(t) {
+    await t.send("Use Docker Compose to start the project and fix its failing health check.");
   },
 });
 ```
+
+`dockerSandbox()`负责在 profile选择的外层 daemon上创建 privileged容器，并用 `readiness`确认普通
+Agent用户可以访问内层 Docker；它不会自行在容器里启动 `dockerd`。Dockerfile必须安装 Docker
+CLI/daemon，并用 root `ENTRYPOINT`先启动 inner dockerd、修正 Unix socket权限，再执行 NiceEval传入
+的 `Cmd`。完整的 Dockerfile、entrypoint和 Experiment写法见
+[NiceEval-Eval单容器 DinD](use-case/niceeval-eval.md)。
 
 Docker `start` 只表示 PID 1已运行，不表示 entrypoint启动的 inner dockerd已 ready。NiceEval在任何
 Sandbox lifecycle setup、prepare、agent ensure或 Attempt命令前重试 readiness command。容器提前

@@ -25,6 +25,55 @@ NiceEval-Eval/
 Docker CLI/daemon与 Compose plugin。每个 Eval仍是完整 folder-local题包；不会为 DinD增加 outer
 `docker-compose.yaml`，也不会增加启动宿主 daemon的下游 shell wrapper。
 
+## DinD镜像
+
+下面用浮动 tag保持示例可读；真实评估仓库必须把 `FROM`钉到审核过的 digest：
+
+```dockerfile
+FROM docker:29-dind
+
+RUN apk add --no-cache ca-certificates git nodejs npm python3 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node
+
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+ENV DOCKER_TLS_CERTDIR=""
+COPY --chmod=755 niceeval-dind-entrypoint.sh /usr/local/bin/niceeval-dind-entrypoint
+ENTRYPOINT ["niceeval-dind-entrypoint"]
+```
+
+`niceeval-dind-entrypoint.sh`必须保留 NiceEval传入的 `Cmd`。它不能只运行 `dockerd`，否则 Sandbox
+容器不会进入 NiceEval的保活生命周期：
+
+```sh
+#!/bin/sh
+set -eu
+
+dockerd-entrypoint.sh --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
+dockerd_pid=$!
+
+attempt=0
+until docker info >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if ! kill -0 "$dockerd_pid" 2>/dev/null; then
+    cat /tmp/dockerd.log >&2
+    exit 1
+  fi
+  if [ "$attempt" -ge 120 ]; then
+    cat /tmp/dockerd.log >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+chown root:node /var/run/docker.sock
+chmod 660 /var/run/docker.sock
+exec "$@"
+```
+
+这里的 inner daemon只监听容器内的 Unix socket；不要给它增加 TCP listener，也不要把 outer或宿主
+socket mount进来。
+
 ## 单容器
 
 每条 Attempt只有一台 outer eval container：
@@ -46,54 +95,58 @@ Sandbox lifecycle setup。
 inner socket没有离开 eval container。Agent拥有 inner root等价能力，但看不到 outer daemon、其它
 Attempt、宿主 project/HOME/凭据或 rootful socket。
 
-## Experiment共用声明
+## Experiment声明
 
 ```ts
+import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
 import { dockerSandbox } from "niceeval/sandbox";
 
 const GiB = 1024 ** 3;
 const MiB = 1024 ** 2;
 
-export const EVAL_MAX_CONCURRENCY = 4;
-export const agentUnderTest = codexAgent();
-
-export const sandbox = dockerSandbox({
-  source: {
-    type: "dockerfile",
-    context: new URL("../sandbox/", import.meta.url),
-  },
-  profile: "default",
-  user: "node",
-  privileged: "rootless",
-  resources: {
-    cpus: 4,
-    memoryBytes: 6 * GiB,
-    pidsLimit: 2048,
-    readOnlyRootfs: true,
-    tmpfs: {
-      "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
-      "/home/sandbox/workspace": {
-        sizeBytes: 2 * GiB,
-        mode: 0o755,
-        uid: 1000,
-        gid: 1000,
-        executable: true,
-      },
-      "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
-      "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
-      "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  maxConcurrency: 4,
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
     },
-  },
-  readiness: {
-    command: ["docker", "info"],
+    profile: "default",
     user: "node",
-    timeoutMs: 30_000,
-  },
+    privileged: "rootless",
+    resources: {
+      cpus: 4,
+      memoryBytes: 6 * GiB,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: {
+        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
+        "/home/sandbox/workspace": {
+          sizeBytes: 2 * GiB,
+          mode: 0o755,
+          uid: 1000,
+          gid: 1000,
+          executable: true,
+        },
+        "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
+        "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
+        "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+      },
+    },
+    readiness: {
+      command: ["docker", "info"],
+      user: "node",
+      timeoutMs: 30_000,
+    },
+  }),
 });
 ```
 
-每个 Experiment显式写 `maxConcurrency: EVAL_MAX_CONCURRENCY`。这不是把全仓并发降到1；多个
+`sandbox`由 Experiment直接持有，并应用到该 Experiment选择的 Eval；它不是一段脱离
+`defineExperiment()`的独立配置。每个 Experiment显式写 `maxConcurrency: 4`。这不是把全仓并发降到1；多个
 Invocation和每个 Invocation内的 Attempt都可并发，profile watchdog只在 aggregate容量不足时排队。
 
 ## 宿主与运行

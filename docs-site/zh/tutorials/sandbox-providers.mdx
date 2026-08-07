@@ -70,6 +70,13 @@ sandbox: dockerComposeSandbox({
 
 `workspaceService` 指定 Compose 文件里哪个 service 是主 Sandbox。Agent、`t.sandbox` 的命令与文件操作、`workdir`、变更 diff，全部只落在这一个容器上；Compose 文件里的其它 service（数据库、mock server 之类）是伴随资源，不经过 `Sandbox` 接口——不能对它们 `runCommand`、上传或读写文件，也看不到它们的 diff。要用到这些伴随 service，只能靠题目自己的网络访问，例如从 `client` 容器里用 Compose 内置 DNS 访问 `db:5432`。
 
+### Docker-in-Docker：让 Agent自己运行 Docker
+
+如果 Agent需要在同一个 Sandbox里执行 `docker build`、`docker run`或 `docker compose`，使用受管
+rootless Docker profile和带 DinD entrypoint的 Dockerfile。profile负责选择并验证外层 Docker
+daemon；镜像 entrypoint负责启动容器内的 `dockerd`。完整配置见
+[在 Sandbox里运行 Docker-in-Docker](/zh/tutorials/docker-in-docker)。
+
 ## 生命周期
 
 `dockerImageSandbox({ image })` / `vercelSandbox({ snapshotId })` / `e2bSandbox({ template })` 返回的 `SandboxLayer` 有 `.prepare(command)`、`.setup(fn)` 和 `.teardown(fn)` 链式方法。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。

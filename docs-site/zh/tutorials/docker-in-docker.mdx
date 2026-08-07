@@ -1,0 +1,166 @@
+---
+title: "在 Sandbox 里运行 Docker-in-Docker"
+sidebarTitle: "Docker-in-Docker"
+description: "为 coding agent 配置受管 rootless Docker profile、DinD 镜像和 readiness，让它在单个 NiceEval Sandbox 内运行 Docker 与 Compose。"
+---
+
+当评估任务要求 Agent执行 `docker build`、`docker run`或 `docker compose`时，可以让一台外层
+Sandbox容器启动自己的内层 Docker daemon。内层容器只通过同一 Sandbox内的 Unix socket访问它，
+不会拿到宿主或外层 Docker socket。
+
+这条路径由两部分组成：
+
+- `profile: "default"`选择宿主部署者配置的受管 rootless Docker daemon，由它创建外层 Sandbox；
+- 你的 Dockerfile用 root entrypoint在外层 Sandbox内启动 `dockerd`，再把 NiceEval传入的保活命令
+  作为 `Cmd`执行。
+
+`dockerSandbox()`本身不会自动安装或启动内层 Docker。只写 `privileged: "rootless"`而没有 DinD
+镜像与 entrypoint，Agent仍然不能在 Sandbox里使用 `docker`。
+
+## 1. 准备 DinD镜像
+
+创建 `sandbox/Dockerfile`：
+
+```dockerfile
+FROM docker:29-dind
+
+RUN apk add --no-cache ca-certificates git nodejs npm python3 \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node
+
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+ENV DOCKER_TLS_CERTDIR=""
+COPY --chmod=755 niceeval-dind-entrypoint.sh /usr/local/bin/niceeval-dind-entrypoint
+ENTRYPOINT ["niceeval-dind-entrypoint"]
+```
+
+生产评估应把 `FROM`钉到审核过的 image digest。根据被测 Agent再把它需要的 CLI和固定依赖烘焙
+进镜像，不要让每个 Attempt重复安装。
+
+再创建 `sandbox/niceeval-dind-entrypoint.sh`：
+
+```sh
+#!/bin/sh
+set -eu
+
+dockerd-entrypoint.sh --host=unix:///var/run/docker.sock >/tmp/dockerd.log 2>&1 &
+dockerd_pid=$!
+
+attempt=0
+until docker info >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if ! kill -0 "$dockerd_pid" 2>/dev/null; then
+    cat /tmp/dockerd.log >&2
+    exit 1
+  fi
+  if [ "$attempt" -ge 120 ]; then
+    cat /tmp/dockerd.log >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+chown root:node /var/run/docker.sock
+chmod 660 /var/run/docker.sock
+exec "$@"
+```
+
+最后一行不能省略：NiceEval创建 Sandbox时会传入自己的保活 `Cmd`。entrypoint先启动 inner
+`dockerd`，然后必须执行这个 `Cmd`，才能让 Sandbox继续接受 Agent命令。inner daemon只监听 Unix
+socket；不要增加 TCP listener，也不要 mount宿主的 `/var/run/docker.sock`。
+
+## 2. 在 Experiment上声明 Sandbox
+
+```ts title="experiments/dind.ts"
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+const GiB = 1024 ** 3;
+const MiB = 1024 ** 2;
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  maxConcurrency: 4,
+  sandbox: dockerSandbox({
+    source: {
+      type: "dockerfile",
+      context: new URL("../sandbox/", import.meta.url),
+    },
+    profile: "default",
+    user: "node",
+    privileged: "rootless",
+    resources: {
+      cpus: 4,
+      memoryBytes: 6 * GiB,
+      pidsLimit: 2048,
+      readOnlyRootfs: true,
+      tmpfs: {
+        "/var/lib/docker": { sizeBytes: 3 * GiB, mode: 0o711, executable: true },
+        "/home/sandbox/workspace": {
+          sizeBytes: 2 * GiB,
+          mode: 0o755,
+          uid: 1000,
+          gid: 1000,
+          executable: true,
+        },
+        "/home/node": { sizeBytes: 512 * MiB, mode: 0o700, uid: 1000, gid: 1000 },
+        "/tmp": { sizeBytes: 1024 * MiB, mode: 0o1777 },
+        "/run": { sizeBytes: 128 * MiB, mode: 0o755 },
+      },
+    },
+    readiness: {
+      command: ["docker", "info"],
+      user: "node",
+      timeoutMs: 30_000,
+      intervalMs: 250,
+    },
+  }),
+});
+```
+
+`sandbox`也可以写在 `defineEval({ sandbox: ... })`里；当一组评估用例共用同一个 DinD环境时，写
+在 Experiment上更清楚。`readiness`以 Agent实际使用的 `node`身份执行，只有该用户能连接 inner
+socket后才开始 Adapter setup和评估用例。
+
+## 3. 在评估用例里验证真实用法
+
+```ts title="evals/docker-compose.eval.ts"
+import { defineEval } from "niceeval";
+import { commandSucceeded } from "niceeval/expect";
+
+export default defineEval({
+  description: "Agent can repair and start a Docker Compose project",
+  async test(t) {
+    await t.send("修复 Compose 项目，然后启动服务并确认健康检查通过。");
+
+    t.check(
+      await t.sandbox.runCommand("docker", ["run", "--rm", "alpine:3.20", "true"]),
+      commandSucceeded(),
+    );
+  },
+});
+```
+
+这里的 `docker run`连接的是 Sandbox里的 inner daemon。Agent在同一环境中运行的 `docker compose`
+也使用这个 daemon；创建的容器和网络会随外层 Sandbox一起销毁。
+
+## 4. 运行前检查 profile
+
+宿主部署者需要先安装并登记受管 rootless Docker profile。评估作者不在 TypeScript或 CLI里传
+socket路径，只引用本机别名：
+
+```bash
+npx niceeval docker profile list
+npx niceeval docker profile doctor default --smoke
+npx niceeval exp dind
+```
+
+`doctor --smoke`会在该 profile上启动一次受限 DinD容器，并实际运行内层
+`docker run --rm alpine:3.20 true`。它证明外层 profile支持 nested Docker，但不会检查你项目的
+Dockerfile；项目镜像仍由上面的 `readiness`验证。
+
+如果 `readiness`超时，先看 entrypoint是否成功启动 `dockerd`、`/var/run/docker.sock`是否允许
+`node`访问，以及 `/var/lib/docker`、`/run`和 `/tmp`是否都有足够的可写 tmpfs。不要通过挂载宿主
+socket来绕过失败。
