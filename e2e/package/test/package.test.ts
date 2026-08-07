@@ -129,6 +129,28 @@ it("raw Node 双面装载安装后 exports 的每个 runtime subpath：keys 一�
   expect(report.cli?.stdoutHasUsage).toBe(true);
 });
 
+it("import.meta.resolve 不可用时 require.resolve fallback 仍完成同一遍历（filesystem path 统一消费）", async () => {
+  const traversal = join(process.cwd(), "fixtures", "traverse-entries.mjs");
+  const receipt = await command([process.execPath]).run([traversal], {
+    cwd: process.cwd(),
+    env: { NICEEVAL_TRAVERSE_USE_REQUIRE_RESOLVE: "1" },
+  });
+
+  expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
+  expect(receipt.stderr).toBe("");
+  const report = receipt.json<TraversalReport>();
+
+  expect(report.ok).toBe(true);
+  expect(report.failures).toEqual([]);
+  for (const asset of report.assets) {
+    expect(asset.status, asset.specifier).toBe("ok");
+  }
+  const root = report.entries.find((entry) => entry.specifier === "niceeval");
+  expect(root?.status).toBe("loaded");
+  expect(root?.keysEqual).toBe(true);
+  expect(report.cli?.status).toBe("ok");
+});
+
 it("仓库外 NodeNext ESM 与 CJS consumer 对根入口与全部公开 runtime subpath 类型检查通过", async () => {
   const receipt = await command(["pnpm"]).run(
     ["exec", "tsc", "-p", "fixtures/type-consumers", "--noEmit"],
