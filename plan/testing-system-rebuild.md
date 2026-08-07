@@ -112,13 +112,13 @@
 │      design: 单一可互操作 runtime identity；ESM/CJS 与各自 NodeNext 类型入口同源生成，不把双格式编译成两套私有状态
 │  ├─ [ ] T6.2.1 runtime build / exports / bin（parallel with T6.2.2, T6.2.3）
 │  │      owner: package.json, bin/**, scripts/package-runtime/**, tsconfig.package-*.json
-│  │      worker: DP V4
+│  │      worker: Terra（replacement；DP V4 首轮零 diff 已回收）
 │  ├─ [ ] T6.2.2 外部 ESM/CJS、混合宿主与 NodeNext consumer（parallel with T6.2.1, T6.2.3）
 │  │      owner: e2e/package/**
-│  │      worker: Terra
+│  │      worker: DP V4（replacement；Terra 首轮零 diff 已回收）
 │  ├─ [ ] T6.2.3 release preflight 与发布产物机器守护（parallel with T6.2.1, T6.2.2）
 │  │      owner: .github/workflows/release.yml, test/docs/package-artifacts.test.ts
-│  │      worker: DP V4
+│  │      worker: DP V4（首轮 diff 由 replacement 收口）
 │  └─ [ ] T6.2.4 父侧串行验收：同一 tgz、Node 18/22/24、identity Journey、类型两面、release digest
 ├─ [x] T6.3 report：确定性 evidence + Playwright
 │      owner: e2e/report/**
