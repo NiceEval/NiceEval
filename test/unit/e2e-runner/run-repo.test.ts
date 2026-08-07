@@ -1,3 +1,4 @@
+// feature: docs/engineering/testing/e2e/execution.md
 // Runner receipt / cleanup contracts: external temp copy, artifacts outside
 // the source repo, staged receipts, cleanup even on failure. Real temp dirs
 // and small fixtures — not call-order spies.
