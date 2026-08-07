@@ -217,8 +217,13 @@ async function writeEsmFacade(outputRoot, source, valueNames, extension = ".mjs"
   const facadeFile = runtimePath(source, extension);
   const output = join(outputRoot, facadeFile);
   const cjsSpecifier = `./${basename(cjsFile)}`;
+  // 两种 ESM façade 都从同一份 canonical CJS cache 取值：Node 18 会把静态公开
+  // ESM → 失败 CJS bridge 的 optional-peer 错误在 catch 后再次抛出；Vite 对 .js
+  // 兼容 façade 的静态 CJS default interop 也会把默认导出变成 undefined。
   const lines = [
-    `import __niceevalCanonical from ${JSON.stringify(cjsSpecifier)};`,
+    'import { createRequire as __niceevalCreateRequire } from "node:module";',
+    "const __niceevalRequire = __niceevalCreateRequire(import.meta.url);",
+    `const __niceevalCanonical = __niceevalRequire(${JSON.stringify(cjsSpecifier)});`,
   ];
   let index = 0;
   for (const name of valueNames) {

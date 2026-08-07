@@ -1,17 +1,24 @@
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 「用户 .ts 装载与宿主模块形态」类别：CLI 装载用户 .ts 不受宿主 package.json 的 type 影响
+// （契约见 docs/cli.md「装载用户 .ts」）。这里守护两条数据面不变量,两者缺一 CJS 宿主必崩:
+// bug: memory/tsx-dynamic-import-require-cycle.md
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// CJS 宿主(npm init -y 默认)下 CLI 必须能装载自己 init 生成的 config——契约见
-// docs/cli.md「装载用户 .ts」,覆盖类别见 docs/engineering/testing/unit/experiments-runner.md
-// 「用户 .ts 装载与宿主模块形态」。这里守护两条数据面不变量,两者缺一 CJS 宿主必崩:
-// bug: memory/tsx-dynamic-import-require-cycle.md
 const ROOT = resolve(import.meta.dirname, "../..");
+
+type ExportCondition = string | { [condition: string]: ExportCondition };
+
+function conditionTargets(condition: ExportCondition): string[] {
+  if (typeof condition === "string") return [condition];
+  return Object.values(condition).flatMap(conditionTargets);
+}
 
 describe("装载用户 .ts 的宿主模块形态无关性", () => {
   it("exports 每个带 import 条件的出口同时带 require 条件,且两者指向真实文件", () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
-      exports: Record<string, string | Record<string, string>>;
+      exports: Record<string, ExportCondition>;
     };
     const problems: string[] = [];
     for (const [entry, value] of Object.entries(pkg.exports)) {
@@ -21,9 +28,10 @@ describe("装载用户 .ts 的宿主模块形态无关性", () => {
         problems.push(`${entry}: 有 import 条件但没有 require 条件——CJS 编译面的用户文件 require 这个子路径会 ERR_PACKAGE_PATH_NOT_EXPORTED`);
         continue;
       }
-      for (const target of [value.import, value.require]) {
-        // dist/ 产物由 prepare 链生成,git clean checkout 下可以不存在;源码面必须存在
-        if (!target.startsWith("./dist/") && !existsSync(join(ROOT, target))) {
+      // import / require 可各自嵌套 types/default 条件；每个公开叶都必须由 CI 的
+      // build:package 预先生成，不能让 Unit 用不存在的 dist 掩盖发布面断裂。
+      for (const target of [...conditionTargets(value.import), ...conditionTargets(value.require)]) {
+        if (!existsSync(join(ROOT, target))) {
           problems.push(`${entry}: 条件指向的 ${target} 不存在`);
         }
       }

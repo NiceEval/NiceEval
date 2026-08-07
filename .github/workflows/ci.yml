@@ -27,6 +27,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Unit 覆盖 package exports 与 report 的预编译运行时；干净 checkout 不能依赖
+      # install 生命周期或旧 dist 偶然留下的产物。
+      - name: Build package runtime
+        run: pnpm run build:package
+
       - name: Typecheck
         run: pnpm run typecheck
 
