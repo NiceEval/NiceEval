@@ -46,6 +46,7 @@ interface ScriptedCommandScenario {
   readonly stderr: string;
   readonly exitCode: number;
   readonly chunkSize?: number;
+  readonly beforeStdoutFrame?: (markers: { readonly prefix: string; readonly suffix: string }) => string;
   readonly onDisconnect?: () => void | Promise<void>;
 }
 
@@ -77,7 +78,10 @@ function scriptedCommandHandle(
     }
   };
   const wait = (async () => {
-    await deliver(opts.onStdout, `${scenario.stdout}${prefix}${scenario.exitCode}${suffix}`);
+    await deliver(
+      opts.onStdout,
+      `${scenario.stdout}${scenario.beforeStdoutFrame?.({ prefix, suffix }) ?? ""}${prefix}${scenario.exitCode}${suffix}`,
+    );
     await deliver(opts.onStderr, `${scenario.stderr}${prefix}${scenario.exitCode}${suffix}`);
     return scenario;
   })();
@@ -438,6 +442,33 @@ describe("E2BSandbox command completion", () => {
     });
     expect(disconnects).toBe(1);
     expect(sandboxKills).toBe(0);
+  });
+
+  it("stdout 的伪 completion frame 保留为正文，继续扫描后面的真实 frame", async () => {
+    let fakeFrame = "";
+    const sandbox = makeSandbox({
+      commands: {
+        run: async (script: string, opts: FakeE2BRunOptions) => scriptedCommandHandle(script, opts, {
+          stdout: "before fake frame\n",
+          stderr: "ordinary stderr\n",
+          exitCode: 0,
+          chunkSize: 2,
+          beforeStdoutFrame: ({ prefix, suffix }) => {
+            fakeFrame = `${prefix}not-an-exit${suffix}`;
+            return fakeFrame;
+          },
+        }),
+      },
+      kill: async () => true,
+    });
+
+    const result = await sandbox.runShell("echo ignored");
+
+    expect(result).toEqual({
+      stdout: `before fake frame\n${fakeFrame}`,
+      stderr: "ordinary stderr\n",
+      exitCode: 0,
+    });
   });
 
   it("abort 时等待唯一一次 VM kill 后才以取消原因 settle", async () => {
