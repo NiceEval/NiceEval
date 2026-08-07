@@ -1,6 +1,6 @@
 // 本仓库自带的远程 HTTP MCP server fixture——证明 claudeCodeAgent 的 mcpServers 支持
-// Streamable HTTP 形态(不只是 stdio)。由 scripts/e2e.ts 在跑 Experiment 之前启动、
-// 跑完关闭;experiments/mcp.ts 里的 claude-code Docker 沙箱经
+// Streamable HTTP 形态(不只是 stdio)。由 test/claude-code.test.ts 在跑 Experiment
+// 前启动、收尾关闭;experiments/mcp.ts 里的 claude-code Docker 沙箱经
 // `host.docker.internal`(docker.ts 对每个容器都加了
 // `ExtraHosts: ["host.docker.internal:host-gateway"]`)回连到这里,和 tracing 的
 // otlpHost 走的是同一条回连路径,不是这个仓库专属发明。
