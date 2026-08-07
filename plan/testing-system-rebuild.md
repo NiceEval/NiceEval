@@ -164,7 +164,7 @@
 │  ├─ [x] T8.2.1 experiments-runner：44 files / 约 19.2k lines
 │  │      验收结论：零删除；现有测试均为纯选择、指纹、调度、锁、renderer 与 reducer 矩阵，真实 CLI 与 carry/history Journey 已只留在 E2E
 │  ├─ [x] T8.2.2 reports：60 files / 约 15.2k lines
-│  │      已删除 705 行重复 web/DOM、主题 token 与私有 render cache 断言；单一浏览器 Journey 接管 CopyBlock 剪贴板、真实 href 与 Conversation 可见结果，公式、普通值转换与报告树语义仍由 Unit 拥有
+│  │      已删除 749 行重复 web/DOM、主题 token、私有 render cache 与 tsx 子进程断言；浏览器 Journey 接管 CopyBlock/真实 href/Conversation，长期 view server Journey 接管 config-import 热重载，公式、普通值转换与报告树语义仍由 Unit 拥有
 │  ├─ [x] T8.2.3 sandbox：44 files / 约 12.3k lines
 │  │      已合并 Docker ensureLifetime 的第二份四格矩阵；其余 signal 均为受控取消竞态，真实 Provider 矩阵尚未被 E2E 接管，故不冒进删除
 │  ├─ [x] T8.2.4 adapters + record：20 files / 约 4.6k lines

@@ -63,6 +63,7 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   - 在详情页看到判定与 assistant 对话证据。
 
   这条 Journey 接管结果后，Unit 不再保留对应 HTML、DOM 或剪贴板替身断言。
+  同一功能 Repo 还启动安装后候选包的长期 `view` server：报告经项目 config import，修改报告文件后轮询同一个 HTTP URL，必须从旧标记切到新标记。这个 owner 证明用户拿到的热重载结果，不断言 tsx hook、namespace 或模块缓存实现。
 - **候选包的外部消费边界**：把编排器注入的候选 `niceeval` tarball 链接进临时消费方项目，以独立 Node 进程从该项目 cwd 执行 `niceeval show --report`，对同一份真实 Record 分别覆盖消费方无 `tsconfig.json`、classic JSX 与 `react-jsx` 三种配置。
   三种场景都必须从 `niceeval/report/built-in` 成功装载 package-owned 预编译 ESM 并渲染真实证据，不得受消费方 JSX 配置影响或依赖全局 `React`；这个 case 证明的是发布包模块边界，不重复组件渲染断言。
 
