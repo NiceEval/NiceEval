@@ -78,20 +78,20 @@
        acceptance: npm view @niceeval/testkit@<version> version
 
 [ ] T4 迁移 CLI 确定性 pilot（depends on T1.6, T2.5；最终 gate depends on T3.4）
-├─ [ ] T4.1 把 e2e/cli/e2e.json 改为 pr lane 的正式 manifest
+├─ [x] T4.1 把 e2e/cli/e2e.json 改为 pr lane 的正式 manifest
 │      owner: e2e/cli/e2e.json
 ├─ [x] T4.2 用签入确定性 Agent/backend 替换真实模型与 secret
 │      owner: e2e/cli/agents/**, e2e/cli/src/**, e2e/cli/experiments/**,
 │             e2e/cli/evals/**, e2e/cli/{niceeval.config.ts,e2e.json,package.json,pnpm-lock.yaml,scripts/e2e.ts}
-├─ [ ] T4.3 改成原生 Vitest 文件并使用 @niceeval/testkit
+├─ [x] T4.3 改成原生 Vitest 文件并使用 @niceeval/testkit
 │      owner: e2e/cli/test/**, e2e/cli/package.json, e2e/cli/vitest.config.ts
-├─ [ ] T4.4 只保留一个垂直命题
+├─ [x] T4.4 只保留一个垂直命题
 │      proof: 外部副本安装同一 candidate → 执行公开 CLI → 严格读回结果
-├─ [ ] T4.5 做重构免疫审查
+├─ [x] T4.5 做重构免疫审查
 │      acceptance: 测试不 import candidate 类型或源码，不读取私有结果布局，不断言内部调用与当前 DTO
 ├─ [ ] T4.6 注入 selector 忽略、failed/errored 交换、NDJSON 截断三类错误并确认 pilot 红在公开阶段
-├─ [ ] T4.7 删除被替代 scripts/e2e.ts、scripts/verify.ts 与真实模型配置
-└─ [ ] T4.8 验收 Repo、文件、标题三种重跑
+├─ [x] T4.7 删除被替代 scripts/e2e.ts、scripts/verify.ts 与真实模型配置
+└─ [x] T4.8 验收 Repo、文件、标题三种重跑
        acceptance: pnpm e2e --repo cli -- --run test/<pilot>.test.ts -t <title>
 
 [x] T5 改造 GitHub E2E 编排（depends on T2.3；parallel with T4）
