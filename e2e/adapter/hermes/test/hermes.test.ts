@@ -8,7 +8,7 @@ import { command, type ProcessReceipt } from "@niceeval/testkit";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { ensureDockerImage } from "../docker/image.ts";
+import { ensureDockerImage } from "../scripts/build-docker-env.ts";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
