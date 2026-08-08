@@ -6,9 +6,9 @@
 
 ---
 
-## 结论
+## 方案摘要
 
-每条 Attempt 仍只解析一个 Sandbox Case。
+每条 Attempt 仍只选定一个 Sandbox 实例。
 SandboxSpec setup、EvalDef setup 与 Agent setup 仍按各自 owner 准备同一个 Sandbox。
 
 PLAN-7 不再为 Terminal-Bench 增加文件专用 Eval API。
@@ -21,7 +21,7 @@ PLAN-7 不再为 Terminal-Bench 增加文件专用 Eval API。
 
 | 问题 | 写在哪里 |
 |---|---|
-| 从什么环境启动 | `environment` |
+| 从什么 Environment 启动 | `environment` |
 | Agent 要完成什么 | `await t.send(...)` |
 | 什么时候把文件放进 Sandbox | 对应位置的普通 `t.sandbox.upload*()` |
 | 怎样观察和断言 | 紧随其后的普通命令、读取与 `t.check()` |
@@ -31,13 +31,13 @@ PLAN-7 不再为 Terminal-Bench 增加文件专用 Eval API。
 
 ## 为什么不设文件 field
 
-文件是 Fixture、隐藏测试、baseline 还是最终产物，不是文件自身的类型。
+文件是 Fixture、隐藏测试、baseline 还是最终输出，不是文件自身的类型。
 同一个文件在不同 Eval 中可能承担不同用途；框架不应把普通传输复制成多套 API。
 
 `loadCriteria`、`criteria` 与 `privateFiles` 都是为了让 Runner 提前取得指纹和泄题信息，却把内部缓存实现推给作者。
 `afterAgent` 又试图禁止 callback 后继续发 turn，但普通 TypeScript 顺序已经完整表达了真实可见性。
 
-PLAN-7 采用一条更中立的规则：本地路径或 URL 进入普通上传 API 时，Runner 自动记录这次外部文件读取及其内容身份。
+PLAN-7 采用一条更中立的规则：本地路径或 URL 进入普通上传 API 时，Runner 自动写入这次外部文件读取及其内容身份。
 
 ## 身份与泄漏的诚实边界
 
@@ -47,10 +47,10 @@ PLAN-7 采用一条更中立的规则：本地路径或 URL 进入普通上传 A
 1. 首次执行真实运行并产生 transfer manifest；
 2. 后续携带在派发前重算上一份 manifest 的文件身份；
 3. Eval 源码闭包变化时不信任旧 manifest，直接重跑；
-4. materializer 记录 Agent 可见的 build/mount closure；
-5. 判定封口前，把本次 `send` 窗口外上传的本地 source 与该 closure 比对，命中则结果无效。
+4. materializer 写入 Agent 可见的 build/mount closure；
+5. 判定封口前，把本次 `send` 区间外上传的本地 source 与该 closure 比对，命中则结果无效。
 
-首次执行的事后比对保证判定不会采信泄题环境，但不能倒流阻止已经发生的暴露。
+首次执行的事后比对保证判定不会采信把测试材料泄露给 Agent 的 Sandbox，但不能倒流阻止已经发生的暴露。
 需要保密而不仅是保证评测有效性时，测试材料必须物理放在 build context 外，或由 materializer 在启动前提供 filtered context。
 
 ## 模块求值保持纯声明
@@ -67,7 +67,7 @@ PLAN-7 不新增 Terminal-Bench Eval 工厂。
 
 1. 保持 Environment 与三层 setup owner。
 2. 删除 `loadCriteria`、`loadPrivate`、`fixture.files`、`criteria`、`privateFiles`、`verifier` 与 `afterAgent` 候选面。
-3. 普通 `uploadFile` / `uploadDirectory` 接受 Eval 模块相对 `URL`，并记录 source tree、内容摘要、调用区间与 Sandbox 目标。
+3. 普通 `uploadFile` / `uploadDirectory` 接受 Eval 模块相对 `URL`，并把 source tree、内容摘要、调用区间与 Sandbox 目标写进 transfer manifest。
 4. carry planner 读取上次 transfer manifest；源码或依赖变化时重跑。
-5. materializer 记录 Agent 可见 closure，判定封口前执行动态泄漏比对。
-6. agent diff 继续只认 `send` 窗口；窗口外上传与跑测不需要 `diff.ignore`。
+5. materializer 写入 Agent 可见 closure，判定封口前执行动态泄漏比对。
+6. agent diff 继续只认 `send` 区间；区间外上传与跑测不需要 `diff.ignore`。

@@ -55,7 +55,7 @@ reportBehavior(retryAbsorbsOneFailedAttempt, async () => {
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | JSON 只按 parse 与声明字段比较；耗时、缩进和字段顺序不参与。退出码只与 eval 折叠结果关联 |
 | 不能改断言放行 | parse 失败不能改成期望值；全绿结果的 exit 0 是跨层不变量，不能把 `expect: 0` 改成 `nonzero` |

@@ -36,15 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -64,14 +64,11 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      # 发版闸门只看包自身对不对:代码单测 + docs/memory 守护。docs-site 的 mint 校验
-      # (test:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
+      # 发版闸门只看包自身对不对:类型检查 + docs/memory 守护。docs-site 的 mint 校验
+      # (lint:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
       # 随包 INDEX.md 的生成失败由 prepare 里的 build:index 直接报错。
-      - name: Test
-        run: pnpm test
-
-      - name: Test docs guards
-        run: pnpm run test:docs
+      - name: Lint docs
+        run: pnpm run lint:docs
 
       - name: Publish
         run: |

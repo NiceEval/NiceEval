@@ -6,9 +6,9 @@
 
 ---
 
-## 结论
+## 方案摘要
 
-每条 Attempt 先选择唯一 Environment，再由当前 Provider 把它解析成一个完整 Sandbox Case。
+每条 Attempt 先选择唯一 Environment，再由当前 Provider 把它规划成一个完整 Sandbox 实例。
 Case 启动后，Experiment、Eval 与 Agent 按固定顺序准备同一个主 Sandbox。
 
 ```text
@@ -26,10 +26,10 @@ Environment 决定启动前的拓扑与起点；三个 setup owner 只能在启�
 
 ## 对“只有一个 template”的修正
 
-统一不变量不是“只有一个 template”，而是“只选择一个 Environment，并解析一个 Sandbox Case”。
-image、E2B template 与 snapshot 是单实例 Provider 的起点产物；Compose Case 还包含 service、网络、volume、ready 与整组清理。
+统一不变量不是“只有一个 template”，而是“只选择一个 Environment，并规划一个 Sandbox 实例”。
+image、E2B template 与 snapshot 是单实例 Provider 的构建输出；Compose Case 还包含 service、网络、volume、ready 与整组销毁。
 
-因此不能把 Compose 压成 template，也不能让普通 setup 新增 sidecar 或重写资源组拓扑。
+因此不能把 Compose 压成 template，也不能让普通 setup 新增 sidecar 或改写 service、网络与 volume 的拓扑。
 Experiment 确实需要改变拓扑时，应提供该 profile 的完整预制 Case，而不是在运行中的主 Sandbox 上伪装合并。
 
 ## 起点与 owner 正交
@@ -42,8 +42,8 @@ Eval 可以同时声明 Compose Environment 与 Eval setup；Experiment 也可�
 | Owner | 可以声明什么 | 不可以声明什么 |
 |---|---|---|
 | Eval | 可选 Environment、Eval setup、Fixture 与测试 | Provider、第二个起点 |
-| Experiment | SandboxConfig、sandbox setup / teardown | 覆盖已有 Eval Environment 的普通默认起点 |
-| Agent | Agent Ensure、鉴权、配置与 turn | Environment 或 Sandbox Case |
+| Experiment | SandboxConfig、sandbox setup / teardown | 替换已有 Eval Environment 的普通默认起点 |
+| Agent | Agent Ensure、鉴权、配置与 turn | Environment 或 Sandbox 实例 |
 
 ## 作者面
 

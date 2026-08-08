@@ -1,11 +1,11 @@
 # Agent Ensure —— 探测、缺失才 install、复检
 
-「环境里应当有哪个 Agent」与「怎么把它装进环境」是两件事。
+「Sandbox 里应当有哪个 Agent」与「怎么把它装进 Sandbox」是两件事。
 前者是 Adapter 的 ensure 声明(`AgentEnsure`:目标 identity 加只读 探测);后者是按 identity 配对的官方 Agent 安装层(`AgentInstaller`)。
 
 Runner 在每条 Attempt 的 `agent.ensure` 相位执行 **ensure 循环**:探测 命中就直接使用,未命中时由配对安装层执行锁定版本的安装,随后复检同一个 探测。
 `agent.ensure` 排在两方作者 layer 的 prepare command 之后、workspace baseline 之前;Agent runtime setup 仍记 `agent.setup`。
-官方 template、自建 template、任务镜像与空白环境都走这条循环,差别只是第一次 探测 是否命中——预装 Agent 是 探测 命中的优化,不是任意任务环境可运行的前提。
+官方 template、自建 template、任务镜像与空白 Sandbox 都走这条循环,差别只是第一次 探测 是否命中——预装 Agent 是 探测 命中的优化,不是任意任务 Sandbox 可运行的前提。
 
 ```text
 sandbox case 构建所需产物并启动实例 → 主 Sandbox
@@ -45,7 +45,7 @@ interface SandboxAgentDef {
 ```
 
 - **探测 用普通 `runCommand` 语义执行,零副作用。**
-  `command -v` 只能证明「有一个同名命令」;探测 至少覆盖可执行文件、精确版本与 Adapter 依赖的运行条件。
+  `command -v` 只能证明「有一个同名命令」;探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件。
 - **identity 是纯数据。**
   Agent 名、精确版本与 revision 连同精确匹配的 installer identity/revision/installMode 按声明顺序进入
   configHash 与 `run.json`;它同时是配对安装层的选择键。installer 分发内容变化必须显式提升 revision。
@@ -125,7 +125,7 @@ interface StagedAgentInstallContext extends AgentInstallContext {
 凭据与鉴权始终归 Adapter 的 runtime `setup`,不进安装层。
 `install` 全部经主 Sandbox 的命令与文件 API 执行;安装只修改主 Sandbox,外层 DinD VM 与 sidecar 不安装 Agent、不向 Agent 暴露文件 API。
 
-官方内置 adapter 出厂自带配对安装层:同一个包发布,identity 里的版本常量同源,与预制环境「命中预装与回退安装装同一版」是同一条规则。
+官方内置 adapter 出厂自带配对安装层:同一个包发布,identity 里的版本常量同源,与 Prebuilt environment「命中预装与回退安装装同一版」是同一条规则。
 identity 对不上时没有配对安装层,探测 未命中的失败大声报出,不静默换一版安装。
 
 ## agent.ensure 相位:Runner 组装的循环
@@ -134,18 +134,18 @@ Adapter 声明 ensure,Runner 由 ensure 声明与配对安装层组装 Agent lay
 Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能带 template;排序与 template 禁令见 [Sandbox · Agent layer](../../sandbox/layers.md#agent-layer)。
 作者面零变化:安装随 experiment 选择的 agent 自动接线,Eval / Experiment 作者不 import 任何安装对象。
 
-`progress` 是 Adapter 面的 Human-only 短期文案，Runner 只在字段存在时转发，不能从 identity、安装模式或内部循环猜一句通用话。Codex 因而可以说清正在检查哪个版本、安装哪份官方发行物；第三方 Adapter 未声明时不显示 detail。它不进 identity、JSON 或结果记录。
+`progress` 是 Adapter 面的 Human-only 短期文案，Runner 只在字段存在时转发，不能从 identity、安装模式或内部循环猜一句通用话。Codex 因而可以说清正在检查哪个版本、安装哪份官方发行物；第三方 Adapter 未声明时不显示 detail。它不进 identity、JSON 或落盘结果。
 
 每条 `AgentEnsure` 按声明顺序走同一条循环:
 
-1. 探测 用 `runCommand` 执行；存在 `progress.checking` 时先投影到 Human active 行。退出码零命中，非零是正常未命中，记录命中的安装事实；命中时投影可选的 `progress.ready`。
+1. 探测 用 `runCommand` 执行；存在 `progress.checking` 时先投影到 Human active 行。退出码零命中，非零是正常未命中，记下命中的安装事实；命中时投影可选的 `progress.ready`。
 2. 未命中时按 identity 精确匹配 `AgentInstaller`。存在 `progress.installing` 时，先投影到 Human active 行。
    - `staged` 执行宿主侧 `prepareArtifact()` 和主 Sandbox `install()`；`sandbox-network` 直接 `install()`；`verify-only` 不安装并立即报缺失。
    - 安装后复检同一个 探测。复检成功时，投影可选的 `progress.ready`。
 3. install 失败或复检仍未命中:Attempt `errored`,归 `agent.ensure`,附 identity、期望版本与下一步,不记成 Agent 做题 `failed`。
-4. 探测 未命中且没有 identity 匹配的安装层:同样 `errored`,错误信息给两条出路——换预装该版本的预制环境让 探测 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
+4. 探测 未命中且没有 identity 匹配的安装层:同样 `errored`,错误信息给两条出路——换预装该版本的 Prebuilt environment 让 探测 命中,或作者在 Experiment layer 用 [`installTool`](../../sandbox/prepare-commands.md) 自装。
 
-离线环境与内部镜像源走同样的两条出路:预装进预制环境,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
+离线网络与内部镜像源走同样的两条出路:预装进 Prebuilt environment,或用 `installTool` 按内部渠道安装;ensure 循环只认 探测 的运行事实,不问安装出自哪条渠道。
 
 ### 为什么拆成声明与安装两半
 
@@ -167,13 +167,13 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 ## Ensure 契约
 
 - **探测 检查精确身份。**
-  探测 至少覆盖可执行文件、精确版本与 Adapter 依赖的运行条件;命中还是本次安装写入 attempt 的安装事实。
+  探测 至少检查可执行文件、精确版本与 Adapter 依赖的运行条件;命中还是本次安装写入 attempt 的安装事实。
 - **不按 template 名短路。**
-  官方 template 也必须 探测——template 名、tag 或来源不是运行事实,被错误覆盖的官方 template 不能因为名字受信绕过验证。
+  官方 template 也必须 探测——template 名、tag 或出处不是运行事实,被错误替换的官方 template 不能因为名字受信绕过验证。
 - **安装必须收敛。**
   安装锁定精确 Agent 版本;安装成功后重跑同一个 探测。
-  install 退出 0、复检仍未命中时按环境错误处理,不把坏环境交给 Agent。
-- **失败归环境准备。**
+  install 退出 0、复检仍未命中时按 Sandbox 准备失败处理,不把坏 Sandbox 交给 Agent。
+- **失败归准备阶段。**
   探测 配对、install 与复检都属于 `agent.ensure`;失败得到 `errored`,附缺失命令、期望版本与下一步,不记成 Agent 做题 `failed`。
 - **不静默降级。**
   安装缺少 root、可写目录或前置运行时时点名缺项;内置安装层不猜一个近似命令继续跑,也不在安装模式之间静默切换。
@@ -187,7 +187,7 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 |---|---|---|
 | `staged` | 内置默认路径:staged payload 在题面网络之外准备,经文件 API 送入安装;题面网络不可用也能装 | 内置安装层的默认值 |
 | `sandbox-network` | 安装层显式声明用沙箱内网络与包管理器安装;网络可用性成为该安装层的支持面 | 自定义安装层 |
-| `verify-only` | 只接受预装且 探测 命中的环境;探测 未命中立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计环境的用户 |
+| `verify-only` | 只接受预装且 探测 命中的 Sandbox;探测 未命中立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计用途的用户 |
 
 失败后不允许在三种模式之间静默猜测或降级;换模式是配置变更,不是运行时回退。
 
@@ -198,12 +198,12 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 - 目标 platform / libc 来自**每个 Eval pair 的 ProviderPlan**，不是宿主平台，也不是创建后才临时决定:
   同一个 Experiment 可以选择目标平台不同的 Eval，staged payload 因此按计划目标分桶。
 - 主 Sandbox 创建后仍执行 `uname -s` / `uname -m` / `ldd`，但它只验证实际平台与计划目标完全一致；
-  不一致立即以环境错误终止，绝不拿实际结果改写计划或换另一份 staged payload。
+  不一致立即以 Sandbox 准备失败终止，绝不拿实际结果改写计划或换另一份 staged payload。
 - prepare key 由 ensure identity、installer revision 与计划目标 platform / libc 组成。
   Run 级只取得一次安装文件，多个同目标 attempt 通过 single-flight 共享。
 - 校验 digest 后进入本地 / 远端共享 cache。实际 artifact digest 与实际平台只作为 runtime provenance/facts 落盘，
   不进入 configHash 或 fingerprint；可比性由 installer 静态 revision 与 ProviderPlan target 分别承担。
-- 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity)),不占 attempt 并发位。
+- 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md) 的两层时间模型一节),不占 attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。
   任务镜像由题目决定,不能假设它带 Node / Python 工具链——内置 Node CLI Agent 因此优先取该平台的
   自带运行时原生包(如 `@openai/codex@<ver>-linux-arm64` 里的 musl 静态二进制),安装退化成
@@ -213,7 +213,7 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 
 ### 故意断网的题面
 
-坏网络本身可以是题目:`dns: 192.0.2.1`、错误 `extra_hosts`、被替换的 `curl` / `apt` 都是待修故障,不是环境缺陷。
+坏网络本身可以是题目:`dns: 192.0.2.1`、错误 `extra_hosts`、被替换的 `curl` / `apt` 都是待修故障,不是 Sandbox 缺陷。
 这类题面的 Ensure 义务:
 
 - provider 与安装层不改坏 DNS、不恢复被替换的系统工具;Agent 安装复检通过后,题面网络仍保持故障。
@@ -222,7 +222,7 @@ Node、npm prefix、包管理器与安装目录是具体安装层的前置要求
 
 ## 身份、指纹与可比性
 
-attempt 环境身份由两根正交的轴组成:
+attempt 的 Sandbox 身份由两根正交的轴组成:
 
 ```text
 attempt 环境身份
@@ -232,8 +232,8 @@ attempt 环境身份
 ```
 
 Agent ensure 静态身份进入 configHash；pair-owned ProviderPlan 进入逐 Eval fingerprint 与 Sandbox 复用池键，完整输入清单见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
-改任务 Dockerfile 只重建环境、不动 Agent 配置;改 Agent 版本只改变 ensure identity 与 staged payload activity,不重建任务 BuildKey。
-两种变化都触发重跑,但不强制发布二者笛卡尔积的预制产物——同一份任务构建产物可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 探测 或安装。
+改任务 Dockerfile 只重建 Sandbox、不动 Agent 配置;改 Agent 版本只改变 ensure identity 与 staged payload activity,不重建任务 BuildKey。
+两种变化都触发重跑,但不强制发布二者笛卡尔积的预构建输出——同一份任务构建输出可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行 探测 或安装。
 
 探测 命中还是本次安装作为运行事实落盘(attempt `facts` 的 `agent.ensure` 键),用于核对声明身份是否兑现;运行事实不能反过来替代规划期指纹。
 没有精确版本的 `latest` 安装不参与可携带结果:内置安装层不提供这条模式,ensure 声明无法给出稳定 identity 时启动期报错。
@@ -242,24 +242,24 @@ Agent ensure 静态身份进入 configHash；pair-owned ProviderPlan 进入逐 E
 
 构建脚本与运行时安装可以使用各自原生工具,共享的是同一个 `identity` 与同一个 `probe`:
 
-- 官方产物可以继续由 provider 原生构建脚本预装 Agent,发布前执行同一个 探测。
+- 官方构建输出可以继续由 provider 原生构建脚本预装 Agent,发布前执行同一个 探测。
 - 项目自建 template 只装任务依赖也合法;运行时的 ensure 循环负责补 Agent。
-- provider 可以维护带 Agent identity 的派生 cache 作为 探测 命中优化;未命中时回到任务环境产物后装 Agent。
+- provider 可以维护带 Agent identity 的派生 cache 作为 探测 命中优化;未命中时回到任务构建输出后装 Agent。
 - 构建命令与运行时命令不强求逐字符同源;漂移由发布门与运行时复检发现。
 
 ## Sandbox 复用与复用池隔离
 
 ensure 循环每条 Attempt 都执行且必须可收敛:复用 Sandbox 第一次安装后,后续 attempt 的 探测 快速命中。
-安装产物放在 workdir 外的 Agent 自有目录,题间 reset 不删除;Agent 配置与任务 workspace 仍逐 attempt 重建。
+安装文件放在 workdir 外的 Agent 自有目录,题间 reset 不删除;Agent 配置与任务 workspace 仍逐 attempt 重建。
 
 复用池键固定为 `(CaseKey, templateOwner, author layer identities, Agent ensure identity)`,见[三方准备时序](../../sandbox/lifecycle.md#身份与复用池)。
-键不同的窗口不共享 Sandbox,也不共享安装产物:一条重环境 eval 装过的 Agent 不会让另一条错误继承它;安装事实与指纹不串组。
+键不同的复用池不共享 Sandbox,也不共享安装文件:一条重 Sandbox eval 装过的 Agent 不会让另一条错误继承它;安装事实与指纹不串组。
 
 ## 相关阅读
 
 - [Agent 数据契约](agent-contract.md) —— `send`、AgentContext 与配置归属不变量。
 - [Sandbox Agent](../library/sandbox-agent.md) —— `setup` / `send` / `teardown` 的编写指南。
 - [内置 prepare 命令](../../sandbox/prepare-commands.md) —— 探测 / install / ensure 词族与 `installTool`。
-- [Sandbox Case](../../sandbox/case.md) —— 主 Sandbox 从哪里来、BuildKey / CaseKey 是什么。
-- [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity) —— `agent.artifact.prepare` 与错误归属的落盘形状。
+- [Sandbox 实例](../../sandbox/case.md) —— 主 Sandbox 从哪里来、BuildKey / CaseKey 是什么。
+- [Record · 两层时间模型](../../record/architecture.md) —— `agent.artifact.prepare` 与错误归属的落盘形状。
 - [Experiments · 缓存与携带](../../experiments/cache.md) —— installer 静态 identity/revision 与 ProviderPlan target 怎样进入两层身份，runtime digest 为什么不进入。

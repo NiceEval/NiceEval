@@ -2,7 +2,7 @@
 
 ## 声明一条 Agent Judge 断言
 
-`t.judge.agent()` 接收一份带评分锚点的 rubric，并返回与其它 Judge 相同的链式 Assertion。
+`t.judge.agent()` 接收一份带评分参照点的 rubric，并返回与其它 Judge 相同的链式 Assertion。
 
 ```ts
 interface AgentJudgeRubric {
@@ -40,7 +40,7 @@ t.judge.agent(
 ).atLeast(0.8);
 ```
 
-没有阈值时默认是只记录分数的 soft Assertion。
+没有阈值时默认是只登记分数的 soft Assertion。
 `.atLeast(x)`、`.gate(x?)`、`.soft()`、`.optional()`、`.points(n)` 与 `.stopOnFailure()` 完全复用既有 Assertion 语义。
 
 ## 默认材料与工作区
@@ -58,7 +58,7 @@ t.judge.agent(
 
 `{ workspace: "snapshot" }` 请求最终 workdir 的隔离副本。
 它只在被测 Attempt 与 Agent Judge 都是 Sandbox 形态时合法；其它组合在 Assertion 登记时抛配置错误，不把作者错误降级成 unavailable。
-省略 `workspace` 时，Sandbox Agent Judge 仍有自己的工具环境，但其中不含被测工作区。
+省略 `workspace` 时，Sandbox Agent Judge 仍有自己的工具 Sandbox，但其中不含被测工作区。
 
 ## 裁判执行配置
 
@@ -119,7 +119,7 @@ export default defineExperiment({
 ```
 
 被测 Agent 与 Agent Judge 即使使用同一个 Adapter factory，也是两个独立实例。
-作者必须为裁判显式声明凭据来源；NiceEval 不借用被测 Agent 的 key。
+作者必须为裁判显式声明凭据出处；NiceEval 不借用被测 Agent 的 key。
 
 ## 判分返回协议
 
@@ -141,7 +141,7 @@ interface AgentJudgeEvidence {
 ```
 
 `score` 必须位于 `[0, 1]`。
-`rationale` 解释分数怎样落在 rubric 锚点之间；`evidence` 指向材料片段、仓库路径与行号、命令及其结果，不能只重复结论。
+`rationale` 解释分数怎样落在 rubric 参照点之间；`evidence` 指向材料片段、仓库路径与行号、命令及其结果，不能只重复判断。
 
 Runner 优先读取 `Turn.data`。
 `Turn.data` 省略时，最终 assistant message 必须只包含一个 JSON object，可以有一层 Markdown JSON code fence。
@@ -162,4 +162,4 @@ Runner 不从普通叙事中搜索或猜测对象边界。
 | `agent-judge-timeout` | 整条裁判生命周期耗尽 `judge.agent.timeoutMs` |
 
 以上原因都不产生 0 分。
-它们进入既有 `unavailable` 记录；非 `.optional()` 使 Attempt `errored`，`.optional()` 只允许该证据缺席。
+它们进入既有 `unavailable` 数据；非 `.optional()` 使 Attempt `errored`，`.optional()` 只允许该证据缺席。

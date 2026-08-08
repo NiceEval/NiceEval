@@ -67,7 +67,7 @@ const byAgent = sources.measure.rows({
 </Table>
 ```
 
-写了 `<Column>` 就覆盖数据源的默认列，不换组件。
+写了 `<Column>` 就替换数据源的默认列，不换组件。
 一组列可以直接 `map` 出来，因为结构节点位置按声明顺序展平数组与 Fragment：
 
 ```tsx
@@ -89,7 +89,7 @@ const byMemory = sources.measure.rows({
 <Table source={byMemory} filter />
 ```
 
-维度数组解析为复合维度，成员显示键以 ` · ` 连接。
+维度数组展开为复合维度，成员显示键以 ` · ` 连接。
 它在收维度的每个位置都合法，所以同一个 `["agent", label("memory")]` 既能投影成表格的行，也能投影成图表的轴。
 
 ### 四级：自定义读数
@@ -113,7 +113,7 @@ export const changedLines = defineMeasure({
 
 这段代码里作者写的是**一次 attempt 的值**，聚合方向是两个字符串。
 两级聚合的层数不由作者的代码结构决定，所以少写一层拿不到错数字。
-`null` 是「测不了」，`0` 是「测得为零」，两者在聚合与覆盖率上的待遇不同。
+`null` 是「测不了」，`0` 是「测得为零」，两者在聚合与涵盖率上的待遇不同。
 
 ### 五级：自己写一个数据源
 
@@ -174,7 +174,7 @@ export const budgetRows = defineSource<Sample, TableContent<BudgetRow>>({
 });
 ```
 
-默认投影直接使用 `TableContent.columns`；写 `<Column>` 时只覆盖列选择、顺序与呈现，不改变 rows：
+默认投影直接使用 `TableContent.columns`；写 `<Column>` 时只涵盖列选择、顺序与呈现，不改变 rows：
 
 ```tsx
 <Table source={budgetRows}>
@@ -189,7 +189,7 @@ export const budgetRows = defineSource<Sample, TableContent<BudgetRow>>({
 ```
 
 `Row.key` 是稳定的行身份，`Column.dataKey` 对应 `Row.cells` 的键。
-`columns()` 收已解析的行，所以「列随数据变」的判断也住在数据源里。
+`columns()` 收已读取的行，所以「列随数据变」的判断也住在数据源里。
 实验对比表的主读数列按题型构成在通过率与总分之间切换，就是这么做的。
 
 这条边界把职责分开：source 决定 rows、Cell 语义与默认 columns；`Table` 只投影 Content，不重新分组、聚合或创造 row。
@@ -240,7 +240,7 @@ const [snapshot, table] = await Promise.all([
 return <><Stat label="Attempts" value={snapshot.scope.attempts} /><Table data={table} filter /></>;
 ```
 
-浏览器包因此只需要 `niceeval/report/react` 的纯渲染面，不含记录根与磁盘读取。
+浏览器包因此只需要 `niceeval/report/react` 的纯渲染面，不含结果根与磁盘读取。
 
 ---
 
@@ -248,7 +248,7 @@ return <><Stat label="Attempts" value={snapshot.scope.attempts} /><Table data={t
 
 原语集合封闭，加一个能力时先判断它属于哪层：
 
-1. 要读磁盘，或要认识 `AttemptHandle`、读数、时效、覆盖吗 → 数据源。
+1. 要读磁盘，或要认识 `AttemptHandle`、读数、时效、涵盖范围吗 → 数据源。
 2. 要看这一页**其它**组件的数据吗 → 管线。
 3. 两个都不要 → 原语，而且大概率是已有原语的一个列或单元格类型。
 
@@ -264,7 +264,7 @@ return <><Stat label="Attempts" value={snapshot.scope.attempts} /><Table data={t
 ## 优势
 
 - **需求 1 到 4 由数据形状强制。**
-  两级聚合写在 `Measure.perEval` / `acrossEvals`，覆盖率与证据写在 `MeasureCell` 的必填字段。
+  两级聚合写在 `Measure.perEval` / `acrossEvals`，涵盖率与证据写在 `MeasureCell` 的必填字段。
   作者少写什么都不会得到错数字。
 - **需求 5 到 7 有承重结构。**
   「哪些 attempt 落进这一格」是数据源的领域判断，跟随格子而不是有效样本。
@@ -313,11 +313,11 @@ Sample ──▶ 数据源 compute() ──▶ 可序列化 Content ──┬─
 1. **加一列自定义读数**：`defineMeasure` 加进 `measures` 数组，不改库。
 2. **两处同值**：摘要与散点消费同一个 `Measure`，删掉报告缓存后从原始结果重算得到同一个数。
 3. **换分组维度**：`dimensions: ["agent"]` 改成 `dimensions: [["agent", label("memory")]]`，组件不变。
-4. **证据可达**：任一读数格能列出它覆盖的全部 attempt，包括读数为 `null` 的那几条。
+4. **证据可达**：任一读数格能列出它涵盖的全部 attempt，包括读数为 `null` 的那几条。
 5. **浏览器包干净**：自有 React 页面只 import `niceeval/report/react` 即可渲染。
 
 **反指标**：数据源把 `MeasureCell` 压成字符串放入文本格。
-表面看数字一样，实际丢掉了有效样本数、覆盖总数与证据引用，读者看到一个数却点不开它从哪几条 attempt 来。
+表面看数字一样，实际丢掉了有效样本数、涵盖总数与证据引用，读者看到一个数却点不开它从哪几条 attempt 来。
 
 ---
 

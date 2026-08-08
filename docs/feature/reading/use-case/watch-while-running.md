@@ -16,10 +16,10 @@ niceeval view --exp compare/codex
 每写完一个 attempt,页面上就多一行。
 不需要刷新,重建完成后页面自己重载,并且停在你正在看的那一页或那个 attempt 上。
 
-## 看到的一定是完整记录
+## 看到的一定是完整条目
 
 盯着一个正在写的目录看,直觉上会担心读到半份数据。
-这件事由记录格式担保,不靠 view 自己防抖:
+这件事由 Record 格式担保,不靠 view 自己防抖:
 
 - `result.json` 一次原子写成,所以站点要么看不见这个 attempt,要么看见它的完整判定。
 - Run 还没补 `completedAt` 是这个场景的常态。
@@ -44,11 +44,11 @@ niceeval view --report reports/site.tsx
 ## 什么时候改用 `show`
 
 `view` 是给人盯着看的。
-要一次性的文本结论 —— CI 判红、AI 自主迭代读输出、贴进 issue ——用 [`show`](../../reports/show.md):它渲染同一份报告定义的 text 面,跑完就退出,没有 server。
+要一次性的文本判定 —— CI 判红、AI 自主迭代读输出、贴进 issue ——用 [`show`](../../reports/show.md):它渲染同一份报告定义的 text 面,跑完就退出,没有 server。
 
 ## 看完要发出去
 
-同一份收窄换成 `--out` 就是发布产物,逐字节一致:
+同一份收窄换成 `--out` 就是发布文件,逐字节一致:
 
 ```sh
 niceeval view --exp compare/codex --out site

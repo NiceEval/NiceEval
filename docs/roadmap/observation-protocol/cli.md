@@ -67,7 +67,7 @@ type LiveRecord =
 `snapshot` 与 `heartbeat` 是 live transport record，不进入 Record 权威事实。
 
 cursor 是 Invocation live channel 发出的不透明续读位置。
-客户端只能原样回传，不能解析 cursor 来猜 stream 或 sequence。
+客户端只能原样回传，不能读取 cursor 来猜 stream 或 sequence。
 
 ## Live snapshot
 
@@ -125,10 +125,10 @@ snapshot 是 live transport 的有界状态副本，不是 Record 文档或 Proj
 随后只发送 cursor 之后的 record，确保 attach 边界没有漏项。
 
 live channel 可以只保留有界历史。
-客户端给出的 cursor 已落出保留窗口时，服务端发送 `reason: "resync"` 的新 snapshot 和 cursor，再从新位置继续；不得用现有状态伪造缺失的历史事件。
+客户端给出的 cursor 已落出保留时段时，服务端发送 `reason: "resync"` 的新 snapshot 和 cursor，再从新位置继续；不得用现有状态伪造缺失的历史事件。
 
 断线重连以最后确认的 cursor 继续。
-重复收到相同 Observation ID 或 Claim ID 时按幂等记录处理；相同 ID 内容不同是协议错误。
+重复收到相同 Observation ID 或 Claim ID 时按幂等登记处理；相同 ID 内容不同是协议错误。
 
 ## 公开的 live 事件
 

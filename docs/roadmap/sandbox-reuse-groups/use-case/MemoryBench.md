@@ -32,14 +32,14 @@ export default defineSandboxGroup({
 });
 ```
 
-八道 Eval 的 `evolutionSandbox()` 只调用 `sandboxLayer().prepare(...)`，所以产物类型是 `prepare-only`，可以加入组。
+八道 Eval 的 `evolutionSandbox()` 只调用 `sandboxLayer().prepare(...)`，所以输出类型是 `prepare-only`，可以加入组。
 若其中一道改用 Dockerfile template 或增加 `setup()`，这份组文件立即出现 TypeScript 错误。
 
 组定义与题目共址，并直接要求所有 Agent/model Experiment 对这八道题使用复用组。
 每个 Experiment 各自创建组实例；baseline 与 mempal 不共享同一台 Sandbox，也不共享运行状态。
 
 baseline 的 E2B template 与 mempal 的 template、checkpoint lifecycle 都继续由各自 Experiment 声明。
-组内每道 Eval 的 Rust 安装与仓库准备仍作为第二层 prepare 逐 Attempt 重放。
+组内每道 Eval 的 Rust 安装与仓库准备仍作为第二层 prepare 逐 Attempt 重新执行。
 
 baseline 没有 memory Agent、Skill 或外部状态，只是使用相同的物理复用边界。
 如果 baseline 的测量契约要求这八道题逐题 fresh，就不能把共同 Eval 定义成强制复用组；Experiment 不能关闭 Eval 侧要求。
@@ -55,5 +55,5 @@ baseline 没有 memory Agent、Skill 或外部状态，只是使用相同的物�
 远程记忆库或宿主 checkpoint 不由 Sandbox 组自动隔离。
 实验必须使用稳定且独立的 cohort，并在跨 Invocation 共享该 cohort 时声明 `sharedState.key`。
 
-Sequence 保证步骤全部真实执行，`stop-group` 保证实例失效后不拿空白环境接续。
+Sequence 保证步骤全部真实执行，`stop-group` 保证实例失效后不拿空白 Sandbox 接续。
 两者都不证明第三方记忆库已经恢复到干净起点。

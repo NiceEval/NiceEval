@@ -76,7 +76,7 @@ interface MetricValue {
 ```
 
 `value: null` 表示缺数据或不适用，不等于零。
-`rollup()` 产物固定 `basis: "eval"`：samples / total 数题级单元，`refs` 恒为 Attempt locator。
+`rollup()` 返回的 Calculation 固定 `basis: "eval"`：samples / total 数题级单元，`refs` 恒为 Attempt locator。
 renderer 根据 `value + format + locale` 格式化，计算函数不生成 display 字符串。
 
 ## 官方 Calculation
@@ -96,7 +96,7 @@ delta、stability、scoreboard 与 frontier 不因出现在内建报告里就成
 
 ## 题型构成与主读数
 
-一个范围的对比主读数由其中出现的题型决定，裁决见[计分粒度](../../assertions/library/score-points.md#横截面聚合同型实验各读各的)。
+一个范围的对比主读数由其中出现的题型决定，裁决见[计分粒度](../../assertions/library/score-points.md#横截面聚合两种题型各读各的)。
 通过制读通过率，计分制读总分。
 
 题型是定义期事实；同一 experiment 可以同时包含两种题型。
@@ -108,7 +108,7 @@ type EvaluationKindComposition = "pass" | "points" | "mixed";
 const composition = await evaluationKindComposition(sample);
 ```
 
-`evaluationKindComposition(sample)` 是公开函数；取自 Run 记录的定义期 `evaluationKind`。
+`evaluationKindComposition(sample)` 是公开函数；取自 Run 的 Record 中定义期字段 `evaluationKind`。
 
 **主读数映射是单点规则**，官方消费者都引用这一条，不各自另设判据：
 

@@ -37,7 +37,7 @@
 
 ### 4b：SQL 只查已算好的 Content
 
-把 SQL 限制成对数据源产物的二次投影，口径仍住在 `Measure` 里：
+把 SQL 限制成对数据源输出的二次投影，口径仍住在 `Measure` 里：
 
 ```tsx
 const byAgent = measureRows({ rows: "agent", measures: [passRate, costUSD] });
@@ -94,7 +94,7 @@ Sample ──┬── 数据源 compute() ────────▶ Content �
          └── sql() ── 全量加载表 ── 引擎 ──▶ 行集 ────┘
 ```
 
-两条竖线汇进同一批原语，但它们保证的东西不同：上面一条带着覆盖率与证据，下面一条带着作者写下的列。
+两条竖线汇进同一批原语，但它们保证的东西不同：上面一条带着涵盖率与证据，下面一条带着作者写下的列。
 
 ---
 

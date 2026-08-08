@@ -33,7 +33,7 @@ Runner 先 Ensure mempal Provision 和 Agent CLI,随后 Sandbox setup 从外部�
 Attempt 完成后,teardown 在销毁该 Running Environment 前回存状态。
 
 `maxConcurrency: 1` 让载入、Agent 执行和回存组成同一 Experiment 的临界区。
-没有这条限制时,两个全新 Sandbox 可能同时读到相同旧版本,随后互相覆盖回存结果。
+没有这条限制时,两个全新 Sandbox 可能同时读到相同旧版本,随后互相覆写回存结果。
 
 ## 与 Sandbox 复用的区别
 
@@ -41,4 +41,4 @@ Attempt 完成后,teardown 在销毁该 Running Environment 前回存状态。
 Provision 和 Agent Ensure 因此在每条 Attempt 都重新检查,只有预装命中或 Provider 的隔离实例克隆可以缩短准备时间。
 
 如果实验要观察同一份活状态在 Sandbox 内连续累积,使用[复用 Sandbox 中的状态](复用沙箱中的状态.md)。
-两条路径的状态边界、失败恢复和运行记录不同,不能用安装成本在它们之间做隐式切换。
+两条路径的状态边界、失败恢复和运行数据不同,不能用安装成本在它们之间做隐式切换。

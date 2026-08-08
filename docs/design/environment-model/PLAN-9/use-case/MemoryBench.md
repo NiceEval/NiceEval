@@ -3,7 +3,7 @@
 契约单源见 [Library · 没有 template 的 recipe](../library.md#没有-template-的-recipe)、[Architecture · Owner stack](../architecture.md#owner-stack)与 [Lifecycle · Experiment template 路径](../lifecycle.md#experiment-template-路径)。
 
 MemoryBench 的 Experiment 提供 E2B template，并由这份 template 选择 E2B Provider。
-Experiment 的 mempal 条件属于复用窗口，Eval 的 checkout 与项目依赖属于每条 Attempt；Experiment 是 templateOwner。
+Experiment 的 mempal 条件属于复用周期，Eval 的 checkout 与项目依赖属于每条 Attempt；Experiment 是 templateOwner。
 
 ```typescript
 export default defineExperiment({
@@ -28,7 +28,7 @@ export default defineEval({
 });
 ```
 
-解析后的 stack 是：
+归一后的 stack 是：
 
 ```text
 Experiment E2B template
@@ -46,9 +46,9 @@ Experiment E2B template
 ```
 
 Experiment 同时拥有 template 与 setup。
-template 预装 mempal 只让 `mempalSetup` command 中的版本检查提前返回，不删除这条 command。复用时 mempal setup/teardown 每窗口各一次，Eval checkout beforeEach 则按当前 Eval 每 Attempt 执行。
+template 预装 mempal 只让 `mempalSetup` command 中的版本检查提前返回，不删除这条 command。复用时 mempal setup/teardown 每复用周期各一次，Eval checkout beforeEach 则按当前 Eval 每 Attempt 执行。
 
-两方窗口 setup 完成后建立 reset anchor；当前 Attempt 的 checkout 完成后才建立 Agent diff baseline。因此 checkout 不计入 Agent 修改，但不同 Eval 的 checkout command 不需要进入 pool key。
+两方 Window scope setup 完成后建立 reset anchor；当前 Attempt 的 checkout 完成后才建立 Agent diff baseline。因此 checkout 不计入 Agent 修改，但不同 Eval 的 checkout command 不需要进入 pool key。
 
 若同一批中某条 Eval 自带 Compose recipe，这个 Experiment 与该 Eval 就同时显式声明了 template。
 Runner 在 discovery 后的全矩阵 link planning 中报告 `sandbox.template-conflict`，列出双方 factory 与声明位置，并让整个 Run 保持零 Sandbox 创建。作者必须拆分 Experiment 的 Eval selector，或移除一方 template；E2B template 不会静默变成 fallback。

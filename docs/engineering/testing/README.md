@@ -147,21 +147,21 @@ pnpm e2e --lane main --repo adapter/codex-cli
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
 `test.each` 展开的每个 case 都计入。不能把独立命题合并进一个大测试规避上限，也不为接近上限而补测。
 
-完整执行契约见 [本地与 CI](e2e/execution.md)。
+完整执行契约见 [本地与 CI](../../roadmap/testing/e2e/execution.md)。
 
 ## 文档地图
 
 - [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
-- [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
-- [测试组合与退役](portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
+- [官方 Testkit](../../roadmap/testing/testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
+- [测试组合与退役](../../roadmap/testing/portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
 - [Unit](unit/README.md) —— 确定性语义例外的存在资格和写法；
 - [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
-- [E2E 测试正文](e2e/authoring.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
-- [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
-- [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
+- [E2E 测试正文](e2e/README.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
+- [真实场景 Repo](../../roadmap/testing/e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
+- [本地与 CI](../../roadmap/testing/e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/record.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。

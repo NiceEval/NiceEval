@@ -7,14 +7,14 @@
 1. Eval、Experiment、Agent 与 SandboxSpec 分别拥有哪一段。
 2. template、Compose 与其它起点同时出现时,哪一份负责 build 和 start。
 3. Requirement 安装、状态 Hook、Fixture 与 AgentProvisioner 按什么顺序执行。
-4. `sandboxReuse` 打开后,哪些步骤每窗口一次,哪些步骤仍然每 Attempt 执行。
+4. `sandboxReuse` 打开后,哪些步骤每复用周期一次,哪些步骤仍然每 Attempt 执行。
 
 类型与错误语义仍以 [Library](library.md) 和 [Architecture](architecture.md) 为准。
 本篇保留单数 Requirement 槽位,也保留 PLAN-4 对 SandboxSpec 显式起点的原始解释。
 
 ## 四种 Base Case
 
-PLAN-4 最终只启动一个完整 Sandbox Case:
+PLAN-4 最终只启动一个完整 `Sandbox Case`:
 
 | 名称 | 来自哪里 | 什么时候选中 |
 |---|---|---|
@@ -81,22 +81,22 @@ Eval Requirement、Experiment Requirement、AgentProvisioner、SandboxSpec Hook�
 
 | 阶段 | Owner | fresh Attempt | reuse window |
 |---|---|---|---|
-| 解析双方 Base Case 与融合表 | Eval + Experiment | 每个 Eval 规划一次 | 每个 Eval 规划一次 |
-| build 或定位起点产物 | 选中的完整 Sandbox Case | Run 级按 BuildKey 协调 | Run 级共享;窗口只消费 locator |
-| start、services ready | 选中的完整 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
-| `sandbox.setup` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
+| 读取双方 Base Case 与融合表 | Eval + Experiment | 每个 Eval 规划一次 | 每个 Eval 规划一次 |
+| build 或定位起点输出 | 选中的完整 `Sandbox Case` | Run 级按 BuildKey 协调 | Run 级共享;复用周期只消费 locator |
+| start、services ready | 选中的完整 `Sandbox Case` | 每 Attempt 一次 | 每复用周期一次 |
+| `sandbox.setup` | SandboxSpec | 每 Attempt 一次 | 每复用周期一次 |
 | Eval 与 Experiment Requirement 检查和 Ensure | Eval + Experiment | 每 Attempt 一次 | 每 Attempt 一次 |
-| 建立或恢复 workdir baseline | Runner / workspace | 每 Attempt 建立一次 | 每窗口建立一次,后续 Attempt reset |
+| 建立或恢复 workdir baseline | Runner / workspace | 每 Attempt 建立一次 | 每复用周期建立一次,后续 Attempt reset |
 | Eval setup 与 Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
 | Agent CLI 检查与 Ensure | AgentProvisioner | 每 Attempt 一次 | 每 Attempt 一次 |
 | Experiment state load/save | Experiment 状态 | Library 没有公开可执行相位 | Library 没有公开可执行相位 |
 | Agent turn、隐藏 verifier 与断言求值 | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
 | Eval 与 Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
-| `sandbox.teardown` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
-| Case finalizer | 选中的完整 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
+| `sandbox.teardown` | SandboxSpec | 每 Attempt 一次 | 每复用周期一次 |
+| Case finalizer | 选中的完整 `Sandbox Case` | 每 Attempt 一次 | 每复用周期一次 |
 
 build 与 start 是两件事。
-相同 BuildKey 可以复用不可变产物,每个 fresh Attempt 仍创建独立运行实例。
+相同 BuildKey 可以复用不可变输出,每个 fresh Attempt 仍创建独立运行实例。
 
 Requirement install 不是 Base build。
 它发生在完整 Case ready 之后,并且只有初始检查未命中的 Requirement 才检查 prepare、上传与安装能力。
@@ -108,9 +108,9 @@ Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Require
 
 ```text
 声明与规划
-  -> 解析 Eval Base Case、Experiment Base Case 与 SandboxSpec 显式起点
+  -> 读取 Eval Base Case、Experiment Base Case 与 SandboxSpec 显式起点
   -> 按四种组合选择一个完整 Sandbox Case
-  -> build 或定位所选 Case 引用的全部产物
+  -> build 或定位所选 Case 引用的全部输出
   -> 启动完整 Sandbox Case
   -> 等待 services 与 resources ready
   -> 执行 sandbox.setup
@@ -129,10 +129,10 @@ Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Require
 ```
 
 真实可执行的 `sandbox.setup` 位于 Requirement 与 AgentProvisioner 之前。
-它可以承载早期环境预置,却不能保证使用 Agent CLI 恢复外部状态。
+它可以承载早期 Sandbox 预置,却不能保证使用 Agent CLI 恢复外部状态。
 
 本方案描述过一条理想路径:`AgentProvisioner Ensure -> state load -> 最终检查`。
-但 Library 没有 state identity、load、save 或 activity 的公开形状,所以这条路径不能由公开 API 调用,C6 与 C7 只能部分覆盖。
+但 Library 没有 state identity、load、save 或 activity 的公开形状,所以这条路径不能由公开 API 调用,C6 与 C7 只能部分涵盖。
 
 单数 Requirement 不会在这条时间线上自动拆开。
 一个复合 Experiment Requirement 内部的成员身份、依赖、资源等待和错误仍然合并在同一个活动中。
@@ -140,7 +140,7 @@ Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Require
 ## `sandboxReuse` 生命周期
 
 ```text
-复用窗口打开
+复用周期打开
   -> 使用 Run 级 locator 启动一个选中的完整 Sandbox Case
   -> 执行一次 sandbox.setup
   -> 第一条 Attempt:
@@ -153,8 +153,8 @@ Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Require
        -> 执行 Eval 与 Agent teardown
 
 后续 Attempt
-  -> 检查复用窗口寿命
-  -> 把 workdir 重置到窗口 baseline
+  -> 检查复用周期寿命
+  -> 把 workdir 重置到复用周期 baseline
   -> 再次检查并补齐 Eval Requirement 与 Experiment Requirement
   -> 重建 Eval setup 与 Fixture
   -> AgentProvisioner 再次检查并补齐 Agent CLI
@@ -163,41 +163,41 @@ Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Require
   -> 挂载隐藏 verifier、判分,再由 Eval 作者清理
   -> 执行 Eval 与 Agent teardown
 
-复用窗口关闭
+复用周期关闭
   -> 执行一次 sandbox.teardown
   -> 执行 Case finalizer 并停止 Sandbox
 ```
 
-一个窗口只承接相同 Experiment、相同 environment profile 与相同所选 CaseKey。
+一个复用周期只承接相同 Experiment、相同 environment profile 与相同所选 CaseKey。
 不同 Eval Base Case、Experiment Base Case 或融合 Case 不共享运行实例。
 
-复用的是 Case 实例与 workdir 外的活状态,不是上一条 Attempt 的验证结论。
+复用的是 Case 实例与 workdir 外的活状态,不是上一条 Attempt 的验证判断。
 Eval、Experiment 与 Agent 三方条件在每条 Attempt 中都重新检查;前一次安装通常只让下一次检查命中。
 
-如果作者把状态读写放进 SandboxSpec Hook,它只能在窗口早期载入、关闭时回存,并且要位于 workdir 外才能跨 reset 存活。
+如果作者把状态读写放进 SandboxSpec Hook,它只能在复用周期早期载入、关闭时回存,并且要位于 workdir 外才能跨 reset 存活。
 这仍然没有独立 state identity、activity、失败或轮换语义。
 
 隐藏 verifier 仍位于 Eval `test(t)` 内,cleanup 由作者自行用 `try/finally` 实现。
 本候选没有受管 cleanup 注册或独立活动。
-Runner 不能保证 workdir 外路径、mount 与进程已经清除,也不能因 cleanup 失败自动退休窗口。
+Runner 不能保证 workdir 外路径、mount 与进程已经清除,也不能因 cleanup 失败自动退休复用周期。
 
 ## C1-C10 的 Base Case 与 template 选择
 
-| Case | 覆盖结果 | PLAN-4 实际选中的环境或 template | 启动后发生什么 |
+| Case | 涵盖结果 | PLAN-4 实际选中的 Sandbox 或 template | 启动后发生什么 |
 |---|---|---|---|
-| C1 评估环境较重 | 覆盖 | 选择当前 Eval contribution 自带的 Dockerfile 或 Compose Base Case | 检查 Eval Requirement,再补齐 Experiment Requirement 与 Agent CLI |
-| C2 实验环境较重 | 覆盖 | SandboxSpec 写了普通 image、template 或 snapshot 时选择该显式起点;没有显式起点时选择 Provider 中性 Case | 每条 fresh Attempt 检查并补齐 Experiment Requirement |
-| C3 评估与实验环境都较重 | 覆盖 | SandboxSpec 没有显式起点时选择当前 Eval 自带的 Compose Base Case | 在该 Compose Case 中准备、上传、安装并复检 Experiment Requirement |
-| C4 组合多个条件 | 部分覆盖 | 有 Eval Base Case 时选择它;否则选择 SandboxSpec 显式起点;两者都没有时选择 Provider 中性 Case | 多个实验条件被压进一个复合 Experiment Requirement |
-| C5 预装稳定条件 | 覆盖 | Eval 无 Base Case 时选择预装该条件的 Experiment image、template 或 snapshot;Eval 也有 Base Case 时选择 `environment.cases[environmentProfile]` 中的融合 Case | 预装仍要通过三方实际检查 |
-| C6 新 Sandbox 外部状态 | 部分覆盖 | 逐 Eval 选择其 Eval Base Case;没有 Eval Base Case 时选择 Experiment Base Case 或 Provider 中性 Case;双方都有时选择精确融合 Case | 实际只有早期 `sandbox.setup`;Agent 安装后的 state load 没有公开 API |
-| C7 复用 Sandbox 活状态 | 部分覆盖 | 每个窗口按同一规则选择一个 Eval Base Case、Experiment Base Case、融合 Case 或 Provider 中性 Case | 有窗口 cadence,但没有公开的 state identity、activity 与失败语义 |
-| C8 Experiment 提供条件基底 | 覆盖 | 选择 `environment.base` 声明的 Experiment 条件 template;PLAN-4 也会把 SandboxSpec 显式起点当成同类 Base Case | 检查 Experiment Requirement,再补齐 Eval Requirement 与 Agent CLI |
-| C9 双方都有不可叠加基底 | 覆盖 | 选择 `environment.cases[environmentProfile]` 中已经融合双方条件的完整 Case | 分别检查 Eval Requirement、Experiment Requirement 与 Agent CLI |
-| C10 混合批次 | 不覆盖 | 无 Eval Base Case 的 Eval 选择普通 SandboxSpec template;自带 Compose Base Case 的 Eval 被迫查询融合 Case,缺项即在启动前报错 | 普通默认 template 被误当作 Experiment 条件基底,制造并不存在的双 Base 冲突 |
+| C1 评估 Sandbox 较重 | 涵盖 | 选择当前 Eval contribution 自带的 Dockerfile 或 Compose Base Case | 检查 Eval Requirement,再补齐 Experiment Requirement 与 Agent CLI |
+| C2 实验 Sandbox 较重 | 涵盖 | SandboxSpec 写了普通 image、template 或 snapshot 时选择该显式起点;没有显式起点时选择 Provider 中性 Case | 每条 fresh Attempt 检查并补齐 Experiment Requirement |
+| C3 评估与实验 Sandbox 都较重 | 涵盖 | SandboxSpec 没有显式起点时选择当前 Eval 自带的 Compose Base Case | 在该 Compose Case 中准备、上传、安装并复检 Experiment Requirement |
+| C4 组合多个条件 | 部分涵盖 | 有 Eval Base Case 时选择它;否则选择 SandboxSpec 显式起点;两者都没有时选择 Provider 中性 Case | 多个实验条件被压进一个复合 Experiment Requirement |
+| C5 预装稳定条件 | 涵盖 | Eval 无 Base Case 时选择预装该条件的 Experiment image、template 或 snapshot;Eval 也有 Base Case 时选择 `environment.cases[environmentProfile]` 中的融合 Case | 预装仍要通过三方实际检查 |
+| C6 新 Sandbox 外部状态 | 部分涵盖 | 逐 Eval 选择其 Eval Base Case;没有 Eval Base Case 时选择 Experiment Base Case 或 Provider 中性 Case;双方都有时选择精确融合 Case | 实际只有早期 `sandbox.setup`;Agent 安装后的 state load 没有公开 API |
+| C7 复用 Sandbox 活状态 | 部分涵盖 | 每个复用周期按同一规则选择一个 Eval Base Case、Experiment Base Case、融合 Case 或 Provider 中性 Case | 有复用周期 cadence,但没有公开的 state identity、activity 与失败语义 |
+| C8 Experiment 提供条件基底 | 涵盖 | 选择 `environment.base` 声明的 Experiment 条件 template;PLAN-4 也会把 SandboxSpec 显式起点当成同类 Base Case | 检查 Experiment Requirement,再补齐 Eval Requirement 与 Agent CLI |
+| C9 双方都有不可叠加基底 | 涵盖 | 选择 `environment.cases[environmentProfile]` 中已经融合双方条件的完整 Case | 分别检查 Eval Requirement、Experiment Requirement 与 Agent CLI |
+| C10 混合批次 | 不涵盖 | 无 Eval Base Case 的 Eval 选择普通 SandboxSpec template;自带 Compose Base Case 的 Eval 被迫查询融合 Case,缺项即在启动前报错 | 普通默认 template 被误当作 Experiment 条件基底,制造并不存在的双 Base 冲突 |
 
 C3 只有在 Experiment 没有贡献 Base Case,并且 SandboxSpec 没有显式普通起点时保持单 Base。
 一旦 SandboxSpec 配置普通 template,PLAN-4 就把它解释成 Experiment Base Case,转入双 Base 分支。
 
 C10 没有可用的优先级补丁。
-让 Eval Base Case 静默覆盖 SandboxSpec template 会同时覆盖真正的 Experiment 条件基底,从而破坏 C8 与 C9。
+让 Eval Base Case 静默覆写 SandboxSpec template 会同时覆写真正的 Experiment 条件基底,从而破坏 C8 与 C9。

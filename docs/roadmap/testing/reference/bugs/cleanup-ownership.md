@@ -1,6 +1,6 @@
 # Bug 组：进程内收尾与进程外认领是两种闭包
 
-这一组用强清路径拦腰切断 teardown 作正例，用 SIGKILL 后 Compose 资源组不进入 orphan 清单作反证。
+这一组用强清路径拦腰切断 teardown 作正例，用 SIGKILL 后 Compose 资源集合不进入 orphan 清单作反证。
 前者能在进程退出前完成，后者物理上只能事后恢复；测试不能用同一种“终于没有资源”掩盖两条责任边界。
 
 ## 正例：二次 Ctrl+C 跳过实验 teardown
@@ -8,10 +8,10 @@
 真实批跑中，第一次 Ctrl+C 后优雅停 sandbox 超时，二次 Ctrl+C 进入强清。
 旧实现只停 sandbox，随后直接 `process.exit(130)`；实验 teardown 管理的容器、隧道和 license 席位留下。
 
-第一版 fix `5eb19b7b` 增加宿主侧 teardown 注册表、逐段清理上限和强清 drain。
+第一版 fix `5eb19b7b` 增加宿主侧 teardown 注册表、逐段回收上限和强清 drain。
 但真机再次复现：强清只等 15 秒，而单个合法 teardown 上限是 30 秒；正在执行的 teardown 又已从注册表取走，drain 看不见它。
 
-第二版 `14e5207` 才形成区分力闭包：teardown 是 memoized promise，正常路径与 drain 等同一个 settle；强清窗口由清理常量推导，并以实际 settle 为退出条件。
+第二版 `14e5207` 才形成区分力闭包：teardown 是 memoized promise，正常路径与 drain 等同一个 settle；强清时限由回收常量推导，并以实际 settle 为退出条件。
 新增单测证明并发到达只执行一次且双方都等待，但没有真实 CLI 信号与外部资源的 E2E。
 
 用户侧 proof 复用第 3 轮的长驻服务会话：
@@ -55,22 +55,22 @@ sandboxBehavior(killedComposeRunCanBeRecoveredAsOneGroup, async () => {
 ```
 
 `sandboxInventory()` 是本轮新增的最小领域读面。
-它只解析公开 `sandbox list` 输出里的 group identity、状态和资源数；provider 原生命令只用于测试设施的异常清理，不充当产品断言。
+它只读取公开 `sandbox list` 输出里的 group identity、状态和资源数；provider 原生命令只用于测试设施的异常回收，不充当产品断言。
 
 ## 删除的候选
 
 - “收到 SIGKILL 时跑 teardown”：物理上不可实现，删除。
 - 只断容器数量为 0：会漏网络、外部服务和误删活资源，删除。
 - 单元里 mock `process.exit` 后检查注册表为空：证明不了真实信号、子进程和外部资源，降为单元守护。
-- 固定 sleep 后查资源：清理有公开上限时等 settle；进程外核对用最终状态重试，不把机器速度写进契约。
+- 固定 sleep 后查资源：回收有公开上限时等 settle；进程外核对用最终状态重试，不把机器速度写进契约。
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | SIGINT proof 等 settle；SIGKILL proof 查事后归属，不要求不留瞬时资源 |
 | 不能改断言放行 | 强清退出前资源必须收束；SIGKILL 后必须能列出并整组 prune |
-| 观察失败显式报错 | 服务未进入运行态、inventory 解析失败、候选 unverified 都单独报错 |
+| 观察失败显式报错 | 服务未进入运行态、inventory 读取失败、候选 unverified 都单独报错 |
 | 用户侧直接定位 | 列命令、signal、run identity、group、容器 / 网络数与 prune 输出 |
-| 设施不造假 | 产品断言走 NiceEval CLI；异常清理另记并总会执行，避免残留污染后续测试 |
+| 设施不造假 | 产品断言走 NiceEval CLI；异常回收另记并总会执行，避免残留污染后续测试 |
 | 用户已有用法不改 | 复用原 Experiment teardown、Compose 和官方 sandbox 命令 |

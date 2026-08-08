@@ -24,17 +24,17 @@ E2E 必须就地展示前置事实、用户动作、带身份的结果和关键�
 ### G3：E2E 与 Unit 各用合适语言
 
 单边界 E2E / Journey E2E 从公开能力和用户结果进入。
-调度、并发、锁、时钟、解析与代数定律等机制证明可以直接使用内部精确词汇，不伪装成用户故事。
+调度、并发、锁、时钟、parse 与代数定律等机制证明可以直接使用内部精确词汇，不伪装成用户故事。
 
-### G4：产品契约只有一个来源
+### G4：产品契约单源
 
-测试在需要解释命题时引用已有用户任务锚点与对应 Feature 契约，不复制语义定义。
+测试在需要解释命题时引用已有用户任务链接目标与对应 Feature 契约，不复制语义定义。
 任务优先来自 `docs/feature/*/use-case/`；某个能力尚无 Use Case 时，引用它现有的唯一用户入口，例如 Getting Started。
 测试目录与 `docs/engineering/testing/` 不再维护另一份逐场景产品清单。
 
 ### G5：oracle 独立且有区分力
 
-期望不能从候选包的 schema、renderer 常量、私有记录或本次输出反推。
+期望不能从候选包的 schema、renderer 常量、私有 Record 或本次输出反推。
 Fixture 必须区分正确实现与至少一种常见错误实现。
 
 ### G6：变化预算可解释
@@ -54,13 +54,13 @@ Fixture 必须区分正确实现与至少一种常见错误实现。
 
 ### G9：允许增量采用
 
-方案必须能先覆盖高风险用户路径，再按证据扩展。
+方案必须能先守护高风险用户路径，再按证据扩展。
 它不能要求一次性重写约 1,900 个现有测试，也不能把高 churn 本身当成低质量证据。
 
 ### G10：本地与 CI 使用同一条执行链
 
 开发者本地、GitHub Actions 与 release preflight 必须运行同一个根命令、同一种候选包注入和同一份消费项目。
-Host、Docker 与 live provider 的边界要显式，不能靠环境自动切换后仍声称证明同一个条件。
+Host、Docker 与 live provider 的边界要显式，不能靠宿主自动切换后仍声称证明同一个条件。
 
 ## 可验证要求
 
@@ -71,16 +71,16 @@ Host、Docker 与 live provider 的边界要显式，不能靠环境自动切换
 - E2E prepare 完成后，共享 evidence 只读；会修改结果的测试使用独立结果根或独立 Repo，不靠顺序保护。
 - 每个 E2E Repo 分开核对 candidate、fixture、lockfile、backend 与 executor 身份；第一版不跨提交复用结果。
 - JSON 与 XML 按语义结构比较；只有明确承诺逐字稳定的短文本使用 golden。
-- 非 TTY 输出与 PTY 布局是两个显式观察面，不能由隐式解析器混为一体。
-- 静态 HTML 在禁 JS、仅本地网络的真实 Chromium 中验收；交互 E2E 才启用 JS，并记录浏览器与候选身份。
+- 非 TTY 输出与 PTY 布局是两个显式观察面，不能由隐式 parser 混为一体。
+- 静态 HTML 在禁 JS、仅本地网络的真实 Chromium 中验收；交互 E2E 才启用 JS，并登记浏览器与候选身份。
 - 真实协议映射比较同次调用的独立上下游观察或稳定不变量，不签入会随 provider 漂移的固定 token 数。
-- 新的共享 parser / helper 只有出现至少两个独立消费者和稳定重用边界后，才进入公共包。
+- 新的共享 parser / 机械工具只有出现至少两个独立消费者和稳定重用边界后，才进入公共包。
 - PR 必须有不接触 secrets 的确定性 E2E；真实 adapter 只在可信 main、nightly、手动或 release lane 获取最小密钥集。
 - release 必须测试随后发布的同一份 tarball，而不是验收后重新构建另一份包。
 
 ## 非目标
 
-- 追求测试数量、覆盖率百分比或所有源码行的行为映射。
-- 用 Gherkin、自然语言解析器或代码生成替代 TypeScript。
+- 追求测试数量、coverage 百分比或所有源码行的行为映射。
+- 用 Gherkin、自然语言 parser 或代码生成替代 TypeScript。
 - 让 unit 模拟外部协议，以换取一套离线伪 E2E。
 - 让测试成为 niceeval 的第二份公开 API 或结果模型。

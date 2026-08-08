@@ -1,20 +1,17 @@
 /**
  * docs/ 正文的可读性检查:句长、段长与禁词库。
  *
- * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json,
- * 现存命中数的台账在 docs/writing-baseline.json。
+ * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json。
  *
- * 这里只出规则与计数,不自带命令行:判对错与更新台账都由
- * lint/docs/docs-writing.lint.ts 经 `pnpm lint:docs` 驱动,台账用 Vitest 的
- * 文件快照写回(`pnpm lint:docs -u`)。台账里的数字只许变小——降到 0 的文件
- * 从台账里消失,新写的正文一次命中都不许有。
+ * 这里只出规则与命中位置,不自带命令行:判对错由
+ * lint/docs/docs-writing.lint.ts 经 `pnpm lint:docs` 驱动。守护是零容忍的:
+ * 每一处实际命中都会列出,全部改掉后才通过。
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const RULES_FILE = "docs/writing-rules.json";
-const BASELINE_FILE = "docs/writing-baseline.json";
 const CONCEPTS_FILE = "docs/concepts.md";
 // 判「这个词有没有人用」要连中文站一起看:词在 docs-site/zh 用着、只是设计文档里没提,
 // 那不是死词。反过来两边都不出现,才说明立了词没人用。
@@ -46,23 +43,11 @@ interface WritingRules {
   bannedTerms: BannedTerm[];
 }
 
-/** 按文件计数的两条长度规则。禁词另记,因为要按词分开。 */
+/** 两条长度规则既驱动检查,也用来校验 JSON 的规则形状。 */
 const LENGTH_RULES = [
   { key: "sentenceLength", label: "超长句" },
   { key: "paragraphLength", label: "超长段" },
 ] as const;
-
-type LengthRule = (typeof LENGTH_RULES)[number]["key"];
-
-/**
- * 台账:文件 → 命中数。两条长度规则各一个数字,禁词按词分开记。
- * 死词记成词表而不是数字——换一个词死掉、原来的活过来,数字不变但问题换了一个,
- * 计数拦不住这种等量替换。
- */
-export type Baseline = Record<LengthRule, Record<string, number>> & {
-  bannedTerms: Record<string, Record<string, number>>;
-  deadTerms: string[];
-};
 
 /** 一条命中,带上打印所需的全部信息——调用方不必再回查规则。 */
 export interface Hit {
@@ -75,17 +60,6 @@ export interface Hit {
 
 export interface LintReport {
   hits: Hit[];
-  /** 当前实测的台账形态,可直接写回 docs/writing-baseline.json。 */
-  actual: Baseline;
-  /** 相对台账的回归(数字变大或出现新条目)。 */
-  regressions: string[];
-  /**
-   * 有行级回归的文件。死词回归不落在具体某一行,不进这里——否则详报会把
-   * 概念表已入账的旧命中全倒出来,把真正要改的那几行淹掉。
-   */
-  regressionFiles: string[];
-  /** 概念表里立了、正文一次没用过的词条。 */
-  deadTerms: string[];
 }
 
 /** 概念表的一行:一个词条的全部写法,以及并列同义词里的首选裁决。 */
@@ -192,16 +166,19 @@ function termCorpus(): string {
 }
 
 /** 立了词、正文一次没用过:要么删掉这一行,要么正文该有人用它。 */
-export function deadConceptTerms(terms: ConceptTerm[]): string[] {
+function unusedConceptTerms(terms: ConceptTerm[]): ConceptTerm[] {
   const corpus = usageCorpus();
-  return terms
-    .filter((term) => !term.writings.some((writing) => corpus.includes(writing)))
+  return terms.filter((term) => !term.writings.some((writing) => corpus.includes(writing)));
+}
+
+export function deadConceptTerms(terms: ConceptTerm[]): string[] {
+  return unusedConceptTerms(terms)
     .map((term) => term.writings.join(" / "))
     .sort();
 }
 
 function walkDocs(dir: string, extensions: string[] = [".md"]): string[] {
-  return readdirSync(join(ROOT, dir)).flatMap((name) => {
+  return readdirSync(join(ROOT, dir)).sort().flatMap((name) => {
     const rel = join(dir, name);
     if (statSync(join(ROOT, rel)).isDirectory()) return walkDocs(rel, extensions);
     return extensions.some((ext) => name.endsWith(ext)) ? [rel] : [];
@@ -331,21 +308,10 @@ function bannedMatchers(rules: WritingRules): Array<BannedTerm & { re: RegExp }>
 
 export function lintDocsWriting(): LintReport {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
-  const baseline: Baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_FILE), "utf8"));
   const concepts = parseConcepts();
   const matchers = bannedMatchers(rules);
 
   const hits: Hit[] = [];
-  const deadTerms = deadConceptTerms(concepts);
-  const actual: Baseline = {
-    sentenceLength: {},
-    paragraphLength: {},
-    bannedTerms: {},
-    deadTerms,
-  };
-  const count = (rule: LengthRule, file: string) => {
-    actual[rule][file] = (actual[rule][file] ?? 0) + 1;
-  };
 
   for (const file of walkDocs("docs")) {
     const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
@@ -353,7 +319,6 @@ export function lintDocsWriting(): LintReport {
     for (const block of proseBlocks(lines)) {
       const text = proseText(block.text);
       if (proseLength(text) > rules.paragraphLength.max) {
-        count("paragraphLength", file);
         hits.push({
           file,
           line: block.line,
@@ -363,7 +328,6 @@ export function lintDocsWriting(): LintReport {
       }
       for (const [order, sentence] of splitSentences(text).entries()) {
         if (proseLength(sentence) <= rules.sentenceLength.max) continue;
-        count("sentenceLength", file);
         hits.push({
           file,
           line: block.line,
@@ -387,54 +351,32 @@ export function lintDocsWriting(): LintReport {
         if (term.exempt?.some((prefix) => file.startsWith(prefix))) continue;
         const count = countTermHits(prose, term.re, term.allowIn);
         if (count === 0) continue;
-        const perFile = (actual.bannedTerms[file] ??= {});
-        perFile[term.term] = (perFile[term.term] ?? 0) + count;
-        hits.push({
-          file,
-          line: lineNumber,
-          rule: term.term,
-          message: `禁用写法「${term.term}」——改用${term.use};${term.why}`,
-        });
+        for (let occurrence = 1; occurrence <= count; occurrence += 1) {
+          hits.push({
+            file,
+            line: lineNumber,
+            rule: term.term,
+            message:
+              `禁用写法「${term.term}」(本行第 ${occurrence}/${count} 处)——` +
+              `改用${term.use};${term.why}`,
+          });
+        }
       }
     }
   }
 
-  // 只判「变大」。变小不在这里报:台账收紧由 actual 与 docs/writing-baseline.json
-  // 的文件快照比对负责,`pnpm lint:docs -u` 一步写回。
-  const regressions: string[] = [];
-
-  for (const { key, label } of LENGTH_RULES) {
-    for (const file of new Set([...Object.keys(actual[key]), ...Object.keys(baseline[key] ?? {})])) {
-      const now = actual[key][file] ?? 0;
-      const allowed = baseline[key]?.[file] ?? 0;
-      if (now > allowed) regressions.push(`${file}: ${label} ${allowed} → ${now}`);
-    }
+  for (const term of unusedConceptTerms(concepts)) {
+    hits.push({
+      file: CONCEPTS_FILE,
+      line: term.line,
+      rule: "deadConceptTerm",
+      message:
+        `「${term.writings.join(" / ")}」立了词但 docs/ 与 docs-site/ 正文一次没用过——` +
+        "删掉这一行,或者正文改用它",
+    });
   }
 
-  const termFiles = new Set([...Object.keys(actual.bannedTerms), ...Object.keys(baseline.bannedTerms)]);
-  for (const file of termFiles) {
-    const nowTerms = actual.bannedTerms[file] ?? {};
-    const allowedTerms = baseline.bannedTerms[file] ?? {};
-    for (const term of new Set([...Object.keys(nowTerms), ...Object.keys(allowedTerms)])) {
-      const now = nowTerms[term] ?? 0;
-      const allowed = allowedTerms[term] ?? 0;
-      if (now > allowed) regressions.push(`${file}: 「${term}」${allowed} → ${now}`);
-    }
-  }
-
-  const regressionFiles = [...new Set(regressions.map((r) => r.split(":")[0]))];
-
-  // 死词按词判,不按数量判:台账里没有的死词就是新死的,哪怕总数没变。
-  const known = new Set(baseline.deadTerms ?? []);
-  for (const term of deadTerms) {
-    if (!known.has(term)) {
-      regressions.push(
-        `${CONCEPTS_FILE}: 「${term}」立了词但 docs/ 与 docs-site/ 正文一次没用过——删掉这一行,或者正文该改用它`,
-      );
-    }
-  }
-
-  return { hits, actual, regressions, regressionFiles, deadTerms };
+  return { hits };
 }
 
 /** 图里的一个文本节点:`<text>` / `<tspan>` 拼平之后的一句,连同它挂的 class。 */
@@ -491,7 +433,7 @@ export function svgTexts(svg: string): SvgText[] {
 }
 
 /**
- * 图里的用语检查。两条,都不设台账——图是新的,一次命中都不许有:
+ * 图里的用语检查。两条规则都要求一次命中都不许有:
  *
  * 1. **不立新词。** `.label` 里的每个中文词都要在 `docs/` 或 `docs-site/` 正文
  *    (含概念表)里出现过。图最容易长出只此一处的自造词:画的人为了摆得下
@@ -507,13 +449,18 @@ export function lintSvgTerms(): Hit[] {
   for (const file of walkDocs("docs", [".svg"])) {
     for (const node of svgTexts(readFileSync(join(ROOT, file), "utf8"))) {
       for (const term of matchers) {
-        if (countTermHits(node.text, term.re, term.allowIn) === 0) continue;
-        hits.push({
-          file,
-          line: node.line,
-          rule: term.term,
-          message: `图里的禁用写法「${term.term}」——改用${term.use};${term.why}`,
-        });
+        const count = countTermHits(node.text, term.re, term.allowIn);
+        if (count === 0) continue;
+        for (let occurrence = 1; occurrence <= count; occurrence += 1) {
+          hits.push({
+            file,
+            line: node.line,
+            rule: term.term,
+            message:
+              `图里的禁用写法「${term.term}」(该文本第 ${occurrence}/${count} 处)——` +
+              `改用${term.use};${term.why}`,
+          });
+        }
       }
       if (!node.classes.includes(TERM_SLOT)) continue;
       for (const run of node.text.match(HAN_RUN) ?? []) {
@@ -532,23 +479,13 @@ export function lintSvgTerms(): Hit[] {
   return hits;
 }
 
-/**
- * 回归的详报:哪一行、超了多少、禁词该改用什么。只打回归文件里的命中——
- * 台账里的旧命中不是这次要改的,混进来会把该改的那几行淹掉。
- */
-export function formatRegressionHits(report: LintReport): string {
-  if (report.regressions.length === 0) return "";
-  const files = new Set(report.regressionFiles);
-  const lines = report.hits
-    .filter((hit) => files.has(hit.file))
-    .map((hit) => `${hit.file}:${hit.line}  ${hit.message}`);
+/** 零容忍守护的完整诊断:不筛选历史命中,每一条实际命中都要修复。 */
+export function formatLintHits(hits: readonly Hit[]): string {
+  if (hits.length === 0) return "";
   return [
-    ...lines,
+    ...hits.map((hit) => `${hit.file}:${hit.line}  ${hit.message}`),
     "",
-    `有 ${report.regressions.length} 项超出 ${BASELINE_FILE}:`,
-    ...report.regressions.map((r) => `  - ${r}`),
-    "",
-    `改掉上面打印的那几行;台账只许变小,不要为了变绿去动 ${BASELINE_FILE}。`,
+    `共 ${hits.length} 条实际命中。文档写作守护是零容忍的:改掉全部命中后重跑 pnpm lint:docs。`,
   ].join("\n");
 }
 
@@ -579,22 +516,4 @@ export function validateRules(): string[] {
     problems.push("paragraphLength.max 小于 sentenceLength.max——合法的单句会被段长规则判死,没法改");
   }
   return problems;
-}
-
-/**
- * 台账的落盘形态。文件快照按整串比对,所以键序必须稳定——否则同一份实测
- * 换个遍历顺序就"不一致",`-u` 会来回改写同一个文件。
- */
-export function serializeBaseline(actual: Baseline): string {
-  const sortKeys = <T>(obj: Record<string, T>): Record<string, T> =>
-    Object.fromEntries(Object.keys(obj).sort().map((k) => [k, obj[k]]));
-  const sorted: Baseline = {
-    sentenceLength: sortKeys(actual.sentenceLength),
-    paragraphLength: sortKeys(actual.paragraphLength),
-    bannedTerms: sortKeys(
-      Object.fromEntries(Object.entries(actual.bannedTerms).map(([f, t]) => [f, sortKeys(t)])),
-    ),
-    deadTerms: [...actual.deadTerms].sort(),
-  };
-  return `${JSON.stringify(sorted, null, 2)}\n`;
 }

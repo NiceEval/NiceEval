@@ -14,7 +14,7 @@ Eval 是可执行 TypeScript，不是只有 prompt 和答案的数据行。
 共享设计必须先补齐这两个正确性面；不能因为外部 package 整体升级让全部题重跑，也不能在 dependency 或隐藏判据改变时错误携带。
 
 普通本地源码捕获以项目根为边界，`node_modules` 不进入闭包。
-挂载外部 Eval 根后，来源 package root 必须成为那组 Eval 的源码捕获边界，否则 Eval 依赖的项目内模块变化不会作废结果。
+挂载外部 Eval 根后，上游 package root 必须成为那组 Eval 的源码捕获边界，否则 Eval 依赖的项目内模块变化不会作废结果。
 
 ## Terminal-Bench 给出的真实压力
 
@@ -22,14 +22,14 @@ NiceEval Terminal-Bench 仓库把 238 条题维护成 folder-local Eval（226 �
 每题已经拥有 NiceEval Sandbox、Task、官方判据与资产隔离，不存在需要再次转换的格式差异。
 
 复制方案的问题不是 Eval 不兼容，而是消费方需要复制 238 个目录、Eval 依赖模块与后续修正。
-来源升级也退化成人工目录 diff，项目无法从依赖声明回答“使用的是哪个 commit 或 package”。
+上游升级也退化成人工目录 diff，项目无法从依赖声明回答“使用的是哪个 commit 或 package”。
 
 ## 外部框架怎样共享题
 
 | 系统 | 共享单位 | 版本固定方式 | 对 NiceEval 的启发 |
 |---|---|---|---|
 | Harbor | 统一格式的 task archive 与 dataset manifest | `dataset.toml` 逐题保存 SHA-256；registry tag 可落到 revision 或 digest | 语言中立任务需要自有内容仓库；逐题 digest 适合精确身份 |
-| Inspect | Python package 中注册的 Task，或带 `eval.yaml` 的 Hugging Face dataset | Python 环境 lockfile；HF 引用可附 tag 或 revision hash | 原生可执行任务最适合跟随本语言 package 分发 |
+| Inspect | Python package 中注册的 Task，或带 `eval.yaml` 的 Hugging Face dataset | Python 运行时 lockfile；HF 引用可附 tag 或 revision hash | 原生可执行任务最适合跟随本语言 package 分发 |
 | lm-evaluation-harness | YAML TaskConfig、辅助 Python 与 Hugging Face dataset | 官方建议共享 YAML 加代码 commit；dataset 可传 revision | 只锁题面配置不够，Eval 依赖的可执行模块也必须进入同一依赖身份 |
 | OpenAI Evals | Git 仓库内 registry YAML、Eval 类与 Git-LFS 数据 | Eval 名带版本，完整复现还依赖仓库 commit | 中央源码仓适合官方集合，但第三方消费要 fork 或跟随整仓 |
 | WorkBuddyBench | Harbor 风格任务目录组成的四个自有 subset | Hugging Face 压缩包、版本名与 `SHA256SUMS` | 大资产可与 harness 分开交付，但校验值仍要有唯一 owner |
@@ -56,11 +56,11 @@ NiceEval 外部 Eval 交付的是会 import `niceeval` 与其它 TypeScript pack
 
 ## 零共享协议改造的边界
 
-- 外部 Eval 来源是受信任代码；Eval 模块会在宿主进程执行。
-- NiceEval 只扫描挂载的 Eval root，不导入来源 package 的入口或 `niceeval.config.ts`。
+- 外部 Eval 上游是受信任代码；Eval 模块会在宿主进程执行。
+- NiceEval 只扫描挂载的 Eval root，不导入上游 package 的入口或 `niceeval.config.ts`。
 - Eval owner 内的 `niceeval` bare import 必须在 Node >=22.15 的受支持装载矩阵中绑定消费运行时；其它 bare import 仍从该 package 查找并进入逐 Eval dependency identity。
 - 已安装内容必须包含 Eval 根、Eval 依赖模块、Fixture、测试与 Sandbox 构建输入。
-- 外部 Eval 的相对路径以来源 package root 为边界，不能逃到交付内容之外。
+- 外部 Eval 的相对路径以上游 package root 为边界，不能逃到交付内容之外。
 - 项目 lockfile 必须签入；Git tag 或 semver range 只有经过 lockfile 固定后才可复现。
 - 多个外部根可能给出相同内部路径，最终 id 必须由消费项目的挂载前缀隔离。
 

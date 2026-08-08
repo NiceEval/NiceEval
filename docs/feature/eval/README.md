@@ -32,11 +32,11 @@ export default defineEval({
 ```
 
 `timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。
-项目级配置是没写时的默认来源，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 覆盖。`judge` 按单条断言 `{ model }` → experiment → eval → config 逐字段解析，没有 CLI 覆盖层。
+项目级配置是没写时的默认出处，压不掉 eval 写下的值。
+`timeoutMs` 可由 experiment 或 `--timeout` 替换。`judge` 按单条断言 `{ model }` → experiment → eval → config 逐字段求值，没有 CLI 替换层。
 
 Eval 的 `judge` 是这道题对裁判能力的默认要求。Experiment 可以签入另一组执行配置做 A/B；rubric、severity 与 threshold 仍只属于 Eval。见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
-完整解析链见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)。
+完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
 
@@ -51,22 +51,22 @@ template identity、CaseKey 与 command identity 计入 Attempt fingerprint（�
 Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.unexpected-for-direct-agent`。
 
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
-两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
+两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-区间与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
 `metadata` 只在 Experiment 谓词或 Reporter 确实消费某个结构化业务维度时使用。
 能从 eval id、tags 或 description 推导出的值不重复写；没有消费者就省略，不能把它当任意杂物抽屉。
 
 题目的机械准备只有两处:`sandbox` layer 的 `.prepare()` 命令与 `test(t)` 普通代码。
 `prepare()` 每条 Attempt 都在 Agent 进场前执行,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖);写入算 eval 归因,不进 agent diff。
-命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记清理(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
+命令取得沙箱外临时资源后用 `context.onCleanup()` 就地登记 cleanup(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md))。
 
-收尾按全局准备顺序逆序:Agent teardown 之后,两层已登记 cleanup 逆序执行,复用窗口关闭时 Provider Case finalizer 整组回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
+收尾按全局准备顺序逆序：Agent teardown 之后，两层已登记 cleanup 逆序执行，复用周期关闭时 Provider Case finalizer 整组回收(时序单源见[三方准备时序](../sandbox/lifecycle.md#cleanup))。
 准备时间线上的分工:template owner 的命令先执行,另一 owner 随后,Agent 安装(`agent.ensure`)收尾准备链,再进入 workspace baseline 与 Agent runtime setup(`agent.setup`)。需要恢复实际 Sandbox checkpoint 时，由 lifecycle `setup()` 在实例创建后完成。
 
 文件传输不设 EvalInput field。
 第一次 `send` 前需要 Agent 看见的文件直接通过 `t.sandbox.upload*()` 上传；测试文件在对应 `send` 返回后上传，再用普通命令和断言判分。
 
-本地路径或 URL 进入普通上传 API 时，Runner 自动记录 transfer manifest。
+本地路径或 URL 进入普通上传 API 时，Runner 自动写入 transfer manifest。
 文件身份、动态泄漏检查与携带规则见[本地测试文件](use-case/criteria-files.md)。
 
 **禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
@@ -74,7 +74,7 @@ Direct Agent 没有运行中的 Sandbox，为它声明 `sandbox` 报 `sandbox.un
 
 ## 文件夹入口:一道题一个目录
 
-发现器接受两种入口;同一 id 两种入口并存时启动期报重名,不按扫描顺序覆盖:
+发现器接受两种入口；同一 id 两种入口并存时启动期报重名，不按扫描顺序替换：
 
 ```text
 evals/foo.eval.ts       → eval id "foo"
@@ -93,10 +93,10 @@ evals/foo/eval.ts       → eval id "foo"
 | 普通本地上传 source | 调用发生时上传；相对 `send` 的位置决定 Agent 是否可见 | 首次执行写入 transfer manifest，后续用于携带 |
 
 普通起始文件在 send 前上传，Agent 本来就应看见；测试文件在对应 send 返回后上传。
-目录共址只解决组织问题，不把环境构建与运行期文件传输合并成一个哈希。
+目录共址只解决组织问题，不把 environment 构建与运行期文件传输合并成一个哈希。
 
 solution、生成器与参考答案不得进入任何 build context 或最终镜像。
-它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox Case · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
+它们若从未被 Eval 读取，就不需要为了 Runner 再声明一次；template 一侧的隔离规则见 [Sandbox 实例与伴随资源 · 动态泄漏检查](../sandbox/case.md#动态泄漏检查本地上传与-agent-可见-closure)。
 
 ## defineScoreEval：计分制题型
 
@@ -120,7 +120,7 @@ export default defineScoreEval({
 ```
 
 计分制只多出分数面：`.points(n)` 是得分点，`t.score(label, n)` 直接给分。
-严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只记录。
+严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只写入。
 需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
 
 题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "points"`)供报告选择主读数。

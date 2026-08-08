@@ -7,7 +7,7 @@
 | Owner | 拥有 |
 |---|---|
 | Case owner | Case ID、World / Action / Claim 联合、Case digest |
-| 同仓 Projection owner | driver、执行层、claim 覆盖与 evidence |
+| 同仓 Projection owner | driver、执行层、claim 守护与 evidence |
 | 外仓 native proof owner | 自己的动作、观察、期望与执行器 |
 | 根 Registry | Case / Projection / ExternalProofLink 的只读连接 |
 | E2E 仓库 | prepare、frozen world、verify 与 cleanup |
@@ -71,7 +71,7 @@ prepare named world
 | E2E observation | 每个选中 Projection 1 | 每个选中 Projection 1 |
 | 外仓 native proof | 由外仓自己执行 | 由外仓自己执行 |
 
-Reuse 只有在 Case semantic digest、candidate、producer、fixture、外部依赖、prepare config 和适用环境 identity 全部相同时成立。
+Reuse 只有在 Case semantic digest、candidate、producer、fixture、外部依赖、prepare config 和适用宿主 identity 全部相同时成立。
 任何不匹配都拒绝旧 world，不静默 prepare。
 
 ## Cases

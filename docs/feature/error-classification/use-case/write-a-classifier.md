@@ -66,7 +66,9 @@ adapter factory 上只认协议短语(完整写法与要点见 [Library](../libr
 4. **验证**。
    单元层用按脚本失败的 fake agent 断言分类结果;真实运行里的生效观察面:
 
-   - 实验分类器命中:该失败判为终局(`retryable: false`,不进重试)且携带 `scope: "experiment"`——attempt 照常 `errored`,实验闸落下,反馈流出现 `experiment halted (dispatch-halted)`(`reason` 词进诊断文案),余量计 `unstarted`、其它实验不连坐;修好后重跑即续跑(与[抛出点声明](declare-fatal-scope.md)的止损语义完全相同)。
+   - 实验分类器命中：该失败判为终局（`retryable: false`，不进重试）且携带 `scope: "experiment"`——attempt 照常 `errored`，实验止损生效，反馈流出现 `experiment halted (dispatch-halted)`（`reason` 词进诊断文案）。余量计 `unstarted`、其它实验不连坐。
+     attempt 照常 `errored`,实验止损生效,反馈流出现 `experiment halted (dispatch-halted)`(`reason` 词进诊断文案),余量计 `unstarted`、其它实验不连坐。
+     修好后重跑即续跑,止损语义与[抛出点声明](declare-fatal-scope.md)完全相同。
    - adapter 分类器命中:activity 行出现 `turn retry 2/4 (acme_queue_full)`,重试成功的 attempt 结果零痕迹。
 
 ## 边界
@@ -81,11 +83,11 @@ adapter factory 上只认协议短语(完整写法与要点见 [Library](../libr
 - **空间轴从严(adapter 侧)。
   ** adapter 也可以给 `scope`,但只限协议回执能证明「后续每次调用必死」的场景(凭据失效、账号封禁);说不清波及范围就只给时间轴——误扩 scope 停掉的是用户的整批实验。
 - **时间轴别给要人修的死因(实验侧)。
-  ** 中途死亡的隧道 `retryable: true` 只会让 attempt 在退避里泡到预算耗尽再落闸,多烧几分钟没有任何收益;真正的瞬时抖动回退已经认得。
+  ** 中途死亡的隧道 `retryable: true` 只会让 attempt 在退避里泡到预算耗尽再止损,多烧几分钟没有任何收益;真正的瞬时抖动回退已经认得。
 - **别复述回退。
   ** 429、DNS 失败、拒连这些通用形状回退已认得,分类器只写私有知识,其余一律 `undefined` 回落。
 - **与抛出点声明互补不是二选一。
-  ** 探测 兜「起跑就死」,分类器兜「中途死」;共享服务型实验两个都写,才没有窗口。
+  ** 探测 兜「起跑就死」,分类器兜「中途死」;共享服务型实验两个都写,才没有缺口。
 
 ## 相关阅读
 

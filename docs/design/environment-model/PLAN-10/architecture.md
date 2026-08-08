@@ -66,10 +66,10 @@ Experiment root -> [Experiment, Eval, Agent]
 公开 `SandboxLayer` 只有 kind 品牌与 command 链。
 Provider factory 归一时才把 root template 放进 `OwnedAuthorLayer`；普通作者不能手写这个内部结构。
 
-Agent layer 参与相同的 owner 顺序和 activity 记录，但保留 `AgentProvisioner` 原协议。
+Agent layer 参与相同的 owner 顺序和 activity 归因，但保留 `AgentProvisioner` 原协议。
 统一的是“在哪个位置执行”，不是“所有节点必须长成同一个 callback”。
 
-## SandboxTemplate 与 Sandbox Case
+## SandboxTemplate 与 Sandbox 实例
 
 root layer 内部携带一个封闭的 `SandboxTemplate` 联合：
 
@@ -84,7 +84,7 @@ type SandboxTemplate =
 ```
 
 每个成员同时选定自己的 Provider planner。
-它们只共享“解析成一个完整 Sandbox Case”的结果，不要求字段同构：
+它们只共享“规划成一个完整 Sandbox 实例”的结果，不要求字段同构：
 
 ```text
 logical root
@@ -128,7 +128,7 @@ Eval C image root       C
 ```
 
 这里有三个 logical root，但每个 pair 只有一个，所以矩阵合法。
-物理 planner 可以按 root identity、Provider revision、平台和 build input 共享构建产物；它不会把三个 root 合并成一个 Case。
+物理 planner 可以按 root identity、Provider revision、平台和 build input 共享构建输出；它不会把三个 root 合并成一个 Case。
 
 反向矩阵同样合法：
 
@@ -157,11 +157,11 @@ PLAN-10 不用优先级把 conflict / missing 变成隐式选择。
 作者应让 X 只选择 A、Y 只选择 B，或移动 root 所有权，使每条实际 selector 边都满足 XOR。
 
 如果同一个业务组合确实需要 Eval 条件与 Experiment 条件共同烘焙，唯一 root factory 必须指向已经融合两者的完整 Case；另一方保留 extension layer 来执行实际检查。
-共享 fused root 可以用普通 TypeScript helper，不增加 pair override registry。
+共享 fused root 可以用普通 TypeScript 工厂函数，不增加 pair override registry。
 
 ### Logical root 与物理 variant
 
-一个 root factory 可以在 physical planning 时根据显式目标平台解析不同 digest：
+一个 root factory 可以在 physical planning 时根据显式目标平台选用不同 digest：
 
 ```text
 dockerImageSandbox({ image: "acme/tool:v3" })
@@ -205,7 +205,7 @@ Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖，
 ## 单一 Attempt prepare 频次
 
 PLAN-10 的普通 author command 没有 Window scope。
-无论 fresh 或 reuse，每条 Attempt 都在进入 Agent 前完整重放两层命令：
+无论 fresh 或 reuse，每条 Attempt 都在进入 Agent 前重新执行两层命令：
 
 ```text
 fresh: create Case -> author commands -> AgentProvisioners -> Agent
@@ -213,13 +213,13 @@ reuse: reset Case  -> author commands -> AgentProvisioners -> Agent
 ```
 
 因此命令不能依赖“上一条 Attempt 应该已经运行过我”。
-昂贵工具用领域 helper 实现实际 inspect、miss 时 install、安装后 reinspect；预装 root 只让检查命中，不删除 command。
+昂贵工具由明确的检查命令实现实际 inspect、miss 时 install、安装后 reinspect；预装 root 只让检查命中，不删除 command。
 
 这项选择刻意牺牲 Window-only command 的表达力：
 
 - Case 寿命资源归 Provider Case；
 - 外部状态的 open / load / save / close 归 State Feature；
-- 不能幂等、严格每窗口一次的任意 callback 不属于普通 SandboxLayer。
+- 不能幂等、严格每复用周期一次的任意 callback 不属于普通 SandboxLayer。
 
 它避免作者在不了解 reset anchor 和 pool key 时选择错误 scope。
 
@@ -228,7 +228,7 @@ reuse: reset Case  -> author commands -> AgentProvisioners -> Agent
 Agent Adapter 的 provisioner 节点排在两层 author command 之后。
 每条 Attempt 都执行 `inspect -> miss 时 install -> reinspect`；预装 CLI 或复用 Sandbox 通常在 inspect 快速命中。
 
-AgentProvisioner 可以在资源创建前按已经解析的目标平台准备 host payload，并把 payload digest、目标平台与安装模式带入 fingerprint：
+AgentProvisioner 可以在资源创建前按已经确定的目标平台准备 host payload，并把 payload digest、目标平台与安装模式带入 fingerprint：
 
 ```text
 link pair
@@ -270,13 +270,13 @@ Sandbox reuse 的 pool key 至少固定：
 (CaseKey, rootOwner, author layer identities, AgentProvisioner identity)
 ```
 
-PLAN-10 每条 Attempt 都重放 commands，所以 pool key 不把“某条命令已经执行”当作可跳过证据。
-reset 失败、prepare cleanup 失败或 State Feature 无法恢复已知边界时退休窗口。
+PLAN-10 每条 Attempt 都重新执行 commands，所以 pool key 不把“某条命令已经执行”当作可跳过证据。
+reset 失败、prepare cleanup 失败或 State Feature 无法恢复已知边界时退休该复用周期。
 
 ## Cleanup 与错误语义
 
 SandboxCommand 只有在取得资源后才通过 `onCleanup()` 注册本次 cleanup。
-Runner 按全局准备顺序逆序执行：Agent runtime teardown、第二 author layer cleanup、root layer cleanup，最后在窗口关闭时调用 Provider Case finalizer。
+Runner 按全局准备顺序逆序执行：Agent runtime teardown、第二 author layer cleanup、root layer cleanup，最后在复用周期关闭时调用 Provider Case finalizer。
 
 | 失败点 | 结果 |
 |---|---|
@@ -284,10 +284,10 @@ Runner 按全局准备顺序逆序执行：Agent runtime teardown、第二 autho
 | pair 没有 root | `sandbox.root-missing`，全矩阵聚合，零 Provider I/O |
 | Direct Agent 搭配 SandboxLayer | `sandbox.unexpected-for-direct-agent` |
 | root factory / platform / capability 不可用 | physical planning 聚合错误，零 build / create |
-| Provider build / start / ready | Attempt `errored`，归 Sandbox Case |
+| Provider build / start / ready | Attempt `errored`，归 Sandbox 实例 |
 | root author command | Attempt `errored`，归 `sandbox.prepare.<rootOwner>` |
 | extension author command | Attempt `errored`，归对应 owner |
 | AgentProvisioner inspect / install / reinspect | Attempt `errored`，归 `agent.provision` |
 | State load / save | Attempt `errored`，归独立 state phase |
-| command cleanup / Agent teardown | 保留原结果并追加 cleanup diagnostic；必要时退休复用窗口 |
-| Provider finalizer | 记录 Case cleanup diagnostic，不覆盖原始 Attempt verdict |
+| command cleanup / Agent teardown | 保留原结果并追加 cleanup diagnostic；必要时退休该复用周期 |
+| Provider finalizer | 写入 Case cleanup diagnostic，不取代原始 Attempt verdict |

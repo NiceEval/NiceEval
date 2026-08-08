@@ -17,7 +17,7 @@ Sequence 只引用 Eval ID，不复制 Eval，不给 Eval 增加第二个身份�
 
 一次 Sequence Invocation 从第一步开始，按声明顺序逐步真实执行。
 Sequence 不使用历史结果沿用，不把文件名字典序当执行契约，也不根据业务 metadata 猜测步骤行为。
-选择序列中的某个终点时，Runner 仍从第一步重放到该终点。
+选择序列中的某个终点时，Runner 仍从第一步重新执行到该终点。
 
 Sequence 不声明 `role`、learn、update、revoke 或 checkpoint。
 这些词描述特定评测领域，既不能改变通用调度，也不能证明外部状态发生了对应变化。
@@ -26,11 +26,11 @@ Sequence 不声明 `role`、learn、update、revoke 或 checkpoint。
 ## 框架保证与外部状态
 
 NiceEval 保证本轮的执行 lineage：成员完整、顺序确定、单步串行、前序步骤没有被结果沿用替代。
-每条序列结果都记录 Sequence ID、定义摘要和步骤位置，报告不需要解析数字文件名前缀。
+每条序列结果都登记 Sequence ID、定义摘要和步骤位置，报告不需要读取数字文件名前缀。
 
 NiceEval 不检查 opaque 外部状态的内容。
 `$HOME` 目录、远端 memory 服务或共享数据库是否从干净起点开始，仍由 Experiment 的 Sandbox lifecycle 与外部系统负责。
-多个 Invocation 共用一份状态时继续使用 `sharedState.key` 独占完整窗口。
+多个 Invocation 共用一份状态时继续使用 `sharedState.key` 独占完整时段。
 
 Sequence 开始时若无法证明外部状态已回到约定起点，作者必须换新 cohort 或由 lifecycle 恢复固定 revision。
 CLI 只报告能观察到的 state key、Sequence lineage 与实际派发，不把“执行了完整前缀”夸大成“外部状态已经干净”。
@@ -41,8 +41,8 @@ CLI 只报告能观察到的 state key、Sequence lineage 与实际派发，不�
 它们封口并完成收尾后，Runner 才派发下一步；领域判分失败不会抹去已经发生的交互。
 
 `errored`、`skipped` 或 Invocation 中断不能证明步骤到达可继续的提交边界。
-Runner 不派发其后的步骤，并把未开始成员记录为 `skipped`，诊断码为 `sequence-history-incomplete`。
-下一次运行仍从第一步真实重放，不从中断位置继续。
+Runner 不派发其后的步骤，并把未开始成员登记为 `skipped`，诊断码为 `sequence-history-incomplete`。
+下一次运行仍从第一步真实重新执行，不从中断位置继续。
 
 ## 范围
 
@@ -50,7 +50,7 @@ Runner 不派发其后的步骤，并把未开始成员记录为 `skipped`，诊
 
 - `defineSequence()` 与 `sequences/` 文件发现；
 - 一个 Sequence 对现有 Eval ID 的有序引用；
-- `niceeval exp --sequence` 与 `--through` 的完整前缀重放；
+- `niceeval exp --sequence` 与 `--through` 的完整前缀重新执行；
 - Sequence Invocation 内固定为单步串行，并禁用结果沿用；
 - Sequence lineage 的计划输出、Record 字段与报告读取面；
 - 缺成员、重复成员、非法收窄和历史中断的结构化反馈。
@@ -58,7 +58,7 @@ Runner 不派发其后的步骤，并把未开始成员记录为 `skipped`，诊
 不包含：
 
 - `role` 或 memory 领域的 learn、update、revoke、checkpoint 词表；
-- 解析文件名中的数字前缀、目录名或 metadata 来推断依赖；
+- 读取文件名中的数字前缀、目录名或 metadata 来推断依赖；
 - 自动判断某条业务记忆是否新增、替换、撤销或存活；
 - 自动清空作者的外部服务、创建 cohort 或验证 checkpoint 内容；
 - 分支图、条件步骤、循环和 DAG；
@@ -68,6 +68,6 @@ Runner 不派发其后的步骤，并把未开始成员记录为 `skipped`，诊
 ## 入口
 
 - [Library](library.md) —— `defineSequence()`、发现路径与定义形状
-- [CLI](cli.md) —— 选择、计划、完整前缀重放与错误反馈
+- [CLI](cli.md) —— 选择、计划、完整前缀重新执行与错误反馈
 - [Architecture](architecture.md) —— Sequence、Run、Attempt 的关系及 lineage 不变量
 - [Use Case](use-case/README.md) —— 按用户目标组织的完整路径

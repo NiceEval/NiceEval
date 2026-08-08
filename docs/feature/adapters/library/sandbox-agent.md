@@ -1,6 +1,6 @@
 # Sandbox Agent
 
-被测对象是在隔离环境中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
+被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
 Sandbox provider 由 experiment 选择；Adapter 不绑定 Docker、Vercel 或 E2B。
 
 ```ts
@@ -51,14 +51,14 @@ export default defineSandboxAgent({
 `setup` 只做 Agent runtime 准备：写鉴权、Agent 配置和扩展；不安装 CLI，失败直接抛出并使 attempt errored。
 `send` 只执行一轮任务，多轮时会重复调用。只有协议给出完整可信终态才返回 Turn。
 
-CLI 非零、signal、transport 中断或无法解析终态时 reject `SendFailure`。`Turn.status: "failed"` 只保留给协议明确报告的可评分任务失败，不能由 `exitCode !== 0` 直接推导。
+CLI 非零、signal、transport 中断或无法辨认终态时 reject `SendFailure`。`Turn.status: "failed"` 只保留给协议明确报告的可评分任务失败，不能由 `exitCode !== 0` 直接推导。
 可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
 
 每个回调的 `ctx.progress(...)` 只更新当前 `agent.setup` / `agent.run` / `agent.teardown` 的短期 activity;需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)`。
 不要从 CLI stdout 的每个 frame 转发 progress,也不要直接写宿主进程的 stdout/stderr。
 完整语义见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
-环境级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `prepare()` 或预制产物；eval 的任务 Fixture 属于 Eval layer 的 `prepare()` 或 `test(t)`。
+Sandbox 级二进制、预热和跨 attempt 资源属于 Experiment layer 的 `prepare()` 或预构建输出；eval 的任务 Fixture 属于 Eval layer 的 `prepare()` 或 `test(t)`。
 三类准备不交换职责。
 
 ## Transcript 采集

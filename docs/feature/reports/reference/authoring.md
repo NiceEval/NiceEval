@@ -1,6 +1,6 @@
 # 报告作者 API —— References
 
-本篇记录报告作者 API 从外部产品学习什么，以及哪些部分不适合 NiceEval。
+本篇说明报告作者 API 从外部产品学习什么，以及哪些部分不适合 NiceEval。
 双面 renderer 的逐块参考见 [Reports · 参考方案](README.md)；本篇专门比较普通报告作者的完整开发体验。
 
 ## Rill：指标层到默认分析页
@@ -25,7 +25,7 @@
  NiceEval 不照抄 `data` 属性；组件按值的角色分别接收 rows、points、items 或 value。
 
 不跟 SQL。
-NiceEval 的官方指标必须保住两级聚合、覆盖和 Attempt 引用；这些规则不能退回每份报告的 `group by` 与附加列。
+NiceEval 的官方指标必须保住两级聚合、coverage 和 Attempt 引用；这些规则不能退回每份报告的 `group by` 与附加列。
 
 ## Observable Framework：惰性依赖与开发循环
 
@@ -70,7 +70,7 @@ NiceEval 输入是 Sample 与 Attempt Evidence，普通报告直接调用 TypeSc
 终端、网页、自有 React 页面和 Agent 都应消费同一份指标身份与计算结果。
 
 不把 NiceEval 扩成通用语义层服务。
-它的事实来源仍是 Record，比较边界仍由 Sample 确定。
+它的事实仍出自 Record，比较边界仍由 Sample 确定。
 
 ## Braintrust：把通用监控与实验比较分开
 
@@ -137,9 +137,9 @@ Braintrust 的 reducer 目录还暴露了一个缺口，但不能原样照搬。
 报告作者 API 学一条：嵌入包应以宿主 React 应用为中心，提供纯组件、主题和明确事件，不要求宿主加载完整报告运行时。
 
 NiceEval 不需要远端 BI 服务、认证会话或保存查询 id。
-服务端先把 Record 解析成快照，浏览器组件只渲染这份快照。
+服务端先把 Record 转成快照，浏览器组件只渲染这份快照。
 
-## 对 NiceEval 的综合结论
+## 对 NiceEval 的综合判断
 
 没有一个参考物同时提供：
 

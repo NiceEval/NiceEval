@@ -8,9 +8,9 @@
 
 ### 简述
 
-niceeval 不接管服务:多容器环境继续走[环境预置放哪](../../../feature/sandbox/library.md#环境预置放哪)的「外部编排」行(`docker compose up -d && niceeval exp …`),或写进 `ExperimentDef.setup`。
+niceeval 不接管服务:多容器拓扑继续走[预置放哪](../../../feature/sandbox/library.md)的「外部编排」行(`docker compose up -d && niceeval exp …`),或写进 `ExperimentDef.setup`。
 niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["services"]` 一类的标签),provider 声明能力,缺项计划期 `skipped`;命令树与 send 终态沿用[已定稿契约](../../../feature/adapters/architecture/agent-contract.md)。
-赌注是:假 `failed` 的大头来自「环境不对等没被发现」,把它变成显式 `skipped` 就消掉了大部分危害,编排本身留给成熟的外部工具。
+赌注是:假 `failed` 的大头来自「Sandbox 不对等没被发现」,把它变成显式 `skipped` 就消掉了大部分危害,编排本身留给成熟的外部工具。
 
 ### 优势
 
@@ -22,8 +22,8 @@ niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["se
 
 - **R2 / R3 / R7 不满足**:就绪门、判分时服务存活、服务日志证据都在 niceeval 视野之外;服务中途死掉仍是运行期假 `failed`,只是概率被 `skipped` 前置过滤降低。
 - **R1 / R4 折半**:服务拓扑不逐 eval 声明,同一批 run 里不同题要不同服务组合时,外部编排只能起并集;服务地址经 env 传入,eval 写死 URL,provider 中性名存实亡。
-- **R6 缺席**:外部服务的版本与配置不进指纹,环境变了缓存照常沿用——与[缓存契约](../../../feature/experiments/cache.md)的「计划内自变量必须进指纹」直接矛盾,只能靠用户自觉 `--rerun all`。
-- **R9 缺席**:强杀路径下外部服务的清理完全靠用户。
+- **R6 缺席**:外部服务的版本与配置不进指纹,Sandbox 变了缓存照常沿用——与[缓存契约](../../../feature/experiments/cache.md)的「计划内自变量必须进指纹」直接矛盾,只能靠用户自觉 `--rerun all`。
+- **R9 缺席**:强杀路径下外部服务的回收完全靠用户。
 - 云 provider 形态残缺:外部编排起在宿主机,E2B / Vercel 的 VM 里 agent 访问不到宿主机的 compose 网络,只能再打隧道——恰是 MemoryBench 里连接错误重灾区的形状。
 
 ---
@@ -42,14 +42,14 @@ niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["se
 ### 落地路线
 
 1. profile 的 `requires` 标签 + provider 能力元数据 +`skipped` 语义(与 PLAN-1 第 3 步同一份工程)。
-2. 文档把外部编排的组合写成指引(env 传址、清理责任、指纹盲区的 `--rerun all` 义务)。
+2. 文档把外部编排的组合写成指引(env 传址、回收责任、指纹盲区的 `--rerun all` 义务)。
 
 ---
 
 ### 验收 / Definition of Done
 
 1. **R5**:声明 `requires` 的 eval 在无能力 provider 上计划期 `skipped`,零沙箱创建。
-2. **文档指引**:外部编排用例页含 env 传址与清理责任声明。
+2. **文档指引**:外部编排用例页含 env 传址与回收责任声明。
 
 **反指标**:
 
@@ -61,4 +61,4 @@ niceeval 只补两块最小语义: profile 可声明抽象需求(`requires: ["se
 ### 和其它方案的关系
 
 - **vs PLAN-1**:本方案 = PLAN-1 的能力协商切片 + 现状外部编排;PLAN-1 落地后本方案的 `requires` 标签被 profile 推导取代。
-- **vs PLAN-2**:不解析 compose,只把 compose 的存在当用户侧事实。
+- **vs PLAN-2**:不读取 compose,只把 compose 的存在当用户侧事实。

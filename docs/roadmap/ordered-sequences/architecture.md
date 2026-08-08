@@ -13,7 +13,7 @@ SequenceDefinition ──引用──▶ EvalDefinition × N
 ```
 
 Sequence Step 不是新的评分实体。
-每一步仍产生普通 Attempt、Assertion 与 Verdict；步骤只补充它在本轮有序历史中的位置和来源。
+每一步仍产生普通 Attempt、Assertion 与 Verdict；步骤只补充它在本轮有序历史中的位置和出处。
 
 Record 增加下面两处形状：
 
@@ -43,14 +43,14 @@ interface EvalResult {
 ```
 
 普通 Experiment Run 省略 `Run.sequence`，普通 Attempt 省略 `EvalResult.sequence`。
-读取面只凭这些落盘事实识别 Sequence 结果，不解析 evalId 的数字前缀，也不重新读取当前 Sequence 源码猜测旧记录。
+读取面只凭这些落盘事实识别 Sequence 结果，不读取 evalId 的数字前缀，也不重新读取当前 Sequence 源码猜测旧数据。
 
 ## 规划与派发
 
 规划按以下顺序完成：
 
 1. 发现并校验 Sequence Definition；
-2. 解析唯一 Experiment，并取得它实际选择的 Eval；
+2. 读取唯一 Experiment，并取得它实际选择的 Eval；
 3. 校验所有 Sequence 成员都在选择结果中；
 4. 应用 `--through`，得到从第一步开始的连续前缀；
 5. 对该前缀做普通 Eval × Experiment link 与 physical planning；
@@ -78,12 +78,12 @@ Sequence Invocation 不消费历史结果沿用。
 ## 并发 Invocation 与外部状态
 
 Sequence 不创建第二套状态锁。
-Experiment 声明 `sharedState.key` 时，现有共享状态租约覆盖整个 Sequence Invocation，从 lifecycle setup 前持有到最后一次 teardown 与 finalizer 后。
+Experiment 声明 `sharedState.key` 时，现有共享状态租约涵盖整个 Sequence Invocation，从 lifecycle setup 前持有到最后一次 teardown 与 finalizer 后。
 
 没有 `sharedState` 时，并行 Invocation 可以各自运行同一 Sequence。
 这只在它们使用独立状态或完全无状态时安全；共享外部状态却不声明 key 仍是 Experiment 作者错误。
 
-完整重放只证明 NiceEval 本轮依次执行了完整前缀。
+完整重新执行只证明 NiceEval 本轮依次执行了完整前缀。
 外部系统若不能在开始前恢复固定 revision、分配新 cohort，或回滚中断步骤，当前状态就不能称为干净轨迹。
 Sequence 不通过成功文案掩盖这个边界。
 

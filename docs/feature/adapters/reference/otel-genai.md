@@ -1,8 +1,8 @@
-# OTel GenAI 与其它「agent 行为怎么记」的标准(调研记录)
+# OTel GenAI 与其它「agent 行为怎么记」的标准(调研笔记)
 
-**来源:** OpenTelemetry 官方文档 / [semantic-conventions-genai 仓库](https://github.com/open-telemetry/semantic-conventions-genai)、各标准官方 spec(2026-07 抓取)。
-这是**调研记录**,和 [agent-eval 笔记](agent-eval.md)对照着读:同一个问题——"agent 干了什么,用什么 schema 记下来"——agent-eval 选择**自己定义一套闭集事件类型**,OTel GenAI 是**行业标准的另一套**。
-本篇记录 OTel GenAI 到底定义了什么、还有哪些标准在解决同一问题、以及这些对 niceeval 的 `StreamEvent` / trace 双轨设计意味着什么。
+**出处:** OpenTelemetry 官方文档 / [semantic-conventions-genai 仓库](https://github.com/open-telemetry/semantic-conventions-genai)、各标准官方 spec(2026-07 抓取)。
+这是**调研笔记**,和 [agent-eval 笔记](agent-eval.md)对照着读:同一个问题——"agent 干了什么,用什么 schema 记下来"——agent-eval 选择**自己定义一套闭集事件类型**,OTel GenAI 是**行业标准的另一套**。
+本篇整理 OTel GenAI 到底定义了什么、还有哪些标准在解决同一问题、以及这些对 niceeval 的 `StreamEvent` / trace 双轨设计意味着什么。
 
 niceeval 自己的选择已经定了(见 [Observability](../../../observability.md#otlp-traces-统一瀑布图)):**断言走自定义 `StreamEvent[]`,trace 归一到 OTel GenAI semconv,不发明私有 trace schema**。
 本篇是这个决定背后的对照材料。
@@ -18,7 +18,7 @@ niceeval 自己的选择已经定了(见 [Observability](../../../observability.
 | 消息内容 | transcript 全量保留(离线评测需要) | **opt-in**(敏感数据顾虑,默认不采) |
 | 服务的场景 | 离线断言 / 评分 | 线上可观测 / APM 后端 |
 
-这两条路线不是竞争关系,是**场景不同**:eval 需要"完整、可断言的行为记录",可观测需要"标准、可跨系统聚合的遥测"。
+这两条路线不是竞争关系,是**场景不同**:eval 需要"完整、可断言的行为档案",可观测需要"标准、可跨系统聚合的遥测"。
 niceeval 两者都要,所以双轨。
 
 ## OTel GenAI 定义了什么
@@ -42,9 +42,11 @@ niceeval 两者都要,所以双轨。
 | `invoke_workflow` | `invoke_workflow {gen_ai.workflow.name}` | 多 agent 编排的一次工作流 |
 | `plan` | `plan {gen_ai.agent.name}` | agent 的规划 / 任务分解阶段 |
 
-agent span 的必填属性是 `gen_ai.operation.name`(+远程形态的 `gen_ai.provider.name`);有值就填 `gen_ai.agent.name` / `gen_ai.agent.id`;消息内容(`gen_ai.input.messages` / `gen_ai.output.messages`)、`gen_ai.tool.definitions`、`gen_ai.system_instructions` 都是 **opt-in**。
+agent span 的必填属性是 `gen_ai.operation.name`(+远程形态的 `gen_ai.provider.name`)。
+有值就填 `gen_ai.agent.name` / `gen_ai.agent.id`。
+消息内容(`gen_ai.input.messages` / `gen_ai.output.messages`)、`gen_ai.tool.definitions`、`gen_ai.system_instructions` 都是 **opt-in**。
 
-### Events(输入输出的全量记录)
+### Events(输入输出的全量存档)
 
 **没有** per-message 事件(早期草案的 `gen_ai.user.message` / `gen_ai.assistant.message` 那套已废)。
 现在只有两个事件:
@@ -65,11 +67,16 @@ agent span 的必填属性是 `gen_ai.operation.name`(+远程形态的 `gen_ai.p
 
 ### OpenInference(Arize Phoenix)—— span kind 分类学最全
 
-OTel 兼容的另一套约定,核心是每条 span 必带 `openinference.span.kind`,枚举比 OTel GenAI 的 operation.name 丰富得多:`LLM` / `TOOL` / `CHAIN` / `AGENT` / `RETRIEVER` / `RERANKER` / `EMBEDDING` / `GUARDRAIL` / `EVALUATOR` / `PROMPT`。
-消息不走事件,**打平成索引属性**:`llm.input_messages.<i>.message.role` / `.content`;工具调用带 `tool_call.id` + `tool_call.function.name` / `.arguments`;token 与成本:`llm.token_count.prompt|completion|total`(含 cache read/write 细分)、`llm.cost.prompt|completion|total`(USD)。
-多模态内容有 `message_content.type`(`text` / `image` / `audio` / `reasoning` / `tool_use`)。
+- OTel 兼容的另一套约定,核心是每条 span 必带 `openinference.span.kind`。
+  枚举比 OTel GenAI 的 operation.name 丰富得多:`LLM` / `TOOL` / `CHAIN` / `AGENT` / `RETRIEVER` / `RERANKER` / `EMBEDDING` / `GUARDRAIL` / `EVALUATOR` / `PROMPT`。
+- 消息不走事件,**打平成索引属性**。
+  `llm.input_messages.<i>.message.role` / `.content`;工具调用带 `tool_call.id` + `tool_call.function.name` / `.arguments`。
+  token 与成本:`llm.token_count.prompt|completion|total`(含 cache read/write 细分)、`llm.cost.prompt|completion|total`(USD)。
+- 多模态内容有 `message_content.type`(`text` / `image` / `audio` / `reasoning` / `tool_use`)。
 
-对照价值:`GUARDRAIL` / `EVALUATOR` / `RERANKER` 这些 kind 说明"span 语义角色"的枚举可以比 niceeval 现在的 `turn | model | tool | agent | other` 细;`llm.cost.*` 直接把成本进 trace,niceeval 是在收尾时按价格表估算的(`estimateCost`,见 `src/o11y/cost.ts`),两种放法。
+对照价值:`GUARDRAIL` / `EVALUATOR` / `RERANKER` 这些 kind 说明"span 语义角色"的枚举可以比 niceeval 现在的 `turn | model | tool | agent | other` 细。
+`llm.cost.*` 直接把成本进 trace,niceeval 是在收尾时按价格表估算的(`estimateCost`,见 `src/o11y/cost.ts`)。
+两种放法。
 
 ### OpenLLMetry(Traceloop)—— gen_ai.* 的前身推手
 
@@ -79,13 +86,21 @@ OTel 兼容的另一套约定,核心是每条 span 必带 `openinference.span.ki
 
 ### OpenAI Agents SDK traces —— 带类型的私有 span 树
 
-自己的一套(可经 processor 导出到 OTel 系后端):`Trace{ workflow_name, trace_id, group_id }` + 强类型 span:`agent_span` / `generation_span` / `function_span`(工具调用)/ `handoff_span` / `guardrail_span` / `transcription_span` / `speech_span` / `custom_span`。
-两个值得记的点:**`handoff_span` 是它独有的语义**(agent 间移交,OTel 里只能拿 `invoke_agent` 近似);**敏感数据是开关**(`RunConfig.trace_include_sensitive_data` 控制 generation/function span 是否含输入输出)——和 OTel 把消息内容做成 opt-in 是同一个顾虑的不同解法。
+- 自己的一套(可经 processor 导出到 OTel 系后端):`Trace{ workflow_name, trace_id, group_id }` + 强类型 span。
+- span 集:`agent_span` / `generation_span` / `function_span`(工具调用)/ `handoff_span` / `guardrail_span` / `transcription_span` / `speech_span` / `custom_span`。
+- 两个值得记的点:**`handoff_span` 是它独有的语义**(agent 间移交,OTel 里只能拿 `invoke_agent` 近似)。
+- **敏感数据是开关**:`RunConfig.trace_include_sensitive_data` 控制 generation/function span 是否含输入输出。
+- 这和 OTel 把消息内容做成 opt-in 是同一个顾虑的不同解法。
 
 ### AG-UI —— 和 niceeval `StreamEvent` 同形态的扁平事件流
 
-前面几个都是 trace(span 树);AG-UI 不是 telemetry,是 **agent ↔ 前端的流式事件协议**,但它的形态和 niceeval 的 `StreamEvent[]` 最像:扁平事件序列 + 显式 id 配对。
-事件词汇:生命周期 `RunStarted` / `RunFinished` / `RunError` / `StepStarted|Finished`;消息三段式 `TextMessageStart`(定 `messageId` + role)→ `TextMessageContent`(delta)→ `TextMessageEnd`;工具调用镜像同构 `ToolCallStart`(定 `toolCallId` + name)→ `ToolCallArgs`(delta)→ `ToolCallEnd` → **`ToolCallResult`**;另有状态同步(`StateSnapshot` / `StateDelta`,RFC 6902 JSON Patch)和 `Reasoning*` 系列。
+前面几个都是 trace(span 树);AG-UI 不是 telemetry,是 **agent ↔ 前端的流式事件协议**。
+它的形态和 niceeval 的 `StreamEvent[]` 最像:扁平事件序列 + 显式 id 配对。
+事件词汇:
+- 生命周期:`RunStarted` / `RunFinished` / `RunError` / `StepStarted|Finished`。
+- 消息三段式:`TextMessageStart`(定 `messageId` + role)→ `TextMessageContent`(delta)→ `TextMessageEnd`。
+- 工具调用镜像同构:`ToolCallStart`(定 `toolCallId` + name)→ `ToolCallArgs`(delta)→ `ToolCallEnd` → **`ToolCallResult`**。
+- 状态同步:`StateSnapshot` / `StateDelta`(RFC 6902 JSON Patch)和 `Reasoning*` 系列。
 
 对照价值:**又一个用显式 id(`toolCallId`)配对 call/result 的设计**;它把"流式增量"(start/content/end 三段式)做进了词汇,而 niceeval 的 `StreamEvent` 是事后整段的——评测离线跑,不需要增量,这是场景差异不是缺陷。
 若将来 view 要做"实时看 agent 跑",AG-UI 是现成参考。
@@ -94,7 +109,8 @@ OTel 兼容的另一套约定,核心是每条 span 必带 `openinference.span.ki
 
 LLM 工程平台的数据模型:`Trace`(一次请求)+ 嵌套 `Observation`(span / generation / event 几类),外加 `Session`(聚合多 trace 的多轮会话)和 `Score`(评分挂到 trace/observation 上)。
 底层使用 OTel。
-对照价值:它的 `Session → Trace → Observation` 三层和 niceeval 的 `run → session → turn → events` 作用域链是同构的;`Score` 挂在任意层的设计对应 niceeval "断言作用域由接收者决定"。
+对照价值:它的 `Session → Trace → Observation` 三层和 niceeval 的 `run → session → turn → events` 作用域链是同构的。
+`Score` 挂在任意层的设计对应 niceeval "断言作用域由接收者决定"。
 
 ## 汇总对照
 

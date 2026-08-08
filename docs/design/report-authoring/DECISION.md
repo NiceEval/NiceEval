@@ -2,7 +2,7 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md)
 
-## 结论
+## 裁决
 
 采纳 [PLAN-5](PLAN-5/README.md)。
 作者面是“静态 page + 普通函数 + 普通结果值 + 按形状命名的组件”。
@@ -16,9 +16,9 @@
 
 ## 为什么替换 PLAN-2
 
-PLAN-2 正确识别了两级聚合、覆盖、证据下钻与双面一致这些硬约束，但把内部运行阶段投影成了三个作者概念。
+PLAN-2 正确识别了两级聚合、涵盖范围、证据下钻与双面一致这些硬约束，但把内部运行阶段投影成了三个作者概念。
 
-Source 让作者理解声明何时 compute；Composition 让作者理解 page context 与树解析；Component 的 source / data 双入口让调用点无法直接说出值的角色。
+Source 让作者理解声明何时 compute；Composition 让作者理解 page context 与树读取；Component 的 source / data 双入口让调用点无法直接说出值的角色。
 
 这些协议没有增加表达力。
 普通函数已经能完成异步、组合、并行、join、排序与复用。

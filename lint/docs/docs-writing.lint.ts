@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  formatRegressionHits,
+  formatLintHits,
   lintDocsWriting,
   lintSvgTerms,
   parseConcepts,
   proseBlocks,
   proseText,
-  serializeBaseline,
   splitSentences,
   svgTexts,
   synonymBans,
@@ -16,7 +15,7 @@ import {
 
 // docs/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
 // 规矩本身写在 docs/README.md「写给人读」与 docs/concepts.md「禁用写法」。
-// 规则与计数住在 scripts/docs-writing-lint.ts,判对错只有这一处入口——
+// 规则与命中位置住在 scripts/docs-writing-lint.ts,判对错只有这一处入口——
 // 契约再准确,读不动的段落等于没写,而「以后再顺手改」在没有守护时等于不改。
 describe("docs 可读性守护", () => {
   it("docs/writing-rules.json 的每条禁词都带 use 与 why", () => {
@@ -24,17 +23,9 @@ describe("docs 可读性守护", () => {
     expect(validateRules()).toEqual([]);
   });
 
-  it("超长句、超长段与禁用写法不超过 docs/writing-baseline.json 的台账", async () => {
+  it("超长句、超长段、禁用写法与死词均不得命中", () => {
     const report = lintDocsWriting();
-
-    // 棘轮在前:有回归就在这一行终止,下面的台账写回够不着,
-    // 于是 `-u` 也放不宽一个数字——「只许变小」在更新模式下同样成立。
-    expect(report.regressions.length, formatRegressionHits(report)).toBe(0);
-
-    // 改好了台账就得跟着收紧,否则腾出来的额度会被下一次改动悄悄用掉。
-    await expect(serializeBaseline(report.actual)).toMatchFileSnapshot(
-      "../../docs/writing-baseline.json",
-    );
+    expect(report.hits.length, formatLintHits(report.hits)).toBe(0);
   });
 
   it("句子量在软换行拼接之后:在句子中间换行不改变判定", () => {
@@ -118,11 +109,11 @@ describe("docs 可读性守护", () => {
 });
 
 // 图和正文各说各话是这么开始的:画的人为了摆得下造个简称,读的人在正文里查不到它。
-// 规矩写在 docs/SVG-DESIGN.md「用语:图里不立新词」,没有台账——一次命中都不许有。
+// 规矩写在 docs/SVG-DESIGN.md「用语:图里不立新词」,一次命中都不许有。
 describe("docs/ 手绘 SVG 的用语", () => {
   it("盒标题与泳道名用的词在正文里都有出处,禁用写法也不许藏进图里", () => {
     const hits = lintSvgTerms();
-    expect(hits, hits.map((h) => `${h.file}:${h.line}  ${h.message}`).join("\n")).toEqual([]);
+    expect(hits.length, formatLintHits(hits)).toBe(0);
   });
 
   it("tspan 拼进父节点,不按 tspan 切词", () => {

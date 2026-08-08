@@ -5,7 +5,7 @@
 ## 形状
 
 NiceEval 托管自己的 Suite registry。
-发布方上传 Eval 源码与资产归档，消费方用专用命令添加 Suite，并把解析结果写进 `eval.lock`。
+发布方上传 Eval 源码与资产归档，消费方用专用命令添加 Suite，并把选择结果写进 `eval.lock`。
 
 ```sh
 niceeval suite add niceeval/terminal-bench@2.1
@@ -46,13 +46,13 @@ registry 归档必须包含可执行 TypeScript、所有本地资产与一份依
 
 ## 对固定 Case 的结果
 
-PLAN-2 可以满足 S2、S3 与来源 digest，但不满足 S1 的发布仓库零改动。
+PLAN-2 可以满足 S2、S3 与上游 digest，但不满足 S1 的发布仓库零改动。
 若只保存 Suite 总 digest，S6 会让全套题失效；若逐题建依赖图，registry 又开始复制 NiceEval 指纹系统。
 
 S9 可以在发布时拦截，但 S10 仍需要 JavaScript runtime 归属规则。
 它没有消除包管理器，只在包管理器外再增加一条分发链。
 
-## 结论
+## 裁决
 
 这个方案适合语言中立任务归档，不适合原生 NiceEval Eval。
 未来可以建立只读目录来索引公开 Suite package，但目录不应成为第二个安装器或依赖锁 owner。

@@ -2,23 +2,26 @@
 
 `--timing` 是 attempt-detail 组件族对应区块的 text 面。
 [首页](attempt.md)的 `timing:` 行给出逐阶段一行的完整摘要（子节点只是折叠成计数，阶段本身不筛选）；`--timing` 是整个 Attempt 的时间分析入口，展开首页折叠掉的子节点。
-它先按 `result.json.phases` 输出 runner 生命周期，再投影各锚点下的 activity 树：两层作者 layer 的 prepare command 与已登记 cleanup、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、producer 自己起 key 的语义 activity（如 `workspace.diff.export`），以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
-锚点行的本地化标签只覆盖 `LifecyclePhase` 闭集；activity 一律渲染 producer 写下的 `label`，未知 key 不需要 renderer 认识，也不进锚点标签表。
+
+它先按 `result.json.phases` 输出 runner 生命周期，再投影各生命周期阶段下的 activity 树。树里包含四类节点：两层作者 layer 的 prepare command 与已登记 cleanup、经 `Sandbox.runCommand()` / `runShell()` 发出的命令。还有 producer 自己起 key 的语义 activity（如 `workspace.diff.export`），以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
+
+阶段行的本地化标签只对 `LifecyclePhase` 闭集生效；activity 一律渲染 producer 写下的 `label`，未知 key 不需要 renderer 认识，也不进阶段标签表。
 某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、作者 command、operation、沙箱命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
 
-时间分析入口有两档密度，都是这个区块 text 渲染面的选项，不是事实过滤器；`--json` 面恒为完整的树解析产物，等价 `--timing=full` 的节点集合，不受 detail node 预算约束（[切片是组件选择](../architecture.md#show-的切片是组件选择)）：
+时间分析入口有两档密度，都是这个区块 text 渲染面的选项，不是事实过滤器；`--json` 面恒为完整树结构的输出，等价 `--timing=full` 的节点集合，不受 detail node 预算约束（[切片是组件选择](../architecture.md#show-的切片是组件选择)）：
 
 - 单独使用 `--timing` 是**有界诊断投影**。
   所有实际存在的 lifecycle phase 与收尾 phase 都必须出现；phase 下的 runner child 与已关联 OTel span 共用 80 个 detail node 的全局预算。
   未超过预算时，它与 full 输出相同；超过预算时，优先保留失败路径、最慢节点及首尾时序样本，并在每棵被截断的子树原位写明省略节点数、其中的失败数和 full 命令。
 - `--timing=full` 逐节点展开 artifact 中全部 runner timing node 与能唯一挂接到 turn 的全部 OTel span，不受 detail node 预算限制。
 
-两档密度都只读取已经封口的 timing 证据。命令调用若通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记 API key、token 或 header value，摘要在落盘前已替换成 `<redacted>`；`full` 与 `--json` 解除的是节点预算，不是脱敏边界，不能恢复原值。未登记的自由文本与修复前产生的旧 artifact 没有可供读取端推断的 provenance，renderer 不按 `token=` 等键名猜测。
+两档密度都只读取已经封口的 timing 证据。命令调用若通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与落盘边界) 登记 API key、token 或 header value，摘要在落盘前已替换成 `<redacted>`；`full` 与 `--json` 解除的是节点预算，不是脱敏边界，不能恢复原值。未登记的自由文本与修复前产生的旧 artifact 没有可供读取端推断的 provenance，renderer 不按 `token=` 等键名猜测。
   它是审计、脚本取证和检查 renderer 摘要是否诚实的入口；输出很长是允许的。
 
 预算按**节点**而不是终端物理行计算，phase 行与 `… N nodes omitted` 提示不占预算。
 80 个节点分成四个稳定选择池：失败路径最多 40 个节点、最慢路径最多 20 个节点、全局时序最早与最晚各最多 10 个节点；选中一个深层节点时，其祖先路径一并保留并占用所在池的额度，四个池合并时去重。
 失败按 `startOffsetMs` / `id` 定序；最慢节点按 `durationMs` 降序并以 `startOffsetMs` / `id` 打破平局；首尾样本按 `startOffsetMs` / `id` 定序。
+
 某个池装不下时按自己的稳定次序截断，省略提示如实带出未展示的失败数；某个池没有用满时，空余额度依次交给失败、最慢、首尾池继续选择。
 renderer 不计算或显示 omitted children 的耗时合计，因为 sibling 可能并发；父节点自身的墙钟才是这棵子树可靠的时间包络。
 
@@ -76,29 +79,29 @@ runner 节点使用本机单调时钟，OTel 节点使用 span 自带时钟，�
 
 ## producer 起 key 提供语义，renderer 只负责通用投影
 
-一个由 runner、Sandbox 或 provider 自己拥有的逻辑工作，如果内部会批量处理很多对象或执行多个低层步骤，采集端应在自己的命名空间下起 key 记录一个 activity 父节点（如 `workspace.diff.export`）。
+一个由 runner、Sandbox 或 provider 自己拥有的逻辑工作，如果内部会批量处理很多对象或执行多个低层步骤，采集端应在自己的命名空间下起 key，写入一个 activity 父节点（如 `workspace.diff.export`）。
 `label` 在采集时就写成有界的人读摘要，例如 `export workspace diff · 1 window · 3,302 files`；实际经过公开 Sandbox 边界的命令仍作为它的 `command` child 留下。
 批量工作应在 Sandbox 内一次完成一个逻辑批次，不能先制造逐文件远端调用，再指望 renderer 把性能问题藏起来。
 
-artifact 不保存 render callback，renderer 也不解析 `git show ...`、`cat-file ...` 或其它 shell 文本来猜 command family。
+artifact 不保存 render callback，renderer 也不解读 `git show ...`、`cat-file ...` 或其它 shell 文本来猜 command family。
 这样既不把 git/ledger 细节放入通用 Reports，也不会把路径不同的真实调用误合并成一个虚构步骤。
 语义压缩来自 producer 写下的 operation；renderer 面对任意未知节点只使用统一的预算、失败、耗时和时序规则。
 
-`show` 在 TTY、管道、CI 与 coding agent 环境使用同一选择规则，不因是否交互而改变节点集合，也不自动启动 pager。
+`show` 在 TTY、管道、CI 与 coding agent 场合下使用同一选择规则，不因是否交互而改变节点集合，也不自动启动 pager。
 需要翻页时由用户显式运行 `niceeval show @loc --timing=full | less -R`；CLI 不能像 `git log` 那样在 TTY 下擅自进入一个会等待输入的进程。
 
 ## Run 级 activity 的读取
 
 共享构建（`sandbox.build`）、共享 staged payload 准备（`agent.artifact.prepare`）与实验级 Hook 的时间不属于任何 attempt，不出现在 `--timing` 的 attempt 树里。
 它们的家是 `RunMeta.timings`：`niceeval show --timing` 不带 attempt locator 时输出 Run 级 activity 树，与 attempt 树同一套预算、失败与时序投影规则；未知 key 同样用 producer 的 `label` 通用渲染。
-sandboxBuild 的专用卡（locator、输入、依赖它的 attempt）从 [`sandboxBuilds`](../../record/architecture.md#共享构建的-provenancesandboxbuilds) 读取，不解析 timing label。
+sandboxBuild 的专用卡（locator、输入、依赖它的 attempt）从 [`sandboxBuilds`](../../record/architecture.md#共享构建的-provenancesandboxbuilds) 读取，不解读 timing label。
 
 ## 大时间树的输出 case
 
 **Case 1：小树。**
 detail node 不超过 80 时，单独使用 `--timing` 不插入省略行，内容与 `--timing=full` 相同。
 
-**Case 2：producer 已记录批量 activity。**
+**Case 2：producer 已写入批量 activity。**
 即使这个 activity 处理 3,302 个文件，也只展示逻辑工作和真实的批量 Sandbox 边界，不按文件制造 3,302 行：
 
 ```text
@@ -120,7 +123,7 @@ workspace.diff    14m 58s
      full: niceeval show @16nhdz6b --timing=full
 ```
 
-renderer 不把这些行命名为 `git show ×N`：只有 producer 明确记录的 operation 才能提供这种业务语义。
+renderer 不把这些行命名为 `git show ×N`：只有 producer 明确写入的 operation 才能提供这种业务语义。
 旧 artifact 的几千条命令仍是一次真实的 O(files) 调用证据，full 模式必须原样可查。
 
 **Case 4：巨大异构树中有失败。**
@@ -141,7 +144,7 @@ summary 模式和 full 模式都输出 `phase timing unavailable`，不会把 ev
 重定向到文件或管道时仍使用 80-node 默认预算；只有显式 `--timing=full` 才解除限制。
 CLI 不读取 stdin，不因 pager 等待而挂住 agent/CI。
 
-命令节点携带它生效的时限与来源层（[时限归属](../../sandbox/architecture.md#时限归属attempt-deadline-是唯一默认)的词汇：attempt deadline、逐命令 timeout、provider 上限）。
+命令节点携带它生效的时限与归属层（[时限归属](../../sandbox/architecture.md#时限归属attempt-deadline-是唯一默认)的词汇：attempt deadline、逐命令 timeout、provider 上限）。
 text 面在因超时失败的节点原位标注，如 `✗ deadline 60s · per-command timeout`——读者不该靠「停在整 1m 0s」这种巧合反推是谁掐断了命令；`--json` 与 `--timing=full` 对全部命令节点给出该字段。
 
 errored 或超时的 attempt 里，`--timing` 直接标出死在哪一步——最后一条主链阶段以及已知的最深 child 带 `✗`，其后没有主链条目；沙箱从未创建成功时收尾段整段缺席。

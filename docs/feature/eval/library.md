@@ -1,7 +1,7 @@
 # Eval ——库用法
 
 写一个 eval 像写一个测试：一个文件、一个 `test(t)` 函数。
-`test(t)` 里只做三件事——**驱动**（`t.send(...)` 让 agent 干活）、**读取**（`t.reply` / `turn` / `t.sandbox` 拿到结果）、**断言**（把观察写成可评分的记录）。
+`test(t)` 里只做三件事——**驱动**（`t.send(...)` 让 agent 干活）、**读取**（`t.reply` / `turn` / `t.sandbox` 拿到结果）、**断言**（把观察写成可评分的条目）。
 `defineEval` 各字段的契约见 [README](README.md)。
 
 ```typescript
@@ -43,7 +43,7 @@ export default defineEval({
 ## Eval 文件就是普通 Sandbox 输入
 
 本地文件不在 EvalInput 中重复登记。
-`uploadFile` 接受 `Buffer | URL`，`uploadDirectory` 接受相对路径或 URL；Runner 在实际读取本地 source 时记录 transfer manifest。
+`uploadFile` 接受 `Buffer | URL`，`uploadDirectory` 接受相对路径或 URL；Runner 在实际读取本地 source 时写入 transfer manifest。
 
 上传发生在第一个 `send` 前，文件就对 Agent 可见；发生在某个 `send` 返回后，过去的 turn 看不见；随后再 `send` 时下一轮正常可见。
 完整规则见[本地测试文件](use-case/criteria-files.md)。
@@ -53,7 +53,7 @@ export default defineEval({
 ## tags 与 sandbox：让 experiment 选择
 
 `tags` 是分类标签，供 CLI `--tag` 与 experiment 谓词过滤，未声明时是空数组。
-`sandbox` 让 Eval 自带起点：题目环境归题目时，Eval 用 `dockerComposeSandbox()` 这类 template-bearing factory 声明完整起点。
+`sandbox` 让 Eval 自带起点：题目运行条件归题目时，Eval 用 `dockerComposeSandbox()` 这类 template-bearing factory 声明完整起点。
 选中它的 Experiment 保持 command-only，按 id 前缀或 tags 选题，不感知题目用哪个 Provider；配对规则见 [Sandbox Layer](../sandbox/layers.md#每个配对的-link-约束)。
 eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」；对着哪个 agent 跑、跑几次，由 `experiments/` 里的 `defineExperiment` 决定（见 [Experiments](../experiments/README.md)）。
 

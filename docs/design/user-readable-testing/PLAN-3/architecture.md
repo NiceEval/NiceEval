@@ -129,7 +129,7 @@ Step ID 在 Case 内唯一；每个 claim 的 `after` 必须引用存在的 step
 |---|---|---|
 | 入口 | `registerUnitProjection` | `registerE2EProjection` |
 | 边界 | 进程内模块或公开 Library | 安装包、CLI、浏览器或真实协议 |
-| 控制 | TestClock、barrier、可区分 fixture | 真实进程、产物与交互 |
+| 控制 | TestClock、barrier、可区分 fixture | 真实进程、真实输出与交互 |
 | 证据 | 返回值、事件、受控机制事实 | stdout、文件、DOM、screen 或 trace |
 | 复用 | 每例重新创建 | 按 evidence identity 准备一次，之后只读 |
 
@@ -195,12 +195,12 @@ Case 不把这些机制伪装成 E2E 也能复用的步骤。
 ```
 
 同一 world 可以供多个 Case 使用。
-测试体不能再次执行模型任务、覆盖结果或依赖上一条测试的副作用。
+测试体不能再次执行模型任务、覆写结果或依赖上一条测试的副作用。
 
 ## Driver 义务
 
 - JSON 按结构、字段和业务身份比较，不做整文件 byte golden。
-- XML 按 suite、case、failure 与 error 语义解析。
+- XML 按 suite、case、failure 与 error 语义读取。
 - Browser 优先使用 role locator 与 ARIA。
 - Terminal 显式区分 pipe 与 PTY；布局 claim 只能投影到 PTY screen。
 - 只有本身逐字属于契约的短帮助、错误或提示使用 golden。
@@ -209,13 +209,13 @@ Case 不把这些机制伪装成 E2E 也能复用的步骤。
 
 ## 不变量
 
-1. 每条 Case 恰有一个 Primary Projection，并覆盖全部 claim 与声明 surfaces。
+1. 每条 Case 恰有一个 Primary Projection，并涵盖全部 claim 与声明 surfaces。
 2. 每个 claim 都引用稳定主体身份。
 3. Primary 满足 Case 的 layer、公开边界与真实协议要求；每个 required boundary 有同仓 Projection 或指向完整原生 proof 的 ExternalProofLink。
 4. unit 与 E2E 不共享执行、时钟、setup 或 cleanup。
 5. E2E prepare 是最后一个可修改 evidence 的阶段。
 6. 真实协议兼容性只能由真实协议 E2E 主证明。
-7. Feature 文档仍是契约来源。
+7. Feature 文档仍是契约出处。
 8. `goal` 声称的每个结果都必须落到具体 claim。
 9. 不支持的媒介语义显式失败。
 10. 机制定律可以留在原生 unit test，不强制投影。
@@ -237,7 +237,7 @@ semantic digest
 ```
 
 相同 identity 可以 single-flight 准备一次。
-产物进入独立命名目录，冻结后只读；任一组成变化都创建新目录。
+生成文件进入独立命名目录，冻结后只读；任一组成变化都创建新目录。
 运行时 identity 包含会影响证据的 Node、OS、locale、PTY、终端列数、浏览器与 viewport。
 
 unit Projection 不跨测试复用可变 fixture。
@@ -250,7 +250,7 @@ unit Projection 不跨测试复用可变 fixture。
 `InvocationError` 表示公开动作意外失败。
 只有 Claim 明确声明产品错误结果时，错误才成为 observation。
 
-`ObservationError` 表示媒介无法解析。
+`ObservationError` 表示媒介无法读取。
 `ClaimMismatch` 必须打印 Case、claim、Projection、driver、契约、身份、期望、观察与证据位置。
 
-`CleanupError` 单独附在主要结果后，不能覆盖更早失败。
+`CleanupError` 单独附在主要结果后，不能遮蔽更早失败。

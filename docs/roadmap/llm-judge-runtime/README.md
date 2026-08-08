@@ -10,10 +10,10 @@ LLM Judge 需要稳定表达“看哪些材料、按什么 rubric、由哪个模
 
 - 多个 scorer 对 `input`、`output`、`expected` 和 `criteria` 的解释不同，同一个参数位置不能稳定表示材料角色。
 - 判分材料被压成一段字符串，图片、音频、文件和带角色的多段上下文没有共同形状。
-- rubric、prompt 模板、模型调用、响应解析和 Assertion 记录绑在一次函数调用里，无法独立演进或复用。
+- rubric、prompt 模板、模型调用、响应读取和 Assertion 登记绑在一次函数调用里，无法独立演进或复用。
 - 单条结果只保留分数和材料预览，无法复核配方版本、模型、节点、理由、引用、重试和用量。
 - 多维质量评估只能写成互不关联的 Judge Assertion，不能表达并行评分、确定性聚合与 fallback。
-- 运行器靠源码中的 `judge` 字样猜测是否需要预检，helper 或动态调用会让成本保护失去确定性。
+- 运行器靠源码中的 `judge` 字样猜测是否需要预检，工具或动态调用会让成本保护失去确定性。
 
 ## 核心心智
 
@@ -21,7 +21,7 @@ LLM Judge 需要稳定表达“看哪些材料、按什么 rubric、由哪个模
 它接收一份 Judge Check；Check 指向 rubric 或 Judge Recipe，并把输入槽绑定到 Judge Material。
 
 Judge Recipe 编译成静态 Judge Graph。
-单模型 rubric 是只有一个模型节点的图，复杂评估也沿用同一执行与记录协议。
+单模型 rubric 是只有一个模型节点的图，复杂评估也沿用同一执行与登记协议。
 
 ```text
 Judge Check
@@ -52,7 +52,7 @@ Judge Check
 |---|---|---|
 | Judge Check | 选择配方、绑定材料、选择 profile | 构造模型协议或折叠 Attempt |
 | Judge Recipe | 声明 rubric、输入槽、静态图和最终节点 | 读取凭据或执行网络请求 |
-| 材料解析器 | 解析 scope、文件与内联内容，生成稳定材料清单 | 猜测材料角色或支持能力 |
+| 材料读取器 | 读取 scope、文件与内联内容，生成稳定材料清单 | 猜测材料角色或支持能力 |
 | Judge Runtime | 校验图、调度节点、预算、重试与 fallback | 理解某家模型 SDK |
 | Judge Provider | 能力声明、预检、规范请求转换和原始响应归一 | 决定 rubric、阈值或 Verdict |
 | Assertion collector | 把最终 Decision 写成 AssertionResult | 展开图节点或调用模型 |
@@ -99,4 +99,4 @@ LLM Judge 只对已给材料执行有界模型请求，不主动打开仓库、�
 
 - [Library](library.md) —— Judge Check、材料、配方、图与配置 API。
 - [Architecture](architecture.md) —— 规范请求、调度、失败、Record 与不变量。
-- [Use Cases](use-case/README.md) —— 多模态产物与多节点判分。
+- [Use Cases](use-case/README.md) —— 多模态输出与多节点判分。

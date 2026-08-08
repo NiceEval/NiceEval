@@ -83,7 +83,7 @@ template 名跳过 Agent 检查保留公共兼容层。
 
     - 后续每条新测试都能指向一个已声明覆盖类别。
     - 删除任一类别可明确说出会放走哪类错误。
-    - registry 守护与 `pnpm test:docs` 通过。
+    - registry 守护与 `pnpm lint:docs` 通过。
 
   - [ ] `[S]` 实现 Feature 目标契约
     依赖:测试覆盖与实现地图登记
@@ -240,7 +240,7 @@ template 名跳过 Agent 检查保留公共兼容层。
     - `rg` 对旧公共名(`TimingNode`、`TimingNodeKind` 等)的命中只允许在 Design、
       memory 或明确历史引用里。
     - `pnpm docs:reference` 后没有生成区块漂移。
-    - `pnpm test:docs`、`pnpm test:docs-site` 通过。
+    - `pnpm lint:docs`、`pnpm lint:docs-site` 通过。
     - 示例按 `examples/README.md` 的命令通过。
 
 ## 并行与串行关系
@@ -307,8 +307,8 @@ CLI / 读取面 ──> 联调
 ```sh
 pnpm run typecheck
 pnpm test
-pnpm test:docs
-pnpm test:docs-site
+pnpm lint:docs
+pnpm lint:docs-site
 pnpm run prepare
 pnpm e2e --repo cli
 pnpm e2e --repo report

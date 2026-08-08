@@ -9,7 +9,7 @@
 旧实现却在 `marketplace add` exit 0 后直接用配置中的 `marketplace.name` 拼下一条安装命令。
 结果是 add 成功，plugin install 才以“找不到 marketplace”间接失败，错误没有告诉用户实际注册名。
 
-memory 在 2026-07-13 记录该缺口时它尚未修复；后续 fix commit `5e7549eb` 已为 Claude Code 与
+memory 在 2026-07-13 登记该缺口时它尚未修复；后续 fix commit `5e7549eb` 已为 Claude Code 与
 Codex 都加入 add 后 `marketplace list --json` 回读：配置名与实际注册名不一致时立即抛出包含两者的
 错误，且不继续安装 plugin。该提交增加了 mismatch、回读命令失败和未知 JSON 形状的 fake
 sandbox 单测，但真实 CLI 的身份闭包仍应由已有 native-plugin consumer world 证明。
@@ -40,7 +40,7 @@ fix commit `07416e68` 前，`installedVersion()` 猜测
 
 原单测用 canned response 精确证明了错误猜测内部自洽。真实 native-plugin E2E 的既有 Eval gate
 `equals("1.3.2")` 才首先失败；它又连带触发了 `brief(undefined)` 的 TypeError，暴露断言设施在
-实际值缺失时不能正常展示的问题。同一 fix 把解析改到真实形状，并给 `brief()` 增加
+实际值缺失时不能正常展示的问题。同一 fix 把读取改到真实形状，并给 `brief()` 增加
 `JSON.stringify(value) ?? String(value)` 字符串失败回退和单元回归。
 
 用户侧不需要一个新的 `pluginVersion()` DSL：继续运行既有 native-plugin Eval，并从公开结果读取
@@ -62,7 +62,7 @@ agent-setup 结果到达原 Eval gate。fake CLI shape 只留在 parser contract
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | pinned repo / ref / plugin identity 固定；不锁安装日志顺序和无关字段 |
 | 不能改断言放行 | expected marketplace 名来自用户配置，actual 来自真实 CLI；版本期望来自 pinned plugin manifest，不能从候选结果回抄 |

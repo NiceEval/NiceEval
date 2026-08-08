@@ -133,10 +133,10 @@
     - 验收：三份环境矩阵全部通过；任何一项缺证据时不得把 Roadmap 整体提升为 Feature。
 
   - [ ] **M. 全仓回归、契约晋升与 PR 收口** `[S]` `⇐ A–L`
-    - [ ] 运行 `pnpm test`、`pnpm run typecheck`、`pnpm e2e --group sandbox`；改了 report 时先 `pnpm run build:report`；改公开 CLI 后运行参考文档生成与 `pnpm test:docs-site`。
+    - [ ] 运行 `pnpm test`、`pnpm run typecheck`、`pnpm e2e --group sandbox`；改了 report 时先 `pnpm run build:report`；改公开 CLI 后运行参考文档生成与 `pnpm lint:docs-site`。
     - [ ] 将 `docs/roadmap/docker-profiles/` 的最终契约按 owner 并入 `docs/feature/sandbox/` 的 library/cli/architecture/lifecycle/use-case，删除 Roadmap 入口和目录，不复制第二份定义。
     - [ ] 重写 Feature 中“没有 profile registry”和临时环境变量 attestation 等旧声明；同步 `docs/source-map.md`、Feature/roadmap 索引、测试覆盖规范和公开文档。
-    - [ ] 运行 `pnpm test:docs`、`pnpm test:docs-site`，并核对 roadmap 名称、旧 factory、旧环境变量和冲突声明无残留。
+    - [ ] 运行 `pnpm lint:docs`、`pnpm lint:docs-site`，并核对 roadmap 名称、旧 factory、旧环境变量和冲突声明无残留。
     - [ ] 审计两个仓库 `git status` 与 diff；NiceEval PR 只含授权实现/文档/测试/部署资产，不携带 NiceEval-Eval 的既有未知改动或验收产物。
     - [ ] PR 描述附命令、环境、HEAD/link 证明、四路/八路、双 Invocation、SIGKILL/restart、三宿主结果和未通过项；任一硬门槛未过则保留 Roadmap，不宣称 Feature。
 

@@ -4,7 +4,7 @@
 
 ## 两个相位
 
-环境模型分成启动前解析与启动后准备：
+本主题分成启动前规划与启动后准备：
 
 ```text
 Environment selection and planning
@@ -27,7 +27,7 @@ Post-start preparation
 启动后相位只能通过主 Sandbox 的命令、文件与窄能力接口改变运行状态。
 
 这条能力边界阻止 setup 假装合并两个起点。
-setup 不能把已经启动的单实例变成 Compose Case，也不能把两个 image 或 template 烘成第三个产物。
+setup 不能把已经启动的单实例变成 Compose Case，也不能把两个 image 或 template 烘成第三个构建输出。
 
 ## 数据模型
 
@@ -61,9 +61,9 @@ interface RunningSandboxCase {
 EnvironmentRequest 与 PlannedSandboxCase 是规划值；RunningSandboxCase 与 Sandbox 是运行时资源。
 公开 `composeEnvironment()` 只构造 EnvironmentSource，不能返回或冒充后两者。
 
-## 唯一起点解析
+## 唯一起点规划
 
-解析优先级为：
+规划优先级为：
 
 ```text
 Eval 声明 Environment
@@ -107,7 +107,7 @@ Runner 只从选中的 Provider 读取它，不合并 config、Experiment 与 Ev
 
 | 层 | 变化轴与频次 | 保留的领域能力 |
 |---|---|---|
-| Experiment sandbox setup | 每 Sandbox 或复用窗口 | setup / teardown、Experiment identity、状态载入与回存 |
+| Experiment sandbox setup | 每 Sandbox 或复用周期 | setup / teardown、Experiment identity、状态载入与回存 |
 | Eval setup | 每 Attempt | Eval identity、Fixture、题目依赖与 eval phase 反馈 |
 | Agent setup | 每 Attempt | 平台探测、staged payload、CLI Ensure、鉴权、配置与 Agent facts |
 
@@ -115,7 +115,7 @@ Runner 只从选中的 Provider 读取它，不合并 config、Experiment 与 Ev
 PLAN-8 只统一执行方向和顺序，不统一协议。
 
 普通 setup 可以直接执行命令。
-需要预装命中的昂贵条件继续使用领域 helper 封装 identity、inspect、install 与 re-inspect；plain function 不声称可验证命中。
+需要预装命中的昂贵条件继续使用领域 setup 函数封装 identity、inspect、install 与 re-inspect；plain function 不声称可验证命中。
 
 ## 起点 owner 不会吞掉 setup owner
 
@@ -136,21 +136,21 @@ Eval 无 Environment，Experiment 有 defaultEnvironment
 因此不是“一个 owner 变成 template，剩下两个 owner 才是 layer”。
 同一个 Eval 可以既提供 Environment 又提供 Eval setup；同一个 Experiment 也可以既提供 defaultEnvironment 又提供 sandbox setup。
 
-## 身份与记录
+## 身份与写入
 
 EnvironmentSource、命中的 profile Case、Provider planner revision、BuildKey 与完整 CaseKey 进入逐 Eval fingerprint。
-Provider defaultEnvironment、Experiment setup helper identity 与 Agent identity 经 configHash 进入 fingerprint。
+Provider defaultEnvironment、Experiment setup 函数 identity 与 Agent identity 经 configHash 进入 fingerprint。
 
-每条 Attempt 记录：
+每条 Attempt Record 保存：
 
 - 选中的 Environment 分支与 profile；
-- 实际 Case kind、Provider、BuildKey、CaseKey 与原生产物 locator；
+- 实际 Case kind、Provider、BuildKey、CaseKey 与原生构建输出 locator；
 - 三层 setup activity、identity、actual facts、耗时与失败 phase；
-- RunningSandboxCase 的主 Sandbox、能力、伴随资源与清理结果；
+- RunningSandboxCase 的主 Sandbox、能力、伴随资源与销毁结果；
 - PLAN-7 定义的本地 transfer manifest 与 Agent 可见 closure。
 
 函数体不自动参与哈希。
-没有显式 identity 的 plain setup 仍可执行，但结果记录必须标注该 setup 身份不可比较。
+没有显式 identity 的 plain setup 仍可执行，但结果条目必须标注该 setup 身份不可比较。
 
 ## 预制组合
 
@@ -158,14 +158,14 @@ Provider defaultEnvironment、Experiment setup helper identity 与 Agent identit
 Runner 不把 defaultEnvironment 与 Eval Environment 合并，也不把 setup 成功解释成已生成可复用起点。
 
 预制 Case 启动后仍执行 Experiment、Eval 与 Agent 三层检查。
-产物名或 manifest 不能证明二进制、PATH、权限、动态库或题目服务仍满足要求。
+构建输出名或 manifest 不能证明二进制、PATH、权限、动态库或题目服务仍满足要求。
 
 ## 文件与泄漏
 
 普通本地上传在实际读取字节时生成 transfer manifest。
-Provider planner 与 materializer 记录 build context、image provenance 与 bind-mount closure。
+Provider planner 与 materializer 写入 build context、image provenance 与 bind-mount closure。
 
-判定封口前，Runner 对比 send 窗口外的本地 source 与 Agent 可见 closure。
+判定封口前，Runner 对比 send 区间外的本地 source 与 Agent 可见 closure。
 命中时 Attempt `errored`，不接受判分；需要保密时仍依靠物理隔离或 filtered context。
 
 ## 错误语义
@@ -174,11 +174,11 @@ Provider planner 与 materializer 记录 build context、image provenance 与 bi
 |---|---|
 | profile 缺失、defaultEnvironment 声明非法 | 启动期配置错误，零 Sandbox 创建 |
 | Provider 不支持 Environment kind | 计划期 `skipped`；全 skipped 升级启动期错误 |
-| build、start、ready 或资源组失效 | Attempt `errored`，归 Sandbox Case |
+| build、start、ready 或伴随资源失效 | Attempt `errored`，归 Sandbox 实例 |
 | Experiment sandbox setup | Attempt `errored`，归 `sandbox.setup` |
 | Eval setup | Attempt `errored`，归 `eval.setup` |
 | Agent Ensure 或 Agent setup | Attempt `errored`，归 `agent.setup` |
 | 动态泄漏比对 | Attempt `errored`，不接受 verdict |
 
-setup 失败不会倒推成 Environment 解析失败。
+setup 失败不会倒推成 Environment 规划失败。
 Environment 能启动也不证明三层准备已经满足。

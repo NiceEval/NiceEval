@@ -9,7 +9,7 @@ evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test()
 experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over 选定 evals
 ```
 
-> 外部方案的来源与取舍单独收在[设计参照](reference/README.md)，不作为目标契约的一部分。
+> 外部方案的参考与取舍单独收在[设计参照](reference/README.md)，不作为目标契约的一部分。
 
 ## 为什么要分开
 
@@ -21,7 +21,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **跨 agent / 跨配置对比是一等公民。**
   每个实验文件钉一个单一配置；报告直接比较当前 Sample 里的 experiments，并只读取 Sample 已经选好的 Attempt。
 
-实验文件改名会改变 `experimentId`。需要保留旧结果时，使用[实验改名与结果重绑](rename.md)显式迁移并留下来源审计，不手工修改 Record。
+实验文件改名会改变 `experimentId`。需要保留旧结果时，使用[实验改名与结果重绑](rename.md)显式迁移并保留出处审计，不手工修改 Record。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## `defineExperiment` 的形状
@@ -68,23 +68,23 @@ export default defineExperiment({
 题型由 `EvalDescriptor.evaluationKind` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
 计分语义见[计分粒度](../assertions/library/score-points.md)。
 
-`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只覆盖**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。解析链见 [Architecture · 配置解析](architecture.md#配置解析链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
+`judge` 属于运行配置：同一批 eval 可以在两个 Experiment 中只改变裁判模型或端点，得到可签入、可复现、会进入指纹的 judge A/B。它只规定**怎样执行裁判**（model / baseUrl / apiKeyEnv / timeoutMs），不允许 Experiment 定义题目的 rubric、评分材料、severity 或 threshold；这些仍只写在 Eval 的 judge assertion 上。求值链见 [Architecture · 配置求值](architecture.md#配置求值链一次求值处处同源)，完整场景见 [Judge A/B 用例](../judge/use-case/experiment-ab.md)。
 
-`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。
-两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。
+`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置。
+只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。
 三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
 `maxConcurrency` 是本 Invocation 内的**实验并发限制**:只让该实验的 Attempt 排队,同批其它实验照常按全局并发跑。
 它可以表达一次运行内严格串行、严格重试或只维护 N 个可复用 Sandbox，但不会因为另一个终端也选了同一 Experiment 而共享名额。
-什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
+什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
-Runner 在同一记录根内按 `key` 独占整个状态窗口。
-窗口从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
+Runner 在同一 Record 根内按 `key` 独占整个状态区间。
+区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
 这个字段只提供互斥，不代替 checkpoint 存储、原子提交或强杀恢复。
 
 同一 Experiment 的独立 Sandbox 不共享可变状态时省略它；两个 Experiment 确实指向同一 checkpoint 时使用同一 `key`。
-key 是会进入 Run 记录的稳定非密字符串，必须匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；不把 token、账号或其它凭据编进 key。
+key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z0-9._/-]{0,127}`；不把 token、账号或其它凭据编进 key。
 
 `classifyFailure` 是实验作者识别共享基建死因的纯分类器。
 它只声明失败是否可重试、以及死因波及 attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。
@@ -93,19 +93,20 @@ key 是会进入 Run 记录的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 `setup` / `teardown` 是**实验级生命周期 Hook 对**:整场至多一次、跑在宿主机上。
 `setup` 在本实验第一个真正要派发的 attempt 之前执行;`teardown` 在本实验全部 attempt 收尾后执行(失败、中断也执行),当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免,半路失败的现场同样要扫尾;一个 attempt 都不派发时两者都不跑。
 它们管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。
-`setup` 的产物写模块级变量,`teardown` 与同文件的 agent 工厂 / prepare command 从闭包读——runner 不做值的中介。
-成对 `setup` / `teardown` 只属于 Experiment 与 Agent 两层;Sandbox 与 Eval 的准备走 layer 的 `prepare()`,闭包传状态对两类入口同样适用(统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
+
+`setup` 的定义值写模块级变量,`teardown` 与同文件的 agent 工厂 / prepare command 从闭包读——runner 不做值的中介。
+成对 `setup` / `teardown` 只属于 Experiment 与 Agent 两层;Sandbox 与 Eval 的准备走 layer 的 `prepare()`,闭包传状态对两类入口同样适用(统一语义见 [Runner · 预置顺序](../../runner.md))。
 用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 
 生命周期各层各归各位,`setup` 不替代其它层:
 
-- 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账锚点前执行。
+- 按实验变化的**沙箱内**准备(装二进制、预热、写实验配置)写 Experiment `sandbox` layer 的 `prepare()` 命令,每条 Attempt 在变更分类账标记前执行。
 - 这条 eval 自己的题目准备写 Eval layer 的 `prepare()` 或 `test(t)` 普通代码。
 - 装 Agent CLI 归 Agent layer(Adapter 的 ensure 声明 + 配对安装层),连 agent 归 `SandboxAgent.setup`。
 - 跨 Attempt 的实际 Sandbox 目录、服务或快照由 `SandboxLayer.setup()` / `teardown()` 成对恢复与回存；声明 `sandboxReuse: true` 时，它们按每个物理 Sandbox 执行一次。
 - 跨实验、这次 run 之前就该存在的资源仍用外部编排。
 
-哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。
+哪层放什么按场景查[用例手册 · 预置与收尾怎么放](use-case/生命周期/);完整分工表见 [Sandbox 预置分工](../sandbox/library.md)、准备命令的声明见 [Sandbox Layer](../sandbox/layers.md)。
 
 `sandbox` 字段声明本实验的 `SandboxLayer`。
 具体 Provider factory(如 `e2bSandbox({ template })`)产出携带完整起点的 template-bearing layer;`sandboxLayer()` 产出只执行准备命令的 command-only layer。
@@ -117,7 +118,7 @@ key 是会进入 Run 记录的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 
 `sandboxReuse: true` 是实验作者对 Sandbox 生命周期的声明，不是一次运行的提速开关。
 它表示选中的 Eval 可以在题间 reset 后共用 Sandbox。
-复用只改变 Case 创建次数:reset 到 Case 就绪点后,每条 Attempt 仍重放两层 layer 的 prepare 命令。
+复用只改变 Case 创建次数:reset 到 Case 就绪点后,每条 Attempt 仍重新执行两层 layer 的 prepare 命令。
 省略时，每个 Attempt 使用全新 Sandbox。
 
 同时活跃的 Sandbox 数由现有并发限制决定：同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发位共同限制同时运行数。
@@ -143,7 +144,7 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [Sandbox 生命周期](../sandbox/lifecycle.md) —— 记忆库与 checkpoint 怎样在物理 Sandbox 边界恢复与回存。
 - [计分粒度](../assertions/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分)；混合时两种读数各算各的。
 - [计分粒度的 Experiments 边界](score-points.md) —— Experiment 不复制评分语义，只保留选择与运行边界。
-- [Architecture](architecture.md) —— 实体、配置解析、生命周期、跨 Invocation 协调与完成状态。
+- [Architecture](architecture.md) —— 实体、配置求值、生命周期、跨 Invocation 协调与完成状态。
 - [设计参照](reference/README.md) —— agent-eval 等外部方案带来了什么、哪些边界没有跟随。
 - [CLI](cli.md) —— `niceeval exp` 命令。
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。

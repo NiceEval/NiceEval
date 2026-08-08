@@ -10,9 +10,9 @@ discover → select → pack → isolate → install → prepare → test → co
 
 1. `discover` 只读取叶子项目的 `e2e.json`。
 2. `select` 按 `--repo`、`--lane`、平台能力与变更路径选择项目。
-3. `pack` 只生成一次候选 tarball，并记录 digest。
+3. `pack` 只生成一次候选 tarball，并登记 digest。
 4. `isolate` 为每个项目和每次重试建立全新副本。
-5. `install` 注入候选并核对实际解析身份。
+5. `install` 注入候选并核对实际定位身份。
 6. `prepare` 启动项目拥有的本地进程、Docker service、浏览器或 live provider preflight。
 7. `test` 运行项目的原生 Vitest 或 Playwright Test 命令；过滤参数原样透传。
 8. `collect` 无论成功失败都收集声明的 artifact，并执行 secret redaction。
@@ -25,7 +25,7 @@ discover → select → pack → isolate → install → prepare → test → co
 证据根在 prepare 结束后转成只读；需要修改结果的测试复制自己的最小写集。
 
 第一版不跨提交复用 evidence。
-跨候选缓存需要同时证明 candidate、fixture、producer、provider 与环境身份，成本和误复用风险都高于当前收益。
+跨候选缓存需要同时证明 candidate、fixture、producer、provider 与宿主身份，成本和误复用风险都高于当前收益。
 
 ## 本地
 
@@ -70,4 +70,4 @@ workflow 的职责只有 checkout、运行时准备、矩阵调度、缓存 stor
 release workflow 先按 tag 生成带最终版本的 tarball 并保存 digest，再把该 artifact 交给 release lane。
 所有 blocking 项目通过后才发布同一 tarball。
 
-live provider 无结论、artifact 丢失或候选 identity 不一致都阻止发布；不能把 inconclusive 当 pass。
+live provider 结果不定、artifact 丢失或候选 identity 不一致都阻止发布；不能把 inconclusive 当 pass。

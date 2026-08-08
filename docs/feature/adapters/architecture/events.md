@@ -30,7 +30,7 @@ type StreamEvent =
 1. 保持原始发生顺序，不按事件类型重排。
 2. tool 与 subagent 共用 `operation.started` / `operation.finished`，用稳定 operation ID 配对。
    ID 只需在**一次 started→finished 配对内**稳定,不要求跨轮唯一。
-   同一个 ID 在 finished 后再次 started 是新操作,core 新建记录而非覆盖。
+   同一个 ID 在 finished 后再次 started 是新操作,core 新建条目而非覆写。
 3. tool operation 的 `name` 保留上游原始工具名；可选的 `tool` 保存跨 Agent 的闭集规范分类。
    进入规范化流程后仍无法识别时，`tool` 写 `unknown`；不承诺分类任意应用工具的协议也可以省略 `tool`。
    两种情况都不能丢掉或改写 `name`，读者始终能看到真实协议值。
@@ -42,15 +42,21 @@ type StreamEvent =
    ** 工具输出再大也原样交出来——断言跑在完整值上，落盘时才由写入面统一削到 256 KiB 并打 `truncated` 标记（见 [Record · 大值截断](../../record/architecture.md#大值截断)）。
    Adapter 自己先削一刀会让断言看到不完整的输出，是 bug，不是保护。
 8. **`loc` 只属于 eval 侧注入的 user message。
-   ** `t.send` 由 core 记录、携带 send 语句的源码位置；adapter 从 SDK 事件或 transcript 归一出的任何消息都不携带 `loc`。
+   **    `t.send` 由 core 留存、携带 send 语句的源码位置；adapter 从 SDK 事件或 transcript 归一出的任何消息都不携带 `loc`。
    消费方以「user message 是否带 `loc`」区分 eval 发出的 send 与被测系统内部注入的 user 消息（agent 自身的续跑提示、对输入的重新包装）——内部注入保留在流里如实呈现，但不是新的一轮。
 9. **`sourceOrder` 只属于 eval 侧注入的 user message。** 它由 core 与断言、直接给分共用的
-   attempt 级序列分配；历史事件可省略，当前 `t.send` 产物必写。adapter 不生成也不改写它。
-10. **`context.injected` 是被测系统内部注入的第二种形态：不披着 `message` 外衣的上下文文本。
-   ** 不变量 8 的内部注入仍然是一条 `role:"user"` 的 `message`（只是没有 `loc`）；但有些被测系统的注入根本不构成一条消息——例如 Claude Code 的 SessionStart / UserPromptSubmit hook 在下一轮开始前把额外文本前置进模型上下文，这段文本既不是 assistant 说的也不是 user 说的，硬套进 `message.role` 会污染按 role 或消息数做的断言。
-   `context.injected` 只承载**带实际文本内容**的注入；被测系统内部机制里"某个动作执行完毕"这类不携带上下文文本的信号（例如一次注入确认），不构成事件——它对行为断言没有信息量，和「系统元数据行不进事件流」是同一条原则的延伸，不是新例外。
-   `source` 是可选的原始来源标记（如 Claude Code 自己的 hook 名 `SessionStart`），adapter 按各自协议原样透传供下钻，不强行归一到一组封闭枚举，不同被测系统的命名不必对齐。
-   **这与 niceeval 自己的 [prepare command](../../sandbox/layers.md#command-形状与-identity)是完全不同的两层机制。**后者是作者声明、运行器编排的沙箱准备命令；前者是被测 CLI 自己的内部生命周期设施，`context.injected` 只归一后者。
+   attempt 级序列分配；历史事件可省略，当前 `t.send` 的输出必写。adapter 不生成也不改写它。
+10. **`context.injected` 是被测系统内部注入的第二种形态：不披着 `message` 外衣的上下文文本。**
+    - 不变量 8 的内部注入仍然是一条 `role:"user"` 的 `message`（只是没有 `loc`）。
+    - 有些被测系统的注入根本不构成一条消息：例如 Claude Code 的 SessionStart / UserPromptSubmit hook 在下一轮开始前把额外文本前置进模型上下文。
+      这段文本既不是 assistant 说的也不是 user 说的，硬套进 `message.role` 会污染按 role 或消息数做的断言。
+    - `context.injected` 只承载**带实际文本内容**的注入。
+    - 被测系统内部机制里"某个动作执行完毕"这类不携带上下文文本的信号（例如一次注入确认），不构成事件。
+      它对行为断言没有信息量，和「系统元数据行不进事件流」是同一条原则的延伸，不是新例外。
+    - `source` 是可选的原始出处标记（如 Claude Code 自己的 hook 名 `SessionStart`）。
+      adapter 按各自协议原样透传供下钻，不强行归一到一组封闭枚举，不同被测系统的命名不必对齐。
+    - **这与 niceeval 自己的 [prepare command](../../sandbox/layers.md#command-形状与-identity)是完全不同的两层机制。**
+      后者是作者声明、运行器编排的沙箱准备命令；前者是被测 CLI 自己的内部生命周期设施，`context.injected` 只归一后者。
 
 ## InputRequest
 
@@ -79,4 +85,6 @@ Adapter 不预计算断言结果。
 折叠按 `operationId` 把 started 与 finished 对成一条操作：配上 finished 的取其状态；只有 started、尚未等到 finished 的操作状态是 **`pending`**——HITL 停在审批上的工具调用就以这个状态被断言，不是容错分支。
 只有 finished、没配上 started 才属于 core 容错，不是正常映射契约。
 
-`context.injected` 不获得专属的 `Turn` 便利字段（不像 `message` 有 `Turn.message`）——它和 `thinking`、`compaction` 同一档次，通过 `Turn.events` / 跨轮 `events` 数组按 `type` 过滤读取；`contextInjections` 计数只回答「这一轮有没有发生过注入」这种存在性问题，不替代逐条读取原文用 `text`。
+`context.injected` 不获得专属的 `Turn` 便利字段（不像 `message` 有 `Turn.message`）。
+它和 `thinking`、`compaction` 同一档次，通过 `Turn.events` / 跨轮 `events` 数组按 `type` 过滤读取。
+`contextInjections` 计数只回答「这一轮有没有发生过注入」这种存在性问题，不替代逐条读取原文用 `text`。

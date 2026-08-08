@@ -16,28 +16,28 @@
 它同时是一个正常的 niceeval 用户项目：被测对象是 coding agent CLI（claude-code、codex 等），跑在 sandbox 隔离 workspace 里，任务输入是「把 niceeval 接入这个项目」。
 niceeval 评估自己的安装体验，本身就是 sandbox-agent 能力的一次完整使用。
 
-仓库的核心资产是 **fixture 宿主项目矩阵**：每个 fixture 是一个签入的最小真实项目，对应 `INIT.zh.md` 第 2 步的一个判断分支，让评估覆盖不同的接入路径：
+仓库的核心资产是 **fixture 宿主项目矩阵**：每个 fixture 是一个签入的最小真实项目，对应 `INIT.zh.md` 第 2 步的一个判断分支，让评估涵盖不同的接入路径：
 
-| fixture 形态 | 覆盖的接入路径 |
+| fixture 形态 | 涵盖的接入路径 |
 |---|---|
 | Vercel AI SDK 应用（`useChat` 后端） | 内置 `uiMessageStreamAgent`，零映射 |
 | 自研 HTTP agent loop | 手写 `send` 与事件映射 |
 | coding agent 的 Skill / MCP server | sandbox 路径，agent 本体进隔离 workspace |
 | 非 JS 项目（如 Python 服务） | 「宿主不是 TS 项目、就地新建 `package.json`」分支 |
 
-每次运行把 fixture 复制进隔离 workspace，注入候选 niceeval tarball（注入模型同 [E2E 的候选包注入](../testing/e2e/README.md)）与安装前文档来源，agent 从零开始自主执行；workspace 结束即弃，不把上一次的产出带进下一次。
+每次运行把 fixture 复制进隔离 workspace，注入候选 niceeval tarball（注入模型同 [E2E 的候选包注入](../testing/e2e/README.md)）与安装前文档出处，agent 从零开始自主执行；workspace 结束即弃，不把上一次的产出带进下一次。
 
 ## 一条 eval 的形状
 
 - **输入**：fixture 项目 + 一句安装指令（指向 `INIT.zh.md` 的安装前入口）。
 - **执行**：agent 在 sandbox 内自主完成探测、安装、写三件套、跑通验证，中途不注入人工提示。
-- **断言**：结束后对 workspace 落盘产物和 agent transcript 两个面做断言，分三层评分（见下）。
+- **断言**：结束后对 workspace 落盘输出和 agent transcript 两个面做断言，分三层评分（见下）。
 
 ## 评分维度
 
 三层维度对应开头的三个问题，从精确断言到 judge 逐层放宽：
 
-1. **机制层（精确断言）**：安装链的客观事实——依赖装上且解析到候选包、`niceeval.config.ts` 与托管指引区块存在、typecheck 通过、niceeval 能发现 agent 写出的 eval、experiment 跑通且退出码符合预期。
+1. **机制层（精确断言）**：安装链的客观事实——依赖装上且定位到候选包、`niceeval.config.ts` 与托管指引区块存在、typecheck 通过、niceeval 能发现 agent 写出的 eval、experiment 跑通且退出码符合预期。
 2. **产出质量层（rubric / judge）**：三件套是否符合公开文档声明的契约——adapter 不做进程内直调、不代管被测进程；eval 输入贴 fixture 的真实功能而不是「你好」式占位；每个 experiment 文件只声明一个配置并用 `evals` 选择任务；judge 模型与被测模型分离。
    评分依据就是随包文档里写给用户的规则，评的是「文档里的契约有没有被读懂并执行」。
 3. **路由层（transcript 断言）**：安装完成后 agent 的文档读取行为——是否切换到 `node_modules/niceeval/INDEX.md` 并由它路由，读的页面与 fixture 形态是否匹配，有没有退回官网 `main` 或训练记忆里的旧 API。
@@ -69,5 +69,5 @@ niceeval 评估自己的安装体验，本身就是 sandbox-agent 能力的一�
   E2E 验证 niceeval 功能在真实协议下的正确性，本仓库评估文档对 AI 的效果；功能回归不在本仓库的职责内，本仓库变红也不阻塞发版。
 - **只评从零接入**。
   已接入项目里的结果查询与诊断链路由 [`agent-debug-eval.md`](agent-debug-eval.md) 评估，两组评估共仓库、fixture 与题面独立。
-- **不追求覆盖全部文档页面**。
+- **不追求涵盖全部文档页面**。
   fixture 矩阵按接入路径的判断分支组织，一条路径一个 fixture；页面级的文案质量由产出质量层的失败归因倒查，不为每页文档造一个场景。

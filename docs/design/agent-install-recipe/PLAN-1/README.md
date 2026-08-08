@@ -16,7 +16,7 @@ e2bCodingAgentTemplate("codex", {
 });
 ```
 
-工厂内部按起点来源分两条路:官方 agent 基线走既有归一, `fromImage` 起点 OCI image 或 E2B template先补 Node、再走契约规范化与 agent 安装。
+工厂内部按起点出处分两条路:官方 agent 基础镜像走既有归一, `fromImage` 起点 OCI image 或 E2B template先补 Node、再走契约规范化与 agent 安装。
 改动集中在一个函数,公开面只多一个字段。
 
 ### 优势

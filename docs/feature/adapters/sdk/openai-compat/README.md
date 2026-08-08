@@ -1,7 +1,7 @@
 # OpenAI 兼容（Chat Completions / Responses）
 
 `turnFromChatCompletion(res)` 与 `turnFromResponses(res)` 把 OpenAI 两种响应形状转换成 `Turn`。
-目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；名称同时表达协议来源与 Turn 返回值：
+目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；名称同时表达协议出处与 Turn 返回值：
 
 ```ts
 import {
@@ -35,7 +35,7 @@ return turnFromResponses(await client.responses.create({ model, input: text }));
 
 - **Chat Completions** 不承诺「响应 = 完整过程」——应用可能在服务端跑完工具循环，只把最终答案给你。
   `notCalledTool` 这类负断言只能当「没看到」，不能当「确实没发生」。
-- **Responses** 的协议契约里 `output` 数组记录了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。
+- **Responses** 的协议契约里 `output` 数组列出了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。
 
 这条差异体现在转换器声明的证据完整性上，两者产出的 `Turn` 形状本身相同。
 用户侧写法与「零映射」表格见 [docs-site 的 send 指南](../../../../../docs-site/zh/tutorials/write-send.mdx)。

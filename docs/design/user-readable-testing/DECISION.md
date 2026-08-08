@@ -2,7 +2,7 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [EVIDENCE](EVIDENCE.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md)
 
-## 结论
+## 裁决
 
 采纳 [PLAN-4](PLAN-4/README.md)：真实场景 Repo 与原生结果断言。
 
@@ -38,30 +38,30 @@ PLAN-4 牺牲机器生成的全仓 Behavior 图，换取更低的误抽象风险
 
 ## 为什么否决 PLAN-2 作为终态
 
-PLAN-2 试图一次解决覆盖登记、证据缓存、失败来源、并发、执行频率与测试作者体验。
+PLAN-2 试图一次解决`覆盖登记`、证据缓存、失败归因、并发、执行频率与测试作者体验。
 它的 `report-target-closure` 示例因此被拆成 Behavior、Recipe、World、execution、browser wrapper、Observed matcher、mechanism owner、Registry 和 retirement 文件。
 
 这带来三个直接问题：
 
 1. 结果断言只占很小一部分，读者要先理解平台对象才能判断测试是否正确；
-2. `world.siteExport().targetClosure()` 一类 helper 可能从候选产物计算成功条件，oracle 独立性不再一眼可审；
+2. `world.siteExport().targetClosure()` 一类工具可能从候选输出计算成功条件，oracle 独立性不再一眼可审；
 3. 示例没有场景 Repo 自己的 package、lockfile、manifest 与 CI lane，反而没有展示声称的真实 repo 边界。
 
 Behavior ID 与 evidence provenance 本身有价值，但不值得成为每条高价值测试的必经层。
-失败 artifact 已能记录候选 digest、命令、路径和阶段；长期覆盖关系由领域目录、Feature 测试说明与历史 bug 表审查。
+失败 artifact 已能登记候选 digest、命令、路径和阶段；长期守护关系由领域目录、Feature 测试说明与历史 bug 表审查。
 
 ## 为什么不选其它候选
 
 ### PLAN-1
 
-PLAN-1 迁移容易，但 Behavior Registry 和媒介 matcher 仍会把测试语义拆到声明与 helper。
+PLAN-1 迁移容易，但 Behavior Registry 和媒介 matcher 仍会把测试语义拆到声明与机械工具。
 适合保留的成果只有：结构化输出先 parse、浏览器使用可访问身份、PTY 显式建模、短文本才用 golden。
 这些规则直接进入 PLAN-4 的原生测试，不需要 Behavior wrapper。
 
 ### PLAN-3
 
 PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection 执行。
-它最容易生成覆盖图，也最容易成为 NiceEval 的影子实现。
+它最容易生成守护图，也最容易成为 NiceEval 的影子实现。
 现有重复尚未证明维护 driver 与 Projection 的成本合理。
 
 ## 测试分层裁决

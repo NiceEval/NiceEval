@@ -2,12 +2,12 @@
 
 **本方案**:[README](README.md) · [Library](library.md) · [Use Case](use-case/README.md)
 
-本篇承接普通用户不需要掌握的解析、身份、能力、准备、生命周期与记录契约。
+本篇承接普通用户不需要掌握的读取、身份、能力、准备、生命周期与登记契约。
 公开调用形状见 [Library](library.md)。
 
 ## 两个内部阶段,不进入普通 API
 
-Runner 把 Eval Environment 与当前 Sandbox Provider 解析成两个内部对象:
+Runner 把 Eval Environment 与当前 Sandbox Provider 读取成两个内部对象:
 
 ```typescript
 interface EnvironmentPlan {
@@ -27,27 +27,27 @@ interface RunningEnvironment {
 }
 ```
 
-`EnvironmentPlan` 是 Provider-specific 执行计划,`RunningEnvironment` 是已经启动的资源组。
+`EnvironmentPlan` 是 Provider-specific 执行计划,`RunningEnvironment` 是已经启动的资源集合。
 两者都不是 Eval 作者要构造的公开领域对象。
 
 每个 Running Environment 只有一个主 `Sandbox`。
 Agent、Fixture、测试命令、文件 API、workdir 与 diff 都锚定它;伴随服务只能通过独立能力句柄访问。
 
-## Environment 解析
+## Environment 读取
 
 Eval 的 `environment` 有三种形状:
 
-| 声明 | 解析 |
+| 声明 | 读取 |
 |---|---|
 | 省略 | 使用 SandboxConfig 的默认起点 |
 | profile 字符串 | 查 SandboxConfig 的 `environments` 表 |
-| `composeEnvironment(...)` 等 folder-local source | 先查同 profile 的显式 `environments` 覆盖,否则交给 Provider 内建支持 |
+| `composeEnvironment(...)` 等 folder-local source | 先查同 profile 的显式 `environments` 覆写,否则交给 Provider 内建支持 |
 
 folder-local profile 从 Eval 目录路径稳定推导。
 显式表项优先,使项目可以在不修改 Eval 的前提下用预制 image、template 或 snapshot 替换按需构建。
 
 内置 Provider 直接声明自己支持的 Environment kind。
-Docker 支持 Compose 不需要用户注册 materializer;未来 E2B 或其它 Provider 只有完成 workspace、网络、就绪、采证与清理契约后才能声明相同支持。
+Docker 支持 Compose 不需要用户注册 materializer;未来 E2B 或其它 Provider 只有完成 workspace、网络、就绪、采证与回收契约后才能声明相同支持。
 
 缺失分两类:
 
@@ -79,8 +79,8 @@ defineSandboxProvider({
 
 ### BuildKey
 
-BuildKey 只回答为什么应该得到同一构建产物。
-它包含 builder revision、目标平台、Dockerfile、过滤后的 build context、build args 与解析后的基础镜像 digest。
+BuildKey 只回答为什么应该得到同一构建输出。
+它包含 builder revision、目标平台、Dockerfile、过滤后的 build context、build args 与读取后的基础镜像 digest。
 
 BuildKey 构建在 Attempt 创建 Sandbox 前按 Run 级 single-flight 协调。
 同 key 只构建一次,失败只影响依赖该 key 的 Attempt。
@@ -88,7 +88,7 @@ BuildKey 构建在 Attempt 创建 Sandbox 前按 Run 级 single-flight 协调。
 ### EnvironmentKey
 
 现有 `CaseKey` 改名为 `EnvironmentKey`。
-它回答这条 Eval 的完整题目环境是否相同,包含 Environment kind、Provider 解析 revision、全部 BuildKey、镜像 digest、Compose 与 overlay 内容、挂载内容及影响 workspace、网络和就绪的参数。
+它回答这条 Eval 的完整题目 Sandbox 是否相同,包含 Environment kind、Provider 读取 revision、全部 BuildKey、镜像 digest、Compose 与 overlay 内容、挂载内容及影响 workspace、网络和就绪的参数。
 
 `EnvironmentKey` 进入每条 Eval 的 fingerprint。
 逐 Attempt 容器名、临时目录与随机项目名只作为运行事实,不进入身份。
@@ -125,7 +125,7 @@ Provision `platforms` 与目标平台在计划期做交集,确定不相容时 `s
 `installRequirements` 在 inspect miss 后才检查;inspect 命中时不要求安装所需的 root 或 network。
 `unknown` 不被当成 available,也不提前阻止执行。
 
-Compose 的明确 `network_mode: none` 解析为 `none`。
+Compose 的明确 `network_mode: none` 读取为 `none`。
 未声明网络限制不等于 Provider 已证明外网可用,因此可以保留为 `unknown`;安装时断网按 Provision install 错误归属。
 
 ## Provision 协议
@@ -164,8 +164,8 @@ Provision name + identity + target platform
 同平台的多个 Sandbox miss 共享同一份宿主侧 payload;不同平台各自准备。
 stageDir 属于本次 Invocation,结束时回收;payload 以路径流式上传,不要求把大文件读进内存。
 
-prepare timing 落 Run 级共享节点,等待它的 Attempt 同时记录 origin。
-Sandbox 已经创建并占用资源,所以等待时间继续消耗 Attempt deadline;想彻底移出 Attempt 热路径时使用预制环境。
+prepare timing 落 Run 级共享节点,等待它的 Attempt 同时登记 origin。
+Sandbox 已经创建并占用资源,所以等待时间继续消耗 Attempt deadline;想彻底移出 Attempt 热路径时使用预构建 Sandbox。
 
 ## 生命周期
 
@@ -173,12 +173,12 @@ setup 侧顺序固定:
 
 | 步骤 | 频次 |
 |---|---|
-| 解析 Environment、协调 BuildKey | Run 级共享 |
+| 读取 Environment、协调 BuildKey | Run 级共享 |
 | 创建 Running Environment 并等待 ready | 每 Sandbox |
 | Experiment Provision inspect / install / 全组复检 | inspect 每 Attempt,install 仅 miss |
 | Adapter 确保 Agent CLI 就位 | 每 Attempt |
 | Sandbox 状态 Hook | 每 Sandbox |
-| 建立 workdir baseline | 每 Attempt 或复用窗口重置后 |
+| 建立 workdir baseline | 每 Attempt 或复用周期重置后 |
 | Agent setup:鉴权、配置与 MCP 注册 | 每 Attempt |
 | Eval setup、Fixture、Agent 执行与评分 | 每 Attempt |
 
@@ -200,13 +200,13 @@ Provision 没有 teardown,安装内容随 Sandbox 销毁。
 - 复用结果按普通 Experiment 的终态、指纹、资格与 `--rerun` 判据参与跨 Run 结果携带；携带的 Attempt 不创建 Sandbox。
 
 Provision 安装昂贵不自动推出 Sandbox 复用。
-默认路径仍是每条 Attempt 取得全新 Sandbox;稳定重依赖进入预制环境,Provider 可以透明克隆准备好的隔离实例。
+默认路径仍是每条 Attempt 取得全新 Sandbox;稳定重依赖进入预构建 Sandbox,Provider 可以透明克隆准备好的隔离实例。
 
 跨 Attempt 累积状态本来就是实验变量时,作者才开启复用并根据顺序要求设置 `maxConcurrency`。
 
-## 失败与记录
+## 失败与登记
 
-| 失败点 | 结果 | 记录 |
+| 失败点 | 结果 | 登记 |
 |---|---|---|
 | Environment 配置非法 | 启动期错误 | 一次穷举全部配置问题 |
 | Provider 不支持 Environment kind | 计划期 `skipped` | Eval、kind、Provider 与可行下一步 |
@@ -236,7 +236,7 @@ Attempt facts 使用 `provision.<name>.hit` 与 `provision.<name>.<fact>`。
 | `SandboxSpec` | `SandboxConfig` |
 | `defineSandbox()` | `defineSandboxProvider()` |
 | `materializers` / `dockerComposeMaterializer()` | 删除;Provider 内建支持 Environment kind |
-| sandbox case / `CaseKey` | 内部 Environment Plan / `EnvironmentKey` |
+| `Sandbox Case` / `CaseKey` | 内部 Environment Plan / `EnvironmentKey` |
 | `defineLayer()` | `defineProvision()` |
 | `experiment.layers` | `experiment.provisions` |
 | Layer `check` / `apply` | Provision `inspect` / `install` |

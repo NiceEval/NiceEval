@@ -52,7 +52,7 @@ interface ReportOptions {
 
 `pages` 是非空有序数组，数组顺序就是导航顺序。
  page id 必须唯一；数字样式的 id 仍按数组位置导航，不做数值排序。
-声明 `params` 的页必须同时声明 `load` 且 `navigation: false`；page 的完整形状见 [Library](../library.md#defineReport-保留静态-page-边界)。
+声明 `params` 的页必须同时声明 `load` 且 `navigation: false`；page 的完整形状见 [Library](../library.md#definereport-保留静态-page-边界)。
 
 ## 完整示例
 
@@ -106,7 +106,7 @@ export default defineReport({
 ## `head`
 
 `head` 只接受白名单内的静态标签与属性。
-本地脚本、样式和图片路径相对报告定义文件解析，进入静态站时按内容哈希复制到 `assets/`。
+本地脚本、样式和图片路径相对报告定义文件定位，进入静态站时按内容哈希复制到 `assets/`。
 远程脚本必须显式写完整 URL，并受发布策略与 CSP 校验。
 
 初始报告不得依赖 `head` 脚本才可读。

@@ -21,7 +21,7 @@ export default defineSandboxGroup({
 });
 ```
 
-`evals` 接受 `defineEval()` / `defineScoreEval()` 的原始产物，不接受字符串 id。
+`evals` 接受 `defineEval()` / `defineScoreEval()` 的原始输出，不接受字符串 id。
 成员类型保留 Eval 的 Sandbox 所有权：
 
 ```ts
@@ -53,7 +53,7 @@ function defineSandboxGroup(input: SandboxGroupInput): SandboxGroupDefinition;
 
 没有字段拥有隐式默认值。
 `evals` 非空，不接受字符串、前缀、glob、函数、tag 或 metadata 选择器。
-导入语句同时让成员来源和目录关系对用户可见；数组顺序不参与调度，发现后按 Eval id 排序成成员集合。
+导入语句同时让成员出处和目录关系对用户可见；数组顺序不参与调度，发现后按 Eval id 排序成成员集合。
 
 ## Eval Layer 的类型边界
 
@@ -72,7 +72,7 @@ interface SandboxLayer<
 }
 ```
 
-`defineEval()` 与 `defineScoreEval()` 用条件类型把作者输入保留到产物：
+`defineEval()` 与 `defineScoreEval()` 用条件类型把作者输入保留到输出：
 
 ```ts
 type OwnershipOf<Sandbox> =
@@ -167,13 +167,13 @@ TypeScript 先拒绝不合类型的成员；发现期再为 JavaScript、类型�
 ## 选择与未分组 Eval
 
 Experiment 与 CLI 继续只用普通 Eval id 选择题目，不增加“运行组”的第二套选择配置或命令。
-选中的 Eval 若属于 Sandbox Group，就自动进入该组队列；Experiment 不能关闭、覆盖或重新分组。
+选中的 Eval 若属于 Sandbox Group，就自动进入该组队列；Experiment 不能关闭、覆写或重新分组。
 
 Experiment 的 `evals` 仍是付费范围。
 组里未被选中的成员不运行，也不会被组定义自动补入选择。
 
 未被任何组引用的 Eval 保持 fresh。
-框架不建立隐式的“其它”组，也不因为多个 Eval 解析出相同 Layer 就共享实例。
+框架不建立隐式的“其它”组，也不因为多个 Eval 读取出相同 Layer 就共享实例。
 
 组定义没有“仅允许复用”的弱语义。
 若某个 Experiment 必须让同一 Eval fresh，该 Eval 就不能属于强制复用组；框架不提供 Experiment 侧 opt-out 来掩盖这项冲突。
@@ -193,10 +193,10 @@ Experiment 的 `evals` 仍是付费范围。
 ## 顺序与结果携带
 
 复用组只保证互斥使用同一活跃实例，不保证组内 Eval 的业务顺序。
-需要完整有序历史时使用 `defineSequence()`；组定义不解析文件名前缀来猜步骤。
+需要完整有序历史时使用 `defineSequence()`；组定义不读取文件名前缀来猜步骤。
 
 普通运行继续逐 Attempt 使用结果携带。
-被携带结果不会在 Sandbox 中重放副作用，因此仅靠复用组不能建立跨历史 Run 的状态轨迹。
+被携带结果不会在 Sandbox 中重新执行副作用，因此仅靠复用组不能建立跨历史 Run 的状态轨迹。
 
 Sequence Invocation 每一步都真实派发，并禁止结果携带。
 它与 `stop-group` 组合后，同时得到完整执行历史和同一物理实例。

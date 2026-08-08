@@ -57,12 +57,12 @@ Matcher 不从候选包导入 schema 或预期。
 package consumer 在仓库外 cwd 安装候选 tarball，只调用公开 import 与 CLI。
 Behavior 元数据改善追踪，断言仍必须来自公开 stdout、机器出口、HTML 或浏览器。
 
-测试不能读取 `src/` 或私有记录实现补足证据。
+测试不能读取 `src/` 或私有 Record 实现补足证据。
 本方案沿用真实边界，完整满足 C7。
 
 ## C8：回归证明
 
-有公开行为后果的 bug 在 Behavior 元数据中记录 bug 引用，并补主证明或 supporting proof。
+有公开行为后果的 bug 在 Behavior 元数据中登记 bug 引用，并补主证明或 supporting proof。
 只影响内部机制的 bug 可以只增加普通机制测试。
 
 Registry 展示 `bug → Behavior → primary proof`。

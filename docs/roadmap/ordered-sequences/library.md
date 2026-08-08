@@ -59,12 +59,12 @@ Sequence 成员继续引用 Eval 文件路径派生的 ID；移动 Sequence 文�
 Sequence 不包含 Agent、model、Sandbox、timeout、flags 或 lifecycle Hook。
 这些执行条件仍由 CLI 选中的一个 Experiment 提供。
 
-Experiment 的 `evals` 选择必须覆盖 Sequence 的全部成员。
+Experiment 的 `evals` 选择必须涵盖 Sequence 的全部成员。
 发现后若有成员不在该 Experiment 的选择结果中，规划失败并列出缺失 Eval；Sequence 不越过 Experiment 的边界自动扩题。
 
-Sequence Invocation 要求解析后的 `attempts` 为 1。
+Sequence Invocation 要求读取后的 `attempts` 为 1。
 多次重复需要彼此隔离的状态起点，不能在没有状态实例模型时把 `attempts: N` 解释成 N 条独立 Sequence。
 
 Sequence 不创建 Sandbox 复用组。
 成员被 [`sandbox-group.ts`](../sandbox-reuse-groups/library.md)引用时使用共享实例；未分组成员继续使用 fresh Sandbox。
-外部服务或无状态基线都可以承载同一条 Sequence；具体状态位置仍归 Experiment 和 Sandbox lifecycle。
+外部服务或无状态参照都可以承载同一条 Sequence；具体状态位置仍归 Experiment 和 Sandbox lifecycle。

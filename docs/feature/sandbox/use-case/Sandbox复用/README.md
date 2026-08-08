@@ -2,7 +2,7 @@
 
 Experiment 声明 `sandboxReuse: true` 后，指纹匹配的终态 Attempt 会照常由后续 Run 沿用，不创建 Sandbox。
 未沿用的 Attempt 才共用 Sandbox，分摊创建和公共准备。
-两层作者 layer 的 `prepare()` 每条 Attempt 重放；昂贵动作靠真实检查把关，复用窗口内第二条起检查命中、快速返回。
+两层作者 layer 的 `prepare()` 每条 Attempt 重新执行；昂贵动作靠真实检查把关，复用周期内第二条起检查命中、快速返回。
 
 | 目标 | 用例 |
 |---|---|

@@ -56,7 +56,7 @@ runnerBehavior({
 });
 ```
 
-标题中的“携带”和“身份变化项重新执行”分别落到公开结果的来源与执行次数。
+标题中的“携带”和“身份变化项重新执行”分别落到公开结果的出处与执行次数。
 测试输入是用户能做的 eval 源码修改，不暴露 fingerprint 测试入口。
 Fixture 的 Agent 对 `kept` 或第二次 `rerun` 调用立即抛错，但这个防伪事实由相邻 supporting proof 直接展示，不成为 User View 的一部分。
 读者不需要打开 Runner 调度实现，也不会把两个 attempt 混成一个总数。
@@ -189,7 +189,7 @@ reportBehavior({
 });
 ```
 
-两条关系 matcher 都记录 stdout 与 HTML 的 evidence、提取路径和对象身份。
+两条关系 matcher 都登记 stdout 与 HTML 的 evidence、提取路径和对象身份。
 测试明确写出“attempt 身份”和“逐 attempt verdict”两项口径，不把语义范围藏进 `semanticValues()`。
 这条测试证明两面关系。
 具体通过率是否正确，仍由计算语义自己的主证明负责。
@@ -383,7 +383,7 @@ pnpm e2e -- verify \
   --behavior reports.view.narrow-by-experiment
 ```
 
-`scripts/e2e.ts` 解析参数，并先比对当前候选、producer、fixture、prepare config 和适用环境 identity。
+`scripts/e2e.ts` 读取参数，并先比对当前候选、producer、fixture、prepare config 和适用宿主 identity。
 不匹配时以 expired-evidence 失败并提示重新执行 `pnpm e2e`，不静默 prepare。
 
 读回迁移或修复测试从 `report-scoreboard@<digest>` 创建单例私有的 mutable clone。
@@ -469,8 +469,8 @@ adapterBehavior({
 
 `src/usage-probe.ts` 是该自治仓库签入的真实当前 SDK 用法；prepare 同次保存上游公开 usage event 与 niceeval 公开 JSON 出口。
 断言比较的是同一次调用的独立上下游字段，不是会随 provider / tokenizer 变化的固定 token 数。
-每个关系 matcher 同时记录 protocol-event 与 JSON 两份来源。
-E2E 不从候选包导入 schema 版本，也不读取私有记录对象。
+每个关系 matcher 同时登记 protocol-event 与 JSON 两份出处。
+E2E 不从候选包导入 schema 版本，也不读取私有 Record 对象。
 
 ## C7：包外消费者
 
@@ -538,7 +538,7 @@ Driver 不能读取 `src/`、候选内部 schema 常量或私有 `.niceeval` 结
 ## C8：回归修复
 
 有公开行为后果的 bug 复用或新增 Behavior ID。
-主证明元数据记录 bug，Registry 展示契约、主证明、边界证明和少量 supporting proof。
+主证明元数据登记 bug，Registry 展示契约、主证明、边界证明和少量 supporting proof。
 
 只影响内部机制的 bug 直接在相邻单元测试写可区分 regression：
 
@@ -553,7 +553,7 @@ it.effect("取消最后一个 waiter 会释放 producer fiber", () => {
 ## 采用判断
 
 先在 Runner cache 与 Report 读面各试点三到五条高风险 Behavior。
-评审分别记录：
+评审分别登记：
 
 - 用户行为测试是否能一屏读完；
 - 内部重构是否只触及机制证明；

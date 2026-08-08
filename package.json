@@ -167,8 +167,9 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:docs": "vitest run --project docs",
-    "test:docs-site": "vitest run --project docs-site && pnpm run docs:validate && pnpm run docs:links",
+    "lint": "pnpm run lint:docs && pnpm run lint:docs-site",
+    "lint:docs": "vitest run --project lint-docs",
+    "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",
     "niceeval": "node bin/niceeval.js",
     "gen:diff-code": "tsx scripts/gen-diff-code.ts",
     "docs:reference": "tsx scripts/generate-reference.ts",

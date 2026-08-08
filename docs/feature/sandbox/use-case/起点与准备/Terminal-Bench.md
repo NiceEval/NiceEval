@@ -40,7 +40,7 @@ export default defineExperiment({
 ```
 
 省略的 `experiment.sandbox` 归一成空 command-only layer,不选择 Provider,也不产生隐式 template。
-解析后的准备链是:
+执行后的准备链是:
 
 ```text
 Eval Compose template
@@ -50,11 +50,11 @@ Eval Compose template
   -> Agent runtime
 ```
 
-Compose template 解析成完整 Case:`client` 主 Sandbox、伴随 service、网络、volume、ready 与整组 finalizer 都归 Docker Compose Provider。
+Compose template 求值成完整 Case:`client` 主 Sandbox、伴随 service、网络、volume、ready 与整组 finalizer 都归 Docker Compose Provider。
 普通 layer command 不能把第二个 image 或 sidecar 叠到 Case 上。
 
 同一 Experiment 还可以选中另一条使用 `e2bSandbox()` 的 Eval。
-template 按配对解析,Experiment 不需要按 Provider 分叉。
+template 按配对求值,Experiment 不需要按 Provider 分叉。
 
 实验需要证书时,Experiment 追加 command:
 

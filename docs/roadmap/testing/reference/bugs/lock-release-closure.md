@@ -31,10 +31,10 @@ runnerBehavior(completedInvocationLeavesNoFreshLockForTheNextOne, async () => {
 两次 action 使用不同真实进程并绑定同一 private clone。
 第二次加 `--rerun all`，避免 carry 在取锁前直接满足请求而让 proof 恒绿。
 
-## 同形反证：实验闸租约也会复活
+## 同形反证：实验级并发限制租约也会复活
 
 `src/runner/gate-lease.ts` 有同一份异步心跳形状。
-只修 case lock 会让单进程或单实验 proof 变绿，多开 Invocation 的实验级并发闸仍可能留下租约。
+只修 case lock 会让单进程或单实验 proof 变绿，多开 Invocation 的实验级并发限制仍可能留下租约。
 
 `bd97c9e8` 同时修改两处并各加一条竞态单元。
 可复用结构守护应让所有 heartbeat lease 实现通过同一 contract case：release 返回后等待若干调度轮次，存储中没有当前 holder 的条目，后继 acquire 不进入 wait。
@@ -43,7 +43,7 @@ runnerBehavior(completedInvocationLeavesNoFreshLockForTheNextOne, async () => {
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 不比等待毫秒；只断后继 Invocation 不出现无属主 lock wait |
 | 不能改断言放行 | 第二次明确 `--rerun all`；不能接受“最终 30 秒后通过” |

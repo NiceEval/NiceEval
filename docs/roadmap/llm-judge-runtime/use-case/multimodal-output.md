@@ -1,4 +1,4 @@
-# 评估多模态产物
+# 评估多模态输出
 
 这个 Eval 要求 Agent 生成一张图表，并判断图表是否表达参考数据。
 Eval 在定义期声明 `vision` profile 需要文本和图片，规划器因此能在派发 Agent 前完成能力预检。
@@ -47,7 +47,7 @@ export default defineEval({
 });
 ```
 
-材料解析器读取并 snapshot 两个文件。
+材料读取器读取并 snapshot 两个文件。
 图片作为 image part 进入 Provider，CSV 作为带 `reference` role 的文本 part 进入同一规范请求。
 
 Provider 不支持 image 时，这个 Eval × Experiment pair 在预检阶段得到 `judge-capability-unavailable`。

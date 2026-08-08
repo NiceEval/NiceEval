@@ -14,7 +14,7 @@
 - Journey E2E，在同一个真实项目中连续执行多条用户命令，并断言关键过程节点和最终结果。
 
 测试语义写在 Vitest 正文里。
-仓库级 manifest 只负责选择、运行环境、密钥和 artifact，不登记产品 Behavior，也不解释断言。
+仓库级 manifest 只负责选择、运行宿主、密钥和 artifact，不登记产品 Behavior，也不解释断言。
 
 真实场景 Repo 是承载手段，不是新的产品模型。
 它就是一个用户会写出的项目：自己的 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务代码和测试。
@@ -65,7 +65,7 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 |---|---|---|
 | 纯逻辑 / 可控调度 | unit + fake 自有依赖 | 每次 PR |
 | 安装后公开产品行为 | 无密钥场景 Repo | 本地、PR、release |
-| 本地服务或 Linux 环境 | host process 或 pinned Docker | 本地、PR |
+| 本地服务或 Linux 宿主 | host process 或 pinned Docker | 本地、PR |
 | 真实第三方协议 | live provider / SDK / CLI | main、nightly、release |
 | 高成本资源生命周期 | Docker / remote sandbox | nightly、release |
 
@@ -82,7 +82,7 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 - 浏览器先断言 URL / HTTP / network，再断言目标实体与用户动作；“有一个 dialog”不等于打开了正确对象。
 - 历史回归在文件头写 `regression: <commit 或 memory>`，正文仍按长期用户结果命名。
 - `test.each` 只展开共享动作与共享断言的等价矩阵；步骤不同就拆开。
-- 共享 helper 只能拥有临时目录、进程、HTTP server、解析与清理等机械能力。
+- 共享工具只能拥有临时目录、进程、HTTP server、数据读取与资源释放等机械能力。
   领域选择、期望和正确性算法留在测试文件。
 
 ## 失败定位
@@ -132,8 +132,8 @@ PR lane 不接触 secrets，只跑 unit 与确定性场景 Repo。
 
 ## 代价
 
-- 没有一张机器生成的全仓 Behavior 图，覆盖审计依赖领域目录、历史缺陷表和 review。
-- 各场景 Repo 通过精确锁定的独立 Testkit 复用机械进程与解析原语；领域 fixture 与 expected 仍保持独立。
+- 没有一张机器生成的全仓 Behavior 图，守护审计依赖领域目录、历史缺陷表和 review。
+- 各场景 Repo 通过精确锁定的独立 Testkit 复用机械进程与读取原语；领域 fixture 与 expected 仍保持独立。
 - 同一公开结果若在多个媒介都有独有契约，需要分别写断言，不能由统一领域对象自动投影。
 - 本地没有 Docker、浏览器或密钥时，只能运行满足能力的子集。
 

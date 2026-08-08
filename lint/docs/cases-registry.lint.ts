@@ -8,11 +8,11 @@ import { describe, expect, it } from "vitest";
 // 1. src/ 下每个测试文件头部声明所属文档(// cases: docs/engineering/testing/unit/<feature>.md),
 //    且声明指向真实存在的测试文档——没有这条,新增测试可以绕开覆盖登记存在,
 //    「先声明后写测」的预算闸门静默失效;
-// 2. 每篇 Feature 测试文档至少被一个 src 测试文件声明——没有这条,测试文档可以整册与套件
-//    脱钩,覆盖规范声明的类别没人实现也没人发现;
-// 3. 测试里的 `// bug: memory/<条目>.md` 引用指向真实存在的 memory 条目——修法台账靠
+// 2. 测试里的 `// bug: memory/<条目>.md` 引用指向真实存在的 memory 条目——修法台账靠
 //    这条引用从测试反查现象与根因,memory 重组后的死指针比不写更糟(照着找的人会以为台账没了)。
 // test/ 下的代码测试没有 Feature 文档可指,不做 cases 声明(例外已写进上述文档)。
+// 测试重置期间允许 Feature 文档先声明 Unit 例外的准入条件、暂时没有实现者；反向强制每篇
+// 文档都挂一个测试会逼人保留空测试或假 owner,与 Journey-first 的存在资格冲突。
 const ROOT = resolve(import.meta.dirname, "../..");
 
 // 方法论、覆盖登记规则与 harness 契约不是 Feature owner 文档。
@@ -58,27 +58,6 @@ describe("Feature 测试文档 lint", () => {
       }
     }
     expect(problems, "这些测试文件的 cases 声明缺失或失效").toEqual([]);
-  });
-
-  it("docs/engineering/testing/unit/ 下每篇 Feature 测试文档至少被一个 src 测试文件声明", () => {
-    const featureDocs = walk(
-      "docs/engineering/testing/unit",
-      (name) => name.endsWith(".md") && !NON_FEATURE_DOCS.has(name),
-    );
-    const declared = new Set(
-      srcTests.flatMap((file) =>
-        readFileSync(join(ROOT, file), "utf8")
-          .split("\n")
-          .slice(0, 20)
-          .map((line) => CASES_LINE.exec(line)?.[1])
-          .filter((t): t is string => t !== undefined),
-      ),
-    );
-    const orphaned = featureDocs.filter((doc) => !declared.has(doc));
-    expect(
-      orphaned,
-      "这些 Feature 测试文档没有任何 src 测试文件声明——给对应 feature 的测试文件加 cases 头注,或裁决这篇文档是否该存在",
-    ).toEqual([]);
   });
 
   it("测试里的 // bug: memory/….md 引用指向真实存在的 memory 条目", () => {

@@ -42,7 +42,7 @@ source 不存在、穿出项目根、符号链接逃逸或目录展开为空时�
 
 ## 动态 transfer manifest
 
-Runner 在普通上传实际读取本地字节时，同步记录 source tree、内容摘要、Sandbox 目标与它处于哪个 send 区间。
+Runner 在普通上传实际读取本地字节时，同步写入 source tree、内容摘要、Sandbox 目标与它处于哪个 send 区间。
 作者不需要把同一路径再登记一次。
 
 首次执行产生 manifest。
@@ -51,8 +51,8 @@ Eval 源码闭包变化时，旧依赖集合可能已经不完整，因此直接
 
 ## 动态泄漏检查
 
-materializer 记录 Agent 启动前实际可见的 build/mount closure。
-判定封口前，Runner 把本次 send 窗口外上传的本地 source 与该 closure 比对；同一测试材料若早已对 Agent 可见，本次 Attempt `errored`。
+materializer 记下 Agent 启动前实际可见的 build/mount closure。
+判定封口前，Runner 把本次 send 区间外上传的本地 source 与该 closure 比对；同一测试材料若早已对 Agent 可见，本次 Attempt `errored`。
 
 首次执行只能在实际走到上传调用后知道动态 source，因此这项检查保证“不采信泄题结果”，不承诺倒流阻止首次暴露。
 需要保密时，把测试材料放在 build context 外，或使用 materializer 的 filtered context。
@@ -64,12 +64,12 @@ Eval 从未读取的 solution 不进入 transfer manifest，也不需要 `privat
 
 ## 归因
 
-agent diff 只折叠 `send` 窗口内的 Sandbox 变化。
-跑测上传、venv、coverage 与 cache 发生在窗口外时属于 eval 归因，不需要 `diff.ignore` 或特殊 verification phase。
+agent diff 只折叠 `send` 区间内的 Sandbox 变化。
+跑测上传、venv、coverage 与 cache 发生在区间外时属于 eval 归因，不需要 `diff.ignore` 或特殊 verification phase。
 
 ## 边界
 
 - Agent 一开始就应看到的文件，在第一次 `send` 前普通上传。
-- checkout、凭据派生或外部临时资源可以放 Eval layer 的 `prepare()`，清理经 `context.onCleanup()` 登记。
+- checkout、凭据派生或外部临时资源可以放 Eval layer 的 `prepare()`，cleanup 经 `context.onCleanup()` 登记。
 - 内存生成的内容使用 Buffer 上传；其身份由生成它的源码或已登记数据输入承担。
 - 巨型模型、系统包和运行时归 template，不在每条 Eval 中上传。

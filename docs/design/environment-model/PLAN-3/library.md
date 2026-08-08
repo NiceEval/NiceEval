@@ -1,9 +1,9 @@
 # PLAN-3：Library
 
-本篇是 PLAN-3 公开调用形状的单一来源。
+本篇是 PLAN-3 公开调用形状的单一出处。
 方案取舍见 [README](README.md)，运行和身份语义见 [Architecture](architecture.md)，完整场景见 [Use Cases](use-case/README.md)。
 
-## Sandbox Case 入口
+## `Sandbox Case` 入口
 
 Eval 使用现有 environment 入口声明完整题目 Case：
 
@@ -32,11 +32,11 @@ e2bSandbox({
 ```
 
 `environments` 表项优先于同 profile 的 folder-local materialize。
-表值仍是完整 Sandbox Case，不把 Compose 多 service 环境压成单 template。
+表值仍是完整 `Sandbox Case`，不把 Compose 多 service Sandbox 压成单 template。
 
 普通 Provider 对内建 source kind 提供默认 materializer。
 用户只在自定义 source kind 或自定义 Provider 时声明 materializer。
-本方案不改变 Sandbox Case 的公开形状与完整义务。
+本方案不改变 `Sandbox Case` 的公开形状与完整义务。
 
 ## `defineAddon`
 
@@ -149,7 +149,7 @@ interface AddonSpec<I extends AddonIdentity> {
 }
 ```
 
-`name` 在一次 Experiment 的解析结果内唯一。
+`name` 在一次 Experiment 的读取结果内唯一。
 `identity` 是可序列化目标身份；脚本、payload 和模型会改变目标状态时，必须以 digest 或 revision 进入 identity。
 
 `check` 返回实际 identity、事实与不匹配原因，不能只返回 boolean。
@@ -173,8 +173,8 @@ export default defineExperiment({
 `addons` 是声明集合，数组位置不表达执行顺序。
 Runner 根据 `dependsOn` 与 `resources` 建立调度图。
 
-框架提供 `commandAddon`、`aptPackages` 与 `npmGlobalPackages` 等 helper。
-helper 返回普通 Addon，并自动提供对应工具的真实检查与安装资源声明。
+框架提供 `commandAddon`、`aptPackages` 与 `npmGlobalPackages` 等工具。
+工具返回普通 Addon，并自动提供对应工具的真实检查与安装资源声明。
 
 Addon 可以有 `prepare`。
 它只在实际 `check` miss 后运行，按 Addon name、目标 identity 与目标 platform single-flight。

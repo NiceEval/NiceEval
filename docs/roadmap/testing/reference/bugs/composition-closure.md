@@ -31,7 +31,7 @@ reportBehavior(exactExperimentWinsOverVariants, async () => {
 Report host 却委托给 `dist/report` 编译单元中的另一份查询实现；WeakMap 索引按 results 对象身份挂在 raw src 模块实例，换实例必然 not found。
 
 真机 `show @<locator> --report standard` 暴露问题。
-这再次证明「给基础函数补更多单元」不能覆盖宿主组合；需要从真实 package entry 做 locator 往返。
+这再次证明「给基础函数补更多单元」不能守护宿主组合；需要从真实 package entry 做 locator 往返。
 
 ```ts
 reportBehavior(reportHostConsumesRecordLocator, async () => {
@@ -47,7 +47,7 @@ reportBehavior(reportHostConsumesRecordLocator, async () => {
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 精确集合只锁 experiment identity；locator proof 只锁对应 attempt，不锁完整渲染文案 |
 | 不能改断言放行 | 精确选择不能改成有序子序列；locator 值来自实际 producer，不能换一个较新的 locator 绕过 |

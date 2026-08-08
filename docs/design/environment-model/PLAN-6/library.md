@@ -12,9 +12,9 @@ type EvalEnvironment = string | SandboxSource;
 ```
 
 字符串是 environment profile。
-`SandboxSource` 是 folder-local、provider-neutral 的环境输入,例如 Compose 文件、主 service 与 build context。
+`SandboxSource` 是 folder-local、provider-neutral 的 Environment 输入,例如 Compose 文件、主 service 与 build context。
 
-folder-local 的完整形态是「task package 就是 eval 文件夹」:环境、判据与 eval 定义同目录,全部路径从 `import.meta.url` 推导:
+folder-local 的完整形态是「task package 就是 eval 文件夹」:Environment 声明、判据与 eval 定义同目录,全部路径从 `import.meta.url` 推导:
 
 ```text
 evals/terminal-bench/broken-python/
@@ -38,12 +38,12 @@ export default defineEval({
 });
 ```
 
-Eval 不返回 Provider-native Sandbox Case。
-source 只有经过当前 SandboxSpec 的覆盖表或 materializer,才成为运行 case。
+Eval 不返回 Provider-native 的 Sandbox 实例。
+source 只有经过当前 SandboxSpec 的 `environments` 映射表或 materializer,才成为运行 case。
 
 ## 数据集 adapter 派生 Environment
 
-外部 benchmark 已经把环境放进 task package 时,迁移者不逐题重写 `environment:`。
+外部 benchmark 已经把 Environment 放进 task package 时,迁移者不逐题重写 `environment:`。
 adapter 读取原格式并返回普通 EvalDef record:
 
 ```typescript
@@ -55,7 +55,7 @@ export default await loadTerminalBench({
 ```
 
 `loadTerminalBench()` 不是 NiceEval core 的第二套 Eval API。
-它是 benchmark-specific helper,内部为每个 task 调用 `defineEval()` 并派生:
+它是 benchmark-specific 的导入函数,内部为每个 task 调用 `defineEval()` 并派生:
 
 - `task.yaml` 对应的 instruction、timeout、tags 与 metadata。
 - Compose 与公开 build inputs 对应的 `SandboxSource`。
@@ -66,7 +66,7 @@ adapter 必须稳定排序 task id,登记各类输入身份,并检查 private/ve
 
 ## Experiment Sandbox setup
 
-Experiment 的默认起点与环境准备都留在 SandboxSpec:
+Experiment 的默认起点与 Sandbox 准备都留在 SandboxSpec:
 
 ```typescript
 export default defineExperiment({
@@ -81,7 +81,7 @@ export default defineExperiment({
 ```
 
 `template` 只在 Eval 没有 Environment 时成为起点。
-`.setup(...)` 始终作用于最终解析出的主 Sandbox,所以同一个 mempal setup 也能作用在 Terminal-Bench Compose 的 `client` 上。
+`.setup(...)` 始终作用于最终选定的主 Sandbox,所以同一个 mempal setup 也能作用在 Terminal-Bench Compose 的 `client` 上。
 
 多个实验准备按链式顺序执行:
 
@@ -93,7 +93,7 @@ sandbox
 ```
 
 作者不再声明 `dependsOn` 或 `resources`。
-顺序有语义时直接按阅读顺序写;领域 helper 内部可以对自己掌握的独立动作安全并行。
+顺序有语义时直接按阅读顺序写;领域 setup 函数内部可以对自己掌握的独立动作安全并行。
 
 ## EvalDef setup
 
@@ -113,14 +113,14 @@ export default defineEval({
 ```
 
 这仍是普通 `EvalDef.setup`。
-`nodeRepositoryFixture()` 只是减少重复的领域 helper;作者也可以写现有的 async setup function。
+`nodeRepositoryFixture()` 只是减少重复的领域 setup 函数;作者也可以写现有的 async setup function。
 
 仓库 checkout、项目依赖与可见 Fixture 在 Agent 前完成。
 隐藏 verifier 不属于 setup,必须等最后一次 Agent turn 返回后再 materialize。
 
-## 可验证 setup helper
+## 可验证 setup 函数
 
-昂贵或可能预装的条件使用领域 helper 封装 check/install/recheck:
+昂贵或可能预装的条件使用领域 setup 函数封装 check/install/recheck:
 
 ```typescript
 const mempalSetup = defineSandboxSetup({
@@ -140,12 +140,12 @@ const mempalSetup = defineSandboxSetup({
 ```
 
 普通作者消费 `mempalSetup({...})`,不实现这个底层形状。
-`identity` 进入配置身份;check 的实际 facts、install activity 与 recheck 进入 Attempt 记录。
+`identity` 进入配置身份;check 查得的 facts、install activity 与 recheck 进入 Attempt Record。
 
 plain setup function 继续允许,但它每次执行且不享受预装命中或受管 staged payload。
 需要这些能力时才使用 `defineSandboxSetup()`。
 
-## SandboxSpec 解析入口
+## SandboxSpec 起点选择入口
 
 ```typescript
 interface SandboxSpecEnvironmentInputs<NativeCase> {
@@ -157,9 +157,9 @@ interface SandboxSpecEnvironmentInputs<NativeCase> {
 ```
 
 `environments` 表项必须兑现同一 profile 对应 Environment 的外部行为。
-预制产物怎样携带构建时的 source provenance 尚未定稿;配置不能从当前 source 动态计算一个声明值,再用它证明既有产物没有过期。
+预制组合怎样携带构建时的 source provenance 尚未定稿;配置不能从当前 source 动态计算一个声明值,再用它证明既有预制组合没有过期。
 
-固定解析顺序是:
+固定选择顺序是:
 
 ```text
 environments[profile]
@@ -168,10 +168,10 @@ environments[profile]
   > Provider neutral case
 ```
 
-有 source 但当前 SandboxSpec 没有覆盖或 materializer 时,该 Eval 在计划期 `skipped`。
+有 source 但当前 SandboxSpec 没有对应映射或 materializer 时,该 Eval 在计划期 `skipped`。
 Runner 不回退到默认 template。
 
 ## Agent 保持独立
 
 AgentProvisioner 保留平台探测、staged payload、安装模式、check/install/recheck 与逐 Attempt 安装事实。
-它在 SandboxSpec setup 与 EvalDef setup 之后运行,不改成通用 Sandbox setup helper。
+它在 SandboxSpec setup 与 EvalDef setup 之后运行,不改成通用 Sandbox setup 函数。

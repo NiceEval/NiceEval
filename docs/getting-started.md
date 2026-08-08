@@ -121,7 +121,7 @@ npx niceeval exp local classify
 
 ## 3. 评一个放入沙箱的 coding agent
 
-给一个编码任务,让 Claude Code / bub 在隔离环境里改代码,再用测试验证。起始文件、验证测试都是 `test(t)` 里手工放进沙箱——没有 `PROMPT.md` 目录约定,也没有自动发现:
+给一个编码任务,让 Claude Code / bub 在隔离 Sandbox 里改代码,再用测试验证。起始文件、验证测试都是 `test(t)` 里手工放进沙箱——没有 `PROMPT.md` 目录约定,也没有自动发现:
 
 ```typescript
 // evals/fixtures/button.eval.ts
@@ -175,7 +175,7 @@ export default defineEval({
 ```
 
 `experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerImageSandbox({ image: NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE })`(都从 `niceeval/sandbox` 导入)。
-没有游离的 Provider 配置,也没有 `--sandbox` 这种 CLI 覆盖:起点由 template-bearing factory 声明并同时带出 Provider,写在 Experiment 或 Eval 的 `sandbox` 字段上(配对规则见 [Sandbox Layer](feature/sandbox/layers.md))。
+没有游离的 Provider 配置,也没有 `--sandbox` 这种 CLI 替换:起点由 template-bearing factory 声明并同时带出 Provider,写在 Experiment 或 Eval 的 `sandbox` 字段上(配对规则见 [Sandbox Layer](feature/sandbox/layers.md))。
 
 **跑起来:**
 
@@ -208,7 +208,9 @@ Discovered 3 evals
 Results:  2 passed, 1 failed, 0 skipped
 ```
 
-详细 artifact 落在该实验的 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json`,以及每个 attempt 目录下的 `result.json`(判定、断言、结构化错误与 diagnostics)与按需生成的 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Record Format](feature/record/architecture.md)。
+详细 artifact 落在该实验的 Run 目录 `.niceeval/<experiment>/<run>/`。
+Run 级 `run.json`,以及每个 attempt 目录下的 `result.json`(判定、断言、结构化错误与 diagnostics)。
+按需生成 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Record Format](feature/record/architecture.md)。
 
 ## 接进 CI
 

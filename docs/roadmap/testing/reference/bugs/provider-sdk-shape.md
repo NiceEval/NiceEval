@@ -1,7 +1,7 @@
 # Bug 组：第三方 SDK 形状不能由测试自己发明
 
 这一组用 E2B provisioning reconcile 作正例，用 detached inspect 的同形复发作反证。
-它同时给出一条否定结论：普通用户侧 DSL 不能确定性捕获所有 provider 缺陷。
+它同时给出一条否定判断：普通用户侧 DSL 不能确定性捕获所有 provider 缺陷。
 
 ## 正例：reconcile 把 paginator 当数组
 
@@ -21,7 +21,7 @@ commit `4b37775` 修复 `src/sandbox/keep.ts` 中相同的 `Promise<Array>` 假�
 更关键的证据是 fix 前 `keep.test.ts` 也写了 `e2bListMock.mockResolvedValue([...])`：测试与产品共享同一条虚构 API，因此测试稳定地为错误事实背书。
 
 这个反证排除了「给 reconcile 补一个 bug 专用测试」的方案。
-最少守护必须覆盖所有 E2B `Sandbox.list()` 调用点，或者让生产代码直接保持真实返回类型，使错误形状无法编译。
+最少守护必须涵盖所有 E2B `Sandbox.list()` 调用点，或者让生产代码直接保持真实返回类型，使错误形状无法编译。
 
 ## 最早失败层
 
@@ -39,7 +39,7 @@ providerContract("e2b list traversal", () => {
 mock 只实现从真实类型推导出的 interface，并至少提供两页，避免单页假实现掩盖循环错误。
 
 用户侧能证明的只有语义结果，例如 `niceeval sandbox list` 把凭据或网络故障显示为 unknown，而不是 expired。
-它不能稳定制造「create 已可能成功但客户端收到歧义错误」的远端窗口。
+它不能稳定制造「create 已可能成功但客户端收到歧义错误」的远端间隙。
 若没有 provider fault proxy 或官方 emulator，这一条应明确标为机制缺口。
 
 ## DSL 如何定位已发生的故障
@@ -58,11 +58,11 @@ sandboxBehavior(retryDoesNotFailInsideReconcile, async () => {
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 类型守护引用安装中的真实 SDK 声明；provider contract 只断遍历与状态语义 |
 | 不能改断言放行 | 不能把真实 SDK 返回类型改写进本地 interface；SDK 升级必须先通过 contract case |
 | 观察失败显式报错 | SDK 形状在 compile / unit invoke 失败；真实运行保留 provider、操作与原始 cause |
 | 用户侧直接定位 | 若进入 E2E，失败停在 sandbox provision / reconcile，不退化成 Report 对象缺失 |
-| 设施不造假 | mock 从真实类型推导并覆盖多页；禁止 `as unknown as` 和 `mockResolvedValue(Array)` 发明形状 |
+| 设施不造假 | mock 从真实类型推导并涵盖多页；禁止 `as unknown as` 和 `mockResolvedValue(Array)` 发明形状 |
 | 用户已有用法不改 | 用户的 Eval 与实验完全不变；缺的是框架自己的 provider 测试机制 |

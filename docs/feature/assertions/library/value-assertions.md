@@ -12,8 +12,8 @@ t.check(turn.data, matches(MySchema));
 
 ## `check` 与 `require`
 
-- `t.check(value, matcher)` 同步记录断言并继续执行，适合一次收集多条结果。
-- `await t.require(value, matcher)` 等价于 `await t.check(value, matcher).gate().stopOnFailure()`；不通过时记录硬失败并中止依赖它的后续代码，通过后返回原 value。
+- `t.check(value, matcher)` 同步登记断言并继续执行，适合一次收集多条结果。
+- `await t.require(value, matcher)` 等价于 `await t.check(value, matcher).gate().stopOnFailure()`；不通过时登记硬失败并中止依赖它的后续代码，通过后返回原 value。
 
 只有后续逻辑依赖这个值时才使用 `require`。
 两种题型都有它；作用域断言或需要保留 soft 严重度时，在断言句柄上显式链 `.stopOnFailure()`。
@@ -50,7 +50,7 @@ t.check(turn.data, satisfies((v) => Array.isArray(v) && v.length <= 5, "最多 5
 `similarity(expected)` 是归一化编辑距离（1 − Levenshtein ÷ 较长串长度），不是语义相似度——同义改写、语序调整会得低分，适合期望输出接近逐字稳定的场景；语义评价用 [LLM-as-judge](../../judge/library.md)。
 
 `includesUrl(min?)` / `hasSections(min?)` 是**内容形状断言**。
-它们不判语义，只检查回答是否带来源链接或小节结构。
+它们不判语义，只检查回答是否带出处链接或小节结构。
 没有 Judge key 时，它们比检查输入中已有的词更可靠，但仍判不了内容真伪。
 有 Judge 时，语义质量交给 [LLM-as-judge](../../judge/library.md)。
 URL 按去重后的完整链接计数；标题按行首 `#` 到 `######` 计数。

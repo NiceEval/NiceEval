@@ -16,7 +16,7 @@
 | 用户行为主证明 | 公开 Library 与确定性用户结果 | 真实包、CLI、协议、PTY 或浏览器结果 |
 | 机制证明 | 算法、锁、并发、时钟、转换与错误传播 | 只在真实边界本身就是证明对象时使用 |
 
-用户行为不再埋在巨型源文件旁测试和粗粒度覆盖清单里。
+用户行为不再埋在巨型源文件旁测试和粗粒度守护清单里。
 机制测试也不必为了“可读”而伪装成不精确的用户故事。
 
 ## 核心心智
@@ -216,7 +216,7 @@ e2e/report/test/behavior/
 └── debug/inspect-attempt.test.ts
 ```
 
-这些目录不是第三种执行环境。
+这些目录不是第三种执行层。
 根仓库里的文件仍由 unit project 执行；E2E 仓库里的文件仍由自己的真实 E2E 入口执行。
 
 机制测试继续与实现相邻：
@@ -231,8 +231,8 @@ src/report/components/compute.test.ts
 - 按能力定义 `RunnerUser`、`ReportUser`、`RecordUser`，不提供全仓基类。
 - 方法用用户对象和动作命名，不用 `section`、`row`、`line` 或 CSS selector 命名。
 - 主证明只从公开 import、CLI、机器出口或浏览器进入；私有事件与模块只供机制证明观察。
-- 每个 Behavior 同时链接既有 Use Case 的用户任务锚点和 Feature 契约锚点；标题不能替代这两个来源。
-- CLI 行为在调用点保留可复制的完整 argv 或 shell literal；User View 只类型化返回结果，不把命令藏进场景 helper。
+- 每个 Behavior 同时链接既有 Use Case 的用户任务链接目标和 Feature 契约链接目标；标题不能替代这两个出处。
+- CLI 行为在调用点保留可复制的完整 argv 或 shell literal；User View 只类型化返回结果，不把命令藏进场景工具。
 - 返回值必须能按稳定身份继续寻址，例如 attempt ID、experiment name 或 case ID。
 - 观察值必须是带 evidence、提取路径和对象身份的 `Observed<T>`；主证明 matcher 只消费这种值。
 - 关系测试逐字段列出比较口径，不提供 `semanticValues()` 一类隐藏聚合。
@@ -276,7 +276,7 @@ Manifest 只包含 Behavior、Proof 与外部引用元数据，不包含运行�
 - 本仓引用存在；跨仓引用声明明确的 `repository + Behavior ID`；
 - 每个 E2E proof 的 `evidenceRecipeId` 指向本仓唯一 recipe，并精确绑定自己的 world 与 read-only / mutable-clone 模式。
 - 每个 `mutable-clone` proof 的 `mutationActionId` 指向本仓唯一 `defineMutationAction()` export，且 action 的公开入口与 proof target 相同；
-- mutation action 的 module / export 与静态 symbol closure 可解析；`read-only` proof 不引用 action。
+- mutation action 的 module / export 与静态 symbol closure 可定位；`read-only` proof 不引用 action。
 
 根聚合守护只读收集各仓 Manifest，再验证：
 
@@ -288,19 +288,19 @@ Manifest 只包含 Behavior、Proof 与外部引用元数据，不包含运行�
 
 运行期报告与静态 Registry 分开。
 每个实际执行的主证明和 required BoundaryProof 都必须产生自己的带身份 Outcome Assertion。
-每个声明的 observation 都必须贡献 evidence；关系断言必须在同一 assertion 中记录全部来源。
-Browser / HTML observation 还必须引用本次 Verification Run 和 frozen HTML 来源。
+每个声明的 observation 都必须贡献 evidence；关系断言必须在同一 assertion 中登记全部出处。
+Browser / HTML observation 还必须引用本次 Verification Run 和 frozen HTML 出处。
 标题声称业务结果或跨媒介关系时，只断言 exit code 或只读取其中一面不能满足声明。
-未执行、prepare 失败与 outcome 失败分别记录。
-单例重跑不会改写静态完整性结论，完整 CI 则要求本次选择范围里的主证明与必需边界证明都被执行。
+未执行、prepare 失败与 outcome 失败分别登记。
+单例重跑不会改写静态完整性判断，完整 CI 则要求本次选择范围里的主证明与必需边界证明都被执行。
 
 自然语言标题仍由 review 检查。
-运行期记录只能守住“至少一个身份断言”，不能理解标题里的全部主张。
+运行期数据只能守住“至少一个身份断言”，不能理解标题里的全部主张。
 
 Behavior Manifest 是静态证明目录。
 E2E 命令打印的 evidence manifest 是一次运行的只读证据入口；两者身份、生命周期与用途分开。
 
-字面量测试代码是 Behavior Manifest 的唯一来源，生成文件不签入。
+字面量测试代码是 Behavior Manifest 的唯一出处，生成文件不签入。
 根仓 `test/docs/` 用只读 AST 扫描当前 checkout 直接构造内存 Manifest；它不运行自治 E2E 生成器。
 每个 `pnpm e2e` 在本次运行 artifact 目录输出本仓 `behavior-manifest.json`，只供该次独立 CI 阅读，不回流为根守护输入。
 
@@ -322,7 +322,7 @@ pnpm e2e -- verify \
   --behavior reports.view.narrow-by-experiment
 ```
 
-`scripts/e2e.ts` 是唯一参数解析者。
+`scripts/e2e.ts` 是唯一读取参数的入口。
 每个 E2E proof 的 `evidenceRecipeId` 必须在传入 manifest 中恰好匹配一次；一个 Behavior 需要多个 world 时重复传 `--world`。
 `verify --world` 必须校验 candidate、recipe、producer symbol closure、fixture、外部依赖与适用 producer environment identity。
 World 不匹配、未冻结或 artifact 不完整时，命令直接失败；它不能暗中重新运行模型。
@@ -354,11 +354,11 @@ Evidence:
 - declaration：ID、契约、主证明或注册关系错误；
 - prepare：fixture、真实模型运行或 evidence world 失败；
 - invoke：公开动作未能执行；
-- observe：媒介无法解析或对象身份无法寻址；
+- observe：媒介无法 parse 或对象身份无法寻址；
 - outcome：观察合法，但用户结果不符合预期；
-- cleanup：清理失败，保留更早的主失败。
+- cleanup：收尾失败，保留更早的主失败。
 
-解析失败不能退回宽松匹配。
+parse 失败不能退回宽松匹配。
 缺少 evidence 也不能被解释成产品结果不符合预期。
 
 ## 范围

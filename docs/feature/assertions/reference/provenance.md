@@ -1,8 +1,8 @@
-# Assertions 设计来源
+# Assertions 设计参照
 
-这页只记录外部设计来源，不承担用户 API 或内部架构契约。
+这页只收外部设计参考，不承担用户 API 或内部架构契约。
 
-| 来源 | 借鉴内容 |
+| 出处 | 借鉴内容 |
 |---|---|
 | eve.dev evals | gate/soft、`t` / session / turn 接收者模型、`check` / `require`、matcher 与 judge DX |
 | Vercel agent-eval | Sandbox diff、transcript 归一化、experiment 与本地结果查看器的工程形状 |

@@ -4,13 +4,13 @@
 
 ---
 
-## 结论
+## 裁决
 
 实验加速采用分层方案：
 
 1. 先用结果沿用、选择与首过即停减少不必派发的 Attempt。
-2. 默认使用[方案 1](PLAN-1/README.md)：保留有界并发，稳定依赖进入预制环境，每 Attempt 使用全新 Sandbox。
-3. Sandbox 预热可以移动创建时间，但真实记录中 `sandbox.create` 只占约 0.5%–0.6%，因此不作为第一优先级。
+2. 默认使用[方案 1](PLAN-1/README.md)：保留有界并发，稳定依赖进入预构建起点，每 Attempt 使用全新 Sandbox。
+3. Sandbox 预热可以移动创建时间，但真实运行数据中 `sandbox.create` 只占约 0.5%–0.6%，因此不作为第一优先级。
 4. Experiment 作者确认题间状态边界后，显式使用[方案 4](PLAN-4/README.md)：`sandboxReuse: true` 让本 Invocation 的 Attempt 共用 Sandbox。
 5. [方案 2](PLAN-2/README.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
 6. 多个 Invocation 使用各自的 Sandbox 复用池；只有它们读写同一外部状态时，才用 `sharedState.key` 独占完整生命周期。
@@ -29,7 +29,7 @@ MemoryBench 和 NiceEval-Eval 的 Agent 执行占总耗时约 68.8%–87.6%， S
 
 MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 fetch 占 4.2%。
 这些工作多数发生在 `eval.run`，只复用 Sandbox 不会自动省掉。
-跨项目稳定的工具链进入预制环境；由当前 checkout、lockfile、实验 flags 或临时凭据决定的安装不能合理烘成每个 commit 一份 template，应进入 SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
+跨项目稳定的工具链进入预构建起点；由当前 checkout、lockfile、实验 flags 或临时凭据决定的安装不能合理烘成每个 commit 一份 template，应进入 SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
 
 因此，`sandbox.create` 只占 0.5%–0.6% 只否定“为了创建本身复用”。
 它不否定动态准备的复用收益；是否声明 `sandboxReuse` 要看能移入 SandboxSpec `setup` 的阶段占比，而不是只看创建耗时。
@@ -52,7 +52,7 @@ MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 
 - `maxConcurrency: 1` 表达本次 Invocation 同时最多运行一个 Sandbox。
 - Runner 按需创建 Sandbox，不预先创建不会使用的数量。
 
-Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 解析后的 environment profile 分组。
+Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 定位出的 environment profile 分组。
 同一个 Sandbox 只承接同组 Attempt，各组共同受 Experiment `maxConcurrency` 限制。
 
 跨 Invocation 共享 checkpoint 时，Experiment 另声明 `sharedState: { key }`。
@@ -64,7 +64,7 @@ key 进入 `configHash`；租约从 Experiment/Sandbox setup 前持有到 Sandbo
 
 - `createSandbox`、SandboxSpec `setup` / `teardown`、题间重置点与 `stop` 各执行一次；
 - Agent 与 Eval `setup` / `teardown` 仍逐 Attempt 成对执行；
-- 每次派发前确认 Sandbox 能覆盖 Attempt deadline 与收尾；
+- 每次派发前确认 Sandbox 能涵盖 Attempt deadline 与收尾；
 - 不能续期时停止旧 Sandbox，创建并准备替代 Sandbox。
 
 Provider 配置用 `lifetimeMs` 声明希望保持 Sandbox 的时间，并通过 `SandboxReuseCapability.ensureLifetime(minRemainingMs)` 提供中立能力。
@@ -85,7 +85,7 @@ Sandbox 复用是签入的实验语义：
 
 ## 实施顺序
 
-1. 先把稳定安装迁入预制环境或 SandboxSpec `setup`。
+1. 先把稳定安装迁入预构建起点或 SandboxSpec `setup`。
 2. 为内置 Provider 增加 Sandbox 复用寿命能力。
 3. 让一个 Sandbox 完成复用、reset、续期与更换流程。
 4. 扩展到多个 Sandbox，并接入现有并发限制。

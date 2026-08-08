@@ -7,9 +7,9 @@
 
 ## 三个领域入口
 
-| 所有者 | 入口 | 产物 |
+| 所有者 | 入口 | 产出 |
 |---|---|---|
-| Eval | `composeSandbox()`、`defineEvalEnvironment()` 与题目 helper | Eval `EnvironmentContribution` |
+| Eval | `composeSandbox()`、`defineEvalEnvironment()` 与题目构造函数 | Eval `EnvironmentContribution` |
 | Experiment | `defineExperimentEnvironment()` 与可选 `defineExperimentState()` | Experiment `EnvironmentContribution`、融合 cases 表与独立状态生命周期 |
 | Agent | Adapter 工厂 | `AgentEnvironmentContribution` |
 
@@ -56,13 +56,13 @@ interface EnvironmentRequirement {
 ```
 
 `name` 在同一个所有者的 contribution 内唯一。
-解析成安装图后使用 `owner + name` 作为稳定节点键,因此 Eval 与 Experiment 可以各自使用领域内的自然名称。
+归一成安装图后使用 `owner + name` 作为稳定节点键,因此 Eval 与 Experiment 可以各自使用领域内的自然名称。
 
 `identity` 是声明目标身份。
 版本、脚本 revision、模型、证书与 payload digest 等语义输入必须进入该值。
 函数体不自动参与哈希。
 
-`verify` 读取已经创建的完整 Sandbox Case。
+`verify` 读取已经创建的完整 Sandbox 实例。
 它可以消费主 Sandbox 命令结果,也可以使用 ready、services、能力与身份事实。
 返回值必须包含实际事实或不匹配原因,不能只返回 boolean。
 
@@ -129,13 +129,13 @@ interface ExperimentEnvironmentContribution extends EnvironmentContribution {
 }
 ```
 
-`requirements` 为空数组表示该所有者没有额外环境事实。
+`requirements` 为空数组表示该所有者没有额外 Sandbox 事实。
 集合参与哈希前按成员 `name` 排序。
 数组位置不表达依赖、安装顺序或优先级。
 
 Eval 的 `base` 是题目 Base。
 Experiment 的 `base` 是与同点 Requirement 集合绑定的条件基底。
-它们都表示完整 Sandbox Case 预期满足所属成员,但启动后所有成员仍执行 `verify`。
+它们都表示完整 Sandbox 实例预期满足所属成员,但启动后所有成员仍执行 `verify`。
 
 一个 contribution 只能提供一个 Base。
 需要按 Eval profile 提供多个融合 case 时,使用 Experiment contribution 的 `cases` 表。
@@ -196,17 +196,17 @@ interface ExperimentStateLifecycle {
 Provider 硬丢实例时 save 记为 `unavailable`,不是假装成功。
 Eval teardown 位于 fresh save 之后,仍沿既有规则只追加诊断,不反改已经提交的 checkpoint。
 `sandboxReuse: true` 必须配 `saveOn: "after-load"`。
-复用窗口没有逐 Attempt 状态回滚,不能承诺丢弃失败 Attempt 已经写入的活状态。
+复用周期没有逐 Attempt 状态回滚,不能承诺丢弃失败 Attempt 已经写入的活状态。
 
 `load()` 返回实际载入的 checkpoint identity、digest 与中性事实;`save()` 返回成功提交的新 checkpoint。
 save 使用独立 cleanup deadline 与 signal,不会复用已经超时或取消的 Attempt signal。
 
 后继 checkpoint 规则固定如下:
 
-| consistency | 首次 load | fresh 下一 Attempt | reuse 窗口轮换 |
+| consistency | 首次 load | fresh 下一 Attempt | reuse 复用周期轮换 |
 |---|---|---|---|
-| `pinned(revision)` | 读取并核对固定 revision | 仍读取同一固定 revision;本次 save 只作输出,不成为后继 | 新窗口仍从固定 revision 开始;需要连续演化时不能选 pinned |
-| `rolling` | 读取 store 当前已提交 head | 必须读取上一条成功 save 的 checkpoint | 旧窗口 save 成功后,新窗口必须 load 该 checkpoint |
+| `pinned(revision)` | 读取并核对固定 revision | 仍读取同一固定 revision;本次 save 只作输出,不成为后继 | 新复用周期仍从固定 revision 开始;需要连续演化时不能选 pinned |
+| `rolling` | 读取 store 当前已提交 head | 必须读取上一条成功 save 的 checkpoint | 旧复用周期 save 成功后,新复用周期必须 load 该 checkpoint |
 
 `rolling` 同一 cohort 的 load → save 临界区必须串行,因此要求 `maxConcurrency: 1`。
 save 失败后没有合法后继,Runner 停止继续派发该状态序列。
@@ -239,7 +239,7 @@ export default defineExperiment({
 
 不复用时每条 Attempt 各执行一次 load/save。
 复用时每个 Sandbox window 各执行一次,中间 Attempt 直接观察同一份活状态。
-Nowledge 的 nmem attach、远端能力探测等环境条件仍属于 Experiment Requirement;只有 checkpoint load/save 进入这套状态接口。
+Nowledge 的 nmem attach、远端能力探测等 Sandbox 条件仍属于 Experiment Requirement;只有 checkpoint load/save 进入这套状态接口。
 
 ## Eval contribution
 
@@ -268,9 +268,9 @@ export default defineEval({
 ```
 
 `tbComposeEnvironment()` 返回完整 Compose Base。
-真实 helper 填入 `T_BENCH_*` image、container、`TEST_DIR` 与日志路径插值,并固定 `build: "on-demand"`、`executionUser: "image"`。
-随机 container name 与宿主日志目录只作为 materialization facts;helper revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
-Compose 的 services、网络、volume、ready 条件、主 Sandbox 与资源组继续归完整 Sandbox Case。
+该工厂函数填入 `T_BENCH_*` image、container、`TEST_DIR` 与日志路径插值,并固定 `build: "on-demand"`、`executionUser: "image"`。
+随机 container name 与宿主日志目录只作为 materialization facts;工厂函数 revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
+Compose 的 services、网络、volume、ready 条件、主 Sandbox 与伴随资源继续归完整 Sandbox 实例。
 
 Eval 也可以只贡献可移植 Ensure:
 
@@ -375,7 +375,7 @@ export default defineEval({
 
 判据文件仍由 `loadCriteria` 一类 loader 登记内容指纹。
 `HiddenVerifierFixture.identity` 只描述 materialize / cleanup 配方。
-cleanup 失败把 Attempt 改为 `errored`,跳过 state save、退休复用窗口并停止依赖该状态的序列;这条语义不同于只追加诊断的普通 `EvalDef.teardown`。
+cleanup 失败把 Attempt 改为 `errored`,跳过 state save、退休该复用周期并停止依赖该状态的序列;这条语义不同于只追加诊断的普通 `EvalDef.teardown`。
 
 ## Experiment Requirement 集合
 
@@ -470,7 +470,7 @@ export default defineExperiment({
 表值必须是完整 Provider-native Case。
 上例是 Docker 原生 `{ compose }` 表值,不是中性的 `ComposeSandboxSource`。
 Terminal-Bench 的真实 `tbComposeEnvironment()` 应留在 Eval contribution,不能直接放进这个表。
-若同一 profile 需要中央覆盖,适配层必须产出当前 Provider 的原生 case。
+若同一 profile 需要中央替换,适配层必须产出当前 Provider 的原生 case。
 这个 case 仍须兑现 `T_BENCH_*` 插值、按需 build、image user 与完整服务组。
 不能用单 Sandbox template 名或只给一个 Compose 路径,冒充可启动的三服务 Case。
 
@@ -520,9 +520,9 @@ export default defineExperiment({
 ```
 
 `cases` 第一版只接受精确 profile key。
-表值是完整 Sandbox Case,不是 Runner 要继续拼接的局部配置。
+表值是完整 Sandbox 实例,不是 Runner 要继续拼接的局部配置。
 它替代双方 Base,不删除双方 Requirement 集合。
-Compose 融合表项仍要保留变量插值、按需 build、image user、每项服务、ready、network、资源组与 finalizer;这里只是改用一份已经融合实验条件的 Compose 定义。
+Compose 融合表项仍要保留变量插值、按需 build、image user、每项服务、ready、network、完整资源集与 finalizer;这里只是改用一份已经融合实验条件的 Compose 定义。
 
 `environments` 与融合 `cases` 同时命中一个 profile 时,选择融合表项。
 融合表项预期满足 Eval 与 Experiment 两侧,而 `environments` 表项只预期满足 Eval。
@@ -607,7 +607,7 @@ interface AgentRuntimeLifecycle {
 AgentProvisioner 继续拥有目标平台探测、staged payload、安装模式、Agent 启动条件和逐 Attempt 安装事实。
 它可以复用 single-flight、deadline 与资源互斥设施,但不会进入 `requirements` 数组或 Base Case 竞争。
 
-Agent runtime identity 包含非敏感的鉴权引用名、配置 digest、Plugin / Skill 来源与 ref、MCP 声明。
+Agent runtime identity 包含非敏感的鉴权引用名、配置 digest、Plugin / Skill 声明位置与 ref、MCP 声明。
 setup 后必须真实 verify;最终屏障再次运行 AgentProvisioner check 与 runtime verify。
 因此 CLI 存在但 Plugin、Skill、MCP 或配置静默失败时,Agent turn 不会开始。
 
@@ -737,8 +737,8 @@ interface HiddenVerifierActivity {
 }
 ```
 
-实际事实与活动进入 Attempt 记录。
+实际事实与活动进入 Attempt Record。
 它们解释本次检查和安装,不成为下一次运行跳过 verify 的依据。
 复用 Sandbox 时每条 Attempt 仍产生自己的检查与最终屏障活动。
-状态活动按 fresh Attempt 或复用 window 记录,不会伪装成每条复用 Attempt 都重新 load/save。
+状态活动按 fresh Attempt 或复用 window 落盘,不会伪装成每条复用 Attempt 都重新 load/save。
 隐藏 verifier 活动只保存 identity、阶段与 cleanup 结果,不落盘判分材料正文。

@@ -27,7 +27,7 @@ Attempt finalize
 
 profile 与模态要求在 discovery 时已知。
 图在 `t.judge.llm` 注册 Assertion 时编译，之后拓扑不可改变。
-材料值可以依赖 Turn 或 Sandbox 终态，因此只在 Assertion 求值前解析。
+材料值可以依赖 Turn 或 Sandbox 终态，因此只在 Assertion 求值前读取。
 
 预检按“Run × 已使用 profile”去重。
 它验证凭据、端点、模型存在性和已声明模态，不发送真实 rubric 或材料。
@@ -91,7 +91,7 @@ interface JudgeCitation {
 ```
 
 `score` 必须是有限的 `0..1` 数。
-`rationale` 是面向复核者的简短结论依据，不要求也不保存模型的私有推理过程。
+`rationale` 是面向复核者的简短判断依据，不要求也不保存模型的私有推理过程。
 
 每条 citation 必须指向本请求的一份材料和有效 part。
 文字 quote 必须能在对应文本中定位；图片 region 使用 `0..1` 的归一化坐标；音频时间不得超出材料时长。
@@ -106,33 +106,33 @@ NiceEval 拥有 rubric prompt compiler。
 同一 compiler 版本固定以下内容：
 
 - candidate、reference、context 与 instruction 的语义。
-- `0`、`0.5`、`1` 的共同评分锚点。
+- `0`、`0.5`、`1` 的共同评分参照点。
 - 对材料内指令的隔离要求。
 - Decision JSON schema 与 citation 规则。
 - 简短 rationale 的长度上限。
 
 内置配方只贡献 rubric、输入槽和图，不复制整套 system prompt。
-prompt compiler 版本进入算法身份；改变评分锚点或输出解释必须改变该版本。
+prompt compiler 版本进入算法身份；改变评分参照点或输出解释必须改变该版本。
 
 Provider 可以把规范请求映射到 Responses、Chat Completions、Messages 或其它模型协议。
 Provider 不能重写 rubric、调换材料角色或私自改变评分范围。
 
-## 材料解析与多模态
+## 材料读取与多模态
 
-材料解析器把 scope、项目文件、Sandbox 文件和内联文件解析成内容寻址 part。
-解析按以下顺序进行：
+材料读取器把 scope、项目文件、Sandbox 文件和内联文件读取成内容寻址 part。
+读取按以下顺序进行：
 
 1. 读取字节，并校验大小上限。
 2. 根据声明、扩展名和内容确定 MIME；冲突时报作者错误。
 3. 文本按 UTF-8 解码并保留 media type；二进制计算 SHA-256。
-4. 生成材料清单，并把尚无稳定 Record 来源的字节写入 attempt blob 存储。
+4. 生成材料清单，并把尚无稳定 Record 出处的字节写入 attempt blob 存储。
 5. 汇总实际模态，与 Eval 的 `judge.llm.uses` 和 Provider capabilities 对照。
 
 Runtime 不做隐式 OCR、语音转录、图片描述或 PDF 文本抽取。
 这些操作会改变评估语义，必须由显式图节点或用户准备步骤完成。
 
 同一份 blob 在一个 Attempt 内只保存一次。
-HTTP URL 不直接进入 Provider，避免远端内容在重放时漂移，也避免 Provider 获得未声明的网络读取权限。
+HTTP URL 不直接进入 Provider，避免远端内容在重新执行时漂移，也避免 Provider 获得未声明的网络读取权限。
 
 ## 图模型
 
@@ -151,7 +151,7 @@ interface JudgeGraphDefinition {
 ```
 
 definition 阶段拒绝重复 id、未知依赖、环、空图、不可到达的返回节点和错误输出类型。
-节点数组顺序不决定执行顺序；拓扑关系决定 readiness，节点 id 决定稳定记录顺序。
+节点数组顺序不决定执行顺序；拓扑关系决定 readiness，节点 id 决定稳定登记顺序。
 
 ### 节点结果
 
@@ -162,7 +162,7 @@ type JudgeNodeResult =
   | { status: "skipped"; because: string };
 ```
 
-得分为 0 的模型结论仍是 `completed`。
+得分为 0 的模型判断仍是 `completed`。
 网络、能力和响应协议问题是 `unavailable`；没有被选择的 fallback 分支是 `skipped`。
 
 普通 `aggregate` 的必需依赖 unavailable 时，该节点同样 unavailable。
@@ -174,7 +174,7 @@ fallback 只处理声明的可用性失败，不会吞掉配方 bug、非法图�
 它的 citations 是子节点引用按材料位置去重后的并集，rationale 是节点 id、分数与权重的有界明细。
 
 `minimum` 与 `maximum` 选择对应 score 的完整 Decision。
-并列时按节点 id 排序取第一项；节点记录保留全部输入，避免报告把未选项误写成未执行。
+并列时按节点 id 排序取第一项；节点登记保留全部输入，避免报告把未选项误写成未执行。
 
 ### 调度
 
@@ -195,17 +195,17 @@ Runtime 拥有重试策略，Provider 关闭隐式重试。
 
 408、429、连接错误和 5xx 可以重试。
 鉴权失败、未知模型、不支持的模态、非法请求和用户取消不重试。
-结构化输出解析失败允许重试一次，但仍计入 `maxAttempts` 与图总预算。
+结构化输出读取失败允许重试一次，但仍计入 `maxAttempts` 与图总预算。
 
 退避优先使用 `Retry-After`，否则使用指数全抖动。
-每次尝试的状态、服务端 code、延迟和用量进入节点记录；凭据、完整响应 header 和敏感 body 不落盘。
+每次尝试的状态、服务端 code、延迟和用量进入节点登记；凭据、完整响应 header 和敏感 body 不落盘。
 
 ## Assertion 映射
 
 一张图只产生一条 AssertionResult。
 最终节点 completed 时，`decision.score` 交给 Assertion collector：
 
-- 没有阈值的 soft Judge 记录 score，并得到 `outcome: "passed"`。
+- 没有阈值的 soft Judge 登记 score，并得到 `outcome: "passed"`。
 - `.atLeast(x)` 与 `.gate(x)` 使用既有阈值规则得到 passed 或 failed。
 - `.points(n)` 使用 `n × score` 计算实得分。
 
@@ -227,7 +227,7 @@ interface AssertionBase {
 ```
 
 普通 Assertion 不带 `evaluator`。
-报告通过 `executionId` 读取完整节点记录，不从 `detail` 或 `evidence` 反解析身份。
+报告通过 `executionId` 读取完整节点登记，不从 `detail` 或 `evidence` 反推身份。
 `kind: "agent"` 的分支由 Agent-as-Judge 定义，本主题不改变其 execution。
 
 ## unavailable 原因
@@ -250,7 +250,7 @@ profile、凭据或预检失败发生在派发前，使用 `judge-precheck-faile
 
 ## Record
 
-每个 Attempt 的 LLM Judge 记录写入 `judge.json`：
+每个 Attempt 的 LLM Judge 数据写入 `judge.json`：
 
 ```ts
 interface JudgeArtifact {
@@ -270,12 +270,12 @@ interface LlmJudgeExecution {
 }
 ```
 
-节点按稳定 id 排列，记录依赖、状态、耗时、物理尝试、Decision 与实际模型。
+节点按稳定 id 排列，登记依赖、状态、耗时、物理尝试、Decision 与实际模型。
 Provider 的原始完整响应不落盘；有界服务端摘要可进入失败 attempt。
 
 二进制材料写在 attempt 的 `blobs/<sha256>`。
-`JudgeMaterialRecord` 保存 role、media type、字节数、SHA-256、来源引用与 blob 相对路径。
-已经存在于权威 Record artifact 的文本只保存来源引用、hash 和有界预览，不复制整份内容。
+`JudgeMaterialRecord` 保存 role、media type、字节数、SHA-256、出处引用与 blob 相对路径。
+已经存在于权威 Record artifact 的文本只保存出处引用、hash 和有界预览，不复制整份内容。
 `retention: "digest"` 的材料不写 blob；它仍保存原内容 hash，并标明内容不可从 Record 复原。
 
 show 的默认 Assertion 行仍只显示名称、score、阈值与 unavailable 摘要。
@@ -288,7 +288,7 @@ show 的默认 Assertion 行仍只显示名称、score、阈值与 unavailable �
 - 配方 id、版本与规范化图结构。
 - prompt compiler 与 Decision schema 版本。
 - Provider id、identity、模型和会改变采样的 profile 字段。
-- 材料解析算法与 MIME 规则版本。
+- 材料读取算法与 MIME 规则版本。
 
 rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 凭据值、临时 request id、运行耗时和模型输出不进入身份。
@@ -301,7 +301,7 @@ rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 - core 不依赖 scorer 供应商来定义公开 API、prompt 或结果类型。
 - 同一模型响应不能同时被解释成分数和 unavailable。
 - 0 分是有效 Decision，缺证据没有数值分数。
-- Provider 不能看到未解析 URL，也不能把不支持的模态静默转成文本。
+- Provider 不能看到未读取 URL，也不能把不支持的模态静默转成文本。
 - 图内模型调用都经过同一个 scheduler、预算、重试和 Record 管道。
 - 一个 `t.judge.llm` 调用恰好对应一条 AssertionResult 和一条 LlmJudgeExecution。
 - 报告展示的 score、模型、理由和引用都能追溯到同一个 `executionId`。

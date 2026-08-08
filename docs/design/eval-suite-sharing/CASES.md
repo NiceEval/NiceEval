@@ -14,7 +14,7 @@
 | S5 | 共享 Eval 运行结束 | 继续产生普通 Record；不增加外部题专用结果格式 |
 | S6 | 依赖升级只改一条 Eval | 其它身份稳定 Eval 的 source/dependency/transfer 输入未变，历史结果继续携带；随机身份题保守重跑 |
 | S7 | 发布仓库只改页面、说明或项目配置 | 所有 Eval 的运行指纹不变 |
-| S8 | 本地 Eval 与外部根产出同一 id | 发现阶段拒绝运行，一次列出冲突来源和可执行修法 |
+| S8 | 本地 Eval 与外部根产出同一 id | 发现阶段拒绝运行，一次列出冲突出处和可执行修法 |
 | S9 | 安装内容漏掉 Fixture 或测试文件 | 普通发现或 Eval 生命周期按现有阶段报缺失路径，不增加专用校验协议 |
 | S10 | 本地 workspace 的发布项目装有另一版 NiceEval | Node >=22.15 的装载矩阵中，owner 内 NiceEval import 绑定消费运行时，不产生品牌或 Sandbox 双实例错误 |
 | S11 | 外部 Eval 使用了消费版本没有的 NiceEval API | linker 可识别时指出 package、文件和缺失 export；其它访问保留带 origin 的普通错误 |

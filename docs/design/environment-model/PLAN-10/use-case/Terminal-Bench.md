@@ -41,7 +41,7 @@ export default defineExperiment({
 ```
 
 省略的 `experiment.sandbox` 被规范化为空 extension，不选择 Provider，也不产生 implicit template。
-解析后的准备链是：
+归一后的准备链是：
 
 ```text
 Eval Docker Compose root
@@ -51,11 +51,11 @@ Eval Docker Compose root
   -> Agent runtime
 ```
 
-Compose root 解析成完整 Case：`client` 主 Sandbox、伴随 service、网络、volume、ready 与整组 finalizer 都留在 Docker Compose Provider。
+Compose root 规划成完整 Case：`client` 主 Sandbox、伴随 service、网络、volume、ready 与整组 finalizer 都留在 Docker Compose Provider。
 普通 Layer command 不能把第二个 image 或 sidecar 叠到 Case 上。
 
 同一 Experiment 还可以选中另一条使用 `e2bSandbox()` 的 Eval。
-root 按 pair 解析，所以 Experiment 不需要按 Provider 分叉。
+root 按 pair 归一，所以 Experiment 不需要按 Provider 分叉。
 
 若实验需要证书，可以添加 extension command：
 

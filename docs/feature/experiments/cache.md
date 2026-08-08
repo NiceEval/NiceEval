@@ -17,12 +17,12 @@
 |---|---|---|---|
 | 终态 | 条目 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不携带,总会重试 |
 | 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹 | 这条 eval 的全部 attempt 重跑 |
-| 资格 | 条目 | `executionMs` ≤ 当前解析后的 `timeoutMs` | 这一条重跑 |
+| 资格 | 条目 | `executionMs` ≤ 当前求值后的 `timeoutMs` | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
 | 模式 | 本次调用 | 该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态, 没理由重花一次钱去复现同一个已知结果。
-`errored` 与 `skipped` 的判定本身不可信,不是可复用的终态,因此从不缓存—— 前者是框架或环境层面的不确定失败,例如超时、沙箱失败。
+`errored` 与 `skipped` 的判定本身不可信,不是可复用的终态,因此从不缓存—— 前者是框架或宿主层面的不确定失败,例如超时、沙箱失败。
 
 Runner 内部把每条判定表达为 `Eligible | Blocked`；`Blocked` 才携带 gate 与 reason。
 成功不靠 `undefined` 表示，因此调用方必须穷尽处理两种结果，不能把遗漏分支误认成可携带。
@@ -30,7 +30,7 @@ Runner 内部把每条判定表达为 `Eligible | Blocked`；`Blocked` 才携带
 后两道门的完整语义在[执行模式划走的两块](#执行模式划走的两块)。
 
 五道门只管读得进来的条目。
-写它的 niceeval 版本与本次的 `schemaVersion` 不同时,那份落盘整份不解析([版本不匹配时的读取行为](../record/architecture.md#版本不匹配时的读取行为)),条目根本走不到任何一道门前——`--dry` 把这样的行标 `incompatible` 而不是 `new`,它跟从没跑过是两回事。
+写它的 niceeval 版本与本次的 `schemaVersion` 不同时,那份落盘整份不解读([版本不匹配时的读取行为](../record/architecture.md#版本不匹配时的读取行为)),条目根本走不到任何一道门前——`--dry` 把这样的行标 `incompatible` 而不是 `new`,它跟从没跑过是两回事。
 
 ## 指纹:两个哈希嵌套
 
@@ -57,7 +57,7 @@ Docker image 的浮动 tag、Dockerfile 未 pin 的 `FROM`、Compose 未 pin 的
 Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对 installer 的 identity/revision/installMode；
 它进入 configHash。计划目标平台属于 pair-owned ProviderPlan，进入逐 Eval fingerprint。
 实际 staged payload digest 与创建后核验出的实际平台是 runtime provenance/facts，不进入任一哈希。
-因此改 Agent 版本不重建任务环境，换 template 不改 installer 静态身份；installer 分发内容变化必须提升 revision。
+因此改 Agent 版本不重建任务 Sandbox，换 template 不改 installer 静态身份；installer 分发内容变化必须提升 revision。
 
 `configHash` 是 Run 级的**配置身份**,同时是跨 Run 可比性的唯一判据, 读取面怎么用它见 [Record · configHash](../record/library.md#confighash配置身份只算一次)。
 两个哈希嵌套而不是并列,于是新增一个公开配置字段只需要裁决一次「进不进 configHash」, 不必分别裁决「进不进指纹」和「算不算可比性配置」。
@@ -72,7 +72,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
    `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
   换来的是一个字段只裁决一次,不必维护一张「哪个字段对哪类 eval 有效」的表。
 - **凭据不进。**
-  `judge` 进的是解析后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
+  `judge` 进的是求值后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
 - **`sandboxReuse` 进。**
   复用改变 Case 创建次数和题间状态边界，因此属于可比性配置；它不改变已完成结果能否按相同指纹携带。省略等价于 `false`。
 - **`sharedState.key` 进。**
@@ -81,19 +81,19 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 ### manifest:哈希做索引,清单做解释
 
 指纹是扁平哈希,只能回答「等不等」,回答不了「哪里变了」。
-回答后一个问题的是 **manifest**:每次 Run 按 eval 落一份指纹输入的可读清单, 与指纹同刻算出、同处落盘(Run 记录根下 `manifests.json`,逐 eval 一份):
+回答后一个问题的是 **manifest**:每次 Run 按 eval 落一份指纹输入的可读清单, 与指纹同刻算出、同处落盘(Run 根目录下 `manifests.json`,逐 eval 一份):
 
-- **配置面**:configHash 各字段的解析后值。
+- **配置面**:configHash 各字段的求值后的值。
   凭据本来就不进指纹,也不进 manifest。
 - **源码面**:闭包逐文件的「项目根相对路径 × 内容哈希」,与指纹同一份输入。
 - **数据面**:loader 登记文件的同口径清单。
 
 指纹不等时,新旧两份 manifest 相减得到**带名字的精确差异**: `config:judge.model` 的旧值到新值、`source:evals/share/prompts.ts` 的内容哈希变化、 `data:evals/data/cases.yaml` 的增删改。
-差异只服务于解释: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)展示它, `niceeval accept` 在接受前把它完整写入审计记录。
+差异只服务于解释: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)展示它, `niceeval accept` 在接受前把它完整写入审计条目。
 历史条目缺 manifest 时,算不出的只有源码面与数据面,两者合并成一条 `opaque:no-manifest`,不猜。
 配置面另有出处:它落盘在 `run.json`,从条目重建后照常给具名差异。
 
-fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 payload / 编码口径，`coverageVersion` 标识 manifest 覆盖的输入集合；旧记录未声明时按 legacy 版本 `0` 读取。
+fingerprint 与 manifest 各带独立版本。`algorithmVersion` 标识哈希 payload / 编码口径，`coverageVersion` 标识 manifest 涵盖的输入集合；旧条目未声明时按 legacy 版本 `0` 读取。
 任何进入 fingerprint 的输入都必须有同源 manifest 投影。当前版本内出现 fingerprint 不同、manifest 相同，属于 `fingerprint-invariant-violation`，不能退化成没有差异说明的 `previous-result`。
 
 跨版本先查显式迁移注册表。迁移只返回三种决策：已证明等价、具名差异、无法证明。
@@ -222,24 +222,24 @@ export default defineEval({
 判定逻辑常常不住在 `.eval.ts` 里——断言抽进 `share/assert-memory.ts`、数据行从 `evals/data/` 读进来,是被鼓励的写法。
 指纹因此认的不是单个文件,是这条 eval 的**源码闭包**:
 
-- **静态面**:eval 文件字节,加上它的导入图里解析后落在项目根内的每个模块,递归展开。
-  判据是模块解析后的真实路径,不是 import 写法——相对路径、`tsconfig` 的 `paths` 别名都算数。
-  按项目根相对路径排序后逐个哈希,顺序固定;循环导入按解析后的绝对路径去重。
+- **静态面**:eval 文件字节,加上它的导入图里定位后落在项目根内的每个模块,递归展开。
+  判据是模块定位后的真实路径,不是 import 写法——相对路径、`tsconfig` 的 `paths` 别名都算数。
+  按项目根相对路径排序后逐个哈希,顺序固定;循环导入按定位后的绝对路径去重。
 - **数据面**:经 loader 读入的数据与 EvalDefinition 声明的受管文件,内容哈希进引用它的那条 eval——增删文件与改一字节同等作废。
   哈希口径是排序后的「相对路径 × 内容哈希」对,权限位与修改时间不进哈希。
   输入分两类:
   - `loadYaml` / `loadJson` / `loadText` 读入即登记。发现期把内容交给 Eval 定义并哈希进数据指纹。
-  - 普通 `uploadFile(URL)` / `uploadDirectory(pathOrUrl)` 在真实执行时记录 transfer manifest。后续携带重算历史 manifest；Eval 源码闭包变化时不信任旧依赖集合，直接重跑。
+  - 普通 `uploadFile(URL)` / `uploadDirectory(pathOrUrl)` 在真实执行时写入 transfer manifest。后续携带重算历史 manifest；Eval 源码闭包变化时不信任旧依赖集合，直接重跑。
   完整规则见[本地测试文件](../eval/use-case/criteria-files.md)。
 
-两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink 解析过去的那些)、以及动态 `import()`。
+两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink 定位过去的那些)、以及动态 `import()`。
 改了这些要重验用 [`--rerun all`](use-case/重新运行/)。
 用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过；数据走 loader，静态判据走 EvalDefinition 文件声明。
 
 **闭包是 1 对 N 的,依赖越集中作废面越大。**
-eval 文件的字节只作废它自己, 而一个被 30 条 eval 引用的 helper 改一行就作废那 30 条,效果接近改一个 `flags` 值。
+eval 文件的字节只作废它自己, 而一个被 30 条 eval 引用的共享函数改一行就作废那 30 条,效果接近改一个 `flags` 值。
 `share/` 里通常还混着 prompt 模板、类型与日志这类不参与判定的代码,改它们同样全批重烧。
-想缩小作废面就按变更频率拆文件:稳定的断言 helper 和天天调的 prompt 模板不放同一个文件。
+想缩小作废面就按变更频率拆文件:稳定的断言函数和天天调的 prompt 模板不放同一个文件。
 
 ### 两个文件之外的世界:改了也不作废
 
@@ -256,7 +256,7 @@ eval 文件的字节只作废它自己, 而一个被 30 条 eval 引用的 helpe
 要复验用 [`--rerun`](use-case/重新运行/)—— 改了被测对象只复验失败项走 `--rerun`,外部世界整个变了走 `--rerun all`。
 能配置化的差异(服务端版本号)就显式写进 `flags` 让指纹自然失效,比每次手动重跑可靠。
 
-### 为什么 eval 认字节,实验文件认解析值
+### 为什么 eval 认字节,实验文件认字段值
 
 上面两块的不对称是有意的,来自两者语义的可声明性差异。
 实验文件的语义完全等于 `defineExperiment` 那几个字段的值,列得出来,指纹就认这些值。
@@ -275,8 +275,8 @@ eval 的判定逻辑写在 `test(t)` 的函数体里,列不出一组能代表它
 超时上限不改变「结果是什么」,只决定「等不等得到」。
 一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟的上限下是同一个事实; 把 `timeoutMs` 掺进哈希会让提高上限作废全部已完成结果,为一个不影响它们的参数付全量重跑。
 
-因此指纹不含 `timeoutMs`,它在指纹匹配之外另立一条判据: **终态 attempt 可携带,当且仅当其 `executionMs` ≤ 当前解析后的 `timeoutMs`**(未设上限视为无穷)。
-四层来源的解析顺序单源在[配置解析链](architecture.md#配置解析链一次求值处处同源)。
+因此指纹不含 `timeoutMs`,它在指纹匹配之外另立一条判据: **终态 attempt 可携带,当且仅当其 `executionMs` ≤ 当前求值后的 `timeoutMs`**(未设上限视为无穷)。
+四层出处的求值顺序单源在[配置求值链](architecture.md#配置求值链一次求值处处同源)。
 
 判据用 `executionMs` 而不是 `durationMs`,是为了让两侧量的是同一段时间。
 attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队, `executionMs` 按同一口径落盘(定义见 [Results · result.json](../record/architecture.md#resultjson))。
@@ -309,41 +309,41 @@ niceeval accept @a1b2c3d4
 niceeval accept @a1b2c3d4 @e5f6g7h8
 ```
 
-显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每条来源对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
+显式 locator 列表是唯一输入,也是唯一作用域。命令从当前项目发现每个 locator 对应的 experiment 与 eval,按当前源码和运行配置重算指纹,然后新建一份结果快照。新条目保留原结果的 verdict、证据和 artifact 引用,使用当前指纹与配置身份,因此下一次 `niceeval exp` 自然携带它。
 
 接受不是一次 `exp` 的参数,也不按 `config:`、`source:` 或 `data:` 选择一批条目。命令不提供批量接受选项：范围会随当前发现结果漂移，不能代表逐条授权。
-多个 locator 可以跨 experiment：命令按每条 locator 解析出的 experiment 分组，为每个 experiment 各自合成一个原子 snapshot。同一 experiment 内，两个 locator 解析到同一个当前 (eval, attempt) 目标视为重复选择，直接拒绝；跨 experiment 时，同名 eval 各自独立，不算重复。它不把某个 experiment 内部的共同差异扩散到其它 experiment 或未列出的结果。
+多个 locator 可以跨 experiment：命令按每条 locator 定位出的 experiment 分组，为每个 experiment 各自合成一个原子 snapshot。同一 experiment 内，两个 locator 定位到同一个当前 (eval, attempt) 目标视为重复选择，直接拒绝；跨 experiment 时，同名 eval 各自独立，不算重复。它不把某个 experiment 内部的共同差异扩散到其它 experiment 或未列出的结果。
 
 写盘前先对全部 locator 验证下列条件:
 
 - locator 恰好指向一条可读的历史结果;
 - 结果是 `passed` 或 `failed`;
-- 当前项目仍发现同一 experiment 与 eval,并能解析其运行配置;
+- 当前项目仍发现同一 experiment 与 eval,并能求值其运行配置;
 - 当前 Sandbox pair 已成功完成 discovery、link 与 physical planning;
 - 当前超时上限仍允许该结果的 `executionMs`。
 
 缺失序号、`errored`、`skipped` 与留存 Sandbox 的结果都不能接受。`sandboxReuse` 只描述真实派发时的 Sandbox 生命周期，不收紧单条结果的接受资格。Provider identity 未 pin 或 callback opaque 属于 fingerprint 输入，不单独作为 carry blocker。
 
-任一 locator 解析失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后按 experiment 分组，每组各自封口一个 snapshot。
-输出逐条列出来源与新 locator，结果各自保存自己的 `acceptedFrom`。
-该 Run 的 `sandboxPlansByEval` 与 `knownEvalIds` 覆盖本组全部接受的 Eval。
+任一 locator 定位失败、重复、不可接受或不能重算当前指纹时，整批零写入。全部通过后按 experiment 分组，每组各自封口一个 snapshot。
+输出逐条列出原 locator 与新 locator，结果各自保存自己的 `acceptedFrom`。
+该 Run 的 `sandboxPlansByEval` 与 `knownEvalIds` 涵盖本组全部接受的 Eval。
 prepare 时为重算指纹而临时形成的单题计划只存在于运行期，不落盘为读面贡献声明；Sample 直接选择本组写出的物理 Attempt。
 
 `accept` 不能把「每次 Invocation 都故意换身份」的条目重锚成可携带结果。否则命令虽然报告成功，下一次规划仍必然显示 `previous-result`。错误信息说明阻止条件和下一步,不会退化为运行实验或批量接受其它结果。
 
-新条目记录 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
+新条目写入 `acceptedFrom`:原 locator、原指纹、当前指纹和 manifest 差异摘要。这个留痕跟着新结果走,让读取面区分正常携带与人工接受;它不是对将来变化的永久豁免。下次输入再变,指纹门照常拦下,需要再次显式接受对应结果。
 
-长期反复接受同一类变化说明声明放错了家——连接坐标该搬去 `ctx.fact()`,稳定的开关该从 `flags` 里拆出去。接受入口只记录一次明确的人为判断,不把不可比的结果伪装成正常缓存命中。
+长期反复接受同一类变化说明声明放错了家——连接坐标该搬去 `ctx.fact()`,稳定的开关该从 `flags` 里拆出去。接受入口只写入一次明确的人为判断,不把不可比的结果伪装成正常缓存命中。
 
-## 携带来源不要求 Run 收尾
+## 携带不要求 Run 收尾
 
 attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与 Run 有没有补上 `completedAt` 无关。
 被中断或强杀的 run 留下的未收尾 Run,其中已落盘的终态 attempt 照常携带。
 
 **重跑同一条命令就是续跑**:只花缺失 attempt 的成本。
-这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径, 配合[实验面的启动自愈](architecture.md#强杀后的收尾回退收尾登记与启动自愈) 与[实例面的孤儿核对](../sandbox/architecture.md#孤儿核对强杀路径的实例面回退), 重跑前不需要任何手工清理。
+这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径, 配合[实验面的启动自愈](architecture.md#强杀后的收尾回退收尾登记与启动自愈) 与[实例面的孤儿核对](../sandbox/architecture.md#孤儿核对强杀路径的实例面回退), 重跑前不需要任何手工删除。
 
-这条保证只覆盖 NiceEval 自己能判定的结果与受管资源,不声称回滚 Agent 已经写进外部系统、`$HOME` checkpoint 或共享数据库的副作用。跨 Attempt 持久状态的作者必须把 Attempt 终态设计成原子提交边界:中断中的 Attempt 要么能够回滚到上一个已提交 checkpoint,要么把当前 cohort 标为污染并换一个干净 cohort 重建序列。否则「已完成结果照常携带、缺失 Attempt 续跑」会把半次写入带进后半段,这两部分不能视为同一条实验轨迹。
+这条保证只涵盖 NiceEval 自己能判定的结果与受管资源,不声称回滚 Agent 已经写进外部系统、`$HOME` checkpoint 或共享数据库的副作用。跨 Attempt 持久状态的作者必须把 Attempt 终态设计成原子提交边界:中断中的 Attempt 要么能够回滚到上一个已提交 checkpoint,要么把当前 cohort 标为污染并换一个干净 cohort 重建序列。否则「已完成结果照常携带、缺失 Attempt 续跑」会把半次写入带进后半段,这两部分不能视为同一条实验轨迹。
 
 直接 callback 不提供可追踪 identity。只改变 callback 实现或它读取的外部状态时，旧结果可能继续携带；作者应永久补上 `defineSandboxCommand()` 的 `revision` / `inputs`，并用 `--rerun all` 修复已经产生的结果集。
 
@@ -388,5 +388,5 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 - [`--rerun`](use-case/重新运行/) —— 指纹没得改但就是要重跑时的一次性口径。
 - [Record · configHash](../record/library.md#confighash配置身份只算一次) —— 同一个哈希在读取面怎样担保跨 Run 可比。
 - [Results · 两类条目](../record/architecture.md#resultjson) —— 携带条目怎样落盘、怎样回指原 artifact。
-- [Architecture · carry](architecture.md#carry自动携带) —— 携带在实验解析与运行规划里的位置。
+- [Architecture · carry](architecture.md#carry自动携带) —— 携带在实验求值与运行规划里的位置。
 - [Runner](../../runner.md) —— 发现、并发调度、首过即停与退出码。

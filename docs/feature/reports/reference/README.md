@@ -3,7 +3,7 @@
 Reports 的参考分成两组：
 
 - [报告作者 API](authoring.md) —— Rill、Evidence、Observable Framework、 Malloy、Lightdash、Cube、Braintrust 与 Metabase。
-- 本页记录双面 renderer 的边界来源。
+- 本页写明双面 renderer 边界规则的出处。
 
 ## Rich
 

@@ -158,4 +158,4 @@ import { dockerImage } from "niceeval/sandbox";
 - 没有发布方定义、格式适配器或共享入口。
 - 没有外部题专用结果格式；共享 Eval 继续产生普通 Record。
 - 没有 `eval.lock`；依赖版本只由项目 package lock 管理。
-- 没有运行时覆盖外部 EvalDefinition 的 merge API。
+- 没有运行时覆写外部 EvalDefinition 的 merge API。

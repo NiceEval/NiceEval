@@ -90,8 +90,8 @@ dialog 只换摆放位置，不建立第二份内容实现。
 
 ## 相关阅读
 
-- [Attempt diff](attempt-diff.md) —— 文件差异的来源、可用性与 `DiffResult` 形状。
+- [Attempt diff](attempt-diff.md) —— 文件差异取自哪份证据、可用性与 `DiffResult` 形状。
 - [Attempt facts](attempt-facts.md) —— `ctx.fact()` 运行事实的完整键值表。
-- [Library · Attempt 详情](../../library.md#attempt-详情)
-- [Architecture · Attempt 详情](../../architecture.md#attempt-详情)
+- [Library · 参数化页](../../library.md#参数化页attempt-与-experiment-详情)
+- [Architecture · 目标与宿主通道](../../architecture.md#目标与宿主通道)
 - [show attempt](../../show/attempt.md)

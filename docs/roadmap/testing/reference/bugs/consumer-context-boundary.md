@@ -52,9 +52,9 @@ reportBehavior(loadsReportFromItsOwnProject, async () => {
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
-| 契约不变不误红 | 只断工作流可执行与稳定对象身份，不锁 JSX 产物、完整标题或栈文案 |
+| 契约不变不误红 | 只断工作流可执行与稳定对象身份，不锁 JSX 输出、完整标题或栈文案 |
 | 不能改断言放行 | CommonJS 与 foreign cwd 是声明的支持矩阵；不能删除红的 scenario 或把崩溃列为允许结果 |
 | 观察失败显式报错 | 静态登记错误在运行前失败，world 身份不符在 prepare 失败；CLI 装载崩溃在 invoke 失败；对象缺失在 observe 失败 |
 | 用户侧直接定位 | 失败列出 consumer 形态、宿主 cwd、报告路径、候选包摘要、命令与 stderr |

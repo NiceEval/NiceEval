@@ -346,8 +346,8 @@ interface FileTreeFingerprint {
 两者都只是链接，不复制正文。
 
 `Observed<T>` 是不透明值。
-只有 identity-aware matcher 可以取出其值并生成 `OutcomeAssertion`；普通测试代码不能通过 `.value` 绕过来源记录。
-每个来源同时保存媒介、原始 evidence 和提取路径。
+只有 identity-aware matcher 可以取出其值并生成 `OutcomeAssertion`；普通测试代码不能通过 `.value` 绕过出处登记。
+每份出处同时保存媒介、原始 evidence 和提取路径。
 Verify 阶段才产生的 ARIA、trace 或 mutation 结果还必须保存 `VerificationRun`，并用 `derivedFrom` 指回 frozen world 的输入 artifact。
 期望不进入 User View，也不进入 evidence manifest。
 
@@ -381,7 +381,7 @@ Verify 阶段才产生的 ARIA、trace 或 mutation 结果还必须保存 `Verif
 - behavior：用户任务和公开结果；
 - mechanism：实现定律与诊断事实。
 
-目录、runner 和 helper 不能把两条轴合并。
+目录、runner 和工具不能把两条轴合并。
 `test/unit/behavior/` 仍属于 unit project；`e2e/*/test/behavior/` 仍属于各自治 E2E 仓库。
 
 ## Behavior 注册
@@ -398,13 +398,13 @@ runnerBehavior(spec, async ({ user, fixture }) => {
 
 - 把 `BehaviorSpec` 交给 Registry；
 - 安装 Feature-owned User View；
-- 捕获 identity-aware matcher 的 Outcome 记录；
+- 捕获 identity-aware matcher 的 Outcome 数据；
 - 给 Vitest 标题加稳定 Behavior ID，并保留过滤与重试能力；
 - 在失败消息中加入用户任务、契约、entry、observation、boundary 与 evidence。
 
 它不负责计算 fixture、启动模型、推进时钟或重试断言。
 测试正文必须就地出现影响结果的公开配置、Library 调用、完整 CLI argv 或浏览器动作。
-Helper 可以隐藏临时目录、端口与进程清理，不能把用户选择折进 `runSameScenario()` 之类的不透明入口。
+机械工具可以隐藏临时目录、端口与进程收尾，不能把用户选择折进 `runSameScenario()` 之类的不透明入口。
 
 ## Typed Observable View
 
@@ -450,18 +450,18 @@ plain stdout driver 不支持 browser 交互时，注册阶段就拒绝该行为
 
 User View 必须满足：
 
-- 只选择、解析、规范化 transport 噪声；
+- 只选择、读取、规范化 transport 噪声；
 - 不重新计算通过率、缓存命中、去重、排序或 verdict；
-- 不从候选包导入 schema 常量和 renderer helper；
+- 不从候选包导入 schema 常量和 renderer 工具；
 - 不按 Behavior ID 分支；
 - 不提供 `semanticValues()`、`summary()` 这类隐藏比较口径的聚合；
 - 找不到对象时列出实际身份；
-- 不提供 `raw()`、`.value` 逃生舱给主证明绕过身份与来源断言；
+- 不提供 `raw()`、`.value` 逃生舱给主证明绕过身份与出处断言；
 - 每个观察值都保留 evidence、提取路径和对象身份。
 
 复杂算法继续由机制测试直接证明。
 跨媒介关系必须在测试里逐项列出比较字段。
-例如比较两面 attempt ID 与 verdict，而不是调用一个不可审计的“语义相等” helper。
+例如比较两面 attempt ID 与 verdict，而不是调用一个不可审计的“语义相等”工具。
 
 ## Registry 数据流
 
@@ -488,7 +488,7 @@ Manifest 从字面量元数据静态派生，不运行测试、不读取 candida
 它不签入仓库。
 
 根 `test/docs/behavior-registry.test.ts` 用只读 AST parser 扫描根仓和 `e2e/` 下 tracked test 源码，在内存中按 repository 构造 Manifest。
-它不安装 E2E 依赖，也不 import 仓库 helper。
+它不安装 E2E 依赖，也不 import 仓库工具。
 
 自治仓库的 `scripts/e2e.ts` 在 prepare 前用本仓实现完成同一静态检查，并把 `behavior-manifest.json` 写进本次 artifact 目录。
 该文件只供独立 CI 报告，不成为下一次运行或根静态守护的输入。
@@ -507,12 +507,12 @@ Registry 不能成为 `pnpm e2e` 的运行时依赖。
 
 跨仓 supporting / boundary proof 只携带 `behaviorRepository + behaviorId`。
 独立 checkout 的本地守护验证引用形状并把它写进 Manifest，不要求其它仓库在场。
-完整 checkout 的根聚合守护负责解析引用与判定全局证明是否齐全。
+完整 checkout 的根聚合守护负责定位引用与判定全局证明是否齐全。
 根仓 repository ID 固定为 `niceeval`；自治 E2E 仓库使用自己的 `e2e.json.id`。
 
 `task` 与 `contract` 的 ContractRef 使用同一 repository 命名。
-本地 guard 只解析本仓拥有的引用；外部引用只查 `repository + path + anchor` 形状。
-完整 checkout 的根聚合器按 repository root map 解析外部 path 与 heading，并报告 owner、来源测试和失效 anchor。
+本地 guard 只定位本仓拥有的引用；外部引用只查 `repository + path + anchor` 形状。
+完整 checkout 的根聚合器按 repository root map 定位外部 path 与 heading，并报告 owner、所属测试和失效 anchor。
 
 静态完整性不能替代运行证明。
 PrimaryProof 和每个 required BoundaryProof 在执行时都必须各自产生 `ProofRunResult`：
@@ -560,7 +560,7 @@ Recipe 只描述该仓库的 prepare 动作，其 AST 与引用值进入 `Recipe
 
 如果迁移、修复或其它写动作**本身就是待证明的用户动作**，E2E proof 必须声明 `mode: "mutable-clone"`。
 Prepare 只生成并冻结动作前 baseline；verify 按 `cloneId` 创建 `MutableScenarioClone`，再从声明的公开入口执行 `mutationActionId`。
-副本位于单例私有临时目录，由该 proof 独占并清理；原 world 始终只读。
+副本位于单例私有临时目录，由该 proof 独占并在结束时删除；原 world 始终只读。
 这种 proof 不能与普通只读 proof 共享副本或执行顺序。
 Reuse 只复用 baseline，仍为本次 proof 创建 fresh clone 并重新执行待测写动作。
 
@@ -577,13 +577,13 @@ export const migrateRecord = defineMutationAction({
 ```
 
 它只描述从声明的公开入口执行哪一个待测动作，不包含 matcher、预期值或产品算法。
-静态守卫要求 action ID 在本仓唯一、module / export 可解析、实现位于同一仓库，并要求每个 `mutable-clone` proof 恰好解析一个 action。
+静态守卫要求 action ID 在本仓唯一、module / export 可定位、实现位于同一仓库，并要求每个 `mutable-clone` proof 恰好定位一个 action。
 Proof 的 `target.entry` 必须与 action 的 `entry` 相同；`read-only` proof 不能引用 action。
-Mutation action 只允许静态 import；实现依赖的本地 symbol closure 必须能被完整解析，动态 import 或运行时代码生成直接使声明失败。
+Mutation action 只允许静态 import；实现依赖的本地 symbol closure 必须能被完整定位，动态 import 或运行时代码生成直接使声明失败。
 
 Verify 在创建 clone 前导入 Manifest 指向的确切 module / export，复核 action ID 与 entry，再计算 action 及其静态依赖的 `SourceClosureFingerprint`。
 该 fingerprint 写入本次 `VerificationIdentity.mutationAction`，action ID 与 clone ID 写入 `VerificationRun.mutation`，随后 action 在 fresh clone 上恰好执行一次。
-Action 实现变化会改变 Verification Run 身份，但不会伪装 frozen baseline 已改变；reuse 仍执行当前已解析并指纹化的 action。
+Action 实现变化会改变 Verification Run 身份，但不会伪装 frozen baseline 已改变；reuse 仍执行当前已定位并指纹化的 action。
 
 ### 冻结强制
 
@@ -610,13 +610,13 @@ World 的 fingerprint 分区固定如下：
 | producer | recipe `prepare` 与 `scripts/e2e.ts` prepare entry 引用的本地 symbol 闭包，以及这些模块的 lockfile resolution | `scripts/e2e.ts` verify branch、User View、verify adapter、测试期望 |
 | fixture | recipe 声明的 fixture roots 的规范化 path / type / content | prepare 产生的输出 |
 | external dependencies | provider、model、SDK / protocol 版本与其它声明身份 | secret 值 |
-| producer environment | 真正影响产物的 Node、OS、locale、PTY 实现与终端尺寸 | 验证顺序、browser page 状态 |
+| producer environment | 真正影响输出的 Node、OS、locale、PTY 实现与终端尺寸 | 验证顺序、browser page 状态 |
 | verifier | User View / media adapter / matcher 的 symbol 闭包、proof source digest 与 browser identity | frozen world digest |
 
 Recipe 即使与 Behavior 位于同一文件，也只摘要 `defineEvidenceRecipe()` 的 AST 与其引用 symbol，不 hash 整个测试文件。
-TypeScript symbol graph 解析静态 import；动态 module / 文件读取必须列入 recipe 的 `producerInputs` / `fixtureInputs`。
-Prepare sandbox 记录实际本地读取，发现未声明输入就失败。
-Manifest 保存每个闭包成员及 digest；reuse 重新解析当前闭包并逐项比较，因此 helper 新增、删除或修改都会拒绝旧 world。
+TypeScript symbol graph 跟随静态 import；动态 module / 文件读取必须列入 recipe 的 `producerInputs` / `fixtureInputs`。
+Prepare sandbox 登记实际本地读取，发现未声明输入就失败。
+Manifest 保存每个闭包成员及 digest；reuse 重新定位当前闭包并逐项比较，因此工具新增、删除或修改都会拒绝旧 world。
 
 World identity 由 candidate、recipe、producer、fixture、external dependencies 与 producer environment 组成。
 PTY 已在 prepare 产出，因此这些终端维度进入 world identity。
@@ -629,7 +629,7 @@ PTY 已在 prepare 产出，因此这些终端维度进入 world identity。
 
 ### 单例重跑协议
 
-自治仓库只有一个参数解析者：自己的 `scripts/e2e.ts`。
+自治仓库只有一个参数入口：自己的 `scripts/e2e.ts`。
 标准命令是：
 
 ```bash
@@ -642,7 +642,7 @@ pnpm e2e -- verify \
 
 - candidate、recipe、producer symbol closure、fixture、external dependencies 与适用 producer environment digest；
 - `state === "frozen"`、文件树 digest 和全部 artifact；
-- prepare 输入 evidence 是否都位于对应 world root；verify 新产物是否都位于对应 Verification Run root。
+- prepare 输入 evidence 是否都位于对应 world root；verify 新生成文件是否都位于对应 Verification Run root。
 
 缺少、重复或 recipe ID 不符都在执行测试前失败。
 任一项不匹配都以 expired-evidence 失败，并打印重新运行 `pnpm e2e` 完整 prepare 的命令。
@@ -653,13 +653,13 @@ pnpm e2e -- verify \
 | Observation | Adapter 责任 | 不承担 |
 |---|---|---|
 | process result | argv、cwd、退出码、信号 | stdout 内容、业务结果 |
-| NDJSON events | 逐行解析生命周期事件、事件身份与顺序 | 把事件流冒充结果 JSON 文档 |
+| NDJSON events | 逐行读取生命周期事件、事件身份与顺序 | 把事件流冒充结果 JSON 文档 |
 | plain stdout | 无框文字、顺序、公开状态 | PTY 布局、精确机器身份 |
 | protocol event | 同次真实调用的公开 SDK / wire 事件 | 固定 token 常量、候选私有 Record |
 | terminal PTY | 最终 cell grid、scrollback、宽度、折行、降级 | JSON 字段语义 |
 | JSON | 完整结构、字段、身份、值 | 缩进与字段顺序 |
 | JUnit | suite、case、failure、error | XML 空白与属性顺序 |
-| HTML | 真实 Chromium 解析出的静态内容与可访问语义 | CSS 像素布局 |
+| HTML | 真实 Chromium 渲染出的静态内容与可访问语义 | CSS 像素布局 |
 | browser | 交互、可见状态、role 与归属 | 重新计算报告数据 |
 
 `PtyScreenEvidence` 的 `viewport` 必须恰有 `rows` 行；每行的 `columns` 等于最终列数，`cells` 也恰有该数量。
@@ -697,7 +697,7 @@ User View 不吞掉这些控制。
 行为主证明只看用户结果，supporting proof 则直接展示时间推进、事件顺序和意外调用失败。
 
 Proof 关联只产生静态元数据与带 ID 的标题，不包装测试函数。
-因此 Effect/Vitest 原生的 Scope、`Effect.provide(Layer)`、table / property helper、timeout、retry、并发选项、过滤和失败位置都原样保留。
+因此 Effect/Vitest 原生的 Scope、`Effect.provide(Layer)`、table / property 工具、timeout、retry、并发选项、过滤和失败位置都原样保留。
 若一个 runner form 无法无损保留，就让测试保持普通机制测试，不登记 supporting proof。
 
 这能逐步替换全局 fake timer 与真实墙钟混合协议，但不是 Behavior Registry 成立的前置条件。
@@ -705,7 +705,7 @@ Proof 关联只产生静态元数据与带 ID 的标题，不包装测试函数�
 ## 不变量
 
 1. 每个 Behavior 恰有一个 PrimaryProof。
-2. 每个主证明覆盖声明的 entry、observations 与 boundaries；每个 observation 都实际贡献 evidence。
+2. 每个主证明守护声明的 entry、observations 与 boundaries；每个 observation 都实际贡献 evidence。
 3. 每个 required BoundaryProof 都必须存在、执行并产生自己的身份断言；supporting proof 或 exit-code smoke 不能满足这项要求。
 4. User View 不拥有期望，也不实现产品算法。
 5. Feature 文档是语义单源。
@@ -715,7 +715,7 @@ Proof 关联只产生静态元数据与带 ID 的标题，不包装测试函数�
 9. 外部协议兼容性必须有真实协议 E2E。
 10. 内部机制测试可以完全不进入 Behavior Registry。
 
-## 错误与清理
+## 错误与资源释放
 
 | 错误 | 归属与反馈 |
 |---|---|
@@ -726,8 +726,8 @@ Proof 关联只产生静态元数据与带 ID 的标题，不包装测试函数�
 | prepare 失败 | World 失败，所有消费者引用同一根因，不标成 skip |
 | invoke 失败 | 报告公开动作、entry、进程或 browser step |
 | observe 失败 | 报告 adapter、observation、提取路径、evidence 与实际候选身份 |
-| outcome mismatch | 报告 Behavior、目标身份、期望、观察和每个来源 evidence |
-| cleanup 失败 | 附加到主结果，不覆盖更早失败 |
+| outcome mismatch | 报告 Behavior、目标身份、期望、观察和每份出处 evidence |
+| cleanup 失败 | 附加到主结果，不遮蔽更早失败 |
 
 意外 boundary 调用继续立即抛错。
 Parser 不得在失败后退回字符串包含，让本应失败的行为通过。

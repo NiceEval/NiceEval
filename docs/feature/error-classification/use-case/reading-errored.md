@@ -20,7 +20,8 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
    ```
 
 退避中的 attempt 让出全局并发槽位给排队中的其它 attempt,整批吞吐不塌;大多数情况下第二三次尝试就过,**重试成功的 attempt 在结果里零痕迹**——你根本不会走到本篇。
-你看到的耗尽摘要(`… · retries exhausted (4 attempts, rate_limit)`)意味着限流持续压过了整个重试预算(单次 send 封顶 4 次尝试,attempt 另有加总上限):并发本身超出配额,把 `--max-concurrency` 降下来才是对因下药,重试只兜抖动不兜超卖。
+你看到的耗尽摘要(`… · retries exhausted (4 attempts, rate_limit)`)意味着限流持续压过了整个重试预算(单次 send 封顶 4 次尝试,attempt 另有加总上限)。
+并发本身超出配额,把 `--max-concurrency` 降下来才是对因下药,重试只兜抖动不兜超卖。
 
 3. **无后缀:被判不可重试的失败**。
    典型是响应中途的流中断 / 连接重置:
@@ -53,7 +54,7 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
 - **「大概率能过」不等于「安全重试」。**
   分类判据是重试安全性,不是复发概率;歧义错误宁可判死一个 attempt,不产出不可信的 verdict。
 - **同一个死因刷屏几十条,不是本篇的场景。**
-  限流全实验共享但**自愈**,被重试吸收的失败到不了止损闸;几十条 attempt 报同一个**不会自愈**的死因(探活失败、对共享 host 的拒连、fixture 缺失)时,走声明通道:[抛出点声明](declare-fatal-scope.md)或[写分类器](write-a-classifier.md)。
+  限流全实验共享但**自愈**,被重试吸收的失败到不了止损;几十条 attempt 报同一个**不会自愈**的死因(探活失败、对共享 host 的拒连、fixture 缺失)时,走声明通道:[抛出点声明](declare-fatal-scope.md)或[写分类器](write-a-classifier.md)。
 - **想要断点续传,只能在 agent 侧**;adapter 也不该在 `send` 里自己整段重发来伪装这层能力。
   你的协议能证明某个文案只在受理前出现时,走[写分类器](write-a-classifier.md)把它归入可重试。
 - **中断安全。**

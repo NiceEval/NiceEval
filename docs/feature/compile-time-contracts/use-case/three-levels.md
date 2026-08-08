@@ -64,7 +64,7 @@ report.tsx(24,32): error TS2820: Type '"passRat"' is not assignable to type 'Evi
 
 ## 第 2 级：加载文件时中止
 
-同一个仓库里还有一份从旧项目拷来的 `.js` 配置，类型不覆盖它：
+同一个仓库里还有一份从旧项目拷来的 `.js` 配置，类型不涵盖它：
 
 ```js
 // experiments/legacy.config.js
@@ -77,14 +77,14 @@ export default defineExperiment({ id: "codex", agent: "codex" });
 defineExperiment 不接受 id —— id 由文件路径推导。
 ```
 
-同一类反馈还覆盖三种绕过类型的路径：`as` 断言、动态 `import()` 得到的对象、以及 JSON 里读来的数据。
-报告里那张图的数据来自上一季度导出的 JSON，作者用解析入口把它变成行：
+同一类反馈还涵盖三种绕过类型的路径：`as` 断言、动态 `import()` 得到的对象、以及 JSON 里读来的数据。
+报告里那张图的数据来自上一季度导出的 JSON，作者用校验入口把它变成行：
 
 ```ts
 const rows = parseEvidenceRows(await readJson("history.json"));
 ```
 
-那份 JSON 里有一行只剩维度字段，解析当场失败并点名：
+那份 JSON 里有一行只剩维度字段，校验当场失败并点名：
 
 ```text
 parseEvidenceRow: row needs at least one MetricValue field, got only dimensions (agent, model)

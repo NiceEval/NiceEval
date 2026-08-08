@@ -1,8 +1,8 @@
 # Assertion 与 Turn 的展示 —— exp、show 与 view 各显示什么
 
-每条断言评估完都是一条 `AssertionResult`，字段全集见 [Assertions 架构 · 断言记录](../architecture.md#断言记录assertionresult)。
-`niceeval exp` 的失败反馈、报告列表、`niceeval show` 与 `niceeval view` 都投影同一条记录，不各自发明字段。
-本页先定义不同信息密度下该显示多少，再按断言家族给出「记录什么字段 → 显示成什么」的对照示例。
+每条断言评估完都是一条 `AssertionResult`，字段全集见 [Assertions 架构 · 断言条目](../architecture.md#断言条目assertionresult)。
+`niceeval exp` 的失败反馈、报告列表、`niceeval show` 与 `niceeval view` 都投影同一条条目，不各自发明字段。
+本页先定义不同信息密度下该显示多少，再按断言家族给出「存什么字段 → 显示成什么」的对照示例。
 
 ## 两套展示契约
 
@@ -23,19 +23,19 @@
 
 “主失败”只是展示投影，不改变 verdict，也不丢弃 `result.json.assertions`：
 
-1. `failed` attempt 先在记录顺序中取第一条 `outcome: "failed"` 的 gate；`--strict` 仅由 soft 失败造成 verdict 时，取第一条促成判定的 soft。
+1. `failed` attempt 先在登记顺序中取第一条 `outcome: "failed"` 的 gate；`--strict` 仅由 soft 失败造成 verdict 时，取第一条促成判定的 soft。
 2. assertion unavailable 造成 `errored` 且没有结构化执行 error 时，取第一条非 optional unavailable。
 3. 结构化执行 error 优先显示 error 摘要，不拿某条 assertion 冒充根因。
 4. 其余同类失败计数为 `+N more failures`；只能在 Attempt 详情展开，不能继续放入比较列表。
 
 计分制（`defineScoreEval`）在同一套规则上补两条，摘要回答的问题从「为什么红」扩展到「分丢在哪」：
 
-5. 计分制 `failed` 只有前置中止一个来源。
-   规则 1 自然选中中止的前置；它是记录顺序最后一条断言，也是唯一 failed 的 gate。
+5. 计分制 `failed` 只可能来自前置中止。
+   规则 1 自然选中中止的前置；它是登记顺序最后一条断言，也是唯一 failed 的 gate。
    单行摘要照常拼装，不追加中止标注。
-   `⤓` 属于 Attempt 详情，见[计分制](#计分制points-与给分记录)；摘要行首的 Verdict 已表达「这轮没跑完」。
+   `⤓` 属于 Attempt 详情，见[计分制](#计分制points-与给分条目)；摘要行首的 Verdict 已表达「这轮没跑完」。
 6. 计分制 `passed` Attempt 可能存在丢分得分点，包括带 `.points` 的 failed 断言和 `.optional()` 下的 unavailable。
-   此时取记录顺序第一条丢分得分点为主摘要，单行尾缀其挣分标注（`… · +0 pts`）。
+   此时取登记顺序第一条丢分得分点为主摘要，单行尾缀其挣分标注（`… · +0 pts`）。
    其余丢分得分点计 `+N more lost points`。
    得分点全部挣满或没有得分点时，Result 仍为 `—`。
    `t.score` 是作者算好条件才给的分，没有「丢」的概念，不进摘要。
@@ -114,7 +114,7 @@ HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
 - 完整未折行的值在 attempt 首页与 `events.json` / `diff.json` 等 artifact 里，单行面只给能扫读的预览。
 
 `--json` 的 `failure` 事件使用独立结构化字段 `severity` / `assertion` / `matcher` / `expected` / `received` / `score` / `threshold` / `reason`；存在什么发什么。
-机器消费者因此不需要解析 `gate: ...` 这句 Human 文案。
+机器消费者因此不需要解读 `gate: ...` 这句 Human 文案。
 
 结果摘要不内联源码。
 源码回答“这条检查写在哪里、周围代码是什么”，不能替代 expected / received；并发失败时内联还会淹没 scrollback。
@@ -125,12 +125,12 @@ HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
 `show @locator` 与 view Attempt 详情消费完整 `AssertionResult[]`，而不是结果摘要里挑出的那一条。
 它们必须同时提供：
 
-- 顶部计数：passed、gate failed、soft below threshold、unavailable 各多少；计分制 attempt 加一项得分点挣满计数（`2/5 得分点挣满`，见[计分制](#计分制points-与给分记录)）；
+- 顶部计数：passed、gate failed、soft below threshold、unavailable 各多少；计分制 attempt 加一项得分点挣满计数（`2/5 得分点挣满`，见[计分制](#计分制points-与给分条目)）；
 - 非 passed 断言的完整展开（show 按声明顺序平铺，view 默认先展开失败项）：每条保留 group、matcher、expected / received、score / threshold、reason 与 `source: file:line:column`；
-- passed 收纳：show 只保留计数，view 按 group 默认折叠但可展开全部；计分制的得分点不收纳，见[计分制](#计分制points-与给分记录)；
+- passed 收纳：show 只保留计数，view 按 group 默认折叠但可展开全部；计分制的得分点不收纳，见[计分制](#计分制points-与给分条目)；
 - 源码入口：`show @locator --source` 与 view source 使用运行时保存的 eval source，在断言调用行标 `✓` / `✗`，行后只附属于该行的断言详情。
 
-源码模式不负责重新判定，也不从源码反推字段；行内标注仍然来自 `AssertionResult.loc` 与同一条结构化记录。
+源码模式不负责重新判定，也不从源码反推字段；行内标注仍然来自 `AssertionResult.loc` 与同一条结构化条目。
 没有 source artifact 或 loc 时，Attempt 详情照常显示完整断言，只把源码入口标为 unavailable。
 
 ## 通用渲染规则
@@ -140,7 +140,7 @@ HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
 - **状态行**区分 `✗ gate`、`✗ soft` 与 `◌ unavailable`。
   无阈值 Judge 没有判定，不算失败也不折进通过计数；它仍按声明位置列出分数。
 - **分数证据**始终可看。
-  计分制 Attempt 的得分点与给分记录逐条或成块出现；得分点包括 passed 项。
+  计分制 Attempt 的得分点与给分条目逐条或成块出现；得分点包括 passed 项。
   全部通过且无分数可看时，只按 group 折成 `✓ passed · <group> · <count>` 计数行。
 - **每条的首行**是 `<状态图标> <severity> · <标题>`。
   `✗` 表示失败，`◌` 表示 unavailable，纯打分行不带图标。
@@ -199,12 +199,12 @@ HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
 
 `t.check(cmd, commandSucceeded())` 的 `evidence` 是命令行本身，`received` 分两层。
 首行是退出码加折成单行的输出尾部摘要，取 stdout 与 stderr 合并后的末尾。
-合并按 stderr 在前、stdout 在后：包装器的装包与进度噪声按惯例流到 stderr 且发生在被测命令之前，测试 runner 的失败计数收在 stdout 最后几行——这个顺序让合并后的末尾落在结论上，不落在噪声上。
+合并按 stderr 在前、stdout 在后：包装器的装包与进度噪声按惯例流到 stderr 且发生在被测命令之前，测试 runner 的失败计数收在 stdout 最后几行——这个顺序让合并后的末尾落在结果上，不落在噪声上。
 只有一条流有内容时顺序不产生差别。
 随后附上原样保留换行的更长 `output tail:` 段。
 
 摘要面只保留首行，包括比较列表与 `--source` 标注；Attempt 首页按原始换行展开尾部。
-runner 不另存 eval 侧命令输出，这条记录是它唯一的归属。
+runner 不另存 eval 侧命令输出，这条条目是它唯一的归属。
 只存单行摘要会丢失「测试到底怎么挂的」证据：
 
 ```text
@@ -269,7 +269,7 @@ soft · closedQA("修改是否聚焦问题?")   0.82
     source: evals/refactor.eval.ts:21:3
 ```
 
-Judge 没有解析到模型 / key 时记 `unavailable`。
+Judge 没有找到模型 / key 时记 `unavailable`。
 非 `.optional()` 的断言评不了会使 Attempt `errored`，见[判定规则](../../verdict/architecture.md#证据不可用unavailable不折叠成通过)：
 
 ```text
@@ -279,7 +279,7 @@ Judge 没有解析到模型 / key 时记 `unavailable`。
 
 ## Sandbox 断言
 
-`fileChanged` / `fileDeleted` / `notInDiff` 检查 [Agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)。
+`fileChanged` / `fileDeleted` / `notInDiff` 检查 [Agent 归因增量](../../sandbox/architecture.md)。
 失败信息要能区分「Agent 没改」与「文件只被 Eval 侧写入」：
 
 ```text
@@ -298,7 +298,7 @@ Judge 没有解析到模型 / key 时记 `unavailable`。
 ## 证据缺口的 unavailable
 
 负断言与上限断言在所需证据通道非 complete 时记 `unavailable`，并给出通道原因。
-正断言在非 complete 通道上没找到匹配时同样是 `unavailable`，不是 failed，见 [EvidenceCoverage](../../adapters/architecture/evidence.md#覆盖声明evidencecoverage)。
+正断言在非 complete 通道上没找到匹配时同样是 `unavailable`，不是 failed，见 [EvidenceCoverage](../../adapters/architecture/evidence.md)。
 view 在 Attempt 详情顶部同时显示 coverage 徽标。
 带 `.optional()` 的条目额外标 `optional`，说明它不影响判定：
 
@@ -321,7 +321,7 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
     source: evals/weather.eval.ts:31:7
 ```
 
-## 计分制：`.points` 与给分记录
+## 计分制：`.points` 与给分条目
 
 计分制（`defineScoreEval`）Eval 的两种给分痕迹都要能在 Attempt 详情里看到，不能只在报告总分列汇总。
 `show @locator` 与 view Attempt 详情消费同一份 `AssertionResult[]` / `ScoreEntry[]`，不另建计分展示。
@@ -350,9 +350,9 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
 契约二的顶部计数在计分制 Attempt 增加**得分点挣满计数**，例如 `2/5 得分点挣满`。
 挣满表示挣到全部声明分值；连续打分断言不足 `n × 1.0` 就不算挣满。
 **本轮挣分总和只在 Attempt 头行出现一次**，位于 `AttemptSummary` 的总分位，见 [Attempt 详情组件](../../reports/components/attempt-detail/README.md#公开区块集)。
-计数行与给分记录区块不重复这个总数。
+计数行与给分条目区块不重复这个总数。
 
-**前置中止**：两种题型里链了 `.stopOnFailure()` 的断言挂掉会就地结束 `test()`；若同时是 gate，按 `✗ gate` 展开，行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全失败」因此一眼可分：
+**前置中止**：两种题型里链了 `.stopOnFailure()` 的断言挂掉会就地结束 `test()`；若同时是 gate，按 `✗ gate` 展开，行尾追加一个中止标注，其后不再有任何断言或给分条目——详情里「后面是空的」和「后面全失败」因此一眼可分：
 
 ```text
 ✗ gate · db-gpt cloned
@@ -361,11 +361,11 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
     ⤓ stopOnFailure: test() 就地结束
 ```
 
-**`t.score(label, n)` 的直接给分记录**与断言分属两个数组，见 [Assertions 架构 · 断言记录](../architecture.md#断言记录assertionresult)。
+**`t.score(label, n)` 的直接给分条目**与断言分属两个数组，见 [Assertions 架构 · 断言条目](../architecture.md#断言条目assertionresult)。
 它没有 severity 与 outcome，不与 assertions 混排。
-展示时单独形成「给分记录」区块，并按 `groupPath` 分组。
+展示时单独形成「给分条目」区块，并按 `groupPath` 分组。
 分组算法与 passed 断言相同，使用 `groupPath.join(" > ")`；无分组归到同一个空键。
-组内保持记录顺序：
+组内保持登记顺序：
 
 ```text
 给分记录 · 2
@@ -375,11 +375,11 @@ view 在 Attempt 详情顶部同时显示 coverage 徽标。
 ```
 
 **源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`），得分点的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后源码行整体降灰。
-共享 helper 中的给分证据进入源码调用片段；有位置但缺正文时显示 unavailable 缺口。
-只有没有 `loc` 的得分点与给分记录进入 unmapped，给分记录仍按 `groupPath` 分组。
+共享函数中的给分证据进入源码调用片段；有位置但缺正文时显示 unavailable 缺口。
+只有没有 `loc` 的得分点与给分条目进入 unmapped，给分条目仍按 `groupPath` 分组。
 视觉细则单点在 [Attempt 详情组件](../../reports/components/primitives/source-view.md#web-面视觉规范) 定义 `AttemptSource` 的视觉规范。
 
-通过制（`evaluationKind: "pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。`evaluationKind` 是 factory 固定的必填事实，不用省略值猜题型。
+通过制（`evaluationKind: "pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分条目——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分条目」区块。`evaluationKind` 是 factory 固定的必填事实，不用省略值猜题型。
 
 ## Turn（`t.send()`）的展示
 
@@ -398,7 +398,7 @@ Adapter 提供结构化输出时展示 `turn.data`。
 主会话不带前缀，与「`t.send()` 是主线、`t.newSession()` 是额外会话」的 API 形态对应。
 同一枚 token 原样出现在 `--execution` 轮头行、`--timing` turn 节点、`--source` send 标注、`--diff` / `diff.json` 的 `windows`，以及 [`sandbox history` / `diff`](../../sandbox/cli.md#回放留存现场的变更历史sandbox-history-diff)。
 复制进 `--window` 时也使用它。
-标签是不透明字符串；跨面对照按字符串等值，消费方不解析内部结构。
+标签是不透明字符串；跨面对照按字符串等值，消费方不解读内部结构。
 
 **show 首页 `execution:` 行**——整个 attempt 的事件计数，一行看规模：
 
@@ -457,7 +457,7 @@ eval.run              26.3s
   └─ turn2                 3.1s
 ```
 
-**`show --source`**——`t.send(...)` 的调用行标注该轮的头行事实（身份、status、墙钟与 usage——有记录才出现），失败轮标 `✗`；不内联回复与工具卡片，语法契约见 [Show · --source](../../reports/show/eval-source.md)：
+**`show --source`**——`t.send(...)` 的调用行标注该轮的头行事实（身份、status、墙钟与 usage——有条目才出现），失败轮标 `✗`；不内联回复与工具卡片，语法契约见 [Show · --source](../../reports/show/eval-source.md)：
 
 ```text
 27✓       .send("Implement `run_tasks` in `run.py`. …")
@@ -476,6 +476,6 @@ turn2 · completed · evidence: actions partial — stream reconnected mid-turn
 
 ## 相关阅读
 
-- [Assertions 架构 · 断言记录](../architecture.md#断言记录assertionresult) —— 字段全集的单点定义。
+- [Assertions 架构 · 断言条目](../architecture.md#断言条目assertionresult) —— 字段全集的单点定义。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— 各状态怎么折叠成判定。
 - [Show](../../reports/show.md) / [View](../../reports/view.md) —— 宿主页面布局与其它证据切面。

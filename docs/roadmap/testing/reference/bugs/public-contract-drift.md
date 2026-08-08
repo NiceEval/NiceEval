@@ -6,7 +6,7 @@
 ## 正例：`runs: 3` 静默只跑一次
 
 公开站、33 个 example 实验和两份 help 曾继续使用 `runs`，真实字段已经是 `attempts`。
-CLI 的未知 `--runs` 会被严格参数解析拒绝；对象字段却由 `defineExperiment` 原样返回，examples 又不进 typecheck，所以 `runs: 3` 静默按默认一次执行。
+CLI 的未知 `--runs` 会被严格的参数读取拒绝；对象字段却由 `defineExperiment` 原样返回，examples 又不进 typecheck，所以 `runs: 3` 静默按默认一次执行。
 
 用户可见症状不是文案里出现旧词，而是复制可运行示例后得到错误的 attempt 数。
 普通 docs build、断链检查和核心类型检查都绿，因为它们没有把示例作为包消费方运行。
@@ -40,15 +40,15 @@ world recipe 直接从被发布 example 组装消费方，不在测试里重抄�
 TypeScript 的超额属性检查能保护直接对象字面量，但 JavaScript、类型断言和未纳入 typecheck 的生成示例仍可静默失效。
 
 consumer E2E 能防官方示例回归，不能替所有用户配置提供运行时诊断。
-框架若要满足“错误公开事实最早失败”，应在 `defineExperiment` 解析阶段拒绝未知键并列出允许字段；这属于机制缺口，不在 DSL 里增加 `attemptCountIsNotDefaultByAccident()`。
+框架若要满足“错误公开事实最早失败”，应在 `defineExperiment` 读取阶段拒绝未知键并列出允许字段；这属于机制缺口，不在 DSL 里增加 `attemptCountIsNotDefaultByAccident()`。
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 只执行标记为 runnable 的示例；叙述性片段不参与 |
 | 不能改断言放行 | attempt 数来自示例声明；不能把 3 改成实际默认 1 |
-| 观察失败显式报错 | 安装、类型、invoke、NDJSON 解析和 outcome 分阶段报告 |
+| 观察失败显式报错 | 安装、类型、invoke、NDJSON 读取和 outcome 分阶段报告 |
 | 用户侧直接定位 | 列页面 / example 路径、消费方 cwd、命令、字段与实际 attempt 身份 |
 | 设施不造假 | 使用候选 tarball 与真实包入口，不从仓库源码相对 import |
 | 用户已有用法不改 | 示例本身就是用户入口；测试只自动执行它 |

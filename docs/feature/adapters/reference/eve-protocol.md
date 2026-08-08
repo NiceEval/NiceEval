@@ -1,6 +1,6 @@
-# eve 的协议机制:自产自销的运行时事件流(源码阅读记录)
+# eve 的协议机制:自产自销的运行时事件流(源码阅读笔记)
 
-**来源:** 直接读 `/Users/ctrdh/Code/eve`(本机 checkout)的源码。
+**出处:** 直接读 `/Users/ctrdh/Code/eve`(本机 checkout)的源码。
 关键文件:
 
 - 协议定义:`packages/eve/src/protocol/message.ts`(`HandleMessageStreamEvent` 联合,530 行)
@@ -17,7 +17,7 @@ eve 同时拥有 agent 运行时(Vercel AI SDK `streamText` 外包一层 harness
 ```
 
 niceeval 的位置一句话:**契约形状学 eve(强类型事件、callId、`rejected`、parked),采集方式像 agent-eval(读未接管理层的 CLI transcript),trace 归一到 OTel**。
-本篇记录 eve 这套协议到底怎么收集、收集了什么字段——为 niceeval 的 `StreamEvent` 演进提供上限参照。
+本篇整理 eve 这套协议到底怎么收集、收集了什么字段——为 niceeval 的 `StreamEvent` 演进提供上限参照。
 
 ## 采集机制:没有"采集",只有"传输"
 
@@ -30,7 +30,7 @@ niceeval 的位置一句话:**契约形状学 eve(强类型事件、callId、`re
   请求体是联合类型:首轮 `{ message }`;续轮 `{ continuationToken, message }` **或** `{ continuationToken, inputResponses }`。
   resume 靠 token 而不是 CLI flag;回答 HITL 是结构化的 `InputResponse[]`——`{ requestId, optionId?, text? }`,**带 requestId 定位到具体哪个请求**,不是"再发一条用户消息"。
 - **事件持久化 + 可回放。**
-  每个事件可带 `meta: { at }` 时间戳,运行时在写入 workflow-owned stream 前盖章,"so replay preserves the original timing"——事件流同时是持久会话记录,回放不失真。
+   每个事件可带 `meta: { at }` 时间戳,运行时在写入 workflow-owned stream 前盖章,"so replay preserves the original timing"——事件流同时是持久会话存档,回放不失真。
 
 ## 事件词汇:26 种类型,带三级坐标
 
@@ -69,7 +69,10 @@ type RuntimeActionRequest =
   | { kind: "remote-agent-call"; callId: string; name: string; remoteAgentName: string; nodeId: string; description: string; input: JsonObject };
 ```
 
-`load-skill` 在 eve 里是一种 action kind——niceeval 不照搬这个位置:Skill 加载在 niceeval 是 `skill.loaded` 一等事件,adapter 负责从各自的原生形态(eve 的 `load-skill` action kind、Claude Code 的 Skill `tool_use`)识别出来并归一,`t.loadedSkill` 只读这条事件(见[标准事件模型](../architecture/events.md))。
+`load-skill` 在 eve 里是一种 action kind——niceeval 不照搬这个位置。
+Skill 加载在 niceeval 是 `skill.loaded` 一等事件。
+adapter 负责从各自的原生形态(eve 的 `load-skill` action kind、Claude Code 的 Skill `tool_use`)识别出来并归一。
+`t.loadedSkill` 只读这条事件(见[标准事件模型](../architecture/events.md))。
 subagent 调用在 eve 里也是 action 的一种,再由运行时展开成 `subagent.*` 事件。
 
 ### `InputRequest`:HITL 请求的完整形状
@@ -104,7 +107,8 @@ interface RuntimeIdentity {
 
 - **`t.events` 就是原始协议事件**,没有第二层 eval 专用 schema。
   作用域断言直接查这条流。
-- **派生事实**(`derive-run-facts.ts` → `EveEvalDerivedFacts`):`toolCalls / toolCallCount / subagentCalls / subagentCallCount / inputRequests / parked / messageCount / reasoningBlockCount / failureCode?`。
+- **派生事实**(`derive-run-facts.ts` → `EveEvalDerivedFacts`)。
+  字段:`toolCalls / toolCallCount / subagentCalls / subagentCallCount / inputRequests / parked / messageCount / reasoningBlockCount / failureCode?`。
   对照 niceeval `deriveRunFacts` 的事实集:多 `reasoningBlockCount` 和 `failureCode`(顶层失败码,从 `*.failed` 事件抠),少压缩次数与 `contextInjections`。
 - **轮次边界在协议里**:`isCurrentTurnBoundaryEvent` = `session.completed | session.failed | session.waiting`——客户端读到边界事件就知道这轮到头了,不靠连接关闭或超时猜。
 - **parked 判定同思路**:`endedParkedOnInput(events)`,niceeval 的"最后一条有意义事件是 `input.requested`"与之对齐。
@@ -123,7 +127,7 @@ interface RuntimeIdentity {
    要支持"第几步做了什么"级别的断言或 view 分组时,eve 的三级坐标是现成方案。
 2. **operation 失败的结构化错误。**
    eve 的 `action.result.error: { code, message }` 不把失败原因埋在 output 字符串里；niceeval 的 `operation.finished` 只有 `status` 与 `output`。
-   消费方不该解析工具私有输出来判断失败,这个理由对 view 和断言同样成立。
+   消费方不该解码工具私有输出来判断失败,这个理由对 view 和断言同样成立。
 3. **usage 按 step 记。**
    niceeval 的 `usage` 挂在 `Turn`(整轮聚合);eve 挂在 `step.completed`(每次模型调用一份)。
    transcript 里常有 per-step 用量,聚合前丢掉了瀑布图想要的粒度。

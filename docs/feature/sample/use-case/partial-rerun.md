@@ -29,7 +29,7 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
    `currentSample(record)`。
    `a` 来自 `R3`,`b` 来自 `R2`。
    两条 attempt 的 `run.configHash` 与基准(`R3`)一致,因此可以组成当前样本。
-   `sample.runs` 保留 `R2`、`R3` 两个真实来源,不制造一份合成 Run。
+   `sample.runs` 保留 `R2`、`R3` 两份真实 Run,不制造一份合成 Run。
 
 3. **拒绝不可比的旧结果。**
    `R1` 里也有 `b`,但配置是 `model: old`,configHash 与基准不等。
@@ -37,17 +37,17 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
    若 `R2` 不存在,`b` 留在 `coverage.missing`，原因为 `previous-result`，可附上 `R1` 的 locator 作为解释与显式 accept 入口——旧判定不计入当前结果。
 
 4. **继续收窄。**
-   `sample.pipe(dropExperiments(…))` 等算子只删减已有来源。
-   删掉 `R2` 这个来源后, 来自 `R3` 的 `a` 仍保留,`b` 回到覆盖缺口——分母用原始 `knownEvalIds`,不随删减缩水。
+   `sample.pipe(dropExperiments(…))` 等算子只删减已有 Run。
+   删掉 `R2` 这份 Run 后, 来自 `R3` 的 `a` 仍保留,`b` 回到缺口——分母用原始 `knownEvalIds`,不随删减缩水。
    `pipe` 返回新 Sample,原样本不变。
 
 ## 边界
 
 - `latestRunSample` 的单位是 Run,不是逐 Eval 找最新。
-- `currentSample` 可以保留同一 Experiment 的多个来源 Run。
+- `currentSample` 可以保留同一 Experiment 的多个贡献 Run。
 - 跨 Run 拼接只在 configHash 相等时发生。
-- 携带条目与本次执行条目同等属于 current；来源只留在 Attempt 明细。
-- attempt 始终指向真实来源。
-  Sample 不重写 locator,也不制造合成来源。
+- 携带条目与本次执行条目同等属于 current；二者差异只留在 Attempt 明细。
+- attempt 始终指向真实的物理副本。
+  Sample 不重写 locator,也不制造合成 Run。
 - 要看历史趋势,不要用 `currentSample` 代替时间序列。
   改用 Reports 的 [Experiment 历史用例](../../reports/use-case/分析/跟踪实验历史.md)。
