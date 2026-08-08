@@ -49,7 +49,7 @@ turn.calledTool("shell", { input });
 
 它有四个用户问题：
 
-- 作者必须知道 Adapter 把命令叫作什么；
+- 作者必须知道 Adapter 把 command 放在哪个 input field；
 - 一条常见检查需要多个中间值；
 - 关系被递归 AST 和正则语法淹没；
 - 同一 command 在存在性和顺序 API 中容易出现两套 matcher。
@@ -68,8 +68,8 @@ turn.calledTool("shell", { input });
 | tool 顺序 | 复用 `toolOrder()` |
 | 任意文本值 | 复用 `t.check()`，普通文件规则内联 |
 | 文件断言与 diff | 复用 `t.sandbox`，不增加 `turn.changes` |
-| command 跨 Adapter | 扩展既有 `ToolSelector`，不增加 `ranCommand()` |
-| completed 后才继续 | 给 `toolOrder()` 增加 `sequential` option |
+| command 结构 | 扩展既有 `ToolMatch`，不增加 `ranCommand()` |
+| tool 子序列 | 让 `toolOrder()` 接受同源 `ToolSelector` |
 | 禁止可观察 input 路径 | 增加窄的 `toolInputsExclude({ paths })` |
 | show 的动态 locator 与诊断 | 完整 Turn Judge，不增加 JSON matcher |
 
@@ -86,10 +86,16 @@ core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它
 2. Adapter 能按自己声明的 grammar 无歧义取得单一 invocation。
 
 复合 shell、动态展开、管道与 quoting 不确定时保持 opaque。
-opaque selector 是 unavailable，不通过空格 split 猜一份看似稳定的 argv。
+依赖 opaque invocation 的 command 字段是 unavailable，不通过空格 split 猜一份看似稳定的 argv。
 
-`toolOrder()` 与 `calledTool()` 必须复用同一个 `CommandSelector` evaluator。
+`toolOrder()` 与 `calledTool()` 必须复用同一个 `ToolMatch.command` evaluator。
 顺序断言已经证明 command 存在时，普通 E2E 不再重复登记存在性分。
+
+Eve 的 `toolOrder()` 只证明 request subsequence。
+NiceEval 保留这条语义：单调 cursor 消费不同 occurrence，但不新增 finish-before-start mode。
+
+Harness 需要的动态 locator 复用、工具输出因果与最终 reply 顺序由完整 Turn Judge 判断。
+把它们并入 `toolOrder()` 会让一个常用子序列方法承担隐含的时序协议。
 
 ## 为什么路径排除不让作者写正则
 
@@ -136,6 +142,6 @@ Eval 不能改读 `.niceeval` 私有文件补齐。
 NiceEval 应保留 Eve 的 scope-first 风格，也应保留自己的 `unavailable`、evidence coverage、题内 points 与 optional 语义。
 普通调用点不需要新的 Match AST 或大量新方法。
 
-最终方向是：扩展 `calledTool()` / `toolOrder()` 的 selector，给 `toolOrder()` 增加严格时序 option，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
+最终方向是：给既有 `ToolMatch` 增加 command 字段，让 `toolOrder()` 接受同源 selector，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
 
 目标契约见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。
