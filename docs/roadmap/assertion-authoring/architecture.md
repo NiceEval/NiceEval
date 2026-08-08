@@ -77,6 +77,9 @@ interface LogicalToolOccurrence {
 }
 ```
 
+EventPosition 是 Observation 协议定义的 `{ turnOrdinal, eventOrdinal }`。
+同一 session 内按 turnOrdinal、再按 eventOrdinal 做 lexicographic comparison；不同 session 的位置不可比较。
+
 command 不是第二笔事件、第二个 identity 或摘要数组。
 它是同一笔 tool occurrence 的标准投影，复用 id、start、finish 与 status。
 
@@ -138,6 +141,12 @@ A.start ───── A.finish   B.start ─── B.finish   assistant
 4. 没有 definite 路径，但 opaque 或 partial evidence 仍允许路径时 unavailable；
 5. required channels 完整，且不存在任何可行路径时 failed。
 
+partial channel 不会抹掉已观察位置。
+一条 start、finish 与后继位置都确定的链仍可 passed；缺少 finish、候选事件或相关 channel 完整度时，只能保留 feasible path 并返回 unavailable。
+
+缺失或非法 EventPosition 是 Runner 协议 defect，不作为普通 mismatch。
+读取未来允许兼容的旧 Record 时若没有该坐标，对应顺序 Projector 返回 unavailable，不能退回 Attempt stream sequence。
+
 `{ command: rule }` 直接调用 `ranCommand()` 使用的单 occurrence evaluator。
 EventRule 不复制 command parsing、TextRule、status 或 opaque 语义。
 
@@ -175,6 +184,13 @@ core 用 send 前后的稳定边界把 entry 归因到 Turn，并应用 `EvalDef
 一条 Turn change 是边界两端的最终关系：
 
 ```ts
+type TextEvidence =
+  | { readonly state: "available"; readonly value: string }
+  | {
+      readonly state: "opaque";
+      readonly reason: "binary" | "oversized" | "unsupported";
+    };
+
 interface TurnChange {
   readonly path: SandboxPath;
   readonly kind: "added" | "modified" | "deleted";
@@ -296,7 +312,7 @@ interface AssertionResult {
   readonly score?: number;
   readonly points?: number;
   readonly reason?: string;
-  readonly detail?: AssertionDetail;
+  readonly detail?: string;
   readonly evidence: readonly EvidenceRef[];
 }
 ```
