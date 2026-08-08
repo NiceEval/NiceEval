@@ -9,8 +9,8 @@
 Adapter native protocol
   │ 显式、版本化映射
   ▼
-Standard Observation + evidenceCoverage
-  │ core 合成 logical occurrence
+Original command + standard logical normalizer
+  │ durable Observation + evidenceCoverage
   ▼
 Scoped assertion / Sandbox diff collector
   │ 领域规则三态求值
@@ -30,7 +30,7 @@ type CommandProjection =
   | { readonly kind: "not-command" }
   | {
       readonly kind: "command";
-      readonly invocation:
+      readonly original:
         | {
             readonly state: "available";
             readonly executable: string;
@@ -42,19 +42,52 @@ type CommandProjection =
               | "redacted"
               | "truncated"
               | "compound-shell"
-              | "unsupported";
+              | "dynamic-shell"
+              | "unsupported-protocol";
+          };
+      readonly logical:
+        | {
+            readonly state: "available";
+            readonly executable: string;
+            readonly args: readonly string[];
+            readonly normalizer: "logical-command/v1";
+            readonly normalization: "identity" | "pnpm-exec" | "npx";
+          }
+        | {
+            readonly state: "opaque";
+            readonly normalizer: "logical-command/v1";
+            readonly reason: "original-opaque";
+            readonly originalReason:
+              | "redacted"
+              | "truncated"
+              | "compound-shell"
+              | "dynamic-shell"
+              | "unsupported-protocol";
+          }
+        | {
+            readonly state: "opaque";
+            readonly normalizer: "logical-command/v1";
+            readonly reason:
+              | "unsupported-wrapper-form"
+              | "ambiguous-wrapper-target"
+              | "multiple-executions";
           };
     };
 ```
 
-Adapter 只有在原生协议直接提供 argv，或能按该协议明确声明的 grammar 无歧义取得单一 invocation 时，才能标为 available。
-复合 shell、动态展开、管道或无法确认 quoting 的 source 是 `compound-shell`，不能靠空格 split 伪造 argv。
+Adapter 只有在原生协议直接提供 argv，或能按该协议明确声明的 grammar 无歧义取得单一 invocation 时，才能把 original 标为 available。
+复合 shell、动态展开、管道或无法确认 quoting 的 source 在 Adapter 边界直接成为 original opaque，不能靠空格 split 伪造 argv，也不交给 normalizer 再猜。
 
-executable 与 args 保留提交给执行边界的原始 token。
-框架不做 basename、wrapper 展开、PATH resolution 或等价命令归一化。
+Observation Protocol 的唯一 `logical-command/v1` normalizer 只消费 available original tokens。
+它保留 direct command，并把 exact `pnpm exec <target> ...`、`pnpm --silent exec <target> ...` 与无 runner-option 的 exact `npx <target> ...` 投影成 target 的 logical executable / args。
+`--silent` 属于 original runner args，不进入 logical args；child 边界后的未知 flag 则原样保留。
 
-这条边界意味着 `pnpm exec niceeval ...` 的 executable 是 `pnpm`，不是 `niceeval`。
-Eval 的 command rule 若只接受 `niceeval`，wrapper occurrence 就是确定 mismatch；core 不从用户题面或显示文本猜等价关系。
+该 normalizer 不做 basename、PATH resolution 或开放式 wrapper 猜测。
+未知 pnpm runner flag、递归执行、歧义 target 与不支持的 npx form 保留 available original、logical opaque；`npm exec`、yarn、bun、dlx、corepack 与绝对路径 runner 按 identity 处理。
+
+logical command 表示用户请求的逻辑 CLI，不证明 package provenance、版本或物理 binary identity。
+因此 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 与 `npx niceeval` 都能满足同一个 `executable: "niceeval"`。
+诊断只能说“匹配逻辑命令”，不能说定位或执行了某个特定 binary。
 
 ## Logical tool occurrence
 
@@ -90,7 +123,7 @@ Adapter 只有同时满足以下条件，才能声明 `actions: complete`：
 3. 原生协议明确提供的 input 全部保留；
 4. 没有无法识别的 action kind、丢失的 start 或未交代的截断。
 
-command invocation opaque 不必自动降低整个 actions channel。
+logical invocation opaque 不必自动降低整个 actions channel。
 它表示 occurrence 集合已知，但依赖 invocation 的 selector 仍可能 unavailable。
 
 Adapter 无法判断 command / not-command 时必须降低 actions coverage。
@@ -98,17 +131,28 @@ Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 
 ## ToolMatch command 真值
 
-一笔 occurrence 的 command 字段有三种结果：
+一笔 occurrence 的 command 字段只读取 logical，有三种结果：
 
 | Evidence | Result |
 |---|---|
-| invocation available，executable、prefix 与 excludes 全满足 | definite match |
-| invocation available，任一条件不满足 | definite mismatch |
-| invocation opaque | indeterminate |
+| logical available，executable、prefix 与 excludes 全满足 | definite match |
+| logical available，任一条件不满足 | definite mismatch |
+| logical opaque | indeterminate |
 | not-command | definite mismatch |
 
+ToolMatch 的 name、input、output、status 与 command 使用三值 AND。
+任一字段 definite mismatch 就使整笔 occurrence definite mismatch；全部字段 definite match 才是 definite match；其余才是 indeterminate。
+因此与其它字段已经矛盾的 opaque command 不会污染候选集合，false 压过 unknown。
+
 `calledTool()` 找到一笔 completed definite ToolMatch 就可 passed。
-没有 definite match，且 actions complete、没有 indeterminate candidate 时 failed；其余是 unavailable。
+没有 definite match，且 actions complete、没有 compatible indeterminate candidate 时 failed；其余是 unavailable。
+
+负存在性与 count 复用同一 occurrence 真值：
+
+- `notCalledTool()` 发现 definite match 立即 failed；compatible indeterminate candidate 或 partial actions 使结果 unavailable；只有 complete 且没有 possible match 才 passed；
+- exact count 的 definite matches 已超过 expected 时立即 failed；只有 actions complete、没有 indeterminate candidate 且 definite count 等于 expected 才 passed；
+- definite count 尚未超额，但 partial / indeterminate 仍可能改变 exact count 时 unavailable；
+- count predicate 只在 complete、无 indeterminate、count 唯一确定时调用；任意不确定区间不猜 predicate 的单调性，返回 unavailable。
 
 ## `toolOrder()` 顺序
 
@@ -116,20 +160,31 @@ Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 每个 selector 由 `name` 和去掉 count 的同一份 `ToolMatch` 组成。
 既有 string selector 在登记边界等价为只含 `{ name }` 的 selector，不建立第二套匹配语义。
 
-算法使用单调 cursor：
+算法对同一组 occurrence 计算两条子序列关系：definite path 只接受 definite match；possible path 接受 definite match 或 indeterminate candidate。
+两者都按单调 cursor 消费不同 actual index，不相关工具可以穿插；一笔 occurrence 不能占两个 selector，`multiple-executions` 也不会被拆成多笔。
 
-1. 从 cursor 后面的第一笔 occurrence 开始寻找当前 selector 的 definite match；
-2. 找到后消费该 actual index，并把 cursor 移到它后面；
-3. 下一项不能回用已经消费的 occurrence；
-4. 不相关的工具与 definite mismatch 可以穿插；
-5. 没有 definite subsequence，但 opaque 或 partial evidence 仍可能补出一条时 unavailable；
-6. actions complete 且不存在可行 subsequence 时 failed。
+- 存在 definite path 时 passed，即使 actions partial；
+- 没有 definite path，但存在 possible path 时 unavailable；
+- observed occurrences 没有 possible path、但 actions partial 时 unavailable；
+- 只有 actions complete 且没有 possible path 时 failed。
+
+例如 `[A? opaque, B definite]` 对 `[A, B]` 是 unavailable；`[B definite, A definite]` 在 complete channel 上 failed；唯一一笔同时可能匹配 A / B 的 occurrence 不能复用，因此在 complete channel 上 failed。
 
 selector 的 `status: "completed"` 只证明该 occurrence 最终 completed。
 它不证明前一项 finish 早于后一项 start，也不建立工具输出被下一步消费的因果关系。
 
 Harness 的动态 locator 复用、show 输出是否影响后续动作，以及最终 reply 是否基于这些证据，都由 binary `turn.judge.llm()` 读取完整有序 Turn 判断。
 `toolOrder()` 不增加 message selector，也不冒充这项因果检查。
+
+## Command 诊断与脱敏
+
+AssertionResult 不把 argv 重新拼成仿真 shell text。
+passed、failed 与 unavailable 都用有界 token 数组展示 `original.argv`、`logical.argv`、normalizer 与 normalization / opaque reason。
+logical match 的文案固定说明它是逻辑命令请求，不是物理 binary provenance。
+
+original 与 logical preview 复用 Observation Record 已执行的 secret redaction、truncation 与预算结果。
+Assertion evaluator 不复制未脱敏 argv，也不从 tool input 重建一份旁路 evidence。
+`toolOrder()` unavailable 必须指出第一个无法确定的 selector index、normalizer 和 opaque reason，不能误报成“未调用 niceeval”。
 
 ## 工具输入负断言
 
@@ -222,7 +277,7 @@ Eval 不能绕过 CLI 读取 `.niceeval` 私有文件，也不能要求 Agent �
 以下情况是 unavailable：
 
 - required coverage 不足且事实仍可能成立；
-- command invocation opaque；
+- logical command opaque；
 - Sandbox permission、transport、timeout 或 terminated；
 - diff 内容是 binary 或 oversized，但 Assertion 需要内容。
 

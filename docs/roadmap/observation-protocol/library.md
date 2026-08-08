@@ -102,7 +102,7 @@ type CommandProjection =
   | { readonly kind: "not-command" }
   | {
       readonly kind: "command";
-      readonly invocation:
+      readonly original:
         | {
             readonly state: "available";
             readonly executable: string;
@@ -114,7 +114,35 @@ type CommandProjection =
               | "redacted"
               | "truncated"
               | "compound-shell"
-              | "unsupported";
+              | "dynamic-shell"
+              | "unsupported-protocol";
+          };
+      readonly logical:
+        | {
+            readonly state: "available";
+            readonly executable: string;
+            readonly args: readonly string[];
+            readonly normalizer: "logical-command/v1";
+            readonly normalization: "identity" | "pnpm-exec" | "npx";
+          }
+        | {
+            readonly state: "opaque";
+            readonly normalizer: "logical-command/v1";
+            readonly reason: "original-opaque";
+            readonly originalReason:
+              | "redacted"
+              | "truncated"
+              | "compound-shell"
+              | "dynamic-shell"
+              | "unsupported-protocol";
+          }
+        | {
+            readonly state: "opaque";
+            readonly normalizer: "logical-command/v1";
+            readonly reason:
+              | "unsupported-wrapper-form"
+              | "ambiguous-wrapper-target"
+              | "multiple-executions";
           };
     };
 
@@ -131,20 +159,50 @@ type ToolOperationStarted = {
 };
 ```
 
-CommandProjection 的 owner 是具体 Adapter。
-它只能根据原生协议的显式、版本化映射分类，不能由 core 根据 canonical tool name 或 input 字段猜测。
+Adapter 只拥有 `original`：它根据原生协议的显式、版本化映射，把一笔 operation 证明为单一 argv，或给出 opaque reason。
+`original.state: "available"` 要求原生协议直接提供 argv，或 Adapter 能按该协议明确声明的 grammar 无歧义取得单一 invocation；executable 与 args 保留执行边界收到的 token。
+复合 shell、动态展开、管道或无法确认 quoting 的 source 必须在这里成为 opaque，不能先伪造 available argv 再让后层猜测。
 
-`invocation.state: "available"` 要求原生协议直接提供 argv，或 Adapter 能按该协议明确声明的 grammar 无歧义取得单一 invocation。
-executable 与 args 保留提交给执行边界的原始 token。
+Observation Protocol 拥有唯一、封闭、版本化的 logical-command normalizer。
+它只消费 available original token，不读取 tool name、input 或 raw shell text；Adapter 在 durable `operation.started` 发出前调用同一实现，不能各自复制 package-runner parser。
+Assertion core 只消费 durable `logical`，不回读 `original` 补造事实。
 
-复合 shell、动态展开、管道或无法确认 quoting 的 source 使用 `compound-shell`。
-Adapter 与 core 都不能用空格 split、重新 quote、展开 wrapper、拆分一笔 occurrence 或合并多笔 occurrence。
+`logical` 表示用户请求的逻辑 CLI，不证明 package provenance、版本、PATH resolution 或最终物理 binary。
+`logical.state: "available"` 与 opaque 两支都携带 normalizer profile；original opaque 时，logical 必须是 `original-opaque` 并带相同 `originalReason`。
+已识别 wrapper 的 grammar 不受支持时，original 仍可 available，logical 则按具体原因 opaque。
+
+`logical-command/v1` 是封闭最小集合：
+
+- 其它单一 executable 使用 `identity`，不做 basename 或 PATH normalization；
+- exact `pnpm exec <target> ...` 与 `pnpm --silent exec <target> ...` 使用 `pnpm-exec`；
+- exact `npx <target> ...` 的无 runner-option 形态使用 `npx`；
+- `pnpm` 的其它 runner flag、递归执行、歧义 target 与其它 `npx` form 保持 logical opaque；
+- `npm exec`、yarn、bun、dlx、corepack 与绝对路径 runner 不顺带归一。
+
+| Original tokens | Logical result |
+|---|---|
+| `niceeval exp local` | available `identity`：`niceeval`, `["exp", "local"]` |
+| `pnpm exec niceeval exp local` | available `pnpm-exec`：`niceeval`, `["exp", "local"]` |
+| `pnpm --silent exec niceeval exp local` | available `pnpm-exec`：`niceeval`, `["exp", "local"]`；`--silent` 只留 original |
+| `npx niceeval exp local` | available `npx`：逻辑请求 `niceeval`, `["exp", "local"]` |
+| `pnpm exec niceeval --unknown-child-flag` | available；未知 child flag 原样留在 logical args |
+| `pnpm --unknown-runner-flag exec niceeval` | opaque `unsupported-wrapper-form` |
+| `pnpm -r exec niceeval` | opaque `multiple-executions` |
+| `npx --package=niceeval -- niceeval exp local` | opaque `unsupported-wrapper-form` |
+| `/usr/bin/pnpm exec niceeval exp local` | `identity` `/usr/bin/pnpm`，对 logical `niceeval` definite mismatch |
+| `npm exec -- niceeval exp local` | `identity` `npm`，对 logical `niceeval` definite mismatch |
+
+`sh -c`、管道、变量展开与其它 shell language 不进入这张 original-token 表。
+Adapter 必须在 tokenization 边界把它们分别标为 `compound-shell` 或 `dynamic-shell`；normalizer 不维护另一份 shell executable registry。
+
+wrapper child 边界后的 token 全部原样进入 logical args，所以未知 child flag 不会使 logical opaque。
+未来增加 runner 必须有 NiceEval 官方指导或真实下游需要、上游 grammar 证据和歧义 / 多执行 / flag conformance matrix，并升级 normalizer profile；这里不提供公开 registry。
 
 `not-command` 表示 Adapter 能确定这笔 tool operation 不是命令。
 Adapter 无法确定 command / not-command 时必须降低 actions coverage，不能用 `not-command` 掩盖未知。
 
 actions 为 complete 时，必须保证全部 action occurrences 已产生，且每笔 tool operation 都有上述分类。
-command invocation 可以 opaque；这不遗漏 occurrence，但依赖 invocation 的 Projector 或 Assertion 必须得到 unavailable。
+logical invocation 可以 opaque；这不遗漏 occurrence，也不自动降低 actions coverage，但依赖 command 的 Projector 或 Assertion 必须按三态得到 unavailable。
 
 工具 input 若有未交代的截断、redaction 或可能隐藏字符串的 opaque subtree，actions 不能继续宣称 complete。
 这条要求让工具输入的 exact-zero Assertion 不会把未知内容当作空内容。
