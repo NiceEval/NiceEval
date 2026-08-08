@@ -1862,10 +1862,20 @@ function runEvaluationCommand(
           Effect.map((lock) => lock !== undefined && !isCaseLockExpired(lock, now)),
         ),
       ), { concurrency: "unbounded" });
-      const rowsWithLocks = Object.freeze(rows.map((row, index) => Object.freeze({
-        ...row,
-        ...(lockedFlags[index] ? { locked: true } : {}),
-      })));
+      const evalGroupsByEvalId = new Map(evals.flatMap((evalDef) =>
+        evalDef.evalGroup === undefined ? [] : [[evalDef.id, evalDef.evalGroup] as const]
+      ));
+      const rowsWithLocks = Object.freeze(rows.map((row, index) => {
+        const evalGroup = evalGroupsByEvalId.get(row.evalId);
+        return Object.freeze({
+          ...row,
+          ...(evalGroup === undefined ? {} : {
+            evalGroupId: evalGroup.id,
+            evalGroupIndex: evalGroup.index,
+          }),
+          ...(lockedFlags[index] ? { locked: true } : {}),
+        });
+      }));
       const input = {
         totalAttempts,
         evals: uniqueEvalIds.size,

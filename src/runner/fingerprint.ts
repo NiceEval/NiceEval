@@ -51,7 +51,6 @@ export type FingerprintSourceCache = Map<string, Effect.Effect<string, Fingerpri
 export function createFingerprintSourceCache(): FingerprintSourceCache {
   return new Map();
 }
-
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
@@ -176,6 +175,12 @@ function fingerprintPreparedPair(
         id: evalDef.id,
         tags: evalDef.tags ?? [],
         metadata: evalDef.metadata ?? {},
+        ...(evalDef.evalGroup === undefined ? {} : { group: {
+          id: evalDef.evalGroup.id,
+          index: evalDef.evalGroup.index,
+          evalIds: [...evalDef.evalGroup.evalIds],
+          definitionHash: evalDef.evalGroup.definitionHash,
+        } }),
       },
       loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果

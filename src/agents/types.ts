@@ -310,6 +310,11 @@ export interface AgentContext {
    * 但不能据此绕过 Sandbox 的隐藏判据隔离。
    */
   readonly evalId?: string;
+  /** 当前 Attempt 的 Eval Group；未分组 Eval 省略。 */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly definitionHash: string;
+  };
   /** Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。 */
   readonly attempt?: AttemptRef;
   readonly session: AgentSession;

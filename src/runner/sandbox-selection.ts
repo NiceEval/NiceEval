@@ -80,7 +80,9 @@ function physicalCapabilityRequirements(
   options: SandboxRunPlanningOptions,
 ): readonly SandboxPhysicalCapabilityRequirement[] {
   const requirements: SandboxPhysicalCapabilityRequirement[] = [];
-  if (run.sandboxReuse === true) requirements.push(Object.freeze({ _tag: "Reuse" }));
+  if (run.sandboxReuse === true || evalDef.evalGroup !== undefined) {
+    requirements.push(Object.freeze({ _tag: "Reuse" }));
+  }
   if (options.keepSandbox !== undefined) requirements.push(Object.freeze({ _tag: "Retention" }));
   const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? options.configTimeoutMs;
   if (timeoutMs !== undefined) {
@@ -116,6 +118,7 @@ export function linkRunSandboxes(
     evalDef: DiscoveredEval;
     authorBaseDirs: {
       readonly eval: string;
+      readonly "eval-group"?: string;
       readonly experiment: string;
     };
   }>> = [];
@@ -129,12 +132,23 @@ export function linkRunSandboxes(
       }));
     }
     for (const evalDef of selectedEvalsForRun(evals, run)) {
+      if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
+        return Effect.fail(new SandboxRunPlanningInvariantError({
+          code: "sandbox.run-planning-invariant",
+          message: `eval-group-sandbox-reuse-conflict: Experiment ${JSON.stringify(experimentId)} selects Eval Group ${JSON.stringify(evalDef.evalGroup.id)} while declaring sandboxReuse: true. Eval Groups own reuse; remove sandboxReuse.`,
+        }));
+      }
       const input: SandboxLayerPairInput = {
         eval: {
           id: evalDef.id,
           layer: evalDef.sandbox,
           declaredAt: { file: evalDef.sourcePath },
         },
+        ...(evalDef.evalGroup === undefined ? {} : { group: {
+          id: evalDef.evalGroup.id,
+          layer: evalDef.evalGroup.sandbox,
+          declaredAt: { file: evalDef.evalGroup.sourcePath },
+        } }),
         experiment: {
           id: experimentId,
           layer: run.sandbox,
@@ -148,7 +162,11 @@ export function linkRunSandboxes(
         key: runPairKey(experimentId, evalDef.id),
         run,
         evalDef,
-        authorBaseDirs: Object.freeze({ eval: evalDef.baseDir, experiment: experimentBaseDir }),
+        authorBaseDirs: Object.freeze({
+          eval: evalDef.baseDir,
+          ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
+          experiment: experimentBaseDir,
+        }),
       }));
     }
   }
@@ -264,6 +282,21 @@ export function prepareRunSandboxes(
             code: "sandbox.run-planning-invariant",
             message: `Physical planner returned ${prepared.length} of ${linkedPairs.length} linked pairs.`,
           }));
+        }
+        const groupPlans = new Map<string, string>();
+        for (const entry of prepared) {
+          const group = entry.evalDef.evalGroup;
+          if (group === undefined || entry.plan._tag !== "Sandbox") continue;
+          const key = JSON.stringify([entry.run.experimentId, group.id]);
+          const physical = digestOf(entry.plan.providerPlan.identity);
+          const previous = groupPlans.get(key);
+          if (previous !== undefined && previous !== physical) {
+            return Effect.fail(new SandboxRunPlanningInvariantError({
+              code: "sandbox.run-planning-invariant",
+              message: `eval-group-incompatible: Eval Group ${JSON.stringify(group.id)} has different physical Sandbox plans across its selected members in Experiment ${JSON.stringify(entry.run.experimentId)}. Split the group by compatible template/provider identity.`,
+            }));
+          }
+          groupPlans.set(key, physical);
         }
         return Effect.succeed(Object.freeze(prepared));
       },

@@ -46,6 +46,7 @@ export interface SandboxLayerContributionInput {
 
 export interface SandboxLayerPairInput {
   readonly eval: SandboxLayerContributionInput;
+  readonly group?: SandboxLayerContributionInput;
   readonly experiment: SandboxLayerContributionInput;
   readonly agent: {
     readonly kind: "direct" | "sandbox";
@@ -54,7 +55,7 @@ export interface SandboxLayerPairInput {
 }
 
 export interface SandboxLayerOwnerRef {
-  readonly kind: "eval" | "experiment";
+  readonly kind: "eval" | "eval-group" | "experiment";
   readonly id: string;
 }
 
@@ -188,6 +189,7 @@ export interface LinkedSandboxPair {
   readonly teardownHooks: readonly SandboxHook[];
   /** Eval 自己声明 lifecycle 时实例不得跨 Eval 共用。 */
   readonly hasEvalLifecycleHooks: boolean;
+  readonly evalGroupId?: string;
   readonly fingerprint: SandboxLayerFingerprintProjection;
 }
 
@@ -322,6 +324,31 @@ function normalizeContribution(
   return Object.freeze({ owner, explicit, state, view });
 }
 
+/** Stable identity of one author-owned layer, before it is linked with the other owners. */
+export function sandboxLayerDefinitionIdentity(layer: SandboxLayer | undefined): JsonValue {
+  const contribution = normalizeContribution("eval-group", { id: "<definition>", layer });
+  const commands: JsonValue[] = contribution.view.commands.map((command): JsonValue => command.kind === "stable"
+    ? {
+        kind: "stable",
+        index: command.index,
+        id: command.id,
+        revision: command.revision,
+        inputs: command.inputs,
+      }
+    : { kind: "opaque", index: command.index });
+  const lifecycle: JsonValue[] = [
+    ...fingerprintLifecycle(contribution.owner, "setup", contribution.state.setupHooks),
+    ...fingerprintLifecycle(contribution.owner, "teardown", contribution.state.teardownHooks),
+  ].map((entry) => ({ kind: entry.kind, phase: entry.phase, index: entry.index }));
+  return {
+    layer: contribution.state.kind === "template-bearing"
+      ? { _tag: "Template", value: sandboxTemplateIdentity(contribution.state.template) }
+      : { _tag: "CommandOnly" },
+    commands,
+    ...(lifecycle.length === 0 ? {} : { lifecycle }),
+  };
+}
+
 function pairRef(input: SandboxLayerPairInput): SandboxLinkIssue["pair"] {
   return Object.freeze({
     evalId: input.eval.id,
@@ -384,12 +411,12 @@ function issue(
 
 function linkedCommands(
   first: NormalizedContribution,
-  second: NormalizedContribution,
+  ...rest: readonly NormalizedContribution[]
 ): {
   readonly commands: readonly LinkedSandboxCommand[];
 } {
   const commands: LinkedSandboxCommand[] = [];
-  for (const contribution of [first, second]) {
+  for (const contribution of [first, ...rest]) {
     contribution.state.commands.forEach((declaration, index) => {
       const fingerprint = fingerprintCommand(contribution.owner, index, declaration);
       commands.push(Object.freeze({ owner: contribution.owner, index, command: declaration.command, fingerprint }));
@@ -401,16 +428,16 @@ function linkedCommands(
 function linkSandboxPair(
   pair: SandboxLinkIssue["pair"],
   templateOwner: TemplateContribution,
-  otherOwner: NormalizedContribution,
+  otherOwners: readonly NormalizedContribution[],
 ): LinkedSandboxPair {
   const template = templateOwner.state.template;
-  const linked = linkedCommands(templateOwner, otherOwner);
+  const linked = linkedCommands(templateOwner, ...otherOwners);
   const fingerprints = Object.freeze(linked.commands.map((entry) => entry.fingerprint));
   const lifecycle = Object.freeze([
     ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
-    ...fingerprintLifecycle(otherOwner.owner, "setup", otherOwner.state.setupHooks),
+    ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "setup", owner.state.setupHooks)),
     ...fingerprintLifecycle(templateOwner.owner, "teardown", templateOwner.state.teardownHooks),
-    ...fingerprintLifecycle(otherOwner.owner, "teardown", otherOwner.state.teardownHooks),
+    ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "teardown", owner.state.teardownHooks)),
   ]);
   const fingerprint = Object.freeze({
     version: 1 as const,
@@ -427,9 +454,12 @@ function linkSandboxPair(
     templateOwner: templateOwner.owner,
     template,
     commands: linked.commands,
-    setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwner.state.setupHooks]),
-    teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwner.state.teardownHooks]),
-    hasEvalLifecycleHooks: (templateOwner.owner.kind === "eval" ? templateOwner.state.setupHooks.length + templateOwner.state.teardownHooks.length : otherOwner.state.setupHooks.length + otherOwner.state.teardownHooks.length) > 0,
+    setupHooks: Object.freeze([...templateOwner.state.setupHooks, ...otherOwners.flatMap((owner) => owner.state.setupHooks)]),
+    teardownHooks: Object.freeze([...templateOwner.state.teardownHooks, ...otherOwners.flatMap((owner) => owner.state.teardownHooks)]),
+    hasEvalLifecycleHooks: [templateOwner, ...otherOwners].some((owner) => owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0),
+    ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
+      ? {}
+      : { evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id }),
     fingerprint,
   });
 }
@@ -449,9 +479,10 @@ export function linkSandboxLayers(
       const pair = pairRef(input);
       const evalContribution = normalizeContribution("eval", input.eval);
       const experimentContribution = normalizeContribution("experiment", input.experiment);
+      const groupContribution = input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
 
       if (pair.agentKind === "direct") {
-        if (evalContribution.explicit || experimentContribution.explicit) {
+        if (evalContribution.explicit || experimentContribution.explicit || groupContribution !== undefined) {
           issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
         } else {
           linked.push(Object.freeze({
@@ -464,16 +495,20 @@ export function linkSandboxLayers(
         continue;
       }
 
-      const evalTemplate = isTemplateContribution(evalContribution);
-      const experimentTemplate = isTemplateContribution(experimentContribution);
-      if (!evalTemplate && !experimentTemplate) {
+      const contributions = [experimentContribution, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution];
+      const templates = contributions.filter(isTemplateContribution);
+      if (templates.length === 0) {
         issues.push(issue("sandbox.template-missing", pair, evalContribution, experimentContribution));
-      } else if (evalTemplate && experimentTemplate) {
+      } else if (templates.length > 1) {
         issues.push(issue("sandbox.template-conflict", pair, evalContribution, experimentContribution));
-      } else if (evalTemplate) {
-        linked.push(linkSandboxPair(pair, evalContribution, experimentContribution));
-      } else if (isTemplateContribution(experimentContribution)) {
-        linked.push(linkSandboxPair(pair, experimentContribution, evalContribution));
+      } else {
+        const template = templates[0]!;
+        const ordered = template.owner.kind === "eval-group"
+          ? [template, experimentContribution, evalContribution]
+          : template.owner.kind === "experiment"
+            ? [template, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution]
+            : [template, experimentContribution];
+        linked.push(linkSandboxPair(pair, template, ordered.filter((owner) => owner !== template)));
       }
     }
 

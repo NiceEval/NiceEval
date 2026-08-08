@@ -37,6 +37,7 @@ export interface PlannedLinkedRun {
 
 export interface SandboxAuthorBaseDirs {
   readonly eval: string;
+  readonly "eval-group"?: string;
   readonly experiment: string;
 }
 
@@ -169,12 +170,17 @@ function capabilityIssues(
   const issues: SandboxPhysicalPlanningIssue[] = [];
   for (const requirement of requirements) {
     if (requirement._tag === "Reuse" && plan.capabilities.reuse._tag === "Unsupported") {
+      const group = pair.evalGroupId;
       issues.push(capabilityIssue(
         pair,
         baseDir,
         "sandbox.reuse-unavailable",
-        `Provider ${JSON.stringify(plan.provider)} cannot satisfy sandboxReuse: ${plan.capabilities.reuse.reason}.`,
-        ["Select a provider with Sandbox reuse support, or disable sandboxReuse for this Experiment."],
+        group === undefined
+          ? `Provider ${JSON.stringify(plan.provider)} cannot satisfy sandboxReuse: ${plan.capabilities.reuse.reason}.`
+          : `Provider ${JSON.stringify(plan.provider)} cannot run Eval Group ${JSON.stringify(group)} because Sandbox reuse is unavailable: ${plan.capabilities.reuse.reason}.`,
+        group === undefined
+          ? ["Select a provider with Sandbox reuse support, or disable sandboxReuse for this Experiment."]
+          : ["Select a provider with Sandbox reuse support, or remove these Evals from the Eval Group."],
       ));
       continue;
     }
@@ -261,6 +267,10 @@ export function planLinkedRuns(
         continue;
       }
       const baseDir = input.authorBaseDirs[input.pair.templateOwner.kind];
+      if (baseDir === undefined) {
+        issues.push(invalidBaseDirIssue(input.pair, "<missing eval-group base directory>"));
+        continue;
+      }
       if (!isAbsolute(baseDir)) {
         issues.push(invalidBaseDirIssue(input.pair, baseDir));
         continue;

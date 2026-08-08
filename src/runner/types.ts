@@ -754,6 +754,26 @@ export type AnyEvalDefinition =
   | EvalDefinition<"pass", TestContext>
   | EvalDefinition<"score", ScoreTestContext>;
 
+const EVAL_GROUP_DEFINITION: unique symbol = Symbol("niceeval.evalGroupDefinition");
+
+/** A group member must not own a Sandbox template or instance lifecycle. Runtime discovery revalidates this. */
+export type EvalGroupMember = AnyEvalDefinition;
+export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
+  readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
+  readonly sandbox?: Sandbox;
+}
+export interface EvalGroupDefinition extends EvalGroupInput {
+  readonly [EVAL_GROUP_DEFINITION]: true;
+}
+export function brandEvalGroupDefinition(value: EvalGroupInput): EvalGroupDefinition {
+  Object.defineProperty(value, EVAL_GROUP_DEFINITION, { value: true });
+  return Object.freeze(value) as EvalGroupDefinition;
+}
+export function isEvalGroupDefinition(value: unknown): value is EvalGroupDefinition {
+  return typeof value === "object" && value !== null &&
+    (value as { readonly [EVAL_GROUP_DEFINITION]?: unknown })[EVAL_GROUP_DEFINITION] === true;
+}
+
 /** @internal 唯一写入 Definition 私有品牌的构造辅助；不从公共入口导出。 */
 export function brandEvalDefinition<Kind extends EvaluationKind, Context>(
   value: EvalDefinitionFields & { evaluationKind: Kind; test(t: Context): EvalTestReturn },
@@ -786,6 +806,18 @@ export interface DiscoveredEvalFacts {
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
    */
   readonly source: CapturedEvalSource;
+  /** @internal Original factory object, used only for Eval Group identity resolution. */
+  readonly definition: AnyEvalDefinition;
+  /** Eval Group planning facts, present only for discovered group members. */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly index: number;
+    readonly evalIds: readonly string[];
+    readonly definitionHash: string;
+    readonly sandbox?: SandboxLayer;
+    readonly sourcePath: string;
+    readonly baseDir: string;
+  };
 }
 
 /** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */

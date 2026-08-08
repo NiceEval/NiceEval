@@ -1,6 +1,7 @@
 // Discovery is the only boundary where executable modules enter the typed runner.
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,18 +18,23 @@ import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { captureLoadedFiles } from "../loaders/index.ts";
 import { freshImportModule } from "../fresh-import.ts";
 import { sandboxLayerStateOf, type SandboxLayer } from "../sandbox/layer.ts";
+import { sandboxLayerDefinitionIdentity } from "../sandbox/link.ts";
 import {
   discoverEval,
   discoverExperiment,
   isEvalDefinition,
   isExperimentDefinition,
+  isEvalGroupDefinition,
 } from "../types.ts";
 import type {
   AnyEvalDefinition,
   DiscoveredEval,
   DiscoveredExperiment,
   ExperimentDefinition,
+  EvalGroupDefinition,
 } from "../types.ts";
+import { digestOf } from "../sandbox/identity.ts";
+import { captureSourceClosure } from "./source-closure.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
 
@@ -73,6 +79,8 @@ interface ExperimentModule {
   readonly default?: ExperimentDefinition;
 }
 
+interface EvalGroupModule { readonly default: EvalGroupDefinition }
+
 const EvalDefinitionSchema = Schema.declare(isEvalDefinition, {
   identifier: "EvalDefinition",
   description: "a value returned by defineEval() or defineScoreEval()",
@@ -90,6 +98,9 @@ const ExperimentDefinitionSchema = Schema.declare(isExperimentDefinition, {
 });
 const ExperimentModuleSchema: Schema.Schema<ExperimentModule> = Schema.Struct({
   default: Schema.optional(ExperimentDefinitionSchema),
+});
+const EvalGroupModuleSchema: Schema.Schema<EvalGroupModule> = Schema.Struct({
+  default: Schema.declare(isEvalGroupDefinition, { identifier: "EvalGroupDefinition" }),
 });
 
 function discoveryError(issues: readonly DiscoveryIssue[]): DiscoveryError {
@@ -154,6 +165,14 @@ function decodeExperimentModule(value: unknown, file: string): Effect.Effect<Exp
       String(error),
       ["Default-export defineExperiment({...}) instead of a plain object."],
     )),
+  );
+}
+
+function decodeEvalGroupModule(value: unknown, file: string): Effect.Effect<EvalGroupModule, DiscoveryError> {
+  return Schema.decodeUnknown(EvalGroupModuleSchema, { errors: "all" })(value).pipe(
+    Effect.mapError((error) => issue(file, "discovery.invalid-export", String(error), [
+      "Default-export defineEvalGroup({ evals: [definition, ...] }).",
+    ])),
   );
 }
 
@@ -427,6 +446,7 @@ function discoverEvalEntry(
       loaderDataPaths,
       criteriaPaths,
       privatePaths,
+      definition,
     })));
   });
 }
@@ -437,9 +457,73 @@ export function discoverEvals(
   options: { freshImport?: boolean } = {},
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
-  return collectEvalEntries(dir, root).pipe(
-    Effect.flatMap((entries) => collectAll(entries, (entry) => discoverEvalEntry(entry, root, options.freshImport))),
-  );
+  return Effect.gen(function*() {
+    const entries = yield* collectEvalEntries(dir, root);
+    const evals = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, options.freshImport));
+    const groupsDir = join(root, "eval-groups");
+    const files = existsSync(groupsDir)
+      ? yield* walkFiles(groupsDir, root, (name) => name === "eval-group.ts" || name.endsWith(".eval-group.ts"))
+      : Object.freeze([] as string[]);
+    const groupEntries = files.map((file) => {
+      const name = basename(file);
+      const id = name === "eval-group.ts"
+        ? relative(groupsDir, dirname(file)).split(sep).join("/")
+        : relative(groupsDir, file).replace(/\.eval-group\.ts$/, "").split(sep).join("/");
+      return { file, id };
+    });
+    const groupIdIssues: DiscoveryIssue[] = [];
+    const groupsById = new Map<string, typeof groupEntries>();
+    for (const entry of groupEntries) groupsById.set(entry.id, [...(groupsById.get(entry.id) ?? []), entry]);
+    for (const [id, owners] of groupsById) {
+      if (id.length === 0) {
+        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.invalid-export", message: "Eval Group id must not be empty.", actions: ["Put eval-group.ts in a named subdirectory or use a named *.eval-group.ts entry."] });
+      } else if (owners.length > 1) {
+        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.duplicate-id", message: `Duplicate eval group id ${JSON.stringify(id)}: multiple entries map to the same id.`, actions: ["Keep either the file entry or the folder entry for this id."] });
+      }
+    }
+    if (groupIdIssues.length > 0) return yield* Effect.fail(discoveryError(groupIdIssues));
+    const claimed = new Map<AnyEvalDefinition, string>();
+    const annotated = new Map<AnyEvalDefinition, DiscoveredEval>();
+    const issues: DiscoveryIssue[] = [];
+    const memberSourcePaths = new Set(evals.map((item) => item.sourcePath));
+    for (const { file, id } of groupEntries) {
+      const label = relative(root, file).split(sep).join("/");
+      const imported = yield* importModule(file, root, "eval", options.freshImport);
+      const module = yield* decodeEvalGroupModule(imported, label);
+      const resolved = module.default.evals.map((definition) => evals.filter((item) => item.definition === definition));
+      const evalIds = resolved.flatMap((matches) => matches.map((item) => item.id));
+      const groupSources = yield* Effect.promise(() => captureSourceClosure(file, { root, stopPaths: memberSourcePaths }));
+      const definitionHash = digestOf({
+        version: 1,
+        id,
+        evalIds,
+        layer: sandboxLayerDefinitionIdentity(module.default.sandbox),
+        sources: groupSources,
+      });
+      module.default.evals.forEach((definition, index) => {
+        const matches = resolved[index]!;
+        if (matches.length !== 1) {
+          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-unresolved: member ${index} resolves to ${matches.length} discovered Evals.`, actions: ["Import the exact default definition object from an eval entry."] });
+          return;
+        }
+        const member = matches[0]!;
+        const prior = claimed.get(definition);
+        if (prior !== undefined) {
+          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-overlap: Eval ${JSON.stringify(member.id)} is already in group ${JSON.stringify(prior)}.`, actions: ["List each Eval exactly once in one group."] });
+          return;
+        }
+        const state = member.sandbox === undefined ? undefined : sandboxLayerStateOf(member.sandbox);
+        if (state?.kind === "template-bearing" || (state?.setupHooks.length ?? 0) > 0 || (state?.teardownHooks.length ?? 0) > 0) {
+          issues.push({ file: label, code: "discovery.invalid-export", message: `eval-group-member-layer: Eval ${JSON.stringify(member.id)} owns a template or lifecycle hook.`, actions: ["Move the template and lifecycle hooks to the Experiment or Eval Group; keep only prepare commands on the Eval."] });
+          return;
+        }
+        claimed.set(definition, id);
+        annotated.set(definition, discoverEval(definition, { ...member, evalGroup: Object.freeze({ id, index, evalIds: Object.freeze(evalIds), definitionHash, sandbox: module.default.sandbox, sourcePath: file, baseDir: dirname(file) }) }));
+      });
+    }
+    if (issues.length > 0) return yield* Effect.fail(discoveryError(issues));
+    return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
+  });
 }
 
 function discoverExperimentFile(

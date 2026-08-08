@@ -109,7 +109,6 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 function feedbackWho(a: Attempt): string {
   return runWho({ agentName: a.run.agent.name, model: a.run.model, experimentId: a.run.experimentId });
 }
-
 function attemptIdentityKey(
   experimentId: string | undefined,
   agentName: string,
@@ -327,13 +326,28 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // 注意这只是省钱的吞吐优化,不是正确性前提 —— 即便同 key 的 attempt 同时在飞,
   // 首个通过会 abort 同 key 其余 attempt,且它们的结果被下面的去重检查丢弃,不会重复计入。
   const attempts: Attempt[] = [];
+  const groupedPredecessors = new WeakMap<Attempt, Promise<void>>();
+  const groupedReleases = new WeakMap<Attempt, () => void>();
+  const groupedTails = new Map<AgentRun, Map<string, Promise<void>>>();
   for (const run of opts.agentRuns) {
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
     const evals = selectedEvalsForRun(opts.evals, run);
-    for (let i = 0; i < run.attempts; i++) {
-      for (const evalDef of evals) {
+    const grouped = new Map<string, typeof evals>();
+    for (const evalDef of evals) {
+      if (evalDef.evalGroup === undefined) continue;
+      grouped.set(evalDef.evalGroup.id, [...(grouped.get(evalDef.evalGroup.id) ?? []), evalDef]);
+    }
+    const slots = [
+      ...[...Array(run.attempts).keys()].flatMap((i) => evals
+        .filter((evalDef) => evalDef.evalGroup === undefined)
+        .map((evalDef) => ({ i, evalDef }))),
+      ...[...grouped.values()].flatMap((members) => members
+        .toSorted((left, right) => left.evalGroup!.index - right.evalGroup!.index)
+        .flatMap((evalDef) => [...Array(run.attempts).keys()].map((i) => ({ i, evalDef })))),
+    ];
+    for (const { i, evalDef } of slots) {
         const carryKey = cacheKey(run, evalDef.id);
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
         // `carriedAttemptsByKey`),不是"这个组合有过携入就跳过前 N 个"——attempts:5 里若只有
@@ -363,7 +377,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         if (sandboxPlansByEval === undefined) {
           throw new Error(`Missing Experiment plan map for ${JSON.stringify(run.experimentId)}.`);
         }
-        attempts.push({
+        const attempt: Attempt = {
           evalDef,
           run,
           attempt: i,
@@ -373,8 +387,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           judge: resolvedJudgesByKey.get(carryKey),
           plan: prepared.plan,
           sandboxPlansByEval,
-        });
-      }
+        };
+        attempts.push(attempt);
+        if (evalDef.evalGroup !== undefined) {
+          let tails = groupedTails.get(run);
+          if (tails === undefined) groupedTails.set(run, (tails = new Map()));
+          const predecessor = tails.get(evalDef.evalGroup.id) ?? Promise.resolve();
+          let release!: () => void;
+          const settled = new Promise<void>((resolve) => { release = resolve; });
+          groupedPredecessors.set(attempt, predecessor);
+          groupedReleases.set(attempt, release);
+          tails.set(evalDef.evalGroup.id, settled);
+        }
     }
   }
 
@@ -2334,23 +2358,31 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             yield* outcome.window;
           }
         });
+        const predecessor = groupedPredecessors.get(a);
+        const orderedPipeline = predecessor === undefined
+          ? pipeline
+          : Effect.promise(() => predecessor).pipe(Effect.flatMap(() => pipeline));
         // 实验级 teardown 结算:每个 attempt 收尾(含被 preflight 跳过、被中断的、被用例锁
         // 被 preflight 跳过、被中断的)都从身份集合移除；最后一个触发 ExperimentDef.teardown。ensuring
         // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
         const withExpLifecycle =
           !a.run.setup && !a.run.teardown
-            ? pipeline
-            : pipeline.pipe(
+            ? orderedPipeline
+            : orderedPipeline.pipe(
                 Effect.ensuring(settleExperimentAttempt(a).pipe(Effect.orDie)),
               );
-        if (!caseState) return withExpLifecycle;
         // 用例锁释放:这个 key 的全部 attempt(真实派发的与被 late-carry 跳过的)都 settle 后
         // 删锁,与上面的实验级 teardown 计数同一种「逐 attempt 收尾时递减,归零触发」模式,
         // 挂在最外层确保晚于实验级 teardown 计数结算(docs「用例全部 attempt 收尾(含沙箱销毁)
         // 后删除自己的锁」)。
-        return withExpLifecycle.pipe(
-          Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
-        );
+        const withCaseLifecycle = !caseState
+          ? withExpLifecycle
+          : withExpLifecycle.pipe(
+              Effect.ensuring(releaseCaseLockIfDone(caseState, a.attempt)),
+            );
+        if (predecessor === undefined) return withCaseLifecycle;
+        const releaseSuccessor = groupedReleases.get(a)!;
+        return withCaseLifecycle.pipe(Effect.ensuring(Effect.sync(releaseSuccessor)));
       },
       { concurrency: opts.maxConcurrency, discard: true },
     ).pipe(

@@ -625,6 +625,8 @@ export interface JsonPlanDispatch {
 export interface JsonPlanRow {
   experimentId: string;
   evalId: string;
+  evalGroupId?: string;
+  evalGroupIndex?: number;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
   /** previous-result 历史结果。`acceptance: legacy-locator` 表示旧 locator 不符合当前命令语法，不能接受。 */

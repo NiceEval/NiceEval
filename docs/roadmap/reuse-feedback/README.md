@@ -26,18 +26,21 @@
 ## Sandbox 复用增加运行级汇总
 
 Attempt 持久化 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-声明 `sandboxReuse` 的 Experiment 按现有物理复用池提供四个运行级量；Eval Group 则直接以自身作为这组计数的声明源：
+声明 `sandboxReuse` 的 Experiment 按现有物理复用池提供四个运行级量；Eval Group 按本轮 run 槽位提供同一组计数：
 
 | 量 | 口径 |
 |---|---|
 | `active` | 当前可以继续承接 Attempt 的 Sandbox 数 |
 | `created` | 本次 Invocation 完成 Case 就绪并承接首条 Attempt 的 Sandbox 累计数 |
 | `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 prepare 失败或超时仍计入 |
-| `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出池后，成功建立替代 Sandbox 的累计数 |
+| `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出后，成功为下一未开始槽位建立替代 Sandbox 的累计数 |
 
 live 面板按 Experiment 与 Eval Group 恒定显示 `active`、`created` 与 `assignments`，`replacements` 只在非零时显示。
 结束反馈显示四项最终值。
 多个组不合成一组总数，否则无法判断哪一个组在轮换实例。
+carried、excluded 与 early-exit 槽位不租借 Sandbox，因此不进入 `assignments`。
+替代实例绝不重新派发已经开始的 Attempt。
+
 机器输出在既有 `progress` 与 `result` 事件上附加逐 Experiment、逐 group 的 `sandboxReuse` 数组，不增加独立事件。
 数组每项带 `experimentId`、group 身份与四个量；机器面四项恒定存在。
 逐实例承接明细继续归 `niceeval view` / `show`，不进入运行流。
