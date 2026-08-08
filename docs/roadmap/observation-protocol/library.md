@@ -98,24 +98,22 @@ Runner 把 turnOrdinal 写进每条 turn-scoped durable Observation，并把 eve
 每笔 tool `operation.started` 都携带穷尽的 command classification：
 
 ```ts
-type CommandLanguage = "posix-shell" | "powershell" | "cmd" | "unknown";
-
 type CommandProjection =
   | { readonly kind: "not-command" }
   | {
       readonly kind: "command";
-      readonly source:
+      readonly invocation:
         | {
             readonly state: "available";
-            readonly value: string;
-            readonly language: CommandLanguage;
+            readonly executable: string;
+            readonly args: readonly string[];
           }
         | {
             readonly state: "opaque";
             readonly reason:
               | "redacted"
               | "truncated"
-              | "structured-only"
+              | "compound-shell"
               | "unsupported";
           };
     };
@@ -136,17 +134,17 @@ type ToolOperationStarted = {
 CommandProjection 的 owner 是具体 Adapter。
 它只能根据原生协议的显式、版本化映射分类，不能由 core 根据 canonical tool name 或 input 字段猜测。
 
-`source.state: "available"` 要求原生协议明确提供提交给执行边界的 command source string。
-仅有 argv、`program + args`、SDK display summary 或若干片段时使用 `structured-only` 或 `unsupported`。
+`invocation.state: "available"` 要求原生协议直接提供 argv，或 Adapter 能按该协议明确声明的 grammar 无歧义取得单一 invocation。
+executable 与 args 保留提交给执行边界的原始 token。
 
-Adapter 与 core 都不能把 argv join 成字符串、重新 quote、拆分一笔 occurrence 或合并多笔 occurrence。
-`language` 只解释原始 source，不授权任何 normalization。
+复合 shell、动态展开、管道或无法确认 quoting 的 source 使用 `compound-shell`。
+Adapter 与 core 都不能用空格 split、重新 quote、展开 wrapper、拆分一笔 occurrence或合并多笔 occurrence。
 
 `not-command` 表示 Adapter 能确定这笔 tool operation 不是命令。
 Adapter 无法确定 command / not-command 时必须降低 actions coverage，不能用 `not-command` 掩盖未知。
 
 actions 为 complete 时，必须保证全部 action occurrences 已产生，且每笔 tool operation 都有上述分类。
-command source 可以结构化 opaque；这不遗漏 occurrence，但依赖 source 的 Projector 或 Assertion 必须得到 unavailable。
+command invocation 可以 opaque；这不遗漏 occurrence，但依赖 invocation 的 Projector 或 Assertion 必须得到 unavailable。
 
 工具 input 若有未交代的截断、redaction 或可能隐藏字符串的 opaque subtree，actions 不能继续宣称 complete。
 这条要求让工具输入的 exact-zero Assertion 不会把未知内容当作空内容。

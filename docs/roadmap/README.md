@@ -31,4 +31,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Prepare 阶段瞬时失败自愈](prepare-transient-retry/README.md) —— 内置 prepare 命令的瞬时重试
 - [有序 Eval 序列](ordered-sequences/README.md) —— 用独立 Sequence 声明现有 Eval 的顺序、完整重新执行与执行 lineage
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
-- [Assertion 作者面](assertion-authoring/README.md) —— inline rule、一等行为事实、typed require 与延迟 Sandbox source
+- [Assertion 作者面](assertion-authoring/README.md) —— 复用 scope-first 断言、结构化 command selector 与 Sandbox 结果检查
