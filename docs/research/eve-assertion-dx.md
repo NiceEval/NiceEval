@@ -1,6 +1,6 @@
 # Eve 断言 DX 与 Harness 需求
 
-本研究比较 Eve 与 NiceEval 的断言作者面，并用 NiceEval-Eval Harness 检查候选 API 是否解决真实问题。
+本研究比较 Eve 与 NiceEval 的断言作者面，并用 NiceEval-Eval Harness 检查候选 API 是否解决真实用户问题。
 它只提供带日期的设计输入，不构成 NiceEval 的目标契约。
 
 ## 观察版本
@@ -10,34 +10,36 @@
 | 对象 | Revision | 主要证据 |
 |---|---|---|
 | Eve | `bd93f55481b3048d0273dd041b423e73fb9248cf` | `packages/eve/src/evals/` 与 `docs/evals/` |
-| NiceEval-Eval | `2794a6cf315c247605f14a9ffed55f0a4564ac78` | 当时的 `evals/harness/add-regression/eval.ts` 与 Harness 说明 |
-| NiceEval | 本研究所在工作树 | Assertions、Sandbox change attribution、Adapter events 与 evidence coverage |
+| NiceEval-Eval | `2794a6cf315c247605f14a9ffed55f0a4564ac78` | 当时的 `evals/harness/` 与 Harness 说明 |
+| NiceEval | 本研究所在工作树 | Assertions、Sandbox diff、Adapter events 与 evidence coverage |
 
 Eve 与 NiceEval-Eval 都来自本机 checkout。
 本研究读取源码、文档与 Git revision，没有把运行中服务或发布包行为混入判断。
 
-Harness 随后的产品目标收敛为两个端到端诊断场景。
-旧题的 18 条、34 分只作为研究样本，不构成需要守恒的目标契约。
+Harness 的目标收敛为两个单轮端到端诊断场景。
+旧题的条目数与分数只作为研究样本，不构成需要守恒的产品契约。
 
-## 值得保留的分层
+## Eve 的真实作者面
 
-Eve 与 NiceEval 都把检查分成三类：
+Eve 把普通检查分成两层：
 
 | 入口 | 负责什么 |
 |---|---|
-| scope assertion | turn、session 或 attempt 内的标准行为事实 |
-| value/source assertion | 作者值、Sandbox 文件、JSON 与 change selection |
-| Judge | 无法由确定规则完整表达的开放式质量标准 |
+| `t` / session / turn scoped method | run、tool、event、状态等标准事实 |
+| `t.check(value, assertion)` | 作者明确交出的任意值 |
 
-这套分层避免把协议事实、任意 TypeScript 值和模型判断并入一个万能函数。
-NiceEval 还需要保留 Eve 没有的 `unavailable`、evidence coverage、题内 points 与 optional 语义。
+`succeeded()`、`calledTool()` 与 `toolOrder()` 都直接挂在 scope receiver 上。
+scope 只改变证据范围，不改变方法风格。
 
-Eve 的 `.label()`、assertion-backed require、类型化 event matcher 与结构化 Judge material 都提供了有价值的作者体验。
-这些体验可以吸收，但不能继承 raw event、boolean-only result 或缺少 coverage 的数据模型。
+`calledTool()` 的 matcher object 内联表达 input、output、status 与 count。
+`toolOrder()` 检查 tool request subsequence；它不能证明前一笔 completed 后下一笔才开始。
 
-## 旧 Match 方向为什么不足
+Eve 的 `t.check()` 使用 `eve/evals/expect` builders，例如 `includes()`、`equals()` 与 `matches()`。
+这适合任意应用值，但若每个标准行为事实都先变成 value 再套 builder，作者会失去领域接收者的清晰范围。
 
-第一轮候选把所有关系统一成显式 Match AST：
+## 对旧 Match AST 的否决
+
+旧候选要求作者先声明 text matcher，再嵌入 JSON shape：
 
 ```ts
 const command = match.text.pattern("local command", /niceeval exp local/i);
@@ -45,99 +47,95 @@ const input = match.json.shape({ command });
 turn.calledTool("shell", { input });
 ```
 
-它消除了 raw RegExp 的部分歧义，却没有解决普通作者的核心负担：
+它有四个用户问题：
 
-- 作者仍需知道 Adapter 把命令叫作 `shell`；
-- 一条常见检查需要预声明多个中间 matcher；
-- `allOf`、`not` 与递归 shape 把 AST 组合复杂度暴露到每个 Eval；
-- `eventOrder` 若另收 `{ command }`，容易形成第二套命令匹配语义；
-- exact-one 仍需要匿名 type predicate 才能取得收窄后的值。
+- 作者必须知道 Adapter 把命令叫作什么；
+- 一条常见检查需要多个中间值；
+- 关系被递归 AST 和正则语法淹没；
+- 同一 command 在存在性和顺序 API 中容易出现两套 matcher。
 
-因此问题不只是 Match builder 名字。
-普通入口需要先拥有标准 observation fact 与延迟 source，再用局部 inline rule 说明关系。
+因此普通 Harness 不应导入 `match.*`，也不应靠共享规则构造器隐藏复杂度。
+调用点应直接从 `turn` 或 `t.sandbox` 开始。
 
-## Command fact 的边界
+## 先复用，再扩展
 
-现有 Adapter 会遇到 `shell`、`Bash`、`command_execution`、argv、`command`、`cmd` 与 `program + args` 等形状。
-canonical tool name 适合展示和粗粒度工具统计，但不足以证明这些形状语义等价。
+研究逐项比较 Harness 需求与 Eve / NiceEval 已有能力：
 
-研究据此得到两条限制：
+| 需求 | 裁决 |
+|---|---|
+| scope 成功 | 复用 `succeeded()` |
+| tool 存在 | 复用 `calledTool()` |
+| tool 顺序 | 复用 `toolOrder()` |
+| 任意文本值 | 复用 `t.check()`，普通文件规则内联 |
+| 文件断言与 diff | 复用 `t.sandbox`，不增加 `turn.changes` |
+| command 跨 Adapter | 扩展既有 `ToolSelector`，不增加 `ranCommand()` |
+| completed 后才继续 | 给 `toolOrder()` 增加 `sequential` option |
+| 禁止可观察 input 路径 | 增加窄的 `toolInputsExclude({ paths })` |
+| show 的动态 locator 与诊断 | 完整 Turn Judge，不增加 JSON matcher |
 
-1. CommandProjection 必须由 Adapter 按原生协议显式分类，不能由 core 猜；
-2. TextRule 只匹配协议明确提供的原始 command source，不能把 argv 重建成字符串。
+这次扩展的中心不是“名字更好看的新断言词汇”，而是让既有 scoped methods 能消费标准 observation。
 
-argv-only Adapter 对文本命令断言返回 unavailable，比输出一条看似统一、实际 quoting 已失真的字符串更可靠。
-这使 `ranCommand()` 成为跨 Adapter 的共同信任规则，而不是强行统一所有命令表示。
+## Command projection 的真实边界
 
-## Inline rule 的消歧
+coding-agent Adapter 会遇到 raw shell、argv、`program + args` 与 SDK display summary。
+core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它们语义等价。
 
-text slot 的普通路径只保留：
+标准 projection 因此只在两种情况下提供 executable + args：
 
-```ts
-{ exact: "..." }
-{ contains: "..." }
-{ pattern: /.../, excludes: { contains: "..." } }
-```
+1. 原生协议直接提供 argv；
+2. Adapter 能按自己声明的 grammar 无歧义取得单一 invocation。
 
-直接传入的 string 与 RegExp 都不进入 text slot。
-Identifier slot 直接接收 string 并固定 exact，因为工具名、角色和 change kind 本来就是离散身份。
+复合 shell、动态展开、管道与 quoting 不确定时保持 opaque。
+opaque selector 是 unavailable，不通过空格 split 猜一份看似稳定的 argv。
 
-`excludes` 只作用于同一个 candidate。
-它满足“命令包含 A 且不含 B”的高频需求，但不会发展成跨 candidate 的通用 `not/allOf` 程序。
+`toolOrder()` 与 `calledTool()` 必须复用同一个 `CommandSelector` evaluator。
+顺序断言已经证明 command 存在时，普通 E2E 不再重复登记存在性分。
 
-## Logical order
+## 为什么路径排除不让作者写正则
 
-Eve 的 event order 使用 raw protocol events，没有把 start 与 finish 合成 logical occurrence。
-同类事件交错时，“前一项结束后下一项才开始”无法由事件类型数组可靠表达。
+Eve 的 matcher mini-language 能用 RegExp 或 predicate 搜索 tool input。
+但“禁止 `.niceeval`、`evals` 与 `agents` 路径 component”要求作者维护跨平台边界正则，调用点难读且容易漏报。
 
-NiceEval 的 sequence 需要：
+`toolInputsExclude({ paths })` 把这项稳定关系放回作用域方法。
+它只检查 observed input string leaves；coverage 不完整且没有已知命中时是 unavailable。
 
-- command rule 与 `ranCommand()` 复用同一 projection 和 evaluator；
-- 每个位置由不同 occurrence 满足；
-- 非最终 operation 必须 finish；
-- `next.start > previous.finish`；
-- partial / opaque evidence 保留 feasible-but-unproven 的 unavailable。
+该方法不检查 stdout、assistant reply、子进程变量集合或 OS syscall。
+它不能被描述为文件访问审计。
 
-一条 sequence 已证明命令存在时，不再为同一事实重复登记存在性分。
-独立 status、count 或 partial diagnosis 确有价值时，才额外登记 `ranCommand()`。
+## Sandbox 归位
 
-## Sandbox 与 JSON
+NiceEval 已有 `t.sandbox.fileChanged()`、`fileDeleted()`、`file()` 与 agent 归因 diff。
+把文件能力放进 `turn.changes` 会制造第二个 receiver，也让多轮 scope 设计先于真实 Harness 需要。
 
-Harness 需要在调用点检查 Turn changes、最终文本文件和 `show --json` 输出。
-这些事实不应通过 eager read、手写 parser 或匿名 predicate进入 Eval。
+两个新 Harness 都是一条 `t.send()`，所以 attempt 级 agent 归因 diff 已能表达用户范围：
 
-研究建议：
+- `t.sandbox.changedPaths(paths)` 比较 exact touched-path set；
+- `t.sandbox.noChanges()` 使用同一个空集 collector；
+- `t.sandbox.fileChanged(path, options)` 在同一条 change 检查 before / after 文本；
+- `t.sandbox.file(path)` 继续作为延迟 UTF-8 text source。
 
-- `turn.changes.paths({ exact })` 比较应用 ignore 后的最终 normalized path 集合；
-- `t.sandbox.file(path)` 继续作为延迟文本 source，不增加同义 `text(path)`；
-- `t.sandbox.json(path)` 负责一次读取、UTF-8 decode 与 parse；
-- missing、invalid UTF-8 与 JSON syntax error 是 Assertion failed；
-- permission、transport 与 timeout 是 unavailable；
-- nested shape 使用显式 object / array node，不靠 serialized JSON search。
+本轮不增加 exact-one collection API。
+Harness 没有后续控制流依赖该值，Eve 既有 `require` 与 NiceEval 当前 diff view 足以处理其它高级场景。
 
-数组需要两种精确关系：ordered exact 与 unordered exact multiset。
-unordered 使用一对一匹配，重复 rule 消费不同 actual index，额外元素不能通过。
+## 为什么不读 show JSON
 
-object shape 还需要局部 `present` / `absent` field rule。
-它们能表达 accepted provenance 的有无和禁止额外差异字段，又不引入任意 predicate。
+`niceeval show` 是用户诊断界面。
+Harness 的目标是确认 Agent 看懂 compact 输出、复用正确 locator 下钻，并给出正确修复建议。
 
-## Exact-one
+若 Eval 要求 Agent 把 `show --json` 写到临时文件，再断言 `format`、`schemaVersion`、`view` 与递归 `shape`，测试重点就从用户诊断变成展示 envelope。
+大量 array / shape 规则也是一个事实：当前断言层级不对。
 
-旧 Harness 用 `newEvalFiles[0]!` 接在 boolean length check 后，Assertion 与类型控制流彼此分离。
-`t.requireOne()` 直接对 `readonly T[]` 或 collection source 登记一条 gate Assertion，并返回唯一的 `T`。
+研究因此否决 `t.sandbox.json()` 与通用 `JsonRule` 作为这项 Roadmap 的新增能力。
+标准机器事实由 scoped assertions 与 Sandbox diff 检查；show 的动态关联由 `turn.judge.llm()` 读取完整 tool calls、output 与 message。
 
-0 或多项是 failed，source unavailable 是 unavailable。
-两种结果都终止依赖路径，但不冒充 Attempt error。
+若 CLI Human 输出无法让 Judge取得所需事实，结果应暴露 NiceEval 呈现缺口。
+Eval 不能改读 `.niceeval` 私有文件补齐。
 
 ## 研究判断
 
-NiceEval 不需要换掉 AssertionResult、scope、handle、coverage 或 Judge 分层。
-需要替换的是普通作者面对 Match AST 和 Adapter 细节的方式。
+NiceEval 应保留 Eve 的 scope-first 风格，也应保留自己的 `unavailable`、evidence coverage、题内 points 与 optional 语义。
+普通调用点不需要新的 Match AST 或大量新方法。
 
-目标应是一组受 observation owner 约束的一等词汇：`ranCommand`、`eventOrder`、`toolInputsExclude`、Turn changes、typed require 与延迟 Sandbox source。
-高级 Match AST 仍可作为少数协议或任务特例的逃生口，但不应成为普通 Harness 的必经路径。
+最终方向是：扩展 `calledTool()` / `toolOrder()` 的 selector，给 `toolOrder()` 增加严格时序 option，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
 
-普通词汇只有在两个独立下游需要、跨 Adapter completeness 可定义、并能归入既有 rule domain 时才增加。
-这道门槛比“能少写几行”更能阻止核心 API 膨胀。
-
-定稿契约见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。
+目标契约见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。

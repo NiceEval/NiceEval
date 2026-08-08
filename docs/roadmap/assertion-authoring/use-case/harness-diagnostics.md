@@ -1,131 +1,121 @@
-# 用 show 诊断两个 Harness 端到端场景
+# 用 show 完成两道单轮 Harness 诊断
 
-Harness 评估 NiceEval 的真实使用旅途，而不是逐个给内部 API 形状打分。
-它收敛为两个端到端场景，并要求 Agent 只通过 `niceeval show` 诊断运行结果。
+断言签名与求值语义的契约单源在 [Library](../library.md)、[Rule](../matching.md) 与 [Architecture](../architecture.md)。
+本页从用户要完成的任务出发，展示两道完整 Harness 怎样组合这些能力。
 
-禁止直接 `cat`、`jq`、`rg` 或用其它工具读取 `.niceeval` 原始文件。
-这是一项可观察工具输入约束，不宣称 NiceEval 能审计 OS syscall。
+两个场景都只发送一条用户消息。
+Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第二轮提示提醒遗漏步骤。
 
-## 场景一：修复基建后处理结果
+每条 Assertion 都是在调用点直接写出的 `t.*`、`turn.*` 或 `t.sandbox.*` 调用。
+示例不预声明 matcher、RegExp、JSON rule 或共享规则构造器。
 
-Fixture 缺少 Python，第一次运行因此 errored。
-Agent 应先执行非 dry-run 的 `niceeval exp local`，再用 `niceeval show` 定位最早失败阶段。
-修复基建后，Agent 重新运行受影响场景，并根据公开结果判断是否执行 `niceeval accept`。
+这些示例描述 Roadmap 目标契约。
+下游若提前采用，应保留 TypeScript error 暴露尚未落地的签名，不能用旧 Match AST 或类型断言伪装实现。
 
-机器 Assertion 负责：
+## 用户共同需要什么
 
-- 真实运行过 experiment；
-- 所有诊断经过 `show`；
-- `exp → show → assistant reply` 顺序互不重叠；
-- 没有通过工具输入直接引用 `.niceeval`；
-- 指定 Turn 没有改业务文件，修复 Turn 改了目标基建文件；
-- 若执行 accept，其 command occurrence 已成功结束。
+用户不是在测试某个 Adapter 的工具名，也不是要求 Agent 生成一份机器专用 JSON。
+用户要确认：
 
-Judge 只检查回复是否正确解释 errored、修复后的结果与 accept 决策，不重新判断命令和文件事实。
+- Agent 真正运行了非 dry-run experiment；
+- 结果诊断经过公开 `niceeval show`，而不是读取 `.niceeval` 私有文件；
+- Agent 看过前一步结果后才继续下一步；
+- 最终回复把 show 中的证据和修复建议对应起来；
+- 文件修改没有越过任务允许的范围。
 
-## 场景二：区分模型能力与断言问题
+确定性的 command 顺序、可观察工具输入、运行状态和 Sandbox diff 由机器 Assertion 检查。
+动态 locator、Human 输出含义与回复建议需要关联完整 tool calls 和 message，因此由 `turn.judge.llm()` 检查。
 
-第二个 Fixture 是没有历史结果的新 repo。
-Agent 运行 experiment 后，只能根据 `niceeval show` 判断失败来自模型能力不足，还是 Eval 的确定性 Assertion 过紧。
+## A：修好 Python 起点，再判断复验与接受
 
-机器 Assertion 继续证明运行、show、回复顺序和禁止读取原始文件。
-Judge 只评价归因是否结合 show 提供的 Assertion 详情与实际候选行为，不能接受没有公开结果依据的猜测。
+### 用户任务
 
-## 推荐调用
+Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四项。
+`experiments/local.ts` 的 Sandbox image tag 起初指向只有 Node、缺少 Python 的 runtime。
 
-每条检查都在调用点保持一行，不预声明 matcher、RegExp 或共享规则构造器：
+用户要求 Agent：
 
-```ts
-turn1.eventOrder([{ command: { pattern: /\bniceeval(?:@\S+)?\s+(?:--\s+)?exp\s+local\b/i, excludes: { pattern: /--dry(?:-run)?\b/i } } }, { command: { pattern: /\bniceeval(?:@\S+)?\s+(?:--\s+)?show\b/i, status: "completed" } }, { reply: "assistant" }]).gate();
-turn1.toolInputsExclude({ pattern: /\.niceeval(?:[/\\]|\b)/ }).gate();
-turn1.changes.noChanges().gate();
-turn2.changes.fileChanged("infra/python.toml").gate();
-turn2.ranCommand({ pattern: /\bniceeval(?:@\S+)?\s+(?:--\s+)?accept\s+@\S+/i, status: "completed" }).gate();
-const newEvalPath = await t.requireOne(turn2.changes.files({ kind: "added", path: { pattern: /\.eval\.ts$/ } }), { label: "恰好新增一条可发现的 eval", points: 2 });
-t.check(t.sandbox.file(newEvalPath), { contains: "defineEval", excludes: { contains: "match.where" } }).points(2).gate();
-t.check(t.sandbox.json("config/policy.json"), { shape: { id: { type: "string" }, scorers: { array: { exact: ["nonEmpty"] } } } }).points(3).gate();
-```
+1. 先运行一次非 dry-run `niceeval exp local`；
+2. 用 `niceeval show` 确认 Python 基建错误；
+3. 只把目标 experiment 的 runtime tag 改成 Python 版本；
+4. 按候选 NiceEval 版本的 carry / rerun 语义完成可信复验；
+5. 再用 `show` 核对 current 与 history，判断哪些结果可以接受；
+6. 在最终回复中解释证据和决定。
 
-第一条 sequence 已经证明 `exp` 与 `show` 存在，不再重复登记两条 `ranCommand()`。
-`accept` 不属于该 sequence，且它的成功状态是独立结果，所以单独登记。
+这道题评的是一条完整诊断旅程，不是分别为 `exp`、`show`、`accept` 凑存在性分。
 
-`requireOne()` 成功后返回 source 元素类型。
-若 `changes.files()` 返回 `EvidenceSource<readonly SandboxPath[]>`，`newEvalPath` 就是 `SandboxPath`，不是 `string | undefined`。
-
-## 诊断闭环
-
-两个场景都遵守同一闭环：
-
-1. 执行最小 experiment slice；
-2. 使用 `niceeval show` 查看 Attempt、阶段、Assertion 与 Verdict；
-3. 根据公开输出修复基建、候选实现或 Eval 规则；
-4. 只重跑受影响场景；
-5. 再次使用 `show` 复核；
-6. 在 assistant reply 中交代证据与判断。
-
-CLI 无法显示所需诊断时，Harness 应把它登记为 NiceEval 呈现缺口。
-它不能绕过 CLI 去读私有文件，再把私有格式变成 Eval 契约。
-
-## History JSON
-
-Harness 可以让 Agent 通过公开 `niceeval show --history --json` 把 stdout 写进 Sandbox 临时文件。
-Eval 随后用一条 `t.check()` 检查完整 JSON，不自行 parse，也不为 history 新增业务 matcher。
-
-下面的 shape 假定公开输出用 `sections`、`attempts` 与 `deltas` 表达四个 case。
-字段名应跟随最终 CLI JSON schema；array relation 与 field presence 语义保持不变。
+### Harness 调用
 
 ```ts
-t.check(t.sandbox.json("/tmp/niceeval-history.json"), {
-  shape: {
-    sections: {
-      array: {
-        unordered: [
-          {
-            shape: {
-              case: "alpha",
-              attempts: { array: { exact: [{ shape: { verdict: "passed", acceptedFrom: { present: true } } }] } },
-              deltas: { array: { exact: [{ shape: { selector: { shape: { kind: "sandbox", image: { type: "string" } } }, from: { contains: "runtime:node" }, to: { contains: "runtime:python" }, agent: { absent: true }, model: { absent: true }, eval: { absent: true }, flags: { absent: true } } }] } },
-            },
-          },
-          {
-            shape: {
-              case: "beta",
-              attempts: { array: { exact: [{ shape: { verdict: "passed", acceptedFrom: { present: true } } }] } },
-              deltas: { array: { exact: [{ shape: { selector: { shape: { kind: "sandbox", image: { type: "string" } } }, from: { contains: "runtime:node" }, to: { contains: "runtime:python" }, agent: { absent: true }, model: { absent: true }, eval: { absent: true }, flags: { absent: true } } }] } },
-            },
-          },
-          {
-            shape: {
-              case: "gamma",
-              attempts: { array: { exact: [{ shape: { verdict: "failed", acceptedFrom: { present: true } } }] } },
-              deltas: { array: { exact: [{ shape: { selector: { shape: { kind: "sandbox", image: { type: "string" } } }, from: { contains: "runtime:node" }, to: { contains: "runtime:python" }, agent: { absent: true }, model: { absent: true }, eval: { absent: true }, flags: { absent: true } } }] } },
-            },
-          },
-          {
-            shape: {
-              case: "case-d",
-              attempts: { array: { exact: [{ shape: { verdict: "errored", acceptedFrom: { absent: true } } }, { shape: { verdict: "passed", acceptedFrom: { absent: true } } }] } },
-              deltas: { array: { exact: [] } },
-            },
-          },
-        ],
-      },
-    },
-  },
-}).points(8).gate();
+const turn = await t.send("运行 local experiment，用 niceeval show 诊断并修复缺少 Python 的基建；完成可信复验，判断可接受的结果，最后说明依据。禁止直接读取 .niceeval、evals 或 agents 下的内部材料。");
+turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }, { command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
+turn.succeeded().gate();
+t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
+t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", afterIncludes: "runtime:python" }).points(2).gate();
+turn.judge.llm({ name: "最终 current 结果", rubric: "只依据本轮 niceeval show 的公开输出判断：最终 current leaderboard 必须恰好是 cases/alpha、cases/beta、cases/gamma、cases/delta 四项，其中 3 passed、1 failed、0 errored；不能用回复中的自报数字代替 CLI 证据。", scoreMode: "binary" }).points(3).gate();
+turn.judge.llm({ name: "接受历史正确", rubric: "结合本轮完整 show 输出判断：cases/alpha、cases/beta、cases/gamma 各恰好一条 attempt，verdict 依次为 passed、passed、failed，且都有 acceptedFrom；每条 acceptedFrom 只显示 config:sandboxLayer 与 plan:physical 两类差异，from/to 是公开字符串，但不要求泄露 literal image tag。cases/delta 恰好两条真实 attempt，顺序为 errored 后 passed，二者都没有 acceptedFrom。不得依靠回复自报或私有文件。", scoreMode: "binary" }).points(6).gate();
+turn.judge.llm({ name: "候选版本复验与建议", rubric: candidateVersion.startsWith("0.9.") ? "候选是 0.9.x：确认修复后确实重新执行完整 local experiment，并根据 show 正确解释接受范围；不要求该版本没有的 rerun flag。" : "候选是 0.12+：确认修复后强制全量真实执行，通常使用 --rerun all 或可由工具证据证明等价的做法，不能把自动重试 errored 与携入旧结果冒充全量复验；最终接受判断必须与 show 证据一致。", scoreMode: "binary" }).points(4).gate();
 ```
 
-`unordered` 对四个 section 做 exact multiset 匹配，所以不依赖 CLI 展示顺序，也不允许第五个 section。
-前三个 section 各有一条 delta，case-d 没有 delta，因此同一条 Assertion 也证明 delta 总数恰好为 3。
+三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
+A 的可得分总数固定为 `3 + 2 + 3 + 6 + 4 = 18`。
 
-每个 delta 的 `agent`、`model`、`eval` 与 `flags` 都要求 absent。
-它们不会因为 outer shape 默认允许其它字段而漏掉禁止的差异种类。
+`changedPaths()` 只证明 agent 归因路径集合恰好一项。
+`fileChanged()` 证明同一条 change 的 before 含 `runtime:node`、after 含 `runtime:python`；两者都不声称文件只改了这一个 token。
 
-current JSON 的汇总可以保持一条短 Assertion：
+current、history 与候选版本三项都是 gate。
+任何一项错误都会使 outer verdict failed，不会只丢分却留下 headline passed。
+
+`accept` 不另设一条 command 得分。
+接受行为是否成立、范围是否安全已经由公开 history 证据与候选版本判断共同检查，重复计分会放大同一事实。
+
+## B：区分模型能力不足和 Eval 过紧
+
+### 用户任务
+
+第二个 Fixture 是没有历史结果的新 repo，只有 `cases/alpha`、`cases/beta` 与 `cases/gamma`。
+首次运行的客观结果是 1 passed、2 failed、0 errored。
+
+用户要求 Agent：
+
+1. 运行一次非 dry-run local experiment；
+2. 从 compact `niceeval show` 取得 beta 与 gamma 各自的 locator；
+3. 对每个 locator 分别查看 `--source` 与 `--execution`；
+4. 判断 beta 是模型回复 / 推理不足，gamma 是确定性 exact Assertion 过紧；
+5. 给出应该改回复还是改 Eval 的建议，不修改 repo。
+
+动态 locator 只能在运行时从 show 获得。
+把它抽成 Eval CLI 查找函数会复制 locator 读取逻辑；只看最终 message 又会丢掉是否真的下钻同一 locator 的证据。
+因此两条 Judge 都读取完整 Turn。
+
+### Harness 调用
 
 ```ts
-t.check(t.sandbox.json("/tmp/niceeval-current.json"), { shape: { summary: { shape: { passed: 3, failed: 1, errored: 0 } } } }).points(2).gate();
+const turn = await t.send("运行 local experiment，只用 niceeval show 下钻 beta 和 gamma 的失败；区分模型能力不足与 Eval 断言过紧，给出各自应该修改什么的建议。不要修改 repo，也不要读取 .niceeval、evals 或 agents 下的内部材料。");
+turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
+turn.succeeded().gate();
+t.sandbox.noChanges().points(2).gate();
+turn.judge.llm({ name: "beta 归因", rubric: "同时检查完整 tool calls、show 输出和最终 message：compact show 必须显示 cases/alpha、cases/beta、cases/gamma 的首次结果为 1 passed、2 failed、0 errored，并识别 cases/beta 的 locator；后续 --source 与 --execution 必须使用同一个 beta locator。证据必须显示候选给出 18，而客观要求是 20；结论应建议修正回复或推理，不应修改 Eval。", scoreMode: "binary" }).points(6).gate();
+turn.judge.llm({ name: "gamma 归因", rubric: "同时检查完整 tool calls、show 输出和最终 message：Agent 必须从 compact show 识别另一个属于 cases/gamma 的 locator，并让 --source 与 --execution 使用同一个 gamma locator。证据必须表明候选行为在题意上正确，但 exact Assertion 比题面更严格；结论应建议修改 Eval，不应要求改写正确回复。", scoreMode: "binary" }).points(6).gate();
 ```
 
-JSON syntax error、非法 UTF-8 与 missing 都是 Assertion failed。
-permission、transport、timeout 与 terminated 是 unavailable；parser 或 provider defect 才使 Attempt errored。
+B 的可得分总数固定为 `2 + 6 + 6 = 14`。
+两条 Judge 都链 `.gate()`；任一 locator 绑定、证据或归因错误都会使 outer verdict failed。
+
+`t.sandbox.noChanges()` 是有意义的 2 分范围纪律，不是零分空集检查。
+它与 `changedPaths([])` 同源，并且 agent 即使改后复原也不能通过。
+
+## 公开诊断闭环
+
+两道题都遵守同一条用户路径：
+
+1. 执行非 dry-run 的最小 experiment；
+2. 使用 `niceeval show` 查看 Attempt、Assertion、Verdict 与接受审计；
+3. A 只修改目标 experiment，B 不修改 repo；
+4. 只做用户需求要求的复验；
+5. 再用 show 核对结果，并在 assistant reply 中交代证据与判断。
+
+CLI 无法显示 Judge 所需事实时，Harness 应把结果判为失败并指出 NiceEval 呈现缺口。
+它不能绕过 CLI 读取 `.niceeval` 原始文件，也不能要求 Agent 把 show JSON 写到 `/tmp` 供 Eval 匹配。
