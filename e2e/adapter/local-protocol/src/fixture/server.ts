@@ -7,9 +7,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-
-const port = Number(process.env.PORT ?? 34201);
-const host = process.env.HOST ?? "127.0.0.1";
+import { FIXTURE_BASE_URL, FIXTURE_HOST, FIXTURE_PORT } from "./address.ts";
 
 type Mode = "ok" | "disconnect" | "hang" | "error";
 
@@ -81,7 +79,7 @@ const server = createServer((req, res) => {
   void (async () => {
     try {
       const method = req.method ?? "GET";
-      const url = new URL(req.url ?? "/", `http://${host}:${port}`);
+      const url = new URL(req.url ?? "/", FIXTURE_BASE_URL);
 
       if (method === "OPTIONS") {
         res.writeHead(204, {
@@ -142,8 +140,8 @@ const server = createServer((req, res) => {
   })();
 });
 
-server.listen(port, host, () => {
-  process.stdout.write(`local-protocol fixture listening on http://${host}:${port}\n`);
+server.listen(FIXTURE_PORT, FIXTURE_HOST, () => {
+  process.stdout.write(`local-protocol fixture listening on ${FIXTURE_BASE_URL}\n`);
 });
 
 function shutdown(): void {

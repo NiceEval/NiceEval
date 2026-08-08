@@ -7,8 +7,7 @@
 // (这里就是 `docker build`),experiment 只消费产物 tag(sandbox.ts 的
 // `dockerSandbox({ source: { type: "image", image: IMAGE_TAG } })`)。
 //
-// 幂等:tag 已存在时跳过构建,除非传 --force 或设 BUB_E2E_REBUILD_IMAGE=1
-// (改了 Dockerfile 后要重建时用)。产物只在本机 Docker daemon 有效(单机构建,单机消费),
+// 幂等:tag 已存在时跳过构建,改了 Dockerfile 后传 --force 重建。产物只在本机 Docker daemon 有效(单机构建,单机消费),
 // 与 e2e.json 的 requires.docker 对应。
 
 import { spawnSync } from "node:child_process";
@@ -21,7 +20,7 @@ function imageExists(tag: string): boolean {
 }
 
 export function ensureDockerImage(opts: { force?: boolean } = {}): void {
-  const force = opts.force ?? (process.argv.includes("--force") || process.env.BUB_E2E_REBUILD_IMAGE === "1");
+  const force = opts.force ?? process.argv.includes("--force");
   if (!force && imageExists(IMAGE_TAG)) {
     console.log(`[build-docker-env] ${IMAGE_TAG} already present, skipping build (pass --force to rebuild).`);
     return;

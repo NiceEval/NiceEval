@@ -288,7 +288,6 @@ jobs:
           BUB_API_KEY: ${{ secrets.BUB_API_KEY }}
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
           CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
-          NICEEVAL_JUDGE_BASE: ${{ secrets.NICEEVAL_JUDGE_BASE }}
           NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -303,7 +302,6 @@ jobs:
             "BUB_API_KEY",
             "CODEX_API_KEY",
             "CODEX_BASE_URL",
-            "NICEEVAL_JUDGE_BASE",
             "NICEEVAL_JUDGE_KEY",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",

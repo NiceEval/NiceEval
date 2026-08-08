@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { defineExperiment } from "niceeval";
 import { hangingAgent } from "../agents/deterministic.ts";
 
@@ -8,11 +9,7 @@ interface BackendInfo { pid: number; port: number }
 let backend: BackendInfo | undefined;
 let backendProcess: ChildProcess | undefined;
 
-function infoPath(): string {
-  const path = process.env.NICEEVAL_LIFECYCLE_INFO_PATH?.trim();
-  if (!path) throw new Error("NICEEVAL_LIFECYCLE_INFO_PATH is required");
-  return path;
-}
+const infoPath = join(process.cwd(), ".niceeval-lifecycle-backend.json");
 
 async function waitForInfo(path: string): Promise<BackendInfo> {
   const deadline = Date.now() + 10_000;
@@ -42,12 +39,12 @@ export default defineExperiment({
   agent: hangingAgent,
   evals: ["interrupt"],
   setup: async (ctx) => {
-    const child = spawn(process.execPath, ["fixtures/backend.mjs", infoPath()], {
+    const child = spawn(process.execPath, ["fixtures/backend.mjs", infoPath], {
       cwd: process.cwd(),
       stdio: "ignore",
     });
     backendProcess = child;
-    backend = await waitForInfo(infoPath());
+    backend = await waitForInfo(infoPath);
     ctx.fact("backend", `http://127.0.0.1:${backend.port}`);
   },
   teardown: async () => {

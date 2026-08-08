@@ -6,7 +6,8 @@ import { configDefaults } from "vitest/config";
 //   lint-docs      → docs/ memory/  `pnpm lint:docs`                      索引、链接、写作规则与用例登记
 //   lint-docs-site → docs-site/     `pnpm lint:docs-site`                 生成区块、随包索引与 Mint 校验
 // project 成员资格由目录决定，不由清单决定——新守护文件放进哪个目录就归哪个入口，
-// 不存在「三个 include 谁都没收它、于是永远不跑」的静默失效。
+// 不存在「三个 include 谁都没收它、于是永远不跑」的静默失效。真机 Docker 验收由
+// vitest.docker.config.ts 显式进入，不属于默认 suite。
 const EXCLUDE = [
   ...configDefaults.exclude,
   // include 已按仓库根锚定（src/、test/ 开头），下面这些沙箱型目录本就匹配不到；
@@ -20,6 +21,7 @@ const EXCLUDE = [
   "e2e/report/**",
   "e2e/undo/**",
 ];
+const UNIT_EXCLUDE = [...EXCLUDE, "src/**/*.docker.test.ts"];
 
 export default defineConfig({
   test: {
@@ -28,7 +30,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["src/**/*.test.ts", "src/**/*.test.tsx", "test/unit/**/*.test.ts"],
-          exclude: EXCLUDE,
+          exclude: UNIT_EXCLUDE,
         },
       },
       {

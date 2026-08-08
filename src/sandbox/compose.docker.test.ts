@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/sandbox.md
-// 真机 Docker opt-in：NICEEVAL_DOCKER_TEST=1 pnpm exec vitest run --project unit src/sandbox/compose.docker.test.ts
+// 真机 Docker opt-in：pnpm exec vitest run --config vitest.docker.config.ts
 // 覆盖 attempt signal 已 abort 时的 Compose 整组回收，以及 owned/anonymous/external volume 边界。
 
 import { randomUUID } from "node:crypto";
@@ -16,9 +16,7 @@ import {
 } from "./compose.ts";
 import { computeCaseKey } from "./identity.ts";
 
-const runDocker = process.env.NICEEVAL_DOCKER_TEST === "1";
-
-describe.runIf(runDocker)("Docker Compose provider real cleanup", () => {
+describe("Docker Compose provider real cleanup", () => {
   it("aborted attempt 仍删除 project container/network/owned+anonymous volumes，并保留 external volume", async () => {
     const root = await mkdtemp(join(tmpdir(), "niceeval-compose-docker-"));
     const suffix = randomUUID().slice(0, 8);

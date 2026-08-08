@@ -19,7 +19,7 @@ import { expect, it } from "vitest";
 const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY"] as const;
 
-const PORT = Number(process.env.PORT ?? 34101);
+const PORT = 34101;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const OTLP_ENDPOINT = "http://127.0.0.1:4318";
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -127,7 +127,6 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
     ["pnpm", "exec", "tsx", "src/backend/server.ts"],
     {
       env: {
-        PORT: String(PORT),
         OTEL_EXPORTER_OTLP_ENDPOINT: OTLP_ENDPOINT,
       },
       timeoutMs: 14 * 60_000,

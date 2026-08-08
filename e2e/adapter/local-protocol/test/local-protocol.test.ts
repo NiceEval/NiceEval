@@ -18,9 +18,8 @@ import { createConnection } from "node:net";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { FIXTURE_BASE_URL, FIXTURE_PORT } from "../src/fixture/address.ts";
 
-const PORT = Number(process.env.PORT ?? 34201);
-const BASE_URL = `http://127.0.0.1:${PORT}`;
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 interface ExpStartEvent {
@@ -49,13 +48,6 @@ interface ExpResultEvent {
 }
 
 type ExpEvent = ExpStartEvent | ExpErrorEvent | ExpResultEvent | { event: string };
-
-function fixtureEnv(): NodeJS.ProcessEnv {
-  return {
-    LOCAL_PROTOCOL_URL: BASE_URL,
-    PORT: String(PORT),
-  };
-}
 
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -152,7 +144,6 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
   await withProcess(
     ["pnpm", "exec", "tsx", "src/fixture/server.ts"],
     {
-      env: fixtureEnv(),
       timeoutMs: 7 * 60_000,
       processGroup: true,
     },
@@ -161,14 +152,12 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
         timeoutMs: 15_000,
         label: "local-protocol fixture readiness",
       });
-      await waitForHealth(`${BASE_URL}/healthz`, 10_000);
-
-      const env = fixtureEnv();
+      await waitForHealth(`${FIXTURE_BASE_URL}/healthz`, 10_000);
 
       // ── 1. transport：完整 canned SSE 往返，exit 0，公开读回含固定文案 ──
       const transport = await niceeval.run(
         ["exp", "transport", "--rerun", "all", "--json", "--junit", "junit/transport.xml"],
-        { env, timeoutMs: 60_000 },
+        { timeoutMs: 60_000 },
       );
       const transportEvents = expectExpStream(transport, 0);
       expect(transportEvents.at(-1)).toMatchObject({
@@ -184,12 +173,12 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       expect(transportJunit).not.toContain("<failure");
       expect(transportJunit).not.toContain("<error");
 
-      const board = await niceeval.run(["show", "--exp", "transport"], { env });
+      const board = await niceeval.run(["show", "--exp", "transport"]);
       expect(board.exitCode, board.diagnostic()).toBe(0);
       expect(board.stdout).toContain("transport-ok");
       expect(board.stdout).toMatch(/pass|passed/i);
 
-      const history = await niceeval.run(["show", "transport-ok", "--history"], { env });
+      const history = await niceeval.run(["show", "transport-ok", "--history"]);
       expect(history.exitCode, history.diagnostic()).toBe(0);
       const locatorLine = history.stdout.split("\n").filter((line) => line.includes("@")).at(-1);
       expect(locatorLine, history.diagnostic()).toBeDefined();
@@ -198,14 +187,14 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       expect(locator).toBeDefined();
 
       // 公开 execution 投影含 fixture 文案（transport 身份），不读 .niceeval。
-      const execution = await niceeval.run(["show", locator!, "--execution"], { env });
+      const execution = await niceeval.run(["show", locator!, "--execution"]);
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("local-protocol-ok");
 
       // ── 2. disconnect：半截 SSE 断流 → 公开 send 失败阶段 ──
       const disconnect = await niceeval.run(
         ["exp", "disconnect", "--rerun", "all", "--json", "--junit", "junit/disconnect.xml"],
-        { env, timeoutMs: 60_000 },
+        { timeoutMs: 60_000 },
       );
       const disconnectEvents = expectExpStream(disconnect, "nonzero");
       expect(disconnectEvents.at(-1)).toMatchObject({
@@ -230,7 +219,7 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       // ── 3. timeout：挂起 body + 短 experiment.timeoutMs → send 生命周期错误 ──
       const timeoutRun = await niceeval.run(
         ["exp", "timeout", "--rerun", "all", "--json", "--junit", "junit/timeout.xml"],
-        { env, timeoutMs: 30_000 },
+        { timeoutMs: 30_000 },
       );
       const timeoutEvents = expectExpStream(timeoutRun, "nonzero");
       expect(timeoutEvents.at(-1)).toMatchObject({
@@ -253,7 +242,7 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       // ── 4. http-error：HTTP 500 → send 生命周期错误 + 可行动诊断 ──
       const httpError = await niceeval.run(
         ["exp", "http-error", "--rerun", "all", "--json", "--junit", "junit/http-error.xml"],
-        { env, timeoutMs: 60_000 },
+        { timeoutMs: 60_000 },
       );
       const httpErrorEvents = expectExpStream(httpError, "nonzero");
       expect(httpErrorEvents.at(-1)).toMatchObject({
@@ -277,5 +266,5 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
   );
 
   // cleanup：withProcess dispose 后 fixture 端口必须释放。
-  await assertPortReleased(PORT, 5_000);
+  await assertPortReleased(FIXTURE_PORT, 5_000);
 });

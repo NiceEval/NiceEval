@@ -85,7 +85,7 @@ export function appendNativeArgs(command: readonly string[], nativeArgs: readonl
   return [...command, ...nativeArgs];
 }
 
-const EXCLUDED_FROM_COPY = new Set(["node_modules", ".niceeval", ".git"]);
+const EXCLUDED_FROM_COPY = new Set(["node_modules", ".niceeval", ".git", ".env"]);
 
 export async function copyRepoIsolated(sourceDir: string, destDir: string): Promise<void> {
   await mkdir(destDir, { recursive: true });
@@ -273,9 +273,10 @@ export async function runRepo(
 
         // --- install ---
         const installCmd = ["pnpm", "install", "--no-frozen-lockfile"] as const;
+        const installEnv = buildChildEnv(process.env, allSecretNames, []);
         let installCapture: CommandCapture;
         try {
-          installCapture = await runCommand(installCmd, copyDir, process.env, 30 * 60_000);
+          installCapture = await runCommand(installCmd, copyDir, installEnv, 30 * 60_000);
         } catch (err) {
           installCapture = {
             exitCode: null,
