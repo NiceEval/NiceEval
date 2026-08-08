@@ -8,9 +8,9 @@ Eval 作者要表达的是用户可观察的要求：Agent 是否按顺序运行
 一条普通检查应直接从证据所属对象开始：
 
 ```ts
-turn.succeeded().gate();
 turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
-t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
+turn.toolInputsExclude({ paths: [".niceeval"] }).gate();
+turn.succeeded().gate();
 ```
 
 `t`、session 与 turn 使用同一组作用域词汇，只改变观察范围。
@@ -42,6 +42,9 @@ Inline rule 只在需要比较明确文本值时出现。
 - `toolInputsExclude({ paths })` 检查已观察工具输入中的路径引用；
 - `t.sandbox.changedPaths()` / `noChanges()` 检查 agent 归因路径集合；
 - `t.sandbox.fileChanged(path, options)` 在同一条 change 中检查前后文本。
+
+`command` 只匹配标准 logical executable / argv。
+Observation Protocol 在作者面之前统一处理 direct、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx`；作者不写 wrapper OR，普通 API 也不增加 raw 或 runner mode。
 
 `ranCommand()`、新的 `eventOrder()` 方言、`turn.changes`、`t.requireOne()` 与 `t.sandbox.json()` 不进入这套作者面。
 它们会复制既有概念，或把展示格式和通用 JSON DSL 变成核心契约。

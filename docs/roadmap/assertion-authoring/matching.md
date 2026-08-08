@@ -46,13 +46,17 @@ interface CommandMatch {
 
 匹配一笔 occurrence 时同时满足：
 
-1. 标准 projection 可用；
-2. executable 与 `command.executable` exact；
-3. argv 以 `command.argsStart` 逐 token exact 开头；
-4. argv 不含任一 `excludes` exact token。
+1. 标准 logical projection 可用；
+2. logical executable 与 `command.executable` exact；
+3. logical argv 以 `command.argsStart` 逐 token exact 开头；
+4. logical argv 不含任一 `excludes` exact token。
 
 空 executable、空 expected token 或重复 `excludes` 是 author error。
-command 字段不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring。
+command 字段不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring，也不暴露 original / wrapper selector。
+
+Observation Protocol 在 Assertion 之前把已证明透明的 direct、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx` 投影成同一套 logical executable / argv。
+runner 自己的 `--silent` 不进入 logical argv，目标命令边界后的 token 原样保留。
+logical 只表示请求的 CLI，不证明 package provenance、版本或物理 binary。
 
 `input`、`output`、`status` 与 `command` 匹配同一笔 occurrence。
 `calledTool()` 与 `toolOrder()` 调用同一个单 occurrence evaluator，因此不会出现两套 command 语义。
@@ -65,6 +69,7 @@ type ToolSelector = { readonly name: string } & Omit<ToolMatch, "count">;
 
 `toolOrder()` 的每一项消费一个不同 actual index。
 它按 request position 做子序列匹配，不把 status 或 command 字段解释成 finish-before-start 因果关系。
+单 occurrence 字段求值中 definite mismatch 压过 indeterminate；order 同时检查 definite 与 possible 两种子序列，opaque candidate 不能被粗略当成已调用或未调用。
 
 ## Tool input path exclusion
 

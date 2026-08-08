@@ -109,13 +109,17 @@ interface ScopedAssertions<H> {
 `name` 保持既有 exact tool identifier 语义。
 `command` 与 input、output、status 必须由同一笔 occurrence 满足；`count` 统计同时满足全部字段的 occurrences。
 
-`executable` 按 exact identifier 匹配，`argsStart` 按 argv token prefix 匹配。
-`excludes` 中每项按 exact argv token 排除；它不搜索拼接后的 shell 文本。
+`executable` 按 logical exact identifier 匹配，`argsStart` 按 logical argv token prefix 匹配。
+`excludes` 中每项按 logical argv 的 exact token 排除；它不搜索拼接后的 shell 文本，也不看 runner 自己的 flags。
 
 ```ts
 turn.calledTool("shell", { command: { executable: "niceeval", argsStart: ["show"] } }).gate();
 turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
 ```
+
+同一条 `executable: "niceeval"` 能匹配 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 与无 runner-option 的 `npx niceeval`。
+这是 Observation Protocol 已经证明的 logical command request；它不声称定位到某个包版本或物理 binary。
+original tokens 只进入脱敏、受预算约束的审计与诊断，不进入普通作者签名。
 
 `calledTool()` 默认要求匹配 occurrence 的 status 为 `completed`，与既有 ToolMatch 默认一致。
 `toolOrder()` 的 selector 省略 status 时不增加 lifecycle 条件；显式 `status: "completed"` 才要求该 occurrence 已完成。
