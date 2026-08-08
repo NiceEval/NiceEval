@@ -40,7 +40,17 @@ diff；`IncrementalReview` 模式审查上次 review 后的新提交及其与当
 6. 跨仓影响：若改动会影响 `terminal-bench`、`MemoryBench` 或 `NiceEval-Eval`，只陈述能从当前仓库证据确认的上游契约影响；证据不足时标为 uncertain，不臆测下游状态。
 7. Package scripts：比较 base 与 PR 最终版本的 `package.json` scripts，列出新增、删除、重命名或命令内容改变的 script。说明每项命令的用途、调用的实际入口，以及 CI、文档或开发流程是否同步；给出变化前后的可复制命令和用户工作流影响，不要把仅有依赖变化误报为 script 变化。
 8. 环境变量：逐项比较 base 与 PR 最终版本中的环境变量。检查 `process.env`、Docker/Compose `Env`、Dockerfile `ENV`、CI `env`/secret、systemd `Environment`/`EnvironmentFile`、shell `${NAME}` 与宿主部署配置。用户变量、CI secret、测试开关、容器内注入、宿主 service和 packaging script都不能遗漏。每项说明 producer、consumer、作用域、继承边界、默认值、优先级、校验、secret风险与迁移，并检查名称是否进入环境变量边界守护。重点判断它是否真的需要 ambient state：固定值优先常量，一次调用的选择优先参数或 CLI flag，项目配置优先 typed config，宿主部署事实优先受管 descriptor或 service config。若已有显式通道足够，却又新增可继承、可覆盖的环境变量，形成 finding；官方上游工具要求的变量也要说明为什么不能避免。
-9. 测试变更：列出新增、删除、重命名或实质改写的测试，说明每项测试要证明的契约、增删原因及其与产品改动的对应关系。每项给出代表场景，说明旧测试会放走哪类错误、新测试如何使该错误可失败，以及它保护的用户行为。若测试改动是为修复 flaky、时序依赖、环境依赖、过度 mock、脆弱 snapshot 或其它不稳健问题，明确说明原测试为何不稳健以及新写法如何降低该风险；证据不足时写“无法从 PR 证据确认”，不要臆测作者动机。区分新增产品行为覆盖、回归测试与只提升测试稳健性的改动。
+9. 测试变更与稳定性预算：直接从 base diff 列出所有新增、删除、重命名或实质改写的产品测试、fixture、expected 与 harness，不依赖 PR 描述是否主动列出。先从契约与可观察行为 diff 独立推导受影响 owner，再逐文件核对测试 diff。稳定的含义是“小更改只修改真实受影响的测试”；以下预算是 blocking 规则：
+   - 公开结果不变的内部重构，产品测试、fixture 与 expected 的预算为零；私有路径移动只能修改一个集中 seam / harness。若必须批量跟改，说明测试锁住了实现细节，要求恢复稳定边界、迁移或删除这些测试。
+   - 每个新增的独立用户目标只新增一个 Journey 主 owner；目标只有一个原子公开结果时才用一个单边界 E2E。一个 PR 若新增多个
+     可独立失败的用户目标，须逐个列出契约与 owner，不能以“同一功能”为由压进一个测试。既有用户结果不变时，不修改其 owner。
+   - 公开契约变化只修改实际结果发生变化的 owner。多个测试文件同改时，逐个指出它拥有的独立公开结果；“同一 Feature”“顺便补覆盖”或实现文件同批变化不能扩大预算。
+   - Bug 修复先加强本应捕获它的现有 owner，并用旧实现或等价 mutation 证明会红；只有现有 owner 无法表达独立结果或具名算法风险时才新增测试，同时删除被替代的重复项。
+   - 测试设施变化只修改集中机械适配层，产品 expected 不随 runner、executor 或内部 receipt 改写。不要为 Testkit、根 E2E runner 或 workflow 建立独立测试分类，也不要用 Vitest 扫描 YAML / 源码结构来证明测试流程。专门的测试退役 PR 只允许修改声明的迁移集合，并须逐项给出 retain、replace 或 delete 的证据。
+   - Report、Runner、Record 的新 owner 接管前必须做 contract-preserving perturbation：分别改变内部 DTO / 组件树 / class、调度器 / receipt / 模块布局、私有存储 / reader，同时保留对应公开结果。演练前后测试源码、fixture 与 expected 必须零 diff 并保持全绿；再注入一个真正改变公开结果的 mutation，确认对应 owner 在最早相关阶段变红。
+   任何超出预算、缺少唯一 owner、复制已有矩阵，或因内部实现小改而连带修改的测试，都形成 finding，并把 Review 结论设为“需要修改”。
+10. 测试形态与可靠性：从产品契约零基推导用户结果，再按“Journey E2E → 单边界 E2E → 最小 Unit 例外 → 不自动化”检查；现有测试与 owner 没有保留推定。每条新增、保留或实质改写的 Unit 都必须先说明真实 E2E 为何不能直接、稳定地制造输入并观察同一错误结果；与其它 Unit 不重复、算法重要、分支独有或便于定位均不是理由。缺少具体 E2E 不可行证据时要求删除 Unit，必要时由 E2E 接管。核对 `pnpm test` 报告的 Tests 数，超过 200 时形成 finding；Testkit 不设独立 Unit 套件。`test.each` 的展开 case 逐条计数，不接受把独立命题合并进大测试规避上限。新增、接管或实质修改的自动化 owner 必须在同一 candidate digest、checkout、lockfile 与运行条件下完成三份全新副本、同副本连续两次、Repo 默认并行、文件与标题单跑及资源终结收据；测试级 retry 后转绿不算可靠。Snapshot 大面积变化时只接受 owner 已声明的稳定表示发生变化，不接受批量确认。依赖兄弟测试顺序、共享可变结果、`serial` 或“必须最后”才能通过，均视为可靠性失败。若所有自动化都会破坏稳定或可靠性，不要求编写脆弱测试；选择不自动化时不得创建测试文件、空场景 Repo 或伪 owner。Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时可采用此处置。安全或发布关键行为既无可靠自动化、又无本次真实验收时形成 finding。
+11. 永久 Test impact 收据：对每个新增、删除、替换、实质修改或不自动化项，检查 PR Tests section 是否保存 candidate Git SHA 与 NiceEval tarball digest、`retain | delete | replace | not automated` 处置、契约与 owner、历史 fix parent / mutation / perturbation 引用、实际验证命令与最早失败阶段、checkout / lockfile / fixture / seed / 时钟策略 / 镜像身份，以及三份新副本、同副本两次、默认并行、文件与标题单跑、资源终结的逐次结果。不自动化项改为保存无法可靠自动化的原因、真实运行条件与版本、生产入口、AI 动作、公开观察和未守护风险。Review 必须从 diff 独立核对这些字段；字段缺失、固定条件不明或只写最终绿色摘要时形成 finding，并把结论设为“需要修改”。
 
 兼容性分类使用以下固定词：
 
@@ -107,10 +117,13 @@ Review body 必须使用中文并严格采用以下结构；每节即使没有�
 
 ## 测试变更
 
-| 变化 | 测试 | 代表场景 | 旧测试会放走什么 | 新测试证明什么 | 用户影响 |
-| --- | --- | --- | --- | --- | --- |
+| 变化 | 测试 | Owner 与预算裁决 | 代表场景 | 旧测试会放走什么 | 新测试证明什么 | 可靠性或不自动化证据 | 用户影响 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 
-逐项报告新增、删除、重命名或实质改写的测试。代表场景必须包含具体输入、动作与预期结果；说明它属于产品行为覆盖、回归测试、测试稳健性修复还是证据不足。若属于稳健性修复，写明原风险与新写法如何消除或约束风险。没有变化时写“无”。
+逐项报告新增、删除、重命名或实质改写的测试、fixture、expected 与集中 harness；选择不自动化的行为也单列一行，即使测试 diff
+为空。代表场景必须包含具体输入、动作与预期结果；
+Owner 与预算裁决必须写“预算内”或“超预算”，并给出契约证据，不能只复述 PR 描述。说明它属于产品行为覆盖、回归测试、
+测试稳健性修复、测试退役还是证据不足；若属于稳健性修复，写明原风险与新写法如何消除或约束风险。没有变化时写“无”。
 
 ## Review 结论
 
@@ -123,5 +136,5 @@ Finding 规则：
 - finding 必须锚定最能说明问题的 changed line，包含触发条件、实际后果和最小安全修法；能给 GitHub suggestion 时只给最小替换。
 - 不报告纯风格、命名偏好、无证据的猜测、旧代码问题、已被测试或守护明确覆盖的问题，也不把“可以更好”包装成缺陷。
 - 同一根因只报一次。先检查已有 review threads，避免重复；增量 review 只报告新提交引入的问题，或新提交尝试修复但仍未解决的问题，不重复没有变化的旧 finding。
-- 只有会导致错误结果、数据/安全问题或公共契约实质回归的问题才使用 `Request changes`；其余使用 `Comment`。不要自动 `Approve`。
+- 错误结果、数据/安全问题、公共契约实质回归，以及测试稳定性预算超支、无正当理由新增 Unit、可靠性证据缺失时使用 `Request changes`；其余使用 `Comment`。不要自动 `Approve`。
 - 没有 finding 时明确给出通过结论，不为了显得有产出而制造评论。
