@@ -217,8 +217,13 @@ async function writeEsmFacade(outputRoot, source, valueNames, extension = ".mjs"
   const facadeFile = runtimePath(source, extension);
   const output = join(outputRoot, facadeFile);
   const cjsSpecifier = `./${basename(cjsFile)}`;
+  // Both ESM facades read the canonical CJS cache so import() and require()
+  // observe one runtime identity. Vite's static CJS default interop can turn
+  // the default export into undefined, so use an explicit createRequire bridge.
   const lines = [
-    `import __niceevalCanonical from ${JSON.stringify(cjsSpecifier)};`,
+    'import { createRequire as __niceevalCreateRequire } from "node:module";',
+    "const __niceevalRequire = __niceevalCreateRequire(import.meta.url);",
+    `const __niceevalCanonical = __niceevalRequire(${JSON.stringify(cjsSpecifier)});`,
   ];
   let index = 0;
   for (const name of valueNames) {
