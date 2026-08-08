@@ -129,6 +129,15 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 | Telemetry | 实际收到的 OTLP log、span 与采集 Diagnostic | 原始 name/attributes 保留，canonical kind 是投影 |
 | Usage | provider 或 Agent 实际返回的 token 与账单 | 估算成本不属于 Observation |
 
+Agent operation 的 command classification 也属于 Adapter 归一职责。
+Adapter 按原生协议把每笔 tool operation 穷尽标为 not-command，或标为 command 并交付原始 source / opaque reason。
+
+core 只按 operation identity 配对 start 与 finish。
+它不能根据 `shell`、`Bash`、`command_execution` 等名字，或 `command` / `cmd` / `program + args` 输入形状补造 command fact。
+
+非权威显示摘要可以为了人读从 input 猜测 command text，但必须明确标为 Projection。
+这类摘要不能成为 Assertion、Claim、Projector 输入或 evidence coverage 的依据。
+
 短期 `progress`、spinner tick、heartbeat 与 renderer redraw 属于 ephemeral 反馈。
 它们使用独立的 live stream，不占用 durable stream 的 sequence。
 这些反馈可以进入 live snapshot 的 transient overlay，也可以被合并或丢弃，但不进入 Record，不能改变权威 reducer 的结果。

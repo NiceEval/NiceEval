@@ -52,6 +52,9 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 判分预检 | Judge precheck | 派发前对判分端点的最小探测;失败只作废含 Judge 断言的 Eval,不拦整次运行 | [派发前预检](./feature/judge/library.md#派发前预检) |
 | 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Agent Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
 | 证据完整度 | Evidence coverage (`evidenceCoverage`) | Adapter 对事件、action、message、usage、status 与 data 是否采集完整的必填逐通道声明 | [证据与完整性](feature/adapters/architecture/evidence.md) |
+| Inline rule | Inline rule | 在普通 Assertion 调用点显式写出 exact、contains、pattern、shape 等单一 candidate 关系；不是通用 Match AST | [Assertion Rule](roadmap/assertion-authoring/matching.md) |
+| Command projection | Command projection | Adapter 对一笔 tool operation 作出的穷尽分类：not-command，或 command 的原始 source / opaque reason | [Observation Protocol](roadmap/observation-protocol/library.md#command-projection) |
+| EvidenceSource | EvidenceSource | `t.sandbox.file()` / `json()` 等延迟取得候选值的私有品牌 token；到 Assertion 消费边界才读取并求值 | [Assertion Library](roadmap/assertion-authoring/library.md#tcheck-与延迟-source) |
 
 ### 计分粒度
 
