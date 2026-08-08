@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/local-protocol",
+  "areas": ["adapter"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 10,
+  "harness": { "testkit": true },
+  "secrets": [],
+  "requires": { "runtimes": ["node>=22"] },
+  "paths": [
+    "e2e/adapter/local-protocol/**",
+    "package.json",
+    "pnpm-lock.yaml",
+    "e2e/scripts/**"
+  ],
+  "artifacts": [".niceeval/**", "junit/**"]
+}

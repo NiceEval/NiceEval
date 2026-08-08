@@ -175,8 +175,8 @@ export interface Flags {
   teardown: boolean;
 }
 
-// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明,不依赖 allowNegative(需 Node 20.14+,
-// engines 是 >=18)。未知 flag 由 strict 模式报清晰错误,不再静默吞掉后面的位置参数。
+// 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明，不启用全局 allowNegative，
+// 避免每个 boolean flag 都隐式获得未设计的负向别名。未知 flag 由 strict 模式报清晰错误。
 //
 // 每个 flag 的 JSDoc 就是它在 docs-site/zh/reference/cli.mdx flag 表里的说明,由
 // scripts/generate-reference.ts 提取渲染——改 flag 语义时改这里的注释即可,不用碰生成脚本。

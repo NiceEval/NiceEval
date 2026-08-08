@@ -1,0 +1,397 @@
+name: e2e
+
+# E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
+# 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
+#
+# prepare → plan matrix、Testkit typecheck、pack 一次 NiceEval tgz + sha256
+# e2e     → 并行 cell 下载并重算 candidate digest；pnpm e2e run --candidate <exact> --repo <id>
+#           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
+#           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
+#
+# Lane: PR=pr(无 secret) | push main=main | schedule=nightly | dispatch=输入
+# 可信 lane 挂 GitHub Environment（与 lane 同名），不复制 Repo 选择逻辑。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "显式 lane"
+        required: true
+        type: choice
+        options:
+          - pr
+          - main
+          - nightly
+          - release
+        default: pr
+      repo:
+        description: "只跑一个 Repo id（留空=该 lane 全集）"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  prepare:
+    name: prepare e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has-jobs: ${{ steps.plan.outputs.has-jobs }}
+      lane: ${{ steps.lane.outputs.lane }}
+      inject-secrets: ${{ steps.lane.outputs.inject-secrets }}
+      environment: ${{ steps.lane.outputs.environment }}
+      candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
+      candidate_tgz_name: ${{ steps.pack.outputs.candidate_tgz_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
+        with:
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve lane and environment
+        id: lane
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          DISPATCH_LANE: ${{ github.event.inputs.lane }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) lane=pr ;;
+            schedule) lane=nightly ;;
+            workflow_dispatch) lane="${DISPATCH_LANE:-pr}" ;;
+            push)
+              if [ "$REF" = "refs/heads/main" ]; then lane=main; else lane=pr; fi
+              ;;
+            *) lane=pr ;;
+          esac
+          case "$lane" in
+            pr)
+              inject=false
+              environment=
+              ;;
+            main|nightly|release)
+              inject=true
+              environment="$lane"
+              ;;
+            *)
+              echo "::error::unknown lane ${lane}"
+              exit 1
+              ;;
+          esac
+          {
+            echo "lane=${lane}"
+            echo "inject-secrets=${inject}"
+            echo "environment=${environment}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] lane=${lane} inject-secrets=${inject} environment=${environment:-"(none)"}"
+
+      - name: Run e2e plan --json
+        id: plan
+        env:
+          LANE: ${{ steps.lane.outputs.lane }}
+          DISPATCH_REPO: ${{ github.event.inputs.repo }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          args=(--lane "$LANE" --json)
+          repo="$(printf '%s' "${DISPATCH_REPO:-}" | tr -d '[:space:]')"
+          if [ -n "$repo" ]; then
+            args+=(--repo "$repo")
+          fi
+          # 能求 diff 时交给 plan 做 path 省时；否则 fail-open 跑 lane 全集
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "push" ]; then
+            if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
+              while IFS= read -r path; do
+                [ -n "$path" ] && args+=(--diff-path "$path")
+              done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+            else
+              echo "[e2e] base unavailable — full lane (fail-open)"
+            fi
+          fi
+          plan_file="${RUNNER_TEMP}/e2e-plan.json"
+          pnpm e2e plan "${args[@]}" > "$plan_file"
+          if ! jq -e 'type == "array"' "$plan_file" >/dev/null; then
+            echo "::error::plan --json did not emit a JSON array"
+            cat "$plan_file" || true
+            exit 1
+          fi
+          count="$(jq 'length' "$plan_file")"
+          {
+            echo "matrix=$(jq -c '.' "$plan_file")"
+            if [ "$count" -gt 0 ]; then
+              echo "has-jobs=true"
+            else
+              echo "has-jobs=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] plan lane=${LANE} selected ${count}: $(jq -r '[.[].id] | join(", ")' "$plan_file")"
+
+      - name: Typecheck Testkit
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/testkit run typecheck
+
+      - name: Pack exact NiceEval candidate once
+        if: steps.plan.outputs.has-jobs == 'true'
+        id: pack
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/niceeval-e2e-candidate"
+          mkdir -p "$out_dir"
+          candidate_tgz_name="niceeval-candidate.tgz"
+          candidate_path="${out_dir}/${candidate_tgz_name}"
+          pnpm e2e pack --out "$candidate_path" | tee "${out_dir}/candidate-pack.json"
+          test -f "$candidate_path"
+          candidate_sha256="$(jq -r '.sha256' "${out_dir}/candidate-pack.json")"
+          if [ -z "$candidate_sha256" ] || [ "$candidate_sha256" = "null" ]; then
+            echo "::error::NiceEval pack did not emit sha256"
+            exit 1
+          fi
+          candidate_actual="$(sha256sum "$candidate_path" | awk '{print $1}')"
+          if [ "$candidate_actual" != "$candidate_sha256" ]; then
+            echo "::error::NiceEval sha256 mismatch: pack=${candidate_sha256} recomputed=${candidate_actual}"
+            exit 1
+          fi
+          printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
+          {
+            echo "candidate_sha256=${candidate_sha256}"
+            echo "candidate_tgz_name=${candidate_tgz_name}"
+            echo "candidate_path=${candidate_path}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] NiceEval ${candidate_tgz_name} sha256=${candidate_sha256}"
+
+      - name: Upload exact NiceEval candidate
+        if: steps.plan.outputs.has-jobs == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-e2e-candidate
+          path: |
+            ${{ steps.pack.outputs.candidate_path }}
+            ${{ steps.pack.outputs.candidate_path }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  e2e:
+    name: e2e (${{ matrix.id }})
+    needs: prepare
+    if: needs.prepare.outputs.has-jobs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    # PR: null（不挂 Environment）；main/nightly/release: 同名 Environment
+    environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm and Node
+        uses: pnpm/setup@v1
+        with:
+          runtime: node@22
+          cache: true
+          install: false
+
+      - name: Install orchestrator dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Derive safe artifact id
+        id: safe
+        env:
+          REPO_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          safe="$(printf '%s' "$REPO_ID" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          echo "id=${safe}" >> "$GITHUB_OUTPUT"
+          echo "artifact-root=${RUNNER_TEMP}/niceeval-e2e-artifacts/${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: contains(toJSON(matrix.requires), 'python')
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Playwright browsers
+        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
+        env:
+          BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
+        run: |
+          set -euo pipefail
+          mapfile -t browsers < <(jq -r '.[]' <<< "$BROWSERS_JSON")
+          pnpm exec playwright install --with-deps "${browsers[@]}"
+
+      - name: Download exact NiceEval candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: niceeval-e2e-candidate
+          path: ${{ runner.temp }}/niceeval-e2e-candidate
+
+      - name: Verify NiceEval SHA-256
+        id: candidate
+        env:
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
+          CANDIDATE_TGZ_NAME: ${{ needs.prepare.outputs.candidate_tgz_name }}
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/niceeval-e2e-candidate"
+          candidate="${root}/${CANDIDATE_TGZ_NAME}"
+          for required in "$candidate" "${candidate}.sha256"; do
+            test -s "$required"
+          done
+          candidate_actual="$(sha256sum "$candidate" | awk '{print $1}')"
+          if ! [[ "$EXPECTED_CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::missing or invalid upstream candidate sha256 output: ${EXPECTED_CANDIDATE_SHA256:-<empty>}"
+            exit 1
+          fi
+          if [ "$candidate_actual" != "$EXPECTED_CANDIDATE_SHA256" ] \
+            || [ "$(tr -d '[:space:]' < "${candidate}.sha256")" != "$candidate_actual" ]; then
+            echo "::error::NiceEval sha256 mismatch: expected=${EXPECTED_CANDIDATE_SHA256} actual=${candidate_actual}"
+            exit 1
+          fi
+          echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
+          echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
+
+      - name: Inject secrets for trusted lane
+        if: needs.prepare.outputs.inject-secrets == 'true'
+        env:
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          BUB_API_BASE: ${{ secrets.BUB_API_BASE }}
+          BUB_API_KEY: ${{ secrets.BUB_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
+          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+        run: |
+          set -euo pipefail
+          node <<'NODE_EOF'
+          const fs = require("fs");
+          const allowed = new Set([
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_BASE_URL",
+            "BUB_API_BASE",
+            "BUB_API_KEY",
+            "CODEX_API_KEY",
+            "CODEX_BASE_URL",
+            "NICEEVAL_JUDGE_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+          ]);
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const lines = [];
+          let injected = 0;
+          for (const name of manifest.secrets) {
+            if (!allowed.has(name)) {
+              throw new Error(`${process.env.MANIFEST}: secret ${name} is not in the workflow allowlist`);
+            }
+            const value = process.env[name];
+            if (typeof value !== "string" || value.length === 0) continue;
+            const marker = `E2E_SECRET_${name}_${Math.random().toString(36).slice(2)}`;
+            lines.push(`${name}<<${marker}`, value, marker);
+            injected += 1;
+          }
+          if (lines.length > 0) {
+            fs.appendFileSync(process.env.GITHUB_ENV, lines.join("\n") + "\n");
+          }
+          console.log(`[e2e] injected ${injected}/${manifest.secrets.length} declared secret(s)`);
+          NODE_EOF
+
+      - name: Run e2e for ${{ matrix.id }}
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+          REPO_ID: ${{ matrix.id }}
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_ROOT"
+          pnpm e2e run \
+            --candidate "$CANDIDATE" \
+            --repo "$REPO_ID" \
+            --artifact-root "$ARTIFACT_ROOT"
+
+      - name: Redact secrets in artifactRoot
+        if: always() && needs.prepare.outputs.inject-secrets == 'true'
+        env:
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+        run: |
+          set -euo pipefail
+          if [ ! -d "$ARTIFACT_ROOT" ]; then
+            echo "[e2e] no artifactRoot to redact"
+            exit 0
+          fi
+          node <<'NODE_EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const root = process.env.ARTIFACT_ROOT;
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const replacements = manifest.secrets
+            .map((name) => ({ name, value: process.env[name] }))
+            .filter(({ value }) => typeof value === "string" && value.length > 0);
+          function walk(dir, files = []) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const abs = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(abs, files);
+              else if (entry.isFile()) files.push(abs);
+            }
+            return files;
+          }
+          const files = walk(root);
+          let hits = 0;
+          for (const abs of files) {
+            let text;
+            try {
+              text = fs.readFileSync(abs, "utf8");
+            } catch {
+              continue;
+            }
+            let next = text;
+            for (const { name, value } of replacements) {
+              if (next.includes(value)) {
+                hits += next.split(value).length - 1;
+                next = next.split(value).join(`<redacted:${name}>`);
+              }
+            }
+            if (next !== text) fs.writeFileSync(abs, next, "utf8");
+          }
+          console.log(`[e2e] redaction: ${hits} occurrence(s) across ${files.length} file(s)`);
+          NODE_EOF
+
+      - name: Upload cell artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ steps.safe.outputs.id }}
+          path: ${{ steps.safe.outputs.artifact-root }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true

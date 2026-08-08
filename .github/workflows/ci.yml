@@ -15,8 +15,6 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v6
@@ -42,8 +40,6 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       # mint CLI 要 LTS Node；这个 job 与 package job 并行，慢在拉 mint@latest 上，
       # 不拖住代码侧反馈。

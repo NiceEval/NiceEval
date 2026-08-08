@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "report",
+  "areas": ["report"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["node", "scripts/run-native.mjs"],
+  "timeoutMinutes": 10,
+  "harness": { "testkit": true },
+  "secrets": [],
+  "requires": {
+    "runtimes": ["node>=22"],
+    "browsers": ["chromium"]
+  },
+  "paths": ["e2e/report/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [
+    "site-export/**",
+    "junit/**",
+    "test-results/**"
+  ]
+}
