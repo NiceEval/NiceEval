@@ -24,6 +24,8 @@ export interface TurnSpans {
   spans: TraceSpan[];
   /** 本轮归属用的是 traceparent 还是时间窗口(日志/守卫用)。 */
   attribution: "traceparent" | "window";
+  /** 本轮请求的宿主 wall-clock 边界，供 attempt 收尾归属迟到导出。 */
+  window: { startMs: number; endMs: number };
 }
 
 /** 一个 agent(= 一个被测进程)整个 run 的 OTLP 通道:receiver + 归属状态。 */
@@ -46,7 +48,9 @@ export class AgentOtelChannel {
     const headers = { traceparent: `00-${traceId}-${randomBytes(8).toString("hex")}-01` };
 
     const exec = async (): Promise<{ result: T } & TurnSpans> => {
+      const turnStartMs = Date.now();
       const result = await fn(headers);
+      const turnEndMs = Date.now();
       // 给本轮最后一批导出留落地时间(SimpleSpanProcessor 即发;Batch 的 5s 定时兜不住,
       // 迟到的由 attempt 末尾 sweep 按 traceId 捞回)。
       await this.receiver.settle(200, 1200);
@@ -63,7 +67,36 @@ export class AgentOtelChannel {
         spans = [];
         attribution = "traceparent";
       } else {
-        spans = fresh;
+        // OTLP export can arrive after fn returns. Accept spans that overlap the
+        // request's start boundary or start during the request (including settle).
+        // Remote clock skew can make this conservative: prefer missing data over
+        // mixing a late span from the previous turn into the current one.
+        const windowed = fresh.filter(
+          (s) => s.endMs >= turnStartMs && s.startMs <= turnEndMs,
+        );
+        const spansByTrace = new Map<string, TraceSpan[]>();
+        for (const span of windowed) {
+          const traceSpans = spansByTrace.get(span.traceId);
+          if (traceSpans === undefined) spansByTrace.set(span.traceId, [span]);
+          else traceSpans.push(span);
+        }
+        const candidates = [...spansByTrace.entries()]
+          .map(([candidateTraceId, candidateSpans]) => {
+            const latestEndMs = Math.max(...candidateSpans.map((s) => s.endMs));
+            const coversTurnEnd = candidateSpans.some(
+              (s) => s.startMs <= turnEndMs && s.endMs >= turnEndMs,
+            );
+            return { candidateTraceId, candidateSpans, latestEndMs, coversTurnEnd };
+          })
+          .sort(
+            (a, b) =>
+              Number(b.coversTurnEnd) - Number(a.coversTurnEnd) ||
+              Math.abs(turnEndMs - a.latestEndMs) - Math.abs(turnEndMs - b.latestEndMs) ||
+              b.latestEndMs - a.latestEndMs ||
+              a.candidateTraceId.localeCompare(b.candidateTraceId),
+          );
+        const selected = candidates[0];
+        spans = selected?.candidateSpans ?? [];
         attribution = "window";
       }
       for (const s of spans) this.consumed.add(s.spanId);
@@ -71,7 +104,13 @@ export class AgentOtelChannel {
       // traceparent。把合成 id 写进 turn 会导致 timing 永远匹配不到实际 span；单 trace
       // 窗口直接记录真实 id，多 trace 的其余部分仍由 eval.run leftovers 如实保留。
       const attributedTraceId = attribution === "window" && spans[0] !== undefined ? spans[0].traceId : traceId;
-      return { result, traceId: attributedTraceId, spans, attribution };
+      return {
+        result,
+        traceId: attributedTraceId,
+        spans,
+        attribution,
+        window: { startMs: turnStartMs, endMs: turnEndMs },
+      };
     };
 
     if (this.confirmed) return exec();
@@ -92,12 +131,24 @@ export class AgentOtelChannel {
   }
 
   /** attempt 末尾:按本 attempt 的 traceId 集合捞迟到的 span(Batch 导出等)。 */
-  async sweep(traceIds: ReadonlySet<string>): Promise<TraceSpan[]> {
-    if (traceIds.size === 0) return [];
+  async sweep(
+    traceIds: ReadonlySet<string>,
+    attemptWindows?: readonly { startMs: number; endMs: number }[],
+  ): Promise<TraceSpan[]> {
+    if (traceIds.size === 0 && (attemptWindows === undefined || attemptWindows.length === 0)) return [];
     await this.receiver.settle(200, 1000);
     const late = this.receiver
       .collect()
-      .filter((s) => !this.consumed.has(s.spanId) && traceIds.has(s.traceId));
+      .filter((s) => {
+        if (this.consumed.has(s.spanId)) return false;
+        // Exact traceparent attribution remains authoritative even when remote
+        // clocks skew outside host time; discrete turn windows only add deferred
+        // candidates, so another concurrent attempt's gap is never a window.
+        return traceIds.has(s.traceId) ||
+          (attemptWindows !== undefined && attemptWindows.some(
+            (window) => s.endMs >= window.startMs && s.startMs <= window.endMs,
+          ));
+      });
     for (const s of late) this.consumed.add(s.spanId);
     return late;
   }

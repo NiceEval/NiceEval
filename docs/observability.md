@@ -85,7 +85,12 @@ t.check(t.o11y.totalToolCalls, satisfies((n) => (n as number) < 50, "工具调�
 ## OTLP traces → 统一瀑布图
 
 `StreamEvent` 回答「做了什么」;**trace 回答「各花了多久、谁套谁」**。
-配了 OTel 接入的 agent(沙箱型声明 `tracing` 块;direct agent 配 `defineConfig({ telemetry })`)经 OpenTelemetry 把 OTLP traces 导出到运行器(沙箱型每个沙箱起一个本机 OTLP/HTTP 接收器,direct agent 共享一个固定端口接收器,端点经 `ctx.telemetry.endpoint` 交给 agent),跑完归一成 `TraceSpan[]` 挂到 `EvalResult.trace`,`niceeval view` 画成瀑布图。
+配了 OTel 接入的 agent 经 OpenTelemetry 把 OTLP traces 导出到运行器：
+
+- Sandbox Agent 声明 `tracing`，默认在同一个 Sandbox 内起 attempt-scope receiver，避免依赖未承诺的容器到宿主路由。
+- direct agent 配 `defineConfig({ telemetry })`，共享宿主固定端口 receiver。
+
+两条路径都把端点经 `ctx.telemetry.endpoint` 交给 agent。跑完后，runner 把 span 归一成 `TraceSpan[]` 挂到 `EvalResult.trace`，`niceeval view` 再画成瀑布图。作者显式配置 `telemetry.host` 时，Sandbox Agent 也可改走已经由作者保证可达的宿主或 tunnel receiver。
 
 **断言永远只读事件流,从不读 span。
 ** `send` 返回的 `Turn.events` 是断言唯一的数据源——有 trace 也不给断言开后门。

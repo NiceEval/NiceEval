@@ -1,4 +1,5 @@
-// 在沙箱内部起一个轻量 OTLP/HTTP 接收器,供 e2b / vercel 等远程沙箱使用。
+// 在沙箱内部起一个轻量 OTLP/HTTP 接收器,供不承诺宿主回连的 provider 使用
+// (Docker / e2b / vercel 等)。
 // 流程:
 //   1. writeText 把 collector 脚本上传到沙箱
 //   2. runShell 在后台启动它(node ... & echo $!),拿 PID;collector 用内核分配端口
@@ -202,7 +203,7 @@ async function makeInSandboxReceiver(sandbox: Sandbox): Promise<TraceReceiver> {
       const maxTicks = Math.max(quietTicks, Math.round(maxMs / 100));
       await sandbox
         .runShell(
-          `prev=-1; stable=0; i=0; ` +
+          `prev=$(wc -c < ${spansPath} 2>/dev/null || echo 0); stable=0; i=0; ` +
             `while [ $i -lt ${maxTicks} ]; do ` +
             `s=$(wc -c < ${spansPath} 2>/dev/null || echo 0); ` +
             `if [ "$s" = "$prev" ]; then stable=$((stable+1)); [ $stable -ge ${quietTicks} ] && break; ` +
