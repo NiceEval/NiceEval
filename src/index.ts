@@ -1,7 +1,7 @@
 // niceeval 公开导出(import { … } from "niceeval")。
 // Agent/Adapter 相关见 "niceeval/adapter";Sandbox 相关见 "niceeval/sandbox"。
 
-export { defineEval, defineScoreEval, defineConfig, defineExperiment } from "./define.ts";
+export { defineEval, defineScoreEval, defineEvalGroup, defineConfig, defineExperiment } from "./define.ts";
 
 export { requireEnv, getEnv, stripComments } from "./util.ts";
 
@@ -45,6 +45,9 @@ export type {
   ScoreEvalInput,
   EvalDefinition,
   AnyEvalDefinition,
+  EvalGroupMember,
+  EvalGroupInput,
+  EvalGroupDefinition,
   EvaluationKind,
   EvalDescriptor,
   ScoreEntry,

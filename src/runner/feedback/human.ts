@@ -1169,6 +1169,8 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
 export interface HumanDryPlanRow {
   experimentId: string;
   evalId: string;
+  evalGroupId?: string;
+  evalGroupIndex?: number;
   /** 本行计划内的 attempt 总数；混合 `attempts` 的多个 Experiment 不共用 input 的最大值。 */
   attempts?: number;
   /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
@@ -1239,15 +1241,19 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     );
   }
   const idWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.experimentId)));
-  const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.evalId)));
+  const evalLabel = (row: HumanDryPlanRow): string => row.evalGroupId === undefined
+    ? row.evalId
+    : `${row.evalId} [group ${row.evalGroupId} #${row.evalGroupIndex}]`;
+  const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(evalLabel(row))));
   for (const row of input.rows) {
-    const base = `${row.experimentId}${" ".repeat(idWidth - stringWidth(row.experimentId) + 2)}${row.evalId}`;
+    const label = evalLabel(row);
+    const base = `${row.experimentId}${" ".repeat(idWidth - stringWidth(row.experimentId) + 2)}${label}`;
     // 行尾恒有一个标注:要派发的行逐条给门的原因词,全部携带的行标 carried,
     // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
     const suffix = row.locked
       ? t("feedback.human.lockedRowSuffix")
       : dryPlanReasonSuffix(row.dispatch, row.prior, row.carried, row.attempts ?? input.attempts);
-    lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
+    lines.push(`${base}${" ".repeat(evalWidth - stringWidth(label) + 3)}${suffix}`);
   }
   const previousResultBlocks = renderPreviousResultDeltaGroups(input);
   if (previousResultBlocks.length > 0) lines.push("", ...previousResultBlocks);

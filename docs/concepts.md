@@ -267,7 +267,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
-| Eval Group | Eval Group (`defineEvalGroup`) | 组成 Group × Eval × Experiment 规划维度；组内 Eval 按顺序共用 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
+| Eval Group | Eval Group (`defineEvalGroup`) | 按 definition 数组排列成员；组内真实派发的 Attempt 串行复用至多一台 Sandbox，不同 Group 可以并行 | [Eval Group](roadmap/eval-groups/README.md) |
 | Observation | Observation | 运行后无法重新取得、只陈述实际发生了什么的不可变事实 | [运行观测协议](roadmap/observation-protocol/README.md) |
 | Claim | Claim | evaluator 根据明确依据在当时作出的判断 | [运行观测协议](roadmap/observation-protocol/architecture.md#provenance-与-claim) |
 | Reducer | Reducer | 按事件顺序把 Observation 归约成运行状态的纯函数 | [运行观测协议](roadmap/observation-protocol/architecture.md#reducer-与-snapshot) |

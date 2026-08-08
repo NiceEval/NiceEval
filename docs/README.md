@@ -72,7 +72,7 @@ docs/
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
-│   ├── eval-groups/                     Group × Eval × Experiment、组内复用与组间并行
+│   ├── eval-groups/                     按 definition 排序的组内 Sandbox 复用与组间并行
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC
 │   ├── materialization-cache/            Provider cache 的需求、库存、归因与安全回收
 │   └── prepare-transient-retry/         prepare 网络瞬时失败的 attempt 内自愈候选

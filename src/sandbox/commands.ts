@@ -44,8 +44,14 @@ export type SandboxCleanupCommand = (
 
 export interface SandboxCommandContext {
   readonly phase: "prepare" | "agent.post-setup" | "agent.pre-teardown";
+  /** 当前 Attempt 的 Eval Group；未分组 Eval 省略。 */
+  readonly evalGroup?: {
+    readonly id: string;
+    readonly definitionHash: string;
+  };
   readonly owner:
     | { readonly kind: "eval"; readonly id: string }
+    | { readonly kind: "eval-group"; readonly id: string }
     | { readonly kind: "experiment"; readonly id: string }
     | { readonly kind: "agent"; readonly id: string };
   readonly attempt: AttemptRef;

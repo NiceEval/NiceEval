@@ -31,6 +31,7 @@ function commandContext(
 ): SandboxCommandContext {
   return {
     phase,
+    ...(ctx.evalGroup === undefined ? {} : { evalGroup: ctx.evalGroup }),
     owner: { kind: "agent", id: agentName },
     attempt: ctx.attempt ?? { id: ctx.evalId ?? "unknown", index: 0 },
     signal: ctx.signal,
@@ -82,6 +83,7 @@ export async function runPreTeardownHooks(
   const hookCtx = commandContext(ctx, agentName, "agent.pre-teardown", (cleanup) => nestedCleanups.push(cleanup));
   const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
     phase: "agent.pre-teardown",
+    ...(hookCtx.evalGroup === undefined ? {} : { evalGroup: hookCtx.evalGroup }),
     owner: { kind: "agent", id: agentName },
     attempt: hookCtx.attempt,
     signal: hookCtx.signal,

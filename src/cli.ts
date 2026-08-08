@@ -1720,9 +1720,16 @@ async function main(): Promise<void> {
         return lock !== undefined && !isCaseLockExpired(lock, now);
       }),
     );
+    const evalGroupsByEvalId = new Map(evals.flatMap((evalDef) =>
+      evalDef.evalGroup === undefined ? [] : [[evalDef.id, evalDef.evalGroup] as const]
+    ));
     const matrix: JsonPlanRow[] = rowInputs.map((row, i) => ({
       experimentId: row.experimentId,
       evalId: row.evalId,
+      ...(evalGroupsByEvalId.get(row.evalId) === undefined ? {} : {
+        evalGroupId: evalGroupsByEvalId.get(row.evalId)!.id,
+        evalGroupIndex: evalGroupsByEvalId.get(row.evalId)!.index,
+      }),
       reused: row.reused,
       ...(row.prior !== undefined
         ? { prior: row.prior.map(({ locator, verdict, acceptance, evidenceState }) => ({ locator, verdict, acceptance, evidenceState })) }
@@ -1761,6 +1768,10 @@ async function main(): Promise<void> {
           rows: rowInputs.map((row, i) => ({
             experimentId: row.experimentId,
             evalId: row.evalId,
+            ...(evalGroupsByEvalId.get(row.evalId) === undefined ? {} : {
+              evalGroupId: evalGroupsByEvalId.get(row.evalId)!.id,
+              evalGroupIndex: evalGroupsByEvalId.get(row.evalId)!.index,
+            }),
             attempts: row.attempts,
             ...(lockedFlags[i] ? { locked: true } : {}),
             ...(row.carried.length > 0 ? { carried: row.carried } : {}),
