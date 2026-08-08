@@ -399,9 +399,26 @@ interface JudgeProvider {
   };
   identity(): JsonValue;
   precheck(request: JudgePrecheckRequest): Promise<void>;
-  evaluate(request: JudgeModelRequest): Promise<JudgeProviderResponse>;
+  evaluate(request: JudgeModelRequest): Promise<JudgeProviderResult>;
 }
+
+type JudgeProviderResult =
+  | {
+      readonly kind: "response";
+      readonly response: JudgeProviderResponse;
+    }
+  | {
+      readonly kind: "invalid-response";
+      readonly phase: "decode" | "conversion";
+      readonly detail?: string;
+    };
 ```
+
+`native-schema` Provider 在取得协议对象后返回 response 分支。
+`json-text` Provider 无法把模型文本 decode 或转换成 JudgeProviderResponse 时，返回 invalid-response，不用普通 rejection 表示响应内容错误。
+
+detail 是有界、已脱敏的人读说明，不能携带完整模型 body。
+网络、鉴权、timeout 与取消仍通过既有 Provider failure envelope 或 rejection 交给 Runtime 分类。
 
 `identity()` 不得包含 key 值，但必须包含会改变请求语义的端点、协议和 Provider 版本。
 凭据只从 Provider 配置指定的 env 变量读取。

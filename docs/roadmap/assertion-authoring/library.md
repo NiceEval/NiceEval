@@ -273,8 +273,11 @@ expected 中的重复项同步报告 author error；数组顺序没有语义，�
 `files()` 是类型化 selection source，不登记 Assertion。
 它返回最终 delta 中满足 selection 的唯一 normalized paths，按诊断稳定顺序排列，供 `requireOne()` 消费。
 
-Direct Agent 的类型不暴露 `t.sandbox` 或 `turn.changes`。
-JavaScript 越过 capability 类型时，登记 diff consumer 会同步报告 author error。
+`defineEval()` 保持 Agent-agnostic，同一份 Eval 可以由 Direct 或 Sandbox Agent 运行。
+因此 `TestContext` 继续使用包含 `t.sandbox` 与 `turn.changes` 的宽接口，不按运行期 Agent kind 改变静态成员。
+
+Direct Agent 运行时登记 Sandbox 或 change consumer，会同步报告 `sandbox-capability-required` author error。
+本 Roadmap 不引入 capability-generic `defineEval()`，也不让 TypeScript 对同一份 Eval 按 Experiment 配置切换形状。
 
 ## 延迟 Sandbox 文件
 
