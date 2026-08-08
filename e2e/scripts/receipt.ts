@@ -42,7 +42,7 @@ export interface RepoReceipt {
   detail: string;
   /** The candidate tarball identity retained for this run, when materialized. */
   candidate: CandidateReceipt;
-  /** Present when a verified Testkit tgz was injected into this repo. */
+  /** Present when the checkout-local Testkit directory was injected. */
   testkit?: TestkitReceipt;
 }
 
@@ -52,32 +52,20 @@ export interface CandidateReceipt {
   integrity: string;
   /** Content-addressed path relative to artifactRoot; absent if persistence failed. */
   artifactPath?: string;
+  /** Command that replays this repo with the retained candidate bytes. */
+  reproduce: string;
+  /** True only while the durable candidate tarball remains available. */
+  exactReplay: boolean;
 }
 
-/**
- * Testkit identity + durability record
- * (docs/engineering/testing/testkit.md「构建与采用门禁」7). version is
- * diagnostic only — digest and SRI are the identity. artifactPath is relative
- * to the durable artifact root; exactReplay is only true while that tgz still
- * exists.
- */
+/** Checkout-local Testkit diagnostics; it is deliberately not replayable. */
 export interface TestkitReceipt {
-  /** Package version, diagnostic only — never identity. */
+  /** Package version, diagnostic only. */
   version: string;
-  /** Full sha256 hex of the injected tarball bytes. */
-  sha256: string;
-  /** SRI of the tarball bytes: "sha512-<base64>". */
-  integrity: string;
-  /** Actual installed path inside the (now removed) isolated copy. */
+  /** Checkout-relative build source. */
+  sourcePath: "packages/testkit";
+  /** Copy-relative installed path recorded before cleanup. */
   resolvedPath: string;
-  /** Content-addressed tgz path relative to the durable artifact root. */
-  artifactPath: string;
-  /** Content-addressed NiceEval candidate path relative to the durable artifact root. */
-  candidateArtifactPath: string;
-  /** Command that reproduces this exact repo run with the same bytes. */
-  reproduce: string;
-  /** True only while both durable candidate and Testkit tgz artifacts remain. */
-  exactReplay: boolean;
 }
 
 export function commandFailedCapture(capture: CommandCapture): boolean {

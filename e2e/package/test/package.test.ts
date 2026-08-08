@@ -4,7 +4,7 @@
 // package exports 进入，不引用 NiceEval 源码路径或构建目录。
 
 import { command } from "@niceeval/testkit";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { findInstalledPackageRoot } from "../fixtures/traverse-entries.mjs";
@@ -177,4 +177,13 @@ it("type-consumers 静态 import 清单与安装后 exports 的 object runtime s
   }
 
   expect([...specifiers].sort()).toEqual(objectSubpaths);
+});
+
+it("安装后的候选包不包含也不声明私有 Testkit", () => {
+  const { root, packageJson } = findInstalledPackageRoot("niceeval", import.meta.url);
+  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
+    const dependencies = packageJson[field] as Record<string, unknown> | undefined;
+    expect(dependencies?.["@niceeval/testkit"], `package.json ${field}`).toBeUndefined();
+  }
+  expect(existsSync(join(root, "packages", "testkit")), "候选包不得携带 packages/testkit").toBe(false);
 });

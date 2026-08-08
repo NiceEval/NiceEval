@@ -10,9 +10,6 @@
     "directory": "packages/testkit"
   },
   "type": "module",
-  "engines": {
-    "node": ">=18"
-  },
   "files": [
     "dist",
     "README.md"
@@ -30,11 +27,10 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
     "typecheck": "tsc6 -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "pack:check": "pnpm build && pnpm pack --pack-destination artifacts"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "18.19.130",
+    "@types/node": "^22.0.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "4.1.9"
   }

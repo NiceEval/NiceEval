@@ -112,11 +112,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "[release] packed ${tgz} sha256=${sha256}"
 
-      # docs/memory 守护在拿到正式 tarball 后运行:package-artifacts 守护消费
-      # NICEEVAL_CANDIDATE_TGZ 里同一份 tgz,不再本地 pnpm pack;其余 docs 守护照常。
+      # docs/memory 守护在拿到正式 tarball 后运行；它不参与 release tarball 的传递。
       - name: Test docs guards
-        env:
-          NICEEVAL_CANDIDATE_TGZ: ${{ steps.pack.outputs.tgz }}
         run: pnpm run test:docs
 
       # 发布 preflight:Package / CLI / Report 三个 Repo 安装上面这一份 tarball,

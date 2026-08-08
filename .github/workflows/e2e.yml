@@ -3,9 +3,11 @@ name: e2e
 # E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
 # 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
 #
-# package → Testkit meta-test/typecheck；分别 pack 一次 NiceEval/Testkit tgz + sha256，上传 exact 双 tgz
+# package → Testkit test/typecheck
+# candidate → pack 一次 NiceEval tgz + sha256，上传该候选
 # plan    → pnpm e2e plan --lane <lane> --json
-# e2e     → 下载并重算同一双 tgz digest；pnpm e2e run --candidate <exact> --testkit <exact> --repo <id>
+# e2e     → 下载并重算 candidate digest；pnpm e2e run --candidate <exact> --repo <id>
+#           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
 # aggregate → 汇总 cell receipt/summary
 #
@@ -50,8 +52,6 @@ jobs:
     outputs:
       candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
       candidate_tgz_name: ${{ steps.pack.outputs.candidate_tgz_name }}
-      testkit_sha256: ${{ steps.pack.outputs.testkit_sha256 }}
-      testkit_tgz_name: ${{ steps.pack.outputs.testkit_tgz_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,18 +67,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test Testkit meta-tests
+      - name: Test Testkit
         run: pnpm --filter @niceeval/testkit run test
 
       - name: Typecheck Testkit
         run: pnpm --filter @niceeval/testkit run typecheck
 
-      - name: Build and pack exact E2E tarballs once
+      - name: Pack exact NiceEval candidate once
         id: pack
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          out_dir="${RUNNER_TEMP}/niceeval-e2e-tarballs"
+          out_dir="${RUNNER_TEMP}/niceeval-e2e-candidate"
           mkdir -p "$out_dir"
           candidate_tgz_name="niceeval-candidate.tgz"
           candidate_path="${out_dir}/${candidate_tgz_name}"
@@ -94,81 +93,21 @@ jobs:
             echo "::error::NiceEval sha256 mismatch: pack=${candidate_sha256} recomputed=${candidate_actual}"
             exit 1
           fi
-
-          # Testkit 的 build 脚本先清空 dist/；pack 禁用 lifecycle script，确保不会在
-          # 已验收的 clean build 后再次构建。唯一生成物随后改为内容寻址文件名。
-          pnpm --filter @niceeval/testkit run build
-          testkit_stage="${out_dir}/testkit-stage"
-          mkdir -p "$testkit_stage"
-          PNPM_CONFIG_IGNORE_SCRIPTS=true pnpm --filter @niceeval/testkit pack --pack-destination "$testkit_stage"
-          testkit_tgzs=("${testkit_stage}"/*.tgz)
-          if [ "${#testkit_tgzs[@]}" -ne 1 ]; then
-            echo "::error::expected exactly one Testkit tgz, found ${#testkit_tgzs[@]}"
-            exit 1
-          fi
-          testkit_actual="$(sha256sum "${testkit_tgzs[0]}" | awk '{print $1}')"
-          testkit_tgz_name="niceeval-testkit-${testkit_actual}.tgz"
-          testkit_path="${out_dir}/${testkit_tgz_name}"
-          mv "${testkit_tgzs[0]}" "$testkit_path"
-          testkit_sha256="$(sha256sum "$testkit_path" | awk '{print $1}')"
-          if [ "$testkit_actual" != "$testkit_sha256" ]; then
-            echo "::error::Testkit sha256 changed while naming tarball"
-            exit 1
-          fi
-
           printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
-          printf '%s\n' "$testkit_sha256" > "${testkit_path}.sha256"
           {
             echo "candidate_sha256=${candidate_sha256}"
             echo "candidate_tgz_name=${candidate_tgz_name}"
             echo "candidate_path=${candidate_path}"
-            echo "testkit_sha256=${testkit_sha256}"
-            echo "testkit_tgz_name=${testkit_tgz_name}"
-            echo "testkit_path=${testkit_path}"
           } >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval ${candidate_tgz_name} sha256=${candidate_sha256}"
-          echo "[e2e] Testkit ${testkit_tgz_name} sha256=${testkit_sha256}"
 
-      # Vitest 本身不以 Node 18 为运行时；记录一个真实 Node 18 二进制，再恢复
-      # orchestration Node，使 docs guard 能在同一次测试中以 raw Node 18 运行 consumer。
-      - name: Set up Node 18 Testkit consumer runtime
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Record Node 18 executable
-        id: node18
-        run: |
-          set -euo pipefail
-          node18="$(command -v node)"
-          "$node18" --version | grep -E '^v18\.'
-          echo "path=${node18}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Node for docs guards
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      # 只运行直接读取这两份 upload 前 tgz 的 guard。全量 test:docs 还包含独立的
-      # 文档写作台账，不能让其无关失败阻断 artifact 身份 gate。
-      - name: Guard exact E2E tarballs before upload
-        env:
-          NICEEVAL_CANDIDATE_TGZ: ${{ steps.pack.outputs.candidate_path }}
-          NICEEVAL_TESTKIT_TGZ: ${{ steps.pack.outputs.testkit_path }}
-          NICEEVAL_TESTKIT_NODE18: ${{ steps.node18.outputs.path }}
-          NICEEVAL_EXACT_E2E_TARBALLS: "true"
-        run: pnpm exec vitest run --project docs test/docs/e2e-testkit-ci-guards.test.ts
-
-      - name: Upload exact E2E tarballs
+      - name: Upload exact NiceEval candidate
         uses: actions/upload-artifact@v4
         with:
-          name: niceeval-e2e-tarballs
+          name: niceeval-e2e-candidate
           path: |
             ${{ steps.pack.outputs.candidate_path }}
             ${{ steps.pack.outputs.candidate_path }}.sha256
-            ${{ steps.pack.outputs.testkit_path }}
-            ${{ steps.pack.outputs.testkit_path }}.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -325,51 +264,36 @@ jobs:
           echo "id=${safe}" >> "$GITHUB_OUTPUT"
           echo "artifact-root=${RUNNER_TEMP}/niceeval-e2e-artifacts/${safe}" >> "$GITHUB_OUTPUT"
 
-      - name: Download exact E2E tarballs
+      - name: Download exact NiceEval candidate
         uses: actions/download-artifact@v4
         with:
-          name: niceeval-e2e-tarballs
-          path: ${{ runner.temp }}/niceeval-e2e-tarballs
+          name: niceeval-e2e-candidate
+          path: ${{ runner.temp }}/niceeval-e2e-candidate
 
-      - name: Verify NiceEval and Testkit SHA-256
-        id: tarballs
+      - name: Verify NiceEval SHA-256
+        id: candidate
         env:
           EXPECTED_CANDIDATE_SHA256: ${{ needs.package.outputs.candidate_sha256 }}
           CANDIDATE_TGZ_NAME: ${{ needs.package.outputs.candidate_tgz_name }}
-          EXPECTED_TESTKIT_SHA256: ${{ needs.package.outputs.testkit_sha256 }}
-          TESTKIT_TGZ_NAME: ${{ needs.package.outputs.testkit_tgz_name }}
         run: |
           set -euo pipefail
-          root="${RUNNER_TEMP}/niceeval-e2e-tarballs"
+          root="${RUNNER_TEMP}/niceeval-e2e-candidate"
           candidate="${root}/${CANDIDATE_TGZ_NAME}"
-          testkit="${root}/${TESTKIT_TGZ_NAME}"
-          for required in "$candidate" "$testkit" "${candidate}.sha256" "${testkit}.sha256"; do
+          for required in "$candidate" "${candidate}.sha256"; do
             test -s "$required"
           done
           candidate_actual="$(sha256sum "$candidate" | awk '{print $1}')"
-          testkit_actual="$(sha256sum "$testkit" | awk '{print $1}')"
-          for expected in "$EXPECTED_CANDIDATE_SHA256" "$EXPECTED_TESTKIT_SHA256"; do
-            if ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "::error::missing or invalid upstream sha256 output: ${expected:-<empty>}"
-              exit 1
-            fi
-          done
+          if ! [[ "$EXPECTED_CANDIDATE_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::missing or invalid upstream candidate sha256 output: ${EXPECTED_CANDIDATE_SHA256:-<empty>}"
+            exit 1
+          fi
           if [ "$candidate_actual" != "$EXPECTED_CANDIDATE_SHA256" ] \
             || [ "$(tr -d '[:space:]' < "${candidate}.sha256")" != "$candidate_actual" ]; then
             echo "::error::NiceEval sha256 mismatch: expected=${EXPECTED_CANDIDATE_SHA256} actual=${candidate_actual}"
             exit 1
           fi
-          if [ "$testkit_actual" != "$EXPECTED_TESTKIT_SHA256" ] \
-            || [ "$(tr -d '[:space:]' < "${testkit}.sha256")" != "$testkit_actual" ]; then
-            echo "::error::Testkit sha256 mismatch: expected=${EXPECTED_TESTKIT_SHA256} actual=${testkit_actual}"
-            exit 1
-          fi
-          {
-            echo "candidate=${candidate}"
-            echo "testkit=${testkit}"
-          } >> "$GITHUB_OUTPUT"
+          echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
-          echo "[e2e] Testkit ${testkit} sha256=${testkit_actual}"
 
       - name: Inject secrets for trusted lane
         if: needs.plan.outputs.inject-secrets == 'true'
@@ -399,8 +323,7 @@ jobs:
 
       - name: Run e2e for ${{ matrix.id }}
         env:
-          CANDIDATE: ${{ steps.tarballs.outputs.candidate }}
-          TESTKIT: ${{ steps.tarballs.outputs.testkit }}
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
           REPO_ID: ${{ matrix.id }}
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
         run: |
@@ -408,7 +331,6 @@ jobs:
           mkdir -p "$ARTIFACT_ROOT"
           pnpm e2e run \
             --candidate "$CANDIDATE" \
-            --testkit "$TESTKIT" \
             --repo "$REPO_ID" \
             --artifact-root "$ARTIFACT_ROOT"
 
@@ -485,12 +407,10 @@ jobs:
           HAS_JOBS: ${{ needs.plan.outputs.has-jobs }}
           LANE: ${{ needs.plan.outputs.lane }}
           CANDIDATE_SHA256: ${{ needs.package.outputs.candidate_sha256 }}
-          TESTKIT_SHA256: ${{ needs.package.outputs.testkit_sha256 }}
         run: |
           set -euo pipefail
           echo "[e2e] lane=${LANE:-unknown}"
           echo "[e2e] candidate sha256=${CANDIDATE_SHA256:-unknown}"
-          echo "[e2e] testkit sha256=${TESTKIT_SHA256:-unknown}"
           echo "[e2e] package=${PACKAGE_RESULT} plan=${PLAN_RESULT} e2e=${E2E_RESULT:-skipped} has-jobs=${HAS_JOBS:-}"
           if [ "$PACKAGE_RESULT" != "success" ]; then
             echo "::error::package job failed"
@@ -526,7 +446,6 @@ jobs:
           fi
           echo "=== e2e aggregate ==="
           echo "candidate sha256: ${{ needs.package.outputs.candidate_sha256 }}"
-          echo "testkit sha256: ${{ needs.package.outputs.testkit_sha256 }}"
           echo "lane: ${{ needs.plan.outputs.lane }}"
           echo
           cells=0

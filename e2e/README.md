@@ -4,7 +4,7 @@
 
 ## 目录
 
-每个带 `e2e.json` 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本，再执行 manifest 声明的命令。
+每个带 `e2e.json` 的叶子目录都是一个独立消费项目，自带 `package.json`、lockfile 和原生 Vitest 或 Playwright 测试。根 runner 把候选 `niceeval` tarball 安装进仓库外副本；需要 Testkit 的 Repo 还会从当前 checkout clean-build 私有 workspace package，并只在该副本中注入目录依赖，随后执行 manifest 声明的命令。
 
 ```text
 e2e/
@@ -26,34 +26,25 @@ e2e/
 
 ```sh
 pnpm e2e plan --lane pr --json
-pnpm e2e pack --out-dir /tmp/niceeval-candidate
-pnpm e2e run --candidate /tmp/niceeval-candidate/<tarball> --repo cli
+pnpm e2e pack --out /tmp/niceeval-candidate.tgz
+pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo cli
 
-# 默认模式依次 plan → pack 一次 → 对选中 Repo 运行同一 tarball
+# 默认模式依次 plan → pack 一次 candidate → 按需 build 一次 Testkit → 运行
 pnpm e2e --lane pr
 pnpm e2e --repo report -- --run test/report.test.ts
 pnpm e2e --repo report -- --run test/report.browser.spec.ts -t "打开"
 ```
 
-本地开发未发布的 Testkit 时，显式注入一次打包结果：
-
-```sh
-pnpm e2e run \
-  --candidate /tmp/niceeval-candidate.tgz \
-  --testkit packages/testkit/artifacts/niceeval-testkit-0.1.0.tgz \
-  --repo cli
-```
-
-`--testkit` 只用于本地验证；场景 Repo 的 `package.json` 始终声明 registry 精确版本。最终产品 gate 不注入本地 Testkit。
+Testkit 没有单独的 tarball 参数。它是同仓库的私有测试工具，不是发布候选；`harness.testkit: true` 是唯一消费声明。runner 会在一次 invocation 中 build 一次 `packages/testkit`，再把该目录作为本地依赖注入隔离副本。场景源 `package.json` 和 lockfile 不声明 Testkit，也不直接链接 workspace。
 
 ## 选择与失败
 
 - `plan` 只读 manifest，不 pack、不安装、不读取 secret。
 - `run` 在临时副本依次执行 install、injection attestation、test、artifact collection 与 cleanup。
-- 选择使用 `--lane`、`--repo`、`--path` 和 capability；不存在旧 `group` 参数。
+- 选择使用 `--lane`、`--repo`、`--diff-path` 和 capability；不存在旧 `group` 参数。
 - 测试非零退出归 regression；安装、注入、artifact 或 cleanup 失败归 infra。Adapter 不用 exit 75 或日志正则猜分类。
 - 原始收据、JUnit 与声明的 artifact 写入 durable artifact root；隔离副本在 cleanup 阶段删除。
 
 ## 单项调试
 
-正式验收始终走根 runner，确保 candidate 与 Testkit 身份可核对。进入叶子目录直接运行 `pnpm e2e` 只适合已经安装好依赖后的测试正文调试；它不证明当前 checkout 的 candidate 已被注入。
+正式验收始终走根 runner，确保 candidate 身份和 Testkit 的副本内安装路径可核对。进入叶子目录直接运行 `pnpm e2e` 只适合已经安装好依赖后的测试正文调试；它不证明当前 checkout 的 candidate 已被注入。
