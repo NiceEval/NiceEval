@@ -25,8 +25,8 @@
 
 ## Sandbox 复用增加运行级汇总
 
-Attempt 数据登记 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-声明 `sandboxReuse` 的 Experiment 按复用组提供四个运行级量：
+Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
+声明 `sandboxReuse` 的 Experiment 按现有物理复用池提供四个运行级量；Eval Group 则直接以自身作为这组计数的声明源：
 
 | 量 | 口径 |
 |---|---|
@@ -35,7 +35,7 @@ Attempt 数据登记 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承�
 | `assignments` | 已租借 Sandbox 的 Attempt 累计数；租借后的 prepare 失败或超时仍计入 |
 | `replacements` | ready Sandbox 因 reset、寿命确认或收尾失败退出池后，成功建立替代 Sandbox 的累计数 |
 
-live 面板按 Experiment 与 Sandbox 复用组恒定显示 `active`、`created` 与 `assignments`，`replacements` 只在非零时显示。
+live 面板按 Experiment 与 Eval Group 恒定显示 `active`、`created` 与 `assignments`，`replacements` 只在非零时显示。
 结束反馈显示四项最终值。
 多个组不合成一组总数，否则无法判断哪一个组在轮换实例。
 机器输出在既有 `progress` 与 `result` 事件上附加逐 Experiment、逐 group 的 `sandboxReuse` 数组，不增加独立事件。
