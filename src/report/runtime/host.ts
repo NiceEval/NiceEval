@@ -36,6 +36,11 @@ export type {
 export type { ThemeDefinition } from "../theme.ts";
 export type { ResolvedPage } from "./resolved-page.ts";
 
+// Source hosts must enter the precompiled report graph through its public
+// entry point too. The string annotation keeps the first package build from
+// depending on generated self-reference declarations.
+const BUILT_IN_REPORT_ENTRY: string = "niceeval/report/built-in";
+
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
 
@@ -85,7 +90,7 @@ export async function loadHostReport(
   if (configuredReport !== undefined) {
     return normalizeConfiguredReport(configuredReport);
   }
-  const { standard } = await import("../built-in/index.tsx");
+  const { standard } = (await import(BUILT_IN_REPORT_ENTRY)) as { standard: ReportDefinition };
   return standard as ReportDefinition;
 }
 
@@ -105,7 +110,7 @@ export function describeReportSource(reportPath: string | undefined, configuredR
  * 没声明时仍保留官方 AttemptDetails，避免组合组件的 locator 因换了首页而退化成不可点击文本。
  */
 export async function loadDefaultHostAttemptPage(): Promise<ReportPage> {
-  const { standard } = await import("../built-in/index.tsx");
+  const { standard } = (await import(BUILT_IN_REPORT_ENTRY)) as { standard: ReportDefinition };
   const page = standard.pages.find((candidate) => candidate.id === "attempt");
   if (page === undefined) throw new Error('The built-in report is missing its "attempt" page.');
   return page;
