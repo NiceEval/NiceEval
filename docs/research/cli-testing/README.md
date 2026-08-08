@@ -41,11 +41,11 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 
 以下是对现有目标契约的事实核对，不代表实现已经完成。
 
-- [Testing](../../engineering/testing/README.md) 按 Library、installed CLI、HTTP、browser 与真实 Adapter 划分可观察边界。
-- [Testing Architecture](../../engineering/testing/architecture.md) 要求 oracle 独立、结构化输出严格解码，并把进程结果作为一等证据。
-- [Scenario Repos](../../engineering/testing/e2e/scenario-repos.md) 要求普通 consumer Repo 安装候选 tarball，并用 digest 证明被测 artifact 身份。
-- [E2E Execution](../../engineering/testing/e2e/execution.md) 规定本地和 CI 复用 runner，并区分 PR、main、nightly 与 release lane。
-- [Portfolio](../../engineering/testing/portfolio.md) 用唯一 matrix owner、历史 bug 杀伤力与退役条件控制重复。
+- [Testing Roadmap](../../roadmap/testing/README.md) 已按 Library、installed CLI、HTTP、browser 与真实 adapter 划分可观察边界。
+- [Testing Architecture](../../roadmap/testing/architecture.md) 已要求 oracle 独立、结构化输出严格解码，并把进程结果作为一等证据。
+- [Scenario Repos](../../roadmap/testing/e2e/scenario-repos.md) 已要求普通 consumer repo 安装候选 tarball，并用 digest 证明被测 artifact 身份。
+- [E2E Execution](../../roadmap/testing/e2e/execution.md) 已规定本地和 CI 复用 runner，并区分 PR、main、nightly 与 release lane。
+- [Portfolio](../../roadmap/testing/portfolio.md) 已用唯一 matrix owner、历史 bug 杀伤力与退役条件控制重复。
 - 目标契约已经要求资源级 cleanup 与失败分类。这个方向与 Git、pnpm、OpenTofu、kubectl 的成熟做法一致。
 
 因此，NiceEval 的主要问题不是缺少测试层级名称。它已经有比多数项目更严格的候选包身份链、真实 consumer repo 和矩阵所有权设计。
@@ -90,11 +90,11 @@ Vite、Vitest 与 Playwright 如何测试自身，以及 NiceEval 是否应自�
 
 | 位置 | 建议 |
 |---|---|
-| `docs/engineering/testing/architecture.md` | 补全 ProcessResult、ControlledProcess、timeout、进程树、子进程变量清洗、redaction、assertion ledger 与错误聚合 |
-| `docs/engineering/testing/e2e/scenario-repos.md` | 定义机器可读 `CandidateReceipt`，包含包路径、digest、安装位置、入口与报告版本 |
-| `docs/engineering/testing/e2e/execution.md` | 定义 `OwnedResource` 与 `CleanupReceipt`，并规定 lane preflight 和禁止静默 skip |
-| `docs/engineering/testing/portfolio.md` | 为每条风险补唯一 owner、wiring、排除 lane、删除条件和历史 bug 证据 |
-| `docs/engineering/testing/e2e/authoring.md` | 测试正文保留完整 argv、公开观察与独立 expected，不另维护代码原型 |
+| `docs/roadmap/testing/architecture.md` | 补全 ProcessResult、ControlledProcess、timeout、进程树、子进程变量清洗、redaction、assertion ledger 与错误聚合 |
+| `docs/roadmap/testing/e2e/scenario-repos.md` | 定义机器可读 `CandidateReceipt`，包含包路径、digest、安装位置、入口与报告版本 |
+| `docs/roadmap/testing/e2e/execution.md` | 定义 `OwnedResource` 与 `CleanupReceipt`，并规定 lane preflight 和禁止静默 skip |
+| `docs/roadmap/testing/portfolio.md` | 为每条风险补唯一 owner、wiring、排除 lane、删除条件和历史 bug 证据 |
+| `docs/roadmap/testing/example/README.md` | 每个场景只保留一个 canonical repo，索引只链接而不复制测试正文 |
 | 各 scenario Repo 的 `test/support/process.ts` | 先让每个例子明确返回可控子进程、分离流、强制 timeout、终止进程树并等待退出；契约稳定后再抽到根 runner，不预建大而全的共享命令执行器 |
 | 根 runner 的 server / resource support | readiness 与 shutdown 都要有 deadline；stop 后验证 PID 消失和端口可重新绑定，并以普通 TypeScript API 供 Vitest 与 Playwright Test 复用 |
 | CommonJS package example | 改成真实叶子 consumer repo，安装候选 tarball 并验证 receipt，禁止 workspace/source import |

@@ -1,0 +1,21 @@
+{
+  "name": "niceeval-example-adapter-codex-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "niceeval": "^0.4.6"
+  },
+  "devDependencies": {
+    "@niceeval/testkit": "0.1.0",
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

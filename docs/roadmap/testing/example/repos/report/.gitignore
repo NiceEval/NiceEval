@@ -1,0 +1,5 @@
+.niceeval/
+node_modules/
+playwright-report/
+site/
+test-results/

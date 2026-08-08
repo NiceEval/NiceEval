@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "cli",
+  "areas": ["cli"],
+  "lanes": ["pr", "main", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "test"],
+  "timeoutMinutes": 8,
+  "secrets": [],
+  "paths": ["src/cli.ts", "src/show/**", "src/runner/feedback/**"],
+  "artifacts": [".niceeval/**"]
+}

@@ -3,7 +3,9 @@
 这一篇讲 `niceeval` 命令行**怎么实现**:入口模块怎么分层、一次调用的数据从 argv 到退出码怎么流转,以及调度核心为什么用 Effect-TS、用在哪几处。
 面向要改这部分代码的人。
 
-这不是命令 / flag 参考——命令、flag、环境变量、退出码这些面向用户的行为契约,单源在 `src/cli.ts` 的 `FLAG_OPTIONS` 各项 JSDoc,由 `pnpm docs:reference` 生成进 [`docs-site/zh/reference/cli.mdx`](../docs-site/zh/reference/cli.mdx)(英文版 `docs-site/reference/cli.mdx`)——要查某个 flag 干什么,去那里,不要在这篇找。
+这不是命令 / flag 参考——命令、flag、进程变量、退出码这些面向用户的行为契约,单源在 `src/cli.ts` 的 `FLAG_OPTIONS` 各项 JSDoc。
+它由 `pnpm docs:reference` 生成进 [`docs-site/zh/reference/cli.mdx`](../docs-site/zh/reference/cli.mdx)(英文版 `docs-site/reference/cli.mdx`)。
+要查某个 flag 干什么,去那里,不要在这篇找。
 `show` / `view` 各自的命令行为与真实输出示例见 [`feature/reports/show.md`](feature/reports/show.md) / [`feature/reports/view.md`](feature/reports/view.md)。
 
 ## 模块地图
@@ -59,13 +61,15 @@ process.argv
 ## 装载用户 .ts:宿主模块形态无关
 
 CLI 唯一的运行前提是「装了 niceeval」。
-宿主项目 `package.json` 的 `type` 写什么(`"module"`、`"commonjs"`、不写)不影响任何命令——`npm init -y` 的默认产物(`"type": "commonjs"`)下,`init` 生成的 config 也必须能被下一条命令装载。
-用户的 `.ts`(`niceeval.config.ts`、`evals/`、`experiments/`、`--report` 报告文件)都经 `bin/niceeval.js` 注册的 tsx hook 动态 `import()` 进来,tsx 按离文件最近的 `package.json` 的 `type` 决定把它编成 ESM 还是 CJS,所以两条编译面都要走得通,靠两个机制共同保证、缺一不可:
+宿主项目 `package.json` 的 `type` 写什么(`"module"`、`"commonjs"`、不写)不影响任何命令。
+`npm init -y` 的默认输出(`"type": "commonjs"`)下,`init` 生成的 config 也必须能被下一条命令装载。
+用户的 `.ts`(`niceeval.config.ts`、`evals/`、`experiments/`、`--report` 报告文件)都经 `bin/niceeval.js` 注册的 tsx hook 动态 `import()` 进来。
+tsx 按离文件最近的 `package.json` 的 `type` 决定把它编成 ESM 还是 CJS,所以两条编译面都要走得通,靠两个机制共同保证、缺一不可:
 
 - **bin 同时注册 tsx 的 ESM 与 CJS 两个 hook**(`tsx/esm/api` + `tsx/cjs/api`)。
-  宿主是 CJS 形态时用户文件落进 Node 的 CJS loader,没有 CJS hook 就没人转译,未编译的 TS 会被当 JS 解析直接语法报错。
+  宿主是 CJS 形态时用户文件落进 Node 的 CJS loader,没有 CJS hook 就没人转译,未编译的 TS 会被当 JS 语法读取直接报错。
 - **`package.json` 每个带 `import` 条件的 exports 出口同时带指向同一文件的 `require` 条件**。
-  CJS 编译面下用户文件里的 `import ... from "niceeval/expect"` 会变成 `require(...)`,exports 表缺 `require` 条件时 Node 在解析入口就拒绝(`ERR_PACKAGE_PATH_NOT_EXPORTED`)。
+  CJS 编译面下用户文件里的 `import ... from "niceeval/expect"` 会变成 `require(...)`,exports 表缺 `require` 条件时 Node 在入口查找阶段就拒绝(`ERR_PACKAGE_PATH_NOT_EXPORTED`)。
   `require` 到 `.ts` 没问题——niceeval CLI 场景下 tsx 的 CJS hook 恒已注册,会转译。
 
 ESM 宿主仍是推荐形态:CJS 编译面下 config / eval 文件用不了顶层 `await`。
@@ -74,7 +78,8 @@ ESM 宿主仍是推荐形态:CJS 编译面下 config / eval 文件用不了顶�
 ## 反馈 coordinator:一个 run 只有一个终端协调者
 
 输出形态(人读文本 / `--json`)只决定"终端展示",不进入调度核心,也不是一种 `Reporter`。
-`Reporter` (`onEvent` / `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`)只负责把完成结果写到别处(artifacts、JSON、JUnit、Braintrust、用户自定义平台);`cli.ts` 不再构造 `Console` / `Live` / `Quiet` 这类兼职当展示层的 reporter,两种形态各自的展示逻辑全部收在 `src/runner/feedback/`:
+`Reporter` (`onEvent` / `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`)只负责把完成结果写到别处(artifacts、JSON、JUnit、Braintrust、用户自定义平台)。
+`cli.ts` 不再构造 `Console` / `Live` / `Quiet` 这类兼职当展示层的 reporter,两种形态各自的展示逻辑全部收在 `src/runner/feedback/`:
 
 ```text
 runner/feedback/
@@ -89,25 +94,48 @@ runner/feedback/
                    stopDynamic()(停 tick、清 dashboard)→ finish()(reporter 收尾之后打印最终摘要)两阶段收尾
 ```
 
-run 激活后(`coordinator.start(plan)` 之后),全部诊断——sandbox provisioning retry 耗尽、budget 不可执行、reporter 失败、Ctrl+C 中断——都经 `sink.ts` 的 `reportActivity` / `reportDiagnostic` / `reportAttemptLifecycle` 等函数转发给当前活跃的 coordinator,下层模块(`sandbox/*`、`runner/run.ts`、`runner/report.ts`)不允许直接单独使用 stdout/stderr。
-`sink.ts` 按调用栈维护"当前哪个 coordinator 活跃" (而不是全局单例,给测试里同进程内多次 `runEvals()` 留出隔离空间),run 未激活或 coordinator 尚未构造时回退到 `src/tty-line.ts` 的 bootstrap stderr 出口,保证 argv / config 解析错误仍然可见。
+run 激活后(`coordinator.start(plan)` 之后),全部诊断都经 `sink.ts` 的 `reportActivity` / `reportDiagnostic` / `reportAttemptLifecycle` 等函数转发给当前活跃的 coordinator。
+诊断包括 sandbox provisioning retry 耗尽、budget 不可执行、reporter 失败与 Ctrl+C 中断。
+下层模块(`sandbox/*`、`runner/run.ts`、`runner/report.ts`)不允许直接单独使用 stdout/stderr。
+
+`sink.ts` 按调用栈维护"当前哪个 coordinator 活跃"。
+它不是全局单例,给测试里同进程内多次 `runEvals()` 留出隔离空间。
+run 未激活或 coordinator 尚未构造时回退到 `src/tty-line.ts` 的 bootstrap stderr 出口。
+这保证 argv / config 语法错误仍然可见。
 
 ### required reporter
 
-`cli.ts` 给每个 `Reporter` 实例包一层 `ReporterRegistration { reporter, name, required, target? }`:默认 `Artifacts`、显式 `--json` / `--junit` 标 `required: true`——它们是 agent / CI 读结果的唯一权威入口,写失败必须让 completion / 退出码判红;`config.reporters` 标 `required: false`,失败只折成一条 diagnostic, 不影响 completion 也不阻断其它 reporter 收尾或在飞的 attempt。
-`src/runner/report.ts` 的 `runReporter()` 统一吞掉每次回调抛出的异常,按 `reg.name` 去重折叠成一条 `reporter-error:<name>` diagnostic; `reg.required` 决定它是否写进最终 `InvocationCompletion.reporterErrors` 并让 completion 非 `complete`。
+`cli.ts` 给每个 `Reporter` 实例包一层 `ReporterRegistration { reporter, name, required, target? }`。
+默认 `Artifacts`、显式 `--json` / `--junit` 标 `required: true`。
+它们是 agent / CI 读结果的唯一权威入口,写失败必须让 completion / 退出码判红。
+
+`config.reporters` 标 `required: false`。
+它的失败只折成一条 diagnostic。
+这不影响 completion,也不阻断其它 reporter 收尾或在飞的 attempt。
+`src/runner/report.ts` 的 `runReporter()` 统一吞掉每次回调抛出的异常。
+它按 `reg.name` 去重折叠成一条 `reporter-error:<name>` diagnostic。
+`reg.required` 决定它是否写进最终 `InvocationCompletion.reporterErrors` 并让 completion 非 `complete`。
 
 ### locator 在调度前生成
 
 `runEvals()` 在展开/调度任何 attempt 之前就为每个 Experiment 预分配持久化 `runId`,并在构造 fresh attempt plan 时立即计算 `locator = encodeAttemptLocator({ runId, evalId, attempt })`。
 这个值作为 attempt 身份的一部分传进 `runAttempt`,不是完成后再写回结果。
 于是 verdict 定稿时提交的留存注册表、feedback coordinator 的 failure / kept 事件、reporter 的 `eval:complete` 与最终 `result.json` 从第一次观察起就拿到同一个 locator。
-Artifacts writer 经 `RunShape.runIds` 使用同一份身份并把来源写成 `locatorRunId`;自动携带的条目仍原样保留旧 locator 与来源 Run,不按当前 invocation 重算。
+
+Artifacts writer 经 `RunShape.runIds` 使用同一份身份并把出处写成 `locatorRunId`。
+自动携带的条目仍原样保留旧 locator 与出处 Run,不按当前 invocation 重算。
 
 ## 终端框线:一个渲染件,全仓消费
 
-框线的**行为契约**单源在[排版原语 · 区域框](feature/reports/library/layout.md#区域框text-面的框线体裁)(几何、嵌字、嵌套降级、量测、非 TTY 降级);本节定它的**物理实现**:全仓只有一个面板渲染件,所有终端面板——`show` 的证据区块(Section text 面)、`exp` 的 live 面板与结束面板(`runner/feedback/human.ts`)、`sandbox` 命令组的一次性面板(`sandbox/cli-commands.ts`)——都经它产出物理行,任何模块不得自己拼 `╭─` 字符串。
-理由与量测同源:渲染与量测必须用同一张宽度表,框线几何一旦出现第二份实现,嵌字优先级、截断规则与宽度表就开始各自漂移——右边框顶歪、标题截断不一致这类 bug 的结构性根因就是「多处手拼」。
+框线的**行为契约**单源在[排版原语 · 区域框](feature/reports/library/layout.md#区域框text-面的框线体裁)。
+契约含几何、嵌字、嵌套降级、量测与非 TTY 降级。
+
+本节定它的**物理实现**:全仓只有一个面板渲染件。
+所有终端面板——`show` 的证据区块(Section text 面)、`exp` 的 live 面板与结束面板(`runner/feedback/human.ts`)、`sandbox` 命令组的一次性面板(`sandbox/cli-commands.ts`)——都经它产出物理行。
+任何模块不得自己拼 `╭─` 字符串。
+理由与量测同源:渲染与量测必须用同一张宽度表。
+框线几何一旦出现第二份实现,嵌字优先级、截断规则与宽度表就开始各自漂移。
+右边框顶歪、标题截断不一致这类 bug 的结构性根因就是「多处手拼」。
 
 ### 落点与依赖方向
 
@@ -125,33 +153,43 @@ src/report/model/panel.ts         面板渲染件:同步纯函数,消费 text-la
 - **消费方**:`Section` 的 text 面(`src/report/definition/primitives.tsx`)、`runner/feedback/human.ts`、`sandbox/cli-commands.ts`。
   `Grid` cell 的直角框仍归 `grid-layout.ts`(它是数据格几何,不是区域框),但量测同样只走 text-layout。
 - **依赖方向**:面板渲染件与 text-layout 同属 report 构建单元的 model 层,是无模块态的同步纯函数。
-  CLI 侧(feedback renderer、sandbox 命令组)按普通模块 import 它们,与[单一 report runtime 身份](feature/reports/architecture.md#单一-report-runtime-身份)不冲突——那条约束针对装载态与 `ReportDefinition` 品牌,不约束纯函数工具;反向(report 组件 import CLI / feedback)仍然禁止。
+  CLI 侧(feedback renderer、sandbox 命令组)按普通模块 import 它们,与[装载期约束](feature/reports/architecture.md#执行模型)不冲突——那条约束针对装载态与 `ReportDefinition` 品牌,不约束纯函数工具。
+  反向(report 组件 import CLI / feedback)仍然禁止。
 
 ### 为什么不引第三方终端 UI 库
 
 - **`ink`(React 终端渲染器)**:报告树已有自己的双面组件模型与 `resolve → validate → render` 管线,ink 再带一套 reconciler 与 JSX runtime 就是第二个组件模型。
   live 面板的刷新契约(真实状态变化驱动、每秒最多 4 帧、历史帧不得进 scrollback)要求重绘时点完全受控,交给 reconciler 就失去这层控制。
-  report 的 web 面(`show` / `view`)本就以 `react` + `react-dom/server` 渲染静态 HTML,`react` 是本包的运行时依赖;但 live 面板走的是无模块态同步纯函数的 text 面,重绘时点自持,不经 react——不为了终端 UI 再叠一层 reconciler。
-- **`boxen` / `cli-table3` 这类框线库**:框画得出来,但它们各自内置宽度量测(`string-width` 及其 East-Asian-Ambiguous 策略),与区域框契约定死的宽度表(CJK 记 2 列、`·` `●` 等 ambiguous 恒记 1 列)不保证一致——两张宽度表并存正是要消灭的漂移;边框嵌标题 / meta / 下钻命令、嵌套降横隔、100 列上限这些契约规则它们也不覆盖,包一层适配后几何还是要自己写。
-- **结论**:框线几何是百行级同步纯函数,底层唯一的难点(显示宽度)已由 `text-layout.ts` 单源解决;引库的成本(供应链、版本漂移、第二张宽度表)高于自写成本。
-  色彩只标结论词,按需写 ANSI 转义,不引 `chalk`。
+  report 的 web 面(`show` / `view`)本就以 `react` + `react-dom/server` 渲染静态 HTML,`react` 是本包的运行时依赖。
+  但 live 面板走的是无模块态同步纯函数的 text 面,重绘时点自持,不经 react——不为了终端 UI 再叠一层 reconciler。
+- **`boxen` / `cli-table3` 这类框线库**:框画得出来,但它们各自内置宽度量测(`string-width` 及其 East-Asian-Ambiguous 策略),与区域框契约定死的宽度表(CJK 记 2 列、`·` `●` 等 ambiguous 恒记 1 列)不保证一致。
+  两张宽度表并存正是要消灭的漂移;边框嵌标题 / meta / 下钻命令、嵌套降横隔、100 列上限这些契约规则它们也不含,包一层适配后几何还是要自己写。
+- **取舍**:框线几何是百行级同步纯函数,底层唯一的难点(显示宽度)已由 `text-layout.ts` 单源解决。
+  引库的成本(供应链、版本漂移、第二张宽度表)高于自写成本。
+  色彩只标判定词,按需写 ANSI 转义,不引 `chalk`。
 
-哪些输出该画框不由这套实现决定,由[区域框的体裁规则](feature/reports/library/layout.md#区域框text-面的框线体裁)决定:面板画框;`list` 的 eval 清单、`sandbox stop` 的确认行、diff hunk、失败流这类逐条流事件不画框,不为统一观感而框化。
+哪些输出该画框不由这套实现决定,由[区域框的体裁规则](feature/reports/library/layout.md#区域框text-面的框线体裁)决定。
+面板画框。
+`list` 的 eval 清单、`sandbox stop` 的确认行、diff hunk、失败流这类逐条流事件不画框,不为统一观感而框化。
 
-## flag 解析:表驱动,单源
+## flag 读取:表驱动,单源
 
-`FLAG_OPTIONS`(`src/cli.ts`)是 `node:util` `parseArgs` 的 options 表,每一项的 JSDoc 注释就是它在生成的 CLI 参考页 flag 表里的说明——改 flag 语义只改这条注释,不用碰生成脚本(`scripts/generate-reference.ts`)。
-`--no-x` 形式的负向 flag 显式声明成独立表项，不启用 `parseArgs` 的全局 `allowNegative`；否则每个 boolean flag 都会隐式获得未设计的负向别名。
+`FLAG_OPTIONS`(`src/cli.ts`)是 `node:util` `parseArgs` 的 options 表。
+每一项的 JSDoc 注释就是它在生成的 CLI 参考页 flag 表里的说明——改 flag 语义只改这条注释,不用碰生成脚本(`scripts/generate-reference.ts`)。
+`--no-x` 形式的负向 flag 显式声明成独立表项,而不是依赖 `parseArgs` 的 `allowNegative`(后者要求 Node 20.14+,而 `engines` 只保证 >=18)。
 `strict: true` 让未知 flag 直接报错,不静默吞掉后面的位置参数。
 
-`--diff=<path>` 是表驱动解析之外唯一的例外:`--diff` 本身是布尔 flag(单独使用 `--diff` = 文件级摘要),`=<path>` 形式必须在喂给 `parseArgs` 之前手工预扫出来(空格分隔的 `--diff <path>` 里 `<path>` 会被当成位置参数 = eval id 前缀,这是刻意的,不是 bug)。
+`--diff=<path>` 是表驱动读取之外唯一的例外。
+`--diff` 本身是布尔 flag,单独使用 `--diff` = 文件级摘要。
+`=<path>` 形式必须在喂给 `parseArgs` 之前手工预扫出来。
+空格分隔的 `--diff <path>` 里 `<path>` 会被当成位置参数 = eval id 前缀,这是刻意的,不是 bug。
 
 ## Effect-TS 用在哪、为什么
 
 Effect 只用在调度核心——`runner/run.ts`、`runner/attempt.ts`、`sandbox/resolve.ts` 的 `createSandbox`——不用在 `cli.ts` 本身,也不用在 `show` / `view` 的只读路径。
 三个具体问题决定了这条边界画在哪:
 
-### 1. 两级并发闸,不是简单的信号量
+### 1. 两级并发限制,不是简单的信号量
 
 `run.ts` 用 `Effect.forEach(attempts, ..., { concurrency: "unbounded" })`:每个 attempt 立刻有自己的 fiber,真正的并发上限由两级 `Effect.Semaphore` 把守(全局 `globalSem` + 可选的实验级 `runSem`)。
 关键设计是 preflight/body 两段拆分:
@@ -191,12 +229,13 @@ const sandbox = yield* Effect.acquireRelease(
 沙箱 lease 的 release disposition 初始为 `stop`;正常、抛错或 Ctrl+C 关闭 Scope 时都会停容器。
 只有 verdict 定稿后先把留存条目原子写盘成功,runner 才把 disposition 切到 `keep`;写盘失败保持 `stop`。
 OTel receiver 不参与留存,始终由自己的 finalizer 关闭。
-这是"不留无主沙箱"承诺的实现机制,不是靠 `try/finally` 手写覆盖每条退出路径。
+这是"不留无主沙箱"承诺的实现机制,不是靠 `try/finally` 手写穷举每条退出路径。
 
 ### 3. 取消是一等信号,不是事后检查
 
-`cli.ts` 的 SIGINT/SIGTERM 处理器创建一个 `AbortController`，在收到信号后调用 `abort()`，再把 `ctrl.signal` 作为 `runEvals()` 的输入交给 runner。
-`src/runner/run.ts` 负责把这个 signal 传给 `Effect.runPromiseExit`；这一层才完成从 Node `AbortSignal` 到 Effect fiber 中断的桥接：
+`cli.ts` 的 SIGINT/SIGTERM 处理器创建一个 `AbortController`,在收到信号后调用 `abort()`,再把 `ctrl.signal` 作为 `runEvals()` 的输入交给 runner。
+`src/runner/run.ts` 负责把这个 signal 传给 `Effect.runPromiseExit`。
+这一层才完成从 Node `AbortSignal` 到 Effect fiber 中断的桥接:
 
 ```typescript
 const exit = await Effect.runPromiseExit(
@@ -209,46 +248,83 @@ const exit = await Effect.runPromiseExit(
 );
 ```
 
-`runPromiseExit`（而非 `runPromise`）返回一个 `Exit` 而不抛错，让 runner 把“用户按了 Ctrl+C”当成正常的部分结果收尾（用已完成的 results 出一份汇总），而不是让中断变成一条看起来像 bug 的崩溃栈。
-`catchAllCause` 把中断类的 `Cause` 咽下、非中断的意外照常上抛——这两类必须分开处理，否则一次 Ctrl+C 要么被误判成真缺陷，要么真缺陷被误当成正常中断吞掉。
+`runPromiseExit`(而非 `runPromise`)返回一个 `Exit` 而不抛错。
+它让 runner 把"用户按了 Ctrl+C"当成正常的部分结果收尾,用已完成的 results 出一份汇总,而不是让中断变成一条看起来像 bug 的崩溃栈。
+`catchAllCause` 把中断类的 `Cause` 咽下、非中断的意外照常上抛。
+这两类必须分开处理,否则一次 Ctrl+C 要么被误判成真缺陷,要么真缺陷被误当成正常中断吞掉。
 
 每个 attempt 自己还有硬性的工作超时边界(`Effect.timeoutTo`),独立于外层的用户中断信号。
-关键嵌套是 **Scope 在外、timeout 在内**:到点只中断产生 verdict 的工作 fiber并转换成 `errored` draft,沙箱 lease 此时仍活着;runner 在同一 Scope 内执行有界 teardown、定稿 verdict并尝试提交 keep,最后才关闭 Scope。
-这样超时现场可以按策略留下,而 Ctrl+C 是中断外层 Scope,没有 verdict / keep commit 就一定走 `stop`。
-即便 adapter / test 无视传入 signal,Effect 仍能从调度侧结束等待并进入收尾;各 teardown 与 provider stop 自己另有清理超时,不能无限拖住硬边界后的退出。
+关键嵌套是 **Scope 在外、timeout 在内**。
+到点只中断产生 verdict 的工作 fiber并转换成 `errored` draft,沙箱 lease 此时仍活着。
+runner 在同一 Scope 内执行有界 teardown、定稿 verdict并尝试提交 keep,最后才关闭 Scope。
+
+这样超时现场可以按策略留下。
+而 Ctrl+C 是中断外层 Scope,没有 verdict / keep commit 就一定走 `stop`。
+即便 adapter / test 无视传入 signal,Effect 仍能从调度侧结束等待并进入收尾。
+各 teardown 与 provider stop 自己另有 cleanup 超时,不能无限拖住硬边界后的退出。
 
 ### 为什么 `cli.ts` 本身不用 Effect
 
-`cli.ts` 的职责到 `runEvals({ ..., signal: ctrl.signal })` 这一次调用为止就结束了——它构造 `AbortController`、组装调度所需的数据(`AgentRun[]`、reporters、并发上限),然后把控制权和一个 `AbortSignal` 交给调度核心,自己不持有任何需要跨越成功/失败/中断都保证释放的资源。
-`show` / `view` 同理:读一份落盘的 JSON、渲染、退出,没有需要结构化并发或跨路径资源清理的场景。
-Effect 在这里买的是两样东西——"资源释放不看退出路径"和"结构化取消"——只在真正有并发 attempt、真正持有沙箱/网络资源的调度核心才用得上这两样;把这套机制铺到线性的 argv 解析或一次性的同步读取路径上,只是仪式,不解决任何问题。
+`cli.ts` 的职责到 `runEvals({ ..., signal: ctrl.signal })` 这一次调用为止就结束了。
+它构造 `AbortController`、组装调度所需的数据(`AgentRun[]`、reporters、并发上限),然后把控制权和一个 `AbortSignal` 交给调度核心。
+它自己不持有任何需要跨越成功/失败/中断都保证释放的资源。
+
+`show` / `view` 同理:读一份落盘的 JSON、渲染、退出,没有需要结构化并发或跨路径资源 cleanup 的场景。
+Effect 在这里买的是两样东西:"资源释放不看退出路径"和"结构化取消"。
+这两样只在真正有并发 attempt、真正持有沙箱/网络资源的调度核心才用得上。
+把这套机制铺到线性的 argv 读取或一次性的同步读取路径上,只是仪式,不解决任何问题。
 
 ## 中断:三级响应
 
 ![Ctrl+C 的三级中断时序](assets/cli-interrupt-sequence.svg)
 
 **强清不是绕过收尾,而是加速它。**
-中断路径上每一段收尾都要跑:attempt 级收尾链(Agent teardown → 已登记 cleanup 逆序 → Provider finalizer)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
+中断路径上每一段收尾都要跑。
+attempt 级收尾链(Agent teardown → 已登记 cleanup 逆序 → Provider finalizer)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾包住。
+强清路径先强停沙箱,让卡在沙箱 I/O 上的收尾立刻失败返回。
+随后的退出条件是**事件驱动的 settle,不是时钟**。
+它并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
 
-实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**(本实验第一个通过派发许可的 attempt)起登记为可执行入口——setup 挂起、抛错都不影响它可达。
-执行体是 memoized 的一次性 promise:正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转;条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。
-登记进程内注册表的同一时点,收尾意向也持久化到磁盘(`.niceeval/teardowns/` 逐条目文件),settle 后删除——它不参与进程内的任何路径,只服务强杀后的启动自愈(契约见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。
+实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**起登记为可执行入口。
+触发时点是本实验第一个通过派发许可的 attempt。
+setup 挂起、抛错都不影响它可达。
+
+执行体是 memoized 的一次性 promise。
+正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转。
+条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。
+
+登记进程内注册表的同一时点,收尾意向也持久化到磁盘(`.niceeval/teardowns/` 逐条目文件),settle 后删除。
+它不参与进程内的任何路径,只服务强杀后的启动自愈(契约见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。
 `main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套回退再退出。
-attempt 级 Hook 活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户 Hook 会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
+attempt 级 Hook 活在各自 fiber 的收尾链里,不进注册表。
+从 fiber 外重新执行用户 Hook 会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
 
-**有界性是事件驱动收口的前提**:每个收尾可调用体(Agent teardown、每条已登记 cleanup、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。
+**有界性是事件驱动收口的前提**。
+每个收尾可调用体(Agent teardown、每条已登记 cleanup、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)cleanup 超时。
+到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。
 因此「等全部 settle」有确定上界,不会无限拖住退出。
-四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**——看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),强清上限至少容纳一个满额清理超时。
+
+四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**。
+看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),强清上限至少容纳一个满额 cleanup 超时。
 强清上限不是第 2 级的语义(settle 才是),它只拦「收尾可调用体绕过了自己的超时」这种失守病态,到点放弃退出——那时的职责与第 3 级相同。
 
-目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个回退函数再退出;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。
+目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown。
+每个沙箱要么在本次 run 的 cleanup 集合里——退出前必被 stop。
+第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个回退函数再退出。
+要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从 cleanup 集合移出(`niceeval sandbox list` 可见、`stop` 可清)。
 中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。
-`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;这条路径的回退是事后认领:实例面靠创建期写进 provider 元数据的运行标识与 `niceeval sandbox prune`(见 [Sandbox · 孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面回退)),实验面靠磁盘上的收尾登记与下次 `niceeval exp` 的启动自愈(见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。
+
+`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内。
+这条路径的回退是事后认领。
+实例面靠创建期写进 provider 元数据的运行标识与 `niceeval sandbox prune`(见 [Sandbox · 孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面回退))。
+实验面靠磁盘上的收尾登记与下次 `niceeval exp` 的启动自愈(见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。
 
 ## 相关阅读
 
-- [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— 人读文本与 `--json` 两种输出形态的完整行为契约(什么时候动态覆盖、什么时候永久追加、示例输出)——这篇讲行为,本篇讲 coordinator/reporter 的接线方式。
-- [Runner](runner.md) —— 调度行为的契约(并发、首过即停、budget、完成状态、退出码、指纹缓存)——这篇讲行为,本篇讲这些行为背后的 Effect 机制。
+- [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— 人读文本与 `--json` 两种输出形态的完整行为契约(什么时候动态替换、什么时候永久追加、示例输出)。
+  这篇讲行为,本篇讲 coordinator/reporter 的接线方式。
+- [Runner](runner.md) —— 调度行为的契约(并发、首过即停、budget、完成状态、退出码、指纹缓存)。
+  这篇讲行为,本篇讲这些行为背后的 Effect 机制。
 - [Sandbox · Architecture](feature/sandbox/architecture.md) —— `acquireRelease` 在 provider 创建上的另一处用法、provisioning 重试如何临时归还并发槽位。
 - [Show](feature/reports/show.md) / [View](feature/reports/view.md) —— 这两条只读命令各自的行为与真实输出。
-- [docs-site CLI 参考](../docs-site/zh/reference/cli.mdx) —— 面向用户的命令 / flag / 环境变量文档。
+- [docs-site CLI 参考](../docs-site/zh/reference/cli.mdx) —— 面向用户的命令 / flag / 进程变量文档。
