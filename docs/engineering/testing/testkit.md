@@ -17,8 +17,9 @@ Testkit 的源码跟随当前 checkout，但场景 Repo 只消费根 runner 为�
 不是身份、缓存键或稳定性承诺。Testkit 不发布 npm、不采用独立 semver/tag/workflow，也不对仓外消费者建立 API 承诺。
 若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
-Node 下限为 18，tarball 同时提供 ESM、CJS 与对应类型入口。构建必须先删除 `dist/` 再完整重建，避免增量残留被 pack。
-Testkit 不依赖 NiceEval、根 runner 或 scenario；它的 meta-test 只消费固定的非 NiceEval fixture，保持 bootstrap 无环。
+Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
+构建必须先删除 `dist/` 再完整重建，避免增量残留进入场景。Testkit 不依赖 NiceEval、根 runner 或 scenario；它的测试只消费
+固定的非 NiceEval fixture，保持 bootstrap 无环。
 
 ## 准入边界
 

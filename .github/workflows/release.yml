@@ -3,7 +3,7 @@ name: Release
 # 发版到 npm 只有一条路:打 v* 标签、push 到 origin。标签号就是发布版本号,
 # CI 自己从标签名解析版本号,在 runner 本地写入 package.json(不写回仓库),
 # 然后构建、pnpm pack 恰好一次生成待发 tarball 并保存 sha256。Package/CLI/Report
-# preflight 与当前 Node / Node 18 的原生脚本 smoke 全部安装同一份 tgz;全部通过后
+# preflight 与 Node 22 原生脚本 smoke 全部安装同一份 tgz;全部通过后
 # npm publish 直接发布这份 tarball —— 不重新 prepare、不重新 pack、不改写 exports,
 # registry 收到的字节与 preflight 验证过的字节一致(docs/engineering/testing/e2e/package.md
 # 「安装与身份」、docs/engineering/testing/e2e/execution.md「Release 信任链」)。
@@ -16,7 +16,7 @@ name: Release
 # prepare —— npm publish 接收的是已经 pack 好的 tarball,不执行生命周期脚本。
 #
 # smoke 脚本是纯原生 Node(ESM import 与 CJS require 遍历安装后的全部公开 exports),
-# 不经过 tsx;它在当前 release Node 与 Node 18(engines 下限)各跑一遍。
+# 不经过 tsx;只在仓库统一的 Node 22 基线上运行。
 
 on:
   push:
@@ -133,7 +133,7 @@ jobs:
 
       # 原生脚本 smoke:把 tarball 装进干净临时项目,用 raw Node 遍历 exports
       # 全部公开入口(ESM import + CJS require),并跑一次安装后的 niceeval binary。
-      # 不经过 tsx,直接证明 dist 产物在 Node 18 / 22 下可装载。
+      # 不经过 tsx,直接证明 dist 产物在 Node 22 下可装载。
       - name: Native smoke on release Node
         env:
           CANDIDATE: ${{ steps.pack.outputs.tgz }}
@@ -187,30 +187,8 @@ jobs:
           ./node_modules/.bin/niceeval --help >/dev/null
           echo "[release] native smoke passed on node $(node --version)"
 
-      # engines 下限:同一份 smoke 在 Node 18 重跑,产物必须对支持范围的最小版本也可装载。
-      - name: Set up Node 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Native smoke on Node 18
-        run: |
-          set -euo pipefail
-          cd "${RUNNER_TEMP}/niceeval-smoke"
-          test -f smoke.mjs
-          test -d node_modules/niceeval
-          node smoke.mjs
-          ./node_modules/.bin/niceeval --help >/dev/null
-          echo "[release] native smoke passed on node $(node --version)"
-
-      # 回切发布 Node;npm publish 直接消费 preflight 通过的那份 tarball,
-      # 不触发 prepare、不重新构建工作目录,发布前再核对一次 sha256。
-      - name: Restore release Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: "https://registry.npmjs.org"
-
+      # npm publish 直接消费 preflight 通过的那份 tarball，不触发 prepare、
+      # 不重新构建工作目录；发布前再核对一次 sha256。
       - name: Verify digest and publish the exact tarball
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -4,9 +4,8 @@
 // - object 条件体是公开 runtime subpath：同一 raw Node 进程内分别用 import() 与
 //   createRequire(import.meta.url)() 装载，断言两面公开导出 keys 一致；根入口再对
 //   两边同时存在的每个函数/类逐一断言引用 ===（同一进程内共享 runtime identity）。
-// - 纯字符串 exports 是静态 asset：只验证 import.meta.resolve + readFile 公开可达。
-//   解析目标统一为 filesystem path 消费，兼容 import.meta.resolve 的 file:// URL 与
-//   require.resolve fallback（Node 18.19 之前无 import.meta.resolve）的普通路径。
+// - 纯字符串 exports 是静态 asset：只验证 import.meta.resolve + readFile 公开可达，
+//   并把 import.meta.resolve 返回的 file:// URL 转成 filesystem path 消费。
 // - 解析目标存在、但装载因缺失第三方依赖失败时，只有缺失包名命中安装后
 //   package.json 的 peerDependenciesMeta[name].optional===true（scoped 包按
 //   @scope/name 解析）才判为 dependency-gated 并跳过；其余缺失与其它失败
@@ -14,10 +13,8 @@
 //   hard failure，进程以非零退出并输出失败明细。
 // - 另从仓库外临时 cwd 执行安装后的 niceeval --help。
 //
-// 本文件只用 Node 18 内置 API，可由 Vitest（Journey A）与 smoke.mjs 复用，
-// 也可用 `node fixtures/traverse-entries.mjs` 直接运行。设置环境变量
-// NICEEVAL_TRAVERSE_USE_REQUIRE_RESOLVE=1 强制 require.resolve fallback，
-// 用于测试覆盖 import.meta.resolve 不可用的分支。
+// 本文件只用 Node 22 内置 API，可由 Vitest（Journey A）与 smoke.mjs 复用，
+// 也可用 `node fixtures/traverse-entries.mjs` 直接运行。
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
@@ -78,25 +75,12 @@ function optionalPeerNames(packageJson) {
   return names;
 }
 
-/**
- * import.meta.resolve 在 Node 18.19+ 可用，返回 file:// URL；不可用或显式要求
- * fallback（preferRequireResolve）时退回 exports 感知的 require.resolve，返回
- * 普通 filesystem path。两者经 toFilePath 统一后消费。
- */
-function resolvePublicly(require, specifier, preferRequireResolve) {
-  if (!preferRequireResolve && typeof import.meta.resolve === "function") {
-    try {
-      return import.meta.resolve(specifier);
-    } catch (error) {
-      if (error && (error.code === "ERR_UNSUPPORTED_DIR_IMPORT" || error.code === "ERR_MODULE_NOT_FOUND" || error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED")) {
-        throw error;
-      }
-    }
-  }
-  return require.resolve(specifier);
+/** Node 22 的 import.meta.resolve 返回公开 export 对应的 file:// URL。 */
+function resolvePublicly(specifier) {
+  return import.meta.resolve(specifier);
 }
 
-/** 统一 resolved target 为可读 filesystem path：兼容 file:// URL 与 require.resolve 路径。 */
+/** 把 import.meta.resolve 的 file:// URL 转成可读 filesystem path。 */
 function toFilePath(target) {
   if (typeof target === "string" && target.startsWith("file:")) {
     return fileURLToPath(target);
@@ -167,10 +151,10 @@ function checkRootIdentity(esmModule, cjsModule) {
   return { checked: true, mismatches };
 }
 
-async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers, preferRequireResolve) {
+async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers) {
   let resolved;
   try {
-    resolved = resolvePublicly(require, specifier, preferRequireResolve);
+    resolved = resolvePublicly(specifier);
   } catch (error) {
     return { specifier, exportKey, status: "failed", error: describeError(error) };
   }
@@ -224,9 +208,9 @@ async function checkRuntimeEntry(require, specifier, exportKey, optionalPeers, p
   return { specifier, exportKey, status: "failed", error: describeError(viaImport.error) };
 }
 
-function checkAsset(require, specifier, exportKey, preferRequireResolve) {
+function checkAsset(specifier, exportKey) {
   try {
-    const resolved = resolvePublicly(require, specifier, preferRequireResolve);
+    const resolved = resolvePublicly(specifier);
     if (!targetExists(resolved)) {
       throw new Error(`resolved asset target not found: ${resolved}`);
     }
@@ -285,10 +269,8 @@ function checkCli(require, packageName, packageRoot) {
 /**
  * 遍历安装后包的 exports，执行 Journey A 全部断言并返回结构化 report。
  * 不抛异常；失败全部收集进 report.failures（exit 非零由调用方决定）。
- * preferRequireResolve 强制走 require.resolve fallback（普通 filesystem path），
- * 用于覆盖 import.meta.resolve 不可用（Node 18.19 之前）的分支。
  */
-export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_NAME, fromUrl = import.meta.url, preferRequireResolve = false } = {}) {
+export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_NAME, fromUrl = import.meta.url } = {}) {
   let packageRoot = "";
   let packageVersion = "unknown";
   let require = null;
@@ -312,9 +294,9 @@ export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_N
     if (exportKey.includes("*")) continue;
     const specifier = specifierOf(packageName, exportKey);
     if (typeof value === "string") {
-      assets.push(checkAsset(require, specifier, exportKey, preferRequireResolve));
+      assets.push(checkAsset(specifier, exportKey));
     } else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      entries.push(await checkRuntimeEntry(require, specifier, exportKey, optionalPeers, preferRequireResolve));
+      entries.push(await checkRuntimeEntry(require, specifier, exportKey, optionalPeers));
     }
   }
 
@@ -339,8 +321,7 @@ export async function traverseInstalledEntries({ packageName = DEFAULT_PACKAGE_N
 }
 
 async function main() {
-  const preferRequireResolve = process.env.NICEEVAL_TRAVERSE_USE_REQUIRE_RESOLVE === "1";
-  const report = await traverseInstalledEntries({ preferRequireResolve });
+  const report = await traverseInstalledEntries();
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (!report.ok) {
     for (const failure of report.failures) {
