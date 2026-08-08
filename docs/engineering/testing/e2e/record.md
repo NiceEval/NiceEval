@@ -17,9 +17,10 @@
 并把版本写成独立字面量。malformed fixture 必须停在公开 reader 的错误边界，不能回退到模糊 substring。
 
 Report Repo 只消费公开 Record API 或公开 CLI 产生的事实，不直接读取 `run.json`、`result.json`、`events.json` 等私有路径。
-只改变私有存储组织或 reader 内部 DTO 时，本 Repo 与 Report Repo 的测试源码、fixture 和 expected 都不得修改。
+只改变私有存储组织或 reader 内部 DTO 属于公开契约不变的内部重构；Record 与 Report owner 不应因此改变。
 
-## 重构免疫验收
+## 稳定性归属
 
-接管前执行一次 contract-preserving perturbation：改变私有存储组织与 reader 实现，同时保持公开 Record API 和 show 输出。
-测试文件、fixture 与 expected 必须零 diff，外部 candidate tarball 原样全绿。另一个真正改变公开格式的 mutation 必须让本 owner 变红。
+本页只界定公开边界与 owner，不另设一套无法读取 PR diff 的执行规则。测试文件、fixture、expected 是否超出变更预算，
+以及 contract-preserving perturbation 与公开格式 mutation 的收据是否充分，统一由
+[Pullfrog review prompt](../../../../.github/pullfrog-review-prompt.md#prompt)逐文件审计并给出 `Request changes` verdict。

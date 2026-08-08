@@ -14,6 +14,11 @@
 
 ### 1. 机器出口
 
+#### show-json-pipe
+
+安装后的 `niceeval show --json` 经真实 pipe 交付完整文档；大于常见流缓冲区的尾部 sentinel 仍可读，退出码与 JSON 信封合法。
+该原子结果由 `e2e/report/test/show-json-pipe.test.ts` 单独拥有，不与选择、历史或渲染命题压进同一文件。
+
 - CLI `--json` 输出的机器摘要与读取面口径一致。
 - `niceeval show --json` 的信封用 `sample`回显范围，`view` 判别 10 个内建 task Result 的 `data`形状；history attempt 用 `runStartedAt`。
 - 对同一份真实 Record，text 与 JSON 必须选出同一批实体且公共派生字段同值，证明两面消费同一 task Result，不是 CLI 私有公式。
@@ -78,7 +83,9 @@ class/tag selector 只是找到元素的手段，除非公开文档把它声明�
 
 ## 边界
 
-判定、聚合、计算口径与报告定义的装载规范化这些**数据语义**归[单元测试 Reports](../unit/reports.md)——数据源的 `compute()` 与树解析管线在 fixture 上证明，不需要真实运行。
-本仓库承接从数据到呈现的一切：渲染出来的结构、排版、样式与交互，以及 CLI 读面的进程级行为——选择收窄、用法错误矩阵与装载失败反馈都在真实进程的退出码与 stderr 上验收。
+判定、聚合、计算口径与报告定义的装载规范化，默认由本仓库通过真实输入及公开读面结果证明；不再因为它们是“数据语义”
+就整类分配给 Unit。只有公开结果无法稳定穷举或区分的具名算法风险，才在
+[Unit Reports](../unit/reports.md)登记最小矩阵。本仓库同时拥有渲染结构、排版、样式与交互，以及 CLI 读面的进程级行为——
+选择收窄、用法错误矩阵与装载失败反馈都在真实进程的退出码与 stderr 上验收。
 
 每个 Repo 的[公开读回](README.md#公开读回)会在真实数据上驱动 show 的读取与渲染路径，但断言停在自有事实的出现与口径一致；逐字段的格式、出口与渲染契约只在本仓库验收一次。

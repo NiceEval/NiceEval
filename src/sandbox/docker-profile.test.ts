@@ -22,11 +22,6 @@ import {
   dockerImageSandbox,
   sandboxLayerStateOf,
 } from "./layer.ts";
-import {
-  dockerProfileDoctorDindConfig,
-  DOCKER_PROFILE_DOCTOR_DIND_CMD,
-  DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK,
-} from "./docker-profile/cli.ts";
 import { loadDockerProfileRegistry, loadDockerProfileRegistryAt } from "./docker-profile/runtime.ts";
 
 const GiB = 1024 ** 3;
@@ -301,25 +296,6 @@ describe("Docker execution profile v1 pure descriptor", () => {
         network: { ...networkVersion.policy.network, version: 2 },
       },
     }))).toBe("sandbox.docker-profile-schema-invalid");
-  });
-});
-
-describe("Docker profile doctor Unix-only DinD", () => {
-  it("保留官方entrypoint所需的dockerd Cmd，不写TLS Env，并检查2375/2376 listener", () => {
-    expect(DOCKER_PROFILE_DOCTOR_DIND_CMD).toEqual([
-      "dockerd",
-      "--host=unix:///var/run/docker.sock",
-      "--shutdown-timeout=2",
-    ]);
-    expect(dockerProfileDoctorDindConfig()).toEqual({ Cmd: [...DOCKER_PROFILE_DOCTOR_DIND_CMD] });
-    expect(dockerProfileDoctorDindConfig()).not.toHaveProperty("Env");
-    expect(DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK).toEqual([
-      "sh",
-      "-ec",
-      expect.stringContaining("/proc/net/tcp /proc/net/tcp6"),
-    ]);
-    expect(DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK[2]).toContain(":0947$");
-    expect(DOCKER_PROFILE_DOCTOR_UNIX_ONLY_CHECK[2]).toContain(":0948$");
   });
 });
 

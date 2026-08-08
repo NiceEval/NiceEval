@@ -5,10 +5,10 @@ NiceEval 只提供候选包注入、场景 Repo 隔离与 Testkit 机械原语�
 
 ## 文件形状
 
-一个文件只属于一个 Feature owner，并在第一行写 `feature:`。历史缺陷凭据只贴在确实能杀死旧实现的 case 旁。
+一个文件只属于一个稳定结果 owner，并在第一行写唯一 `owner:`。历史缺陷凭据只贴在确实能杀死旧实现的 case 旁。
 
 ```ts
-// feature: docs/feature/reports/show.md
+// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
 test("show --json 经 pipe 交付完整文档", async () => {
   // 完整 argv、公开观察与独立 expected 留在这里。
 });
@@ -45,7 +45,23 @@ expect(document.view).toBe("attempt");
 - cleanup 无条件终结资源，并保留更早失败。
 
 Journey 在每个域间接缝立即断言，不把整段流程压成最后一个页面断言。
-同一文件中的独立结果由原生 runner 分成多个 test；共享 Evidence 只有冻结后才能只读复用。
+同一 owner 的最小等价类可由原生 runner 的 `test.each` 展开；独立结果不能只靠拆成同文件的多个 `test()` 冒充独立 owner。
+共享 Evidence 只有冻结后才能只读复用。
+
+检查点只服务 Journey 的终态。一个命题拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败时，
+它不属于该 Journey，必须拥有另一测试文件和 owner。
+
+## 稳定与可靠
+
+稳定的定义是小更改只修改真实契约影响范围内的测试；逐类预算与 blocking 裁决只在
+[Pullfrog review prompt](../../../../.github/pullfrog-review-prompt.md#prompt)维护。测试读取公开结果的稳定身份与关系，
+不锁动态 ID、临时端口、duration、DOM class 或私有文件布局。
+
+可靠要求同一 candidate、输入与运行条件反复执行时不意外失败。测试使用确定性 fixture、显式 seed / 时钟策略、条件等待和私有状态。
+固定 sleep、共享可变结果、兄弟文件顺序、测试级 retry 与未终结资源都违反可靠性。
+
+新增、接管或实质修改 owner 时，按[可靠性接管门](../README.md#可靠性重复运行)执行三个全新副本、同副本连续运行、默认并行和单项重跑。
+自动化无法通过该门时，不降低断言或复制生产算法；按[不自动化](../README.md#不自动化)改做本次 AI 真实验收。
 
 ## 失败分类
 

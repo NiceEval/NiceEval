@@ -1,14 +1,16 @@
 # 测试组合、Owner 与退役
 
-本篇管理“哪些测试值得存在”，不建立运行时 Registry。目标不是测试最多或行命中率最高，而是每个会进入发布的
-错误都有一个最早、稳定、可读的 owner，并且同一矩阵不在多层复制。
+本篇管理“哪些自动化测试值得存在”，不建立运行时 Registry。目标不是测试最多或行命中率最高。
+每个能够稳定、可靠自动化的用户结果应有一个最小主 owner；不自动化的结果没有长期 owner。
+Unit 只作为可证伪的例外，同一矩阵不在多层复制。
 
-## 两层的存在资格
+## Owner 的存在资格
 
 | 身份 | 必须回答 | 数量规则 |
 |---|---|---|
-| E2E | 删掉后会放走哪个稳定用户错误？为何 Unit 看不到真实边界？ | 每个结果一个主 owner |
-| Unit | 哪一类错误算法会通过？为何 E2E 无法稳定制造或区分？ | 每个具名风险一个矩阵 owner |
+| Journey E2E | 用户要完成哪个跨接缝目标？哪些检查点只服务这个终态？ | 每个用户目标一个主 owner |
+| 单边界 E2E | 用户拿到哪个原子结果？为什么必须经过这条真实边界？ | 每个原子结果一个主 owner |
+| Unit 例外 | 哪类错误算法会通过？为什么 E2E 无法稳定制造、穷举或区分？ | 每个具名风险一个最小矩阵 |
 
 下列理由不能单独让测试存在：新增函数、分支、DTO 字段、DOM class、snapshot、line coverage，或“离实现近一点更放心”。
 
@@ -16,18 +18,22 @@
 
 每个产品域在自己的 testing 文档维护一张小表，目标形状如下：
 
-| 用户结果 / 确定性风险 | 形态 | Owner | Lane | 历史 bug |
-|---|---|---|---|---|
-| `show --json` 经 pipe 完整交付 | 单边界 E2E | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
-| CJS 项目 `init → list` | Journey E2E | `e2e/package/test/commonjs-init-list.test.ts` | PR / release | `b44420d3` |
-| Codex CLI 工具事件读回为 `shell` | Adapter E2E | `e2e/adapter/codex-cli/test/tool-identity.test.ts` | main / nightly | — |
+| Owner ID | 用户结果 / 确定性风险 | 形态 | 文件 | Lane | 历史 bug |
+|---|---|---|---|---|---|
+| `#show-json-pipe` | `show --json` 经 pipe 完整交付 | 单边界 E2E | `e2e/cli/test/show-json-pipe.test.ts` | PR / release | `d8d5a84b` |
+| `#commonjs-init-list` | CJS 项目 `init → list` | Journey E2E | `e2e/package/test/commonjs-init-list.test.ts` | PR / release | `b44420d3` |
+| `#codex-tool-identity` | Codex CLI 工具事件读回为 `shell` | Adapter E2E | `e2e/adapter/codex-cli/test/tool-identity.test.ts` | main / nightly | — |
 
 表只回答 owner 和运行档，不复制 argv、fixture、expected 或步骤。执行真相仍在测试文件，lane 真相在 Repo manifest。
+测试文件第一行写 `// owner: <文档路径#Owner-ID>`，一份文件只指向一个 owner。
+
+Journey 的检查点只证明终态所需身份、接线和前置事实。
+拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败的命题，必须拆到另一 owner 文件。
 
 ## 唯一矩阵 Owner
 
-一个等价类只在一个位置完整展开。例如 fingerprint 哪些输入参与身份由 unit 表驱动穷举；真实项目“只重跑发生变化的
-Eval”由一条单边界 E2E 证明接线。human、JSON、Report 和 runner 不再各复制一份 fingerprint 全矩阵。
+一个等价类只在一个位置完整展开。例如真实项目“只重跑发生变化的 Eval”先由单边界 E2E 拥有；只有该结果无法区分
+fingerprint 漏掉哪类输入时，才由已登记的 Unit 例外穷举最小输入矩阵。human、JSON、Report 和 runner 不再各复制一份矩阵。
 
 其它层若要保留代表，必须指出它排除的不同错误实现：
 
@@ -36,23 +42,15 @@ Eval”由一条单边界 E2E 证明接线。human、JSON、Report 和 runner �
 - Journey E2E 证明跨域的 locator 能继续交给 show / view；
 - 三者不是因为“多测一层”，而是观察不同边界。
 
-## Fixture 变化预算
+## Fixture 与 Oracle
 
 Unit fixture 只显式填写本 case 有语义的字段；机械默认值由测试专用 builder 补齐。builder 只造输入，不计算预期。
 
 E2E 不手写内部 Run、Attempt 或 Report DTO；它们通过真实 Eval / Experiment 产生结果，再从公开 CLI、包导出、
 HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，才签入最小旧格式 fixture，并把 schema version 写成独立字面量。
 
-合理的变化预算：
-
-| 变化 | 允许修改的测试 |
-|---|---|
-| 内部重构、DTO 增加无关字段 | 不应修改 E2E；只改真正依赖该语义的 Unit |
-| 公开输出新增可选字段 | 旧结果测试通常不改；新增结果需要新断言时才改 owner |
-| 公开格式破坏性升版 | 对应 contract owner 与显式旧版兼容 fixture |
-| 用户任务或结果改变 | 对应 E2E owner 和产品文档 |
-
-目标不是测试永远不改，而是测试变化与公开契约变化同范围。
+稳定的定义见[测试总纲](README.md#稳定性变更预算)；逐类预算、逐文件审计与 blocking 条件只在
+[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护。
 
 ## 功能归属与 Bug 回归
 
@@ -63,18 +61,18 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 
 | 文档 | 回答的问题 | 测试怎样指向它 |
 |---|---|---|
-| Feature 契约文档 | 用户长期得到什么行为 | E2E 文件头用 `feature:`；优先链接 `docs/feature/**`，内部 CLI / package 边界链接其稳定 owner 文档 |
-| `docs/engineering/testing/**` | 哪些等价类和边界由哪个测试拥有 | Unit 沿用机器检查的 `// cases:`；E2E owner 表只列文件与 lane |
+| Feature 契约文档 | 用户长期得到什么行为 | Owner anchor 链接对应 Feature 契约 |
+| `docs/engineering/testing/**` | 哪些结果和风险由哪个测试拥有 | 测试首行用唯一 `// owner:` 指向 anchor |
 | `memory/**` | Bug 的现象、根因、修法和旧实现 kill 收据 | Unit 用 `// bug:`；E2E 用 `// regression:` |
 
 公开 issue 可以追加一行 `issue:`，但不能替代仓库内的 memory。issue 可能改标题、关闭或迁移；memory 必须保存复现条件、
 fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能区分旧实现。
 
 单边界 E2E 指向它唯一跨过的契约。Journey 跨多个产品域时只登记最终用户结果的 owner；中间步骤的次级契约留在步骤旁的
-普通注释。这样 `feature:` 仍能回答“这条长流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
+普通注释。唯一 `owner:` 回答“这条流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
 
 ```ts
-// feature: docs/feature/reports/show/json.md
+// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
 // regression: memory/show-json-pipe-truncated-at-128k.md
 // issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
 test("show --json 经 pipe 仍交付完整文档", async () => {
@@ -82,7 +80,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 });
 ```
 
-没有历史 Bug 的功能测试只写功能归属。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
+没有历史 Bug 的功能测试只写 owner。发现 Bug 后，先加强原 owner；新断言确实能杀死旧实现时，才追加 `regression:`。
 若只能证明同类风险而没有 kill 收据，仍只链接 Feature 契约。相关 memory 可以在普通解释注释或 Repo README 中写成
 “相关风险”，但不再发明一行看似可机器追踪、实际没有 kill 资格的 `risk:` 元数据。
 
@@ -104,31 +102,32 @@ Bug escape 后按顺序处理：
 
 ## 迁移与退役
 
-迁移一批旧测试时提交一张简短对账表：
+迁移一批旧测试时，在 PR Test impact 提交逐文件或逐 owner 的处置表：
 
-| 旧测试 | 判定 | 新 owner / 理由 |
-|---|---|---|
-| 线性 CLI 大脚本的一段 | 拆分 | 按行为命名的 E2E 文件，可按标题单跑 |
-| 内部宿主模拟外部 cwd | 删除 | Package 场景 Repo 已从候选 tarball 证明 |
-| 完整 DTO snapshot | 删除 / 收窄 | 无公开契约；独有算法留最小 unit |
-| 会修改共享结果的 readback | 隔离 | 独立 Repo 或独立结果根，不靠顺序 |
+| 旧测试 / owner | 稳定结果或具名风险 | 判定 | 新 owner / Unit 例外理由 | 证据 |
+|---|---|---|---|---|
+| 线性 CLI 大脚本的一段 | `show --json` 完整交付 | replace | 按结果拆分的 E2E 文件 | mutation + 单项重跑 |
+| 内部宿主模拟外部 cwd | 外部项目安装 | delete | Package 场景 Repo 已从 candidate 证明 | 历史错误 kill |
+| 完整 DTO snapshot | 无公开契约 | delete | 无 | 不建立替代测试 |
+| 独有算法矩阵 | fingerprint 输入等价类 | retain | E2E 无法穷举；稳定 seam | 算法 mutation |
 
-新旧测试不能无限期并行。新 owner 只有通过当前候选、历史 bug kill 和本地单项重跑后才接管；接管同批删除旧 owner。
+新旧测试不能无限期并行。新 owner 只有同时满足以下条件才接管：
 
-## 重构免疫演练
+- 当前 candidate 通过；
+- 公开 mutation 或历史旧实现在具名检查点变红；
+- [可靠性接管门](README.md#可靠性重复运行)全部通过；
+- Repo、文件和标题可单项重跑。
 
-结果层 E2E，以及只依赖已声明稳定语义 seam 的 Unit，遵守同一保证：公开输入与公开结果契约不变时，测试源码、fixture
-与 expected 无需修改。import 私有函数、锁调用顺序或模块路径的 Unit 不具有这项保证；它要么改走稳定语义 seam，要么明确
-排除在演练之外，不能据此宣称整个 Unit 树对任意重构免疫。
+接管时同批删除旧 owner。整域使用“都是纯逻辑”作零删除理由，不构成退役证据。
 
-Report、Runner、Record 的新 owner 接管前各做一次 contract-preserving perturbation：
+## 不自动化的处置
 
-- Report 改内部 DTO、组件树、class 与渲染实现，保留公开输出、可访问身份和视觉结果；
-- Runner 改调度器、内部 receipt DTO 与模块布局，保留公开 CLI 和结果；
-- Record 改私有存储组织与 reader 实现，保留公开 Record API 与 show 输出。
+`automation: none` 是一次变更的验收处置，不是长期 owner。
+只有 Journey、单边界 E2E 与 Unit 例外都会违反稳定或可靠要求，依赖无法固定的外部条件，或必须复制生产核心算法时才能选择。
 
-演练前后，测试源码、fixture 与 expected 必须零 diff，同一外部 candidate tarball 原样全绿，私有依赖守护仍通过。
-还要注入一个真正改变公开结果的 mutation，让对应 owner 变红；否则“重构免疫”可能只是测试没有区分力。
+PR Test impact 按 [PR 模板](../../../.github/PULL_REQUEST_TEMPLATE.md#tests)保存本次验收事实。
+不创建空测试、mock 假 pass 或伪 owner。Docker-in-Docker 的宿主内核、daemon 权限和嵌套网络无法固定时适用本处置。
+安全或发布关键行为既无可靠自动化、又无本次真实验收时必须阻断。
 
 ## 可读性 Review
 
@@ -142,23 +141,14 @@ Report、Runner、Record 的新 owner 接管前各做一次 contract-preserving 
 6. 是否已有另一层完整复制同一矩阵？
 7. 内部无关字段或 CSS 重命名会不会迫使它修改？
 8. 若测试修改 config、结果或服务，它是否只触碰自己的 Repo 副本和 owned resource？
+9. 它能否通过重复运行接管门；不能时是否应选择不自动化？
 
 前三项需要跨多个声明文件才能回答，或第 5 项无法回答时，先改测试设计，不扩充复用设施或 Registry 掩盖问题。
 
-## 修改测试的决策门
+## 修改测试的 PR 裁决
 
-生产改动让测试失败时，不先更新 snapshot 或 expected；按下面顺序裁决：
-
-| 问题 | 处理 |
-|---|---|
-| 公开结果没有变化 | E2E 的 expected 不改；若它因 DTO、路径、CSS 或函数名失败，收窄它与实现的耦合 |
-| 公开契约有意变化 | 先改产品契约，再只改该结果的唯一 owner；兼容性 owner 仍保留旧格式 fixture |
-| 新 bug 逃逸 | 先加强已有 owner 并证明能杀死旧实现；只有新边界无法由它表达时才新增测试 |
-| 运行设施变化 | 只改 candidate、process、server 或 cleanup 收据层；领域 expected 不随 executor 改写 |
-| Snapshot 大面积变化 | 先检查结构化字段和用户语义；只接受属于该 snapshot owner 的稳定表示变化，不批量确认 |
-| 测试需要依赖兄弟顺序 | 分配私有 Repo / 结果根；不增加 `serial` 或“必须最后”注释掩盖共享状态 |
-
-这套决策允许真正的契约变化修改测试，同时阻止内部重构把大量 E2E 拖进同一个 diff。
+生产改动让测试失败时，不先更新 snapshot 或 expected。逐类预算、Snapshot 变化与共享状态的 blocking 裁决只在
+[Pullfrog review prompt](../../../.github/pullfrog-review-prompt.md#prompt)维护；本篇不复制一张无法直接读取 PR diff 的决策表。
 
 ## 周期复核
 

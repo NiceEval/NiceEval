@@ -1,7 +1,8 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // 分区「形态解析与 --json 流不变量」
 //
-// `computeExitCode` 是 CompletionStatus 驱动退出码折叠的纯函数,直接单测。`renderJsonPlanDocument`
+// `computeExitCode` 只保留完成态、reporter 和 early-exit 的区分力矩阵；正常、failed 与 errored 的
+// 精确退出码由安装后的 CLI owner（cli-normal-run / cli-failure-error-results）证明。`renderJsonPlanDocument`
 // 只需证明「单个 JSON 文档,不是 NDJSON 流」这条结构性不变量。json renderer 写出的逐事件字段、
 // 心跳节奏、`--json` 不做 suppression 这些流不变量由 coordinator/reducer 驱动的事件序列断言
 // (见 coordinator.test.ts/reducer.test.ts);具体字节级渲染由
@@ -60,18 +61,6 @@ function completion(overrides: Partial<InvocationCompletion> = {}): InvocationCo
 }
 
 describe("computeExitCode:CompletionStatus 驱动退出码,不只看 failed/errored", () => {
-  it("全部通过、complete → 0", () => {
-    expect(computeExitCode(summary({ passed: 5, failed: 0, errored: 0 }), completion())).toBe(0);
-  });
-
-  it("有 failed → 1", () => {
-    expect(computeExitCode(summary({ passed: 4, failed: 1 }), completion())).toBe(1);
-  });
-
-  it("有 errored → 1", () => {
-    expect(computeExitCode(summary({ passed: 4, errored: 1 }), completion())).toBe(1);
-  });
-
   it("budget 耗尽导致 unstarted、completion.status=incomplete → 1,即便全部已跑的都通过", () => {
     expect(
       computeExitCode(summary({ passed: 36, failed: 0, errored: 0 }), completion({ status: "incomplete", unstarted: 4 })),

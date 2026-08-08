@@ -1,25 +1,35 @@
 # 测试体系 Architecture
 
-本篇定义测试从风险到结果的依赖方向。测试框架使用原生 Vitest / Playwright；通用层只负责编排和机械收据，
+本篇定义测试从用户目标到 owner 的依赖方向。测试框架使用原生 Vitest / Playwright；通用层只负责编排和机械收据，
 不再引入 Behavior、Recipe、World、Observed 或 Registry 作为作者必经模型。
 
 ## 依赖方向
 
 ```text
-公开契约 / 历史 bug / 具名确定性风险
-                  │
-                  ▼
-       独立 fixture + 明确 expected
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-      Unit             E2E 场景 Repo
-纯逻辑 / barrier      pnpm exec niceeval …
-        │                   │
-        └─────────┬─────────┘
-                  ▼
-       原生断言 + 原始失败收据
+稳定用户目标 / 原子公开结果
+              │
+              ▼
+        查找已有 owner
+              │
+       ┌──────┴──────┐
+       ▼             ▼
+ Journey E2E    单边界 E2E
+ 跨公开接缝       一个公开结果
+       └──────┬──────┘
+              ▼
+  E2E 能否稳定制造并区分风险？
+       ┌──────┴──────┐
+      能             不能
+       │              ▼
+       │        最小 Unit 例外
+       │              │
+       └──────┬───────┘
+              ▼
+     原生断言 + 原始失败收据
 ```
+
+所有自动化形态都无法同时满足稳定与可靠要求时，不再向下发明测试形态。
+该变更使用 AI 真实验收，并在 PR Test impact 中声明未守护风险。
 
 E2E 编排层包在 Repo 外侧：
 
@@ -41,7 +51,7 @@ e2e.json → 选择 Repo → pack 候选 → 复制隔离 → 安装核验 → e
 
 | 层 | 可以读取 | 可以影响 verdict |
 |---|---|---|
-| Harness attestation | tarball digest、包实际加载路径、lock identity、Testkit version / integrity | 是；只判断被测身份与设施可信度 |
+| Harness attestation | NiceEval candidate digest、包实际加载路径、lock identity、Testkit 副本内 directory dependency identity / installed realpath | 是；只判断被测身份与设施可信度 |
 | Outcome oracle | 公开 CLI、JSON / NDJSON / JUnit、package exports、Record API、HTTP、真实 href、已声明的可访问身份与视觉结果 | 是；判断用户结果 |
 | Diagnostic only | 私有存储、完整日志、trace 与内部 artifact | 否；只进入失败附件 |
 
@@ -53,16 +63,21 @@ E2E 有两组隔离 Repo。`cli`、`runner`、`record`、`report`、`package` �
 NiceEval 自己拥有的行为；`adapter/<id>` 是兼容性场景，使用对应真实 SDK / CLI 或协议故障端。两组只共用机械 Testkit，
 不共用依赖图、fixture、secret、结果根或领域 expected。
 
-## 从风险选择测试形态
+## 从用户目标选择测试形态
 
-按下列顺序选择最早而完整的边界：
+按下列顺序选择 owner：
 
-1. 能用纯输入输出排除错误算法：写 Unit；
-2. 风险来自安装、进程、文件、HTTP、浏览器或协议边界：写单边界 E2E；
-3. 风险只会在多个公开域串联时出现：写 Journey E2E，并在每个域间接缝检查；
-4. 同一风险已经有完整 owner：扩大 owner 的等价类，不并排复制新测试。
+1. 查找已有 owner；它能表达该风险时，加强现有断言，不并排增加测试。
+2. 一个用户目标跨多个公开域时，写 Journey E2E，并在终态所需接缝立即检查。
+3. 一个原子结果只跨一条真实边界时，写单边界 E2E。
+4. E2E 无法稳定制造、穷举或区分具名错误算法时，登记并写最小 Unit 例外。
+5. 上述自动化都无法满足稳定与可靠要求时，不写自动化测试，改做本次 AI 真实验收。
 
-“代码在 `src/report`”不自动意味着写 unit；“测试放在 `e2e/`”也不自动意味着它证明了用户结果。
+纯输入输出不是 Unit 的自动准入理由。公共 Library 与 Record 格式从安装后 package export 进入单边界 E2E。
+聚合、归一与 schema 先由用户结果 owner 证明，Unit 只保留 E2E 无法表达的最小算法矩阵。
+
+Journey 可以有多个检查点，但检查点只能证明终态所需身份、接线或前置事实。
+一个命题拥有独立输入、独立 expected、独立修复动作，或能与终态独立失败时，必须拆成另一 Journey 或单边界 E2E。
 
 ## Prepare、Invoke、Observe、Outcome、Cleanup
 
@@ -92,20 +107,20 @@ E2E 文件从上到下保持同一信息顺序：
 
 | 位置 | 保留的信息 | 不放入这里的内容 |
 |---|---|---|
-| 文件头 | 第一行的 `feature:` / `cases:`、Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
+| 文件头 | 第一行的唯一 `owner:`、Repo ID、NiceEval 根目录重跑命令、隔离 Repo 内命令 | 依赖安装教程 |
 | 局部类型 | 本测试实际读取的公开字段 | 完整生产 DTO、候选导出的 schema 常量 |
 | 局部函数 | process、parse、唯一项查找、资源关闭等机械操作 | scenario 名到用户动作的映射、领域 expected |
-| 测试标题与注释 | 长期用户结果；`feature:` 写契约归属，历史 kill 用 `regression:` 指向 memory | 临时实现函数名、当前 DOM 结构 |
+| 测试标题与注释 | 长期用户结果；唯一 `owner:` 链接契约归属，历史 kill 用 `regression:` 指向 memory | 临时实现函数名、当前 DOM 结构 |
 | 测试正文 | 完整 argv 或紧邻的具名 argv、公开观察、字面 expected、最近接缝断言 | 从 actual 反推 expected、无解释的整页 snapshot |
 
 读者只打开这个文件，就应能回答“在哪个 Repo 跑、用户执行什么、预期是什么、最早会在哪一步失败”。
 为满足这一点保留两三次相似 argv 是合理成本；只有两个 Repo 已出现相同且稳定的机械协议时才上移复用实现。
 抽取后测试标题、argv、sentinel、verdict 和历史回归理由仍留在 owner 文件。
 
-Feature 是每条测试的长期归属，Bug 不是第三种执行层。目录、文件名与标题按功能和可观察结果命名；
-E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在第一行，让 owner 不依赖 import 排列。一个文件含多个 case 时，
-`regression:` / `bug:` 紧贴真正能杀死旧实现的那个 case，不能把整文件的其它测试也伪装成回归。Unit 的 `// cases:` / `// bug:` 与 E2E 的
-`feature:` / `regression:` 怎样对应，统一见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
+每个测试文件第一行用 `// owner: <docs path#anchor>` 指向一个稳定结果或具名风险。
+文件内可以用 `test.each` 展开同一等价类，不能加入第二个独立结果。
+`regression:` / `bug:` 紧贴真正能杀死旧实现的 case，不能把整文件的其它测试也伪装成回归。
+统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性
 
@@ -198,6 +213,15 @@ interface ProcessResult {
 Lifecycle 的 cleanup oracle 必须观察被管理资源本身：带 run ID 的 container / network / volume、backend active-session、
 sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没有子进程或远端 orphan；发 signal 前也必须先等资源进入
 可观察的 ready 状态，最后再让一个独立消费者证明资源可重新取得。
+
+## 可靠性接管门
+
+新增、接管或实质修改 owner 时，执行[可靠性：重复运行](README.md#可靠性重复运行)规定的固定组合。
+三个全新副本检查随机漂移；同一副本连续两次检查残留；Repo 默认并行检查顺序依赖；单项重跑检查独立身份。
+这几类运行缺一不可，不能用测试级 retry 把一次意外失败改写成通过。
+
+可靠性接管门只比较稳定语义。动态 ID、临时端口和 duration 可以变化；Verdict、实体关系、公开错误分类和资源终态必须相同。
+无法通过接管门的自动化不得降级断言、增加固定 sleep 或改成 mock 核心算法，应按[不自动化](README.md#不自动化)处理。
 
 ## 失败分类
 
