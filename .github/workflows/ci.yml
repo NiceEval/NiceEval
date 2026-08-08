@@ -7,7 +7,7 @@ on:
 
 jobs:
   package:
-    name: Package and site
+    name: Package runtime, typecheck, unit tests, and site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      # 仅运行已登记的稳定 Unit 例外；Journey 由 e2e workflow 的 PR lane 拥有。
+      - name: Test unit exceptions
+        run: pnpm test
 
       - name: Build product site
         run: pnpm run site:build
