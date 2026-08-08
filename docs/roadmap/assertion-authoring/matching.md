@@ -1,183 +1,116 @@
 # Assertion 作者面 —— Rule
 
-普通作者在调用点写单层 rule object。
-Rule 是各领域 API 的参数，不是作者需要构造、保存或组合的通用 AST。
+普通作者只在调用点写领域参数。
+这些对象不是可构造、保存或组合的通用 Match AST。
 
 ## TextRule
 
+文本文件与其它明确 string value 使用单层 inline rule：
+
 ```ts
 type TextAtom =
-  | {
-      readonly exact: string;
-      readonly contains?: never;
-      readonly pattern?: never;
-    }
-  | {
-      readonly contains: string;
-      readonly exact?: never;
-      readonly pattern?: never;
-    }
-  | {
-      readonly pattern: RegExp;
-      readonly exact?: never;
-      readonly contains?: never;
-    };
+  | { readonly exact: string }
+  | { readonly contains: string };
 
 type TextRule = TextAtom & {
   readonly excludes?: TextAtom | readonly [TextAtom, ...TextAtom[]];
 };
 ```
 
+普通路径不接受直接传入的 RegExp，也不提供 `pattern`。
+Harness 的规则若只能靠一段复杂正则才读得懂，应先寻找结构化领域事实；自由文本确实需要模糊判断时使用 Judge。
+
 `exact` 使用 code-unit equality。
 `contains` 使用大小写敏感的 literal substring，并拒绝空字符串。
-`pattern` 保存 `source` 与 `flags`，每次求值创建新的 RegExp，不能受 `lastIndex` 污染。
 
-框架不 trim、不做 Unicode normalization、不调用 `String(value)`，也不序列化 JSON 后搜索。
-大小写、空白和 shell quoting 都由作者的 literal 或 RegExp 明确表达。
-
-`excludes` 只约束已经满足主 atom 的同一个 candidate：
+`excludes` 只约束满足主 atom 的同一个 candidate：
 
 ```ts
-turn.ranCommand({
-  pattern: /niceeval\s+exp\s+local/i,
-  excludes: { pattern: /--dry(?:-run)?\b/i },
-});
+t.check(t.sandbox.file("experiments/local.ts"), { contains: "runtime:python", excludes: { contains: "runtime:node" } });
 ```
 
-这条规则要求同一条 command source 命中主 pattern，且不命中排除项。
-它不会拿一条命令满足主 pattern，再拿另一条命令满足 excludes。
+框架不 trim、不做 Unicode normalization、不调用 `String(value)`，也不序列化其它值后搜索。
+identifier slot 继续接受未包装的非空 string，并固定 exact；工具名、executable、argv token 与 Sandbox path 都是 identifier。
 
-Text slot 不接受直接传入的 string 或 RegExp。
-关系必须在值里写出，避免同一个字符串在不同接收位置分别代表 exact 或 contains。
+## Command selector
 
-Identifier slot 继续接受直接传入的非空 string，并固定 exact。
-工具名、角色、Skill 名、request id 与 change kind 都是 identifier；自由文本、command source 和 diff 内容不是。
-
-## CommandRule
+command selector 是 `calledTool()` 与 `toolOrder()` 共用的一种 `ToolSelector`：
 
 ```ts
-type CountRule =
-  | number
-  | { readonly min: number; readonly max?: number }
-  | { readonly min?: number; readonly max: number };
-
-interface CommandOccurrenceFilter {
-  readonly status?: "pending" | "completed" | "failed" | "rejected";
-  readonly count?: CountRule;
-}
-
-type CommandRule = TextRule & CommandOccurrenceFilter;
-type OrderedCommandRule = TextRule & Omit<CommandOccurrenceFilter, "count">;
-```
-
-TextRule、status 与 count 必须由同一批 command occurrences 满足。
-省略 count 表示 `{ min: 1 }`；number 表示 exact count。
-`ranCommand()` 的“ran”只承诺 occurrence 已开始，不隐含成功；要求成功时写 `status: "completed"`。
-
-CommandRule 只匹配 Observation 协议提供的原始 command source。
-它不从 input 字段猜命令，也不把 argv、program 和 args 重建成文本。
-
-## EventRule
-
-```ts
-type MessageEventRule =
-  | { readonly reply: "assistant"; readonly text?: TextRule }
-  | {
-      readonly message: "user";
-      readonly origin?: "eval" | "agent";
-      readonly text?: TextRule;
-    };
-
-type EventRule =
-  | { readonly command: OrderedCommandRule }
-  | MessageEventRule
-  | { readonly skill: string }
-  | { readonly error: TextRule };
-```
-
-实际 declaration 用互斥字段封闭各分支；JavaScript 或 `any` 不能同时传 `command` 与 `reply`。
-`{ command: rule }` 与 `ranCommand(rule)` 使用同一个 command selector 和 TextRule evaluator，不建立第二套命令语义。
-
-EventRule 不接受 count。
-顺序中的每一项由一笔 occurrence 满足，同一 occurrence 不能占两个位置。
-
-## JsonRule
-
-```ts
-type JsonRule =
-  | {
-      readonly exact: JsonValue;
-      readonly shape?: never;
-      readonly schema?: never;
-    }
-  | {
-      readonly shape: JsonShapeSpec;
-      readonly exact?: never;
-      readonly schema?: never;
-    }
-  | {
-      readonly schema: StandardSchemaV1;
-      readonly exact?: never;
-      readonly shape?: never;
-    };
-```
-
-`exact` 比较完整 JSON-compatible snapshot。
-`shape` 是 object 的 partial shape：plain scalar 表示 exact；每个 object node 必须显式写 `{ shape }`；每个 array node 必须显式写 `{ array }`。
-`schema` 调用一次 Standard Schema validator。
-
-snapshot walker 不调用 getter 或 `toJSON`，拒绝 Proxy、cycle、accessor、class instance、`undefined`、NaN、Infinity、bigint、symbol 与 sparse array。
-非法 expected 或 schema envelope 在 Assertion 登记边界同步报告 author error。
-
-schema 的 transformed output 不会静默替换 `JSON.parse` 从 Sandbox 文件得到的值：
-
-- `t.check(source, { schema })` 只做 validation；
-- `t.require(source, { schema })` 通过后返回原始 parsed `JsonValue`，不采用 schema output，也不承诺类型收窄；
-- 需要 transformed output 的作者显式调用独立 parse API，不能借 Assertion 隐式改值。
-
-`exact` 与 `shape` 的 `t.require` overload 可以分别返回 expected subtype 与 `InferShape<P>` 的交集，因为它们验证的就是原始 JSON value。
-
-## ChangeRule
-
-```ts
-interface ChangeRule {
-  readonly path?: TextRule;
-  readonly kind?: "added" | "modified" | "deleted";
-  readonly before?: TextRule;
-  readonly after?: TextRule;
+interface CommandSelector {
+  readonly command: readonly [executable: string, ...argsPrefix: string[]];
+  readonly excludes?: readonly string[];
 }
 ```
 
-ChangeRule 至少包含一个字段，所有字段匹配同一条 `{ window, path, kind, before, after }` entry。
-路径 convenience `fileChanged(path)` 与 `fileDeleted(path)` 直接接收 string，并固定 normalized path exact。
+匹配一笔 occurrence 时同时满足：
 
-## 三值求值
+1. 标准 projection 可用；
+2. executable 与 `command[0]` exact；
+3. argv 以 `command.slice(1)` 逐 token exact 开头；
+4. argv 不含任一 `excludes` exact token。
 
-每个 rule 对一笔 candidate 得到 definite match、definite mismatch 或 indeterminate。
-opaque source、opaque diff text 与不完整 selector 输入产生 indeterminate，不会被压成 mismatch。
+空 executable、空 expected token、重复 `excludes` 或只有空数组的 `command` 是 author error。
+selector 不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring。
 
-集合断言再结合 coverage：
+同一 selector 在 `calledTool()` 与 `toolOrder()` 中调用同一个 occurrence evaluator。
+因此存在性和顺序性不会出现两套 command 匹配语义。
 
-- 已有 definite match 的正断言可以 passed；
-- 完整集合全部 definite mismatch 才 failed；
-- 仍有 indeterminate candidate 或集合不完整时 unavailable。
+## Tool input path exclusion
 
-负断言反向要求完整集合：任一 definite match 即 failed；只有集合完整且每项 definite mismatch 才 passed；其余情况 unavailable。
+```ts
+interface ToolInputExclusion {
+  readonly paths: readonly [string, ...string[]];
+}
+```
 
-## 高级 Match 边界
+path 先按 `/` 与 `\\` 切成非空 components，再对工具 input 的每个 string leaf 做连续 component 匹配。
+相对路径、绝对路径和 Windows separator 使用同一规则。
 
-`niceeval/expect/advanced` 可以提供不可变 Match AST、`allOf`、`oneOf`、`not`、具名 predicate 与 adapter-specific tool inspection。
-高级入口用于框架没有标准事实的领域检查，不是普通断言的实现细节泄漏到调用点。
+输入字符串中的目标前后必须是路径边界。
+字母、数字、`_`、`.` 与 `-` 的相邻文本不会被误当作 component 边界。
 
-普通 API 不接受高级 Match 值，避免一个 overload 同时承担 inline rule 与 AST。
-从高级 API 回到普通 API 必须先形成明确的自定义 Assertion，不能把 AST 作为 `CommandRule`、`JsonRule` 或 EventRule 字段传入。
+这项关系只用于 `toolInputsExclude()`。
+它不是通用 string matcher，也不能嵌进 `calledTool().input`。
 
-新增普通词汇必须同时满足：
+## Sandbox change 条件
 
-1. NiceEval 拥有该事实的 observation 或 source；
-2. 至少两个独立真实下游需要它；
-3. 不同 Adapter 可以遵守同一 completeness 与 unavailable 语义；
-4. 新规则与 Text、Command、JSON、Event 等现有 domain 正交；
-5. 调用点不需要通用组合器才能表达常见检查。
+```ts
+interface FileChangeOptions {
+  readonly beforeIncludes?: string;
+  readonly afterIncludes?: string;
+}
+```
 
-因此普通作者面是一组有边界的一等词汇，不是旧 Match AST 的语法糖，也不会以“再加一个组合器”的方式长成万能 DSL。
+两个字段都是大小写敏感的 literal substring，并拒绝空字符串。
+它们和 path、change kind 共同匹配一条 agent change entry。
+
+added 没有 before，deleted 没有 after。
+作者对缺失一侧写内容条件时是确定 mismatch；内容被 elide 或读取证据不完整时是 unavailable。
+
+`changedPaths(paths)` 是 exact set relation，不是 ordered array relation：
+
+- expected 顺序不影响结果；
+- expected 重复 path 是 author error；
+- actual 的额外或缺失 path 都 failed；
+- partial diff 尚不能排除缺失 path 时 unavailable。
+
+## 不提供通用 JSON rule
+
+本作者面不增加 `JsonRule`、递归 `shape`、数组 `exact/unordered`、field presence 或 schema wrapper。
+它们会把普通 Harness 变成 JSON 查询语言，并把某个 CLI 的展示 envelope 固化成核心 API。
+
+任意应用值已有 `t.check()` 与 `niceeval/expect`。
+Standard Schema 继续适合业务结构；`niceeval show` 的诊断语义则由完整 Turn Judge 检查，不由 Eval 自行 parse 或匹配 JSON。
+
+## TypeScript 消歧
+
+领域对象使用封闭字段并依赖 excess-property checking：
+
+- `{ command: [...] }` 只能进入 `ToolSelector` 的 command 分支；
+- string `ToolSelector` 只能表示 exact tool identifier；
+- `{ exact }` 与 `{ contains }` 是互斥的 `TextAtom`；
+- `TextRule`、`CommandSelector` 与 `ToolInputExclusion` 互不赋值。
+
+JavaScript、`any` 或扩散对象绕过静态检查时，登记边界执行同一套穷尽 runtime validation。
+互斥字段、空值或未知字段同步报告 author error，不登记一条永远匹配不到的 Assertion。

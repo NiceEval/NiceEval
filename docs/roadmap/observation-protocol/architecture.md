@@ -162,7 +162,7 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 | Usage | provider 或 Agent 实际返回的 token 与账单 | 估算成本不属于 Observation |
 
 Agent operation 的 command classification 也属于 Adapter 归一职责。
-Adapter 按原生协议把每笔 tool operation 穷尽标为 not-command，或标为 command 并交付原始 source / opaque reason。
+Adapter 按原生协议把每笔 tool operation 穷尽标为 not-command，或标为 command 并交付结构化 invocation / opaque reason。
 
 core 只按 operation identity 配对 start 与 finish。
 它不能根据 `shell`、`Bash`、`command_execution` 等名字，或 `command` / `cmd` / `program + args` 输入形状补造 command fact。

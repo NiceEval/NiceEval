@@ -121,7 +121,8 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 值断言匹配器(includes / equals / matches / similarity / satisfies / makeAssertion) | `src/expect/index.ts` |
-| 作用域断言(succeeded / ranCommand / eventOrder / toolInputsExclude / changes …) | `src/assertions/scoped.ts` |
+| 作用域断言(succeeded / calledTool / toolOrder / toolInputsExclude …) | `src/assertions/scoped.ts` |
+| Sandbox 断言(changedPaths / noChanges / fileChanged …) | `src/context/context.ts`、`src/assertions/diff.ts` |
 | 断言收集器(延迟评估 + 链式 gate/soft/atLeast;`.points(n)` 挂在 `RecordHandle` 上——`finalize` 按 `n × score` 写进 `AssertionResult.points`;`AssertionCollector.score(label, n)` 立即写入 `ScoreEntry`,不像断言那样等 finalize 求值) | `src/assertions/collector.ts` |
 | 计分制的前置中止(句柄上的 `.gate()` 使该断言就地求值并进入中止态,下一次 `t.*` 调用或 finalize 抛中止信号;matcher 自带/链上的 severity 只贡献 threshold,不触发中止) | `src/assertions/collector.ts`(`RecordHandle.gate` 的计分制分支、`t.*` 入口的待决前置结算)、`src/context/control-flow.ts`(中止异常) |
 | 计分制题型(`defineEval`/`defineScoreEval` 分别定死 `EvalDefinition.evaluationKind` 为 `"pass"`/`"points"`,禁止手写;`ScoreEvalInput` 的 `test(t)` 换成 `ScoreTestContext`) | `src/define.ts`(工厂函数)、`src/runner/types.ts`(`EvaluationKind`、`EvalDefinition.evaluationKind`、`ScoreEvalInput`、`EvalDescriptor.evaluationKind`) |
