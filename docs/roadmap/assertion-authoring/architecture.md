@@ -1,521 +1,318 @@
 # Assertion 作者面 —— Architecture
 
-Assertion collector 仍把值 matcher、scope assertion、Sandbox evidence 与 Judge 折叠成 `AssertionResult[]`。
-本主题收紧输入快照、scope provenance、logical occurrence 与求值边界，不增加第五种 Verdict。
+本页定义 Assertion 怎样消费标准 Observation、延迟 Sandbox source 与 workspace delta。
+公开调用形状见 [Library](library.md)，inline rule 语义见 [Rule](matching.md)。
 
-## 数据建模
+## 分层
 
 ```text
-Attempt
-├─ Assertion collector
-│  ├─ registered assertion × N
-│  └─ frozen AssertionResult × N
-└─ Agent session × N
-   └─ logical Turn × N
-      ├─ Turn outcome
-      ├─ resolved EvidenceCoverage
-      └─ StreamEvent × N
-         └─ logical operation occurrence × N
+Adapter native protocol
+  │ 显式、版本化映射
+  ▼
+Standard Observation + evidenceCoverage
+  │ core 按 operationId 合成 logical occurrence
+  ▼
+Scoped collector / delayed source resolver
+  │ inline rule 三值求值
+  ▼
+AssertionResult + Claim
 ```
 
-registered assertion 保存 selector、matcher snapshot、handle 配置与求值状态。
-logical occurrence 只在单个 session 的标准事件中派生。
-Record 保存每个 Turn 的原始 outcome、证据完整度与事件，使 scope assertion 的依据不退化成 attempt 级最差摘要。
+Adapter 负责解释原生协议。
+core 不按工具名、JSON key 或显示文本猜标准事实；Assertion evaluator 也不反向打开 Adapter 私有 transcript。
 
-## `AssertionResult`
+## Command projection 的唯一 owner
 
-```ts
-type AssertionScope =
-  | { readonly kind: "attempt" }
-  | {
-      readonly kind: "session";
-      readonly session: string;
-      readonly through?: string;
-    }
-  | {
-      readonly kind: "turn";
-      readonly turn: string;
-    };
-
-type AssertionEvaluatorRef =
-  | { readonly kind: "llm"; readonly executionId: string }
-  | { readonly kind: "agent"; readonly executionId: string };
-
-interface AssertionBase {
-  /** 最终人读标题。 */
-  readonly name: string;
-  /** 标题由框架摘要还是作者输入产生。 */
-  readonly nameKind: "generated" | "author";
-  /** matcher / Judge evaluator 摘要。 */
-  readonly detail?: string;
-  readonly scope: AssertionScope;
-  readonly groupPath?: readonly string[];
-  readonly severity: "gate" | "soft";
-  readonly stopOnFailure?: true;
-  readonly optional?: true;
-  readonly loc?: SourceLoc;
-  readonly sourceOrder: number;
-  readonly pointsAvailable?: number;
-  readonly evaluator?: AssertionEvaluatorRef;
-}
-
-type AssertionResult =
-  | (AssertionBase & {
-      readonly outcome: "passed" | "failed";
-      readonly score: number;
-      readonly threshold?: number;
-      readonly expected?: string;
-      readonly received?: string;
-      readonly evidence?: string;
-      readonly points?: number;
-    })
-  | (AssertionBase & {
-      readonly outcome: "unavailable";
-      readonly reason: string;
-      readonly evidence?: string;
-    });
-```
-
-`scope` 是 machine-readable provenance。
-`name` 不再内嵌 `turn2 ·` 或 `session2 through session2/turn1 ·`。
-turn 与 session token 都按 opaque equality 使用，读取面不能拆字符串推导层级。
-
-session receiver 登记 Assertion 时，把当时最后一个 returned logical Turn 写入 `through`；零 turn session 省略它。
-selector 与 `through` 一同冻结，因此同一 session 在不同时间取得的 snapshot 可以区分。
-
-Match root 的 description 带 `generated | author` provenance。
-自动 exact、contains、shape 与组合摘要写 `generated`；pattern、where、`.describe()` 的作者文本写 `author`。
-direct `t.check` 或 `t.require` 没有 registration label 时，`nameKind` 继承 root provenance。
-
-handle `.label()`、require options label、`defineAssertion.description` 与 Judge `name` 写 `nameKind: "author"`。
-`nameKind` 让读取面分清作者恰好把 label 写成 matcher 文本的情形，不需要重复保存 label 字符串。
-label 允许重复；它不能参与跨运行 join 或唯一性校验。
-
-内建 matcher 的 `detail` 是默认 matcher 摘要。
-`defineAssertion` 被 handle `.label()` 改标题时，原始 custom description 进入 `detail`，仍可解释 evaluator 的职责。
-
-`sourceOrder`、`loc` 与 source code 位置只用于排序和导航，不承担 Assertion 身份。
-跨 eval 的语义维度仍是 `groupPath`。
-
-### 统一展示投影
-
-所有 text、Web、source view 与 JSON failure feedback 共用一个 pure projector：
-
-1. attempt 无 scope prefix；turn 使用 `<turn> · `；session 使用 `<session> through <turn> · `，没有 turn 时只显示 session。
-2. 无 group 时，主体标题是 `name`。
-3. 有 group 且 `nameKind: "author"` 时，主体是 `groupPath > name`。
-4. 有 group 且 `nameKind: "generated"` 时，主体只显示 `groupPath`，matcher 摘要紧邻显示。
-5. `detail` 与主体最后一项相同时不重复，否则紧邻标题显示。
-
-机器 JSON 继续分字段携带 `scope`、`name`、`nameKind`、`groupPath` 与 `detail`。
-人读投影不能改写这些结构字段。
-
-label 不改变 main failure 选择、group 比较、source order 或源码位置。
-
-## Recorded Turn evidence
-
-`events.json` 的顶层形状是按 session 分组的 array：
+CommandProjection 的权威形状由 [运行观测协议](../observation-protocol/library.md#command-projection) 定义。
+它随 `operation.started` 产生，core 只把 start 与 finish 合成同一笔 logical occurrence。
 
 ```ts
-type EventsArtifact = readonly RecordedSession[];
-
-interface RecordedSession {
-  readonly session: string;
-  readonly evidenceCoverage: EvidenceCoverage;
-  readonly turns: readonly RecordedTurn[];
-}
-
-interface RecordedTurn {
-  readonly turn: string;
-  readonly status: "completed" | "failed" | "waiting";
-  readonly data?: JsonValue;
-  readonly usage?: Usage;
-  readonly evidenceCoverage: EvidenceCoverage;
-  readonly events: readonly StreamEvent[];
-  readonly truncated?: readonly Truncation[];
-}
-```
-
-session 按 core 创建序稳定排列；turn 按该 session 的 send 调用序排列；event 只在所属 turn 内有顺序。
-这个 artifact 不声明跨 session 的全局 event index。
-每个已创建 session 都进入 array，包括没有 turn 的 unused session。
-
-持久 event ref 使用 `{ session, turn, eventOrdinal }`。
-occurrence ref 保存同形 start ref 与可选 end ref，不从 array 下标构造跨 session 坐标。
-
-每个 returned logical Turn 都保存 status、data、usage、六通道 evidence coverage 与事件。
-input、reply、toolCalls、subagentCalls 与 input requests 继续从事件派生，不重复保存。
-
-Turn coverage 是 Agent 默认值与该轮降级合成后的六通道完整形状。
-非空 session 逐通道取 turns 的最差状态；相同最差等级时稳定选择最早 turn 的 reason。
-
-从未发起 send 的 session 使用全通道 complete 作为空集合 identity。
-core 知道该 session 没有 action、message、event、usage、status 或 data；创建 unused handle 不能制造采集缺口。
-`result.json.evidenceCoverage` 是全部 session coverage 的最差摘要，writer 与 reader 校验它和 grouped facts 一致。
-
-status、usage 与 coverage 不受 event 大值转写影响。
-Turn data 需要缩减时，`RecordedTurn.truncated` 用结构化 path 与原始大小说明；runtime Assertion 始终读取完整 data。
-离线 evaluator 依赖被缩减部分时返回 unavailable，不能把 Record 保留能力误写成 Adapter coverage。
-coverage reason 使用自身的有界文本规则；event 或 data 缩减不能删除 channel 状态与 reason。
-
-物理 retry 或最终 `SendFailure` 不伪装成 logical Turn。
-它们的 partial events、usage 与 coverage 留在 retry/error evidence，并携带 `{ session, turn, sendAttempt }` refs。
-同一 refs 使用 opaque token，不靠数字字符串反推 session 或 turn。
-
-### Message event provenance
-
-`RecordedTurn.events` 复用[运行观测协议的 `MessageEvent`](../observation-protocol/library.md#agent-turn-stream)。
-下列 union 说明 Assertion 与持久结构依赖的字段：
-
-```ts
-type MessageEvent =
+type CommandProjection =
+  | { readonly kind: "not-command" }
   | {
-      readonly type: "message";
-      readonly role: "assistant";
-      readonly text: string;
-    }
-  | {
-      readonly type: "message";
-      readonly role: "user";
-      readonly origin: "eval";
-      readonly text: string;
-      readonly sourceOrder: number;
-      readonly loc?: SourceLoc;
-    }
-  | {
-      readonly type: "message";
-      readonly role: "user";
-      readonly origin: "agent";
-      readonly text: string;
+      readonly kind: "command";
+      readonly source:
+        | {
+            readonly state: "available";
+            readonly value: string;
+            readonly language: "posix-shell" | "powershell" | "cmd" | "unknown";
+          }
+        | {
+            readonly state: "opaque";
+            readonly reason: "redacted" | "truncated" | "structured-only" | "unsupported";
+          };
     };
 ```
 
-core 为 `send` 与 `respond` 创建 `origin: "eval"` 的 user event。
-每次调用产生新 logical Turn，该 core event 固定是本轮 event ordinal 0。
-返回给作者的 `Turn.events` 与 `RecordedTurn.events` 都包含它。
+available source 必须是原生协议明确标为提交给执行边界的 command source string。
+仅有 argv、`program + args`、SDK display summary 或若干片段时，source 必须是 opaque。
 
-Adapter 内部观察到的 user message 必须写 `origin: "agent"`，不能伪造 `loc` 或 `sourceOrder`。
-assistant message 不带 origin。
-`loc` 可能因调用栈不可得而省略，因此不能用它猜 message producer。
+框架不 join argv，不重新 quote，不做 shell syntax parse，也不把多条 native operations 合并成一条命令。
+Adapter 只有在原生协议提供独立 occurrence identity 时，才能产出多笔 logical occurrences。
 
-## Match engine
+`language` 只用于 provenance 与诊断。
+TextRule 始终匹配 source 的原始 code units，不能根据 language 改写 candidate。
 
-Match builder 在调用点取得 AST snapshot并登记到模块私有 registry。
-text、JSON、CommandResult 与其它 built-in domain 各有 runtime validator；错误 domain 不降成 mismatch：
-
-- 作者 immediate value 越过 TypeScript domain 是同步 author error，不登记 AssertionResult；
-- Adapter、Sandbox Provider 或 core-owned fact 违反标准类型是 protocol defect，Attempt errored；
-- generic `match.where<T>` 的 `T` 在 runtime 擦除，只按 predicate 的严格 boolean / defect 规则求值。
-
-generic `match.exact` 的 domain 是 unknown。
-complete actual 不属于 snapshot-compatible set时是 definite mismatch；它不会为比较调用 getter或 `toJSON`。
-JsonMatch 则要求 actual 已通过 JsonValue protocol boundary。
-
-内部 evaluator 返回 matched、mismatched 或 indeterminate。
-普通作者值是 complete；redaction、Provider truncation 与未采字段必须用结构化 opaque node 表达。
-占位字符串、空串、`undefined` 或普通缺 key 不能冒充 opaque。
-Record budget truncation发生在 runtime求值之后，不改变当次 Assertion。
-
-组合器按固定顺序 short-circuit：
-
-- oneOf 遇首个 matched停止；没有 matched时，有 indeterminate即 indeterminate，否则 mismatched；
-- allOf 与 shape 遇首个 mismatched停止；没有 mismatch时，有 indeterminate即 indeterminate，否则 matched；
-- not 只求 inner一次，交换 matched / mismatched并保留 indeterminate。
-
-allOf / oneOf按 arm array顺序；shape按 builder snapshot时的 own string-key顺序；exact object按 canonical key顺序。
-indeterminate本身不停止，后项仍可能提供决定性 true或false。
-诊断不能触发已无需执行的 predicate。
-
-collector用 `{ assertion, matchNode, candidateRef }` memoize evaluation。
-order DP或count aggregation重访同一 candidate不重复调用 predicate；同一 Match被两条 Assertion复用时各自求值一次。
-
-Match tree只存在于 runtime内部。
-projector按相同遍历顺序选择main path，并写回 AssertionResult已有的 expected、received与evidence string。
-三个字段各自统一限制在4096 UTF-8 bytes；control bytes先移除，截断停在Unicode scalar boundary，含原始byte count的marker计入上限。
-
-### Match evidence
-
-对一个 scope 的 logical candidate set，Match engine得到 definite-match、definite-mismatch与possible-match。
-collector用可命中数量区间折叠所有 count、existence与absence：
-
-```text
-L = definite-match count
-U = L + possible-match count + future
-future = 0          when every required channel is complete
-future = +infinity  otherwise, unless core proves a tighter bound
-```
-
-number CountMatch归一为 `[n,n]`，range归一为 `[min ?? 0, max ?? +infinity]`。
-`[L,U]` 完全位于允许区间时 passed；两区间无交集时 failed；其它情况 unavailable。
-
-同一算法处理默认存在 `{min:1}`、`notEvent/notCalledTool/noChange` 的 exact 0，以及 `hasChange` 的 min 1。
-例如 actions complete、一个 shell definite mismatch、另一个 input opaque时，`[L,U]=[0,1]`；exact 0、exact 1与min 1都 unavailable。
-若另有一个 definite match，则 `[1,2]`：exact 0 failed、exact 1 unavailable、min 1 passed。
-
-order为每个 session分别构造 definite与feasible可达图。
-definite chain只使用 definite-match node与确定成立的时序边；feasible chain还允许possible-match node与不是确定false的边。
-相关channel非complete时，feasible图保守加入可能漏采的candidate，但仍服从core已知的scope/时间边界。
-
-任一 session有definite完整链即passed；否则任一 session有feasible完整链即unavailable；两张图都没有完整链才failed。
-因此没有definite `[A,B]` chain、但把opaque candidate当B即可成链时是unavailable。
-即使存在possible node，若所有组合都被已知domain或时序冲突阻断，且没有future能补链，仍可确凿failed。
+现有 `pickCommand(command/cmd/program+args)` 只能作为非权威显示摘要。
+它不能进入 Assertion、Claim、command projector 或 coverage 判断。
 
 ## Logical occurrence
 
-tool 与 subagent operation 使用 session-local state machine：
+每笔 logical tool occurrence 包含：
 
-```text
-closed / absent --started(id, kind)--> open
-open --finished(same id, same kind)--> closed occurrence
-closed --started(reused id, kind)----> new occurrence
+```ts
+interface LogicalToolOccurrence {
+  readonly id: string;
+  readonly session: string;
+  readonly turn: string;
+  readonly name: {
+    readonly original: string;
+    readonly canonical?: string;
+  };
+  readonly input: JsonValue;
+  readonly command: CommandProjection;
+  readonly start: EventPosition;
+  readonly finish?: EventPosition;
+  readonly status: "pending" | "completed" | "failed" | "rejected";
+}
 ```
 
-operation id 只在单个 session 的当前 open lifecycle 内唯一。
-两个 session 的同名 id 绝不配对。
+command 不是第二笔事件、第二个 identity 或摘要数组。
+它是同一笔 tool occurrence 的标准投影，复用 id、start、finish 与 status。
 
-每个 event 的坐标是 `(turnOrdinal, eventOrdinal)`。
-closed occurrence 使用 `[startedCoordinate, finishedCoordinate]`；open occurrence 没有有限 end。
-open 可以跨同一 session 的 turns，resume turn 的 finish 关闭历史 start。
+orphan finish 没有可信 start、name、input 或 command classification。
+它可以用于诊断协议缺口，不能凭空匹配 `ranCommand()` 或占据 `eventOrder()` 的 command 位置。
 
-logical occurrence 归属 start 所在 turn。
-已经返回的 Turn 是不可变 snapshot：后续 finish 不回写旧 Turn，也不让 resume turn 凭空多一笔新发起调用。
-session 与 attempt 的后续 snapshot 可以看到 closed occurrence。
+## Actions coverage
 
-同 id 在 open 时再次 started，或 finish kind 与 open kind 不一致，都是 Adapter 协议缺陷。
-send 边界把它归为 non-retryable `SendFailure`，Attempt 使用既有 `agent-send-failed` error code。
-coverage 只描述缺失事实，不用来掩盖矛盾流。
+Adapter 只有同时满足以下条件，才能为一个 Turn 声明 `actions: complete`：
 
-同 session 历史从未出现 open start 的 finish 是 orphan。
-它作为 `[i, i]` point occurrence 保存自己真实拥有的 status 与 output，同时把 actions channel 降为 partial。
-orphan 没有 name 或 input，不能凭空匹配 `calledTool(name)`。
+1. 原生协议中的全部 action occurrences 都进入标准事件流；
+2. 每笔 tool occurrence 都有穷尽的 command / not-command 分类；
+3. 原生协议明确提供的 tool input 全部保留；
+4. 没有无法识别的 action kind、丢失的 started occurrence 或未交代的截断；
+5. opaque command source 使用结构化 reason，而不是伪造空字符串。
 
-非 order 的 attempt receiver 先在每个 session 内派生 occurrence，再把各 session 的集合相加做存在性、count 与上限判断。
-生命周期配对仍不跨 session；负断言必须证明每个相关 session 都没有命中。
+command source 是 opaque 不必自动降低整个 actions channel。
+它表示 occurrence 集合完整，但该字段无法判定；依赖 source 的 Assertion仍可能 unavailable。
 
-## Order
+Adapter 无法判断 command / not-command 时必须降低 actions coverage。
+它不能因为 canonical name 是 `shell`，或 input 含 `command`、`cmd`、`program`、`args` 而宣称 complete。
 
-### `toolOrder`
+## `ranCommand()` 真值
 
-`toolOrder(["A", "B"])` 只读取拥有真实 start/name 的 logical tool occurrences，并按 start 坐标寻找名字子序。
-open occurrence 可以贡献 start 正事实，orphan finish 不能。
+collector 先筛选 command occurrences，再让同一个 CommandRule 检查 source、status 与 count。
 
-找到 definite start 子序即可在 partial actions 上 passed。
-没有 definite chain时，possible candidate或partial actions产生feasible chain则unavailable；没有feasible chain才failed。
+| 已观察证据 | actions coverage | 结果 |
+|---|---|---|
+| 至少一笔 definite match，且 count 已确定满足 | 任意 | passed |
+| 所有 occurrence 都 definite mismatch，count 已确定不满足 | complete | failed |
+| 没有 definite match，但有 command source opaque | 任意 | unavailable |
+| 没有 definite match，可能仍缺 occurrence | partial / unavailable | unavailable |
+| 完整集合可以确定 count 满足或不满足 | complete | 按 count 结果 |
 
-### `eventOrder`
+需要总数上限、exact count 或 pending absence 时，partial actions 通常不能形成 passed。
+只有已经观察到的下界足以证明某个 `{ min }` 时，正向 count 才可在 partial channel 上通过。
 
-`eventOrder` 断言存在一组互不重叠的 occurrences：
+`ranCommand()` 不检查 OS exit semantics。
+status 来自 Agent operation lifecycle；作者要求 `completed` 时，证明的是该 logical occurrence 以 completed finish 封口。
 
-```text
-next.start > previous.end
-```
+## `eventOrder()`
 
-tool 与 subagent 是 interval；message、skill、thinking 等普通事件是 `[i, i]` point。
-非最终 matcher 只能选择 closed occurrence；最终 matcher 可以选择 open occurrence。
-显式 `{ status: "pending" }` 出现在非最终位置是登记期 author error。
-
-status 省略时，非最终 matcher 跳过 open candidate；最终 matcher 可以用它的 start/name/input 正事实。
-显式 pending 声称“没有 finish”，因此即使找到 derived open occurrence，也要求 actions complete。
-
-算法按存在性求 definite与feasible两张链，不选择“最早开始”后就停止。
-每一层从可接续的 closed candidates 中选择 end 最小者；相同 end 再按 start 与 occurrence ordinal 排序。
-等价 DP 可以替代，但必须产出相同 canonical chain与三值结果。
+sequence matcher 在同一 session 中寻找 distinct occurrences：
 
 ```text
-A1=[1,100]  A2=[2,3]  B=[4,5]
+A.start ───── A.finish   B.start ─── B.finish   assistant
+                    <       <                         <
 ```
 
-`eventOrder([A, B])` 选择 A2 后 passed，不能因 A1 更早开始而失败。
+每个非最终 operation 必须 closed。
+相邻项要求 `next.start > previous.finish`；相等、交叠或并发都不能形成链。
+最终 operation 可以 open，单点 message 的 start 与 finish 是同一个 event position。
 
-下面的交错调用刻意展示两种 order 不同：
+算法按 event position 建立候选图：
 
-```text
-A started(1), B started(2), B finished(3), A finished(4)
-```
+1. 每个规则节点收集 definite 与 indeterminate candidates；
+2. 边只连接 distinct occurrence，且满足严格非重叠；
+3. 存在全 definite 完整路径时 passed；
+4. 没有 definite 路径，但 opaque 或 partial evidence 仍允许路径时 unavailable；
+5. required channels 完整，且不存在任何可行路径时 failed。
 
-- `toolOrder(["A", "B"])` passed；
-- `eventOrder([{ type: "tool", name: "A" }, { type: "tool", name: "B" }])` failed。
+`{ command: rule }` 直接调用 `ranCommand()` 使用的单 occurrence evaluator。
+EventRule 不复制 command parsing、TextRule、status 或 opaque 语义。
 
-evidence 保存 canonical occurrence refs。
-失败诊断指出无法接续的 matcher index 与当时最小可达 end，不声称事件流里完全没有该 type。
+turn sequence 的 required channels 是各项并集。
+`command` 需要 actions，assistant reply 需要 messages；任一缺口都参与 feasible path 判断。
 
-turn order 只看该 turn；session order 可以跨自己的 turns。
-attempt order 对每个 session 独立求链，任一 session passed 则整体 passed。
-没有 definite chain但至少一条 session有feasible chain时 unavailable；没有session存在feasible chain时 failed。
+## 工具输入负断言
 
-## Evidence routing
+`toolInputsExclude()` 只检查标准 tool occurrence 的 input，不检查 stdout、assistant reply、子进程变量集合或 OS syscall。
+默认 selector 包含 scope 内所有 tools；显式 `tools` 同时按 canonical / original identifier exact 筛选。
 
-`EventMatch.type` 固定 required channel，作者不能改写：
+JSON walker 只访问 string leaves：
 
-| EventMatch type | Channel |
+- object 按 own enumerable string keys 的稳定顺序遍历 value；
+- array 按 index 遍历；
+- 不检查 key；
+- 不调用 getter、`toJSON` 或 `String()`；
+- number、boolean 与 null 不进入 TextRule。
+
+| 证据 | 结果 |
 |---|---|
-| `tool`、`subagent` | actions |
-| `message` | messages |
-| `skill`、`input-request`、`thinking`、`context`、`compaction`、`error` | events |
+| 任一 string leaf definite match | failed |
+| actions complete、所选 inputs 全部可遍历、没有 match | passed |
+| actions 不完整，且没有已知 match | unavailable |
+| input 存在可能隐藏 string 的 opaque subtree，且没有已知 match | unavailable |
 
-`eventOrder` 的 required channels 是序列各 matcher 的并集。
-它不额外要求 events complete；不相关 type 的缺口不能阻止 tool-to-message 链成立。
+因此该 API 的承诺是“已观察工具输入里没有命中”。
+它不会把这项结果写成“Agent 没有读取文件”或“OS 没有访问路径”。
 
-证据折叠规则由 [Match evidence](#match-evidence) 的数量区间与可达图统一给出。
-partial / unavailable channel仍允许 definite正事实 passed；opaque或可能漏采的事实保持possible，不折成false。
-负断言与需要最终上界的检查只有在整个可行区间都满足时才能passed。
-显式 pending 是负事实，actions非complete时只能成为possible-match。
+## Change ledger
 
-unavailable evidence 列出每个 required channel 的实际状态与 reason。
+Sandbox provider 为 Attempt 输出一次最终 diff export。
+core 用 send 前后的稳定边界把 entry 归因到 Turn，并应用 `EvalDefinition.diff.ignore`。
 
-### Count
+一条 Turn change 是边界两端的最终关系：
 
-count 不把 possible candidate 当成未命中。
-collector先形成 `[L,U]`，再与 exact/range允许区间比较；同一算法处理complete、partial与path-level opaque evidence。
+```ts
+interface TurnChange {
+  readonly path: SandboxPath;
+  readonly kind: "added" | "modified" | "deleted";
+  readonly before: TextEvidence | { readonly state: "absent" };
+  readonly after: TextEvidence | { readonly state: "absent" };
+}
+```
 
-公开 API 不接受 count predicate。
-框架无法判断 `n => n === 2` 或 `n => n >= 2` 是否能在 partial 流上安全提前成立。
+同一路径在一个 Turn 的最终 ledger 中最多一条。
+改后复原不会出现在 changed-path 集合；rename 固定表示 old path deleted 与 new path added。
 
-`eventsSatisfy` 也不推断 predicate 单调性。
-对应 scope 的 events channel 不全为 complete 时，它直接 unavailable，且不执行用户函数。
+`paths({ exact })` 对 added、modified、deleted 的 normalized path 做集合相等，不比较数组顺序。
+expected 有重复项是 author error；actual 若违反唯一性是 provider/evaluator defect。
 
-## Scope current state
+exact set 的三值规则是：
 
-### `succeeded`
+- 已观察到 expected 之外的确定 path，立即 failed；
+- collector complete 时，集合相等 passed，不等 failed；
+- collector partial 且尚无矛盾时 unavailable。
 
-turn 读取该 turn；session snapshot 读取最后一个 logical Turn；attempt 按每个非空 session 的最后一轮折叠。
+`noChanges()` 调用同一个 evaluator，并固定 expected 为空集。
+它不是另一套“diff 文本为空”检查。
 
-- status 是 failed 或 waiting：确凿 failed；
-- status 是 completed，但 status coverage 非 complete：unavailable；
-- status 是 completed 且 status coverage complete：passed；
-- session 没有 turn：idle，failed；
-- attempt 没有非空 session：failed；unused session 不参与 attempt 折叠。
+`fileChanged(path)` 只接受 added / modified。
+删除必须使用 `fileDeleted(path)`；`paths({ exact })` 则把三种 kind 都计入集合。
 
-attempt 中任一 session 的最新状态为 failed/waiting 时 failed。
-全部最新状态 completed，但任一 status coverage 非 complete 时 unavailable；全部 complete 才 passed。
-并发 send 谁先 settle 不影响结果。
+## 延迟 source
 
-一个总写 completed、但把 status 声明为 partial 的 Adapter 不能让 `succeeded()` passed。
+EvidenceSource 是不可伪造的惰性 token。
+创建 token 不做 I/O；`check()` finalize 或 awaited `require()` 到达求值边界时才读取候选值。
 
-### `parked`
+同一条 Assertion 中的 source 只读取一次。
+读取、UTF-8 解码和 JSON parse 共享 Attempt cancellation signal，并服从同一 deadline。
 
-turn 与 session 按当前最后一轮检查；attempt 表示至少一个 session 当前 parked，unused session 忽略。
+### 文本文件
 
-找到当前未回答 `input.requested` 是正事实，可以 passed。
-没找到时，required status/events 任一非 complete 就 unavailable；两者 complete 才 failed。
+`sandbox.file(path)` 的 missing 与 invalid UTF-8 是 definite content failure，因此 Assertion failed。
+permission、transport、timeout 与 terminated 表示无法取得 candidate，因此 unavailable。
 
-waiting 却没有对应 `input.requested` 违反 Adapter Turn 契约。
-send 边界产生协议 `SendFailure`，不把该 Turn 交给 Assertion。
+TextRule 只在 available UTF-8 string 上调用一次。
+missing 不会交给 `{ excludes }`，避免“文件不存在，所以不含禁止文本”假通过。
+
+### JSON 文件
+
+`sandbox.json(path)` 在求值边界执行：read bytes → strict UTF-8 decode → JSON parse → JsonRule。
+
+missing、invalid UTF-8 与 JSON syntax error 都是 failed。
+syntax detail 保留首个 line/column 与有界 parser message；不会把原始秘密内容完整复制进诊断。
+
+permission、transport、timeout 与 terminated 是 unavailable。
+parser throw、provider 返回非法 envelope 或 evaluator 非法状态是 defect，才使 Attempt errored。
+
+Standard Schema validator throw、rejection 或非法 result 同样是 evaluator defect。
+普通 schema issues 是 failed；schema transformed output 被丢弃，`require()` 返回原始 parsed value。
+
+## Array relation
+
+`array.exact` 直接比较 rule index 与 actual index，并要求长度相等。
+`array.unordered` 构造二分图：左侧是 rule occurrence，右侧是 actual index，definite match 形成确定边。
+
+unordered passed 需要匹配两侧全部节点的完美匹配。
+因此它是 exact multiset，不是 subset contains：
+
+- 重复 rule 要求不同 actual indices；
+- 重复 actual value 仍是多个元素；
+- 额外 actual element 会使长度或完美匹配失败；
+- 同一 actual index 不能满足两个 rule occurrences。
+
+若只有借助 indeterminate edge 才可能形成完美匹配，结果 unavailable。
+完整 JSON 没有 opaque node 时，无法形成完美匹配就是 failed。
+
+诊断先固定 rule path，再报告候选 actual indices 与最深 mismatch。
+算法不能因为遍历顺序不同而随机选择另一条主诊断。
+
+## `requireOne()` 控制边界
+
+`requireOne()` 对 available collection 只检查 `length === 1`，并登记一条 Assertion。
+passed 时返回原元素，因此 branded `SandboxPath`、discriminated union 或 readonly subtype 都得到保留。
+
+0 或 2 项以上是 failed；source unavailable 是 unavailable。
+两种非 passed 结果都通过内部 control signal 终止依赖路径，collector 把它识别为已登记 Assertion，不记 Attempt error。
+
+label 与 points 都属于这一条 Assertion。
+它固定 gate，不允许用 soft 绕过随后代码的数据依赖。
 
 ## Evaluator 边界
 
-所有 Assertion 求值都位于 runner 已有的 Effect fiber 与 Attempt AbortSignal 中。
-collector 不为单条 Assertion 启动 nested Effect runtime。
+以下情况是 author error，并在登记边界同步报告：
 
-custom evaluator 的合法返回只有 score result 或显式 unavailable。
-signal 未 abort 时的 throw/rejection、非法 union、非文本诊断、NaN 或越界 score 都成为结构化 `assertion-evaluator-defect` Attempt error。
-`.optional()` 不能遮蔽 defect。
+- rule 同时出现互斥关系；
+- 空 contains、非法 CountRule、重复 expected path；
+- 非法 snapshot、schema envelope 或不足两项的 eventOrder；
+- Pass/Fail Eval 向 `requireOne()` 传 points。
 
-collector 对 Promise 使用下面的 cancellation protocol：
+以下情况是 candidate failed：
 
-1. 调用 evaluator 前检查 signal；已经 abort 时不调用。
-2. 为 Promise 的 fulfill/reject 两支都安装 handler，并和 signal abort 竞争。
-3. abort 获胜时，把 evaluation cell 原子标为 cancelled，停止等待并传播原始 `signal.reason`。
-4. evaluator 先 settle 时，在接受结果前再次检查 signal；同 tick abort 时 signal 优先。
-5. cancelled cell 的 late fulfillment/rejection 只被消费，不能写 `AssertionResult`、改变 Attempt error 或再次 finalize。
+- available value 与 rule 不匹配；
+- source missing、invalid UTF-8 或 invalid JSON；
+- exact-one collection 数量不等于 1。
 
-never-settling evaluator 不会阻止 Attempt deadline。
-deadline 到达后沿既有 timeout 分类成为 errored，不生成 custom unavailable、failed 或 score。
+以下情况是 unavailable：
 
-abort 后的 late rejection 不成为 unhandled rejection，也不改写 timeout/interruption 终态。
-evaluator 仍有义务响应 signal，终止外部 I/O 并释放自己拥有的资源。
+- coverage 不足且事实仍可能成立；
+- 标准字段 structured opaque；
+- Sandbox permission、transport、timeout 或 terminated。
 
-只有 signal 未 abort，且 `{ unavailable: true }` 先合法 settle 时，custom unavailable 才成立。
-expected、received 与 evidence 使用 Match engine 同一中央 projector，各自最多4096 UTF-8 bytes；matcher不各自定义保存大小。
+只有框架、Adapter、provider、parser 或自定义 evaluator 违反自身协议时，Attempt 才 errored。
 
-`conformsTo(schema)` 只验证原始 input。
-合法 issues形成mismatch；transformed output被丢弃，`t.require`仍返回原值。
-schema envelope在builder调用时验证，validate throw/rejection或非法result是evaluator defect。
-`turn.outputConformsTo` 先读取data evidence：present才调用schema，opaque或未采是unavailable，complete且明确absent是failed。
+## AssertionResult 与 Claim
 
-同一 registered assertion 至多 evaluate 一次。
-`t.require` 与 awaited stop 的冻结结果由 finalize 复用。
-
-## Handle 生命周期
-
-```text
-registered --modifier--> registered
-registered --require / stop / finalize--> evaluating --> frozen
-frozen --modifier--> author error
-```
-
-Match与ValueAssertion modifier返回不可变clone；recorded handle modifier更新同一 pending spec。
-调用 stop 的瞬间就冻结，不等 Promise settle。
-
-浮空 stop 没有语言层面的控制力。
-框架不维护“下个 API 再补抛”的 pending queue，也不通过截掉后续 `AssertionResult` 伪装同步副作用没有发生。
-
-failed/unavailable stop 使用内部 non-error control signal，只中止依赖代码。
-evaluator defect 使用 Attempt error；两者不能共用普通 Error 文案猜测。
-
-## Sandbox evidence
-
-turn changes 与 aggregate Sandbox Assertion 共用一次最终 diff export。
-turn selector 使用该 turn token；aggregate selector使用全部 send 区间。
-
-分类能力只来自每个 send 区间的 before/after：
-
-- 同一 send 区间内改动后复原，边界相同，框架无法观察该历史；
-- 跨两个 send 区间的改动与复原形成两条 delta，仍可见；
-- `fileChanged` 与 `fileDeleted` 只声明边界 delta，不声称观察 syscall 或 touch 历史。
-
-目标 turn 的 diff group 即使没有变化也必须存在。
-export 失败或 group 缺失时 `noChanges` unavailable，不能把缺事实当空事实。
-
-通用 change selector 的 entry identity 是 `{ window, path }`。
-path、kind、before与after必须来自同一条 WindowChange；aggregate receiver只扩大entry集合，不合并跨window字段。
-before / after是window两端的完整文本，rename拆为deleted + added，不公开patch/hunk猜测。
-
-binary、oversized text与path-only Provider把相应文本写成structured opaque。
-`hasChange`、`noChange` 逐entry运行 Match，再按min 1 / exact 0使用数量区间。
-path已definite mismatch的opaque entry不影响结果；path matched但所需after opaque时possible-match，负断言不能假通过。
-旧 `notInDiff` 与 `diff.matches` 不进入目标API。
-
-Delayed file 在 matcher 前使用 tagged resolution：
+每次调用登记一条结构化 Assertion：
 
 ```ts
-type FileResolution =
-  | { readonly state: "available"; readonly text: string }
-  | { readonly state: "missing"; readonly path: string }
-  | {
-      readonly state: "unavailable";
-      readonly reason: string;
-      readonly detail?: string;
-    };
+interface AssertionResult {
+  readonly name: string;
+  readonly nameKind: "author" | "generated";
+  readonly scope: AssertionScope;
+  readonly outcome: "passed" | "failed" | "unavailable";
+  readonly score?: number;
+  readonly points?: number;
+  readonly reason?: string;
+  readonly detail?: AssertionDetail;
+  readonly evidence: readonly EvidenceRef[];
+}
 ```
 
-只有 available 分支调用 matcher。
-missing 直接形成 score 0 的 failed；unavailable 写 `sandbox-file-unavailable`。
-Provider 必须用结构化 NotFound 区分 missing；core 不正则匹配异常文本。
+receiver 决定 scope；`.label()` 或 require options 提供 author name；否则从一等方法与 rule 生成稳定标题。
+标题不拼入 turn 前缀，show / view 根据结构化 scope 渲染归属。
 
-## Record compatibility
+Assertion Claim 引用实际消费的 Observation、diff export 或 Sandbox read evidence。
+它不会把非权威 `pickCommand` 摘要、私有 `.niceeval` 文件或 Report projection 当成判断依据。
 
-grouped `events.json`、required `AssertionResult.scope`、`nameKind` 与 message origin 是同一次 breaking Record change。
-目标 Run 格式把当前 `schemaVersion` 从 15 提升到 16；没有 per-artifact version 或局部兼容分支。
+## 普通 API 防膨胀
 
-旧 Run 整份 incompatible，不对 `events.json` 猜形，也不做多版本 normalize loader。
-writer、reader、artifact registry、truncation、o11y 派生、Reports、fixtures 与 carry eligibility 在同一 schema 切换。
-跨 `schemaVersion` 继续不携带结果。
+一个事实进入普通词汇前必须同时满足 observation owner、两个真实下游、跨 Adapter completeness 和正交 rule domain。
+不满足时进入高级 API 或用户代码。
 
-[运行观测协议](../observation-protocol/README.md) 使用 typed Observation 时，projector 必须产生同构的 recorded session/turn view。
-协议可以换物理容器，不能丢 session boundary、Turn outcome、coverage 或 message origin，也不能制造跨 session 顺序。
+普通 domain 不共享万能 `Rule` 联合，也不提供任意 `not/allOf/oneOf/predicate`。
+局部 excludes、field absent 和 array relation 都绑定单一 candidate，不能组合成跨值逻辑程序。
 
-## 不变量
-
-- label 是人读标题，不是 join key。
-- operation id 不跨 session 配对，attempt order 不跨 session 拼链。
-- `toolOrder` 使用 start 子序；`eventOrder` 使用非重叠 interval sequence。
-- pending 需要完整 actions 事实；open start 本身仍是正事实。
-- arbitrary count predicate 不进入公开 API。
-- predicate 返回值不做 truthiness coercion。
-- unavailable 与 evaluator defect 不互相转换。
-- finalized Assertion 不会再次求值或被 handle modifier 改写。
-- missing file 不进入 string matcher，unknown read failure 不伪装成 missing。
-- raw RegExp、implicit String coercion与serialized JSON search不进入selector。
-- possible Match不会在not、count或order中被折成false。
-- Record 与 author predicate view 分型；`eventsSatisfy` 不能读取 status、data、usage 或 coverage。
+这使 `ranCommand()`、`paths()` 与 `sandbox.json()` 成为稳定领域入口，而不是旧 Match AST 的别名层。
