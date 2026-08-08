@@ -35,10 +35,6 @@ export type {
 } from "../definition/report.ts";
 export type { ThemeDefinition } from "../theme.ts";
 export type { ResolvedPage } from "./resolved-page.ts";
-  // 源码宿主也必须跨公开 entry 进入预编译报告图。宽化为 string 让首次
-// build:package 不依赖尚未生成的自引用声明文件。
-  const BUILT_IN_REPORT_ENTRY: string = "niceeval/report/built-in";
-
 // Source hosts must enter the precompiled report graph through its public
 // entry point too. The string annotation keeps the first package build from
 // depending on generated self-reference declarations.
