@@ -206,7 +206,7 @@ export interface Turn {
  * 启动期配置(`defineConfig({ telemetry: { port } } )`)固定的,不从这里传。
  */
 export interface Telemetry {
-  /** 接收端点(完整路径,形如 http://host.docker.internal:PORT/v1/traces)。 */
+  /** 接收端点(完整路径,形如 http://127.0.0.1:PORT/v1/traces)。 */
   readonly endpoint: string;
   /**
    * env-based 导出的 env(= AgentTracing.env(endpoint) 的结果),ready-to-spread。

@@ -6,24 +6,16 @@
     "docs/engineering/agent-docs/agent-debug-eval.md": 1,
     "docs/engineering/benchmark/README.md": 10,
     "docs/engineering/example-tier-sync/README.md": 10,
-    "docs/engineering/testing/README.md": 1,
-    "docs/engineering/testing/e2e/README.md": 2,
     "docs/engineering/testing/e2e/adapter/README.md": 3,
     "docs/engineering/testing/e2e/adapter/ai-sdk.md": 1,
     "docs/engineering/testing/e2e/adapter/codex-cli.md": 1,
-    "docs/engineering/testing/e2e/cli.md": 2,
-    "docs/engineering/testing/e2e/report.md": 7,
-    "docs/engineering/testing/unit/README.md": 1,
-    "docs/engineering/testing/unit/assertions.md": 10,
-    "docs/engineering/testing/unit/eval.md": 4,
-    "docs/engineering/testing/unit/experiments-runner.md": 16,
-    "docs/engineering/testing/unit/sandbox.md": 11,
+    "docs/engineering/testing/e2e/report.md": 6,
     "docs/feature/adapters/architecture/agent-contract.md": 2,
     "docs/feature/adapters/architecture/events.md": 2,
     "docs/feature/adapters/library/coding-agent-extensions.md": 1,
     "docs/feature/adapters/library/streaming.md": 1,
     "docs/feature/adapters/reference/agent-loop-apis.md": 19,
-    "docs/feature/adapters/reference/claude-code-otel-telemetry.md": 6,
+    "docs/feature/adapters/reference/claude-code-otel-telemetry.md": 4,
     "docs/feature/adapters/reference/eve-protocol.md": 2,
     "docs/feature/adapters/reference/otel-genai.md": 7,
     "docs/feature/adapters/reference/otel-instrumentation.md": 9,
@@ -46,12 +38,12 @@
     "docs/feature/reports/show/usage.md": 1,
     "docs/feature/reports/use-case/分析/终端跨条件归因.md": 1,
     "docs/feature/sandbox/README.md": 2,
-    "docs/feature/sandbox/architecture.md": 14,
+    "docs/feature/sandbox/architecture.md": 13,
     "docs/feature/sandbox/cli.md": 5,
     "docs/feature/sandbox/library.md": 1,
     "docs/feature/sandbox/local.md": 3,
     "docs/getting-started.md": 1,
-    "docs/observability.md": 9,
+    "docs/observability.md": 8,
     "docs/origin-integration.md": 12,
     "docs/references.md": 6
   },
@@ -63,11 +55,6 @@
     "docs/engineering/example-tier-sync/README.md": 2,
     "docs/engineering/testing/e2e/adapter/README.md": 2,
     "docs/engineering/testing/e2e/report.md": 3,
-    "docs/engineering/testing/unit/assertions.md": 4,
-    "docs/engineering/testing/unit/eval.md": 2,
-    "docs/engineering/testing/unit/experiments-runner.md": 15,
-    "docs/engineering/testing/unit/reports.md": 2,
-    "docs/engineering/testing/unit/sandbox.md": 3,
     "docs/feature/adapters/architecture/agent-contract.md": 1,
     "docs/feature/adapters/architecture/events.md": 1,
     "docs/feature/adapters/library/coding-agent-extensions.md": 1,
@@ -1043,133 +1030,6 @@
     "docs/design/report-authoring/README.md": {
       "结论": 1
     },
-    "docs/design/user-readable-testing/CASES.md": {
-      "来源": 1,
-      "覆盖": 2
-    },
-    "docs/design/user-readable-testing/DECISION.md": {
-      "helper": 2,
-      "产物": 1,
-      "来源": 1,
-      "结论": 1,
-      "覆盖": 3,
-      "记录": 1
-    },
-    "docs/design/user-readable-testing/EVIDENCE.md": {
-      "helper": 1,
-      "产物": 1,
-      "基线": 3,
-      "覆盖": 3,
-      "记录": 1
-    },
-    "docs/design/user-readable-testing/GOALS.md": {
-      "helper": 1,
-      "来源": 1,
-      "环境": 1,
-      "覆盖": 2,
-      "解析": 3,
-      "记录": 2,
-      "锚点": 1
-    },
-    "docs/design/user-readable-testing/LIMITS.md": {
-      "产物": 1,
-      "基线": 1,
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 1,
-      "记录": 2,
-      "锚点": 1
-    },
-    "docs/design/user-readable-testing/PLAN-1/README.md": {
-      "环境": 1,
-      "覆盖": 1,
-      "解析": 3,
-      "记录": 1
-    },
-    "docs/design/user-readable-testing/PLAN-1/architecture.md": {
-      "清理": 1,
-      "解析": 1,
-      "记录": 1
-    },
-    "docs/design/user-readable-testing/PLAN-1/lifecycle.md": {
-      "清理": 1,
-      "环境": 1
-    },
-    "docs/design/user-readable-testing/PLAN-1/use-case/README.md": {
-      "记录": 2
-    },
-    "docs/design/user-readable-testing/PLAN-2/README.md": {
-      "helper": 1,
-      "来源": 4,
-      "清理": 1,
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 1,
-      "解析": 4,
-      "记录": 3,
-      "锚点": 2
-    },
-    "docs/design/user-readable-testing/PLAN-2/architecture.md": {
-      "helper": 7,
-      "产物": 2,
-      "来源": 5,
-      "清理": 3,
-      "覆盖": 2,
-      "解析": 13,
-      "记录": 3
-    },
-    "docs/design/user-readable-testing/PLAN-2/lifecycle.md": {
-      "产物": 1,
-      "来源": 3,
-      "清理": 1,
-      "解析": 4,
-      "记录": 2
-    },
-    "docs/design/user-readable-testing/PLAN-2/use-case/README.md": {
-      "来源": 2,
-      "环境": 1,
-      "解析": 1,
-      "记录": 5
-    },
-    "docs/design/user-readable-testing/PLAN-3/README.md": {
-      "覆盖": 5
-    },
-    "docs/design/user-readable-testing/PLAN-3/architecture.md": {
-      "产物": 2,
-      "来源": 1,
-      "覆盖": 3,
-      "解析": 2
-    },
-    "docs/design/user-readable-testing/PLAN-3/lifecycle.md": {
-      "环境": 1,
-      "覆盖": 1
-    },
-    "docs/design/user-readable-testing/PLAN-3/use-case/README.md": {
-      "记录": 2
-    },
-    "docs/design/user-readable-testing/PLAN-4/README.md": {
-      "helper": 1,
-      "清理": 1,
-      "环境": 2,
-      "覆盖": 1,
-      "解析": 2
-    },
-    "docs/design/user-readable-testing/PLAN-4/architecture.md": {
-      "helper": 3,
-      "清理": 1,
-      "覆盖": 2,
-      "解析": 5
-    },
-    "docs/design/user-readable-testing/PLAN-4/lifecycle.md": {
-      "环境": 1,
-      "结论": 1,
-      "解析": 1,
-      "记录": 1
-    },
-    "docs/design/user-readable-testing/README.md": {
-      "helper": 1,
-      "解析": 1
-    },
     "docs/engineering/agent-docs/README.md": {
       "产物": 11,
       "覆盖": 1,
@@ -1201,32 +1061,18 @@
       "记录": 2,
       "重放": 4
     },
-    "docs/engineering/testing/README.md": {
-      "helper": 1,
-      "产物": 4,
-      "环境": 1,
-      "覆盖": 12,
-      "记录": 1
-    },
     "docs/engineering/testing/churn.md": {
       "产物": 1,
       "窗口": 3,
-      "覆盖": 4,
+      "覆盖": 3,
       "记录": 1
     },
     "docs/engineering/testing/e2e/README.md": {
-      "产物": 3,
-      "基线": 4,
-      "清理": 2,
-      "环境": 12,
-      "结论": 3,
-      "覆盖": 7,
-      "解析": 6,
-      "记录": 2
+      "覆盖": 1
     },
     "docs/engineering/testing/e2e/adapter/README.md": {
-      "覆盖": 6,
-      "记录": 5
+      "覆盖": 5,
+      "记录": 4
     },
     "docs/engineering/testing/e2e/adapter/ai-sdk.md": {
       "来源": 1,
@@ -1249,121 +1095,19 @@
       "来源": 1,
       "记录": 1
     },
-    "docs/engineering/testing/e2e/cli.md": {
-      "基线": 1,
-      "覆盖": 1,
-      "解析": 1
-    },
     "docs/engineering/testing/e2e/report.md": {
-      "产物": 3,
+      "产物": 2,
       "来源": 4,
-      "覆盖": 5,
-      "解析": 3,
+      "覆盖": 4,
+      "解析": 2,
       "记录": 2
     },
-    "docs/engineering/testing/e2e/verification.md": {
-      "helper": 1,
-      "环境": 1,
-      "解析": 1,
-      "记录": 4
-    },
     "docs/engineering/testing/unit/README.md": {
-      "helper": 3,
-      "sandbox case": 2,
-      "产物": 6,
-      "来源": 2,
-      "清理": 2,
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 21,
-      "解析": 3,
-      "记录": 3
-    },
-    "docs/engineering/testing/unit/adapters.md": {
-      "sandbox case": 1,
-      "产物": 2,
-      "来源": 1,
-      "环境": 11,
-      "覆盖": 3,
-      "记录": 4
-    },
-    "docs/engineering/testing/unit/assertions.md": {
-      "来源": 2,
-      "覆盖": 10,
-      "解析": 4,
-      "记录": 8
-    },
-    "docs/engineering/testing/unit/eval.md": {
-      "helper": 1,
-      "产物": 3,
-      "来源": 1,
-      "窗口": 3,
-      "覆盖": 6,
-      "解析": 5,
-      "记录": 7,
-      "重放": 1
-    },
-    "docs/engineering/testing/unit/experiments-runner.md": {
-      "helper": 1,
-      "产物": 4,
-      "来源": 13,
-      "清理": 1,
-      "环境": 9,
-      "窗口": 3,
-      "结论": 5,
-      "覆盖": 26,
-      "解析": 16,
-      "记录": 9,
-      "锚点": 3,
-      "闸": 9
-    },
-    "docs/engineering/testing/unit/harness.md": {
-      "覆盖": 1,
-      "记录": 1
-    },
-    "docs/engineering/testing/unit/record.md": {
-      "产物": 1,
-      "来源": 6,
-      "覆盖": 10,
-      "记录": 6,
-      "锚点": 5
-    },
-    "docs/engineering/testing/unit/registry.md": {
-      "产物": 1,
-      "覆盖": 13,
-      "记录": 1
-    },
-    "docs/engineering/testing/unit/reports.md": {
-      "产物": 18,
-      "来源": 6,
-      "窗口": 7,
-      "覆盖": 36,
-      "解析": 17,
-      "记录": 10,
-      "锚点": 2
-    },
-    "docs/engineering/testing/unit/sample.md": {
-      "helper": 1,
-      "来源": 11,
-      "覆盖": 8,
-      "记录": 2,
-      "锚点": 3
+      "覆盖": 2
     },
     "docs/engineering/testing/unit/sandbox.md": {
-      "helper": 1,
-      "sandbox case": 3,
-      "产物": 2,
-      "来源": 1,
-      "清理": 7,
-      "环境": 4,
-      "窗口": 5,
-      "结论": 1,
-      "覆盖": 19,
-      "解析": 7,
-      "记录": 9,
-      "资源组": 2,
-      "重放": 4,
-      "锚点": 4
+      "环境": 2,
+      "记录": 1
     },
     "docs/error-feedback.md": {
       "来源": 1,
@@ -2712,164 +2456,6 @@
     "docs/roadmap/sandbox-reuse-groups/use-case/Terminal-Bench.md": {
       "产物": 2,
       "环境": 1
-    },
-    "docs/roadmap/testing/reference/README.md": {
-      "helper": 1,
-      "覆盖": 1
-    },
-    "docs/roadmap/testing/reference/bugs/README.md": {
-      "helper": 1,
-      "产物": 2,
-      "基线": 1,
-      "来源": 3,
-      "清理": 4,
-      "环境": 1,
-      "窗口": 2,
-      "结论": 1,
-      "覆盖": 18,
-      "解析": 5,
-      "记录": 3,
-      "资源组": 1,
-      "闸": 3
-    },
-    "docs/roadmap/testing/reference/bugs/acceptance-bank.md": {
-      "产物": 1,
-      "来源": 3,
-      "清理": 3,
-      "环境": 2,
-      "窗口": 1,
-      "覆盖": 14,
-      "解析": 2,
-      "记录": 3,
-      "闸": 2
-    },
-    "docs/roadmap/testing/reference/bugs/adapter-event-identity.md": {
-      "结论": 1,
-      "覆盖": 1,
-      "记录": 1
-    },
-    "docs/roadmap/testing/reference/bugs/artifact-boundary.md": {
-      "结论": 1,
-      "解析": 3,
-      "记录": 1
-    },
-    "docs/roadmap/testing/reference/bugs/browser-enhancement-closure.md": {
-      "产物": 1,
-      "结论": 1,
-      "记录": 1
-    },
-    "docs/roadmap/testing/reference/bugs/build-readiness-and-identity.md": {
-      "产物": 1,
-      "来源": 4,
-      "环境": 1,
-      "覆盖": 2,
-      "解析": 1,
-      "记录": 1
-    },
-    "docs/roadmap/testing/reference/bugs/cleanup-ownership.md": {
-      "清理": 5,
-      "窗口": 1,
-      "结论": 1,
-      "解析": 2,
-      "资源组": 1
-    },
-    "docs/roadmap/testing/reference/bugs/composition-closure.md": {
-      "结论": 1,
-      "覆盖": 1
-    },
-    "docs/roadmap/testing/reference/bugs/consumer-context-boundary.md": {
-      "产物": 1,
-      "结论": 1
-    },
-    "docs/roadmap/testing/reference/bugs/diagnostic-identity.md": {
-      "结论": 1,
-      "解析": 1
-    },
-    "docs/roadmap/testing/reference/bugs/diff-evidence-boundary.md": {
-      "基线": 2,
-      "结论": 1
-    },
-    "docs/roadmap/testing/reference/bugs/empty-success.md": {
-      "产物": 3,
-      "结论": 1,
-      "覆盖": 2,
-      "解析": 2,
-      "记录": 3
-    },
-    "docs/roadmap/testing/reference/bugs/external-install-readback.md": {
-      "结论": 1,
-      "解析": 1,
-      "记录": 1
-    },
-    "docs/roadmap/testing/reference/bugs/failure-delivery.md": {
-      "结论": 1,
-      "解析": 1,
-      "闸": 2
-    },
-    "docs/roadmap/testing/reference/bugs/history-roundtrip.md": {
-      "基线": 3,
-      "结论": 1,
-      "解析": 1,
-      "记录": 2
-    },
-    "docs/roadmap/testing/reference/bugs/hosting-base.md": {
-      "产物": 3,
-      "结论": 1,
-      "覆盖": 1,
-      "解析": 1
-    },
-    "docs/roadmap/testing/reference/bugs/lock-release-closure.md": {
-      "结论": 1,
-      "闸": 2
-    },
-    "docs/roadmap/testing/reference/bugs/mutable-view-world.md": {
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 1
-    },
-    "docs/roadmap/testing/reference/bugs/process-result-observation.md": {
-      "结论": 1
-    },
-    "docs/roadmap/testing/reference/bugs/provider-sdk-shape.md": {
-      "窗口": 1,
-      "结论": 2,
-      "覆盖": 2
-    },
-    "docs/roadmap/testing/reference/bugs/public-contract-drift.md": {
-      "结论": 1,
-      "解析": 3
-    },
-    "docs/roadmap/testing/reference/bugs/recent-fixes-2026-08-04-to-05.md": {
-      "基线": 1,
-      "环境": 1,
-      "结论": 1,
-      "覆盖": 2,
-      "解析": 2
-    },
-    "docs/roadmap/testing/reference/bugs/report-formula-ownership.md": {
-      "helper": 1,
-      "结论": 1,
-      "解析": 1
-    },
-    "docs/roadmap/testing/reference/bugs/scheduler-timeline.md": {
-      "结论": 1,
-      "覆盖": 1,
-      "闸": 5
-    },
-    "docs/roadmap/testing/reference/bugs/synthesis.md": {
-      "来源": 3,
-      "清理": 2,
-      "环境": 3,
-      "结论": 1,
-      "覆盖": 5,
-      "解析": 1,
-      "记录": 2,
-      "闸": 2
-    },
-    "docs/roadmap/testing/reference/current-system-gaps.md": {
-      "产物": 1,
-      "结论": 2,
-      "覆盖": 17
     },
     "docs/runner.md": {
       "sandbox case": 1,

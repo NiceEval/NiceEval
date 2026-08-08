@@ -89,7 +89,7 @@ export default defineEval({
 - **agent 归因增量 = 每次 send 的边界 delta。** `workspace.diff` 从分类账导出每次 send 的 before/after,按时序写入 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。
 - **单次观察边界。** 每笔只证明两个边界之间的差异;同一次 send 内创建后删除、修改后复原都不可见。
 - **跨 send 保留。** 压成单一 before/after 会夹带其间的 eval 写入,也会抹掉分属不同 send 的创建后删除或修改后复原。
-- **读取面。** `net`、涉及的 send 与 `diff.get(path)` 都从 delta 序列派生;后续 eval 写入不会回改已经取得的 agent delta。
+- **读取面。** `net`、涉及的 send 与 `diff.get(path)` 都从 delta 序列派生。后续 eval 写入不会回改已经取得的 agent delta。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令枚举全部 send 区间的路径、读取文本 blob 并统计二进制尺寸。结果写入沙箱内文件,宿主经文件通道下载一次并校验。
 - **Provider 调用数不随规模增长。** 往返数与 send 次数、文件数无关;实现不能逐文件远端调用,也不能把大证据写进 stdout。沙箱侧只要求 git 与 POSIX shell 工具,不要求 node 或 python。
 - **单次 send 预算。** 最多导出 10,000 个路径和 64 MiB 文本 blob;预算只计算实际传输的 before/after 文本字节。
@@ -109,7 +109,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCom
 
 Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase/command/turn 下,所以 `sandbox.prepare.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、adapter 启动 Agent CLI、workspace baseline/diff 与 lifecycle hook 的回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
 
-runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点;例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
+runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点。例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
 `sandbox.create` 是特殊边界:此时 Sandbox 对象尚不存在,不能靠同一个包装器看到内部步骤。内置 provider 可把真实 SDK 请求、宿主命令或创建子步骤作为 `provider` 节点写入;第三方 provider 没提供细分时只记录 `sandbox.create` 合计,不能为了树好看把 API 调用伪装成 shell 命令。Agent CLI 内部自行执行的工具命令也不经过 Sandbox 包装,它们由标准事件流记录,有 OTel 且 correlation 唯一时才在 turn 下显示耗时。
 

@@ -1,385 +1,187 @@
-# E2E CI
+# E2E：真实用户结果的默认 owner
 
-E2E 是[测试体系](../README.md)的真实层：真实模型、真实协议、真实沙箱、真实安装与进程，没有离线档、mock 模式或替身分支——模型调用成本不构成设计约束，费用与时长由每个仓库自己的 Experiment 档位（模型、runs、budget、timeout）控制。
+产品行为默认从 E2E 开始裁决。E2E 穿过真实公开边界：candidate、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
+signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。CLI、Runner、Record、Report、Package 与 Lifecycle 使用
+功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 兼容性 Repo。
 
-niceeval 的 E2E 以**独立测试仓库**为执行与所有权边界。
-每个测试仓库都包含自己的被测应用、直接实例化官方 Agent 工厂的 Experiment、Eval、依赖锁文件、启动脚本和验收脚本；不同仓库之间不共享 Eval factory、profile、应用进程或结果读取代码。
+跨多个公开接缝的完整用户目标由 Journey 拥有；原子公开结果由单边界 E2E 拥有。
+只有两者无法稳定制造、穷举或区分具名错误算法时，才进入 [Unit 例外](../unit/README.md)。
 
-根仓库只编排这些仓库：构建当前 niceeval 候选包、选择测试仓库、逐个隔离运行并汇总结果。
-它不理解某个仓库应该发现多少条 Eval、工具名是什么，也不递归猜测 `.niceeval/` 的内部布局。
+## Repo 是载体，不是测试模型
 
-这条边界让同一个测试仓库可以被三种执行器用同一条命令运行：开发者本机、GitHub Actions，以及同步该仓库后远程执行命令的 crabbox。
+每个叶子目录是一个能被复制到仓库外使用的 NiceEval 项目：
 
-本篇定义所有仓库共用的执行与编排协议。
-每个仓库**测什么、断言什么**按验收域分篇：
+- 自己的 `package.json` 与签入 lockfile；
+- NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
+- `e2e.json` 的 `harness.testkit: true`；根 runner clean-build 当前 checkout 的 Testkit，并只在副本中注入目录依赖；
+- `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
+- 原生 Vitest / Playwright 测试；
+- 只描述运行条件的 `e2e.json`。
 
-- [适配器域](adapter/README.md)——`e2e/adapter/` 的仓库：每个官方适配器一个仓库、一篇 E2E 验收说明，验收真实协议路径。
-- [功能域 · 报告与读面](report.md)——`e2e/report/` 仓库：落盘格式、公开读取面、机器出口与 show/view 渲染面。
-- [功能域 · CLI](cli.md)——`e2e/cli/` 仓库：选择、退出码折叠与缓存复用。
+它不能从 workspace 相对路径 import NiceEval 源码，也不能用“生成过 evidence”代替断言。完整规则见
+[真实场景 Repo](scenario-repos.md)。
 
-验收脚本怎么执行 `niceeval` 命令、怎么断言返回的就是需要的，参考写法与用例见[验收脚本写法](verification.md)。
+## 框架分工：复用 runner，只写产品 harness
 
-## 1. 设计目标
+- CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
+- Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
+- 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
+- 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
-E2E CI 同时证明以下行为：
+这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
+再为自身的真实项目、CLI、server 或候选构建写薄的产品 fixture。NiceEval 不另造 assertion DSL、browser runner
+或第二套测试调度器。
 
-1. **真实仓库路径**：从安装 niceeval、启动被测应用、发现 `evals/` 与 `experiments/`、执行真实 Agent，到断言、评分、结果落盘和进程退出码，全部通过公开使用面完成。
-2. **仓库自治**：一个测试仓库只依赖自己的签入内容、声明的外部服务与注入的 niceeval 候选包。
-   删除其它测试仓库或把本仓库复制到独立 checkout，不改变它的行为。
-3. **协议差异显式存在**：SDK 的工具命名、usage、HITL、会话和沙箱能力直接写在对应仓库的 Eval 中，不用共享 profile 把多个真实协议抽象成一套条件分支。
-4. **正反路径可证**：支持某项能力的仓库同时验证正例和反例；退出码折叠的验证由[功能域 · CLI](cli.md)的 `cli` 仓库承担，其 deliberate-fail / deliberate-error 实验把预期非零退出转换为仓库级验收成功。
-5. **可独立调度**：任意仓库都能以稳定 ID 被单独选择、设置超时、注入所需 secrets、上传自己的证据，并把原始退出状态交给本地、CI 或 crabbox。
+## 单边界 E2E
 
-## 2. 独立测试仓库
+单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
-### 2.1 独立的含义
+```ts
+// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
+// regression: memory/show-json-pipe-truncated-at-128k.md
+test("show --json 经 pipe 仍交付完整文档", async () => {
+  const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
+  const result = await niceeval.run(["show", locator, "--json"]);
 
-一个测试仓库满足以下约束：
+  expect(result.exitCode, result.diagnostic()).toBe(0);
+  expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
 
-- 有自己的 `package.json` 和 lockfile，不加入 niceeval 根 workspace；Python 等其它运行时同样在仓库内声明依赖。
-  TS 系仓库带一份只含 `packages: []` 的 `pnpm-workspace.yaml`，让 pnpm 把仓库目录本身当 workspace root、不向上并入父级 workspace——这样候选 niceeval tarball 注入后解析到的是仓库自己的 `node_modules`，就地调试（`cd <repo> && pnpm install && pnpm e2e`）与拷贝到临时目录执行行为一致。
-  仓库自己的原生构建开关（`allowBuilds`）也声明在这个文件里。
-- 有自己的 `niceeval.config.ts`、`evals/` 和 `experiments/`；Experiment 直接从 `niceeval/adapter` 导入并实例化官方 Agent 工厂。
-- 被测应用及其启动方式属于该仓库，不从中央 `apps/` 目录连接共享进程。
-- 不 import 另一个测试仓库，也不 import niceeval 根仓中的 `e2e/shared`、`src/` 或测试辅助源码。
-- 不使用指向父目录的 `file:` / `link:` 依赖。
-  待测 niceeval 由执行器通过候选包注入。
-- 不包含 `agents/` 或等价的本地 Adapter 实现层，不调用 `defineAgent`、`defineSandboxAgent`、`driveFrameStream` 或 `from*Events` 拼装 Agent。
-  官方工厂不够用就是产品缺口，不在 E2E 中补胶水。
-- `.niceeval/`、服务日志和 JUnit 属于一次运行的临时证据，必须被 ignore，不得成为下一次运行的输入。
-- 从父目录复制到一个临时目录后，仍能在只注入候选包和 secrets 的条件下执行。
+  const document = result.json<AttemptDocument>();
+  expect(document.format).toBe("niceeval.show");
+  expect(document.data).toContainEqual(expect.objectContaining({ id: "tail-sentinel" }));
+});
+```
 
-“不共享”约束的是运行时代码和测试语义。
-仓库可以遵循同一份书面执行协议，也可以在创建时从模板复制初始骨架；复制后各仓库独立演进，不存在会同时改变整个矩阵行为的共享 factory。
+命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
+命令收据与资源生命周期的共用规则见 [Testkit](../testkit.md)。
 
-`e2e/` 的布局平铺，目录名就是验收域：`adapter/` 是唯一的多仓库 collection，装已有完整官方 Agent 工厂的适配器仓库（`group` 为 `sdk` / `sandbox`），负责官方适配器的协议验收；`cli/`、`report/` 是直挂在 `e2e/` 下、自带 `e2e.json` 的功能仓库（`group` 分别为 `cli`、`report`），对一次真实运行的产物断言 CLI 行为、落盘格式与渲染面，不测适配器协议路径。
-物理位置只表达归属，不是仓库身份的一部分——`id` 在全部仓库范围内全局唯一，编排器与 CI 从每个仓库自己的 `e2e.json` 读 `group`，不从目录位置反推分组。
+## Journey E2E：长用户流程
 
-只有事件转换器、尚无完整官方 Agent 工厂的 fixture 放在 `e2e/undo/`。
-`undo/` 不是 collection，发现器与 CI 都不扫描它；对应官方工厂落地后，fixture 删除本地 Adapter 实现、Experiment 改为直接实例化工厂，再整体移回 `adapter/`。
-
-### 2.2 仓库形状
-
-每个仓库都是完整的用户项目，而不是只绑定共享定义的薄壳：
+Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
 
 ```text
-<repo>/
-  package.json
-  pnpm-lock.yaml
-  pnpm-workspace.yaml          # 只含 packages: []，令仓库自成 workspace root；兼放 allowBuilds
-  .gitignore
-  .env.example
-  e2e.json
-  niceeval.config.ts
-
-  src/                         # 被测应用；不需要服务的仓库可省略
-  evals/                       # 本仓库拥有的 Eval
-  experiments/                # 直接实例化 niceeval/adapter 官方工厂
-
-  scripts/
-    e2e.ts                     # 唯一执行入口（tsx 执行）：准备、启动、运行、验收、清理
-    verify.ts                  # 可选；只包含本仓库的可观察行为断言
+init → exp --dry → exp → show --history → show @locator --execution → view --out → 浏览器打开
 ```
 
-例如 `claude-code` 仓库直接在自己的 MCP Eval 里断言真实 Claude Code 工具名，`ai-sdk` 仓库直接断言 UI Message Stream 的不带命名空间的工具名。
-两者即使覆盖相似场景，也各自拥有完整 Eval；重复是协议验收的证据，不是需要消除的代码坏味道。
+只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
+Journey E2E 同时保留过程检查点和最终目标。
 
-### 2.3 仓库描述文件
+Journey 的每个检查点只证明终态需要的身份、接线或前置事实。
+一个命题拥有独立输入、独立 expected、独立修复动作，或可以与终态独立失败时，必须拆成单边界 E2E 或另一 Journey。
+不能把选择、退出码、缓存、机器输出与导出等多个结果放进一个 `test()`，再用“长流程”掩盖多 owner。
 
-`e2e.json` 只声明编排器运行本仓库所需的事实：
+Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
-```json
-{
-  "id": "claude-agent-sdk",
-  "group": "sdk",
-  "command": ["pnpm", "e2e"],
-  "timeoutMinutes": 20,
-  "secrets": ["DEEPSEEK_API_KEY", "NICEEVAL_JUDGE_KEY"],
-  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
-  "requires": { "runtimes": ["node>=22"] }
-}
-```
+## 功能 Repo 与 Adapter Repo 不混用
 
-字段契约如下：
+功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
+或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
+昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
-| 字段             | 含义                                                                                                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`             | 全局稳定的仓库选择器，也是 CI / crabbox 任务名                                                                                                                                                                |
-| `group`          | 调度分组：`sdk`、`sandbox`、`cli`、`report`                                                                                                                                                                   |
-| `command`        | 在仓库根执行的唯一验收命令，不包含 secret 值                                                                                                                                                                  |
-| `timeoutMinutes` | 仓库级硬超时；Experiment 自己仍声明 attempt timeout 与 budget                                                                                                                                                 |
-| `secrets`        | 所需环境变量名，用于 fail-fast 检查和最小授权                                                                                                                                                                 |
-| `artifacts`      | 成功或失败后可收集的仓库相对路径                                                                                                                                                                              |
-| `requires`       | 可选；执行环境需求：`runtimes`（如 `["node>=22", "python>=3.11"]`）、`docker`（布尔）、`arch`、`memoryGB`。执行器据此选择 GitHub Actions runner 与 crabbox provider/profile；省略表示只需要 Node 运行时与出网 |
+live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 只断言协议身份与关系。
+结构化外部故障不算 pass，也不倒推确定性产品 owner 失败；同一 candidate 的 AI 真实兼容性验收可以替代本次有效 live 结果。
 
-这里不声明 Eval 数、期望 verdict、端口或 `.niceeval` 文件名。
-前两者属于仓库自己的验收语义；端口属于仓库自己的进程生命周期；结果布局属于 niceeval 的 Results 契约。
+## 公开读回
 
-## 3. 统一执行协议
+每个 Repo 通过产品公开入口读回自己制造的结果，但只断言本 Repo 拥有的事实。功能 Repo 用 `show`、导出文件或浏览器证明
+NiceEval 自有行为；Adapter Repo 用 `exp` / `show` 确认协议身份、usage、session 与失败阶段。通用 CLI 格式、Report 渲染和
+Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而复制到所有 Repo。
 
-### 3.1 唯一命令
+## Adapter
 
-每个仓库提供：
-
-```sh
-pnpm e2e
-```
-
-该命令独立完成：
-
-1. 检查运行时、候选 niceeval 包和所需 secrets。
-2. 安装依赖，并确保实际解析到的是注入的候选 niceeval，而不是 lockfile 中的基线版本。
-3. 清理本仓库上一次运行的临时结果。
-4. 启动本仓库拥有的服务并等待 readiness；无服务仓库跳过。
-5. 以 `--rerun all` 运行本仓库声明的 Experiment，并输出 JUnit。
-6. 校验本仓库的预期退出码与可观察行为，并对新产出的结果执行 CLI 读回（见 4.3）。
-7. 无论成功失败都终止服务；保留日志和 `.niceeval/` 供执行器收集。
-
-调用方不需要知道先起哪个端口、运行几个 Experiment、哪一次 CLI 调用预期退出 1。
-`pnpm e2e` 的退出码就是该仓库的最终验收结论，并区分失败类别：
-
-- `0`：契约符合预期。
-- `75`（`EX_TEMPFAIL`）：基础设施故障——依赖安装失败、服务 readiness 超时、provider 返回 429/5xx 或网络错误导致 attempt errored、judge 服务不可达这类**能确证的外部故障**。
-- 其它非零：回归，契约不符。
-
-分类规则只有一条：能确证是外部故障才退 `75`，不能确证一律按回归退出——宁可误报回归，不可把回归漏报成环境问题。
-回归与基础设施故障都使该仓库判红，区别只在编排器的重试与汇总标注（见根仓库编排）。
-
-这条命令同时就是**本机回路**：开发者注入真实 key 后单仓库直接跑，与 CI、crabbox 行为完全一致，不存在"本机用 mock、CI 用真的"的分叉。
-
-### 3.2 候选 niceeval 注入
-
-根仓库先把当前 checkout 构建成可安装的 npm tarball，并把 tarball 路径作为候选包交给每个测试仓库。
-候选包是测试仓库与 niceeval 源码之间唯一允许的代码连接。
-
-注入机制满足以下规则：
-
-- 测试仓库的 `package.json` 声明一个正常发布版本作为独立运行时的默认基线。
-- 编排执行时，候选 tarball 覆盖该依赖，但不永久修改仓库 manifest 或 lockfile。
-- 仓库在运行开头打印 `niceeval` 的解析路径与版本/producer 信息，供日志诊断；**核验义务在编排器**——注入方在仓库命令结束后核对实际解析到的包与候选 tarball 指纹，不一致的结果作废（见根仓库编排）。
-  这项防线不靠每个仓库手写的脚本各自实现。
-  独立 checkout 不注入候选时没有核验对象，测的就是 lockfile 锁定的发布版。
-- tarball 必须包含与发布相同的入口、构建产物和 package metadata；E2E 不从 `src/` 相对导入来绕过打包边界。
-
-因此，niceeval 根仓可以验证未发布的当前改动；一个独立 checkout 也可以不注入 tarball，直接验证它锁定的已发布版本。
-
-### 3.3 secrets 与真实服务
-
-测试仓库通过环境变量接收真实 provider 与 judge 凭据，`.env.example` 只列变量名和非秘密 base URL。
-执行器按 `e2e.json.secrets` 逐仓库最小化注入，不把整个矩阵的 secrets 暴露给每个仓库。
-
-SDK 与沙箱适配仓库使用真实模型和真实协议，不新增只为 E2E 存在的 mock 分支。
-模型、runs、budget 和 timeout 由仓库自己的 Experiment 决定：PR 门禁使用便宜模型与小样本，nightly 仓库或 Experiment 承担更完整的模型与 provider 矩阵。
-
-被测服务由仓库的 `scripts/e2e.ts` 启动和清理。
-中央 workflow 不维护全局端口表，也不并发共享长期服务；仓库可使用动态端口并通过自身环境传给 adapter。
-
-## 4. 仓库内验收
-
-### 4.1 验收责任
-
-Eval 是被测输入，不等于仓库级测试结论。
-仓库自己的验收脚本负责：
-
-- CLI 退出码是否符合该 Experiment 的预期；
-- 应发现的 Eval 是否实际运行，避免少排用例仍全绿；
-- 正常 Experiment 是否按 Eval 级折叠后通过；
-- 本仓库专项关注的 session、tool、skill、MCP、sandbox 或 tracing 行为——各域的断言计划见对应域文档。
-
-这些期望与本仓库的 Eval 同处一个所有权边界。
-新增或删除 Eval 时，只修改该仓库，不同步中央期望表。
-
-公开使用面按**用户边界**判断，不按媒介判断：CLI 的退出码与输出、公开导出文件、HTTP 响应、package 的公开 API，以及浏览器中用户能感知的内容、语义、可访问性与交互都可以是 E2E 观察面。
-测试必须经候选包公开入口驱动；内部组件名、内部树形、未公开 class/tag 与具体布局算法不是预期。
-DOM selector 可以是定位手段，但不自动成为契约；能用 role、可见文本或公开稳定属性定位时优先用它们。
-
-预期必须独立于候选实现：固定值来自本仓库签入的 Eval/fixture 与公开文档，升级时随契约 diff 显式修改。
-禁止从候选包导入 schema 常量、renderer、组件或计算函数来生成“正确答案”；这种写法只证明候选实现与自己一致，无法抓住实现和预期同错。
-
-### 4.2 Results 读取边界
-
-仓库验收脚本只从 **CLI 公开使用面**进入：它起 `niceeval` 子进程并断言退出码与输出。
-它不 import niceeval 库代码，也不得递归扫描 `.niceeval/`、猜 `run.json` 名称或手工拼 Attempt 路径。
-读取结果只用 CLI 出口：
-
-- 稳定机器摘要：`--json` 输出文件；
-- 默认报告与逐 attempt 时间线（verdict、耗时、成本、locator）：`niceeval show` / `show --history`；
-- 证据切面：`show @<locator> --execution` / `--timing` / `--source` / `--diff`；
-- CI 出口：显式指定的 `--junit` 文件。
-
-`openRecord()` 读取库是公开使用面的一部分，它的 E2E 验收归[功能域 · 报告与读面](report.md)的 `report` 仓库——只有那里可以断言落盘格式与读取库，其它仓库不复制格式知识、不经库面读结果。
-
-### 4.3 CLI 读回
-
-每个仓库的验收链在 Experiment 结束后接读面 CLI：同一份新产出的 Run 直接交给 `niceeval show`（及仓库关心的证据切面，如 `show --execution`）。
-一次真实运行因此同时验收两个域——协议路径本身，和 CLI 读面在真实数据上的表现；模型成本只花一次。
-
-读回是仓库机制验收的**断言面**：「适配器是否正常接收到各种信息」以 CLI 展示输出为准——展示里出现，就证明归一、落盘、读取面、渲染整条链都通了。
-机制事实同样以展示形态断言——「没记录 trace」的可见形态就是 timing unavailable 与不挂 OTel 子树的 `--timing`。
-
-读回断言有界，只断言三类事实：
-
-- 进程退出码为 0——读面在真实结果上不崩；
-- 本仓库拥有的事实出现在输出里（Eval id、verdict、断言过的调用节点），且与 `--json` 口径一致；
-- 证据面与该仓库的 tracing 期望一致——声明 tracing 的仓库，执行树节点带 span 时间注释；未声明的显示 timing unavailable。
-
-读回不断言终端布局、列格式或文案——渲染契约集中在[功能域 · 报告与读面](report.md)的 `report` 仓库验收；也不断言完整落盘与出口格式——同样是 `report` 的责任。
-这条边界让读回的维护成本停留在「自有事实的子串级检查」，矩阵修复成本不随格式微调放大。
-
-## 5. 根仓库编排
-
-niceeval 根仓库保留一个薄编排层：
+`e2e/adapter/` 是 collection；每个官方 adapter 自己拥有叶子 Repo，另有独立的本地协议 Repo。不能在一个
+`adapter/test/` 目录里用不同 fixture 名字冒充多个消费项目：
 
 ```text
-e2e/
-  README.md
-  adapter/                     # 每个官方适配器一个仓库（group：sdk / sandbox）
-    ai-sdk/
-    claude-code/
-    codex-cli/
-    bub/
-  cli/                         # CLI 功能仓库（group：cli）
-  report/                      # 报告与读面功能仓库（group：report）
-  undo/                        # 缺少完整官方工厂的停用 fixture；不参与发现与 CI
-  scripts/
-    discovery.ts               # 发现 adapter/<id>/ 与 e2e/ 直挂仓库并校验 e2e.json
-    injection.ts               # 构建候选 tarball、算内容指纹、装后核验实际解析到的就是候选包
-    secrets.ts                 # 按 e2e.json.secrets 为每个仓库构造最小注入的子进程环境
-    list.ts                    # discovery.ts 的 CLI 包装（tsx 执行）
-    run.ts                     # 构建候选包、选择仓库、隔离 spawn、汇总退出码（tsx 执行）
+e2e/adapter/
+├── ai-sdk/          # live SDK 与该 SDK 独有的 telemetry / session 证据
+├── codex-cli/       # live CLI、隔离 HOME / config 与规范工具身份
+├── local-protocol/  # 无密钥的 transport、故障分类与 cleanup
+├── claude-code/
+├── opencode/
+└── bub/
 ```
 
-布局是 §2.1 定义的平铺形态：`adapter/` 是唯一的多仓库 collection，其余直挂仓库靠自带 `e2e.json` 被发现——新增功能域就是在 `e2e/` 下新增一个直挂仓库，不改变发现协议本身。
+两类叶子 Repo 提供互补测试：
 
-编排器只负责：
+| 测试 | 证明 | Lane |
+|---|---|---|
+| 本地协议 / Docker fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
+| Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | main / nightly / release |
 
-1. 构建一次候选 niceeval tarball。
-2. 从每个仓库自己的 `e2e.json` 发现 ID、组、命令、超时、secret 名、artifact 路径和环境需求。
-3. 为选中的仓库创建隔离工作目录，注入候选包和最小环境，执行其唯一命令。
-4. **注入核验**：仓库命令结束后、采信退出码之前，核对仓库内实际解析到的 `niceeval` 包指纹与候选 tarball 一致；不一致则作废该仓库结果，按基础设施故障处理——绿灯必须来自候选包，不能来自 lockfile 里的发布基线。
-5. **基础设施重试**：退出码 `75` 的仓库整仓库重跑一次；重跑后仍 `75` 按失败汇总并标注 infra 类别。
-   回归（其它非零）不重试。
-6. 原样汇总仓库退出码与失败类别，收集声明的证据。
+本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。NiceEval 自有的协议语义矩阵默认留在
+确定性本地协议 E2E；只有它无法稳定穷举或区分的纯归一算法，才登记最小 Unit 例外。Live Repo 只取有区分力的真实兼容性代表。
 
-编排器不得：
+Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
+以及失败时的阶段和可行动诊断。不能只断言命令 exit 0。
 
-- 内置 SDK、端口或 Experiment 列表；
-- 维护每个仓库的 Eval 数与 verdict 期望；
-- 启动被测应用；
-- 读取或解释 `.niceeval/`；
-- 把一个仓库失败降级为警告后继续返回成功。
+Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox.list()` 的 SDK paginator 形状归直接使用真实 SDK 类型的
+最小 Unit；把它改写成自造 HTTP cursor 后，即使有两页数据也不能引用 E2B 的历史回归。
 
-本地选择命令保持稳定：
+## Report
+
+`e2e/record/` 是公开 `niceeval/record` API 与已声明磁盘格式的唯一 owner。它可以使用签入的公开格式 fixture；未在
+Record 契约逐项声明的 `.niceeval` 位置与文件布局仍是私有实现。改变公开 Record 格式会修改这个 owner；只改变私有存储组织
+或 reader 实现，不得修改 Report E2E。
+
+Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
+
+- `show`：text / JSON 的身份、范围、切片和大输出；
+- `view --out`：导出文件、链接闭合、base path 与无 server 读取；
+- `view`：HTTP、持续重建与浏览器动作；
+- 自定义 Report：外部 cwd 的 TSX 编译、公开组件和页面目标。
+
+浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。
+默认直接使用 Playwright Test；只有经测量证明需要跨大量场景共享远端 browser 时，才允许引入专用 browser fixture。
+
+## Runner
+
+Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、carry 与 history 证据。`carry-reuse.test.ts`、
+`history-dedup.test.ts` 等子功能是同一 Repo 内的测试文件；修改 config、Eval 或当前结果的 case 使用私有项目副本。
+这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
+
+## Package 与 CLI
+
+Package Repo 按 [Package 外部消费契约](package.md)用默认 CommonJS 项目的 `init → list` Journey 验证安装后的 CLI、tsx CJS hook
+与 `require` exports 接线，并检查私有 Testkit 没有进入产品包。ESM 与功能子路径由各功能 Repo 的真实 Journey 自然消费，
+不在 Package Repo 复制入口清单。
+CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / NDJSON / JUnit。两者都执行安装后的 binary，
+不能直接调用 `src/cli.ts` 或 mock commander / parseArgs 后宣称公开命令已通过。
+
+## Lifecycle
+
+Lifecycle Repo 保留原生测试 runner 的默认并行。每条 case 按场景独占自己的进程组、容器或 Sandbox，不靠兄弟文件的执行顺序隔离。
+只有无法分配独立身份的外部资源才在局部关闭并行，并在 Repo README 说明限制。Lifecycle 不仅检查第一条命令退出，还检查：
+
+- signal 被送到正确进程；
+- teardown 与 lease 结束；
+- 没有 orphan 或残留容器；
+- 下一次独立消费者可以正常启动；
+- cleanup 失败不会遮蔽原始失败。
+
+## 单项重跑
+
+任何 E2E 必须能按 Repo、文件和标题重跑：
 
 ```sh
-pnpm e2e --repo ai-sdk
-pnpm e2e --repo cli
 pnpm e2e --repo report
-pnpm e2e --group sdk
-pnpm e2e --group sandbox
+pnpm e2e --repo report -- --run test/exported-targets.test.ts
+pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case target"
 ```
 
-矩阵默认串行或按仓库隔离后有限并发。
-一个仓库内的并发由 niceeval Experiment 控制；编排器不让两个仓库共享服务、`.niceeval/` 或安装目录。
+E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
 
-## 6. CI 与 crabbox
+新增、接管或实质修改 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
+默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
 
-### 6.1 GitHub Actions
+本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。
 
-GitHub Actions 从仓库描述文件生成 matrix，每个 matrix cell 只运行一个测试仓库，runner 规格由该仓库 `e2e.json.requires` 映射（Docker、架构、内存），不在中央 workflow 里内置每仓库知识。
-这样超时、日志、secrets、重试和 artifact 都以仓库为边界，某个慢沙箱不会遮住其它 SDK 的结论。
+## 各域覆盖入口
 
-触发层级：
+- [Adapter](adapter/README.md)：官方 Adapter 与真实协议的兼容性 owner；
+- [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
+- [Record](record.md)：公开 Record API 与已声明磁盘格式；
+- [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 
-| 层级     | 内容                                        | 触发                             |
-| -------- | ------------------------------------------- | -------------------------------- |
-| PR       | SDK 仓库与 `cli`、`report` 功能仓库的便宜档 | pull request、main push          |
-| 路径门禁 | 受影响的真实沙箱仓库                        | sandbox / agent / 对应 repo 改动 |
-| Nightly  | 完整模型、judge 与 sandbox provider 仓库    | schedule、手动 dispatch          |
-
-每个 cell 总是上传该仓库声明的 JUnit、`.niceeval/` 和服务日志。
-`.niceeval/` 被 ignore 只表示不进入版本控制，不表示失败证据不应上传。
-
-上传前，执行器用本次注入的 secret 值对全部 artifact 做扫描替换（占位符 `<redacted:VAR_NAME>`），命中记入运行汇总——真实 Agent 与服务日志可能回显环境变量，收集面负责最终脱敏，不指望每个仓库的日志纪律。
-
-### 6.2 crabbox
-
-crabbox 同步仓库 checkout 并在远端执行仓库命令；它不应知道 niceeval E2E 的内部编排。
-单仓库运行使用同一个入口：
-
-```sh
-crabbox run --shell 'pnpm e2e --repo ai-sdk'
-```
-
-当某个测试仓库被放在独立 checkout 中时，命令进一步收窄为：
-
-```sh
-crabbox run --shell 'pnpm install --frozen-lockfile && pnpm e2e'
-```
-
-两种方式的仓库脚本、Eval 和验收语义相同。
-crabbox 只负责远端容量、同步、环境转发、日志/JUnit 收集和退出码传播；niceeval 根编排器或测试仓库负责候选包注入与 E2E 语义。
-
-传递 secrets 时使用 crabbox 的环境 allowlist / profile 能力，不把值写进命令行、`e2e.json` 或仓库配置。
-仓库的执行环境需求（Docker、CPU 架构、内存）声明在 `e2e.json.requires`，由 crabbox provider/profile 映射满足，不在 Eval 中探测并偷偷降级。
-
-## 7. 验收域
-
-矩阵按**测什么**分三个验收域，每个域一篇文档定义自己的仓库与断言计划：
-
-| 域                | 文档                           | 仓库                                                                | group             |
-| ----------------- | ------------------------------ | ------------------------------------------------------------------- | ----------------- |
-| 适配器            | [adapters/](adapter/README.md) | 已有完整官方工厂的仓库：`ai-sdk`、`claude-code`、`codex-cli`、`bub` | `sdk` / `sandbox` |
-| 功能 · 报告与读面 | [report.md](report.md)         | `report`                                                            | `report`          |
-| 功能 · CLI        | [cli.md](cli.md)               | `cli`                                                               | `cli`             |
-
-一个能力只在真实支持它的仓库中出现。
-中央矩阵不依据 profile 自动删减 Eval；缺少覆盖应表现为域文档覆盖表中的空白，由评审决定补进哪个仓库。
-
-功能仓库（`cli`、`report`）同样使用真实 Agent 与真实模型。
-E2E 矩阵里不存在脚本化 Agent。
-
-稳定性来自断言对象：只断言一次真实运行的确定性产物，例如 Attempt 集合、退出码、落盘格式、渲染结构与排版；不判断模型输出质量。
-因此，一次真实运行可以支持任意多条确定性断言，覆盖广度不随模型调用次数增长。
-
-全部 E2E 仓库都需要真实凭据。
-无凭据环境的验证边界是 `pnpm test`。
-
-缺少完整官方工厂的 SDK 不进入矩阵：fixture 留在 `e2e/undo/`，覆盖缺口记录在[适配器域](adapter/README.md)。
-协议归一的验收只在真实运行里发生，E2E 不用本地 `defineAgent` 把转换器包装成貌似完整的官方适配器；工厂落地前，该 SDK 的协议路径就是显式空白。
-
-### 7.1 破坏性变更的矩阵修复
-
-niceeval 是 beta 软件，公开 API / CLI 的破坏性重设计是常态。
-仓库自治意味着一次破坏性变更要逐仓库修复——这是自治换来的预期成本，不因此回退到共享 factory。
-修复按固定顺序推进，属于该变更的影响面，与变更同批完成：
-
-1. **功能仓库先行**（`cli`、`report`）：它们最薄、断言只依赖确定性事实，先绿说明新契约本身自洽。
-2. **按 group 逐组修适配器仓库**（`--group sdk` → `--group sandbox`）：每组内的修复是同构的机械改动，改完一组跑一组。
-3. 修复期间某仓库暴露出的额外问题按该仓库的所有权处理，不顺手扩大变更范围。
-
-## 8. 结构边界怎么被守住
-
-§2 的仓库结构约束不设离线元测试——不为 E2E 仓库的目录形状、`e2e.json` schema 或 import 边界写"对测试的测试"。
-约束由两条真实路径证明：
-
-- **编排器每次隔离运行**（§5）：仓库被复制到隔离工作目录、注入候选包、真实安装并执行。
-  不独立的仓库——越界 import、指向父目录的 `file:` / `link:` 依赖、缺 lockfile、workspace 并入父级——在这一步直接失败；注入核验拦住解析到基线版本的假绿灯。
-- **发现器 fail-fast**：`discovery.ts` 读取 `e2e.json` 时校验字段契约与跨 collection 的 ID 唯一性，非法描述文件在选择仓库阶段即报错，不进入执行。
-
-其余约束（启用仓库不含 `agents/`、不导入自定义 Agent 拼装入口、根编排器不内置仓库专属知识）由评审对照本篇核对。
-`test/` 下不为 E2E 仓库保留任何结构测试；那里的守护只服务仓库文档与登记表约束（见[测试体系总纲](../README.md#分层谁负责证明什么)）。
-
-## 9. 不做的事
-
-- 不建立 `e2e/shared`，不共享 Eval / Experiment factory，也不通过 profile 生成各仓库的能力子集。
-- 不在 E2E 中实现或补全 Adapter；没有完整官方工厂的仓库进入 `e2e/undo/`，直到产品侧补齐。
-- 不把被测应用与 Eval 拆成中央 `apps/` + 薄 `projects/`，避免单独运行时还要恢复隐含拓扑。
-- 不让根编排脚本理解所有仓库的领域期望或 Results 私有布局。
-- 不用 symlink、跨仓库相对 import、根 workspace hoist 或父目录 `file:` 依赖制造“看起来独立”的仓库。
-- 不让某个真实模型仓库承担全部框架契约；确定性机制放进 `cli` / `report` 功能仓库，适配器仓库专注协议路径。
-- 不要求不同仓库拥有相同 Eval 文件名、数量、prompt、runs 或 assertion；覆盖矩阵对齐责任，不对齐源码。
-- 不把 crabbox 变成 E2E 语义层。
-  它是可替换执行器，仓库命令在本地、CI 和 crabbox 上保持一致。
-- 不在适配器仓库的 CLI 读回（见 4.3）里断言 show / view 的终端布局与报告 DOM——读回只断言自有事实的出现与口径一致。
-  渲染与视觉交互的验收集中在功能域 `results` 仓库的渲染面条目，不散布到各适配器仓库；边界见 [results.md](report.md)。
+这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。

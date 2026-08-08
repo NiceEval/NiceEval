@@ -563,8 +563,8 @@ export function runAttemptEffect(
 
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
-      //   string → docker 类沙箱,宿主开本地接收器,container 经 host.docker.internal 回连
-      //   null   → 远程云端沙箱(e2b / vercel),宿主端口不可达 → 改在沙箱内起 collector
+      //   string → provider 承诺该 hostname 可访问宿主 receiver
+      //   null   → provider 不承诺宿主回连,改在沙箱内起 attempt-scope collector
       // defineConfig({ telemetry: { host } }) 可强制覆盖(如配好 tunnel 时)。
       //
       // 非沙箱 agent(远程 / 进程内)不走 per-attempt receiver:被测应用是长驻进程,只有一条
@@ -608,7 +608,7 @@ export function runAttemptEffect(
             telemetry = env ? { endpoint, env } : { endpoint };
             log(t("runner.otlpOverride", { endpoint }));
           } else if (sandbox.otlpHost !== null) {
-            // 本地/docker 沙箱:宿主开接收器
+            // provider 明确承诺宿主回连:宿主开接收器
             receiver = yield* createTraceReceiver();
             const endpoint = receiver.endpoint(sandbox.otlpHost);
             const env = run.agent.tracing?.env?.(endpoint);
@@ -616,7 +616,7 @@ export function runAttemptEffect(
             const proto = run.agent.tracing?.protocol;
             log(t("runner.otlpReceiver", { endpoint, proto: proto ? ` (${proto})` : "" }));
           } else {
-            // 远程沙箱(e2b / vercel):在沙箱内起 collector,agent 往 localhost 端口发。
+            // provider 不承诺宿主回连:在沙箱内起 collector,agent 往 localhost 端口发。
             receiver = yield* createInSandboxTraceReceiver(sandbox);
             const endpoint = receiver.endpoint("");
             const env = run.agent.tracing?.env?.(endpoint);
@@ -1455,8 +1455,13 @@ async function runAttemptBody(
       //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
       enterPhase("telemetry.collect");
       try {
-        const late = await otel.sweep(state.manager.otelTraceIds);
-        const spans = [...state.manager.otelSpans, ...late];
+        const late = await otel.sweep(state.manager.otelTraceIds, state.manager.otelTurnWindows);
+        const traceIdsBeforeDeferred = new Set(state.manager.otelTraceIds);
+        const deferred = state.manager.attributeDeferredOtel(late);
+        const knownLate = late.filter((span) => traceIdsBeforeDeferred.has(span.traceId));
+        const spans = [...state.manager.otelSpans, ...knownLate, ...deferred].filter(
+          (span, index, all) => all.findIndex((candidate) => candidate.spanId === span.spanId) === index,
+        );
         if (spans.length) {
           const canonical = (run.agent.spanMapper ?? mapGenericSpans)(spans);
           trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);

@@ -1,6 +1,6 @@
-// 本机 OTLP/HTTP traces 接收器:每个沙箱起一个,容器里的 agent 把 OTLP 导出到它。
-// 监听 0.0.0.0 的临时端口(容器经 host.docker.internal 回连宿主),收到的 span 攒着,
-// 跑完由运行器一次性 collect 挂到 EvalResult.trace。只认 POST .../v1/traces。
+// 宿主 OTLP/HTTP traces 接收器:供 direct agent、run 级共享管线与显式 host override 使用。
+// 监听临时或固定端口,收到的 span 攒着,跑完由运行器一次性 collect 挂到
+// EvalResult.trace。只认 POST .../v1/traces。
 
 import { createServer } from "node:http";
 import { gunzipSync } from "node:zlib";
@@ -10,7 +10,7 @@ import { parseOtlpTraces } from "./parse.ts";
 import { t } from "../../i18n/index.ts";
 
 export interface TraceReceiver {
-  /** agent 应导出到的完整端点(host 由 provider 定:docker → host.docker.internal)。 */
+  /** agent 应导出到的完整端点；host 来自本机默认、provider 能力或作者显式覆盖。 */
   endpoint(host: string): string;
   /** 目前为止收到并解析出的全部 span(副本)。 */
   collect(): TraceSpan[];
@@ -41,6 +41,7 @@ export async function makeTraceReceiver(port = 0): Promise<TraceReceiver> {
 async function makeReceiver(port = 0): Promise<TraceReceiver> {
   const spans: TraceSpan[] = [];
   let lastAt = 0;
+  let arrivalGeneration = 0;
 
   const server = createServer((req, res) => {
     if (req.method !== "POST") {
@@ -66,6 +67,7 @@ async function makeReceiver(port = 0): Promise<TraceReceiver> {
         if (parsed.length) {
           spans.push(...parsed);
           lastAt = Date.now();
+          arrivalGeneration += 1;
         }
       } catch {
         // 解析失败不回 5xx,免得导出端重试刷屏。
@@ -90,7 +92,7 @@ async function makeReceiver(port = 0): Promise<TraceReceiver> {
         reject(err);
       }
     });
-    // 0.0.0.0:容器经 host-gateway / host.docker.internal 回连宿主,不能只听 127.0.0.1。
+    // 显式 tunnel / 固定端口接入可能不从 loopback 到达，不能只听 127.0.0.1。
     server.listen(port, "0.0.0.0", () => {
       const a = server.address();
       resolve(typeof a === "object" && a ? a.port : 0);
@@ -101,12 +103,13 @@ async function makeReceiver(port = 0): Promise<TraceReceiver> {
     endpoint: (host) => `http://${host}:${boundPort}/v1/traces`,
     collect: () => spans.slice(),
     async settle(quietMs, maxMs) {
-      // 等到「收到过 span 且静默 quietMs」或「整体超 maxMs」。还没收到任何 span 时
-      // 也一直等到 maxMs —— 最后一批导出可能正在途中(进程刚退、POST 还没到)。
+      // 只以本次调用开始后的 arrival 为 quiet 基线；上一批的 lastAt 不能让本次
+      // settle 提前返回，否则 BatchSpanProcessor 的迟到 batch 会被 sweep 漏掉。
+      const baselineGeneration = arrivalGeneration;
       const deadline = Date.now() + maxMs;
       for (;;) {
         if (Date.now() >= deadline) return;
-        if (lastAt !== 0 && Date.now() - lastAt >= quietMs) return;
+        if (arrivalGeneration > baselineGeneration && Date.now() - lastAt >= quietMs) return;
         await new Promise((r) => setTimeout(r, 50));
       }
     },

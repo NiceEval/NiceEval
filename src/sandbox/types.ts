@@ -172,10 +172,11 @@ export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
   /** 本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。 */
   readonly sandboxId: string;
   /**
-   * 本地 OTLP 接收器的目标 host。
-   * - `string`:Sandbox 内可通过该 hostname 回连宿主 OTLP 端口(如 docker 的 `host.docker.internal`)。
-   * - `null`:Sandbox 运行在远程云端(如 e2b/vercel),无法访问宿主本地端口 → 跳过 tracing。
-   *   可通过环境变量 `NICEEVAL_OTLP_HOST` 强制覆盖(如配置 tunnel 时)。
+   * OTLP receiver 的放置能力。
+   * - `string`:Sandbox 内可通过该 hostname 访问宿主 receiver。
+   * - `null`:provider 不承诺宿主回连；runner 尝试在 Sandbox 内启动 attempt-scope receiver。
+   *   这不保证 tracing 成功；镜像缺少 receiver 所需运行时时只记录 supplemental diagnostic。
+   * `defineConfig({ telemetry: { host } })` 可在作者已经提供受控 tunnel 时显式覆盖。
    */
   readonly otlpHost: string | null;
 

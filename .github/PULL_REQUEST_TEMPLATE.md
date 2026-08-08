@@ -6,8 +6,8 @@ Types: feat, fix, docs, refactor, test, ci, chore.
 Choose the type from the PR's final outcome, not its first commit. Update the
 title when the scope changes. Name the user-visible capability or behavior, not
 an internal mechanism such as its registry, protocol, or storage model. Keep one
-dominant outcome and aim for 72 characters or fewer. PR titles and descriptions
-must be written in English.
+dominant outcome and aim for 72 characters or fewer. Write the PR title and
+description in the language of the user's latest request.
 
 Keep every section below. Write "None" when that surface does not change.
 Repeat the entry block when a section contains multiple changes. Every changed
@@ -91,10 +91,22 @@ a new environment variable.
 
 ## Tests
 
-### `<test file or named case>`
+### `<test file, named owner, or manually verified behavior>`
 
-- Change: `added | removed | renamed | substantially rewritten`
+- Change: `added | removed | renamed | substantially rewritten | not automated`
+- Change class: `public-contract | internal-refactor | new-journey | bug-regression | test-retirement | not-automated`
+- Disposition: `retain | delete | replace | not automated`
+- Candidate identity: <Git SHA and NiceEval tarball SHA-256, or "not applicable">
+- Contract and owner: `<docs path#anchor, or "no long-term automated owner">`
+- Stability budget: <why this exact test file is inside the observable contract diff; list the replaced or deleted owner when applicable>
 - Example scenario: <representative input, action, and expected result>
 - Before: <the regression or contract violation that could escape>
 - After: <what the test now proves>
+- Distinguishing evidence: <historical fix parent, mutation, or contract-preserving perturbation reference and observed result>
+- Verification: <exact commands and earliest failing prepare/invoke/observe/outcome/cleanup stage>
+- Fixed conditions: <lockfile, fixture, seed, clock policy, and image digest or "not applicable">
+- Repeatability: <fresh copies 1/2/3, same-copy runs 1/2, default parallel, file/title isolation, and resource cleanup results>
+- Unit exception or no automation: <why E2E cannot distinguish this risk through a stable boundary, or the AI manual verification conditions and unprotected risk>
+- Unit count: <`pnpm test` Tests; total must be 200 or fewer; Testkit has no independent Unit suite>
+- Manual observation: <real runtime/version, production entry, AI actions, public result, and unprotected risk; "not applicable" for automation>
 - User impact: <the user-visible behavior protected by this test>

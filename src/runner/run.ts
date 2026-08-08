@@ -566,6 +566,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const artifactPrepare =
     opts.artifactPrepare ??
     new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
+
+  // 非沙箱 tracing agent 的共享 OTLP 接收池必须先进入 attempt options 快照。被测应用是
+  // 长驻进程，端点不能随 attempt 换；若在快照之后才补 pool，attempt 会退回随机端口。
+  if (!opts.otelPool) {
+    opts = { ...opts, otelPool: new OtelReceiverPool(opts.config.telemetry?.port) };
+  }
+
   // 运行期依赖用新快照扩展，不回写调用方交进来的 RunOptions 计划对象。
   const attemptOptions: RunOptions = opts.artifactPrepare === undefined
     ? { ...opts, artifactPrepare }
@@ -842,12 +849,6 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
     return sem;
   };
-
-  // 非沙箱 tracing agent 的共享 OTLP 接收池:被测应用是长驻进程,端点不能随
-  // attempt 换 —— receiver 粒度跟被测进程走(每 agent 一个,整个 run 复用),run 结束回收。
-  if (!opts.otelPool) {
-    opts = { ...opts, otelPool: new OtelReceiverPool(opts.config.telemetry?.port) };
-  }
 
   // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
   // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个

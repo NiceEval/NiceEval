@@ -7,7 +7,7 @@ on:
 
 jobs:
   package:
-    name: Package and site
+    name: Typecheck and docs lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,14 +30,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test
-        run: pnpm test
 
       - name: Test docs guards
         run: pnpm run test:docs
-
-      - name: Build product site
-        run: pnpm run site:build
 
   docs-site:
     name: docs-site

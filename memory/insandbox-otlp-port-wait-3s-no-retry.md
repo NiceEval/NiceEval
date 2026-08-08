@@ -49,6 +49,8 @@
 「拿不到端口时是杀 attempt 还是降级为 no-op receiver + diagnostic」仍未裁决——本次维持杀
 attempt(降级会让依赖 span 的断言无声失分,不能默认打开)。
 
-**适用场景**：只影响 `sandbox.otlpHost === null` 的远程沙箱(e2b / vercel)且 agent 声明了
-`tracing` 的组合;docker / local 沙箱走 host 侧 receiver,不经这条路径。相关
-[[e2b-sandbox]]、[[vercel-sandbox-issues]]。
+**2026-08-08 后续**：Docker bridge 的 host-gateway 别名不能证明宿主防火墙允许容器回连；
+Docker provider 也改为 `otlpHost === null`，默认使用本页的 Sandbox 内 receiver。适用面因此是
+所有不承诺宿主回连、且 agent 声明了 `tracing` 的 Sandbox。Docker Compose 的任意
+`mainService` 不保证 Node；缺运行时时 receiver 启动失败只记 supplemental diagnostic，不改判定。
+local provider 仍走宿主 receiver。相关 [[e2b-sandbox]]、[[vercel-sandbox-issues]]。

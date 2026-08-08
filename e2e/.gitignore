@@ -1,4 +1,0 @@
-# 各 project 的 judge 凭证(apps 的 .env 由 apps/*/.gitignore 各自管)
-projects/*/.env
-# codex 的运行时 scratch
-apps/codex-sdk/workspace/

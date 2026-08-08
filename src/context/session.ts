@@ -2,7 +2,7 @@
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
 import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, JsonValue, Sandbox, SandboxAgentContext, SessionSlot, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
-import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
+import type { AgentOtelChannel, TurnSpans } from "../o11y/otlp/turn-otel.ts";
 import {
   downgradeEvidenceCoverage,
   worstEvidenceCoverage,
@@ -19,7 +19,7 @@ import {
 } from "./send-retry.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import { isSendFailure, sendFailureText } from "./send-failures.ts";
-import type { RetryAttemptRecord } from "../runner/types.ts";
+import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { recordFact } from "../shared/facts.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 
@@ -148,8 +148,9 @@ export interface SessionDeps {
     failed?: boolean;
     traceId?: string;
     traceAttribution?: "traceparent" | "window" | "none";
+    otelWindow?: TurnSpans["window"];
     usage?: Usage;
-  }) => void;
+  }) => TimingActivity | undefined;
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
@@ -189,6 +190,16 @@ export class SessionManager {
   readonly otelSpans: TraceSpan[] = [];
   /** 本 attempt 各轮的 traceId(attempt 末尾按它 sweep 迟到 span)。 */
   readonly otelTraceIds = new Set<string>();
+  private readonly otelTurnRecords: Array<{
+    window: TurnSpans["window"];
+    activity?: TimingActivity;
+    hasSpans: boolean;
+  }> = [];
+
+  /** 已完成轮次的离散宿主时间窗口；共享 receiver sweep 只用这些窗口补迟到 span。 */
+  get otelTurnWindows(): readonly TurnSpans["window"][] {
+    return this.otelTurnRecords.map((record) => record.window);
+  }
   private warnedWindowAttribution = false;
   private warnedNoSpans = false;
 
@@ -304,6 +315,7 @@ export class SessionManager {
     let turn: Turn;
     let sentTraceId: string | undefined;
     let sentAttribution: "traceparent" | "window" | "none" | undefined;
+    let sentWindow: TurnSpans["window"] | undefined;
     this.deps.onSendActive?.(true);
     // turn 级重试:包住这一次逻辑 send(下面两个分支各一次调用),分类判据与执行体时序见
     // docs/feature/error-classification/architecture.md。retryDeps 复用同一个 attempt 级
@@ -358,6 +370,7 @@ export class SessionManager {
         turn = r.turn;
         sentTraceId = r.traceId;
         sentAttribution = r.attribution;
+        sentWindow = r.window;
       } else {
         turn = await sendWithTurnRetry(
           () => this.sendAgent({ text, files, responses }, ctx),
@@ -377,6 +390,7 @@ export class SessionManager {
         durationMs: Math.max(0, timingNow() - startOffsetMs),
         failed: true,
         traceAttribution: sentAttribution,
+        otelWindow: sentWindow,
         ...(isSendFailure(e) && e.usage !== undefined ? { usage: e.usage } : {}),
       });
       throw e;
@@ -386,16 +400,24 @@ export class SessionManager {
       // adapter 义务保证返回时 agent 侧进程已退出或进入不再写 workspace 的静止态)。
       await this.deps.ledgerHooks?.afterSend(windowLabel).catch(() => {});
     }
-    this.deps.onTurn?.({
+    const timingActivity = this.deps.onTurn?.({
       sessionIndex: session.index,
       turnIndex,
       startOffsetMs,
       durationMs: Math.max(0, timingNow() - startOffsetMs),
       failed: turn.status === "failed" ? true : undefined,
-      traceId: sentTraceId,
+      ...(sentAttribution !== "none" && sentTraceId !== undefined ? { traceId: sentTraceId } : {}),
       traceAttribution: sentAttribution,
+      otelWindow: sentWindow,
       usage: turn.usage,
     });
+    if (sentWindow !== undefined) {
+      this.otelTurnRecords.push({
+        window: sentWindow,
+        activity: timingActivity,
+        hasSpans: sentAttribution !== "none",
+      });
+    }
 
     this.allEvents.push(...turn.events);
     session.events.push(...turn.events);
@@ -435,7 +457,7 @@ export class SessionManager {
     otel: AgentOtelChannel,
     input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
     ctx: AgentContext,
-  ): Promise<{ turn: Turn; traceId: string; attribution: "traceparent" | "window" | "none" }> {
+  ): Promise<{ turn: Turn; traceId: string; attribution: "traceparent" | "window" | "none"; window: TurnSpans["window"] }> {
     const r = await otel.runTurn((headers) => {
       const turnCtx: AgentContext = ctx.telemetry
         ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
@@ -443,7 +465,7 @@ export class SessionManager {
       return this.sendAgent(input, turnCtx);
     });
     this.otelSpans.push(...r.spans);
-    this.otelTraceIds.add(r.traceId);
+    if (r.spans.length > 0) this.otelTraceIds.add(r.traceId);
 
     if (r.attribution === "window" && r.spans.length > 0 && !this.warnedWindowAttribution) {
       this.warnedWindowAttribution = true;
@@ -453,7 +475,55 @@ export class SessionManager {
       this.warnedNoSpans = true;
       this.deps.log(t("otel.noSpans"));
     }
-    return { turn: r.result, traceId: r.traceId, attribution: r.spans.length === 0 ? "none" : r.attribution };
+    return {
+      turn: r.result,
+      traceId: r.traceId,
+      attribution: r.spans.length === 0 ? "none" : r.attribution,
+      window: r.window,
+    };
+  }
+
+  /** telemetry.collect 收到 BatchSpanProcessor 迟到导出后，回写尚无 span 的 turn。 */
+  attributeDeferredOtel(spans: readonly TraceSpan[]): TraceSpan[] {
+    const attributed: TraceSpan[] = [];
+    const remaining = new Set(spans);
+    for (const record of this.otelTurnRecords) {
+      if (record.hasSpans || record.activity === undefined) continue;
+      const candidates = [...remaining].filter(
+        (span) => span.endMs >= record.window.startMs && span.startMs <= record.window.endMs,
+      );
+      const byTrace = new Map<string, TraceSpan[]>();
+      for (const span of candidates) {
+        const group = byTrace.get(span.traceId);
+        if (group === undefined) byTrace.set(span.traceId, [span]);
+        else group.push(span);
+      }
+      const selected = [...byTrace.entries()]
+        .map(([traceId, traceSpans]) => {
+          const latestEndMs = Math.max(...traceSpans.map((span) => span.endMs));
+          const coversEnd = traceSpans.some(
+            (span) => span.startMs <= record.window.endMs && span.endMs >= record.window.endMs,
+          );
+          return { traceId, traceSpans, latestEndMs, coversEnd };
+        })
+        .sort(
+          (a, b) =>
+            Number(b.coversEnd) - Number(a.coversEnd) ||
+            Math.abs(record.window.endMs - a.latestEndMs) - Math.abs(record.window.endMs - b.latestEndMs) ||
+            b.latestEndMs - a.latestEndMs ||
+            a.traceId.localeCompare(b.traceId),
+        )[0];
+      if (selected === undefined) continue;
+      record.activity.traceId = selected.traceId;
+      record.activity.traceAttribution = "window";
+      record.hasSpans = true;
+      this.otelTraceIds.add(selected.traceId);
+      for (const span of selected.traceSpans) {
+        remaining.delete(span);
+        attributed.push(span);
+      }
+    }
+    return attributed;
   }
 
   private sendAgent(input: TurnInput, ctx: AgentContext): Promise<Turn> {

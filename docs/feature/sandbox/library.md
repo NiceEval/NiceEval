@@ -291,9 +291,16 @@ bootstrap、supervisor 与 dockerd 以 root 运行；Agent、普通 Sandbox 命�
 的 sandbox 是 `DestroyOnly`：stop 后内容会丢失，因此 `--keep-sandbox` 不会伪装成可保留。
 这些字段只属于单容器 Docker image/Dockerfile provider，Compose 尚不接受它们。
 
-Managed rootless DinD不会注入 `host.docker.internal`，并把 sandbox 的 OTLP 回连能力声明为
-不可用；受信任 supervisor 默认阻断 host loopback。这样 trace 不会被静默发往一个其实只指向
-嵌套网络的假“宿主”。需要观测时应先提供受控代理，再单独扩展该契约。
+Docker provider 不注入 `host.docker.internal`，并统一把 `Sandbox.otlpHost` 声明为 `null`。
+一个 host-gateway 别名不能证明宿主防火墙允许容器回连；把它报告成能力会让 exporter 把 trace
+静默发往不可达端点。Runner 因而在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问
+`127.0.0.1`。作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })`
+显式改走宿主 receiver；该配置仍优先于 provider 默认。
+
+Compose 作者显式声明的 `extra_hosts` 原样交给 Compose，NiceEval 不删除也不改写。Compose 的
+`mainService` 镜像不受单容器 Docker 的 Node/npm 工具契约约束；镜像缺少 Node 时，沙箱内 receiver
+启动失败只产生 supplemental `telemetry-configure-failed` diagnostic，不改写判定。若某个 Compose
+评估把 trace 当作必需证据，镜像作者应提供 Node，或显式配置可达的 `telemetry.host`。
 
 这仍是共享宿主内核的容器级隔离，不是 VM 安全边界。daemon 的启动、Unix socket 权限、
 无 TCP listener、外层 data-root 总容量，以及运行后的真实 `cpu.max` / `memory.max` /

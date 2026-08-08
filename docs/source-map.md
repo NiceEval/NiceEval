@@ -76,6 +76,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 原生 OTLP span → canonical GenAI semconv(mapper 由 Agent 经 `spanMapper` 声明,core 不按名字分支;默认走通用 heuristic) | `src/o11y/otlp/mappers/{codex,bub}.ts`、`src/o11y/otlp/canonical.ts`(`heuristicTag` / `mapGenericSpans`) |
 | run 级共享 OTLP 接收 + 逐轮归属(traceparent → `ctx.telemetry.headers`;窗口回退 + 未确认时该 agent 轮次串行) | `src/o11y/otlp/turn-otel.ts`(`AgentOtelChannel` / `OtelReceiverPool`);接线在 `src/runner/attempt.ts`(池取通道)与 `src/context/session.ts`(`sendWithOtel`:归属 / 派生 / 合并) |
 | 固定端口 / 自定义接收 host 模式(`defineConfig({ telemetry: { host, port } })`,niceeval 项目内唯一入口,不读环境变量) | `src/runner/run.ts`(`OtelReceiverPool` 取 `config.telemetry.port`)、`src/runner/attempt.ts`(`config.telemetry.host`)、`src/o11y/otlp/receiver.ts`(`makeTraceReceiver(port)`,端口被占用时报 `otel.portInUse`) |
+| Sandbox attempt-scope OTLP receiver 放置(`otlpHost: string` 才承诺宿主回连；`null` 在 Sandbox 内采集；显式 `telemetry.host` 优先) | `src/sandbox/types.ts`、各 provider 的 `otlpHost`、`src/runner/attempt.ts`、`src/o11y/otlp/{receiver,sandbox-receiver}.ts` |
 | `deriveRunFacts`(toolCalls / subagents / parked / compactions) | `src/o11y/derive.ts` |
 | 宿主侧行为断言 `t.o11y`(读取时从当前累积事件现算) | `src/o11y/derive.ts`(`buildO11ySummary`) → `src/context/context.ts`(`t.o11y` getter) |
 | codex 用量从 `turn.completed.usage` 抠出 | `src/o11y/parsers/codex.ts` |
