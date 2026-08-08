@@ -20,7 +20,7 @@ Eve 与 NiceEval-Eval 都来自本机 checkout。
 
 NiceEval 不需要换掉整个 Assertion 模型。
 现有 scope、三态 `outcome`、证据完整性、`.optional()` 与计分制比 Eve 更适合真实 eval。
-真正需要重做的是五个接缝：有数据的有序行为、Judge 材料、人读标题、自定义诊断，以及依赖断言结果的后续代码。
+真正需要重做的是六个接缝：Match 语言、有数据的有序行为、Judge 材料、人读标题、自定义诊断，以及依赖断言结果的后续代码。
 
 `add-regression` 里的重复检查大多值得保留。
 它们分别证明命令出现、动作有序、输出可信、回复准确、文件真实和独立命令验证通过。
@@ -28,6 +28,10 @@ NiceEval 不需要换掉整个 Assertion 模型。
 
 当前内置词汇也不是每项都值得原样保留。
 与 NiceEval 私有证据有关的断言应继续内置；通用且高频的值 matcher 应保留；只检查某种回答版式的用户函数应退出核心词汇。
+
+其中 Match 不能只做增量修补。
+当前相同的 raw RegExp 在文本 matcher、JSON selector、EventMatch 与 Sandbox diff 中分别表示 pattern、serialized value search 或多字段 search；raw string 又会按入口变成 exact 或 contains。
+这种 union 省了 builder 名字，却把关系藏在接收位置里，也让同一个 pattern 很难从调用点看出实际 candidate。
 
 ## Eve 提供的作者体验
 
@@ -75,6 +79,45 @@ Eve 文档把 `eventOrder` 称为 event group，但源码中的 group 是“同�
 它不是工具、子 Agent 或消息等逻辑动作。
 NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据模型。
 
+## Match 入口盘点
+
+### NiceEval 当前分裂
+
+| 入口 | raw string | raw RegExp / function | 隐含 candidate |
+|---|---|---|---|
+| `includes` / `messageIncludes` | contains | RegExp test | `String(value)` 或聚合消息 |
+| EventMatch text | exact | RegExp test | 单个事件字段 |
+| `JsonMatch` root | exact value | RegExp test | serialized root JSON |
+| `JsonMatch` nested leaf | exact value | RegExp / predicate | 当前字段；RegExp 未命中时还会回退到 serialized root JSON |
+| `matches(schema)` | 不适用 | Standard Schema | 原始值，但名字看不出这是 validation |
+| `diff.matches` | 不适用 | RegExp | path、before 与 after 的混合扫描 |
+| `notInDiff` | 不适用 | RegExp | path 与 after 的混合扫描 |
+
+嵌套 JSON RegExp 的 root fallback尤其危险。
+作者把 `/secret/` 写在 `token` 字段，另一个字段含相同文本时也可能命中；字段位置不再约束证据。
+top-level RegExp 搜 serialized JSON还会让字符串 escaping、key 与 value 共享同一文本空间。
+
+当前 predicate 使用 truthiness 会把错误返回 Promise 的 async function 当成通过。
+RegExp 的可变 `lastIndex`、调用者后续 mutation与 getter / `toJSON`副作用也没有同一 normalization boundary。
+
+Eve 的 deep matcher减少了入口数量，但仍把 literal、RegExp与function放在同一个 union。
+它对非string value执行JSON serialization后再跑RegExp，因此没有解决“pattern究竟看哪个字符串”的问题。
+
+### 研究裁决
+
+Match 应直接 breaking 重做：
+
+- ordinary、text与JSON domain分开，candidate universe进入类型；
+- exact、contains、pattern、shape、not、allOf与oneOf逐字说明关系；
+- 自由文本slot只接收TextMatch，identifier string固定exact；
+- RegExp只从`match.text.pattern(description, re)`进入，predicate只从有description的`match.where`进入；
+- schema validation改名`conformsTo`，不冒充可嵌套Match或transform refinement；
+- Sandbox按同一条WindowChange显式匹配path/kind/before/after，不再把多个字段交给一个RegExp；
+- opaque value产生indeterminate，not/count/order不能把它当false。
+
+这不是兼容迁移。
+旧builder、raw union与serialized fallback应一并删除；保留deprecated alias会让两套心智继续共存。
+
 ## `add-regression` 真正要求什么
 
 目标文件是 NiceEval-Eval 的 `evals/harness/add-regression/eval.ts`。
@@ -82,18 +125,18 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 
 | 需求 | 当前写法 | 现有缺口 | 研究方向 |
 |---|---|---|---|
-| 确认第一轮真的运行完整 experiment | `calledTool("shell", { input })` | 无缺口；省略 status 正是所需语义 | 保留任意生命周期默认值 |
-| 确认随后用 `show` 下钻 | `calledTool` 加 `status: "completed"` | 无缺口 | 保留同一笔调用上的 input、output、status 匹配 |
+| 确认第一轮真的运行完整 experiment | raw RegExp 嵌进 `calledTool("shell", { input })` | 省略 status 正确，但 pattern candidate 与 partial object 关系都隐含 | `text.pattern` 嵌进 `json.shape`，保留任意生命周期默认值 |
+| 确认随后用 `show` 下钻 | raw RegExp 加 `status: "completed"` | lifecycle 语义正确，Match 仍难读 | 复用显式 `showInput`，继续绑定同一笔 input 与 status |
 | 确认 exp、show、回复依次发生 | 目标形状已经写成对象数组 | `eventOrder` 只收原始事件类型字符串 | 用逻辑行为 matcher 重做 `eventOrder` |
 | 评价命令是否分开、非 dry-run 且符合版本规则 | Judge 读取 `JSON.stringify(turn.toolCalls)` | 手工序列化丢类型，也把材料整形泄漏到题目里 | Judge 接受可序列化结构值 |
 | 评价真实运行数量与失败详情 | 独立 Judge 读取 tool calls | 与顺序 Judge 看似重复，实际标准不同 | 保留独立给分项 |
 | 评价助手是否准确复述结果 | Judge 读取 `turn.message` | 无缺口 | 保留 turn 默认材料与显式材料 |
 | 确认 turn 没有协议失败 | `turn.succeeded()` | 无缺口 | 保留证据完整性语义 |
-| 找到且只找到一个新增 eval | 布尔表达式配 `isTrue(label)` | 断言通过后仍用 `newEvalFiles[0]!` | type predicate matcher 配 typed require 返回 tuple |
+| 找到且只找到一个新增 eval | 布尔表达式配 `isTrue(label)` | 断言通过后仍用 `newEvalFiles[0]!` | `match.where(description, typePredicate)` 配 typed require 返回 tuple |
 | 评价新增 eval 不是弱断言或恒真作弊 | Judge 读取源文件 | 无缺口；这是开放式语义标准 | 保留 Judge，不造业务专用 matcher |
 | 证明文件由 agent 改动 | `t.sandbox.fileChanged(path)` | aggregate 无法直接指明是哪一轮；单个 send 区间内改后复原也不可观察 | 增加 turn 对应的边界 delta 断言 |
-| 证明修复轮没有削弱回归 eval | 再读文件并做严格布尔相等 | eager 读取会让候选删文件先变成 I/O error | 用 delayed `sandbox.file` 配 `equals(source)` 与 label |
-| 独立命令验证取消边界 | `runCommand` 配 `commandSucceeded()` | 无缺口 | 保留命令结果专用诊断 |
+| 证明修复轮没有削弱回归 eval | 再读文件并做严格布尔相等 | eager 读取会让候选删文件先变成 I/O error | delayed `sandbox.file` 配 `match.text.exact(source)` 与 handle label |
+| 独立命令验证取消边界 | `runCommand` 配 `commandSucceeded()` | 诊断成立，但它与其它 builder 不在同一 namespace | 收入 `match.commandSucceeded()` |
 | 每个标准独立给分且关键项硬失败 | `.points(n).gate()` | 无缺口 | 保留 points、severity 与控制流三轴 |
 
 这道题的第一轮 `local` 预期返回失败状态，因为新增回归正在复现 bug。
@@ -105,18 +148,17 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 
 | Matcher | 裁决建议 | 理由 |
 |---|---|---|
-| `includes` | 保留 | 高频通用值匹配；失败能展示 needle 与 received |
-| `excludes` | 保留 | 负向文本检查高频，且 `stripComments` 消除代码注释假阳性 |
-| `equals` | 保留 | 精确结构值与源码保真都需要它 |
-| `matches` | 保留 | Standard Schema 是结构化输出的稳定边界 |
+| `includes` | 改为 `match.text.contains` | literal contains 与 pattern 不应共用 overload |
+| `excludes` | 改为 `match.not(match.text.contains(...))` | 负关系进入同一组合代数；`stripComments` 退出通用文本层 |
+| `equals` | 按 domain 拆为 exact | ordinary、text 与 JSON exact需要不同 candidate universe |
+| `matches` | 改为 `conformsTo` | Standard Schema 是 validation，可能异步或 transform，不是 selector Match |
 | `similarity` | 重塑默认线 | 算法有用，但 `0.6` 没有跨任务通用意义；默认应只记连续分，作者显式加线 |
 | `includesUrl` | 退出核心词汇 | 只是某类回答版式，不是 NiceEval 私有事实；可由共享用户断言构造器组合 |
 | `hasSections` | 退出核心词汇 | Markdown 标题数是任务标准，不应扩张通用断言表面 |
-| `satisfies` | 保留并收紧 | 仍是必要 escape hatch；matcher 自身先取得非空 label，type predicate 再收窄 `t.require` 返回值 |
-| `isDefined` | 保留并增强 | 前置代码常需非空值；应把返回值收窄为 `NonNullable<T>` |
-| `isTrue` | 保留轻量 sugar | 布尔条件很常见；标签统一移到共享句柄，避免 builder 独有参数 |
-| `isFalse` | 保留轻量 sugar | 与 `isTrue` 对称，并明确报告的 expected 值 |
-| `commandSucceeded` | 保留 | 它理解 NiceEval `CommandResult`，能给出命令与失败输出，而非只看布尔值 |
+| `satisfies` | 改为 `match.where(description, predicate)` | escape hatch 必须在builder调用点自带诊断文本，严格同步返回boolean |
+| `isDefined` | 收入 `match.defined` | 前置代码需要 `NonNullable<T>` refinement，但不需要独立命名体系 |
+| `isTrue` / `isFalse` | 删除 | domain exact已明确expected boolean，不再保留对称sugar |
+| `commandSucceeded` | 收入 `match.commandSucceeded` | 它理解 NiceEval `CommandResult`，同时和其它值关系共用入口 |
 | `makeAssertion` | 改为 `defineAssertion` | 它声明可组合 matcher，不创建运行时资源；同时应支持有界丰富诊断与 unavailable |
 
 一个 matcher 是否进入核心，不能只看“能否少写几行”。
@@ -128,7 +170,7 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 |---|---|---|
 | `succeeded` | 保留 | 它理解协议失败、HITL park 与 evidence coverage |
 | `parked` | 保留 | HITL 等待是 NiceEval 才掌握的运行事实 |
-| `messageIncludes` | 保留 | 它按 scope 聚合消息，并正确处理不完整消息证据 |
+| `messageIncludes` | 保留 literal convenience | 方法名已经说明 contains；RegExp overload 删除 |
 | `calledTool` | 保留 | input、output、status 与 count 必须绑定同一笔逻辑调用 |
 | `notCalledTool` | 保留 | 负断言依赖完整 action 证据，不能降成数组搜索 |
 | `toolOrder` | 保留 convenience | 只关心工具发起顺序时比通用事件对象更清楚；它使用 started 子序，不冒充完成先后 |
@@ -137,14 +179,14 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 | `loadedSkill` | 保留 | skill 是标准事件事实，不应要求作者猜底层工具名 |
 | `calledSubagent` | 保留 | 委派身份、远端、输出与生命周期属于标准派生事实 |
 | `noFailedActions` | 保留 | 一次检查工具、skill 与子 Agent 的标准失败面 |
-| `event` | 重塑输入 | 从原始 `type` 字符串提升为类型化逻辑行为 matcher |
+| `event` | 重塑输入 | 从原始 `type` 字符串提升为类型化逻辑行为，文本字段只接收 TextMatch |
 | `notEvent` | 重塑输入 | 与 `event` 共用逻辑 matcher，并保留负证据 completeness |
 | `eventOrder` | 重点重做 | 接受 tool、message、subagent 等 matcher，按 operation id 关联生命周期，再做真正子序匹配 |
 | `eventsSatisfy` | 保留 raw escape hatch | 极少数协议不变量仍需整段原始事件；label 继续必填 |
 | `maxTokens` | 保留 | usage 完整性与实测超限的单调判定属于框架事实 |
 | `maxCost` | 保留 | 成本估算与缺失语义属于框架事实 |
-| `outputEquals` | 保留 | turn output 的 evidence coverage 不能由 `t.check(turn.data, ...)` 还原 |
-| `outputMatches` | 保留 | 同上，并为 structured output 提供 schema 诊断 |
+| `outputEquals` | 改为 `output(JsonMatch)` | turn data coverage不能由`t.check(turn.data, ...)`还原，值关系仍应进入Match |
+| `outputMatches` | 改为 `outputConformsTo` | 同一coverage边界，名称明确表示Standard Schema validation |
 
 `eventOrder` 的目标不应是把所有 specialized assertion 合成一项。
 `calledTool` 适合证明存在与次数，`toolOrder` 适合只看发起顺序，`eventOrder` 才承担跨行为类型的非重叠时序。
@@ -155,10 +197,10 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 |---|---|---|
 | `fileChanged` | 保留 aggregate，并增加 turn 区间形态 | aggregate 汇总与逐 turn 边界 delta 都由变更分类账掌握 |
 | `fileDeleted` | 保留 aggregate，并增加 turn 区间形态 | 删除归因不能用最终文件不存在替代 |
-| `notInDiff` | 保留 aggregate，并增加 turn 区间形态 | 内容省略时必须 unavailable，普通正则搜索做不到 |
+| `notInDiff` | 删除，改为 `noChange(ChangeMatch)` | path、before、after必须来自同一WindowChange，opaque字段保持possible |
 | `noFailedShellCommands` | 退出专属词汇 | 与 `notCalledTool("shell", { status: "failed" })` 重复，也容易被误读成 eval 验证命令 |
 | `diff.get` | 保留材料视图 | 精确内容比较仍应交给值 matcher |
-| `diff.matches` | 保留材料视图 | 它能在内容省略时拒绝静默给出 false |
+| `diff.matches` | 删除，改为显式 change字段 | 一个RegExp不应同时搜索path与多个区间文本 |
 | `diff.isEmpty` | 增加 Assertion 对应物 | “没有改动”是负证据；直接布尔值不应成为唯一作者路径 |
 | `file(path)` | 保留延迟材料 | finalize 时文件内容配任意值 matcher，职责清楚 |
 
@@ -169,7 +211,7 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 
 | 能力 | 裁决建议 | 理由 |
 |---|---|---|
-| `.label(name)` | 新增到值 matcher 与没有必填标题的已登记句柄 | 它只决定人读标题；Judge 继续以 required `name` 为唯一标题，跨 eval 对比仍使用 `groupPath` |
+| `.label(name)` | 只放在已登记 handle；require 用 registration option | Match description与单次Assertion title分层；Judge继续以required `name`为唯一标题 |
 | `.gate()` | 保留 | 只表达硬判定，不隐式改变控制流 |
 | `.atLeast(x)` | 保留 | soft 分数线与 hard gate 必须可区分 |
 | `.soft()` | 保留 | 连续质量分与纯观测仍有独立价值 |
@@ -197,5 +239,6 @@ NiceEval 可以吸收对象 matcher 的调用形状，不能继承这层数据�
 6. 自定义 matcher 的异步失败在 Assertion 求值边界归一，不把嵌套运行时或任意异常结构泄漏进 Record。
 7. turn 变更读取现有 send 区间的 before/after delta，不承诺观察区间内改后复原的历史，也不另做一次文件系统 diff。
 8. 业务 rubric 留在 eval 代码与 Judge，不因一条回归题新增专用核心断言。
+9. Match 关系必须在builder名字中可见；opaque evidence保留第三态，raw RegExp、truthiness与serialized root fallback全部退出公开selector。
 
 这些输入已经完成独立设计挑战；定稿后的 API 与边界见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。

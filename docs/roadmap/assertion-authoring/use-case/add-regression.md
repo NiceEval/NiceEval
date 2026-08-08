@@ -36,7 +36,7 @@ completed Decision 只能给 0 或 1，因此 `.points(n).gate()` 不会出现 f
 
 ```ts
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, equals, satisfies } from "niceeval/expect";
+import { match } from "niceeval/expect";
 import { material } from "niceeval/judge";
 
 const EXISTING_EVALS = [
@@ -47,10 +47,16 @@ const EXISTING_EVALS = [
   "evals/policy/warranty.eval.ts",
 ] as const;
 
-type ExistingEval = (typeof EXISTING_EVALS)[number];
-
-const NICEEVAL_LOCAL_COMMAND = /\bniceeval(?:@\S+)?\s+(?:--\s+)?exp\s+local\b/i;
-const NICEEVAL_SHOW_COMMAND = /\bniceeval(?:@\S+)?\s+(?:--\s+)?show\b/i;
+const NICEEVAL_LOCAL_COMMAND = match.text.pattern(
+  "niceeval exp local command",
+  /\bniceeval(?:@\S+)?\s+(?:--\s+)?exp\s+local\b/i,
+);
+const NICEEVAL_SHOW_COMMAND = match.text.pattern(
+  "niceeval show command",
+  /\bniceeval(?:@\S+)?\s+(?:--\s+)?show\b/i,
+);
+const localInput = match.json.shape({ command: NICEEVAL_LOCAL_COMMAND });
+const showInput = match.json.shape({ command: NICEEVAL_SHOW_COMMAND });
 
 export default defineScoreEval({
   description: "给绿色 experiment 补一条真实回归，先复现再修实现并全量复验",
@@ -75,23 +81,23 @@ export default defineScoreEval({
     );
 
     turn1
-      .calledTool("shell", { input: { command: NICEEVAL_LOCAL_COMMAND } })
+      .calledTool("shell", { input: localInput })
       .points(1)
       .gate();
     turn1
       .calledTool("shell", {
-        input: { command: NICEEVAL_SHOW_COMMAND },
+        input: showInput,
         status: "completed",
       })
       .points(1)
       .gate();
     turn1
       .eventOrder([
-        { type: "tool", name: "shell", input: { command: NICEEVAL_LOCAL_COMMAND } },
+        { type: "tool", name: "shell", input: localInput },
         {
           type: "tool",
           name: "shell",
-          input: { command: NICEEVAL_SHOW_COMMAND },
+          input: showInput,
           status: "completed",
         },
         { type: "message", role: "assistant" },
@@ -154,13 +160,13 @@ export default defineScoreEval({
       .split("\n")
       .map((file) => file.trim().replace(/^\.\//, ""))
       .filter(Boolean);
-    const newEvalFiles = evalFiles.filter(
-      (file) => !EXISTING_EVALS.includes(file as ExistingEval),
-    );
-    const oneNewEval = satisfies(
+    const existingEvals = new Set<string>(EXISTING_EVALS);
+    const newEvalFiles = evalFiles.filter((file) => !existingEvals.has(file));
+    const oneNewEval = match.where(
+      "恰好新增一条会被 local 选中的 policy eval",
       (files: readonly string[]): files is readonly [string] =>
         evalFiles.length === 6 && files.length === 1,
-    ).label("恰好新增一条会被 local 选中的 policy eval");
+    );
 
     const [newEvalPath] = await t.require(newEvalFiles, oneNewEval, { points: 2 });
 
@@ -188,7 +194,7 @@ export default defineScoreEval({
 
     turn2
       .calledTool("shell", {
-        input: { command: NICEEVAL_LOCAL_COMMAND },
+        input: localInput,
         status: "completed",
       })
       .points(1)
@@ -198,7 +204,7 @@ export default defineScoreEval({
         {
           type: "tool",
           name: "shell",
-          input: { command: NICEEVAL_LOCAL_COMMAND },
+          input: localInput,
           status: "completed",
         },
         { type: "message", role: "assistant" },
@@ -244,7 +250,7 @@ export default defineScoreEval({
       .points(3)
       .gate();
 
-    t.check(t.sandbox.file(newEvalPath), equals(newEvalSource))
+    t.check(t.sandbox.file(newEvalPath), match.text.exact(newEvalSource))
       .label("修复轮原样保留新增的回归 eval")
       .points(2)
       .gate();
@@ -262,7 +268,7 @@ export default defineScoreEval({
         'if (fulfilling !== "Orders cannot be canceled after fulfillment begins.") throw new Error(`fulfilling: ${fulfilling}`);',
       ].join("\n"),
     ]);
-    t.check(cancellationBehaviorTest, commandSucceeded()).points(3).gate();
+    t.check(cancellationBehaviorTest, match.commandSucceeded()).points(3).gate();
     turn2.succeeded().points(1).gate();
   },
 });
@@ -274,6 +280,7 @@ export default defineScoreEval({
 
 - 直接 boolean 配 `isTrue(label)`；
 - `newEvalFiles[0]!`；
+- raw RegExp 藏在递归 JSON selector 里；
 - Judge 调用点的 `JSON.stringify`；
 - 未 await 的 `.stopOnFailure()`；
 - attempt aggregate `t.sandbox.fileChanged(path)`；
@@ -281,7 +288,8 @@ export default defineScoreEval({
 
 新增的概念都对应必要边界：
 
-- labeled type predicate 与 Score `t.require(..., { points: 2 })` 同时负责收窄、给分和控制流；
+- `match.text.pattern` 与 `match.json.shape` 分别说明 CLI 文本关系和 tool input shape；
+- 有 description 的 type predicate 与 Score `t.require(..., { points: 2 })` 同时负责收窄、给分和控制流；
 - Eval 只声明一次 `judge.llm.uses`；
 - `material.json` / `material.text` 固定每条 Judge 的最小材料；
 - required Judge name 与 `scoreMode: "binary"` 固定标题和端点分数；
