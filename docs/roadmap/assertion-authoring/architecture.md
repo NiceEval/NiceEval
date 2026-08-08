@@ -114,6 +114,7 @@ Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 
 `toolOrder()` 按 request position 对 logical tool occurrences 做子序列匹配。
 每个 selector 由 `name` 和去掉 count 的同一份 `ToolMatch` 组成。
+既有 string selector 在登记边界等价为只含 `{ name }` 的 selector，不建立第二套匹配语义。
 
 算法使用单调 cursor：
 

@@ -10,7 +10,6 @@
 
 ```ts
 interface BaseAssertionHandle<H> {
-  label(name: string): H;
   gate(threshold?: number): H;
   atLeast(threshold: number): H;
   soft(): H;
@@ -101,6 +100,7 @@ type ToolSelector = { readonly name: string } & Omit<ToolMatch, "count">;
 interface ScopedAssertions<H> {
   succeeded(): H;
   calledTool(name: string, match?: ToolMatch): H;
+  toolOrder(names: readonly [string, string, ...string[]]): H;
   toolOrder(selectors: readonly [ToolSelector, ToolSelector, ...ToolSelector[]]): H;
   toolInputsExclude(rule: ToolInputExclusion, options?: ToolInputOptions): H;
 }
@@ -122,6 +122,7 @@ turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: [
 
 `toolOrder()` 保持既有 request subsequence 语义。
 它用单调 cursor 为每项消费一笔不同 occurrence，允许其它工具穿插；它不证明前一项 finish 早于后一项 start。
+既有 string tuple overload 保留，并在登记边界逐项等价为 `{ name }`；需要 command、input、output 或 status 时才使用 `ToolSelector` overload，两者复用同一个 occurrence evaluator。
 
 ## 可观察工具输入排除
 
