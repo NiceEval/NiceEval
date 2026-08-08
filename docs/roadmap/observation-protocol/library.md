@@ -138,7 +138,7 @@ CommandProjection 的 owner 是具体 Adapter。
 executable 与 args 保留提交给执行边界的原始 token。
 
 复合 shell、动态展开、管道或无法确认 quoting 的 source 使用 `compound-shell`。
-Adapter 与 core 都不能用空格 split、重新 quote、展开 wrapper、拆分一笔 occurrence或合并多笔 occurrence。
+Adapter 与 core 都不能用空格 split、重新 quote、展开 wrapper、拆分一笔 occurrence 或合并多笔 occurrence。
 
 `not-command` 表示 Adapter 能确定这笔 tool operation 不是命令。
 Adapter 无法确定 command / not-command 时必须降低 actions coverage，不能用 `not-command` 掩盖未知。
