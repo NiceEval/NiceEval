@@ -25,7 +25,7 @@
 
 ## Sandbox 复用增加运行级汇总
 
-Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
+Attempt 持久化 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
 声明 `sandboxReuse` 的 Experiment 按现有物理复用池提供四个运行级量；Eval Group 则直接以自身作为这组计数的声明源：
 
 | 量 | 口径 |
