@@ -76,50 +76,52 @@ t.check(t.sandbox.file("experiments/local.ts"), { contains: "runtime:python", ex
 
 missing 不会被当作空字符串交给 `excludes`，所以“文件不存在”不能假通过“不含禁止文本”。
 
-## 工具与 command selector
+## ToolMatch 内的 command
 
 `calledTool()` 与 `toolOrder()` 继续是 `t`、session、turn 共用的作用域词汇。
-它们扩展为接受同一个 `ToolSelector`：
+command 作为既有 `ToolMatch` 的一个窄字段进入同一笔 tool occurrence：
 
 ```ts
-type CommandSelector = {
-  readonly command: readonly [executable: string, ...argsPrefix: string[]];
+interface CommandMatch {
+  readonly executable: string;
+  readonly argsStart?: readonly string[];
   readonly excludes?: readonly string[];
-};
-
-type ToolSelector = string | CommandSelector;
-
-interface ToolOrderOptions {
-  readonly sequential?: boolean;
 }
+
+interface ToolMatch {
+  readonly input?: JsonMatch;
+  readonly output?: JsonMatch;
+  readonly status?: "pending" | "completed" | "failed" | "rejected";
+  readonly count?: number | ((count: number) => boolean);
+  readonly command?: CommandMatch;
+}
+
+type ToolSelector = { readonly name: string } & Omit<ToolMatch, "count">;
 
 interface ScopedAssertions<H> {
   succeeded(): H;
-  calledTool(selector: ToolSelector, match?: ToolMatch): H;
-  toolOrder(
-    selectors: readonly [ToolSelector, ToolSelector, ...ToolSelector[]],
-    options?: ToolOrderOptions,
-  ): H;
+  calledTool(name: string, match?: ToolMatch): H;
+  toolOrder(selectors: readonly [ToolSelector, ToolSelector, ...ToolSelector[]]): H;
   toolInputsExclude(rule: ToolInputExclusion, options?: ToolInputOptions): H;
 }
 ```
 
-string selector 保持既有语义：按 canonical tool name、再按 original tool name 做 exact identifier 匹配。
-command selector 不接收 tool name；它只消费 Adapter 提供的标准 command projection。
+`name` 保持既有 exact tool identifier 语义。
+`command` 与 input、output、status 必须由同一笔 occurrence 满足；`count` 统计同时满足全部字段的 occurrences。
 
-`command` 数组的第一项是 exact executable，后续项是 argv prefix。
+`executable` 按 exact identifier 匹配，`argsStart` 按 argv token prefix 匹配。
 `excludes` 中每项按 exact argv token 排除；它不搜索拼接后的 shell 文本。
 
 ```ts
-turn.calledTool({ command: ["niceeval", "show"] }).gate();
-turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+turn.calledTool("shell", { command: { executable: "niceeval", argsStart: ["show"] } }).gate();
+turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
 ```
 
 `calledTool()` 默认要求匹配 occurrence 的 status 为 `completed`，与既有 ToolMatch 默认一致。
-`toolOrder()` 省略 `sequential` 时保持既有 request subsequence 语义，允许其它工具穿插。
+`toolOrder()` 的 selector 省略 status 时不增加 lifecycle 条件；显式 `status: "completed"` 才要求该 occurrence 已完成。
 
-`sequential: true` 时，每个 selector 必须由不同的 completed occurrence 满足。
-相邻两项还要求后一项的 start 严格晚于前一项的 finish；无关 occurrence 仍可穿插。
+`toolOrder()` 保持既有 request subsequence 语义。
+它用单调 cursor 为每项消费一笔不同 occurrence，允许其它工具穿插；它不证明前一项 finish 早于后一项 start。
 
 ## 可观察工具输入排除
 
@@ -197,7 +199,7 @@ turn.judge.llm({
 }).points(4).gate();
 ```
 
-`turn.judge.llm()` 的默认 current material 包含该轮用户输入、assistant message 与可用行为事件。
+`turn.judge.llm()` 的默认 current material 包含该轮用户输入、assistant message 与按 Observation 顺序排列的可用行为事件。
 作者不需要 `material.turn(turn)`，也不应只传 `turn.message` 丢掉 tool calls。
 
 机器可确定的 command 顺序、工具输入与 Sandbox diff 不重复交给 Judge。

@@ -19,12 +19,12 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 
 - Agent 真正运行了非 dry-run experiment；
 - 结果诊断经过公开 `niceeval show`，而不是读取 `.niceeval` 私有文件；
-- Agent 看过前一步结果后才继续下一步；
+- Agent 根据前一步公开结果选择后续动作；
 - 最终回复把 show 中的证据和修复建议对应起来；
 - 文件修改没有越过任务允许的范围。
 
-确定性的 command 顺序、可观察工具输入、运行状态和 Sandbox diff 由机器 Assertion 检查。
-动态 locator、Human 输出含义与回复建议需要关联完整 tool calls 和 message，因此由 `turn.judge.llm()` 检查。
+确定性的 tool request 子序列、可观察工具输入、运行状态和 Sandbox diff 由机器 Assertion 检查。
+动态 locator、工具输出因果、Human 输出含义与最终回复顺序需要关联完整有序 Turn，因此由 `turn.judge.llm()` 检查。
 
 ## A：修好 Python 起点，再判断复验与接受
 
@@ -38,7 +38,7 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 1. 先运行一次非 dry-run `niceeval exp local`；
 2. 用 `niceeval show` 确认 Python 基建错误；
 3. 只把目标 experiment 的 runtime tag 改成 Python 版本；
-4. 按候选 NiceEval 版本的 carry / rerun 语义完成可信复验；
+4. 按候选 NiceEval 版本的 accept / rerun 能力完成可信复验；
 5. 再用 `show` 核对 current 与 history，判断哪些结果可以接受；
 6. 在最终回复中解释证据和决定。
 
@@ -47,15 +47,15 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 ### Harness 调用
 
 ```ts
-const turn = await t.send("运行 local experiment，用 niceeval show 诊断并修复缺少 Python 的基建；完成可信复验，判断可接受的结果，最后说明依据。禁止直接读取 .niceeval、evals 或 agents 下的内部材料。");
-turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }, { command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件。");
+turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }, { name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();
 t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
 t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", afterIncludes: "runtime:python" }).points(2).gate();
-turn.judge.llm({ name: "最终 current 结果", rubric: "只依据本轮 niceeval show 的公开输出判断：最终 current leaderboard 必须恰好是 cases/alpha、cases/beta、cases/gamma、cases/delta 四项，其中 3 passed、1 failed、0 errored；不能用回复中的自报数字代替 CLI 证据。", scoreMode: "binary" }).points(3).gate();
-turn.judge.llm({ name: "接受历史正确", rubric: "结合本轮完整 show 输出判断：cases/alpha、cases/beta、cases/gamma 各恰好一条 attempt，verdict 依次为 passed、passed、failed，且都有 acceptedFrom；每条 acceptedFrom 只显示 config:sandboxLayer 与 plan:physical 两类差异，from/to 是公开字符串，但不要求泄露 literal image tag。cases/delta 恰好两条真实 attempt，顺序为 errored 后 passed，二者都没有 acceptedFrom。不得依靠回复自报或私有文件。", scoreMode: "binary" }).points(6).gate();
-turn.judge.llm({ name: "候选版本复验与建议", rubric: candidateVersion.startsWith("0.9.") ? "候选是 0.9.x：确认修复后确实重新执行完整 local experiment，并根据 show 正确解释接受范围；不要求该版本没有的 rerun flag。" : "候选是 0.12+：确认修复后强制全量真实执行，通常使用 --rerun all 或可由工具证据证明等价的做法，不能把自动重试 errored 与携入旧结果冒充全量复验；最终接受判断必须与 show 证据一致。", scoreMode: "binary" }).points(4).gate();
+turn.judge.llm({ name: "最终 current 结果", rubric: "只依据本轮最后一次 niceeval show 的公开输出判断：current leaderboard 必须恰好是 cases/alpha、cases/beta、cases/gamma、cases/delta 四项，其中 3 passed、1 failed、0 errored；唯一 failed 是原本就合法的 cases/gamma，不能用回复中的自报数字代替 CLI 证据。", scoreMode: "binary" }).points(3).gate();
+turn.judge.llm({ name: "公开 history 正确", rubric: candidateVersion.startsWith("0.9.") ? "候选是 0.9.x：只依据本轮完整有序 Turn 中的公开 show 输出判断。该版本没有 locator accept；runtime 修复后必须看到四个 case 都产生新的真实 terminal result，最终 alpha、beta、delta passed，gamma 保持原本合法的 failed，不要求 acceptedFrom，也不能用回复自报或私有文件补证据。" : "候选是 0.12+ 或 canary：只依据本轮完整有序 Turn 中的公开 show 输出判断。cases/alpha、cases/beta、cases/gamma 恰好三个仍有效 terminal results 被 accept，verdict 依次为 passed、passed、failed，acceptedFrom 只允许 config:sandboxLayer 与 plan:physical 两类差异，from/to 只要求是公开字符串。cases/delta 必须从 errored 真实重跑为 passed，两个真实 attempts 都没有 acceptedFrom；不能 accept 第四项，也不要求公开 literal image tag。", scoreMode: "binary" }).points(6).gate();
+turn.judge.llm({ name: "根因、范围与版本策略", rubric: candidateVersion.startsWith("0.9.") ? "完整有序 Turn 必须证明 Agent 先从公开 show 判断根因是 runtime 缺少 Python，只修改基础设施配置；由于 0.9.x 没有 locator accept，改 runtime 后完整重跑四项，并保留 cases/gamma 原本合法的 failed。最终回复必须在复验输出之后说明这些依据。" : "完整有序 Turn 必须证明 Agent 先从公开 show 判断根因是 runtime 缺少 Python，只修改基础设施配置；对 0.12+ 或 canary 应从 show 证据 accept 恰好三个仍有效 terminal results，只真实重跑 errored 的 cases/delta，并保留 cases/gamma 原本合法的 failed。强制 --rerun all 或重跑全部四项判为错误；最终回复必须在复验输出之后说明这些依据。", scoreMode: "binary" }).points(4).gate();
 ```
 
 三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
@@ -69,6 +69,9 @@ current、history 与候选版本三项都是 gate。
 
 `accept` 不另设一条 command 得分。
 接受行为是否成立、范围是否安全已经由公开 history 证据与候选版本判断共同检查，重复计分会放大同一事实。
+
+0.12+ / canary 的正确策略不是强制全量重跑。
+三个已有 terminal results 仍有效时应由公开 show 证据 accept，只让 errored 的 delta 真实执行；0.9.x 没有 locator accept，才在 runtime 修复后完整重跑。
 
 ## B：区分模型能力不足和 Eval 过紧
 
@@ -92,13 +95,13 @@ current、history 与候选版本三项都是 gate。
 ### Harness 调用
 
 ```ts
-const turn = await t.send("运行 local experiment，只用 niceeval show 下钻 beta 和 gamma 的失败；区分模型能力不足与 Eval 断言过紧，给出各自应该修改什么的建议。不要修改 repo，也不要读取 .niceeval、evals 或 agents 下的内部材料。");
-turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+const turn = await t.send("运行 local experiment，调查所有失败并逐项给出归因与修正建议。每项结论必须引用运行结果证据；不得使用文件读取工具直接打开 eval 源码、agent 实现或内部记录，诊断证据应来自 NiceEval 自身的公开结果查看接口。不要修改项目。");
+turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();
 t.sandbox.noChanges().points(2).gate();
-turn.judge.llm({ name: "beta 归因", rubric: "同时检查完整 tool calls、show 输出和最终 message：compact show 必须显示 cases/alpha、cases/beta、cases/gamma 的首次结果为 1 passed、2 failed、0 errored，并识别 cases/beta 的 locator；后续 --source 与 --execution 必须使用同一个 beta locator。证据必须显示候选给出 18，而客观要求是 20；结论应建议修正回复或推理，不应修改 Eval。", scoreMode: "binary" }).points(6).gate();
-turn.judge.llm({ name: "gamma 归因", rubric: "同时检查完整 tool calls、show 输出和最终 message：Agent 必须从 compact show 识别另一个属于 cases/gamma 的 locator，并让 --source 与 --execution 使用同一个 gamma locator。证据必须表明候选行为在题意上正确，但 exact Assertion 比题面更严格；结论应建议修改 Eval，不应要求改写正确回复。", scoreMode: "binary" }).points(6).gate();
+turn.judge.llm({ name: "beta 归因", rubric: "检查完整有序 Turn：compact show 必须先显示 cases/alpha、cases/beta、cases/gamma 的首次结果为 1 passed、2 failed、0 errored，并给出 cases/beta 的 locator；后续 --source 与 --execution 必须在该输出之后使用同一个 beta locator。证据必须显示候选给出 18，而客观要求是 20；最终回复必须在下钻输出之后建议修正回复或推理，不应修改 Eval。", scoreMode: "binary" }).points(6).gate();
+turn.judge.llm({ name: "gamma 归因", rubric: "检查完整有序 Turn：Agent 必须先从 compact show 取得另一个属于 cases/gamma 的 locator，再让 --source 与 --execution 使用同一个 gamma locator。证据必须表明候选行为在题意上正确，但 exact Assertion 比题面更严格；最终回复必须在下钻输出之后建议修改 Eval，不应要求改写正确回复。", scoreMode: "binary" }).points(6).gate();
 ```
 
 B 的可得分总数固定为 `2 + 6 + 6 = 14`。

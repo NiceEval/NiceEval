@@ -32,13 +32,14 @@ t.check(t.sandbox.file("experiments/local.ts"), { contains: "runtime:python", ex
 框架不 trim、不做 Unicode normalization、不调用 `String(value)`，也不序列化其它值后搜索。
 identifier slot 继续接受未包装的非空 string，并固定 exact；工具名、executable、argv token 与 Sandbox path 都是 identifier。
 
-## Command selector
+## ToolMatch command 字段
 
-command selector 是 `calledTool()` 与 `toolOrder()` 共用的一种 `ToolSelector`：
+command 是既有 `ToolMatch` 的内联窄字段：
 
 ```ts
-interface CommandSelector {
-  readonly command: readonly [executable: string, ...argsPrefix: string[]];
+interface CommandMatch {
+  readonly executable: string;
+  readonly argsStart?: readonly string[];
   readonly excludes?: readonly string[];
 }
 ```
@@ -46,15 +47,24 @@ interface CommandSelector {
 匹配一笔 occurrence 时同时满足：
 
 1. 标准 projection 可用；
-2. executable 与 `command[0]` exact；
-3. argv 以 `command.slice(1)` 逐 token exact 开头；
+2. executable 与 `command.executable` exact；
+3. argv 以 `command.argsStart` 逐 token exact 开头；
 4. argv 不含任一 `excludes` exact token。
 
-空 executable、空 expected token、重复 `excludes` 或只有空数组的 `command` 是 author error。
-selector 不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring。
+空 executable、空 expected token 或重复 `excludes` 是 author error。
+command 字段不对 raw shell text 做语法 parse，不做 basename 猜测，不跨 token 搜索 substring。
 
-同一 selector 在 `calledTool()` 与 `toolOrder()` 中调用同一个 occurrence evaluator。
-因此存在性和顺序性不会出现两套 command 匹配语义。
+`input`、`output`、`status` 与 `command` 匹配同一笔 occurrence。
+`calledTool()` 与 `toolOrder()` 调用同一个单 occurrence evaluator，因此不会出现两套 command 语义。
+
+`ToolSelector` 只给这份 matcher 补上 tool name，并删除 count：
+
+```ts
+type ToolSelector = { readonly name: string } & Omit<ToolMatch, "count">;
+```
+
+`toolOrder()` 的每一项消费一个不同 actual index。
+它按 request position 做子序列匹配，不把 status 或 command 字段解释成 finish-before-start 因果关系。
 
 ## Tool input path exclusion
 
@@ -107,10 +117,10 @@ Standard Schema 继续适合业务结构；`niceeval show` 的诊断语义则由
 
 领域对象使用封闭字段并依赖 excess-property checking：
 
-- `{ command: [...] }` 只能进入 `ToolSelector` 的 command 分支；
-- string `ToolSelector` 只能表示 exact tool identifier；
+- `ToolSelector.name` 只能表示 exact tool identifier；
+- `ToolMatch.command` 只能接受 `CommandMatch`；
 - `{ exact }` 与 `{ contains }` 是互斥的 `TextAtom`；
-- `TextRule`、`CommandSelector` 与 `ToolInputExclusion` 互不赋值。
+- `TextRule`、`CommandMatch` 与 `ToolInputExclusion` 互不赋值。
 
 JavaScript、`any` 或扩散对象绕过静态检查时，登记边界执行同一套穷尽 runtime validation。
 互斥字段、空值或未知字段同步报告 author error，不登记一条永远匹配不到的 Assertion。
