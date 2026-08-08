@@ -141,7 +141,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 构造 `t`(send / reply / newSession / check / 作用域断言 / judge / sandbox) | `src/context/context.ts` |
 | 会话驱动(多轮 send → agent.send,事件 / 用量累加,newSession) | `src/context/session.ts` |
 | 控制流信号(skip / `.stopOnFailure()` 前置中止；send 执行异常独立走 `SendFailure`) | `src/context/control-flow.ts`、`src/context/send-failures.ts` |
-| `t.sandbox.file(path)` / `json(path)` 延迟引用(到消费边界才读取、解码或调用 `JSON.parse`) | `src/context/context.ts`(`FileRef`) |
+| `t.sandbox.file(path)` 延迟引用(到消费边界才读取与解码) | `src/context/context.ts`(`FileRef`) |
 
 ## Runner / CLI / Experiments([runner.md](runner.md) / [cli.md](cli.md) 架构 / [feature/experiments/](feature/experiments/README.md))
 
