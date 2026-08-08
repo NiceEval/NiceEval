@@ -36,21 +36,44 @@ Report artifact 可以独立定义面向消费者的格式，但改变该格式�
 事件业务字段只存在于自己的 `body` schema；新增事件种类不会扩大其它事件或 frozen core schema。
 
 ```ts
+interface AttemptObservationScopeBase {
+  kind: "attempt";
+  runId: string;
+  experimentId: string;
+  attemptId: string;
+  evalId: string;
+}
+
 type ObservationScope =
   | {
       kind: "run";
       runId: string;
       experimentId: string;
     }
-  | {
-      kind: "attempt";
-      runId: string;
-      experimentId: string;
-      attemptId: string;
-      evalId: string;
-      agentSessionId?: string;
-      turnId?: string;
-    };
+  | (AttemptObservationScopeBase & {
+      agentSessionId?: never;
+      turnId?: never;
+      turnOrdinal?: never;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId?: never;
+      turnOrdinal?: never;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId: string;
+      turnOrdinal: number;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId: string;
+      turnOrdinal: number;
+      eventOrdinal: number;
+    });
 
 interface ObservationEvent<T extends JsonValue = JsonValue> {
   format: "niceeval.observation";
@@ -86,8 +109,17 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
 `name` 是开放、带命名空间的语义名，例如 `niceeval.attempt.started`、`niceeval.agent.operation.started`。
 `schema` 标识该事件 body 的独立版本，例如 `niceeval.agent.operation.started/1`。
 
-durable scope 只有 Run 与 Attempt 两种穷尽形状。
-Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt，`turnId` 存在时必须同时存在 `agentSessionId`。
+durable scope 只有 Run 与 Attempt 两种顶层形状。
+Attempt scope 再穷尽区分 attempt、session、turn 与 turn event。
+`turnId` 存在时必须同时写 session identity 与 turnOrdinal；Agent behavior event 还必须写 eventOrdinal。
+
+SessionManager 在一次 `send` / `respond` 开始时分配零起点、单调递增且不复用的 `turnOrdinal`。
+core 创建的 eval user message 使用 `eventOrdinal: 0`，Adapter 随后 yield 的 event frame 按原顺序取得 1、2、3。
+
+Outcome 不是 event，不占 eventOrdinal。
+同一 Agent Session 不允许并发 `send` / `respond`，所以 `(turnOrdinal, eventOrdinal)` 形成 session 内稳定全序。
+
+Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt。
 
 `stream.id` 标识一个可独立封口和重新执行的流。
 Attempt 事件使用 Attempt stream；Run 级调度、setup、teardown 与共享 activity 使用 Run stream。

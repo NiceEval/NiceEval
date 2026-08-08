@@ -47,6 +47,11 @@ passed 时 Promise fulfill；failed 或 unavailable 写入 Assertion 后终止�
 
 ```ts
 declare const evidenceSourceBrand: unique symbol;
+declare const sandboxPathBrand: unique symbol;
+
+type SandboxPath = string & {
+  readonly [sandboxPathBrand]: "sandbox-path";
+};
 
 interface EvidenceSource<T> {
   readonly [evidenceSourceBrand]: T;
@@ -94,12 +99,37 @@ interface RequireScoreOptions extends RequireOptions {
   readonly points?: number;
 }
 
+type RequiredJsonValue<R extends JsonRule> =
+  R extends { readonly exact: infer E extends JsonValue }
+    ? E
+    : R extends { readonly shape: infer P extends JsonShapeSpec }
+      ? InferShape<P>
+      : JsonValue;
+
+interface PassFailTestContext {
+  require<V extends string>(
+    value: ImmediateValue<V> | EvidenceSource<V>,
+    rule: TextRule,
+    options?: RequireOptions,
+  ): Promise<V>;
+  require<V extends JsonValue, R extends JsonRule>(
+    value: ImmediateValue<V> | EvidenceSource<V>,
+    rule: R,
+    options?: RequireOptions,
+  ): Promise<V & RequiredJsonValue<R>>;
+}
+
 interface ScoreTestContext {
-  require<T, R extends RuleFor<T>>(
-    value: ImmediateValue<T> | EvidenceSource<T>,
+  require<V extends string>(
+    value: ImmediateValue<V> | EvidenceSource<V>,
+    rule: TextRule,
+    options?: RequireScoreOptions,
+  ): Promise<V>;
+  require<V extends JsonValue, R extends JsonRule>(
+    value: ImmediateValue<V> | EvidenceSource<V>,
     rule: R,
     options?: RequireScoreOptions,
-  ): Promise<RequiredValue<T, R>>;
+  ): Promise<V & RequiredJsonValue<R>>;
 }
 ```
 
@@ -164,6 +194,13 @@ interface ScopedAssertions<H> {
 
 interface ToolInputOptions {
   readonly tools?: readonly string[];
+}
+
+interface SubagentRule {
+  readonly status?: "pending" | "completed" | "failed";
+  readonly remoteUrl?: TextRule;
+  readonly output?: JsonRule;
+  readonly count?: CountRule;
 }
 ```
 
@@ -326,6 +363,46 @@ type JsonArrayRule =
       readonly exact?: never;
       readonly unordered?: never;
     };
+
+type PresentJsonKeys<P extends JsonShapeSpec> = {
+  [K in keyof P]-?: P[K] extends { readonly absent: true } ? never : K;
+}[keyof P];
+
+type AbsentJsonKeys<P extends JsonShapeSpec> = {
+  [K in keyof P]-?: P[K] extends { readonly absent: true } ? K : never;
+}[keyof P];
+
+type JsonValueOfType<T> =
+  T extends "string" ? string
+  : T extends "number" ? number
+  : T extends "boolean" ? boolean
+  : T extends "object" ? { readonly [key: string]: JsonValue }
+  : T extends "array" ? readonly JsonValue[]
+  : T extends "null" ? null
+  : JsonValue;
+
+type InferJsonNode<R> =
+  R extends { readonly exact: infer E extends JsonValue }
+    ? E
+    : R extends TextRule
+      ? string
+      : R extends JsonPrimitive
+        ? R
+        : R extends { readonly type: infer T }
+          ? JsonValueOfType<T>
+          : R extends { readonly present: true }
+            ? JsonValue
+            : R extends { readonly shape: infer P extends JsonShapeSpec }
+              ? InferShape<P>
+              : R extends { readonly array: unknown }
+                ? readonly JsonValue[]
+                : JsonValue;
+
+type InferShape<P extends JsonShapeSpec> = {
+  readonly [K in PresentJsonKeys<P>]: InferJsonNode<P[K]>;
+} & {
+  readonly [K in AbsentJsonKeys<P>]?: never;
+};
 ```
 
 plain primitive 在 shape slot 中表示 exact。

@@ -75,6 +75,24 @@ core 为每次 `send` 或 `respond` 创建 `origin: "eval"` 的 user message，�
 Adapter frame 依原顺序接在它之后。
 Adapter 不能产出 `origin: "eval"`，assistant message 也不能带 origin；非法组合是协议错误。
 
+### Session event position
+
+```ts
+interface EventPosition {
+  readonly turnOrdinal: number;
+  readonly eventOrdinal: number;
+}
+```
+
+SessionManager 在 `send` / `respond` 开始时分配零起点、单调递增且不复用的 turnOrdinal。
+core user message 的 eventOrdinal 是 0；Adapter event frame 按 yield 顺序从 1 递增；Outcome 不占 ordinal。
+
+两个位置按 `(turnOrdinal, eventOrdinal)` 做 lexicographic comparison。
+因此前一 Turn 已 closed 的 operation 与后一 Turn 的 event 可以形成严格顺序；Attempt stream sequence 不能替代这组坐标。
+
+Runner 把 turnOrdinal 写进每条 turn-scoped durable Observation，并把 eventOrdinal 写进每条 Agent behavior Observation。
+缺失、重复、负数或非 safe integer 是协议 defect；partial stream 中已经写出的合法位置仍保持可比较。
+
 ## Command projection
 
 每笔 tool `operation.started` 都携带穷尽的 command classification：
