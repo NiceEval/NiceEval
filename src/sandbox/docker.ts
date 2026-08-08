@@ -267,8 +267,6 @@ export function dockerHostConfig(
       ]));
   return {
     AutoRemove: false,
-    // Privileged DinD modes 不开放宿主回连；普通 Docker sandbox 保留既有 OTLP 路径。
-    ...(privileged === "disabled" ? { ExtraHosts: ["host.docker.internal:host-gateway"] } : {}),
     ...(privileged !== "disabled"
       ? { Privileged: true, ...(dns.length === 0 ? {} : { Dns: [...dns] }) }
       : {}),
@@ -387,7 +385,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.userOverride = options.user === "" ? undefined : options.user;
     this.privileged = options.privileged ?? "disabled";
     this.dockerAccess = options.dockerAccess;
-    this.otlpHost = this.privileged === "disabled" ? "host.docker.internal" : null;
+    // Docker bridge 能否回连宿主取决于宿主防火墙与 daemon 网络策略，provider 不能把
+    // host-gateway 伪装成稳定能力。null 让 runner 把 attempt-scope collector 放进沙箱；
+    // 作者确有受控 tunnel 时仍可用 config.telemetry.host 显式覆盖。
+    this.otlpHost = null;
     this.resources = options.resources ?? {};
     this.readiness = options.readiness;
     this.dockerSocketPath = options.dockerSocketPath;
@@ -617,7 +618,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 不带 AutoRemove:留存意图必须在创建期传入(--keep-sandbox 的 suspend = docker stop,
       // 停驻容器的文件系统落盘持久)。默认路径的销毁由 stop() 显式 stop + remove,行为等价;
       // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
-      // host.docker.internal 供容器回连宿主 OTLP；Linux 显式映到 host-gateway。
       HostConfig: {
         ...dockerHostConfig(this.privileged, this.resources, this.dns, socketMount),
         ...(this.network === null ? {} : { NetworkMode: this.network.id }),

@@ -60,7 +60,7 @@ export OTEL_LOG_TOOL_CONTENT=1     # 工具的输入输出内容本身
 ```
 
 也就是说,不开这三个 flag,拿到的 span 只能回答"跑了哪些工具、每步花多久、有没有出错",回答不了"这次 Read 读的是哪个文件、Bash 跑的是什么命令、模型说了什么"——而这些恰恰是 niceeval 磁盘旁读 transcript 现在**免费**能拿到的东西。
-开了这三个 flag 才能拉平,但意味着把敏感的 prompt / 工具明文经 OTLP 发到我们自己起的本机接收器——链路仍在本机(容器 → 宿主的临时端口),不出网,风险可控,但这是要显式做的取舍,不是零成本升级。
+开了这三个 flag 才能拉平,但意味着把敏感的 prompt / 工具明文经 OTLP 发到 NiceEval 起的临时接收器。Sandbox Agent 的 receiver 与 CLI 在同一个 Sandbox 内，链路只走容器内 loopback、不出网；风险可控，但这是要显式做的取舍，不是零成本升级。
 
 ### Gating:这条路径对 `-p` 模式是开放的
 
@@ -69,21 +69,21 @@ export OTEL_LOG_TOOL_CONTENT=1     # 工具的输入输出内容本身
 niceeval 的 `src/agents/claude-code.ts` 一直是拿 `--print`(即 `-p`)跑的沙箱型 adapter——**刚好落在不受组织白名单限制的那一半**,不用等 Anthropic 给账号开权限就能试。
 这是这条路径对 niceeval 场景友好的地方。
 
-## 跟 niceeval 现有 OTLP 接收器天然兼容
+## 跟 NiceEval 的 OTLP 接收管线天然兼容
 
-niceeval 已经有一套本机 OTLP 接收器(`src/o11y/otlp/receiver.ts`),给 direct agent 的 `capabilities.tracing` 用:每个沙箱起一个临时端口,只认 `POST .../v1/traces`,`src/o11y/otlp/parse.ts` 同时吃 **OTLP/JSON** 和 **OTLP/protobuf** 两种线编码(手写了一个够用的 protobuf reader,没有额外依赖)。
+NiceEval 有宿主 receiver 与 Sandbox 内 receiver 两种放置方式。direct agent / 显式 host override 使用 `src/o11y/otlp/receiver.ts`，Sandbox Agent 默认使用 `src/o11y/otlp/sandbox-receiver.ts`。两者都只认 `POST .../v1/traces`，并复用 `src/o11y/otlp/parse.ts`；parser 同时解码 **OTLP/JSON** 和 **OTLP/protobuf**，不需要为 Claude Code 新写转换代码。
 
 Claude Code 的 traces 导出器支持的协议是 `grpc` / `http/json` / `http/protobuf` 三选一(`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`)。
 **只要选 `http/json` 或 `http/protobuf`,不选 `grpc`**(现有接收器是个普通 `http.createServer`,不认 gRPC 的 HTTP/2 帧),Claude Code 就能把 span 直接导出到现有接收器,格式层面**不需要新写解析代码**——`parseOtlpTraces` 已经覆盖。
 
-理论上可以这样接(未验证,只是根据文档推出的配置):
+`claudeCodeAgent` 当前按下面的协议注入配置；endpoint 指向同一个 Sandbox 内的 receiver：
 
 ```bash
 CLAUDE_CODE_ENABLE_TELEMETRY=1
 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
 OTEL_TRACES_EXPORTER=otlp
 OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf     # 或 http/json,别选 grpc
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=<TraceReceiver.endpoint(host)>   # 沙箱里跑 claude 时复用现有 receiver
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:<port>/v1/traces
 OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场景短会话不必顾虑"生产环境该调大"
 ```
 
@@ -100,9 +100,9 @@ span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcrip
 
 **值得作为时间轨(`TraceSpan[]`)的可选升级路径考虑,分两档:**
 
-1. **保底档(不用动 adapter 代码):** 什么都不接,继续用 transcript 时间戳合成 span——这是现状,降级安全,`view` 少一些真实的 span 层级细节(比如工具"等权限"和"真正执行"分不开),但断言不受影响。
-2. **升级档(可选,给需要更真实瀑布图的用户):** `claudeCodeAgent` 配置里加一个开关,setup 阶段给沙箱里跑 `claude` 的进程注入上面那组 env(复用沙箱已经有的 `TraceReceiver`,跟 direct agent 的 tracing 走同一个接收器/同一个 `o11y/otlp/mappers/` 归一管线),用户自己决定要不要为了更真实的瀑布图打开内容脱敏(`OTEL_LOG_TOOL_DETAILS` 等)。
-   这是**加法**,不影响现有行为轨,失败也只是"没拿到 trace",不影响断言——符合[采集设计](../architecture/collection.md)里"时间轨缺数据是降级,不是契约问题"的既有原则。
+1. **保底档:** receiver 或 exporter 不可用时，行为轨仍由 transcript 旁读提供；`view` 如实显示 timing unavailable，断言不受影响。
+2. **时间轨:** `claudeCodeAgent` 默认声明 `tracing.env`，runner 在 Sandbox 内提供 receiver；用户只有在需要 span 内容时才另外打开 `OTEL_LOG_TOOL_DETAILS` 等敏感内容开关。
+   这条时间轨不影响现有行为轨，失败只产生 supplemental telemetry diagnostic，不改判定——符合[采集设计](../architecture/collection.md)里「时间轨缺数据是降级，不是契约问题」的原则。
 
 **不建议**因为这个能力去改变现有"等 `runCommand` 返回再读 transcript"的行为轨轮询模型:近实时的是 span(计时结构),不是行为数据本身——`StreamEvent[]` 需要的完整内容(尤其是断言要读的工具参数/输出/助手文本)能免费给的只有磁盘旁读的完整 transcript,OTel 版本要么没内容要么要额外开脱敏 flag 且不保证字段稳定性。
 

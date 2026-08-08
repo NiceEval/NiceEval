@@ -69,8 +69,8 @@ export const OtelCollect = () => (
         <div className="ne-trk-stage">
           <span className="ne-trk-step ne-lit" style={{ animationDelay: "2.9s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "3.2s" }}>
-            <div className="ne-trk-text">本机 OTLP 接收器</div>
-            <div className="ne-trk-sub">telemetry.port 固定端口，或注入的 OTEL_* env</div>
+            <div className="ne-trk-text">OTLP 接收器</div>
+            <div className="ne-trk-sub">宿主固定端口，或 Sandbox 内临时端口</div>
           </div>
         </div>
         <div className="ne-trk-stage">

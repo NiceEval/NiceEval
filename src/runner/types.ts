@@ -1049,8 +1049,8 @@ export interface Config {
    * 临时端口(经 ctx.telemetry 交给 adapter)。代价:固定端口下同机同时只能跑一个 niceeval 进程,
    * 且该端口被别的进程占用时会报错——换一个空闲端口写回这里即可。
    * `host` 是报给 adapter 的接收端 hostname(而非监听地址,监听地址恒为 0.0.0.0):默认
-   * "127.0.0.1";docker Sandbox 型 tracing 需要 "host.docker.internal" 之类的场景,或配了隧道
-   * 的远程接入,在这里覆盖。
+   * "127.0.0.1"。只有作者已经提供受控 tunnel / 可达路由时才在这里覆盖；Docker Sandbox
+   * 默认把 receiver 放在 Sandbox 内，不依赖隐式宿主 gateway。
    */
   telemetry?: { host?: string; port?: number };
   /**

@@ -18,7 +18,7 @@ import type {
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
-import { summaryText } from "../assertions/display.ts";
+import { stripControl, summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
 import { formatTurnLabel, normalizeTurnLabel } from "../shared/turn-label.ts";
@@ -815,11 +815,14 @@ function renderCardLines(parts: CardParts, handle: string, locator: string, full
   const bodyLines: string[] = [];
   const truncations: SegmentTruncation[] = [];
   for (const seg of parts.segments) {
+    // events/commands 保留原始证据；text 面不能让被测 CLI 的 ANSI/C0 字节重新控制用户终端。
+    // JSON 面不走这里，仍忠实返回落盘值。
+    const safeText = stripControl(seg.text);
     let content: string;
     if (full) {
-      content = seg.text;
+      content = safeText;
     } else {
-      const t = truncateSegment(seg.text);
+      const t = truncateSegment(safeText);
       truncations.push(t);
       content = t.shown;
     }
