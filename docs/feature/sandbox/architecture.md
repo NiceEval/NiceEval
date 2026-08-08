@@ -77,7 +77,7 @@ export default defineEval({
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
     t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
-    //  读的是最后触及该文件那个窗口的终态;窗口之间夹着的 eval 写入不会被算进 agent 的账
+    //  读的是最后一笔包含该路径的 agent delta 的 after 值;其间的 eval 写入不会被算进 agent 的账
   },
 });
 ```
