@@ -3,13 +3,10 @@ name: e2e
 # E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
 # 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
 #
-# package → Testkit test/typecheck
-# candidate → pack 一次 NiceEval tgz + sha256，上传该候选
-# plan    → pnpm e2e plan --lane <lane> --json
-# e2e     → 下载并重算 candidate digest；pnpm e2e run --candidate <exact> --repo <id>
+# prepare → plan matrix、Testkit test/typecheck、pack 一次 NiceEval tgz + sha256
+# e2e     → 并行 cell 下载并重算 candidate digest；pnpm e2e run --candidate <exact> --repo <id>
 #           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
-# aggregate → 汇总 cell receipt/summary
 #
 # Lane: PR=pr(无 secret) | push main=main | schedule=nightly | dispatch=输入
 # 可信 lane 挂 GitHub Environment（与 lane 同名），不复制 Repo 选择逻辑。
@@ -45,88 +42,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  package:
-    name: package candidate
+  prepare:
+    name: prepare e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    outputs:
-      candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
-      candidate_tgz_name: ${{ steps.pack.outputs.candidate_tgz_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
-      - name: Set up pnpm and Node
-        uses: pnpm/setup@v1
-        with:
-          runtime: node@22
-          cache: true
-          install: false
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Test Testkit
-        run: pnpm --filter @niceeval/testkit run test
-
-      - name: Typecheck Testkit
-        run: pnpm --filter @niceeval/testkit run typecheck
-
-      - name: Pack exact NiceEval candidate once
-        id: pack
-        run: |
-          set -euo pipefail
-          out_dir="${RUNNER_TEMP}/niceeval-e2e-candidate"
-          mkdir -p "$out_dir"
-          candidate_tgz_name="niceeval-candidate.tgz"
-          candidate_path="${out_dir}/${candidate_tgz_name}"
-          pnpm e2e pack --out "$candidate_path" | tee "${out_dir}/candidate-pack.json"
-          test -f "$candidate_path"
-          candidate_sha256="$(jq -r '.sha256' "${out_dir}/candidate-pack.json")"
-          if [ -z "$candidate_sha256" ] || [ "$candidate_sha256" = "null" ]; then
-            echo "::error::NiceEval pack did not emit sha256"
-            exit 1
-          fi
-          candidate_actual="$(sha256sum "$candidate_path" | awk '{print $1}')"
-          if [ "$candidate_actual" != "$candidate_sha256" ]; then
-            echo "::error::NiceEval sha256 mismatch: pack=${candidate_sha256} recomputed=${candidate_actual}"
-            exit 1
-          fi
-          printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
-          {
-            echo "candidate_sha256=${candidate_sha256}"
-            echo "candidate_tgz_name=${candidate_tgz_name}"
-            echo "candidate_path=${candidate_path}"
-          } >> "$GITHUB_OUTPUT"
-          echo "[e2e] NiceEval ${candidate_tgz_name} sha256=${candidate_sha256}"
-
-      - name: Upload exact NiceEval candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: niceeval-e2e-candidate
-          path: |
-            ${{ steps.pack.outputs.candidate_path }}
-            ${{ steps.pack.outputs.candidate_path }}.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-  plan:
-    name: plan matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       has-jobs: ${{ steps.plan.outputs.has-jobs }}
       lane: ${{ steps.lane.outputs.lane }}
       inject-secrets: ${{ steps.lane.outputs.inject-secrets }}
       environment: ${{ steps.lane.outputs.environment }}
+      candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
+      candidate_tgz_name: ${{ steps.pack.outputs.candidate_tgz_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # pnpm/setup 在 version 缺省时读取根 packageManager；不要在 workflow 重复版本真源。
       - name: Set up pnpm and Node
         uses: pnpm/setup@v1
         with:
@@ -218,18 +152,66 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "[e2e] plan lane=${LANE} selected ${count}: $(jq -r '[.[].id] | join(", ")' "$plan_file")"
 
+      - name: Test Testkit
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/testkit run test
+
+      - name: Typecheck Testkit
+        if: steps.plan.outputs.has-jobs == 'true'
+        run: pnpm --filter @niceeval/testkit run typecheck
+
+      - name: Pack exact NiceEval candidate once
+        if: steps.plan.outputs.has-jobs == 'true'
+        id: pack
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/niceeval-e2e-candidate"
+          mkdir -p "$out_dir"
+          candidate_tgz_name="niceeval-candidate.tgz"
+          candidate_path="${out_dir}/${candidate_tgz_name}"
+          pnpm e2e pack --out "$candidate_path" | tee "${out_dir}/candidate-pack.json"
+          test -f "$candidate_path"
+          candidate_sha256="$(jq -r '.sha256' "${out_dir}/candidate-pack.json")"
+          if [ -z "$candidate_sha256" ] || [ "$candidate_sha256" = "null" ]; then
+            echo "::error::NiceEval pack did not emit sha256"
+            exit 1
+          fi
+          candidate_actual="$(sha256sum "$candidate_path" | awk '{print $1}')"
+          if [ "$candidate_actual" != "$candidate_sha256" ]; then
+            echo "::error::NiceEval sha256 mismatch: pack=${candidate_sha256} recomputed=${candidate_actual}"
+            exit 1
+          fi
+          printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
+          {
+            echo "candidate_sha256=${candidate_sha256}"
+            echo "candidate_tgz_name=${candidate_tgz_name}"
+            echo "candidate_path=${candidate_path}"
+          } >> "$GITHUB_OUTPUT"
+          echo "[e2e] NiceEval ${candidate_tgz_name} sha256=${candidate_sha256}"
+
+      - name: Upload exact NiceEval candidate
+        if: steps.plan.outputs.has-jobs == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: niceeval-e2e-candidate
+          path: |
+            ${{ steps.pack.outputs.candidate_path }}
+            ${{ steps.pack.outputs.candidate_path }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   e2e:
     name: e2e (${{ matrix.id }})
-    needs: [package, plan]
-    if: needs.plan.outputs.has-jobs == 'true'
+    needs: prepare
+    if: needs.prepare.outputs.has-jobs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     # PR: null（不挂 Environment）；main/nightly/release: 同名 Environment
-    environment: ${{ needs.plan.outputs.inject-secrets == 'true' && needs.plan.outputs.environment || fromJSON('null') }}
+    environment: ${{ needs.prepare.outputs.inject-secrets == 'true' && needs.prepare.outputs.environment || fromJSON('null') }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.plan.outputs.matrix) }}
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -244,16 +226,6 @@ jobs:
       - name: Install orchestrator dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Set up Python
-        if: contains(toJSON(matrix.requires), 'python')
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up Playwright browsers
-        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
-        run: pnpm exec playwright install --with-deps
-
       - name: Derive safe artifact id
         id: safe
         env:
@@ -264,6 +236,21 @@ jobs:
           echo "id=${safe}" >> "$GITHUB_OUTPUT"
           echo "artifact-root=${RUNNER_TEMP}/niceeval-e2e-artifacts/${safe}" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Python
+        if: contains(toJSON(matrix.requires), 'python')
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Playwright browsers
+        if: contains(toJSON(matrix.requires), 'chromium') || contains(toJSON(matrix.requires), 'firefox') || contains(toJSON(matrix.requires), 'webkit')
+        env:
+          BROWSERS_JSON: ${{ toJSON(matrix.requires.browsers) }}
+        run: |
+          set -euo pipefail
+          mapfile -t browsers < <(jq -r '.[]' <<< "$BROWSERS_JSON")
+          pnpm exec playwright install --with-deps "${browsers[@]}"
+
       - name: Download exact NiceEval candidate
         uses: actions/download-artifact@v4
         with:
@@ -273,8 +260,8 @@ jobs:
       - name: Verify NiceEval SHA-256
         id: candidate
         env:
-          EXPECTED_CANDIDATE_SHA256: ${{ needs.package.outputs.candidate_sha256 }}
-          CANDIDATE_TGZ_NAME: ${{ needs.package.outputs.candidate_tgz_name }}
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
+          CANDIDATE_TGZ_NAME: ${{ needs.prepare.outputs.candidate_tgz_name }}
         run: |
           set -euo pipefail
           root="${RUNNER_TEMP}/niceeval-e2e-candidate"
@@ -296,7 +283,7 @@ jobs:
           echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
 
       - name: Inject secrets for trusted lane
-        if: needs.plan.outputs.inject-secrets == 'true'
+        if: needs.prepare.outputs.inject-secrets == 'true'
         env:
           ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
           MANIFEST: e2e/${{ matrix.dir }}/e2e.json
@@ -335,9 +322,9 @@ jobs:
             --artifact-root "$ARTIFACT_ROOT"
 
       - name: Redact secrets in artifactRoot
-        if: always() && needs.plan.outputs.inject-secrets == 'true'
+        if: always() && needs.prepare.outputs.inject-secrets == 'true'
         env:
-          ALL_SECRETS_JSON: ${{ needs.plan.outputs.inject-secrets == 'true' && toJSON(secrets) || '{}' }}
+          ALL_SECRETS_JSON: ${{ needs.prepare.outputs.inject-secrets == 'true' && toJSON(secrets) || '{}' }}
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
         run: |
           set -euo pipefail
@@ -391,99 +378,3 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           include-hidden-files: true
-
-  aggregate:
-    name: aggregate e2e
-    needs: [package, plan, e2e]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check upstream outcomes
-        env:
-          PACKAGE_RESULT: ${{ needs.package.result }}
-          PLAN_RESULT: ${{ needs.plan.result }}
-          E2E_RESULT: ${{ needs.e2e.result }}
-          HAS_JOBS: ${{ needs.plan.outputs.has-jobs }}
-          LANE: ${{ needs.plan.outputs.lane }}
-          CANDIDATE_SHA256: ${{ needs.package.outputs.candidate_sha256 }}
-        run: |
-          set -euo pipefail
-          echo "[e2e] lane=${LANE:-unknown}"
-          echo "[e2e] candidate sha256=${CANDIDATE_SHA256:-unknown}"
-          echo "[e2e] package=${PACKAGE_RESULT} plan=${PLAN_RESULT} e2e=${E2E_RESULT:-skipped} has-jobs=${HAS_JOBS:-}"
-          if [ "$PACKAGE_RESULT" != "success" ]; then
-            echo "::error::package job failed"
-            exit 1
-          fi
-          if [ "$PLAN_RESULT" != "success" ]; then
-            echo "::error::plan job failed"
-            exit 1
-          fi
-          if [ "${HAS_JOBS}" != "true" ]; then
-            echo "[e2e] no matrix cells — aggregate ok"
-            exit 0
-          fi
-
-      - name: Download all cell artifacts
-        if: needs.plan.outputs.has-jobs == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: e2e-*
-          path: ${{ runner.temp }}/e2e-cells
-          merge-multiple: false
-
-      - name: Summarize cells
-        if: needs.plan.outputs.has-jobs == 'true'
-        env:
-          CELLS_ROOT: ${{ runner.temp }}/e2e-cells
-          E2E_RESULT: ${{ needs.e2e.result }}
-        run: |
-          set -euo pipefail
-          if [ ! -d "$CELLS_ROOT" ]; then
-            echo "::error::no cell artifacts downloaded"
-            exit 1
-          fi
-          echo "=== e2e aggregate ==="
-          echo "candidate sha256: ${{ needs.package.outputs.candidate_sha256 }}"
-          echo "lane: ${{ needs.plan.outputs.lane }}"
-          echo
-          cells=0
-          receipts=0
-          summaries=0
-          junit_files=0
-          while IFS= read -r -d '' dir; do
-            cells=$((cells + 1))
-            rel="${dir#"$CELLS_ROOT"/}"
-            echo "--- cell: ${rel} ---"
-            if [ -f "${dir}/summary.json" ]; then
-              summaries=$((summaries + 1))
-              jq -c '{passed, regression, infra, total, results: [.results[] | {id, exitCode, category, detail}]}' \
-                "${dir}/summary.json" || cat "${dir}/summary.json"
-            fi
-            while IFS= read -r -d '' receipt; do
-              receipts=$((receipts + 1))
-              echo "receipt: ${receipt#"$dir"/}"
-              jq -c '{repoId, exitCode, category, detail, stages: [.stages[]? | .stage + "=" + (if .ok then "ok" else "fail" end)]}' \
-                "$receipt" 2>/dev/null || jq -c '.' "$receipt" 2>/dev/null || echo "(unreadable receipt)"
-            done < <(find "$dir" -type f -name receipt.json -print0 | sort -z)
-            while IFS= read -r -d '' junit; do
-              junit_files=$((junit_files + 1))
-              echo "junit: ${junit#"$dir"/}"
-            done < <(find "$dir" -type f \( -iname 'junit*.xml' -o -path '*/junit/*.xml' \) -print0 | sort -z)
-            echo
-          done < <(find "$CELLS_ROOT" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
-          echo "cells=${cells} summaries=${summaries} receipts=${receipts} junit=${junit_files}"
-          echo "matrix job result: ${E2E_RESULT}"
-          if [ "$E2E_RESULT" != "success" ]; then
-            echo "::error::one or more e2e matrix cells failed (result=${E2E_RESULT})"
-            exit 1
-          fi
-          if [ "$cells" -eq 0 ]; then
-            echo "::error::expected cell artifacts but found none"
-            exit 1
-          fi
-          if [ "$summaries" -ne "$cells" ] || [ "$receipts" -lt "$cells" ]; then
-            echo "::error::incomplete execution evidence: cells=${cells} summaries=${summaries} receipts=${receipts}"
-            exit 1
-          fi

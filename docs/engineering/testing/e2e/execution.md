@@ -31,10 +31,13 @@ pnpm e2e plan --lane pr --json
 pnpm e2e run --candidate artifacts/niceeval-candidate.tgz --repo report --artifact-root artifacts/e2e/report
 ```
 
-`plan --json` 只输出 Repo、executor、能力和分片，不包含产品断言。
-本地默认顺序是 plan → pack NiceEval candidate → run；`run` 在选中 Testkit consumer 时 clean-build 当前 workspace Testkit 一次。
-无 Repo 被选择或 manifest 非法时不 pack、不 build。CI 的 plan 与上游 package job 可以并行；run 消费 candidate artifact 与当前
-checkout，不再下载第二份 Testkit artifact。`plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
+- `plan --json` 只输出 Repo、executor、能力和分片，不包含产品断言；
+- 本地默认顺序是 plan → pack NiceEval candidate → run；
+- `run` 在选中 Testkit consumer 时 clean-build 当前 workspace Testkit 一次；
+- 无 Repo 被选择或 manifest 非法时不 pack、不 build；
+- CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
+- matrix run 消费 candidate artifact 与当前 checkout，不再下载第二份 Testkit artifact；
+- `plan` 不 pack、不安装、不读 secret、不创建 Repo 副本；显式 `run --candidate` 不重新 pack。
 
 Candidate 就是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。NiceEval 不能改用 workspace link：link 会绕过
 `files`、打包生命周期、bin / exports 完整性和仓库外 dependency resolution，可能让源码树能跑而实际安装包失败。Testkit 没有这些发布承诺，
@@ -114,21 +117,20 @@ Fork 与同仓 PR 使用同一无密钥门禁。禁止用 `pull_request_target` 
 ## GitHub Actions 形状
 
 ```text
-package job
+prepare job
+  ├─ e2e plan --lane <lane> --json
+  ├─ Testkit test / typecheck
   └─ pack candidate.tgz + sha256，上传 artifact
-             │
-plan job ────┼─ e2e plan --lane <lane> --json
              │
              ▼
 matrix jobs：下载同一 candidate.tgz
   └─ checkout 中 build Testkit；e2e run --candidate … --repo <matrix.id>
-             │
-             ▼
-aggregate job：JUnit + E2E summary + artifact links
 ```
 
 Workflow 只准备 Node / pnpm / Docker / browser、下发矩阵、缓存 store / image layer、上传 artifact。
 它不自己改 dependency、分类错误、实现重试、决定 expected 或维护另一份 Repo 清单。
+每个 matrix cell 自己上传 receipt、summary、JUnit 与声明附件；GitHub 原生汇总 matrix 成败，不再启动一个 job
+下载并复述所有 cell 的结果。
 
 Cache key 至少区分 pnpm 版本、OS / 架构和 Docker image digest。包管理器 store 依赖自身内容寻址；PR 不使用会把
 其它候选测试文件带回来的宽泛 restore key。Nightly 定期跑 cold cell，防止日常 cache 掩盖缺失依赖或镜像初始化问题。
