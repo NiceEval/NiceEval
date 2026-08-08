@@ -9,7 +9,7 @@
     "url": "git+https://github.com/NiceEval/NiceEval.git"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "bin": {
     "niceeval": "bin/niceeval.js"
