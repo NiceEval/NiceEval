@@ -9,8 +9,8 @@
 
 ```ts
 type TextAtom =
-  | { readonly exact: string }
-  | { readonly contains: string };
+  | { readonly exact: string; readonly contains?: never }
+  | { readonly contains: string; readonly exact?: never };
 
 type TextRule = TextAtom & {
   readonly excludes?: TextAtom | readonly [TextAtom, ...TextAtom[]];
