@@ -208,6 +208,7 @@
     "@ai-sdk/otel": "^1.0.9",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "@playwright/test": "1.61.1",
     "@radix-ui/react-collapsible": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-tabs": "^1.1.15",
