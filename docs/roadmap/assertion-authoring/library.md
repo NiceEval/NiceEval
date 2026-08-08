@@ -5,43 +5,40 @@
 
 ## 值 matcher
 
-值 matcher 从 `niceeval/expect` 导出：
-
 ```ts
-import {
-  commandSucceeded,
-  defineAssertion,
-  equals,
-  excludes,
-  includes,
-  isDefined,
-  isFalse,
-  isTrue,
-  matches,
-  satisfies,
-  similarity,
-} from "niceeval/expect";
+import { conformsTo, defineAssertion, match, similarity } from "niceeval/expect";
 ```
 
-公开词汇如下：
+`match` 是值检查与 scoped selector 共用的声明语言：
 
-| Matcher | 默认角色 | 用途 |
-|---|---|---|
-| `includes(needle, opts?)` | gate | 字符串包含或 RegExp 命中 |
-| `excludes(needle, opts?)` | gate | 字符串不包含或 RegExp 不命中 |
-| `equals(expected)` | gate | descriptor-safe snapshot 的完整结构相等 |
-| `matches(schema)` | gate | Standard Schema 验证 |
-| `similarity(expected)` | 无通过线的 soft | 归一化编辑距离，只写连续分 |
-| `satisfies(predicate)` | 必须先 `.label()` | 同步 boolean predicate 或 type predicate |
-| `isDefined()` | gate | 排除 `null | undefined` 并提供 refinement |
-| `isTrue()` / `isFalse()` | gate | 严格 boolean 检查 |
-| `commandSucceeded()` | gate | `CommandResult.exitCode === 0`，并提供命令失败诊断 |
+```ts
+const command = match.text.pattern(
+  "niceeval exp local command",
+  /\bniceeval\s+exp\s+local\b/i,
+);
+
+turn.calledTool("shell", {
+  input: match.json.shape({ command }),
+});
+
+const oneFile = match.where(
+  "恰好一个文件",
+  (files: readonly string[]): files is readonly [string] => files.length === 1,
+);
+const [path] = await t.require(files, oneFile);
+```
+
+raw `RegExp`、raw predicate、`string | RegExp` 与递归 object union 不进入 selector。
+exact、contains、pattern、shape、`allOf`、`oneOf`、`not`、type refinement、snapshot、三值求值与 breaking 列表的单源见 [Match](matching.md)。
 
 `similarity()` 没有通用的默认及格线。
 需要判定时，作者显式链 `.atLeast(x)` 或 `.gate(x)`；不链时它只贡献质量分。
 
+Standard Schema 使用 `conformsTo(schema)`。
+它是可能异步的 validation-only ValueAssertion，不能嵌进 selector，也不把 schema transformed output 当成 `t.require` 返回值。
+
 回答版式规则不进入内置词汇。
-URL 数量、Markdown 小节数与类似任务标准使用 `satisfies`、`defineAssertion` 或 Judge。
+URL 数量、Markdown 小节数与类似任务标准使用 `match.where`、`defineAssertion` 或 Judge。
 
 ### Matcher 类型
 
@@ -52,7 +49,6 @@ declare const refinementOutput: unique symbol;
 interface ValueAssertion<T = unknown> {
   /** Internal variance brand; not author-settable. */
   readonly [assertionInput]: (value: T) => void;
-  label(name: string): ValueAssertion<T>;
   gate(threshold?: number): ValueAssertion<T>;
   atLeast(threshold: number): ValueAssertion<T>;
   soft(): ValueAssertion<T>;
@@ -62,78 +58,16 @@ interface ValueAssertion<T = unknown> {
 interface RefinementAssertion<T, S extends T> extends ValueAssertion<T> {
   /** Internal refinement brand; not author-settable. */
   readonly [refinementOutput]: S;
-  label(name: string): RefinementAssertion<T, S>;
   gate(threshold?: number): RefinementAssertion<T, S>;
   atLeast(threshold: number): RefinementAssertion<T, S>;
   soft(): RefinementAssertion<T, S>;
   optional(): RefinementAssertion<T, S>;
 }
-
-interface UnlabeledRefinement<T, S extends T> {
-  label(name: string): RefinementAssertion<T, S>;
-}
 ```
 
-Matcher 是不可变值。
-每个 modifier 返回新值，原 matcher 可在多个 `t.check` 或 `t.require` 调用中安全复用。
-
-`.label()` 要求非空、有界文本。
-它只改变人读标题，不改变 matcher 算法、`groupPath`、scope、源码位置或 source order。
-
-### `satisfies` 与 refinement
-
-```ts
-function satisfies<T, S extends T>(
-  predicate: (value: T) => value is S,
-): UnlabeledRefinement<T, S>;
-
-function satisfies<T>(
-  predicate: (value: T) => boolean,
-): UnlabeledRefinement<T, T>;
-
-function isDefined<T>(): RefinementAssertion<T, NonNullable<T>>;
-```
-
-`satisfies(predicate)` 先返回未命名 type-state。
-它只能继续链 `.label(nonBlank)`，不能直接传给 `t.check` 或 `t.require`。
-JavaScript 或 `any` 绕过静态类型时，调用边界同样拒绝未命名 predicate。
-
-```ts
-const oneFile = satisfies(
-  (files: readonly string[]): files is readonly [string] => files.length === 1,
-).label("恰好一个文件");
-
-const [path] = await t.require(files, oneFile);
-```
-
-`t.check(value, satisfies(...)).label(...)` 不成立。
-predicate 在 `t.check` 发生前必须已有可诊断标题。
-
-所有 predicate 都是严格同步函数。
-返回值必须恰为 boolean；thenable、truthy object、number、string、`undefined` 或 throw 都属于 evaluator defect。
-异步自定义逻辑只使用 [`defineAssertion`](#defineassertion)。
-
-### 声明值 snapshot
-
-`equals` 与声明式 match 对象在 builder 调用时取得不可变 snapshot。
-walker 只读取 own property descriptor，不调用 getter、`toJSON`，也不沿 prototype 取值。
-
-接受的结构是：
-
-- `null`、boolean、string 与有限 number；
-- dense array；
-- prototype 为 `Object.prototype | null`，且只含 own enumerable string-keyed data property 的 plain object；
-- `JsonMatch` 额外允许 RegExp 与同步 predicate 作为叶。
-
-拒绝 `undefined`、array hole、`NaN`、Infinity、bigint、symbol key/value、accessor、额外 array property、cycle 与 class instance。
-`Date`、`Map`、`Set` 和 typed array 也不属于声明值。
-共享但无环的引用按每个出现位置展开。
-
-RegExp 只保存 `source` 与 `flags`。
-每次测试 candidate 时创建新实例，因此 `g` / `y` 的 `lastIndex` 与调用者之后的 mutation 都不影响结果。
-predicate leaf 只保留函数引用，snapshot 阶段不调用它；closure state 由作者拥有，matcher 求值时才读取。
-
-`matches(schema)` 持有 Standard Schema 协议值，不把 schema class 送入上述 walker。
+Match 与 ValueAssertion 都是不可变值。
+它们没有 `.label()`；description 属于 evaluator，Assertion title 属于单次登记。
+`t.check(...).label(...)` 配置已登记 handle，`t.require(..., { label })` 在无 handle 的调用点配置标题。
 
 ## `t.check` 与 typed `t.require`
 
@@ -148,50 +82,80 @@ type ImmediateValue<T> = T & {
   readonly [deferredFileContentBrand]?: never;
 };
 
+interface RequireOptions {
+  readonly label?: string;
+}
+
 interface PassFailTestContext {
+  check<M>(file: DeferredFileContent, assertion: Match<string, M>): AssertionHandle;
   check(file: DeferredFileContent, assertion: ValueAssertion<string>): AssertionHandle;
-  check<T>(value: ImmediateValue<T>, assertion: ValueAssertion<T>): AssertionHandle;
+  check<T, M, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: Match<T, M>,
+  ): AssertionHandle;
+  check<T, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: ValueAssertion<T>,
+  ): AssertionHandle;
 
   require<S extends string>(
     file: DeferredFileContent,
-    assertion: RefinementAssertion<string, S>,
+    assertion: RefinementMatch<string, S> | RefinementAssertion<string, S>,
+    options?: RequireOptions,
   ): Promise<S>;
-  require(file: DeferredFileContent, assertion: ValueAssertion<string>): Promise<string>;
-  require<T, S extends T>(
-    value: ImmediateValue<T>,
-    assertion: RefinementAssertion<T, S>,
-  ): Promise<S>;
-  require<T>(value: ImmediateValue<T>, assertion: ValueAssertion<T>): Promise<T>;
+  require<M>(
+    file: DeferredFileContent,
+    assertion: Match<string, M> | ValueAssertion<string>,
+    options?: RequireOptions,
+  ): Promise<string>;
+  require<T, S extends T, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: RefinementMatch<T, S> | RefinementAssertion<T, S>,
+    options?: RequireOptions,
+  ): Promise<V & S>;
+  require<T, M, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: Match<T, M> | ValueAssertion<T>,
+    options?: RequireOptions,
+  ): Promise<V>;
 }
 
-interface RequireScoreOptions {
-  readonly points: number;
+interface RequireScoreOptions extends RequireOptions {
+  readonly points?: number;
 }
 
 interface ScoreTestContext {
+  check<M>(file: DeferredFileContent, assertion: Match<string, M>): ScoreAssertionHandle;
   check(file: DeferredFileContent, assertion: ValueAssertion<string>): ScoreAssertionHandle;
-  check<T>(value: ImmediateValue<T>, assertion: ValueAssertion<T>): ScoreAssertionHandle;
+  check<T, M, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: Match<T, M>,
+  ): ScoreAssertionHandle;
+  check<T, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: ValueAssertion<T>,
+  ): ScoreAssertionHandle;
 
   require<S extends string>(
     file: DeferredFileContent,
-    assertion: RefinementAssertion<string, S>,
+    assertion: RefinementMatch<string, S> | RefinementAssertion<string, S>,
     options?: RequireScoreOptions,
   ): Promise<S>;
-  require(
+  require<M>(
     file: DeferredFileContent,
-    assertion: ValueAssertion<string>,
+    assertion: Match<string, M> | ValueAssertion<string>,
     options?: RequireScoreOptions,
   ): Promise<string>;
-  require<T, S extends T>(
-    value: ImmediateValue<T>,
-    assertion: RefinementAssertion<T, S>,
+  require<T, S extends T, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: RefinementMatch<T, S> | RefinementAssertion<T, S>,
     options?: RequireScoreOptions,
-  ): Promise<S>;
-  require<T>(
-    value: ImmediateValue<T>,
-    assertion: ValueAssertion<T>,
+  ): Promise<V & S>;
+  require<T, M, V extends T>(
+    value: ImmediateValue<V>,
+    assertion: Match<T, M> | ValueAssertion<T>,
     options?: RequireScoreOptions,
-  ): Promise<T>;
+  ): Promise<V>;
 }
 ```
 
@@ -199,12 +163,12 @@ interface ScoreTestContext {
 JavaScript 入口也先按品牌分流，不能把 token 当成返回值。
 
 `t.require` 只写入一条 Assertion，并固定使用 gate 与 stop control。
-matcher 提供 evaluator、threshold、label、detail 与 optional；`t.require` 把 severity 提升为 gate，并保留显式 threshold。
+matcher 提供 evaluator、threshold、detail 与 optional；`t.require` 把 severity 提升为 gate，并保留显式 threshold。
 没有 threshold 时使用 gate 默认线 1。
 
-Score eval 的第三参是唯一 points 配置入口。
-`points` 必须为正有限数；省略表示该 requirement 不进入得分面。
-Pass/Fail eval 在静态类型和 JavaScript runtime 都拒绝第三参。
+registration options 的 `label` 只配置这一次 Assertion title。
+Score eval 的 `points` 是 requirement 唯一给分入口，必须为正有限数；省略表示不进入得分面。
+Pass/Fail eval 接受 `label`，但静态类型和 JavaScript runtime 都拒绝 `points`。
 
 passed 时 `t.require` 返回原值或 refinement 后的 `S`。
 failed 与 unavailable 都不返回；optional 只改变 unavailable 对 Verdict 的影响。
@@ -229,7 +193,7 @@ type CustomAssertionEvaluation =
     };
 
 interface DefineAssertionSpec<T> {
-  readonly name: string;
+  readonly description: string;
   readonly severity?: "gate" | "soft";
   readonly threshold?: number;
   evaluate(
@@ -241,8 +205,8 @@ interface DefineAssertionSpec<T> {
 function defineAssertion<T>(spec: DefineAssertionSpec<T>): ValueAssertion<T>;
 ```
 
-`name` 是 required author title。
-返回的 matcher 仍可用 `.label()` 给某一次消费换人读标题。
+`description` 是 required author matcher description。
+direct `t.check` 未设置 handle label 时用它作为 author name；作为 `t.require` 输入时也可由 registration options 的 label 替换标题。
 
 合法 score 是有限的 `0..1`。
 只有显式 `{ unavailable: true }` 表示预期的不可评估状态。
@@ -327,15 +291,24 @@ interface ToolMatch {
 
 interface SubagentMatch {
   readonly status?: "pending" | "completed" | "failed";
-  readonly remoteUrl?: string | RegExp | ((url: string) => boolean);
+  readonly remoteUrl?: TextMatch;
   readonly output?: JsonMatch;
   readonly count?: CountMatch;
+}
+
+interface InputRequestFilter {
+  readonly id?: string;
+  readonly prompt?: TextMatch;
+  readonly display?: TextMatch;
+  readonly action?: string;
+  readonly input?: JsonMatch;
+  readonly optionIds?: readonly string[];
 }
 
 interface ScopedAssertions<H> {
   succeeded(): H;
   parked(): H;
-  messageIncludes(token: string | RegExp): H;
+  messageIncludes(token: string): H;
   calledTool(name: string, match?: ToolMatch): H;
   notCalledTool(name: string, match?: Omit<ToolMatch, "count">): H;
   toolOrder(names: readonly [string, string, ...string[]]): H;
@@ -365,8 +338,6 @@ interface ScopedAssertions<H> {
 ### `EventMatch`
 
 ```ts
-type TextMatch = string | RegExp;
-
 type MessageEventMatch =
   | {
       readonly type: "message";
@@ -391,7 +362,7 @@ type EventMatch =
   | ({ readonly type: "tool"; readonly name?: string } & Omit<ToolMatch, "count">)
   | ({ readonly type: "subagent"; readonly name?: string } & Omit<SubagentMatch, "count">)
   | MessageEventMatch
-  | { readonly type: "skill"; readonly skill?: TextMatch }
+  | { readonly type: "skill"; readonly skill?: string }
   | ({ readonly type: "input-request" } & InputRequestFilter)
   | { readonly type: "thinking"; readonly text?: TextMatch }
   | { readonly type: "context"; readonly text?: TextMatch; readonly source?: TextMatch }
@@ -400,16 +371,34 @@ type EventMatch =
 ```
 
 同一 EventMatch 内的字段是 AND。
-string 严格相等，RegExp 按 pattern 测试；string 不暗含 contains。
-`InputRequestFilter` 的文本字段也复用 `TextMatch`，不增加 predicate 形态。
-包含语义使用 `messageIncludes` 或显式 RegExp。
+自由文本字段只接收 `TextMatch`；raw string、RegExp 或 predicate 都是 author error。
+工具、subagent、Skill、request id 与 action 是 identifier，直接 string 固定 exact。
+`messageIncludes(token)` 是方法名已经说明 contains 的 literal convenience，不接收 RegExp。
 
-EventMatch 不接受 count，也不接受通用 text predicate。
+EventMatch 不接受 count，也不另开 raw text predicate。
 `event()` 的第二参才拥有 count；`eventOrder()` 类型上至少两项。
 `toolOrder()` 同样要求至少两个非空工具名。
 JavaScript 或 `any` 传入不足两项、空名字或非法 matcher 时，登记边界同步报 author error。
 
 `event()` 对 tool 与 subagent 数 logical occurrence，不数 start / finish raw frames。
+
+### Turn structured output
+
+turn receiver 额外提供两条 coverage-aware 入口：
+
+```ts
+turn.output(match.json.exact(expected));
+turn.output(match.json.shape({ verdict: "passed" }));
+turn.outputConformsTo(schema);
+```
+
+`output(JsonMatch)` 使用同一 Match engine；`outputConformsTo(StandardSchema)` 使用 validation-only evaluator。
+data present 时各调用一次。
+data channel 非 complete且没有 present value，或对应值是 opaque 时 unavailable；data complete 且明确 absent 时 failed，不把 absent 当 `undefined` 交给 matcher/schema。
+
+schema issues 是普通 mismatch。
+schema envelope 非法时 builder 同步报 author error；validate throw/rejection或非法 result是 evaluator defect。
+schema transform 的 output 被丢弃，scope assertion不提供 parse API。
 
 ### 两种顺序
 
@@ -482,17 +471,29 @@ aggregate 入口增加 `noChanges()`：
 ```ts
 t.sandbox.fileChanged(path);
 t.sandbox.fileDeleted(path);
-t.sandbox.notInDiff(pattern);
+t.sandbox.hasChange({
+  path: match.text.exact("src/index.ts"),
+  after: match.text.contains("await"),
+});
+t.sandbox.noChange({ after: match.text.contains("console.log") });
 t.sandbox.noChanges();
 ```
 
 Sandbox-backed turn 额外暴露：
 
 ```ts
+interface ChangeMatch {
+  readonly path?: TextMatch;
+  readonly kind?: "added" | "modified" | "deleted";
+  readonly before?: TextMatch;
+  readonly after?: TextMatch;
+}
+
 interface TurnChanges<H> {
   fileChanged(path: string): H;
   fileDeleted(path: string): H;
-  notInDiff(pattern: string | RegExp): H;
+  hasChange(match: ChangeMatch): H;
+  noChange(match: ChangeMatch): H;
   noChanges(): H;
 }
 
@@ -507,13 +508,25 @@ session 没有 changes 入口。
 `noChanges` 只证明应用固定 ignore/include 规则后，所选 delta 为空。
 缺少目标 send 区间或 diff export 失败时结果是 unavailable；缺区间不等于没有变化。
 
+`ChangeMatch` 至少有一个字段。
+它匹配同一条 `{ window, path, kind, before, after }` entry；aggregate receiver 不会把一个区间的 path 与另一个区间的文本拼起来。
+before / after 是该区间两端的完整文本，不是 patch、hunk 或 added line。
+rename 固定拆成 old path deleted 与 new path added。
+
+added 的 before 与 deleted 的 after 是已知 absent；要求该侧文本时 definite mismatch。
+binary、oversized text 或 path-only provider 的文本是 opaque；只看 path/kind 仍可判，依赖 opaque before/after 则进入 unavailable。
+`hasChange` 是 min 1，`noChange` 是 exact 0，并复用 [Match evidence](architecture.md#match-evidence) 的区间折叠。
+
+旧 `notInDiff` 与 `diff.matches` 删除。
+字段名不再让一个 RegExp 同时搜索 path、before、after 与 serialized patch。
+
 Direct Agent 的类型不暴露 `t.sandbox` 或 `turn.changes`。
 JavaScript 越过 capability 类型时，登记 diff consumer 会同步报 author error。
 
 ### Delayed file
 
 ```ts
-t.check(t.sandbox.file(path), equals(original));
+t.check(t.sandbox.file(path), match.text.exact(original));
 ```
 
 `t.sandbox.file(path)` 在 consumer 求值边界读取文本：
@@ -525,7 +538,7 @@ t.check(t.sandbox.file(path), equals(original));
 | permission、transport、timeout、terminated 或未知读取失败 | 不调用 | unavailable，reason=`sandbox-file-unavailable` |
 
 missing 不会变成 `undefined`、空串或私有 sentinel。
-因此 `excludes`、schema 与 custom string matcher 都不能在文件不存在时假通过。
+因此 negative Match、schema 与 custom string matcher 都不能在文件不存在时假通过。
 要证明删除使用 `fileDeleted(path)`。
 
 `t.check` 延迟到 finalize；`await t.require(t.sandbox.file(...), matcher)` 在调用点求值并返回真实 string 或 refinement 后的 string subtype。

@@ -3,9 +3,10 @@
 ## 解决的问题
 
 NiceEval 已把值 matcher、作用域检查、Sandbox 验证与 Judge 汇入同一种 `AssertionResult`。
-真实多轮 eval 仍会在五个接缝失去类型或证据语义：
+真实多轮 eval 仍会在六个接缝失去类型或证据语义：
 
 - `eventOrder` 只能排列事件类型，不能同时约束工具名、入参、状态与 assistant message；
+- raw RegExp 在文本、JSON、diff 与 selector 中分别表示 contains、exact、serialized search 或多字段 search，同一写法无法说明关系；
 - count predicate、pending operation 与多 session 聚合会在 partial evidence 上产生含糊结果；
 - `t.require` 不能把 type predicate 的收窄结果和计分项写入同一条 Assertion；
 - 浮空 `.stopOnFailure()`、手写 `JSON.stringify` 与 eager file read 会把作者错误、候选失败和材料整形混在一起；
@@ -24,8 +25,12 @@ Assertion 继续保留三个入口：
 | scope assertion | turn、session 或 attempt 的标准事实与证据完整度 |
 | Judge | 需要模型按 rubric 评价的开放式标准 |
 
-值 matcher 是不可变值；每个 modifier 返回新 matcher。
+Match 与 ValueAssertion 是不可变作者值；每个 modifier 返回新值。
 已经登记的 handle 则配置同一条 pending Assertion，直到 finalize、`t.require` 或 awaited `.stopOnFailure()` 开始求值。
+
+Match 明确分成 ordinary、text 与 JSON domain。
+exact、contains、pattern、shape、not、allOf 与 oneOf 都由命名 builder 表达；自由文本 slot 不接收 raw string、RegExp 或 predicate。
+Match 在 complete value 上得到 matched / mismatched，在结构化 opaque evidence 上可以得到 indeterminate，scope collector 不把它压成 false。
 
 `.label()` 只提供人读标题，不是跨运行身份。
 跨 eval 比较继续读取 `groupPath`；turn/session/attempt 归属写入结构化 `scope`。
@@ -43,6 +48,7 @@ attempt 级 order 只要求某一条 session 内存在完整链，绝不把并�
 包含：
 
 - 统一 `.label()`、handle 冻结、awaited `.stopOnFailure()` 与 typed `t.require`；
+- breaking 统一 Match domain、组合器、三值诊断与 schema validation 命名；
 - `CountMatch`、`EventMatch`、logical occurrence、两种 order 与 receiver-aware `eventsSatisfy`；
 - custom Assertion 的结构化 evaluation、AbortSignal 与 defect 边界；
 - turn 级 changes assertion、aggregate `noChanges()` 与 delayed file 三分语义；
@@ -56,12 +62,14 @@ attempt 级 order 只要求某一条 session 内存在完整链，绝不把并�
 - session 级 changes、turn 上的 Sandbox 操作或第二次 diff 采集；
 - 跨 session 的全局事件顺序；
 - count predicate、通用 EventMatch text predicate 或浮空 Promise 结算；
+- raw RegExp / predicate selector、隐式 `String(value)` 或 serialized JSON pattern search；
 - `includesUrl`、`hasSections`、`noFailedShellCommands` 等可由通用词汇表达的业务版式别名；
 - 在 Assertion 包内复制 Judge Provider、材料规范化或 binary response schema。
 
 ## 入口
 
 - [Library](library.md) —— matcher、scope assertion、handle、require 与 Sandbox 作者面。
+- [Match](matching.md) —— text / JSON domain、组合器、三值求值、诊断与 breaking surface。
 - [Architecture](architecture.md) —— occurrence、coverage、Record、求值边界与展示投影。
 - [Use Case](use-case/README.md) —— 真实题目的完整迁移与分值守恒。
 - [Research](../../research/eve-assertion-dx.md) —— Eve DX 与逐项断言审视。

@@ -45,7 +45,7 @@ interface AssertionBase {
   /** 最终人读标题。 */
   readonly name: string;
   /** 标题由框架摘要还是作者输入产生。 */
-  readonly nameKind: "default" | "author";
+  readonly nameKind: "generated" | "author";
   /** matcher / Judge evaluator 摘要。 */
   readonly detail?: string;
   readonly scope: AssertionScope;
@@ -83,13 +83,16 @@ turn 与 session token 都按 opaque equality 使用，读取面不能拆字符�
 session receiver 登记 Assertion 时，把当时最后一个 returned logical Turn 写入 `through`；零 turn session 省略它。
 selector 与 `through` 一同冻结，因此同一 session 在不同时间取得的 snapshot 可以区分。
 
-内建 matcher 没有 `.label()` 时写 `nameKind: "default"`。
-`.label()`、`defineAssertion.name` 与 Judge `name` 写 `nameKind: "author"`。
+Match root 的 description 带 `generated | author` provenance。
+自动 exact、contains、shape 与组合摘要写 `generated`；pattern、where、`.describe()` 的作者文本写 `author`。
+direct `t.check` 或 `t.require` 没有 registration label 时，`nameKind` 继承 root provenance。
+
+handle `.label()`、require options label、`defineAssertion.description` 与 Judge `name` 写 `nameKind: "author"`。
 `nameKind` 让读取面分清作者恰好把 label 写成 matcher 文本的情形，不需要重复保存 label 字符串。
 label 允许重复；它不能参与跨运行 join 或唯一性校验。
 
 内建 matcher 的 `detail` 是默认 matcher 摘要。
-`defineAssertion` 被 `.label()` 改标题时，原始 custom name 进入 `detail`，仍可解释 evaluator 的职责。
+`defineAssertion` 被 handle `.label()` 改标题时，原始 custom description 进入 `detail`，仍可解释 evaluator 的职责。
 
 `sourceOrder`、`loc` 与 source code 位置只用于排序和导航，不承担 Assertion 身份。
 跨 eval 的语义维度仍是 `groupPath`。
@@ -101,7 +104,7 @@ label 允许重复；它不能参与跨运行 join 或唯一性校验。
 1. attempt 无 scope prefix；turn 使用 `<turn> · `；session 使用 `<session> through <turn> · `，没有 turn 时只显示 session。
 2. 无 group 时，主体标题是 `name`。
 3. 有 group 且 `nameKind: "author"` 时，主体是 `groupPath > name`。
-4. 有 group 且 `nameKind: "default"` 时，主体只显示 `groupPath`，matcher 摘要紧邻显示。
+4. 有 group 且 `nameKind: "generated"` 时，主体只显示 `groupPath`，matcher 摘要紧邻显示。
 5. `detail` 与主体最后一项相同时不重复，否则紧邻标题显示。
 
 机器 JSON 继续分字段携带 `scope`、`name`、`nameKind`、`groupPath` 与 `detail`。
@@ -195,6 +198,68 @@ Adapter 内部观察到的 user message 必须写 `origin: "agent"`，不能伪�
 assistant message 不带 origin。
 `loc` 可能因调用栈不可得而省略，因此不能用它猜 message producer。
 
+## Match engine
+
+Match builder 在调用点取得 AST snapshot并登记到模块私有 registry。
+text、JSON、CommandResult 与其它 built-in domain 各有 runtime validator；错误 domain 不降成 mismatch：
+
+- 作者 immediate value 越过 TypeScript domain 是同步 author error，不登记 AssertionResult；
+- Adapter、Sandbox Provider 或 core-owned fact 违反标准类型是 protocol defect，Attempt errored；
+- generic `match.where<T>` 的 `T` 在 runtime 擦除，只按 predicate 的严格 boolean / defect 规则求值。
+
+generic `match.exact` 的 domain 是 unknown。
+complete actual 不属于 snapshot-compatible set时是 definite mismatch；它不会为比较调用 getter或 `toJSON`。
+JsonMatch 则要求 actual 已通过 JsonValue protocol boundary。
+
+内部 evaluator 返回 matched、mismatched 或 indeterminate。
+普通作者值是 complete；redaction、Provider truncation 与未采字段必须用结构化 opaque node 表达。
+占位字符串、空串、`undefined` 或普通缺 key 不能冒充 opaque。
+Record budget truncation发生在 runtime求值之后，不改变当次 Assertion。
+
+组合器按固定顺序 short-circuit：
+
+- oneOf 遇首个 matched停止；没有 matched时，有 indeterminate即 indeterminate，否则 mismatched；
+- allOf 与 shape 遇首个 mismatched停止；没有 mismatch时，有 indeterminate即 indeterminate，否则 matched；
+- not 只求 inner一次，交换 matched / mismatched并保留 indeterminate。
+
+allOf / oneOf按 arm array顺序；shape按 builder snapshot时的 own string-key顺序；exact object按 canonical key顺序。
+indeterminate本身不停止，后项仍可能提供决定性 true或false。
+诊断不能触发已无需执行的 predicate。
+
+collector用 `{ assertion, matchNode, candidateRef }` memoize evaluation。
+order DP或count aggregation重访同一 candidate不重复调用 predicate；同一 Match被两条 Assertion复用时各自求值一次。
+
+Match tree只存在于 runtime内部。
+projector按相同遍历顺序选择main path，并写回 AssertionResult已有的 expected、received与evidence string。
+三个字段各自统一限制在4096 UTF-8 bytes；control bytes先移除，截断停在Unicode scalar boundary，含原始byte count的marker计入上限。
+
+### Match evidence
+
+对一个 scope 的 logical candidate set，Match engine得到 definite-match、definite-mismatch与possible-match。
+collector用可命中数量区间折叠所有 count、existence与absence：
+
+```text
+L = definite-match count
+U = L + possible-match count + future
+future = 0          when every required channel is complete
+future = +infinity  otherwise, unless core proves a tighter bound
+```
+
+number CountMatch归一为 `[n,n]`，range归一为 `[min ?? 0, max ?? +infinity]`。
+`[L,U]` 完全位于允许区间时 passed；两区间无交集时 failed；其它情况 unavailable。
+
+同一算法处理默认存在 `{min:1}`、`notEvent/notCalledTool/noChange` 的 exact 0，以及 `hasChange` 的 min 1。
+例如 actions complete、一个 shell definite mismatch、另一个 input opaque时，`[L,U]=[0,1]`；exact 0、exact 1与min 1都 unavailable。
+若另有一个 definite match，则 `[1,2]`：exact 0 failed、exact 1 unavailable、min 1 passed。
+
+order为每个 session分别构造 definite与feasible可达图。
+definite chain只使用 definite-match node与确定成立的时序边；feasible chain还允许possible-match node与不是确定false的边。
+相关channel非complete时，feasible图保守加入可能漏采的candidate，但仍服从core已知的scope/时间边界。
+
+任一 session有definite完整链即passed；否则任一 session有feasible完整链即unavailable；两张图都没有完整链才failed。
+因此没有definite `[A,B]` chain、但把opaque candidate当B即可成链时是unavailable。
+即使存在possible node，若所有组合都被已知domain或时序冲突阻断，且没有future能补链，仍可确凿failed。
+
 ## Logical occurrence
 
 tool 与 subagent operation 使用 session-local state machine：
@@ -234,8 +299,8 @@ orphan 没有 name 或 input，不能凭空匹配 `calledTool(name)`。
 `toolOrder(["A", "B"])` 只读取拥有真实 start/name 的 logical tool occurrences，并按 start 坐标寻找名字子序。
 open occurrence 可以贡献 start 正事实，orphan finish 不能。
 
-找到完整 start 子序即可在 partial actions 上 passed。
-没找到且 actions 非 complete 时 unavailable；complete 时 failed。
+找到 definite start 子序即可在 partial actions 上 passed。
+没有 definite chain时，possible candidate或partial actions产生feasible chain则unavailable；没有feasible chain才failed。
 
 ### `eventOrder`
 
@@ -252,9 +317,9 @@ tool 与 subagent 是 interval；message、skill、thinking 等普通事件是 `
 status 省略时，非最终 matcher 跳过 open candidate；最终 matcher 可以用它的 start/name/input 正事实。
 显式 pending 声称“没有 finish”，因此即使找到 derived open occurrence，也要求 actions complete。
 
-算法按存在性求链，不选择“最早开始”后就停止。
+算法按存在性求 definite与feasible两张链，不选择“最早开始”后就停止。
 每一层从可接续的 closed candidates 中选择 end 最小者；相同 end 再按 start 与 occurrence ordinal 排序。
-等价 DP 可以替代，但必须产出相同 canonical chain。
+等价 DP 可以替代，但必须产出相同 canonical chain与三值结果。
 
 ```text
 A1=[1,100]  A2=[2,3]  B=[4,5]
@@ -276,7 +341,7 @@ evidence 保存 canonical occurrence refs。
 
 turn order 只看该 turn；session order 可以跨自己的 turns。
 attempt order 对每个 session 独立求链，任一 session passed 则整体 passed。
-没有 session 成链时，只要任一 session 的 required channel 非 complete 就 unavailable；全部 complete 才 failed。
+没有 definite chain但至少一条 session有feasible chain时 unavailable；没有session存在feasible chain时 failed。
 
 ## Evidence routing
 
@@ -291,25 +356,17 @@ attempt order 对每个 session 独立求链，任一 session passed 则整体 p
 `eventOrder` 的 required channels 是序列各 matcher 的并集。
 它不额外要求 events complete；不相关 type 的缺口不能阻止 tool-to-message 链成立。
 
-证据折叠规则：
-
-- complete：匹配正常得到 passed 或 failed；
-- partial / unavailable：找到完整正事实可以 passed；没找到时 unavailable；
-- 负断言与需要最终上界的检查在非 complete channel 上 unavailable；
-- 显式 pending 是负事实，必须要求 actions complete。
+证据折叠规则由 [Match evidence](#match-evidence) 的数量区间与可达图统一给出。
+partial / unavailable channel仍允许 definite正事实 passed；opaque或可能漏采的事实保持possible，不折成false。
+负断言与需要最终上界的检查只有在整个可行区间都满足时才能passed。
+显式 pending 是负事实，actions非complete时只能成为possible-match。
 
 unavailable evidence 列出每个 required channel 的实际状态与 reason。
 
 ### Count
 
-count 先数满足 matcher 的 logical occurrences，再应用 `CountMatch`：
-
-| Evidence state | 可确定 outcome |
-|---|---|
-| observed > max | failed |
-| 只有 min，且 observed >= min | passed |
-| 其它依赖最终总数的情形，channel 非 complete | unavailable |
-| channel complete | 正常判断 exact/range |
+count 不把 possible candidate 当成未命中。
+collector先形成 `[L,U]`，再与 exact/range允许区间比较；同一算法处理complete、partial与path-level opaque evidence。
 
 公开 API 不接受 count predicate。
 框架无法判断 `n => n === 2` 或 `n => n >= 2` 是否能在 partial 流上安全提前成立。
@@ -369,7 +426,12 @@ abort 后的 late rejection 不成为 unhandled rejection，也不改写 timeout
 evaluator 仍有义务响应 signal，终止外部 I/O 并释放自己拥有的资源。
 
 只有 signal 未 abort，且 `{ unavailable: true }` 先合法 settle 时，custom unavailable 才成立。
-expected、received 与 evidence 统一去控制字节并应用 Assertion preview 上限；matcher 不各自定义保存大小。
+expected、received 与 evidence 使用 Match engine 同一中央 projector，各自最多4096 UTF-8 bytes；matcher不各自定义保存大小。
+
+`conformsTo(schema)` 只验证原始 input。
+合法 issues形成mismatch；transformed output被丢弃，`t.require`仍返回原值。
+schema envelope在builder调用时验证，validate throw/rejection或非法result是evaluator defect。
+`turn.outputConformsTo` 先读取data evidence：present才调用schema，opaque或未采是unavailable，complete且明确absent是failed。
 
 同一 registered assertion 至多 evaluate 一次。
 `t.require` 与 awaited stop 的冻结结果由 finalize 复用。
@@ -382,7 +444,7 @@ registered --require / stop / finalize--> evaluating --> frozen
 frozen --modifier--> author error
 ```
 
-ValueAssertion modifier 返回不可变 clone；recorded handle modifier 更新同一 pending spec。
+Match与ValueAssertion modifier返回不可变clone；recorded handle modifier更新同一 pending spec。
 调用 stop 的瞬间就冻结，不等 Promise settle。
 
 浮空 stop 没有语言层面的控制力。
@@ -404,7 +466,15 @@ turn selector 使用该 turn token；aggregate selector使用全部 send 区间�
 
 目标 turn 的 diff group 即使没有变化也必须存在。
 export 失败或 group 缺失时 `noChanges` unavailable，不能把缺事实当空事实。
-`notInDiff` 遇 elided 内容时沿现有规则 unavailable。
+
+通用 change selector 的 entry identity 是 `{ window, path }`。
+path、kind、before与after必须来自同一条 WindowChange；aggregate receiver只扩大entry集合，不合并跨window字段。
+before / after是window两端的完整文本，rename拆为deleted + added，不公开patch/hunk猜测。
+
+binary、oversized text与path-only Provider把相应文本写成structured opaque。
+`hasChange`、`noChange` 逐entry运行 Match，再按min 1 / exact 0使用数量区间。
+path已definite mismatch的opaque entry不影响结果；path matched但所需after opaque时possible-match，负断言不能假通过。
+旧 `notInDiff` 与 `diff.matches` 不进入目标API。
 
 Delayed file 在 matcher 前使用 tagged resolution：
 
@@ -446,4 +516,6 @@ writer、reader、artifact registry、truncation、o11y 派生、Reports、fixtu
 - unavailable 与 evaluator defect 不互相转换。
 - finalized Assertion 不会再次求值或被 handle modifier 改写。
 - missing file 不进入 string matcher，unknown read failure 不伪装成 missing。
+- raw RegExp、implicit String coercion与serialized JSON search不进入selector。
+- possible Match不会在not、count或order中被折成false。
 - Record 与 author predicate view 分型；`eventsSatisfy` 不能读取 status、data、usage 或 coverage。
