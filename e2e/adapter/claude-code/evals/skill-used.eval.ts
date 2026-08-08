@@ -8,6 +8,7 @@
 import { defineEval } from "niceeval";
 
 const TOPIC = "niceeval-e2e-skill-topic-926";
+const OTHER_SKILLS = ["e2e-checklist", "e2e-decoy"] as const;
 
 export default defineEval({
   description: "Skills:挂载的本地 Skill 产生 skill.loaded 事件,其内容会影响回答",
@@ -23,6 +24,11 @@ export default defineEval({
       session1.loadedSkill("e2e-marker");
       t.loadedSkill("e2e-marker");
       t.messageIncludes("926");
+      turn1.event("skill.loaded", { count: 1 });
+      turn1.eventsSatisfy("marker 题没有误加载其它 Skill", (events) =>
+        events.every(
+          (event) => event.type !== "skill.loaded" || !OTHER_SKILLS.some((skill) => skill === event.skill),
+        ));
     });
   },
 });

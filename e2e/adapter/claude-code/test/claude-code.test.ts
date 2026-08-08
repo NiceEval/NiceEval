@@ -16,6 +16,8 @@ const EXPECTED_EVALS = [
   "assertion-contract/tool-match-and-sandbox",
   "session-resume",
   "skill-used",
+  "skill-checklist",
+  "skill-unused",
   "mcp-tools",
   "plugin-mcp",
   "websearch-denied",

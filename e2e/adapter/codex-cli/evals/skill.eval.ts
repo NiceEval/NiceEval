@@ -11,6 +11,7 @@ import { includes } from "niceeval/expect";
 
 const SKILL_DIR = ".agents/skills";
 const SKILL_NAME = "niceeval-status-report";
+const OTHER_SKILLS = ["niceeval-release-note", "niceeval-decoy"] as const;
 const MARKER = "STATUS-REPORT-FORMAT-NICEEVAL-E2E-914";
 const relPath = "status.txt";
 
@@ -34,10 +35,16 @@ export default defineEval({
     t.noFailedActions();
 
     await t.group("行为痕迹:真的用 shell 读过这个 skill 的文件", () => {
-      t.calledTool("shell", {
+      turn.calledTool("shell", {
         status: "completed",
         input: { command: new RegExp(`${SKILL_DIR}/${SKILL_NAME}`) },
       });
+      for (const other of OTHER_SKILLS) {
+        turn.notCalledTool("shell", { input: { command: new RegExp(`${SKILL_DIR}/${other}`) } });
+      }
+      // Codex 没有原生 Skill 工具；真实读取成立时仍不得伪造 Claude 式 skill.loaded。
+      turn.notEvent("skill.loaded");
+      t.notEvent("skill.loaded");
     });
 
     await t.group("结果痕迹:产出文件采用了 skill 里的约定标记", () => {

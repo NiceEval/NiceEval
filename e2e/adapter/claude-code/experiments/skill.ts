@@ -5,16 +5,20 @@ import { sandbox } from "../sandbox.ts";
 const agent = claudeCodeAgent({
   apiKey: process.env.ANTHROPIC_API_KEY,
   baseUrl: process.env.ANTHROPIC_BASE_URL,
-  skills: [{ kind: "local", path: "fixtures/skills/e2e-marker" }],
+  skills: [
+    { kind: "local", path: "fixtures/skills/e2e-marker" },
+    { kind: "local", path: "fixtures/skills/e2e-checklist" },
+    { kind: "local", path: "fixtures/skills/e2e-decoy" },
+  ],
 });
 
-// 独立实验:只挂了本地 Skill fixture 的 agent 才可能触发 skill.loaded,基线 agent 没
-// 装这个 fixture。
+// 同一个 agent 同时装三个互斥 Skill：两条正向 Eval 各选一个，第三个始终作为反选哨兵；
+// 普通对话 Eval 则证明一个都没加载。
 export default defineExperiment({
-  description: "skill:挂载了本地 Skill 的 claude-code agent",
+  description: "skill:三个互斥本地 Skill 的正选、反选与零加载契约",
   agent,
   model: "gpt-5.6-luna",
   sandbox,
   attempts: 1,
-  evals: (e) => e.id === "skill-used",
+  evals: ["skill-used", "skill-checklist", "skill-unused"],
 });

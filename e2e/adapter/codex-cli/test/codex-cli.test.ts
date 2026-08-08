@@ -19,6 +19,7 @@ const EXPECTED_EVALS = [
   "usage",
   "mcp",
   "skill",
+  "skill-release-note",
   "plugin-hook",
   "configfile",
 ] as const;
