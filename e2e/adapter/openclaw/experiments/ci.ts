@@ -4,8 +4,8 @@ import { sandbox } from "../sandbox.ts";
 
 // 与 bub 同源的 OpenAI 兼容网关:写 baseUrl 时 Adapter 注册 compat provider。
 const agent = openClawAgent({
-  apiKey: process.env.OPENCLAW_API_KEY ?? process.env.BUB_API_KEY,
-  baseUrl: process.env.OPENCLAW_BASE_URL ?? process.env.BUB_API_BASE,
+  apiKey: process.env.BUB_API_KEY,
+  baseUrl: process.env.BUB_API_BASE,
 });
 
 export default defineExperiment({

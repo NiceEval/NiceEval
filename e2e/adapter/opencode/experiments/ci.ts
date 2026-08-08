@@ -5,8 +5,8 @@ import { sandbox } from "../sandbox.ts";
 // 与 bub 同源的 OpenAI 兼容网关:OpenCode 的 anthropic provider 接 DeepSeek
 // Anthropic 兼容端点会 Unexpected server error,走 compat provider 才稳定。
 const agent = openCodeAgent({
-  apiKey: process.env.OPENCODE_API_KEY ?? process.env.BUB_API_KEY,
-  baseUrl: process.env.OPENCODE_BASE_URL ?? process.env.BUB_API_BASE,
+  apiKey: process.env.BUB_API_KEY,
+  baseUrl: process.env.BUB_API_BASE,
 });
 
 export default defineExperiment({

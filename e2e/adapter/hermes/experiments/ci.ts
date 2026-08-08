@@ -4,8 +4,8 @@ import { sandbox } from "../sandbox.ts";
 
 // 与 bub 同源的 OpenAI 兼容网关。
 const agent = hermesAgent({
-  apiKey: process.env.HERMES_API_KEY ?? process.env.BUB_API_KEY,
-  baseUrl: process.env.HERMES_API_BASE ?? process.env.BUB_API_BASE,
+  apiKey: process.env.BUB_API_KEY,
+  baseUrl: process.env.BUB_API_BASE,
 });
 
 export default defineExperiment({
