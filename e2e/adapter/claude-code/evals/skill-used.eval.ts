@@ -12,15 +12,17 @@ const TOPIC = "niceeval-e2e-skill-topic-926";
 export default defineEval({
   description: "Skills:挂载的本地 Skill 产生 skill.loaded 事件,其内容会影响回答",
   async test(t) {
-    const turn = await t.send(
+    const session1 = t.newSession();
+    const turn1 = await session1.send(
       `${TOPIC} 是什么?回答前先检查你是否有一个关于这个确切主题的 skill,如果有就使用它。`,
     );
-    await turn.succeeded().stopOnFailure();
+    await turn1.succeeded().stopOnFailure();
 
     await t.group("原生 Skill 工具被调用,归一为 skill.loaded", () => {
+      turn1.loadedSkill("e2e-marker");
+      session1.loadedSkill("e2e-marker");
       t.loadedSkill("e2e-marker");
       t.messageIncludes("926");
     });
-
   },
 });

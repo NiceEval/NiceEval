@@ -1,21 +1,41 @@
 // 签入的本地 UI Message Stream HTTP fixture。
 //
-// 只服务 adapter/local-protocol 的 transport / 故障注入：固定 SSE 帧、可控断流、
-// 挂起与 HTTP 错误。不模拟 live AI SDK 工具/HITL/session 矩阵，也不需要真实
-// provider 或密钥。协议形状参考 AI SDK UI Message Stream 文档中的最小 text 路径，
-// 仅够 uiMessageStreamAgent 归约出一条 assistant message。
+// 只服务 adapter/local-protocol 的 transport / 故障注入与共享断言契约：
+// 固定 SSE 帧、可控断流、挂起与 HTTP 错误；契约三节（conversation / scope-tool / coding）
+// 按真实协议帧吐出工具 part。不模拟 live AI SDK 的 HITL / session 矩阵，也不需要真实
+// provider 或密钥。协议形状参考 AI SDK UI Message Stream 文档
+// （tool-input-available → tool-output-available 归约出 output-available 工具 part），
+// 仅够 uiMessageStreamAgent 归约出真实事件流。coding 节只吐帧、不做文件操作：Direct
+// Agent 没有 Sandbox（profile 声明 sandboxUnavailable: true），契约只要求真实的
+// ToolMatch 帧，不要求落盘。
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { FIXTURE_BASE_URL, FIXTURE_HOST, FIXTURE_PORT } from "./address.ts";
 
-type Mode = "ok" | "disconnect" | "hang" | "error";
+type Mode = "ok" | "disconnect" | "hang" | "error" | "conversation" | "scope-tool" | "coding";
 
 function modeFromPath(pathname: string): Mode | undefined {
   // /modes/<mode>/api/chat
-  const match = pathname.match(/^\/modes\/(ok|disconnect|hang|error)\/api\/chat\/?$/);
+  const match = pathname.match(
+    /^\/modes\/(ok|disconnect|hang|error|conversation|scope-tool|coding)\/api\/chat\/?$/,
+  );
   return match?.[1] as Mode | undefined;
 }
+
+// ───────────────────── 共享断言契约的 profile 常量 ─────────────────────
+// 与 evals/assertion-profile.ts 的同一组字面量；fixture 是真实执行端，不是断言逻辑。
+const CONTRACT_MARKERS = {
+  conversation: "LOCAL_CONTRACT_CONVERSATION_926",
+  scope: "LOCAL_CONTRACT_SCOPE_926",
+  changedPath: "assertion-contract-edit.txt",
+  createdPath: "assertion-contract-created.txt",
+  deletedPath: "assertion-contract-delete.txt",
+  changedBefore: "before-assertion-contract-926",
+  changedAfter: "after-assertion-contract-926",
+  createdMarker: "created-by-assertion-contract-926",
+  shellMarker: "LOCAL_CONTRACT_OUTPUT_926",
+} as const;
 
 function sseHeaders(): Record<string, string> {
   return {
@@ -57,6 +77,75 @@ function writeDisconnectStream(res: ServerResponse): void {
   res.write("", () => {
     res.destroy();
   });
+}
+
+// ───────────────────── 共享断言契约的协议帧（真实工具 part，非伪造事件） ─────────────────────
+
+/** 一条已完成工具调用的标准帧序列：input-available → output-available。 */
+function writeToolCall(res: ServerResponse, callId: string, toolName: string, input: unknown, output: unknown): void {
+  writeSse(res, { type: "tool-input-available", toolCallId: callId, toolName, input });
+  writeSse(res, { type: "tool-output-available", toolCallId: callId, output });
+}
+
+/** 收尾文本 + finish + [DONE]；事件流里 operation 之后出现 message 事件。 */
+function writeFinish(res: ServerResponse, text: string): void {
+  const textId = `text_${randomUUID()}`;
+  writeSse(res, { type: "text-start", id: textId });
+  writeSse(res, { type: "text-delta", id: textId, delta: text });
+  writeSse(res, { type: "text-end", id: textId });
+  writeSse(res, { type: "finish" });
+  res.write("data: [DONE]\n\n");
+  res.end();
+}
+
+/** conversation 节：零工具的纯文本往返，回复固定 marker。 */
+function writeConversationStream(res: ServerResponse): void {
+  writeSse(res, { type: "start", messageId: `msg_${randomUUID()}` });
+  writeFinish(res, CONTRACT_MARKERS.conversation);
+}
+
+/** scope-tool 节：恰好一次 shell 工具调用，input/output 都带 marker。 */
+function writeScopeToolStream(res: ServerResponse): void {
+  writeSse(res, { type: "start", messageId: `msg_${randomUUID()}` });
+  writeToolCall(res, `call_${randomUUID()}`, "shell", { command: `echo ${CONTRACT_MARKERS.scope}` }, { stdout: CONTRACT_MARKERS.scope });
+  writeFinish(res, "done");
+}
+
+/** coding 节：4 次真实工具 part 帧（file_write / file_edit / shell / shell）。 */
+function writeCodingStream(res: ServerResponse): void {
+  writeSse(res, { type: "start", messageId: `msg_${randomUUID()}` });
+
+  writeToolCall(
+    res,
+    `call_${randomUUID()}`,
+    "file_write",
+    { path: CONTRACT_MARKERS.createdPath, content: CONTRACT_MARKERS.createdMarker },
+    { ok: true },
+  );
+
+  writeToolCall(
+    res,
+    `call_${randomUUID()}`,
+    "file_edit",
+    {
+      path: CONTRACT_MARKERS.changedPath,
+      oldText: CONTRACT_MARKERS.changedBefore,
+      newText: CONTRACT_MARKERS.changedAfter,
+    },
+    { ok: true, replaced: 1 },
+  );
+
+  writeToolCall(res, `call_${randomUUID()}`, "shell", { command: `rm ${CONTRACT_MARKERS.deletedPath}` }, { ok: true });
+
+  writeToolCall(
+    res,
+    `call_${randomUUID()}`,
+    "shell",
+    { command: `echo ${CONTRACT_MARKERS.shellMarker}` },
+    { stdout: CONTRACT_MARKERS.shellMarker },
+  );
+
+  writeFinish(res, "done");
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -120,6 +209,18 @@ const server = createServer((req, res) => {
         res.writeHead(200, sseHeaders());
         if (mode === "disconnect") {
           writeDisconnectStream(res);
+          return;
+        }
+        if (mode === "conversation") {
+          writeConversationStream(res);
+          return;
+        }
+        if (mode === "scope-tool") {
+          writeScopeToolStream(res);
+          return;
+        }
+        if (mode === "coding") {
+          writeCodingStream(res);
           return;
         }
 

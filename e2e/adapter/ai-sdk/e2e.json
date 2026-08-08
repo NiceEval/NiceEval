@@ -6,13 +6,13 @@
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
   "timeoutMinutes": 15,
-  "harness": { "testkit": true },
+  "harness": { "testkit": true, "adapterAssertions": true },
   "secrets": [
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "NICEEVAL_JUDGE_KEY"
   ],
   "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
-  "paths": ["e2e/adapter/ai-sdk/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "paths": ["e2e/adapter/ai-sdk/**", "e2e/adapter/shared/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]
 }

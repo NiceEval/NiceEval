@@ -161,10 +161,11 @@ Executor 回答测试进程在哪里运行：
 
 ## Adapter Repo
 
-Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。每个 adapter Repo 应包含最小而真实的
-Eval / Experiment 集：
+Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。
+每个 adapter Repo 的一次运行包含共享 Assertion 契约与本地协议 Eval。根 runner 把共享契约复制进隔离副本，叶子 Repo 只提供真实工具名、提示词与 marker；
+MCP、HITL、Skill、Plugin、Subagent 等能力仍归对应 Adapter 的本地 Eval。运行内容至少包括：
 
-- 一个正常消息往返；
+- 一个明确要求零工具的正常消息往返，并以负断言证明没有工具调用；
 - 一个该 adapter 独有能力，例如工具、session、MCP、usage 或 sandbox；
 - 一个可控失败或断流；
 - 公开 readback 能确认上游身份被正确保留 / 规范化。

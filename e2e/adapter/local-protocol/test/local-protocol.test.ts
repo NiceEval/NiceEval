@@ -135,8 +135,15 @@ function expectSendFailurePhase(error: ExpErrorEvent): void {
   expect(["eval.run", "agent.run"]).toContain(error.phase);
 }
 
+const EXPECTED_CONTRACT_EVALS = [
+  "assertion-contract/values-and-no-tools",
+  "assertion-contract/score-handles",
+  "assertion-contract/scope-tool",
+  "assertion-contract/tool-match-and-sandbox",
+] as const;
+
 it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超时、错误阶段与 cleanup", async () => {
-  // prepare：本 Journey 声明的结果 / JUnit 从空白开始。
+  // prepare：本 Journey 声明的结果与 JUnit 从空白开始。
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit", { recursive: true, force: true });
   mkdirSync("junit", { recursive: true });
@@ -262,6 +269,72 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       // uiMessageStreamAgent 对非 2xx 会把 status 写进 message。
       expect(httpErrors[0]!.reason).toMatch(/500|failed|POST/i);
       expect(readFileSync("junit/http-error.xml", "utf8")).toContain("<error");
+
+      // ── 5. 共享断言契约：conversation / scope-tool / coding 三节一次真实运行 ──
+      // 契约 Eval 由根 runner 物化为 evals/assertion-contract.eval.ts（e2e.json 声明
+      // harness.adapterAssertions），每个实验选一条；事件来自 fixture 的真实协议帧。
+      // Direct Agent 无 Sandbox：profile 声明 sandboxUnavailable，契约对真实工具事件
+      // 执行完整 ToolMatch、跳过 t.sandbox 专属段。
+      const contractConversation = await niceeval.run(
+        ["exp", "contract-conversation", "--rerun", "all", "--json", "--junit", "junit/contract-conversation.xml"],
+        { timeoutMs: 60_000 },
+      );
+      expectExpStream(contractConversation, 0);
+
+      const contractScopeTool = await niceeval.run(
+        ["exp", "contract-scope-tool", "--rerun", "all", "--json", "--junit", "junit/contract-scope-tool.xml"],
+        { timeoutMs: 60_000 },
+      );
+      expectExpStream(contractScopeTool, 0);
+
+      const contractCoding = await niceeval.run(
+        ["exp", "contract-coding", "--rerun", "all", "--json", "--junit", "junit/contract-coding.xml"],
+        { timeoutMs: 60_000 },
+      );
+      expectExpStream(contractCoding, 0);
+
+      const contractScoreHandles = await niceeval.run(
+        ["exp", "contract-score-handles", "--rerun", "all", "--json", "--junit", "junit/contract-score-handles.xml"],
+        { timeoutMs: 60_000 },
+      );
+      expectExpStream(contractScoreHandles, 0);
+
+      // 契约四节的 attempt 全部经公开 show 读回：默认报告列出各 experiment group，
+      // 逐 eval 的 history 都有一条 passed attempt——防止少发现/少运行后假绿。
+      const contractBoard = await niceeval.run(["show"]);
+      expect(contractBoard.exitCode, contractBoard.diagnostic()).toBe(0);
+      for (const experimentId of [
+        "contract-conversation",
+        "contract-scope-tool",
+        "contract-coding",
+        "contract-score-handles",
+      ]) {
+        expect(contractBoard.stdout, `show 默认报告缺少 experiment "${experimentId}"`).toContain(experimentId);
+      }
+      const contractLocators = new Map<string, string>();
+      for (const evalId of EXPECTED_CONTRACT_EVALS) {
+        const history = await niceeval.run(["show", evalId, "--history"]);
+        expect(history.exitCode, history.diagnostic()).toBe(0);
+        const lines = history.stdout.split("\n").filter((line) => line.includes("@"));
+        expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
+        expect(lines.at(-1), `${evalId} latest attempt is not passed`).toContain("passed");
+        contractLocators.set(evalId, lines.at(-1)!.match(/@\S+/)?.[0]!);
+      }
+
+      // execution 是适配器收到的公开投影：coding 节的工具 part 帧必须穿透归一化、
+      // 落盘与 CLI 展示——TOOL 卡片出现 canonical 工具名与断言过的入参路径。
+      const codingExecution = await niceeval.run([
+        "show",
+        contractLocators.get("assertion-contract/tool-match-and-sandbox")!,
+        "--execution",
+      ]);
+      expect(codingExecution.exitCode, codingExecution.diagnostic()).toBe(0);
+      expect(
+        codingExecution.stdout.includes("file_write") || codingExecution.stdout.includes("file_edit"),
+        "contract coding execution tree missing file_write/file_edit nodes",
+      ).toBe(true);
+      expect(codingExecution.stdout.includes("shell"), "contract coding execution tree missing shell node").toBe(true);
+      expect(codingExecution.stdout).toContain("assertion-contract-edit.txt");
     },
   );
 

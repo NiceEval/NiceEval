@@ -11,7 +11,7 @@
 // 断言仍跑在按声明装出来的那份安装上。
 import { defineExperiment } from "niceeval";
 import { codexAgent } from "niceeval/adapter";
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 import { sandbox } from "../sandbox.ts";
 
 const MARKETPLACE = "niceeval-e2e-plugins";
@@ -19,7 +19,7 @@ const SOURCE = "CorrectRoadH/niceeval-e2e-codex-hook-fixture";
 const REF = "343b07bc8b204cd7f524d2dd4367f83409c98c29";
 const PLUGIN = "hook-demo";
 
-const rewriteMarketplaceSource: SandboxHook = async (sb) => {
+const rewriteMarketplaceSource: SandboxCommand = async (sb) => {
   const res = await sb.runShell(
     [
       "set -e",

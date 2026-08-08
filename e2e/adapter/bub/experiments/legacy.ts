@@ -19,8 +19,9 @@ export default defineExperiment({
   }),
   // 只跑 coding-task 一条:版本线是新增的覆盖维度,不是新增的协议行为
   // (预算见 docs/engineering/testing/e2e/adapter/README.md「仓库 Eval 预算」),
-  // 其余三条行为已由 ci.ts 在默认版本上证明。
+  // 其余行为已由 ci.ts 在默认版本上证明。共享契约的四条不进版本线。
   model: "gpt-5.6-luna",
   sandbox,
   attempts: 1,
+  evals: ["coding-task/write-and-verify"],
 });

@@ -13,6 +13,8 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  evals: ["coding-task/write-and-verify", "session/recall", "usage/tokens"],
+  evals: (e) =>
+    e.id.startsWith("assertion-contract/") ||
+    ["coding-task/write-and-verify", "session/recall", "usage/tokens"].includes(e.id),
   attempts: 1,
 });

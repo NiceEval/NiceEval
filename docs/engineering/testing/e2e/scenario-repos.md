@@ -90,7 +90,10 @@ interface E2ERepoManifest {
   executor: Executor;
   command: readonly [string, ...string[]];
   timeoutMinutes: number;
-  harness?: { testkit?: boolean };
+  harness?: {
+    testkit?: boolean;
+    adapterAssertions?: boolean;
+  };
   secrets: readonly string[];
   requires?: {
     docker?: boolean;
@@ -113,11 +116,15 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 
 1. 从待测 checkout pack 一份 NiceEval candidate tgz；
 2. 若选中 Repo 声明 `harness.testkit: true`，删除当前 workspace Testkit 的 `dist/` 并完整构建一次；
-3. 把每个选中 Repo 复制到新的临时目录；
+3. 把每个选中 Repo 复制到新的临时目录；声明 `harness.adapterAssertions: true` 的 Adapter Repo 还必须签入
+   `evals/assertion-profile.ts`，runner 只在该副本中把 checkout 的共享断言契约复制成普通 Eval 源码；
 4. 只在副本中把 `niceeval` 指向 candidate，并新增指向 `packages/testkit` 的绝对 `file:` devDependency；
 5. 安装后核对 NiceEval executable 与 candidate integrity；Testkit 只核对实际包名、唯一 directory resolution，以及
    realpath 位于副本自己的 pnpm virtual store；
 6. 把 candidate digest、Testkit version/source/installed realpath（诊断）、Repo ID、artifact 路径和 candidate 复现命令写入摘要。
+
+`adapterAssertions` 不创建一条脱离 Adapter 的测试 lane。它让同一笔 live Adapter 运行发现共享 Eval，并用叶子 Repo 的
+profile 驱动真实对话、工具与 Sandbox；所以一次调用同时验证公开 Assertion 契约和该 Adapter 的事件归一兼容性。
 
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。

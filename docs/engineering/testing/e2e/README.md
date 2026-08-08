@@ -79,7 +79,9 @@ Journey E2E 使用独立项目副本和结果根。失败后保留副本时，�
 或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
 昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
-live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 只断言协议身份与关系。
+live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系，
+并在同一次真实运行里执行 Adapter collection 共享的公开 Assertion 契约。共享的是 Eval 源码，事件、模型、工具、Sandbox
+与结果仍属于该叶子 Adapter Repo；它不是脱离 Adapter 的第二条测试 lane。
 结构化外部故障不算 pass，也不倒推确定性产品 owner 失败；同一 candidate 的 AI 真实兼容性验收可以替代本次有效 live 结果。
 
 ## 公开读回

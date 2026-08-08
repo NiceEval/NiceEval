@@ -44,21 +44,45 @@
 各 live Repo 只证明官方工厂与特定上游版本的兼容性，不接管确定性产品可靠性。
 缺少完整官方工厂的 SDK 在其仓库落地前没有协议验收证明，这是验收表中的显式空白，不用 E2E 仓库内的本地 Adapter 实现或 fixture 测试冒充。
 
-## 仓库 Eval 预算
+## 共享断言契约
 
-每个适配器仓库只保**证明其主要责任所需的最小 Eval 闭环**。确定性的协议行为、错误与边界值矩阵默认由本地协议 E2E
-通过真实 transport 展开；live Repo 只证明“这个官方入口仍能走通”。只有本地协议 E2E 无法稳定穷举或区分的 NiceEval
-自有纯归一算法，才登记[最小 Unit 例外](../../unit/README.md)。因此：
+每个 Adapter Repo 的一次真实运行同时验收两件事：**NiceEval 公开断言在该上游的真实事件上能求值，且该 Adapter 的特有协议仍兼容**。
+这不是把同一套 Eval 手工复制到每个仓库：
 
-- 新增 Eval 必须对应该仓库主要责任内的一种**新的真实协议行为**（新工具形态、新 HITL 形态、新沙箱能力），不做能力巡礼。
-- 一种协议行为一个 Eval；同一行为的第二个 Eval 是维护负担，不是更多证明。
-- 确定性机制（缓存、results 格式、退出码折叠、渲染面）归[功能域 · 报告与读面](../report.md)与[功能域 · CLI](../cli.md)的功能仓库，适配器仓库不重复背。
+- `e2e/adapter/shared/assertion-contract.eval.ts` 是协议中立断言矩阵的唯一源码，验证普通对话反调、值 matcher、工具 `ToolMatch`、Sandbox 与 `t` / session / turn scope。
+- Adapter Repo 在 `e2e.json` 声明 `harness.adapterAssertions: true`，并提供 `evals/assertion-profile.ts`；profile 只保存真实提示词、工具名与 marker，不复制断言逻辑。
+- 根 runner 只在隔离副本中把共享源码复制为 `evals/assertion-contract.eval.ts`。因此它与普通 Eval 一样被发现、指纹化和留档，不从候选包或 `node_modules` 借断言实现。
+- MCP 命名/传输、HITL、Skill、Plugin、Subagent 和上游独有的状态仍由各 Repo 本地 Eval 拥有；不支持的能力不伪造正向事件。
+
+值 matcher 与句柄修饰符可用签入字面量稳定穷举；作用域与工具断言必须读该 Adapter 的真实标准事件，不在 Eval 里伪造第二套事件生成器。
+同一 Repo 的原生验收脚本必须把共享契约 ID 与本地协议 ID 一起列入 expected，防止少发现或少运行后假绿。
+
+公开通过制 Assertion 当前有 **39 个方法族**，这里按能力而不是接收者重复计数：13 个值 matcher（含
+`makeAssertion`）、17 个共享 scope 方法、4 个 Sandbox 方法、2 个 turn output 方法和 3 个 Judge 方法。
+此外还要验证 `check` / `require` 两种登记方式，`gate` / `atLeast` / `soft` / `optional` / `stopOnFailure`
+五种句柄修饰，以及计分制的 `points` / `t.score`。共享文件用四条 Eval 分工：
+
+| Eval ID | 契约面 |
+|---|---|
+| `assertion-contract/values-and-no-tools` | 普通对话在 turn、session、`t` 三种 scope 证明零工具；枚举值 matcher、output、Judge 的无配置折叠、正反断言与通过制修饰符 |
+| `assertion-contract/score-handles` | 同一个真实 Adapter 的普通对话枚举计分制句柄与直接给分 |
+| `assertion-contract/scope-tool` | 同一笔真实工具调用分别由 `turn1.xxx`、`session1.xxx` 与 `t.xxx` 断言，同时验证 count 数字/谓词和 event 顺序 |
+| `assertion-contract/tool-match-and-sandbox` | `ToolMatch` 的 input / count / output / status 参数形状，以及 Sandbox 文件、diff、shell 的正反断言 |
+
+Direct Agent 的核心链接契约不允许声明 Sandbox。AI SDK 与本地 UI message protocol 因此在 profile 声明
+`sandboxUnavailable: true`：同一 Eval 仍对其真实工具事件执行完整 `ToolMatch`，Sandbox 专属 4 个方法则由六个真实
+Sandbox coding adapters 执行。不能为了让矩阵表面齐整而放宽产品的 direct-agent 资源边界。
+
+17 个共享 scope 方法里，协议中立的 14 个在这四条 Eval 里求值；`parked`、`loadedSkill`、`calledSubagent`
+必须由确实能产生 HITL、Skill 或 Subagent 一等事件的本地 Eval 正向证明。`ToolMatch.status` 的 `pending` / `rejected` /
+`failed` 同理分配给能真实产生这些状态的 Adapter，不能让普通工具成功路径伪造。Judge 三种方法在共享契约验证声明与
+未配置模型时的 `optional + unavailable` 折叠；真实裁判请求不属于 Adapter 协议，保留给 Judge 自己的正向 E2E owner。
 
 Live 运行出现结构化外部故障时不判 pass。可以由同一 candidate、同一上游版本的 AI 通过真实生产入口完成兼容性验收；
 PR Test impact 保存动作、公开观察和未守护风险。Live 结果与 AI 真实验收都没有时，该兼容性状态是“未证明”。
 任何会实际调用付费模型的 live 验收、批量 Adapter 矩阵或整批重跑，都必须先取得用户明确批准；选择 lane 不代表取得授权。
 
-这个预算让矩阵在破坏性变更时的修复成本保持在与仓库数量线性、而不是与 Eval 总数线性的水平。
+共享契约让公开断言扩展时只改一处；每个 Adapter 仍用自己的上游、凭据、Sandbox 和结果根独立运行。
 
 ## 上游 SDK 版本
 

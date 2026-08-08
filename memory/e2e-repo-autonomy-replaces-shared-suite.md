@@ -16,3 +16,22 @@
 **crabbox 边界**：repo 暴露唯一的 `pnpm e2e` 命令。crabbox 只同步 checkout、转发 allowlist 环境、执行该命令、收集 JUnit/artifact 并传播退出码，不理解 niceeval 的 Eval、Results 或服务拓扑。
 
 定稿契约：`docs/engineering/testing/e2e/README.md`。
+
+## 2026-08-08 部分翻案：Adapter collection 共享 Assertion Eval 源码
+
+用户进一步定案：上述“repo 之间不共享 Eval”对 `e2e/adapter` 的公开 Assertion 兼容矩阵过度隔离。
+每个 Adapter 原先各写一份普通对话、工具匹配与 scope 断言，会让同一份公开 Assertion API 在多处漂移，也很难确认
+参数形状和反向断言没有漏项。
+
+新的边界是：
+
+- 根仓拥有一份协议中立的 `e2e/adapter/shared/assertion-contract.eval.ts`；runner 只在单个 Adapter Repo 的隔离副本中
+  将它物化为普通 Eval 源码。
+- 每个叶子 Repo 仍拥有自己的 Agent、Experiment、lockfile、secret、Sandbox、结果与验收脚本，只用本地
+  `evals/assertion-profile.ts` 提供该协议的真实提示词、工具名和 marker。
+- 一次 Adapter 运行同时验证 Assertion 契约与 Adapter 归一兼容性；不新增脱离 Adapter 的 suite、lane 或中央结果 verifier。
+- MCP、HITL、Skill、Plugin、Subagent 等协议特有能力仍由叶子 Repo 的本地 Eval 拥有，根 runner 不理解这些领域 expected。
+
+所以 2026-07-13 对“中央 verifier 越过公开读面”“共享应用/进程/结果读取”“根仓理解领域 expected”的否决继续有效；
+只推翻“任何 Eval 源码都不得在 Adapter Repo 间共享”这一条。当前定稿契约见
+`docs/engineering/testing/e2e/adapter/README.md#共享断言契约`。

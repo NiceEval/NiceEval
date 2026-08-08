@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
-  "coding-task",
+  "assertion-contract/values-and-no-tools",
+  "assertion-contract/score-handles",
+  "assertion-contract/scope-tool",
+  "assertion-contract/tool-match-and-sandbox",
   "session-resume",
   "skill-used",
   "mcp-tools",
