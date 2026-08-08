@@ -65,6 +65,8 @@ setup 或 Eval 手工命令真正失败时，不必指望 Agent event：
 
 命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
 
+Text 面在预览与 `--expand` 前剥离捕获内容中的 ANSI 转义和不可打印控制字节，避免被测 CLI 的输出重新控制宿主终端；这只改变展示投影，不改写落盘证据。`--json` 仍忠实返回脱敏后的落盘字符串。
+
 ## 卡片预览预算与 `--expand`
 
 卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整的树解析产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。

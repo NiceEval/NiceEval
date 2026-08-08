@@ -128,12 +128,6 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
 
-  const board = await niceeval.run(["show", "--page", "attempts"]);
-  expectSuccessfulCli(board);
-  for (const evalId of EXPECTED_EVALS) {
-    expect(board.stdout, `show --page attempts missing ${evalId}`).toContain(evalId);
-  }
-
   const codingTaskLocator = await latestAttemptLocator("coding-task/write-and-verify");
   for (const evalId of EXPECTED_EVALS) {
     if (evalId === "coding-task/write-and-verify") continue;
@@ -159,5 +153,5 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expectSuccessfulCli(timing);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/turn\s+s\d+\/t\d+/);
+  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 }, 48 * 60_000);

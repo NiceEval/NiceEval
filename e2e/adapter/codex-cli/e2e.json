@@ -7,7 +7,7 @@
   "command": ["pnpm", "exec", "vitest", "run"],
   "timeoutMinutes": 40,
   "harness": { "testkit": true },
-  "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL"],
   "requires": { "docker": true, "externalNetwork": true },
   "paths": ["e2e/adapter/codex-cli/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]

@@ -25,8 +25,9 @@ interface Sandbox extends SandboxOperations, SandboxTransferOperations {
   /** provider 原生的实例 id(如 Docker 容器 ID 前缀);用于关联日志、排查问题。 */
   readonly sandboxId: string;
   /**
-   * 沙箱内回连宿主 OTLP 端口用的 hostname(docker 是 `host.docker.internal` 之类);
-   * 远程云沙箱够不着宿主本地端口时为 `null` → 跳过 tracing。
+   * OTLP receiver 的放置能力:string 表示 provider 承诺该 hostname 可访问宿主 receiver;
+   * null 表示不承诺宿主回连,runner 会尝试在 Sandbox 内启动 attempt-scope receiver。
+   * null 不等于跳过 tracing,也不保证镜像具备 receiver 所需运行时。
    */
   readonly otlpHost: string | null;
 

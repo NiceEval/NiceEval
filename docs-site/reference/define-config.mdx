@@ -98,8 +98,8 @@ each run dynamically allocates a temporary port (handed to the adapter via `ctx.
 port, only one niceeval process can run on the same machine at a time, and it errors if that port is already taken by
 another process — pick a free port and write it back here.
 `host` is the receiving-end hostname reported to the adapter (not the listen address, which is always `0.0.0.0`);
-defaults to "127.0.0.1"; override it here when a Docker Sandbox tracing setup needs something like
-"host.docker.internal", or for a remote integration configured with a tunnel.
+defaults to "127.0.0.1". Override it here only when you have already provided a controlled tunnel or a reachable
+route; Docker Sandboxes place the receiver inside the Sandbox by default and do not rely on an implicit host gateway.
 
 #### `pricing`
 

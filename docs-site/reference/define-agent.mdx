@@ -511,10 +511,11 @@ Stable identifier for this sandbox (each provider's native ID, e.g. a Docker con
 readonly otlpHost: string | null;
 ```
 
-Target host for the local OTLP receiver.
-- `string`: inside the sandbox, this hostname connects back to the host's OTLP port (e.g. Docker's `host.docker.internal`).
-- `null`: the sandbox runs on remote cloud infrastructure (e.g. e2b/vercel) and cannot reach a local host port → tracing is skipped.
-  Can be force-overridden with the `NICEEVAL_OTLP_HOST` environment variable (e.g. when configuring a tunnel).
+Where the OTLP receiver can be placed.
+- `string`: inside the sandbox, this hostname can reach the host's receiver.
+- `null`: the provider does not promise that the sandbox can reach back to the host; the runner tries to start an attempt-scope receiver inside the sandbox instead.
+  This does not guarantee tracing succeeds; when the image lacks the runtime the receiver needs, only a supplemental diagnostic is recorded.
+`defineConfig({ telemetry: { host } })` can override this explicitly when you have already provided a controlled tunnel.
 
 #### `appendLog`
 

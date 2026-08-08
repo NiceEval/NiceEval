@@ -8,13 +8,20 @@
 // or packed when the plan selects zero repos or fails.
 
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { repoRootDir } from "./discovery.ts";
 import { main as planMain } from "./plan.ts";
+
+function loadRootEnv(): void {
+  const envPath = join(repoRootDir(), ".env");
+  if (existsSync(envPath)) loadEnvFile(envPath);
+}
 
 export function splitNativeArgs(argv: readonly string[]): { selectionArgs: readonly string[]; nativeArgs: readonly string[] } {
   const separator = argv.indexOf("--");
@@ -75,7 +82,10 @@ async function runDefault(argv: readonly string[]): Promise<void> {
         console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
         return candidate;
       },
-      run: runMain,
+      run: async (runArgs) => {
+        loadRootEnv();
+        await runMain(runArgs);
+      },
     });
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
@@ -108,6 +118,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return;
   }
 
+  loadRootEnv();
   const { main: runMain } = await import("./run.ts");
   await runMain(runArgs);
 }

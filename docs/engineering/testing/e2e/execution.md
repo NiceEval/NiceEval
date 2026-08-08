@@ -23,6 +23,10 @@ pnpm e2e --lane main --repo adapter/codex-cli
 pnpm e2e --lane pr --repo adapter/local-protocol
 ```
 
+本地运行只从仓库根目录的 `.env` 读取私有凭据与宿主浏览器路径；各功能 Repo / Adapter Repo 不保存自己的 `.env`。
+根 runner 在 `plan` 与 `pack` 阶段不读取该文件，只在真正进入 `run` 时加载一次，并继续按各 Repo manifest 的
+`secrets` 白名单做最小注入。复制根目录 `.env.example` 后即可直接执行上述命令；CI 仍由 workflow 注入同名变量。
+
 内部可以拆成 `pack`、`plan`、`run` 三个子动作供 CI 分布式执行；本地默认命令包装同一实现：
 
 ```sh
@@ -152,6 +156,10 @@ PR path filter 来自 manifest `paths`，只是省时提示：plan 无法可靠�
 
 镜像使用不可变 digest；需要从本仓库构建时，Dockerfile 和 build context 进入 Repo `paths`。容器不读取宿主 secret 文件，
 不挂载可写源码树，资源名带 run ID，cleanup 后检查 orphan。
+
+Live Adapter 的每个 `dockerSandbox()` 都显式声明 2 CPU、512 PID 与零额外 swap。常规 CLI 场景的 memory hard limit 是
+3 GiB；Claude Code 的 plugin / skill 并行场景实测会击穿 3 GiB，因此单独使用 4 GiB。额度属于 Sandbox template，必须由
+Docker cgroup 的 `cpu.max`、`memory.max`、`memory.swap.max` 与 `pids.max` 验收，不能只检查 TypeScript 声明或 Docker inspect。
 
 ## 并发
 

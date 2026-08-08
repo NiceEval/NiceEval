@@ -132,13 +132,8 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
 
-  // observe：show 默认报告列出本仓库 Eval，防止少发现/少运行后仍以组级汇总假绿。
-  const board = await niceeval.run(["show"]);
-  expectSuccessfulCli(board);
-  for (const evalId of EXPECTED_EVALS) {
-    expect(board.stdout, `show default board missing ${evalId}`).toContain(evalId);
-  }
-
+  // 每个 Eval 用公开的 `show <eval-id> --history` 逐一取回 locator。默认 report 表会按
+  // 终端宽度折行，不拿它的视觉布局重复证明 Report 域已经拥有的渲染契约。
   const locators: Record<string, string> = {};
   for (const evalId of EXPECTED_EVALS) {
     locators[evalId] = await latestAttemptLocator(evalId);
@@ -176,7 +171,7 @@ it("真实 bub adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读
   expectSuccessfulCli(timing);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/turn\s+s\d+\/t\d+/);
+  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
   // legacy 版本线放最后：version/otelPlugin pin 到 0.3.9 仍产出时间注释。
   const legacy = await niceeval.run(

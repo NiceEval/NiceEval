@@ -22,8 +22,6 @@ const EXPECTED_EVALS = [
 const REQUIRED_LIVE_SECRETS = [
   "CODEX_API_KEY",
   "CODEX_BASE_URL",
-  "NICEEVAL_JUDGE_KEY",
-  "NICEEVAL_JUDGE_BASE",
 ] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);

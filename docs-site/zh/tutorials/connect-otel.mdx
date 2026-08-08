@@ -62,7 +62,7 @@ export default defineAgent({
 
   服务启动时一次性配 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces`，之后跑多少次评估用例都不用改。代价：端口共享意味着同一台机器同时只能跑一个 niceeval 进程；OTel Collector 扇出场景同理指向这个固定端点。`port` 被其它进程占用时 [NiceEval](https://niceeval.com/) 会直接报错提示换一个空闲端口，不会静默失败。
 
-  报给应用的接收端 hostname 默认是 `127.0.0.1`；docker 型 sandbox tracing 需要 `host.docker.internal`、或配了隧道的远程接入需要别的 hostname 时，加 `host` 覆盖：`telemetry: { host: "host.docker.internal", port: 4318 }`。这两个字段是 [NiceEval](https://niceeval.com/) 里配置 OTLP 接收的唯一入口，不读环境变量。
+  报给应用的接收端 hostname 默认是 `127.0.0.1`。只有应用已经能通过受控隧道或其它可达路由访问宿主 receiver 时，才用 `host` 报出那个地址，例如 `telemetry: { host: "otel.internal", port: 4318 }`。Docker Sandbox Agent 默认在同一个 Sandbox 内启动 receiver，不依赖容器回连宿主。这两个字段是 [NiceEval](https://niceeval.com/) 里配置 OTLP 接收的唯一入口，不读环境变量。
 
 - **子进程 / 由 [NiceEval](https://niceeval.com/) 拉起的进程**（CLI 型 agent）：什么都不用做。`ctx.telemetry.env`（标准 `OTEL_*` 环境变量，ready-to-spread）注入进程环境，每次 run 是新进程、读到新端点。
 

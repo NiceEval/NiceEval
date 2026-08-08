@@ -115,8 +115,8 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   requireLiveSecrets();
   await requireDocker();
 
-  // 沙箱镜像是本仓库自己的 Dockerfile（docker/Dockerfile），niceeval.config.ts
-  // 的 dockerImageSandbox 引用同一 tag；缺失时先构建，不替换成本地替代物。
+  // 沙箱镜像是本仓库自己的 Dockerfile（docker/Dockerfile），Experiment 上的
+  // dockerSandbox 引用同一 tag；缺失时先构建，不替换成本地替代物。
   ensureDockerImage();
 
   rmSync(".niceeval", { recursive: true, force: true });
@@ -135,14 +135,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(junit).toContain("<testsuite");
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
-
-  // observe：--page attempts 是不随实验组数收缩的逐 attempt 视图，
-  // 防止少发现/少运行后仍以组级汇总假绿。
-  const board = await niceeval.run(["show", "--page", "attempts"]);
-  expectSuccessfulCli(board);
-  for (const evalId of EXPECTED_EVALS) {
-    expect(board.stdout, `show --page attempts missing ${evalId}`).toContain(evalId);
-  }
 
   const codingTaskLocator = await latestAttemptLocator("coding-task/write-and-verify");
   for (const evalId of EXPECTED_EVALS) {
@@ -175,5 +167,5 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expectSuccessfulCli(timing);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
-  expect(timing.stdout).toMatch(/turn\s+s\d+\/t\d+/);
+  expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 }, 38 * 60_000);

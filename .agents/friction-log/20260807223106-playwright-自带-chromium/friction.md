@@ -10,12 +10,12 @@ severity: 'minor'
 Playwright 自带 chromium headless shell（chrome-headless-shell-1228，postinstall 下载的 ubuntu24.04 fallback build）启动失败：`error while loading shared libraries: libglib-2.0.so.0`。NixOS 不在 ldconfig 提供其动态依赖（libglib-2.0、libnss3 等 22 个缺失），3 个浏览器测试全部以 browserType.launch 失败告终（归 infra，不是断言问题）。
 
 ## Possible Solution
-- 短期：`e2e/report/playwright.config.ts` 已加 `CHROMIUM_EXECUTABLE_PATH` 钩子（未设置时行为不变，CI 不受影响）；本机运行时 `CHROMIUM_EXECUTABLE_PATH=/run/current-system/sw/bin/chromium pnpm e2e --repo report`，系统 chromium（Nix wrapper 自带依赖）可被正常驱动。
-- 长期：给 Playwright 自带浏览器补齐系统库，或把钩子扩展为默认探测 `which chromium`，让后续 agent 免环境变量直接跑通。
+- 短期：`e2e/report/playwright.config.ts` 已加 `CHROMIUM_EXECUTABLE_PATH` 钩子（未设置时行为不变，CI 不受影响）；NixOS 开发机在仓库根 `.env` 配置 `CHROMIUM_EXECUTABLE_PATH=/run/current-system/sw/bin/chromium` 一次，之后直接执行 `pnpm e2e --repo report`。系统 chromium（Nix wrapper 自带依赖）可被正常驱动。
+- 长期：由 NixOS 开发环境提供 Playwright 所需的系统库，或保持上述显式宿主浏览器路径；仓库不默认探测特定平台路径。
 
 ## Minimal Reproducible Example
 ```sh
-pnpm e2e --repo report   # 无 CHROMIUM_EXECUTABLE_PATH 时浏览器 leg 必挂
+pnpm e2e --repo report   # 根 .env 未配 CHROMIUM_EXECUTABLE_PATH 时，NixOS 浏览器 leg 失败
 ```
 
 ## Context

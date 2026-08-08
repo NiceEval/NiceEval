@@ -15,7 +15,7 @@
     "docs/feature/adapters/library/coding-agent-extensions.md": 1,
     "docs/feature/adapters/library/streaming.md": 1,
     "docs/feature/adapters/reference/agent-loop-apis.md": 19,
-    "docs/feature/adapters/reference/claude-code-otel-telemetry.md": 6,
+    "docs/feature/adapters/reference/claude-code-otel-telemetry.md": 4,
     "docs/feature/adapters/reference/eve-protocol.md": 2,
     "docs/feature/adapters/reference/otel-genai.md": 7,
     "docs/feature/adapters/reference/otel-instrumentation.md": 9,
@@ -43,7 +43,7 @@
     "docs/feature/sandbox/library.md": 1,
     "docs/feature/sandbox/local.md": 3,
     "docs/getting-started.md": 1,
-    "docs/observability.md": 9,
+    "docs/observability.md": 8,
     "docs/origin-integration.md": 12,
     "docs/references.md": 6
   },

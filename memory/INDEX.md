@@ -360,7 +360,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## o11y 采集
 
 - 已修 [estimatecost-openai-inclusive-cache-double-billed](estimatecost-openai-inclusive-cache-double-billed.md) — OpenAI 系 adapter 的 cacheReadTokens 曾是 inputTokens 子集,estimateCost 按互斥桶相加把 cache 命中按全价+缓存价计两次,codex 成本虚高 ~5.5x;修为 Usage 桶恒互斥、七个 OpenAI 系生产点落桶前扣减(旧 run 落盘口径断代,对比需换算)
-- 已修 [insandbox-otlp-port-wait-3s-no-retry](insandbox-otlp-port-wait-3s-no-retry.md) — 远程沙箱内 OTLP collector 端口等待固定 3s、全链路零重试,冷启动抖动就把 attempt 打成 errored(还误标 phase=sandbox.create),重跑即过;修为墙钟 20s 预算 + 进程死了早退 + 换路径重试一轮,阶段归 telemetry.configure
+- 已修 [insandbox-otlp-port-wait-3s-no-retry](insandbox-otlp-port-wait-3s-no-retry.md) — Sandbox 内 OTLP collector 端口等待固定 3s、全链路零重试,冷启动抖动就把 attempt 打成 errored(还误标 phase=sandbox.create),重跑即过;修为墙钟 20s 预算 + 进程死了早退 + 换路径重试一轮,阶段归 telemetry.configure；Docker 现也使用这条路径
 - [telemetry-configure-failure-stays-errored](telemetry-configure-failure-stays-errored.md) — 裁决(2026-07-30):沙箱 `/tmp` 不可写等 telemetry 配置失败保持 errored 不降级,warning 降级与 coverage 兜底两版均否决(环境缺陷要大声修);义务=provider 可写保证扩到 runner 沙箱侧运行时路径 + 报错点名修法
 - [ai-sdk-otel-needsapproval-no-execute-tool-span](ai-sdk-otel-needsapproval-no-execute-tool-span.md) — @ai-sdk/otel 不给 `needsApproval:true` 的工具产 execute_tool span,当年靠 span 派生事件的接法因此断不中;span→事件派生 API 已撤,现在 `uiMessageStreamAgent` 从协议帧直构 approve/deny 工具对(deny 理由内置默认),gap 够不着断言
 - [ai-sdk-agent-otel-timing-subtree-unlinked](ai-sdk-agent-otel-timing-subtree-unlinked.md) — `aiSdkAgent` 的 attempt-scope tracing 下 `show --execution` 的 span↔节点关联正常工作,但 `show --timing` 的 OTel 子树永远挂不出来:turn 从未拿到 `traceId`(shared-pool 才会赋值),就算强制走 shared-pool,window-attribution 生成的合成 traceId 也从不匹配真实 span traceId;未修,e2e/adapter/ai-sdk 的 verify.ts 已写成非 gating 断言;根因与 Agent 工厂无关,迁到 HTTP 传输层后同一缺口原样复现
