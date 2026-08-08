@@ -81,9 +81,7 @@ Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值�
 
 | 产品域 | Unit owner 文档 |
 | --- | --- |
-| Experiments 与 Runner | [experiments-runner.md](experiments-runner.md) |
 | Sandbox | [sandbox.md](sandbox.md) |
-| Record | [record.md](record.md) |
 
 这些页面是 Unit 例外登记，不是测试数量清单。页面中没有 E2E 不足与稳定 seam 说明的类别，不能据此保留 Unit。
 
