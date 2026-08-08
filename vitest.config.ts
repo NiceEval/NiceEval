@@ -1,10 +1,10 @@
 import { defineConfig } from "vitest/config";
 import { configDefaults } from "vitest/config";
 
-// 三个 project 按「验证对象」切，各有一个入口命令，互不重叠：
-//   unit      → 代码           `pnpm test`           src/ 单测 + test/unit/ 的代码级仓库守护
-//   docs      → docs/ memory/  `pnpm test:docs`      索引覆盖、链接真实性、句长段长与禁用写法、用例登记
-//   docs-site → docs-site/     `pnpm test:docs-site` 生成区块漂移、随包索引；命令里还串了 mint 校验
+// 三个 project 按「验证对象」切，代码走 test，文档与文档站走统一 lint：
+//   unit           → 代码           `pnpm test`      src/ 单元测试
+//   lint-docs      → docs/ memory/  `pnpm lint`      索引、链接、写作规则与用例登记
+//   lint-docs-site → docs-site/     `pnpm lint`      生成区块、随包索引与 Mint 校验
 // project 成员资格由目录决定，不由清单决定——新守护文件放进哪个目录就归哪个入口，
 // 不存在「三个 include 谁都没收它、于是永远不跑」的静默失效。
 const EXCLUDE = [
@@ -33,15 +33,15 @@ export default defineConfig({
       },
       {
         test: {
-          name: "docs",
-          include: ["test/docs/**/*.test.ts"],
+          name: "lint-docs",
+          include: ["lint/docs/**/*.lint.ts"],
           exclude: EXCLUDE,
         },
       },
       {
         test: {
-          name: "docs-site",
-          include: ["test/docs-site/**/*.test.ts"],
+          name: "lint-docs-site",
+          include: ["lint/docs-site/**/*.lint.ts"],
           exclude: EXCLUDE,
         },
       },

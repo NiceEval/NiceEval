@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Unit 覆盖 package exports 与 report 的预编译运行时；干净 checkout 不能依赖
+      # 产品站构建会消费 report 的预编译运行时；干净 checkout 不能依赖
       # install 生命周期或旧 dist 偶然留下的产物。
       - name: Build package runtime
         run: pnpm run build:package
@@ -36,14 +36,11 @@ jobs:
         run: pnpm run typecheck
 
 
-      - name: Test docs guards
-        run: pnpm run test:docs
-
       - name: Build product site
         run: pnpm run site:build
 
-  docs-site:
-    name: docs-site
+  docs-lint:
+    name: Docs lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -65,5 +62,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test docs-site guards and validate with mint
-        run: pnpm run test:docs-site
+      - name: Lint docs and docs-site
+        run: pnpm lint

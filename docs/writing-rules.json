@@ -1,5 +1,5 @@
 {
-  "$doc": "docs/ 正文的可读性规则与禁词库。规矩本身写在 docs/README.md「写给人读」;这份 JSON 是脚本读的那一份。用 pnpm test:docs 检查,台账收紧用 pnpm test:docs -u。",
+  "$doc": "docs/ 正文的可读性规则与禁词库。规矩本身写在 docs/README.md「写给人读」;这份 JSON 是脚本读的那一份。用 pnpm lint 检查,台账收紧用 pnpm lint:docs -u。",
   "sentenceLength": {
     "max": 140,
     "$why": "docs/ 的读者是照着它写实现的人,长难句里的条件读一遍抓不全。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"

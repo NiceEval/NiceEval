@@ -7,7 +7,7 @@
 不要从本文件学习整个项目。先按任务进入对应目录，读取该目录最近的 `README.md`、`AGENTS.md` 或索引，再沿链接只加载相关正文：
 
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
-- 文档用词审查：先把裁决写进 `docs/writing-rules.json`，再运行 `pnpm test:docs`，按守护输出逐项修改；不手工搜索并维护另一份命中清单
+- 文档用词审查：先把裁决写进 `docs/writing-rules.json`，再运行 `pnpm lint`，按 lint 输出逐项修改；不手工搜索并维护另一份命中清单
 - 设计到源码的定位：[`docs/source-map.md`](docs/source-map.md)
 - 写、改或评审测试：先读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md)（Journey-first、Unit 例外、可靠性与不自动化）；测试变更预算以 [Pullfrog review prompt](.github/pullfrog-review-prompt.md#prompt)为唯一执行入口；写 Unit 前再读 [`docs/engineering/testing/unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 的 `docs/engineering/testing/unit/<feature>.md` 例外登记；造或改 Fixture 时遵守 Unit 总纲的「Fixture 与 Harness」及该 Feature 文档的 Fixture 特例
 - 历史踩坑与设计裁决：[`memory/INDEX.md`](memory/INDEX.md)，命中索引项后才读正文
@@ -34,7 +34,7 @@
 - 保持 core 中立。具体边界以 [`docs/architecture.md`](docs/architecture.md) 为准。
 - 公共 API、可观察行为或文档变更时，沿对应目录入口完成同步与验证；测试命令以 `package.json` 和局部入口文档为准。
 - `src/report/**` 是仓库里唯一的预编译运行时面。修改后，在用 CLI 或 workspace/link 下游验收前先运行 `pnpm run build:report`；下游已经开着 `niceeval view` 时还要重启进程。`view` 的 watch/rebuild 面向真实用户的记录、报告、主题与项目配置，不监听或代编译 `niceeval` 依赖自身；pnpm 的 `Already up to date` 只表示依赖安装状态，不表示 `dist/report/**` 已与源码同步。
-- 需要新增仓库级机器守护时，优先写进 `test/` 下的 Vitest 测试，按验证对象放进 `test/unit/`、`test/docs/` 或 `test/docs-site/`（分别复用 `pnpm test`、`pnpm test:docs`、`pnpm test:docs-site`），不另造脚本、命令或 hook。
+- 代码验证放进 `src/**/*.test.ts(x)` 或 `test/unit/`，统一复用 `pnpm test`。文档与文档站规则分别放进 `lint/docs/**/*.lint.ts`、`lint/docs-site/**/*.lint.ts`，统一复用 `pnpm lint`；不把文档 lint 命名成测试。pre-push 只调用这个统一 lint 入口，不维护第二份检查清单。
 - 设计只落 `docs/`，不另写执行计划。定稿的契约本身就是实现输入：要做什么写进 `docs/` 正文，为什么这么定写进正文的理由句或 `reference/`，翻案与弯路写进 `memory/`。单独维护一份任务分解会把契约复述一遍，并且落后于 `docs/` 的下一次迭代；多 agent 并行按 `docs/` 的目录边界切工作，不按计划文件里的节点切。
 - 测试求质不求量：产品行为先找既有 owner，再选 Journey 或单边界 E2E；Unit 不是默认形态。新增或实质修改 Unit 前，先在对应 Feature 例外登记中写明 E2E 不足、具名错误算法、最小矩阵与稳定 seam。答不出「证明哪条契约、删了会放走哪类错误」的测试不写；无法同时满足稳定与可靠要求时不写自动化测试，改做本次 AI 真实验收。
 

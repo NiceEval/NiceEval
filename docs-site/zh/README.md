@@ -33,7 +33,7 @@ Technical Reference 不等于整页都由生成器拼出来。页面仍可手写
 - 能力矩阵、选择表和行为约束暂时由手写 Reference 承担；它们必须只描述当前实现，并避免重复已经生成的类型签名。
 - `reference/` 中没有生成区块的页面不因此成为 API 事实的第二来源。出现代码形状时，优先链接已有生成页；确实缺少生成入口时先补生成器。
 
-运行 `pnpm docs:reference` 后，生成器只改 `zh/reference/` 中已登记的 region。`test/docs-site/reference-consistency.test.ts` 会拦截源码与生成区块的漂移。
+运行 `pnpm docs:reference` 后，生成器只改 `zh/reference/` 中已登记的 region。`lint/docs-site/reference-consistency.lint.ts` 会拦截源码与生成区块的漂移。
 
 ## 当前页面归类
 
