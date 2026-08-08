@@ -1,6 +1,6 @@
 # Package：安装后的外部消费
 
-Package Repo 证明发布 tarball 在仓库外、没有源码 checkout 与 TypeScript runtime loader 的消费者中可用。它只观察 Node、TypeScript 与安装后的 `niceeval` binary 给出的公开结果，不读取候选包的 `src/` / `dist/` 布局来判定成功。
+Package Repo 证明发布 tarball 在仓库外、没有源码 checkout 与 TypeScript runtime loader 的消费者中可用。它只观察 Node、TypeScript 与安装后的 `niceeval` binary 给出的公开结果，不读取候选包的 `src/` / `dist/` 布局来判定成功。NiceEval 的 CI 只使用 Node 22，不建立跨 Node 版本兼容矩阵。
 
 ## 验收契约
 
