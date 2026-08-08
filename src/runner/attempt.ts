@@ -1085,6 +1085,10 @@ async function runAttemptBody(
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,
     experimentId: run.experimentId,
+    ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+      id: evalDef.evalGroup.id,
+      definitionHash: evalDef.evalGroup.definitionHash,
+    } }),
     session: createAgentSession(),
     telemetry,
     progress: feedback.progress,
@@ -1126,6 +1130,10 @@ async function runAttemptBody(
           if (node) recorder.pushParent(node);
           const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
             phase: "prepare",
+            ...(evalDef.evalGroup === undefined ? {} : { evalGroup: {
+              id: evalDef.evalGroup.id,
+              definitionHash: evalDef.evalGroup.definitionHash,
+            } }),
             owner: entry.owner,
             attempt: { id: `${run.experimentId}/${evalDef.id}`, index: attempt },
             signal,

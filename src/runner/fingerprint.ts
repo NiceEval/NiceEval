@@ -3,8 +3,8 @@
 
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { dirname, extname, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { relative } from "node:path";
 import { Effect } from "effect";
 import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
 import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
@@ -28,6 +28,7 @@ import {
   FINGERPRINT_ALGORITHM_VERSION,
   FINGERPRINT_COVERAGE_VERSION,
 } from "../record/manifest.ts";
+import { captureSourceClosure } from "./source-closure.ts";
 import {
   configIdentityPaths,
   configIdentityForRun,
@@ -144,6 +145,12 @@ async function fingerprintPreparedPair(
       id: evalDef.id,
       tags: evalDef.tags ?? [],
       metadata: evalDef.metadata ?? {},
+      ...(evalDef.evalGroup === undefined ? {} : { group: {
+        id: evalDef.evalGroup.id,
+        index: evalDef.evalGroup.index,
+        evalIds: [...evalDef.evalGroup.evalIds],
+        definitionHash: evalDef.evalGroup.definitionHash,
+      } }),
     },
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
@@ -204,38 +211,7 @@ async function streamHash(path: string): Promise<string> {
 
 /** 项目内静态 import 图；外部包和动态 import 有意不进入闭包。 */
 async function sourceClosure(evalDef: DiscoveredEval, cache?: Map<string, Promise<string>>): Promise<Array<[string, string]>> {
-  const root = process.cwd();
-  const visited = new Set<string>();
-  const files: Array<[string, string]> = [];
-  const visit = async (path: string): Promise<void> => {
-    const absolute = resolve(path);
-    if (visited.has(absolute) || !absolute.startsWith(`${root}/`) && absolute !== root) return;
-    visited.add(absolute);
-    const content = await cachedRead(absolute, cache);
-    files.push([relative(root, absolute), content]);
-    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)]
-      .flatMap((match) => match[1] === undefined ? [] : [match[1]]);
-    for (const spec of specs) {
-      if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
-      const resolved = await resolveModule(dirname(absolute), spec);
-      if (resolved) await visit(resolved);
-    }
-  };
-  await visit(evalDef.sourcePath);
-  return files.sort(([a], [b]) => a.localeCompare(b));
-}
-
-async function resolveModule(from: string, specifier: string): Promise<string | undefined> {
-  const raw = resolve(from, specifier);
-  const candidates = extname(raw) ? [raw] : [raw, ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((ext) => `${raw}${ext}`), ...["index.ts", "index.tsx", "index.js"].map((name) => resolve(raw, name))];
-  for (const candidate of candidates) {
-    try {
-      if ((await stat(candidate)).isFile()) return candidate;
-    } catch {
-      // 尝试下一个扩展名。
-    }
-  }
-  return undefined;
+  return captureSourceClosure(evalDef.sourcePath, { cache });
 }
 
 /**

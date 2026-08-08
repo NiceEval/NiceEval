@@ -6,6 +6,8 @@ import type {
   DirectAgentDef,
   Config,
   EvalInput,
+  EvalGroupDefinition,
+  EvalGroupInput,
   EvalDefinition,
   ExperimentDefinition,
   ExperimentInput,
@@ -16,7 +18,7 @@ import type {
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
+import { brandEvalDefinition, brandEvalGroupDefinition, brandExperimentDefinition } from "./types.ts";
 import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
@@ -30,6 +32,18 @@ import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
+
+/** Define an ordered queue of real Eval definitions. Group identity comes from its discovery path. */
+export function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
+  input: EvalGroupInput<Sandbox>,
+): EvalGroupDefinition {
+  if (!Array.isArray(input.evals) || input.evals.length === 0) {
+    throw new TypeError("defineEvalGroup evals must be a non-empty array of defineEval()/defineScoreEval() definitions.");
+  }
+  assertSandboxLayer(input.sandbox, "defineEvalGroup");
+  const [first, ...rest] = input.evals;
+  return brandEvalGroupDefinition({ evals: Object.freeze([first, ...rest]), ...(input.sandbox ? { sandbox: input.sandbox } : {}) });
+}
 
 /** @internal 仅供 discoverEvals 验证 points 题型来源。 */
 export function isDefinedScoreEval(value: object): boolean {
