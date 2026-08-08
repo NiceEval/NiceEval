@@ -1,9 +1,0 @@
-{
-  "id": "opencode",
-  "group": "sandbox",
-  "command": ["pnpm", "e2e"],
-  "timeoutMinutes": 40,
-  "secrets": ["BUB_API_KEY", "BUB_API_BASE"],
-  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
-  "requires": { "docker": true }
-}

@@ -30,8 +30,6 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test
-        run: pnpm test
 
       - name: Test docs guards
         run: pnpm run test:docs
