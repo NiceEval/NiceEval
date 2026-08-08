@@ -15,6 +15,27 @@ type AgentTurnFrame =
 
 type AgentTurnStream = AsyncIterable<AgentTurnFrame>;
 
+type MessageEvent =
+  | {
+      type: "message";
+      role: "assistant";
+      text: string;
+    }
+  | {
+      type: "message";
+      role: "user";
+      origin: "eval";
+      text: string;
+      sourceOrder: number;
+      loc?: SourceLoc;
+    }
+  | {
+      type: "message";
+      role: "user";
+      origin: "agent";
+      text: string;
+    };
+
 interface TurnOutcome {
   status: "completed" | "failed" | "waiting";
   data?: JsonValue;
@@ -45,9 +66,14 @@ stream 必须满足以下规则：
 4. reject 前已经 yield 的事件继续作为 partial Observation 保存，不复制进 `SendFailure`。
 5. `waiting` 必须伴随至少一条未解决的 `input.requested`，回答轮沿用同一 `AgentSession`。
 6. Adapter 不截断事件；Record sink 在持久化边界统一截断并写入结构化标记。
+7. Adapter 观察到的内部 user message 必须使用 `origin: "agent"`，且不能携带 `loc` 或 `sourceOrder`。
 
 Runner 为每条 Agent frame 补齐 Turn scope、Observation identity、sequence、单调时间和 source。
 `StreamEvent.operationId` 只配对一项 Agent 操作；Observation `id` 则是跨 Record 引用的稳定事件身份，两者不能互换。
+
+core 为每次 `send` 或 `respond` 创建 `origin: "eval"` 的 user message，并放在该 logical Turn 的 event ordinal 0。
+Adapter frame 依原顺序接在它之后。
+Adapter 不能产出 `origin: "eval"`，assistant message 也不能带 origin；非法组合是协议错误。
 
 ## Batch Adapter
 
@@ -81,6 +107,7 @@ interface Turn {
 }
 ```
 
+`Turn.events` 包含 core 创建的 eval user message 与后续 Adapter events。
 断言在完整的内存事件上运行。
 Record 截断、Live 过滤和 OTel 缺失都不能改变 `Turn.events` 或断言结果。
 

@@ -77,7 +77,7 @@ export default defineEval({
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
     t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
-    //  读的是最后触及该文件那个窗口的终态;窗口之间夹着的 eval 写入不会被算进 agent 的账
+    //  读的是最后一笔包含该路径的 agent delta 的 after 值;其间的 eval 写入不会被算进 agent 的账
   },
 });
 ```
@@ -86,8 +86,15 @@ export default defineEval({
 - **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,direct agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,prepare 命令里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
-- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。尺寸核算先于内容传输。内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
+- **agent 归因增量 = 每次 send 的边界 delta。** `workspace.diff` 从分类账导出每次 send 的 before/after,按时序写入 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。
+- **单次观察边界。** 每笔只证明两个边界之间的差异;同一次 send 内创建后删除、修改后复原都不可见。
+- **跨 send 保留。** 压成单一 before/after 会夹带其间的 eval 写入,也会抹掉分属不同 send 的创建后删除或修改后复原。
+- **读取面。** `net`、涉及的 send 与 `diff.get(path)` 都从 delta 序列派生;后续 eval 写入不会回改已经取得的 agent delta。
+- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令枚举全部 send 区间的路径、读取文本 blob 并统计二进制尺寸。结果写入沙箱内文件,宿主经文件通道下载一次并校验。
+- **Provider 调用数不随规模增长。** 往返数与 send 次数、文件数无关;实现不能逐文件远端调用,也不能把大证据写进 stdout。沙箱侧只要求 git 与 POSIX shell 工具,不要求 node 或 python。
+- **单次 send 预算。** 最多导出 10,000 个路径和 64 MiB 文本 blob;预算只计算实际传输的 before/after 文本字节。
+- **大值显式省略。** 二进制只保存 `status` 与字节数。超过 1 MiB 的文本采用同一方式,并写 `elided`(形状见 [Results · diff.json](../record/architecture.md#diffjson));两者都不占文本预算。
+- **先核算尺寸。** 内容省略后,存在性与 `status` 断言仍可求值;内容断言如实返回证据不可用,不能静默判过或判败。
 
 导出命令、下载或解析失败时不得伪造空窗口。
 非 optional 的 diff 消费者存在时，失败使对应断言 `unavailable`，并令 Attempt `errored`。

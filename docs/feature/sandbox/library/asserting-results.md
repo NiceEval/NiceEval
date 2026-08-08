@@ -14,11 +14,11 @@ t.check(t.sandbox.file("package.json"), matches(PackageSchema));
 
 | API | 类型 | 用法 |
 |---|---|---|
-| `fileChanged(path)` | 延迟断言 | 文件在任一 send 窗口内被 agent 触及（净效果为零也算发生过；只关心净结果时读 diff 摘要的 `net`） |
+| `fileChanged(path)` | 延迟断言 | 文件在一个或多个 send 的 before/after delta 中为 added 或 modified；同一 send 内改后复原不可见，跨 send 的复原分别留下 delta |
 | `fileDeleted(path)` | 延迟断言 | 文件在agent diff 中被删除 |
 | `notInDiff(re)` | 延迟断言 | agent diff 不含模式 |
 | `noFailedShellCommands()` | 延迟断言 | Agent 发起的 shell 工具没有失败退出 |
-| `diff.get(path)` | 结果材料 | 该文件在最后一个触及它的 agent 窗口结束时的内容；文件不在 agent diff 里返回 `undefined` |
+| `diff.get(path)` | 结果材料 | 最后一笔包含该路径的 agent delta 的 after 内容；文件不在 agent diff 里返回 `undefined` |
 | `diff.isEmpty()` | 结果材料 | 判断agent diff 是否为空 |
 | `diff.matches(re)` | 结果材料 | 判断agent diff 是否命中正则 |
 | `file(path)` | 延迟材料 | finalize 时读取 Sandbox 文件，交给 matcher |

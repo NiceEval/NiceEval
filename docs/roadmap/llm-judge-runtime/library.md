@@ -29,17 +29,21 @@ type LlmJudgeCheck =
       rubric: string;
       on?: JudgeMaterial | readonly JudgeMaterial[];
       profile?: string;
+      scoreMode?: JudgeScoreMode;
       recipe?: never;
       input?: never;
     }
   | {
-      name?: string;
+      name: string;
       recipe: JudgeRecipe;
       input: Record<string, JudgeRecipeInput>;
       profile?: string;
+      scoreMode?: never;
       rubric?: never;
       on?: never;
     };
+
+type JudgeScoreMode = "continuous" | "binary";
 
 type JudgeRecipeInput =
   | JudgeMaterial
@@ -50,7 +54,12 @@ type JudgeRecipeInput =
 ```
 
 省略 `profile` 等价于 `default`。
+省略 `scoreMode` 等价于 `continuous`。
 直接 rubric 被规范化为版本化的内置 `niceeval/rubric` 配方，因此也走静态单节点图。
+配方自身固定 score mode，调用配方时不能改写。
+
+`continuous` 接受任意有限 `0..1` 分数。
+`binary` 的 Provider response schema 只接受 `0 | 1`，适合原本使用 Y/N 端点的检查；`.gate()` 只判断通过线，不负责把连续分数量化成二元分数。
 
 ## 材料
 
@@ -79,6 +88,7 @@ t.judge.llm({
 type JudgeMaterial =
   | ScopeMaterial
   | TextMaterial
+  | JsonMaterial
   | FileMaterial
   | InlineFileMaterial;
 
@@ -104,6 +114,13 @@ interface TextMaterial extends MaterialBase {
   mediaType: "text/plain" | "text/markdown" | "application/json";
 }
 
+interface JsonMaterial extends MaterialBase {
+  readonly kind: "json";
+  readonly mediaType: "application/json";
+  readonly canonicalText: string;
+  readonly algorithm: "json-jcs/rfc8785-v1";
+}
+
 interface FileMaterial extends MaterialBase {
   kind: "file";
   from: "project" | "sandbox";
@@ -122,6 +139,43 @@ interface InlineFileMaterial extends MaterialBase {
 `material.current()` 解析调用点的 scope。
 `material.turn(turn)`、`material.session(session)` 与 `material.attempt()` 产生显式 scope 材料。
 Turn 材料包含该轮用户输入、附件、assistant message 与可用行为事件，不把整个对象做 JSON stringify。
+
+`material.json(value, options)` 在调用点取得 eager、不可变 snapshot。
+descriptor-safe walker 接受：
+
+- `null`、boolean、string 与有限 number；
+- dense array；
+- prototype 为 `Object.prototype | null`，且只含 own enumerable string-keyed data property 的 plain object。
+
+共享但无环的引用按出现位置展开。
+
+类型入口的核心形状是：
+
+```ts
+type JsonSnapshotInput<T> =
+  T extends null | boolean | string | number ? T
+    : T extends (...args: never[]) => unknown ? never
+      : T extends readonly unknown[]
+        ? { readonly [K in keyof T]: JsonSnapshotInput<T[K]> }
+        : T extends object
+          ? { readonly [K in keyof T]: JsonSnapshotInput<T[K]> }
+          : never;
+
+function json<const T>(
+  value: T & JsonSnapshotInput<T>,
+  options: MaterialBase,
+): JsonMaterial;
+```
+
+它拒绝 `undefined`、array hole、`NaN`、Infinity、bigint、symbol key/value、function、accessor、cycle 与 class instance；`Date`、`Map`、`Set` 和 typed array 也不被接受。
+walker 不调用 getter 或 `toJSON`，也不沿 prototype 读取。
+
+snapshot 按 RFC 8785 JCS 生成 canonical UTF-8 文本，算法身份是 `json-jcs/rfc8785-v1`。
+调用后的对象 mutation 不改变材料、hash 或 Judge 输入。
+构造器返回被冻结的 wrapper；canonical bytes 由 Runtime 私有持有，JavaScript 强改公开字段也不能替换该 snapshot。
+
+类型入口使用递归 mapped type 接受 readonly framework facts，而不是要求对象声明 string index signature；runtime 校验仍是最终边界。
+JSON 材料形成一个 `application/json` text part，因此 Eval 的静态声明只需要 `media: ["text"]`。
 
 `material.file(path, { from, ... })` 在 Judge 求值时读取文件。
 文件扩展名只用于给出 MIME 候选；内容与声明冲突时报作者错误。
@@ -151,6 +205,7 @@ Provider 不支持某种 part 时，该请求在模型调用前以 `judge-capabi
 import { judges, material } from "niceeval/judge";
 
 t.judge.llm({
+  name: "事实与参考一致",
   recipe: judges.factuality,
   input: {
     candidate: material.current({ id: "answer", role: "candidate" }),
@@ -162,6 +217,7 @@ t.judge.llm({
 }).atLeast(0.8);
 
 t.judge.llm({
+  name: "摘要忠于原文",
   recipe: judges.summary,
   input: {
     candidate: material.current({ id: "summary", role: "candidate" }),
@@ -184,6 +240,7 @@ import { defineJudge } from "niceeval/judge";
 export const safeForAge = defineJudge({
   id: "acme/safe-for-age",
   version: 1,
+  scoreMode: "binary",
   inputs: {
     candidate: { kind: "material", required: true },
     age: { kind: "text", required: true },
@@ -194,6 +251,7 @@ export const safeForAge = defineJudge({
 ```
 
 `id` 在项目和依赖图中唯一，`version` 是正整数。
+`scoreMode` 省略时是 `continuous`，并成为配方不可由调用者改写的属性。
 rubric 语义、输入槽或输出解释改变时必须递增版本。
 
 ## 静态 Judge Graph

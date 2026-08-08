@@ -1148,7 +1148,7 @@
       "记录": 2
     },
     "docs/design/user-readable-testing/PLAN-4/README.md": {
-      "helper": 2,
+      "helper": 1,
       "清理": 1,
       "环境": 2,
       "覆盖": 1,
@@ -2244,10 +2244,10 @@
       "产物": 2,
       "来源": 4,
       "清理": 8,
-      "环境": 17,
-      "窗口": 28,
-      "覆盖": 9,
-      "解析": 12,
+      "环境": 16,
+      "窗口": 16,
+      "覆盖": 8,
+      "解析": 11,
       "记录": 9,
       "资源组": 5,
       "锚点": 5,
@@ -2300,7 +2300,7 @@
       "锚点": 1
     },
     "docs/feature/sandbox/library/asserting-results.md": {
-      "窗口": 4
+      "窗口": 2
     },
     "docs/feature/sandbox/library/operations.md": {
       "sandbox case": 1,
@@ -2571,7 +2571,7 @@
     "docs/roadmap/llm-judge-runtime/architecture.md": {
       "来源": 3,
       "结论": 2,
-      "解析": 9,
+      "解析": 3,
       "记录": 7,
       "重放": 1,
       "锚点": 2
