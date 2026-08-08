@@ -35,6 +35,7 @@ export type {
 } from "../definition/report.ts";
 export type { ThemeDefinition } from "../theme.ts";
 export type { ResolvedPage } from "./resolved-page.ts";
+
 // Source hosts must enter the precompiled report graph through its public
 // entry point too. The string annotation keeps the first package build from
 // depending on generated self-reference declarations.
