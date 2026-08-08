@@ -123,7 +123,7 @@ return <Table rows={rows} />;
 - **page 是必要的声明边界。**
   page 清单静态可见，内容逐页惰性求值和失败隔离；普通值模型不等于把整份报告变成一个不透明函数。
 - **正确性留在组合器。**
-  两级聚合、覆盖与 refs 由 `rollup()` 和 `aggregate()` 保证，官方函数与用户函数走同一条路。
+  两级聚合、coverage 与 refs 由 `rollup()` 和 `aggregate()` 保证，官方函数与用户函数走同一条路。
 - **复杂读数仍欠证据。**
   非 rollup 算法通过 `metricValue()` 和 `evidenceRow()` 声明分母、basis 与 refs。
 - **范围必须可见。**
@@ -182,7 +182,7 @@ return <Table rows={rows} />;
 
 ## 契约场景
 
-实现与测试至少覆盖这些完整报告：
+实现与测试至少涉及这些完整报告：
 
 1. 按 Agent 比较通过率与成本，并同时显示散点和表格。
 2. 收窄 `security/` Eval 后列出失败 Attempt。

@@ -1,9 +1,9 @@
 # 断言证据与完整性
 
 作用域断言只消费 `Turn`、标准事件及其派生事实。
-Adapter 不实现断言，但其数据来源决定结论能否成立。
+Adapter 不实现断言，但其数据出处决定判定能否成立。
 
-| 证据 | 支撑的结论 | 缺失风险 |
+| 证据 | 支撑的判定 | 缺失风险 |
 |---|---|---|
 | 真实 Turn status | succeeded、parked | 恒 completed 会静默假通过 |
 | assistant message | reply、messageIncludes | 正断言失败 |
@@ -19,12 +19,12 @@ Adapter 不实现断言，但其数据来源决定结论能否成立。
 因此漏掉部分事件比完全没有事件更危险。
 
 官方 SDK 完整事件流、完整 steps/output 和经过生命周期 fixture 验证的 transcript 可以形成完整性证据。
-最终自然语言、只采成功事件的埋点、内容可脱敏的 OTel span，以及未覆盖并发/失败的手写映射不能单独证明完整。
+最终自然语言、只采成功事件的埋点、内容可脱敏的 OTel span，以及未涵盖并发/失败的手写映射不能单独证明完整。
 
 Adapter 无法完整采集时必须用下面的 evidence coverage 声明说出来，不能用空数组表达“确认没有发生”。
 OTel 始终属于时间轨，不补写行为事件。
 
-## 覆盖声明（EvidenceCoverage）
+## 完整性声明（EvidenceCoverage）
 
 完整性不是口头承诺，是随数据走的声明：
 
@@ -58,10 +58,10 @@ type TurnEvidenceCoverage = Partial<EvidenceCoverage>;
 
 声明分两层。Agent 层必须把六个通道逐一说清，不能靠省略表达“不知道”：
 
-- **Agent 级默认**：`defineAgent` / `defineSandboxAgent` 的 `evidenceCoverage` 是必填字段，声明该 Adapter 的常态覆盖。
+- **Agent 级默认**：`defineAgent` / `defineSandboxAgent` 的 `evidenceCoverage` 是必填字段，声明该 Adapter 的常态完整性。
   官方 SDK 适配器可以用全通道 complete 的 `completeEvidenceCoverage` 常量；手写映射必须为每个通道选择 complete、partial 或 unavailable，并为后两者写原因。
 - **Turn 级降级**：`Turn.evidenceCoverage?: TurnEvidenceCoverage` 只列本轮相对 Agent 默认值的降级（这一轮流断了、这一轮拿不到 usage）。省略整个字段表示本轮沿用 Agent 声明；省略其中某个通道表示该通道沿用，不能升格。
-- attempt 级聚合取各 turn 的最差值（unavailable < partial < complete），随判定落进 `result.json` 的必填 `evidenceCoverage` 字段（见 [Record](../../record/architecture.md#resultjson)），报告据此展示证据覆盖。
+- attempt 级聚合取各 turn 的最差值（unavailable < partial < complete），随判定落进 `result.json` 的必填 `evidenceCoverage` 字段（见 [Record](../../record/architecture.md#resultjson)），报告据此展示证据完整性。
 
 这种强制显式声明不是 capability 问卷：它不启用功能，只阻止“Adapter 什么都没说”被持久化成含糊的第四种状态。JavaScript 输入漏字段同样在 Agent 构造期报错。
 

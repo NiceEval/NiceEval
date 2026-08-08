@@ -55,7 +55,7 @@ export default defineAgent({
 });
 ```
 
-`progress` 是可覆盖的短期 activity,适合 turn、tool 或安装进度;不要每个 token/delta 都调用。
+`progress` 是可覆写的短期 activity,适合 turn、tool 或安装进度;不要每个 token/delta 都调用。
 `diagnostic` 是永久 warning/error,适合协议降级、数据不完整和 cleanup 问题。
 两者都不能指定 phase、输出流或 ANSI,也不会改变 `Turn.status`/verdict。
 无法继续时抛异常;被测 agent 正常返回失败时通过 `Turn.status: "failed"` 表达。
@@ -65,7 +65,7 @@ export default defineAgent({
 
 ## Sandbox Agent
 
-被测对象是在隔离环境中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
+被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
 CLI 身份写在必填 `ensure` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
 `setup` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
@@ -143,7 +143,7 @@ export default defineSandboxAgent({
 ## SDK 与协议转换器
 
 不同 SDK 不在本页堆叠。
-每个 SDK 使用独立小文件记录其入口、原始事件、会话、HITL、usage 和完整性边界：
+每个 SDK 使用独立小文件说明其入口、原始事件、会话、HITL、usage 和完整性边界：
 
 - [AI SDK](sdk/ai-sdk/README.md)
 - [Claude Agent SDK](sdk/claude-agent-sdk/README.md)

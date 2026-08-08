@@ -2,7 +2,7 @@
 
 **相关文档**：[README](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [DECISION](../DECISION.md)
 
-## 结论形状
+## 裁决形状
 
 报告作者只使用普通函数、普通结果值和按显示形状命名的组件：
 
@@ -53,7 +53,7 @@ export default defineReport(async (sample) => {
 
 ## 取舍
 
-这套形状比 PLAN-2 少三个公开运行协议，但保留 PLAN-2 追求的两级聚合、覆盖、证据与双面一致。
+这套形状比 PLAN-2 少三个公开运行协议，但保留 PLAN-2 追求的两级聚合、涵盖范围、证据与双面一致。
 代价是 page render 成为粗粒度求值边界，跨 page 共享计算依赖内部透明缓存，而不是公开依赖图。
 
 完整产品契约见 [Reports](../../../feature/reports/README.md)。

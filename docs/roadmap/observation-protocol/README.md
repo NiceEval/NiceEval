@@ -4,14 +4,14 @@
 这些信息既要供 `watch` 实时读取，也要进入 Record 供 `show`、`view` 与自定义 Report 复核。
 
 如果每个消费面各自定义结果形状，报告字段、运行中事件和磁盘格式会互相推动 schema 变化。
-本主题以一份可重放的观测协议统一事实来源，同时保留 Record、Sample 与 Reports 的既有层次。
+本主题以一份可重新执行的观测协议统一事实出处，同时保留 Record、Sample 与 Reports 的既有层次。
 
 ## 解决的问题
 
 - 运行中观察与终态 Record 分别定义事件，容易形成两套生命周期词表与状态折叠逻辑。
 - `EvalResult` 同时承担运行时返回、持久化、携带和报告输入，消费便利会反向决定磁盘字段。
 - Agent 只在一轮结束后交回事件数组，旁路观察者不能及时看到已经发生的行为。
-- OTel 提供时间与跨进程关联，但采集可缺失，也不能覆盖 Runner 的完整生命周期。
+- OTel 提供时间与跨进程关联，但采集可缺失，也不能涵盖 Runner 的完整生命周期。
 - 新报告常常只需要另一种聚合或展示，却被迫修改权威结果 schema。
 
 ## 核心心智
@@ -38,7 +38,7 @@ Record 的权威内容只有三类：
 |---|---|---|
 | Provenance | 为什么这是这次运行，使用了哪些输入与算法 | 不能 |
 | Observation | 实际发生了什么 | 不能 |
-| Claim | 当时依据哪些事实作出了什么结论 | 不能恢复当时结论，只能重新求值 |
+| Claim | 当时依据哪些事实作出了什么判断 | 不能恢复当时判断，只能重新求值 |
 
 Projection 是从三类权威内容计算出的读模型。
 执行树、时间树、usage、diff、Assertion 与 Verdict 读面都属于 Projection。
@@ -55,8 +55,8 @@ Report artifact 只携带本次报告实际消费的依据。
 报告使用 trace Projector 时，已经存在的全部 trace 依据都属于强制闭包；复制不完整必须让导出失败，不能降级成“未发布”。
 报告根本不使用 trace 时，Report artifact 可以不携带它，但本地 Record 仍保留原事实。
 
-运行期 snapshot 或 Invocation 索引可以为了附着与恢复写入活动 Invocation 存储，但它们位于 Record 之外，并声明重放依据。
-用户明确导出的 Report 也可以落盘，但它是可删除、可重新生成的交付物，不能成为 Observation、Claim 或下一次 Report 的事实来源。
+运行期 snapshot 或 Invocation 索引可以为了附着与恢复写入活动 Invocation 存储，但它们位于 Record 之外，并声明重新执行依据。
+用户明确导出的 Report 也可以落盘，但它是可删除、可重新生成的交付物，不能成为 Observation、Claim 或下一次 Report 的事实出处。
 snapshot、Report 计算结果与 Projection 分属不同 owner，但都不参与 Record 的事实兼容判断。
 
 运行身份只有一棵树：
@@ -86,17 +86,17 @@ Agent Session 和 Turn 只细分 Attempt 内的 Agent 行为，不与 Attempt �
 | Record | 保存 Provenance、durable Observation 与 Claim | 选择 current、聚合指标或排版 |
 | Live | 订阅同一事件流并提供有界 snapshot | 成为第二份 execution log 或终态权威 |
 | OTel 接入 | 导入或导出时间、父子关系与跨进程关联 | 决定行为事实、执行错误或 Verdict |
-| Sample | 选择可比较的 Attempt 并交代覆盖 | 改写历史 Claim |
-| Projector | 从权威内容按需计算带依据的读模型 | 写 Record、保存 Projection 或读取未记录的外部状态 |
+| Sample | 选择可比较的 Attempt 并交代涵盖 | 改写历史 Claim |
+| Projector | 从权威内容按需计算带依据的读模型 | 写 Record、保存 Projection 或读取未登记的外部状态 |
 | Reports | 组合读模型，按 `basedOn` 收集发布依据并导出交付物 | 读取原始事件 schema、丢弃已引用证据，或让 Report 字段进入 Record |
 
 ## 范围
 
 本主题包含：
 
-- Observation envelope、事件身份、作用域、排序、版本与重放规则。
+- Observation envelope、事件身份、作用域、排序、版本与重新执行规则。
 - Agent 的增量事件生产契约及终态 Outcome。
-- durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出产物的边界。
+- durable Observation、ephemeral progress、Provenance、Claim、Projection 与导出输出的边界。
 - Record 与 Report 共用的 frozen graph core、独立 payload 版本、强依赖和未知对象保留规则。
 - Observation stream 的固定大小分段、大型 evidence blob 分块与 Report 证据闭包。
 - `watch`、`exp --json`、Invocation snapshot 与旁路附着语义。
@@ -116,11 +116,11 @@ Record reader 只接受本主题定义的容器格式。
 这次切换不兼容旧 Record 或旧 Report；v2 落地后则是一条长期追加演进的协议线。
 旧 v2 reader 必须沿 frozen strong edge 保留未知 typed payload 的完整原始闭包，并继续读取已知对象。
 新 reader 把旧数据没有采集的新事实交代为 unavailable，不能补造默认字段。
-普通功能不得推动容器升版；只有 frozen bootstrap、typed reference、强闭包、Graph root 封口或 core 信任语义无法继续解析时才允许提出 v3。
+普通功能不得推动容器升版；只有 frozen bootstrap、typed reference、强闭包、Graph root 封口或 core 信任语义无法继续读取时才允许提出 v3。
 
 ## 入口
 
-- [Architecture](architecture.md) —— 事件模型、Hub、Record、OTel、重放与 schema 演进。
+- [Architecture](architecture.md) —— 事件模型、Hub、Record、OTel、重新执行与 schema 演进。
 - [Library](library.md) —— Agent 事件流、Record 读取与 Projector API。
 - [CLI](cli.md) —— `watch`、`exp --json`、snapshot 与附着协议。
-- [Reference](reference/README.md) —— Projector 命名来源、容器先例、历史 schema 反事实回放与代码对照。
+- [Reference](reference/README.md) —— Projector 命名出处、容器先例、历史 schema 反事实回放与代码对照。

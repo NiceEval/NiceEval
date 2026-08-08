@@ -13,4 +13,4 @@
 | 批次很长，Sandbox 可能到达寿命上限 | [在派发前更换 Sandbox](../../sandbox/use-case/Sandbox复用/长批次更换Sandbox.md) |
 | 同一题重复运行，安装成本反复出现 | [重复运行看稳定性](../../sandbox/use-case/Sandbox复用/重复运行看稳定性.md) |
 
-结果沿用会跳过执行；Sandbox 复用仍真实执行，只分摊 Sandbox 创建，重放的 prepare 靠真实检查快速命中。
+结果沿用会跳过执行；Sandbox 复用仍真实执行，只分摊 Sandbox 创建，重复执行的 prepare 靠真实检查快速命中。

@@ -4,7 +4,7 @@
 
 ## 先分清:「多 agent eval」是三件不同的事
 
-| 场景 | 一句话 | 本文覆盖 |
+| 场景 | 一句话 | 本文守护 |
 |---|---|---|
 | **A. 被测对象内部是多 agent** | 一次 `t.send`,里面有 planner / researcher / writer 分工 | ✅ 主体 |
 | **B. eval 编排多个 agent 对手戏** | 主被测 agent 对着另一个 agent(模拟用户、谈判对手)你来我往 | ✅ 次之 |
@@ -68,7 +68,7 @@ export default defineEval({
 
 - 跨 agent 对比评分:experiments 矩阵已有(场景 C)。
 - A2A / ACP 等 agent 间协议对接:那是某个 adapter 的活,core 不认协议。
-- agent 间消息内容的自动评分:judge 已覆盖,不需要新机制。
+- agent 间消息内容的自动评分:judge 已守护,不需要新机制。
 - 多轮对手戏的循环语法糖(`converse(agent, { maxTurns })` 之类)：普通 TypeScript 循环是完整表达，不提供第二种控制流 API。
 
 ## 跨场景裁决

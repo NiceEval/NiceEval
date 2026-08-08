@@ -10,14 +10,14 @@
 
 ### 简述
 
-环境 profile 从「一个起点产物」升格为「一份拓扑」:一个
+environment profile 从「一个起点输出」升格为「一份拓扑」:一个
 agent 沙箱、若干服务、一张网。拓扑归一成 niceeval 自己的
 规范化数据结构,声明入口有两个——手写 `defineEnvironment`,
 或从任务自带的 compose 文件导入(`environmentFromCompose`,
 产出同一份规范化拓扑);provider 负责构建与启动。`Sandbox` 接口
-一个方法不加,服务是环境的附属事实,不是第二个沙箱。
+一个方法不加,服务是 Sandbox 的附属事实,不是第二个沙箱。
 与 PLAN-2 的根本差异:契约实体是封闭字段集的规范化拓扑,
-compose 只是导入来源;与 PLAN-3 的根本差异:服务的生命
+compose 只是导入出处;与 PLAN-3 的根本差异:服务的生命
 周期由 niceeval 接管,有就绪门、日志证据与回收故事。
 
 ### 配置形态
@@ -52,7 +52,7 @@ export default defineConfig({
 });
 ```
 
-- `services` 的键是服务名,同时就是 agent 侧可解析的主机名;
+- `services` 的键是服务名,同时就是 agent 侧可寻址的主机名;
   启动期校验合法 DNS label,并拉黑保留字
   (`localhost`、宿主 hostname、provider 元数据域名)。
 - `image` 与 `build` 二选一;`build` 是
@@ -68,12 +68,12 @@ export default defineConfig({
   同一网络、DNS 与出口策略,但不依赖尚未存在的 agent 沙箱。
   Docker 用同网的一次性探针容器,VM 内编排也用同网容器,
   不从 runner 宿主或 VM 外部绕路。探针句柄一经取得就纳入
-  环境 finalizer,成功、失败与中断路径都删除。轮询 500ms
+  Sandbox finalizer,成功、失败与中断路径都删除。轮询 500ms
   起指数退避、封顶 5s;`timeoutMs` 省略时 60s。省略
   `ready` 时容器进入运行态即就绪。
-- 容器在 ready 通过前退出即环境失败(`errored`),不做
+- 容器在 ready 通过前退出即 Sandbox 失败(`errored`),不做
   restart;ready 通过后到 attempt 结束前退出,同样按
-  环境错误终止 attempt,附服务日志。
+  Sandbox 错误终止 attempt,附服务日志。
 - `privileged` 声明在**单个 service** 上;agent 沙箱不提供
   特权位——特权 agent 容器在共享 daemon 上能看见并影响
   并发兄弟 attempt,这个隔离面不出让。
@@ -100,59 +100,59 @@ export default defineConfig({
 `dependsOn`、`build` 翻成 `build`,产出与手写完全同构的
 规范化拓扑;未被豁免又不认识的 key 一律启动期报错,不静默
 忽略。compose 文件的字节不进指纹,指纹只认规范化拓扑——
-与「实验文件认解析值」的既有哲学一致。
+与「实验文件认读取值」的既有哲学一致。
 
 `agentService` 只负责指出哪一项要从伴随服务拓扑中剔除,
 不把该服务的 `image` / `build` 翻译成 agent 沙箱起点。
 agent 起点仍由下面的 provider spec 表选择,构建仍走 provider
 原生工具。导入器在返回值里保留一份只供诊断的 agent source
 摘要(image 引用或 build context 路径),启动期将它与 spec
-解析结果并列展示。
+读取结果并列展示。
 
-缺少对应 spec 表项时按缺项报错,不得回退到基础产物。这样
+缺少对应 spec 表项时按缺项报错,不得回退到基础输出。这样
 迁移者不必人工猜「漏的是哪份 agent 配方」,但导入器也不
 冒充跨 provider 构建 DSL。所谓「零手抄」只指伴随服务拓扑,
-不包括构建并发布 agent 预制产物。
+不包括构建并发布 agent 预构建输出。
 
 provider spec 的
-[`environments` 表](../../../feature/sandbox/library/prebuilt-environments.md#按-environment-选预制产物)
-原语义保留,只翻译 agent 沙箱的起点产物。对齐规则:
+[`environments` 表](../../../feature/sandbox/library/prebuilt-environments.md)
+原语义保留,只翻译 agent 沙箱的起点输出。对齐规则:
 
 - 只有 spec 表项:服务数为零的单容器 profile,现有语义。
 - 只有 config 表项:若拓扑来自手写 `defineEnvironment`,agent
-  沙箱从 spec 基础产物起步;若来自 compose 导入且剔除了
-  `agentService`,启动期报缺少 agent 产物映射,不静默换环境。
-- 两处都有:起点产物听 spec 表,服务听 config 表。
+  沙箱从 spec 基础输出起步;若来自 compose 导入且剔除了
+  `agentService`,启动期报缺少 agent 输出映射,不静默换 Sandbox。
+- 两处都有:起点输出听 spec 表,服务听 config 表。
 - 两处都查不到:启动期配置错误,一次穷举,零沙箱创建。
 - `config.environments` 的键对照本次发现到的**全部** eval
   检查,不对照过滤后的选中集合。没有任何已发现 eval 引用的
   键与缺表项同款穷举报错——unused entry 是键名笔误的形状;
   某个键只被未选中的 eval 引用则合法,改变 `evals` 过滤器
-  不要求同步裁剪环境表。未发现的动态 eval 不靠猜测放行,
+  不要求同步裁剪 Sandbox 表。未发现的动态 eval 不靠猜测放行,
   应先完成 loader 发现再做本校验。
 
 ### 优势
 
 - **R1 / R4**:拓扑声明与 provider spec 解耦;服务名即
-  主机名,解析是 provider 的构建与启动义务。
+  主机名,寻址是 provider 的构建与启动义务。
 - **R2 / R3**:生命周期由 niceeval 编排,就绪门在 agent
   沙箱创建之前,服务销毁在评分之后。
 - **R5 / R11**:需求从规范化拓扑纯数据推导(`services` →
   `services` 位;`build` → `imageBuild`;`privileged` 同名);
   `--keep-sandbox` 再追加 `serviceKeep`;全量跳过升级为
   启动期报错,不产出绿色空跑。
-- **R6**:指纹输入 = agent 沙箱起点产物 + 规范化拓扑
-  (服务名、image 解析后的 OCI digest、build context 内容
+- **R6**:指纹输入 = agent 沙箱起点输出 + 规范化拓扑
+  (服务名、image 读取后的 OCI digest、build context 内容
   哈希、env 的明文值与间接引用名、command、dependsOn、
-  ready)。浮动 tag 只作解析输入,不作环境身份。
+  ready)。浮动 tag 只作读取输入,不作 Sandbox 身份。
 - **R7 / R9 / R10**:服务由 niceeval 创建,日志、phases、
   预算口径、回收与孤儿核对都是顺理成章的义务(见下节)。
 - **R8**:导入器让 TB 类任务零手抄,compose 保持单一事实源;
   手抄漏译一个 healthcheck 参数就是新的「推导有洞」,
   导入器把这类错误整类关掉。
 - 与[无跨 provider 构建 DSL](../../../feature/sandbox/library/prebuilt-environments.md#为什么没有跨-provider-构建-dsl)
-  相容:服务不是发布产物,是运行期容器;agent 沙箱起点仍
-  只认 typed 产物 ID。
+  相容:服务不是发布输出,是运行期容器;agent 沙箱起点仍
+  只认 typed 输出 ID。
 
 ### 缺点
 
@@ -195,20 +195,20 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 - 服务容器**与网络**创建期打同一套 provision token 与
   运行标识(docker 网络支持 label)。
-- kill-on-failure 覆盖部分启动的拓扑:拿到任一句柄后失败,
+- kill-on-failure 涵盖部分启动的拓扑:拿到任一句柄后失败,
   先整组销毁再抛原始错误(db 起了、api ready 超时,
   db 与网络不留)。
 - 拉服务镜像限流沿用拒绝类退避;确定性构建失败按共享该
   profile 的范围附
   [`scope`](../../../feature/error-classification/README.md)
-  给止损闸,不让 30 条同 profile 的 attempt 各烧一遍。
+  给止损熔断,不让 30 条同 profile 的 attempt 各烧一遍。
   同 content-hash 的并发构建做进程内 single-flight。
 - 孤儿核对与 `sandbox prune` 的资源词表加「服务容器」
-  「网络」两行;中断与留存矩阵覆盖构建 image、创建网络、启动 Sandbox 与服务以及等待 ready 时的 Ctrl+C。
-  此刻沙箱 Scope 尚不存在,清理由各阶段自己的 finalizer 承担。
+  「网络」两行;中断与留存矩阵涵盖构建 image、创建网络、启动 Sandbox 与服务以及等待 ready 时的 Ctrl+C。
+  此刻沙箱 Scope 尚不存在,收尾由各阶段自己的 finalizer 承担。
 
 **能力协商与 skipped(R5 / R11)。** 供给侧是 provider
-中性元数据的能力位(与 `exclusive` 同层),解析期取交集:
+中性元数据的能力位(与 `exclusive` 同层),读取期取交集:
 
 - 缺项的 (eval, provider) 组合逐 attempt 落
   `verdict: "skipped"`,`skipReason` 用
@@ -234,20 +234,20 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 - **Local**:不启动伴随服务,一律 `skipped`。
 
 服务声明里的 `image` 可以写 tag 或 digest。规划期由 provider
-按目标平台把 tag 解析成不可变 OCI manifest digest。规范化
-拓扑、指纹与 `run.json` 投影都记录 digest;同一 tag 被重推
-会得到新指纹。解析发生在携带决策之前,失败是环境解析错误,
+按目标平台把 tag 读取成不可变 OCI manifest digest。规范化
+拓扑、指纹与 `run.json` 投影都登记 digest;同一 tag 被重推
+会得到新指纹。读取发生在携带决策之前,失败是 Sandbox 读取错误,
 不能拿旧结果假装命中。
 `build` 不先构建再算身份,它继续以 context 内容、Dockerfile
 与 args 的规范化哈希作为指纹输入;构建产出的 digest 另作为
-运行事实落盘,用于事后核对。provider 若不能解析不可变身份,
+运行事实落盘,用于事后核对。provider 若不能读取不可变身份,
 不得声明 `services` 能力。
 
 **证据(R7)。** 服务日志进
 [证据 registry](../../../feature/record/architecture.md)新行
 `service-logs`:逐服务分文件、尾部截断带体积上限、publish
 默认携带、词干进 `AttemptRecord.artifacts`;采集沿用 timing
-记录的脱敏纪律(env 值不回显进摘要)。
+数据的脱敏纪律(env 值不回显进摘要)。
 
 **指纹与 secrets(R6)。** `{ fromEnv }` 的变量名进指纹与
 落盘投影,值两者都不进——密钥轮换不触发重跑,与
@@ -257,7 +257,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 **留存。** `--keep-sandbox` 对带服务的 attempt 留存整组
 (agent 容器 + 服务容器 + 网络),注册表条目扩 `services`
-与 `network` 字段,`state` 逐成员记录。提交 keep 后的状态
+与 `network` 字段,`state` 逐成员登记。提交 keep 后的状态
 转换由 provider 原子地对整组执行,不允许只暂停 agent:
 
 - Docker 按反向 `dependsOn` 顺序停止服务,再停止 agent,
@@ -272,7 +272,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 `sandbox stop` 销毁整组并拆网,少销毁任何成员都算失败并保留
 登记项。ready 失败的 `errored` 不留存——agent 沙箱从未创建,
-登记项没有可进入的锚点;服务日志 artifact 是该场景的唯一
+登记项没有可进入的入口;服务日志 artifact 是该场景的唯一
 证据,这句写进 keep 文档。
 
 **复用。** [Sandbox 复用](../../../feature/sandbox/reuse.md)
@@ -284,9 +284,9 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 ### 落地路线
 
-1. 规范化拓扑类型、`defineEnvironment`、镜像 digest 解析与
+1. 规范化拓扑类型、`defineEnvironment`、镜像 digest 读取与
    两表对齐,启动期穷举报错(含 unused key、保留字、全 skipped)。
-2. Docker 构建并启动:网络与配额、并行启动 + `dependsOn` 排闸、
+2. Docker 构建并启动:网络与配额、并行启动 + `dependsOn` 准入、
    ready 门、回收契约接入、phases 扩词、日志证据行。
 3. 能力协商与 `skipped` 落盘形状。
 4. 指纹扩展(含 `fromEnv`)与缓存口径前移、回归测试。
@@ -298,12 +298,12 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 ### 验收 / Definition of Done
 
-1. **依赖排闸(R2)**:`api dependsOn db` 的拓扑,db ready
+1. **依赖准入(R2)**:`api dependsOn db` 的拓扑,db ready
    前 api 不启动;db ready 恒失败时 attempt `errored`、
    api 从未启动、网络与 db 已回收。
 2. **判分时服务活着(R3)**:`test(t)` 最后一步与 judge
    阶段各发一次服务请求,全部成功。
-3. **服务名解析(R4)**:同一条 eval 在 docker 与(验证后
+3. **服务名寻址(R4)**:同一条 eval 在 docker 与(验证后
    的)e2b 上用 `http://api:8000` 均可达,eval 零改动。
 4. **skipped 与假绿(R5 / R11)**:带服务 profile 跑 local,
    部分命中时逐 attempt 落 `skipped` 并单列;选中集合全部
@@ -313,7 +313,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
    不触发;轮换 `fromEnv` 指向的密钥值不触发。
 6. **证据(R7)**:失败 attempt 的 artifacts 里有逐服务
    日志,超上限时尾部截断而不是撑爆目录。
-7. **导入器(R8)**:已有对应 provider agent 预制产物映射时,
+7. **导入器(R8)**:已有对应 provider agent 预构建输出映射时,
    真实 TB compose 只写 `agentService` 与插值表即可导入
    伴随服务并跑通;缺 agent 映射时启动期同时展示 compose
    agent source 与待补的 spec 表项。含未认识 key 的 compose
@@ -323,7 +323,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
    留存后 `enter` 会依赖有序地恢复服务、重过 ready 门再
    进入 agent;恢复失败时登记项仍可见。
 9. **口径(R10)**:首轮构建 10 分钟的 attempt,deadline 与
-   `executionMs` 都覆盖这 10 分钟;第 31 个并发 attempt
+   `executionMs` 都涵盖这 10 分钟;第 31 个并发 attempt
    在网络配额上排队而不是成片 `errored`。
 
 **反指标**:
@@ -342,7 +342,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 ### 和其它方案的关系
 
-- **vs PLAN-2**:PLAN-2 的 compose 解析以导入器身份并入
+- **vs PLAN-2**:PLAN-2 的 compose 读取以导入器身份并入
   本方案(同一份规范化拓扑);被否决的只是「compose 直接
   作为运行时契约实体」。
 - **vs PLAN-3**:PLAN-3 的能力协商切片是本方案落地路线的

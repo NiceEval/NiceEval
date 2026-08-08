@@ -8,7 +8,7 @@ Sandbox Group Definition 不提供 template、Provider 或 prepare 命令。
 组成员的 Eval Layer 只能省略，或是没有实例 hook 的 command-only prepare Layer；Experiment 必须提供 template-bearing Layer，并成为唯一 lifecycle owner。
 
 每个 Eval × Experiment pair 仍按 [Sandbox Layer](../../feature/sandbox/layers.md)完成普通 link。
-Experiment 作为 template owner 先 prepare，当前 Eval 的 command-only prepare 随后重放；现有两层顺序不变。
+Experiment 作为 template owner 先 prepare，当前 Eval 的 command-only prepare 随后重新执行；现有两层顺序不变。
 
 link 完成后，physical planning 产生既有复用身份：
 
@@ -23,7 +23,7 @@ Runner 仍逐项比较最终 identity。
 自定义 Provider 或动态 JavaScript 绕过结构约束后若产生差异，报 `sandbox-reuse-group-incompatible`，不猜测也不拆组。
 
 组 id 进入运行时复用键。
-两个组即使解析出完全相同的物理身份，也必须创建各自的 Sandbox，不能跨组借用。
+两个组即使读取出完全相同的物理身份，也必须创建各自的 Sandbox，不能跨组借用。
 运行时所有权是 `(invocationId, experimentId, groupId)`；另一个 Experiment 或 Invocation 使用同一组定义时，创建自己的独立实例。
 
 ## 发现实体与规划实体
@@ -49,7 +49,7 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 
 ## 编译期与发现期
 
-`defineEval()` 产物保留 `none`、`prepare-only` 或 `instance` Sandbox 所有权。
+`defineEval()` 输出保留 `none`、`prepare-only` 或 `instance` Sandbox 所有权。
 `defineSandboxGroup()` 的 tuple 只接受前两种，普通 TypeScript 项目在加载 NiceEval 前就能指出具体不合法成员。
 
 发现顺序固定为 Eval 在前、Sandbox Group 在后。
@@ -61,7 +61,7 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 
 1. 组内下一条工作取得全局与 Experiment 并发位；
 2. 首条工作创建 Sandbox，后续工作领取同一活跃实例；
-3. Runner reset workdir，并重放两层 prepare 与 agent.ensure；
+3. Runner reset workdir，并重新执行两层 prepare 与 agent.ensure；
 4. Attempt 封口和 cleanup 完成后，实例回到该组；
 5. 组结束后执行 lifecycle teardown，再按 physical release policy 停驻或销毁。
 
@@ -77,7 +77,7 @@ assignment 只由发现结果与当前 Eval id 确定，不读取 Experiment 配
 所有 assignment 仍逐 Attempt 判断结果携带；被携带的 Attempt 不领取 Sandbox，也不执行 lifecycle、reset 或 prepare。
 
 Sequence 上下文仍按[有序 Eval 序列](../ordered-sequences/architecture.md)进入 Attempt 指纹。
-复用组不建立第二套 lineage、完整前缀或重放规则。
+复用组不建立第二套 lineage、完整前缀或重新执行规则。
 
 ## 实例不可用
 
@@ -86,10 +86,10 @@ Sandbox 在以下任一条件下不可继续：reset 失败、派发前寿命无
 - `stop-group`：中止该组尚未派发的工作，Run 记为 incomplete；其它组和 fresh Attempt 继续。
 - `replace-sandbox`：完成旧实例可执行的 teardown 与 physical release，再创建新实例继续尚未派发的工作。
 
-两条路径都记录原始失败阶段和 Provider 原文。
-`replace-sandbox` 记录替换，但不把新实例描述成连续状态。
+两条路径都登记原始失败阶段和 Provider 原文。
+`replace-sandbox` 登记替换，但不把新实例描述成连续状态。
 
-## 记录形状
+## 数据形状
 
 Run 保存实际选中的组定义，Attempt 保存 Sandbox 调度归属：
 

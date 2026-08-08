@@ -41,7 +41,7 @@ OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`�
 1. 官方 SDK 事件或结构化结果，由官方转换器直接归一。
 2. CLI 的结构化 stdout。
 3. CLI 为 resume 保存的 transcript / tape。
-4. 无结构化来源时返回空事件并明确负断言不可信，不从自然语言输出猜工具行为。
+4. 无结构化出处时返回空事件并明确负断言不可信，不从自然语言输出猜工具行为。
 
 具体通道模型和新增 CLI 的检查清单见 [行为与 Trace 采集](architecture/collection.md)。
 

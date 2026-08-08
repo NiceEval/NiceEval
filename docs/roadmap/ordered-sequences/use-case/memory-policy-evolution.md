@@ -85,9 +85,9 @@ pnpm --silent exec niceeval exp compare/codex-mempal \
   --dry
 ```
 
-计划列出八步、固定串行、完整重放和 `sharedState` key。
+计划列出八步、固定串行、完整重新执行和 `sharedState` key。
 它不会把 key 名里含有 cohort 就解释成干净状态；`restoreKnownCohort` 是否真的恢复约定 revision 仍由作者负责。
-同一正式条件再次运行时要分配新的 cohort，或让 lifecycle 恢复同一份固定起点；不能在上次的最终状态上再次重放。
+同一正式条件再次运行时要分配新的 cohort，或让 lifecycle 恢复同一份固定起点；不能在上次的最终状态上再次重新执行。
 
 确认起点后运行同一命令，去掉 `--dry`：
 

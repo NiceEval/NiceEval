@@ -51,7 +51,7 @@ Runner 为每条 Agent frame 补齐 Turn scope、Observation identity、sequence
 
 ## Batch Adapter
 
-不能增量取得原生事件的 Adapter 可以使用 batch helper。
+不能增量取得原生事件的 Adapter 可以使用 batch 工具。
 它仍产生同一条 Turn stream，只是所有 frame 在原生调用结束后才可见。
 
 ```ts
@@ -102,7 +102,7 @@ interface AgentContext {
 | `diagnostic` | Observation | 是 | 每次发生都保留，读面可以按 key 去重投影 |
 | `fact` | Observation | 是 | 每次上报都追加；latest-fact projector 按 sequence 取最后值 |
 
-`fact` 的同 key 更新不覆盖历史事件。
+`fact` 的同 key 更新不覆写历史事件。
 需要当前值的消费面使用 latest-fact projector；需要变化轨迹的消费面读取全部事件。
 
 ## Record 读取
@@ -148,7 +148,7 @@ Report、show 与 view 不直接按事件名或 schema 分支，而是使用 pro
 
 Projector 是带稳定身份的普通函数值。
 它把一个 AttemptHandle 转成带 availability 和依据的中性读模型，不创建新的持久化实体。
-这个名称借自 Event Sourcing/CQRS 的 Projector，但 NiceEval 采用的是只读纯函数特化；来源与差异见 [Reference](reference/README.md#projector-与-projection)。
+这个名称借自 Event Sourcing/CQRS 的 Projector，但 NiceEval 采用的是只读纯函数特化；出处与差异见 [Reference](reference/README.md#projector-与-projection)。
 
 ```ts
 type UnavailableReason =
@@ -195,7 +195,7 @@ verdict(attempt);     // Availability<VerdictClaim>
 ```
 
 Projector 可以组合其它 projector，但必须合并 `basedOn`，不能把 unavailable 变成猜测值。
-它只能依赖 sealed Record、显式参数和其它 Projector，不能读取当前环境或未记录配置。
+它只能依赖 sealed Record、显式参数和其它 Projector，不能读取当前运行条件或未登记配置。
 同一 Projector 版本对相同输入必须返回相同结果。
 
 Projector 版本用于区分派生语义，并写入明确导出的 Report artifact 元数据。
@@ -204,7 +204,7 @@ Reader 可以在当前 AttemptHandle 内 memoize 结果，但不能写磁盘缓�
 
 Claim evaluator 使用 Projection 时，必须确认全部 EvidenceRef 来自当前 Record graph，再把 `target` 写成 Claim 的底层 EvidenceTarget。
 Projection 自身不是 EvidenceRef，也不能成为 Claim、另一个 Record 或后续 Report 的权威输入。
-evaluator 版本必须覆盖所调用 Projector 的语义版本，不能让依赖变化静默改写同一 evaluator 身份。
+evaluator 版本必须涵盖所调用 Projector 的语义版本，不能让依赖变化静默改写同一 evaluator 身份。
 
 ## Reports 的依赖方向
 
@@ -226,7 +226,7 @@ const changedLines = rollup(async (attempt) => {
 只有新的 projector 证明缺少不可重建事实时，才需要增加独立 Observation schema。
 
 用户明确保存的 HTML、JSON 或其它 Report artifact 属于 Reports 输出。
-它可以记录 generator 版本与输入 Record Graph root，但不进入本地 Record graph，也不被 `openRecord()` 读取。
+它可以登记 generator 版本与输入 Record Graph root，但不进入本地 Record graph，也不被 `openRecord()` 读取。
 
 ## Report artifact 的证据闭包
 

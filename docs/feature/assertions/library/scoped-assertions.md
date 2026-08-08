@@ -41,8 +41,7 @@ t.calledTool("get_weather", { count: 2 }); // 全 attempt
 partial 通道只会少采，超出不可能由采集造成。
  `count` 为谓词且不满足时，非 complete 通道上一律记 `unavailable`。
 缺证据的计数没有可信判定。
-覆盖声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
-
+完整度声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。
 
 ## 匹配条件的字段全集
@@ -94,7 +93,7 @@ await t.respond({ request, optionId: "reject" });
 t.calledTool("send_email", { status: "rejected" });
 ```
 
-严重度与匹配条件正交：作用域断言默认 gate；降级成软指标链 `.atLeast(1)`——参数是分数线，不是调用次数，次数在 `count` 里表达；只记录、不设线用无参 `.soft()`（裁决见 [Severity 与 Verdict](../../verdict/architecture.md#severity)）。
+严重度与匹配条件正交：作用域断言默认 gate；降级成软指标链 `.atLeast(1)`——参数是分数线，不是调用次数，次数在 `count` 里表达；只留档、不设线用无参 `.soft()`（裁决见 [Severity 与 Verdict](../../verdict/architecture.md#severity)）。
 
 ## 顺序与谓词
 
@@ -118,7 +117,7 @@ t.eventsSatisfy("thinking 不超过 3 次", (events) =>
 
 | 接收者 | API | 原因 |
 |---|---|---|
-| `t` | `check`、`require`、`skip`、`log`、`group` | 记录或控制整个 attempt |
+| `t` | `check`、`require`、`skip`、`log`、`group` | 登记或控制整个 attempt |
 | `t` | `newSession()` | 只有主上下文创建额外 session |
 | `t` | `sandbox.*` | Sandbox 是 attempt 资源 |
 | turn | `outputEquals(value)`、`outputMatches(schema)` | 直接评价这一轮的 `turn.data` |

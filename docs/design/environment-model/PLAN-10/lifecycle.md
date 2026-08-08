@@ -9,15 +9,15 @@
 | Eval layer | 可选 root、按 Attempt 的 SandboxCommand、test | 题目起点、题目准备、Agent 交互与判分 |
 | Experiment layer | 可选 root、按 Attempt 的 SandboxCommand | 实验起点或实验准备 |
 | Agent layer | extension-only AgentProvisioner | CLI identity、payload、平台、安装与复检 |
-| Provider Case | root planner、build、start、ready、finalizer | 创建、观测、复用并清理完整资源组 |
-| State Feature | load、save、临界区与窗口状态 | 外部或跨 Attempt 实验状态 |
+| Provider Case | root planner、build、start、ready、finalizer | 创建、观测、复用并释放主 Sandbox 实例及伴随资源 |
+| State Feature | load、save、临界区与复用周期状态 | 外部或跨 Attempt 实验状态 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
 Agent layer 只共享排序位置，不把 AgentProvisioner 降格成普通命令。
 
 ## Run 级 discovery 与 link
 
-Runner 先加载 Eval、Experiment、config 与 Agent，再解析所有 selector 和 CLI filter。
+Runner 先加载 Eval、Experiment、config 与 Agent，再求值所有 selector 和 CLI filter。
 随后对实际选择图中的每一条 `Eval × Experiment` 边执行 root XOR：
 
 ```text
@@ -111,14 +111,14 @@ Adapter 完成 inspect / install / reinspect 后，Runner 才进入 State 与 Ag
 |---|---|---|
 | pair root link | Run 规划期 | Run 规划期 |
 | Provider physical plan / fingerprint | Run 规划期 | Run 规划期 |
-| Case create / ready | 每 Attempt | 每复用窗口 |
+| Case create / ready | 每 Attempt | 每复用周期 |
 | reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
-| root / extension prepare commands | 每 Attempt | 每 Attempt 重放 |
+| root / extension prepare commands | 每 Attempt | 每 Attempt 重新执行 |
 | AgentProvisioner inspect / install / reinspect | 每 Attempt | 每 Attempt重检，命中可快速返回 |
-| State load / save | 每 Attempt，按 State 契约 | 每 Attempt或窗口，按 State 契约 |
+| State load / save | 每 Attempt，按 State 契约 | 每 Attempt 或复用周期，按 State 契约 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command registered cleanup | 每 Attempt逆序 | 每 Attempt逆序 |
-| Provider finalizer | 每 Attempt | 每复用窗口 |
+| Provider finalizer | 每 Attempt | 每复用周期 |
 
 PLAN-10 不在 Layer 中建立 reset anchor 后跳过 command。
 复用只复用 Provider Case 与允许保留的状态；准备链仍然是每条 Attempt 的可观察事实。
@@ -136,15 +136,15 @@ State load 在 Agent CLI 已可用后执行；Runner 随后建立本条 Attempt 
 - root / extension command 写入的题目材料不算 Agent 修改；
 - Agent CLI 安装不得把工具文件写进任务 workdir；
 - State load 的实验条件不算 Agent 修改；
-- `test(t)` 在 `send` 窗口外上传的 verifier 仍按 Eval 活动归因；
-- 只有 Agent turn 窗口内的变化进入 Agent diff。
+- `test(t)` 在 send 区间外上传的 verifier 仍按 Eval 活动归因；
+- 只有 Agent turn 区间内的变化进入 Agent diff。
 
-Runner 仍记录各活动的实际文件变化，不能靠延后 baseline 隐藏测试泄漏。
+Runner 仍写入各活动的实际文件变化，不能靠延后 baseline 隐藏测试泄漏。
 
 ## Cleanup
 
 SandboxCommand 在运行中取得临时资源后调用 `context.onCleanup()`。
-只清理本条 Attempt 实际取得的资源，顺序为全局 LIFO：
+只释放本条 Attempt 实际取得的资源，顺序为全局 LIFO：
 
 ```text
 Agent runtime teardown
@@ -159,7 +159,7 @@ AgentProvisioner 默认不卸载 CLI；其临时 payload handle 由 Adapter / Ru
 Case service、watcher、日志和 volume 不用 `onCleanup()`，由 Provider Case finalizer 整组关闭。
 
 cleanup 使用独立 budget 与 signal，不复用已经 abort 的前向 signal。
-cleanup 失败保留原结果、记录诊断，并在无法证明可恢复时退休复用窗口。
+cleanup 失败保留原结果、写入诊断，并在无法证明可恢复时退休该复用周期。
 
 ## 多 root matrix 的执行
 
@@ -193,13 +193,13 @@ PLAN-10 不引入动态优先级或 dependsOn，因为它们会让同一 layer �
 
 | Case | PLAN-10 路径 |
 |---|---|
-| C1 | Eval root 直接解析完整 Compose / Dockerfile Case |
+| C1 | Eval root 直接规划完整 Compose / Dockerfile Case |
 | C2 | Experiment root 或 extension command 表达实验条件，逐 Attempt 实际检查 |
 | C3 | Eval root → Experiment commands → AgentProvisioner 固定串行 |
 | C4 | 同 owner 的 command 按源码顺序串行，无自动并行 |
 | C5 | 预装只让 ensure command 检查命中，不删除声明 |
-| C6-C7 | State 保持独立；Layer prepare 每 Attempt 重放 |
+| C6-C7 | State 保持独立；Layer prepare 每 Attempt 重新执行 |
 | C8 | Experiment root → Eval checkout → Agent |
 | C9 | 不兼容组合使用融合 root 或拆 selector，不合并两份 root |
 | C10 | root 按 pair 选择；同一 Run 可含多个 Provider/template |
-| C11 | `test(t)` 继续使用普通上传并记录 transfer manifest |
+| C11 | `test(t)` 继续使用普通上传并写入 transfer manifest |

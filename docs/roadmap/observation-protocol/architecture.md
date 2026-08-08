@@ -6,9 +6,9 @@ Writer、Live 和 Report 在接收一个值前都要先判断它属于哪类信�
 
 | 信息 | 判据 | 例子 |
 |---|---|---|
-| Provenance | 解释运行与求值所需，不能用读取时的环境替代 | 输入清单、Agent 与 model、配置、源码摘要、算法版本 |
+| Provenance | 解释运行与求值所需，不能用读取时的运行条件替代 | 输入清单、Agent 与 model、配置、源码摘要、算法版本 |
 | Observation | 运行后无法重新取得，只陈述发生了什么 | Agent 事件、命令输出、workspace 变化、耗时、实际账单、错误 |
-| Claim | 当时由 evaluator 根据依据作出的结论 | Assertion、judge、Verdict、估算成本、证据覆盖结论 |
+| Claim | 当时由 evaluator 根据依据作出的判断 | Assertion、judge、Verdict、估算成本、证据涵盖判断 |
 | Projection | Projector 从同一份 Record 确定性计算出的中性读模型 | 执行树、时间树、usage、diff、Assertion 与 Verdict 读面 |
 
 Projector 取名自 Event Sourcing/CQRS 中从事件产生读模型的组件，直接先例与 NiceEval 的纯函数特化见 [Reference](reference/README.md#projector-与-projection)。
@@ -89,7 +89,7 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
 durable scope 只有 Run 与 Attempt 两种穷尽形状。
 Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt，`turnId` 存在时必须同时存在 `agentSessionId`。
 
-`stream.id` 标识一个可独立封口和重放的流。
+`stream.id` 标识一个可独立封口和重新执行的流。
 Attempt 事件使用 Attempt stream；Run 级调度、setup、teardown 与共享 activity 使用 Run stream。
 每个 stream 的 `sequence` 从零连续递增，顺序由 Observation Hub 收到事件的次序决定，不用墙钟推断并发事件的先后。
 
@@ -102,7 +102,7 @@ Adapter 从原生 transcript 或 SDK 事件归一时写入 Adapter 身份和 map
 ## 事件身份与版本
 
 同一 `id` 只能对应同一份规范化字节。
-Hub 重复收到字节相同的事件时按幂等重放处理；相同 ID 对应不同内容是协议错误，必须产生结构化 Diagnostic。
+Hub 重复收到字节相同的事件时按幂等重入处理；相同 ID 对应不同内容是协议错误，必须产生结构化 Diagnostic。
 
 持久化事件不是封闭 TypeScript union。
 Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque event 返回，并保留完整 envelope 与 body。
@@ -131,7 +131,7 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 它们使用独立的 live stream，不占用 durable stream 的 sequence。
 这些反馈可以进入 live snapshot 的 transient overlay，也可以被合并或丢弃，但不进入 Record，不能改变权威 reducer 的结果。
 
-Assertion、judge、Verdict、估算成本与证据覆盖聚合不伪装成 Observation。
+Assertion、judge、Verdict、估算成本与证据涵盖聚合不伪装成 Observation。
 它们进入 Claim，并通过明确依据引用 Observation 或 Provenance。
 
 ## Agent 是增量事件生产者
@@ -148,7 +148,7 @@ waiting ── send(responses, same AgentSession) ──> emitting
 ```
 
 `waiting` 是一轮的正常 Outcome，不是半写入的状态快照。
-下一次回答沿用同一 `AgentSession`，产生新的 Turn stream；历史事件不可覆盖。
+下一次回答沿用同一 `AgentSession`，产生新的 Turn stream；历史事件不可覆写。
 
 Batch Adapter 可以在原生调用结束后一次产出全部事件。
 Streaming Adapter 在事件发生时立即产出；两者进入 Hub 后具有相同的 Record、断言和 live 语义。
@@ -180,7 +180,7 @@ Record、Live 和 OTel exporter 共享这份转写后的 durable envelope，不�
 另一种允许形态是按事件 schema 的固定规则截断并标记；不能让一条事件独占无界文件。
 这个预算只约束一条事件的编码，不限制一个 stream 能保存多少事件。
 
-Attempt 只有在 Attempt-scoped finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整记录。
+Attempt 只有在 Attempt-scoped finalizer 完成、事件流封口、Claim 写入且 Record sink 确认后才成为完整数据。
 进程中断留下的未封口 stream 保留为 incomplete evidence；Reader 不补造 Outcome、Verdict 或缺失事件。
 
 Attempt-scoped finalizer 包含 Agent teardown、已登记 cleanup 与 Sandbox lifecycle teardown。
@@ -212,13 +212,13 @@ snapshot 必须声明它折叠到哪个 stream sequence。
 
 ## Provenance 与 Claim
 
-Provenance 保存复核运行所需、但不能用读取时环境替代的输入：
+Provenance 保存复核运行所需、但不能用读取时运行条件替代的输入：
 
 - Run、Attempt、Experiment、Eval、Agent Session 与 Turn 身份。
 - 实际使用的 Agent、Adapter、model、reasoning effort 与 provider。
 - 运行配置、Eval 源码、判据、Sandbox 输入与安装清单。
 - strict、judge、价格表和 Claim evaluator 等求值算法身份。
-- Adapter 声明及每 Turn 实际形成的证据覆盖。
+- Adapter 声明及每 Turn 实际形成的证据涵盖。
 
 哈希值是输入在指定算法下的派生标识，不是 Projector 读模型。
 Record 可以用哈希寻址或校验文档，但同时保存完整输入与算法身份；configHash、fingerprint 或索引值不能代替输入本身。
@@ -281,11 +281,11 @@ object selector 省略时引用整个 payload；存在时由开放、带版本�
 Report 可以同时消费多个 Run；只写 `recordId`、`streamId`、`claimId` 或 digest 都不能作为发布闭包的身份。
 
 确定性 Assertion 也保存为 Claim。
-Reader 可以使用相同 evaluator 复核，但不能用读取时规则静默覆盖历史结论。
+Reader 可以使用相同 evaluator 复核，但不能用读取时规则静默覆写历史判断。
 Judge Claim 保存模型返回与 judge 身份；Verdict Claim 引用 Assertion、Judge、致命错误和 strict 输入，不复制它们。
 
 Claim 可以依据内存中的完整事件求值，而 Record 中的同一事件可能带 `truncated` 或脱敏标记。
-这种 Claim 仍保存当时结论，但读取面必须把复核能力标为 truncated 或 redacted，不能宣称持久化证据完整。
+这种 Claim 仍保存当时判断，但读取面必须把复核能力标为 truncated 或 redacted，不能宣称持久化证据完整。
 
 provider 返回的实际账单是 Observation。
 NiceEval 根据 usage 和价格表计算的金额是 Claim，必须引用 usage 事件、价格表与计价算法。
@@ -354,13 +354,13 @@ core decoder 遇到未知字段、重复 JSON key、非法 UTF-8、非安全整�
 extension 只能进入新的 typed payload，不能增加 `LayoutV2`、`DescriptorV1`、`GraphNodeV1`、`EdgePageV1` 或 `GraphRootV1` 字段。
 
 `digest` 使用 `<registered-algorithm>:<canonical-value>`，算法和值都必须通过注册表校验。
-路径解析器根据校验后的算法和值生成存储路径，不能把输入字符串直接拼进文件路径。
+路径读取器根据校验后的算法和值生成存储路径，不能把输入字符串直接拼进文件路径。
 未知算法返回 `unsupported-digest`；增加一种算法不改变 Digest 语法，也不自动要求新的容器版本。
 `size` 必须是 JSON safe integer，并与取得的原始落盘字节完全相等。
 
 `mediaType` 是小写、无参数的规范 media type；`DescriptorV1` 的三个字段共同组成 typed reference。
 digest 只定位原始字节，不能单独决定这些字节的业务解释。
-验证发生在解压、解密或业务解析之前；内容寻址目录布局不是 EvidenceRef 或领域身份。
+验证发生在解压、解密或业务读取之前；内容寻址目录布局不是 EvidenceRef 或领域身份。
 
 压缩、加密、签名、annotation、权限与 codec 要求都不进入 DescriptorV1。
 它们使用独立 wrapper、attestation 或 metadata payload，并通过 Graph node 强依赖引用所需对象。
@@ -403,7 +403,7 @@ bundle subject 通过 strong edge 引用多个 Record 或 Report node；增加�
 
 领域 catalog 是 Record 或 Report payload 使用的查询索引，不是容器闭包算法。
 它可以表达实体挂载与跨实体的有类型关系，不把 Run、Attempt、重试、携带、人工接受或跨 Run 对比限制成一棵 parent-child 树。
-一个结论可以有多个 `derivedFrom` link，不需要伪造唯一 parent。
+一个判断可以有多个 `derivedFrom` link，不需要伪造唯一 parent。
 
 Catalog payload 若保存 NodeRef，所属 Graph node 必须同时对每个引用写 strong edge。
 已知 catalog decoder 校验两边一致；generic walker 只使用 strong edge。
@@ -464,7 +464,7 @@ Generic copier 只按 DescriptorV1 和 strong edge 复制原始字节；它不�
 领域小型 JSON payload 可以使用 RFC 8785 JCS；超过 JSON 安全整数范围的计数和 offset 使用十进制字符串。
 
 普通功能不得提出 v3。
-只有 frozen bootstrap 无法解析、typed reference 无法继续解释、显式强闭包不足、Graph root 封口语义失效，或 core parser 与 object-ID 信任缺陷无法隔离时，才允许讨论新的容器版本。
+只有 frozen bootstrap 无法读取、typed reference 无法继续解释、显式强闭包不足、Graph root 封口语义失效，或 core parser 与 object-ID 信任缺陷无法隔离时，才允许讨论新的容器版本。
 每个提案必须先通过 [schema 演进防火墙](reference/schema-evolution.md#版本升级防火墙)；不能证明必须改变容器公理，就留在 v2。
 
 ### Record 发布与 Report 导出
@@ -514,10 +514,10 @@ NiceEval Observation 可以映射成 OTel LogRecord 或 span event 向外导出�
 ## Report 与 projector 边界
 
 Record reader 只验证文档、返回已知中性类型，并把未知、损坏、截断与缺失切面显式交代。
-Sample 只选择 Attempt、建立比较口径和呈现覆盖。
+Sample 只选择 Attempt、建立比较口径和呈现涵盖。
 
 Projector 是从 AttemptHandle 到带依据读模型的纯函数。
-这里的纯函数允许读取句柄指向的 sealed Record，但不允许读取当前时间、网络、进程环境、随机数或未记录配置。
+这里的纯函数允许读取句柄指向的 sealed Record，但不允许读取当前时间、网络、进程条件、随机数或未登记配置。
 同一份 Record、同一 Projector 版本与相同参数必须得到相同结果。
 
 Projection 没有 Record identity、Graph root 生命周期或文档引用。
@@ -529,7 +529,7 @@ Projection 类型属于 Library API，不是磁盘 document schema。
 
 Claim evaluator 可以调用 Projector，但保存 Claim 时必须确认全部 EvidenceRef 来自当前 Record graph，并把它们展开为底层 EvidenceTarget。
 Claim 不能引用一个 Projection 值、Report artifact 或运行期 snapshot。
-evaluator 版本必须覆盖它依赖的 Projector 语义，使依赖变化产生新的 Claim evaluator 身份。
+evaluator 版本必须涵盖它依赖的 Projector 语义，使依赖变化产生新的 Claim evaluator 身份。
 
 新增 Report 时：
 
@@ -542,10 +542,10 @@ Report 行、图表点、通过率、p90、汇总成本和执行树都不进入 
 用户导出的 HTML、JSON 或其它 Report artifact 写入 Reports 负责的目标位置，不挂进本地 Record graph。
 artifact 的 generator 版本和输入摘要只解释这份交付物，不把它提升成历史事实。
 
-## 重放不变量
+## 重新执行不变量
 
 1. 同一组已封口 durable 事件与同一 reducer 版本必须产生相同 snapshot。
-2. Live 在终态 cursor 上的 snapshot 必须等于从 Record 重放得到的同版本 snapshot。
+2. Live 在终态 cursor 上的 snapshot 必须等于从 Record 重新执行得到的同版本 snapshot。
 3. 丢失或合并 ephemeral progress 不得改变终态 snapshot、Claim 或 Verdict。
 4. OTel 缺失不得改变 Agent 行为节点、执行错误和 Verdict，只允许 timing 能力降级。
 5. Reader 必须保留未知事件与未知 typed object 的原始字节；不知道一种 schema 不能让已知内容不可读。

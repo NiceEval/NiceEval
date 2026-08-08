@@ -63,14 +63,15 @@ setup 或 Eval 手工命令真正失败时，不必指望 Agent event：
 
 命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联命令卡与[`--timing`](timing.md) 的 command 节点。若 Eval 随后抛出的 `error.message` 只剩截断尾部，Attempt 首页只在存在 `checked: true` 的命令时提示 `failed command evidence: niceeval show @<locator> --execution`。要从整个 attempt 回答「时间花在哪里」，使用 [`--timing`](timing.md)。
 
-命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与记录边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
+命令卡、Agent 事件卡与 Attempt error 消费的是同一次最终证据封口。命令通过 [`CommandOptions.sensitiveValues`](../../sandbox/library/operations.md#已知敏感值与落盘边界) 登记的已知值在落盘前统一替换成 `<redacted>`；`--expand`、`--grep` 与 `--json` 都只在脱敏后的值上工作，不存在“展开后取回原凭据”的旁路。没有登记 provenance 的自由文本和旧 artifact 无法在读取期可靠识别，展示层不使用 API-key/token 正则猜测。
 
 Text 面在预览与 `--expand` 前剥离捕获内容中的 ANSI 转义和不可打印控制字节，避免被测 CLI 的输出重新控制宿主终端；这只改变展示投影，不改写落盘证据。`--json` 仍忠实返回脱敏后的落盘字符串。
 
 ## 卡片预览预算与 `--expand`
 
-卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整的树解析产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。
+卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整树结构的输出（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。
 卡片正文是**有界预览**，主尺度是行：每个内容段最多显示前 3 行（保留原始换行）。
+
 段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；命令证据卡的命令行、stdout、stderr 各为一段。
 每段另有 1 KiB（UTF-8 字节，按字符边界回退）回退，防单行超长的 JSON blob 击穿行预算。
 选 3 行而不是更宽，是因为这个视图的职责是全景骨架——回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；细读任何一张卡都是一条显式的 `--expand` 命令，不靠预览承载完整内容。
@@ -95,11 +96,11 @@ Text 面在预览与 `--expand` 前剥离捕获内容中的 ANSI 转义和不可
 - `--expand <handle>` 与 `--execution` 组合、要求恰好一个 attempt 的范围，输出该卡片的完整落盘内容（原始换行，不再截断）。
   落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值如实带 `truncated` 标注与原始字节数——展开还原的是落盘证据，不是运行时全量。
 - 句柄未命中（turn 或卡片序号超界）按用法错误退出，并报该 attempt 实际的 turn 数与该 turn 的卡片数，不猜相邻卡片。
-- JSON 面恒为完整的树解析产物，不受预览预算约束；`--expand` 与 `--json` 组合因此是用法错误的推论，不是特判（[形状](json.md)）。
+- JSON 面恒为完整树结构的输出，不受预览预算约束；`--expand` 与 `--json` 组合因此是用法错误的推论，不是特判（[形状](json.md)）。
 
 ## 范围化：跨 attempt 扫描与 `--grep`
 
-`--execution` 接受任意[范围](../show.md#一次调用-范围-切片-形态)：范围含多个 attempt 时，宿主机器按 experimentId、evalId、attempt 序把这个区块逐 attempt 映射并分节，节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>` 是宿主机器写的定位行，节内内容仍由组件的 text 面产出，格式与单 attempt 相同。
+`--execution` 接受任意[范围](../show.md#一次调用--范围--切片--形态)。范围含多个 attempt 时，宿主机器按 experimentId、evalId、attempt 序把这个区块逐 attempt 映射并分节。节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>` 是宿主机器写的定位行，节内内容仍由组件的 text 面产出，格式与单 attempt 相同。
 全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄这个 text 渲染面的注意力范围。
 
 `--grep <pattern>` 是这个区块 text 渲染面的选项，不是事实过滤器：它只输出命中的卡片，不改变哪些证据存在。

@@ -20,7 +20,7 @@
 - [固定题集做考试成绩单](分析/固定题集成绩单.md) —— 报告旁成绩单函数。
 - [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `aggregate()` + 三种通过率。
 - [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `aggregate()` 后的矩阵与 `Bars`。
-- [比较基线与候选的成对差异](分析/测量成对差异.md) —— `comparisonResult()`。
+- [比较基准与候选的成对差异](分析/测量成对差异.md) —— `comparisonResult()`。
 - [扫描参数档位的趋势与拐点](分析/扫描参数趋势.md) —— 数值轴 `Chart` 的 line mark。
 - [跟踪一个 Experiment 的历次 Run](分析/跟踪实验历史.md) —— `record.experiments` + run 维度。
 
@@ -40,7 +40,7 @@
 ## [使用宿主](使用宿主/README.md)
 
 - [不带选项的 `view` 与收窄:在浏览器里复盘,只看关心的那部分](使用宿主/浏览器复盘与收窄.md)
-- [`--record` / `--run`:换记录根,或只看一份 Run](使用宿主/切换记录根与Run.md)
+- [`--record` / `--run`:换 Record root,或只看一份 Run](使用宿主/切换RecordRoot与Run.md)
 - [`--report` / `--page`:show 与 view 共用同一份自定义报告](使用宿主/共用自定义报告.md)
 - [人看 web、Agent 读终端：共用自定义业务口径](使用宿主/让Agent读取自定义报告.md)
 
@@ -78,8 +78,8 @@
 | `--stats` | show | [跨条件归因](分析/终端跨条件归因.md) |
 | `--exp` | show / view | [`--history` 用例](调试/查看不稳定历史.md) · [不带选项的 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
 | `--exp` ×N(对照) | show | [跨条件归因](分析/终端跨条件归因.md) |
-| `--record` | show / view | [换记录根](使用宿主/切换记录根与Run.md) |
-| `--run` | view | [换记录根](使用宿主/切换记录根与Run.md) |
+| `--record` | show / view | [换 Record root](使用宿主/切换RecordRoot与Run.md) |
+| `--run` | view | [换 Record root](使用宿主/切换RecordRoot与Run.md) |
 | `--no-open` / `--port` | view | [不带选项的 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
 | `--out` | view | [静态导出](交付报告/导出静态站.md) |
 | `--report` / `--page` | show / view | [自定义报告](使用宿主/共用自定义报告.md) |

@@ -75,7 +75,7 @@ export default defineScoreEval({
 });
 ```
 
-`.stopOnFailure()` 在写下的位置立即结算断言；通过时返回原值或句柄，失败时记录既定 AssertionResult 并中止 `test()`。
+`.stopOnFailure()` 在写下的位置立即结算断言；通过时返回原值或句柄，失败时登记既定 AssertionResult 并中止 `test()`。
 它不能单独出现，必须跟在带通过线的 `.gate()` / `.atLeast()` 或使用 matcher 默认通过线的断言之后。
 `.gate().stopOnFailure()` 是硬前置；`.atLeast(x).stopOnFailure()` 只停止后续代码，仍保持 soft 严重度。
 控制流不再借 severity 一词表达。
@@ -94,7 +94,7 @@ Verdict 只有 passed、failed、errored、skipped，按固定优先级取第一
 ```
 
 Errored 压过一切，因为执行证据已经不可信。
-Failed 压过 skipped，避免 `t.skip()` 掩盖此前记录的硬失败。
+Failed 压过 skipped，避免 `t.skip()` 掩盖此前登记的硬失败。
 
 计分制（`defineScoreEval`）使用同一张表。
 得分点丢分本身不产生 failed；显式 gate 不通过仍产生 failed。
@@ -108,14 +108,14 @@ Failed 压过 skipped，避免 `t.skip()` 掩盖此前记录的硬失败。
 - **负断言与上限断言的证据通道不完整**——`notEvent` / `usedNoTools` 这类「确认没发生」的断言，以及 token / cost 上限断言，都依赖完整采集。
   所需通道非 complete 时，空流不能证明「没发生」，缺 usage 不能按零聚合；unknown 也属于这种情况，见 [证据与完整性](../assertions/architecture/evidence.md)。
 - **正断言在非 complete 通道上没找到匹配**——「没采到」不能算成「Agent 没做」；找到匹配则照常通过（证据存在就是证据），complete 通道上没找到才是 failed。
-- **judge 没有解析到模型或 API key**——rubric 写了就必须留下记录（见 [LLM-as-judge](../judge/library.md)）。
-- **judge 调用没有产出可信分数**——请求发出去了但失败（HTTP 非 2xx、连接中断、单次调用超时），或响应回来了但取不出分数（不合协议、分数缺失或不可解析）。
-  判分请求失败与 agent 没做到在分数面上必须可分辨：**这种情况绝不落成 `score: 0` 的通过记录**，否则「裁判失败」和「答得一塌糊涂」在报告里长得一模一样，而前者是要修配置、后者是要修 agent。
+- **judge 没有找到模型或 API key**——rubric 写了就必须留下条目（见 [LLM-as-judge](../judge/library.md)）。
+- **judge 调用没有产出可信分数**——请求发出去了但失败（HTTP 非 2xx、连接中断、单次调用超时），或响应回来了但取不出分数（不合协议、分数缺失或无法解读）。
+  判分请求失败与 agent 没做到在分数面上必须可分辨：**这种情况绝不落成 `score: 0` 的通过条目**，否则「裁判失败」和「答得一塌糊涂」在报告里长得一模一样，而前者是要修配置、后者是要修 agent。
   `reason` 用 `judge-call-failed`，状态码或异常摘要进 `evidence`。
 
 折叠规则只有一条：**作者写下的每条断言默认都要求可评估**——任一非 optional 断言 unavailable，attempt 即 `errored`，不分 gate / soft。
-评不了的结论不可信，不能当 agent 答对，也不该当 agent 答错；「soft 全部评不了但 attempt 还绿着」是没有测量的绿，不允许出现。
-确实允许缺席的断言由作者显式链 `.optional()`——它的 unavailable 只保留在记录里由报告如实展示，不影响 Verdict。
+评不了的判定不可信，不能当 agent 答对，也不该当 agent 答错；「soft 全部评不了但 attempt 还绿着」是没有测量的绿，不允许出现。
+确实允许缺席的断言由作者显式链 `.optional()`——它的 unavailable 只保留在条目里由报告如实展示，不影响 Verdict。
 optional 与 severity 正交： severity 说「影不影响质量判定」，optional 说「证据允许不允许缺席」，不互相复用。
 
-Turn failed 和 attempt errored 不是同一概念：Agent 行为失败可以形成可评分结果；基础设施、超时或作者异常使本次执行无法形成可信结论。
+Turn failed 和 attempt errored 不是同一概念：Agent 行为失败可以形成可评分结果；基础设施、超时或作者异常使本次执行无法形成可信判定。

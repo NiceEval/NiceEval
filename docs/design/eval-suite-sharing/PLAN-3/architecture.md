@@ -83,7 +83,7 @@ CJS 属性读取或运行期动态访问无法静态判断时，保留带 origin
 每个根先独立完成文件扫描、模块装载，并从数组或 keyed record 生成多条 Eval。
 外部 root 相对 id 合法后再拼前缀，所有根合并后一次检查重复最终 id。
 
-冲突不能按根顺序覆盖。
+冲突不能按根顺序覆写。
 错误同时列出本地文件、外部 package、root 与挂载点，使用户能判断该改哪个配置 key。
 
 外部 root 之外的 `experiments/`、`niceeval.config.ts`、Agent 与其它文件不会被扫描。
@@ -165,7 +165,7 @@ provenance 字段不包含本机绝对路径、registry token、鉴权 header �
 ## 为什么没有 `eval.lock`
 
 项目 package lock 是依赖选择与安装身份的唯一 owner。
-它同时覆盖 package tarball 或 Git commit、普通 dependencies 与 NiceEval 版本。
+它同时涵盖 package tarball 或 Git commit、普通 dependencies 与 NiceEval 版本。
 
 NiceEval manifest 是 package lock 和安装树对当前 Eval 的只读投影，不承担安装。
 它按 Eval保存文件哈希、可达 dependency identity、runtime revision 与 transfer 输入，回答哪个输入改变；它不能被拿来重新安装 package，也不写回依赖选择。

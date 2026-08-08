@@ -1,7 +1,9 @@
 # Record —— 架构
 
-这是磁盘上的 Run / attempt 记录格式规范,也是 `niceeval view` 的离线输入契约;层的分工见 [README](README.md),TS 读写 API 见 [Library](library.md),格式选型的来源见 [参考方案](reference/README.md)。
-实现入口是 `src/record/writer.ts`(`Artifacts()` reporter 是它的薄壳);核心持久化类型在 `src/record/`,运行时类型在 `src/types.ts` 的 `EvalResult`、`StreamEvent`、`TraceSpan`、`O11ySummary` 和 `DiffData`。
+这是磁盘上的 Run / attempt 落盘格式规范,也是 `niceeval view` 的离线输入契约;层的分工见 [README](README.md),TS 读写 API 见 [Library](library.md),格式选型的出处见 [参考方案](reference/README.md)。
+实现入口是 `src/record/writer.ts`(`Artifacts()` reporter 是它的薄壳)。
+核心持久化类型在 `src/record/`。
+运行时类型是 `src/types.ts` 的 `EvalResult`、`StreamEvent`、`TraceSpan`、`O11ySummary` 和 `DiffData`。
 
 ## 目录结构
 
@@ -69,8 +71,8 @@
 }
 ```
 
-当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。`renamedFrom` 是可选审计字段，删除运行期选题投影也不影响当前 reader 读取旧记录，因此两项都不升版。
-历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的 results-schema-version-history 条目。
+当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。`renamedFrom` 是可选审计字段，删除运行期选题投影也不影响当前 reader 读取历史落盘，因此两项都不升版。
+历史各版本的字段差异与升版原因不在正文维护，记在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
 设计原则是**不做兼容机制**。
@@ -92,11 +94,11 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
 - attempt 文件保持原始 JSON object/array。
   `result.json` 是未包装对象,`events.json` 是 `StreamEvent[]`,不为塞版本号改成 `{ schemaVersion, data }` envelope;`jq`/`node` 直接读的体验不被打破。
 - 不要用目录名表达 schema。
-  实验目录、run 目录和 attempt 目录只表达身份与定位;版本全部在 `run.json` 里,复制、重命名、归档目录不影响解析。
+  实验目录、run 目录和 attempt 目录只表达身份与定位;版本全部在 `run.json` 里,复制、重命名、归档目录都不影响读取时的版本判断。
 
 ### 版本不匹配时的读取行为
 
-读取器不解析、不迁移、不降级渲染任何版本不同的 Run,行为只分三档:
+读取器不做版本适配、不迁移、不降级渲染任何版本不同的 Run,行为只分三档:
 
 - **`schemaVersion` 相同**:正常读取渲染。
 - **`run.json.format === "niceeval.results"` 但 `schemaVersion` 不同**(不论新旧):整份落盘视为不兼容。
@@ -179,7 +181,7 @@ interface RunMeta {
 它是「这是一份 niceeval 落盘」的识别符,不是模块名的投影:改动它会让所有历史版本连「这东西是谁写的」都认不出来,从而给不出版本提示——而那正是这个字段永久稳定的全部意义。
 识别符与模块名各自稳定,互不跟随。
 
-`ExperimentRunInfo` 是**解析后运行配置的穷尽可序列化投影**——记录这次运行实际生效的值,不是原始 `ExperimentDefinition`(函数与 hooks 本来就无法忠实落盘,存「原样」只能存谎):
+`ExperimentRunInfo` 是**配置求值后运行配置的穷尽可序列化投影**——保存这次运行实际生效的值,不是原始 `ExperimentDefinition`(函数与 hooks 本来就无法忠实落盘,存「原样」只能存谎):
 
 ```typescript
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -218,13 +220,14 @@ interface ExperimentRunInfo {
 
 几条纪律:
 
-- **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
+- **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制。
+  同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。
-- **运行期选题不落进结果配置。** Runner 在内存中解析本次计划并供 dry、调度与实验生命周期使用；Run 的事实面只记录实际物理 Attempt 与 `knownEvalIds` 分母。
+- **运行期选题不落进结果配置。** Runner 在内存中规划本次计划并供 dry、调度与实验生命周期使用；Run 的事实面只保存实际物理 Attempt 与 `knownEvalIds` 分母。
 - **`evals` 过滤器及其指纹不属于结果身份。** 它决定这一 invocation 派发哪些题，不改变已经产生的单题结果；调度解释由运行期计划负责。
   Sample 按物理 Attempt 与 `configHash` 选择 current，Reports 只消费 Sample，不从计划字段推断贡献范围。
-- **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只记录 Experiment 作者 layer；
-  `sandboxPlansByEval` 完整记录所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
+- **Run 级不猜一个“默认 sandbox”。** `sandboxLayer` 只保存 Experiment 作者 layer；
+  `sandboxPlansByEval` 完整保存所有 selected Eval 的 pair-owned plan，包含 Direct，不能从当前 Attempt 或第一条 Eval 反推全局。
 - **ProviderPlan 只含 provider 明确构造的可发布纯数据。** token、凭据值、runtime callback 与私有路径不进入 plan；
   实际 artifact digest、实际平台和 provider runtime locator 属 Attempt provenance/facts，不反写 configHash/fingerprint。
 - 未选中的 eval 不写映射项；已选中的 eval 不允许缺项。template 唯一性与 owner 判定单源在 [Sandbox Layer](../sandbox/layers.md)。
@@ -235,20 +238,20 @@ interface ExperimentRunInfo {
 
 通过数、失败数、总用量、总成本这类聚合**不落盘**:它们由 `result.json` 逐条推导,聚合永远发生在消费方(`openRecord` 分层之上的计算函数或你的脚本)——这与读取面「忠实磁盘,不合并不聚合」是同一条铁律。
 
-## 两层时间模型:生命周期锚点与开放 activity
+## 两层时间模型:生命周期`锚点`与开放 activity
 
-时间与归属分两层记录,各自回答不同的问题:
+时间与归属分两层保存,各自回答不同的问题:
 
-- **生命周期锚点(`LifecyclePhase`)**:Runner 拥有的 attempt 生命周期闭集,不是扩展点。
+- **生命周期阶段(`LifecyclePhase`)**:Runner 拥有的 attempt 生命周期闭集,不是扩展点。
   它决定主链与收尾段的边界、attempt deadline 的起点、错误归属和 `durationMs` / `executionMs` 口径。
 - **timing activity(`TimingActivity`)**:开放的工作计时节点,Run 与 attempt 共用同一形状。
-  provider、Adapter 与第三方 producer 用稳定机器 key 记录自己的工作;未知 key 可通用读取和展示,但不能改变 verdict、deadline、资源释放或主耗时口径。
+  provider、Adapter 与第三方 producer 用稳定机器 key 登记自己的工作;未知 key 可通用读取和展示,但不能改变 verdict、deadline、资源释放或主耗时口径。
 
 两层的连接点有两处。
-attempt 侧,`phases[]` 是锚点序列,每个锚点下挂 activity 子树(`PhaseTiming.children`)。
+attempt 侧,`phases[]` 是阶段序列,每个阶段下挂 activity 子树(`PhaseTiming.children`)。
 Run 侧,共享构建、共享 staged payload 准备与实验级 Hook 这类不属于任何单个 attempt 的工作记在 `RunMeta.timings`,一次工作只计时一次,被多少 attempt 依赖都不复制。
 
-### `LifecyclePhase`:Runner 保留的锚点闭集
+### `LifecyclePhase`:Runner 保留的阶段闭集
 
 ```typescript
 /**
@@ -292,7 +295,7 @@ type LifecyclePhase =
 ### `ActivityKey`:稳定机器 key
 
 activity 的 `key` 是非空、以 `.` 分段、带命名空间的稳定字符串,例如 `sandbox.build`、`agent.artifact.prepare`、`provider.image.pull`。
-key 只回答「这项工作是什么」,供程序分组与专用读取面按名识别;人读文字由 `label` 表达,消费者不得解析 label 重建语义。
+key 只回答「这项工作是什么」,供程序分组与专用读取面按名识别;人读文字由 `label` 表达,消费者不得拿 label 重建语义。
 
 NiceEval 保留 `sandbox`、`agent`、`eval`、`workspace`、`assertions`、`telemetry`、`experiment`、`judge`、`record` 九个顶级命名空间。
 第三方 producer 使用自己的 provider、Adapter 或 package 命名空间,不需要任何注册或枚举放行。
@@ -349,7 +352,7 @@ interface TimingActivity {
 |---|---|---|
 | `agent.turn` | attempt | 一次 send 的端到端包络;轮标签语法单点见 [Assertions · Turn 的展示](../assertions/architecture/scopes.md) |
 | `sandbox.command` | attempt | 四个公开 `run*` 方法的最外层调用；非零退出保留 `checked` 调用事实，并经 `timingNodeId` 关联 [`commands.json`](#commandsjson) |
-| `sandbox.prepare` | attempt | 两层作者 layer 的逐 command 节点,`sandbox.cleanup` 锚点下的已登记 cleanup 节点同用此 key;label 带 owner 与序号,匿名 callback 用 `eval#<i>` / `experiment#<i>` |
+| `sandbox.prepare` | attempt | 两层作者 layer 的逐 command 节点,`sandbox.cleanup` 阶段下的已登记 cleanup 节点同用此 key;label 带 owner 与序号,匿名 callback 用 `eval#<i>` / `experiment#<i>` |
 | `provider.*` | 两者皆可 | provider 内部步骤,如 `provider.image.pull`、`provider.build.execute` |
 | `workspace.diff.export` | attempt | 变更分类账的批量导出;label 带有界规模摘要 |
 | `sandbox.build` | Run | 一个 BuildKey 的查询与构建;经 [`sandboxBuilds`](#共享构建的-provenancesandboxbuilds) 关联 provenance |
@@ -357,15 +360,15 @@ interface TimingActivity {
 | `experiment.setup` / `experiment.teardown` | Run | 实验级 Hook 整场一次的执行 |
 
 采集端知道某段工作是一个逻辑整体时,在执行边界直接起 key 写下稳定语义与有界规模摘要(如 `workspace.diff.export` 的 `export workspace diff · 2 windows · 3,302 files`),把实际公开命令或 provider 步骤挂在下面。
-批量算法必须先在执行层把 provider 往返约束到逻辑批次再记录;不能落成逐对象远端调用后指望 Reports 折叠。
+批量算法必须先在执行层把 provider 往返约束到逻辑批次,再按批次落盘;不能落成逐对象远端调用后指望 Reports 折叠。
 
 ### 未知 key 与版本
 
-- 未知 key 原样保留并通用渲染;读取器不得拒绝整份记录,官方 reader 不需要 registry 才能显示。
-- 未知 key 对口径零影响:activity 不改变 verdict、deadline、资源释放,也不进 `durationMs` / `executionMs`——口径只由锚点层定义。
+- 未知 key 原样保留并通用渲染;读取器不得拒绝整份落盘,官方 reader 不需要 registry 才能显示。
+- 未知 key 对口径零影响:activity 不改变 verdict、deadline、资源释放,也不进 `durationMs` / `executionMs`——口径只由阶段层定义。
 - 新增普通 activity key 不递增 `schemaVersion`;老读取器按未知 key 通用渲染。
 - 改变已有 key 的结构化字段语义或时钟域属于破坏性格式变化,按[版本规则](#版本与升级设计)递增 `schemaVersion`。
-- 生命周期锚点闭集的成员变化影响口径定义,同样按版本规则处理,不靠「未知 phase 也能渲染」豁免。
+- 生命周期阶段闭集的成员变化影响口径定义,同样按版本规则处理,不靠「未知 phase 也能渲染」豁免。
 
 ### `TimingOrigin`:错误与诊断的归属
 
@@ -385,11 +388,11 @@ type TimingOrigin =
     };
 ```
 
-- attempt 内的致命错误与诊断保留 Runner 锚点,可进一步指向锚点下的 activity。
-- attempt 开始前发生的共享构建失败引用 Run timing node,不伪造 `sandbox.create` 或其它 attempt 锚点;所有依赖该 BuildKey、本应 fresh 执行的 attempt 得到 `errored`,origin 指向同一个 node。
-- Run 级 diagnostic 可以只引用 Run timing node,也可以带 `experiment.setup` 这类归因锚点的 attempt 形态——按事实选形态,不为凑字段编造。
-- timing node 的 key 由 `timingNodeId` 关联记录得到;error / diagnostic 不复制 key,避免两处漂移。
-- 没有 timing 记录的第三方 producer 允许只写 attempt 锚点,或写无 `origin` 的 Run diagnostic。
+- attempt 内的致命错误与诊断保留 Runner 的阶段归属,可进一步指向该阶段下的 activity。
+- attempt 开始前发生的共享构建失败引用 Run timing node,不伪造 `sandbox.create` 或其它 attempt 阶段;所有依赖该 BuildKey、本应 fresh 执行的 attempt 得到 `errored`,origin 指向同一个 node。
+- Run 级 diagnostic 可以只引用 Run timing node,也可以带 `experiment.setup` 这类归因阶段的 attempt 形态——按事实选形态,不为凑字段编造。
+- timing node 的 key 由 `timingNodeId` 关联查得;error / diagnostic 不复制 key,避免两处漂移。
+- 没有 timing 数据的第三方 producer 允许只写 attempt 阶段,或写无 `origin` 的 Run diagnostic。
 
 携带条目的 run scope `timingNodeId` 指向产出它那一轮的 Run:读取面经 `artifactBase` 回原 Run 的 `run.json` 解引用,不在本 Run 的 `timings` 里找。
 
@@ -418,10 +421,10 @@ interface SandboxBuildRecord {
 ```
 
 - 每个实际查询或构建过的 BuildKey 一条;多个 attempt 引用同一条 provenance。
-- cache hit 也留下有界的查询 activity 与 `status: "hit"` 记录;完全被携带、无需查询的 BuildKey 不制造假记录。
+- cache hit 也留下有界的查询 activity 与 `status: "hit"` 条目;完全被携带、无需查询的 BuildKey 不会留下假条目。
 - 共享构建只属于 Run:不占 attempt 并发位,不进任何 attempt 的 `executionMs`。
-  一次十分钟的冷构建在整份记录里只出现一次时间,预算与调度契约单源在 [Sandbox Case · Run 级构建协调](../sandbox/case.md#run-级构建协调共享准备的预算与调度)。
-- Run 通用读取面按 `sandbox.build` key 展示时间;Sandbox 专用读取面再用本表展示 locator、输入与依赖它的 attempt,不解析 timing label。
+  一次十分钟的冷构建在整份落盘里只出现一次时间,预算与调度契约单源在 [Sandbox 实例与伴随资源 · Run 级构建协调](../sandbox/case.md#run-级构建协调共享准备的预算与调度)。
+- Run 通用读取面按 `sandbox.build` key 展示时间;Sandbox 专用读取面再用本表展示 locator、输入与依赖它的 attempt,不拿 timing label 重建语义。
 
 ### 携带、publish 与复制的忠实保留
 
@@ -432,7 +435,7 @@ interface SandboxBuildRecord {
 
 ## `result.json`
 
-单个 attempt 的**权威记录**：判定、断言、结构化执行错误与 diagnostics 只住在这里。
+单个 attempt 的**权威事实**：判定、断言、结构化执行错误与 diagnostics 只住在这里。
 attempt 的 teardown 链与 Scope release 完成后一次写成，之后没有任何环节会改写它。
 
 ```typescript
@@ -455,11 +458,11 @@ interface AttemptRecord {
   executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
-  /** 记录态断言;元素字段契约单独定义在 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。 */
+  /** 断言条目;元素字段契约单独定义在 [Assertions · 断言条目](../assertions/architecture.md#断言条目assertionresult)。 */
   assertions: AssertionResult[];
   /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.evaluationKind` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。官方 writer 必写；通用第三方 producer 若只产 pass/fail 记录可以省略并按 `"pass"` 读取，计分记录必须显式写 `"points"`。 */
   evaluationKind?: "pass" | "points";
-  /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。只在 `evaluationKind: "points"` 时出现,省略等价于空数组。 */
+  /** `t.score(label, n)` 的直接给分条目;元素字段契约见 [Assertions · 断言条目](../assertions/architecture.md#断言条目assertionresult)。只在 `evaluationKind: "points"` 时出现,省略等价于空数组。 */
   scoreEntries?: ScoreEntry[];
   /** 证据覆盖聚合:必填；Agent 六通道声明经各 turn 降级后的最差值。字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md)。 */
   evidenceCoverage: EvidenceCoverage;
@@ -588,7 +591,7 @@ interface AttemptError {
   /**
    * 超时打断产生的 `errored` 专用:这次撞的是哪层时限、上限值多少、值从哪一层解析而来。
    * 三样一起落盘,报错行与 [`show --timing`](../reports/show/timing.md) 照实印这三样;
-   * 归属规则单源在 [Sandbox · 时限归属](../sandbox/architecture.md#时限归属attempt-deadline-是唯一缺省)。
+   * 归属规则单源在 [Sandbox · 时限归属](../sandbox/architecture.md#时限归属attempt-deadline-是唯一默认)。
    */
   timeout?: TimeoutAttribution;
 }
@@ -604,7 +607,7 @@ interface TimeoutAttribution {
   /** 该层实际生效的上限,毫秒。 */
   limitMs: number;
   /**
-   * 值来自哪一层:`attempt-deadline` 取 [`timeoutMs` 的解析链](../experiments/architecture.md#配置解析链一次求值处处同源)
+   * 值来自哪一层:`attempt-deadline` 取 [`timeoutMs` 的配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)
    * 四层之一,`command-timeout` 只有命令显式声明一个来源。
    */
   source: "flag" | "experiment" | "eval" | "config" | "command";
@@ -652,29 +655,39 @@ interface DiagnosticRecord {
 
 `sandbox` 是可选字段，Direct Attempt 与旧 producer 都可以没有。
 老读取器按未知字段忽略，这类新增本身按本页版本规则不递增 `schemaVersion`。
-消费方把 origin 的锚点当归因标签渲染，不得因不认识某个成员拒绝整份记录。
+消费方把 origin 的阶段当归因标签渲染，不得因不认识某个成员拒绝整份落盘。
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。
 数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。
 
-`agent.teardown` / `sandbox.cleanup` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应收尾 diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
-结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
+`agent.teardown` / `sandbox.cleanup` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段。
+主链抛错后它们照常执行、照常计时,各自可独立标 `failed`(对应收尾 diagnostic,不改判定),且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
+结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入,再由 Scope 外层组装最终 `AttemptRecord`。
+不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
 `children` 是 runner 直接观察到的 activity 树。
-`sandbox.prepare` / `sandbox.cleanup` 两个锚点先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号），command 内所有经四个公开 `Sandbox.run*()` 方法发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
-包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
-命令摘要先按 `CommandOptions.sensitiveValues` 的显式 provenance 精确替换，再截断；env 只允许保留 key。
-每条公开调用（成功与非零退出都算）的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。Record 同时保存 `checked` 调用事实；普通方法的非零由消费层推导为 `observed`，节点不标 `failed`；checked 方法的非零由消费层推导为 `failed`，节点同步标 `failed: true`；`exitCode === 0` 由消费层推导为中性的成功语义。
+`sandbox.prepare` / `sandbox.cleanup` 两个阶段先按 `sandbox.prepare` activity 逐 command 建节点（label 带 owner 与序号）。
+command 内所有经四个公开 `Sandbox.run*()` 方法发出的命令继续挂成 `sandbox.command` 子节点。
 
-敏感值集合只驻留当前 Attempt 内存。最终 result 封口再覆盖 timing、events/trace、retryAttempts、diagnostics 与 error，所有 show/JSON 读面共享同一边界。未登记自由文本与旧 artifact 不做键名正则猜测。
+同一套包装同样作用于 `workspace.baseline`、`agent.ensure`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 以及各收尾阶段。
+包装只保存最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
+命令摘要先按 `CommandOptions.sensitiveValues` 的显式 provenance 精确替换，再截断；env 只允许保留 key。
+
+每条公开调用（成功与非零退出都算）的 stdout/stderr 替换已知敏感值后写进 `commands.json`，并用 `timingNodeId` 关联 command 节点。
+
+Record 同时保存 `checked` 调用事实；普通方法的非零由消费层推导为 `observed`，节点不标 `failed`；checked 方法的非零由消费层推导为 `failed`，节点同步标 `failed: true`；`exitCode === 0` 由消费层推导为中性的成功语义。
+
+敏感值集合只驻留当前 Attempt 内存。
+最终 result 封口时再把 timing、events/trace、retryAttempts、diagnostics 与 error 的最终值写入,所有 show/JSON 读面共享同一边界。
+未登记自由文本与旧 artifact 不做键名正则猜测。
 成功命令的输出同样复制进 `commands.json`；Agent 内部工具命令（不经公开 Sandbox 包装）仍只由 `events.json` 承载，不重复落一份。
 
-`agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为错误 / 诊断 origin 的归因锚点出现，不在 `phases` 里单列。
+`agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为错误 / 诊断 origin 的归因阶段出现，不在 `phases` 里单列。
 每次 send 由 runner 产生一个 `agent.turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。
 `trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。
 这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
 
-Experiment `setup` / `teardown` 属于 Run 级生命周期：执行计时落 `RunMeta.timings` 的同名 activity，归因锚点可进入 origin，但它们不进入任何单条 Attempt 的 `phases[]`。
+Experiment `setup` / `teardown` 属于 Run 级生命周期：执行计时落 `RunMeta.timings` 的同名 activity，归因阶段可进入 origin，但它们不进入任何单条 Attempt 的 `phases[]`。
 Run 级 diagnostics 与 facts 在 `run.json` 封口时保存；Attempt timing 不借入整场只执行一次的耗时。
 
 `sandbox.create` 早于 Sandbox 对象存在，不能由 `runCommand` / `runShell` 包装捕获。
@@ -685,13 +698,13 @@ Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来
 `result.json` 永远保存完整 runner activity 树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。
 阶段边界、主链 / 收尾两段的 failed 语义、activity 树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show/timing.md)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
 
-`error` 与 `diagnostics` 的 attempt 锚点都由 runner 在错误 / 诊断发生时按已打开的生命周期锚点绑定,调用方不能自行填写。
+`error` 与 `diagnostics` 的 attempt 归因都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。
 两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。
 `diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
 
 同一个 phase 可以产生两种后果：`workspace.diff` 被非 optional 断言消费时，采集失败形成 required evidence unavailable；它只为 artifact 或 optional 断言服务时，失败形成 diagnostic。
 `telemetry.configure` 与 `telemetry.collect` 只产时间轨，按 Observability 契约始终是 supplemental。
-后发生的 supplemental 失败不得覆盖先前的 `AttemptError`，也不得把已经可计算的 AssertionResult 丢弃。
+后发生的 supplemental 失败不得替换先前的 `AttemptError`，也不得把已经可计算的 AssertionResult 丢弃。
 
 `DiagnosticRecord` 是持久化 observation:只保存 code、origin、level、去重次数与当时观察到的 `detail` / `context`。
 它不存本地化文案、修复建议或命令。
@@ -699,7 +712,7 @@ Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来
 `AttemptError.message` 例外地保留:它是被测对象的失败证据,不是 niceeval 的操作性文案。
 
 `progress` 文本不写入任何 artifact。
-它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。
+它是运行时的短期状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。
 事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。
 trace 不是必需回退:沙箱创建发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
 
@@ -708,21 +721,26 @@ attempt 的结果封口发生在 Effect Scope release 完成之后：teardown �
 这样 teardown diagnostic 不会因为主 test 已经返回而丢失。
 进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
 
-Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份回退算一份。`locatorRunId` 则记录 locator 的来源 Run:本 Run fresh 条目写本 Run 的 `runId`,carry 与 publish 原样保留；旧记录缺失它时 reader 沿 `artifactBase` 回溯原 attempt，无法回溯才退回条目所在 Run。
+Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`)。
+
+拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在落盘缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份回退算一份。
+`locatorRunId` 则记下 locator 出自哪个 Run:本 Run fresh 条目写本 Run 的 `runId`,carry 与 publish 原样保留；旧条目缺失它时 reader 沿 `artifactBase` 回溯原 attempt,无法回溯才退回条目所在 Run。
 
 两类条目:
 
 - **本 Run 跑出的条目**:artifact 与 `result.json` 同目录,不需要任何路径引用字段。
-- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本 Run,让最新 Run 保持完整;`--rerun all` 关闭携带全部重跑,语义见 [Experiments · 缓存与携带](../experiments/cache.md)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对记录根,指向原 Run 的 attempt 目录),`artifacts` 列表、`facts`、`locator`、`locatorRunId`、判定与证据指向**一律原样携带,没有例外**——携带来的是那一轮真实发生过的事,不按本轮改写。
+- **携带条目**(语义见 [Experiments · 缓存与携带](../experiments/cache.md)):运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本 Run,让最新 Run 保持完整;`--rerun all` 关闭携带全部重跑。
+  `startedAt` 保留原条目的时刻,另带 `artifactBase`(相对落盘根,指向原 Run 的 attempt 目录)。
+  `artifacts` 列表、`facts`、`locator`、`locatorRunId`、判定与证据指向**一律原样携带,没有例外**——携带来的是那一轮真实发生过的事,不按本轮改写。
   一个被改写的历史字段没有任何读者能正确解释:它既不是当初发生的事,也不是本轮观察到的事。
 
   合入只重打 `fingerprint` 一个字段,让[一份 Run 里的条目共享一个指纹口径](../experiments/cache.md#一份-run-里的条目共享一个指纹口径)。
   「条目与配置怎么对上号」因此不靠 fingerprint 承担:`attempt.run.configHash` 直接给出该条目所在 Run 的配置身份,读取面不必翻更早的 Run,也不必从指纹反推。
-  常规携带下重打前后本就相等——相等正是携带判据。人工接受会新建一条当前口径的结果,来源与新旧差异写进 `acceptedFrom`,它是「这条为何能跨过指纹门」的唯一记录。
+  常规携带下重打前后本就相等——相等正是携带判据。人工接受会新建一条当前口径的结果,原 locator 与新旧差异写进 `acceptedFrom`,它是「这条为何能跨过指纹门」的唯一说明。
 
   `artifactBase` 是事实上的「携带」标记,读取面把它连同目标目录是否仍在一起投影成 [`evidenceState`](library.md#携带条目与-evidencestate) 三态。
-  清理历史 Run 前先用 `publish` 解引用并复制要保留的结果——原 Run 删除后,该条目转为 `dangling`,artifact 懒加载返回 `null`,而 `artifacts` 列表仍声明写过它们;两者的差值就是「证据丢了」,不与「没采集」混为一谈。
-  记录格式版本变化时不携带,理由见 [Library · 跨 schemaVersion 不携带](library.md#携带条目与-evidencestate)。
+  删除历史 Run 前先用 `publish` 解引用并复制要保留的结果——原 Run 删除后,该条目转为 `dangling`,artifact 懒加载返回 `null`,而 `artifacts` 列表仍声明写过它们;两者的差值就是「证据丢了」,不与「没采集」混为一谈。
+  落盘格式版本变化时不携带,理由见 [Library · 跨 schemaVersion 不携带](library.md#携带条目与-evidencestate)。
 
 ### Usage
 
@@ -742,29 +760,34 @@ interface Usage {
   reasoningTokens?: number;
   /** 真实发生的模型请求数。协议不提供请求计数就省略,绝不写 1 凑数——一个 20 轮 session 报 `requests: 1` 比缺失更有害。 */
   requests?: number;
-  /** 网关/协议实测的计费金额(如实转发,不换算)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:实测存在时消费方优先它(口径见 [Reports 内置读数](../reports/library/measures.md#内置读数) costUSD 行)。 */
+  /** 网关/协议实测的计费金额(如实转发,不换算)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:实测存在时消费方优先它(口径见 [Reports 内置读数](../reports/library/measures.md#官方-calculation) costUSD 行)。 */
   costUSD?: number;
 }
 ```
 
 三个输入侧 token 桶**恒互斥**:`inputTokens + cacheReadTokens + cacheCreationTokens` 相加才是送进模型的完整上下文量。
-互斥是 adapter 的归一化义务,不是协议的自然属性——Anthropic 系协议原生按互斥计量,如实转发即可;OpenAI 系协议报的是「含缓存命中的输入总量 + 缓存命中子集」,adapter 落值前必须先从输入总量里扣掉子集,扣减结果不小于 0(各协议原生口径与扣减落点见各 adapter 的 cost 文档,索引在 [Adapters SDK](../adapters/sdk/README.md))。
-选恒互斥而不是「报什么记什么」,因为桶语义只有全局一致,逐桶乘单价相加的[成本估算](../../observability.md#换算成本价格表从哪来)、跨 agent 的用量对比、`t.maxTokens` 的上限判定才是同一个口径:coding agent 会话的缓存命中率常在九成以上,「含缓存总量」与「未缓存量」差一个数量级,两种口径混进同一个公式会把估算成本放大数倍。
+
+互斥是 adapter 的归一化义务,不是协议的自然属性。
+Anthropic 系协议原生按互斥计量,如实转发即可。
+OpenAI 系协议报的是「含缓存命中的输入总量 + 缓存命中子集」,adapter 落值前必须先从输入总量里扣掉子集,扣减结果不小于 0(各协议原生口径与扣减落点见各 adapter 的 cost 文档,索引在 [Adapters SDK](../adapters/sdk/README.md))。
+
+选恒互斥而不是「报什么记什么」,因为桶语义只有全局一致,逐桶乘单价相加的[成本估算](../../observability.md#换算成本价格表从哪来)、跨 agent 的用量对比、`t.maxTokens` 的上限判定才是同一个口径。
+coding agent 会话的缓存命中率常在九成以上,「含缓存总量」与「未缓存量」差一个数量级,两种口径混进同一个公式会把估算成本放大数倍。
 
 「上下文总量」(三个输入桶相加)是消费端派生量,不落盘;`inputTokens` 本身就是未缓存输入。
-轮数与工具调用数不属于 `Usage`——它们是 `events.json` 的行为派生(与 `o11y.json` 同源),show 的 usage 展示从两处组装(口径单源见 [`AttemptUsage` 组装口径](../reports/components/attempt-detail/attempt-usage.md#组装口径单源))。
+轮数与工具调用数不属于 `Usage`——它们是 `events.json` 的行为派生(与 `o11y.json` 同源),show 的 usage 展示从两处组装(口径单源见 [`AttemptUsage` 组装口径](../reports/components/attempt-detail/attempt-usage.md))。
 
 ### facts：运行事实
 
-`facts` 记录生命周期代码主动上报的**运行环境观测**:键值标量,回答「这次实际看到了什么」——记忆库起步有多少条笔记、恢复自哪份 checkpoint、远端服务返回了哪个版本。
+`facts` 保存生命周期代码主动上报的**运行条件观测**:键值标量,回答「这次实际看到了什么」——记忆库起步有多少条笔记、恢复自哪份 checkpoint、远端服务返回了哪个版本。
 它是运行后的审计证据，不是配置入口，也不是缓存键。
 
 - **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条观察通道(声明见 [Sandbox command](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。
-  三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常 observation,`fact` 是中性的环境事实。
+  三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常 observation,`fact` 是中性的事实条目。
 - **归属跟随作用域**:sandbox command、agent setup/teardown、adapter send 上报的进 `AttemptRecord.facts`;experiment setup/teardown 上报的进 `RunMeta.facts`。
   runner 自动归属,调用方不能指定层级。
 - **形状**:key 匹配 `[a-z0-9._-]{1,64}`,value 是 `string | number | boolean` 标量。
-  同一作用域内同 key 后写覆盖先写——fact 是现刻观测,不是追加日志;需要留痕迹的过程用 `diagnostic`。
+  同一作用域内同 key 后写替换先写——fact 是现刻观测,不是追加日志;需要留痕迹的过程用 `diagnostic`。
 - **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment setup 与 sandbox prepare 尚未运行时，runner 已经决定哪些 attempt 可以携带。
   计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--rerun all` 重跑，再用 facts 审计实际状态。
   把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
@@ -772,7 +795,7 @@ interface Usage {
   与上一条不矛盾:**条件是你写下的,坐标是跑出来的**,判据与三个家的分工见 [Experiments · 运行时坐标不进配置](../experiments/library.md#运行时坐标不进配置三个家)。
 - **要它跟着单条结果走就报在 attempt 作用域**:`AttemptRecord.facts` 随[携带条目](#resultjson)原样携带,携带来的那条读到的仍是产出它那一轮的观测,不被本轮的新值冒名顶替;`RunMeta.facts` 记的是本次运行整场的观测,携带条目不继承它。
   按 fact 分组的报告因此只读 attempt 级。
-- **读取面原样转发**:facts 在 show 详情的完整键值表([Facts](../reports/show/attempt.md#facts))、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
+- **读取面原样转发**:facts 在 show 详情的完整键值表([Facts](../reports/show/attempt.md#facts))、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么运行条件，但不能反过来证明携带结果仍与当前外部状态相容。
 
 ## 证据 registry
 
@@ -782,7 +805,7 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 
 | artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 默认 | 内容职责 |
 |---|---|---|---|---|---|---|
-| `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威记录 |
+| `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威事实 |
 | `commands.json` | `commands` | attempt 级,按需 | `CommandExitEvidence[]` | 截(stdout/stderr 各自独立,64 KiB) | 带 | Sandbox 命令(成功与非零退出都记)的公开调用事实与 stdout/stderr |
 | `events.json` | `events` | attempt 级,按需 | `StreamEvent[]` | 截 | 带 | 归一化标准事件流 |
 | `trace.json` | `trace` | attempt 级,按需 | `TraceSpan[]` | 截 | 带 | OTel span 树 |
@@ -800,9 +823,9 @@ writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` �
 
 ### `commands.json`
 
-Runner 对四个公开 `Sandbox.run*()` 方法的最外层调用自动记录**每一次调用**，成功与非零退出都记。
+Runner 对四个公开 `Sandbox.run*()` 方法的最外层调用自动保存**每一次调用**，成功与非零退出都记。
 证据在 `CommandResult` 返回调用方之前写入内存。因此 Eval 后续即使只把 `.slice(-500)` 拼进异常，NiceEval 仍保有完整输出。
-`CommandOptions.sensitiveValues` 登记的已知值例外：记录副本在此处替换成 `<redacted>`，运行时返回结果不变。
+`CommandOptions.sensitiveValues` 登记的已知值例外：落盘副本在此处替换成 `<redacted>`，运行时返回结果不变。
 文件形状：
 
 ```typescript
@@ -825,11 +848,11 @@ interface CommandExitEvidence {
 type CommandsArtifact = CommandExitEvidence[];
 ```
 
-- 每条公开调用都记录一条证据，不再只记非零退出；成功命令此前是唯一的盲区——受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）成功时的输出此前只能靠 `--keep-sandbox` 进现场查看，现在与失败命令同样落盘可查（见 [Sandbox CLI](../sandbox/cli.md)）。
-- stdout / stderr 各自独立按 64 KiB(`COMMAND_STREAM_MAX_BYTES`)截断，规则与[大值截断](#大值截断)的落点、marker 与结构化 `truncated` 字段同构，只是上限更小、逐流独立判定——一条流超限不牵连另一条。上限收窄是因为体量不再天然有界于失败命令数：全量记录后一条高频循环里的成功命令能反复产出大输出。
+- 每条公开调用都写一条证据，不再只记非零退出；成功命令此前是唯一的盲区——受管命令（两层 prepare、lifecycle 命令、`ensure` / `install`）成功时的输出此前只能靠 `--keep-sandbox` 进现场查看，现在与失败命令同样落盘可查（见 [Sandbox CLI](../sandbox/cli.md)）。
+- stdout / stderr 各自独立按 64 KiB(`COMMAND_STREAM_MAX_BYTES`)截断，规则与[大值截断](#大值截断)的落点、marker 与结构化 `truncated` 字段同构，只是上限更小、逐流独立判定——一条流超限不牵连另一条。上限收窄是因为体量不再天然有界于失败命令数：全量落盘后一条高频循环里的成功命令能反复产出大输出。
   截断只发生在落盘序列化那一刻;调用方与 Eval 运行时看到的始终是完整值。进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
-- 记录不改变公开方法的返回 / 抛错语义。Record 只保存调用事实 `checked`；普通方法的非零在消费层显示为 `observed`，checked 方法抛出的非零才显示为 `failed`，`exitCode === 0` 显示为中性的成功语义。
-- 调用方在普通方法返回后手工抛错，不把命令记录追改为 `failed`。Attempt error 说明调用方怎样解释结果，命令证据只说明该次公开调用本身采用哪种退出策略。
+- 落盘不改变公开方法的返回 / 抛错语义。Record 只保存调用事实 `checked`；普通方法的非零在消费层显示为 `observed`，checked 方法抛出的非零才显示为 `failed`，`exitCode === 0` 显示为中性的成功语义。
+- 调用方在普通方法返回后手工抛错，不把命令落盘追改为 `failed`。Attempt error 说明调用方怎样解释结果，命令证据只说明该次公开调用本身采用哪种退出策略。
 - provider 内部实现步骤、Agent 自己调用的 shell 不经过公开 Sandbox 包装，不伪装成这里的命令；前者只进 provider timing，后者来自 `events.json`。
 - 携带条目按 `artifactBase` 读取原文件；发布携带与截断策略按[证据 registry](#证据-registry) 的 `commands` 行处理。
   `AttemptRecord.artifacts` 含 `commands` 只表示 writer 确实写过该文件。
@@ -838,7 +861,7 @@ type CommandsArtifact = CommandExitEvidence[];
 ### `events.json`
 
 类型是 `StreamEvent[]`。
-这是从 agent 原始 transcript 归一化后的标准事件流,也是作用域断言、transcript 展示、工具调用统计的主要来源。
+这是从 agent 原始 transcript 归一化后的标准事件流,也是作用域断言、transcript 展示、工具调用统计的主要数据出处。
 
 常见事件包括:
 
@@ -869,7 +892,7 @@ type CommandsArtifact = CommandExitEvidence[];
   ```
 
   入口文件在 discovery 时登记，始终存在且标为 `entry`。
-  其它项目文件在断言、给分记录或 `t.send` 的运行时帧首次引用时读取，标为 `referenced`。
+  其它项目文件在断言、给分条目或 `t.send` 的运行时帧首次引用时读取，标为 `referenced`。
   读取失败只在帧路径保留 unavailable 缺口，不制造没有正文的哈希引用。
   一个 attempt 恰好有一个 `entry`；读取面不按断言命中数猜主文件。
 - **Run 级 `sources/<sha256>.json`**:去重仓库,内容按哈希建档——
@@ -882,16 +905,17 @@ type CommandsArtifact = CommandExitEvidence[];
 
   同一 Run 内不管多少个 attempt 引用同一份源码(同一个 eval 文件被多个 attempt / 多个 eval 共享是常态——重试、或数组默认导出的多个 eval),内容只在 `sources/` 下存一份,按内容哈希(不是按路径)去重;哈希撞见即复用,不重写。
 
-`niceeval view` 与 `AttemptHandle.sources()`(见 [Library](library.md))把两者拼回 `SourceArtifact[]`(`{path, content, role}[]`)供上层消费——消费方不需要知道落盘拆成了两层,只有直接读盘的脚本(`jq` / 手写工具)需要知道这个引用 + 仓库的两步解析。
+`niceeval view` 与 `AttemptHandle.sources()`(见 [Library](library.md))把两者拼回 `SourceArtifact[]`(`{path, content, role}[]`)供上层消费。
+消费方不需要知道落盘拆成了两层,只有直接读盘的脚本(`jq` / 手写工具)需要按「引用 + 仓库」两步取回内容。
 `niceeval view` 用它把 `t.send`、断言和运行结果叠回源码行。
 
 源码正文在每个 attempt 的 `SourceRegistry` 中按路径缓存。
 入口正文来自 discovery；其它文件在第一条运行时帧引用它时同步读取一次。
-收尾只写缓存，不重新读文件，因此运行期间修改 eval helper 不会让已记录行号对应到后来版本的正文。
+收尾只写缓存，不重新读文件，因此运行期间修改 eval 引用的辅助文件不会让已记下的行号对应到后来版本的正文。
 项目路径必须经过真实路径规范化并确认仍在 config 所在根目录内。
 
 携带条目不在新 Run 里重写 `sources.json` 或 `sources/`——沿用其它 artifact 同样的 `artifactBase` 回退:读取面按 `artifactBase` 定位到原 Run,原 Run 的 `sources.json` 引用 + 原 Run 自己的 `sources/` 去重仓库依然完整,不需要复制。
-`publish` 发布时则相反——产物必须自包含,不能带 `artifactBase` 回退指针,所以复制时把引用解引用出完整内容后,在目标 Run 里按内容重新去重落盘(见 [Library](library.md)「复制与瘦身」)。
+`publish` 发布时则相反——发布结果必须自包含,不能带 `artifactBase` 回退指针,所以复制时把引用解引用出完整内容后,在目标 Run 里按内容重新去重落盘(见 [Library](library.md)「发布」一节)。
 
 ### `trace.json`
 
@@ -922,8 +946,8 @@ token 用量、成本与耗时**不在**本文件:权威分别是 `result.json` 
 ### `agent-setup.json`
 
 类型是 `AgentSetupManifest`。
-沙箱型 Coding Agent Adapter 用它记录该 Attempt 实际安装的 Skill、Agent Native Plugin、MCP Server、Python Plugin 与官方原生配置文件。
-Manifest 保存来源、固定 ref、Plugin / Skill 名和可公开的解析版本；原生配置文件只保存 Agent 名、项目相对路径与原始字节的 SHA-256，不保存文件正文，也不保存 API Key、Token 或其它环境变量值。
+沙箱型 Coding Agent Adapter 用它保存该 Attempt 实际安装的 Skill、Agent Native Plugin、MCP Server、Python Plugin 与官方原生配置文件。
+Manifest 保存出处、固定 ref、Plugin / Skill 名和可公开的版本号；原生配置文件只保存 Agent 名、项目相对路径与原始字节的 SHA-256，不保存文件正文，也不保存 API Key、Token 或其它 env 变量值。
 
 它不参与评分，只提供复现与诊断证据。
 没有安装扩展或原生配置文件的 Adapter 不生成该文件。
@@ -931,8 +955,8 @@ Manifest 保存来源、固定 ref、Plugin / Skill 名和可公开的解析版�
 
 ### `diff.json`
 
-内容是 [agent 归因增量](../sandbox/architecture.md#变更归因send-窗口与分类账)——只含 agent 在 send 窗口内的改动,fixture 与校验材料不在其中,消费方不需要再过滤。
-**落盘的是逐窗口 delta 序列,不做跨窗口压缩**:窗口之间可能夹着 eval 侧写入,把同一文件压成一对 before/after 会把 eval 的修改夹带进 agent 的账里,「创建又删除」「改完又改回」这类净零变化也会被压没:
+内容是 [agent 归因增量](../sandbox/architecture.md#变更归因send-区间与分类账)——只含 agent 在 send 区间内的改动,fixture 与校验材料不在其中,消费方不需要再过滤。
+**落盘的是逐区间 delta 序列,不做跨区间压缩**:区间之间可能夹着 eval 侧写入,把同一文件压成一对 before/after 会把 eval 的修改夹带进 agent 的账里,「创建又删除」「改完又改回」这类净零变化也会被压没:
 
 ```typescript
 /** diff.json 的落盘形状:按时序的窗口数组。 */
@@ -959,7 +983,7 @@ interface WindowChange {
 }
 ```
 
-读取面(`AttemptHandle.diff()`)在窗口序列之上**派生**文件级视图——派生物可随时重算,不落盘,符合「聚合在消费方」铁律:
+读取面(`AttemptHandle.diff()`)在区间序列之上**派生**文件级视图——派生物可随时重算,不落盘,符合「聚合在消费方」铁律:
 
 ```typescript
 interface DiffData {
@@ -983,7 +1007,7 @@ interface DiffFileSummary {
 }
 ```
 
-断言语义按这两层各取所需：`fileChanged(path)` 断「任一窗口触及」，`net` 供只关心最终结果的消费方；单文件 patch 按窗口逐段渲染。
+断言语义按这两层各取所需：`fileChanged(path)` 断「任一区间触及」，`net` 供只关心最终结果的消费方；单文件 patch 按区间逐段渲染。
 它只存在于 Sandbox Attempt；Direct Agent 没有由 NiceEval 管理的 workspace，因此没有 diff。
 
 ## 大值截断
@@ -1000,17 +1024,20 @@ OTLP instrumentation 又常把同一份工具结果原样挂进 span 属性。
 契约:
 
 - **落点唯一**:`run.writeAttempt()`(见 [Library](library.md))。
-  不在 adapter、不在 OTLP 解析、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
-- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性里的**任意字符串值**,以及 `commands.json` 每条记录的 `stdout` / `stderr`。
-  不只工具输出——`thinking` 文本、`error` 消息同样可能爆。
-  registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。
-  `sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。
-  `diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。
-  未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
+  不在 adapter、不在 OTLP span 处理、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
+- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由。
+  命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性里的**任意字符串值**,以及 `commands.json` 每条命令证据的 `stdout` / `stderr`。
+
+  边界与例外:
+  - 不只工具输出——`thinking` 文本、`error` 消息同样可能爆。
+  - registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。
+  - `sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。
+  - `diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。
+  - 未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
 - **上限分两档**:`events.json` / `trace.json` 每个字符串值 256 KiB(UTF-8 字节,常量 `ARTIFACT_VALUE_MAX_BYTES`)。
-  `commands.json` 每条记录的 `stdout` / `stderr` 各自独立 64 KiB(常量 `COMMAND_STREAM_MAX_BYTES`)。
+  `commands.json` 每条命令证据的 `stdout` / `stderr` 各自独立 64 KiB(常量 `COMMAND_STREAM_MAX_BYTES`)。
   两档截断按 UTF-8 字符边界回退,不切断多字节字符。
-  commands 上限更小,因为它现在记录每一次公开调用(成功与非零退出都算),不再只靠「只收非零退出」让体量天然有界——高频循环里反复出现的成功命令输出需要一个更紧的逐值上限。
+  commands 上限更小,因为它现在保存每一次公开调用(成功与非零退出都算),不再只靠「只收非零退出」让体量天然有界——高频循环里反复出现的成功命令输出需要一个更紧的逐值上限。
 - **没有 flag、没有配置项。**
   「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令或输出 256 KiB / 64 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。
   给旋钮只会让某天有人把它调大、再把仓库塞爆。
@@ -1036,7 +1063,7 @@ interface Truncation {
 
 `commands.json` 用同一套 marker 格式与 `Truncation` 形状,只是阈值换成 64 KiB;`stdout` / `stderr` 各自独立判定,一条流超限不截断另一条。
 
-view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Sample Issue](../sample/library.md#issue-code-全集) 是同一条原则。
+view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方做正则匹配」与 [Sample Issue](../sample/library.md#issue-code-全集) 是同一条原则。
 
 两条明确不做:
 
@@ -1057,17 +1084,17 @@ Agent runtime 在把工具结果发给模型前仍需自己的字节预算:如�
 
 ## locator 的唯一性
 
-**作用域是一个记录根。**
-`resolveLocator` 在一个打开的 Record 里寻址,所以「不能撞」的范围就是这个记录根扫到的全部 attempt——不是一个 Run,也不是全局。
+**作用域是一个落盘根。**
+`resolveLocator` 在一个打开的 Record 里寻址,所以「不能撞」的范围就是这个落盘根扫到的全部 attempt——不是一个 Run,也不是全局。
 60 bit 在 10⁶ 条 attempt 下的碰撞概率约 `4.3 × 10⁻⁷`,10⁵ 条约 `4.3 × 10⁻⁹`。
 
 **locator 是派生值,撞了不能靠重算躲开。**
 输入是 `{runId, evalId, attempt}` 这个不可变元组,同样的输入永远得到同样的 body。
 所以碰撞不是「换个随机数再试」,而是必须有定义的两侧行为:
 
-- **写入侧**:runner 在派发 fresh attempt 前,把本批登记与当前记录根的 locator 索引一起预检。
-  已存在且身份元组不同,抛 `LocatorCollisionError` 并在任何 attempt 调度前中止本次 invocation——不静默覆盖,也不悄悄换一个值,否则同一条 attempt 在不同进程里会有两个 locator。carry 不重新登记,沿用原来源身份。
-- **读取侧**:同一来源身份的 carry 副本先折叠到最新一份；`resolveLocator` 经此去重仍命中多于一条时抛 `AmbiguousLocatorError`,列出候选的 experimentId / evalId / attempt,不返回其中任意一条。
+- **写入侧**:runner 在派发 fresh attempt 前,把本批登记与当前落盘根的 locator 索引一起预检。
+  已存在且身份元组不同,抛 `LocatorCollisionError` 并在任何 attempt 调度前中止本次 invocation——不静默覆写,也不悄悄换一个值,否则同一条 attempt 在不同进程里会有两个 locator。carry 不重新登记,沿用原 provenance 身份。
+- **读取侧**:同一 provenance 身份的 carry 副本先折叠到最新一份；`resolveLocator` 经此去重仍命中多于一条时抛 `AmbiguousLocatorError`,列出候选的 experimentId / evalId / attempt,不返回其中任意一条。
   返回一条会让用户看着别人的 attempt 却以为是自己那条,比报错严重。
 
 三种失败因此各自可分辨:语法不合法是 `MalformedLocatorError`,索引里没有是 `LocatorNotFoundError`,索引里有多条是 `AmbiguousLocatorError`。
@@ -1083,7 +1110,7 @@ locator 要被人从终端复制、粘进 URL、肉眼比对,所以它的长度�
 
 1. 定位 Run:`.niceeval/<experiment>/` 下最新的时间戳目录,读 `run.json` 确认身份与版本。
 2. 逐 attempt 读 `<evalId>/a<attempt>/result.json` 拿判定、断言、用量、成本、`locator`。
-3. 需要证据时读同目录的 `commands.json`、`events.json`、`trace.json`、`sources.json`、`o11y.json`、`agent-setup.json`、`diff.json`;携带条目按 `artifactBase`(相对记录根)回原 Run 取。
+3. 需要证据时读同目录的 `commands.json`、`events.json`、`trace.json`、`sources.json`、`o11y.json`、`agent-setup.json`、`diff.json`;携带条目按 `artifactBase`(相对落盘根)回原 Run 取。
    `sources.json` 只是引用,内容在 `<Run 根>/sources/<sha256>.json`——携带条目要去原 Run 的 `sources/`,不是当前 Run 的。
 
 两种非正常落盘的判定:
@@ -1114,5 +1141,5 @@ locator 要被人从终端复制、粘进 URL、肉眼比对,所以它的长度�
 - [README](README.md) —— 三层分工、库的边界、消费方。
 - [Library](library.md) —— `niceeval/record` 的 TS 读写 API。
 - [参考方案](reference/README.md) —— 格式与版本策略从哪些系统学来。
-- [Sample](../sample/README.md) —— 从记录选出一份可比较的样本。
+- [Sample](../sample/README.md) —— 从 Record 选出一份可比较的样本。
 - [Reports](../reports/README.md) —— 建立在样本之上的积木。

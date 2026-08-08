@@ -3,7 +3,7 @@
 **本方案**:[README](README.md) · [Architecture](architecture.md) · [Use Case](use-case/README.md)
 
 本篇只定义用户调用的公开形状。
-模型选择与取舍见 [README](README.md),解析、身份与生命周期见 [Architecture](architecture.md)。
+模型选择与取舍见 [README](README.md),读取、身份与生命周期见 [Architecture](architecture.md)。
 
 ## 导出入口
 
@@ -46,7 +46,7 @@ interface ComposeEnvironmentOptions {
 这个名字表达用户可观察的职责,不使用只说明拓扑位置的 `mainService`。
 
 `composeEnvironment` 不选择 Provider。
-Docker Provider 内建支持;其它 Provider 只有兑现相同 workspace、网络、就绪、采证与清理契约后才能声明支持。
+Docker Provider 内建支持;其它 Provider 只有兑现相同 workspace、网络、就绪、采证与回收契约后才能声明支持。
 
 ## `dockerSandbox()` 内建 Environment 支持
 
@@ -62,7 +62,7 @@ export default defineExperiment({
 `dockerSandbox()` 自动消费 `composeEnvironment(...)` 与后续定稿的 Dockerfile Environment。
 用户不写 `materializers` 表,也不导入 `dockerComposeMaterializer()`。
 
-具名 Environment 仍可通过 Provider 配置覆盖:
+具名 Environment 仍可通过 Provider 配置覆写:
 
 ```typescript
 dockerSandbox({
@@ -75,7 +75,7 @@ dockerSandbox({
 ```
 
 Eval 显式引用同名 profile,或 folder-local Environment 推导出该 profile 时,`environments` 表项优先于 Provider 内建的按需构建。
-这保留用预制产物替换慢路径的出口,但不要求普通用户维护第二张注册表。
+这保留用预制输出替换慢路径的出口,但不要求普通用户维护第二张注册表。
 
 ## `defineProvision(spec)`
 
@@ -183,11 +183,11 @@ interface ProvisionSpec<I extends ProvisionIdentity> {
 
 `ProgressUpdate` 与 `DiagnosticInput` 复用现有生命周期反馈形状。
 Provision 没有 teardown;安装内容随 Sandbox 销毁,跨 Attempt 状态仍由 Sandbox Hook 管理。
-没有声明 `prepare` 时,`install` 收到 `{ files: {} }`;共享 helper 因此不需要为 `prepared` 增加 undefined 分支。
+没有声明 `prepare` 时,`install` 收到 `{ files: {} }`;共享工具因此不需要为 `prepared` 增加 undefined 分支。
 
 ### identity 与 inspect
 
-`identity` 必须覆盖安装配方、payload、模型与其它会改变实验条件的输入。
+`identity` 必须涵盖安装配方、payload、模型与其它会改变实验条件的输入。
 函数体不参与 fingerprint,所以脚本内容要以 digest 或人工递增 revision 进入 identity。
 
 `inspect` 返回实际安装的 identity,不返回作者自己判定的 `ok: true`。
@@ -210,10 +210,10 @@ Provider 无法静态证明的能力保留为 `unknown`,由 install 的实际结
 ### prepare
 
 `prepare` 是可选的宿主侧 payload 准备,用于断网安装和大文件共享。
-它取得解析后的目标平台;single-flight key 包含 Provision name、identity 与 `target.platform`,不同架构不会误用同一 payload。
+它取得读取后的目标平台;single-flight key 包含 Provision name、identity 与 `target.platform`,不同架构不会误用同一 payload。
 
 `prepare` 在第一次 inspect miss 后按需启动。
-等待共享准备时 Attempt deadline 继续计算,因为 Sandbox 已经创建并持续占用 Provider 资源;记录同时保留 Run 级共享准备 timing。
+等待共享准备时 Attempt deadline 继续计算,因为 Sandbox 已经创建并持续占用 Provider 资源;登记同时保留 Run 级共享准备 timing。
 
 ## `experiment.provisions`
 

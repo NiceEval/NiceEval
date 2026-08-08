@@ -1,6 +1,6 @@
 # Assertions
 
-Assertion 是一次可记录的检查。
+Assertion 是一次可留档的检查。
 值 matcher、作用域检查、Sandbox 验证、资源上限和 Judge 都产出同一种 `AssertionResult`；这一层负责检查什么、证据是否完整以及结果怎样落盘，不决定整个 Attempt 的最终状态。
 
 ## 从哪里开始

@@ -36,7 +36,7 @@ bubAgent({                                          // 往回钉一代:插件要
 - **插件靠 override 装。**
   插件所在 workspace 把 `bub` 声明成 git 依赖，不写 override 的话每次安装都会去拉 Bub 主干——版本失控。
   Adapter 因此总是先写一份把 `bub` 钉成 `bub==<version>` 的 override 文件再安装，用户不需要知道这个细节。
-- **`version` 与 `otelPlugin` 都参与 ensure identity**：换任意一个都改变配置身份，也让预装环境的 marker 对不上而触发配对 Installer 的完整安装。
+- **`version` 与 `otelPlugin` 都参与 ensure identity**：换任意一个都改变配置身份，也让预装 Sandbox 的 marker 对不上而触发配对 Installer 的完整安装。
 
 行为轨来自 Bub tape JSONL；session 由 Adapter 管理。
 缺少显式 call ID 的旧事件只能按位配对，因此并发工具完整性取决于原始 tape 是否提供稳定关联字段。
@@ -44,12 +44,14 @@ Usage 和 cost 从 run 事件读取。
 
 Bub 原生 OTLP 可以配置为时间轨，span mapper 只影响瀑布图。
 
-## 预制环境
+## Prebuilt environment
 
-Bub 没有 provider 官方 template；NiceEval 用固定版本配方（锁定 Bub 版本与 OTel 插件 commit）构建公共模板 `correctroads-default-team/niceeval-bub` 与公共镜像 `niceeval/bub`，并在环境里写安装规格 marker。
+Bub 没有 provider 官方 template。
+NiceEval 用固定版本配方（锁定 Bub 版本与 OTel 插件 commit）构建公共模板 `correctroads-default-team/niceeval-bub` 与公共镜像 `niceeval/bub`。
+并在 Sandbox 里写安装规格 marker。
 
-Adapter 的 ensure 只接受 identity marker 完全匹配的预装环境，不把 PATH 上任意一个 `bub` 当成兼容版本。
+Adapter 的 ensure 只接受 identity marker 完全匹配的预装 Sandbox，不把 PATH 上任意一个 `bub` 当成兼容版本。
 
 `version`、`otelPlugin` 与 `pythonPlugins` 集合都参与 identity（factory 与 Installer 共用规范化代码，顺序、空白、重复项不制造假差异）；任一不同就由匹配的新 Installer 完整安装并复检。
 
-构建带自有插件的模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
+构建带自有插件的模板见 [Sandbox · Prebuilt environment](../../../sandbox/library/prebuilt-environments.md)。

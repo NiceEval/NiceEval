@@ -20,17 +20,17 @@ sample.issues;   // 无法落到单题缺口上的读取问题
 主报告只有一份 current 结果集。
 每个 Experiment × Eval 在当前 `configHash` 下有物理 Attempt 就进入 `sample.attempts`，否则进入 coverage 缺口。
 
-Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于来源事实，不改变它是不是 current，也不改变计票。
+Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于 provenance 事实，不改变它是不是 current，也不改变计票。
 不同 `configHash` 的旧结果只用于解释缺口和进入 History，不混进当前报告。
 
 ## 缺口不是第二套结果
 
 缺口统一表示「当前配置下没有结果」，并带下一步所需的原因：
 
-- `never-run`：记录历史里从未出现这道题的物理 Attempt。
+- `never-run`：Record 历史里从未出现这道题的物理 Attempt。
 - `previous-result`（旧结果缺口）：历史里有结果，但没有一条能代表当前配置；缺口可带最近旧 locator，供用户重跑或显式 `niceeval accept`。
 
-两种原因都不进入通过率、得分、成本或覆盖分子。
+两种原因都不进入通过率、得分、成本或样本命中范围的分子。
 原因只帮助用户决定下一步，不把旧 verdict 变成半有效结果。
 
 ## 常见用途
@@ -50,7 +50,7 @@ Attempt 是实际执行、携带合入还是从可比旧 Run 补入，只属于�
 
 ## 相关阅读
 
-- [Library](library.md) —— current 选择、覆盖、缺口与转换形状。
+- [Library](library.md) —— current 选择、缺口原因与转换形状。
 - [参考方案](reference/README.md) —— 显式选择与转换从哪里学。
 - [用例手册](use-case/README.md) —— 局部补跑与人工接受的完整路径。
 - [Record](../record/README.md) —— 被选择的物理事实。

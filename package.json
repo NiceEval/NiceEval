@@ -168,8 +168,6 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --project unit",
-    "test:watch": "vitest --project unit",
     "lint": "pnpm run lint:docs && pnpm run lint:docs-site",
     "lint:docs": "vitest run --project lint-docs",
     "lint:docs-site": "vitest run --project lint-docs-site && pnpm run docs:validate && pnpm run docs:links",

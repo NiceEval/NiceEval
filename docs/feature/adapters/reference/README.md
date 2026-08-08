@@ -1,6 +1,6 @@
 # Adapter 参考调研
 
-这里保存外部协议、SDK 与可观测生态的源码阅读和调研记录，为 Adapter 设计裁决提供证据。
+这里保存外部协议、SDK 与可观测生态的源码阅读和调研笔记，为 Adapter 设计裁决提供证据。
 它们不是 niceeval 的公共契约，也不是普通用户的必读路径。
 
 | 调研 | 内容 |
@@ -12,4 +12,4 @@
 | [OTel GenAI](otel-genai.md) | GenAI semantic conventions 与相关生态 |
 | [OTel instrumentation](otel-instrumentation.md) | 现成框架埋点的数据完整性 |
 
-已采纳的产品结论必须写回 [`../architecture.md`](../architecture.md) 或对应 [`../sdk/`](../sdk/README.md) 页面；研究页不替代目标契约。
+已采纳的产品判定必须写回 [`../architecture.md`](../architecture.md) 或对应 [`../sdk/`](../sdk/README.md) 页面；研究页不替代目标契约。

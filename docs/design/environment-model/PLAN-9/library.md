@@ -258,12 +258,12 @@ declare function vercelSandbox(
 ```
 
 Recipe 是不可变声明。
-它是 opaque / branded factory 产物：内部区分 command-only 与 template-bearing 两种状态，四个 command 方法只保留原状态。公开 API 没有 `.template()`、`.provider()`、`.concat()` 或对象字面量入口能在同一 recipe 再加起点。即使 Eval 与 Experiment 声明了 identity 相同的 template，仍是 1×1 conflict，不能去重后猜 ownerOrder。
+它是 opaque / branded factory 的返回定义值：内部区分 command-only 与 template-bearing 两种状态，四个 command 方法只保留原状态。公开 API 没有 `.template()`、`.provider()`、`.concat()` 或对象字面量入口能在同一 recipe 再加起点。即使 Eval 与 Experiment 声明了 identity 相同的 template，仍是 1×1 conflict，不能去重后猜 ownerOrder。
 四个方法使用同一种 SandboxCommand 执行原语，但 phase 是类型参数：
 
 | Scope | 正向方法 | 反向方法 | fresh | reuse |
 |---|---|---|---|---|
-| Window（fresh Case / 复用窗口） | `.setup()` | `.teardown()` | 各一次 | 每窗口各一次 |
+| Window（fresh Sandbox / 复用周期） | `.setup()` | `.teardown()` | 各一次 | 每复用周期各一次 |
 | Attempt | `.beforeEach()` | `.afterEach()` | 各一次 | 每 Attempt 各一次 |
 
 `.setup()` 与 `.beforeEach()` 都按追加顺序执行；`.teardown()` 与 `.afterEach()` 都按追加逆序执行。Runner 另外在 owner 之间执行反向收尾。
@@ -284,18 +284,18 @@ vercelSandbox({ snapshotId })              -> VercelSnapshotSandboxTemplate + Ve
 因此 `e2bSandbox({ template: "mempal-codex-v3" })` 中的 `template` 只是该 factory 的 provider-native option，不要求与其它 factory 共享字段类型。普通作者不能通过 `recipe.template = ...` 或直接构造对象替换 factory 的归一规则。
 每次调用 template-bearing factory 都算一份 template contribution。`dockerImageSandbox()` 的名字和必填 `image` 明确表达完整起点；不存在 provider-only factory 或隐式 default。
 
-`SandboxCommandContext` 记录 owner、精确 phase、scope、signal、progress、diagnostic 与 facts。Attempt phase 的 `attempt` 必填，Window phase 根本没有该字段；依赖 Attempt 的 helper 不能误传给 `.setup()` 后才在运行时拿到 `undefined`。inline callback 由调用点推导 phase，不增加标注负担。`AttemptRef` 的完整值进入当前 Attempt fingerprint；callback 不能读取 index 后仍复用另一条 Attempt 的 identity。
+`SandboxCommandContext` 携带 owner、精确 phase、scope、signal、progress、diagnostic 与 facts。Attempt phase 的 `attempt` 必填，Window phase 根本没有该字段；依赖 Attempt 的命令不能误传给 `.setup()` 后才在运行时拿到 `undefined`。inline callback 由调用点推导 phase，不增加标注负担。`AttemptRef` 的完整值进入当前 Attempt fingerprint；callback 不能读取 index 后仍复用另一条 Attempt 的 identity。
 
-window scope 没有伪造的“当前 Attempt”：其 command activity、facts、耗时与 diagnostic 归 RunningSandboxCase / 复用窗口记录，窗口内 Attempt 只引用该记录。attempt scope 的同类证据直接归当前 Attempt。这样 setup 失败或最终 teardown 失败即使发生在 Attempt 边界外，也有稳定归属。
+Window scope 没有伪造的“当前 Attempt”：其 command activity、facts、耗时与 diagnostic 归 RunningSandboxCase / 复用周期 Record，复用周期内 Attempt 只引用该 Record。attempt scope 的同类证据直接归当前 Attempt。这样 setup 失败或最终 teardown 失败即使发生在 Attempt 边界外，也有稳定归属。
 
-每个 phase 使用自己的 signal。`teardown` / `afterEach` 取得独立 cleanup budget，不能复用已经 abort 的前向 signal；Window context 也不暴露 Attempt index、model 等会让复用窗口按借用者分叉的字段。
+每个 phase 使用自己的 signal。`teardown` / `afterEach` 取得独立 cleanup budget，不能复用已经 abort 的前向 signal；Window context 也不暴露 Attempt index、model 等会让复用周期按借用者分叉的字段。
 
 `SandboxCommandTarget` 保留 workdir、checked command 与 Sandbox 内文件 IO，但没有 `stop()`，也不暴露 Provider-native SDK。它不能新增 service、替换主 Sandbox 或保存新 template；`copyPath()` 的两端都在 Sandbox 内。
 
 host path / URL 传输遵守三条规则：
 
 - source 先经过 `registerSandboxContent()`，由 discovery 读取并登记内容 digest；callback 只接收 manifest-backed handle。
-- 稳定 helper 把 handle 放进 `SandboxCommandIdentity.inputs`。Runner 在 Provider planning 前把它规范化为 source manifest，并折入 command identity、所属 stack identity 与 Attempt fingerprint。
+- 稳定命令把 handle 放进 `SandboxCommandIdentity.inputs`。Runner 在 Provider planning 前把它规范化为 source manifest，并折入 command identity、所属 stack identity 与 Attempt fingerprint。
 - 直接传入的 callback 若捕获 handle 而未登记 inputs，仍按 opaque 处理。
 
 运行中的完整 `Sandbox` 继续供 `test(t)` 与 Provider 内部使用；它与 `SandboxCommandTarget` 不是同一个能力类型。
@@ -316,10 +316,10 @@ interface ExperimentDef {
 }
 ```
 
-两侧故意接受同一个类型。template factory 放在哪个字段，哪一侧就是 template owner；Provider 随这份 template 解析，不固定归 Experiment。
+两侧故意接受同一个类型。template factory 放在哪个字段，哪一侧就是 template owner；Provider 由这份 template 带出，不固定归 Experiment。
 
 两处 `sandbox` 不表示创建两个 Sandbox。
-Runner 把它们与 Agent 的专用 contribution 解析成同一条 owner stack，并只创建一个 Sandbox Case。
+Runner 把它们与 Agent 的专用 contribution 归一成同一条 owner stack，并只创建一个 Sandbox 实例。
 
 ## Pair link 约束
 
@@ -332,7 +332,7 @@ Runner 把它们与 Agent 的专用 contribution 解析成同一条 owner stack�
 | 无 | 有 | Experiment template 激活，Experiment 是 owner |
 | 无 | 无 | `sandbox.template-missing`，整个 Run 零 Sandbox 创建 |
 
-这项约束跨越独立模块与动态 Eval selector，不能只靠单文件 `tsc`。Runner 在 discovery 与 selector 解析完成后构造全部 pair plan，并在 fingerprint、build、carry、网络与 Sandbox 创建前聚合全部错误。正常运行和 `--dry` 使用同一份 linked matrix，不在各阶段重新选择 template。
+这项约束跨越独立模块与动态 Eval selector，不能只靠单文件 `tsc`。Runner 在 discovery 与 selector 求值完成后构造全部 pair plan，并在 fingerprint、build、carry、网络与 Sandbox 创建前聚合全部错误。正常运行和 `--dry` 使用同一份 linked matrix，不在各阶段重新选择 template。
 
 冲突诊断必须同时包含 experiment id、eval id、两边的 owner、factory、template kind、identity 与声明文件，并明确 NiceEval 不会合并或按优先级忽略任一 template。
 
@@ -354,7 +354,7 @@ export default defineEval({
 ```
 
 它不选择起点，也不选择 Provider。
-当 Experiment 拥有 active template 时，Experiment 与 Eval 的窗口 setup 先完成；随后每条 Attempt 先执行 Experiment beforeEach，再执行这些 Eval beforeEach。
+当 Experiment 拥有 active template 时，Experiment 与 Eval 的 Window scope setup 先完成；随后每条 Attempt 先执行 Experiment beforeEach，再执行这些 Eval beforeEach。
 
 ## Template-bearing recipe
 
@@ -381,7 +381,7 @@ interface ComposeSandboxOptions {
 }
 ```
 
-`composeSandbox()` 接受 Compose 起点参数并返回 SandboxRecipe；它同时选择 Docker Compose Provider。Compose SandboxTemplate 由 factory 产物在内部携带，不作为共享 Recipe 属性暴露。
+`composeSandbox()` 接受 Compose 起点参数并返回 SandboxRecipe；它同时选择 Docker Compose Provider。Compose SandboxTemplate 由 factory 的返回定义值在内部携带，不作为共享 Recipe 属性暴露。
 `workspaceService` 对应 Agent、Eval、文件 API、workdir 与 diff 共同使用的主 Sandbox。
 
 ### `dockerfileSandbox()`
@@ -419,7 +419,7 @@ export default defineEval({
 
 Terminal-Bench 的多容器 Eval 可以用 `composeSandbox(...)`，单机 Eval 可以用 `e2bSandbox(...)`；同一 Experiment 无需按 Provider 分叉。
 
-`dockerImageSandbox({ image })`、`e2bSandbox({ template })` 与 `vercelSandbox({ snapshotId })` 的原生起点字段必填。PLAN-9 第一阶段不提供 profile registry、provider-only factory、implicit default 或“第二份 template 的物理覆盖”。共享起点直接抽成返回具体 factory 产物的普通 TypeScript helper。
+`dockerImageSandbox({ image })`、`e2bSandbox({ template })` 与 `vercelSandbox({ snapshotId })` 的原生起点字段必填。PLAN-9 第一阶段不提供 profile registry、provider-only factory、implicit default 或“第二份 template 的物理替换”。共享起点直接抽成普通 TypeScript 工厂函数，返回对应 factory 的定义值。
 
 若 Experiment command 无法在 Eval template 上执行，该 pair 就不兼容；作者必须让恰好一侧改用已经融合条件的完整 template，不能让 Runner 合并两个起点。
 
@@ -432,7 +432,7 @@ Terminal-Bench 的多容器 Eval 可以用 `composeSandbox(...)`，单机 Eval �
 ## Command 责任
 
 SandboxCommand 的执行频次由声明方法决定。
-昂贵安装、运行期能力检查与整窗共享配置适合 `.setup()`；checkout、Fixture 和每题依赖准备适合 `.beforeEach()`。对应清理分别放在 `.teardown()` 与 `.afterEach()`。
+昂贵安装、运行期能力检查与整窗共享配置适合 `.setup()`；checkout、Fixture 和每题依赖准备适合 `.beforeEach()`。对应的 cleanup 分别放在 `.teardown()` 与 `.afterEach()`。
 框架不为它建立 Requirement、inspect 或 install 协议，也不根据预制 template 名猜测某条 command 可以删除。
 
 普通 shell layer 不必写 callback：
@@ -443,11 +443,11 @@ defineSandboxRecipe()
   .beforeEach(shell("pnpm install --frozen-lockfile"));
 ```
 
-`command()` / `shell()` 天然携带纯数据 identity，并使用 checked exit。identity 的效果投影明确包含 executable / script、argv、cwd、env、root 与 stdin；`stream` 只属于观测配置，`timeout` 属于执行政策，两者进入 configHash 与运行记录，任一变化都不得沿用旧 command carry。options 不接受 `onStdout` / `onStderr` 等函数回调。
+`command()` / `shell()` 天然携带纯数据 identity，并使用 checked exit。identity 的效果投影明确包含 executable / script、argv、cwd、env、root 与 stdin；`stream` 只属于观测配置，`timeout` 属于执行政策，两者进入 configHash 与运行 Record，任一变化都不得沿用旧 command carry。options 不接受 `onStdout` / `onStderr` 等函数回调。
 
-复杂探测、分支与文件 IO 可以直接写 callback，但直接传入的 callback 一律 opaque；JavaScript 无法可靠证明它没有读取 `process.env`、时间或其它全局状态。需要稳定 identity 的 helper 必须用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记，所有动态输入与 `RegisteredSandboxContent.digest` 都进入 `inputs`。Runner 不使用 `Function.prototype.toString()`、函数名或所谓 static import closure 猜闭包值。
+复杂探测、分支与文件 IO 可以直接写 callback，但直接传入的 callback 一律 opaque；JavaScript 无法可靠证明它没有读取 `process.env`、时间或其它全局状态。需要稳定 identity 的命令必须用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记，所有动态输入与 `RegisteredSandboxContent.digest` 都进入 `inputs`。Runner 不使用 `Function.prototype.toString()`、函数名或所谓 static import closure 猜闭包值。
 
-opaque callback 仍可执行，但 Attempt 不能跨 Run carry；Window command 还会注入 invocation / pair salt，不能跨 pair 或 invocation 共享复用窗口。任一 phase 含 opaque command 时，计划明确显示 `carryEligible = false`，不能拿伪稳定哈希命中旧状态。
+opaque callback 仍可执行，但 Attempt 不能跨 Run carry；Window command 还会注入 invocation / pair salt，不能跨 pair 或 invocation 共享复用周期。任一 phase 含 opaque command 时，计划明确显示 `carryEligible = false`，不能拿伪稳定哈希命中旧状态。
 
 Agent 安装继续由 AgentProvisioner 拥有。
 通用 SandboxCommand 不复制 Agent 的宿主侧 prepare、staged payload、安装模式、平台探测、鉴权、会话与逐 Attempt Agent facts。
@@ -455,4 +455,4 @@ Agent 安装继续由 AgentProvisioner 拥有。
 ## 普通文件传输
 
 `test(t)` 继续使用一套普通 Sandbox API。
-本地 URL 上传时，Runner 自动记录 source tree、内容身份、目标与 send 区间；顺序决定 Agent 可见性，send 窗口决定 Agent diff 归因。
+本地 URL 上传时，Runner 自动登记 source tree、内容身份、目标与 send 区间；顺序决定 Agent 可见性，send 区间决定 Agent diff 归因。

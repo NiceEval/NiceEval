@@ -24,7 +24,7 @@ export default defineExperiment({
 
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
 - 题间 reset 只恢复 workdir，workdir 外的状态可能继续存在；
-- 两层作者 layer 的 `prepare()` 每条 Attempt 重放,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
+- 两层作者 layer 的 `prepare()` 每条 Attempt 重新执行,昂贵动作靠真实检查快速命中(官方写法见[内置 prepare 命令](prepare-commands.md))；
 - agent.ensure 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
@@ -78,38 +78,38 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 - Attempt 的 Agent 与 cleanup 收尾完成后,Sandbox 才能 reset、轮换或停止。
 
 Runner 不把 `prepare()` 提升成每个 Sandbox 一次；只有作者显式声明的 `setup()` / `teardown()` 是物理 Sandbox 的生命周期。
-稳定 Agent CLI 应进入预制环境;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重放成本。
+稳定 Agent CLI 应进入预制实例;随 Experiment 变化的准备写在 Experiment layer 的 `prepare()`,由真实检查控制重新执行成本。
 
 Agent CLI 先由 ensure 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
-随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
-「可重复执行」的作者义务只覆盖作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
+随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明出处与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
+「可重复执行」的作者义务只涉及作者自己写的代码:两层 layer 的 `prepare()` 与 Agent factory 的 `postSetup`。
 
 ## 复用池按物理身份分组
 
 一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
-Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecycle owner marker 分组。不同 Eval 即使 `prepare()` 命令不同，只要物理计划相同仍可共享同一个 Sandbox，prepare 会在每次领取时重放；Eval 声明 lifecycle hook 时带入 Eval marker，因此不会和其他 Eval 共享。
+Runner 按 Provider 的物理计划 identity、Agent ensure identity 与 lifecycle owner marker 分组。不同 Eval 即使 `prepare()` 命令不同，只要物理计划相同仍可共享同一个 Sandbox，prepare 会在每次领取时重新执行；Eval 声明 lifecycle hook 时带入 Eval marker，因此不会和其他 Eval 共享。
 
 - 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；
 - Experiment `maxConcurrency` 约束所有组的同时执行总数；
 - 不同组之间不共享 Sandbox,也不共享任何检查命中历史。
 
-未登记 identity 的 callback 不改变跨 Invocation 结果携带，也不改变同一 Run 的物理复用池分组：真正派发时，命令仍在每条 Attempt 领取实例后照常重放。完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
+未登记 identity 的 callback 不改变跨 Invocation 结果携带，也不改变同一 Run 的物理复用池分组：真正派发时，命令仍在每条 Attempt 领取实例后照常重新执行。完整规则见[三方准备时序](lifecycle.md#身份与复用池)。
 
 ## 题间重置
 
-Sandbox Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点**。
+Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点**。
 每条 Attempt 开始前,workdir 必须处于这个点。
 
 上一条 Attempt 的证据折叠完成后,Runner:
 
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
-3. 按 owner 顺序重放两层作者 layer 的 `prepare()` 命令；
-4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因窗口;`test(t)` 重新准备本 Attempt 的 Fixture。
+3. 按 owner 顺序重新执行两层作者 layer 的 `prepare()` 命令；
+4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因区间;`test(t)` 重新准备本 Attempt 的 Fixture。
 
 题间 reset 不是整台 Sandbox 归零。
-Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外路径的文件,全局安装、包管理器缓存、build/cache 和后台进程都会保留,Provider 或作者显式清理的状态除外。
+Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外路径的文件,全局安装、包管理器缓存、build/cache 和后台进程都会保留,Provider 或作者显式清除的状态除外。
 这些残留可能是有意复用的加速状态,也可能污染后续 Attempt,不能把 reset 当成完整隔离。
 
 复用假设 Agent 读不到上一条 Attempt 留在私有分类账里的对象;这个假设只在执行身份不是 root 时成立。
@@ -117,8 +117,8 @@ Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外
 报错时点与下文「派发前确认」里 Provider 缺 `ensureLifetime` 能力的报错时点同构。
 
 大型持久 build/cache 由作者负责生命周期治理。
-作者必须选择容量上限、达到上限前的可解释阈值告警、清理或轮换策略,以及无法安全清理时退休 Sandbox 的策略。
-正常的容量、缓存大小、版本和命中状态记录为 `facts`;只有达到明确风险阈值才报 `diagnostic`,清理或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
+作者必须选择容量上限、达到上限前的可解释阈值告警、清除或轮换策略,以及无法安全清除时退休 Sandbox 的策略。
+正常的容量、缓存大小、版本和命中状态写入为 `facts`;只有达到明确风险阈值才报 `diagnostic`,清除或轮换无法保证继续安全时应退休 Sandbox 或抛出异常。
 
 reset 删除了某个已安装内容时,当前 Attempt 的检查会未命中并重新安装;这是正确性结果,不是缓存失败。
 reset 失败后,该 Sandbox 立即停止承接 Attempt,并追加一条运行级 diagnostic(`sandbox-reset-failed`,点名实例编号与失败原文)。
@@ -170,7 +170,7 @@ interface SandboxReuseCapability {
 该能力只能由 Provider 自己实现：`ready: true` 的唯一合法依据，是寿命已经真实设置或续期到了 Provider 后端。
 Runner 不提供任何基于本地时钟的通用记账实现——记账没有把寿命写进后端时，它把「没实现」伪装成「实现了」，Sandbox 会在远处的运行期被 Provider 按自己的默认寿命回收，而 Runner 一路答 `ready: true`。
 
-Runner 在每次派发前请求足以覆盖 Attempt deadline 与收尾预留时间的 Sandbox 复用寿命。
+Runner 在每次派发前请求足以涵盖 Attempt deadline 与收尾预留时间的 Sandbox 复用寿命。
 Provider 可以在 `ensureLifetime` 内续期，也可以只确认现有时间。
 
 - `ready: true`：Sandbox 可以承接 Attempt。
@@ -201,8 +201,8 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 直接 command / lifecycle callback 不提供额外失效条件，也不阻断该 pair 的 carry；需要追踪其变化时由作者登记稳定 identity。
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
-- Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-  这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结（含 Eval `setup` 失败与超时），记录里都必须带完整归属，不得因为没走到收尾而缺失。
+- Attempt 写入 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
+  这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结（含 Eval `setup` 失败与超时），Record 里都必须带完整归属，不得因为没走到收尾而缺失。
 
 ## 复用污染的可观察性
 
@@ -223,7 +223,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - **首过即停**：语义不变，取消的 Attempt 不触发新 Sandbox 创建。
 - **`--keep-sandbox`**：与 `sandboxReuse: true` 互斥；最终现场不只属于某一条 Attempt。
 - **`localSandbox()`**：与 `sandboxReuse: true` 互斥；Runner 不重置用户工作树。
-- **预制环境**：优先使用，先把稳定安装移出 Attempt。
+- **预制实例**：优先使用，先把稳定安装移出 Attempt。
 - **Sandbox 预热**：不叠加；复用 Experiment 自己按需创建 Sandbox。
 
 ## 失败与收尾
@@ -235,7 +235,7 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 - 寿命确认不通过：按「派发前确认」轮换——停止该 Sandbox、创建替代 Sandbox，这是正常调度而不是异常，不发 diagnostic。
 - Invocation 中断：停止派发，收尾所有已创建 Sandbox，最后执行 Experiment `teardown`。
 - Invocation 中断不会替外部持久状态提供事务回滚；`teardown` 能否排除中断 Attempt 的半成品写入由作者契约决定。
-- cleanup 或 `stop` 失败：记录诊断，不让同一 Sandbox 再承接 Attempt。
+- cleanup 或 `stop` 失败：写入诊断，不让同一 Sandbox 再承接 Attempt。
 
 ## 非目标
 
@@ -248,6 +248,6 @@ Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接
 
 - [实验加速 Design](../../design/experiment-speed/README.md) —— 真实耗时、候选方案与选择。
 - [Experiments](../experiments/README.md) —— `sandboxReuse` 在 Experiment 中的归属。
-- [预制环境](library/prebuilt-environments.md) —— 把稳定安装移到构建期。
+- [预制实例](library/prebuilt-environments.md) —— 把稳定安装移到构建期。
 - [Architecture](architecture.md) —— 分类账与 Provider 实现。
 - [Runner](../../runner.md) —— 派发、并发与完整收尾顺序。

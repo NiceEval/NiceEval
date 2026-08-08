@@ -7,57 +7,48 @@ on:
 
 jobs:
   package:
-    name: Package runtime, typecheck, unit tests, and site
+    name: Typecheck and docs lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      # version 缺省时 pnpm/action-setup 读取根 package.json 的 packageManager，
-      # 不在 workflow 重复版本真源。
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      # 产品站构建会消费 report 的预编译运行时；干净 checkout 不能依赖
-      # install 生命周期或旧 dist 偶然留下的产物。
-      - name: Build package runtime
-        run: pnpm run build:package
 
       - name: Typecheck
         run: pnpm run typecheck
 
-      # 仅运行已登记的稳定 Unit 例外；Journey 由 e2e workflow 的 PR lane 拥有。
-      - name: Test unit exceptions
-        run: pnpm test
+      - name: Lint docs
+        run: pnpm run lint:docs
 
-      - name: Build product site
-        run: pnpm run site:build
-
-  docs-lint:
-    name: Docs lint
+  docs-site:
+    name: docs-site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      # version 缺省时 pnpm/action-setup 读取根 package.json 的 packageManager，
-      # 不在 workflow 重复版本真源。
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
 
       # mint CLI 要 LTS Node；这个 job 与 package job 并行，慢在拉 mint@latest 上，
       # 不拖住代码侧反馈。
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -65,5 +56,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint docs and docs-site
-        run: pnpm lint
+      - name: Lint docs-site and validate with mint
+        run: pnpm run lint:docs-site

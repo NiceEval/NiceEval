@@ -7,7 +7,7 @@
 ## 目的
 
 缩短从发起 Invocation 到拿到结果的总耗时，同时保留实验声明的串行或并行要求。
-这项设计覆盖 Runner 派发、Sandbox 准备与 Sandbox 复用。
+这项设计涵盖 Runner 派发、Sandbox 准备与 Sandbox 复用。
 
 实验总耗时由派发量、排队、Sandbox 准备、Agent 执行和评分共同决定。
 选型必须先看阶段耗时；Sandbox 创建次数减少，不等于实验一定更快。
@@ -18,7 +18,7 @@
 - Sandbox 复用必须由 Experiment 显式声明，并进入配置哈希。
   结果仍按普通携带判据进入结果沿用，可以按该 Experiment 的声明进入 CI。
 - Experiment 的 `maxConcurrency` 表达本 Invocation 的宽度，不隐式变成跨进程名额。
-- 跨 Invocation 共享 checkpoint 时，独占边界覆盖完整的恢复、执行、回存与 Provider finalizer。
+- 跨 Invocation 共享 checkpoint 时，独占边界涵盖完整的恢复、执行、回存与 Provider finalizer。
 - 可以并行的 Attempt 不应因为 Sandbox 复用被强制改成整批串行。
 - Runner 只依赖 Provider 能力，不按 Docker、E2B 或 Vercel 的名字分支。
 - 生命周期 Hook 的次数由所属层决定，不能为了提速改变 Agent 或 Eval Hook 的次数。
@@ -29,14 +29,14 @@
 
 1. 默认模式继续为每个 Attempt 使用全新 Sandbox。
 2. 同一个 Sandbox 在同一时刻最多承接一条 Attempt。
-3. Sandbox 复用只重置明确覆盖的 workdir 状态，不宣称等同于全新 Sandbox。
+3. Sandbox 复用只重置明确涵盖的 workdir 状态，不宣称等同于全新 Sandbox。
 4. Sandbox 复用的结果按普通终态、指纹、资格与 `--rerun` 判据参与结果沿用；CI 按签入的 Experiment 生命周期运行。
 5. Agent 与 Eval `setup` / `teardown` 每 Attempt 成对执行。
 
 ### 效率
 
 6. 先用结果沿用、选择与首过即停减少不必派发的 Attempt。
-7. 稳定依赖可以移入预制环境或 SandboxSpec `setup`。
+7. 稳定依赖可以移入预构建起点或 SandboxSpec `setup`。
 8. 如果采用 Sandbox 预热，只能在计划确定后按近期派发量创建。
 9. 如果采用 Sandbox 复用，必须能说明实际分摊了哪些阶段。
 10. 候选方案必须分别说明只用一个 Sandbox 与同时使用多个 Sandbox 的并行影响。
@@ -45,7 +45,7 @@
 
 ### Sandbox 寿命
 
-13. 采用 Sandbox 复用时，Runner 派发前要确认 Sandbox 能覆盖 Attempt deadline 与收尾。
+13. 采用 Sandbox 复用时，Runner 派发前要确认 Sandbox 能涵盖 Attempt deadline 与收尾。
 14. 候选方案必须说明不能续期时是更换 Sandbox，还是停止 Run。
 15. Provider 无法确认 Sandbox 复用寿命时，候选方案不能假设它会持续存活。
 16. reset、续期或 SandboxSpec `setup` 失败后，该 Sandbox 不再承接 Attempt。
@@ -53,7 +53,7 @@
 ### 反馈
 
 17. 计划与结束反馈至少展示少跑数量、实际并行数、Sandbox 创建数和复用次数。
-18. Attempt 时间树只记录本 Attempt 的工作；共用的创建与 SandboxSpec `setup` 记为 Run 级开销。
+18. Attempt 时间树只登记本 Attempt 的工作；共用的创建与 SandboxSpec `setup` 记为 Run 级开销。
 19. 基准至少区分 Sandbox 创建、SandboxSpec `setup`、Agent 准备、Agent 执行与评分。
 
 ## 不在范围内

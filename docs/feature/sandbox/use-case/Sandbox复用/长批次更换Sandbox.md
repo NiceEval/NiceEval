@@ -20,11 +20,11 @@ export default defineExperiment({
 ```
 
 Runner 为每个 Sandbox 确认 Sandbox 复用寿命。
-下一条 Attempt 派发前，它请求足以覆盖 Attempt deadline 与收尾的时间。
+下一条 Attempt 派发前，它请求足以涵盖 Attempt deadline 与收尾的时间。
 
 寿命足够或 Provider 成功续期时，Attempt 进入原 Sandbox。
 Provider 无法满足时，原 Sandbox 停止领取新任务并销毁，绑定 Case 的资源由 Provider finalizer 整组关闭。
-Runner 创建替代 Sandbox，Case 就绪、落下题间重置点后再派发；两层 `prepare()` 照常在每条 Attempt 进入前重放。
+Runner 创建替代 Sandbox，Case 就绪、落下题间重置点后再派发；两层 `prepare()` 照常在每条 Attempt 进入前重新执行。
 
 ```text
 Sandbox reuse: replacing sandbox 1 before memory/commit-18
@@ -44,5 +44,5 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 
 ## 什么时候改用默认模式
 
-需要每条 Attempt 都从全新环境开始或需要保留失败现场时，去掉 `sandboxReuse`。
-稳定依赖应先进入 [预制环境](../../library/prebuilt-environments.md)，避免每个全新实例重复安装。
+需要每条 Attempt 都从全新 Sandbox 开始或需要保留失败现场时，去掉 `sandboxReuse`。
+稳定依赖应先进入 [预制实例](../../library/prebuilt-environments.md)，避免每个全新实例重复安装。

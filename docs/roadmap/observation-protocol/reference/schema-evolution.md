@@ -17,7 +17,7 @@
 | 增加首 token 延迟 | 扩展 timing/result 类型、writer、reader 与报告 | 新事件 payload、timing Projector 与页面 | 否 |
 | 增加 trace 瀑布图 | 接入 `trace.json`、artifact registry、loader、publish 与页面 | telemetry node、trace Projector 与页面 | 否 |
 | trace 增加 attribute | 修改共享 `TraceSpan` 或 artifact 形状 | 新 telemetry media type 或新 Projector | 否 |
-| 修改成本算法 | 处理 `result.json` 中旧成本字段的语义 | 新 evaluator/Projector identity，历史 Claim 不覆盖 | 否 |
+| 修改成本算法 | 处理 `result.json` 中旧成本字段的语义 | 新 evaluator/Projector identity，历史 Claim 不覆写 | 否 |
 | 增加源码或 diff 下钻 | 新 artifact、reader 方法和 publish 词干 | 新 payload、strong edge 与 Projector | 否 |
 | 报告发布 trace | 调用方手工把 `trace` 放进 artifact allowlist | Export Plan 的 `basedOn` 自动形成强闭包 | 否 |
 | 单个 trace 超过 Git 限制 | 发布失败、排除证据或重新运行 | segment node 与 chunk-index node 自动扩展 | 否 |
@@ -130,7 +130,7 @@ const plan: ReportExportPlan = {
 | sealed 后收到迟到事实 | 写新 Graph root 与 lineage；旧 Claim 仍绑定旧 root | 否 |
 | 脱敏、选择性披露或权限变化 | 导出新的闭包或 encryption payload，不改原 sealed graph | 否 |
 | 恶意深图、重复边或伪循环 | visited set 与资源预算保证终止，并返回资源限制 | 否 |
-| digest 路径穿越或大小欺骗 | 路径解析器先校验算法、编码和 size，再访问文件系统 | 否 |
+| digest 路径穿越或大小欺骗 | 路径读取器先校验算法、编码和 size，再访问文件系统 | 否 |
 | 相同 digest、不同 media type | typed reference 比较完整 DescriptorV1，不以 digest 合并 | 否 |
 | 未知复合 payload | 所有容器依赖在 strong edge；opaque body 不参与遍历 | 否 |
 | packfile、CDN 或镜像源 | 只改变 transport；取得字节后仍按 DescriptorV1 验证 | 否 |
@@ -162,7 +162,7 @@ v2 先固定五个可检查的不变量：
 七项都是“能”时，提案必须留在 v2。
 只有以下情况才允许提出 v3：
 
-- frozen Layout 字节无法继续安全解析。
+- frozen Layout 字节无法继续安全读取。
 - `mediaType + digest + size` 不再足以形成 typed reference。
 - 未来权威内容无法表示成有限 immutable payload 与显式强依赖。
 - sealed Graph root 的闭包或不可变语义必须改变。
@@ -177,7 +177,7 @@ v2 先固定五个可检查的不变量：
 
 1. 未知 node 引用未知 blob 时，旧 copier 复制完整强闭包，并保持所有 bytes、digest 与 size。
 2. 相同 digest、不同 media type 的两个 DescriptorV1 不得被 EvidenceRef、缓存或 visited set 混同。
-3. 相同 `recordId`、不同 Graph root 的 evidence 不得交叉解析。
+3. 相同 `recordId`、不同 Graph root 的 evidence 不得交叉读取。
 4. 持久化 Claim 只保存 EvidenceTarget；把最终 GraphRootRef 写进 Claim 的构造必须因内容哈希自引用而被拒绝。
 5. Reader 从某个 sealed Graph root 读取 Claim 后，返回的每个 EvidenceRef 都限定到该 root。
 6. 增加未知 node 后，旧 reader 的全部已知 Projection 保持相同。
@@ -186,11 +186,11 @@ v2 先固定五个可检查的不变量：
 9. 签名失败只影响 authenticity 结果，不把字节完整的 sealed graph 判成 corrupt。
 10. partial clone 缺对象时返回 `missing-object`，不得变成 `not-recorded`、`open` 或 `corrupt`。
 11. 恶意深图、重复边和伪循环必须在预算内终止，不能无限递归或耗尽内存。
-12. 两个 writer 同时更新 head 时，一个 compare-and-swap 必须失败，不能静默覆盖另一个 checkpoint。
-13. core JCS 语料覆盖 duplicate key、非法 UTF-8、`-0`、指数、Unicode 排序和超安全整数。
+12. 两个 writer 同时更新 head 时，一个 compare-and-swap 必须失败，不能静默覆写另一个 checkpoint。
+13. core JCS 语料涵盖 duplicate key、非法 UTF-8、`-0`、指数、Unicode 排序和超安全整数。
 14. `../../x`、未知算法、大小写混杂和超长 digest 必须在访问文件系统前被拒绝。
 15. GC 面对两个 Graph root 共享同一 node 时，删除一个 head 不能回收仍可达的 node。
-16. 迟到事实形成新 Graph root 后，旧 Report 仍解析旧 root，不能混用两个版本的 event。
+16. 迟到事实形成新 Graph root 后，旧 Report 仍读取旧 root，不能混用两个版本的 event。
 17. Report 子集导出必须包含 source Graph root 到 EvidenceTarget 的有效 membership proof，以及 target 的全部强闭包。
 18. membership proof 不得迫使导出无关 sibling payload，也不能携带无 strong edge 关联的秘密 node。
 19. 改变 segment 或 chunk 边界只能改变物理 NodeRef，不能改变 logical digest 与 Projector 结果。

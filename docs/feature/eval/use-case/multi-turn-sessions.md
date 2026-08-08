@@ -52,7 +52,7 @@
 
 ## 边界
 
-- turn 与 session 的断言在**记录时 Run**：session 断言之后再发生的轮次不会改变已记录断言的评估材料。
+- turn 与 session 的断言在**写入时 Run**：session 断言之后再发生的轮次不会改变已写入断言的评估材料。
   要看「到最后为止的全部」，挂 `t`。
 - `t.newSession()` 开的 session 事件**仍会汇入** `t.*` 的 attempt 级聚合断言；但不进入 `t.reply` / `t.events` 这类主 session 即时读取视图。
 - Turn 不能继续驱动会话——下一轮仍从 `t` 或对应 session 调用 `send`。

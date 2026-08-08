@@ -1,4 +1,4 @@
-# 多容器环境 —— 现状约束与候选清单
+# 多容器拓扑 —— 现状约束与候选清单
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) ·
@@ -8,36 +8,36 @@
 
 ## 目的
 
-记录候选方案依赖的组件与契约的真实限制。只写现状与影响,
-不下结论。
+记载候选方案依赖的组件与契约的真实限制。只写现状与影响,
+不下裁决。
 
 ---
 
-# niceeval 现有环境契约
+# niceeval 现有 Sandbox 契约
 
 ## 产品特性
 
 `environment` 是 eval 上的不透明 profile id;spec 工厂的
-`environments` 表把 profile 翻译成单个预制产物
+`environments` 表把 profile 翻译成单个预构建输出
 (Docker image / E2B template / Vercel snapshot)。
 
 ## 当前支持
 
-- profile 逐 eval 解析,缺表项启动期报错,一次穷举。
-- 解析结果计入 eval fingerprint,产物变化触发重跑。
-- 预制产物 + `sandbox.setup` Hook 两层分工清晰。
+- profile 逐 eval 读取,缺表项启动期报错,一次穷举。
+- 读取结果计入 eval fingerprint,输出变化触发重跑。
+- 预构建输出 + `sandbox.setup` Hook 两层分工清晰。
 
 ## 当前不支持
 
-- 一个 profile 只能是一个产物,表达不了「一组容器加一张网」。
-- 没有能力协商:环境不满足时的结局是运行期假 `failed`,
+- 一个 profile 只能是一个输出,表达不了「一组容器加一张网」。
+- 没有能力协商:Sandbox 不满足时的结局是运行期假 `failed`,
   不是计划期 `skipped`。
-- 服务类资源没有清理、留存、孤儿核对故事。
+- 服务类资源没有回收、留存、孤儿核对故事。
 
 ## 直接影响
 
 各候选方案都要回答:profile 的值升格成什么、缺能力时
-判什么、新资源怎么纳入清理与留存。
+判什么、新资源怎么纳入回收与留存。
 
 ---
 
@@ -45,7 +45,7 @@
 
 ## 当前支持
 
-- 每 attempt 建一张 bridge 网络,内置 DNS 按容器别名解析,
+- 每 attempt 建一张 bridge 网络,内置 DNS 按容器别名寻址,
   服务名语义免费。
 - `docker build` 原生支持从任务仓库的 Dockerfile 构建,
   layer cache 天然按内容命中。
@@ -62,7 +62,7 @@
 
 Docker 是各方案里构建与启动成本最低的一档;差异集中在「谁来
 翻译声明」。PLAN-1 由 niceeval 翻译 typed 表;PLAN-2 由
-niceeval 解析 compose 子集;PLAN-3 用户自己跑 compose;
+niceeval 读取 compose 子集;PLAN-3 用户自己跑 compose;
 PLAN-4 由 Docker provider 原生消费 compose,不翻译。
 
 ---
@@ -78,10 +78,10 @@ PLAN-4 由 Docker provider 原生消费 compose,不翻译。
 
 ## 当前不支持
 
-- 官方基线模板未预装 docker;VM 内 docker 的可用性、
+- 官方基础模板未预装 docker;VM 内 docker 的可用性、
   嵌套开销与网络形态**需真机验证**,未验证前不能默认打开。
 - Vercel 运行用户非 root,docker daemon 权限路径待验证。
-- VM 内容器的服务名解析要额外做(如 `/etc/hosts` 指向
+- VM 内容器的服务名寻址要额外做(如 `/etc/hosts` 指向
   容器 IP),不像 Docker provider 那样免费。
 
 ## 直接影响

@@ -10,7 +10,7 @@ Runner 在 link 阶段为每个实际 Eval × Experiment 配对选择一份完�
 - Direct Agent Judge 没有 `sandbox`，Sandbox Agent Judge 有一个 template-bearing `sandbox`。
 - timeout、model、reasoning effort 与 flags 形状合法。
 
-`test(t)` 运行到 `t.judge.agent()` 时，Assertion collector 校验 rubric 锚点与 `workspace` 的形态组合。
+`test(t)` 运行到 `t.judge.agent()` 时，Assertion collector 校验 rubric 参照点与 `workspace` 的形态组合。
 这些输入可以位于普通代码分支中，Runner 不通过源码文本猜一条断言是否会执行。
 
 同一次 Invocation 中，没有执行 Agent Judge Assertion 的 Eval 不调用裁判。
@@ -56,12 +56,12 @@ assertions.evaluate
 ```
 
 快照在裁判 Sandbox 的 prepare 之后导入，只替换 workdir。
-Agent Ensure 与 setup 随后运行，使裁判 CLI 和鉴权不被快照覆盖；它们不得把被测 Agent 的进程配置当作裁判配置复用。
+Agent Ensure 与 setup 随后运行，使裁判 CLI 和鉴权不被快照覆写；它们不得把被测 Agent 的进程配置当作裁判配置复用。
 
 每条 Assertion 使用一个全新的裁判 Sandbox。
 同一 Attempt 的多条 Agent Judge Assertion 不共享文件修改、Agent Session 或上下文；Provider build artifact 可以按既有 BuildKey 复用，但运行实例不能复用。
 
-## 失败与清理
+## 失败与回收
 
 生命周期一旦创建资源，就按创建顺序逆序执行全部已登记 finalizer。
 send、decision 校验或协议修正失败都不跳过 Agent teardown、Sandbox teardown 与 physical release。
@@ -90,4 +90,4 @@ send、decision 校验或协议修正失败都不跳过 Agent teardown、Sandbox
 | 裁判 Sandbox physical release | 创建后 1 |
 
 一次协议修正不重新调查，也不新建 Session。
-Agent 若自行在首次任务中多轮调用模型或工具，那些物理动作属于 Adapter 内部行为，全部记录在同一个裁判 execution。
+Agent 若自行在首次任务中多轮调用模型或工具，那些物理动作属于 Adapter 内部行为，全部登记在同一个裁判 execution。

@@ -1,6 +1,6 @@
-# Terminal-Bench:Eval Environment 与 Docker 内建解析
+# Terminal-Bench:Eval Environment 与 Docker 内建规划
 
-契约单源见 [Library · Eval Environment](../library.md#eval-environment)、[Architecture · 唯一起点解析](../architecture.md#唯一起点解析)与 [Lifecycle](../lifecycle.md)。
+契约单源见 [Library · Eval Environment](../library.md#eval-environment)、[Architecture · 唯一起点规划](../architecture.md#唯一起点规划)与 [Lifecycle](../lifecycle.md)。
 
 ## Eval
 
@@ -59,7 +59,7 @@ Experiment 只选择 Docker Provider，并声明启动后的 Experiment 条件�
 它不导入 `dockerComposeMaterializer()`，也不需要知道选中的 Eval 使用 Compose 还是 Dockerfile Environment。
 
 Docker Provider 若不支持 Compose，这个组合在计划期明确 skipped。
-Provider 不能静默使用 defaultEnvironment 跑一个拓扑不同的近似环境。
+Provider 不能静默使用 defaultEnvironment 跑一个拓扑不同的近似 Sandbox。
 
 ## 无法现场准备的条件
 
@@ -75,10 +75,10 @@ dockerSandbox({
 }).setup(ensureGitForLedger);
 ```
 
-表项替换该 profile 的按需 Compose 规划，不与 Compose 产物运行时合并。
-`ensureGitForLedger` 仍要检查实际状态；预制产物名不是命中证明。
+表项替换该 profile 的按需 Compose 规划，不与 Compose 构建输出运行时合并。
+`ensureGitForLedger` 仍要检查实际状态；预制构建输出名不是命中证明。
 
-## Runner 记录
+## Runner 写入
 
-记录包含 Compose Environment identity、实际 Case、BuildKey、CaseKey、setup activity 与 transfer manifest。
+Record 包含 Compose Environment identity、实际 Case、BuildKey、CaseKey、setup activity 与 transfer manifest。
 判定封口前，Runner 对比测试 source 与 Agent 可见 build / mount closure，发现泄漏时拒绝 verdict。

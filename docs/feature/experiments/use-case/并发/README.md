@@ -1,7 +1,7 @@
 # 并发 —— 用例
 
 先区分四个控制面：CLI `--max-concurrency` 约束本 Invocation 的全局吞吐，Experiment `maxConcurrency` 约束本 Invocation 内该实验的宽度。
-用例锁防止同一 Eval 双跑；`sharedState.key` 独占跨 Invocation 的可变状态窗口。
+用例锁防止同一 Eval 双跑；`sharedState.key` 独占跨 Invocation 的可变状态区间。
 
 | 目标 | 用例 |
 |---|---|

@@ -1,6 +1,6 @@
 # Assertions —— 库用法
 
-最常见的 Assertion 写法是：先驱动 Agent，再对回复、行为、产物和成本记录断言。
+最常见的 Assertion 写法是：先驱动 Agent，再对回复、行为、生成文件与成本登记断言。
 
 ```ts
 import { defineEval } from "niceeval";

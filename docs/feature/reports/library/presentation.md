@@ -85,7 +85,7 @@ const display = formatMetricValue(cell.value, cell.unit, cell.format, locale);
 千位缩写只在后两支生效。
 百分比、耗时与金额各有自己的读法，缩写会把它们读坏。
 
-`MetricFormat` 的 `custom` 分支覆盖内建格式：
+`MetricFormat` 的 `custom` 分支替换内建格式：
 
 ```ts
 export const cacheHitRate = rollup(
@@ -104,7 +104,7 @@ export const cacheHitRate = rollup(
 ```
 
 它只格式化同一个终值。
-覆盖不能改变聚合口径，也不能按 locale 给出不同的数——两份数字会让同一张报告的中英文版本对不上账。
+替换不能改变聚合口径，也不能按 locale 给出不同的数——两份数字会让同一张报告的中英文版本对不上账。
 
 ### 时刻不走 unit
 
@@ -124,10 +124,10 @@ formatInstant(attempt.result.startedAt, locale);
 `formatAxisTick(value, step, unit)` 的精度跟随刻度步长，不跟随值本身：步长 `0.25` 的刻度打 `0.25` / `0.5` / `0.75`，而 `formatMetricValue` 会把它们缩写掉。
 自定义图表组件画轴用它，不自己 `toFixed`。
 
-### 显式历史中的相对时距
+### 相对时距是数据不是文案
 
 History、稳定性等显式时间旅途需要显示「这次执行距今多久」时，两面都调用 `formatTimeDistance(ms, locale)`，不各写一套措辞。
-当前报告不根据 Attempt 来源追加时距或降饱和；相对时距不是 current 状态字段。
+当前报告不按 Attempt 是否携带追加时距或降饱和；相对时距不是 current 状态字段。
 
 | 区间 | en | zh-CN |
 |---|---|---|
@@ -141,11 +141,11 @@ History、稳定性等显式时间旅途需要显示「这次执行距今多久�
 
 ## 缺数据、不适用与占位
 
-三种空格是三件不同的事，各有自己的文案来源，不互相顶替：
+三种空格是三件不同的事，各有自己的文案出处，不互相顶替：
 
 | 形态 | 含义 | 文案 |
 |---|---|---|
-| `metric` 且 `value === null` | 覆盖到了计数单位，但没有一条给得出值 | renderer 经 `formatMetricValue` 取缺数据文案 |
+| `metric` 且 `value === null` | 计数单位上已有样本，但没有一条给得出值 | renderer 经 `formatMetricValue` 取缺数据文案 |
 | `missing` | 本该有却没跑到 | `code` 经词表映射 |
 | `notApplicable` | 这个读数对这一行没有意义 | `—` |
 
@@ -154,7 +154,7 @@ History、稳定性等显式时间旅途需要显示「这次执行距今多久�
 
 | `code` | 含义 | en | zh-CN |
 |---|---|---|---|
-| `noSamples` | 这一格覆盖的 attempt 读数全部为 `null` | `no data` | `无数据` |
+| `noSamples` | 这一格对应的 attempt 读数全部为 `null` | `no data` | `无数据` |
 | `neverRun` | 历史中从未出现这道题的物理 Attempt | `not run yet` | `尚未运行` |
 | `previousResult` | 有旧但不兼容的结果，当前配置下仍无结果 | `no result for current config` | `当前配置下无结果` |
 | `unscorable` | 有 attempt，但读数测不出 | `unscorable` | `测不出` |
@@ -201,7 +201,7 @@ History、稳定性等显式时间旅途需要显示「这次执行距今多久�
 这里只给类型与用法。
 
 名称与视觉编码是**一份**呈现结果。
-库不公开两套 helper 让作者自己拼接：标签取自这一页的完整 keyset，颜色取自这一页的槽位分配，任何一半自己算都会与另一半脱节。
+库不公开两套辅助函数让作者自己拼接：标签取自这一页的完整 keyset，颜色取自这一页的槽位分配，任何一半自己算都会与另一半脱节。
 
 组件先声明，再按句柄取回：
 

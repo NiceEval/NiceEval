@@ -6,8 +6,8 @@
 | 接收者 | Selector | 求值时机 |
 |---|---|---|
 | `t` | attempt 的全部 session 和 turn | 延迟到 test 结束后对聚合结果求值 |
-| session（`t.newSession()` 的返回值） | 该 session 在记录断言时已有的事件和 usage | 记录时求值 |
-| turn（`t.send()` 的返回值） | 该轮不可变的事件、状态和 usage | 记录时求值 |
+| session（`t.newSession()` 的返回值） | 该 session 在断言登记时已有的事件和 usage | 登记时求值 |
+| turn（`t.send()` 的返回值） | 该轮不可变的事件、状态和 usage | 登记时求值 |
 
 ```ts
 const first = await t.send("查布鲁克林天气");

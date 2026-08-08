@@ -8,15 +8,15 @@
 
 ## 目的
 
-为「agent 进入环境的方式」选一个组合形态,让任务镜像为底
+为「agent 进入 Sandbox 的方式」选一个组合形态,让任务镜像为底
 的基准移植(Case B)不必手抄 niceeval 内部契约就能表达,
-同时官方基线动线(Case A)一字不改。
+同时官方基础镜像动线(Case A)一字不改。
 
 范围边界:本决策只管**安装配方与起点 OCI image 或 E2B template的组合关系**——配方
 以什么形态存在、叠在什么起点 OCI image 或 E2B template上、由谁校验。多服务拓扑归
-[Design · 多容器环境](../multi-container-environments/README.md)。
+[Design · 多容器拓扑](../multi-container-environments/README.md)。
 「预装是否可用」的检测属于本决策的检查契约,各 agent
-接入页的检测细节按结论对齐。
+接入页的检测细节按裁决对齐。
 
 ---
 
@@ -26,7 +26,7 @@
   Agent 身份(名字、精确版本、配方修订)在规划期锁定并进入
   指纹。构建期烘焙与运行时安装都必须落到同一个锁定身份;
   无锁定身份的探测式安装(装到什么算什么)不进任何路径。
-  预制产物的价值是命中检查、省掉安装耗时,不是身份的来源。
+  预制 image / template 的价值是命中检查、省掉安装耗时,不是身份的出处。
 - **不发明跨 provider 构建 DSL**:
   [既有裁决](../../feature/sandbox/library/prebuilt-environments.md#为什么没有跨-provider-构建-dsl)
   继续成立。候选方案给的是 provider 原生构建工具里的可
@@ -57,7 +57,7 @@
   配方,与内置配方消费同一套组合与校验机制。
 - **R6 任意构建路径零手抄**:用户在 provider 原生构建工具
   (含 Dockerfile)里预装 Agent 时,不需要手抄 niceeval 的
-  内部契约;预装缺失或不完整时由运行时把环境补齐到同一个
+  内部契约;预装缺失或不完整时由运行时把 Sandbox 补齐到同一个
   检查后置条件,而不是静默坏掉。
 
 ---
@@ -70,8 +70,8 @@
   [LIMITS](LIMITS.md))。幂等短路与「检查在前」的形态
   本身不在排除之列。
 - **多服务拓扑**——归
-  [Design · 多容器环境](../multi-container-environments/README.md)。
-- **Vercel 的产物原语**——Vercel 没有可发布模板,维持
+  [Design · 多容器拓扑](../multi-container-environments/README.md)。
+- **Vercel 的模板原语**——Vercel 没有可发布模板,维持
   [Run 构建流程](../../feature/sandbox/library/prebuilt-environments.md#vercel-sandbox从运行实例拍-run),
   不伪造。
 - **Adapter 的会话与配置语义**——检查通过之后 Agent 怎么

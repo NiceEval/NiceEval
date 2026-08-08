@@ -35,7 +35,7 @@ LLM-as-judge 用独立裁判模型打 0.
    ```
 
 4. 裁判模型的优先级是：单次 `{ model }` → Experiment 的 `judge` 字段 → Eval 的 `judge` 字段 → 项目配置。
-   没有内置默认模型，也没有环境变量层：
+   没有内置默认模型，也没有进程变量层：
 
    ```typescript
    t.judge.autoevals.factuality("布鲁克林今天是晴天", { model: "gpt-4o" }).atLeast(0.8);
@@ -43,7 +43,7 @@ LLM-as-judge 用独立裁判模型打 0.
 
 ## 边界
 
-- 解析不到模型或 API key 时，judge 断言记 `unavailable` 并使 attempt `errored`——写下的 rubric 默认要求可评估，缺 key 直接红，不会静默消失。
+- 找不到模型或 API key 时，judge 断言记 `unavailable` 并使 attempt `errored`——写下的 rubric 默认要求可评估，缺 key 直接红，不会静默消失。
   确实允许缺席的 rubric 显式链 `.optional()`。
 - 判断「必须提到某个词」这类可精确表达的规则，用 `includes` 等 matcher，不要浪费一次 judge 调用。
 - 期望输出接近逐字稳定时用 `similarity`（编辑距离）就够；judge 留给真正开放式的质量问题。
@@ -51,7 +51,7 @@ LLM-as-judge 用独立裁判模型打 0.
 
 ## 相关阅读
 
-- [Judge](../../judge/library.md) —— 三个入口、模型解析与 unavailable 语义的单源契约。
+- [Judge](../../judge/library.md) —— 三个入口、模型求值与 unavailable 语义的单源契约。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— soft 阈值怎样在 `--strict` 下收紧。
 - [Assertions · 作用域](../../assertions/architecture/scopes.md) —— 各接收者 judge 的默认材料。
 - [Assertions · 计分粒度](../../assertions/library/score-points.md) —— Judge 分数进质量分列，两个都通过的模型质量差可比；计分制里链 `.points(n)` 按连续分比例挣分。

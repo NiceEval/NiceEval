@@ -17,7 +17,7 @@ Attempt
 ```
 
 每条 Agent Judge Assertion 恰好关联零或一个 Agent Judge execution。
-配置或工作区在创建前已经不可用时没有 execution；一旦创建，成功、失败、事件、usage 与清理结果都保留在同一个 execution 下。
+配置或工作区在创建前已经不可用时没有 execution；一旦创建，成功、失败、事件、usage 与回收结果都保留在同一个 execution 下。
 
 ```ts
 interface AgentJudgeExecution {
@@ -41,7 +41,7 @@ interface AgentJudgeExecution {
 }
 ```
 
-`AssertionResult` 的记录基类增加可选 evaluator 引用：
+`AssertionResult` 的数据基类增加可选 evaluator 引用：
 
 ```ts
 interface AgentAssertionEvaluatorRef {
@@ -88,12 +88,12 @@ Runner 用分离的消息区段和稳定标签交付它们，并明确要求 Age
 ## workdir 快照
 
 `workspace: "snapshot"` 捕获评分边界处的完整 workdir 文件树，包括 `.git` 与未跟踪文件。
-它不捕获进程、网络连接、环境变量、被测 Agent Session、Sandbox 私有分类账或 workdir 外路径。
+它不捕获进程、网络连接、env 变量、被测 Agent Session、Sandbox 私有分类账或 workdir 外路径。
 
 快照是带逐文件摘要的归档。
-Runner 只经 Sandbox 文件操作协议捕获与导入 workdir，不复制被测 Sandbox 的进程、环境或 Provider 运行实例。
+Runner 只经 Sandbox 文件操作协议捕获与导入 workdir，不复制被测 Sandbox 的进程、运行条件或 Provider 运行实例。
 
-Runner 先封口被测 Agent 的全部 send 窗口，再捕获快照。
+Runner 先封口被测 Agent 的全部 send 区间，再捕获快照。
 快照导入全新的裁判 Sandbox；Agent Judge 对副本拥有普通读写权限，但任何写入都不回流。
 Runner 不以只读 mount 伪装隔离，因为裁判可能需要构建、生成缓存或执行会写临时文件的测试。
 
@@ -109,7 +109,7 @@ core 不按 Adapter 名或模型名分支；`kind` 只决定是否创建裁判 S
 它不暴露被测 Experiment flags，除非作者在 `judge.agent.flags` 再声明一份；同名字段不形成隐式继承。
 
 Agent Judge 的事件带 `role: "judge"` 与 execution id。
-作用域断言只读取 `role: "subject"` 的事件，因此裁判运行的 shell、工具与消息不会让 `calledTool()`、`maxTokens()` 或 `messageIncludes()` 改变结论。
+作用域断言只读取 `role: "subject"` 的事件，因此裁判运行的 shell、工具与消息不会让 `calledTool()`、`maxTokens()` 或 `messageIncludes()` 改变判断。
 
 subject usage 与 judge usage 分列保存。
 Attempt 总成本可以显示两者之和，但报告必须同时保留 `subject` 与 `judge` 两个分量，不能把裁判成本算成被测 Agent 成本。
@@ -123,10 +123,10 @@ Attempt 总成本可以显示两者之和，但报告必须同时保留 `subject
 - 一条 Assertion 使用一条全新的裁判 Agent Session，不读取其它 Assertion 的结果。
 - Agent Judge 的工具行为不能补足被测 Adapter 的 Evidence coverage；两类证据属于不同角色。
 
-## 记录与读取
+## 登记与读取
 
 rubric、材料摘要、协议版本、裁判配置身份与 workdir 摘要属于 Provenance。
-裁判 Session 的事件、Turn、usage、诊断与清理事实属于 Observation。
+裁判 Session 的事件、Turn、usage、诊断与回收事实属于 Observation。
 `AgentJudgeDecision` 与映射后的 AssertionResult 是 Claim，并引用对应 execution 与材料。
 
 show 默认在 Assertion 行显示 score、threshold 与 rationale 摘要。
@@ -138,7 +138,7 @@ view 可以从 evidence 引用跳到裁判看到的材料或 workdir 快照清�
 以下输入进入 Attempt fingerprint：
 
 - rubric 的 name、criterion 与 anchors。
-- `{ on }` 的来源代码，以及 `workspace` 选择。
+- `{ on }` 的出处代码，以及 `workspace` 选择。
 - 最终选中的 `judge.agent` 全部配置身份。
 - Agent、Adapter、model、reasoning effort、flags 与 Sandbox layer 身份。
 - Agent Judge 任务模板和 `niceeval.agent-judge/1` 协议版本。
@@ -154,8 +154,8 @@ view 可以从 evidence 引用跳到裁判看到的材料或 workdir 快照清�
 Agent Judge 在对应 Attempt 的 Assertion 求值阶段运行，并继续占用该 Attempt 的并发位。
 不同 Attempt 的裁判可以受全局与 Experiment 并发限制并行；同一 Attempt 的 Assertion 保持声明顺序，不并发启动多个 Agent Judge。
 
-`judge.agent.timeoutMs` 覆盖裁判 Sandbox 创建、快照导入、Agent setup、首次 send、一次协议修正、teardown 与销毁。
-Attempt deadline 的剩余时间是外层上限；两者取更早者，超时来源写入 unavailable evidence。
+`judge.agent.timeoutMs` 涵盖裁判 Sandbox 创建、快照导入、Agent setup、首次 send、一次协议修正、teardown 与销毁。
+Attempt deadline 的剩余时间是外层上限；两者取更早者，超时出处写入 unavailable evidence。
 
 Agent Judge usage 进入独立 judge 成本桶，也计入 Experiment 的总预算护栏。
 预算预测与停止派发不能只计算被测 Agent，否则 Agent-as-Judge 会绕过成本上限。

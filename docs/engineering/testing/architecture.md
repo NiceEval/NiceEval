@@ -122,7 +122,7 @@ E2E 文件从上到下保持同一信息顺序：
 每个测试文件第一行用 `// owner: <docs path#anchor>` 指向一个稳定结果或具名风险。
 文件内可以用 `test.each` 展开同一等价类，不能加入第二个独立结果。
 `regression:` / `bug:` 紧贴真正能杀死旧实现的 case，不能把整文件的其它测试也伪装成回归。
-统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
+统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](../../roadmap/testing/portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性
 
@@ -142,7 +142,7 @@ E2E 文件从上到下保持同一信息顺序：
 
 ## 复用设施预算
 
-跨 Repo 的稳定机械能力由内部 [官方 Testkit](testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
+跨 Repo 的稳定机械能力由内部 [官方 Testkit](../../roadmap/testing/testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
 消费本次 runner 生成的内容寻址 tgz；不通过 workspace link 或 checkout 路径运行。能力是否上移按机械契约的消费者判断，不能因为
 功能与 Adapter 属于不同 Repo 集合，就复制两份 process 或严格 JSON 实现。
 
@@ -238,8 +238,8 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 
 ## 证明关系不是运行时平台
 
-测试文件和标题是执行身份；[Portfolio](portfolio.md) 只维护人可审查的稳定结果、owner、lane 和历史 bug 链接。
+测试文件和标题是执行身份；[Portfolio](../../roadmap/testing/portfolio.md) 只维护人可审查的稳定结果、owner、lane 和历史 bug 链接。
 它不生成测试代码，也不要求测试重复登记一份元数据。
 
 根 runner 的机器 schema 仅包含 Repo 的运行条件，详见
-[真实场景 Repo](e2e/scenario-repos.md)；本地 / CI 生命周期见 [Execution](e2e/execution.md)。
+[真实场景 Repo](../../roadmap/testing/e2e/scenario-repos.md)；本地 / CI 生命周期见 [Execution](../../roadmap/testing/e2e/execution.md)。

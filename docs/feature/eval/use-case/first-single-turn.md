@@ -3,7 +3,7 @@
 ## 解决什么问题
 
 最常见的 eval 是「发一句话，看 agent 答得对不对、做没做该做的事」。
-它需要的全部 API 就是三个动作：`t.send` 驱动、`t.reply` 读取、断言记录。
+它需要的全部 API 就是三个动作：`t.send` 驱动、`t.reply` 读取、断言写入。
 这一篇是所有其它用例的地基。
 
 ## 全流程
@@ -32,7 +32,7 @@
    带本地文件的一轮用 `t.sendFile(path, text?)`，文件按扩展名推断 MIME、随本轮输入附上。
 
 3. 断言分两类，写在你观察结果的地方：
-   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：记录下来，`test` 结束后对整个 attempt 聚合评估。
+   - **作用域断言**（`t.succeeded()`、`t.calledTool(...)`）：记下来，`test` 结束后对整个 attempt 聚合评估。
      默认就是硬门槛（gate）、默认「至少一次」，多数场景一个修饰都不用链。
    - **值断言**（`t.check(value, matcher)`）：就地对一个具体值评分，matcher 从 `niceeval/expect` 导入（`includes` / `equals` / `matches` / `satisfies` …，全表见[值断言](../../assertions/library/value-assertions.md)）。
      后续代码依赖这个值时改用 `await t.require(...)`——不通过直接中止。

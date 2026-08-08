@@ -1,10 +1,10 @@
-# 把预置项装进预制环境
+# 把预置项装进预构建 Sandbox
 
 返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C5](../../CASES.md#c5预装稳定条件)。
 
 ## 解决什么问题
 
-逐项 timing 显示 mempal 每次安装和预热都要 90 秒,而[实验环境较重的记忆实验](实验环境较重.md)会频繁运行。
+逐项 timing 显示 mempal 每次安装和预热都要 90 秒,而[实验 Sandbox 较重的记忆实验](实验Sandbox较重.md)会频繁运行。
 这时可以用 Provider 原生工具构建预装 mempal 的 image、template 或 snapshot。
 
 ## 只切换 Sandbox 起点
@@ -32,5 +32,5 @@ Provision inspect 只证明自己声明的内容,不能证明两个起点的系�
 先用现场安装把实验跑对,根据逐项 timing 决定哪些 Provision 值得预装。
 构建完成后切换 Sandbox 起点并接受一次全量重跑;新的实验代际内,Provision 继续提供身份核验与漂移防护。
 
-预制环境消除稳定安装时间,同时保持每条 Attempt 使用全新 Sandbox。
+预构建 Sandbox 消除稳定安装时间,同时保持每条 Attempt 使用全新 Sandbox。
 它不会像 `sandboxReuse` 一样改变跨 Attempt 状态边界。

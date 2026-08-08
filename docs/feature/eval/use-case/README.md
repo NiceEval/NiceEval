@@ -3,7 +3,7 @@
 本目录是编写 eval 的 Library API 用例文档（体裁约定见[功能文档](../../README.md)）：一篇讲一个真实用例的全流程——作者要评什么、从驱动到断言的完整写法、边界与何时改用别的模式。
 契约单源在 [Library](../library.md)、[Context](../library/context.md)、[Assertions](../../assertions/library.md) 与 [Sandbox](../../sandbox/library.md)，这里只做叙事串联，不复制契约定义。
 
-从上往下读是一条学习路径：前两篇覆盖所有 eval 都会用的驱动与断言，后面各篇按需进入。
+从上往下读是一条学习路径：前两篇涵盖所有 eval 都会用的驱动与断言，后面各篇按需进入。
 
 ## 会话驱动
 
@@ -18,7 +18,7 @@
 - [裁判评质量：规则写不出对错时](judge-quality.md)
 - [计分制：五步走完三步挣 3 分](rubric-points.md)
 
-## 规模与环境
+## 规模与运行条件
 
 - [测试集从输入数组生成多条 eval：一套逻辑跑一批 case](dataset-fanout.md)
 - [本地测试文件：普通上传与动态身份](criteria-files.md)

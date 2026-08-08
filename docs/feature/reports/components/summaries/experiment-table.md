@@ -20,7 +20,7 @@ Experiment
 ## 当前结果只有一种
 
 实际执行、携带合入与从可比旧 Run 补入的 Attempt 都是 current 结果，使用同一行形状并正常计票。
-`AttemptHandle.carried` 只在 Attempt 详情中解释来源，不产生表格筛选、降饱和样式或额外覆盖分类。
+`AttemptHandle.carried` 只在 Attempt 详情中说明该 Attempt 来自哪次 Run，不产生表格筛选、降饱和样式或额外分类。
 
 不同 `configHash` 的历史结果不进入表格读数。
 它只帮助 Sample 把缺口原因判断为 `previous-result`，并提供可下钻的旧 locator；旧 verdict 不作为当前表格的参考值显示。
@@ -42,7 +42,7 @@ Attempt 行身份格只有 locator，判定长在 locator 上：前面一个判�
 耗时、成本与 Tokens 在 Experiment、路径段组、Eval、Attempt 四层各显示自己的口径：
 
 - Experiment：先对每个 Eval 的 Attempts 取平均，再让所有 Eval 等权参与总体平均。
-- 路径段组：只在该组覆盖的 Eval 上执行同样的两级平均。
+- 路径段组：只在该组包含的 Eval 上执行同样的两级平均。
 - Eval：该题所有 Attempts 的平均。
 - Attempt：该次 Attempt 的精确值；单样本也沿用同一列，因此列名统一为“平均耗时”“平均 Tokens”“平均成本”。
 
@@ -66,7 +66,7 @@ Reports 不预判 `accept` 一定成功，也不把旧 verdict、时距或样式
 
 ## 报告没有口径开关
 
-Experiment 表格不提供改变 Sample 贡献集合、覆盖分母或导出值的控件。
+Experiment 表格不提供改变 Sample 贡献集合、分母口径或导出值的控件。
 排序、搜索和视觉折叠可以改变行的摆放或可见性，但不能改变任何统计。
 
 show、view 或站点需要不同范围时，由宿主重新打开 Record、创建 Sample 并重新渲染整份报告。

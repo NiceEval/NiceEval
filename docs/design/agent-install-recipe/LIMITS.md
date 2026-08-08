@@ -8,9 +8,9 @@
 
 ## 目的
 
-记录候选方案共同面对的现状:E2B 构建 API 能做什么、
+记载候选方案共同面对的现状:E2B 构建 API 能做什么、
 niceeval 契约层长什么样、外部参照(Harbor)怎么组合、
-需求方(TB 任务镜像)长什么样。只写现状,不下结论。
+需求方(TB 任务镜像)长什么样。只写现状,不下裁决。
 
 ---
 
@@ -94,7 +94,7 @@ agent CLI 安装出成品。
 ## 产品特性
 
 TB 2.0 官方 harness([Harbor](https://github.com/laude-institute/harbor))
-的组合模型与 niceeval 相反:任务持有环境(每道题自带
+的组合模型与 niceeval 相反:任务持有 Sandbox(每道题自带
 Dockerfile / compose),agent 是一份运行时安装配方,在容器
 启动后经 `environment.exec()` 装进去。
 
@@ -111,8 +111,8 @@ Dockerfile / compose),agent 是一份运行时安装配方,在容器
 
 ## 当前不支持
 
-- 探测与安装的成本每个 attempt 都付一遍;没有产物级的
-  锁定版本可比性,同一配置在不同时刻可能装到不同环境。
+- 探测与安装的成本每个 attempt 都付一遍;没有预装输出级的
+  锁定版本可比性,同一配置在不同时刻可能装到不同 Sandbox。
 - 存在静默降级点:找不到受支持的包管理器时只记 warning
   继续跑,失败推迟到 agent 启动,归因困难。
 
@@ -144,12 +144,12 @@ TB 任务的基础镜像(如
 
 - 镜像不带 Node,也不带任何 agent CLI;任务侧 Dockerfile
   的 `RUN` 行不含这些依赖的安装命令——镜像内容本身就是
-  安装面,文本扫描推导不出环境需求。
+  安装面,文本扫描推导不出 Sandbox 需求。
 
 ## 直接影响
 
 - Case B 的第一批真实起点 OCI image 或 E2B template全是 apt 系,支持面从 apt 起步
-  即可覆盖;musl(如 Alpine)与 rpm 系是否进支持面是
+  即可涵盖;musl(如 Alpine)与 rpm 系是否进支持面是
   独立取舍,见各 PLAN 与 [DECISION](DECISION.md)。
 
 ---
@@ -159,6 +159,6 @@ TB 任务的基础镜像(如
 - **Docker 侧没有中间件挂点**:Dockerfile 是文本,不是
   builder 链;配方要惠及 Docker 用户只能以可引用的 shell
   片段形式存在,由 `RUN` 引用。
-- **Vercel 无可发布产物原语**:配方在 Vercel 上只有运行时
+- **Vercel 无可发布模板原语**:配方在 Vercel 上只有运行时
   一种执行时机
   (见[Run 构建流程](../../feature/sandbox/library/prebuilt-environments.md#vercel-sandbox从运行实例拍-run))。

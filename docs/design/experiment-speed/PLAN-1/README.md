@@ -1,4 +1,4 @@
-# 方案 1：全新 Sandbox、预制环境与 Sandbox 预热
+# 方案 1：全新 Sandbox、预构建起点与 Sandbox 预热
 
 **相关文档**：[README](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [DECISION](../DECISION.md)
 
@@ -12,14 +12,14 @@
 ## 优势
 
 - 保持 Attempt 间隔离、结果沿用资格和现有并行。
-- Provider 只需保证一个 Sandbox 覆盖一条 Attempt。
-- 预制环境能减少 `eval.run` 内重复安装，而不只减少 Sandbox 创建。
+- Provider 只需保证一个 Sandbox 涵盖一条 Attempt。
+- 预构建起点能减少 `eval.run` 内重复安装，而不只减少 Sandbox 创建。
 
 ## 缺点
 
 - SandboxSpec 与 Agent 的运行期准备仍逐 Attempt 支付。
 - Sandbox 预热只移动创建时间，不减少资源占用。
-- 预制产物的制作与失效由项目和 Provider 原生工具管理。
+- 预构建输出的制作与失效由项目和 Provider 原生工具管理。
 
 ## 数据流
 
@@ -37,7 +37,7 @@
 ## 验收
 
 1. 同批 Attempt 无法观察到前一条的文件、进程或用户目录状态。
-2. 有预创建 Sandbox 时，Attempt 的 `sandbox.create` 只记录领取耗时。
+2. 有预创建 Sandbox 时，Attempt 的 `sandbox.create` 只登记领取耗时。
 3. 停止派发后不继续补充 Sandbox，未领用数量有界并被销毁。
 4. Sandbox 预热不改变结果沿用资格。
 5. 验收同时比较总耗时和 Sandbox 资源时间。

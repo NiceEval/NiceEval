@@ -16,7 +16,7 @@ Java 生态的测试报告框架。
   adapter 只需要认识文件格式,不需要 link 任何渲染代码。
   这正是 `.niceeval/` 与 `niceeval/report` 的关系,也是 [`createWriter`](../library.md#写createwriter)敢把写入面开放给第三方 harness 的依据——Allure 的 adapter 生态(JUnit / pytest / Jest / Cypress …)实证了这条路走得通。
 - **一次运行一个目录,不写聚合文件。**
-  通过数、失败数由生成器从逐条记录推导,不落盘。
+  通过数、失败数由生成器从逐条事实推导,不落盘。
 
 **没跟什么。**
 
@@ -39,7 +39,7 @@ Git 允许一个仓库通过 `.git/objects/info/alternates` 借用另一个仓�
   [携带条目](../library.md#携带条目与-evidencestate)的 `artifactBase` 就是 alternates:条目在新 Run 里,artifact 的字节还在原 Run 目录。
   省的是同一份 events / trace /源码不被复制 N 遍。
 - **复制成自包含结果是唯一的正解。**
-  Git 的答案是 `git repack -a`(把借来的对象打进自己的包),[`publish()`](../library.md#发布publish) 做的是同一件事:解开引用,把 artifact 复制进目标 Run,使产物自包含。
+  Git 的答案是 `git repack -a`(把借来的对象打进自己的包),[`publish()`](../library.md#发布publish) 做的是同一件事:解开引用,把 artifact 复制进目标 Run,使复制出的内容自包含。
   两边遵守同一条纪律:离开原仓库前先把外部引用指向的内容复制进目标目录。
 - **`git clone --shared` 的文档明确写「除非你知道自己在做什么,否则不要用」。**
   同样的判断落成`.niceeval/` 是本地事实根、跨出可信边界必须经 `publish()`。
@@ -61,13 +61,13 @@ Git 按内容的 SHA 存 blob,同样内容只存一份,路径与内容分离。
 
 **没跟什么。**
 不做 packfile、不做 delta 压缩、不做 gc。
-记录的生命周期以周计,不是以年计;为省磁盘引入一个需要维护的对象库,代价大于收益。
+这些落盘的生命周期以周计,不是以年计;为省磁盘引入一个需要维护的对象库,代价大于收益。
 
 ## dbt —— 事实层与派生层分家
 
 **是什么。**
 数据转换工具。
-源表(sources)不可变,模型(models)是从源表算出来的派生物,`target/` 里的 `run_results.json` / `manifest.json` 是每次运行的记录。
+源表(sources)不可变,模型(models)是从源表算出来的派生物,`target/` 里的 `run_results.json` / `manifest.json` 是每次运行留下的落盘。
 materialization 策略(view / table / incremental)是**显式声明**的,不是隐式缓存。
 
 **学了什么。**

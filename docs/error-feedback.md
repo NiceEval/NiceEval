@@ -1,7 +1,7 @@
 # Issue 与用户反馈
 
 niceeval 把「发生了什么」与「应该怎样告诉用户」分开。
-写入时只记录可追溯的 error / diagnostic observation;读取与选择时产生结构化 Issue;宿主或 Reports 的 policy 最后把 Issue 映射为面向当前读者的 Notice。
+写入时只持久化可追溯的 error / diagnostic observation;读取与选择时产生结构化 Issue;宿主或 Reports 的 policy 最后把 Issue 映射为面向当前读者的 Notice。
 
 ```text
 .niceeval observation
@@ -11,7 +11,7 @@ structured Issue
 user-facing Notice
 ```
 
-这条边界让同一份记录可以在 CLI、静态网页、CI 和自有产品中重新解释,而不会把某个版本的英文文案、严重度 policy 或修复命令冻结在 `.niceeval` 里。
+这条边界让同一份 observation 可以在 CLI、静态网页、CI 和自有产品中重新解释,而不会把某个版本的英文文案、严重度 policy 或修复命令冻结在 `.niceeval` 里。
 
 **分开的是「事实」与「解释」,不是把解释也分散。
 ** 解释有唯一产地 `NoticeCatalog`, 宿主只投影,不各写一份文案(见[Present: Notice](#present-notice))。
@@ -36,7 +36,7 @@ Record 只持久化运行时真正观察到的内容:
 
 ### Read: Issue
 
-Issue 是从记录、artifact 可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
+Issue 是从 Record、artifact 可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
 它用稳定 code 表达类别,并携带定位与判断所需的原始事实。
 例如:
 
@@ -84,7 +84,7 @@ CLI 把 `rerun` 投成 `niceeval exp <id>` 一行可复制命令,web 投成按�
 新增 action kind 要回这张表登记;找不到诚实投影形态的能力不该做成 action,和 [`enhance` 能力位](feature/reports/architecture.md#只有一面能做的事具名-enhance-位)同一条纪律。
 
 **未知 code 的 fallback 也必须带下一步。
-** 第三方 producer 写的 code 不在 catalog 里时, 显示原始 `detail` 与 `context`,并给出一条保守的下一步:检查产生这条记录的组件版本。
+** 第三方 producer 写的 code 不在 catalog 里时, 显示原始 `detail` 与 `context`,并给出一条保守的下一步:检查产生这条 observation 的组件版本。
 只打印 code 和 detail 不算合格——「给不出下一步的报错是缺陷,与算错数字同级」对 fallback 同样成立。
 
 ## 库错误类
@@ -105,7 +105,7 @@ CLI 不从 `Error.message` 正则抠命令,但这不等于 `message` 可以没�
 
 ## 即时 CLI 错误
 
-argv 解析、config 加载、记录根打开和报告装载失败时没有 `.niceeval` observation 可写。
+argv 读取、config 加载、Record root 打开和报告装载失败时没有 `.niceeval` observation 可写。
 CLI 仍先构造一个瞬时结构化 Issue,再经同一份 catalog 渲染两行反馈:
 
 ```text
@@ -123,14 +123,14 @@ error: unknown option '--agnet'
 
 - **哪个操作**:phase 与 operation 名,例如 `eval.setup` 里的一次 fixture 上传。
 - **对什么对象**:文件路径与字节数、命令摘要或请求目标。
-- **预算多少、谁定的**:超时毫秒数与它来自哪层——attempt 的 `timeoutMs` 标注 [解析链](feature/experiments/architecture.md#配置解析链一次求值处处同源)的来源层 (`from config`);SDK / HTTP 层超时点名 provider 与请求类别。
+- **预算多少、谁定的**:超时毫秒数与它来自哪层——attempt 的 `timeoutMs` 标注[配置求值链](feature/experiments/architecture.md)的出处层 (`from config`);SDK / HTTP 层超时点名 provider 与请求类别。
 
 `The operation was aborted due to timeout` 这样的消息三样都缺,按缺陷处理。
 
 ## 新增问题的义务
 
 1. 在事实拥有者处定义稳定 code 和最小结构化证据,并说明它是 persisted observation 还是 read/select Issue。
-2. observation 只记录 detail/context,不写操作建议;Issue 只投影事实,不写渲染文案。
+2. observation 只写入 detail/context,不写操作建议;Issue 只投影事实,不写渲染文案。
 3. 在 `NoticeCatalog` 登记这条 code 的严重度、文案与 action——**只登记一次**, 宿主不重复写文案。
    action 用不上现有 kind 时先回闭集登记新 kind 并给出各宿主投影。
 4. 测试分层证明:写入测试断言 observation 事实,读取测试断言 Issue 投影,呈现测试断言 catalog 文案与 action 投影;并断言 `NiceEvalError.message` 与同一条 catalog 条目同源。

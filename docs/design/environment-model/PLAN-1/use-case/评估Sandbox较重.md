@@ -1,10 +1,10 @@
-# 评估环境较重
+# 评估 Sandbox 较重
 
-返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C1](../../CASES.md#c1评估环境较重)。
+返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C1](../../CASES.md#c1评估-sandbox-较重)。
 
 ## 项目形态
 
-每道 Eval 自带 Dockerfile 或 Compose,环境本身是题意的一部分。
+每道 Eval 自带 Dockerfile 或 Compose,Sandbox 本身是题意的一部分。
 terminal-bench 就是这种形态:重的是每道题的系统包、服务与构建过程,Experiment 没有额外实验工具。
 
 ## Eval 声明 Environment
@@ -49,7 +49,7 @@ Experiment 没有额外工具时不声明 `provisions`。
 ## 重成本怎样复用
 
 Dockerfile 与 build context 按 BuildKey 做 Run 级构建协调;同一构建输入只构建一次,Provider 原生 cache 可以继续复用中间层。
-这是评估环境较重时的主要优化,不需要打开 `sandboxReuse`。
+这是评估 Sandbox 较重时的主要优化,不需要打开 `sandboxReuse`。
 
 不同 EnvironmentKey 不能共用一个 Sandbox。
 同一个 Environment 有多次 Attempt、并且实验明确接受 workdir 外残留时,才单独评估是否开启 Sandbox 复用。

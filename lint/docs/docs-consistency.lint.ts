@@ -123,6 +123,9 @@ describe("docs 一致性", () => {
     // `../docs/…`,两种写法抠出来的都是同一个仓库根路径。`docs-site/` 不匹配(docs 后面不是 /)。
     const broken: string[] = [];
     for (const dir of CODE_DIRS) {
+      // 测试重置期间部分代码域可以暂时不存在。clean checkout 不应因为可选扫描入口
+      // 缺席而在 readdirSync 阶段崩溃；目录出现后仍会自动进入同一轮检查。
+      if (!existsSync(join(ROOT, dir))) continue;
       for (const file of walkCode(dir)) {
         const content = readFileSync(join(ROOT, file), "utf8");
         for (const m of content.matchAll(/\bdocs\/[\w./-]+\.mdx?\b/g)) {

@@ -32,7 +32,7 @@ Experiment 可以只替换 Agent Judge 来做可复现的裁判 A/B，但不能�
 | 被测 Agent | Agent Judge | 典型用途 |
 |---|---|---|
 | Direct | Direct | 评对话、结构化输出或远程服务响应 |
-| Direct | Sandbox | 裁判在自己的工具环境里查资料、执行分析脚本 |
+| Direct | Sandbox | 裁判在自己的工具 Sandbox 里查资料、执行分析脚本 |
 | Sandbox | Direct | 把 diff、测试结果或显式材料交给远程裁判服务 |
 | Sandbox | Sandbox | 在独立工作区副本中审查仓库、运行测试与追踪代码 |
 
@@ -58,8 +58,8 @@ Direct Agent Judge 不创建也不伪造 Sandbox。
 
 ## 安全边界
 
-- 被测输出、仓库文件与工具结果都按不可信证据处理，不能覆盖 rubric、返回协议或裁判执行配置。
-- Agent Judge 使用自己的 Adapter 鉴权与进程环境，不继承被测 Agent 的凭据、Session 或环境变量。
+- 被测输出、仓库文件与工具结果都按不可信证据处理，不能覆写 rubric、返回协议或裁判执行配置。
+- Agent Judge 使用自己的 Adapter 鉴权与进程条件，不继承被测 Agent 的凭据、Session 或 env 变量。
 - `{ workspace: "snapshot" }` 是复制整个被测 workdir 的显式授权；省略时只交付断言材料。
 - Agent Judge 不取得阈值、Verdict、其它裁判结果或历史 Attempt，避免围绕及格线作答或形成循环判定。
 - 裁判运行失败表示证据不可用，不等于被测对象得 0 分；它进入既有 `unavailable` 传播规则。
@@ -85,6 +85,6 @@ Direct Agent Judge 不创建也不伪造 Sandbox。
 
 - [Library](library.md) —— Assertion API、裁判执行配置与判分协议。
 - [CLI](cli.md) —— 计划、运行中反馈、show 与机器输出。
-- [Architecture](architecture.md) —— 实体边界、证据流、记录、身份与错误。
-- [Lifecycle](lifecycle.md) —— 两种 Agent Judge 的创建、执行与清理时序。
+- [Architecture](architecture.md) —— 实体边界、证据流、登记、身份与错误。
+- [Lifecycle](lifecycle.md) —— 两种 Agent Judge 的创建、执行与回收时序。
 - [用例](use-case/README.md) —— 对话评质量与仓库审查的完整路径。

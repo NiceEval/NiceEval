@@ -39,8 +39,8 @@ interface DiffFileWindow {
 
 `change` 与 `diff.json` 的 `net`、text 面的行首字母是同一套词：`added` / `modified` / `deleted` 在两面各打印为 `A` / `M` / `D`。
 
-patch 按窗口分段，不合成跨窗口 patch。
-窗口之间可能夹着 eval 侧写入，合成会把它算进 agent 的账；「创建又删除」「改完又改回」也会被合成压没。
+patch 按 send 区间分段，不合成跨区间 patch。
+send 区间之间可能夹着 eval 侧写入，合成会把它算进 agent 的账；「创建又删除」「改完又改回」也会被合成压没。
 
 ## web 面：路径树
 
@@ -54,7 +54,7 @@ patch 按窗口分段，不合成跨窗口 patch。
 
 - 只有一个子目录、自己没有文件的目录链压成一行，例如 `src/report/model/`。
 - 目录默认展开：文件清单是这个区块的主体，不该藏在一次点击后面。
-- 文件行默认折叠 patch，展开后按窗口分段，段头是轮标签。
+- 文件行默认折叠 patch，展开后按 send 区间分段，段头是轮标签。
 - 内容被省略的文件行显示字节数变化并在行上标注原因（binary / oversized text），不给展开区（没有 patch 可看）。
 - 折叠态的 `+N` 与 `-M` 各自成元素，与 patch 里的增行、删行同一套颜色。
 
@@ -75,12 +75,12 @@ text 面的 `--diff=<path>` 是对单个文件的显式请求，不设预算。
 
 ## text 面
 
-text 面是文件级摘要清单：一行一个文件，状态字母、路径、增删行数、触碰的窗口。
+text 面是文件级摘要清单：一行一个文件，状态字母、路径、增删行数、触碰的 send 区间。
 输出形态与 `niceeval show --diff` 逐字一致，两者调用同一个投影，不存在第二份口径。
 `--diff` 的完整输出示例见 [`--diff`](../../show/diff.md)。
 
 ## 相关阅读
 
-- [Attempt diff](../attempt-detail/attempt-diff.md) —— 文件差异的来源、可用性与 `DiffResult` 形状。
+- [Attempt diff](../attempt-detail/attempt-diff.md) —— 文件差异的出处、可用性与 `DiffResult` 形状。
 - [`--diff`](../../show/diff.md) —— 同一份投影的终端切片。
-- [Sandbox Architecture · 变更归因](../../../sandbox/architecture.md#变更归因send-窗口与分类账) —— 窗口与分类账。
+- [Sandbox Architecture · 变更归因](../../../sandbox/architecture.md#变更归因send-区间与分类账) —— send 区间与分类账。

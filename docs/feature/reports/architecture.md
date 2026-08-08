@@ -102,7 +102,7 @@ const rows = await toTraceNodes(sample);
 ```
 
 作者直接 `await` 结果。
-框架不注册惰性查询对象，也不推迟到组件解析阶段执行。
+框架不注册惰性查询对象，也不把执行推迟到组件求值阶段。
 
 每个函数可以独立：
 
@@ -185,7 +185,7 @@ aggregate(sample, {
 Calculation 品牌不区分官方与用户，只阻止手写一个漏掉 coverage 和 refs 的同形函数。
 它存在于不可序列化的函数值上，只在 `aggregate()` 执行前校验，不会进入 Result、fixture、ShowJson 或 React props。
 
-`rollup()` 自动建立题级分组、过滤 null、计算 samples / total，把覆盖范围内的全部 Attempt locator 写入 refs，并把 MetricValue basis 固定为 `"eval"`。
+`rollup()` 自动建立题级分组、过滤 null、计算 samples / total，把纳入聚合的全部 Attempt locator 写入 refs，并把 MetricValue basis 固定为 `"eval"`。
 终值是跨题级单元（Experiment × Eval）的统计量，samples / total 因此数单元；口径与算例见 [Library](library.md#samples--total-的口径)。
 
 Reducer 同样是有稳定身份的公开函数值。
@@ -237,7 +237,7 @@ AggregateRow 也不能重新进入 `aggregate()`；类型签名只允许 Sample 
 
 EvidenceRow 不带 symbol 品牌；组件在运行时结构校验 refs 与 MetricValue，所以 JSON 往返后仍然有效。
 Sample 派生图表只接受 EvidenceRow points；纯外部 JSON 标量序列经图表的显式 `external` 声明绘图，没有 Attempt 下钻。
-领域函数离开核心目录仍走同一条运行时校验；退出证据契约的唯一出口是显式的 `external`，NiceEval 不验证 external 行的来源，只保证这个退出可审计。
+领域函数离开核心目录仍走同一条运行时校验；退出证据契约的唯一出口是显式的 `external`，NiceEval 不验证 external 行的出处，只保证这个退出可审计。
 
 ## 组件不执行计算
 
@@ -352,7 +352,7 @@ export default defineReport({
   目标类型没有实体分支；`targetOfRefs` 指向 id 为 `attempt` 的页是标准库约定，报告没有这张页时 href 为 `undefined`。
 
 详情页不属于第二种 page 类型。
-attempt 详情与 experiment 详情是标准库导出的参数化页（[Library · 参数化页](library.md#参数化页attempt-与-experiment-详情)）：`params` 声明寻址与枚举，`load` 声明输入来源——前者读证据、后者收窄 Sample，宿主对两者执行同一条 `renderTarget` 路径。
+attempt 详情与 experiment 详情是标准库导出的参数化页（[Library · 参数化页](library.md#参数化页attempt-与-experiment-详情)）：`params` 声明寻址与枚举，`load` 声明取数方式——前者读证据、后者收窄 Sample，宿主对两者执行同一条 `renderTarget` 路径。
 自定义报告没有声明同 id 页时，view 用内建 `standard` 的同名页补位，仍不进入报告导航。
 参数化页的寻址、静态导出与无 JS 深链契约见 [View](view.md#参数化页的-dialog-摆放)。
 
@@ -375,7 +375,7 @@ export default defineReport(async (sample) => {
 ```
 
 快照模块在运行前由脚本或人写盘，随报告一起进版本库。
-page render 不能请求网络、读取环境变量、使用时钟或随机数；新数据只能通过重新生成快照文件进入报告。
+page render 不能请求网络、读取进程变量、使用时钟或随机数；新数据只能通过重新生成快照文件进入报告。
 快照文件在报告的 import 图内，缓存身份、watch 重建与导出可复现性因此不需要第二套规则。
 join 仍是普通函数，不建立 external data 查询协议。
 宿主没有外部数据注入通道：报告的宿主输入只有 Sample；证据经页自己的 `load` 从 `PageLoadContext` 装载。
@@ -400,7 +400,7 @@ const points = await aggregate(sample, {
 `niceeval/report/react` 只导出纯 Web 组件和结果类型。
 它不读取 Sample、Record，也不提供 page 运行时。
 
-## show 切片与 `--json` 的锚点
+## show 的切片是组件选择
 
 普通函数模型不让 show 从组件树反推数据。
 `ShowJson` 信封、view 名和“JSON 是 text 的数据超集”继续保留，`data` 的单源是公开普通转换函数的结果类型。
@@ -489,7 +489,7 @@ const ConfusionMatrix = defineRenderer({
 }, import.meta.url);
 ```
 
-管线在 render 后收集页面上实际出现组件的资产：按内容哈希复制到 `assets/` 并去重，按稳定顺序注入，第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，与 head 本地资产走同一条路径纪律。
+管线在 render 后收集页面上实际出现组件的资产：按内容哈希复制到 `assets/` 并去重，按稳定顺序注入，第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它定位，与 head 本地资产走同一条路径纪律。
 官方原语的增强 runtime 与 stylesheet 走的就是这条机制，自定义组件与官方组件平权；没出现在页面上的组件，资产也不注入。
 
 资产受增强层不变量约束：初始静态 HTML 无 JavaScript 时完整可读，脚本只添加浏览行为，不改变数据或初始数值。

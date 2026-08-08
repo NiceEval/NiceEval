@@ -7,7 +7,7 @@
 ## 目的
 
 记下四类候选作者面各自能做什么、做不到什么，以及它们共同撞上的那几堵墙。
-结论在 [DECISION](DECISION.md)，这里只写现状。
+裁决在 [DECISION](DECISION.md)，这里只写现状。
 
 ---
 
@@ -21,16 +21,16 @@
 ## 当前支持
 
 - 一个 `Table` 同时画实验对比、成绩单与稳定性矩阵，换的只是数据源。
-- 两级聚合、覆盖率、证据引用由 `Measure` 与 `MeasureCell` 的形状强制携带。
+- 两级聚合、涵盖率、证据引用由 `Measure` 与 `MeasureCell` 的形状强制携带。
 - 单位、方向与格式化随 `Measure` 一次声明；双语 label 由 Component 的内建字段词典或显式呈现声明负责。
 - 作者写的 Source 与官方 Source 同形态，唯一公开接口是 `Source<Input extends SourceInput, Content>`。
-- `compute()` 产物是普通可序列化数据，用普通 JavaScript 就能过滤、截断、重排。
+- `compute()` 的输出是普通可序列化数据，用普通 JavaScript 就能过滤、截断、重排。
 
 ## 当前不支持
 
 - 探索性提问要先找到对应数据源；官方目录没有的能力要作者自己写一个。
 - 作者要先学会 `Measure`、`Dimension` 与两级聚合这套词汇，才能自定义读数。
-- 跨实体的复杂关联（窗口、自连接、多层子查询）没有一等写法，要在 `compute()` 之后用普通 JavaScript 做。
+- 跨实体的复杂关联（开窗函数、自连接、多层子查询）没有一等写法，要在 `compute()` 之后用普通 JavaScript 做。
 
 ## 直接影响
 
@@ -72,7 +72,7 @@
 
 ## 产品特性
 
-树解析时把 Record 全量加载成 attempts、evals、runs 等表，作者写 SQL 取行，通用原语渲染行集。
+树读取时把 Record 全量加载成 attempts、evals、runs 等表，作者写 SQL 取行，通用原语渲染行集。
 要落地需要一个引擎：DuckDB、SQLite，或自己实现一个 SQL 子集。
 
 一张能摊平的 `attempts` 表大致是：
@@ -85,7 +85,7 @@ agent · model · started_at · scoring · flags(json) · labels(json)
 
 ## 当前支持
 
-- 关联与窗口是一等写法：「每个 agent 上最差的三道题」一句 SQL 就能写。
+- 关联与开窗函数是一等写法：「每个 agent 上最差的三道题」一句 SQL 就能写。
 - 提问不必先在库里存在对应能力，探索性查询即写即得。
 - 会 SQL 的人不必再学一套词汇。
 
@@ -96,10 +96,10 @@ agent · model · started_at · scoring · flags(json) · labels(json)
   两个查询都返回一个像通过率的数。
 - **证据引用变成可选项。**
    聚合结果是标量，要下钻就得作者自己写 `array_agg(locator)`，忘了写就丢掉整条证据链。
-- **覆盖率要靠作者自觉。**
+- **涵盖率要靠作者自觉。**
    `count(v)` 与 `count(*)` 的差就是「测不了」的样本数；SQL 不会因为少写一列而报错。
 - **artifact 摊不平。**
-   diff、事件流与 trace 可达数百 MB，且逐 attempt 懒加载；把它们放入表要么在树解析前全量读入内存，要么退化成 UDF。
+   diff、事件流与 trace 可达数百 MB，且逐 attempt 懒加载；把它们放入表要么在树读取前全量读入内存，要么退化成 UDF。
 - **列的元数据没有位置。**
    单位、越高越好、双语标签与格式化在 SQL 里无处声明，只能在查询旁边再配一张表。
 - **类型不进 TS。**
@@ -138,7 +138,7 @@ page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把�
 ## Record 不是数据库
 
 结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是按需读取的 artifact。
-任何查询面都要先回答「什么时候从磁盘读取、一次读取多少」，而懒加载正是大 artifact 不拖垮树解析的原因。
+任何查询面都要先回答「什么时候从磁盘读取、一次读取多少」，而懒加载正是大 artifact 不拖垮树读取的原因。
 
 ## 结果形状不是平表
 
@@ -152,8 +152,8 @@ page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把�
 
 ## 浏览器包边界
 
-`niceeval/report/react` 只吃已计算好的可序列化数据，不碰磁盘、不认识记录根。
-查询引擎进不了这个包，所以 SQL 只能在树解析阶段执行，产物仍是行集。
+`niceeval/report/react` 只吃已计算好的可序列化数据，不碰磁盘、不认识结果根。
+查询引擎进不了这个包，所以 SQL 只能在树读取阶段执行，输出仍是行集。
 
 ## 作者已经在写 TypeScript
 

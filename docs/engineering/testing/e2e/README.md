@@ -19,14 +19,14 @@ signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与�
 - 只描述运行条件的 `e2e.json`。
 
 它不能从 workspace 相对路径 import NiceEval 源码，也不能用“生成过 evidence”代替断言。完整规则见
-[真实场景 Repo](scenario-repos.md)。
+[真实场景 Repo](../../../roadmap/testing/e2e/scenario-repos.md)。
 
 ## 框架分工：复用 runner，只写产品 harness
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
 - 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
-- 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
+- 独立 [Testkit](../../../roadmap/testing/testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
 这与 [Vite / Vitest / Playwright 等框架工具的自测方式](../../../research/framework-e2e/README.md)相同：复用通用 test runner，
@@ -54,7 +54,7 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 ```
 
 命令执行器、parser 和 artifact 收集器可以复用；阈值、sentinel 和成功条件不能藏进通用函数。
-命令收据与资源生命周期的共用规则见 [Testkit](../testkit.md)。
+命令收据与资源生命周期的共用规则见 [Testkit](../../../roadmap/testing/testkit.md)。
 
 ## Journey E2E：长用户流程
 
@@ -143,7 +143,7 @@ Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、car
 
 ## Package 与 CLI
 
-Package Repo 按 [Package 外部消费契约](package.md)用默认 CommonJS 项目的 `init → list` Journey 验证安装后的 CLI、tsx CJS hook
+Package Repo 按 [Package 外部消费契约](README.md#package-与-cli)用默认 CommonJS 项目的 `init → list` Journey 验证安装后的 CLI、tsx CJS hook
 与 `require` exports 接线，并检查私有 Testkit 没有进入产品包。ESM 与功能子路径由各功能 Repo 的真实 Journey 自然消费，
 不在 Package Repo 复制入口清单。
 CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / NDJSON / JUnit。两者都执行安装后的 binary，
@@ -175,13 +175,13 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 新增、接管或实质修改 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
 
-本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。
+本地、Docker 与 GitHub Actions 见 [Execution](../../../roadmap/testing/e2e/execution.md)。
 
-## 各域覆盖入口
+## 各域验收入口
 
 - [Adapter](adapter/README.md)：官方 Adapter 与真实协议的兼容性 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
-- [Record](record.md)：公开 Record API 与已声明磁盘格式；
+- [Record](README.md)：公开 Record API 与已声明磁盘格式；
 - [Report](report.md)：公开读面、HTTP、导出与浏览器行为。
 
 这些页面只登记稳定结果与 owner，不复制本篇的 Repo、执行和隔离规则。

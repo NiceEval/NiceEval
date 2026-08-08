@@ -1,7 +1,7 @@
 # `HeroCard`
 
 [`Hero`](hero.md) 使用的站点身份原语。
-它只收已经算好的 Sample 来源摘要；标题由调用者显式传入。
+它只收已经算好的 Sample 摘要；标题由调用者显式传入。
 
 ```ts
 interface HeroContent {

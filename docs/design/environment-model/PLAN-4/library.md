@@ -7,12 +7,12 @@
 
 ## 三个领域入口
 
-普通作者不直接创建统一的环境对象。
+普通作者不直接创建统一的 Sandbox 对象。
 三种所有者继续从各自入口提供声明:
 
-| 所有者 | 入口 | 产物 |
+| 所有者 | 入口 | 输出 |
 |---|---|---|
-| Eval | `composeSandbox()`、题目环境 helper | 一个 Eval `EnvironmentContribution` |
+| Eval | `composeSandbox()`、题目 Sandbox 工具 | 一个 Eval `EnvironmentContribution` |
 | Experiment | `defineExperimentEnvironment()` | 一个 Experiment `EnvironmentContribution` |
 | Agent | Adapter 工厂 | 一个 `AgentProvisioner` |
 
@@ -58,11 +58,11 @@ interface EnvironmentRequirement {
 }
 ```
 
-`name` 在同一解析后的安装图内唯一。
+`name` 在同一读取后的安装图内唯一。
 `identity` 是作者声明的目标身份,必须包含脚本 revision、版本、模型或证书 digest 等语义输入。
 函数体不自动参与哈希。
 
-`verify` 读取已经创建的完整 Sandbox Case。
+`verify` 读取已经创建的完整 `Sandbox Case`。
 它可以消费主 Sandbox 的命令结果,也可以消费 case 的 ready、services、能力与身份事实。
 返回值必须携带实际事实;只返回 boolean 不能解释漂移。
 
@@ -120,8 +120,8 @@ interface EnvironmentContribution {
 }
 ```
 
-Eval 与 Experiment 各自解析出一个 contribution。
-`base` 表示该完整 Sandbox Case 预期满足同点声明的 Requirement,但启动后仍执行 `verify`。
+Eval 与 Experiment 各自读取出一个 contribution。
+`base` 表示该完整 `Sandbox Case` 预期满足同点声明的 Requirement,但启动后仍执行 `verify`。
 
 单数槽位是本方案的公开限制。
 证书、内部 registry 与工具同时存在时,作者必须把它们包装成一个复合 Requirement。
@@ -150,7 +150,7 @@ export default defineEval({
 ```
 
 `composeSandbox()` 同时产生 Eval Requirement 与完整 Compose Base。
-Compose 的 services、网络、volume、ready 条件与主 Sandbox 仍由 Sandbox Case 持有。
+Compose 的 services、网络、volume、ready 条件与主 Sandbox 仍由 `Sandbox Case` 持有。
 
 Eval 也可以只贡献可移植 Ensure:
 
@@ -223,7 +223,7 @@ export default defineExperiment({
 ```
 
 `cases` 第一版只接受精确 profile key。
-表值是已经融合两侧条件的完整 Sandbox Case,不是 Runner 要继续合并的局部片段。
+表值是已经融合两侧条件的完整 `Sandbox Case`,不是 Runner 要继续合并的局部片段。
 表项替代两个独立 Base,不替代两份 Requirement。
 
 一次 Experiment 可以声明多个候选 case。
@@ -284,5 +284,5 @@ interface RequirementActivity {
 }
 ```
 
-实际事实与活动进入 Attempt 记录,不反向成为下一次运行的受信状态证明。
+实际事实与活动进入 Attempt 数据,不反向成为下一次运行的受信状态证明。
 复用 Sandbox 时每条 Attempt 都产生自己的检查活动。

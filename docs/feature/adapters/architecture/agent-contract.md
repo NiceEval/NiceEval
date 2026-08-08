@@ -55,7 +55,10 @@ interface Turn {
 `direct` 描述 runner 直接调用 Adapter，不描述目标进程的位置。
 进程内函数和远程 HTTP 服务都属于 Direct Agent，不形成第三种运行器分支。
 
-`usage` 的 token 桶按恒互斥口径落值：`inputTokens` 是未缓存输入，OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶（契约与理由见 [Record · Usage](../../record/architecture.md#usage)，各协议的原生口径与扣减明细见各 adapter 的 cost 文档）；网关实测成本只经 `usage.costUSD` 显式带回，core 从不从 token 反推。
+`usage` 的 token 桶按恒互斥口径落值:`inputTokens` 是未缓存输入。
+OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶(契约与理由见 [Record · Usage](../../record/architecture.md#usage))。
+各协议的原生口径与扣减明细见各 adapter 的 cost 文档。
+网关实测成本只经 `usage.costUSD` 显式带回,core 从不从 token 反推。
 
 Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不含消息便利字段；core 在把结果交给 eval 作者前，把本轮 assistant `message` 事件的文本按序折叠成便利字段 `turn.message` 补上（作者面字段表见 [Context · 读取结果](../../eval/library/context.md#读取结果)）。
 `thinking`、`compaction`、`context.injected` 不获得同类便利字段，按 `type` 过滤 `events` 读取（见[标准事件模型](events.md#派生事实)）。
@@ -64,7 +67,7 @@ Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不�
 
 - `completed` / `waiting` 是正常终态；
 - `failed` 是协议已经给出完整、可信、可评分的任务失败，例如 Agent 明确结束并报告无法完成；它不是 transport error，也不自动触发重试；
-- CLI 非零退出、signal、transport 中断、无法解析终态，或协议没有给出可信终态时，`send()` 必须 reject `SendFailure`，不能伪造 `failed` Turn；
+- CLI 非零退出、signal、transport 中断、无法辨认终态，或协议没有给出可信终态时，`send()` 必须 reject `SendFailure`，不能伪造 `failed` Turn；
 - Eval 若要求任务必须完成，显式写 `await turn.succeeded().stopOnFailure()`；框架不提供把执行错误和领域失败混在一起的 `expectOk()`。
 
 `SendFailure` 必须携带受理事实 `acceptance: "rejected" | "started" | "unknown"`，并尽可能保存 events、usage、进程状态与正规化后的 `ExternalCause`。只有协议能证明输入未被受理时才写 `rejected`；空事件、非零退出或一句 “retry later” 都不能独自证明未受理。完整分类与重试门见[执行失败分类](../../error-classification/architecture.md)。
@@ -91,15 +94,17 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性环境观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量;不影响 Turn status 或 verdict,形状与覆盖语义见 [Record · facts](../../record/architecture.md#facts运行事实)。
+`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性运行观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量。
+它不影响 Turn status 或 verdict,形状与覆写语义见 [Record · facts](../../record/architecture.md#facts运行事实)。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。
 二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。
 
-runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,所以同名 `progress/diagnostic` 会自动绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown` operation。
-Adapter 不能传 phase/scope,也不能把上下文保存到另一个回调复用。
-`progress` 是 Human active 行可覆盖的短期状态;`diagnostic` 是永久 warning/error,但不改变 Turn status 或 attempt verdict。
-`log(msg)` 是 `progress({ message: msg })` 的便捷别名,不是第三条通道——同样绑定当前生命周期阶段,只是省去构造 update 对象;超时失败时最近若干行会并入结果的 error 信息,方便定位 Adapter 卡在哪一步。
+- runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,同名 `progress/diagnostic` 会自动绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown` operation。
+- Adapter 不能传 phase/scope,也不能把上下文保存到另一个回调复用。
+- `progress` 是 Human active 行可覆写的短期状态;`diagnostic` 是永久 warning/error,但不改变 Turn status 或 attempt verdict。
+- `log(msg)` 是 `progress({ message: msg })` 的便捷别名,不是第三条通道。
+  它同样绑定当前生命周期阶段,只是省去构造 update 对象;超时失败时最近若干行会并入结果的 error 信息,方便定位 Adapter 卡在哪一步。
 完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
 ## 配置归属不变量
@@ -118,7 +123,7 @@ Agent 只配置怎样连接自己；运行条件不固化在 Agent 中。
 
 Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用，HITL 来自 waiting + request + resume，行为断言来自事件，负断言可信度来自完整性证据，Sandbox 能力来自 sandbox kind，trace 来自 telemetry 配置。
 `evidenceCoverage` 不是能力位的例外——它是完整性证据的载体（诚实义务的声明），core 不据它启用或禁用任何行为，只用它折叠断言可信度。
-`classifySendFailure` 同理——它只补充 Adapter 已经 reject 的 `SendFailure` 的分类精度，策略（次数、退避、落闸）对所有 Agent 一致（见[执行失败分类](../../error-classification/architecture.md)）。
+`classifySendFailure` 同理——它只补充 Adapter 已经 reject 的 `SendFailure` 的分类精度，策略（次数、退避、停止重试）对所有 Agent 一致（见[执行失败分类](../../error-classification/architecture.md)）。
 
 只有 Sandbox 设置运行时守卫。
 其它能力缺失时由返回数据自然表现，core 不按 Agent 名字分支。
@@ -127,7 +132,7 @@ Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用�
 
 Sandbox Agent 的 CLI 与所需运行时只由 `ensure` 和 identity 匹配的 Installer 安装。
 `setup` 只连接 runtime、注入鉴权、写运行配置与扩展，并且每 Attempt 只执行一次。
-环境预置属于 Eval / Experiment layer 的 `prepare()`，任务 Fixture 属于 `test(t)`。
+准备逻辑属于 Eval / Experiment layer 的 `prepare()`，任务 Fixture 属于 `test(t)`。
 setup 基础设施失败产生 `errored`，Agent 运行结果通过 Turn 表达。
 
 `setup` / `teardown` 遵循成对语义：`teardown` 当且仅当本 Attempt 走到过 agent setup 时点才执行，`setup` 抛错不豁免。
@@ -135,7 +140,7 @@ Sandbox Agent 的两个 Hook 接收 `(sandbox, ctx)`；Direct Agent 的两个 Ho
 并发状态以 `ctx.session` 或 Adapter 自有的 Attempt 键管理。
 完整顺序见[三方准备时序](../../sandbox/lifecycle.md)。
 
-一次逻辑 `send` 的窗口覆盖首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试记录；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
+一次逻辑 `send` 的边界横跨首次物理调用与全部重试。最终返回或拒绝的证据必须先写入重试条目；相关命令树也必须已经终结，或进入可证明不再写 workdir 的静止态，Promise 才能 settle。
 
 HITL `waiting` 可以保留等待输入的 Agent 状态，但它必须静止。把日志写到 workdir 外，或把路径加入 `diff.ignore`，都不能代替静止证明。
 

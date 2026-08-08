@@ -6,7 +6,7 @@
 >
 > 文档性质：外部产品研究与产品建议，不是 NiceEval 目标契约
 
-## 结论
+## 研究判断
 
 `https://openrouter.ai/skills/spawn-ori-eval` 指向的是一个标准 Agent Skill。
 它不是评估框架本身，而是安装、启动和编排 Ori 的外层工作流。
@@ -21,9 +21,9 @@ NiceEval 的边界更宽，重点是 Eval、Experiment、Adapter、Sandbox、Rec
 最值得 NiceEval 学的不是 Ori 的 TypeScript API，而是它怎样把评估面、真实数据、成功判据、运行约束、候选范围和下一步变成一条结果导向工作流。
 NiceEval 不需要为此再造一个 `create-niceeval-eval` Skill：`INIT.md` 加随包 `INDEX.md` 已经位于同一个产品入口，并把“安装”定义成写出、跑通和交接第一条真实 Eval。
 
-## 一手来源
+## 一手材料
 
-本研究只把以下官方材料当作 Ori 事实来源：
+本研究只把以下官方材料当作 Ori 事实出处：
 
 - [spawn-ori-eval 产品页](https://openrouter.ai/skills/spawn-ori-eval)
 - [spawn-ori-eval Skill 源码](https://github.com/OpenRouterTeam/skills/blob/main/skills/spawn-ori-eval/SKILL.md)
@@ -32,7 +32,7 @@ NiceEval 不需要为此再造一个 `create-niceeval-eval` Skill：`INIT.md` �
 - [Ori release 仓库](https://github.com/OpenRouterLabs/ori-releases)
 
 观察日的 release manifest 为 `0.4.0+063b32e`，构建时间是 2026-08-03。
-Ori release 仓库声明 Apache-2.0 覆盖发布资产与构建二进制所用源码。
+Ori release 仓库声明 Apache-2.0 许可适用于发布资产与构建二进制所用源码。
 
 NiceEval 对照材料来自仓库根部 `INIT.md`、随包 `INDEX.md` 和相邻 NiceEval-Eval 仓库中的安装评估源码。
 原问题所说的 `INSTALL.md` 在仓库中并不存在；当前承担自动安装与接入引导职责的是 `INIT.md`。
@@ -45,7 +45,7 @@ NiceEval 对照材料来自仓库根部 `INIT.md`、随包 `INDEX.md` 和相邻 
 | `create-eval` Skill | 扫描仓库，询问评估面、数据、判据、限制和候选，生成一次性评估 | 不取代 Ori Eval runner |
 | Ori Eval | 发现并执行 `*.eval.ts`，运行候选模型和 Judge，输出断言、排名、报告与参照结果比较 | 不负责 coding agent 的具体本地工具循环 |
 | Ori Harness | 启动 Claude Code、Codex、Hermes、OpenCode 等本地 Agent CLI | 临时工作目录不等于隔离 Sandbox |
-| OpenRouter | 提供模型目录、路由、价格和鉴权 | 不是通用的评估记录模型 |
+| OpenRouter | 提供模型目录、路由、价格和鉴权 | 不是通用的评估事实存档模型 |
 
 ### `spawn-ori-eval` 实际做了什么
 
@@ -54,10 +54,10 @@ Skill 固定在仓库外创建 `/tmp/spawn-ori-eval-<hash>`，保存步骤、完
 
 Skill 用固定 authoring model 启动 `ori code --prompt-file`。
 观察日的 Skill 同时把运行模型和 Judge 模型钉为 `openai/gpt-5.6-terra`。
-固定模型的目的，是让不同宿主 Agent 触发 Skill 时，评估作者和 Judge 环境保持一致。
+固定模型的目的，是让不同宿主 Agent 触发 Skill 时，评估作者与 Judge 面对同一组模型，行为保持一致。
 
 Ori 的访谈最少有五个问题，最多六个问题。
-问题覆盖被测表面或工作区材料、真实数据、判据优先级、成本或运行限制、候选模型，以及结果出来后的下一步。
+问题涉及被测表面或工作区材料、真实数据、判据优先级、成本或运行限制、候选模型，以及结果出来后的下一步。
 外层 Skill 不代用户回答，每得到一个答案就把完整 prompt 重新交给一次新的 Ori 进程。
 
 生成的 Eval 位于用户仓库外的临时工作区。
@@ -73,16 +73,16 @@ CLI 负责运行整个候选矩阵，也能输出 Markdown、JUnit 和相对历�
 |---|---|---|---|
 | 定义测什么 | `*.eval.ts` 中的 test 与断言 | Eval | 两者都把任务和判定放在评估定义中 |
 | 定义怎么跑 | `setupAgent`、候选模型与 Eval 配置 | Experiment | NiceEval 强制把运行配置与 Eval 分离 |
-| 驱动被测 Agent | Ori Harness 或自定义 harness | Adapter | NiceEval 用标准事件、会话与证据覆盖声明约束 Adapter |
+| 驱动被测 Agent | Ori Harness 或自定义 harness | Adapter | NiceEval 用标准事件、会话与证据完整度声明约束 Adapter |
 | 隔离执行 | 本地 Agent CLI 与临时工作区 | Sandbox Provider | Ori 的临时目录提供可丢弃性，不自动提供容器或 micro-VM 隔离 |
 | 语义评分 | `setupJudge` 与 LLM Judge | Judge Assertion | 两者都要求 Judge 与候选角色可区分 |
-| 重复与比较 | 候选模型、排名、baseline | Experiment、Attempt、Sample、Report | NiceEval 的记录、携带和可比较性契约更细 |
+| 重复与比较 | 候选模型、排名、baseline | Experiment、Attempt、Sample、Report | NiceEval 的落盘事实、携带和可比较性契约更细 |
 | 自动选候选 | OpenRouter live model catalog | 用户或 Experiment 作者声明 | Ori 的 OpenRouter 垂直整合更顺滑，NiceEval 更中立 |
 | 自动接入 | 可安装 Skill 完成访谈、生成与运行 | `INIT.md` 安装后路由随包文档 | 两者处于同一入口位置；NiceEval 应补强现有工作流的定题和交接，而不是复制一层 Skill |
 | 临时转长期 | 结果后由用户决定是否迁入 | 通常直接在项目中形成三件套 | Ori 优化一次性选型，NiceEval 优化持续评估资产 |
 
 Ori 是 NiceEval 在“模型或 Agent 选择”场景中的直接竞品。
-它不是 NiceEval 全部能力的一一替代品：Sandbox 生命周期、标准事件证据、物理记录、Sample 口径和报告消费都不应被压成一个候选模型排名表。
+它不是 NiceEval 全部能力的一一替代品：Sandbox 生命周期、标准事件证据、落盘事实、Sample 口径和报告消费都不应被压成一个候选模型排名表。
 
 ## NiceEval 的自动安装入口
 
@@ -103,7 +103,7 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 
 ### 候选与题目
 
-安装实验对 `v0.11.0`、`v0.12.0` 和运行时解析为精确版本的 `canary` 使用同一 Agent、模型、Sandbox 与题目。
+安装实验对 `v0.11.0`、`v0.12.0` 和运行时归一为精确版本的 `canary` 使用同一 Agent、模型、Sandbox 与题目。
 每个候选只改变被安装的 NiceEval 版本，目的是把结果差异尽量归因到对应版本的 `INIT.md` 与随包文档。
 
 当前安装题目只有两个真实 Python 项目：
@@ -111,10 +111,10 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 | 题目 | 协议难点 | 质量风险 |
 |---|---|---|
 | DB-GPT `v0.8.1` | OpenAI 兼容 HTTP，但必须进入真实数据库对话模式 | 误接普通聊天旁路，或编造不存在的表和字段 |
-| GPT Researcher `v3.6.0` | 自定义 WebSocket 帧，需要把来源和进度映射成事件 | 只检查任务提交回执，或输出无来源的研究结论 |
+| GPT Researcher `v3.6.0` | 自定义 WebSocket 帧，需要把出处与进度映射成事件 | 只检查任务提交回执，或输出没有出处的研究判断 |
 
-`advance/` 还覆盖 Letta、OpenHands、Skyvern 和 Express coding agent Sandbox。
-它们用于评更复杂的多轮、轮询、协议映射和预制环境，不与两条安装题的分数直接横比。
+`advance/` 还包含 Letta、OpenHands、Skyvern 和 Express coding agent Sandbox。
+它们用于评更复杂的多轮、轮询、协议映射和预构建镜像或 template，不与两条安装题的分数直接横比。
 
 ### 评估项
 
@@ -132,7 +132,7 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 | 评估内容质量 | 核心用例、具体结果断言、真实负例、Experiment 与 Eval 指向同一系统 | 四条独立 Judge 加分 |
 | 完成交接 | 最终回复是否交代文件、复现命令、真实首跑结果，并把继续加深的选择交还用户 | 两条独立 Judge 加分 |
 | 文档路由 | 从 Agent 的命令输入确认是否读取随包 `INDEX.md`、任务页，以及是否绕去在线文档 | 加分 |
-| Sandbox 成熟度 | Provider、配套 SDK、预构建环境引用、官方公共 image 或 template、不可变版本引用 | `advance/` 专属 gate 与加分 |
+| Sandbox 成熟度 | Provider、配套 SDK、预构建镜像或 template 引用、官方公共 image 或 template、不可变版本引用 | `advance/` 专属 gate 与加分 |
 
 这套评估最大的优点是把“装没装成”“是否真的执行”“源码实践”“用例设计品味”分开。
 机械事实用 gate 或 matcher，开放式质量才交给 Judge，避免一条主观总分掩盖具体失败点。
@@ -144,23 +144,23 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 ### 当前可见证据
 
 2026-08-06 使用当前 NiceEval CLI 执行三个候选的 `--dry --json`，每个计划都是两条 Eval、一个 Experiment 配置、每格一次 Attempt，总派发数为 2。
-dry plan 只能证明矩阵可解析，不能证明安装引导有效。
+dry plan 只能证明矩阵能展开成计划，不能证明安装引导有效。
 
 当前 CLI 查不到这三个安装 Experiment 的可读结果。
-CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 记录，并提示使用旧版本 CLI 读取。
+CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 事实存档，并提示使用旧版本 CLI 读取。
 本研究遵守 NiceEval-Eval 的结果读取约束，没有直接读取 `.niceeval/`，也没有触发付费重跑。
 
-因此，现在只能评价评估设计和覆盖范围，不能声称 `v0.12.0`、`v0.11.0` 或 `canary` 的效果更好。
+因此，现在只能评价评估设计和适用范围，不能声称 `v0.12.0`、`v0.11.0` 或 `canary` 的效果更好。
 
 ### 评估设计的缺口
 
 1. 安装矩阵只有两题且每格一次 Attempt，难以区分稳定行为和单次 Agent 随机性。
 2. 被测宿主固定为 Codex，模型固定为 `gpt-5.6-luna`，尚未证明同一入口对其它 Skill 宿主同样有效。
 3. 加分式评分不声明统一满分，不同题型启用的评分项也不同；它适合在同一路径内比较版本，不适合跨 install 与 advance 排名。
-4. 内容质量、澄清、首次定题与完成交接依赖 LLM Judge，正式结论需要固定 Judge 配置并观察重复运行方差。
+4. 内容质量、澄清、首次定题与完成交接依赖 LLM Judge，正式研究判断需要固定 Judge 配置并观察重复运行方差。
 5. 新增定题判据要求 agent 先陈述仓库中已确认的事实，只询问会改变有效性或成本的未知项；仍需用实跑检查 Judge 能否稳定区分“先探索”与“把探索甩给用户”。
 6. 较重的 advance 项目为了成本和稳定性，不都执行真实在线 Adapter gate。它们可以证明源码和执行证据形状，却不能替代完整服务链路的持续回归。
-7. 当前结果不可由现行 CLI 直接比较，所有效果结论都应等待一批按当前 schema 产生、可由 `niceeval show` 读取的运行。
+7. 当前结果不可由现行 CLI 直接比较，所有效果判断都应等待一批按当前 schema 产生、可由 `niceeval show` 读取的运行。
 
 这些缺口不否定现有矩阵。
 它们说明 NiceEval-Eval 现在更适合回答“版本化 onboarding 是否让同一 Codex 在同一题上做对更多事”，还不能单独证明这条入口跨 Agent、跨项目都稳定成立。
@@ -194,7 +194,7 @@ CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 记�
 
 - 用自然语言意图触发完整评估，而不是要求用户先知道 CLI 和文件结构。
 - 每次读取当前 CLI 帮助和随包文档，避免 Skill 内复制会过期的 API。
-- 明确区分评估作者、被测候选和 Judge，记录三者的模型与版本来源。
+- 明确区分评估作者、被测候选和 Judge，记下三者的模型与版本出处。
 - 把候选发现、真实数据、成功判据、成本上限和生产参照模型当成不同决策。
 - 临时评估默认不污染用户仓库，结果出现后再决定是否晋升为长期资产。
 - 最终同时报告质量、失败样本、耗时和成本，不只给一行胜负。
@@ -206,7 +206,7 @@ CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 记�
 - 不把 authoring model 和 Judge 永久绑成同一个固定模型。可复现性应来自明确 provenance、固定 Judge 配置和版本化评估资产。
 - 不用五到六次完整进程重启作为正常访谈协议。先扫描再问一个真正阻塞的决策，能减少重复读仓库的时间和费用。
 - 不把 `/tmp` 里的步骤文件当成评估结果真相。外层恢复状态可以很薄，运行事实仍应由 NiceEval Record 和 `show` 提供。
-- 不把临时目录叫 Sandbox。需要隔离、资源限制和可复现环境时，必须声明真实 Sandbox Provider。
+- 不把临时目录叫 Sandbox。需要隔离、资源限制和可复现条件时，必须声明真实 Sandbox Provider。
 - 不把 Eval 和候选模型矩阵揉成一个长期文件。NiceEval 的 Eval、Experiment 分离是可复用和可比较的基础。
 - 不默认开始一个可能超额消费的运行。dry plan 与成本确认应发生在付费派发之前。
 
@@ -223,8 +223,8 @@ CLI 只报告工作区里有四个由 NiceEval `0.4.6` 写入的旧 schema 记�
 
 1. 保留 DB-GPT 与 GPT Researcher，在同一安装 Attempt 中检查评估面、真实数据、成功判据、运行约束、候选范围和完成交接。
 2. 增加第二种 coding agent 宿主，确认 URL 入口和随包文档不只对 Codex 有效。
-3. 每格提高到至少两次 Attempt，并固定 Judge 配置，观察澄清、产物质量和最终 verdict 的方差。
-4. 单独记录首次接入的提问轮数、墙钟时间、authoring 成本、Eval 运行成本和用户需要做的决策数。
+3. 每格提高到至少两次 Attempt，并固定 Judge 配置，观察澄清、交付质量和最终 verdict 的方差。
+4. 单独记下首次接入的提问轮数、墙钟时间、authoring 成本、Eval 运行成本和用户需要做的决策数。
 5. 对比不同版本 `INIT.md` 与随包文档，在 Agent、模型、题目和 Judge 固定时观察新增判据是否改善。
 6. 只有在入口稳定减少人工提示、没有降低 Eval 有效性，并且成本可接受时，才把新增行为写成目标契约。
 

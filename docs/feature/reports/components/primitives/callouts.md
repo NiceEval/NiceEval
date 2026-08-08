@@ -66,11 +66,11 @@ interface CalloutsProps {
 
 ## 开放词表友好
 
-原语按 `level` / `message` / `command` / `count` 通用渲染，不按来源侧的 code 或 kind 建注册表，也不拒绝未知成员。
+原语按 `level` / `message` / `command` / `count` 通用渲染，不按数据源侧的 code 或 kind 建注册表，也不拒绝未知成员。
 数据源没给分组模板的条目各自单独成组、逐条原样渲染 `message`，行为不劣于平铺。
 
 ## 相关阅读
 
 - [组件树](../README.md) ——四层模型与结构节点规则。
 - [Library](../../library.md) ——公开转换与官方 Calculation。
-- [错误反馈](../../../../error-feedback.md#消息三段式) —— `message` 的三段式契约。
+- [错误反馈](../../../../error-feedback.md#库错误类) —— `message` 的三段式契约。

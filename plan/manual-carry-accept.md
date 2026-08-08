@@ -62,11 +62,11 @@
 - **2. 公开面同步** `[S: 1]`
   - 2.1 `[P]` `pnpm docs:reference` 重生成（cli.ts FLAG_OPTIONS 的 --accept JSDoc 已是终态语义，
     现在就可跑，不必等 1.3）。
-    - 验收：`pnpm test:docs-site` 漂移守护绿。
+    - 验收：`pnpm lint:docs-site` 漂移守护绿。
   - 2.2 `[P]` `src/i18n/` 两份 `--help` 速查核对（手工体裁，点名 --accept / --rerun / --dry）。
     - 验收：`pnpm run niceeval -- --help` 两语言输出人工过目。
   - 2.3 `[P]` docs-site 英文入口按中文（`zh/tutorials/rerun-and-cache.mdx` 含本轮补句）与当前代码同步。
-    - 验收：`PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site` 全绿。
+    - 验收：`PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm lint:docs-site` 全绿。
 
 - **3. 真实 repo 验收** `[S: 1]`（在 `/Users/ctrdh/Code/MemoryBench`，只 `--dry`，不烧 attempt）
   - 3.1 `[P]` `pnpm exec niceeval exp compare/codex toggl-cli/ --dry`：18 格逐行有原因
@@ -82,7 +82,7 @@
   - 4.2 `[P]` examples tier 漂移裁决：先读 memory 的 tier-sync 与 gen-diff 条目再决定
     跑不跑 `pnpm tiers:sync`（有覆盖手工修订的前科）；修不动就单独报回给用户裁决。
     - 验收：`pnpm test` 全绿，或明确记录「留给用户」的一句话与理由。
-  - 4.3 `pnpm test:docs`（工作树里另有一条 src 特性线在飞——sandbox-cases/agent-ensure，
+  - 4.3 `pnpm lint:docs`（工作树里另有一条 src 特性线在飞——sandbox-cases/agent-ensure，
     它也改 docs 与 `src/runner/**`；回归先分归属再修，不动它的半成品）。
 
 - **5. 提交** `[S: 全部]`（串行，最后做）

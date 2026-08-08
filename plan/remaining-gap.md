@@ -203,13 +203,13 @@ show-view 宿主 / Judge / Adapter 改名 / o11y 注入）已落地。本文只�
 |---|---|---|
 | 1.1–1.6 原语与管线 | `source=` 与 `data=` 严格等价、页级色分配封闭、两面同口径 | `pnpm run build:report`；`pnpm test` |
 | 1.7 替换 | 内建 `standard` 渲染出的 Content 与替换前逐项同值；只剩三个站点身份件是专用的 | `pnpm run view:build`；`pnpm e2e --repo report` |
-| 1.8 清旧词 | 旧公共名 `rg` 零命中，docs-site 手写参考页已同步 | `pnpm test:docs-site` |
+| 1.8 清旧词 | 旧公共名 `rg` 零命中，docs-site 手写参考页已同步 | `pnpm lint:docs-site` |
 | 2 watch | 改报告文件触发重建、改依赖目录不触发 | `pnpm test` |
 | 3 E2B | 三份 tag 真实存在并冷启动成功 | 从每个发布 ref 新建 E2B 沙箱实跑 |
 
 ### 完成定义
 
-- `pnpm run typecheck`、`pnpm test`、`pnpm test:docs`、`pnpm test:docs-site`、`pnpm run prepare` 全绿。
+- `pnpm run typecheck`、`pnpm test`、`pnpm lint:docs`、`pnpm lint:docs-site`、`pnpm run prepare` 全绿。
 - `src/report/components/` 下不再有 `makeDataComponent`、`faces.ts` 与专用 `*Data` renderer；
   该目录只剩数据源实现与三个站点身份件。
 - `docs/source-map.md` 的「与目标契约的已知实现差异」清空。

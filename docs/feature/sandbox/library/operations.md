@@ -68,7 +68,7 @@ interface CommandOptions {
 
 因此 探测、best-effort cleanup 与“目标不存在即已收敛”的删除动作使用普通方法。确实要求零退出的安装、构建与验证使用 checked 方法。不要通过 `|| true` 抹掉原始退出码，也不另设退出码白名单让 Runner 猜调用方业务语义。
 
-command-exit error 的默认 message 除 exit code 外，还要带经过控制字符清理与长度收口的 stderr 尾部；stderr 为空时才回落 stdout。fixture/build 的直接死因因此无需下钻 execution 就可见。完整、未截断的 stdout/stderr 仍只保存在 error 携带的 `CommandResult` 与命令证据中。
+command-exit error 的默认 message 除 exit code 外，还要带经过控制字符清洗与长度收口的 stderr 尾部；stderr 为空时才回落 stdout。fixture/build 的直接死因因此无需下钻 execution 就可见。完整、未截断的 stdout/stderr 仍只保存在 error 携带的 `CommandResult` 与命令证据中。
 
 没有 `tryCommand()` / `tryShell()`：如果普通方法叫 `runCommand`，它就不应暗含“必须成功”；checked 语义只放在 `OrThrow` 后缀上。同一段 探测 因此直写：
 
@@ -81,7 +81,7 @@ if (probe.exitCode !== 0) {
 
 命令不会自动重试。命令可能已产生副作用，只有调用者能证明幂等时，才在自己的 layer 或 eval 逻辑里写显式重试。
 
-### 已知敏感值与记录边界
+### 已知敏感值与落盘边界
 
 命令把 API key、token、HTTP header value 或其它凭据拼进 argv / shell heredoc 时，调用者必须在同一次调用的 `sensitiveValues` 中登记**实际会出现在文本里的值**：
 
@@ -94,7 +94,7 @@ await sandbox.runShell(
 ```
 
 Provider 仍收到原始 script、argv 与 env，运行时 stdout/stderr 也原样交还调用方。
-变化只发生在 Runner 的记录边界：命令摘要先精确替换再截断，失败输出与最终执行证据中的同一已知值也替换成 `<redacted>`。
+变化只发生在 Runner 的落盘边界：命令摘要先精确替换再截断，失败输出与最终执行证据中的同一已知值也替换成 `<redacted>`。
 敏感值集合只活在当前 Attempt 内存里，不进入 timing、artifact、指纹或 Sandbox identity。
 
 这不是按字段名猜测的 secret scanner。NiceEval 不会因为文本出现 `token=`、`api_key` 或 `Authorization` 就擅自隐藏后面的任意内容；未登记的自由文本、调用方先行编码/拆分后未一并登记的形态、Provider 自己的原生日志，以及已有旧 artifact 都无法由读取端可靠恢复 provenance。`--timing=full`、`--execution --expand` 与 `--json` 只展开已经脱敏的落盘值，不会还原原文。
@@ -105,11 +105,11 @@ Provider 仍收到原始 script、argv 与 env，运行时 stdout/stderr 也原�
 
 Promise 因 timeout、取消、Attempt interruption 或 Agent runtime cancellation settle 前，Provider 必须确认本次受管命令树已终止；若不能精确终止，就退休并停止整个 Sandbox。只关 stdout/stderr 流、PTY 或 transport 不算终止。
 
-正常命令成功结束后，关闭 transport / session 不得顺带杀死命令有意启动的独立任务服务。保留哪些任务服务由 Sandbox Case 与 reuse/keep 契约决定，不由命令客户端连接寿命猜测。
+正常命令成功结束后，关闭 transport / session 不得顺带杀死命令有意启动的独立任务服务。保留哪些任务服务由 Case 与 reuse/keep 契约决定，不由命令客户端连接寿命猜测。
 
 E2B 的 command RPC 会把直接 shell 的完成与 stdout/stderr event stream EOF 绑在一起；后台服务继承输出管道时，后者可以继续打开。E2B provider 因此以直接 shell 的退出码和前台输出作为命令完成信号，随后只断开 event transport，既不等待后台服务关闭管道，也不把它的输出重定向到 `/dev/null`。这条放行只适用于正常完成；timeout、取消和 interruption 仍按上面的命令树终止协议退休整台 VM。
 
-这个完成信号是 Provider 私有 framing，不是普通输出里的字符串搜索：wrapper 自身被 shell、SDK 或子进程按源码/转义文本回显时，不得把其中的 marker 字面量和 `$exit` 变量误认成完成帧。只有 wrapper 的直接 supervisor 在 shell 已取得子进程状态后写出的、payload 严格为十进制数字且 stdout/stderr 两路一致的帧才可结束命令；协议完整性失败时退出状态必须标为未知，不能用 SDK 默认值或解析失败文本伪造。wrapper 的生成与解析必须同时经过真实 bash 执行测试，不能由测试替 shell 人工拼出合法 marker。
+这个完成信号是 Provider 私有 framing，不是普通输出里的字符串搜索：wrapper 自身被 shell、SDK 或子进程按源码/转义文本回显时，不得把其中的 marker 字面量和 `$exit` 变量误认成完成帧。只有 wrapper 的直接 supervisor 在 shell 已取得子进程状态后写出的、payload 严格为十进制数字且 stdout/stderr 两路一致的帧才可结束命令；协议完整性失败时退出状态必须标为未知，不能用 SDK 默认值或拆帧失败文本伪造。wrapper 的生成与拆帧必须同时经过真实 bash 执行测试，不能由测试替 shell 人工拼出合法 marker。
 
 ## 文件：文本、字节与传输分词
 
@@ -134,10 +134,10 @@ interface SandboxTransferOperations {
 }
 ```
 
-两侧相对路径有不同锚点：
+两侧相对路径的定位基准不同：
 
-- Sandbox 路径按 `workdir` 解析；
-- 宿主 `source` / `target` 的相对字符串按 eval 定义文件所在目录解析，`URL` 原样使用；
+- Sandbox 路径按 `workdir` 定位；
+- 宿主 `source` / `target` 的相对字符串按 eval 定义文件所在目录定位，`URL` 原样使用；
 - 不使用进程 `cwd`，也不硬编码 provider 的绝对 workdir。
 
 例子：

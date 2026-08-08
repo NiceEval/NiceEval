@@ -14,7 +14,7 @@
 
 ### 发布方零共享协议新增
 
-1. 一个已能运行的 NiceEval 项目不需要新增共享入口、manifest、配置字段或生成产物。
+1. 一个已能运行的 NiceEval 项目不需要新增共享入口、manifest、配置字段或生成输出。
 2. 发布方现有的 `defineEval`、`defineScoreEval`、Sandbox、Assertion、项目内依赖模块与资产原样运行。
 3. 发布项目自己的 `niceeval.config.ts`、Experiment 与 Agent 不进入共享契约。
 
@@ -58,7 +58,7 @@
 
 ### 安全与归属
 
-22. 挂载外部 Eval 根与安装并执行第三方代码同级，来源必须在人读与机器读入口可见。
+22. 挂载外部 Eval 根与安装并执行第三方代码同级，出处必须在人读与机器读入口可见。
 23. 外部 Eval 继续经过隐藏输入泄漏检查，package 边界不能放宽资产隔离。
 24. package 的 name、version、repository 与 license 提供基础归属，不替用户判断法律许可。
 
@@ -66,7 +66,7 @@
 
 - 不把 Harbor、Inspect 或其它格式转换成 NiceEval。
 - 不建立 NiceEval 托管 registry、账号、权限、计费或镜像服务。
-- 不替 npm、pnpm、Yarn 或 Git 解析版本和安装依赖。
+- 不替 npm、pnpm、Yarn 或 Git 决定版本和安装依赖。
 - 不要求发布方维护共享专用 metadata 或 release。
 - 不把共享项目的 Experiment 当成消费项目运行配置。
-- 不让消费项目静默覆盖外部根里的单题；需要改题时使用 fork 或新的 package 来源。
+- 不让消费项目静默覆写外部根里的单题；需要改题时使用 fork 或新的 package 上游。

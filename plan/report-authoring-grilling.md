@@ -382,6 +382,6 @@ NiceEval-Eval 3 个实验目录）读不出——那些 run 的结论已进 memo
 
 ## 八、收尾
 
-`pnpm test:docs`（`writing-baseline.json` 只许变小）、`docs/README.md` 索引核对。
+`pnpm lint:docs` 零命中、`docs/README.md` 索引核对。
 批次 1、2 定稿后把裁决沉进 `memory/`：修订 `report-tree-opens-dual-face-components`（它写的
 "第一层公开模型只有 Source 与 Component"已被推翻），并新增一条记录三概念翻案的理由。

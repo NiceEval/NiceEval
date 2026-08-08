@@ -56,7 +56,7 @@ NiceEval 的内部实现只有两类计算。
 公共作者 callback 与 Provider SDK 可以按各自契约返回 `Promise`，但只在最外层适配一次，不能让 `Promise`、`try/catch` 或 `Effect.runPromise` 继续穿过内部调用链。
 
 数据从作者输入依次流经 Definition、Discovered、Linked、Planned、Attempt 与 Record。
-每个阶段只接收上一个阶段的完整产物，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
+每个阶段只接收上一个阶段的完整输出，并用判别联合表示互斥状态；可选字段只表示该业务事实确实可以缺席，不能同时承担“尚未计算”“不适用”“失败”或旧版本占位。
 阶段推进只创建新值，不回写前一阶段，也不在下游重新选择、重新链接或猜默认值。
 
 `unknown` 只允许出现在 JavaScript、动态 import、JSON、文件格式、SDK 返回和第三方 throw 这些真实的不可信边界。
@@ -79,7 +79,7 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 | 评分手段 | expect + 作用域断言 + judge | 上述 + 手工在沙箱里跑命令,再用 `t.check(result, commandSucceeded())` 判定 |
 | 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、artifact 格式全部共享** | 同 → |
 
-这张表是整个架构的中心论点:**两种范式只在"Agent 的构造证据(`kind` 与 `send` 实际做到了什么)"上不同,在"如何判分、如何调度、如何记录"上完全一致。
+这张表是整个架构的中心论点:**两种范式只在"Agent 的构造证据(`kind` 与 `send` 实际做到了什么)"上不同,在"如何判分、如何调度、如何写入"上完全一致。
 ** 所以它们能住在同一个入口、同一个库里,而不是两个入口或两个库。
 
 ## `t` 上下文：宽接口与构造证据
@@ -87,9 +87,10 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 `test(t)` 收到的 `t` 对每个 Agent 都暴露同一套宽接口(`TestContext`),但每个方法**实际能不能读到数据**由 Agent 的构造证据决定,不是声明式的能力位——这是唯一的运行时守卫例外:
 
 - 任何 Agent → `t.check` / `t.require`(值断言)、`t.log`、`t.skip`、`t.signal`、`t.judge`,以及 `t.send` / `t.reply` / `t.newSession`(能不能多轮取决于 `send` 有没有接上 `ctx.session` 的续接存取器,不取决于声明)。
-- `send` 吐出 `action.*` 事件 → `t.calledTool` / `t.toolOrder` / `t.usedNoTools` 有数据可断;没吐,正断言自然不命中、负断言按事件来源的完整性证明判断可信度(见[断言证据与完整性](feature/adapters/architecture/evidence.md))。
-- `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO(`writeText` / `readText` / `writeBytes` / `readBytes`)、宿主传输(`upload*` / `download*`)、命令执行(`runCommand` / `runShell`)和结果断言 / diff 都收在这一个命名空间下。
-  评 sandbox 产物用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。
+- `send` 吐出 `action.*` 事件 → `t.calledTool` / `t.toolOrder` / `t.usedNoTools` 有数据可断;没吐,正断言自然不命中、负断言按事件出处的完整性证明判断可信度(见[断言证据与完整性](feature/adapters/architecture/evidence.md))。
+- `defineSandboxAgent` 构造(`kind: "sandbox"`)→ `t.sandbox`:文件 IO、宿主传输与命令执行。
+  `writeText` / `readText` / `writeBytes` / `readBytes`、`upload*` / `download*`、`runCommand` / `runShell` 与结果断言 / diff 都收在这一个命名空间下。
+  评 sandbox 输出用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。
   非沙箱型 agent 调用这组方法会立即得到清晰报错(`capabilityGuard`)——这是唯一仍需要运行时拦截的能力,因为没有沙箱就没有文件系统可读。
 
 ## 一次 Invocation,端到端
@@ -98,8 +99,8 @@ Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval 可以被两类 Age
 Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 
 1. **加载配置。
-   ** 对支持 Eval 覆盖的字段按 CLI → experiment → eval → `niceeval.config.ts` → 默认值解析。
-   不支持 Eval 覆盖的字段按各自专题声明的层级解析；见[配置与凭据的边界](#配置从代码来凭据从环境来)。
+   ** 对支持 Eval 替换的字段按 CLI → experiment → eval → `niceeval.config.ts` → 默认值求值。
+   不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **指纹与结果沿用。
@@ -111,43 +112,53 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 5. **有界并发调度。
    ** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。
    重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
-6. **准备环境,交给 `test(t)`。
-   ** 沙箱型:Provider 按配对唯一的 template 启动 Sandbox Case → 按 owner 顺序执行两层作者 layer 的 `prepare()` 命令(template owner 先、另一 owner 后,装二进制、预热、题目准备;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ agent.ensure 循环安装 Agent CLI(`agent.ensure`:探测、缺失时配对安装层 install、复检)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 跑 agent 的 runtime `SandboxAgent.setup`(写鉴权与运行时配置)。
-   之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
+6. **准备 Sandbox,交给 `test(t)`。**
+   沙箱型按固定顺序完成下面几步:
+   - Provider 按配对唯一的 template 启动 Sandbox 实例。
+   - 按 owner 顺序执行两层作者 layer 的 `prepare()` 命令(template owner 先、另一 owner 后,装二进制、预热、题目准备;这一步在变更分类账参照点之前,准备输出不进入任何归因视图)。
+   - `agent.ensure` 循环安装 Agent CLI:探测、缺失时配对安装层 install、复检。
+   - 打变更分类账参照点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md))。
+   - 跑 agent 的 runtime `SandboxAgent.setup`(写鉴权与运行时配置)。
+   之后全部交给这条 eval 自己的 `test(t)`。
+   作者按自己的顺序调 `t.sandbox.writeText` / `writeBytes` / `uploadDirectory`(准备起始文件)与 `t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)。
+   `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
+   顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账折叠各 send 窗口的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
+   ** `test(t)` 跑完后从分类账折叠各 send 区间的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
-   ** `test(t)` 里记录的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部求值成 `AssertionResult[]`。
+   ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部求值成 `AssertionResult[]`。
 9. **判定。
    ** 断言 + 执行错误 + 跳过原因直接折叠成一个互斥的 `Verdict`(`passed`/`failed`/`errored`/`skipped`,没有中间态)。
 10. **首过即停。
     ** 若该 attempt 通过且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 attempt。
 11. **收尾与留存。
-    ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
+    ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
+    收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
     阶段词表以 [Results 的 `LifecyclePhase` 闭集](feature/record/architecture.md#resultjson)为唯一权威。
 12. **报告。
-    ** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判定与 artifact 随之写进该实验 Run 目录(`.niceeval/<experiment>/<run>/<evalId>/aN/result.json`);每个 Run 在该 Experiment 收尾后补 `completedAt` 与 Run 级 diagnostics,全部结束后回调 `onInvocationComplete`。
+    ** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判定与 artifact 随之写进该实验 Run 目录(`.niceeval/<experiment>/<run>/<evalId>/aN/result.json`)。
+    每个 Run 在该 Experiment 收尾后补 `completedAt` 与 Run 级 diagnostics,全部结束后回调 `onInvocationComplete`。
 13. **退出码。
     ** 有 `verdict=failed`(含 `--strict` 下 soft 未达标而改判的)或 `verdict=errored` → 非零退出;报告里两者分开列,供 CI 判红和诊断。
 
-## 配置从代码来,凭据从环境来
+## 配置从代码来,凭据从进程变量来
 
-环境变量在 NiceEval 里只有两个合法用途,两个之外的一切都从代码读:
+进程变量在 NiceEval 里只有两个合法用途,两个之外的一切都从代码读:
 
 | 类别 | 从哪来 | 说明 |
 |---|---|---|
-| **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是默认来源 |
-| **其它运行配置**(attempts、并发、预算、报告、界面语言、Adapter 与 Sandbox 参数) | 按所属专题声明的层级解析 | 没有环境变量层；`--dry` 打印的解析结果就是真正生效的值 |
-| **凭据**(API key、provider token) | 环境变量,变量名由代码声明 | adapter / sandbox 工厂各自声明自己那一个官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`);judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落、不做"环境里有哪个 key 就用哪个"的探测 |
-| **终端环境事实**(`NO_COLOR`、TTY、系统 locale) | 环境 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置。`config.locale` 优先于系统 locale |
+| **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是默认出处 |
+| **其它运行配置**(attempts、并发、预算、报告、界面语言、Adapter 与 Sandbox 参数) | 按所属专题声明的层级求值 | 没有进程变量层；`--dry` 打印的求值结果就是真正生效的值 |
+| **凭据**(API key、provider token) | 进程变量,变量名由代码声明 | adapter / sandbox 工厂各自声明自己那一个官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`);judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落、不做"进程变量里有哪个 key 就用哪个"的探测 |
+| **终端输出事实**(`NO_COLOR`、TTY、系统 locale) | 进程变量 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置。`config.locale` 优先于系统 locale |
 
-CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那是凭据的投递方式,不是配置层。
+CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那是凭据的投递方式,不是配置层。
 
-**配置是代码,所以"从环境注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
-区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去环境里猜——这正是这条边界要保住的东西。
+**配置是代码,所以"从进程变量注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
+区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去进程变量里猜——这正是这条边界要保住的东西。
 
-这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻环境才能回答,而环境不进 Run、不进指纹、复现时也不在手边。
-凭据反过来——它不能进签入 git 的代码,所以只能来自环境;NiceEval 能做的是不去猜它叫什么名字。
+这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻进程变量才能回答,而进程变量不进 Run、不进指纹、复现时也不在手边。
+凭据反过来——它不能进签入 git 的代码,所以只能来自进程变量;NiceEval 能做的是不去猜它叫什么名字。
 
 ## 错误隔离
 

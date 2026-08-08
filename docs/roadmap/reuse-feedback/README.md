@@ -1,7 +1,7 @@
 # 结果携带与 Sandbox 复用反馈
 
 结果携带与 Sandbox 复用是两套正交机制。
-[缓存与携带](../../feature/experiments/cache.md)复用历史 Attempt 的判定与证据；[Sandbox 复用](../../feature/sandbox/reuse.md)让本次 Invocation 的多条 Attempt 共用运行环境，但每条 Attempt 仍真实执行。
+[缓存与携带](../../feature/experiments/cache.md)复用历史 Attempt 的判定与证据；[Sandbox 复用](../../feature/sandbox/reuse.md)让本次 Invocation 的多条 Attempt 共用运行 Sandbox，但每条 Attempt 仍真实执行。
 
 两套机制的行为边界继续由 Feature 契约定义。
 本主题统一结果携带的公开名字，并为 Sandbox 复用定义运行级汇总。
@@ -25,7 +25,7 @@
 
 ## Sandbox 复用增加运行级汇总
 
-Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
+Attempt 数据登记 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
 声明 `sandboxReuse` 的 Experiment 按复用组提供四个运行级量：
 
 | 量 | 口径 |
@@ -47,7 +47,7 @@ live 面板按 Experiment 与 Sandbox 复用组恒定显示 `active`、`created`
 
 ## 不在本主题里的问题
 
-- 生效并发已经由 Experiments CLI 显示全局来源与逐 Experiment 上限，不在这里重复设计。
+- 生效并发已经由 Experiments CLI 显示全局出处与逐 Experiment 上限，不在这里重复设计。
 - 留存实例与孤儿分别由 `sandbox list`、`sandbox list --orphans` 回答；本主题不新增 Provider 配额盘点。
 - 不提供 `--reuse-verify`。
   同一 Eval 连跑两次相同不能证明没有残留污染，不同也可能来自 Agent 随机性；需要验证特定残留风险时，由作者写专门 Eval。

@@ -1,6 +1,6 @@
 # PLAN-2：Architecture
 
-本篇是 PLAN-2 的 template 解析、Layer 执行、身份、生命周期和失败语义单一来源。
+本篇是 PLAN-2 的 template 读取、Layer 执行、身份、生命周期和失败语义单一出处。
 公开 API 见 [Library](library.md)。
 
 ## 数据模型
@@ -21,7 +21,7 @@ interface ResolvedTemplate {
 ```
 
 `ResolvedTemplate` 是单实例 Provider 起点的抽象。
-它没有主 Sandbox、伴随 service、ready、能力句柄、证据和资源组 finalizer 字段，因此不能完整承载 Sandbox Case。
+它没有主 Sandbox、伴随 service、ready、能力句柄、证据和资源集合 finalizer 字段，因此不能完整承载 `Sandbox Case`。
 
 安装单元统一归一为：
 
@@ -37,14 +37,14 @@ interface ResolvedLayer {
 
 `owner` 只供身份归属和诊断使用，不改变执行协议。
 
-## template 解析
+## template 读取
 
 规划期按下表选择 template：
 
 | Eval environment | Experiment 侧声明 | 结果 |
 |---|---|---|
 | 省略 | 普通 template | 使用 Experiment template |
-| 声明 | 未声明普通 template | 使用 Eval environment 解析结果 |
+| 声明 | 未声明普通 template | 使用 Eval environment 读取结果 |
 | 声明 | `templates` 命中 profile | 使用 map 指定的预制 template |
 | 声明 | 只声明普通 template | 启动期双 template 冲突 |
 | 省略 | 两处都省略 | 使用 Provider 默认起点 |
@@ -53,7 +53,7 @@ interface ResolvedLayer {
 Runner 不验证替代项分别兑现了 Eval 与 Experiment 的要求。
 
 所有冲突和缺失 profile 在创建 Sandbox 前一次穷举报出。
-当前 Provider 无法把 folder-local environment 归一成单 template 时，本方案没有完整 Sandbox Case 作为退路；该能力缺口必须显式暴露，不能退回普通默认 template。
+当前 Provider 无法把 folder-local environment 归一成单 template 时，本方案没有完整 `Sandbox Case` 作为退路；该能力缺口必须显式暴露，不能退回普通默认 template。
 
 ## Layer 执行
 
@@ -100,9 +100,9 @@ template 创建 Sandbox
 省略 `sandboxReuse` 时，每条 Attempt 创建全新 Sandbox。
 开启复用时，每条 Attempt 仍重新经过 Layer 检查；默认检查只读取受管 manifest，因此无法发现 Layer 安装内容被前一条 Attempt 改坏。
 
-## 身份与记录
+## 身份与登记
 
-身份按声明来源分配：
+身份按声明出处分配：
 
 ```text
 configHash
@@ -115,10 +115,10 @@ configHash
   += Eval Layer 的排序后 { name, identity }
 ```
 
-Agent Layer 的 identity 可以进入 configHash，但统一协议没有 staged payload digest、解析平台和安装模式的位置。
-template 的 provider locator 可以进入身份，却不能描述 Compose 的完整运行资源组。
+Agent Layer 的 identity 可以进入 configHash，但统一协议没有 staged payload digest、读取平台和安装模式的位置。
+template 的 provider locator 可以进入身份，却不能描述 Compose 的完整运行资源集合。
 
-运行时至少记录 Layer owner、目标 identity、检查命中与安装失败诊断。
+运行时至少登记 Layer owner、目标 identity、检查命中与安装失败诊断。
 本候选没有穷尽定义实际 identity、逐项活动、复检结果和候选破坏者的落盘形状，因此不满足完整可解释性要求。
 
 ## 失败语义
@@ -127,7 +127,7 @@ template 的 provider locator 可以进入身份，却不能描述 Compose 的�
 |---|---|
 | template/profile 声明冲突或缺失 | 启动期配置错误，零 Sandbox 创建 |
 | Provider 无法兑现 folder-local environment | 明确能力缺口，不能静默使用默认 template |
-| 自定义 `inspect` 抛错 | Attempt `errored`，归环境准备 |
+| 自定义 `inspect` 抛错 | Attempt `errored`，归 Sandbox 准备 |
 | Layer `install` 失败 | Attempt `errored`；并行失败逐项保留 |
 | manifest 与目标 identity 不同 | 执行 install |
 | manifest 命中但实际状态已漂移 | 不报错；这是本方案的假命中缺口 |

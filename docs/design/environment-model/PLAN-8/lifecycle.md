@@ -6,10 +6,10 @@
 
 | Owner | 声明 | 生命周期职责 |
 |---|---|---|
-| EvalDef | 可选 Environment、setup、test、teardown | 题目环境请求、逐 Attempt 准备、Agent 交互与判分 |
-| SandboxConfig | Provider、defaultEnvironment、profile Case、setup / teardown | 解析唯一 Case，启动资源组，准备 Experiment 条件 |
+| EvalDef | 可选 Environment、setup、test、teardown | 题目 Environment 请求、逐 Attempt 准备、Agent 交互与判分 |
+| SandboxConfig | Provider、defaultEnvironment、profile Case、setup / teardown | 规划唯一 Case，启动 service、网络与 volume，准备 Experiment 条件 |
 | Agent | AgentProvisioner、setup、send、teardown | Agent CLI Ensure、鉴权、配置与 turn |
-| Sandbox Case | build、start、ready、finalizer | 创建、观测并清理完整隔离环境 |
+| Sandbox 实例 | build、start、ready、finalizer | 创建、观测并销毁完整的隔离 Sandbox |
 
 EnvironmentSource 没有运行时 Hook；它是规划输入，不是一个会执行命令的 owner。
 
@@ -55,41 +55,41 @@ defaultEnvironment 不参与 Eval Environment 分支，三层 setup 也不会因
 
 | 动作 | 输入与输出 | 允许改变什么 |
 |---|---|---|
-| build | Environment / native Case → provider 产物 | image、template、snapshot 或 Compose service image |
-| start | provider 产物 → RunningSandboxCase | 实例、网络、volume、ready、能力与资源组 |
+| build | Environment / native Case → provider 构建输出 | image、template、snapshot 或 Compose service image |
+| start | provider 构建输出 → RunningSandboxCase | 实例、网络、volume、ready、能力与伴随资源 |
 | setup | RunningSandboxCase 的主 Sandbox → 运行状态 | 主 Sandbox 内文件、命令、进程与窄能力状态 |
 | Fixture / test | 当前 Attempt 的主 Sandbox → 题目输入与判分证据 | workdir、测试材料、send 顺序与断言 |
 
-普通 setup 不产生新的 provider 产物，也不改变 CaseKey 来伪装起点变化。
-setup identity 作为自己的配置或逐 Eval 身份记录。
+普通 setup 不产生新的 provider 构建输出，也不改变 CaseKey 来伪装起点变化。
+setup identity 作为自己的配置或逐 Eval 身份持久化。
 
 ## Fresh 与 Reuse
 
 | 节点 | Fresh Sandbox | `sandboxReuse: true` |
 |---|---|---|
-| Environment 解析与 BuildKey 协调 | Run 规划期 | Run 规划期 |
-| Case create / ready | 每 Attempt | 每复用窗口 |
-| Experiment sandbox setup / teardown | 每 Attempt | 每复用窗口 |
+| Environment 规划与 BuildKey 协调 | Run 规划期 | Run 规划期 |
+| Case create / ready | 每 Attempt | 每复用周期 |
+| Experiment sandbox setup / teardown | 每 Attempt | 每复用周期 |
 | workspace baseline / reset | 每 Attempt 建立 | 首条建立，后续每 Attempt reset |
 | Eval setup、Agent setup 与 test | 每 Attempt | 每 Attempt |
 | transfer manifest 与泄漏比对 | 每 Attempt | 每 Attempt |
-| Case finalizer / stop | 每 Attempt | 每复用窗口 |
+| Case finalizer / stop | 每 Attempt | 每复用周期 |
 
-复用窗口只能包含相同 CaseKey 与相容 SandboxConfig 的 Attempt。
-reset 无法恢复已知状态时立即退休窗口，不能让下一条 Attempt 继承未声明条件。
+复用周期只能包含相同 CaseKey 与相容 SandboxConfig 的 Attempt。
+reset 无法恢复已知状态时立即退休该复用周期，不能让下一条 Attempt 继承未声明条件。
 
 ## Setup 顺序与复检
 
 Experiment sandbox setup 按链式追加顺序执行；Eval 与 Agent 在各自 phase 内按声明顺序执行。
 第一期没有跨 owner 自动并行，也没有让作者维护依赖图。
 
-领域 helper 在需要预装命中时执行 check、必要时 install、再 check。
-后一个 owner 可能破坏前一个 owner 的条件时，由拥有该条件的 helper 或专门最终门负责复检；plain setup 不自动获得状态证明。
+领域 setup 函数在需要预装命中时执行 check、必要时 install、再 check。
+后一个 owner 可能破坏前一个 owner 的条件时，由拥有该条件的 setup 函数或专门最终门负责复检；plain setup 不自动获得状态证明。
 
 ## State
 
 外部状态载入与回存继续使用成对 setup / teardown 或对应 State Feature。
-状态不是 Environment，也不是 build 产物；复用窗口身份、临界区与失败提交策略不并入 EnvironmentSource。
+状态不是 Environment，也不是 build 构建输出；复用周期身份、临界区与失败提交策略不并入 EnvironmentSource。
 
 Agent runtime 同样保持独立。
 Agent CLI 预装只优化 AgentProvisioner 的 ensure 命中，不让 Agent 成为 Environment owner。
@@ -102,7 +102,7 @@ Agent CLI 预装只优化 AgentProvisioner 的 ensure 命中，不让 Agent 成�
 | C2 | defaultEnvironment 后执行 Experiment sandbox setup |
 | C3 | Eval Compose Case 启动后执行 Experiment、Eval 与 Agent 三层准备 |
 | C4 | Experiment setup 链按阅读顺序串行 |
-| C5 | 预装只优化领域 helper 的检查命中 |
+| C5 | 预装只优化领域 setup 函数的检查命中 |
 | C6-C7 | State 与 Sandbox 复用保持独立 owner 和频次 |
 | C8 | Experiment defaultEnvironment 为起点，Eval setup 准备题目 |
 | C9 | `environments[profile]` 提供完整预制 Case，Runner 不合并两个起点 |

@@ -54,7 +54,7 @@ type JudgeRecipeInput =
 
 ## 材料
 
-材料 helper 从 `niceeval/judge` 导出：
+材料工具从 `niceeval/judge` 导出：
 
 ```ts
 import { material } from "niceeval/judge";
@@ -119,18 +119,18 @@ interface InlineFileMaterial extends MaterialBase {
 }
 ```
 
-`material.current()` 解析调用点的 scope。
+`material.current()` 读取调用点的 scope。
 `material.turn(turn)`、`material.session(session)` 与 `material.attempt()` 产生显式 scope 材料。
 Turn 材料包含该轮用户输入、附件、assistant message 与可用行为事件，不把整个对象做 JSON stringify。
 
 `material.file(path, { from, ... })` 在 Judge 求值时读取文件。
 文件扩展名只用于给出 MIME 候选；内容与声明冲突时报作者错误。
-HTTP URL 不是材料来源，调用方应先取得字节，再使用项目文件或内联文件。
+HTTP URL 不是材料出处，调用方应先取得字节，再使用项目文件或内联文件。
 
 `retention` 省略时是 `full`，材料内容随 Judge provenance 保存。
 `digest` 只保存 hash、大小、MIME 与有界脱敏预览；Provider 仍读取原内容，报告会明确标出内容未保留。
 
-Provider 接收解析后的规范内容 part：
+Provider 接收读取后的规范内容 part：
 
 ```ts
 type JudgeContentPart =
@@ -229,13 +229,13 @@ export const answerQuality = defineJudgeGraph({
 ```
 
 节点 id 在配方内唯一且稳定。
-`build` 只能调用图 builder，不能读取环境、时间、随机数或执行 I/O。
+`build` 只能调用图 builder，不能读取运行条件、时间、随机数或执行 I/O。
 
 builder 提供三类节点：
 
 | API | 作用 |
 |---|---|
-| `g.model(id, spec)` | 通过 Provider 产生 Decision；`spec.profile` 可覆盖 Check 的默认 profile |
+| `g.model(id, spec)` | 通过 Provider 产生 Decision；`spec.profile` 可覆写 Check 的默认 profile |
 | `g.aggregate(id, spec)` | 用内置规则聚合多个结果 |
 | `g.fallback(id, primary, secondary)` | primary unavailable 时才执行并选择 secondary |
 
@@ -270,7 +270,7 @@ Judge Check 实际使用的 profile 或模态超出声明时是作者错误。
 ## Profile 与 Provider
 
 项目、Eval 与 Experiment 都可以声明同名 profile 的配置层。
-解析优先级是 Experiment → Eval → 项目；每个字段独立取第一份已声明值。
+读取优先级是 Experiment → Eval → 项目；每个字段独立取第一份已声明值。
 
 ```ts
 interface LlmJudgeConfig {
@@ -293,7 +293,7 @@ interface JudgeProfileConfig {
 type JudgeMedia = "text" | "image" | "audio" | "file";
 ```
 
-解析后每个被使用的 profile 必须有 Provider 与 model。
+读取后每个被使用的 profile 必须有 Provider 与 model。
 预算字段省略时依次取 `180_000`、`300_000`、`3` 与 `1`。
 
 ```ts
@@ -321,7 +321,7 @@ export default defineConfig({
 ```
 
 `provider` 是原子字段；一层只能整体替换，不能合并 Provider 内部选项。
-模型、预算、重试和并发是 profile 字段，不接受单条 Check 覆盖。
+模型、预算、重试和并发是 profile 字段，不接受单条 Check 覆写。
 Experiment 因此可以对 Judge 模型做 A/B，同时保证同一 Run 的执行身份稳定。
 
 Check 的 `profile` 是图内模型节点的默认值。
@@ -346,4 +346,4 @@ interface JudgeProvider {
 ```
 
 `identity()` 不得包含 key 值，但必须包含会改变请求语义的端点、协议和 Provider 版本。
-凭据只从 Provider 配置指定的环境变量读取。
+凭据只从 Provider 配置指定的 env 变量读取。
