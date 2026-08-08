@@ -80,13 +80,17 @@ turn.calledTool("shell", { input });
 coding-agent Adapter 会遇到 raw shell、argv、`program + args` 与 SDK display summary。
 core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它们语义等价。
 
-标准 projection 因此只在两种情况下提供 executable + args：
+标准 original projection 因此只在两种情况下提供 executable + args：
 
 1. 原生协议直接提供 argv；
 2. Adapter 能按自己声明的 grammar 无歧义取得单一 invocation。
 
-复合 shell、动态展开、管道与 quoting 不确定时保持 opaque。
+复合 shell、动态展开、管道与 quoting 不确定时保持 original opaque。
 依赖 opaque invocation 的 command 字段是 unavailable，不通过空格 split 猜一份看似稳定的 argv。
+
+只保留 original 仍不足以服务 NiceEval 自己的公开指引：pnpm 仓库通常执行 `pnpm exec niceeval`，机器 Assertion 却要表达逻辑 CLI `niceeval`。
+目标契约因此在 tokenization 之后增加唯一、版本化且封闭的 logical normalizer，只识别已有真实需求的 direct、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx`。
+普通 `CommandMatch` 只看 logical argv；original 继续用于脱敏审计，core 不回读 raw shell text，作者也不枚举 wrapper OR。
 
 `toolOrder()` 与 `calledTool()` 必须复用同一个 `ToolMatch.command` evaluator。
 顺序断言已经证明 command 存在时，普通 E2E 不再重复登记存在性分。
@@ -142,6 +146,6 @@ Eval 不能改读 `.niceeval` 私有文件补齐。
 NiceEval 应保留 Eve 的 scope-first 风格，也应保留自己的 `unavailable`、evidence coverage、题内 points 与 optional 语义。
 普通调用点不需要新的 Match AST 或大量新方法。
 
-最终方向是：给既有 `ToolMatch` 增加 command 字段，让 `toolOrder()` 接受同源 selector，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
+最终方向是：给既有 `ToolMatch` 增加只消费 logical command 的字段，让 `toolOrder()` 接受同源 selector，给 `t.sandbox` 补 exact path set，并增加一条诚实的 observed-input 路径负断言。
 
 目标契约见 [Assertion 作者面 Roadmap](../roadmap/assertion-authoring/README.md)。

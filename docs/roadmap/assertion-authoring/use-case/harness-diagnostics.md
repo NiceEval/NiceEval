@@ -26,6 +26,10 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 确定性的 tool request 子序列、可观察工具输入、运行状态和 Sandbox diff 由机器 Assertion 检查。
 动态 locator、工具输出因果、Human 输出含义与最终回复顺序需要关联完整有序 Turn，因此由 `turn.judge.llm()` 检查。
 
+每题的机械层固定为三条 turn 调用：一条 `toolOrder()`、一条 `toolInputsExclude()`、一条 `succeeded()`。
+`ToolMatch.command` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
+opaque shell 仍是 unavailable；这项归一不读取 raw shell text，也不证明物理 binary identity。
+
 ## A：修好 Python 起点，再判断复验与接受
 
 ### 用户任务
@@ -60,7 +64,7 @@ turn.judge.llm({ name: "根因、范围与版本策略", rubric: candidateVersio
 
 三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
 A 的可得分总数固定为 `3 + 2 + 3 + 6 + 4 = 18`。
-其中 observed-input gate 只覆盖题面明示禁止直接读取的 `.niceeval`；它不把读取 `evals` 或 `agents` 变成隐藏失败条件。
+其中 observed-input gate 只检查题面明示禁止直接读取的 `.niceeval`；它不把读取 `evals` 或 `agents` 变成隐藏失败条件。
 
 `changedPaths()` 只证明 agent 归因路径集合恰好一项。
 `fileChanged()` 证明同一条 change 的 before 含 `runtime:node`、after 含 `runtime:python`；两者都不声称文件只改了这一个 token。
