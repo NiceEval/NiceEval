@@ -106,7 +106,7 @@ EventRule 不接受 count。
 ```ts
 type JsonRule =
   | {
-      readonly exact: SnapshotCompatible<JsonValue>;
+      readonly exact: JsonValue;
       readonly shape?: never;
       readonly schema?: never;
     }
@@ -123,7 +123,7 @@ type JsonRule =
 ```
 
 `exact` 比较完整 JSON-compatible snapshot。
-`shape` 是 object 的 partial shape：plain scalar 表示 exact，plain object 递归表示 shape，array 要求长度和位置相等。
+`shape` 是 object 的 partial shape：plain scalar 表示 exact；每个 object node 必须显式写 `{ shape }`；每个 array node 必须显式写 `{ array }`。
 `schema` 调用一次 Standard Schema validator。
 
 snapshot walker 不调用 getter 或 `toJSON`，拒绝 Proxy、cycle、accessor、class instance、`undefined`、NaN、Infinity、bigint、symbol 与 sparse array。
