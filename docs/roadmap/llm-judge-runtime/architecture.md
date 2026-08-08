@@ -100,7 +100,8 @@ interface JudgeCitation {
 文字 quote 必须能在对应文本中定位；图片 region 使用 `0..1` 的归一化坐标；音频时间不得超出材料时长。
 无引用时写空数组，不能伪造一个材料 id。
 
-Provider 原始返回先变成 `JudgeProviderResponse`，再由 Runtime 校验 Decision。
+Provider 原始返回先变成 `JudgeProviderResult`。
+decode / conversion 失败使用 invalid-response 分支；response 分支再由 Runtime 校验 Decision。
 缺字段、非法分数、未知 citation 或超界位置都是响应协议失败，不会被修补成 0 分。
 binary 请求合法返回 `score: 0.7` 时同样是 `judge-response-invalid`，不会四舍五入，也不会留下 70% 的 points。
 
@@ -209,7 +210,8 @@ Runtime 拥有重试策略，Provider 关闭隐式重试。
 
 408、429、连接错误和 5xx 可以重试。
 鉴权失败、未知模型、不支持的模态、非法请求和用户取消不重试。
-结构化输出不符合 schema 时允许重试一次，但仍计入 `maxAttempts` 与图总预算。
+Provider 无法 decode / conversion，或结构化输出不符合 schema 时，都作为响应协议失败并允许重试一次。
+这次重试仍计入 `maxAttempts` 与图总预算。
 binary 请求返回 `score: 0.7` 属于同一类响应协议失败；重试耗尽后节点 unavailable，原因是 `judge-response-invalid`。
 
 退避优先使用 `Retry-After`，否则使用指数全抖动。
