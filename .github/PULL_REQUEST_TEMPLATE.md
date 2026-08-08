@@ -6,8 +6,8 @@ Types: feat, fix, docs, refactor, test, ci, chore.
 Choose the type from the PR's final outcome, not its first commit. Update the
 title when the scope changes. Name the user-visible capability or behavior, not
 an internal mechanism such as its registry, protocol, or storage model. Keep one
-dominant outcome and aim for 72 characters or fewer. PR titles and descriptions
-must be written in English.
+dominant outcome and aim for 72 characters or fewer. Write the PR title and
+description in the language of the user's latest request.
 
 Keep every section below. Write "None" when that surface does not change.
 Repeat the entry block when a section contains multiple changes. Every changed

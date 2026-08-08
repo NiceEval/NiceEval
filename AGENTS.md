@@ -68,7 +68,7 @@
 ## Git 与协作安全
 
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
-- PR 标题、PR 正文与 commit message 一律使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
+- PR 标题与正文使用用户当前提问的语言；用户切换语言时跟随最新一条提问。commit message 仍使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - 创建或更新 PR 前先读 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)，并以它作为 PR 标题与正文写法的唯一入口。保留模板中的全部分类；未变化的分类写 `None`，每个变化条目都按模板给出 before/after example 与 user impact。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。
@@ -78,5 +78,5 @@
 ## Release 安全
 
 NiceEval 产品发布只走 `.github/workflows/release.yml`：创建并推送 `vX.Y.Z` tag，由 CI 写版本、校验、发布 npm 并创建 GitHub Release。
-`@niceeval/testkit` 只走 `.github/workflows/release-testkit.yml` 与 `testkit-vX.Y.Z` tag；该 workflow 发布已经通过 pilot 的同一 tarball，
-不得触发产品发布。不要在本地运行 `npm publish`，也不要为了发布预先修改 main 上任一 `package.json` 版本。
+`@niceeval/testkit` 是当前 checkout 的 private workspace harness，不发布 npm、不打 release tag，也不建立独立 tarball 信任链。
+不要在本地运行 `npm publish`，也不要为了发布预先修改 main 上任一 `package.json` 版本。
