@@ -3,9 +3,9 @@
 `@niceeval/testkit` 是场景 Repo 共用的机械设施，不是 NiceEval 产品行为 DSL。它减少进程、数据解码和资源终结代码的复制，
 但不替测试决定用户做什么、什么结果算正确。
 
-Testkit 的测试只验证这些进程、文件系统、HTTP 与资源生命周期原语本身；它们不能替产品 Journey 证明用户结果。
-不为 Testkit 再建立独立的测试设施分类，也不为测试 fixture 复刻第二套 runner。新增或实质修改的测试仍须命名
-具体机械故障、保持最小矩阵与稳定入口，并通过[可靠性接管门](README.md#可靠性重复运行)。
+Testkit 不维护独立 Unit 套件。CLI、Runner、Report、Record、Package 与 Lifecycle 场景通过安装后的 Testkit 入口实际调用
+进程、文件系统、HTTP 与资源生命周期原语；同一原语不再配一套 fixture 自测。类型与构建错误由 `typecheck` 和 clean build 阻断，
+运行错误由最先使用它的真实场景收据或资源终态阻断。
 
 Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后，把 `packages/testkit` 作为本地目录依赖只注入场景的隔离副本；
 它不先变成 tarball，也不获得发布 artifact、digest 或独立重新执行承诺。场景源不声明 workspace 或本地路径，避免绕开根 runner。
@@ -21,8 +21,7 @@ Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后�
 若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
 Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
-构建必须先删除 `dist/` 再完整重建，避免增量残留进入场景。Testkit 不依赖 NiceEval、根 runner 或 scenario；它的测试只消费
-固定的非 NiceEval fixture，保持 bootstrap 无环。
+构建必须先删除 `dist/` 再完整重建，避免增量残留进入场景。Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环。
 
 ## 准入边界
 
@@ -213,26 +212,20 @@ export function withHttpServer<T>(
 
 这些内容一旦上移，测试会变短，但读者无法从正文看出命令、独立 oracle 和失败接缝。
 
-## Testkit 测试
+## 真实场景验收
 
-Testkit 不用 NiceEval 测自己。固定 fixture process 分别产生：
+- CLI、Runner、Package 与 Lifecycle 用 `command()`、`withProjectCopy()` 和进程收据执行仓库外用户动作；
+- Runner 与 Lifecycle 用 `only()`、`defined()` 和 `pollUntil()`核对真实结果与资源终态；
+- Report 与本地协议场景用 `withProcess()`、`waitForOutput()`和严格数据解码观察长驻进程；
+- Record 与 Lifecycle 用 `withTempDir()`证明临时资源在正文结束后消失；
+- Report 用 `withHttpServer()`启动真实 listener，并在正文结束后释放端口。
 
-- spawn error、提前退出、不同 exit / signal；
-- stdout / stderr 交错、分块 UTF-8 与超过展示上限的完整输出；
-- 完整 JSON、前后噪声、截断 JSON、malformed NDJSON 与错误行号；
-- waiter 挂载前已经输出 readiness、稍后成功、timeout 与进程提前退出；
-- body 成功 / 失败和 cleanup 成功 / 失败的四种组合；
-- POSIX process group 或声明过的 Windows capability；
-- 临时目录在成功、失败和 timeout 后都被回收。
-- 项目复制的排除项、链接越界拒绝、正文与删除同时失败；
-- HTTP handler 的动态端口、请求传递、正文失败与 listener 终止确认。
-
-关键 parser、timeout 与 cleanup 分支要做 mutation kill。场景 E2E 随后通过安装后的 `@niceeval/testkit` 入口实际调用这些原语；
-不再为同一实现另造 tarball consumer 或用 NiceEval 作 Testkit 的测试 oracle。
+这些场景已经让主要原语经过真实进程、目录、HTTP 和 cleanup。为某个边缘输入另造 Testkit fixture 仍是在第二层重复同一机械命题，
+不因更易定位而获得 Unit 资格。若场景无法稳定制造某个设施故障，就按[不自动化](README.md#不自动化)处置，不建立脆弱自测。
 
 ## 构建与采用门禁
 
-1. `pnpm --filter @niceeval/testkit test` 与 `typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行它们。
+1. `pnpm --filter @niceeval/testkit typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行，Testkit 不设独立 Unit 命令。
 2. 每次根 runner invocation 只在确有 `harness.testkit: true` 消费者时 clean-build 当前 Testkit 一次；不 pack、不上传。
 3. runner 只在隔离副本中加入指向 `packages/testkit` 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
    resolution，安装后的包名与版本正确，realpath 位于副本自己的 virtual store，而不是 checkout 源目录。

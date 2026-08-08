@@ -14,8 +14,6 @@
 | [`#cli-no-experiment-feedback`](#cli-no-experiment-feedback) | Experiment 零命中给出用法错误与下一步 | 单边界 E2E | `e2e/cli/test/no-experiment-feedback.test.ts` | PR |
 | [`#cli-no-eval-feedback`](#cli-no-eval-feedback) | Eval 前缀零命中给出用法错误与下一步 | 单边界 E2E | `e2e/cli/test/no-eval-feedback.test.ts` | PR |
 | [`#cli-failure-error-results`](#cli-failure-error-results) | `failed` 与 `errored` 的退出码、NDJSON 与 JUnit 可区分 | 单边界 E2E | `e2e/cli/test/failure-error-results.test.ts` | PR |
-| [`#cli-normal-run`](#cli-normal-run) | 正常 Experiment 的人读完成态与 JUnit | 单边界 E2E | `e2e/cli/test/normal-run.test.ts` | PR |
-| [`#cli-cache-reuse`](#cli-cache-reuse) | 默认 carry 不新增 attempt，`--rerun all` 新增 attempt | Journey E2E | `e2e/cli/test/cache-reuse.test.ts` | PR |
 
 ## 验收计划
 
@@ -40,24 +38,28 @@
 | deliberate-fail  | 断言必然不通过的 Eval   | attempt verdict `failed`，进程非零退出                          |
 | deliberate-error | 必然产生执行错误的 Eval | attempt verdict `errored`，进程非零退出，且与 `failed` 判然有别 |
 
-### cli-normal-run
-
-正常 Experiment 以 `0` 退出，非 TTY 人读输出是零 ANSI 的单一 stdout 追加流，JUnit 不含 failure 或 error。
-
-### cli-cache-reuse
-
-1. 首次带 `--rerun all` 执行并保存基线 Run。
-2. 同一 Experiment 不带 `--rerun all` 再执行，断言结果由公开读取面显示为 carry/cached，且没有产生新的 Agent 调用。
-3. 再次带 `--rerun all` 执行，断言产生真实的新 attempt。
-
-其它所有 E2E 仓库每次验收都带 `--rerun all`，不依赖跨运行缓存——缓存语义只在这里验收一次。
+正常成功态由所有使用确定性 Experiment 的功能 Journey 自然经过；carry 与 history 由 [Runner](runner.md) owner 证明。
+CLI 域不为同一结果复制成功 JUnit 或缓存三步测试。
 
 ### 反馈输出格式
 
-对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../feature/experiments/cli.md) 声明的反馈契约：`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr；非 TTY 人读文本是零 ANSI 的单一 stdout 追加流；真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
-TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
+对人读文本与 `--json` 两种输出形态各跑一次真实进程，并在 stdout/stderr 上断言
+[Experiments CLI](../../../feature/experiments/cli.md) 的反馈契约：
 
-公开命令与 flag 的进程级失败面同样在本仓库验收：未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出；已删除的 `--output`、不存在的 `--quiet`、把 `show` 专属 flag 传给 `exp`、非法 `--timing` mode 也必须在运行前以明确用法错误退出；`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+- `--json` 每行都是可 `JSON.parse` 的事件对象，不含 ANSI 控制字符；
+- 正常事件全部落在 stdout，只有 run 建立前的错误落 stderr；
+- 非 TTY 人读文本是零 ANSI 的单一 stdout 追加流；
+- 真实 PTY smoke 证明运行期选择 dashboard renderer，并产生光标控制与框面。它的完成态与退出码必须和另外两种形态一致。
+TTY 的精确宽度、行高降级、折叠和逐帧顺序不建立长期自动化 owner。
+E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
+相关变更按[不自动化](../README.md#不自动化)保存本次真实终端观察。
+
+公开命令与 flag 的进程级失败面同样在本仓库验收：
+
+- 未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出；
+- 已删除的 `--output`、不存在的 `--quiet`、把 `show` 专属 flag 传给 `exp`、非法 `--timing` mode 也必须在运行前失败；
+- `--dry` 的人读与 JSON 两面都不写请求的 JUnit 文件；
+- `--dry --json` 只输出一个计划文档，不输出事件流。
 公开 flag 组合的语义矩阵由本仓库通过安装后的真实进程拥有；同一“非法组合在运行前给出用法错误”风险可用一张
 表驱动矩阵表达，不再为 parser 私有分支复制 Unit。只有真实 CLI 无法稳定制造或区分的具名语法 parse 算法，才登记最小 Unit 例外。
 

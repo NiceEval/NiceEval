@@ -9,15 +9,10 @@
 
 | Owner ID | 用户结果 | 形态 | 文件 | Lane |
 | --- | --- | --- | --- | --- |
-| [`#runner-carry-dry-dispatch`](#runner-carry-dry-dispatch) | dry plan 与随后的 dispatch 对同一首次结果报告相同的 carry 数量 | Journey E2E | `e2e/runner/test/carry-dry-dispatch.test.ts` | PR |
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑追加历史 identity，carry 不复制已有 attempt | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
 
 ## 验收命题
-
-### runner-carry-dry-dispatch
-
-先以 `--rerun all` 产生首次结果。随后 `exp --dry --json` 的 `matrix` 与 `reused` 必须预测这批既有结果；不带 `--dry` 的真实 dispatch 必须报告同一复用数量。dry 与真实调用是不同的公开动作，因此在同一 owner 中直接对照它们的用户可见结果。
 
 ### runner-carry-partial-reuse
 

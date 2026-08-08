@@ -95,7 +95,7 @@ discover → select → pack candidate → build Testkit → isolate → prepare
 失败、取消和 signal 都必须走 collect / cleanup。`--keep-workdir` 仅供显式本地诊断。
 
 每次安装核对 NiceEval candidate 字节身份，并核对 Testkit 来自当前 checkout 的目录 resolution 与副本内安装路径。
-Testkit 先用非 NiceEval fixture 测试自身原语，再作为机械设施进入产品场景；它不获得第二份 artifact 身份。
+Testkit 以 typecheck、clean build 和真实产品场景中的使用结果验收；它不保留独立 Unit，也不获得第二份 artifact 身份。
 
 阶段收据保存产生结果的进程本身的 exit / signal。验证不得用 `command | head`、`command | tail` 后读取管道末端退出码；
 需要裁剪控制台输出时，先把 producer 的完整 stdout / stderr 与退出状态落入 artifact，再只裁剪展示副本。Repo 启动的 view、mock、
@@ -119,7 +119,7 @@ Fork 与同仓 PR 使用同一无密钥门禁。禁止用 `pull_request_target` 
 ```text
 prepare job
   ├─ e2e plan --lane <lane> --json
-  ├─ Testkit test / typecheck
+  ├─ Testkit typecheck / clean build
   └─ pack candidate.tgz + sha256，上传 artifact
              │
              ▼

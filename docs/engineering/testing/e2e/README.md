@@ -143,7 +143,9 @@ Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、car
 
 ## Package 与 CLI
 
-Package Repo 按 [Package 外部消费契约](package.md)使用真实 `package.json` 形态验证 CJS、ESM、无 `type`、optional peer 缺席、跨格式运行时身份、外部 Report 和公开 example。
+Package Repo 按 [Package 外部消费契约](package.md)用默认 CommonJS 项目的 `init → list` Journey 验证安装后的 CLI、tsx CJS hook
+与 `require` exports 接线，并检查私有 Testkit 没有进入产品包。ESM 与功能子路径由各功能 Repo 的真实 Journey 自然消费，
+不在 Package Repo 复制入口清单。
 CLI Repo 验证 argv、stdin / stdout / stderr、pipe、PTY、exit 与 JSON / NDJSON / JUnit。两者都执行安装后的 binary，
 不能直接调用 `src/cli.ts` 或 mock commander / parseArgs 后宣称公开命令已通过。
 

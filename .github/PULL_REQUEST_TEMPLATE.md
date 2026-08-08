@@ -107,5 +107,6 @@ a new environment variable.
 - Fixed conditions: <lockfile, fixture, seed, clock policy, and image digest or "not applicable">
 - Repeatability: <fresh copies 1/2/3, same-copy runs 1/2, default parallel, file/title isolation, and resource cleanup results>
 - Unit exception or no automation: <why E2E cannot distinguish this risk through a stable boundary, or the AI manual verification conditions and unprotected risk>
+- Unit count: <`pnpm test` Tests; total must be 200 or fewer; Testkit has no independent Unit suite>
 - Manual observation: <real runtime/version, production entry, AI actions, public result, and unprotected risk; "not applicable" for automation>
 - User impact: <the user-visible behavior protected by this test>

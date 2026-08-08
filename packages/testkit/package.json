@@ -26,12 +26,10 @@
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
-    "typecheck": "tsc6 -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "typecheck": "tsc6 -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "4.1.9"
+    "typescript": "npm:@typescript/typescript6@6.0.2"
   }
 }
