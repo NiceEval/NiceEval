@@ -92,6 +92,8 @@ Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session �
 `stream.id` 标识一个可独立封口和重新执行的流。
 Attempt 事件使用 Attempt stream；Run 级调度、setup、teardown 与共享 activity 使用 Run stream。
 每个 stream 的 `sequence` 从零连续递增，顺序由 Observation Hub 收到事件的次序决定，不用墙钟推断并发事件的先后。
+该 sequence 只回答 Hub 接收先后，不能证明并发 Agent session 之间的 start、finish 或因果顺序。
+需要行为顺序的 projector 只能在同一 session 内使用 turn 与 event ordinal。
 
 `observedAt` 是 Hub 接收事件时的墙钟，`monotonicOffsetNs` 是相对 stream 起点的本地单调时钟。
 `occurredAt` 只在外部协议可信地给出原始时间时存在，不参与 NiceEval 事件排序。

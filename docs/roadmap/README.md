@@ -32,3 +32,4 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Plugins](plugins/README.md) —— 在 Eval 与 Experiment 上复用跨 Sandbox、Agent 与生命周期的评估条件
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
+- [Assertion 作者面](assertion-authoring/README.md) —— typed require、有数据的行为顺序、可诊断 matcher 与结构化 scope
