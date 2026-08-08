@@ -13,7 +13,7 @@ NiceEval 所有可见面共用一套设计语言：**层级靠排版和留白，
 |---|---|---|
 | 报告组件（`niceeval/report`） | 官方 stylesheet 每个用点读 `var(--niceeval-*, <basalt 兜底>)` | [Library · 主题](docs/feature/reports/library/theme.md) |
 | `niceeval view` 宿主 chrome | `src/view/styles.css` 的 `:root` 短名读同一组令牌、同一份兜底 | [View](docs/feature/reports/view.md) |
-| 内部文档与公开站的手绘 SVG | 共用样式段手抄 basalt 值，`pnpm test:docs` 逐张比对 | [SVG 图示的视觉契约](docs/SVG-DESIGN.md) |
+| 内部文档与公开站的手绘 SVG | 共用样式段手抄 basalt 值，`pnpm lint` 逐张比对 | [SVG 图示的视觉契约](docs/SVG-DESIGN.md) |
 | 产品站点（`site/`） | `app/globals.css` 的 `:root` 短名直接钉死 basalt 值 | [site/README.md](site/README.md) |
 
 产品站点 `site/`（landing page）的叙事自由，观感不自由：色板、零圆角、无渐变无阴影
@@ -61,11 +61,10 @@ basalt 也因此不需要自带一行 CSS。
 | 不变量 | 守护 |
 |---|---|
 | 官方 CSS（report 与 view）的令牌兜底 = basalt | `test/unit/report-theme-tokens.test.ts` |
-| SVG 图示的样式段、用语与色值不漂移 | `pnpm test:docs`（`test/docs/`） |
+| SVG 图示的样式段、用语与色值不漂移 | `pnpm lint`（`lint/docs/`） |
 
 stylesheet 类名与组件发射类名是否对齐不设 src 层守护：样式断没断只有真实产物能证明，
-验收归 e2e 报告域对导出站的计算样式与几何断言（候选断言词表见
-[testing/dsl](docs/roadmap/testing/dsl/README.md)）。
+验收归 [E2E 报告域](docs/engineering/testing/e2e/report.md)对导出站的计算样式与几何断言。
 
 改色的唯一动线：改 `src/report/theme.ts` 的 basalt → 按守护红灯同步 CSS 兜底与
 SVG 共用样式段。反向（先改 CSS 再回填主题）不成立，守护会拦。
