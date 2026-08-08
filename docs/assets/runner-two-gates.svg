@@ -41,7 +41,7 @@
   <path d="M160 88 H1192" class="rule-strong" />
   <text x="32" y="128" class="label mono">Attempt A</text>
   <rect x="160.5" y="104.5" width="1031" height="136" class="box" />
-  <text x="176" y="134" class="label">实验并发限制：全程持有</text>
+  <text x="176" y="134" class="label">实验并发限制：退避不释放</text>
   <rect x="192.5" y="160.5" width="191" height="48" class="box-2" /><text x="212" y="190">等 setup</text>
   <rect x="400.5" y="160.5" width="239" height="48" class="box-2 c0-s" /><text x="420" y="190" class="mono">send 1</text>
   <rect x="656.5" y="160.5" width="191" height="48" class="box-2 warn-s" /><text x="676" y="190" class="warn">退避：让位</text>

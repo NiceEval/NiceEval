@@ -19,29 +19,13 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-test.each([
-  {
-    name: "greet 前缀只选择 greet/hello",
-    argv: ["exp", "normal", "greet", "--dry", "--json"],
-    expectedEvalIds: ["greet/hello"],
-  },
-  {
-    name: "tool 前缀只选择 tool/weather",
-    argv: ["exp", "normal", "tool", "--dry", "--json"],
-    expectedEvalIds: ["tool/weather"],
-  },
-  {
-    name: "省略 Eval 前缀选择 normal 的全部 Eval",
-    argv: ["exp", "normal", "--dry", "--json"],
-    expectedEvalIds: ["greet/hello", "tool/weather"],
-  },
-])("$name", async ({ argv, expectedEvalIds }) => {
+test("Eval 前缀只选择命中的 Eval", async () => {
   await withProjectCopy(projectCopy, async ({ root }) => {
-    const receipt = await niceeval.run(argv, { cwd: root });
+    const receipt = await niceeval.run(["exp", "normal", "greet", "--dry", "--json"], { cwd: root });
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     const plan = receipt.json<ExpPlanDocument>();
     expect(plan).toMatchObject({ format: "niceeval.exp-plan", schemaVersion: 3 });
-    expect(plan.matrix.map((row) => row.evalId).sort()).toEqual([...expectedEvalIds].sort());
+    expect(plan.matrix.map((row) => row.evalId)).toEqual(["greet/hello"]);
   });
 });

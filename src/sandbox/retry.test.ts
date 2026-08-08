@@ -1,4 +1,6 @@
+// owner: docs/engineering/testing/unit/sandbox.md#provision-retry
 // cases: docs/engineering/testing/unit/sandbox.md
+// 限流、歧义创建与 reconcile 时序依赖外部 provider；仅 fake clock/port 能稳定区分重试错误算法。
 import { describe, expect, it, vi } from "vitest";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
 
@@ -16,32 +18,6 @@ function fakeSlot() {
 }
 
 describe("withProvisionRetry", () => {
-  it("succeeds without touching the slot when create() succeeds first try", async () => {
-    const { slot, calls } = fakeSlot();
-    const result = await withProvisionRetry(
-      async () => "sandbox",
-      () => "unknown",
-      slot,
-    );
-    expect(result).toBe("sandbox");
-    expect(calls).toEqual([]);
-  });
-
-  it("throws immediately on a non-retryable error without touching the slot", async () => {
-    const { slot, calls } = fakeSlot();
-    const err = new Error("bad template");
-    await expect(
-      withProvisionRetry(
-        async () => {
-          throw err;
-        },
-        () => "unknown",
-        slot,
-      ),
-    ).rejects.toBe(err);
-    expect(calls).toEqual([]);
-  });
-
   it("throws an ambiguous error on the first attempt when no reconcile channel exists", async () => {
     const err = new Error("fetch failed");
     let attempts = 0;

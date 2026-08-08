@@ -1,4 +1,6 @@
+// owner: docs/engineering/testing/unit/sandbox.md#buildkey-构建协调
 // cases: docs/engineering/testing/unit/sandbox.md
+// 真实 E2E 不能稳定控制 provider 的挂起、失败与时钟；这些 BuildKey 调度错误只在可控 seam 可穷举。
 // 覆盖类别:
 // - BuildKey single-flight、失败扇出和预算
 import { describe, expect, it } from "vitest";

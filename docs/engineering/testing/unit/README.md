@@ -5,7 +5,8 @@ Unit 不是功能实现的默认测试形态。它只负责 Journey 与单边界
 
 ## 存在资格
 
-新增或保留 Unit 前必须同时回答：
+新增或保留 Unit 前必须先回答：为什么真实 E2E 不能直接、稳定地制造输入并观察同一错误结果？
+回答“与其它 Unit 不重复”无效。通过这道门后，才继续回答：
 
 1. 它证明哪条产品契约或仓库约束？
 2. 删除它会让哪一种具名错误算法通过？
@@ -14,8 +15,11 @@ Unit 不是功能实现的默认测试形态。它只负责 Journey 与单边界
 5. 最小等价类矩阵是什么，是否已有 owner？
 6. 测试通过哪个公共 API、NiceEval 自有稳定 port 或集中测试 seam 进入？
 
-答不清时不写或退役。E2E 已完整证明同一命题时，Unit 只能保留能排除另一种错误实现的最小代表，不能复制整张矩阵。
+答不清时不写或退役。E2E 能直接证明同一命题时，Unit 全部删除；不能以另一种错误实现、定位速度或矩阵较小为由保留第二层 owner。
 直接 import 私有函数、锁调用顺序或散布私有模块路径，不满足稳定 seam 条件。
+
+这套资格对存量测试同样生效。当前文件存在、历史上曾经发现 bug、或 Feature 测试文档列过类别，都不提供保留资格。
+复核必须从产品契约和 E2E 观察面重新推导，不能从现有测试列表倒推需要保护的行为。
 
 ## 可能成为 Unit 例外的风险
 
@@ -76,15 +80,10 @@ Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值�
 ## Feature 测试文档
 
 | 产品域 | Unit owner 文档 |
-|---|---|
-| Eval | [eval.md](eval.md) |
+| --- | --- |
 | Experiments 与 Runner | [experiments-runner.md](experiments-runner.md) |
 | Sandbox | [sandbox.md](sandbox.md) |
-| Adapter 的自有确定性逻辑 | [adapters.md](adapters.md) |
-| Assertions | [assertions.md](assertions.md) |
 | Record | [record.md](record.md) |
-| Sample | [sample.md](sample.md) |
-| Reports | [reports.md](reports.md) |
 
 这些页面是 Unit 例外登记，不是测试数量清单。页面中没有 E2E 不足与稳定 seam 说明的类别，不能据此保留 Unit。
 
@@ -109,6 +108,7 @@ Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值�
 ## 运行与守护
 
 - `pnpm test`：无网络、无容器、无凭据；全量 60 秒内、单文件 5 秒内；
+- `pnpm test` 报告的 Tests 总数不得超过 200；Testkit 不设独立 Unit 套件；
 - `pnpm test <路径或名称>`：按 Feature 切片；
 - `pnpm run typecheck`：类型契约；
 - `pnpm test:docs`：`// owner:`、`// bug:`、索引与链接守护。

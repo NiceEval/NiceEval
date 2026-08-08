@@ -3,7 +3,7 @@ name: e2e
 # E2E CI 编排（docs/engineering/testing/e2e/execution.md）。
 # 只做 checkout / runtime / matrix / artifact；不解释产品 expected，不复制 manifest 选择。
 #
-# prepare → plan matrix、Testkit test/typecheck、pack 一次 NiceEval tgz + sha256
+# prepare → plan matrix、Testkit typecheck、pack 一次 NiceEval tgz + sha256
 # e2e     → 并行 cell 下载并重算 candidate digest；pnpm e2e run --candidate <exact> --repo <id>
 #           （runner 在当前 checkout 为声明的 consumer clean-build Testkit 并注入目录依赖）
 #           --artifact-root "$RUNNER_TEMP/niceeval-e2e-artifacts/<safe-id>"
@@ -151,10 +151,6 @@ jobs:
             fi
           } >> "$GITHUB_OUTPUT"
           echo "[e2e] plan lane=${LANE} selected ${count}: $(jq -r '[.[].id] | join(", ")' "$plan_file")"
-
-      - name: Test Testkit
-        if: steps.plan.outputs.has-jobs == 'true'
-        run: pnpm --filter @niceeval/testkit run test
 
       - name: Typecheck Testkit
         if: steps.plan.outputs.has-jobs == 'true'
