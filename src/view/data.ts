@@ -666,12 +666,12 @@ async function renderReportSlot(
     assets: import("../report/extension/types.ts").PageRendererAssets;
   }>;
 }> {
-  // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
-  // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../report/runtime/host.ts(两个宿主共用的中性联系面)。
+  // 报告 runtime 与 view 同属一个预编译 canonical graph，不受消费方 cwd/tsconfig 影响；
+  // 装载与渲染统一经 ../report/runtime/host.ts(两个宿主共用的中性联系面)。
   // config 每次重建 fresh 装载——不能吃启动时那份已求值的 report 对象,否则改 reports/*.tsx
   // 只会触发 watch/SSE,内容仍是旧定义。
   const loadDefinitions = async (): Promise<LoadedDefinitions> => {
-    // 配置模块由 raw src 执行，host 则消费 dist/report；私有品牌必须在 host 边界重新证明。
+    // 配置模块与 host 都落到同一 canonical graph；私有品牌不再跨源码/构建图重新证明。
     let configReport: ReportDefinition | undefined;
     let configTheme: ThemeDefinition | undefined;
     if (config !== undefined) {
@@ -698,13 +698,13 @@ async function renderReportSlot(
 
   // 参数化页的唯一 href 派生(target.ts 的 `targetHref`),两个宿主(scope pages 与参数化页
   // 自己的内容)共用同一份纯函数,不各自重新拼字符串。
-  const { targetHref } = await import("../../dist/report/runtime/target.js");
+  const { targetHref } = await import("../report/runtime/target.ts");
 
   // 自定义报告替换的是可见页面，不该顺手切断官方组件的下钻目标。核心不区分实体种类
   // (docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)：内建 `standard`
   // 的每一张参数化页(attempt、experiment……)按 id 补位，报告显式声明同 id 页时覆盖它，
   // 且不把补位页塞进导航或报告元数据。
-  const { standard } = await import("../../dist/report/built-in/index.js");
+  const { standard } = await import("../report/built-in/index.tsx");
   const paramPageDefs = new Map<string, ReportPage>();
   for (const p of (standard as ReportDefinition).pages) {
     if (p.params !== undefined) paramPageDefs.set(p.id, p as ReportPage);
