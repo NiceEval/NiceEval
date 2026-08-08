@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineExperiment } from "niceeval";
-import { hangingAgent } from "../agents/deterministic.ts";
+import { hangingAgent, lifecycleSandbox } from "../agents/deterministic.ts";
 
 interface BackendInfo { pid: number; port: number }
 
@@ -37,7 +37,11 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<bool
 export default defineExperiment({
   description: "SIGINT drains experiment teardown",
   agent: hangingAgent,
+  sandbox: lifecycleSandbox,
   evals: ["interrupt"],
+  attempts: 2,
+  maxConcurrency: 1,
+  sandboxReuse: true,
   setup: async (ctx) => {
     const child = spawn(process.execPath, ["fixtures/backend.mjs", infoPath], {
       cwd: process.cwd(),
