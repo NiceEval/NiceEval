@@ -36,21 +36,44 @@ Report artifact 可以独立定义面向消费者的格式，但改变该格式�
 事件业务字段只存在于自己的 `body` schema；新增事件种类不会扩大其它事件或 frozen core schema。
 
 ```ts
+interface AttemptObservationScopeBase {
+  kind: "attempt";
+  runId: string;
+  experimentId: string;
+  attemptId: string;
+  evalId: string;
+}
+
 type ObservationScope =
   | {
       kind: "run";
       runId: string;
       experimentId: string;
     }
-  | {
-      kind: "attempt";
-      runId: string;
-      experimentId: string;
-      attemptId: string;
-      evalId: string;
-      agentSessionId?: string;
-      turnId?: string;
-    };
+  | (AttemptObservationScopeBase & {
+      agentSessionId?: never;
+      turnId?: never;
+      turnOrdinal?: never;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId?: never;
+      turnOrdinal?: never;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId: string;
+      turnOrdinal: number;
+      eventOrdinal?: never;
+    })
+  | (AttemptObservationScopeBase & {
+      agentSessionId: string;
+      turnId: string;
+      turnOrdinal: number;
+      eventOrdinal: number;
+    });
 
 interface ObservationEvent<T extends JsonValue = JsonValue> {
   format: "niceeval.observation";
@@ -86,12 +109,23 @@ interface ObservationEvent<T extends JsonValue = JsonValue> {
 `name` 是开放、带命名空间的语义名，例如 `niceeval.attempt.started`、`niceeval.agent.operation.started`。
 `schema` 标识该事件 body 的独立版本，例如 `niceeval.agent.operation.started/1`。
 
-durable scope 只有 Run 与 Attempt 两种穷尽形状。
-Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt，`turnId` 存在时必须同时存在 `agentSessionId`。
+durable scope 只有 Run 与 Attempt 两种顶层形状。
+Attempt scope 再穷尽区分 attempt、session、turn 与 turn event。
+`turnId` 存在时必须同时写 session identity 与 turnOrdinal；Agent behavior event 还必须写 eventOrdinal。
+
+SessionManager 在一次 `send` / `respond` 开始时分配零起点、单调递增且不复用的 `turnOrdinal`。
+core 创建的 eval user message 使用 `eventOrdinal: 0`，Adapter 随后 yield 的 event frame 按原顺序取得 1、2、3。
+
+Outcome 不是 event，不占 eventOrdinal。
+同一 Agent Session 不允许并发 `send` / `respond`，所以 `(turnOrdinal, eventOrdinal)` 形成 session 内稳定全序。
+
+Invocation 是 live channel 的聚合身份，不写入 Record；Agent Session 与 Turn 只能细分 Attempt。
 
 `stream.id` 标识一个可独立封口和重新执行的流。
 Attempt 事件使用 Attempt stream；Run 级调度、setup、teardown 与共享 activity 使用 Run stream。
 每个 stream 的 `sequence` 从零连续递增，顺序由 Observation Hub 收到事件的次序决定，不用墙钟推断并发事件的先后。
+该 sequence 只回答 Hub 接收先后，不能证明并发 Agent session 之间的 start、finish 或因果顺序。
+需要行为顺序的 projector 只能在同一 session 内使用 turn 与 event ordinal。
 
 `observedAt` 是 Hub 接收事件时的墙钟，`monotonicOffsetNs` 是相对 stream 起点的本地单调时钟。
 `occurredAt` 只在外部协议可信地给出原始时间时存在，不参与 NiceEval 事件排序。
@@ -126,6 +160,18 @@ Reader 用 `(name, schema)` 查找 decoder；不知道的事件仍以 opaque eve
 | Sandbox | command、退出状态、workspace change、cleanup 与 physical release | 大值由 Record sink 统一截断并显式标记 |
 | Telemetry | 实际收到的 OTLP log、span 与采集 Diagnostic | 原始 name/attributes 保留，canonical kind 是投影 |
 | Usage | provider 或 Agent 实际返回的 token 与账单 | 估算成本不属于 Observation |
+
+Agent operation 的 original command classification 属于 Adapter 归一职责。
+Adapter 按原生协议把每笔 tool operation 穷尽标为 not-command，或标为 command 并交付结构化 original invocation / opaque reason。
+
+同一份 Observation Protocol normalizer 随后只从 available original tokens 产生 durable logical invocation；它不读取 input 或 raw shell text。
+direct command、`pnpm exec`、`pnpm --silent exec` 与无选项 `npx` 的逻辑语义因此跨 Adapter 一致，Assertion core 不再实现 wrapper parser。
+
+core 只按 operation identity 配对 start 与 finish。
+它不能根据 `shell`、`Bash`、`command_execution` 等名字，或 `command` / `cmd` / `program + args` 输入形状补造 command fact。
+
+非权威显示摘要可以为了人读从 input 猜测 command text，但必须明确标为 Projection。
+这类摘要不能成为 Assertion、Claim、Projector 输入或 evidence coverage 的依据。
 
 短期 `progress`、spinner tick、heartbeat 与 renderer redraw 属于 ephemeral 反馈。
 它们使用独立的 live stream，不占用 durable stream 的 sequence。

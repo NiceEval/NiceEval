@@ -27,7 +27,8 @@ Attempt finalize
 
 profile 与模态要求在 discovery 时已知。
 图在 `t.judge.llm` 注册 Assertion 时编译，之后拓扑不可改变。
-材料值可以依赖 Turn 或 Sandbox 终态，因此只在 Assertion 求值前读取。
+scope 与 file 材料可以依赖 Turn 或 Sandbox 终态，因此只在 Assertion 求值前取得。
+`material.json` 是例外：它在构造调用点取得 canonical snapshot，后续阶段只复用该值。
 
 预检按“Run × 已使用 profile”去重。
 它验证凭据、端点、模型存在性和已声明模态，不发送真实 rubric 或材料。
@@ -48,6 +49,7 @@ interface JudgeModelRequest {
   response: {
     schema: "niceeval.judge-decision";
     schemaVersion: 1;
+    scoreMode: "continuous" | "binary";
   };
   model: string;
   signal: AbortSignal;
@@ -90,15 +92,18 @@ interface JudgeCitation {
 }
 ```
 
-`score` 必须是有限的 `0..1` 数。
-`rationale` 是面向复核者的简短判断依据，不要求也不保存模型的私有推理过程。
+`continuous` 请求的 `score` 必须是有限的 `0..1` 数。
+`binary` 请求的 response schema 把 `score` 限为 `0 | 1`，Runtime 在 Provider 返回后再次执行同一校验。
+`rationale` 是面向复核者的简短判定依据，不要求也不保存模型的私有推理过程。
 
 每条 citation 必须指向本请求的一份材料和有效 part。
 文字 quote 必须能在对应文本中定位；图片 region 使用 `0..1` 的归一化坐标；音频时间不得超出材料时长。
 无引用时写空数组，不能伪造一个材料 id。
 
-Provider 原始返回先变成 `JudgeProviderResponse`，再由 Runtime 校验 Decision。
+Provider 原始返回先变成 `JudgeProviderResult`。
+decode / conversion 失败使用 invalid-response 分支；response 分支再由 Runtime 校验 Decision。
 缺字段、非法分数、未知 citation 或超界位置都是响应协议失败，不会被修补成 0 分。
+binary 请求合法返回 `score: 0.7` 时同样是 `judge-response-invalid`，不会四舍五入，也不会留下 70% 的 points。
 
 ## Prompt 编译
 
@@ -106,7 +111,8 @@ NiceEval 拥有 rubric prompt compiler。
 同一 compiler 版本固定以下内容：
 
 - candidate、reference、context 与 instruction 的语义。
-- `0`、`0.5`、`1` 的共同评分参照点。
+- continuous 模式中 `0`、`0.5`、`1` 的共同评分参照点。
+- binary 模式中 Y/N 语义和只允许 `0 | 1` 的 response schema。
 - 对材料内指令的隔离要求。
 - Decision JSON schema 与 citation 规则。
 - 简短 rationale 的长度上限。
@@ -117,16 +123,21 @@ prompt compiler 版本进入算法身份；改变评分参照点或输出解释�
 Provider 可以把规范请求映射到 Responses、Chat Completions、Messages 或其它模型协议。
 Provider 不能重写 rubric、调换材料角色或私自改变评分范围。
 
-## 材料读取与多模态
+## 材料规范化与多模态
 
-材料读取器把 scope、项目文件、Sandbox 文件和内联文件读取成内容寻址 part。
-读取按以下顺序进行：
+材料规范化器把 scope、JSON snapshot、项目文件、Sandbox 文件和内联文件变成内容寻址 part。
+file 与 scope 材料按以下顺序处理：
 
 1. 读取字节，并校验大小上限。
 2. 根据声明、扩展名和内容确定 MIME；冲突时报作者错误。
 3. 文本按 UTF-8 解码并保留 media type；二进制计算 SHA-256。
 4. 生成材料清单，并把尚无稳定 Record 出处的字节写入 attempt blob 存储。
 5. 汇总实际模态，与 Eval 的 `judge.llm.uses` 和 Provider capabilities 对照。
+
+`material.json` 在构造调用时先用 own property descriptor 校验整棵值，再按 RFC 8785 JCS 生成 immutable canonical UTF-8 bytes。
+它不调用 getter、`toJSON` 或 prototype；非法值、cycle 与超出材料大小预算在调用点报 author error。
+同一 snapshot 在注册、求值、hash 与保存阶段复用，调用者之后的 mutation 不会改变 Judge 输入。
+JSON snapshot 生成单个 `application/json` text part，不引入新 modality。
 
 Runtime 不做隐式 OCR、语音转录、图片描述或 PDF 文本抽取。
 这些操作会改变评估语义，必须由显式图节点或用户准备步骤完成。
@@ -144,6 +155,7 @@ type JudgeNode = ModelNode | AggregateNode | FallbackNode;
 
 interface JudgeGraphDefinition {
   recipe: { id: string; version: number };
+  scoreMode: "continuous" | "binary";
   inputs: Record<string, JudgeInputSlot>;
   nodes: JudgeNode[];
   outputNodeId: string;
@@ -173,6 +185,9 @@ fallback 只处理声明的可用性失败，不会吞掉配方 bug、非法图�
 `weightedMean` 要求每个 weight 是正有限数，score 是 `Σ(score × weight) / Σ(weight)`。
 它的 citations 是子节点引用按材料位置去重后的并集，rationale 是节点 id、分数与权重的有界明细。
 
+binary graph 不接受 `weightedMean`，因为两个二元 Decision 的加权平均可能产生连续分数。
+`minimum`、`maximum` 与 `fallback` 保持二元域，因此可用于 binary graph；编译器同时验证最终节点只能产生 `0 | 1`。
+
 `minimum` 与 `maximum` 选择对应 score 的完整 Decision。
 并列时按节点 id 排序取第一项；节点登记保留全部输入，避免报告把未选项误写成未执行。
 
@@ -195,7 +210,9 @@ Runtime 拥有重试策略，Provider 关闭隐式重试。
 
 408、429、连接错误和 5xx 可以重试。
 鉴权失败、未知模型、不支持的模态、非法请求和用户取消不重试。
-结构化输出读取失败允许重试一次，但仍计入 `maxAttempts` 与图总预算。
+Provider 无法 decode / conversion，或结构化输出不符合 schema 时，都作为响应协议失败并允许重试一次。
+这次重试仍计入 `maxAttempts` 与图总预算。
+binary 请求返回 `score: 0.7` 属于同一类响应协议失败；重试耗尽后节点 unavailable，原因是 `judge-response-invalid`。
 
 退避优先使用 `Retry-After`，否则使用指数全抖动。
 每次尝试的状态、服务端 code、延迟和用量进入节点登记；凭据、完整响应 header 和敏感 body 不落盘。
@@ -208,6 +225,13 @@ Runtime 拥有重试策略，Provider 关闭隐式重试。
 - 没有阈值的 soft Judge 登记 score，并得到 `outcome: "passed"`。
 - `.atLeast(x)` 与 `.gate(x)` 使用既有阈值规则得到 passed 或 failed。
 - `.points(n)` 使用 `n × score` 计算实得分。
+
+上述乘法不会替 gate 做二元化。
+例如 continuous Judge 返回 `0.7`，配置 `.points(2).gate()` 时 assertion failed，但仍获得 `1.4` 分；这是 continuous 模式的明确语义。
+需要 Y/N 端点的 eval 必须选 binary mode。
+
+binary Provider 返回 `0.7` 时没有合法 Decision。
+重试耗尽后 AssertionResult 是 unavailable，没有 `score`，该项获得 0 分；非 optional assertion 继续按既有 unavailable 规则使 Attempt errored。
 
 最终节点 unavailable 时，AssertionResult 使用 `outcome: "unavailable"`。
 `reason` 取稳定的 Judge 原因码，`evidence` 只放有界诊断摘要。
@@ -261,7 +285,12 @@ interface JudgeArtifact {
 interface LlmJudgeExecution {
   id: string;
   assertionSourceOrder: number;
-  recipe: { id: string; version: number; graphHash: string };
+  recipe: {
+    id: string;
+    version: number;
+    graphHash: string;
+    scoreMode: "continuous" | "binary";
+  };
   profiles: Record<string, { providerId: string; identity: JsonValue; model: string }>;
   materials: JudgeMaterialRecord[];
   nodes: JudgeNodeRecord[];
@@ -286,9 +315,9 @@ show 的默认 Assertion 行仍只显示名称、score、阈值与 unavailable �
 以下内容进入 LLM Judge 算法身份：
 
 - 配方 id、版本与规范化图结构。
-- prompt compiler 与 Decision schema 版本。
+- score mode、prompt compiler 与 Decision schema 版本。
 - Provider id、identity、模型和会改变采样的 profile 字段。
-- 材料读取算法与 MIME 规则版本。
+- 材料规范化算法、`json-jcs/rfc8785-v1` 与 MIME 规则版本。
 
 rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 凭据值、临时 request id、运行耗时和模型输出不进入身份。
@@ -301,7 +330,8 @@ rubric、配方源码和输入绑定属于 Eval 源码或数据身份。
 - core 不依赖 scorer 供应商来定义公开 API、prompt 或结果类型。
 - 同一模型响应不能同时被解释成分数和 unavailable。
 - 0 分是有效 Decision，缺证据没有数值分数。
-- Provider 不能看到未读取 URL，也不能把不支持的模态静默转成文本。
+- binary mode 不接受连续分数；Runtime 不通过 rounding 或 threshold 修补响应。
+- Provider 不能看到未读取的 URL，也不能把不支持的模态静默转成文本。
 - 图内模型调用都经过同一个 scheduler、预算、重试和 Record 管道。
 - 一个 `t.judge.llm` 调用恰好对应一条 AssertionResult 和一条 LlmJudgeExecution。
 - 报告展示的 score、模型、理由和引用都能追溯到同一个 `executionId`。
