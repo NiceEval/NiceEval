@@ -39,6 +39,11 @@ export type { ResolvedPage } from "./resolved-page.ts";
 // build:package 不依赖尚未生成的自引用声明文件。
   const BUILT_IN_REPORT_ENTRY: string = "niceeval/report/built-in";
 
+// Source hosts must enter the precompiled report graph through its public
+// entry point too. The string annotation keeps the first package build from
+// depending on generated self-reference declarations.
+const BUILT_IN_REPORT_ENTRY: string = "niceeval/report/built-in";
+
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
 

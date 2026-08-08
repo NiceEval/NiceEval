@@ -217,9 +217,9 @@ async function writeEsmFacade(outputRoot, source, valueNames, extension = ".mjs"
   const facadeFile = runtimePath(source, extension);
   const output = join(outputRoot, facadeFile);
   const cjsSpecifier = `./${basename(cjsFile)}`;
-  // 两种 ESM façade 都从同一份 canonical CJS cache 取值，保持 import / require
-  // 的运行时身份一致；Vite 对 .js 兼容 façade 的静态 CJS default interop 会把
-  // 默认导出变成 undefined，因此这里保留显式 createRequire bridge。
+  // Both ESM facades read the canonical CJS cache so import() and require()
+  // observe one runtime identity. Vite's static CJS default interop can turn
+  // the default export into undefined, so use an explicit createRequire bridge.
   const lines = [
     'import { createRequire as __niceevalCreateRequire } from "node:module";',
     "const __niceevalRequire = __niceevalCreateRequire(import.meta.url);",
