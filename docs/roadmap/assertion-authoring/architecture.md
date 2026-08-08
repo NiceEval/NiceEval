@@ -54,7 +54,7 @@ executable 与 args 保留提交给执行边界的原始 token。
 框架不做 basename、wrapper 展开、PATH resolution 或等价命令归一化。
 
 这条边界意味着 `pnpm exec niceeval ...` 的 executable 是 `pnpm`，不是 `niceeval`。
-Harness 要证明直接调用 `niceeval` 时，应在用户任务中明确要求直接命令；若允许 wrapper，就应把 wrapper 写成另一条可接受的用户需求，而不是让 core 猜。
+Eval 的 command rule 若只接受 `niceeval`，wrapper occurrence 就是确定 mismatch；core 不从用户题面或显示文本猜等价关系。
 
 ## Logical tool occurrence
 
@@ -76,10 +76,10 @@ interface LogicalToolOccurrence {
 ```
 
 command 是同一笔 tool occurrence 的标准投影，不拥有第二个 identity。
-`calledTool()` 与 `toolOrder()` 都在这组 occurrence 上运行。
+`ToolMatch.command`、input、output 与 status 都在这组 occurrence 上运行。
 
 orphan finish 没有可信 start、input 或 command classification。
-它只能进入协议诊断，不能满足 command selector。
+它只能进入协议诊断，不能满足 `ToolMatch.command`。
 
 ## Actions coverage
 
@@ -96,9 +96,9 @@ command invocation opaque 不必自动降低整个 actions channel。
 Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 它不能因为工具名是 `shell`，或 input 含 `command`、`cmd`、`program`、`args` 而宣称 complete。
 
-## Command selector 真值
+## ToolMatch command 真值
 
-一笔 occurrence 的 command selector 有三种结果：
+一笔 occurrence 的 command 字段有三种结果：
 
 | Evidence | Result |
 |---|---|
@@ -107,33 +107,28 @@ Adapter 无法判断 command / not-command 时必须降低 actions coverage。
 | invocation opaque | indeterminate |
 | not-command | definite mismatch |
 
-`calledTool()` 找到一笔 completed definite match 就可 passed。
+`calledTool()` 找到一笔 completed definite ToolMatch 就可 passed。
 没有 definite match，且 actions complete、没有 indeterminate candidate 时 failed；其余是 unavailable。
 
 ## `toolOrder()` 顺序
 
-省略 `sequential` 时，`toolOrder()` 保持既有 request subsequence：selector 只按 start 顺序出现，允许无关 occurrence 穿插。
+`toolOrder()` 按 request position 对 logical tool occurrences 做子序列匹配。
+每个 selector 由 `name` 和去掉 count 的同一份 `ToolMatch` 组成。
 
-`sequential: true` 使用 distinct completed occurrences，并要求：
+算法使用单调 cursor：
 
-```text
-A.start ─── A.finish        B.start ─── B.finish
-                    <
-```
+1. 从 cursor 后面的第一笔 occurrence 开始寻找当前 selector 的 definite match；
+2. 找到后消费该 actual index，并把 cursor 移到它后面；
+3. 下一项不能回用已经消费的 occurrence；
+4. 不相关的工具与 definite mismatch 可以穿插；
+5. 没有 definite subsequence，但 opaque 或 partial evidence 仍可能补出一条时 unavailable；
+6. actions complete 且不存在可行 subsequence 时 failed。
 
-相邻两项满足 `B.start > A.finish`。
-相等、交叠、并发或缺少 finish 都不能形成确定链。
+selector 的 `status: "completed"` 只证明该 occurrence 最终 completed。
+它不证明前一项 finish 早于后一项 start，也不建立工具输出被下一步消费的因果关系。
 
-算法按 EventPosition 建立候选图：
-
-1. 每个 selector 收集 definite 与 indeterminate candidates；
-2. 边只连接 distinct occurrence，并检查严格非重叠；
-3. 存在全 definite 完整路径时 passed；
-4. opaque 或 partial evidence 仍允许完整路径时 unavailable；
-5. required channel complete 且无可行路径时 failed。
-
-Turn 的最终 assistant message 在该 Turn 的 tool loop 结束后产生。
-因此 `await t.send()` 返回的 Turn 同时通过 `turn.succeeded()`，且最后一笔 sequential command 已 completed 时，不需要再把 `{ reply: "assistant" }` 作为顺序参数传入。
+Harness 的动态 locator 复用、show 输出是否影响后续动作，以及最终 reply 是否基于这些证据，都由 binary `turn.judge.llm()` 读取完整有序 Turn 判断。
+`toolOrder()` 不增加 message selector，也不冒充这项因果检查。
 
 ## 工具输入负断言
 
@@ -211,7 +206,7 @@ Eval 不能绕过 CLI 读取 `.niceeval` 私有文件，也不能要求 Agent �
 
 以下情况在登记边界同步报告 author error：
 
-- 空 command tuple、空 token、重复 excludes；
+- 空 executable、空 command token、重复 excludes；
 - 空 path exclusion、重复 expected changed path；
 - inline rule 同时出现互斥关系或空 contains；
 - `toolOrder()` 少于两项；
@@ -237,5 +232,5 @@ Eval 不能绕过 CLI 读取 `.niceeval` 私有文件，也不能要求 Agent �
 普通 API 不共享万能 `Rule` 联合，也不提供 `allOf`、`oneOf`、`not` 或 arbitrary predicate。
 一个新方法必须满足四个条件：有标准 observation owner、至少两个真实下游、可定义 coverage、无法由现有领域方法清楚表达。
 
-这次只扩展 `ToolSelector`、`toolOrder` options 与既有 `t.sandbox`。
+这次只扩展既有 `ToolMatch`、让 `toolOrder()` 接受同源 `ToolSelector`，并补齐既有 `t.sandbox`。
 Harness 的输出格式、case 名和评分 rubric 留在用例，不能反向进入 core API。

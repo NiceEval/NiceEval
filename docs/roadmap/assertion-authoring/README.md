@@ -3,13 +3,13 @@
 ## 用户需要
 
 Eval 作者要表达的是用户可观察的要求：Agent 是否按顺序运行命令、是否只修改允许的文件、是否通过公开输出完成诊断。
-作者不应先学习 Adapter 工具名、手写正则，或把一条 CLI 输出转换成 JSON Match AST。
+作者不应先学习 Adapter 的 command input shape、手写正则，或把一条 CLI 输出转换成 JSON Match AST。
 
 一条普通检查应直接从证据所属对象开始：
 
 ```ts
 turn.succeeded().gate();
-turn.toolOrder([{ command: ["niceeval", "exp", "local"], excludes: ["--dry", "--dry-run"] }, { command: ["niceeval", "show"] }], { sequential: true }).gate();
+turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
 t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
 ```
 
@@ -37,8 +37,8 @@ Inline rule 只在需要比较明确文本值时出现。
 
 本 Roadmap 只增加已有词汇无法诚实表达的能力：
 
-- `calledTool()` 与 `toolOrder()` 共用结构化 command selector；
-- `toolOrder(..., { sequential: true })` 证明前一项完成后下一项才开始；
+- 既有 `ToolMatch` 增加结构化 `command` 字段；
+- `toolOrder()` 接受由 `name` 与同一份 `ToolMatch` 组成的 selector；
 - `toolInputsExclude({ paths })` 检查已观察工具输入中的路径引用；
 - `t.sandbox.changedPaths()` / `noChanges()` 检查 agent 归因路径集合；
 - `t.sandbox.fileChanged(path, options)` 在同一条 change 中检查前后文本。
@@ -68,7 +68,7 @@ Harness 的用户要求是“用 `niceeval show` 完成诊断”，不是“产�
 
 ## 一条事实只断言一次
 
-顺序断言已经证明其中每个 command occurrence 存在。
+顺序断言已经证明其中每个 tool occurrence 存在。
 普通 E2E 不再为同一命令额外登记 `calledTool()` 得分项；只有 count、独立 status 或独立诊断确有用户价值时才增加存在性 Assertion。
 
 Score Assertion 直接链 `.gate()` 是零分硬要求。
