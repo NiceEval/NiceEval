@@ -79,5 +79,5 @@
 ## Release 安全
 
 NiceEval 产品发布只走 `.github/workflows/release.yml`：创建并推送 `vX.Y.Z` tag，由 CI 写版本、校验、发布 npm 并创建 GitHub Release。
-`@niceeval/testkit` 只走 `.github/workflows/release-testkit.yml` 与 `testkit-vX.Y.Z` tag；该 workflow 发布已经通过 pilot 的同一 tarball，
-不得触发产品发布。不要在本地运行 `npm publish`，也不要为了发布预先修改 main 上任一 `package.json` 版本。
+`@niceeval/testkit` 是当前 checkout 的 private workspace harness，不发布 npm、不打 release tag，也不建立独立 tarball 信任链。
+不要在本地运行 `npm publish`，也不要为了发布预先修改 main 上任一 `package.json` 版本。
