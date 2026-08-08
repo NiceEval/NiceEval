@@ -1,4 +1,5 @@
-// feature: docs/engineering/testing/e2e/README.md
+// owner: docs/engineering/testing/e2e/runner.md#runner-history-dedup
+// rerun: pnpm e2e --repo runner -- --run test/history-dedup.test.ts
 import { join, resolve } from "node:path";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";

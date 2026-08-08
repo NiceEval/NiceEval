@@ -85,11 +85,12 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - managed DinD缺 profile或完整 resources时在 Docker I/O前失败；profile resolution或 attestation失败绝不重试成 raw privileged。
   - 三种 access都默认得到以 Sandbox默认用户执行的 `docker info` readiness；用户声明可替换探针但不能关闭。
   - readiness的总 deadline同时限制每次 exec；单次 `docker info`卡住不得越过 `timeoutMs`。
-  - DinD provider-owned launcher是常量协议：替换原 Entrypoint/Cmd、预留 supervisor grace、逐项检查工具，并把协议修订进入 identity。
-  - launcher中的用户值只能作为 argv，不得拼进 shell source。
   - 不含临时文件系统的 raw DinD是 `Suspendable`；任意 Docker sandbox只要使用 `tmpfs`或只读 rootfs就是 `DestroyOnly`。不得把 stop/start后会丢失的 workspace、inner image、container、volume或 cache伪装成可保留。
-  - 仓库单元层保留 mount/GID/plan、fail-closed分支、endpoint兼容检查、supervisor Unix-only参数、readiness deadline/诊断、retention与 doctor Cmd契约；不使用子进程变量门控的本机 Docker测试。
-  - raw、managed、socket与 Compose的真实 Docker矩阵归 NiceEval-Eval E2E套件承接；在该套件完成迁移前，不把它记作本仓库已经获得的验证证据。
+  - Unit 只保留 mount/GID/plan、配置 fail-closed、identity、retention，以及可由 fake clock 稳定制造的 deadline / cleanup 错误算法。
+    不得通过断言 bootstrap、supervisor 或 doctor 的源码字符串与 Cmd 数组，冒充证明 inner daemon 能启动。
+  - raw、managed、socket与 Compose 的真实 Docker 矩阵只有在 NiceEval-Eval 能固定宿主内核、daemon 权限与嵌套网络并通过可靠性接管门后，才由 E2E 承接。
+    在此之前选择 `automation: none`：相关变更由 AI 从候选包的真实 CLI 入口手动验收并在 PR 留收据，不创建空 Repo、宿主条件门控测试或伪 owner。
+    此时也不把真实 Docker 矩阵记作本仓库已经获得的验证证据。
   - socket path和 profile alias是宿主本地 binding，不进可分享 identity；socket、raw DinD和 managed DinD的模式语义必须进入 identity。
 - **PATH 与 pathPrepend**：PATH 是 Sandbox 受管变量，声明面拒绝、运行面按序前置。
   - docker provider：factory `pathPrepend` 按声明顺序前置到受管 PATH（npm 全局 bin + 系统默认路径之前），验证顺序而不只验证包含关系；省略时受管 PATH 与不带 `pathPrepend` 的既有行为逐字节一致。

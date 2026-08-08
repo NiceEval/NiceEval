@@ -1,8 +1,11 @@
-# E2E：真实场景 Repo
+# E2E：真实用户结果的默认 owner
 
-E2E 只负责必须穿过真实公开边界的行为：候选包、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
-signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 Journey。CLI、Runner、Record、Report、Package 与 Lifecycle 使用
+产品行为默认从 E2E 开始裁决。E2E 穿过真实公开边界：candidate、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
+signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。CLI、Runner、Record、Report、Package 与 Lifecycle 使用
 功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 兼容性 Repo。
+
+跨多个公开接缝的完整用户目标由 Journey 拥有；原子公开结果由单边界 E2E 拥有。
+只有两者无法稳定制造、穷举或区分具名错误算法时，才进入 [Unit 例外](../unit/README.md)。
 
 ## Repo 是载体，不是测试模型
 
@@ -10,7 +13,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 
 - 自己的 `package.json` 与签入 lockfile；
 - NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
-- `e2e.json` 的 `harness.testkit: true`；根 runner 在副本中注入当次唯一、内容寻址的 Testkit tgz；
+- `e2e.json` 的 `harness.testkit: true`；根 runner clean-build 当前 checkout 的 Testkit，并只在副本中注入目录依赖；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
 - 原生 Vitest / Playwright 测试；
 - 只描述运行条件的 `e2e.json`。
@@ -22,7 +25,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Report 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
-- 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- 根 `pnpm e2e` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - 独立 [Testkit](../testkit.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
@@ -35,7 +38,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
-// feature: docs/feature/reports/show/json.md
+// owner: docs/engineering/testing/e2e/report.md#show-json-pipe
 // regression: memory/show-json-pipe-truncated-at-128k.md
 test("show --json 经 pipe 仍交付完整文档", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
@@ -64,6 +67,10 @@ init → exp --dry → exp → show --history → show @locator --execution → 
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
 Journey E2E 同时保留过程检查点和最终目标。
 
+Journey 的每个检查点只证明终态需要的身份、接线或前置事实。
+一个命题拥有独立输入、独立 expected、独立修复动作，或可以与终态独立失败时，必须拆成单边界 E2E 或另一 Journey。
+不能把选择、退出码、缓存、机器输出与导出等多个结果放进一个 `test()`，再用“长流程”掩盖多 owner。
+
 Journey E2E 使用独立项目副本和结果根。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
 ## 功能 Repo 与 Adapter Repo 不混用
@@ -71,6 +78,9 @@ Journey E2E 使用独立项目副本和结果根。失败后保留副本时，�
 功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
 或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
 昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
+
+live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 只断言协议身份与关系。
+结构化外部故障不算 pass，也不倒推确定性产品 owner 失败；同一 candidate 的 AI 真实兼容性验收可以替代本次有效 live 结果。
 
 ## 公开读回
 
@@ -100,8 +110,8 @@ e2e/adapter/
 | 本地协议 / Docker fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
 | Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | main / nightly / release |
 
-本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。两者若断言同一纯转换矩阵，完整矩阵留 Unit，
-Repo 各取有区分力的真实边界代表。
+本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。NiceEval 自有的协议语义矩阵默认留在
+确定性本地协议 E2E；只有它无法稳定穷举或区分的纯归一算法，才登记最小 Unit 例外。Live Repo 只取有区分力的真实兼容性代表。
 
 Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
 以及失败时的阶段和可行动诊断。不能只断言命令 exit 0。
@@ -159,6 +169,9 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case ta
 ```
 
 E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
+
+新增、接管或实质修改 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
+默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
 
 本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。
 

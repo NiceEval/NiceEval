@@ -3,9 +3,12 @@
 `@niceeval/testkit` 是场景 Repo 共用的机械设施，不是 NiceEval 产品行为 DSL。它减少进程、数据解码和资源终结代码的复制，
 但不替测试决定用户做什么、什么结果算正确。
 
-Testkit 的源码跟随当前 checkout，但场景 Repo 只消费根 runner 为本次运行产生的不可变 tarball。
-因此 monorepo 管源码与构建，tarball 管隔离安装，内容 digest 管身份；场景不通过 workspace symlink
-或 checkout 路径执行 Testkit。
+Testkit 的测试只验证这些进程、文件系统、HTTP 与资源生命周期原语本身；它们不能替产品 Journey 证明用户结果。
+不为 Testkit 再建立独立的测试设施分类，也不为测试 fixture 复刻第二套 runner。新增或实质修改的测试仍须命名
+具体机械故障、保持最小矩阵与稳定入口，并通过[可靠性接管门](README.md#可靠性重复运行)。
+
+Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后，把 `packages/testkit` 作为本地目录依赖只注入场景的隔离副本；
+它不先变成 tarball，也不获得发布 artifact、digest 或独立重新执行承诺。场景源不声明 workspace 或本地路径，避免绕开根 runner。
 
 ## 项目与身份
 
@@ -210,9 +213,9 @@ export function withHttpServer<T>(
 
 这些内容一旦上移，测试会变短，但读者无法从正文看出命令、独立 oracle 和失败接缝。
 
-## Testkit 自测
+## Testkit 测试
 
-Testkit candidate 不用 NiceEval 自测。固定 fixture process 分别产生：
+Testkit 不用 NiceEval 测自己。固定 fixture process 分别产生：
 
 - spawn error、提前退出、不同 exit / signal；
 - stdout / stderr 交错、分块 UTF-8 与超过展示上限的完整输出；
@@ -224,22 +227,21 @@ Testkit candidate 不用 NiceEval 自测。固定 fixture process 分别产生�
 - 项目复制的排除项、链接越界拒绝、正文与删除同时失败；
 - HTTP handler 的动态端口、请求传递、正文失败与 listener 终止确认。
 
-关键 parser、timeout 与 cleanup 分支要做 mutation kill。Meta-test 通过后，用即将注入场景的同一 tgz 做 clean-temp
-ESM/CJS 与类型入口验收，不再用 NiceEval 作 Testkit 的自测 oracle。
+关键 parser、timeout 与 cleanup 分支要做 mutation kill。场景 E2E 随后通过安装后的 `@niceeval/testkit` 入口实际调用这些原语；
+不再为同一实现另造 tarball consumer 或用 NiceEval 作 Testkit 的测试 oracle。
 
 ## 构建与采用门禁
 
 1. `pnpm --filter @niceeval/testkit test` 与 `typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行它们。
-2. 本地每次根 runner invocation 对当前 Testkit build/pack 一次；CI 上游 package job 也只 build/pack 一次，matrix 只下载同一份。
-3. tarball 文件名包含 SHA-256；每个副本核对 SHA-256、SHA-512/SRI、唯一 lock resolution、实际包名与安装路径。
-4. Testkit tgz 的验收直接消费将被使用的同一字节：清单 allowlist、clean-temp install、Node 18 ESM/CJS，以及
-   `skipLibCheck: false` 的 `.mts` / `.cts` consumer；验收后禁止重新 pack。
-5. NiceEval candidate tgz 不得包含 `packages/testkit/**`，任何 dependency 字段也不得声明 `@niceeval/testkit`。
-6. 场景以 `e2e.json` 的 `harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit。
-7. receipt 保存 version（诊断）、SHA-256、SRI、实际安装路径和 tarball artifact 相对路径。只在 tgz 仍被保留时声称 exact replay；
-   tgz 已删除时只声称可追责。
-8. Testkit、根 workspace/lock 或注入契约变化时，plan 动态选中全部 `harness.testkit: true` 消费者。任何安装缓存键都必须
-   包含 NiceEval 与 Testkit 两份 tgz digest，版本号、pnpm store 或跨 run cache 不能代替身份。
-
+2. 每次根 runner invocation 只在确有 `harness.testkit: true` 消费者时 clean-build 当前 Testkit 一次；不 pack、不上传。
+3. runner 只在隔离副本中加入指向 `packages/testkit` 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
+   resolution，安装后的包名与版本正确，realpath 位于副本自己的 virtual store，而不是 checkout 源目录。
+4. NiceEval candidate tgz 不得包含 `packages/testkit/**`，任何 dependency 字段也不得声明 `@niceeval/testkit`。
+5. 场景以 `e2e.json` 的 `harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit、`workspace:`
+   或预先签入的本地目录引用。
+6. receipt 只保存 Testkit version、checkout 相对 source path 与副本内 installed realpath；这些字段只供诊断。
+   exact replay 只描述保留的 NiceEval candidate 字节，不把当前 checkout 的 Testkit 伪装成可独立重新执行的 artifact。
+7. Testkit、根 workspace/lock 或注入契约变化时，plan 使 path 优化 fail-open，选中该 lane 全集。未来若缓存 Testkit 构建，
+   cache key 必须来自源码与构建输入，不能用 version 或 pnpm store 命中代替当前 checkout 身份。
 
 删除或移动文件后，收尾必须检查并删除本次产生的空目录。

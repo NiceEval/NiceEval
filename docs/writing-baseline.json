@@ -1071,13 +1071,10 @@
       "记录": 2,
       "重放": 4
     },
-    "docs/engineering/testing/README.md": {
-      "覆盖": 1
-    },
     "docs/engineering/testing/churn.md": {
       "产物": 1,
       "窗口": 3,
-      "覆盖": 4,
+      "覆盖": 3,
       "记录": 1
     },
     "docs/engineering/testing/e2e/README.md": {
@@ -1085,7 +1082,7 @@
     },
     "docs/engineering/testing/e2e/adapter/README.md": {
       "覆盖": 5,
-      "记录": 5
+      "记录": 4
     },
     "docs/engineering/testing/e2e/adapter/ai-sdk.md": {
       "来源": 1,
@@ -1109,19 +1106,17 @@
       "记录": 1
     },
     "docs/engineering/testing/e2e/cli.md": {
-      "基线": 1,
-      "覆盖": 1,
-      "解析": 1
+      "基线": 1
     },
     "docs/engineering/testing/e2e/report.md": {
       "产物": 2,
       "来源": 4,
       "覆盖": 4,
-      "解析": 3,
+      "解析": 2,
       "记录": 2
     },
     "docs/engineering/testing/unit/README.md": {
-      "覆盖": 3
+      "覆盖": 2
     },
     "docs/engineering/testing/unit/adapters.md": {
       "sandbox case": 1,
