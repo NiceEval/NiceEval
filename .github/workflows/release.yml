@@ -73,8 +73,8 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      # 发版闸门只看包自身对不对:代码单测 + docs/memory 守护。docs-site 的 mint 校验
-      # (test:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
+      # 发版闸门只看包自身对不对:代码单测 + docs/memory lint。docs-site 的 Mint 校验
+      # 不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
       # 随包 INDEX.md 的生成失败由 build:package 里的 build:index 直接报错。
       - name: Test
         run: pnpm test
@@ -113,8 +113,8 @@ jobs:
           echo "[release] packed ${tgz} sha256=${sha256}"
 
       # docs/memory 守护在拿到正式 tarball 后运行；它不参与 release tarball 的传递。
-      - name: Test docs guards
-        run: pnpm run test:docs
+      - name: Lint bundled documentation
+        run: pnpm run lint:docs
 
       # 发布 preflight:Package / CLI / Report 三个 Repo 安装上面这一份 tarball,
       # 在仓库外、无 checkout、无 tsx 包装的消费者中跑各自场景(根 runner 负责

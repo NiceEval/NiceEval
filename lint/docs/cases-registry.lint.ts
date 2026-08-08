@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// Feature 测试文档与测试套件的双向挂钩由测试守护(契约见
+// Feature 测试文档与代码测试的双向挂钩由文档 lint 检查(契约见
 // docs/engineering/testing/unit/README.md「矩阵与覆盖登记」与
 // docs/engineering/testing/unit/registry.md),不引入脚本:
 // 1. src/ 下每个测试文件头部声明所属文档(// cases: docs/engineering/testing/unit/<feature>.md),
@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 //    脱钩,覆盖规范声明的类别没人实现也没人发现;
 // 3. 测试里的 `// bug: memory/<条目>.md` 引用指向真实存在的 memory 条目——修法台账靠
 //    这条引用从测试反查现象与根因,memory 重组后的死指针比不写更糟(照着找的人会以为台账没了)。
-// test/ 下的仓库守护测试没有 Feature 文档可指,不做 cases 声明(例外已写进上述文档)。
+// test/ 下的代码测试没有 Feature 文档可指,不做 cases 声明(例外已写进上述文档)。
 const ROOT = resolve(import.meta.dirname, "../..");
 
 // 方法论、覆盖登记规则与 harness 契约不是 Feature owner 文档。
@@ -28,7 +28,7 @@ function walk(dir: string, match: (name: string) => boolean): string[] {
 
 const isTestFile = (name: string) => name.endsWith(".test.ts") || name.endsWith(".test.tsx");
 
-describe("Feature 测试文档守护", () => {
+describe("Feature 测试文档 lint", () => {
   const srcTests = walk("src", isTestFile);
   const CASES_LINE = /^\/\/ cases: (docs\/engineering\/testing\/unit\/[a-z-]+\.md)$/;
 

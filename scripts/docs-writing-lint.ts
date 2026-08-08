@@ -5,8 +5,8 @@
  * 现存命中数的台账在 docs/writing-baseline.json。
  *
  * 这里只出规则与计数,不自带命令行:判对错与更新台账都由
- * test/docs/docs-writing.test.ts 经 `pnpm test:docs` 驱动,台账用 vitest 的
- * 文件快照写回(`pnpm test:docs -u`)。台账里的数字只许变小——降到 0 的文件
+ * lint/docs/docs-writing.lint.ts 经 `pnpm lint:docs` 驱动,台账用 Vitest 的
+ * 文件快照写回(`pnpm lint:docs -u`)。台账里的数字只许变小——降到 0 的文件
  * 从台账里消失,新写的正文一次命中都不许有。
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -400,7 +400,7 @@ export function lintDocsWriting(): LintReport {
   }
 
   // 只判「变大」。变小不在这里报:台账收紧由 actual 与 docs/writing-baseline.json
-  // 的文件快照比对负责,`pnpm test:docs -u` 一步写回。
+  // 的文件快照比对负责,`pnpm lint:docs -u` 一步写回。
   const regressions: string[] = [];
 
   for (const { key, label } of LENGTH_RULES) {

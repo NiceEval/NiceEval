@@ -111,6 +111,6 @@ Fixture 只显式填写本 case 有语义的字段；builder 补机械默认值�
 - `pnpm test` 报告的 Tests 总数不得超过 200；Testkit 不设独立 Unit 套件；
 - `pnpm test <路径或名称>`：按 Feature 切片；
 - `pnpm run typecheck`：类型契约；
-- `pnpm test:docs`：`// owner:`、`// bug:`、索引与链接守护。
+- `pnpm lint`：文档与文档站规则，包括 `// owner:`、索引与链接检查。
 
-`src/**/*.test.ts(x)` 与 `test/unit/**` 归代码侧 Unit project；`test/docs/**` 与 `test/docs-site/**` 各归自己的文档入口。
+`src/**/*.test.ts(x)` 与 `test/unit/**` 归代码侧 Unit project；`lint/docs/**/*.lint.ts` 与 `lint/docs-site/**/*.lint.ts` 归统一文档 lint 入口。

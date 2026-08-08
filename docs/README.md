@@ -50,7 +50,7 @@ docs/
 ├── user-story.md                        从 Epic 到普通用户故事的产品地图
 ├── source-map.md                        目标契约 → 源码落点
 ├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
-├── writing-rules.json                   句长、段长规则与禁词库，pnpm test:docs 读它
+├── writing-rules.json                   句长、段长规则与禁词库，pnpm lint 读它
 ├── writing-baseline.json                现存命中数上限，只许变小
 │
 ├── feature/                             已落地并验收的功能契约
@@ -219,18 +219,22 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 ## 校验与同步
 
-修改 `docs/` 或根 README 后运行：
+修改 `docs/`、`docs-site/` 或根 README 后统一运行：
 
 ```sh
-pnpm test:docs
+pnpm lint
 ```
 
-两组守护都挂在这一条命令上：
+文档与文档站的全部 lint 都挂在这一条命令上：
 
-- `test/docs/docs-consistency.test.ts` 检查索引覆盖与相对链接。
+- `lint/docs/docs-consistency.lint.ts` 检查索引覆盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `test/docs/docs-writing.test.ts` 检查上表里能机器判定的两条——句长、段长，外加禁用写法与两条立词纪律。
+- `lint/docs/docs-writing.lint.ts` 检查上表里能机器判定的两条——句长、段长，外加禁用写法与两条立词纪律。
   括号嵌套靠人读，没有守护。
+- `lint/docs-site/**/*.lint.ts` 检查参考区块、随包索引与站点迁移，再运行 Mintlify 校验和断链检查。
+
+`pnpm install` 会把仓库的 Git hook 路径配置为 `.githooks`。
+`pre-push` 调用同一条 `pnpm lint`，不单独维护另一份规则清单。
 
 超标时这条命令直接打出每一处该怎么改——文件:行号、超了多少字、命中哪个禁用写法及为什么。
 没有第二条命令要记。
@@ -243,7 +247,7 @@ pnpm test:docs
   没有粗体的多写法格是几个并列词条，不是同义词，不产生裁决。
 
 [`writing-baseline.json`](writing-baseline.json) 是**待清理存量上限**，记录每个文件现存多少处；禁词按词分别计数，不能只记总数，否则一个词消失、另一个词新增时数量不变，问题却换了。
-新写的正文一处都不许命中；存量上限只许变小，改好后运行 `pnpm test:docs -u` 收紧。
+新写的正文一处都不许命中；存量上限只许变小，改好后运行 `pnpm lint:docs -u` 收紧。
 把存量上限改大来换绿灯，等于把这条规矩作废。因此有回归时 `-u` 不写入新数值，而是先报告失败。
 新增规则时，首批存量命中不走 `-u`，要手写进 `writing-baseline.json`，让「放宽」这个动作留在 diff 里接受检查。
 
