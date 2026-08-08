@@ -137,7 +137,7 @@ eval.ts(3,14): error TS2322: Type 'string' is not assignable to type 'ConfigHash
 eval.ts(4,20): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
 ```
 
-同一批调用写在 `.js` 文件里或经过 `as` 断言时，装载期守卫给出同一结论：
+同一批调用写在 `.js` 文件里或经过 `as` 断言时，装载期守卫给出同一判定：
 
 ```text
 defineEval 不接受 id —— id 由文件路径推导。
@@ -207,7 +207,7 @@ report.ts(11,14): error TS2322: Type '{ id: string; ... navigation: true; load: 
     Type 'true' is not assignable to type 'false'.
 ```
 
-装载期反馈保持不变，覆盖动态导入的页对象：
+装载期反馈保持不变，涵盖动态导入的页对象：
 
 ```text
 Report page "eval-detail" declares params but no load — a parametrized page needs load to turn params into its render input. Add load: (base, params, ctx) => ...
@@ -431,16 +431,16 @@ report.ts(1,14): error TS2345: Argument of type '{ agent: "codex"; }' is not ass
   Property '[CONTRACT_DIAGNOSTIC]' is missing in type '{ agent: "codex"; }' but required in type 'EvidenceNeedsMetric'.
 ```
 
-运行时守卫覆盖 JSON 与 JavaScript 调用：
+运行时守卫涵盖 JSON 与 JavaScript 调用：
 
 ```text
 evidenceRow requires at least one MetricValue field
 ```
 
-### 动态数据经过独立解析函数
+### 动态数据经过独立校验函数
 
 从 JSON、数据库或外部 API 得到的对象是 `unknown`，静态上没有可证明的 MetricValue 字段。
-这类值走一个显式解析入口，不给 `evidenceRow()` 保留接收宽对象的 overload：
+这类值走一个显式校验入口，不给 `evidenceRow()` 保留接收宽对象的 overload：
 
 ```ts
 function parseEvidenceRow(value: unknown): EvidenceRow;
@@ -524,7 +524,7 @@ defineAgent({
 });
 ```
 
-手写声明必须列出六个通道；partial / unavailable 必须带原因，complete 不能带原因。字段形状与消费语义单源在 [Adapter evidence](../adapters/architecture/evidence.md#覆盖声明evidencecoverage)。
+手写声明必须列出六个通道；partial / unavailable 必须带原因，complete 不能带原因。字段形状与消费语义单源在 [Adapter evidence](../adapters/architecture/evidence.md)。
 
 下面两种输入都在调用点失败：
 
@@ -545,9 +545,9 @@ agent.ts(3,3): error TS2739: Type '{ events: { status: "partial"; }; }' is missi
 
 JavaScript 或类型断言绕过静态入口时，Agent 构造器在 discovery 前检查同一形状；不把缺字段规范化成含糊的 unknown 状态。
 
-## Custom Sandbox case 的产物边界
+## Custom Sandbox 的输出边界
 
-自定义 case 不填写 capability 字符串；声明与创建结果都用闭合 ADT，资源组定位和运行事实也是必填纯数据：
+自定义 case 不填写 capability 字符串；声明与创建结果都用闭合 ADT，伴随资源定位和运行事实也是必填纯数据：
 
 ```ts
 import { Effect } from "effect";
@@ -586,7 +586,7 @@ declare function defineSandboxCase(
 没有 services 返回 `{ _tag: "None" }`，有 services 返回 `{ _tag: "Available", value }`，并与声明侧的 `Supported` / `Unsupported` 一致。
 跨进程留存需要可发现的 provider identity 与 detached 实现，不能由一次 callback 临时声明，因此输入与返回值都没有 `retention`、`wake` 或 capability 数组。
 
-合法调用直接返回完整的主执行空间与资源组：
+合法调用直接返回完整的主执行空间与伴随资源：
 
 ```ts
 defineSandboxCase({
@@ -625,9 +625,9 @@ sandbox.ts(4,30): error TS2322: Type 'SandboxRetention' is not assignable to typ
 
 运行时仍对 JavaScript 与类型断言绕过检查同一边界。
 非法声明和 `--keep-sandbox` 在创建资源前报错。
-callback 缺必填字段、返回未知能力字段或 services ADT 前后不一致时，结果不会进入完成态；系统会尽力整组清理已创建资源。
+callback 缺必填字段、返回未知能力字段或 services ADT 前后不一致时，结果不会进入完成态；系统会尽力整组回收已创建资源。
 
-## Factory 产物使用私有品牌
+## Factory 定义使用私有品牌
 
 Theme 与 Report 的公开定义包含各自模块私有的 symbol 属性。
 symbol 不从包入口导出，因此普通对象无法构造出可赋值类型：

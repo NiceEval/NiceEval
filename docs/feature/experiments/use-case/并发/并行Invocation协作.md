@@ -44,7 +44,7 @@ Experiment `maxConcurrency` 也只在当前 Invocation 生效：两条命令都�
 
 - 锁粒度是 `(experiment, eval)`。
   同一 Eval 的多个 Attempt 由一个 Invocation 完整承接，不拆成两份不完整的通过率分母。
-- 协作范围是同一工作副本与同一 `.niceeval` 记录根。
+- 协作范围是同一工作副本与同一 `.niceeval` Record 根。
   不同机器、不同工作副本或不共享文件系统时，各自独立运行。
 - Experiment `setup` / `teardown` 每个 Invocation 各执行一次。
   用例锁不把实验级 Hook 变成跨进程单例；`sharedState` 只做独占互斥，需要跨进程复用同一服务实例时仍交给外部编排。

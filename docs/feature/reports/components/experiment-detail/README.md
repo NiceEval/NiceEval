@@ -15,10 +15,10 @@
 | 区块 | 内容 |
 |---|---|
 | 实验身份 | experiment id、agent、model、flags、`evaluationKind`、最近运行时间 |
-| 读数摘要 | 主读数、成本、tokens、耗时，以及 evals × attempts 覆盖 |
+| 读数摘要 | 主读数、成本、tokens、耗时，以及 evals × attempts 的 `coverage` |
 | 结果构成 | eval verdict 计票 |
 | 题目清单 | Eval → Attempt 层级，每条 attempt 的 locator 是 attempt 详情目标 |
-| 覆盖缺口 | 未跑到的 eval 占位行与补跑命令 |
+| 缺口 | 未跑到的 eval 占位行与补跑命令 |
 | 实验级 notices | experiment 作用域的 facts 与封口警告 |
 
 实验级 notices 只在这里有落脚点：attempt 级事实进 `AttemptDetails`，run 级事实进 run notices，experiment 作用域的事实由本组件解释。

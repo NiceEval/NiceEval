@@ -2,7 +2,7 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md)
 
-## 结论
+## 裁决
 
 采纳 [PLAN-3](PLAN-3/README.md)：消费项目挂载另一个已安装 NiceEval 项目的 Eval 目录。
 
@@ -72,7 +72,7 @@ Terminal-Bench 10 条带随机 Compose env 的题也采用这一正确性优先�
 ## 可演进边界
 
 公开目录未来可以索引包含原生 NiceEval Eval 的 package 或仓库。
-目录只负责发现，不参与安装、版本解析或 lockfile 写入，也不要求发布方增加共享 manifest。
+目录只负责发现，不参与安装、版本选择或 lockfile 写入，也不要求发布方增加共享 manifest。
 
 若未来出现不含可执行 TypeScript 的语言中立任务协议，应另开设计比较 registry。
 该问题不能反向扩大原生 Eval 共享的第一版边界。

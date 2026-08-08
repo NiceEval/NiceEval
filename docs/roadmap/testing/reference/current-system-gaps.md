@@ -6,19 +6,19 @@
 
 本篇对照当前 [`docs/engineering/testing/`](../../../engineering/testing/README.md) 与实际 `e2e/report`，解释为什么已经有大量测试、每个逃逸 bug 也会补回归文件，仍然需要靠用户在真实 Report 中发现“链接存在但 modal 打不开”。
 
-## 结论
+## 审计判断
 
 问题不是“没有 E2E”或“断言数量不够”，而是四个闭包没有同时成立：
 
-1. **覆盖闭包**：Feature 抽象升级后，proof 仍覆盖新的完整抽象，而不是旧实例。
+1. **守护闭包**：Feature 抽象升级后，proof 仍守护新的完整抽象，而不是旧实例。
 2. **执行闭包**：相关 proof 在产生改动的同一候选上、反馈仍有用的时间点实际运行。
-3. **证据闭包**：producer、导出产物、hosting、浏览器 consumer 属于同一个冻结 world。
+3. **证据闭包**：producer、导出输出、hosting、浏览器 consumer 属于同一个冻结 world。
 4. **失败闭包**：一处失败能落在最早阶段，并且不遮住同批其它 Behavior。
 
 现行体系分别拥有这些能力的局部实现，但没有把四个闭包变成一个可执行门禁。
 
 它还有第五个问题：**portfolio 没有闭包**。现行体系规定测试只随契约变化，却没有为一条语义指定唯一矩阵
-owner，也没有要求新增主证明时退役重复 unit。结果是每个出口、DTO 和历史 bug 都能各自获得一组测试；覆盖在
+owner，也没有要求新增主证明时退役重复 unit。结果是每个出口、DTO 和历史 bug 都能各自获得一组测试；守护在
 增加，修改生产结构时需要同步维护的测试也持续增加。
 
 本 Roadmap 因此不是单独修 E2E。它用同一份 proof portfolio 管理 unit、structure 与 E2E，并把旧测试删除、
@@ -32,9 +32,9 @@ Report Feature 已把详情机制定义成通用参数化页：内建至少有 `
 现有单元测试也已经验证 `planSite` 对 attempt 与 experiment 两类页面生成文件，说明数据 / 规划层知道新抽象。
 但是浏览器 E2E 仍把路径写死为 `attempt/<locator>.html`，组件场景也只以 locator 和 AttemptDetails 命名：
 
-- [`src/view/site-param-pages.test.ts`](../../../../src/view/site-param-pages.test.ts) 证明计划层的通用文件集合；
-- [`e2e/report/scripts/verify-render-visual.ts`](../../../../e2e/report/scripts/verify-render-visual.ts) 只点击一个 attempt locator；
-- [`e2e/report/scripts/report-components/attempt-detail.scenarios.ts`](../../../../e2e/report/scripts/report-components/attempt-detail.scenarios.ts) 只覆盖 attempt 详情。
+- `src/view/site-param-pages.test.ts` 证明计划层的通用文件集合；
+- `e2e/report/scripts/verify-render-visual.ts` 只点击一个 attempt locator；
+- `e2e/report/scripts/report-components/attempt-detail.scenarios.ts` 只守护 attempt 详情。
 
 因此“通用 producer 已迁移、浏览器 consumer 仍按旧实例验收”的组合可以同时满足：
 
@@ -42,14 +42,14 @@ Report Feature 已把详情机制定义成通用参数化页：内建至少有 `
 - 旧 attempt E2E 绿：某个代表 attempt 仍能打开；
 - 新产品坏：experiment、自定义参数化页或某条新的导出接线路径没有生成对应静态文档，用户点击后 404。
 
-截图中的具体症状更早：链接已经存在，但对应 attempt 文档没有产出。现有 attempt E2E 若在同一候选上完整执行本应变红；它最终靠人工发现，说明除了覆盖抽象，还存在执行反馈的问题。
+截图中的具体症状更早：链接已经存在，但对应 attempt 文档没有产出。现有 attempt E2E 若在同一候选上完整执行本应变红；它最终靠人工发现，说明除了守护抽象，还存在执行反馈的问题。
 
 ## 现行规则的八个失效机制
 
 ### 0. “契约影响面”没有阻止内部 DTO 被升级成契约
 
 现行变更预算的方向正确，但契约边界依赖人工解释。测试文档可以把内部 ADT、完整对象形状、formatter 输入和
-manifest 当前字段登记成覆盖规范；实现一改，再同步改覆盖规范和测试，就会被归类为“合法契约变化”。
+manifest 当前字段登记成`覆盖规范`；实现一改，再同步改`覆盖规范`和测试，就会被归类为“合法契约变化”。
 
 carried 是代表：用户契约是未变化结果被复用、变化或无法解释的结果重跑，公共 JSON 另有机器 schema 契约。
 但 planner `deltas` / `comparison` 形状、Human formatter 输入和每处手写的完整 `EvalManifest` 也进入测试观察面，
@@ -86,13 +86,13 @@ owner、新 owner 实际替代旧 proof 时提交 retirement declaration。
 它能指导一个已经知道该跑什么的人，不能阻止：
 
 - 本地提交未运行对应 E2E；
-- Feature 从 attempt 升级为 target，旧 Behavior 仍被当作覆盖存在；
+- Feature 从 attempt 升级为 target，旧 Behavior 仍被当作已有守护存在；
 - 一个总命令存在，但其中相关场景因更早失败从未到达。
 
-### 4. 覆盖登记只防“整册脱钩”，不防类别漂移，也不登记 E2E
+### 4. `覆盖登记`只防“整册脱钩”，不防类别漂移，也不登记 E2E
 
-[覆盖登记](../../../engineering/testing/unit/registry.md)明确说机器守护只保证 src 测试文件与测试文档不整册脱钩，类别级对应依赖人工评审。
-它也以 `src/**/*.test.ts(x)` 为主，不要求 E2E Behavior 声明自己覆盖哪个 Feature category。
+[`覆盖登记`](../../../engineering/testing/unit/registry.md)明确说机器守护只保证 src 测试文件与测试文档不整册脱钩，类别级对应依赖人工评审。
+它也以 `src/**/*.test.ts(x)` 为主，不要求 E2E Behavior 声明自己守护哪个 Feature category。
 
 所以“Reports 有测试文档”“E2E 有 attempt dialog 场景”都可以为真，但没人机器核对“参数化 target 闭环”这个新类别是否有浏览器 proof。
 
@@ -121,7 +121,7 @@ reportBehavior({
 
 ### 5. Report 验收说明是一张巨大清单，抽象升级后旧名仍看起来合理
 
-[Report E2E 计划](../../../engineering/testing/e2e/report.md)覆盖很多公开行为，但导出、视觉和自定义报告段落仍主要围绕 `attempt/<locator>.html`、attempt-input page 与 locator 深链书写。
+[Report E2E 计划](../../../engineering/testing/e2e/report.md)守护很多公开行为，但导出、视觉和自定义报告段落仍主要围绕 `attempt/<locator>.html`、attempt-input page 与 locator 深链书写。
 一条新 Feature 把宿主升级成通用参数化页时，文档中没有一个独立、可替换的“target closure”类别要求同步升级。
 
 结果不是完全没有测试，而是测试仍然证明旧命题：**attempt 能打开**；产品的新命题已经是：**最终清单里的任意参数化页都由同一宿主机制打开**。
@@ -131,16 +131,16 @@ reportBehavior({
 [验收脚本写法](../../../engineering/testing/e2e/verification.md)规定不用测试框架、单线流程、第一处失败即抛错。
 实际 Report runner 还依赖手工顺序，因为后置 verifier 会改写共享 resultsRoot。
 
-这使“补了一个测试文件”仍不等于它每次得到执行：前面的 provider、格式或读回断言红了，浏览器场景没有结论；修一个场景时又必须重跑完整 producer 和此前所有 verifier。
+这使“补了一个测试文件”仍不等于它每次得到执行：前面的 provider、格式或读回断言红了，浏览器场景没有结果；修一个场景时又必须重跑完整 producer 和此前所有 verifier。
 
 冻结 world、vitest Behavior、按 id 单例重跑和失败聚合解决的是运行学，不是语法糖。
 
 ### 7. 跟改率只能发现脆弱测试，发现不了“稳定但过时”的测试
 
 [测试跟改率](../../../engineering/testing/churn.md)统计源码变更时哪些测试文件总跟着改，适合发现锁实现细节的脆弱测试。
-但一个 attempt 专用 E2E 在 target 重构后完全没改，跟改率反而很好看；它只是已经不再覆盖产品抽象。
+但一个 attempt 专用 E2E 在 target 重构后完全没改，跟改率反而很好看；它只是已经不再守护产品抽象。
 
-因此 churn 继续保留为维护性指标，但不能充当覆盖完整性指标。覆盖完整性必须由 category ↔ Behavior 登记、结构 census 和真实旧 bug kill test 提供。
+因此 churn 继续保留为维护性指标，但不能充当守护完整性指标。守护完整性必须由 category ↔ Behavior 登记、结构 census 和真实旧 bug kill test 提供。
 
 ## 为什么继续补 bug 回归文件仍不够
 
@@ -155,7 +155,7 @@ reportBehavior({
 5. 在 fix parent 或最小逆补丁上运行，证明新 proof 真能杀死旧 bug；
 6. 用同形反证验证它不是 bug 专用 matcher。
 
-测试数量可以不增加，覆盖命题必须升级。
+测试数量可以不增加，守护命题必须升级。
 
 ## 对现行 testing 文档的采用改动
 
@@ -169,7 +169,7 @@ reportBehavior({
 | `engineering/testing/e2e/verification.md` | 线性 `node:assert` 参考改成 Behavior + 冻结 world + 失败聚合；仍保留真实 shell 原文和公开入口 |
 | `engineering/testing/unit/README.md` | 测试存在资格改成主证明或具名机制风险；删除按函数、类型和分支增测的解释空间 |
 | `engineering/testing/unit/harness.md` | 增加 production DTO 隔离要求和 fixture blast radius；无关字段只允许修改 builder |
-| `engineering/testing/unit/<feature>.md` | 覆盖规范改为 Behavior 与唯一 mechanism matrix owner，不登记内部 ADT / formatter 输入的完整形状 |
+| `engineering/testing/unit/<feature>.md` | `覆盖规范`改为 Behavior 与唯一 mechanism matrix owner，不登记内部 ADT / formatter 输入的完整形状 |
 | `engineering/testing/unit/registry.md` | 聚合主证明、matrix owner 与 retirement declaration；拒绝重复矩阵，并核对本批声明删除的 proof 已消失 |
 | `engineering/testing/churn.md` | 明确它只量维护性，不量 coverage freshness；与 duplicated matrix、retired proof 和 fixture blast radius 同批审计 |
 

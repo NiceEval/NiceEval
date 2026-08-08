@@ -1,6 +1,6 @@
-# agent-eval 具体怎么做适配转换(源码阅读记录)
+# agent-eval 具体怎么做适配转换(源码阅读笔记)
 
-**来源:** 直接读 `/Users/ctrdh/Code/agent-eval`(vercel-labs/agent-eval 本机 checkout)的源码,不是转述。
+**出处:** 直接读 `/Users/ctrdh/Code/agent-eval`(vercel-labs/agent-eval 本机 checkout)的源码,不是转述。
 关键文件:
 
 - 目标 schema:`packages/agent-eval/src/lib/o11y/types.ts`
@@ -9,7 +9,7 @@
 - Codex 转换:`packages/agent-eval/src/lib/o11y/parsers/codex.ts`
 - 采集(怎么拿到原始 transcript):`packages/agent-eval/src/lib/agents/claude-code.ts`、`codex.ts`、`shared.ts`
 
-这是**学习笔记**,记录别人的具体实现,供设计归一化管线时对照;不是 niceeval 的实现描述——niceeval 自己的数据契约见 [Adapter Architecture](../architecture.md),调用方式见 [Adapter Library](../library.md)。
+这是**学习笔记**,整理别人的具体实现,供设计归一化管线时对照;不是 niceeval 的实现描述——niceeval 自己的数据契约见 [Adapter Architecture](../architecture.md),调用方式见 [Adapter Library](../library.md)。
 
 ## 目标层长什么样:`TranscriptEvent` / `Transcript`
 
@@ -50,7 +50,7 @@ interface Transcript {
 这里的三个 `unknown` 是 **agent-eval 自己的外部目标 schema**，不是 NiceEval 的领域字段：`args` / `result`
 来自第三方 CLI wire payload，`raw` 是它额外保留的原始调试对象。NiceEval parser 只在读取这类 SDK / JSONL
 输入的动态边界接收 `unknown`，当场把工具输入与输出正规化成 `JsonValue`；无法正规化的值必须得到显式
-降级或失败状态。不能把 `raw`、类实例或 `unknown` 写入 `StreamEvent`、`Turn` 或 attempt 记录，
+降级或失败状态。不能把 `raw`、类实例或 `unknown` 写入 `StreamEvent`、`Turn` 或 attempt 存档，
 再交给下游猜。
 因此引用代码保留原项目的真实签名，但它不构成 NiceEval 可以长期保存 `unknown` 的先例。
 
@@ -119,7 +119,7 @@ function getParserForAgent(agent: string) {
 | `Task` / `task` | `agent_task` |
 | 认不出的 | `unknown` |
 
-**行级容错:** 每一行包在 `try/catch` 里,解析失败静默跳过(`parseClaudeCodeTranscript` 外层再包一层,把异常收进 `errors[]`),不会让一行坏数据拖垮整份 transcript。
+**行级容错:** 每一行包在 `try/catch` 里,读取失败静默跳过(`parseClaudeCodeTranscript` 外层再包一层,把异常收进 `errors[]`),不会让一行坏数据拖垮整份 transcript。
 
 ## Codex 怎么转换
 
@@ -132,7 +132,7 @@ function getParserForAgent(agent: string) {
 - `message` / `chat` / `response` → 一条 `message`,`role` 从 `data.role` 或者猜 `data.from === "assistant"`。
 - `function_call` / `tool_call` / `tool_use` / `action`（四个同义 type 名）都映射到一条 `tool_call`。
   `name` 依次尝试 `data.function?.name`、`data.name`、`data.tool` 与 `data.action`。
-  `args` 优先解析 OpenAI 式的 `function.arguments`（JSON 字符串，需再 `JSON.parse`）；
+  `args` 优先解码 OpenAI 式的 `function.arguments`（JSON 字符串，需再 `JSON.parse`）；
   否则退回 `data.arguments`、`data.input` 或 `data.params`。
 - `function_result` / `tool_result` / `tool_response` / `action_result` → 一条 `tool_result`。
 - `thinking` / `reasoning` / `thought` → 一条 `thinking`。
@@ -177,7 +177,7 @@ function getParserForAgent(agent: string) {
 - **文件路径、URL 与命令的提取函数**（`extractFilePath` / `extractUrl` / `extractCommand`）
   在两份 parser 里几乎逐字重复。差异只在字段名的优先级：Claude Code 先试 `args.path`；
   Codex 也先试 `args.path`，但还识别 `args.endpoint`。
-  新增一个 agent = 复制这一整套函数再改字段名,没有抽成共享 helper。
+  新增一个 agent = 复制这一整套函数再改字段名,没有抽成共享函数。
 - **tool_call 和 tool_result 不靠 id 配对。** `TranscriptEvent` 没有 `callId` 这类字段。
   聚合层以“数组里最后一个还没填 `exitCode` 的 shellCommand”这个**顺序假设**，
   把 call 和 result 拼起来（见下一节）。如果两个工具调用交叠或乱序，这个假设会配错。
@@ -193,7 +193,7 @@ const path = (args._extractedPath || args.path || args.file) as string;
 if (path) filesModified.add(path);
 ```
 
-`_extractedPath` 由两份 parser 各自在**行解析之后的一趟后处理**里补上(两边写法几乎一样):
+`_extractedPath` 由两份 parser 各自在**逐行转换之后的一趟后处理**里补上(两边写法几乎一样):
 
 ```typescript
 // claude-code.ts 和 codex.ts 都有这一段(后处理,不在逐行解析里)
@@ -226,7 +226,7 @@ case 'tool_result':
   }
 ```
 
-“数组里最后一条还没写 exitCode 的记录”就是这次 result 对应的 call。
+“数组里最后一条还没写 exitCode 的条目”就是这次 result 对应的 call。
 这是可行的，因为 Codex/Claude Code 的工具调用在 transcript 里基本严格顺序：
 等上一个工具跑完才发起下一个。但这个假设没有 id 回退；一旦上游并发多个工具调用，配对就会错。
 
@@ -243,13 +243,13 @@ case 'tool_result':
   - **第二条通道，只为了拿“实际用的模型”：** 从 stdout 先抓一个 `thread.started` 事件，
     取得 `thread_id`。再用它在 `~/.codex/sessions` 磁盘上 `find` 对应的 session JSONL 文件，
     从中找 `turn_context` 事件的 `payload.model`。经网关请求的模型名可能与实际路由的模型不一致，
-    只有磁盘上的 session 文件会记录真实值。
-    **同一个 agent 的“转换用” transcript 与“读实际模型用”的数据来源是两条不同采集路径**，
+    只有磁盘上的 session 文件会留存真实值。
+    **同一个 agent 的“转换用” transcript 与“读实际模型用”的数据出处是两条不同采集路径**，
     不是一份数据复用两次。
 
 ## 落地:注入沙箱给断言用
 
-`injectTranscriptContext(sandbox, rawTranscript, agentName, model)`(`agents/shared.ts`)只做三件事:解析 transcript、取 `summary`、写文件——不写 `events`:
+`injectTranscriptContext(sandbox, rawTranscript, agentName, model)`(`agents/shared.ts`)只做三件事:解码 transcript、取 `summary`、写文件——不写 `events`:
 
 ```typescript
 const transcript = rawTranscript ? parseTranscript(rawTranscript, agentName, model) : null;
@@ -262,13 +262,13 @@ await sandbox.writeText('__agent_eval__/results.json', JSON.stringify(context, n
 
 ## 这次读源码对 niceeval 的启发
 
-- **显式 ID 配对比"数组里最后一条未配对记录"更稳。
+- **显式 ID 配对比"数组里最后一条未配对条目"更稳。
   ** niceeval 的 `operation.started` / `operation.finished` 靠 `operationId` 配对,不依赖工具调用严格顺序发生。
   agent-eval 这份实现在并发或乱序工具调用下会错配,是个真实的设计取舍,不是理论问题。
 - **"暗号字段 + 通用回退"这个具体写法值得抄**,尤其是"提取"和"聚合"分离这一点;但**提取函数本身在多个 agent parser 间被复制而非共享**,是可以直接避免的重复,新写 parser 时不必照抄这一部分。
 - **一个 agent 的"采集"可以是多条互不相干的通道**(Codex 的 stdout 转写 vs 磁盘读实际模型),不是"一个 agent 一种采集方式"——设计 adapter 的采集逻辑时要按"这份数据要用来干什么"分别决定怎么采,而不是假设一种机制能满足所有需求。
 - **`Agent.run()` 是一个每个 agent 重写一遍的单体函数**(建沙箱、传文件、装 CLI、跑命令、抓 transcript、注入上下文、跑校验、采 diff、关沙箱,claude-code.ts 和 codex.ts 里这一整套流程几乎逐行重复),生命周期没有被收进一个共享的运行器骨架里。
-  niceeval 把这套骨架收进运行器(`setup` 一次 / `send` 每轮一次 / git 基线与 diff 由 runner 统一管),adapter 只写"这几行不同"的部分——这是两边在"core 拥有多少"这条线上最大的架构分歧。
+  niceeval 把这套骨架收进运行器(`setup` 一次 / `send` 每轮一次 / git 初始状态与 diff 由 runner 统一管),adapter 只写"这几行不同"的部分——这是两边在"core 拥有多少"这条线上最大的架构分歧。
 
 ## 相关阅读
 

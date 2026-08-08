@@ -11,7 +11,7 @@ artifact 中的 `command_execution` 已完成且 exit 0，但 SDK 流转换器�
 公开错误事实是同一个 NiceEval 规范工具身份随接入路径变化：transcript parser 路径把命令归一为 `shell`，SDK stream 路径却没有。
 用户症状看起来像 agent 没有调用工具，实际是 adapter 丢了身份。
 
-fix 前 `src/agents/sdk-streams.test.ts` 已覆盖 `command_execution`、`mcp_tool_call` 与成对 result，但期望值本身只含原始 `name`，没有拿转换结果走一次公开 `calledTool` 语义。
+fix 前 `src/agents/sdk-streams.test.ts` 已守护 `command_execution`、`mcp_tool_call` 与成对 result，但期望值本身只含原始 `name`，没有拿转换结果走一次公开 `calledTool` 语义。
 测试精确验证了错误的中间形状，所以仍绿；最早应失败在 adapter contract case，其次是已有 Eval 的真实 E2E。
 
 ```ts
@@ -30,7 +30,7 @@ DSL 不要求用户修改 Eval，也不要求额外发内部事件。
 
 ## 同形反证：Claude SDK 后来重复遗漏
 
-`060a6a05` 的提交说明已经记录 `fromClaudeSdkMessages` 有同类缺口，但当时没有规范名 gate 依赖它，所以没有红。
+`060a6a05` 的提交说明已经登记 `fromClaudeSdkMessages` 有同类缺口，但当时没有规范名 gate 依赖它，所以没有红。
 直到 `d8d5a84b` 才给 Claude `tool_use` 补上 `CLAUDE_TOOL_ALIASES` 归一；该 commit 没有同步增加协议测试。
 
 这证明“给 Codex 四种 item 写断言”只是单例修复。
@@ -41,7 +41,7 @@ DSL 不要求用户修改 Eval，也不要求额外发内部事件。
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 断规范身份 `shell`，不锁厂商原始词或渲染布局 |
 | 不能改断言放行 | 同一 Eval 跨 adapter 复用；改成 `command_execution` / `Bash` 会违反公开规范身份 |

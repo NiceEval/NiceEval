@@ -35,9 +35,9 @@ tracked test source
 Manifest 不运行测试、不读取 candidate、不需要 secret，也不签入。
 根 `test/docs/behavior-registry.test.ts` 直接扫描根仓与 `e2e/` 的 tracked source；它不安装 E2E 依赖，也不调用自治仓库生成器。
 
-独立 E2E checkout 只解析本仓拥有的 task / contract。
+独立 E2E checkout 只定位本仓拥有的 task / contract。
 外部 `ContractRef` 只检查 `repository + path + anchor` 形状。
-完整 checkout 的根 guard 按 repository root map 解析外部 heading。
+完整 checkout 的根 guard 按 repository root map 定位外部 heading。
 
 每个 `scripts/e2e.ts` 在 prepare 前完成本仓静态检查，并把 `behavior-manifest.json` 写进**本次运行 artifact 目录**供独立 CI 阅读。
 它不是签名、锁文件或下次运行输入。
@@ -85,7 +85,7 @@ Verify 不重新执行可能写缓存、自动迁移或改变结果的候选命�
 浏览器 proof 在 verify 为每例创建全新 Playwright Chromium BrowserContext / Page。
 静态 HTML proof 禁用 JavaScript 并阻断非本地网络；交互 proof 才启用 JavaScript，过滤和展开只修改该页状态。
 静态 server、browser profile、ARIA snapshot、截图、日志与 trace 全部写进 world 外的 Verification Run。
-World 保存 producer identity；每个 browser `ObservationSource` 记录 run ID、verifier identity、run artifact 与 frozen HTML 来源。
+World 保存 producer identity；每个 browser `ObservationSource` 登记 run ID、verifier identity、run artifact 与 frozen HTML 出处。
 
 ## 冻结与 mutation
 
@@ -101,10 +101,10 @@ World 保存 producer identity；每个 browser `ObservationSource` 记录 run I
 
 迁移、修复等写动作本身就是待测行为时，proof 声明 `mode: "mutable-clone"`。
 Prepare 只冻结动作前 baseline；verify 创建单例私有 `MutableScenarioClone`，核对 `cloneId / ownerProofId / baseWorldDigest`，再执行声明的 `mutationActionId`。
-Clone 有独立身份、初始/最终 tree digest、临时根与完整清理；不能跨例共享，也不能改变原 world。
+Clone 有独立身份、初始/最终 tree digest、临时根与完整资源释放；不能跨例共享，也不能改变原 world。
 Reuse 只省掉 baseline prepare，不省略这次待测 mutation。
 
-`mutationActionId` 必须解析为本仓唯一的 `defineMutationAction()` export。
+`mutationActionId` 必须定位为本仓唯一的 `defineMutationAction()` export。
 静态守卫核对 action 的公开入口与 proof target；运行时在创建 clone 前导入该 export，复核 ID 与入口，并摘要它的完整静态 symbol closure。
 Action fingerprint 进入 `VerificationIdentity`，action ID 与 clone ID 进入 `VerificationRun`。
 实现变化只改变本次 verifier 身份；fresh 与 reuse 都必须在新的私有 clone 上执行当前 action 一次。
@@ -119,14 +119,14 @@ pnpm e2e -- verify \
   --behavior <behavior-id>
 ```
 
-本仓 `scripts/e2e.ts` 是唯一参数解析者。
+本仓 `scripts/e2e.ts` 是唯一读取参数的入口。
 它先定位当前注入 candidate，再校验：
 
 - 每个选中 E2E proof 的 `evidenceRecipeId` 恰好匹配一个 world；
 - candidate、recipe、producer symbol closure 与 fixture digest；
 - 外部依赖与适用 producer environment identity；
 - `state === "frozen"`、文件树 digest 与全部 artifact；
-- prepare evidence 均位于匹配 world root；verify 新产物只写入匹配 Verification Run root。
+- prepare evidence 均位于匹配 world root；verify 新生成文件只写入匹配 Verification Run root。
 
 任一项不匹配都以 expired-evidence 失败，列出差异并提示重新执行完整 `pnpm e2e`。
 Reuse 绝不静默 prepare、调用模型或改写 manifest。
@@ -149,8 +149,8 @@ Reuse 绝不静默 prepare、调用模型或改写 manifest。
 PrimaryProof 与每个 required BoundaryProof 执行后都必须各自产生 `ProofRunResult`：
 
 - target 与声明的 entry、observations、boundaries 完全相符；
-- 每个 observation 至少贡献一个带 evidence 与 selector 的来源；
-- 关系断言在同一个 outcome 中记录全部参与来源；
+- 每个 observation 至少贡献一个带 evidence 与 selector 的出处；
+- 关系断言在同一个 outcome 中登记全部参与出处；
 - 至少一个 outcome 按用户对象身份验证结果。
 - E2E proof 的 execution、实际 world recipe 与可选 mutable clone 完全相符。
 

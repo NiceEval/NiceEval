@@ -35,4 +35,4 @@ Eval setup 只修改运行中的主 Sandbox。
 它不会生成新的 E2B template，也不会把题目仓库解释成第二份 Environment。
 
 若另一个 Eval 显式声明 Environment，普通 defaultEnvironment 立即让位。
-只有 `environments[profile]` 的完整 Case 能覆盖该 Environment；Runner 不把两个起点合并。
+只有 `environments[profile]` 的完整 Case 能替换该 Environment；Runner 不把两个起点合并。

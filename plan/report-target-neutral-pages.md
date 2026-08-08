@@ -88,5 +88,5 @@ A ──┬── B ──┬── E ──┬── G ──┐
    - 直接落深链 `#/attempt/@<locator>` 与 `#/experiment/<key>` 均能打开;
    - `niceeval view --out site`:产物含 `attempt/` 与 `experiment/` 两目录,无 JS 打开 `experiment/<key>.html` 完整可读;
    - `niceeval show @<locator> --report`(有/无 attempt 页)行为与 docs 预期一致。
-4. **文档同步**:`pnpm test:docs` 与 `pnpm test:docs-site` 绿(本次契约已先行落稿,预期只有 source-map 行需动)。
+4. **文档同步**:`pnpm lint:docs` 与 `pnpm lint:docs-site` 绿(本次契约已先行落稿,预期只有 source-map 行需动)。
 5. **回归哨**:实验散点点开不再指向任意 attempt——用户截图场景(`#/attempt/@1kp8gz7h`)不复现。

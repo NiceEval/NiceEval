@@ -79,13 +79,13 @@ Registry 拒绝用 fake SDK 或 wire fixture 充当 Primary。
 
 Primary E2E Projection 用三个显式 step 完成 `install → run → read`。
 Package driver 在仓库外 cwd 安装候选 tarball，再调用公开 import 或 CLI。
-Driver 不能读取 `src/`、私有记录状态或候选内部常量。
+Driver 不能读取 `src/`、私有 Record 状态或候选内部常量。
 
 Claim 只引用公开可观察的 experiment、attempt、exit 和结果身份。
 
 ## C8：回归证明
 
-有公开行为后果的 bug 复用或新增 Case ID，并在 `regressions` 记录引用。
+有公开行为后果的 bug 复用或新增 Case ID，并在 `regressions` 登记引用。
 Registry 展示契约、Primary 与 Supporting Projection。
 
 只影响内部机制的 bug 不建立 Case。

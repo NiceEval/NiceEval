@@ -5,9 +5,9 @@
 1. Eval、Experiment 与 Agent 分别贡献什么。
 2. 每个配对怎样在创建资源前确定唯一 template。
 3. Case 启动后,三层准备按什么顺序执行,失败归到哪里。
-4. `sandboxReuse` 打开后,哪些步骤每窗口一次,哪些步骤仍然每 Attempt 执行。
+4. `sandboxReuse` 打开后,哪些步骤每复用周期一次,哪些步骤仍然每 Attempt 执行。
 
-作者声明面见 [Sandbox Layer](layers.md);template 之下的完整运行单位见 [Sandbox Case](case.md)。
+作者声明面见 [Sandbox Layer](layers.md);template 之下的完整运行单位见 [Case](case.md)。
 
 ## Owner
 
@@ -16,7 +16,7 @@
 | Eval layer | 可选 template、逐 Attempt 的 SandboxCommand、test | 题目起点、题目准备、Agent 交互与判分 |
 | Experiment layer | 可选 template、逐 Attempt 的 SandboxCommand | 实验起点或实验准备 |
 | Agent layer | Adapter 的 ensure 声明序列与配对的 Agent 安装层,由 Runner 组装 | CLI identity、探测、payload、平台、安装与复检 |
-| Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并清理完整资源组 |
+| Provider Case | template planner、build、start、ready、finalizer | 创建、观测、复用并整组销毁 |
 
 Eval 与 Experiment 的 `sandbox` 字段使用同一个 `SandboxLayer` 类型。
 Agent layer 只共享排序位置,ensure 循环的协议不降格成普通命令。
@@ -62,7 +62,7 @@ core 不把计划降成 JSON 后再 Schema decode，也不把新 plan 逆向拼�
 启动函数返回带 `Scope.Scope` 要求的 Effect。
 fresh Case 默认在 Scope 退出时整组 stop。
 留存路径必须通过显式 release disposition 完成 suspend。
-资源不能直接离开 Scope，再依赖调用约定手工清理。
+资源不能直接离开 Scope，再依赖调用约定手工销毁。
 
 ## Eval template 路径
 
@@ -122,8 +122,8 @@ Agent CLI 与 Adapter 配置可以依赖 template 提供的系统能力,也可�
 
 ## 单一 Attempt prepare 频次
 
-普通作者 command 没有窗口级 scope。
-无论 fresh 或 reuse,每条 Attempt 都在进入 Agent 前完整重放两层命令:
+普通作者 command 没有周期级 scope。
+无论 fresh 或 reuse,每条 Attempt 都在进入 Agent 前完整执行两层命令:
 
 ```text
 fresh: create Case -> author commands -> agent.ensure 循环 -> Agent
@@ -131,12 +131,12 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 ```
 
 因此命令不能依赖「上一条 Attempt 应该已经运行过我」。
-昂贵工具由领域 helper 实现真实检查、缺失时安装、安装后复检;预装 template 只让检查命中,不删除 command。
+昂贵工具由领域步骤实现真实检查、缺失时安装、安装后复检;预装 template 只让检查命中,不删除 command。
 
-这项选择刻意放弃窗口专属 command 的表达力:
+这项选择刻意放弃周期专属 command 的表达力:
 
 - 绑定 Case 寿命的资源归 Provider Case;
-- 无法重复执行、严格每个物理实例一次的环境动作归 Sandbox lifecycle hooks。
+- 无法重复执行、严格每个物理实例一次的实例动作归 Sandbox lifecycle hooks。
 
 它换来的是作者不需要理解 reset 边界与复用池就能把准备写对。
 
@@ -146,14 +146,14 @@ reuse: reset Case  -> author commands -> agent.ensure 循环 -> Agent
 |---|---|---|
 | 配对 template link | Run 规划期 | Run 规划期 |
 | Provider physical plan / fingerprint | Run 规划期 | Run 规划期 |
-| Case create / ready | 每 Attempt | 每复用窗口 |
+| Case create / ready | 每 Attempt | 每复用周期 |
 | reset | 唯一 Attempt 进入前 | 每 Attempt 进入前 |
-| 两层作者 prepare commands | 每 Attempt | 每 Attempt 重放 |
+| 两层作者 prepare commands | 每 Attempt | 每 Attempt 执行 |
 | agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt | 每 Attempt 重探,命中快速返回 |
 | Sandbox lifecycle hooks | 每物理实例一次 | 每台被复用的物理实例一次；纯 Experiment-owned hook 可跨 eval 共用，Eval-owned hook 按 eval 隔离 |
 | Agent runtime / test | 每 Attempt | 每 Attempt |
 | command 已登记 cleanup | 每 Attempt 逆序 | 每 Attempt 逆序 |
-| Provider finalizer | 每 Attempt | 每复用窗口 |
+| Provider finalizer | 每 Attempt | 每复用周期 |
 
 复用只复用 Provider Case 与允许保留的状态;准备链仍然是每条 Attempt 的可观察事实。
 某个检查命令的已安装内容在 reset 后仍然存在时,它的检查会命中;reset 删除了该内容时,当前 Attempt 重新安装,这是正确性结果,不是缓存失败。
@@ -168,16 +168,16 @@ Sandbox setup 在物理实例创建后、逐 Attempt prepare 前执行；teardow
 
 - 作者 command 写入的题目材料不算 Agent 修改;
 - Agent CLI 安装不得把工具文件写进任务 workdir;
-- lifecycle setup 写入的环境条件不算 Agent 修改;
-- `test(t)` 在 `send` 窗口外上传的文件仍按 Eval 活动归因;
-- 只有 Agent turn 窗口内的变化进入 Agent diff。
+- lifecycle setup 写入的运行条件不算 Agent 修改;
+- `test(t)` 在 `send` 区间外上传的文件仍按 Eval 活动归因;
+- 只有 Agent turn 区间内的变化进入 Agent diff。
 
-Runner 仍记录各活动的实际文件变化,不能靠延后 baseline 隐藏测试泄漏。
+Runner 仍登记各活动的实际文件变化,不能靠延后 baseline 隐藏测试泄漏。
 
 ## Cleanup
 
 SandboxCommand 在运行中取得临时资源后调用 `context.onCleanup()`。
-Runner 只清理本条 Attempt 实际取得的资源,顺序为全局 LIFO:
+Runner 只对本条 Attempt 实际取得的资源执行 cleanup,顺序为全局 LIFO:
 
 ```text
 Agent runtime teardown
@@ -190,7 +190,7 @@ Agent runtime teardown
 
 agent.ensure 循环默认不卸载 CLI;临时 payload 由 Agent 安装层与 Runner 的专用 finalizer 处理。
 Case 的 service、watcher、日志与 volume 不走 `onCleanup()`,由 Provider Case finalizer 整组关闭。
-cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;cleanup 失败保留原结果、记录诊断,并在无法证明可恢复时退休复用窗口。
+cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;cleanup 失败保留原结果、写入诊断,并在无法证明可恢复时退休复用周期。
 
 ## 身份与复用池
 
@@ -212,7 +212,7 @@ Sandbox 复用池的键只固定物理实例共享所需的输入:
 (Provider physical plan identity, Agent ensure identity, lifecycle owner marker)
 ```
 
-每条 Attempt 都重放命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
+每条 Attempt 都执行命令,所以池键不包含 prepare command 或「某条命令已经执行」的证据。
 hook callback 的函数体不进入 fingerprint，也不阻断跨 Run carry。Eval-owned hook 会把同一 Run 的物理实例按 eval 隔离，Experiment-owned hook 不会；hook 语义变化后的复验由作者显式执行 `--rerun all`。
 reset 或 cleanup 无法恢复已知边界时退休物理实例。
 
@@ -224,19 +224,19 @@ reset 或 cleanup 无法恢复已知边界时退休物理实例。
 | 配对两方都没有 template | `sandbox.template-missing`,全矩阵聚合,零 Provider I/O |
 | Direct Agent 搭配 SandboxLayer | `sandbox.unexpected-for-direct-agent` |
 | template factory / 平台 / capability 不可用 | physical planning 聚合错误,零 build / create |
-| Provider build / start / ready | Attempt `errored`,归 Sandbox Case |
+| Provider build / start / ready | Attempt `errored`,归 Case |
 | template owner 的作者 command | Attempt `errored`,归 `sandbox.prepare.<templateOwner>` |
 | 第二作者 layer 的 command | Attempt `errored`,归对应 owner 的 `sandbox.prepare` |
 | agent.ensure 循环的 探测 配对、install 或复检 | Attempt `errored`,归 `agent.ensure` |
 | Sandbox lifecycle setup | Attempt `errored`;已创建的物理实例仍依序运行 teardown 后停止 |
 | Sandbox lifecycle teardown | 追加 warning diagnostic，继续其余 teardown 并停止 provider |
-| command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用窗口 |
-| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败记录 `sandbox-stop-failed` Case cleanup 诊断并保留可重试/孤儿认领的资源所有权，不覆盖原始 Attempt 判定 |
+| command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用周期 |
+| Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup 诊断并保留可重试/孤儿认领的资源所有权，不改写原始 Attempt 判定 |
 
 ## 相关阅读
 
 - [Sandbox Layer](layers.md) —— 作者声明、配对规则与 command identity。
-- [Sandbox Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
+- [Case](case.md) —— BuildKey / CaseKey、构建协调与 Compose 义务。
 - [Sandbox 复用](reuse.md) —— reset、寿命确认与复用污染诊断。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— ensure 声明与 Agent 安装层的协议。
 - [Experiments · 缓存与携带](../experiments/cache.md) —— fingerprint 与 configHash 的完整输入清单。

@@ -16,5 +16,5 @@
 - 点目标是该实验的 [experiment 详情页](../experiment-detail/README.md)，报告没有 `experiment` 页时点是纯图形；
 - series 默认优先使用 `labels.line`，没有 line 时使用 agent。
 
-`series`、`connect` 与 `pointTarget` 可以覆盖默认归类、连线与下钻策略。
+`series`、`connect` 与 `pointTarget` 可以替换默认归类、连线与下钻策略。
 组件只负责默认比较口径；需要其它轴或粒度时直接使用 `aggregate()` 与 `Scatter`。

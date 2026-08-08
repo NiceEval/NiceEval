@@ -2,7 +2,7 @@
 
 `--source` 是 attempt-detail 源码区块的深度 text 投影。
 它显示本次 Attempt 首次引用各文件时保存的源码，不读取工作树里可能已经改过的版本。
-入口文件构成主干；共享 helper 中的断言、给分记录和 send 按运行时调用路径挂到主干或上一层 helper 的调用行下。
+入口文件构成主干；共享辅助文件中的断言、给分条目和 send 按运行时调用路径挂到主干或上一层辅助文件的调用行下。
 
 ```sh
 niceeval show @1qrdcfq8 --source
@@ -50,7 +50,7 @@ one file in full:     niceeval show @1qrdcfq8 --source=evals/install/share/eval-
   全通过路径默认只显示汇总；有未通过、unavailable、丢分或前置中止时默认内联调用片段。
 
 调用片段使用被调文件自己的行号，每层增加一个 `│` 缩进。
-同一调用行循环进入同一个 helper 时，各次标注按发生顺序合并；运行时帧没有 invocation 身份，因此输出不声称调用了多少次。
+同一调用行循环进入同一个辅助文件时，各次标注按发生顺序合并；运行时帧没有 invocation 身份，因此输出不声称调用了多少次。
 
 默认投影折叠连续的无关源码行，并在 400 个源码行预算内优先展开严重失败。
 主干行、调用汇总和完整证据树不受预算影响；收起的路径在当前投影只留汇总，并提示 `--source=full`。
@@ -81,7 +81,7 @@ outside the eval entry · lib/candidate.ts
 
 链中缺少源码时保留 `source unavailable: <path>`；经过第三方包时保留不可展开的`package: <name>`。
 更深的项目源码仍挂在缺口下面。
-只有真正没有 `loc` 的断言和给分记录进入`unmapped`。
+只有真正没有 `loc` 的断言和给分条目进入`unmapped`。
 
 没有任何源码时命令非零退出并报告 unavailable，不伪造空文档。
 

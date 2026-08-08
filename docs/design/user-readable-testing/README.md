@@ -60,7 +60,7 @@ test("show --json 经 pipe 仍交付完整 JSON", async () => {
 });
 ```
 
-这里的 helper 只启动进程和解析 JSON。
+这里的辅助代码只负责启动子进程，并把 stdout 读成 JSON。
 阈值、sentinel 与成功条件都在测试文件里，候选实现无法替测试生成答案。
 跨 Repo 共享这些机械能力时，交付物与待测包的信任边界见 [TESTKIT](TESTKIT.md)。
 

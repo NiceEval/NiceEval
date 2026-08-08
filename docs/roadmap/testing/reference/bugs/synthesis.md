@@ -1,12 +1,12 @@
-# 最终综合：用最少公开行为覆盖历史缺陷
+# 最终综合：用最少公开行为守护历史缺陷
 
 > 本篇是 PLAN-2 阶段的研究综合，保留 world、proof 与领域 matcher 词汇，不是最终作者 API。
 > 选定方案把这里的历史缺陷形态映射到 Unit、单边界 E2E、Journey E2E 和真实场景 Repo；
 > 最终规则见 [测试 Roadmap](../../README.md)。
 
-## 结论
+## 审计判断
 
-七轮抽样覆盖 CLI、runner、record、report、browser、provider、sandbox、adapter、构建与文档消费方。
+七轮抽样守护 CLI、runner、record、report、browser、provider、sandbox、adapter、构建与文档消费方。
 第 6、7 轮连续跨模块挑战都没有新增缺陷形态、测试原语或机制缺口，当前抽象可以收敛。
 
 收敛结果不是“为每个旧 bug 写一个 matcher”，而是六组可复用能力：
@@ -18,7 +18,7 @@
 | 公开结构读面 | `reportView()`、`ndjsonEvents()`、`jsonSummary()`、`junitReport()`、`sandboxInventory()` | 从用户实际收到的 stdout、机器出口和资源清单按公开身份读回 |
 | 真实消费 / 托管形态 | `w.consumerDir(name)`、`hosting` | CJS、foreign cwd、发布包入口、无尾斜杠子路径等宿主差异进入矩阵 |
 | 浏览器动作闭环 | Playwright 原生动作、领域寻址、步骤轨迹 | DOM producer、增强脚本、URL 基底、网络取件与可见结果在真实浏览器闭合 |
-| 独立比较 | `expectObserved()`、短文本 `toMatchScrubbedFileSnapshot()` | 预期来自题面，不从候选实现回抄；失败携带来源与提取路径 |
+| 独立比较 | `expectObserved()`、短文本 `toMatchScrubbedFileSnapshot()` | 预期来自题面，不从候选实现回抄；失败携带出处与提取路径 |
 
 `attemptIntervals()`、`truncations()`、`executionNodes()` 是上述公开读面的领域查询，不是各自的
 runner 或观察机制。它们只有公开文档已经存在对应概念时才立词。
@@ -32,11 +32,11 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 | prepare | recipe、候选包、结果根、producer closure、可变权限正确 | 共享 evidence 被后置验收污染 |
 | invoke | 用户命令能在指定 consumer / hosting / provider world 正确启动 | CJS config、foreign Report、marketplace 名、空 view |
 | observe | 用户实际收到的流、artifact、URL、结构字段完整可消费 | pipe 截断、diff 三态、artifact 404、diagnostic code |
-| outcome | 多个局部事实折叠后的 verdict、identity、formula、timeline 关系正确 | retry exit、并发闸、carry、Report 公式 |
+| outcome | 多个局部事实折叠后的 verdict、identity、formula、timeline 关系正确 | retry exit、并发限制、carry、Report 公式 |
 | cleanup | 进程结束后，框架承诺负责的外部资源和 lease 已真正释放 | teardown 被切断、Compose orphan、心跳复活锁 |
 
 失败消息固定为：已执行 action 轨迹、失败阶段、公开对象身份、实际观察、期望与最短复现命令。
-观察器自己解析失败必须在 observe 阶段显式报错；不得回退成空数组、`undefined`、文本包含或“跳过”。
+观察器自己读取失败必须在 observe 阶段显式报错；不得回退成空数组、`undefined`、文本包含或“跳过”。
 
 ## 分层归属
 
@@ -48,42 +48,42 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 1. 机器出口经真实 pipe 仍完整，进程 outcome 与最终结果一致。
 2. CJS、foreign cwd、文档 example 作为真实候选包消费方可运行。
 3. 公开 locator 与历史选择能在多步运行后往返，宿主不丢 identity closure。
-4. 调度只断区间关系：实验隔离、retry 持闸、BuildKey ready 即放行。
+4. 调度只断区间关系：实验隔离、retry 持续占用并发名额、BuildKey ready 即放行。
 5. adapter 的公开身份由真实事件 / 安装状态读回，不由配置或厂商中间名猜测。
 6. diff、artifact 与机器出口保留“缺失 / 空 / 有内容”及“完整 / 截断”的公开边界。
 7. Report 领域值在 text / web 中一致，公式由非对称输入独立确定。
 8. 通用参数化 target、clean-url 托管、交互增强与热重载在真实浏览器完成动作闭环。
 9. SIGINT / SIGKILL 后，外部 inventory 与下一次 Invocation 证明资源所有权已闭合。
-10. 官方 sandbox 的执行用户、可写工具目录、受管 PATH 与 recipe identity 在真实环境一致。
+10. 官方 sandbox 的执行用户、可写工具目录、受管 PATH 与 recipe identity 在真实宿主上一致。
 11. Site 用户能从完整文章列表进入正文，并沿 markdown link 到达目标。
 
 ### 单元 / 结构守护负责
 
 这些事实可在最早层确定，放进 E2E 只会更慢、更难定位：
 
-| 守护 | 必须覆盖的反例 | 不交给 E2E 的理由 |
+| 守护 | 必须守住的相反例子 | 不交给 E2E 的理由 |
 |---|---|---|
 | provider SDK contract case | paginator / page、真实类型、unknown 状态 | 远端歧义故障不可确定重现，类型与纯适配最早失败 |
 | scheduler / lease 压力单元 | retry backoff、release 后在飞 heartbeat、两类 lease 共用行为 | 概率竞态需可控 barrier，不应靠 E2E 多跑碰运气 |
-| BuildKey 来源矩阵 | service / build 声明、探测回落、执行入参同源 | 组合数量高，纯输入矩阵定位更直接 |
+| BuildKey 出处矩阵 | service / build 声明、探测回落、执行入参同源 | 组合数量高，纯输入矩阵定位更直接 |
 | adapter contract matrix | 每条 SDK / CLI 路径的 canonical identity、真实 JSON fixture | 一个代表真机 proof 足够，其余路径不重复付费 |
 | artifact registry contract | 每类大字段的保存 / 截断策略、后续命令仍完整 | 策略是 registry 的穷举事实，不靠一条巨大用户 fixture 证明全量 |
 | Report compute contract | 三种可区分公式、failure reason 优先级、跨 experiment identity | 计算层最早失败；用户 E2E 只留一个代表组合题 |
-| runnable example census | 每个公开键 / flag 至少有一个真实 consumer case | 这是覆盖完整性，不是单个页面渲染行为 |
+| runnable example census | 每个公开键 / flag 至少有一个真实 consumer case | 这是守护完整性，不是单个页面渲染行为 |
 | producer symbol closure | Report host 不加载第二份 record / locator 实现 | 防测试 recipe 自己选错入口制造假红假绿 |
 | Report target 结构 census | 最终 page 清单、`enumerate()` / `planSite` 输出与 `docs/feature/reports/` 登记表双向全集比对、内部链接与导出文件双向闭合 | 全量集合在计划层最早失败；浏览器只留 attempt / experiment / custom 代表 |
-| official sandbox baseline contract | effective user、`/usr/local`、managed PATH、recipe revision 声明与执行错配 | provider / recipe 组合在结构层穷举；真实环境只留一个代表 |
+| official sandbox baseline contract | effective user、`/usr/local`、managed PATH、recipe revision 声明与执行错配 | provider / recipe 组合在结构层穷举；真实宿主只留一个代表 |
 | source text integrity | literal C0 控制字节进入发布源码或生成 TS | byte scan 最早、最便宜，启动 CLI 不能增加区分力 |
 | Site content registry | registry / index identity 漂移、markdown link node 退化 | 全 post / locale 矩阵在结构层拥有；浏览器只留 discover → read 代表 |
 
 ### 仍需框架机制
 
-三项不能用特例断言假装已经覆盖：
+三项不能用特例断言假装已经守护：
 
 | 机制缺口 | 为什么用户侧当前捕获不了 | 关闭标准 |
 |---|---|---|
-| provider 故障编排 | 普通用户入口不能确定制造“create 超时但远端已创建”、paginator 中途失败等状态 | provider contract harness 能脚本化 SDK page / error 序列；同一用户命令可稳定复现且总清理 |
-| Build 执行事实 attestation | provenance 只有声明 / BuildKey，没有实际镜像平台或 builder 结果 | 公开结果记录执行侧平台 / digest，并能与 BuildKey 的有效平台作结构比较 |
+| provider 故障编排 | 普通用户入口不能确定制造“create 超时但远端已创建”、paginator 中途失败等状态 | provider contract harness 能脚本化 SDK page / error 序列；同一用户命令可稳定复现且总回收 |
+| Build 执行事实 attestation | provenance 只有声明 / BuildKey，没有实际镜像平台或 builder 结果 | 公开结果登记执行侧平台 / digest，并能与 BuildKey 的有效平台作结构比较 |
 | 未知配置键拒绝 | `defineExperiment` 对 `runs` 之类未知顶层键会静默忽略，E2E 只能发现一个具体拼写 | 运行时或 schema 在 config 装载阶段拒绝未知键，错误带文件、键名与最近候选 |
 
 在机制关闭前，题库把它们标为 `GAP`，不写 `expect(...).toBeTruthy()` 一类替代品。
@@ -99,7 +99,7 @@ runner 或观察机制。它们只有公开文档已经存在对应概念时才�
 5. **观察器故障不假绿。**喂入 malformed / unsupported 公开输出时必须显式报 observe error，并列实际候选。
 6. **用户用法不改。**不得要求修改 Eval、原 assertion、Report 或产品代码来增加观察点；差异只在隔离 recipe / consumer / hosting world。
 
-每题还要写明公开契约来源、独立 oracle 推导与区分性输入。
+每题还要写明公开契约出处、独立 oracle 推导与区分性输入。
 合法契约迁移必须先改契约文档、迁移说明和题目版本；只运行 `vitest -u` 或把字面值改成当前输出，
 不能成为放行方式。
 
@@ -126,11 +126,11 @@ radius。`duplicated matrix` 必须为 0；纯实现重构的 `net proof delta` 
 
 | 批次 | 内容 | 进入下一批的可判定标准 |
 |---|---|---|
-| 0：加固版 walking skeleton | 手写 prepare 脚本端到端落一条瘦版 `reports.target-closure`：脚本产出 manifest JSON，manifest 记录 fixture 目录与脚本内容 hash、candidate sha256，`world()` 读取时重算比对、失配拒绝读取；Playwright 原生动作词只准出现在单个 support 模块内，测试正文只调用领域函数名；hosting 仅 `directory-root` | CI path-filter 硬门禁与本批同批挂上；本批 Retirement Declaration 只列实际要删除或吸收的旧 proof，清单中 `removed` 文件仍存在即红；缺失 experiment 文档的逆补丁在 observe 阶段必红；冷跑成本读数落盘（`clean-url-subpath` 逆补丁归浏览器批次） |
+| 0：加固版 walking skeleton | 手写 prepare 脚本端到端落一条瘦版 `reports.target-closure`：脚本产出 manifest JSON，manifest 登记 fixture 目录与脚本内容 hash、candidate sha256，`world()` 读取时重算比对、失配拒绝读取；Playwright 原生动作词只准出现在单个 support 模块内，测试正文只调用领域函数名；hosting 仅 `directory-root` | CI path-filter 硬门禁与本批同批挂上；本批 Retirement Declaration 只列实际要删除或吸收的旧 proof，清单中 `removed` 文件仍存在即红；缺失 experiment 文档的逆补丁在 observe 阶段必红；冷跑成本读数落盘（`clean-url-subpath` 逆补丁归浏览器批次） |
 | 1：便宜高收益 | 题 A1 进程 / pipe、A2 consumer matrix、A3 locator roundtrip、A11 Site discover / read；真实消费者落地后提取并冻结 `WorldManifest` schema v1，冻结动作是写进 `docs/`，schema 的每个 digest 链字段都必须是可重算的非空 digest；热缓存预算从本批起算 | 四题当前版绿；对应旧 commit / 逆补丁红在预期阶段；化妆性扰动仍绿；`WorldManifest` schema v1 已写入 `docs/`，缺 digest 或无法重算都拒绝读取 |
 | 2：事件与计算 | A4 timeline、A6 artifact boundary、A7 Report semantics | 不用 sleep；每题至少区分两个错误实现；失败消息只靠公开身份定位 |
 | 3：浏览器 | A8 generic target / clean-url / enhancement / hot reload | target census 全集闭合；attempt / experiment / custom 三类代表可达；三种 hosting recipe 隔离；缺 DOM、网络 404、服务提前退分别可诊断；无公网 |
-| 4：高成本生命周期 | A5 外部 adapter identity、A9 cleanup ownership、A10 官方 sandbox contract | pinned 外部输入；串行 lane；无论成功失败都执行异常清理；下一次运行证明无残留；官方环境声明与执行事实一致 |
+| 4：高成本生命周期 | A5 外部 adapter identity、A9 cleanup ownership、A10 官方 sandbox contract | pinned 外部输入；串行 lane；无论成功失败都执行异常回收；下一次运行证明无残留；官方宿主声明与执行事实一致 |
 | 5：机制关闭 | provider fault harness、Build attestation、unknown-key rejection | 每个 `GAP` 转成结构化公开事实后，先补 unit contract，再决定是否升一个代表 E2E |
 | 6：现有 unit 收敛 | 依次迁移 runner carried、Report compute、Record、adapter identity 的高跟改矩阵 | 每个 Feature 有唯一 owner；旧重复 proof 已删除；无关 DTO 字段变化只触及 fixture builder；净数量报告可审计 |
 

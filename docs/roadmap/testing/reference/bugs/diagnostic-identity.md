@@ -25,7 +25,7 @@ runnerBehavior(warningKeepsStableCodeAndSeparateIdentity, async () => {
 });
 ```
 
-proof 不解析 code 的冒号，也不从 message 正则提取身份。
+proof 不读取 code 的冒号，也不从 message 正则提取身份。
 缺任一具名字段时在 observe 阶段失败。
 
 ## 同形反证：最后经过的阶段不是失败原因
@@ -46,7 +46,7 @@ fix commit `d3792749` 前，runner 把 teardown 前最后一个 lifecycle phase 
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | code、identity、origin 各断各的，不锁去重 key 或展示顺序 |
 | 不能改断言放行 | code 是公开枚举；phase 来自错误原点；failed 必须省略 |

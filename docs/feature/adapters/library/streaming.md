@@ -42,7 +42,9 @@ Spec 只声明一帧对应开始、增量、完成还是失败；通用实现按
 - `onFrame` 返回 pause 信号时补一条 `input.requested` 事件并返回 waiting Turn，且不关闭 cursor。
 
 `onFrame` 只识别 transport 特有行为，例如审批帧或服务器错误；SDK 标准事件仍由 reducer 处理。
-保存现场是 `onFrame` 自己的责任——adapter 定义 typed slot，在返回 pause 前用 `ctx.session.set(slot, ...)` 存住 cursor 与 reducer，回答轮 `ctx.session.take(slot)` 取回接着读同一条流；`driveFrameStream` 只负责停轮，不代为保存。
+保存现场是 `onFrame` 自己的责任——adapter 定义 typed slot，在返回 pause 前用 `ctx.session.set(slot, ...)` 存住 cursor 与 reducer。
+回答轮 `ctx.session.take(slot)` 取回接着读同一条流。
+`driveFrameStream` 只负责停轮，不代为保存。
 
 ```ts
 const heldSlot = createSessionSlot<Held>("my-agent/held-stream");
@@ -68,7 +70,7 @@ Sandbox Adapter 可以复用 `shared` 中的安装、采集、诊断和 JSONL �
 - `captureLatestJsonl`
 - `extractJsonlFromStdout`
 - `firstJsonField`
-- session ID helpers
+- session ID 处理工具
 - `shellQuote`
 - `diagnoseFailure`
 - Agent transcript parsers

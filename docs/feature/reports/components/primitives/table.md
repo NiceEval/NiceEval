@@ -7,7 +7,7 @@
 ```
 
 省略 columns 时按第一行的稳定字段顺序推导。
-覆盖列时传字段名或列定义：
+自定义列时传字段名或列定义：
 
 ```tsx
 <Table
@@ -56,10 +56,10 @@ web 面输出真实 `<table>`；text 面输出[数据格框](../../library/layou
 
 行形状与列集同源：每一行（含 group、placeholder 与各层子行）的 cells key 集合等于列集。对这一行不适用的列显式填 notApplicable 格，不靠缺格回落成 `—`。写了列集外的 key，或漏掉一个声明列，都按完整用户反馈报错，错误指到行 key 与列 key。
 
-表头长在列声明上。列声明可携带 `header`（LocalizedText），text 与 web 两面按当前 locale 解析同一份表头，不各自另取；未声明 `header` 的列按 key 原样显示——维度值列（条件名、实验 id 这类列名即数据的列）用这一支。
+表头长在列声明上。列声明可携带 `header`（LocalizedText），text 与 web 两面按当前 locale 从同一份表头取对应语言，不各自另取；未声明 `header` 的列按 key 原样显示——维度值列（条件名、实验 id 这类列名即数据的列）用这一支。
 `Table` 自身不携带任何列名词表，不认识 entity、passRate 这类具体列名；同一个 key 在不同投影里可以有不同表头。
 
-公开 rows 形态的表头同一规则：默认原样显示字段名，传 `label` 覆盖。
+公开 rows 形态的表头同一规则：默认原样显示字段名，传 `label` 替换。
 
 ## 相关阅读
 

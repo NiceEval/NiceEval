@@ -1,12 +1,14 @@
 # References —— 从其它项目学到什么
 
-已经落地的借鉴大多分散记在各篇文档自己的"来源"脚注里(比如 [README](README.md) 的整体形状借鉴、[Assertions 来源](./feature/assertions/reference/provenance.md) 里的评分设计来源、[experiments/architecture.md](feature/experiments/architecture.md#设计参照从-agent-eval-删除了什么以及为什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`)。这篇文档不重复那些,专门记录**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
+已经落地的借鉴大多分散记在各篇文档自己的"出处"脚注里。
+比如 [README](README.md) 的整体形状借鉴、[Assertions 出处](./feature/assertions/reference/provenance.md) 里的评分设计出处、[experiments 设计参照](feature/experiments/reference/agent-eval.md#niceeval-没跟什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`。
+这篇文档不重复那些,专门记下**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
 
 每次调研一个外部项目开一个二级标题,格式固定:是什么 → 已经借鉴的 → 这次新学到、值得抄的 → 调研过但不打算抄的(及理由)。
 
 ## API 设计准则
 
-**来源：** [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)、[Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)、[Rust API Guidelines · Naming](https://rust-lang.github.io/api-guidelines/naming.html) 与 [Google Go Style Best Practices · Naming](https://google.github.io/styleguide/go/best-practices.html)。
+**出处：** [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)、[Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)、[Rust API Guidelines · Naming](https://rust-lang.github.io/api-guidelines/naming.html) 与 [Google Go Style Best Practices · Naming](https://google.github.io/styleguide/go/best-practices.html)。
 
 **是什么：** 四套语言生态的公开 API 命名与调用约定。
 Swift 以调用点清晰为首要目标；Google TypeScript 规定 TypeScript 标识符的 casing、描述性与缩写纪律；Rust 为转换等动作建立稳定词族；Google Go 区分返回值的名词性名字与产生动作的动词性名字。
@@ -29,13 +31,16 @@ Swift 以调用点清晰为首要目标；Google TypeScript 规定 TypeScript �
 
 ## Vercel agent-eval —— `packages/playground`
 
-**来源路径:** `/Users/ctrdh/Code/agent-eval/packages/playground`(本机另一个项目,不在这个仓库里,记路径方便下次再核对实现有没有变)。
+**出处路径:** `/Users/ctrdh/Code/agent-eval/packages/playground`(本机另一个项目,不在这个仓库里,记路径方便下次再核对实现有没有变)。
 
-**是什么:** `@vercel/agent-eval-playground`,独立发布的 Next.js 结果查看器。零数据库、零 API 路由——所有页面是 Server Component,`lib/data.ts` 直接 `fs.readdirSync`/`readFileSync` 读 `results/`(实验结果)和 `evals/`(eval fixture)两个目录,`force-dynamic` 保证每次请求都读最新的盘上数据。CLI(`bin.mjs`)把目录路径放入环境变量后 `spawn` 包内置的 `next start`。
+**是什么:** `@vercel/agent-eval-playground`,独立发布的 Next.js 结果查看器。
+零数据库、零 API 路由——所有页面是 Server Component。
+`lib/data.ts` 直接 `fs.readdirSync`/`readFileSync` 读 `results/`(实验结果)和 `evals/`(eval fixture)两个目录,`force-dynamic` 保证每次请求都读最新的盘上数据。
+CLI(`bin.mjs`)把目录路径放入进程变量后 `spawn` 包内置的 `next start`。
 
-### 已经借鉴的(更早调研,已经在别处记过来源)
+### 已经借鉴的(更早调研,已经在别处记过出处)
 
-`niceeval view` 本身("本地结果查看器")、sandbox / diff 的工程形状、transcript 归一化与可观测、experiment 层——这些在 [README](README.md) 和 [source-map.md](source-map.md) 里已经标了来源,这里不重复。
+`niceeval view` 本身("本地结果查看器")、sandbox / diff 的工程形状、transcript 归一化与可观测、experiment 层——这些在 [README](README.md) 和 [source-map.md](source-map.md) 里已经标了出处,这里不重复。
 
 ### 这次新学到、值得抄的
 
@@ -45,72 +50,131 @@ Swift 以调用点清晰为首要目标；Google TypeScript 规定 TypeScript �
 
 ### 调研过、判断不值得抄的(及理由)
 
-1. **Tool 遥测是固定的 10 项 `ToolName` 枚举** (`file_read`/`shell`/`web_fetch`/…) + Badge 计数(`O11ySummary.tsx`)。niceeval 走的是 OTel GenAI 语义约定的 canonical trace/mapper(见 [Observability](observability.md#transcript-标准事件流)),覆盖面和跨 agent 一致性都更好——这块 niceeval 已经比它强,不用倒退抄。
-2. **整个架构是"每次请求都读 fs 的 Next.js 多页面 live server"。** 没有数据库、没有 API 路由,但需要一个常驻的 `next start` 进程。niceeval 的 `view` 是"一次性烘焙 HTML+JSON 静态产物"(`src/view/index.ts` 的 `renderHtml`),导出目录扔给任何静态托管就能看,不需要常驻进程。这是刻意的取舍,不打算改成常驻多页应用——如果要抄 `/compare`,数据仍然要在生成 HTML 时一次性烘焙进去,不能假设前端能随时再查 fs。
-3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 放入环境变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
+1. **Tool 遥测是固定的 10 项 `ToolName` 枚举** (`file_read`/`shell`/`web_fetch`/…) + Badge 计数(`O11ySummary.tsx`)。
+   niceeval 走的是 OTel GenAI 语义约定的 canonical trace/mapper(见 [Observability](observability.md#transcript-标准事件流))。
+   它涉及面更广、跨 agent 一致性更好。
+   这块 niceeval 已经比它强,不用倒退抄。
+2. **整个架构是"每次请求都读 fs 的 Next.js 多页面 live server"。** 没有数据库、没有 API 路由,但需要一个常驻的 `next start` 进程。
+   niceeval 的 `view` 是"一次性烘焙 HTML+JSON 静态站点"(`src/view/index.ts` 的 `renderHtml`),导出目录扔给任何静态托管就能看,不需要常驻进程。
+   这是刻意的取舍,不打算改成常驻多页应用。
+   如果要抄 `/compare`,数据仍然要在生成 HTML 时一次性烘焙进去,不能假设前端能随时再查 fs。
+3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 放入进程变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
 
 ## Recharts
 
-**来源:** [recharts.github.io](https://recharts.github.io/en-US/)、`recharts/recharts` GitHub README(经站点调研,未在本仓库留存原始抓取)。
+**出处:** [recharts.github.io](https://recharts.github.io/en-US/)、`recharts/recharts` GitHub README(经站点调研,未在本仓库留存原始抓取)。
 
-**是什么:** "A composable charting library built on React components" ——SVG 图表库,GitHub README 给出的三条原则是"用 React 组件部署""原生 SVG 支持""声明式组件,组件本身只负责呈现"。图表家族按位置分五组:Charts(`LineChart`/`BarChart`/`AreaChart`/`ComposedChart`/`PieChart`/`RadarChart`/`RadialBarChart`/`ScatterChart`/`FunnelChart`/`Treemap`/`Sankey`/`SunburstChart`)、General(`ResponsiveContainer`/`Tooltip`/`Legend`/`Label`/…)、Cartesian(`XAxis`/`YAxis`/`CartesianGrid`/`Line`/`Bar`/`Area`/`Scatter`/`Brush`/`ReferenceLine`/…)、Polar(`Pie`/`Radar`/`RadialBar`/`PolarAngleAxis`/…)、Shapes。核心组合模型:图表容器(如 `LineChart`)收 `data`(一份对象数组)与尺寸/margin,子组件(`CartesianGrid`、`XAxis`、`YAxis`、`Tooltip`、`Legend`、一个或多个 series 组件如 `Line`/`Bar`/`Area`)按声明顺序摆在容器内,每个 series 组件用 `dataKey` 从容器的共享 `data` 里取自己的字段;容器与子组件之间是显式 React context 关系,每个组件的 API 页固定列"Parent Components"(消费谁的 context,通常是 `ResponsiveContainer` 或某个图表容器)和"Child Components"(向哪些组件提供 context),子组件之间(如 `CartesianGrid`/`XAxis`/`Line`)在 API 文档层面不要求特定顺序。`ComposedChart` 允许在同一个容器里混合多种 series 类型子组件(如同一张图里 `Area`+`Bar`+`Line`)。
+**是什么:** "A composable charting library built on React components" ——SVG 图表库。
+GitHub README 给出的三条原则是"用 React 组件部署""原生 SVG 支持""声明式组件,组件本身只负责呈现"。
+图表家族按位置分五组:
+
+- Charts:`LineChart`/`BarChart`/`AreaChart`/`ComposedChart`/`PieChart`/`RadarChart`/`RadialBarChart`/`ScatterChart`/`FunnelChart`/`Treemap`/`Sankey`/`SunburstChart`。
+- General:`ResponsiveContainer`/`Tooltip`/`Legend`/`Label`/…。
+- Cartesian:`XAxis`/`YAxis`/`CartesianGrid`/`Line`/`Bar`/`Area`/`Scatter`/`Brush`/`ReferenceLine`/…。
+- Polar:`Pie`/`Radar`/`RadialBar`/`PolarAngleAxis`/…。
+- Shapes。
+
+核心组合模型:图表容器(如 `LineChart`)收 `data`(一份对象数组)与尺寸/margin。
+子组件(`CartesianGrid`、`XAxis`、`YAxis`、`Tooltip`、`Legend`、一个或多个 series 组件如 `Line`/`Bar`/`Area`)按声明顺序摆在容器内。
+每个 series 组件用 `dataKey` 从容器的共享 `data` 里取自己的字段。
+
+容器与子组件之间是显式 React context 关系。
+每个组件的 API 页固定列"Parent Components"(消费谁的 context,通常是 `ResponsiveContainer` 或某个图表容器)和"Child Components"(向哪些组件提供 context)。
+子组件之间(如 `CartesianGrid`/`XAxis`/`Line`)在 API 文档层面不要求特定顺序。
+`ComposedChart` 允许在同一个容器里混合多种 series 类型子组件,如同一张图里 `Area`+`Bar`+`Line`。
 
 ### 这次新学到、值得抄的
 
-1. **子组件即配置,新增能力是"加一种子组件类型",不是给已有容器组件继续加字段。** `ComposedChart` 把 `Area`/`Bar`/`Line` 三种 series 组件混进同一张图,三种呈现分属独立组件,不是同一个容器组件靠一个 `type: "area" | "bar" | "line"` 字段切换。容器只认领固定几个概念(数据源、尺寸、margin),把"这张图要有哪些轴、哪些 series、要不要图例"整体下放给子组件列表表达。
-2. **三级定制阶梯,同一个类型形状贯穿多个定制点。** `Line` 的 `dot`/`activeDot`/`label`/`shape`、`Tooltip` 的 `content`,都是同一个类型公式:`false`(关闭)→ `{ 部分属性对象 }`(轻量覆盖若干字段)→ `ReactNode | Function`(整体接管渲染)。作者按需要的定制深度选择投入层级,不必为了改一个点的描边颜色就去写一个完整的自定义渲染组件。
+1. **子组件即配置,新增能力是"加一种子组件类型",不是给已有容器组件继续加字段。** `ComposedChart` 把 `Area`/`Bar`/`Line` 三种 series 组件混进同一张图。
+   三种呈现分属独立组件,不是同一个容器组件靠一个 `type: "area" | "bar" | "line"` 字段切换。
+   容器只认领固定几个概念(数据源、尺寸、margin),把"这张图要有哪些轴、哪些 series、要不要图例"整体下放给子组件列表表达。
+2. **三级定制阶梯,同一个类型形状贯穿多个定制点。** `Line` 的 `dot`/`activeDot`/`label`/`shape`、`Tooltip` 的 `content`,都是同一个类型公式:`false`(关闭)→ `{ 部分属性对象 }`(轻量改写若干字段)→ `ReactNode | Function`(整体接管渲染)。
+   作者按需要的定制深度选择投入层级,不必为了改一个点的描边颜色就去写一个完整的自定义渲染组件。
 3. **父子 context 关系在文档里显式配对声明。** 每个组件的参考页固定给出"我消费谁的 context"与"我给哪些子组件提供 context"两条,读者不用去读实现就能知道一个子组件能不能脱离某个容器单独使用。这是个文档模式,不是 recharts 独有的实现机制——即便不采用 React context,这种"结构关系显式配对写出来"的写法值得在 niceeval 自己的图表类文档里借鉴。
 
 ### 调研过、判断不值得抄的(及理由)
 
-1. **`ResponsiveContainer` / 容器的 `responsive` 属性靠浏览器 `ResizeObserver` 测量父元素尺寸。** `ResponsiveContainer` 的 `initialDimension` 默认 `{ width: -1, height: -1 }`,意味着首次测量完成前尺寸不确定——这与 niceeval「web 面先输出完整可读静态 HTML,响应式由 CSS 完成、不依赖 JS 测量」的不变量([Architecture · 静态网页](feature/reports/architecture.md#静态网页))冲突,直接采用会让无 JS 场景下的初始渲染不可靠。niceeval 现有的 CSS Grid + container query 减列方案不测量、不依赖 JS,做的是同一件"让图表适应容器宽度"的事,不需要倒退抄。
-2. **把 `recharts` 包整体接进 niceeval 报告 web 面的渲染依赖。** recharts 是纯 SVG/DOM 组件库,没有任何 text/终端投影;niceeval 的[图表组件](feature/reports/components/charts/README.md)两面必须同源,text 面的字符坐标图/趋势线无论如何都要自己写,不会因为借了 recharts 的 web 渲染而省下这块工作。被采用的是它的**组件树词汇**——容器、轴、series 与嵌套节点的父子所有权;包本身不进运行时依赖,两面渲染由 niceeval 自己实现。
-3. **动画系统、`syncId` 跨图联动 tooltip、40 余个鼠标/触摸/指针事件 prop。** 这些是浏览器交互层能力;niceeval 报告的「静态 HTML + 渐进增强」模型里,增强脚本只做排序/过滤/tooltip 这类轻量行为([不变量](feature/reports/architecture.md#静态网页)),不需要 recharts 级别的动画或跨图联动系统。
+1. **`ResponsiveContainer` / 容器的 `responsive` 属性靠浏览器 `ResizeObserver` 测量父元素尺寸。** `ResponsiveContainer` 的 `initialDimension` 默认 `{ width: -1, height: -1 }`,意味着首次测量完成前尺寸不确定。
+   这与 niceeval「web 面先输出完整可读静态 HTML,响应式由 CSS 完成、不依赖 JS 测量」的不变量([Architecture · 组件自带资产](feature/reports/architecture.md#组件自带资产))冲突,直接采用会让无 JS 场景下的初始渲染不可靠。
+   niceeval 现有的 CSS Grid + container query 减列方案不测量、不依赖 JS,做的是同一件"让图表适应容器宽度"的事,不需要倒退抄。
+2. **把 `recharts` 包整体接进 niceeval 报告 web 面的渲染依赖。** recharts 是纯 SVG/DOM 组件库,没有任何 text/终端投影。
+   niceeval 的[图表组件](feature/reports/components/charts/README.md)两面必须同源,text 面的字符坐标图/趋势线无论如何都要自己写,不会因为借了 recharts 的 web 渲染而省下这块工作。
+   被采用的是它的**组件树词汇**——容器、轴、series 与嵌套节点的父子所有权;包本身不进运行时依赖,两面渲染由 niceeval 自己实现。
+3. **动画系统、`syncId` 跨图联动 tooltip、40 余个鼠标/触摸/指针事件 prop。** 这些是浏览器交互层能力。
+   niceeval 报告的「静态 HTML + 渐进增强」模型里,增强脚本只做排序/过滤/tooltip 这类轻量行为([不变量](feature/reports/architecture.md#组件自带资产)),不需要 recharts 级别的动画或跨图联动系统。
 
 ## Playwright ARIA Run 与 ivya / Vitest 移植
 
-**来源:** [playwright.dev/docs/aria-snapshots](https://playwright.dev/docs/aria-snapshots)、[Vitest Browser Mode · ARIA snapshots](https://main.vitest.dev/guide/browser/aria-snapshots)(Vitest 4.1.4+ 实验特性,底层是独立库 ivya,见 [vitest PR #9668](https://github.com/vitest-dev/vitest/pull/9668))。
+**出处:** [playwright.dev/docs/aria-snapshots](https://playwright.dev/docs/aria-snapshots)、[Vitest Browser Mode · ARIA snapshots](https://main.vitest.dev/guide/browser/aria-snapshots)(Vitest 4.1.4+ 实验特性,底层是独立库 ivya,见 [vitest PR #9668](https://github.com/vitest-dev/vitest/pull/9668))。
 
-**是什么:** `toMatchAriaSnapshot`——对页面**可访问性树**(不是 DOM、不是像素)做 YAML Run 断言的 DSL。节点写法 `- role "name" [attr=value]`,子节点靠缩进;`"引号"` 是空白折叠后的精确名,`/…/` 是正则,省略 name 或属性即「不关心」。匹配语义:**默认局部匹配**——模板子节点只需按序作为实际子节点的子序列出现,多出的实际节点忽略;`- /children: equal` 升级为直接子节点精确匹配,`deep-equal` 逐层精确。文本一律空白折叠(多行折成单行再比)。更新走 `--update-snapshots`(默认 patch 模式产 diff 文件)。Vitest 侧的移植 ivya 是 Playwright-independent 的 a11y 树生成 + YAML 子集解析 + 匹配三件套,输入是一个 DOM element。
+**是什么:** `toMatchAriaSnapshot`——对页面**可访问性树**(不是 DOM、不是像素)做 YAML Run 断言的 DSL。
+节点写法 `- role "name" [attr=value]`,子节点靠缩进。
+`"引号"` 是空白折叠后的精确名,`/…/` 是正则,省略 name 或属性即「不关心」。
+
+匹配语义是**默认局部匹配**。
+模板子节点只需按序作为实际子节点的子序列出现,多出的实际节点忽略。
+`- /children: equal` 升级为直接子节点精确匹配,`deep-equal` 逐层精确。
+文本一律空白折叠,多行折成单行再比。
+更新走 `--update-snapshots`,默认 patch 模式产 diff 文件。
+Vitest 侧的移植 ivya 是 Playwright-independent 的 a11y 树生成 + YAML 子集 parse + 匹配三件套,输入是一个 DOM element。
 
 ### 值得抄的
 
-1. **「默认子序列、显式升级精确」的匹配公式。** 省略即不关心 + 有序子序列 + `/children: equal|deep-equal` 三档,让一份期望天然容忍化妆性新增(加一行注解、加一个区块不打红),要锁死顺序时再显式声明。这是「断言事实而非排版」的机制化表达,对终端输出的结构断言同样适用——发明一套终端节点词表(section/table/row/tree),匹配语义逐条照抄。
+1. **「默认子序列、显式升级精确」的匹配公式。** 省略即不关心 + 有序子序列 + `/children: equal|deep-equal` 三档,让一份期望天然容忍化妆性新增(加一行注解、加一个区块不打红),要锁死顺序时再显式声明。
+   这是「断言事实而非排版」的机制化表达,对终端输出的结构断言同样适用——发明一套终端节点词表(section/table/row/tree),匹配语义逐条照抄。
 2. **值的三态:精确串 / 正则 / 省略。** 同一个语法位置容纳三种严格度,写断言的人按需选,不用在「整句 includes」和「手写正则」之间二选一。
 3. **HTML 面直接用现成实现,不自己发明。** Vitest 4.1.4+ 的 `toMatchAriaSnapshot` / ivya 就是这套语义的可复用实现;对导出的静态 HTML 断言语义结构时优先评估直接采用(browser mode,或对 happy-dom 装载的文档跑 ivya——离浏览器可用性需要 spike)。
 
 ### 调研过、判断不值得抄的(及理由)
 
 1. **把 aria role 词表原样搬到终端。** 终端输出没有可访问性树,role 语义(heading level、checked、expanded)大半没有对应物;抄的是匹配语义与语法形状,节点词表要按终端排版概念(框线区块、列对齐表格、缩进树)重新定义。
-2. **Run patch/3way 更新模式。** vitest 的 `-u` 已覆盖更新流,不需要复刻 Playwright 的三种模式。
+2. **Run patch/3way 更新模式。** vitest 的 `-u` 已含更新流,不需要复刻 Playwright 的三种模式。
 
 ## trycmd / snapbox(Rust)
 
-**来源:** [docs.rs/trycmd](https://docs.rs/trycmd/latest/trycmd/)、[assert-rs/snapbox](https://github.com/assert-rs/snapbox)(cargo 自己在用,活跃维护)。
+**出处:** [docs.rs/trycmd](https://docs.rs/trycmd/latest/trycmd/)、[assert-rs/snapbox](https://github.com/assert-rs/snapbox)(cargo 自己在用,活跃维护)。
 
-**是什么:** 声明式 CLI golden 测试。用例是数据文件(`.trycmd`,或 Markdown 里的 ` ```console ` 代码块——README 示例即测试):`$ cmd` 起命令、`? 2` 断言退出码、其后整段是期望输出。容差词表内联在期望里:`[..]` 行内任意字符、`...` 独立行跳过任意行数、`[ROOT]`/`[CWD]`/`[EXE]` 内置路径脱敏变量、`TestCases::insert_var` 自定义变量。更新流:`TRYCMD=overwrite cargo test` 重写 golden,`TRYCMD=dump` 落实际输出供人查。
+**是什么:** 声明式 CLI golden 测试。
+用例是数据文件(`.trycmd`,或 Markdown 里的 ` ```console ` 代码块——README 示例即测试):`$ cmd` 起命令、`? 2` 断言退出码、其后整段是期望输出。
+容差词表内联在期望里:`[..]` 行内任意字符、`...` 独立行跳过任意行数、`[ROOT]`/`[CWD]`/`[EXE]` 内置路径脱敏变量、`TestCases::insert_var` 自定义变量。
+更新流:`TRYCMD=overwrite cargo test` 重写 golden,`TRYCMD=dump` 落实际输出供人查。
 
 ### 值得抄的
 
-1. **容差词表长在 golden 里,不长在断言代码里。** `[..]`、`...`、脱敏变量让「每次运行都变的值」(耗时、成本、路径、locator)在期望文件里就地声明为不关心,golden 剩下的每个字符都是有意锁定的契约。映射到 vitest:`toMatchFileSnapshot` + 比对前的 scrub 归一管线(strip-ansi → 声明式正则→占位符表,如 `[COST]`/`[LOCATOR]`;Go 生态的 [atago](https://github.com/nao1215/atago) 的 `scrub:` 规则表是同思路的现成参照)。注意 [vitest#5426](https://github.com/vitest-dev/vitest/issues/5426):自定义 snapshot serializer 不作用于 `toMatchFileSnapshot`,归一要在传入 matcher 之前自己做。
+1. **容差词表长在 golden 里,不长在断言代码里。** `[..]`、`...`、脱敏变量让「每次运行都变的值」(耗时、成本、路径、locator)在期望文件里就地声明为不关心,golden 剩下的每个字符都是有意锁定的契约。
+   映射到 vitest:`toMatchFileSnapshot` + 比对前的 scrub 归一管线(strip-ansi → 声明式正则 → 占位符表,如 `[COST]`/`[LOCATOR]`;Go 生态的 [atago](https://github.com/nao1215/atago) 的 `scrub:` 规则表是同思路的现成参照)。
+   注意 [vitest#5426](https://github.com/vitest-dev/vitest/issues/5426):自定义 snapshot serializer 不作用于 `toMatchFileSnapshot`,归一要在传入 matcher 之前自己做。
 2. **overwrite/dump 双模式更新流。** 「重写 golden」与「只落实际输出供人对照」分开,review 时能先看 dump 再决定收不收——vitest `-u` 天然对应前者,后者是失败信息设计的参照。
 
 ### 调研过、判断不值得抄的(及理由)
 
 1. **把 golden 当唯一断言词表。** trycmd 面向输出窄而稳的传统 CLI;对渲染面大、化妆调整频繁的报告输出整页上 golden,等于把脆断言从代码搬进数据文件——golden 只适合窄稳表面(`--json` 摘要、JUnit、错误文案)。
-2. **shlex 拆分命令的执行模型。** 验收脚本「命令以 shell 原文出现、可直接复制复现」的既有约定更好,不需要 trycmd 的命令解析层。
+2. **shlex 拆分命令的执行模型。** 验收脚本「命令以 shell 原文出现、可直接复制复现」的既有约定更好,不需要 trycmd 的命令拆分层。
 
 ## CLI / TUI 测试生态横评(cli-testing-library、tui-test、shell-use、atago 等)
 
-**来源:** [crutchcorn/cli-testing-library](https://github.com/crutchcorn/cli-testing-library)、[@microsoft/tui-test](https://www.npmjs.com/package/@microsoft/tui-test)(仓库已重定向到 [microsoft/shell-use](https://github.com/microsoft/shell-use))、[nao1215/atago](https://github.com/nao1215/atago)、[ink-testing-library](https://github.com/vadimdemedes/ink-testing-library)、prysk/cram、shelltestrunner、bats-core、aruba。
+**出处:** [crutchcorn/cli-testing-library](https://github.com/crutchcorn/cli-testing-library)、[@microsoft/tui-test](https://www.npmjs.com/package/@microsoft/tui-test)(仓库已重定向到 [microsoft/shell-use](https://github.com/microsoft/shell-use))、[nao1215/atago](https://github.com/nao1215/atago)、[ink-testing-library](https://github.com/vadimdemedes/ink-testing-library)。
+还有 prysk/cram、shelltestrunner、bats-core、aruba 一族。
 
-**是什么:** 对「有没有现成的 vitest 友好 CLI 验收库」的一轮横评。结论:**这个生态位是空的**——cli-testing-library 是 testing-library 查询模型移植到子进程输出缓冲(`findByText` + 每查询可选 `{stripAnsi, collapseWhitespace, normalizer}`),只有点查询、没有结构断言,单维护者;tui-test 是 Playwright-for-terminals(PTY + xterm.js 网格模型、auto-wait locator、整屏 Run),但项目已整体转向 agent 工具 shell-use,且自带 runner 与 vitest 互斥;atago 是 YAML 场景 + 最完整的 scrub 词表(自动脱敏 ANSI/临时路径/UUID/时间戳/端口 + 用户声明的 regex→占位符),但生态极小;ink-testing-library 只服务 Ink 渲染的应用;prysk/shelltestrunner/bats/aruba 是 golden-transcript 或 Gherkin 一族的老前辈,没有容差与结构词表。
+**是什么:** 对「有没有现成的 vitest 友好 CLI 验收库」的一轮横评。
+研究判断:**这个生态位是空的**。
+cli-testing-library 是 testing-library 查询模型移植到子进程输出缓冲(`findByText` + 每查询可选 `{stripAnsi, collapseWhitespace, normalizer}`),只有点查询、没有结构断言,单维护者。
+tui-test 是 Playwright-for-terminals(PTY + xterm.js 网格模型、auto-wait locator、整屏 Run),但项目已整体转向 agent 工具 shell-use,且自带 runner 与 vitest 互斥。
+
+atago 是 YAML 场景 + 最完整的 scrub 词表(自动脱敏 ANSI/临时路径/UUID/时间戳/端口 + 用户声明的 regex→占位符),但生态极小。
+ink-testing-library 只服务 Ink 渲染的应用。
+prysk/shelltestrunner/bats/aruba 是 golden-transcript 或 Gherkin 一族的老前辈,没有容差与结构词表。
+
+每个库只涉及其中一小块,没有一个能直接当 vitest 的 CLI 验收层。
+每个库只解决其中一小块,没有一个能直接当 vitest 的 CLI 验收层。
 
 ### 值得抄的
 
-1. **每查询可选归一化选项**(cli-testing-library 的 `{stripAnsi, collapseWhitespace, normalizer}`)——点查询层的工效学形状。
-2. **xterm.js 网格模型是 TUI 断言的正确抽象**(tui-test):看到的是 cursor 移动、重绘之后的**屏幕终态**,不是字节流。仅作认知参照记录:PTY dashboard 的验收维持粗粒度 smoke,不引入网格模型(见下)。
-3. **atago 的声明式 scrub 规则表**——golden 归一管线的参照,已并入上一节结论。
+1. **每查询可选归一化选项**(cli-testing-library 的 `{stripAnsi, collapseWhitespace, normalizer}`)。
+   这是点查询层的工效学形状。
+2. **xterm.js 网格模型是 TUI 断言的正确抽象**(tui-test):看到的是 cursor 移动、重绘之后的**屏幕终态**,不是字节流。
+   仅作认知参照:PTY dashboard 的验收维持粗粒度 smoke,不引入网格模型(见下)。
+3. **atago 的声明式 scrub 规则表**——golden 归一管线的参照,已并入上一节研究判断。
 
 ### 调研过、判断不值得抄的(及理由)
 
@@ -120,12 +184,12 @@ Swift 以调用点清晰为首要目标；Google TypeScript 规定 TypeScript �
 
 ## 浏览器交互 DSL 生态(Playwright 原生词表、Screenplay、CodeceptJS)
 
-**来源:** [Playwright · Best Practices](https://playwright.dev/docs/best-practices)、[Locators](https://playwright.dev/docs/locators)、[Auto-waiting](https://playwright.dev/docs/actionability)、[Assertions](https://playwright.dev/docs/test-assertions)。
+**出处:** [Playwright · Best Practices](https://playwright.dev/docs/best-practices)、[Locators](https://playwright.dev/docs/locators)、[Auto-waiting](https://playwright.dev/docs/actionability)、[Assertions](https://playwright.dev/docs/test-assertions)。
 高层 DSL 侧:[Serenity/JS · Screenplay Pattern](https://serenity-js.org/handbook/design/screenplay-pattern/)、[CodeceptJS · Basics](https://codecept.io/basics/)、playwright-bdd 一族。
 
-**是什么:** 对「浏览器交互验收要不要自建 DSL」的一轮横评。结论:**引擎全部现成,不自建**。
-Playwright 原生词表覆盖交互层三件套:
-
+**是什么:** 对「浏览器交互验收要不要自建 DSL」的一轮横评。
+研究判断:**引擎全部现成,不自建**。
+Playwright 原生词表给出交互层三件套:
 - 寻址:`getByRole` / 可见文本的官方优先序,CSS / XPath 明确列为最后手段;
 - 等待:web-first assertion(`expect(locator).toBeVisible()` / `toHaveCount()` 自动重试到收敛),官方明确反对 `waitForTimeout` 硬等;
 - 结构:`toMatchAriaSnapshot`,与终端语义树那节是同一套匹配语义。
@@ -136,8 +200,10 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ### 值得抄的
 
-1. **web-first assertion 的决策规则。** 「为验证而等 → 用自动重试断言;为下一步动作而等 → 等具体状态」,固定时长 sleep 一律删除;不带重试的即时读数(`count()`)不做断言对象。
-2. **寻址优先序作为契约。** role → 可见文本 → test id,class / CSS 只作最后手段——与 report 域「class selector 只是找到元素的手段」互相印证;领域词内部实现按此排序。
+1. **web-first assertion 的决策规则。** 「为验证而等 → 用自动重试断言;为下一步动作而等 → 等具体状态」,固定时长 sleep 一律删除。
+   不带重试的即时读数(`count()`)不做断言对象。
+2. **寻址优先序作为契约。** role → 可见文本 → test id,class / CSS 只作最后手段。
+   这与 report 域「class selector 只是找到元素的手段」互相印证;领域词内部实现按此排序。
 3. **Screenplay 的两个点子,取形不取栈。** 领域动词让场景语言停在公开概念;活动轨迹让失败自带已执行步骤序列。
 抄进「领域词 + 步骤日志」的薄封装,不引 @serenity-js 依赖(Actor / Ability 抽象对「单用户读报告」场景无增益)。
 
@@ -149,9 +215,10 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ## Harbor(Terminal-Bench 2.0 harness)
 
-**来源:** [laude-institute/harbor](https://github.com/laude-institute/harbor) 的 `src/harbor/agents/installed/`(`base.py`、`codex.py`、`node_install.py`)与 [Harbor docs](https://www.harborframework.com/docs)。
+**出处:** [laude-institute/harbor](https://github.com/laude-institute/harbor) 的 `src/harbor/agents/installed/`(`base.py`、`codex.py`、`node_install.py`)与 [Harbor docs](https://www.harborframework.com/docs)。
 
-**是什么:** TB 2.0 的官方 harness。组合模型与 niceeval 相反:任务持有环境(每道题自带 Dockerfile / compose),agent 是 `BaseInstalledAgent` 子类——一份运行时安装配方,容器启动后经 `environment.exec()` 装进去。
+**是什么:** TB 2.0 的官方 harness。
+组合模型与 niceeval 相反:任务持有运行条件(每道题自带 Dockerfile / compose),agent 是 `BaseInstalledAgent` 子类——一份运行时安装配方,容器启动后经 `environment.exec()` 装进去。
 
 ### 值得抄的
 
@@ -161,14 +228,14 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ### 调研过、判断不值得抄的(及理由)
 
-1. **运行时安装为主路径。** 探测与安装成本每个 attempt 都付,且没有产物级锁定版本可比性;与预制产物主路径原则冲突,运行时安装只留作回退。
+1. **运行时安装为主路径。** 探测与安装成本每个 attempt 都付,且没有版本锁定可比性;与预构建起点主路径原则冲突,运行时安装只留作回退。
 2. **找不到包管理器时 warning 继续跑。** 静默降级点,失败推迟到 agent 启动、归因困难;niceeval 的对应位置选构建期报错。
 
 ## 相关阅读
 
 - [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`sources.measure.delta`](feature/reports/calculations.md))按 run 维度承担。
-- [测试 Architecture](engineering/testing/architecture.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械 helper。
+- [测试 Architecture](engineering/testing/architecture.md) —— 采用 Playwright role / label / web-first assertion 与严格结构 parser，但不再自建 Report 验收 DSL；共享层只保留机械工具函数。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
-- [agent-eval 适配笔记](feature/adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读记录。
+- [agent-eval 适配笔记](feature/adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读笔记。
 - [OTel GenAI 等标准参考](feature/adapters/reference/otel-genai.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。
 - [eve 协议机制](feature/adapters/reference/eve-protocol.md) —— eve 运行时原生事件流的字段与采集机制,StreamEvent 演进的上限参照。

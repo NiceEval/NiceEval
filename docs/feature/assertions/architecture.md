@@ -24,11 +24,11 @@ Severity 与四态折叠不属于本层，见 [Verdict](../verdict/architecture.
 
 **Assertion（输入态）** 是 matcher、作用域断言与 Judge 这些「怎么查」的表达。
 例如 [`custom-assertions`](library/custom-assertions.md) 里的 `function jsonValid(): Assertion`。
-collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（记录态）**。
+collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（结果态）**。
 `Verdict` 表达整个 Attempt 的互斥结果。
 多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
 
-## 断言记录（AssertionResult）
+## 断言条目（AssertionResult）
 
 `result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](../verdict/architecture.md) 判定规则的输入。
 字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
@@ -128,7 +128,7 @@ interface ScoreEntry {
 }
 ```
 
-`loc` 整体仍可省略：运行时无法取得栈时，记录进入源码视图的 unmapped 区。
+`loc` 整体仍可省略：运行时无法取得栈时，条目进入源码视图的 unmapped 区。
 只要 `loc` 存在，`callers` 就是必选数组；单文件 eval 与调用链缺失都写空数组，避免多个构造点各自解释“没填”含义。
 `package` 帧只保存包名，不把第三方源码纳入 Record。
 
@@ -144,10 +144,10 @@ show、view 与报告需要的每个展示字段都在表内，不存在「放�
 `pointsAvailable` 不参与判定。`pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明；
 展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
 
-`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。
+`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 条目也永不携带 `ScoreEntry`。
 两者共用同一套 `groupPath` 折叠约定, 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
 
-计分制记录里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是 `severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带 `stopOnFailure: true`。
+计分制条目里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是 `severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带 `stopOnFailure: true`。
 观测是 `severity: "soft"` + 无 `points`。
 质量分因此按「soft 且没有 `points`」取子集聚合。
 得分点已经在分数面被读过一次，不再进入质量分。

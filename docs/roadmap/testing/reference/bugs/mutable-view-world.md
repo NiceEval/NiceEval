@@ -43,11 +43,11 @@ report E2E 的 `verifyReadback` 会在共享 `resultsRoot` 追加两次真实快
 `9cbd4f90` 的修法只是补充“依赖原 locator 的模块必须排在 verifyReadback 前”的顺序说明；产品没坏，测试设施制造了稳定假红。
 
 这条反证证明仅有 action 序列还不够，action 必须绑定私有 world identity。
-已有设计 `w.clone(mutationActionId)` 正好覆盖：
+已有设计 `w.clone(mutationActionId)` 正好涵盖：
 
 - 只读 proof 拿不到写权限，前后文件树 digest 必须一致。
 - 需要变化的 proof 只通过签入的 `clone.run(actionId)` 修改自己的 clone。
-- `service()`、浏览器和后续 `cli()` 都显式绑定同一个 clone，不从进程全局环境猜 results root 或 cwd。
+- `service()`、浏览器和后续 `cli()` 都显式绑定同一个 clone，不从进程全局变量猜 results root 或 cwd。
 
 因此不再保留“把会写的 verifier 排最后”作为候选方案；后续模块一增加，顺序约定还会重复失效。
 
@@ -61,7 +61,7 @@ clone recipe 需要声明自己可变的路径和 action，默认仍是全只读
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 断公开页面从旧标记收敛到新标记；不锁 reload 次数、日志或模块实例 |
 | 不能改断言放行 | 两个标记由签入 action 的前后输入决定，不能把 SECOND 改成当前旧页面 |

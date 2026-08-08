@@ -24,7 +24,7 @@ unit 与 E2E 分别用显式 Projection 证明其中的 claim。
 3. `claims`：哪些带身份的结果必须成立；
 4. `proof`：主证明与必需真实边界分别经过什么。
 
-每条 Case 恰有一个 Primary Projection，并覆盖全部 claim。
+每条 Case 恰有一个 Primary Projection，并涵盖全部 claim。
 Supporting Projection 可以证明 claim 子集或更精确的机制定律。
 
 两个界面的用户结果不同，就写两条 Case。
@@ -141,7 +141,7 @@ Registry 验证：
 - Case、claim 与 Projection ID 唯一；
 - 契约链接存在；
 - 每条 Case 恰有一个 Primary Projection；
-- Primary 覆盖全部 claim，并满足声明的 layer 与 boundary；
+- Primary 涵盖全部 claim，并满足声明的 layer 与 boundary；
 - 每个 required boundary 都有同仓 Projection，或指向一条完整 native proof 的跨仓 link；
 - Supporting 引用存在的 claim；
 - 每个 claim 都有主体身份；
@@ -175,12 +175,12 @@ Manifest identity 不匹配、未冻结或缺 artifact 时直接失败。
 | 错误 | 时机与反馈 |
 |---|---|
 | DeclarationError | 注册前；重复 ID、空 claim、失效契约或 Case 含不可声明值 |
-| ProjectionError | 注册前；缺主证明、claim 未覆盖、step 引用失效或必需边界不满足 |
+| ProjectionError | 注册前；缺主证明、claim 未涵盖、step 引用失效或必需边界不满足 |
 | PreparationError | evidence world 准备失败；全部消费者指向同一根因 |
 | InvocationError | 公开动作意外失败 |
 | ObservationError | 输出无法由声明的媒介 adapter 解释 |
 | ClaimMismatch | 打印 Case、claim、Projection、driver、身份、期望、观察与证据 |
-| CleanupError | 附在主结果后，不覆盖更早失败 |
+| CleanupError | 附在主结果后，不遮蔽更早失败 |
 
 Driver 不支持某个 claim 时，在注册期失败。
 它不能静默降级成字符串包含或任意节点存在。
@@ -217,6 +217,6 @@ Driver 不支持某个 claim 时，在注册期失败。
 - Case、Projection 与 driver 分散后，简单失败可能需要多次跳转。
 - 领域联合变化会批量触发无关 Case。
 - 跨自治仓库只能共享静态 proof link，不能共享或执行 claim；语义重复仍由各仓 review 承担。
-- “能生成覆盖矩阵”容易诱导团队追求迁移数量，而不是静默风险。
+- “能生成守护矩阵”容易诱导团队追求迁移数量，而不是静默风险。
 
 本方案只适合已经出现真实跨边界重复的稳定领域。

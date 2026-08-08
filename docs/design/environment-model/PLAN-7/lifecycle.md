@@ -7,9 +7,9 @@
 | Owner | 声明 | 运行职责 |
 |---|---|---|
 | EvalDef | Environment、setup、test、teardown | 题目准备、Agent 交互、文件传输与判分 |
-| SandboxSpec | Provider、默认 case、覆盖表、materializer、setup | 解析一个 case 并准备 Experiment 条件 |
+| SandboxSpec | Provider、默认 case、`environments` 映射表、materializer、setup | 选定一个 case 并准备 Experiment 条件 |
 | Agent | Agent setup | 安装 CLI、配置 runtime、执行 turn |
-| Sandbox Case | build/start/ready/finalizer | 创建并清理完整隔离环境 |
+| Sandbox 实例 | build/start/ready/finalizer | 创建并销毁完整的隔离 Sandbox |
 
 文件传输是 Eval 普通代码，不新增 owner。
 
@@ -36,14 +36,14 @@
 
 | 节点 | Fresh Sandbox | `sandboxReuse: true` |
 |---|---|---|
-| Case create/ready 与 SandboxSpec setup | 每 Attempt | 每复用窗口 |
+| Case create/ready 与 SandboxSpec setup | 每 Attempt | 每复用周期 |
 | workspace baseline/reset | 每 Attempt 建立 | 首条建立，后续 reset |
 | EvalDef setup、Agent setup 与 test | 每 Attempt | reset 后每 Attempt |
 | transfer manifest 与泄漏比对 | 每 Attempt | 每 Attempt |
-| Case finalizer/stop | 每 Attempt | 每复用窗口 |
+| Case finalizer/stop | 每 Attempt | 每复用周期 |
 
 下一条 Attempt 必须等待 reset 完成。
-普通上传、测试临时文件或 Agent 修改只要无法恢复到已知状态，就终止该复用窗口。
+普通上传、测试临时文件或 Agent 修改只要无法恢复到已知状态，就终止该复用周期。
 
 ## 错误与收尾
 
@@ -56,7 +56,7 @@
 | reset | teardown diagnostic | 禁止复用该 Sandbox |
 
 没有 `eval.verify` 或 `eval.afterAgent` phase。
-时间树在 `eval.run` 下按真实调用顺序记录普通 upload、command 与 turn activity。
+时间树在 `eval.run` 下按真实调用顺序写入普通 upload、command 与 turn activity。
 
 ## Cases
 
@@ -64,5 +64,5 @@
 |---|---|---|
 | C1-C5 | 单一起点加三层 setup | Eval 普通代码按顺序传输 |
 | C6-C7 | 外部 state 与复用保持独立 | reset 是复用屏障 |
-| C8-C10 | 默认 case、预制覆盖与混合解析不变 | transfer manifest 属于逐 Attempt 证据 |
+| C8-C10 | 默认 case、预制完整 case 与混合选择不变 | transfer manifest 属于逐 Attempt 证据 |
 | C11 | 每题自包含定义 | 无顶层登记、无文件字段、无共享 Eval 工厂 |

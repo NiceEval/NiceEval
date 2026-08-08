@@ -3,7 +3,7 @@
 本篇定义哪些计算属于公共内核，哪些只是某份报告里的普通函数，以及组件目录的准入边界。
 作者 API 总览见 [README](README.md)，完整调用形状见 [Library](library.md)。
 
-## 结论
+## 内核保留五类值
 
 公共计算内核只保留五类值：
 
@@ -71,7 +71,7 @@ Eval、Run 或 Experiment 数量则从 Sample 对应事实计算；这样单位�
 
 ## Sample 不增加 map
 
-Sample 只负责表达比较总体、覆盖和选择问题。
+Sample 只负责表达比较总体、`coverage` 和选择问题。
 它已有两个不可互换的转换：
 
 ```ts
@@ -106,7 +106,7 @@ const historyAttempts = sample.historyAttempts;
 
 ## 报告旁算法不退出证据契约
 
-“不进入核心计算目录”只表示没有通用公式，不表示可以返回没有来源的 number。
+“不进入核心计算目录”只表示没有通用公式，不表示可以返回没有 provenance 的 number。
 
 非 rollup 算法必须使用：
 
@@ -215,7 +215,7 @@ async function pairedDelta(
 - 只有成对实验比较使用；
 - 输出形状由具体报告决定；
 - baseline / candidate 的选择语义尚未证明能跨报告稳定复用；
-- `aggregate()` 不需要理解“候选”和“基线”。
+- `aggregate()` 不需要理解“candidate”和“baseline”。
 
 内建差异报告与用户报告必须能调用同一份 `pairedDelta()` 实现。
 它可以与该内建报告一起具名导出，或先作为公开示例存在；不能拥有绕过公共 reducer 和证据结果构造器的私有计算路径。

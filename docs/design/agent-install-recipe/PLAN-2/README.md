@@ -65,7 +65,7 @@ const template = verifyE2BNodeToolContract(
 - **R6 不达成**:中间件是 E2B builder 词汇,Docker 用户
   引用不到;Node 工具契约对 Dockerfile 仍无出处。
 - 自定义 agent 的运行时半边(回退安装、指纹检测)没有
-  口子,R5 只覆盖构建期。
+  口子,R5 只涵盖构建期。
 
 ---
 
@@ -90,11 +90,11 @@ niceeval/sandbox/e2b-template 公开面
 1. `withNodeToolContract` 任意 OCI image 或 E2B template模式(与 PLAN-1 第 1 步
    相同)。
 2. 从工厂函数体析出 `withCodingAgent`,工厂改为组合调用;
-   既有单测与公共基线构建脚本回归。
+   既有单测与公共基础镜像构建脚本回归。
 3. 导出与 TSDoc,`pnpm docs:reference` 重新生成参考页。
 4. TB 任务 image冒烟:八道卡住的题跑通。
 5. 重写
-   [预制环境](../../../feature/sandbox/library/prebuilt-environments.md)
+   [预制 Sandbox](../../../feature/sandbox/library/prebuilt-environments.md)
    E2B 节与 docs-site 教程,按三轴模型分 Case 叙述。
 
 ---
@@ -115,7 +115,7 @@ niceeval/sandbox/e2b-template 公开面
 
 - 工厂与中间件两条路径产出的模板行为有差异——说明工厂
   没有真正退化为组合糖,Case A/B 又变回平行实现。
-- 契约校验只在官方基线路径上跑——`fromImage` 路径建成
+- 契约校验只在官方基础镜像路径上跑——`fromImage` 路径建成
   静默坏模板,回到 README 描述的坏法。
 
 ---

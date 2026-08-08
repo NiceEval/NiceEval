@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-让 Claude Code / Codex 这类 coding agent 替你修 eval 失败:它自己跑 niceeval、读失败证据、改代码、再跑。human live 面板对它全是噪音——原地重绘、spinner、框线和 ANSI 都要浪费上下文去解析,整份 transcript 放入去更是灾难。它真正需要三样:退出码、失败的稳定身份(locator)、按需下钻的证据入口。运行流加 `--json` 得到可直接解析的 NDJSON 事件;深读证据一律交给 [`niceeval show`](../../../reports/show.md)(要结构化就同样加 [`--json`](../../../reports/show/json.md))。
+让 Claude Code / Codex 这类 coding agent 替你修 eval 失败:它自己跑 niceeval、读失败证据、改代码、再跑。human live 面板对它全是噪音——原地重绘、spinner、框线和 ANSI 都要浪费上下文去解读,整份 transcript 放入去更是灾难。它真正需要三样:退出码、失败的稳定身份(locator)、按需下钻的证据入口。运行流加 `--json` 得到可直接解读的 NDJSON 事件;深读证据一律交给 [`niceeval show`](../../../reports/show.md)(要结构化就同样加 [`--json`](../../../reports/show/json.md))。
 
 ## 全流程
 
@@ -42,7 +42,7 @@
 ## 边界
 
 - 事件流不是另一份结果 schema;权威数据是 Run 与 attempt artifacts,批量分析走 [`show --json`](../../../reports/show/json.md) 或 [Results](../../../record/README.md) 读取面。
-- 不解析运行流也完全可行:跑默认人读文本、只看退出码,失败后直接 `niceeval show`。`--json` 是需要程序化消费运行事件(计数、看板、并行编排)时的入口。
+- 不读运行流也完全可行:跑默认人读文本、只看退出码,失败后直接 `niceeval show`。`--json` 是需要程序化消费运行事件(计数、看板、并行编排)时的入口。
 - `failure` 事件只带主失败断言的有界字段;完整 assertions、源码、execution、diff 按需 `show` 下钻。
 
 ## 相关阅读

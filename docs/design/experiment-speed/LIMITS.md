@@ -10,7 +10,7 @@
 |---|---|---|
 | 结果沿用、选择、首过即停 | 不需要执行的 Attempt | 必须执行的 Attempt 有多慢 |
 | 有界并发 | 独立 Attempt 的排队 | 单条 Attempt 与 Provider 容量上限 |
-| 预制环境 | 重复安装稳定依赖 | 实例创建与随实验变化的准备 |
+| 预构建起点 | 重复安装稳定依赖 | 实例创建与随实验变化的准备 |
 | Sandbox 预热 | 把实例创建移出 Attempt 路径 | SandboxSpec Hook 仍逐 Sandbox 执行 |
 | Sandbox 复用 | 多条 Attempt 分摊实例创建与 SandboxSpec `setup` | workdir 之外的状态残留 |
 
@@ -24,7 +24,7 @@ Agent 与 Eval `setup` / `teardown` 是每 Attempt 一次，必须继续成对�
 原设计曾把 `SandboxAgent.setup` 提升成整组一次，却仍让 Agent `teardown` 逐 Attempt 执行。
 这违反 Agent 生命周期契约，也可能把 Attempt 状态留给下一题。
 
-稳定的 Agent CLI 安装应进入预制环境或 SandboxSpec Hook。
+稳定的 Agent CLI 安装应进入预构建起点或 SandboxSpec Hook。
 Runner 不能因为安装内容看起来稳定，就改变 Agent Hook 的调用次数。
 
 ## workdir reset 不是完整隔离
@@ -32,17 +32,17 @@ Runner 不能因为安装内容看起来稳定，就改变 Agent Hook 的调用�
 分类账只能把被跟踪的 workdir 内容重置到复用 Sandbox 的题间重置点。
 `$HOME`、`/tmp`、全局安装、后台进程、排除目录和外部服务状态仍会跨 Attempt 存活。
 
-Provider 中立接口无法完整清理这些状态。
+Provider 中立接口无法完整回收这些状态。
 因此，Sandbox 复用必须写进 Experiment 并进入配置哈希。
 结果按普通携带判据进入结果沿用；CI 可以运行这个已签入的 Experiment。
 
 ## Invocation 不共享运行中 Sandbox
 
-每条 Invocation 有自己的 Scope、Run 记录与 Provider finalizer。
+每条 Invocation 有自己的 Scope、Run Record 与 Provider finalizer。
 把运行中 Sandbox handle 交给另一个进程需要跨进程 handle 恢复、Scope 所有权转移与单一 finalizer，不是现有 Provider Case 契约。
 因此多个 Invocation 各自维护 Sandbox 复用池；可以共享的是明确声明的外部状态身份，不是 Sandbox 实例。
 
-文件租约只能协调共享同一记录根和时钟的进程。
+文件租约只能协调共享同一结果根和时钟的进程。
 不同机器、不同工作副本或外部服务的全局单例仍需要外部编排。
 
 ## Provider 限制
@@ -60,7 +60,7 @@ Runner 不能写死某个分钟数，只能依赖能力接口。
 
 | 方案 | Attempt 间隔离 | 可保留并行 | 分摊创建与 SandboxSpec `setup` | Sandbox 寿命 |
 |---|---|---|---|---|
-| 全新 Sandbox + 预制环境 + Sandbox 预热 | 是 | 是 | 否 | 每 Attempt 独立 |
+| 全新 Sandbox + 预构建起点 + Sandbox 预热 | 是 | 是 | 否 | 每 Attempt 独立 |
 | 一个 Sandbox 串行执行整批 | 否 | 否 | 是 | 整批依赖一个 Sandbox |
 | 一个或多个 Sandbox 复用 | 否 | 是 | 每个 Sandbox 分摊 | 派发前续期或更换 |
 

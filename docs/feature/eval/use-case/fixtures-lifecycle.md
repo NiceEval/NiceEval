@@ -3,7 +3,7 @@
 ## 解决什么问题
 
 有些准备工作不属于 `test(t)` 的正文：装依赖、在外部服务里建临时 repo、预热数据。
-`sandbox` layer 的 `.prepare()` 承载这类逐 Attempt 的题目准备，清理用 `context.onCleanup()` 就地登记。
+`sandbox` layer 的 `.prepare()` 承载这类逐 Attempt 的题目准备，cleanup 用 `context.onCleanup()` 就地登记。
 `t.progress` / `t.diagnostic` 让长步骤和降级情况在运行反馈里可见；`t.skip` 在前置条件不满足时把 attempt 标成跳过而不是失败。
 
 静态起始文件在第一次 `send` 前通过普通 Sandbox API 上传:
@@ -37,14 +37,14 @@ export default defineEval({
    });
    ```
 
-2. 大多数 Fixture**不需要**登记清理：写进沙箱的文件、装的依赖随 Sandbox Case 回收自动消失。
+2. 大多数 Fixture**不需要**登记 cleanup：写进沙箱的文件、装的依赖随 Sandbox 实例及伴随资源回收自动消失。
    需要收尾的是**沙箱外**的资源（临时 repo、bucket、队列 topic），不收就泄漏。
-   `context.onCleanup()` 只在命令成功取得资源后登记，Runner 按全局准备顺序逆序执行；没执行到的命令不产生虚假清理（时序见[三方准备时序](../../sandbox/lifecycle.md#cleanup)）。
+   `context.onCleanup()` 只在命令成功取得资源后登记，Runner 按全局准备顺序逆序执行；没执行到的命令不产生虚假 cleanup（时序见[三方准备时序](../../sandbox/lifecycle.md#cleanup)）。
 
-3. `prepare()` 每条 Attempt 都重放，开启 Sandbox 复用也一样。
+3. `prepare()` 每条 Attempt 都重新执行，开启 Sandbox 复用也一样。
    昂贵动作写成真实检查：命中后快速返回，缺失时安装并复检（频次契约见 [Sandbox Layer](../../sandbox/layers.md#作者只学三个规则)）。
 
-4. `test(t)` 里 eval 自己执行的长步骤用 `t.progress` 报短期状态，降级但可继续的情况用 `t.diagnostic` 留永久记录：
+4. `test(t)` 里 eval 自己执行的长步骤用 `t.progress` 报短期状态，降级但可继续的情况用 `t.diagnostic` 留永久条目：
 
    ```typescript
    t.progress({ message: "uploading fixtures", current: 1, total: 3 });
@@ -61,8 +61,8 @@ export default defineEval({
 ## 边界
 
 - `progress` / `diagnostic` 只报告、不断言：`diagnostic` 即使 `level: "error"` 也不改 verdict。
-  要影响结论就写断言或抛异常。
-- cleanup 抛错只追加诊断，不改已产出的判定；要让收尾动作影响结论，在 `prepare()` / `test` 里抛。
+  要影响判定就写断言或抛异常。
+- cleanup 抛错只追加诊断，不改已产出的判定；要让收尾动作影响判定，在 `prepare()` / `test` 里抛。
 - 直接传入的 callback 不增加可追踪 identity，但不阻断跨 Run 沿用结果；要让实现或动态输入变化自动作废结果，用 `defineSandboxCommand()`（见 [Sandbox Layer](../../sandbox/layers.md#稳定-identity-与-opaque-callback)）。
 - 层次分工：实验条件的准备在 Experiment layer 的 `prepare()`，Agent 安装在 `agent.ensure`，**这条任务**的素材才在 Eval layer 的 `prepare()` 或 `test(t)`（三方时序见[三方准备时序](../../sandbox/lifecycle.md)）。
 

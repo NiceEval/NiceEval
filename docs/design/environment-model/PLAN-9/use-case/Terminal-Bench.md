@@ -54,7 +54,7 @@ Experiment 不选择 Provider，也不检查选中 Eval 的 template kind。多�
 
 NiceEval ledger 所需的 Git 由 Runner 自己保证，Codex CLI 由官方 Adapter 安装，benchmark 不复制这两项基础设施责任。
 
-解析后的 stack 是：
+归一后的 stack 是：
 
 ```text
 Eval Compose template
@@ -84,5 +84,5 @@ export default defineEval({
 
 ## Runner 证据
 
-dry plan 与运行记录逐 Eval 展示 template factory、由它选出的 Docker Compose 或 E2B Provider、CaseKey、Case/Attempt scope 与 `eval → experiment → agent`。
+dry plan 与运行 Record 逐 Eval 展示 template factory、由它选出的 Docker Compose 或 E2B Provider、CaseKey、Case/Attempt scope 与 `eval → experiment → agent`。
 transfer manifest 和 Agent 可见 closure 在判定封口前比对，发现测试泄漏时拒绝 verdict。

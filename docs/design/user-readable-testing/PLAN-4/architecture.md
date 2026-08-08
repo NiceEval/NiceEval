@@ -20,7 +20,7 @@ ProcessResult、结构化文档、网络与协议 evidence
 e2e.json → 选择项目 → 构建候选 tarball → 隔离安装 → executor → 收集 artifact
 ```
 
-编排层不读取 `.niceeval/`，不解析产品输出，也不拥有预期。
+编排层不读取 `.niceeval/`，不解码产品输出，也不拥有预期。
 
 ## 目录
 
@@ -81,7 +81,7 @@ interface E2ERepoManifest {
 manifest 只声明运行条件。
 它不含 Behavior ID、contract anchor、expected result、page matrix 或 matcher。
 
-`paths` 是 CI 选择提示，不是覆盖证明。
+`paths` 是 CI 选择提示，不是守护证明。
 编排器无法计算 diff 时必须多跑，不能静默少跑。
 
 ## Executor 与被测 backend 分开
@@ -107,7 +107,7 @@ Executor 回答“测试进程在哪里运行”：
 2. 对 tarball 字节计算 digest；
 3. 把选中项目复制到新的临时目录；
 4. 只在副本中把 `niceeval` 指向该 tarball；
-5. 安装后从 lockfile 与实际解析路径核对候选身份；
+5. 安装后从 lockfile 与实际定位路径核对候选身份；
 6. 把 digest 写入测试摘要和 artifact。
 
 依赖缓存只能缓存包管理器 store 与 Docker layer。
@@ -133,24 +133,24 @@ interface ProcessResult {
 }
 ```
 
-允许的 helper：
+允许的机械工具：
 
-- 创建与清理临时目录；
+- 创建与释放临时目录；
 - 启动进程、PTY、HTTP server 或浏览器；
-- 解析 JSON、NDJSON、XML；
+- 读取 JSON、NDJSON、XML；
 - 保存 stdout、stderr、trace、screenshot 与 service log；
 - 等待端口、URL 或显式事件就绪。
 
-禁止的 helper：
+禁止的机械工具：
 
 - 从候选结果推导 expected target / verdict / identity；
 - 把完整用户动作隐藏在 scenario 名后；
 - 重新实现 Report、Sample、scheduler 或 adapter 的正确性算法；
-- 解析失败后退回宽松 substring；
+- 读取失败后退回宽松 substring；
 - 在断言阶段修改共享 evidence。
 
 领域 parser 默认留在所属场景 Repo。
-至少两个项目出现相同稳定格式后，才提取纯解析 helper；预期仍留在各测试文件。
+至少两个项目出现相同稳定格式后，才提取纯读取工具；预期仍留在各测试文件。
 
 ## 结果与诊断
 
@@ -185,7 +185,7 @@ JUnit 与摘要来自 Vitest reporter 或薄 adapter，不要求测试正文登�
 - `skipped`：本次 lane 本来就不选择该项目；显式选择后缺 secret 或 runtime 属配置错误，不能悄悄 skip。
 
 判不清就按 regression。
-cleanup 失败附加在原失败后；不能覆盖更早的 outcome。
+cleanup 失败附加在原失败后；不能遮蔽更早的 outcome。
 
 ## Oracle 独立性
 

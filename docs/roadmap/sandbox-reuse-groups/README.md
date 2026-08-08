@@ -6,11 +6,11 @@
 ## 解决的问题
 
 全实验复用把所有 Eval 放进一个隐式池，也让每个 Experiment 重复维护同一份成员边界。
-作者无法直接写出“这几道评估属于同一套环境，其它评估保持隔离并行”这条题集契约。
+作者无法直接写出“这几道评估属于同一套 Sandbox，其它评估保持隔离并行”这条题集契约。
 
 三个 dogfooding 场给出三类约束：
 
-| 项目 | 真实边界 | 配置结论 |
+| 项目 | 真实边界 | 配置判断 |
 |---|---|---|
 | MemoryBench | 纵向记忆链 Eval 只有 command-only prepare；不同记忆条件各自提供 template | 这些 Eval 可以在编译期组成一组，各 Experiment 分别拥有实例 |
 | Terminal-Bench | 238 个 Eval 各自拥有 Dockerfile / Compose template | template-owning Eval 不能入组，每条 Attempt 使用全新 Sandbox |
@@ -23,18 +23,18 @@ Sandbox Layer 与复用组按所有权组合：
 - Layer 回答“一条 Eval 最终需要什么 Sandbox，以及按什么顺序 prepare”；
 - 复用组回答“哪些已经完成 link 的 Eval 轮流使用同一物理实例”。
 
-组成员不能拥有 template 或 `setup()` / `teardown()` 实例生命周期，只能省略 Sandbox Layer，或声明每 Attempt 重放的 command-only `prepare()`。
+组成员不能拥有 template 或 `setup()` / `teardown()` 实例生命周期，只能省略 Sandbox Layer，或声明每 Attempt 重新执行的 command-only `prepare()`。
 Experiment 是组实例唯一的 template 与 lifecycle owner；现有 Layer link 顺序不变。
 
-这个限制进入 `defineEval()` 产物的类型状态。
+这个限制进入 `defineEval()` 输出的类型状态。
 `defineSandboxGroup()` 接收导入的 Eval definition，而不是字符串 id，因此 TypeScript 会直接拒绝带 template 或实例 hook 的成员；动态 JavaScript 与显式类型逃逸仍由发现期再次校验。
 
 组定义位于 `evals/` 下的 `*.sandbox-group.ts` 或 `<group>/sandbox-group.ts`，与 Eval 的文件入口、目录入口对称。
-定义文件所在目录只提供引用锚点，文件路径只生成稳定组 id，不自动决定成员。
-文件必须导入 Eval definition，并用 `defineSandboxGroup()` 明确列出每个成员；新增文件不会因为碰巧放在同一目录就进入共享环境。
+定义文件所在目录只提供引用定位点，文件路径只生成稳定组 id，不自动决定成员。
+文件必须导入 Eval definition，并用 `defineSandboxGroup()` 明确列出每个成员；新增文件不会因为碰巧放在同一目录就进入共享 Sandbox。
 
 `defineSandboxGroup()` 本身就表示成员需要 Sandbox reuse，不再等待 Experiment 二次启用。
-Experiment 只照常选择 Eval，不能追加、删除、覆盖或关闭成员的分组归属。
+Experiment 只照常选择 Eval，不能追加、删除、覆写或关闭成员的分组归属。
 
 每个组只有一台活跃 Sandbox，因此组内 Attempt 串行。
 不同组和未分组 Attempt 继续在 Experiment 与 Invocation 的并发上限内并行。
@@ -45,7 +45,7 @@ Experiment 只照常选择 Eval，不能追加、删除、覆盖或关闭成员�
 复用组不声明 Eval 顺序、完整前缀或业务依赖。
 这些执行历史由[有序 Eval 序列](../ordered-sequences/README.md)唯一负责；纵向评测把 Sequence 与 `stop-group` 复用组组合使用。
 
-## 设计结论
+## 设计裁决
 
 1. `defineSandboxGroup()` 同时声明成员与必须复用；Experiment 不引用组、不重复成员，也不提供全实验复用布尔值。
 2. 一个 Eval 至多属于一个组；成员来自导入 definition 的显式数组，不从目录内容、tag、metadata 或 Layer 自动推导。
@@ -62,7 +62,7 @@ Experiment 只照常选择 Eval，不能追加、删除、覆盖或关闭成员�
 
 - `evals/` 内的 `defineSandboxGroup()`、文件入口与目录入口发现；
 - definition 成员引用、Layer type-state、重叠检查与发现期运行时复核；
-- 组内单实例调度、显式替换策略、失败传播和运行记录；
+- 组内单实例调度、显式替换策略、失败传播和运行数据；
 - `--dry`、live 与结束反馈中的组和实例归属。
 
 本功能不包含：
@@ -79,6 +79,6 @@ Experiment 只照常选择 Eval，不能追加、删除、覆盖或关闭成员�
 ## 入口
 
 - [Library](library.md) —— `defineSandboxGroup()`、发现路径、成员引用与错误反馈。
-- [Architecture](architecture.md) —— Layer 边界、规划实体、调度、指纹与记录形状。
+- [Architecture](architecture.md) —— Layer 边界、规划实体、调度、指纹与数据形状。
 - [Lifecycle](lifecycle.md) —— fresh、组内复用、停止与替换的完整时序。
 - [Use Cases](use-case/README.md) —— MemoryBench、Terminal-Bench 与 NiceEval-Eval 的完整写法。

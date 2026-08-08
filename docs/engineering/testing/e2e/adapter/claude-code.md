@@ -10,7 +10,7 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 | coding 任务工具轨 | 真实任务下 transcript JSONL 归一出文件与 shell 工具事件，按 `tool_use.id` / `tool_result.tool_use_id` 配对                       |
 | Skills            | 挂载的 Skill 被使用时产生 `skill.loaded` 一等事件                                                                                |
 | MCP               | stdio 与远程 HTTP 两种形态的 server 都能被调用，工具以 `mcp__<server>__<tool>` 命名出现；反例断言未挂载的 server `notCalledTool` |
-| Plugins           | marketplace 安装的 Plugin 行为在事件流中可观察；声明 `sandboxReuse` 时同一沙箱的第二条 Attempt 安装收敛——同名 marketplace 注册被替换为声明来源、Plugin 按声明重装，不因残留状态报错 |
+| Plugins           | marketplace 安装的 Plugin 行为在事件流中可观察；声明 `sandboxReuse` 时同一沙箱的第二条 Attempt 安装收敛——同名 marketplace 注册被替换为声明出处、Plugin 按声明重装，不因残留状态报错 |
 | settingsFile      | `permissions.deny` 关闭 WebSearch / WebFetch 后，反例断言 `notCalledTool` 的 `web_search` / `web_fetch`                          |
 | 会话              | 原生 resume ID 续接，第二轮能引用首轮事实                                                                                        |
 | usage             | transcript 抠出的逐轮 usage 非空并聚合进 attempt                                                                                 |
@@ -19,5 +19,5 @@ Repo ID 是 `adapter/claude-code`；manifest 声明 `areas: ["adapter"]`、live 
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
 - **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`执行树出现 `skill.loaded` 与 `mcp__` 调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.env`注入原生 OTLP 遥测，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树呈现`claude_code.interaction → llm_request / tool`层级。
+- **OTel**：adapter 的 `tracing.env`注入原生 OTLP 遥测，执行树的时间注释就是写入成立的展示证明；`show --timing` 的 OTel 子树呈现`claude_code.interaction → llm_request / tool`层级。
   原生 span 内容默认脱敏是常态——trace 只证时间与结构，行为断言仍以 transcript 归一的事件流为准。

@@ -30,7 +30,7 @@ reportBehavior(overviewUsesDeclaredTwoLevelPassRate, async () => {
 });
 ```
 
-验收题把 fixture 输入和独立推导写在题面；候选实现不能导出自己的 `passRate` helper 给 oracle。
+验收题把 fixture 输入和独立推导写在题面；候选实现不能导出自己的 `passRate` 工具给 oracle。
 若要改变契约，必须先改公开计算说明与验收题的公式身份，不能只把 `83.3%` 改成页面当前数字。
 
 ## 同形反证：失败原因和组摘要也被展示层重算或漏算
@@ -63,11 +63,11 @@ await expectWeb(groupBrowser.getByText("$0.70", { exact: true })).toBeVisible();
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 断领域 metric / cell 与精确值，不锁 DOM class、布局、字形或附带文案 |
 | 不能改断言放行 | 每题使用能区分至少三种候选公式的输入，并在题面写独立推导和公式身份 |
 | 观察失败显式报错 | summary、row、cell 缺失与值错误分开；跨面不一致单独报告 |
 | 用户侧直接定位 | 消息列 fixture 输入、独立推导、实际 text / web 值和领域路径 |
-| 设施不造假 | oracle 不 import 候选 compute；stdout 与浏览器各自解析公开输出 |
+| 设施不造假 | oracle 不 import 候选 compute；stdout 与浏览器各自读取公开输出 |
 | 用户已有用法不改 | 复用既有结果、官方 Report 和公开 show / view；不改 Eval 或结果 schema |

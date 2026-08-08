@@ -25,7 +25,7 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，
 
 - 对可以并行的 Attempt，整批串行可能显著增加总耗时。
 - 整批依赖一个 Sandbox，批次可能超过 Sandbox 复用寿命。
-- workdir reset 不清理用户目录、后台进程和排除目录。
+- workdir reset 不触及用户目录、后台进程和排除目录。
 - Agent 与 Eval Hook 仍须逐 Attempt 执行，不能借此省掉 Agent setup。
 
 ## 数据流
@@ -41,10 +41,10 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，
 ## 验收
 
 1. Attempt 开始前，被跟踪的 workdir 内容回到题间重置点。
-2. 结果记录 `sandbox.reused`，按普通携带判据进入结果沿用；CI 使用签入的 Experiment 配置。
+2. 结果登记 `sandbox.reused`，按普通携带判据进入结果沿用；CI 使用签入的 Experiment 配置。
 3. 派发前确认 Sandbox 复用寿命，不能等待 Sandbox 在 Attempt 中途到期。
 4. Agent 与 Eval Hook 每 Attempt 成对执行。
 
-## 结论
+## 裁决
 
 本方案是[方案 4](../PLAN-4/README.md)在单 Invocation 内最多维护一个 Sandbox 时的行为，不单独建立 Feature 或调度规则。

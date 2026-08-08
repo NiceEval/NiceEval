@@ -1,7 +1,7 @@
 # Eval —— 架构
 
 内部设计依据，解释 `defineEval` 与 `t` 的取舍；作者写 eval 的直接用法从 [`defineEval` 的形状](README.md#defineeval-的形状) 开始。
-原始设计笔记与 eve 源码核对记录的出处在 memory 条目 [eval-architecture-original-notes](../../../memory/eval-architecture-original-notes.md)。
+原始设计笔记与 eve 源码核对条目的出处在 memory 条目 [eval-architecture-original-notes](../../../memory/eval-architecture-original-notes.md)。
 
 ## 两条设计原则
 
@@ -21,16 +21,16 @@
 同一套作用域断言词汇（`succeeded` / `messageIncludes` / `calledTool` / `event` / `maxTokens` …）绑定在 `t`、session、turn 三个接收者上，绑定位置决定读哪份数据、什么时候求值。
 三者的 selector 与求值时机逐行标注在 [Assertions · 作用域绑定](../assertions/architecture/scopes.md)，`outputEquals` / `outputMatches` 这类只对单轮结果有意义的能力不下放给其它接收者。
 
-## 文件传输与 send 窗口
+## 文件传输与 send 区间
 
-- 起始文件在第一次 `send` 前通过普通 Sandbox API 上传；动态或带外部资源收尾的任务素材也可以放 Eval layer 的 `prepare()`，清理经 `context.onCleanup()` 登记。
-- `fileChanged` / `diff` 只反映 Agent 在 send 窗口内的改动。窗口外的上传与命令属于 eval 归因。
+- 起始文件在第一次 `send` 前通过普通 Sandbox API 上传；动态或带外部资源收尾的任务素材也可以放 Eval layer 的 `prepare()`，cleanup 经 `context.onCleanup()` 登记。
+- `fileChanged` / `diff` 只反映 Agent 在 send 区间内的改动。区间外的上传与命令属于 eval 归因。
 - 测试文件在对应 `send` 返回后普通上传。作者随后再次 `send` 时，新一轮会看见这些文件，这是顺序语义，不是错误。
 
 ## 生命周期与不变量
 
 - eval 的准备命令记 `sandbox.prepare`（诊断按 owner 细分），主链随后是 `eval.run` → `assertions.evaluate`。
-  `eval.run` 按真实顺序覆盖普通文件传输、全部 turn、命令与断言记录。
+  `eval.run` 按真实顺序涵盖普通文件传输、全部 turn、命令与断言条目。
   已登记 cleanup 在收尾段逆序执行，失败只追加 diagnostic，不改判定。
   阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。
 - 作者写下的每条断言默认要求可评估：证据缺口使 attempt `errored`，显式 `.optional()` 才允许缺席；判定四态互斥（[Severity 与 Verdict](../verdict/architecture.md)）。

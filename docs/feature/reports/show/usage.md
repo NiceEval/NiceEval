@@ -4,7 +4,7 @@
 
 ## 组装口径
 
-行为计数、token/请求来源、token 拆分片段的显示规则与缺失省略规则，是 `AttemptUsage` 组件本身的契约，单源声明在 [`AttemptUsage` 组装口径（单源）](../components/attempt-detail/attempt-usage.md#组装口径单源)——`--usage` 表的每一行、attempt 详情首页的 `usage:` 行、对照矩阵的用量列、`--execution` turn 头行，全部读同一份口径，不在各自的分篇里重复声明或衍生第二套数字。
+行为计数、token/请求出处、token 拆分片段的显示规则与缺失省略规则，是 `AttemptUsage` 组件本身的契约，单源声明在 [`AttemptUsage` 组装口径（单源）](../components/attempt-detail/attempt-usage.md#组装口径单源)。`--usage` 表的每一行、attempt 详情首页的 `usage:` 行、对照矩阵的用量列、`--execution` turn 头行，全部读同一份口径，不在各自的分篇里重复声明或衍生第二套数字。
 
 `--usage` 表在这份组件口径之上追加的是宿主装配：多个 attempt 的行怎么排、怎么分节、合计行怎么算、缺失怎么占位——这些属于 show 的机器，不是组件内容，声明在下面。
 

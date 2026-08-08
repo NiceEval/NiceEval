@@ -22,7 +22,7 @@
 上游 harness 固定从 task 目录取得 `docker-compose.yaml`,build/up 后进入 `client` 容器运行 Agent。
 Agent 结束后,harness 才把 `run-tests.sh` 与 `tests/**` 复制到 `/tests` 并判分。
 
-所以环境的真正 owner 是 task package。
+所以题目 Environment 的真正 owner 是 task package。
 NiceEval 迁移 adapter 只负责翻译这个格式;迁移者不应给数百道题重新手写一份 `environment:`。
 
 ## 文件布局
@@ -173,9 +173,9 @@ export default defineExperiment({
   -> 执行官方 verifier 并清理隐藏材料
 ```
 
-若改用不能按 Compose source 构建并启动 Sandbox Case 的 Provider,只有两种诚实结果:
+若改用不能按 Compose source 构建并启动 Sandbox 实例的 Provider,只有两种诚实结果:
 
 - SandboxSpec 为具体 environment profile 提供等价的预制完整 case。
-- 没有覆盖的 task 在计划期 `skipped`。
+- 没有对应映射的 task 在计划期 `skipped`。
 
-Runner 不能回退到 Experiment 默认 template,因为那会丢掉 task package 规定的环境。
+Runner 不能回退到 Experiment 默认 template,因为那会丢掉 task package 规定的 Environment。

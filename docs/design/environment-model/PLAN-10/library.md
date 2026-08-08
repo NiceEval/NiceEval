@@ -107,11 +107,11 @@ type SandboxCleanupCommand = (
 ```
 
 `prepare()` 是普通 Layer 唯一的公开生命周期方法，每条 Attempt 都执行。
-命令需要清理时，在本次执行成功取得资源后通过 `context.onCleanup()` 注册；Runner 对已成功注册的 cleanup 按全局准备顺序逆序执行。
+命令需要 cleanup 时，在本次执行成功取得资源后通过 `context.onCleanup()` 注册；Runner 对已成功注册的 cleanup 按全局准备顺序逆序执行。
 声明与资源取得放在同一 command 中，因此未执行或取得失败的命令不会产生虚假的 cleanup。
 
 PLAN-10 没有 `.setup()` / `.teardown()` / `.beforeEach()` / `.afterEach()`、scope option、priority、`dependsOn` 或 layer concat。
-绑定完整 Case 的资源由 Provider finalizer 清理；跨 Attempt 状态由 State Feature 清理。
+绑定完整 Case 的资源由 Provider finalizer 释放；跨 Attempt 状态由 State Feature 释放。
 
 ## Root 与 extension
 
@@ -369,7 +369,7 @@ declare function agentSandboxLayer(): AgentSandboxLayer;
 
 Adapter 入口从 `niceeval/adapter` 导出 `agentSandboxLayer()`；Eval / Experiment 作者不需要导入它。
 
-Adapter helper 可以把多个 Agent 安装组件按声明顺序加入该 layer：
+Adapter 的 `agentSandboxLayer()` 可以把多个 Agent 安装组件按声明顺序加入该 layer：
 
 ```typescript
 defineSandboxAgent({
@@ -389,7 +389,7 @@ defineSandboxAgent({
 - inspect、miss 时 install、安装后 reinspect；
 - Adapter 专属 facts、诊断与凭据边界。
 
-Runner 只统一顺序与记录 envelope，不把这些字段投影成较弱的 SandboxCommand。
+Runner 只统一顺序与持久化 envelope，不把这些字段投影成较弱的 SandboxCommand。
 Direct Agent 没有运行中的 Sandbox，也没有 Agent layer；Eval 或 Experiment 为 Direct Agent 声明任何 SandboxLayer 都是 link error。
 
 ## 每个配对的静态约束
@@ -404,4 +404,4 @@ Eval extension + Experiment extension -> missing
 这个 XOR 取决于 discovery 与 selector 形成的真实 pair，不能由单个 TypeScript 文件证明。
 `niceeval check`、`--dry` 与正常运行必须消费同一个 pair linker。
 
-同一 Run 的不同 pair 可以解析不同 root；`SandboxLayer` 的 kind 品牌只证明单个声明不能伪造或变形，不把“整个 Run 只能有一个 template”写进类型。
+同一 Run 的不同 pair 可以归一不同 root；`SandboxLayer` 的 kind 品牌只证明单个声明不能伪造或变形，不把“整个 Run 只能有一个 template”写进类型。

@@ -20,7 +20,7 @@ import {
 } from "niceeval/sandbox";
 ```
 
-模块边界表达两个不同问题：Environment 描述题目从什么条件启动；SandboxConfig 选择谁解析它，并配置启动后的 Experiment 准备。
+模块边界表达两个不同问题：Environment 描述题目从什么条件启动；SandboxConfig 选择谁规划它，并配置启动后的 Experiment 准备。
 
 ## Eval Environment
 
@@ -33,7 +33,7 @@ interface EvalDef {
 }
 ```
 
-字符串是 environment profile；EnvironmentSource 是 folder-local、Provider-neutral 的题目环境来源。
+字符串是 environment profile；EnvironmentSource 是 folder-local、Provider-neutral 的题目 Environment 输入。
 两者都不选择 Provider，也都不是运行中的 Sandbox。
 
 ### `composeEnvironment()`
@@ -60,7 +60,7 @@ interface ComposeEnvironmentOptions {
 ```
 
 `workspaceService` 是 Agent、Eval、文件 API、workdir 与 diff 共同锚定的 service。
-Environment 仍可声明伴随 service，但普通 setup 只取得主 Sandbox，不取得任意修改资源组的入口。
+Environment 仍可声明伴随 service，但普通 setup 只取得主 Sandbox，不取得任意修改 service、网络与 volume 的入口。
 
 ### `dockerfileEnvironment()`
 
@@ -134,10 +134,10 @@ vercelSandbox({
 ```
 
 `defaultEnvironment` 是 Provider-native 的完整起点声明。
-它只在当前 Eval 没有 Environment 时使用，不与 Eval Environment 合并，也不覆盖它。
+它只在当前 Eval 没有 Environment 时使用，不与 Eval Environment 合并，也不替换它。
 
 省略字段时，Provider 可以使用自己文档化的内建 defaultEnvironment。
-Runner 仍把最终使用的 image、template 或 snapshot identity 写入记录，不能用“默认”掩盖实际起点。
+Runner 仍把最终使用的 image、template 或 snapshot identity 写入 Attempt Record，不能用“默认”掩盖实际起点。
 
 ## `environments[profile]`
 
@@ -156,7 +156,7 @@ dockerSandbox({
 `environments[profile]` 命中时优先于 Provider 按 EnvironmentSource 规划。
 它用于替换慢路径，或表达无法在运行中安装的完整组合；启动后仍执行三层 setup 的检查与准备。
 
-表项不是第二份 Environment contribution，也不声明框架把 Eval 与 Experiment 两个产物合并过。
+表项不是第二份 Environment contribution，也不声明框架把 Eval 与 Experiment 两份声明合并过。
 它的 provenance 必须能证明自己对应当前 Environment source，不能由配置里的同名字符串自行背书。
 
 ## 三层 setup
@@ -188,7 +188,7 @@ setup 数组顺序就是执行顺序。
 ## 普通文件传输
 
 PLAN-7 的普通上传语义原样保留。
-本地 URL 进入 `uploadFile` 或 `uploadDirectory` 时，Runner 记录真实读取的 source tree、内容身份、目标与 send 区间。
+本地 URL 进入 `uploadFile` 或 `uploadDirectory` 时，Runner 写入真实读取的 source tree、内容身份、目标与 send 区间。
 
 ```typescript
 await t.send("完成任务。");
@@ -197,5 +197,5 @@ const result = await t.sandbox.runShell("bash /tests/run-tests.sh", { root: true
 t.check(result, commandSucceeded());
 ```
 
-顺序决定可见性，send 窗口决定 Agent diff 归因。
+顺序决定可见性，send 区间决定 Agent diff 归因。
 文件用途不进入 Environment 或 SandboxConfig 类型。

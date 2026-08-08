@@ -39,9 +39,9 @@ export default defineExperiment({
 
 - `checkout()`:在 workdir 外维护按 `(repo, ref)` 键控的镜像;首条 Attempt 走网络,后续 Attempt 从镜像快速写入 workdir。identity 是 `(repo, ref)`,进入 fingerprint 与复用池的现有规则。
 - `installTool()`:探测命中即返回;未命中执行 install 并复检,复检失败按执行失败计。identity 是 `tool + identity` 参数。
-- `--dry` 复用视图:内置命令声明自己的成本类别(命中型),普通 command 一律标注每题重放;逐命令展示类别与依据。
+- `--dry` 复用视图:内置命令声明自己的成本类别(命中型),普通 command 一律标注每题重新执行;逐命令展示类别与依据。
 
-## 覆盖
+## 守护
 
 | Case | 路径 |
 |---|---|
@@ -52,6 +52,6 @@ export default defineExperiment({
 
 ## 代价与义务
 
-- 采纳即翻案 memory 旧裁决「不配官方 fixture 装载 API」,须在 memory 记录新理由(复用缓存与稳定身份)与旧判据(绕行自设地雷)的差异。
+- 采纳即翻案 memory 旧裁决「不配官方 fixture 装载 API」,须在 memory 登记新理由(复用缓存与稳定身份)与旧判据(绕行自设地雷)的差异。
 - 内置命令集合是公开面,进入参考页与 docs-site 的维护范围。
-- 镜像缓存位置属于 内置命令内部约定,必须写明它服从 reset 与活状态边界,不被 `onCleanup` 清理。
+- 镜像缓存位置属于 内置命令内部约定,必须写明它服从 reset 与活状态边界,不被 `onCleanup` 删除。

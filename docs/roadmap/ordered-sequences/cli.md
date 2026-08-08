@@ -10,10 +10,10 @@ niceeval exp compare/codex-gpt-5.6-luna \
 ```
 
 一次命令只选择一个 Experiment 和一个 Sequence。
-Experiment 前缀必须唯一解析；Sequence ID 使用完整匹配，不用前缀一次命中多条序列。
+Experiment 前缀必须唯一读取；Sequence ID 使用完整匹配，不用前缀一次命中多条序列。
 
 `--sequence` 与 Eval 位置参数、`--tag`、`--rerun` 互斥。
-Sequence 自己给出唯一成员范围，并且每次都真实重放完整选择；继续接受这些收窄或沿用参数会制造看似成功的残缺历史。
+Sequence 自己给出唯一成员范围，并且每次都真实重新执行完整选择；继续接受这些收窄或沿用参数会制造看似成功的残缺历史。
 
 ## 运行到指定成员
 

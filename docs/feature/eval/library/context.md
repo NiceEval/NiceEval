@@ -49,8 +49,8 @@ async test(t) {
 }
 ```
 
-这两个方法只报告反馈,不用于断言:`progress` 可被 Human active 行覆盖且不会逐条进入 Agent/CI 输出;`diagnostic` 是永久事件,但即使 level 为 `error` 也不会自动改变 verdict。
-测试结论仍由断言决定,基础设施无法继续时则抛异常。
+这两个方法只报告反馈,不用于断言:`progress` 可被 Human active 行替换且不会逐条进入 Agent/CI 输出;`diagnostic` 是永久事件,但即使 level 为 `error` 也不会自动改变 verdict。
+测试判定仍由断言决定,基础设施无法继续时则抛异常。
 scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent 阶段。
 完整反馈契约见 [Experiments · 生命周期代码怎样向这次运行反馈](../../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 

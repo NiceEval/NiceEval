@@ -40,7 +40,7 @@ OpenClaw 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
 公开能力以真实 fixture / e2e 仓库固定的事实为准；未证明完整的行为不进公开能力声明。
 
-## 预制环境
+## Prebuilt environment
 
 Adapter 的必填 ensure 用 PATH 上 `openclaw` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/openclaw`（`NICEEVAL_OPENCLAW_DOCKER_IMAGE`）把 CLI 烘焙进 `/usr/local/bin`。

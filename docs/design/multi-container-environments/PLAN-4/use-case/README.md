@@ -3,17 +3,17 @@
 本文把 [PLAN-4](../README.md) 落到四道真实 Terminal-Bench 题上，
 回答三个可以直接复审的问题：
 
-1. 上游题目文件放在哪里，哪些内容进环境身份，哪些内容进
+1. 上游题目文件放在哪里，哪些内容进 Sandbox 身份，哪些内容进
    eval 判据指纹；
 2. Docker 与云端 provider 分别怎样把同一个 profile 构建并启动成
-   完整 sandbox case；
+   完整 `SandboxCase`；
 3. `eval` 与 `experiment` 最终写成什么样，Agent 的
    检查→必要时安装放在哪一步。
 
 样例核对自 [harbor-framework/terminal-bench](https://github.com/harbor-framework/terminal-bench) 的
 `d28711d0da2675d0bb1d56de45ae5df6082438a3`。下文 API 展开 PLAN-4 的四道题映射；Terminal-Bench
 的最终布局与作者调用面以
-[环境模型 PLAN-6 的 Terminal-Bench 用例](../../../environment-model/PLAN-6/use-case/Terminal-Bench.md)
+[Sandbox 模型 PLAN-6 的 Terminal-Bench 用例](../../../environment-model/PLAN-6/use-case/Terminal-Bench.md)
 为准。本页保留四道多容器真题对 Provider Case、BuildKey、CaseKey、主 Sandbox 与 ready/cleanup 的证据；推荐迁移入口是 PLAN-6 的单文件 dataset adapter,下面的逐目录 wrapper 只展开单题映射。
 
 ---
@@ -106,7 +106,7 @@ evals/foo/eval.ts       → id "foo"
 普通起始 fixture 也可以同目录放在 `fixture/`，由 eval
 `setup` 或 `test` 在 `send` 前上传，Agent 本来就应看见；
 它进入 eval fixture 归因。目录共址只解决组织问题，不把
-环境、fixture、verifier 三种生命周期揉成一个哈希。
+Sandbox、fixture、verifier 三种生命周期揉成一个哈希。
 
 发现期会将 loader 登记的 verifier/private 路径与 Compose
 每个 build context 交叉检查。若仍在 Docker 发送闭包里，
@@ -133,7 +133,7 @@ import { defineTerminalBenchEval } from "../_lib/terminal-bench.ts";
 export default await defineTerminalBenchEval(import.meta.url);
 ```
 
-Helper 声明的是 Compose source，不选择 provider：
+这个模块声明的是 Compose source，不选择 provider：
 
 ```typescript
 // evals/terminal-bench/_lib/terminal-bench.ts
@@ -203,12 +203,12 @@ export async function defineTerminalBenchEval(entry: string | URL) {
 ```
 
 `loadCriteriaTree(URL)` 是 folder-first 所需的候选补充：登记
-该目录下的完整判据树并返回 file URL，不要求 helper 反向拼
+该目录下的完整判据树并返回 file URL，不要求工具反向拼
 项目根相对 glob。当前 `loadCriteria` 的字符串 glob仍保留，
 适合跨目录或精细 include/exclude。两者都只能在发现期调用。
 
 `hiddenInputs` 不重复计算判据指纹，只把已登记的隐藏路径交给
-环境泄漏门核对。更理想的实现可以由发现器自动关联，不要求
+Sandbox 泄漏门核对。更理想的实现可以由发现器自动关联，不要求
 作者重复传；这里把数据流写明，留待 API 调用点评审。
 
 `composeSandbox` 产出 folder-local sandbox 声明，
@@ -226,7 +226,7 @@ Terminal-Bench compatibility adapter 为每个 attempt 生成
 默认以 root 工作，`broken-networking` 要修改系统文件。
 Provider 不能悄悄换成 UID 1000；云实现也要兑现等价权限面。
 
-四题的解析结果应当是：
+四题的读取结果应当是：
 
 | 题 | BuildKey | 额外进入 CaseKey、但不触发对应镜像 build 的输入 |
 |---|---|---|
@@ -245,7 +245,7 @@ Provider 不能悄悄换成 UID 1000；云实现也要兑现等价权限面。
 所以 verifier 命令显式 `{ root: true }`。这不改变 Agent
 做题时的权限；Agent 权限由 sandbox source 的
 `executionUser` 决定。
-验证命令产生的 venv 与依赖也发生在 Agent 窗口之后，不进入
+验证命令产生的 venv 与依赖也发生在 Agent 阶段之后，不进入
 Agent diff。
 
 四题可以由 benchmark adapter 合并成一个 keyed record。
@@ -282,20 +282,20 @@ export default defineExperiment({
 });
 ```
 
-首次运行时，环境构建协调器按 BuildKey 去重：
+首次运行时，Sandbox 构建协调器按 BuildKey 去重：
 
 - broken、debug、sql-injection 各 build 一个 client；
 - sheets 分别 build client 与 api；
-- `postgres:15` 和两个 Python service image 解析 digest、按
+- `postgres:15` 和两个 Python service image 读取 digest、按
   Docker cache 拉取，不伪装成逐题 build；
 - 同一道题跑多个 attempt 时不重复 build。
 
-环境产物就绪后才创建 Compose project。主 Sandbox 是
+Sandbox 输出就绪后才创建 Compose project。主 Sandbox 是
 `client`，因此 Codex Adapter 的 Ensure 在 client 中执行：
 先检查精确版本；未预装才安装；复检通过后做题。它不会装进
 宿主、Docker daemon 容器或 sidecar。
 
-环境构建并发 `2` 与 attempt 并发 `4` 是两道闸。冷构建时间
+Sandbox 构建并发 `2` 与 attempt 并发 `4` 是两个并发限制。冷构建时间
 记入 Run 的 `sandboxBuilds`，不占四个 Agent attempt 位；
 Compose create、Agent Ensure、做题和验证才进入 attempt
 deadline。
@@ -334,7 +334,7 @@ export default defineExperiment({
 
 这里 E2B template 只预装 Docker daemon、Compose 与基础
 cache，不预烘四道题，更不预烘 241 道 `<题目 × Agent>`
-组合。任务环境按 CaseKey/BuildKey 现场构建并启动；Codex 仍在
+组合。任务 Sandbox 按 CaseKey/BuildKey 现场构建并启动；Codex 仍在
 返回的 client Sandbox 内 Ensure。官方 Codex template 只是
 Ensure 更容易命中的优化，不是运行这些任务的前提。
 
@@ -360,7 +360,7 @@ provider 清单全绿。
 
 1. `debug_server.py` 只挂在 program；client 的文件 API、
    Agent、eval verifier 都不能读它。
-2. client 能解析 `program`，Agent 只能经两个 HTTP API 探测。
+2. client 能寻址 `program`，Agent 只能经两个 HTTP API 探测。
 3. 修改 `debug_server.py` 改 CaseKey，但 client BuildKey
    仍命中。
 4. verifier 从 client 请求测试端点并检查
@@ -368,13 +368,13 @@ provider 清单全绿。
 
 ### simple-sheets-put
 
-1. client 与 api 各有一个 BuildKey，db 记录
+1. client 与 api 各有一个 BuildKey，db 登记
    `postgres:15` 的实际 digest。
 2. Compose 原生兑现 db→api→client 的健康检查链；未就绪时
    不把 client 交给 Agent。
 3. Agent 只访问 `http://api:8000`，不能把 API/DB 合并进
    client 进程。
-4. api 或 db 在评分前异常退出，attempt 是环境
+4. api 或 db 在评分前异常退出，attempt 是 Sandbox
    `errored`，并附对应服务日志。
 
 ### sql-injection-attack
@@ -391,17 +391,17 @@ provider 清单全绿。
 
 ## 由这些样例反推的实现边界
 
-- NiceEval core 需要 sandbox case 生命周期、CaseKey、
+- NiceEval core 需要 `SandboxCase` 生命周期、CaseKey、
   BuildKey 协调和主 Sandbox，不需要认识 Terminal-Bench
   task schema。
-- Terminal-Bench compatibility helper 负责上游变量和目录
+- Terminal-Bench compatibility 工具负责上游变量和目录
   约定，不负责解释或改写 Compose 网络语义。
 - Eval folder 声明 sandbox source、题面与判据；不运行
   `docker compose build/up`，也不维护 template alias。
 - Experiment 选择 Agent、provider materializer、构建并发与
   attempt 并发；不复制四道题的拓扑。
 - Agent Adapter 只在 case 返回的主 Sandbox 做
-  check→install→recheck；环境是否预装 Codex不改变 eval。
+  check→install→recheck；Sandbox 是否预装 Codex 不改变 eval。
 - Provider 不能完整兑现某 case 时应缺映射并在启动期失败。
   「不同 provider 有不同 case 集合」是诚实的能力边界，不是
   core 不通用。

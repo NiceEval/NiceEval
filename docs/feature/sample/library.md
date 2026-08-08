@@ -70,21 +70,21 @@ interface Sample {
 ```
 
 `attempts` 是当前贡献全集，官方计算函数只消费它。
-`runs` 只保存真正贡献过 Attempt 的来源 Run；同一个 Experiment 可以有多个来源 Run，但它们共享当前 `configHash`。
+`runs` 只保存真正贡献过 Attempt 的 Run；同一个 Experiment 可以有多个贡献 Run，但它们共享当前 `configHash`。
 `historyAttempts` 服务明确的 History、趋势和稳定性旅途，不参与当前报告计票。
 
-## 覆盖与缺口原因
+## 缺口与分母
 
 `knownEvalIds` 是分母，来自本地历史与各 Run 声明的已知 Eval 并集，再与调用方范围求交。
-`missing` 只列当前 `attempts` 没有覆盖的 Eval。
+`missing` 只列当前 `attempts` 里没有对应 Attempt 的 Eval。
 
 `never-run` 表示历史中没有该 Eval 的任何物理 Attempt。
 `previous-result` 表示历史中有物理 Attempt，但它不在当前可比 Run 集合中；`previous` 取最近一条可定位结果作为审计入口。
 这个引用不参与任何读数，也不保证 `accept` 一定成功；`accept` 仍会按当前项目重新完成全部资格校验。
 
-## 来源事实
+## provenance 事实
 
-`AttemptHandle.carried` 保留为来源事实。
+`AttemptHandle.carried` 保留为 provenance 事实。
 它用于 Attempt 详情解释证据从哪里来，不用于过滤、分段、降饱和或改变统计。
 
 如果产品要求结果必须在一定时间内重新执行，这项要求进入携带资格或 fingerprint 输入。
@@ -103,18 +103,18 @@ const algebra = currentSample(record)
 | `scope()` | 重新定义当前总体 | 与范围求交 |
 | `filter()` | 删除不可信或不适用的当前观测 | 保持不变，删出的 Eval 进入缺口 |
 
-转换同步更新 `attempts`、`runs`、`historyAttempts`、`coverage` 与有来源作用域的 `issues`。
+转换同步更新 `attempts`、`runs`、`historyAttempts`、`coverage` 与 `issues`(带 experiment 归属的随所属实验存活)。
 Sample 不提供 `freshOnly()`；需要查看单次执行事实时进入 Run 或 History 旅途。
 
 ## 去重
 
 携带会让同一 Attempt 出现在多份 Run 中。
-选择器按稳定 locator 身份去重，重复时保留最新 Run 中的物理副本，使证据入口落在最新记录上。
+选择器按稳定 locator 身份去重，重复时保留最新 Run 中的物理副本，证据入口因此落在最新副本上。
 缺少稳定身份时宁可保留，不靠近似字段误删。
 
 ## Issue code 全集
 
-`issues` 只收不能落到某个 coverage 缺口或 Attempt 来源上的读取问题：
+`issues` 只收不能归到某个 coverage 缺口或某个 Attempt 上的读取问题：
 
 ```ts
 type SampleIssue =

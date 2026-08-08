@@ -1,10 +1,10 @@
-# 实验环境较重
+# 实验 Sandbox 较重
 
-返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C2](../../CASES.md#c2实验环境较重)。
+返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C2](../../CASES.md#c2实验-sandbox-较重)。
 
 ## 项目形态
 
-所有 Eval 使用同一种基础环境,重的是随 Experiment 变化的工具。
+所有 Eval 使用同一种基础 Sandbox,重的是随 Experiment 变化的工具。
 例如记忆实验需要 mempal 二进制与模型 cache,普通对照实验不需要这些内容。
 
 Eval 不声明特殊 Environment;Experiment 选择基础 Sandbox,并通过 Provision 声明额外条件。
@@ -57,7 +57,7 @@ export default defineExperiment({
 ```
 
 `mcpServers` 决定 Agent 怎样连接 mempal,Provision 负责 mempal 在 Sandbox 中真实就位。
-`flags` 只提供报告分组坐标;Provision identity 进入 `configHash` 与运行记录。
+`flags` 只提供报告分组坐标;Provision identity 进入 `configHash` 与运行数据。
 
 对照组使用另一份 Experiment,既不声明 mempal Provision,也不注册对应 MCP server。
 
@@ -67,4 +67,4 @@ export default defineExperiment({
 基础 template 没有 mempal 时,每个 Sandbox 都需要安装;Provision 解决身份、检查与组合问题,不靠改变隔离边界制造性能收益。
 
 payload 下载可以通过 `prepare` 在本次 Run 内共享。
-稳定且昂贵的安装应按[预制环境用例](把预置项装进预制环境.md)进入 template,同时保留 Provision 做运行时核验。
+稳定且昂贵的安装应按[预构建 Sandbox 用例](把预置项装进预构建Sandbox.md)进入 template,同时保留 Provision 做运行时核验。

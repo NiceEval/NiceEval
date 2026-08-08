@@ -11,5 +11,5 @@ Verdict 是一个 Attempt 的互斥终态：`passed`、`failed`、`errored` 或 
 | 理解 `--strict` 和 CLI 反馈 | [CLI](cli.md) |
 | 把 soft 质量线收紧成门禁 | [用例](use-case/README.md) |
 
-Assertion 的记录形状见 [Assertions](../assertions/README.md)。
+Assertion 的条目形状见 [Assertions](../assertions/README.md)。
 裁判模型调用见 [Judge](../judge/README.md)。

@@ -25,11 +25,11 @@ Attempt
 └── Agent setup activity
 ```
 
-Environment 是起点解析输入。
+Environment 是起点选择输入。
 setup 是 Sandbox 启动后的有序生命周期动作。
 两者没有共同的 contribution 或 Base 接口。
 
-## Environment 解析
+## Environment 起点选择
 
 规划器先计算稳定 profile,再调用当前 SandboxSpec:
 
@@ -73,10 +73,10 @@ Agent setup 仍由 Adapter 拥有。
 三个 owner 不合并错误域。
 同一物理命令失败时,phase 决定诊断属于 `sandbox.setup`、`eval.setup` 还是 `agent.setup`。
 
-## 可验证 helper,不是通用 Requirement 图
+## 可验证的 setup 函数,不是通用 Requirement 图
 
 setup 默认是显式有序动作。
-当某项准备昂贵或可能已经预装时,领域 helper 可以实现:
+当某项准备昂贵或可能已经预装时,领域 setup 函数可以实现:
 
 ```text
 check actual facts
@@ -85,25 +85,25 @@ check actual facts
   -> recheck actual facts
 ```
 
-Runner 只为 branded setup helper 提供 deadline、staged payload、identity 与 activity 记录设施。
+Runner 只为 branded setup 函数提供 deadline、staged payload、identity 与 activity 写入设施。
 它不收集 Eval/Experiment Requirement 数组,也不跨 owner 建 DAG。
 
-这样保留真实验证,但把版本检查、安装方式与事实解释留在 `mempalSetup()`、`nodeRepositoryFixture()` 等领域 helper 内。
+这样保留真实验证,但把版本检查、安装方式与事实解释留在 `mempalSetup()`、`nodeRepositoryFixture()` 等领域 setup 函数内。
 普通作者只看到一个符合所在层次的 setup 调用。
 
-## 预制覆盖
+## 预制组合
 
-有些 Provider 不能按 Eval source 构建并启动 Sandbox Case,或者实验工具无法在题目启动后安装。
+有些 Provider 不能按 Eval source 构建并启动 Sandbox 实例,或者实验工具无法在题目启动后安装。
 SandboxSpec 可以在 `environments[profile]` 提供已经组合好的完整 case。
 
 表项必须兑现原 Environment 的外部行为。
-预制产物与 source 的内容身份核对仍是本决策的遗留风险;在产物 provenance 有稳定公开形状前,不让配置用当前 source 动态计算出的声明值替旧产物背书。
-启动后的 SandboxSpec setup 仍执行;可验证 helper 检查命中时不会重复安装。
+预制组合与 source 的内容身份核对仍是本决策的遗留风险;在预制组合的 provenance 有稳定公开形状前,不让配置用当前 source 动态计算出的声明值替旧组合背书。
+启动后的 SandboxSpec setup 仍执行;可验证 setup 函数检查命中时不会重复安装。
 
 Runner 不从默认 template 与 Eval source 合成表项。
-组合产物由作者或构建系统在运行前准备。
+组合好的完整 case 由作者或构建系统在运行前准备。
 
-## 身份与记录
+## 身份与写入
 
 ```text
 Run configHash
@@ -121,7 +121,7 @@ plain function 的函数体不自动参与哈希。
 无 identity 的 plain setup 不参与缓存命中:它每次执行,所在 Attempt 在报告中标注 setup 身份不可比。
 需要缓存命中或跨 run 对比的自定义准备,通过 `defineSandboxSetup()` 或既有显式 revision 字段声明身份。
 
-Attempt 记录保存所选 case、每层 setup 的 activity、可验证 helper 的实际 facts 与 Agent 安装事实。
+Attempt Record 保存所选 case、每层 setup 的 activity、可验证 setup 函数查得的 facts 与 Agent 安装事实。
 这些事实解释本次执行,不成为以后跳过 check 的依据。
 
 ## 正交生命周期
@@ -129,5 +129,5 @@ Attempt 记录保存所选 case、每层 setup 的 activity、可验证 helper �
 外部 Experiment state 在 Agent CLI 就位后按独立 Feature 契约 load/save。
 turn 后 hidden verifier 在 Agent 完成后 materialize 并 cleanup。
 
-这些相位不改变 Environment 解析或 setup owner。
-多容器的 ready、主 Sandbox、finalizer 与 stop 继续属于 Sandbox Case。
+这些相位不改变 Environment 起点选择或 setup owner。
+多容器的 ready、主 Sandbox、finalizer 与 stop 继续属于 Sandbox 实例。

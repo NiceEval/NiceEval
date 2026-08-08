@@ -50,7 +50,7 @@ Behavior ID 描述稳定用户结果，不编码测试文件、执行层或媒�
 
 每个 E2E 仓库签入自己的 wrapper 与 matcher。
 根 Registry 只能只读扫描共同元数据，不能成为该仓库 `pnpm e2e` 的依赖，也不能注入共享测试语义。
-各仓生成只含声明与引用的本地 Manifest；独立 checkout 只校验本仓，完整 checkout 再聚合解析跨仓引用与必需边界。
+各仓生成只含声明与引用的本地 Manifest；独立 checkout 只校验本仓，完整 checkout 再聚合定位跨仓引用与必需边界。
 
 ## Evidence 所有权
 
@@ -60,7 +60,7 @@ fake 可以证明确定性转换，但不能成为外部协议兼容性的唯一
 E2E evidence 来自真实候选包、CLI、SDK、provider、外部 cwd 或浏览器。
 一次真实运行供多个读面使用时，所有写操作先在 prepare 完成，再把结果发布为命名且不可变的 world。
 
-需要迁移、修复或追加记录的场景使用独立派生 world。
+需要迁移、修复或追加 Record 的场景使用独立派生 world。
 断言阶段不能原地修改共享根。
 
 ## 媒介适配器
@@ -97,7 +97,7 @@ PTY parser 也不能替代 JSON 读取精确身份。
 - Parser 只读取事实，不计算产品应得结果。
 - 标题声称的具体对象必须在 matcher 中以身份出现。
 - E2E prepare 是普通验收前最后一个可写阶段。
-- unit 与 E2E 不共享 setup、时钟、清理或协议模拟语义。
+- unit 与 E2E 不共享 setup、时钟、回收或协议模拟语义。
 
 ## 生命周期与错误
 

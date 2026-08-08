@@ -16,16 +16,16 @@ const sample = currentSample(record, { experiments: "compare/" });
 
 | 你要什么 | 从哪进 |
 |---|---|
-| 官方口径的一批 attempt,连覆盖与警告一起 | `latestRunSample` / `currentSample` |
+| 官方口径的一批 attempt,连命中范围与警告一起 | `latestRunSample` / `currentSample` |
 | 官方口径的折叠数字(表格、矩阵、散点) | [Reports 的计算函数](../../reports/library.md) |
 | 连口径都自定义(例如全历史的分布) | 直接遍历 `record.experiments` |
 
 判据是**你需要多少判断**:要与 `show` / `view` 首页对上数字就从选择器出发;要一条别人没有的口径, 才下沉到 Record。
 
-## CI 门禁:先判覆盖,再判通过
+## CI 门禁:先判命中范围,再判通过
 
-覆盖缩水比失败更隐蔽 —— 分母少了几道题,通过率反而好看。
-所以门禁先判覆盖:
+命中范围缩水比失败更隐蔽 —— 分母少了几道题,通过率反而好看。
+所以门禁先判命中范围:
 
 ```typescript
 const shrunk = sample.coverage.some((c) => c.missing.length > 0);

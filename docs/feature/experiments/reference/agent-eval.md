@@ -23,7 +23,7 @@ agent-eval 用 `ExperimentConfig` 把 Agent、模型、尝试次数、题目选�
 | `editPrompt` | 删除 | prompt 归 Eval 或 Agent，不由 Experiment 隐式重写 |
 | `onRunComplete` | 拆分 | 分析归 Reporter，资源回收归 `teardown` |
 | `modelPolicy` | 删除 | `model` 省略即 Agent 原生默认 |
-| `copyFiles` | 删除 | 产物与 agent diff 已有明确读取面 |
+| `copyFiles` | 删除 | 落盘文件与 agent diff 已有明确读取面 |
 | `webResearch` / `agentOptions` | 合并为 `flags` | 一个 JSON 参数袋，整袋进入配置身份 |
 
 最终边界是：Experiment 决定**怎样运行与怎样执行裁判**，但不定义**什么答案算对**。评分材料、rubric、阈值与 severity 始终留在 Eval。

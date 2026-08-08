@@ -118,7 +118,7 @@ t.notCalledTool("send_email", { status: "completed" });            // 可以发�
 
 - **`count` 数字超出是确凿失败**：partial 通道只会少采不会多采，实测已超出的「恰好 n 次」不可能是采集造成的；`count` 谓词不满足时在非 complete 通道上记 `unavailable`——缺证据的计数没有可信判定。
 - **谓词（`input` / `output` / `count` 谓词）对报告不透明**，失败时只有 label 和计数可读——能用字面量或 RegExp 表达的不要写谓词。
-- 严重度与 match 正交：默认 gate，降软指标链 `.atLeast(1)`，只记录链 `.soft()`；证据允许缺席另链 `.optional()`。
+- 严重度与 match 正交：默认 gate，降软指标链 `.atLeast(1)`，只写入链 `.soft()`；证据允许缺席另链 `.optional()`。
 - `calledSubagent(name, match?)` 的 `SubagentMatch` 语义同源（`count` / `status` / `output` 同义，另有 `remoteUrl` 匹配委派地址）；`event(type, opts?)` 只有 `count`。
   字段全集见[契约单源](../../assertions/library/scoped-assertions.md#匹配条件的字段全集)。
 

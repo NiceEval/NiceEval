@@ -1,7 +1,7 @@
 # ⚡ NiceEval 设计文档
 
 `docs/` 保存 NiceEval 的最终功能契约、形成这些契约的设计材料，以及带日期的外部产品研究。
-Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决记录，Research 只提供决策输入而不构成目标契约。
+Feature 和未归类的产品页描述已经落地并验收的产品状态，Roadmap 描述已经定稿但尚未落地的目标状态，Design 保存多方案比较与裁决存档，Research 只提供决策输入而不构成目标契约。
 
 因此：
 
@@ -12,7 +12,7 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 
 讨论或修改设计时，目标状态一律以 docs 的声明为准；docs 未声明的行为视为未定稿，先在对话或 Design 中裁决，不从源码反推。
 只有进入实现与核对阶段，才使用 [Source Map](source-map.md) 定位源码并直接检查实现。
-要记录实现踩坑或设计翻案，进入 [`memory/INDEX.md`](../memory/INDEX.md)。
+要写入实现踩坑或设计翻案，进入 [`memory/INDEX.md`](../memory/INDEX.md)。
 
 ## 按意图进入
 
@@ -27,7 +27,7 @@ Feature 和未归类的产品页描述已经落地并验收的产品状态，Roa
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 设计或评审公开 API | [API 设计](api-design.md) |
 | 查看已经定稿、等待落地的方向 | [Roadmap](roadmap/README.md) |
-| 对比多个候选方案、给出架构 / 技术选型结论 | [Design](design/README.md) |
+| 对比多个候选方案、给出架构 / 技术选型裁决 | [Design](design/README.md) |
 | 研究外部产品及其对 NiceEval 的启发 | [Research](research/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
@@ -51,7 +51,6 @@ docs/
 ├── source-map.md                        目标契约 → 源码落点
 ├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
 ├── writing-rules.json                   句长、段长规则与禁词库，pnpm lint 读它
-├── writing-baseline.json                现存命中数上限，只许变小
 │
 ├── feature/                             已落地并验收的功能契约
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
@@ -168,7 +167,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 ## 写给人读
 
 `docs/` 的读者是照着它做设计决策、写实现的人，不是只被 grep 的语料。
-契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状来源的地位。
+契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状出处的地位。
 
 因此正文按下面三条写。
 
@@ -182,7 +181,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 只有句末标点算断句，分号和破折号串起来的分句仍是同一句——长难句正是这么长起来的。
 一行有多长不受限：句子写完再换行，中途要不要断行按 diff 好不好读自己定。
 
-用词只有一个来源：[Concepts](concepts.md)。
+用词只有一处出处：[Concepts](concepts.md)。
 
 - 同一概念在正文里始终写同一个词，不换同义词，也不临时造中文译名。
 - 要用总表里没有的概念，先在 concepts.md 立词，再在正文使用。
@@ -204,7 +203,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 两条纪律:
 
 - **契约单源不迁移。** 定义只写在 `library.md` / `cli.md`;`use-case/` 只做搭配与叙事,引用契约页,不复制定义——各 use-case README 开头那句「契约单源始终在…」就是这条的落点。
-- **契约页要场景时引用,不展开。** `library.md` 讲到某个参数的典型场景(断网环境、并发临界区这类),一句话点到,链接 `use-case/` 对应叶子;完整代码不进契约页。
+- **契约页要场景时引用,不展开。** `library.md` 讲到某个参数的典型场景(断网、并发临界区这类),一句话点到,链接 `use-case/` 对应叶子;完整代码不进契约页。
 
 ## 从设计到实现
 
@@ -229,7 +228,7 @@ pnpm lint
 
 文档与文档站的全部 lint 都挂在这一条命令上：
 
-- `lint/docs/docs-consistency.lint.ts` 检查索引覆盖与相对链接。
+- `lint/docs/docs-consistency.lint.ts` 检查索引涵盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
 - `lint/docs/docs-writing.lint.ts` 检查上表里能机器判定的两条——句长、段长，外加禁用写法与两条立词纪律。
   括号嵌套靠人读，没有守护。
@@ -248,10 +247,8 @@ pnpm lint
 - **非首选同义词**：一格里并列多个写法、其中一个加粗时，粗体那个是首选，其余出现在正文即提示改用首选。
   没有粗体的多写法格是几个并列词条，不是同义词，不产生裁决。
 
-[`writing-baseline.json`](writing-baseline.json) 是**待清理存量上限**，记录每个文件现存多少处；禁词按词分别计数，不能只记总数，否则一个词消失、另一个词新增时数量不变，问题却换了。
-新写的正文一处都不许命中；存量上限只许变小，改好后运行 `pnpm lint:docs -u` 收紧。
-把存量上限改大来换绿灯，等于把这条规矩作废。因此有回归时 `-u` 不写入新数值，而是先报告失败。
-新增规则时，首批存量命中不走 `-u`，要手写进 `writing-baseline.json`，让「放宽」这个动作留在 diff 里接受检查。
+写作规则零容忍：正文一次命中都不许有，不存在存量上限，也没有 `-u` 收紧这一说。
+新增规则时，存量正文当场改写，让「放宽」这个动作留在 diff 里接受检查。
 
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 

@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-你想确认评分结论是否依赖某个裁判模型，同时保持题目、rubric、阈值、被测 Agent 与样本完全相同。临时 CLI flag 无法复现，复制 Eval 又会让评分规则分叉；正确的变化轴是两个 Experiment 的 `judge` 配置。
+你想确认评分判定是否依赖某个裁判模型，同时保持题目、rubric、阈值、被测 Agent 与样本完全相同。临时 CLI flag 无法复现，复制 Eval 又会让评分规则分叉；正确的变化轴是两个 Experiment 的 `judge` 配置。
 
 ## 全流程
 
@@ -40,7 +40,7 @@ export default defineExperiment({
 });
 ```
 
-两份 Experiment 各自进入配置身份与 Run 记录，报告按 `labels.judge` 对比。`judge` 决定实际调用哪个模型，`labels` 只给报告命名；两者不能互换。
+两份 Experiment 各自进入配置身份与 Run 条目，报告按 `labels.judge` 对比。`judge` 决定实际调用哪个模型，`labels` 只给报告命名；两者不能互换。
 
 ## 边界
 
@@ -51,5 +51,5 @@ export default defineExperiment({
 
 ## 相关阅读
 
-- [Judge Library](../library.md#模型与鉴权) —— 完整解析链与凭据边界。
+- [Judge Library](../library.md#模型与鉴权) —— 完整求值链与凭据边界。
 - [Experiments](../../experiments/README.md#defineexperiment-的形状) —— `judge` 为什么属于可签入运行配置。

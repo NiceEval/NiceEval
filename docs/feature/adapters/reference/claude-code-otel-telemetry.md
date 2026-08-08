@@ -1,6 +1,7 @@
 # Claude Code 自带的 OTel 遥测 —— 能不能替代"等 CLI 跑完再读 transcript"
 
-**来源:** [Claude Code 官方 Monitoring 文档](https://code.claude.com/docs/en/monitoring-usage)(2026-07 抓取原始页面核对,不是转述摘要);对照读了 `/Users/ctrdh/Code/agent-eval`(vercel-labs/agent-eval)的 `claude-code.ts` + `o11y/parsers/claude-code.ts` 源码。
+**出处:** [Claude Code 官方 Monitoring 文档](https://code.claude.com/docs/en/monitoring-usage)(2026-07 抓取原始页面核对,不是转述摘要)。
+对照读了 `/Users/ctrdh/Code/agent-eval`(vercel-labs/agent-eval)的 `claude-code.ts` + `o11y/parsers/claude-code.ts` 源码。
 
 ## 先回答问题
 
@@ -9,14 +10,18 @@
 
 - Claude Code 的 OTel 导出是**定时批量导出**(OTel SDK 标准的 BatchProcessor 行为),不是每条事件产生就立刻 POST 一次。
   间隔可调,metrics 默认 60s、logs/traces 默认 5s,**最低可以调到 1000ms**(见下表),进程退出时也会把剩余缓冲区强制 flush 一次。
-- 所以"增量"是相对的:比起 niceeval 现在的 claude-code adapter(`src/agents/claude-code.ts`)—— `runCommand` 等整个 `claude --print` 进程退出,再一次性读回整份 transcript JSONL —— 这条路径能在**进程运行过程中**分批收到 span,粒度是秒级,不是"跑完才有"。
+- 所以"增量"是相对的。
+  比起 niceeval 现在的 claude-code adapter(`src/agents/claude-code.ts`)—— `runCommand` 等整个 `claude --print` 进程退出,再一次性读回整份 transcript JSONL —— 这条路径能在**进程运行过程中**分批收到 span。
+  粒度是秒级,不是"跑完才有"。
 - 但也不是 eve / 自建 direct agent 那种"事件发生即推"的上限:批量间隔就是延迟下限,想要更低延迟只能继续调小间隔(有性能/开销代价,官方文档明确说"debug 用完记得调回去")。
 
-结论细化到"该不该接"见文末[结论](#结论这条路径值不值得接)。
+判定细化到"该不该接"见文末「判定:这条路径值不值得接」一节。
 
-## agent-eval 不是答案来源:它压根没用 OTel
+## agent-eval 不是答案出处:它压根没用 OTel
 
-先排除一个容易搞混的点:`/Users/ctrdh/Code/agent-eval`(vercel-labs 的 agent-eval)里的 Claude Code 适配(`packages/agent-eval/src/lib/agents/claude-code.ts`)**完全没有用 OTel**——它是纯粹的"沙箱里跑 `claude --print`,`sandbox.runCommand()` 等命令退出,再 `ls -t ~/.claude/projects/**/*.jsonl | head -1` 找最新一份磁盘 transcript 整份读回来"(`captureTranscript()`),`captureTranscriptBestEffort()` 只在命令完成 / abort / catch 分支里调用一次。
+- 先排除一个容易搞混的点:`/Users/ctrdh/Code/agent-eval`(vercel-labs 的 agent-eval)里的 Claude Code 适配(`packages/agent-eval/src/lib/agents/claude-code.ts`)**完全没有用 OTel**。
+  - 它是纯粹的"沙箱里跑 `claude --print`,`sandbox.runCommand()` 等命令退出,再 `ls -t ~/.claude/projects/**/*.jsonl | head -1` 找最新一份磁盘 transcript 整份读回来"(`captureTranscript()`)。
+  - `captureTranscriptBestEffort()` 只在命令完成 / abort / catch 分支里调用一次。
 跟 niceeval 自己的 `src/agents/claude-code.ts` 是**同一套磁盘旁读策略**,niceeval 这边还额外记过一篇源码阅读笔记([agent-eval 参考](agent-eval.md))。
 
 也就是说:agent-eval 对"能不能提前拿到结果"这个问题没有帮助——它对这个问题给出的答案是"不能,等 CLI 退出"。
@@ -74,7 +79,7 @@ niceeval 的 `src/agents/claude-code.ts` 一直是拿 `--print`(即 `-p`)跑的�
 NiceEval 有宿主 receiver 与 Sandbox 内 receiver 两种放置方式。direct agent / 显式 host override 使用 `src/o11y/otlp/receiver.ts`，Sandbox Agent 默认使用 `src/o11y/otlp/sandbox-receiver.ts`。两者都只认 `POST .../v1/traces`，并复用 `src/o11y/otlp/parse.ts`；parser 同时解码 **OTLP/JSON** 和 **OTLP/protobuf**，不需要为 Claude Code 新写转换代码。
 
 Claude Code 的 traces 导出器支持的协议是 `grpc` / `http/json` / `http/protobuf` 三选一(`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`)。
-**只要选 `http/json` 或 `http/protobuf`,不选 `grpc`**(现有接收器是个普通 `http.createServer`,不认 gRPC 的 HTTP/2 帧),Claude Code 就能把 span 直接导出到现有接收器,格式层面**不需要新写解析代码**——`parseOtlpTraces` 已经覆盖。
+**只要选 `http/json` 或 `http/protobuf`,不选 `grpc`**(现有接收器是个普通 `http.createServer`,不认 gRPC 的 HTTP/2 帧),Claude Code 就能把 span 直接导出到现有接收器,格式层面**不需要新写解码代码**——`parseOtlpTraces` 已经涵盖。
 
 `claudeCodeAgent` 当前按下面的协议注入配置；endpoint 指向同一个 Sandbox 内的 receiver：
 
@@ -90,9 +95,9 @@ OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场
 ## 跟现有采集矩阵的关系
 
 `claudeCodeAgent` 的 `tracing.env` 注入本页这组 env，并与 Bub、Codex 一样默认开启，源码入口见 `src/agents/claude-code.ts`。
-span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcript 旁读,与下文结论一致。
+span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcript 旁读,与下文判定一致。
 
-## 结论:这条路径值不值得接
+## 判定:这条路径值不值得接
 
 **不建议现在替换行为轨(`StreamEvent[]`)的采集方式。
 ** 磁盘旁读 transcript 免费给全量内容(prompt / 工具参数 / 工具输出 / 助手文本),OTel 版本要拿到同等内容得开三个额外 flag、还处于 beta(字段随时可能变,`user_prompt` 等内容属性文档原文写明"不是稳定 span schema 的一部分")。
@@ -104,11 +109,14 @@ span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcrip
 2. **时间轨:** `claudeCodeAgent` 默认声明 `tracing.env`，runner 在 Sandbox 内提供 receiver；用户只有在需要 span 内容时才另外打开 `OTEL_LOG_TOOL_DETAILS` 等敏感内容开关。
    这条时间轨不影响现有行为轨，失败只产生 supplemental telemetry diagnostic，不改判定——符合[采集设计](../architecture/collection.md)里「时间轨缺数据是降级，不是契约问题」的原则。
 
-**不建议**因为这个能力去改变现有"等 `runCommand` 返回再读 transcript"的行为轨轮询模型:近实时的是 span(计时结构),不是行为数据本身——`StreamEvent[]` 需要的完整内容(尤其是断言要读的工具参数/输出/助手文本)能免费给的只有磁盘旁读的完整 transcript,OTel 版本要么没内容要么要额外开脱敏 flag 且不保证字段稳定性。
+**不建议**因为这个能力去改变现有"等 `runCommand` 返回再读 transcript"的行为轨轮询模型。
+近实时的是 span(计时结构),不是行为数据本身。
+`StreamEvent[]` 需要的完整内容(尤其是断言要读的工具参数/输出/助手文本)能免费给的只有磁盘旁读的完整 transcript。
+OTel 版本要么没内容,要么要额外开脱敏 flag 且不保证字段稳定性。
 
 ## 相关阅读
 
 - [行为与 Trace 采集](../architecture/collection.md) —— 双轨采集设计。
 - [agent-eval 参考](agent-eval.md) —— agent-eval 的 claude-code 适配源码阅读(纯磁盘旁读,不涉及 OTel)。
 - [OTel GenAI 等标准参考](otel-genai.md) —— OTel GenAI semconv 本身讲的是"字段该叫什么",这篇讲的是"Claude Code 到底发不发、多快发"。
-- [Observability](../../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解析管线现状。
+- [Observability](../../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解码管线现状。

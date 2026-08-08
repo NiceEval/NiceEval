@@ -10,7 +10,7 @@
 | 真实边界 | 声明 | 两个并行 Invocation 的结果 |
 |---|---|---|
 | Attempt 彼此独立，只想每个进程保留一个 Sandbox | `sandboxReuse: true`, `maxConcurrency: 1` | 各自一个 Sandbox，两边可同时跑不同 Eval |
-| 两个 Sandbox 都恢复、修改并回存同一 checkpoint | 再加 `sharedState: { key }` | 只有一个完整状态窗口运行，另一边在创建 Sandbox 前等待 |
+| 两个 Sandbox 都恢复、修改并回存同一 checkpoint | 再加 `sharedState: { key }` | 只有一个完整状态周期运行，另一边在创建 Sandbox 前等待 |
 | 共享服务自己支持并发，没有整体 restore/save | 不声明 `sharedState` | 用服务自己的事务与配额；两边压力相加 |
 | 两个 Experiment id 读写同一 cohort | 声明相同 `sharedState.key` | 跨 Experiment 串行整段状态生命周期 |
 
@@ -29,7 +29,7 @@ export default defineExperiment({
 终端 A 与 B 同时运行该 Experiment 时，用例锁使它们认领不同 Eval，每边各维护一个 Sandbox。
 两边合计可同时执行两条 Attempt；一边声明 1、另一边因配置漂移声明 3 时，它们也各用自己的宽度，不取在场最小值。
 
-## 共享 checkpoint 要锁住完整窗口
+## 共享 checkpoint 要锁住完整周期
 
 Mempal 的 `$HOME` 由 Sandbox lifecycle `setup()` 从宿主机 checkpoint 恢复，并在 `teardown()` 回存。这个 Experiment 声明：
 
@@ -45,7 +45,7 @@ export default defineExperiment({
 ```
 
 `maxConcurrency: 1` 只让本 Invocation 维护一条串行 Attempt 队列。
-`sharedState.key` 才保证不会出现「Sandbox A 恢复旧 checkpoint → Sandbox B 也恢复旧 checkpoint → 两边先后覆盖回存」。
+`sharedState.key` 才保证不会出现「Sandbox A 恢复旧 checkpoint → Sandbox B 也恢复旧 checkpoint → 两边先后改写回存」。
 
 预期时序是：
 
@@ -68,7 +68,7 @@ Invocation B: replan carry → acquire if work remains → create Sandbox B
 - `sharedState` 只保证两条状态轨迹不交错，不合并两个 Invocation 的 Eval 发现顺序。后一题必须读前一题的实验仍用单一 Invocation、固定选择集与 `--rerun all`。
 - 持有者被强杀后，等待方可在心跳过期后接管互斥，但 NiceEval 不能证明外部状态没有半次写入。作者必须原子提交 checkpoint；做不到时换新 key 与干净 cohort 从头重建。
 - Sandbox 在 Attempt 中途消失时，当前 Attempt 记 `errored`，不静默重跑。Sandbox lifecycle `teardown()` 必须早于 Provider finalizer；若 checkpoint save 只因 Sandbox 已停止而失败，这是实现违反收尾顺序，不是并行运行的正常结果。
-- 租约只在共享同一 `.niceeval` 记录根的进程间生效。不同机器、不同工作副本或不共享文件系统时，外部数据库或 checkpoint 要自己提供分布式互斥。
+- 租约只在共享同一 `.niceeval` Record 根的进程间生效。不同机器、不同工作副本或不共享文件系统时，外部数据库或 checkpoint 要自己提供分布式互斥。
 - 改变 `sharedState.key` 表示换了状态轨迹，因此进入 `configHash` 并作废旧结果。两个配置指向同一底层状态却误写不同 key，属于作者契约违约。
 
 ## 读反馈

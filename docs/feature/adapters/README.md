@@ -20,7 +20,7 @@ niceeval 不要求被测对象实现统一协议；每个 Adapter 负责驱动�
 3. **行为轨与时间轨分离。**
    `Turn.events` 是断言的唯一行为依据；OTel span 只进入 trace 瀑布图，不生成事件，也不参与断言。
 4. **能力由构造证明。**
-   Adapter 实际返回的状态、事件、usage 与会话行为决定哪些 eval 结论可信，不使用一张声明式 capability 问卷。
+   Adapter 实际返回的状态、事件、usage 与会话行为决定哪些 eval 判定可信，不使用一张声明式 capability 问卷。
 
 ## 从哪里开始
 

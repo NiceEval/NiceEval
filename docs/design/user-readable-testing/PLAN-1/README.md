@@ -150,7 +150,7 @@ Registry 从测试里的静态元数据派生，不签入第二份场景清单�
 Behavior → Feature 契约 → primary proof → supporting proofs → surface
 ```
 
-现有 `// cases:` 可以在迁移期继续登记机制覆盖文档。
+现有 `// cases:` 可以在迁移期继续登记机制守护文档。
 当某个 Feature 的用户行为都进入 Registry 后，再删除对应 Markdown 场景清单。
 
 ## 执行命令
@@ -169,7 +169,7 @@ pnpm e2e
 pnpm e2e -- --reuse <manifest> --behavior reports.filter.by-experiment
 ```
 
-`--reuse` 校验 candidate、producer / driver、外部依赖、运行环境与 prepare 配置 identity。
+`--reuse` 校验 candidate、producer / driver、外部依赖、运行条件与 prepare 配置 identity。
 Manifest 不匹配、未冻结或缺少 artifact 时直接失败，不静默重新调用模型。
 
 ## 错误语义
@@ -177,12 +177,12 @@ Manifest 不匹配、未冻结或缺少 artifact 时直接失败，不静默重�
 | 失败 | 反馈 |
 |---|---|
 | 重复 ID、失效契约链接、缺少主证明 | 在 docs guard 阶段失败，列出全部冲突位置 |
-| evidence 无法解析 | 报告媒介、解析阶段、原始 evidence 路径和最小解析错误 |
+| evidence 无法读取 | 报告媒介、读取阶段、原始 evidence 路径和最小读取错误 |
 | 用户结果不匹配 | 报告 Behavior ID、目标身份、期望、实际候选和最小差异 |
 | E2E 准备失败 | 标成 prepare 失败，不伪装成 assertion mismatch |
 | matcher 试图修改冻结 evidence | 立即失败，并报告 world 与写入路径 |
 
-Matcher 不得在断言阶段重新调用模型、追加记录或依赖上一条测试的副作用。
+Matcher 不得在断言阶段重新调用模型、追加 Record 或依赖上一条测试的副作用。
 
 ## 迁移方式
 

@@ -34,11 +34,11 @@ interface Sandbox {
 }
 ```
 
-`URL` 按标准 URL 语义解析；folder Eval 通常用 `new URL("tests/", import.meta.url)`。
-字符串 local path 仍相对 Eval 模块目录解析。
+`URL` 按标准 URL 语法 parse；folder Eval 通常用 `new URL("tests/", import.meta.url)`。
+字符串 local path 仍以 Eval 模块目录为基准换算。
 
 `uploadFile` 的 `Buffer` 表示运行期已在内存中的普通二进制内容。
-`URL` 与 `uploadDirectory` 的 local source 表示宿主文件依赖；Runner 自动记录实际读取的文件树，不要求作者另行登记。
+`URL` 与 `uploadDirectory` 的 local source 表示宿主文件依赖；Runner 自动写入实际读取的文件树，不要求作者另行登记。
 
 目录按稳定相对路径顺序展开。
 `ignore` 只过滤该 source 下的相对路径；source 不存在、逃出项目根或目录为空时在调用点报错。
@@ -65,7 +65,7 @@ async test(t) {
 
 ## Transfer manifest
 
-每次普通本地上传记录:
+每次普通本地上传写入:
 
 ```typescript
 interface LocalTransferInput {
@@ -78,9 +78,9 @@ interface LocalTransferInput {
 ```
 
 这是 Attempt 证据，不是 EvalDef 作者 API。
-Buffer 上传记录目标与 activity，但没有可供下一次运行重算的宿主 source。
+Buffer 上传写入目标与 activity，但没有可供下一次运行重算的宿主 source。
 
-carry planner 只复用来源于上次真实执行、且 Eval 源码闭包仍相同的 transfer manifest。
+carry planner 只复用由上次真实执行产生、且 Eval 源码闭包仍相同的 transfer manifest。
 任何 source 内容或匹配集变化都使对应 Attempt 重跑。
 
 ## metadata 的边界

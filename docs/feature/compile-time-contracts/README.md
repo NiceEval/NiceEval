@@ -3,7 +3,7 @@
 NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和运行时数据。
 这三类事实各有自己的类型，静态可判定的约束落在调用点上。
 
-运行时校验覆盖 JavaScript、类型断言、动态导入和 JSON 往返，不承担 TypeScript 作者面的第一道反馈。
+运行时校验涵盖 JavaScript、类型断言、动态导入和 JSON 往返，不承担 TypeScript 作者面的第一道反馈。
 
 作者按顺序遇到三级反馈：编辑器里的 tsc 诊断、加载文件时的守卫消息、discovery 之后动资源之前的 link 结果。
 三级各自负责哪一类事实见 [Library](library.md#三级反馈)，一次改动依次撞上三级的走查见 [三级反馈走查](use-case/three-levels.md)。
@@ -16,9 +16,9 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 1. 作者被禁止填写的派生字段作为可选字段出现在输入类型中。
 2. 两个字段要求二选一或共同出现，类型却把它们分别声明为 optional。
 3. 两组对象键或字段值存在关系，泛型只描述返回值，没有约束调用参数。
-4. 宿主只接受 `define*` 产物，公开类型却可以由普通对象按结构伪造。
+4. 宿主只接受 `define*` 返回的定义，公开类型却可以由普通对象按结构伪造。
 
-这些形态让错误反馈远离出错调用点，也让文档中的“禁止”“二选一”和“只收 factory 产物”无法由 TypeScript 证明。
+这些形态让错误反馈远离出错调用点，也让文档中的“禁止”“二选一”和「只收 factory 定义」无法由 TypeScript 证明。
 
 ## 核心心智
 
@@ -34,7 +34,7 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 
 类型使用四种固定工具：
 
-- **阶段类型**：作者输入、定义产物、发现结果和规划结果使用不同类型。
+- **阶段类型**：作者输入、定义值、发现结果和规划结果使用不同类型。
 - **穷尽联合**：二选一与字段依赖使用 union，并用 `never` 排除另一分支字段。
 - **关系泛型**：键冲突、字段存在性和值类别由输入泛型计算。
 - **不可伪造品牌**：只允许 factory 产生的定义带模块私有 `unique symbol`。
@@ -50,13 +50,13 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | 阶段 | 类型 | 谁构造 |
 |---|---|---|
 | 作者输入 | `EvalInput` / `ScoreEvalInput` | 作者写在 `defineEval()` / `defineScoreEval()` 的实参里 |
-| 定义产物 | `EvalDefinition<Kind, Context>` | factory |
+| 定义值 | `EvalDefinition<Kind, Context>` | factory |
 | 发现结果 | `DiscoveredEval` | 发现器 |
 
 Experiment 走同一条规则：`ExperimentInput` → `ExperimentDefinition` → `DiscoveredExperiment`。
 
 三个阶段各有其名，`Def` 后缀不进公开类型。
-一个名字同时指作者输入、factory 产物与带 id 的发现结果时，读者无法从名字判断手上的值处在哪一阶段。
+一个名字同时指作者输入、factory 定义值与带 id 的发现结果时，读者无法从名字判断手上的值处在哪一阶段。
 `id`、`evaluationKind` 与 `configHash` 也只能声明成可选才能同时满足三方，于是“禁止手写”这条规矩没有类型可以表达。
 
 ## 契约范围
@@ -71,8 +71,8 @@ Experiment 走同一条规则：`ExperimentInput` → `ExperimentDefinition` →
 | Evidence row | 输入类型证明至少有一个 `MetricValue` 字段 | 只有维度字段的对象不能编译 |
 | Report charts | `x`、`y`、`series`、`point`、`sort.field` 使用按值类型过滤后的键 | 不存在或不可绘制的静态字段不能编译 |
 | Agent evidence coverage | 六个通道在 Agent 构造时穷尽声明；partial / unavailable 必须带原因 | 漏通道或无原因的降级无法写出 |
-| Custom Sandbox case | callback 返回主 Sandbox、资源组与可选 services；留存不属于临时 callback | 缺基线句柄或拼接 retention 的形状无法写出 |
-| Theme / Report definition | factory 产物带模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
+| 自定义 Sandbox | callback 返回主 Sandbox、伴随资源与可选 services；留存不属于临时 callback | 缺基础句柄或拼接 retention 的形状无法写出 |
+| Theme / Report definition | factory 定义带模块私有品牌 | 普通对象不能冒充宿主可装载定义 |
 | Sandbox layer | template factory 与 Provider 原子绑定；kind 品牌区分 template-bearing 与 command-only | 单个 layer 的非法形状在调用点失败；跨配对的 1×1 / 0×0 在 linker 一次报全 |
 
 精确类型与调用形状见 [Library](library.md)。
@@ -112,9 +112,9 @@ JavaScript、`unknown`、动态 import 和显式类型断言仍可能绕过静�
 类型系统不负责证明网络可达、文件存在、请求 option 真实存在、数组元素跨行一致或 `samples <= total`。
 这些事实依赖运行时值，由现有边界校验。
 
-静态无法证明的动态数据走显式解析入口，不为宽对象保留 overload。
+静态无法证明的动态数据走显式校验入口，不为宽对象保留 overload。
 JSON、数据库与外部 API 得到的行经 `parseEvidenceRow()` 完成同一条证明，普通的写错对象因此不会顺着宽签名逃回运行时。
-两个入口的分工见 [Library](library.md#动态数据经过独立解析函数)。
+两个入口的分工见 [Library](library.md#动态数据经过独立校验函数)。
 
 ## 迁移纪律
 

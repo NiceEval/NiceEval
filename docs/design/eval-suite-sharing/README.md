@@ -7,7 +7,7 @@
 这里承诺的是“零共享协议文件”，不是替一个不完整或依赖声明错误的 package 自动补齐内容。
 
 这个设计比较三种交付形态：复制题目、建立 NiceEval registry、挂载另一个已安装 NiceEval 项目的 Eval 目录。
-推荐 [PLAN-3](PLAN-3/README.md)：分发与版本由项目已有的 package manager 负责，NiceEval 只扩展多根发现和逐 Eval 来源记录。
+推荐 [PLAN-3](PLAN-3/README.md)：分发与版本由项目已有的 package manager 负责，NiceEval 只扩展多根发现和逐 Eval 出处登记。
 
 ## 推荐路径一眼看完
 
@@ -49,16 +49,16 @@ niceeval exp codex terminal-bench/
 ```
 
 `terminal-bench/hello-world` 仍是一条普通 Eval。
-它沿用原来的 Sandbox、Task、Assertion 与 Record 主线；共享来源增加 owner/provenance 事实，但不增加第二套运行模型。
+它沿用原来的 Sandbox、Task、Assertion 与 Record 主线；共享上游增加 owner/provenance 事实，但不增加第二套运行模型。
 
 ## 谁需要做什么
 
 | 角色 | 必需动作 |
 |---|---|
-| 发布方 | 不写共享专用内容；所选 Git/package 来源按普通规则包含 Eval、资产与运行期依赖 |
-| 消费方 package manager | 安装仓库、tarball 或 package，并在项目 lockfile 固定精确解析 |
+| 发布方 | 不写共享专用内容；所选 Git/package 上游按普通规则包含 Eval、资产与运行期依赖 |
+| 消费方 package manager | 安装仓库、tarball 或 package，并在项目 lockfile 固定精确版本 |
 | 消费方 NiceEval 配置 | 声明 package、Eval root 与项目内挂载前缀 |
-| NiceEval | 发现外部根、隔离来源、捕获逐 Eval 输入，并运行普通 Experiment |
+| NiceEval | 发现外部根、隔离上游、捕获逐 Eval 输入，并运行普通 Experiment |
 
 “发布方零共享协议新增”不等于 NiceEval 能读取未交付的文件。
 如果 npm tarball 的 `files` 或 `.npmignore` 排除了 `evals/`，消费方应改用包含它们的 Git 依赖，或由发布方修正常规 package 内容。

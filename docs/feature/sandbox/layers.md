@@ -23,7 +23,7 @@ prepare order
 template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 template。
 同一 Experiment 可以选中分别使用 Compose、E2B 与 Docker image 的多个 Eval;Runner 为矩阵中的每个合法配对分别得到一个 template,再按物理身份共享构建或分配 Case。
 
-`SandboxLayer` 是 **Eval / Experiment 对同一 Sandbox 生命周期的声明层**，不是 Docker image layer，也不是可单独构建的镜像增量。保留 `Layer` 这个词，是因为它表达 owner 与有序组合；物理运行句柄始终叫 `Sandbox`，完整环境单位始终叫 `SandboxCase`。
+`SandboxLayer` 是 **Eval / Experiment 对同一 Sandbox 生命周期的声明层**，不是 Docker image layer，也不是可单独构建的镜像增量。保留 `Layer` 这个词，是因为它表达 owner 与有序组合；物理运行句柄始终叫 `Sandbox`，完整运行单位始终叫 `SandboxCase`。
 普通 layer 不能创建第二个 Sandbox、替换 template、增加 sidecar 或停止 Case。
 
 ## 作者只学四个规则
@@ -33,9 +33,9 @@ template 的唯一性是配对局部约束,一个 Run 可以同时存在多个 t
 3. template owner 的命令先执行,另一方的命令后执行,Agent 安装最后执行;同一 layer 内按书写顺序执行。
 4. 逐 Attempt 的准备使用 `prepare()`；只属于实际 Sandbox 寿命的目录、守护进程或快照使用 `setup()` / `teardown()`，不借此表达调度 lane。
 
-普通 command 只有逐 Attempt 的 `prepare()` 一种频次;开启 Sandbox 复用后也先 reset,再重放完整准备链。物理 Sandbox 生命周期另由显式的 `setup()` / `teardown()` 表达。
+普通 command 只有逐 Attempt 的 `prepare()` 一种频次;开启 Sandbox 复用后也先 reset,再执行完整准备链。物理 Sandbox 生命周期另由显式的 `setup()` / `teardown()` 表达。
 预装或昂贵工具由 prepare command 检查实际版本,命中后快速返回;缺失时安装并复检。
-作者因此不必区分窗口级与逐题级两种 scope,也没有放错 scope 造成的复用污染。
+作者因此不必区分周期级与逐题级两种 scope,也没有放错 scope 造成的复用污染。
 完整时序与 fresh / reuse 次数表见 [三方准备时序](lifecycle.md)。
 
 ## 导出入口
@@ -104,7 +104,7 @@ command 链只保留原 kind:不能把 command-only layer 变成 template-bearin
 共享接口不暴露 `.template()`、`.provider()` 或可写 template 属性;起点只能由具体 factory 的 options 声明。
 
 即使 Eval 与 Experiment 声明了物理身份相同的 template,配对仍是 `sandbox.template-conflict`。
-删除其中一份会改变 template owner、命令顺序、来源与失败归因,Runner 不能先去重再猜顺序。
+删除其中一份会改变 template owner、命令顺序、声明出处与失败归因,Runner 不能先去重再猜顺序。
 
 ## Template-bearing factory
 
@@ -191,12 +191,12 @@ declare function vercelSandbox(
 declare function sandboxLayer(): SandboxLayer<"command-only">;
 ```
 
-`user` 覆盖整个 Sandbox 的默认执行身份,省略时沿用环境自己声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
+`user` 替换整个 Sandbox 的默认执行身份,省略时沿用起点声明的身份;语义与各 provider 的支持面见 [Library · 执行身份](library.md#执行身份),值进入 fingerprint。
 
 Docker image/Dockerfile 还可声明结构化 `resources`与 `dockerAccess`。socket、raw privileged DinD和
 managed rootless DinD是不可互相降级的判别分支；完整边界见 [Library · Docker access](library.md#docker-access)。
 
-`env` 只放会改变环境语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
+`env` 只放会改变运行时语义的非敏感 Compose 插值值，它的值进入 fingerprint。凭据改用
 `credentialEnv`：`value` 只交给本次 runtime binding，不进入 plan、record 或 fingerprint；变量名与可选
 `revision` 进入身份。凭据选择了不同租户、数据集或权限面时必须更新 `revision`。同一个变量名不能同时出现在
 `env` 与 `credentialEnv`。
@@ -213,7 +213,7 @@ localSandbox()                                   -> 宿主目录 template + Loca
 ```
 
 原生起点字段必填:`dockerImageSandbox` 必须给 `image`,`e2bSandbox` 必须给 `template`。
-没有 provider-only factory、implicit default 或 profile registry;共享起点直接抽成返回 factory 产物的普通 TypeScript helper。
+没有 provider-only factory、implicit default 或 profile registry;共享起点直接抽成返回 factory 定义值的普通 TypeScript 函数。
 `e2bSandbox({ template })` 中的 `template` 只是该 factory 的 provider-native option,不同 factory 之间不共享字段类型。
 
 Compose template 保存 service、网络、volume、ready、主执行空间与整组 finalizer,不会被压成单容器 image。
@@ -234,8 +234,8 @@ interface ExperimentInput {
 }
 ```
 
-对 Sandbox Agent 的配对/link 语义，省略 `sandbox` 按空的 command-only layer 参与解析，
-但 Definition 仍保留“省略”这一来源事实，也不会提供隐式 template：
+对 Sandbox Agent 的配对/link 语义，省略 `sandbox` 按空的 command-only layer 参与配对，
+但 Definition 仍保留“省略”这一声明事实，也不会提供隐式 template：
 
 ```typescript
 const sandboxLinkEquivalent = sandboxLayer();
@@ -246,7 +246,7 @@ Direct Agent 只允许两侧都省略；作者显式写出 `sandboxLayer()` 仍�
 会按下文报 `sandbox.unexpected-for-direct-agent`。
 
 作者只在需要 template 或准备命令时写字段。
-字段所在位置决定 owner,不表示创建两份 Sandbox;Runner 把两层与 Agent 的专用贡献放进同一条准备时间线,只创建一个 Sandbox Case。
+字段所在位置决定 owner,不表示创建两份 Sandbox;Runner 把两层与 Agent 的专用贡献放进同一条准备时间线,只创建一个 Case。
 
 Terminal-Bench 的 Eval 携带 template:
 
@@ -338,7 +338,7 @@ core 不读取 provider 私有字段，也不按 provider 名或 adapter 字符�
 每条边从 `(experimentId, evalId)` tuple 派生身份。
 id 含紧凑分隔符时切换到无碰撞编码，不从结果字符串猜边界。
 同一 tuple 重复出现是 `sandbox.duplicate-run-pair` typed link failure。
-Map 的后写值不能静默覆盖先写值。
+Map 的后写值不能静默改写先写值。
 
 人类错误至少给出可直接修改的两处声明:
 
@@ -361,9 +361,9 @@ missing 的配对必须补 template 或修改 selector,不能借相邻配对的 
 
 一个 Experiment 自己带 template 时,它选中的每个 Eval 都必须是 command-only。
 一个 Experiment 是 command-only 时,它选中的每个 Eval 都必须带 template。
-两组 Eval 混在同一个 selector 里时，矩阵必然出现 conflict 或 missing；不能靠“Eval 覆盖 Experiment”一类优先级静默丢掉某一方声明。
+两组 Eval 混在同一个 selector 里时，矩阵必然出现 conflict 或 missing；不能靠“Eval 优先于 Experiment”一类优先级静默丢掉某一方声明。
 
-通常做法是让 Experiment 保持 command-only，每个 Eval 显式拥有自己的 template。通用起点用普通 helper 复用，特殊 Eval 直接使用自己的 Compose / image / template。这样同一个 Experiment 仍可横跨混合数据集，A/B 身份不被拆散。
+通常做法是让 Experiment 保持 command-only，每个 Eval 显式拥有自己的 template。通用起点用普通函数复用，特殊 Eval 直接使用自己的 Compose / image / template。这样同一个 Experiment 仍可横跨混合数据集，A/B 身份不被拆散。
 
 只有实验本身必须拥有起点时，才拆 selector 或拆 Experiment。
 
@@ -409,11 +409,11 @@ Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,�
 发现反向依赖时按下面顺序修正:
 
 1. 条件本来属于后一个 owner:移动 command 所有权。
-2. 条件是完整起点的一部分:放进唯一 template factory 或预制产物。
+2. 条件是完整起点的一部分:放进唯一 template factory 或预制实例。
 3. 只有部分 Eval / Experiment 组合兼容:拆 selector,形成各自合法的配对图。
 4. 两方条件无法现场组合:为该组合提供已经融合双方条件的完整 template,另一方保持 command-only。
 
-融合 template 用普通 TypeScript helper 共享,不新增按配对覆盖的注册表;Runner 不合并两个起点。
+融合 template 用普通 TypeScript 函数共享,不新增按配对替换的注册表;Runner 不合并两个起点。
 
 ## Command 形状与 identity
 
@@ -521,10 +521,10 @@ sandboxLayer()
   .prepare(shell("pnpm install --frozen-lockfile"));
 ```
 
-`command()` / `shell()` 由纯数据参数生成稳定 identity,identity 覆盖 executable / script、argv、cwd、env、user 与 stdin。
+`command()` / `shell()` 由纯数据参数生成稳定 identity,identity 涵盖 executable / script、argv、cwd、env、user 与 stdin。
 复杂探测、分支与文件 IO 可以直接写 callback。JavaScript 无法可靠提取它读取的 `process.env`、时间或其它闭包状态，因此直接 callback 不向 fingerprint 增加 identity；Runner 也不用 `Function.prototype.toString()` 或函数名猜闭包。
 
-需要稳定 identity 的 helper 用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
+需要稳定 identity 的自定义步骤用 `defineSandboxCommand({ id, revision, inputs }, run)` 显式登记,所有动态输入进入 `inputs`。
 本地文件或目录先经 `registerSandboxContent()` 取得 digest-backed handle,再放进 `inputs` 并用 `putContent()` 送入 Sandbox。
 
 `run` 的函数体、函数名与闭包不进入 identity。只改实现而保持 `id`、`revision`、`inputs` 不变时,Runner 不会发现语义已经变化,旧结果仍可能沿用。实现语义变化必须提高 `revision`;外部输入变化必须反映到 `inputs`。若作者漏改 identity 后已经产生或沿用了结果,先修正 `revision` 或 `inputs`,再按[全量重验](../experiments/use-case/重新运行/全量重验.md)对受影响选择执行 `--rerun all`。`--rerun all` 只修复这一次结果集,不能替代永久 identity 修正。
@@ -537,9 +537,9 @@ Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprin
 
 ### Cleanup
 
-命令需要清理时,在本次执行成功取得资源后调用 `context.onCleanup()` 登记。
+命令需要 cleanup 时,在本次执行成功取得资源后调用 `context.onCleanup()` 登记。
 Runner 对已成功登记的 cleanup 按全局准备顺序逆序执行;未执行或取得失败的命令不会产生虚假 cleanup。
-绑定完整 Case 的资源由 Provider finalizer 清理；属于该物理 Sandbox 的持久路径，以及跨 run checkpoint 的恢复与回存，都由 `setup()` / `teardown()` 成对处理；三者都不走 `onCleanup()`。
+绑定完整 Case 的资源由 Provider finalizer 回收；属于该物理 Sandbox 的持久路径，以及跨 run checkpoint 的恢复与回存，都由 `setup()` / `teardown()` 成对处理；三者都不走 `onCleanup()`。
 
 ## Agent layer
 
@@ -553,7 +553,7 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 ## 相关阅读
 
 - [三方准备时序](lifecycle.md) —— owner 顺序、fresh / reuse 次数、身份与错误归属。
-- [Sandbox Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
+- [Case](case.md) —— template 之下的完整运行单位:BuildKey / CaseKey、构建协调、Compose。
 - [Library](library.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
-- [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重放、reset 与寿命确认。
+- [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
 - [Agent Ensure](../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。

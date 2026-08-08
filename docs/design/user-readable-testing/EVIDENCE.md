@@ -2,22 +2,22 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md) · [旧问题对账](../../roadmap/testing/history-problems.md)
 
-本页记录本次决策审阅过的测试结构、代表性实现和历史提交。
+本页记载本次决策审阅过的测试结构、代表性实现和历史提交。
 数字用于说明规模与结构，不作为质量分数。
 
-## 审计基线切面
+## 审计参照切面
 
 在 `c12aeeb27d4f` 对 tracked `*.test.ts(x)` 做静态统计：190 个文件、52,624 行，以及 2,227 个
 `it` / `test`。Runner 约占 18,567 行、623 个测试；Report 约占 11,706 行、590 个测试。
-这不是会自动更新的“当前数字”，而是本次决策可复算的历史基线。
+这不是会自动更新的“当前数字”，而是本次决策可复算的历史参照。
 
-单个 [`src/runner/run.test.ts`](../../../src/runner/run.test.ts) 在该基线有 5,319 行和约 106 个测试。
+单个 `src/runner/run.test.ts` 在该参照快照中有 5,319 行和约 106 个测试。
 它同时包含大型 FakeSandbox、RunOptions 装配、全局 fake timer，以及捕获真实墙钟的双时钟协议。
 
-[`test/docs/cases-registry.test.ts`](../../../test/docs/cases-registry.test.ts)只校验测试文件前 20 行的一条 `// cases:`。
-因此，测试文件与 Feature 测试文档有连接，但场景、覆盖类别与具体证明没有机器映射。
+[`cases-registry.lint.ts`](../../../lint/docs/cases-registry.lint.ts)只校验测试文件前 20 行的一条 `// cases:`。
+因此，测试文件与 Feature 测试文档有连接，但场景、`覆盖类别`与具体证明没有机器映射。
 
-Runner 测试文档按粗粒度覆盖类别组织，无法替代具体结果 owner 与原生测试标题之间的连接。
+Runner 测试文档按粗粒度`覆盖类别`组织，无法替代具体结果 owner 与原生测试标题之间的连接。
 
 ## 代表性提交
 
@@ -29,7 +29,7 @@ Runner 测试文档按粗粒度覆盖类别组织，无法替代具体结果 own
 | `6abccb8b` | 建立 unit / E2E 两层、60 秒预算与每 Feature 场景表；单次增加 1,838 行 | 两层边界有效；把场景再抄进 docs 的成本过高 |
 | `d5b54472` | 审计 888 条测试，删除约 40 条无区分力断言，并引入 `// cases:` Registry | 区分性与登记有效；文件粒度不足以表达用户行为主证明 |
 | `6458af5a` | 删除 adapter wire fixture 与离线结构测试，把协议兼容性交给真实 Adapter E2E | 确定性转换可 unit，真实协议兼容性必须 E2E |
-| `998ebeef` | 用覆盖类别替换逐场景表，删除 1,862 行重复文档 | 不应恢复手写场景镜像；粗类别也不能无限膨胀 |
+| `998ebeef` | 用`覆盖类别`替换逐场景表，删除 1,862 行重复文档 | 不应恢复手写场景镜像；粗类别也不能无限膨胀 |
 | `aabf22cc` | 把 Report E2E 拆成一次 `produceEvidence()` 与多个消费者 | 一次昂贵取证、多面复用是正确所有权 |
 | `5c5f5b95` | 从候选包导入 schema version，避免 fixture 漂移 | 同源信息会让实现与测试一起错，减少漂移不是最高目标 |
 | `89ba8e64` | 恢复签入 E2E 仓库的独立 schema 预期，并删除三套离线进程 fixture | 独立 oracle 与真实边界优先于方便复用 |
@@ -64,10 +64,10 @@ Runner 测试文档按粗粒度覆盖类别组织，无法替代具体结果 own
 ## 文档之间的直接矛盾
 
 [测试总纲](../../engineering/testing/README.md)与 [Report E2E](../../engineering/testing/e2e/report.md)把真实 text / HTML 设为 E2E 的唯一验收面。
-[`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 产物断言。
+[`unit/reports.md`](../../engineering/testing/unit/reports.md)却仍要求若干 text 字符串与 HTML 输出断言。
 
 [Report 读面 DSL](PLAN-2/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。
-该抽象已随 PLAN-2 留在 Design；选定方案只提取机械 parser / browser helper，并把领域 expected 留在原生测试。
+该抽象已随 PLAN-2 留在 Design；选定方案只提取机械 parser 与 browser 工具，并把领域 expected 留在原生测试。
 排版仍遵守[排版契约](../../feature/reports/library/layout.md)，场景 Repo 仍遵守 E2E 自治，两者不需要一套新的产品对象模型才能成立。
 
 这些冲突说明，媒介 parser 的稳定性只是问题的一部分。

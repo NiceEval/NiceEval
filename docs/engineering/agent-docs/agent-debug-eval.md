@@ -1,6 +1,6 @@
 # Agent Debug Eval：诊断效果评估
 
-[agent-install-eval.md](agent-install-eval.md) 评估 agent 能否把 niceeval 接入项目；接入只是起点，日常高频动作发生在接入之后——**在一个已经跑出结果的项目里替用户查信息**：哪个 experiment 落后了要重跑、某条 eval 为什么失败、失败那次 attempt 里 agent 实际做了什么。
+[agent-install-eval.md](agent-install-eval.md) 评估 agent 能否把 niceeval 接入项目；接入只是起点，日常高频动作发生在接入之后。**在一个已经跑出结果的项目里替用户查信息**：哪个 experiment 落后了要重跑、某条 eval 为什么失败、失败那次 attempt 里 agent 实际做了什么。
 这条诊断链路依赖 CLI 的钻取视图（`show` → `show --exp <path>` → `show @<attempt> --execution` / `--page traces`）与随包文档的配合，效果同样需要证据。
 
 要回答的三个问题：
@@ -24,7 +24,7 @@ fixture 是一个已接入 niceeval 且跑出过结果的用户项目切片：�
 | attempt execution 有实质内容（thinking、工具调用、失败线索在 transcript 里） | 深挖题的答案落点 |
 
 第一份 fixture 从 coding-agent-memory-evals（多 coding agent × 多 memory 方案的对比评估项目）导出。
-导出裁剪规则：只收组成当前 `show` 视图的 Run 及其 attempt 产物（`events.json`、`trace.json`），历史 Run 不进 fixture；裁剪后的数据必须仍能让 `niceeval show` 完整复现出题时的视图。
+导出裁剪规则：只收组成当前 `show` 视图的 Run 及其 attempt 输出（`events.json`、`trace.json`），历史 Run 不进 fixture；裁剪后的数据必须仍能让 `niceeval show` 完整复现出题时的视图。
 
 每次运行把 fixture 复制进隔离 workspace 并注入候选 niceeval tarball（注入模型同 [E2E 的候选包注入](../testing/e2e/README.md)），agent 对结果数据只读探查。
 数据永不重跑，题库的标准答案在出题时由人工从这份数据核对并随 fixture 签入——数据不变，答案就不腐烂。

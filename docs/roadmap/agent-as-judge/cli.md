@@ -1,7 +1,7 @@
 # Agent-as-Judge —— CLI
 
 Agent-as-Judge 不增加运行 flag。
-Agent、model、reasoning effort、Sandbox 与 timeout 都来自可签入的 `judge.agent` 配置，避免一次临时覆盖产生无法复现的分数。
+Agent、model、reasoning effort、Sandbox 与 timeout 都来自可签入的 `judge.agent` 配置，避免一次临时覆写产生无法复现的分数。
 
 ## 计划反馈
 
@@ -60,7 +60,7 @@ Sandbox 创建、快照导入和销毁作为该行的 detail 呈现，不增加�
 ```
 
 `niceeval show @<locator> --execution` 把裁判放在独立的 `JUDGE EXECUTIONS` 区块。
-每次 execution 显示 Agent Session、工具调用、命令、协议修正轮、usage、引用证据和清理结果，不混入被测执行树。
+每次 execution 显示 Agent Session、工具调用、命令、协议修正轮、usage、引用证据和回收结果，不混入被测执行树。
 
 `niceeval show @<locator> --diff` 只显示被测 Agent 的 diff。
 裁判在副本中的修改不进入该切片；view 的 Agent Judge 详情可以显示裁判命令，但不提供裁判 diff 作为被测证据。

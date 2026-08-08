@@ -26,8 +26,8 @@ const agent = hermesAgent({
 - 续轮用 `--resume <session_id>`；`t.newSession()` 后不传旧 id。
 
 鉴权只写进沙箱内 `~/.hermes`，不继承宿主机配置。
-Hermes 是[官方原生配置文件](../../library/coding-agent-extensions.md#使用官方原生配置文件)那条「secret 走环境变量、不落盘」的例外：key 同时进 `~/.hermes/config.yaml` 的 `custom_providers[].api_key` 和 `~/.hermes/.env`。
-Hermes 只对可识别 host（`openai.com`、`openrouter.ai` 一类）认进程环境里的同名 key，OpenAI 兼容网关的凭据只能从这两个文件取；每次调用注入的环境变量是补充，不是来源。
+Hermes 是[官方原生配置文件](../../library/coding-agent-extensions.md#使用官方原生配置文件)那条「secret 走 env var、不落盘」的例外：key 同时进 `~/.hermes/config.yaml` 的 `custom_providers[].api_key` 和 `~/.hermes/.env`。
+Hermes 只对可识别 host（`openai.com`、`openrouter.ai` 一类）认进程 env 里的同名 key，OpenAI 兼容网关的凭据只能从这两个文件取；每次调用注入的 env var 是补充，不是出处。
 两个文件由 Adapter 生成、随沙箱销毁，不进 manifest。
 
 ## 行为轨与会话
@@ -46,7 +46,7 @@ Hermes 的会话权威存储是 SQLite：`~/.hermes/state.db`
 Skills 落到 Hermes 可发现目录（默认 `~/.hermes/skills/<name>/`），并在需要时写发现指引。
 Hermes 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
-## 预制环境
+## Prebuilt environment
 
 Adapter 的必填 ensure 用 `$HOME/.local/bin/hermes` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
 NiceEval 公共镜像 `niceeval/hermes`（`NICEEVAL_HERMES_DOCKER_IMAGE`）按同一布局烘焙。

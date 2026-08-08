@@ -1,7 +1,7 @@
 # Sandbox：可控 Provider 时序例外
 
 真实 Sandbox 的创建、执行、signal 与资源终态由 Adapter 和 Lifecycle E2E 证明。Docker-in-Docker、远端配额和真实 Provider 故障
-无法满足重复运行门时不自动化，不用 Unit 冒充真实环境。
+无法满足重复运行门时不自动化，不用 Unit 冒充真实运行条件。
 
 ## Unit 例外规范
 
@@ -17,7 +17,7 @@
 - 失败只影响依赖该 key 的工作，并共享同一个 Run origin；
 - 独立构建受并发、逐 key timeout、全局预算与 abort 约束；
 - 瞬时失败有限重试，确定性失败不重试，已就绪 key 不等待慢 key；
-- 共享构建耗时只进入 Run timing，不复制进每条记录。
+- 共享构建耗时只进入 Run timing，不复制进每条条目。
 
 ### Provision retry
 
@@ -26,4 +26,4 @@
 
 最小矩阵区分：没有 reconcile 通道时不盲重试、每次重试前先 reconcile、reconcile 失败终止、退避前后按序 release / reacquire。
 
-其它 Sandbox 行为不保留 Unit。真实环境能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。
+其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。

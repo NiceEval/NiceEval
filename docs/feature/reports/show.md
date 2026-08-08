@@ -1,6 +1,6 @@
 # `niceeval show` —— 在终端读结果
 
-`niceeval show` 不运行 eval，只读取记录根。
+`niceeval show` 不运行 eval，只读取 Record root。
 它适合在 shell 或 coding agent 循环里快速回答三个问题：哪一题失败、失败的实际值是什么、下一步该看哪份证据。
 
 ## 一次调用 = 范围 × 切片 × 形态
@@ -68,7 +68,7 @@ niceeval show --exp dev-e2b --usage --json # 同一范围的结构化数据超�
 | 看 token 拆分、轮数、工具调用数与成本 | [`--usage`](show/usage.md) |
 | 核对 agent 实际改了哪些文件 | [`--diff`](show/diff.md) |
 | 看一道题历次执行的时间轴 | [`--history`](show/history.md) |
-| 找从来没通过过的题、区分环境错误与判定失败 | [`--stats`](show/stats.md) |
+| 找从来没通过过的题、区分基础设施错误与判定失败 | [`--stats`](show/stats.md) |
 | 把任意视图喂给脚本 | [`--json`](show/json.md) |
 | 渲染自定义报告：单页、多页与 `--page` 的操作步骤 | [`--report` 的单页与多页](show/reports.md) |
 
@@ -84,20 +84,19 @@ niceeval show --report reports/site.tsx --page exam
 niceeval show --report standard        # 内建视图名，回到默认报告
 ```
 
-`--record` 改变记录根；`--exp` 按 experiment id 路径段匹配，eval id 位置参数直接按前缀过滤。
-携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`show` 不按来源再提供第二种当前结果口径。
+`--record` 改变 Record root；`--exp` 按 experiment id 路径段匹配，eval id 位置参数直接按前缀过滤。
+携带进当前配置的 Attempt 与本次新执行的 Attempt 同等属于当前 Sample；`show` 不按携带与否再提供第二种当前结果口径。
 需要检查某次运行或旧配置结果时，使用 `--run`、`--history` 或 locator 的显式旅途。
 
-`--exp` 出现两次以上时进入对照语义：每个 `--exp` 是一个对照条件，必须恰好解析到一个 experiment；某个 `--exp` 前缀匹配到多个 experiment 时按用法错误退出并列出全部候选 id，不猜测意图（契约见[对照矩阵](show/compare.md)）。
+`--exp` 出现两次以上时进入对照语义：每个 `--exp` 是一个对照条件，必须恰好命中一个 experiment；某个 `--exp` 前缀匹配到多个 experiment 时按用法错误退出并列出全部候选 id，不猜测意图（契约见[对照矩阵](show/compare.md)）。
 `@<locator>` 位置参数与重复 `--exp` 互斥——locator 已经唯一确定了 experiment，再给对照条件没有可执行的语义。
 
 `--report <名字|文件>` 替换整份 pages。
 值按形态判别：含 `/`、以 `.` 开头或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的当报告文件路径，其余不含路径的名称查[内建视图名](library/built-in.md)（当前只有 `standard`），不含路径的名称未命中就列出可用名字并提示文件要写成 `./reports/site.tsx`。
-不带 `--report` 的 Sample 范围装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](README.md#项目默认报告)）。
+不带 `--report` 的 Sample 范围装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](show/reports.md#case-7项目默认报告与临时回到内建)）。
 单个 `@<locator>` 是稳定的内建诊断入口：没有显式 `--report` 时，它不装载项目默认报告，直接调用 Attempt 详情任务并渲染官方 text 面；项目报告是否声明 `attempt` page 不影响这条命令。
 
-显式写出 `show @<locator> --report <file>` 才选择该报告中 id 为 `attempt` 的参数化页，经它的 `load` 装载 locator 对应的 evidence 并渲染 text 面；缺页时按用法错误退出，不回退到官方详情。`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。
-`--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/record` 读取面](../record/library.md)。
+显式写出 `show @<locator> --report <file>` 才选择该报告中 id 为 `attempt` 的参数化页，经它的 `load` 装载 locator 对应的 evidence 并渲染 text 面；缺页时按用法错误退出，不回退到官方详情。`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。`--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/record` 读取面](../record/library.md)。
 
 ## 无匹配与不可读结果
 
@@ -108,7 +107,7 @@ $ niceeval show 1qrdcfq8
 No results matched: 1qrdcfq8. Evals with results: memory/agent-037-updatetag-cache, memory/swelancer-manager-proposals
 ```
 
-扫描记录根时，可读 Run 照常参与报告；未完成、损坏或 schema 不兼容的 Run 会列出原因。
+扫描 Record root 时，可读 Run 照常参与报告；未完成、损坏或 schema 不兼容的 Run 会列出原因。
 完全没有可读结果时命令非零退出，并对带 `producer.version` 的旧格式给出对应版本的 `npx niceeval@<version> show --record <root>` 建议。
 
 ## 相关阅读

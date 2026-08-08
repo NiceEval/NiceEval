@@ -2,7 +2,7 @@
 
 **相关文档**:[方案](README.md) · [Library](library.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
 
-## 三方声明与运行产物
+## 三方声明与运行输出
 
 ```text
 SandboxSpec
@@ -53,7 +53,7 @@ ExperimentStateLifecycle 属于 Experiment 的运行状态。
 
 ## 规划分成三层
 
-规划器先完成声明校验,再逐 Eval 选择 Base Case,最后解析 Ensure 身份。
+规划器先完成声明校验,再逐 Eval 选择 Base Case,最后确定 Ensure 身份。
 三层各自产生可以落盘的确定结果。
 
 ### 声明校验
@@ -66,15 +66,15 @@ ExperimentStateLifecycle 属于 Experiment 的运行状态。
 - identity 不可序列化。
 - Experiment 条件基底或融合 case 不符合当前 Provider 的 case 形状。
 - 双 Base profile 缺少精确融合表项。
-- profile 在 Eval 声明、`environments` 表与融合表之间无法解析。
+- profile 在 Eval 声明、`environments` 表与融合表之间无法归一。
 - `sandboxReuse: true` 与 `saveOn: "attempt-succeeded"` 同时出现。
 
 Provider 不支持一个合法 Sandbox source kind 时,受影响 Eval 记为计划期 `skipped`。
 非法配置与 Provider 能力不足保持不同结果。
 
-### Eval Base 解析
+### Eval Base 选择
 
-Eval Base 的来源按 Eval 既有优先级解析:
+Eval Base 的声明位置按 Eval 既有优先级归一:
 
 ```text
 matching SandboxSpec environments entry
@@ -84,7 +84,7 @@ matching SandboxSpec environments entry
 
 `environments` 表项是 Eval Requirement 的预制实现。
 它替代同 profile 的 folder-local source 现场构建,但仍归 Eval 一侧。
-表项的全部 BuildKey、locator、CaseKey、ready 与资源组义务不改变。
+表项的全部 BuildKey、locator、CaseKey、ready 与主 Sandbox 及伴随资源义务不改变。
 
 ### 条件基底与默认 case
 
@@ -115,8 +115,8 @@ else:
 
 ## 融合 case 与多 Eval
 
-融合 case 是用户或构建系统已经组合两侧条件的完整 Sandbox Case。
-Runner 不解析并合并 Eval Base 与条件基底。
+融合 case 是用户或构建系统已经组合两侧条件的完整 Sandbox 实例。
+Runner 不合并 Eval Base 与条件基底。
 
 规划器展开完整 Eval 矩阵后,一次收集所有双 Base 缺项。
 只要一条组合缺少精确 profile 表项,本次 Run 就在创建 Sandbox 前失败。
@@ -128,7 +128,7 @@ Runner 不解析并合并 Eval Base 与条件基底。
 
 一次 Experiment 可以声明多个融合 case。
 矩阵展开后,每条 Attempt 仍只选择一个完整 case。
-所选 profile、表项声明身份、全部 BuildKey、locator 与 CaseKey 进入逐 Eval 解析结果。
+所选 profile、表项声明身份、全部 BuildKey、locator 与 CaseKey 进入逐 Eval 归一结果。
 
 ## 三方生命周期
 
@@ -166,56 +166,56 @@ converge owners in the running Sandbox
   -> SandboxSpec teardown, Case finalizer and stop
 ```
 
-Base Case build 负责镜像、template、snapshot 或 Compose 构建产物集合。
-一个 Compose Case 可以引用零个、一个或多个 BuildKey,同时记录只拉取镜像的 digest。
-BuildKey 命中只复用对应构建产物,不复用活 Sandbox。
-start 从选中的完整 Base 创建主 Sandbox、伴随服务和资源组,并等待 ready。
+Base Case build 负责镜像、template、snapshot 或 Compose 构建输出集合。
+一个 Compose Case 可以引用零个、一个或多个 BuildKey,同时写入只拉取镜像的 digest。
+BuildKey 命中只复用对应构建输出,不复用活 Sandbox。
+start 从选中的完整 Base 创建主 Sandbox 实例及伴随服务与资源,并等待 ready。
 
-SandboxSpec setup 是现有的早期环境 Hook,位于 ready 与首次 Requirement verify 之间。
+SandboxSpec setup 是现有的早期 Sandbox Hook,位于 ready 与首次 Requirement verify 之间。
 它不是外部状态 load,也不因为 `sandboxReuse` 打开而改变到 Agent 之后。
 
 install 只处理已经启动的 Sandbox 中未满足的条件。
 Eval 与 Experiment 的成员进入同一依赖和资源图;AgentProvisioner 随后保持独立 Ensure。
 Experiment state、Fixture 与 Agent runtime setup 分别保持自己的 cadence。
-数组来源和 template 来源都不改变 owner。
+数组声明与 template 声明都不改变 owner。
 
 安装成功不等于三方条件已经收敛。
-后安装成员可能覆盖 PATH、证书、动态库或共享 prefix。
+后安装成员可能改写 PATH、证书、动态库或共享 prefix。
 因此逐成员复检之后还存在两道不可省略的全组屏障。
 
-第一道屏障覆盖 Eval 与 Experiment 的完整 Requirement 集合。
+第一道屏障作用于 Eval 与 Experiment 的完整 Requirement 集合。
 第二道屏障发生在状态、Fixture 与 Agent runtime setup 之后。
 它重新运行两组 Environment verify、AgentProvisioner check 与 Agent runtime verify。
 任一失败都阻止 Agent turn。
 
-Eval Fixture 分成两个可见性窗口。
+Eval Fixture 分成两个可见性区间。
 turn 前的 setup 与 Fixture 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入断言求值。
 Base build content 也不能携带本应隐藏的判分材料。
 
 隐藏 verifier 的 materialization 与 cleanup 必须成对。
 materialization 一旦进入,无论 verifier、断言求值或后续阶段怎样退出,cleanup 都在 `finally` 中运行。
 
-Library 的 `HiddenVerifierMaterializeContext.onCleanup()` 要求作者在取得每项外部资源前登记收尾,Runner 按 LIFO 执行并记录结果。
-cleanup 覆盖 workdir 外的路径、mount、进程和临时凭据,并且必须在下一条 Attempt、state save 与 Sandbox reset 之前成功。
+Library 的 `HiddenVerifierMaterializeContext.onCleanup()` 要求作者在取得每项外部资源前登记收尾,Runner 按 LIFO 执行并写入结果。
+cleanup 作用于 workdir 外的路径、mount、进程和临时凭据,并且必须在下一条 Attempt、state save 与 Sandbox reset 之前成功。
 
-cleanup 失败时 Attempt 记为 `errored`,跳过 state save 并退休窗口,避免下一条 Agent 看到上一题的判分材料。
+cleanup 失败时 Attempt 记为 `errored`,跳过 state save 并退休该复用周期,避免下一条 Agent 看到上一题的判分材料。
 这套受管语义不同于普通 `EvalDef.teardown`;后者仍只追加 teardown 诊断。
 
 ## Requirement 调度图
 
 每个成员节点的稳定键是 `owner + name`。
-Eval 与 Experiment 分别保持命名域,但解析后的资源调度图统一考虑两个集合。
+Eval 与 Experiment 分别保持命名域,但归一后的资源调度图统一考虑两个集合。
 
 ### 初始 verify
 
-Sandbox Case ready 后,调度器先执行全部只读 verify。
+Sandbox 实例 ready 后,调度器先执行全部只读 verify。
 verify 可以并行,但必须遵守同一 Sandbox API 的安全并发限制。
 
 检查结果分三类:
 
 | 结果 | 后续 |
 |---|---|
-| satisfied | 记录实际 identity 与 facts,不检查安装能力 |
+| satisfied | 写入实际 identity 与 facts,不检查安装能力 |
 | missing 且有 install | 进入 Ensure 图 |
 | missing 且无 install | 该组合运行期不兼容 |
 
@@ -246,7 +246,7 @@ Runner 不会因为一条不会执行的 install 路径不可用而拒绝它。
 ### Prepare single-flight
 
 `prepare` 只在初始 verify 未命中、install 存在且能力满足后调用。
-目标平台来自已经创建的 Sandbox Case。
+目标平台来自已经创建的 Sandbox 实例。
 
 共享键为:
 
@@ -255,7 +255,7 @@ owner + name + declared identity + target platform
 ```
 
 准备结果携带 payload identity 与 digest。
-两者进入对应 Eval 的解析后 Ensure 身份与安装 activity。
+两者进入对应 Eval 的归一后 Ensure 身份与安装 activity。
 
 每个 Attempt 等待共享准备时继续消耗自己的 setup deadline。
 单个等待者超时不延长共享任务。
@@ -292,7 +292,7 @@ AgentRuntimeLifecycle 逐 Attempt 写入并验证鉴权、配置与扩展。
 
 Adapter 继续负责:
 
-- Agent 声明 identity 与目标环境解析 identity。
+- Agent 声明 identity 与目标 Sandbox 确定 identity。
 - 目标平台与安装模式探测。
 - 宿主侧 staged payload 准备。
 - Agent CLI 与启动条件检查。
@@ -306,67 +306,67 @@ AgentProvisioner 可以复用准备 single-flight、deadline 和资源互斥协�
 Agent 安装可能修改与实验工具相同的 prefix。
 runtime setup 也可能静默漏装 Plugin、Skill 或 MCP。
 因此最终屏障重新调用 AgentProvisioner check 与 AgentRuntimeLifecycle verify,不能用 CLI 存在代替 runtime 可用。
-屏障失败时,诊断记录受影响成员和 Agent 安装 activity。
+屏障失败时,诊断写入受影响成员和 Agent 安装 activity。
 
 AgentRuntimeLifecycle 也遵守 entered-at 成对语义。
 一旦调用 runtime setup,即使 setup、verify、最终屏障、Agent turn、verifier 或断言求值失败,Runner 都在 `finally` 中执行 runtime teardown。
-teardown 失败不覆盖更早的主错误,但会退休复用窗口;活动以 `terminatedAt` 与可选阶段结果表达未到达的检查。
+teardown 失败不取代更早的主错误,但会退休该复用周期;活动以 `terminatedAt` 与可选阶段结果表达未到达的检查。
 
 ## Sandbox 复用
 
 安装状态、外部实验状态、workdir Fixture 与 Agent runtime 是四种不同职责。
 Requirement 不提供 load、save、reset 或 Fixture 字段。
 
-复用键至少包含 Experiment、解析后的 environment profile 与所选 CaseKey。
+复用键至少包含 Experiment、归一后的 environment profile 与所选 CaseKey。
 不同 profile、不同 CaseKey 或不同 Experiment 不共用活 Sandbox。
 BuildKey 构建缓存、prepare single-flight 与活 Sandbox 复用是三套独立机制。
 
 ### 每 Attempt 使用全新 Sandbox
 
-每条 Attempt 都选择 Base、创建并 ready 一份新 Sandbox Case,然后执行早期 SandboxSpec setup。
+每条 Attempt 都选择 Base、创建并 ready 一份新 Sandbox 实例,然后执行早期 SandboxSpec setup。
 三方检查和安装在这份实例中完成;SandboxSpec teardown 也逐 Attempt 执行。
 
 Experiment 状态由独立的 ExperimentStateLifecycle 载入和回存,不复用 SandboxSpec Hook 相位。
 PLAN-11 把 load 放在 Eval / Experiment Ensure 与 AgentProvisioner 就位之后,把 save 放在 Agent runtime teardown 与 Eval teardown 之间。
 load 可以使用 Agent CLI,但不能依赖尚未执行的 Agent runtime setup。
-状态载入后的三方最终屏障负责发现状态恢复造成的环境破坏。
-fresh state 可以写 workdir,因为 save 在可能清理 turn 前 Fixture 的 Eval teardown 之前读取它。
+状态载入后的三方最终屏障负责发现状态恢复造成的 Sandbox 破坏。
+fresh state 可以写 workdir,因为 save 在可能移除 turn 前 Fixture 的 Eval teardown 之前读取它。
 
 同一 Experiment 的 load 到 save 临界区由 Experiment 并发限制保护。
 这条路径不要求 `sandboxReuse`。
 
 ### 复用活 Sandbox
 
-`sandboxReuse: true` 让同一复用键的多条 Attempt 共用已经启动的 Sandbox Case。
-一个窗口只创建、ready、执行 SandboxSpec setup 和载入状态一次。
-窗口关闭时回存状态,再执行 SandboxSpec teardown、Case finalizer 与 stop。
+`sandboxReuse: true` 让同一复用键的多条 Attempt 共用已经启动的 Sandbox 实例。
+一个复用周期只创建、ready、执行 SandboxSpec setup 和载入状态一次。
+复用周期关闭时回存状态,再执行 SandboxSpec teardown、Case finalizer 与 stop。
 
 每条 Attempt 仍执行以下动作:
 
 1. 确认 Sandbox 寿命;首条 Attempt 在 Eval / Experiment Ensure 后建立 baseline,后续 Attempt 先 reset 到该点。
 2. 重新 verify 全部 Eval 与 Experiment Requirement;只为 miss 执行 install。
 3. 重新执行 AgentProvisioner Ensure;前次安装通常让 check 命中。
-4. 窗口首条 Attempt 载入状态;后续 Attempt 直接使用活状态。
+4. 复用周期首条 Attempt 载入状态;后续 Attempt 直接使用活状态。
 5. 重建 turn 前 Fixture,执行并验证 Agent runtime setup。
 6. 运行三方最终屏障,完成所有 Agent turn 后再进入隐藏 verifier、断言求值与证据收集。
-7. 执行 Agent runtime teardown;窗口不在此时 save,随后执行 Eval teardown。
+7. 执行 Agent runtime teardown;复用周期不在此时 save,随后执行 Eval teardown。
 
 需要跨 reset 演化的状态、全局安装与 cache 必须位于 workdir 之外。
-Requirement install 位于 baseline 前,可以把可重置的环境内容写进 workdir。
+Requirement install 位于 baseline 前,可以把可重置的 Sandbox 内容写进 workdir。
 state load 位于 baseline 后;fresh 模式可以写 workdir,reuse 模式要跨 Attempt 演化的状态必须位于 workdir 外。
 turn 前 Fixture 与 turn 后 verifier 都随 workdir 每 Attempt 重建。
 Eval teardown 只能释放对应 Eval setup / Fixture 自己取得的资源,不能删除 ExperimentStateLifecycle 拥有的 workdir 外状态。
 
-窗口记录独立 identity 与承接序号。
+每个复用周期写入独立 identity 与承接序号。
 需要确定顺序或单份累积状态的 Experiment 必须使用 `maxConcurrency: 1`。
-并发大于一会建立多条窗口,每条窗口拥有自己的活状态与安装命中历史。
+并发大于一会建立多条复用周期,每个复用周期拥有自己的活状态与安装命中历史。
 
 检查 cache 只有在相同实例代次、成员 identity 与资源修改代次下有效。
 安装、reset 或状态载入触及相关资源后,对应 cache 失效。
 
-### 状态失败、取消与窗口轮换
+### 状态失败、取消与复用周期轮换
 
-`state.load` 失败时当前 Attempt 记为 `errored`,窗口立即退休,不会承接下一条 Attempt。
+`state.load` 失败时当前 Attempt 记为 `errored`,该复用周期立即退休,不会承接下一条 Attempt。
 `state.save` 失败不反改已经完成的题目 verdict,但使该 Experiment 的状态序列失败;Runner 停止继续派发依赖这份状态的 Attempt。
 
 `saveOn: "after-load"` 表示 load 成功后,Fixture、runtime、最终屏障、Agent turn、verifier、断言求值或 teardown 失败都在 outer-finally 尝试 save。
@@ -379,17 +379,17 @@ Eval teardown 仍沿既有规则只追加诊断;fresh save 位于它之前,所�
 
 可处理的取消、Attempt timeout 与 Sandbox lifetime 轮换都遵守同一 `saveOn` 策略。
 save 获得独立 cleanup budget 和 signal,不继承已经过期的 Attempt deadline。
-`rolling` 轮换只有在旧窗口 save 成功后才创建并从该 checkpoint load 替代窗口。
-`pinned` 新窗口始终重新载入声明的固定 revision;旧窗口 save 只是输出,不成为后继。
-SIGKILL、断电或 Provider 硬丢实例无法承诺 save;记录保留最后成功 load/save 的 digest。
+`rolling` 轮换只有在旧复用周期 save 成功后才创建并从该 checkpoint load 替代复用周期。
+`pinned` 新复用周期始终重新载入声明的固定 revision;旧复用周期 save 只是输出,不成为后继。
+SIGKILL、断电或 Provider 硬丢实例无法承诺 save;保留最后成功 load/save 的 digest。
 后续 `rolling` 只能从最后已提交 checkpoint 恢复,`pinned` 仍回到固定 revision。
 
 后继规则不能由 store 实现自行猜测:
 
-| consistency | fresh 下一 Attempt | reuse 窗口轮换 |
+| consistency | fresh 下一 Attempt | reuse 复用周期轮换 |
 |---|---|---|
-| `pinned(revision)` | 每次都 load 固定 revision | 新窗口仍 load 固定 revision |
-| `rolling` | 必须 load 上一条成功 save | 必须 load 旧窗口成功 save |
+| `pinned(revision)` | 每次都 load 固定 revision | 新复用周期仍 load 固定 revision |
+| `rolling` | 必须 load 上一条成功 save | 必须 load 旧复用周期成功 save |
 
 `rolling` 的同一 cohort 只允许一条 load → save 临界区,要求 `maxConcurrency: 1`。
 save 失败后不存在合法后继,后续依赖该状态的 Attempt 不再派发。
@@ -425,12 +425,12 @@ reuse window close:
 
 前一步失败不会阻止后一步。
 实例仍可访问时,load/save 失败、runtime teardown 失败与 verifier cleanup 失败都必须继续执行 SandboxSpec teardown、Case finalizer 与 stop。
-实例已经硬丢时,不能执行的步骤记录 `unavailable`,不伪造成功。
+实例已经硬丢时,不能执行的步骤写入 `unavailable`,不伪造成功。
 
 ## 身份与哈希
 
-Requirement identity 分声明层与解析层。
-声明层描述作者选择,解析层加入目标平台、payload digest 与选中的 case。
+Requirement identity 分声明层与归一层。
+声明层描述作者选择,归一层加入目标平台、payload digest 与选中的 case。
 
 ```text
 Run configHash
@@ -458,12 +458,12 @@ Requirement 集合按 `name` 排序后参与哈希。
 每个 Eval 实际选择的表项与 CaseKey 进入该 Eval fingerprint。
 configHash 不按 Eval 分叉。
 
-实际 identity、facts、activities 与耗时进入 Attempt 记录。
+实际 identity、facts、activities 与耗时进入 Attempt Record。
 它们解释本次 verify 与 Ensure,不成为下一次运行跳过检查的理由。
 
 state 的 declared identity 必须携带 store、cohort 与 schema。
 `pinned` state 还携带固定 revision;`rolling` state 明确禁用结果携带,允许 checkpoint 随同一实验序列推进。
-运行时 load/save 的 checkpoint identity 与 digest 进入 Attempt 或 window 记录,不事后改写派发前已经计算的 fingerprint。
+运行时 load/save 的 checkpoint identity 与 digest 进入 Attempt 或 window Record,不事后改写派发前已经计算的 fingerprint。
 只写一个浮动 store URL 但既不声明 pinned revision、也不选择 rolling,属于启动期配置错误。
 
 ## 错误与不兼容
@@ -473,34 +473,34 @@ state 的 declared identity 必须携带 store、cohort 与 schema。
 | 声明期 | 重名、缺依赖、依赖环、identity 非法 | 启动期配置错误,一次穷举报出 |
 | 声明期 | 双 Base 缺精确 profile 融合 case | 启动期配置错误,创建 Sandbox 前列全缺项 |
 | 规划期 | Provider 不支持合法 source kind | 对受影响 Eval 记 `skipped` |
-| 运行期 verify | 未命中且没有 install | 环境不兼容,零 Agent turn |
-| 运行期能力检查 | 未命中且缺安装所需能力 | 环境不兼容,零 Agent turn |
+| 运行期 verify | 未命中且没有 install | Sandbox 不兼容,零 Agent turn |
+| 运行期能力检查 | 未命中且缺安装所需能力 | Sandbox 不兼容,零 Agent turn |
 | prepare/upload/install | 命令、网络、校验或 deadline 失败 | Attempt `errored`,归 `environment.ensure` |
 | Eval/Experiment 复检 | 安装后仍未满足 | Attempt `errored`,归 `environment.ensure` |
 | Agent Ensure | Agent 检查、准备、安装或复检失败 | Attempt `errored`,归 `agent.setup` |
 | Agent runtime | 鉴权、配置、Plugin、Skill、MCP setup 或 verify 失败 | Attempt `errored`,归 `agent.setup` |
-| Agent runtime teardown | 成对收尾失败或超时 | 保留主错误,追加诊断并退休窗口 |
-| verifier cleanup | 隐藏材料、mount 或进程未清除 | Attempt `errored`,跳过 state save、退休窗口并停止依赖该状态的序列 |
-| state load | checkpoint 读取、校验或恢复失败 | Attempt `errored`,退休窗口 |
-| state save skipped | save policy 未达成、load 失败或 verifier cleanup 失败 | 记录明确 reason;只有主动 save policy 允许后续从 predecessor 继续 |
+| Agent runtime teardown | 成对收尾失败或超时 | 保留主错误,追加诊断并退休该复用周期 |
+| verifier cleanup | 隐藏材料、mount 或进程未清除 | Attempt `errored`,跳过 state save、退休该复用周期并停止依赖该状态的序列 |
+| state load | checkpoint 读取、校验或恢复失败 | Attempt `errored`,退休该复用周期 |
+| state save skipped | save policy 未达成、load 失败或 verifier cleanup 失败 | 写入明确 reason;只有主动 save policy 允许后续从 predecessor 继续 |
 | state transfer unavailable | Sandbox 已丢或 Provider 不可达 | 保留最后成功 digest,状态序列停止 |
 | state save | checkpoint 提交或校验失败 | 保留已完成 verdict,标记状态序列失败并停止后续派发 |
 | 最终屏障 | Agent、状态或前一条 Attempt 破坏既有条件 | Attempt `errored`,归 `environment.verify`,附最后修改活动与失败成员 |
 
 声明期错误作用于整次 Run。
 计划期 `skipped` 只作用于 Provider 无法承载的 Eval。
-运行期不兼容和 `errored` 作用于已经解析到具体 Base 的 Attempt。
+运行期不兼容和 `errored` 作用于已经归一到具体 Base 的 Attempt。
 
 ## 可观察活动
 
 每次检查、准备、上传、安装、复检与组级屏障都有独立 activity。
-activity 至少记录 owner、Requirement name、阶段、时点、耗时与结果。
+activity 至少写入 owner、Requirement name、阶段、时点、耗时与结果。
 
 诊断同时携带:
 
 - 声明目标 identity 与实际 identity。
 - 目标平台、payload identity 与 digest。
-- 所选 Base 类型、来源、全部 BuildKey、locator 与 CaseKey。
+- 所选 Base 类型、声明位置、全部 BuildKey、locator 与 CaseKey。
 - 默认 case 是否让位,条件基底或融合 case 是否命中。
 - 依赖阻塞链与资源等待时间。
 - 初始检查、成员复检和最终屏障结果。

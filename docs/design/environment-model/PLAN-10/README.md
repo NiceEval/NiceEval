@@ -6,7 +6,7 @@
 
 ---
 
-## 结论
+## 总纲
 
 Eval、Experiment 与 Sandbox Agent 都向同一个主 Sandbox 贡献一层准备。
 Eval 与 Experiment 使用完全相同的公开 `sandbox` 字段和 `SandboxLayer` 类型；Adapter 内部也拥有 Agent layer，但不能提供 template。
@@ -39,10 +39,10 @@ template 的唯一性是 **pair-local**，不是整个 Run 只能出现一个 te
 3. root 的命令先执行，另一方的命令后执行，Agent 安装最后执行；同一 layer 内按书写顺序执行。
 
 PLAN-10 不把 Window / Attempt 两套普通 hook 暴露给作者。
-`SandboxLayer.prepare()` 每条 Attempt 都执行；开启 Sandbox 复用后也先 reset，再重放完整准备链。
+`SandboxLayer.prepare()` 每条 Attempt 都执行；开启 Sandbox 复用后也先 reset，再重新执行完整准备链。
 预装或昂贵工具由 prepare command 检查实际版本，命中后快速返回；缺失时安装并复检。这样作者不必判断一条准备应该放 `setup` 还是 `beforeEach`，也不会因为放错 scope 造成复用污染。
 
-绑定 Sandbox Case 寿命的 service、ready、日志、volume、资源组 finalizer 与 retain/resume 仍由 Provider Case 管理。
+绑定 Sandbox 实例寿命的 service、ready、日志、volume、主 Sandbox 及伴随资源的 finalizer 与 retain/resume 仍由 Provider Case 管理。
 跨 Attempt 外部状态仍由 State Feature 管理，不伪装成 Layer command。
 
 ## Layer 不是旧的通用安装协议
@@ -53,7 +53,7 @@ PLAN-10 不把 Window / Attempt 两套普通 hook 暴露给作者。
 - Agent Adapter 添加的是 `AgentProvisioner`。它仍保留宿主侧 payload prepare、目标平台探测、inspect / install / reinspect、安装模式、鉴权边界与安装事实。
 - Runner 把二者放进同一条确定的准备时间线，但不把 AgentProvisioner 伪装成普通 command。
 
-这与旧的“统一 Layer 安装池”不同：PLAN-10 保留完整 Compose Sandbox Case、Provider 能力句柄、Agent staged payload 与真实复检，只统一作者看到的层和执行顺序。
+这与旧的“统一 Layer 安装池”不同：PLAN-10 保留完整的 Compose 主 Sandbox 实例及伴随资源、Provider 能力句柄、Agent staged payload 与真实复检，只统一作者看到的层和执行顺序。
 
 `Sandbox Layer` 是逻辑生命周期层，不是 Docker image layer、OverlayFS layer 或可以单独构建的镜像增量。
 普通 layer 不能创建第二个 Sandbox、替换 root、增加 sidecar 或停止 Case。
@@ -102,7 +102,7 @@ export default defineEval({
 });
 ```
 
-解析后的顺序是：
+归一后的顺序是：
 
 ```text
 Experiment E2B root
@@ -114,7 +114,7 @@ Experiment E2B root
 
 ## 为什么强制顺序
 
-不强制顺序会把三件事重新交给作者：谁先执行、哪些命令能并行、失败后怎样逆序清理。
+不强制顺序会把三件事重新交给作者：谁先执行、哪些命令能并行、失败后怎样逆序 cleanup。
 自动从 shell、文件路径或 Provider 名推导依赖也不可靠。
 
 PLAN-10 因而只有一个规则：root-first、other-second、Agent-last。
@@ -127,11 +127,11 @@ PLAN-10 因而只有一个规则：root-first、other-second、Agent-last。
 - AgentProvisioner 可以依赖两方作者准备；
 - 任意反向依赖都不是调度提示，而是该配对不可组合。
 
-不可组合时，作者必须移动命令所有权、拆分 Eval / Experiment selector，或让唯一 root factory 指向已经融合条件的完整 Case。Runner 不加入优先级、DAG 或第二 root 覆盖表。
+不可组合时，作者必须移动命令所有权、拆分 Eval / Experiment selector，或让唯一 root factory 指向已经融合条件的完整 Case。Runner 不加入优先级、DAG 或第二 root 替换表。
 
 ## 多个 template 怎样存在
 
-一次 Run 可以有任意多个 root template，只要每个实际 pair 恰好解析一个：
+一次 Run 可以有任意多个 root template，只要每个实际 pair 恰好归一一个：
 
 ```text
 Experiment X（extension-only）
@@ -149,9 +149,9 @@ Eval Q（extension-only）
 ```
 
 若某个矩阵单元两边都有 root，该单元是结构冲突；相同 template identity 也不能去重，因为 owner 不同会改变命令顺序和归因。
-若一个 root factory 根据目标平台解析不同 image digest 或 snapshot，那是同一个逻辑 root 的物理 variant，由 Provider planner 在 fingerprint 前确定，不算多个逻辑 root。
+若一个 root factory 根据目标平台选用不同 image digest 或 snapshot，那是同一个逻辑 root 的物理 variant，由 Provider planner 在 fingerprint 前确定，不算多个逻辑 root。
 
-一个 Attempt 需要多个 service 时使用一个 Compose root 解析成完整 Sandbox Case；“一个 root”从来不等于“一个容器实例”。
+一个 Attempt 需要多个 service 时使用一个 Compose root 规划成完整 Sandbox 实例；“一个 root”从来不等于“一个容器实例”。
 
 ## 相对 PLAN-9 改了什么
 
@@ -169,8 +169,8 @@ PLAN-10 的简化不是删除完整 Case 或 AgentProvisioner，而是删除普�
 
 ## 代价
 
-- 所有普通 layer command 都按 Attempt 重放。昂贵命令必须自己做真实检查；PLAN-10 用额外检查换取单一频次心智。
-- 某项动作若只能严格执行一次且不能幂等，它不能作为普通 Layer；应归 Provider Case、State Feature 或其它拥有窗口生命周期的领域组件。
+- 所有普通 layer command 都在每条 Attempt 重新执行。昂贵命令必须自己做真实检查；PLAN-10 用额外检查换取单一频次心智。
+- 某项动作若只能严格执行一次且不能幂等，它不能作为普通 Layer；应归 Provider Case、State Feature 或其它拥有整个复用周期生命周期的领域组件。
 - 固定顺序不表达反向依赖。需要反向依赖的组合必须重构 owner 或使用融合 root。
 - Agent 与 Eval / Experiment 共用时间线，但不共用弱化后的执行协议；Runner 内部仍要调度 SandboxCommand 与 AgentProvisioner 两类节点。
 - matrix 中只要存在 conflict / missing，整个 Run 在 Provider I/O 前失败；合法单元不会先偷偷创建资源。

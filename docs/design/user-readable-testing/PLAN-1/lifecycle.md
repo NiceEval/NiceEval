@@ -4,7 +4,7 @@
 
 ## Owner
 
-现有 unit / E2E 测试 owner 继续拥有 fixture、执行器、matcher 与清理。
+现有 unit / E2E 测试 owner 继续拥有 fixture、执行器、matcher 与收尾。
 新增 Registry 只读取静态 Behavior / Proof 元数据，不接管测试运行。
 各自治 E2E 仓库继续拥有自己的 `scripts/e2e.ts` 和 evidence。
 
@@ -36,7 +36,7 @@ reuse
   → 只读重跑 matcher
 ```
 
-candidate、producer、外部依赖、环境或 prepare 配置不匹配时拒绝 reuse。
+candidate、producer、外部依赖、运行条件或 prepare 配置不匹配时拒绝 reuse。
 本方案只给新场景规定冻结规则；旧脚本的可变共享根按触达迁移，因此在迁移完成前仍可能依赖执行顺序。
 
 ## 次数

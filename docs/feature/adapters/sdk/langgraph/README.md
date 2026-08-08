@@ -9,7 +9,7 @@ createLangGraphEventStream()
 不提供 `langGraphAgent()` 工厂。
 LangGraph 可以进程内运行，也可以部署在自建 HTTP 服务或 Agent Server 后；niceeval 不绑定其中一种 transport。
 
-转换器应覆盖：
+转换器应涵盖：
 
 - `messages` channel 的 text、reasoning 与 tool-call content blocks；
 - `tools` channel 的 started、finished 与 error，并按 tool call ID 配对；

@@ -18,7 +18,7 @@
 ## 执行 niceeval 命令
 
 命令以 **shell 原文**出现在脚本里——和开发者在终端里敲的一模一样，可以直接复制出去手动复现。
-唯一的 helper 只做一件事：跑命令、拿 stdout 与退出码；预期非零退出（deliberate-fail 这类）是一等场景，不是异常：
+唯一的命令执行器只做一件事：跑命令、拿 stdout 与退出码；预期非零退出（deliberate-fail 这类）是一等场景，不是异常：
 
 ```ts
 // scripts/verify.ts
@@ -37,7 +37,7 @@ function sh(cmd: string, expect: number | "nonzero" = 0): string {
 
 ## 用例一：跑实验，断言退出码
 
-`--rerun all` 保证真实新跑，`--json` 保证可解析的稳定事件流，`--junit` 落 CI 出口：
+`--rerun all` 保证真实新跑，`--json` 保证可解码的稳定事件流，`--junit` 落 CI 出口：
 
 ```ts
 const EXPECTED_EVALS = ["weather/brooklyn", "weather/hitl-reject"];
@@ -88,7 +88,7 @@ for (const id of EXPECTED_EVALS) {
 const locator = latestAttemptLine("weather/brooklyn").match(/@\S+/)![0];
 ```
 
-## 用例四：`show --execution`——调用与入参都存在，OTel 记录可见
+## 用例四：`show --execution`——调用与入参都存在，OTel 数据可见
 
 执行树是「适配器收到了什么」的用户可见投影：判分断言过的调用应全部以节点出现，TOOL 卡片的 `input` 块含断言过的入参值——名字和参数都要穿到展示面；OTel 期望以时间注释的展示形态核验。
 （入参的判分断言在 Eval 里连名带参写：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`，见[适配器域](adapter/README.md)。）
@@ -104,7 +104,7 @@ assert.ok(
   "TOOL 卡片的 input 里没有出现入参 Brooklyn——入参在归一或展示链路上被丢弃/改写",
 );
 
-// 声明 tracing 面的仓库：调用记录到了 OTel，展示上就是节点带时间注释
+// 声明 tracing 面的仓库：调用数据写进了 OTel，展示上就是节点带时间注释
 assert.ok(
   !execution.includes("timing unavailable"),
   "执行树节点缺 span 时间注释——OTel 没接上或 correlation 断裂，用 show --timing 看 OTel 子树挂上没有",
@@ -114,9 +114,9 @@ assert.ok(
 // assert.ok(execution.includes("timing unavailable"), "不该有 trace 的适配器出现了时间注释");
 ```
 
-## 用例五：`show --timing`——OTel 记录成了什么
+## 用例五：`show --timing`——OTel 写成了什么
 
-`--execution` 回答「记录了没有」，`--timing` 回答「记录成了什么」：runner 时间树下按 traceId 挂出 OTel model / tool 子树：
+`--execution` 回答「有没有写入」，`--timing` 回答「写成了什么」：runner 时间树下按 traceId 挂出 OTel model / tool 子树：
 
 ```ts
 const timing = sh(`pnpm exec niceeval show ${locator} --timing`);
@@ -199,4 +199,4 @@ try {
 }
 ```
 
-判不准就按回归退出——宁可误报回归，不可把回归漏报成环境问题。
+判不准就按回归退出——宁可误报回归，不可把回归漏报成运行条件问题。

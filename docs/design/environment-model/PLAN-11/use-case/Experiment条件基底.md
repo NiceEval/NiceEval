@@ -66,5 +66,5 @@ export default defineExperiment({
 
 - configHash 保存实验 Requirement 集合、条件基底、普通默认 case 与 Agent 声明身份。
 - fingerprint 保存 Eval 集合、所选条件基底 CaseKey 与逐平台 payload identity。
-- 每个成员分别记录初始检查、是否安装、复检、最终检查与耗时。
+- 每个成员分别写入初始检查、是否安装、复检、最终检查与耗时。
 - `base-node-22` 没有被选中,但它仍作为 SandboxSpec 配置落盘。

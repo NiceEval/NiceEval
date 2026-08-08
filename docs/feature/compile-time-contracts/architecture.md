@@ -15,7 +15,7 @@ Author Input → Definition → Discovered Definition → Linked Configuration �
 |---|---|---|
 | Author Input | 作者选择的行为、配置和 hooks | 路径 id、factory 判别、configHash |
 | Definition | 作者事实 + factory 生成的精确判别 | 路径 id、configHash |
-| Discovered Definition | Definition + id、来源路径 | configHash |
+| Discovered Definition | Definition + id、声明路径 | configHash |
 | Linked Configuration | selector 形成的实际配对、唯一 Sandbox template owner、owner order | Provider 网络结果、BuildKey、CaseKey |
 | Planned Run | Provider 只读规划后的运行配置、configHash、BuildKey、CaseKey | 可再次修改的作者输入 |
 
@@ -42,8 +42,8 @@ linker 必须先聚合全部 template conflict 与 missing，再允许任何 Pro
 | EvidenceRow 至少一个读数 | `WithMetricField` 交叉诊断类型 | `evidenceRow` 与 `parseEvidenceRow` 结构校验 |
 | chart 字段角色 | 过滤键泛型 | `pointsToDataset` 跨行校验 |
 | Agent evidence coverage 穷尽性 | 必填对象 + 降级判别 union | `defineAgent` / `defineSandboxAgent` 构造守卫 |
-| custom Sandbox 产物边界 | 固定返回形状 + `retention?: never` | `defineSandboxCase` 输入与 materialize 结果校验 |
-| factory 产物身份 | 私有 unique symbol | `isThemeDefinition` / `isReportDefinition` |
+| custom Sandbox 输出边界 | 固定返回形状 + `retention?: never` | `defineSandboxCase` 输入与 materialize 结果校验 |
+| factory 定义身份 | 私有 unique symbol | `isThemeDefinition` / `isReportDefinition` |
 | Sandbox template 恰好一份 | layer kind 私有品牌与 factory option 类型 | discovery 后的全矩阵 linker，早于 Provider 网络与资源 |
 
 `never` 与诊断类型的取舍规则、以及每条约束的实测诊断文本，见 [Library](library.md#三级反馈)。
@@ -65,10 +65,10 @@ linker 必须先聚合全部 template conflict 与 missing，再允许任何 Pro
 | EvidenceRow | 至少一个必填 MetricValue | 只有维度；只有可选 MetricValue |
 | Charts | points 推断出的可绘制键 | 不存在字段；refs；函数或对象字段 |
 | Agent evidence coverage | 六通道 complete；带原因的 partial / unavailable | 漏通道；降级缺 reason；complete 携带 reason |
-| Sandbox | 主 Sandbox + 资源组；可选 services | 缺基线句柄；callback 拼接 retention 或未知 capability |
+| Sandbox | 主 Sandbox + 伴随资源；可选 services | 缺基础句柄；callback 拼接 retention 或未知 capability |
 | Sandbox layer | 具体 factory 产生的 template-bearing layer；`sandboxLayer()` 产生的 command-only layer | 对象字面量伪造 layer；factory 缺必填起点选项 |
 | Theme / Report | factory 返回值进入配置与宿主 | 普通对象伪造 kind |
 
 配对上恰好一份 template 不进 TypeScript 那一列：它取决于 discovery 与 selector 的实际配对，单文件类型系统看不到。link 行为必须穷举 1×1 得到 `sandbox.template-conflict`、0×0 得到 `sandbox.template-missing`，且两者都发生在任何 Provider I/O 之前。
 
-JavaScript、动态导入与显式类型断言绕过静态入口后，运行时镜像仍必须给出同一结论、点名实际字段并在副作用前失败。合法输入的规范化结果不得因诊断增强而改变。
+JavaScript、动态导入与显式类型断言绕过静态入口后，运行时镜像仍必须给出同一判定、点名实际字段并在副作用前失败。合法输入的规范化结果不得因诊断增强而改变。

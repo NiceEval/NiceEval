@@ -8,12 +8,12 @@ AI SDK 应用按被测边界接入：应用部署为 HTTP 服务时用 `uiMessag
 | 应用提供 UI Message Stream HTTP endpoint | `uiMessageStreamAgent(options)` |
 | HTTP 返回 AI SDK `generateText` / `streamText` 结果形状 | `turnFromAiSdk(result)` |
 
-`uiMessageStreamAgent` 管理 SSE reducer、全量历史重放和 tool approval 改写重发，适用于 AI SDK `useChat` 后端。
+`uiMessageStreamAgent` 管理 SSE reducer、全量历史重发和 tool approval 改写重发，适用于 AI SDK `useChat` 后端。
 
 `turnFromAiSdk` 从 step content、tool call ID、tool result、approval part 与聚合 usage 构造 `Turn`。
 它兼容 AI SDK 多代字段名，但不负责 transport——请求怎么发、fetch 到哪个 endpoint 仍由调用方的 `defineAgent` 写。
 
-可选 trace 集成从 `niceeval/adapter/otel` 导入 `aiSdkOtel()`；OTel 只生成 trace，不成为事件来源。
+可选 trace 集成从 `niceeval/adapter/otel` 导入 `aiSdkOtel()`；OTel 只生成 trace，不成为事件出处。
 
 完整示例见 [`examples/zh/tier1/ai-sdk-v7/`](../../../../../examples/zh/tier1/ai-sdk-v7/)。
 

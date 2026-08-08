@@ -59,7 +59,7 @@
     验收：
 
     - 文档能唯一回答“零 attempt 的 Eval 按 agent 分到哪一行”。
-    - `pnpm test:docs` 通过。
+    - `pnpm lint:docs` 通过。
     - `rg` 不再命中只含 `{ evalId, experiment }` 的旧主体形状。
 
   - [x] `[P]` 建立普通值计算内核（依赖：coverage 分组事实）
@@ -265,15 +265,15 @@
       `components/sources/**` 假路径；`library/measures.md` 恢复
       `#题型构成与主读数` / `#维度与数值轴` 锚点。
     - [x] 同步 `docs-site/zh/**`、源码 TSDoc、生成参考和可运行示例。
-      汇合验收：`pnpm test:docs` 与 Node 22 下 `pnpm test:docs-site` 绿。
+      汇合验收：`pnpm lint:docs` 与 Node 22 下 `pnpm lint:docs-site` 绿。
     - [x] 新的翻案或反直觉实现约束写入 memory 并挂入 INDEX；
       普通迁移过程不写 memory。
 
     验收：
 
     - `pnpm docs:reference` 后工作树没有生成区块漂移。
-    - `pnpm test:docs` 通过。
-    - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site` 通过。
+    - `pnpm lint:docs` 通过。
+    - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm lint:docs-site` 通过。
     - 示例按 `examples/README.md` 的对应命令通过。
 
   - [ ] `[X]` 完成真实用户路径验收（依赖：文档与实现收口）
@@ -354,6 +354,6 @@ show/view 必须等 page、renderer 和内建报告汇合。
 - coverage 缺口在所有官方与自定义分组下都有确定归属，total 不会因缺 attempt 静默缩水。
 - show、view、内建报告和 JSON 出口不维护重复聚合口径。
 - 公共包、源码、Feature 文档、测试覆盖规范、Source Map、docs-site 与示例使用同一代模型。
-- `pnpm run prepare`、`pnpm run typecheck`、`pnpm test`、`pnpm test:docs` 全部通过。
-- Node 22 下 `pnpm test:docs-site` 通过。
+- `pnpm run prepare`、`pnpm run typecheck`、`pnpm test`、`pnpm lint:docs` 全部通过。
+- Node 22 下 `pnpm lint:docs-site` 通过。
 - `e2e/report/` 对候选包的真实验收通过。

@@ -30,7 +30,7 @@ const agent = claudeCodeAgent({
 });
 ```
 
-外部 Skill 建议固定 `ref`。仓库包含多个 Skill 时显式填写 `skills`；指定不存在的名称或无法解析多 Skill 仓库时，setup 失败并列出可选项。
+外部 Skill 建议固定 `ref`。仓库包含多个 Skill 时显式填写 `skills`；指定不存在的名称或无法识别多 Skill 仓库时，setup 失败并列出可选项。
 
 ## 添加 MCP Server
 
@@ -60,7 +60,7 @@ MCP 只在 factory 构造时传入。需要条件变体时包装 factory 并合�
 
 ## 安装后运行脚本：`postSetup`
 
-插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的配置块登记进 agent 主配置。这类脚本必须在 Adapter 全部安装步骤（写主配置、挂 MCP、装 Skills 与 Plugin、写 manifest）之后执行，否则它写下的配置会被后续步骤覆盖。把它声明成 factory 的 `postSetup` Hook：
+插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的配置块登记进 agent 主配置。这类脚本必须在 Adapter 全部安装步骤（写主配置、挂 MCP、装 Skills 与 Plugin、写 manifest）之后执行，否则它写下的配置会被后续步骤改写。把它声明成 factory 的 `postSetup` Hook：
 
 ```ts
 import type { SandboxCommand } from "niceeval/sandbox";
@@ -78,18 +78,23 @@ const agent = codexAgent({
 });
 ```
 
-`postSetup` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）：拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。`phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。Hook 通过 `onCleanup()` 登记的收尾在 `preTeardown` 之后按全局逆序执行；其中一项失败不会阻断后续收尾，失败最后一并上报。Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+`postSetup` 复用 prepare command 的类型与窄上下文（`SandboxCommand` / `SandboxCommandContext`，见 [Sandbox Layer](../../sandbox/layers.md)）。
+- 拿到 sandbox 句柄和 `signal`/`progress`/`diagnostic`/`facts`，不借用完整 `AgentContext`。
+- `phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。
+- 多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。
+- Hook 通过 `onCleanup()` 登记的收尾在 `preTeardown` 之后按全局逆序执行；其中一项失败不会阻断后续收尾，失败最后一并上报。
+- Hook 抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 
 ## 与 Sandbox 复用组合
 
-声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。Adapter 在每条 attempt 开始前把扩展安装收敛到声明：上一条 attempt 留在 `$HOME` 里的同名 marketplace 注册与 Plugin 安装，被替换成按声明来源与 ref 的全新安装（规则见[扩展边界](../architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)）。
+声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。Adapter 在每条 attempt 开始前把扩展安装收敛到声明：上一条 attempt 留在 `$HOME` 里的同名 marketplace 注册与 Plugin 安装，被替换成按声明出处与 ref 的全新安装（规则见[扩展边界](../architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)）。
 
-两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须可重复执行；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆盖。
+两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须可重复执行；Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆写。
 用例叙事见[插件实验开复用](../../sandbox/use-case/Sandbox复用/插件实验开复用.md)。
 
-它与作者 sandbox layer 的分工只看相对 agent 安装的时机。与 agent 配置无关的环境预置进 Eval / Experiment layer 的 prepare command，跑在 agent 安装之前；要读写 agent 安装产物（插件文件、agent 主配置）的脚本进 `postSetup`，跑在 agent 安装之后。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
+它与作者 sandbox layer 的分工只看相对 agent 安装的时机。与 agent 配置无关的准备逻辑进 Eval / Experiment layer 的 prepare command，跑在 agent 安装之前；要读写 agent 安装文件（插件文件、agent 主配置）的脚本进 `postSetup`，跑在 agent 安装之后。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
 
 ## 使用官方原生配置文件
 
@@ -123,7 +128,7 @@ const codex = codexAgent({
 });
 ```
 
-`settingsFile` 和 `configFile` 是运行 niceeval 的机器上的本地文件路径，不是 Sandbox 内路径；它们相对本地 niceeval 项目根解析，分别指向完整的 Claude Code `settings.json` 与 Codex `config.toml`。字段只接受项目根内的相对路径：`configs/codex/no-web.toml` 与 `./configs/codex/no-web.toml` 合法，包含 `..` 的路径、绝对路径、`~` 路径和解析后逃出项目根的符号链接都在 setup 阶段报错。
+`settingsFile` 和 `configFile` 是运行 niceeval 的机器上的本地文件路径，不是 Sandbox 内路径；它们相对本地 niceeval 项目根定位，分别指向完整的 Claude Code `settings.json` 与 Codex `config.toml`。字段只接受项目根内的相对路径：`configs/codex/no-web.toml` 与 `./configs/codex/no-web.toml` 合法，包含 `..` 的路径、绝对路径、`~` 路径和解开符号链接后逃出项目根的路径都在 setup 阶段报错。
 
 项目根是执行 niceeval 时的当前工作目录，也就是包含 `niceeval.config.ts` 的目录；路径不相对 Eval、Experiment 或声明 Agent 的源码文件。文件可以分开放置：
 
@@ -139,7 +144,7 @@ my-evals/
 
 Adapter 先从本地读取原始字节，再上传到 Sandbox 的隔离 Agent 配置目录。它不继承宿主机的 `~/.claude/settings.json` 或 `~/.codex/config.toml`；传入文件原样替换 Sandbox 中原本为空的用户配置层，不做字符串拼接、deep merge 或重新序列化。仓库自己的项目级配置仍由被测 CLI 按官方优先级读取。
 
-model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 setup 阶段报错，不做静默覆盖。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走环境变量，不写进配置文件。例外只有 Hermes——它的凭据面只认 `~/.hermes` 下的文件，落盘范围与理由见 [Hermes 页](../sdk/hermes/README.md)。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
+model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 setup 阶段报错，不做静默改写。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走 env var，不写进配置文件。例外只有 Hermes——它的凭据面只认 `~/.hermes` 下的文件，落盘范围与理由见 [Hermes 页](../sdk/hermes/README.md)。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
 
 上例两边都关掉内置联网检索：评测答案能被搜到时，联网会污染通过率。注意原生配置只能关掉 Agent 的检索工具，挡不住它用 shell 命令访问网络；更强的网络隔离属于 Sandbox 层。
 
@@ -175,7 +180,7 @@ model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容
 
 ## 查看安装结果
 
-Sandbox Agent setup 写出安装 manifest，attempt 结果保存实际安装的 Skill、来源、ref、插件、解析版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，不记作 Agent 解题失败。
+Sandbox Agent setup 写出安装 manifest，attempt 结果保存实际安装的 Skill、出处、ref、插件、实际版本，以及原生配置文件的项目相对路径与 SHA-256；manifest 不保存配置文件正文。安装失败属于基础设施错误，不记作 Agent 解题失败。
 
 每个 Agent 支持的字段和示例见：
 

@@ -1,4 +1,4 @@
-# Reading —— 从记录到报告
+# Reading —— 从 Record 到报告
 
 [Architecture](../../architecture.md) 讲一次运行怎么产生结果,终点是判定与 artifact 写进 Run 目录。
 本篇接着往下讲:这些字节躺在磁盘上之后,怎么变成终端里的一屏、网页上的一张报告,或者你自己脚本里的一个数字。两篇的交接点就是那个 Run 目录 —— 执行链路的终点,读取面的起点。
@@ -14,20 +14,20 @@
 | 层 | 模块 | 输入 | 输出 | 有没有判断 |
 |---|---|---|---|---|
 | 事实 | [`niceeval/record`](../record/README.md) | 磁盘 | `Record` / `Run` / `AttemptHandle` | 无 |
-| 选择 | [`niceeval/sample`](../sample/README.md) | `Record` | `Sample` | 有:口径、覆盖、时效 |
+| 选择 | [`niceeval/sample`](../sample/README.md) | `Record` | `Sample` | 有:口径、样本命中范围、时效 |
 | 呈现 | [`niceeval/report`](../reports/README.md) | `Sample` | 组件数据 | 有:指标、折叠、排版 |
 
 分界线是**判断**:哪一层允许有看法,允许到什么程度。
 
-**Record 一点判断都不许有。** 它的承诺是每个返回值都能在磁盘上逐字节指出来源。所以通过数、成本合计这类聚合不落盘,「最新一次」这种选法也不在这里 —— 「最新」先要定义粒度,而定义粒度就是看法。
+**Record 一点判断都不许有。** 它的承诺是每个返回值都能在磁盘上逐字节指出出处。所以通过数、成本合计这类聚合不落盘,「最新一次」这种选法也不在这里 —— 「最新」先要定义粒度,而定义粒度就是看法。
 
 Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdict；它把目录列入 `record.unreadable`，Sample 将其呈现为 `unreadable-run` warning。未派发 Attempt 只存在于 Invocation 的 `unstarted` 计数中，不创建 `result.json`；两者都不能冒充 `skipped`。
 
-**Sample 有判断,但判断必须写进返回值。** current 选择、覆盖与缺口原因都写在返回值上；Reports 不从 Run、历史或运行期计划重建另一份贡献集合。
+**Sample 有判断,但判断必须写进返回值。** current 选择、命中范围与缺口原因都写在返回值上；Reports 不从 Run、历史或运行期计划重建另一份贡献集合。
 
 **Reports 的判断是呈现判断。** 值怎么算归[读数](../reports/library/measures.md),两级折叠归 `perEval` / `acrossEvals`,长什么样归组件与主题。
 
-把选择器长在 Record 上,那条「逐字节可指出来源」的承诺当场垮一半:读者每读一个字段都要先想「这算事实还是算解释」。三层切法本身学自 Vega-Lite 的 `data → transform → mark`,逐条出处见各层的 `reference/`。
+把选择器长在 Record 上,那条「逐字节可指出处」的承诺当场垮一半:读者每读一个字段都要先想「这算事实还是算解释」。三层切法本身学自 Vega-Lite 的 `data → transform → mark`,逐条出处见各层的 `reference/`。
 
 ## 跨三层的不变量
 
@@ -63,15 +63,15 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 
 ## 宿主、收窄与出站
 
-`show` 与 `view` 是两个宿主 —— 打开记录、挑 Sample、渲染报告的那一侧。它们装载同一份报告定义,走同一条 `装载 → resolve → validate → render` 管线,没有宿主特权。
+`show` 与 `view` 是两个宿主 —— 打开 Record、挑 Sample、渲染报告的那一侧。它们装载同一份报告定义,走同一条 `装载 → resolve → validate → render` 管线,没有宿主特权。
 
-**收窄是选择层的事,写在命令行上。** 两个宿主的位置参数与 flag 是同一套:位置参数是 eval id 前缀,`--exp` 按 experiment id 路径段匹配,`--record` / `--run` 换输入。它们合起来把记录根滤成一份有效根,再交给选择器。命令行表达不了的挑选走 [`publish()`](../record/library.md#发布publish) 构一个新的记录根,而不是给 CLI 加谓词语法。
+**收窄是选择层的事,写在命令行上。** 两个宿主的位置参数与 flag 是同一套:位置参数是 eval id 前缀,`--exp` 按 experiment id 路径段匹配,`--record` / `--run` 换输入。它们合起来把 Record 根滤成一份有效根,再交给选择器。命令行表达不了的挑选走 [`publish()`](../record/library.md#发布publish) 构一个新的 Record 根,而不是给 CLI 加谓词语法。
 
 一个报告实例只绑定宿主创建的一份 Sample。
-报告组件可以折叠或排序同一批行，但不能调用 Sample 转换改变贡献集合、覆盖分母或导出值。
+报告组件可以折叠或排序同一批行，但不能调用 Sample 转换改变贡献集合、改写分母或导出值。
 要看单次执行事实进入 Run，要看历次变化进入 History；两种旅途都不改变 current 报告。
 
-**出站有两条,共用一条站点管线。** [`niceeval view`](../reports/view.md) 建一次站点再盯着输入 [持续重建](../reports/view.md#持续重建),`niceeval view --out <dir>` 建完就退出、产物写进目录。
+**出站有两条,共用一条站点管线。** [`niceeval view`](../reports/view.md) 建一次站点再盯着输入 [持续重建](../reports/view.md#持续重建),`niceeval view --out <dir>` 建完就退出、生成的文件写进目录。
 同一份收窄下两者逐字节一致 —— 本地看到的就是发出去的。
 
 ## 常见用途
@@ -88,6 +88,6 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 - [用例手册](use-case/README.md) —— 四个读取任务的完整路径。
 - [Architecture](../../architecture.md) —— 这些字节怎么被跑出来:发现、驱动、评分、报告。
 - [Record](../record/README.md) —— 事实层:格式、读写、身份与发布。
-- [Sample](../sample/README.md) —— 选择层:口径、覆盖、时效与转换算子。
+- [Sample](../sample/README.md) —— 选择层:口径、命中范围、时效与转换算子。
 - [Reports](../reports/README.md) —— 呈现层:show、view 与报告组件。
 - [Concepts](../../concepts.md) —— 「结果数据与报告」一组词的总表。

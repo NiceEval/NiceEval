@@ -8,7 +8,7 @@ Adapter 必须通过受支持的 CLI、SDK 或 API 驱动，不使用 GUI 自动
 
 | 对象 | 准入契约 |
 |---|---|
-| Cursor Agent SDK | 稳定 API 覆盖 session、HITL 与 usage；真实示例证明这些能力；转换器不强制消费方安装完整 SDK 包 |
+| Cursor Agent SDK | 稳定 API 涵盖 session、HITL 与 usage；真实示例证明这些能力；转换器不强制消费方安装完整 SDK 包 |
 | vm0 | 官方接口提供稳定结构化事件与会话恢复契约 |
 
 ## 排除边界

@@ -11,7 +11,7 @@ fix commit `d489dfd4` 前，renderer 已把图表点类名改成 `.niceeval-char
 公开错误事实是用户 hover 数据点后看不到契约中的系列 / 横轴 / 数值提示。
 类名、事件监听器和 `<title>` 搬运都只是实现手段。
 
-fix commit 只改 JS / CSS 并记录人工 Chromium 验证，没有自动测试。
+fix commit 只改 JS / CSS 并登记人工 Chromium 验证，没有自动测试。
 组件单元能证明 SVG 点与 `<title>` 存在，enhance 脚本也能独立加载；没有真实 hover，它们会一起绿。
 
 ```ts
@@ -44,11 +44,11 @@ Table 过滤复用 `ui.filter()` 与 `visibleRows()`；tooltip 复用上面的 c
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 按公开数据身份和可见文本断言，不锁 DOM 类名与坐标 |
 | 不能改断言放行 | 系列、x、值来自签入数据；不能把期望改成“存在 title” |
 | 观察失败显式报错 | 数据点找不到与 hover 后 tooltip 不出现分阶段报告 |
 | 用户侧直接定位 | 消息含页面、series、x、步骤轨迹、截图和浏览器错误 |
-| 设施不造假 | 真实 Chromium、启用 JS、真实静态产物；不直接调用 enhance 函数 |
+| 设施不造假 | 真实 Chromium、启用 JS、真实静态站点；不直接调用 enhance 函数 |
 | 用户已有用法不改 | 用户 Report 与组件不加 test id 或内部观察点 |

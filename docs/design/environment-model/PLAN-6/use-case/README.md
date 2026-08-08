@@ -1,4 +1,4 @@
-# PLAN-6 用例覆盖
+# PLAN-6 用例映射
 
 契约单源始终在[方案](../README.md)、[Library](../library.md)、[Architecture](../architecture.md)与[Lifecycle](../lifecycle.md)。
 本目录只展示真实项目怎样使用候选 API。
@@ -16,9 +16,9 @@
 | C2 | MemoryBench 的 Experiment 默认 template 与 sandbox setup |
 | C3 | Terminal-Bench Compose 加 mempal Experiment setup |
 | C4 | 多个 sandbox setup 按声明顺序执行 |
-| C5 | MemoryBench mempal template 使 setup helper 的 check 命中 |
+| C5 | MemoryBench mempal template 使 setup 函数的 check 命中 |
 | C6 | Environment 收敛后进入独立 state lifecycle |
-| C7 | 复用窗口按 owner 重放对应 setup |
+| C7 | 复用周期内按 owner 重新执行对应 setup |
 | C8 | MemoryBench 从 Experiment template 启动,再执行 EvalDef setup |
 | C9 | SandboxSpec `environments[profile]` 提供预制组合 case |
 | C10 | 同一 SandboxSpec 对有 Environment 与无 Environment 的 Eval 走两条固定分支 |

@@ -39,8 +39,8 @@ export default defineEval({
 这条 Eval 没有 Environment。
 Runner 先使用当前 SandboxSpec 的默认 case,再执行这条 Eval 的 setup。
 
-`nodeRepositoryFixture()` 是 Eval setup helper。
-它锁定仓库 URL、commit、包管理器命令与 helper revision,并把进度和失败归到 `eval.setup`。
+`nodeRepositoryFixture()` 是 Eval setup 函数。
+它锁定仓库 URL、commit、包管理器命令与 fixture 的 revision,并把进度和失败归到 `eval.setup`。
 作者也可以直接写 async `setup`;不需要学习 Requirement、Base 或融合 case。
 
 ## Experiment
@@ -75,7 +75,7 @@ export default defineExperiment({
 缺失时在 Agent 前失败并提示构建锁定 template;template 名本身不作为命中证明。
 
 当前 `mempalTeardown("codex")` 在 Sandbox 收尾时回存 checkpoint。
-这段状态语义与 Environment 起点正交;PLAN-6 保留现有写法,不借环境模型重造 state API。
+这段状态语义与 Environment 起点正交;PLAN-6 保留现有写法,不借本主题选型重造 state API。
 
 ## 运行路径
 

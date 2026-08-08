@@ -2,7 +2,7 @@
 
 契约单源见 [Sandbox Layer · Eval 与 Experiment 使用同一个类型](../../layers.md#eval-与-experiment-使用同一个类型)、[内置 prepare 命令](../../prepare-commands.md)与[三方准备时序 · Experiment template 路径](../../lifecycle.md#experiment-template-路径)。
 
-MemoryBench 的环境和 mempal 版本随 Experiment 变化,具体 Eval 只负责 checkout 固定仓库并准备题目。
+MemoryBench 的 Sandbox 和 mempal 版本随 Experiment 变化,具体 Eval 只负责 checkout 固定仓库并准备题目。
 因此 Experiment 是 template owner,Eval 保持 command-only:
 
 ```typescript
@@ -49,7 +49,7 @@ export default defineEval({
 });
 ```
 
-解析后的顺序是:
+执行后的顺序是:
 
 ```text
 Experiment E2B template
@@ -63,7 +63,7 @@ Experiment E2B template
 `installTool` 每条 Attempt 都用 探测 检查实际版本。
 template 已预装正确版本时首测即命中;缺失时现场安装并复检;template 名本身不代替实际检查。
 
-开启 Sandbox 复用后,Runner 每条 Attempt 仍先 reset,再重放 installTool、checkout 与 `agent.ensure`。
+开启 Sandbox 复用后,Runner 每条 Attempt 仍先 reset,再重新执行 installTool、checkout 与 `agent.ensure`。
 mempal 装在 workdir 外,reset 后 探测 命中;`checkout()` 的镜像让第二条 Attempt 起零网络,只付本地写入。
 逐 Attempt 的命令仍只有 `prepare()` 一种频次；物理实例的记忆目录则明确由 lifecycle hook 管理。
 
@@ -78,4 +78,4 @@ Eval Compose template + Experiment E2B template -> sandbox.template-conflict
 ```
 
 Runner 在全矩阵 link 中列出冲突并保持零 Provider I/O。
-作者可以收窄 Experiment selector,或把该组合改成唯一的融合 template;E2B template 不会静默覆盖 Eval template。
+作者可以收窄 Experiment selector,或把该组合改成唯一的融合 template;E2B template 不会静默改写 Eval template。

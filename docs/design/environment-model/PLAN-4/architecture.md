@@ -29,7 +29,7 @@ Base Case 与 Ensure 是兑现 Requirement 的两种路径,不是另外两份要
 
 ## Base Case 选择
 
-规划器先为每个 Eval 解析 Eval contribution,再读取 Experiment contribution 与 SandboxSpec 起点。
+规划器先为每个 Eval 读取 Eval contribution,再读取 Experiment contribution 与 SandboxSpec 起点。
 SandboxSpec 上的显式 image、template 或 snapshot 在本方案中归一为 Experiment Base。
 没有显式起点时,Provider 的中性 case 不归任何 Requirement 所有。
 
@@ -57,8 +57,8 @@ else:
 
 ## 融合 case 与多 Eval
 
-融合 case 的 profile key 指向一个完整 Sandbox Case。
-它已经由作者或构建系统组合双方起点,Runner 不解析并拼接两个 Base。
+融合 case 的 profile key 指向一个完整 `Sandbox Case`。
+它已经由作者或构建系统组合双方起点,Runner 不读取并拼接两个 Base。
 
 规划器先展开完整 Eval 矩阵,再一次收集缺失 profile。
 只要一条双 Base 组合缺少融合 case,本次 Run 就在创建 Sandbox 前失败。
@@ -66,7 +66,7 @@ else:
 
 一个 Experiment 的 `cases` 表可以有多个值。
 它们是不同 Eval 的候选 Base,不是一条 Attempt 上的多个 Base。
-所选 profile、表项声明身份与最终 CaseKey 一起进入逐 Eval 解析结果。
+所选 profile、表项声明身份与最终 CaseKey 一起进入逐 Eval 读取结果。
 
 ## 从声明到 Agent turn
 
@@ -84,11 +84,11 @@ validate declarations
   -> start Agent turn
 ```
 
-安装动作完成不等于环境已经收敛。
-后安装节点可能覆盖 PATH、证书或共享 prefix,所以每个节点复检之后还有两道组级屏障。
+安装动作完成不等于 Sandbox 已经收敛。
+后安装节点可能覆写 PATH、证书或共享 prefix,所以每个节点复检之后还有两道组级屏障。
 
-第一道屏障覆盖 Eval 与 Experiment。
-第二道屏障发生在 Agent Ensure 和外部状态载入之后,覆盖 Eval、Experiment 与 Agent。
+第一道屏障涵盖 Eval 与 Experiment。
+第二道屏障发生在 Agent Ensure 和外部状态载入之后,涵盖 Eval、Experiment 与 Agent。
 任何屏障失败都会阻止 Agent turn。
 
 ## Eval 与 Experiment Ensure 图
@@ -102,7 +102,7 @@ validate declarations
 - 资源名必须是非空稳定字符串。
 - Requirement identity 必须可以序列化。
 
-Sandbox ready 后,调度器先并发执行不修改环境的初始 verify。
+Sandbox ready 后,调度器先并发执行不修改 Sandbox 的初始 verify。
 只有未命中的节点才进入 Ensure 图。
 
 ### 依赖与资源
@@ -121,7 +121,7 @@ Sandbox ready 后,调度器先并发执行不修改环境的初始 verify。
 ### Prepare single-flight
 
 `prepare` 只在初始 verify 未命中并且 `install` 存在后调用。
-目标平台由已经创建的 Sandbox Case 解析,因此同名 Requirement 在不同平台上不会误用 payload。
+目标平台由已经创建的 `Sandbox Case` 读取,因此同名 Requirement 在不同平台上不会误用 payload。
 
 共享键为:
 
@@ -130,7 +130,7 @@ owner + name + declared identity + target platform
 ```
 
 结果携带 payload identity 与 digest。
-二者进入该 Eval 的解析后 Ensure 身份,也进入安装活动。
+二者进入该 Eval 的读取后 Ensure 身份,也进入安装活动。
 
 每个 Attempt 等待共享准备时仍受自己的 setup deadline 约束。
 等待者超时只结束自己的等待。
@@ -166,7 +166,7 @@ AgentProvisioner 在 Eval 与 Experiment 的全组屏障通过后开始。
 
 Adapter 继续拥有:
 
-- Agent 声明 identity 与解析后的安装 identity。
+- Agent 声明 identity 与读取后的安装 identity。
 - 目标平台与安装模式探测。
 - 宿主侧 staged payload 准备。
 - Agent CLI、配置与启动条件检查。
@@ -191,15 +191,15 @@ save 在 Attempt 收尾阶段执行,失败产生独立的状态保存诊断。
 
 这只是内部目标相位。
 本候选的 Library 没有定义独立 state lifecycle;把现有 SandboxSpec setup 直接当作 load 会在 AgentProvisioner 前过早执行。
-因此 C6/C7 的状态路径只能算部分覆盖。
+因此 C6/C7 的状态路径只能算部分涵盖。
 
 同一 Experiment 的 load 到 save 临界区由 Experiment 并发限制保护。
 这条路径不需要开启 Sandbox 复用。
 
 ### 复用活状态
 
-Sandbox 复用窗口有自己的 window identity 与序号。
-状态可以在窗口打开时载入,在窗口关闭时回存。
+Sandbox 复用周期有自己的 window identity 与序号。
+状态可以在复用周期打开时载入,在复用周期关闭时回存。
 
 每条 Attempt 仍执行三份 Requirement 的 verify 与最终屏障。
 检查缓存只允许在相同 Sandbox 实例代次和相同资源修改代次内命中。
@@ -225,10 +225,10 @@ Experiment contribution 的函数体不自动哈希。
 脚本、模型、证书与 payload 变化必须由 revision 或 digest 进入声明 identity。
 
 `cases` 表作为 Run 配置落盘。
-每个 Eval 实际选中的表项、CaseKey 与解析后身份进入该 Eval 的 fingerprint。
+每个 Eval 实际选中的表项、CaseKey 与读取后身份进入该 Eval 的 fingerprint。
 configHash 不按 Eval 分叉。
 
-实际检查事实、活动与耗时进入 Attempt 记录。
+实际检查事实、活动与耗时进入 Attempt 数据。
 它们解释本次运行发生了什么,不成为下一次运行跳过 verify 的依据。
 
 ## 错误模型
@@ -238,12 +238,12 @@ configHash 不按 Eval 分叉。
 | 声明期 | 重名、缺依赖、依赖环、重复 Experiment Base | 启动期配置错误,一次穷举报出 |
 | 规划期 | Provider 不支持合法 source kind | 对受影响 Eval 记 `skipped` |
 | 规划期 | 双 Base 缺精确 profile 融合 case | 启动期配置错误,创建 Sandbox 前列全缺项 |
-| 运行期 verify | 未命中且没有 install | 环境不兼容,零 Agent turn |
-| 运行期能力检查 | 未命中且缺安装所需能力 | 环境不兼容,零 Agent turn |
+| 运行期 verify | 未命中且没有 install | Sandbox 不兼容,零 Agent turn |
+| 运行期能力检查 | 未命中且缺安装所需能力 | Sandbox 不兼容,零 Agent turn |
 | prepare/upload/install | 命令、网络、校验或 deadline 失败 | Attempt `errored`,归 `sandbox.setup` |
 | Eval/Experiment 复检 | 安装后仍未满足 | Attempt `errored`,归 `sandbox.setup` |
 | Agent Ensure | Agent 检查、准备、安装或复检失败 | Attempt `errored`,归 `agent.setup` |
-| 最终屏障 | Agent 或状态载入破坏先前条件 | Attempt `errored`,记录最后修改活动与失败 Requirement |
+| 最终屏障 | Agent 或状态载入破坏先前条件 | Attempt `errored`,登记最后修改活动与失败 Requirement |
 
 运行期不兼容和执行错误分开。
 前者表示合法声明无法在所选 Base 上收敛,后者表示承诺可以完成的 Ensure 执行失败。
@@ -251,7 +251,7 @@ configHash 不按 Eval 分叉。
 ## 可观察活动
 
 每个检查、准备、上传、安装、复检与组级屏障都有独立 activity。
-activity 至少记录 owner、Requirement 名、开始与结束时间、结果和失败阶段。
+activity 至少登记 owner、Requirement 名、开始与结束时间、结果和失败阶段。
 
 诊断同时携带:
 

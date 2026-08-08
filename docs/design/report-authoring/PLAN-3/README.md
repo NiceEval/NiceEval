@@ -7,7 +7,7 @@
 ## 方案
 
 保留通用原语，把数据源换成查询。
-树解析阶段把 Record 全量加载成 attempts、evals、runs 等表，执行作者写的 SQL，行集交给原语渲染。
+树读取阶段把 Record 全量加载成 attempts、evals、runs 等表，执行作者写的 SQL，行集交给原语渲染。
 
 ```tsx
 import { Table, defineReport, sql } from "niceeval/report";
@@ -47,7 +47,7 @@ export default defineReport({
 
 - **需求 8 的另一种答法。
   ** 提问不必先在库里存在对应能力，想到什么查什么，探索性分析即写即得。
-- **关联与窗口是一等写法。
+- **关联与开窗函数是一等写法。
   ** 「每个 agent 上最差的三道题」一句就能写：
 
   ```sql
@@ -119,7 +119,7 @@ count(*)    as total      -- 这一格覆盖的全部 attempt
 
 `assistantTurns` 要读 `o11y.json`，`changedLines` 要读 diff。
 这些 artifact 逐 attempt 懒加载，单个可达数百 MB。
-放入表只有两条路：树解析前从磁盘全量读入内存，或者提供 UDF。
+放入表只有两条路：树读取前从磁盘全量读入内存，或者提供 UDF。
 
 ```sql
 select agent, avg(changed_lines(locator)) from attempts group by 1
@@ -147,7 +147,7 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 - **类型不进 TS。
   ** 列名拼错、`select` 少一列，都要等运行时才炸。
 - **引擎进包。
-  ** DuckDB 与 SQLite 都要装原生依赖或 wasm，影响安装耗时；自研子集则要自己实现窗口函数与报错。
+  ** DuckDB 与 SQLite 都要装原生依赖或 wasm，影响安装耗时；自研子集则要自己实现开窗函数与报错。
 - **口径漂移无从检测。
   ** 官方数字来自 `Measure`，作者页面的数字来自各自的查询，两边对不上时没有单点可查。
 
@@ -162,7 +162,7 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
                     artifact 只能全量加载或走 UDF
 ```
 
-全量加载就是这个方案的成本所在：它要在树解析前决定读多少磁盘，而 [PLAN-2](../PLAN-2/README.md) 把这个决定留给每个读数自己。
+全量加载就是这个方案的成本所在：它要在树读取前决定读多少磁盘，而 [PLAN-2](../PLAN-2/README.md) 把这个决定留给每个读数自己。
 
 ---
 
@@ -170,12 +170,12 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 
 1. **默认正确**：作者按直觉写下的第一版查询给出正确权重的通过率。
    本方案做不到——直觉写法是摊平的 `avg`。
-2. **证据可达**：任一聚合格能点进它覆盖的 attempt。
+2. **证据可达**：任一聚合格能点进它涵盖的 attempt。
    本方案要看作者写没写 `array_agg`。
 3. **读数只声明一次**：同一个成本列在两页上单位与方向一致。
    本方案要看两段 SQL 旁边的元数据表是否抄一致。
-4. **大 artifact 不拖垮树解析**：只读实际用到的 diff。
-   本方案在 UDF 形态下勉强成立，在树解析前全量加载的形态下不成立。
+4. **大 artifact 不拖垮树读取**：只读实际用到的 diff。
+   本方案在 UDF 形态下勉强成立，在树读取前全量加载的形态下不成立。
 
 **反指标**：拿一份只有单次 attempt 的结果验收。
 这时摊平的 `avg` 与嵌套的 `avg` 得到同一个数，两级聚合的缺陷完全不显形——而真实实验几乎都跑多轮。

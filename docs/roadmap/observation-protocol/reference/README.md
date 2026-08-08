@@ -1,6 +1,6 @@
 # 运行观测协议 —— 参考方案
 
-这一层记录设计从哪些成熟软件与规范借来，以及 NiceEval 有意没有照搬什么。
+这一层登记设计从哪些成熟软件与规范借来，以及 NiceEval 有意没有照搬什么。
 目标契约仍以 [Architecture](../architecture.md) 和 [Library](../library.md) 为准。
 
 ## Projector 与 Projection
@@ -10,12 +10,12 @@ Event Sourcing/CQRS 软件已经用它表示“消费事件并产生读模型的
 
 | 软件 | 官方名称 | 实际语义 | NiceEval 的关系 |
 |---|---|---|---|
-| Commanded + Ecto | `Projector` | Event handler 订阅事件并事务性更新 SQL read model | 借组件名与重放语义，不借持久 subscription |
+| Commanded + Ecto | `Projector` | Event handler 订阅事件并事务性更新 SQL read model | 借组件名与重新执行语义，不借持久 subscription |
 | Spatie Laravel Event Sourcing | `Projector` | 事件处理类写数据库或文件中的 Projection | 借 Projector/Projection 区分，不借有副作用的写模型 |
 | Neos Event Sourced Content Repository | `Projector` | 确定性函数把事件应用到 projection data model | 与 NiceEval 的纯函数约束最接近 |
 | Python `eventsourcing` | `projector_func` | 从 stored events 重建 aggregate | 与按需读取有限历史最接近 |
 | Akka Projections | `Projection` | 持续消费带 offset 的 Source，并写外部模型 | 只有 projection 家族语义，不是 exact `Projector` 先例 |
-| EventStoreDB / KurrentDB | `Projection` / projection engine | 保存 checkpoint、state 与 result，可持续运行 | 只有可重放读模型语义，不是 NiceEval 的运行模型 |
+| EventStoreDB / KurrentDB | `Projection` / projection engine | 保存 checkpoint、state 与 result，可持续运行 | 只有可重入读模型语义，不是 NiceEval 的运行模型 |
 
 一手资料：
 
@@ -26,7 +26,7 @@ Event Sourcing/CQRS 软件已经用它表示“消费事件并产生读模型的
 - [Neos 的 Event Sourcing 定义](https://docs.neos.io/guide/contributing-to-neos/event-sourced-content-repository/how-we-understand-event-sourcing) 把 Projector 描述为确定、无副作用的纯函数。
 - [Python eventsourcing Application](https://eventsourcing.readthedocs.io/en/stable/topics/application.html) 公开使用 `projector_func` 从事件重建对象。
 - [Akka Projection overview](https://doc.akka.io/libraries/akka-projection/current/overview.html) 把带 offset 的持续消费进程称为 Projection。
-- [KurrentDB Projection introduction](https://docs.kurrent.io/server/v26.1/features/projections/intro) 展示持续运行、checkpoint 与 reset 后重放。
+- [KurrentDB Projection introduction](https://docs.kurrent.io/server/v26.1/features/projections/intro) 展示持续运行、checkpoint 与 reset 后重新执行。
 
 NiceEval 只采用“权威历史经确定性计算得到读模型”这部分。
 `AttemptProjector` 不维护 subscription、offset 或 checkpoint，不写持久 read model，也不触发网络或其它外部副作用。
@@ -60,7 +60,7 @@ on(event, async () => {
 v2 容器不是凭空设计，也不靠预先猜完全部字段。
 它组合了多个成熟协议已经证明过的机制：
 
-| 来源 | 借用的机制 | 不照搬的部分 |
+| 出处 | 借用的机制 | 不照搬的部分 |
 |---|---|---|
 | OCI Image Spec | `mediaType + digest + size` Descriptor 与内容寻址 DAG | image、config、layer 的容器镜像业务语义 |
 | Git object database | 不可变内容对象与引用分离 | Git 的少量固定对象类型和 packfile |

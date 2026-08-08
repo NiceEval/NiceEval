@@ -7,13 +7,13 @@
 不加任何公开面。
 检查与缓存的惯用法(`command -v x || install`、workdir 外镜像目录、`defineSandboxCommand` 封装)写进 feature 用例手册,由作者照抄。
 
-## 覆盖
+## 守护
 
 | Case | 路径 |
 |---|---|
 | C1 | 用例手册给出「镜像目录 + 每题写入」的 shell 惯用法 |
 | C2 | 用例手册给出探测式安装的 `defineSandboxCommand` 样板 |
-| C3 | 不覆盖:普通 command 无法向 `--dry` 声明成本类别,计划面只能一律标每题重放 |
+| C3 | 不守护:普通 command 无法向 `--dry` 声明成本类别,计划面只能一律标每题重新执行 |
 | C4 | 天然满足 |
 
 ## 优点

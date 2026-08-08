@@ -13,7 +13,7 @@
 | Agent runtime 与 Eval test | 每 Attempt | 每 Attempt |
 | 实例不可用后的动作 | 不适用 | 按 `onUnavailable` 停组或替换 |
 
-两种生命周期都在每条 Attempt 建立独立归因窗口。
+两种生命周期都在每条 Attempt 建立独立归因区间。
 共享 Sandbox 不合并判定、usage、diff、事件或 locator。
 
 ## 组内时序
@@ -45,7 +45,7 @@ Runner 追加 `sandbox-reuse-group-stopped` diagnostic。
 新实例重新执行 lifecycle setup、建立 reset point，并从该组下一条尚未派发的 Attempt 继续。
 
 替换不重跑已经产生模型成本的 Attempt。
-运行记录递增 `sandboxNumber` 与 replacements，让读取面明确知道同组结果来自多台先后使用的 Sandbox。
+运行数据递增 `sandboxNumber` 与 replacements，让读取面明确知道同组结果来自多台先后使用的 Sandbox。
 
 ## carry 与零资源路径
 
@@ -66,7 +66,7 @@ Invocation 中断时，Runner 停止派发新工作，并按以下顺序收尾�
 5. 按 [Sandbox 默认停驻与回收](../sandbox-retention/lifecycle.md)执行 physical release。
 
 未派发成员不产生伪 Attempt。
-下一次运行重新做普通携带或 Sequence 完整重放规划。
+下一次运行重新做普通携带或 Sequence 完整重新执行规划。
 
 ## 与默认停驻组合
 

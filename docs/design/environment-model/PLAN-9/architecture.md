@@ -52,14 +52,14 @@ interface FingerprintedSandboxStack extends PlannedSandboxStack {
 ```
 
 `OwnedSandboxRecipe` 是 Runner 的内部归一结构，不是公开作者接口。
-公开 `SandboxRecipe` 只约束 Window 与 Attempt 两种 scope 的 command stack。具体 factory 读取自己的 options 后，才把 template 与 Provider factory 放进这份内部结构。E2B template ref、Docker image、Vercel snapshot 与 Compose 资源组无需伪装成同一个公共字段类型。
+公开 `SandboxRecipe` 只约束 Window 与 Attempt 两种 scope 的 command stack。具体 factory 读取自己的 options 后，才把 template 与 Provider factory 放进这份内部结构。E2B template ref、Docker image、Vercel snapshot 与 Compose 的整套资源拓扑无需伪装成同一个公共字段类型。
 
 Agent 不提供 template 或 Provider。
 它出现在 ownerOrder 中，是因为 AgentProvisioner 与 Agent setup 作用于同一个主 Sandbox；内部协议不因此降格成 SandboxCommand。
 
 ## SandboxTemplate 的边界
 
-SandboxTemplate 是“选择 Provider 并启动完整 Sandbox Case 的 recipe”这一封闭联合：
+SandboxTemplate 是“选择 Provider 并启动完整 Sandbox 实例的 recipe”这一封闭联合：
 
 ```typescript
 type SandboxTemplate =
@@ -72,7 +72,7 @@ type SandboxTemplate =
 ```
 
 联合成员不结构同构。
-Compose 成员保留资源组拓扑并选择 Docker Compose Provider；E2B 成员携带 template ref 并选择 E2B Provider；Custom 成员必须给出纯数据 identity、Provider factory 与完整 Case planner。
+Compose 成员保留整套资源拓扑并选择 Docker Compose Provider；E2B 成员携带 template ref 并选择 E2B Provider；Custom 成员必须给出纯数据 identity、Provider factory 与完整 Case planner。
 
 共同结果是 PlannedSandboxCase，不是共同实现：
 
@@ -90,16 +90,16 @@ SandboxTemplate
 
 ## Active template 选择
 
-每个实际选中的 Eval × Experiment pair 先检查作者显式 template contribution，再解析恰好一个 active template：
+每个实际选中的 Eval × Experiment pair 先检查作者显式 template contribution，再归一恰好一个 active template：
 
 | Eval 显式 template | Experiment 显式 template | Active template | Owner |
 |---|---|---|---|
-| 有 | 有 | 配置冲突，不解析 | 无 |
+| 有 | 有 | 配置冲突，不归一 | 无 |
 | 有 | 无 | Eval template | Eval |
 | 无 | 有 | Experiment template | Experiment |
-| 无 | 无 | 配置缺失，不解析 | 无 |
+| 无 | 无 | 配置缺失，不归一 | 无 |
 
-`image`、`template`、`snapshotId`、Compose 或 Dockerfile 都是完整 template contribution，同时带出 Provider。它们不能覆盖另一侧 template，也不能被静默忽略；1×1 报 `sandbox.template-conflict`，0×0 报 `sandbox.template-missing`。
+`image`、`template`、`snapshotId`、Compose 或 Dockerfile 都是完整 template contribution，同时带出 Provider。它们不能替换另一侧 template，也不能被静默忽略；1×1 报 `sandbox.template-conflict`，0×0 报 `sandbox.template-missing`。
 
 concrete factory 的返回类型已经把 template 与 Provider factory 原子绑定，link 不再做第二次 planner 完整性分支。已被 Experiment selector 选中的 pair 若在目标平台、能力或 locator 上不可用，会在只读 physical planning 聚合报错，不会自动 `skipped`；作者必须用 selector 明确排除，否则整个 Run 零资源失败。
 
@@ -118,7 +118,7 @@ linkSandboxMatrix(
 
 它在 discovery 和 Eval selection 后穷举所有实际 pair，聚合 template conflict / missing、Direct Agent 误配与空 selector。只要有一项错误，整个 Run 在 Provider 网络、fingerprint、build 与 Sandbox create 前失败；不能先创建合法 pair，再运行到错误 pair 才停止。
 
-随后才进入 Provider 的只读 physical / network planning：解析本地 Compose / Dockerfile 与 `workspaceService`，检查目标平台和计划能力，再读取 image digest、E2B template 或 snapshot locator。这一步生成 `PlannedSandboxStack` / `PlannedSandboxCase`，可以做 Provider 只读网络请求，但仍不 build、不创建 Sandbox，也不启动模型。所有可并行检查的错误一次列全。
+随后才进入 Provider 的只读 physical / network planning：读取本地 Compose / Dockerfile 与 `workspaceService`，检查目标平台和计划能力，再读取 image digest、E2B template 或 snapshot locator。这一步生成 `PlannedSandboxStack` / `PlannedSandboxCase`，可以做 Provider 只读网络请求，但仍不 build、不创建 Sandbox，也不启动模型。所有可并行检查的错误一次列全。
 
 唯一合法阶段顺序是：
 
@@ -170,7 +170,7 @@ Window scope 与 Attempt scope 分别使用同一 ownerOrder。
 每个 owner 内按声明顺序执行 setup 与 beforeEach；afterEach 与 teardown 先按 ownerOrder 逆序，再在 owner 内按追加逆序执行。
 
 Eval command 与 Experiment command 共用同一执行协议。
-owner 是排序与记录元数据，不是 command 子类；Runner 不因 owner 改变它能调用的 SandboxCommandTarget。该窄视图没有 `stop()` 或 Provider-native SDK，生命周期 command 不能提前销毁主 Sandbox。
+owner 是排序与归因元数据，不是 command 子类；Runner 不因 owner 改变它能调用的 SandboxCommandTarget。该窄视图没有 `stop()` 或 Provider-native SDK，生命周期 command 不能提前销毁主 Sandbox。
 
 Runner 不按 command 内容、文件路径或命令字符串猜依赖。
 template owner setup 只能依赖自己的 template，后续 owner setup 可以依赖前序结果。进入 Attempt scope 时两方 setup 都已完成；template owner beforeEach 不能依赖尚未执行的第二 owner beforeEach，后续 owner则可以依赖前序的本次结果。
@@ -197,8 +197,8 @@ active template 的 factory 同时选择 Provider；它可以来自 Eval，也�
 fingerprint 只能在 Provider 只读 physical / network planning 完成后计算。完整 Attempt identity 包含：
 
 - active SandboxTemplate identity 与 templateOwner；
-- Provider planner revision、BuildKey、CaseKey 与原生产物 locator；
-- 解析后的 ownerOrder；
+- Provider planner revision、BuildKey、CaseKey 与 Provider-native 起点 locator；
+- 确定的 ownerOrder；
 - Experiment recipe identity，经 configHash 进入；
 - Eval recipe identity，经逐 Eval fingerprint 进入；
 - Agent identity、安装模式与 staged payload identity；
@@ -210,8 +210,8 @@ fingerprint 只能在 Provider 只读 physical / network planning 完成后计�
 (CaseKey, templateOwner, ownerOrder, caseScopeRecipeIdentity)
 ```
 
-`caseScopeRecipeIdentity` 覆盖两方 setup/teardown 的声明源、配置与顺序，避免不同窗口条件共享同一个 reset anchor。
-beforeEach/afterEach 的 identity 进入 Attempt fingerprint，但不进入 pool key；因此同一兼容窗口可按当前 Eval 执行不同的 Attempt command。
+`caseScopeRecipeIdentity` 涵盖两方 setup/teardown 的声明源、配置与顺序，避免不同复用周期条件共享同一个 reset anchor。
+beforeEach/afterEach 的 identity 进入 Attempt fingerprint，但不进入 pool key；因此同一兼容复用周期可按当前 Eval 执行不同的 Attempt command。
 
 ```text
 windowStackIdentity = hash(owner + phase + ordinal + commandIdentity
@@ -226,9 +226,9 @@ attemptFingerprint = hash(template physical identity + templateOwner
                           + Eval + Experiment + Agent + input identities)
 ```
 
-`caseScopeRecipeIdentity` 不是第三套独立摘要；它必须精确等于 `windowStackIdentity`。Attempt fingerprint 同时包含 Window 与 Attempt 两套 stack identity，不能只记录本次 beforeEach / afterEach 而漏掉建立 reset anchor 的 setup / teardown。
+`caseScopeRecipeIdentity` 不是第三套独立摘要；它必须精确等于 `windowStackIdentity`。Attempt fingerprint 同时包含 Window 与 Attempt 两套 stack identity，不能只纳入本次 beforeEach / afterEach 而漏掉建立 reset anchor 的 setup / teardown。
 
-`commandIdentity` 只能来自 `command()` / `shell()` 的纯数据效果投影，或 `defineSandboxCommand()` 显式登记的 helper id / revision / effective inputs。直接传入的 callback 无法证明闭包输入，一律 opaque。teardown 必须进入 pool key，因为已打开窗口只能绑定一套确定的最终收尾；beforeEach / afterEach 只进入 Attempt fingerprint。
+`commandIdentity` 只能来自 `command()` / `shell()` 的纯数据效果投影，或 `defineSandboxCommand()` 显式登记的 id / revision / effective inputs。直接传入的 callback 无法证明闭包输入，一律 opaque。teardown 必须进入 pool key，因为已打开的复用周期只能绑定一套确定的最终收尾；beforeEach / afterEach 只进入 Attempt fingerprint。
 
 template 物理实现相同但 owner 不同时，ownerOrder 可能不同，因此 fingerprint 也必须不同。
 Runner 不从 shell 内容推导 Requirement 或软件 identity。任一 phase 出现 opaque command 都令 `carryEligible = false`。
@@ -240,18 +240,18 @@ opaqueWindowSalt = hash(runInvocationId + experimentId + evalId)
 windowStackIdentity = hash(declaredWindowStack + opaqueWindowSalt)
 ```
 
-因此 opaque Window 不会跨 invocation 或 Eval × Experiment pair 命中同一 pool key。opaque Attempt command 不改变 pool key，但仍禁用整条 Attempt 的跨 Run carry。两种情况都在 dry plan 与运行记录显示具体原因。
+因此 opaque Window 不会跨 invocation 或 Eval × Experiment pair 命中同一 pool key。opaque Attempt command 不改变 pool key，但仍禁用整条 Attempt 的跨 Run carry。两种情况都在 dry plan 与运行 Record 显示具体原因。
 
 ## 两种 scope 与复用
 
-fresh 模式中一条 Attempt 恰好拥有一个 Case 窗口，所以 setup/teardown 与 beforeEach/afterEach 都各运行一次。
-复用模式中，两方 setup 在窗口启动时各运行一次，Runner 随后建立 reset anchor；每条 Attempt reset 到该 anchor 后，按 ownerOrder 执行两方 beforeEach。Agent diff 的 workspace baseline 在全部 beforeEach 完成后建立。
+fresh 模式中一条 Attempt 恰好拥有一个 Sandbox 实例，所以 setup/teardown 与 beforeEach/afterEach 都各运行一次。
+复用模式中，两方 setup 在复用周期启动时各运行一次，Runner 随后建立 reset anchor；每条 Attempt reset 到该 anchor 后，按 ownerOrder 执行两方 beforeEach。Agent diff 的 workspace baseline 在全部 beforeEach 完成后建立。
 
-窗口结束时先按逆序执行两方 teardown，再调用 Provider Case finalizer。每条 Attempt 则在 Agent 收尾后按逆序执行 afterEach。
-池只允许复用 `CaseKey`、templateOwner、ownerOrder 与 Window scope identity 都相同的窗口；Attempt scope 可随当前 Eval 改变，并由该 Attempt 自己执行。
+复用周期结束时先按逆序执行两方 teardown，再调用 Provider Case finalizer。每条 Attempt 则在 Agent 收尾后按逆序执行 afterEach。
+池只允许复用 `CaseKey`、templateOwner、ownerOrder 与 Window scope identity 都相同的复用周期；Attempt scope 可随当前 Eval 改变，并由该 Attempt 自己执行。
 
-Provider Case 的 create、ready 与 finalizer 是每 Sandbox 或复用窗口语义。
-绑定资源组寿命的日志、service watcher 与清理不进入普通 recipe setup/teardown。
+Provider Case 的 create、ready 与 finalizer 是每 Sandbox 实例或复用周期语义。
+绑定主 Sandbox 与伴随资源寿命的日志、service watcher 与 cleanup 不进入普通 recipe setup/teardown。
 
 ## State 与 Agent
 
@@ -267,15 +267,15 @@ AgentProvisioner 保留平台探测、宿主侧 prepare、staged payload、安�
 
 作者只能让恰好一侧改用已经包含所需条件的完整 template，另一侧保留 command-only recipe，并通过 Experiment selector 形成合法 pair。预装仍不吞掉运行时检查：template owner 与另一 owner 的 setup / beforeEach 都照常执行。
 
-## 记录与 dry plan
+## 运行 Record 与 dry plan
 
 `--dry` 对每条 Eval 展示唯一 template 的 factory / identity / source、templateOwner、由它选出的 Provider、Planned Case 分支、ownerOrder，以及按 Window/Attempt scope 分组的 command 与执行频次。
 
-运行记录保存同一形状，再附每个 owner command 的 scope、activity、facts、耗时与失败 phase。
+运行 Record 保存同一形状，再附每个 owner command 的 scope、activity、facts、耗时与失败 phase。
 
 `runCommand` / `runShell` 使用 checked 语义：非零退出的 exit code、stdout / stderr 证据照常落盘，并立即成为当前 phase 的失败。`tryCommand` / `tryShell` 保存同样的执行证据和显式 try 模式，但仅把非零 exit 结果交给 callback 判断，并把证据标为 `accepted` / `handled`，不污染 failed-command 判据。timeout、cancel 与 transport failure 仍然抛出；try 不会隐藏 command、从 identity 中删除它，或吞掉 callback 随后抛出的错误。
 
-Window scope command 的证据和诊断归 RunningSandboxCase / 复用窗口记录，所有借用它的 Attempt 引用该记录；Attempt scope command 则归当前 Attempt。Runner 不把窗口 setup 或窗口末尾 teardown 虚构成某一条 Attempt 的 hook。
+Window scope command 的证据和诊断归 RunningSandboxCase / 复用周期 Record，所有借用它的 Attempt 引用该 Record；Attempt scope command 则归当前 Attempt。Runner 不把复用周期 setup 或复用周期末尾 teardown 虚构成某一条 Attempt 的 hook。
 
 动态本地上传与 Agent 可见 closure 继续执行泄漏比对。
 首次运行只能事后拒绝泄漏结果；需要保密时仍使用物理隔离或 filtered context。
@@ -290,13 +290,13 @@ Window scope command 的证据和诊断归 RunningSandboxCase / 复用窗口记�
 | selector 匹配零 Eval | 配置错误；除非显式 `allowEmpty`，零 Sandbox 创建 |
 | Provider 目标平台不可用，或 Planned Case 缺少 Agent 所需 capability | physical planning 聚合错误，Adapter 不得暗换 template，零 Sandbox 创建 |
 | Compose / Dockerfile / workspaceService、image、E2B template 或 snapshot locator 无效 | physical planning 聚合错误，零 Sandbox 创建 |
-| build、start、ready 或资源组失效 | Attempt `errored`，归 Sandbox Case |
-| Eval / Experiment recipe setup | 当前窗口不可用，归 `sandbox.setup.eval` / `sandbox.setup.experiment` |
+| build、start、ready 或主 Sandbox 及伴随资源失效 | Attempt `errored`，归 Sandbox 实例 |
+| Eval / Experiment recipe setup | 当前复用周期不可用，归 `sandbox.setup.eval` / `sandbox.setup.experiment` |
 | Eval / Experiment recipe beforeEach | 当前 Attempt `errored`，归 `sandbox.beforeEach.eval` / `sandbox.beforeEach.experiment` |
 | Agent Ensure 或 setup | Attempt `errored`，归 `agent.setup` |
 | State load/save | Attempt `errored`，归独立 state phase |
-| afterEach / teardown | 保留原始结果并记录对应 cleanup phase 诊断 |
+| afterEach / teardown | 保留原始结果并写入对应 cleanup phase 诊断 |
 | 动态泄漏比对 | Attempt `errored`，不接受 verdict |
 
 任一 setup 失败后不再进入后续 owner，也不开始任何 Attempt；Runner 按已进入 owner 的逆序执行 teardown，最后始终调用 Provider Case finalizer。
-beforeEach 失败时 Agent 不开始执行；Runner 对已进入的 Attempt scope 执行逆序 afterEach，并在允许再次借出窗口前验证或恢复 reset 边界。cleanup 诊断不覆盖原始错误。
+beforeEach 失败时 Agent 不开始执行；Runner 对已进入的 Attempt scope 执行逆序 afterEach，并在允许再次借出复用周期前验证或恢复 reset 边界。cleanup 诊断不取代原始错误。

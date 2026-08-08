@@ -26,7 +26,7 @@ const agent = openCodeAgent({
 - 续轮用 `--session <id>`；`t.newSession()` 后不传旧 id，开新会话线。
 
 鉴权与 provider 写进项目级 `opencode.json`（沙箱内），不继承宿主机配置。
- secret 走环境变量，不写进配置文件。
+ secret 走 env var，不写进配置文件。
 
 ## 行为轨与会话
 
@@ -38,7 +38,7 @@ stdout 拿不到完整工具轨迹时，Adapter 用 `opencode export <sessionID>
 Skills 落到 `.agents/skills/<name>/`，并写发现指引进 `AGENTS.md`。
  OpenCode 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
-## 预制环境
+## Prebuilt environment
 
 Adapter 的必填 ensure 用 PATH 上 `opencode` 的精确版本作 探测；预装命中即快速返回，未命中时由 identity 匹配的 Installer 安装锁定版本并复检。
  NiceEval 公共镜像 `niceeval/opencode`（`NICEEVAL_OPENCODE_DOCKER_IMAGE`）把 CLI 烘焙进 `/usr/local/bin`。

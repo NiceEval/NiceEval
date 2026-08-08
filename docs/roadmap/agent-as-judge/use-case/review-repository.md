@@ -7,7 +7,7 @@
 
 ## 全流程
 
-Experiment 使用一个 Sandbox Agent 完成任务，并为 Agent Judge 声明另一套独立运行环境。
+Experiment 使用一个 Sandbox Agent 完成任务，并为 Agent Judge 声明另一套独立运行条件。
 
 ```ts
 // experiments/coding.ts
@@ -59,7 +59,7 @@ export default defineEval({
 });
 ```
 
-Runner 封口被测 send 窗口后捕获 workdir，再把副本导入全新的裁判 Sandbox。
+Runner 封口被测 send 区间后捕获 workdir，再把副本导入全新的裁判 Sandbox。
 裁判可以运行测试并修改自己的副本；原 workdir、被测 diff 与被测 Sandbox 的 retention policy 保持不变。
 
 裁判返回的 evidence 可以引用 `src/session.ts:88`、测试文件和具体命令结果。
@@ -69,4 +69,4 @@ Runner 封口被测 send 窗口后捕获 workdir，再把副本导入全新的�
 
 - `workspace: "snapshot"` 的合法组合见 [Library · 默认材料与工作区](../library.md#默认材料与工作区)。
 - 文件树复制规则见 [Architecture · workdir 快照](../architecture.md#workdir-快照)。
-- 创建、导入与清理顺序见 [Lifecycle · Sandbox Agent Judge](../lifecycle.md#sandbox-agent-judge)。
+- 创建、导入与回收顺序见 [Lifecycle · Sandbox Agent Judge](../lifecycle.md#sandbox-agent-judge)。

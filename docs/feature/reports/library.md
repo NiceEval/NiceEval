@@ -159,7 +159,7 @@ export default defineReport({
 ## 输入就是 Sample
 
 宿主先完成 `--record`、`--exp` 与 Eval 位置参数的范围选择，再把同一份当前 Sample 传给被请求的 sample page render。
-携带来源不改变成员资格；报告文件也不能根据运行期选择计划或来源再造第二套当前结果集。
+Attempt 是否携带不改变成员资格；报告文件也不能按运行期选择计划或携带出处再造第二套当前结果集。
 
 作者继续使用 Sample 已有转换：
 
@@ -186,7 +186,7 @@ const top50 = failures.attempts
 ```
 
 聚合函数收 Sample，不收随手过滤的 `AttemptHandle[]`。
-这样覆盖分母、历史口径与去重事实不会在普通数组操作中丢失。
+这样 coverage 分母、历史口径与去重事实不会在普通数组操作中丢失。
 
 一组图共享范围时，先产生一个具名 Sample 值，再把它交给每次计算：
 
@@ -244,7 +244,7 @@ const attemptCostUSD:
   (result: EvalResult) => number | null;
 ```
 
-官方分组的事实来源固定：
+官方分组固定读取以下事实：
 
 | 分组 | 读取 |
 |---|---|
@@ -255,7 +255,7 @@ const attemptCostUSD:
 分组函数是普通同步函数。
 官方函数与用户函数没有不同的类型或执行入口。
 分组函数拿不到 AttemptHandle：分组因此不可能把同一道题的 attempts 切进两个组，题级折叠的边界由类型保护。
-零 attempt 的 Eval 仍有确定的锚点 Run，因此「按 agent 分到哪一行」有唯一答案。
+零 attempt 的 Eval 仍有确定的参照 Run，因此「按 agent 分到哪一行」有唯一答案。
 
 计算函数由公开的 `rollup()` 产生。
 它描述“一条 Attempt 怎样取值”，并让组合器负责题内与跨题聚合。
@@ -356,7 +356,7 @@ export const changedLines = rollup(
 
 ### samples / total 的口径
 
-`rollup()` 产物的 samples、total 与 refs 用一组算例锁定。
+`rollup()` 输出的 samples、total 与 refs 用一组算例锁定。
 范围内有三道 Eval：`a` 有三个 attempt，题内值 `[1, 0, null]`；`b` 有一个 attempt，题内值 `[1]`；`c` 在题集内但一个 attempt 都没跑。
 
 | withinEval / acrossEvals | 题级值 | value | samples / total |
@@ -441,7 +441,7 @@ interface MetricValue {
 Calculation 只作为 `aggregate()` 的 value 传入。
 `basis` 命名 samples / total 的计数单位，终值就是在这个粒度上得出的统计量；`refs` 与 basis 无关，恒为 Attempt locator——它是证据链，不承担分母。
 
-`rollup()` 的产物固定 `basis: "eval"`，计数单位是题级单元：samples 数至少有一个非 null 题内值的单元，total 数组内全部单元，含一个 attempt 都没跑到的 coverage 缺口。
+`rollup()` 的输出固定 `basis: "eval"`，计数单位是题级单元：samples 数至少有一个非 null 题内值的单元，total 数组内全部单元，含一个 attempt 都没跑到的 coverage 缺口。
 用户不手工拼 MetricValue。
 MetricValue 不预生成本地化 display；text 与 web renderer 使用同一份 `value + format` 按当前 locale 格式化。
 
@@ -507,7 +507,7 @@ const ranked = performance.toSorted(
 - 题级值再跨单元折成终值。
 - 预期缺数据返回 `value: null`。
 - coverage 缺口不进终值、不冒充零，但计入 total。
-- `refs` 覆盖非空与空值 Attempt。
+- `refs` 同时含非空与空值的 Attempt。
 - 相同输入产生确定顺序与字节稳定结果。
 
 AggregateRow 同时是 EvidenceRow。
@@ -783,7 +783,7 @@ function AttemptList({ attempts }: AttemptListProps) {
 <Table rows={performance} />
 ```
 
-覆盖列时使用普通数组：
+自定义列时使用普通数组：
 
 ```tsx
 <Table
@@ -884,7 +884,7 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 
 - 默认路径在运行时结构校验 refs 与 MetricValue，无证据的行直接报错。
 - `external: true` 是对证据契约的显式退出，不是另一种校验。
-- NiceEval 不验证 external 行的数据真实来源。
+- NiceEval 不验证 external 行数据的出处。
 - `external` 这个词在源码与 review 里可搜索。
 
 结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，把 Sample 派生数字标成 external 因此只受审查约束，与伪造读数同责。

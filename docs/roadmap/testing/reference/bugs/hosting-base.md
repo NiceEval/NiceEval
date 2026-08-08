@@ -1,4 +1,4 @@
-# Bug 组：静态产物必须在真实 URL 基底下闭合
+# Bug 组：静态站点必须在真实 URL 基底下闭合
 
 这一组用 attempt 链接在无尾斜杠子路径下 404 作正例，用 artifact fetch 的同形 404 作反证。
 它完全复用设计已有的 `hosting: "clean-url-subpath"`、真实浏览器和领域下钻，不新增原语。
@@ -32,19 +32,19 @@ reportBehavior(cleanUrlSubpathKeepsTargetsAndArtifactsReachable, async () => {
 ## 同形反证：文件存在，artifact URL 仍错
 
 fix commit `f3dcb393` 处理过相同托管形态下的 source / trace fetch。
-导出目录中文件完整，前端却把 `artifact/<rel>` 解析到父目录，页面误报“部署缺 artifact”。
+导出目录中文件完整，前端却把 `artifact/<rel>` 定位到父目录，页面误报“部署缺 artifact”。
 
 该 fix 加了 URL 纯函数单测，却没有真实 clean-url 托管。
-上面的一个浏览器 proof 同时覆盖两条旧 bug：dialog 不开时停在 target 下钻；dialog 开但 source 缺失时停在 artifact 内容。
+上面的一个浏览器 proof 同时守护两条旧 bug：dialog 不开时停在 target 下钻；dialog 开但 source 缺失时停在 artifact 内容。
 这证明 hosting 是 world 形态，不应分别给链接和 fetch 写两个 URL matcher。
 
 ## 六项检查
 
-| 检查 | 结论 |
+| 检查 | 判断 |
 |---|---|
 | 契约不变不误红 | 断 locator、dialog 与公开 source 身份，不锁 base 标签实现 |
 | 不能改断言放行 | hosting recipe 固定无尾斜杠入口与 308 行为，不能换成本地 `/` |
 | 观察失败显式报错 | 链接缺失、点击后 dialog 缺失、artifact 请求失败分阶段报告 |
 | 用户侧直接定位 | 消息含入口 URL、最终请求 URL、HTTP 状态、locator 与截图 |
-| 设施不造假 | server 真实模拟 cleanUrls；浏览器启用 JS；同目录产物不改写 |
-| 用户已有用法不改 | 同一份 `view --out` 产物和公开 locator 链接 |
+| 设施不造假 | server 真实模拟 cleanUrls；浏览器启用 JS；同目录输出不改写 |
+| 用户已有用法不改 | 同一份 `view --out` 输出和公开 locator 链接 |

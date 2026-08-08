@@ -1,15 +1,15 @@
-# 实验与评估环境都较重
+# 实验与评估 Sandbox 都较重
 
-返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C3](../../CASES.md#c3评估与实验环境都较重)。
+返回 [PLAN-1 用例手册](README.md)。场景定义见根 [CASES · C3](../../CASES.md#c3评估与实验-sandbox-都较重)。
 
 ## 项目形态
 
 每道 Eval 有自己的 Compose,不同 Experiment 又要增加不同工具。
-例如 241 道 terminal-bench 题各自构建任务环境,记忆实验还要安装 mempal,普通对照实验则不安装。
+例如 241 道 terminal-bench 题各自构建任务 Sandbox,记忆实验还要安装 mempal,普通对照实验则不安装。
 
 两条变化轴分别声明,不构建「241 道题 × 每个实验变体」的组合 template。
 
-## Eval 声明题目环境
+## Eval 声明题目 Sandbox
 
 ```typescript
 export default defineEval({
@@ -78,9 +78,9 @@ prepare 在第一次 inspect miss 后启动。
 
 ## 两种缓存互相独立
 
-- BuildKey 复用题目 Environment 的构建产物。
+- BuildKey 复用题目 Environment 的构建输出。
 - Provision prepare 复用宿主侧 payload。
-- 预制环境可以让 Provision inspect 直接命中。
+- 预构建 Sandbox 可以让 Provision inspect 直接命中。
 
 `sandboxReuse` 不能让不同 EnvironmentKey 共用一个实例,也不是消除组合矩阵的前提。
 只有同一个 Environment 的多个 Attempt 本来就允许共享 workdir 外状态时,才使用 Sandbox 复用。

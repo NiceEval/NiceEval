@@ -1,6 +1,6 @@
 # PLAN-2：Library
 
-本篇是 PLAN-2 公开调用形状的单一来源。
+本篇是 PLAN-2 公开调用形状的单一出处。
 方案取舍见 [README](README.md)，运行和身份语义见 [Architecture](architecture.md)，完整场景见 [Use Cases](use-case/README.md)。
 
 ## template 声明
@@ -41,7 +41,7 @@ dockerSandbox({
 `templates` 的 key 是 environment profile，值是该 Provider 的原生起点引用。
 它替换同 profile 的 folder-local environment，不建立第二种安装机制。
 
-三种声明只竞争一个槽位，精确优先级见 [Architecture](architecture.md#template-解析)。
+三种声明只竞争一个槽位，精确优先级见 [Architecture](architecture.md#template-读取)。
 
 ## `defineLayer`
 
@@ -103,8 +103,8 @@ interface LayerContext<I extends LayerIdentity> {
 }
 ```
 
-`name` 在一条解析后的 Attempt 内唯一。
-`identity` 必须覆盖版本、安装脚本与其它会改变安装结果的输入；函数体本身不参与哈希。
+`name` 在一条读取后的 Attempt 内唯一。
+`identity` 必须涵盖版本、安装脚本与其它会改变安装结果的输入；函数体本身不参与哈希。
 
 省略 `inspect` 时，框架读取受管 manifest 并比较其中的 `{ name, identity }`。
 安装成功后框架把同一形状写入 manifest。

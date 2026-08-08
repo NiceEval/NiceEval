@@ -21,7 +21,7 @@ async send(input, ctx) {
 
 不要自己判断是不是新会话：新 session 的 `ctx.session.id` 自然是 undefined。
 
-## 客户端重放历史
+## 客户端重发历史
 
 无状态服务要求每轮发送完整消息数组时：
 
