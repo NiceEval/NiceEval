@@ -49,7 +49,7 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 ```ts
 const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件。");
 turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }, { name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
-turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
+turn.toolInputsExclude({ paths: [".niceeval"] }).gate();
 turn.succeeded().gate();
 t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
 t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", afterIncludes: "runtime:python" }).points(2).gate();
@@ -60,6 +60,7 @@ turn.judge.llm({ name: "根因、范围与版本策略", rubric: candidateVersio
 
 三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
 A 的可得分总数固定为 `3 + 2 + 3 + 6 + 4 = 18`。
+其中 observed-input gate 只覆盖题面明示禁止直接读取的 `.niceeval`；它不把读取 `evals` 或 `agents` 变成隐藏失败条件。
 
 `changedPaths()` 只证明 agent 归因路径集合恰好一项。
 `fileChanged()` 证明同一条 change 的 before 含 `runtime:node`、after 含 `runtime:python`；两者都不声称文件只改了这一个 token。
