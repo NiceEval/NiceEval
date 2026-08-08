@@ -121,6 +121,7 @@ function collectRepoIds(repoIds: readonly string[]): string[] {
  */
 export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOptions): DiscoveredRepo[] {
   const repoIds = collectRepoIds(options.repoIds ?? []);
+  let explicitlyRequested: readonly DiscoveredRepo[] = [];
   if (repoIds.length > 0) {
     const knownIds = new Set(all.map((repo) => repo.manifest.id));
     const missing = repoIds.filter((id) => !knownIds.has(id));
@@ -128,6 +129,21 @@ export function selectRepos(all: readonly DiscoveredRepo[], options: SelectionOp
       const known = all.map((repo) => repo.manifest.id).join(", ") || "(none discovered)";
       throw new Error(`--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${known}`);
     }
+    const requested = new Set(repoIds);
+    explicitlyRequested = all.filter((repo) => requested.has(repo.manifest.id));
+  }
+
+  if (
+    options.lane !== undefined &&
+    explicitlyRequested.length > 0 &&
+    !explicitlyRequested.some((repo) => repo.manifest.lanes.includes(options.lane))
+  ) {
+    const available = explicitlyRequested
+      .map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`)
+      .join("; ");
+    throw new Error(
+      `--repo selection is unavailable in lane ${JSON.stringify(options.lane)}. Available lanes: ${available}`,
+    );
   }
 
   const requestedIds = repoIds.length > 0 ? new Set(repoIds) : undefined;

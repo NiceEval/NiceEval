@@ -5,12 +5,12 @@
 //
 // Harness pre-flight (prepare stage): scenario source package.json/lockfile
 // must not contain @niceeval/testkit, `workspace:` or `file:` references; a
-// repo declaring harness.testkit: true must receive the injected tgz; a repo
-// that does not declare it must not import @niceeval/testkit. All three fail
-// before any install or test. Injection only ever adds the content-addressed
-// tgz as a `file:` devDependency inside the isolated copy; after install the
-// lockfile must hold exactly one Testkit resolution whose SRI matches the
-// injected bytes, and the installed package name/path must verify.
+// repo declaring harness.testkit: true receives the clean-built checkout
+// directory, while an undeclared repo must not import it. Injection adds an
+// absolute `file:` directory devDependency only inside the isolated copy.
+// After install the lockfile must hold exactly one directory resolution and
+// the installed package must live in that copy's pnpm virtual store, never as
+// a link back to the checkout.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -19,17 +19,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import type { DiscoveredRepo } from "./discovery.ts";
-import type { CandidateTarball, TestkitTarball } from "./injection.ts";
-import {
-  verifyInjection,
-  verifyTestkitLockResolution,
-} from "./injection.ts";
+import type { CandidateTarball } from "./injection.ts";
+import { verifyInjection } from "./injection.ts";
 import {
   checkTestkitSourceClean,
-  injectTestkitTarball,
-  materializeTestkitArtifact,
+  injectTestkitDirectory,
   scanForTestkitImports,
-  testkitInstallPath,
+  verifyInstalledTestkit,
+  verifyTestkitDirectoryResolution,
+  type TestkitPackage,
 } from "./testkit.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
@@ -121,51 +119,28 @@ export async function pointAtCandidateTarball(copyDir: string, tarballPath: stri
 }
 
 /**
- * Verify candidate (and, for declared consumers, testkit) actually resolved
- * to the tarballs from the isolated copy's own lockfile and node_modules. Any
- * mismatch is a harness failure: never run an unproven product package, and
- * never silently run a testkit that is not the injected artifact.
- *
- * Testkit verification covers the full post-install identity set: exactly one
- * lock resolution whose SRI matches the injected bytes, the entry key's
- * package name, and the actually installed package's name/path.
+ * Verify the candidate tarball and the optional Testkit directory resolution
+ * from the isolated copy's own lockfile and node_modules.
  */
 function verifyAllInjections(
   lockfileText: string,
   candidate: CandidateTarball,
-  testkit: TestkitTarball | undefined,
+  testkit: TestkitPackage | undefined,
   copyDir: string,
-): { ok: true; testkitDetail?: string } | { ok: false; reason: string } {
+): { ok: true; testkitDetail?: string; testkitResolvedPath?: string } | { ok: false; reason: string } {
   const candidateVerdict = verifyInjection(lockfileText, candidate.integrity);
   if (!candidateVerdict.ok) return { ok: false, reason: candidateVerdict.reason };
   if (testkit === undefined) return { ok: true };
 
-  const verdict = verifyTestkitLockResolution(lockfileText, testkit.integrity);
-  if (!verdict.ok) return { ok: false, reason: verdict.reason };
-
-  const installedPkgJson = join(testkitInstallPath(copyDir), "package.json");
-  if (!existsSync(installedPkgJson)) {
-    return {
-      ok: false,
-      reason: `installed testkit metadata missing at ${installedPkgJson} — @niceeval/testkit did not actually install`,
-    };
-  }
-  let installedName: unknown;
-  try {
-    installedName = (JSON.parse(readFileSync(installedPkgJson, "utf8")) as { name?: unknown }).name;
-  } catch (err) {
-    return { ok: false, reason: `installed testkit package.json is unreadable: ${(err as Error).message}` };
-  }
-  if (installedName !== "@niceeval/testkit") {
-    return {
-      ok: false,
-      reason: `installed package at ${installedPkgJson} has name ${JSON.stringify(installedName)}, expected "@niceeval/testkit"`,
-    };
-  }
+  const lockVerdict = verifyTestkitDirectoryResolution(lockfileText, testkit.path, copyDir);
+  if (!lockVerdict.ok) return { ok: false, reason: lockVerdict.reason };
+  const installedVerdict = verifyInstalledTestkit(copyDir, testkit);
+  if (!installedVerdict.ok) return { ok: false, reason: installedVerdict.reason };
 
   return {
     ok: true,
-    testkitDetail: `testkit tarball (@niceeval/testkit@${testkit.version}, sha256:${testkit.sha256}) integrity matches lockfile; installed name/path verified at ${testkitInstallPath(copyDir)}`,
+    testkitDetail: `workspace testkit (@niceeval/testkit@${testkit.version}) has one directory resolution; isolated realpath verified at ${installedVerdict.realPath}`,
+    testkitResolvedPath: relative(copyDir, installedVerdict.installedPath),
   };
 }
 
@@ -240,7 +215,7 @@ export async function runRepo(
   artifactRoot: string,
   allSecretNames: ReadonlySet<string>,
   nativeArgs: readonly string[],
-  testkit?: TestkitTarball,
+  testkit?: TestkitPackage,
 ): Promise<RepoRunResult> {
   const repoId = repo.manifest.id;
   const copyDir = join(scratchRoot, "runs", repoId);
@@ -250,8 +225,8 @@ export async function runRepo(
   let testExitCode: number | null = null;
   let copyCreated = false;
   let testkitInjected = false;
+  let testkitResolvedPath: string | undefined;
   let durableCandidatePath = candidate.path;
-  let durableTestkit: TestkitTarball | undefined;
 
   try {
     durableCandidatePath = await materializeCandidateArtifact(artifactRoot, candidate);
@@ -267,7 +242,7 @@ export async function runRepo(
       const prepareViolations = checkTestkitSourceClean(copyDir);
       if (consumesTestkit && testkit === undefined) {
         prepareViolations.push(
-          "harness.testkit: true declared but no testkit tarball was injected (missing --testkit) — declared-but-not-injected must fail before test",
+          "harness.testkit: true declared but the workspace Testkit was not built — declared-but-not-injected must fail before test",
         );
       }
       if (!consumesTestkit) {
@@ -292,11 +267,7 @@ export async function runRepo(
       if (prepareOk) {
         await pointAtCandidateTarball(copyDir, durableCandidatePath);
         if (consumesTestkit) {
-          const durable = await materializeTestkitArtifact(artifactRoot, testkit as TestkitTarball);
-          // Keep the caller's expected SRI for the post-install verification;
-          // only its path changes to the durable byte copy.
-          durableTestkit = { ...(testkit as TestkitTarball), path: durable.path };
-          await injectTestkitTarball(copyDir, durableTestkit);
+          await injectTestkitDirectory(copyDir, testkit as TestkitPackage);
           testkitInjected = true;
         }
 
@@ -328,7 +299,7 @@ export async function runRepo(
         });
 
         if (installOk) {
-          // --- injection (lockfile integrity + installed identity; never .niceeval) ---
+          // --- injection: candidate bytes plus optional Testkit directory ---
           let injectionOk = false;
           let injectionDetail: string;
           try {
@@ -340,10 +311,11 @@ export async function runRepo(
               const verdict = verifyAllInjections(
                 lockText,
                 candidate,
-                testkitInjected ? durableTestkit : undefined,
+                testkitInjected ? testkit : undefined,
                 copyDir,
               );
               injectionOk = verdict.ok;
+              if (verdict.ok) testkitResolvedPath = verdict.testkitResolvedPath;
               injectionDetail = verdict.ok
                 ? testkitInjected
                   ? `candidate integrity matches lockfile; ${verdict.testkitDetail}`
@@ -356,62 +328,62 @@ export async function runRepo(
           }
           stages.push({ stage: "injection", ok: injectionOk, detail: injectionDetail });
 
-          // Never run an unproven candidate: skip test (and collect) when injection fails.
+          // Never run an unproven candidate: skip test and collection on failure.
           if (injectionOk) {
-          // --- test ---
-          const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
-          const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
-          const testCmd = appendNativeArgs(repo.manifest.command, nativeArgs);
-          let testCapture: CommandCapture;
-          try {
-            testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs);
-          } catch (err) {
-            testCapture = {
-              exitCode: null,
-              signal: null,
-              timedOut: false,
-              stdout: "",
-              stderr: (err as Error).message,
-            };
-          }
-          testExitCode = testCapture.exitCode;
-          const testOk = testCapture.exitCode === 0 && !testCapture.timedOut;
-          stages.push({
-            stage: "test",
-            ok: testOk,
-            command: testCmd,
-            capture: retainCapture(testCapture, testOk),
-            detail: testCapture.timedOut
-              ? "exceeded e2e.json timeoutMinutes; process killed"
-              : testOk
-                ? "command exited 0"
-                : `exit ${testCapture.exitCode}`,
-          });
+            // --- test ---
+            const childEnv = buildChildEnv(process.env, allSecretNames, repo.manifest.secrets);
+            const timeoutMs = repo.manifest.timeoutMinutes * 60_000;
+            const testCmd = appendNativeArgs(repo.manifest.command, nativeArgs);
+            let testCapture: CommandCapture;
+            try {
+              testCapture = await runCommand(testCmd, copyDir, childEnv, timeoutMs);
+            } catch (err) {
+              testCapture = {
+                exitCode: null,
+                signal: null,
+                timedOut: false,
+                stdout: "",
+                stderr: (err as Error).message,
+              };
+            }
+            testExitCode = testCapture.exitCode;
+            const testOk = testCapture.exitCode === 0 && !testCapture.timedOut;
+            stages.push({
+              stage: "test",
+              ok: testOk,
+              command: testCmd,
+              capture: retainCapture(testCapture, testOk),
+              detail: testCapture.timedOut
+                ? "exceeded e2e.json timeoutMinutes; process killed"
+                : testOk
+                  ? "command exited 0"
+                  : `exit ${testCapture.exitCode}`,
+            });
 
-          // --- collect into durable artifactRoot only (never source, never scratch) ---
-          try {
-            const { collected, warnings } = await collectArtifacts(
-              copyDir,
-              artifactDir,
-              repo.manifest.artifacts,
-            );
-            for (const w of warnings) console.warn(`[e2e] ${w}`);
-            stages.push({
-              stage: "collect",
-              ok: true,
-              collected,
-              detail:
-                collected.length > 0
-                  ? `wrote ${collected.length} artifact path(s) under ${artifactDir}`
-                  : `no artifacts matched under ${artifactDir}`,
-            });
-          } catch (err) {
-            stages.push({
-              stage: "collect",
-              ok: false,
-              detail: `collect failed: ${(err as Error).message}`,
-            });
-          }
+            // --- collect into durable artifactRoot only (never source or scratch) ---
+            try {
+              const { collected, warnings } = await collectArtifacts(
+                copyDir,
+                artifactDir,
+                repo.manifest.artifacts,
+              );
+              for (const warning of warnings) console.warn(`[e2e] ${warning}`);
+              stages.push({
+                stage: "collect",
+                ok: true,
+                collected,
+                detail:
+                  collected.length > 0
+                    ? `wrote ${collected.length} artifact path(s) under ${artifactDir}`
+                    : `no artifacts matched under ${artifactDir}`,
+              });
+            } catch (err) {
+              stages.push({
+                stage: "collect",
+                ok: false,
+                detail: `collect failed: ${(err as Error).message}`,
+              });
+            }
           }
         }
       }
@@ -452,16 +424,11 @@ export async function runRepo(
   const classified = classifyFromReceipt({ stages, detail: "" });
   const candidateRetained = isRetainedArtifact(artifactRoot, durableCandidatePath);
   const testkitReceipt: TestkitReceipt | undefined =
-    testkitInjected && durableTestkit !== undefined
+    testkitInjected && testkit !== undefined && testkitResolvedPath !== undefined
       ? {
-          version: durableTestkit.version,
-          sha256: durableTestkit.sha256,
-          integrity: durableTestkit.integrity,
-          resolvedPath: testkitInstallPath(copyDir),
-          artifactPath: relative(artifactRoot, durableTestkit.path),
-          candidateArtifactPath: relative(artifactRoot, durableCandidatePath),
-          reproduce: `pnpm e2e run --candidate ${durableCandidatePath} --testkit ${durableTestkit.path} --repo ${repoId}`,
-          exactReplay: candidateRetained && isRetainedArtifact(artifactRoot, durableTestkit.path),
+          version: testkit.version,
+          sourcePath: testkit.sourcePath,
+          resolvedPath: testkitResolvedPath,
         }
       : undefined;
   const receipt: RepoReceipt = {
@@ -476,6 +443,8 @@ export async function runRepo(
       sha256: candidate.sha256,
       integrity: candidate.integrity,
       ...(candidateRetained ? { artifactPath: relative(artifactRoot, durableCandidatePath) } : {}),
+      reproduce: `pnpm e2e run --candidate ${durableCandidatePath} --repo ${repoId}`,
+      exactReplay: candidateRetained,
     },
     ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
   };

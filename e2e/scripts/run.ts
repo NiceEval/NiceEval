@@ -13,13 +13,10 @@
 // regression; this runner does not guess infrastructure from a numeric exit
 // code. Non-host executors are rejected as unsupported.
 //
-// An explicit `--testkit <exact-tgz>` is reserved for CI / exact replay and
-// NEVER triggers a repack: the given tarball is identity + sha256 verified,
-// materialized under artifactRoot/testkit/niceeval-testkit-<sha256>.tgz as
-// the durable artifact, and injected only into repos that declare
-// `harness.testkit: true`. A selected repo declaring it without any testkit
-// tarball fails before any test runs (declared-but-not-injected); repos that
-// do not declare it must not import @niceeval/testkit (prepared per repo).
+// When selected repos declare `harness.testkit: true`, this invocation
+// clean-builds packages/testkit once and injects that checkout directory only
+// into isolated copies. Testkit is private harness code, not a durable or
+// replayable tarball. Repos that do not declare it must not import it.
 //
 // This script must never hardcode SDK names, ports, or expected eval/verdict
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
@@ -30,9 +27,9 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
-import { discoverAllRepos, e2eRootDir } from "./discovery.ts";
-import { readCandidateTarball, readTestkitTarball, type TestkitTarball } from "./injection.ts";
-import { ensureTestkitForHarnessConsumers, materializeTestkitArtifact } from "./testkit.ts";
+import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
+import { readCandidateTarball } from "./injection.ts";
+import { buildTestkitPackage } from "./testkit.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
 import { appendNativeArgs, runRepo, type RepoRunResult } from "./run-repo.ts";
@@ -50,8 +47,6 @@ interface Cli {
   capability?: string;
   diffPaths?: string[];
   candidatePath: string;
-  /** Optional explicit local @niceeval/testkit tarball for local development. */
-  testkitPath?: string;
   artifactRoot: string | undefined;
   nativeArgs: string[];
 }
@@ -68,7 +63,6 @@ export function parseRunCli(argv: readonly string[]): Cli {
     args: [...optionArgs],
     options: {
       candidate: { type: "string" },
-      testkit: { type: "string" },
       repo: { type: "string", multiple: true, default: [] },
       lane: { type: "string" },
       capability: { type: "string" },
@@ -98,7 +92,6 @@ export function parseRunCli(argv: readonly string[]): Cli {
     capability: typeof values.capability === "string" ? values.capability : undefined,
     diffPaths: diffPaths.length > 0 ? diffPaths : undefined,
     candidatePath: values.candidate,
-    testkitPath: typeof values.testkit === "string" && values.testkit.length > 0 ? values.testkit : undefined,
     artifactRoot: typeof values["artifact-root"] === "string"
       ? resolve(values["artifact-root"])
       : undefined,
@@ -180,8 +173,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
   try {
     const cli = parseRunCli(argv);
     const candidate = readCandidateTarball(cli.candidatePath);
-    const testkit: TestkitTarball | undefined =
-      cli.testkitPath !== undefined ? await readTestkitTarball(cli.testkitPath) : undefined;
     scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-scratch-"));
     artifactRoot = cli.artifactRoot ?? mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
     await mkdir(artifactRoot, { recursive: true });
@@ -189,13 +180,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
     console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
-    let durableTestkit: TestkitTarball | undefined;
-    if (testkit !== undefined) {
-      durableTestkit = await materializeTestkitArtifact(artifactRoot, testkit);
-      console.log(`[e2e] testkit tarball: ${testkit.path}`);
-      console.log(`[e2e] testkit fingerprint: ${testkit.integrity} (sha256:${testkit.sha256})`);
-      console.log(`[e2e] durable testkit artifact: ${durableTestkit.path}`);
-    }
 
     const { repos, errors } = discoverAllRepos(e2eRootDir());
     if (errors.length > 0) {
@@ -211,11 +195,11 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       return;
     }
 
-    // Declared-but-not-injected must fail before any test: a harness consumer
-    // without its Testkit would silently run whatever the registry resolves.
-    const harnessErrors = ensureTestkitForHarnessConsumers(selected, durableTestkit);
-    if (harnessErrors.length > 0) {
-      throw new Error(harnessErrors.join("; "));
+    const testkit = selected.some((repo) => repo.manifest.harness?.testkit === true)
+      ? await buildTestkitPackage(repoRootDir())
+      : undefined;
+    if (testkit !== undefined) {
+      console.log(`[e2e] workspace testkit: ${testkit.path} (@niceeval/testkit@${testkit.version})`);
     }
 
     const allSecretNames = new Set<string>();
@@ -231,7 +215,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         artifactRoot,
         allSecretNames,
         cli.nativeArgs,
-        durableTestkit,
+        testkit,
       );
       console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
       console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
