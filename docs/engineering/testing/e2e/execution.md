@@ -112,6 +112,8 @@ backend、container 与 browser 都必须登记 owned handle；`finally` 做有�
 | `workflow_dispatch` | 显式 | 按 environment | 单 Repo / lane 复现 |
 
 Fork 与同仓 PR 使用同一无密钥门禁。禁止用 `pull_request_target` 让 PR 代码接触 secret。
+可信 lane 的 workflow 只能显式引用已登记的 secret 白名单；禁止 `toJSON(secrets)` 或其它全量枚举。
+Repo manifest 声明了白名单外的名称时，在注入前失败，不动态读取其它仓库 secret。
 任何会实际调用付费模型的 live 验收、批量 Adapter 矩阵或整批重跑，都必须先取得用户明确批准；lane 选择与 secret 可用不构成授权。
 
 ## GitHub Actions 形状

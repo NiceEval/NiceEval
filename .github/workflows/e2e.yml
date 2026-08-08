@@ -281,18 +281,41 @@ jobs:
       - name: Inject secrets for trusted lane
         if: needs.prepare.outputs.inject-secrets == 'true'
         env:
-          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
           MANIFEST: e2e/${{ matrix.dir }}/e2e.json
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          BUB_API_BASE: ${{ secrets.BUB_API_BASE }}
+          BUB_API_KEY: ${{ secrets.BUB_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_BASE_URL: ${{ secrets.CODEX_BASE_URL }}
+          NICEEVAL_JUDGE_BASE: ${{ secrets.NICEEVAL_JUDGE_BASE }}
+          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
         run: |
           set -euo pipefail
           node <<'NODE_EOF'
           const fs = require("fs");
-          const all = JSON.parse(process.env.ALL_SECRETS_JSON || "{}");
+          const allowed = new Set([
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_BASE_URL",
+            "BUB_API_BASE",
+            "BUB_API_KEY",
+            "CODEX_API_KEY",
+            "CODEX_BASE_URL",
+            "NICEEVAL_JUDGE_BASE",
+            "NICEEVAL_JUDGE_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+          ]);
           const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
           const lines = [];
           let injected = 0;
           for (const name of manifest.secrets) {
-            const value = all[name];
+            if (!allowed.has(name)) {
+              throw new Error(`${process.env.MANIFEST}: secret ${name} is not in the workflow allowlist`);
+            }
+            const value = process.env[name];
             if (typeof value !== "string" || value.length === 0) continue;
             const marker = `E2E_SECRET_${name}_${Math.random().toString(36).slice(2)}`;
             lines.push(`${name}<<${marker}`, value, marker);
@@ -320,8 +343,8 @@ jobs:
       - name: Redact secrets in artifactRoot
         if: always() && needs.prepare.outputs.inject-secrets == 'true'
         env:
-          ALL_SECRETS_JSON: ${{ needs.prepare.outputs.inject-secrets == 'true' && toJSON(secrets) || '{}' }}
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+          MANIFEST: e2e/${{ matrix.dir }}/e2e.json
         run: |
           set -euo pipefail
           if [ ! -d "$ARTIFACT_ROOT" ]; then
@@ -332,10 +355,10 @@ jobs:
           const fs = require("fs");
           const path = require("path");
           const root = process.env.ARTIFACT_ROOT;
-          const all = JSON.parse(process.env.ALL_SECRETS_JSON || "{}");
-          const replacements = Object.entries(all)
-            .filter(([, value]) => typeof value === "string" && value.length > 0)
-            .map(([name, value]) => ({ name, value }));
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8"));
+          const replacements = manifest.secrets
+            .map((name) => ({ name, value: process.env[name] }))
+            .filter(({ value }) => typeof value === "string" && value.length > 0);
           function walk(dir, files = []) {
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
               const abs = path.join(dir, entry.name);
