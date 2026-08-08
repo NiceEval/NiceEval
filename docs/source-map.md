@@ -121,7 +121,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 值断言匹配器(includes / equals / matches / similarity / satisfies / makeAssertion) | `src/expect/index.ts` |
-| 作用域断言(succeeded / calledTool / event / fileChanged / notInDiff …) | `src/assertions/scoped.ts` |
+| 作用域断言(succeeded / ranCommand / eventOrder / toolInputsExclude / changes …) | `src/assertions/scoped.ts` |
 | 断言收集器(延迟评估 + 链式 gate/soft/atLeast;`.points(n)` 挂在 `RecordHandle` 上——`finalize` 按 `n × score` 写进 `AssertionResult.points`;`AssertionCollector.score(label, n)` 立即写入 `ScoreEntry`,不像断言那样等 finalize 求值) | `src/assertions/collector.ts` |
 | 计分制的前置中止(句柄上的 `.gate()` 使该断言就地求值并进入中止态,下一次 `t.*` 调用或 finalize 抛中止信号;matcher 自带/链上的 severity 只贡献 threshold,不触发中止) | `src/assertions/collector.ts`(`RecordHandle.gate` 的计分制分支、`t.*` 入口的待决前置结算)、`src/context/control-flow.ts`(中止异常) |
 | 计分制题型(`defineEval`/`defineScoreEval` 分别定死 `EvalDefinition.evaluationKind` 为 `"pass"`/`"points"`,禁止手写;`ScoreEvalInput` 的 `test(t)` 换成 `ScoreTestContext`) | `src/define.ts`(工厂函数)、`src/runner/types.ts`(`EvaluationKind`、`EvalDefinition.evaluationKind`、`ScoreEvalInput`、`EvalDescriptor.evaluationKind`) |
@@ -140,7 +140,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 构造 `t`(send / reply / newSession / check / 作用域断言 / judge / sandbox) | `src/context/context.ts` |
 | 会话驱动(多轮 send → agent.send,事件 / 用量累加,newSession) | `src/context/session.ts` |
 | 控制流信号(skip / `.stopOnFailure()` 前置中止；send 执行异常独立走 `SendFailure`) | `src/context/control-flow.ts`、`src/context/send-failures.ts` |
-| `t.sandbox.file(path)` 延迟引用(到 finalize 才读沙箱文件) | `src/context/context.ts`(`FileRef`) |
+| `t.sandbox.file(path)` / `json(path)` 延迟引用(到消费边界才读取、解码或调用 `JSON.parse`) | `src/context/context.ts`(`FileRef`) |
 
 ## Runner / CLI / Experiments([runner.md](runner.md) / [cli.md](cli.md) 架构 / [feature/experiments/](feature/experiments/README.md))
 

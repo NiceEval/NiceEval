@@ -75,6 +75,64 @@ core 为每次 `send` 或 `respond` 创建 `origin: "eval"` 的 user message，�
 Adapter frame 依原顺序接在它之后。
 Adapter 不能产出 `origin: "eval"`，assistant message 也不能带 origin；非法组合是协议错误。
 
+## Command projection
+
+每笔 tool `operation.started` 都携带穷尽的 command classification：
+
+```ts
+type CommandLanguage = "posix-shell" | "powershell" | "cmd" | "unknown";
+
+type CommandProjection =
+  | { readonly kind: "not-command" }
+  | {
+      readonly kind: "command";
+      readonly source:
+        | {
+            readonly state: "available";
+            readonly value: string;
+            readonly language: CommandLanguage;
+          }
+        | {
+            readonly state: "opaque";
+            readonly reason:
+              | "redacted"
+              | "truncated"
+              | "structured-only"
+              | "unsupported";
+          };
+    };
+
+type ToolOperationStarted = {
+  readonly type: "operation.started";
+  readonly operationId: string;
+  readonly operation: {
+    readonly kind: "tool";
+    readonly name: string;
+    readonly input: JsonValue;
+    readonly tool?: ToolName;
+    readonly command: CommandProjection;
+  };
+};
+```
+
+CommandProjection 的 owner 是具体 Adapter。
+它只能根据原生协议的显式、版本化映射分类，不能由 core 根据 canonical tool name 或 input 字段猜测。
+
+`source.state: "available"` 要求原生协议明确提供提交给执行边界的 command source string。
+仅有 argv、`program + args`、SDK display summary 或若干片段时使用 `structured-only` 或 `unsupported`。
+
+Adapter 与 core 都不能把 argv join 成字符串、重新 quote、拆分一笔 occurrence 或合并多笔 occurrence。
+`language` 只解释原始 source，不授权任何 normalization。
+
+`not-command` 表示 Adapter 能确定这笔 tool operation 不是命令。
+Adapter 无法确定 command / not-command 时必须降低 actions coverage，不能用 `not-command` 掩盖未知。
+
+actions 为 complete 时，必须保证全部 action occurrences 已产生，且每笔 tool operation 都有上述分类。
+command source 可以结构化 opaque；这不遗漏 occurrence，但依赖 source 的 Projector 或 Assertion 必须得到 unavailable。
+
+工具 input 若有未交代的截断、redaction 或可能隐藏字符串的 opaque subtree，actions 不能继续宣称 complete。
+这条要求让工具输入的 exact-zero Assertion 不会把未知内容当作空内容。
+
 ## Batch Adapter
 
 不能增量取得原生事件的 Adapter 可以使用 batch 工具。
