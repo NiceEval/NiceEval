@@ -584,7 +584,7 @@ export interface ExperimentListItem {
    */
   missing: readonly SampleMissing[];
   /** 所含快照中最近的 startedAt。 */
-  lastRunAt: string;
+  lastRunAt?: string;
   evalRows: ExperimentListEvalRow[];
 }
 

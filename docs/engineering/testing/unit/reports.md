@@ -364,7 +364,7 @@ const scope = reportScopeFixture({
   - fresh import 让装载入口及其项目内 import 子图失效；改报告文件或它 import 的组件后下一次装载读到新内容。
 - **view 数据装载（ViewScan）**：`loadViewScan` 的数据层语义以返回结构、Map/Set 内容与错误对象为断言面。
   - unreadable 的三种原因如实进 `viewData`（producer 感知的升级提示）。
-  - 报告槽 Sample 是当前结果集口径（与 show 同一 `currentSample`，`composedRuns` 反映跨快照合成）。
+  - 默认项目读面由 `projectCurrentSample(record, target)` 选择当前结果；显式 `--record` / `--run` 的离线读面由 Record-relative selector 选择，`composedRuns` 反映跨快照合成。
   - 跨快照按 attempt 身份键去重；`--resume` 复印件不给证据室索引灌票。
   - 新布局落盘直接可读（写入面 / 读取面同一契约）；零可读结果直说不渲染空页面。
   - `viewData` 只含证据室元信息，不携带统计输出。
@@ -433,7 +433,9 @@ const scope = reportScopeFixture({
 - **show 终端宿主的文案纯函数**：`show` 的纯函数以返回值为断言面，不依赖终端排版。
   `verdictReasonLine` 把多行 `error.message` 收为首行并移除控制字节；完整 message 只在 attempt 详情块展开。
   `showCommand` / `otherPagesText` 按 `HostCommandContext` 生成可复现的页 / 组索引命令，只列未渲染页并携带完整上下文。
-  选择收窄、`--history` 时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归 [E2E 功能域 · 报告与读面](../e2e/report.md)；跨 Run 的当前 Sample 选择与去重语义归[单元测试 Record / Sample](record.md)的 `currentSample()` 类别。
+  选择收窄、`--history` 时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归 [E2E 功能域 · 报告与读面](../e2e/report.md)。
+
+  Project Target 的三层身份选择与 Record-relative head 选择归[单元测试 Record / Sample](record.md)的对应 selector 类别。
 - **o11y 数据派生**：
   - `estimateCost` 对未知 Model 返回 `null`。
     缺少 Usage 时不猜零成本。

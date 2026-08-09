@@ -29,7 +29,7 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 当前范围内没有结果的题进入结构化 `coverage[].missing`，原因明确区分为 `never-run` 或 `previous-result`；范围之外的实验与题不再属于这份 Sample。
 所以一屏上的通过率永远配着一个说得清的当前分母，不会用旧配置判定补数。
 
-跨历史拼题另有前提:`currentSample` 只把 `configHash` 相同的 Run 拼进来。
+跨历史拼题另有前提：`projectCurrentSample` 只把 Run hash、逐 Eval result hash 与 canonical fingerprint 都匹配 Target 的 attempt 拼进来。
 改过 model 或 flags 之后只补跑了一部分题,旧配置那些题不冒充新配置的当前结果,直接进缺口。
 
 ## 两个 `--exp` 是对照,不是并集

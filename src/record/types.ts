@@ -6,7 +6,7 @@
 // 命名约定:Experiment / Run / Eval 是纯数据,不带 Handle 后缀;
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
-import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity, Verdict } from "../types.ts";
+import type { DiagnosticRecord, EvalResult, EvaluationKind, ExperimentRunInfo, JsonValue, LocalizedText, SandboxBuildRecord, TimingActivity, Verdict } from "../types.ts";
 import type { CommandExitEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
@@ -226,14 +226,42 @@ export interface Record {
  * `missing` 永远被算出来,不静默——渲染面把它转成覆盖占位行
  * (见 docs/feature/sample/library.md「选择快照」「时效:新执行与历史执行」)。
  *
- * `run` 是该 Experiment 的锚点 Run:零 attempt 的 Eval 按 agent / model / flags 归组时
- * 读它。`latestRunSample` 锚 latest Run;`currentSample` 锚确定该 Experiment 可比性
- * 配置的 latest Run。锚点不必出现在 `Sample.runs`(全缺口 Experiment 仍有锚点)。
+ * `run` 是 Record-relative selector 的锚点 Run。项目 current 不借历史 Run 填展示身份，
+ * 零 attempt 的 Eval 直接读 `target`。锚点不必出现在 `Sample.runs`。
  */
+export interface ProjectCurrentEvalTarget {
+  id: string;
+  resultConfigHash: string;
+  fingerprint: string;
+  evaluationKind: EvaluationKind;
+}
+
+/** 项目定义与 physical planning 共同给出的 Experiment 当前身份；它不是一份虚构 Run。 */
+export interface ProjectCurrentExperimentTarget {
+  id: string;
+  runConfigHash: string;
+  attempts: number;
+  agent: string;
+  model?: string;
+  reasoningEffort?: string;
+  flags: globalThis.Record<string, JsonValue>;
+  labels?: globalThis.Record<string, string | number>;
+  description?: string;
+  evals: readonly ProjectCurrentEvalTarget[];
+}
+
+/** 项目宿主在一次无派发规划中证明出的当前目标。 */
+export interface ProjectCurrentTarget {
+  plannedAt: string;
+  experiments: readonly ProjectCurrentExperimentTarget[];
+}
+
 export interface SampleCoverage {
   experimentId: string;
-  /** 该 Experiment 的分组锚点 Run(agent / model / experiment 配置的事实来源)。 */
-  run: Run;
+  /** Record-relative Sample 的物理分组锚点。项目 current 不伪造 Run，改读 target。 */
+  run?: Run;
+  /** 项目 current 的权威展示与身份目标。 */
+  target?: ProjectCurrentExperimentTarget;
   /** 分母:本地历史 ∪ 各快照携带的 knownEvalIds,交命令行范围(与 `exp.knownEvalIds` 同源)。 */
   knownEvalIds: string[];
   /** 当前配置下没有物理 Attempt 的题，以及帮助用户决定下一步的缺口原因。 */
@@ -244,7 +272,7 @@ export interface SampleCoverage {
 export interface SampleMissing {
   evalId: string;
   /** 从未有物理 Attempt，或有历史结果但没有一条能代表当前配置。 */
-  reason: "never-run" | "previous-result";
+  reason: "never-run" | "previous-result" | "unverifiable-result";
   /** 最近一条旧结果的审计入口；它不参与当前统计，也不保证一定满足 accept 资格。 */
   previous?: {
     locator: AttemptLocator;
@@ -296,6 +324,15 @@ export type SampleIssue =
       startedAt: string;
       /** 该快照目录的绝对路径。 */
       dir: string;
+    }
+  | {
+      /** 历史 attempt 缺少证明项目 current 所需的身份字段。 */
+      code: "unverifiable-current-result";
+      experimentId: string;
+      evalId: string;
+      attempt: number;
+      locator?: AttemptLocator;
+      missing: readonly ("run-config-hash" | "result-config-hash" | "fingerprint")[];
     }
   | {
       code: "dangling-evidence";

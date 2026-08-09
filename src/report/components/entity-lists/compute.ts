@@ -244,15 +244,22 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
         attempts,
       });
     }
-    const experiment = newest.run.experiment ?? newest.attempt.result.experiment;
-    const model = newest.attempt.result.model ?? newest.run.model;
     const coverageEntry = coverageByExperiment.get(experimentId);
+    const target = coverageEntry?.target;
+    const experiment = newest.run.experiment ?? newest.attempt.result.experiment;
+    const model = target?.model ?? newest.attempt.result.model ?? newest.run.model;
+    const targetKinds = new Set(target?.evals.map((entry) => entry.evaluationKind) ?? []);
+    const targetComposition: EvaluationKindComposition | undefined = targetKinds.size === 0
+      ? undefined
+      : targetKinds.size > 1
+        ? "mixed"
+        : targetKinds.has("points") ? "points" : "pass";
     out.push({
       experimentId,
-      agent: newest.run.agent || newest.attempt.result.agent,
+      agent: target?.agent ?? (newest.run.agent || newest.attempt.result.agent),
       ...(model !== undefined ? { model } : {}),
-      ...(experiment?.flags ? { flags: experiment.flags } : {}),
-      evaluationKind: itemEvaluationKindComposition(group),
+      ...(target !== undefined ? { flags: target.flags } : experiment?.flags ? { flags: experiment.flags } : {}),
+      evaluationKind: targetComposition ?? itemEvaluationKindComposition(group),
       evalVerdicts: stats.verdicts,
       endToEndPassRate: await computeCell(passRate, passEvaluationItems(group)),
       totalScore: await computeCell(totalScore, group),
@@ -273,16 +280,22 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     if (groups.has(coverageEntry.experimentId)) continue;
     const emptyItems: Item[] = [];
     const anchor = coverageEntry.run;
-    const experiment = anchor.experiment;
+    const target = coverageEntry.target;
+    if (anchor === undefined && target === undefined) continue;
+    const experiment = anchor?.experiment;
+    const kinds = new Set(target?.evals.map((entry) => entry.evaluationKind) ?? []);
+    const composition: EvaluationKindComposition = kinds.size > 1
+      ? "mixed"
+      : kinds.has("points") ? "points" : "pass";
     out.push({
       experimentId: coverageEntry.experimentId,
       // 锚点 Run 给出 agent / model / flags：零 attempt 的 Experiment 仍能按配置归组。
-      agent: anchor.agent,
-      ...(anchor.model !== undefined ? { model: anchor.model } : {}),
-      ...(experiment?.flags ? { flags: experiment.flags } : {}),
+      agent: target?.agent ?? anchor!.agent,
+      ...((target?.model ?? anchor?.model) !== undefined ? { model: target?.model ?? anchor?.model } : {}),
+      ...(target !== undefined ? { flags: target.flags } : experiment?.flags ? { flags: experiment.flags } : {}),
       // SampleCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
       // 纪律下的默认,不是从任何真实数据推断出来的。
-      evaluationKind: "pass",
+      evaluationKind: composition,
       evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
       endToEndPassRate: await computeCell(passRate, emptyItems),
       totalScore: await computeCell(totalScore, emptyItems),
@@ -293,7 +306,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       attempts: 0,
       knownEvalIds: coverageEntry.knownEvalIds,
       missing: coverageEntry.missing,
-      lastRunAt: anchor.startedAt,
+      ...(anchor !== undefined ? { lastRunAt: anchor.startedAt } : {}),
       evalRows: [],
     });
   }

@@ -353,7 +353,10 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   // 项目侧收窄到闭集,不再整根递归:项目根下的记录、依赖目录与无关文件都不是重建理由。
   const projectEntries = await projectWatchEntries(scanOptions, resolve(opts.watchRoot ?? process.cwd()));
   const projectWatcher = new ProjectFileWatcher(() => scheduler.notify("modules"));
-  const syncProjectWatch = (): Promise<void> => projectWatcher.sync(projectEntries).catch(() => {});
+  const syncProjectWatch = async (): Promise<void> => {
+    const plan = await current;
+    await projectWatcher.sync([...projectEntries, ...plan.scan.projectWatchInputs]).catch(() => {});
+  };
   await syncProjectWatch();
 
   const server = createServer(async (req, res) => {
@@ -387,6 +390,17 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       // 因此先按浏览器请求里的编码路径精确查表。artifact 等历史清单键仍可能保存未编码的
       // 文件名；只有精确未命中时才回退到解码路径，不能在查表前无条件把 `%40` 变回 `@`。
       const requestPath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+      // 顶层刷新是远程/不可监听 planning 输入的显式 replan 边界。本地权威输入仍由 watcher
+      // 主动触发；刷新失败后绝不把 last-good 继续冒充 current。
+      if (requestPath === "index.html" && scanOptions.projectCurrent !== undefined) {
+        await rebuild("modules").catch(() => undefined);
+        await syncProjectWatch();
+      }
+      if (lastError !== undefined) {
+        res.writeHead(503, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+        res.end(`current target unavailable: ${lastError}`);
+        return;
+      }
       const lookup = (candidate: SitePlan) => {
         let path = requestPath;
         let result = candidate.files.get(path);

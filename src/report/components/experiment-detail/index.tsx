@@ -49,7 +49,7 @@ export const ExperimentDetails = defineComponent<ExperimentDetailsProps>(async (
         {exp.model !== undefined ? <Stat label={LABEL.model!} value={exp.model} /> : null}
         {exp.flags !== undefined ? <Stat label={LABEL.flags!} value={JSON.stringify(exp.flags)} /> : null}
         <Stat label={LABEL.evaluationKind!} value={exp.evaluationKind} />
-        <Stat label={LABEL.lastRun!} value={formatInstant(exp.lastRunAt, locale)} />
+        <Stat label={LABEL.lastRun!} value={exp.lastRunAt === undefined ? "—" : formatInstant(exp.lastRunAt, locale)} />
       </Grid>
       {/* 读数摘要:主读数(随题型选)、成本、tokens、耗时,以及 evals × attempts 覆盖。 */}
       <Grid className="niceeval-experiment-summary">

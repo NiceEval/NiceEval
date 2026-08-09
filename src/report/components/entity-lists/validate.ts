@@ -42,8 +42,8 @@ function attemptListItemProblem(value: unknown, path: string): string | null {
 function sampleMissingProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (typeof value.evalId !== "string") return `"${path}.evalId" must be a string`;
-  if (value.reason !== "never-run" && value.reason !== "previous-result") {
-    return `"${path}.reason" must be "never-run" or "previous-result"`;
+  if (value.reason !== "never-run" && value.reason !== "previous-result" && value.reason !== "unverifiable-result") {
+    return `"${path}.reason" must be "never-run", "previous-result", or "unverifiable-result"`;
   }
   if (value.previous !== undefined) {
     if (!isObject(value.previous) || typeof value.previous.locator !== "string") {
@@ -80,7 +80,7 @@ export const validateExperimentListData: Validator = (data) =>
     if (knownProblem !== null) return knownProblem;
     const missingProblem = arrayProblem(item.missing, `${path}.missing`, sampleMissingProblem);
     if (missingProblem !== null) return missingProblem;
-    if (typeof item.lastRunAt !== "string") return `"${path}.lastRunAt" must be a string`;
+    if (item.lastRunAt !== undefined && typeof item.lastRunAt !== "string") return `"${path}.lastRunAt" must be a string`;
     return arrayProblem(item.evalRows, `${path}.evalRows`, (row, rowPath) => {
       if (!isObject(row) || typeof row.evalId !== "string") {
         return `"${rowPath}" must be an object with a string "evalId"`;
