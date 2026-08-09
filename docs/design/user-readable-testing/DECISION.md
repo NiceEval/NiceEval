@@ -91,7 +91,7 @@ PLAN-3 为 World、Action 与 Claim 建立领域判别联合，再由 Projection
 
 ## 采用落点
 
-定稿目标写回 [`docs/roadmap/testing/`](../../roadmap/testing/README.md)：
+定稿目标写回 [正式测试体系](../../engineering/testing/README.md)：
 
 - 总纲与领域 / 边界矩阵；
 - Unit 存在资格；
