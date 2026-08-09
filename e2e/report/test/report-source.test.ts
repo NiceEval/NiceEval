@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/report.md#证据切面
+// owner: docs/engineering/testing/e2e/report.md#report-source-snapshot
 // rerun: pnpm e2e --repo report -- --run test/report-source.test.ts
 
 import { command, only, withProjectCopy } from "@niceeval/testkit";

@@ -92,6 +92,34 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 class/tag selector 只是找到元素的手段，除非公开文档把它声明成 DOM、可访问性或导出格式契约，否则不能把具体 class/tag 本身写进预期；样式断言也应证明可见布局或交互效果，而不是规定必须由 grid、flex 或某个组件实现。
 格式或渲染变更只需要更新这个仓库，不需要修改任何适配器仓库。
 
+## 自动化 owner
+
+下列 heading 是 E2E 文件的稳定身份；每个文件只接管一个可独立失败的公开结果或完整 Journey。
+
+### report-show-json
+
+`show --json` 对本轮完整运行产生的三态 Sample、JUnit 出口和显式报告入口使用同一批公开事实。
+
+### report-execution-evidence
+
+`show --execution` 从本轮 Record 读回确定的 tool-call 对话证据，不从当前 fixture 重建过程。
+
+### report-source-snapshot
+
+旧 locator 在源码发生变化后仍显示运行时捕获的入口、调用链与导入断言快照。
+
+### report-static-export
+
+`view --out` 把本轮 report evidence 导出为可读静态站，并保留对应用户内容。
+
+### report-config-reload
+
+运行中的 `view` 持续重建项目模块、配置与 Record，报告短暂失效后可在同一 server 上恢复。
+
+### report-browser-journey
+
+自定义报告在静态导出与真实 `view` server 中都能完成导航、证据下钻和无 JavaScript 可读终态。
+
 ## 边界
 
 判定、聚合、计算口径与报告定义的装载规范化这些**数据语义**归[单元测试 Reports](../unit/reports.md)——数据源的 `compute()` 与树解码管线在 fixture 上证明，不需要真实运行。

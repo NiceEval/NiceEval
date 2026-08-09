@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/report.md#渲染面
+// owner: docs/engineering/testing/e2e/report.md#report-browser-journey
 // rerun: pnpm e2e --repo report -- --run test/report.browser.spec.ts
 //
 // 浏览器 owner 自己完成 exp → view --out → 真正的 niceeval view server → browser，

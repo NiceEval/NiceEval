@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/report.md#导出与server
+// owner: docs/engineering/testing/e2e/report.md#report-config-reload
 // rerun: pnpm e2e --repo report -- --run test/report-config-reload.test.ts
 
 import { command, pollUntil, waitForOutput, withProcess, withProjectCopy } from "@niceeval/testkit";

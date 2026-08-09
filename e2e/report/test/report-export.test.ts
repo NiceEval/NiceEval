@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/report.md#导出与server
+// owner: docs/engineering/testing/e2e/report.md#report-static-export
 // rerun: pnpm e2e --repo report -- --run test/report-export.test.ts
 
 import { command, withProjectCopy } from "@niceeval/testkit";

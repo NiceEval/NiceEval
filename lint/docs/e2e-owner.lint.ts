@@ -8,15 +8,24 @@ const ASCII_ANCHOR = "[a-z0-9]+(?:-[a-z0-9]+)*";
 const DOCUMENT_PATH = "docs/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md";
 const STRICT_OWNER_LINE = new RegExp(`^// owner: (${DOCUMENT_PATH})#(${ASCII_ANCHOR})$`);
 const ANY_OWNER_LINE = /^\/\/ owner: (.+)$/;
+const GENERATED_DIRECTORIES = new Set([
+  ".git",
+  ".niceeval",
+  "evidence",
+  "node_modules",
+  "site-export",
+  "test-results",
+]);
+const E2E_TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
 function walkE2e(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true })
     .sort((left, right) => left.name.localeCompare(right.name))
     .flatMap((entry) => {
-      if (entry.name === "node_modules" || entry.name === ".git") return [];
+      if (GENERATED_DIRECTORIES.has(entry.name)) return [];
       const path = join(dir, entry.name);
       if (entry.isDirectory()) return walkE2e(path);
-      return entry.name.endsWith(".test.ts") || entry.name.endsWith(".spec.ts") ? [path] : [];
+      return E2E_TEST_FILE.test(entry.name) ? [path] : [];
     });
 }
 
