@@ -70,7 +70,11 @@ docs/
 │
 ├── roadmap/                             已定稿、尚未落地的目标契约
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion
-│   ├── assertion-authoring/             inline rule、一等行为事实与延迟 Sandbox source
+│   ├── assertion-authoring/             评估事实、显式判定与计分、统一 Match
+│   ├── replayable-grading/              多轮 Execution 与 Grading 分离、Record 重评分
+│   ├── experiment-pilot-sampling/       共同题集、固定 seed 与 non-final Pilot
+│   ├── experiment-families/             keyed record 展开稳定 Experiment ID
+│   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
 │   ├── ordered-sequences/               现有 Eval 的有序执行、完整重放与 lineage

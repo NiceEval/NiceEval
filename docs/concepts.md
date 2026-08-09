@@ -269,6 +269,20 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
+| 评估事实 | Evaluation Fact (`BooleanFact` / `ScoreFact`) | 由 matcher、作用域或 Sandbox 创建且在一个 Attempt 内只求值一次的受管节点；自身不决定判定或计分 | [Assertion 作者面](roadmap/assertion-authoring/README.md) |
+| Fact 用途 | Fact use | `assert` / `require` / `assertIfCovered` 的判定用途，或 `score` 的计分用途；按 `factId` 复用同一求值结果 | [Assertion Architecture](roadmap/assertion-authoring/architecture.md#record-形状) |
+| 可重评分 Eval | Replayable Eval | 用独立 execution 与 grading definition 保存完整多轮证据，并允许只对 sealed Execution graph 重新评分 | [可重评分 Eval](roadmap/replayable-grading/README.md) |
+| Execution graph | Execution graph | 保存一次 replayable Agent 执行的 Observation、Provenance、Ref manifest 与 ExecutionOutcome 的 sealed graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#两个-plane) |
+| ExecutionOutcome | ExecutionOutcome | execution plane 的 `completed / errored / skipped` 终态；不回答评测是否通过 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#状态机) |
+| Eval Ref contract | Eval Ref contract | 定义期声明的具名 SessionRef / TurnRef schema；同时生成 Execution 绑定与 Grading required subset 的 TypeScript 类型 | [Replayable Library](roadmap/replayable-grading/library.md#eval-ref-contract) |
+| Grading | Grading | 一个 GradingDefinition 对一份 sealed Execution graph 产生的不可变 Fact、Claim 与结果 graph | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| GradingRun | GradingRun | 对一个 Experiment Run 已写入 Record 的 SampleManifest 执行或复用全部 Grading 的持久批次 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| GradingResult | GradingResult | 单项 Grading 按 pass 或 score evaluation kind 判别的终态，与 ExecutionOutcome 分开保存 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingresult) |
+| SampleManifest | SampleManifest | 一个 Experiment Run 写入 Record 的候选分母、ExecutionGraph 引用、carry provenance 与 coverage | [Replayable Architecture](roadmap/replayable-grading/architecture.md#samplemanifest-与-current) |
+| 已评分样本 | GradedSample | SampleManifest 与明确 GradingRun 组合出的读模型；inline、graded、execution-terminal 与 grading-gap 穷尽分支 | [Replayable Architecture](roadmap/replayable-grading/architecture.md#gradingrun-与-gradedsample) |
+| Pilot 选择 | Pilot selection | 在 attempts 展开前按共同 Eval ID 总体执行 first 或固定 seed sample，并保留 non-final coverage | [Experiment Pilot 抽样](roadmap/experiment-pilot-sampling/README.md) |
+| 具名 Experiment 族 | Experiment family (`defineExperiments`) | 用一个 keyed record 展开多个普通 Experiment；文件路径与 key 共同形成稳定 ID | [具名 Experiment 族](roadmap/experiment-families/README.md) |
+| Fixture 内容命令 | Fixture content command (`putFixture`) | 把本地内容登记、digest-backed identity 与 `putContent` 组成一个普通 prepare command | [Fixture 内容命令](roadmap/sandbox-fixture-content/README.md) |
 | Agent Judge | Agent Judge | 作为 Assertion evaluator 运行的独立 Agent；调查证据后返回分数、理由与引用，不拥有 Verdict | [Agent-as-Judge](roadmap/agent-as-judge/README.md) |
 | Eval 序列 | Sequence (`defineSequence`) | 引用现有 Eval ID，并要求从第一步开始按声明顺序真实执行的文件派生定义 | [有序 Eval 序列](roadmap/ordered-sequences/README.md) |
 | Sandbox 复用组 | Sandbox reuse group | `evals/` 中显式声明必须共用一台活跃 Sandbox 的 Eval 集合；选中即生效，组外 Attempt 保持 fresh | [分组 Sandbox 复用](roadmap/sandbox-reuse-groups/README.md) |

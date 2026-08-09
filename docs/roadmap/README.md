@@ -32,4 +32,8 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Plugins](plugins/README.md) —— 在 Eval 与 Experiment 上复用跨 Sandbox、Agent 与生命周期的评估条件
 - [Docker Image](docker-image/README.md) —— 用统一 `dockerImage()` 声明预制镜像或按内容构建的镜像
 - [Chart 语义内核与报告交互控制器](report-chart-kernel/README.md) —— 双面语义模型、精确值 HTML、键盘焦点与 Table 渐进增强
-- [Assertion 作者面](assertion-authoring/README.md) —— 复用 scope-first 断言、结构化 command selector 与 Sandbox 结果检查
+- [Assertion 作者面](assertion-authoring/README.md) —— 用 Fact 分离 matcher、判定、控制流与计分，并统一 scope、command 和 Sandbox 检查
+- [可重评分 Eval](replayable-grading/README.md) —— 分离多轮 Execution 与只读 Grading，并对 sealed Record 独立重判
+- [Experiment Pilot 抽样](experiment-pilot-sampling/README.md) —— 用共同 Eval ID、固定 seed 与 non-final coverage 运行可复现小样本
+- [具名 Experiment 族](experiment-families/README.md) —— 用 keyed record 在一个文件中声明多个稳定 Experiment ID
+- [Fixture 内容命令](sandbox-fixture-content/README.md) —— 把本地内容登记、稳定 command identity 与 Sandbox 传输收成一个 prepare 糖
