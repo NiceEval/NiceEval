@@ -138,10 +138,7 @@ async function fingerprintPreparedPair(
         [relativePortable(ownerRoot, path), await cachedContentHash(path, sourceCache)],
     ),
   );
-  const dependencies = Object.freeze(Object.fromEntries((evalDef.moduleFacts?.dependencies ?? []).map((dependency) => {
-    const stable = JSON.stringify(dependencyFingerprintIdentity(dependency));
-    return [dependency.specifier ?? stable, hashText(stable)] as const;
-  })));
+  const dependencies = dependencyFingerprintMap(evalDef.moduleFacts?.dependencies ?? []);
   const runtime = await runtimeContractFacts(
     pair.plan._tag === "Sandbox" ? pair.plan.providerPlan.provider : undefined,
   );
@@ -207,6 +204,34 @@ function dependencyFingerprintIdentity(
 ): Readonly<globalThis.Record<string, JsonValue>> {
   const { lockDigest: _lockProof, ...identity } = dependency;
   return identity;
+}
+
+/**
+ * One bare specifier can resolve to several physical package instances through
+ * different parents.  A plain Object.fromEntries would silently keep only the
+ * last instance, so hash the complete, stable identity set for each specifier.
+ * Preserve the historical single-instance projection to avoid invalidating
+ * unrelated carry records merely because this collision case became explicit.
+ */
+function dependencyFingerprintMap(
+  dependencies: readonly Readonly<globalThis.Record<string, JsonValue>>[],
+): Readonly<globalThis.Record<string, string>> {
+  const grouped = new Map<string, string[]>();
+  for (const dependency of dependencies) {
+    const stable = JSON.stringify(dependencyFingerprintIdentity(dependency));
+    const key = typeof dependency.specifier === "string" ? dependency.specifier : stable;
+    const identities = grouped.get(key) ?? [];
+    identities.push(stable);
+    grouped.set(key, identities);
+  }
+  return Object.freeze(Object.fromEntries(
+    [...grouped.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, identities]) => {
+        const ordered = identities.sort();
+        return [key, hashText(ordered.length === 1 ? ordered[0]! : JSON.stringify(ordered))] as const;
+      }),
+  ));
 }
 
 async function cachedRead(path: string, cache?: Map<string, Promise<string>>): Promise<string> {

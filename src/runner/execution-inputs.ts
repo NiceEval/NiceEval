@@ -154,11 +154,14 @@ export class ExecutionInputTracker {
     target: string,
     ignore: readonly string[] = [],
   ): StaticTransferPlanEntry | undefined {
-    const match = this.#plan.find((entry) =>
-      !this.#consumedPlanSequences.has(entry.sequence) &&
-      entry.kind === kind && entry.source === source && entry.target === target &&
-      JSON.stringify(entry.ignore ?? []) === JSON.stringify(ignore),
-    );
+    const next = this.#plan
+      .filter((entry) => !this.#consumedPlanSequences.has(entry.sequence))
+      .sort((left, right) => left.sequence - right.sequence)[0];
+    const match = next !== undefined &&
+      next.kind === kind && next.source === source && next.target === target &&
+      JSON.stringify(next.ignore ?? []) === JSON.stringify(ignore)
+      ? next
+      : undefined;
     if (match === undefined) this.#limitations.set("dynamic-transfer", `${kind}:${source} -> ${target}`);
     else this.#consumedPlanSequences.add(match.sequence);
     return match;

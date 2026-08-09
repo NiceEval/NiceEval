@@ -491,10 +491,10 @@ async function preflightEvalModule(entry: string, root: ResolvedEvalRoot): Promi
       if (recurse) await visit(target);
     };
     for (const statement of sourceFile.statements) {
-      if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && !statement.importClause?.isTypeOnly) {
+      if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && !isTypeOnlyModuleDeclaration(statement)) {
         assertStaticNiceevalApi(root, file, statement);
         await inspect(statement.moduleSpecifier.text, true);
-      } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier) && !statement.isTypeOnly) {
+      } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier) && !isTypeOnlyModuleDeclaration(statement)) {
         assertStaticNiceevalApi(root, file, statement);
         await inspect(statement.moduleSpecifier.text, true);
       }
@@ -570,6 +570,22 @@ function assertStaticNiceevalApi(
     message: `The consumer NiceEval runtime does not export ${missing.map((name) => JSON.stringify(name)).join(", ")} from ${JSON.stringify(specifier.text)}.`,
     actions: ["Upgrade the consumer NiceEval package or select a compatible external Eval package."],
   });
+}
+
+/** A declaration is runtime-free only when every imported/exported binding is type-only. */
+function isTypeOnlyModuleDeclaration(statement: ts.ImportDeclaration | ts.ExportDeclaration): boolean {
+  if (ts.isImportDeclaration(statement)) {
+    const clause = statement.importClause;
+    if (clause === undefined) return false; // Side-effect imports execute at runtime.
+    if (clause.isTypeOnly) return true;
+    return clause.name === undefined && clause.namedBindings !== undefined &&
+      ts.isNamedImports(clause.namedBindings) && clause.namedBindings.elements.length > 0 &&
+      clause.namedBindings.elements.every((element) => element.isTypeOnly);
+  }
+  if (statement.isTypeOnly) return true;
+  return statement.exportClause !== undefined && ts.isNamedExports(statement.exportClause) &&
+    statement.exportClause.elements.length > 0 &&
+    statement.exportClause.elements.every((element) => element.isTypeOnly);
 }
 
 /** Configure the already-registered linker for one fresh external discovery invocation. */
@@ -816,11 +832,11 @@ export async function moduleFactsForEval(
       }
     };
     for (const statement of sourceFile.statements) {
-      if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && !statement.importClause?.isTypeOnly) {
+      if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && !isTypeOnlyModuleDeclaration(statement)) {
         await scanSpecifier(statement.moduleSpecifier.text, "static-import", true);
       } else if (
         ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined &&
-        ts.isStringLiteral(statement.moduleSpecifier) && !statement.isTypeOnly
+        ts.isStringLiteral(statement.moduleSpecifier) && !isTypeOnlyModuleDeclaration(statement)
       ) {
         await scanSpecifier(statement.moduleSpecifier.text, "static-export", true);
       }
@@ -1393,17 +1409,6 @@ async function installedIdentity(input: {
   readonly mount: string;
 }): Promise<InstalledPackageIdentity> {
   const { lock, consumerRoot, dependency, declaration, packageRoot, mount } = input;
-  // The direct key must be visible in the lock selection.  This intentionally does
-  // not guess a transitive match from an installed package version.
-  if (!lockMentionsDependency(lock, dependency, declaration)) {
-    throw issueError({
-      code: "eval-root.installation-unverifiable",
-      mount,
-      dependency,
-      message: `The ${lock.kind} lockfile cannot be matched to direct dependency "${dependency}".`,
-      actions: ["Regenerate the lockfile with the project's package manager."],
-    });
-  }
   const lockfile = lock.kind;
   const declaredWorkspace = await isDeclaredWorkspacePackage(consumerRoot, packageRoot);
   if (declaration.startsWith("workspace:") && !declaredWorkspace) {
@@ -1413,6 +1418,24 @@ async function installedIdentity(input: {
       dependency,
       message: "The installed package is not one of the consumer's declared workspace members.",
       actions: ["Repair the workspace declaration and reinstall the dependency."],
+    });
+  }
+  try {
+    await assertDirectInstalledLockSelection({
+      lock,
+      consumerRoot,
+      dependency,
+      declaration,
+      packageRoot,
+      declaredWorkspace,
+    });
+  } catch (cause) {
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: `The ${lock.kind} lockfile does not prove the direct dependency selection: ${cause instanceof Error ? cause.message : String(cause)}`,
+      actions: ["Regenerate the lockfile with the declared direct dependency and reinstall it."],
     });
   }
   if (declaredWorkspace) {
@@ -1432,6 +1455,7 @@ async function installedIdentity(input: {
       parentModule: join(consumerRoot, "package.json"),
       specifier: dependency,
       contentDigest,
+      directDeclaration: declaration,
     });
   } catch (cause) {
     const detail = cause instanceof EvalRootPreflightError
@@ -1446,6 +1470,15 @@ async function installedIdentity(input: {
     });
   }
   if (instance.identityKind === "git") {
+    if (!isGitDeclaration(declaration)) {
+      throw issueError({
+        code: "eval-root.installation-unverifiable",
+        mount,
+        dependency,
+        message: "The direct non-Git declaration resolves to a Git lock identity.",
+        actions: ["Regenerate the lockfile and reinstall the declared dependency."],
+      });
+    }
     const commit = instance.commit;
     if (commit === undefined) {
       throw issueError({
@@ -1459,7 +1492,13 @@ async function installedIdentity(input: {
     return Object.freeze({ kind: "git", commit, lockfile, lockDigest: lock.digest });
   }
   if (instance.identityKind === "file") {
-    return Object.freeze({ kind: "file", contentDigest, lockfile, lockDigest: lock.digest });
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: "The direct registry, Git, or tarball declaration resolves to a mutable file lock identity.",
+      actions: ["Regenerate the lockfile and reinstall the declared dependency."],
+    });
   }
   const integrity = instance.integrity;
   if (instance.identityKind !== "registry" || integrity === undefined) {
@@ -1503,17 +1542,6 @@ async function assertLocalPackageSelection(input: {
     ? fileURLToPath(new URL(`file:${rawTarget}`))
     : resolve(consumerRoot, rawTarget);
   try {
-    await assertDirectLocalLockSelection(lock, consumerRoot, dependency, declaration, declaredTarget);
-  } catch (cause) {
-    throw issueError({
-      code: "eval-root.installation-unverifiable",
-      mount,
-      dependency,
-      message: `The local dependency declaration does not match the ${lock.kind} lock selection: ${cause instanceof Error ? cause.message : String(cause)}`,
-      actions: ["Regenerate the lockfile with the declared local dependency and reinstall it."],
-    });
-  }
-  try {
     if (await realpath(declaredTarget) === await realpath(packageRoot)) return;
   } catch {
     // Some managers materialise file dependencies into their installation tree.
@@ -1548,6 +1576,113 @@ async function assertLocalPackageSelection(input: {
     message: `The ${lock.kind} lock maps the local dependency to a non-file package identity.`,
     actions: ["Regenerate the lockfile and reinstall the local dependency."],
   });
+}
+
+/**
+ * Prove the consumer's root/importer descriptor, not merely that the package
+ * name occurs somewhere in the lockfile.  The latter can be satisfied by an
+ * unrelated transitive package after a direct declaration becomes stale.
+ */
+async function assertDirectInstalledLockSelection(input: {
+  readonly lock: ConsumerLock;
+  readonly consumerRoot: string;
+  readonly dependency: string;
+  readonly declaration: string;
+  readonly packageRoot: string;
+  readonly declaredWorkspace: boolean;
+}): Promise<void> {
+  const { lock, consumerRoot, dependency, declaration, packageRoot, declaredWorkspace } = input;
+  if ((declaration.startsWith("file:") || declaration.startsWith("link:")) && !isTarballDeclaration(declaration)) {
+    const rawTarget = declaration.slice(declaration.indexOf(":") + 1);
+    const declaredTarget = rawTarget.startsWith("//")
+      ? fileURLToPath(new URL(`file:${rawTarget}`))
+      : resolve(consumerRoot, rawTarget);
+    await assertDirectLocalLockSelection(lock, consumerRoot, dependency, declaration, declaredTarget);
+    return;
+  }
+
+  if (lock.kind === "npm") {
+    const parsed: unknown = JSON.parse(lock.text);
+    if (!isPlainRecord(parsed) || !isPlainRecord(parsed.packages)) throw new Error("package-lock has no packages map");
+    const root = parsed.packages[""];
+    if (!isPlainRecord(root)) throw new Error("package-lock has no consumer root entry");
+    if (directDependencySelector(root, dependency) !== declaration) {
+      throw new Error("the consumer root entry does not preserve the declared selector");
+    }
+    const logicalPath = ["node_modules", ...dependency.split("/")].join("/");
+    if (!isPlainRecord(parsed.packages[logicalPath])) {
+      throw new Error("package-lock has no direct installed package entry");
+    }
+    try {
+      if (await realpath(resolve(consumerRoot, logicalPath)) !== await realpath(packageRoot)) {
+        throw new Error("package-lock's direct logical entry maps a different installed package");
+      }
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.includes("maps a different")) throw cause;
+      throw new Error("package-lock's direct logical entry is not materialised at the selected package root");
+    }
+    return;
+  }
+
+  if (lock.kind === "pnpm") {
+    const parsed: unknown = parseYaml(lock.text);
+    if (!isPlainRecord(parsed) || !isPlainRecord(parsed.importers)) throw new Error("pnpm lock has no importers map");
+    const root = parsed.importers["."];
+    if (!isPlainRecord(root)) throw new Error("pnpm lock has no consumer importer");
+    const direct = directDependencyEntry(root, dependency);
+    const selector = typeof direct === "string"
+      ? direct
+      : isPlainRecord(direct) && typeof direct.specifier === "string" ? direct.specifier : undefined;
+    if (selector !== declaration) throw new Error("the consumer importer does not preserve the declared selector");
+    const selected = isPlainRecord(direct) && typeof direct.version === "string" ? direct.version : undefined;
+    if (selected === undefined) throw new Error("the consumer importer has no selected direct version");
+    if (declaredWorkspace && !(await localReferenceMatchesTarget(selected, packageRoot, consumerRoot))) {
+      throw new Error("the consumer importer selects a different workspace package");
+    }
+    return;
+  }
+
+  if (!/^__metadata:\s*$/m.test(lock.text)) {
+    if (declaredWorkspace) return; // Yarn Classic omits workspace packages from yarn.lock.
+    const matchingDescriptors = lock.text
+      .split(/\n(?=\S)/g)
+      .flatMap((block) => yarnClassicDescriptors(block.split("\n", 1)[0] ?? ""))
+      .filter((descriptor) => yarnClassicDescriptorMatches(descriptor, dependency, declaration, consumerRoot));
+    if (matchingDescriptors.length !== 1) {
+      throw new Error(`Yarn Classic lock maps the direct descriptor to ${matchingDescriptors.length} entries`);
+    }
+    return;
+  }
+
+  const parsed: unknown = parseYaml(lock.text);
+  if (!isPlainRecord(parsed) || !isPlainRecord(parsed.__metadata)) throw new Error("Yarn lock has no Berry metadata");
+  const roots = Object.entries(parsed)
+    .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) &&
+      typeof entry.resolution === "string" && entry.resolution.endsWith("@workspace:."))
+    .map(([, entry]) => entry as Record<string, unknown>);
+  if (roots.length !== 1) throw new Error(`Yarn lock maps the consumer root to ${roots.length} entries`);
+  const selector = directDependencySelector(roots[0]!, dependency);
+  if (selector === undefined || !yarnBerrySelectorMatchesDeclaration(selector, declaration)) {
+    throw new Error("the consumer workspace entry does not preserve the declared selector");
+  }
+  const selected = Object.entries(parsed)
+    .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) &&
+      yarnBerryKeyHasDescriptor(key, dependency, selector))
+    .map(([key, entry]) => ({ key, entry: entry as Record<string, unknown> }));
+  if (selected.length !== 1) {
+    throw new Error(`Yarn lock maps the direct descriptor to ${selected.length} entries`);
+  }
+  if (declaredWorkspace) {
+    const resolution = selected[0]!.entry.resolution;
+    if (typeof resolution !== "string") throw new Error("the direct workspace entry has no resolution");
+    const marker = resolution.lastIndexOf("@workspace:");
+    if (marker < 0) throw new Error("the direct workspace entry is not workspace-backed");
+    const workspaceReference = resolution.slice(marker + "@workspace:".length).split("::", 1)[0]!;
+    const selectedRoot = workspaceReference === "." ? consumerRoot : resolve(consumerRoot, workspaceReference);
+    if (!(await sameLocalTarget(selectedRoot, packageRoot))) {
+      throw new Error("the direct workspace entry selects a different workspace package");
+    }
+  }
 }
 
 async function assertDirectLocalLockSelection(
@@ -1638,6 +1773,15 @@ function directDependencySelector(container: Record<string, unknown>, dependency
   return typeof entry === "string" ? entry : undefined;
 }
 
+function yarnBerrySelectorMatchesDeclaration(selector: string, declaration: string): boolean {
+  return selector === declaration || selector === `npm:${declaration}`;
+}
+
+function yarnBerryKeyHasDescriptor(key: string, dependency: string, selector: string): boolean {
+  const expected = `${dependency}@${selector}`;
+  return key.split(/,\s*/).some((descriptor) => descriptor === expected || descriptor.startsWith(`${expected}::`));
+}
+
 async function localSelectorsMatch(left: string, right: string, base: string): Promise<boolean> {
   if (left === right) return true;
   const [leftTarget, rightTarget] = await Promise.all([
@@ -1712,14 +1856,18 @@ async function assertLockEntryLocalTarget(
  * the synchronous hook; adapters only map that concrete target into the
  * consumer lock's portable locator.  They never re-run a module resolver.
  */
-async function identifyDependencyInstance(input: {
+interface DependencyInstanceInput {
   readonly consumerRoot: string;
   readonly packageRoot: string;
   readonly parentModule: string;
   readonly specifier: string;
   readonly contentDigest: string;
   readonly expectedLocalTarget?: string;
-}): Promise<globalThis.Record<string, string>> {
+  /** Present only for the configured root package, never for a transitive P4 edge. */
+  readonly directDeclaration?: string;
+}
+
+async function identifyDependencyInstance(input: DependencyInstanceInput): Promise<globalThis.Record<string, string>> {
   const lock = await readConsumerLock(input.consumerRoot);
   if (lock === undefined) {
     throw dependencyIdentityError(input, "No supported consumer lockfile is available for the actual dependency target.");
@@ -1769,7 +1917,7 @@ async function portableInstalledPath(consumerRoot: string, packageRoot: string):
 
 async function identifyNpmInstance(
   lock: ConsumerLock,
-  input: { readonly consumerRoot: string; readonly packageRoot: string; readonly parentModule: string; readonly specifier: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
+  input: DependencyInstanceInput,
   name: string,
   version: string,
   installPath: string,
@@ -1798,6 +1946,12 @@ async function identifyNpmInstance(
     throw dependencyIdentityError(input, `npm package-lock maps the actual ${name}@${version} target to ${candidates.length} logical package entries.`);
   }
   const candidate = candidates[0]!;
+  if (input.directDeclaration !== undefined) {
+    const directPath = ["node_modules", ...input.specifier.split("/")].join("/");
+    if (candidate.key !== directPath) {
+      throw dependencyIdentityError(input, `npm package-lock maps the configured direct dependency to ${JSON.stringify(candidate.key)}, not ${JSON.stringify(directPath)}.`);
+    }
+  }
   if (input.expectedLocalTarget !== undefined) {
     await assertLockEntryLocalTarget(candidate.entry, lock, input.expectedLocalTarget, input.consumerRoot, input);
   }
@@ -1813,7 +1967,7 @@ async function identifyNpmInstance(
 
 async function identifyPnpmInstance(
   lock: ConsumerLock,
-  input: { readonly consumerRoot: string; readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
+  input: DependencyInstanceInput,
   name: string,
   version: string,
   installPath: string,
@@ -1844,6 +1998,15 @@ async function identifyPnpmInstance(
   if (selected === undefined) {
     throw dependencyIdentityError(input, `pnpm lock cannot uniquely map actual ${name}@${version} target${virtualLocator === undefined ? "" : ` (${virtualLocator})`}.`);
   }
+  if (input.directDeclaration !== undefined) {
+    const importers = parsed.importers;
+    const root = isPlainRecord(importers) ? importers["."] : undefined;
+    const direct = isPlainRecord(root) ? directDependencyEntry(root, input.specifier) : undefined;
+    const directVersion = isPlainRecord(direct) && typeof direct.version === "string" ? direct.version : undefined;
+    if (directVersion === undefined || !pnpmDirectVersionMatchesKey(name, directVersion, selected.key)) {
+      throw dependencyIdentityError(input, `pnpm's direct importer selection does not map to lock entry ${JSON.stringify(selected.key)}.`);
+    }
+  }
   if (input.expectedLocalTarget !== undefined) {
     await assertLockEntryLocalTarget(selected.entry, lock, input.expectedLocalTarget, input.consumerRoot, input);
   }
@@ -1859,13 +2022,15 @@ async function identifyPnpmInstance(
 
 async function identifyYarnInstance(
   lock: ConsumerLock,
-  input: { readonly consumerRoot: string; readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
+  input: DependencyInstanceInput,
   name: string,
   version: string,
   installPath: string,
 ): Promise<globalThis.Record<string, string>> {
   const berry = await parseYarnBerryEntry(lock.text, input.consumerRoot, installPath, name, version, input);
-  const selector = berry === undefined ? await declaredDependencySelector(input.parentModule, input.specifier) : undefined;
+  const selector = berry === undefined
+    ? input.directDeclaration ?? await declaredDependencySelector(input.parentModule, input.specifier)
+    : undefined;
   const classic = berry === undefined
     ? parseYarnClassicEntry(lock.text, input.consumerRoot, name, version, input.specifier, selector)
     : undefined;
@@ -1989,6 +2154,13 @@ function pnpmKeyMatches(key: string, name: string, version: string): boolean {
     normalized.startsWith(`${name}@${version}_`);
 }
 
+function pnpmDirectVersionMatchesKey(name: string, directVersion: string, key: string): boolean {
+  const normalized = key.replace(/^\//, "");
+  const expected = directVersion.startsWith(`${name}@`) ? directVersion : `${name}@${directVersion}`;
+  return normalized === expected || normalized.startsWith(`${expected}(`) || normalized.startsWith(`${expected}_`) ||
+    expected.startsWith(`${normalized}(`) || expected.startsWith(`${normalized}_`);
+}
+
 function pnpmLocatorMatches(key: string, locator: string): boolean {
   const normalized = key.replace(/^\//, "").replaceAll("/", "+").replaceAll(":", "+").replace(/[()]/g, "_");
   return locator === normalized || locator.startsWith(`${normalized}_`) || locator.startsWith(`${normalized}(`);
@@ -2000,7 +2172,7 @@ async function parseYarnBerryEntry(
   installPath: string,
   name: string,
   version: string,
-  input: { readonly parentModule: string; readonly specifier: string },
+  input: DependencyInstanceInput,
 ): Promise<Record<string, unknown> | undefined> {
   try {
     const value: unknown = parseYaml(text);
@@ -2022,9 +2194,24 @@ async function parseYarnBerryEntry(
     }
     const locator = stateLocators[0]!;
     const unvirtualized = unvirtualizeYarnLocator(locator);
+    let directSelector: string | undefined;
+    if (input.directDeclaration !== undefined) {
+      const roots = Object.entries(value)
+        .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) &&
+          typeof entry.resolution === "string" && entry.resolution.endsWith("@workspace:."))
+        .map(([, entry]) => entry as Record<string, unknown>);
+      if (roots.length !== 1) {
+        throw dependencyIdentityError(input, `Yarn lock maps the consumer root to ${roots.length} entries.`);
+      }
+      directSelector = directDependencySelector(roots[0]!, input.specifier);
+      if (directSelector === undefined || !yarnBerrySelectorMatchesDeclaration(directSelector, input.directDeclaration)) {
+        throw dependencyIdentityError(input, "Yarn lock has no matching direct descriptor in the consumer workspace entry.");
+      }
+    }
     const matches = Object.entries(value)
       .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) && entry.version === version && key.includes(`${name}@`) &&
-        typeof entry.resolution === "string" && (entry.resolution === locator || entry.resolution === unvirtualized))
+        typeof entry.resolution === "string" && (entry.resolution === locator || entry.resolution === unvirtualized) &&
+        (directSelector === undefined || yarnBerryKeyHasDescriptor(key, input.specifier, directSelector)))
       .map(([, entry]) => entry as Record<string, unknown>);
     if (matches.length !== 1) {
       throw dependencyIdentityError(input, `Yarn lock maps the actual .yarn-state locator ${JSON.stringify(locator)} to ${matches.length} entries.`);
@@ -2108,12 +2295,6 @@ function yarnClassicDescriptorMatches(
     resolve(consumerRoot, selector.slice("file:".length));
 }
 
-function lockMentionsDependency(lock: ConsumerLock, dependency: string, declaration: string): boolean {
-  const escaped = escapeRegExp(dependency);
-  if (new RegExp(`(^|[\\s'\"/])${escaped}([\\s'\":@/]|$)`, "m").test(lock.text)) return true;
-  return lock.text.includes(declaration);
-}
-
 function isGitDeclaration(value: string): boolean {
   const gitReference = /(?:git\+|git:|github:|git@|https?:\/\/[^\s]+\.git(?:#|$))/i;
   return gitReference.test(value) && (gitReference.exec(value)?.index === 0 || /@(?:git\+|git:|github:|git@|https?:\/\/[^\s]+\.git(?:#|$))/i.test(value));
@@ -2126,10 +2307,6 @@ function isTarballDeclaration(value: string): boolean {
 function gitCommit(value: string): string | undefined {
   const hash = value.match(/(?:#|commit:\s*|commit=)([0-9a-f]{7,64})\b/i)?.[1];
   return hash?.toLowerCase();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function hashText(value: string): string {
@@ -2296,6 +2473,9 @@ async function collectStaticTransfer(
   conditional: boolean,
 ): Promise<void> {
   if (!ts.isPropertyAccessExpression(call.expression)) return;
+  const sandbox = call.expression.expression;
+  if (!ts.isPropertyAccessExpression(sandbox) || sandbox.name.text !== "sandbox" ||
+    !ts.isIdentifier(sandbox.expression) || sandbox.expression.text !== "t") return;
   const method = call.expression.name.text;
   if (method !== "uploadFile" && method !== "uploadDirectory") return;
   if (conditional) {
