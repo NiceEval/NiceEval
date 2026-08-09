@@ -18,7 +18,7 @@ type TextRule = TextAtom & {
 ```
 
 普通路径不接受直接传入的 RegExp，也不提供 `pattern`。
-Harness 的规则若只能靠一段复杂正则才读得懂，应先寻找结构化领域事实；自由文本确实需要模糊判断时使用 Judge。
+Harness 的规则若只能靠一段复杂正则才读得懂，应先寻找结构化领域事实；自由文本关系不应继续膨胀这套确定性规则。
 
 `exact` 使用 code-unit equality。
 `contains` 使用大小写敏感的 literal substring，并拒绝空字符串。
@@ -116,7 +116,7 @@ added 没有 before，deleted 没有 after。
 它们会把普通 Harness 变成 JSON 查询语言，并把某个 CLI 的展示 envelope 固化成核心 API。
 
 任意应用值已有 `t.check()` 与 `niceeval/expect`。
-Standard Schema 继续适合业务结构；`niceeval show` 的诊断语义则由完整 Turn Judge 检查，不由 Eval 自行 parse 或匹配 JSON。
+Standard Schema 继续适合业务结构；`niceeval show` 的诊断语义不由 Eval 自行 parse 或匹配 JSON。
 
 ## TypeScript 消歧
 

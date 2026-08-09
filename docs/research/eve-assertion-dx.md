@@ -71,7 +71,7 @@ turn.calledTool("shell", { input });
 | command 结构 | 扩展既有 `ToolMatch`，不增加 `ranCommand()` |
 | tool 子序列 | 让 `toolOrder()` 接受同源 `ToolSelector` |
 | 禁止可观察 input 路径 | 增加窄的 `toolInputsExclude({ paths })` |
-| show 的动态 locator 与诊断 | 完整 Turn Judge，不增加 JSON matcher |
+| show 的动态 locator 与诊断 | 不在本次确定性规则中增加 JSON matcher |
 
 这次扩展的中心不是“名字更好看的新断言词汇”，而是让既有 scoped methods 能消费标准 observation。
 
@@ -98,7 +98,7 @@ core 无法仅凭 `shell`、`Bash`、`command_execution` 或 input key 判断它
 Eve 的 `toolOrder()` 只证明 request subsequence。
 NiceEval 保留这条语义：单调 cursor 消费不同 occurrence，但不新增 finish-before-start mode。
 
-Harness 需要的动态 locator 复用、工具输出因果与最终 reply 顺序由完整 Turn Judge 判断。
+Harness 需要的动态 locator 复用、工具输出因果与最终 reply 顺序不应伪装成 `toolOrder()` 的确定性语义。
 把它们并入 `toolOrder()` 会让一个常用子序列方法承担隐含的时序协议。
 
 ## 为什么路径排除不让作者写正则
@@ -136,9 +136,9 @@ Harness 的目标是确认 Agent 看懂 compact 输出、复用正确 locator �
 大量 array / shape 规则也是一个事实：当前断言层级不对。
 
 研究因此否决 `t.sandbox.json()` 与通用 `JsonRule` 作为这项 Roadmap 的新增能力。
-标准机器事实由 scoped assertions 与 Sandbox diff 检查；show 的动态关联由 `turn.judge.llm()` 读取完整 tool calls、output 与 message。
+标准机器事实由 scoped assertions 与 Sandbox diff 检查；show 的动态关联不在本次 Assertion Roadmap 中新增。
 
-若 CLI Human 输出无法让 Judge取得所需事实，结果应暴露 NiceEval 呈现缺口。
+若 CLI Human 输出无法呈现用户诊断所需事实，应暴露 NiceEval 呈现缺口。
 Eval 不能改读 `.niceeval` 私有文件补齐。
 
 ## 研究判断

@@ -37,7 +37,6 @@ export default defineEval({
     await t.send("根据工具返回的库存信息，给出补货建议。");
 
     t.judge.llm({
-      name: "回答质量",
       recipe: answerQuality,
       input: {
         candidate: material.current({ id: "answer", role: "candidate" }),

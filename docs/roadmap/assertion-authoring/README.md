@@ -27,7 +27,6 @@ turn.succeeded().gate();
 | 禁止可观察工具输入引用路径 | `toolInputsExclude()` |
 | 文件范围与内容 | `t.sandbox.*` |
 | 任意文本值 | `t.check(value, inlineRule)` |
-| 需要解释完整操作过程 | `turn.judge.llm()` |
 
 普通路径没有 `match.*` namespace，也不要求作者预声明 matcher 或共享规则构造器。
 Inline rule 只在需要比较明确文本值时出现。
@@ -54,8 +53,8 @@ Observation Protocol 在作者面之前统一处理 direct、`pnpm exec`、`pnpm
 Harness 的用户要求是“用 `niceeval show` 完成诊断”，不是“产出某个 JSON envelope”。
 机器断言负责命令顺序、禁止路径、成功状态和 Sandbox diff 等标准事实。
 
-`show` 的 locator 绑定、输出含义与最终建议需要关联完整 tool calls 和 assistant message。
-这类检查由 `turn.judge.llm()` 读取完整 Turn；Eval 不要求 Agent 重定向 JSON，也不把 `format`、`schemaVersion` 或 `sections` 固化成断言 API。
+`show` 的 locator 绑定、输出含义与最终建议需要关联完整 tool calls 和 assistant message，但不属于本次新增的确定性事实。
+Eval 不应为了绕过这个边界要求 Agent 重定向 JSON，也不把 `format`、`schemaVersion` 或 `sections` 固化成断言 API。
 
 ## 证据与结果
 

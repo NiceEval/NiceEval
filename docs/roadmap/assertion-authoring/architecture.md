@@ -173,8 +173,8 @@ ToolMatch 的 name、input、output、status 与 command 使用三值 AND。
 selector 的 `status: "completed"` 只证明该 occurrence 最终 completed。
 它不证明前一项 finish 早于后一项 start，也不建立工具输出被下一步消费的因果关系。
 
-Harness 的动态 locator 复用、show 输出是否影响后续动作，以及最终 reply 是否基于这些证据，都由 binary `turn.judge.llm()` 读取完整有序 Turn 判断。
-`toolOrder()` 不增加 message selector，也不冒充这项因果检查。
+`toolOrder()` 不证明动态 locator 被后续命令复用、show 输出影响了后续动作，或最终 reply 基于这些证据。
+它不增加 message selector，也不冒充因果检查。
 
 ## Command 诊断与脱敏
 
@@ -247,16 +247,10 @@ permission、transport、timeout 与 terminated 表示拿不到 candidate，因�
 本 Roadmap 不提供延迟 JSON source。
 JSON syntax failure 的分类问题因此不会进入 Assertion API；应用自己取得的任意值继续使用现有 value assertion。
 
-## 完整 Turn Judge 边界
+## 公开诊断边界
 
-`turn.judge.llm()` 的 current material 由 LLM Judge Runtime 投影。
-它包含该轮用户输入、assistant message 和 coverage 允许的行为事件，而不是 `JSON.stringify(turn)`。
-
-Harness 用它关联 `niceeval show` 的 command、stdout、动态 locator、后续 source/execution 调用与最终建议。
-Judge 不负责重新判断标准 command 顺序、工具输入路径或 Sandbox diff。
-
-CLI 无法把用户需要的诊断事实显示给 Agent 时，Judge 应失败并指出呈现缺口。
-Eval 不能绕过 CLI 读取 `.niceeval` 私有文件，也不能要求 Agent 生成一份专供 Assertion 的 JSON。
+Harness 仍需要关联 `niceeval show` 的 command、stdout、动态 locator、后续 source/execution 调用与最终建议，但本 Roadmap 不把这些关系编码成新的确定性断言。
+CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能绕过 CLI 读取 `.niceeval` 私有文件，也不能要求 Agent 生成一份专供 Assertion 的 JSON。
 
 ## Error classification
 
