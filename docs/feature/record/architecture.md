@@ -59,7 +59,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 15,
+  "schemaVersion": 17,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -71,7 +71,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `15`；本次升版来自 `commands.json` 新增公开调用事实 `checked`，用于区分 checked / unchecked 命令调用。`renamedFrom` 是可选审计字段，删除运行期选题投影也不影响当前 reader 读取历史落盘，因此两项都不升版。
+当前 `schemaVersion` 是 `17`。这次原子切换把 Attempt 的判定图固定为 `evaluationAlgorithm: "fact-use/v2"`、`factResults` 与 `factUses`；含旧 assertion 或 Judge sidecar 的 Run 文件整份不支持读取。
 历史各版本的字段差异与升版原因不在正文维护，记在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -202,13 +202,11 @@ interface ExperimentRunInfo {
   sandboxReuse?: boolean;
   /** 跨 Invocation 共享可变状态的租约身份；进 configHash。 */
   sharedState?: { key: string };
-  /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
-  strict?: boolean;
   /**
    * Experiment 级裁判执行配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
    * `apiKeyEnv` 只指向凭据变量,不落盘。
    */
-  judge?: { model?: string; baseUrl?: string; timeoutMs?: number };
+  judge?: { model?: string; baseUrl?: string; apiKeyEnv?: string; timeoutMs?: number };
   /** Experiment 作者 layer 的完整纯数据身份；Direct/command-only 同样显式记录。 */
   sandboxLayer: JsonValue;
   /** 本次所有 selected Eval 的完整 pair-owned ProviderPlan 身份；Direct 也有显式项。 */
@@ -435,7 +433,7 @@ interface SandboxBuildRecord {
 
 ## `result.json`
 
-单个 attempt 的**权威事实**：判定、断言、结构化执行错误与 diagnostics 只住在这里。
+单个 attempt 的**权威事实**：Fact 结果、Fact use、终态、结构化执行错误与 diagnostics 只住在这里。
 attempt 的 teardown 链与 Scope release 完成后一次写成，之后没有任何环节会改写它。
 
 ```typescript
@@ -458,12 +456,16 @@ interface AttemptRecord {
   executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
-  /** 断言条目;元素字段契约单独定义在 [Assertions · 断言条目](../assertions/architecture.md#断言条目assertionresult)。 */
-  assertions: AssertionResult[];
-  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.evaluationKind` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。官方 writer 必写；通用第三方 producer 若只产 pass/fail 记录可以省略并按 `"pass"` 读取，计分记录必须显式写 `"points"`。 */
-  evaluationKind?: "pass" | "points";
-  /** `t.score(label, n)` 的直接给分条目;元素字段契约见 [Assertions · 断言条目](../assertions/architecture.md#断言条目assertionresult)。只在 `evaluationKind: "points"` 时出现,省略等价于空数组。 */
-  scoreEntries?: ScoreEntry[];
+  /** 原子 Fact/use 算法标识；schema 17 必为 `"fact-use/v2"`。 */
+  evaluationAlgorithm: "fact-use/v2";
+  /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`，定义期事实，与 `EvalDescriptor.evaluationKind` 同源。 */
+  evaluationKind: "pass" | "score";
+  /** 每个 producer 的一次求值结果；`explanation` 是 evaluator 理由，`evidence` 只保存裁剪、脱敏的判分材料。 */
+  factResults: EvaluationFactResult[];
+  /** 每个显式 verdict 或 score consumer 的结果。 */
+  factUses: (VerdictFactUseResult | ScoreFactUseResult)[];
+  /** 仅计分题型存在的 score terminal 与 credit。 */
+  scoreResult?: ScoreFactAttemptOutcome;
   /** 证据覆盖聚合:必填；Agent 六通道声明经各 turn 降级后的最差值。字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md)。 */
   evidenceCoverage: EvidenceCoverage;
   /** 自动重试吸收的物理 send 失败,按发生顺序完整保留；最终一次逻辑 Turn 不重复放这里。 */
@@ -702,9 +704,9 @@ Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来
 两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。
 `diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
 
-同一个 phase 可以产生两种后果：`workspace.diff` 被非 optional 断言消费时，采集失败形成 required evidence unavailable；它只为 artifact 或 optional 断言服务时，失败形成 diagnostic。
+同一个 phase 可以产生两种后果：`workspace.diff` 被 Fact consumer 使用时，采集失败形成 consumed Fact unavailable；它只为 artifact 服务时，失败形成 diagnostic。
 `telemetry.configure` 与 `telemetry.collect` 只产时间轨，按 Observability 契约始终是 supplemental。
-后发生的 supplemental 失败不得替换先前的 `AttemptError`，也不得把已经可计算的 AssertionResult 丢弃。
+后发生的 supplemental 失败不得替换先前的 `AttemptError`，也不得把已经可计算的 Fact result/use 丢弃。
 
 `DiagnosticRecord` 是持久化 observation:只保存 code、origin、level、去重次数与当时观察到的 `detail` / `context`。
 它不存本地化文案、修复建议或命令。

@@ -1,4 +1,4 @@
-// 真正跨域的原子类型:序列化 / 严重度 / 源码位置 / 生命周期。
+// 真正跨域的原子类型:序列化 / 源码位置 / 生命周期。
 // 各域的类型住在各自目录的 types.ts(o11y / sandbox / agents / assertions / context / runner),
 // src/types.ts 是聚合 facade —— 模块代码统一从那里 import,不必记住每个类型的家。
 
@@ -24,9 +24,6 @@ export type JsonMatch =
   | ((value: unknown) => boolean)
   | readonly JsonMatch[]
   | { readonly [key: string]: JsonMatch };
-
-/** Legacy Judge 断言严重度；普通 Fact 的判定由 assert/require 显式声明。 */
-export type Severity = "gate" | "soft";
 
 /** 一次 Attempt 的互斥终态；跳过是已结束但不构成可执行结论的结果。 */
 export type Verdict = "passed" | "failed" | "errored" | "skipped";

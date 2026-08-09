@@ -95,22 +95,11 @@ function factUseProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-function legacyJudgeProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a LegacyJudgeAssertionResult object`;
-  if (typeof value.name !== "string") return `"${path}.name" must be a string`;
-  if (typeof value.detail !== "string") return `"${path}.detail" must be a string`;
-  if (value.rationale !== undefined && typeof value.rationale !== "string") return `"${path}.rationale" must be a string when present`;
-  if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
-  return null;
-}
-
 export function validateAssertionsData(data: unknown): string | null {
   if (!isObject(data)) return "expected an object";
   const facts = arrayProblem(data.factResults, "factResults", factResultProblem);
   if (facts !== null) return facts;
-  const uses = arrayProblem(data.factUses, "factUses", factUseProblem);
-  if (uses !== null) return uses;
-  return arrayProblem(data.legacyJudgeAssertions, "legacyJudgeAssertions", legacyJudgeProblem);
+  return arrayProblem(data.factUses, "factUses", factUseProblem);
 }
 
 

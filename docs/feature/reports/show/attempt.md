@@ -9,7 +9,7 @@
 2. 开始时间、耗时、成本、得分与 usage。
 3. facts：`ctx.fact()` 上报的运行事实完整键值表，有才显示。
 4. 结构化 error 与 persisted diagnostics。
-5. 标注 Eval 源码；源码不可用时显示断言表。
+5. 标注 Eval 源码；源码不可用时显示 Fact result/use 表。
 6. 生命周期 timing。
 7. 对话、trace 与 diff 的紧凑摘要。
 
@@ -48,13 +48,11 @@ facts:
 按落盘 key 的插入顺序显示，不重新排序。
 组装口径单源见 [Attempt Facts](../components/attempt-detail/attempt-facts.md)。
 
-## 断言与源码
+## Fact/use 与源码
 
-有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则 `toAttemptAssertions(attempt)` 返回断言 rows。
-两条路径使用同一份 AssertionResult 和源码锚。
+有 Eval 源码时，`toAttemptSource(attempt)` 返回标注源码；否则详情返回 Fact result/use rows。两条路径使用同一份 producer/consumer 源码锚。
 
-失败断言按原始声明顺序显示，并保留 group、matcher、expected、received 与位置。
-全通过断言可以按 group 折叠；计分制得分点无论 passed 与否都逐条显示。
+失败或不可用 use 按 `sourceOrder` 显示，并保留 label、Fact 名、expected、received、reason 与位置。成功 ScoreFact 显示归一化分数；score use 显示实际 earned 分。Judge 只作为一个 ScoreFact producer 出现在该通用表中。
 
 ## 错误与 diagnostics
 

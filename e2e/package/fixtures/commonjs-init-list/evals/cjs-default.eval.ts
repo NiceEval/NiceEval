@@ -4,6 +4,6 @@ import { isTrue } from "niceeval/expect";
 export default defineEval({
   description: "default CommonJS package consumer",
   async test(t) {
-    t.check(true, isTrue("installed package subpath is loadable"));
+    t.assert(t.check(true, isTrue("installed package subpath is loadable")));
   },
 });

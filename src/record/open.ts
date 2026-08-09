@@ -515,7 +515,7 @@ async function readSnapshotDir(dir: string, meta: RunMeta, state: ScanState): Pr
 }
 
 /**
- * Schema 16 has exactly one attempt shape. We validate the Fact graph before
+ * Schema 17 has exactly one attempt shape. We validate the Fact graph before
  * applying snapshot defaults, so a malformed result cannot enter reports as a
  * partly plausible legacy assertion record.
  */

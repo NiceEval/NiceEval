@@ -187,10 +187,10 @@ export function formatPlainNumber(value: number): string {
 }
 
 /**
- * 计分制 attempt 详情里的挣分标注:`.points(n)` 挣到的分(`n × score`)或 `t.score(label, n)`
- * 的直接给分,单复数随数值(`+1 pt` / `+0.8 pts` / `+0 pts`)——挣 0 分同样显示,不隐藏
- * (docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。这是某一条检查/
- * 记录的**增量**标注,带前导 `+`;attempt 头行的总分位用 `formatPoints`(绝对值,不带 `+`)。
+ * 计分制 attempt 详情里的挣分标注:Fact score use 的 `max × normalizedScore` 或
+ * `t.score(label, { earned })` 的直接给分。单复数随数值(`+1 pt` / `+0.8 pts` / `+0 pts`)
+ * 变化。挣 0 分同样显示。这是一条 Fact use 的增量标注，带前导 `+`；attempt 头行的总分位
+ * 用 `formatPoints`（绝对值，不带 `+`）。
  */
 export function formatPointsSuffix(points: number): string {
   return `+${formatPlainNumber(points)} ${points === 1 ? "pt" : "pts"}`;

@@ -3,12 +3,11 @@
 
 import type { AnswerValue } from "../agents/types.ts";
 import type {
-  AssertionHandle,
   BooleanFact,
   EvidenceSource,
   FactPhase,
   FactUseOptions,
-  ScoreAssertionHandle,
+  JudgeMaterial,
   ScoreCompletion,
   ScoreFact,
   ScoreThresholdOptions,
@@ -31,6 +30,7 @@ export type {
   EvidenceSource,
   FactPhase,
   FactUseOptions,
+  JudgeMaterial,
   ScoreCompletion,
   ScoreFact,
   ScoreThresholdOptions,
@@ -51,32 +51,48 @@ export interface ScopedFactProducers<P extends FactPhase> {
   calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
   notCalledTool(match: ToolMatch): BooleanFact<void, P>;
   toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
+  usedNoTools(): BooleanFact<void, P>;
+  maxToolCalls(max: number): BooleanFact<void, P>;
+  loadedSkill(skill: string): BooleanFact<void, P>;
+  noFailedActions(): BooleanFact<void, P>;
   event(match: EventMatch, options?: CollectionMatch): BooleanFact<MatchableEvent, P>;
   notEvent(match: EventMatch): BooleanFact<void, P>;
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+  eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
+  maxTokens(max: number): UsageEvidenceFact<P>;
+  maxCost(usd: number): UsageEvidenceFact<P>;
 }
 
 /** A completed Agent turn is immutable, so its facts are usable by `require`. */
-export interface TurnHandle<H extends AssertionHandle | ScoreAssertionHandle = AssertionHandle> extends ScopedFactProducers<"now"> {
+export interface TurnHandle extends ScopedFactProducers<"now"> {
   readonly events: readonly StreamEvent[];
   readonly toolCalls: readonly import("../o11y/types.ts").ToolCall[];
   readonly status: "completed" | "failed" | "waiting";
   readonly message: string;
   readonly data?: JsonValue;
   readonly usage?: Usage;
-  /** Judge remains a legacy compatibility island, not a Fact producer. */
-  readonly judge: JudgeNamespace<H>;
+  /** Judge facts are bound to this immutable turn's original input and output. */
+  readonly judge: TurnJudgeNamespace;
 }
 
-export interface AutoevalsNamespace<H extends AssertionHandle | ScoreAssertionHandle = AssertionHandle> {
-  closedQA(question: string, opts?: { on?: string; model?: string }): H;
-  factuality(expected: string, opts?: { on?: string; model?: string }): H;
-  summarizes(source: string, opts?: { on?: string; model?: string }): H;
+export interface AutoevalsNamespace {
+  closedQA(question: string, material: JudgeMaterial): ScoreFact<"now">;
+  factuality(expected: string, material: JudgeMaterial): ScoreFact<"now">;
+  summarizes(source: string, material: JudgeMaterial): ScoreFact<"now">;
 }
 
-/** Existing public Judge API and handles retain their old shape. */
-export interface JudgeNamespace<H extends AssertionHandle | ScoreAssertionHandle = AssertionHandle> {
-  readonly autoevals: AutoevalsNamespace<H>;
+export interface TurnAutoevalsNamespace {
+  closedQA(question: string): ScoreFact<"now">;
+  factuality(expected: string): ScoreFact<"now">;
+  summarizes(source: string): ScoreFact<"now">;
+}
+
+export interface JudgeNamespace {
+  readonly autoevals: AutoevalsNamespace;
+}
+
+export interface TurnJudgeNamespace {
+  readonly autoevals: TurnAutoevalsNamespace;
 }
 
 export interface FileChangedOptions {
@@ -91,6 +107,8 @@ export interface EvalSandbox extends SandboxOperations, SandboxTransferOperation
   noChanges(): BooleanFact<void, "final">;
   fileChanged(path: string, options?: FileChangedOptions): BooleanFact<void, "final">;
   fileDeleted(path: string): BooleanFact<void, "final">;
+  notInDiff(pattern: RegExp): BooleanFact<void, "final">;
+  noFailedShellCommands(): BooleanFact<void, "final">;
 }
 
 export interface InputRequestFilter {
@@ -105,29 +123,28 @@ export interface InputRequestFilter {
 export type RespondAnswer = { readonly request: InputRequest } & AnswerValue;
 
 /** A session Fact captures the session prefix at declaration time. */
-export interface SessionHandle<H extends AssertionHandle | ScoreAssertionHandle = AssertionHandle> extends ScopedFactProducers<"now"> {
-  send(input: SendInput): Promise<TurnHandle<H>>;
-  sendFile(path: string, text?: string): Promise<TurnHandle<H>>;
+export interface SessionHandle extends ScopedFactProducers<"now"> {
+  send(input: SendInput): Promise<TurnHandle>;
+  sendFile(path: string, text?: string): Promise<TurnHandle>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
-  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle<H>>;
-  respondAll(optionId: string): Promise<TurnHandle<H>>;
+  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
+  respondAll(optionId: string): Promise<TurnHandle>;
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
   readonly usage: Usage;
-  readonly judge: JudgeNamespace<H>;
 }
 
 export interface TestContext extends ScopedFactProducers<"final"> {
-  send(input: SendInput): Promise<TurnHandle<AssertionHandle>>;
-  sendFile(path: string, text?: string): Promise<TurnHandle<AssertionHandle>>;
+  send(input: SendInput): Promise<TurnHandle>;
+  sendFile(path: string, text?: string): Promise<TurnHandle>;
   requireInputRequest(filter?: InputRequestFilter): InputRequest;
-  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle<AssertionHandle>>;
-  respondAll(optionId: string): Promise<TurnHandle<AssertionHandle>>;
+  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
+  respondAll(optionId: string): Promise<TurnHandle>;
   readonly reply: string;
   readonly sessionId: string | undefined;
   readonly events: readonly StreamEvent[];
-  newSession(): SessionHandle<AssertionHandle>;
+  newSession(): SessionHandle;
 
   readonly signal: AbortSignal;
   readonly model?: string;
@@ -158,16 +175,16 @@ export interface TestContext extends ScopedFactProducers<"final"> {
   readonly sandbox: EvalSandbox;
   readonly o11y: O11ySummary;
   readonly usage: Usage;
-  readonly judge: JudgeNamespace<AssertionHandle>;
+  readonly judge: JudgeNamespace;
 }
 
 export interface ScoreTestContext extends Omit<TestContext, "judge" | "send" | "sendFile" | "respond" | "respondAll" | "newSession"> {
-  send(input: SendInput): Promise<TurnHandle<ScoreAssertionHandle>>;
-  sendFile(path: string, text?: string): Promise<TurnHandle<ScoreAssertionHandle>>;
-  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle<ScoreAssertionHandle>>;
-  respondAll(optionId: string): Promise<TurnHandle<ScoreAssertionHandle>>;
-  newSession(): SessionHandle<ScoreAssertionHandle>;
-  readonly judge: JudgeNamespace<ScoreAssertionHandle>;
+  send(input: SendInput): Promise<TurnHandle>;
+  sendFile(path: string, text?: string): Promise<TurnHandle>;
+  respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
+  respondAll(optionId: string): Promise<TurnHandle>;
+  newSession(): SessionHandle;
+  readonly judge: JudgeNamespace;
   score<P extends FactPhase>(
     label: string,
     fact: BooleanFact<unknown, P> | ScoreFact<P>,

@@ -116,8 +116,7 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
 
 /**
  * EvalResult → Braintrust 一行。导出仅为单测;映射口径:
- * - scores:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下 —— 实验 diff 里
- *   gate 回归和 soft 分数回归用同一套机制看。重名断言追加 `#n` 消歧,不静默覆盖。
+ * - scores:每个已消费且成功的 Score Fact 记归一化分；阈值 verdict use 另记 0/1。
  * - metrics:start/end(Braintrust 由此算时长)+ token 用量 + 估算成本;缺就不写,不编 0。
  * - metadata:身份维度(agent / model / experiment / attempt / flags)+ 失败断言明细。
  */
@@ -127,30 +126,29 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   const terminal = attemptTerminalOf(result);
   const verdict = verdictForTerminal(result);
   if (fact !== undefined) {
+    const consumedFactIds = new Set<string>();
     for (const use of fact.factUses) {
-      if (use.useKind === "verdict") {
-        if (use.outcome === "passed" || use.outcome === "failed") {
-          addScore(scores, `verdict:${use.label ?? use.key ?? use.method}`, use.outcome === "passed" ? 1 : 0);
-        }
-        continue;
-      }
-      if (use.outcome !== "scored" || use.input.kind !== "fact" || use.input.max <= 0) continue;
-      addScore(scores, `score:${use.label}`, Math.min(1, Math.max(0, use.earned / use.input.max)));
+      if (use.useKind === "verdict") consumedFactIds.add(use.target.factId);
+      else if (use.input.kind === "fact") consumedFactIds.add(use.input.factId);
     }
-    for (const judge of fact.legacyJudgeAssertions) {
-      if (judge.outcome !== "passed" && judge.outcome !== "failed") continue;
-      addScore(scores, `legacy-judge:${judge.name}`, Math.min(1, Math.max(0, judge.normalizedScore)));
+    const byId = new Map(fact.factResults.map((item) => [item.factId, item]));
+    for (const item of fact.factResults) {
+      if (item.factKind !== "score" || item.outcome !== "scored" || !consumedFactIds.has(item.factId)) continue;
+      addScore(scores, `fact:${item.factId}`, item.normalizedScore);
+    }
+    for (const use of fact.factUses) {
+      if (use.useKind !== "verdict" || use.target.kind !== "score") continue;
+      const target = byId.get(use.target.factId);
+      if (target?.factKind !== "score" || target.outcome !== "scored") continue;
+      if (use.outcome !== "passed" && use.outcome !== "failed") continue;
+      const stableUseKey = use.key ?? use.label ?? target.name;
+      addScore(scores, `use:${stableUseKey}`, use.outcome === "passed" ? 1 : 0);
     }
     // A scored zero is a successful terminal, whereas invalid is the only
     // observed zero for terminal validity. Unavailable/errored intentionally
     // omit this score rather than masquerading as ordinary 0.
     if (terminal === "scored") addScore(scores, "niceeval:terminal", 1);
     if (terminal === "invalid") addScore(scores, "niceeval:terminal", 0);
-  } else {
-    for (const a of result.assertions) {
-      if (a.outcome === "unavailable") continue;
-      addScore(scores, a.severity === "gate" ? `gate:${a.name}` : a.name, Math.min(1, Math.max(0, a.score)));
-    }
   }
 
   const metrics: globalThis.Record<string, number> = {};
@@ -191,18 +189,8 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     metadata.evaluationKind = fact.evaluationKind;
     metadata.factResults = fact.factResults as unknown as JsonValue;
     metadata.factUses = fact.factUses as unknown as JsonValue;
-    metadata.legacyJudgeAssertions = fact.legacyJudgeAssertions as unknown as JsonValue;
     const score = scoreOutcomeOf(result);
     if (score !== undefined) metadata.scoreResult = score as unknown as JsonValue;
-  } else {
-    const failed = result.assertions
-      .filter((a) => a.outcome === "failed")
-      .map((a) => ({ name: a.name, ...(a.detail === undefined ? {} : { detail: a.detail }) }));
-    if (failed.length > 0) metadata.failedAssertions = failed;
-    const unavailable = result.assertions
-      .filter((a) => a.outcome === "unavailable")
-      .map((a) => ({ name: a.name, reason: a.outcome === "unavailable" ? a.reason : "" }));
-    if (unavailable.length > 0) metadata.unavailableAssertions = unavailable;
   }
 
   // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。

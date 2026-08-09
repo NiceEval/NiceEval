@@ -8,7 +8,7 @@ export class EvalSkipped extends Error {
   }
 }
 
-/** t.require / .stopOnFailure() 不过:正常断言失败；中止后续，但由已记录断言决定判定。 */
+/** `t.require()` 未通过:正常 Fact use 失败；中止后续，但由已记录 Fact/use 决定判定。 */
 export class EvalRequirementFailed extends Error {
   constructor(public readonly assertionName: string) {
     super(`requirement failed: ${assertionName}`);

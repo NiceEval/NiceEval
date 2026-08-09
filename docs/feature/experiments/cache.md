@@ -68,8 +68,7 @@ Agent 安装身份只含按声明顺序冻结的 ensure identity 与精确配对
 - **进 configHash 的字段必须落进 `run.json`**,顶层或 `ExperimentRunInfo` 二选一、不重复。
   没落盘就没法对历史侧重算配置身份,配置面的差异解释与 [`accept`](#niceeval-accept-locator接受一条或多条结果) 的重锚校验也就无从落地。
 - **`configHash` 不逐 eval、不逐题型分叉。**
-  代价是配置改动会波及证明上不受它影响的 eval: 一条 eval 自己完整声明了 `judge` 时,config 层换裁判模型照样让它重跑。
-   `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
+  代价是配置改动会波及证明上不受它影响的 eval：一条 eval 自己完整声明了 `judge` 时，config 层换裁判模型照样让它重跑。
   换来的是一个字段只裁决一次,不必维护一张「哪个字段对哪类 eval 有效」的表。
 - **凭据不进。**
   `judge` 进的是求值后 `model`、`baseUrl` 与 `timeoutMs`；`judge.apiKeyEnv` 只选择凭据从哪来，不进哈希也不落盘。
@@ -182,7 +181,6 @@ export default defineExperiment({
 });
 ```
 
-命令行上还有一个:`--strict` 改变 soft 断言怎样影响判定,进指纹 → 36 条全部重跑。
 `--max-concurrency` 只是调度,一条不动。
 
 ### eval 文件:一行下去只作废这一条

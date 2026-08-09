@@ -4,7 +4,6 @@
 import type { PhaseTiming, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
 import type {
   EvaluationFactResult,
-  LegacyJudgeAssertionResult,
   ScoreFactUseResult,
   VerdictFactUseResult,
 } from "../assertions/types.ts";
@@ -62,7 +61,6 @@ export function deriveSendAnnotations(
 export type LineAnnotation =
   | { kind: "fact"; fact: EvaluationFactResult }
   | { kind: "factUse"; use: VerdictFactUseResult | ScoreFactUseResult }
-  | { kind: "legacyJudge"; judge: LegacyJudgeAssertionResult }
   | { kind: "send"; send: SendAnnotation };
 
 export interface SourceTreeLine {
@@ -104,7 +102,6 @@ export interface AnnotatedSourceTree {
   unmapped: {
     facts: EvaluationFactResult[];
     uses: (VerdictFactUseResult | ScoreFactUseResult)[];
-    legacyJudgeAssertions: LegacyJudgeAssertionResult[];
   };
   summary: SourceCallSummary;
 }
@@ -139,7 +136,6 @@ export function assembleSourceTree(input: {
   sources: readonly SourceArtifact[];
   factResults: readonly EvaluationFactResult[];
   factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
-  legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
   sends: readonly SendAnnotation[];
   abort?: SourceLoc;
 }): AnnotatedSourceTree {
@@ -158,7 +154,7 @@ export function assembleSourceTree(input: {
   const spine = makeNode(input.entry.path);
   if (!spine) throw new Error(`Entry source is missing from the captured source set: ${input.entry.path}`);
   const detached: SourceNode[] = [];
-  const unmapped: AnnotatedSourceTree["unmapped"] = { facts: [], uses: [], legacyJudgeAssertions: [] };
+  const unmapped: AnnotatedSourceTree["unmapped"] = { facts: [], uses: [] };
   const abortedCalls = new Set<SourceCall>();
 
   const findOrCreateDetached = (file: string): SourceNode | undefined => {
@@ -213,7 +209,6 @@ export function assembleSourceTree(input: {
     if (!loc) {
       if (annotation?.kind === "fact") unmapped.facts.push(annotation.fact);
       if (annotation?.kind === "factUse") unmapped.uses.push(annotation.use);
-      if (annotation?.kind === "legacyJudge") unmapped.legacyJudgeAssertions.push(annotation.judge);
       return;
     }
     const declaration = {
@@ -292,25 +287,23 @@ interface SourceAnnotationInput {
 }
 
 /**
- * Fact producer、Fact consumer、legacy Judge sidecar 与 send 都有 sourceOrder，因而能恢复真正
+ * Fact producer、Fact consumer 与 send 都有 sourceOrder，因而能恢复真正
  * 的跨数组发生顺序。缺字段的第三方记录只保留各自存储桶内的稳定顺序；绝不把这个回退位置
  * 解释成不同事实之间的实际先后。
  */
 type SourceAnnotationSequence =
   | { kind: "recorded"; sourceOrder: number; inputIndex: number }
-  | { kind: "legacy"; sourceKind: SourceAnnotationKind; inputIndex: number };
+  | { kind: "unrecorded"; sourceKind: SourceAnnotationKind; inputIndex: number };
 
-const legacySourceKindRank: Readonly<Record<SourceAnnotationKind, number>> = {
+const sourceKindRank: Readonly<Record<SourceAnnotationKind, number>> = {
   fact: 0,
   factUse: 1,
-  legacyJudge: 2,
-  send: 3,
+  send: 2,
 };
 
 function sortSourceAnnotations(input: {
   factResults: readonly EvaluationFactResult[];
   factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
-  legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
   sends: readonly SendAnnotation[];
 }): SourceAnnotationInput[] {
   const inputs: SourceAnnotationInput[] = [];
@@ -328,18 +321,15 @@ function sortSourceAnnotations(input: {
           ? annotation.send.loc
           : annotation.kind === "fact"
             ? annotation.fact.producerLoc
-            : annotation.kind === "factUse"
-              ? annotation.use.consumerLoc
-              : annotation.judge.loc,
+            : annotation.use.consumerLoc,
         sequence: order === undefined
-          ? { kind: "legacy", sourceKind: annotation.kind, inputIndex }
+          ? { kind: "unrecorded", sourceKind: annotation.kind, inputIndex }
           : { kind: "recorded", sourceOrder: order, inputIndex },
       });
     }
   };
   addInputs(input.factResults, (fact) => ({ kind: "fact", fact }), (fact) => fact.sourceOrder);
   addInputs(input.factUses, (use) => ({ kind: "factUse", use }), (use) => use.sourceOrder);
-  addInputs(input.legacyJudgeAssertions, (judge) => ({ kind: "legacyJudge", judge }), (judge) => judge.sourceOrder);
   addInputs(input.sends, (send) => ({ kind: "send", send }), (send) => send.sourceOrder);
   return inputs.sort(compareSourceAnnotationSequence);
 }
@@ -349,12 +339,12 @@ function compareSourceAnnotationSequence(left: SourceAnnotationInput, right: Sou
   const rightSequence = right.sequence;
   if (leftSequence.kind === "recorded" && rightSequence.kind === "recorded") {
     return leftSequence.sourceOrder - rightSequence.sourceOrder ||
-      legacySourceKindRank[left.annotation.kind] - legacySourceKindRank[right.annotation.kind] ||
+      sourceKindRank[left.annotation.kind] - sourceKindRank[right.annotation.kind] ||
       leftSequence.inputIndex - rightSequence.inputIndex;
   }
   if (leftSequence.kind === "recorded") return -1;
   if (rightSequence.kind === "recorded") return 1;
-  return legacySourceKindRank[leftSequence.sourceKind] - legacySourceKindRank[rightSequence.sourceKind] ||
+  return sourceKindRank[leftSequence.sourceKind] - sourceKindRank[rightSequence.sourceKind] ||
     leftSequence.inputIndex - rightSequence.inputIndex;
 }
 
@@ -456,21 +446,7 @@ function annotationSummary(annotation: LineAnnotation): SourceCallSummary {
       unavailable: use.outcome !== "passed" && use.outcome !== "failed" ? 1 : 0,
     };
   }
-  const judge = annotation.judge;
-  const base: SourceCallSummary = {
-    ...emptySummary(),
-    checks: 1,
-    passed: judge.outcome === "passed" ? 1 : 0,
-    failed: judge.outcome === "failed" ? 1 : 0,
-    unavailable: judge.outcome !== "passed" && judge.outcome !== "failed" ? 1 : 0,
-  };
-  if (judge.policy.scoring.kind === "points") {
-    base.points = {
-      earned: "earnedPoints" in judge ? judge.earnedPoints : 0,
-      available: judge.policy.scoring.max,
-    };
-  }
-  return base;
+  return emptySummary();
 }
 
 function addSummaries(items: readonly SourceCallSummary[]): SourceCallSummary {
@@ -532,7 +508,6 @@ function summaryOfUnmapped(unmapped: AnnotatedSourceTree["unmapped"]): SourceCal
   return addSummaries([
     ...unmapped.facts.map((fact) => annotationSummary({ kind: "fact", fact })),
     ...unmapped.uses.map((use) => annotationSummary({ kind: "factUse", use })),
-    ...unmapped.legacyJudgeAssertions.map((judge) => annotationSummary({ kind: "legacyJudge", judge })),
   ]);
 }
 
@@ -610,35 +585,6 @@ function mergeFileNodes(nodes: readonly SourceNode[]): SourceNode {
 interface BudgetCandidate {
   call: ProjectedSourceCall;
   depth: number;
-  severity: "soft" | "gate";
-}
-
-function failedSeverity(call: ProjectedSourceCall): "soft" | "gate" {
-  const annotations: LineAnnotation[] = [];
-  const visitCalls = (calls: readonly ProjectedSourceCall[]) => {
-    for (const child of calls) {
-      if (child.target.kind === "source") visitNode(child.target.node);
-      else {
-        if (child.target.kind === "unavailable") annotations.push(...child.target.annotations);
-        visitCalls(child.target.calls);
-      }
-    }
-  };
-  const visitNode = (node: SourceContentNode) => {
-    for (const line of node.lines) {
-      annotations.push(...line.annotations);
-      visitCalls(line.calls);
-    }
-  };
-  if (call.target.kind === "source") visitNode(call.target.node);
-  else {
-    if (call.target.kind === "unavailable") annotations.push(...call.target.annotations);
-    visitCalls(call.target.calls);
-  }
-  return annotations.some((annotation) =>
-    (annotation.kind === "factUse" && annotation.use.useKind === "verdict" && annotation.use.method === "require" && annotation.use.outcome === "failed") ||
-    (annotation.kind === "legacyJudge" && annotation.judge.policy.verdict.kind === "gate" && annotation.judge.outcome === "failed")
-  ) ? "gate" : "soft";
 }
 
 function applyLineBudget(source: SourceContent, budget: number): void {
@@ -647,7 +593,7 @@ function applyLineBudget(source: SourceContent, budget: number): void {
     let count = 0;
     for (const call of calls) {
       if (call.open) {
-        candidates.push({ call, depth, severity: failedSeverity(call) });
+        candidates.push({ call, depth });
         if (call.target.kind === "source") {
           count += call.target.node.lines.length;
           count += call.target.node.lines.reduce((sum, line) => sum + visibleLinesInCalls(line.calls, depth + 1), 0);
@@ -663,10 +609,7 @@ function applyLineBudget(source: SourceContent, budget: number): void {
     source.spine.lines.reduce((sum, line) => sum + visibleLinesInCalls(line.calls, 1), 0) +
     source.detached.reduce((sum, node) => sum + node.lines.reduce((subtotal, line) => subtotal + visibleLinesInCalls(line.calls, 1), 0), 0);
   if (visible <= budget) return;
-  candidates.sort((left, right) =>
-    right.depth - left.depth ||
-    (left.severity === right.severity ? 0 : left.severity === "soft" ? -1 : 1)
-  );
+  candidates.sort((left, right) => right.depth - left.depth);
   for (const candidate of candidates) {
     if (!candidate.call.open) continue;
     candidate.call.open = false;

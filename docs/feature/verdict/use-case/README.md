@@ -1,5 +1,5 @@
 # Verdict 用例
 
-## `--strict`
+通过显式 Fact use 设定质量阈值：
 
-- [质量分毕业成门禁](strict-quality-gate.md)
+- [用明确阈值守住质量](strict-quality-gate.md)

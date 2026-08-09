@@ -10,7 +10,7 @@
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
-import type { EvalResult, JsonValue, JudgeConfig } from "../types.ts";
+import type { EvalResult, JsonValue, JudgeConfig, ResolvedJudgeConfig } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 
 /**
@@ -43,6 +43,7 @@ export type JudgeConfigIdentity =
       readonly _tag: "Configured";
       readonly model: DeclaredConfigValue<string>;
       readonly baseUrl: DeclaredConfigValue<string>;
+      readonly apiKeyEnv: DeclaredConfigValue<string>;
       readonly timeoutMs: DeclaredConfigValue<number>;
     };
 
@@ -102,6 +103,7 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
           _tag: "Configured" as const,
           model: Object.freeze(identity.judge.model),
           baseUrl: Object.freeze(identity.judge.baseUrl),
+          apiKeyEnv: Object.freeze(identity.judge.apiKeyEnv),
           timeoutMs: Object.freeze(identity.judge.timeoutMs),
         }),
     agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
@@ -149,13 +151,14 @@ function declaredString(value: string | undefined): DeclaredConfigValue<string> 
   return value === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value };
 }
 
-function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
+function judgeIdentity(judge: JudgeConfig | ResolvedJudgeConfig | undefined): JudgeConfigIdentity {
   return judge === undefined
     ? { _tag: "Unconfigured" }
     : {
         _tag: "Configured",
         model: declaredString(judge.model),
         baseUrl: declaredString(judge.baseUrl),
+        apiKeyEnv: declaredString(judge.apiKeyEnv),
         timeoutMs: judge.timeoutMs === undefined ? { _tag: "Omitted" } : { _tag: "Configured", value: judge.timeoutMs },
       };
 }
@@ -163,7 +166,7 @@ function judgeIdentity(judge: JudgeConfig | undefined): JudgeConfigIdentity {
 export function configIdentityForRun(
   run: AgentRun,
   plan: LinkedRunPlan,
-  judge: JudgeConfig | undefined = run.judge,
+  judge: JudgeConfig | ResolvedJudgeConfig | undefined = run.judge,
 ): ConfigIdentity {
   return freezeConfigIdentity({
     agent: run.agent.name,
@@ -212,9 +215,10 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judge._tag === "Configured") {
-    putDeclared("judge.model", identity.judge.model);
-    putDeclared("judge.baseUrl", identity.judge.baseUrl);
-    putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
+  putDeclared("judge.model", identity.judge.model);
+  putDeclared("judge.baseUrl", identity.judge.baseUrl);
+  putDeclared("judge.apiKeyEnv", identity.judge.apiKeyEnv);
+  putDeclared("judge.timeoutMs", identity.judge.timeoutMs);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;

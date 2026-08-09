@@ -12,10 +12,11 @@ export default defineEval({
   description?: string;   // 人读的描述,出现在报告里;不参与任何判定
   tags?: string[];        // 供 --tag 与 ExperimentInput.evals 谓词过滤
 
-  judge?: JudgeConfig;    // 这道题要多强的裁判
+  judge?: true | JudgeConfig;
+  // 声明这道题可创建 Judge Fact；true 继承配置，对象同时按字段覆盖配置
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    timeout 要按次压过时用 --timeout 或 experiment 字段;judge 单条换模型用断言的 { model }
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段；Judge 配置只在声明层解析一次
 
   sandbox?: SandboxLayer;   // 这道题的起点或准备:具体 Provider factory 的产物,或 sandboxLayer() 的命令链
   //  与 Experiment 的同名字段配对:每个实际配对恰好一方带 template
@@ -31,11 +32,11 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要 Judge capability，这是题目本身的属性，不是这次跑法的偏好。
 项目级配置是没写时的默认出处，压不掉 eval 写下的值。
-`timeoutMs` 可由 experiment 或 `--timeout` 替换。`judge` 按单条断言 `{ model }` → experiment → eval → config 逐字段求值，没有 CLI 替换层。
+`timeoutMs` 可由 experiment 或 `--timeout` 设置替换。`judge: true` 从 Experiment 与项目 Config 继承；`judge: { ... }` 声明 capability 并按字段替换它们。没有在 eval 上声明 `judge` 时，创建 Judge Fact 是同步作者错误。
 
-Eval 的 `judge` 是这道题对裁判能力的默认要求。Experiment 可以签入另一组执行配置做 A/B；rubric、severity 与 threshold 仍只属于 Eval。见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
+Runner 将求值后的 Judge 配置冻结一次，用同一份值做 fingerprint、预检与 evaluator 执行。Fact recipe 没有 `{ model }` 替换层。阈值属于 `t.assert` 或 `await t.require` 的 Fact use；计分属于 `t.score`。见 [LLM-as-judge](../judge/library.md#capability-与配置)。
 完整求值链见 [Experiments · 配置求值链](../experiments/architecture.md#配置求值链一次求值处处同源)。
 
 `sandbox` 放一个 `SandboxLayer`，两种形态（类型与 factory 契约单源在 [Sandbox Layer](../sandbox/layers.md)）：
@@ -134,14 +135,14 @@ export default defineScoreEval({
 后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.assert(fact)` 继续收集。
 
 正常路径必须 `return t.finishScore()`，明确关闭计分收集器。
-`require` 未通过、Judge `.stopOnFailure()` 未通过或 `t.skip()` 是合法终止路径，不要求执行不可达的完成令牌。
+`require` 未通过、Judge Fact 不可用或 `t.skip()` 是合法终止路径，不要求执行不可达的完成令牌。
 
 题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "score"`)供报告选择主读数。
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
 计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-points.md)。
 
 API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集从输入数组生成多条 eval、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
-评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。
+评分手段（Judge、匹配器与 Fact use）单独成篇，见 [Assertions](../assertions/README.md)。
 
 ## 相关阅读
 

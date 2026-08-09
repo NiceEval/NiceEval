@@ -1,85 +1,36 @@
-# 值 Assertion
+# Assertions —— 值 Fact
 
-从 `niceeval/expect` 导入 matcher，再用 `t.check` 或 `t.require` 评分任意值。
-
-```ts
-import { includes, matches, isDefined } from "niceeval/expect";
-
-const reply = await t.require(t.reply, isDefined("reply"));
-t.check(reply, includes("Brooklyn"));
-t.check(turn.data, matches(MySchema));
-```
-
-## `check` 与 `require`
-
-- `t.check(value, matcher)` 同步登记断言并继续执行，适合一次收集多条结果。
-- `await t.require(value, matcher)` 等价于 `await t.check(value, matcher).gate().stopOnFailure()`；不通过时登记硬失败并中止依赖它的后续代码，通过后返回原 value。
-
-只有后续逻辑依赖这个值时才使用 `require`。
-两种题型都有它；作用域断言或需要保留 soft 严重度时，在断言句柄上显式链 `.stopOnFailure()`。
-完整语义见[Severity 与 Verdict · 控制流与严重度正交](../../verdict/architecture.md#控制流与严重度正交)。
-
-## 内置 matcher
-
-| Matcher | 用途 | 默认严重度 |
-|---|---|---|
-| `includes(needle, opts?)` | 包含字符串或命中正则 | gate |
-| `excludes(needle, opts?)` | 不包含字符串或不命中正则 | gate |
-| `equals(expected)` | 深度相等 | gate |
-| `matches(schema)` | Standard Schema / Zod 校验 | gate |
-| `similarity(expected)` | `[0,1]` 编辑距离相似度 | soft（阈值 0.6） |
-| `includesUrl(min?)` | 含至少 min 条（默认 1）去重后的 http(s) 链接 | gate |
-| `hasSections(min?)` | 含至少 min 个（默认 2）Markdown 标题 | gate |
-| `satisfies(predicate, label?)` | 自定义谓词 | gate |
-| `isDefined(label?)` | 非 null / undefined | gate |
-| `isTrue(label?)` / `isFalse(label?)` | 严格布尔判断 | gate |
-| `commandSucceeded()` | 命令退出码为 0 | gate |
-
-`includes` / `excludes` 的 `opts` 是 `{ stripComments?: boolean }`：`stripComments` 先剥掉代码注释再匹配，用于只对真实代码断言、不被注释里的字面量干扰：
+从 `niceeval/expect` 导入纯 Match factory，再用 `t.check` 创建 Fact：
 
 ```ts
-t.check(t.sandbox.diff.get("src/weather.ts"), excludes(/console\.log/, { stripComments: true }));
+import { includes, isDefined, matches, similarity } from "niceeval/expect";
+
+const reply = await t.require(t.check(t.reply, isDefined("reply")));
+const mentionsBrooklyn = t.check(reply, includes("Brooklyn"));
+const dataIsValid = t.check(turn.data, matches(ResultSchema));
+const quality = t.check(reply, similarity("Brooklyn is sunny."));
+
+t.assert(mentionsBrooklyn);
+t.assert(dataIsValid);
+t.assert(quality, { atLeast: 0.8 });
 ```
 
-`satisfies` 的 `predicate` 是 `(value: unknown) => boolean`，真记 1 分、假记 0 分；`label` 进报告名：
+`check` 创建惰性 BooleanFact 或 ScoreFact。它不自行改变 verdict。`require(value, match)` 是即时便利写法：它创建 BooleanFact、登记 verdict use，并返回原值的收窄类型。
 
-```ts
-t.check(turn.data, satisfies((v) => Array.isArray(v) && v.length <= 5, "最多 5 条结果"));
-```
+Match 不带 severity、可选性、分值或停止策略。阈值写在 `t.assert(scoreFact, { atLeast })` 或 `t.require(scoreFact, { atLeast })`；计分写在 `t.score(label, fact, { max })`。
 
-`similarity(expected)` 是归一化编辑距离（1 − Levenshtein ÷ 较长串长度），不是语义相似度——同义改写、语序调整会得低分，适合期望输出接近逐字稳定的场景；语义评价用 [LLM-as-judge](../../judge/library.md)。
+## Match factory
 
-`includesUrl(min?)` / `hasSections(min?)` 是**内容形状断言**。
-它们不判语义，只检查回答是否带出处链接或小节结构。
-没有 Judge key 时，它们比检查输入中已有的词更可靠，但仍判不了内容真伪。
-有 Judge 时，语义质量交给 [LLM-as-judge](../../judge/library.md)。
-URL 按去重后的完整链接计数；标题按行首 `#` 到 `######` 计数。
+| Factory | 结果 |
+|---|---|
+| `includes`、`excludes`、`pattern` | 字符串 BooleanMatch |
+| `equals` | 深相等 BooleanMatch |
+| `matches` | Standard Schema 输入收窄 |
+| `isDefined`、`isTrue`、`isFalse` | 常用 BooleanMatch |
+| `similarity` | `[0,1]` ScoreMatch |
+| `satisfies`、`defineValueMatch` | 自定义 BooleanMatch |
+| `defineScoreMatch` | 自定义 ScoreMatch |
 
-## 改严重度与阈值
+ScoreMatch 返回非有限数或 `[0,1]` 外的值是 evaluator error。NiceEval 不把它裁剪成可用分数。
 
-每个 matcher 都可以链 `.gate(threshold?)`、`.atLeast(threshold)`、`.soft()` 或 `.optional()`，返回新的不可变 matcher，原实例不变、可复用：
-
-```ts
-const nearEnough = similarity("布鲁克林今天晴。");
-t.check(t.reply, nearEnough.atLeast(0.9));   // 收紧默认的 0.6；nearEnough 本身不变
-t.check(reply2, nearEnough.gate(0.8));       // 同一个 matcher 换一档严重度复用
-```
-
-写下这四个词各会怎样向上传播——`.gate` 是硬要求、`.atLeast` 的参数是分数线、`.soft()` 不设线、`.optional()` 允许证据缺席——逐行标注在[Severity 与 Verdict](../../verdict/architecture.md#severity)。
-两种题型里的严重度完全同义；是否停止后续代码只由断言句柄的 `.stopOnFailure()` 决定。
-
-每个 matcher 失败时在 show / view 里显示什么，见 [断言与 Turn 的展示](display.md)。
-
-## 分组
-
-`t.group(title, fn)` 组织报告区块，并给对比提供得分点维度；不改变各断言分数或严重度，也不参与判定：
-
-```ts
-await t.group("天气查询", async () => {
-  t.check(t.reply, includes("Brooklyn"));
-  t.calledTool("get_weather");
-});
-```
-
-分组可以嵌套，返回 `fn` 的返回值。
-组名在对比读取面按字面聚合成跨 eval 可比的得分点：计分制下读组内挣分之和，通过制下读组质量分（soft 断言均值），gate 失败按组定位「死在哪层」；同类检查在不同 eval 里保持组名一致——折叠语义见[计分粒度](score-points.md)。
+`t.group(title, fn)` 只组织 Fact 和 use 的 source group。它不改变 Fact 结果、阈值或计分。

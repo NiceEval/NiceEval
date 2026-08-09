@@ -1,6 +1,5 @@
 // Eval author context: Fact producers own evidence, while Fact uses are the
-// only route into a verdict, requirement, or score.  Legacy Judge is injected
-// as a deliberately isolated sidecar.
+// only route into a verdict, requirement, or score.
 
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
@@ -12,6 +11,7 @@ import {
 } from "../assertions/collector.ts";
 import {
   changeEntryCandidatesFor,
+  elidedContentPaths,
   emptyDiffData,
   evaluateNoChanges,
   evaluateTouchedPaths,
@@ -29,8 +29,8 @@ import {
   type ScoreMatch,
   type ToolMatch,
 } from "../assertions/match.ts";
-import type { FactPhase } from "../assertions/types.ts";
-import { buildJudge } from "../assertions/judge.ts";
+import type { FactPhase, ResolvedJudgeConfig } from "../assertions/types.ts";
+import { buildJudge, buildTurnJudge } from "../assertions/judge.ts";
 import type { ResolvedEvidenceCoverage, EvidenceCoverageChannel } from "../assertions/coverage.ts";
 import { EvalSkipped } from "./control-flow.ts";
 import { FileRef, resolveDeferredFileText } from "./deferred-file-content.ts";
@@ -51,7 +51,6 @@ import type {
   InputRequestFilter,
   InputResponse,
   JsonValue,
-  JudgeConfig,
   LogicalToolOccurrence,
   RespondAnswer,
   Sandbox,
@@ -90,7 +89,7 @@ export interface ContextDeps {
   experimentId?: string;
   signal: AbortSignal;
   log(msg: string): void;
-  judge: JudgeConfig | undefined;
+  judge: ResolvedJudgeConfig | undefined;
   telemetry?: import("../types.ts").Telemetry;
   otel?: import("../o11y/otlp/turn-otel.ts").AgentOtelChannel;
   evalBaseDir?: string;
@@ -261,6 +260,26 @@ function validateFileChangedOptions(
   }
 }
 
+function nonNegativeFinite(value: number, label: string): number {
+  if (!Number.isFinite(value) || value < 0) throw new TypeError(`${label} must be a non-negative finite number`);
+  return value;
+}
+
+function nonNegativeCount(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new TypeError(`${label} must be a non-negative safe integer`);
+  return value;
+}
+
+function nonEmptyLabel(value: string, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) throw new TypeError(`${label} must be a non-empty string`);
+  return value;
+}
+
+function regexMatches(pattern: RegExp, value: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(value);
+}
+
 function collectionOutcome<T>(
   candidates: readonly CandidateResult<T>[],
   coverage: string | undefined,
@@ -304,6 +323,125 @@ async function notCalledToolOutcome(evidence: ScopeEvidence, match: ToolMatch): 
   const coverage = coverageReason(evidence.coverage, "actions");
   if (candidates.some((candidate) => candidate.result.state === "unavailable") || coverage !== undefined) {
     return { outcome: "unavailable", reason: firstUnavailableReason(candidates, coverage) };
+  }
+  return { outcome: "passed" };
+}
+
+function usedNoToolsOutcome(evidence: ScopeEvidence): BooleanFactEvaluation {
+  const occurrences = occurrencesFor(evidence.turns);
+  if (occurrences.length > 0) {
+    return {
+      outcome: "failed",
+      expected: "no tool calls",
+      received: `${occurrences.length} tool call${occurrences.length === 1 ? "" : "s"}`,
+    };
+  }
+  const unavailable = coverageReason(evidence.coverage, "actions");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function maxToolCallsOutcome(evidence: ScopeEvidence, max: number): BooleanFactEvaluation {
+  const count = occurrencesFor(evidence.turns).length;
+  if (count > max) return { outcome: "failed", expected: `at most ${max} tool calls`, received: `${count} tool calls` };
+  const unavailable = coverageReason(evidence.coverage, "actions");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function loadedSkillOutcome(evidence: ScopeEvidence, skill: string): BooleanFactEvaluation {
+  const loaded = evidence.events.filter(
+    (event): event is Extract<StreamEvent, { readonly type: "skill.loaded" }> => event.type === "skill.loaded",
+  );
+  if (loaded.some((event) => event.skill === skill)) return { outcome: "passed" };
+  const unavailable = coverageReason(evidence.coverage, "events");
+  return unavailable === undefined
+    ? {
+        outcome: "failed",
+        expected: `loaded skill ${JSON.stringify(skill)}`,
+        received: loaded.length === 0 ? "no skills loaded" : loaded.map((event) => event.skill).join(", "),
+      }
+    : { outcome: "unavailable", reason: unavailable };
+}
+
+function noFailedActionsOutcome(evidence: ScopeEvidence): BooleanFactEvaluation {
+  const facts = deriveRunFacts(evidence.events);
+  const failedTools = facts.toolCalls.filter((call) => call.status === "failed");
+  const failedSubagents = facts.subagentCalls.filter((call) => call.status === "failed");
+  if (failedTools.length > 0 || failedSubagents.length > 0) {
+    return {
+      outcome: "failed",
+      expected: "no failed tool or subagent actions",
+      received: [
+        ...failedTools.map((call) => `tool ${call.originalName ?? call.name}`),
+        ...failedSubagents.map((call) => `subagent ${call.name}`),
+      ].join(", "),
+    };
+  }
+  const unavailable = coverageReason(evidence.coverage, "actions");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function eventsSatisfyOutcome(
+  evidence: ScopeEvidence,
+  label: string,
+  predicate: (events: readonly StreamEvent[]) => boolean,
+): BooleanFactEvaluation {
+  if (predicate(evidence.events)) return { outcome: "passed" };
+  const unavailable = coverageReason(evidence.coverage, "events");
+  return unavailable === undefined
+    ? { outcome: "failed", expected: label, received: `${evidence.events.length} events in scope` }
+    : { outcome: "unavailable", reason: unavailable };
+}
+
+function maxTokensOutcome(evidence: ScopeEvidence, max: number): BooleanFactEvaluation {
+  const total = (evidence.usage.inputTokens ?? 0) + (evidence.usage.outputTokens ?? 0);
+  if (total > max) return { outcome: "failed", expected: `at most ${max} tokens`, received: `${total} tokens` };
+  const unavailable = coverageReason(evidence.coverage, "usage");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function maxCostOutcome(evidence: ScopeEvidence, usd: number): BooleanFactEvaluation {
+  const cost = evidence.usage.costUSD ?? 0;
+  if (cost > usd) return { outcome: "failed", expected: `at most $${usd}`, received: `$${cost}` };
+  const unavailable = coverageReason(evidence.coverage, "usage");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function noFailedShellCommandsOutcome(evidence: ScopeEvidence): BooleanFactEvaluation {
+  const failed = deriveRunFacts(evidence.events).toolCalls.filter(
+    (call) => (call.name === "shell" || call.originalName === "shell") && call.status === "failed",
+  );
+  if (failed.length > 0) {
+    return {
+      outcome: "failed",
+      expected: "no failed shell commands",
+      received: `${failed.length} failed shell command${failed.length === 1 ? "" : "s"}`,
+    };
+  }
+  const unavailable = coverageReason(evidence.coverage, "actions");
+  return unavailable === undefined ? { outcome: "passed" } : { outcome: "unavailable", reason: unavailable };
+}
+
+function notInDiffOutcome(diff: DiffData, pattern: RegExp): BooleanFactEvaluation {
+  for (const path of Object.keys(diff.files)) {
+    if (regexMatches(pattern, path)) return { outcome: "failed", expected: `diff excludes ${pattern}`, received: `matched path ${path}` };
+  }
+  for (const window of diff.windows) {
+    for (const [path, change] of Object.entries(window.changes)) {
+      if (change.after !== undefined && regexMatches(pattern, change.after)) {
+        return {
+          outcome: "failed",
+          expected: `diff excludes ${pattern}`,
+          received: `matched content in ${path} (${window.window})`,
+        };
+      }
+    }
+  }
+  const elided = elidedContentPaths(diff);
+  if (elided.length > 0) {
+    return {
+      outcome: "unavailable",
+      reason: `diff-content-elided (${elided.length} path${elided.length === 1 ? "" : "s"}: ${elided.slice(0, 3).join(", ")}${elided.length > 3 ? ", …" : ""})`,
+    };
   }
   return { outcome: "passed" };
 }
@@ -671,6 +809,38 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         evaluate: () => toolOrderOutcome(evidence(), ordered),
       });
     },
+    usedNoTools: () =>
+      collector.createBooleanFact<void, P>({
+        name: "usedNoTools",
+        phase,
+        value: undefined,
+        evaluate: () => usedNoToolsOutcome(evidence()),
+      }),
+    maxToolCalls: (max: number) => {
+      const limit = nonNegativeCount(max, "maxToolCalls() max");
+      return collector.createBooleanFact<void, P>({
+        name: `maxToolCalls(${limit})`,
+        phase,
+        value: undefined,
+        evaluate: () => maxToolCallsOutcome(evidence(), limit),
+      });
+    },
+    loadedSkill: (skill: string) => {
+      const name = nonEmptyLabel(skill, "loadedSkill() skill");
+      return collector.createBooleanFact<void, P>({
+        name: `loadedSkill(${JSON.stringify(name)})`,
+        phase,
+        value: undefined,
+        evaluate: () => loadedSkillOutcome(evidence(), name),
+      });
+    },
+    noFailedActions: () =>
+      collector.createBooleanFact<void, P>({
+        name: "noFailedActions",
+        phase,
+        value: undefined,
+        evaluate: () => noFailedActionsOutcome(evidence()),
+      }),
     event: (match: EventMatch, options?: { readonly count?: number }) => {
       const count = collectionCount(options, "event()");
       return collector.createBooleanFact<MatchableEvent, P>({
@@ -695,6 +865,36 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         value: undefined,
         evaluate: () => eventOrderOutcome(evidence(), ordered),
       });
+    },
+    eventsSatisfy: (label: string, predicate: (events: readonly StreamEvent[]) => boolean) => {
+      const name = nonEmptyLabel(label, "eventsSatisfy() label");
+      if (typeof predicate !== "function") throw new TypeError("eventsSatisfy() predicate must be a function");
+      return collector.createBooleanFact<void, P>({
+        name,
+        phase,
+        value: undefined,
+        evaluate: () => eventsSatisfyOutcome(evidence(), name, predicate),
+      });
+    },
+    maxTokens: (max: number) => {
+      const limit = nonNegativeFinite(max, "maxTokens() max");
+      return collector.createBooleanFact<void, P>({
+        name: `maxTokens(${limit})`,
+        phase,
+        value: undefined,
+        usageEvidence: true,
+        evaluate: () => maxTokensOutcome(evidence(), limit),
+      }) as import("../assertions/types.ts").UsageEvidenceFact<P>;
+    },
+    maxCost: (usd: number) => {
+      const limit = nonNegativeFinite(usd, "maxCost() usd");
+      return collector.createBooleanFact<void, P>({
+        name: `maxCost(${limit})`,
+        phase,
+        value: undefined,
+        usageEvidence: true,
+        evaluate: () => maxCostOutcome(evidence(), limit),
+      }) as import("../assertions/types.ts").UsageEvidenceFact<P>;
     },
   });
 
@@ -752,7 +952,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   const makeSandbox = (): EvalSandbox => {
     const guardAsync = <A extends unknown[], R>(name: string, fn: (...args: A) => Promise<R>) =>
       async (...args: A): Promise<R> => {
-        await collector.settleLegacyPrerequisites();
         collector.beforeManagedBoundary(`sandbox.${name}`);
         return fn(...args);
       };
@@ -831,26 +1030,40 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
               : { outcome: "failed", expected: `deleted ${JSON.stringify(path)}`, received: "path is not net-deleted" },
         });
       },
+      notInDiff: (pattern) => {
+        if (!(pattern instanceof RegExp)) throw new TypeError("notInDiff() pattern must be a RegExp");
+        collector.requireDiffEvidence();
+        return collector.createBooleanFact<void, "final">({
+          name: `notInDiff(${pattern})`,
+          phase: "final",
+          value: undefined,
+          evidence: "diff",
+          evaluate: (context) => notInDiffOutcome(context.diff, pattern),
+        });
+      },
+      noFailedShellCommands: () =>
+        collector.createBooleanFact<void, "final">({
+          name: "noFailedShellCommands",
+          phase: "final",
+          value: undefined,
+          evaluate: () => noFailedShellCommandsOutcome(aggregateScope()),
+        }),
     };
   };
 
   const sendTurn = async (session: RunSession, text: string, files?: readonly InputFile[], responses?: readonly InputResponse[]): Promise<TurnHandle> => {
-    await collector.settleLegacyPrerequisites();
     collector.beforeManagedBoundary("send");
     const turn = await manager.send(session, text, files, responses);
     return makeTurnHandle(turn, registerTurn(session, turn), session, text);
   };
 
-  const makeJudge = (session: RunSession, input: () => string) =>
-    buildJudge({
-      record: (spec) => collector.recordLegacyJudge(spec),
-      judge: deps.judge,
-      getOutput: () => conversationText(session.events),
-      getInput: input,
-      signal: deps.signal,
-    });
+  const judgeDeps = {
+    judge: deps.judge,
+    signal: deps.signal,
+    createScoreFact: (definition: import("../assertions/collector.ts").ScoreFactDefinition<"now">) => collector.createScoreFact(definition),
+  };
 
-  const makeTurnHandle = (turn: Turn, item: ScopeTurn, session: RunSession, input: string): TurnHandle => {
+  const makeTurnHandle = (turn: Turn, item: ScopeTurn, _session: RunSession, input: string): TurnHandle => {
     const facts = makeScopedFacts("now", () => ({
       events: turn.events,
       turns: [item],
@@ -866,7 +1079,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       data: turn.data,
       usage: turn.usage,
       ...facts,
-      judge: makeJudge(session, () => input),
+      judge: buildTurnJudge(judgeDeps, { input, output: lastAssistantText(turn.events) ?? "" }),
     };
   };
 
@@ -882,7 +1095,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     return {
       send: (input) => sendTurn(session, typeof input === "string" ? input : input.text, typeof input === "string" ? undefined : input.files),
       sendFile: async (path, text) => {
-        await collector.settleLegacyPrerequisites();
         collector.beforeManagedBoundary("sendFile");
         const file = await readInputFile(path);
         const turn = await manager.send(session, text ?? "", [file]);
@@ -890,7 +1102,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       },
       requireInputRequest: (filter) => requireInputRequest(session, filter),
       respond: async (...answers) => {
-        await collector.settleLegacyPrerequisites();
         collector.beforeManagedBoundary("respond");
         if (answers.length === 0) throw new Error("respond() requires at least one answer");
         const built = buildRespondInput(session, answers);
@@ -898,7 +1109,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         return sendTurn(session, built.text, undefined, built.responses);
       },
       respondAll: async (optionId) => {
-        await collector.settleLegacyPrerequisites();
         collector.beforeManagedBoundary("respondAll");
         if (session.pendingInputRequests.length === 0) throw new Error("There is no pending input request to answer");
         const requests = session.pendingInputRequests.slice();
@@ -918,17 +1128,21 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       get usage() {
         return session.usage;
       },
-      get judge() {
-        return makeJudge(session, () => session.lastInput);
-      },
       succeeded: () => snapshotFacts().succeeded(),
       parked: () => snapshotFacts().parked(),
       calledTool: (match, options) => snapshotFacts().calledTool(match, options),
       notCalledTool: (match) => snapshotFacts().notCalledTool(match),
       toolOrder: (matches) => snapshotFacts().toolOrder(matches),
+      usedNoTools: () => snapshotFacts().usedNoTools(),
+      maxToolCalls: (max) => snapshotFacts().maxToolCalls(max),
+      loadedSkill: (skill) => snapshotFacts().loadedSkill(skill),
+      noFailedActions: () => snapshotFacts().noFailedActions(),
       event: (match, options) => snapshotFacts().event(match, options),
       notEvent: (match) => snapshotFacts().notEvent(match),
       eventOrder: (matches) => snapshotFacts().eventOrder(matches),
+      eventsSatisfy: (label, predicate) => snapshotFacts().eventsSatisfy(label, predicate),
+      maxTokens: (max) => snapshotFacts().maxTokens(max),
+      maxCost: (usd) => snapshotFacts().maxCost(usd),
     };
   };
 
@@ -981,7 +1195,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     assertIfCovered: (fact: import("../assertions/types.ts").UsageEvidenceFact<FactPhase>, options?: unknown) => collector.assertIfCovered(fact, options as never),
     require,
     group: async (title: string, fn: () => Promise<unknown> | unknown) => {
-      await collector.settleLegacyPrerequisites();
       return collector.withGroup(title, fn);
     },
     sandbox,
@@ -992,7 +1205,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       return manager.usage;
     },
     get judge() {
-      return makeJudge(manager.primary, () => manager.primary.lastInput);
+      return buildJudge(judgeDeps);
     },
     ...finalFacts,
     ...(deps.evaluationKind === "score"
@@ -1030,13 +1243,6 @@ function mimeTypeFor(path: string): string {
     case ".webp": return "image/webp";
     default: return "application/octet-stream";
   }
-}
-
-function conversationText(events: readonly StreamEvent[]): string {
-  return events
-    .filter((event): event is Extract<StreamEvent, { type: "message" }> => event.type === "message")
-    .map((event) => `${event.role}: ${event.text}`)
-    .join("\n");
 }
 
 function requireInputRequest(session: RunSession, filter?: InputRequestFilter): InputRequest {

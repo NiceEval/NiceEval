@@ -7,7 +7,7 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
 import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
-import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
+import type { DiscoveredEval, EvalResult, JsonValue, ResolvedJudgeConfig } from "../types.ts";
 import { EVALUATION_ALGORITHM, type AgentRun, type FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
@@ -274,6 +274,8 @@ export interface CarryPlan {
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   /** `cacheKey(run, evalId)` → Run 级配置身份。 */
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
+  /** `cacheKey(run, evalId)` → the one frozen Judge resolution for this pair. */
+  readonly resolvedJudgesByKey: ReadonlyMap<string, ResolvedJudgeConfig | undefined>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
   readonly plannedFingerprints: ReadonlyMap<string, string>;
   /**
@@ -557,6 +559,7 @@ async function planCarryPrepared(
   const plannedFingerprints = new Map<string, string>();
   const manifestsByKey = new Map<string, EvalManifest>();
   const plannedConfigHashes = new Map<string, string>();
+  const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
   // 与 plannedFingerprints 同一批 (run × evalDef) 循环里顺带算好,供下面按 key 查「这个组合
   // 这次的携带资格线是多少」——同一个 key 在同一次 planCarry 调用里只对应一个 (run, evalDef)
   // 组合,与 plannedFingerprints 的 key 语义一致。
@@ -573,6 +576,7 @@ async function planCarryPrepared(
   for (const pair of preparedPairs) {
       const { key, run, evalDef } = pair;
       const resolvedJudge = resolveJudge(run.judge, evalDef.judge, options.configJudge);
+      resolvedJudgesByKey.set(key, resolvedJudge);
       const identity = configIdentityForRun(run, pair.plan, resolvedJudge);
       const configHash = hashConfigIdentity(identity);
       entries.set(key, { pair, identity });
@@ -800,6 +804,7 @@ async function planCarryPrepared(
   return Object.freeze({
     preparedPairsByKey,
     plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
+    resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),
     plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
     acceptableFingerprints: readonlyMapSnapshot(
       [...acceptable].map(([key, values]) => [key, readonlySetSnapshot(values)] as const),

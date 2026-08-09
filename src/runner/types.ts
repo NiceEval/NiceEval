@@ -9,14 +9,16 @@ import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import type {
-  AssertionResult,
-  AttemptFactTrace,
+  EvaluationFactResult,
   DiffArtifact,
   JudgeConfig,
-  PrimaryAssertionSummary,
+  JudgeDeclaration,
+  ResolvedJudgeConfig,
+  PrimaryFactSummary,
   ScoreCompletion,
   ScoreFactAttemptOutcome,
-  ScoreEntry,
+  ScoreFactUseResult,
+  VerdictFactUseResult,
 } from "../assertions/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
@@ -52,8 +54,8 @@ export interface ExperimentRunInfo {
   sandboxPlansByEval: globalThis.Record<string, JsonValue>;
   /** Sandbox 是否在同一次 Run 内复用。 */
   sandboxReuse?: boolean;
-  /** 解析后的 Judge 执行身份；apiKeyEnv 是凭据选择器，不落盘。 */
-  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "timeoutMs">;
+  /** 解析后的 Judge 执行身份；只记录凭据选择器名，不记录凭据。 */
+  judge?: Pick<JudgeConfig, "model" | "baseUrl" | "apiKeyEnv" | "timeoutMs">;
   /**
    * Agent Ensure 与精确配对 installer 的静态身份投影；按声明顺序完整落盘。
    * 实际 artifact digest/platform 属运行 provenance，不进入这里。
@@ -404,25 +406,16 @@ export interface EvalResult {
   durationMs: number;
   /** 自 sandbox.create 起、排除并发排队和收尾的执行耗时；旧记录缺失时携带保守回退 durationMs。 */
   executionMs?: number;
-  assertions: AssertionResult[];
-  /**
-   * New Fact graph trace. Record/show still need their own envelope migration;
-   * fresh runner results keep this as a non-enumerable in-memory property so
-   * the legacy writer cannot accidentally emit a hybrid result.json.
-   */
-  factTrace: AttemptFactTrace;
-  /** Structured Score Fact outcome; likewise in-memory until Record migrates. */
+  /** The complete native Fact graph, persisted directly in result.json. */
+  factResults: readonly EvaluationFactResult[];
+  factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
+  /** Structured Score Fact outcome for score Eval terminal semantics. */
   scoreResult?: ScoreFactAttemptOutcome;
   /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"score"`,定义期事实,与
-   * `EvalDescriptor.evaluationKind` 同源。schema 16 必填；旧 `"points"` 结果只能由旧 reader 读取。
+   * `EvalDescriptor.evaluationKind` 同源。schema 17 必填。
    */
   evaluationKind: EvaluationKind;
-  /**
-   * Legacy 直接给分记录只用于旧 Record reader；新的 score Fact 结果保存在 `scoreResult`。
-   * 与 `assertions[].points` 共同构成分数面(见 docs/feature/experiments/score-points.md)。
-   */
-  scoreEntries?: ScoreEntry[];
   /** 自动重试吸收的物理 send 失败，按发生顺序完整保留。 */
   retryAttempts?: RetryAttemptRecord[];
   usage?: Usage;
@@ -527,12 +520,11 @@ export const RECORD_FORMAT = "niceeval.results";
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
  * 旧版 commands.json 不做兼容读取。
- * `16` = Fact/use 分离结果、`evaluationKind: "score"` 与 `evaluationAlgorithm: "fact-use/v1"`；
- * 旧 AssertionResult/ScoreEntry/strict Record 不与新结果混读。
+ * `17` = Fact/use 原子记录、`evaluationAlgorithm: "fact-use/v2"`；旧格式完全不支持读取。
  * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
  * 两者都不是破坏性格式变化，因此不递增版本。
  */
-export const RECORD_SCHEMA_VERSION = 16;
+export const RECORD_SCHEMA_VERSION = 17;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
@@ -666,7 +658,7 @@ export type ReporterEvent =
  */
 export type EvaluationKind = "pass" | "score";
 
-export const EVALUATION_ALGORITHM = "fact-use/v1" as const;
+export const EVALUATION_ALGORITHM = "fact-use/v2" as const;
 export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM;
 
 /**
@@ -705,8 +697,8 @@ export interface EvalAuthorFields {
    * 每个实际 Eval x Experiment 配对必须恰好一方提供 template-bearing layer。
    */
   sandbox?: SandboxLayer;
-  /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
-  judge?: JudgeConfig;
+  /** 声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。 */
+  judge?: JudgeDeclaration;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
@@ -747,7 +739,7 @@ export interface EvalDefinitionFields {
    * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
    */
   readonly sandbox?: SandboxLayer;
-  readonly judge?: JudgeConfig;
+  readonly judge?: JudgeDeclaration;
   readonly reporters: readonly Reporter[];
   readonly timeoutMs?: number;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
@@ -868,7 +860,7 @@ export interface ExperimentAuthorFields {
   reasoningEffort?: string;
   /**
    * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
-   * rubric、材料、severity 与 threshold 仍由 Eval assertion 拥有。各字段按
+   * rubric、材料与消费阈值仍由 Eval 的 Fact/use 声明拥有。各字段按
    * Experiment → Eval → Config 解析。
    */
   judge?: JudgeConfig;
@@ -1248,6 +1240,8 @@ export interface Attempt {
   readonly key: string;
   readonly fingerprint: string;
   readonly configHash: string;
+  /** Planning 时唯一解析并冻结的 Judge capability/config。 */
+  readonly judge: ResolvedJudgeConfig | undefined;
   /** 该 pair 的唯一、不可变规划产物；fingerprint / create / reuse 全部消费同一份值。 */
   readonly plan: LinkedRunPlan;
   /** 同一 Experiment 本次选中 Eval 的完整 plan 映射；run.json 不从当前 pair 猜全局默认值。 */
@@ -1399,8 +1393,8 @@ export interface FailureDetail {
   verdict: "failed" | "errored";
   /** 一层可行动摘要(gate 断言名、error 消息……),不是完整 stack/transcript;详情走 `niceeval show`。 */
   reason: string;
-  /** failed / Fact unavailable 时的结构化主 Fact 摘要；字段名为反馈协议兼容保留。 */
-  assertion?: PrimaryAssertionSummary;
+  /** failed / unavailable 时的结构化主 Fact/use 摘要。 */
+  fact?: PrimaryFactSummary;
   /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
   phase?: LifecyclePhase;
   /** 仅 errored 且没有结构化主断言摘要（真正的执行错误，而非 assertion-unavailable）时携带：
@@ -1622,7 +1616,7 @@ export type DurableFeedbackEvent =
       who: string;
       verdict: "failed" | "errored";
       reason: string;
-      assertion?: PrimaryAssertionSummary;
+      fact?: PrimaryFactSummary;
       phase?: LifecyclePhase;
       code?: string;
       origin?: TimingOrigin;

@@ -546,7 +546,6 @@ export const zhCN = {
     "provider 的可写保证不止 workdir,runner 要在 workdir 之外放采集器与变更分类账。" +
     "修法:让 /tmp 对运行用户可写(镜像里 `chmod 1777 /tmp`,或换一个不把 /tmp 挂成只读的镜像 / 用户),修好后重跑即续上。",
   "assertions.evaluationError": "断言评估出错: {{error}}",
-  "assertions.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) 非法;给分必须是非负有限数(n >= 0)。",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} 工具",

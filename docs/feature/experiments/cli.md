@@ -1145,7 +1145,6 @@ CI 的权威接口是退出码和结构化文件。
 
 ```sh
 niceeval exp ci \
-  --strict \
   --junit .niceeval/junit.xml
 niceeval show --json > .niceeval/ci-summary.json   # 需要 JSON 汇总时,读结果面而不是运行流
 ```
@@ -1155,19 +1154,19 @@ niceeval show --json > .niceeval/ci-summary.json   # 需要 JSON 汇总时,读�
 PR 快速门禁,每条只跑一次:
 
 ```sh
-niceeval exp pr --strict --attempts 1 --junit .niceeval/junit.xml
+niceeval exp pr --attempts 1 --junit .niceeval/junit.xml
 ```
 
 夜间稳定性采样,跑满次数而不是首过即停(默认行为,不用额外 flag):
 
 ```sh
-niceeval exp nightly --strict --attempts 5 --junit .niceeval/nightly.xml
+niceeval exp nightly --attempts 5 --junit .niceeval/nightly.xml
 ```
 
 预算受限的外部模型回归:
 
 ```sh
-niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
+niceeval exp regression --budget 25 --junit .niceeval/regression.xml
 ```
 
 预算到顶属于“运行未完成计划”,结果不能伪装成全绿——人读文本给 warning 行与 `incomplete` 完成态,`--json` 给对应事件:
@@ -1191,7 +1190,7 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 调度 | `--max-build-concurrency` | Run 级 Sandbox 构建准备；默认 2 | 同时 lookup/build 多少个不同 BuildKey；不占 attempt 并发位 |
 | 调度 | `--timeout` | 每个 attempt | 单次尝试的时间上限 |
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是全局总限制(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
-| 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
+| 调度 | `--early-exit` / `--no-early-exit` | 每条 eval | 首过即停或跑满 Attempt |
 | 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;单独使用 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
 | 执行模式 | [`--keep-sandbox`](../sandbox/cli.md) | 整次调用；与 Experiment 的 `sandboxReuse: true` 互斥 | 留存单条 Attempt 的现场 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |

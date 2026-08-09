@@ -1,10 +1,9 @@
 import { decodeAttemptLocator, type AttemptLocator } from "../../record/locator.ts";
-import { compactAssertionSummary, summaryText } from "../../assertions/display.ts";
+import { summaryText } from "../../assertions/display.ts";
 import type {
   EvaluationFactResult,
   EvalResult,
-  LegacyJudgeAssertionResult,
-  PrimaryAssertionSummary,
+  PrimaryFactSummary,
   ScoreFactUseResult,
   VerdictFactUseResult,
 } from "../../types.ts";
@@ -27,11 +26,11 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   }
 
   const terminal = failureSummaryTerminal(result);
-  const assertion = terminal === undefined ? undefined : primaryFactSummary(result, terminal);
+  const fact = terminal === undefined ? undefined : primaryFactSummary(result, terminal);
   // A score `invalid` deliberately wins over later execution errors. Conversely,
   // an errored terminal can only fall back to the runner error after every
-  // evaluator-originated Fact / legacy Judge cause has been considered.
-  const fallbackError = terminal === "errored" && assertion === undefined ? result.error : undefined;
+  // evaluator-originated Fact cause has been considered.
+  const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
   // 执行错误只给一层可行动摘要(docs/feature/experiments/cli.md「运行反馈」):message 取首行
   // ——多行 message 的后续行(如 diagnose 的 output tail)归 `show @locator` 展开,不进
   // scrollback;再过 summaryText 剥控制字节并按摘要上限收口,adapter 组装的文本里混进
@@ -45,14 +44,14 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     : "";
   const reason = fallbackError !== undefined
     ? `${summaryText(firstLine(fallbackError.message))}${attribution}`
-    : assertion !== undefined
-      ? compactAssertionSummary(assertion)
+    : fact !== undefined
+      ? compactFactSummary(fact)
       : summaryText(result.verdict);
   const origin = fallbackError?.origin;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
   // 已经有更具体的结构化摘要，不需要也没有这个字段。
-  const code = result.verdict === "errored" && assertion === undefined ? fallbackError?.code : undefined;
+  const code = result.verdict === "errored" && fact === undefined ? fallbackError?.code : undefined;
   const factsCount = result.facts === undefined ? undefined : Object.keys(result.facts).length;
 
   return {
@@ -61,7 +60,7 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     who: runWho({ agentName: result.agent, model: result.model, experimentId: result.experimentId }),
     verdict: result.verdict,
     reason,
-    ...(assertion !== undefined ? { assertion } : {}),
+    ...(fact !== undefined ? { fact } : {}),
     ...(phase !== undefined ? { phase } : {}),
     ...(code !== undefined ? { code } : {}),
     ...(origin !== undefined ? { origin } : {}),
@@ -70,9 +69,9 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
 }
 
 /**
- * 反馈行只投影已经落定的 Fact/use；不把新结果反向伪造成 legacy AssertionResult。
+ * 反馈行只投影已经落定的 Fact/use。
  * 只选择真正参与当前失败终态的 use；同一 Fact 同时用于 verdict 与 score 时只显示一次。
- * 旧反馈 DTO 的 severity 槽固定投影为 gate，不反向伪造 legacy AssertionResult。
+ * 反馈只投影 Fact/use 的因果关系，不重建另一套判定等级。
  */
 type FailureSummaryTerminal = "failed" | "invalid" | "errored" | "unavailable";
 
@@ -86,12 +85,10 @@ function failureSummaryTerminal(result: EvalResult): FailureSummaryTerminal | un
 function primaryFactSummary(
   result: EvalResult,
   terminal: FailureSummaryTerminal,
-): PrimaryAssertionSummary | undefined {
-  const trace = result.factTrace;
-  if (trace === undefined) return undefined;
-  const facts = new Map(trace.facts.map((fact) => [fact.factId, fact]));
+): PrimaryFactSummary | undefined {
+  const facts = new Map<string, EvaluationFactResult>(result.factResults.map((fact) => [fact.factId, fact]));
   const candidates = new Map<string, FactFailureCandidate>();
-  for (const use of trace.uses) {
+  for (const use of result.factUses) {
     const candidate = useCandidate(use, facts, terminal);
     if (candidate === undefined) continue;
     const identity = candidate.factId === undefined ? `use:${candidate.sourceOrder}` : `fact:${candidate.factId}`;
@@ -102,23 +99,18 @@ function primaryFactSummary(
   // to it directly. Uses keep their labels when present; these rows fill only
   // the otherwise invisible roots.
   if (terminal === "errored" || terminal === "unavailable") {
-    for (const fact of trace.facts) {
-      const candidate = factCandidate(fact, trace.uses, terminal);
+    for (const fact of result.factResults) {
+      const candidate = factCandidate(fact, result.factUses, terminal);
       if (candidate !== undefined && !candidates.has(`fact:${fact.factId}`)) {
         candidates.set(`fact:${fact.factId}`, candidate);
       }
     }
   }
-  for (const legacy of trace.legacyJudgeAssertions) {
-    const candidate = legacyCandidate(legacy, terminal);
-    if (candidate !== undefined) candidates.set(`legacy:${legacy.sourceOrder}`, candidate);
-  }
   const ordered = [...candidates.values()].sort((left, right) => left.sourceOrder - right.sourceOrder);
   const primary = ordered[0];
   if (primary === undefined) return undefined;
   return {
-    severity: "gate",
-    assertion: summaryText(primary.title),
+    title: summaryText(primary.title),
     ...(primary.matcher === undefined ? {} : { matcher: summaryText(primary.matcher) }),
     ...(primary.expected === undefined ? {} : { expected: summaryText(primary.expected) }),
     ...(primary.received === undefined ? {} : { received: summaryText(primary.received) }),
@@ -202,25 +194,10 @@ function factCandidate(
   };
 }
 
-function legacyCandidate(
-  legacy: LegacyJudgeAssertionResult,
-  terminal: FailureSummaryTerminal,
-): FactFailureCandidate | undefined {
-  const causal = terminal === "failed" || terminal === "invalid"
-    ? legacy.outcome === "failed" && legacy.policy.verdict.kind === "gate"
-    : terminal === "errored"
-      ? legacy.outcome === "errored"
-      : legacy.outcome === "unavailable" && !legacy.policy.optional;
-  if (!causal) return undefined;
-  const reason = legacy.outcome === "unavailable"
-    ? legacy.reason
-    : legacy.outcome === "errored"
-      ? legacy.error.message
-      : undefined;
-  return {
-    sourceOrder: legacy.sourceOrder,
-    title: legacy.name,
-    ...(legacy.detail === legacy.name ? {} : { matcher: legacy.detail }),
-    ...(reason === undefined ? {} : { reason }),
-  };
+function compactFactSummary(summary: PrimaryFactSummary): string {
+  const parts = [summary.title];
+  if (summary.matcher !== undefined) parts.push(summary.matcher);
+  if (summary.reason !== undefined) parts.push(`reason ${summary.reason}`);
+  if (summary.additionalFailures > 0) parts.push(`+${summary.additionalFailures} more`);
+  return parts.join(" · ");
 }

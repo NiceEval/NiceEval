@@ -549,7 +549,6 @@ export const en = {
     "a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. " +
     "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "assertions.evaluationError": "assertion evaluation error: {{error}}",
-  "assertions.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
   "assertions.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
   "session.fileFallback": "[file]",
   "session.tools": "{{count}} tools",

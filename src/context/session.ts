@@ -94,7 +94,6 @@ export class RunSession implements AgentSession {
 
   index = 1;
   lastMessage = "";
-  lastInput = "";
   lastStatus: "completed" | "failed" | "waiting" = "completed";
   readonly events: StreamEvent[] = [];
   readonly pendingInputRequests: InputRequest[] = [];
@@ -170,7 +169,7 @@ export interface SessionDeps {
   /** 仅供确定性单测注入:turn 重试执行体的随机数与睡眠(生产路径省略,走真实退避)。 */
   retryRandom?: () => number;
   retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
-  /** 与 AssertionCollector 共用的 attempt 级源码事实序号分配器。 */
+  /** 与 Fact collector 共用的 attempt 级源码事实序号分配器。 */
   nextSourceOrder?: () => number;
 }
 
@@ -297,7 +296,6 @@ export class SessionManager {
     const timingNow = this.deps.timingNow ?? (() => performance.now());
     const startOffsetMs = timingNow();
 
-    session.lastInput = text;
     const userEvent: StreamEvent = {
       type: "message",
       role: "user",

@@ -249,7 +249,7 @@ async function prepareAcceptTarget(
     pair.plan,
     sandboxPlansByEval,
     ctx.config,
-    targetEval.judge,
+    resolvedJudge,
   );
   return prepareAcceptedAttempt({
     recordRoot: ctx.recordRoot,

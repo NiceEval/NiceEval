@@ -60,8 +60,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 计分方式 | Evaluation mode | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](./feature/assertions/library/score-points.md) |
-| 计分项 | — | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](./feature/assertions/library/score-points.md) |
+| 题型 | Evaluation kind | `defineEval` 固定为通过制；`defineScoreEval` 在题内创建 score use | [计分粒度](./feature/assertions/library/score-points.md) |
+| 计分 use | Score use | `t.score(label, fact, { max })` 把 Fact 的连续分数计入定义的满分 | [计分粒度](./feature/assertions/library/score-points.md) |
 
 ### Agent 与 Adapter
 

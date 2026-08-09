@@ -31,10 +31,10 @@ export default defineEval({
 | `parked` / `requireInputRequest` / `respond` / `respondAll` | 停在人工输入上的 gate 与续接 | [Context · 驱动 API](library/context.md#驱动-api) | [HITL 审批](use-case/hitl-approval.md) |
 | `succeeded` / `calledTool` / `toolOrder` / `event` / `maxTokens` … | 作用域断言：断 agent 做了什么、花了多少 | [Assertions · 作用域断言](../assertions/library/scoped-assertions.md) | [过程与成本](use-case/process-and-cost.md) · [calledTool 全参数](use-case/calledtool.md) |
 | `t.group` | 分组断言：报告区块，组名同时是对比的得分点维度 | [Assertions · 值断言 · 分组](../assertions/library/value-assertions.md#分组) | [过程与成本](use-case/process-and-cost.md) |
-| `.points(n)` / `t.score(label, n)` | 计分制给分（仅 `defineScoreEval` 的 `t`）：断言条件给分 / 直接累加给分 | [Assertions · 计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明) | [计分制](use-case/rubric-points.md) |
-| `t.check` / `t.require` + `niceeval/expect` matcher | 值断言：断某个具体值（`t.require` 是通过制的前置词，计分制的 `t` 上没有） | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
-| `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
-| `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
+| `t.score(label, fact, { max })` / `t.score(label, { earned })` | 计分制给分（仅 `defineScoreEval` 的 `t`）：将 Fact 映射为分数，或直接登记已算分数 | [Assertions · 计分](../assertions/library/score-points.md) | [计分制](use-case/rubric-points.md) |
+| `t.check` / `t.assert` / `t.require` + `niceeval/expect` matcher | 生产值 Fact，再显式登记 verdict use；`require` 立即求值并停止依赖路径 | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
+| `t.assert(scoreFact, { atLeast })` / `await t.require(scoreFact, { atLeast })` | ScoreFact 的阈值与控制流；不存在链式 severity 或缺席策略 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
+| `t.judge` / `turn.judge` | LLM-as-judge：根级显式材料或 immutable Turn 材料，均返回 ScoreFact | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
 | `sandbox` + `.prepare(command)` | 题目起点与逐 Attempt 准备命令 | [Sandbox Layer](../sandbox/layers.md) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 | 普通 `t.sandbox.upload*()` | 按源码顺序传入起始文件或测试文件 | [Sandbox 文件操作](../sandbox/library/operations.md) | [本地测试文件](use-case/criteria-files.md) |
@@ -88,4 +88,4 @@ eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」�
 - [README](README.md) —— `defineEval` 的核心契约。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 的调用和结果字段。
 - [Architecture](architecture.md) ——接收者模型与两条设计原则。
-- [Assertions](../assertions/README.md) ——断言、judge、严重度与判定。
+- [Assertions](../assertions/README.md) ——Fact、Judge 与判定。

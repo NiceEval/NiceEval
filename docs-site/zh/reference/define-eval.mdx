@@ -12,8 +12,8 @@ import { defineEval } from "niceeval";
 export default defineEval({
   description: "Brooklyn weather query",
   async test(t) {
-    await t.send("What's the weather like in Brooklyn today?");
-    t.succeeded();
+    const turn = await t.send("What's the weather like in Brooklyn today?");
+    t.assert(turn.succeeded());
   },
 });
 ```
@@ -56,10 +56,10 @@ sandbox?: SandboxLayer;
 #### `judge`
 
 ```ts
-judge?: JudgeConfig;
+judge?: JudgeDeclaration;
 ```
 
-覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。
+声明 Judge capability；true 继承 Experiment/Config，对象同时声明并覆盖它们。
 
 #### `reporters`
 
@@ -108,7 +108,7 @@ test(t: TestContext): Promise<void> | void;
 
 `t`（`TestContext`）是评估用例作者拿到的高层上下文。`t.check(...)`、`t` / `turn` 的事件方法和 `t.sandbox` 的文件方法只生成 Fact；`t.assert(...)`、`t.assertIfCovered(...)` 与 `t.require(...)` 决定这些事实怎样影响通过制判定。`t.require(...)` 只接受已经可求值的 `phase: "now"` Fact，失败时中止后续代码；`phase: "final"` 的文件与最终 diff Fact 必须交给 `t.assert(...)`，在评估用例收尾时统一求值。
 
-计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，并在正常返回时 `return t.finishScore()`。Judge 的公开入口和旧句柄本轮保持原样，不属于 Fact API。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
+计分制 `defineScoreEval` 使用 `ScoreTestContext`：用 `t.score(label, fact, { max })` 或 `t.score(label, { earned })` 记分，并在正常返回时 `return t.finishScore()`。Judge recipe 也是 ScoreFact producer，使用同一套 `assert`、`require` 和 `score`。完整规则见[计分制](/zh/tutorials/evaluation-kinds#走完三步也要记三分)。全部成员：
 
 {/* GENERATED:BEGIN test-context */}
 
@@ -144,6 +144,30 @@ notCalledTool(match: ToolMatch): BooleanFact<void, P>;
 toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
 ```
 
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanFact<void, P>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanFact<void, P>;
+```
+
+#### `loadedSkill`
+
+```ts
+loadedSkill(skill: string): BooleanFact<void, P>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanFact<void, P>;
+```
+
 #### `event`
 
 ```ts
@@ -162,16 +186,34 @@ notEvent(match: EventMatch): BooleanFact<void, P>;
 eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
 ```
 
+#### `eventsSatisfy`
+
+```ts
+eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): UsageEvidenceFact<P>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): UsageEvidenceFact<P>;
+```
+
 #### `send`
 
 ```ts
-send(input: SendInput): Promise<TurnHandle<AssertionHandle>>;
+send(input: SendInput): Promise<TurnHandle>;
 ```
 
 #### `sendFile`
 
 ```ts
-sendFile(path: string, text?: string): Promise<TurnHandle<AssertionHandle>>;
+sendFile(path: string, text?: string): Promise<TurnHandle>;
 ```
 
 #### `requireInputRequest`
@@ -183,13 +225,13 @@ requireInputRequest(filter?: InputRequestFilter): InputRequest;
 #### `respond`
 
 ```ts
-respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle<AssertionHandle>>;
+respond(...responses: (string | RespondAnswer)[]): Promise<TurnHandle>;
 ```
 
 #### `respondAll`
 
 ```ts
-respondAll(optionId: string): Promise<TurnHandle<AssertionHandle>>;
+respondAll(optionId: string): Promise<TurnHandle>;
 ```
 
 #### `reply`
@@ -213,7 +255,7 @@ readonly events: readonly StreamEvent[];
 #### `newSession`
 
 ```ts
-newSession(): SessionHandle<AssertionHandle>;
+newSession(): SessionHandle;
 ```
 
 #### `signal`
@@ -354,21 +396,27 @@ readonly usage: Usage;
 #### `judge`
 
 ```ts
-readonly judge: JudgeNamespace<AssertionHandle>;
+readonly judge: JudgeNamespace;
 ```
 
 {/* GENERATED:END test-context */}
 
-## Judge 断言
+## Judge ScoreFact
+
+先在 `defineEval` 或 `defineScoreEval` 声明 `judge: true`，再创建并消费 Judge Fact：
 
 ```ts
-t.judge.autoevals.factuality(expected, { on: t.reply }).atLeast(0.8);
-t.judge.autoevals.closedQA(question, { on: t.reply }).atLeast(0.7);
-t.judge.autoevals.closedQA(rubric, { on: t.reply }).atLeast(0.75);
-t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
+const turn = await t.send("总结需求。");
+const factual = turn.judge.autoevals.factuality(expected);
+const quality = turn.judge.autoevals.closedQA(question);
+const summary = turn.judge.autoevals.summarizes(sourceText);
+
+t.assert(factual, { atLeast: 0.8 });
+t.assert(quality, { atLeast: 0.7 });
+t.assert(summary, { atLeast: 0.75 });
 ```
 
-`t.judge.autoevals` 有三个方法：`factuality`（回复与 `expected` 事实是否一致）、`closedQA`（回复是否满足给定问题或 rubric）、`summarizes`（回复是否是给定原文 `source` 的合格摘要）。三者都直接用 [autoevals](https://github.com/braintrustdata/autoevals)（braintrust）库的评分器，`{ on: t.reply }` 指定被评的文本。
+`t.judge.autoevals` 的根级 recipe 额外接收 `{ input, output }` 字符串材料。`turn.judge` 已绑定 immutable Turn 材料。模型配置按 Eval、Experiment、项目配置解析一次；没有单次模型覆盖或 `{ on }` 选项。
 
 ## `Turn` 返回类型
 
@@ -408,6 +456,30 @@ notCalledTool(match: ToolMatch): BooleanFact<void, P>;
 toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
 ```
 
+#### `usedNoTools`
+
+```ts
+usedNoTools(): BooleanFact<void, P>;
+```
+
+#### `maxToolCalls`
+
+```ts
+maxToolCalls(max: number): BooleanFact<void, P>;
+```
+
+#### `loadedSkill`
+
+```ts
+loadedSkill(skill: string): BooleanFact<void, P>;
+```
+
+#### `noFailedActions`
+
+```ts
+noFailedActions(): BooleanFact<void, P>;
+```
+
 #### `event`
 
 ```ts
@@ -424,6 +496,24 @@ notEvent(match: EventMatch): BooleanFact<void, P>;
 
 ```ts
 eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
+```
+
+#### `eventsSatisfy`
+
+```ts
+eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): BooleanFact<void, P>;
+```
+
+#### `maxTokens`
+
+```ts
+maxTokens(max: number): UsageEvidenceFact<P>;
+```
+
+#### `maxCost`
+
+```ts
+maxCost(usd: number): UsageEvidenceFact<P>;
 ```
 
 #### `events`
@@ -465,10 +555,10 @@ readonly usage?: Usage;
 #### `judge`
 
 ```ts
-readonly judge: JudgeNamespace<H>;
+readonly judge: TurnJudgeNamespace;
 ```
 
-Judge remains a legacy compatibility island, not a Fact producer.
+Judge facts are bound to this immutable turn's original input and output.
 
 {/* GENERATED:END turn-handle */}
 

@@ -81,8 +81,8 @@ export interface FailureEvent {
   locator: string;
   evalId: string;
   experimentId: string;
-  severity: "gate" | "soft";
-  assertion: string;
+  verdict: "failed" | "errored";
+  fact: string;
   matcher?: string;
   expected?: JsonValue;
   received?: JsonValue;
@@ -474,6 +474,21 @@ function lifecyclePhaseField(value: JsonValue | undefined): LifecyclePhase | und
 
 function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { type: "failure" }): void {
   const experimentId = requiredExperimentId(event.identity.experimentId, event.identity.evalId);
+  const fact = event.fact;
+  if (fact !== undefined) {
+    writeEvent(io, {
+      event: "failure",
+      locator: String(event.locator),
+      evalId: event.identity.evalId,
+      experimentId,
+      verdict: event.verdict,
+      fact: fact.title,
+      ...(fact.matcher !== undefined ? { matcher: fact.matcher } : {}),
+      ...(fact.expected !== undefined ? { expected: fact.expected } : {}),
+      ...(fact.received !== undefined ? { received: fact.received } : {}),
+    });
+    return;
+  }
   if (event.verdict === "errored") {
     writeEvent(io, {
       event: "error",
@@ -485,17 +500,13 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
     });
     return;
   }
-  const a = event.assertion;
   writeEvent(io, {
     event: "failure",
     locator: String(event.locator),
     evalId: event.identity.evalId,
     experimentId,
-    severity: a?.severity ?? "gate",
-    assertion: a?.assertion ?? event.reason,
-    ...(a?.matcher !== undefined ? { matcher: a.matcher } : {}),
-    ...(a?.expected !== undefined ? { expected: a.expected } : {}),
-    ...(a?.received !== undefined ? { received: a.received } : {}),
+    verdict: event.verdict,
+    fact: event.reason,
   });
 }
 

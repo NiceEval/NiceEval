@@ -1,10 +1,10 @@
 ---
-title: "NiceEval Fact、Match 与断言用途"
+title: "NiceEval Fact、Match 与用途"
 sidebarTitle: "Fact 与断言"
-description: "NiceEval 如何用 Match 生成 Fact，再用 t.assert、t.require 与 t.score 明确登记判定和分数。"
+description: "用 Match 和作用域 producer 创建 Fact，再用 t.assert、t.require 与 t.score 明确登记判定和分数。"
 ---
 
-NiceEval 把“观察到什么”与“怎样使用这项观察”分开。Match 只比较一个候选值；`t.check(...)`、Turn、Session 与 Sandbox API 生成 Fact；`t.assert(...)`、`t.require(...)` 和计分制的 `t.score(...)` 再决定 Fact 用于判定还是计分。
+NiceEval 把“观察到什么”和“如何使用观察”分开。Match 只比较一个候选值；`t.check(...)`、Turn、Session 和 Sandbox producer 创建 Fact；`t.assert(...)`、`t.require(...)` 与 `t.score(...)` 才让 Fact 影响结果。
 
 ```ts
 import { includes, similarity } from "niceeval/expect";
@@ -12,57 +12,43 @@ import { includes, similarity } from "niceeval/expect";
 const containsResult = t.check(turn.message, includes("完成"));
 const answerQuality = t.check(turn.message, similarity(expected));
 
-t.assert(containsResult, { label: "回复说明已经完成" });
-t.assert(answerQuality, { atLeast: 0.8, label: "回复接近期望内容" });
+t.assert(containsResult, { label: "回复说明完成" });
+t.assert(answerQuality, { atLeast: 0.8, label: "回复质量" });
 ```
 
-创建 Fact 不会隐式改变 Attempt。每项必须成立的条件都要在消费位置明确登记，因此同一个评估用例在本地、CI 和重跑时不会切换判定标准。
+创建 Fact 不会隐式改变 Attempt。每条需要检查的规则都在消费位置明确登记，因此本地、CI 和重跑使用同一套判定。
 
-## 三个普通 Fact 消费入口
+## 三种 Fact use
 
 | 入口 | 用途 | 控制流 |
 |---|---|---|
-| `t.assert(fact)` | 把 Boolean Fact 登记为硬要求 | 继续执行，收集其它独立事实 |
-| `t.assert(scoreFact, { atLeast })` | 把 Score Fact 登记为带阈值的硬要求 | 继续执行 |
-| `await t.require(fact)` | 登记硬要求，并取得通过后的收窄值 | 未通过或无法求值时结束依赖路径 |
+| `t.assert(fact)` | Boolean Fact 的 verdict use | 继续执行，收集独立结果 |
+| `t.assert(scoreFact, { atLeast })` | ScoreFact 的阈值 verdict use | 继续执行 |
+| `await t.require(fact, options)` | 即时 Fact 的 verdict use，并取得通过结果 | 未通过或不可用时停止依赖路径 |
 
-`t.require(value, match)` 是立即值检查的简写：
+`defineScoreEval` 还提供 `t.score(label, fact, { max })`。它登记 score use：Boolean Fact 通过获得 `max`，ScoreFact 按归一化分数比例获得分数。
 
-```ts
-const config = await t.require(
-  JSON.parse(await t.sandbox.readText("config.json")),
-  matches(ConfigSchema),
-  { label: "配置符合 schema" },
-);
-```
+一个 Fact 最多有一个 verdict use 和一个 score use。两种用途共享一次 evaluator 求值。无人消费的 Fact 是作者错误；它不会在后台自行运行。
 
-`require` 只接受即时的 `phase: "now"` Fact。最终 diff 与整个 Attempt 的聚合事实要等 `test(t)` 返回后才能求值，因此它们使用 `t.assert(...)`，不能拿来控制中途路径。
+## 通过制与计分制终态
 
-## 判定结果
-
-通过制 `defineEval` 按以下顺序形成终态：
+通过制按已消费 Fact/use 折叠：
 
 ```text
-执行、作者或 evaluator 错误，或必需证据无法取得 → errored
-任一 assert / require 要求失败，或 Judge gate 失败 → failed
-显式 t.skip(reason)                                  → skipped
-否则                                                 → passed
+任一已消费 Fact 或 verdict use unavailable / errored  → errored
+任一 verdict use failed                               → failed
+显式 t.skip(reason)                                   → skipped
+否则                                                   → passed
 ```
 
-`errored` 表示这次执行无法形成可信判断，不伪装成 agent 没做到。多个独立 `t.assert(...)` 会全部求值，报告可一次显示完整失败信息。
+计分制保留更细的 score terminal。成功为 `scored`，失败的 verdict use 为 `invalid`，不可用为 `unavailable`，evaluator 或执行错误为 `errored`。只有 `scored` 才有可计入的 credit；不可用和错误不伪装为 0 分。
 
-## 值 Match 先生成 Fact
+## 值 Fact
 
-`niceeval/expect` 导出纯 Match factory。Boolean Match 产生通过、失败或证据不可用三态；Score Match 产生 `[0, 1]` 的连续分数或证据不可用。
+`niceeval/expect` 导出纯 Match factory。Boolean Match 产生通过、失败或证据不可用；Score Match 产生 `[0, 1]` 内的连续分数。
 
 ```ts
-import {
-  equals,
-  includes,
-  matches,
-  satisfies,
-  similarity,
-} from "niceeval/expect";
+import { equals, includes, matches, satisfies, similarity } from "niceeval/expect";
 
 t.assert(t.check(turn.message, includes("订单已确认")));
 t.assert(t.check(turn.data, equals({ status: "refund", amount: 42 })));
@@ -73,133 +59,68 @@ const quality = t.check(turn.message, similarity("期望答案"));
 t.assert(quality, { atLeast: 0.8 });
 ```
 
-Match 本身不携带判定或计分策略。同一个 Match 可以复用到多个候选值，不会因为某个调用点的用途改变自身。
+Match 不携带阈值、分值、可选性或控制流。Score Match 返回无效结构、非有限数或区间外数值时，Fact 为 evaluator error，不会被裁剪。
 
-## Turn、Session 与 Attempt Fact
+## 作用域 Fact
 
-接收者决定事实范围。`turn.*` 只看这一轮，`session.*` 看一条 Session 的前缀，`t.*` 在 `test(t)` 返回后看整个 Attempt。
+接收者决定证据范围。`turn.*` 只看该 Turn，`session.*` 看那条 session 的前缀，根 `t.*` 在 `test(t)` 返回后看整个 Attempt。
 
 ```ts
-import { commandMatch, eventMatch, toolMatch } from "niceeval/expect";
+import { toolMatch } from "niceeval/expect";
 
 const turn = await t.send("运行检查并修复问题。");
-
-t.assert(turn.succeeded());
-t.assert(turn.calledTool(toolMatch("shell", { status: "completed" })));
-t.assert(turn.event(eventMatch("message", { role: "assistant" })));
-
-t.assert(t.calledTool(commandMatch("niceeval", {
-  argsStart: ["show"],
-  status: "completed",
-})));
+t.assert(turn.succeeded(), { label: "Turn 成功" });
+t.assert(turn.calledTool(toolMatch("shell")), { label: "使用 shell" });
+t.assert(turn.calledTool(toolMatch("read_file"), { count: 2 }), { label: "读取两次" });
 ```
 
-次数写在 Fact producer 的 `{ count }` 里，不写成阈值：
-
-```ts
-t.assert(turn.calledTool(toolMatch("read_file"), { count: 2 }));
-```
-
-`commandMatch(...)` 只读取 Adapter 提供的 logical command projection。证据不完整或命令投影 opaque 时，没找到匹配不能冒充确定失败。
+否定检查和精确次数依赖完整证据。证据不足时，Fact 为 `unavailable`；普通消费会让 Attempt `errored`，而不是把空事件当作通过。
 
 ## Sandbox Fact 与真实命令
 
-最终文件变化是 `phase: "final"` Fact。Sandbox 命令先返回普通结果，再由值 Match 生成即时 Fact。
+最终文件变化是 `phase: "final"` Fact。Sandbox 命令先返回普通结果，再用 `t.check` 生成即时 Fact：
 
 ```ts
 import { commandSucceeded, includes } from "niceeval/expect";
 
-t.assert(t.sandbox.fileChanged("src/Button.tsx"));
-t.assert(t.sandbox.fileDeleted("src/old.ts"));
-t.assert(t.check(
-  t.sandbox.file("src/Button.tsx"),
-  includes("export function Button"),
-));
+t.assert(t.sandbox.fileChanged("src/Button.tsx"), { label: "修改 Button" });
+t.assert(t.check(t.sandbox.file("src/Button.tsx"), includes("export function Button")));
 
 const testResult = await t.sandbox.runCommand("pnpm", ["test"]);
 t.assert(t.check(testResult, commandSucceeded()), { label: "项目测试通过" });
 ```
 
-一个延迟文件 EvidenceSource 在一项 Fact 内只读取一次。文件缺失是确定失败；权限、传输或超时问题是证据不可用，不能把空字符串当文件内容继续匹配。
+文件缺失是确定失败；权限、传输或超时导致的证据问题是 `unavailable`，不会把空字符串当内容继续匹配。
 
-## 效率与成本
-
-用量值也先变成 Fact，再明确登记预算要求：
-
-```ts
-const outputBudget = t.check(
-  t.usage.outputTokens,
-  satisfies("有用量且 output tokens 不超过 10000", (tokens) =>
-    typeof tokens === "number" && tokens <= 10_000
-  ),
-);
-t.assert(outputBudget, { label: "输出 token 预算" });
-```
-
-这项 Match 同时要求用量存在，因此缺失不会被当成 0。只有 core 标记的 usage Fact 才能交给 `t.assertIfCovered(...)` 表达“Agent 声明不支持时不适用”。
-
-## 计分制复用同一个 Fact
-
-`defineScoreEval` 的 `t.score(...)` 把 Fact 用于分数。一个 Fact 可以同时用于判定和计分，而且 evaluator 只运行一次。
+## 计分 Fact
 
 ```ts
 const changed = t.sandbox.fileChanged("experiments/local.ts");
-t.assert(changed, { label: "runtime 配置有效" });
-t.score("runtime 配置修复", changed, { max: 2 });
+t.assert(changed, { label: "配置有效" });
+t.score("配置修复", changed, { max: 2 });
 
 const quality = t.check(turn.message, similarity(expectedAnswer));
 t.score("回答质量", quality, { max: 20 });
-
 t.score("代码精简", { earned: tierPoints });
 return t.finishScore();
 ```
 
-Boolean Fact 通过挣得 `max`，失败挣 0；Score Fact 按 `max × normalizedScore` 计分。作者直接给分使用 `{ earned }`，正常路径最后返回 `t.finishScore()`。
+成功、已消费且没有 score use 的 ScoreFact 可进入 `examScore`。有 score use 的同一 Fact 只进入 `totalScore`。这个规则也适用于 Judge。
 
-## 自定义 Match
+## Judge 是普通 ScoreFact
 
-Boolean Match 用 `defineValueMatch`，连续分数 Match 用 `defineScoreMatch`：
-
-```ts
-import { defineScoreMatch, defineValueMatch } from "niceeval/expect";
-
-const jsonValid = () => defineValueMatch<string>({
-  name: "valid JSON",
-  evaluate(value) {
-    try {
-      JSON.parse(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-});
-
-const concise = () => defineScoreMatch<string>({
-  name: "concise answer",
-  score(value) {
-    return Math.max(0, 1 - value.length / 1000);
-  },
-});
-
-t.assert(t.check(turn.message, jsonValid()));
-t.assert(t.check(turn.message, concise()), { atLeast: 0.7 });
-```
-
-自定义 Match 只实现单个候选值的比较。读取文件、扫描事件、判断证据完整度以及决定 Verdict 仍由对应的 Fact producer 与 consumer 负责。
-
-## Judge 保留兼容句柄
-
-Judge 尚未迁移成普通 Fact producer，因此继续支持 `.atLeast(...)`、`.gate(...)`、`.optional()`、`.stopOnFailure()`，以及计分制的 `.points(...)`。这些链式方法不属于普通 Match 或 Fact。
+Judge recipe 返回 ScoreFact，因此使用方式与其他连续 Fact 相同：
 
 ```ts
-t.judge.autoevals.closedQA("回答是否具体、礼貌?").atLeast(0.7);
-t.judge.autoevals.closedQA("不得编造账户信息").gate(0.9);
+const quality = turn.judge.autoevals.closedQA("回答是否具体且礼貌？");
+t.assert(quality, { atLeast: 0.7, label: "回答质量" });
 ```
+
+Judge 没有链式阈值、可选消费、观察消费或计分 API。材料、配置和失败语义见 [Judge](/zh/explanation/judge)。
 
 ## 相关阅读
 
-- [Match 参考](/zh/reference/expect) — 内置 Match、组合与自定义 Match 的完整签名。
+- [Match 参考](/zh/reference/expect) — 内置 Match、组合与自定义 Match。
 - [评估 API](/zh/reference/define-eval) — Fact producer 与 consumer 的字段全集。
-- [通过制与计分制](/zh/tutorials/evaluation-kinds) — 两种题型的完整写法与结果状态。
-- [Judge](/zh/explanation/judge) — Judge 兼容句柄与模型配置。
+- [通过制与计分制](/zh/tutorials/evaluation-kinds) — 两种题型的完整写法。
+- [Judge](/zh/explanation/judge) — Judge ScoreFact 与模型配置。

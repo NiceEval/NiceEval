@@ -1,41 +1,33 @@
-# `--strict`：质量分毕业成门禁
+# 用明确阈值守住质量
 
-## 解决什么问题
+开放式质量检查应把阈值写在消费 Fact 的位置，而不是依赖运行时模式。
+先用代表性结果校准 rubric 和阈值，再把已确定的要求写成一个稳定的 verdict use。
 
-一条新写的质量断言(相似度、judge 评分)还没养熟:阈值定多少合适没有数据,直接写成 gate 会让整批 eval 因为一条没校准的断言天天红。
-但只留档不判定又没有牙齿——质量退化悄悄发生,没人看见。
-需要一条从「观察」到「执法」的渐进路径,而不是在 gate / 不断言之间二选一。
+```typescript
+const quality = turn.judge.autoevals.closedQA("回答是否完整且准确？");
+t.assert(quality, { atLeast: 0.8, label: "回答质量" });
+```
 
-## 全流程
+需要在同一行阻止依赖后续步骤时使用 `require`：
 
-1. 断言先写成带阈值的 soft(契约见 [Severity 与 Verdict](../architecture.md)):
+```typescript
+const quality = turn.judge.autoevals.closedQA("回答是否满足安全要求？");
+await t.require(quality, { atLeast: 0.9, label: "安全质量" });
+await t.send("继续执行下一步");
+```
 
-   ```ts
-   t.check(reply, similarity("按月份分组统计营收").atLeast(0.7));
-   ```
+这两种写法都创建一个 verdict use。分数低于阈值时 Attempt `failed`；Judge 无法评估时 Attempt `errored`，不会把配置或网络问题伪装成 Agent 失败。
 
-2. 日常按默认模式跑,soft 低于阈值**只留档不改判**——run 保持绿,分数落进结果:
+计分制若要按质量比例给分，使用 score use：
 
-   ```bash
-   niceeval exp compare
-   ```
+```typescript
+const quality = turn.judge.autoevals.closedQA("说明是否清晰？");
+t.score("说明质量", quality, { max: 20 });
+```
 
-3. 观察期用 `niceeval show` / `view` 看各 attempt 的 soft 分数分布,校准阈值:0.7 是太松还是太紧,数据说话。
-4. 阈值稳定后,在要收紧的场合(每周质量巡检、发版前检查)加 `--strict`,soft 低于阈值按 failed 判:
-
-   ```bash
-   npx niceeval exp compare --strict
-   ```
-
-5. `--strict` 下红掉的题就是质量退化清单,照常拿 locator 下钻;确认阈值和断言都可信后,把该断言改成 `.gate(x)`,从此不依赖 flag、任何模式都执法。
-
-## 边界
-
-- Gate 断言不受 `--strict` 影响,任何模式下不通过都 failed——`--strict` 只对带通过线的 soft 生效:打分断言的 `.atLeast(0.7)` 与 0/1 断言的 `.atLeast(1)` 都在此列。
-- 无参 `.soft()` 的纯留档断言在 `--strict` 下也只留档:没有线就没有「低于线」。
-- 断言评不了(judge 缺 key、证据通道不完整)是 `unavailable` 走 errored,不是 failed——`--strict` 不改变这条(见 [CLI](../cli.md))。
+同一 Fact 可同时有一个 verdict use 和一个 score use，evaluator 仍只运行一次。
 
 ## 相关阅读
 
-- [CLI](../cli.md) —— `--strict` 用法与退出/展示规则。
-- [Severity 与 Verdict](../architecture.md) —— gate / soft / optional 的判定规则单源。
+- [Verdict 与 Fact use](../architecture.md) —— 终态折叠规则。
+- [Judge](../../judge/library.md) —— ScoreFact 与配置。

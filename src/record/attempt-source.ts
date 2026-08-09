@@ -25,23 +25,17 @@ export async function loadAttemptSourceTree(
     sources,
     factResults: result.factResults,
     factUses: result.factUses,
-    legacyJudgeAssertions: result.legacyJudgeAssertions,
     sends,
     abort: firstControlFailureLoc(result),
   });
 }
 
-/** `require` 与 legacy Judge stop 都是控制流边界；取最早声明处标记后续源码不可达。 */
+/** `require` 是唯一的 Fact 控制流边界；取最早声明处标记后续源码不可达。 */
 function firstControlFailureLoc(result: ReturnType<typeof materializeFactRecord>): SourceLoc | undefined {
   const candidates = [
     ...result.factUses.flatMap((use) =>
       use.useKind === "verdict" && use.method === "require" && use.outcome !== "passed" && use.consumerLoc
         ? [{ order: use.sourceOrder, loc: use.consumerLoc }]
-        : []
-    ),
-    ...result.legacyJudgeAssertions.flatMap((judge) =>
-      judge.policy.stopOnFailure === true && judge.outcome === "failed" && judge.loc
-        ? [{ order: judge.sourceOrder, loc: judge.loc }]
         : []
     ),
   ];

@@ -1,4 +1,6 @@
 import { defineEval } from "niceeval";
+import { eventMatch, includes } from "niceeval/expect";
+
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 
 // bub 没有原生 Skill 加载机制:装进 .agents/skills/ 目录 + AGENTS.md 里的发现指引
@@ -17,18 +19,30 @@ export default defineEval({
         `检查你的项目 skills 目录里的 review-conventions skill,把其中记录的确切魔法词` +
         `告诉我。`,
     );
-    await turn.succeeded().stopOnFailure();
+    await t.require(turn.succeeded());
 
-    t.messageIncludes(MAGIC_WORD);
-    t.eventsSatisfy(
-      "某次工具调用的入参中出现了挂载的 skill 文件路径/文件名",
-      (events) =>
-        events.some(
-          (event) =>
-            event.type === "operation.started" &&
-            event.operation.kind === "tool" &&
-            JSON.stringify(event.operation.input).toLowerCase().includes("skill"),
+    t.assert(
+      t.event(
+        eventMatch("message", {
+          role: "assistant",
+          text: includes(MAGIC_WORD),
+        }),
+      ),
+    );
+    t.assert(
+      t.eventsSatisfy(
+        "某次工具调用的入参中出现了挂载的 skill 文件路径/文件名",
+        (events) =>
+            events.some(
+              (event) =>
+                event.type === "operation.started" &&
+                event.operation.kind === "tool" &&
+                JSON.stringify(event.operation.input)
+                  .toLowerCase()
+                  .includes("skill"),
+            ),
         ),
+      ),
     );
   },
 });

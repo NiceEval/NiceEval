@@ -241,10 +241,7 @@ const en = {
 
   /** 计分制 attempt 详情的 chrome(docs/feature/assertions/library/display.md「计分制」)。 */
   "attemptAssertions.scorePointsEarned": "{earned}/{total} score points earned in full",
-  "attemptAssertions.scoreEntries": "Score entries",
   /** 断言表的四列表头。 */
-  "attemptAssertions.name": "Assertion",
-  "attemptAssertions.severity": "Severity",
   "attemptAssertions.outcome": "Outcome",
   "attemptAssertions.detail": "Detail",
   "attemptSource.abortReason": "prerequisite failed, test() ended here",
@@ -419,9 +416,6 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "attemptList.filterPlaceholder": "筛选 attempt…",
 
   "attemptAssertions.scorePointsEarned": "{earned}/{total} 得分点挣满",
-  "attemptAssertions.scoreEntries": "给分记录",
-  "attemptAssertions.name": "断言",
-  "attemptAssertions.severity": "严重度",
   "attemptAssertions.outcome": "结果",
   "attemptAssertions.detail": "详情",
   "attemptSource.abortReason": "前置未过,test() 就地结束",

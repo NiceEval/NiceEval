@@ -8,7 +8,7 @@ export default defineEval({
   description: "source-snapshot:入口与被导入断言模块都必须在运行时冻结",
 
   async test(t) {
-    t.check(ENTRY_SNAPSHOT, equals(ENTRY_SNAPSHOT));
+    t.assert(t.check(ENTRY_SNAPSHOT, equals(ENTRY_SNAPSHOT)));
     checkImportedSnapshot(t);
   },
 });

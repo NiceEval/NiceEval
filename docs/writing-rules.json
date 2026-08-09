@@ -5,7 +5,7 @@
     "docs-site/zh"
   ],
   "publicApiExamples": {
-    "$why": "公开示例必须与可运行的 Fact/Match 作者面和 CLI 同步。普通 Fact 先由 producer 创建，再由 t.assert、t.require 或 t.score 消费；只有隔离保留的 Judge 句柄继续支持 gate、atLeast 与 points 链。",
+    "$why": "公开示例必须与可运行的 Fact/Match 作者面和 CLI 同步。所有 Fact（包括 Judge ScoreFact）先由 producer 创建，再由 t.assert、t.require 或 t.score 消费。",
     "rejectedCliFlags": [
       {
         "flag": "--strict",
@@ -35,7 +35,7 @@
           "docs/feature/eval/README.md"
         ],
         "use": "Boolean Fact 用 t.assert(fact)，需要立即停止依赖路径时用 await t.require(fact)",
-        "why": "普通 Match 与 Fact 没有 gate 句柄；只有 Judge 兼容句柄保留这条链"
+        "why": "Fact 没有 gate 句柄；用 t.assert(fact) 或 await t.require(fact) 显式登记 verdict use"
       },
       {
         "method": "atLeast",
@@ -44,7 +44,7 @@
           "docs/feature/eval/README.md"
         ],
         "use": "Score Fact 用 t.assert(fact, { atLeast })，计分时用 t.score(label, fact, { max })",
-        "why": "普通 Match 与 Fact 没有 atLeast 句柄；只有 Judge 兼容句柄保留这条链"
+        "why": "Score Fact 没有 atLeast 句柄；把阈值写在 t.assert / t.require 的 options 中"
       },
       {
         "method": "points",
@@ -53,7 +53,7 @@
           "docs/feature/eval/README.md"
         ],
         "use": "在 defineScoreEval 中用 t.score(label, fact, { max })",
-        "why": "普通 Fact 不再用 points 句柄计分；只有 Judge 兼容句柄保留这条链"
+        "why": "Fact 不使用 points 句柄计分；在 defineScoreEval 中用 t.score(label, fact, { max })"
       }
     ],
     "removedScoreOverloads": [

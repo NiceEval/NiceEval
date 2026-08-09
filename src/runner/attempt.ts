@@ -16,7 +16,6 @@ import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
-import { resolveJudge } from "./judge-config.ts";
 import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
@@ -71,7 +70,7 @@ import type {
   DiffArtifact,
   EvalResult,
   CommandExitEvidence,
-  JudgeConfig,
+  ResolvedJudgeConfig,
   JsonValue,
   Sandbox,
   ScopedFeedback,
@@ -178,7 +177,7 @@ export function runAttemptEffect(
     id: evalDef.id,
     description: evalDef.description,
     experimentId: run.experimentId,
-    experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
+    experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
     agent: run.agent.name,
     model: run.model,
     verdict: "errored",
@@ -188,8 +187,8 @@ export function runAttemptEffect(
     attempt,
     startedAt: new Date(t0).toISOString(),
     durationMs: 0,
-    assertions: [],
-    factTrace: emptyFactTrace(),
+    factResults: [],
+    factUses: [],
     evidenceCoverage: run.agent.evidenceCoverage,
     evaluationKind: evalDef.evaluationKind ?? "pass",
   };
@@ -688,7 +687,7 @@ export function runAttemptEffect(
             }
           }
           try {
-            timeoutSources = await withCleanupTimeout(() => collectSources(events, [], evalDef.source));
+            timeoutSources = await withCleanupTimeout(() => collectSources(events, [], [], evalDef.source));
           } catch {
             // 源码读不到:如实缺失,不阻塞收尾。
           }
@@ -911,17 +910,9 @@ export function runAttemptEffect(
             sources: timeoutSources ?? [],
           }
         : withSandbox;
-      // The Fact result is useful to in-process reporters immediately, but
-      // Record still owns a separate breaking envelope migration. Keep these
-      // fields readable on EvalResult without letting the existing writer's
-      // object spread serialize a hybrid old/new result.json.
-      return keepFactOutcomeInMemory(redactEvalResultEvidence(completed, sensitiveValues));
+      return redactEvalResultEvidence(completed, sensitiveValues);
     }),
   );
-}
-
-function emptyFactTrace(): import("../assertions/types.ts").AttemptFactTrace {
-  return { facts: [], uses: [], legacyJudgeAssertions: [] };
 }
 
 function withFinalizedFacts(
@@ -932,7 +923,8 @@ function withFinalizedFacts(
   return {
     ...result,
     verdict: kind === "score" ? verdictForTerminal(finalized.score.status) : finalized.pass.verdict,
-    factTrace: finalized.trace,
+    factResults: finalized.factResults,
+    factUses: finalized.factUses,
     ...(kind === "score" ? { scoreResult: finalized.score } : {}),
   };
 }
@@ -1323,7 +1315,6 @@ async function runAttemptBody(
     // 构造 t,跑 test
     enterPhase("eval.run");
     log(t("runner.driveAgent"));
-    const judge = resolveJudge(run.judge, evalDef.judge, config.judge);
     const { context, state } = createEvalContext({
       agent: run.agent,
       sandbox,
@@ -1335,7 +1326,7 @@ async function runAttemptBody(
       experimentId: run.experimentId,
       signal,
       log,
-      judge,
+      judge: a.judge,
       telemetry,
       otel,
       evalBaseDir: evalDef.baseDir,
@@ -1346,7 +1337,7 @@ async function runAttemptBody(
       // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
       // 走的生命周期链是同一个函数,两条链的决议序各自单源在 send-failures.ts / failure-class.ts。
       experimentClassifier: run.classifyFailure,
-      // 题型:计分制下句柄上的 .gate() 是前置(就地求值 + 挂了中止 test()),见 collector。
+      // 题型决定 Fact use 的折叠；`require` 是唯一的立即控制流消费者。
       evaluationKind: evalDef.evaluationKind ?? "pass",
       // 前置断言就地求值要看当前已提交窗口的 agent diff(非沙箱型没有分类账,省略)。
       ...(ledger ? { liveDiff: async () => deriveDiffData(await ledger!.exportWindows()) } : {}),
@@ -1397,9 +1388,6 @@ async function runAttemptBody(
     let skipReason: string | undefined;
     try {
       const completion = await withSourceRegistry(sourceRegistry, () => evalDef.test(context as never));
-      // Preserve the legacy Judge handle's supported unawaited
-      // `.stopOnFailure()` path at the normal-return boundary.
-      await state.collector.settleLegacyPrerequisites();
       if (evalDef.evaluationKind === "score") state.collector.completeScore(completion);
       else state.collector.completePass();
     } catch (e) {
@@ -1515,10 +1503,10 @@ async function runAttemptBody(
       },
     };
     if (!skipReason) enterPhase("assertions.evaluate");
+    const judgeFinalizationStartedAt = Date.now();
     const finalizedFacts = await state.collector.finalize(assertionEvaluationContext, {
-      // Keep the legacy Judge handle's live progress wording while its result
-      // is isolated in the Fact trace sidecar.
-      onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
+      onJudgeProgress: ({ index, total, check }) =>
+        log(`judge · ${check} (${index}/${total}) · ${Date.now() - judgeFinalizationStartedAt}ms`),
       ...(error === undefined || errorClass === undefined
         ? {}
         : {
@@ -1528,10 +1516,6 @@ async function runAttemptBody(
             }],
           }),
     });
-    // Record/show have not migrated to FactTrace yet.  Keep their old field
-    // empty rather than projecting a lossy faux AssertionResult; the canonical
-    // result is carried separately for the next integration slice.
-    const assertions: import("../types.ts").AssertionResult[] = [];
     const verdict = factVerdict(finalizedFacts, evalDef.evaluationKind ?? "pass");
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
@@ -1605,13 +1589,13 @@ async function runAttemptBody(
     const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
 
     // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
-    const sources = await collectSources(events, assertions, evalDef.source, sourceRegistry);
+    const sources = await collectSources(events, finalizedFacts.factResults, finalizedFacts.factUses, evalDef.source, sourceRegistry);
 
     const value: EvalResult = {
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
-      experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, evalDef.judge),
+      experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
       agent: run.agent.name,
       model: run.model,
       verdict,
@@ -1621,8 +1605,8 @@ async function runAttemptBody(
       attempt,
       startedAt: new Date(t0).toISOString(),
       durationMs,
-      assertions,
-      factTrace: finalizedFacts.trace,
+      factResults: finalizedFacts.factResults,
+      factUses: finalizedFacts.factUses,
       evaluationKind: evalDef.evaluationKind ?? "pass",
       ...(evalDef.evaluationKind === "score" ? { scoreResult: finalizedFacts.score } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
@@ -1785,10 +1769,9 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
 ] as const satisfies readonly (keyof EvalResult)[];
 
 const EVAL_RESULT_REDACTED_EVIDENCE_KEYS = [
-  "assertions",
-  "factTrace",
+  "factResults",
+  "factUses",
   "scoreResult",
-  "scoreEntries",
   "retryAttempts",
   "error",
   "diagnostics",
@@ -1832,25 +1815,6 @@ function redactEvalResultEvidence(result: EvalResult, sensitiveValues: ReadonlyS
     ...result,
     ...redactedEvidence,
   };
-}
-
-/**
- * `record/writer.ts` deliberately persists the enumerable EvalResult shape.
- * Fact traces cannot join that old schema until Record's version and
- * evaluation-algorithm migration land, so preserve them as in-memory
- * properties rather than accidentally emitting a mixed envelope.
- */
-function keepFactOutcomeInMemory(result: EvalResult): EvalResult {
-  for (const key of ["factTrace", "scoreResult"] as const) {
-    if (result[key] === undefined) continue;
-    Object.defineProperty(result, key, {
-      value: result[key],
-      enumerable: false,
-      configurable: true,
-      writable: true,
-    });
-  }
-  return result;
 }
 
 /**
@@ -2011,7 +1975,8 @@ function factVerdict(finalized: FactFinalizeResult, kind: "pass" | "score"): imp
 
 async function collectSources(
   events: readonly StreamEvent[],
-  assertions: readonly EvalResult["assertions"][number][],
+  factResults: readonly import("../assertions/types.ts").EvaluationFactResult[],
+  factUses: readonly (import("../assertions/types.ts").VerdictFactUseResult | import("../assertions/types.ts").ScoreFactUseResult)[],
   evalSource: CapturedEvalSource,
   registry?: SourceRegistry,
 ): Promise<SourceArtifact[]> {
@@ -2023,7 +1988,8 @@ async function collectSources(
     for (const frame of loc.callers ?? []) if (frame.kind === "project") paths.add(frame.file);
   };
   for (const e of events) if (e.type === "message") add(e.loc);
-  for (const a of assertions) add(a.loc);
+  for (const fact of factResults) add(fact.producerLoc);
+  for (const use of factUses) add(use.consumerLoc);
   const out: SourceArtifact[] = [{ path: evalSource.path, content: evalSource.content, role: "entry" }];
   for (const path of paths) {
     if (path === evalSource.path) {
@@ -2046,11 +2012,10 @@ export function experimentRunInfo(
   run: AgentRun,
   plan: Attempt["plan"],
   sandboxPlansByEval: globalThis.Record<string, import("../types.ts").JsonValue>,
-  config?: Pick<Config, "timeoutMs" | "judge">,
-  evalJudge?: JudgeConfig,
+  config?: Pick<Config, "timeoutMs">,
+  judge?: ResolvedJudgeConfig,
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
-  const judge = resolveJudge(run.judge, evalJudge, config?.judge);
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
@@ -2065,10 +2030,8 @@ export function experimentRunInfo(
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(judge
-      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
+      ? { judge: { model: judge.model, baseUrl: judge.baseUrl, apiKeyEnv: judge.apiKeyEnv, timeoutMs: judge.timeoutMs } }
       : {}),
     agentInstalls: [...agentInstallPlansForRun(run)],
   };
 }
-
-export { resolveJudge } from "./judge-config.ts";

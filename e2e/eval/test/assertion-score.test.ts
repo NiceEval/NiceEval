@@ -18,7 +18,7 @@ interface ExpEvent {
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
-test("计分制 handle modifiers 与直接给分写入公开 Record", async () => {
+test("Score Fact 消费与直接给分写入公开 Record", async () => {
   await withProjectCopy(
     evalProjectCopy,
     async ({ root }) => {
@@ -35,10 +35,22 @@ test("计分制 handle modifiers 与直接给分写入公开 Record", async () =
       const record = await openRecord(join(root, ".niceeval"));
       const attempt = resolveLocator(record, locator);
       expect(attempt.result.verdict).toBe("passed");
-      expect(attempt.result.evaluationKind).toBe("points");
-      expect(attempt.result.scoreEntries).toContainEqual(
-        expect.objectContaining({ label: "deterministic manual points", points: 4 }),
+      expect(attempt.result.evaluationKind).toBe("score");
+      expect(attempt.result.evaluationAlgorithm).toBe("fact-use/v2");
+      expect(attempt.result.factUses).toContainEqual(
+        expect.objectContaining({
+          useKind: "score",
+          label: "deterministic manual points",
+          input: { kind: "direct", earned: 4 },
+          outcome: "scored",
+          earned: 4,
+        }),
       );
+      expect(attempt.result.scoreResult).toEqual({
+        status: "scored",
+        earnedScore: 10,
+        creditedScore: 10,
+      });
     },
     evalArtifactStaging("score"),
   );

@@ -11,7 +11,6 @@ niceeval 不需要专门的 CI 档——日志页给人看,默认的人读文本
 
    ```sh
    niceeval exp ci \
-     --strict \
      --junit .niceeval/junit.xml
    ```
 

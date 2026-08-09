@@ -91,20 +91,25 @@ export default defineScoreEval({
 
 计分制的 `scored` 可以是 0 分。零分说明评估成功形成了分数，不等于执行失败或证据不足。
 
-## Judge 是兼容入口
+## Judge 也是 ScoreFact
 
-Judge 仍返回旧句柄，因此 `.atLeast(...)`、`.gate(...)` 和计分制里的 `.points(...)` 继续可用：
+Judge recipe 与 `similarity(...)` 一样返回 ScoreFact。先声明 `judge` capability，再将它交给明确的 consumer：
 
 ```ts
-t.judge.autoevals.closedQA("说明是否具体、准确?").atLeast(0.7);
-t.judge.autoevals.closedQA("不得编造账户信息").gate(0.9);
+export default defineScoreEval({
+  judge: true,
+  async test(t) {
+    const turn = await t.send("说明这项变更的动机和风险。");
+    const quality = turn.judge.autoevals.closedQA("说明是否具体、准确？");
 
-// defineScoreEval 中
-t.judge.autoevals.closedQA("说明是否讲清动机与风险?").points(20);
-return t.finishScore();
+    t.assert(quality, { atLeast: 0.7, label: "最低说明质量" });
+    t.score("说明质量", quality, { max: 20 });
+    return t.finishScore();
+  },
+});
 ```
 
-这些链式方法只属于 Judge 兼容面。普通 Match、Boolean Fact 与 Score Fact 使用 `t.assert`、`t.require` 和 `t.score`。
+同一个 Fact 可以有一个 verdict use 与一个 score use，evaluator 只运行一次。Judge 没有链式阈值或计分 API。
 
 ## 代码任务用真实命令验收
 

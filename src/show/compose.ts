@@ -1,16 +1,16 @@
 // show 专属的执行时间轴口径(--history;契约:docs/feature/reports/show.md「--history:一个 eval
 // 的执行时间轴」)。逐 attempt 而非逐快照:对 Sample 中匹配的每个 experimentId + evalId 分节,
 // 节内按 startedAt 升序列出跨快照按 attempt 身份键去重后的历次 attempt——时间、verdict、
-// 单行结果摘要(Assertion display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。
+// 单行结果摘要(Fact/use display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。
 //
 // 现刻水位 Sample(两个宿主共用)住在 ../sample/index.ts;本文件只留 show 独有的时间轴计算。
 // 数据只消费 niceeval/record 的读取面。
 
 import { attemptCostUSD } from "../report/model/metrics.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../assertions/display.ts";
+import { factDisplaySummary, summaryText } from "../assertions/display.ts";
 import type { EvalResult, Verdict } from "../types.ts";
 import type { AttemptHandle, Experiment } from "../record/index.ts";
-import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal, type AttemptTerminal } from "../record/fact-record.ts";
+import { attemptTerminalOf, verdictForTerminal, type AttemptTerminal } from "../record/fact-record.ts";
 
 // ───────────────────────── 时间轴(--history)─────────────────────────
 
@@ -20,7 +20,7 @@ export interface AttemptHistoryRow {
   verdict: Verdict;
   /** Fact score terminal is retained separately from its four-way tally mapping. */
   terminal: AttemptTerminal;
-  /** 单行结果摘要(display 契约):主失败断言 / 结构化 error 一层摘要 / skip 理由;passed 缺省。 */
+  /** 单行结果摘要(display 契约):主 Fact/use / 结构化 error 一层摘要 / skip 理由;passed 缺省。 */
   summary?: string;
   durationMs: number;
   costUSD: number | null;
@@ -36,26 +36,13 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 
 /**
  * 单行结果摘要:与默认报告 Result 单元格同一条 display 契约(docs/feature/assertions/library/display.md)——
- * 结构化 error 取一层 message 摘要,skipped 取理由,failed 取主失败断言的紧凑单行;passed 无摘要。
+ * 结构化 error 取一层 message 摘要,skipped 取理由,失败取主 Fact/use 的紧凑单行;passed 无摘要。
  */
 function rowSummary(result: EvalResult): string | undefined {
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return fact.text;
   if (result.error !== undefined) return summaryText(result.error.message);
-  if (result.skipReason !== undefined) return summaryText(result.skipReason);
-  const fact = factRecordOf(result);
-  const score = scoreOutcomeOf(result);
-  if (score !== undefined) {
-    if (score.status === "invalid") return `invalid · earned ${score.earnedScore} · credited ${score.creditedScore}`;
-    if (score.status === "unavailable") return `unavailable · ${score.issues[0]?.reason ?? "score evidence unavailable"}`;
-    if (score.status === "errored") return `errored · ${score.errors[0]?.error.message ?? "score evaluator error"}`;
-    if (score.status === "skipped") return score.reason;
-  }
-  if (fact !== undefined) {
-    const use = fact.factUses.find((candidate) => candidate.useKind === "verdict" && candidate.outcome === "failed");
-    if (use?.useKind === "verdict") return summaryText(use.label ?? use.key ?? use.method);
-    return undefined;
-  }
-  const summary = primaryAssertionSummary(result.assertions, result.verdict, result.evaluationKind === "score" ? "score" : "pass");
-  return summary === undefined ? undefined : compactAssertionSummary(summary);
+  return result.skipReason === undefined ? undefined : summaryText(result.skipReason);
 }
 
 /**

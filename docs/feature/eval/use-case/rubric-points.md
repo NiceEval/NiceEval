@@ -1,94 +1,62 @@
-# 计分制：五步走完三步挣 3 分
+# 计分制：检查点和质量分都用 Fact
 
-## 解决什么问题
+通过制回答“是否满足要求”。需要表达“做到几成”时，使用 `defineScoreEval`，将每项证据显式消费为 score use。
+分数从 0 累加，作者为每个 use 写出分值；没有 `.points()`、隐式满分或运行时严格模式。
 
-通过制回答「做没做对」，但有一类题的答案是「做到了几成」：安装五步走完三步，不该和一步没走同为 0 分——模型间的真实差距全藏在这里。这类题用 **`defineScoreEval`** 定义，用给分词汇叠加挣分：分从 0 往上累加、分值非负、不声明满分。同一条 eval 的代码对每个 experiment 是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，判定不需要分母。契约单源见[计分粒度](../../assertions/library/score-points.md#计分制叠加给分没有上限声明)。
-
-## 全流程
-
-以「安装并启动 DB-GPT」为例，一条完整的检查点清单题：
+## 检查点给分
 
 ```typescript
-// evals/install/db-gpt.eval.ts
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, includes, isTrue } from "niceeval/expect";
+import { commandSucceeded, includes, isTrue, toolMatch } from "niceeval/expect";
 
 export default defineScoreEval({
-  description: "安装并启动 DB-GPT,通过健康检查",
+  judge: true,
+  description: "安装并启动 DB-GPT",
   async test(t) {
-    await t.send("把 DB-GPT 装起来,启动服务并确保健康检查通过。");
+    await t.send("把 DB-GPT 装起来，启动服务并确保健康检查通过。");
 
-    // 纯前置:repo 都没 clone 下来,后面的步骤无从谈起——存在性检查用 pathExists(布尔),
-    // 不是取内容的 file()(那个留给 t.check 配 matches/includes 这类内容断言)。
     const cloned = await t.sandbox.pathExists("db-gpt/README.md");
-    t.require(cloned, isTrue("db-gpt cloned"));
+    await t.require(cloned, isTrue("db-gpt cloned"), { label: "已克隆仓库" });
 
-    // 五个检查点各值 1 分,互相独立:挂一条照记 0 分,不连坐后面
-    t.sandbox.fileChanged("db-gpt/.env").points(1);                          // ① 配置了环境
-    t.calledTool("shell", { input: { command: /pip install/ } }).points(1);  // ② 装了依赖
-    t.calledTool("shell", { input: { command: /dbgpt start/ } }).points(1);  // ③ 启动了服务
+    t.score("配置环境", t.sandbox.fileChanged("db-gpt/.env"), { max: 1 });
+    t.score("安装依赖", t.calledTool(toolMatch("shell", { input: { command: /pip install/ } })), { max: 1 });
+    t.score("启动服务", t.calledTool(toolMatch("shell", { input: { command: /dbgpt start/ } })), { max: 1 });
 
-    const health = await t.sandbox.runShell("curl -s localhost:5670/health");
-    t.check(health, commandSucceeded()).points(1);                           // ④ 健康检查可达
-    t.check(health.stdout, includes("ok")).points(1);                        // ⑤ 返回内容正确
+    const health = await t.sandbox.runCommand("curl", ["-s", "localhost:5670/health"]);
+    t.score("健康检查可达", t.check(health, commandSucceeded()), { max: 1 });
+    t.score("健康检查内容", t.check(health.stdout, includes("ok")), { max: 1 });
+    return t.finishScore();
   },
 });
 ```
 
-逐块读：
+每个 score use 独立计算。Boolean Fact 通过时获得 `max`，失败时获得 0；ScoreFact 按其 `[0,1]` 归一化分数乘以 `max`。`require` 是唯一的即时前置消费：失败时后续代码不继续执行，未创建的 score use 自然不会记分。
 
-1. **检查点给分用 `.points(n)`**：挂在任何断言上的条件给分，通过挣 `n` 分、不过挣 0。五个检查点各自独立——只配好运行条件、装好依赖的模型挣 2 分，全走通的挣 5 分，「做到几成」直接落在分上。
-2. **前置条件用 `t.require()`**：失败就地结束，后面的给分代码不执行，那些分**自然没挣到**。clone 都失败的模型这题挣 0 分——中止挣 0 是 agent 的责任，成立；这和基础设施故障是两回事（见边界）。得分点本身也能当前置：`t.calledTool(...).points(1).gate().stopOnFailure()` 读作「值 1 分，同时是硬要求，没做到就别往下跑」。
-3. **丢分不是失败**：得分点不影响判定，挂三条只是少挣三分，verdict 仍是 `passed`。计分制的 `failed` 只有前置中止一个出处，它回答的是「这次的分数完不完整」；默认报告读的是分（3 vs 1），attempt 详情里逐条红绿照常可看，「死在第几步」在那里下钻。
+## 用 Judge 给连续分
 
-## 分值不等权时：rubric 大题
-
-检查点清单是等权计分（每条 1 分）；rubric 大题的各维度分量不同，分值作者自定。三个给分形态按证据类型选：0/1 断言链 `.points`、自己算的分用 `t.score` 直接累加、judge 按连续分比例挣：
+Judge 与其他 ScoreFact 没有特殊计分分支：
 
 ```typescript
-// evals/refactor/async-rewrite.eval.ts
-import { defineScoreEval } from "niceeval";
-import { commandSucceeded } from "niceeval/expect";
-
-export default defineScoreEval({
-  description: "回调改写 async/await,按 rubric 给分",
-  async test(t) {
-    await t.sandbox.uploadDirectory("fixtures/refactor-starter");
-    await t.send("把 src/legacy.js 的回调全部改写成 async/await,并在 NOTES.md 写重构说明。");
-
-    await t.group("正确性", async () => {
-      const test = await t.sandbox.runCommand("npm", ["test"]);
-      t.check(test, commandSucceeded()).points(60);      // 测试全过值 60 分;丢了照样往下评
-    });
-
-    await t.group("代码质量", async () => {
-      const diff = t.sandbox.diff.get("src/legacy.js");
-      const lines = diff.split("\n").filter((l) => l.startsWith("+")).length;
-      t.score("代码精简", lines <= 60 ? 20 : lines <= 120 ? 10 : 0);   // 分档自己算,直接累加
-
-      t.judge.autoevals.closedQA("重构说明是否讲清动机与风险?", {
-        on: t.sandbox.diff.get("NOTES.md"),
-      }).points(20);                                     // judge 打 0.8 → 挣 16 分
-    });
-  },
+const notes = await t.sandbox.readText("NOTES.md");
+const quality = t.judge.autoevals.closedQA("说明是否讲清动机和风险？", {
+  input: "重构代码并说明动机与风险。",
+  output: notes,
 });
+
+t.assert(quality, { atLeast: 0.7, label: "最低说明质量" });
+t.score("说明质量", quality, { max: 20, key: "notes-quality" });
 ```
 
-- **一条断言只扮演一个角色**：`.points(n)` 是得分点、`.gate(x?)` 是硬判定、什么都不链或 `.soft()` / `.atLeast(x)` 是观测（进质量分）。控制流独立：需要失败后立即停止时用 `t.require(...)`，或链 `.stopOnFailure()`。链了 `.points()` 后不再链 `.soft()` / `.atLeast()`——得分点已经用分数表达了分量，再进质量分是同一条证据被读两遍。
-- **`t.score(label, n)`** 是判定条件复杂到断言词汇装不下时的出口：作者算好条件和分数后直接累加，`label` 进报告。
-- **`t.group` 给分数命名维度**：组内挣分聚成对比里的得分点——报告里「正确性挣 60/挣 0」「代码质量挣 36/挣 12」按组横向可比，跨 eval 组名一致就能聚成同一维度。
+这一 Fact 既有一个 verdict use 又有一个 score use，但 evaluator 只运行一次。分数无效、不可用或 evaluator error 都保留为 Fact/use 结果；不会被截断为 0。
 
-## 边界
+## 终态与聚合
 
-- **叠加不扣分**：分值非负（`.points(n)` 要求 `n > 0`，`t.score` 要求 `n ≥ 0`）。「做了坏事」不用负分——要「到这一步不成立就别往下跑了」写 `t.require(...)`，要「没做坏事算得分项」写正向检查点（`t.notCalledTool(...).points(1)`）。
-- **硬判定与中止正交**：`.gate()` 只决定 Verdict，不隐式改变执行顺序；`.stopOnFailure()` 才在该断言失败时停止后续代码。`t.require(x)` 是 `t.check(x).gate().stopOnFailure()` 的值断言快捷方式，两种题型一致。
-- **中止的 0 和基础设施的 `null` 严格分开**：前置失败后面挣 0 分是 agent 的责任；沙箱炸了、judge 没 key 是 `errored`，整题分数 `null`、不折成 0——评不了不是 agent 差。
-- **题型即定义函数**：`defineScoreEval` 的 `t` 才有 `.points` / `t.score`，在 `defineEval` 里写给分是类型错误；`t.require` 与 `.stopOnFailure()` 两种题型都有。同一 experiment 可以混合题型，但通过率与总分始终分列，不相加。
-- 检查点是**独立可跑的题目**时不要用计分制，拆成多个 eval（[测试集从输入数组生成多条 eval](dataset-fanout.md)）——粒度来自更多的题，不是更细的分。
+`finishScore()` 封口后，所有 score use 可用时 Attempt 为 `scored`。失败的 verdict use 使它成为 `invalid` 且 `creditedScore` 为 0；不可用与 evaluator/执行错误保持 `null` credit，不能伪装为 0 分。
+
+成功、已消费且没有 score use 的 ScoreFact 才能各计一次 `examScore`。有 score use 的 Fact 只贡献 `totalScore`，因此 Judge 与任意其他 ScoreFact 遵循完全相同的聚合规则。
 
 ## 相关阅读
 
-- [计分粒度](../../assertions/library/score-points.md) —— 通过制 / 计分制的完整契约与横截面聚合规则（契约单源）。
-- [过程与成本](process-and-cost.md) —— 检查点断言本身的匹配写法。
-- [裁判评质量](judge-quality.md) —— judge 入口与阈值语义。
-- [沙箱 coding 任务](sandbox-coding.md) —— rubric 大题依赖的 diff 归因与验证命令。
+- [计分 Fact](../../assertions/library/score-points.md) —— 终态和聚合规则。
+- [Judge](../../judge/library.md) —— ScoreFact 材料与配置。
+- [Verdict 与 Fact use](../../verdict/architecture.md) —— 失败与不可用的终态。

@@ -87,11 +87,10 @@ export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | 
 export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAssertionsData | null {
   const fact = factRecordOf(evidence.result);
   if (fact === undefined) return null;
-  if (fact.factResults.length === 0 && fact.factUses.length === 0 && fact.legacyJudgeAssertions.length === 0) return null;
+  if (fact.factResults.length === 0 && fact.factUses.length === 0) return null;
   return {
     factResults: fact.factResults,
     factUses: fact.factUses,
-    legacyJudgeAssertions: fact.legacyJudgeAssertions,
   };
 }
 

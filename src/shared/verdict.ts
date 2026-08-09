@@ -2,40 +2,7 @@
 // 必须保持环境无关且只依赖 type import,vite 前端会直接打包它。
 // 单独成模块的原因:折叠/计票口径两边必须逐字一致,否则折叠行状态会和 KPI / 成功率对不上。
 
-import type { Severity, Verdict } from "./types.ts";
-
-/** Verdict 折叠所需的最小断言投影，避免 shared 反向依赖 assertions 域。 */
-export interface VerdictAssertion {
-  readonly outcome: "passed" | "failed" | "unavailable";
-  readonly severity: Severity;
-  readonly optional?: boolean;
-}
-
-/** 折叠单个 Attempt Verdict 所需的最小执行投影。 */
-export interface VerdictInput {
-  readonly error?: { readonly code: string };
-  readonly assertions: readonly VerdictAssertion[];
-  readonly skipReason?: string;
-}
-
-/**
- * 把执行结果、断言与显式 skip 折叠成一个 Attempt Verdict。固定优先级是
- * errored > failed > skipped > passed。
- */
-export function computeVerdict(input: VerdictInput): Verdict {
-  if (input.error !== undefined) return "errored";
-
-  for (const assertion of input.assertions) {
-    if (assertion.outcome === "unavailable" && !assertion.optional) return "errored";
-  }
-
-  for (const assertion of input.assertions) {
-    if (assertion.outcome === "failed" && assertion.severity === "gate") return "failed";
-  }
-
-  if (input.skipReason !== undefined) return "skipped";
-  return "passed";
-}
+import type { Verdict } from "./types.ts";
 
 /** 折叠/计票只需要 verdict 字段;server 传 EvalResult,前端传 ViewResult 都满足。 */
 export type ScoreAttemptTerminal = "scored" | "invalid" | "unavailable";
@@ -56,7 +23,7 @@ export interface VerdictLike {
   scoreResult?: ScoreOutcomeLike;
 }
 
-/** Exact terminal state for a Fact score attempt; pass/legacy inputs retain Verdict. */
+/** Exact terminal state for a Fact score attempt; pass evaluations retain Verdict. */
 export function attemptTerminalOf(attempt: VerdictLike): AttemptTerminal {
   if (attempt.evaluationKind === "score" && attempt.scoreResult !== undefined) {
     return attempt.scoreResult.status;
@@ -64,7 +31,7 @@ export function attemptTerminalOf(attempt: VerdictLike): AttemptTerminal {
   return attempt.verdict;
 }
 
-/** Converts the five score terminals to the legacy four-way tally/JUnit shape. */
+/** Converts score terminals to the four-way tally/JUnit shape. */
 export function verdictForTerminal(terminal: AttemptTerminal): Verdict {
   switch (terminal) {
     case "scored": return "passed";

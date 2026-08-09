@@ -1068,7 +1068,12 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
   if (!isRecord(occurrence.name) || typeof occurrence.name.original !== "string") {
     throw new TypeError("tool occurrence has an invalid name envelope");
   }
-  const observed = occurrence.name.canonical ?? occurrence.name.original;
+  // `unknown` means the adapter could not map this domain-specific tool onto
+  // NiceEval's canonical vocabulary. It must not hide the original name that
+  // the author can still assert exactly.
+  const observed = occurrence.name.canonical === undefined || occurrence.name.canonical === "unknown"
+    ? occurrence.name.original
+    : occurrence.name.canonical;
   if (observed !== expected) {
     return mismatched(
       diagnostic("tool-name-mismatch", "tool name did not match", {
@@ -1293,7 +1298,10 @@ export interface EventOptionsByType {
     readonly text?: BooleanMatch<string, string, "value">;
   };
   readonly "operation.started": { readonly tool?: ToolMatch };
-  readonly "operation.finished": { readonly tool?: ToolMatch };
+  readonly "operation.finished": {
+    readonly tool?: ToolMatch;
+    readonly output?: BooleanMatch<JsonValue, JsonValue, "value">;
+  };
 }
 
 type MatchableEventType = keyof EventOptionsByType;
@@ -1349,6 +1357,17 @@ async function toolEventResult(event: MatchableEvent, match: ToolMatch | undefin
   return evaluateBooleanMatch(match, event.occurrence);
 }
 
+function finishedOutputResult(
+  event: Extract<MatchableEvent, { readonly type: "operation.finished" }>,
+  match: BooleanMatch<JsonValue, JsonValue, "value"> | undefined,
+): Promise<BooleanMatchEvaluation<unknown>> {
+  if (match === undefined) return Promise.resolve(matched(event, diagnostic("event-output-unrestricted", "event output is unrestricted")));
+  if (event.output === undefined) {
+    return Promise.resolve(mismatched(diagnostic("event-output-missing", "operation.finished event has no output", { expected: match.name })));
+  }
+  return evaluateBooleanMatch(match, event.output);
+}
+
 export function eventMatch<K extends keyof EventOptionsByType>(
   type: K,
   options?: EventOptionsByType[K],
@@ -1376,16 +1395,36 @@ export function eventMatch<K extends keyof EventOptionsByType>(
     }) as EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
   }
 
-  const normalized = assertPlainOptions(options, `eventMatch(${type}) options`, ["tool"]);
+  const normalized = assertPlainOptions(
+    options,
+    `eventMatch(${type}) options`,
+    type === "operation.finished" ? ["tool", "output"] : ["tool"],
+  );
   const tool = normalized.tool;
   if (tool !== undefined) assertBooleanMatch(tool, `eventMatch(${type}) options.tool`, "tool");
+  const output = normalized.output;
+  if (output !== undefined) assertBooleanMatch(output, `eventMatch(${type}) options.output`, "value");
   const name = `eventMatch(${type})`;
   return createBooleanMatch("event", name, async (event) => {
     if (event.type !== type) {
       return mismatched(diagnostic("event-type-mismatch", "event type did not match", { expected: type }));
     }
-    return toolEventResult(event, tool as ToolMatch | undefined) as Promise<
-      BooleanMatchEvaluation<Extract<MatchableEvent, { readonly type: K }>>
-    >;
+    const fields = await evaluateFields([
+      { label: "tool", evaluate: () => toolEventResult(event, tool as ToolMatch | undefined) },
+      ...(event.type === "operation.finished"
+        ? [{
+            label: "output",
+            evaluate: () => finishedOutputResult(
+              event,
+              output as BooleanMatch<JsonValue, JsonValue, "value"> | undefined,
+            ),
+          }]
+        : []),
+    ]);
+    return combineConjunction<MatchableEvent, Extract<MatchableEvent, { readonly type: K }>>(
+      event,
+      name,
+      fields,
+    );
   }) as EventMatch<Extract<MatchableEvent, { readonly type: K }>>;
 }

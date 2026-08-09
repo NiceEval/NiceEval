@@ -60,7 +60,7 @@ export type RunClassification =
  * 版本判定与最小形状校验(docs/feature/record/architecture.md「版本不匹配时的读取行为」):
  * - 带 format 信封:format 不是 niceeval.results → 无关 JSON;schemaVersion 非数字 → malformed;
  *   schemaVersion 与当前不同 → 不兼容(不解析、不迁移、不降级),带 schemaVersion 与完整 producer。
- *   schema 16 的 Fact/use Record 和旧 AssertionResult / ScoreEntry 记录绝不按字段形状互猜;
+ *   旧 schema 的记录绝不按字段形状互猜;
  *   schemaVersion 相同时校验 experimentId / agent / startedAt 均为 string,不满足 → malformed。
  * - 无信封:v1 的 run 级 summary.json(results[] 是数组且 startedAt 是 string)按 incompatible
  *   (schemaVersion 1)处理 —— 这是版本识别,不是迁移;不满足启发式的当无关 JSON 忽略。

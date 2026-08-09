@@ -20,10 +20,7 @@ import type {
   Usage,
   Verdict,
 } from "../../types.ts";
-import type {
-  EvaluationFactResult,
-  LegacyJudgeAssertionResult,
-} from "../../assertions/types.ts";
+import type { EvaluationFactResult } from "../../assertions/types.ts";
 import type { FactUseResult, AttemptTerminal } from "../../record/fact-record.ts";
 import type { DiffFile } from "../definition/primitives/diff-lines.ts";
 import type { CalloutGroup } from "../definition/primitives/callouts-logic.ts";
@@ -653,13 +650,11 @@ export interface AttemptErrorData extends AttemptError {
 }
 
 /**
- * `AttemptAssertions` 保留历史组件名，但数据已是 Fact Record 的三个隔离通道：Fact producer、
- * Fact use consumer 与 legacy Judge sidecar。它不从旧 assertions / scoreEntries 推断任何东西。
+ * `AttemptAssertions` 保留组件名，但数据只包含 Fact producer 与 Fact use consumer。
  */
 export interface AttemptAssertionsData {
   factResults: readonly EvaluationFactResult[];
   factUses: readonly FactUseResult[];
-  legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
 }
 
 /** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */

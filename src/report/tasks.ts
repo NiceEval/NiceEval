@@ -21,7 +21,7 @@ import type {
   TimingActivity,
   TraceSpan,
 } from "../types.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../assertions/display.ts";
+import { factDisplaySummary, summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import {
   aggregate,
@@ -463,24 +463,11 @@ function historyAttemptKey(attempt: AttemptHandle): string | undefined {
 }
 
 function historySummary(result: EvalResult): string | undefined {
-  const fact = factRecordOf(result);
-  if (fact !== undefined) {
-    const use = fact.factUses.find((candidate) => candidate.useKind === "verdict" && candidate.outcome === "failed");
-    if (use?.useKind === "verdict") return summaryText(use.label ?? use.key ?? use.method);
-    const score = fact.scoreResult;
-    if (score?.status === "invalid") return summaryText(`invalid · earned ${score.earnedScore} · credited ${score.creditedScore}`);
-    if (score?.status === "unavailable") return summaryText(`unavailable · ${score.issues[0]?.reason ?? "score evidence unavailable"}`);
-    if (score?.status === "errored") return summaryText(`errored · ${score.errors[0]?.error.message ?? "score evaluator error"}`);
-    if (score?.status === "skipped") return summaryText(score.reason);
-  }
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return fact.text;
   if (result.error !== undefined) return summaryText(firstLine(result.error.message));
   if (result.skipReason !== undefined) return summaryText(result.skipReason);
-  const summary = primaryAssertionSummary(
-    result.assertions,
-    verdictForTerminal(result),
-    result.evaluationKind === "score" ? "score" : "pass",
-  );
-  return summary === undefined ? undefined : compactAssertionSummary(summary);
+  return undefined;
 }
 
 function matchesEvalOption(evalId: string, option: HistoryOptions["evals"]): boolean {

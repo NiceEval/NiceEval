@@ -8,7 +8,7 @@
 //   taskPassRate(task-pass-rate)                   null     null             0       1             higher
 //   executionReliability(execution-reliability)    null     0                1       1             higher
 //   passRate(pass-rate)                            null     0                0       1             higher
-//   examScore(exam-score)                          null     0                0       soft 均分      higher
+//   examScore(exam-score)                          null     有分数则均分，否则 null            higher
 //   totalScore(total-score)                        null     null             Σpoints Σpoints       higher(通过制 eval 恒 null,不参与聚合)
 //   durationMs(duration)                           null     实测;timeout→null 同左   实测     实测          lower
 //   tokens(tokens)                                 null     实测;无 usage→null 同左   同左          lower
@@ -112,34 +112,26 @@ export const passRate = attemptMetric({
 export const examScore = attemptMetric({
   name: "exam-score",
   label: { en: "Exam score", "zh-CN": "考试得分" },
-  description: "Per-eval score: gates decide pass, soft assertions grade quality.",
+  description: "Per-eval score: consumed successful Score Facts without score uses are averaged once each.",
   better: "higher",
   unit: "%",
   bounds: { min: 0, max: 1 },
   value(a) {
-    const verdict = verdictForTerminal(a.result);
-    if (verdict === "skipped") return null;
-    // 先按 verdict 分派,再看断言:errored 的断言是空数组,「gate 全过才得分」的
-    // 字面实现会让条件空真成立、崩溃反而得满分 —— 交白卷是 0 分,不是缺数据,更不是满分。
-    // failed 同理得 0：报告只消费已折叠的终态，不在此重新判卷。
-    if (verdict !== "passed") return 0;
-    // unavailable 没有分数:不计入均分分母(评不了 ≠ 0 分;非 optional 的 unavailable
-    // 早已把 verdict 拖成 errored,走不到这个分支)。带 points 的也排除:计分制的得分点
-    // 已经在分数面被读过一次,再进质量分就是同一条证据被读两遍(docs/feature/experiments/
-    // score-points.md「折叠树」——质量分按「soft 且无 points」取子集)。
     const fact = factRecordOf(a.result);
-    if (fact !== undefined) {
-      const soft = fact.legacyJudgeAssertions.filter(
-        (judge) => judge.policy.verdict.kind === "soft" && (judge.outcome === "passed" || judge.outcome === "failed"),
-      );
-      if (soft.length === 0) return 1;
-      return soft.reduce((sum, judge) => sum + ("normalizedScore" in judge ? judge.normalizedScore : 0), 0) / soft.length;
-    }
-    const soft = a.result.assertions.filter(
-      (x) => x.severity === "soft" && x.outcome !== "unavailable" && x.points === undefined,
+    if (fact === undefined) return null;
+    const scoreUseFactIds = new Set(
+      fact.factUses.flatMap((use) => use.useKind === "score" && use.input.kind === "fact" ? [use.input.factId] : []),
     );
-    if (soft.length === 0) return 1;
-    return soft.reduce((sum, x) => sum + (x.outcome === "unavailable" ? 0 : x.score), 0) / soft.length;
+    const consumedFactIds = new Set(
+      fact.factUses.flatMap((use) => use.useKind === "verdict" ? [use.target.factId] : use.input.kind === "fact" ? [use.input.factId] : []),
+    );
+    const scores = fact.factResults.flatMap((item) =>
+      item.factKind === "score" && item.outcome === "scored" && consumedFactIds.has(item.factId) && !scoreUseFactIds.has(item.factId)
+        ? [item.normalizedScore]
+        : [],
+    );
+    if (scores.length === 0) return null;
+    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
   },
 });
 

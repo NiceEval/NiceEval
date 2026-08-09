@@ -33,7 +33,7 @@
   `eval.run` 按真实顺序涵盖普通文件传输、全部 turn、命令与断言条目。
   已登记 cleanup 在收尾段逆序执行，失败只追加 diagnostic，不改判定。
   阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。
-- 作者写下的每条断言默认要求可评估：证据缺口使 attempt `errored`，显式 `.optional()` 才允许缺席；判定四态互斥（[Severity 与 Verdict](../verdict/architecture.md)）。
+- 被消费的每个 Fact 都要求可评估：证据缺口使 Attempt `errored`，没有可选或观察消费；通过制与计分制终态见 [Verdict 与 Fact use](../verdict/architecture.md)。
 - eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集按位置生成零填充序号 id（`sql/0000`，插删或重排会改变后续 id），keyed record 生成稳定的业务 key id（`swelancer/15193`）。
   key 是单一路径片段，发现顺序按 key 字典序固定。
 

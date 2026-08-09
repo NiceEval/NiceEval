@@ -5,8 +5,8 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
-import type { EvaluationFactResult, LegacyJudgeAssertionResult, ScoreFactUseResult, VerdictFactUseResult } from "../assertions/types.ts";
+import type { CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { EvaluationFactResult, ScoreFactUseResult, VerdictFactUseResult } from "../assertions/types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type {
   LineAnnotation,
@@ -20,7 +20,7 @@ import { groupIncompatibleVersionSkips } from "../record/index.ts";
 import { attemptTerminalOf, factRecordOf, scoreOutcomeOf } from "../record/fact-record.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
-import { stripControl, summaryText } from "../assertions/display.ts";
+import { factDisplaySummary, stripControl, summaryText } from "../assertions/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
 import { formatTurnLabel, normalizeTurnLabel } from "../shared/turn-label.ts";
@@ -113,40 +113,6 @@ export function skippedRunsText(unreadable: readonly UnreadableRun[], root: stri
   return lines.join("\n");
 }
 
-// ───────────────────────── 断言行 ─────────────────────────
-
-function scoreText(score: number): string {
-  return formatPlainNumber(Math.round(score * 100) / 100);
-}
-
-/** 分组路径标题(嵌套用 " > " 拼接);无分组返回 undefined。 */
-function groupTitle(a: AssertionResult): string | undefined {
-  return a.groupPath && a.groupPath.length > 0 ? a.groupPath.join(" > ") : undefined;
-}
-
-/** 断言行:✓/✗/◌ + severity + 标题;unavailable 带 reason,soft 恒带 score/1(失败再补 detail)。 */
-export function assertionLine(a: AssertionResult): string {
-  const group = groupTitle(a);
-  const scope = group ? `${group} · ` : "";
-  const optional = a.optional ? "optional · " : "";
-  if (a.outcome === "unavailable") {
-    return `◌ ${a.severity} · ${optional}${scope}${a.name} — unavailable: ${a.reason}`;
-  }
-  const head = `${a.outcome === "passed" ? "✓" : "✗"} ${a.severity} ${optional}${scope}${a.name}`;
-  if (a.severity === "soft") {
-    const detail = a.outcome === "failed" && a.detail ? `: ${a.detail}` : "";
-    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
-    return `${head} — ${scoreText(a.score)}${threshold}${detail}`;
-  }
-  if (a.outcome === "failed") {
-    const reason = a.detail ?? `score ${scoreText(a.score)}`;
-    const received = a.received ?? a.evidence;
-    // 单行面只放摘要收口后的预览;多行值(如 output tail)的完整版在 attempt 首页展开。
-    return received !== undefined ? `${head} — ${reason} · received: ${summaryText(received)}` : `${head} — ${reason}`;
-  }
-  return head;
-}
-
 // ───────────────────────── AttemptEvidence 共用 ─────────────────────────
 // evalSourceText / executionText / timingText / diffText(--source / --execution / --timing / --diff
 // 四个证据切面)共用的小件:locator 头、失败原因、断言计票摘要。四个证据 renderer 都只消费
@@ -170,59 +136,19 @@ export function attemptTerminalText(result: EvalResult): string {
 
 /**
  * 一次 attempt 未通过的判定原因,单行、不含 detail——供紧凑索引行使用。precedence 与
- * `report/compute.ts::reasonFor` 同一条规则(error → skipReason → 未通过的 gate 断言,
- * soft 永不进入),但格式更短(`gate <name>`,不带 `: <detail>`——detail 留给
- * `--eval`/单 eval 详情块的完整断言明细),这里独立实现而不是导入 report/ 的函数:
+ * `Fact/use` 图决定摘要；结构化执行 error 与 skip 理由才是图外回退。这里独立实现而不是导入
+ * report/ 的函数:
  * report 包正被并行重写(见 plan/attempt-evidence-feedback-loop.md),show 的紧凑索引不应
  * 依赖它的内部实现细节。
  */
 export function verdictReasonLine(result: EvalResult): string | undefined {
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return fact.text;
   // 单行面只要 error 的一层摘要:message 取首行(diagnose 的 output tail 等后续行归
   // attempt 详情块展开),再经 summaryText 剥控制字节 + 收口。
   if (result.error !== undefined) return summaryText(firstLine(result.error.message));
   if (result.skipReason !== undefined) return result.skipReason;
-  const fact = factRecordOf(result);
-  if (fact !== undefined) {
-    const failed = fact.factUses.flatMap((use) =>
-      use.useKind === "verdict" && use.outcome === "failed" ? [use] : [],
-    );
-    if (failed.length > 0) return failed.map((use) => use.label ?? use.key ?? use.method).join(", ");
-    const unavailable = fact.factUses.find((use) =>
-      (use.useKind === "verdict" && (use.outcome === "unavailable" || use.outcome === "errored")) ||
-      (use.useKind === "score" && (use.outcome === "unavailable" || use.outcome === "errored"))
-    );
-    if (unavailable !== undefined) {
-      return unavailable.outcome === "errored"
-        ? `errored ${(unavailable as { error: { message: string } }).error.message}`
-        : `unavailable ${(unavailable as { reason: string }).reason}`;
-    }
-    return undefined;
-  }
-  const gates = result.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
-  if (gates.length === 0) {
-    const gap = result.assertions.find((a) => a.outcome === "unavailable" && !a.optional);
-    return gap && gap.outcome === "unavailable" ? `unavailable ${gap.name} (${gap.reason})` : undefined;
-  }
-  return gates.map((a) => `gate ${a.name}`).join(", ");
-}
-
-/**
- * 断言计票摘要,`--eval` 与全景面共用:`assertions: 1 passed · 1 gate failed · 1 soft below
- * target`。直接读 `EvalResult.assertions`(恒可用的瘦身字段)而不是
- * 完整源码树的 summary 与这批断言计票恒等，但源码证据可能不可用；直接读
- * `result.assertions` 让这条摘要不因缺源码而跟着消失。
- */
-export function assertionSummaryLine(assertions: AssertionResult[]): string {
-  const passed = assertions.filter((a) => a.outcome === "passed").length;
-  const gateFailed = assertions.filter((a) => a.outcome === "failed" && a.severity === "gate").length;
-  const softBelow = assertions.filter((a) => a.outcome === "failed" && a.severity === "soft").length;
-  const unavailableCount = assertions.filter((a) => a.outcome === "unavailable").length;
-  const parts: string[] = [];
-  if (passed > 0) parts.push(`${passed} passed`);
-  if (gateFailed > 0) parts.push(`${gateFailed} gate failed`);
-  if (softBelow > 0) parts.push(`${softBelow} soft below target`);
-  if (unavailableCount > 0) parts.push(`${unavailableCount} unavailable`);
-  return `assertions: ${parts.length > 0 ? parts.join(" · ") : "(none)"}`;
+  return undefined;
 }
 
 // ───────────────────────── --history ─────────────────────────
@@ -318,33 +244,6 @@ function indentedText(text: string, width: number, indent = 4, maxLines = 18): s
 
 // ───────────────────────── 证据切面:--eval(Eval 源码标注) ─────────────────────────
 
-/** gate 失败 / soft 恒带分 / unavailable 带 reason——与 assertionLine 的口径一致,但不带断言
- *  name(源码行本身就是名字)。 */
-function evalAssertionDetailLine(a: AssertionResult): string | undefined {
-  if (a.outcome === "unavailable") {
-    return `${a.severity} · unavailable · ${a.reason}${a.evidence ? ` · ${summaryText(a.evidence)}` : ""}`;
-  }
-  if (a.severity === "soft") {
-    const detail = a.outcome === "failed" && a.detail ? ` · ${a.detail}` : "";
-    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
-    return `soft · ${scoreText(a.score)}${threshold}${detail}`;
-  }
-  if (a.outcome === "failed") {
-    // 标注行是源码页里的一行事实,不是证据面:expected / received 过摘要收口
-    // (折单行 + 上限),完整值在 attempt 首页与 events.json / diff.json。
-    const parts = ["gate"];
-    const group = groupTitle(a);
-    if (group) parts.push(group);
-    parts.push(a.name);
-    if (a.expected !== undefined) parts.push(`expected ${summaryText(a.expected)}`);
-    const received = a.received ?? a.evidence;
-    if (received !== undefined) parts.push(`received ${summaryText(received)}`);
-    if (a.detail) parts.push(summaryText(a.detail));
-    return parts.join(" · ");
-  }
-  return undefined;
-}
-
 /** send 行摘要只显示 status · 墙钟(有记录才出现),不透传内部轮 label。 */
 function sendAnnotationLine(send: SendAnnotation): string {
   const parts: string[] = [send.status];
@@ -362,6 +261,7 @@ function factResultLine(fact: EvaluationFactResult): string {
     fact.outcome,
     ...(fact.expected !== undefined ? [`expected ${summaryText(fact.expected)}`] : []),
     ...(fact.received !== undefined ? [`received ${summaryText(fact.received)}`] : []),
+    ...(fact.explanation !== undefined ? [`explanation ${summaryText(fact.explanation)}`] : []),
     ...(fact.outcome === "unavailable" || fact.outcome.startsWith("notReached") ? [`reason ${(fact as { reason: string }).reason}`] : []),
     ...(fact.outcome === "errored" ? [`error ${fact.error.message}`] : []),
     ...(sourceLocText(fact.producerLoc) ? [`producer: ${sourceLocText(fact.producerLoc)!}`] : []),
@@ -389,39 +289,16 @@ function factUseLine(use: VerdictFactUseResult | ScoreFactUseResult): string {
   return details.join(" · ");
 }
 
-function legacyJudgeLine(judge: LegacyJudgeAssertionResult): string {
-  const details = [
-    "legacy Judge",
-    judge.name,
-    judge.outcome,
-    `check ${summaryText(judge.detail)}`,
-    ...(judge.outcome === "passed" || judge.outcome === "failed" ? [`score ${formatPlainNumber(judge.normalizedScore)}`] : []),
-    ...(judge.policy.scoring.kind === "points" && "earnedPoints" in judge
-      ? [`${formatPlainNumber(judge.earnedPoints)} / ${formatPlainNumber(judge.policy.scoring.max)} pts`]
-      : []),
-    ...(judge.outcome === "unavailable" || judge.outcome.startsWith("notReached") ? [`reason ${summaryText((judge as { reason: string }).reason)}`] : []),
-    ...(judge.outcome === "errored" ? [`error ${summaryText(judge.error.message)}`] : []),
-    ...(judge.rationale !== undefined ? [`rationale ${summaryText(judge.rationale)}`] : []),
-    ...("evidence" in judge && judge.evidence !== undefined ? [`evidence ${summaryText(judge.evidence)}`] : []),
-    ...(sourceLocText(judge.loc) ? [`producer: ${sourceLocText(judge.loc)!}`] : []),
-  ];
-  return details.join(" · ");
-}
-
 function lineGlyph(annotations: readonly LineAnnotation[]): string {
   const sends = annotations.flatMap((annotation) => annotation.kind === "send" ? [annotation.send] : []);
   const anyFailed = annotations.some((annotation) =>
     (annotation.kind === "fact" && (annotation.fact.outcome === "failed" || annotation.fact.outcome === "errored")) ||
-    (annotation.kind === "factUse" && (annotation.use.outcome === "failed" || annotation.use.outcome === "errored")) ||
-    (annotation.kind === "legacyJudge" && (annotation.judge.outcome === "failed" || annotation.judge.outcome === "errored"))
+    (annotation.kind === "factUse" && (annotation.use.outcome === "failed" || annotation.use.outcome === "errored"))
   ) || sends.some((send) => send.status === "failed");
   const anyUnavailable = annotations.some((annotation) =>
     (annotation.kind === "fact" && (annotation.fact.outcome === "unavailable" || annotation.fact.outcome.startsWith("notReached"))) ||
     (annotation.kind === "factUse" && (
       annotation.use.outcome === "unavailable" || annotation.use.outcome === "notApplicable" || annotation.use.outcome.startsWith("notReached")
-    )) ||
-    (annotation.kind === "legacyJudge" && (
-      annotation.judge.outcome === "unavailable" || annotation.judge.outcome.startsWith("notReached")
     ))
   );
   return annotations.length === 0
@@ -437,7 +314,7 @@ function annotationDetailLine(annotation: LineAnnotation): string | undefined {
   if (annotation.kind === "send") return sendAnnotationLine(annotation.send);
   if (annotation.kind === "fact") return factResultLine(annotation.fact);
   if (annotation.kind === "factUse") return factUseLine(annotation.use);
-  return legacyJudgeLine(annotation.judge);
+  return undefined;
 }
 
 function evalSourceLineText(line: ProjectedSourceLine, gutterWidth: number, width: number, indent: string): string[] {
@@ -529,7 +406,7 @@ function hasClosedCalls(node: SourceContentNode): boolean {
 }
 
 /**
- * `--eval`:运行时保存的 Eval 源码,Fact producer / consumer 与 legacy Judge 分别标回源码行；
+ * `--eval`:运行时保存的 Eval 源码,Fact producer / consumer 标回源码行；
  * 无位置事实也必须保留，`evidence.evalSource === null` 时如实说明源码未捕获。
  */
 export function evalSourceText(
@@ -548,11 +425,10 @@ export function evalSourceText(
     blocks.push(`outside the eval entry · ${renderSourceNode(detached, "", width).join("\n")}`);
   }
 
-  if (source.unmapped.facts.length > 0 || source.unmapped.uses.length > 0 || source.unmapped.legacyJudgeAssertions.length > 0) {
+  if (source.unmapped.facts.length > 0 || source.unmapped.uses.length > 0) {
     const unmappedLines = [
       ...source.unmapped.facts.map(factResultLine),
       ...source.unmapped.uses.map(factUseLine),
-      ...source.unmapped.legacyJudgeAssertions.map(legacyJudgeLine),
     ].map((line) => indentBlock(wrapDisplay(line, width - 2).join("\n"), "  "));
     blocks.push(
       [`unmapped evidence (${unmappedLines.length}, no source location):`, ...unmappedLines].join("\n"),

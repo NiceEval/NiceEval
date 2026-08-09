@@ -1,55 +1,33 @@
-# 自定义 Assertion
+# Assertions —— 自定义 Match
 
-内置 matcher 无法表达规则时，用 `makeAssertion` 创建同步或异步 matcher。
-
-```ts
-import { makeAssertion, type Assertion } from "niceeval/expect";
-
-function jsonValid(): Assertion {
-  return makeAssertion({
-    name: "jsonValid",
-    severity: "gate",
-    score(value) {
-      try {
-        JSON.parse(String(value));
-        return 1;
-      } catch {
-        return 0;
-      }
-    },
-  });
-}
-
-t.check(t.reply, jsonValid());
-```
-
-spec 的字段全集：
-
-| 字段 | 语义 |
-|---|---|
-| `name: string` | 报告里显示的断言名——谓词不可展示，名字是失败的全部解释，展示形态见 [断言与 Turn 的展示](display.md#值断言) |
-| `severity?: "gate" \| "soft"` | 省略默认 `gate` |
-| `threshold?: number` | 及格线：分数 ≥ 阈值通过；省略时 gate 用默认通过线 1（打分制的 `score` 应显式给阈值），soft 只记分不判定 |
-| `score: (value) => number \| Promise<number>` | 返回 `[0,1]` 分数，可以是异步函数 |
-
-`score` 是异步时，评分在 finalize 阶段 await，eval 代码不需要额外等待。
-典型场景是把值交给外部工具或服务打分：
+复用布尔规则时使用 `defineValueMatch`：
 
 ```ts
-function passesTypecheck(): Assertion {
-  return makeAssertion({
-    name: "passesTypecheck",
-    async score(value) {
-      const result = await runTsc(String(value));
-      return result.errorCount === 0 ? 1 : 0;
-    },
-  });
-}
+import { defineValueMatch, defineScoreMatch } from "niceeval/expect";
+
+const jsonValid = defineValueMatch<string>({
+  name: "jsonValid",
+  evaluate(value) {
+    try {
+      JSON.parse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+});
+
+const concise = defineScoreMatch<string>({
+  name: "concise",
+  score(value) {
+    return value.length <= 200 ? 1 : 0.4;
+  },
+});
+
+t.assert(t.check(t.reply, jsonValid));
+t.assert(t.check(t.reply, concise), { atLeast: 0.7 });
 ```
 
-产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见 [值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
+`defineValueMatch` 必须返回 boolean。`defineScoreMatch` 必须返回有限 `[0,1]` 数字。throw、reject、非法结构和越界分数都是 evaluator error，而不是 failed 或 unavailable。
 
-Assertion 适合评价一个值或一个 scope。
-跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单 attempt Assertion 中自行读取历史结果。
-
-优先组合已有 matcher；只有新的评分语义才创建新 Assertion，不为业务字段包装一层只转发参数的别名。
+Match 只描述如何比较一个候选值。它不能返回 Fact、指定 verdict、标记可选性或直接计分。将自定义 ScoreMatch 的 Fact 传给 `assert`、`require` 或 `score`，才能声明其用途。

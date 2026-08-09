@@ -280,9 +280,8 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
   }
 
   async function writeAttemptForImpl(result: EvalResult): Promise<void> {
-    // `factTrace` / `scoreResult` are intentionally non-enumerable on fresh
-    // runner results. Materialize them before any object rest/spread can lose
-    // the trace and before result.json receives its only schema-16 shape.
+    // Schema 17 writes the native Fact/use graph directly. Validate the exact
+    // record before any object rest/spread reaches result.json.
     const factResult = materializeFactRecord(result);
     assertEvidenceCoverage(factResult.evidenceCoverage, "writeAttemptFor()");
     if (!factResult.experimentId) {

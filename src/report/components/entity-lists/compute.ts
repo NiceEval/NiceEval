@@ -31,53 +31,19 @@ import {
   type Item,
 } from "../../model/aggregate.ts";
 import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens, totalScore } from "../../model/metrics.ts";
-import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../../assertions/display.ts";
+import { factDisplaySummary, summaryText } from "../../../assertions/display.ts";
 import { firstLine } from "../../../util.ts";
 import { summarizeItems } from "../shared-compute.ts";
-import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../../record/fact-record.ts";
+import { attemptTerminalOf, verdictForTerminal } from "../../../record/fact-record.ts";
 
 /**
  * 一次 attempt 的单行结果摘要(断言摘要契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
- * (phase · code · message)。schema-16 的 Fact Record 直接显示 Fact use 或 score terminal，
- * 不再从旧 assertion 数组猜测；legacy schema 才保留旧摘要路径。
+ * (phase · code · message)。Fact Record 直接显示 Fact use 或 score terminal。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
-  const fact = factRecordOf(result);
-  const terminal = attemptTerminalOf(result);
-  if (fact !== undefined) {
-    const score = scoreOutcomeOf(result);
-    if (score !== undefined && terminal !== "scored" && terminal !== "skipped") {
-      const issue = score.status === "errored" ? score.errors[0] : score.status === "invalid" || score.status === "unavailable" ? score.issues[0] : undefined;
-      const issueText = issue === undefined
-        ? undefined
-        : issue.kind === "error" ? `${issue.error.code}: ${firstLine(issue.error.message)}` : issue.reason;
-      const scoreText = `earned ${score.earnedScore} · credited ${score.creditedScore === null ? "unavailable" : score.creditedScore}`;
-      const issueCount = score.status === "errored" ? score.errors.length + score.issues.length
-        : score.status === "invalid" || score.status === "unavailable" ? score.issues.length
-        : 0;
-      return { summary: summaryText([terminal, scoreText, issueText].filter((part): part is string => part !== undefined).join(" · ")), more: Math.max(0, issueCount - 1) };
-    }
-    const problematicUses = fact.factUses.filter((use) =>
-      use.outcome !== "passed" && use.outcome !== "scored" && use.outcome !== "notApplicable",
-    );
-    const use = problematicUses[0];
-    if (use !== undefined) {
-      const label = use.key ?? (use.useKind === "score" ? use.label : use.label ?? use.method);
-      const detail = "error" in use ? `${use.error.code}: ${firstLine(use.error.message)}`
-        : "reason" in use ? use.reason
-        : undefined;
-      return { summary: summaryText([label, use.outcome, detail].filter((part): part is string => part !== undefined).join(" · ")), more: problematicUses.length - 1 };
-    }
-    const judge = fact.legacyJudgeAssertions.find((item) => item.outcome !== "passed");
-    if (judge !== undefined) {
-      const detail = "error" in judge ? `${judge.error.code}: ${firstLine(judge.error.message)}`
-        : "reason" in judge ? judge.reason
-        : undefined;
-      return { summary: summaryText(["Legacy Judge", judge.name, judge.outcome, detail].filter((part): part is string => part !== undefined).join(" · ")), more: Math.max(0, fact.legacyJudgeAssertions.filter((item) => item.outcome !== "passed").length - 1) };
-    }
-    return { summary: null, more: 0 };
-  }
+  const fact = factDisplaySummary(result);
+  if (fact !== undefined) return { summary: fact.text, more: fact.more };
   const verdict = verdictForTerminal(result);
   if (verdict === "errored" && result.error !== undefined) {
     // message 取首行:多行 message 的后续行(diagnose 的 output tail)是下钻证据,折进
@@ -87,21 +53,7 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
     );
     return { summary: summaryText(parts.join(" · ")), more: 0 };
   }
-  const evaluationKind = result.evaluationKind === "score" ? "score" : "pass";
-  const scorablePassed = verdict === "passed" && evaluationKind === "score";
-  if (verdict === "failed" || verdict === "errored" || scorablePassed) {
-    const primary = primaryAssertionSummary(result.assertions, verdict, evaluationKind);
-    if (primary !== undefined) {
-      return {
-        summary: compactAssertionSummary({ ...primary, additionalFailures: 0 }),
-        more: primary.additionalFailures,
-      };
-    }
-    if (verdict === "errored" && result.skipReason !== undefined) {
-      return { summary: summaryText(result.skipReason), more: 0 };
-    }
-    return { summary: null, more: 0 };
-  }
+  if (verdict === "errored" && result.skipReason !== undefined) return { summary: summaryText(result.skipReason), more: 0 };
   return { summary: null, more: 0 };
 }
 
