@@ -1,252 +1,43 @@
-// 值断言匹配器(expect)。每个匹配器产出一个 ValueAssertion:纯函数 score +
-// 可链式改严重度 / 阈值。链式方法返回全新的不可变 ValueAssertion,复用同一个 score。
+// niceeval/expect：只导出纯 Match factories。Fact、verdict 与 score use 由 context 负责。
 
-import type { Severity, ValueAssertion } from "../types.ts";
-import { stripComments } from "../util.ts";
-import { deepEqual, validateSchema } from "../assertions/match.ts";
+export {
+  and,
+  commandMatch,
+  commandSucceeded,
+  defineScoreMatch,
+  defineValueMatch,
+  equals,
+  eventMatch,
+  excludes,
+  includes,
+  includesUrl,
+  isDefined,
+  isFalse,
+  isTrue,
+  hasSections,
+  matches,
+  not,
+  or,
+  pattern,
+  referencesAnyPath,
+  satisfies,
+  similarity,
+  toolMatch,
+} from "../assertions/match.ts";
 
-// 自定义匹配器作者用的公共类型(docs/feature/assertions/README.md 的 `Assertion` 即它)。
-export type { Severity, ValueAssertion } from "../types.ts";
-export type { ValueAssertion as Assertion } from "../types.ts";
-
-/** includes / excludes 的可选项。stripComments:先剥注释再匹配(只对真实代码生效)。 */
-export interface MatchOptions {
-  stripComments?: boolean;
-}
-
-// ───────────────────────── 内部工厂 ─────────────────────────
-
-/**
- * 唯一的内部工厂。gate()/atLeast()/optional() 都基于它返回新的不可变实例,
- * 共享同一个 score(只换 severity / threshold / isOptional)。
- * `expected` 是期望条件的有界文本描述(如 `contains "Brooklyn"`),失败时进
- * AssertionResult.expected 供 show/view 展示。
- */
-function createAssertion(
-  name: string,
-  severity: Severity,
-  score: (value: unknown) => number | Promise<number>,
-  threshold?: number,
-  opts?: { expected?: string; isOptional?: boolean },
-): ValueAssertion {
-  const self: ValueAssertion = {
-    name,
-    severity,
-    threshold,
-    ...(opts?.isOptional ? { isOptional: true } : {}),
-    ...(opts?.expected !== undefined ? { expected: opts.expected } : {}),
-    score,
-    // 转成硬门槛(失败即整条 eval 不通过)。
-    gate: (t?: number) => createAssertion(name, "gate", score, t, opts),
-    // 软阈值:默认不改变 verdict;--strict 下软阈值失败也会使 verdict=failed。
-    atLeast: (t: number) => createAssertion(name, "soft", score, t, opts),
-    // 纯记录的软断言:不设线,分数照实落盘、永不 fail;无参数,清空 threshold(即便原先是 gate(x) 或 atLeast(x))。
-    soft: () => createAssertion(name, "soft", score, undefined, opts),
-    // 允许证据缺席:评不了只记 unavailable,不影响判定(与 severity 正交)。
-    optional: () => createAssertion(name, severity, score, threshold, { ...opts, isOptional: true }),
-  };
-  return Object.freeze(self);
-}
-
-// ───────────────────────── 工具函数 ─────────────────────────
-
-/** 给断言起个可读名时用,JSON.stringify 失败 / 为 undefined 时回退到 String。 */
-function safeLabel(v: unknown): string {
-  try {
-    return JSON.stringify(v) ?? String(v);
-  } catch {
-    return String(v);
-  }
-}
-
-/** 经典 DP 编辑距离(滚动两行)。 */
-function levenshtein(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-
-  let prev = new Array<number>(n + 1);
-  let curr = new Array<number>(n + 1);
-  for (let j = 0; j <= n; j++) prev[j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-    }
-    const tmp = prev;
-    prev = curr;
-    curr = tmp;
-  }
-  return prev[n];
-}
-
-// ───────────────────────── 匹配器 ─────────────────────────
-
-/** 把 value 转成待匹配字符串;opts.stripComments 时先剥注释。 */
-function toMatchTarget(value: unknown, opts?: MatchOptions): string {
-  const s = String(value);
-  return opts?.stripComments ? stripComments(s) : s;
-}
-
-/** String(value) 含子串 / 命中正则则 1,否则 0。默认硬门槛。opts.stripComments 时只看真实代码。 */
-export function includes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion {
-  const label = needle instanceof RegExp ? needle.toString() : safeLabel(needle);
-  const suffix = opts?.stripComments ? ", stripComments" : "";
-  return createAssertion(
-    `includes(${label}${suffix})`,
-    "gate",
-    (value) => {
-      const s = toMatchTarget(value, opts);
-      if (needle instanceof RegExp) return needle.test(s) ? 1 : 0;
-      return s.includes(needle) ? 1 : 0;
-    },
-    undefined,
-    { expected: needle instanceof RegExp ? `matches ${label}` : `contains ${label}` },
-  );
-}
-
-/** includes 的取反:不含子串 / 不命中正则则 1,否则 0。默认硬门槛。opts.stripComments 时只看真实代码。 */
-export function excludes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion {
-  const label = needle instanceof RegExp ? needle.toString() : safeLabel(needle);
-  const suffix = opts?.stripComments ? ", stripComments" : "";
-  return createAssertion(
-    `excludes(${label}${suffix})`,
-    "gate",
-    (value) => {
-      const s = toMatchTarget(value, opts);
-      if (needle instanceof RegExp) return needle.test(s) ? 0 : 1;
-      return s.includes(needle) ? 0 : 1;
-    },
-    undefined,
-    { expected: needle instanceof RegExp ? `does not match ${label}` : `does not contain ${label}` },
-  );
-}
-
-/** 深相等则 1,否则 0。默认硬门槛。 */
-export function equals(expected: unknown): ValueAssertion {
-  return createAssertion(
-    `equals(${safeLabel(expected)})`,
-    "gate",
-    (value) => (deepEqual(value, expected) ? 1 : 0),
-    undefined,
-    { expected: safeLabel(expected) },
-  );
-}
-
-/**
- * 用 schema 校验 value——不是正则匹配,是 Standard Schema / zod 风格的结构校验。
- * 优先 Standard Schema(schema['~standard'].validate),否则退化到 zod 风格的
- * .safeParse / .parse。校验通过 1,否则 0;任何异常 → 0。默认硬门槛。
- */
-export function matches(schema: unknown): ValueAssertion {
-  return createAssertion("matches(schema)", "gate", async (value) =>
-    (await validateSchema(value, schema)) ? 1 : 0,
-  );
-}
-
-/**
- * 纯字符串编辑距离,不是语义相似度——归一化 Levenshtein 距离 [0,1](1 - 编辑距离 / 较长串长度),
- * 不理解含义,同义改写 / 语序调整会被判低分。默认软分,阈值 0.6。
- */
-export function similarity(expected: string): ValueAssertion {
-  return createAssertion(
-    `similarity(${safeLabel(expected)})`,
-    "soft",
-    (value) => {
-      const a = String(value);
-      const b = expected;
-      const maxLen = Math.max(a.length, b.length);
-      if (maxLen === 0) return 1; // 两个空串视为完全相同
-      return 1 - levenshtein(a, b) / maxLen;
-    },
-    0.6,
-    { expected: safeLabel(expected) },
-  );
-}
-
-/**
- * 文本含至少 min 条(默认 1)去重后的 http(s) 链接则 1,否则 0。默认硬门槛。
- * 「回答有没有引用真实来源」的形状断言:没有 Judge key 时,它是「至少引用一条来源链接」
- * 的最低成本兜底——被测方复读题目糊弄不过去,编造的链接则留给负例或 Judge 去抓。
- */
-export function includesUrl(min = 1): ValueAssertion {
-  return createAssertion(
-    `includesUrl(min=${min})`,
-    "gate",
-    (value) => {
-      const urls = new Set(String(value).match(/https?:\/\/[^\s<>()"'`]+/g) ?? []);
-      return urls.size >= min ? 1 : 0;
-    },
-    undefined,
-    { expected: `contains >= ${min} distinct http(s) URL(s)` },
-  );
-}
-
-/**
- * 文本含至少 min 个(默认 2)Markdown 标题(行首 # 到 ######)则 1,否则 0。默认硬门槛。
- * 「回答是不是一份有结构的文档」的形状断言,适合研究报告、方案文档这类产出型回答——
- * 一段没有任何小标题的流水文本过不了。
- */
-export function hasSections(min = 2): ValueAssertion {
-  return createAssertion(
-    `hasSections(min=${min})`,
-    "gate",
-    (value) => ((String(value).match(/^#{1,6}\s+\S/gm) ?? []).length >= min ? 1 : 0),
-    undefined,
-    { expected: `contains >= ${min} markdown heading(s)` },
-  );
-}
-
-/** 谓词为真则 1,否则 0。默认硬门槛;name 带上 label 便于报告辨认。 */
-export function satisfies(predicate: (v: unknown) => boolean, label?: string): ValueAssertion {
-  const name = label ? `satisfies(${label})` : "satisfies(predicate)";
-  return createAssertion(name, "gate", (value) => (predicate(value) ? 1 : 0));
-}
-
-/** value 非 null / 非 undefined 则 1,否则 0。省掉 `x !== undefined` + isTrue 的样板。默认硬门槛。 */
-export function isDefined(label?: string): ValueAssertion {
-  const name = label ? `isDefined(${label})` : "isDefined()";
-  return createAssertion(name, "gate", (value) => (value != null ? 1 : 0), undefined, { expected: "defined" });
-}
-
-/** value === true 则 1,否则 0。带 label 的布尔断言(fileExists 等检查用)。默认硬门槛。 */
-export function isTrue(label?: string): ValueAssertion {
-  const name = label ? `isTrue(${label})` : "isTrue()";
-  return createAssertion(name, "gate", (value) => (value === true ? 1 : 0), undefined, { expected: "true" });
-}
-
-/** CommandResult.exitCode === 0 则 1,否则 0。默认硬门槛。 */
-export function commandSucceeded(): ValueAssertion {
-  return createAssertion(
-    "commandSucceeded()",
-    "gate",
-    (value) => {
-      if (value === null || typeof value !== "object") return 0;
-      return (value as { exitCode?: unknown }).exitCode === 0 ? 1 : 0;
-    },
-    undefined,
-    { expected: "exit 0" },
-  );
-}
-
-/** value === false 则 1,否则 0。带 label 的布尔断言。默认硬门槛。 */
-export function isFalse(label?: string): ValueAssertion {
-  const name = label ? `isFalse(${label})` : "isFalse()";
-  return createAssertion(name, "gate", (value) => (value === false ? 1 : 0), undefined, { expected: "false" });
-}
-
-/**
- * 自定义断言工厂:直接给名字 / 严重度 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
- * 不像 gate()/atLeast() 那样需要二段链式调用来定级。severity 省略默认 gate。
- */
-export function makeAssertion(spec: {
-  name: string;
-  severity?: Severity;
-  threshold?: number;
-  score: (value: unknown) => number | Promise<number>;
-}): ValueAssertion {
-  return createAssertion(spec.name, spec.severity ?? "gate", spec.score, spec.threshold);
-}
+export type {
+  BooleanMatch,
+  CommandMatchOptions,
+  EventMatch,
+  EventOptionsByType,
+  LogicalCommandOccurrence,
+  Match,
+  MatchDomain,
+  MatchableEvent,
+  ScoreMatch,
+  TextMatchOptions,
+  ToolMatch,
+  ToolMatchOptions,
+  ToolStatus,
+  ValueMatch,
+} from "../assertions/match.ts";
