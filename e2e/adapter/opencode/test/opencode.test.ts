@@ -23,6 +23,7 @@ const DECOY_MARKER = "OPENCODE-DECOY-AUDIT-NICEEVAL-E2E-518";
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
   "BUB_API_BASE",
+  "OPENCODE_API_KEY",
 ] as const;
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
@@ -79,7 +80,7 @@ function expectSuccessfulCli(receipt: ProcessReceipt): void {
   expect(receipt.stdout).not.toMatch(/[\x1b\x08]/);
 }
 
-function expectExpStream(receipt: ProcessReceipt): ExpEvent[] {
+function expectExpStream(receipt: ProcessReceipt, expectedTotal: number): ExpEvent[] {
   expectSuccessfulCli(receipt);
   expect(receipt.durationMs).toBeGreaterThan(0);
   expect(receipt.stdout).not.toBe("");
@@ -87,7 +88,7 @@ function expectExpStream(receipt: ProcessReceipt): ExpEvent[] {
   const events = receipt.ndjson<ExpEvent>();
   expect(events.length).toBeGreaterThan(0);
   expect(events[0]).toMatchObject({ event: "start", format: "niceeval.exp" });
-  expect((events[0] as ExpStartEvent).total).toBeGreaterThanOrEqual(EXPECTED_EVALS.length);
+  expect((events[0] as ExpStartEvent).total).toBeGreaterThanOrEqual(expectedTotal);
   expect(events.at(-1)).toMatchObject({
     event: "result",
     status: "passed",
@@ -98,14 +99,19 @@ function expectExpStream(receipt: ProcessReceipt): ExpEvent[] {
   return events;
 }
 
-async function attemptLines(evalId: string): Promise<string[]> {
-  const history = await niceeval.run(["show", evalId, "--history"]);
+async function attemptLines(evalId: string, experimentId?: string): Promise<string[]> {
+  const history = await niceeval.run([
+    "show",
+    evalId,
+    ...(experimentId === undefined ? [] : ["--exp", experimentId]),
+    "--history",
+  ]);
   expectSuccessfulCli(history);
   return history.stdout.split("\n").filter((line) => line.includes("@"));
 }
 
-async function latestAttemptLocator(evalId: string): Promise<string> {
-  const lines = await attemptLines(evalId);
+async function latestAttemptLocator(evalId: string, experimentId?: string): Promise<string> {
+  const lines = await attemptLines(evalId, experimentId);
   expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
 
   const latest = lines.at(-1)!;
@@ -137,13 +143,15 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit.xml", { force: true });
+  rmSync("junit-go.xml", { force: true });
 
-  // invoke：完整 argv 走安装后的 candidate binary；真实 OpenCode CLI、Docker sandbox
-  // 与 live provider 仍由 experiments/ci.ts + evals/ 驱动。
-  const run = await niceeval.run(["exp", "--rerun", "all", "--json", "--junit", "junit.xml"], {
-    timeoutMs: 36 * 60_000,
-  });
-  const events = expectExpStream(run);
+  // invoke：先跑 compat 基线的完整协议矩阵。完整 argv 走安装后的 candidate binary；
+  // 真实 OpenCode CLI、Docker sandbox 与 live provider 由 experiments/ci.ts + evals/ 驱动。
+  const run = await niceeval.run(
+    ["exp", "ci", "--rerun", "all", "--json", "--junit", "junit.xml"],
+    { timeoutMs: 36 * 60_000 },
+  );
+  const events = expectExpStream(run, EXPECTED_EVALS.length);
   const result = events.at(-1) as ExpResultEvent;
   expect(result.passed).toBeGreaterThanOrEqual(EXPECTED_EVALS.length);
 
@@ -196,4 +204,38 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
-}, 38 * 60_000);
+
+  // 新配置线只跑一条有工具调用的代表 Eval：显式 OPENCODE_API_KEY、无自定义
+  // base URL、完整 opencode-go 模型 ID 必须共同完成真实 provider 调用。
+  const goRun = await niceeval.run(
+    [
+      "exp",
+      "go",
+      "coding-task/write-and-verify",
+      "--rerun",
+      "all",
+      "--json",
+      "--junit",
+      "junit-go.xml",
+    ],
+    { timeoutMs: 12 * 60_000 },
+  );
+  const goEvents = expectExpStream(goRun, 1);
+  const goResult = goEvents.at(-1) as ExpResultEvent;
+  expect(goResult.passed).toBeGreaterThanOrEqual(1);
+
+  const goJunit = readFileSync("junit-go.xml", "utf8");
+  expect(goJunit).toContain("<testsuite");
+  expect(goJunit).not.toContain("<failure");
+  expect(goJunit).not.toContain("<error");
+
+  const goBoard = await niceeval.run(["show", "--exp", "go"]);
+  expectSuccessfulCli(goBoard);
+  expect(goBoard.stdout).toContain("coding-task/write-and-verify");
+  expect(goBoard.stdout).toContain("opencode-go/deepseek-v4-flash");
+
+  const goLocator = await latestAttemptLocator("coding-task/write-and-verify", "go");
+  const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
+  expectSuccessfulCli(goExecution);
+  expectToolInputReadback(goExecution.stdout, TOOL_PAYLOAD, 2);
+}, 52 * 60_000);
