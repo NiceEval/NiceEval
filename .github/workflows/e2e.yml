@@ -53,7 +53,6 @@ jobs:
       inject-secrets: ${{ steps.lane.outputs.inject-secrets }}
       environment: ${{ steps.lane.outputs.environment }}
       candidate_sha256: ${{ steps.pack.outputs.candidate_sha256 }}
-      candidate_tgz_name: ${{ steps.pack.outputs.candidate_tgz_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,17 +73,15 @@ jobs:
       - name: Resolve lane and environment
         id: lane
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF: ${{ github.ref }}
           DISPATCH_LANE: ${{ github.event.inputs.lane }}
         run: |
           set -euo pipefail
-          case "$EVENT_NAME" in
+          case "$GITHUB_EVENT_NAME" in
             pull_request) lane=pr ;;
             schedule) lane=nightly ;;
             workflow_dispatch) lane="${DISPATCH_LANE:-pr}" ;;
             push)
-              if [ "$REF" = "refs/heads/main" ]; then lane=main; else lane=pr; fi
+              if [ "$GITHUB_REF" = "refs/heads/main" ]; then lane=main; else lane=pr; fi
               ;;
             *) lane=pr ;;
           esac
@@ -114,9 +111,7 @@ jobs:
         env:
           LANE: ${{ steps.lane.outputs.lane }}
           DISPATCH_REPO: ${{ github.event.inputs.repo }}
-          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           args=(--lane "$LANE" --json)
@@ -125,11 +120,11 @@ jobs:
             args+=(--repo "$repo")
           fi
           # 能求 diff 时交给 plan 做 path 省时；否则 fail-open 跑 lane 全集
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "push" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] || [ "$GITHUB_EVENT_NAME" = "push" ]; then
             if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
               while IFS= read -r path; do
                 [ -n "$path" ] && args+=(--diff-path "$path")
-              done < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+              done < <(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")
             else
               echo "[e2e] base unavailable — full lane (fail-open)"
             fi
@@ -163,8 +158,7 @@ jobs:
           set -euo pipefail
           out_dir="${RUNNER_TEMP}/niceeval-e2e-candidate"
           mkdir -p "$out_dir"
-          candidate_tgz_name="niceeval-candidate.tgz"
-          candidate_path="${out_dir}/${candidate_tgz_name}"
+          candidate_path="${out_dir}/niceeval-candidate.tgz"
           pnpm e2e pack --out "$candidate_path" | tee "${out_dir}/candidate-pack.json"
           test -f "$candidate_path"
           candidate_sha256="$(jq -r '.sha256' "${out_dir}/candidate-pack.json")"
@@ -180,10 +174,9 @@ jobs:
           printf '%s\n' "$candidate_sha256" > "${candidate_path}.sha256"
           {
             echo "candidate_sha256=${candidate_sha256}"
-            echo "candidate_tgz_name=${candidate_tgz_name}"
             echo "candidate_path=${candidate_path}"
           } >> "$GITHUB_OUTPUT"
-          echo "[e2e] NiceEval ${candidate_tgz_name} sha256=${candidate_sha256}"
+          echo "[e2e] NiceEval niceeval-candidate.tgz sha256=${candidate_sha256}"
 
       - name: Upload exact NiceEval candidate
         if: steps.plan.outputs.has-jobs == 'true'
@@ -257,11 +250,10 @@ jobs:
         id: candidate
         env:
           EXPECTED_CANDIDATE_SHA256: ${{ needs.prepare.outputs.candidate_sha256 }}
-          CANDIDATE_TGZ_NAME: ${{ needs.prepare.outputs.candidate_tgz_name }}
         run: |
           set -euo pipefail
           root="${RUNNER_TEMP}/niceeval-e2e-candidate"
-          candidate="${root}/${CANDIDATE_TGZ_NAME}"
+          candidate="${root}/niceeval-candidate.tgz"
           for required in "$candidate" "${candidate}.sha256"; do
             test -s "$required"
           done

@@ -15,13 +15,11 @@ import {
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
 const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY"] as const;
 
-const PORT = 34101;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
-const OTLP_ENDPOINT = "http://127.0.0.1:4318";
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 interface ExpStartEvent {
@@ -47,10 +45,6 @@ interface ExpResultEvent {
 }
 
 type ExpEvent = ExpStartEvent | ExpResultEvent | { event: string };
-
-function liveEnv(): NodeJS.ProcessEnv {
-  return { AI_SDK_URL: BASE_URL };
-}
 
 function requireLiveSecrets(): void {
   const missing = REQUIRED_LIVE_SECRETS.filter((name) => !process.env[name]);
@@ -106,7 +100,7 @@ function expectExpStream(receipt: ProcessReceipt): ExpEvent[] {
 }
 
 async function latestAttemptLocator(evalId: string): Promise<string> {
-  const history = await niceeval.run(["show", evalId, "--history"], { env: liveEnv() });
+  const history = await niceeval.run(["show", evalId, "--history"]);
   expectSuccessfulCli(history);
   const lines = history.stdout.split("\n").filter((line) => line.includes("@"));
   expect(lines.length, `${evalId} has no public attempt in show --history`).toBeGreaterThan(0);
@@ -126,9 +120,6 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
   await withProcess(
     ["pnpm", "exec", "tsx", "src/backend/server.ts"],
     {
-      env: {
-        OTEL_EXPORTER_OTLP_ENDPOINT: OTLP_ENDPOINT,
-      },
       timeoutMs: 14 * 60_000,
     },
     async (server) => {
@@ -136,13 +127,13 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
         timeoutMs: 20_000,
         label: "ai-sdk backend readiness",
       });
-      await waitForHealth(`${BASE_URL}/healthz`, 20_000);
+      await waitForHealth(`${AI_SDK_BASE_URL}/healthz`, 20_000);
 
       // invoke：完整 argv 走安装后的 candidate binary；真实 provider 与
       // uiMessageStreamAgent 仍由 experiments/ci.ts + evals/ 驱动。
       const run = await niceeval.run(
         ["exp", "--rerun", "all", "--json", "--junit", "junit.xml"],
-        { env: liveEnv(), timeoutMs: 13 * 60_000 },
+        { timeoutMs: 13 * 60_000 },
       );
       const events = expectExpStream(run);
       const result = events.at(-1) as ExpResultEvent;
@@ -155,11 +146,11 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
 
       // observe：公开成绩单必须列出本 Repo 声明的 Experiment 与每条 Eval，
       // 防止少发现/少运行后仍以空结果假绿。
-      const board = await niceeval.run(["show"], { env: liveEnv() });
+      const board = await niceeval.run(["show"]);
       expectSuccessfulCli(board);
       expect(board.stdout).toContain("ci");
 
-      const groupBoard = await niceeval.run(["show", "--exp", "ci"], { env: liveEnv() });
+      const groupBoard = await niceeval.run(["show", "--exp", "ci"]);
       expectSuccessfulCli(groupBoard);
       for (const evalId of EXPECTED_EVALS) {
         expect(groupBoard.stdout).toContain(evalId);
@@ -173,7 +164,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       // outcome：execution 是适配器收到的公开投影；工具名、入参和 OTel 节点
       // 时间注释都必须穿过归一化、落盘与 CLI 展示。
       const toolLocator = locators.get("tool-call")!;
-      const execution = await niceeval.run(["show", toolLocator, "--execution"], { env: liveEnv() });
+      const execution = await niceeval.run(["show", toolLocator, "--execution"]);
       expectSuccessfulCli(execution);
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
@@ -181,7 +172,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
 
       // timing 公开命令必须成功，并且必须把同一真实工具调用挂到 per-turn
       // OTel 子树；ai-sdk.md 将 correlation 断裂定义为协议回归，不能降级成 warning。
-      const timing = await niceeval.run(["show", toolLocator, "--timing"], { env: liveEnv() });
+      const timing = await niceeval.run(["show", toolLocator, "--timing"]);
       expectSuccessfulCli(timing);
       expect(timing.stdout).toContain("get_weather");
     },

@@ -6,10 +6,9 @@ import { convertToModelMessages, pipeUIMessageStreamToResponse, stepCountIs, str
 import { buildTools, SYSTEM_PROMPT } from "./tool-defs.ts";
 import { DEFAULT_MODEL, resolveModel } from "./models.ts";
 import { setupOtel } from "./otel.ts";
+import { AI_SDK_BASE_URL, AI_SDK_PORT } from "../topology.ts";
 
 setupOtel("ai-sdk-e2e");
-
-const port = Number(process.env.PORT ?? 34101);
 
 const server = createServer(async (req, res) => {
   try {
@@ -19,8 +18,8 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, "127.0.0.1", () => {
-  process.stdout.write(`ai-sdk e2e server listening on http://127.0.0.1:${port}\n`);
+server.listen(AI_SDK_PORT, "127.0.0.1", () => {
+  process.stdout.write(`ai-sdk e2e server listening on ${AI_SDK_BASE_URL}\n`);
 });
 
 function shutdown(): void {

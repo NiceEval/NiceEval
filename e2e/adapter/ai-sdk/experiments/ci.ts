@@ -1,11 +1,11 @@
 import { defineExperiment } from "niceeval";
 import { uiMessageStreamAgent } from "niceeval/adapter";
 import { DEFAULT_MODEL } from "../src/backend/models.ts";
+import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
-const BASE_URL = process.env.AI_SDK_URL ?? "http://127.0.0.1:34101";
 const agent = uiMessageStreamAgent({
   name: "ai-sdk-ui-message-stream",
-  url: `${BASE_URL}/api/chat`,
+  url: `${AI_SDK_BASE_URL}/api/chat`,
   // 应用用 BatchSpanProcessor,流结束后留一段宽限让最后一批 span 落进本轮收集窗口
   // (只影响 `niceeval view` / `show --execution` 的瀑布图,不影响断言)。
   settleMs: 600,
