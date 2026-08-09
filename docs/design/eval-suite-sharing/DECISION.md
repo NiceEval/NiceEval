@@ -23,6 +23,9 @@ NiceEval 增加六件事：
 
 在 loader、owner capability、dependency projection 与 transfer manifest 四个正确性前置项完成并通过安装矩阵前，不批准只实现“多扫描一个目录”的缩水版本。
 
+实现还必须遵守 PLAN-3 后续闭合的启动/机器协议、阶段 barrier、真实模块查找身份、不可变 transfer snapshot、条件化 runtime closure 与 schema-15 attempt-inline provenance 契约。
+这些是进入实现的必要条件，不是可延后的增强项。
+
 ## 为什么不是 PLAN-1
 
 PLAN-1 在运行语义上没有缺口，但它把每次消费变成一次 fork。
