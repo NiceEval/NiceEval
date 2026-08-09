@@ -9,16 +9,18 @@ import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
+const BASELINE_EVALS = [
   "coding-task/write-and-verify",
-  "skills/status-report",
   "session/recall",
   "usage/tokens",
 ] as const;
+const SKILL_EVAL = "skills/status-report";
+const GO_EVAL = "provider/go-routing";
 
 const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
 const STATUS_MARKER = "OPENCODE-STATUS-REPORT-NICEEVAL-E2E-914";
 const DECOY_MARKER = "OPENCODE-DECOY-AUDIT-NICEEVAL-E2E-518";
+const GO_LIVE_MARKER = "OPENCODE-GO-DEEPSEEK-V4-FLASH-E2E-731";
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -143,17 +145,18 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit.xml", { force: true });
+  rmSync("junit-skill.xml", { force: true });
   rmSync("junit-go.xml", { force: true });
 
-  // invoke：先跑 compat 基线的完整协议矩阵。完整 argv 走安装后的 candidate binary；
+  // invoke：先跑 compat 基线协议矩阵。完整 argv 走安装后的 candidate binary；
   // 真实 OpenCode CLI、Docker sandbox 与 live provider 由 experiments/ci.ts + evals/ 驱动。
   const run = await niceeval.run(
     ["exp", "ci", "--rerun", "all", "--json", "--junit", "junit.xml"],
     { timeoutMs: 36 * 60_000 },
   );
-  const events = expectExpStream(run, EXPECTED_EVALS.length);
+  const events = expectExpStream(run, BASELINE_EVALS.length);
   const result = events.at(-1) as ExpResultEvent;
-  expect(result.passed).toBeGreaterThanOrEqual(EXPECTED_EVALS.length);
+  expect(result.passed).toBeGreaterThanOrEqual(BASELINE_EVALS.length);
 
   const junit = readFileSync("junit.xml", "utf8");
   expect(junit).toContain("<testsuite");
@@ -161,7 +164,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(junit).not.toContain("<error");
 
   const locators: Record<string, string> = {};
-  for (const evalId of EXPECTED_EVALS) {
+  for (const evalId of BASELINE_EVALS) {
     locators[evalId] = await latestAttemptLocator(evalId);
   }
 
@@ -178,11 +181,6 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   ).toBe(true);
   // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
   expectToolInputReadback(execution.stdout, TOOL_PAYLOAD, 2);
-
-  const skillExecution = await niceeval.run(["show", locators["skills/status-report"]!, "--execution"]);
-  expectSuccessfulCli(skillExecution);
-  expectToolInputReadback(skillExecution.stdout, STATUS_MARKER, 1);
-  expect(skillExecution.stdout).not.toContain(DECOY_MARKER);
 
   // usage Eval 的两个 t.send() 都有独立的正 token 数；execution 的两个 turn 头必须各自可读。
   const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
@@ -205,13 +203,37 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(timing.stdout).toContain("agent.setup");
   expect(timing.stdout).toMatch(/turn\s+turn1\b/);
 
-  // 新配置线只跑一条有工具调用的代表 Eval：显式 OPENCODE_API_KEY、无自定义
-  // base URL、完整 opencode-go 模型 ID 必须共同完成真实 provider 调用。
+  // Skill 配置独立成线：安装、原生 skill 工具选择与 decoy 反选由专用 Eval 证明。
+  const skillRun = await niceeval.run(
+    ["exp", "skill", SKILL_EVAL, "--rerun", "all", "--json", "--junit", "junit-skill.xml"],
+    { timeoutMs: 10 * 60_000 },
+  );
+  const skillEvents = expectExpStream(skillRun, 1);
+  const skillResult = skillEvents.at(-1) as ExpResultEvent;
+  expect(skillResult.passed).toBeGreaterThanOrEqual(1);
+
+  const skillJunit = readFileSync("junit-skill.xml", "utf8");
+  expect(skillJunit).toContain("<testsuite");
+  expect(skillJunit).not.toContain("<failure");
+  expect(skillJunit).not.toContain("<error");
+
+  const skillBoard = await niceeval.run(["show", "--exp", "skill", "--json"]);
+  expectSuccessfulCli(skillBoard);
+  expect(skillBoard.stdout).toContain(SKILL_EVAL);
+
+  const skillLocator = await latestAttemptLocator(SKILL_EVAL, "skill");
+  const skillExecution = await niceeval.run(["show", skillLocator, "--execution"]);
+  expectSuccessfulCli(skillExecution);
+  expectToolInputReadback(skillExecution.stdout, STATUS_MARKER, 1);
+  expect(skillExecution.stdout).not.toContain(DECOY_MARKER);
+
+  // Go 配置独立成线：专用 Eval 用显式 OPENCODE_API_KEY、无自定义 base URL 完成
+  // 真实 provider 调用，再从官方 session export 核对 provider 与 API model。
   const goRun = await niceeval.run(
     [
       "exp",
       "go",
-      "coding-task/write-and-verify",
+      GO_EVAL,
       "--rerun",
       "all",
       "--json",
@@ -229,13 +251,15 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(goJunit).not.toContain("<failure");
   expect(goJunit).not.toContain("<error");
 
-  const goBoard = await niceeval.run(["show", "--exp", "go"]);
+  const goBoard = await niceeval.run(["show", "--exp", "go", "--json"]);
   expectSuccessfulCli(goBoard);
-  expect(goBoard.stdout).toContain("coding-task/write-and-verify");
+  expect(goBoard.stdout).toContain(GO_EVAL);
   expect(goBoard.stdout).toContain("opencode-go/deepseek-v4-flash");
 
-  const goLocator = await latestAttemptLocator("coding-task/write-and-verify", "go");
+  const goLocator = await latestAttemptLocator(GO_EVAL, "go");
   const goExecution = await niceeval.run(["show", goLocator, "--execution"]);
   expectSuccessfulCli(goExecution);
-  expectToolInputReadback(goExecution.stdout, TOOL_PAYLOAD, 2);
+  expect(goExecution.stdout).toContain("opencode export");
+  expect(goExecution.stdout).toContain("deepseek-v4-flash");
+  expect(goExecution.stdout).toContain(GO_LIVE_MARKER);
 }, 52 * 60_000);

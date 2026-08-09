@@ -13,7 +13,6 @@ export default defineExperiment({
   agent,
   model: "opencode-go/deepseek-v4-flash",
   sandbox,
-  // provider / credential / model route 是新增覆盖维度，不重复 ci 的完整协议矩阵。
-  evals: ["coding-task/write-and-verify"],
+  evals: ["provider/go-routing"],
   attempts: 1,
 });
