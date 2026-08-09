@@ -23,6 +23,9 @@
 
 1. **跑对应的 Eval**：Experiment 直接从 `niceeval/adapter` 导入并实例化官方 Agent 工厂，以 `--rerun all` 运行真实模型 Eval。
    仓库不拥有 `agents/`，不包装转换器，也不实现 `send()`；配置能力不够时修官方工厂。
+   Sandbox coding Agent 还必须从 `niceeval/sandbox` 导入对应的 `NICEEVAL_*_DOCKER_IMAGE`，让当前版本锁定的官方镜像参与同一条 Journey。
+   Live Repo 不硬编码旧 tag，也不用本地空白镜像替代这项配对证明。
+   若 fallback Installer 需要独立验收，应由另一条确定性 case 拥有，不能替代官方镜像与 Adapter 的组合验收。
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call ID 配对、HITL 产生 `input.requested`、usage 逐轮到位。
    - 工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`。名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch` 的深度部分匹配见[Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。
    - 支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。

@@ -8,7 +8,6 @@ import { command, type ProcessReceipt } from "@niceeval/testkit";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { ensureDockerImage } from "../scripts/build-docker-env.ts";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
@@ -111,7 +110,6 @@ async function latestAttemptLocator(evalId: string): Promise<string> {
 it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
-  ensureDockerImage();
 
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit.xml", { force: true });

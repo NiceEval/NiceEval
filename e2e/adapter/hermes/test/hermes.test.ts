@@ -8,7 +8,6 @@ import { command, type ProcessReceipt } from "@niceeval/testkit";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { ensureDockerImage } from "../scripts/build-docker-env.ts";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
@@ -114,10 +113,6 @@ async function latestAttemptLocator(evalId: string): Promise<string> {
 it("真实 Hermes CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
-
-  // 沙箱镜像是本仓库自己的 Dockerfile（docker/Dockerfile），Experiment 上的
-  // dockerSandbox 引用同一 tag；缺失时先构建，不替换成本地替代物。
-  ensureDockerImage();
 
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit.xml", { force: true });
