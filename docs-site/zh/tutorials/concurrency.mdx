@@ -148,7 +148,7 @@ export default defineExperiment({
 ```
 
 `maxConcurrency: 1` 只串行本 Invocation 的 Attempt。`sharedState.key` 才跨终端保护同一 checkpoint。
-租约在 Experiment 和 Sandbox 的 `setup` 之前取得，到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 完成后才释放。等待方不创建 Sandbox。对方完成后先重新判断结果沿用，已经齐了就不再跑第二遍。
+租约在 Experiment 和 Sandbox 的 `setup` 之前取得，到 Sandbox `teardown`、Provider finalizer 与 Experiment `teardown` 完成后才释放。等待方不创建 Sandbox。租约释放后，等待方继续自己的既定计划；它不读取或沿用另一 Record 的结果。
 
 `sharedState` 只做互斥，不替你存 checkpoint，也不能回滚强杀前的半次写入。做不到原子回存时，换新 key 和干净 cohort 从头重建。
 
@@ -181,7 +181,7 @@ const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void
 
 三个前提要一起满足：
 
-- **一个实验只开一个终端。** 多开时两个终端各自有一条串行队列并认领评估用例，合起来的先后不再由命名决定。`sharedState` 能让两段状态窗口不交错，但不会合并两边的选择集和顺序。
+- **一个 Record root 只开一个终端。** 第二个终端指向同一 root 时会得到 `record-root-busy`。不同 root 的队列彼此独立，合起来的先后不由命名决定。
 - **上一轮的结果会被沿用、不再执行**，它写入的状态也就不会重新产生。顺序依赖这份状态时用 `--rerun all` 从头跑，见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 - **`attempts > 1` 时按轮次跑**：这批评估用例各跑一遍算一轮，跑完再开下一轮。同一条评估用例的多次 Attempt 不连在一起。
 
@@ -202,32 +202,23 @@ export default defineExperiment({
 });
 ```
 
-## 多开一个终端给同一批加速
+## 多开终端时隔离 Record
 
-已经在跑的那次运行改不了并发配置。确认本机、Provider 和 Agent 服务还有余量时，在第二个终端跑同一条命令：
+同一 Record root 不支持两条 Invocation 自动分工。确认本机、Provider 和 Agent 服务还有余量时，为第二个终端指定不同 root：
 
 ```bash
-niceeval exp compare --max-concurrency 2   # 终端 A 已经在跑
-niceeval exp compare --max-concurrency 2   # 终端 B 后启动
+niceeval exp compare --record .niceeval/record-a --max-concurrency 2
+niceeval exp compare --record .niceeval/record-b --max-concurrency 2
 ```
 
-两边自动分工：每条评估用例开跑前拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。撞上对方持有的锁时，该项计成 `elsewhere`，不占自己的并发位，先去跑还没人认领的：
-
-```text
-24 total · 2 running · 2 elsewhere · 20 queued
-waiting on another run · compare/codex (2 evals, pid 41267)
-```
-
-对方跑完落盘后，等待方取锁、重新判断结果沿用：已完成的直接沿用，仍缺的自己补跑。两边最后都拿到完整结果，交集部分只花一份钱。误在两个终端跑了同一条命令时，同一套机制保证没有任何一条被跑两遍。
+两边各自规划完整选择，可能重复执行相同评估用例，也不会读取或携入对方运行中的 Attempt。每个 root 独立产生 Run、Sample 和 Report；NiceEval 不自动合并它们。
 
 三个边界：
 
 - 两边的 CLI 上限会相加，Provider 容量不会。配额紧张时把两边都调低。
 - 实验自己的 `maxConcurrency` 也是每个终端各算各的：两条命令都声明 3 时，合计最多跑六条。
-- 两个终端的 Sandbox 池也各自独立。只有确实共享 checkpoint 时才声明 `sharedState.key`。这时另一边在创建 Sandbox 前等待。
-- 协作范围是同一个工作副本、同一个 `.niceeval` 记录根。不同机器各跑各的。
-
-某次运行被 `kill -9` 或断电杀掉时，它留下的锁不会卡住后来者：心跳停止 30 秒后，下一次运行自动接管。`.niceeval/locks/` 不需要手工清理。
+- 两个终端的 Sandbox 池也各自独立。只有确实共享外部 checkpoint 时才声明 `sharedState.key`；这不会合并 Record。
+- 指向同一 root 的第二条命令立即失败，不等待、不接管，也不读取第一条命令的中间数据。
 
 ## 边界
 

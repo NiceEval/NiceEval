@@ -4,8 +4,7 @@ live 适配器 Repo：`experiments/tool-call.ts` 使用真实官方工厂 `uiMes
 （`niceeval/adapter`）。它只经 HTTP 边界接入**本仓库自带的被测应用**（`src/backend/`）。
 该应用是 `useChat` 形状的 UI Message Stream SSE 后端，真实模型经 `@ai-sdk/openai` 接入。
 
-本 Repo 证明：真实协议下工具调用发生了，并以不带命名空间的原始工具名出现。公开执行证据
-（`niceeval show --execution --json`）能够读回该 `name`；UI Message Stream 不承诺为任意应用工具补 `tool` 分类。
+本 Repo 证明：真实协议下工具调用发生了，并以不带命名空间的原始工具名出现。`niceeval show --run <runId> --page <attempt-execution-route>` 的公开执行页面能够读回该 `name`；UI Message Stream 不承诺为任意应用工具补 `tool` 分类。
 它进入 main / nightly / release lane
 （见 `e2e.json.lanes`），需要真实 provider 凭据。
 

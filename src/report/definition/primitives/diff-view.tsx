@@ -1,5 +1,5 @@
 // DiffView:按路径分层的文件清单与逐窗口 patch
-// (docs/feature/reports/components/primitives/diff-view.md)。值形状、摘要文本、内联预算与
+// (docs/feature/reports/README.md)。值形状、摘要文本、内联预算与
 // 树的构成都在 diff-lines.ts,这里只负责两面渲染。
 
 import type { ReactElement, ReactNode } from "react";

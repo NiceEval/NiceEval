@@ -143,11 +143,11 @@ Executor 回答测试进程在哪里运行：
 - CLI 结果从 exit、stdout、stderr、PTY、JUnit 或 `show --json` 读取；
 - Report 从 `show`、`view --out`、HTTP 和浏览器读取；
 - Record 格式测试可以用公开 `niceeval/record` API；
-- Adapter 从公开运行流和 `show --execution/--timing/--json` 读取；
+- Adapter 从公开运行流、`show --run <runId> --json` 与已规划的 execution / timing 页面读取；
 - 除非磁盘格式本身就是被测契约，不直接扫描 `.niceeval/` 私有布局；
 - 不 import 候选内部类型给测试手写 expected。
 
-测试可以从公开 history 取得动态 locator，因为 locator 是上一步用户获得的结果；它随后必须被另一条公开命令真正消费。
+测试可以从公开 receipt 取得动态 Run identity；它随后必须被另一条公开命令真正消费。
 
 ## 隔离规则
 

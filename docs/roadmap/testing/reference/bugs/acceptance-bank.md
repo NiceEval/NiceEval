@@ -70,7 +70,7 @@ fix parent 或最小逆补丁验证登记。
 
 - **守护**：setup 文件污染 diff `28758142`；零改动误报无证据 `2b81795f`；单 attempt 159 MB `5e7549eb`；机器出口被错误截断 `d8d5a84b`。
 - **fixture**：带 Skill 的现有 agent、一个零净改动 attempt、一个超过 artifact 阈值的工具输出和一份大 `show --json`。
-- **动作**：读取既有 gate、`show --diff`、公开 JSON truncation 标记，并把机器出口接真实 pipe。
+- **动作**：读取既有 gate、已规划的 Attempt diff 页面、公开 JSON truncation 标记，并把机器出口接真实 pipe。
 - **公开 oracle**：framework setup path 不进 agent diff；artifact 空显示“零改动”而非“无证据”；有损字段明确列 path / 原始与保留字节；无损机器出口完整可 parse。
 - **区分性**：三态与两类 payload policy 在同题并列，不能用“文件存在”“stdout 非空”通过。
 - **最早失败**：outcome / observe；消息列 artifact path、locator、策略与实际字节数。
@@ -92,7 +92,7 @@ fix parent 或最小逆补丁验证登记。
 - **fixture**：同一源码文件包含两次 `t.send`，分别产生不同 assistant / tool 内容与工具名；另一个同形 Attempt 不发布 events artifact。
 - **动作**：从候选 tarball 导出 Report，在 `clean-url-subpath` 宿主打开 attempt dialog；按 drive API、源码路径与发生序分别展开两次 send。
 - **公开 oracle**：每个 send 返回区只显示本轮 assistant / tool 与工具名；已映射轮次不在 Attempt 末尾重复；缺 events 时显示明确 warning。
-- **区分性**：恢复 `5a4d01a9^` 与“events 全追加页面末尾”两条 mutation 都必须失败；只测 `show --execution`、HTML 包含 events、组件 snapshot、target 存在或 dialog 打开不能通过。
+- **区分性**：恢复 `5a4d01a9^` 与“events 全追加页面末尾”两条 mutation 都必须失败；只测 execution 页面存在、HTML 包含 events、组件 snapshot、target 存在或 dialog 打开不能通过。
 - **最早失败**：invoke 对应导出或 target 打不开；observe 对应 drive / return reader 无法寻址；outcome
   对应返回缺失、错挂、重复或缺失状态错误。证据附 locator、drive identity、action 轨迹、artifact 状态、
   target URL、实际 entry kind、HTML evidence 与截图。

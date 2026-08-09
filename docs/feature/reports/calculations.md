@@ -1,160 +1,104 @@
-# 报告作者 API —— 计算边界
+# Reports Calculations
 
-本篇定义哪些计算进入公共 Reports 内核，哪些留在某份报告旁。
-完整调用形状见 [Library](library.md)。
+Calculation 把 ReportInput 中已计划并读取的 facts 变成读数。它不拥有事实，不读取 Record，也不改变 Sample 的选择和分母。完整公开形状见 [Library](library.md#calculation)。
 
-## 内核保留五类值
+## 每项计算的声明
 
-公共计算面只保留以下角色：
+每个 Calculation 必须给出四项：
 
-```ts
-mean;
-sum;
-min;
-max;
-percentile(0.95);
+1. <code>id</code>；
+2. <code>inputs</code> 中所有 required facts；
+3. <code>completeness</code> policy；
+4. 使用哪些 Sample slot，以及如何形成 observed 与 denominator。
 
-defineCalculation;
-rollup;
-aggregate;
-metricValue;
-evidenceRow;
-
-MeasureCell;
-MetricValue;
-EvidenceValue;
-```
-
-- Projector 由 Record 的 `defineAttemptProjector<Input, Params, T>()` 声明事实读取与 provenance；
-- Projector 同时声明规范化 defaults、实际 object dependencies，并从 `projectNormalized()` 返回 raw `T`；
-- Calculation 声明静态 projector dependency、canonical JSON configuration 与纯 evaluate；
-- rollup 声明 group 内、group 间和 unavailable policy；
-- aggregate 把 Sample membership 转成带顶层 coverage 的 AggregateResult；
-- MetricValue 与 EvidenceRow 是复杂算法的证据终点。
-
-公共内核不因为一张报告需要它就新增 `history()`、`delta()`、`stability()`、`pivot()` 或 `frontier()`。
-
-## Reducer 是函数，不是字符串
+页面直接读取通道时同样列出 <code>inputs</code>。不允许先在 render 中取到一个对象，再按对象字段决定临时读取另一个通道。
 
 ```ts
-const p95DurationMs = rollup(durationMs, {
-  withinEval: percentile(0.95),
-  acrossEvals: mean,
-  unavailable: "exclude",
+const checked = defineJsonFact({
+  id: "commands-checked",
+  owner: "attempt",
+  name: "com.example.commands-checked",
+  parse(document) {
+    if (typeof document.value !== "number") {
+      throw new Error("commands checked must be a number");
+    }
+    return document.value;
+  },
 });
 ```
 
-`mean`、`sum`、`min`、`max` 与 `percentile(p)` 都是纯函数。
-它们只接收已经被 rollup policy 纳入的 available 值；不能把 unavailable 改写成 `null`、零或空数组。
-
-`percentile(p)` 接受闭区间 `[0, 1]`，对有序样本做稳定线性插值。
-count 或 distinct 必须先声明 identity、分母和 unavailable policy，因此不作为无主语 reducer 提供。
-
-## Sample 不增加 map
-
-Sample 负责固定比较总体、coverage、membership 与 provenance。
-它提供的范围改变会生成固定选择：
-
 ```ts
-const security = narrowSample(sample, {
-  experiments: ["compare/"],
-  evals: ["security/"],
+const checkedCount = defineCalculation({
+  id: "checked-count",
+  inputs: [checked],
+  completeness: "allowPartial",
+  evaluate(input) {
+    // 只读取 input.report 与 input.readRun/readAttempt(...)
+    return {
+      state: "available",
+      value: 20,
+      completeness: {
+        state: "partial",
+        observed: 20,
+        denominator: 100,
+        issues: [],
+      },
+    };
+  },
 });
 ```
 
-Sample 不提供 map、groupBy、reduce、pipe 或任意 predicate callback。
-这些操作会让结果脱离完整 source 集合、分母和 membership proof。
+上述值在页面写作 <code>20 / 100 · partial</code>。<code>20</code> 是 observed，<code>100</code> 是 Sample 分母；两者不可互换。
 
-需要分组或数值，使用 `aggregate()`；需要普通展示结构，使用已交付 ReportData 上的纯转换。
-`aggregate()` request 在 ReportData 中得到的是 `EvidenceValue<AggregateResult>`，不是 rows；组件只在
-available 分支消费 `value.rows`，并保留 `value.coverage` 与最外层 evidence metadata。
+## 完整度 policy
 
-## 报告旁算法不退出证据契约
+| policy | 可计算条件 | 输出要求 |
+|---|---|---|
+| <code>allowPartial</code> | 已成功解码的 facts 足以执行公式。 | 保留 <code>partial</code>、observed、denominator 和 issues。 |
+| <code>requireComplete</code> | 每个 required fact 的持久采集与本次解码均完整。 | 任一输入不完整、unavailable 或 unsupported 时返回 unavailable。 |
 
-成对差异、稳定性和固定题集成绩单不能强行写入通用 rollup。
-它们仍必须从已计划的 MeasureCell 和 EvidenceValue 出发：
+invalid 不是可选的不足数据。已请求 invalid 通道使该 Calculation 的输入失败，并显示 Record 给出的具名 issue。没有请求它的 Calculation 不读取也不受影响。
 
-```ts
-interface DeltaPoint {
-  readonly baseline: MeasureCell<number>;
-  readonly candidate: MeasureCell<number>;
-  readonly delta: EvidenceValue<number>;
-}
+<code>allowPartial</code> 不允许把已解码子集伪装成完整总体。<code>requireComplete</code> 不允许用零、<code>null</code> 或空数组代替 unavailable。
 
-function pairedDelta(
-  baseline: readonly MeasureCell<number>[],
-  candidate: readonly MeasureCell<number>[],
-): readonly DeltaPoint[] {
-  // 按明确 identity 配对；保留两个输入的 EvidenceValue。
-}
-```
+## 分母与 slot 状态
 
-`MeasureCell` 与 `EvidenceValue` 分别由 [Reports Library](library.md#分组函数与计算函数) 和 [Record Library](../record/library.md#evidencevaluevalue-与-verification-两轴) owner 定义；`DeltaPoint` 只属于这个报告旁算法示例。
+Sample 的 <code>slots</code> 是每项 Calculation 的完整候选集合。
 
-结束时使用 `metricValue()` 与 `evidenceRow()`。
-这两项要求算法明确 coverage、refs 和 EvidenceValue，而非返回 bare number 或把不可用输入抹成空值。
-`evidenceRow()` 额外要求所有自定义字段属于 `ReportJsonObject`；任意 class instance、Date、Map、
-函数或 `undefined` 不因“是 object”就能进入结果行。
+| slot 状态 | 对 observed 的影响 | 对 denominator 的影响 |
+|---|---|---|
+| <code>included</code> 且输入可用 | 可按公式计入。 | 计入。 |
+| <code>included</code> 且输入 partial | 仅 <code>allowPartial</code> 可把成功部分计入。 | 计入。 |
+| <code>not-recorded</code> | 不计入 observed。 | 计入。 |
+| <code>invalid</code> | 不计入 observed，并保留 issue。 | 计入。 |
+| <code>excluded</code> | 不计入。 | 不属于收窄后的分母。 |
 
-## 历史是另一份固定选择
+pairwise Calculation 还要声明配对键与同时可比较的 slot 条件。任一侧缺少 required fact 时，pair 不能被无声丢弃；结果说明未形成 pair 的数量和原因。
 
-趋势、时间线和回归比较需要一个明确的图版本与成员集合。
-报告把它作为单独 materialized Sample 或显式的 Sample union 交给 plan，而不是让一个 `history()` 函数在 render 时扫描 Record。
+## 采集完整度与解码完整度
 
-这样每个历史点都有完整 source Graph 集合、adopted revision 和 membership proof。
-如果选择策略改变，就产生新的 Sample identity 和新的 ReportPlan。
+<code>ChannelRead</code> 里的两条完整度轴表达不同事实：
 
-## `scoreboard` 是模式，不是 API
+- 持久采集完整度说明 Record 写入的集合是 complete、partial 还是 unavailable。
+- 解码完整度说明本次 decoder 成功读取了多少既有内容。
 
-成绩单的固定题集、权重、满分和不计分 policy 属于业务契约。
-它可在报告旁用已计划的 MeasureCell 写成纯函数：
+Calculation 不合并这两条状态。任一轴 partial 都要求 <code>allowPartial</code> 的显式标记，或使 <code>requireComplete</code> unavailable。unknown event 造成的解码 partial 不能改写持久采集完整度；未采集也不能伪装成 decoder 错误。
 
-```ts
-const scoreboard = calculateScoreboard(cells, rubric);
-const total = metricValue({
-  result: scoreboard.evidence,
-  coverage: scoreboard.coverage,
-  refs: scoreboard.refs,
-  unit: "points",
-});
-```
+## 报告旁算法
 
-缺题仍保留在 coverage；已有依据继续留在 refs。
-只有多个独立报告具有相同输入、公式和输出语义时，才考虑把一个算法提升到公共内核。
+领域特有的质量、成本、趋势、配对差异和成绩单算法属于使用它的 Report 模块。它们仍要声明 inputs、policy、公式与页面文字。
 
-## `delta`、`stability` 与 `frontier` 留在报告旁
+只有当多个 Report 共享同一 facts、相同分母、相同 formula 与相同状态语义时，才把算法提升为公开 Calculation。通用组件只呈现 CalculationValue，不拥有公式，也不改变可用性。
 
-这些名字没有跨产品统一的比较键、阈值或展示结果。
-它们的合法形态是纯函数：输入是 Plan 已经声明的 ReportData，输出是带 EvidenceValue 的结果值。
+## 页面呈现
 
-它们不能在 renderer 中读取新的 projector，不能依赖原始事件 schema，也不能把缺失一侧从分母中悄悄删除。
+数字、图表和下载文件都带相同的 CalculationValue。partial 值显示 observed、denominator 和 partial；unavailable 显示 reasons；unsupported 显示通道名称；输入失败显示 issues。
 
-## 报告组件不认识计算名
+文字页面与网页页面使用同一 CalculationValue。它们不各自再次读取 facts，也不按展示形态调整分母。
 
-`Col`、`Table`、`Bars`、`Scatter` 与 `Stat` 只认识已经建立的 props 值。Table 与图表的 aggregate
-overload 认识完整 AggregateData，先判别外层 EvidenceValue，再读取 AggregateResult；它们不接未包装的
-`aggregate().value.rows` 逃生形状。
-它们不知道一个点来自 pass rate、delta、scoreboard 或外部 snapshot，也不会触发计算。
+## 相关阅读
 
-这条边界让新增分析先成为纯 Calculation 或报告旁函数，而不是扩张组件目录或建立第二种查询语言。
-
-## 计算的准入判据
-
-新函数进入公共计算内核前必须同时满足：
-
-1. 至少三个独立报告需要相同输入、公式与输出语义。
-2. 普通实现容易产生看似合理、却遗漏 coverage 或 evidence 的错误。
-3. 它能用静态 Projector dependency、纯 Calculation 与 EvidenceValue 表达。
-4. 官方报告与用户报告调用同一个公开实现。
-
-不满足时，函数留在使用它的报告旁。
-
-## 组件的准入判据
-
-组件目录按显示形状增长，不按领域问题增长：
-
-1. **原语**：text 与 web 都有现有组合无法表达的显示逻辑。
-2. **糖组件**：只组合同步纯投影和原语，不能改变数值或证据资格。
-3. **其余内容**：领域计算是 Calculation 或报告旁函数；页面装配属于 ReportPlan；呈现偏好属于现有 props。
-
-自定义 renderer 必须消费已冻结的值，不能向 plan、executor 或 Store 反向请求数据。
+- [Library](library.md#calculation)：Calculation、MetricCompleteness 与错误类型。
+- [Architecture](architecture.md#通道状态只在请求处生效)：局部通道状态。
+- [比较质量与成本](use-case/比较质量与成本.md)：比较 Report 的声明方式。
+- [核对通道完整度](use-case/核对通道完整度.md)：20 / 100 partial 的完整路径。

@@ -1,163 +1,127 @@
-# 缓存与携带 —— 哪些历史 Attempt 仍可采用
+# 缓存与携带：哪些 Attempt 可以继续使用
 
-Experiment 的缓存不是复制结果。
-Runner 在一个明确的已提交 `RecordGraphRef` 中找到可采用的 Attempt，然后为当前 Run 写 Claim 与 `RunContribution`；执行事实仍属于 origin Run。
+Experiment 缓存不复制结果。Runner 从当前 Record 找到一个已有 Attempt，并在新 Run 的 slot 中建立 carried 或 accepted Member。
 
-本页定义 carry、accept 的资格与写入语义。
-Attempt、Claim、Contribution、locator 与 RecordStore 的形状由 [Record](../record/README.md) 定义。
+Attempt 的执行事实只保存一次。Member 说明本 Run 为什么采用它；后续读取始终取得源 Attempt 的当前业务值。
 
-## 携带要过的门
+## 自动携带资格
 
-一条历史 Attempt 要进入当前 Run，必须同时通过以下条件。
-
-![Attempt 采用的五道门](assets/carry-six-gates.svg)
+一条 Attempt 必须同时通过以下条件，才能自动 carry：
 
 | 条件 | 判断对象 | 不通过时 |
 |---|---|---|
-| 终态 | 被采用 Attempt 的 Verdict 是 `passed` 或 `failed` | 派发执行 |
-| 指纹 | 该 Eval 的 fingerprint 等于当前求值后的 fingerprint | 派发执行 |
-| timeout 资格 | `executionMs` 不超过当前 `timeoutMs` | 派发执行 |
-| `--rerun` 口径 | 本次档位仍允许采用此 Verdict | 派发执行 |
-| `--keep-sandbox` 口径 | 本次不要求该成员重新取得现场 | 派发执行 |
+| 终态 | Verdict 是 `passed` 或 `failed` | 派发执行 |
+| fingerprint | 执行输入与当前输入相同 | 派发执行 |
+| timeout | `executionMs` 不超过当前 `timeoutMs` | 派发执行 |
+| `--rerun` | 本次档位允许采用该 Verdict | 派发执行 |
+| `--keep-sandbox` | 本次没有要求保留新现场 | 派发执行 |
 
-Runner 用 `Eligible | Blocked` 表达计划结果。
-不存在、损坏、不可读、`errored` 或 `skipped` 的 Attempt 都不会被当成可采用成员。
+不存在、无法读取、`errored` 或 `skipped` 的 Attempt 都不能自动 carry。Verdict 与 eligibility 任一不是 read + durable complete + decoding complete，或 payload 不符合精确形状，也必须执行。重复 `attemptId`、dangling Member 或结构错误先由 Record reader 隔离，不能作为候选。
 
-读取候选时先固定 source `RecordGraphRef`。
-无论随后 Store head 怎样推进，该次计划都不会把时间较晚写入的 Attempt 静默混进来；重新规划必须显式打开另一个 GraphRef。
+上述列表是本格式自动 carry 的穷尽输入。<code>--rerun</code> 与 <code>--keep-sandbox</code> 是本次 policy；指定 <code>--keep-sandbox</code> 时自动 carry 全部关闭。新配方输入必须通过更换 input/config identity domain 纳入。无法归约到既有 identity、duration 或本次 policy 的新持久 gate 不能新增 planner-critical channel；产品若必须使用它，就更换完整格式名。
 
-## 指纹：两个哈希嵌套
+规划只支持停稳 Record。同一 root 已有 active reader、writer 或人工编辑时，Runner 以 <code>record-root-busy</code> 失败；它不等待运行中结果，也不重新读取变化中的目录。静态 export 只有 Record 读取/build 阶段占用 reader lease。
 
-每条 Eval 计算自己的 fingerprint：
+## 规划身份不是 Record 版本
 
 ```text
-configHash  = hash(agent 与安装身份、model、reasoningEffort、flags、sandboxReuse、
-                   sharedState.key、Experiment sandbox layer、strict、judge)
-
-fingerprint = hash(configHash、Eval 源码闭包、evalId / tags / metadata、
-                   pair-owned ProviderPlan、受管数据文件与判据树)
+configIdentity = { domain, value }
+inputIdentity  = { domain, value }
 ```
 
-`configHash` 表达一个 Run 的已求值运行配置身份。
-它与完整字段一同进入 Run Provenance；Record 不需要额外的 Run 摘要或结果文件来解释它。
+这两个值都是不透明的相等性 token，只用于规划阶段快速比较输入，不承担 Record 身份、防伪或编辑检测。只有 `domain` 相同的 token 才能比较；算法、输入闭包或配方的语义改变时，生产方必须换一个新的 `domain`，旧值因此自然不匹配。旧 planner 也只会生成旧 domain，因此不会误用新 Attempt。`attemptId` 与 locator 都不从这些 token 派生。
 
-layer identity 由 template-bearing factory 的纯数据 options 与已声明 command identity 组成。
-直接传入的 callback 没有可追踪 identity；作者需要自动作废历史 Attempt 时，必须使用 `defineSandboxCommand()` 并维护 `revision` 与 `inputs`。
+同一次计算还生成可读 manifest。它列出已求值配置、源码闭包和受管数据文件，让 CLI 能说明哪个输入不同。identity、manifest 与资格判断写入 Attempt 或 Run 的具名通道，不进入永久核心结构。
 
-凭据不进入 fingerprint 或 Provenance。
-`judge.apiKeyEnv` 只表示读取凭据的位置；Judge 的 model、baseUrl 与 timeout 属于已求值配置。
+直接 callback 没有稳定输入描述。需要它参与自动作废时，作者使用 `defineSandboxCommand()` 并维护其声明的 `revision` 与 `inputs`；这里的 `revision` 只是作者给命令配方的业务字段，不是 Record 版本。
 
-### manifest：哈希做比较，清单做解释
+凭据不进入 fingerprint 或 manifest。`judge.apiKeyEnv` 只表示读取凭据的位置；Judge model、baseUrl 与 timeout 属于已求值配置。
 
-同一次指纹计算还产生可读的输入清单。
-它列出已求值配置、项目内源码闭包和受管数据文件的 identity，供计划、人读差异与 accept Claim 的审计使用。
+## timeout 资格
 
-这个清单是 Experiments-owned Provenance 或 Claim evidence，不是 Run 下的 JSON 文件，也不成为另一套事实根。
-它的引用遵守 Record 的 typed payload 与 strong-edge 规则。
+`timeoutMs` 不进入 input identity，因为它不改变已经发生的执行事实。carry 另行要求执行时长不超过当前 `timeoutMs`；未设置 timeout 视为无上限。
 
-fingerprint 不同但可比较时，CLI 显示具名差异，例如 `config:judge.model` 或 `source:evals/share/prompt.ts`。
-不能比较时显示明确限制；空差异不能被误读为“已经证明等价”。
+提高上限不会让 Attempt 失去资格。降低上限后，超过限制的 Attempt 必须重新执行。
 
-跨版本的等价性只能由明确迁移规则证明。
-没有证明时自动 carry 必须停止；人可以检查证据后 accept，或重新执行。
+执行时长保存为 `{ domain, milliseconds }`。`milliseconds` 是单调时钟区间向上取整得到的非负 safe integer；只有相同 `domain` 的值才允许比较。它来自 Attempt 的 eligibility 通道，不从目录时间推断。
 
-## 携带资格：timeoutMs 不进哈希
+## 以 slot 为粒度携带
 
-`timeoutMs` 不改变已经完成的 Attempt 事实，只限制当前配置是否能合理复现它。
-因此 fingerprint 不含 `timeoutMs`，但 carry 额外要求 `executionMs <= timeoutMs`；未设置 timeout 视为无上限。
+`attempts: 5` 已有三个合格 Attempt 时，新 Run 只补两个缺失 ordinal。调大 attempts 只增加 expected slot，调小则让新 Run 使用较小分母，不删除已有 Run 或 Attempt。
 
-提高上限不会让已完成的合格 Attempt 失去资格。
-降低上限时，超过新限制的历史 Attempt 必须重新执行。
+每个自动采用的 slot 只写永久核心引用：
 
-`executionMs` 与 Attempt deadline 使用同一段执行区间，不包含等待并发位的时间。
-它是由 Record 中的 timing Observation 和 Projector 读取出的值，不从目录创建时间推断。
+```ts
+interface CarriedMember {
+  readonly kind: "carried";
+  readonly runId: string;
+  readonly slotId: string;
+  readonly attemptId: string;
+}
+```
 
-## 携带粒度：以 Attempt 为单位
+建立 Member 时的 input/config identity、资格与理由写入该 Run 的 `niceeval.actions` 通道，并以 `slotId`、`attemptId` 关联。它不冻结 Attempt，也不在用户编辑 Attempt 后把 Member 标成失效。未来需要新增 action 字段时，只演进这个通道，不改 Member 核心。
 
-`attempts: 5` 已有三个合格 Attempt 时，当前 Run 只需要补两个缺失 ordinal。
-调大 attempts 只补缺失成员，调小不删除任何历史 graph entity。
+locator 是完整 128-bit `attemptId` 的可逆表示。carry 不生成新的 Attempt identity 或 locator。
 
-每个被采用的成员都形成目标 Run 的一个 `membershipSlot`。
-Runner 创建 carry Claim，并写一个 `mode: "carried"` 的 RunContribution；它的 `attempt` 是历史 Attempt 的完整 `AttemptRef`，`basisClaims` 指向该 Claim。
+## `niceeval accept`
 
-这一动作不会复制 Attempt、Verdict、evidence、Observation、Provenance 或 locator。
-locator 始终是被采用 Attempt 的完整 128-bit identity，CLI canonical 形式为 `@` 加 26 个大写 Crockford 字符。
-
-若历史 Attempt 后来收到迟到事实，更新遵循 Record 的线性 revision 规则。
-同一个 Contribution 只能采用同一个 Attempt 的后继 revision，不能偷偷改指向另一个 Attempt。
-
-## `niceeval accept`：接受明确列出的 Attempt
-
-指纹不同时，操作者可以明确声明某些历史 Attempt 仍适用于当前 Experiment 配置：
+fingerprint 不同时，操作者可以明确接受一个或多个已有 Attempt：
 
 ```sh
 niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY @123456789ABCDEFGHJKMNPQRST
 ```
 
-locator 列表是唯一作用域。
-命令不接受动态 query、差异类别或批量选择器；这些输入会在 source Graph 改变时扩大或缩小授权范围。
+locator 列表是唯一授权范围。命令不接受动态 query、差异类别或批量表达式。
 
-### 原子预检与写入
+### 预检与写入
 
-`accept` 先对全部 locator 做原子预检，预检失败时零写入。
-它逐项确认 locator 格式与身份、历史 Attempt 的可读性和终态、当前 Experiment 与 Eval 的发现结果、当前配置与 timeout 资格，以及当前 Sandbox pair 的可用计划。
+`accept` 在写入前对全部 locator 完成预检：
 
-预检通过后，命令按 Experiment 分组。
-每个 Experiment 在本次 Invocation 中建立一个新 Run，并为每个显式成员写入：
+1. locator 语法合法且能查到唯一 `attemptId`；
+2. Attempt 可读并已有终态；
+3. 当前 Experiment 与 Eval 可以发现；
+4. 当前配置、timeout 和 Sandbox pair 可以求值；
+5. 同一 Run 中没有重复 slot 或重复授权。
 
-1. 一条 accept Claim，保存当前配置身份、被采用 Attempt ref 与可读的差异审计；
-2. 一个 `mode: "accepted"` 的 RunContribution，其 `basisClaims` 指向该 Claim；
-3. 该 Run 的 immutable `RecordGraphRef` 与 receipt。
+任一检查失败时零写入。全部通过后，命令按 Experiment 建立新 Run，并为每个显式成员写 accepted Member：
 
-Contribution 采用原 Attempt 的明确 revision。
-它不能复制或 reparent Attempt、Verdict、evidence、Observation 或 Provenance，也不能生成另一个 locator。
-审计材料只在 Claim 与其 evidence refs 中出现，不复制到 Attempt 或 Contribution 的私有出处字段。
+```ts
+interface AcceptedMember {
+  readonly kind: "accepted";
+  readonly runId: string;
+  readonly slotId: string;
+  readonly attemptId: string;
+}
+```
 
-一次预检可涵盖多个 Experiment。
-每个 Experiment 的 Run 都独立完成自己的 Record 提交；任何 Store 写入失败都以对应 receipt 的 `partial` 或 `not-recorded` 如实返回，而不是伪造完成态。
+accepted Member 不复制 Attempt 数据。操作者接受的 identity、差异与理由写入该 Run 的 `niceeval.actions` 通道；这些值只解释当时接受了什么，不持续认证源值。
 
 ### 输出与错误
 
-成功输出列出原 locator、Experiment、Run、Contribution mode 与该 Run 的 GraphRef。
-同一 locator 在输出中保持不变；阅读证据仍使用该 locator 与 receipt 指向的 RecordGraphRef。
+成功输出原 locator、Experiment、Run、slot 与 `accepted`。Invocation receipt 只返回本次 `runIds` 和进程完成状态。
 
 | 错误 | 含义 | 下一步 |
 |---|---|---|
-| `malformed-locator` | 缺少 `@`、不是 26 个字符、含非法字母或高位不合法 | 复制完整 canonical locator |
-| `locator-not-found` | 当前 Record 中没有该 Attempt | 打开正确的 Record 或检查输入 |
-| `accept-ineligible` | Verdict、timeout、当前发现或计划不满足条件 | 阅读说明后重新执行或修正选择 |
-| `duplicate-accept-member` | 同一 Experiment 的同一 membership 重复列入 | 每个成员只给一次 locator |
-| `record-head-conflict` | 提交期间 Store head 推进 | 按 returned actual head 重建并重试 |
+| `malformed-locator` | locator 语法不合法 | 复制完整 locator |
+| `locator-not-found` | Record 没有对应 Attempt | 打开正确 Record 或检查输入 |
+| `accept-ineligible` | Attempt、timeout、发现或计划不满足条件 | 阅读差异后重跑或修正配置 |
+| `duplicate-accept-member` | 同一目标 slot 重复授权 | 每个 slot 只给一个 locator |
 
-accept 不是永久豁免。
-下次输入再次变化时，fingerprint 门仍会阻止自动 carry；需要新的明确 accept 或重新执行。
+## origin Run 可以 unfinished
 
-## 携带不要求 Run 收尾
+Attempt 目录已经完整发布、Verdict 已终结且引用有效时，可以成为 carry 或 accept 候选。origin Run 没有 `completedAt` 不会删除这份 Attempt。
 
-Attempt 一旦已完成 required stream、terminal Claim 与 Contribution 的 durable 提交，就可以成为将来计划的候选。
-origin Run 后来 `incomplete` 或 Invocation 被中断，不会抹掉该 Attempt 已经可验证的事实。
+这条规则不承诺恢复 Agent 已经修改的外部系统、共享数据库或 checkpoint。作者仍需为外部状态提供可恢复边界。
 
-重跑同一命令会在明确 GraphRef 上重新规划，只执行缺失或失去资格的成员。
-这不承诺回滚 Agent 已经写入外部系统、共享数据库或未受管 checkpoint；作者仍要为外部状态提供恢复边界。
+## 并发 Invocation
 
-## 并发 Invocation：取到锁后重新规划
+同一 Record root 只允许一条 Invocation。另一个进程指向它时立即得到 <code>record-root-busy</code>，不能协作领取 Eval 或读取对方运行中的 Attempt。
 
-用例锁释放后，等待者打开新的明确 `RecordGraphRef` 并重新计算该 Eval 的候选。
-对方已经提交的合格 Attempt 可以形成 carried Contribution；其余成员才执行。
+需要并行两条 Invocation 时必须指定不同 Record root。它们各自规划、写入和形成 Sample，不自动合并；完成后也不能把两个 Record 暗中拼成一个分母。
 
-这条 happens-before 关系来自锁的释放与 Store commit，而不是读取“最近目录”。
-同一 `(experimentId, evalId)` 的 Attempt 分母仍由一个 Invocation 承接，避免两边各得到不完整的比较样本。
-
-## 执行模式划走的一块
-
-`sandboxReuse: true` 只描述真实派发时的 Sandbox 生命周期。
-它不改变 carry、accept 或 rename 对历史 Attempt 的采用规则；被采用成员不会创建、模拟或重新获得历史 Sandbox。
-
-`--keep-sandbox` 要求本次真实执行才能留下现场。
-落入当前留存档的成员不得 carry，必须重新派发；这不改变历史 Record，也不会为历史 Attempt 补造 Sandbox 事实。
-
-## `--rerun`：一个旋钮定哪些历史成员仍可采用
+## `--rerun`
 
 | 写法 | 可自动采用 | 本次执行 |
 |---|---|---|
@@ -165,12 +129,11 @@ origin Run 后来 `incomplete` 或 Invocation 被中断，不会抹掉该 Attemp
 | `--rerun` / `--rerun failed` | `passed` | 上述成员与所有 `failed` |
 | `--rerun all` | 无 | 选中矩阵中的全部成员 |
 
-`--rerun` 只作用于这一次 Invocation，不改 fingerprint 定义，也不修改历史 Run。
-需要长期表达的差异应进入公开 Experiment 配置，而不是依赖一次性重新执行。
+`--rerun` 只作用于本次 Invocation，不改 fingerprint，也不修改已有 Run。
 
 ## 相关阅读
 
-- [Architecture](architecture.md#carry自动携带) —— Carry 进入 Run 的实体关系。
-- [实验改名](rename.md) —— `renamed` Contribution 的跨 Experiment 采用。
-- [Record Architecture](../record/architecture.md#runattempt-与-contribution) —— Attempt、Contribution 与 revision 的硬约束。
-- [Record CLI](../record/cli.md#attemptlocator) —— locator 的 canonical 语法与错误。
+- [Architecture](architecture.md#carry) —— carried Member 的实体关系。
+- [实验改名](rename.md) —— 通过 accepted Member 表达 Experiment 改名。
+- [Record Architecture](../record/architecture.md) —— Run、Member 与 Attempt 不变量。
+- [Record CLI](../record/cli.md) —— locator 语法与错误。

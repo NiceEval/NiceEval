@@ -1,7 +1,7 @@
 # Coding Agent 扩展边界
 
 Skills、MCP servers 和原生 Plugins 在 `agent.ensure` 相位安装。
-core 只保存安装 manifest 对应的 Observation，不理解每个 Agent 的配置目录、Marketplace 或包管理器；它不把安装结果写入 AttemptPayloadV1。
+Record 只通过 Attempt-owned 具名通道保存安装 manifest，不理解每个 Agent 的配置目录、Marketplace 或包管理器；安装结果不进入 Attempt 核心。
 
 ## 类型边界
 
@@ -59,7 +59,7 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 
 每个 attempt 只执行一次。
 多轮 `send` 不重复安装。
-`postSetup` 排在 manifest 之后：manifest 审计的是 Adapter 自身的安装 Observation，Hook 失败也不该丢掉这份证据；Hook 做了什么由命令 Observation 与 timing Projector 留存。
+`postSetup` 排在 manifest 之后：manifest 审计的是 Adapter 自身的安装 channel event，Hook 失败也不该丢掉这份证据；Hook 做了什么由命令 channel event 与 timing decoder 留存。
 
 ## 安装收敛：不假设沙箱空白
 
@@ -101,13 +101,13 @@ Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 at
 
 ## 失败语义
 
-下列失败都在 `agent.ensure` 相位形成结构化执行错误 Observation 与该 Attempt 的 `errored` Verdict Claim：路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根,以及原生配置语法错误或含保留键。Attempt lifecycle 不使用 verdict token。
+下列失败都在 `agent.ensure` 相位形成结构化执行错误通道事件 与该 Attempt 的 `errored` Verdict：路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根,以及原生配置语法错误或含保留键。Attempt lifecycle 不使用 verdict token。
 仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `postSetup` Hook 抛错,同样归这一相位。
 只有 Agent 已开始执行任务后的行为失败才进入 Turn status。
 
 ## Manifest
 
-Adapter 通过共享 manifest writer 写入安装事实，Runner 将其提交为 Attempt stream 的安装 Observation。
+Adapter 通过共享 manifest writer 写入安装事实，Runner 将其提交为 Attempt stream 的安装 channel event。
 
 - 原生配置只记 Agent 名、项目相对出处路径和原始字节的 SHA-256，不记配置正文。
   任意官方配置都可能携带敏感字符串，不能靠字段白名单证明适合原样落盘。

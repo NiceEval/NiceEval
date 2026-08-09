@@ -42,7 +42,7 @@ signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与�
 // regression: memory/show-json-pipe-truncated-at-128k.md
 test("show --json 经 pipe 仍交付完整文档", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);
-  const result = await niceeval.run(["show", locator, "--json"]);
+  const result = await niceeval.run(["show", "--run", runId, "--json"]);
 
   expect(result.exitCode, result.diagnostic()).toBe(0);
   expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(128 * 1024);
@@ -61,22 +61,22 @@ test("show --json 经 pipe 仍交付完整文档", async () => {
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
 
 ```text
-init → exp --dry → exp → show --history → show @locator --execution → view --out → 浏览器打开
+init → exp --dry → exp → show --run <runId> --json → show --run <runId> --page <attempt-route> → view --run <runId> --out → 浏览器打开
 ```
 
-只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
+只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 Run identity、计划页面和结果能跨域传递。
 Journey E2E 同时保留过程检查点和最终目标。
 
 Journey 的每个检查点只证明终态需要的身份、接线或前置事实。
 一个命题拥有独立输入、独立 expected、独立修复动作，或可以与终态独立失败时，必须拆成单边界 E2E 或另一 Journey。
 不能把选择、退出码、缓存、机器输出与导出等多个结果放进一个 `test()`，再用“长流程”掩盖多 owner。
 
-Journey E2E 使用独立项目副本和独立 `.niceeval` RecordStore。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
+Journey E2E 使用独立项目副本和独立 `.niceeval` Record root。失败后保留副本时，摘要必须给出从第一条失败命令开始的复现方式。
 
 ## 功能 Repo 与 Adapter Repo 不混用
 
 功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
-或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、`.niceeval` Store 或
+或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、Record root 或
 昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
 live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 只断言协议身份与关系。
@@ -121,15 +121,13 @@ Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox
 
 ## Report
 
-`e2e/record/` 是公开 `niceeval/record` API 与已声明磁盘格式的唯一 owner。它可以使用签入的公开格式 fixture；未在
-Record 契约逐项声明的 `.niceeval` 位置与文件布局仍是私有实现。改变公开 Record 格式会修改这个 owner；只改变私有存储组织
-或 reader 实现，不得修改 Report E2E。
+`e2e/record/` 是公开 `niceeval/record` API 与已声明磁盘格式的唯一 owner。它可以使用签入的公开格式 fixture。Record Architecture 明确列出的路径属于公开格式；Report E2E 不扫描这些路径，只通过公开 reader 消费。改变公开 Record 格式会修改这个 owner；只改变 reader 内部实现，不得修改 Report E2E。
 
 Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 
-- `show`：text / JSON 的身份、范围、切片和大输出；
+- `show --run` / `show --latest`：text / JSON 的身份、范围、页面选择和大输出；
 - `view --out`：导出文件、链接闭合、base path 与无 server 读取；
-- `view`：HTTP、持续重建与浏览器动作；
+- `view --run` / `view --latest`：固定一次 ReportExecution 的 HTTP 与浏览器动作；输入变化由下一次命令读取，不持续重建；
 - 自定义 Report：外部 cwd 的 TSX 编译、公开组件和页面目标。
 
 浏览器场景先断言目标 URL / HTTP，再按 role 与实体身份操作；不要读 `.niceeval-row-hidden`、固定 sleep 或探测任意节点。
@@ -137,8 +135,7 @@ Report Repo 用真实 Experiment 产生结果，再通过公开入口读取：
 
 ## Runner
 
-Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、carry 与 history 证据。`carry-reuse.test.ts`、
-`history-dedup.test.ts` 等子功能是同一 Repo 内的测试文件；修改 config、Eval 或写入 Store 的 case 使用私有项目副本与明确 GraphRef。
+Runner Repo 使用确定性本地 Agent 产生可区分的 plan、dispatch、carry 与 adoption 事实。携带复用与去重等子功能是同一 Repo 内的测试文件；修改 config、Eval 或写入 Record 的 case 使用私有项目副本、每例独立的临时 Record root 与明确 Sample 选择。
 这些命题不依赖真实 provider 身份，因此不能借用 `adapter/ai-sdk` 或 `adapter/codex-cli` 的运行结果。
 
 ## Package 与 CLI

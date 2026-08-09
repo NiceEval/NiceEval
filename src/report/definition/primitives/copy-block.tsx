@@ -1,4 +1,4 @@
-// CopyBlock:一整块可复制的文本(docs/feature/reports/components/primitives/copy-block.md)。
+// CopyBlock:一整块可复制的文本(docs/feature/reports/README.md)。
 
 import type { ReactNode } from "react";
 import { defineComponent } from "../tree.ts";

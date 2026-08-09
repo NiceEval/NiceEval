@@ -144,12 +144,12 @@ reportBehavior({
   id: "reports.page.text-web-parity",
   task: {
     repository: "niceeval",
-    path: "docs/feature/reports/use-case/交付报告/导出静态站.md",
+    path: "docs/feature/reports/README.md",
     anchor: "全流程",
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/reports/view.md",
+    path: "docs/feature/reports/README.md",
     anchor: "自定义报告与外壳",
   },
   title: "同一页的 text 与 web 面保留相同终值和证据身份",
@@ -203,12 +203,12 @@ reportBehavior({
   id: "reports.view.narrow-by-experiment",
   task: {
     repository: "niceeval",
-    path: "docs/feature/reports/use-case/使用宿主/浏览器复盘与收窄.md",
+    path: "docs/feature/reports/README.md",
     anchor: "全流程",
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/reports/view.md",
+    path: "docs/feature/reports/README.md",
     anchor: "打开与收窄",
   },
   title: "用户收窄到 main 后，只看到 main 的实验",
@@ -246,12 +246,12 @@ reportBehavior({
   id: "reports.view.open-attempt-dialog",
   task: {
     repository: "niceeval",
-    path: "docs/feature/reports/use-case/调试/按定位符下钻.md",
+    path: "docs/feature/reports/README.md",
     anchor: "全流程",
   },
   contract: {
     repository: "niceeval",
-    path: "docs/feature/reports/view.md",
+    path: "docs/feature/reports/README.md",
     anchor: "参数化页的-dialog-摆放",
   },
   title: "用户打开 attempt 后，详情属于所选 attempt",

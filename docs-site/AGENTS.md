@@ -32,10 +32,8 @@
 - **Attempt**：同一个 eval 的第 i 次重复运行。中文直接写 `Attempt`，不写“尝试”。
 - **EarlyExit（`earlyExit`）**：取通过率时先过一次即中止其余 attempt 的策略。中文写“首过即停”，不写“早停”。
 - **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
-- **Record**：一个 `.niceeval/` 是跨 Invocation / Experiment / Run 的长期 Record 事实根。中文正文直接写 `Record` 或“Record 事实根”；判定、断言与诊断以 Claim 保存，原始行为以 Observation 保存，每次提交产生不可变 committed Graph root。
-- **RecordGraphRef**：`recordId` 加固定 Graph root 的组合，`openRecordGraph()` 用它重开一个固定 revision。中文正文写 `RecordGraphRef`。
-- **Report artifact**：报告导出的可交付物，可删除、可重新生成，不进入 Record 权威事实。中文正文写 `Report artifact`。
-- **snapshot（transport snapshot）**：live 通道传输的有界状态副本（`LiveSnapshot`），不是 durable storage unit。中文正文写“live snapshot”，与 Sandbox provider 的“沙箱快照（`snapshotId`）”区分开。
+- **Record**：`.niceeval/record/` 中可人工编辑的当前数据集，只在目录停稳时读写。Run 保存 expected slots，Member 引用 Attempt；判定、断言、诊断和事件进入 owner-local 的具名通道。Record 不保存 revision、hash 或防伪证明。
+- **Report artifact**：报告导出的自包含目录，带精确 runtime、全部页面和资源。它可删除、可重新生成，不是 Record，也不由未来 NiceEval 重新打开。
 - **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
 - **HITL**：human-in-the-loop，人工介入。第一次出现时写全称或中文解释。
@@ -43,11 +41,11 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
-- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的 `standard` 报告——报告 / Attempts / 追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页。每页用公开转换函数和组件组成，与用户报告文件同构。首页由摘要、质量成本散点与 Experiment 表格组成，网页与终端消费同一次 page render 的结果树。
-- **Sample**：从 Record 选出的可比较读取面。中文正文写 `Sample`，不写 `Scope`；它携带选中的 Attempt、贡献 Run、覆盖、来源与读取期 Issue。
+- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的官方 Report。它和自定义 Report 一样只消费 `ReportInput`，不读取 Record 路径或磁盘字段。
+- **Sample**：从明确 Run 或具名 latest policy 形成的内存选择。中文正文写 `Sample`，不写 `Scope`；它保留 expected-slot 分母，以及 included / not-recorded / invalid / excluded 状态。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
-- **双面组件（dual-render component）**：`defineRenderer({ text, web })` 的产物。英文写 dual-render，不写 dual-face。组件只显示已经计算好的普通值，不取数。
-- **报告模型**：page render 接收 Sample 或 AttemptEvidence，用普通 TypeScript 函数产生可序列化结果，再把结果交给组件。表格使用 `Table rows={...}`；图表按显示形状使用 `Scatter`、`Line`、`Bars` 与 `Area`。Attempt 详情组件是 `AttemptDetails`。
+- **ReportInput**：Record→Reports composition adapter 按 ReportPlan 准备的进程内普通值。它保留 Sample 分母和内部通道读取状态，不落盘、不含 reader；consumer 只能通过受控 accessor 读取自己声明的输入。
+- **报告模型**：Report 先用纯 `plan()` 穷举 facts、calculations、页面和下载，再通过受控 accessor 计算宿主数据。静态 export 写出精确 runtime 与穷尽的 `StaticAssetManifest`。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则

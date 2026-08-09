@@ -24,7 +24,7 @@ function signedPointsText(value: number): string {
 }
 
 /**
- * 一格的判定读法(docs/feature/reports/show/compare.md):有数据时通过制只留判定符(`bare`)、
+ * 一格的判定读法(docs/feature/reports/README.md):有数据时通过制只留判定符(`bare`)、
  * 计分制显示挣分;该条件缺席这道题时是纯 `notApplicable`——对照矩阵只呈现各条件自己的当前
  * 覆盖,不把旧配置结果以参考的形式请回当前表格。
  */

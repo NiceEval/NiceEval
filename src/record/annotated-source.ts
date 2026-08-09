@@ -6,7 +6,7 @@ import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 
 /**
- * 标回 `t.send(...)` 调用行的一轮 turn 头行事实(契约见 docs/feature/reports/show.md
+ * 标回 `t.send(...)` 调用行的一轮 turn 头行事实(契约见 docs/feature/reports/README.md
  * 「--eval:把断言放回源码」)。身份标签与 --execution / --timing / diff windows 同一套;
  * 回复全文与轮内卡片不进这个模型——源码页只回答「这行代码对应哪一轮、这一轮成了没成」。
  */

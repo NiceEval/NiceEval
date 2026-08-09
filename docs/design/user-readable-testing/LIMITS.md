@@ -58,7 +58,7 @@ prepare 之后共享给多个测试的证据必须只读；需要迁移、修复
 ### L9：媒介契约不同
 
 管道捕获是非 TTY；正式终端布局需要显式 PTY。
-[报告排版契约](../../feature/reports/library/layout.md)还规定脚本不能靠框线字符理解 plain stdout。
+[报告排版契约](../../feature/reports/README.md)还规定脚本不能靠框线字符理解 plain stdout。
 
 JSON 和 JUnit 承诺字段与结果语义，不默认承诺缩进、字段顺序和 XML 空白。
 HTML 的语义树、浏览器交互与 CSS 布局也是三个不同观察面。

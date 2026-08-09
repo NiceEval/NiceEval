@@ -24,7 +24,7 @@ export interface StaticHtmlOptions {
  * web 宿主的装载语义:选页(只能是 scope-input page)→ resolve(组合展开 + spec 取数,
  * 唯一的 await 边界)→ 树校验(与 text 宿主同一遍)→ 静态渲染 web 面。宿主不在报告树外
  * 另设警告通道——挑选警告的呈现件是 `ScopeWarnings` 组件,内建报告每页都放它,自定义报告
- * 放不放是作者义务(docs/feature/reports/architecture.md「Sample 是计算入口」)。
+ * 放不放是作者义务(docs/feature/reports/README.md「Sample 是计算入口」)。
  */
 export async function renderReportToStaticHtml(
   definition: ReportDefinition,

@@ -35,7 +35,7 @@ signal、sandbox 或下一次消费者。E2E 按流程范围分为单边界与 J
 单边界 E2E 只跨一条公开边界或一个紧密动作组。命令、观察和 expected 放在同一文件：
 
 ```ts
-// feature: docs/feature/reports/show/json.md
+// feature: docs/feature/reports/README.md
 // regression: memory/show-json-pipe-truncated-at-128k.md
 test("show --json 经 pipe 仍交付完整文档", async () => {
   const niceeval = command(["pnpm", "--silent", "exec", "niceeval"]);

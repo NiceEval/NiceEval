@@ -1,9 +1,6 @@
-# Sample —— 用例手册
+# Sample 用例
 
-本目录把选择 API 放回实际任务中。
-契约单源始终在 [Library](../library.md)；用例只说明怎样组合固定选择、membership proof 和交付。
+本目录说明怎样把选择 API 用于具体任务。契约单源始终在 [Library](../library.md)。
 
-## 选择与收窄
-
-- [局部补跑之后，固定样本怎样形成](partial-rerun.md) —— 通过 Run contribution slot 读取 executed 与 carried Attempt。
-- [收窄一份可复核的样本](收窄样本.md) —— 不重开 Record，也不在报告里藏 predicate。
+- [局部补跑之后选择完整分母](partial-rerun.md) —— executed、carried 与 accepted 怎样进入 Sample。
+- [收窄一份 Sample](收窄样本.md) —— 保留分母状态，同时排除不需要的范围。

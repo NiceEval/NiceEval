@@ -1,140 +1,62 @@
 ---
-title: "Run NiceEval in GitHub Actions and CI"
+title: "Run NiceEval in CI"
 sidebarTitle: "CI Integration"
-description: "Add NiceEval to GitHub Actions or any CI. Failed evals exit non-zero, JUnit XML can be emitted, and caching can speed up repeated runs."
+description: "Use the process exit status for a CI gate, retain the final receipt, and provide a JUnit file to the platform."
 ---
 
-Evals should live in CI the same way tests do. They catch agent regressions on pull requests and track model, cost, and latency changes in nightly jobs.
+When CI runs an Experiment, the process exit status decides whether the gate passes. `--json` provides feedback from the current process; its final receipt contains the Invocation's `runIds`. A JUnit file gives the CI platform test results to display.
 
-## Exit codes
+## Basic command
 
-By default, [NiceEval](https://niceeval.com/) exits non-zero when any gate fails. In CI you usually want `--strict` so failure is explicit:
-
-```bash
-npx niceeval exp ci \
-  --strict \
-  --junit ./artifacts/niceeval-junit.xml
+```sh
+npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml
 ```
 
-CI doesn't need a separate output mode: human text without `--json`, on a non-TTY (a CI log page), automatically degrades to an append-only stream — no boxes, no ANSI, only appending a line at start, on each failure/error, on each diagnostic, and at the final verdict; passed attempts are never printed one by one. That log is for people to read; platform annotations go through `--junit`, and a JSON summary is read from the results plane after the run (see below).
+This command has three outputs:
+
+- Exit status: CI uses it to pass or fail the job.
+- NDJSON: Progress and diagnostics describe the current process; the final receipt describes the Invocation.
+- JUnit: A temporary file for the CI platform.
+
+JUnit and external-platform files do not own the Record. The quiescent Record's named channels keep the current Verdict, Usage, assertions, and diagnostics.
 
 ## GitHub Actions example
 
+This step retains JSON output and correctly preserves the exit status from `niceeval exp`:
+
 ```yaml
-name: evals
-on:
-  pull_request:
-  workflow_dispatch:
+- name: Run evals
+  shell: bash
+  run: |
+    set -o pipefail
+    npx niceeval exp ci --json --junit ./artifacts/niceeval-junit.xml \
+      | tee ./artifacts/niceeval.ndjson
+    exit "${PIPESTATUS[0]}"
 
-jobs:
-  evals:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+- name: Upload JUnit
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: niceeval-junit
+    path: ./artifacts/niceeval-junit.xml
 ```
 
-## Configure secrets
+Inject model credentials through CI secrets. Do not put credentials in an Experiment, receipt, JUnit file, or log.
 
-<Steps>
-  <Step title="Add repository secrets">
-    Put provider tokens into GitHub Actions secrets.
-  </Step>
-  <Step title="Pass them as env in the workflow">
-    Expose only the variables the eval step needs.
-  </Step>
-  <Step title="Verify they exist">
-    Use a minimal eval, or run `list` / a dry run first to confirm configuration.
-  </Step>
-</Steps>
+## Use the receipt in a later step
 
-## JSON, JUnit, and structured errors
+After an Invocation is created successfully, the final NDJSON record contains its receipt. A later script can use its `runIds` to select an explicit Run for viewing or export:
 
-Without `--json`, `niceeval exp` prints human text. On a non-TTY — exactly what a CI log page is — that automatically degrades to an append-only, frameless stream: `PLAN` and the closing verdict / `FAILURES` / `NEXT` are still complete information panels, just without box-drawing characters — the title stands alone on its own line, the body is indented two columns. Failures and errors each append one unindented stream line as they happen, then get collected and restated inside the `FAILURES` panel at wrap-up. Real non-TTY output from a failed gate assertion:
-
-```text
-PLAN
-  1 attempts · 1 evals × 1 configs · concurrency 2
-✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
-    gate: equals("definitely-not-ok")
-        expected "definitely-not-ok" · received ok
-FAILED                                                                                            0s
-  0 passed · 1 failed · 0 errored  (0 reused)
-  2 new tok
-
-FAILURES
-  ✗ @52KG9EFW5TB8167MXJ30SYZCNA basic [mock]
-      gate: equals("definitely-not-ok")
-          expected "definitely-not-ok" · received ok
-NEXT
-  Inspect: niceeval show @52KG9EFW5TB8167MXJ30SYZCNA
-  Eval:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --source
-  Trace:   niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --execution
-  Diff:    niceeval show @52KG9EFW5TB8167MXJ30SYZCNA --diff
-  Compare: niceeval view
-  RESULTS
-  RecordStore root: .niceeval/ (fixed at the invoked head)
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --out ./report-site \
+  --no-open
 ```
 
-The exit code is the first-line red/green signal; JUnit and the Record are the complete machine interface — this log is only for people to read, search, and locate. An `errored` attempt (an execution error, not a failed assertion) is the same kind of unindented stream line, carrying a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary — for example `✗ @0123456789ABCDEFGHJKMNPQRS fixtures/button [ci/codex] errored · sandbox.create` followed by `sandbox-rate-limit: E2B sandbox allocation failed after 5 attempts`. The full cause, stack, and diagnostics live in the Record's Attempt facts — run `niceeval show @<locator>` to review them.
+If an input error ends the command before an Invocation exists, there is no receipt. Correct the command, Experiment, or selection condition instead of guessing a Run ID.
 
-When something needs to parse run events programmatically (a custom annotation adapter, a live dashboard), add `--json` to that same command to get the same facts as `InvocationMachineRecord` NDJSON — the LiveRecord sequence ends with exactly one `receipt`:
+## Keep feedback readable
 
-```bash
-npx niceeval exp ci --strict --junit ./artifacts/niceeval-junit.xml --json
-```
+CI logs are for the current process's progress and diagnostics. To inspect business results, use the receipt's `runIds` with `show` or `view`. To share results over time, use `view --out` to produce a static report site.
 
-When you just need a JSON summary file, don't parse the run log — read the results plane after the run instead:
-
-```bash
-npx niceeval show --json > ./artifacts/niceeval-summary.json
-```
-
-<Tip>
-  If the repo uses pnpm, swap that command for `pnpm --silent exec niceeval show --json > ./artifacts/niceeval-summary.json`. `pnpm exec` prints a startup banner to stdout by default, which ends up inside the redirected JSON file; `--silent` turns that banner off.
-</Tip>
-
-`show --json` first pins one `RecordGraphRef`, materializes one fixed Sample, and reads that fixed membership — including compatible carried results — never a moving "current state". Narrow by experiment with `--exp`; when CI must audit one physical Run rather than the fixed Sample, address that Run explicitly instead of filtering the Sample by provenance.
-
-The `--json` / `--junit` output the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
-
-## Discovery only
-
-```bash
-npx niceeval list
-```
-
-This is useful when you only want to confirm that eval files load and configuration is sane.
-
-## Cache `.niceeval/`
-
-You can cache `.niceeval/` in CI, but make sure the fingerprint covers every input that affects the result. For nightly benchmarks, keeping the full Record facts is usually more valuable.
-
-## Control concurrency
-
-```bash
-npx niceeval exp ci --max-concurrency 2
-```
-
-Sandbox evals should stay conservative on a standard GitHub-hosted runner. Remote HTTP evals can usually run with higher concurrency if the service allows it.
-
-## Recommended patterns
-
-<CardGroup cols={2}>
-  <Card title="PR runs" icon="code-pull-request">
-    Run only critical evals and high-risk paths so feedback stays fast.
-  </Card>
-  <Card title="Nightly full-matrix runs" icon="moon">
-    Run the full experiment matrix and record pass rate, cost, and latency trends.
-  </Card>
-</CardGroup>
-
-Publish results as a static report site (auto-updating on Vercel or GitHub Pages) — see [Publish reports from CI](./publish-report).
+See [Publish a Static Report](/tutorials/publish-report) for the full static-site workflow.

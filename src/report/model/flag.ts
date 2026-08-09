@@ -1,5 +1,5 @@
 // flag() / runConfig() / numericFlag() / numericRunConfig():把 experiment 声明的变量当
-// 分组维度或数值轴(docs/feature/reports/library/measures.md「维度与数值轴」)。
+// 分组维度或数值轴(docs/feature/reports/README.md「维度与数值轴」)。
 // 变量来自配置,不来自命名 —— 报告不解析 experiment id 字符串抠变量。
 // flag() 只读 `ExperimentDef.flags` 里显式声明的 KV;model / reasoningEffort / budget / runs
 // 这类顶层运行配置不在 flags 里,用 runConfig() 读快照的 ExperimentRunInfo 投影。

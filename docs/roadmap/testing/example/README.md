@@ -63,7 +63,7 @@ E2E 的 `// feature:` 与 Unit 的 `// cases:` 放在文件第一行。若一个
 紧贴对应的 `test()` / `it()`；只有整文件唯一 case 时，才可与 owner 一起放在文件头。
 
 ```ts
-// feature: docs/feature/reports/show/json.md
+// feature: docs/feature/reports/README.md
 // regression: memory/show-json-pipe-truncated-at-128k.md
 test("show --json 经 pipe 仍交付完整文档", async () => {
   // 测试正文仍展示真实命令、公开观察和字面 expected。

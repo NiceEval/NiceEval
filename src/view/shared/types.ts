@@ -30,7 +30,7 @@ export interface ViewReportPageMeta {
   id: string;
   title: LocalizedText;
   /**
-   * 报告声明的 `navigation: false`(docs/feature/reports/library/shell.md「导航的组成只有一条
+   * 报告声明的 `navigation: false`(docs/feature/reports/README.md「导航的组成只有一条
    * 规则」):该页退出导航,外壳不为它渲染 tab。这份列表本身不是导航列表——它同时是页内容块与
    * `#/page/<id>` 路由的键,所以退出导航的页仍如实在列,只带上这个标记;缺省即在导航里。
    */
@@ -38,7 +38,7 @@ export interface ViewReportPageMeta {
 }
 
 /**
- * 规范化后的报告外壳声明(docs/feature/reports/library/shell.md):壳(导航)由前端
+ * 规范化后的报告外壳声明(docs/feature/reports/README.md):壳(导航)由前端
  * 渲染,页内容消费 <template> 静态块。title 已走完回退链(def.title → 唯一且相同的快照 name →
  * 内置文案「Eval 运行结果 / Eval Record」),宿主落点只有浏览器 <title>(文档单例);
  * 页内 hero 标题由 Hero 组件消费同一取值链,品牌是组件、宿主页头不渲染任何品牌位。

@@ -334,7 +334,7 @@ function spanKind(span: TraceSpan): string {
 /**
  * span 列表 → 按 `parentSpanId` 保留采集侧层级的时间树;偏移换算成
  * `anchorOffsetMs + (startMs - t0)`,即挂载点起点加 span 相对时序
- * (docs/feature/reports/components/attempt-detail/presentation.md「自上而下有什么」)。
+ * (docs/feature/reports/README.md「自上而下有什么」)。
  */
 function spanTreeNodes(spans: readonly TraceSpan[], anchorOffsetMs: number, t0: number): WaterfallNode[] {
   if (spans.length === 0) return [];
@@ -508,7 +508,7 @@ function assertionToneClass(assertion: AssertionResult): string {
 
 /**
  * 一条 assertion 在展开区里的呈现:一行判定摘要,失败与 soft 项接一段 expected / received 正文
- * (docs/feature/reports/components/attempt-detail/presentation.md「源码行展开区里有什么」)。
+ * (docs/feature/reports/README.md「源码行展开区里有什么」)。
  */
 function assertionNodes(assertion: AssertionResult, key: string): ReportNode[] {
   const points =

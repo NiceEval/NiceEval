@@ -1,157 +1,55 @@
 ---
-title: "把报告站发布上线"
-sidebarTitle: "报告站上线"
-description: "把 .niceeval 直接提交进仓库、配一份排除运行时状态的 .gitignore,再用不装整仓依赖的 CI 脚本和 Vercel CLI,在打 tag 时把报告站发布上线。"
+title: "部署静态报告站"
+sidebarTitle: "部署报告站"
+description: "将 view --out 生成的自包含目录部署到任意静态托管服务。"
 ---
 
-[通过 CI 发布报告](/zh/tutorials/publish-report)讲的是用 `exportSample` 生成独立的 `SampleBundle` 提交进仓库,适合结果要脱离原始记录根、按需挑选证据的场景。这一页讲另一条更直接的路:把 `.niceeval` 原样提交进仓库(排除几类不该提交的运行时状态),用一份不依赖仓库自身 `node_modules` 的构建脚本,让 CI 只在你打 tag 时把它发布到 Vercel。这条路不做导出选择,适合单条 Attempt 的证据体积在实践中稳定可控的项目;想要一份和原始记录根解耦的独立目录,选前一条路。
+先用明确的 `niceeval view --latest --out` 或 `niceeval view --run <id> --out` 生成报告站，再部署该目录。报告站已经含有页面、宿主数据、下载项、内建精确 runtime 和 manifest；托管平台无需读取源 Record，也无需执行 NiceEval。
 
-## `.niceeval/` 里,哪些是站点要的数据
-
-`.niceeval/` 下同时混着结果数据和几类运行时状态,只有第一类是报告站要读的东西:
-
-- **`.niceeval/` 的 Record 事实**是评估结果本身——判定、断言、结构化错误与诊断随 Attempt 提交,事件、源码、trace 与 diff 以 Observation 保存。这是站点数据源。
-- **`.niceeval/locks/`** 是并发跑评估用例时的用例锁,一条 `(experiment, eval)` 一个心跳文件。持有者每 10 秒重写一次心跳,全部 Attempt 正常收尾后自己删掉锁,不需要手工清理。
-
-  被 `kill -9` 或断电打断的运行不会释放锁。心跳落后 30 秒即视为过期,下一次运行会自动接管。它是进程运行时状态,不是评估结果；提交进仓库只会让人读到一份早已作废的心跳文件。
-Invocation index 是外部 reducer projection（keyed by `invocationId`），与 `watch` / receipt 共享同一 identity 与 reducer；它不是 Record entity，也不公开物理目录，不属于站点数据。
-
-diff 单独说体积。Agent 一次工具调用能产生任意大的输出,diff 归因逐窗口保存、不做跨窗口压缩也不截断,单条 Attempt 的 diff 事实因此可能到上百 MB。它确实会被 `niceeval view` 用到——Attempt 详情页的"文件差异"区块经 diff Projector 读取它;但报告首页、实验对比这些聚合视图不需要它。缺失时"文件差异"区块如实显示证据未提供,不影响页面其余部分。Record evidence 一律经 API / Projector 读取，体积取舍由证据闭包决定，不由文件路径表达。
-
-## 推荐的 `.gitignore`
-
-```gitignore
-# .niceeval/ 提交进仓库,是报告站的数据源。只排除运行时状态:
-.niceeval/locks/         # 用例锁,进程运行时状态;强杀后的残留文件靠心跳过期自动接管,不用清理
+```sh
+npx niceeval view --latest --experiment checkout \
+  --out ./report-site \
+  --no-open
 ```
 
-其余 Record 事实与证据对象——Attempt payload、Observation stream、Claim、trace、源码——原样提交。
+需要发布特定运行时，使用 receipt 中的 Run ID：
 
-## CI 构建:不装整仓依赖
-
-评估用例相关的依赖(Docker / E2B SDK、各家 model provider)体积大且与报告构建无关,CI 没必要为了生成一个静态站跑一遍仓库自己的 `install`。做法是在临时目录单独装 `niceeval` 和它默认内建报告要用到的 `react`、`react-dom`,再把这份 `node_modules` 链接回仓库根:
-
-```bash
-#!/usr/bin/env bash
-# scripts/build-report.sh
-set -euo pipefail
-
-REPO="$PWD"
-BUILD_DIR=/tmp/niceeval-build
-
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-npm init -y >/dev/null
-npm i --no-audit --no-fund niceeval@latest react react-dom
-
-# Vercel 的 build cache 会把上一次部署的 node_modules 原样恢复到仓库根(里面是旧版
-# niceeval);ln -sfn 对已存在的目录会把链接建到目录内部而不是替换它,必须先清掉。
-# 本地跑这份脚本时不动真实 node_modules,直接拒绝,避免误删开发环境。
-if [ -e "$REPO/node_modules" ] && [ ! -L "$REPO/node_modules" ]; then
-  if [ "${VERCEL:-}" = "1" ]; then
-    rm -rf "$REPO/node_modules"
-  else
-    echo "refusing to replace real $REPO/node_modules; run in a clean clone" >&2
-    exit 1
-  fi
-fi
-ln -sfn "$BUILD_DIR/node_modules" "$REPO/node_modules"
-
-cd "$REPO"
-node_modules/.bin/niceeval view --record .niceeval --out site
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --out ./report-site \
+  --no-open
 ```
 
-链接回仓库根这一步不只是为了能在仓库根用相对路径 `node_modules/.bin/niceeval` 调用。后续如果传自定义 `--report reports/xxx.tsx`,`tsx` 会用仓库自己的 `tsconfig`(`jsx: "react-jsx"`)编译这个文件,文件里的 `import "niceeval/report"` 按文件位置解析。模块查找得从仓库根的 `node_modules` 找起。不管当下用不用自定义报告,这一步都值得做,省得以后加了自定义报告才发现构建脚本要重写。
+## CI 流程
 
-`vercel.json` 指向这份脚本,并跳过 Vercel 默认的 install 步骤:
+一个静态托管流程通常有三步：
 
-```json
-{
-  "installCommand": "echo 'skip: 报告构建自己装依赖,不用仓库的 node_modules'",
-  "buildCommand": "bash scripts/build-report.sh",
-  "outputDirectory": "site",
-  "git": {
-    "deploymentEnabled": false
-  }
-}
-```
+1. 运行 Experiment，并保留最后的 receipt。
+2. 用明确 Run 或明确 latest policy 运行 `view --out`。
+3. 将输出目录交给静态托管服务。
 
-`git.deploymentEnabled: false` 关掉 Vercel 对这个仓库的自动部署——不设它,Vercel 的原生 Git 集成会在每次 push 时自动构建部署,和下一节"只在打 tag 时发布"的意图冲突。
-
-## 只在打 tag 时发布
-
-`vercel.json` 关掉自动部署后,发布动作交给一条只在 push tag 时触发的 GitHub Actions workflow:
+GitHub Actions 的构建任务示例：
 
 ```yaml
-# .github/workflows/deploy-report.yml
-name: deploy-report
+- name: 生成报告站
+  run: npx niceeval view --latest --experiment checkout --out ./report-site --no-open
 
-on:
-  push:
-    tags:
-      - "v*"
-
-concurrency:
-  group: deploy-report
-  cancel-in-progress: false
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-    steps:
-      # push tags 事件默认检出 tag 指向的 commit,不需要额外指定 ref。
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - run: npm i -g vercel@latest
-
-      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+- name: 上传静态站点目录
+  uses: actions/upload-pages-artifact@v3
+  with:
+    path: ./report-site
 ```
 
-<Warning>
-  不要用 Vercel 的 Deploy Hook 替代这条 workflow。Deploy Hook 部署的是"触发那一刻分支上的最新 commit",不是 tag 指向的 commit——打完 tag 后如果分支上又有新提交,Hook 部署的会是那条新提交,线上内容和你发布的版本号对不上。这条 workflow 用 Vercel CLI 的 prebuilt 流程(`pull` → `build --prod` → `deploy --prebuilt --prod`),在 checkout 到 tag 之后才构建,发布内容与 tag 精确对应。
-</Warning>
+后续部署任务使用托管平台提供的发布步骤。无论使用 GitHub Pages、对象存储或其它静态托管服务，发布目标都是 `./report-site`，不是源 Record。
 
-<Steps>
-  <Step title="生成 VERCEL_ORG_ID 与 VERCEL_PROJECT_ID">
-    本地在项目根目录运行一次 `vercel link`,把项目关联到 Vercel;生成的 `.vercel/project.json` 里就是这两个值。
-  </Step>
-  <Step title="生成 VERCEL_TOKEN">
-    在 Vercel 账号的 Settings → Tokens 建一个新 token。
-  </Step>
-  <Step title="把三个值加进仓库 secrets">
-    `VERCEL_TOKEN`、`VERCEL_ORG_ID`、`VERCEL_PROJECT_ID` 三个都要配,workflow 里都用到了。
-  </Step>
-</Steps>
+## 发布前检查
 
-日常发布流程是:结果数据更新后提交并 push;确认线上要跟着换版本时,打一个 tag 并 push 到远程——这一步才真正触发部署。
+导出会列出所有页面、参数化页面、下载项与内建 runtime 文件，并写入 `StaticAssetManifest`。导出失败时不会发布半完成目录。`--out` 必须指向不存在的目录；更新内容时使用新的输出目录。
 
-```bash
-git tag v0.3.0
-git push origin v0.3.0
-```
+部署后用浏览器检查首页、参数化页面和下载项。站点在断网条件下也应正常显示，因为所有引用都是目录内的相对路径。
 
-## 接着看
+## 更新站点
 
-<CardGroup cols={2}>
-  <Card title="通过 CI 发布报告" icon="rotate-right" href="/zh/tutorials/publish-report">
-    另一条路:用 exportSample 生成独立的 SampleBundle 提交进仓库。
-  </Card>
-  <Card title="在 CI 中运行 NiceEval" icon="gear" href="/zh/tutorials/ci-integration">
-    把评估用例本身接进 GitHub Actions。
-  </Card>
-  <Card title="查看结果" icon="database" href="/zh/tutorials/viewing-results">
-    `niceeval view` 的本地用法与导出细节。
-  </Card>
-  <Card title="自定义报告" icon="flask" href="/zh/tutorials/custom-reports">
-    传给 `--report` 的报告文件怎么写。
-  </Card>
-</CardGroup>
+每次需要更新内容时，重新选择 Sample，导出到新的目录，再部署该目录。已发布目录表示那次导出时的固定 `ReportExecution`；它不会随着之后的 Record 编辑而变化。
+
+有关选择范围和导出内容，请阅读[发布静态报告](/zh/tutorials/publish-report)。

@@ -74,7 +74,7 @@ fix parent 或逆补丁、最早失败阶段，以及为什么这条 oracle 能�
 普通注释。这样 `feature:` 仍能回答“这条长流程归谁维护”，不会变成一串每次流程增减都要同步的标签。
 
 ```ts
-// feature: docs/feature/reports/show/json.md
+// feature: docs/feature/reports/README.md
 // regression: memory/show-json-pipe-truncated-at-128k.md
 // issue: https://github.com/owner/repo/issues/123  // 只有真实存在时才写
 test("show --json 经 pipe 仍交付完整文档", async () => {

@@ -71,7 +71,7 @@ if (!res.requestId) {
 }
 ```
 
-`progress` is not persisted; a diagnostic is saved with the Attempt and can be reviewed through its locator. If the HTTP connection fails or the response cannot be parsed, just throw — the runner records that the error occurred in `agent.run` and forms the `errored` Verdict Claim.
+`progress` is not persisted. A diagnostic is written to an Attempt-owned channel and can be reviewed on an Attempt detail page within a selected Run. If the HTTP connection fails or the response cannot be parsed, throw: the Runner records the error in `agent.run` and forms an `errored` Verdict in the `niceeval.verdict` channel.
 
 **This step unlocks**: `t.reply`, `t.messageIncludes()`, all the conversation material for the Judge, and **model comparison** on the Experiment side. `ctx.model` comes from the Experiment's `model`; the runner passes it through verbatim and the Adapter only forwards it. For integration tiers, see [Tier](/explanation/tier).
 

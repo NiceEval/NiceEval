@@ -30,7 +30,9 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-Each line gives you three things: the attempt locator (use `niceeval show @0123456789ABCDEFGHJKMNPQRS` to see the evidence written to disk), the Sandbox instance id, and the command to enter it. A kept Sandbox doesn't sit there burning resources — a Docker container stops on disk, an E2B microVM pauses billing, a Vercel Sandbox saves its filesystem. `niceeval sandbox enter` wakes it up, then opens a shell in `workdir`; when you exit the shell, the environment automatically goes back to sleep (pass `--leave-running` to keep it running instead). Once inside, you're looking at the environment exactly as it was when that attempt finished — run commands, browse files, reproduce the failure by hand.
+Each line gives you three things: an Attempt identity, the Sandbox instance ID, and the command to enter it. Inspect persisted evidence with `niceeval show --run <runId> --page attempt-<attemptId>`. A kept Sandbox does not sit there burning resources: a Docker container stops on disk, an E2B microVM pauses billing, and a Vercel Sandbox saves its filesystem.
+
+`niceeval sandbox enter` wakes the environment, then opens a shell in `workdir`. When you exit, it automatically returns to sleep; add `--leave-running` to keep it running. Inside, you see the environment as it was when that Attempt finished, so you can run commands, browse files, and reproduce the failure by hand.
 
 ## List and clean up
 

@@ -10,8 +10,8 @@ NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 ![NiceEval 产品架构总览](assets/architecture-overview.svg)
 
 四段职责是**单向数据流**。
-发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`， Assertion collector 把检查判断提交为带依据的 Assertion Claim。
-判定规则把执行证据与全部断言判断折叠成一个互斥的 Verdict Claim，Reporter 再消费该 Claim 与 `onRecord` 事实流。
+发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，Assertion collector 形成检查结果。
+判定规则把执行错误与全部断言折叠成一个互斥 Verdict，Record writer 再把这些当前业务事实写入具名通道。
 Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费 `Turn` 与显式材料。
 
 ## 模块分层
@@ -103,8 +103,8 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。
    ** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **指纹与结果沿用。
-   ** 对每个 eval 算 `(eval 源码闭包 + resolved 配置)` 指纹；带 `passed` / `failed` Verdict Claim 的历史 Attempt revision 逐条通过携带资格门后，才由本次 Run 的 Claim 与 `RunContribution` 采用。`errored` / `skipped` Verdict Claim 永不携带；历史 Attempt 始终留在 origin Run，既不复制也不重挂。
+3. **identity 与结果沿用。
+   ** 对每个 eval 计算带 domain 的 input/config identity。只有 Verdict 与 eligibility 都完整读取和完整解码、domain 与 value 相等、duration 与本次 policy 也通过资格门时，本次 Run 才用 carried Member 引用历史 Attempt。`errored` / `skipped` 永不自动携带；历史 Attempt 始终留在 origin Run，既不复制也不重挂。
    完整判据只见[缓存与携带](feature/experiments/cache.md)。
 4. **建 attempt 列表。
    ** 每个 eval × `attempts` 次 → 一批 attempt。
@@ -124,22 +124,21 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
    `t.send()` 驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、归一化成标准事件流。
    顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定;核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。
-   ** `test(t)` 跑完后从分类账取得各 send 区间的变更证据；固定 GraphRef 上的 diff Projector 再折叠其并集，供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与读取面使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中；不存在私有 `diff.json` 真源。
+   ** `test(t)` 跑完后从分类账取得各 send 区间的变更事实，折叠其并集，供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 Record diff 通道使用。fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **断言求值。
-   ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成带明确证据依据的 Assertion Claim。
+   ** `test(t)` 里写入的作用域断言、值断言与 Judge，连同手工校验命令的结果断言，全部形成结构化 assertion 结果。
 9. **判定。
-   ** 断言 Claim、执行错误 Observation 与跳过原因共同形成一个互斥的 Verdict Claim（`passed` / `failed` / `errored` / `skipped`，没有中间态）。这些 token 不改变 Attempt 的 `active` / `completed` / `abandoned` lifecycle。
+   ** assertion 结果、执行错误与跳过原因共同形成一个互斥 Verdict（`passed` / `failed` / `errored` / `skipped`，没有中间态），写入 planner-critical 的 `niceeval.verdict` 通道。
 10. **首过即停。
-    ** 若该 Attempt 形成 `passed` Verdict Claim 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
+   ** 若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 11. **收尾与留存。
     ** finally 里按 `SandboxAgent.teardown` → 两层作者 layer 已登记 cleanup(按全局准备顺序逆序)→ Provider finalizer 的顺序收尾。
-    收尾只能追加 Diagnostic Observation,不改 Verdict Claim;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
-    阶段词表以 [Record · Architecture 的 `LifecyclePhase` 闭集](feature/record/architecture.md)为唯一权威。
-12. **报告。
-    ** 每个 eval 收尾即在串行报告队列上回调 `onAttemptReceipt`(不阻塞执行池),回调携带 `AttemptReceiptSnapshot` 的窄身份、lifecycle 收束与穷尽 `RecordCommit`。Observation 与 Claim 追加进跨 Invocation / Experiment / Run 长期存在的 `.niceeval` RecordStore；每次提交产生不可变 GraphRef。
-    每个 Run 在该 Experiment 收尾后形成 `RunReceipt`，全部结束后回调 `onInvocationReceipt` 并返回不聚合宽结果的 `InvocationReceipt`。
+    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。
+12. **写 Record 与返回 receipt。
+    ** Runner 在 Attempt 自己的临时目录完整形成核心文件、通道和 blob，再以目录 rename 原子发布，并为 Run slot 写 Member。每个 Run 在初始 writer 释放所有权时写 `completedAt`；全部结束后返回不聚合宽结果的 `InvocationReceipt`。
+    Report 不参与采集或落盘。show/view 先形成 core-only Sample 与 ReportPlan，再由唯一 composition adapter 按需读取 ReportInput；一次 ReportExecution 同时服务终端、本机页面或静态导出。
 13. **退出码。
-    ** 有 `failed` Verdict Claim（含 `--strict` 下 soft 未达标而改判的）或 `errored` Verdict Claim → 非零退出;报告里两者分开列,供 CI 判红和诊断。
+    ** 有 `failed` Verdict（含 `--strict` 下 soft 未达标而改判的）或 `errored` Verdict → 非零退出；报告里两者分开列，供 CI 判红和诊断。
 
 ## 配置从代码来,凭据从进程变量来
 
@@ -164,13 +163,13 @@ CLI 启动时仍加载项目根的 `.env`(不改写已有进程变量)——那�
 
 三类错误被分开处理,避免一个 case 拖垮整批:
 
-- **断言失败** ——正常路径,形成 `failed` Verdict Claim,不抛。
-- **执行器异常**(超时、网络、沙箱起不来)——在单 eval 边界被捕获，写结构化执行错误 Observation 并形成 `errored` Verdict Claim；Attempt lifecycle 仍收束为 `completed` 或 `abandoned`，其余 eval 照跑。
-- **作者错误**(`test` 里抛了非断言异常)——同样写执行错误 Observation 与 `errored` Verdict Claim,不污染别人。
+- **断言失败** ——正常路径，形成 `failed` Verdict，不抛。
+- **执行器异常**(超时、网络、沙箱起不来)——在单 eval 边界被捕获，写结构化执行错误并形成 `errored` Verdict；其余 eval 照跑。
+- **作者错误**(`test` 里抛了非断言异常)——同样写执行错误与 `errored` Verdict，不污染别人。
 
 ## 相关阅读
 
-- [Record](feature/record/README.md) ——第 12 步提交的可验证 Record:原始事实、Sample 选择与 Reports 呈现。
+- [Record](feature/record/README.md) ——第 12 步写入的可编辑当前数据集、Sample 选择与 Reports 呈现。
 - [Runner](runner.md) ——调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) ——三层的契约。
 - [Assertions](./feature/assertions/README.md) ——检查、作用域与证据。

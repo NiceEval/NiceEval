@@ -3,7 +3,7 @@
 `docs/` 与 `docs-site/` 里所有手绘 SVG 按这一页画。
 色值、间距、字号在这里裁决一次，图里直接写死这些数。
 
-色值取自官方暗色主题 [Basalt](feature/reports/themes/basalt.md)（单源在 `src/report/theme.ts`）。
+色值取自官方暗色主题 [Basalt](feature/reports/README.md)（单源在 `src/report/theme.ts`）。
 图和 `niceeval view`、默认报告因此是同一个观感：近黑底、1px 细线、灰阶文字，颜色只在有语义时出现。
 
 ## 观感：默认无色

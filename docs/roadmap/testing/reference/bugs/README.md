@@ -51,7 +51,7 @@
 | DOM producer 与增强脚本的接缝静默腐烂 | [图表 tooltip 与退役列表增强](browser-enhancement-closure.md) | 复用真实 browser、领域寻址和用户动作闭环 | 用户侧 browser proof |
 | 文档 / example 没有作为真实包消费方执行 | [`runs` 与 `--reuse-sandbox` 漂移](public-contract-drift.md) | 复用 consumer world、候选包、真实 `cli()` 与 NDJSON 身份 | 用户侧 proof 加守护结构 |
 | release 返回后仍有旧异步写入到达 | [case lock 与 gate lease 心跳复活](lock-release-closure.md) | 复用私有 action 序列、两个真实进程与 NDJSON lock 事件 | 用户侧代表 proof 加共享 lease 单元 |
-| 内部近似字段被误当公开身份、证据或原因 | [diagnostic code 与 failure phase](diagnostic-identity.md)、[diff 证据三态](diff-evidence-boundary.md) | 复用 NDJSON 具名字段、真实 `show --diff` 与短文本 scrubbed golden | 用户侧 proof 加 feedback / 投影单元 |
+| 内部近似字段被误当公开身份、证据或原因 | [diagnostic code 与 failure phase](diagnostic-identity.md)、[diff 证据三态](diff-evidence-boundary.md) | 复用 NDJSON 具名字段、真实 Attempt diff 页面与短文本 scrubbed golden | 用户侧 proof 加 feedback / 投影单元 |
 | 静态站点没有在真实 URL 基底下闭合 | [无尾斜杠 attempt 与 artifact](hosting-base.md) | 复用 hosting matrix、浏览器领域下钻与网络诊断 | 用户侧 browser proof |
 
 ## 证据账本
@@ -92,8 +92,8 @@
 | failure phase 取最后生命周期 / `d3792749` | `eval.run` 错误显示 `assertions.evaluate`；普通 failed 被伪造 phase | lifecycle 与 verdict 测试分离，没有比较 error origin | 同一 NDJSON origin 关系 | outcome；errored 比 origin，failed 断省略 | 无 | 已由 feedback 单元与代表 CLI proof 归属 |
 | 无尾斜杠子路径下 attempt 全 404 / `f055aa67` | 点击 locator 只改 hash，dialog 不出现 | 本地 server 永远带斜杠；file URL 永远带文件名 | `hosting: clean-url-subpath`、真实 click / dialog | observe / outcome；列入口、请求 URL、HTTP 与截图 | 无 | unit 只算 base；必须保留浏览器 proof |
 | 同形 artifact fetch 404 / `f3dcb393` | 文件已导出，页面却误报 artifact 缺失 | 导出布局与 URL 纯函数分开正确，缺真实托管组合 | 同一 hosting proof 内断 source 内容 | outcome；dialog 可开但 artifact 请求失败 | 无 | 不另立 URL matcher，避免与 attempt 链接重复 |
-| `agent.setup` 文件污染 agent diff / `28758142` | Skill / 新建 AGENTS.md 被算成 agent 产出，既有 `notInDiff()` 误红 | fake sandbox 只断写过 `.git/info/exclude` 命令，没有真实 attempt 的最终 diff | 既有 Eval gate、真实 `show --diff` 与 scrubbed golden | outcome / observe；列 gate、locator 与实际路径清单 | 无 | 已有 AGENTS.md 不能整体排除；真实修改必须继续可见 |
-| 零改动 diff 被误报无证据 / `2b81795f` | artifact 存在却显示 `diff unavailable` | 投影错误复用了“是否值得推荐”的 `capabilities.diff`；修复测试只走纯 renderer | 同一 `show --diff` 的公开三态短文本 | observe；区分 artifact 缺失与 files 为空 | 无 | 不新增内部 capability 读面 |
+| `agent.setup` 文件污染 agent diff / `28758142` | Skill / 新建 AGENTS.md 被算成 agent 产出，既有 `notInDiff()` 误红 | fake sandbox 只断写过 `.git/info/exclude` 命令，没有真实 attempt 的最终 diff | 既有 Eval gate、真实 Attempt diff 页面与 scrubbed golden | outcome / observe；列 gate、Run / Attempt identity 与实际路径清单 | 无 | 已有 AGENTS.md 不能整体排除；真实修改必须继续可见 |
+| 零改动 diff 被误报无证据 / `2b81795f` | artifact 存在却显示 `diff unavailable` | 投影错误复用了“是否值得推荐”的 `capabilities.diff`；修复测试只走纯 renderer | 同一 Attempt diff 页面的公开三态短文本 | observe；区分 artifact 缺失与 files 为空 | 无 | 不新增内部 capability 读面 |
 | marketplace add 注册名与配置名不一致 / `5e7549eb` | add exit 0 后，plugin install 才以错误名字间接失败 | fake CLI 不读取真实仓库 manifest；记入 memory 时尚未修 | 隔离真实 consumer world、真 CLI、add 后 identity readback | invoke；同时列 expected / actual marketplace 名 | 无 | 外部 CLI E2E 需网络 / pinned repo，普通 PR 可降级为定期 lane |
 | Codex plugin list JSON 形状猜错 / `07416e68` | 真实安装的 `resolvedVersion` 恒缺失，原 gate 又因 `brief(undefined)` 二次崩溃 | canned response 使用不存在的 `{ plugins }` / `id` 形状，测试与实现共同猜错 | 既有 native-plugin Eval gate、真实 consumer world；parser contract case | outcome；列 plugin identity、pinned version、locator；预览不再崩 | 无 | 真实外部 proof 保留一个代表版本，其余 adapter 走 contract case |
 | Report 迁移重算错误通过率 / `d0b6718`，修复 `f98713ae` | 页面正常但把两级聚合 83.3% 显示成 attempt 比例 75% | 渲染 smoke 只证明能显示；没有让三种公式给不同答案的 fixture | 领域 summary metric、精确值、text / web `toEqualObserved()` | observe / outcome；列输入桶、独立推导与两面实际值 | 无 | fixture 必须保持非对称，禁止从候选 compute import oracle |

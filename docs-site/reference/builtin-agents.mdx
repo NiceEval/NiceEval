@@ -14,7 +14,7 @@ The three built-in sandbox agents (`claude-code`, `codex`, `bub`) do not impleme
 | Event stream completeness | The whole scoped assertion set: `calledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `messageIncludes` / `noFailedActions` / `event` / `eventOrder`, etc.; **negative assertions (`notCalledTool` and friends) are only trustworthy with a complete event stream** |
 | Session continuation | Cross-turn memory assertions, `t.newSession()` session isolation |
 | HITL (human in the loop) | `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()` |
-| `tracing` | trace Projection, the call waterfall in `niceeval view` |
+| `tracing` | trace decoding, the call waterfall in `niceeval view` |
 
 ## What each built-in agent implements
 
@@ -37,7 +37,7 @@ None of the three built-in sandbox agents currently support HITL: their `send` o
 - Connection: spawns `claude --print --dangerously-skip-permissions` in the Sandbox and reads back the latest transcript from `~/.claude/projects/**/*.jsonl`.
 - Session continuation: appends `--resume <id>` when `ctx.session.id` has a value; the session id parsed from the transcript is written back via `ctx.session.capture()`.
 - Auth: `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL`; configuration options are listed under `ClaudeCodeConfig` below.
-- `tracing` is configured via the claude CLI's native OTLP trace spans (beta), protocol `http/protobuf`: setting `CLAUDE_CODE_ENABLE_TELEMETRY` and `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` (a beta toggle, must be explicitly enabled) in env hands the endpoint to the CLI; The trace Projection shows a waterfall at the interaction / llm_request / tool level.
+- `tracing` is configured via the claude CLI's native OTLP trace spans (beta), protocol `http/protobuf`: setting `CLAUDE_CODE_ENABLE_TELEMETRY` and `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA` (a beta toggle, must be explicitly enabled) in env hands the endpoint to the CLI; trace decoding shows a waterfall at the interaction / llm_request / tool level.
 
 ### codex
 

@@ -70,7 +70,7 @@ export interface AttemptMetric<Name extends string = string> {
   /**
    * 指标值的自然边界(如通过率 0–1、成本下界 0)。图轴呼吸边距不越过声明的边界——
    * 贴边数据点如实落在框线上(如通过率 100%),那是指标的自然边界,不是裁剪
-   * (docs/feature/reports/components/charts/README.md「值域」)。
+   * (docs/feature/reports/README.md「值域」)。
    */
   bounds?: { min?: number; max?: number };
   /**
@@ -133,7 +133,7 @@ export type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
 /**
  * series 类选项(Scatter / Line / SampleOverview)的输入:单维度,或
  * 非空数组解析为复合维度——name 依声明顺序以 ` × ` 连接,每个 attempt 的值为各成员显示键
- * 以 ` · ` 连接,任一成员缺失沿用 `(missing)` 显示键参与连接(docs/feature/reports/library/measures.md)。
+ * 以 ` · ` 连接,任一成员缺失沿用 `(missing)` 显示键参与连接(docs/feature/reports/README.md)。
  */
 export type SeriesInput = DimensionInput | readonly [DimensionInput, ...DimensionInput[]];
 
@@ -171,12 +171,12 @@ export interface MetricColumn {
   unit?: string;
   /** 渲染提示:排序方向、轴向、涨跌配色。 */
   better?: "higher" | "lower";
-  /** = metric.bounds,原样投影;图轴值域推定读这里(docs/feature/reports/components/charts/README.md「值域」)。 */
+  /** = metric.bounds,原样投影;图轴值域推定读这里(docs/feature/reports/README.md「值域」)。 */
   bounds?: { min?: number; max?: number };
 }
 
 /**
- * 通用读数投影(docs/feature/reports/library/measures.md):本次选择的 Dimension + AttemptMetric
+ * 通用读数投影(docs/feature/reports/README.md):本次选择的 Dimension + AttemptMetric
  * 组成的按需 Dataset。Chart / Table 只按字段名绑定，不重新读取 Record。
  */
 export interface DatasetField {
@@ -260,7 +260,7 @@ export interface ScoreboardData {
 }
 
 /**
- * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/calculations.md)。`verdict` / `totalScore` 用与默认报告同一套题目级判定口径(`totalScore` 取各
+ * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/README.md)。`verdict` / `totalScore` 用与默认报告同一套题目级判定口径(`totalScore` 取各
  * attempt 的均值);`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的**合计**,
  * 不是均值。
  */
@@ -370,7 +370,7 @@ export interface VerdictTally {
 /**
  * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
  * (同一个 experiment 或多个 experiment 并排都可能形成 mixed)。是定义期事实
- * (`EvalDescriptor.evaluationKind`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
+ * (`EvalDescriptor.evaluationKind`),不依赖 attempt 执行结果(docs/feature/reports/README.md
  * 「题型构成与主读数」)。
  */
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
@@ -378,7 +378,7 @@ export type EvaluationKindComposition = "pass" | "points" | "mixed";
 /**
  * 一个范围的摘要:快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端通过率
  * 和总成本。eval 的身份键是 experimentId + evalId;data 恒携带两级计票,渲染面显示哪一级
- * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/components/summaries/sample-summary.md)。
+ * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/README.md)。
  */
 export interface SampleSummaryContent {
   /** 贡献当前数据的快照时间范围;空范围为 null,不编造当前时间。 */
@@ -410,7 +410,7 @@ export interface SampleSummaryContent {
 // ───────────────────────── 站点组件(Hero / CopyFixPrompt / TraceWaterfall)─────────────────────────
 
 /**
- * `HeroCard` 的数据(docs/feature/reports/components/site/hero-card.md):站点标题区的
+ * `HeroCard` 的数据(docs/feature/reports/README.md):站点标题区的
  * 运行 meta——最后运行时间与快照合成来源。标题不在 data 里,它是站点声明与 Sample 的合成物,
  * 经 `HeroCardProps.title` 传入。
  */
@@ -422,7 +422,7 @@ export interface HeroData {
 }
 
 /**
- * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/library.md):
+ * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/README.md):
  * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Run 本体、`evals` 或
  * `AttemptHandle`,避免把文件读取能力拖进浏览器边界。
  */
@@ -440,7 +440,7 @@ export type SnapshotDiagnosticsData = readonly SnapshotDiagnosticsItem[];
 
 /**
  * `CopyFixPrompt` 的数据:resolve 期算好的修复 prompt 全文与参与的失败数
- * (docs/feature/reports/components/summaries/sample-fix-prompt.md)。
+ * (docs/feature/reports/README.md)。
  */
 export interface CopyFixPromptData {
   /** 修复 prompt 全文;失败逐条含 eval id、主失败摘要与 attempt 下钻命令。 */
@@ -591,7 +591,7 @@ export interface ExperimentListItem {
 // ───────────────────────── Experiment 详情组件族 ─────────────────────────
 
 /**
- * `ExperimentDetails` 的 data(docs/feature/reports/components/experiment-detail/README.md):
+ * `ExperimentDetails` 的 data(docs/feature/reports/README.md):
  * 六区块共享同一份转换结果。`experiment` 就是收窄到单个 experiment 后的 `experimentListData`
  * 的那一项——实验身份、读数摘要、结果构成、题目清单与覆盖缺口都是它的字段,不重复搬一份;
  * `catchUpCommand` / `notices` / `diagnostics` 是这个组件独有的三块:补跑命令、experiment
@@ -610,7 +610,7 @@ export interface ExperimentDetailsData {
 
 // ───────────────────────── Attempt 详情组件族 ─────────────────────────
 //
-// 11 个叶子组件的 data 契约(docs/feature/reports/components/attempt-detail/README.md)。每个都由
+// 11 个叶子组件的 data 契约(docs/feature/reports/README.md)。每个都由
 // 同名 `attempt*Data(evidence: AttemptEvidence)` 同步派生,不读文件、不 fetch——
 // loadAttemptEvidence 已经一次性装配好全部证据。`AttemptSummary` 恒非空;其余在对应
 // 能力位为空时函数返回 null,两面渲染为空输出。
@@ -640,7 +640,7 @@ export interface AttemptSummaryData {
  * `commandEvidenceHint` 只在 `error.message` 疑似只剩某条非零命令 stdout/stderr 的截断尾部
  * (message 是该字段去首尾空白后的真严格后缀)且存在失败命令证据时为 `true`——两面渲染据此在
  * 错误摘要后提示 `failed command evidence: niceeval show <locator> --execution`
- * (docs/feature/reports/show/execution.md)。
+ * (docs/feature/reports/README.md)。
  */
 export interface AttemptErrorData extends AttemptError {
   /** text 面拼 `niceeval show <locator> --execution` 提示命令用;web 面不需要。 */
@@ -744,7 +744,7 @@ export interface AttemptDiagnosticsData {
 
 /**
  * `UsageTable` 的 data:判定、轮数、工具调用数、token 拆分与成本摊成的单行用量摘要;组装口径单源
- * 见 docs/feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源。identity 字段
+ * 当前目标契约见 docs/feature/reports/README.md。identity 字段
  * (`locator`/`experimentId`/`evalId`/`attempt`/`verdict`)恒有——它们不是「usage 有没有」的一部分,
  * 是这一行归属哪个 attempt 的身份。其余字段各自独立地只在事实真实存在时出现:
  *

@@ -1,9 +1,9 @@
 // 排版原语 Row / Col / Grid / Section / Stat / Text / Markdown / Style / Tabs / Tab / Table:十一个内置
-// 双面组件,没有特殊机制(docs/feature/reports/library/layout.md)。web 面是普通 React 渲染;
+// 双面组件,没有特殊机制(docs/feature/reports/README.md)。web 面是普通 React 渲染;
 // text 面用 ctx.render(child, 子宽) 显式传宽。Style 注入页级全局 CSS(树位置只决定声明
 // 顺序),text 面渲染为空。Table 是自定义表的标准件,官方表状组件的 text 面也建在它上面。
 // Grid / Stat 的语义层(normalizeGrid 展平校验、text 面的 TextGridPlan 排版)在
-// ./grid-layout.ts(docs/feature/reports/architecture.md「排版原语的语义层与面内布局」);
+// ./grid-layout.ts(docs/feature/reports/README.md「排版原语的语义层与面内布局」);
 // 本文件只声明两面适配,不重复那份算术。
 
 import type { CSSProperties, ReactNode } from "react";
@@ -732,7 +732,7 @@ function validatedTable(
 /**
  * 行形状与列集同源:每一行(含 group / placeholder 与各层子行)的 cells key 集合
  * 等于列集。不适用的列显式填 notApplicable,不靠缺格回落成 `—`
- * (docs/feature/reports/components/primitives/table.md「Content 协议」)。
+ * (docs/feature/reports/README.md「Content 协议」)。
  */
 function validateRowShapes(rows: readonly TableContentRow[], columnKeys: ReadonlySet<string>): void {
   for (const row of rows) {
@@ -810,7 +810,7 @@ function renderCellWeb(
       );
     case "locator": {
       // 判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
-      // (docs/feature/reports/components/summaries/experiment-table.md)。
+      // (docs/feature/reports/README.md)。
       const verdict = cell.verdict;
       const className = cx(
         "niceeval-locator",

@@ -1,12 +1,10 @@
 # Record 用例
 
-契约单源始终在 [Library](../library.md) 与 [CLI](../cli.md)。
-这里按用户目标串起完整路径，不重复定义 Record、LiveRecord 或 Projector 类型。
+这里按写入者的目标串起路径。字段、目录、读取状态和错误的唯一正文分别是 [Architecture](../architecture.md) 与 [Library](../library.md)。
 
 | 用户目标 | 进入 |
 |---|---|
-| 另开终端查看正在运行的评估 | [运行中旁路查看](watch-while-running.md) |
-| 用 TypeScript 脚本复核一条历史 Attempt | [从脚本复核事实](audit-from-script.md) |
-| 把第三方 Runner、Adapter 或判断 owner 接入 Record | [把运行事实写入 Record](produce-runtime-facts.md) |
+| 让 Runner 或第三方 harness 写入一轮运行事实 | [写入运行事实](produce-runtime-facts.md) |
+| 给未来功能增加字段或新事实，同时控制兼容性影响 | [未来功能怎样不扩张核心格式](未来功能不扩张核心格式.md) |
 
-选择 Attempt 范围进入 [Sample](../../sample/use-case/README.md)；导出站点进入 [Reports 用例](../../reports/use-case/README.md)。
+选择可比较对象进入 [Sample](../../sample/README.md)。终端与网页呈现进入 [Reports](../../reports/README.md)。

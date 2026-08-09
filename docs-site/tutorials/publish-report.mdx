@@ -1,170 +1,58 @@
 ---
-title: "Publish a report through CI"
-sidebarTitle: "Publish via CI"
-description: "Pick a fixed selection, export the Sample as an auditable SampleBundle for downstream consumers, or export the report site directly from a Record Store root with view --out; CI builds with a single view --record."
+title: "Publish a Static Report"
+sidebarTitle: "Publish a Static Report"
+description: "Use view --out to export a self-contained report site that opens offline and is separate from its source Record."
 ---
 
-`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)). `view --out` goes through the public `exportReport()`: it consumes one fixed Sample and exports a Report artifact — not a Record copy, and `openRecord()` cannot open it again.
+`niceeval view --latest --out <directory>`, or an explicit `niceeval view --run <id> --out <directory>`, selects a core-only Sample from a quiescent Record, builds ReportInput as planned, executes the Report once, and writes a self-contained static site. It is the only export path for sharing results.
 
-Publishing through CI only requires getting the result data into the build machine's hands. Two paths: pass a `.niceeval/` copy as a CI artifact (or commit it to the repo directly) and run `view --record <data root> --out` on it; or export a fixed selection as a `SampleBundle` for downstream analysis — a `SampleBundle` is not a Record, and `--record` does not accept it.
-
-## Picking a fixed selection and exporting a SampleBundle
-
-To hand an auditable sample to a colleague or downstream analysis (not to `view --record`), pin a `RecordGraphRef`, materialize a fixed Sample, and write it into a standalone `SampleBundleStore`. Create `scripts/export-sample.ts` (the project's evals and config are already TypeScript, so the script uses `.ts` too, and runs directly via `tsx`):
-
-```javascript
-import { rm } from "node:fs/promises";
-import {
-  createRecordSourceSet,
-  openRecord,
-  openRecordStore,
-} from "niceeval/record";
-import {
-  createSampleBundleStore,
-  exportSample,
-  materializeSample,
-  openSampleBundle,
-} from "niceeval/sample";
-
-const output = "sample-data";
-await using recordStore = await openRecordStore(".niceeval");
-await using record = await openRecord(recordStore); // pin this head once
-const sample = await materializeSample(record, {
-  runs: ["compare/candidate"],                      // explicit full-ID arrays: runs / evals / experiments
-});
-
-await rm(output, { recursive: true, force: true });
-await using sources = await createRecordSourceSet([record]);
-await using bundleStore = await createSampleBundleStore(output);
-const bundleRef = await exportSample(sample, {
-  sources,
-  target: bundleStore,
-});
-
-const bundle = await openSampleBundle(bundleStore, bundleRef);  // reads only what was copied
-console.log(bundle.ref, bundle.sample.members.length);
+```sh
+npx niceeval view --latest --experiment checkout \
+  --out ./report-site \
+  --no-open
 ```
 
-`materializeSample()` only reads the current Contributions of the selected Runs in the fixed Graph and materializes each slot as a member; when the writer advances the head, reopen the Record and produce another Sample.
-`exportSample()` never rewrites anything; the Bundle keeps the full members, coverage, provenance, and membership proofs, and `openSampleBundle()` only reads what the bundle copied — it never re-runs the Record's current selection.
-**A `SampleBundle` is not a Record** — `view --record` does not accept it; the static site's data root must be a Record Store (`.niceeval/` or a copy of it).
+You can also export one explicit Run:
 
-## The build command is the export command
-
-```bash
-npx niceeval view --record .niceeval --out site
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --out ./report-site \
+  --no-open
 ```
 
-To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)):
+## Select the scope before exporting
 
-```bash
-npx niceeval view --record .niceeval --exp compare --out site
+`--run` and `--latest` form the Sample first. A Sample preserves the full expected-slot denominator and its `included`, `not-recorded`, `invalid`, and `excluded` states.
+
+The Report requests the facts it needs through its plan and uses them to build one fixed `ReportInput`. An unrequested channel does not affect the export. A requested invalid channel shows its named issue and fails that export.
+
+## What the export directory contains
+
+A successful directory includes:
+
+- Every planned page and parameterized page.
+- The current host data each page needs.
+- The exporter's exact built-in runtime, base styles, and fonts.
+- Already-produced downloads.
+- A `StaticAssetManifest` that exhaustively lists those files.
+
+The browser reads only the export directory. It does not access the network or source Record, and it does not need a later NiceEval installation. Before sharing the directory with a colleague or static host, open it in an offline browser to confirm its pages and downloads work.
+
+The target directory must not exist. The command never replaces or deletes an existing directory. To update a deployment, export to a new directory and let the hosting platform switch versions.
+
+## Generate it in CI
+
+Run evals, then export in the same job:
+
+```sh
+npx niceeval exp ci --json
+npx niceeval view --latest --experiment ci --out ./report-site --no-open
 ```
 
-`view` fails outright with a non-zero exit code on zero readable results — it never exports an empty report. If the data-root checkout is broken, or every stored fact is incompatible with the current niceeval's container version and gets skipped wholesale, the build fails and Vercel / GitHub Pages keeps the previous deployment. The error lists every skipped object with its reason, and for the version-incompatibility case also gives the `npx niceeval@<version> view` command that can view the old data directly.
+The final JSON line from the first command is its receipt. To pin the export to that Invocation, read its `runIds` and use `view --run <runId>` instead.
 
-## Publishing a custom report
+## Publish the directory
 
-Without `--report`, the published site is the default report's three pages (Report, Attempts, Traces). To switch to your own pages, pass a [`defineReport` report file](/tutorials/custom-reports) to `--report` — attempt detail (transcript, trace, code view) stays in the same site, and every number in the report drills into its corresponding evidence, exactly like local `view --report`:
+Give `./report-site` to your hosting provider as the static-site directory. Do not point the platform build at a source Record; it only needs to deploy the already generated directory.
 
-```bash
-npx niceeval view --record .niceeval --report reports/exam.tsx --out site
-```
-
-The report file is committed in the repo — edit the layout, push, and the live site updates. With the `vercel.json` / workflow below, just swap the build command for this one line; nothing else needs to change.
-
-## Connecting site analytics and third-party scripts
-
-To hook the published site up to Google Analytics, tracking pixels, or a comment widget, declare tags in the report file's `head` field. Copy the vendor's snippet field-for-field into an object — for GA4, the two `<script>` blocks the vendor gives you become two entries. Page content doesn't need to be rewritten: the default report is exported as `standard` from `niceeval/report/built-in`, and spreading its pages into your own gives you the default site as-is, plus your title and scripts:
-
-```tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-
-export default defineReport({
-  pages: [...standard.pages],
-  title: "Memory Evals",
-  head: [
-    { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },
-    {
-      tag: "script",
-      children: `
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-XXXX');
-      `,
-    },
-  ],
-});
-```
-
-There are only a few rules:
-
-- `tag` supports four values — `meta`, `link`, `script`, `style` — rendered into every page's `<head>` in declaration order. SEO meta, favicon, fonts, and JSON-LD all go through here.
-- An `attrs` value of `true` outputs a bare attribute (`async`, `defer`); a string outputs `key="value"`. For third-party scripts configured through `data-*` attributes (comments, tracking), copy the attributes straight in.
-- `src` / `href` values that are `https://` external links are kept as-is; relative paths like `./favicon.svg` get copied automatically into the exported site's `assets/` and have their reference rewritten.
-- Scripts are published verbatim and execute in the reader's browser — don't embed secrets in them.
-
-```tsx
-// A tracking script configured through data-*: copy the attributes straight in
-{ tag: "script", attrs: { async: true, src: "https://tracker.example/t.js", "data-project": "memory-evals" } }
-```
-
-## Connecting a hosting platform
-
-**Vercel**: drop a `vercel.json` at the repo root; after importing the project, push to deploy.
-
-```json
-{
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --record .niceeval --out site",
-  "outputDirectory": "site"
-}
-```
-
-**GitHub Pages**: in the repo's Settings → Pages, set Source to GitHub Actions, then add a workflow:
-
-```yaml
-# .github/workflows/report.yml
-name: report
-on:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --record .niceeval --out site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
-
-The daily loop: run the eval locally, run `npx tsx scripts/export-sample.ts` to produce the downstream `sample-data/` when needed, and build the site with `npx niceeval view --record .niceeval --out site`, deploying `site/`. `view --out` only copies the evidence closure the Plan consumes; narrowing flags like `--exp` decide what leaves the site. Your local `.niceeval/` can keep the full history and diffs — there is no need to cut away debugging evidence just to satisfy a Git limit.
-
-## What gets published is the planned evidence
-
-The full site export carries the transcript, source, and trace evidence closure the Plan consumes. Oversized values carry structured truncation markers. `view --out` goes through `exportReport()` and produces a Report artifact — it never rewrites content, and the output is not a Record copy that `openRecord()` can open. Anyone can browse the published site down to prompts and tool outputs, so confirm the results are fit to make public before you publish to the public internet. The serialization policy only redacts known credentials — command stdout / stderr can be recorded as Observation evidence — so review all evidence by hand before publishing; do not assume sensitive content is filtered automatically.
+Deploy that directory with your hosting provider's normal static-site workflow.

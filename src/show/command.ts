@@ -1,4 +1,4 @@
-// show 专属的可复制命令拼装:页索引 / 组索引共用的携带规则(docs/feature/reports/show/reports.md
+// show 专属的可复制命令拼装:页索引 / 组索引共用的携带规则(docs/feature/reports/README.md
 // 「索引命令携带完整上下文」)。这不是两宿主共用的报告 runtime 部分——view 走网页路由,不生成
 // 终端命令——所以住在 show 自己这一侧,不进 src/report/runtime/host.ts。
 

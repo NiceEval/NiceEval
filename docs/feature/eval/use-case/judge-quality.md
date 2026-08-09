@@ -43,7 +43,7 @@ LLM-as-judge 用独立裁判模型打 0.
 
 ## 边界
 
-- 找不到模型或 API key 时，judge 断言形成 `unavailable` Assertion Claim，并使该 Attempt 形成 `errored` Verdict Claim。
+- 找不到模型或 API key 时，judge 断言形成 `unavailable` Assertion result，并使该 Attempt 形成 `errored` Verdict。
   写下的 rubric 默认要求可评估，缺 key 直接红，不会静默消失；Attempt lifecycle 不使用 verdict token。
   确实允许缺席的 rubric 显式链 `.optional()`。
 - 判断「必须提到某个词」这类可精确表达的规则，用 `includes` 等 matcher，不要浪费一次 judge 调用。

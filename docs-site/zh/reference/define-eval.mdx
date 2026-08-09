@@ -255,7 +255,7 @@ log(msg: string): void;
 skip(reason: string): never;
 ```
 
-立即中止本评估用例,形成 `skipped` Verdict Claim;`reason` 不能为空。
+立即中止本评估用例,在 `niceeval.verdict` 通道形成 `skipped` Verdict;`reason` 不能为空。
 
 #### `check`
 

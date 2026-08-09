@@ -1,4 +1,4 @@
-// Dataset 形状校验与 TableContent 投影(docs/feature/reports/library/measures.md)。
+// Dataset 形状校验与 TableContent 投影(docs/feature/reports/README.md)。
 
 import type { Cell } from "../definition/cell.ts";
 import type { Dataset, DatasetField, DatasetRow, MetricValue } from "./types.ts";

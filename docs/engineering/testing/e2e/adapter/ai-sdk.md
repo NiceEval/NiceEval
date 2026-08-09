@@ -22,7 +22,7 @@ Repo ID 是 `adapter/ai-sdk`；manifest 声明 `areas: ["adapter"]`、live lanes
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
   usage 非空这条机制事实由 `results`仓库承担（本仓库的 UI Message Stream 协议帧不带 token 计数，属于诚实的`unavailable`，不在此断言）。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`执行树出现不带命名空间的工具名调用节点，节点带 span 时间注释。
+- **CLI 读回**：`show --run <runId>` 的默认页面列出本仓库 Eval 与 Verdict；进入已规划的 Attempt execution 页面后，执行树出现不带命名空间的工具名调用节点，节点带 span 时间注释。
 - **OTel**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`），span 发到 `niceeval.config.ts` 的 `telemetry.port` 固定端口。执行树的时间注释就是写入成立的展示证明；本仓库承担矩阵中 direct-agent telemetry 路径的证明。
-  `show --timing` 的 per-turn OTel 子树必须与事件调用靠显式 correlation 对齐；断裂按协议回归判红。
+  已规划 timing 页面的 per-turn OTel 子树必须与事件调用靠显式 correlation 对齐；断裂按协议回归判红。
   OTel 只生成 trace，不成为事件出处；判分断言仍只读事件流。

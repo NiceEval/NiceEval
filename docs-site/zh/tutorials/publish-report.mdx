@@ -1,176 +1,58 @@
 ---
-title: "通过 CI 发布报告"
-sidebarTitle: "CI 发布报告"
-description: "固定选择后把 Sample 导出成可验证的 SampleBundle 交给下游,或直接在 Record Store 根上用 view --out 导出报告站;CI 用一行 view --record 构建。"
+title: "发布静态报告"
+sidebarTitle: "发布静态报告"
+description: "用 view --out 导出一个可离线打开、与源 Record 脱离的自包含报告站。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、Run 列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。`view --out` 走的是公开 `exportReport()`：它消费一份固定 Sample，导出 Report artifact——不是 Record 副本，也不能再被 `openRecord()` 打开。
+`niceeval view --latest --out <目录>` 或显式 `niceeval view --run <id> --out <目录>` 从停稳的 Record 选择 core-only Sample，按计划形成 `ReportInput` 并执行一次 Report，再写出自包含静态站。它是分享结果的唯一导出路径。
 
-CI 发布只需要让记录数据到构建机手里。可以把 `.niceeval/` 副本作为 CI artifact 传入，或提交进仓库（见[把报告站发布上线](/zh/tutorials/deploy-report-site)）。构建机再对它运行 `view --record <数据根> --out`。
-
-也可以把固定选择导出成 `SampleBundle`，交给下游分析。`SampleBundle` 不是 Record，`--record` 不接受它。
-
-## 固定选择并导出 SampleBundle
-
-要交付一份可验证的样本给同事或下游分析（不是给 `view --record`），先固定 `RecordGraphRef` 并生成固定 Sample，再写入独立 `SampleBundleStore`。新建 `scripts/export-sample.ts`（项目里评估用例和配置本来就是 TypeScript，脚本也用 `.ts`，由 `tsx` 直接运行）：
-
-```javascript
-import { rm } from "node:fs/promises";
-import {
-  createRecordSourceSet,
-  openRecord,
-  openRecordStore,
-} from "niceeval/record";
-import {
-  createSampleBundleStore,
-  exportSample,
-  materializeSample,
-  openSampleBundle,
-} from "niceeval/sample";
-
-const output = "sample-data";
-await using recordStore = await openRecordStore(".niceeval");
-await using record = await openRecord(recordStore); // 固定这一次 head
-const sample = await materializeSample(record, {
-  runs: ["compare/candidate"],                      // 明确完整 ID 数组:runs / evals / experiments
-});
-
-await rm(output, { recursive: true, force: true });
-await using sources = await createRecordSourceSet([record]);
-await using bundleStore = await createSampleBundleStore(output);
-const bundleRef = await exportSample(sample, {
-  sources,
-  target: bundleStore,
-});
-
-const bundle = await openSampleBundle(bundleStore, bundleRef);  // 只读已复制内容
-console.log(bundle.ref, bundle.sample.members.length);
+```sh
+npx niceeval view --latest --experiment checkout \
+  --out ./report-site \
+  --no-open
 ```
 
-`materializeSample()` 只读取固定 Graph 中选定 Run 的 current Contribution，将每个 slot 写成成员。writer 推进 head 后，重新打开 Record 再生成一份 Sample。
+也可以导出明确 Run：
 
-`exportSample()` 不改写任何内容。Bundle 保存完整 members、coverage、provenance 与 membership proof；`openSampleBundle()` 只读 bundle 已复制的部分，不重新执行 Record 的 current 选择。
-
-**`SampleBundle` 不是 Record**——`view --record` 不接受它；静态站的数据根必须是 Record Store（`.niceeval/` 或它的副本）。
-
-## 构建命令就是导出命令
-
-```bash
-npx niceeval view --record .niceeval --out site
+```sh
+npx niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY \
+  --out ./report-site \
+  --no-open
 ```
 
-只发布一部分实验时,把收窄直接交给导出命令,页面和证据都只含收窄后的范围(见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管)):
+## 导出前选择范围
 
-```bash
-npx niceeval view --record .niceeval --exp compare --out site
+`--run` 与 `--latest` 先形成 Sample。Sample 保留完整 expected-slot 分母，以及 `included`、`not-recorded`、`invalid` 和 `excluded` 状态。
+
+Report 根据计划请求所需的 facts，并用这些值构造固定的 `ReportInput`。未请求的通道不会影响导出；被请求的无效通道会显示具名问题并使这次导出失败。
+
+## 导出目录包含什么
+
+成功的目录包括：
+
+- 全部已计划页面和参数化页面；
+- 页面所需的当前宿主数据；
+- exporter 内建的精确 runtime、基础样式和字体；
+- 已经生成的下载项；
+- 穷尽列出这些文件的 `StaticAssetManifest`。
+
+浏览器只读取导出目录。它不访问网络、不读取源 Record，也不需要之后安装 NiceEval。把目录交给同事或静态托管服务前，可以在断网浏览器中打开它确认页面与下载项可用。
+
+目标目录必须不存在。命令不会替换或删除已有目录；需要更新时请导出到一个新目录，再让部署平台切换版本。
+
+## 在 CI 中生成
+
+先运行评估，再在同一任务中导出：
+
+```sh
+npx niceeval exp ci --json
+npx niceeval view --latest --experiment ci --out ./report-site --no-open
 ```
 
-`view` 对零可读结果直接报错、非零退出,不会导出一张空报告——数据根 checkout 坏掉,或所有事实与当前 niceeval 的容器版本不兼容被整批跳过时,构建失败,Vercel / GitHub Pages 保留上一次部署。错误逐条列出被跳过的对象与原因,版本不兼容场景还给出能直接查看旧事实的 `npx niceeval@<版本> view` 命令。
+第一条命令的最后一条 JSON 是 receipt。需要固定到本次运行时，读取 receipt 的 `runIds`，并改用 `view --run <runId>`。
 
-## 发布自定义报告
+## 发布目录
 
-不传 `--report` 时,发布出来的站点就是默认报告的三个页面(报告、Attempts、追踪)。想换成自己的页面,把 [`defineReport` 报告文件](/zh/tutorials/custom-reports)传给 `--report` 就行——attempt 详情(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
+将 `./report-site` 作为静态站点目录交给你的托管平台。不要把平台构建步骤指向源 Record；平台只需要部署已经生成的目录。
 
-```bash
-npx niceeval view --record .niceeval --report reports/exam.tsx --out site
-```
-
-报告文件提交在仓库里,改完版面 push,线上就跟着更新。用下面的 `vercel.json` / workflow 时,把构建命令换成这一行即可,其余配置不用动。
-
-## 接站点分析与第三方脚本
-
-发布出去的站想挂 Google Analytics、埋点或评论组件,在报告文件的 `head` 字段里声明标签。厂商文档里的 snippet 逐字段照抄成对象就行——以 GA4 为例,官方给的两段 `<script>` 写成两个条目。页面内容不用重写:默认报告以 `standard` 为名从 `niceeval/report/built-in` 导出,把它的页展开进自己的 `pages` 就是原样的默认站点加上你的标题和脚本:
-
-```tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-
-export default defineReport({
-  pages: [...standard.pages],
-  title: "Memory Evals",
-  head: [
-    { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },
-    {
-      tag: "script",
-      children: `
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-XXXX');
-      `,
-    },
-  ],
-});
-```
-
-规则只有几条:
-
-- `tag` 支持 `meta`、`link`、`script`、`style` 四种,按声明顺序渲染进每一页的 `<head>`。SEO meta、favicon、字体、JSON-LD 都走这里。
-- `attrs` 的值写 `true` 输出无值属性(`async`、`defer`),写字符串输出 `key="value"`。靠 `data-*` 属性配置的第三方脚本(评论、埋点)直接把属性抄进来。
-- `src` / `href` 写 `https://` 外链时原样保留;写 `./favicon.svg` 这类相对路径时,文件会自动复制进导出站的 `assets/` 并改好引用。
-- 脚本会原样发布并在读者浏览器里执行,别在里面嵌密钥。
-
-```tsx
-// 靠 data-* 配置的埋点脚本:属性照抄
-{ tag: "script", attrs: { async: true, src: "https://tracker.example/t.js", "data-project": "memory-evals" } }
-```
-
-## 接托管平台
-
-**Vercel**:仓库根放一个 `vercel.json`,导入项目后 push 即部署。
-
-```json
-{
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --record .niceeval --out site",
-  "outputDirectory": "site"
-}
-```
-
-**GitHub Pages**:仓库 Settings → Pages 把 Source 设为 GitHub Actions,再加 workflow:
-
-```yaml
-# .github/workflows/report.yml
-name: report
-on:
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --record .niceeval --out site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
-
-日常循环是：本地跑评估用例，需要时运行 `npx tsx scripts/export-sample.ts`，生成给下游的 `sample-data/`。构建站时运行 `npx niceeval view --record .niceeval --out site`，再部署 `site/`。
-
-`view --out` 只复制 Plan 明确消费的 evidence closure；`--exp` 等收窄决定出站范围。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
-
-## 发布的是选中的证据
-
-整站导出会带上 Plan 消费的 transcript、源码和 trace 证据闭包。超大值带结构化截断标记。`view --out` 通过 `exportReport()` 生成 Report artifact，不改写任何内容；输出不是 Record 副本，不能被 `openRecord()` 打开。发布的站点谁都能翻到 prompt 和工具输出，发布到公网前确认结果内容适合公开。serialization policy 只对已知凭据做 redaction——命令 stdout / stderr 本身可以作为 Observation 证据进入 Record，所以发布前必须人工审查全部证据，不能假设敏感内容自动被过滤。
+部署方式见[部署报告站](/zh/tutorials/deploy-report-site)。

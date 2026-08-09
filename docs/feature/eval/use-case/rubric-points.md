@@ -39,7 +39,7 @@ export default defineScoreEval({
 
 1. **检查点给分用 `.points(n)`**：挂在任何断言上的条件给分，通过挣 `n` 分、不过挣 0。五个检查点各自独立——只配好运行条件、装好依赖的模型挣 2 分，全走通的挣 5 分，「做到几成」直接落在分上。
 2. **前置条件用 `t.require()`**：失败就地结束，后面的给分代码不执行，那些分**自然没挣到**。clone 都失败的模型这题挣 0 分——中止挣 0 是 agent 的责任，成立；这和基础设施故障是两回事（见边界）。得分点本身也能当前置：`t.calledTool(...).points(1).gate().stopOnFailure()` 读作「值 1 分，同时是硬要求，没做到就别往下跑」。
-3. **丢分不是失败**：得分点不影响判定，挂三条只是少挣三分，Verdict Claim 仍是 `passed`。计分制的 `failed` Verdict Claim 只有前置中止一个出处，它回答的是「这次的分数完不完整」；默认报告读的是分（3 vs 1），Attempt 详情里逐条红绿照常可看，「死在第几步」在那里下钻。Verdict token 不进入 Attempt lifecycle。
+3. **丢分不是失败**：得分点不影响判定，挂三条只是少挣三分，Verdict 仍是 `passed`。计分制的 `failed` Verdict 只有前置中止一个出处，它回答的是「这次的分数完不完整」；默认报告读的是分（3 vs 1），Attempt 详情里逐条红绿照常可看，「死在第几步」在那里下钻。Verdict token 不进入 Attempt lifecycle。
 
 ## 分值不等权时：rubric 大题
 
@@ -82,7 +82,7 @@ export default defineScoreEval({
 
 - **叠加不扣分**：分值非负（`.points(n)` 要求 `n > 0`，`t.score` 要求 `n ≥ 0`）。「做了坏事」不用负分——要「到这一步不成立就别往下跑了」写 `t.require(...)`，要「没做坏事算得分项」写正向检查点（`t.notCalledTool(...).points(1)`）。
 - **硬判定与中止正交**：`.gate()` 只决定 Verdict，不隐式改变执行顺序；`.stopOnFailure()` 才在该断言失败时停止后续代码。`t.require(x)` 是 `t.check(x).gate().stopOnFailure()` 的值断言快捷方式，两种题型一致。
-- **中止的 0 和基础设施的 `null` 严格分开**：前置失败后面挣 0 分是 agent 的责任；沙箱炸了、Judge 没 key 会形成 `errored` Verdict Claim，整题分数 `null`、不折成 0——评不了不是 agent 差。
+- **中止的 0 和基础设施的 `null` 严格分开**：前置失败后面挣 0 分是 agent 的责任；沙箱炸了、Judge 没 key 会形成 `errored` Verdict，整题分数 `null`、不折成 0——评不了不是 agent 差。
 - **题型即定义函数**：`defineScoreEval` 的 `t` 才有 `.points` / `t.score`，在 `defineEval` 里写给分是类型错误；`t.require` 与 `.stopOnFailure()` 两种题型都有。同一 experiment 可以混合题型，但通过率与总分始终分列，不相加。
 - 检查点是**独立可跑的题目**时不要用计分制，拆成多个 eval（[测试集从输入数组生成多条 eval](dataset-fanout.md)）——粒度来自更多的题，不是更细的分。
 

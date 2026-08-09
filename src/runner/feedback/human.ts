@@ -90,7 +90,7 @@ type HumanFingerprintComparison =
   | { kind: "changed"; deltas: readonly HumanFingerprintDelta[] }
   | { kind: "unexplained"; diagnostic: HumanFingerprintDiagnostic };
 
-/** live/结束面板的传输能力(docs/feature/reports/library/layout.md「区域框」):是 TTY 且
+/** live/结束面板的传输能力(docs/feature/reports/README.md「区域框」):是 TTY 且
  *  没有要求朴素输出(`NO_COLOR`)时才画框——`io.env` 而不是直接读 `process.env`,保持
  *  profile renderer 可用假 IO 确定性测试。 */
 function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: number } {

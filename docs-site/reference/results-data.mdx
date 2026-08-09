@@ -1,223 +1,94 @@
 ---
-title: "Read record data directly with niceeval/record"
+title: "Read Record Data"
 sidebarTitle: "Results Data API"
-description: "The data layer under reports: openRecord / openRecordGraph open a fixed Record root, RecordHandle reads Runs, Contributions, and Attempts, Projectors produce evidence-carrying read models, and materializeSample / exportSample / mirrorRecord handle selection and delivery."
+description: "Select a core-only Sample from a quiescent Record, then read current data through a ReportPlan."
 ---
 
-Under the conversion functions, components, and dual-render renderers used by [Custom Reports](/tutorials/custom-reports) sits one more layer: `niceeval/record`, the reader for a fixed Record root. Both official doors and every report read from this layer, with no private data channel; when an analysis cannot even be expressed in a report, drop to this layer and grab the data directly.
+A `Record` is editable current data under `.niceeval/record/`. It stores Runs, Members, Attempts, and their named channels. Read and write it only while the directory is quiescent.
 
-When to drop to this layer:
+This page explains the data boundary. To inspect results in the terminal or browser, read [Viewing Results](/tutorials/viewing-results). To define pages and calculations, read [Write a Custom Report](/tutorials/custom-reports).
 
-- **The analysis cannot be folded with `aggregate()` / `rollup()`.** Tables, matrices, scorecards, and scatter plots are all "folding"; distribution-style views (histograms, per-event analysis) are not folding — you have to traverse attempts yourself.
-- **Feeding results into your own system.** A data warehouse, alerting, an internal platform — they consume typed facts, not a disk layout.
-- **Auditing raw facts.** Verdicts, assertions, and diagnostics are stored as Claims, raw behavior as Observations; the read side projects on demand, never guessing and never fabricating.
+## Open a quiescent Record
 
-This layer only reads raw facts from a fixed revision; it holds no opinion of its own: no merging, no aggregating, no re-selecting by time. "How to view it" belongs to the reports and Samples above it.
+The library receives the actual Record root and does not append `.niceeval` or `record`. Open a reader, then form a Sample with an explicit Run selection.
 
-## Reading: `openRecord` and `openRecordGraph`
+```ts
+import { openRecordReader } from "niceeval/record";
+import { selectSample } from "niceeval/sample";
 
-One `.niceeval` is a **long-lived Record root** spanning Invocations, Experiments, and Runs. A Record is a `RecordSubject` on a frozen typed-object Graph: Run / Attempt / Observation stream / Claim payloads evolve independently, and every commit produces a new immutable Graph root that is updated atomically with the mutable metadata (head plus append-only committedRoots).
+let sample: Sample;
+{
+  await using reader = await openRecordReader({
+    root: ".niceeval/record",
+  });
 
-`openRecordStore(root)` opens the Store capability without choosing a revision. `openRecord(store)` then reads the current head once; `openRecordGraph(store, ref)` opens a specific revision. Both Record functions return a `RecordHandle`, and all child handles are pinned to the same `RecordGraphRef`:
-
-```typescript
-import { builtins, openRecord, openRecordGraph, openRecordStore } from "niceeval/record";
-
-await using store = await openRecordStore(".niceeval");
-await using record = await openRecord(store);
-
-record.ref;                        // RecordGraphRef: the revision this read is pinned to
-record.recordId;                   // the record identity
-
-for await (const run of record.runs()) { /* ... */ }
-for await (const attempt of record.attempts()) { /* ... */ }
-```
-
-An open handle never switches when an active writer advances the head. Call `openRecord(store)` again only when you intentionally accept the then-current head; save the `RecordGraphRef` and call `openRecordGraph(store, ref)` to reproduce an old receipt.
-
-### Locating an Attempt
-
-`resolveAttempt(locator)` follows the locator index in the currently fixed Graph. To diagnose late facts, explicitly open the Graph revision you intend to inspect and resolve the same locator there; the API never chooses a revision by time or silently replaces an existing Contribution:
-
-```typescript
-const attempt = await record.resolveAttempt(
-  "@01J8ZK3M6P4T7V9X2C5N8QW0RY",
-);
-```
-
-A locator is the 26-character Crockford encoding of the full 128-bit `attemptId`; the CLI writes `@` plus 26 characters.
-When the same locator points at a different graph or adopted revision, the read surface shows the full identity instead of merging them into one execution.
-When locators come from multiple explicitly opened Records, disambiguate with `recordId:@locator`.
-
-### Runs, Contributions, and Attempts
-
-```typescript
-for await (const run of record.runs()) {
-  run.runId;                       // this Run's identity
-  run.invocationId;                // the Invocation that created it
-  run.experimentId;
-  run.state;                       // "active" | "completed" | "incomplete" | "interrupted"
-
-  for await (const contribution of run.contributions()) {
-    contribution.mode;             // "executed" | "carried" | "accepted" | "renamed"
-    contribution.membershipSlot;
-    contribution.attempt;          // AttemptRef: full Graph, attemptId, locator, adopted node
-    contribution.basisClaims;      // the Claims the adoption was based on
-  }
+  sample = await selectSample(reader, {
+    kind: "runs",
+    runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
+  });
 }
 ```
 
-A Run lists the current Contribution of each membership slot through strong edges.
-`executed`, `carried`, `accepted`, and `renamed` are the same kind of membership fact: an Attempt always belongs to its origin Run, and the current Run only adopts it through a Contribution — execution facts are never copied.
+You can also use the `latest` policy. It selects the final completed Run for each matching Experiment; select unfinished Runs explicitly with `runIds`.
 
-```typescript
-const attempt = await record.resolveAttempt("@01J8ZK3M6P4T7V9X2C5N8QW0RY");
-
-attempt.identity;                  // attemptId, locator, originRunId, evalId, ordinal
-attempt.originRunId;               // the origin Run it always belongs to
-attempt.state;                     // "active" | "completed" | "abandoned"
-await attempt.provenance();        // ProvenanceSet: inputs, config, algorithm identity
-attempt.observations();            // ObservationSet: the raw fact stream, iterated continuously across segments
-await attempt.claims();            // ClaimSet: judgments made at the time, based on explicit evidence
-```
-
-`attempt.observations().events()` returns `ObservationRead` values ordered by sequence: `available` carries the event plus its `EvidenceRef`, `unavailable` carries all causes. The reader validates envelopes, sequences, and Claim references; unknown events are preserved as-is.
-Every Claim in `attempt.claims()` carries `basedOn` evidence references, combined with the current `RecordGraphRef` into `EvidenceRef`s on read-back.
-
-## Read models go through Projectors
-
-Verdict, assertion, execution tree, timing, usage, diff, and Verdict read surfaces do not branch on raw events directly — a **Projector** computes them deterministically from the same Record. Public Projectors can only be built with `defineAttemptProjector`; built-in projectors include at least `execution` / `timing` / `trace` / `usage` / `diff` / `assertions` / `verdict`:
-
-```typescript
-const verdict = await record.project(attempt, builtins.verdict);
-
-if (verdict.state === "available") {
-  verdict.value;                   // VerdictClaim: passed / failed / errored / skipped
-  verdict.basedOn;                 // EvidenceRef[]: the evidence this verdict is based on
-  verdict.verification;            // full / limited / unverified, with all issues
-} else {
-  verdict.causes;                  // all unavailable causes, never collapsed
+```ts
+let latest: Sample;
+{
+  await using reader = await openRecordReader({ root: ".niceeval/record" });
+  latest = await selectSample(reader, {
+    kind: "latest",
+    experimentIds: ["checkout"],
+  });
 }
 ```
 
-Projectors use a tracking `ProjectionReadContext`; the framework forms `basedOn` and verification automatically, and authors cannot hand-write or replace evidence.
-Results keep value and verification as two axes: `truncated` / `redacted` / `missing` / `corrupt` are each reported honestly, never collapsed into `null`.
-The same Projector version returns the same result for the same input; Projections never enter the Record and can be discarded once the handle closes.
+Every read uses the files as they exist when it runs. If a user edits a Verdict, Usage, or another channel after the directory is quiescent, a later ReportInput construction reads the edited value. The Sample itself stores core data and its denominator only.
 
-Three points:
+## Core data relationships
 
-- **Missing evidence is never silent.** When a class of facts was never collected, the Projector returns unavailable `not-recorded`; when an object is missing, `missing-object` — what is missing and why both have structured reasons.
-- **Unreadable stores are never silent.** When a Graph cannot be opened, a locator cannot be recognized, or a reference fails validation, the command fails and names the object; missing and corrupt are reported separately as `missing-object` / `corrupt`, never disguised as an empty result.
-- **Memoized per handle in-process.** Two readers of the same diff Projector do not read large facts twice.
-
-`AttemptError` is the sole fatal execution error that forms the `errored` Verdict Claim. It carries a stable `code`, a human-readable `message`, the lifecycle operation where it happened, and an optional bounded cause/stack. Diagnostics can coexist with any verdict and hold problems found while the run could still continue or at wrap-up. Transient `progress` is not persisted; an OTel trace is not a prerequisite for error storage either. Attempt lifecycle state is only `active` / `completed` / `abandoned` — `passed` / `failed` / `errored` / `skipped` are Verdict Claims, not Attempt state.
-
-## Oversized values are truncated
-
-An Agent can produce enormous output from a single command — a recursive `grep` through `node_modules` that hits minified JS can put several MB into one line. That output lands in multiple Observation events; left alone, one attempt can occupy hundreds of MB.
-
-The Record owner freezes a single Observation envelope at a maximum of 1 MiB. Larger complete payloads take one of two paths: they become standalone typed objects the event references through strong edges, or a concrete event schema declares a fixed transformation. The serialization policy performs credential substitution and budget transformations at the persistence boundary and writes `EvidenceTransformationV1` (`truncated` / `redacted`, with selector and original byte count or policy) onto the event.
-
-**This does not affect the verdict.** Assertions read the full in-memory output; truncation happens only at the persistence boundary — the committed Observation is evidence, not the scorer's input. A pass stays a pass; a fail stays a fail.
-
-To mark "something is missing here" honestly in your own script, read the `ObservationRead` verification axis:
-
-```typescript
-for await (const read of attempt.observations().events()) {
-  if (read.state === "available") {
-    for (const t of read.event.transformations ?? []) {
-      if (t.kind === "truncated") {
-        console.log(`${t.selector.schema} was ${t.originalBytes} bytes, truncated`);
-      }
-    }
-  } else {
-    console.error(read.causes);   // all unavailable causes, never collapsed
-  }
-}
+```text
+Run expected slots
+        ↓
+Member: executed | carried | accepted
+        ↓
+Attempt and its named channels
 ```
 
-Transformations are driven by Record semantics, never guessed from string sizes. The presentation layer may offer bounded previews, but those previews show the EvidenceValue's verification / transformation — not a separate on-disk truncation rule. `.niceeval/` is a good local source of truth and is not, by default, something to commit to Git.
+- A Run's `expectedSlots` define the denominator.
+- A slot has at most one Member. `executed` means this Run ran the Attempt; `carried` and `accepted` adopt an existing Attempt.
+- An Attempt retains the `origin` where it actually ran. Adoption does not copy Verdict, Usage, or diagnostics.
+- Reasons for carrying and accepting belong to the Run's `niceeval.actions` channel and link the slot and Attempt.
 
-Truncation happens at the persistence boundary and cannot limit tool output the agent runtime sends to the model. If the runtime first stuffs a full 50 MB tool result into a model request and gets a 413, NiceEval still records the Attempt as `errored`; this only keeps the failed event stream from ballooning on the same output afterward.
+Record validation of structure, paths, identities, and references rejects contradictory data. It does not retain edit history.
 
-## Selecting a fixed Sample: `materializeSample` / `narrowSample` / `unionSamples`
+## Channel read states
 
-Most scenarios first answer "which members of this fixed result do I pick". A Sample is not a lazy query over directories, time, or "the latest result" — it is an already-materialized selection value, provided by `niceeval/sample`:
+Business values live in named channels, such as Verdict, Eligibility, Usage, and diagnostics. A channel's durable collection completeness and its current decoding completeness are separate facts.
 
-```typescript
-import { openRecord, openRecordStore } from "niceeval/record";
-import { materializeSample, narrowSample, unionSamples } from "niceeval/sample";
-
-await using store = await openRecordStore(".niceeval");
-await using record = await openRecord(store);
-const sample = await materializeSample(record, {
-  runs: ["compare/candidate"],       // explicit full-ID arrays: runs / evals / experiments
-});
-```
-
-| Entry | Answers |
-|---|---|
-| `materializeSample(record, selection)` | Generate an auditable population through one fixed Record handle |
-| `narrowSample(sample, selector)` | Narrow the population by experiment, eval, or member, keeping sources and denominator |
-| `unionSamples(samples, conflictPolicy)` | Merge already-materialized Samples; never guess a "main Graph" across Records |
-
-`materializeSample()` only reads the current Contribution strong edges of the selected Run revisions in that Graph and materializes each slot as a member or a coverage item.
-When the writer advances the head, callers must reopen the Record and produce another Sample — the same Sample never drifts.
-
-```typescript
-sample.identity;                 // SampleRef: the digest identity of this selection
-sample.sources;                  // full RecordGraphRef list, JCS-sorted, non-empty
-sample.members;                  // SampleMembership[]: each carries the full Contribution and AttemptRef
-sample.coverage;                 // denominator / included / excluded / unavailable
-sample.provenance;               // full materialized / narrowed / union derivation trail
-```
-
-Coverage keeps the exact denominator plus three mutually exclusive subsets: `included`, `excluded` (with the selector that excluded them), and `unavailable` (with all causes and `basedOn`).
-Narrowing only adjusts coverage — it never reopens the Record, picks new slots, or drops the parent denominator; cross-Record merging only accepts already-materialized Samples, `unionSamples()` deduplicates by full identity, and different revisions of the same address conflict by default.
-
-The default home page of `niceeval show` / `view` consumes the coverage and MetricValues of one fixed Sample.
-To see another historical combination, explicitly generate another Sample; views never build a second membership set by locator, time, or provenance.
-
-<RecordShape />
-
-## Copying and exporting
-
-Pick the primitive that fits the job:
-
-- **`captureRecordMirrorSnapshot(source)` + `mirrorRecord(source, target, { snapshot })`** — persists an exact source revision token, then copies that committed-root history into an unbound target. Retries use the same token and never silently move to a newer head; no evidence allowlist is accepted.
-- **`exportSample(sample, { sources, target })`** — writes one `MaterializedSample` into a standalone `SampleBundleStore` through explicit fixed source readers and returns a `SampleBundleRef`; `openSampleBundle(source, ref)` only reads the members, coverage, and evidence the bundle copied — it never re-runs the Record's current selection.
-- **`exportReport(...)`** — presentation delivery. Exports the evidence closure the report consumes; deletable and regenerable, never Record authority (see [Reports](/tutorials/custom-reports)).
-
-```typescript
-import {
-  captureRecordMirrorSnapshot,
-  createRecordSourceSet,
-  mirrorRecord,
-} from "niceeval/record";
-import { createSampleBundleStore, exportSample, openSampleBundle } from "niceeval/sample";
-
-const snapshot = await captureRecordMirrorSnapshot(sourceStore);
-await mirrorRecord(sourceStore, targetStore, { snapshot });    // exact, retryable history copy
-
-await using sources = await createRecordSourceSet([record]);
-await using bundleStore = await createSampleBundleStore("site-data");
-const bundleRef = await exportSample(sample, {
-  sources,
-  target: bundleStore,
-});                                                           // standalone SampleBundle
-const bundle = await openSampleBundle(bundleStore, bundleRef); // reads only what was copied
-```
-
-`SampleBundleStore` is a standalone Store capability with no Record Graph, writer, or current-member API.
-**A SampleBundle is not a Record** — `openRecord()` cannot open it, and `--record` does not accept it; `--record` only takes a RecordStore root (such as a `mirrorRecord` target).
-To refresh a report site on every push, see [Publish a report](/tutorials/publish-report).
-
-## Layer overview
-
-| Layer | Entry | Answers |
+| State | Meaning | Caller behavior |
 | --- | --- | --- |
-| The two official doors | `niceeval show` / `niceeval view` | View the official layout, zero code |
-| Custom reports | [Custom Reports](/tutorials/custom-reports), [Report Components](/reference/report-components) | Your own metrics and layout |
-| Record data API (this page) | `niceeval/record` + `niceeval/sample` | Algorithms folding cannot express, wiring into your own systems, auditing raw facts |
+| `read` | A value was read; collection or decoding can still be partial. | Preserve completeness and issue information. |
+| `unavailable` | It was declared but not collected, or it does not apply. | Show the reason. |
+| `unsupported` | The current reader does not support the channel. | Affect only content that depends on it. |
+| `invalid` | A requested channel file or value is invalid. | Fail with its named issues. |
 
-Each layer builds on the one below it. The same fixed Record facts are the sole source of truth — anything derived above can be recomputed at any time.
+An unknown or retired channel is `unsupported` at that channel only. `unavailable`, `unsupported`, and `invalid` cannot replace one another. An unrequested channel does not block an unrelated read.
+
+## From Sample to ReportInput
+
+A `Sample` is an explicit in-memory selection and does not write back to the Record. It preserves every expected slot and represents scope with these states:
+
+| Sample state | Meaning |
+| --- | --- |
+| `included` | It has a valid Member and can read that Member's adopted Attempt. |
+| `not-recorded` | The expected slot has no Member. |
+| `invalid` | The Member, Attempt, or core reference has a problem. |
+| `excluded` | A caller excluded it from an existing Sample. |
+
+Reports turn a Sample into `ReportInput` through the facts they require. ReportInput is an ordinary in-process value that retains the denominator, membership states, channel read states, and issues. A Report consumes it; it never reads a path or interprets files itself.
+
+## Related pages
+
+- [Viewing Results](/tutorials/viewing-results): Select Samples with `show` and `view`.
+- [Rerun and Carry Results](/tutorials/rerun-and-cache): Understand `carried`, `accepted`, and `niceeval.actions`.
+- [Report Components API](/reference/report-components): Review public Report capabilities.

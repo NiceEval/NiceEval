@@ -205,10 +205,10 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 2. 查询 provider 原生 cache 或本地 build registry。
 3. 同 key 只允许一个 builder,single-flight 等待者不重复上传 context 或创建 template。
 4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。放行逐 key 发生:一条 attempt 只等自己引用的那几个 key,不等同批其它 key 收工,不引用任何 BuildKey 的 attempt 从第一秒就可派发。
-5. 瞬时构建失败(基础镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建结果是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该让整批依赖该 key 的 Attempt 形成 `errored` Verdict Claim。
+5. 瞬时构建失败(基础镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建结果是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该让整批依赖该 key 的 Attempt 形成 `errored` Verdict。
 6. 重试耗尽或确定性构建失败（构建定义错误、基础镜像不存在）按共享该 key 的范围止损。
-   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Attempt 都引用同一 Run-scoped 执行错误 Observation，并形成自己的 `errored` Verdict Claim。
-   timing Projector 由同一 Run-scoped `sandbox.build` Observation 读出归属。
+   失败的 BuildKey 只执行一次；每个依赖它、本应 fresh 执行的 Attempt 都引用同一 Run-scoped 执行错误通道事件，并形成自己的 `errored` Verdict。
+   timing decoder 由同一 Run-scoped `sandbox.build` channel event 读出归属。
 
 预算分两层,口径不混:
 
@@ -260,7 +260,7 @@ Compose 的第二文件入口不属于当前 CaseKey 的输入闭包；`include`
 Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或受控的判分采证接口可见——把 sidecar 合并进主 Sandbox 会改变题目,不属于合法降级。
 
 主容器进入 ready 后才交给 Agent;判分完成前整组保持存活。
-任一必需服务提前退出时，Attempt 形成 `errored` Verdict Claim，并附服务状态与日志 Observation，不折叠成 Agent 行为的 `failed` Verdict Claim。
+任一必需服务提前退出时，Attempt 形成 `errored` Verdict，并附服务状态与日志 channel event，不折叠成 Agent 行为的 `failed` Verdict。
 收尾按 case 自己的资源句柄执行 `compose down`;部分启动、中断与超时同样走整组 finalizer。
 逐服务日志和 artifact 由 `ServiceController` 取得;artifact 声明只引用主 Sandbox 时所有 provider 都能运行,引用 sidecar 时启动期要求 `services` 能力并校验服务名存在。
 
@@ -322,11 +322,11 @@ defineSandboxCase({
 |---|---|---|
 | template 缺失、冲突或 case 声明非法 | link 期配置错误 | 一次穷举报错,零 Sandbox 创建 |
 | 声明合法但平台、能力或 locator 不可用 | physical planning 聚合错误 | 整个 Run 零资源失败;作者用 selector 显式排除 |
-| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict Claim | 引用 Run-scoped `sandbox.build` Observation；timing Projector 读出同一归属 |
-| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict Claim | Attempt 运行归属,附服务状态与日志 Observation |
-| Agent Ensure 失败 | Attempt 形成 `errored` Verdict Claim | `agent.ensure` 归属(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
+| 共享构建失败 | 依赖它的 Attempt 形成 `errored` Verdict | 引用 Run-scoped `sandbox.build` channel event；timing decoder 读出同一归属 |
+| Sandbox 启动、ready、服务中途退出 | Attempt 形成 `errored` Verdict | Attempt 运行归属,附服务状态与日志 channel event |
+| Agent Ensure 失败 | Attempt 形成 `errored` Verdict | `agent.ensure` 归属(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 
-Agent 完成任务但断言未达标时，才形成 `failed` Verdict Claim。
+Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
 每个 case 至少产出主 Sandbox 启动日志与本次使用的 image / template / snapshot、容器名等运行事实;声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing。
 证据字段是中性的,采集手段留在 provider。
 
@@ -358,7 +358,7 @@ folder eval 的测试文件与构建输入共址时，materializer 与普通上�
 
 - materializer 登记全部 build context 经 `.dockerignore` / filtered context 求值后的实际 closure，以及 Agent 可达 bind mounts。
 - `test(t)` 中的普通本地上传登记 source tree 与内容摘要。
-- 判定封口前交叉比对两份事实；send 区间外才上传的测试若已在 Agent 可见 closure 中，写入执行错误 Observation 并形成本次 Attempt 的 `errored` Verdict Claim。
+- 判定封口前交叉比对两份事实；send 区间外才上传的测试若已在 Agent 可见 closure 中，写入执行错误通道事件 并形成本次 Attempt 的 `errored` Verdict。
 - 后续运行可用历史 transfer manifest 在启动 Agent 前预检；首次运行只能事后拒绝结果，不能宣称阻止了暴露。
 - 修法是移出 context、写进 `.dockerignore`，或让 materializer 生成 filtered context；过滤规则自身进入 BuildKey。
 

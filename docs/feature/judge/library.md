@@ -54,8 +54,8 @@ Judge 评不出可信分数时，该条断言条目为 `outcome: "unavailable"`�
 
 运行期没有找到模型时，reason 是 `judge-model-unresolved`；key 变量缺失时是 `judge-key-unresolved`。请求失败或响应中取不出分数时，reason 是 `judge-call-failed`，状态码与异常摘要进入 `evidence`。请求失败包括 HTTP 非 2xx、连接中断与调用超时；响应失败包括协议不符与分数缺失。
 
-写下的 rubric 默认要求可评估。无论 soft 还是 gate，unavailable 都使该 Attempt 形成 `errored` Verdict Claim；Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`。
-`.optional()` 只允许这条运行期判分证据缺席；此时 unavailable Assertion Claim 保留在条目里，但不影响 Verdict Claim。
+写下的 rubric 默认要求可评估。无论 soft 还是 gate，unavailable 都使该 Attempt 形成 `errored` Verdict；Attempt lifecycle 仍只收束为 `completed` 或 `abandoned`。
+`.optional()` 只允许这条运行期判分证据缺席；此时 unavailable Assertion result 保留在条目里，但不影响 Verdict。
 折叠规则见 [Severity 与 Verdict](../verdict/architecture.md)。
 
 ## 调用预算与执行顺序
@@ -104,8 +104,8 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 **预检失败只阻止需要 judge 的 eval 派发，不拦整次运行**：
 
-- 这些 eval 的全部计划 Attempt 不派发、不创建沙箱，保持 `unstarted`；不伪造 Attempt、locator 或 `errored` Verdict Claim。
-  失败本身是 Run-scoped `judge-precheck-failed` 执行错误 Observation（phase: `judge.precheck`），并由 `RunReceipt` 表示不完整；它与其它派发前确定性失败（如 `experiment-setup-failed`）同构。
+- 这些 eval 的全部计划 Attempt 不派发、不创建沙箱，保持 `unstarted`；不伪造 Attempt、locator 或 `errored` Verdict。
+  失败本身是 Run-scoped `judge-precheck-failed` 执行错误通道事件（phase: `judge.precheck`），并由 `RunReceipt` 表示不完整；它与其它派发前确定性失败（如 `experiment-setup-failed`）同构。
 - 不含 judge 断言的 eval 照常派发，一条 judge 配置问题不没收整批与它无关的结果。
 - `error.message` 带实际探测的端点与失败原因（超时秒数或状态码）。超时的 `fix:` 首选提示是「端点接受连接但不回，先查同一账号的其它流量是否占满了网关并发」，其次才是核对 `baseUrl`——这两种错的症状一样，前者更常见也更难想到。
 

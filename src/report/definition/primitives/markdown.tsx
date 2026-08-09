@@ -1,4 +1,4 @@
-// Markdown:CommonMark + GFM 散文排版(docs/feature/reports/library/layout.md#markdown)。
+// Markdown:CommonMark + GFM 散文排版。当前目标契约见 docs/feature/reports/README.md。
 // 解析一次产出 AST，text / web 从同一棵树投影。
 
 import type { ReactElement, ReactNode } from "react";
@@ -32,7 +32,7 @@ export interface MarkdownAst {
 const TABLE_ERROR =
   "Markdown tables are not supported in <Markdown>. Use the <Table> primitive instead — " +
   "terminal column widths must go through stringWidth / wrapDisplay (CJK counts as 2 columns). " +
-  "See docs/feature/reports/library/layout.md#table.";
+  "See docs/feature/reports/README.md.";
 
 const ANSI_BOLD_ON = "\u001b[1m";
 const ANSI_BOLD_OFF = "\u001b[22m";

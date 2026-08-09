@@ -1,5 +1,5 @@
-// defineRenderer 的公开类型(docs/feature/reports/library/layout.md「自定义 renderer」、
-// docs/feature/reports/architecture.md「自定义显示形状」)。
+// defineRenderer 的公开类型(docs/feature/reports/README.md「自定义 renderer」、
+// docs/feature/reports/README.md「自定义显示形状」)。
 
 import type { ReactNode } from "react";
 import type { JsonValue } from "../../shared/types.ts";
@@ -16,7 +16,7 @@ export interface RendererAssetPaths {
 
 /**
  * text / web renderer 共用的呈现上下文:只含 locale 与维度呈现,不含 Sample、Record、
- * Source、IO 或异步取数(docs/feature/reports/architecture.md「自定义显示形状」)。
+ * Source、IO 或异步取数(docs/feature/reports/README.md「自定义显示形状」)。
  */
 export interface RendererContext {
   readonly locale: ReportLocale;

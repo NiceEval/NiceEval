@@ -14,7 +14,7 @@ OTel span 用于生成 **`niceeval view` 中的调用瀑布图**。瀑布图按�
 
 ## 原理（一段话）
 
-[NiceEval](https://niceeval.com/) 运行时启动本机 OTLP 接收器。应用发送的 span 会归属到对应 `send` 轮次，归一成 GenAI 语义后作为 supplemental telemetry Observation 提交进 durable Observation stream，并由 `npx niceeval view` 经 trace Projection 显示为瀑布图。**span 不参与断言**——它不改变 Agent 行为、执行错误或 Verdict。埋点缺失、span 迟到或丢批只影响瀑布图完整性，不影响判定。
+[NiceEval](https://niceeval.com/) 运行时启动本机 OTLP 接收器。应用发送的 span 会归属到对应 `send` 轮次，归一成 GenAI 语义后写入 Attempt-owned `niceeval.telemetry` JSONL 事件通道；Report 只有声明对应 requirement 后才解码它并显示瀑布图。**span 不参与断言**——它不改变 Agent 行为、执行错误或 Verdict。埋点缺失、span 迟到或丢批只影响该通道的 coverage 和瀑布图完整性，不影响判定。
 
 <OtelCollect />
 

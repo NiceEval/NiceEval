@@ -15,5 +15,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具调用节点。
+- **CLI 读回**：`show --run <runId>` 的成绩单列出本仓库 Eval 与 Verdict；进入已规划的 Attempt execution 页面后，执行树出现工具调用节点。
 - **OTel**：适配器复用 canonical OTel mapper；OTel 内容关闭时只影响 timing 注释，事件流断言照常通过。

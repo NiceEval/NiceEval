@@ -1,15 +1,15 @@
-# 读懂一次 `errored` Verdict Claim:框架重试过没有,为什么
+# 读懂一次 `errored` Verdict:框架重试过没有,为什么
 
 ## 解决什么问题
 
-一个 Attempt 的 Verdict Claim 为 `errored` 时，排查的第一个问题是「框架试过自愈没有」。Attempt lifecycle 仍是 `completed` 或 `abandoned`，执行错误与每次重试都是可审计 Observation。
+一个 Attempt 的 Verdict 为 `errored` 时，排查的第一个问题是「框架试过自愈没有」。Attempt lifecycle 仍是 `completed` 或 `abandoned`，执行错误与每次重试都是可审计 channel event。
 答案就写在错误 message 里:带 `retries exhausted` 后缀 = 已重试到预算耗尽仍失败;没有后缀 = 被判为不可重试、从未重试。
-两种 `errored` Verdict Claim 的下一步完全不同,本篇教你分别读懂——不需要写任何代码,自愈行为是零配置的内建面。
+两种 `errored` Verdict 的下一步完全不同,本篇教你分别读懂——不需要写任何代码,自愈行为是零配置的内建面。
 
 ## 全流程
 
 1. **取证**。
-   `niceeval show` 或 `view` 打开该 attempt,看结构化错误的 message 有没有重试摘要后缀,进对应分支。
+   用 `niceeval show --run <runId> --page attempt-<attemptId>` 打开该 Attempt 页面，看结构化错误的 message 有没有重试摘要后缀，再进入对应分支。
 
 2. **有后缀:重试耗尽的失败**。
    典型是高并发批跑撞限流——`--max-concurrency 12` 时十几个 attempt 同时开 turn,几个撞上入场拒绝(`Concurrency limit exceeded for user, please retry later`)。
@@ -36,10 +36,10 @@
    - **agent 内层已经放弃**:codex 这类 CLI 断连会带着会话现场自动重连、从断点接着跑,你根本看不到失败;它浮出流中断,说明它自己重试过并放弃了。
      bub 这类没有内层自愈的 agent 断一次浮一次——那是 agent 侧的能力缺口,框架代偿不了:会话现场在 agent 手里,框架没有断点。
    - **框架不整段重发**:流断在响应中途,无法证明 agent 未开始处理——上例里已跑了 3 次工具调用、可能写了 workspace。
-     重发同一段 user text 会让 agent 把做过的操作再做一遍,产出被污染的判定,比一次诚实的 `errored` Verdict Claim 更糟。
+     重发同一段 user text 会让 agent 把做过的操作再做一遍,产出被污染的判定,比一次诚实的 `errored` Verdict 更糟。
      即使文案里混着限流字样，envelope 的 `acceptance: "started"` 也会被[受理证据门](../architecture.md#分类链)拦下；空事件则是 `unknown`，同样不能重试。
 
-4. **恢复路径(两分支同一条)**:带 `errored` Verdict Claim 的成员不具备携带资格，使用 `--rerun failed` 重跑失败样本；带 `passed` / `failed` Claim 的 Contribution 按携带规则照常可被采用。新 Attempt 从干净沙箱起,没有上一次半途现场的污染,这正是「重发 turn」给不了的。
+4. **恢复路径(两分支同一条)**:带 `errored` Verdict 的成员不具备携带资格，使用 `--rerun failed` 重跑失败样本；带 `passed` / `failed` channel entry 的 Member 按携带规则照常可被采用。新 Attempt 从干净沙箱起,没有上一次半途现场的污染,这正是「重发 turn」给不了的。
    偶发抖动用一次续跑吸收即可。
 
 5. **频繁复现时按层对因下药**:限流反复耗尽 → 降 `--max-concurrency`(或实验级 `maxConcurrency`,路由见[并发用例手册](../../experiments/use-case/并发/));流中断频繁 → 先调 agent 的原生重连配置,没有这层能力的 agent 给上游提 FR,再往下查 adapter 与网络路径。

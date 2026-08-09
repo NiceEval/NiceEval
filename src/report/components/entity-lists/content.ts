@@ -1,7 +1,7 @@
 // 实体列表 Table Content 投影(docs/feature/reports/components/entity-lists/)。
 // Eval 分组层在这里从扁平 evalRows + missing(SampleCoverage 的缺口数组)投影成
 // TableContent.subRows
-// (docs/feature/reports/library.md「Eval 分组层」)。
+// (docs/feature/reports/README.md「Eval 分组层」)。
 
 import type { Cell, ColumnSpec, TableContent, TableContentRow } from "../../definition/cell.ts";
 import { localizedMessage } from "../../model/locale.ts";
@@ -277,7 +277,7 @@ function evalRow(
 }
 
 /**
- * 覆盖缺口的两档占位行(docs/feature/reports/components/summaries/experiment-table.md
+ * 覆盖缺口的两档占位行(docs/feature/reports/README.md
  * 「缺口原因与动作」):`never-run` 与 `previous-result` 都表示「当前配置下没有结果」,
  * 都不进任何聚合读数;差别在原因文案与是否带最近旧 locator(审计与授权入口,
  * 不把旧 verdict、时距或样式混入当前结果)。

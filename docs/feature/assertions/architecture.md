@@ -1,155 +1,63 @@
 # Assertions —— 架构
 
-值 matcher、作用域检查与 Judge 最终都进入同一个 Assertion collector。
-collector 只形成 `Assertion Claim[]`；执行错误 Observation 与 Assertion Claim 怎样折叠成 Verdict Claim 由 [Verdict](../verdict/README.md) 定义。四个 verdict token 不属于 Attempt lifecycle。
+Assertion 是一次 Attempt 内的检查结果。值 matcher、作用域检查、Sandbox 检查、资源限制和 Judge 都把各自的业务数据写入 Attempt-owned <code>niceeval.assertions</code> channel。
 
-```text
+Assertion 不拥有 Run membership、Attempt origin 或报告聚合。它只说明某项检查检查了什么、得到什么状态、采用哪些材料，以及该项是 gate、soft 还是 optional。
+
+~~~text
 value / scope / judge / sandbox / efficiency
-                    │
-                    ▼
-           Assertion collector
-                    │
-                    ▼
-          Assertion Claim[] ──────┐
-                                  ├──► Verdict Claim
-执行错误 Observation + strict ─────┘
-```
+                    ↓
+            Assertion collector
+                    ↓
+    Attempt channel: niceeval.assertions
+                    ↓
+              Verdict folding
+~~~
 
-## 设计主题
+## 断言条目
 
-- [作用域绑定](architecture/scopes.md)
-- [证据与完整性](architecture/evidence.md)
+<code>niceeval.assertions</code> 保存按声明顺序排列的 <code>AssertionResult</code>。每条使用以下稳定字段：
 
-Severity 与四态折叠不属于本层，见 [Verdict](../verdict/architecture.md)。
+| 字段 | 说明 |
+|---|---|
+| <code>name</code>、<code>groupPath</code>、<code>source</code> | 条目名称、展示分组和可选源码位置。 |
+| <code>severity</code>、<code>optional</code>、<code>stopOnFailure</code> | 对 Verdict 和用户测试流程的影响。 |
+| <code>outcome</code> | <code>passed</code>、<code>failed</code> 或 <code>unavailable</code>。 |
+| <code>score</code>、<code>threshold</code> | 有分数条目的归一化得分和通过线。 |
+| <code>expected</code>、<code>received</code>、<code>evidence</code> | 有界的人读预览。 |
+| <code>reason</code> | 仅 <code>unavailable</code> 的机器可读原因。 |
+| <code>pointsAvailable</code>、<code>points</code> | 计分制 Eval 的可得分与实得分。 |
 
-**Assertion（输入态）** 是 matcher、作用域断言与 Judge 这些「怎么查」的表达。
-例如 [`custom-assertions`](library/custom-assertions.md) 里的 `function jsonValid(): Assertion`。
-collector 把每次检查折叠成的「查出了什么」是 **Assertion Claim**。
-Verdict Claim 表达整个 Attempt revision 的互斥判断；Attempt 自身只处在 `active` / `completed` / `abandoned` lifecycle。
-多个 Attempt 的报告在固定 GraphRef 上通过 Projector 聚合通过率和平均耗时，不制造第五种 Verdict Claim。
+<code>expected</code>、<code>received</code> 和 <code>evidence</code> 是有界预览。完整的源码、diff、conversation 和大文本由各自 channel 或 Attempt-owned blob 保存；断言条目只保存判定和展示需要的摘要。
 
-## 断言条目（Assertion Claim）
+<code>groupPath</code> 仅组织呈现与分数汇总。它不改变 Verdict。<code>stopOnFailure</code> 只决定失败后是否继续执行用户的 <code>test()</code>，也不改变严重度。
 
-Record 的 Assertion Claim 是 [Severity 与 Verdict](../verdict/architecture.md) 判定规则的输入。
-字段契约单点定义在这里，[Record Format](../record/architecture.md) 引用而不复写：
+## 判定与分数
 
-```typescript
-interface ProjectSourceFrame {
-  kind: "project";
-  /** 相对项目根的路径。 */
-  file: string;
-  line: number;
-  column?: number;
-}
+<code>severity: "gate"</code> 的 <code>failed</code> 参与失败 Verdict。<code>severity: "soft"</code> 只在 strict policy 下参与失败 Verdict。<code>optional</code> 只改变 <code>unavailable</code> 对 Verdict 的影响，不把它改成通过。
 
-interface PackageSourceFrame {
-  kind: "package";
-  package: string;
-}
+<code>score</code> 是本条检查的归一化得分。<code>pointsAvailable</code> 与 <code>points</code> 只属于计分制 Eval；它们不从 score 反推，也不改变通过制 Eval 的规则。
 
-type SourcePathFrame = ProjectSourceFrame | PackageSourceFrame;
+<code>t.score(label, points)</code> 写入独立的分数条目。它不含 severity 或 outcome，不能直接改变 Verdict。
 
-interface SourceLoc {
-  /** 声明位置，相对项目根。 */
-  file: string;
-  line: number;
-  column?: number;
-  /** 从 eval 入口到声明处，由外到内；不含声明处自身，无可用链时为空数组。 */
-  callers: SourcePathFrame[];
-}
+## 数据归属
 
-interface AssertionBase {
-  /** 断言标题:t.group 内是该断言自己的摘要,组外是 matcher 摘要或 judge 问题;show/view 失败行的标题。 */
-  name: string;
-  /** 所属分组路径:外层在前的 t.group 标题数组;无分组省略。报告分块与对比得分点的维度键,不影响判定。 */
-  groupPath?: string[];
-  severity: "gate" | "soft";
-  /** 作者链过 .stopOnFailure();仅在本条 failed 时停止后续 test 代码,与 severity 正交。 */
-  stopOnFailure?: true;
-  /** 作者用 .optional() 显式允许该断言缺席;只改变 unavailable 的折叠方式(见 Severity 与 Verdict),不改变 severity 语义。 */
-  optional?: true;
-  /** matcher / judge 摘要,如 `equals(4)`、`closedQA("…")`;与 name 分开,供 show/view 同时展示分组标题与检查方式。 */
-  detail?: string;
-  /** 断言在 eval 源码中的声明位置与调用路径，`--source` 据此装配源码调用树。 */
-  loc?: SourceLoc;
-  /** 与 score Claim、用户 send 共用的 Attempt stream sequence；历史记录可省略，当前 Claim 必写。 */
-  sourceOrder?: number;
-  /** `.points(n)` 声明的可得分值；failed / unavailable 也保留，未链 points 与通过制省略。 */
-  pointsAvailable?: number;
-}
+Assertion collector 只消费调用方提供的值和已经交付的通道数据。它不打开 Record 路径，不读 ReportInput，也不生成报告页面。
 
-type AssertionClaim =
-  | (AssertionBase & {
-      outcome: "passed" | "failed";
-      /** 归一化得分:值断言 0/1,judge 等打分断言 0..1。 */
-      score: number;
-      /** .atLeast(x) / .gate(x) 设的通过线;纯记录 soft 与默认线时省略。 */
-      threshold?: number;
-      /** 失败证据摘要:期望值 / 实际值的有界文本预览,供 show/view 直接展示。 */
-      expected?: string;
-      received?: string;
-      /** 这条分数看着什么材料算出(judge 输入或被检查值预览);view 展开排查用,默认不展示。 */
-      evidence?: string;
-      /**
-       * `.points(n)` 挂在这条断言上的挣分:`n × score`(0/1 断言通过挣 n、不过挣 0;打分断言按
-       * 连续分比例挣)。只在计分制 eval 里链过 `.points()` 时出现;省略表示这条断言不参与计分
-       * (通过制 eval 的全部断言,或计分制 eval 里没链 `.points()` 的断言)。与 `score` 是两个读数——
-       * `score` 判定用,`points` 计分用,互不派生(见[计分粒度](library/score-points.md))。
-       */
-      points?: number;
-    })
-  | (AssertionBase & {
-      outcome: "unavailable";
-      /** 机器可读原因,如 "judge-model-unresolved"、"judge-call-failed"、"evidence-coverage:actions=partial"。 */
-      reason: string;
-      /**
-       * 评不了的一层人读细节:judge 调用失败时是状态码 / 异常摘要,证据通道不完整时是缺的通道与
-       * 实际覆盖度。`reason` 回答「归哪一类」,它回答「这一条具体怎么了」——没有它,一个
-       * `judge-call-failed` 分不出是网关拒了鉴权还是请求体不合协议,而两者的下一步完全不同。
-       */
-      evidence?: string;
-    });
+source 位置信息可选。存在时，它只含项目相对路径、行列和调用路径；第三方包不写入项目源码内容。
 
-/**
- * `t.score(label, n)` 形成的 score Claim，与 Assertion Claim 分属两个 Claim kind——它不是一条被评估的
- * 断言，没有 severity、没有 outcome，不参与 Verdict 或质量分，只贡献分数面：
- */
-interface ScoreClaim {
-  /** 作者传入的 label,原样进报告。 */
-  label: string;
-  /** 直接给分,n >= 0(见[计分粒度](library/score-points.md))。 */
-  points: number;
-  /** 所属分组路径,同 AssertionBase.groupPath;规则一致(外层在前的 t.group 标题数组)。 */
-  groupPath?: string[];
-  /** 调用点，同 AssertionBase.loc。 */
-  loc?: SourceLoc;
-  /** 与断言、用户 send 共用的 Attempt stream sequence；历史记录可省略，当前 Claim 必写。 */
-  sourceOrder?: number;
-}
-```
+通道文件由 Attempt owner 写入。人工编辑停稳 Record 后，下一次 reader、Sample 和 Report 会看到新的 Assertion 数据。
 
-`loc` 整体仍可省略：运行时无法取得栈时，条目进入源码视图的 unmapped 区。
-只要 `loc` 存在，`callers` 就是必选数组；单文件 eval 与调用链缺失都写空数组，避免多个构造点各自解释“没填”含义。
-`package` 帧只保存包名，不把第三方源码纳入 Record。
+## 与 Verdict 和 Reports 的关系
 
-判别键是 `outcome`。
-`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败」或「`score: 0` 但又不许聚合」的非法组合。
-普通聚合代码按 `outcome` 分支，不会把证据缺口算成零分。
+Verdict 从 assertion 条目、执行错误和 strict policy 形成 <code>niceeval.verdict</code>。Verdict 规则由 [Verdict](../verdict/architecture.md) 单点定义。
 
-这份字段全集是穷尽的。
+Sample 只保留 Attempt 核心和分母，不读取 assertion。ReportPlan 声明 assertion requirement 后，composition adapter 才把对应 <code>ChannelRead</code> 放进内部 ReportInput；Report 不能自行读取 assertion 文件或重新计算 Attempt 业务状态。
 
-- show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」的隐式约定。
-- `expected`、`received` 与 `evidence` 是有界预览，而不是原始值。
-- 原始事件、源码与变更证据以 Observation 追加到 Record。
-  diff、trace、usage 等由固定 GraphRef 的 Projector 读取，不存在 `events.json` / `diff.json` 等私有事实文件。
-- 判定只消费 `severity`、`outcome`、`optional`、`score` 与 `threshold`；`points` 与 `pointsAvailable` 不参与判定。
-  `pointsAvailable` 是单个给分项的分值，不是 eval 的全局满分声明。
-  展示 “0 / 5” 必须读取这两个独立字段，不能从实得 `points` 或归一化 `score` 反推分母。
+## 相关阅读
 
-`points` 与 Score Claim 是计分制(`defineScoreEval`)才会出现的分数面数据；通过制 eval 的 Assertion Claim 永不带 `points`，也不会形成 score Claim。它们都不进入 AttemptPayloadV1。
-两者共用同一套 `groupPath` 折叠约定, 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
-
-计分制条目里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是 `severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带 `stopOnFailure: true`。
-观测是 `severity: "soft"` + 无 `points`。
-质量分因此按「soft 且没有 `points`」取子集聚合。
-得分点已经在分数面被读过一次，不再进入质量分。
+- [Assertion 证据与完整性](architecture/evidence.md)
+- [Assertion 展示](library/display.md)
+- [Assertion Library](library.md)
+- [Verdict](../verdict/README.md)
+- [Record 通道](../record/architecture.md#通道语义与兼容性)

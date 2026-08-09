@@ -82,7 +82,7 @@ export interface RenderReportTextOptions extends TextRenderOptions {
  * text 宿主的装载语义:选页(只能是非参数化 page,见 pickReportPage)→ resolve(组合展开 +
  * spec 取数,唯一的 await 边界)→ 树校验 → 遍历渲染 text 面。不需要 react-dom。宿主不在报告树外
  * 另设警告通道——挑选警告的呈现件是 `ScopeWarnings` 组件,内建报告每页都放它,自定义报告放不放
- * 是作者义务(docs/feature/reports/architecture.md「Sample 是计算入口」)。
+ * 是作者义务(docs/feature/reports/README.md「Sample 是计算入口」)。
  */
 export async function renderReportToText(
   definition: ReportDefinition,
@@ -108,7 +108,7 @@ export function reportTitleText(definition: ReportDefinition, scope: Sample, loc
 
 // ───────────────────────── 逐页(树)渲染入口:宿主联系面 ─────────────────────────
 
-/** 宿主索引命令的完整上下文(docs/feature/reports/show/reports.md「索引命令携带完整上下文」)。 */
+/** 宿主索引命令的完整上下文(docs/feature/reports/README.md「索引命令携带完整上下文」)。 */
 export interface HostCommandContext {
   patterns: string[];
   record?: string;

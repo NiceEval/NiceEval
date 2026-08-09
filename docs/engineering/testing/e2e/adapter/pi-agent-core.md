@@ -14,5 +14,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具执行节点，时间注释显示 timing unavailable。
-- **OTel**：本适配器不声明 tracing 面——`show --execution` 时间注释显示 timing unavailable，`show --timing` 不挂 OTel 子树。
+- **CLI 读回**：`show --run <runId>` 的默认页面列出本仓库 Eval 与 Verdict；进入已规划的 Attempt execution 页面后，执行树出现工具执行节点，时间注释显示 timing unavailable。
+- **OTel**：本适配器不声明 tracing 面——已规划的 execution 页面显示 timing unavailable，timing 页面不挂 OTel 子树。

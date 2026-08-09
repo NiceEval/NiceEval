@@ -31,9 +31,9 @@
 
 - eval 的准备命令记 `sandbox.prepare`（诊断按 owner 细分），主链随后是 `eval.run` → `assertions.evaluate`。
   `eval.run` 按真实顺序涵盖普通文件传输、全部 turn、命令与断言条目。
-  已登记 cleanup 在收尾段逆序执行，失败只追加 Diagnostic Observation，不改 Verdict Claim。
+  已登记 cleanup 在收尾段逆序执行，失败只追加 diagnostic channel event，不改 Verdict。
   阶段词表的唯一权威是 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md)。
-- 作者写下的每条断言默认要求可评估：证据缺口形成 `errored` Verdict Claim，显式 `.optional()` 才允许缺席；四个 verdict token 是 Claim 值，不是 Attempt lifecycle state（[Severity 与 Verdict](../verdict/architecture.md)）。
+- 作者写下的每条断言默认要求可评估：证据缺口形成 `errored` Verdict，显式 `.optional()` 才允许缺席；四个 verdict token 是 channel entry 值，不是 Attempt lifecycle state（[Severity 与 Verdict](../verdict/architecture.md)）。
 - eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集按位置生成零填充序号 id（`sql/0000`，插删或重排会改变后续 id），keyed record 生成稳定的业务 key id（`swelancer/15193`）。
   key 是单一路径片段，发现顺序按 key 字典序固定。
 

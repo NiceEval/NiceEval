@@ -19,13 +19,13 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
     发现并打印所有评估用例，不运行。
   </Card>
   <Card title="npx niceeval clean" icon="trash">
-    删除 `.niceeval/` 下的历史事实与快照。
+    删除明确 writer 留下的 Record 临时目录，不删除正式 Run 或 Attempt。
   </Card>
-  <Card title="npx niceeval show [id-prefix | @locator]" icon="terminal">
-    在终端读取结果。用 `@<locator>` 或评估用例 ID 前缀下钻断言、评估用例源码、执行事件流、diff 和历史。
+  <Card title="npx niceeval show --run | --latest" icon="terminal">
+    在终端执行报告。用明确 Run 或 latest policy 形成 Sample。
   </Card>
   <Card title="npx niceeval view" icon="eye">
-    打开网页结果查看器，读默认报告并交互浏览评估用例源码、执行事件流与 diff。默认范围与 `show` 相同。跨 run 时间轴（`--history`）是 `show` 专用的终端能力。
+    打开固定 ReportExecution 的网页结果。选择与 `show` 相同；要看编辑后的 Record，结束后重新运行。
   </Card>
 </CardGroup>
 
@@ -112,25 +112,14 @@ npx niceeval exp list --json
 | `--orphans` | boolean | `sandbox list` 专用:核对强杀(`SIGKILL` / 断电)路径留下的无主沙箱实例(docker + e2b;vercel 无按元数据检索实例的通道,不参与)。只读,不清理;销毁走 `niceeval sandbox prune`。 |
 | `--tag` | string | 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 |
 | `--junit` | string | 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 |
-| `--json` | boolean | `exp` 命令专用:机器面——stdout 上单一有序的 NDJSON 事件流(一行一个 JSON 对象),供 coding agent、CI annotation adapter 或脚本消费;`--dry --json` 输出单个 JSON 计划文档而不是流。省略即人读文本(TTY live 面板 / 非 TTY 追加流)。`show` 命令专用:任何切片的结构化形态——同一范围、同一切片选出的同一批实体,输出成一个 JSON 文档到 stdout;与 `--report`、`--expand` 互斥,多个证据 flag(`--source`/`--execution`/`--timing`/`--diff`)只能选一个。 |
+| `--json` | boolean | `exp` 命令专用:stdout 上单一有序的 NDJSON 事件流；`--dry --json` 输出单个 JSON 计划文档。`show` 命令专用:输出同一 ReportExecution 的宿主数据与状态，不打开第二条取数路径。 |
 | `--smoke` | boolean | `docker profile doctor` 专用：启动受限 DinD 容器并运行内层容器。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
 | `--host` | string | `view` 命令专用:指定监听地址；可裸写，此时监听全部网络地址并打印可打开的本机与局域网 URL。省略时同样监听全部网络地址。 |
-| `--source` | boolean | `show` 命令专用:该 attempt 运行时保存的 Eval 源码调用树。裸写为有界默认投影；`--source=full` 展开全部调用路径；`--source=<path>` 按捕获路径后缀唯一匹配并显示该文件全文。 |
-| `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 |
-| `--timing` | boolean | `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 |
-| `--grep` | string | `show` 命令专用:只与 `--execution` 组合;JS 正则,只输出命中的执行卡片(角色文本、工具名、input、result,失败命令再加 display/stdout/stderr),末尾报跨 attempt 汇总 `N matches in M attempts`。与 `--expand` 互斥。 |
-| `--expand` | string | `show` 命令专用:只与 `--execution` 组合,要求范围恰好命中一个 attempt;展开一张卡片的完整落盘内容(不截断)。句柄语法 `t<轮次>.c<卡片>`(agent 事件)或 `cmd<n>`(失败 Sandbox 命令),来自截断卡片自带的提示。与 `--grep` 互斥。 |
-| `--diff` | boolean | `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 |
-| `--history` | boolean | `show` 命令专用:执行时间轴——对匹配的每个 experiment × eval 分节,逐 attempt 列时间 / verdict / 摘要 / 耗时 / 成本 / locator;与 `--report` 互斥。 |
-| `--usage` | boolean | `show` 命令专用:范围内逐 attempt 的用量表(`UsageTable` 装配)——判定、轮数、工具调用数、token 拆分与成本;多个 experiment 时逐 experiment 分节、节尾各自合计,缺失字段显示 `—` 且不计入合计。`@<locator>` 范围下退化成该 attempt 的单行表。 |
-| `--stats` | boolean | `show` 命令专用:eval × experiment 的稳定性矩阵(`StabilityMatrix` 装配)——每格是该组合全部历史执行(跨快照去重、不设可比性门槛)的判定计数,回答「哪些题从来没通过过」;与 `@<locator>`、`--report` 互斥。 |
-| `--exp` | string | `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 |
-| `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:选择另一个 RecordStore 根(如 `mirrorRecord` 的目标目录);`exportSample` 的 SampleBundle 不是 Record,不能作记录根。 |
-| `--run` | string | `view` 命令专用:在已固定的 `RecordGraphRef` 内选择一个 Run reference,不是文件也不是独立根;不存在或歧义时命令失败(扫描模式只跳过)。 |
+| `--record` | string | `show` / `view` / `accept` / `sandbox enter\|list\|stop` 共用:指定实际 Record root;CLI 不补接 `.niceeval/record` 或其它后缀。 |
+| `--run` | string | `show` / `view` 可重复传入 `--run`;每次按完整 `runId` 增加一个显式 Run,重复 identity 去重。 |
 | `--report` | string | `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 |
-| `--theme` | string | `view` 命令专用:内建主题名或显式主题文件路径。 |
 | `--page` | string | `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
@@ -141,6 +130,9 @@ npx niceeval exp list --json
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |
 | `--help` | boolean | 打印用法说明并退出。 |
 | `--version` | boolean | 打印 niceeval 的版本号并退出。 |
+| `--latest` | boolean | `show` / `view` 命令专用:按 Sample 的稳定 latest policy 为每个目标 Experiment 各选择一个已完成 Run;与 `--run` 互斥。 |
+| `--experiment` | string | `show` / `view` 可重复使用。与 `--latest` 合用时定义目标 Experiment 集合;与 `--run` 合用时按完整 identity 收窄 Sample。 |
+| `--eval` | string | `show` / `view` 命令专用:在已经形成的 Sample 上按完整 eval identity 收窄。 |
 
 {/* GENERATED:END cli-flags */}
 
@@ -178,58 +170,38 @@ npx niceeval exp compare --json
 npx niceeval exp compare --strict --junit ./artifacts/niceeval-junit.xml
 ```
 
-两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)。AI 反馈闭环的完整用法（读事件流、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)。CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
-
-## `session list` / `session show`
-
-每次 `niceeval exp …` 调度会维护一份以 `invocationId` 为键的外部 Invocation index，与 `watch` / receipt 共享同一 identity 和 reducer。查询本身只读，不加载配置、不发现源码、不启动运行时，也不公开物理目录：
-
-```bash
-npx niceeval session list
-npx niceeval session list --all --json
-npx niceeval session show <sessionId>
-```
-
-默认只列出心跳仍有效的活动 Session。`--all` 追加已封口记录，并把超过 30 秒没有心跳的记录单列为 `expired`。`--json` 输出单个 `niceeval.sessions`（或 `niceeval.session`）文档，不是 `exp --json` 的事件流。
+两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)。AI 反馈闭环的完整用法见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)。CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。进程结束后没有 `watch` 或 session 查询；长期数据从停稳 Record 生成报告。
 
 ## `view`
 
 ```bash
-npx niceeval view
+npx niceeval view --latest
+npx niceeval view --run 01H...
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认报告和同一套默认选择：固定一个 `RecordGraphRef`，生成固定 Sample，再按每个 experiment × 评估用例的 current Contribution 显示判定。
+打开本地记录查看器。它和 `show` 共用同一份默认 Report 和同一套明确选择：从停稳 Record 按 `--run` 或 `--latest` 形成 core-only Sample，再按 ReportPlan 读取所需通道。
 
-局部重跑时，未重跑的 slot 会通过 `carried` / `accepted` Contribution 沿用历史 Attempt。同一份 Sample 不按时间或可变 head 重选。评估用例 ID 前缀、`--exp`、`--record` 对两者的收窄一致。
+局部重跑时，未重跑的 slot 可以通过 `carried` / `accepted` Member 引用已有 Attempt。同一份 Sample 不按可变 head 重选。`--experiment`、`--eval` 和 `--record` 对两种宿主的收窄一致。
 
-## `show [id-prefix...]`
+## `show`
 
 ```bash
-npx niceeval show
-npx niceeval show weather/brooklyn
-npx niceeval show @0123456789ABCDEFGHJKMNPQRS
-npx niceeval show @0123456789ABCDEFGHJKMNPQRS --source
-npx niceeval show @0123456789ABCDEFGHJKMNPQRS --execution
-npx niceeval show @0123456789ABCDEFGHJKMNPQRS --execution --expand t2.c3
-npx niceeval show fixtures/button --diff
-npx niceeval show weather/brooklyn --history
+npx niceeval show --latest
+npx niceeval show --run 01H...
+npx niceeval show --run 01H... --run 01J...
+npx niceeval show --run 01H... --page attempt-0123456789ABCDEFGHJKMNPQRS
+npx niceeval show --run 01H... --report ./reports/summary.ts --page overview
 ```
 
-`show` 是终端结果入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。位置参数选「看哪些评估用例」（ID 前缀）或直接用 `@<locator>` 精确选一个 attempt。不带位置参数时直接比较当前 Scope，`--exp` 按 experiment id 路径收窄。
+`show` 是终端报告入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。它不接受模糊的位置选择：`--run` 与 `--latest` 二选一。单个 Attempt 详情是已选 Sample 中的参数化页面，不是另一条 selector。
 
-`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）。`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`。范围含多个 attempt 时，按 experiment id、eval id、attempt 序逐 attempt 分节。
+`--run` 可重复，只读取这些显式 Run；`--latest` 对每个目标 Experiment 按完成时间和 Run identity 的稳定规则各选择一个。`--latest --experiment <id>` 定义目标集合；不带 `--experiment` 时目标来自可读 Run 核心。目标集合为空、任一目标没有完成 Run，或任一候选 Run 的排序核心损坏都明确失败，不缩小比较组去猜“最近一次”。未完成 Run 必须显式 `--run`。
 
-`--record <目录>` 指定记录根，`--history` 查看跨 Run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义。每个 `--exp` 必须恰好解析到一个 experiment，顺序就是对照条件顺序。完整的阅读顺序、输出示例和证据说明见[查看结果](/zh/tutorials/viewing-results)。
+选择完成后，`show` 先冻结 ReportPlan，只读取其中声明的通道，再执行一次 Report。requested channel 的 unavailable、unsupported、partial 或 invalid 会原样显示；未请求的未知或损坏通道不影响当前页面。完整契约见[查看结果](/zh/tutorials/viewing-results)。
 
-`--execution` 的卡片正文是有界预览：每个内容段（消息正文。工具卡的 input 与 result 各算一段）最多显示前 3 行，每段另有 1 KiB（UTF-8 字节）上限防止单行过长。有折叠的卡片在卡尾报被折的行数与字符数，并自带该卡片的展开句柄，整行就是可复制的完整命令：
+`view --latest --out <目录>`（或显式 `--run`）使用同一份 ReportExecution 预渲染自包含静态站。目标目录必须不存在；全部页面、下载项与静态资产路径先通过校验，完成后才以一次 rename 发布。导出过程不会把 Record 路径或 blob 路径交给用户 Report。
 
-```text
-    (+3055 lines · 263161 chars · niceeval show @0123456789ABCDEFGHJKMNPQRS --execution --expand t2.c3)
-```
-
-`--expand <handle>` 只与 `--execution` 组合，要求范围恰好命中一个 attempt，并单独输出该卡片的完整持久化内容。句柄 `t<轮次>.c<轮内卡序>`（agent 事件卡）或 `cmd<n>`（失败 Sandbox 命令卡）从预览提示里抄，不自己数。
-
-带 transformation 的内容展开后会如实标注 `truncated` / `redacted` 与原始字节数。`--grep` 命中的卡片同样受预览预算，尾巴照带句柄。`--json` 面输出已求值数据的结构化结果，与 `--expand` 互斥。
+命令持有 reader lease 直到 Sample、ReportPlan 和 ReportInput 形成，随后立即释放。ReportExecution 再从内存输入形成；人工编辑停稳 Record 或修改 Report module 只会影响下一次命令。运行中的 `view` 与静态 export 消费自包含 execution，不再读取或 watch Record。
 
 ## `--early-exit` 与 `--strict`
 

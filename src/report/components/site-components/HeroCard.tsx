@@ -1,6 +1,6 @@
 // HeroCard:站点标题区的 web 面——hero 标题(h1)与品牌行(等同 PoweredBy,
 // 恒含、无拆除 prop)。标题输入是站点声明与 Sample 的合成物。data 保留在双面
-// 组件契约中供 text 面输出运行摘要,web 面不展示(docs/feature/reports/components/site/hero-card.md)。
+// 组件契约中供 text 面输出运行摘要,web 面不展示(docs/feature/reports/README.md)。
 
 import type { ReactElement } from "react";
 import type { HeroData } from "../../model/types.ts";

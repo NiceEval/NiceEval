@@ -1,5 +1,5 @@
 // ScopeWarnings 的聚合层:先把 Sample Issue 解释为 Notice,再按「下一步动作」组织成组,
-// web / text 两面共用(docs/feature/reports/components/summaries/sample-notices.md「聚合轴是动作,不是发生顺序」)。
+// web / text 两面共用(docs/feature/reports/README.md「聚合轴是动作,不是发生顺序」)。
 
 import type { SampleIssue } from "../../../record/types.ts";
 import { localeText, type ReportLocale, type ReportMessageKey } from "../../model/locale.ts";
@@ -102,7 +102,7 @@ function dedupeCommand(members: readonly SampleIssueNotice[]): string | null {
  * 其余(含未登记 kind)按 kind 聚合。组排序:实验作用域组在前(按实验 id 字典序),
  * 非实验作用域组在后(按 kind);类别两档制(integrity / freshness)已随旧 Run /
  * partial-coverage 一并删除——三种 warning kind 都是同一类完整性事实,不再需要档位区分
- * (docs/feature/reports/components/summaries/sample-notices.md「聚合轴是动作,不是发生顺序」)。
+ * (docs/feature/reports/README.md「聚合轴是动作,不是发生顺序」)。
  */
 export function groupScopeWarnings(input: readonly SampleIssue[], locale: ReportLocale): GroupedScopeWarnings {
   const issues = input.map((issue) => NoticeCatalog.of(issue, locale));

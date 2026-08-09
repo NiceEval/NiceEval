@@ -1,7 +1,7 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。实体列表族(ExperimentList / EvalList /
-// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/library.md)。
+// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/README.md)。
 //
-// 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
+// 共同约定(docs/feature/reports/README.md「指标聚合不变量」):
 // - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
 // - 聚合前按身份键去重(dedupeAttempts;missing-startedAt 不去重、如实保留、不透出警告);
 // - null ≠ 0:缺数据不编数,覆盖率经 samples/total 如实暴露;
@@ -221,7 +221,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
   for (const [experimentId, group] of groups) {
     const stats = summarizeItems(group);
     // 这一行显示的 agent/model/flags 读水位基准 Run(贡献来源中 startedAt 最新者),
-    // 不是任取某个真实来源(docs/feature/reports/architecture.md「Sample 是计算入口」)——
+    // 不是任取某个真实来源(docs/feature/reports/README.md「Sample 是计算入口」)——
     // 组内每个 item 的 watermark 是同一个对象,取任一个即可;优先找真实来源恰好等于水位
     // 基准的 item,好让下面混读的 attempt 级字段(model/evaluationKind 等)也来自同一份数据。
     const watermark = group[0]!.watermark;

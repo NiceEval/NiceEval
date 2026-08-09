@@ -1,5 +1,5 @@
 // EvidenceRow / external points → Dataset，供 Chart 内核绘制。
-// 契约见 docs/feature/reports/library.md「图表」、components/charts/README.md。
+// 契约见 docs/feature/reports/README.md「图表」、components/charts/README.md。
 
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import { isMetricValue, type EvidenceRow, type MetricValue } from "../../model/calculation.ts";

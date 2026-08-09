@@ -26,7 +26,7 @@ export {
 } from "./data.ts";
 
 /**
- * view 的输入语义(docs/feature/reports/view.md「打开与收窄」):位置参数只有一种含义——
+ * view 的输入语义(docs/feature/reports/README.md「打开与收窄」):位置参数只有一种含义——
  * eval id 前缀,与 show 一致,含义不随文件系统状态改变(路径样子的位置参数只会按前缀报无匹配)。
  * 记录根经 `--record <dir>` 递入;单开一份 Run 经 `--run <file>` 递入,文件不可读时
  * 命令失败(扫描模式对坏快照只跳过)。两个来源互斥。
@@ -72,7 +72,7 @@ export function resolveViewInput(
  * 同一份产物清单,这里把它写进 <dir>——index.html + `artifact/<base>/` 证据树,整个目录扔给
  * 任何静态托管即是完整体验。首页即报告槽(裸跑填充内建报告,--report 整槽替换),证据室同站;
  * 多页报告仍是单个 index.html(页面走 `#/page/<id>` 路由)。单文件(*.html)导出已移除:
- * 代码/transcript/trace 视图依赖 artifact 文件,单文件注定残缺(docs/feature/reports/view.md
+ * 代码/transcript/trace 视图依赖 artifact 文件,单文件注定残缺(docs/feature/reports/README.md
  * 「静态导出」)。
  */
 export async function buildView(opts: ViewOptions = {}): Promise<string> {
@@ -83,7 +83,7 @@ export async function buildView(opts: ViewOptions = {}): Promise<string> {
     );
   }
   // 位置参数 / --exp 对导出同义于本地:收窄作用在有效根上,出站的页面数据与证据文件
-  // 只含收窄后的范围(docs/feature/reports/view.md「静态导出」:出站的就是收窄到的)。
+  // 只含收窄后的范围(docs/feature/reports/README.md「静态导出」:出站的就是收窄到的)。
   // 静态导出保持「任一页失败整体失败」(pageFailure 缺省 "throw"),不产出半套站点。
   const plan = await planSite(opts.input, opts.scan);
   await writeSite(plan, out);

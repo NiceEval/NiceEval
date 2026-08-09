@@ -334,8 +334,8 @@ Vitest 原生标题统一带 `[Behavior ID]` 前缀，因此底层 `-t` 仍可�
 
 ```text
 Behavior: reports.view.narrow-by-experiment
-Task: niceeval:docs/feature/reports/use-case/使用宿主/浏览器复盘与收窄.md#全流程
-Contract: niceeval:docs/feature/reports/view.md#打开与收窄
+Task: niceeval:docs/feature/reports/README.md#全流程
+Contract: niceeval:docs/feature/reports/README.md#打开与收窄
 Outcome: Comparison table shows only experiment "main"
 Entry: browser
 Observations: browser-a11y

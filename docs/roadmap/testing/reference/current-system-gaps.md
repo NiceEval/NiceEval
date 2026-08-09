@@ -27,7 +27,7 @@ owner，也没有要求新增主证明时退役重复 unit。结果是每个出�
 ## 本次 modal 逃逸的具体链条
 
 Report Feature 已把详情机制定义成通用参数化页：内建至少有 `attempt` 与 `experiment`，宿主按最终 pageId 清单拦截 `<pageId>/<key>.html`，不认识实体种类；dialog 还承担直接 deep link、关闭、焦点、滚动与嵌套下钻。
-见 [View · 参数化页 dialog](../../../feature/reports/view.md#参数化页的-dialog-摆放)。
+见 [View · 参数化页 dialog](../../../feature/reports/README.md#参数化页的-dialog-摆放)。
 
 现有单元测试也已经验证 `planSite` 对 attempt 与 experiment 两类页面生成文件，说明数据 / 规划层知道新抽象。
 但是浏览器 E2E 仍把路径写死为 `attempt/<locator>.html`，组件场景也只以 locator 和 AttemptDetails 命名：
@@ -103,7 +103,7 @@ owner、新 owner 实际替代旧 proof 时提交 retirement declaration。
 reportBehavior({
   id: "reports.target-closure",
   task: { repository: "niceeval", path: "docs/feature/reports/use-case/…", anchor: "…" },
-  contract: { repository: "niceeval", path: "docs/feature/reports/view.md", anchor: "参数化页的-dialog-摆放" },
+  contract: { repository: "niceeval", path: "docs/feature/reports/README.md", anchor: "参数化页的-dialog-摆放" },
   risk: "release-blocking",
   primary: {
     layer: "e2e",

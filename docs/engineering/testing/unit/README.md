@@ -84,12 +84,12 @@ Feature 文档是语义的唯一出处。
 | ---------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [eval.md](eval.md)                             | Context、session、HITL、能力边界                                          | scripted Agent 与 recording Sandbox（自有 `Agent` / `Sandbox` 接口） | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent 走同一条 Context 链      |
 | [experiments-runner.md](experiments-runner.md) | 调度、缓存、Sandbox 生命周期、budget、退出码折叠                          | fake Agent / Sandbox / Reporter、受控时钟与 barrier                  | [e2e/cli](../e2e/cli.md)：真实进程与真实 attempt 下同一批行为                |
-| [assertions.md](assertions.md) | matcher、collector、scope、judge、verdict | 构造的证据图（`AssertionEvaluationContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
+| [assertions.md](assertions.md) | matcher、collector、scope、judge、verdict | 构造 `AssertionEvaluationContext`；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因、主 Sandbox 实例及伴随资源 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [adapters.md](adapters.md)                     | Agent ensure 循环、身份 / staged payload digest、断网义务、复用与 environment 隔离 | 脚本化安装层 + recording Sandbox（自有接口）                   | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent CLI 安装与探测           |
-| [record.md](record.md)                         | 提交 / 读取、身份与 locator、闭包与完整性、receipt、mirror / export、开放 timing activity | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的提交与读回                         |
+| [record.md](record.md)                         | core、descriptor、通道与 blob 的发布/读取、独占 lease、人工编辑后的当前值 | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的提交与读回                         |
 
-| [reports.md](reports.md)                       | 数据源 `compute()`、装载、树解码                                          | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
+| [reports.md](reports.md)                       | Sample、ReportPlan、transport matrix、Calculation 与页面的一次执行        | core-only Sample 与按 requirement 返回 transport 的 fixture           | [e2e/report](../e2e/report.md)：真实输出上的出口与渲染                       |
 
 ## Feature 测试文档
 
@@ -111,12 +111,11 @@ Feature 文档是语义的唯一出处。
 | [Sandbox](../../../feature/sandbox/README.md)                                         | 生命周期、路径边界、命令结果、diff、cleanup 与 Sandbox 实例语义          | [sandbox.md](sandbox.md)                       |
 | [Adapters](../../../feature/adapters/README.md)（Agent Ensure）                        | Ensure 状态机、Agent / artifact 身份、断网义务、复用与 environment 隔离        | [adapters.md](adapters.md)                     |
 | [Assertions](../../../feature/assertions/README.md) | matcher、scope、collector、evidence、Coverage 和 Verdict 形成一致判定 | [assertions.md](assertions.md) |
-| [Record](../../../feature/record/README.md)                                          | artifact round-trip、身份、开放 timing、`configHash` 与发布自包含     | [record.md](record.md)                         |
-
-| [Reports](../../../feature/reports/README.md)                                         | 读数与聚合口径正确；装载、树解码与校验反馈完整                      | [reports.md](reports.md)                       |
+| [Record](../../../feature/record/README.md)                                          | core、descriptor、channel、blob、lease 与人工编辑后的当前值           | [record.md](record.md)                         |
+| [Reports](../../../feature/reports/README.md)                                         | plan/build/once-execute、状态完整性与静态路径                          | [reports.md](reports.md)                       |
 
 SDK 事件转换与协议归一没有单元层测试维度——协议的真身只有真实调用，wire fixture 是协议的二手复制、会随上游版本漂移，协议正确性的唯一验收面是 [E2E 适配器域](../e2e/adapter/README.md)的真实运行。
-Adapter 侧确定性逻辑（Agent Ensure）登记在 [adapters.md](adapters.md)；归一之后与协议无关的派生（成本估算、执行树投影）登记在 [reports.md](reports.md) / [record.md](record.md)。
+Adapter 侧确定性逻辑（Agent Ensure）登记在 [adapters.md](adapters.md)；归一之后与协议无关的派生计算登记在 [reports.md](reports.md)，Record 只负责核心与通道读写。
 
 一条跨 Feature 契约可以在拥有完整观察面的边界测试一次，再由各 Feature 的领域规则测试补足独立失败模式。
 不要为了让每个源码目录都有测试而重复完整流程。

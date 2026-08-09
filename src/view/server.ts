@@ -1,6 +1,6 @@
 // HTTP server:把站点管线(site.ts 的 planSite)产出的同一份产物挂在指定地址上按路径服务。
 // 这里不携带任何取数或布局知识——查不到清单条目就是 404,同一页同一语言的报告块与 `--out`
-// 逐字节一致(docs/feature/reports/view.md 开篇)。宿主语义全部作用在管线之外:
+// 逐字节一致(docs/feature/reports/README.md 开篇)。宿主语义全部作用在管线之外:
 //
 // - 重建理由只有 watch 闭集。请求不触发重建——打开或刷新页面时盘上没变,产物就是上一次那份。
 // - 变更按理由分流:记录变更沿用上一次装载出的定义,模块文件变更才重装整棵 import 图。
@@ -51,7 +51,7 @@ export interface ViewServer {
 }
 
 /**
- * 重建理由(docs/feature/reports/view.md「变更分两类,失效到不同深度」)。合成一次重建时
+ * 重建理由(docs/feature/reports/README.md「变更分两类,失效到不同深度」)。合成一次重建时
  * `modules` 吸收 `records`：模块图重装本来就带着整条管线重跑,反过来不成立。
  */
 export type RebuildReason = "records" | "modules";
@@ -94,7 +94,7 @@ function isWatchedChange(root: string, filename: string | null): boolean {
 }
 
 /**
- * 项目侧 watch 的入口(docs/feature/reports/view.md「持续重建」的闭集第 2–4 行):
+ * 项目侧 watch 的入口(docs/feature/reports/README.md「持续重建」的闭集第 2–4 行):
  * 项目配置,加 --report / --theme 指到的**文件**。裸词(`standard` / `basalt`)是内建名,
  * 随包分发没有项目文件可盯,按装载同一条形态判别排除。配置文件此刻不存在也在列——
  * 它所在目录照样挂 watcher,建出来那一下就是一次重建理由。
@@ -257,7 +257,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   let current: Promise<SitePlan>;
   let inFlight: Promise<SitePlan> | undefined;
   /**
-   * 一个订阅中的浏览器:它在看哪一页、哪种语言(docs/feature/reports/view.md
+   * 一个订阅中的浏览器:它在看哪一页、哪种语言(docs/feature/reports/README.md
    * 「只渲染看得见的那一块」)。重建后只为这些订阅渲染块,没人看的页不渲染。
    */
   const reloadClients = new Set<{ res: import("node:http").ServerResponse; page?: string; locale: ReportLocale }>();

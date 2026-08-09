@@ -120,7 +120,7 @@ export function renderCharPlot(opts: CharPlotOptions): string {
 
 /**
  * 图下的读值表:每行是一个点的标记字母、所属系列、点名与两轴终值。字母把图上的记号与这
- * 一行绑在一起(docs/feature/reports/show/default-report.md「标记字母按图例顺序分配」);
+ * 一行绑在一起(docs/feature/reports/README.md「标记字母按图例顺序分配」);
  * `series` 列只在有两个以上系列时出现,单系列时那一列全是同一个词、占宽度不给信息。
  */
 export function renderCoordinateTable(

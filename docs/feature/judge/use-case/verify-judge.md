@@ -49,12 +49,12 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
 4. 跑通后确认分数**真的**评出来了:
 
    ```bash
-   niceeval show <eval-id>
+   niceeval show --run <runId> --page attempt-<attemptId>
    ```
 
    **你会看到**:每条 rubric 后面跟着分数。
    跑中判分请求失败（网关回 400、连接断、超时）的那条不会伪装成 0 分通过。
-   它记 `◌ unavailable · judge-call-failed`，`evidence` 里是状态码或异常摘要，并形成这次 Attempt 的 `errored` Verdict Claim。
+   它记 `◌ unavailable · judge-call-failed`，`evidence` 里是状态码或异常摘要，并形成这次 Attempt 的 `errored` Verdict。
    Attempt lifecycle 不使用 verdict token。
    **「裁判失败」和「agent 答得一塌糊涂」在报告上长得不一样**,这正是这套条目方式存在的理由：前者去修配置，后者去修 agent。
 
@@ -64,16 +64,16 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    t.judge.autoevals.closedQA("文风是否友好?").optional();
    ```
 
-   **你会看到**:它评不了时只留一条 unavailable Assertion Claim，不再形成 `errored` Verdict Claim；其余没写 `.optional()` 的 rubric 照旧要求可评估。
+   **你会看到**:它评不了时只留一条 unavailable Assertion result，不再形成 `errored` Verdict；其余没写 `.optional()` 的 rubric 照旧要求可评估。
 
 ## 边界
 
 - 端点整体不可达（连不上、鉴权被拒、探测超时）在派发前就被判分预检拦下。
-  含 judge 断言的 eval 保持 `unstarted`，失败作为 Run-scoped `judge-precheck-failed` 执行错误 Observation 留档。
-  不伪造逐条 Attempt 或 `errored` Verdict Claim，其余 eval 照常派发。
+  含 judge 断言的 eval 保持 `unstarted`，失败作为 Run-scoped `judge-precheck-failed` 执行错误通道事件 留档。
+  不伪造逐条 Attempt 或 `errored` Verdict，其余 eval 照常派发。
   本用例补的是预检涵盖不到的那段——协议不符、分数取不出来,只有真评一次才暴露。
-- 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable 仍形成 `errored` Verdict Claim，不会造出「一条都没评却全绿」的报告。
-- `--strict` 不改变这条路径上的任何判定:unavailable 形成 `errored` Verdict Claim，与 soft 阈值是两回事(见[`--strict`](../../verdict/use-case/strict-quality-gate.md))。
+- 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable 仍形成 `errored` Verdict，不会造出「一条都没评却全绿」的报告。
+- `--strict` 不改变这条路径上的任何判定:unavailable 形成 `errored` Verdict，与 soft 阈值是两回事(见[`--strict`](../../verdict/use-case/strict-quality-gate.md))。
 - 模型找不到是另一个 reason（`judge-model-unresolved`）,判定后果相同——judge 没有内置默认模型,四层(单次 `{ model }` → Experiment → Eval → config)都没配就是配置错误。
 
 ## 相关阅读

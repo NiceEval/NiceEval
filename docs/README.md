@@ -22,8 +22,8 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 从用户价值审视完整产品范围 | [用户故事地图](user-story.md) |
-| 理解事实怎样落盘、实时查看并被复核 | [Record](feature/record/README.md) |
-| 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
+| 理解当前数据怎样落盘、编辑并交给 Sample/Reports | [Record](feature/record/README.md) |
+| 查什么改动会重跑，或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)（eligibility identity 与 domain） |
 | 让记忆库或累积笔记跨 Attempt 延续 | [Sandbox 复用](feature/sandbox/reuse.md) 与 [Sandbox 生命周期](feature/sandbox/lifecycle.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
@@ -34,7 +34,7 @@ Design 保存多方案比较与裁决存档，Research 只提供决策输入而�
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
-| 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/reference/README.md)） |
+| 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/README.md)） |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
 | 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
 
@@ -65,9 +65,9 @@ docs/
 │   ├── assertions/                      检查、作用域、证据与 AssertionResult
 │   ├── judge/                           裁判模型配置、调用与 unavailable
 │   ├── verdict/                         Severity、严格模式与四态折叠
-│   ├── record/                          Record 事实根:图、读写、身份、live 与证据交付
-│   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换
-│   └── reports/                         show、view 与报告组件
+│   ├── record/                          可编辑当前数据集：核心、通道、读写与身份
+│   ├── sample/                          从 Record 选择 core-only 分母
+│   └── reports/                         计划输入、一次执行、show/view 与静态导出
 │
 ├── roadmap/                             已定稿、尚未采用为当前契约的方向
 │   ├── agent-as-judge/                  用独立 Agent 调查证据并执行 Judge Assertion

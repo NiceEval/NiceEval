@@ -1,5 +1,5 @@
 // PoweredBy:唯一的品牌件的 web 面。品牌契约是「提供一个组件,不给开关」——无 props、
-// 无关闭配置;不想要品牌 = 不用它(docs/feature/reports/components/site/powered-by.md)。
+// 无关闭配置;不想要品牌 = 不用它(docs/feature/reports/README.md)。
 // rel 只声明 noopener 以保留 Referer(默认策略只发 origin):官网统计由此得知点击来自哪个
 // 报告站点;静态导出在构建期不知道自己托管在哪个域名,来源不进 URL 参数。
 

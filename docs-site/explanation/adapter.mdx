@@ -116,7 +116,7 @@ interface Agent {
 }
 ```
 
-`progress` is short-lived status during the run and is never persisted; `diagnostic` is a bounded warning/error you want to review after the run, and it is saved with the Attempt. Neither can specify a lifecycle phase, and neither changes `Turn.status` on its own. When the connection fails or the response cannot be parsed, throw: the runner forms the `errored` Verdict Claim and prints a drill-down locator in the terminal.
+`progress` is short-lived status during the run and is never persisted. `diagnostic` is a bounded warning or error saved in an Attempt-owned diagnostics channel. Neither can specify a lifecycle phase or change `Turn.status` on its own. When the connection fails or the response cannot be parsed, throw: the Runner writes a structured error and forms an `errored` Verdict in the `niceeval.verdict` channel.
 
 `send` is the only function you must implement. There are only three types in its signature; take them one at a time.
 
@@ -228,7 +228,7 @@ interface AgentSession {
 }
 ```
 
-The runner binds a lifecycle scope to the Agent's `setup`, to each `send`, and to `teardown` separately. The Adapter only reports progress/diagnostics from inside the current callback; it cannot pass a phase, a color, or an output stream. `progress` is never persisted; diagnostics are committed with the Attempt as Observations into the Record. When it cannot continue, throw — the runner saves the structured error and forms the `errored` Verdict Claim. Attempt lifecycle state is only `active` / `completed` / `abandoned`; a verdict token is not Attempt state.
+The Runner binds a lifecycle scope to the Agent's `setup`, each `send`, and `teardown` separately. The Adapter only reports progress and diagnostics from the current callback; it cannot pass a phase, color, or output stream. `progress` is never persisted. A diagnostic is committed as an event in an Attempt-owned diagnostics channel. When it cannot continue, throw: the Runner saves the structured error and forms an `errored` Verdict in the `niceeval.verdict` channel. Attempt lifecycle state is only `active` / `completed` / `abandoned`; a Verdict token is not Attempt state.
 
 There are no flags to check on `ctx`. All three tier fields have "pass-through" semantics: `model` and `flags` are declared by the experiment and handed over verbatim by the runner — the Adapter's only job is to forward them to the application with the request, never to interpret them; `telemetry` only appears when OTel integration is configured, and inside `send` you only need to spread its `headers` into the request headers — the receiving endpoint is fixed in `defineConfig` and pointed at by the application at startup, not passed from here; see [OTel Integration](/tutorials/connect-otel). `experimentId` is a stable identifier derived from the path; the typical use is isolating cross-attempt state per experiment inside a Sandbox's environment hooks (partitioning cache directory names and sandbox snapshot tags by it); see [Sandbox provider · Lifecycle](/tutorials/sandbox-providers#lifecycle).
 
@@ -295,7 +295,7 @@ The handle you get from `await t.send()` is a view onto this one Turn: turn-leve
 | `t.calledTool()` / `t.toolOrder()` and other positive assertions | paired operation events present | Nothing — having events means you can assert |
 | `t.notCalledTool()` / `t.usedNoTools()` and other negative assertions being **trustworthy** | Events come from an official converter with a completeness proof | Nothing — the proof travels with the converter's return value |
 | `t.sandbox`, `t.sandbox.fileChanged()`, etc. | Constructed by `defineSandboxAgent` | Nothing |
-| trace Projection, the `niceeval view` waterfall | A `tracing` block exists (spans only feed the waterfall, never assertions) | Nothing — you were writing the block anyway |
+| trace channel and the `niceeval view` waterfall | A `tracing` block exists (spans only feed the waterfall, never assertions) | Nothing — you were writing the block anyway |
 
 The negative-assertion row is the only tiered one: `notCalledTool` asserts "it did not happen", which presupposes "the events are complete" — and that only holds when the source itself carries a completeness contract (SDK-native event stream pass-through, AI SDK's `result.steps`, Responses' `output`). Hand-written mappings carry no proof, so negative assertions warn at runtime that they are untrustworthy instead of silently passing. This also means there is no "declared but can't deliver" drift: trustworthiness follows where the events came from, not the author's self-assessment. The precise per-capability obligations are in the [Capabilities Reference](/reference/capabilities).
 

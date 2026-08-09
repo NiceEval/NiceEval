@@ -96,10 +96,10 @@ export default defineEval({
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval
 npx niceeval exp my-agent refund # 只跑 ID 以 refund 开头的
-npx niceeval view              # 本地查看器里看结果
+npx niceeval view --latest --experiment my-agent  # 本地查看器里看结果
 ```
 
-**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要、失败 locator 和结果路径。`npx niceeval view` 会显示每条评估用例逐轮的输入、事件和评分明细。
+**验证运行结果**：终端会显示动态 dashboard，完成和排队数量在原位更新。失败、错误和 warning 会保留在输出中。运行结束后会打印摘要和 receipt；用其中的 Run ID 也可以执行 `npx niceeval view --run <runId>`，查看每条评估用例逐轮的输入、事件和评分明细。
 
 没跑通时，按报错的位置分三类排查：
 
@@ -198,7 +198,7 @@ async send(input, ctx) {
 
 `progress` 是可覆盖的短期状态。`diagnostic` 是运行结束后仍能回顾的有界记录。两者都不能指定 phase 或输出流，也不会自动改变 `Turn.status` 或 Attempt 判定。连接失败、解析无法继续等基础设施错误应抛出异常。正常收到的被测 Agent 失败通过 `Turn.status: "failed"` 表达。
 
-终端只显示错误的一层摘要和 locator。完整 code、message、cause、stack 与 diagnostics 保存在 Record 的 Attempt 事实里，使用 `niceeval show @<locator>` 查看。OTel trace 只补充调用关系和耗时，不是错误记录的前提。
+终端只显示错误的一层摘要和 Attempt identity。完整 code、message、cause、stack 与 diagnostics 保存在 Attempt-owned 通道里，使用 `niceeval show --run <runId> --page attempt-<attemptId>` 查看。OTel trace 只补充调用关系和耗时，不是错误数据的前提。
 
 要分别评估本地和生产环境，创建两个 Experiment 文件，并传入不同的工厂参数：
 

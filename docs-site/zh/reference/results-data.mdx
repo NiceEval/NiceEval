@@ -1,227 +1,94 @@
 ---
-title: "用 niceeval/record 读取记录数据"
+title: "读取 Record 数据"
 sidebarTitle: "结果数据 API"
-description: "报告脚下的数据层：openRecord / openRecordGraph 打开固定 Record 事实根，RecordHandle 读取 Run、Contribution 与 Attempt，Projector 产生带依据的读模型，materializeSample / exportSample / mirrorRecord 负责选择与交付。"
+description: "从停稳的 Record 选择 core-only Sample，并按 ReportPlan 读取当前数据。"
 ---
 
-import { RecordShape } from '/snippets/diagram-record-shape.jsx';
+`Record` 是 `.niceeval/record/` 下可人工编辑的当前数据集。它保存 Run、Member、Attempt 和各自的具名通道。读写都只在目录停稳时进行。
 
-[自定义报告](/zh/tutorials/custom-reports)用到的转换函数、组件与双面 renderer 脚下还有一层：`niceeval/record`，固定 Record 事实根的读取器。官方两扇门和全部报告读的都是这一层，没有私有数据通道；报告表达不了的口径，下到这层直接拿数据算。
+这页说明数据边界。要在终端或浏览器中查看结果，请阅读[查看结果](/zh/tutorials/viewing-results)。要定义页面和计算，请阅读[自定义报告](/zh/tutorials/custom-reports)。
 
-什么时候下到这层：
+## 打开停稳的 Record
 
-- **口径连 `aggregate()` / `rollup()` 都折不出。** 表格、矩阵、成绩单、散点都是「折叠」；分布类的看法（直方图、逐事件分析）不是折叠，要自己遍历 attempt。
-- **把结果喂进自己的系统。** 数据仓库、告警、内部平台——吃类型化事实，不吃磁盘布局。
-- **复核原始事实。** 判定、断言与诊断以 Claim 保存，原始行为以 Observation 保存，读取面按需投影，不猜测、不补造。
+Library 接收实际的 Record 根目录，不会补接 `.niceeval` 或 `record`。先打开 reader，再用明确的 Run 选择形成 `Sample`。
 
-这一层只读取固定 revision 的原始事实，不预设任何看法：不合并、不聚合、不按时间重选。「怎么看」归上层的报告与 Sample。
+```ts
+import { openRecordReader } from "niceeval/record";
+import { selectSample } from "niceeval/sample";
 
-## 读：`openRecord` 与 `openRecordGraph`
+let sample: Sample;
+{
+  await using reader = await openRecordReader({
+    root: ".niceeval/record",
+  });
 
-一个 `.niceeval` 是跨 Invocation / Experiment / Run 的**长期 Record 事实根**。Record 是 frozen typed-object Graph 上的 `RecordSubject`。Run、Attempt、Observation stream 与 Claim 以独立 typed payload 保存。
-
-每次提交产生新的不可变 committed Graph root，并与 mutable 元数据（head 与 append-only committedRoots）原子更新。
-
-`openRecordStore(root)` 只打开 Store capability，不选择 revision；`openRecord(store)` 再读取一次当下 head，`openRecordGraph(store, ref)` 打开指定 revision。后两个入口都返回 `RecordHandle`，所有子 handle 固定到同一个 `RecordGraphRef`：
-
-```typescript
-import { builtins, openRecord, openRecordGraph, openRecordStore } from "niceeval/record";
-
-await using store = await openRecordStore(".niceeval");
-await using record = await openRecord(store);
-
-record.ref;                        // RecordGraphRef:这次读取固定的 revision
-record.recordId;                   // 记录身份
-
-for await (const run of record.runs()) { /* ... */ }
-for await (const attempt of record.attempts()) { /* ... */ }
-```
-
-活动 writer 更新 head 后，已打开的 handle 不切换。只有明确接受调用时的 current head 才再次 `openRecord(store)`；需要复现旧 receipt 就保存 `RecordGraphRef` 并调用 `openRecordGraph(store, ref)`。
-
-### 定位 Attempt
-
-`resolveAttempt(locator)` 在当前固定 Graph 中沿 locator index 定位。诊断迟到事实时，先显式打开要检查的 Graph revision，再解析同一 locator；API 不按时间挑 revision，也不偷偷替换既有 Contribution：
-
-```typescript
-const attempt = await record.resolveAttempt(
-  "@01J8ZK3M6P4T7V9X2C5N8QW0RY",
-);
-```
-
-locator 是完整 128-bit `attemptId` 的 26 字符 Crockford 编码，CLI 写 `@` 加 26 字符。
-相同 locator 指向不同 graph 或 adopted revision 时，读取面显示完整 identity，不把它们混成一次执行。
-locator 来自多份显式打开的 Record 时，用 `recordId:@locator` 消除歧义。
-
-### Run、Contribution 与 Attempt
-
-```typescript
-for await (const run of record.runs()) {
-  run.runId;                       // 本 Run 身份
-  run.invocationId;                // 创建它的 Invocation
-  run.experimentId;
-  run.state;                       // "active" | "completed" | "incomplete" | "interrupted"
-
-  for await (const contribution of run.contributions()) {
-    contribution.mode;             // "executed" | "carried" | "accepted" | "renamed"
-    contribution.membershipSlot;
-    contribution.attempt;          // AttemptRef:含完整 Graph、attemptId、locator 与 adopted node
-    contribution.basisClaims;      // 采用时依据的 Claim
-  }
+  sample = await selectSample(reader, {
+    kind: "runs",
+    runIds: ["01J8ZK3M6P4T7V9X2C5N8QW0RY"],
+  });
 }
 ```
 
-Run 以 strong edge 列出每个 membership slot 的 current Contribution。
-`executed`、`carried`、`accepted` 与 `renamed` 都是同一种成员事实：Attempt 永远属于 origin Run，当前 Run 只通过 Contribution 采用它，不复制执行事实。
+也可以使用 `latest` policy。它从每个匹配 Experiment 的已完成 Run 中选择最后一个；未完成的 Run 必须以 `runIds` 明确选择。
 
-```typescript
-const attempt = await record.resolveAttempt("@01J8ZK3M6P4T7V9X2C5N8QW0RY");
-
-attempt.identity;                  // attemptId、locator、originRunId、evalId、ordinal
-attempt.originRunId;               // 永属的 origin Run
-attempt.state;                     // "active" | "completed" | "abandoned"
-await attempt.provenance();        // ProvenanceSet:输入、配置、算法身份
-attempt.observations();            // ObservationSet:原始事实流,跨段连续迭代
-await attempt.claims();            // ClaimSet:当时依据明确证据作出的判断
-```
-
-`attempt.observations().events()` 返回按 sequence 排列的 `ObservationRead` 联合：`available` 携带事件与 `EvidenceRef`，`unavailable` 携带全部 causes。Reader 验证 envelope、sequence 与 Claim 引用，未知事件原样保留。
-`attempt.claims()` 里的每条 Claim 带 `basedOn` 证据引用，读回时与当前 `RecordGraphRef` 组合成 `EvidenceRef`。
-
-## 读模型走 Projector
-
-判定、断言、执行树、时间树、usage、diff 与 Verdict 读面不直接按事件分支——它们由 **Projector** 从同一份 Record 确定性计算。公开 Projector 只能通过 `defineAttemptProjector` 构造，内建 Projector 至少包括 `execution` / `timing` / `trace` / `usage` / `diff` / `assertions` / `verdict`：
-
-```typescript
-const verdict = await record.project(attempt, builtins.verdict);
-
-if (verdict.state === "available") {
-  verdict.value;                   // VerdictClaim:passed / failed / errored / skipped
-  verdict.basedOn;                 // EvidenceRef[]:这条判定依据的证据
-  verdict.verification;            // full / limited / unverified,带全部 issues
-} else {
-  verdict.causes;                  // 全部 unavailable causes,不折叠
+```ts
+let latest: Sample;
+{
+  await using reader = await openRecordReader({ root: ".niceeval/record" });
+  latest = await selectSample(reader, {
+    kind: "latest",
+    experimentIds: ["checkout"],
+  });
 }
 ```
 
-Projector 使用追踪式 `ProjectionReadContext`，框架自动形成 `basedOn` 和 verification，作者不能手写或替换依据。
-结果分 value 与 verification 两轴：`truncated` / `redacted` / `missing` / `corrupt` 各自如实交代，不折叠成 `null`。
-同一 Projector 版本对相同输入返回相同结果；Projection 不进入 Record，关闭句柄后可丢弃。
+每次读取都使用调用时的文件值。用户在目录停稳后修改 Verdict、Usage 或其他通道，再次构造 ReportInput 时会读取修改后的值；Sample 本身只保存核心和分母。
 
-三条要点：
+## 核心数据关系
 
-- **证据缺失不静默。** 某类事实没被采集时 Projector 返回 unavailable `not-recorded`，对象缺失返回 `missing-object`——缺什么、为什么缺，都有结构化原因。
-- **读不了的落盘不静默。** 无法打开 Graph、识别 locator 或验证引用时命令失败并指出对象；缺失与损坏按 `missing-object` / `corrupt` 分开交代，不冒充空结果。
-- **同进程内按句柄记忆化。** 两处都读同一个 diff Projector 不会把大事实读两遍。
-
-`AttemptError` 是形成 `errored` Verdict Claim 的唯一致命执行错误，包含稳定 `code`、人可读 `message`、发生错误的 lifecycle operation，以及可选的有限 cause/stack。诊断可以与任意判定共存，保存运行仍可继续或收尾时发现的问题。瞬时 `progress` 不落盘；OTel trace 也不是错误存储的前提。Attempt lifecycle state 只有 `active` / `completed` / `abandoned`——`passed` / `failed` / `errored` / `skipped` 是 Verdict Claim，不是 Attempt state。
-
-## 大值与 transformation
-
-Agent 跑一条命令，输出可以大得离谱——一次递归 `grep` 扫进 `node_modules`，撞上压缩过的 JS 文件，单行就有几 MB。这种输出会同时进入 Observation stream 的多个事件，不管的话一个 attempt 就能占上百 MB。
-
-Record owner 冻结单个 Observation envelope 最大 1 MiB。更大的完整 payload 走两条路：作为独立 typed object 由事件以 strong edge 引用；或由具体 event schema 声明固定 transformation。serialization policy 在持久化边界执行凭据替换与预算 transformation，并把 `EvidenceTransformationV1`（`truncated` / `redacted`，带 selector 与原始字节数或 policy）写在事件上。
-
-**这不影响判定。** 断言读的是运行时的完整输出，截断只发生在持久化边界——提交的 Observation 是证据，不是评分的输入。断言该过还是过，该挂还是挂。
-
-要在自己的脚本里如实标出「这里少了东西」，读 `ObservationRead` 的验证轴：
-
-```typescript
-for await (const read of attempt.observations().events()) {
-  if (read.state === "available") {
-    for (const t of read.event.transformations ?? []) {
-      if (t.kind === "truncated") {
-        console.log(`${t.selector.schema} 原始 ${t.originalBytes} 字节,已截断`);
-      }
-    }
-  } else {
-    console.error(read.causes);   // 全部 unavailable causes,不折叠
-  }
-}
+```text
+Run 的 expected slots
+        ↓
+Member: executed | carried | accepted
+        ↓
+Attempt 与它的具名 channels
 ```
 
-transformation 由 Record 语义驱动，不按字符串值大小猜。展示层可以有界预览，但它展示的是 EvidenceValue 的 verification / transformation，不是一套独立的落盘截断规则。`.niceeval/` 适合做本地事实根，不默认适合直接提交进 Git。
+- Run 的 `expectedSlots` 决定分母。
+- 一个 slot 最多有一个 Member。`executed` 表示本 Run 执行了 Attempt；`carried` 与 `accepted` 表示采用已有 Attempt。
+- Attempt 保留实际执行它的 `origin`。采用 Attempt 不复制 Verdict、Usage 或诊断。
+- carry 与 accept 的理由属于 Run 的 `niceeval.actions` 通道，并以 slot 与 Attempt 关联。
 
-截断发生在持久化边界，不能替 agent runtime 限制发给模型的工具输出。如果 runtime 先把 50 MB 工具结果完整写入模型请求并收到 413，NiceEval 仍会把 Attempt 记为 `errored`；这里只保证失败后的事件流不再被同一段输出撑爆。
+Record 的结构、路径、身份和引用校验用于拒绝自相矛盾的数据。它不保存编辑历史。
 
-## 选一份固定 Sample：`materializeSample` / `narrowSample` / `unionSamples`
+## 通道读取状态
 
-多数场景先回答「这份固定结果里选哪些」。Sample 不是目录、时间或「最新结果」的惰性查询，它是已经生成的选择值，由 `niceeval/sample` 提供：
+业务值保存在具名通道，例如 Verdict、Eligibility、Usage 与诊断。通道的持久采集完整度和这次解码完整度是两条独立信息。
 
-```typescript
-import { openRecord, openRecordStore } from "niceeval/record";
-import { materializeSample, narrowSample, unionSamples } from "niceeval/sample";
-
-await using store = await openRecordStore(".niceeval");
-await using record = await openRecord(store);
-const sample = await materializeSample(record, {
-  runs: ["compare/candidate"],       // 明确完整 ID 数组:runs / evals / experiments
-});
-```
-
-| 入口 | 回答 |
-|---|---|
-| `materializeSample(record, selection)` | 通过一个固定 Record handle 生成可复核总体 |
-| `narrowSample(sample, selector)` | 从该总体收窄实验、Eval 或成员，保留 sources 与分母 |
-| `unionSamples(samples, conflictPolicy)` | 合并多份已生成的 Sample，跨 Record 不猜主 Graph |
-
-`materializeSample()` 只读取该 Graph 中各选定 Run revision 的 current Contribution strong edge，将每个 slot 写成成员或 coverage 项。
-writer 推进 head 后，调用方必须重新打开 Record 并生成另一份 Sample——同一份 Sample 不漂移。
-
-```typescript
-sample.identity;                 // SampleRef:本次选择的 digest 身份
-sample.sources;                  // 完整 RecordGraphRef 列表,按 JCS 排序,非空
-sample.members;                  // SampleMembership[]:每项含完整 Contribution 与 AttemptRef
-sample.coverage;                 // denominator / included / excluded / unavailable
-sample.provenance;               // materialized / narrowed / union 的完整轨迹
-```
-
-coverage 精确保存分母与三个互斥子集：`included`、`excluded`（带造成排除的 selector）与 `unavailable`（带全部 causes 与 basedOn）。
-收窄只调整 coverage，不重新打开 Record、不挑新的 slot、不丢 parent denominator；跨 Record 合并只接受已经生成的 Sample，`unionSamples()` 按完整 identity 去重，同一 address 不同 revision 默认 conflict。
-
-`niceeval show` / `view` 的默认首页消费一份固定 Sample 的 coverage 与 MetricValue。
-要看另一份历史组合，显式生成另一份 Sample；视图不按 locator、时间或 provenance 再造第二套成员集合。
-
-<RecordShape />
-
-## 复制与导出
-
-按用途选择复制或导出原语：
-
-- **`captureRecordMirrorSnapshot(source)` + `mirrorRecord(source, target, { snapshot })`** —— 先持久化精确 source revision token，再把对应 committed-root 历史复制进 unbound target。重试复用同一 token，不会静默漂到新 head；不接受 evidence allowlist。
-- **`exportSample(sample, { sources, target })`** —— 通过显式固定 source reader 把一份 `MaterializedSample` 写进独立 `SampleBundleStore`，并返回 `SampleBundleRef`。`openSampleBundle(source, ref)` 只读取 bundle 已复制的成员、coverage 和证据，不重新执行 Record 的 current 选择。
-- **`exportReport(...)`** —— 呈现交付。导出报告消费的 evidence closure，可删除、可重新生成，不进入 Record 权威事实（见 [Reports](/zh/tutorials/custom-reports)）。
-
-```typescript
-import {
-  captureRecordMirrorSnapshot,
-  createRecordSourceSet,
-  mirrorRecord,
-} from "niceeval/record";
-import { createSampleBundleStore, exportSample, openSampleBundle } from "niceeval/sample";
-
-const snapshot = await captureRecordMirrorSnapshot(sourceStore);
-await mirrorRecord(sourceStore, targetStore, { snapshot });    // 精确且可重试的历史副本
-
-await using sources = await createRecordSourceSet([record]);
-await using bundleStore = await createSampleBundleStore("site-data");
-const bundleRef = await exportSample(sample, {
-  sources,
-  target: bundleStore,
-});                                                           // 独立 SampleBundle
-const bundle = await openSampleBundle(bundleStore, bundleRef); // 只读已复制内容
-```
-
-`SampleBundleStore` 是独立 Store capability，没有 Record 的 Graph、writer 或 current-member API。
-**SampleBundle 不是 Record**——`openRecord()` 不能打开它，`--record` 也不接受它；`--record` 只接 RecordStore 根（如 `mirrorRecord` 的目标）。
-要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/tutorials/publish-report)。
-
-## 分层速览
-
-| 层 | 入口 | 回答 |
+| 状态 | 含义 | 调用方处理 |
 | --- | --- | --- |
-| 官方两扇门 | `niceeval show` / `niceeval view` | 零代码看官方摆法 |
-| 自定义报告 | [自定义报告](/zh/tutorials/custom-reports)、[报告组件](/zh/reference/report-components) | 自己的口径与摆法 |
-| 记录数据 API（本页） | `niceeval/record` + `niceeval/sample` | 折叠表达不了的算法、接自己的系统、复核原始事实 |
+| `read` | 已读到值；采集或解码仍可能是 partial。 | 保留完整度与问题说明。 |
+| `unavailable` | 已声明但未采集，或此处不适用。 | 显示原因。 |
+| `unsupported` | 当前 reader 不支持这个通道。 | 只让依赖该通道的内容受影响。 |
+| `invalid` | 被请求的通道文件或内容无效。 | 以具名问题失败。 |
 
-每层都建立在下一层之上，同一份固定 Record 事实是唯一事实来源——上层的派生物删了随时可重算。
+未知或退役通道只在该通道显示 `unsupported`。`unavailable`、`unsupported` 与 `invalid` 不能互相替代。未请求的通道不会阻止无关读取。
+
+## 从 Sample 到 ReportInput
+
+`Sample` 是内存中的明确选择，不会写回 Record。它保留每个 expected slot，并用下列状态表达范围：
+
+| Sample 状态 | 含义 |
+| --- | --- |
+| `included` | 有合法 Member，且能读取其采用的 Attempt。 |
+| `not-recorded` | expected slot 没有 Member。 |
+| `invalid` | Member、Attempt 或核心引用存在问题。 |
+| `excluded` | 调用方在既有 Sample 上排除了该项。 |
+
+Reports 根据所需的 facts 把 Sample 变成 `ReportInput`。`ReportInput` 是进程内普通值，保留分母、成员状态、通道读取状态和问题。Report 只消费它，不读取路径或自行解释文件。
+
+## 相关页面
+
+- [查看结果](/zh/tutorials/viewing-results)：用 `show` 与 `view` 选择 Sample。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)：理解 `carried`、`accepted` 与 `niceeval.actions`。
+- [报告组件参考](/zh/reference/report-components)：查看 Report 的公开能力。

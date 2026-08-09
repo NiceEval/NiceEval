@@ -1,10 +1,10 @@
 // defineReport:唯一可被宿主装载的产物 —— 外壳(title、theme、dimensionPins、head)加
-// 非空页列表;单页与多页不是两种机制,页数只是列表长度(docs/feature/reports/library/shell.md)。
+// 非空页列表;单页与多页不是两种机制,页数只是列表长度(docs/feature/reports/README.md)。
 // 单页缩写:传入 `PageRender<Sample>`,规范化为 id `report` 的 sample page。
 // 页函数只放在每页的 `render` 字段,装载期不执行。
 // page 只有一种形状(PageDefinition):`params` 把一页声明成参数化页,`load` 声明输入来源;
 // 核心不区分 attempt / experiment 这些实体种类——attempt 与 experiment 详情只是标准库导出的
-// 两张普通参数化页(docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)。
+// 两张普通参数化页(docs/feature/reports/README.md「参数化页:attempt 与 experiment 详情」)。
 //
 // text/web 两个宿主的渲染入口在 ../runtime/;这里只有 ReportDefinition 的类型体系、
 // 装载规范化与元数据折叠(buildReportMeta / resolveReportTitle),不做任何渲染。
@@ -66,7 +66,7 @@ export interface ReportPageBase {
   title: LocalizedText;
 }
 
-/** 组件下钻交出的目标值(不是 URL):哪张页、哪个参数(docs/feature/reports/library.md「目标与下钻」)。 */
+/** 组件下钻交出的目标值(不是 URL):哪张页、哪个参数(docs/feature/reports/README.md「目标与下钻」)。 */
 export interface ReportTarget<Params extends JsonValue = JsonValue> {
   page: string;
   params?: Params;
@@ -211,7 +211,7 @@ export interface ReportMetaPage {
 /**
  * 规范化后的报告声明,经组合组件 ctx.report 只读可见(dimensionPins / head 是注入资产与视觉配置,不进)。
  * 不携带"当前是哪一页"——那由 ctx.page(PageContext)表达,两者不是同一份状态
- * (docs/feature/reports/library/shell.md「行为约束」)。
+ * (docs/feature/reports/README.md「行为约束」)。
  */
 export interface ReportMeta {
   /** 走完回退链(声明 title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」)后的标题。 */

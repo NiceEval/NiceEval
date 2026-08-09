@@ -1,6 +1,6 @@
 // Scatter / Line / Bars / Area：接 points 的显示形状原语。
 // 内部落到 Dataset + Chart 内核；作者面不暴露 Dataset。
-// 契约见 docs/feature/reports/library.md「图表」、components/charts/README.md。
+// 契约见 docs/feature/reports/README.md「图表」、components/charts/README.md。
 
 import type { ReactNode } from "react";
 import { COMPONENT_FACES, defineComponent, type ReportComponent } from "../tree.ts";
@@ -145,7 +145,7 @@ function sortValue(raw: unknown, path: string, external: boolean): number | stri
 
 /**
  * Bars 的显示层排序与截断：只改可见行序与数量，不聚合长尾。
- * 契约：docs/feature/reports/components/charts/README.md「Bars」。
+ * 契约：docs/feature/reports/README.md「Bars」。
  */
 export function applyBarsSortLimit(
   points: readonly object[],

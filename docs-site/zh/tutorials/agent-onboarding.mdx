@@ -59,7 +59,7 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 模型或 key 解析不到、网关拒了鉴权、判分请求超时，这条 Judge 断言记成 `unavailable` 并带上原因，这次 Attempt 判 `errored`——评不出来的结论既不算通过，也不算 agent 答错。所以「全绿」就是真的评过了。确实允许某条缺席（实验性的、开发机上没 key）时，在那一条上显式写 `.optional()`。
-- **配完先验一次。** 写一条只评固定文本的轻量评估用例跑一遍，不需要先调被测 agent：`t.judge.autoevals.closedQA("这段文本是否表达成功?", { on: "operation completed successfully" }).gate(0.8)`。跑完 `niceeval show <评估用例 id>` 确认每条后面真的跟着分数。
+- **配完先验一次。** 写一条只评固定文本的轻量评估用例跑一遍，不需要先调被测 agent：`t.judge.autoevals.closedQA("这段文本是否表达成功?", { on: "operation completed successfully" }).gate(0.8)`。跑完用 receipt 的 Run ID 执行 `niceeval show --run <runId> --page attempt-<attemptId>`，确认每条后面真的跟着分数。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里有没有可用的 key（`NICEEVAL_JUDGE_KEY`、`DEEPSEEK_API_KEY` 等），有就用 `apiKeyEnv` 指过去并按上一条验证。确实没有才降级到精确断言 + 形状断言（`includesUrl()` / `hasSections()` 这类，见[题型与断言](/zh/tutorials/evaluation-kinds)），并在收尾总结里明确说明 Judge 未配置及原因。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己打分。模型解析优先级（单次调用 → 评估用例级 → 全局配置）和三种评分形状见 [Judge](/zh/explanation/judge)，`judge` 字段全集见 [defineConfig 参考](/zh/reference/define-config)。
 
@@ -85,10 +85,10 @@ export default defineConfig({
 
 ```sh
 <包管理器> exec niceeval exp models   # 按路径运行两个模型配置
-<包管理器> exec niceeval view                 # 查看器里看对比结果
+<包管理器> exec niceeval view --latest --experiment models  # 查看器里看对比结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show` 加 `--source`、`--execution`、`--timing`、`--diff` 完成运行、观察、修改和重跑。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)从 receipt 取得 Run ID，再用 `niceeval show --run <runId> --page <planned-route>` 查看 source、execution、timing 或 diff 页面，完成观察、修改和重跑。查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对。`t.succeeded()` 不过 → 应用回了非成功状态。只有内容断言不过 → 接入已经通了，调断言或调应用。
 
 ## 第 5 步：收尾，告诉用户做了什么
 

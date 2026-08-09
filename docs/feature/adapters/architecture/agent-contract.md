@@ -85,7 +85,7 @@ interface AgentContext {
   readonly experimentId?: string;
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: DiagnosticInput): void;
-  fact(key: string, value: string | number | boolean): void;
+  fact(name: string, value: JsonValue): void;
   log(msg: string): void;
 }
 
@@ -94,9 +94,9 @@ interface SandboxAgentContext extends AgentContext {
 }
 ```
 
-`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性运行观测(如实际生效的 agent 配置、缓存命中状态)。
-它作为 Observation 追加进 `.niceeval/` 长期 Record 事实根,随 Attempt 保存,成为一等观测量。
-它不影响 Turn status 或 verdict,形状与覆写语义见 [Record · Architecture](../../record/architecture.md)。
+`fact(name, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈入口：它以反向域 name 写入本 Attempt 的中性 JSON document，完整 document 上限为 65,536 UTF-8 bytes。
+同一 owner/name 只允许写一次；第二次写入是 typed error，不替换也不追加。它作为 Attempt-owned custom channel 保存，成为一等观测量。
+它不影响 Turn status 或 verdict，精确形状与写入语义见 [Record · Architecture](../../record/architecture.md)。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。
 二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。

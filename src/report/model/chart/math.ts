@@ -26,7 +26,7 @@ export interface AxisBounds {
 }
 
 /**
- * 图轴值域推定(docs/feature/reports/components/charts/README.md「值域」),两步:
+ * 图轴值域推定(docs/feature/reports/README.md「值域」),两步:
  *
  * ① 呼吸边距:数据极值向两端各扩数据跨度的 20%,数据极值点因此不落在绘图框线上。数据跨度
  * 为零(单点,或全部点同值)时,边距改取该值绝对值的 20%;值恰为 0 时取 1(否则唯一的点仍会
@@ -111,7 +111,7 @@ export interface AxisScale {
  * `ticksInDomain` 在域内取整齐刻度,最后按 `[pixelLo, pixelHi]` 做线性映射。`invert` 只影响
  * 最后这一步的映射方向(`better: "lower"` 的轴反向渲染)——值域先按呼吸边距 / bounds 推定,
  * 再决定要不要反向,反向不改变值域本身或钳制结果。Scatter 与 Line 的两轴共用
- * 这一个函数(docs/feature/reports/components/charts/README.md「值域」)。
+ * 这一个函数(docs/feature/reports/README.md「值域」)。
  */
 export function axisScale(
   values: readonly number[],
@@ -207,7 +207,7 @@ function ringCandidates(p: PointLabelInput, d: number): Omit<PlacedPointLabel, "
 }
 
 /**
- * 散点直接标签的候选位择优布局(docs/feature/reports/library.md「Scatter」):
+ * 散点直接标签的候选位择优布局(docs/feature/reports/README.md「Scatter」):
  * 每个标签在点四周由近及远的候选环上打分——与已放置标签的重叠、与任何数据点的重叠、
  * 越出画布的面积、离点距离逐项累加,取代价最小的候选。存在无冲突候选时标签必不遮点、
  * 不叠标签、不越界;全候选冲突时取重叠最小者,绝不丢标签。重合点簇因此向不同方向散开,

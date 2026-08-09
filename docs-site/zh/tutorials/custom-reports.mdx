@@ -1,66 +1,76 @@
 ---
 title: "编写自定义报告"
-description: "用普通 TypeScript 函数计算结果，并同时生成终端与网页报告。"
+description: "先声明页面所需 facts，再用一次内存执行生成终端、网页与静态导出共用的结果。"
 ---
 
-自定义报告接收宿主选好的 Sample，返回组件树：
+自定义 Report 不接收 Record 路径，也不在页面 render 时临时查数据。固定流程是：
 
 ```text
-Sample
-  → 普通 TypeScript 函数
-  → 可序列化结果值
-  → 组件
-  → text / web
+core-only Sample → ReportScope → ReportPlan
+                                  ↓
+                              ReportInput
+                                  ↓
+                         ReportExecution（一次）
+                           ↙       ↓       ↘
+                         show     view    export
 ```
 
-计算发生在 page render 中。
-组件只显示 `rows`、`points`、`items`、`nodes` 或 `attempt` 等具体值。
+## 定义所需 fact
 
-## 创建第一份报告
+优先使用 NiceEval 导出的内建 requirement。自定义 JSON fact 使用 `defineJsonFact()`，并明确 owner：
 
-新建 `reports/quality.tsx`：
+```ts
+import { defineJsonFact } from "niceeval/report";
 
-```tsx
-import {
-  Page,
-  Scatter,
-  Table,
-  agent,
-  aggregate,
-  costUSD,
-  defineReport,
-  passRate,
-} from "niceeval/report";
-
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
-
-  return (
-    <Col>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Col>
-  );
+const attemptEnergy = defineJsonFact({
+  id: "attempt-energy",
+  owner: "attempt",
+  name: "com.example.energy",
+  parse(document) {
+    if (typeof document.value !== "number") {
+      throw new Error("energy must be a number");
+    }
+    return document.value;
+  },
 });
 ```
 
-运行：
+自定义 name 使用反向域 namespace，不能以 `niceeval.` 开头。parser 只接收已验证的 `{ observedAt, value }`，不会收到 bytes、descriptor、路径或 blob。它在 execute 阶段对每个 owner 与 requirement 组合执行一次，必须同步返回 JSON 值。
 
-```bash
-niceeval show --report ./reports/quality.tsx
-niceeval view --report ./reports/quality.tsx
+## 先计划页面
+
+`plan(scope)` 只看 core-only slots。它可以按 Run、slot、Attempt ID 和 locator 穷尽详情 route，但不能读取 Verdict、Usage 或其它业务值。
+
+```ts
+import {
+  defineReport,
+  verdict,
+} from "niceeval/report";
+
+export default defineReport({
+  id: "quality",
+  plan(scope) {
+    return {
+      calculations: [qualitySummary],
+      pages: [
+        {
+          id: "overview",
+          route: { pathname: "/", parameters: {} },
+          title: "Overview",
+          inputs: [verdict, attemptEnergy],
+          calculations: [qualitySummary],
+          render(input) {
+            return overviewPage(input);
+          },
+        },
+      ],
+      downloads: [],
+    };
+  },
+});
 ```
 
-两个宿主执行同一个 page render。
-同一棵结果树分别交给 text 和 web renderer。
+页面、Calculation 和 Download 各自声明 `inputs`。未声明的 fact 不能在执行时补读；宿主会把这种调用报告为 plan invalid。
 
 ## 设成项目默认
 
@@ -75,317 +85,77 @@ export default defineConfig({
 });
 ```
 
-以后直接运行 `niceeval show` 或 `niceeval view`。
-临时切回内建报告时使用 `--report standard`。
+以后不带 `--report` 的 `show` 与 `view` 使用它。按次切回内建报告时使用 `--report standard`。
 
-## 收窄 Sample
-
-宿主先处理 `--record`、`--exp` 和评估位置参数，
-再把 Sample 交给报告。
-携带与本次执行的 Attempt 同等属于这一份当前 Sample。
-
-报告内继续使用 Sample 方法：
+## 定义 Calculation
 
 ```ts
-const security = sample.scope({ evals: "security/" });
-
-const reliable = security.filter((attempt) =>
-  attempt.result.verdict !== "errored"
-);
-```
-
-`scope()` 改变比较总体和 coverage 分母。
-`filter()` 删除不可信或不适用的观测。
-
-一组图共享范围时，先生成一个具名 Sample：
-
-```ts
-const production = sample
-  .scope({ experiments: "production/" })
-  .filter(isReliableAttempt);
-```
-
-然后把同一个 `production` 传给每次计算。
-
-## 使用 `aggregate()`
-
-`aggregate()` 接收分组函数和 Calculation：
-
-```tsx
-const rows = await aggregate(sample, {
-  by: {
-    experiment,
-    agent,
-  },
-  values: {
-    passRate,
-    costUSD,
+const qualitySummary = defineCalculation({
+  id: "quality-summary",
+  inputs: [verdict, attemptEnergy],
+  completeness: "allowPartial",
+  evaluate(input) {
+    return calculateQuality(input);
   },
 });
 ```
 
-对象键就是结果字段名。
-每个读数字段是 MetricValue，包含 value、unit、samples、total、basis 与 refs。
+`allowPartial` 可以使用成功读到的部分，但结果必须保留完整 Sample 分母、observed 数与 partial 标记。`requireComplete` 只有 durable collection 与 decoding 都 complete 时才可用。
 
-结果是普通数组，可以继续使用 JavaScript：
+## 页面怎样读取
 
-```ts
-const ranked = rows
-  .toSorted((a, b) =>
-    (b.passRate.value ?? -Infinity) -
-    (a.passRate.value ?? -Infinity)
-  )
-  .slice(0, 10);
-```
-
-不要把聚合结果再次传给 `aggregate()`。
-需要增加读数时，回到同一份 Sample，把 Calculation 加进原来的 `values`。
-
-## 定义自己的 Calculation
-
-`rollup()` 把单 Attempt 取值函数变成 Calculation：
+页面只能读取自己的 inputs 和 calculations：
 
 ```ts
-import {
-  mean,
-  min,
-  rollup,
-} from "niceeval/report";
+render(input) {
+  const rows = input.report.sample.included.map((slot) => ({
+    locator: slot.locator,
+    verdict: input.readAttempt(slot, verdict),
+    energy: input.readAttempt(slot, attemptEnergy),
+  }));
 
-export const changedLines = rollup(
-  async (attempt) => {
-    if (attempt.result.verdict !== "passed") {
-      return null;
-    }
-
-    const diff = await attempt.diff();
-    return diff ? countChangedLines(diff) : null;
-  },
-  {
-    withinEval: min,
-    acrossEvals: mean,
-    unit: "lines",
-    better: "lower",
-  },
-);
-```
-
-官方 Calculation 和用户 Calculation 使用同一个 `rollup()`。
-空集合保持 `null`，不会被伪装成零。
-
-## 显示实体列表
-
-Sample 已经提供展开后的 `attempts`：
-
-```tsx
-export default defineReport((sample) => {
-  const failures = sample
-    .filter((attempt) =>
-      attempt.result.verdict === "failed" ||
-      attempt.result.verdict === "errored"
-    )
-    .attempts
-    .toSorted((a, b) =>
-      (attemptCostUSD(b.result) ?? 0) -
-      (attemptCostUSD(a.result) ?? 0)
-    )
-    .slice(0, 50);
-
-  return <AttemptList attempts={failures} />;
-});
-```
-
-需要通用表格时先立即转换：
-
-```tsx
-const rows = toAttemptRows(failures);
-return <Table rows={rows} />;
-```
-
-## 复用动态区块
-
-复用就是普通函数：
-
-```tsx
-export async function overview(sample: Sample) {
-  const performance = await aggregate(sample, {
-    by: { agent },
-    values: { passRate, costUSD },
-  });
-
-  return (
-    <>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </>
-  );
+  return {
+    title: "Overview",
+    body: { rows },
+    textAlternative: renderRowsAsText(rows),
+  };
 }
 ```
 
-在 page render 中直接调用：
+页面返回结构化 JSON 与文字等价内容，不返回 React 组件、脚本、CSS 或文件路径。浏览器宿主由 NiceEval 内建 runtime 提供。
 
-```tsx
-render: async (sample) => (
-  <Col>
-    {await overview(sample)}
-  </Col>
-)
+## 失败隔离
+
+如果页面 A 只请求合法 Verdict，而页面 B 请求损坏的 Usage：
+
+- A 正常 render；
+- B 形成带 channel 与 issues 的 `input-invalid`，本机 view 显示具名错误页；
+- 其它页面不会重新读取 Record；
+- 静态 export 因计划内存在失败 consumer 而整体不发布。
+
+用户 render、Calculation 或 Download 抛错时状态是 `execution-failed`，不会冒充输入无效。
+
+## 下载项
+
+Download 也是具名 consumer。它声明 inputs 和 calculations，以 `defineReportDownloadPath("downloads/...")` 取得受约束路径，并在唯一执行阶段返回完整 `Uint8Array`。静态 export 只写已经生成的 bytes，不再次运行用户代码。
+
+## 能力边界
+
+自定义 Report 不提供：
+
+- 任意浏览器 script、style、font、worker 或 WASM；
+- 运行时网络请求；
+- 从 Report 读取文件路径或 blob；
+- generic `ctx.fact()` 的 JSONL、追加或超过 65,536 UTF-8 bytes 的 document。
+
+大文本和二进制运行事实使用 NiceEval 认可的具名专用 Attempt channel 与 blob，由内建 decoder 交付普通值。
+
+## 运行与发布
+
+```sh
+npx niceeval show --run <run-id> --report ./reports/quality.ts
+npx niceeval view --run <run-id> --report ./reports/quality.ts --no-open
+npx niceeval view --run <run-id> --report ./reports/quality.ts --out ./quality-site
 ```
 
-多个独立计算使用普通 `Promise.all()`。
-
-## 创建多页报告
-
-```tsx
-export default defineReport({
-  title: "Team evals",
-  pages: [
-    {
-      id: "overview",
-      title: "Overview",
-      render: async (sample) => (
-        <Col>
-          {await overview(sample)}
-        </Col>
-      ),
-    },
-    {
-      id: "failures",
-      title: "Failures",
-      render: failuresPage,
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-`pages` 的数组顺序就是导航顺序。
-宿主只执行当前请求的 page。
-`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻。`standardExperimentPage` 同样可以放进来，散点上的实验点就能点开实验详情。
-
-## 自定义 Attempt 详情
-
-复用官方页的参数与装载，只换 `render`：
-
-```tsx
-{
-  ...standardAttemptPage,
-  render: async (attempt) => {
-    const [turns, files] = await Promise.all([
-      toConversationTurns(attempt),
-      toDiffFiles(attempt),
-    ]);
-
-    return (
-      <Col>
-        <Conversation turns={turns} />
-        <DiffView files={files} />
-      </Col>
-    );
-  },
-}
-```
-
-Attempt 详情页的 id 是 `attempt`。
-报告里没有这张 page 时，locator 只显示为文本。
-
-## 接入外部业务快照
-
-先把外部数据写成冻结快照模块：
-
-```tsx
-// budget-snapshot.ts —— 运行前由脚本生成，随报告进版本库
-export const budgets = {
-  checkout: { monthlyUSD: 40 },
-  search: { monthlyUSD: 25 },
-};
-```
-
-报告文件直接 import：
-
-```tsx
-import { budgets } from "./budget-snapshot";
-
-export default defineReport(async (sample) => {
-  const performance = await aggregate(sample, {
-    by: { experiment },
-    values: { passRate, costUSD },
-  });
-
-  return <Table rows={joinBudgets(performance, budgets)} />;
-});
-```
-
-page render 不请求网络，不读取环境变量、时钟或随机数。要更新数据，就重新生成快照模块。
-快照属于报告的 import 图，开发服务器会在它变化时重新构建报告。
-
-## 编写新的显示形状
-
-现有组件组合不出目标显示时，使用扩展入口：
-
-```tsx
-import { defineRenderer } from "niceeval/report/extension";
-
-const ConfusionMatrix = defineRenderer({
-  text(value, options, context) {
-    return renderTextMatrix(value, options, context);
-  },
-  web(value, options, context) {
-    return <WebMatrix value={value} options={options} />;
-  },
-});
-```
-
-两个 renderer 都只接已经计算好的普通值。
-自定义计算继续写普通函数，不需要注册协议。
-
-## 固定某个值的颜色
-
-在报告外壳的 `dimensionPins` 中按分组字段和完整值固定视觉身份。
-例如可以让同一个 Agent 在每一页都使用同一组颜色、线型和符号。
-
-显示标签不是身份键。不要截 Experiment 路径末段，也不要按数组下标分配颜色。
-完整主题字段见[报告主题](/zh/tutorials/theming)。
-
-## 让自己的组件跟随任何主题
-
-自定义 renderer 使用 `--niceeval-*` 主题令牌，
-不要把 Basalt 或 Chalk 的 hex 值复制进组件。
-状态使用 positive、negative、warning 等语义令牌，
-名义 series 使用运行时分配的视觉身份。
-
-## 嵌入自己的 React 页面
-
-在服务端或构建进程中计算：
-
-```ts
-const points = await aggregate(sample, {
-  by: { agent },
-  values: { passRate, costUSD },
-});
-```
-
-在浏览器使用 `niceeval/report/react`：
-
-```tsx
-<Scatter
-  points={points}
-  x="costUSD"
-  y="passRate"
-  point="agent"
-/>
-```
-
-React 入口不读取 Record、Sample 或 artifact。
-记录根不在产品运行环境时，把 Result 在构建期写成 JSON。
-
-## 下一步
-
-- 查完整形状：[报告组件 API](/zh/reference/report-components)
-- 发布静态站：[发布报告](/zh/tutorials/publish-report)
-- 自定义外观：[报告主题](/zh/tutorials/theming)
+`--out` 必须指向不存在的目录。详情见[发布静态报告](/zh/tutorials/publish-report)和[报告组件 API](/zh/reference/report-components)。

@@ -1,164 +1,70 @@
-# Reports —— 计划、数据与双面呈现
+# Reports：把 Sample 变成可交付视图
 
-Reports 把一份已经生成的 [Sample](../sample/README.md) 变成可审计的报告交付物。
-它保留组件、主题、`show`、`view`、参数化页面与作者组合能力，但把取数固定在 renderer 之前。
+Reports 把已经选择好的 [Sample](../sample/README.md) 变成终端输出、浏览器页面或可分享的静态报告站。它负责计算和呈现，不拥有评估事实。
 
-作者模型只有一条主线：
+    RecordReader → core-only Sample → ReportPlan
+                                      ↓
+                                  ReportInput
+                                      ↓
+                              ReportExecution
+                                ↙           ↘
+                              view          export
 
-```text
-冻结报告模块与参数
-  → plan：枚举 page instance、Calculation、Projector request
-  → executor：规范化、memoize 并求出 ReportData
-  → render：每个 page instance 生成一次不可变组件树
-  → text / web：消费同一棵树
-```
+<code>ReportInput</code> 是进程内的普通值。它带着 core-only Sample、完整分母，以及按 ReportPlan 请求的 Run 与 Attempt 通道读取。它不落盘，不是另一种 Record 格式，也不携带打开的 reader。
 
-ReportDefinition 的 `plan({ sample, parameters })` 只读取 Sample 的稳定 identity、规范化 sources、已定 membership、coverage 与 provenance。
-它运行一次，不能读取 Projection 值、网络、时钟、任意 Store 或未计划的外部数据。
+## 核心心智
 
-## 基本写法
+Sample 决定比较范围和分母。Reports 不按时间、路径或 Attempt locator 再选成员。一个分母项即使没有 Member、核心引用有误，或被调用方排除，也保留在 ReportInput 中，并以 Sample 的状态呈现。
 
-```tsx
-import {
-  Col,
-  Scatter,
-  Table,
-  aggregate,
-  costUSD,
-  defineReport,
-  passRate,
-} from "niceeval/report";
+只有 Record→Reports composition adapter 同时接收 reader、Sample 与 plan。Report 定义、Calculation、页面、本机 runtime 和静态 runtime 只消费 ReportInput 或一次形成的 ReportExecution，不重新打开 Record。
 
-export default defineReport({
-  plan({ sample }) {
-    const performance = aggregate(sample, {
-      id: "performance",
-      by: ["agent"],
-      measures: { passRate, costUSD },
-      unavailable: "exclude",
-    });
+每个页面和 Calculation 都声明自己需要的 facts。未被该页面或 Calculation 请求的损坏、未知或退役通道不会阻断它。被请求的 invalid 通道形成该请求的失败；unavailable 与 unsupported 进入明确的呈现状态。
 
-    return {
-      pages: [
-        {
-          id: "overview",
-          title: "Overview",
-          data: { performance },
-          render({ performance }) {
-            return (
-              <Col>
-                <Scatter
-                  points={performance}
-                  x="costUSD"
-                  y="passRate"
-                  point="agent"
-                />
-                <Table rows={performance} />
-              </Col>
-            );
-          },
-        },
-      ],
-    };
-  },
-});
-```
+## 计算与完整度
 
-`aggregate()` 在 plan 中声明一个 sample-wide `AggregateRequest<Groups, Measures>`，不在作者代码里取值。
-executor 统一执行 request，并把冻结的 `ReportData` 交给 `render()`。其中 `performance` 始终是
-`EvidenceValue<AggregateResult>`；`Scatter` 与 `Table` 的 aggregate 输入会先显示外层 unavailable，
-available 时才消费 `value.rows` 与 `value.coverage`。示例没有把它隐式 unwrap 成未包装数组。
-同一 page instance 的 render 只运行一次，text 和 web 不会各自计算一遍。
+Calculation 必须同时声明：
 
-## 作者应当理解的边界
+- 所需的 facts；
+- 分母如何采用 Sample 的 slot；
+- <code>allowPartial</code> 或 <code>requireComplete</code> 完整度 policy；
+- 可用、部分和不可用状态怎样呈现。
 
-- **Sample 是固定输入。** Reports 不重开 Record，不按 locator、时间或配置摘要重新挑选 Attempt。
-- **Projector 是唯一取数入口。** 通过 Record 的 `defineAttemptProjector()` 声明身份、规范化 defaults、实际 Projector object dependencies 与读取。`projectNormalized()` 只返回 raw `T`；作者不能手写 available/unavailable 或 `basedOn`。
-- **Calculation 是纯声明。** 它用带本地 request id 的 ProjectorRequest 列出 dependency，`evaluate()` 只经 `input.get(request)` 计算已交付输入。
-- **renderer 只显示。** 它不能发起查询、执行 Calculation、读取 Store，或以 UI 字段反推 Record 事实。
-- **缺失不是 null。** `EvidenceValue`、`MeasureCell` 和 `MetricValue` 保留 available / unavailable 判别；available 保留 verification 与全部 issues，unavailable 保留全部 causes 与 basedOn。
-- **外部业务事实先进入 Record。** 先写成带 provenance 的 snapshot，再由 Projector 读取；报告模块不能在 plan 或 render 临时请求业务系统。
+例如 <code>commands.checked</code> 只在 100 个分母项中的 20 个被采集时，页面写 <code>20 / 100 · partial</code>。它不能把 20 当成 100。选择 <code>requireComplete</code> 的同一读数是 unavailable，不给出假装完整的数值。
 
-## 页面与参数
+完整规则在 [Calculations](calculations.md) 定义；公开类型在 [Library](library.md) 定义。
 
-普通页面和参数化页面共用一种计划模型。
-参数化页面在 plan 阶段按 Sample identity 枚举所有 instance；每个 instance 的 data dependency 在计划中完整可见。
-数据相关分支只能决定怎样显示已交付的 data，不能在某个分支临时增加 Projector request。
+## 页面与静态分享
 
-`pages` 中只有一种作者输入 `ReportPageInput`。像上面的普通页可以同时省略 `instanceId` / `route`；
-executor 确定性补成 instanceId 等于 id、pathname 为 `"/" + id`、空 route parameters，并把
-navigation 补为 true。参数化页必须显式给出 instanceId 与 route；只给一个会在执行 request 前以
-`report-plan-invalid` 失败。之后 renderer、target 与 artifact 只消费字段完整的 PlannedPage / ReportPlannedPage。
+一个 Report 先用纯 <code>plan()</code> 枚举所有页面、参数化页面实例、Calculation、Download 和各自 inputs，再形成 ReportInput。<code>executeReport()</code> 让每个 custom parser 和 consumer 各执行至多一次；show、view 与 export 消费同一份既有结果。
 
-页面的 id、导航顺序、主题、head、`dimensionPins` 与双面 renderer 协议仍保持为 Reports 的宿主边界。
-页脚、页头链接和作者组合仍是普通组件树；它们不成为另一个数据通道。
+静态 export 是一个自包含目录。它包括预渲染页面、当前宿主数据、下载项、exporter 内建的精确 runtime，以及穷尽的 <code>StaticAssetManifest</code>。用户 Report 不提供任意浏览器脚本、CSS 或路径 loader。浏览器只从该目录读取 artifact 私有数据；它不访问网络、源 Record 或未来安装的 NiceEval。
 
-## 交付
+参数化页面必须在 export 前穷尽实例。目标目录必须不存在；成功时同级临时目录以一次 rename 完整出现。固定 <code>manifest.json</code> 不列入自身 entries，除此之外每个文件都必须被 manifest 穷尽。
 
-公开 `loadReportDefinition(entryModule)` 先生成带完整 module graph identity 的
-`FrozenReportDefinition`。`exportReport(frozenDefinition, { sample, sources, parameters, target })` 运行
-完整计划，并返回 `ReportArtifactRef`。
+## 范围
 
-`sources` 是由固定 Record handle 构造的 `RecordSourceSet`；交付物通过 `openReportArtifact(store, ref)` 打开。
-executor 在执行完成后生成并写入 finalized `ReportExportPlan`；作者不手写 export plan，也不能靠
-渲染时的偶然读取补依赖。
+Reports 包含：
 
-创建、打开、导出与读取 artifact Store 的完整入口和可判别 `ReportArtifactError` 见 [Library](library.md#导出报告)。
+- 从 core-only Sample 与 ReportPlan 形成 ReportInput；
+- 一次执行 Calculation、Page 与 Download，并由 view/export 共用结果；
+- 声明 facts、Calculation、页面、文本与网页呈现；
+- 对 partial、unavailable、unsupported 和 invalid 的可读反馈；
+- 终端查看、本地浏览和自包含静态分享；
+- 可访问的页面结构与文字等价内容。
 
-export 在读取 target Store、Record sources 或 Sample 字段并运行 plan 之前，先调用 Sample-owned
-`validateMaterializedSample()`。伪造、brand / canonical order / invariant / digest 损坏统一包装为
-`report-sample-invalid`，并保留完整 `SampleValidationError`；它们不会变成空 Sample、零 coverage 或
-Store failure。
+Reports 不包含：
 
-`ReportNode` 与 renderer 函数只存在于 export 的内存执行阶段。artifact 持久化的是 canonical
-`ReportExportPlan`、纯 JSON page payload 与已经生成的 text / HTML。
-它还保存资产 bytes 与 proof index。
-`openReportArtifact()` 离线验证并重开这些值，不装载报告模块，也不重新执行 renderer。
+- Record 文件读取、写入、格式定义或通道 decoder；
+- 事实 owner、proof、snapshot、revision 或任何 Record 引用；
+- Record-to-Record 复制、镜像、同步或观察文件变化；
+- 全局 custom fact registry 或 capability negotiation。
+- 任意浏览器资源 provider 或用户路径读取。
 
-Report artifact 与 SampleBundle 分别使用独立 Store。
-`ReportArtifactStore` 只有 create/open 能取得 runtime brand，并实现 `AsyncDisposable`；wrapper
-close 幂等，已经取得的 child export/read retain 可独立完成。真实 closed 与伪造/其它 Store kind
-的 invalid handle 使用互斥 typed failure。
+## 入口
 
-bundled local create/open factory 只接受非空绝对本地 path，或没有 host / query / fragment 的
-`file:` URL；合法输入先规范化成绝对本地 path。root issue 与非 `file:` scheme 各有 closed typed
-failure，并保留实际 `create` / `open` operation；它们不会伪装成 missing、permission 或 IO。
-
-目标 Store 用分页 `RecordEvidenceProofIndexV1` 交付报告实际消费的 event、object、Claim 与 authenticated absence proof。
-归档 wrapper 包含源 `RecordGraphRef`、原始 bytes 与路径证明，但不会激活源节点。
-
-复制、递归 basis 闭合或 proof 校验失败会使导出失败，不能伪装成 `not-recorded`。
-Report 不直接传播 Record owner error。
-source 读取与 proof closure 都包装为 `ReportArtifactError / report-evidence-closure-failed`。
-wrapper 按 `phase` 完整保留 typed `RecordSourceFailure` 或 `RecordEvidenceProofFailure`，不降成
-message 或 `unknown`。
-
-## 保留的呈现能力
-
-`Table`、`Scatter`、`Waterfall`、`Conversation`、`SourceView`、`DiffView`、Attempt 与 Experiment 详情、主题与自定义双面 renderer 都继续存在。
-组件接收已经计算好的普通值；它们不理解原始事件 schema，也不拥有 Record 读取权限。
-
-`show` 与 `view` 选择报告 target，消费同一份计划、ReportData 和结果树。
-`show` 的内建诊断切片仍是稳定的终端路径；`view` 保留本地浏览、深链、主题和静态站交付。
-
-## 契约场景
-
-实施与验收至少包含这些用户路径：
-
-1. 按 Agent 显示质量与成本，并由同一批 ReportData 渲染图和表。
-2. 生成 `security/` Sample 后收窄成员，再列出失败或 unavailable 成员。
-3. 参数化 Attempt 详情页在 plan 中按 Sample identity 枚举，深链不增加临时读取。
-4. 用自定义 Projector 定义业务读数，并把完整 basedOn、available verification 或 unavailable causes 交给 MetricValue。
-5. 用固定题集 rubric 生成成绩单，保留固定分母和各题证据。
-6. 把预先 snapshot 进 Record 的外部预算与 NiceEval 读数放进同一份 ReportData。
-7. 用同一份定义分别由 `show`、`view` 与静态导出消费。
-8. 定义新的双面显示形状，但不让 renderer 执行查询或重新判断证据资格。
-
-## 相关阅读
-
-- [Library](library.md) —— ReportDefinition、Projector、Calculation、MetricValue 与导出 API。
-- [Architecture](architecture.md) —— plan/data/render、identity、memo、Store 与证据闭包。
-- [Calculations](calculations.md) —— 公共计算内核与报告旁算法的边界。
-- [Show](show.md) —— 终端 target 与内建诊断切片。
-- [View](view.md) —— 浏览器、主题、深链与静态站交付。
-- [Sample](../sample/README.md) —— 报告的已定输入与跨 Store 交付。
+- [Architecture](architecture.md)：边界、输入流程、通道隔离、静态 export 与不变量。
+- [Library](library.md)：ReportInput、facts、Calculation、页面和静态 export 的公开形状。
+- [CLI](cli.md)：<code>show</code>、<code>view</code> 和 <code>view --out</code>。
+- [Calculations](calculations.md)：完整度 policy、分母和报告旁算法。
+- [Use case](use-case/README.md)：比较、完整度核对、静态分享和可访问页面。
+- [Reference](reference/README.md)：外部材料的使用边界。

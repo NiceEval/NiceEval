@@ -1,127 +1,53 @@
 # 执行失败分类 —— 库用法
 
-重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。
-作者面的公开 API 有三个，各对应一处知识所在地。空间轴 fatal 错误类用于实验/eval 作者声明自己 探测 出的死因；`ExperimentDefinition.classifyFailure` 供实验作者识别以第三方错误形态浮出的共享基建死因。`Agent.classifySendFailure` 供 adapter 作者教回退认不出的自家协议错误。
+重试参数不暴露给 Eval 或 Experiment 作者。作者只在拥有明确事实时声明失败的影响范围；Adapter 作者只在协议能够证明请求未被受理时声明可重试。
 
-## eval / 实验作者:你会看到什么
+## Eval 与 Experiment 作者
 
-不写任何声明时,自愈与止损的观察面:
+共享服务、凭据或 Fixture 缺失等可证明会影响兄弟 slot 的问题，可以直接抛出范围明确的错误：
 
-- **重试中**:attempt 的 activity 行短暂显示 `turn retry 2/4 (rate_limit) — waiting 8s` 一类进度;退避中的 attempt 会让出并发槽位给别的 attempt。
-- **重试成功**:逻辑事件流、turn 数与判定和一次成功的 send 无异；每次物理发送、受理证据、分类、原始 usage 与耗时仍追加为
-  typed retry Observation，供固定 GraphRef 的 Projector 与成本 Claim 读取。
-- **重试耗尽**：Attempt 照常收敛 lifecycle，并由终局执行错误 Observation 形成 `errored` Verdict Claim。
-  其人读 message 带 `retries exhausted (4 attempts, rate_limit)` 一类摘要，指出耗尽的是单 send 封顶还是 attempt 总预算。
-  没有摘要的 `errored` Verdict Claim 说明该错误被判为不可重试、从未重试（见[用例：读懂 errored](use-case/reading-errored.md)）。
-- **触发止损**：某条失败携带 `scope: "eval"` / `"experiment"` 时，反馈流出一条 error 级 `dispatch-halted` 诊断，带着失败 message。人读 `✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`；`--json` 是同一条诊断的 `warning` 事件，只在首次触发时出现一行。
-- 同 eval / 同实验还没跑的成员不再派发、计入 `unstarted`，Run completion 为 `incomplete`；Record 里留同一个
-  `dispatch-halted` Observation。它们没有 Attempt；如需显示跳过，只能形成 Run-scoped `skipped` Verdict Claim（形状见[止损执行体](architecture.md#止损执行体)）。
-- **恢复**:带 `errored` Verdict Claim 的成员与 `unstarted` 都不具备携带资格——修好运行条件后使用 `--rerun failed` 重跑失败成员，`--rerun all` 才全量重跑。
-
-## 实验 / eval 作者:声明死因的波及范围
-
-写 探测、fixture 校验的人最清楚失败波及多远,在抛出点直接说:
-
-```ts
+~~~ts
 import { ExperimentFatalError } from "niceeval";
 
-// experiments/compare/codex-nowledge.ts —— id 从路径推导,不手写
-export default defineExperiment({
-  sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).prepare(async (sandbox, context) => {
-    // 探活实验共享的服务端隧道:失败则本实验每条 attempt 同因必死
-    const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
-    if (probe.exitCode !== 0) {
-      throw new ExperimentFatalError(
-        `server probe(${serverUrl}) failed — 服务端/隧道已死,修好后更新 .env 重跑`,
-        { cause: probe.stderr },
-      );
-    }
-  }),
-  setup: nowledge.setup,
-});
-```
+throw new ExperimentFatalError(
+  "共享服务不可用；检查服务地址和凭据后重跑",
+);
+~~~
 
-fixture 级的死因用 `EvalFatalError`,只停本 eval 的剩余 attempt:
+<code>ExperimentFatalError</code> 停止该 Experiment 的后续派发。只影响单个 Eval 的确定性条件使用 <code>EvalFatalError</code>。
 
-```ts
-import { EvalFatalError } from "niceeval";
-import { sandboxLayer } from "niceeval/sandbox";
+错误 message 应包含现象和下一步。Runner 将终局错误写入相应 diagnostic channel；Run 或 Attempt 的详情页可以据此展示反馈。
 
-sandbox: sandboxLayer().prepare(async (_sandbox, _context) => {
-  if (!existsSync(fixturePath)) {
-    throw new EvalFatalError(`fixture ${fixturePath} 缺失,所有 Attempt 同因必死——先跑 pnpm fixtures:sync`);
-  }
-}),
-```
+不要仅凭“像基础设施问题”扩大范围。拿不准时，让失败保持在单个 Attempt，避免错误地停止有效 slot。
 
-服务在 run **中途**死掉时,死因会以第三方错误的形态浮出(对隧道 host 的拒连、turn 层连接错误),探测 看不见它;实验分类器认得自家 host:
+## Experiment 分类器
 
-```ts
-// experiments/compare/codex-nowledge.ts
-export default defineExperiment({
-  // ...
-  classifyFailure({ text }) {
-    // 只有实验作者知道这个 host 是全实验共享的隧道
-    if (text.includes(serverHost) && /ECONNREFUSED|ENOTFOUND/.test(text)) {
-      return { retryable: false, scope: "experiment", reason: "nowledge_tunnel_down" };
-    }
-    return undefined; // 其余交给后续链路
-  },
-});
-```
+第三方错误可能在执行中出现，而不是在作者能提前检查的位置。Experiment 可以为自己掌握的共享资源提供 <code>classifyFailure({ text })</code>。
 
-要点:
+当文本明确包含该共享服务的地址和拒绝连接代码时，分类器可返回 <code>{ retryable: false, scope: "experiment", reason: "shared_service_unavailable" }</code>。其它输入返回 <code>undefined</code>。
 
-- **message 就是修复提示**:它会走完反馈流与 Record 诊断的全程,写成「现象 + 下一步」,别人(和三天后的你)照着它就能修。
-- **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。
-  拿不准就不声明,让它形成单条 Attempt 的执行错误 Observation 与 `errored` Verdict Claim：多烧的是钱,错杀的是整批命中范围数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
-- **识别不靠类身份**:框架用结构守卫(`failureClassOf`)认这些错误,`instanceof` 在依赖树里有第二份 niceeval 时会静默失效——自己代码里如需识别也用守卫。
-- **没有「可重试」错误类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 prepare / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
-  prepare 里想容忍抖动,自己 try 一次即可。
-- **止损触发后不可逆、不跨运行**:本次 invocation 内不再派发;下次运行从零判断,没有需要解除的状态。
+分类器只返回决策和 reason。退避时长、重试上限、并发行为与停止派发的写入由 Runner 统一管理。
 
-## adapter 作者:`classifySendFailure`
+## Adapter 作者
 
-类型形状单源在 [Architecture · 类型](architecture.md#类型)。
-写分类器主要回答时间轴问题:**这个错误能否证明「这次输入未被 agent 受理」?**
-Adapter 必须先在构造 `SendFailure` 时写出 `acceptance`；分类器只能补 `FailureClass`，不能把 `unknown` 升成 `rejected`。只有 envelope 已是 `rejected` 且协议知识支持该分类时才返回 `{ retryable: true, reason: "..." }`；拿不准返回 `undefined`。
-实验分类器排在你之前(决议序见 [Architecture · 分类链](architecture.md#分类链)),实验作者认领的失败问不到你,不冲突。
+Adapter 在 <code>classifySendFailure</code> 中补充协议信息。只有明确拒绝受理的请求才可标为可重试。
 
-```ts
-import { completeEvidenceCoverage, defineSandboxAgent, sendFailureText } from "niceeval/adapter";
-import type { SendFailure, FailureClass } from "niceeval/adapter";
+例如，<code>failure.acceptance</code> 为 <code>"rejected"</code> 且错误文本含 <code>QUEUE_FULL</code> 时，可返回可重试分类。
 
-export function acmeAgent() {
-  return defineSandboxAgent({
-    name: "acme",
-    evidenceCoverage: completeEvidenceCoverage,
-    ensure: acmeEnsure,
-    // ... setup / send ...
-    classifySendFailure(failure: SendFailure): FailureClass | undefined {
-      // acme CLI 把服务端入场拒绝写成固定短语;该短语只在首个模型请求被受理前出现
-      if (failure.acceptance === "rejected" && sendFailureText(failure).includes("ACME_QUEUE_FULL")) {
-        return { retryable: true, reason: "acme_queue_full" };
-      }
-      return undefined; // 其余交给保守回退
-    },
-  });
-}
-```
+返回值为 <code>{ retryable: true, scope: "attempt", reason: "queue_full" }</code>。其它输入返回 <code>undefined</code>。
 
-要点:
+流中断、半截响应和含糊的文本通常不能证明未被受理，应返回 <code>undefined</code>。Adapter 只有能证明共享范围时才使用 <code>eval</code> 或 <code>experiment</code>。
 
-- **`undefined` 是常态返回值**,只在协议知识能给出更准答案时给结果;分类器要快、纯、不抛错——抛错按 `undefined` 回落处理并被吞掉,等于白写一路。
-- **不在 `send` 里自己整段重发**:断连重连这类内层自愈是被测 CLI 的原生能力(codex 会,bub 不会),adapter 不代偿;`send` 浮出的失败就是 agent 侧的最终结果,框架层的重发归重试执行体(分层见 [README · 自愈阶梯与止损阶梯](README.md#自愈阶梯与止损阶梯))。
-- **空间轴从严**:adapter 也可以给 `scope`,但只限协议层能证明死因为实验共享的场景(凭据失效、账号封禁这类「后续每次调用必死」的明确回执);误扩 scope 停掉的是用户的整批实验,判据比时间轴更重。
-  协议回执说不清波及范围时,只给时间轴。
-- **只声明决策与词,不碰策略**:重试几次、退避多久、止损怎么触发都归执行体,对所有 agent 一致;`reason` 只出现在 activity 行与文案里(上例批跑时会看到 `turn retry 2/4 (acme_queue_full)`),不进任何分支；`acceptance !== "rejected"` 时[受理证据门](architecture.md#分类链)会否决可重试判断。
-- **歧义文案默认不归可重试**:流中断、响应中途重置、空事件或一句限流文案都不足以证明未受理；只有协议的 admission 状态、code 或 transport 阶段能给 `rejected`。判据全文见 [README · 分类](README.md#分类)。
+## 调用后会看到什么
 
-内置 adapter 与自定义 adapter(`defineAgent` / `defineSandboxAgent`)同一挂载面,没有第二条注册通道。
+- 当前进程在重试时显示短暂进度；重试成功不会产生新的逻辑 Turn。
+- 重试耗尽后，Attempt 写入终局 diagnostic，Verdict 为 <code>errored</code>。
+- 停止派发时，Run 写入 <code>dispatch-halted</code>；后续 expected slots 保留为 <code>not-recorded</code>。
+- 修复后再次运行。carry planner 读取当前 Verdict、eligibility 和 identity，再决定是否执行。
 
 ## 相关阅读
 
-- [README](README.md) —— 两轴判据、声明通道、止损语义与非目标。
-- [Architecture](architecture.md) —— 类型形状、分类链、重试执行体、止损执行体。
-- [用例](use-case/README.md) —— 全流程叙事。
-- [Adapter · 编写 Adapter](../adapters/library/writing-an-adapter.md) —— send 的组织方式,分类器读的错误从哪来。
+- [Architecture](architecture.md)
+- [Runner](../../runner.md)
+- [Record 通道](../record/architecture.md#通道语义与兼容性)
+- [缓存与携带](../experiments/cache.md)

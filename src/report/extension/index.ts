@@ -1,5 +1,5 @@
 // niceeval/report/extension —— 自定义双面 renderer 协议。
-// 契约见 docs/feature/reports/library/layout.md 与 docs/feature/reports/architecture.md。
+// 契约见 docs/feature/reports/README.md 与 docs/feature/reports/README.md。
 
 export { defineRenderer } from "./define.ts";
 export { isRendererComponent, rendererMetaOf } from "./meta.ts";

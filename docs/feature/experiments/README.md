@@ -19,22 +19,21 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **experiment 是可签入的运行配置。**
   比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
 - **跨 agent / 跨配置对比是一等公民。**
-每个实验文件钉一个单一配置；报告只比较固定 Sample 已经选好的 Contribution 与 Attempt，不在页面打开时另选结果。
+  每个实验文件声明一个配置；报告只比较 Sample 已经选好的 Run 与 Attempt，不在页面打开时另选结果。
 
-实验文件改名会改变 `experimentId`。需要采用旧 Attempt 时，使用[实验改名与 Run 采用](rename.md)显式迁移并保留出处审计，不手工修改 Record。
+实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](rename.md)建立 accepted Member，并保存改名上下文。
   目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## 与 Record 的边界
 
-一个 `.niceeval` 是跨 Invocation、Experiment 与 Run 持续追加的 [RecordStore](../record/README.md)。
-Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run graph entity，并把每次成功写入提交为不可变 `RecordGraphRef`。
+`<project>/.niceeval/record/` 是跨 Invocation、Experiment 与 Run 的 [Record](../record/README.md)。
+Experiment 只提供运行配置；Runner 在一次 Invocation 中为每个选中的 Experiment 建立一个 Run。
 
-Run 不是目录、文件或独立 Record root。
-Attempt 永远属于实际执行它的 origin Run；后来被 carry、accept 或 rename 使用时，目标 Run 只通过 Claim 与 `RunContribution` 采用那个 Attempt 的明确 revision。
-因此 locator 始终指向同一个 128-bit Attempt identity，不会因采用动作而改变。
+Run 的 expected membership 定义本次分母。executed、carried 或 accepted Member 把每个 slot 连接到一个 Attempt；Attempt 永远保留实际执行它的 origin Run。
+因此 locator 始终由同一个完整 `attemptId` 表达，不会因采用动作而改变。
 
-Invocation 有 `invocationId`，用于 Run Provenance、Live、外部 Invocation 索引和 receipt。
-它不是 Record entity catalog 的成员；一次 Invocation 可以产生零到多个 Run，每个 Run 恰好属于一个 Experiment。
+Invocation 有 `invocationId`，用于关联瞬时进度与最终 receipt。Run 关系由 receipt 的 `runIds` 表达；需要落盘 provenance 时使用可选 Run-owned 通道，不扩张 Run 核心。
+一次 Invocation 可以产生零到多个 Run，每个 Run 恰好属于一个 Experiment。
 
 ## `defineExperiment` 的形状
 
@@ -87,7 +86,7 @@ export default defineExperiment({
 
 只给报告归类的值，例如「这格用的记忆机制是 mempal」，写入 `labels`。
 Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
-再次运行会以当前 labels 建立新 Run，并通过 carried Contribution 采用历史 Attempt。
+再次运行会以当前 labels 建立新 Run，并通过 carried Member 采用已有 Attempt。
 
 两者都是实验作者写下的**声明**。
 运行后才存在的值，例如 `setup` 起出的隧道 URL 或服务端报回的版本，两个袋子都不进；使用 `ctx.fact()` 上报为运行观测。
@@ -98,7 +97,7 @@ Agent 与 Eval 看不见它，改它不让已有 Attempt 失去采用资格。
 什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);限制的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
 `sharedState: { key }` 声明该 Experiment 会恢复、修改并回存一份跨 Invocation 共享的可变状态。
-Runner 在同一 RecordStore 的协调域内按 `key` 独占整个状态区间。
+Runner 在同一项目的协调域内按 `key` 独占整个状态区间。
 区间从 Experiment `setup` 与任何 Sandbox lifecycle `setup()` 之前开始，直到所有 Sandbox `teardown()`、Provider finalizer 与 Experiment `teardown` 完成。
 这个字段只提供互斥，不代替 checkpoint 存储、原子提交或强杀恢复。
 

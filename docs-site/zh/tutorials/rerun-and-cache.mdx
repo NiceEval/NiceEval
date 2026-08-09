@@ -1,262 +1,78 @@
 ---
-title: "让改动只重跑该重跑的那些评估用例"
+title: "重跑与沿用结果"
 sidebarTitle: "重跑与沿用"
-description: "同一条命令再跑一遍时，NiceEval 沿用已经跑完的结果，只补跑缺的部分。这一页说明哪一处改动作废哪些结果，以及指纹之外的东西变了要怎么用 --rerun 复验。"
+description: "查看每个 slot 会执行、自动采用还是由操作者接受，并理解这些关系怎样进入 Record。"
 ---
 
-import { Picker } from '/snippets/widgets.jsx';
+每次 Invocation 都建立新的 Run。Run 的 expected slots 定义本次分母；每个 slot 最多有一个 Member。Member 只有三种形态：
 
-跑过一轮之后再跑同一条命令，已经判定完的评估用例默认不重花 Agent 与 Sandbox 的钱：NiceEval 沿用上一轮的结果，这次只派发真正缺的那些 Attempt。
+| Member | 何时出现 |
+| --- | --- |
+| `executed` | Runner 执行了这个 slot。 |
+| `carried` | 规划器自动采用已有 Attempt。 |
+| `accepted` | 操作者明确采用已有 Attempt。 |
+
+三个 Member 都引用一个 Attempt。Attempt 的 `origin` 保持不变，因此采用后的 Slot 读取的是该 Attempt 当前的 Verdict、Usage 和其他通道值。
+
+## 先查看计划
+
+在运行前使用 `--dry`。它读取停稳 Record 中规划所需的通道，并逐个列出执行或采用的原因。
+
+```sh
+npx niceeval exp checkout --dry
+```
+
+示例输出：
 
 ```text
-╭─ PLAN ──────────────────────────────────────────╮
-│ 36 attempts · 36 evals × 1 configs              │
-│ 24 of 36 reused · 12 to run                     │
-╰─────────────────────────────────────────────────╯
+PLAN
+checkout  cart/add-item  ordinal 0  carried @01J8ZK3M6P4T7V9X2C5N8QW0RY
+checkout  cart/add-item  ordinal 1  execute: input-identity-changed
 ```
 
-先用 `--dry` 查看派发计划。人读输出会保留每条携入结果的 Verdict：
+如果信息缺失、无效、不支持或 domain 不同，规划器会说明原因并执行该 slot，而不会把它当作可采用结果。
 
-```text
-compare/codex  memory/passed       carried (passed)
-compare/codex  memory/failed       carried (failed)
-compare/codex  memory/mixed        carried (2 passed · 1 failed)
-compare/codex  memory/partial      carried 2/3 (1 passed · 1 failed) · errored 1/3
+## 自动采用的条件
+
+一个 Attempt 要自动成为 `carried` Member，需要同时满足：
+
+- Verdict 是可采用的终态；
+- 输入身份与当前输入相同；
+- 执行时长符合当前 timeout；
+- 本次 `--rerun` 允许采用该 Verdict；
+- 本次没有通过 `--keep-sandbox` 要求真实执行。
+
+输入身份和配置身份都是带 domain 的不透明值。只有 domain 逐字相同才比较 value。Verdict 与 Eligibility 是规划所需的长期支持通道。
+
+建立 `carried` Member 时，资格、身份和理由写入目标 Run 的 `niceeval.actions` 通道。Member 本身不复制这些说明，也不复制 Attempt 的业务值。
+
+## 控制重跑范围
+
+```sh
+# 默认采用符合条件的 passed 与 failed Attempt
+npx niceeval exp checkout
+
+# 重跑 failed Attempt
+npx niceeval exp checkout --rerun
+
+# 重新执行选中范围内的全部 slot
+npx niceeval exp checkout --rerun all
 ```
 
-一行有多个 Attempt 时，每个派发原因都使用 `N/total`。
-默认规则携入指纹匹配的 `passed` 与 `failed`，`errored` 和 `skipped` Attempt 自动重跑。
-只写 `--rerun` 主动重跑 `failed`，`--rerun all` 重跑选中矩阵的全部 Attempt。
+改变 `--rerun` 只影响本次 Invocation，不会修改已有 Run 或 Attempt。
 
-这一页回答两个问题：我刚改的这一处会让多少条重跑，以及改的东西 NiceEval 看不见时怎么让它复验。
+## 明确接受已有 Attempt
 
-## 一处改动作废多大范围
+当自动采用条件不满足，但你确认某个已有 Attempt 仍可用时，使用完整 locator：
 
-下面每一格是一次真实改动。设定：这个实验选中 36 条评估用例，上一轮全绿。
-
-<Picker
-  name="ne-cache"
-  title="改了这一处"
-  hint="选一格看这次跑什么"
-  note={<>能配置化的差异（服务端版本号这类）显式写进 <code>flags</code>，让指纹自然失效，比每次手动重跑可靠。</>}
-  items={[
-    {
-      tab: "一条评估用例里的 prompt",
-      tone: "neg",
-      lead: "重跑 1 条，其余 35 条沿用",
-      why: [
-        <>评估用例文件进指纹的是<strong>整份字节</strong>。改 prompt、改断言、加一行注释、重新格式化，效果一样：这一条重跑。</>,
-        "这正是想要的粒度——改一道题只花那一道题的钱。",
-      ],
-    },
-    {
-      tab: "30 条共用的断言 辅助函数",
-      tone: "neg",
-      lead: "重跑 30 条，其余 6 条沿用",
-      why: [
-        <>指纹认的是这条评估用例的<strong>源码闭包</strong>：它自己的字节，加上导入图里落在项目根内的每个模块。一个被 30 条引用的辅助函数改一行就作废那 30 条。</>,
-        "想缩小作废面就按变更频率拆文件：稳定的断言辅助函数和天天调的 prompt 模板不放同一个文件。",
-      ],
-    },
-    {
-      tab: "实验的 model 或 flags",
-      tone: "neg",
-      lead: "36 条全部重跑",
-      why: [
-        <><code>model</code>、<code>reasoningEffort</code>、<code>flags</code> 都是运行条件。<code>flags</code> 整袋进指纹，加一个键、删一个键同样全跑。</>,
-        "两个取值下跑出来的是两批不同条件的结果，混在一起读通过率没有意义。",
-      ],
-    },
-    {
-      tab: "labels、描述、注释",
-      tone: "pos",
-      lead: "一条不动，36 条全部沿用",
-      why: [
-        <><code>labels</code> 是报告坐标，Adapter 和评估用例都读不到它，改它不影响跑出来的结果。<code>description</code>、注释、字段顺序、把某个值抽成变量同理。</>,
-        "实验文件认的是解析出来的值，不认字节——这一点和评估用例文件正相反。",
-      ],
-    },
-    {
-      tab: "attempts 从 3 调到 5",
-      tone: "warn",
-      lead: "已有 3 条沿用，补跑缺的 2 条",
-      why: [
-        <>沿用以 Attempt 为单位。<code>attempts</code> 因此不进指纹：调大只补跑缺的序号，调小不删已有结果。</>,
-        "通过率的分母由沿用的和新跑的一起凑满。",
-      ],
-    },
-    {
-      tab: "timeoutMs",
-      tone: "warn",
-      lead: "调大一条不动。调小只重跑当初跑得慢的那几条",
-      why: [
-        <>上限不改变「结果是什么」，只决定「等不等得到」，所以它不进指纹。一条 15 分钟跑完的 <code>passed</code>，在 20 分钟和 40 分钟的上限下是同一个事实。</>,
-        "它另立一条判据：执行耗时超过当前上限的旧结果在新配置下复现不出来，如实重跑。执行耗时不含等并发位的排队时间。",
-      ],
-    },
-    {
-      tab: "Sandbox 的 template",
-      tone: "neg",
-      lead: "换名字全部重跑。同名重建一条不动",
-      why: [
-        <>换 <code>template</code> / <code>image</code> / <code>snapshotId</code> 就是换了起步环境，结果不可比，36 条全部重跑。只改 <code>environments</code> 表里的一行时，只有声明了那个 profile 的评估用例重跑。</>,
-        <>名字不变、内容重建（同名镜像重新 build、<code>.setup()</code> 里多装一个二进制）时指纹看不见这个变化，一条不动。要复验用下面的 <code>--rerun all</code>。</>,
-      ],
-    },
-    {
-      tab: "Agent CLI 升级",
-      tone: "warn",
-      lead: "一条不动，但上一轮的绿可能已经不成立",
-      why: [
-        "指纹只认你写下的配置和它能读到的源码。Agent CLI 升版本、被测服务改了行为或换了实例、Agent 的 system prompt 改了，NiceEval 都看不见。",
-        <>这时旧的绿掩盖的可能是真实回归。改了被测对象只复验失败项走 <code>--rerun</code>，外部环境整个变了走 <code>--rerun all</code>。</>,
-      ],
-    },
-    {
-      tab: "声明式 callback 的函数体",
-      tone: "warn",
-      lead: "identity 不变时一条不动，NiceEval 不会发现函数体变化",
-      why: [
-        <><code>defineSandboxCommand()</code> 只用 <code>id</code>、<code>revision</code> 与 <code>inputs</code> 建立身份。<code>run</code> 的函数体、函数名和闭包不进入指纹。</>,
-        <>实现语义变化时提高 <code>revision</code>，外部输入变化时更新 <code>inputs</code>。如果已经漏改，先修正 identity，再收窄选择并执行 <code>--rerun all</code>。</>,
-      ],
-    },
-  ]}
-/>
-
-## 沿用要过的门
-
-指纹只是其中一道。一条已经落盘的 Attempt 要被这次运行沿用，下面每一道都要过：
-
-| 门 | 判据 | 不过会怎样 |
-| --- | --- | --- |
-| 终态 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不沿用，总会重试 |
-| 指纹 | 这条评估用例的指纹等于本次配置算出的指纹 | 这条评估用例的全部 Attempt 重跑 |
-| 资格 | 执行耗时不超过当前解析后的 `timeoutMs` | 这一条重跑 |
-| 口径 | `--rerun` 这次仍采信这个判定 | 该判定的 Attempt 重跑 |
-| 模式 | 这条不落在 `--keep-sandbox` 的留存档内 | 这一条真派发 |
-
-`passed` 与 `failed` 都是「跑完了、判定确定」的终态，没理由重花一次钱去复现同一个已知结果。`errored` 是超时、Sandbox 失败这类环境层面的不确定失败，判定本身不可信，所以从不沿用。
-
-## 指纹读得到哪些文件
-
-判定逻辑常常不住在 `.eval.ts` 里：断言抽进 `share/assert-memory.ts`，数据行从 `evals/data/` 读进来。指纹因此认的不是单个文件：
-
-- **源码**：评估用例文件的字节，加上它的导入图里解析后落在项目根内的每个模块，递归展开。相对路径和 `tsconfig` 的 `paths` 别名都算数。
-- **数据**：经 `loadYaml` / `loadJson` / `loadText` 读入的文件，内容哈希算进读它的那条评估用例。隐藏测试脚本、参考实现、shell 模板都是判据文件，改一字节就重跑引用它的那条，写法见[隐藏测试判分](/zh/tutorials/criteria-files)。
-
-三处读不到，是明确的缺口：`node_modules` 里的包、动态 `import()`，以及你自己用 `fs.readFile` 读进来的文件——NiceEval 不知道那次读发生过。判据文件一律走 loader 读入，loader 只能写在模块顶层，写进 `test(t)` 会直接报错。
-
-## 每轮换一次的地址不要写进 flags
-
-`flags` 写的是实验条件，它整袋参与指纹判定。隧道地址每次重启换一个 URL，写进 `flags` 就等于每次重启都作废全部已完成结果。
-
-这个地址是 `setup` 跑起来才拿到的，用 `ctx.fact()` 把它记进结果：
-
-```ts
-sandboxSetup(): SandboxHook {
-  return async (sandbox, ctx) => {
-    ctx.fact("nowledge.endpoint", env.url);   // 这条 Attempt 实际连的实例
-    await sandbox.writeText(".nowledge/env", `NMEM_URL=${env.url}\n`);
-  };
-}
+```sh
+npx niceeval accept @01J8ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-记录一样不少：`niceeval show` 的 `facts:` 行会列出这条 Attempt 连的地址，报告也能按它分组。沿用进来的结果带的是它当初那一轮的地址，不会被这一轮的新 URL 顶替。
+`accept` 先检查所有输入，再建立带 `accepted` Member 的 Run。操作者理由、差异和资格写入该 Run 的 `niceeval.actions` 通道。它不会修改源 Attempt，也不会复制源 Attempt 的通道值。
 
-判据是**谁写下这个值**：你在实验里声明的是条件，写 `flags`。跑起来才知道的是观测，用 `ctx.fact()`。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
+## 编辑会影响下一次读取
 
-## 搬走一个键，不赔上一轮重烧
+停稳后修改某个 Attempt 的 Verdict、Usage 或其他通道，下一次查看 `carried` 或 `accepted` Member 时会看到修改后的当前值。若 Attempt 或引用无效，Sample 将该 slot 标为 `invalid`，而不是 `not-recorded`。
 
-地址已经写进 `flags`、现在要搬去 `ctx.fact()` 时，删掉这个键会让 flags 袋变化、上一轮全废。先跑 `--dry` 看这次为什么全要重跑：
-
-```bash
-npx niceeval exp compare --dry
-```
-
-```text
-plan: 36 attempts · 36 evals × 1 configs · attempts 1
-0 carried in from cache · 36 to run
-
-compare/baseline  01  previous-result passed: config:flags.tunnelUrl changed (https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com)
-  prior:  @2VRHPQ4D2KG9EFW5TB8167MXJ3 (passed)
-  accept: niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
-```
-
-`previous-result passed` 说明历史结论是通过的、但当前指纹已变化。它还不能被缓存直接携带。差异解释与执行证据是两条轴：`fingerprint version changed` 只说明输入差异无法按当前 manifest 展开，不表示 execution、diff 或 timing 丢失。先用 locator 打开证据，确认结论仍然成立后接受它：
-
-```bash
-npx niceeval show @2VRHPQ4D2KG9EFW5TB8167MXJ3 --timing
-npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3
-npx niceeval accept @2VRHPQ4D2KG9EFW5TB8167MXJ3 @67MXJ30SYZCNAVRHPQ4D2KG9EF
-```
-
-```text
-╭─ PLAN ──────────────────────────────────────────╮
-│ Accepted @2VRHPQ4D2KG9EFW5TB8167MXJ3 · mode: accepted                        │
-│ Current fingerprint: 5f3b…                      │
-╰─────────────────────────────────────────────────╯
-```
-
-`accept` 对全部显式 locator 做原子预检，预检失败时零写入。预检通过后按 Experiment 分组，每个 Experiment 建立一个新的 Run。
-
-每个显式成员会写入一条 accept Claim，保存当前配置身份、被采用的 Attempt ref 与可读的差异审计。它还会写入一条 `mode: "accepted"` 的 RunContribution，`basisClaims` 指向该 Claim。
-
-Contribution 采用原 Attempt 的明确 revision，不复制或重设 Attempt、Verdict、evidence 或 Provenance 的父级，也不产生另一个 locator。该 Run 的 immutable `RecordGraphRef` 与 receipt 一并返回。命令不会因为共同差异接受未列出的结果，也没有批量接受选项。
-
-无法证明等价的差异会显示 `previous-result` 并要求显式 `accept` 或重跑。输出不会使用含义不清的 `details unavailable`。
-
-locator 缺少 `@`、不是 26 个字符、含非法字母或高位不合法时返回 `malformed-locator`，不会给出一个必然失败的命令。复制完整 canonical locator，或重新运行该 eval。
-
-`passed` 和 `failed` 的历史结果可以接受。结果是否来自复用 Sandbox、当前实验是否声明 `sandboxReuse: true`，都不影响接受资格。`errored`、`skipped`，以及要求保留真实 Sandbox 现场的执行模式不能接受。命令会说明原因，不会自动改为运行实验。
-
-## 指纹没得改但就是要重跑
-
-`--rerun` 是一根轴三档，只作用于本次调用，不改变指纹定义：
-
-| 写法 | 哪些算数 | 本次跑什么 |
-| --- | --- | --- |
-| 不带 | `passed` 与 `failed` | `errored`、`skipped` 与缺失的 Attempt 序号 |
-| `--rerun` | 只有 `passed` | 上面那些，加所有 `failed` |
-| `--rerun all` | 都不算数 | 选中矩阵的每一条 |
-
-```bash
-npx niceeval exp compare --rerun        # 改了 Agent 的 prompt，复验失败项
-npx niceeval exp compare --rerun all    # Agent CLI 升级、镜像重建，全量重验
-```
-
-只写的 `--rerun` 用于改了不在指纹里的东西之后复验失败项，不必自己去结果树里挖失败的评估用例 ID——失败面板的 `Retry:` 行给的就是这条命令。`--rerun all` 用于外部环境整个变了时的全量重验，也是收工前确认没有回归的那一步。
-
-声明式 callback 漏改 identity 时，`--rerun all` 只能修复本次结果。先提高 `revision` 或把变化写进 `inputs`，再执行全量重验。否则下一轮仍可能沿用语义已经变化的旧结果。直接 callback 是 opaque，NiceEval 会禁用跨 Run carry，因此不需要用 `--rerun` 补偿函数体检测。
-
-## 中断的运行重跑就是续跑
-
-Attempt 的事实随收尾链完成后一次提交，判定可信与否与这次运行有没有正常结束无关。被 Ctrl-C 或 `kill -9` 打断的运行，已经提交的终态照常沿用。
-
-所以长批次撞上 CI 时限或宿主超时之后，恢复路径就是重跑同一条命令：只花缺失 Attempt 的成本，重跑前不需要任何手工清理。完整的恢复流程见[被强杀之后接着跑](/zh/troubleshooting/recover-after-kill)。
-
-这只说明 NiceEval 的结果与受管 Sandbox 能续上，不代表外部状态自动回滚。实验若把 `$HOME` checkpoint、远端 memory 服务或共享数据库跨 Attempt 累积，中断中的 Attempt 可能已经写入一半。正式比较必须恢复到最后一个终态 Attempt 的原子 checkpoint。做不到就换干净 cohort 从头重建。继续沿用旧 cohort 适合调试，不应和完整批次混作同一条实验轨迹。
-
-多开一个终端跑同一条命令也是同一套规则：每条评估用例开跑前拿一把带心跳的锁，取到锁之后重新看一眼它当前的结果，别人已经跑完落盘的直接沿用，仍缺的自己跑。两边最后都拿到完整结果，交集部分只花一份钱。
-
-## 留存现场要求真实执行
-
-- **复用 Sandbox 的运行照常沿用结果。** 声明 `sandboxReuse: true` 的实验与普通实验一样，在 pair 具备稳定 carry identity 时沿用指纹匹配的终态 Attempt。未沿用的 Attempt 才在本次的共用 Sandbox 中执行。直接 callback 是 opaque，会明确禁用 carry。`--rerun` 仍可要求相应 Attempt 真实重跑。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
-- **`--keep-sandbox` 要的是一次真实执行的现场。** 判定落在当前留存档内的 Attempt 不沿用、照常派发：沿用来的结果没有 Sandbox 可留。`failed` 档下 `failed` 重跑、`passed` 照常沿用，`all` 档下全部重跑。
-
-## 接着看
-
-<CardGroup cols={2}>
-  <Card title="被强杀之后接着跑" icon="rotate-right" href="/zh/troubleshooting/recover-after-kill">
-    长批次被打断后怎么恢复。
-  </Card>
-  <Card title="并发与执行顺序" icon="layer-group" href="/zh/tutorials/concurrency">
-    名额怎么分、什么时候必须串行。
-  </Card>
-  <Card title="隐藏测试判分" icon="file-lines" href="/zh/tutorials/criteria-files">
-    让判据文件参与指纹。
-  </Card>
-  <Card title="运行器" icon="gear" href="/zh/explanation/runner">
-    发现、调度、沿用与预算的完整机制。
-  </Card>
-</CardGroup>
+完成运行后，用 receipt 的 `runIds` 选择结果。查看步骤见[查看结果](/zh/tutorials/viewing-results)。

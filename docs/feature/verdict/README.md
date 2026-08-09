@@ -1,18 +1,14 @@
 # Verdict
 
-Verdict 是依据一个 Attempt revision 的证据形成的互斥 Claim：`passed`、`failed`、`errored` 或 `skipped`。
-它不是 Attempt lifecycle state：Attempt 只会是 `active`、`completed` 或 `abandoned`。这一层拥有 Severity、`--strict`、`unavailable` 传播和四态优先级；它消费执行错误 Observation 与 Assertion Claim，不执行检查，也不调用 Judge。
+Verdict 是 Attempt-owned <code>niceeval.verdict</code> channel 中的终态业务数据。它的值只有 <code>passed</code>、<code>failed</code>、<code>errored</code> 和 <code>skipped</code>。
 
-每个 terminal Verdict 都是一个固定的 Attempt-scoped `niceeval.verdict/1` Claim；其 ID、anchor、catalog
-membership 与内建 Projector 由 [Architecture](architecture.md#durable-verdict-claim) 定义。
+它把 Assertion 结果、执行错误、strict policy 和显式 skip 归并为一个可读状态。它不替代 Attempt origin、Member 或 Run 的完成时间，也不复制 usage、diff、conversation 或诊断。
+
+<code>niceeval.verdict</code> 是 planner-critical channel，<code>niceeval.eligibility</code> 也是。两者在 <code>niceeval.record</code> 的生命周期内永久支持，精确 payload 永不扩展。
 
 ## 从哪里开始
 
-| 目的 | 入口 |
-|---|---|
-| 理解 Severity、unavailable 与四态折叠 | [Architecture](architecture.md) |
-| 理解 `--strict` 和 CLI 反馈 | [CLI](cli.md) |
-| 把 soft 质量线收紧成门禁 | [用例](use-case/README.md) |
-
-Assertion 的条目形状见 [Assertions](../assertions/README.md)。
-裁判模型调用见 [Judge](../judge/README.md)。
+- [Architecture](architecture.md)：Severity、四态折叠、channel 数据和读取规则。
+- [Assertions](../assertions/README.md)：断言怎样形成输入。
+- [缓存与携带](../experiments/cache.md)：planner 怎样使用 Verdict 与 eligibility。
+- [Reports](../reports/README.md)：页面怎样呈现状态和完整度。

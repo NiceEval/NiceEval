@@ -76,12 +76,12 @@
 ## 不是本 doc 的目标
 
 - **读数口径本身。**
-  `passRate` 怎么算、超时怎么记删失，归 [读数与维度](../../feature/reports/library/measures.md)。
+  `passRate` 怎么算、超时怎么记删失，归 [读数与维度](../../feature/reports/README.md)。
 - **Sample 选择。**
   哪些 attempt 进入这次比较，归 [Sample](../../feature/sample/README.md)。
 - **主题与 CSS。**
-  报告长什么样归 [主题](../../feature/reports/library/theme.md)。
+  报告长什么样归 [主题](../../feature/reports/README.md)。
 - **宿主 flag 与寻址。**
-  `show` 的切片、`view` 的路由归 [Reports 架构](../../feature/reports/architecture.md)。
+  `show` 的切片、`view` 的路由归 [Reports 架构](../../feature/reports/README.md)。
 - **把结果交给外部工具。**
   想用 pandas 或 BI 查结果，走 [Record](../../feature/record/library.md) 的读取面与 `exportSample`，不需要报告面提供查询语言。

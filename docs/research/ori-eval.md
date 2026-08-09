@@ -126,7 +126,7 @@ NiceEval 的 `INIT.md` 与随包 `INDEX.md` 合起来就是 create-eval 入口�
 | 真实执行过程 | Agent 是否真的调用 `niceeval init`、真实 `niceeval exp` 和 `niceeval show` | 加分 |
 | 安装最佳实践 | devDependency、受管区块、非 JS 项目独立目录、ESM | 加分 |
 | Experiment 设计 | 至少两个配置、模型字面量不同、描述存在、Agent 在 Experiment 中配置、`attempts: 1` | 加分 |
-| Adapter 执行证据 | `show --execution` 能否读到标准 `ASSISTANT` 事件 | 机械取证 |
+| Adapter 执行证据 | 已规划的 Attempt execution 页面能否读到标准 `ASSISTANT` 事件 | 机械取证 |
 | Adapter 源码实践 | 真实传输、取消信号、模型和会话透传、工厂配置、反馈通道、完整事件映射 | 加分 |
 | Eval 作者实践 | 使用正式断言 API、宽容的语义或结构判定、不在 Eval 内管理被测进程 | 加分 |
 | 评估内容质量 | 核心用例、具体结果断言、真实负例、Experiment 与 Eval 指向同一系统 | 四条独立 Judge 加分 |

@@ -285,7 +285,7 @@ export type {
 export type { Cell, VerdictCounts } from "./definition/cell.ts";
 export { formatCellText } from "./definition/cell.ts";
 
-// 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):渲染侧单点入口。
+// 格式化与呈现工具箱(docs/feature/reports/README.md):渲染侧单点入口。
 export { formatAxisTick, formatInstant, formatMetricValue, formatTimeDistance, missingText } from "./model/format.ts";
 
 // 文本排版工具箱:自定义组件的 text 面用的就是官方组件那把尺子。
@@ -338,10 +338,10 @@ export type { HeroCardProps, HeroLink, HeroLogo, HeroProps } from "./components/
 export { AttemptList, ExperimentTable, FailureList } from "./components/entity-lists/index.tsx";
 export type { ExperimentTableProps } from "./components/entity-lists/index.tsx";
 
-// 目标与下钻(docs/feature/reports/library.md「目标与下钻」)。
+// 目标与下钻(docs/feature/reports/README.md「目标与下钻」)。
 export { targetOfRefs, ATTEMPT_PAGE_ID } from "./components/shared.ts";
 
-// Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
+// Attempt 详情组合组件(docs/feature/reports/README.md)。
 export {
   AttemptAssessment,
   AttemptDetails,
@@ -349,7 +349,7 @@ export {
 } from "./components/attempt-detail/index.tsx";
 export type { AttemptDetailsProps } from "./components/attempt-detail/index.tsx";
 
-// Experiment 详情组合组件(docs/feature/reports/components/experiment-detail/README.md)。
+// Experiment 详情组合组件(docs/feature/reports/README.md)。
 export { ExperimentDetails } from "./components/experiment-detail/index.tsx";
 export type { ExperimentDetailsProps } from "./components/experiment-detail/index.tsx";
 

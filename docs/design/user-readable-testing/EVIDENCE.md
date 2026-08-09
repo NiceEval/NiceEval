@@ -68,7 +68,7 @@ Runner 测试文档按粗粒度`覆盖类别`组织，无法替代具体结果 o
 
 [Report 读面 DSL](PLAN-2/README.md) 曾试图统一结构识别、evidence 生命周期和公共 verifier。
 该抽象已随 PLAN-2 留在 Design；选定方案只提取机械 parser 与 browser 工具，并把领域 expected 留在原生测试。
-排版仍遵守[排版契约](../../feature/reports/library/layout.md)，场景 Repo 仍遵守 E2E 自治，两者不需要一套新的产品对象模型才能成立。
+排版仍遵守[排版契约](../../feature/reports/README.md)，场景 Repo 仍遵守 E2E 自治，两者不需要一套新的产品对象模型才能成立。
 
 这些冲突说明，媒介 parser 的稳定性只是问题的一部分。
 测试作者面还需要先裁决证明对象、主证明所有者和 evidence 生命周期。

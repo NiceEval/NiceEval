@@ -1,4 +1,4 @@
-// 官方表格数据协议的单元格类型(docs/feature/reports/components/primitives/table.md「单元格类型」)。
+// 官方表格数据协议的单元格类型(docs/feature/reports/README.md「单元格类型」)。
 // Table / Grid / Stat 共用这份判别联合;自定义 Source 要交给这些原语必须适配成这个形状。
 
 import type { AttemptLocator } from "../../record/locator.ts";
@@ -58,7 +58,7 @@ export type Cell =
       /**
        * 缺口题的最近旧结果 locator:审计与授权入口(`niceeval accept @<locator>`),
        * 不进任何计数、不携带旧判定或时距
-       * (docs/feature/reports/components/summaries/experiment-table.md「缺口原因与动作」)。
+       * (docs/feature/reports/README.md「缺口原因与动作」)。
        */
       readonly previous?: { readonly locator: AttemptLocator };
     };
@@ -71,7 +71,7 @@ export interface ColumnSpec {
    * 列表头。text / web 两面按当前 locale 解析同一份;省略时按 key 原样显示
    * (维度值列——条件名、实验 id 这类列名即数据的列——用这一支)。
    * Table 原语自己不携带列名词表,表头只来自这里
-   * (docs/feature/reports/components/primitives/table.md「Content 协议」)。
+   * (docs/feature/reports/README.md「Content 协议」)。
    */
   readonly header?: LocalizedText;
 }

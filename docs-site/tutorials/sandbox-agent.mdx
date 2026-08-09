@@ -1,28 +1,28 @@
 ---
-title: "Sandbox agents: evaluate Claude Code, Codex, and bub"
+title: "Sandbox Agents: Evaluate Claude Code, Codex, and bub"
 sidebarTitle: "Sandbox Agents"
-description: "Use NiceEval built-in agents or a custom adapter to run coding-agent CLIs inside Docker or cloud sandboxes."
+description: "Use NiceEval built-in Agents or a custom Adapter to run coding-agent CLIs in Docker or cloud Sandboxes."
 ---
 
-Sandbox agents start a coding-agent CLI inside an isolated environment, give it a workspace and a task, let it edit files and run commands, then collect transcript, diff, and test results.
+A Sandbox Agent starts a coding-agent CLI in an isolated environment, gives it a workspace and task, lets it edit files and run commands, then collects its transcript, diff, and test results.
 
-## Built-in sandbox agents
+## Built-in Sandbox Agents
 
 <CardGroup cols={3}>
   <Card title="claude-code" icon="code">
-    Runs the Anthropic Claude Code CLI. Requires `ANTHROPIC_API_KEY`.
+    Runs the Anthropic Claude Code CLI and requires `ANTHROPIC_API_KEY`.
   </Card>
   <Card title="codex" icon="terminal">
-    Runs the OpenAI Codex CLI. Requires `CODEX_API_KEY`.
+    Runs the OpenAI Codex CLI and requires `CODEX_API_KEY`.
   </Card>
   <Card title="bub" icon="robot">
-    Runs the bub coding agent. Authentication follows the bub CLI's own rules.
+    Runs the bub coding agent and follows bub's own authentication rules.
   </Card>
 </CardGroup>
 
-## Run a built-in agent
+## Run a built-in Agent
 
-Set `sandbox` on the Eval or Experiment to choose where [NiceEval](https://niceeval.com/) creates the isolated environment:
+Set `sandbox` on an Eval or Experiment to choose where [NiceEval](https://niceeval.com/) creates the isolated environment:
 
 ```ts
 // experiments/local.ts
@@ -45,10 +45,10 @@ npx niceeval exp local fixtures/button --attempts 10
 ```
 
 <Note>
-  There is no CLI flag or project-level fallback for this. If neither the Eval nor Experiment contributes a template-bearing layer, link planning fails before any Sandbox is created.
+  There is no matching CLI flag or project-wide default provider. If neither the Eval nor Experiment contributes a template-bearing layer, link planning fails before NiceEval creates a Sandbox.
 </Note>
 
-When you run a coding agent in the cloud, you can use the E2B public templates NiceEval already publishes, so no attempt has to install the CLI:
+For a coding Agent in the cloud, use NiceEval's published E2B public template to avoid installing the CLI for every Attempt:
 
 ```ts
 import { codexAgent } from "niceeval/adapter";
@@ -62,9 +62,9 @@ export default defineExperiment({
 });
 ```
 
-Claude Code uses `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`, and Bub uses `NICEEVAL_BUB_E2B_TEMPLATE`. Each constant is a complete, version-pinned reference whose version follows the agent baked into the template, so you never have to track it yourself. To keep adding system packages, binaries, or model caches on top, see [Sandbox provider · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
+Use `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE` for Claude Code or `NICEEVAL_BUB_E2B_TEMPLATE` for bub. Each constant is a complete, version-pinned reference whose version follows the Agent in that template. See [Sandbox Providers: Prebuilt Environments and Runtime Checkpoints](/tutorials/sandbox-providers#prebuilt-environments-and-runtime-checkpoints) to add system packages, binaries, or model caches.
 
-The built-in agents exported from `niceeval/adapter` are factory functions. Put auth, proxy, MCP, or GitHub Skill setup in the factory arguments. Keep the model in the experiment's `model` field, and the sandbox provider in `sandbox`:
+Built-in Agents exported from `niceeval/adapter` are factories. Put authentication, proxies, MCP, or GitHub skills in the factory arguments. Keep the model in the Experiment's `model` field and the provider in its `sandbox` field:
 
 ```ts
 import { defineExperiment } from "niceeval";
@@ -92,55 +92,89 @@ export default defineExperiment({
 
 ## Agent environment variables
 
-| Agent | Required variables |
-|---|---|
+| Agent | Required variable |
+| --- | --- |
 | `claude-code` | `ANTHROPIC_API_KEY` |
 | `codex` | `CODEX_API_KEY` |
-| `bub` | whatever the bub CLI requires |
+| `bub` | Follow the bub CLI's authentication rules. |
 
 ## Workflow
 
 ```text
-createSandbox
-  → the sandbox spec's .setup() hook?     # environment setup (installs per experiment); skipped if none
-  → the eval's setup?                     # this eval's Fixture (if defined)
-  → adapter.setup?                        # install the CLI / write agent config
-  → test(t): uploadDirectory(...)         # write this eval's starting files
-  → adapter.send(input, ctx)              # only files the agent changes at this step enter the diff
-  → test(t): runCommand(...)              # run verification commands by hand
-  → collect the agent's changed files     # used by t.sandbox.diff / fileChanged
-  → assertion evaluation and verdict
-  → adapter.teardown?                     # agent cleanup
-  → the sandbox spec's .teardown() hook?  # environment cleanup (such as saving state back), last before destroy
-  → sandbox.stop()
+Create a Sandbox
+  → Run the Sandbox setup lifecycle
+  → Run the Eval setup lifecycle and prepare Fixtures
+  → Check the Agent CLI version; install it and check again when needed
+  → Run Adapter setup and write authentication and run configuration
+  → Run test(t) and write starting files
+  → The Adapter calls the Agent and records its file changes
+  → Run verification commands, score the result, and form a Verdict
+  → Run Adapter and Sandbox teardown lifecycles
+  → Stop the Sandbox
 ```
 
-The starting files and verification commands both live in `test(t)`. During agent execution, it can only see the files you already wrote into the sandbox.
+Write starting files and verification commands in `test(t)`. The Agent can see only files you wrote into the Sandbox.
 
-`t.sandbox.diff` and `t.sandbox.fileChanged()` only include **files the agent changed during `t.send()`**: NiceEval records the workspace state right before and right after each `t.send()` call, and attributes whatever changed in between to the agent. The starting files you uploaded, and any verification material written after `t.send()`, never get mixed in — so `fileChanged("src/app.ts")` only passes when the agent actually touched that file.
+`t.sandbox.diff` and `t.sandbox.fileChanged()` contain only files the Agent changed during `t.send()`. NiceEval records workspace state before and after each `t.send()`, so the changes between those points belong to the Agent. Starting files you uploaded and verification materials you write after `t.send()` are not included. `fileChanged("src/app.ts")` passes only when the Agent really changed that file.
 
-The lifecycle hooks (`.setup()` / `.teardown()`) hang off the spec in the experiment's `sandbox` field, and handle environment setup that varies per experiment — installing a binary specific to one experiment, warming something up, loading and saving state across attempts. The files they write belong to the environment and are not counted in the agent's diff. For how to write them and the rules they follow, see [Sandbox provider · Lifecycle](/tutorials/sandbox-providers#lifecycle).
+## Requirements for collecting file changes
 
-## Custom sandbox agent
+NiceEval creates a private Git repository in the Sandbox. It records workspace state before and after each `t.send()`; the difference is the Agent's work. Collection requires all of the following:
+
+- **The Sandbox has Git and a POSIX shell.** Built-in provider images include them. Verify them for a custom image. The project under test does not need to be a Git repository: NiceEval's private repository lives outside the workdir, does not touch your `.git`, and is not visible to the Agent.
+- **Files are written in the workdir.** Collection covers `sandbox.workdir`. Omit `targetDir` or `cwd` when writing files. For an absolute path, read `sandbox.workdir`; do not hard-code `/workspace`. Files outside the workdir are neither visible to the Agent nor collected.
+- **The workdir root has no nested Git repository.** Put the checkout directly in the workdir root. A submodule or another clone there is an execution error that lists the path, because normal file changes inside it would disappear from the record. Exclude a repository that does not participate in scoring with `diff.ignore`.
+- **The change happens during `t.send()`.** Files written after the final `t.send()` are your verification material, not Agent work.
+
+NiceEval excludes `.git`, `node_modules`, `__pycache__`, Python virtual environments, common build output, and package-manager caches by default. Otherwise one `npm install` could produce tens of thousands of paths. Adjust that list with an Eval's `diff` field:
 
 ```ts
-import { defineSandboxAgent } from "niceeval/adapter";
+export default defineEval({
+  diff: {
+    ignore: ["fixtures/**"],                 // A change here is not Agent work
+    include: ["node_modules/some-pkg/**"],  // Include a patched dependency
+  },
+  async test(t) { /* ... */ },
+});
+```
+
+Patterns use Git-ignore syntax relative to the workdir root. A pattern without `/` matches a name at every depth; one with `/` starts at the workdir root; a trailing `/` denotes a directory. The project's own `.gitignore` does not participate, so project-ignored files are still recorded. NiceEval freezes the list at the first snapshot; a later Agent edit to `.gitignore` cannot affect it.
+
+One `t.send()` window can collect at most 10,000 paths and 64 MiB of content. Exceeding either limit is an execution error, not an empty change set that could let a file assertion pass.
+
+Lifecycle callbacks (`.setup()` and `.teardown()`) belong to the Experiment's `sandbox` specification. Use them for environment setup that changes by Experiment: install an Experiment-specific binary, warm a cache, or load and save state across Attempts. Files they write are environment state, not part of the Agent diff. See [Sandbox Providers: Lifecycle](/tutorials/sandbox-providers#lifecycle) for the API and rules.
+
+## Create a custom Sandbox Agent
+
+```ts
+import {
+  completeEvidenceCoverage,
+  createNpmCliInstaller,
+  defineSandboxAgent,
+  resolveAgentBin,
+} from "niceeval/adapter";
+
+const { ensure, installer } = createNpmCliInstaller({
+  identity: { agent: "my-agent", version: "1.0.0", revision: "1" },
+  packageName: "my-agent",
+  bin: "my-agent",
+});
 
 export default defineSandboxAgent({
   name: "my-agent",
-  async setup(sandbox, ctx) {
-    ctx.progress({ message: "Checking the my-agent install" });
-    await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
-  },
+  evidenceCoverage: completeEvidenceCoverage,
+  ensure,
+  installers: [installer],
   async send(input, ctx) {
-    ctx.progress({ message: "Running the my-agent CLI" });
-    await ctx.sandbox.runCommand("my-agent", ["run", input.text, "--json-out", "agent-events.json"]);
+    ctx.progress({ message: "Running my-agent CLI" });
+    const bin = await resolveAgentBin(ctx.sandbox, "my-agent");
+    await ctx.sandbox.runCommand(bin, ["run", input.text, "--json-out", "agent-events.json"]);
     const transcript = await ctx.sandbox.readText("agent-events.json");
     if (transcript.trim() === "") {
       ctx.diagnostic({
         code: "empty-transcript",
         level: "warning",
-        message: "my-agent wrote no transcript; tool assertions may lack evidence",
+        message: "my-agent did not write a transcript; tool assertions might lack evidence",
       });
     }
     return {
@@ -151,29 +185,33 @@ export default defineSandboxAgent({
 });
 ```
 
-`setup`, each `send`, and `teardown` all get feedback methods scoped to themselves:
+`createNpmCliInstaller` prepares the npm package on the host, then sends it into the Sandbox. The Sandbox does not need Node.js or npm. The complete workflow is in [Create a Custom Sandbox Agent](#create-a-custom-sandbox-agent).
 
-- `ctx.progress({ message, current?, total? })` updates the current short-lived status. It suits installing a CLI, running a turn, or reading a transcript. Do not call it per token or per JSONL frame.
-- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` records protocol degradation, missing transcripts, and cleanup problems. It goes into the permanent terminal events and is committed with the Attempt as an Observation into the Record.
-- Throw when you cannot keep running. The runner records the phase it happened in, plus the error code, message, cause, and stack, and forms the `errored` Verdict Claim.
+`setup`, every `send`, and `teardown` each receive feedback methods for their own scope:
 
-Do not call `console.log/error` or write to `process.stdout/stderr` directly from an adapter. That tears apart the human dashboard and breaks the ordering of CI logs.
+- `ctx.progress({ message, current?, total? })` updates short-lived status. Use it for CLI installation, a Turn, or transcript reading. Do not call it for every token or JSONL frame.
+- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` records protocol degradation, missing transcripts, and cleanup problems. It enters the terminal's permanent event stream and is committed as a channel event with the Attempt.
+- Throw when execution cannot continue. The Runner writes the stage, code, message, cause, and stack to a diagnostic channel, then forms an `errored` Verdict in the `niceeval.verdict` channel.
 
-When a sandbox or adapter error shows up during a run, the terminal gives you an attempt locator:
+Do not call `console.log` or `console.error`, or write `process.stdout` or `process.stderr`, from an Adapter. That breaks up the human dashboard and CI log order.
+
+When a Sandbox or Adapter error appears during a run, the terminal prints an Attempt identity:
 
 ```text
 ✗ @5TB8167MXJ30SYZCNAVRHPQ4D2 fixtures/button [local] errored · agent setup
     agent-install-failed: npm install my-agent exited with code 1
-    Inspect: niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
+    Inspect: niceeval show --run <runId> --page attempt-5TB8167MXJ30SYZCNAVRHPQ4D2
 ```
 
-Run `niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2` to see the structured error, the diagnostics, and the lifecycle phases that completed. `--timing` gives a bounded diagnostic time tree (queueing, sandbox startup, the shell inside setup/teardown hooks, the agent CLI's install and launch commands, each send, correlated OTel model/tool spans, and cleanup), so you can see directly which layer the error or timeout happened in, and where the time went before that. When the tree has more than 80 detail nodes, it keeps the failures, the slow points, and the head/tail samples, and reports how many were omitted; use `--timing=full` when you need to audit node by node. `--execution` instead uses the event stream as the skeleton to see what the agent did; when OTel is present, it only attaches timing to events it can uniquely correlate. Sandbox creation can fail before telemetry is established, so reviewing the error does not depend on a trace.
+Run the displayed `show --run <runId> --page attempt-<attemptId>` command to inspect the structured error, diagnostics, and completed lifecycle stages. That page reads the timing channel, including queueing, Sandbox startup, shell work in setup and teardown, Agent CLI installation and startup, each send, correlated OTel model or tool work, and cleanup. It identifies the layer where an error or timeout occurred and where earlier time went.
+
+When the tree has more than 80 detail nodes, it retains failures, slow points, and head and tail samples, then reports how many nodes it omitted. To audit every node, choose the complete planned timing route from the same Sample's page index. An execution route uses events as its structure and attaches timing only to uniquely correlated events when OTel is present. Sandbox creation can fail before telemetry starts, so error review does not depend on a trace.
 
 ## `ctx.model` and `ctx.flags`
 
-The model and flags declared by the experiment appear in the adapter context. The adapter decides how to map them to CLI arguments or HTTP payloads.
+The model and flags declared by an Experiment appear in the Adapter context. An Adapter can turn them into CLI arguments or an HTTP payload.
 
-## Use a custom agent in an experiment
+## Use a custom Agent in an Experiment
 
 ```ts
 import { defineExperiment } from "niceeval";
@@ -189,5 +227,5 @@ export default defineExperiment({
 ```
 
 <Warning>
-  Do not add agent-specific branches inside the runner. Put differing behavior in the adapter.
+  Do not add Agent-specific branches to the Runner. Put behavioral differences in the Adapter.
 </Warning>

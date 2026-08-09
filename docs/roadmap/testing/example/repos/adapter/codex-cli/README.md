@@ -2,8 +2,7 @@
 
 live 适配器 Repo：`experiments/tool-call.ts` 用真实官方工厂 `codexAgent`
 （`niceeval/adapter`）在 Docker Sandbox 里跑真实 `codex exec --json`。本 Repo 证明：
-真实命令调用同时保留协议原名 `command_execution` 与规范分类 `shell`、调用与结果配对成立、且从公开执行证据读回
-（`niceeval show --execution --json`）可见。进入 main / nightly / release lane
+真实命令调用同时保留协议原名 `command_execution` 与规范分类 `shell`、调用与结果配对成立，且从 `niceeval show --run <runId> --page <attempt-execution-route>` 的公开执行页面可见。进入 main / nightly / release lane
 （见 `e2e.json.lanes`），需要真实凭据与 Docker。
 
 ## 怎么跑

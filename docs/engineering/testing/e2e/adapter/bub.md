@@ -28,11 +28,11 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter"]`、live lanes、
 两代必须成对钉：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型；配 0.3.9 直接 import 失败。
 反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨静默为空（契约见 [Bub 契约页 · 装哪一版 Bub](../../../../feature/adapters/sdk/bub/README.md#装哪一版-bub)）。
 
-`legacy` 放在验收顺序最后跑：固定 RecordGraphRef 的 Sample 一旦包含两个实验，`show` 默认报告就折叠成实验汇总表；前面按 Eval id 断言的步骤必须在 selection 只含 `ci` 时完成。
+`legacy` 放在验收顺序最后跑：固定 Sample 一旦包含两个实验，默认报告就折叠成实验汇总表；前面按 Eval id 断言的步骤必须在 selection 只含 `ci` 时完成。
 
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.env` 注入标准 `OTEL_*` 进程变量（OTLP/protobuf），执行树的时间注释就是写入成立的展示证明；`show --timing` 的 OTel 子树挂出经 mapper 归一的 model / tool span。
+- **CLI 读回**：`show --run <runId>` 的默认页面列出本仓库 Eval 与 Verdict；进入已规划的 Attempt execution 页面后，执行树出现工具调用节点，节点带 span 时间注释。
+- **OTel**：adapter 的 `tracing.env` 注入标准 `OTEL_*` 进程变量（OTLP/protobuf），execution 页面的时间注释就是写入成立的展示证明；已规划的 timing 页面挂出经 mapper 归一的 model / tool span。
   span mapper 只影响瀑布图——判分断言仍只读 tape 归一的事件流。

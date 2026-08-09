@@ -1,120 +1,49 @@
-# Record：可验证事实根
+# Record：可编辑的当前数据集
 
-一次评估会持续产生输入出处、Agent 行为、Sandbox 命令、用量、错误和判断。
-这些内容既要支持运行中的 `watch`，也要在结束后供 `show`、`view`、脚本和 Report 复核。
-Record 把它们保存成一份长期、可寻址、可验证的事实根，避免运行返回值、磁盘字段和页面数据各自成为真源。
+Record 是 <code>&lt;project&gt;/.niceeval/record/</code> 中的当前数据集。一次评估形成的 Run、成员关系、Attempt 和通道数据都在这里。人和工具只在目录停稳时读取或编辑它。
 
-本功能以 Record 作为产品边界。
-Observation 只回答“实际发生了什么”，是 Record 中的一类 durable payload。
-Record 还拥有 Provenance、Claim、Run、Attempt、内容图、提交事务和证据读取；名称因此指向完整事实对象，而不是其中一种输入。
+它不是防伪账本，也不保存编辑历史、修订号或 revision。一次读取得到的内容可以在下一次命令前被写入器或人工改变。文件形状、身份、路径和引用校验只用于拒绝自相矛盾的数据。
 
 ## 核心心智
 
-`.niceeval` 是项目的多 owner workspace state container，不对应一个 Record。
-bundled CLI 的 RecordStore 精确位于 `<project>/.niceeval/record`；这个子根可以跨多次 Invocation、多个 Experiment 和多个 Run 追加事实。
+Run 定义本次运行应包含哪些 slot，因此决定分母。Member 将一个 slot 采用到一个 Attempt。Attempt 保存实际执行产生的细节；一个 Attempt 被编辑后，所有采用它的 Member 在下一次读取时都会看到新值。
 
-`sandboxes`、`teardowns`、`sessions` 和 locks 是 `.niceeval` 内其它 owner 的 sibling，Record 不读取、认领或删除它们。
-每次成功提交都会产生一个不可变 `RecordGraphRef`。
-默认打开读取最新 head，receipt、Sample 和 Report 则固定到明确的 revision，后续写入不会让既有读结果漂移。
-它们保存完整 `RecordGraphRef`，不会按时间、latest 或 most recent 重新挑选结果。
+carry、accept 与 rename 的理由不写入 Member。它们是 Run 的局部通道事实，并以 slotId 和 attemptId 关联。Attempt 始终保有自己的 origin，不会因被采用而改挂到另一个 Run。
+
+Invocation 只是 Runner 或 Library 的返回身份。它没有持久化目录；<code>InvocationReceipt</code> 也不复制 locator、Verdict、用量、费用或计数。
 
 ```text
-Runner / Agent / Sandbox
-          │
-          ├─ Provenance：为什么是这次执行
-          ├─ Observation：实际发生了什么
-          └─ Claim：当时依据哪些事实作出什么判断
-                          │
-                          v
-                 Record durable revision
-                    │             │
-                    ├─ Live       └─ Sample
-                    │                 │
-                    └─ Projector ─────┴─> show / view / Report
+record files
+    ↓
+RecordReader
+    ↓
+core-only Sample → ReportPlan → ReportInput
+    ↓
+ReportExecution → view / export
 ```
 
-Projection 是 Projector 从固定 Record revision 计算出的读模型。
-执行树、时间树、usage、diff、Assertion 和 Verdict 读面都属于 Projection，不进入 Record graph，也不成为下一次判断的事实出处。
+只有 composition adapter 按 ReportPlan 读取磁盘字段。Report 定义、页面、view 与 export 只消费内存输入或执行结果，因此不会成为另一套文件解释器。
 
-## 五条不变量
+## 演进方式
 
-1. **事实与看法分开。** Provenance、Observation 和 Claim 是权威内容；Projection、snapshot 和 Report artifact 都是可重建读面。
-2. **revision 不漂移。** 每个已提交 Graph root 都不可变；完整性由 Stream、Attempt、Run 和 receipt 表达，不给 Graph root 另造 `open` / `sealed` 状态。
-3. **引用带完整身份。** 证据、Attempt 和 Projection 都绑定完整 `RecordGraphRef`；采用历史 Attempt 时还绑定具体 adopted node。
-4. **依赖显式成图。** typed payload 的每个容器依赖都写成 strong edge；验证、复制、GC 和选择性导出共用一套 walker。
-5. **缺口如实保留。** 未采集、未完成、截断、脱敏、损坏和能力不支持是不同状态，不能折成 `null`、空数组或猜测值。
+根文件的格式名固定为 <code>niceeval.record</code>。本格式拒绝历史 Results 系列的第 1 至第 15 号标记，且不显示迁移提示。
 
-Store 可以先是没有 Layout、head、recordId 和 genesis 的 unbound object namespace。首次成功 CAS
-才绑定 Record；之后每个 committed Graph root 都是 immutable durable revision。打开时固定一个
-完整 GraphRef，Projection、Sample、Report 和 receipt 都不能悄悄换到后来 head。
+这里没有全局整数格式版本字段。核心协议冻结后，破坏性领域演进使用永不复用的语义身份，并只让相关通道局部失效。新 reader 必须读取所有核心形状有效的 <code>niceeval.record</code>；它可以把未知或已退役通道报告为不支持。
 
-## 运行身份与采用关系
-
-Invocation 是一次命令或 Library 调用的 live 聚合身份，不是 durable entity。
-每个 Run 恰属一个 Invocation 与一个 Experiment；每个 Attempt 永远归实际创建它的 origin Run。
-
-当前 Run 使用 `RunContribution` 的 membership slot 纳入 Attempt：
-
-```text
-Run A（origin） ── owns ──> Attempt X
-
-Run B ── slot ──> Contribution ── adopted revision ──> Attempt X
-                    executed | carried | accepted | renamed
-```
-
-carry、accept 和 rename 不复制执行事实，也不把 Attempt 改挂到新 Run。
-它们创建带依据的 Claim 与 Contribution；迟到事实通过同一 Contribution 的线性 revision 采用同一 Attempt 的后继 revision。
-历史 GraphRef 仍看到原来的 Run、Contribution 和 Attempt。
-
-## 信息所有者
-
-| 所有者 | 负责 | 不负责 |
-|---|---|---|
-| Runner | Invocation、Run、Attempt 生命周期，identity reservation，终态 receipt | 解释 Adapter 私有协议或生成报告字段 |
-| Adapter | 把原生 Agent 输出映射成标准行为事件，并声明证据涵盖 | 改写 Runner 生命周期或 Verdict |
-| Observation Hub | 校验 envelope、分配顺序并把同一事实交给 durable 与 live sink | 聚合报告指标 |
-| Record | 保存 Provenance、Observation、Claim、实体 revision 与强依赖 | 选择 current、聚合指标或排版 |
-| Live | 从同一事件流提供 snapshot、tail 与重连 | 成为第二份终态事实源 |
-| Sample | 在固定 revision 上选择可比较的 Contribution，并交代涵盖 | 改写历史事实 |
-| Projector | 通过可追踪读取产生带依据的 Projection | 写 Record、访问网络、读取未登记状态或手写 EvidenceValue |
-| Reports | 计划 Projection、计算指标、渲染并复制实际依据 | 读取原始事件 schema 或反推 Record 字段 |
-
-## 用户任务归属
-
-- [运行中旁路查看](use-case/watch-while-running.md) 读取 LiveRecord，不争用被观察进程的 stdin。
-- [从脚本复核事实](use-case/audit-from-script.md) 固定一次 Graph revision，再读取 Provenance、Observation、Claim 或 Projector。
-- 收窄可比较范围由 [Sample](../sample/README.md) 负责。
-- 构建可分享站点与其它交付物由 [Reports](../reports/README.md) 负责。
+这不是“完全无版本”。格式名、核心身份和目录协议仍是稳定边界。只有它们无法保持解释时才更换整个格式名；普通领域变化不能让所有历史 Record 一起失效。
 
 ## 范围
 
-本功能定义：
+Record 定义根目录、Run / Member / Attempt 的核心文件、通道、原子发布和单通道四态读取。它也定义 owner-aware 的临时目录删除。
 
-- frozen typed-object graph、Record 领域 payload、Merkle catalog 与 locator index；
-- durable Observation、Provenance、Claim、RunContribution 与本地证据 target；
-- Store 的 fencing、staging、CAS、崩溃恢复、committed root 历史与 GC barrier；
-- Agent 增量事件、LiveRecord、Reducer snapshot 和 Invocation receipt；
-- 固定 revision 的 Record handle、追踪式 Projector、`EvidenceValue` 两轴状态和 memo identity；
-- `watch`、机器输出、locator 寻址、typed mirror snapshot 与选择性证明的职责边界。
+Record-to-Record 的发布、复制、镜像和同步不属于本功能。分享由自包含的静态 Report export 负责。它脱离源 Record 后呈现固定内容，不把 producer 身份认证或可再次查询的承诺交给 Record。
 
-Library 调用传入的 root 永远是实际 Store root，不附加 `.niceeval`、`record` 或任何其它后缀。
-bundled CLI 只把项目根映射到 `<project>/.niceeval/record`，再将这个绝对路径交给 Library。
-创建只认领该精确子根；已有目标、缺失目标和错误 format 各自使用 Store 的 typed failure。
-它不会领养 `.niceeval` 父目录、改写 sibling，或自动迁移、删除既有用户结果。
-
-本功能不定义 Verdict 词表、Sample 选择算法、Report 页面布局、远程控制面或 OTel collector。
-这些 owner 通过 typed payload、Projector 和公开句柄接入，不扩张 frozen core。
-
-`exportSample` 按 phase 直接传播 `RecordSourceError`、`RecordReadError` 或
-`RecordEvidenceProofError`。Reports 把底层
-`RecordSourceFailure` 或 `RecordEvidenceProofFailure` 包进自己的导出错误，不能把它伪装成 Record
-的直接传播。完整镜像先 capture 或 parse typed snapshot；二者只产生 snapshot error，随后 mirror
-只产生 mirror error。具体失败词表见 [Library](library.md)。
+运行中的终端反馈和旁路查看由 Runner 负责。<code>show</code>、<code>view</code>、导出和人工编辑都只面对停稳目录。
 
 ## 入口
 
-- [Architecture](architecture.md) —— 容器、领域实体、统一证据证明、Store 事务与 GC 不变量。
-- [Library](library.md) —— Agent stream、Record 读写、receipt 与 Projector API。
-- [CLI](cli.md) —— `watch`、机器输出、locator 与终态审计。
-- [Use cases](use-case/README.md) —— 运行中查看与脚本审计的完整路径。
-- [Reference](reference/README.md) —— Projector、typed-object graph 与版本防火墙的外部先例。
+- [Architecture](architecture.md)：文件布局、核心形状、身份、通道、发布和演进不变量。
+- [Library](library.md)：创建或打开 reader / writer、通道读取和 typed error。
+- [CLI](cli.md)：项目 root、<code>show</code>、<code>view</code> 与临时目录删除。
+- [Use case](use-case/README.md)：Runner 或第三方 harness 写入运行事实的路径。
+- [Reference](reference/README.md)：外部研究索引，不定义产品契约。

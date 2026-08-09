@@ -49,7 +49,7 @@
    });
    ```
 
-`.optional()` 是另一个正交维度：允许这条断言在证据缺席时只形成 `unavailable` Assertion Claim、不再形成 `errored` Verdict Claim。
+`.optional()` 是另一个正交维度：允许这条断言在证据缺席时只形成 `unavailable` Assertion result、不再形成 `errored` Verdict。
 
 ## 边界
 

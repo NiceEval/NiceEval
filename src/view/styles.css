@@ -19,7 +19,7 @@
 }
 
 :root {
-  /* 宿主 chrome 与页内报告读同一份主题令牌(docs/feature/reports/library/theme.md
+  /* 宿主 chrome 与页内报告读同一份主题令牌(docs/feature/reports/README.md
      「在 view 中怎样生效」):兜底值 = 默认主题 basalt(src/report/theme.ts 单源),
      生效主题的令牌块注入在本文件之后,覆盖 --niceeval-* 即全站换观感。 */
   color-scheme: dark;
@@ -134,7 +134,7 @@ main {
   main { width: min(100vw - 28px, 1120px); padding-top: 42px; }
 }
 
-/* ── 外壳:导航右侧外部链接与页脚(docs/feature/reports/library/shell.md) ── */
+/* ── 外壳:导航右侧外部链接与页脚(docs/feature/reports/README.md) ── */
 .shell-links { display: flex; gap: 8px; align-items: center; margin-left: auto; }
 /* 链接自带 padding 撑大可点击区域(而非仅靠文字宽度);.shell-links 的 gap 相应收窄,
    两条链接之间的视觉间距(padding + gap + padding)与改前基本持平。 */

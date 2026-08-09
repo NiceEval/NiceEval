@@ -1,135 +1,65 @@
-# 把运行事实写入 Record
+# 写入运行事实
 
-契约单源始终在 [Record Library](../library.md#高层-record-writer)。
-本页只说明不同角色从哪里接入，以及什么时候形成 Provenance、Observation、Claim 或 Projection。
+本页面向 Runner 和第三方 harness。普通 Eval 作者通过 Eval、Assertion、Judge 和 Sandbox 的上层入口产生数据，不直接拼 Record 文件。
 
-## 先确认自己是不是事实生产者
+## 开始一次写入
 
-普通 Eval 作者不创建 `RecordWriter`，也不直接调用 `observe()` 或 `claim()`。
-这些入口是 Runner 与第三方 harness 的 producer SPI；Node、edge、radix、sequence、Graph revision 与
-CAS 全部由框架管理。
+writer 只在没有 reader 或人工编辑者并发使用目录时开始。新目录使用 <code>await using writer = await createRecordWriter(...)</code>。已有停稳目录使用 <code>await using writer = await openRecordWriter(...)</code>。这个 async-dispose 作用域就是 root 独占写 lease。
 
-| 角色 | 使用的上层入口 | 不直接处理 |
-|---|---|---|
-| Eval 作者 | `defineEval()`、Assertions、Judge 与 Sandbox API | RecordWriter、Observation binding、Claim basis |
-| Adapter 作者 | [Adapter SDK](../../adapters/sdk/README.md) 的标准行为事件 | Record Graph、stream sequence、Node 或 edge |
-| Assertion / Judge / Verdict owner | 各 Feature 的 evaluator 与结果入口 | 任意 JSON Claim、手写 evidence identity |
-| 第三方 Runner 或 harness | `createRecordWriter()` 与 Invocation / Run / Attempt lifecycle | 任意 Graph 拼装、head 覆写、手写 digest |
-| Report 或分析作者 | Projector、Sample、Calculation 与 Report API | `observe()`、`claim()`、原始 event schema |
+先建立 Invocation 的内存身份，再写 Run 的 <code>run.json</code>。Run 必须一次声明完整 <code>expectedSlots</code>，包括每个 <code>slotId</code>、<code>evalId</code> 和 attempt 编号。
 
-Adapter 先把原生 SDK 输出转换成标准行为事件。Observation Hub 再校验 envelope、分配顺序，并把同一
-事实交给 durable 与 live sink。Assertion、Judge、Verdict 和 adoption owner 则在自己的领域入口形成
-判断；Record 只负责保存它们产生的 Claim。
+不要从显示名生成 identity。Run、slot、Attempt 和 Invocation 都使用规范的 128-bit opaque ID。Eval 与 experiment 文本只写进核心字段，不进入目录路径。
 
-```text
-Eval author ───────────────> Runner lifecycle
-Adapter ──> behavior event ──> Observation Hub ──> Observation
-Assertion / Judge ──> evaluator + tracked basis ──> Claim
-Report / show / view ──> Projector ───────────────> Projection
-```
+## 为每个 slot 形成 Attempt
 
-## 四种内容怎样选择
+实际执行的 Attempt 按以下顺序形成：
 
-| 内容 | 回答的问题 | 典型例子 |
-|---|---|---|
-| Provenance | 为什么是这次执行，使用了什么输入 | Eval 源码、Agent 配置、model、价格表 snapshot |
-| Observation | producer 实际捕获了什么 | Agent message、tool stdout、exit code、provider usage |
-| Claim | 哪个 evaluator 当时依据什么作出什么判断 | Assertion、Judge score、Verdict、估算成本、adoption decision |
-| Projection | 固定 revision 现在可以怎样被读取 | timing tree、usage 汇总、diff、pass rate、Report rows |
+1. 为 Attempt 分配 identity，并填写 origin 和 eval。
+2. 在自己的 <code>.tmp/&lt;writerId&gt;</code> 中写完整目录。
+3. 写入 channel 文件和只归该 Attempt 的 blobs。
+4. 验证 descriptor、coverage、路径、引用和 <code>attempt.json</code>。
+5. 以一次同文件系统目录 rename 发布 Attempt。
+6. 在本 writer 临时目录形成、校验并 close Member 普通文件，再以单文件 atomic replace 写入目标 slot。
 
-选择时依次问：
+本 Run 实际执行的 Attempt 使用 <code>executed</code> Member。采用历史 Attempt 时使用 <code>carried</code> 或 <code>accepted</code> Member；它们不改变 Attempt 的 origin。
 
-1. 这是外部系统或运行时实际产生的值吗？是则形成 Observation。
-2. 这是执行输入、算法、Sandbox 起点、子进程变量集合或 Provider 资源出处吗？是则形成 Provenance。
-3. 这是需要保留原 evaluator、版本和依据的历史判断吗？是则形成 Claim。
-4. 它能从固定 Record revision 确定性重建，而且只服务读取或显示吗？是则形成 Projection。
+carry、accept 或 rename 的理由写到 Run 通道，并同时带 <code>slotId</code> 和 <code>attemptId</code>。不要给 Member 增加 context、provenance 或 diagnostics 字段。
 
-不要因为一个计算结果方便查询就把它写成 Claim。能由 Projector 重建的 timing、usage aggregation、
-diff 与 Report metric 都留在 Record graph 之外。
+## 选择通道形态
 
-## Observation 保存发生的事
-
-Observation 适合有明确 producer、schema 和顺序的运行事件。例如：
-
-- Adapter 收到 Agent message；
-- Sandbox command 返回 stdout、stderr 与 exit code；
-- provider response 报告实际 token usage；
-- workspace collector 捕获文件变化；
-- Runner 写入 lifecycle transition 或错误。
-
-同一 stream binding 在 owner 内保持稳定。Runner 或 harness 只建立 binding；writer 补入 scope、分配
-sequence、执行 serialization transformation，并生成 Graph revision。Adapter 不生成 streamId、
-sequence、NodeRef 或 GraphRef。
-
-如果 provider 返回实际账单，它是 Observation。若 NiceEval 根据价格表计算金额，该金额是 Claim，
-因为 evaluator、价格表版本和计算依据都会影响结果。
-
-## Claim 保存当时采用的判断
-
-Claim 不表示绝对真理。它表达的是：某个具名 evaluator 的某个版本，在某个时刻依据一组已提交事实，
-产生了一个判断。
-
-典型组合是：
-
-```text
-Observation
-  Judge request
-  Judge 原始 response
-        │
-        ▼ basedOn
-Claim
-  evaluator = acme.judge / rubric / 3
-  value = { score: 0.8, verdict: "pass" }
-```
-
-原始 response 让复核者检查 score 与 Verdict 的规范化是否正确；Claim 则保留运行当时真正采用的值。
-以后重新运行 Judge 可能使用不同 model、prompt 或 evaluator version，不能替换历史 Claim。
-
-普通 Assertion、Judge 和 Verdict 使用各自 Feature 的入口。owner 生成 Claim identity、evaluator
-与 tracked basis。只有第三方 harness 在实现新的判断 owner 时才直接调用 `RunWriter.claim()` 或
-`AttemptWriter.claim()`。它必须提供稳定 Claim id、完整 evaluator identity、已提交 basis 与
-`producedAt`，不能用说明文字或未提交对象代替 evidence。
-
-Run adoption 也属于 Claim。carry、accept 与 rename 必须先保存“为什么采用这个 Attempt”的
-Run-scoped Claim，再把返回的 `ClaimRef` 交给 `RunWriter.adopt()`。
-
-## 第三方 harness 的职责边界
-
-第三方 harness 使用 [高层 Record writer](../library.md#高层-record-writer) 管理这条顺序：
-
-1. 创建 RecordWriter，并开始 Invocation。
-2. 开始 Run，写入本次 Run 的 Provenance。
-3. 在外部副作用之前 reserve Attempt identity。
-4. 让 Adapter event mapper 把标准行为事件写成 Observation。
-5. 让 Assertion、Judge、Verdict 或 adoption owner 写入 Claim。
-6. 使用 owner 返回的 `ClaimRef` 完成 Attempt、adopt Contribution 或结束 Run。
-7. 完成 Invocation，向上层返回 receipt。
-
-harness 不构造 GraphNode、strong edge、catalog、locator index 或 committed root。它也不自行选择
-head、修改历史 revision，或把失败写成 `null`。writer 根据 lifecycle operation 形成事务并执行 CAS；
-冲突、closed capability、权限、IO 与 graph violation 使用 Record Library 的 typed failure。
-
-## 常见误用
-
-| 误用 | 正确入口 |
+| 数据特征 | 写入位置 |
 |---|---|
-| 把 Judge 原始 response 直接当 Verdict | response 是 Observation；解释结果是带 basis 的 Claim |
-| 把 pass rate 写入 Record | 用 Sample + Calculation / Projector 重建 |
-| 把 model 配置当作运行事件 | 配置属于 Provenance；provider 实际返回的 model identity 可以是 Observation |
-| Adapter 手写 Claim 证明自己成功 | Adapter 只报告行为事实；Assertion 或 Verdict owner 作判断 |
-| Report renderer 临时读取 event | 在 plan 中声明 Projector request |
-| 调用方传 NodeRef 或自行递增 sequence | 交给 writer 与 Observation Hub |
-| 用一段 message 代替 Claim basis | 先提交依据，再引用完整 EvidenceTarget / ClaimRef |
+| 有序、高频、追加量大，且未知 variant 可保留 | JSONL event channel |
+| 单一终态、人工可编辑或随机读取频繁 | document channel |
+| 大文本或二进制内容 | Attempt-owned blob |
 
-判断仍有歧义时，优先保存最接近 producer 的 Observation，并把可重建解释留给 Projector。只有需要
-保留“当时实际采用了这个判断”时，才新增 Claim。
+conversation、tool、telemetry 和 diagnostics 适合 JSONL。verdict、eligibility、assertions、usage、timing summary、diff、sources 与 commands manifest 适合 document channel。
 
-## 接下来进入哪里
+内建名称使用 <code>niceeval.&lt;descriptive-concept&gt;</code>。自定义 JSON fact 使用反向域 namespace，精确 document transport 见 [Architecture](../architecture.md#通道语义与兼容性)。两者都不要以数字后缀表示语义演进，也不要复用已经发布的名称。generic <code>fact()</code> 每个 owner/name 只写一次，完整 document 上限为 65,536 UTF-8 bytes，不支持 JSONL、追加或 blob。
 
-- 编写或接入 Agent：进入 [Adapter SDK](../../adapters/sdk/README.md)。
-- 定义检查：进入 [Assertions](../../assertions/README.md)。
-- 使用模型裁判：进入 [Judge Library](../../judge/library.md)。
-- 折叠终态：进入 [Verdict](../../verdict/README.md)。
-- 从固定事实构造读模型：进入 [追踪式 Projector](../library.md#追踪式-projector)。
-- 选择可比较成员：进入 [Sample](../../sample/README.md)。
-- 构建终端或网页交付：进入 [Reports](../../reports/README.md)。
+通道暂时不能采集时，写 <code>unavailable/not-collected</code>。不适用时写 <code>unavailable/not-applicable</code>。不要用空文件、空数组或 <code>null</code> 代替这两个状态。
+
+## 结束 Run 与 Invocation
+
+新 Run 核心、Member、descriptor/coverage 更新与 <code>completedAt</code> 都先写入本 writer 的同文件系统临时普通文件，flush/fsync、close 后再 atomic replace。自动 writer 不直接截断正式 JSON；平台缺少所需原语时写入失败。
+
+初始 writer 停止拥有 Run 时写入 <code>completedAt</code>。这只标示写入责任结束，不阻止后续人工编辑内容。
+
+Invocation 完成、中断或失败时，Runner 返回 <code>InvocationReceipt</code>。receipt 只包含 Invocation、Run、起止时间和 completion，不携带执行详情。
+
+正常退出只删除自己的临时目录。进程崩溃时留下的临时内容交给停稳后的 owner-aware clean；不要删除其它 writer 的目录。
+
+打开已有 owner 时，writer 原值保留自己未明确写入的 descriptor、channel 文件和 blob。未知或退役 decoder 不授权删除文件；既有 descriptor 无法安全读出时，该 owner 保持只读。
+
+## 常见边界
+
+| 错误做法 | 正确做法 |
+|---|---|
+| 把 Report 页面字段写回 Record | 由 composition adapter 形成 ReportInput |
+| 让一个 Member 复制 Attempt 的 verdict 或 usage | Member 只引用 Attempt |
+| 把 rename 写成新的 Member kind | 在 Run 通道写入 rename 事实 |
+| 用不同 duration domain 的数值比较 timeout | 视为不可采用 |
+| 给已发布通道原地改变含义 | 发布新的描述性通道或 event 名 |
+| 在正式 Attempt 路径逐个写文件 | 先在临时目录完整形成，再一次发布 |
+
+写入完成后离开 <code>await using</code> 作用域。dispose 等待在飞写入，关闭句柄并删除本 writer 未发布的临时内容，然后释放 lease。随后 reader 才在停稳目录上打开 Record。进程崩溃无法执行 dispose 时，现场留给 owner-aware clean。

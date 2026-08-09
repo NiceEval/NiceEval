@@ -1,4 +1,4 @@
-// Chart 原语:消费 Dataset,用 x/y 与 <Series> 映射坐标与 mark(docs/feature/reports/components/charts/README.md)。
+// Chart 原语:消费 Dataset,用 x/y 与 <Series> 映射坐标与 mark(docs/feature/reports/README.md)。
 
 import type { CSSProperties, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
@@ -791,7 +791,7 @@ function chartText(
   const yDomain = paddedAxisDomain(points.map((p) => p.y), yBounds);
 
   // 标记字母按图例顺序逐点分配:series 按显示键字典序,series 内按 x 原始值升序
-  // (docs/feature/reports/show/default-report.md)。按 series 下标分配会让一个 series 的
+  // (docs/feature/reports/README.md)。按 series 下标分配会让一个 series 的
   // 全部点共用一个字母,图上读不出哪个点是哪一行。
   const groups = legendGroups(visible);
   const marks = new Map<string, string>();

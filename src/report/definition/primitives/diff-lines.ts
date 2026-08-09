@@ -1,5 +1,5 @@
 // 文件差异的值形状与纯文本渲染:DiffView 两面、show 的 --diff 与 --diff=<path> 共用这一份
-// (契约 docs/feature/reports/components/primitives/diff-view.md)。这个模块不含 JSX,所以
+// (契约 docs/feature/reports/README.md)。这个模块不含 JSX,所以
 // src/show 能直接从源码引它,web 面走 dist/report 的编译产物,两条路径消费同一份实现。
 
 import { renderAlignedRows } from "../../model/text-layout.ts";

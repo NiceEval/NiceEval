@@ -1,5 +1,5 @@
 // niceeval.config.ts 装载:CLI 与 view 共用。view 本地模式每次重建传 freshImport,
-// 让 config.report / config.theme 及其整棵 import 图失效(docs/feature/reports/view.md)。
+// 让 config.report / config.theme 及其整棵 import 图失效(docs/feature/reports/README.md)。
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";

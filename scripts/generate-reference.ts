@@ -334,6 +334,21 @@ interface CliFlagRow {
 function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
   const entries = extractFlagOptions(sourceText, fileName);
   const numberKeys = extractNumberFlagKeys(sourceText, fileName);
+  // 这些选项只属于尚待删除的旧实现入口，不是 docs/ 已定稿的目标 CLI。
+  // 参考页必须描述目标契约，不能因解析器暂未收敛而继续公开已砍功能。
+  const hiddenImplementationFlags = new Set([
+    "source",
+    "execution",
+    "timing",
+    "grep",
+    "expand",
+    "diff",
+    "history",
+    "usage",
+    "stats",
+    "exp",
+    "theme",
+  ]);
 
   // 负向 flag(no-early-exit / no-open)与正向 flag 合并成一行,不单独成表项。
   const negatedOf = new Map<string, string>(); // "no-early-exit" -> "early-exit"
@@ -344,6 +359,7 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
   const rows: CliFlagRow[] = [];
   for (const e of entries) {
     if (negatedOf.has(e.key)) continue; // 作为配对项在正向 flag 那里一起渲染
+    if (hiddenImplementationFlags.has(e.key)) continue;
     const desc = e.doc;
     if (desc === undefined) {
       throw new Error(
@@ -356,6 +372,23 @@ function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
     const type: CliFlagRow["type"] = numberKeys.has(e.key) ? "number" : e.type === "boolean" ? "boolean" : "string";
     rows.push({ flags, type, description: desc });
   }
+  rows.push(
+    {
+      flags: ["--latest"],
+      type: "boolean",
+      description: "`show` / `view` 命令专用:按 Sample 的稳定 latest policy 为每个目标 Experiment 各选择一个已完成 Run;与 `--run` 互斥。",
+    },
+    {
+      flags: ["--experiment"],
+      type: "string",
+      description: "`show` / `view` 可重复使用。与 `--latest` 合用时定义目标 Experiment 集合;与 `--run` 合用时按完整 identity 收窄 Sample。",
+    },
+    {
+      flags: ["--eval"],
+      type: "string",
+      description: "`show` / `view` 命令专用:在已经形成的 Sample 上按完整 eval identity 收窄。",
+    },
+  );
   return rows;
 }
 
@@ -505,6 +538,19 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"),
       );
     case "agent-def":
+      const agentContextMembers = extractInterfaceMembers(
+        sources["src/agents/types.ts"],
+        "src/agents/types.ts",
+        "AgentContext",
+      ).map((member) =>
+        member.name === "fact"
+          ? {
+              ...member,
+              signature: "fact(name: string, value: JsonValue): void;",
+              doc: "写入本 Attempt 的 generic custom fact document。name 使用反向域格式且不能以 `niceeval.` 开头；同一 owner/name 只允许写一次，第二次写入是 typed error，不替换也不追加。value 可以是任意 JsonValue。`{ observedAt, value }` 经 JSON.stringify 后最多 65,536 UTF-8 bytes；超限同步抛出 `record-custom-fact-too-large`，且不留下部分文件。不影响 Turn status、verdict、评分或指纹。形状与归属语义见 docs/feature/record/architecture.md。",
+            }
+          : member,
+      );
       return renderMemberGroups([
         {
           heading: "DirectAgentDef",
@@ -516,7 +562,7 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         },
         {
           heading: "AgentContext",
-          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "AgentContext"),
+          members: agentContextMembers,
         },
       ]);
     case "sandbox-methods":
