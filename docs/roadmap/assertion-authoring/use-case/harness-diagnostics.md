@@ -28,7 +28,7 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 本页只展示这次 API 负责的机器检查，不为其伪造新入口。
 
 每题的机械层固定为三条 turn 调用：一条 `toolOrder()`、一条 `toolInputsExclude()`、一条 `succeeded()`。
-`ToolMatch.command` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
+`commandMatch()` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
 opaque shell 仍是 unavailable；这项归一不读取 raw shell text，也不证明物理 binary identity。
 
 ## A：修好 Python 起点，再判断复验与接受
@@ -53,11 +53,13 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 
 ```ts
 const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件、eval 源码或 agent 实现；诊断证据应来自 NiceEval 自身的公开结果查看接口。");
-turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }, { name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
+turn.toolOrder([
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }), commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();
 t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
-t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", afterIncludes: "runtime:python" }).points(2).gate();
+t.sandbox.fileChanged("experiments/local.ts", { before: includes("runtime:node"), after: includes("runtime:python") }).points(2).gate();
 ```
 
 三条未链 `.points()` 的 Assertion 是零分 gate，只进入判定面。
@@ -65,7 +67,7 @@ t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", 
 其中 observed-input gate 与题面共同明确禁止直接读取 `.niceeval`、`evals` 与 `agents`；三项都是用户可见的任务边界，不是隐藏失败条件。
 
 `changedPaths()` 只证明 agent 归因路径集合恰好一项。
-`fileChanged()` 证明同一条 change 的 before 含 `runtime:node`、after 含 `runtime:python`；两者都不声称文件只改了这一个 token。
+`fileChanged()` 让同一条 change 的 before / after 分别通过两个 `includes()` matcher；它不声称文件只改了这一个 token。
 
 `accept` 不另设一条 command 得分。
 是否正确接受、保留和复验仍须依据公开 dry/show、不兼容原因、三条 accept 回执、`3 carried、1 to run` 计划与 delta 真实执行判断；本次不为这组动态关系增加确定性 API，单独给 accept command 计分也会放大同一事实。
@@ -98,7 +100,9 @@ t.sandbox.fileChanged("experiments/local.ts", { beforeIncludes: "runtime:node", 
 
 ```ts
 const turn = await t.send("运行 local experiment，调查所有失败并逐项给出归因与修正建议。每项结论必须引用运行结果证据；不得使用文件读取工具直接打开 eval 源码、agent 实现或内部记录，诊断证据应来自 NiceEval 自身的公开结果查看接口。不要修改项目。");
-turn.toolOrder([{ name: "shell", command: { executable: "niceeval", argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] } }, { name: "shell", command: { executable: "niceeval", argsStart: ["show"] }, status: "completed" }]).gate();
+turn.toolOrder([
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();
 t.sandbox.noChanges().points(2).gate();
