@@ -20,20 +20,15 @@ export class LocalRetain<Owner> implements AsyncDisposable {
     return this.#state;
   }
 
-  async close(): Promise<void> {
-    if (this.#state === "released") return;
+  close(): Promise<void> {
     if (this.#closeResult !== undefined) return this.#closeResult;
+    if (this.#state === "released") return Promise.resolve();
+    // Release is an ownership transfer, not a retryable lease on this wrapper.  Once the
+    // registry owns the finalizer retry path, this escaped retain must never become held again.
+    this.#state = "released";
     const result = this.releaseOnce();
     this.#closeResult = result;
-    try {
-      await result;
-      this.#state = "released";
-    } catch (cause) {
-      // A failed backend finalizer must remain observable and retryable; marking this retain
-      // released first would strand the final retain with no capability left to finish it.
-      if (this.#closeResult === result) this.#closeResult = undefined;
-      throw cause;
-    }
+    return result;
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
@@ -54,6 +49,7 @@ export class LocalRetainRegistry<Owner> implements AsyncDisposable {
   #state: LocalRetainRegistryState = "open";
   #active = 0;
   #finalizeResult: Promise<void> | undefined;
+  #retryScheduled = false;
   readonly #identity = Object.freeze({});
 
   constructor(private readonly finalize: () => Promise<void>) {}
@@ -79,7 +75,7 @@ export class LocalRetainRegistry<Owner> implements AsyncDisposable {
         await this.releaseCount();
         return;
       }
-      await this.finishIfDrained();
+      await this.finishIfDrained(false);
     }, this.#identity);
   }
 
@@ -87,14 +83,10 @@ export class LocalRetainRegistry<Owner> implements AsyncDisposable {
     return retain.isOwnedBy(this.#identity);
   }
 
-  /**
-   * 并发 close 共享同一次 in-flight settled result。真正 finalizer 在最后一个 child retain
-   * 离开后执行，避免 close 把已有 capability 的底层连接提前释放；失败则保留 closing，供持有
-   * retain 的调用者重试实际 cleanup。
-   */
+  /** A manual backend close also gives a pending finalizer one explicit retry opportunity. */
   async close(): Promise<void> {
     if (this.#state === "open") this.#state = "closing";
-    await this.finishIfDrained();
+    await this.finishIfDrained(true);
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
@@ -107,14 +99,20 @@ export class LocalRetainRegistry<Owner> implements AsyncDisposable {
     // Store.close therefore only releases its own retain; existing handle/writer/lease retains
     // keep this registry open and may still derive their documented child capabilities.
     if (this.#active === 0 && this.#state === "open") this.#state = "closing";
-    await this.finishIfDrained();
+    await this.finishIfDrained(false);
   }
 
-  private async finishIfDrained(): Promise<void> {
+  private async finishIfDrained(retry: boolean): Promise<void> {
     if (this.#state !== "closing" || this.#active !== 0) return;
-    if (this.#finalizeResult !== undefined) {
-      await this.#finalizeResult;
-      return;
+    const existing = this.#finalizeResult;
+    if (existing !== undefined) {
+      try {
+        await existing;
+        return;
+      } catch (cause) {
+        if (!retry) throw cause;
+        if (this.#finalizeResult === existing) this.#finalizeResult = undefined;
+      }
     }
     const result = this.finalize();
     this.#finalizeResult = result;
@@ -122,10 +120,30 @@ export class LocalRetainRegistry<Owner> implements AsyncDisposable {
       await result;
       this.#state = "closed";
     } catch (cause) {
-      // Keep the registry in closing so the still-held final retain (or an explicit backend
-      // close retry) can finish the real finalizer. Do not convert a failed cleanup into closed.
-      if (this.#finalizeResult === result) this.#finalizeResult = undefined;
+      // The retain that triggered this finalizer is already released.  Preserve the failure for
+      // that caller, keep the registry as its new cleanup owner, and arrange one safe background
+      // retry.  Later mutations/open-read/GC/backend-close also explicitly retry this path.
+      this.scheduleFinalizerRetry();
       throw cause;
+    }
+  }
+
+  private scheduleFinalizerRetry(): void {
+    if (this.#retryScheduled || this.#state !== "closing") return;
+    this.#retryScheduled = true;
+    queueMicrotask(() => {
+      void this.retryFinalizerInBackground();
+    });
+  }
+
+  private async retryFinalizerInBackground(): Promise<void> {
+    try {
+      await this.finishIfDrained(true);
+    } catch {
+      // A later safe admission point retries again.  This callback deliberately has no caller
+      // whose promise could observe a second finalizer result.
+    } finally {
+      this.#retryScheduled = false;
     }
   }
 }

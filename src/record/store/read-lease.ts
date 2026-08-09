@@ -228,3 +228,49 @@ export async function listLocalDurableReadLeases(
   }
   return Object.freeze(records);
 }
+
+/**
+ * Expired read leases do not protect GC.  Remove their durable records while the caller holds the
+ * same mutation/barrier admission used for lease creation and release, so a crash cannot turn an
+ * already-expired lease into permanent control-plane debris.
+ */
+export async function pruneExpiredLocalDurableReadLeases(
+  paths: LocalStorePaths,
+  protocol: LocalReadLeaseProtocol,
+  now = Date.now(),
+): Promise<void> {
+  const names = await readDirectoryIfPresent(paths.readLeases);
+  for (const name of names) {
+    if (!name.endsWith(".json") || name.startsWith(".")) continue;
+    const leaseId = name.slice(0, -".json".length);
+    if (!validLeaseId(leaseId)) {
+      throw new LocalStorePhysicalCorruptionError({
+        component: "read-lease",
+        path: join(paths.readLeases, name),
+        detail: "read lease filename is invalid",
+      });
+    }
+    const path = localReadLeasePath(paths, leaseId);
+    const bytes = await readFileIfPresent(path);
+    if (bytes === undefined) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(decoder.decode(bytes));
+    } catch {
+      throw new LocalStorePhysicalCorruptionError({
+        component: "read-lease",
+        path,
+        detail: "read lease is not valid JSON",
+      });
+    }
+    const record = decodeRecord(value, path, protocol);
+    if (record === undefined || record.leaseId !== leaseId) {
+      throw new LocalStorePhysicalCorruptionError({
+        component: "read-lease",
+        path,
+        detail: "read lease does not match the v1 physical shape",
+      });
+    }
+    if (Date.parse(record.expiresAt) <= now) await removeFileIfPresent(path);
+  }
+}

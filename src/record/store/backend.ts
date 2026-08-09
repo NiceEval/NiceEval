@@ -13,8 +13,11 @@ import {
 import {
   LocalStoreClosedError,
   LocalStoreGraphAccessError,
+  LocalStoreIoError,
   LocalStoreLeaseLostError,
   LocalStoreReadLeaseError,
+  nodeErrorCode,
+  type LocalGraphAccessFailure,
 } from "./errors.ts";
 import { LocalStoreFoundation, LocalStoreGcBarrierPermit } from "./foundation.ts";
 import { bytesDigest, markJournalCommitted, writePreparedJournal } from "./journal.ts";
@@ -66,13 +69,22 @@ export type LocalBackendReadOwner = Extract<
   { readonly kind: "record-handle" | "record-source-reader" }
 >;
 
+export type LocalBackendObjectReadResult =
+  | LocalObjectReadResult<DescriptorV1>
+  | {
+      readonly state: "permission-denied" | "unavailable" | "io-failure";
+      readonly ref: DescriptorV1;
+      readonly cause: unknown;
+    };
+
+/** Object reads retain their physical cause as a structured edge, rather than throwing text. */
 export interface LocalBackendObjectReader {
-  readonly read: (ref: DescriptorV1) => Promise<LocalObjectReadResult<DescriptorV1>>;
+  readonly read: (ref: DescriptorV1) => Promise<LocalBackendObjectReadResult>;
 }
 
 export type LocalGraphAccessResult<A> =
   | { readonly state: "valid"; readonly value: A }
-  | { readonly state: "invalid"; readonly detail: string };
+  | { readonly state: "invalid"; readonly failure: LocalGraphAccessFailure };
 
 /**
  * The graph worker owns these operations. Store calls them at its transaction/barrier boundaries,
@@ -126,14 +138,14 @@ export type LocalCommitResult =
       readonly actual: GraphRootRefV1 | null;
     }
   | { readonly state: "record-id-mismatch"; readonly expectedRecordId: string; readonly actualRecordId: string }
-  | { readonly state: "graph-invalid"; readonly detail: string }
+  | { readonly state: "graph-invalid"; readonly failure: LocalGraphAccessFailure }
   | { readonly state: "object-failed"; readonly result: Exclude<LocalObjectPutResult<DescriptorV1>, { readonly state: "stored" | "already-present" }> };
 
 export type LocalMirrorInstallResult =
   | { readonly state: "installed"; readonly graph: RecordGraphRef }
   | { readonly state: "snapshot-layout-mismatch" }
   | { readonly state: "initialize-conflict"; readonly expected: null; readonly actual: LayoutV2 }
-  | { readonly state: "graph-invalid"; readonly detail: string }
+  | { readonly state: "graph-invalid"; readonly failure: LocalGraphAccessFailure }
   | { readonly state: "object-failed"; readonly result: Exclude<LocalObjectPutResult<DescriptorV1>, { readonly state: "stored" | "already-present" }> };
 
 export type LocalBackendGcRoot =
@@ -156,7 +168,7 @@ type LocalLayoutTransition =
       readonly actual: GraphRootRefV1 | null;
     }
   | { readonly state: "record-id-mismatch"; readonly expectedRecordId: string; readonly actualRecordId: string }
-  | { readonly state: "graph-invalid"; readonly detail: string };
+  | { readonly state: "graph-invalid"; readonly failure: LocalGraphAccessFailure };
 
 export interface LocalBackendGcSnapshot {
   readonly layout: LayoutV2 | null;
@@ -295,7 +307,7 @@ export class LocalBackendTransaction implements AsyncDisposable {
           reader: this.backend.objectReader,
         });
         if (graphValidation.state === "invalid") {
-          return { state: "graph-invalid", detail: graphValidation.detail };
+          return { state: "graph-invalid", failure: graphValidation.failure };
         }
 
         const nextBytes = this.backend.foundation.encodeLayout(plan.layout);
@@ -556,7 +568,7 @@ export class LocalBackendMirrorInstall<Snapshot> implements AsyncDisposable {
           reader: this.backend.objectReader,
         });
         if (graphValidation.state === "invalid") {
-          return { state: "graph-invalid", detail: graphValidation.detail };
+          return { state: "graph-invalid", failure: graphValidation.failure };
         }
 
         await writePreparedJournal(this.backend.foundation.paths, {
@@ -981,8 +993,16 @@ export class LocalRecordStoreBackend implements AsyncDisposable {
     readonly foundation: LocalStoreFoundation,
     readonly graph: LocalRecordStoreGraphAccess,
   ) {
-    this.#retains = new LocalRetainRegistry(async () => foundation.close());
-    this.objectReader = Object.freeze({ read: (ref: DescriptorV1) => foundation.objects.read(ref) });
+    this.#retains = new LocalRetainRegistry(async () => this.finalize());
+    this.objectReader = Object.freeze({
+      read: async (ref: DescriptorV1): Promise<LocalBackendObjectReadResult> => {
+        try {
+          return await foundation.objects.read(ref);
+        } catch (cause) {
+          return localBackendObjectReadFailure(ref, cause);
+        }
+      },
+    });
   }
 
   get state(): LocalRecordStoreBackendState {
@@ -1045,7 +1065,7 @@ export class LocalRecordStoreBackend implements AsyncDisposable {
     if (verifiedSnapshot.state === "invalid") {
       throw new LocalStoreGraphAccessError({
         operation: "validate-mirror-snapshot",
-        detail: verifiedSnapshot.detail,
+        failure: verifiedSnapshot.failure,
       });
     }
     const installRetain = this.#retains.retain(retain.owner, "mirror-install");
@@ -1110,7 +1130,7 @@ export class LocalRecordStoreBackend implements AsyncDisposable {
         if (committed.state === "invalid") {
           throw new LocalStoreGraphAccessError({
             operation: "enumerate-committed-roots",
-            detail: committed.detail,
+            failure: committed.failure,
           });
         }
         for (const graph of committed.value) roots.push(Object.freeze({ kind: "committed", graph }));
@@ -1301,14 +1321,14 @@ function validateLayoutTransition(
   plan: LocalCommitPlan,
 ): LocalLayoutTransition {
   if (!typedReferenceEquals(plan.layout.head, plan.next)) {
-    return { state: "graph-invalid", detail: "commit Layout head must exactly equal the requested GraphRootRef" };
+    return { state: "graph-invalid", failure: layoutSemanticFailure("layout-head-mismatch", "commit-layout") };
   }
   if (current === null) {
     if (expected !== null) {
       return { state: "head-conflict", expected, actual: null };
     }
     if (plan.layout.generation !== 1) {
-      return { state: "graph-invalid", detail: "the first bound Layout must use generation 1" };
+      return { state: "graph-invalid", failure: layoutSemanticFailure("layout-generation-invalid", "commit-layout") };
     }
     return { state: "valid" };
   }
@@ -1323,7 +1343,7 @@ function validateLayoutTransition(
     };
   }
   if (plan.layout.generation !== current.generation + 1) {
-    return { state: "graph-invalid", detail: "each bound commit must increase Layout generation by exactly one" };
+    return { state: "graph-invalid", failure: layoutSemanticFailure("layout-generation-invalid", "commit-layout") };
   }
   return { state: "valid" };
 }

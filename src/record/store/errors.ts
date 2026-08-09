@@ -4,6 +4,107 @@
 // RecordStoreError / RecordWriteError 等领域 failure。
 
 import { Schema } from "effect";
+import type { DescriptorV1 } from "../protocol/core.ts";
+
+/**
+ * Store-to-graph failures are deliberately data, not diagnostics.  The public Record adapter can
+ * map these variants without inspecting an Error class name or message.  `cause` is retained only
+ * at the physical object-read boundary where it remains an implementation diagnostic.
+ */
+export type LocalGraphAccessComponent =
+  | "commit-layout"
+  | "current-layout"
+  | "committed-roots"
+  | "graph-root"
+  | "strong-closure"
+  | "record-history"
+  | "catalog"
+  | "locator-index"
+  | "stream-prefix"
+  | "adopted-attempt"
+  | "mirror-layout"
+  | "mirror-history";
+
+export type LocalGraphSemanticViolationCode =
+  | "layout-head-mismatch"
+  | "layout-generation-invalid"
+  | "layout-record-id-mismatch"
+  | "expected-head-mismatch"
+  | "committed-root-membership-invalid"
+  | "committed-root-append-invalid"
+  | "record-history-invalid"
+  | "record-subject-invalid"
+  | "strong-closure-invalid"
+  | "catalog-transition-invalid"
+  | "catalog-key-rebound"
+  | "catalog-key-deleted"
+  | "locator-key-rebound"
+  | "locator-key-deleted"
+  | "stream-append-invalid"
+  | "adopted-attempt-not-committed"
+  | "catalog-locator-mismatch";
+
+export interface LocalGraphSemanticViolation {
+  readonly code: LocalGraphSemanticViolationCode;
+  readonly component: LocalGraphAccessComponent;
+  readonly ref?: DescriptorV1;
+  readonly related?: DescriptorV1;
+}
+
+export interface LocalGraphResourceLimit {
+  readonly name: "objects" | "depth" | "bytes";
+  readonly maximum: number;
+}
+
+export type LocalStoreObjectReadCause =
+  | { readonly kind: "permission"; readonly cause: unknown }
+  | { readonly kind: "unavailable"; readonly cause: unknown }
+  | { readonly kind: "io"; readonly cause: unknown };
+
+/** Closed internal failure union for all graph bridge entry points. */
+export type LocalGraphAccessFailure =
+  | {
+      readonly kind: "graph-semantic-violation";
+      readonly violations: readonly [LocalGraphSemanticViolation, ...LocalGraphSemanticViolation[]];
+    }
+  | {
+      readonly kind: "missing-object";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref: DescriptorV1;
+    }
+  | {
+      readonly kind: "corrupt";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref?: DescriptorV1;
+    }
+  | {
+      readonly kind: "unsupported-digest";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref: DescriptorV1;
+    }
+  | {
+      readonly kind: "unsupported-schema";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref?: DescriptorV1;
+    }
+  | {
+      readonly kind: "unsupported-capability";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref?: DescriptorV1;
+    }
+  | {
+      readonly kind: "resource-limit";
+      readonly component: LocalGraphAccessComponent;
+      readonly limit: LocalGraphResourceLimit;
+      readonly observed: number;
+      readonly ref?: DescriptorV1;
+    }
+  | {
+      readonly kind: "object-read";
+      readonly component: LocalGraphAccessComponent;
+      readonly ref: DescriptorV1;
+      readonly cause: LocalStoreObjectReadCause;
+    };
 
 /** 发生文件系统交互时的稳定操作名；不是 public Record API 的 operation 词表。 */
 export const LocalStoreIoOperation = Schema.Literal(
@@ -125,20 +226,31 @@ export class LocalStoreReadLeaseError extends Schema.TaggedError<LocalStoreReadL
   },
 ) {}
 
-export class LocalStoreGraphAccessError extends Schema.TaggedError<LocalStoreGraphAccessError>("LocalStoreGraphAccessError")(
-  "LocalStoreGraphAccessError",
-  {
-    operation: Schema.Literal("validate-commit", "validate-mirror-snapshot", "enumerate-committed-roots"),
-    detail: Schema.String,
-  },
-) {}
+/**
+ * This Error carries the exact closed bridge union.  It intentionally is not a schema error:
+ * object-read causes can preserve a native IO failure without leaking that native shape into the
+ * bridge's stable discriminant.
+ */
+export class LocalStoreGraphAccessError extends Error {
+  readonly operation: "validate-commit" | "validate-mirror-snapshot" | "enumerate-committed-roots";
+  readonly failure: LocalGraphAccessFailure;
+
+  constructor(input: {
+    readonly operation: "validate-commit" | "validate-mirror-snapshot" | "enumerate-committed-roots";
+    readonly failure: LocalGraphAccessFailure;
+  }) {
+    super(input.failure.kind);
+    this.name = "LocalStoreGraphAccessError";
+    this.operation = input.operation;
+    this.failure = input.failure;
+  }
+}
 
 /** mirror install 的 typed snapshot 与待安装 Layout 不同；不能降级成普通 commit。 */
 export class LocalStoreMirrorInstallError extends Schema.TaggedError<LocalStoreMirrorInstallError>("LocalStoreMirrorInstallError")(
   "LocalStoreMirrorInstallError",
   {
     code: Schema.Literal("snapshot-layout-mismatch", "initialize-conflict"),
-    detail: Schema.String,
   },
 ) {}
 

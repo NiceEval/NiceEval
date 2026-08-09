@@ -138,3 +138,54 @@ export class LocalGcAdmissionGate {
     unlock();
   }
 }
+
+/**
+ * Per-capability admission gate.  Unlike `LocalCapabilitySerial`, this gate does not serialize
+ * business work: it only gives close a linearization point and counts operations that were
+ * already admitted before that point.  A caller supplies its own closed error so this primitive
+ * remains usable by read leases and future borrowed reader capabilities.
+ */
+export class LocalOperationGate {
+  #closed = false;
+  #active = 0;
+  #drained: DeferredSignal | undefined;
+
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  admit<A>(operation: () => Promise<A>, closed: () => unknown): Promise<A> {
+    if (this.#closed) return Promise.reject(closed());
+    this.#active += 1;
+    let result: Promise<A>;
+    try {
+      result = operation();
+    } catch (cause) {
+      this.finishAdmission();
+      return Promise.reject(cause);
+    }
+    return result.then(
+      (value) => {
+        this.finishAdmission();
+        return value;
+      },
+      (cause) => {
+        this.finishAdmission();
+        throw cause;
+      },
+    );
+  }
+
+  async close(): Promise<void> {
+    this.#closed = true;
+    if (this.#active === 0) return;
+    if (this.#drained === undefined) this.#drained = new DeferredSignal();
+    await this.#drained.promise;
+  }
+
+  private finishAdmission(): void {
+    this.#active -= 1;
+    if (this.#active !== 0) return;
+    this.#drained?.resolve();
+  }
+}

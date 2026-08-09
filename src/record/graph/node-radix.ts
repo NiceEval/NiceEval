@@ -36,13 +36,13 @@ export interface NodeRadixLeafV1<KeyPreimage> {
   readonly keyPreimage: KeyPreimage;
 }
 
-export interface NodeRadixPayloadShapeV1<Payload> {
+export interface NodeRadixPayloadShapeV1<Payload, KeyPreimage = unknown> {
   readonly branch: (payload: Payload) => NodeRadixBranchV1 | undefined;
-  readonly leaf: (payload: Payload) => NodeRadixLeafV1<unknown> | undefined;
+  readonly leaf: (payload: Payload) => NodeRadixLeafV1<KeyPreimage> | undefined;
 }
 
 interface NodeRadixPayloadAdapter<Payload, Encoded, KeyPreimage>
-  extends NodeRadixPayloadShapeV1<Payload> {
+  extends NodeRadixPayloadShapeV1<Payload, KeyPreimage> {
   readonly schema: Schema.Schema<Payload, Encoded, never>;
   readonly mediaType: string;
   readonly validate: (payload: Payload) => Effect.Effect<void, RecordProtocolError>;
@@ -90,6 +90,30 @@ export const DEFAULT_NODE_RADIX_LOOKUP_LIMITS_V1: NodeRadixLookupLimitsV1 = Obje
   maximumObjects: 65,
   maximumDepth: 64,
 });
+
+/**
+ * Full-tree enumeration has a wider object budget than one membership proof, but retains the
+ * same absolute 64-nibble structural bound.  Callers still choose the concrete policy instead
+ * of allowing a malformed immutable tree to consume unbounded work.
+ */
+export interface NodeRadixEnumerationLimitsV1 {
+  readonly maximumObjects: number;
+  readonly maximumDepth: number;
+}
+
+export const DEFAULT_NODE_RADIX_ENUMERATION_LIMITS_V1: NodeRadixEnumerationLimitsV1 = Object.freeze({
+  maximumObjects: 4_096,
+  maximumDepth: 64,
+});
+
+export interface NodeRadixEnumeratedLeafV1<Payload> {
+  readonly reference: NodeRefV1;
+  readonly payload: Payload;
+}
+
+export interface NodeRadixEnumerationV1<Payload> {
+  readonly leaves: readonly NodeRadixEnumeratedLeafV1<Payload>[];
+}
 
 export type NodeRadixLookupV1<Payload, ReadFailure> =
   | {
@@ -156,6 +180,35 @@ export function lookupAttemptLocatorIndexV1<ReadFailure, Requirements>(
   );
 }
 
+/**
+ * Enumerate a complete entity catalog through the injected graph reader.  This is intentionally
+ * graph-layer machinery: Store callers receive authenticated leaves, never a second radix walk.
+ */
+export function enumerateEntityCatalogV1<ReadFailure, Requirements>(
+  catalog: NodeRefV1,
+  reader: RecordGraphObjectReaderV1<ReadFailure, Requirements>,
+  limits: NodeRadixEnumerationLimitsV1 = DEFAULT_NODE_RADIX_ENUMERATION_LIMITS_V1,
+): Effect.Effect<
+  NodeRadixEnumerationV1<EntityCatalogPayloadV1>,
+  NodeRadixLookupFailureV1<ReadFailure>,
+  Requirements
+> {
+  return enumerateNodeRadixV1(catalog, ENTITY_CATALOG_ADAPTER, reader, limits);
+}
+
+/** Authenticated full enumeration for the independent Attempt locator radix. */
+export function enumerateAttemptLocatorIndexV1<ReadFailure, Requirements>(
+  index: NodeRefV1,
+  reader: RecordGraphObjectReaderV1<ReadFailure, Requirements>,
+  limits: NodeRadixEnumerationLimitsV1 = DEFAULT_NODE_RADIX_ENUMERATION_LIMITS_V1,
+): Effect.Effect<
+  NodeRadixEnumerationV1<AttemptLocatorIndexPayloadV1>,
+  NodeRadixLookupFailureV1<ReadFailure>,
+  Requirements
+> {
+  return enumerateNodeRadixV1(index, ATTEMPT_LOCATOR_INDEX_ADAPTER, reader, limits);
+}
+
 /** Concrete lookup binding is intentionally separate from hash-path traversal. */
 export function entityCatalogLookupMatchesRequestV1(
   requested: EntityCatalogKeyV1,
@@ -198,6 +251,144 @@ function lookupNodeRadixV1<Payload, Encoded, KeyPreimage, ReadFailure, Requireme
       limits,
     )),
   );
+}
+
+interface PendingNodeRadixEnumerationV1 {
+  readonly reference: NodeRefV1;
+  readonly depth: number;
+  readonly expectedChildPrefix: string | undefined;
+  readonly root: boolean;
+}
+
+/**
+ * A bounded, canonical full traversal shared by catalog transition verification.  It authenticates
+ * every branch/leaf through `nodeRadixGraphReader`, rejects cycle/sharing, checks the local
+ * absolute-prefix contract, and recomputes each leaf's mechanical key path.  The caller can then
+ * rebuild the unique canonical root from these leaves without Store learning radix mechanics.
+ */
+function enumerateNodeRadixV1<Payload, Encoded, KeyPreimage, ReadFailure, Requirements>(
+  root: NodeRefV1,
+  adapter: NodeRadixPayloadAdapter<Payload, Encoded, KeyPreimage>,
+  reader: RecordGraphObjectReaderV1<ReadFailure, Requirements>,
+  limits: NodeRadixEnumerationLimitsV1,
+): Effect.Effect<
+  NodeRadixEnumerationV1<Payload>,
+  NodeRadixLookupFailureV1<ReadFailure>,
+  Requirements
+> {
+  return Effect.gen(function* () {
+    const limitsIssue = validateEnumerationLimits(limits);
+    if (limitsIssue !== undefined) return yield* Effect.fail(invalidLimitsFailure(limitsIssue));
+
+    const pending: PendingNodeRadixEnumerationV1[] = [{
+      reference: root,
+      depth: 0,
+      expectedChildPrefix: undefined,
+      root: true,
+    }];
+    const seen = new Map<string, number>();
+    const leaves: NodeRadixEnumeratedLeafV1<Payload>[] = [];
+    const decodedReader = nodeRadixGraphReader(adapter, reader);
+
+    while (pending.length > 0) {
+      const current = pending.pop();
+      if (current === undefined) continue;
+      const identity = typedReferenceKey(current.reference);
+      const firstSeenDepth = seen.get(identity);
+      if (firstSeenDepth !== undefined) {
+        return yield* Effect.fail(radixCycleFailure(
+          current.reference,
+          firstSeenDepth,
+          current.depth,
+        ));
+      }
+      if (current.depth > limits.maximumDepth) {
+        return yield* Effect.fail(resourceLimitFailure(
+          "depth",
+          limits.maximumDepth,
+          current.depth,
+        ));
+      }
+      const observedObjects = seen.size + 1;
+      if (observedObjects > limits.maximumObjects) {
+        return yield* Effect.fail(resourceLimitFailure(
+          "objects",
+          limits.maximumObjects,
+          observedObjects,
+        ));
+      }
+      seen.set(identity, current.depth);
+
+      const payload = yield* decodedReader.read(current.reference);
+      const branch = adapter.branch(payload);
+      if (branch !== undefined) {
+        if (
+          current.expectedChildPrefix !== undefined
+          && !branch.prefix.startsWith(current.expectedChildPrefix)
+        ) {
+          return yield* Effect.fail(radixInvalidFailure(
+            current.reference,
+            "A child branch prefix must extend its parent prefix plus selected nibble",
+          ));
+        }
+        if (branch.children.length === 0) {
+          if (!current.root || branch.prefix !== "") {
+            return yield* Effect.fail(radixInvalidFailure(
+              current.reference,
+              "Only the radix root may be an empty branch with prefix \"\"",
+            ));
+          }
+          continue;
+        }
+        if (branch.children.length < 2 || branch.prefix.length >= 64) {
+          return yield* Effect.fail(radixInvalidFailure(
+            current.reference,
+            "A non-empty canonical radix branch must have 2..16 children before a full key",
+          ));
+        }
+        for (let index = branch.children.length - 1; index >= 0; index -= 1) {
+          const child = branch.children[index];
+          if (child === undefined) continue;
+          pending.push(Object.freeze({
+            reference: child.node,
+            depth: current.depth + 1,
+            expectedChildPrefix: `${branch.prefix}${child.nibble}`,
+            root: false,
+          }));
+        }
+        continue;
+      }
+
+      const leaf = adapter.leaf(payload);
+      if (leaf === undefined) {
+        return yield* Effect.fail(radixInvalidFailure(
+          current.reference,
+          "Radix payload must be a branch or leaf",
+        ));
+      }
+      if (
+        current.expectedChildPrefix !== undefined
+        && !leaf.key.startsWith(current.expectedChildPrefix)
+      ) {
+        return yield* Effect.fail(radixInvalidFailure(
+          current.reference,
+          "A child leaf key must extend its parent prefix plus selected nibble",
+        ));
+      }
+      const mechanicalKey = yield* adapter.keyPath(leaf.keyPreimage).pipe(
+        Effect.mapError((failure) => protocolFailure<ReadFailure>(current.reference, failure)),
+      );
+      if (mechanicalKey !== leaf.key) {
+        return yield* Effect.fail(radixInvalidFailure(
+          current.reference,
+          "A radix leaf key must equal the canonical key path of its key preimage",
+        ));
+      }
+      leaves.push(Object.freeze({ reference: current.reference, payload }));
+    }
+
+    return Object.freeze({ leaves: Object.freeze(leaves) });
+  });
 }
 
 /**
@@ -484,6 +675,16 @@ function typedReferenceKey(reference: NodeRefV1): string {
 }
 
 function validateLookupLimits(limits: NodeRadixLookupLimitsV1): string | undefined {
+  if (!isPositiveSafeInteger(limits.maximumObjects)) {
+    return "maximumObjects must be a positive JSON-safe integer";
+  }
+  if (!isPositiveSafeInteger(limits.maximumDepth)) {
+    return "maximumDepth must be a positive JSON-safe integer";
+  }
+  return undefined;
+}
+
+function validateEnumerationLimits(limits: NodeRadixEnumerationLimitsV1): string | undefined {
   if (!isPositiveSafeInteger(limits.maximumObjects)) {
     return "maximumObjects must be a positive JSON-safe integer";
   }

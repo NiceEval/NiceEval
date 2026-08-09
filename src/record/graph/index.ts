@@ -3,6 +3,7 @@
  * byte reader and, at Store boundaries, adapt its typed result into their own error vocabulary.
  */
 export * from "./catalog.ts";
+export * from "./catalog-transition.ts";
 export * from "./committed-root-lookup.ts";
 export * from "./committed-roots.ts";
 export * from "./committed-root-verify.ts";

@@ -47,21 +47,24 @@ export class LocalRecordStore implements AsyncDisposable {
     return new LocalRecordStore(backend, retain);
   }
 
-  async close(): Promise<void> {
-    if (this.#state === "closed") return;
+  close(): Promise<void> {
     if (this.#closeResult !== undefined) return this.#closeResult;
+    if (this.#state === "closed") return Promise.resolve();
     this.#state = "closing";
     const result = this.closeOnce();
     this.#closeResult = result;
-    try {
-      await result;
-      this.#state = "closed";
-    } catch (cause) {
-      // A failed final retain must not be reported as a closed Store. Its retain stays held and a
-      // caller can retry close; independently retained children were never closed by this path.
-      if (this.#closeResult === result) this.#closeResult = undefined;
-      throw cause;
-    }
+    void result.then(
+      () => {
+        this.#state = "closed";
+      },
+      () => {
+        // Retain release has already transferred cleanup ownership to the backend registry.  A
+        // public Store capability must not become usable again merely because its finalizer
+        // reported a failure.
+        this.#state = "closed";
+      },
+    );
+    return result;
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
