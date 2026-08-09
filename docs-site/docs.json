@@ -673,6 +673,7 @@
                   "zh/tutorials/write-send",
                   "zh/tutorials/connect-otel",
                   "zh/tutorials/sandbox-agent",
+                  "zh/tutorials/install-custom-sandbox-agent",
                   "zh/tutorials/sandbox-providers",
                   "zh/tutorials/docker-in-docker",
                   "zh/tutorials/sandbox-reuse"
@@ -694,6 +695,7 @@
                 "group": "运行、观察与发布",
                 "pages": [
                   "zh/tutorials/rerun-and-cache",
+                  "zh/tutorials/handle-execution-failures",
                   "zh/tutorials/concurrency",
                   "zh/tutorials/ci-integration",
                   "zh/tutorials/reporters",

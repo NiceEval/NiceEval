@@ -168,7 +168,7 @@ t.check(t.reply, includes("required").gate());
 t.check(t.reply, includes("nice to have").atLeast(0.7));
 ```
 
-每个 matcher 返回的 `Assertion`（即 `ValueAssertion`）都带有这些成员；`.gate()` 把它变成硬门槛，`.atLeast()` 变成软阈值：
+每个 matcher 返回的 `Assertion`（即 `ValueAssertion`）都带有这些成员。`.gate()` 把它变成硬门槛，`.atLeast()` 变成软阈值：
 
 {/* GENERATED:BEGIN value-assertion */}
 
@@ -268,4 +268,4 @@ function validEmail(): Assertion {
 t.check(t.reply, validEmail());
 ```
 
-`makeAssertion` 接受单个 spec 对象（`name`、可选 `severity`/`threshold`、`score`），直接返回一个 `Assertion`；按惯例用一个同名函数包一层再调用，而不是把 `makeAssertion` 本身当工厂调用。
+`makeAssertion` 接受单个 spec 对象（`name`、可选 `severity`/`threshold`、`score`），直接返回一个 `Assertion`。按惯例用一个同名函数包一层再调用，而不是把 `makeAssertion` 本身当工厂调用。

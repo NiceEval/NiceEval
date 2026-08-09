@@ -14,7 +14,7 @@ description: "用真实 Workspace、基线实验和自定义报告，评估 Skil
 | 实验 | 对照 | 测什么 |
 | --- | --- | --- |
 | Zod Skill | `with-skill` vs `baseline` | Skill 是否让 Agent 稳定使用 `z.object().safeParse()`，而不是退回手写校验 |
-| Ponytail Benchmark | Baseline / Caveman / Ponytail / YAGNI One-liner | 完整决策 Skill 是否比裸 Agent、简短风格 Skill 或一句提示更有效 |
+| Ponytail Benchmark | Baseline / Caveman / Ponytail / YAGNI One-liner | 完整决策 Skill 是否比不加 Skill 的 Agent、简短风格 Skill 或一句提示更有效 |
 
 Ponytail 这一组迁移自第三方 Plugin 的 Agentic Benchmark，但这个仓库实际比较的是注入给 Agent 的内容与提示。它不用于证明某个原生 Plugin 包装或安装协议是否正确。原生 Skill / Plugin 的安装配置见 [官方适配器](/zh/reference/official-adapters)。
 
@@ -52,6 +52,6 @@ pnpm exec niceeval view --report reports/benchmark.tsx
 ## 从这个案例复用什么
 
 - 用 Experiment 表达有扩展和无扩展的对照，不让评估用例知道实验条件。
-- Prompt 不泄露答案；验证阶段再检查测试、源码、Diff 和行为证据。
+- Prompt 不泄露答案。验证阶段再检查测试、源码、Diff 和行为证据。
 - 把任务成功率作为主指标，把 Token、成本、耗时和行为作为解释指标。
-- [题型与断言](/zh/tutorials/evaluation-kinds) 负责选择 Gate、Soft 和 Judge；本页不复制断言 API。
+- [题型与断言](/zh/tutorials/evaluation-kinds) 负责选择 Gate、Soft 和 Judge。本页不复制断言 API。

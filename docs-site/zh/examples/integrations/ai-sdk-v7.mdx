@@ -11,15 +11,16 @@ description: "一个 AI SDK v7 聊天应用，对着它的 HTTP 接口无侵入�
 - **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。
 
-**接入方式**：内置 **`uiMessageStreamAgent`**——AI SDK UI Message Stream 协议（`useChat`
-后端的标准 SSE）的官方无侵入 adapter，adapter 文件只剩配置：端点在哪、请求体怎么带
-`model`。会话重放、HITL 审批（`needsApproval` 工具的 part 改写重发）、工具/消息事件
-从协议帧直构，全是工厂内置行为；协议帧里没有 usage，这个示例没有用量断言。应用侧
-`src/backend/*` 逐字节未变。要 OTel 瀑布图见 `tier2/`，feature A/B 见 `tier3/`。
+**接入方式**：内置的 `uiMessageStreamAgent` 可以直接连接 AI SDK UI Message Stream，也就是 `useChat` 后端使用的标准 SSE 协议。
+Adapter 只需填写接口地址，并说明如何把 `model` 放进请求体。NiceEval 会处理会话重放、HITL 审批，以及工具和消息事件。
+
+这个协议不提供用量数据，因此示例没有用量断言。接入过程没有修改应用的 `src/backend/*`。
+
+若要查看 OTel 调用瀑布图，请使用 `tier2/` 示例；若要比较功能配置，请使用 `tier3/` 示例。
 
 接入的全部代码变更（生成时从两个目录实测统计）：
 
-<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"应用侧配置（必要：依赖声明）"}</td><td>{"3"}</td><td>{"+5 −1"}</td></tr><tr><td>{"adapter（必要：传输粘合，协议映射在官方包里）"}</td><td>{"2"}</td><td>{"+27"}</td></tr><tr><td>{"evals 与 experiments（评测内容，按需增长）"}</td><td>{"8"}</td><td>{"+139"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"13"}</td><td>{"+171 −1"}</td></tr></tbody></table>
+<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"应用侧配置（必要：依赖声明）"}</td><td>{"3"}</td><td>{"+5 −1"}</td></tr><tr><td>{"Adapter（必要：连接应用，协议映射由 NiceEval 提供）"}</td><td>{"2"}</td><td>{"+27"}</td></tr><tr><td>{"评估用例与实验（按需增长）"}</td><td>{"8"}</td><td>{"+139"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"13"}</td><td>{"+171 −1"}</td></tr></tbody></table>
 
 ## 文件清单
 
@@ -67,7 +68,7 @@ ai-sdk-v7/
 </div>
 </div>
 
-## 新增的 adapter、evals 与 experiments
+## 新增的 Adapter、评估用例与实验
 
 <div className="gd-file">
 <div className="gd-head"><span className="gd-name">{"niceeval.config.ts"}</span><span className="gd-stats"><span className="gd-plus">{"+7"}</span></span></div>

@@ -19,7 +19,7 @@ npx niceeval exp local onboarding/tool-first --keep-sandbox        # 等价 --ke
 npx niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通过的也保留
 ```
 
-`--keep-sandbox` 是 `niceeval exp` 的运行参数，两档：`failed`（缺省值）保留判定为 `failed` 或 `errored` 的 Attempt（包括超时打断的）；`all` 连通过的也保留——调 setup Hook、核对通过环境的真实状态时用它，不用故意弄挂一条评估用例。不带这个参数时全部销毁。
+`--keep-sandbox` 是 `niceeval exp` 的运行参数，两档：`failed`（默认值）保留判定为 `failed` 或 `errored` 的 Attempt（包括超时打断的）。`all` 连通过的也保留——调 setup Hook、核对通过环境的真实状态时用它，不用故意让一条评估用例失败。不带这个参数时全部销毁。
 
 运行结束后，摘要里会列出保留了哪些 Sandbox、怎么进去：
 
@@ -30,7 +30,7 @@ Kept sandboxes (1)
 Stop them with: niceeval sandbox stop --all
 ```
 
-每行给三样东西：Attempt 定位符（用 `niceeval show @1x7f3q9k` 看落盘证据）、Sandbox 实例 id、进入现场的命令。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。`niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell；退出 shell 后现场自动回到休眠（想让它保持运行，加 `--leave-running`）。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
+每行给三样东西：Attempt 定位符（用 `niceeval show @1x7f3q9k` 看落盘证据）、Sandbox 实例 id、进入现场的命令。保留下来的 Sandbox 不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。`niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell。退出 shell 后现场自动回到休眠（想让它保持运行，加 `--leave-running`）。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
 
 ## 查看和清理
 
@@ -38,7 +38,7 @@ Stop them with: niceeval sandbox stop --all
 
 ```bash
 niceeval sandbox list              # 列出保留的沙箱和现场状态
-niceeval sandbox enter a3f9c2d1    # 唤醒并进入；退出后自动回到休眠
+niceeval sandbox enter a3f9c2d1    # 唤醒并进入。退出后自动回到休眠
 niceeval sandbox stop a3f9c2d1     # 销毁指定沙箱（id 可以只写唯一前缀）
 niceeval sandbox stop --all        # 全部销毁
 ```
@@ -49,9 +49,9 @@ niceeval sandbox stop --all        # 全部销毁
 
 - **Docker**：保留 = 容器停在磁盘上（不占内存，重启 Docker 也还在），进入时自动启动。容器不会自己消失，是唯一需要主动清理的 provider。除了 `niceeval sandbox stop`，也可以用 `docker ps -a -f label=niceeval.keep-candidate=true` 直接核对。
 - **E2B**：保留 = 暂停微 VM——文件和内存整体保存，暂停期间停止计费、无限期保留，进入时自动恢复。
-- **Vercel Sandbox**：保留 = 停止微 VM——文件系统保存、之后可恢复，但内存状态不保留，唤醒后进程要重新启动；超过 provider 的保留期限后 `niceeval sandbox list` 标成 `expired`。
+- **Vercel Sandbox**：保留 = 停止微 VM——文件系统保存、之后可恢复，但内存状态不保留，唤醒后进程要重新启动。超过 provider 的保留期限后 `niceeval sandbox list` 标成 `expired`。
 - **自定义 Provider**：`defineSandbox` 产出的 provider 不支持留存，因为事后的 `sandbox stop` 不加载用户配置，无法在新进程里安全找回自定义销毁函数。
 
 ## 边界
 
-保留的 Sandbox 只用来排查，不能续跑或重新评分；判定、断言、diff 这些结论仍以 artifact 为准。查看 artifact 的方法见[查看结果](/zh/tutorials/viewing-results)。
+保留的 Sandbox 只用来排查，不能续跑或重新评分。判定、断言、diff 这些结论仍以 artifact 为准。查看 artifact 的方法见[查看结果](/zh/tutorials/viewing-results)。

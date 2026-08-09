@@ -29,7 +29,7 @@ t.check(turn.data, equals({ intent: "refund" }));
 t.check(t.reply, includes(/order #\d+/));
 ```
 
-`includes` 同时接受子串和正则；`matches` 只接受 Standard Schema / Zod schema，用于结构校验，不做正则匹配。值断言适合精确、稳定、低歧义的结果。
+`includes` 同时接受子串和正则。`matches` 只接受 Standard Schema / Zod schema，用于结构校验，不做正则匹配。值断言适合精确、稳定、低歧义的结果。
 
 ## 作用域断言
 
@@ -108,12 +108,12 @@ export default defineScoreEval({
 });
 ```
 
-- `.points(n)` 挂在任意断言后面：通过挣 `n` 分，不过挣 0；`t.judge.*` 这类连续打分断言按比例挣 `n × score`。
-- 挂了一个检查点只是少挣分，后面照跑。要「这步不成立就别往下跑了」，链 `.stopOnFailure()`。
+- `.points(n)` 挂在任意断言后面：通过挣 `n` 分，不过挣 0。`t.judge.*` 这类连续打分断言按比例挣 `n × score`。
+- 失败一个检查点只是少挣分，后面照跑。要「这步不成立就别往下跑了」，链 `.stopOnFailure()`。
 - `t.score(label, n)` 用于自己算好条件和分数后直接累加，比如按代码行数分档给分。
 - 计分是叠加制，从 0 往上挣，不声明满分：同一条评估用例的代码对每个实验是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，结论不需要分母。
 - 丢分不是失败：五步走完三步的 Attempt 是 `passed` 且挣 3 分。「做到几成」由分数回答，不借判定表达。
-- `.points()` 与 `t.score` 只存在于 `defineScoreEval` 的 `t` 上；在 `defineEval` 里写是类型错误。
+- `.points()` 与 `t.score` 只存在于 `defineScoreEval` 的 `t` 上。在 `defineEval` 里写是类型错误。
 - 一个实验可以同时选中两种题型，报告分别给通过率和总分，两个读数不相加。
 
 ## 代码任务用测试评分

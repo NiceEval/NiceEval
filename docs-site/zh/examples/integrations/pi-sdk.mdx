@@ -11,14 +11,16 @@ description: "一个 pi-agent-core(@earendil-works)助手后端，接入 NiceEva
 - **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) —— 独立的 `@earendil-works/pi-agent-core` HTTP 服务，还没接任何评估用例。
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) —— 同一个应用接入 NiceEval 之后的样子。
 
-**接入方式**：官方转换器——pi 原生 `AgentEvent` → 标准事件的映射是
-`createPiAgentEventStream`（`"niceeval/adapter"` 导出）的事，adapter 只剩传输粘合：
-应用在哪个 URL、审批打哪个端点（`calculate` 工具走 HITL 审批）。应用由你自己按它的
-方式启动（`pnpm start`），评估用例不代管进程。应用侧 `src/backend/*` 逐字节未变。
+**接入方式**：`createPiAgentEventStream`（从 `"niceeval/adapter"` 导出）把 pi 原生 `AgentEvent` 转成 NiceEval 的标准事件。
+
+Adapter 只需填写应用地址和审批接口地址。示例中的 `calculate` 工具需要人工审批。
+
+运行评估前，请先用 `pnpm start` 启动应用。NiceEval 不会启动或停止应用进程。
+除依赖声明外，应用的 `src/backend/*` 代码没有改动。
 
 接入的全部代码变更（生成时从两个目录实测统计）：
 
-<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"应用侧配置（必要：依赖声明）"}</td><td>{"3"}</td><td>{"+7 −1"}</td></tr><tr><td>{"adapter（必要：传输粘合，协议映射在官方包里）"}</td><td>{"2"}</td><td>{"+110"}</td></tr><tr><td>{"evals 与 experiments（评测内容，按需增长）"}</td><td>{"6"}</td><td>{"+119"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"11"}</td><td>{"+236 −1"}</td></tr></tbody></table>
+<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"应用侧配置（必要：依赖声明）"}</td><td>{"3"}</td><td>{"+7 −1"}</td></tr><tr><td>{"Adapter（必要：连接应用，协议映射由 NiceEval 提供）"}</td><td>{"2"}</td><td>{"+110"}</td></tr><tr><td>{"评估用例与实验（按需增长）"}</td><td>{"6"}</td><td>{"+119"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"11"}</td><td>{"+236 −1"}</td></tr></tbody></table>
 
 ## 文件清单
 
@@ -63,7 +65,7 @@ pi-sdk/
 </div>
 </div>
 
-## 新增的 adapter、evals 与 experiments
+## 新增的 Adapter、评估用例与实验
 
 <div className="gd-file">
 <div className="gd-head"><span className="gd-name">{"niceeval.config.ts"}</span><span className="gd-stats"><span className="gd-plus">{"+9"}</span></span></div>

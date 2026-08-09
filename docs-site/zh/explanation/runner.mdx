@@ -39,11 +39,11 @@ npx niceeval exp local fixtures/button
 npx niceeval exp local --max-concurrency 8
 ```
 
-远程 HTTP agent 可以用更高并发；本地 Docker Sandbox 通常需要更低并发，避免 CPU、内存和磁盘竞争。
+远程 HTTP agent 可以用更高并发。本地 Docker Sandbox 通常需要更低并发，避免 CPU、内存和磁盘竞争。
 
 把跑得慢的实验和跑得快的实验混在一次命令里跑是安全的：并发名额优先给「要跑最多轮才能跑完」的实验（比如 `maxConcurrency: 1` 又有几十个 Attempt 的那个），快的实验见缝插针补空位。慢实验有一段 `setup`（起隧道、起共享服务）时也一样——它等 `setup` 的这段时间不占名额，别的实验照常跑，`setup` 一好它就拿下一个空出来的名额，不用为它单开一次命令。
 
-两道闸怎么配、共享状态怎么串行、执行顺序怎么钉死，见[并发与执行顺序](/zh/tutorials/concurrency)。
+两级并发限制怎么配、共享状态怎么串行、执行顺序怎么固定，见[并发与执行顺序](/zh/tutorials/concurrency)。
 
 ### 执行顺序
 
@@ -62,9 +62,9 @@ npx niceeval exp local fixtures/button --attempts 5
 npx niceeval exp local fixtures/button --attempts 5 --early-exit
 ```
 
-`attempts` 用于测 pass rate，默认跑满 `attempts` 次，给出完整的通过率分布。首过即停默认关闭；只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
+`attempts` 用于测 pass rate，默认跑满 `attempts` 次，给出完整的通过率分布。首过即停默认关闭。只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
 
-`attempts` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt；已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
+`attempts` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt。已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
 
 ## 缓存
 
@@ -72,7 +72,7 @@ npx niceeval exp local fixtures/button --attempts 5 --early-exit
 
 fingerprint 由两部分组成：
 
-- **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。隐藏测试脚本、参考实现这类判据文件用 `loadText` 读入，改动同样触发重跑；用 `fs` 自己读的文件不在 fingerprint 里。loader 要写在模块顶层——缓存判断发生在运行之前，写进 `test(t)` 里会直接报错。断言抽在公共 helper 里时，改那个 helper 会让引用它的评估用例全部重跑。
+- **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。隐藏测试脚本、参考实现这类判据文件用 `loadText` 读入，改动同样触发重跑。用 `fs` 自己读的文件不在 fingerprint 里。loader 要写在模块顶层——缓存判断发生在运行之前，写进 `test(t)` 里会直接报错。断言抽在公共辅助函数里时，改那个辅助函数会让引用它的评估用例全部重跑。
 - **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
 
 被测程序自己的源码、Agent CLI 的版本、Sandbox 镜像的内容都不在 fingerprint 里。改了这些要复验，用 `--rerun`（只重跑失败项）或 `--rerun all`（全部重跑）。调试非确定性行为时同样用 `--rerun all`。
@@ -81,7 +81,7 @@ fingerprint 由两部分组成：
 
 ## 并行开多个终端
 
-想同时跑几个 Experiment，直接开几个终端各跑各的；一场大实验嫌慢，就再开一个终端跑同一条命令，两边会自动分工：
+想同时跑几个 Experiment，直接开几个终端各跑各的。一场大实验嫌慢，就再开一个终端跑同一条命令，两边会自动分工：
 
 ```bash
 # 各跑各的：两个实验并行
@@ -93,7 +93,11 @@ npx niceeval exp compare/bub       # 终端 1
 npx niceeval exp compare/bub       # 终端 2
 ```
 
-每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。另一次运行撞到锁，就先去跑还没人认领的评估用例——所以同一条命令开两个终端就是加速：两边自动认领不同的评估用例，各按自己的 `--max-concurrency` 推进，总吞吐接近两边之和。撞锁的评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁；对方跑完、锁一放开，等待方接着往下走。每条评估用例拿到锁的那一刻，都会按缓存规则再看一眼它当前的结果：另一次运行已经跑完落盘的直接复用，还缺的 Attempt 才自己跑。所以不管两个终端的快慢怎么错开，两边最后都拿到完整结果，每条评估用例只花一份钱。
+每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。
+
+另一次运行撞到锁，就先去跑还没人认领的评估用例——所以同一条命令开两个终端就是加速：两边自动认领不同的评估用例，各按自己的 `--max-concurrency` 推进，总吞吐接近两边之和。撞锁的评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁。
+
+对方跑完、锁一放开，等待方接着往下走。每条评估用例拿到锁的那一刻，都会按缓存规则再看一眼它当前的结果：另一次运行已经跑完落盘的直接复用，还缺的 Attempt 才自己跑。所以不管两个终端的快慢怎么错开，两边最后都拿到完整结果，每条评估用例只花一份钱。
 
 锁不会合并两边的并发名额：两个终端各有自己的 `--max-concurrency` 和实验 `maxConcurrency`，Sandbox Provider 和模型接口承受的是两边之和，配额紧张时把两边都调低一点。需要保护同一 checkpoint 时，用实验的 `sharedState.key` 串行完整恢复和回存窗口。
 
@@ -101,11 +105,11 @@ npx niceeval exp compare/bub       # 终端 2
 
 ## Turn 瞬时错误重试
 
-限流、连接建立失败这类瞬时错误，NiceEval 会在同一个 Turn 里自动做有限次数的指数退避重试，不需要你重跑整个实验；等待重试的 Attempt 会把全局并发名额让给别的 Attempt，但实验自己的 `maxConcurrency` 名额不让——声明了 `maxConcurrency: 1` 的串行实验在退避期间也不会有第二个 Attempt 提前进场。只有能确认 Agent 还没开始处理这次输入的错误才会重试——请求已经开始、中途断流的情况不重试，直接记为 `errored`，避免 Agent 把已经做过的操作再做一遍。重试用尽仍失败时，该 Attempt 记为 `errored`，下次运行照常重试（见上面的缓存规则）。
+限流、连接建立失败这类瞬时错误，NiceEval 会在同一个 Turn 里自动做有限次数的指数退避重试，不需要你重跑整个实验。等待重试的 Attempt 会把全局并发名额让给别的 Attempt，但实验自己的 `maxConcurrency` 名额不让——声明了 `maxConcurrency: 1` 的串行实验在退避期间也不会有第二个 Attempt 提前进场。只有能确认 Agent 还没开始处理这次输入的错误才会重试——请求已经开始、中途断流的情况不重试，直接记为 `errored`，避免 Agent 把已经做过的操作再做一遍。重试用尽仍失败时，该 Attempt 记为 `errored`，下次运行照常重试（见上面的缓存规则）。
 
 ## 声明失败的波及范围
 
-有些失败你第一次看到就知道不止这一次：整个 Experiment 共享的服务死了，每条评估用例都会同样死；某条评估用例的 fixture 文件缺失，`attempts: 5` 五次都会同样死。不声明的话，NiceEval 只能一条条撞——每个 Attempt 各自创建 Sandbox、各自失败，同一个死因烧几十遍。把你知道的告诉它，第一次撞上就停：
+有些失败你第一次看到就知道不止这一次：整个 Experiment 共享的服务死了，每条评估用例都会同样死。某条评估用例的 fixture 文件缺失，`attempts: 5` 五次都会同样死。不声明的话，NiceEval 只能一条条撞——每个 Attempt 各自创建 Sandbox、各自失败，同一个死因烧几十遍。把你知道的告诉它，第一次撞上就停：
 
 ```ts
 import { ExperimentFatalError } from "niceeval";
@@ -116,7 +120,7 @@ throw new ExperimentFatalError("记忆服务探活失败——修好隧道、更
 
 只影响一条评估用例的死因（fixture 缺失）抛 `EvalFatalError`，只停这一条的剩余 Attempt，别的评估用例照常跑。错误 message 会原样出现在终端通知和结果快照里，写成「现象 + 下一步」，就是留给修的人的字条。服务在 run 中途死掉、失败以连接错误的形态冒出来时，给 Experiment 配 `classifyFailure`，只认自己共享服务的 host 来识别它。
 
-停下来的 Attempt 计入 `unstarted`，这次运行的结论是 `incomplete`，不会伪装成全绿；同批其它 Experiment 不受影响。修好环境后重跑同一条命令就是续跑：已通过的照常复用，只补跑死掉与没跑的部分，没有任何标记要解除。只声明你能确定的死因——「看起来像基建问题」不算确定；拿不准就让它落成单条 Attempt 的失败，多烧的是一个 Sandbox 的钱，错停的是整批数据。
+停下来的 Attempt 计入 `unstarted`，这次运行的结论是 `incomplete`，不会伪装成全绿。同批其它 Experiment 不受影响。修好环境后重跑同一条命令就是续跑：已通过的照常复用，只补跑死掉与没跑的部分，没有任何标记要解除。只声明你能确定的死因——「看起来像基建问题」不算确定。拿不准就让它落成单条 Attempt 的失败，多烧的是一个 Sandbox 的钱，错停的是整批数据。
 
 ## 超时和预算
 
@@ -147,11 +151,11 @@ Runner 在评估用例完成后把结果交给 Reporters：
 
 ## 输出目录
 
-每次运行会写入该实验的结果快照目录 `.niceeval/<experiment>/<快照>/`，包括快照级 `snapshot.json`，以及每个 Attempt 的 `result.json`（判定、断言、结构化错误、diagnostics）和按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json` 等拆分 artifact。瞬时 progress 不落盘。
+每次运行会写入该实验的结果快照目录 `.niceeval/<experiment>/<快照>/`。目录包含快照级 `snapshot.json`。每个 Attempt 的 `result.json`（判定、断言、结构化错误、diagnostics）和按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json` 等拆分 artifact。瞬时 progress 不落盘。
 
 ## 推荐调试流程
 
 1. 先跑 `npx niceeval list` 确认发现结果。
 2. 用 `npx niceeval exp <实验> <ID 前缀>` 缩小到一个 eval。
-3. 失败后复制终端里的 locator，先运行 `npx niceeval show @<locator>` 看错误或断言摘要；需要 Agent 行为时再加 `--execution`，需要文件变化时加 `--diff`。
+3. 失败后复制终端里的 locator，先运行 `npx niceeval show @<locator>` 看错误或断言摘要。需要 Agent 行为时再加 `--execution`，需要文件变化时加 `--diff`。
 4. 再扩大到完整 suite 或 experiment。

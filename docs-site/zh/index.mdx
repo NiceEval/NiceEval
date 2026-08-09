@@ -51,7 +51,7 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 
 - **[NiceEval](https://niceeval.com/) 核心** 负责发现评估用例、调度运行、打分、生成报告与 artifacts。
 - **Agent 适配器** 是开放边界：你决定如何调用被测系统，以及如何把输出映射成标准事件流。
-- **Sandbox** 负责文件系统隔离：需要真实 workspace 的 coding agent 使用 Docker 或云端 Sandbox；自有 Web Agent 可以直连，无需 Docker。
+- **Sandbox** 负责文件系统隔离：需要真实 workspace 的 coding agent 使用 Docker 或云端 Sandbox。自有 Web Agent 可以直连，无需 Docker。
 
 ## 核心概念一览
 
@@ -60,14 +60,14 @@ import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
 | [评估用例](/zh/explanation/evals) | 一个测试用例：写在 `evals/*.eval.ts` 里，描述测什么。 |
 | [Experiment](/zh/explanation/experiment) | 可签入的运行配置：决定连哪个 Adapter、什么 model、什么 flags。 |
 | [Adapter](/zh/explanation/adapter) | 连接被测系统的适配层：实现一个 `send`，把返回翻译成标准事件流。 |
-| [Sandbox](/zh/tutorials/sandbox-providers) | 需要隔离工作区的 coding agent 才用得到；直连 Web Agent 不需要。 |
+| [Sandbox](/zh/tutorials/sandbox-providers) | 需要隔离工作区的 coding agent 才用得到。直连 Web Agent 不需要。 |
 | [Tier](/zh/explanation/tier) | 接入 Adapter 的三档投入：Tier 1 只接 send，Tier 2 加 OTel 换调用瀑布图，Tier 3 侵入改造做 feature A/B。 |
 
 完整术语表见[架构概览](/zh/explanation/overview)。
 
 ## 示例
 
-跑一条评估用例需要两个文件：评估用例本身（测什么）和 experiment（跑哪个 agent）。CLI 不接受裸评估用例 id——`niceeval exp <experiment> <eval 前缀>` 里的 experiment 才决定「连哪个被测对象」。下面是一个直连 Web Agent 的真实场景（完整项目见仓库 `examples/zh/ai-sdk/`），验证 agent 遇到实时天气问题时会调用工具、并基于工具结果作答，而不是凭空编造：
+跑一条评估用例需要两个文件：评估用例本身（测什么）和 experiment（跑哪个 agent）。CLI 不接受单独的评估用例 id——`niceeval exp <experiment> <eval 前缀>` 里的 experiment 才决定「连哪个被测对象」。下面是一个直连 Web Agent 的真实场景（完整项目见仓库 `examples/zh/ai-sdk/`），验证 agent 遇到实时天气问题时会调用工具、并基于工具结果作答，而不是凭空编造：
 
 ```ts
 // evals/weather-tool.eval.ts
@@ -109,7 +109,7 @@ npx niceeval show       # 终端读取结果，失败项可继续下钻
 npx niceeval view       # 网页交互浏览
 ```
 
-如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区、`t.sandbox.fileChanged()` / `t.sandbox.file()` 检查改了什么文件、`t.sandbox.runCommand()` 跑测试——参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。
+如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），评估用例里改用 `t.sandbox.uploadDirectory()` 铺工作区、`t.sandbox.fileChanged()` / `t.sandbox.file()` 检查文件变化。`t.sandbox.runCommand()` 跑测试。参考独立仓库 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)。
 
 ## 快速开始
 
@@ -135,10 +135,10 @@ READ https://niceeval.com/INIT.md and set up niceeval for this repo: install it,
 
 <AccordionGroup>
   <Accordion title="需要注册账号吗？">
-    不需要。跑评估用例和 `niceeval view` 看报告全在本地完成；只有被测对象本身是需要隔离工作区的 coding agent 时，才会用到 Docker 或 E2B 这类 Sandbox provider。
+    不需要。跑评估用例和 `niceeval view` 看报告全在本地完成。只有被测对象本身是需要隔离工作区的 coding agent 时，才会用到 Docker 或 E2B 这类 Sandbox provider。
   </Accordion>
   <Accordion title="我的 Agent 不是用 TypeScript / JavaScript 写的，能接吗？">
-    能。Adapter 只是对着应用本来暴露的接口（HTTP、gRPC、WebSocket 都行）收发；应用本身用什么语言写、部署在哪里，[NiceEval](https://niceeval.com/) 不关心，见 [Adapter](/zh/explanation/adapter)。
+    能。Adapter 只是对着应用本来暴露的接口（HTTP、gRPC、WebSocket 都行）收发。应用本身用什么语言写、部署在哪里，[NiceEval](https://niceeval.com/) 不关心，见 [Adapter](/zh/explanation/adapter)。
   </Accordion>
   <Accordion title="能接到 CI 里吗？">
     能，见 [CI 集成](/zh/tutorials/ci-integration)。

@@ -44,7 +44,7 @@ export default defineEval({
 });
 ```
 
-`tags` 可供 `--tag` 和 experiment 的 `evals` 谓词读取。`environment` 只声明环境 profile；具体 image / template 由 experiment 使用的 Sandbox 配置映射。
+`tags` 可供 `--tag` 和 experiment 的 `evals` 谓词读取。`environment` 只声明环境 profile。具体 image / template 由 experiment 使用的 Sandbox 配置映射。
 
 ## 单轮评估
 
@@ -133,7 +133,7 @@ export default defineEval({
 
 ## 输出信息
 
-`setup` 用于这条评估用例的 Fixture。第二个参数绑定到评估用例 setup 阶段；`test(t)` 里的反馈绑定到评估用例 run 阶段：
+`setup` 用于这条评估用例的 Fixture。第二个参数绑定到评估用例 setup 阶段。`test(t)` 里的反馈绑定到评估用例 run 阶段：
 
 ```ts
 export default defineEval({
@@ -161,11 +161,11 @@ export default defineEval({
 });
 ```
 
-`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会写进当前 Attempt 的 `result.json`，但不会代替断言或自动改变判定：业务结论仍用 `t.check` / `t.require` / gate；基础设施无法继续时抛出异常。
+`progress` 只更新运行中的短期状态，不进入结果。`diagnostic` 会写进当前 Attempt 的 `result.json`，但不会代替断言或自动改变判定：业务结论仍用 `t.check` / `t.require` / gate。基础设施无法继续时抛出异常。
 
 ## 评估的生命周期
 
-`setup(sandbox, ctx)` 准备 Fixture；配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。它在整条 Attempt 里的位置是固定的：
+`setup(sandbox, ctx)` 准备 Fixture。配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。它在整条 Attempt 里的位置是固定的：
 
 <Lifecycle
   title="一条 Attempt 从排队到收尾"
@@ -187,7 +187,7 @@ export default defineEval({
   ]}
 />
 
-右列是「谁的一次」：四层 Hook 共用同一副成对形态，但触发频次不同。不声明 `sandboxReuse` 时每条 Attempt 独占一个 Sandbox，所以「每个 Sandbox 一次」和「每 Attempt」重合；声明复用之后两者分开，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+右列是「谁的一次」：四层 Hook 共用同一副成对形态，但触发频次不同。不声明 `sandboxReuse` 时每条 Attempt 独占一个 Sandbox，所以「每个 Sandbox 一次」和「每 Attempt」重合。声明复用之后两者分开，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
 
 大多数 Fixture 不需要 `teardown`——写进 Sandbox 的起始文件、装的依赖随 Sandbox 销毁自动没了。需要 `teardown` 的是**Sandbox 外**的 Fixture：在共享外部服务里为这个 Attempt 建的临时资源（临时 repo、bucket、队列 topic），不收就泄漏。
 
@@ -215,7 +215,7 @@ export default defineEval({
 });
 ```
 
-`teardown` 当且仅当这条 Attempt 走到过 `setup` 的时点才执行——`setup` 抛错不豁免，收尾代码要对可能没建成的资源做防御。`teardown` 抛错或超过 30 秒清理上限只记 `teardown-failed` 诊断，不改变这个 Attempt 已经产出的判定；要让某个收尾动作影响结论，在 `setup` / `test` 里抛错，不要指望 `teardown` 能改判。
+`teardown` 当且仅当这条 Attempt 走到过 `setup` 的时点才执行——`setup` 抛错不豁免，收尾代码要对可能没建成的资源做防御。`teardown` 抛错或超过 30 秒清理上限只记 `teardown-failed` 诊断，不改变这个 Attempt 已经产出的判定。要让某个收尾动作影响结论，在 `setup` / `test` 里抛错，不要指望 `teardown` 能改判。
 
 ## 命名约定
 
