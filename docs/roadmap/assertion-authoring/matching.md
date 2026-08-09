@@ -41,6 +41,20 @@ t.check(turn.data, matches(ResultSchema));
 
 关系由 matcher 名字决定，不由接收位置猜：没有未包装 string＝contains、直接 RegExp＝pattern，也没有 `{ contains, excludes }` 这一套旁路 rule。
 
+### `referencesAnyPath()`
+
+```ts
+declare function referencesAnyPath(
+  paths: readonly [string, ...string[]],
+): BooleanMatch<JsonValue, JsonValue, "value">;
+```
+
+`referencesAnyPath()` 在 plain JSON 的 string leaves 中匹配数组内任一路径。它遍历 array element 和 plain-object own data-property value，不匹配 key，也不调用 getter、`toJSON()` 或 `String()`。非 plain JSON、accessor 或 cycle 是 provider / evaluator defect，不能静默跳过。
+
+路径把 `/` 与 `\\` 统一为 separator，移除空 component 与 `.`，保留 `..`，并按大小写精确的完整 component sequence 匹配。它不执行 cwd 或 symlink resolution，不展开子进程变量或 shell expression，也不处理 URL encoding 或文件系统大小写 profile。
+
+例如 `.niceeval`、`./.niceeval/x`、`C:\\repo\\agents\\a` 与 `cat evals/x` 分别命中对应 pattern；`myagents`、`agents-old` 与 `.niceevaluation` 不命中。空数组、空路径、规范化后为空或重复的 pattern 都是同步 author error。
+
 ## `and()` 与 `or()`
 
 两者至少接收两个同 domain 的 `BooleanMatch<T, R, D>`；`similarity()` 等连续 `ScoreMatch` 在类型层不能进入组合。
@@ -83,6 +97,11 @@ declare function toolMatch(name: string, options?: {
   status?: ToolStatus;
 }): ToolMatch;
 
+declare function toolMatch(options: {
+  input: BooleanMatch<JsonValue, JsonValue, "value">;
+  status?: ToolStatus;
+}): ToolMatch;
+
 interface ScopedAssertions<H> {
   calledTool(match: ToolMatch, options?: { count?: number }): H;
   notCalledTool(match: ToolMatch): H;
@@ -90,7 +109,7 @@ interface ScopedAssertions<H> {
 }
 ```
 
-`toolMatch()` 与 `commandMatch()` 都返回 domain=`tool` 的 `BooleanMatch`。command 没有独立 identity，因此不占一个 Match domain，也不再嵌进 `toolMatch()`。省略 `status` 表示“不限制 lifecycle”；需要 completed 必须显式写。直接传 `{ name, status }` 与 string shorthand 都不是公共入口。
+`toolMatch()` 与 `commandMatch()` 都返回 domain=`tool` 的 `BooleanMatch`。command 没有独立 identity，因此不占一个 Match domain，也不再嵌进 `toolMatch()`。省略 `status` 表示“不限制 lifecycle”；需要 completed 必须显式写。无 name overload 必须携带 `input`，不能用空对象匹配所有工具，也不扩张为只含 status 的重复入口。直接传 `{ name, status }` 与 string shorthand 都不是公共入口。
 
 `name`、`input`、logical command 与 `status` 都在同一笔 occurrence 上求值。需要同时约束 command 与 Adapter 工具分类时，使用 `and(commandMatch(...), toolMatch(...))`；两个 matcher 不会各自搜索 occurrence。字段 definite mismatch 压过 unavailable。当前不公开 `output`，因为缺失 output 还没有 `absent | opaque` 的证据状态，不能诚实地区分“确定没有”与“没观察到”。次数不属于 matcher：
 
@@ -105,6 +124,8 @@ turn.calledTool(and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch
 - 禁止 A 或 B 任一工具出现，写 `notCalledTool(or(toolMatch("A"), toolMatch("B")))`；
 - 只禁止同一笔 occurrence 同时满足 A 与 B，写 `notCalledTool(and(A, B))`；
 - `notCalledTool(and(A, B))` 不会禁止只满足 A 或只满足 B 的 occurrence。
+
+Value matcher 只能经 `toolMatch({ input })` 提升到 tool domain。`notCalledTool(or(A, B))` 在一个三态 Assertion 内保留正确的德摩根语义，不应拆成两条可能分别产生 failed 与 unavailable 的 gate。
 
 `toolOrder()` 用单调 cursor 消费不同 occurrence，只证明 request subsequence；它不证明前一项 finish-before-start，也不建立因果关系。
 

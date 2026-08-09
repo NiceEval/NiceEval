@@ -79,6 +79,7 @@ turn.toolOrder([
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
 ]).gate();
 turn.event(eventMatch("message", { role: "assistant", text: includes("done") })).gate();
+turn.notCalledTool(toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) })).gate();
 ```
 
 `commandMatch()` 与 `toolMatch()` 都匹配同一个 logical tool occurrence。普通命令断言只写前者；只有确实还要约束 Adapter 工具分类时，才写 `and(commandMatch(...), toolMatch(...))`。组合的两个分支在同一笔 occurrence 上求值，不会分别寻找两笔工具调用。
@@ -113,7 +114,7 @@ interface EvalSandbox<H> {
 
 `fileChanged(path, options)` 的 `before` / `after` matcher 必须由同一条 change entry 满足。普通文本关系继续复用 `includes()` / `excludes()`，不增加 `beforeIncludes` 一类关系别名。该断言不声称字节级只改了一个 token。
 
-`toolInputsExclude({ paths })` 保留为 observed-input-only 领域断言；默认扫描 scope 内所有 tool input string leaves，coverage 不完整且没有已知反例时是 unavailable。它不冒充 OS 审计。
+工具输入的负约束不增加 Sandbox 或 scoped 专用方法。`referencesAnyPath()` 匹配输入中的可观察路径引用，`toolMatch({ input })` 把它提升为任意工具 occurrence 的条件，`notCalledTool()` 提供负存在性量词。证据不完整且没有已知命中时是 unavailable；这项组合不冒充 OS 审计。
 
 ## 普通路径边界
 

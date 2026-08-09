@@ -16,7 +16,7 @@ turn.toolOrder([
 这里有一套统一语法，而不是三套 DSL：
 
 - `t.check(subject, matcher)` 把值或延迟 source 与纯 matcher 配对；
-- `includes()`、`toolMatch()`、`commandMatch()`、`eventMatch()`、`and()`、`or()` 都从 `niceeval/expect` 构造纯 `Match`；
+- `includes()`、`referencesAnyPath()`、`toolMatch()`、`commandMatch()`、`eventMatch()`、`and()`、`or()` 都从 `niceeval/expect` 构造纯 `Match`；
 - `t`、session、turn 的领域断言消费同一个 `ToolMatch` / `EventMatch`，接收者只改变 scope；
 - 文件 source、diff 和文件行为统一留在 `t.sandbox`。
 
@@ -29,7 +29,7 @@ turn.toolOrder([
 - presence、absence、count 与 order 复用同一份单 occurrence `ToolMatch` / `EventMatch`；
 - `commandMatch()` 是一类 `ToolMatch`，消费 Observation Protocol 的 logical command，不要求作者知道 Adapter 工具名，也不匹配 raw shell text；
 - `t.sandbox.file(path)` 是延迟 `EvidenceSource<string>`，缺失文件不能冒充空字符串；
-- `toolInputsExclude()`、`changedPaths()`、`noChanges()` 与带内容条件的 `fileChanged()` 补齐 Harness 所需的标准事实。
+- `notCalledTool(toolMatch({ input }))` 复用工具负存在性；`changedPaths()`、`noChanges()` 与带内容条件的 `fileChanged()` 补齐 Harness 所需的标准事实。
 
 普通 API 只提供独立 matcher 工厂，不再允许直接传 selector 对象、string shorthand、`match.*` namespace、fluent 同义入口、递归 JSON rule、匿名 `where` 或第二套 order 语义。结构数据继续用 `equals()` 或 Standard Schema 的 `matches()`；CLI 的业务含义由公开输出与完整 Turn 语义判断，不把某个 JSON envelope 固化进 core。
 

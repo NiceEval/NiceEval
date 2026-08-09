@@ -27,7 +27,7 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 动态 locator、工具输出因果、Human 输出含义与最终回复顺序不是本次新增的确定性 Assertion。
 本页只展示这次 API 负责的机器检查，不为其伪造新入口。
 
-每题的机械层固定为三条 turn 调用：一条 `toolOrder()`、一条 `toolInputsExclude()`、一条 `succeeded()`。
+每题的机械层固定为三条 turn 调用：一条 `toolOrder()`、一条 `notCalledTool()`、一条 `succeeded()`。
 `commandMatch()` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
 opaque shell 仍是 unavailable；这项归一不读取 raw shell text，也不证明物理 binary identity。
 
@@ -59,7 +59,7 @@ turn.toolOrder([
   commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
 ]).gate();
-turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
+turn.notCalledTool(toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) })).gate();
 turn.succeeded().gate();
 t.sandbox.changedPaths(["experiments/local.ts"]).points(3).gate();
 t.sandbox.fileChanged("experiments/local.ts", { before: includes("runtime:node"), after: includes("runtime:python") }).points(2).gate();
@@ -107,7 +107,7 @@ turn.toolOrder([
   commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
   commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
 ]).gate();
-turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
+turn.notCalledTool(toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) })).gate();
 turn.succeeded().gate();
 t.sandbox.noChanges().points(2).gate();
 ```
