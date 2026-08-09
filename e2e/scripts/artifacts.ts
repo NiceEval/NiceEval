@@ -7,13 +7,13 @@
 // never parses those files or feeds them into a pass/fail decision.
 
 import { basename, join, relative, resolve, sep } from "node:path";
-import { copyFile, lstat, readdir } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 
 import {
   assertContainedRegularFile,
   assertRealDirectory as assertRealDirectoryChain,
+  copyIntoContainedFile,
   ensureContainedRealDirectory,
-  prepareContainedRegularFile,
 } from "./durable-path.ts";
 import { artifactPatternError, isCanonicalRelativePath } from "./manifest.ts";
 
@@ -56,8 +56,12 @@ async function copySafeFile(source: string, destinationRoot: string, destination
   if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
     throw new Error(`artifact source must be a regular non-symlink file: ${source}`);
   }
-  const destinationPath = await prepareContainedRegularFile(destinationRoot, destination, "artifact destination");
-  await copyFile(source, destinationPath);
+  const destinationPath = await copyIntoContainedFile(
+    destinationRoot,
+    source,
+    destination,
+    "artifact destination",
+  );
   await assertContainedRegularFile(destinationRoot, destinationPath, "artifact destination");
 }
 

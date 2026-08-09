@@ -6,6 +6,7 @@
 // resolves only that root's ancestors to a physical anchor. The declared root
 // itself, and every component below it, must then be a real directory.
 
+import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -199,16 +200,25 @@ export async function assertContainedRegularFile(root: string, target: string, l
   return physicalTargetPath;
 }
 
-/** Write a durable UTF-8 receipt/summary only after its full physical directory chain has been verified. */
+/**
+ * Create a durable UTF-8 receipt/summary only after its full physical
+ * directory chain has been verified. Exclusive creation is intentional: an
+ * existing regular path could be a hard link to an inode outside the durable
+ * root, so overwriting it would violate the boundary even without a symlink.
+ */
 export async function writeContainedUtf8File(root: string, target: string, contents: string, label: string): Promise<string> {
   const targetPath = await prepareContainedRegularFile(root, target, label);
-  await writeFile(targetPath, contents, "utf8");
+  await writeFile(targetPath, contents, { encoding: "utf8", flag: "wx" });
   return assertContainedRegularFile(root, target, label);
 }
 
-/** Copy one file into a verified durable target and confirm it did not become a symlink. */
+/**
+ * Exclusively copy one file into a verified durable target and confirm it did
+ * not become a symlink. COPYFILE_EXCL also prevents an existing hard link from
+ * turning this copy into an out-of-root inode mutation.
+ */
 export async function copyIntoContainedFile(root: string, source: string, target: string, label: string): Promise<string> {
   const targetPath = await prepareContainedRegularFile(root, target, label);
-  await copyFile(source, targetPath);
+  await copyFile(source, targetPath, constants.COPYFILE_EXCL);
   return assertContainedRegularFile(root, target, label);
 }
