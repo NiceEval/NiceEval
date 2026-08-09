@@ -11,20 +11,15 @@ const agent = uiMessageStreamAgent({
   settleMs: 600,
 });
 
-// Direct Agent 不声明 Sandbox：共享断言契约的 tool-match-and-sandbox 对真实工具事件
-// 执行完整 ToolMatch，t.sandbox 专属段由 profile 的 sandboxUnavailable: true 跳过
-// （应用文件工具是内存实现，见 src/backend/tools.ts）。
-
-// 单一实验:共享断言契约与仓库全部 Eval 共用同一个 uiMessageStreamAgent。
+// 单一实验:仓库全部三条 Eval 共用同一个 uiMessageStreamAgent。
 // attempts: 3 + earlyExit absorbs a single real-model blip; three consecutive misses is a
 // genuine regression and the matrix should stay red for it.
 export default defineExperiment({
-  description: "ai-sdk:HTTP useChat 后端(SSE、全量历史重放、审批改写重发、OTel)与共享断言契约",
+  description: "ai-sdk:HTTP useChat 后端(SSE、全量历史重放、审批改写重发、OTel)",
   agent,
   model: DEFAULT_MODEL,
   attempts: 3,
   earlyExit: true,
   budget: 1,
-  evals: (e) =>
-    e.id.startsWith("assertion-contract/") || ["tool-call", "hitl-approval", "session-replay"].includes(e.id),
+  evals: ["tool-call", "hitl-approval", "session-replay"],
 });

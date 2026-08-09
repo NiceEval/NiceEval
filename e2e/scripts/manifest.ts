@@ -7,13 +7,12 @@
 // ignored, and there is no legacy `group` compatibility. `harness.testkit:
 // true` is the only true source of Testkit consumption intent — scenario
 // source package.json/lockfiles never declare @niceeval/testkit
-// (docs/engineering/testing/testkit.md「构建与采用门禁」6). Adapter repos may
-// separately declare `harness.adapterAssertions: true` to materialize the
-// checkout-owned assertion contract in their isolated copy.
+// (docs/engineering/testing/testkit.md「构建与采用门禁」6).
 
 export const SCHEMA_VERSION = 1 as const;
 
 export const AREAS = [
+  "eval",
   "cli",
   "report",
   "record",
@@ -47,8 +46,6 @@ export interface RepoRequires {
 export interface RepoHarness {
   /** Declares that the repo consumes @niceeval/testkit; injection intent. */
   testkit?: boolean;
-  /** Declares that an Adapter Repo consumes the checkout-local shared assertion contract Eval. */
-  adapterAssertions?: boolean;
 }
 
 export interface E2ERepoManifest {
@@ -93,7 +90,7 @@ const REQUIRES_FIELDS = new Set([
   "runtimes",
   "browsers",
 ]);
-const HARNESS_FIELDS = new Set(["testkit", "adapterAssertions"]);
+const HARNESS_FIELDS = new Set(["testkit"]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -289,18 +286,6 @@ export function parseManifest(raw: unknown, source: string): ManifestParseResult
           errors.push(`${source}: "harness.testkit" must be a boolean, got ${JSON.stringify(h.testkit)}`);
         } else {
           harness.testkit = h.testkit;
-        }
-      }
-      if (h.adapterAssertions !== undefined) {
-        if (typeof h.adapterAssertions !== "boolean") {
-          errors.push(
-            `${source}: "harness.adapterAssertions" must be a boolean, got ${JSON.stringify(h.adapterAssertions)}`,
-          );
-        } else {
-          harness.adapterAssertions = h.adapterAssertions;
-          if (h.adapterAssertions && (!Array.isArray(raw.areas) || !raw.areas.includes("adapter"))) {
-            errors.push(`${source}: "harness.adapterAssertions" is only valid for a repo whose areas include "adapter"`);
-          }
         }
       }
     }

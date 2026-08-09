@@ -11,10 +11,6 @@ import { expect, it } from "vitest";
 import { ensureDockerImage } from "../scripts/build-docker-env.ts";
 
 const EXPECTED_EVALS = [
-  "assertion-contract/values-and-no-tools",
-  "assertion-contract/score-handles",
-  "assertion-contract/scope-tool",
-  "assertion-contract/tool-match-and-sandbox",
   "coding-task/write-and-verify",
   "session/recall",
   "usage/tokens",

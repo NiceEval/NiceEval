@@ -16,15 +16,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
-const EXPECTED_EVALS = [
-  "assertion-contract/values-and-no-tools",
-  "assertion-contract/score-handles",
-  "assertion-contract/scope-tool",
-  "assertion-contract/tool-match-and-sandbox",
-  "tool-call",
-  "hitl-approval",
-  "session-replay",
-] as const;
+const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
 const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY"] as const;
 
 const PORT = 34101;
@@ -186,24 +178,6 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
       expect(execution.stdout).toContain("get_weather");
       expect(execution.stdout).toMatch(/北京/);
       expect(execution.stdout).not.toContain("timing unavailable");
-
-      // 共享断言契约的 coding 节经应用文件工具（内存实现，direct agent 无 Sandbox）
-      // 执行：执行树出现 canonical 工具名，断言过的入参（assertion-contract-edit.txt
-      // 等）穿到展示面。
-      const contractLocator = locators.get("assertion-contract/tool-match-and-sandbox")!;
-      const contractExecution = await niceeval.run(["show", contractLocator, "--execution"], {
-        env: liveEnv(),
-      });
-      expectSuccessfulCli(contractExecution);
-      expect(
-        contractExecution.stdout.includes("file_write") || contractExecution.stdout.includes("file_edit"),
-        "contract execution tree missing file_write/file_edit nodes",
-      ).toBe(true);
-      expect(
-        contractExecution.stdout.includes("shell"),
-        "contract execution tree missing shell node",
-      ).toBe(true);
-      expect(contractExecution.stdout).toContain("assertion-contract-edit.txt");
 
       // timing 公开命令必须成功，并且必须把同一真实工具调用挂到 per-turn
       // OTel 子树；ai-sdk.md 将 correlation 断裂定义为协议回归，不能降级成 warning。

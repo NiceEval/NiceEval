@@ -45,18 +45,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = (await readJson(req)) as { messages?: unknown[]; model?: string };
     const signal = abortSignalFor(req);
     const messages = await convertToModelMessages((body.messages ?? []) as UIMessage[]);
-    const tools = buildTools();
     const result = streamText({
       model: resolveModel(body.model ?? DEFAULT_MODEL),
       system: SYSTEM_PROMPT,
       messages,
-      tools,
+      tools: buildTools(),
       stopWhen: stepCountIs(5),
       abortSignal: signal,
     });
     pipeUIMessageStreamToResponse({
       response: res,
-      stream: toUIMessageStream({ stream: result.stream, tools }),
+      stream: toUIMessageStream({ stream: result.stream, tools: buildTools() }),
       headers: corsHeaders(),
     });
     return;

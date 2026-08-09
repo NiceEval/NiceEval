@@ -14,10 +14,9 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 
 import type { DiscoveredRepo } from "./discovery.ts";
 import type { CandidateTarball } from "./injection.ts";
@@ -94,30 +93,6 @@ export async function copyRepoIsolated(sourceDir: string, destDir: string): Prom
     recursive: true,
     filter: (src) => !EXCLUDED_FROM_COPY.has(basename(src)),
   });
-}
-
-const ADAPTER_ASSERTION_CONTRACT = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "adapter",
-  "shared",
-  "assertion-contract.eval.ts",
-);
-const ADAPTER_ASSERTION_TARGET = join("evals", "assertion-contract.eval.ts");
-
-/** Materialize the shared contract as a real, capturable Eval source in an isolated Adapter Repo. */
-export async function injectAdapterAssertionContract(copyDir: string): Promise<void> {
-  const target = join(copyDir, ADAPTER_ASSERTION_TARGET);
-  if (existsSync(target)) {
-    throw new Error(
-      `${ADAPTER_ASSERTION_TARGET} already exists; the checkout-owned adapter assertion contract cannot be shadowed`,
-    );
-  }
-  if (!existsSync(join(copyDir, "evals", "assertion-profile.ts"))) {
-    throw new Error("harness.adapterAssertions: true requires evals/assertion-profile.ts");
-  }
-  await mkdir(dirname(target), { recursive: true });
-  await copyFile(ADAPTER_ASSERTION_CONTRACT, target);
 }
 
 /** Mutates only the isolated copy's package.json — never the checked-in repo. */
@@ -262,9 +237,6 @@ export async function runRepo(
       await copyRepoIsolated(repo.dir, copyDir);
       copyCreated = true;
 
-      const consumesAdapterAssertions = repo.manifest.harness?.adapterAssertions === true;
-      if (consumesAdapterAssertions) await injectAdapterAssertionContract(copyDir);
-
       // --- prepare: harness pre-flight guards (fail before any install/test) ---
       const consumesTestkit = repo.manifest.harness?.testkit === true;
       const prepareViolations = checkTestkitSourceClean(copyDir);
@@ -286,13 +258,9 @@ export async function runRepo(
         stage: "prepare",
         ok: prepareOk,
         detail: prepareOk
-          ? [
-              "source clean",
-              consumesTestkit ? "harness.testkit declared" : "no testkit declared",
-              consumesAdapterAssertions
-                ? `shared adapter assertion contract materialized at ${ADAPTER_ASSERTION_TARGET}`
-                : "no shared adapter assertion contract declared",
-            ].join("; ")
+          ? consumesTestkit
+            ? "source clean; harness.testkit declared"
+            : "source clean; no testkit declared"
           : `prepare failed: ${prepareViolations.join("; ")}`,
       });
 

@@ -7,12 +7,12 @@ const agent = claudeCodeAgent({
   baseUrl: process.env.ANTHROPIC_BASE_URL,
 });
 
-// 基线 agent 一次运行同时验收共享断言契约与 Claude Code 会话/工具协议。
+// 基线 agent:coding-task(文件/shell 工具轨)+ session-resume(原生 resume + usage)。
 export default defineExperiment({
-  description: "coding:共享断言契约 + Claude Code 基线会话/工具协议",
+  description: "coding:基线 claude-code agent —— coding-task 工具轨 + session resume/usage",
   agent,
   model: "gpt-5.6-luna",
   sandbox,
   attempts: 1,
-  evals: (e) => e.id.startsWith("assertion-contract/") || e.id === "session-resume",
+  evals: (e) => e.id === "coding-task" || e.id === "session-resume",
 });
