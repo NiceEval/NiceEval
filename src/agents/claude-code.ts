@@ -16,7 +16,11 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
-import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
+import {
+  registerAgentLifecycleHookCommands,
+  runPostSetupHooks,
+  runPreTeardownHooks,
+} from "./post-setup.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
@@ -125,7 +129,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       bin: "claude",
   });
 
-  return defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
@@ -315,7 +319,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
         catch: (cause) => cause,
       });
     })), { signal: ctx.signal }),
-  });
+  }), config?.postSetup, config?.preTeardown);
 }
 
 /**

@@ -83,6 +83,7 @@ const agent = codexAgent({
 - `phase` 分别是 `agent.post-setup` / `agent.pre-teardown`，`owner` 是当前 agent。
 - 多个 Hook 按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发。
 - Hook 通过 `onCleanup()` 登记的收尾在 `preTeardown` 之后按全局逆序执行；其中一项失败不会阻断后续收尾，失败最后一并上报。
+- `niceeval exp ... --dry --commands` 会在 Adapter 的 opaque setup / teardown 边界内展开 Hook；`shell()` / `command()` 显示脱敏后的声明，函数 callback 保持 opaque。
 - Hook 抛错按基础设施错误计（结构化执行错误通道事件 → `errored` Verdict），不是 agent 解题失败；Attempt lifecycle 仍不使用 verdict token。
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。

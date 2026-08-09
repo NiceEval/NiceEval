@@ -13,7 +13,34 @@ import type {
   SandboxCommandContext,
 } from "../sandbox/commands.ts";
 import type { Sandbox } from "../sandbox/types.ts";
-import type { AgentContext } from "./types.ts";
+import type { AgentContext, SandboxAgent } from "./types.ts";
+
+export interface AgentLifecycleHookCommands {
+  readonly postSetup: readonly SandboxCommand[];
+  readonly preTeardown: readonly SandboxCommand[];
+}
+
+// Adapter factory 构造时就能知道的用户 hook 声明。用 WeakMap 挂在实际 Agent
+// 实例上，不把这份纯预览元数据扩成第二个公开 Agent 执行协议。
+const lifecycleHookCommands = new WeakMap<SandboxAgent, AgentLifecycleHookCommands>();
+
+/** @internal 为内置 Adapter 登记与实际执行共用的 hook 数组。 */
+export function registerAgentLifecycleHookCommands<T extends SandboxAgent>(
+  agent: T,
+  postSetup: readonly SandboxCommand[] | undefined,
+  preTeardown: readonly SandboxCommand[] | undefined,
+): T {
+  lifecycleHookCommands.set(agent, {
+    postSetup: Object.freeze([...(postSetup ?? [])]),
+    preTeardown: Object.freeze([...(preTeardown ?? [])]),
+  });
+  return agent;
+}
+
+/** @internal `--dry --commands` 只读取已登记的声明，不执行 hook。 */
+export function agentLifecycleHookCommandsOf(agent: SandboxAgent): AgentLifecycleHookCommands | undefined {
+  return lifecycleHookCommands.get(agent);
+}
 
 const registeredCleanups = new WeakMap<Sandbox, SandboxCleanupCommand[]>();
 

@@ -21,7 +21,11 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
-import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
+import {
+  registerAgentLifecycleHookCommands,
+  runPostSetupHooks,
+  runPreTeardownHooks,
+} from "./post-setup.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec, TurnEvidenceCoverage } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
@@ -287,7 +291,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       },
   });
 
-  return defineSandboxAgent({
+  return registerAgentLifecycleHookCommands(defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     evidenceCoverage: completeEvidenceCoverage,
@@ -530,7 +534,7 @@ export function codexAgent(config?: CodexConfig): Agent {
         ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
     },
-  });
+  }), config?.postSetup, config?.preTeardown);
 }
 
 /** 把 Codex JSONL 的高频原始帧收敛成 dashboard 当前行的一条短 detail。 */

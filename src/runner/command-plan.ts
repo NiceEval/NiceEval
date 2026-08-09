@@ -5,8 +5,10 @@
 // renderer 只做投影，避免两种输出各维护一套“看起来像执行顺序”的第二真相。
 
 import type { AgentIdentity, AgentInstaller } from "../agents/types.ts";
+import { agentLifecycleHookCommandsOf } from "../agents/post-setup.ts";
 import {
   sandboxCommandPlanOf,
+  type SandboxCommand,
   type SandboxCommandPlanCommand,
   type SandboxCommandPlanCondition,
   type SandboxCommandPlanNode,
@@ -100,6 +102,11 @@ const PROBE_MISS: SandboxCommandPlanCondition = Object.freeze({
 const SHARED_INSTANCE_AVAILABLE: SandboxCommandPlanCondition = Object.freeze({
   code: "shared-instance-lifetime",
   summary: "may repeat after provider retirement, reset failure, or lifetime replacement",
+});
+
+const AGENT_POST_SETUP_REACHED: SandboxCommandPlanCondition = Object.freeze({
+  code: "agent-post-setup-reached",
+  summary: "runs only if Adapter setup reached its declared postSetup point",
 });
 
 function opaque(
@@ -265,6 +272,117 @@ function prepareSteps(pair: PreparedRunPair): readonly CommandPlanStep[] {
   });
 }
 
+function declaredAgentHookStep(
+  command: SandboxCommand,
+  index: number,
+  phase: "agent.post-setup" | "agent.pre-teardown",
+  owner: CommandPlanOwner,
+  condition?: SandboxCommandPlanCondition,
+): CommandPlanStep {
+  const declaration = sandboxCommandPlanOf(command);
+  const label = `${phase === "agent.post-setup" ? "postSetup" : "preTeardown"} #${index}`;
+  return declaration === undefined
+    ? opaque(
+        phase,
+        "agent-lifecycle-hook-callback",
+        "callback-backed Agent lifecycle hook; commands are only known when it runs",
+        { owner, label, ...(condition === undefined ? {} : { condition }) },
+      )
+    : stepFromDeclaration({ ...declaration, label }, phase, owner, condition);
+}
+
+function agentSetupSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readonly CommandPlanStep[] {
+  const agent = pair.run.agent;
+  if (agent.setup === undefined) {
+    return [knownNoCommand("agent.setup", "hook-omitted", "Agent has no setup callback", { owner })];
+  }
+  if (agent.kind !== "sandbox") {
+    return [opaque(
+      "agent.setup",
+      "agent-setup-callback",
+      "Agent setup callback may execute commands; its body is not inspected",
+      { owner },
+    )];
+  }
+  const hooks = agentLifecycleHookCommandsOf(agent);
+  if (hooks === undefined) {
+    return [opaque(
+      "agent.setup",
+      "agent-setup-callback",
+      "Agent setup callback may execute commands; its body is not inspected",
+      { owner },
+    )];
+  }
+  return [
+    opaque(
+      "agent.setup",
+      "adapter-setup-internals",
+      "Adapter setup before declared postSetup hooks may execute commands",
+      { owner, label: "adapter setup" },
+    ),
+    ...hooks.postSetup.map((hook, index) => declaredAgentHookStep(
+      hook,
+      index,
+      "agent.post-setup",
+      owner,
+    )),
+  ];
+}
+
+function agentTeardownSteps(pair: PreparedRunPair, owner: CommandPlanOwner): readonly CommandPlanStep[] {
+  const agent = pair.run.agent;
+  if (agent.teardown === undefined) {
+    return [knownNoCommand("agent.teardown", "hook-omitted", "Agent has no teardown callback", { owner })];
+  }
+  if (agent.kind !== "sandbox") {
+    return [opaque(
+      "agent.teardown",
+      "agent-teardown-callback",
+      "Agent teardown callback may execute commands; its body is not inspected",
+      { owner },
+    )];
+  }
+  const hooks = agentLifecycleHookCommandsOf(agent);
+  if (hooks === undefined) {
+    return [opaque(
+      "agent.teardown",
+      "agent-teardown-callback",
+      "Agent teardown callback may execute commands; its body is not inspected",
+      { owner },
+    )];
+  }
+
+  const preTeardown = hooks.preTeardown
+    .map((hook, index) => ({ hook, index }))
+    .reverse()
+    .map(({ hook, index }) => declaredAgentHookStep(
+      hook,
+      index,
+      "agent.pre-teardown",
+      owner,
+      AGENT_POST_SETUP_REACHED,
+    ));
+  const mayRegisterCleanup = [...hooks.postSetup, ...hooks.preTeardown]
+    .some((hook) => sandboxCommandPlanOf(hook) === undefined);
+  return [
+    ...preTeardown,
+    ...(mayRegisterCleanup
+      ? [opaque(
+          "agent.pre-teardown.cleanup",
+          "registered-agent-cleanup-callbacks",
+          "callback-backed Agent hooks may register LIFO cleanup commands",
+          { owner, condition: AGENT_POST_SETUP_REACHED },
+        )]
+      : []),
+    opaque(
+      "agent.teardown",
+      "adapter-teardown-remainder",
+      "Adapter teardown after declared preTeardown hooks may execute commands",
+      { owner, label: "adapter teardown" },
+    ),
+  ];
+}
+
 function sandboxLifecycleHooks(
   pair: PreparedRunPair,
   phase: "setup" | "teardown",
@@ -343,28 +461,14 @@ function attemptBody(pair: PreparedRunPair, shared: boolean): readonly CommandPl
           { owner: provider! },
         )]
       : []),
-    ...(pair.run.agent.setup === undefined
-      ? [knownNoCommand("agent.setup", "hook-omitted", "Agent has no setup callback", { owner: agentOwner })]
-      : [opaque(
-          "agent.setup",
-          "agent-setup-callback",
-          "Agent setup callback may execute commands; its body is not inspected",
-          { owner: agentOwner },
-        )]),
+    ...agentSetupSteps(pair, agentOwner),
     opaque(
       "eval.test",
       "eval-test-callback",
       "Eval test and any Agent.send calls are runtime callbacks; their commands and branches are not inspected",
       { owner: evalOwner },
     ),
-    ...(pair.run.agent.teardown === undefined
-      ? [knownNoCommand("agent.teardown", "hook-omitted", "Agent has no teardown callback", { owner: agentOwner })]
-      : [opaque(
-          "agent.teardown",
-          "agent-teardown-callback",
-          "Agent teardown callback may execute commands; its body is not inspected",
-          { owner: agentOwner },
-        )]),
+    ...agentTeardownSteps(pair, agentOwner),
     ...(pair.plan._tag === "Sandbox"
       ? [opaque(
           "sandbox.cleanup",
