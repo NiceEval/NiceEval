@@ -2,7 +2,7 @@
 
 产品行为默认从 E2E 开始裁决。E2E 穿过真实公开边界：candidate、外部 cwd、子进程、文件、HTTP、浏览器、真实 SDK / CLI / provider、
 signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与单边界。Eval、CLI、Runner、Record、Report、Package 与 Lifecycle 使用
-功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 兼容性 Repo。
+功能场景 Repo；Adapter 使用另一组 `adapter/<id>` 协议 Repo，包括确定性产品 owner 与 live 兼容性检查。
 
 跨多个公开接缝的完整用户目标由 Journey 拥有；原子公开结果由单边界 E2E 拥有。
 只有两者无法稳定制造、穷举或区分具名错误算法时，才进入 [Unit 例外](../unit/README.md)。
@@ -88,11 +88,13 @@ Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定�
 
 ## 功能 Repo 与 Adapter Repo 不混用
 
-功能 Repo 使用签入的确定性 Agent / backend fixture，证明 NiceEval 自己拥有的行为。Adapter Repo 使用真实 SDK、CLI、provider
-或该协议的本地故障端，只证明该上游入口的兼容性。两者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或
-昂贵 evidence。功能 Journey 不放进 `adapter/ai-sdk`；Adapter 兼容性检查调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
+功能 Repo 使用签入的确定性 Agent / backend fixture，证明对应功能域的行为。
+确定性 Adapter Repo 使用公开协议的本地故障端，证明 NiceEval 官方 Adapter 自己拥有的 transport 与错误处理。
+Live Adapter Repo 使用真实 SDK、CLI 或 provider，只证明该上游入口的兼容性。
+三者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或昂贵 evidence。
+功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `show` 也不获得 CLI 或 Report 的矩阵所有权。
 
-live Adapter 不承担产品可靠性。确定性本地协议 counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系。
+live Adapter 不承担产品可靠性。确定性 UI Message Stream counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系。
 公开 Assertion、Context、Report 或 Runner 契约各自由功能 Repo 完整验收；Adapter 只使用足以判定其协议事实的断言，
 不承载跨 Adapter 的 Assertion 契约或共享 Eval 注入。
 结构化外部故障不算 pass，也不倒推确定性产品 owner 失败；同一 candidate 的 AI 真实兼容性验收可以替代本次有效 live 结果。
@@ -113,14 +115,14 @@ Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而�
 
 ## Adapter
 
-`e2e/adapter/` 是 collection；每个官方 adapter 自己拥有叶子 Repo，另有独立的本地协议 Repo。不能在一个
+`e2e/adapter/` 是 collection；每个官方 Adapter 自己拥有 live 叶子 Repo，另有独立的确定性协议 Repo。不能在一个
 `adapter/test/` 目录里用不同 fixture 名字冒充多个消费项目：
 
 ```text
 e2e/adapter/
 ├── ai-sdk/          # live SDK 与该 SDK 独有的 telemetry / session 证据
 ├── codex-cli/       # live CLI、隔离 HOME / config 与规范工具身份
-├── local-protocol/  # 无密钥的 transport、故障分类与 cleanup
+├── local-protocol/  # uiMessageStreamAgent 的确定性成功对照与故障路径
 ├── claude-code/
 ├── opencode/
 └── bub/
@@ -130,11 +132,11 @@ e2e/adapter/
 
 | 测试 | 证明 | Lane |
 |---|---|---|
-| 本地协议 / Docker fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
+| UI Message Stream 本地 fixture | NiceEval 自有 transport、断流、超时、错误分类和 cleanup | PR |
 | Live SDK / CLI / provider | 上游真实事件形状、鉴权、usage、session、工具身份和版本兼容 | main / nightly / release |
 
 本地 fixture 不能替代 live 兼容性；低成本 live 检查也不能替代可控错误注入。NiceEval 自有的协议语义矩阵默认留在
-确定性本地协议 E2E；只有它无法稳定穷举或区分的纯归一算法，才登记最小 Unit 例外。Live Repo 只取有区分力的真实兼容性代表。
+确定性 UI Message Stream E2E；只有它无法稳定穷举或区分的纯归一算法，才登记最小 Unit 例外。Live Repo 只取有区分力的真实兼容性代表。
 
 Adapter E2E 至少检查：实际执行了期望 Eval、最终 verdict、公开 readback 中的协议身份、usage / session 等本 adapter 独有事实，
 以及失败时的阶段和可行动诊断。不能只断言命令 exit 0。
@@ -210,7 +212,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 
 ## 各域验收入口
 
-- [Adapter](adapter/README.md)：官方 Adapter 与真实协议的兼容性 owner；
+- [Adapter](adapter/README.md)：官方 Adapter 的确定性协议 owner 与 live 兼容性检查；
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
 - [Record](README.md)：公开 Record API 与已声明磁盘格式；

@@ -216,7 +216,7 @@ export function withHttpServer<T>(
 
 - CLI、Runner、Package 与 Lifecycle 用 `command()`、`withProjectCopy()` 和进程收据执行仓库外用户动作；
 - Runner 与 Lifecycle 用 `only()`、`defined()` 和 `pollUntil()`核对真实结果与资源终态；
-- Report 与本地协议场景用 `withProcess()`、`waitForOutput()`和严格数据解码观察长驻进程；
+- Report 与确定性 UI Message Stream 场景用 `withProcess()`、`waitForOutput()`和严格数据解码观察长驻进程；
 - Record 与 Lifecycle 用 `withTempDir()`证明临时资源在正文结束后消失；
 - Report 用 `withHttpServer()`启动真实 listener，并在正文结束后释放端口。
 

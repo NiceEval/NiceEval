@@ -3,11 +3,21 @@
 适配器域回答两个互补问题：**NiceEval 自有协议语义在确定性真实边界下是否正确，以及每个完整官方 Agent 工厂是否仍与
 真实协议、真实模型兼容。**
 
-每个已启用工厂对应一个独立测试仓库和一篇 E2E 验收说明。
+确定性协议 E2E 与 live 兼容性 E2E 使用独立 Repo，分别承担产品可靠性与上游兼容性。
 仓库协议（`e2e.json`、`pnpm e2e`、候选包注入）见[总则](../README.md)。
-只有公开完整 Agent 工厂的对象进入矩阵。只有转换器的对象不在本目录保留验收页，也不计入协议兼容性证明。
+只有公开完整 Agent 工厂的对象进入 live 矩阵。只有转换器的对象不在本目录保留验收页，也不计入协议兼容性证明。
 
-## 验收说明的固定形状
+## 确定性协议 E2E
+
+| 公开边界 | Repo ID | 执行能力 | 证明 | 验收说明 |
+|---|---|---|---|---|
+| `uiMessageStreamAgent` | `adapter/local-protocol` | host、无外部网络、无密钥 | 正常 SSE 成功对照，以及断流、timeout、HTTP 非 2xx 的公开失败结果 | [UI Message Stream](ui-message-stream.md) |
+
+这个 Repo 不是独立官方 Adapter。
+它用签入的 UI Message Stream HTTP fixture 稳定制造成功与故障输入，证明 NiceEval 自己拥有的 transport 和错误处理。
+`adapter/ai-sdk` 则连接真实 AI SDK 应用，证明同一个公开工厂仍兼容真实上游协议。
+
+## Live 验收说明的固定形状
 
 每篇 live 适配器文档按同一个四段式写清该仓库的兼容性验收说明：
 
@@ -26,11 +36,10 @@
 第 2 步是 Eval 的判分断言，第 3、4 步是原生测试文件的机制断言，两者都在该 Repo 的所有权边界内。
 测试正文遵守 [E2E 总纲](../README.md#单边界-e2e)与[测试 Architecture](../../architecture.md#单文件可读性契约)。
 
-## 验收表
+## Live 官方 Adapter 兼容性
 
 | 适配器 | Repo ID | 执行能力 | 入口 | 验收说明 |
 |---|---|---|---|---|
-| 本地协议 | `adapter/local-protocol` | host / Docker，无外部网络 | 官方工厂对应的稳定协议端 | [E2E 总纲](../README.md#adapter) |
 | AI SDK | `adapter/ai-sdk` | host + external network | `uiMessageStreamAgent` | [ai-sdk.md](ai-sdk.md) |
 | Claude Code | `adapter/claude-code` | Docker + external network | `claudeCodeAgent` | [claude-code.md](claude-code.md) |
 | Codex CLI | `adapter/codex-cli` | Docker + external network | `codexAgent` | [codex-cli.md](codex-cli.md) |
@@ -40,7 +49,7 @@
 | OpenClaw | `adapter/openclaw` | Docker + external network | `openClawAgent` | [openclaw.md](openclaw.md) |
 
 官方工厂清单以[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。
-协议归一（事件转换、session、usage、证据完整性）的产品 owner 是本地协议 Repo 的确定性真实运行，不以单元层 wire fixture 替代。
+协议归一（事件转换、session、usage、证据完整性）的产品 owner 是确定性协议 Repo 的真实运行，不以单元层 wire fixture 替代。
 各 live Repo 只证明官方工厂与特定上游版本的兼容性，不接管确定性产品可靠性。
 缺少完整官方工厂的 SDK 在其仓库落地前没有协议验收证明，这是验收表中的显式空白，不用 E2E 仓库内的本地 Adapter 实现或 fixture 测试冒充。
 

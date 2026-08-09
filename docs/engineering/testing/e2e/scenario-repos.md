@@ -182,7 +182,7 @@ Executor 回答测试进程在哪里运行：
 
 ## Adapter Repo
 
-Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。确定性本地协议 Repo 包含最小而真实的
+Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。确定性 UI Message Stream Repo 包含最小而真实的
 Eval / Experiment 集：
 
 - 一个正常消息往返；
@@ -191,14 +191,14 @@ Eval / Experiment 集：
 - 公开 readback 能确认上游身份被正确保留 / 规范化。
 
 每个 live Repo 默认只保留一条官方工厂的最小兼容性 Journey。只有新增该上游独有、且不能由既有 Journey 观察的协议行为时，
-才增加第二条；可控失败与边界值矩阵仍归确定性本地协议 Repo。
+才增加第二条；可控失败与边界值矩阵仍归确定性 UI Message Stream Repo。
 
 “把所有 Eval 跑完且 exit 0”不够。测试必须列出期望 Eval ID，并对每个必要结果或关键事件作断言，防止 discovery 少排后假绿。
 
 Adapter Repo 中出现 `exp`、`show` 或 `--execution` 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
 公开读面的最短路径；同一 CLI flag、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
-本地协议 backend 固定版本和响应，可进入 PR；真实 provider 版本、模型和 CLI 身份写入 artifact，进入可信 lane。
+UI Message Stream backend 固定版本和响应，可进入 PR；真实 provider 版本、模型和 CLI 身份写入 artifact，进入可信 lane。
 二者应是不同叶子 Repo，避免共享依赖、结果与子进程变量后把本地 fixture 误报成某个 live adapter 的证明。
 
 真实 provider 只拥有上游兼容性，不拥有确定性产品语义。结构化外部故障不算 pass；同一 candidate 的 AI 真实兼容性验收

@@ -21,7 +21,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
-`adapter/` 是兼容性 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
+`adapter/` 是协议 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与确定性 UI Message Stream fixture 都是独立叶子 Repo，
 各自安装候选包并拥有结果根。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
 
 ## Owner 选择顺序
@@ -62,7 +62,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | 无法由真实 PTY 稳定制造的纯布局算法 |
 | show、view、HTTP、浏览器与视觉结果 | Report 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
 | 并发、取消、signal 与 orphan | Lifecycle E2E 拥有资源终态 | barrier / fake clock 拥有可控竞态次序 |
-| Adapter 产品语义 | 确定性本地协议 E2E | NiceEval 自有词表上的纯归一或错误分类 |
+| Adapter 产品语义 | 确定性 UI Message Stream E2E | NiceEval 自有词表上的纯归一或错误分类 |
 | 真实 Provider | live Adapter 兼容性检查 | 不接管确定性产品语义 |
 
 一条风险只在一个位置展开完整矩阵。其它层只有在能排除不同错误实现时才留最小代表。
