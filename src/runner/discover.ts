@@ -460,15 +460,9 @@ export function discoverEvals(
   return Effect.gen(function*() {
     const entries = yield* collectEvalEntries(dir, root);
     const evals = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, options.freshImport));
-    const groupsDir = join(root, "eval-groups");
-    const files = existsSync(groupsDir)
-      ? yield* walkFiles(groupsDir, root, (name) => name === "eval-group.ts" || name.endsWith(".eval-group.ts"))
-      : Object.freeze([] as string[]);
+    const files = yield* walkFiles(dir, root, (name) => name === "eval-group.ts");
     const groupEntries = files.map((file) => {
-      const name = basename(file);
-      const id = name === "eval-group.ts"
-        ? relative(groupsDir, dirname(file)).split(sep).join("/")
-        : relative(groupsDir, file).replace(/\.eval-group\.ts$/, "").split(sep).join("/");
+      const id = relative(dir, dirname(file)).split(sep).join("/");
       return { file, id };
     });
     const groupIdIssues: DiscoveryIssue[] = [];
@@ -476,9 +470,9 @@ export function discoverEvals(
     for (const entry of groupEntries) groupsById.set(entry.id, [...(groupsById.get(entry.id) ?? []), entry]);
     for (const [id, owners] of groupsById) {
       if (id.length === 0) {
-        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.invalid-export", message: "Eval Group id must not be empty.", actions: ["Put eval-group.ts in a named subdirectory or use a named *.eval-group.ts entry."] });
+        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.invalid-export", message: "Eval Group id must not be empty.", actions: ["Put eval-group.ts in a named subdirectory under evals/."] });
       } else if (owners.length > 1) {
-        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.duplicate-id", message: `Duplicate eval group id ${JSON.stringify(id)}: multiple entries map to the same id.`, actions: ["Keep either the file entry or the folder entry for this id."] });
+        groupIdIssues.push({ file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "), code: "discovery.duplicate-id", message: `Duplicate eval group id ${JSON.stringify(id)}: multiple entries map to the same id.`, actions: ["Keep one eval-group.ts for this group path."] });
       }
     }
     if (groupIdIssues.length > 0) return yield* Effect.fail(discoveryError(groupIdIssues));

@@ -23,12 +23,12 @@ Eval Group 直接引用 `defineEval()` 或 `defineScoreEval()` 返回的 definit
 ```ts
 import { defineEvalGroup } from "niceeval";
 import { sandboxLayer } from "niceeval/sandbox";
-import entryStats from "../evals/toggl-cli/01-entry-stats/eval.ts";
-import entryBill from "../evals/toggl-cli/02-entry-bill/eval.ts";
+import entryStats from "./01-entry-stats/eval.ts";
+import entryBill from "./02-entry-bill/eval.ts";
 
 export default defineEvalGroup({
   evals: [entryStats, entryBill],
-  sandbox: sandboxLayer().prepare(installRustToolchain),
+  sandbox: sandboxLayer().setup(installRustToolchain),
 });
 ```
 
@@ -59,19 +59,22 @@ function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
 
 ## 发现与身份
 
-Eval Group 使用独立入口：
+Eval Group 与其成员共址：
 
 ```text
-eval-groups/toggl-cli.eval-group.ts
+evals/toggl-cli/eval-group.ts
   -> Eval Group ID "toggl-cli"
 
-eval-groups/memory/signalbox/eval-group.ts
+evals/memory/signalbox/eval-group.ts
   -> Eval Group ID "memory/signalbox"
 ```
 
-同一 ID 的文件入口与目录入口不能并存。
+只发现 `evals/**/eval-group.ts`，不支持 `*.eval-group.ts` 文件入口；根目录 `evals/eval-group.ts` 会因 Group ID 为空而在发现阶段报错。
 Eval Group ID 只来自文件路径，不接受手写 `id` 或 `name`。
 成员保留各自 Eval ID；Runner 按 definition 对象身份把成员映射回已发现的 Eval。
+
+Group 文件是成员次序、组级 Sandbox Layer 与该 Eval 家族辅助代码的内聚入口。
+它不按目录隐式收集成员；成员仍必须逐个 import 为真实 TypeScript definition，所以增加、删除或调整顺序都会形成可审查的 diff。
 
 `definitionHash` 包含 Eval Group ID、完整有序 Eval ID 数组和 Group Layer identity。
 当前 Group 的 ID 与摘要进入成员的正常 `Eval × Experiment` 指纹输入。
@@ -81,6 +84,16 @@ Eval Group ID 只来自文件路径，不接受手写 `id` 或 `name`。
 
 一次规划由 `Eval Group × Eval × Experiment` 三方组成，并共用一份 Sandbox owner stack。
 三方中恰好一方提供 template-bearing Layer，其余已声明 Layer 必须是 command-only。
+
+这三个 owner 表达的是正交贡献，不要求 Group 独占完整镜像：
+
+- Experiment 通常提供随 Agent 条件变化的 template，例如 Codex、Claude Code 或 Bub；
+- Eval Group 用 `setup()` 提供组内物理 Sandbox 只需执行一次的工具链，用 `prepare()` 提供每条 Attempt 都要恢复的组级 fixture；
+- Eval 用 `prepare()` 补充题目专属的 checkout、项目依赖与公开 starter。
+
+因此不另设 fixture API。共享事实直接写在 Group 的 Sandbox Layer；必须防止前题污染后题的事实保留在 Eval prepare。
+即使 template 来自 Experiment，物理 Sandbox 仍由 `(Experiment, Eval Group)` 队列持有和复用，Group 不是 template ownership 的别名。
+隐藏判据与其它私有材料仍在 Agent 回合结束后由 `test(t)` 传入，绝不属于 Agent 之前执行的 prepare。
 
 owner order 只有两种：
 
