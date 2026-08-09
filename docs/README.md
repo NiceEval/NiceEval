@@ -78,6 +78,7 @@ docs/
 │   ├── sandbox-fixture-content/         identity-aware Fixture 内容 prepare 命令
 │   ├── llm-judge-runtime/               原生 LLM Judge 配方、材料、Provider 与判分图
 │   ├── multi-agent/                     多 Agent Eval 场景
+│   ├── eval-selection/                  Experiment 与 CLI 的统一 Eval 过滤语义
 │   ├── eval-groups/                     Group × Eval × Experiment、组内复用与组间并行
 │   ├── record-attachment-authoring/      已退役 raw Record 作者方案与永久边界结论
 │   ├── sandbox-retention/                失败类 Sandbox 的有界停驻、明确销毁与安全 GC

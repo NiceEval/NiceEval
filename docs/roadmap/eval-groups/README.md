@@ -5,7 +5,7 @@ Eval Group 是一个性能原语：同组 Attempt 串行复用 Sandbox，不同 
 
 ## 核心心智
 
-`evals` 数组同时定义成员和唯一队列顺序。
+`members` 数组同时定义封闭成员和唯一队列顺序。
 Runner 先按既有 Experiment 规则为每个 Eval 展开 Attempt 槽位，再确定每个槽位是 run、carried、excluded 或 early-exit。
 只有 run 槽位进入 Group 队列，并按成员数组位置和 attempt number 的顺序真实派发。
 
@@ -27,7 +27,7 @@ import entryStats from "./01-entry-stats/eval.ts";
 import entryBill from "./02-entry-bill/eval.ts";
 
 export default defineEvalGroup({
-  evals: [entryStats, entryBill],
+  members: [entryStats, entryBill],
   sandbox: sandboxLayer().setup(installRustToolchain),
 });
 ```
@@ -38,7 +38,7 @@ export default defineEvalGroup({
 type EvalGroupMember = AnyEvalDefinition;
 
 interface EvalGroupInput<Sandbox extends SandboxLayer | undefined> {
-  readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
+  readonly members: readonly [EvalGroupMember, ...EvalGroupMember[]];
   readonly sandbox?: Sandbox;
 }
 
@@ -53,9 +53,10 @@ function defineEvalGroup<const Sandbox extends SandboxLayer | undefined>(
 ): EvalGroupDefinition;
 ```
 
-`evals` 非空，只接受真实 definition 对象。
+`members` 非空，只接受真实 definition 对象。
 它不接受 string、ID、prefix、glob、tag 或 selector，也不从目录、文件名、Layer identity 或命令推导成员。
 一条 Eval 最多属于一个 Eval Group，同一 Group 不能重复引用一条 Eval。
+Experiment 与 CLI 怎样过滤 Eval，单源在 [Eval 选择](../eval-selection/README.md)；过滤只删除 Group 槽位，不改变成员归属和原始 index。
 
 ## 发现与身份
 
@@ -76,7 +77,7 @@ Eval Group ID 只来自文件路径，不接受手写 `id` 或 `name`。
 Group 文件是成员次序、组级 Sandbox Layer 与该 Eval 家族辅助代码的内聚入口。
 它不按目录隐式收集成员；成员仍必须逐个 import 为真实 TypeScript definition，所以增加、删除或调整顺序都会形成可审查的 diff。
 
-`definitionHash` 包含 Eval Group ID、完整有序 Eval ID 数组和 Group Layer identity。
+`definitionHash` 包含 Eval Group ID、完整有序 members 对应的 Eval ID 数组和 Group Layer identity。
 当前 Group 的 ID 与摘要进入成员的正常 `Eval × Experiment` 指纹输入。
 它不包含 Attempt 前缀或物理执行历史。
 
