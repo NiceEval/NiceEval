@@ -147,7 +147,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 行为 | 文件 |
 |---|---|
 | 发现(evals/ 的 *.eval.ts / *.eval.tsx 与目录入口 eval.ts,experiments/ 的实验,路径推导 id;同 id 双入口报重名) | `src/runner/discover.ts` |
-| 已安装 package 的共享 Eval root(`Config.evalRoots`,P1–P4 预检/owner hook/lock 身份、mount 前缀与 definition provenance) | `src/runner/eval-roots.ts`(安装与运行时边界)、`src/runner/discover.ts`(多 root 发现)、`src/load-config.ts` / `src/loaders/index.ts`(配置与 canonical runtime 接线)、`src/runner/types.ts`(公开类型);契约见 `docs/feature/eval/sharing.md`,选型存档见 `docs/design/eval-suite-sharing/` |
+| 文件级 `defineRemoteEval`（已安装 package 的单题引用、P1–P4 预检/owner hook/lock 身份与 definition provenance） | `src/runner/eval-roots.ts`(安装与运行时边界)、`src/runner/discover.ts`(显式引用定位)、`src/loaders/index.ts`(canonical runtime 接线)、`src/runner/types.ts` / `src/define.ts`(公开类型与入口);契约见 `docs/feature/eval/sharing.md`,选型存档见 `docs/design/eval-suite-sharing/` |
 | Eval 源码捕获、folder-local 目录入口 base id、loader 隐藏输入登记与 build context 交叉检查 | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
 | 普通本地上传的 transfer manifest、不可变 snapshot 与动态泄漏比对 | `src/runner/execution-inputs.ts`(计划/执行证据与 snapshot)、`src/context/context.ts`(Sandbox 包装)、`src/runner/attempt.ts`、`src/runner/fingerprint.ts` / `src/runner/accept.ts`(carry 与显式 transfer 接受);契约见 `docs/feature/eval/use-case/criteria-files.md` 与 `docs/feature/eval/sharing.md` |
 | 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |

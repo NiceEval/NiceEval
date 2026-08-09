@@ -1,130 +1,94 @@
 ---
-title: "共享评估：从已安装 package 挂载评估用例"
+title: "共享评估：用 defineRemoteEval 引用外部题目"
 sidebarTitle: "共享评估"
-description: "把普通 NiceEval 项目作为 package 安装到另一个项目，再用 evalRoots 挂载其中的评估用例；预检安装身份、查看来源并运行共享用例。"
+description: "在消费项目的 Eval 文件中显式引用已安装 package 的一道 Eval，并继续使用原有 Experiment 选择方式。"
 ---
 
-一组评估用例需要被多个项目复用时，不用再复制文件，也不用维护 NiceEval 专用 manifest。发布方仍是普通 TypeScript package；消费方把它声明为直接依赖，再在 `niceeval.config.ts` 里选择要挂载的目录。
+共享 Eval 不会因为安装了一个 package 就自动出现在项目里。消费方为每一道要使用的外部题目写一个普通 Eval 文件，
+Experiment 仍按原来的 `evals` selector 选择它。
 
-挂载名会成为评估 ID 的前缀。下面把 `@acme/shared-evals` 的 `evals/` 挂到 `shared`，包里的 `login.eval.ts` 因而叫 `shared/login`。
+## 安装发布方 package
 
-## 准备发布方 package
-
-发布方按普通 NiceEval 项目组织评估用例、共享模块和 Fixture：
+发布方可以是普通 NiceEval 项目，不需要额外的共享 manifest：
 
 ```text
-shared-evals/
+terminal-bench/
 ├─ package.json
-├─ evals/
-│  └─ login.eval.ts
+├─ evals/terminal-bench/hello-world/eval.ts
 └─ fixtures/
-   └─ starter-app/
 ```
 
-把评估用例实际会读取的文件放进发布内容，并把运行期 bare import 声明为普通 `dependencies`。先检查 tarball 里确实有这些文件：
+消费方把它作为直接依赖安装，并提交对应的 lockfile：
 
 ```bash
-npm pack --dry-run
+pnpm add terminal-bench
 ```
 
-同时用普通 `files` 或 `.npmignore` 排除 `.niceeval/`、`.env*`、构建缓存和其它消费方不需要的项目数据。共享机制不会替 package owner 改写发布清单；`npm pack --dry-run` 的文件数和体积也应纳入检查。
+package 的运行期 dependencies、Eval 文件、Fixture 和 Sandbox 构建输入必须实际包含在发布内容中。可以用
+`npm pack --dry-run` 检查 tarball 内容。
 
-发布方不需要新增 suite、adapter 或 lock 文件。Registry、tarball、Git、file 与 workspace 仍由 package manager 选择和安装；NiceEval 只读取消费项目已经锁定的结果。
+## 写一个远程 Eval 文件
 
-## 在消费项目安装并挂载
+```typescript
+// evals/terminal-bench/hello-world.eval.ts
+import { defineRemoteEval } from "niceeval";
 
-先把共享 package 加成消费项目的直接依赖。CI 更适合不可变的 registry version、tarball 或 Git commit；开发时也可以使用 workspace：
-
-```bash
-pnpm add -D @acme/shared-evals
-```
-
-然后配置挂载名、package dependency key 和 package 内目录：
-
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-
-export default defineConfig({
-  evalRoots: {
-    shared: {
-      package: "@acme/shared-evals",
-      root: "evals",
-    },
-  },
+export default defineRemoteEval({
+  package: "terminal-bench",
+  root: "evals/terminal-bench",
+  eval: "hello-world",
 });
 ```
 
-`root` 省略时就是 `evals`。`package` 写消费项目 `package.json` 里的 dependency key，因此 npm alias 也写 alias 名，不写安装后 manifest 的 `name`。
+文件路径形成消费项目内的 Eval ID：这里是 `terminal-bench/hello-world`。`eval` 必须是上游 package 中已经存在的精确
+ID，不能写 glob、前缀，也不能一次导入整个目录。
 
-## 先预检，再导入评估用例
+`defineRemoteEval` 只创建惰性引用。NiceEval 会在运行前检查直接依赖、lockfile、真实安装路径和 package owner，再导入
+上游题目。单纯安装 `terminal-bench` 而没有这个文件，不会增加任何 Eval。
 
-预检只核对配置、直接依赖、lockfile、安装位置和 package 内容，不导入评估模块：
+## 像以前一样选择 Eval
 
-```bash
-pnpm exec niceeval list --preflight
+Experiment 不需要 `remoteEvals` 字段或第二套选择器：
+
+```typescript
+import { defineExperiment } from "niceeval";
+
+export default defineExperiment({
+  agent: myAgent,
+  evals: ["smoke", "terminal-bench/hello-world"],
+});
 ```
 
-成功后再看完整列表：
+原有的 `"*"`、ID 前缀和 descriptor 谓词仍然适用。远程题目进入同一个 Eval catalog，但必须先通过消费项目的
+`defineRemoteEval` 文件显式登记。
 
 ```bash
-pnpm exec niceeval list shared
+niceeval list
+niceeval exp --eval terminal-bench/hello-world
 ```
 
-有人读的输出会显示 mount、安装身份和每条评估用例的来源。自动化可以请求单个 JSON 文档：
+`list` 只展示本地 Eval 与已登记的远程引用；不会扫描所有 dependency 来猜测哪些目录可能是 Eval。
 
-```bash
-pnpm exec niceeval list --preflight --json
-pnpm exec niceeval list shared --json
-```
+## ownership 与可复现
 
-`list --json` 的纯 JSON 保证要求启动时没有 `NODE_OPTIONS`、`--require`、`--import` 或 loader preload；不满足时会返回 `eval-root.preloaded-owner-unsupported`，而不是输出一半 JSON。
+- 上游 package 拥有题目、断言、Fixture、Sandbox 和题目模块。
+- 消费项目拥有引用文件路径形成的项目内 ID，以及 Experiment 的 agent、model、attempts、flags、预算和选择范围。
+- package manager 与 lockfile 拥有版本、Git commit、tarball integrity 和传递依赖选择。
+- NiceEval 持久化安装 identity、源码、模块依赖和 definition/execution provenance。
 
-## 像项目内评估一样运行
+消费方不能对远程题目做 `patch`、`override` 或任意 alias。需要修改题目时复制为本地 Eval，或等待上游发布新版本。
+package identity 变化时，当前契约会让引用它的题目整体失去跨 Run carry eligibility；逐题跨版本 transfer 以后再设计。
 
-共享评估进入同一套选择、计划和运行流程。位置参数使用挂载后的 ID：
+Yarn Plug'n'Play 因无法提供可核验的 node-modules owner tree，当前不支持；lock 或安装身份无法证明时，NiceEval 会返回
+结构化 `eval-root.*` 诊断，而不是静默运行。
 
-```bash
-pnpm exec niceeval exp baseline shared/login --dry
-pnpm exec niceeval exp baseline shared/login
-```
+## 发布检查
 
-外部 package 里的 `import { defineEval } from "niceeval"` 会绑定到消费方这份 NiceEval runtime；package 自己嵌套安装的另一份 NiceEval 不会取得运行时所有权。ESM 与 CommonJS package 都走这条规则。
+发布方应确认：
 
-结果会同时保存两类来源：当前定义来自哪个已安装 package，以及这次执行实际使用了哪一版定义。后来升级 package 并携带旧结果时，历史执行来源不会被改写成新版本。
+- `package.json` 的运行期依赖写在 `dependencies`；
+- tarball 包含上游 Eval、Fixture 和 Sandbox 构建输入；
+- package 的 NiceEval 版本与消费方兼容；
+- 题目所需的所有外部资源都在 owner 边界内。
 
-## Fixture 变化与接受旧结果
-
-静态可证明的 `uploadFile()`、`uploadDirectory()` 输入会进入执行指纹。Fixture 或可达 dependency 改变时，只作废实际受影响的评估用例。
-
-如果要把一条历史结果接受到新的静态 transfer plan，普通 `accept` 会先拒绝并打印当前 plan digest。只有显式确认那一个 digest 才会继续：
-
-```bash
-pnpm exec niceeval accept @LOCATOR \
-  --accept-transfer sha256:CURRENT_PLAN_DIGEST
-```
-
-动态拼出来的 transfer 路径仍可 fresh run，但证据不完整，不能靠 `--accept-transfer` 把它升级成可携带结果。
-
-## 支持边界
-
-- 使用 Node 22.15 或更高版本。没有 `evalRoots` 的本地项目不受这条门槛影响。
-- 共享 package 必须是消费项目的直接依赖，并由 npm、pnpm 或采用 node-modules linker 的 Yarn 安装；Yarn Plug'n'Play 当前不支持。
-- lockfile 与实际安装树必须能唯一证明所选 package。证明不了时会报 `eval-root.installation-unverifiable`，不会按 name/version 猜一份。
-- 评估根目录、相对 import 与 transfer source 必须留在 package owner 内；逃逸会在导入或发送前被拒绝。
-- 共享评估选择 Docker、E2B 或 Vercel 等 provider 时，消费项目仍要按该 provider 的普通安装步骤提供 NiceEval optional peer；上游的传递依赖不会替代消费方 canonical runtime 的 provider 依赖。
-- 外部评估代码是可执行依赖。完整 `list` 会运行模块顶层代码；只有 `list --preflight` 不导入评估模块。
-
-## 常见失败怎么处理
-
-| 错误码 | 先检查什么 | 下一步 |
-| --- | --- | --- |
-| `eval-root.package-undeclared` | package 是否在消费项目的直接依赖里 | 用当前 package manager 添加依赖并重新安装 |
-| `eval-root.package-uninstalled` | `node_modules` 与 lockfile 是否同步 | 执行 frozen install |
-| `eval-root.installation-unverifiable` | lockfile 能否唯一对应实际安装位置 | 修复 lockfile，或换成有完整 integrity / commit 的交付形态 |
-| `eval-root.missing` | package 内是否真的包含配置的 `root` | 修正 `root` 或发布内容 |
-| `eval-root.outside-package` | root、相对 import 或 symlink 是否逃出 package | 把模块和 Fixture 留在 package 内 |
-| `eval-root.niceeval-api-incompatible` | 共享评估是否导入了消费方没有的 NiceEval API | 升级消费方 NiceEval，或选择兼容的共享 package |
-| `eval-root.node-unsupported` | 当前 `node --version` | 升级到 Node 22.15+，或移除 `evalRoots` |
-
-配置字段的完整类型见 [`defineConfig` 参考](/zh/reference/define-config)，筛选和机器输出见 [CLI 参考](/zh/reference/cli)。
+NiceEval 不新增 `eval.lock`，也不建立第二套 package registry；消费项目的 package lock 是依赖身份的唯一真相。

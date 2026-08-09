@@ -1,7 +1,7 @@
 // Discovery is the only boundary where executable modules enter the typed runner.
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,6 +25,7 @@ import {
   originForEval,
   preflightEvalRootSources,
   preflightEvalRoots,
+  supportsExternalEvalRoots,
   type EvalRootIssueCode,
   type ResolvedEvalRoot,
 } from "./eval-roots.ts";
@@ -32,6 +33,7 @@ import {
   discoverEval,
   discoverExperiment,
   isEvalDefinition,
+  isRemoteEvalReference,
   isExperimentDefinition,
 } from "../types.ts";
 import type {
@@ -40,6 +42,8 @@ import type {
   DiscoveredEval,
   DiscoveredExperiment,
   ExperimentDefinition,
+  PackageEvalRoot,
+  RemoteEvalReference,
 } from "../types.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
@@ -103,6 +107,7 @@ const externalLoaderCaptures = new Map<string, ExternalLoaderCapture[]>();
 
 type EvalModuleExport =
   | AnyEvalDefinition
+  | RemoteEvalReference
   | readonly AnyEvalDefinition[]
   | Readonly<globalThis.Record<string, AnyEvalDefinition>>;
 
@@ -121,6 +126,7 @@ const EvalDefinitionSchema = Schema.declare(isEvalDefinition, {
 const EvalModuleSchema: Schema.Schema<EvalModule> = Schema.Struct({
   default: Schema.Union(
     EvalDefinitionSchema,
+    Schema.declare(isRemoteEvalReference, { identifier: "RemoteEvalReference" }),
     Schema.Array(EvalDefinitionSchema),
     Schema.Record({ key: Schema.String, value: EvalDefinitionSchema }),
   ),
@@ -199,7 +205,7 @@ function decodeEvalModule(value: unknown, file: string): Effect.Effect<EvalModul
       file,
       "discovery.invalid-export",
       String(error),
-      ["Default-export defineEval()/defineScoreEval() output, an array of those outputs, or a keyed record of those outputs."],
+      ["Default-export defineEval()/defineScoreEval() output, defineRemoteEval() reference, an array of local outputs, or a keyed record of local outputs."],
     )),
   );
 }
@@ -308,16 +314,23 @@ function validDatasetKey(key: string): boolean {
 function isEvalDefinitionArray(
   exported: EvalModuleExport,
 ): exported is readonly AnyEvalDefinition[] {
-  return Array.isArray(exported);
+  return Array.isArray(exported) && exported.every((value) => isEvalDefinition(value));
 }
+
+type ExpandedEvalExport =
+  | { readonly id: string; readonly definition: AnyEvalDefinition }
+  | { readonly id: string; readonly remote: RemoteEvalReference };
 
 function expandEvalExport(
   exported: EvalModuleExport,
   entry: EvalEntry,
   root: string,
-): Effect.Effect<readonly { readonly id: string; readonly definition: AnyEvalDefinition }[], DiscoveryError> {
+): Effect.Effect<readonly ExpandedEvalExport[], DiscoveryError> {
   if (isEvalDefinition(exported)) {
     return Effect.succeed(Object.freeze([{ id: entry.baseId, definition: exported }]));
+  }
+  if (isRemoteEvalReference(exported)) {
+    return Effect.succeed(Object.freeze([{ id: entry.baseId, remote: exported }]));
   }
   if (isEvalDefinitionArray(exported)) {
     return Effect.succeed(Object.freeze(exported.map((definition, index) => ({
@@ -499,6 +512,12 @@ function discoverEvalEntry(
     });
     const module = yield* decodeEvalModule(captured.value, fileLabel);
     const expanded = yield* expandEvalExport(module.default, entry, root);
+    const definitions = expanded.filter((value): value is { readonly id: string; readonly definition: AnyEvalDefinition } =>
+      "definition" in value);
+    // A remote declaration is a catalog reference, not an executable local
+    // definition. discoverProjectEvals resolves those references after package
+    // preflight; ordinary local discovery keeps them out of the result.
+    if (definitions.length === 0) return Object.freeze([]);
     const source = yield* Effect.tryPromise({
       try: () => captureEvalSource(entry.file, { root }),
       catch: (cause) => issue(
@@ -527,7 +546,7 @@ function discoverEvalEntry(
     const loaderDataPaths = Object.freeze([...loaderCapture.paths]);
     const criteriaPaths = Object.freeze([...loaderCapture.criteriaPaths]);
     const privatePaths = Object.freeze([...loaderCapture.privatePaths]);
-    const [leakErrors] = yield* Effect.partition(expanded, ({ id, definition }) => runLeakGate(definition, {
+    const [leakErrors] = yield* Effect.partition(definitions, ({ id, definition }) => runLeakGate(definition, {
       evalId: id,
       file: fileLabel,
       baseDir,
@@ -538,7 +557,7 @@ function discoverEvalEntry(
     if (leakErrors.length > 0) {
       return yield* Effect.fail(discoveryError(leakErrors.flatMap((error) => error.issues)));
     }
-    return Object.freeze(expanded.map(({ id, definition }) => {
+    return Object.freeze(definitions.map(({ id, definition }) => {
       const origin = scope.external === undefined ? undefined : originForEval(scope.external, id);
       return discoverEval(definition, {
       id: scope.external === undefined ? id : `${scope.external.mount}/${id}`,
@@ -585,6 +604,40 @@ export function discoverEvals(root: string): Promise<readonly DiscoveredEval[]> 
   return runDiscoveryPromise(discoverEvalsEffect(root));
 }
 
+interface RemoteEvalDeclaration {
+  readonly id: string;
+  readonly file: string;
+  readonly reference: RemoteEvalReference;
+}
+
+/** Read consumer-owned remote declaration files without importing any package owner. */
+async function discoverRemoteEvalDeclarations(root: string): Promise<readonly RemoteEvalDeclaration[]> {
+  const entries = await runDiscoveryPromise(collectEvalEntries(join(root, "evals"), root));
+  const candidates: EvalEntry[] = [];
+  for (const entry of entries) {
+    const source = await readFile(entry.file, "utf8");
+    if (/\bdefineRemoteEval\s*\(/.test(source)) candidates.push(entry);
+  }
+  if (candidates.length > 0 && !supportsExternalEvalRoots()) {
+    throw new EvalRootPreflightError([{
+      code: "eval-root.node-unsupported",
+      message: `defineRemoteEval requires Node >=22.15; current Node is ${process.versions.node}.`,
+      actions: ["Use Node >=22.15, or remove the defineRemoteEval declaration."],
+    }]);
+  }
+  const declarations: RemoteEvalDeclaration[] = [];
+  for (const entry of candidates) {
+    const fileLabel = relative(root, entry.file).split(sep).join("/");
+    const imported = await runDiscoveryPromise(importModule(entry.file, root, "eval"));
+    const module = await runDiscoveryPromise(decodeEvalModule(imported, fileLabel));
+    const expanded = await runDiscoveryPromise(expandEvalExport(module.default, entry, root));
+    for (const value of expanded) {
+      if ("remote" in value) declarations.push(Object.freeze({ id: value.id, file: entry.file, reference: value.remote }));
+    }
+  }
+  return Object.freeze(declarations);
+}
+
 /**
  * Shared Eval-definition consumer boundary.  Every command that needs Eval
  * definitions must call this instead of scanning project `evals/` directly:
@@ -595,7 +648,39 @@ export async function discoverProjectEvals(
   root: string,
   config: Pick<Config, "evalRoots">,
 ): Promise<readonly DiscoveredEval[]> {
-  const externalRoots = await preflightEvalRoots(root, config);
+  const declarations = await discoverRemoteEvalDeclarations(root);
+  const configuredRoots = config.evalRoots ?? {};
+  const remoteMounts: Record<string, PackageEvalRoot> = {};
+  const declarationsByMount = new Map<string, RemoteEvalDeclaration[]>();
+  const mountBySource = new Map<string, string>();
+  const declarationBySource = new Map<string, RemoteEvalDeclaration>();
+  for (const declaration of declarations) {
+    const sourceKey = `${declaration.reference.package}\u0000${declaration.reference.root ?? "evals"}\u0000${declaration.reference.eval}`;
+    const previous = declarationBySource.get(sourceKey);
+    if (previous !== undefined) {
+      throw discoveryError([{
+        file: relative(root, declaration.file).split(sep).join("/"),
+        code: "discovery.duplicate-id",
+        message: `Remote Eval ${JSON.stringify(declaration.reference.eval)} is referenced by both ${relative(root, previous.file)} and ${relative(root, declaration.file)}.`,
+        actions: ["Keep one defineRemoteEval file for each upstream Eval, or choose a different upstream Eval."],
+      }]);
+    }
+    declarationBySource.set(sourceKey, declaration);
+    const key = `${declaration.reference.package}\u0000${declaration.reference.root ?? "evals"}`;
+    let mount = mountBySource.get(key);
+    if (mount === undefined) {
+      mount = `__remote/${String(mountBySource.size).padStart(4, "0")}`;
+      mountBySource.set(key, mount);
+      remoteMounts[mount] = Object.freeze({
+        package: declaration.reference.package,
+        ...(declaration.reference.root === undefined ? {} : { root: declaration.reference.root }),
+      });
+    }
+    declarationsByMount.set(mount, [...(declarationsByMount.get(mount) ?? []), declaration]);
+  }
+  const externalRoots = await preflightEvalRoots(root, {
+    evalRoots: Object.freeze({ ...configuredRoots, ...remoteMounts }),
+  });
   if (externalRoots.length === 0) return discoverEvals(root);
   externalLoaderCaptures.clear();
   await preflightEvalRootSources(externalRoots);
@@ -606,11 +691,38 @@ export async function discoverProjectEvals(
   // package's observed edges or registered loader files.
   const groups: (readonly DiscoveredEval[])[] = [];
   for (const external of externalRoots) {
-    groups.push(await runDiscoveryPromise(discoverEvalScopeEffect({
+    const group = await runDiscoveryPromise(discoverEvalScopeEffect({
       ownerRoot: external.packageRoot,
       evalRoot: external.evalRoot,
       external,
-    })));
+    }));
+    const remoteDeclarations = declarationsByMount.get(external.mount);
+    if (remoteDeclarations === undefined) {
+      groups.push(group);
+      continue;
+    }
+    const selected: DiscoveredEval[] = [];
+    for (const declaration of remoteDeclarations) {
+      const match = group.find((candidate) => candidate.origin?.relativeEvalId === declaration.reference.eval);
+      if (match === undefined) {
+        throw discoveryError([{
+          file: relative(root, declaration.file).split(sep).join("/"),
+          code: "eval-root.missing",
+          mount: external.mount,
+          dependency: declaration.reference.package,
+          evalFile: declaration.file,
+          message: `Remote Eval ${JSON.stringify(declaration.reference.eval)} was not found under the installed package root.`,
+          actions: ["Use the exact upstream Eval id exported by the package."],
+        }]);
+      }
+      const origin = match.origin!;
+      selected.push(discoverEval(match, {
+        ...match,
+        id: declaration.id,
+        origin: Object.freeze({ ...origin, mount: declaration.id, relativeEvalId: declaration.reference.eval }),
+      }));
+    }
+    groups.push(Object.freeze(selected));
   }
   const all = [...local, ...groups.flat()].sort((a, b) => a.id.localeCompare(b.id));
   const byId = new Map<string, DiscoveredEval[]>();

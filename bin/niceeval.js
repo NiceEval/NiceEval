@@ -87,7 +87,7 @@ async function runMachineList(args) {
   if (await isYarnPnpProject()) {
     writeMachineError(
       "eval-root.yarn-pnp-unsupported",
-      "Yarn Plug'n'Play does not expose the node-modules installation tree required by evalRoots. Use Yarn's node-modules linker.",
+      "Yarn Plug'n'Play does not expose the node-modules installation tree required by defineRemoteEval. Use Yarn's node-modules linker.",
     );
     process.exitCode = 1;
     return;

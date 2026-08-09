@@ -737,6 +737,36 @@ export type ScoreEvalInput = EvalAuthorFields & {
   test(t: ScoreTestContext): Promise<void> | void;
 };
 
+/** A consumer-owned file-level declaration for one Eval exported by an installed package. */
+export interface RemoteEvalInput {
+  /** Direct dependency key in the consumer package.json. */
+  readonly package: string;
+  /** Package-relative directory containing the upstream Eval (defaults to `evals`). */
+  readonly root?: string;
+  /** Exact upstream Eval id; globs and prefixes are not accepted. */
+  readonly eval: string;
+}
+
+const REMOTE_EVAL_REFERENCE: unique symbol = Symbol("niceeval.remoteEvalReference");
+
+/** Lazy reference returned by defineRemoteEval; discovery resolves it after package preflight. */
+export interface RemoteEvalReference {
+  readonly package: string;
+  readonly root?: string;
+  readonly eval: string;
+  readonly [REMOTE_EVAL_REFERENCE]: true;
+}
+
+export function brandRemoteEvalReference(value: RemoteEvalInput): RemoteEvalReference {
+  Object.defineProperty(value, REMOTE_EVAL_REFERENCE, { value: true });
+  return Object.freeze(value) as RemoteEvalReference;
+}
+
+export function isRemoteEvalReference(value: unknown): value is RemoteEvalReference {
+  return typeof value === "object" && value !== null &&
+    (value as { readonly [REMOTE_EVAL_REFERENCE]?: unknown })[REMOTE_EVAL_REFERENCE] === true;
+}
+
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
 export interface EvalDefinitionFields {
   readonly description?: string;
@@ -1043,11 +1073,11 @@ export interface EvalDescriptor {
    */
   readonly evaluationKind: EvaluationKind;
   readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
-  /** 从已安装 package 挂载的评估来源；项目内评估省略。 */
+  /** 从已安装 package 文件级引用的评估来源；项目内评估省略。 */
   readonly origin?: ExternalEvalOrigin;
 }
 
-/** 作为额外评估发现根挂载的直接 package dependency。 */
+/** @deprecated Legacy config root retained only for migration from the former auto-mount API. */
 export interface PackageEvalRoot {
   /** 消费项目 package.json 里的直接 dependency key；允许 npm alias。 */
   readonly package: string;
@@ -1076,7 +1106,7 @@ export type InstalledPackageIdentity =
       readonly lockDigest: string;
     };
 
-/** Public provenance of one Eval mounted from an installed package. */
+/** Public provenance of one Eval referenced from an installed package. */
 export interface ExternalEvalOrigin {
   readonly kind: "package";
   readonly mount: string;
@@ -1195,7 +1225,7 @@ export interface Config {
    * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
    */
   pricing?: globalThis.Record<string, PriceOverride>;
-  /** 从已安装的直接 package dependency 挂载额外评估根目录。 */
+  /** @deprecated Use a file-level defineRemoteEval declaration instead. Kept for migration only. */
   evalRoots?: Readonly<globalThis.Record<string, PackageEvalRoot>>;
 }
 
