@@ -84,6 +84,14 @@ function hasPreload() {
 }
 
 async function runMachineList(args) {
+  if (await isYarnPnpProject()) {
+    writeMachineError(
+      "eval-root.yarn-pnp-unsupported",
+      "Yarn Plug'n'Play does not expose the node-modules installation tree required by evalRoots. Use Yarn's node-modules linker.",
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (hasPreload()) {
     writeMachineError(
       "eval-root.preloaded-owner-unsupported",
@@ -147,6 +155,18 @@ async function runMachineList(args) {
     return;
   }
   process.stdout.write(`${JSON.stringify(document)}\n`);
+}
+
+async function isYarnPnpProject() {
+  const { existsSync } = await import("node:fs");
+  const { dirname, join, resolve } = await import("node:path");
+  let current = resolve(process.cwd());
+  for (;;) {
+    if (existsSync(join(current, ".pnp.cjs")) || existsSync(join(current, ".pnp.js"))) return true;
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
 }
 
 /** Drain all pipes continuously; a grandchild holding fd 3 cannot block forever. */

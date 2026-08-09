@@ -139,7 +139,7 @@ async function fingerprintPreparedPair(
     ),
   );
   const dependencies = Object.freeze(Object.fromEntries((evalDef.moduleFacts?.dependencies ?? []).map((dependency) => {
-    const stable = JSON.stringify(dependency);
+    const stable = JSON.stringify(dependencyFingerprintIdentity(dependency));
     return [dependency.specifier ?? stable, hashText(stable)] as const;
   })));
   const runtime = await runtimeContractFacts(
@@ -194,6 +194,19 @@ async function fingerprintPreparedPair(
     transfer,
   });
   return { fingerprint: hash(payload), manifest };
+}
+
+/**
+ * The lockfile digest proves where discovery obtained an installed identity, but
+ * the whole lockfile is not an Eval input.  Keeping it in this hash would make an
+ * unrelated dependency edit invalidate every external Eval that imports any bare
+ * package, defeating the per-Eval dependency projection.
+ */
+function dependencyFingerprintIdentity(
+  dependency: Readonly<globalThis.Record<string, JsonValue>>,
+): Readonly<globalThis.Record<string, JsonValue>> {
+  const { lockDigest: _lockProof, ...identity } = dependency;
+  return identity;
 }
 
 async function cachedRead(path: string, cache?: Map<string, Promise<string>>): Promise<string> {

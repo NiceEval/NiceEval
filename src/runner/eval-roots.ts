@@ -11,7 +11,8 @@ import { existsSync, realpathSync } from "node:fs";
 import { lstat, readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import * as nodePath from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "@typescript/typescript6";
 import { parse as parseYaml } from "yaml";
@@ -1346,6 +1347,43 @@ function repositoryUrl(value: unknown): string | undefined {
   }
 }
 
+async function isDeclaredWorkspacePackage(consumerRoot: string, packageRoot: string): Promise<boolean> {
+  const manifest = await readJsonRecord(join(consumerRoot, "package.json"));
+  const configured = Array.isArray(manifest.workspaces)
+    ? manifest.workspaces
+    : isPlainRecord(manifest.workspaces) && Array.isArray(manifest.workspaces.packages)
+      ? manifest.workspaces.packages
+      : [];
+  const patterns = configured.filter((value): value is string => typeof value === "string");
+  const pnpmWorkspace = join(consumerRoot, "pnpm-workspace.yaml");
+  if (existsSync(pnpmWorkspace)) {
+    try {
+      const parsed: unknown = parseYaml(await readFile(pnpmWorkspace, "utf8"));
+      if (isPlainRecord(parsed) && Array.isArray(parsed.packages)) {
+        patterns.push(...parsed.packages.filter((value): value is string => typeof value === "string"));
+      }
+    } catch {
+      // An unreadable workspace file cannot prove workspace membership.  The
+      // ordinary lock adapter below still decides whether this install is valid.
+    }
+  }
+  if (patterns.length === 0) return false;
+  const actual = await realpath(packageRoot);
+  const relativeRoot = relativePortable(consumerRoot, actual);
+  let included = false;
+  for (const raw of patterns) {
+    const excluded = raw.startsWith("!");
+    const pattern = (excluded ? raw.slice(1) : raw).replace(/^\.\//, "");
+    const matches = isAbsolute(pattern)
+      ? await realpath(pattern).then((path) => path === actual).catch(() => false)
+      : nodePath.matchesGlob(relativeRoot, pattern);
+    if (!matches) continue;
+    if (excluded) return false;
+    included = true;
+  }
+  return included;
+}
+
 async function installedIdentity(input: {
   readonly lock: ConsumerLock;
   readonly consumerRoot: string;
@@ -1367,11 +1405,23 @@ async function installedIdentity(input: {
     });
   }
   const lockfile = lock.kind;
-  if (declaration.startsWith("workspace:")) {
+  const declaredWorkspace = await isDeclaredWorkspacePackage(consumerRoot, packageRoot);
+  if (declaration.startsWith("workspace:") && !declaredWorkspace) {
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: "The installed package is not one of the consumer's declared workspace members.",
+      actions: ["Repair the workspace declaration and reinstall the dependency."],
+    });
+  }
+  if (declaredWorkspace) {
     return Object.freeze({ kind: "workspace", contentDigest: await canonicalTreeDigest(packageRoot), lockfile, lockDigest: lock.digest });
   }
-  if (declaration.startsWith("file:") || declaration.startsWith("link:")) {
-    return Object.freeze({ kind: "file", contentDigest: await canonicalTreeDigest(packageRoot), lockfile, lockDigest: lock.digest });
+  if ((declaration.startsWith("file:") || declaration.startsWith("link:")) && !isTarballDeclaration(declaration)) {
+    const contentDigest = await canonicalTreeDigest(packageRoot);
+    await assertLocalPackageSelection({ lock, consumerRoot, dependency, declaration, packageRoot, mount, contentDigest });
+    return Object.freeze({ kind: "file", contentDigest, lockfile, lockDigest: lock.digest });
   }
   const contentDigest = await canonicalTreeDigest(packageRoot);
   let instance: globalThis.Record<string, string>;
@@ -1384,12 +1434,14 @@ async function installedIdentity(input: {
       contentDigest,
     });
   } catch (cause) {
-    if (cause instanceof EvalRootPreflightError) throw cause;
+    const detail = cause instanceof EvalRootPreflightError
+      ? cause.issues.map((entry) => entry.message).join(" ")
+      : cause instanceof Error ? cause.message : String(cause);
     throw issueError({
       code: "eval-root.installation-unverifiable",
       mount,
       dependency,
-      message: `The lock selection has no portable identity for this package: ${cause instanceof Error ? cause.message : String(cause)}`,
+      message: `The lock selection has no portable identity for this package: ${detail}`,
       actions: ["Use a supported frozen registry/tarball install with immutable identity metadata."],
     });
   }
@@ -1436,6 +1488,225 @@ async function installedIdentity(input: {
   });
 }
 
+async function assertLocalPackageSelection(input: {
+  readonly lock: ConsumerLock;
+  readonly consumerRoot: string;
+  readonly dependency: string;
+  readonly declaration: string;
+  readonly packageRoot: string;
+  readonly mount: string;
+  readonly contentDigest: string;
+}): Promise<void> {
+  const { lock, consumerRoot, dependency, declaration, packageRoot, mount, contentDigest } = input;
+  const rawTarget = declaration.slice(declaration.indexOf(":") + 1);
+  const declaredTarget = rawTarget.startsWith("//")
+    ? fileURLToPath(new URL(`file:${rawTarget}`))
+    : resolve(consumerRoot, rawTarget);
+  try {
+    await assertDirectLocalLockSelection(lock, consumerRoot, dependency, declaration, declaredTarget);
+  } catch (cause) {
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: `The local dependency declaration does not match the ${lock.kind} lock selection: ${cause instanceof Error ? cause.message : String(cause)}`,
+      actions: ["Regenerate the lockfile with the declared local dependency and reinstall it."],
+    });
+  }
+  try {
+    if (await realpath(declaredTarget) === await realpath(packageRoot)) return;
+  } catch {
+    // Some managers materialise file dependencies into their installation tree.
+    // Their lock adapter must map that physical copy back to the declaration.
+  }
+  try {
+    const identity = await identifyDependencyInstance({
+      consumerRoot,
+      packageRoot,
+      parentModule: join(consumerRoot, "package.json"),
+      specifier: dependency,
+      contentDigest,
+      expectedLocalTarget: declaredTarget,
+    });
+    if (identity.identityKind === "file") return;
+  } catch (cause) {
+    const detail = cause instanceof EvalRootPreflightError
+      ? cause.issues.map((entry) => entry.message).join(" ")
+      : cause instanceof Error ? cause.message : String(cause);
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: `The installed local package cannot be mapped to its declaration: ${detail}`,
+      actions: ["Repair the local dependency declaration, lockfile, and installed tree."],
+    });
+  }
+  throw issueError({
+    code: "eval-root.installation-unverifiable",
+    mount,
+    dependency,
+    message: `The ${lock.kind} lock maps the local dependency to a non-file package identity.`,
+    actions: ["Regenerate the lockfile and reinstall the local dependency."],
+  });
+}
+
+async function assertDirectLocalLockSelection(
+  lock: ConsumerLock,
+  consumerRoot: string,
+  dependency: string,
+  declaration: string,
+  declaredTarget: string,
+): Promise<void> {
+  if (lock.kind === "npm") {
+    const parsed: unknown = JSON.parse(lock.text);
+    if (!isPlainRecord(parsed) || !isPlainRecord(parsed.packages)) throw new Error("package-lock has no packages map");
+    const packages = parsed.packages;
+    const root = packages[""];
+    if (!isPlainRecord(root)) throw new Error("package-lock has no consumer root entry");
+    const selector = directDependencySelector(root, dependency);
+    if (selector === undefined || !(await localSelectorsMatch(selector, declaration, consumerRoot))) {
+      throw new Error("the consumer root entry does not preserve the declared local selector");
+    }
+    const logicalPath = ["node_modules", ...dependency.split("/")].join("/");
+    const installed = packages[logicalPath];
+    if (!isPlainRecord(installed)) throw new Error("package-lock has no direct installed package entry");
+    await assertLockEntryLocalTarget(installed, lock, declaredTarget, consumerRoot, {
+      parentModule: join(consumerRoot, "package.json"),
+      specifier: dependency,
+    });
+    return;
+  }
+
+  if (lock.kind === "yarn" && !/^__metadata:\s*$/m.test(lock.text)) {
+    const matchingDescriptors = lock.text
+      .split(/\n(?=\S)/g)
+      .flatMap((block) => yarnClassicDescriptors(block.split("\n", 1)[0] ?? ""))
+      .filter((descriptor) => yarnClassicDescriptorMatches(descriptor, dependency, declaration, consumerRoot));
+    if (matchingDescriptors.length !== 1) {
+      throw new Error(`Yarn Classic lock maps the declared local selector to ${matchingDescriptors.length} entries`);
+    }
+    return;
+  }
+
+  const parsed: unknown = parseYaml(lock.text);
+  if (!isPlainRecord(parsed)) throw new Error(`${lock.kind} lock is not an object`);
+  if (lock.kind === "pnpm") {
+    const importers = parsed.importers;
+    const root = isPlainRecord(importers) ? importers["."] : undefined;
+    if (!isPlainRecord(root)) throw new Error("pnpm lock has no consumer importer");
+    const direct = directDependencyEntry(root, dependency);
+    const selector = typeof direct === "string"
+      ? direct
+      : isPlainRecord(direct) && typeof direct.specifier === "string" ? direct.specifier : undefined;
+    if (selector === undefined || !(await localSelectorsMatch(selector, declaration, consumerRoot))) {
+      throw new Error("the consumer importer does not preserve the declared local selector");
+    }
+    const selected = isPlainRecord(direct) && typeof direct.version === "string" ? direct.version : selector;
+    if (!(await localReferenceMatchesTarget(selected, declaredTarget, consumerRoot))) {
+      throw new Error("the consumer importer selects a different local target");
+    }
+    return;
+  }
+
+  if (isPlainRecord(parsed.__metadata)) {
+    const roots = Object.entries(parsed)
+      .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) &&
+        typeof entry.resolution === "string" && entry.resolution.endsWith("@workspace:.") &&
+        directDependencySelector(entry, dependency) !== undefined)
+      .map(([, entry]) => entry as Record<string, unknown>);
+    if (roots.length !== 1) throw new Error(`Yarn lock maps the consumer root to ${roots.length} entries`);
+    const selector = directDependencySelector(roots[0]!, dependency);
+    if (selector === undefined || !(await localSelectorsMatch(selector, declaration, consumerRoot))) {
+      throw new Error("the consumer workspace entry does not preserve the declared local selector");
+    }
+    return;
+  }
+
+  throw new Error("Yarn lock has no Berry metadata or Classic descriptor mapping");
+}
+
+function directDependencyEntry(container: Record<string, unknown>, dependency: string): unknown {
+  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
+    const values = container[field];
+    if (isPlainRecord(values) && dependency in values) return values[dependency];
+  }
+  return undefined;
+}
+
+function directDependencySelector(container: Record<string, unknown>, dependency: string): string | undefined {
+  const entry = directDependencyEntry(container, dependency);
+  return typeof entry === "string" ? entry : undefined;
+}
+
+async function localSelectorsMatch(left: string, right: string, base: string): Promise<boolean> {
+  if (left === right) return true;
+  const [leftTarget, rightTarget] = await Promise.all([
+    localReferenceTarget(left, base),
+    localReferenceTarget(right, base),
+  ]);
+  if (leftTarget === undefined || rightTarget === undefined) return false;
+  return sameLocalTarget(leftTarget, rightTarget);
+}
+
+async function localReferenceMatchesTarget(reference: string, expected: string, base: string, allowRelative = false): Promise<boolean> {
+  const target = await localReferenceTarget(reference, base, allowRelative);
+  return target !== undefined && sameLocalTarget(target, expected);
+}
+
+async function sameLocalTarget(left: string, right: string): Promise<boolean> {
+  const [canonicalLeft, canonicalRight] = await Promise.all([
+    realpath(left).catch(() => resolve(left)),
+    realpath(right).catch(() => resolve(right)),
+  ]);
+  return canonicalLeft === canonicalRight;
+}
+
+async function localReferenceTarget(reference: string, base: string, allowRelative = false): Promise<string | undefined> {
+  const marker = reference.search(/(?:^|@)(?:file|link|portal):/);
+  let raw: string;
+  if (marker >= 0) {
+    const protocolStart = reference.indexOf(":", marker) + 1;
+    raw = reference.slice(protocolStart).split("#", 1)[0]!.split("::", 1)[0]!;
+  } else if (allowRelative) {
+    raw = reference;
+  } else {
+    return undefined;
+  }
+  if (raw.startsWith("//")) {
+    try {
+      return fileURLToPath(new URL(`file:${raw}`));
+    } catch {
+      return undefined;
+    }
+  }
+  return resolve(base, raw);
+}
+
+async function assertLockEntryLocalTarget(
+  entry: Record<string, unknown>,
+  lock: ConsumerLock,
+  expected: string,
+  consumerRoot: string,
+  input: { readonly parentModule: string; readonly specifier: string },
+): Promise<void> {
+  const resolution = isPlainRecord(entry.resolution) ? entry.resolution : undefined;
+  const reference = typeof resolution?.directory === "string"
+    ? resolution.directory
+    : typeof resolution?.path === "string" ? resolution.path
+    : typeof entry.resolved === "string" ? entry.resolved
+    : typeof entry.resolution === "string" ? entry.resolution
+    : undefined;
+  const allowRelative = typeof resolution?.directory === "string" || typeof resolution?.path === "string" || entry.link === true;
+  if (reference === undefined || !(await localReferenceMatchesTarget(
+    reference,
+    expected,
+    consumerRoot,
+    allowRelative,
+  ))) {
+    throw dependencyIdentityError(input, `The ${lock.kind} lock entry selects a different local target.`);
+  }
+}
+
 /**
  * P4 dependency identity.  Node has already supplied the physical target via
  * the synchronous hook; adapters only map that concrete target into the
@@ -1447,6 +1718,7 @@ async function identifyDependencyInstance(input: {
   readonly parentModule: string;
   readonly specifier: string;
   readonly contentDigest: string;
+  readonly expectedLocalTarget?: string;
 }): Promise<globalThis.Record<string, string>> {
   const lock = await readConsumerLock(input.consumerRoot);
   if (lock === undefined) {
@@ -1462,8 +1734,8 @@ async function identifyDependencyInstance(input: {
   const identity = lock.kind === "npm"
     ? await identifyNpmInstance(lock, input, name, version, installPath)
     : lock.kind === "pnpm"
-      ? identifyPnpmInstance(lock, input, name, version, installPath)
-      : identifyYarnInstance(lock, input, name, version, installPath);
+      ? await identifyPnpmInstance(lock, input, name, version, installPath)
+      : await identifyYarnInstance(lock, input, name, version, installPath);
   return Object.freeze(identity);
 }
 
@@ -1497,7 +1769,7 @@ async function portableInstalledPath(consumerRoot: string, packageRoot: string):
 
 async function identifyNpmInstance(
   lock: ConsumerLock,
-  input: { readonly consumerRoot: string; readonly packageRoot: string; readonly parentModule: string; readonly specifier: string; readonly contentDigest: string },
+  input: { readonly consumerRoot: string; readonly packageRoot: string; readonly parentModule: string; readonly specifier: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
   name: string,
   version: string,
   installPath: string,
@@ -1526,6 +1798,9 @@ async function identifyNpmInstance(
     throw dependencyIdentityError(input, `npm package-lock maps the actual ${name}@${version} target to ${candidates.length} logical package entries.`);
   }
   const candidate = candidates[0]!;
+  if (input.expectedLocalTarget !== undefined) {
+    await assertLockEntryLocalTarget(candidate.entry, lock, input.expectedLocalTarget, input.consumerRoot, input);
+  }
   const identity = lockEntryIdentity(candidate.entry, lock, input, input.contentDigest);
   return {
     locator: `npm:${candidate.key || "."}`,
@@ -1536,13 +1811,13 @@ async function identifyNpmInstance(
   };
 }
 
-function identifyPnpmInstance(
+async function identifyPnpmInstance(
   lock: ConsumerLock,
-  input: { readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string },
+  input: { readonly consumerRoot: string; readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
   name: string,
   version: string,
   installPath: string,
-): globalThis.Record<string, string> {
+): Promise<globalThis.Record<string, string>> {
   let parsed: Record<string, unknown>;
   try {
     const value: unknown = parseYaml(lock.text);
@@ -1552,16 +1827,25 @@ function identifyPnpmInstance(
     throw dependencyIdentityError(input, `Cannot decode pnpm lock packages map: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
   const packages = parsed.packages as Record<string, unknown>;
-  const virtualLocator = pnpmVirtualLocator(installPath);
-  const candidates = Object.entries(packages)
-    .filter(([key, entry]) => isPlainRecord(entry) && pnpmKeyMatches(key, name, version))
-    .map(([key, entry]) => ({ key, entry: entry as Record<string, unknown> }));
+  const virtualLocator = await pnpmVirtualLocatorFromTree(input.consumerRoot, input.packageRoot, installPath, input);
+  const entries = Object.entries(packages)
+    .filter((entry): entry is [string, Record<string, unknown>] => isPlainRecord(entry[1]))
+    .map(([key, entry]) => ({ key, entry }));
+  const candidates = entries
+    .filter(({ key, entry }) => (
+      pnpmKeyMatches(key, name, version) || key.startsWith(`${name}@`) && entry.version === version
+    ));
   const narrowed = virtualLocator === undefined
-    ? candidates
-    : candidates.filter((candidate) => pnpmLocatorMatches(candidate.key, virtualLocator));
-  const selected = narrowed.length === 1 ? narrowed[0] : candidates.length === 1 ? candidates[0] : undefined;
+    ? []
+    : entries.filter((candidate) => pnpmLocatorMatches(candidate.key, virtualLocator));
+  const selected = narrowed.length === 1
+    ? narrowed[0]
+    : narrowed.length > 1 ? undefined : candidates.length === 1 ? candidates[0] : undefined;
   if (selected === undefined) {
     throw dependencyIdentityError(input, `pnpm lock cannot uniquely map actual ${name}@${version} target${virtualLocator === undefined ? "" : ` (${virtualLocator})`}.`);
+  }
+  if (input.expectedLocalTarget !== undefined) {
+    await assertLockEntryLocalTarget(selected.entry, lock, input.expectedLocalTarget, input.consumerRoot, input);
   }
   const identity = lockEntryIdentity(selected.entry, lock, input, input.contentDigest);
   return {
@@ -1573,18 +1857,24 @@ function identifyPnpmInstance(
   };
 }
 
-function identifyYarnInstance(
+async function identifyYarnInstance(
   lock: ConsumerLock,
-  input: { readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string },
+  input: { readonly consumerRoot: string; readonly parentModule: string; readonly specifier: string; readonly packageRoot: string; readonly contentDigest: string; readonly expectedLocalTarget?: string },
   name: string,
   version: string,
   installPath: string,
-): globalThis.Record<string, string> {
-  const berry = parseYarnBerryEntry(lock.text, name, version);
-  const classic = berry === undefined ? parseYarnClassicEntry(lock.text, name, version) : undefined;
+): Promise<globalThis.Record<string, string>> {
+  const berry = await parseYarnBerryEntry(lock.text, input.consumerRoot, installPath, name, version, input);
+  const selector = berry === undefined ? await declaredDependencySelector(input.parentModule, input.specifier) : undefined;
+  const classic = berry === undefined
+    ? parseYarnClassicEntry(lock.text, input.consumerRoot, name, version, input.specifier, selector)
+    : undefined;
   const selected = berry ?? classic;
   if (selected === undefined) {
     throw dependencyIdentityError(input, `Yarn lock cannot uniquely map actual ${name}@${version} target.`);
+  }
+  if (input.expectedLocalTarget !== undefined) {
+    await assertLockEntryLocalTarget(selected, lock, input.expectedLocalTarget, input.consumerRoot, input);
   }
   const identity = lockEntryIdentity(selected, lock, input, input.contentDigest);
   return {
@@ -1623,12 +1913,18 @@ function lockEntryIdentity(
     }
     return { identityKind: "git", commit };
   }
-  const integrity = typeof resolution.integrity === "string"
-    ? resolution.integrity
-    : typeof entry.integrity === "string" ? entry.integrity
-    : typeof entry.checksum === "string" ? `yarn:${entry.checksum}` : undefined;
-  if (integrity !== undefined) return { identityKind: "registry", integrity };
-  if (resolved !== undefined && (resolved.startsWith("file:") || resolved.startsWith("link:") || resolved.startsWith("portal:") || resolved.startsWith("workspace:"))) {
+  const classicTarballHash = resolved?.match(/^file:.*(?:\.tgz|\.tar\.gz)#([0-9a-f]{40})$/i)?.[1];
+  if (classicTarballHash !== undefined) {
+    return {
+      identityKind: "registry",
+      integrity: `sha1-${Buffer.from(classicTarballHash, "hex").toString("base64")}`,
+    };
+  }
+  const portableFileReference = resolved !== undefined &&
+    (/^(?:file:|link:|portal:|workspace:)/.test(resolved) || /@(?:file:|link:|portal:|workspace:)/.test(resolved));
+  const fileBacked = typeof resolution.directory === "string" || typeof resolution.path === "string" ||
+    portableFileReference && (resolved === undefined || !isTarballDeclaration(resolved));
+  if (fileBacked) {
     if (precomputedContentDigest.length === 0) {
       // This branch only runs for pnpm/yarn.  The content hash is asynchronous,
       // so callers that need it must not silently invent a registry identity.
@@ -1636,7 +1932,47 @@ function lockEntryIdentity(
     }
     return { identityKind: "file", contentDigest: precomputedContentDigest };
   }
+  const integrity = typeof resolution.integrity === "string"
+    ? resolution.integrity
+    : typeof entry.integrity === "string" ? entry.integrity
+    : typeof entry.checksum === "string" ? `yarn:${entry.checksum}` : undefined;
+  if (integrity !== undefined) return { identityKind: "registry", integrity };
   throw dependencyIdentityError(input, `The ${lock.kind} lock entry has no immutable integrity, Git commit, or file/workspace identity.`);
+}
+
+async function pnpmVirtualLocatorFromTree(
+  consumerRoot: string,
+  packageRoot: string,
+  installPath: string,
+  input: { readonly parentModule: string; readonly specifier: string },
+): Promise<string | undefined> {
+  const modulesFile = join(consumerRoot, "node_modules", ".modules.yaml");
+  if (!existsSync(modulesFile)) {
+    throw dependencyIdentityError(input, "The pnpm installation has no node_modules/.modules.yaml mapping.");
+  }
+  let metadata: Record<string, unknown>;
+  try {
+    const parsed: unknown = parseYaml(await readFile(modulesFile, "utf8"));
+    if (!isPlainRecord(parsed)) throw new Error("expected an object");
+    metadata = parsed;
+  } catch (cause) {
+    throw dependencyIdentityError(input, `Cannot decode pnpm .modules.yaml: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  const configuredStore = typeof metadata.virtualStoreDir === "string" ? metadata.virtualStoreDir : ".pnpm";
+  const storeCandidate = resolve(dirname(modulesFile), configuredStore);
+  try {
+    const [store, target] = await Promise.all([realpath(storeCandidate), realpath(packageRoot)]);
+    if (isWithin(store, target)) {
+      const rel = relativePortable(store, target);
+      const marker = "/node_modules/";
+      const markerIndex = rel.indexOf(marker);
+      if (markerIndex > 0) return rel.slice(0, markerIndex);
+    }
+  } catch {
+    // A hoisted node linker can have no physical package below virtualStoreDir.
+    // The portable install path still lets a unique lock candidate proceed.
+  }
+  return pnpmVirtualLocator(installPath);
 }
 
 function pnpmVirtualLocator(installPath: string): string | undefined {
@@ -1654,39 +1990,122 @@ function pnpmKeyMatches(key: string, name: string, version: string): boolean {
 }
 
 function pnpmLocatorMatches(key: string, locator: string): boolean {
-  const normalized = key.replace(/^\//, "").replaceAll("/", "+").replace(/[()]/g, "_");
+  const normalized = key.replace(/^\//, "").replaceAll("/", "+").replaceAll(":", "+").replace(/[()]/g, "_");
   return locator === normalized || locator.startsWith(`${normalized}_`) || locator.startsWith(`${normalized}(`);
 }
 
-function parseYarnBerryEntry(text: string, name: string, version: string): Record<string, unknown> | undefined {
+async function parseYarnBerryEntry(
+  text: string,
+  consumerRoot: string,
+  installPath: string,
+  name: string,
+  version: string,
+  input: { readonly parentModule: string; readonly specifier: string },
+): Promise<Record<string, unknown> | undefined> {
   try {
     const value: unknown = parseYaml(text);
-    if (!isPlainRecord(value)) return undefined;
+    if (!isPlainRecord(value) || !isPlainRecord(value.__metadata)) return undefined;
+    const stateFile = join(consumerRoot, "node_modules", ".yarn-state.yml");
+    if (!existsSync(stateFile)) {
+      throw dependencyIdentityError(input, "The Yarn Berry node-modules installation has no .yarn-state.yml mapping.");
+    }
+    const stateValue: unknown = parseYaml(await readFile(stateFile, "utf8"));
+    if (!isPlainRecord(stateValue)) {
+      throw dependencyIdentityError(input, "The Yarn Berry .yarn-state.yml mapping is not an object.");
+    }
+    const stateLocators = Object.entries(stateValue)
+      .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) &&
+        Array.isArray(entry.locations) && entry.locations.includes(installPath))
+      .map(([key]) => key);
+    if (stateLocators.length !== 1) {
+      throw dependencyIdentityError(input, `Yarn .yarn-state.yml maps actual ${name}@${version} target to ${stateLocators.length} locators.`);
+    }
+    const locator = stateLocators[0]!;
+    const unvirtualized = unvirtualizeYarnLocator(locator);
     const matches = Object.entries(value)
-      .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) && entry.version === version && key.includes(`${name}@`))
+      .filter(([key, entry]) => key !== "__metadata" && isPlainRecord(entry) && entry.version === version && key.includes(`${name}@`) &&
+        typeof entry.resolution === "string" && (entry.resolution === locator || entry.resolution === unvirtualized))
       .map(([, entry]) => entry as Record<string, unknown>);
-    return matches.length === 1 ? matches[0] : undefined;
-  } catch {
+    if (matches.length !== 1) {
+      throw dependencyIdentityError(input, `Yarn lock maps the actual .yarn-state locator ${JSON.stringify(locator)} to ${matches.length} entries.`);
+    }
+    return matches[0];
+  } catch (cause) {
+    if (cause instanceof EvalRootPreflightError) throw cause;
     return undefined;
   }
 }
 
-function parseYarnClassicEntry(text: string, name: string, version: string): Record<string, unknown> | undefined {
+function unvirtualizeYarnLocator(locator: string): string {
+  const marker = locator.lastIndexOf("@virtual:");
+  if (marker < 0) return locator;
+  const hash = locator.indexOf("#", marker);
+  return hash < 0 ? locator : `${locator.slice(0, marker)}@${locator.slice(hash + 1)}`;
+}
+
+async function declaredDependencySelector(parentModule: string, specifier: string): Promise<string | undefined> {
+  const packageRoot = await nearestPackageRoot(parentModule);
+  if (packageRoot === undefined) return undefined;
+  const manifest = await readJsonRecord(join(packageRoot, "package.json"));
+  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const) {
+    const declarations = manifest[field];
+    if (isPlainRecord(declarations) && typeof declarations[specifier] === "string") return declarations[specifier];
+  }
+  return undefined;
+}
+
+function parseYarnClassicEntry(
+  text: string,
+  consumerRoot: string,
+  name: string,
+  version: string,
+  specifier: string,
+  selector?: string,
+): Record<string, unknown> | undefined {
   const blocks = text.split(/\n(?=\S)/g);
   const matches: Record<string, unknown>[] = [];
   for (const block of blocks) {
     const [header = "", ...lines] = block.split("\n");
     if (!header.includes(`${name}@`)) continue;
+    const descriptors = yarnClassicDescriptors(header);
+    const matchedDescriptor = selector === undefined
+      ? undefined
+      : descriptors.find((descriptor) => yarnClassicDescriptorMatches(descriptor, specifier, selector, consumerRoot));
+    if (selector !== undefined && matchedDescriptor === undefined) continue;
     const foundVersion = lines.find((line) => /^\s*version\s+/.test(line))?.match(/version\s+["']?([^"'\s]+)["']?/);
     if (foundVersion?.[1] !== version) continue;
     const resolved = lines.find((line) => /^\s*resolved\s+/.test(line))?.match(/resolved\s+["']?([^"']+)["']?/);
     const integrity = lines.find((line) => /^\s*integrity\s+/.test(line))?.trim().split(/\s+/)[1];
+    const descriptorResolution = matchedDescriptor?.startsWith(`${specifier}@`)
+      ? matchedDescriptor.slice(`${specifier}@`.length)
+      : undefined;
     matches.push({
-      ...(resolved?.[1] === undefined ? {} : { resolved: resolved[1] }),
+      ...(resolved?.[1] === undefined && descriptorResolution === undefined
+        ? {}
+        : { resolved: resolved?.[1] ?? descriptorResolution }),
       ...(integrity === undefined ? {} : { integrity }),
     });
   }
   return matches.length === 1 ? matches[0] : undefined;
+}
+
+function yarnClassicDescriptors(header: string): readonly string[] {
+  return header.trim().replace(/:$/, "").split(/,\s*/).map((entry) => entry.trim().replace(/^["']|["']$/g, ""));
+}
+
+function yarnClassicDescriptorMatches(
+  descriptor: string,
+  specifier: string,
+  selector: string,
+  consumerRoot: string,
+): boolean {
+  const prefix = `${specifier}@`;
+  if (!descriptor.startsWith(prefix)) return false;
+  const lockedSelector = descriptor.slice(prefix.length);
+  if (lockedSelector === selector) return true;
+  if (!lockedSelector.startsWith("file:") || !selector.startsWith("file:")) return false;
+  return resolve(consumerRoot, lockedSelector.slice("file:".length)) ===
+    resolve(consumerRoot, selector.slice("file:".length));
 }
 
 function lockMentionsDependency(lock: ConsumerLock, dependency: string, declaration: string): boolean {
@@ -1696,7 +2115,8 @@ function lockMentionsDependency(lock: ConsumerLock, dependency: string, declarat
 }
 
 function isGitDeclaration(value: string): boolean {
-  return /^(?:git\+|git:|github:|git@|https?:\/\/[^\s]+\.git(?:#|$))/i.test(value);
+  const gitReference = /(?:git\+|git:|github:|git@|https?:\/\/[^\s]+\.git(?:#|$))/i;
+  return gitReference.test(value) && (gitReference.exec(value)?.index === 0 || /@(?:git\+|git:|github:|git@|https?:\/\/[^\s]+\.git(?:#|$))/i.test(value));
 }
 
 function isTarballDeclaration(value: string): boolean {
