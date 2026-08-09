@@ -63,6 +63,9 @@ Candidate 就是当前 checkout 当场生成的待发布字节，不是 registry
 
 `run --artifact-root` 让 CI 指定独立于临时工作副本的证据根；runner 删除副本后保留其中的 `summary.json`、Repo receipt 与声明附件。
 原生测试参数在 `--` 后原样且只传一次。
+durable root 先物理锚定，系统级父目录 symlink 可以归一化。root 自身及其以下每层都必须是实目录。
+candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
+`verify-release` 读取保留 tarball 时也做同一目录链核验。
 
 ## Owner 接管运行
 
@@ -253,6 +256,7 @@ Testkit directory resolution、包身份或实际安装路径不符合当前 che
 manifest Repo ID 是 canonical 相对路径，允许 `adapter/ai-sdk`，拒绝绝对路径、dot traversal、反斜杠与控制符。
 artifact 只接受 canonical `dir/**` 或顶层文件 glob。collector 在每次读写时做 containment 检查。
 collector 拒绝源目录中的 symlink、后代 symlink 和特殊文件，也拒绝目标根中的 symlink。
+candidate、receipt 与两类 summary 同样逐段核验 durable root 以下的目录链。任一内部 symlink 属于 runner infra。
 
 ## Release 信任链
 

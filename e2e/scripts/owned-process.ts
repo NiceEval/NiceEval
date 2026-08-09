@@ -76,6 +76,27 @@ export function hasConfirmedOwnedGroupCleanup(result: Pick<OwnedProcessResult, "
   return !result.processGroupOwned || result.groupCleanup.gone === true;
 }
 
+/**
+ * A process outcome is successful only when it reached a normal exit before
+ * its deadline and left no owned group behind. In particular, a command that
+ * handles TERM and exits zero after its timeout is still a timeout failure.
+ */
+export function hasSuccessfulOwnedProcessResult(
+  result: Pick<
+    OwnedProcessResult,
+    "exitCode" | "signal" | "timedOut" | "cancelled" | "error" | "processGroupOwned" | "groupCleanup"
+  >,
+): boolean {
+  return (
+    result.exitCode === 0 &&
+    result.signal === null &&
+    !result.timedOut &&
+    !result.cancelled &&
+    result.error === undefined &&
+    hasConfirmedOwnedGroupCleanup(result)
+  );
+}
+
 export class E2EExecutionCancelledError extends Error {
   constructor(message = "e2e execution cancelled before a new stage could start") {
     super(message);

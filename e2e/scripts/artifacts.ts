@@ -7,8 +7,14 @@
 // never parses those files or feeds them into a pass/fail decision.
 
 import { basename, join, relative, resolve, sep } from "node:path";
-import { copyFile, lstat, mkdir, readdir } from "node:fs/promises";
+import { copyFile, lstat, readdir } from "node:fs/promises";
 
+import {
+  assertContainedRegularFile,
+  assertRealDirectory as assertRealDirectoryChain,
+  ensureContainedRealDirectory,
+  prepareContainedRegularFile,
+} from "./durable-path.ts";
 import { artifactPatternError, isCanonicalRelativePath } from "./manifest.ts";
 
 function isContained(root: string, target: string, allowRoot = false): boolean {
@@ -38,38 +44,11 @@ async function lstatOrUndefined(path: string) {
 async function ensureSafeDirectory(root: string, target: string): Promise<string> {
   const rootPath = resolve(root);
   const targetPath = containedPath(rootPath, target, "artifact destination", true);
-  await mkdir(rootPath, { recursive: true });
-  const rootStat = await lstat(rootPath);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    throw new Error(`artifact root is not a real directory: ${rootPath}`);
-  }
-
-  const tail = relative(rootPath, targetPath);
-  if (tail === "") return targetPath;
-  let current = rootPath;
-  for (const part of tail.split(sep)) {
-    if (part.length === 0 || part === "." || part === "..") {
-      throw new Error(`invalid contained artifact destination segment ${JSON.stringify(part)}`);
-    }
-    current = containedPath(rootPath, join(current, part), "artifact destination");
-    const existing = await lstatOrUndefined(current);
-    if (existing === undefined) {
-      await mkdir(current);
-      continue;
-    }
-    if (!existing.isDirectory() || existing.isSymbolicLink()) {
-      throw new Error(`artifact destination contains a non-directory or symlink: ${current}`);
-    }
-  }
-  return targetPath;
+  return ensureContainedRealDirectory(rootPath, targetPath, "artifact destination");
 }
 
 async function assertRealDirectory(path: string, label: string): Promise<void> {
-  const stat = await lstatOrUndefined(path);
-  if (stat === undefined) return;
-  if (!stat.isDirectory() || stat.isSymbolicLink()) {
-    throw new Error(`${label} must be a real directory, not a symlink or special file: ${path}`);
-  }
+  await assertRealDirectoryChain(path, label);
 }
 
 async function copySafeFile(source: string, destinationRoot: string, destination: string): Promise<void> {
@@ -77,12 +56,9 @@ async function copySafeFile(source: string, destinationRoot: string, destination
   if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
     throw new Error(`artifact source must be a regular non-symlink file: ${source}`);
   }
-  const destinationPath = containedPath(destinationRoot, destination, "artifact destination");
-  const existing = await lstatOrUndefined(destinationPath);
-  if (existing !== undefined && (!existing.isFile() || existing.isSymbolicLink())) {
-    throw new Error(`artifact destination is not a regular file: ${destinationPath}`);
-  }
+  const destinationPath = await prepareContainedRegularFile(destinationRoot, destination, "artifact destination");
   await copyFile(source, destinationPath);
+  await assertContainedRegularFile(destinationRoot, destinationPath, "artifact destination");
 }
 
 /** Recursively copy only real directories and regular files, rejecting every source symlink. */
@@ -156,9 +132,9 @@ export async function collectArtifacts(
   const collected: string[] = [];
   const warnings: string[] = [];
   const copyRoot = resolve(copyDir);
-  const destinationRoot = resolve(destDir);
+  let destinationRoot = resolve(destDir);
   await assertRealDirectory(copyRoot, "isolated artifact copy root");
-  await ensureSafeDirectory(destinationRoot, destinationRoot);
+  destinationRoot = await ensureSafeDirectory(destinationRoot, destinationRoot);
 
   for (const pattern of patterns) {
     const patternError = artifactPatternError(pattern);

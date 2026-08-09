@@ -4,13 +4,17 @@
 // exact candidate bytes supplied to it.
 
 import { readFile, readdir } from "node:fs/promises";
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import * as tar from "tar-stream";
 
 import { readCandidateTarball, type CandidateTarball } from "./injection.ts";
+import {
+  assertContainedRegularFile,
+  assertRealDirectory,
+} from "./durable-path.ts";
 
 interface ReleasePlanEntry {
   id: string;
@@ -90,9 +94,10 @@ async function readPlan(planPath: string): Promise<ReleasePlanEntry[]> {
 }
 
 async function findReceiptFiles(root: string): Promise<string[]> {
-  if (!existsSync(root)) throw new Error(`receipt root does not exist: ${root}`);
+  await assertRealDirectory(root, "release receipt root");
   const files: string[] = [];
   const walk = async (dir: string): Promise<void> => {
+    await assertRealDirectory(dir, "release receipt directory");
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const path = join(dir, entry.name);
@@ -169,18 +174,12 @@ async function readPackagedMetadata(candidatePath: string): Promise<{ name: stri
   return { name, version };
 }
 
-function isInside(root: string, path: string): boolean {
-  const normalizedRoot = resolve(root);
-  const normalizedPath = resolve(path);
-  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}${sep}`);
-}
-
-function assertReceiptCandidate(
+async function assertReceiptCandidate(
   receipt: ReleaseReceipt,
   receiptPath: string,
   receiptRoot: string,
   candidate: CandidateTarball,
-): void {
+): Promise<void> {
   const identity = receipt.candidate;
   if (identity === undefined || identity === null || typeof identity !== "object") {
     throw new Error(`receipt ${receiptPath} has no candidate identity`);
@@ -191,14 +190,11 @@ function assertReceiptCandidate(
   if (identity.exactReplay !== true || typeof identity.artifactPath !== "string" || identity.artifactPath.length === 0) {
     throw new Error(`receipt ${receiptPath} does not retain an exact candidate tarball artifact`);
   }
-  const retainedPath = resolve(receiptRoot, identity.artifactPath);
-  if (!isInside(receiptRoot, retainedPath) || !existsSync(retainedPath)) {
-    throw new Error(`receipt ${receiptPath} candidate artifactPath is missing or escapes receipt root: ${JSON.stringify(identity.artifactPath)}`);
-  }
-  const retainedStat = lstatSync(retainedPath);
-  if (!retainedStat.isFile() || retainedStat.isSymbolicLink()) {
-    throw new Error(`receipt ${receiptPath} candidate artifactPath must be a regular non-symlink file`);
-  }
+  const retainedPath = await assertContainedRegularFile(
+    receiptRoot,
+    resolve(receiptRoot, identity.artifactPath),
+    `receipt ${receiptPath} candidate artifactPath`,
+  );
   const retained = readCandidateTarball(retainedPath);
   if (retained.sha256 !== candidate.sha256 || retained.integrity !== candidate.integrity) {
     throw new Error(`receipt ${receiptPath} retained candidate tarball digest does not match the supplied tarball`);
@@ -216,6 +212,7 @@ export interface ReleaseVerification {
 export async function verifyRelease(cli: VerifyReleaseCli): Promise<ReleaseVerification> {
   const plan = await readPlan(cli.planPath);
   const expectedIds = new Set(plan.map((entry) => entry.id));
+  const receiptRoot = await assertRealDirectory(cli.receiptRoot, "release receipt root");
   const candidate = readCandidateTarball(cli.candidatePath);
   const metadata = await readPackagedMetadata(cli.candidatePath);
   if (metadata.name !== "niceeval") {
@@ -225,10 +222,11 @@ export async function verifyRelease(cli: VerifyReleaseCli): Promise<ReleaseVerif
     throw new Error(`tag ${JSON.stringify(cli.tag)} must exactly equal v${metadata.version} for candidate ${metadata.name}`);
   }
 
-  const files = await findReceiptFiles(cli.receiptRoot);
-  if (files.length === 0) throw new Error(`no receipt.json files found under ${cli.receiptRoot}`);
+  const files = await findReceiptFiles(receiptRoot);
+  if (files.length === 0) throw new Error(`no receipt.json files found under ${receiptRoot}`);
   const byId = new Map<string, string>();
   for (const file of files) {
+    await assertContainedRegularFile(receiptRoot, file, "release receipt");
     const receipt = await parseReceipt(file);
     if (typeof receipt.repoId !== "string" || receipt.repoId.length === 0) {
       throw new Error(`receipt ${file} has no non-empty repoId`);
@@ -240,7 +238,7 @@ export async function verifyRelease(cli: VerifyReleaseCli): Promise<ReleaseVerif
     if (receipt.category !== "pass") {
       throw new Error(`receipt ${file} for ${receipt.repoId} is ${JSON.stringify(receipt.category)}, not "pass"`);
     }
-    assertReceiptCandidate(receipt, file, cli.receiptRoot, candidate);
+    await assertReceiptCandidate(receipt, file, receiptRoot, candidate);
   }
 
   const actualIds = new Set(byId.keys());

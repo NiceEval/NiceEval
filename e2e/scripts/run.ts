@@ -23,7 +23,7 @@
 
 import { join, resolve } from "node:path";
 import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 
@@ -39,6 +39,7 @@ import {
   isExecutionCancelled,
   type E2EExecutionControl,
 } from "./owned-process.ts";
+import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
 
 export { appendNativeArgs } from "./run-repo.ts";
 export type { RepoRunResult } from "./run-repo.ts";
@@ -246,7 +247,7 @@ export async function main(
     const candidate = readCandidateTarball(cli.candidatePath);
     scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-e2e-scratch-"));
     artifactRoot = cli.artifactRoot ?? mkdtempSync(join(tmpdir(), "niceeval-e2e-artifacts-"));
-    await mkdir(artifactRoot, { recursive: true });
+    artifactRoot = await ensureRealDirectory(artifactRoot, "durable artifact root");
     console.log(`[e2e] scratch root (ephemeral): ${scratchRoot}`);
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
@@ -325,7 +326,12 @@ export async function main(
       const summary = buildSummary(artifactRoot, results, runner);
       let summaryPersisted = false;
       try {
-        await writeFile(summary.summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+        await writeContainedUtf8File(
+          artifactRoot,
+          summary.summaryPath,
+          `${JSON.stringify(summary, null, 2)}\n`,
+          "run summary",
+        );
         summaryPersisted = true;
         printSummary(summary);
       } catch (error) {

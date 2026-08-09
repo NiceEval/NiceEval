@@ -15,7 +15,7 @@ import {
   createUnmanagedExecutionControl,
   isExecutionCancelled,
   E2EExecutionCancelledError,
-  hasConfirmedOwnedGroupCleanup,
+  hasSuccessfulOwnedProcessResult,
   throwIfExecutionCancelled,
   type E2EExecutionControl,
 } from "./owned-process.ts";
@@ -45,7 +45,7 @@ async function buildTestkitSource(pkgDir: string, control: E2EExecutionControl):
   if (result.cancelled || isExecutionCancelled(control)) {
     throw new E2EExecutionCancelledError("workspace Testkit build cancelled");
   }
-  return result.exitCode === 0 && hasConfirmedOwnedGroupCleanup(result) ? 0 : 1;
+  return hasSuccessfulOwnedProcessResult(result) ? 0 : 1;
 }
 
 /** Clean-build and validate the private workspace Testkit once. */

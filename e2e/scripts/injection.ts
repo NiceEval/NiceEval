@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 import {
   createUnmanagedExecutionControl,
   hasConfirmedOwnedGroupCleanup,
+  hasSuccessfulOwnedProcessResult,
   isExecutionCancelled,
   E2EExecutionCancelledError,
   type E2EExecutionControl,
@@ -85,14 +86,13 @@ export async function buildCandidateTarball(
   if (packed.cancelled || isExecutionCancelled(control)) {
     throw new E2EExecutionCancelledError("e2e candidate packing cancelled");
   }
-  if (
-    packed.exitCode !== 0 ||
-    packed.signal !== null ||
-    packed.error !== undefined ||
-    !hasConfirmedOwnedGroupCleanup(packed)
-  ) {
+  if (!hasSuccessfulOwnedProcessResult(packed)) {
     throw new Error(
-      `pnpm pack failed (${!hasConfirmedOwnedGroupCleanup(packed) ? packed.groupCleanup.detail : packed.error ?? packed.signal ?? `exit ${packed.exitCode}`}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
+      `pnpm pack failed (${packed.timedOut
+        ? "timed out after TERM → grace → KILL"
+        : !hasConfirmedOwnedGroupCleanup(packed)
+          ? packed.groupCleanup.detail
+          : packed.error ?? packed.signal ?? `exit ${packed.exitCode}`}) while building the candidate niceeval tarball from ${repoRoot} — fix the build before running the e2e matrix`,
     );
   }
 

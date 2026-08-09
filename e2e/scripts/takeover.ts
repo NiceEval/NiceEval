@@ -6,7 +6,7 @@
 // snapshot feed the required fresh-copy and same-installed-copy observations.
 
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
@@ -17,6 +17,7 @@ import {
   createUnmanagedExecutionControl,
   E2EExecutionCancelledError,
   hasConfirmedOwnedGroupCleanup,
+  hasSuccessfulOwnedProcessResult,
   isExecutionCancelled,
   type E2EExecutionControl,
 } from "./owned-process.ts";
@@ -29,6 +30,7 @@ import {
 } from "./run-repo.ts";
 import { buildTestkitPackage, type TestkitPackage } from "./testkit.ts";
 import type { StageReceipt } from "./receipt.ts";
+import { ensureRealDirectory, writeContainedUtf8File } from "./durable-path.ts";
 
 export interface TakeoverCli {
   candidatePath: string;
@@ -112,14 +114,13 @@ async function gitText(
   if (result.cancelled || isExecutionCancelled(execution)) {
     throw new E2EExecutionCancelledError("takeover checkout identity collection cancelled");
   }
-  if (
-    result.exitCode !== 0 ||
-    result.signal !== null ||
-    result.error !== undefined ||
-    !hasConfirmedOwnedGroupCleanup(result)
-  ) {
+  if (!hasSuccessfulOwnedProcessResult(result)) {
     throw new Error(
-      `git ${args.join(" ")} failed (${!hasConfirmedOwnedGroupCleanup(result) ? result.groupCleanup.detail : result.error ?? result.signal ?? `exit ${result.exitCode}`})`,
+      `git ${args.join(" ")} failed (${result.timedOut
+        ? "timed out after TERM → grace → KILL"
+        : !hasConfirmedOwnedGroupCleanup(result)
+          ? result.groupCleanup.detail
+          : result.error ?? result.signal ?? `exit ${result.exitCode}`})`,
     );
   }
   return result.stdout.trim();
@@ -409,8 +410,8 @@ export async function runTakeover(
   const repo = findRepo(cli.repoId);
   const candidate = readCandidateTarball(cli.candidatePath);
   const root = repoRootDir();
-  const artifactRoot = cli.artifactRoot ?? await mkdtemp(join(tmpdir(), "niceeval-e2e-takeover-artifacts-"));
-  await mkdir(artifactRoot, { recursive: true });
+  const declaredArtifactRoot = cli.artifactRoot ?? await mkdtemp(join(tmpdir(), "niceeval-e2e-takeover-artifacts-"));
+  const artifactRoot = await ensureRealDirectory(declaredArtifactRoot, "takeover durable artifact root");
   const scratchRoot = await mkdtemp(join(tmpdir(), "niceeval-e2e-takeover-scratch-"));
   const sourceSnapshotDir = join(scratchRoot, "source", repo.manifest.id);
   const results: RepoRunResult[] = [];
@@ -544,7 +545,12 @@ export async function runTakeover(
     sourceSnapshotCleanup,
   };
   const summaryPath = join(artifactRoot, "takeover-summary.json");
-  await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  await writeContainedUtf8File(
+    artifactRoot,
+    summaryPath,
+    `${JSON.stringify(summary, null, 2)}\n`,
+    "takeover summary",
+  );
   console.log(`[e2e] takeover summary: ${summaryPath}`);
 
   if (setupFailure !== undefined && !isExecutionCancelled(execution)) {

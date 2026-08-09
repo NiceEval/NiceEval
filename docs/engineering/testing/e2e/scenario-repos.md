@@ -115,6 +115,8 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 `id` 是 canonical 相对路径。它允许 `adapter/ai-sdk`，但不允许绝对路径、空段、dot traversal、反斜杠或控制符。
 `artifacts` 只允许 canonical `dir/**` 或顶层文件 glob。非法形状使 discovery 聚合报错。
 collector 逐段检查 copy root 与 artifact root，拒绝 source symlink、后代 symlink、特殊文件及目标 symlink。
+durable root 先物理锚定，root 自身及以下拒绝 symlink。candidate、receipt 与 summary 的目录链也逐段检查。
+任一内部 symlink 使该次运行成为 infra。
 
 ## Candidate 信任链与 Testkit 注入
 

@@ -2,7 +2,7 @@
 // Create exactly one candidate .tgz at the requested path and print its
 // independently recomputed sha512/sha256 digests.
 
-import { mkdtemp, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { parseArgs } from "node:util";
 import { repoRootDir } from "./discovery.ts";
 import { buildCandidateTarball, readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import type { E2EExecutionControl } from "./owned-process.ts";
+import { assertContainedRegularFile, prepareContainedRegularFile } from "./durable-path.ts";
 
 export interface PackDependencies {
   buildCandidateTarball?: typeof buildCandidateTarball;
@@ -44,12 +45,17 @@ export async function packCandidate(
   dependencies: PackDependencies = {},
   execution: E2EExecutionControl | undefined = undefined,
 ): Promise<CandidateTarball> {
-  const outputPath = resolve(out);
-  if (!outputPath.endsWith(".tgz")) {
+  const declaredOutputPath = resolve(out);
+  if (!declaredOutputPath.endsWith(".tgz")) {
     throw new Error(`pack --out must end with .tgz, got ${JSON.stringify(out)}`);
   }
 
-  await mkdir(dirname(outputPath), { recursive: true });
+  const outputRoot = dirname(declaredOutputPath);
+  const outputPath = await prepareContainedRegularFile(
+    outputRoot,
+    declaredOutputPath,
+    "candidate pack output",
+  );
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "niceeval-e2e-pack-"));
   try {
     const build = dependencies.buildCandidateTarball ?? buildCandidateTarball;
@@ -60,6 +66,7 @@ export async function packCandidate(
       throw new Error(`expected exactly one generated candidate in ${temporaryDirectory}`);
     }
     await rename(join(temporaryDirectory, generated[0]), outputPath);
+    await assertContainedRegularFile(outputRoot, declaredOutputPath, "candidate pack output");
     const fingerprint = read(outputPath);
     return { ...fingerprint, name: packed.name, version: packed.version };
   } finally {

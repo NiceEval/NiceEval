@@ -13,9 +13,9 @@
 // a link back to the checkout.
 
 import { createHash, randomUUID } from "node:crypto";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import type { DiscoveredRepo } from "./discovery.ts";
 import type { CandidateTarball } from "./injection.ts";
@@ -30,6 +30,14 @@ import {
 } from "./testkit.ts";
 import { buildChildEnv } from "./secrets.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
+import {
+  assertContainedRegularFile,
+  copyIntoContainedFile,
+  ensureContainedRealDirectory,
+  ensureRealDirectory,
+  prepareContainedRegularFile,
+  writeContainedUtf8File,
+} from "./durable-path.ts";
 import { preflightBrowsers, preflightHostCapabilities } from "./preflight.ts";
 import {
   createUnmanagedExecutionControl,
@@ -57,23 +65,31 @@ async function materializeCandidateArtifact(
   artifactRoot: string,
   candidate: CandidateTarball,
 ): Promise<string> {
-  const targetDir = join(artifactRoot, "candidate");
+  const targetDir = await ensureContainedRealDirectory(
+    artifactRoot,
+    join(artifactRoot, "candidate"),
+    "durable candidate directory",
+  );
   const target = join(targetDir, candidateTarballFileName(candidate.sha256));
-  await mkdir(targetDir, { recursive: true });
+  const preparedTarget = await prepareContainedRegularFile(artifactRoot, target, "durable candidate artifact");
   const sha256 = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
-  if (!existsSync(target) || sha256(target) !== candidate.sha256) {
-    await copyFile(candidate.path, target);
+  if (!existsSync(preparedTarget) || sha256(preparedTarget) !== candidate.sha256) {
+    await copyIntoContainedFile(artifactRoot, candidate.path, preparedTarget, "durable candidate artifact");
   }
-  if (sha256(target) !== candidate.sha256) {
-    throw new Error(`durable candidate artifact at ${target} does not match sha256:${candidate.sha256}`);
+  await assertContainedRegularFile(artifactRoot, preparedTarget, "durable candidate artifact");
+  if (sha256(preparedTarget) !== candidate.sha256) {
+    throw new Error(`durable candidate artifact at ${preparedTarget} does not match sha256:${candidate.sha256}`);
   }
-  return target;
+  return preparedTarget;
 }
 
-function isRetainedArtifact(artifactRoot: string, tarballPath: string): boolean {
-  const root = resolve(artifactRoot);
-  const target = resolve(tarballPath);
-  return target.startsWith(`${root}${sep}`) && existsSync(target);
+async function isRetainedArtifact(artifactRoot: string, tarballPath: string): Promise<boolean> {
+  try {
+    await assertContainedRegularFile(artifactRoot, tarballPath, "durable candidate artifact");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface RepoRunResult {
@@ -242,9 +258,10 @@ export async function runRepo(
   const execution = options.execution ?? createUnmanagedExecutionControl();
   const repoId = repo.manifest.id;
   const copyDir = join(scratchRoot, "runs", options.workdirKey ?? repoId);
-  const scopedArtifactRoot = options.runLabel === undefined ? artifactRoot : join(artifactRoot, options.runLabel);
-  const artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
-  const receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
+  let durableArtifactRoot = artifactRoot;
+  let scopedArtifactRoot = artifactRoot;
+  let artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
+  let receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
   const sourceDir = options.sourceDir ?? repo.dir;
   const testRuns = options.testRuns ?? 1;
   if (!Number.isInteger(testRuns) || testRuns < 1) {
@@ -260,7 +277,18 @@ export async function runRepo(
   let durableCandidatePath = candidate.path;
 
   try {
-    durableCandidatePath = await materializeCandidateArtifact(artifactRoot, candidate);
+    durableArtifactRoot = await ensureRealDirectory(artifactRoot, "repo durable artifact root");
+    scopedArtifactRoot = options.runLabel === undefined
+      ? durableArtifactRoot
+      : await ensureContainedRealDirectory(
+          durableArtifactRoot,
+          join(durableArtifactRoot, options.runLabel),
+          "takeover durable artifact scope",
+        );
+    artifactDir = repoArtifactDir(scopedArtifactRoot, repoId);
+    receiptPath = repoReceiptPath(scopedArtifactRoot, repoId);
+    await ensureContainedRealDirectory(scopedArtifactRoot, artifactDir, "repo durable artifact directory");
+    durableCandidatePath = await materializeCandidateArtifact(durableArtifactRoot, candidate);
     const setupInvocationId = randomUUID();
     invocationIds.push(setupInvocationId);
     const preflightEnv = withInvocationId(
@@ -501,6 +529,7 @@ export async function runRepo(
       stage: nextFailureStage(stages),
       ok: false,
       ...(isExecutionCancelled(execution) ? { cancelled: true } : {}),
+      ...(isExecutionCancelled(execution) ? {} : { failureCategory: "infra" }),
       detail: isExecutionCancelled(execution)
         ? `cancelled while preparing runner state: ${(error as Error).message}`
         : (error as Error).message,
@@ -552,7 +581,7 @@ export async function runRepo(
   // Classify and persist only after cleanup is on the stages list so receipt.json
   // always includes the final cleanup stage under durable artifactDir.
   const classified = classifyFromReceipt({ stages, detail: "" });
-  const candidateRetained = isRetainedArtifact(artifactRoot, durableCandidatePath);
+  const candidateRetained = await isRetainedArtifact(durableArtifactRoot, durableCandidatePath);
   const testkitReceipt: TestkitReceipt | undefined =
     testkitInjected && testkit !== undefined && testkitResolvedPath !== undefined
       ? {
@@ -577,7 +606,7 @@ export async function runRepo(
     candidate: {
       sha256: candidate.sha256,
       integrity: candidate.integrity,
-      ...(candidateRetained ? { artifactPath: relative(artifactRoot, durableCandidatePath) } : {}),
+      ...(candidateRetained ? { artifactPath: relative(durableArtifactRoot, durableCandidatePath) } : {}),
       reproduce: `pnpm e2e run --candidate ${durableCandidatePath} --repo ${repoId}`,
       exactReplay: candidateRetained,
     },
@@ -585,8 +614,12 @@ export async function runRepo(
   };
 
   try {
-    await mkdir(artifactDir, { recursive: true });
-    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+    await writeContainedUtf8File(
+      scopedArtifactRoot,
+      receiptPath,
+      `${JSON.stringify(receipt, null, 2)}\n`,
+      "repo receipt",
+    );
   } catch (error) {
     const detail = `failed to write receipt ${receiptPath}: ${(error as Error).message}`;
     console.error(`[e2e] ${detail}`);
