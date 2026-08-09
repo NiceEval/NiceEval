@@ -3,11 +3,17 @@
 // exact bytes before provider I/O and makes dynamic paths conservatively non-carry.
 
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertPathWithinEvalOwner, moduleObservationCursor, observedModuleEdgesSince } from "./eval-roots.ts";
+import {
+  assertPathWithinEvalOwner,
+  materializeOwnedTransferDirectory,
+  moduleObservationCursor,
+  observedModuleEdgesSince,
+  readOwnedTransferFile,
+} from "./eval-roots.ts";
 import type {
   DiscoveredEval,
   EvalModuleEdge,
@@ -20,6 +26,7 @@ type TransferStatus = "sent" | "failed" | "plan-mismatch";
 
 interface SnapshotFile {
   readonly path: string;
+  readonly sourceId: string;
   readonly digest: string;
   readonly cleanup: () => Promise<void>;
 }
@@ -56,7 +63,7 @@ export class ExecutionInputTracker {
   ): Promise<void> {
     const sourcePath = sourcePathOf(source);
     const snapshot = await snapshotFile(sourcePath, this.#ownerRoot);
-    const sourceId = ownerRelative(this.#ownerRoot, sourcePath);
+    const sourceId = snapshot.sourceId;
     const planned = this.#matchingPlan("file", sourceId, target);
     const entry: globalThis.Record<string, JsonValue> = {
       kind: "file",
@@ -92,7 +99,7 @@ export class ExecutionInputTracker {
     const sourcePath = sourcePathOf(source);
     const ignore = options?.ignore ?? [];
     const snapshot = await snapshotDirectory(sourcePath, this.#ownerRoot, ignore);
-    const sourceId = ownerRelative(this.#ownerRoot, sourcePath);
+    const sourceId = snapshot.sourceId;
     const targetId = target ?? "$WORKDIR";
     const planned = this.#matchingPlan("directory", sourceId, targetId, ignore);
     const entry: globalThis.Record<string, JsonValue> = {
@@ -229,78 +236,43 @@ function portableRuntimeTarget(ownerRoot: string, target: string): string {
 }
 
 async function snapshotFile(source: string, ownerRoot: string): Promise<SnapshotFile> {
-  const real = await assertOwnedRegularSource(source, ownerRoot, "file");
-  const bytes = await readFile(real);
+  const materialized = await readOwnedTransferFile(source, ownerRoot);
   const dir = await mkdtemp(join(tmpdir(), "niceeval-transfer-"));
   const path = join(dir, "payload");
-  await writeFile(path, bytes);
-  return {
-    path,
-    digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-    cleanup: () => rm(dir, { recursive: true, force: true }),
-  };
+  try {
+    await writeFile(path, materialized.bytes);
+    return {
+      path,
+      sourceId: materialized.sourceId,
+      digest: materialized.digest,
+      cleanup: () => rm(dir, { recursive: true, force: true }),
+    };
+  } catch (cause) {
+    await rm(dir, { recursive: true, force: true });
+    throw cause;
+  }
 }
 
 async function snapshotDirectory(source: string, ownerRoot: string, ignore: readonly string[]): Promise<SnapshotDirectory> {
-  const real = await assertOwnedRegularSource(source, ownerRoot, "directory");
   const root = await mkdtemp(join(tmpdir(), "niceeval-transfer-"));
   const payload = join(root, "payload");
-  await mkdir(payload);
-  const hash = createHash("sha256");
-  const ignored = new Set(ignore);
-  let entries = 0;
-  const copy = async (from: string, to: string, prefix: string): Promise<void> => {
-    for (const entry of (await readdir(from, { withFileTypes: true })).sort((a, b) => Buffer.from(a.name).compare(Buffer.from(b.name)))) {
-      if (ignored.has(entry.name)) continue;
-      const sourcePath = join(from, entry.name);
-      const targetPath = join(to, entry.name);
-      const relativePath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      const info = await lstat(sourcePath);
-      if (info.isSymbolicLink()) throw new Error(`directory transfer contains symbolic link ${relativePath}`);
-      if (info.isDirectory()) {
-        hash.update(`d\0${relativePath}\0`);
-        await mkdir(targetPath);
-        entries += 1;
-        await copy(sourcePath, targetPath, relativePath);
-      } else if (info.isFile()) {
-        const bytes = await readFile(sourcePath);
-        hash.update(`f\0${relativePath}\0${bytes.byteLength}\0`);
-        hash.update(createHash("sha256").update(bytes).digest("hex"));
-        hash.update("\0");
-        await writeFile(targetPath, bytes);
-        entries += 1;
-      } else {
-        throw new Error(`directory transfer contains special file ${relativePath}`);
-      }
-    }
-  };
   try {
-    await copy(real, payload, "");
+    await mkdir(payload);
+    const materialized = await materializeOwnedTransferDirectory(source, ownerRoot, ignore, {
+      directory: async (relativePath) => mkdir(join(payload, ...relativePath.split("/"))),
+      file: async (relativePath, bytes) => writeFile(join(payload, ...relativePath.split("/")), bytes),
+    });
+    return {
+      path: payload,
+      sourceId: materialized.sourceId,
+      digest: materialized.digest,
+      entries: materialized.entries,
+      cleanup: () => rm(root, { recursive: true, force: true }),
+    };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
     throw error;
   }
-  return {
-    path: payload,
-    digest: `sha256:${hash.digest("hex")}`,
-    entries,
-    cleanup: () => rm(root, { recursive: true, force: true }),
-  };
-}
-
-async function assertOwnedRegularSource(
-  source: string,
-  ownerRoot: string,
-  expected: "file" | "directory",
-): Promise<string> {
-  const lexical = await lstat(source);
-  if (lexical.isSymbolicLink()) throw new Error(`transfer source is a symbolic link: ${source}`);
-  const real = await assertPathWithinEvalOwner(source, ownerRoot);
-  const info = await lstat(real);
-  if (expected === "file" && !info.isFile() || expected === "directory" && !info.isDirectory()) {
-    throw new Error(`transfer source is not a ${expected}: ${source}`);
-  }
-  return real;
 }
 
 function digestJson(value: unknown): string {

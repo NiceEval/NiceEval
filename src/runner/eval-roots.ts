@@ -1373,19 +1373,7 @@ async function installedIdentity(input: {
   if (declaration.startsWith("file:") || declaration.startsWith("link:")) {
     return Object.freeze({ kind: "file", contentDigest: await canonicalTreeDigest(packageRoot), lockfile, lockDigest: lock.digest });
   }
-  const commit = gitCommit(declaration) ?? gitCommit(lock.text);
-  if (isGitDeclaration(declaration) || commit !== undefined && /(?:git\+|github:|git:|git@|commit:)/i.test(lock.text)) {
-    if (commit === undefined) {
-      throw issueError({
-        code: "eval-root.installation-unverifiable",
-        mount,
-        dependency,
-        message: "The Git dependency has no immutable commit in the lock selection.",
-        actions: ["Lock the dependency to a commit and reinstall."],
-      });
-    }
-    return Object.freeze({ kind: "git", commit, lockfile, lockDigest: lock.digest });
-  }
+  const contentDigest = await canonicalTreeDigest(packageRoot);
   let instance: globalThis.Record<string, string>;
   try {
     instance = await identifyDependencyInstance({
@@ -1393,7 +1381,7 @@ async function installedIdentity(input: {
       packageRoot,
       parentModule: join(consumerRoot, "package.json"),
       specifier: dependency,
-      contentDigest: await canonicalTreeDigest(packageRoot),
+      contentDigest,
     });
   } catch (cause) {
     if (cause instanceof EvalRootPreflightError) throw cause;
@@ -1405,6 +1393,22 @@ async function installedIdentity(input: {
       actions: ["Use a supported frozen registry/tarball install with immutable identity metadata."],
     });
   }
+  if (instance.identityKind === "git") {
+    const commit = instance.commit;
+    if (commit === undefined) {
+      throw issueError({
+        code: "eval-root.installation-unverifiable",
+        mount,
+        dependency,
+        message: "The actual package lock entry is Git-backed but has no immutable commit.",
+        actions: ["Lock the dependency to a commit and reinstall."],
+      });
+    }
+    return Object.freeze({ kind: "git", commit, lockfile, lockDigest: lock.digest });
+  }
+  if (instance.identityKind === "file") {
+    return Object.freeze({ kind: "file", contentDigest, lockfile, lockDigest: lock.digest });
+  }
   const integrity = instance.integrity;
   if (instance.identityKind !== "registry" || integrity === undefined) {
     throw issueError({
@@ -1413,6 +1417,15 @@ async function installedIdentity(input: {
       dependency,
       message: "The lock selection does not expose a portable registry/tarball integrity for this package.",
       actions: ["Use a supported frozen registry/tarball install with immutable integrity metadata."],
+    });
+  }
+  if (isGitDeclaration(declaration)) {
+    throw issueError({
+      code: "eval-root.installation-unverifiable",
+      mount,
+      dependency,
+      message: "The direct Git declaration does not match the actual package lock entry.",
+      actions: ["Regenerate the lockfile and reinstall the declared Git dependency."],
     });
   }
   return Object.freeze({
@@ -1590,11 +1603,6 @@ function lockEntryIdentity(
   precomputedContentDigest: string,
 ): globalThis.Record<string, string> {
   const resolution = isPlainRecord(entry.resolution) ? entry.resolution : entry;
-  const integrity = typeof resolution.integrity === "string"
-    ? resolution.integrity
-    : typeof entry.integrity === "string" ? entry.integrity
-    : typeof entry.checksum === "string" ? `yarn:${entry.checksum}` : undefined;
-  if (integrity !== undefined) return { identityKind: "registry", integrity };
   const resolved = typeof entry.resolved === "string"
     ? entry.resolved
     : typeof resolution.tarball === "string" ? resolution.tarball
@@ -1603,8 +1611,23 @@ function lockEntryIdentity(
     : typeof resolution.path === "string" ? resolution.path
     : typeof entry.resolution === "string" ? entry.resolution
     : undefined;
-  const commit = resolved === undefined ? undefined : gitCommit(resolved);
-  if (commit !== undefined) return { identityKind: "git", commit };
+  const entryCommit = typeof resolution.commit === "string" ? resolution.commit : typeof entry.commit === "string" ? entry.commit : undefined;
+  const gitBacked = entryCommit !== undefined || typeof resolution.repo === "string" ||
+    resolved !== undefined && isGitDeclaration(resolved);
+  if (gitBacked) {
+    const commit = entryCommit === undefined
+      ? resolved === undefined ? undefined : gitCommit(resolved)
+      : gitCommit(`commit:${entryCommit}`);
+    if (commit === undefined) {
+      throw dependencyIdentityError(input, `The ${lock.kind} lock entry is Git-backed but has no immutable commit.`);
+    }
+    return { identityKind: "git", commit };
+  }
+  const integrity = typeof resolution.integrity === "string"
+    ? resolution.integrity
+    : typeof entry.integrity === "string" ? entry.integrity
+    : typeof entry.checksum === "string" ? `yarn:${entry.checksum}` : undefined;
+  if (integrity !== undefined) return { identityKind: "registry", integrity };
   if (resolved !== undefined && (resolved.startsWith("file:") || resolved.startsWith("link:") || resolved.startsWith("portal:") || resolved.startsWith("workspace:"))) {
     if (precomputedContentDigest.length === 0) {
       // This branch only runs for pnpm/yarn.  The content hash is asynchronous,
@@ -1693,29 +1716,60 @@ function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function canonicalTreeDigest(root: string): Promise<string> {
-  const realRoot = await realpath(root);
+/**
+ * Stable content identity for a package tree.  Links are part of the identity:
+ * their owner-relative target is encoded and the target content is included at
+ * the link's logical path.  A global "visited" set would hide a link cycle, so
+ * only the active directory ancestry is tracked here.
+ */
+export async function canonicalTreeDigest(root: string): Promise<string> {
+  let realRoot: string;
+  try {
+    realRoot = await realpath(root);
+  } catch (cause) {
+    if (isSymbolicLinkCycle(cause)) {
+      throw new Error("symbolic-link cycle makes package identity unverifiable at the package root");
+    }
+    throw cause;
+  }
   const digest = createHash("sha256");
-  const visited = new Set<string>();
+  const activeDirectories = new Set<string>();
   const walk = async (current: string, rel: string): Promise<void> => {
     const info = await lstat(current);
     if (info.isSymbolicLink()) {
       const link = await readlink(current);
-      const target = await realpath(resolve(dirname(current), link));
+      let target: string;
+      try {
+        target = await realpath(resolve(dirname(current), link));
+      } catch (cause) {
+        if (isSymbolicLinkCycle(cause)) {
+          throw new Error(`symbolic-link cycle makes package identity unverifiable at ${rel}`);
+        }
+        throw new Error(`symbolic link ${rel} cannot be resolved for a portable package identity: ${errorMessage(cause)}`);
+      }
       if (!isWithin(realRoot, target)) throw new Error(`symlink ${rel} escapes package root`);
       digest.update(`link\0${rel}\0${relativePortable(realRoot, target)}\0`);
-      if (!visited.has(target)) {
-        visited.add(target);
-        await walk(target, rel);
+      if (activeDirectories.has(target)) {
+        throw new Error(`symbolic-link cycle makes package identity unverifiable at ${rel}`);
       }
+      await walk(target, rel);
       return;
     }
     if (info.isDirectory()) {
       if (rel !== "." && ignoredTreePath(rel)) return;
+      const realDirectory = await realpath(current);
+      if (activeDirectories.has(realDirectory)) {
+        throw new Error(`symbolic-link cycle makes package identity unverifiable at ${rel}`);
+      }
+      activeDirectories.add(realDirectory);
       digest.update(`dir\0${rel}\0`);
-      const children = await readdir(current);
-      for (const child of children.sort((a, b) => Buffer.from(a).compare(Buffer.from(b)))) {
-        await walk(join(current, child), rel === "." ? child : `${rel}/${child}`);
+      try {
+        const children = await readdir(current);
+        for (const child of children.sort((a, b) => Buffer.from(a).compare(Buffer.from(b)))) {
+          await walk(join(current, child), rel === "." ? child : `${rel}/${child}`);
+        }
+      } finally {
+        activeDirectories.delete(realDirectory);
       }
       return;
     }
@@ -1728,6 +1782,14 @@ async function canonicalTreeDigest(root: string): Promise<string> {
   };
   await walk(realRoot, ".");
   return digest.digest("hex");
+}
+
+function isSymbolicLinkCycle(cause: unknown): boolean {
+  return typeof cause === "object" && cause !== null && "code" in cause && (cause as { code?: unknown }).code === "ELOOP";
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function ignoredTreePath(rel: string): boolean {
@@ -1840,30 +1902,16 @@ async function collectStaticTransfer(
     return;
   }
   try {
-    const realSource = await realpath(source);
-    if (!isWithin(ownerRoot, realSource)) {
-      throw new EvalRootPreflightError([{
-        code: "eval-root.outside-package",
-        evalFile: containingFile,
-        message: `${method} source resolves outside the Eval owner package.`,
-        actions: ["Keep Eval transfer inputs inside the owning project or package."],
-      }]);
-    }
-    const info = await lstat(realSource);
     const kind = method === "uploadFile" ? "file" : "directory";
-    if (kind === "file" && !info.isFile() || kind === "directory" && !info.isDirectory()) {
-      limitation("dynamic-transfer", containingFile, `${method} source kind is not ${kind}`);
-      return;
-    }
-    const digest = kind === "file"
-      ? `sha256:${createHash("sha256").update(await readFile(realSource)).digest("hex")}`
-      : `sha256:${await strictDirectoryDigest(realSource, ignore ?? [])}`;
+    const materialized = kind === "file"
+      ? await readOwnedTransferFile(source, ownerRoot)
+      : await materializeOwnedTransferDirectory(source, ownerRoot, ignore ?? []);
     const entry: StaticTransferPlanEntry = Object.freeze({
       sequence: plan.length,
       kind,
-      source: relativePortable(ownerRoot, realSource),
+      source: materialized.sourceId,
       target,
-      digest,
+      digest: materialized.digest,
       ...(ignore === undefined || ignore.length === 0 ? {} : { ignore: Object.freeze([...ignore]) }),
     });
     // Each syntactic call is an execution contract, including two adjacent
@@ -1872,6 +1920,16 @@ async function collectStaticTransfer(
     plan.push(entry);
   } catch (cause) {
     if (cause instanceof EvalRootPreflightError) throw cause;
+    if (cause instanceof OwnedTransferSourceError) {
+      throw new EvalRootPreflightError([{
+        code: cause.reason === "outside-owner" ? "eval-root.outside-package" : "eval-root.installation-unverifiable",
+        evalFile: containingFile,
+        message: `${method} source cannot be transferred: ${cause.message}`,
+        actions: cause.reason === "outside-owner"
+          ? ["Keep Eval transfer inputs inside the owning project or package."]
+          : ["Use regular files and owner-internal non-cyclic symbolic links for Eval transfer inputs."],
+      }]);
+    }
     limitation("dynamic-transfer", containingFile, `${method} source cannot be planned: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
 }
@@ -1950,31 +2008,171 @@ function staticIgnoreList(node: ts.Expression | undefined): readonly string[] | 
   return values;
 }
 
-/** Directory transfer hash; symlinks and special files are intentionally rejected. */
-async function strictDirectoryDigest(root: string, ignore: readonly string[]): Promise<string> {
+type OwnedTransferFailure = "outside-owner" | "cycle" | "special" | "kind" | "unresolvable";
+
+class OwnedTransferSourceError extends Error {
+  constructor(readonly reason: OwnedTransferFailure, message: string) {
+    super(message);
+    this.name = "OwnedTransferSourceError";
+  }
+}
+
+interface OwnedTransferSource {
+  readonly sourceId: string;
+  readonly realOwner: string;
+  readonly realSource: string;
+  readonly kind: "file" | "directory";
+}
+
+/**
+ * Resolve a transfer capability twice: the lexical request must originate below
+ * the owner, and its fully dereferenced target must remain below the owner's
+ * real root.  The lexical relative id is intentionally retained so planning and
+ * Attempt-time evidence name the same (possibly symlinked) source.
+ */
+async function resolveOwnedTransferSource(
+  source: string,
+  ownerRoot: string,
+  expected: "file" | "directory",
+): Promise<OwnedTransferSource> {
+  const lexicalOwner = resolve(ownerRoot);
+  const lexicalSource = resolve(source);
+  if (!isWithin(lexicalOwner, lexicalSource)) {
+    throw new OwnedTransferSourceError("outside-owner", "transfer source escapes its Eval owner root");
+  }
+  let realOwner: string;
+  let realSource: string;
+  try {
+    [realOwner, realSource] = await Promise.all([realpath(ownerRoot), realpath(lexicalSource)]);
+  } catch (cause) {
+    if (isSymbolicLinkCycle(cause)) {
+      throw new OwnedTransferSourceError("cycle", "transfer source contains a symbolic-link cycle");
+    }
+    throw new OwnedTransferSourceError("unresolvable", `transfer source cannot be resolved: ${errorMessage(cause)}`);
+  }
+  if (!isWithin(realOwner, realSource)) {
+    throw new OwnedTransferSourceError("outside-owner", "transfer source resolves outside its Eval owner root");
+  }
+  const info = await lstat(realSource);
+  const kind = info.isFile() ? "file" : info.isDirectory() ? "directory" : undefined;
+  if (kind === undefined) {
+    throw new OwnedTransferSourceError("special", "transfer source is a special file");
+  }
+  if (kind !== expected) {
+    throw new OwnedTransferSourceError("kind", `transfer source is not a ${expected}`);
+  }
+  return Object.freeze({
+    sourceId: relativePortable(lexicalOwner, lexicalSource),
+    realOwner,
+    realSource,
+    kind,
+  });
+}
+
+async function resolveOwnedTransferLink(
+  source: string,
+  relativePath: string,
+  realOwner: string,
+): Promise<string> {
+  let target: string;
+  try {
+    target = await realpath(source);
+  } catch (cause) {
+    if (isSymbolicLinkCycle(cause)) {
+      throw new OwnedTransferSourceError("cycle", `directory transfer contains a symbolic-link cycle at ${relativePath}`);
+    }
+    throw new OwnedTransferSourceError("unresolvable", `directory transfer link ${relativePath} cannot be resolved: ${errorMessage(cause)}`);
+  }
+  if (!isWithin(realOwner, target)) {
+    throw new OwnedTransferSourceError("outside-owner", `directory transfer link ${relativePath} resolves outside its Eval owner root`);
+  }
+  return target;
+}
+
+/** Read a file transfer using the same owner and symlink semantics as planning. */
+export async function readOwnedTransferFile(
+  source: string,
+  ownerRoot: string,
+): Promise<{ readonly sourceId: string; readonly bytes: Buffer; readonly digest: string }> {
+  const resolved = await resolveOwnedTransferSource(source, ownerRoot, "file");
+  const bytes = await readFile(resolved.realSource);
+  return Object.freeze({
+    sourceId: resolved.sourceId,
+    bytes,
+    digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  });
+}
+
+interface TransferDirectorySink {
+  readonly directory?: (relativePath: string) => void | Promise<void>;
+  readonly file?: (relativePath: string, bytes: Buffer) => void | Promise<void>;
+}
+
+/**
+ * Materialize an owner-contained directory tree.  Links are dereferenced into
+ * ordinary files/directories at their logical path; escaping links, cycles, and
+ * special files are hard failures.  The returned digest is exactly the digest
+ * of that materialized tree, shared by static planning and Attempt snapshots.
+ */
+export async function materializeOwnedTransferDirectory(
+  source: string,
+  ownerRoot: string,
+  ignore: readonly string[],
+  sink: TransferDirectorySink = {},
+): Promise<{ readonly sourceId: string; readonly digest: string; readonly entries: number }> {
+  const resolved = await resolveOwnedTransferSource(source, ownerRoot, "directory");
   const hash = createHash("sha256");
   const ignored = new Set(ignore);
-  const walk = async (directory: string, prefix: string): Promise<void> => {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries.sort((a, b) => Buffer.from(a.name).compare(Buffer.from(b.name)))) {
-      if (ignored.has(entry.name)) continue;
-      const path = join(directory, entry.name);
-      const relativePath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      const info = await lstat(path);
-      if (info.isDirectory()) {
-        hash.update(`d\0${relativePath}\0`);
-        await walk(path, relativePath);
-      } else if (info.isFile()) {
-        hash.update(`f\0${relativePath}\0${info.size}\0`);
-        hash.update(createHash("sha256").update(await readFile(path)).digest("hex"));
-        hash.update("\0");
-      } else if (info.isSymbolicLink()) {
-        throw new Error(`directory transfer contains symbolic link ${relativePath}`);
-      } else {
-        throw new Error(`directory transfer contains special file ${relativePath}`);
-      }
+  const activeDirectories = new Set<string>();
+  let entries = 0;
+  const walk = async (current: string, relativePath: string, root: boolean): Promise<void> => {
+    let info = await lstat(current);
+    if (info.isSymbolicLink()) {
+      const target = await resolveOwnedTransferLink(current, relativePath, resolved.realOwner);
+      info = await lstat(target);
+      await walkResolved(target, info, relativePath, false);
+      return;
     }
+    await walkResolved(current, info, relativePath, root);
   };
-  await walk(root, "");
-  return hash.digest("hex");
+  const walkResolved = async (current: string, info: Awaited<ReturnType<typeof lstat>>, relativePath: string, root: boolean): Promise<void> => {
+    if (info.isDirectory()) {
+      const realDirectory = await realpath(current);
+      if (activeDirectories.has(realDirectory)) {
+        throw new OwnedTransferSourceError("cycle", `directory transfer contains a symbolic-link cycle at ${relativePath || "."}`);
+      }
+      activeDirectories.add(realDirectory);
+      try {
+        if (!root) {
+          hash.update(`d\0${relativePath}\0`);
+          entries += 1;
+          await sink.directory?.(relativePath);
+        }
+        for (const entry of (await readdir(current, { withFileTypes: true })).sort((a, b) => Buffer.from(a.name).compare(Buffer.from(b.name)))) {
+          if (ignored.has(entry.name)) continue;
+          const childPath = relativePath === "" ? entry.name : `${relativePath}/${entry.name}`;
+          await walk(join(current, entry.name), childPath, false);
+        }
+      } finally {
+        activeDirectories.delete(realDirectory);
+      }
+      return;
+    }
+    if (info.isFile()) {
+      const bytes = await readFile(current);
+      hash.update(`f\0${relativePath}\0${bytes.byteLength}\0`);
+      hash.update(createHash("sha256").update(bytes).digest("hex"));
+      hash.update("\0");
+      entries += 1;
+      await sink.file?.(relativePath, bytes);
+      return;
+    }
+    throw new OwnedTransferSourceError("special", `directory transfer contains special file ${relativePath}`);
+  };
+  await walk(resolved.realSource, "", true);
+  return Object.freeze({
+    sourceId: resolved.sourceId,
+    digest: `sha256:${hash.digest("hex")}`,
+    entries,
+  });
 }
