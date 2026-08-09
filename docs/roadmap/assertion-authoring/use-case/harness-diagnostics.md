@@ -10,8 +10,8 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 判定和计分紧邻 Fact 登记，不预声明跨场景规则。
 示例不预声明 matcher、RegExp、JSON rule 或共享规则构造器。
 
-这些示例描述 Roadmap 目标契约。
-下游若提前采用，应保留 TypeScript error 暴露尚未落地的签名，不能用旧 Match AST 或类型断言伪装实现。
+这些示例使用本 Roadmap 已落地的 Fact 与 Match 契约。
+下游应让 TypeScript 直接校验公开签名，不能用旧 Match AST、旧链式 Fact 用法或类型断言掩盖错误。
 
 ## 用户共同需要什么
 
