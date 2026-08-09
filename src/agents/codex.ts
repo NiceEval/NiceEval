@@ -323,6 +323,10 @@ export function codexAgent(config?: CodexConfig): Agent {
         ? ""
         : `model_reasoning_effort = "${ctx.reasoningEffort}"\n`;
       const base = getBaseUrl();
+      // 自定义 endpoint 常从项目的私有环境注入。它仍是 Codex 的真实运行配置，但不能因
+      // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
+      // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
+      const providerSensitiveValues = base ? [base] : [];
 
       const topLevel = base
         ? modelLine + `model_provider = "s2a"\n` + effortLine
@@ -341,6 +345,7 @@ export function codexAgent(config?: CodexConfig): Agent {
             sb,
             "~/.codex/config.toml",
             providerTable ? `${topLevel}\n${providerTable}` : topLevel,
+            { sensitiveValues: providerSensitiveValues },
           ),
           catch: (cause) => cause,
         });
@@ -359,7 +364,7 @@ export function codexAgent(config?: CodexConfig): Agent {
           yield* Effect.tryPromise({
             try: (signal) => sb.runShell(
               `cat >> ~/.codex/config.toml <<'NICEEVAL_PROVIDER_EOF'\n\n${providerTable}NICEEVAL_PROVIDER_EOF\n`,
-              { signal },
+              { signal, sensitiveValues: providerSensitiveValues },
             ),
             catch: (cause) => cause,
           });
