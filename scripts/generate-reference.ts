@@ -450,6 +450,7 @@ function replaceBetween(content: string, begin: string, end: string, newBody: st
 /** 生成器需要读取的源文件(相对仓库根),CLI 与测试共用同一份清单。 */
 export const SOURCE_FILES = [
   "src/expect/index.ts",
+  "src/assertions/match.ts",
   "src/assertions/types.ts",
   "src/runner/types.ts",
   "src/context/types.ts",
@@ -465,14 +466,63 @@ export const SOURCE_FILES = [
 
 export type SourceMap = Record<(typeof SOURCE_FILES)[number], string>;
 
+/** `niceeval/expect` 的公开 matcher factory；内部 evaluator 与纯辅助函数不进入作者参考。 */
+const EXPECT_FACTORY_NAMES = new Set([
+  "and",
+  "or",
+  "not",
+  "includes",
+  "excludes",
+  "pattern",
+  "equals",
+  "matches",
+  "similarity",
+  "includesUrl",
+  "hasSections",
+  "satisfies",
+  "isDefined",
+  "isTrue",
+  "isFalse",
+  "commandSucceeded",
+  "defineValueMatch",
+  "defineScoreMatch",
+  "referencesAnyPath",
+  "toolMatch",
+  "commandMatch",
+  "eventMatch",
+]);
+
 function computeRegionBody(regionId: string, sources: SourceMap): string {
   switch (regionId) {
     case "expect-matchers":
-      return renderMemberList(extractExportedFunctions(sources["src/expect/index.ts"], "src/expect/index.ts"));
-    case "value-assertion":
       return renderMemberList(
-        extractInterfaceMembers(sources["src/assertions/types.ts"], "src/assertions/types.ts", "ValueAssertion"),
+        extractExportedFunctions(sources["src/assertions/match.ts"], "src/assertions/match.ts")
+          .filter((member) => EXPECT_FACTORY_NAMES.has(member.name)),
       );
+    case "value-assertion":
+      return renderMemberGroups([
+        {
+          heading: "Match",
+          members: extractInterfaceMembers(sources["src/assertions/match.ts"], "src/assertions/match.ts", "Match")
+            .filter((member) => !member.name.startsWith("[")),
+        },
+        {
+          heading: "BooleanMatch",
+          members: extractInterfaceMembers(
+            sources["src/assertions/match.ts"],
+            "src/assertions/match.ts",
+            "BooleanMatch",
+          ),
+        },
+        {
+          heading: "ScoreMatch",
+          members: extractInterfaceMembers(
+            sources["src/assertions/match.ts"],
+            "src/assertions/match.ts",
+            "ScoreMatch",
+          ),
+        },
+      ]);
     case "defineeval-options":
       return renderMemberList(
         [
@@ -489,17 +539,26 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
         ],
       );
     case "test-context":
-      // `t` 的成员分两处声明:两种题型共有的在 BaseTestContext,通过制专属的 require 在
-      // TestContext(计分制的 ScoreTestContext 换成 score)。参考页给的是通过制的 `t`,
-      // 两段按声明顺序接起来,漏掉任一段都会让这一页只剩半张表。
+      // 参考页展示通过制的完整 `t`。Fact 迁移后 TestContext 自身就是唯一公开声明，
+      // 不能为生成器补回已删除的 BaseTestContext 兼容影子。继承的 attempt 作用域 Fact
+      // producer 仍要显式合并，否则参考页会漏掉 succeeded/calledTool 等成员。
       return renderMemberList([
-        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "BaseTestContext"),
+        ...extractInterfaceMembers(
+          sources["src/context/types.ts"],
+          "src/context/types.ts",
+          "ScopedFactProducers",
+        ),
         ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TestContext"),
       ]);
     case "turn-handle":
-      return renderMemberList(
-        extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TurnHandle"),
-      );
+      return renderMemberList([
+        ...extractInterfaceMembers(
+          sources["src/context/types.ts"],
+          "src/context/types.ts",
+          "ScopedFactProducers",
+        ),
+        ...extractInterfaceMembers(sources["src/context/types.ts"], "src/context/types.ts", "TurnHandle"),
+      ]);
     case "config-fields":
       return renderMemberList(
         extractInterfaceMembers(sources["src/runner/types.ts"], "src/runner/types.ts", "Config"),

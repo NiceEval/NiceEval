@@ -24,13 +24,19 @@ Agent 在同一 Turn 内运行、诊断、必要修复并回复；Eval 不用第
 - 最终回复把 show 中的证据和修复建议对应起来；
 - 文件修改没有越过任务允许的范围。
 
-确定性的 tool request 子序列、可观察工具输入、运行状态和 Sandbox diff 由机器 Fact 检查。
+可观察工具输入、运行状态和 Sandbox diff 由机器 Fact 检查。
 动态 locator、工具输出因果、Human 输出含义与最终回复顺序不是本次新增的确定性 Fact。
 本页只展示这次 API 负责的机器检查，不为其伪造新入口。
 
-每题的机械层固定为三个 Turn Fact：`toolOrder()`、`notCalledTool()` 与 `succeeded()`。
-`commandMatch()` 匹配 logical CLI，所以遵循项目指引执行 direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 或无选项 `npx niceeval` 都不需要 Harness 写 wrapper OR。
-opaque shell 仍是 unavailable；这项归一不读取 raw shell text，也不证明物理 binary identity。
+`commandMatch()` 与 `toolOrder()` 只消费 Adapter 已经提供的可信 logical command occurrence。
+direct `niceeval`、`pnpm exec niceeval`、`pnpm --silent exec niceeval` 与无 runner option 的
+`npx niceeval` 可以在这层归一。
+
+当前 Codex / Claude CLI Adapter 只能观察外层 coding-agent 进程，看不到它在沙箱内启动的 shell argv。
+core 不从 raw shell 文本、时间邻近或 OTel 名称猜 argv。因此当前 Harness 不把命令顺序写成硬 Fact。
+
+运行、show、动态 locator、下钻与最终回复的完整有序语义由现有 full-Turn Judge 检查。
+将来只有 Adapter 提供可信 occurrence 时，普通 Eval 才应复用同一 `commandMatch()` 写确定性顺序断言。
 
 ## A：修好 Python 起点，再判断复验与接受
 
@@ -54,12 +60,6 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 
 ```ts
 const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件、eval 源码或 agent 实现；诊断证据应来自 NiceEval 自身的公开结果查看接口。");
-const journey = turn.toolOrder([
-  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
-  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
-  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-]);
 const stayedPublic = turn.notCalledTool(
   toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) }),
 );
@@ -70,7 +70,6 @@ const repairedRuntime = t.sandbox.fileChanged("experiments/local.ts", {
   after: includes("runtime:python"),
 });
 
-t.assert(journey);
 t.assert(stayedPublic);
 t.assert(completed);
 t.assert(changedOnlyConfig);
@@ -81,7 +80,7 @@ t.score("runtime 配置修复", repairedRuntime, { max: 2 });
 return t.finishScore();
 ```
 
-五个 Fact 都明确进入判定用途，其中两个 Fact 还各自进入一次计分用途。
+四个 Fact 都明确进入判定用途，其中两个 Fact 还各自进入一次计分用途。
 本页定义的 A 确定性部分可得 `3 + 2 = 5` 分。
 其中 observed-input 约束与题面共同明确禁止直接读取 `.niceeval`、`evals` 与 `agents`；三项都是用户可见的任务边界，不是隐藏失败条件。
 
@@ -119,17 +118,12 @@ return t.finishScore();
 
 ```ts
 const turn = await t.send("运行 local experiment，调查所有失败并逐项给出归因与修正建议。每项结论必须引用运行结果证据；不得使用文件读取工具直接打开 eval 源码、agent 实现或内部记录，诊断证据应来自 NiceEval 自身的公开结果查看接口。不要修改项目。");
-const journey = turn.toolOrder([
-  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
-  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
-]);
 const stayedPublic = turn.notCalledTool(
   toolMatch({ input: referencesAnyPath([".niceeval", "evals", "agents"]) }),
 );
 const completed = turn.succeeded();
 const unchanged = t.sandbox.noChanges();
 
-t.assert(journey);
 t.assert(stayedPublic);
 t.assert(completed);
 t.assert(unchanged);
