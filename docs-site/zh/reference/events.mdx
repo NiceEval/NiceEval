@@ -17,7 +17,7 @@ interface Turn {
 }
 ```
 
-`data` 的语义是“本轮的结构化产物”：**应用的回答本身是结构化对象**（抽取、分类、表单填充）时才填，评估作者可以用 `t.check(turn.data, ...)` 比较它。只回文本的应用不填——不要把原始响应 body 或 `message` 文本复制进去凑数，也不要反过来把结构化输出序列化塞进 `events`。`usage` 拿得到就带，拿不到就不填——**别编数字**。
+`data` 的语义是“本轮的结构化产物”：**应用的回答本身是结构化对象**（抽取、分类、表单填充）时才填，评估作者可以用 `t.check(turn.data, ...)` 比较它。只回文本的应用不填——不要把原始响应 body 或 `message` 文本复制进去凑数，也不要反过来把结构化输出序列化后写进 `events`。`usage` 拿得到就带，拿不到就不填——**别编数字**。
 
 `usage` 的完整字段（`Usage` 类型）：
 
@@ -220,7 +220,8 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 
 ```ts
 { type: "operation.started", operationId: string,
-  operation: { kind: "tool", name: string, input: JsonValue, tool?: ToolName } }
+  operation: { kind: "tool", name: string, input: JsonValue,
+    tool?: ToolName, command?: CommandProjection } }
 { type: "operation.finished", operationId: string, kind: "tool",
   output?: JsonValue, status: "completed" | "failed" | "rejected" }
 ```
@@ -228,6 +229,33 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 - 每个 tool `operation.started` 配一个**同 `operationId`** 的 tool `operation.finished`——并发调用靠它不错配。你的 agent 返回里有显式 id（AI SDK 的 `toolCallId`、Anthropic 的 `tool_use.id`）就直接用；实在没有再按顺序合成。
 - `status` 如实填：工具执行失败是 `"failed"`；**人否决是 `"rejected"`**。评估作者用带状态的 `toolMatch(...)` 或 `commandMatch(...)` 精确区分，两回事不要混。
 - `name` 用工具的原始名字。
+
+#### 让 `commandMatch()` 取得正向证据
+
+原生协议直接给出单一 invocation 的 structured argv 时，从 `niceeval/adapter` 调用公开构造器：
+
+```ts
+import { commandProjection } from "niceeval/adapter";
+
+events.push({
+  type: "operation.started",
+  operationId: call.id,
+  operation: {
+    kind: "tool",
+    name: call.name,
+    input: call.input,
+    command: commandProjection({
+      state: "available",
+      executable: call.executable,
+      args: call.args,
+    }),
+  },
+});
+```
+
+`commandProjection()` 保留 Adapter 已确认的 original tokens，并调用同一份 `normalizeLogicalCommand()` 生成 `logical-command/v1` 投影。`pnpm exec niceeval show` 和 `npx niceeval show` 因此都能由 `commandMatch("niceeval", { argsStart: ["show"] })` 精确匹配。
+
+只有原生协议已经给出 argv，或协议 grammar 能无歧义地产生单一 invocation，才能把 original 标为 available。协议只给 shell source、内容已截断或脱敏时使用 `opaqueCommandProjection(reason)`；能确认不是 command 时使用 `notCommandProjection()`。无法确认 command / not-command 时降低 actions coverage，不能从 tool name、input 或 shell 文本猜测。
 
 ### 子 agent `operation.started` / `operation.finished` —— 委派了谁
 

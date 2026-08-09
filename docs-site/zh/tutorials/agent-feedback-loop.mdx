@@ -282,7 +282,7 @@ Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运
 不传 `--rerun all` 时，NiceEval 会比较当前指纹与最近结果。指纹由两部分组成：
 
 - **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。
-- **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。
+- **运行配置**：实验 ID、Agent、model、flags、Sandbox，以及 `Judge` 的模型与端点。
 
 超时上限不在指纹里：它决定等不等得到，不决定跑出来的结果是什么。改大改小都不会作废已完成的结果。
 

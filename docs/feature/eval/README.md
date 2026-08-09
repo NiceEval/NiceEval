@@ -101,29 +101,42 @@ solution、生成器与参考答案不得进入任何 build context 或最终镜
 ## defineScoreEval：计分制题型
 
 `defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。
-字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它是另一套类型,给分词汇 `.points(n)` / `t.score(label, n)` **只**存在于这里(在 `defineEval` 里写给分是类型错误):
+字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它多出 Fact 计分、直接给分和完成令牌。
+这些词只存在于 `defineScoreEval`，在 `defineEval` 里写给分是类型错误：
 
 ```typescript
 import { defineScoreEval } from "niceeval";
-import { isTrue } from "niceeval/expect";
+import { commandSucceeded } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 前置:失败就地结束,后面的分自然挣不到
-    await t.require(await t.sandbox.pathExists("db-gpt/README.md"), isTrue("cloned"));
-    t.sandbox.fileChanged("db-gpt/.env").points(1);   // 检查点通过挣 1 分
-    t.score("代码精简", 15);                           // 自己算好条件后直接累加
+
+    const tests = t.check(
+      await t.sandbox.runCommand("pnpm", ["test"]),
+      commandSucceeded(),
+    );
+    t.assert(tests, { label: "测试通过" });
+    t.score("测试通过", tests, { max: 2 });
+
+    const config = t.sandbox.fileChanged("db-gpt/.env");
+    t.score("配置运行环境", config, { max: 1 });
+    t.score("代码精简", { earned: 1 });
+    return t.finishScore();
   },
 });
 ```
 
-计分制只多出分数面：`.points(n)` 是得分点，`t.score(label, n)` 直接给分。
-严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只写入。
-需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
+`t.score(label, fact, { max })` 让 Boolean Fact 通过挣满 `max`、失败挣 0，让 Score Fact 按归一化分数比例挣分。
+`t.score(label, { earned })` 写入作者已算好的非负分数。
+同一个 Fact 可以相邻登记一个判定用途和一个计分用途，evaluator 仍只运行一次。
+后续代码依赖即时 Fact 时使用两种题型共用的 `await t.require(fact)`；多个独立要求使用 `t.assert(fact)` 继续收集。
 
-题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "points"`)供报告选择主读数。
+正常路径必须 `return t.finishScore()`，明确关闭计分收集器。
+`require` 未通过、Judge `.stopOnFailure()` 未通过或 `t.skip()` 是合法终止路径，不要求执行不可达的完成令牌。
+
+题型是定义期事实，进 `EvalDescriptor.evaluationKind`(`"pass" | "score"`)供报告选择主读数。
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
 计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-points.md)。
 

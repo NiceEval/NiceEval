@@ -73,7 +73,7 @@ npx niceeval exp local fixtures/button --attempts 5 --early-exit
 fingerprint 由两部分组成：
 
 - **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` / `loadText` 读进来的数据文件。隐藏测试脚本、参考实现这类判据文件用 `loadText` 读入，改动同样触发重跑。用 `fs` 自己读的文件不在 fingerprint 里。loader 要写在模块顶层——缓存判断发生在运行之前，写进 `test(t)` 里会直接报错。断言抽在公共辅助函数里时，改那个辅助函数会让引用它的评估用例全部重跑。
-- **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
+- **运行配置**：实验 ID、Agent、model、flags、Sandbox，以及 `Judge` 的模型与端点。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
 
 被测程序自己的源码、Agent CLI 的版本、Sandbox 镜像的内容都不在 fingerprint 里。改了这些要复验，用 `--rerun`（只重跑失败项）或 `--rerun all`（全部重跑）。调试非确定性行为时同样用 `--rerun all`。
 

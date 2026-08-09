@@ -953,6 +953,7 @@ export function collectDockerfileProviderBuildPreparation(
         context: plan.context,
         dockerfile: plan.dockerfile,
         buildArgs: plan.buildArgs,
+        ...(plan.target === undefined ? {} : { target: plan.target }),
         platform: plan.platform,
         expected: plan.build,
         ...(plan.profileBinding === undefined ? {} : { dockerSocketPath: plan.profileBinding.dockerSocketPath }),

@@ -45,6 +45,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
   readonly context: SandboxLocation;
   readonly dockerfile: string;
   readonly buildArgs: Readonly<Record<string, string>>;
+  readonly target?: string;
   readonly platform: string;
   readonly expected: DockerfileBuildIdentity;
   readonly dockerSocketPath?: string;
@@ -55,6 +56,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
     context,
     dockerfile: input.dockerfile,
     buildArgs: input.buildArgs,
+    ...(input.target === undefined ? {} : { target: input.target }),
     platform: input.platform,
     label: `sandbox profile ${input.profile}`,
   });
@@ -73,6 +75,7 @@ export async function collectDockerfileBuildFromIdentity(input: {
     dockerfilePath: identity.dockerfilePath,
     dockerfile: identity.dockerfile,
     buildArgs: input.buildArgs,
+    ...(input.target === undefined ? {} : { target: input.target }),
     platform: input.platform,
     ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
   };

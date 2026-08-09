@@ -709,13 +709,13 @@ OTLP trace 或标准化后的 span 数据。它是可选的执行关系和耗时
 ## Verdict 含义
 
 <Tabs>
-  <Tab title="passed">所有 gate 通过。</Tab>
-  <Tab title="failed">至少一个 gate 失败，或 `--strict` 下 soft 断言低于阈值。</Tab>
+  <Tab title="passed">所有明确登记的 Fact 要求与 Judge gate 都通过。</Tab>
+  <Tab title="failed">至少一个 Fact 要求或 Judge gate 失败。</Tab>
   <Tab title="errored">环境、超时、adapter 或 agent runtime 出错。</Tab>
   <Tab title="skipped">评估用例被主动跳过。</Tab>
 </Tabs>
 
-Soft 断言的分数记录在 `assertions[].score` 里。非 `--strict` 模式下，它们不会产生额外的 verdict。
+普通 Fact 是否影响判定由源码里的 `t.assert(...)` / `t.require(...)` 用途决定。Judge 的 soft 分数继续单独展示，只有显式链 `.gate(...)` 才会影响判定。
 
 ## 调试建议
 

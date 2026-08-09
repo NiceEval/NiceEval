@@ -8,11 +8,10 @@ description: "把 NiceEval 接入 GitHub Actions 或任意 CI。评估用例失�
 
 ## 退出码
 
-默认情况下，只要存在失败的 gate，[NiceEval](https://niceeval.com/) 将以非零状态码退出。CI 中通常使用 `--strict`，让失败更明确。
+只要存在失败的 `t.assert(...)` / `t.require(...)` 要求、Judge gate 或执行错误，[NiceEval](https://niceeval.com/) 就以非零状态码退出。需要阻止合并的要求直接写在评估用例源码中，CI 与本地运行读取同一套判定用途。
 
 ```bash
 npx niceeval exp ci \
-  --strict \
   --junit .niceeval/junit.xml
 ```
 
@@ -36,7 +35,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
+      - run: npx niceeval exp ci --junit .niceeval/junit.xml
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -91,7 +90,7 @@ NEXT
 需要机器解析运行事件（自建 annotation adapter、实时看板）时把这条命令加上 `--json`，得到同一套事实的 NDJSON 事件流，`start` 打头、`result` 收尾：
 
 ```bash
-npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
+npx niceeval exp ci --junit .niceeval/junit.xml --json
 ```
 
 需要一份 JSON 汇总文件时不解析运行日志，运行后单独读结果面：

@@ -127,18 +127,18 @@ defineConfig({
 
 ## 严重度：judge 默认 soft
 
-judge 调用和其它断言一样是评分函数，遵守 [Assert · gate 与 soft 严重度](/zh/explanation/assert#gate-与-soft-严重度) 同一套机制——只是**默认值**和大多数值匹配器不同：
+Judge 还使用 [Assert · Judge 兼容句柄](/zh/explanation/assert#judge-保留兼容句柄) 的链式方法；这些方法不属于普通 Fact 或 Match：
 
 ```ts
 t.judge.autoevals.closedQA("语气是否礼貌?");              // 不带阈值 → soft，纯记分，永不让 eval 失败
-t.judge.autoevals.closedQA("语气是否礼貌?").atLeast(0.7); // soft + 阈值 → 只在 --strict 下才算失败
-t.judge.autoevals.closedQA("语气是否礼貌?").gate();       // 提升为 gate → 低于阈值立刻失败
+t.judge.autoevals.closedQA("语气是否礼貌?").atLeast(0.7); // soft + 阈值 → 标出低于质量线的结果，不改变判定
+t.judge.autoevals.closedQA("语气是否礼貌?").gate();       // 提升为 gate → 低于阈值时判为 failed
 ```
 
 不调 `.atLeast()` 也不调 `.gate()` 时，不链分数阈值或门槛的 judge 调用纯粹记一个质量分——会显示在 eval 的分数徽章上，但单独永远不会让运行失败。这是 judge 合理的默认值：一个概率模型在给另一个概率模型的输出打分，把每次没打满分都当硬失败会让整套 eval 变得脆弱、动不动就红。只有当被评的属性真的是硬底线时（比如"回复不能编造账户信息"），才用 `.gate()`。
 
 ## 相关阅读
 
-- [Assert](/zh/explanation/assert) — gate / soft 严重度的完整规则，以及 judge 分数最终折进的判定规则。
+- [Fact 与断言](/zh/explanation/assert) — 普通 Fact 的明确用途，以及 Judge 兼容句柄的边界。
 - [Drive](/zh/explanation/drive) — `t.send()`、`t.newSession()`，以及 `t.judge` / `session.judge` / `turn.judge` 各自挂在哪个 handle 上。
 - [评估](/zh/explanation/evals) — judge 分数如何折进评估用例生命周期和 verdict 类型。

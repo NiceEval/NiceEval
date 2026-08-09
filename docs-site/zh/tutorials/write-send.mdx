@@ -164,7 +164,8 @@ export default defineAgent({
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
   | { type: "operation.started"; operationId: string; operation:
-      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "tool"; name: string; input: JsonValue;
+          tool?: ToolName; command?: CommandProjection }
       | { kind: "subagent"; name: string; remoteUrl?: string } }
   | { type: "operation.finished"; operationId: string; kind: "tool";
       output?: JsonValue; status: "completed" | "failed" | "rejected" }

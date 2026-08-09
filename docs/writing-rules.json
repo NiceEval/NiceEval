@@ -4,6 +4,81 @@
     "docs",
     "docs-site/zh"
   ],
+  "publicApiExamples": {
+    "$why": "公开示例必须与可运行的 Fact/Match 作者面和 CLI 同步。普通 Fact 先由 producer 创建，再由 t.assert、t.require 或 t.score 消费；只有隔离保留的 Judge 句柄继续支持 gate、atLeast 与 points 链。",
+    "rejectedCliFlags": [
+      {
+        "flag": "--strict",
+        "roots": [
+          "docs-site/zh"
+        ],
+        "use": "在 Eval 源码中用 t.assert(...) 或 await t.require(...) 明确登记硬要求",
+        "why": "CLI 已把 --strict 当未知选项拒绝，公开站继续展示会让用户复制出启动前即失败的命令"
+      }
+    ],
+    "removedFactories": [
+      {
+        "name": "makeAssertion",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "布尔 matcher 用 defineValueMatch，连续分数 matcher 用 defineScoreMatch",
+        "why": "niceeval/expect 不再导出 makeAssertion，继续展示会产生导入或类型错误"
+      }
+    ],
+    "ordinaryFactChainMethods": [
+      {
+        "method": "gate",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "Boolean Fact 用 t.assert(fact)，需要立即停止依赖路径时用 await t.require(fact)",
+        "why": "普通 Match 与 Fact 没有 gate 句柄；只有 Judge 兼容句柄保留这条链"
+      },
+      {
+        "method": "atLeast",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "Score Fact 用 t.assert(fact, { atLeast })，计分时用 t.score(label, fact, { max })",
+        "why": "普通 Match 与 Fact 没有 atLeast 句柄；只有 Judge 兼容句柄保留这条链"
+      },
+      {
+        "method": "points",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "在 defineScoreEval 中用 t.score(label, fact, { max })",
+        "why": "普通 Fact 不再用 points 句柄计分；只有 Judge 兼容句柄保留这条链"
+      }
+    ],
+    "removedScoreOverloads": [
+      {
+        "callee": "t.score",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "事实计分写 t.score(label, fact, { max })，直接给分写 t.score(label, { earned })",
+        "why": "t.score(label, number) 已从 ScoreTestContext 删除"
+      }
+    ],
+    "removedEvaluationKinds": [
+      {
+        "value": "points",
+        "roots": [
+          "docs-site/zh",
+          "docs/feature/eval/README.md"
+        ],
+        "use": "evaluationKind: \"score\"",
+        "why": "defineScoreEval 的定义期与结果判别值是 score"
+      }
+    ]
+  },
   "sentenceLength": {
     "max": 140,
     "$why": "docs/ 与 docs-site/zh/ 的读者都需要一遍读懂条件和下一步,长难句会让关键信息藏在并列分句里。量在段落拼接之后,并且只有句末标点算断句:分号和破折号串起来的分句仍算同一句——长难句正是这么长起来的。超了就拆成两句,或把并列内容改写成列表 / 表格。"
