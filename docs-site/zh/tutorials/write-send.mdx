@@ -161,6 +161,8 @@ export default defineAgent({
 应用的返回里不只有回复文本——Chat Completions 形返回的 `tool_calls` 记录了这轮调过什么工具。Adapter 最重要的工作就是**把接口的返回归一成标准事件流**：本轮发生的每件事一个对象，按真实发生顺序排进 `Turn.events`，对象是下面十种类型之一（各字段的实际值，[契约页有一轮的完整示例](/zh/explanation/adapter)）：
 
 ```ts
+import type { CommandProjection } from "niceeval/adapter";
+
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string }
   | { type: "operation.started"; operationId: string; operation:
