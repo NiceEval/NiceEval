@@ -104,7 +104,7 @@ export interface ContextDeps {
   experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
   retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
-  evaluationKind?: "pass" | "points";
+  evaluationKind?: "pass" | "score";
   liveDiff?: () => Promise<DiffData>;
 }
 
@@ -967,7 +967,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       return makeJudge(manager.primary, () => manager.primary.lastInput);
     },
     ...finalFacts,
-    ...(deps.evaluationKind === "points"
+    ...(deps.evaluationKind === "score"
       ? {
           score: (label: string, factOrDirect: unknown, options?: unknown) => collector.score(label, factOrDirect as never, options as never),
           finishScore: () => collector.finishScore(),

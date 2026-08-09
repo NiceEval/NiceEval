@@ -474,7 +474,7 @@ function usageSectionText(experimentId: string, rows: readonly UsageResult[]): s
   const body = rows.map((r) => [
     r.locator,
     r.evalId,
-    `${verdictMark(r.verdict)} ${r.verdict}`,
+    `${verdictMark(r.verdict)} ${r.terminal}`,
     r.turns !== undefined ? String(r.turns) : MISSING_MARK,
     r.toolCalls !== undefined ? String(r.toolCalls) : MISSING_MARK,
     uncachedInOf(r) !== undefined ? formatMetricValue(uncachedInOf(r)!) : MISSING_MARK,

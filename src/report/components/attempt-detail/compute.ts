@@ -23,41 +23,29 @@ import type {
   AttemptTraceData,
   UsageTableData,
 } from "../../model/types.ts";
-import type { AssertionResult, CommandExitEvidence, DiagnosticRecord, EvalResult, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
+import type { CommandExitEvidence, DiagnosticRecord, JsonValue, PhaseTiming, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
 import type { DiffFile } from "../../definition/primitives/diff-lines.ts";
 import { attemptCostUSD } from "../../model/metrics.ts";
 import { failureSummaryOf } from "../entity-lists/compute.ts";
 import { buildO11ySummary } from "../../../o11y/derive.ts";
+import { factRecordOf, attemptTerminalOf, scoreOutcomeOf, verdictForTerminal } from "../../../record/fact-record.ts";
 
 // ───────────────────────── AttemptSummary(恒非空) ─────────────────────────
 
-/**
- * 计分制 attempt 本轮挣分:`assertions[].points`(排除 unavailable)之和 + `scoreEntries[].points`
- * 之和——纯累加,与 model/metrics.ts 的 `totalScore` 指标同一条口径,但这里恒返回一个数字
- * (不为 errored/skipped 归 null):详情页总分位「不摆 null 占位」,只在通过制时整字段省略。
- */
-function earnedPoints(result: EvalResult): number {
-  let total = 0;
-  for (const assertion of result.assertions) {
-    if (assertion.outcome !== "unavailable" && typeof assertion.points === "number") total += assertion.points;
-  }
-  for (const entry of result.scoreEntries ?? []) total += entry.points;
-  return total;
-}
-
 export function attemptSummaryData(evidence: AttemptEvidence): AttemptSummaryData {
   const { result } = evidence;
+  const score = scoreOutcomeOf(result);
   return {
     locator: evidence.locator,
     experimentId: evidence.experimentId,
     identity: evidence.identity,
-    verdict: result.verdict,
+    terminal: attemptTerminalOf(result),
+    verdict: verdictForTerminal(result),
     startedAt: result.startedAt,
     durationMs: result.durationMs,
     costUSD: attemptCostUSD(result),
     capabilities: evidence.capabilities,
-    // 题型判定读定义期 result.evaluationKind,不从 assertions 是否带 points 推断。
-    ...(result.evaluationKind === "points" ? { totalScore: earnedPoints(result) } : {}),
+    ...(score === undefined ? {} : { earnedScore: score.earnedScore, creditedScore: score.creditedScore }),
   };
 }
 
@@ -96,68 +84,14 @@ export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | 
 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
-/** 按 `groupPath.join(" > ")` 分组(无分组归到空键 ""),组内保持传入顺序;passedGroups 与
- *  scoreEntries 共用同一套算法(docs/feature/assertions/library/display.md「计分制」)。 */
-function groupByPath<T extends { groupPath?: string[] }>(items: readonly T[]): { group: string; items: T[] }[] {
-  const groups = new Map<string, T[]>();
-  for (const item of items) {
-    const key = item.groupPath?.join(" > ") ?? "";
-    const list = groups.get(key);
-    if (list) list.push(item);
-    else groups.set(key, [item]);
-  }
-  return [...groups.entries()].map(([group, items]) => ({ group, items }));
-}
-
-/**
- * 得分点挣满计数("2/5 得分点挣满"):分母是全部带 `.points` 的断言(unavailable 结构上不携带
- * `points`,天然不计入);挣满 = `score === 1`——连续打分断言(如 judge)挣到 `n × 0.8` 时
- * `score` 恰是 0.8,不算挣满(docs/feature/assertions/library/display.md「计分制」)。
- */
-function scorePointsEarnedOf(assertions: readonly AssertionResult[]): { earned: number; total: number } | undefined {
-  const scorePoints = assertions.filter((a) => a.outcome !== "unavailable" && a.points !== undefined);
-  if (scorePoints.length === 0) return undefined;
-  const earned = scorePoints.filter((a) => a.outcome !== "unavailable" && a.score === 1).length;
-  return { earned, total: scorePoints.length };
-}
-
-/**
- * 计分制前置中止的中止断言:`failed` 只有前置中止一个来源,中止点恒为记录顺序最后一条
- * `AssertionResult`(必为 failed gate)——从既有事实推导,不加落盘字段(见本 plan「实现判据」)。
- * 按引用标注(不是按行号):这条断言无论展示在哪个面(平铺列表、还是投影回某行源码)都是
- * 同一个对象,标注一次两处都认得出,循环产生的同行多条断言也不会被行级粒度混淆。
- */
-function abortAssertionOf(result: EvalResult): AssertionResult | undefined {
-  return result.evaluationKind === "points" && result.verdict === "failed" && result.assertions.length > 0
-    ? result.assertions[result.assertions.length - 1]
-    : undefined;
-}
-
-/** 中止断言追加 `aborted` 标注(⤓ 前置未过,详情见 docs/feature/assertions/library/display.md「前置中止」);其余原样返回。 */
-function markAborted<T extends AssertionResult>(items: readonly T[], abortAssertion: AssertionResult | undefined): (T & { aborted?: true })[] {
-  if (abortAssertion === undefined) return items.slice();
-  return items.map((a) => (a === abortAssertion ? { ...a, aborted: true as const } : a));
-}
-
 export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAssertionsData | null {
-  const { result } = evidence;
-  const assertions = result.assertions ?? [];
-  // t.score(label, n) 直接给分记录:与 assertions 分属两个数组,只在计分制 eval 上出现
-  // (见 docs/feature/assertions/architecture.md「断言记录」)。
-  const scoreEntries: readonly ScoreEntry[] = result.scoreEntries ?? [];
-  if (assertions.length === 0 && scoreEntries.length === 0) return null;
-  // 得分点(带 .points)豁免 passed 收纳:即使 passed 也进平铺列表,不折进 passedGroups 计数——
-  // 收纳只作用于不带 .points 的观测断言(docs/feature/assertions/library/display.md「得分点不参与
-  // passed 收纳」)。中止断言(若存在)恒是 failed,天然落在这个平铺列表里,不需要额外分支。
-  const attentionBase = assertions.filter((a) => a.outcome !== "passed" || a.points !== undefined);
-  const passed = assertions.filter((a) => a.outcome === "passed" && a.points === undefined);
-  const scorePointsEarned = scorePointsEarnedOf(assertions);
-  const attention = markAborted(attentionBase, abortAssertionOf(result));
+  const fact = factRecordOf(evidence.result);
+  if (fact === undefined) return null;
+  if (fact.factResults.length === 0 && fact.factUses.length === 0 && fact.legacyJudgeAssertions.length === 0) return null;
   return {
-    attention,
-    passedGroups: groupByPath(passed),
-    ...(scoreEntries.length > 0 ? { scoreEntries: groupByPath(scoreEntries) } : {}),
-    ...(scorePointsEarned ? { scorePointsEarned } : {}),
+    factResults: fact.factResults,
+    factUses: fact.factUses,
+    legacyJudgeAssertions: fact.legacyJudgeAssertions,
   };
 }
 
@@ -170,24 +104,21 @@ export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAsserti
  */
 export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromptData | null {
   const { result, identity } = evidence;
-  if (result.verdict === "skipped") return null;
-  // 通过制(省略或 "pass")passed 恒 null;计分制 passed 是否可操作看下面的 failureSummaryOf——
-  // 挣满(或没有得分点)时它同样返回 null summary,不需要在这里重复判断。
-  if (result.verdict === "passed" && result.evaluationKind !== "points") return null;
+  const terminal = attemptTerminalOf(result);
+  if (terminal === "skipped") return null;
+  if (terminal === "scored" || terminal === "passed") return null;
   const { summary, more } = failureSummaryOf(result);
   if (summary === null) return null;
-  // 计分制 passed 但有丢分:可操作失败,但这条 attempt 并没有"失败"——措辞与真正的 failed/
-  // errored 分开,不把丢分说成失败。
-  const lostPoints = result.verdict === "passed";
-  const moreNoun = lostPoints ? "lost points" : "failures";
+  const lostPoints = terminal === "invalid";
+  const moreNoun = lostPoints ? "issues" : "failures";
   const reason = more > 0 ? `${summary} (+${more} more ${moreNoun})` : summary;
   const prompt = [
     lostPoints
-      ? "Recover the lost points on this NiceEval points eval."
+      ? "Resolve the invalid score outcome on this NiceEval score eval."
       : "Fix the failing eval from this niceeval run.",
     "",
-    lostPoints ? "## Lost points" : "## Failure",
-    `eval "${identity.evalId}" [experiment ${evidence.experimentId}] — ${result.verdict}`,
+    lostPoints ? "## Score outcome" : "## Failure",
+    `eval "${identity.evalId}" [experiment ${evidence.experimentId}] — ${terminal}`,
     `  reason: ${reason}`,
     `  inspect: niceeval show ${evidence.locator}`,
     "",
@@ -197,7 +128,7 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
     "3. Decide which side the defect is on: the program under test, or the eval itself (over-tight assertion, wrong fixture, missing setup). Fix that side; do not weaken assertions just to turn the run green.",
     `4. Re-run: \`npx niceeval exp ${evidence.experimentId} ${identity.evalId}\`. Already-passing evals are skipped by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
     lostPoints
-      ? "5. Run `npx niceeval show` and confirm the score improved."
+      ? "5. Run `npx niceeval show` and confirm the score outcome is valid."
       : "5. Run `npx niceeval show` and confirm this failure is gone.",
   ].join("\n");
   return { prompt };
@@ -426,7 +357,8 @@ export function usageTableData(evidence: AttemptEvidence): UsageTableData | null
     experimentId: evidence.experimentId,
     evalId: identity.evalId,
     attempt: identity.attempt,
-    verdict: result.verdict,
+    terminal: attemptTerminalOf(result),
+    verdict: verdictForTerminal(result),
     ...(turns !== undefined ? { turns } : {}),
     ...(toolCalls !== undefined ? { toolCalls } : {}),
     ...(usage !== undefined ? { usage } : {}),

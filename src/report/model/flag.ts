@@ -50,7 +50,6 @@ export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): Js
     case "sandboxLayer": return info.sandboxLayer;
     case "sandboxPlansByEval": return info.sandboxPlansByEval;
     case "sandboxReuse": return info.sandboxReuse;
-    case "strict": return info.strict;
     case "judge":
       return info.judge === undefined
         ? undefined

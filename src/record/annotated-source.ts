@@ -1,7 +1,13 @@
 // 面无关的完整源码调用树与面相关投影。AttemptEvidence 只保存完整树；text、web 与 JSON
 // 都消费 projectSourceView() 产出的同一个 SourceContent，不各自重分桶或猜入口文件。
 
-import type { AssertionResult, PhaseTiming, ScoreEntry, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
+import type { PhaseTiming, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
+import type {
+  EvaluationFactResult,
+  LegacyJudgeAssertionResult,
+  ScoreFactUseResult,
+  VerdictFactUseResult,
+} from "../assertions/types.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 
@@ -54,8 +60,9 @@ export function deriveSendAnnotations(
 
 /** 调用树的面无关完整证据。 */
 export type LineAnnotation =
-  | { kind: "assertion"; assertion: AssertionResult }
-  | { kind: "score"; score: ScoreEntry }
+  | { kind: "fact"; fact: EvaluationFactResult }
+  | { kind: "factUse"; use: VerdictFactUseResult | ScoreFactUseResult }
+  | { kind: "legacyJudge"; judge: LegacyJudgeAssertionResult }
   | { kind: "send"; send: SendAnnotation };
 
 export interface SourceTreeLine {
@@ -94,7 +101,11 @@ export interface SourceCallSummary {
 export interface AnnotatedSourceTree {
   spine: SourceNode;
   detached: SourceNode[];
-  unmapped: { assertions: AssertionResult[]; scores: ScoreEntry[] };
+  unmapped: {
+    facts: EvaluationFactResult[];
+    uses: (VerdictFactUseResult | ScoreFactUseResult)[];
+    legacyJudgeAssertions: LegacyJudgeAssertionResult[];
+  };
   summary: SourceCallSummary;
 }
 
@@ -126,8 +137,9 @@ export interface SourceContent extends Omit<AnnotatedSourceTree, "spine" | "deta
 export function assembleSourceTree(input: {
   entry: SourceArtifact;
   sources: readonly SourceArtifact[];
-  assertions: readonly AssertionResult[];
-  scoreEntries: readonly ScoreEntry[];
+  factResults: readonly EvaluationFactResult[];
+  factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
+  legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
   sends: readonly SendAnnotation[];
   abort?: SourceLoc;
 }): AnnotatedSourceTree {
@@ -146,7 +158,7 @@ export function assembleSourceTree(input: {
   const spine = makeNode(input.entry.path);
   if (!spine) throw new Error(`Entry source is missing from the captured source set: ${input.entry.path}`);
   const detached: SourceNode[] = [];
-  const unmapped: AnnotatedSourceTree["unmapped"] = { assertions: [], scores: [] };
+  const unmapped: AnnotatedSourceTree["unmapped"] = { facts: [], uses: [], legacyJudgeAssertions: [] };
   const abortedCalls = new Set<SourceCall>();
 
   const findOrCreateDetached = (file: string): SourceNode | undefined => {
@@ -199,8 +211,9 @@ export function assembleSourceTree(input: {
     kind: LineAnnotation["kind"] | "abort",
   ) => {
     if (!loc) {
-      if (annotation?.kind === "assertion") unmapped.assertions.push(annotation.assertion);
-      if (annotation?.kind === "score") unmapped.scores.push(annotation.score);
+      if (annotation?.kind === "fact") unmapped.facts.push(annotation.fact);
+      if (annotation?.kind === "factUse") unmapped.uses.push(annotation.use);
+      if (annotation?.kind === "legacyJudge") unmapped.legacyJudgeAssertions.push(annotation.judge);
       return;
     }
     const declaration = {
@@ -279,23 +292,25 @@ interface SourceAnnotationInput {
 }
 
 /**
- * 当前 producer 的三类事实都有 sourceOrder，因而能恢复真正的跨数组发生顺序。历史记录缺
- * 该字段时只能保留原有存储桶内的稳定顺序：它们被明确放在已知顺序事实之后，绝不把这个
- * 回退位置解释成 assertion / score / send 三种事实之间的实际先后。
+ * Fact producer、Fact consumer、legacy Judge sidecar 与 send 都有 sourceOrder，因而能恢复真正
+ * 的跨数组发生顺序。缺字段的第三方记录只保留各自存储桶内的稳定顺序；绝不把这个回退位置
+ * 解释成不同事实之间的实际先后。
  */
 type SourceAnnotationSequence =
   | { kind: "recorded"; sourceOrder: number; inputIndex: number }
   | { kind: "legacy"; sourceKind: SourceAnnotationKind; inputIndex: number };
 
 const legacySourceKindRank: Readonly<Record<SourceAnnotationKind, number>> = {
-  assertion: 0,
-  score: 1,
-  send: 2,
+  fact: 0,
+  factUse: 1,
+  legacyJudge: 2,
+  send: 3,
 };
 
 function sortSourceAnnotations(input: {
-  assertions: readonly AssertionResult[];
-  scoreEntries: readonly ScoreEntry[];
+  factResults: readonly EvaluationFactResult[];
+  factUses: readonly (VerdictFactUseResult | ScoreFactUseResult)[];
+  legacyJudgeAssertions: readonly LegacyJudgeAssertionResult[];
   sends: readonly SendAnnotation[];
 }): SourceAnnotationInput[] {
   const inputs: SourceAnnotationInput[] = [];
@@ -309,15 +324,22 @@ function sortSourceAnnotations(input: {
       const order = sourceOrder(value);
       inputs.push({
         annotation,
-        loc: annotation.kind === "send" ? annotation.send.loc : annotation.kind === "score" ? annotation.score.loc : annotation.assertion.loc,
+        loc: annotation.kind === "send"
+          ? annotation.send.loc
+          : annotation.kind === "fact"
+            ? annotation.fact.producerLoc
+            : annotation.kind === "factUse"
+              ? annotation.use.consumerLoc
+              : annotation.judge.loc,
         sequence: order === undefined
           ? { kind: "legacy", sourceKind: annotation.kind, inputIndex }
           : { kind: "recorded", sourceOrder: order, inputIndex },
       });
     }
   };
-  addInputs(input.assertions, (assertion) => ({ kind: "assertion", assertion }), (assertion) => assertion.sourceOrder);
-  addInputs(input.scoreEntries, (score) => ({ kind: "score", score }), (score) => score.sourceOrder);
+  addInputs(input.factResults, (fact) => ({ kind: "fact", fact }), (fact) => fact.sourceOrder);
+  addInputs(input.factUses, (use) => ({ kind: "factUse", use }), (use) => use.sourceOrder);
+  addInputs(input.legacyJudgeAssertions, (judge) => ({ kind: "legacyJudge", judge }), (judge) => judge.sourceOrder);
   addInputs(input.sends, (send) => ({ kind: "send", send }), (send) => send.sourceOrder);
   return inputs.sort(compareSourceAnnotationSequence);
 }
@@ -409,21 +431,43 @@ function emptySummary(): SourceCallSummary {
 
 function annotationSummary(annotation: LineAnnotation): SourceCallSummary {
   if (annotation.kind === "send") return emptySummary();
-  if (annotation.kind === "score") {
-    return { ...emptySummary(), points: { earned: annotation.score.points, available: annotation.score.points } };
+  if (annotation.kind === "fact") {
+    const outcome = annotation.fact.outcome;
+    return {
+      ...emptySummary(),
+      checks: 1,
+      passed: outcome === "passed" || outcome === "scored" ? 1 : 0,
+      failed: outcome === "failed" ? 1 : 0,
+      unavailable: outcome === "unavailable" || outcome === "errored" || outcome.startsWith("notReached") ? 1 : 0,
+    };
   }
-  const assertion = annotation.assertion;
+  if (annotation.kind === "factUse") {
+    const use = annotation.use;
+    if (use.useKind === "score") {
+      if (use.outcome !== "scored") return { ...emptySummary(), unavailable: 1 };
+      const available = use.input.kind === "fact" ? use.input.max : use.input.earned;
+      return { ...emptySummary(), points: { earned: use.earned, available } };
+    }
+    return {
+      ...emptySummary(),
+      checks: 1,
+      passed: use.outcome === "passed" ? 1 : 0,
+      failed: use.outcome === "failed" ? 1 : 0,
+      unavailable: use.outcome !== "passed" && use.outcome !== "failed" ? 1 : 0,
+    };
+  }
+  const judge = annotation.judge;
   const base: SourceCallSummary = {
+    ...emptySummary(),
     checks: 1,
-    passed: assertion.outcome === "passed" ? 1 : 0,
-    failed: assertion.outcome === "failed" ? 1 : 0,
-    unavailable: assertion.outcome === "unavailable" ? 1 : 0,
-    aborted: false,
+    passed: judge.outcome === "passed" ? 1 : 0,
+    failed: judge.outcome === "failed" ? 1 : 0,
+    unavailable: judge.outcome !== "passed" && judge.outcome !== "failed" ? 1 : 0,
   };
-  if (assertion.pointsAvailable !== undefined) {
+  if (judge.policy.scoring.kind === "points") {
     base.points = {
-      earned: assertion.outcome === "unavailable" ? 0 : assertion.points ?? 0,
-      available: assertion.pointsAvailable,
+      earned: "earnedPoints" in judge ? judge.earnedPoints : 0,
+      available: judge.policy.scoring.max,
     };
   }
   return base;
@@ -486,8 +530,9 @@ function summarizeNode(node: SourceNode, abortedCalls: ReadonlySet<SourceCall>):
 
 function summaryOfUnmapped(unmapped: AnnotatedSourceTree["unmapped"]): SourceCallSummary {
   return addSummaries([
-    ...unmapped.assertions.map((assertion) => annotationSummary({ kind: "assertion", assertion })),
-    ...unmapped.scores.map((score) => annotationSummary({ kind: "score", score })),
+    ...unmapped.facts.map((fact) => annotationSummary({ kind: "fact", fact })),
+    ...unmapped.uses.map((use) => annotationSummary({ kind: "factUse", use })),
+    ...unmapped.legacyJudgeAssertions.map((judge) => annotationSummary({ kind: "legacyJudge", judge })),
   ]);
 }
 
@@ -591,7 +636,8 @@ function failedSeverity(call: ProjectedSourceCall): "soft" | "gate" {
     visitCalls(call.target.calls);
   }
   return annotations.some((annotation) =>
-    annotation.kind === "assertion" && annotation.assertion.outcome === "failed" && annotation.assertion.severity === "gate"
+    (annotation.kind === "factUse" && annotation.use.useKind === "verdict" && annotation.use.method === "require" && annotation.use.outcome === "failed") ||
+    (annotation.kind === "legacyJudge" && annotation.judge.policy.verdict.kind === "gate" && annotation.judge.outcome === "failed")
   ) ? "gate" : "soft";
 }
 

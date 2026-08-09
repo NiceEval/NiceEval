@@ -5,7 +5,7 @@ const DEFERRED_FILE_CONTENT: unique symbol = Symbol("niceeval.deferredFileConten
 
 /**
  * `t.sandbox.file(path)` 产生的延迟证据引用。它不是字符串；AssertionCollector
- * 在 finalize 阶段读取 Sandbox 内容后，再把真实文本交给 ValueAssertion。
+ * 在 finalize 阶段读取 Sandbox 内容后，再把真实文本交给 BooleanMatch。
  */
 export interface DeferredFileContent {
   readonly [DEFERRED_FILE_CONTENT]: true;

@@ -17,7 +17,6 @@ import {
 import type { CommandEvidenceContent } from "../../definition/primitives/conversation.tsx";
 import type { AttemptFactsData, AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
-import { localeText } from "../../model/locale.ts";
 import { cx, type ValueProps } from "../shared.ts";
 import type { PageContext } from "../../definition/tree.ts";
 import {
@@ -76,7 +75,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
       <div className={cx("niceeval-report", "niceeval-attempt-summary", props.className)}>
         <div className="niceeval-attempt-summary-head">
           <span className={`niceeval-verdict-pill niceeval-verdict-${d.verdict}`}>
-            {localeText(ctx.locale, `verdict.${d.verdict}`)}
+            {d.terminal}
           </span>
           <span className="niceeval-attempt-summary-locator">{d.locator}</span>
         </div>
@@ -84,7 +83,8 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           <Kpi label="Experiment" value={d.experimentId} />
           <Kpi label="Eval" value={d.identity.evalId} />
           <Kpi label="Attempt" value={String(d.identity.attempt + 1)} />
-          {d.totalScore !== undefined ? <Kpi label="Score" value={formatPoints(d.totalScore)} /> : null}
+          {d.earnedScore !== undefined ? <Kpi label="Earned score" value={formatPoints(d.earnedScore)} /> : null}
+          {d.creditedScore !== undefined ? <Kpi label="Credited score" value={d.creditedScore === null ? "unavailable" : formatPoints(d.creditedScore)} /> : null}
           {d.startedAt ? <Kpi label="Started" value={formatInstant(d.startedAt, ctx.locale)} /> : null}
           <Kpi label="Duration" value={formatDurationMs(d.durationMs)} />
           {d.costUSD !== null ? <Kpi label="Cost" value={formatUSD(d.costUSD)} /> : null}
@@ -99,7 +99,7 @@ export const AttemptSummary = defineComponent<SummaryProps>({
   },
   text(props) {
     const d = props.data!;
-    return `${d.locator} · ${d.verdict} · ${formatDurationMs(d.durationMs)}`;
+    return `${d.locator} · ${d.terminal} · ${formatDurationMs(d.durationMs)}`;
   },
 });
 AttemptSummary.displayName = "AttemptSummary";

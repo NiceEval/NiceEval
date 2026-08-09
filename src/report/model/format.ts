@@ -369,8 +369,8 @@ export function experimentListEvaluationKindComposition(
   for (const item of items) {
     if (item.attempts === 0) continue;
     if (item.evaluationKind !== "pass") hasPoints = true;
-    if (item.evaluationKind !== "points") hasPass = true;
+    if (item.evaluationKind !== "score") hasPass = true;
   }
   if (hasPass && hasPoints) return "mixed";
-  return hasPoints ? "points" : "pass";
+  return hasPoints ? "score" : "pass";
 }

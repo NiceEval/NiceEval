@@ -10,10 +10,10 @@ import type { EvaluationKindComposition, ReportInput } from "./types.ts";
 
 /**
  * `input` 内出现的题型构成,取自快照记录的定义期 `evaluationKind` 事实(`EvalDescriptor.evaluationKind`,
- * 省略或 `"pass"` 记通过制、`"points"` 记计分制)。
+ * 省略或 `"pass"` 记通过制、`"score"` 记计分制)。
  *
  * 这是主读数选择的单点规则:`SampleSummary`、`ExperimentTable` 的主列、`SampleOverview`
- * 的 compose 步骤都调用这一个函数,不各自重新发明「pass vs points vs mixed」的判断。自定义
+ * 的 compose 步骤都调用这一个函数,不各自重新发明「pass vs score vs mixed」的判断。自定义
  * 报告需要同样的切换时也应该调用它,而不是重新读 `attempt.result.evaluationKind` 另写一份等价逻辑。
  *
  * 判据只看题目的定义期事实,不看执行是否发生——一个 eval 一行代码没跑时,它的 `evaluationKind`
@@ -21,14 +21,14 @@ import type { EvaluationKindComposition, ReportInput } from "./types.ts";
  * 改变所属 eval 的题型归属)。
  *
  * @param input Sample,或手工挑选的快照数组。
- * @returns `"pass"`:范围内全部通过制;`"points"`:全部计分制;`"mixed"`:同一范围内并排
+ * @returns `"pass"`:范围内全部通过制;`"score"`:全部计分制;`"mixed"`:同一范围内并排
  *   出现两种题型——混型既可能来自同一个 experiment,也可能来自不同 experiment 并排
  *   (docs/feature/experiments/score-points.md)。
  */
 export async function evaluationKindComposition(input: ReportInput): Promise<EvaluationKindComposition> {
   const { runs, attempts } = resolveInput(input);
   const items = collectItems(runs, attempts);
-  const hasPoints = items.some((item) => item.attempt.result.evaluationKind === "points");
-  const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "points");
-  return hasPoints && hasPass ? "mixed" : hasPoints ? "points" : "pass";
+  const hasScore = items.some((item) => item.attempt.result.evaluationKind === "score");
+  const hasPass = items.some((item) => item.attempt.result.evaluationKind !== "score");
+  return hasScore && hasPass ? "mixed" : hasScore ? "score" : "pass";
 }

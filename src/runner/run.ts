@@ -22,6 +22,7 @@ import {
   attemptFailureDeclaration,
   experimentRunInfo,
   runAttemptEffect,
+  scoreFactOutcomeForAttemptError,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
 import { resolveJudge } from "./judge-config.ts";
@@ -69,7 +70,7 @@ import {
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator, type AttemptLocatorRegistration } from "../record/locator.ts";
-import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
+import { EVALUATION_ALGORITHM, runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { runPairKey, type PreparedRunPair } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { liveSandboxRuntimeServices } from "../sandbox/runtime.ts";
@@ -2246,10 +2247,16 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   model: a.run.model,
                   verdict: "errored",
                   fingerprint: a.fingerprint,
+                  evaluationAlgorithm: EVALUATION_ALGORITHM,
                   attempt: a.attempt,
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
                   assertions: [],
+                  factTrace: { facts: [], uses: [], legacyJudgeAssertions: [] },
+                  evaluationKind: a.evalDef.evaluationKind,
+                  ...(a.evalDef.evaluationKind === "score"
+                    ? { scoreResult: scoreFactOutcomeForAttemptError(failedBeforeDispatch) }
+                    : {}),
                   evidenceCoverage: a.run.agent.evidenceCoverage,
                   error: failedBeforeDispatch,
                 } satisfies EvalResult)

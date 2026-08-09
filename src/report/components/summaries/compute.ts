@@ -12,6 +12,7 @@ import { collectItems, computeCell, resolveInput } from "../../model/aggregate.t
 import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { evaluationKindComposition } from "../../model/evaluation-kind.ts";
 import { summarizeItems, tallyOf } from "../shared-compute.ts";
+import { verdictForTerminal } from "../../../record/fact-record.ts";
 // ───────────────────────── sampleSummary ─────────────────────────
 
 /** costUSD 的求和投影:两级都 sum(题内多轮求和 + 跨题求和 = 全量求和)。 */
@@ -42,13 +43,13 @@ export async function sampleSummary(input: ReportInput): Promise<SampleSummaryCo
 
   const stats = summarizeItems(items);
   const attemptVerdicts = tallyOf();
-  for (const item of items) attemptVerdicts[item.attempt.result.verdict] += 1;
+  for (const item of items) attemptVerdicts[verdictForTerminal(item.attempt.result)] += 1;
 
   // 题型构成:决定渲染面的主 KPI 是通过率、总分,还是两者都显示。单点判据见
   // evaluationKindComposition()(docs/feature/reports/library/measures.md「题型构成与主读数」)——
   // 不在这里另设一份 hasPoints/hasPass 判断。
   const composition = await evaluationKindComposition(input);
-  const passItems = items.filter((item) => item.attempt.result.evaluationKind !== "points");
+  const passItems = items.filter((item) => item.attempt.result.evaluationKind !== "score");
 
   return {
     range: { earliestStartedAt: earliest, latestStartedAt: latest },

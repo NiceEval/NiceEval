@@ -6,6 +6,7 @@
 
 import { join, relative } from "node:path";
 import type { AssertionResult, CommandExitEvidence, CommandLimitAttribution, EvalResult, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { EvaluationFactResult, LegacyJudgeAssertionResult, ScoreFactUseResult, VerdictFactUseResult } from "../assertions/types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type {
   LineAnnotation,
@@ -16,6 +17,7 @@ import type {
   SourceContentNode,
 } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
+import { attemptTerminalOf, factRecordOf, scoreOutcomeOf } from "../record/fact-record.ts";
 import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
 import { stripControl, summaryText } from "../assertions/display.ts";
@@ -155,7 +157,15 @@ export function assertionLine(a: AssertionResult): string {
 
 /** 证据切面的头行:`@<locator> · <evalId> · <experimentId> · <verdict>`。 */
 export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
-  return [evidence.locator, evidence.identity.evalId, evidence.experimentId, evidence.result.verdict].join(" · ");
+  return [evidence.locator, evidence.identity.evalId, evidence.experimentId, attemptTerminalText(evidence.result)].join(" · ");
+}
+
+/** Exact Fact terminal text; score diagnostics are never collapsed into a generic verdict. */
+export function attemptTerminalText(result: EvalResult): string {
+  const terminal = attemptTerminalOf(result);
+  const score = scoreOutcomeOf(result);
+  if (score === undefined) return terminal;
+  return `${terminal} · earned ${formatPlainNumber(score.earnedScore)} · credited ${score.creditedScore === null ? "null" : formatPlainNumber(score.creditedScore)}`;
 }
 
 /**
@@ -171,6 +181,23 @@ export function verdictReasonLine(result: EvalResult): string | undefined {
   // attempt 详情块展开),再经 summaryText 剥控制字节 + 收口。
   if (result.error !== undefined) return summaryText(firstLine(result.error.message));
   if (result.skipReason !== undefined) return result.skipReason;
+  const fact = factRecordOf(result);
+  if (fact !== undefined) {
+    const failed = fact.factUses.flatMap((use) =>
+      use.useKind === "verdict" && use.outcome === "failed" ? [use] : [],
+    );
+    if (failed.length > 0) return failed.map((use) => use.label ?? use.key ?? use.method).join(", ");
+    const unavailable = fact.factUses.find((use) =>
+      (use.useKind === "verdict" && (use.outcome === "unavailable" || use.outcome === "errored")) ||
+      (use.useKind === "score" && (use.outcome === "unavailable" || use.outcome === "errored"))
+    );
+    if (unavailable !== undefined) {
+      return unavailable.outcome === "errored"
+        ? `errored ${(unavailable as { error: { message: string } }).error.message}`
+        : `unavailable ${(unavailable as { reason: string }).reason}`;
+    }
+    return undefined;
+  }
   const gates = result.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
   if (gates.length === 0) {
     const gap = result.assertions.find((a) => a.outcome === "unavailable" && !a.optional);
@@ -222,7 +249,7 @@ export function attemptHistoryText(opts: {
   const table = renderAlignedRows(
     rows.map((r) => [
       r.startedAt !== undefined ? timelineStamp(r.startedAt) : MISSING,
-      `${verdictMark(r.verdict)} ${r.verdict}`,
+      `${verdictMark(r.verdict)} ${r.terminal}`,
       r.summary ?? MISSING,
       formatDurationMs(r.durationMs),
       r.costUSD === null ? MISSING : formatUSD(r.costUSD),
@@ -325,14 +352,74 @@ function sendAnnotationLine(send: SendAnnotation): string {
   return parts.join(" · ");
 }
 
+function sourceLocText(loc: { file: string; line: number } | undefined): string | undefined {
+  return loc === undefined ? undefined : `${loc.file}:${loc.line}`;
+}
+
+function factResultLine(fact: EvaluationFactResult): string {
+  const details = [
+    `fact: ${fact.name}`,
+    fact.outcome,
+    ...(fact.expected !== undefined ? [`expected ${summaryText(fact.expected)}`] : []),
+    ...(fact.received !== undefined ? [`received ${summaryText(fact.received)}`] : []),
+    ...(fact.outcome === "unavailable" || fact.outcome.startsWith("notReached") ? [`reason ${(fact as { reason: string }).reason}`] : []),
+    ...(fact.outcome === "errored" ? [`error ${fact.error.message}`] : []),
+    ...(sourceLocText(fact.producerLoc) ? [`producer: ${sourceLocText(fact.producerLoc)!}`] : []),
+  ];
+  return details.join(" · ");
+}
+
+function factUseLine(use: VerdictFactUseResult | ScoreFactUseResult): string {
+  const title = use.useKind === "score" ? use.label : use.label ?? use.key ?? use.method;
+  const details = [
+    `${use.outcome === "passed" || use.outcome === "scored" ? "✓" : use.outcome === "failed" || use.outcome === "errored" ? "✗" : "◌"} ${use.useKind}`,
+    title,
+    ...(use.key !== undefined && use.label !== undefined ? [`key: ${use.key}`] : []),
+  ];
+  if (use.useKind === "score" && use.outcome === "scored") {
+    details.push(use.input.kind === "fact" ? `${formatPlainNumber(use.earned)} / ${formatPlainNumber(use.input.max)}` : formatPlainNumber(use.earned));
+  }
+  if (use.outcome === "unavailable" || use.outcome.startsWith("notReached") || use.outcome === "notApplicable") {
+    details.push(`reason ${(use as { reason: string }).reason}`);
+  }
+  if (use.outcome === "errored") details.push(`error ${use.error.message}`);
+  const consumer = sourceLocText(use.consumerLoc);
+  if (consumer) details.push(`consumer: ${consumer}`);
+  return details.join(" · ");
+}
+
+function legacyJudgeLine(judge: LegacyJudgeAssertionResult): string {
+  const details = [
+    "legacy Judge",
+    judge.name,
+    judge.outcome,
+    ...(judge.outcome === "passed" || judge.outcome === "failed" ? [`score ${formatPlainNumber(judge.normalizedScore)}`] : []),
+    ...(judge.policy.scoring.kind === "points" && "earnedPoints" in judge
+      ? [`${formatPlainNumber(judge.earnedPoints)} / ${formatPlainNumber(judge.policy.scoring.max)} pts`]
+      : []),
+    ...(judge.outcome === "unavailable" || judge.outcome.startsWith("notReached") ? [`reason ${(judge as { reason: string }).reason}`] : []),
+    ...(judge.outcome === "errored" ? [`error ${judge.error.message}`] : []),
+    ...(sourceLocText(judge.loc) ? [`producer: ${sourceLocText(judge.loc)!}`] : []),
+  ];
+  return details.join(" · ");
+}
+
 function lineGlyph(annotations: readonly LineAnnotation[]): string {
-  const assertions = annotations.flatMap((annotation) =>
-    annotation.kind === "assertion" ? [annotation.assertion] : []
-  );
   const sends = annotations.flatMap((annotation) => annotation.kind === "send" ? [annotation.send] : []);
-  const anyFailed = assertions.some((assertion) => assertion.outcome === "failed") ||
-    sends.some((send) => send.status === "failed");
-  const anyUnavailable = assertions.some((assertion) => assertion.outcome === "unavailable");
+  const anyFailed = annotations.some((annotation) =>
+    (annotation.kind === "fact" && (annotation.fact.outcome === "failed" || annotation.fact.outcome === "errored")) ||
+    (annotation.kind === "factUse" && (annotation.use.outcome === "failed" || annotation.use.outcome === "errored")) ||
+    (annotation.kind === "legacyJudge" && (annotation.judge.outcome === "failed" || annotation.judge.outcome === "errored"))
+  ) || sends.some((send) => send.status === "failed");
+  const anyUnavailable = annotations.some((annotation) =>
+    (annotation.kind === "fact" && (annotation.fact.outcome === "unavailable" || annotation.fact.outcome.startsWith("notReached"))) ||
+    (annotation.kind === "factUse" && (
+      annotation.use.outcome === "unavailable" || annotation.use.outcome === "notApplicable" || annotation.use.outcome.startsWith("notReached")
+    )) ||
+    (annotation.kind === "legacyJudge" && (
+      annotation.judge.outcome === "unavailable" || annotation.judge.outcome.startsWith("notReached")
+    ))
+  );
   return annotations.length === 0
     ? " "
     : anyFailed
@@ -343,10 +430,10 @@ function lineGlyph(annotations: readonly LineAnnotation[]): string {
 }
 
 function annotationDetailLine(annotation: LineAnnotation): string | undefined {
-  if (annotation.kind === "assertion") return evalAssertionDetailLine(annotation.assertion);
   if (annotation.kind === "send") return sendAnnotationLine(annotation.send);
-  const group = annotation.score.groupPath?.join(" · ");
-  return [group, annotation.score.label, `${annotation.score.points} pts`].filter(Boolean).join(" · ");
+  if (annotation.kind === "fact") return factResultLine(annotation.fact);
+  if (annotation.kind === "factUse") return factUseLine(annotation.use);
+  return legacyJudgeLine(annotation.judge);
 }
 
 function evalSourceLineText(line: ProjectedSourceLine, gutterWidth: number, width: number, indent: string): string[] {
@@ -438,8 +525,8 @@ function hasClosedCalls(node: SourceContentNode): boolean {
 }
 
 /**
- * `--eval`:运行时保存的 Eval 源码,gate/soft 断言标回源码行,外加 unmapped 断言(永不丢弃)
- * 与断言计票摘要。`evidence.evalSource === null` 时如实说明源码未捕获,不伪造空文档。
+ * `--eval`:运行时保存的 Eval 源码,Fact producer / consumer 与 legacy Judge 分别标回源码行；
+ * 无位置事实也必须保留，`evidence.evalSource === null` 时如实说明源码未捕获。
  */
 export function evalSourceText(
   result: AnnotatedSourceResult,
@@ -457,10 +544,11 @@ export function evalSourceText(
     blocks.push(`outside the eval entry · ${renderSourceNode(detached, "", width).join("\n")}`);
   }
 
-  if (source.unmapped.assertions.length > 0 || source.unmapped.scores.length > 0) {
+  if (source.unmapped.facts.length > 0 || source.unmapped.uses.length > 0 || source.unmapped.legacyJudgeAssertions.length > 0) {
     const unmappedLines = [
-      ...source.unmapped.assertions.map((assertion) => assertionLine(assertion)),
-      ...source.unmapped.scores.map((score) => `${score.groupPath?.join(" · ") ?? "score"} · ${score.label} · ${score.points} pts`),
+      ...source.unmapped.facts.map(factResultLine),
+      ...source.unmapped.uses.map(factUseLine),
+      ...source.unmapped.legacyJudgeAssertions.map(legacyJudgeLine),
     ].map((line) => indentBlock(wrapDisplay(line, width - 2).join("\n"), "  "));
     blocks.push(
       [`unmapped evidence (${unmappedLines.length}, no source location):`, ...unmappedLines].join("\n"),

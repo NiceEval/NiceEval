@@ -42,7 +42,7 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
   return (
     <Col className={["niceeval-sample-summary", props.className].filter(Boolean).join(" ")}>
       <Grid>
-        {snapshot.evaluationKindComposition !== "points" ? (
+        {snapshot.evaluationKindComposition !== "score" ? (
           <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "metric", metric: snapshot.endToEndPassRate }} />
         ) : null}
         {snapshot.totalScore !== undefined ? (
@@ -119,9 +119,9 @@ function resolveComparisonSeries(
   return { series, connect: props.connect ?? seriesName(series) === LINE_LABEL_KEY };
 }
 
-function filterInputByEvaluationKind(input: Sample, evaluationKind: "pass" | "points"): Sample {
+function filterInputByEvaluationKind(input: Sample, evaluationKind: "pass" | "score"): Sample {
   return input.filter((attempt) =>
-    (attempt.result.evaluationKind === "points" ? "points" : "pass") === evaluationKind
+    (attempt.result.evaluationKind === "score" ? "score" : "pass") === evaluationKind
   );
 }
 
@@ -203,7 +203,7 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;
 
   if (composition !== "mixed") {
-    const primary = composition === "points" ? "totalScore" : "passRate";
+    const primary = composition === "score" ? "totalScore" : "passRate";
     return (
       <Col className={props.className}>
         {await scatterBlock(input, { series, connect, y: primary, pointTarget, locale: props.locale })}
@@ -212,7 +212,7 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   }
 
   const passInput = filterInputByEvaluationKind(input, "pass");
-  const pointsInput = filterInputByEvaluationKind(input, "points");
+  const pointsInput = filterInputByEvaluationKind(input, "score");
   return (
     <Col className={props.className}>
       {await scatterBlock(passInput, { series, connect, y: "passRate", pointTarget, locale: props.locale })}

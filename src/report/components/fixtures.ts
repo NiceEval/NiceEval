@@ -224,6 +224,7 @@ const failedAttempt: AttemptListItem = {
   attempt: 3,
   agent: "bub",
   evaluationKind: "pass",
+  terminal: "failed",
   verdict: "failed",
   // 已按断言摘要契约折好的单行摘要;渲染面只做宽度截断,不重算
   failureSummary: "gate: roots-correct · expected x=2 · received x=3",
@@ -244,6 +245,7 @@ const erroredAttempt: AttemptListItem = {
   attempt: 0,
   agent: "codex",
   evaluationKind: "pass",
+  terminal: "errored",
   verdict: "errored",
   // errored:结构化 error 的一层摘要(phase · code · message)
   failureSummary: "eval.run · unexpected-error · TypeError: cannot read properties of undefined (reading 'foo')",
@@ -270,6 +272,7 @@ const passedAttempt: AttemptListItem = {
   attempt: 0,
   agent: "bub",
   evaluationKind: "pass",
+  terminal: "passed",
   verdict: "passed",
   failureSummary: null,
   moreFailures: 0,

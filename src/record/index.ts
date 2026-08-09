@@ -51,6 +51,20 @@ export {
 } from "./annotated-source.ts";
 export { loadAttemptSourceTree } from "./attempt-source.ts";
 export {
+  FACT_USE_EVALUATION_ALGORITHM,
+  assertFactRecord,
+  factRecordOf,
+  materializeFactRecord,
+  attemptTerminalOf,
+  verdictForTerminal,
+  scoreOutcomeOf,
+  type AttemptTerminal,
+  type FactRecordEnvelope,
+  type FactRecordResult,
+  type FactUseResult,
+  type ScoreAttemptStatus,
+} from "./fact-record.ts";
+export {
   isAttemptEvidence,
   loadAttemptEvidence,
   type AttemptEvidence,

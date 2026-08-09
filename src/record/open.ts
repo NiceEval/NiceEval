@@ -47,6 +47,7 @@ import type {
 } from "../record/types.ts";
 import { ARTIFACT_KINDS } from "../record/types.ts";
 import { assertEvidenceCoverage } from "../assertions/coverage.ts";
+import { assertFactRecord } from "./fact-record.ts";
 
 // publish 补记 knownEvalIds 需要「复制时刻该实验的 knownEvalIds」,而 Run 上按定稿
 // 不挂 Experiment 反向指针 —— 用模块级 WeakMap 记归属,只供库内部(copy.ts)取用。
@@ -450,8 +451,7 @@ export async function loadLatestResultsForCase(
     const attemptDir = join(best.dir, evalSegment, attemptDirName);
     let record: EvalResult;
     try {
-      record = JSON.parse(await readFile(join(attemptDir, RESULT_FILE), "utf-8")) as EvalResult;
-      assertEvidenceCoverage(record.evidenceCoverage, "result.json");
+      record = parseFactResult(await readFile(join(attemptDir, RESULT_FILE), "utf-8"));
     } catch {
       continue; // 缺 result.json / 坏 JSON:如实跳过(与 openRecord 的 unreadable 同一「不拖垮整次读」精神)
     }
@@ -480,9 +480,7 @@ async function readSnapshotDir(dir: string, meta: RunMeta, state: ScanState): Pr
     const attemptDir = dirname(resultPath);
     let record: EvalResult;
     try {
-      const text = await readFile(resultPath, "utf-8");
-      record = JSON.parse(text) as EvalResult;
-      assertEvidenceCoverage(record.evidenceCoverage, "result.json");
+      record = parseFactResult(await readFile(resultPath, "utf-8"));
     } catch (e) {
       state.unreadable.push({ dir: attemptDir, reason: "malformed", detail: `invalid result.json (${e instanceof Error ? e.message : String(e)})` });
       continue;
@@ -514,6 +512,19 @@ async function readSnapshotDir(dir: string, meta: RunMeta, state: ScanState): Pr
     if (derived !== undefined) run.configHash = derived;
   }
   return run;
+}
+
+/**
+ * Schema 16 has exactly one attempt shape. We validate the Fact graph before
+ * applying snapshot defaults, so a malformed result cannot enter reports as a
+ * partly plausible legacy assertion record.
+ */
+function parseFactResult(text: string): EvalResult {
+  const raw: unknown = JSON.parse(text);
+  assertFactRecord(raw, "result.json");
+  const record = raw as unknown as EvalResult;
+  assertEvidenceCoverage(record.evidenceCoverage, "result.json");
+  return record;
 }
 
 /** `readSnapshotDir` 的 configHash 回退推导:全部 attempt 都带且相等才取用,否则 undefined。 */

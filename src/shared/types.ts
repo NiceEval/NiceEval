@@ -25,7 +25,7 @@ export type JsonMatch =
   | readonly JsonMatch[]
   | { readonly [key: string]: JsonMatch };
 
-/** 断言的严重度:"gate" 失败必判整轮 failed;"soft" 默认只记录不拦截,仅在 `--strict` 模式或显式设阈值未达标时才计入失败。 */
+/** Legacy Judge 断言严重度；普通 Fact 的判定由 assert/require 显式声明。 */
 export type Severity = "gate" | "soft";
 
 /** 一次 Attempt 的互斥终态；跳过是已结束但不构成可执行结论的结果。 */

@@ -28,7 +28,6 @@ export interface ConfigIdentity {
   readonly sandboxReuse: boolean;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
-  readonly strict: boolean;
   readonly judge: JudgeConfigIdentity;
   /** 声明顺序、精确 installer 配对、安装模式与计划目标平台的完整静态身份。 */
   readonly agentInstalls: readonly JsonValue[];
@@ -173,7 +172,6 @@ export function configIdentityForRun(
     flags: run.flags,
     sandboxReuse: run.sandboxReuse ?? false,
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
-    strict: run.strict ?? false,
     judge: judgeIdentity(judge),
     agentInstalls: agentInstallPlansForRun(run),
   });
@@ -193,7 +191,6 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     flags: exp.flags ?? {},
     sandboxReuse: exp.sandboxReuse ?? false,
     sandboxLayer: exp.sandboxLayer,
-    strict: exp.strict ?? false,
     judge: judgeIdentity(exp.judge),
     agentInstalls: exp.agentInstalls,
   });
@@ -212,7 +209,6 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("model", identity.model);
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
-  put("strict", identity.strict);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judge._tag === "Configured") {
@@ -311,7 +307,6 @@ export function counterfactualConfigIdentity(
     flags,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,
     sandboxLayer,
-    strict: accepted.has("config:strict") ? historical.strict : current.strict,
     judge,
     agentInstalls,
   });

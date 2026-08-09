@@ -111,7 +111,7 @@ export interface CollectorOptions {
    * 题型(默认通过制)。计分制下 matcher 自带的默认 gate 只贡献通过线；作者在断言句柄上
    * 显式链 `.gate()` 才是硬要求。两种题型是否中止都只由 `.stopOnFailure()` 决定。
    */
-  evaluationKind?: "pass" | "points";
+  evaluationKind?: "pass" | "score";
   /**
    * stopOnFailure 断言就地求值时看的实时运行结果(events/diff/沙箱等)。生产 Context 必传；
    * 省略时调用 `.stopOnFailure()` 会报内部接线错误。
@@ -151,7 +151,7 @@ export class AssertionCollector {
   private readonly specs: Spec[] = [];
   private readonly groupStack: string[] = [];
   private readonly entries: ScoreEntry[] = [];
-  private readonly evaluationKind: "pass" | "points";
+  private readonly evaluationKind: "pass" | "score";
   private readonly liveContext: (() => Promise<AssertionEvaluationContext>) | undefined;
   private localSourceOrder = 0;
   private readonly nextSourceOrder: () => number;
@@ -242,7 +242,7 @@ export class AssertionCollector {
     if (spec.sourceOrder === undefined) spec.sourceOrder = this.nextSourceOrder();
     // 计分制的未链句柄角色是观测：matcher 自带的 gate 只贡献通过线。作者随后在句柄上
     // 显式 `.gate()` 时会再把 severity 改回 gate；`.stopOnFailure()` 与这里完全正交。
-    if (this.evaluationKind === "points" && spec.severity === "gate") {
+    if (this.evaluationKind === "score" && spec.severity === "gate") {
       spec.severity = "soft";
       spec.threshold = spec.threshold ?? 1;
     }
@@ -595,7 +595,7 @@ interface Requirement<R> {
 }
 
 interface FactCollectorOptions {
-  readonly evaluationKind?: "pass" | "points";
+  readonly evaluationKind?: "pass" | "score";
   readonly liveContext: () => Promise<AssertionEvaluationContext>;
   readonly nextSourceOrder?: () => number;
 }
@@ -633,7 +633,7 @@ export class FactCollector {
   private legacyPending: Promise<void>[] = [];
   private readonly unavailableEvidence = new Map<EvidenceChannel, string>();
   private readonly liveContext: () => Promise<AssertionEvaluationContext>;
-  private readonly evaluationKind: "pass" | "points";
+  private readonly evaluationKind: "pass" | "score";
   private readonly nextSourceOrder: () => number;
   private localSourceOrder = 0;
   private terminal:
@@ -642,6 +642,12 @@ export class FactCollector {
     | { readonly kind: "skipped"; readonly reason: string }
     | { readonly kind: "finished" }
     | undefined;
+  /**
+   * Runner errors seal the complete graph synchronously.  An evaluator may
+   * still resolve after that point, but it must never rewrite the Attempt
+   * trace that was exposed to the Runner.
+   */
+  private runnerErrorFinalization: FactFinalizeResult | undefined;
   private diffConsumers = 0;
   private scoreCompletion: ScoreCompletion | undefined;
 
@@ -780,7 +786,7 @@ export class FactCollector {
     options?: { readonly key?: string; readonly max: number },
   ): void {
     this.assertCanRegister();
-    if (this.evaluationKind !== "points") throw new Error("score() is available only in defineScoreEval");
+    if (this.evaluationKind !== "score") throw new Error("score() is available only in defineScoreEval");
     this.assertLabel(label, "score()");
     if (this.isFact(factOrDirect)) {
       if (options === undefined) throw new TypeError("score(label, fact, { max }) requires max");
@@ -823,7 +829,7 @@ export class FactCollector {
 
   finishScore(): ScoreCompletion {
     this.beforeManagedBoundary("finishScore");
-    if (this.evaluationKind !== "points") throw new Error("finishScore() is available only in defineScoreEval");
+    if (this.evaluationKind !== "score") throw new Error("finishScore() is available only in defineScoreEval");
     if (!this.uses.some((use) => use.kind === "score") && this.legacySpecs.length === 0) {
       throw new Error("finishScore() requires at least one Fact score use or legacy Judge assertion");
     }
@@ -879,8 +885,41 @@ export class FactCollector {
     }
   }
 
-  closeForError(reason: string): void {
-    if (this.terminal === undefined || this.terminal.kind === "finished") this.terminal = { kind: "error", reason };
+  /**
+   * Runner-only external-error boundary. This is deliberately not an author
+   * assertion API: it seals already registered nodes without starting any new
+   * evaluator, so timeout / infrastructure failure cannot race a late result.
+   */
+  finalizeForRunnerError(issue: ErrorAttemptIssue): FactFinalizeResult {
+    if (this.runnerErrorFinalization !== undefined) return this.runnerErrorFinalization;
+
+    const reason = issue.error.message;
+    this.terminal = { kind: "error", reason };
+    const facts = this.nodes.map((node) => {
+      if (node.result !== undefined) return node.result;
+      const result = node.evaluating === undefined
+        ? this.notReached(node, "notReachedByError", reason)
+        : this.baseResult(node, {
+            outcome: "errored",
+            error: this.interruptedEvaluatorError(node.name, reason),
+          });
+      node.result = result;
+      return result;
+    });
+    const uses = this.buildUses();
+    const legacyJudgeAssertions = this.freezeLegacyForRunnerError(reason);
+    const trace: AttemptFactTrace = {
+      facts: Object.freeze(facts),
+      uses: Object.freeze(uses),
+      legacyJudgeAssertions: Object.freeze(legacyJudgeAssertions),
+    };
+    const finalized: FactFinalizeResult = {
+      trace: Object.freeze(trace),
+      pass: this.foldPass(trace, [issue]),
+      score: this.foldScore(trace, [issue]),
+    };
+    this.runnerErrorFinalization = Object.freeze(finalized);
+    return this.runnerErrorFinalization;
   }
 
   closeForSkip(reason: string): void {
@@ -968,6 +1007,7 @@ export class FactCollector {
   }
 
   async finalize(context: AssertionEvaluationContext, options: FactFinalizeOptions = {}): Promise<FactFinalizeResult> {
+    if (this.runnerErrorFinalization !== undefined) return this.runnerErrorFinalization;
     const control = this.terminal?.kind === "control" ? this.terminal : undefined;
     const stoppedByError = this.terminal?.kind === "error" || this.terminal?.kind === "skipped";
     const reachable = this.reachableNodes();
@@ -1190,7 +1230,7 @@ export class FactCollector {
   private terminateByName(name: string): EvalRequirementFailed {
     if (this.terminal?.kind === "control") return this.terminal.signal;
     const signal = new EvalRequirementFailed(name);
-    this.terminal = { kind: "control", signal };
+    if (this.terminal === undefined) this.terminal = { kind: "control", signal };
     return signal;
   }
 
@@ -1206,7 +1246,9 @@ export class FactCollector {
       }
       try {
         for (const dependency of node.dependencies) await this.evaluateNode(dependency, context);
+        if (this.runnerErrorFinalization !== undefined && node.result !== undefined) return node.result;
         const raw = await node.evaluate(context);
+        if (this.runnerErrorFinalization !== undefined && node.result !== undefined) return node.result;
         if (raw.outcome === "unavailable") {
           node.usageUnavailableAtCreation = node.usageEvidence && raw.usageUnavailableAtCreation === true;
         }
@@ -1216,6 +1258,7 @@ export class FactCollector {
         node.result = result;
         return result;
       } catch (error) {
+        if (this.runnerErrorFinalization !== undefined && node.result !== undefined) return node.result;
         const result = this.baseResult(node, { outcome: "errored", error: evaluatorError(error) });
         node.result = result;
         return result;
@@ -1377,16 +1420,21 @@ export class FactCollector {
   private async evaluateLegacyNow(spec: Spec): Promise<FactRuntimeOutcome> {
     const existing = this.legacySettled.get(spec);
     if (existing !== undefined) return existing;
+    if (this.runnerErrorFinalization !== undefined) {
+      return { outcome: "errored", error: this.interruptedEvaluatorError(spec.name, this.terminalReason("attempt ended")) };
+    }
     const inFlight = this.legacyEvaluating.get(spec);
     if (inFlight !== undefined) return inFlight;
     const evaluating = (async (): Promise<FactRuntimeOutcome> => {
       try {
         const raw = await spec.evaluate(await this.liveContext());
         const result = legacyRuntimeOutcome(raw);
+        if (this.runnerErrorFinalization !== undefined) return this.legacySettled.get(spec) ?? result;
         this.legacySettled.set(spec, result);
         return result;
       } catch (error) {
         const result: FactRuntimeOutcome = { outcome: "errored", error: evaluatorError(error) };
+        if (this.runnerErrorFinalization !== undefined) return this.legacySettled.get(spec) ?? result;
         this.legacySettled.set(spec, result);
         return result;
       } finally {
@@ -1402,6 +1450,77 @@ export class FactCollector {
     if (result.outcome === "errored") return true;
     const score = result.outcome === "scored" ? result.normalizedScore : result.outcome === "passed" ? 1 : 0;
     return !computePassed(spec.severity, spec.threshold, score);
+  }
+
+  private interruptedEvaluatorError(name: string, reason: string): EvaluationFactError {
+    return {
+      class: "evaluator",
+      code: "evaluator-interrupted",
+      message: `Evaluator ${JSON.stringify(name)} did not settle before the Attempt ended: ${reason}`,
+    };
+  }
+
+  private freezeLegacyForRunnerError(reason: string): LegacyJudgeAssertionResult[] {
+    return this.legacySpecs.map((spec) => {
+      const verdict: LegacyJudgePolicy["verdict"] = spec.severity === "gate"
+        ? { kind: "gate", atLeast: spec.threshold ?? 1 }
+        : spec.threshold === undefined
+          ? { kind: "soft" }
+          : { kind: "soft", atLeast: spec.threshold };
+      const policyBase = {
+        verdict,
+        optional: spec.optional === true,
+        stopOnFailure: spec.stopOnFailure === true,
+      };
+      const policy: LegacyJudgePolicy = spec.points === undefined
+        ? { ...policyBase, scoring: { kind: "quality" } }
+        : { ...policyBase, scoring: { kind: "points", max: spec.points } };
+      const base = {
+        name: (spec.name.startsWith("judge:") ? spec.name : `judge:${spec.name}`) as `judge:${string}`,
+        detail: spec.detail ?? spec.name,
+        ...(spec.groupPath === undefined ? {} : { groupPath: spec.groupPath }),
+        ...(spec.loc === undefined ? {} : { loc: spec.loc }),
+        sourceOrder: spec.sourceOrder ?? 0,
+      };
+      const raw = this.legacySettled.get(spec);
+      if (raw === undefined && this.legacyEvaluating.has(spec)) {
+        const error = this.interruptedEvaluatorError(spec.name, reason);
+        this.legacySettled.set(spec, { outcome: "errored", error });
+        return { ...base, policy, outcome: "errored", error };
+      }
+      if (raw === undefined) return { ...base, policy, outcome: "notReachedByError", reason };
+      if (raw.outcome === "unavailable") {
+        return { ...base, policy, outcome: "unavailable", reason: raw.reason, ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }) };
+      }
+      if (raw.outcome === "errored") return { ...base, policy, outcome: "errored", error: raw.error };
+      const normalizedScore = raw.outcome === "scored" ? raw.normalizedScore : raw.outcome === "passed" ? 1 : 0;
+      const passed = computePassed(spec.severity, spec.threshold, normalizedScore);
+      if (policy.scoring.kind === "points") {
+        const pointPolicy = {
+          ...policyBase,
+          scoring: { kind: "points" as const, max: policy.scoring.max },
+        } satisfies Extract<LegacyJudgePolicy, { readonly scoring: { readonly kind: "points"; readonly max: number } }>;
+        return {
+          ...base,
+          policy: pointPolicy,
+          outcome: passed ? "passed" : "failed",
+          normalizedScore,
+          earnedPoints: pointPolicy.scoring.max * normalizedScore,
+          ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+        };
+      }
+      const qualityPolicy = {
+        ...policyBase,
+        scoring: { kind: "quality" as const },
+      } satisfies Extract<LegacyJudgePolicy, { readonly scoring: { readonly kind: "quality" } }>;
+      return {
+        ...base,
+        policy: qualityPolicy,
+        outcome: passed ? "passed" : "failed",
+        normalizedScore,
+        ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+      };
+    });
   }
 
   private async finalizeLegacy(onJudgeProgress?: (progress: JudgeProgress) => void): Promise<LegacyJudgeAssertionResult[]> {

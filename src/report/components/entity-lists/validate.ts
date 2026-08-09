@@ -9,8 +9,8 @@ import {
 } from "../shared.ts";
 
 function evaluationKindProblem(value: unknown, path: string, allowMixed: boolean): string | null {
-  if (value === "pass" || value === "points" || (allowMixed && value === "mixed")) return null;
-  return `"${path}" must be ${allowMixed ? '"pass", "points", or "mixed"' : '"pass" or "points"'}`;
+  if (value === "pass" || value === "score" || (allowMixed && value === "mixed")) return null;
+  return `"${path}" must be ${allowMixed ? '"pass", "score", or "mixed"' : '"pass" or "score"'}`;
 }
 
 function attemptListItemProblem(value: unknown, path: string): string | null {
@@ -22,6 +22,7 @@ function attemptListItemProblem(value: unknown, path: string): string | null {
   const evaluationKind = evaluationKindProblem(value.evaluationKind, `${path}.evaluationKind`, false);
   if (evaluationKind !== null) return evaluationKind;
   if (typeof value.verdict !== "string") return `"${path}.verdict" must be a string`;
+  if (typeof value.terminal !== "string") return `"${path}.terminal" must be a string`;
   if (!(value.failureSummary === null || typeof value.failureSummary === "string")) {
     return `"${path}.failureSummary" must be a string or null`;
   }

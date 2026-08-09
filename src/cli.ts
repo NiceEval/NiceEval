@@ -128,7 +128,6 @@ export interface Flags {
   dry: boolean;
   force: boolean;
   rerun?: "failed" | "all";
-  strict: boolean;
   budget?: number;
   tag?: string;
   junit?: string;
@@ -176,7 +175,7 @@ export interface Flags {
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明,不依赖 allowNegative(需 Node 20.14+,
-// engines 是 >=18)。未知 flag 由 strict 模式报清晰错误,不再静默吞掉后面的位置参数。
+// engines 是 >=18)。解析器对未知 flag 严格报错,不再静默吞掉后面的位置参数。
 //
 // 每个 flag 的 JSDoc 就是它在 docs-site/zh/reference/cli.mdx flag 表里的说明,由
 // scripts/generate-reference.ts 提取渲染——改 flag 语义时改这里的注释即可,不用碰生成脚本。
@@ -265,8 +264,6 @@ const FLAG_OPTIONS = {
   force: { type: "boolean" },
   /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
   rerun: { type: "boolean" },
-  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
-  strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 */
   "early-exit": { type: "boolean" },
   /** 强制关闭首过即停,即使实验文件里写了 `earlyExit: true`。 */
@@ -299,6 +296,10 @@ function isCliCommand(candidate: string): candidate is CliCommand {
 
 function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]; flags: Flags } {
   if (argv[0] === "--") argv = argv.slice(1);
+  if (argv.some((arg) => arg === "--strict" || arg.startsWith("--strict="))) {
+    process.stderr.write(t("cli.flag.strictRemoved"));
+    process.exit(1);
+  }
 
   // --diff=<路径> 预扫:diff 本体是布尔(裸 --diff = 文件级摘要),路径只接受 = 连写。
   let diffPath: string | undefined;
@@ -432,7 +433,6 @@ function parseArgs(argv: string[]): { command: CliCommand; positionals: string[]
     dry: values.dry === true,
     force: values.force === true,
     rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
-    strict: values.strict === true,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
@@ -648,7 +648,6 @@ function parseAcceptLocators(positionals: string[], flags: Flags): string[] {
     ["--dry", flags.dry],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
@@ -768,7 +767,6 @@ export function firstExperimentRenameUnsupportedFlag(flags: Flags): string | und
     ["--junit", flags.junit],
     ["--force", flags.force],
     ["--rerun", flags.rerun],
-    ["--strict", flags.strict],
     ["--early-exit/--no-early-exit", flags.earlyExit],
     ["--open/--no-open", flags.open],
     ["--source", flags.source],
@@ -1607,7 +1605,6 @@ async function main(): Promise<void> {
         experimentSourcePath: exp.sourcePath,
         description: exp.description,
         labels: exp.labels,
-        strict: flags.strict,
         // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
         // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
         maxConcurrency: exp.maxConcurrency,

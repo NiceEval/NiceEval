@@ -18,6 +18,7 @@ import { encodeAttemptLocator } from "./locator.ts";
 import { MANIFESTS_FILE, type RunManifests } from "./manifest.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { truncateCommands, truncateEvents, truncateSpans } from "./truncate.ts";
+import { assertFactRecord, materializeFactRecord, type FactRecordResult } from "./fact-record.ts";
 import type { Producer, RunMeta } from "./types.ts";
 
 export interface WriterOptions {
@@ -85,7 +86,7 @@ export interface RunDeclaration {
  * 以外的全部;引用字段由 writer 按实际写入的 artifact 回填。
  */
 export type AttemptEntry = Omit<
-  EvalResult,
+  FactRecordResult,
   | "agent"
   | "model"
   | "startedAt"
@@ -279,25 +280,29 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
   }
 
   async function writeAttemptForImpl(result: EvalResult): Promise<void> {
-    assertEvidenceCoverage(result.evidenceCoverage, "writeAttemptFor()");
-    if (!result.experimentId) {
+    // `factTrace` / `scoreResult` are intentionally non-enumerable on fresh
+    // runner results. Materialize them before any object rest/spread can lose
+    // the trace and before result.json receives its only schema-16 shape.
+    const factResult = materializeFactRecord(result);
+    assertEvidenceCoverage(factResult.evidenceCoverage, "writeAttemptFor()");
+    if (!factResult.experimentId) {
       throw new Error(
-        `writeAttemptFor() requires EvalResult.experimentId (results schemaVersion ${RECORD_SCHEMA_VERSION} lays out one directory per experiment); eval "${result.id}" has none.`,
+        `writeAttemptFor() requires EvalResult.experimentId (results schemaVersion ${RECORD_SCHEMA_VERSION} lays out one directory per experiment); eval "${factResult.id}" has none.`,
       );
     }
     const snap = await snapshotImpl({
-      experimentId: result.experimentId,
-      agent: result.agent,
-      model: result.model,
+      experimentId: factResult.experimentId,
+      agent: factResult.agent,
+      model: factResult.model,
       // 快照 startedAt 优先用 writer 级的 invocation 锚点(见 WriterOptions.snapshotStartedAt)——
       // niceeval 自己的 runner 恒会提供,多个 experiment 共享同一个值。省略时(第三方直调
       // createWriter() 未传该选项)退回旧行为:以本次调用这个 result 自己的 attempt
       // startedAt 为锚,首条落盘的 result 决定了这个 experiment 快照的身份锚点。
-      startedAt: opts.snapshotStartedAt ?? result.startedAt ?? new Date().toISOString(),
-      experiment: result.experiment,
+      startedAt: opts.snapshotStartedAt ?? factResult.startedAt ?? new Date().toISOString(),
+      experiment: factResult.experiment,
     });
 
-    if (result.artifactBase) {
+    if (factResult.artifactBase) {
       // 携带条目(--resume 合入):本轮没有任何新数据,不写 artifact、不重算 artifacts 词干列表,
       // startedAt(执行事实)与 artifactBase 原样保留。locator / locatorRunId 同理原样保留(在 ...rest 里,
       // 没被解构掉)、从不重算——`result` 是上一轮 openRecord() 读回的记录,原快照的
@@ -318,7 +323,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
         commands,
         rawTranscript,
         ...rest
-      } = result;
+      } = factResult;
       void agent;
       void model;
       void experimentId;
@@ -331,7 +336,8 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       void diff;
       void commands;
       void rawTranscript;
-      const attemptDir = join(snap.dir, attemptDirOf(result));
+      assertFactRecord(rest, "writeAttemptFor() carried result");
+      const attemptDir = join(snap.dir, attemptDirOf(factResult));
       await mkdir(attemptDir, { recursive: true });
       await writeFile(join(attemptDir, RESULT_FILE), JSON.stringify(rest, null, 2), "utf-8");
       return;
@@ -354,7 +360,7 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
       artifactBase,
       artifacts,
       ...entry
-    } = result;
+    } = factResult;
     void agent;
     void model;
     void experimentId;
@@ -389,6 +395,7 @@ async function writeAttemptFiles(
   sourceStore: Map<string, Promise<void>>,
 ): Promise<void> {
   assertEvidenceCoverage(entry.evidenceCoverage, "writeAttempt()");
+  assertFactRecord(entry, "writeAttempt() result");
   const attemptDir = join(snapDir, attemptDirOf(entry));
   await mkdir(attemptDir, { recursive: true });
 

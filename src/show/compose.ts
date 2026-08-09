@@ -10,6 +10,7 @@ import { attemptCostUSD } from "../report/model/metrics.ts";
 import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../assertions/display.ts";
 import type { EvalResult, Verdict } from "../types.ts";
 import type { AttemptHandle, Experiment } from "../record/index.ts";
+import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal, type AttemptTerminal } from "../record/fact-record.ts";
 
 // ───────────────────────── 时间轴(--history)─────────────────────────
 
@@ -17,6 +18,8 @@ export interface AttemptHistoryRow {
   /** 该 attempt 自己的开始时刻(ISO);第三方落盘可能缺失,如实缺省、排序沉底。 */
   startedAt?: string;
   verdict: Verdict;
+  /** Fact score terminal is retained separately from its four-way tally mapping. */
+  terminal: AttemptTerminal;
   /** 单行结果摘要(display 契约):主失败断言 / 结构化 error 一层摘要 / skip 理由;passed 缺省。 */
   summary?: string;
   durationMs: number;
@@ -38,7 +41,20 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 function rowSummary(result: EvalResult): string | undefined {
   if (result.error !== undefined) return summaryText(result.error.message);
   if (result.skipReason !== undefined) return summaryText(result.skipReason);
-  const summary = primaryAssertionSummary(result.assertions, result.verdict, result.evaluationKind === "points" ? "points" : "pass");
+  const fact = factRecordOf(result);
+  const score = scoreOutcomeOf(result);
+  if (score !== undefined) {
+    if (score.status === "invalid") return `invalid · earned ${score.earnedScore} · credited ${score.creditedScore}`;
+    if (score.status === "unavailable") return `unavailable · ${score.issues[0]?.reason ?? "score evidence unavailable"}`;
+    if (score.status === "errored") return `errored · ${score.errors[0]?.error.message ?? "score evaluator error"}`;
+    if (score.status === "skipped") return score.reason;
+  }
+  if (fact !== undefined) {
+    const use = fact.factUses.find((candidate) => candidate.useKind === "verdict" && candidate.outcome === "failed");
+    if (use?.useKind === "verdict") return summaryText(use.label ?? use.key ?? use.method);
+    return undefined;
+  }
+  const summary = primaryAssertionSummary(result.assertions, result.verdict, result.evaluationKind === "score" ? "score" : "pass");
   return summary === undefined ? undefined : compactAssertionSummary(summary);
 }
 
@@ -79,7 +95,8 @@ export function attemptHistory(exp: Experiment, evalId: string): AttemptHistoryR
     const r = attempt.result;
     return {
       ...(r.startedAt !== undefined ? { startedAt: r.startedAt } : {}),
-      verdict: r.verdict,
+      verdict: verdictForTerminal(r),
+      terminal: attemptTerminalOf(r),
       ...(rowSummary(r) !== undefined ? { summary: rowSummary(r) } : {}),
       durationMs: r.durationMs,
       costUSD: attemptCostUSD(r),

@@ -60,14 +60,14 @@ export function summaryText(value: string): string {
 /**
  * 按公开展示契约选择主失败断言：failed gate 优先；只有 soft 促成 failed verdict 时才取 soft；
  * errored 且没有结构化 error 时可由第一条非 optional unavailable 解释；计分制（`evaluationKind:
- * "points"`）`passed` 存在丢分得分点（`.points` 断言 outcome 为 failed）时取记录顺序第一条
+ * "score"`）`passed` 存在丢分得分点（legacy `.points` 断言 outcome 为 failed）时取记录顺序第一条
  * （docs/feature/assertions/library/display.md「主失败断言怎样选」规则 6）。`evaluationKind` 必填而非
  * 默认 "pass"：调用方必须显式表态，避免漏传导致这条规则悄悄失效。
  */
 export function primaryAssertionSummary(
   assertions: readonly AssertionResult[],
   verdict: Verdict,
-  evaluationKind: "pass" | "points",
+  evaluationKind: "pass" | "score",
 ): PrimaryAssertionSummary | undefined {
   if (verdict === "failed") {
     const failedGates = assertions.filter(
@@ -88,7 +88,7 @@ export function primaryAssertionSummary(
     if (unavailable.length > 0) return summaryOf(unavailable[0]!, unavailable.length - 1);
   }
 
-  if (verdict === "passed" && evaluationKind === "points") {
+  if (verdict === "passed" && evaluationKind === "score") {
     const lostPoints = assertions.filter(
       (assertion) => assertion.outcome === "failed" && assertion.points !== undefined,
     );

@@ -162,6 +162,8 @@ export const zhCN = {
     "跑 `niceeval exp <选择> --dry` 看每条差异拦下了哪些条目。\n",
   "cli.flag.invalidNumber": "标志 --{{flag}} 需要数字,收到 \"{{value}}\"。\n",
   "cli.flag.outputRemoved": "error: unknown option '--output'\n  fix: 不加 flag 运行得到人读文本;机器面用 --json\n",
+  "cli.flag.strictRemoved":
+    "Unknown option: --strict\nExpress required facts with t.assert(...) or await t.require(...) in the Eval source.\n",
   "runner.budgetUnenforceable":
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "runner.experimentTeardownFailed":
@@ -246,7 +248,7 @@ export const zhCN = {
     "标志:\n" +
     "  --attempts n  --max-concurrency n  --max-build-concurrency n  --timeout ms\n" +
     "  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --rerun[=failed|all]  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
@@ -309,10 +311,6 @@ export const zhCN = {
   "cli.experiment.noEvalsSelected":
     "未选择任何 eval:{{selection}} 匹配到 0 个 eval。可用的 eval 前缀:{{experiments}}。\n" +
     "运行 `niceeval exp {{selection}} --dry` 查看它覆盖了什么,或去掉 eval 过滤跑这些实验选中的全部 eval。\n",
-  "cli.experiment.strictOnPoints":
-    "实验 \"{{experimentId}}\" 选中的 {{count}} 个 eval 全是计分制(defineScoreEval),而 `--strict` 对它们一件事都做不了:\n" +
-    "这个开关只把「带通过线的 soft 断言」翻成 gate,而计分制的判定只认前置 `.gate()` 中止——丢分从不改 verdict。\n" +
-    "去掉 `--strict` 重跑;要收紧计分制的判定,把该硬的检查写成前置 `.gate()`。\n",
   "cli.experimentGroup": "路径",
   "cli.fallbackCleanupTimeout": "\ngraceful 清理超时,强制清理沙箱…\n",
   "cli.forceCleanupExit": "\n强制清理沙箱并退出…\n",
@@ -352,7 +350,7 @@ export const zhCN = {
   "define.scoreEvalIdRejected": "defineScoreEval 不接受 id —— id 由文件路径推导。",
   "define.scoreEvalEnvironmentEmpty": "defineScoreEval 的 environment 如有提供，必须是非空的 profile id。",
   "define.scoreEvalTestRequired": "defineScoreEval 需要一个 async test(t) 函数。",
-  "define.scoreEvalEvaluationKindRejected": "defineScoreEval 不接受 evaluationKind —— 恒定为 \"points\"(计分制)。通过制请用 defineEval。",
+  "define.scoreEvalEvaluationKindRejected": "defineScoreEval 不接受 evaluationKind —— 恒定为 \"score\"(计分制)。通过制请用 defineEval。",
   "define.scoreEvalConfigHashRejected": "defineScoreEval 不接受 configHash —— configHash 由运行规划计算。",
   "define.experimentAgentRequired": "defineExperiment 需要 agent。",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} 不是可 JSON 序列化的值(函数 / undefined / 循环引用 / bigint 不允许);flags 会原样进入结果快照,必须是纯 JSON。",

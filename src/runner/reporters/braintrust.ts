@@ -4,6 +4,7 @@
 // (reporter 错误按框架约定只记 diagnostic,不会让运行崩)。
 
 import type { EvalResult, JsonValue, Reporter } from "../../types.ts";
+import { attemptTerminalOf, factRecordOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 import { reportActivity } from "../feedback/sink.ts";
 
 export interface BraintrustConfig {
@@ -122,14 +123,34 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
  */
 export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   const scores: globalThis.Record<string, number> = {};
-  for (const a of result.assertions) {
-    // unavailable 是没有分数的独立态:不写 0 分(评不了 ≠ 0 分),缺口进 metadata。
-    if (a.outcome === "unavailable") continue;
-    const base = a.severity === "gate" ? `gate:${a.name}` : a.name;
-    let key = base;
-    for (let n = 2; key in scores; n++) key = `${base}#${n}`;
-    // Braintrust 要求 0..1
-    scores[key] = Math.min(1, Math.max(0, a.score));
+  const fact = factRecordOf(result);
+  const terminal = attemptTerminalOf(result);
+  const verdict = verdictForTerminal(result);
+  if (fact !== undefined) {
+    for (const use of fact.factUses) {
+      if (use.useKind === "verdict") {
+        if (use.outcome === "passed" || use.outcome === "failed") {
+          addScore(scores, `verdict:${use.label ?? use.key ?? use.method}`, use.outcome === "passed" ? 1 : 0);
+        }
+        continue;
+      }
+      if (use.outcome !== "scored" || use.input.kind !== "fact" || use.input.max <= 0) continue;
+      addScore(scores, `score:${use.label}`, Math.min(1, Math.max(0, use.earned / use.input.max)));
+    }
+    for (const judge of fact.legacyJudgeAssertions) {
+      if (judge.outcome !== "passed" && judge.outcome !== "failed") continue;
+      addScore(scores, `legacy-judge:${judge.name}`, Math.min(1, Math.max(0, judge.normalizedScore)));
+    }
+    // A scored zero is a successful terminal, whereas invalid is the only
+    // observed zero for terminal validity. Unavailable/errored intentionally
+    // omit this score rather than masquerading as ordinary 0.
+    if (terminal === "scored") addScore(scores, "niceeval:terminal", 1);
+    if (terminal === "invalid") addScore(scores, "niceeval:terminal", 0);
+  } else {
+    for (const a of result.assertions) {
+      if (a.outcome === "unavailable") continue;
+      addScore(scores, a.severity === "gate" ? `gate:${a.name}` : a.name, Math.min(1, Math.max(0, a.score)));
+    }
   }
 
   const metrics: globalThis.Record<string, number> = {};
@@ -156,7 +177,8 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     eval: result.id,
     agent: result.agent,
     attempt: result.attempt,
-    verdict: result.verdict,
+    verdict,
+    terminal,
   };
   if (result.model !== undefined) metadata.model = result.model;
   if (result.experimentId !== undefined) metadata.experiment = result.experimentId;
@@ -164,14 +186,24 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     metadata.flags = result.experiment.flags;
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
-  const failed = result.assertions
-    .filter((a) => a.outcome === "failed")
-    .map((a) => ({ name: a.name, ...(a.detail === undefined ? {} : { detail: a.detail }) }));
-  if (failed.length > 0) metadata.failedAssertions = failed;
-  const unavailable = result.assertions
-    .filter((a) => a.outcome === "unavailable")
-    .map((a) => ({ name: a.name, reason: a.outcome === "unavailable" ? a.reason : "" }));
-  if (unavailable.length > 0) metadata.unavailableAssertions = unavailable;
+  if (fact !== undefined) {
+    metadata.evaluationAlgorithm = fact.evaluationAlgorithm;
+    metadata.evaluationKind = fact.evaluationKind;
+    metadata.factResults = fact.factResults as unknown as JsonValue;
+    metadata.factUses = fact.factUses as unknown as JsonValue;
+    metadata.legacyJudgeAssertions = fact.legacyJudgeAssertions as unknown as JsonValue;
+    const score = scoreOutcomeOf(result);
+    if (score !== undefined) metadata.scoreResult = score as unknown as JsonValue;
+  } else {
+    const failed = result.assertions
+      .filter((a) => a.outcome === "failed")
+      .map((a) => ({ name: a.name, ...(a.detail === undefined ? {} : { detail: a.detail }) }));
+    if (failed.length > 0) metadata.failedAssertions = failed;
+    const unavailable = result.assertions
+      .filter((a) => a.outcome === "unavailable")
+      .map((a) => ({ name: a.name, reason: a.outcome === "unavailable" ? a.reason : "" }));
+    if (unavailable.length > 0) metadata.unavailableAssertions = unavailable;
+  }
 
   // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。
   const id = [result.experimentId ?? "", result.id, result.agent, result.model ?? "", `a${result.attempt}`].join("|");
@@ -185,6 +217,12 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     metadata,
     metrics,
   };
+}
+
+function addScore(scores: globalThis.Record<string, number>, base: string, value: number): void {
+  let key = base;
+  for (let n = 2; key in scores; n++) key = `${base}#${n}`;
+  scores[key] = value;
 }
 
 /** agent 的最终回复文本(事件流里最后一条 assistant message);没有就不填。 */

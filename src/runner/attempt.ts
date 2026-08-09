@@ -29,6 +29,7 @@ import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
+import type { FactFinalizeResult } from "../assertions/collector.ts";
 import { createAgentSession } from "../context/session.ts";
 import { EvalRequirementFailed, EvalSkipped } from "../context/control-flow.ts";
 import { isSendFailure, sendFailureText } from "../context/send-failures.ts";
@@ -51,6 +52,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/co
 import { sandboxLayerIdentityFor } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import { verdictForTerminal } from "../shared/verdict.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
 import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
@@ -84,7 +86,7 @@ import type {
   RetryAttemptRecord,
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
-import { encodeAttemptKey, runWho } from "./types.ts";
+import { encodeAttemptKey, EVALUATION_ALGORITHM, runWho } from "./types.ts";
 import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, sandboxPrepareActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import type {
   AgentRun,
@@ -181,11 +183,13 @@ export function runAttemptEffect(
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
+    evaluationAlgorithm: EVALUATION_ALGORITHM,
     configHash: a.configHash,
     attempt,
     startedAt: new Date(t0).toISOString(),
     durationMs: 0,
     assertions: [],
+    factTrace: emptyFactTrace(),
     evidenceCoverage: run.agent.evidenceCoverage,
     evaluationKind: evalDef.evaluationKind ?? "pass",
   };
@@ -220,18 +224,15 @@ export function runAttemptEffect(
   // 链末端不发明一条隐藏的线。
   const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
   // deadline 的截止**时刻**:沙箱内一切时限从它派生(单条命令未显式传 timeout 时上限 =
-  // 剩余量,见 sandbox/deadline.ts)。与下面那条软截止信号同一个锚点,不各取各的 now()。
+  // 剩余量,见 sandbox/deadline.ts)。与 Effect.timeoutTo 同一个锚点,不各取各的 now()。
   const deadlineAt = attemptTimeout ? Date.now() + attemptTimeout.timeoutMs : undefined;
-  // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
-  // 提前优雅停)。但它【不是】attempt 总超时的硬保证 —— 真正的硬边界是下面的 Effect.timeoutTo:
-  // 它中断整段 body,触发 Sample release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
-  const timeoutSignal = attemptTimeout ? AbortSignal.timeout(attemptTimeout.timeoutMs) : undefined;
-  // 无上限时 signal 仍必须存在(下游 ctx / adapter 一律读它):用一个永不 abort 的信号,
-  // 不用 timeoutSignal 冒充。
-  const signal =
-    parentSignal && timeoutSignal
-      ? AbortSignal.any([parentSignal, timeoutSignal])
-      : (parentSignal ?? timeoutSignal ?? new AbortController().signal);
+  // Adapter 的协作式 deadline 由专用 controller 承载。它绝不能自己设 timer：Effect.timeoutTo
+  // 是唯一的 deadline owner，并会在 onTimeout 同步 abort 这个 controller；否则独立 timer
+  // 可能让 adapter 先 reject，把 deadline 错分成外部 interrupt。
+  const deadlineAbort = new AbortController();
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, deadlineAbort.signal])
+    : deadlineAbort.signal;
 
   // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
   // run.ts 在这个 attempt 的 body Effect 真正开始跑之前,已经先发出过一次 attempt:start(占位
@@ -258,6 +259,10 @@ export function runAttemptEffect(
   let liveUsage: (() => Usage) | undefined;
   let liveRetryAttempts: (() => readonly RetryAttemptRecord[]) | undefined;
   let liveLedger: ChangeLedger | undefined;
+  let finalizeRegisteredFacts:
+    | ((issue: import("../assertions/types.ts").ErrorAttemptIssue) => Promise<FactFinalizeResult>)
+    | undefined;
+  let timeoutFactFinalization: Promise<FactFinalizeResult> | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
   // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
@@ -411,11 +416,23 @@ export function runAttemptEffect(
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
           recorder.failCurrent();
+          timeoutFactFinalization = finalizeRegisteredFacts?.({
+            kind: "error",
+            error: { class: "execution", code: error.code, message: error.message },
+          });
+          // The settled result is joined after Scope release. Attach an observer
+          // now so a concurrently interrupted body cannot surface an unhandled
+          // rejection while finalizers are still running.
+          void timeoutFactFinalization?.catch(() => {});
+          // `timeoutTo` 已经赢得 deadline：先同步封存 Fact，再标记并 abort 协作式 adapter。
+          // 这个 controller 没有独立 timer；它只把已经裁定的 timeout 传给观察 signal 的
+          // adapter。标记必须先于 abort，才能把本 fiber 的 timeout 中断与真正外层取消区分。
+          timedOut = true;
+          deadlineAbort.abort();
           // 置位给下面的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
           // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
           // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
           // 归一化的事件与已累计的用量此刻就能直接读出,不随放弃的 body fiber 一起消失。
-          timedOut = true;
           const events = liveEvents?.();
           const usage = liveUsage?.();
           const retryAttempts = liveRetryAttempts?.();
@@ -423,6 +440,7 @@ export function runAttemptEffect(
             ...base,
             durationMs: recorder.offsetNow(),
             error,
+            ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
             ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
             ...(usage !== undefined ? { usage: { ...usage } } : {}),
             ...(retryAttempts !== undefined && retryAttempts.length > 0
@@ -581,7 +599,7 @@ export function runAttemptEffect(
           telemetry = env ? { endpoint, env } : { endpoint };
           log(t("runner.otlpShared", { endpoint }));
         } catch (e) {
-          if (isAttemptAborted(signal)) throw e;
+          if (isAttemptAborted(parentSignal)) throw e;
           recordDiagnostic({
             code: "telemetry-configure-failed",
             level: "warning",
@@ -620,7 +638,7 @@ export function runAttemptEffect(
             log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
           }
         } catch (e) {
-          if (isAttemptAborted(signal)) throw e;
+          if (isAttemptAborted(parentSignal)) throw e;
           recordDiagnostic({
             code: "telemetry-configure-failed",
             level: "warning",
@@ -746,6 +764,7 @@ export function runAttemptEffect(
           sensitiveValues,
           concurrencySlot,
           declareFailure,
+          isDeadlineTimedOut: () => timedOut,
           layerCleanups,
           registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
             liveEvents = getEvents;
@@ -755,8 +774,11 @@ export function runAttemptEffect(
           registerLedger: (ledger) => {
             liveLedger = ledger;
           },
+          registerFactFinalizer: (finalize) => {
+            finalizeRegisteredFacts = finalize;
+          },
           ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
-        }),
+        }, parentSignal),
       );
 
       // 留存提交:verdict 定稿、其余收尾(teardown 链、diff 采集)已在 body 内完成后,按档位
@@ -823,8 +845,10 @@ export function runAttemptEffect(
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
+    // `timeoutTo` 已在内层把自己的中断消费成 onTimeout 的成功值，因此这里的 Cause interrupt
+    // 仍是外层 fiber 取消（即使 parent AbortSignal 尚未同步）的权威信号，不能只看 parentSignal。
     Effect.catchAllCause((cause) =>
-      Cause.isInterrupted(cause) || isAttemptAborted(signal)
+      Cause.isInterrupted(cause) || isAttemptAborted(parentSignal)
         ? Effect.interrupt
         : Effect.suspend(() => {
             // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
@@ -832,14 +856,30 @@ export function runAttemptEffect(
             const raw = Cause.squash(cause);
             const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
             declareFailure(phase, raw);
-            return Effect.succeed({
+            const error = errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout);
+            const fallback: EvalResult = {
               ...base,
               durationMs: recorder.offsetNow(),
-              error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout),
+              error,
+              ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
+            };
+            if (finalizeRegisteredFacts === undefined) return Effect.succeed(fallback);
+            return Effect.promise(async () => {
+              const finalized = await finalizeRegisteredFacts!({
+                kind: "error",
+                error: { class: "execution", code: error.code, message: error.message },
+              });
+              return withFinalizedFacts(fallback, finalized, evalDef.evaluationKind ?? "pass");
             });
           }),
     ),
+    Effect.flatMap((result) => {
+      if (!timedOut || timeoutFactFinalization === undefined) return Effect.succeed(result);
+      return Effect.promise(async () =>
+        withFinalizedFacts(result, await timeoutFactFinalization!, evalDef.evaluationKind ?? "pass")
+      );
+    }),
     // 结果封口在 Sample release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
     // 这里把完整的阶段计时挂到即将交还的结果上(timeout / scope 兜底分支同样带上)。超时路径
     // 额外把上面那个 finalizer 折叠出的 workspace.diff / sources 并进来——它俩是异步产出,
@@ -878,6 +918,39 @@ export function runAttemptEffect(
       return keepFactOutcomeInMemory(redactEvalResultEvidence(completed, sensitiveValues));
     }),
   );
+}
+
+function emptyFactTrace(): import("../assertions/types.ts").AttemptFactTrace {
+  return { facts: [], uses: [], legacyJudgeAssertions: [] };
+}
+
+function withFinalizedFacts(
+  result: EvalResult,
+  finalized: FactFinalizeResult,
+  kind: "pass" | "score",
+): EvalResult {
+  return {
+    ...result,
+    verdict: kind === "score" ? verdictForTerminal(finalized.score.status) : finalized.pass.verdict,
+    factTrace: finalized.trace,
+    ...(kind === "score" ? { scoreResult: finalized.score } : {}),
+  };
+}
+
+/** Runner-originated failures before Fact folding still produce a closed Score terminal outcome. */
+export function scoreFactOutcomeForAttemptError(
+  error: AttemptError,
+): import("../assertions/types.ts").ScoreFactAttemptOutcome {
+  return {
+    status: "errored",
+    earnedScore: 0,
+    creditedScore: null,
+    errors: [{
+      kind: "error",
+      error: { class: "execution", code: error.code, message: error.message },
+    }],
+    issues: [],
+  };
 }
 
 /** 把 catch 到的 e(body 里 test()/setup 抛错,或 Sample 层 squash 出来的原始错误)折成
@@ -1012,6 +1085,8 @@ interface AttemptResources {
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
+  /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
+  isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
   layerCleanups: LayerCleanupEntry[];
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
@@ -1023,6 +1098,14 @@ interface AttemptResources {
   ) => void;
   /** 变更分类账一建好(workspace.baseline 阶段)就登记回外层(超时收尾段折叠 workspace.diff 用)。 */
   registerLedger: (ledger: ChangeLedger) => void;
+  /**
+   * Context creation registers a close-and-finalize callback with the outer
+   * Effect scope. Attempt timeout/resource failures can then preserve every
+   * Fact already declared instead of falling back to an empty trace.
+   */
+  registerFactFinalizer: (
+    finalize: (issue: import("../assertions/types.ts").ErrorAttemptIssue) => Promise<FactFinalizeResult>,
+  ) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.ensure 使用。 */
   prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
@@ -1041,6 +1124,7 @@ async function runAttemptBody(
   t0: number,
   base: EvalResult,
   res: AttemptResources,
+  parentSignal: AbortSignal | undefined,
 ): Promise<EvalResult> {
   const { evalDef, run, attempt } = a;
   const {
@@ -1061,9 +1145,11 @@ async function runAttemptBody(
     sensitiveValues,
     concurrencySlot,
     declareFailure,
+    isDeadlineTimedOut,
     layerCleanups,
     registerEvidence,
     registerLedger,
+    registerFactFinalizer,
     prepareCoordinator,
   } = res;
   // ctx.fact() 闭包:校验后写进 res.facts(与 runAttemptEffect 共享的同一个 Record 引用),
@@ -1096,6 +1182,11 @@ async function runAttemptBody(
   const commandTarget = createSandboxCommandTarget(sandbox);
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
+  // Context 建成后留一条仅 Runner 使用的同步封存入口。它让 body 的最外层异常出口也遵守
+  // 与 timeout / Sample 层失败相同的 Fact 生命周期，而不是遗失已登记的 trace。
+  let finalizeFacts:
+    | ((issue: import("../assertions/types.ts").ErrorAttemptIssue) => FactFinalizeResult)
+    | undefined;
   /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
    *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
    *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
@@ -1215,7 +1306,7 @@ async function runAttemptBody(
       try {
         await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
       } catch (configureError) {
-        if (isAttemptAborted(signal)) throw configureError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw configureError;
         feedback.diagnostic({
           code: "telemetry-configure-failed",
           level: "warning",
@@ -1293,6 +1384,13 @@ async function runAttemptBody(
       () => state.manager.usage,
       () => state.manager.retryAttempts,
     );
+    finalizeFacts = (issue) => state.collector.finalizeForRunnerError(issue);
+    registerFactFinalizer((issue) => {
+      // `timeoutTo.onTimeout` invokes this before it interrupts the body. The
+      // collector synchronously freezes the terminal trace; this Promise only
+      // preserves the existing outer join shape.
+      return Promise.resolve(finalizeFacts!(issue));
+    });
 
     let error: AttemptError | undefined;
     let errorClass: import("../assertions/types.ts").AttemptFactError["class"] | undefined;
@@ -1302,7 +1400,7 @@ async function runAttemptBody(
       // Preserve the legacy Judge handle's supported unawaited
       // `.stopOnFailure()` path at the normal-return boundary.
       await state.collector.settleLegacyPrerequisites();
-      if (evalDef.evaluationKind === "points") state.collector.completeScore(completion);
+      if (evalDef.evaluationKind === "score") state.collector.completeScore(completion);
       else state.collector.completePass();
     } catch (e) {
       if (e instanceof EvalSkipped) {
@@ -1318,7 +1416,10 @@ async function runAttemptBody(
         declareFailure(getPhase() ?? "eval.run", e);
         error = errorFromThrown(e, getPhase(), res.attemptTimeout);
         errorClass = isSendFailure(e) ? "agent" : "author";
-        state.collector.closeForError(firstLine(formatThrown(e)));
+        state.collector.finalizeForRunnerError({
+          kind: "error",
+          error: { class: errorClass, code: error.code, message: error.message },
+        });
       }
     }
 
@@ -1348,7 +1449,7 @@ async function runAttemptBody(
         }
       } catch (diffError) {
         if (operation) operation.failed = true;
-        if (isAttemptAborted(signal)) throw diffError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
         diffArtifactAvailable = false;
         const reason = `workspace diff export unavailable: ${firstLine(formatThrown(diffError))}`;
         state.collector.markEvidenceUnavailable("diff", reason);
@@ -1431,13 +1532,7 @@ async function runAttemptBody(
     // empty rather than projecting a lossy faux AssertionResult; the canonical
     // result is carried separately for the next integration slice.
     const assertions: import("../types.ts").AssertionResult[] = [];
-    const verdict = factVerdict(
-      finalizedFacts.pass,
-      finalizedFacts.score,
-      error,
-      skipReason,
-      evalDef.evaluationKind ?? "pass",
-    );
+    const verdict = factVerdict(finalizedFacts, evalDef.evaluationKind ?? "pass");
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
@@ -1458,7 +1553,7 @@ async function runAttemptBody(
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
-        if (isAttemptAborted(signal)) throw collectError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
           code: "telemetry-collect-failed",
           level: "warning",
@@ -1489,7 +1584,7 @@ async function runAttemptBody(
           log(`trace:${spans.length} span${note}`);
         }
       } catch (collectError) {
-        if (isAttemptAborted(signal)) throw collectError;
+        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
           code: "telemetry-collect-failed",
           level: "warning",
@@ -1521,6 +1616,7 @@ async function runAttemptBody(
       model: run.model,
       verdict,
       fingerprint: a.fingerprint,
+      evaluationAlgorithm: EVALUATION_ALGORITHM,
       configHash: a.configHash,
       attempt,
       startedAt: new Date(t0).toISOString(),
@@ -1528,7 +1624,7 @@ async function runAttemptBody(
       assertions,
       factTrace: finalizedFacts.trace,
       evaluationKind: evalDef.evaluationKind ?? "pass",
-      ...(evalDef.evaluationKind === "points" ? { scoreResult: finalizedFacts.score } : {}),
+      ...(evalDef.evaluationKind === "score" ? { scoreResult: finalizedFacts.score } : {}),
       ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
       usage,
       estimatedCostUSD: cost,
@@ -1548,18 +1644,24 @@ async function runAttemptBody(
   } catch (e) {
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断
     // 降成 AttemptError 或 warning。外层 Effect 会负责中止并运行 release/finalizer。
-    if (isAttemptAborted(signal)) throw e;
+    if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw e;
     recorder.failCurrent();
     // SandboxLayer command / agent.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
     declareFailure(getPhase() ?? "eval.run", e);
+    const error = errorFromThrown(e, getPhase(), res.attemptTimeout);
+    const finalized = finalizeFacts?.({
+      kind: "error",
+      error: { class: "execution", code: error.code, message: error.message },
+    });
     const value: EvalResult = {
       ...base,
       durationMs: recorder.offsetNow(),
-      error: errorFromThrown(e, getPhase(), res.attemptTimeout),
+      error,
+      ...(evalDef.evaluationKind === "score" ? { scoreResult: scoreFactOutcomeForAttemptError(error) } : {}),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
-    return value;
+    return finalized === undefined ? value : withFinalizedFacts(value, finalized, evalDef.evaluationKind ?? "pass");
   } finally {
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
     // (不计入 durationMs 口径,见 docs/feature/record/architecture.md)。执行序与 LifecyclePhase
@@ -1606,8 +1708,21 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
 }
 
 /** telemetry / diff 等 supplemental 采集失败不能吞掉 Attempt 自己的中断。 */
-function isAttemptAborted(signal: AbortSignal): boolean {
-  return signal.aborted;
+function isAttemptAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+/**
+ * `Effect.promise` aborts its callback signal for every fiber interruption.
+ * A timeout uses that same path only after `timeoutTo` has synchronously set
+ * its winner bit, so only the unmarked case is an external fiber cancellation.
+ */
+function isBodyInterrupted(
+  signal: AbortSignal,
+  parentSignal: AbortSignal | undefined,
+  deadlineTimedOut: boolean,
+): boolean {
+  return isAttemptAborted(parentSignal) || (signal.aborted && !deadlineTimedOut);
 }
 
 /** 诊断只保存有界结构化 cause，不把完整 SDK response 或 stack 灌进结果。 */
@@ -1648,6 +1763,7 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "model",
   "verdict",
   "fingerprint",
+  "evaluationAlgorithm",
   "configHash",
   "attempt",
   "startedAt",
@@ -1889,24 +2005,8 @@ function withCommandTiming(
  * 其它文件(包括 callers 链中的 helper)在首次引用后由 registry 冻结；这里仅把已知路径
  * 补成 artifact。读取失败不能删掉 loc，投影会将该路径表示为 unavailable。
  */
-function factVerdict(
-  pass: import("../assertions/types.ts").PassFactAttemptOutcome,
-  score: import("../assertions/types.ts").ScoreFactAttemptOutcome,
-  error: AttemptError | undefined,
-  skipReason: string | undefined,
-  kind: "pass" | "points",
-): import("../types.ts").Verdict {
-  if (kind === "points") {
-    // A known hard Fact failure is deliberately stronger than later
-    // unavailable/evaluator issues: ScoreFactAttemptOutcome retains them as
-    // issues while `invalid` fixes creditedScore to zero.
-    if (score.status === "invalid") return "failed";
-    if (error !== undefined || score.status === "errored" || score.status === "unavailable") return "errored";
-    if (skipReason !== undefined || score.status === "skipped") return "skipped";
-    return "passed";
-  }
-  if (error !== undefined) return "errored";
-  return pass.verdict;
+function factVerdict(finalized: FactFinalizeResult, kind: "pass" | "score"): import("../types.ts").Verdict {
+  return kind === "score" ? verdictForTerminal(finalized.score.status) : finalized.pass.verdict;
 }
 
 async function collectSources(
@@ -1964,7 +2064,6 @@ export function experimentRunInfo(
     sandboxLayer: sandboxLayerIdentityFor(plan.pair, "experiment"),
     sandboxPlansByEval: { ...sandboxPlansByEval },
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
-    ...(run.strict ? { strict: true } : {}),
     ...(judge
       ? { judge: { model: judge.model, baseUrl: judge.baseUrl, timeoutMs: judge.timeoutMs } }
       : {}),

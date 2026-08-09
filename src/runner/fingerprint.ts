@@ -8,7 +8,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 import { Effect } from "effect";
 import { liveSandboxPlanningServices } from "../sandbox/plan.ts";
 import type { DiscoveredEval, EvalResult, JsonValue } from "../types.ts";
-import type { AgentRun, FingerprintMigration } from "./types.ts";
+import { EVALUATION_ALGORITHM, type AgentRun, type FingerprintMigration } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
 import {
   prepareRunSandboxes,
@@ -137,6 +137,7 @@ async function fingerprintPreparedPair(
     ),
   );
   const payload = {
+    evaluationAlgorithm: EVALUATION_ALGORITHM,
     configHash,
     pairPlan: pair.identity,
     source,

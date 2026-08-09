@@ -80,7 +80,7 @@ const VERDICTS = ["passed", "failed", "errored", "skipped"];
 /** DeltaCell:同 MetricValue 家族但字段不同(verdict/totalScore/attempts/totalTokens/totalCostUSD)。 */
 function deltaCellProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { evaluationKind, verdict, attempts }`;
-  if (value.evaluationKind !== "pass" && value.evaluationKind !== "points") return `"${path}.evaluationKind" must be "pass" or "points"`;
+  if (value.evaluationKind !== "pass" && value.evaluationKind !== "score") return `"${path}.evaluationKind" must be "pass" or "score"`;
   if (typeof value.verdict !== "string" || !VERDICTS.includes(value.verdict)) {
     return `"${path}.verdict" must be one of ${JSON.stringify(VERDICTS)}`;
   }
@@ -95,8 +95,8 @@ function deltaCellProblem(value: unknown, path: string): string | null {
 function deltaTotalsProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { evaluationKindComposition }`;
   const composition = value.evaluationKindComposition;
-  if (composition !== "pass" && composition !== "points" && composition !== "mixed") {
-    return `"${path}.evaluationKindComposition" must be one of ["pass","points","mixed"]`;
+  if (composition !== "pass" && composition !== "score" && composition !== "mixed") {
+    return `"${path}.evaluationKindComposition" must be one of ["pass","score","mixed"]`;
   }
   if (value.passed !== undefined && typeof value.passed !== "number") return `"${path}.passed" must be a number`;
   if (value.denominator !== undefined && typeof value.denominator !== "number") return `"${path}.denominator" must be a number`;

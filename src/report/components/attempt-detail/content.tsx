@@ -27,7 +27,12 @@ import type {
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
-import type { AssertionResult, JsonValue, ScoreEntry, TimingActivity, TraceSpan } from "../../../types.ts";
+import type { JsonValue, TimingActivity, TraceSpan } from "../../../types.ts";
+import type {
+  EvaluationFactResult,
+  LegacyJudgeAssertionResult,
+} from "../../../assertions/types.ts";
+import type { FactUseResult } from "../../../record/fact-record.ts";
 import { stripControl } from "../../../assertions/display.ts";
 import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
@@ -42,19 +47,18 @@ import type {
 } from "../../../record/annotated-source.ts";
 
 function projectedLineTone(line: ProjectedSourceLine): SourceLineTone | undefined {
-  const assertions = line.annotations.flatMap((annotation) =>
-    annotation.kind === "assertion" ? [annotation.assertion] : []
-  );
-  if (assertions.some((assertion) => assertion.outcome === "failed" && assertion.severity === "gate")) return "gate-fail";
-  if (assertions.some((assertion) => assertion.outcome === "failed")) return "soft-fail";
-  if (assertions.some((assertion) => assertion.outcome === "unavailable")) return "unavailable";
-  if (assertions.some((assertion) => assertion.outcome === "passed")) return "passed";
+  const outcomes = line.annotations.flatMap((annotation) => annotationOutcome(annotation));
+  if (line.annotations.some(annotationIsGateFailure)) return "gate-fail";
+  if (outcomes.some((outcome) => outcome === "failed" || outcome === "errored")) return "soft-fail";
+  if (outcomes.some((outcome) => outcome === "unavailable" || outcome.startsWith("notReached"))) return "unavailable";
+  if (outcomes.some((outcome) => outcome === "passed" || outcome === "scored")) return "passed";
   return line.annotations.some((annotation) => annotation.kind === "send") ? "send" : undefined;
 }
 
 function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] {
-  if (annotation.kind === "assertion") return assertionNodes(annotation.assertion, key);
-  if (annotation.kind === "score") return [scoreEntryNode(annotation.score, key)];
+  if (annotation.kind === "fact") return factNodes(annotation.fact, key);
+  if (annotation.kind === "factUse") return factUseNodes(annotation.use, key);
+  if (annotation.kind === "legacyJudge") return legacyJudgeNodes(annotation.judge, key);
   const send = annotation.send;
   return [
     <Text key={key}>
@@ -63,6 +67,16 @@ function annotationNodes(annotation: LineAnnotation, key: string): ReportNode[] 
         .join(" · ")}
     </Text>,
   ];
+}
+
+function annotationOutcome(annotation: LineAnnotation): string[] {
+  if (annotation.kind === "send") return [];
+  return [annotation.kind === "fact" ? annotation.fact.outcome : annotation.kind === "factUse" ? annotation.use.outcome : annotation.judge.outcome];
+}
+
+function annotationIsGateFailure(annotation: LineAnnotation): boolean {
+  if (annotation.kind === "factUse") return annotation.use.useKind === "verdict" && annotation.use.method === "require" && annotation.use.outcome === "failed";
+  return annotation.kind === "legacyJudge" && annotation.judge.policy.verdict.kind === "gate" && annotation.judge.outcome === "failed";
 }
 
 function sourceCallSummaryText(summary: SourceCallSummary): string {
@@ -84,9 +98,8 @@ function projectedCallTone(
   let softFailed = false;
   const visitAnnotations = (annotations: readonly LineAnnotation[]) => {
     for (const annotation of annotations) {
-      if (annotation.kind !== "assertion" || annotation.assertion.outcome !== "failed") continue;
-      if (annotation.assertion.severity === "gate") gateFailed = true;
-      else softFailed = true;
+      if (annotationIsGateFailure(annotation)) gateFailed = true;
+      if (annotationOutcome(annotation).some((outcome) => outcome === "failed" || outcome === "errored")) softFailed = true;
     }
   };
   const visitCalls = (calls: readonly ProjectedSourceCall[]) => {
@@ -146,15 +159,13 @@ function projectedBlockContent(node: ProjectedSourceNode): import("../../definit
       const details = line.annotations.flatMap((annotation, index) => annotationNodes(annotation, `${node.file}:${line.line}:${index}`));
       const calls = line.calls.map(projectedCallContent);
       const points = line.annotations.reduce((sum, annotation) => {
-        if (annotation.kind === "score") return sum + annotation.score.points;
-        if (annotation.kind === "assertion" && annotation.assertion.outcome !== "unavailable") {
-          return sum + (annotation.assertion.points ?? 0);
-        }
+        if (annotation.kind === "factUse" && annotation.use.useKind === "score" && annotation.use.outcome === "scored") return sum + annotation.use.earned;
+        if (annotation.kind === "legacyJudge" && "earnedPoints" in annotation.judge) return sum + annotation.judge.earnedPoints;
         return sum;
       }, 0);
       const hasPoints = line.annotations.some((annotation) =>
-        annotation.kind === "score" ||
-        (annotation.kind === "assertion" && annotation.assertion.outcome !== "unavailable" && annotation.assertion.points !== undefined)
+        (annotation.kind === "factUse" && annotation.use.useKind === "score" && annotation.use.outcome === "scored") ||
+        (annotation.kind === "legacyJudge" && "earnedPoints" in annotation.judge)
       );
       return {
         number: line.line,
@@ -285,8 +296,9 @@ export function projectedSourceContent(
 ): SourceContent | null {
   if (data === null) return null;
   const unmapped: ReportNode[] = [
-    ...data.unmapped.assertions.flatMap((assertion, index) => assertionNodes(assertion, `unmapped:a${index}`)),
-    ...data.unmapped.scores.map((score, index) => scoreEntryNode(score, `unmapped:s${index}`)),
+    ...data.unmapped.facts.flatMap((fact, index) => factNodes(fact, `unmapped:fact${index}`)),
+    ...data.unmapped.uses.flatMap((use, index) => factUseNodes(use, `unmapped:use${index}`)),
+    ...data.unmapped.legacyJudgeAssertions.flatMap((judge, index) => legacyJudgeNodes(judge, `unmapped:judge${index}`)),
   ];
   return {
     spine: projectedBlockContent(data.spine),
@@ -297,29 +309,49 @@ export function projectedSourceContent(
 }
 
 export function attemptAssertionsContent(data: AttemptAssertionsData | null): TableContent | null {
-  if (data === null || (data.attention.length === 0 && data.passedGroups.length === 0)) return null;
+  if (data === null || (data.factResults.length === 0 && data.factUses.length === 0 && data.legacyJudgeAssertions.length === 0)) return null;
   const rows: TableContentRow[] = [];
-  for (const assertion of data.attention) {
-    const detail: string[] = [];
-    if (assertion.detail) detail.push(stripControl(assertion.detail));
-    if (assertion.outcome === "unavailable") {
-      detail.push(`reason: ${assertion.reason}`);
-      if (assertion.evidence !== undefined) detail.push(`evidence: ${stripControl(assertion.evidence)}`);
-    }
+  for (const [index, fact] of data.factResults.entries()) {
     rows.push({
-      key: assertion.name,
+      key: `fact:${fact.factId}:${index}`,
       cells: {
-        name: { kind: "text", text: assertion.name },
-        severity: { kind: "text", text: assertion.severity },
-        outcome: { kind: "verdict", verdict: assertion.outcome === "unavailable" ? "skipped" : assertion.outcome },
-        detail: detail.length > 0 ? { kind: "text", text: detail.join(" · ") } : { kind: "notApplicable" },
+        kind: { kind: "text", text: "Fact" },
+        key: { kind: "text", text: fact.factId },
+        location: { kind: "text", text: sourceLocation(fact.producerLoc) },
+        outcome: { kind: "text", text: fact.outcome },
+        detail: { kind: "text", text: factDetail(fact) },
+      },
+    });
+  }
+  for (const [index, use] of data.factUses.entries()) {
+    rows.push({
+      key: `use:${use.key ?? use.label ?? index}:${index}`,
+      cells: {
+        kind: { kind: "text", text: "Fact use" },
+        key: { kind: "text", text: factUseKey(use) },
+        location: { kind: "text", text: sourceLocation(use.consumerLoc) },
+        outcome: { kind: "text", text: use.outcome },
+        detail: { kind: "text", text: factUseDetail(use) },
+      },
+    });
+  }
+  for (const [index, judge] of data.legacyJudgeAssertions.entries()) {
+    rows.push({
+      key: `legacy-judge:${judge.name}:${index}`,
+      cells: {
+        kind: { kind: "text", text: "Legacy Judge" },
+        key: { kind: "text", text: judge.name },
+        location: { kind: "text", text: sourceLocation(judge.loc) },
+        outcome: { kind: "text", text: judge.outcome },
+        detail: { kind: "text", text: legacyJudgeDetail(judge) },
       },
     });
   }
   return {
     columns: [
-      { key: "name", header: localizedMessage("attemptAssertions.name") },
-      { key: "severity", header: localizedMessage("attemptAssertions.severity") },
+      { key: "kind", header: "Kind" },
+      { key: "key", header: "Key" },
+      { key: "location", header: "Producer / consumer" },
       { key: "outcome", header: localizedMessage("attemptAssertions.outcome") },
       { key: "detail", header: localizedMessage("attemptAssertions.detail") },
     ],
@@ -499,55 +531,97 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
   }
 }
 
-/** 该行 assertion 的判定摘要行 tone:与源码行状态同一套色。 */
-function assertionToneClass(assertion: AssertionResult): string {
-  if (assertion.outcome === "unavailable") return "niceeval-tone-na";
-  if (assertion.outcome === "passed") return "niceeval-tone-good";
-  return assertion.severity === "gate" ? "niceeval-tone-bad" : "niceeval-tone-warn";
+function sourceLocation(loc: { readonly file: string; readonly line: number } | undefined): string {
+  return loc === undefined ? "unmapped" : `${loc.file}:${loc.line}`;
 }
 
-/**
- * 一条 assertion 在展开区里的呈现:一行判定摘要,失败与 soft 项接一段 expected / received 正文
- * (docs/feature/reports/components/attempt-detail/presentation.md「源码行展开区里有什么」)。
- */
-function assertionNodes(assertion: AssertionResult, key: string): ReportNode[] {
-  const points =
-    assertion.outcome !== "unavailable" && assertion.points !== undefined
-      ? ` ${formatPointsSuffix(assertion.points)}`
-      : "";
-  const head = `${assertion.name} · ${assertion.severity} ${assertion.outcome}${points}`;
-  const body: string[] = [];
-  if (assertion.detail) body.push(`check: ${stripControl(assertion.detail)}`);
-  if (assertion.outcome === "unavailable") {
-    body.push(`reason: ${assertion.reason}`);
+function factToneClass(outcome: string, gate = false): string {
+  if (outcome === "passed" || outcome === "scored") return "niceeval-tone-good";
+  if (outcome === "unavailable" || outcome.startsWith("notReached")) return "niceeval-tone-na";
+  return gate ? "niceeval-tone-bad" : "niceeval-tone-warn";
+}
+
+function factDetail(fact: EvaluationFactResult): string {
+  const parts = [`producer: ${sourceLocation(fact.producerLoc)}`];
+  if (fact.dependencyFactIds.length > 0) parts.push(`depends on: ${fact.dependencyFactIds.join(", ")}`);
+  if (fact.outcome === "scored") parts.push(`score: ${fact.normalizedScore}`);
+  if ("reason" in fact) parts.push(`reason: ${fact.reason}`);
+  if (fact.outcome === "errored") parts.push(`error: ${fact.error.code}: ${fact.error.message}`);
+  if (fact.expected !== undefined) parts.push(`expected: ${stripControl(fact.expected)}`);
+  if (fact.received !== undefined) parts.push(`received: ${stripControl(fact.received)}`);
+  if (fact.evidence !== undefined) parts.push(`evidence: ${stripControl(fact.evidence)}`);
+  return parts.join(" · ");
+}
+
+function factUseKey(use: FactUseResult): string {
+  if (use.key !== undefined) return use.key;
+  if (use.useKind === "score") return use.label;
+  return use.label ?? use.method;
+}
+
+function factUseDetail(use: FactUseResult): string {
+  const parts = [`consumer: ${sourceLocation(use.consumerLoc)}`];
+  if (use.useKind === "verdict") {
+    parts.push(`Fact: ${use.target.factId}`);
+    if (use.target.kind === "score") parts.push(`at least: ${use.target.atLeast}`);
+  } else if (use.input.kind === "direct") {
+    parts.push(`direct: ${formatPointsSuffix(use.input.earned)}`);
   } else {
-    if (assertion.expected !== undefined) body.push(`expected: ${stripControl(assertion.expected)}`);
-    if (assertion.received !== undefined) body.push(`received: ${stripControl(assertion.received)}`);
-    if (assertion.threshold !== undefined) body.push(`threshold: ${assertion.threshold} · score: ${assertion.score}`);
+    parts.push(`Fact: ${use.input.factId} / max ${use.input.max}`);
   }
-  if (assertion.evidence !== undefined) body.push(`evidence: ${stripControl(assertion.evidence)}`);
-  const nodes: ReportNode[] = [
-    <Text key={`${key}:head`} className={`niceeval-source-assertion ${assertionToneClass(assertion)}`}>
-      {head}
+  if (use.useKind === "score" && use.outcome === "scored") parts.push(`earned: ${formatPointsSuffix(use.earned)}`);
+  if ("reason" in use) parts.push(`reason: ${use.reason}`);
+  if (use.outcome === "errored") parts.push(`error: ${use.error.code}: ${use.error.message}`);
+  return parts.join(" · ");
+}
+
+function legacyJudgeDetail(judge: LegacyJudgeAssertionResult): string {
+  const parts = [`producer: ${sourceLocation(judge.loc)}`, stripControl(judge.detail)];
+  if (judge.policy.scoring.kind === "points") {
+    const score = "earnedPoints" in judge
+      ? `${judge.earnedPoints}/${judge.policy.scoring.max}`
+      : `max ${judge.policy.scoring.max}`;
+    parts.push(`score: ${score}`);
+  }
+  if ("reason" in judge) parts.push(`reason: ${judge.reason}`);
+  if (judge.outcome === "errored") parts.push(`error: ${judge.error.code}: ${judge.error.message}`);
+  if ("evidence" in judge && judge.evidence !== undefined) parts.push(`evidence: ${stripControl(judge.evidence)}`);
+  return parts.join(" · ");
+}
+
+function factNodes(fact: EvaluationFactResult, key: string): ReportNode[] {
+  return [
+    <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(fact.outcome)}`}>
+      {`Fact ${fact.name} [${fact.factId}] · ${fact.factKind} ${fact.outcome}`}
+    </Text>,
+    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
+      {factDetail(fact)}
     </Text>,
   ];
-  if (body.length > 0) {
-    nodes.push(
-      <Text key={`${key}:body`} className="niceeval-source-assertion-body">
-        {body.join("\n")}
-      </Text>,
-    );
-  }
-  return nodes;
 }
 
-function scoreEntryNode(entry: ScoreEntry, key: string): ReportNode {
-  const group = entry.groupPath?.length ? `${entry.groupPath.join(" > ")} · ` : "";
-  return (
-    <Text key={key} className="niceeval-source-score-entry">
-      {`${group}${entry.label} ${formatPointsSuffix(entry.points)}`}
-    </Text>
-  );
+function factUseNodes(use: FactUseResult, key: string): ReportNode[] {
+  const gate = use.useKind === "verdict" && use.method === "require" && use.outcome === "failed";
+  return [
+    <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(use.outcome, gate)}`}>
+      {`Fact use ${factUseKey(use)} · ${use.useKind} ${use.outcome}`}
+    </Text>,
+    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
+      {factUseDetail(use)}
+    </Text>,
+  ];
+}
+
+function legacyJudgeNodes(judge: LegacyJudgeAssertionResult, key: string): ReportNode[] {
+  const gate = judge.policy.verdict.kind === "gate" && judge.outcome === "failed";
+  return [
+    <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(judge.outcome, gate)}`}>
+      {`Legacy Judge ${judge.name} · ${judge.outcome}`}
+    </Text>,
+    <Text key={`${key}:body`} className="niceeval-source-assertion-body">
+      {legacyJudgeDetail(judge)}
+    </Text>,
+  ];
 }
 
 export function attemptConversationContent(data: AttemptConversationData | null): ConversationContent | null {

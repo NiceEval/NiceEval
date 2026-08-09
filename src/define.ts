@@ -27,11 +27,11 @@ import {
 import { Either, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 
-// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "points" }` 的裸对象。
+// 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ evaluationKind: "score" }` 的裸对象。
 // WeakSet 是模块私有来源证明；Definition 本身另有 types.ts 的私有 symbol 品牌供类型层使用。
 const definedScoreEvals = new WeakSet<object>();
 
-/** @internal 仅供 discoverEvals 验证 points 题型来源。 */
+/** @internal 仅供 discoverEvals 验证 score 题型来源。 */
 export function isDefinedScoreEval(value: object): boolean {
   return definedScoreEvals.has(value);
 }
@@ -102,7 +102,7 @@ export function defineEval(def: EvalInput): EvalDefinition<"pass", TestContext> 
  */
 export function defineScoreEval(
   def: ScoreEvalInput,
-): EvalDefinition<"points", ScoreTestContext> {
+): EvalDefinition<"score", ScoreTestContext> {
   if (Object.hasOwn(def, "id")) {
     throw new Error(t("define.scoreEvalIdRejected"));
   }
@@ -116,7 +116,7 @@ export function defineScoreEval(
     throw new Error(t("define.scoreEvalTestRequired"));
   }
   assertSandboxLayer(def.sandbox, "defineScoreEval");
-  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "points", test: def.test });
+  const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "score", test: def.test });
   definedScoreEvals.add(result);
   return result;
 }

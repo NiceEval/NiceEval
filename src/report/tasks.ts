@@ -35,6 +35,13 @@ import {
   type MetricValue,
 } from "./model/calculation.ts";
 import { attemptCostUSD } from "./model/metrics.ts";
+import {
+  attemptTerminalOf,
+  factRecordOf,
+  materializeFactRecord,
+  verdictForTerminal,
+  type FactRecordResult,
+} from "../record/fact-record.ts";
 import type {
   AttemptAssertionsData,
   AttemptConversationData,
@@ -225,9 +232,10 @@ export type UsageResult = UsageTableData;
 export type DiffResult = AttemptDiffData | null;
 
 /** AttemptRecord 全字段 + show / history 所需的归属与公共派生。 */
-export type HistoryAttemptResult = EvalResult & {
+export type HistoryAttemptResult = (EvalResult | FactRecordResult) & {
   experimentId: string;
   runStartedAt: string;
+  terminal: ReturnType<typeof attemptTerminalOf>;
   summary?: string;
   costUSD: number | null;
 };
@@ -304,13 +312,13 @@ export async function standardOverviewResult(sample: Sample): Promise<StandardOv
   const series = lineGroup(sample);
   const composition = await evaluationKindComposition(sample);
   const passSample = composition === "mixed"
-    ? sample.filter((attempt) => attempt.result.evaluationKind !== "points")
+    ? sample.filter((attempt) => attempt.result.evaluationKind !== "score")
     : sample;
   const pointsSample = composition === "mixed"
-    ? sample.filter((attempt) => attempt.result.evaluationKind === "points")
+    ? sample.filter((attempt) => attempt.result.evaluationKind === "score")
     : sample;
   const chartPromises: Array<Promise<StandardOverviewChartResult>> = [];
-  if (composition !== "points") chartPromises.push(overviewChart(passSample, "passRate", series));
+  if (composition !== "score") chartPromises.push(overviewChart(passSample, "passRate", series));
   if (composition !== "pass") chartPromises.push(overviewChart(pointsSample, "totalScore", series));
   const [hero, notices, diagnostics, fixPrompt, summary, experiments, charts] = await Promise.all([
     heroData(sample),
@@ -438,7 +446,8 @@ export async function usageResult(attempt: AttemptEvidence): Promise<UsageResult
     experimentId: attempt.experimentId,
     evalId: attempt.identity.evalId,
     attempt: attempt.identity.attempt,
-    verdict: attempt.result.verdict,
+    terminal: attemptTerminalOf(attempt.result),
+    verdict: verdictForTerminal(attempt.result),
   };
 }
 
@@ -454,12 +463,22 @@ function historyAttemptKey(attempt: AttemptHandle): string | undefined {
 }
 
 function historySummary(result: EvalResult): string | undefined {
+  const fact = factRecordOf(result);
+  if (fact !== undefined) {
+    const use = fact.factUses.find((candidate) => candidate.useKind === "verdict" && candidate.outcome === "failed");
+    if (use?.useKind === "verdict") return summaryText(use.label ?? use.key ?? use.method);
+    const score = fact.scoreResult;
+    if (score?.status === "invalid") return summaryText(`invalid · earned ${score.earnedScore} · credited ${score.creditedScore}`);
+    if (score?.status === "unavailable") return summaryText(`unavailable · ${score.issues[0]?.reason ?? "score evidence unavailable"}`);
+    if (score?.status === "errored") return summaryText(`errored · ${score.errors[0]?.error.message ?? "score evaluator error"}`);
+    if (score?.status === "skipped") return summaryText(score.reason);
+  }
   if (result.error !== undefined) return summaryText(firstLine(result.error.message));
   if (result.skipReason !== undefined) return summaryText(result.skipReason);
   const summary = primaryAssertionSummary(
     result.assertions,
-    result.verdict,
-    result.evaluationKind === "points" ? "points" : "pass",
+    verdictForTerminal(result),
+    result.evaluationKind === "score" ? "score" : "pass",
   );
   return summary === undefined ? undefined : compactAssertionSummary(summary);
 }
@@ -504,10 +523,12 @@ export async function historyResult(
         evalId: first.evalId,
         attempts: group.map((attempt): HistoryAttemptResult => {
           const summary = historySummary(attempt.result);
+          const result = factRecordOf(attempt.result) !== undefined ? materializeFactRecord(attempt.result) : attempt.result;
           return {
-            ...attempt.result,
+            ...result,
             experimentId: attempt.experimentId,
             runStartedAt: attempt.run.startedAt,
+            terminal: attemptTerminalOf(attempt.result),
             ...(summary !== undefined ? { summary } : {}),
             costUSD: attemptCostUSD(attempt.result),
           };

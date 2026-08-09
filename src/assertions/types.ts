@@ -403,7 +403,7 @@ export interface ScoreAssertionHandle extends BaseAssertionHandle {
   stopOnFailure(): Promise<ScoreAssertionHandle>;
   /**
    * 给观测设通过线:低于 `x` 如实记 failed,**永不影响判定**(计分制的判定面只认前置中止,
-   * `--strict` 也不翻)。judge 这类默认没有线的打分断言靠它把「装好了但质量差」显示成 ✗;
+   * 不会被全局模式隐式升级)。judge 这类默认没有线的打分断言靠它把「装好了但质量差」显示成 ✗;
    * 0/1 断言不需要它——matcher 自带的线在计分制照常生效。
    */
   atLeast(threshold: number): ScoreAssertionHandle;
