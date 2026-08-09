@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/opencode.md
+// owner: docs/engineering/testing/e2e/adapter/opencode.md
 //
 // 单文件 Journey：真实 OpenCode CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
@@ -11,9 +11,14 @@ import { expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
+  "skills/status-report",
   "session/recall",
   "usage/tokens",
 ] as const;
+
+const TOOL_PAYLOAD = "niceeval-opencode-tool-input-907";
+const STATUS_MARKER = "OPENCODE-STATUS-REPORT-NICEEVAL-E2E-914";
+const DECOY_MARKER = "OPENCODE-DECOY-AUDIT-NICEEVAL-E2E-518";
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -110,6 +115,22 @@ async function latestAttemptLocator(evalId: string): Promise<string> {
   return locator!;
 }
 
+/** `show --execution` 的 TOOL 卡把每笔调用的 input 作为独立块公开展示。 */
+function toolInputOccurrences(execution: string, marker: string): number {
+  const lines = execution.split("\n");
+  return lines.filter((line, index) =>
+    line.trim() === "input" && lines.slice(index + 1, index + 5).join("\n").includes(marker),
+  ).length;
+}
+
+function expectToolInputReadback(execution: string, marker: string, minimum: number): void {
+  expect(execution).toContain("TOOL");
+  expect(
+    toolInputOccurrences(execution, marker),
+    `show --execution should expose ${minimum} TOOL input block(s) containing ${marker}`,
+  ).toBeGreaterThanOrEqual(minimum);
+}
+
 it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公开 CLI 读回", async () => {
   requireLiveSecrets();
   await requireDocker();
@@ -131,16 +152,15 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
 
-  const codingTaskLocator = await latestAttemptLocator("coding-task/write-and-verify");
+  const locators: Record<string, string> = {};
   for (const evalId of EXPECTED_EVALS) {
-    if (evalId === "coding-task/write-and-verify") continue;
-    await latestAttemptLocator(evalId);
+    locators[evalId] = await latestAttemptLocator(evalId);
   }
 
   // outcome：execution 是适配器收到的公开投影。TOOL 卡片头是原始未归一化名
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 入参与 OTel 时间注释必须穿过归一化、落盘与 CLI 展示。
-  const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
+  const execution = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--execution"]);
   expectSuccessfulCli(execution);
   expect(
     execution.stdout.includes("notes.txt") ||
@@ -148,6 +168,19 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
       execution.stdout.includes("write"),
     "execution tree missing write evidence (notes.txt/file_write/write)",
   ).toBe(true);
+  // 两笔工具调用都以 marker 为输入；这同时证明参数没有在归一、落盘或 readback 时丢失。
+  expectToolInputReadback(execution.stdout, TOOL_PAYLOAD, 2);
+
+  const skillExecution = await niceeval.run(["show", locators["skills/status-report"]!, "--execution"]);
+  expectSuccessfulCli(skillExecution);
+  expectToolInputReadback(skillExecution.stdout, STATUS_MARKER, 1);
+  expect(skillExecution.stdout).not.toContain(DECOY_MARKER);
+
+  // usage Eval 的两个 t.send() 都有独立的正 token 数；execution 的两个 turn 头必须各自可读。
+  const usageExecution = await niceeval.run(["show", locators["usage/tokens"]!, "--execution"]);
+  expectSuccessfulCli(usageExecution);
+  expect(usageExecution.stdout).toMatch(/turn1\s+·\s+completed[^\n]*\btok\b/);
+  expect(usageExecution.stdout).toMatch(/turn2\s+·\s+completed[^\n]*\btok\b/);
   expect(
     execution.stdout.includes("shell") ||
       execution.stdout.includes("bash") ||
@@ -158,7 +191,7 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // timing：runner 分阶段耗时树。opencode 适配器声明了 tracing 与 canonical OTel
   // mapper，但仓库验收明确「时间轨缺失只影响 timing 注释，不影响事件流断言」，
   // 因此不把字面 OTel 子树当作硬前提，只断言阶段树本身。
-  const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
+  const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
   expectSuccessfulCli(timing);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");

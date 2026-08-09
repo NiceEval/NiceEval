@@ -7,6 +7,10 @@ import { sandbox } from "../sandbox.ts";
 const agent = openCodeAgent({
   apiKey: process.env.BUB_API_KEY,
   baseUrl: process.env.BUB_API_BASE,
+  skills: [
+    { kind: "local", path: "skills/niceeval-opencode-status-report", name: "niceeval-opencode-status-report" },
+    { kind: "local", path: "skills/niceeval-opencode-decoy", name: "niceeval-opencode-decoy" },
+  ],
 });
 
 export default defineExperiment({
@@ -14,6 +18,6 @@ export default defineExperiment({
   agent,
   model: "gpt-5.6-luna",
   sandbox,
-  evals: ["coding-task/write-and-verify", "session/recall", "usage/tokens"],
+  evals: ["coding-task/write-and-verify", "skills/status-report", "session/recall", "usage/tokens"],
   attempts: 1,
 });

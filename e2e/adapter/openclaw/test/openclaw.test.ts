@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/openclaw.md
+// owner: docs/engineering/testing/e2e/adapter/openclaw.md
 //
 // 单文件 Journey：真实 OpenClaw CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
@@ -11,6 +11,7 @@ import { expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
+  "skills/status-report",
   "session/recall",
   "usage/tokens",
 ] as const;
@@ -134,18 +135,18 @@ it("真实 OpenClaw CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
   expectSuccessfulCli(execution);
-  expect(
-    execution.stdout.includes("notes.txt") ||
-      execution.stdout.includes("file_write") ||
-      execution.stdout.includes("write"),
-    "execution tree missing write evidence (notes.txt/file_write/write)",
-  ).toBe(true);
-  expect(
-    execution.stdout.includes("shell") ||
-      execution.stdout.includes("bash") ||
-      execution.stdout.includes("command_execution"),
-    "execution tree missing shell evidence (shell/bash/command_execution)",
-  ).toBe(true);
+  expect(execution.stdout, "execution tree missing file_write input path").toContain("notes.txt");
+  expect(execution.stdout, "execution tree missing file_write input content").toContain("niceeval e2e ok");
+  expect(execution.stdout, "execution tree missing shell input command").toMatch(/cat\s+notes\.txt/);
+
+  const skillLocator = await latestAttemptLocator("skills/status-report");
+  const skillExecution = await niceeval.run(["show", skillLocator, "--execution"]);
+  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.stdout, "execution tree missing selected Skill read input").toContain(
+    ".agents/skills/niceeval-status-report/SKILL.md",
+  );
+  // decoy 的否定在 Eval 的标准事件流上判定。这里不能对整段 CLI 文本作反包含：用户题干
+  // 本身点名了 decoy 路径，命中它只说明 CLI 如实显示了 USER 卡片，不能说明 Agent 读取过它。
 
   const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
   expectSuccessfulCli(timing);

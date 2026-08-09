@@ -10,8 +10,10 @@ export default defineEval({
     );
     await turn.succeeded().stopOnFailure();
     await t.group("写入 notes.txt,再串行 shell 读回来", () => {
-      t.calledTool("file_write", { input: { path: /notes\.txt/ } });
-      t.calledTool("shell");
+      t.calledTool("file_write", {
+        input: { path: /notes\.txt/, content: /niceeval e2e ok/ },
+      });
+      t.calledTool("shell", { input: { command: /cat\s+notes\.txt/ } });
       t.toolOrder(["file_write", "shell"]);
       t.noFailedActions();
     });

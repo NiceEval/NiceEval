@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/hermes.md
+// owner: docs/engineering/testing/e2e/adapter/hermes.md
 //
 // 单文件 Journey：真实 Hermes CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。
@@ -11,9 +11,13 @@ import { expect, it } from "vitest";
 
 const EXPECTED_EVALS = [
   "coding-task/write-and-verify",
+  "skills/selected",
   "session/recall",
   "usage/tokens",
 ] as const;
+
+const WRITE_MARKER = "niceeval-hermes-tool-input-914";
+const SKILL_NAME = "niceeval-hermes-incident-report";
 
 const REQUIRED_LIVE_SECRETS = [
   "BUB_API_KEY",
@@ -131,26 +135,30 @@ it("真实 Hermes CLI adapter 在 Docker sandbox 中的运行结果经过公开 
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
 
-  const codingTaskLocator = await latestAttemptLocator("coding-task/write-and-verify");
+  const locators: Record<string, string> = {};
   for (const evalId of EXPECTED_EVALS) {
-    if (evalId === "coding-task/write-and-verify") continue;
-    await latestAttemptLocator(evalId);
+    locators[evalId] = await latestAttemptLocator(evalId);
   }
 
-  // outcome：execution 是适配器收到的公开投影。Hermes 写文件证据可能以
-  // notes.txt / file_write / write 任一形式出现在执行树。
-  const execution = await niceeval.run(["show", codingTaskLocator, "--execution"]);
-  expectSuccessfulCli(execution);
-  expect(
-    execution.stdout.includes("notes.txt") ||
-      execution.stdout.includes("file_write") ||
-      execution.stdout.includes("write"),
-    "execution tree missing write evidence (notes.txt/file_write/write)",
-  ).toBe(true);
+  // outcome：execution 是适配器收到的公开投影。工具名称、文件路径和两个特意选择的
+  // 入参哨兵都必须跨过归一、落盘与 show；只出现任意 write/shell 名称不够区分。
+  const codingExecution = await niceeval.run([
+    "show",
+    locators["coding-task/write-and-verify"]!,
+    "--execution",
+  ]);
+  expectSuccessfulCli(codingExecution);
+  expect(codingExecution.stdout).toContain("notes.txt");
+  expect(codingExecution.stdout).toContain(WRITE_MARKER);
+  expect(codingExecution.stdout).toMatch(/cat\s+notes\.txt/);
+
+  const skillExecution = await niceeval.run(["show", locators["skills/selected"]!, "--execution"]);
+  expectSuccessfulCli(skillExecution);
+  expect(skillExecution.stdout).toContain(SKILL_NAME);
 
   // timing：仓库验收明确「无原生 OTel 时执行树显示 timing unavailable；
   // 事件流断言照常通过」，因此只断言阶段树本身，不要求字面 OTel 子树。
-  const timing = await niceeval.run(["show", codingTaskLocator, "--timing"]);
+  const timing = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "--timing"]);
   expectSuccessfulCli(timing);
   expect(timing.stdout).toContain("eval.run");
   expect(timing.stdout).toContain("agent.setup");
