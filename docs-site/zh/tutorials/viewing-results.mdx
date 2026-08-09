@@ -374,7 +374,7 @@ $ niceeval show @1c3h6twx --diff=src/components/Button.tsx
    以及每行末尾的 @<locator>。
 3. 运行 niceeval show @<locator>，从摘要确认这次 Attempt 捕获的证据类型。
 4. 按问题选择 --source、--execution、--timing 或 --diff。可以同时传多个证据 flag。
-5. 输出被截断时，读取末尾标出的 sources.json、events.json、trace.json 或 diff.json 原始路径。
+5. 输出被截断时，用末尾给出的 `--expand` 命令读取单张完整卡片；需要结构化材料时给同一条 `show` 加 `--json`。若公开切片仍未呈现所需证据，报告 NiceEval 的呈现缺口，不绕过 `show` 扫原始 artifact。
 6. 修复后重跑该 eval，再用 niceeval show <eval-id> 验证新的 @<locator>。收工前用 --rerun all 全量重跑确认整体结果。
 ```
 

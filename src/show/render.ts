@@ -371,8 +371,9 @@ function factResultLine(fact: EvaluationFactResult): string {
 
 function factUseLine(use: VerdictFactUseResult | ScoreFactUseResult): string {
   const title = use.useKind === "score" ? use.label : use.label ?? use.key ?? use.method;
+  const useKind = use.useKind === "verdict" && use.outcome === "failed" ? "gate" : use.useKind;
   const details = [
-    `${use.outcome === "passed" || use.outcome === "scored" ? "✓" : use.outcome === "failed" || use.outcome === "errored" ? "✗" : "◌"} ${use.useKind}`,
+    `${use.outcome === "passed" || use.outcome === "scored" ? "✓" : use.outcome === "failed" || use.outcome === "errored" ? "✗" : "◌"} ${useKind}`,
     title,
     ...(use.key !== undefined && use.label !== undefined ? [`key: ${use.key}`] : []),
   ];
@@ -380,9 +381,9 @@ function factUseLine(use: VerdictFactUseResult | ScoreFactUseResult): string {
     details.push(use.input.kind === "fact" ? `${formatPlainNumber(use.earned)} / ${formatPlainNumber(use.input.max)}` : formatPlainNumber(use.earned));
   }
   if (use.outcome === "unavailable" || use.outcome.startsWith("notReached") || use.outcome === "notApplicable") {
-    details.push(`reason ${(use as { reason: string }).reason}`);
+    details.push(`reason ${summaryText((use as { reason: string }).reason)}`);
   }
-  if (use.outcome === "errored") details.push(`error ${use.error.message}`);
+  if (use.outcome === "errored") details.push(`error ${summaryText(use.error.message)}`);
   const consumer = sourceLocText(use.consumerLoc);
   if (consumer) details.push(`consumer: ${consumer}`);
   return details.join(" · ");
@@ -393,12 +394,15 @@ function legacyJudgeLine(judge: LegacyJudgeAssertionResult): string {
     "legacy Judge",
     judge.name,
     judge.outcome,
+    `check ${summaryText(judge.detail)}`,
     ...(judge.outcome === "passed" || judge.outcome === "failed" ? [`score ${formatPlainNumber(judge.normalizedScore)}`] : []),
     ...(judge.policy.scoring.kind === "points" && "earnedPoints" in judge
       ? [`${formatPlainNumber(judge.earnedPoints)} / ${formatPlainNumber(judge.policy.scoring.max)} pts`]
       : []),
-    ...(judge.outcome === "unavailable" || judge.outcome.startsWith("notReached") ? [`reason ${(judge as { reason: string }).reason}`] : []),
-    ...(judge.outcome === "errored" ? [`error ${judge.error.message}`] : []),
+    ...(judge.outcome === "unavailable" || judge.outcome.startsWith("notReached") ? [`reason ${summaryText((judge as { reason: string }).reason)}`] : []),
+    ...(judge.outcome === "errored" ? [`error ${summaryText(judge.error.message)}`] : []),
+    ...(judge.rationale !== undefined ? [`rationale ${summaryText(judge.rationale)}`] : []),
+    ...("evidence" in judge && judge.evidence !== undefined ? [`evidence ${summaryText(judge.evidence)}`] : []),
     ...(sourceLocText(judge.loc) ? [`producer: ${sourceLocText(judge.loc)!}`] : []),
   ];
   return details.join(" · ");

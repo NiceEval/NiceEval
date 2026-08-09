@@ -995,7 +995,7 @@ async function loadConfig(cwd: string): Promise<Config> {
 }
 
 // AGENTS.md/CLAUDE.md 托管区块:告诉在这个项目里干活的 coding agent「niceeval 不在你的训练数据里,
-// 先读随包文档,跑完读结构化结果」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
+// 先读随包文档,跑完只经公开 show 面诊断」。随包只发中文准绳版文档(英文站是手工同步、可能滞后,
 // 不进包,见 package.json 的 files);init 时写入/刷新;标记之外的用户内容永不触碰。
 const AGENT_RULES_BEGIN = "<!-- BEGIN:niceeval-agent-rules -->";
 const AGENT_RULES_END = "<!-- END:niceeval-agent-rules -->";
@@ -1006,12 +1006,14 @@ const AGENT_RULES_CONTENT = [
   "`node_modules/niceeval/INDEX.md`, then read the task-specific bundled guides it points",
   "to before writing any eval, experiment, adapter, or niceeval config. That index and",
   "the bundled Chinese docs are the authoritative version matching this installation.",
-  "After a run, drill into failures with `niceeval show` — pick an `@<locator>` from the",
-  "compact index it prints, then `niceeval show @<locator>` for a compact overview, or add",
-  "`--source` / `--execution` / `--diff` for evidence; the run directories the CLI prints",
-  "are the structured source of truth: `run.json` holds the run's metadata and each",
-  "`<evalId>/a<attempt>/result.json` holds that attempt's verdict and assertions, next to",
-  "its artifact files (`events.json` / `trace.json` / `diff.json`).",
+  "After a run, use this repository's package-manager invocation of `niceeval show` for",
+  "diagnosis (`pnpm --silent exec niceeval show` in a pnpm project). Pick an `@<locator>`",
+  "from the compact index, then show that locator for an overview, or add",
+  "`--source` / `--execution` / `--timing` / `--diff` / `--expand` / `--json` for evidence.",
+  "When diagnosing an existing run, do not inspect raw `.niceeval` files or treat the current",
+  "`evals/` or `agents/` source as evidence of what happened in that run. If `niceeval show`",
+  "cannot expose the evidence you need, report that product gap. Reading source remains",
+  "appropriate when the task is to author or modify that source.",
 ].join("\n");
 
 // 优先复用已有的 AGENTS.md;项目只有 CLAUDE.md(没有 AGENTS.md)时改写 CLAUDE.md 本身,
@@ -1985,8 +1987,8 @@ async function main(): Promise<void> {
   const junitPath =
     flags.junit && !completion.reporterErrors.some((e) => e.reporter === "junit") ? flags.junit : undefined;
 
-  // 机器反馈闭环的入口:跑完直接给出每个已创建快照的目录,agent/CI 读 run.json 与各
-  // attempt 的 result.json / artifact(events/trace/diff),不必解析人类向的流式输出。相对 cwd
+  // 跑完给出每个已创建快照的持久化位置，供 CI 保存 artifact 或 Record API 消费；coding
+  // agent 的诊断闭环走 `niceeval show` / `niceeval show --json`，不自行扫描这些目录。相对 cwd
   // 的路径更友好;结果落在 cwd 外时(relative 路径以 .. 开头)原样打印绝对路径。打印本身由
   // renderer 的 "saved" 处理完成,这里只负责把路径交给 coordinator。
   const paths = artifacts.outputDirs().map(({ dir }) => {

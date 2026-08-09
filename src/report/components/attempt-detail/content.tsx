@@ -33,7 +33,7 @@ import type {
   LegacyJudgeAssertionResult,
 } from "../../../assertions/types.ts";
 import type { FactUseResult } from "../../../record/fact-record.ts";
-import { stripControl } from "../../../assertions/display.ts";
+import { summaryText } from "../../../assertions/display.ts";
 import { formatDurationMs, formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
 import { normalizeTurnLabel } from "../../../shared/turn-label.ts";
@@ -75,7 +75,7 @@ function annotationOutcome(annotation: LineAnnotation): string[] {
 }
 
 function annotationIsGateFailure(annotation: LineAnnotation): boolean {
-  if (annotation.kind === "factUse") return annotation.use.useKind === "verdict" && annotation.use.method === "require" && annotation.use.outcome === "failed";
+  if (annotation.kind === "factUse") return annotation.use.useKind === "verdict" && annotation.use.outcome === "failed";
   return annotation.kind === "legacyJudge" && annotation.judge.policy.verdict.kind === "gate" && annotation.judge.outcome === "failed";
 }
 
@@ -545,11 +545,11 @@ function factDetail(fact: EvaluationFactResult): string {
   const parts = [`producer: ${sourceLocation(fact.producerLoc)}`];
   if (fact.dependencyFactIds.length > 0) parts.push(`depends on: ${fact.dependencyFactIds.join(", ")}`);
   if (fact.outcome === "scored") parts.push(`score: ${fact.normalizedScore}`);
-  if ("reason" in fact) parts.push(`reason: ${fact.reason}`);
-  if (fact.outcome === "errored") parts.push(`error: ${fact.error.code}: ${fact.error.message}`);
-  if (fact.expected !== undefined) parts.push(`expected: ${stripControl(fact.expected)}`);
-  if (fact.received !== undefined) parts.push(`received: ${stripControl(fact.received)}`);
-  if (fact.evidence !== undefined) parts.push(`evidence: ${stripControl(fact.evidence)}`);
+  if ("reason" in fact) parts.push(`reason: ${summaryText(fact.reason)}`);
+  if (fact.outcome === "errored") parts.push(`error: ${fact.error.code}: ${summaryText(fact.error.message)}`);
+  if (fact.expected !== undefined) parts.push(`expected: ${summaryText(fact.expected)}`);
+  if (fact.received !== undefined) parts.push(`received: ${summaryText(fact.received)}`);
+  if (fact.evidence !== undefined) parts.push(`evidence: ${summaryText(fact.evidence)}`);
   return parts.join(" · ");
 }
 
@@ -570,22 +570,23 @@ function factUseDetail(use: FactUseResult): string {
     parts.push(`Fact: ${use.input.factId} / max ${use.input.max}`);
   }
   if (use.useKind === "score" && use.outcome === "scored") parts.push(`earned: ${formatPointsSuffix(use.earned)}`);
-  if ("reason" in use) parts.push(`reason: ${use.reason}`);
-  if (use.outcome === "errored") parts.push(`error: ${use.error.code}: ${use.error.message}`);
+  if ("reason" in use) parts.push(`reason: ${summaryText(use.reason)}`);
+  if (use.outcome === "errored") parts.push(`error: ${use.error.code}: ${summaryText(use.error.message)}`);
   return parts.join(" · ");
 }
 
 function legacyJudgeDetail(judge: LegacyJudgeAssertionResult): string {
-  const parts = [`producer: ${sourceLocation(judge.loc)}`, stripControl(judge.detail)];
+  const parts = [`producer: ${sourceLocation(judge.loc)}`, `check: ${summaryText(judge.detail)}`];
   if (judge.policy.scoring.kind === "points") {
     const score = "earnedPoints" in judge
       ? `${judge.earnedPoints}/${judge.policy.scoring.max}`
       : `max ${judge.policy.scoring.max}`;
     parts.push(`score: ${score}`);
   }
-  if ("reason" in judge) parts.push(`reason: ${judge.reason}`);
-  if (judge.outcome === "errored") parts.push(`error: ${judge.error.code}: ${judge.error.message}`);
-  if ("evidence" in judge && judge.evidence !== undefined) parts.push(`evidence: ${stripControl(judge.evidence)}`);
+  if ("reason" in judge) parts.push(`reason: ${summaryText(judge.reason)}`);
+  if (judge.outcome === "errored") parts.push(`error: ${judge.error.code}: ${summaryText(judge.error.message)}`);
+  if (judge.rationale !== undefined) parts.push(`rationale: ${summaryText(judge.rationale)}`);
+  if ("evidence" in judge && judge.evidence !== undefined) parts.push(`evidence: ${summaryText(judge.evidence)}`);
   return parts.join(" · ");
 }
 
@@ -601,7 +602,7 @@ function factNodes(fact: EvaluationFactResult, key: string): ReportNode[] {
 }
 
 function factUseNodes(use: FactUseResult, key: string): ReportNode[] {
-  const gate = use.useKind === "verdict" && use.method === "require" && use.outcome === "failed";
+  const gate = use.useKind === "verdict" && use.outcome === "failed";
   return [
     <Text key={`${key}:head`} className={`niceeval-source-assertion ${factToneClass(use.outcome, gate)}`}>
       {`Fact use ${factUseKey(use)} · ${use.useKind} ${use.outcome}`}

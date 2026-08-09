@@ -20,6 +20,11 @@ export interface EvalScore {
   received?: string;
   /** 这条分数是看着什么材料算出来的(judge 收到的输入等);供 view 展开排查「为什么是这个分」。 */
   evidence?: string;
+  /**
+   * 仅供旧 Autoevals Judge bridge 传递的有界模型理由。它不是作者 API，也不能由 evidence
+   * 推导或替代。
+   */
+  rationale?: string;
 }
 
 /** evaluate 返回它表示「这条断言评不了」:证据通道不完整 / judge 未解析到模型等。 */
@@ -494,6 +499,7 @@ type FactRuntimeOutcome =
       readonly expected?: string;
       readonly received?: string;
       readonly evidence?: string;
+      readonly rationale?: string;
     }
   | {
       readonly outcome: "unavailable";
@@ -1494,6 +1500,7 @@ export class FactCollector {
       }
       if (raw.outcome === "errored") return { ...base, policy, outcome: "errored", error: raw.error };
       const normalizedScore = raw.outcome === "scored" ? raw.normalizedScore : raw.outcome === "passed" ? 1 : 0;
+      const rationale = raw.outcome === "scored" ? raw.rationale : undefined;
       const passed = computePassed(spec.severity, spec.threshold, normalizedScore);
       if (policy.scoring.kind === "points") {
         const pointPolicy = {
@@ -1507,6 +1514,7 @@ export class FactCollector {
           normalizedScore,
           earnedPoints: pointPolicy.scoring.max * normalizedScore,
           ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+          ...(rationale === undefined ? {} : { rationale }),
         };
       }
       const qualityPolicy = {
@@ -1519,6 +1527,7 @@ export class FactCollector {
         outcome: passed ? "passed" : "failed",
         normalizedScore,
         ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+        ...(rationale === undefined ? {} : { rationale }),
       };
     });
   }
@@ -1573,6 +1582,7 @@ export class FactCollector {
         out.push({ ...base, policy, outcome: "errored", error: raw.error });
       } else {
         const normalizedScore = raw.outcome === "scored" ? raw.normalizedScore : raw.outcome === "passed" ? 1 : 0;
+        const rationale = raw.outcome === "scored" ? raw.rationale : undefined;
         const passed = computePassed(spec.severity, spec.threshold, normalizedScore);
         if (policy.scoring.kind === "points") {
           const pointPolicy = policy as Extract<LegacyJudgePolicy, { readonly scoring: { readonly kind: "points"; readonly max: number } }>;
@@ -1583,6 +1593,7 @@ export class FactCollector {
             normalizedScore,
             earnedPoints: pointPolicy.scoring.max * normalizedScore,
             ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+            ...(rationale === undefined ? {} : { rationale }),
           });
         } else {
           const qualityPolicy = policy as Extract<LegacyJudgePolicy, { readonly scoring: { readonly kind: "quality" } }>;
@@ -1592,6 +1603,7 @@ export class FactCollector {
             outcome: passed ? "passed" : "failed",
             normalizedScore,
             ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
+            ...(rationale === undefined ? {} : { rationale }),
           });
         }
       }
@@ -1698,7 +1710,12 @@ function legacyRuntimeOutcome(value: number | EvalScore | EvalUnavailable): Fact
   if (!Number.isFinite(score) || score < 0 || score > 1) {
     return { outcome: "errored", error: { class: "evaluator", code: "invalid-score", message: "Judge returned a score outside finite [0, 1]" } };
   }
-  return { outcome: "scored", normalizedScore: score, ...(typeof value === "number" || value.evidence === undefined ? {} : { evidence: value.evidence }) };
+  return {
+    outcome: "scored",
+    normalizedScore: score,
+    ...(typeof value === "number" || value.evidence === undefined ? {} : { evidence: value.evidence }),
+    ...(typeof value === "number" || value.rationale === undefined ? {} : { rationale: value.rationale }),
+  };
 }
 
 function evaluatorError(error: unknown): EvaluationFactError {

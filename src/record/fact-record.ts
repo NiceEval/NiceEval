@@ -414,6 +414,7 @@ function assertLegacyJudge(value: unknown, path: string, sourceOrders: Map<numbe
   if (!(value.name as string).startsWith("judge:")) throw new Error(`${path}.name must start with "judge:".`);
   if ((value.name as string).length === "judge:".length) throw new Error(`${path}.name must include a Judge name.`);
   if (typeof value.detail !== "string") throw new Error(`${path}.detail must be a string.`);
+  assertOptionalString(value.rationale, `${path}.rationale`);
   if (value.groupPath !== undefined && !isStringArray(value.groupPath)) throw new Error(`${path}.groupPath must be a string array when present.`);
   assertOptionalLoc(value.loc, `${path}.loc`);
   assertSourceOrder(value.sourceOrder, `${path}.sourceOrder`, sourceOrders);

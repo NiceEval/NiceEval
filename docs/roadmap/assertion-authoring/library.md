@@ -258,6 +258,8 @@ interface CollectionMatch {
 }
 
 interface ScopedFacts<P extends FactPhase> {
+  succeeded(): BooleanFact<void, P>;
+  parked(): BooleanFact<void, P>;
   calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
   notCalledTool(match: ToolMatch): BooleanFact<void, P>;
   toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;
@@ -267,6 +269,10 @@ interface ScopedFacts<P extends FactPhase> {
   eventOrder(matches: readonly [EventMatch, EventMatch, ...EventMatch[]]): BooleanFact<void, P>;
 }
 ```
+
+`succeeded()` 要求 scope 的可信末态是 `completed`。`parked()` 要求可信末态是
+`waiting`，并且完整事件证据的最后一个有意义事件是 `input.requested`；status 或 events
+coverage 不完整时返回 unavailable，不以“暂时没看到后续事件”冒充停轮成功。
 
 ```ts
 t.assert(turn.calledTool(commandMatch("niceeval", {

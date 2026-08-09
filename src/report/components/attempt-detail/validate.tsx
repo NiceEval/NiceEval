@@ -98,6 +98,8 @@ function factUseProblem(value: unknown, path: string): string | null {
 function legacyJudgeProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be a LegacyJudgeAssertionResult object`;
   if (typeof value.name !== "string") return `"${path}.name" must be a string`;
+  if (typeof value.detail !== "string") return `"${path}.detail" must be a string`;
+  if (value.rationale !== undefined && typeof value.rationale !== "string") return `"${path}.rationale" must be a string when present`;
   if (typeof value.outcome !== "string") return `"${path}.outcome" must be a string`;
   return null;
 }

@@ -619,6 +619,33 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
             : { outcome: "unavailable", reason: unavailable };
         },
       }),
+    parked: () =>
+      collector.createBooleanFact<void, P>({
+        name: "parked",
+        phase,
+        value: undefined,
+        evaluate: () => {
+          const snapshot = evidence();
+          const statusUnavailable = coverageReason(snapshot.coverage, "status");
+          const eventsUnavailable = coverageReason(snapshot.coverage, "events");
+          if (statusUnavailable !== undefined || eventsUnavailable !== undefined) {
+            return {
+              outcome: "unavailable",
+              reason: statusUnavailable ?? eventsUnavailable ?? "parked-evidence-unavailable",
+            };
+          }
+          if (snapshot.status === "waiting" && deriveRunFacts(snapshot.events).parked) {
+            return { outcome: "passed" };
+          }
+          return {
+            outcome: "failed",
+            expected: "waiting scope ending in input.requested",
+            received: snapshot.status === "waiting"
+              ? "waiting scope without a terminal input request"
+              : `status: ${snapshot.status}`,
+          };
+        },
+      }),
     calledTool: (match: ToolMatch, options?: { readonly count?: number }) => {
       const count = collectionCount(options, "calledTool()");
       return collector.createBooleanFact<LogicalToolOccurrence, P>({
@@ -895,6 +922,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         return makeJudge(session, () => session.lastInput);
       },
       succeeded: () => snapshotFacts().succeeded(),
+      parked: () => snapshotFacts().parked(),
       calledTool: (match, options) => snapshotFacts().calledTool(match, options),
       notCalledTool: (match) => snapshotFacts().notCalledTool(match),
       toolOrder: (matches) => snapshotFacts().toolOrder(matches),

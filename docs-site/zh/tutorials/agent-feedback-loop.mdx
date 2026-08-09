@@ -12,6 +12,8 @@ NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包�
 
 `npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`。两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
 
+托管指引把“编写源码”和“证明某次运行发生了什么”分开：前者当然可以读取 `evals/`、`agents/` 等项目源码；后者只使用 `niceeval show` 及其公开证据切片。不要扫描 `.niceeval/` 原始文件，也不要拿当前源码反推历史执行。公开切片缺少必要证据时，应报告 NiceEval 的呈现缺口。
+
 给 AI 的起始任务可以直接写成：
 
 ```text
@@ -258,7 +260,7 @@ AI 通常按任务选择这些入口：
 {"event":"result","status":"failed","passed":14,"failed":1,"errored":0,"reused":0,"completion":"complete","snapshots":[".niceeval/local/2026-07-09T10-00-00-000Z-x1f2/"]}
 ```
 
-Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view` 或结果快照做批量分析。机器读取以结果快照为事实来源：
+Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag。事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view`。Coding Agent 的运行诊断只消费公开 `show` 切片；不要扫描下面的结果快照目录，也不要用当前 `evals/` 或 `agents/` 源码替代某次运行的证据。需要程序化批量集成时使用公开 Record API。底层持久化布局是：
 
 ```text
 .niceeval/<experiment>/<快照>/

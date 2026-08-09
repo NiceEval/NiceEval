@@ -120,6 +120,12 @@ test(t: TestContext): Promise<void> | void;
 succeeded(): BooleanFact<void, P>;
 ```
 
+#### `parked`
+
+```ts
+parked(): BooleanFact<void, P>;
+```
+
 #### `calledTool`
 
 ```ts
@@ -376,6 +382,12 @@ t.judge.autoevals.summarizes(sourceText, { on: t.reply }).atLeast(0.7);
 
 ```ts
 succeeded(): BooleanFact<void, P>;
+```
+
+#### `parked`
+
+```ts
+parked(): BooleanFact<void, P>;
 ```
 
 #### `calledTool`

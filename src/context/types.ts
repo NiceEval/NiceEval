@@ -47,6 +47,7 @@ export interface CollectionMatch {
 
 export interface ScopedFactProducers<P extends FactPhase> {
   succeeded(): BooleanFact<void, P>;
+  parked(): BooleanFact<void, P>;
   calledTool(match: ToolMatch, options?: CollectionMatch): BooleanFact<LogicalToolOccurrence, P>;
   notCalledTool(match: ToolMatch): BooleanFact<void, P>;
   toolOrder(matches: readonly [ToolMatch, ToolMatch, ...ToolMatch[]]): BooleanFact<void, P>;

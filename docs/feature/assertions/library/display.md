@@ -277,6 +277,17 @@ Judge 没有找到模型 / key 时记 `unavailable`。
     reason: judge-model-unresolved (no judge model in the eval or project config)
 ```
 
+### Legacy Judge bridge
+
+历史 `t.judge.autoevals.*` 的结果以 `legacyJudgeAssertions` 留在 Fact trace 中。只有
+Autoevals 明确返回的字符串 `metadata.rationale` 才会作为私有 `rationale` 落盘，并先折成单行、
+按摘要预算截断；它不是公开 Judge 调用参数，也绝不能从 `evidence` 推导。`evidence` 仍只表示
+裁判收到的材料，可能是一整个 Turn。
+
+`show @locator` 的源码标注与 `show @locator --source` 都要给非通过 / unavailable 的 legacy
+Judge 显示名称、状态、检查摘要，以及有则显示的 rationale、reason 与 evidence 预览。所有这些
+行值均使用有界预览，不能把完整判分材料默认倾倒进终端。
+
 ## Sandbox 断言
 
 `fileChanged` / `fileDeleted` / `notInDiff` 检查 [Agent 归因增量](../../sandbox/architecture.md)。

@@ -148,6 +148,11 @@ export type ScoreFactUseResult = FactUseBase & {
 interface LegacyJudgeResultBase {
   readonly name: `judge:${string}`;
   readonly detail: string;
+  /**
+   * 有界的 Autoevals 自述理由。它只属于旧 Judge → Fact trace 的私有桥接字段：不是作者传给
+   * Judge 的输入，也不能拿 Judge 的 evidence（可能是一整个 Turn）冒充这个理由。
+   */
+  readonly rationale?: string;
   readonly groupPath?: readonly string[];
   readonly loc?: SourceLoc;
   readonly sourceOrder: number;

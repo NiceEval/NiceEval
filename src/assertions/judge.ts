@@ -12,6 +12,7 @@
 import { ClosedQA, Factuality, Summary } from "autoevals";
 import OpenAI from "openai";
 import { unavailable, type EvalScore, type EvalUnavailable } from "./collector.ts";
+import { summaryText } from "./display.ts";
 import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, AssertionEvaluationContext } from "../types.ts";
 import { getEnv } from "../util.ts";
 import { t } from "../i18n/index.ts";
@@ -351,7 +352,7 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
             return unavailable(`judge-key-unresolved (${envHint} unset)`);
           }
           const output = await materialFor(ctx, opts?.on);
-          let result: { score?: number | null } | undefined;
+          let result: { score?: number | null; metadata?: Record<string, unknown> } | undefined;
           // 判分调用有界:到点中断这次调用并记 unavailable。超时源自建 setTimeout +
           // AbortController(不是 AbortSignal.timeout):既要真正取消在飞的请求,也要在网关
           // 连 abort 都不回应时仍然按时结束等待,所以调用与计时器一起 race。
@@ -428,11 +429,15 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
             return unavailable("judge-call-failed", `model=${model} · response did not contain a finite numeric score · retry=no · attempts=${attempts}`);
           }
           // detail 只有「检查方式」一个含义(见 docs/feature/assertions/architecture.md
-          // 「断言记录」),已由 spec.detail 给出;裁判自述的理由没有记录字段,不挤进这里,
-          // 否则判定行标题会变成摘要 + 一整段理由。evidence 仍是判分看的材料。
+          // 「断言记录」),已由 spec.detail 给出。Autoevals 的 rationale 是另一份私有桥接
+          // 事实：只接受它明确给出的字符串，并以摘要预算保存；绝不能用 evidence（判分材料，
+          // 可能是一整个 Turn）代替 rationale。
+          const rawRationale = result.metadata?.rationale;
+          const rationale = typeof rawRationale === "string" ? summaryText(rawRationale) : undefined;
           return {
             score: clamp01(result.score),
             evidence: output,
+            ...(rationale === undefined || rationale.length === 0 ? {} : { rationale }),
           };
         },
       });
