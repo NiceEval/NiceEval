@@ -108,7 +108,10 @@ interface LogicalToolOccurrence {
     readonly original: string;
     readonly canonical?: string;
   };
-  readonly input: JsonValue;
+  readonly input:
+    | { readonly state: "complete"; readonly value: JsonValue }
+    | { readonly state: "partial"; readonly value: JsonValue; readonly opaquePointers: readonly string[]; readonly reason: string }
+    | { readonly state: "unavailable"; readonly reason: string };
   readonly command: CommandProjection;
   readonly start: EventPosition;
   readonly lifecycle:
@@ -207,8 +210,7 @@ Assertion evaluator 不复制未脱敏 argv，也不从 tool input 重建一份�
 
 ## 工具输入负断言
 
-`toolInputsExclude()` 只检查标准 tool occurrence 的 input string leaves。
-它不检查 stdout、assistant reply、子进程变量集合、文件描述符或 OS syscall。
+工具输入负约束复用 `notCalledTool(toolMatch({ input }))`，不增加路径专用 scoped method。它只检查标准 tool occurrence 的 input evidence，不检查 stdout、assistant reply、子进程变量集合、文件描述符或 OS syscall。
 
 walker 只访问 plain JSON value：
 
@@ -217,14 +219,19 @@ walker 只访问 plain JSON value：
 - 不调用 getter、`toJSON` 或 `String()`；
 - number、boolean 与 null 不进入路径匹配。
 
-| Evidence | Result |
-|---|---|
-| 任一 string leaf definite path match | failed |
-| actions complete、所选 inputs 全部可遍历、没有 match | passed |
-| actions 不完整，且没有已知 match | unavailable |
-| input 有可能隐藏 string 的 opaque subtree，且没有已知 match | unavailable |
+`referencesAnyPath()` 还携带私有的 positive-witness capability，让 occurrence evaluator 在 partial input 上保持以下三态：
 
-报告必须把这项结果写成“observed tool inputs 没有引用目标路径”。
+| Input evidence | Matcher result |
+|---|---|
+| 任一可见 string leaf definite path match | matched；新增隐藏 leaf 不能推翻该 witness |
+| complete、全部可遍历且没有 match | mismatched |
+| partial / unavailable 且没有可见 match | unavailable |
+
+任一 occurrence matched 时，`notCalledTool()` 立即 failed；没有 matched、actions complete 且没有 unavailable candidate 时 passed；其余 unavailable。已知命中不依赖完整 coverage，但 evaluator defect 不能被短路掩盖。
+
+actions complete 却携带 partial / unavailable input 是 Observation Protocol defect。actions partial 与某笔 input partial 可以共存；不能把经过截断或脱敏的 `JsonValue` 当成完整 candidate 扫描。
+
+失败诊断包含 tool occurrence、string leaf 的 JSON Pointer 与命中的规范化 pattern，received preview 继续使用既有脱敏和预算。通过文案必须写成“observed tool-input string leaves 未引用目标路径”。
 它不能写成“Agent 没有读取文件”。
 
 ## Sandbox diff collector
@@ -276,7 +283,7 @@ CLI 无法呈现这些事实时，应暴露 NiceEval 呈现缺口；Eval 不能�
 以下情况在登记边界同步报告 author error：
 
 - 空 executable、空 command token、重复 excludes；
-- 空 path exclusion、重复 expected changed path、空的 file change options；
+- `referencesAnyPath()` 的空、无效或规范化后重复 path，重复 expected changed path，空的 file change options；
 - `and()` / `or()` 少于两个布尔 matcher；
 - `toolOrder()` 少于两项或传入非 ToolMatch；
 - exact count 不是正 safe integer；
