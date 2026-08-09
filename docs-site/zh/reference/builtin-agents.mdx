@@ -448,7 +448,7 @@ export default defineAgent({
 
 ## SDK 事件流转换器：`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`
 
-各 agent SDK 的流式协议是 SDK 定义的通用协议，不是某个应用的私有格式——原生帧 → 标准事件的映射知识在官方包里（`niceeval/adapter` 导出），自己写无侵入 adapter 时只剩**传输粘合**（应用把流放在哪个端点、审批走什么端点）。逐帧驱动这个循环本身也是官方件（`driveFrameStream`，见下一节），不用手写 `for` 循环：
+各 Agent SDK 的流式协议由 SDK 定义，不是某个应用的私有格式。`niceeval/adapter` 已经提供原生帧到标准事件的转换器。自己编写非侵入式 Adapter 时，只需填写应用接口和审批接口的地址。`driveFrameStream`（见下一节）会逐帧读取结果，不需要再写 `for` 循环：
 
 ```ts
 import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
@@ -462,7 +462,7 @@ return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()�
 - **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
 - **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类。工具项包括：`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → 配对的 tool `operation.started` + `operation.finished`。`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
 
-可跑参考：[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下 claude-sdk / pi-sdk / codex-sdk 三个 adapter 就是这三个转换器 + `driveFrameStream` + 传输粘合。
+可运行的参考实现位于 [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。其中 Claude SDK、pi SDK 和 Codex SDK 的 Adapter 都由转换器、`driveFrameStream` 和应用接口配置组成。
 
 ## 通用「拼装方式」件：`driveFrameStream` / `deltaStream` + `ctx.session`
 

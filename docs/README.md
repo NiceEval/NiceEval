@@ -167,6 +167,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 `docs/` 的读者是照着它做设计决策、写实现的人，不是只被 grep 的语料。
 `docs-site/zh/` 的读者要边读边完成任务，同样需要短句和可扫读的段落。
 契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状出处的地位。
+句长、段长和禁词检查只负责拦住明确的退化，不负责证明文案好读。通过 lint 后仍要逐段朗读，确认主语、动作和结果都能一次听懂。
 
 因此正文按下面三条写。
 
@@ -184,7 +185,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 - 同一概念在正文里始终写同一个词，不换同义词，也不临时造中文译名。
 - 要用总表里没有的概念，先在 concepts.md 立词，再在正文使用。
-- 已裁决不许出现的写法登记在 [`writing-rules.json`](writing-rules.json) 的 `bannedTerms`，一条带 `term` / `use` / `why`；裁决新术语时同批加一条。只有同时登记在 `siteBannedTerms` 的通用禁词才作用于公开中文站，内部契约专用的消歧规则不强加给用户文档。
+- 已裁决不许出现的写法登记在 [`writing-rules.json`](writing-rules.json) 的 `bannedTerms`，一条带 `term` / `use` / `why`；裁决新术语时同批加一条。只有同时登记在 `siteBannedTerms` 的通用禁词才作用于公开中文站。只针对用户文档内部口吻的写法登记在 `siteOnlyBannedTerms`，不强加给设计契约。
 - 要在正文里引用某个禁用写法本身（例如说明为什么不写它），把它写成行内代码：检查会先剥掉行内代码与代码块。
 
 ## 体裁分工:契约页薄,用例页厚

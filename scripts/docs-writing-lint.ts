@@ -42,6 +42,7 @@ interface WritingRules {
   sentenceLength: { max: number };
   paragraphLength: { max: number };
   siteBannedTerms: string[];
+  siteOnlyBannedTerms: BannedTerm[];
   bannedTerms: BannedTerm[];
 }
 
@@ -360,7 +361,12 @@ function bannedMatchers(
 ): Array<BannedTerm & { re: RegExp }> {
   const siteTerms = new Set(rules.siteBannedTerms);
   const handwritten =
-    target === "docs" ? rules.bannedTerms : rules.bannedTerms.filter((term) => siteTerms.has(term.term));
+    target === "docs"
+      ? rules.bannedTerms
+      : [
+          ...rules.bannedTerms.filter((term) => siteTerms.has(term.term)),
+          ...(rules.siteOnlyBannedTerms ?? []),
+        ];
   return [...handwritten, ...synonymBans(parseConcepts())].map((t) => ({
     ...t,
     re: termMatcher(t.term),
@@ -553,7 +559,7 @@ export function validateRules(): string[] {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
   const problems: string[] = [];
   const seen = new Set<string>();
-  for (const term of rules.bannedTerms) {
+  for (const term of [...rules.bannedTerms, ...(rules.siteOnlyBannedTerms ?? [])]) {
     const label = term.term ?? "(空)";
     if (!term.term) problems.push("有一条禁词没写 term");
     if (!term.use?.trim()) problems.push(`「${label}」没写 use——命中时作者不知道改成什么`);

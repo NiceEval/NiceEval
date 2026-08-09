@@ -11,15 +11,17 @@ description: "一个纯 Python LangGraph + LangSmith OTel 导出的应用，接�
 - **before**：[`origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。
 
-**接入方式**：手写帧映射。server.py 的自定义 JSON 帧逐帧翻成标准事件。
+**接入方式**：这个应用使用自定义 JSON 帧，因此 Adapter 需要自行把每一帧转成 NiceEval 的标准事件。
 `tool-input` 映射为 `operation.started`，`tool-output` 映射为 `operation.finished`，`text-delta` 累积成 `message`。
-`tool-approval-request` 会停轮并产生 `input.requested`。HITL 停轮现场通过 `ctx.session` 存取。
-被测应用是 Python，评估用例侧是另起的独立 TS 项目，应用侧 `src/backend/*.py` 逐字节未变。
-要 OTel 瀑布图见 `tier2/`，feature A/B 见 `tier3/`。
+
+收到 `tool-approval-request` 后，当前 Turn 会等待用户选择，并产生 `input.requested` 事件。Adapter 把尚未读完的流保存在 `ctx.session` 中，收到选择后继续读取。
+
+被测应用使用 Python，评估代码则放在独立的 TypeScript 项目中。接入过程没有修改应用的 `src/backend/*.py`。
+若要查看 OTel 调用瀑布图，请使用 `tier2/` 示例；若要比较功能配置，请使用 `tier3/` 示例。
 
 接入的全部代码变更（生成时从两个目录实测统计）：
 
-<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"评估用例侧 TS 项目脚手架（必要：被测应用是 Python，全新文件）"}</td><td>{"3"}</td><td>{"+42"}</td></tr><tr><td>{"adapter（必要：传输粘合，协议映射在官方包里）"}</td><td>{"2"}</td><td>{"+197"}</td></tr><tr><td>{"evals 与 experiments（评测内容，按需增长）"}</td><td>{"6"}</td><td>{"+118"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"11"}</td><td>{"+357"}</td></tr></tbody></table>
+<table className="gd-summary"><tbody><tr><th>{"类别"}</th><th>{"文件数"}</th><th>{"行数"}</th></tr><tr><td>{"评估用例侧 TS 项目脚手架（必要：被测应用是 Python，全新文件）"}</td><td>{"3"}</td><td>{"+42"}</td></tr><tr><td>{"Adapter（必要：连接应用，协议映射由 NiceEval 提供）"}</td><td>{"2"}</td><td>{"+197"}</td></tr><tr><td>{"评估用例与实验（按需增长）"}</td><td>{"6"}</td><td>{"+118"}</td></tr><tr className="gd-total"><td>{"合计"}</td><td>{"11"}</td><td>{"+357"}</td></tr></tbody></table>
 
 ## 文件清单
 
@@ -64,7 +66,7 @@ langgraph/
 </div>
 </div>
 
-## 新增的 adapter、evals 与 experiments
+## 新增的 Adapter、评估用例与实验
 
 <div className="gd-file">
 <div className="gd-head"><span className="gd-name">{"niceeval.config.ts"}</span><span className="gd-stats"><span className="gd-plus">{"+13"}</span></span></div>

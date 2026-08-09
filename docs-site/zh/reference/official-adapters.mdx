@@ -174,7 +174,7 @@ export default defineExperiment({
   });
   ```
 
-- **SDK 事件流转换器**（`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`）：适合手写 SDK adapter。官方已经做好原生帧到标准事件的映射，只需要补传输粘合，再配合 `driveFrameStream` 逐帧驱动。
+- **SDK 事件流转换器**（`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`）：适合手写 SDK Adapter。官方已经做好原生帧到标准事件的映射。你只需补上请求应用接口的代码，再用 `driveFrameStream` 逐帧读取结果。
 - **`turnFromAiSdk`**：AI SDK `generateText` / `streamText` 结果到标准事件流的转换器，写自己的 HTTP web agent adapter 时用。
 
 这几个适配器的完整参数、能力表和示例代码，见[内置 Agent 能力参考](/zh/reference/builtin-agents)。
