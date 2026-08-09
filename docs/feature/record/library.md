@@ -118,6 +118,556 @@ interface AgentContext {
 三种反馈都不能冒充 Runner 的 LifecyclePhase。
 要让执行失败就抛 typed error；要改变判定就形成 Assertion、Judge 或 Verdict Claim。
 
+## Record evidence registry 与 capability
+
+representation、filter、selector codec 与 redaction policy 都由一个 immutable runtime registry 提供。
+registry 不是 payload 内的声明，也不会由持久化内容、Projector 或 Store 临时推导。
+
+```ts
+type RecordEvidenceRepresentationKeyV1 =
+  | {
+      readonly kind: "object";
+      readonly selectorSchema: string;
+      readonly mediaType: string;
+    }
+  | {
+      readonly kind: "event";
+      readonly selectorSchema: string;
+      readonly eventSchema: string;
+    }
+  | {
+      readonly kind: "claim";
+      readonly selectorSchema: string;
+      readonly claimSchema: string;
+    };
+
+type RecordEvidenceFilterKeyV1 =
+  | {
+      readonly kind: "event-filter";
+      readonly filterSchema: string;
+      readonly eventSchema: string;
+    }
+  | {
+      readonly kind: "claim-filter";
+      readonly filterSchema: string;
+      readonly claimSchema: string;
+    };
+
+type RecordEvidenceSelectorCodecKeyV1 = {
+  readonly kind: "selector-codec";
+  readonly selectorSchema: string;
+};
+
+type RecordEvidenceRedactionPolicyKeyV1 = {
+  readonly kind: "redaction-policy";
+  readonly policy: RedactionPolicyIdV1;
+};
+
+type RecordEvidenceCapabilityKeyV1 =
+  | RecordEvidenceRepresentationKeyV1
+  | RecordEvidenceFilterKeyV1
+  | RecordEvidenceSelectorCodecKeyV1
+  | RecordEvidenceRedactionPolicyKeyV1;
+
+type RecordEvidenceSelectorValidationResultV1 =
+  | { readonly kind: "valid" }
+  | { readonly kind: "invalid" };
+
+type RecordEvidenceUnsupportedResultV1 = {
+  readonly kind: "unsupported";
+};
+
+type RecordEvidenceSelectionResultV1 =
+  | { readonly kind: "selected"; readonly value: JsonValue }
+  | { readonly kind: "not-selected" }
+  | RecordEvidenceUnsupportedResultV1;
+
+type RecordEvidenceLogicalRootResultV1 =
+  | { readonly kind: "same" }
+  | { readonly kind: "different" }
+  | RecordEvidenceUnsupportedResultV1;
+
+type RecordEvidenceTransformationClassificationResultV1 =
+  | { readonly kind: "none"; readonly value: JsonValue }
+  | { readonly kind: "limited"; readonly value: JsonValue }
+  | { readonly kind: "unavailable" }
+  | RecordEvidenceUnsupportedResultV1;
+
+type RecordEvidenceTransformationMeasurementResultV1 =
+  | { readonly kind: "measured"; readonly bytes: number }
+  | RecordEvidenceUnsupportedResultV1;
+
+type RecordEvidenceRedactionApplyResultV1 =
+  | { readonly kind: "success"; readonly value: JsonValue }
+  | RecordEvidenceUnsupportedResultV1;
+
+interface RecordEvidenceObjectSelectionInputV1 {
+  readonly payload: Uint8Array;
+  readonly selector?: VersionedSelector;
+}
+
+interface RecordEvidenceEventSelectionInputV1 {
+  readonly body: JsonValue;
+  readonly selector: VersionedSelector;
+}
+
+interface RecordEvidenceClaimSelectionInputV1 {
+  readonly value: JsonValue;
+  readonly selector: VersionedSelector;
+}
+
+interface RecordEvidenceLogicalRootInputV1 {
+  readonly selector: VersionedSelector;
+  readonly inner: JsonValue;
+  readonly outer: JsonValue;
+}
+
+interface RecordEvidenceTransformationClassificationInputV1 {
+  readonly transformation: EvidenceTransformationV1;
+  readonly value: JsonValue;
+}
+
+interface RecordEvidenceTransformationMeasurementInputV1 {
+  readonly selector: VersionedSelector;
+  readonly value: JsonValue;
+}
+
+interface RecordEvidenceSelectorCodecDefinitionInputV1 {
+  readonly selectorSchema: string;
+  readonly validate: (
+    value: JsonValue,
+  ) => RecordEvidenceSelectorValidationResultV1;
+}
+
+interface RecordEvidenceObjectRepresentationDefinitionInputV1 {
+  readonly selectorSchema: string;
+  readonly mediaType: string;
+  readonly select: (
+    input: RecordEvidenceObjectSelectionInputV1,
+  ) => RecordEvidenceSelectionResultV1;
+  readonly confirmSameLogicalRoot: (
+    input: RecordEvidenceLogicalRootInputV1,
+  ) => RecordEvidenceLogicalRootResultV1;
+  readonly classifyTransformation: (
+    input: RecordEvidenceTransformationClassificationInputV1,
+  ) => RecordEvidenceTransformationClassificationResultV1;
+  readonly measureTransformation: (
+    input: RecordEvidenceTransformationMeasurementInputV1,
+  ) => RecordEvidenceTransformationMeasurementResultV1;
+}
+
+interface RecordEvidenceEventRepresentationDefinitionInputV1 {
+  readonly selectorSchema: string;
+  readonly eventSchema: string;
+  readonly select: (
+    input: RecordEvidenceEventSelectionInputV1,
+  ) => RecordEvidenceSelectionResultV1;
+  readonly confirmSameLogicalRoot: (
+    input: RecordEvidenceLogicalRootInputV1,
+  ) => RecordEvidenceLogicalRootResultV1;
+  readonly classifyTransformation: (
+    input: RecordEvidenceTransformationClassificationInputV1,
+  ) => RecordEvidenceTransformationClassificationResultV1;
+  readonly measureTransformation: (
+    input: RecordEvidenceTransformationMeasurementInputV1,
+  ) => RecordEvidenceTransformationMeasurementResultV1;
+}
+
+interface RecordEvidenceClaimRepresentationDefinitionInputV1 {
+  readonly selectorSchema: string;
+  readonly claimSchema: string;
+  readonly select: (
+    input: RecordEvidenceClaimSelectionInputV1,
+  ) => RecordEvidenceSelectionResultV1;
+  readonly confirmSameLogicalRoot: (
+    input: RecordEvidenceLogicalRootInputV1,
+  ) => RecordEvidenceLogicalRootResultV1;
+  readonly classifyTransformation: (
+    input: RecordEvidenceTransformationClassificationInputV1,
+  ) => RecordEvidenceTransformationClassificationResultV1;
+  readonly measureTransformation: (
+    input: RecordEvidenceTransformationMeasurementInputV1,
+  ) => RecordEvidenceTransformationMeasurementResultV1;
+}
+
+class RecordEvidenceSelectorCodecDefinitionV1 {
+  readonly key: RecordEvidenceSelectorCodecKeyV1;
+}
+
+class RecordEvidenceObjectRepresentationDefinitionV1 {
+  readonly key: Extract<
+    RecordEvidenceRepresentationKeyV1,
+    { readonly kind: "object" }
+  >;
+}
+
+class RecordEvidenceEventRepresentationDefinitionV1 {
+  readonly key: Extract<
+    RecordEvidenceRepresentationKeyV1,
+    { readonly kind: "event" }
+  >;
+}
+
+class RecordEvidenceClaimRepresentationDefinitionV1 {
+  readonly key: Extract<
+    RecordEvidenceRepresentationKeyV1,
+    { readonly kind: "claim" }
+  >;
+}
+
+function defineRecordEvidenceSelectorCodecV1(
+  input: RecordEvidenceSelectorCodecDefinitionInputV1,
+): RecordEvidenceSelectorCodecDefinitionV1;
+
+function defineRecordEvidenceObjectRepresentationV1(
+  input: RecordEvidenceObjectRepresentationDefinitionInputV1,
+): RecordEvidenceObjectRepresentationDefinitionV1;
+
+function defineRecordEvidenceEventRepresentationV1(
+  input: RecordEvidenceEventRepresentationDefinitionInputV1,
+): RecordEvidenceEventRepresentationDefinitionV1;
+
+function defineRecordEvidenceClaimRepresentationV1(
+  input: RecordEvidenceClaimRepresentationDefinitionInputV1,
+): RecordEvidenceClaimRepresentationDefinitionV1;
+```
+
+每个 key 以其完整 discriminated representation 精确匹配。object key 同时匹配 selector schema 与
+payload media type；event 与 claim key 各自匹配 selector schema 和 event/claim schema。filter key 不与
+representation key 混用。`Event.name` 与 `Claim.kind` 不进入 key。相同 policy 三元组才命中同一个
+redaction-policy key。
+
+内部 Map 使用完整 kind 与每个字段的 length-prefixed UTF-16 segment。它不是公开 key，也不会因 schema、
+media type 或 policy 字段含分隔符而碰撞。
+
+selector codec 的 callback 只接收其 exact `VersionedSelector.value`，不接收 schema wrapper、Record、
+Store 或 Projector。它只能返回 `valid` 或 `invalid`。
+
+representation 的四个 callback 都是同一个 exact key 的唯一真源。`select` 的 `selected.value` 是后续
+读取所需的 JsonValue。`not-selected` 表示该已验证 selector 不从这份 target 得到值。`unsupported` 是
+正常的 operation limitation，不是 callback failure。object 收到 owned raw payload bytes 和可选 selector；
+event/Claim 分别只收到 body/value 和 selector。
+
+`confirmSameLogicalRoot` 只判断已选 inner/outer value 是否能组成同一个 logical root。它不能接触 object
+ref、Store 或 wrapper node。`classifyTransformation` 的 supported branch 只能是 `none`、`limited` 或
+`unavailable`；前两者必须返回继续选择所需的 JsonValue。`measureTransformation` 的 `bytes` 必须是 JSON-safe
+unsigned integer。它们可以返回规范的 `unsupported`，不能以缺少 method 或 throw 表示 capability 不支持。
+
+```ts
+interface RecordEvidenceEventEnvelopeViewV1 {
+  readonly format: "niceeval.observation";
+  readonly id: string;
+  readonly name: string;
+  readonly schema: string;
+  readonly stream: { readonly id: string; readonly sequence: number };
+  readonly scope:
+    | { readonly kind: "run"; readonly runId: string; readonly experimentId: string }
+    | {
+        readonly kind: "attempt";
+        readonly runId: string;
+        readonly experimentId: string;
+        readonly attemptId: string;
+        readonly evalId: string;
+        readonly agentSessionId?: string;
+        readonly turnId?: string;
+      };
+  readonly time: {
+    readonly observedAt: string;
+    readonly monotonicOffsetNs: string;
+    readonly occurredAt?: string;
+  };
+  readonly source: {
+    readonly component: string;
+    readonly version?: string;
+    readonly adapter?: string;
+    readonly mapperVersion?: string;
+  };
+  readonly correlation?: {
+    readonly parentEventId?: string;
+    readonly traceId?: string;
+    readonly spanId?: string;
+  };
+}
+
+interface RecordEvidenceClaimEnvelopeViewV1 {
+  readonly id: string;
+  readonly kind: string;
+  readonly schema: string;
+  readonly evaluator: {
+    readonly namespace: string;
+    readonly name: string;
+    readonly version: string;
+    readonly model?: string;
+  };
+  readonly producedAt: string;
+}
+
+type RecordEvidenceFilterPlanResultV1 =
+  | { readonly kind: "envelope-only" }
+  | {
+      readonly kind: "body-dependent";
+      readonly dependencies: readonly [
+        VersionedSelector,
+        ...VersionedSelector[],
+      ];
+      readonly outputSelector?: VersionedSelector;
+    };
+
+type RecordEvidenceFilterEvaluationResultV1 =
+  | { readonly kind: "match" }
+  | { readonly kind: "no-match" };
+
+interface RecordEvidenceEventFilterDefinitionInputV1 {
+  readonly filterSchema: string;
+  readonly eventSchema: string;
+  readonly plan: (filter: JsonValue) => RecordEvidenceFilterPlanResultV1;
+  readonly evaluate: (input: {
+    readonly filter: JsonValue;
+    readonly envelope: RecordEvidenceEventEnvelopeViewV1;
+    readonly dependencies: readonly JsonValue[];
+  }) => RecordEvidenceFilterEvaluationResultV1;
+}
+
+interface RecordEvidenceClaimFilterDefinitionInputV1 {
+  readonly filterSchema: string;
+  readonly claimSchema: string;
+  readonly plan: (filter: JsonValue) => RecordEvidenceFilterPlanResultV1;
+  readonly evaluate: (input: {
+    readonly filter: JsonValue;
+    readonly envelope: RecordEvidenceClaimEnvelopeViewV1;
+    readonly dependencies: readonly JsonValue[];
+  }) => RecordEvidenceFilterEvaluationResultV1;
+}
+
+class RecordEvidenceEventFilterDefinitionV1 {
+  readonly key: Extract<
+    RecordEvidenceFilterKeyV1,
+    { readonly kind: "event-filter" }
+  >;
+}
+
+class RecordEvidenceClaimFilterDefinitionV1 {
+  readonly key: Extract<
+    RecordEvidenceFilterKeyV1,
+    { readonly kind: "claim-filter" }
+  >;
+}
+
+function defineRecordEvidenceEventFilterV1(
+  input: RecordEvidenceEventFilterDefinitionInputV1,
+): RecordEvidenceEventFilterDefinitionV1;
+
+function defineRecordEvidenceClaimFilterV1(
+  input: RecordEvidenceClaimFilterDefinitionInputV1,
+): RecordEvidenceClaimFilterDefinitionV1;
+```
+
+event/Claim filter 的 `plan` 是 total 的 exact two-case Result。`body-dependent.dependencies` 必须非空，
+且每一项的 schema 完全相同。`outputSelector` 另行分类，不能替代 dependency。framework 先验证 plan，
+再从 representation 得到 dependency values。
+
+`evaluate` 只接收 deep-frozen envelope view，以及 framework 已选择并 deep-frozen 的 dependency JsonValue
+列表。它从不接收 event body、Claim value 或 transformation array。它只能返回 `match` 或 `no-match`；
+无法证明 false 的能力不能以 `no-match` 冒充 `unknown` 或 `limited`。
+
+```ts
+interface RecordEvidenceRedactionPolicyDefinitionInputV1 {
+  readonly policy: RedactionPolicyIdV1;
+  readonly apply: (
+    value: JsonValue,
+    selector: VersionedSelector,
+  ) => RecordEvidenceRedactionApplyResultV1;
+}
+
+class RecordEvidenceRedactionPolicyDefinitionV1 {
+  readonly key: RecordEvidenceRedactionPolicyKeyV1;
+}
+
+function defineRecordEvidenceRedactionPolicyV1(
+  input: RecordEvidenceRedactionPolicyDefinitionInputV1,
+): RecordEvidenceRedactionPolicyDefinitionV1;
+
+type RecordEvidenceRepresentationDefinitionV1 =
+  | RecordEvidenceObjectRepresentationDefinitionV1
+  | RecordEvidenceEventRepresentationDefinitionV1
+  | RecordEvidenceClaimRepresentationDefinitionV1;
+
+type RecordEvidenceFilterDefinitionV1 =
+  | RecordEvidenceEventFilterDefinitionV1
+  | RecordEvidenceClaimFilterDefinitionV1;
+
+interface RecordEvidenceRegistryDefinitionV1 {
+  readonly selectorCodecs: readonly RecordEvidenceSelectorCodecDefinitionV1[];
+  readonly representations: readonly RecordEvidenceRepresentationDefinitionV1[];
+  readonly filters: readonly RecordEvidenceFilterDefinitionV1[];
+  readonly redactionPolicies: readonly RecordEvidenceRedactionPolicyDefinitionV1[];
+}
+
+class RecordEvidenceRegistryV1 {
+  readonly definition: Readonly<RecordEvidenceRegistryDefinitionV1>;
+}
+
+interface RecordEvidenceRegistryInput {
+  readonly evidenceRegistry?: RecordEvidenceRegistryV1;
+}
+
+interface RecordEvidenceProofConsumerInput
+  extends RecordEvidenceRegistryInput {}
+
+function createRecordEvidenceRegistryV1(
+  definition: RecordEvidenceRegistryDefinitionV1,
+): RecordEvidenceRegistryV1;
+```
+
+redaction policy 的 `apply` 只接收已经选择的 JsonValue 与 selector，且只返回 `success` 或 `unsupported`。
+它不接触 original bytes、Record、Store 或 Projector。持久化的 unknown policy ID 不要求本地 registry 注册。
+
+每一项必须先经相应的 `define*` 取得 runtime brand。definition class 不公开 callback closure；普通 object
+即使手写相同 key 也不是 definition。公开的 `isRecordEvidence*DefinitionV1()` 判别函数是 runtime brand 的唯一
+判别方式。
+
+`createRecordEvidenceRegistryV1()` 同步验证 root shape、definition brand、schema/ID 以及 exact-key
+duplicate。它复制四个输入 array、root definition 的可见字段与每个 capability 的可见 key。
+副本随后冻结成 snapshot，不保留输入 array、Map、definition object 或 capability object 的可变引用。
+
+raw Uint8Array 在 object invoke 前复制为 owned bytes。typed array 不以 `Object.freeze()` 伪装不可变。
+callback closure 不能被机械复制或冻结。owner 仍须保证它不读取 IO、时钟、随机数或可变外部状态。
+
+```ts
+type RecordEvidenceRegistryDefinitionFailureV1 =
+  | {
+      readonly code: "record-evidence-registry-invalid-definition";
+      readonly definitionKind:
+        | "registry"
+        | "representation"
+        | "filter"
+        | "selector-codec"
+        | "object-representation"
+        | "event-representation"
+        | "claim-representation"
+        | "event-filter"
+        | "claim-filter"
+        | "redaction-policy";
+      readonly index: number | null;
+      readonly key?: RecordEvidenceCapabilityKeyV1;
+      readonly cause: null;
+    }
+  | {
+      readonly code: "record-evidence-registry-duplicate-key";
+      readonly definitionKind:
+        | "selector-codec"
+        | "object-representation"
+        | "event-representation"
+        | "claim-representation"
+        | "event-filter"
+        | "claim-filter"
+        | "redaction-policy";
+      readonly index: number;
+      readonly key: RecordEvidenceCapabilityKeyV1;
+      readonly cause: null;
+    };
+
+class RecordEvidenceRegistryDefinitionError extends Error {
+  readonly failure: RecordEvidenceRegistryDefinitionFailureV1;
+}
+
+type RecordEvidenceCapabilityOperation =
+  | "validate-selector"
+  | "select-object"
+  | "select-event"
+  | "select-claim"
+  | "plan-event-filter"
+  | "evaluate-event-filter"
+  | "plan-claim-filter"
+  | "evaluate-claim-filter"
+  | "confirm-same-logical-root"
+  | "classify-transformation"
+  | "measure-transformation"
+  | "apply-redaction-policy";
+
+interface RecordEvidenceCapabilityFailure {
+  readonly code: "record-evidence-capability-failed";
+  readonly key: RecordEvidenceCapabilityKeyV1;
+  readonly operation: RecordEvidenceCapabilityOperation;
+  readonly issue: "threw" | "invalid-result";
+  readonly cause: unknown | null;
+  readonly retryable: false;
+}
+
+class RecordEvidenceCapabilityError extends Error {
+  readonly failure: RecordEvidenceCapabilityFailure;
+}
+```
+
+非法 definition、非法 schema 或 policy ID、伪造 brand、root array shape 与 duplicate exact key 都同步抛
+`RecordEvidenceRegistryDefinitionError`。`index` 指对应 definition array 的项目；构造单项或 root 时为 `null`。
+可得的完整 exact key 必须保留。`failure` 是机器契约，`Error.message` 不是。
+
+registry 提供只读 lookup/invoke 原语，不暴露可变 Map。`findRecordEvidence*V1()` 以完整 key 查找，
+返回 snapshot definition 或 `undefined`。
+
+`invokeRecordEvidence*V1()` 复制/冻结 callback input，验证 callback Result，并复制/冻结返回的 JsonValue。
+callback throw 产生 `issue: "threw"` 且保留原 cause。
+
+返回非闭集、非 plain canonical JsonValue、非 JSON-safe measurement 或不合法 filter plan，会产生
+`issue: "invalid-result"` 与 `cause: null`。正常 `unsupported` 直接返回，不是 implementation failure。
+
+```ts
+class RecordEvidenceRedactionPolicyHandleV1 {
+  readonly key: RecordEvidenceRedactionPolicyKeyV1;
+}
+
+function issueRecordEvidenceRedactionPolicyHandleV1(
+  registry: RecordEvidenceRegistryV1,
+  policy: RedactionPolicyIdV1,
+): RecordEvidenceRedactionPolicyHandleV1 | undefined;
+
+function isRecordEvidenceRedactionPolicyHandleV1(
+  registry: RecordEvidenceRegistryV1,
+  value: unknown,
+): value is RecordEvidenceRedactionPolicyHandleV1;
+
+function invokeRecordEvidenceRedactionPolicyV1(
+  registry: RecordEvidenceRegistryV1,
+  handle: RecordEvidenceRedactionPolicyHandleV1,
+  value: JsonValue,
+  selector: VersionedSelector,
+): RecordEvidenceRedactionApplyResultV1;
+```
+
+policy handle 只能由 issuing registry 签发。公开 brand 判别函数对伪造 handle 与跨 registry handle 都返回 false，
+不能只依赖 TypeScript 类型。
+
+`BUILTIN_RECORD_EVIDENCE_REGISTRY_V1` 是 immutable singleton。它注册
+`niceeval.expected-membership-slot-selector/1` selector codec 与 `(selector schema, RUN_MEDIA_TYPE)` object
+representation。builtin codec 只接受 exact `{ runId, membershipSlot, evalId }` 非空值。
+
+builtin representation 逐项检查 selector 的 runId 等于 Run payload 的 runId。它还要求
+`expectedMembershipSlots` 恰有一个 membershipSlot/evalId 匹配项，且 `contributions` 没有该 membershipSlot。
+满足时返回 selected selector value；其它 transformation operation 返回 `unsupported`。
+
+writer、`openRecord()`、`openRecordGraph()` 与 proof consumer 省略 registry 时复用同一 builtin instance。
+本任务只提供 registry，尚未把它接入 reader/writer。
+
+writer、`openRecord()`、`openRecordGraph()` 与每个 proof consumer 都显式接受
+`RecordEvidenceRegistryInput`。省略时，它们使用同一个 builtin registry singleton。创建出的 writer、
+RecordHandle、SourceSet reader、Projector session 与 proof consumer 都捕获当时的 registry instance，
+不会随某个全局变量或后续注册改变。
+
+`createRecordSourceSet()` 的输入 handle 必须持有同一个 registry instance。不同实例即使 definition
+逐字相等也以 `record-source-registry-mismatch` 拒绝。redaction policy handle 也绑定创建它的 registry，
+不能交给另一个实例执行。每个 capability 的 owner 负责保证调用纯同步且确定；它不得读取时钟、网络、
+随机数或可变外部状态。
+
+`RecordEvidenceCapabilityError` 是 capability 调用的独立 typed failure。它不能改写为 corrupt、
+unsupported、EvidenceValue limitation 或 `ProjectorExecutionError`。
+
+`RecordHandle.project()` 与 Sample 入口直接传播它。Reports 把它作为自己的 typed cause。
+writer 以 `record-write-evidence-capability-failed` 包装。
+
+`RecordEvidenceRegistryDefinitionError` 只表达创建 registry 时的同步 definition 错误。
+`issue: "threw"` 保存 capability 抛出的原值。`issue: "invalid-result"` 的 `cause` 固定为 null。
+
 ## Store、handle 与读取 capability 的错误边界
 
 以下 error class 是 Record public async entry 的唯一 failure surface。每个 failure 都有稳定
@@ -334,6 +884,9 @@ type RecordGraphVerificationFailure =
 type RecordSourceFailure =
   | (RecordFailureMeta<"create-source-set"> & {
       readonly code: "record-source-empty" | "record-source-invalid-handle";
+    })
+  | (RecordFailureMeta<"create-source-set"> & {
+      readonly code: "record-source-registry-mismatch";
     })
   | (RecordFailureMeta<"read-source"> & {
       readonly code: "record-source-invalid-handle";
@@ -610,6 +1163,32 @@ type RecordWriteFailure =
       readonly ref?: DescriptorV1;
     })
   | (RecordFailureMeta<RecordWriteOperation> & {
+      readonly code: "record-write-transformation-invalid";
+      readonly issue:
+        | "selector-invalid"
+        | "policy-invalid"
+        | "logical-root-mismatch"
+        | "measurement-unavailable"
+        | "order-invalid"
+        | "selector-schema-mismatch"
+        | "nested-wrapper"
+        | "transformations-empty";
+    })
+  | (RecordFailureMeta<RecordWriteOperation> & {
+      readonly code:
+        | "record-write-unsupported-schema"
+        | "record-write-unsupported-capability";
+      readonly selectorSchema: string;
+      readonly representation:
+        | { readonly kind: "object"; readonly mediaType: string }
+        | { readonly kind: "event"; readonly eventSchema: string }
+        | { readonly kind: "claim"; readonly claimSchema: string };
+    })
+  | (RecordFailureMeta<RecordWriteOperation> & {
+      readonly code: "record-write-evidence-capability-failed";
+      readonly capabilityFailure: RecordEvidenceCapabilityFailure;
+    })
+  | (RecordFailureMeta<RecordWriteOperation> & {
       readonly code: "record-write-resource-limit";
       readonly limit: string;
     })
@@ -749,7 +1328,7 @@ interface AttemptIdentity {
   ordinal: number;
 }
 
-interface RecordWriterOptions {
+interface RecordWriterOptions extends RecordEvidenceRegistryInput {
   store: RecordStore;
   recordId: string;
   producer: {
@@ -885,7 +1464,34 @@ abort 不得从旧 snapshot、reason 或 Live channel 临时推导该字段。
 Provenance 的 `mediaType + schema` 必须命中已注册 codec；codec 校验 value，并从该 schema 的具名引用形成 strong edge。
 未知 codec 或 value 中未声明的引用返回 `record-graph-invalid`，不能按任意 JSON 落盘。
 
-Observation writer 从所属 RunWriter 或 AttemptWriter 补入 scope，校验 binding 在同一 owner 内身份稳定，分配 sequence，再执行 serialization transformation。
+Observation writer 从所属 RunWriter 或 AttemptWriter 补入 scope，校验 binding 在同一 owner 内身份稳定，
+分配 sequence，再执行 serialization transformation。
+
+写入 `TransformedEvidenceV1` 时，writer 在任何 intermediate 或 wrapper `putObject` 之前完成全部检查。
+intermediate 不落盘。
+
+预检包含以下项目：
+
+- selector 与 policy；
+- logical root 与 measurement；
+- step 顺序与 selector schema；
+- nonempty transformation 序列与 nested wrapper。
+
+`record-write-transformation-invalid` 的 issue 固定为：
+
+- `selector-invalid`、`policy-invalid` 与 `logical-root-mismatch`；
+- `measurement-unavailable`、`order-invalid` 与 `selector-schema-mismatch`；
+- `nested-wrapper` 与 `transformations-empty`。
+
+未知 schema 产生 `record-write-unsupported-schema`。缺 capability 产生
+`record-write-unsupported-capability`。capability throw 或非法返回产生
+`record-write-evidence-capability-failed`。
+
+wrapper 超过 16 MiB 时产生 `record-write-resource-limit { limit: "record-file-max-bytes" }`。
+writer 不使用分页规避该对象上限。
+
+两种 unsupported failure 都保留 `selectorSchema`。它们也保留 object 的 `mediaType`、event 的
+`eventSchema` 或 Claim 的 `claimSchema` representation discriminant。
 
 `beginRun()` 把 `expectedMembershipSlots` 规范化后写入 Run revision 0；它不是 Sample 或 Reports 在读取
 时补出的配置。数组按 membershipSlot UTF-8 bytes 排序且唯一。每个 membershipSlot 与 evalId 都必须
@@ -938,11 +1544,13 @@ function openRecordStore(
 
 function openRecord(
   store: RecordStore,
+  input?: RecordEvidenceRegistryInput,
 ): Promise<RecordHandle>;
 
 async function openRecordGraph(
   store: RecordStore,
   ref: RecordGraphRef,
+  input?: RecordEvidenceRegistryInput,
 ): Promise<RecordHandle>;
 
 function verifyRecordGraph(
@@ -1221,6 +1829,41 @@ interface SourceTrust {
 }
 ```
 
+### Transformed Evidence 的读取语义
+
+`TransformedEvidenceV1` 是 limitation envelope 与 producer assertion。它声明 producer 曾对一个
+逻辑值施加 transformation，却不证明 original 值、算法忠实性、policy 的安全责任主体或 producer 身份。
+这些信任问题只由 `SourceTrust`、receipt 与 attestation 表达。
+
+高层 API 只发布 wrapper ref，不向调用方发布其中 result 的 node ref。调用方把原逻辑 wrapper 用作普通
+Claim 依据时，writer/framework 自动纳入 wrapper target 与它的精确 result target。
+
+调用方不能靠泄漏 result ref 手拼这对依据。metadata-only Claim 可以只纳入 wrapper。
+
+wrapper 的 metadata proof 只能证明 wrapper bytes，不能证明 result bytes。在线读取必须跟随 wrapper 的
+result edge。离线读取必须同时有 wrapper proof 和与同一 result target 匹配的 result proof，才具备完整
+result 证据。
+
+每个 transformation capability 对一个 step 返回 `none`、`limited` 或 `unavailable`。框架按以下规则
+汇总，不由 Projector 作者自行挑选原因：
+
+| step 结果 | 总体 EvidenceValue | 汇总原因 |
+|---|---|---|
+| 存在任一 `unavailable` | unavailable | 只保留 `unavailable` steps |
+| 没有 unavailable，存在任一 `limited` | available + limited | 只保留 `limited` steps |
+| 全部 `none` | available + full | 无 |
+
+`redacted` 与 `truncated` 分组分别保存 selector。每组按原 transformation 序列的顺序保留重复值。
+没有 query 的 object 读取通常是 limited。未知 query schema 或 transformation schema codec 形成
+`unsupported-schema`；schema 已知但没有相应 capability 才形成 `unsupported-capability`。未知但形状
+合法的 policy ID 仍可读；非法 policy shape 是 corrupt。capability 无法分类某个 step 时只形成
+unsupported，不能猜测为 redacted、truncated 或其它 limitation。
+
+`ctx.object(wrapper, query?)` 透明取得 result 的逻辑值。框架自动纳入不带 selector 的 wrapper basis，
+并纳入带可选 query selector 的 result basis。`ctx.transformations(wrapper)` 只交出 deep-frozen
+`readonly EvidenceTransformationV1[]`，不交出 result ref；它成功时必为 available + full。它不能替代
+`ctx.object()` 取得 result value。
+
 这个 private brand 只由 Record framework 安装。调用方能判别和读取 EvidenceValue，但不能把普通
 JSON、UnavailableCause 或手写 basedOn 伪造成结果。
 
@@ -1495,6 +2138,7 @@ type TrackedOptional<T> =
       readonly state: "absent";
       readonly [trackedOptionalRead]: true;
     };
+
 interface StreamBindingSelector {
   bindingIds?: readonly string[];
   roles?: readonly string[];
@@ -1520,12 +2164,15 @@ interface ProjectionReadContext {
   ): Promise<Tracked<readonly ObservationEvent[]>>;
   object<T>(
     ref: NodeRefV1,
-    selector?: VersionedSelector,
+    query?: VersionedSelector,
   ): Promise<Tracked<T>>;
   optionalObject<T>(
     ref: NodeRefV1,
     selector?: VersionedSelector,
   ): Promise<TrackedOptional<T>>;
+  transformations(
+    wrapper: NodeRefV1,
+  ): Promise<Tracked<readonly EvidenceTransformationV1[]>>;
   require<T>(value: TrackedOptional<T>): Promise<Tracked<T>>;
   project<Input extends JsonObject, Params extends JsonObject, T extends JsonValue>(
     projector: AttemptProjector<Input, Params, T>,
@@ -1533,6 +2180,60 @@ interface ProjectionReadContext {
   ): Promise<Tracked<EvidenceValue<T>>>;
 }
 ```
+
+### Event 与 Claim filter capability
+
+`ctx.events()` 只使用精确的 `event-filter(filterSchema, eventSchema)` capability。filter plan 可以只读取
+envelope，或声明必须读取 body 的 selector dependencies。envelope-only capability 只收到 deep-frozen
+`ObservationEnvelopeView`，没有 body 或 transformations：
+
+```ts
+interface ObservationEnvelopeView {
+  readonly format: "niceeval.observation";
+  readonly id: string;
+  readonly name: string;
+  readonly schema: string;
+  readonly stream: { readonly id: string; readonly sequence: number };
+  readonly scope: ObservationEvent["scope"];
+  readonly time: ObservationEvent["time"];
+  readonly source: ObservationEvent["source"];
+  readonly correlation?: ObservationEvent["correlation"];
+}
+
+interface ClaimEnvelopeView {
+  readonly id: string;
+  readonly kind: string;
+  readonly schema: string;
+  readonly evaluator: Claim["evaluator"];
+  readonly producedAt: string;
+}
+```
+
+```ts
+interface EventFilterBodyPlan {
+  readonly dependencies: readonly [VersionedSelector, ...VersionedSelector[]];
+  readonly outputSelector?: VersionedSelector;
+}
+```
+
+body-dependent event plan 返回 `EventFilterBodyPlan`。dependencies 非空，且每项使用同一个 selector
+schema。`outputSelector` 独立分类，不是 dependency 的替代项。框架受控执行 dependency reads，再把
+deep-frozen selected values 交给 predicate。event-filter capability 不能得到任意原始 body。event 的
+transformations 非空时，框架还验证其中 selector schema 相同。capability 无法证明 predicate 为 false 时，
+框架不能把这条 event 排除。
+
+无论 event 最终匹配或被 capability 证明为 false，完整扫描经过的 segment、page 和 stream index 都进入
+basedOn 与 proof。closed stream 可以给出终局完整结果；open stream 产生 incomplete，或由声明
+prefix-safe 的 Projector 返回 limited。`ObservationSet.events()` 是原始审计接口，不经过 event-filter
+capability。
+
+Claim representation 与 claim-filter 是独立 capability。`ctx.claims()` 使用精确的
+`claim-filter(filterSchema, claimSchema)` key，且只把 `ClaimEnvelopeView` 交给 envelope filter。
+
+body-dependent Claim filter 单独声明非空、同 schema 的 selector dependencies 与可选 output selector。
+框架受控读取 Claim value 并执行 predicate。capability 不能拿到任意原始 value。
+
+完整 Claim catalog 扫描中的匹配项和已排除项都进入依据。不能通过只归档命中 Claim 声称列表完整。
 
 每次成功、缺失或失败读取都由框架把 EvidenceRef、selector、membership、absence 与 verification issue
 写入内部 trace。
