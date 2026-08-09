@@ -10,7 +10,8 @@ export const SYSTEM_PROMPT = `
 规则：
 1. 需要实时天气时，调用 get_weather，并用工具返回的数据作答；不要凭空编造天气。
 2. 需要精确计算时，调用 calculate，把表达式交给它算，不要心算。
-3. 普通闲聊不要调用任何工具。回复保持中文、友好、简洁。
+3. 用户消息含 [REQUIRE_CALCULATE_TOOL] 时，必须且只能调用一次 calculate，不得自行计算；若调用被拒绝，不得重试工具，直接说明未执行。
+4. 普通闲聊不要调用任何工具。回复保持中文、友好、简洁。
 `.trim();
 
 export function buildTools(): ToolSet {

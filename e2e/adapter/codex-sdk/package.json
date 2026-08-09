@@ -1,0 +1,25 @@
+{
+  "name": "e2e-repo-codex-sdk",
+  "private": true,
+  "type": "module",
+  "description": "niceeval E2E adapter repo: Codex SDK converter live compatibility — see docs/engineering/testing/e2e/adapter/codex-sdk.md",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "e2e": "vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/codex-sdk'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "0.142.5",
+    "niceeval": "^0.4.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}

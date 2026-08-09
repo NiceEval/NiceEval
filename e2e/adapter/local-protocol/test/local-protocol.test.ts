@@ -135,7 +135,7 @@ function expectSendFailurePhase(error: ExpErrorEvent): void {
   expect(["eval.run", "agent.run"]).toContain(error.phase);
 }
 
-it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超时、错误阶段与 cleanup", async () => {
+it("签入 fixture 上的 uiMessageStreamAgent 证明审批、transport、断流、超时、错误阶段与 cleanup", async () => {
   // prepare：本 Journey 声明的结果与 JUnit 从空白开始。
   rmSync(".niceeval", { recursive: true, force: true });
   rmSync("junit", { recursive: true, force: true });
@@ -191,7 +191,51 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       expect(execution.exitCode, execution.diagnostic()).toBe(0);
       expect(execution.stdout).toContain("local-protocol-ok");
 
-      // ── 2. disconnect：半截 SSE 断流 → 公开 send 失败阶段 ──
+      // ── 2. approval：请求轮必须先暴露 pending operation，resume 再完成同一 call ──
+      const approval = await niceeval.run(
+        ["exp", "approval", "--rerun", "all", "--json", "--junit", "junit/approval.xml"],
+        { timeoutMs: 60_000 },
+      );
+      const approvalEvents = expectExpStream(approval, 0);
+      expect(approvalEvents.at(-1)).toMatchObject({
+        event: "result",
+        status: "passed",
+        passed: 1,
+        failed: 0,
+        errored: 0,
+        completion: "complete",
+      });
+      const approvalJunit = readFileSync("junit/approval.xml", "utf8");
+      expect(approvalJunit).toContain("<testsuite");
+      expect(approvalJunit).not.toContain("<failure");
+      expect(approvalJunit).not.toContain("<error");
+
+      const approvalBoard = await niceeval.run(["show", "--exp", "approval"]);
+      expect(approvalBoard.exitCode, approvalBoard.diagnostic()).toBe(0);
+      expect(approvalBoard.stdout).toContain("approval-lifecycle");
+      expect(approvalBoard.stdout).toMatch(/pass|passed/i);
+
+      const approvalHistory = await niceeval.run([
+        "show",
+        "approval-lifecycle",
+        "--exp",
+        "approval",
+        "--history",
+      ]);
+      expect(approvalHistory.exitCode, approvalHistory.diagnostic()).toBe(0);
+      const approvalLocatorLine = approvalHistory.stdout.split("\n").filter((line) => line.includes("@")).at(-1);
+      expect(approvalLocatorLine, approvalHistory.diagnostic()).toBeDefined();
+      expect(approvalLocatorLine).toMatch(/pass/i);
+      const approvalLocator = approvalLocatorLine!.match(/@\S+/)?.[0];
+      expect(approvalLocator).toBeDefined();
+
+      const approvalExecution = await niceeval.run(["show", approvalLocator!, "--execution"]);
+      expect(approvalExecution.exitCode, approvalExecution.diagnostic()).toBe(0);
+      expect(approvalExecution.stdout).toContain("calculate");
+      expect(approvalExecution.stdout).toContain("local-approval-output");
+      expect(approvalExecution.stdout).toContain("rejected");
+
+      // ── 3. disconnect：半截 SSE 断流 → 公开 send 失败阶段 ──
       const disconnect = await niceeval.run(
         ["exp", "disconnect", "--rerun", "all", "--json", "--junit", "junit/disconnect.xml"],
         { timeoutMs: 60_000 },
@@ -216,7 +260,7 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       expect(disconnectErrors[0]!.reason).toMatch(/closed|connect|stream|failed|abort|partial/i);
       expect(readFileSync("junit/disconnect.xml", "utf8")).toContain("<error");
 
-      // ── 3. timeout：挂起 body + 短 experiment.timeoutMs → send 生命周期错误 ──
+      // ── 4. timeout：挂起 body + 短 experiment.timeoutMs → send 生命周期错误 ──
       const timeoutRun = await niceeval.run(
         ["exp", "timeout", "--rerun", "all", "--json", "--junit", "junit/timeout.xml"],
         { timeoutMs: 30_000 },
@@ -239,7 +283,7 @@ it("签入 fixture 上的 uiMessageStreamAgent 证明 transport、断流、超�
       expect(timeoutErrors[0]!.reason).toMatch(/timed out|timeout/i);
       expect(readFileSync("junit/timeout.xml", "utf8")).toContain("<error");
 
-      // ── 4. http-error：HTTP 500 → send 生命周期错误 + 可行动诊断 ──
+      // ── 5. http-error：HTTP 500 → send 生命周期错误 + 可行动诊断 ──
       const httpError = await niceeval.run(
         ["exp", "http-error", "--rerun", "all", "--json", "--junit", "junit/http-error.xml"],
         { timeoutMs: 60_000 },

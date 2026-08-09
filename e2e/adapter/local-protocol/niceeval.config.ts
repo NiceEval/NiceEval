@@ -2,8 +2,8 @@ import { defineConfig } from "niceeval";
 
 export default defineConfig({
   name: {
-    "zh-CN": "adapter/local-protocol：无密钥 transport / 断流 / 超时 / 错误 / cleanup",
-    en: "adapter/local-protocol: no-secret transport / disconnect / timeout / error / cleanup",
+    "zh-CN": "adapter/local-protocol：无密钥审批 / transport / 故障 / cleanup",
+    en: "adapter/local-protocol: no-secret approval / transport / faults / cleanup",
   },
   // 断言与公开读回文案固定英文，避免本地中文环境与 CI 口径漂移。
   locale: "en",

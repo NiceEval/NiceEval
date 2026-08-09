@@ -18,7 +18,7 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts
 # 显式 live；缺 secret 在 prepare 前一次列清
 pnpm e2e --lane main --repo adapter/codex-cli
 
-# 本地无密钥 adapter transport / fault；与 live Repo 分开选择
+# 本地无密钥 adapter protocol / transport / fault；与 live Repo 分开选择
 pnpm e2e --lane pr --repo adapter/local-protocol
 ```
 
@@ -70,7 +70,7 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 ## Owner 接管运行
 
-新增、接管或实质修改 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file> -t <title>`。
+新增、接管或实质修改确定性 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file> -t <title>`。
 它拒绝没有显式 candidate、Repo 或原生 target 参数的调用；不是把普通 `run` 重复五次冒充可靠性门。
 接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit clean build（如需要）与场景源 snapshot，再保留以下可审查 receipt：
 
@@ -84,6 +84,9 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 不是用第二次通过掩盖第一次失败。接管运行固定 candidate digest、checkout commit、lockfile、fixture、seed、时钟策略和运行镜像。
 所有运行必须得到相同语义 Verdict 与实体关系；动态 ID、临时端口和 duration 不要求逐字相同。
 接管运行禁用测试级 retry，任一次意外失败都不合格。普通 lane 的 Infrastructure retry 不能替代这份可靠性证据。
+
+真实 provider live owner 不进入这套重复矩阵：每次新增或实质修改做一次已明确授权的真实运行，并完成 `show` / history /
+execution 等公开 readback。只有用户另外授权明确调用次数 / 成本时才对 live Repo 执行 takeover；provider 随机性不能充当产品可靠性证据。
 
 source snapshot 包含会进入副本的未忽略 untracked 文件。runner 拒绝 symlink 与特殊文件。
 summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单与总 digest。

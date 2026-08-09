@@ -1,0 +1,22 @@
+{
+  "name": "e2e-ai-sdk-direct",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/ai-sdk-direct'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.5",
+    "ai": "^7.0.9",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "niceeval": "^0.4.6",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}

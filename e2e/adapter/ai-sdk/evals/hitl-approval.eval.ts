@@ -9,10 +9,9 @@ import { equals } from "niceeval/expect";
 export default defineEval({
   description: "审批请求(approval-requested)会阻塞执行直到给出答复;approve 恢复为 completed,deny 则为 rejected 且从未产生工具结果",
   async test(t) {
-    const draft = await t.send("用计算器算一下 (23+19)*3 等于多少");
+    const draft = await t.send("[REQUIRE_CALCULATE_TOOL] 用计算器算一下 (23+19)*3 等于多少");
     t.check(draft.status, equals("waiting"));
     draft.parked();
-    t.parked();
     draft.calledTool("calculate", { status: "pending", count: 1 });
     draft.eventsSatisfy("审批前不应存在已完成的 calculate 结果", (events) => {
       const calcIds = new Set(
@@ -41,15 +40,14 @@ export default defineEval({
 
     // Deny branch on an independent session line — same prompt, the opposite decision.
     const denied = t.newSession();
-    const deniedDraft = await denied.send("用计算器算一下 (23+19)*3 等于多少");
+    const deniedDraft = await denied.send(
+      "[REQUIRE_CALCULATE_TOOL] 用计算器算 (23+19)*3。",
+    );
     deniedDraft.parked();
     denied.parked();
     denied.calledTool("calculate", { status: "pending", count: 1 });
     denied.requireInputRequest({ action: "calculate" });
-    let turn = await denied.respond("deny");
-    for (let attempt = 0; attempt < 3 && turn.status === "waiting"; attempt++) {
-      turn = await denied.respond("deny");
-    }
+    const turn = await denied.respond("deny");
     t.check(turn.status, equals("completed"));
     denied.calledTool("calculate", { status: "rejected" });
     denied.notCalledTool("calculate", { status: "completed" });

@@ -18,9 +18,10 @@ import { expect, it } from "vitest";
 import { AI_SDK_BASE_URL } from "../src/topology.ts";
 
 const EXPECTED_EVALS = ["tool-call", "hitl-approval", "session-replay"] as const;
-const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY"] as const;
+const REQUIRED_LIVE_SECRETS = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
 
-const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
+const niceevalBin = join(process.cwd(), "node_modules", ".bin", "niceeval");
+const niceeval = command([niceevalBin]);
 
 interface ExpStartEvent {
   event: "start";
@@ -120,6 +121,7 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
   await withProcess(
     ["pnpm", "exec", "tsx", "src/backend/server.ts"],
     {
+      processGroup: true,
       timeoutMs: 14 * 60_000,
     },
     async (server) => {
@@ -131,9 +133,13 @@ it("真实 AI SDK adapter 运行结果经过公开 CLI 读回", async () => {
 
       // invoke：完整 argv 走安装后的 candidate binary；真实 provider 与
       // uiMessageStreamAgent 仍由 experiments/ci.ts + evals/ 驱动。
-      const run = await niceeval.run(
-        ["exp", "--rerun", "all", "--json", "--junit", "junit.xml"],
-        { timeoutMs: 13 * 60_000 },
+      let run!: ProcessReceipt;
+      await withProcess(
+        [niceevalBin, "exp", "--rerun", "all", "--json", "--junit", "junit.xml"],
+        { processGroup: true, timeoutMs: 13 * 60_000 },
+        async (running) => {
+          run = await running.done;
+        },
       );
       const events = expectExpStream(run);
       const result = events.at(-1) as ExpResultEvent;

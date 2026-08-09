@@ -63,7 +63,10 @@ test/
 `adapter/` 是独立于功能 Repo 的 collection，不能把所有 adapter test 放入同一个叶子项目。
 `ai-sdk/`、`codex-cli/`、`claude-code/`、`opencode/`、`bub/` 等每个上游入口都拥有自己的 package、配置、
 凭据边界、结果根与公开 readback。
-无密钥的 `local-protocol/` 只拥有确定性 transport / fault / cleanup，不得用它的 canned event 宣称 live adapter 兼容。
+
+无密钥的 `local-protocol/` 只拥有确定性 protocol state / transport / fault / cleanup，不得用它的 typed fixture 宣称 live adapter 兼容。
+多个纯 converter 只有在依赖、密钥、executor、runtime 与资源边界完全相同时才可共用一个无密钥载体；每个入口仍须有独立
+fixture、Eval、Experiment、测试文件、项目副本 / 结果根与 owner anchor，默认并行不得共写现场。任一依赖图或资源边界分叉就拆 Repo。
 
 ## Repo Manifest
 
@@ -193,10 +196,14 @@ capture 中的 groupCleanup 写入这次探测、所发信号与确认终态。�
 
 隔离是可靠性的必要条件，但不等于可靠性已经成立。
 新增、接管或实质修改 owner 时，使用根 `takeover` 入口固定 candidate、checkout、Testkit 与 source snapshot。
-同一测试还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+确定性 owner 还要在三个全新副本、同一已安装副本连续两次、所属 Repo 默认并行和文件 / 标题单项运行中全部通过。
+
 takeover summary 写入 source snapshot 的相对路径、字节数、SHA-256 清单和总 digest。
 每份 receipt 绑定该 digest；矩阵核验六个观察标签、copy ID、attempt、唯一 invocation ID 与 cleanup 终态。
 测试级 retry 不参与这项验收；任一次意外失败都说明自动化 owner 尚未成立。
+
+真实 provider live owner 每次变更只做一次已明确授权的真实兼容性运行与公开 readback；它不以 provider 随机性承担 takeover
+重复门。需要对 live Repo 跑完整 takeover 时，必须另外取得明确调用次数 / 成本授权。
 
 ## Adapter Repo
 
@@ -216,6 +223,11 @@ Eval / Experiment 集：
 Adapter Repo 中出现 `exp`、`show` 或 `--execution` 不表示它也属于功能测试集合。它只保留能把真实 adapter 证据送入
 公开读面的最短路径；同一 CLI flag、Report 导航或 carry 规则仍由对应功能 Repo 唯一拥有。
 
+只有 converter 的 SDK 可以拥有受限 live consumer glue，但边界是机械的：raw SDK frame 原样进入候选包的公开 converter；
+Repo 不构造 `StreamEvent`，不手写 SDK 字段映射，不自行计算 canonical tool、usage 或终局。Glue 只处理 SDK invocation、
+`AbortSignal`、session/resume 与应用特有 HITL orchestration，且必须在文档中明确它不是官方 factory。需要自定义 envelope 的
+transport 不能把 envelope 称为 raw upstream protocol；无法守住这些限制时，保留 `unproven`，不建 live Repo。
+
 UI Message Stream backend 固定版本和响应，可进入 PR；真实 provider 版本、模型和 CLI 身份写入 artifact，进入可信 lane。
 二者应是不同叶子 Repo，避免共享依赖、结果与子进程变量后把本地 fixture 误报成某个 live adapter 的证明。
 
@@ -233,7 +245,7 @@ UI Message Stream backend 固定版本和响应，可进入 PR；真实 provider
 5. 无密钥 Repo 能在 PR lane 运行，live Repo 缺 secret 时启动前明确失败；
 6. 标成 `regression` 的历史 bug case 能杀死对应旧实现；只能证明相似风险的 case 不挂该 commit；
 7. 被替代旧测试在同批删除。
-8. 新 owner 通过[可靠性接管门](../README.md#可靠性重复运行)。
+8. 新确定性 owner 通过[可靠性接管门](../README.md#可靠性重复运行)；live owner按上文完成一次获授权真实运行，完整 takeover 另行授权。
 
 选择[不自动化](../README.md#不自动化)时不创建测试文件、空场景 Repo 或伪 owner，也不进入本节 Repo 准入。
 该变更只在 PR / release 的 Test impact 保存本次 AI 真实验收收据。

@@ -205,8 +205,10 @@ pnpm e2e --repo report -- --run test/exported-targets.test.ts -t "打开 case ta
 
 E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选择的线性脚本不拥有长期测试命题。
 
-新增、接管或实质修改 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
+新增、接管或实质修改确定性 owner 时，还必须通过[可靠性：重复运行](../README.md#可靠性重复运行)的全新副本、同副本连续运行、
 默认并行与单项重跑组合。任一次意外失败都不合格；测试级 retry 不得把失败改写成通过。
+真实 provider live owner 做一次已明确授权的真实运行与公开读回；完整重复矩阵会放大付费调用且不能证明 provider 确定性，
+只有另获明确调用次数 / 成本授权时才运行。
 
 本地、Docker 与 GitHub Actions 见 [Execution](execution.md)。
 

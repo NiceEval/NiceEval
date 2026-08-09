@@ -9,7 +9,12 @@ import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace
 import { registerTelemetry } from "ai";
 import { OTLP_TRACES_URL } from "../topology.ts";
 
-export function setupOtel(serviceName: string): void {
+export interface OTelLifecycle {
+  forceFlush(): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+export function setupOtel(serviceName: string): OTelLifecycle {
   const provider = new NodeTracerProvider({
     resource: resourceFromAttributes({ "service.name": serviceName }),
     spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: OTLP_TRACES_URL }))],
@@ -17,4 +22,8 @@ export function setupOtel(serviceName: string): void {
   provider.register();
   registerTelemetry(new OpenTelemetry({ tracer: provider.getTracer(serviceName) }));
   process.stdout.write(`OTel tracing enabled -> ${OTLP_TRACES_URL}\n`);
+  return {
+    forceFlush: () => provider.forceFlush(),
+    shutdown: () => provider.shutdown(),
+  };
 }

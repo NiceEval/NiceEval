@@ -8,7 +8,7 @@ import { DEFAULT_MODEL, resolveModel } from "./models.ts";
 import { setupOtel } from "./otel.ts";
 import { AI_SDK_BASE_URL, AI_SDK_PORT } from "../topology.ts";
 
-setupOtel("ai-sdk-e2e");
+const telemetry = setupOtel("ai-sdk-e2e");
 
 const server = createServer(async (req, res) => {
   try {
@@ -23,7 +23,9 @@ server.listen(AI_SDK_PORT, "127.0.0.1", () => {
 });
 
 function shutdown(): void {
-  server.close(() => process.exit(0));
+  server.close(() => {
+    void telemetry.shutdown().finally(() => process.exit(0));
+  });
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
@@ -52,9 +54,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       stopWhen: stepCountIs(5),
       abortSignal: signal,
     });
+    const stream = toUIMessageStream({ stream: result.stream, tools: buildTools() }).pipeThrough(
+      new TransformStream({
+        transform(chunk, controller) {
+          controller.enqueue(chunk);
+        },
+        // BatchSpanProcessor's default timer is deliberately longer than this
+        // request. Hold the HTTP close until every span from this turn has been
+        // acknowledged by the NiceEval OTLP receiver; the consumer never needs
+        // a timing sleep to race the exporter.
+        async flush() {
+          await telemetry.forceFlush();
+        },
+      }),
+    );
     pipeUIMessageStreamToResponse({
       response: res,
-      stream: toUIMessageStream({ stream: result.stream, tools: buildTools() }),
+      stream,
       headers: corsHeaders(),
     });
     return;

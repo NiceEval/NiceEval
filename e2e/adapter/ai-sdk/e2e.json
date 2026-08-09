@@ -7,11 +7,7 @@
   "command": ["pnpm", "exec", "vitest", "run"],
   "timeoutMinutes": 15,
   "harness": { "testkit": true },
-  "secrets": [
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "NICEEVAL_JUDGE_KEY"
-  ],
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
   "requires": { "externalNetwork": true, "runtimes": ["node>=22"] },
   "paths": ["e2e/adapter/ai-sdk/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
   "artifacts": [".niceeval/**", "junit.xml"]
