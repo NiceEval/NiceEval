@@ -90,7 +90,8 @@ docs/
 │
 ├── research/                            带观察日期的外部产品研究，不构成目标契约
 │   ├── ori-eval.md                      Ori Eval、spawn-ori-eval 与 NiceEval 的关系
-│   └── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
+│   ├── eve-assertion-dx.md              Eve 断言 DX 与真实回归题的逐项能力审视
+│   └── assertion-api-dx/                评估断言 API、语法与作者 DX 横向研究
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
