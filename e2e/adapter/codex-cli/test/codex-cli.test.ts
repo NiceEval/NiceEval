@@ -16,6 +16,7 @@ const EXPECTED_EVALS = [
   "mcp",
   "skill",
   "skill-release-note",
+  "repo-skill",
   "plugin-hook",
   "configfile",
 ] as const;
@@ -125,7 +126,7 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
   // invoke：完整 argv 走安装后的 candidate binary；真实 Codex CLI、Docker sandbox
   // 与 live provider 仍由 experiments/* + evals/ 驱动。
   const run = await niceeval.run(["exp", "--rerun", "all", "--json", "--junit", "junit.xml"], {
-    timeoutMs: 36 * 60_000,
+    timeoutMs: 44 * 60_000,
   });
   const events = expectExpStream(run);
   const result = events.at(-1) as ExpResultEvent;
@@ -190,4 +191,10 @@ it("真实 Codex CLI adapter 在 Docker sandbox 中的运行结果经过公开 C
     "execution tree missing remote HTTP MCP call (deepwiki.read_wiki_structure)",
   ).toBe(true);
   expect(mcpExecution.stdout).not.toContain("weather.get_weather");
-}, 38 * 60_000);
+
+  const repoSkillLocator = await latestAttemptLocator("repo-skill");
+  const repoSkillExecution = await niceeval.run(["show", repoSkillLocator, "--execution"]);
+  expectSuccessfulCli(repoSkillExecution);
+  expect(repoSkillExecution.stdout).toContain(".agents/skills/calibre/SKILL.md");
+  expect(repoSkillExecution.stdout).toContain("ebook-convert novel.epub novel.azw3");
+}, 46 * 60_000);

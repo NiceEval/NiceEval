@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     // 单文件垂直 Journey：真实 Claude Code + Docker sandbox + live provider，
-    // 覆盖 6 个 experiment / 6 条 Eval（含 sandboxReuse 第二条 attempt）。
-    testTimeout: 38 * 60_000,
+    // 覆盖 8 个 experiment / 10 条 Eval（含远程 Skill、远程 Plugin 与 sandboxReuse）。
+    testTimeout: 52 * 60_000,
     hookTimeout: 120_000,
   },
 });

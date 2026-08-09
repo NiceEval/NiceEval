@@ -5,7 +5,7 @@
   "lanes": ["main", "nightly", "release"],
   "executor": { "kind": "host" },
   "command": ["pnpm", "exec", "vitest", "run"],
-  "timeoutMinutes": 40,
+  "timeoutMinutes": 50,
   "harness": { "testkit": true },
   "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL"],
   "requires": { "docker": true, "externalNetwork": true },

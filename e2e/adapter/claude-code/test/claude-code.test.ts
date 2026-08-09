@@ -15,15 +15,26 @@ const EXPECTED_EVALS = [
   "skill-used",
   "skill-checklist",
   "skill-unused",
+  "repo-skill",
   "mcp-tools",
   "plugin-mcp",
+  "remote-plugin",
   "websearch-denied",
 ] as const;
 
-// 本仓库有 6 个 experiment（每个挂不同 agent 配置），bare `niceeval show` 按
+// 本仓库有 8 个 experiment（每个挂不同 agent 配置），bare `niceeval show` 按
 // experiment group 汇总展示（见 experiments/*.ts 的文件名）；eval id 级别的存在性
 // 由 show <eval-id> --history 与 --page attempts 逐条核验。
-const EXPECTED_EXPERIMENTS = ["coding", "skill", "mcp", "plugin", "plugin-reuse", "locked-down"] as const;
+const EXPECTED_EXPERIMENTS = [
+  "coding",
+  "skill",
+  "repo-skill",
+  "mcp",
+  "plugin",
+  "plugin-reuse",
+  "remote-plugin",
+  "locked-down",
+] as const;
 
 const REQUIRED_LIVE_SECRETS = [
   "ANTHROPIC_API_KEY",
@@ -139,7 +150,7 @@ it("真实 Claude Code adapter 在 Docker sandbox 中的运行结果经过公开
   // sandbox 与 live provider 仍由 experiments/* + evals/ 驱动。
   const run = await niceeval.run(
     ["exp", "--rerun", "all", "--json", "--junit", "junit.xml"],
-    { timeoutMs: 36 * 60_000 },
+    { timeoutMs: 50 * 60_000 },
   );
   const events = expectExpStream(run);
   const result = events.at(-1) as ExpResultEvent;
@@ -150,7 +161,7 @@ it("真实 Claude Code adapter 在 Docker sandbox 中的运行结果经过公开
   expect(junit).not.toContain("<failure");
   expect(junit).not.toContain("<error");
 
-  // observe：show 默认报告列出全部 6 个 experiment group，--page attempts 是
+  // observe：show 默认报告列出全部 8 个 experiment group，--page attempts 是
   // 不随实验组数收缩的逐 attempt 视图——少发现/少运行后都不能以组级汇总假绿。
   const board = await niceeval.run(["show"]);
   expectSuccessfulCli(board);
@@ -189,6 +200,11 @@ it("真实 Claude Code adapter 在 Docker sandbox 中的运行结果经过公开
     OTEL_NOT_COLLECTED,
   );
 
+  const repoSkillExecution = await niceeval.run(["show", locators.get("repo-skill")!, "--execution"]);
+  expectSuccessfulCli(repoSkillExecution);
+  expect(repoSkillExecution.stdout).toContain("calibre");
+  expect(repoSkillExecution.stdout).toContain("ebook-convert novel.epub novel.azw3");
+
   const mcpExecution = await niceeval.run(["show", locators.get("mcp-tools")!, "--execution"]);
   expectSuccessfulCli(mcpExecution);
   expect(mcpExecution.stdout).toContain("mcp__e2e-stdio__get-sum");
@@ -205,4 +221,10 @@ it("真实 Claude Code adapter 在 Docker sandbox 中的运行结果经过公开
   const pluginExecution = await niceeval.run(["show", locators.get("plugin-mcp")!, "--execution"]);
   expectSuccessfulCli(pluginExecution);
   expect(pluginExecution.stdout).toContain("mcp__plugin_e2e-plugin_tools__get-sum");
-}, 38 * 60_000);
+
+  const remotePluginExecution = await niceeval.run(["show", locators.get("remote-plugin")!, "--execution"]);
+  expectSuccessfulCli(remotePluginExecution);
+  expect(remotePluginExecution.stdout).toContain("frontend-design@claude-plugins-official");
+  expect(remotePluginExecution.stdout).toContain("frontend-design:frontend-design");
+  expect(remotePluginExecution.stdout).toContain("CLAUDE-REMOTE-PLUGIN-E2E-731");
+}, 52 * 60_000);

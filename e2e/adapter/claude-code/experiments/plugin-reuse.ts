@@ -10,13 +10,13 @@
 // postSetup:残留是留给下一条 attempt 的,本条 attempt 的断言仍跑在按声明装出来的那份安装上。
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import type { SandboxHook } from "niceeval/sandbox";
+import type { SandboxCommand } from "niceeval/sandbox";
 import { pluginSandbox } from "../sandbox.ts";
 
 const MARKETPLACE = "niceeval-e2e-marketplace";
 const PLUGIN = "e2e-plugin";
 
-const staleInstalledPlugin: SandboxHook = async (sb) => {
+const staleInstalledPlugin: SandboxCommand = async (sb) => {
   const res = await sb.runShell(
     [
       "set -e",
