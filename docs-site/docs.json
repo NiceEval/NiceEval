@@ -683,6 +683,7 @@
                 "group": "编写评估",
                 "pages": [
                   "zh/tutorials/authoring",
+                  "zh/tutorials/eval-groups",
                   "zh/tutorials/write-experiment",
                   "zh/tutorials/experiments",
                   "zh/tutorials/fixtures",

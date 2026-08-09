@@ -1,0 +1,193 @@
+---
+title: "用评估组按顺序复用 Sandbox"
+sidebarTitle: "评估组"
+description: "用 defineEvalGroup 显式排列成员：同组 Attempt 串行复用一台 Sandbox，不同组继续并行，并把公共准备放到正确的 Sandbox Layer。"
+---
+
+一批评估用例共用同一套重工具链时，你通常同时需要两件事：不要为每道题重复创建
+Sandbox，也不要为了复用而把整批任务都降成串行。`defineEvalGroup()` 把兼容的评估用例
+排成一个明确的队列。同组真实派发的 Attempt 依次复用一台 Sandbox；不同组和未分组的
+评估用例仍可使用其它并发位。
+
+| 你会得到什么 | 运行行为 |
+| --- | --- |
+| 公共准备少付几次 | Sandbox 创建和组级 `setup()` 每个组内实例只执行一次 |
+| 组内顺序固定 | `evals` 数组同时声明成员和顺序，同组同时只派发一条 Attempt |
+| 组间保留吞吐 | 不同组和未分组评估用例可以并行 |
+| 结果仍能单独比较 | 每条 Attempt 继续拥有自己的断言、判定、用量和文件改动 |
+
+评估组只安排本轮需要真实运行的 Attempt。已经沿用的结果不会进入组内 Sandbox，
+`--rerun`、`attempts` 和首过即停仍按 Experiment 的既有规则工作。
+
+## 先选对复用方式
+
+| 任务 | 使用方式 |
+| --- | --- |
+| 一组或几组兼容的评估需要固定顺序，并希望其它组并行 | `defineEvalGroup()` |
+| Experiment 选中的普通评估都能互换顺序，只想开几条复用泳道 | `sandboxReuse: true` |
+| 每条 Attempt 都需要全新的 `$HOME`、`/tmp` 和后台进程 | 不复用 Sandbox，只调并发 |
+
+同一个 Experiment 不能同时选中评估组并声明 `sandboxReuse: true`。评估组已经拥有自己的
+复用边界；两者同时出现会在 Provider 创建 Sandbox 前报
+`eval-group-sandbox-reuse-conflict`。
+
+## 第 1 步：把组文件放在成员旁边
+
+把 `eval-group.ts` 放进 `evals/` 下的具名目录。目录路径就是评估组 ID：
+
+```text
+evals/
+└── workflow/
+    ├── eval-group.ts          # 评估组 ID：workflow
+    ├── 01-index/
+    │   └── eval.ts            # 评估用例 ID：workflow/01-index
+    └── 02-query/
+        └── eval.ts            # 评估用例 ID：workflow/02-query
+```
+
+NiceEval 只发现 `evals/**/eval-group.ts`。不要把文件写成 `*.eval-group.ts`，也不要放在
+`evals/eval-group.ts`；后者没有可用的组 ID。
+
+## 第 2 步：用工厂返回对象声明成员和顺序
+
+每个成员照常默认导出 `defineEval()` 或 `defineScoreEval()` 的返回值。组文件导入这些返回值，
+再按需要的派发顺序排列：
+
+```ts
+// evals/workflow/eval-group.ts
+import { defineEvalGroup } from "niceeval";
+import buildIndex from "./01-index/eval.ts";
+import queryIndex from "./02-query/eval.ts";
+
+export default defineEvalGroup({
+  evals: [buildIndex, queryIndex],
+});
+```
+
+`evals` 必须非空。它只接受工厂实际返回的对象，不接受评估用例 ID、目录前缀、`glob`、
+`tag` 或 `selector`。NiceEval 也不会自动收集同目录文件；成员增删和顺序变化都会明确出现在
+`eval-group.ts` 的 diff 中。
+
+一条评估用例最多属于一个组，同一组也不能重复列出同一条。Experiment 与 CLI 仍负责筛选
+评估用例；选中 `workflow/02-query` 不会自动把 `workflow/01-index` 拉进本轮运行。
+
+## 第 3 步：让 Experiment 提供可复用的 Sandbox
+
+大多数项目由 Experiment 选择 Provider 和 `template`，评估组只负责拥有复用队列：
+
+```ts
+// experiments/codex.ts
+import { defineExperiment } from "niceeval";
+import { codexAgent } from "niceeval/adapter";
+import { e2bSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  evals: ["workflow/"],
+  agent: codexAgent(),
+  sandbox: e2bSandbox({
+    template: "codex",
+    lifetimeMs: 60 * 60_000,
+  }),
+  maxConcurrency: 4,
+});
+```
+
+这里不要写 `sandboxReuse: true`。`maxConcurrency: 4` 是整个 Experiment 的上限，不会让
+同组同时跑四条；它允许其它评估组或未分组评估用例使用剩余并发位。
+
+评估组只支持 Sandbox 型 Agent 和支持复用的 Provider。Direct Agent 与 `localSandbox()`
+不能运行评估组。
+
+## 第 4 步：先检查组 ID 和顺序
+
+先用 `--dry` 确认选择结果，不会创建 Sandbox：
+
+```bash
+npx niceeval exp codex --dry
+```
+
+上面的最小项目会显示：
+
+```text
+plan: 2 个 attempt · 2 个 eval × 1 个运行配置 · attempts 1
+codex  workflow/01-index [group workflow #0]   new
+codex  workflow/02-query [group workflow #1]   new
+```
+
+`#0`、`#1` 是成员在 `evals` 数组中的位置。顺序正确后再运行：
+
+```bash
+npx niceeval exp codex
+```
+
+`attempts` 大于 1 时，NiceEval 先依次跑完第一个成员的各次 Attempt，再进入第二个成员。
+首过即停或结果沿用没有实际派发的槽位会直接跳过。
+
+## 把公共准备放到评估组
+
+一次 Sandbox 规划可以同时接收 Experiment、评估组和评估用例三层声明，但三层中只能有
+一层提供 template。常见分工如下：
+
+| 声明位置 | 适合放什么 | 执行频次 |
+| --- | --- | --- |
+| Experiment 的 `sandbox` | 随 Agent 或模型配置变化的 Provider `template` | 每个组内 Sandbox 一次 |
+| 评估组的 `sandbox` + `.setup()` | 同组共用的工具链、公共 Checkout、构建缓存预热 | 每个组内 Sandbox 一次 |
+| 评估组的 `sandbox` + `.prepare()` | 每条 Attempt 都要恢复的组级 Fixture | 每条真实 Attempt 一次 |
+| 成员自己的 `sandbox` + `.prepare()` | 只属于这道题的 Starter、依赖和公开素材 | 每条真实 Attempt 一次 |
+
+评估组可以提供自己的 `SandboxLayer`：
+
+```ts
+import { defineEvalGroup } from "niceeval";
+import { sandboxLayer } from "niceeval/sandbox";
+import buildIndex from "./01-index/eval.ts";
+import queryIndex from "./02-query/eval.ts";
+
+export default defineEvalGroup({
+  evals: [buildIndex, queryIndex],
+  sandbox: sandboxLayer().setup(async (sandbox, ctx) => {
+    ctx.progress({ message: "准备组内公共工具链" });
+    await sandbox.runCommandOrThrow("npm", ["install", "--global", "tsx@4.22.4"]);
+  }),
+});
+```
+
+组内生命周期与 Agent Context 都能读取 `ctx.evalGroup.id` 和
+`ctx.evalGroup.definitionHash`。公共函数也可能服务未分组评估，所以类型把 `evalGroup`
+保留为可选字段。需要在 `workdir` 外隔离缓存或服务命名空间时，先检查字段是否存在，再使用
+组 ID 派生键。
+
+成员不能提供 `template`，也不能声明 `.setup()` 或 `.teardown()`。把实例级生命周期移到
+评估组或 Experiment；成员只保留不含 `template` 与生命周期、仅声明 `.prepare()` 的
+`SandboxLayer`。
+
+## 不要把评估组当成任务依赖图
+
+每条 Attempt 之间，NiceEval 会把 `workdir` 重置到公共准备完成时的状态。前一道题写进
+`workdir` 的文件不会成为后一道题的输入；`$HOME`、`/tmp`、全局安装和后台进程则可能保留。
+无法接受这些残留时，不要复用 Sandbox。
+
+评估组也不会保证前一道题一定执行。结果沿用、CLI 过滤、预算耗尽和中断都可能让成员不进入
+本轮 Sandbox。后一项必须读取前一项文件时，把两个步骤写进同一条评估用例；只有共享状态本来
+就在 `workdir` 外，而且缺少前一项也能得到有效判定时，才让多条评估用例顺序使用它。
+
+## 常见错误
+
+| 错误 | 修正方式 |
+| --- | --- |
+| `eval-group-member-unresolved` | 从评估入口导入工厂原本返回的默认对象，不要重建对象或写字符串 ID |
+| `eval-group-member-overlap` | 每条评估用例只放进一个组，并且只列一次 |
+| `eval-group-member-layer` | 把成员的 `template`、`.setup()` 和 `.teardown()` 移到评估组或 Experiment |
+| `eval-group-sandbox-reuse-conflict` | 从 Experiment 删除 `sandboxReuse: true` |
+| `sandbox.unexpected-for-direct-agent` | 改用 Sandbox 型 Agent |
+| `sandbox.reuse-unavailable` | 换成支持 Sandbox 复用的 Provider |
+| `eval-group-incompatible` | 让成员得到相同的物理 Sandbox 计划，或按兼容的 `template` 拆组 |
+
+## 接着看
+
+- [复用 Sandbox](/zh/tutorials/sandbox-reuse)——整批普通评估用例适合使用
+  `sandboxReuse: true` 时的生命周期和残留边界。
+- [调好并发](/zh/tutorials/concurrency)——评估组怎样与全局、Experiment 并发上限一起工作。
+- [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——选择 `template`、设置寿命并编写
+  `SandboxLayer`。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)——哪些 Attempt 会进入本轮组内队列。

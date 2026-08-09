@@ -11,6 +11,12 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 多条 Attempt 依次共用同一个 Sandbox：Sandbox 创建和公共准备每个 Sandbox 只付一次，
 每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
 
+<Note>
+  本页讲 Experiment 级的 `sandboxReuse`。只有几组兼容的评估需要固定顺序时，使用
+  [评估组](/zh/tutorials/eval-groups)：同组串行复用，不同组继续并行。选中评估组的
+  Experiment 不能再声明 `sandboxReuse: true`。
+</Note>
+
 <Warning>
   题间 reset 不是整台 Sandbox 归零。NiceEval 只按分类账恢复 `workdir`。`/opt`、`$HOME`、`/tmp` 等 workdir 外状态、全局安装、包缓存和后台进程会保留。大型持久 build/cache 由作者负责选择容量上限、阈值告警、清理或轮换策略。无法安全继续时还要有退休 Sandbox 的策略。
 </Warning>
@@ -198,6 +204,7 @@ export default defineExperiment({
 
 ## 相关阅读
 
+- [评估组](/zh/tutorials/eval-groups)——显式声明组内成员和顺序，同时保留组间并发。
 - [重跑与沿用](/zh/tutorials/rerun-and-cache)——复用 Sandbox 如何沿用终态结果，以及何时使用 `--rerun`。
 - [并发与执行顺序](/zh/tutorials/concurrency)——不复用时怎么用并发拿到同一份提速。
 - [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——各 Provider 的
