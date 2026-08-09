@@ -7,6 +7,7 @@
 // 三值逻辑；转换器在单轮缺 usage 时再据实降级该通道。
 
 import type { EvidenceCoverage, JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 const COMPLETE = Object.freeze({ status: "complete" as const });
 const NO_DATA = Object.freeze({ status: "unavailable" as const, reason: "OpenAI response conversion does not populate Turn.data." });
@@ -42,10 +43,13 @@ export const responsesEvidenceCoverage: EvidenceCoverage = Object.freeze({
   data: NO_DATA,
 });
 
-function missingUsageCoverage(usage: Usage | undefined): Turn["evidenceCoverage"] {
-  return usage
-    ? undefined
-    : { usage: { status: "unavailable", reason: "This response did not include protocol usage." } };
+function turnCoverage(events: readonly StreamEvent[], usage: Usage | undefined): Turn["evidenceCoverage"] {
+  const actionCoverage = unclassifiedToolActionsCoverage(events);
+  if (usage) return actionCoverage;
+  return {
+    ...actionCoverage,
+    usage: { status: "unavailable", reason: "This response did not include protocol usage." },
+  };
 }
 
 /** tool_calls / function_call 的 `arguments` 恒为 JSON 字符串;解析失败(极少见)原样退回字符串,不吞异常。 */
@@ -114,7 +118,8 @@ export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   }
   if (message?.content) events.push({ type: "message", role: "assistant", text: message.content });
   const usage = chatCompletionUsage(res.usage);
-  return { events, status: "completed", usage, evidenceCoverage: missingUsageCoverage(usage) };
+  const evidenceCoverage = turnCoverage(events, usage);
+  return { events, status: "completed", usage, ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }) };
 }
 
 // ───────────────────────── Responses ─────────────────────────
@@ -201,5 +206,6 @@ export function turnFromResponses(res: ResponseLike): Turn {
     }
   }
   const usage = responsesUsage(res.usage);
-  return { events, status: "completed", usage, evidenceCoverage: missingUsageCoverage(usage) };
+  const evidenceCoverage = turnCoverage(events, usage);
+  return { events, status: "completed", usage, ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }) };
 }

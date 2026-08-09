@@ -5,6 +5,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { normalizeJsonValue } from "../../shared/json-value.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -17,6 +18,13 @@ export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
 
 function normalizeToolName(name: string): ToolName {
   return normalizeShared(name, HERMES_TOOL_ALIASES);
+}
+
+/** Hermes 的 terminal tool 给的是工具 arguments，不是可验证的 native argv。 */
+function commandProjectionForHermesTool(name: string) {
+  return name.toLowerCase() === "terminal"
+    ? opaqueCommandProjection("unsupported-protocol")
+    : notCommandProjection();
 }
 
 function get(obj: unknown, key: string): unknown {
@@ -115,7 +123,13 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
         events.push({
           type: "operation.started",
           operationId: callId,
-          operation: { kind: "tool", name, input: args, tool: normalizeToolName(name) },
+          operation: {
+            kind: "tool",
+            name,
+            input: args,
+            tool: normalizeToolName(name),
+            command: commandProjectionForHermesTool(name),
+          },
         });
       }
     }

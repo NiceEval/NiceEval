@@ -20,10 +20,11 @@
 // return { status: stream.failed ? "failed" : "completed", events, usage: stream.usage };
 // ```
 
-import type { JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
+import type { CommandProjection, JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
 import { normalizeToolName } from "../o11y/tool-names.ts";
 import { CODEX_TOOL_ALIASES } from "../o11y/parsers/codex.ts";
 import { CLAUDE_TOOL_ALIASES } from "../o11y/parsers/claude-code.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../o11y/command-projection.ts";
 
 // ───────────────────────── 通用 SSE 读帧器 ─────────────────────────
 
@@ -61,6 +62,11 @@ export function sseJsonFrames<T>(body: ReadableStream<Uint8Array>): SseFrameCurs
 
 function isRecord(v: unknown): v is globalThis.Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+/** Claude Agent SDK 的原生 Bash tool 只交付 shell source，不交付 argv。 */
+function commandProjectionForClaudeSdkTool(name: string): CommandProjection | undefined {
+  return name === "Bash" ? opaqueCommandProjection("unsupported-protocol") : undefined;
 }
 
 // ───────────────────────── Claude Agent SDK:SDKMessage ─────────────────────────
@@ -156,6 +162,7 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
             } else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
               events.push({ type: "thinking", text: block.thinking });
             } else if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+              const command = commandProjectionForClaudeSdkTool(block.name);
               events.push({
                 type: "operation.started",
                 operationId: block.id,
@@ -164,6 +171,7 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
                   name: block.name,
                   input: block.input as JsonValue,
                   tool: normalizeToolName(block.name, CLAUDE_TOOL_ALIASES),
+                  ...(command === undefined ? {} : { command }),
                 },
               });
             }
@@ -401,16 +409,28 @@ export function createCodexThreadEventStream(): CodexThreadStream {
   // 跨 agent 规范名断言在 SDK 流路径上会静默失配(2026-07-09 CI 实红)。
   const handleToolItem = (item: globalThis.Record<string, unknown>, isCompleted: boolean): StreamEvent[] => {
     const events: StreamEvent[] = [];
-    const emitCall = (callId: string, name: string, input: JsonValue, tool: ToolName): void => {
-      if (startedCallIds.has(callId)) return;
-      startedCallIds.add(callId);
-      events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool } });
-    };
+  const emitCall = (
+    callId: string,
+    name: string,
+    input: JsonValue,
+    tool: ToolName,
+    command: CommandProjection,
+  ): void => {
+    if (startedCallIds.has(callId)) return;
+    startedCallIds.add(callId);
+    events.push({ type: "operation.started", operationId: callId, operation: { kind: "tool", name, input, tool, command } });
+  };
 
     switch (item.type) {
       case "command_execution": {
         const callId = callIdOf(item, "cmd");
-        emitCall(callId, "command_execution", { command: item.command ?? null } as JsonValue, "shell");
+        emitCall(
+          callId,
+          "command_execution",
+          { command: item.command ?? null } as JsonValue,
+          "shell",
+          opaqueCommandProjection("unsupported-protocol"),
+        );
         if (isCompleted) {
           const exit = item.exit_code;
           const success = exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error");
@@ -428,7 +448,13 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         const callId = callIdOf(item, "mcp");
         const tool = String(item.tool ?? "unknown");
         const name = typeof item.server === "string" ? `${item.server}.${tool}` : tool;
-        emitCall(callId, name, (item.arguments ?? null) as JsonValue, normalizeToolName(tool, CODEX_TOOL_ALIASES));
+        emitCall(
+          callId,
+          name,
+          (item.arguments ?? null) as JsonValue,
+          normalizeToolName(tool, CODEX_TOOL_ALIASES),
+          notCommandProjection(),
+        );
         if (isCompleted) {
           const success = !item.error && item.status !== "failed";
           events.push({
@@ -443,7 +469,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
       }
       case "web_search": {
         const callId = callIdOf(item, "web");
-        emitCall(callId, "web_search", { query: item.query ?? null } as JsonValue, "web_search");
+        emitCall(callId, "web_search", { query: item.query ?? null } as JsonValue, "web_search", notCommandProjection());
         if (isCompleted) {
           events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: null, status: "completed" });
         }
@@ -460,7 +486,13 @@ export function createCodexThreadEventStream(): CodexThreadStream {
           events.push({
             type: "operation.started",
             operationId: callId,
-            operation: { kind: "tool", name: "file_change", input: change as JsonValue, tool: "file_edit" },
+            operation: {
+              kind: "tool",
+              name: "file_change",
+              input: change as JsonValue,
+              tool: "file_edit",
+              command: notCommandProjection(),
+            },
           });
           events.push({ type: "operation.finished", operationId: callId, kind: "tool", output: change as JsonValue, status: "completed" });
         });

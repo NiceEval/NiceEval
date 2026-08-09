@@ -8,6 +8,7 @@
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { normalizeToolName as normalizeShared } from "../tool-names.ts";
+import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 
 // ───────────────────────── 工具名归一 ─────────────────────────
 
@@ -259,7 +260,16 @@ export function parseClaudeCodeTranscript(raw: string | undefined): ParsedTransc
             events.push({
               type: "operation.started",
               operationId: callId,
-              operation: { kind: "tool", name, input, tool: normalizeToolName(name) },
+              operation: {
+                kind: "tool",
+                name,
+                input,
+                tool: normalizeToolName(name),
+                // Claude transcript only carries Bash source text, never direct argv.
+                command: name.toLowerCase() === "bash"
+                  ? opaqueCommandProjection("unsupported-protocol")
+                  : notCommandProjection(),
+              },
             });
           }
         }

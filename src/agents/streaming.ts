@@ -14,6 +14,7 @@
 
 import type { AgentContext, InputRequest, JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
 import type { SseFrameCursor } from "./sdk-streams.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 // ───────────────────────── driveFrameStream:通用逐帧驱动循环 ─────────────────────────
 
@@ -65,7 +66,13 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
     const verdict = onFrame?.(frame, derived, ctx);
     if (verdict && "pause" in verdict) {
       events.push({ type: "input.requested", request: verdict.pause });
-      return { status: "waiting", events, usage: reducer.usage };
+      const evidenceCoverage = unclassifiedToolActionsCoverage(events);
+      return {
+        status: "waiting",
+        events,
+        usage: reducer.usage,
+        ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+      };
     }
     if (verdict && "fail" in verdict) {
       transportFailed = true;
@@ -73,7 +80,13 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
     }
   }
 
-  return { status: transportFailed || reducer.failed ? "failed" : "completed", events, usage: reducer.usage };
+  const evidenceCoverage = unclassifiedToolActionsCoverage(events);
+  return {
+    status: transportFailed || reducer.failed ? "failed" : "completed",
+    events,
+    usage: reducer.usage,
+    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+  };
 }
 
 // 会话续接与 HITL 停轮现场不再是这里的可选「拼装件」。adapter 定义

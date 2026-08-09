@@ -8,6 +8,7 @@ import {
   skillDiscoveryInstruction,
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
+import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import {
   parseOpenCodeTranscript,
@@ -16,7 +17,7 @@ import {
 } from "../o11y/parsers/opencode.ts";
 import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
+import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
@@ -177,6 +178,23 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
 
       const events: StreamEvent[] = [...parsed.events];
       const hasErrorEvent = events.some((e) => e.type === "error");
+      let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+      if (!raw?.trim()) {
+        const reason = "OpenCode transcript/export was unavailable; tool trajectory was not observed.";
+        turnEvidenceCoverage = {
+          events: { status: "unavailable", reason },
+          actions: { status: "unavailable", reason },
+          usage: { status: "unavailable", reason },
+        };
+      } else if (!parsed.parseSuccess) {
+        const reason = "Some OpenCode transcript lines could not be parsed.";
+        turnEvidenceCoverage = {
+          events: { status: "partial", reason },
+          actions: { status: "partial", reason },
+        };
+      } else {
+        turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+      }
       if (res.exitCode !== 0) {
         throw makeSendFailure({
           acceptance: sendAcceptanceFromEvents(events),
@@ -190,6 +208,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         events,
         usage: parsed.usage,
         status: hasErrorEvent ? "failed" : "completed",
+        ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
       };
     },
   });
