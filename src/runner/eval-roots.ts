@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import * as nodeModule from "node:module";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import { parse as parseYaml } from "yaml";
 import type {
   Config,

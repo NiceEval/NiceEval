@@ -186,6 +186,7 @@
     "docs:links": "cd docs-site && npx --yes mint@latest broken-links --check-anchors --check-redirects"
   },
   "dependencies": {
+    "@typescript/typescript6": "^6.0.2",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "autoevals": "0.0.132",
@@ -199,7 +200,6 @@
     "remark-parse": "^11.0.0",
     "tar-stream": "^3.1.7",
     "tsx": "^4.19.2",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

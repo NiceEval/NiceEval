@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const ts = require("typescript");
+const ts = require("@typescript/typescript6");
 const esbuild = require("esbuild");
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
