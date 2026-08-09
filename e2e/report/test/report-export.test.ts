@@ -5,13 +5,14 @@ import { command, withProjectCopy } from "@niceeval/testkit";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportProjectCopy, retainEvidence } from "./support.ts";
+import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 test("view --out 为本轮 report evidence 导出可读静态站", async () => {
-  await withProjectCopy(reportProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    reportProjectCopy,
+    async ({ root }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
 
@@ -34,8 +35,7 @@ test("view --out 为本轮 report evidence 导出可读静态站", async () => {
       expect(index).toContain("Report fixture");
       expect(index).toContain("tool-call");
       expect(index).toContain("deliberate-fail");
-    } finally {
-      await retainEvidence(root, "export", ["site-export"]);
-    }
-  });
+    },
+    reportArtifactStaging("export", ["site-export"]),
+  );
 });

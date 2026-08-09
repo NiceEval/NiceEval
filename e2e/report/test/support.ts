@@ -1,6 +1,6 @@
-import { cp, mkdir, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import type { ProjectCopyStagingOptions } from "@niceeval/testkit";
+import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 /**
  * 每个 owner 自己在这个副本内写入 `.niceeval`；这里仅声明副本生命周期和
@@ -13,28 +13,72 @@ export const reportProjectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-/**
- * withProjectCopy 会清理运行副本；在它清理前把本轮 `.niceeval` 复制到场景的
- * artifact staging 目录。它只用于失败诊断，绝不作为下一 case 的输入。
- */
-export async function retainEvidence(
-  root: string,
+type ProcessWithLocalInvocation = NodeJS.Process & {
+  __niceevalE2eLocalArtifactInvocationId?: string;
+};
+
+const processWithLocalInvocation = process as ProcessWithLocalInvocation;
+const localInvocationId = processWithLocalInvocation.__niceevalE2eLocalArtifactInvocationId ??=
+  `local-${process.pid}-${randomUUID()}`;
+
+function assertSafePathSegment(value: string, label: string): string {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
+  ) {
+    throw new Error(`${label} must be one safe path segment`);
+  }
+  return value;
+}
+
+function assertCanonicalRelativeDirectory(value: string): string {
+  if (value.length === 0 || isAbsolute(value) || value.includes("\\") || value.includes("\0")) {
+    throw new Error("artifact extra directory must be a canonical relative path");
+  }
+  const canonical = normalize(value);
+  if (
+    canonical !== value ||
+    canonical === "." ||
+    canonical === ".." ||
+    canonical.startsWith(`..${sep}`) ||
+    isAbsolute(canonical)
+  ) {
+    throw new Error("artifact extra directory must stay within the case namespace");
+  }
+  return canonical;
+}
+
+function invocationIdForArtifactNamespace(): string {
+  const injected = process.env.NICEEVAL_E2E_INVOCATION_ID;
+  if (injected === undefined || injected.length === 0) return localInvocationId;
+  return assertSafePathSegment(injected, "NICEEVAL_E2E_INVOCATION_ID");
+}
+
+const invocationId = invocationIdForArtifactNamespace();
+
+export function reportArtifactStaging(
   caseName: string,
   extraDirectories: readonly string[] = [],
-): Promise<void> {
-  const destination = join(process.cwd(), "evidence", caseName);
-  await rm(destination, { recursive: true, force: true });
-  await mkdir(destination, { recursive: true });
-
-  const recordRoot = join(root, ".niceeval");
-  if (existsSync(recordRoot)) {
-    await cp(recordRoot, join(destination, ".niceeval"), { recursive: true });
-  }
-
-  for (const directory of extraDirectories) {
-    const source = join(root, directory);
-    if (existsSync(source)) {
-      await cp(source, join(destination, directory), { recursive: true });
-    }
-  }
+): ProjectCopyStagingOptions {
+  const safeCaseName = assertSafePathSegment(caseName, "artifact caseName");
+  const safeExtraDirectories = extraDirectories.map(assertCanonicalRelativeDirectory);
+  const namespace = join("evidence", invocationId, safeCaseName);
+  return {
+    stageArtifacts: {
+      destinationRoot: process.cwd(),
+      entries: [
+        {
+          source: ".niceeval",
+          target: join(namespace, ".niceeval"),
+          optional: true,
+        },
+        ...safeExtraDirectories.map((directory) => ({
+          source: directory,
+          target: join(namespace, directory),
+          optional: true,
+        })),
+      ],
+      collision: "error",
+    },
+  };
 }

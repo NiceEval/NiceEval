@@ -8,6 +8,7 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { stageArtifacts, type ArtifactStageEntry } from "./artifact-staging.js";
 
 export type ProjectLink = {
   from: string;
@@ -20,6 +21,14 @@ export type ProjectCopyOptions = {
   prefix: string;
   omitTopLevel?: readonly string[];
   links?: readonly ProjectLink[];
+};
+
+export type ProjectCopyStagingOptions = {
+  stageArtifacts: {
+    destinationRoot: string;
+    entries: readonly ArtifactStageEntry[];
+    collision: "error";
+  };
 };
 
 function assertLinkInsideRoot(root: string, to: string): string {
@@ -87,12 +96,17 @@ async function materializeCopy(options: ProjectCopyOptions): Promise<string> {
 export async function withProjectCopy<T>(
   options: ProjectCopyOptions,
   body: (project: { root: string }) => Promise<T>,
+  staging?: ProjectCopyStagingOptions,
 ): Promise<T> {
   const root = await materializeCopy(options);
 
   let bodyError: unknown;
   let result!: T;
   let bodyFailed = false;
+  let stagingError: unknown;
+  let stagingFailed = false;
+  let cleanupError: unknown;
+  let cleanupFailed = false;
 
   try {
     result = await body({ root });
@@ -102,18 +116,36 @@ export async function withProjectCopy<T>(
   }
 
   try {
-    await removeCopy(root);
-  } catch (cleanupError) {
-    if (bodyFailed) {
-      throw new AggregateError([bodyError, cleanupError], "body and cleanup failed", {
-        cause: bodyError,
+    if (staging !== undefined) {
+      await stageArtifacts({
+        sourceRoot: root,
+        destinationRoot: staging.stageArtifacts.destinationRoot,
+        entries: staging.stageArtifacts.entries,
+        collision: staging.stageArtifacts.collision,
       });
     }
-    throw cleanupError;
+  } catch (error) {
+    stagingFailed = true;
+    stagingError = error;
   }
 
-  if (bodyFailed) {
-    throw bodyError;
+  try {
+    await removeCopy(root);
+  } catch (error) {
+    cleanupFailed = true;
+    cleanupError = error;
   }
+
+  const errors: unknown[] = [];
+  if (bodyFailed) errors.push(bodyError);
+  if (stagingFailed) errors.push(stagingError);
+  if (cleanupFailed) errors.push(cleanupError);
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "project copy body, artifact staging, and cleanup failed", {
+      cause: bodyFailed ? bodyError : errors[0],
+    });
+  }
+
   return result;
 }

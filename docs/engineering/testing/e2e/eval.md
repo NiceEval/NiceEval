@@ -13,7 +13,11 @@
 | Owner ID | 用户结果 | 形态 | 目标文件 | Lane |
 | --- | --- | --- | --- | --- |
 | [`#eval-context`](#eval-context) | 多轮、session 与作用域 Context 只看到各自应有的真实事件和 usage | 单边界 E2E | `e2e/eval/test/context.test.ts` | PR |
-| [`#eval-assertion-contract`](#eval-assertion-contract) | 公开 Assertion、句柄与计分 API 在真实 evidence 上产生正确 assertion 与 verdict | 单边界 E2E | `e2e/eval/test/assertions.test.ts` | PR |
+| [`#eval-assertion-values`](#eval-assertion-values) | 值 matcher 与通过制 handle modifiers 在真实 evidence 上给出 passed verdict | 单边界 E2E | `e2e/eval/test/assertion-values.test.ts` | PR |
+| [`#eval-assertion-scopes`](#eval-assertion-scopes) | turn、session 与 attempt scope 在真实工具事件上完成断言 | 单边界 E2E | `e2e/eval/test/assertion-scopes.test.ts` | PR |
+| [`#eval-assertion-score`](#eval-assertion-score) | 计分制 handle modifiers 与直接给分写入公开 Record | 单边界 E2E | `e2e/eval/test/assertion-score.test.ts` | PR |
+| [`#eval-assertion-sandbox`](#eval-assertion-sandbox) | Sandbox 文件与 shell evidence 由公开 assertion 与 Record 判定 | 单边界 E2E | `e2e/eval/test/assertion-sandbox.test.ts` | PR |
+| [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 optional assertion 保留 unavailable | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 
 ## eval-context
 
@@ -23,14 +27,29 @@ Repo 内的 Eval 使用主 session、`newSession()` 与多轮 `send()` 产生可
 
 这组测试以 [Context](../../../feature/eval/library/context.md) 的公开行为为 expected，不根据 `src/` 类型或内部事件 reducer 生成答案。
 
-## eval-assertion-contract
+## eval-assertion-values
 
-公开 Assertion 契约只在本 Repo 完整展开一次，包括值 matcher、turn / session / `t` scope、Sandbox assertion、Judge 的可用与
-unavailable 分支、`check` / `require`、句柄修饰以及计分制。不同 evidence 类型可以拆成多条 Eval；“一个 Experiment 跑完”不要求
-“一个 Eval 写完全部契约”，也不要求每个 Adapter 重跑同一套方法清单。
+值 matcher 与通过制 handle modifiers 在本轮确定性回复上折叠为 `passed`。公开 `show --json` 和 Record 都必须读到该结果与
+值 assertion 的 marker。
 
-Eval 内的断言负责判分；原生测试负责核对 discovery 没漏、预期 Eval 实际运行、进程退出与公开读回中的 assertion / verdict。
-正向证据必须来自真实 Direct Agent 或 Sandbox 行为，不能在测试侧手写标准事件来让 matcher 自证。
+## eval-assertion-scopes
+
+turn、session 与 attempt scope 必须以同一批真实工具事件完成断言；公开 execution readback 同时保留主支工具身份。
+
+## eval-assertion-score
+
+计分制 handle modifiers 与直接给分在公开 Record 中写成 points verdict 和具名 score entry。
+
+## eval-assertion-sandbox
+
+Sandbox 的真实文件与 shell evidence 由公开 assertion 和 Record 判定；readback 包含 agent 写入的 diff marker。
+
+## eval-assertion-judge-unavailable
+
+未配置 Judge 时，optional assertion 保留 `unavailable` 并报告 model unresolved；该场景不发起付费模型调用。
+
+每条 Eval 内的 assertion 负责判分；对应原生测试只核对 discovery 没漏、预期 Eval 实际运行、进程退出与公开读回中的 assertion /
+verdict。正向证据来自真实 Direct Agent 或 Sandbox 行为，测试不手写标准事件来让 matcher 自证。
 
 ## 边界
 

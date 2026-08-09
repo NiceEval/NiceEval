@@ -8,7 +8,7 @@ import { command, pollUntil, waitForOutput, withProcess, withProjectCopy } from 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { reportProjectCopy, retainEvidence } from "./support.ts";
+import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 const FIXTURE_COPY_TEXT = "niceeval report fixture copy text";
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
@@ -17,8 +17,9 @@ const niceeval = command([binary]);
 test("custom report Journey：本轮导出后在真实 view server 中导航证据", async ({ page }) => {
   test.setTimeout(120_000);
 
-  await withProjectCopy(reportProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    reportProjectCopy,
+    async ({ root }) => {
       const liveComponentPath = join(root, "reports", "site-copy-block.tsx");
       const liveComponent = await readFile(liveComponentPath, "utf8");
       expect(liveComponent).toContain("Fixture copy block");
@@ -142,8 +143,7 @@ test("custom report Journey：本轮导出后在真实 view server 中导航证�
           ).toBe("kept");
         },
       );
-    } finally {
-      await retainEvidence(root, "browser", ["site-export"]);
-    }
-  });
+    },
+    reportArtifactStaging("browser", ["site-export"]),
+  );
 });

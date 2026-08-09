@@ -4,7 +4,7 @@
 但不替测试决定用户做什么、什么结果算正确。
 
 Testkit 不维护独立 Unit 套件。CLI、Runner、Report、Record、Package 与 Lifecycle 场景通过安装后的 Testkit 入口实际调用
-进程、文件系统、HTTP 与资源生命周期原语；同一原语不再配一套 fixture 自测。类型与构建错误由 `typecheck` 和 clean build 阻断，
+进程、文件系统、artifact staging 与资源生命周期原语；同一原语不再配一套 fixture 自测。类型与构建错误由 `typecheck` 和 clean build 阻断，
 运行错误由最先使用它的真实场景收据或资源终态阻断。
 
 Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后，把 `packages/testkit` 作为本地目录依赖只注入场景的隔离副本；
@@ -32,11 +32,11 @@ Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容
 | 命令执行、完整 ProcessReceipt、严格 JSON / NDJSON | Testkit |
 | 长驻进程、readiness、timeout 与资源终结 | Testkit 的窄接口 |
 | 临时目录与带显式策略的项目副本 | Testkit |
-| HTTP listener 生命周期 | Testkit；path、status、body 与错误阶段留在 Repo |
+| 显式 source / destination 的 artifact staging | Testkit |
 | Browser、context、trace 与 screenshot | Playwright Test |
 | stdin / PTY 的产品语义 | 对应 CLI Repo，形成跨 Repo 稳定机械协议前不上移 |
 
-Testkit 只接收稳定机械协议。页面动作、HTTP 响应策略、项目排除策略与领域 expected 始终留在 owner 文件。
+Testkit 只接收稳定机械协议。页面动作、项目排除策略与领域 expected 始终留在 owner 文件。
 
 ## API 形状
 
@@ -166,9 +166,31 @@ export function pollUntil<T>(
 ready 条件由 Repo 提供。
 `withTempDir` 在系统临时目录下为每次调用创建唯一路径，并在正文成功或失败后删除。它用于短命 fixture 收据，不用于要收集的结果根、JUnit 或 trace。
 
-### 隔离目录与本地 HTTP
+### 隔离目录与 artifact staging
 
 ```ts
+export type ArtifactStageEntry = {
+  source: string;
+  target: string;
+  optional?: boolean;
+};
+
+export type StageArtifactsReceipt = {
+  copied: readonly Array<{ source: string; target: string }>;
+  skipped: readonly Array<{
+    source: string;
+    target: string;
+    reason: "optional-source-missing";
+  }>;
+};
+
+export function stageArtifacts(options: {
+  sourceRoot: string;
+  destinationRoot: string;
+  entries: readonly ArtifactStageEntry[];
+  collision: "error";
+}): Promise<StageArtifactsReceipt>;
+
 export function withProjectCopy<T>(
   options: {
     from: string;
@@ -181,20 +203,44 @@ export function withProjectCopy<T>(
     }[];
   },
   body: (project: { root: string }) => Promise<T>,
-): Promise<T>;
-
-export function withHttpServer<T>(
-  handler: (request: Request) => Response | Promise<Response>,
-  body: (server: { readonly url: string }) => Promise<T>,
-  options?: { hostname?: string; port?: number },
+  staging?: {
+    stageArtifacts: {
+      destinationRoot: string;
+      entries: readonly ArtifactStageEntry[];
+      collision: "error";
+    };
+  },
 ): Promise<T>;
 ```
 
 `withProjectCopy` 默认只执行逐字节复制，不猜 package manager 或 NiceEval 目录。`omitTopLevel` 只匹配起始目录的第一层名称；
 `links[].to` 必须是副本内的相对路径，不能越出临时根。成功、正文失败和链接失败都会删除整个副本。
 
-`withHttpServer` 默认监听 `127.0.0.1:0`，把实际 origin 作为 `url` 交给正文。handler 决定 path、status、header、body 与延迟；
-正文结束后 Testkit 关闭 listener，并在端口仍被占用时让测试失败。它不是 NiceEval provider mock。
+`stageArtifacts()` 是纯机械的、显式根目录之间的复制原语。
+
+- `sourceRoot` 和 `destinationRoot` 都是绝对目录，且不得相同或互为祖先/后代。重叠判断以 `realpath` 取得的物理目录为准，祖先路径的 symlink 不能绕过它。这样 source entry 不会吸入 destination 内的私有 staging 目录。
+- 每个 `source` / `target` 都是非空相对路径，并分别在自己的 root 内完成 containment 检查。
+- `collision` 只允许 `"error"`。任何 target 都会在复制前检查重复、父子重叠与已存在状态；Testkit 不会删除或改写已有 target。
+- source 本身或递归后代有 symlink 时失败。destination root 到 target parent 的已有链含 symlink 时同样失败。
+- 缺失 source 默认失败；只有显式 `optional: true` 才写入 `skipped` receipt。
+
+所有 source 先复制到 `destinationRoot` 内私有临时目录，再提交原来不存在的 target；单次 staging 失败只回滚这一调用
+新建的 inode 与空父目录，不触碰既有路径或后来替换掉该 inode 的路径。返回的 receipt 只报告声明的 `source` / `target` 和 copied / skipped 状态，
+不猜 `.niceeval`、case 名、cwd 或 artifact 布局。
+
+Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提交绝不对 target 使用 `rename`。普通文件以排他的
+`COPYFILE_EXCL` 创建；目录先以排他的 `mkdir` 取得 root target，再以不替换既有条目的方式写入 descendants。
+某个 target 在排他创建前出现时，stage 会失败而不替换该 target。
+
+目录树不是原子发布物，调用方必须独占自己的 destination namespace。其他进程并发写入同一 namespace 时，读者可能看见未完成的树；
+这种并发不属于 Testkit 可协调的资源租约。
+
+`withProjectCopy` 的第三参数只有上述声明式 `stageArtifacts` 配置。内部固定把副本 `project.root` 作为 `sourceRoot`，不接受任意 staging callback。
+
+- 正文成功或失败后都会先 stage，再 cleanup 副本。
+- 多错误按 `[bodyError, stagingError, cleanupError]` 排列。存在 body error 时它始终排第一并作为 `cause`。
+- 场景调用点自行决定 destination 布局。根 runner 注入的 `NICEEVAL_E2E_INVOCATION_ID` 必须先校验为单个安全 path segment。
+- case 名同样是单个安全 segment。Report 一类的额外目录必须是规范且受 containment 约束的相对路径，再拼进该 case namespace。
 
 核心 Unit 不为了“统一写法”默认依赖 Testkit。纯函数 fixture、fake clock、barrier 和领域 factory 继续留在 Vitest Unit；
 只有它们与第二个独立消费者形成完全相同的机械契约时，才按同一准入规则评估。
@@ -218,9 +264,9 @@ export function withHttpServer<T>(
 - Runner 与 Lifecycle 用 `only()`、`defined()` 和 `pollUntil()`核对真实结果与资源终态；
 - Report 与确定性 UI Message Stream 场景用 `withProcess()`、`waitForOutput()`和严格数据解码观察长驻进程；
 - Record 与 Lifecycle 用 `withTempDir()`证明临时资源在正文结束后消失；
-- Report 用 `withHttpServer()`启动真实 listener，并在正文结束后释放端口。
+- Eval 与 Report 在 `withProjectCopy()` 的声明式 staging 中保留本轮 artifact，供 runner 收集而不作为下一 case 的输入。
 
-这些场景已经让主要原语经过真实进程、目录、HTTP 和 cleanup。为某个边缘输入另造 Testkit fixture 仍是在第二层重复同一机械命题，
+这些场景已经让主要原语经过真实进程、目录、artifact staging 和 cleanup。为某个边缘输入另造 Testkit fixture 仍是在第二层重复同一机械命题，
 不因更易定位而获得 Unit 资格。若场景无法稳定制造某个设施故障，就按[不自动化](README.md#不自动化)处置，不建立脆弱自测。
 
 ## 构建与采用门禁

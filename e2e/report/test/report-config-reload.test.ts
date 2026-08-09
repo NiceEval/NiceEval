@@ -5,7 +5,7 @@ import { command, pollUntil, waitForOutput, withProcess, withProjectCopy } from 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportProjectCopy, retainEvidence } from "./support.ts";
+import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const niceeval = command([binary]);
@@ -33,8 +33,9 @@ async function htmlWithMarkers(url: string, ...markers: string[]): Promise<strin
 }
 
 test("view 持续重建项目模块、配置、Record，并在修复报告后恢复", async () => {
-  await withProjectCopy(reportProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    reportProjectCopy,
+    async ({ root }) => {
       const run = await niceeval.run(["exp", "main", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).not.toBe(0);
       expect(run.stdout).toContain('"event":"result"');
@@ -162,8 +163,7 @@ test("view 持续重建项目模块、配置、Record，并在修复报告后恢
           expect(recovered).not.toContain("REPORT_FIRST");
         },
       );
-    } finally {
-      await retainEvidence(root, "config-reload");
-    }
-  });
+    },
+    reportArtifactStaging("config-reload"),
+  );
 });

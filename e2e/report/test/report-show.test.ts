@@ -5,7 +5,7 @@ import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportProjectCopy, retainEvidence } from "./support.ts";
+import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -29,8 +29,9 @@ interface ShowDocument {
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 test("show --json 读回本轮完整运行的三态 sample", async () => {
-  await withProjectCopy(reportProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    reportProjectCopy,
+    async ({ root }) => {
       await mkdir(join(root, "junit"), { recursive: true });
       const run = await niceeval.run(
         ["exp", "main", "--rerun", "all", "--json", "--junit", "junit/main.xml"],
@@ -105,8 +106,7 @@ test("show --json 读回本轮完整运行的三态 sample", async () => {
       );
       expect(custom.exitCode, custom.diagnostic()).toBe(0);
       expect(custom.stdout).toContain("tool-call");
-    } finally {
-      await retainEvidence(root, "show", ["junit"]);
-    }
-  });
+    },
+    reportArtifactStaging("show", ["junit"]),
+  );
 });

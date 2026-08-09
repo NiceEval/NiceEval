@@ -3,4 +3,4 @@ export * from "./process-lifecycle.js";
 export * from "./primitives.js";
 export * from "./temp.js";
 export * from "./project-copy.js";
-export * from "./http-server.js";
+export * from "./artifact-staging.js";

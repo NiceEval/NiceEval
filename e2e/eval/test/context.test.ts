@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { openRecord, resolveLocator } from "niceeval/record";
 import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { evalProjectCopy, retainEvidence } from "./support.ts";
+import { evalArtifactStaging, evalProjectCopy } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -25,8 +25,9 @@ interface ShowDocument {
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 test("多轮和 newSession 的 Context 只在各自公开 scope 读取真实事件、usage 与输出", async () => {
-  await withProjectCopy(evalProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    evalProjectCopy,
+    async ({ root }) => {
       const run = await niceeval.run(["exp", "context", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const result = only(run.ndjson<ExpEvent>(), (event) => event.event === "result", run.diagnostic());
@@ -54,8 +55,7 @@ test("多轮和 newSession 的 Context 只在各自公开 scope 读取真实事�
       expect(attempt.result.usage).toMatchObject({ inputTokens: 6, outputTokens: 9, costUSD: 0 });
       const events = await attempt.events();
       expect(events?.filter((event) => event.type === "message" && event.role === "assistant")).toHaveLength(3);
-    } finally {
-      await retainEvidence(root, "context");
-    }
-  });
+    },
+    evalArtifactStaging("context"),
+  );
 });

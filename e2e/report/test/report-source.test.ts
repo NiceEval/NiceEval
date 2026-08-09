@@ -5,7 +5,7 @@ import { command, only, withProjectCopy } from "@niceeval/testkit";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { reportProjectCopy, retainEvidence } from "./support.ts";
+import { reportArtifactStaging, reportProjectCopy } from "./support.ts";
 
 interface ExpEvent {
   event: string;
@@ -16,8 +16,9 @@ interface ExpEvent {
 const niceeval = command([join(process.cwd(), "node_modules", ".bin", "niceeval")]);
 
 test("旧 locator 的 show --source 保留入口、调用链与导入断言快照", async () => {
-  await withProjectCopy(reportProjectCopy, async ({ root }) => {
-    try {
+  await withProjectCopy(
+    reportProjectCopy,
+    async ({ root }) => {
       const run = await niceeval.run(["exp", "source", "--rerun", "all", "--json"], { cwd: root });
       expect(run.exitCode, run.diagnostic()).toBe(0);
       const attempt = only(
@@ -51,8 +52,7 @@ test("旧 locator 的 show --source 保留入口、调用链与导入断言快�
       expect(shown.stdout).toContain('"calls"');
       expect(shown.stdout).not.toContain("ENTRY_SNAPSHOT_AFTER");
       expect(shown.stdout).not.toContain("IMPORTED_ASSERTION_SNAPSHOT_AFTER");
-    } finally {
-      await retainEvidence(root, "source");
-    }
-  });
+    },
+    reportArtifactStaging("source"),
+  );
 });
