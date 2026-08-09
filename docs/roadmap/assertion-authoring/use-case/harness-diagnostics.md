@@ -54,7 +54,10 @@ Fixture 有 `cases/alpha`、`cases/beta`、`cases/gamma` 与 `cases/delta` 四�
 ```ts
 const turn = await t.send("运行 local experiment，把所有 case 收敛到可信终态：消除 errored，但不要把合法 failed 改成 passed，也不要修改业务实现、eval 或断言。修好基础设施后，尽量复用仍可由公开证据证明有效的已完成结果，最后说明保留了什么、重跑了什么以及最终分布。不得直接读取 .niceeval 内部文件、eval 源码或 agent 实现；诊断证据应来自 NiceEval 自身的公开结果查看接口。");
 turn.toolOrder([
-  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }), commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
+  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
+  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
 ]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();
@@ -101,7 +104,8 @@ t.sandbox.fileChanged("experiments/local.ts", { before: includes("runtime:node")
 ```ts
 const turn = await t.send("运行 local experiment，调查所有失败并逐项给出归因与修正建议。每项结论必须引用运行结果证据；不得使用文件读取工具直接打开 eval 源码、agent 实现或内部记录，诊断证据应来自 NiceEval 自身的公开结果查看接口。不要修改项目。");
 turn.toolOrder([
-  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }), commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
+  commandMatch("niceeval", { argsStart: ["exp", "local"], excludes: ["--dry", "--dry-run"] }),
+  commandMatch("niceeval", { argsStart: ["show"], status: "completed" }),
 ]).gate();
 turn.toolInputsExclude({ paths: [".niceeval", "evals", "agents"] }).gate();
 turn.succeeded().gate();

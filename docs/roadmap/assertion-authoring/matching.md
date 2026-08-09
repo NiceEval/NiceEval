@@ -100,6 +100,12 @@ turn.notCalledTool(toolMatch("shell", { input: matches(ForbiddenInputSchema) }))
 turn.calledTool(and(commandMatch("niceeval", { argsStart: ["show"] }), toolMatch("shell", { status: "completed" }))).gate();
 ```
 
+`notCalledTool(match)` 的逻辑是“scope 内不存在满足 match 的 occurrence”。因此：
+
+- 禁止 A 或 B 任一工具出现，写 `notCalledTool(or(toolMatch("A"), toolMatch("B")))`；
+- 只禁止同一笔 occurrence 同时满足 A 与 B，写 `notCalledTool(and(A, B))`；
+- `notCalledTool(and(A, B))` 不会禁止只满足 A 或只满足 B 的 occurrence。
+
 `toolOrder()` 用单调 cursor 消费不同 occurrence，只证明 request subsequence；它不证明前一项 finish-before-start，也不建立因果关系。
 
 `calledTool(..., { count })` 是 exact count，必须是正 safe integer；零次使用 `notCalledTool()`。tool count 按 distinct occurrence identity，`toolOrder()` 按 occurrence start position 匹配有序子序列，每项消费不同 occurrence。partial / opaque 证据继续分别计算 definite path 与 possible path，不能把缺证据折成 failed。
