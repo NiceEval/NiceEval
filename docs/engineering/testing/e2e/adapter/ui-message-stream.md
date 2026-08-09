@@ -1,5 +1,7 @@
 # UI Message Stream 确定性协议 E2E
 
+## adapter-local-protocol
+
 Repo ID 是 `adapter/local-protocol`；manifest 声明 `areas: ["adapter"]`、PR 与 live lanes，host 执行、无外部网络、无密钥。
 这个 Repo 不是独立官方 Adapter，被测公开入口是 `uiMessageStreamAgent()`。
 

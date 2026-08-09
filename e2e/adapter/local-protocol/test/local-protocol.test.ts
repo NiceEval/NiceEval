@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/README.md
+// owner: docs/engineering/testing/e2e/adapter/ui-message-stream.md#adapter-local-protocol
 //
 // 重跑：
 //   pnpm e2e --repo adapter/local-protocol

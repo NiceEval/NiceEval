@@ -1,5 +1,7 @@
 # bub 仓库
 
+## adapter-bub-live-compatibility
+
 Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker、Python 与 external network。
 被测对象是 `bubAgent()` 在 Docker Sandbox 里的完整生命周期：安装（含 `pythonPlugins`）、真实 coding 任务、tape JSONL 行为轨与会话（契约见 [Bub 契约页](../../../../feature/adapters/sdk/bub/README.md)）。
 

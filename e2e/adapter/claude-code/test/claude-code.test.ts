@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/claude-code.md
+// owner: docs/engineering/testing/e2e/adapter/claude-code.md#adapter-claude-code-live-compatibility
 //
 // 单文件 Journey：真实 Claude Code + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 OTel 记录。

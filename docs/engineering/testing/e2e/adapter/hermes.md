@@ -1,5 +1,7 @@
 # hermes 仓库
 
+## adapter-hermes-live-compatibility
+
 Repo ID 是 `adapter/hermes`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `hermesAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [Hermes 契约页](../../../../feature/adapters/sdk/hermes/README.md)）。
 

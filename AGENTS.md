@@ -70,7 +70,7 @@
 - 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
 - PR 标题与正文使用用户当前提问的语言；用户切换语言时跟随最新一条提问。commit message 仍使用英语。PR 标题描述用户可见的最终能力或行为，不拿 registry、protocol、storage model 等内部机制代替 feature 名。
 - 创建或更新 PR 前先读 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)，并以它作为 PR 标题与正文写法的唯一入口。保留模板中的全部分类；未变化的分类写 `None`，每个变化条目都按模板给出 before/after example 与 user impact。
-- 自动化产品测试处于重置期：不得新增或恢复 `src/**/*.test.*`、`test/unit/**` 或 `e2e/**`；改动以 typecheck、文档 lint 与本次 AI 真实验收交接。
+- 自动化产品测试处于重置期：不得新增或恢复 `src/**/*.test.*`、`test/unit/**` 或 `e2e/**`；但允许重建 harness / Testkit 与修复既有 E2E owner。新增 owner 仍须先满足 testing 契约；owner 在可靠性接管门收据完成前不得宣称成熟或完成接管，当前 suite 不得宣称已成熟。改动以 typecheck、文档 lint 与本次 AI 真实验收交接。
 - 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。
 - 不使用 `git reset --hard`、`git clean`、`git checkout -- <path>`、`git restore` 丢弃工作，除非用户明确要求。

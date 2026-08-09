@@ -3,6 +3,10 @@
 本域只拥有明确公开的 `niceeval/record` API 与 [Record Format](../../../feature/record/architecture.md)。
 它由 `e2e/record/` 功能 Repo 承担；manifest 的 `areas` 包含 `record`，并进入无密钥 PR lane。
 
+## record-public-api-roundtrip
+
+此 owner 通过候选 tarball 的公开 writer 与 reader 完成一轮写入和读回；边界与验收命题如下。
+
 ## 公开边界
 
 - 从候选 tarball 的公开 `niceeval/record` export 进入，不 import 根 `src/` 或内部子路径；

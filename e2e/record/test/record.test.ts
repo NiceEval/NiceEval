@@ -1,4 +1,4 @@
-// feature: docs/feature/record/library.md
+// owner: docs/engineering/testing/e2e/record.md#record-public-api-roundtrip
 //
 // 只从候选包公开 niceeval/record export 写入并读回；测试不读取或拼接 Record
 // 私有文件布局，expected 是公开格式契约中的字面事实。

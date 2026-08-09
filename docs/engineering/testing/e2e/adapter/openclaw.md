@@ -1,5 +1,7 @@
 # openclaw 仓库
 
+## adapter-openclaw-live-compatibility
+
 Repo ID 是 `adapter/openclaw`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `openClawAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [OpenClaw 契约页](../../../../feature/adapters/sdk/openclaw/README.md)）。
 

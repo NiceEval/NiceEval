@@ -1,5 +1,7 @@
 # codex-cli 仓库
 
+## adapter-codex-cli-live-compatibility
+
 Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]`、live lanes、Docker 与 external network。
 被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、`codex exec --json` 行为轨与续轮（契约见[Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
 

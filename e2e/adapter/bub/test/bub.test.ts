@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/bub.md
+// owner: docs/engineering/testing/e2e/adapter/bub.md#adapter-bub-live-compatibility
 //
 // 单文件 Journey：真实 bubAgent + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。

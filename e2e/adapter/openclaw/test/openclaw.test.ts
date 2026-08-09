@@ -1,4 +1,4 @@
-// owner: docs/engineering/testing/e2e/adapter/openclaw.md
+// owner: docs/engineering/testing/e2e/adapter/openclaw.md#adapter-openclaw-live-compatibility
 //
 // 单文件 Journey：真实 OpenClaw CLI + Docker Sandbox + live provider，
 // 再从公开 CLI 读回 Eval、attempt、execution 与 timing。

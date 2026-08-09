@@ -1,4 +1,4 @@
-// feature: docs/engineering/testing/e2e/adapter/ai-sdk.md
+// owner: docs/engineering/testing/e2e/adapter/ai-sdk.md#adapter-ai-sdk-live-compatibility
 //
 // 单文件 Journey：启动真实 AI SDK HTTP 应用，运行安装后的 niceeval candidate，
 // 再从公开 CLI 读回 Experiment、attempt、execution 与 timing。测试不导入候选
