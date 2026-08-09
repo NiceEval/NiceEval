@@ -1,0 +1,4 @@
+# 这个 leaf 是独立消费项目，不能被 NiceEval 根 workspace 吸收。
+packages: []
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,5 @@
+node_modules/
+.niceeval/
+logs/
+junit.xml
+junit-*.xml

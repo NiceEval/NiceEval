@@ -35,3 +35,10 @@ niceeval: errored ... eval=hitl ... reason="POST /api/chat/resume 失败: 404 {\
 "通知客户端已经在等待"这两件事拆成两步做的场景)都要检查这个顺序——`await`/线程阻塞点必须放在
 "客户端已经不可能抢先"的地方之后,不能放在"通知客户端"之后才登记。落点：
 `e2e/adapter/langgraph/src/backend/server.py` 的 `_register_pending` + `_stream_chat` 主循环。
+
+## 2026-08-09 后续契约
+
+该自建 Python SSE bridge 已不再充当公开 converter 的 provenance。当前确定性
+owner 直接消费真实 `StateGraph.streamEvents({version: "v3"})`，并把官方
+`@langchain/protocol` typed Event 的 HITL 语义作为独立证据。登记先于通知仍是
+通用服务端原则，但此条不再证明 LangGraph converter 的输入 shape。

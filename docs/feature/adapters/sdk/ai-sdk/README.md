@@ -10,6 +10,12 @@ AI SDK 应用按被测边界接入：应用部署为 HTTP 服务时用 `uiMessag
 
 `uiMessageStreamAgent` 管理 SSE reducer、全量历史重发和 tool approval 改写重发，适用于 AI SDK `useChat` 后端。
 
+`approval-requested` 表示模型已经宣布一条逻辑工具调用，但副作用尚未执行。
+因此等待审批的 Turn 先公开一次 `operation.started`，随后公开
+`input.requested`，不公开 `operation.finished`。批准后的 resume 只补同一 call
+ID 的 completed/output；拒绝只补 rejected 且没有 output。重发历史不得重复
+start，同一会话的新 user send 则重置本条消息的增量簿记。
+
 `turnFromAiSdk` 从 step content、tool call ID、tool result、approval part 与聚合 usage 构造 `Turn`。
 它兼容 AI SDK 多代字段名，但不负责 transport——请求怎么发、fetch 到哪个 endpoint 仍由调用方的 `defineAgent` 写。
 

@@ -36,7 +36,10 @@ export const responsesEvidenceCoverage: EvidenceCoverage = Object.freeze({
     status: "partial",
     reason: "Unknown Responses output item types are intentionally skipped by the protocol-neutral converter.",
   }),
-  actions: COMPLETE,
+  actions: Object.freeze({
+    status: "partial",
+    reason: "Unknown Responses output item types are intentionally skipped by the protocol-neutral converter.",
+  }),
   messages: COMPLETE,
   usage: COMPLETE,
   status: SYNTHETIC_STATUS,
@@ -52,7 +55,7 @@ function turnCoverage(events: readonly StreamEvent[], usage: Usage | undefined):
   };
 }
 
-/** tool_calls / function_call 的 `arguments` 恒为 JSON 字符串;解析失败(极少见)原样退回字符串,不吞异常。 */
+/** function tool `arguments` 是 JSON 字符串;解析失败时原样保留,不吞输入。 */
 function parseArgs(raw: string | undefined): JsonValue {
   if (!raw) return {};
   try {
@@ -64,15 +67,33 @@ function parseArgs(raw: string | undefined): JsonValue {
 
 // ───────────────────────── Chat Completions ─────────────────────────
 
-export interface ChatCompletionToolCallLike {
+export interface ChatCompletionFunctionToolCallLike {
   id: string;
+  type: "function";
   function: { name: string; arguments: string };
 }
+
+export interface ChatCompletionCustomToolCallLike {
+  id: string;
+  type: "custom";
+  custom: { name: string; input: string };
+}
+
+/** Extensible fallback; unknown future tool-call variants are ignored. */
+export interface ChatCompletionUnknownToolCallLike {
+  id?: string;
+  type: string;
+}
+
+export type ChatCompletionToolCallLike =
+  | ChatCompletionFunctionToolCallLike
+  | ChatCompletionCustomToolCallLike
+  | ChatCompletionUnknownToolCallLike;
 
 export interface ChatCompletionMessageLike {
   role?: string;
   content?: string | null;
-  tool_calls?: ChatCompletionToolCallLike[];
+  tool_calls?: readonly ChatCompletionToolCallLike[];
 }
 
 export interface ChatCompletionUsageLike {
@@ -110,11 +131,19 @@ export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   const message = res.choices[0]?.message;
   const events: StreamEvent[] = [];
   for (const call of message?.tool_calls ?? []) {
-    events.push({
-      type: "operation.started",
-      operationId: call.id,
-      operation: { kind: "tool", name: call.function.name, input: parseArgs(call.function.arguments) },
-    });
+    if (call.type === "function" && "function" in call) {
+      events.push({
+        type: "operation.started",
+        operationId: call.id,
+        operation: { kind: "tool", name: call.function.name, input: parseArgs(call.function.arguments) },
+      });
+    } else if (call.type === "custom" && "custom" in call) {
+      events.push({
+        type: "operation.started",
+        operationId: call.id,
+        operation: { kind: "tool", name: call.custom.name, input: call.custom.input },
+      });
+    }
   }
   if (message?.content) events.push({ type: "message", role: "assistant", text: message.content });
   const usage = chatCompletionUsage(res.usage);
@@ -131,7 +160,7 @@ export interface ResponseOutputTextLike {
 
 export interface ResponseMessageItemLike {
   type: "message";
-  content?: ResponseOutputTextLike[];
+  content?: readonly unknown[];
 }
 
 export interface ResponseFunctionCallItemLike {
@@ -141,20 +170,24 @@ export interface ResponseFunctionCallItemLike {
   arguments: string;
 }
 
-/** 其余 output item 类型(reasoning、内建工具调用……)按需扩展;认不出的原样跳过。 */
-export interface ResponseOtherItemLike {
-  type: string;
-  [key: string]: unknown;
+export type ResponseOutputItemLike = ResponseMessageItemLike | ResponseFunctionCallItemLike;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export type ResponseOutputItemLike = ResponseMessageItemLike | ResponseFunctionCallItemLike | ResponseOtherItemLike;
-
-function isMessageItem(item: ResponseOutputItemLike): item is ResponseMessageItemLike {
-  return item.type === "message";
+function isMessageItem(item: unknown): item is ResponseMessageItemLike {
+  return isRecord(item) && item.type === "message";
 }
 
-function isFunctionCallItem(item: ResponseOutputItemLike): item is ResponseFunctionCallItemLike {
-  return item.type === "function_call";
+function isFunctionCallItem(item: unknown): item is ResponseFunctionCallItemLike {
+  return (
+    isRecord(item) &&
+    item.type === "function_call" &&
+    typeof item.call_id === "string" &&
+    typeof item.name === "string" &&
+    typeof item.arguments === "string"
+  );
 }
 
 export interface ResponseUsageLike {
@@ -166,7 +199,8 @@ export interface ResponseUsageLike {
 }
 
 export interface ResponseLike {
-  output: ResponseOutputItemLike[];
+  /** Full official Responses output union; recognized items are narrowed at runtime. */
+  output: readonly unknown[];
   usage?: ResponseUsageLike;
 }
 
@@ -193,7 +227,10 @@ export function turnFromResponses(res: ResponseLike): Turn {
   for (const item of res.output ?? []) {
     if (isMessageItem(item)) {
       const text = (item.content ?? [])
-        .filter((c): c is ResponseOutputTextLike => c.type === "output_text")
+        .filter(
+          (content): content is ResponseOutputTextLike =>
+            isRecord(content) && content.type === "output_text" && typeof content.text === "string",
+        )
         .map((c) => c.text)
         .join("");
       if (text) events.push({ type: "message", role: "assistant", text });

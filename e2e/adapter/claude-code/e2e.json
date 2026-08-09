@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/claude-code",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 55,
+  "harness": { "testkit": true },
+  "secrets": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"],
+  "requires": { "runtimes": ["node>=22"], "docker": true, "externalNetwork": true },
+  "paths": ["e2e/adapter/claude-code/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml"]
+}

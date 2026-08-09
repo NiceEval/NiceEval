@@ -20,7 +20,6 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 - [Agent-as-Judge](agent-as-judge/README.md) —— 用独立 Direct 或 Sandbox Agent 调查证据并执行 Judge Assertion
 - [原生 LLM Judge Runtime](llm-judge-runtime/README.md) —— 统一判分配方、规范化材料、Provider、多模态与静态判分图
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它适配器接入
-- [NiceEval 测试体系重构](testing/README.md) —— 真实场景 Repo + 原生 Result / Journey；含 Unit、E2E、本地 / Docker / CI、历史问题对账与可读 TypeScript Example
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
 - [分组 Sandbox 复用](sandbox-reuse-groups/README.md) —— Eval 侧显式列出必须共用 Sandbox 的成员，选中即生效，组外 Attempt 保持 fresh 并行
 - [Sandbox 默认停驻与回收](sandbox-retention/README.md) —— 失败类 Sandbox 的有界停驻、明确销毁、持久管理与安全 GC

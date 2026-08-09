@@ -1,0 +1,5 @@
+# This leaf is not a member of the NiceEval workspace. It must install as an
+# independent consumer so the root E2E runner can inject the candidate package.
+packages: []
+allowBuilds:
+  esbuild: true

@@ -122,7 +122,7 @@ E2E 文件从上到下保持同一信息顺序：
 每个测试文件第一行用 `// owner: <docs path#anchor>` 指向一个稳定结果或具名风险。
 文件内可以用 `test.each` 展开同一等价类，不能加入第二个独立结果。
 `regression:` / `bug:` 紧贴真正能杀死旧实现的 case，不能把整文件的其它测试也伪装成回归。
-统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](../../roadmap/testing/portfolio.md#功能归属与-bug-回归)。
+统一的 owner 与历史 Bug 关系见[功能归属与 Bug 回归](portfolio.md#功能归属与-bug-回归)。
 
 ## Oracle 独立性
 
@@ -142,7 +142,7 @@ E2E 文件从上到下保持同一信息顺序：
 
 ## 复用设施预算
 
-跨 Repo 的稳定机械能力由内部 [官方 Testkit](../../roadmap/testing/testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
+跨 Repo 的稳定机械能力由内部 [官方 Testkit](testkit.md) 承载。它是根 workspace 成员，但场景 Repo 只在隔离副本中
 消费本次 runner 生成的内容寻址 tgz；不通过 workspace link 或 checkout 路径运行。能力是否上移按机械契约的消费者判断，不能因为
 功能与 Adapter 属于不同 Repo 集合，就复制两份 process 或严格 JSON 实现。
 
@@ -218,9 +218,12 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 
 ## 可靠性接管门
 
-新增、接管或实质修改 owner 时，执行[可靠性：重复运行](README.md#可靠性重复运行)规定的固定组合。
+新增、接管或实质修改确定性 owner 时，执行[可靠性：重复运行](README.md#可靠性重复运行)规定的固定组合。
 三个全新副本检查随机漂移；同一副本连续两次检查残留；Repo 默认并行检查顺序依赖；单项重跑检查独立身份。
 这几类运行缺一不可，不能用测试级 retry 把一次意外失败改写成通过。
+
+真实 provider live owner 只做一次已明确授权的兼容性运行；完整接管矩阵需要另行授权调用次数 / 成本，不能用 provider
+随机性充当产品可靠性证明。
 
 可靠性接管门只比较稳定语义。动态 ID、临时端口和 duration 可以变化；Verdict、实体关系、公开错误分类和资源终态必须相同。
 无法通过接管门的自动化不得降级断言、增加固定 sleep 或改成 mock 核心算法，应按[不自动化](README.md#不自动化)处理。
@@ -238,8 +241,8 @@ sandbox lease 或同等公开收据。只有父进程 PID 消失不能证明没�
 
 ## 证明关系不是运行时平台
 
-测试文件和标题是执行身份；[Portfolio](../../roadmap/testing/portfolio.md) 只维护人可审查的稳定结果、owner、lane 和历史 bug 链接。
+测试文件和标题是执行身份；[Portfolio](portfolio.md) 只维护人可审查的稳定结果、owner、lane 和历史 bug 链接。
 它不生成测试代码，也不要求测试重复登记一份元数据。
 
 根 runner 的机器 schema 仅包含 Repo 的运行条件，详见
-[真实场景 Repo](../../roadmap/testing/e2e/scenario-repos.md)；本地 / CI 生命周期见 [Execution](../../roadmap/testing/e2e/execution.md)。
+[真实场景 Repo](e2e/scenario-repos.md)；本地 / CI 生命周期见 [Execution](e2e/execution.md)。

@@ -21,7 +21,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 测试仍然要明确执行 `pnpm exec niceeval exp/show/view` 并断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
-`adapter/` 是兼容性 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与本地协议 fixture 都是独立叶子 Repo，
+`adapter/` 是协议 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与确定性 UI Message Stream fixture 都是独立叶子 Repo，
 各自安装候选包并拥有结果根。两组只共用根 runner 与机械 Testkit，不互借 fixture、依赖或运行结果。
 
 ## Owner 选择顺序
@@ -49,19 +49,20 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 | Unit | E2E 无法稳定区分的确定性风险 | 有证据的例外 |
 
 `Journey` 是 E2E 体裁，不是第三层。Testkit 与根 E2E runner 是测试执行所需的普通代码，不另建一种测试身份；runner 的行为由
-真实场景执行和 CI 收据验收，不再维护 `test/unit/e2e-runner/` 模拟套件。另一条轴只回答产品域：CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
+真实场景执行和 CI 收据验收，不再维护 `test/unit/e2e-runner/` 模拟套件。另一条轴只回答产品域：Eval、CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
 
 ## 风险边界
 
 | 风险 | 默认主 owner | 允许的 Unit 例外 |
 |---|---|---|
 | 公共 Library API、公开 Record 格式 | 安装后 package API 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
+| Eval、Context 与公开 Assertion 契约 | Eval 场景 Repo | 无法由真实 Eval 稳定区分的纯算法矩阵 |
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | 无法由真实 PTY 稳定制造的纯布局算法 |
 | show、view、HTTP、浏览器与视觉结果 | Report 场景 Repo | 无法由浏览器稳定穷举的纯组合算法 |
 | 并发、取消、signal 与 orphan | Lifecycle E2E 拥有资源终态 | barrier / fake clock 拥有可控竞态次序 |
-| Adapter 产品语义 | 确定性本地协议 E2E | NiceEval 自有词表上的纯归一或错误分类 |
+| Adapter 产品语义 | 确定性 UI Message Stream E2E | NiceEval 自有词表上的纯归一或错误分类 |
 | 真实 Provider | live Adapter 兼容性检查 | 不接管确定性产品语义 |
 
 一条风险只在一个位置展开完整矩阵。其它层只有在能排除不同错误实现时才留最小代表。
@@ -77,7 +78,7 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 ## 可靠性：重复运行
 
-新增、接管或实质修改自动化 owner 时，必须通过固定接管门：
+新增、接管或实质修改确定性自动化 owner 时，必须通过固定接管门：
 
 - 在三个全新 Repo 副本中各运行一次；
 - 在同一副本中连续运行两次，证明没有上轮状态漂移；
@@ -87,9 +88,10 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 
 这些运行使用同一 candidate digest、checkout、lockfile、fixture、seed、时钟策略与运行镜像。
 语义 Verdict 和实体关系必须相同；动态 ID、临时端口与 duration 不要求逐字相同。
-自动化 owner 禁止测试级 retry；任一次意外失败、retry 后转绿、默认并行失败或遗留资源都属于可靠性失败。
+确定性自动化 owner 禁止测试级 retry；任一次意外失败、retry 后转绿、默认并行失败或遗留资源都属于可靠性失败。
 
 真实 Provider 不承担确定性产品可靠性。确定性协议 counterpart 通过上述接管门；live Adapter 只断言稳定协议事实。
+每次新增或实质修改 live owner 做一次已明确授权的真实运行与公开读回；完整接管矩阵只有另获明确调用次数 / 成本授权时才跑。
 结构化外部故障不算 pass，可由同一 candidate 的 AI 真实兼容性验收替代；两者都没有时状态是“未证明”。
 
 ## 不自动化
@@ -147,21 +149,21 @@ pnpm e2e --lane main --repo adapter/codex-cli
 Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Tests 数不得超过 200；Testkit 不设独立 Unit 套件。
 `test.each` 展开的每个 case 都计入。不能把独立命题合并进一个大测试规避上限，也不为接近上限而补测。
 
-完整执行契约见 [本地与 CI](../../roadmap/testing/e2e/execution.md)。
+完整执行契约见 [本地与 CI](e2e/execution.md)。
 
 ## 文档地图
 
 - [Architecture](architecture.md) —— 数据流、分类、oracle、失败与复用设施边界；
-- [官方 Testkit](../../roadmap/testing/testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
-- [测试组合与退役](../../roadmap/testing/portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
+- [官方 Testkit](testkit.md) —— 跨 Repo 的进程、严格数据解码、等待与资源终结原语；
+- [测试组合与退役](portfolio.md) —— Journey portfolio、owner、变更预算、矩阵去重与迁移规则；
 - [Unit](unit/README.md) —— 确定性语义例外的存在资格和写法；
 - [E2E](e2e/README.md) —— 单边界测试、Journey、Adapter 与 Lifecycle；
 - [E2E 测试正文](e2e/README.md) —— 原生测试文件、命令收据、阶段、失败分类与浏览器写法；
-- [真实场景 Repo](../../roadmap/testing/e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
-- [本地与 CI](../../roadmap/testing/e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
+- [真实场景 Repo](e2e/scenario-repos.md) —— 项目形状、候选注入、隔离和 adapter backend；
+- [本地与 CI](e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。

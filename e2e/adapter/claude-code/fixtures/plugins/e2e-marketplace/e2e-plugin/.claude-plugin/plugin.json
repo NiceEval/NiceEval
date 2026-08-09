@@ -1,0 +1,6 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "e2e-plugin",
+  "version": "0.1.0",
+  "description": "niceeval e2e fixture plugin bundling a deterministic MCP server (mcp__plugin_e2e-plugin_tools__get-sum)"
+}

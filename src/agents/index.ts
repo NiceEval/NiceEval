@@ -67,8 +67,11 @@ export {
 } from "./openai-compat.ts";
 export type {
   ChatCompletionLike,
+  ChatCompletionCustomToolCallLike,
+  ChatCompletionFunctionToolCallLike,
   ChatCompletionMessageLike,
   ChatCompletionToolCallLike,
+  ChatCompletionUnknownToolCallLike,
   ChatCompletionUsageLike,
   ResponseFunctionCallItemLike,
   ResponseLike,

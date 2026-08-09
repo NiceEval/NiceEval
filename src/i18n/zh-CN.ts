@@ -445,7 +445,7 @@ export const zhCN = {
   "judge.apiKeyMissing": "judge 缺少 API key:设置 NICEEVAL_JUDGE_KEY,或用 judge.apiKeyEnv 指向别的环境变量。",
   "judge.httpError": "judge HTTP {{status}}: {{body}}",
   "judge.probeFailed": "judge 预检失败:{{endpoint}}({{model}}): {{error}}",
-  "judge.probeTimeout": "judge 预检失败:{{endpoint}}({{model}})连续 {{attempts}} 次各 {{seconds}}s 超时 —— 端点接受连接但不回,先查同一账号的其它流量是否占满了网关并发,再核对 judge 的 baseUrl(NICEEVAL_JUDGE_BASE)",
+  "judge.probeTimeout": "judge 预检失败:{{endpoint}}({{model}})连续 {{attempts}} 次各 {{seconds}}s 超时 —— 端点接受连接但不回,先查同一账号的其它流量是否占满了网关并发,再核对 judge.baseUrl",
   "judge.probeMissingKey": "judge 模型 {{model}} 缺少 API key —— 请配置 {{envHint}}",
   "live.more": "… 其余 {{hidden}} 项({{running}} 运行中 · {{waiting}} 等待 · {{done}} 已完成)",
   "live.running": "  正在运行 {{totalRuns}} 次 ({{evals}} eval × {{configs}} 配置, 并发 {{concurrency}})       {{completed}}/{{total}} 完成",

@@ -9,6 +9,7 @@ import {
 } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
+import { shellQuote } from "../sandbox/shell.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import {
   parseOpenCodeTranscript,
@@ -17,7 +18,14 @@ import {
 } from "../o11y/parsers/opencode.ts";
 import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { createNpmCliInstaller } from "./npm-staged.ts";
-import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent, TurnEvidenceCoverage } from "../types.ts";
+import type {
+  Agent,
+  AgentSetupManifest,
+  Sandbox,
+  SkillSpec,
+  StreamEvent,
+  TurnEvidenceCoverage,
+} from "../types.ts";
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
@@ -27,6 +35,40 @@ import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failu
 const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 opencode.json 里的 provider id。 */
 const COMPAT_PROVIDER = "compat";
+
+/**
+ * OpenCode 的 native skill registry 需要 YAML frontmatter 才会把 SKILL.md 广播给
+ * `skill` 工具。共享 SkillSpec 同时服务不要求 frontmatter 的 coding agents，所以只在
+ * OpenCode 沙箱内为缺失的元数据补一个由安装名派生的最小头；作者已有的 native header
+ * 原样保留，仍由 OpenCode 自己校验。
+ */
+async function addOpenCodeSkillFrontmatter(sb: Sandbox, names: readonly string[]): Promise<void> {
+  for (const name of names) {
+    const path = `${SKILL_DIR}/${name}/SKILL.md`;
+    const quotedPath = shellQuote(path);
+    const header = [
+      "---",
+      `name: ${JSON.stringify(name)}`,
+      `description: ${JSON.stringify(`NiceEval-installed skill ${name}`)}`,
+      "---",
+      "",
+    ].join("\n");
+    const result = await sb.runShell(
+      [
+        `if [ \"$(sed -n '1p' ${quotedPath})\" != \"---\" ]; then`,
+        "  tmp=$(mktemp) || exit 1",
+        "  cat > \"$tmp\" <<'NICEEVAL_OPENCODE_SKILL_HEADER'",
+        header,
+        "NICEEVAL_OPENCODE_SKILL_HEADER",
+        `  cat ${quotedPath} >> \"$tmp\" && mv \"$tmp\" ${quotedPath} || { rm -f \"$tmp\"; exit 1; }`,
+        "fi",
+      ].join("\n"),
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(`OpenCode skill ${JSON.stringify(name)} could not receive native frontmatter.`);
+    }
+  }
+}
 
 export interface OpenCodeConfig {
   /** 模型 API key。省略时读 OPENCODE_API_KEY,再回落 ANTHROPIC_API_KEY。 */
@@ -123,6 +165,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const manifest: AgentSetupManifest = { skills: [] };
       if (config?.skills?.length) {
         manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+        await addOpenCodeSkillFrontmatter(sb, installedSkillNames(manifest.skills));
         await appendProjectInstruction(
           sb,
           skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
