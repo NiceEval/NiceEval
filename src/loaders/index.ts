@@ -9,6 +9,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../i18n/index.ts";
+import { assertPathWithinEvalOwner } from "../runner/eval-roots.ts";
 import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
 
 /**
@@ -22,6 +23,10 @@ interface LoaderCapture {
   readonly data: Set<string>;
   readonly criteria: Set<string>;
   readonly private: Set<string>;
+  /** Project root for this Eval's loader path grammar. */
+  readonly root: string;
+  /** Capability boundary; local Eval uses the project root, mounted Eval its package root. */
+  readonly ownerRoot: string;
 }
 
 let activeCapture: LoaderCapture | undefined;
@@ -34,12 +39,15 @@ let activeCapture: LoaderCapture | undefined;
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
+  options?: { root?: string; ownerRoot?: string },
 ): Promise<{ value: T; paths: string[]; criteriaPaths: string[]; privatePaths: string[] }> {
   const previous = activeCapture;
   const capture: LoaderCapture = {
     data: new Set<string>(),
     criteria: new Set<string>(),
     private: new Set<string>(),
+    root: options?.root ?? process.cwd(),
+    ownerRoot: options?.ownerRoot ?? options?.root ?? process.cwd(),
   };
   activeCapture = capture;
   try {
@@ -59,7 +67,7 @@ export async function captureLoadedFiles<T>(
 // URL 只认 `file:`。fileURLToPath 是 niceeval 内部实现,用户侧写 `new URL(p, import.meta.url)`
 // 就够,不需要 import node:url。
 function resolvedPath(path: string | URL): string {
-  const absolute = typeof path === "string" ? resolve(process.cwd(), path) : fromFileUrl(path);
+  const absolute = typeof path === "string" ? resolve(activeCapture?.root ?? process.cwd(), path) : fromFileUrl(path);
   if (!activeCapture) throw new Error(t("loaders.outsideDiscovery", { path: String(path) }));
   activeCapture.data.add(absolute);
   return absolute;
@@ -84,7 +92,9 @@ type DecodedData<T> = unknown extends T ? never : T;
 export type DataDecoder<T> = (value: unknown) => DecodedData<T> | Promise<DecodedData<T>>;
 
 export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
-  const raw = await readFile(resolvedPath(path), "utf-8");
+  const absolute = resolvedPath(path);
+  await assertCapturedPathOwned(absolute);
+  const raw = await readFile(absolute, "utf-8");
   const parsed: unknown = JSON.parse(raw);
   return decode(parsed);
 }
@@ -96,7 +106,9 @@ export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): P
  * 路径写项目根相对的字符串,或 eval 文件相对的 `new URL(p, import.meta.url)`。
  */
 export async function loadText(path: string | URL): Promise<string> {
-  return readFile(resolvedPath(path), "utf-8");
+  const absolute = resolvedPath(path);
+  await assertCapturedPathOwned(absolute);
+  return readFile(absolute, "utf-8");
 }
 
 /** eval 文件相对的 glob；pattern 与 URL 分开，避免 URL parser 改写 glob 字符。 */
@@ -149,7 +161,7 @@ function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
     );
   }
   const baseDir = dirname(fromFileUrl(pattern.relativeTo));
-  return relative(process.cwd(), resolve(baseDir, pattern.pattern)).split(sep).join("/");
+  return relative(activeCapture?.root ?? process.cwd(), resolve(baseDir, pattern.pattern)).split(sep).join("/");
 }
 
 /**
@@ -172,7 +184,7 @@ async function registerGlobPatterns(
 ): Promise<string[]> {
   const capture = activeCapture;
   if (!capture) throw new Error(t("loaders.outsideDiscovery", { path: patterns.join(" ") }));
-  const root = process.cwd();
+  const root = capture.root;
   const compiled = compilePatterns(patterns);
   const matched = new Set<string>();
   for (const base of enumerationBases(compiled)) {
@@ -187,8 +199,18 @@ async function registerGlobPatterns(
     throw new Error(t(key, { patterns: missing.join(" "), root }));
   }
   const target = bucket === "private" ? capture.private : capture.criteria;
-  for (const path of relativePaths) target.add(resolve(root, path));
+  for (const path of relativePaths) {
+    const absolute = resolve(root, path);
+    await assertCapturedPathOwned(absolute);
+    target.add(absolute);
+  }
   return relativePaths;
+}
+
+async function assertCapturedPathOwned(path: string): Promise<void> {
+  const capture = activeCapture;
+  if (!capture) throw new Error(t("loaders.outsideDiscovery", { path }));
+  await assertPathWithinEvalOwner(path, capture.ownerRoot);
 }
 
 /** 从一个枚举起点往下走,把命中 pattern 集的文件按项目根相对路径收进 out。 */
@@ -229,8 +251,12 @@ async function collectCriteria(root: string, base: string, compiled: readonly Co
 }
 
 async function assertInsideRoot(root: string, absolute: string, shown: string): Promise<void> {
-  const real = await realpath(absolute).catch(() => absolute);
-  if (real !== root && !real.startsWith(`${root}${sep}`)) {
+  const [realRoot, real] = await Promise.all([
+    realpath(root).catch(() => root),
+    realpath(absolute).catch(() => absolute),
+  ]);
+  const outside = relative(realRoot, real);
+  if (outside === ".." || outside.startsWith(`..${sep}`) || outside.startsWith("../")) {
     throw new Error(t("loaders.criteriaOutsideRoot", { path: shown, resolved: real, root }));
   }
 }
@@ -241,7 +267,9 @@ async function assertInsideRoot(root: string, absolute: string, shown: string): 
  * JSON 一样必须立即经 `decode` 验证，不让未证明的动态值进入 Eval 定义。
  */
 export async function loadYaml<T>(path: string | URL, decode: DataDecoder<T>): Promise<T> {
-  const raw = await readFile(resolvedPath(path), "utf-8");
+  const absolute = resolvedPath(path);
+  await assertCapturedPathOwned(absolute);
+  const raw = await readFile(absolute, "utf-8");
   // yaml 是可选依赖:用变量 specifier 避免 tsc 静态解析。装了就用真解析器;
   // 没装直接报错并给出下一步 —— 不再退回手写的「极简 YAML」:它对嵌套 / 多行 /
   // 锚点会静默解析出错误数据,让 eval 拿着错的 case 跑起来比直接失败更糟。

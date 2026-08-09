@@ -70,6 +70,7 @@ export default defineConfig({
 | `timeoutMs` | 默认单次 attempt 超时 |
 | `telemetry` | OTLP 接收配置（`host` / `port`），OTel 接入只从这里配 |
 | `pricing` | 价格表覆盖，按 model 名或 `provider/*` 通配 |
+| `evalRoots` | 已废弃；共享 Eval 请在 `evals/` 文件中使用 `defineRemoteEval`（见[共享评估](/zh/tutorials/share-evals)） |
 
 每个字段的类型和完整说明在 [defineConfig 参考](/zh/reference/define-config)。flag 全表在 [CLI 参考](/zh/reference/cli)。
 

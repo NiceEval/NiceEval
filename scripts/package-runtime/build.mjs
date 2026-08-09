@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -5,7 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const ts = require("typescript");
+const ts = require("@typescript/typescript6");
 const esbuild = require("esbuild");
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -30,6 +31,24 @@ const PUBLIC_ENTRIES = [
   ["./report/react", "report/react/index.tsx"],
   ["./report/built-in", "report/built-in/index.tsx"],
   ["./report/extension", "report/extension/index.ts"],
+];
+
+// The runtime contract is intentionally a source-closure declaration, not a
+// require.cache snapshot.  External Eval discovery uses its revision as one
+// fingerprint face and re-resolves bare dependencies in the consumer tree.
+const RUNTIME_CONTRACT_ENTRIES = [
+  "index.ts",
+  "loaders/index.ts",
+  "sandbox/index.ts",
+  "expect/index.ts",
+  "runner/discover.ts",
+  "runner/eval-roots.ts",
+  "runner/fingerprint.ts",
+  "runner/manifest.ts",
+  "runner/execution-inputs.ts",
+  "context/context.ts",
+  "sandbox/paths.ts",
+  "sandbox/operations.ts",
 ];
 
 function isRuntimeSource(file) {
@@ -267,6 +286,95 @@ async function buildRemarkVendor(outputRoot) {
   });
 }
 
+function contractSourceSpecifiers(sourceFile) {
+  const out = [];
+  const visit = (node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      if (isTypeOnlyModuleDeclaration(node)) return;
+      out.push({ specifier: node.moduleSpecifier.text, edge: "static" });
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+      out.push({ specifier: node.arguments[0].text, edge: "literal-dynamic" });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return out;
+}
+
+function isTypeOnlyModuleDeclaration(node) {
+  if (ts.isImportDeclaration(node)) {
+    const clause = node.importClause;
+    if (!clause || clause.isTypeOnly) return true;
+    const named = clause.namedBindings;
+    return named !== undefined && ts.isNamedImports(named) && named.elements.length > 0 && named.elements.every((element) => element.isTypeOnly);
+  }
+  if (node.isTypeOnly) return true;
+  return node.exportClause !== undefined && ts.isNamedExports(node.exportClause) && node.exportClause.elements.length > 0 &&
+    node.exportClause.elements.every((element) => element.isTypeOnly);
+}
+
+function resolveContractRelative(from, specifier) {
+  const raw = resolve(dirname(from), specifier);
+  const candidates = extname(raw)
+    ? [raw]
+    : [raw, ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((extension) => `${raw}${extension}`), ...["index.ts", "index.tsx", "index.js"].map((name) => join(raw, name))];
+  return candidates.find((candidate) => {
+    try {
+      return require("node:fs").statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function writeRuntimeContractManifest(outputRoot) {
+  const queued = RUNTIME_CONTRACT_ENTRIES.map((entry) => join(SRC, entry));
+  const seen = new Set();
+  const bare = new Map();
+  while (queued.length > 0) {
+    const file = queued.pop();
+    if (!file || seen.has(file)) continue;
+    seen.add(file);
+    const source = await readFile(file, "utf8");
+    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    for (const { specifier, edge } of contractSourceSpecifiers(sourceFile)) {
+      if (!specifier.startsWith(".")) {
+        const edges = bare.get(specifier) ?? new Set();
+        edges.add(edge);
+        bare.set(specifier, edges);
+        continue;
+      }
+      const resolved = resolveContractRelative(file, specifier);
+      if (resolved) queued.push(resolved);
+    }
+  }
+  const files = [];
+  for (const source of [...seen].sort()) {
+    const rel = relative(SRC, source).replaceAll("\\", "/");
+    const output = join(outputRoot, runtimePath(rel, ".cjs"));
+    const bytes = await readFile(output);
+    files.push({ file: runtimePath(rel, ".cjs"), sha256: createHash("sha256").update(bytes).digest("hex") });
+  }
+  if (files.length === 0) throw new Error("Runtime contract closure is empty");
+  const revisionInput = {
+    protocolRevision: "owner-hook-v1",
+    node: process.versions.node,
+    entries: [...RUNTIME_CONTRACT_ENTRIES],
+    files,
+    bare: [...bare.entries()]
+      .map(([specifier, edges]) => ({ specifier, edges: [...edges].sort() }))
+      .sort((a, b) => a.specifier.localeCompare(b.specifier)),
+  };
+  const revision = `sha256:${createHash("sha256").update(JSON.stringify(revisionInput)).digest("hex")}`;
+  await writeFile(join(outputRoot, "runtime-contract-manifest.json"), `${JSON.stringify({
+    format: "niceeval.runtime-contract",
+    schemaVersion: 1,
+    revision,
+    ...revisionInput,
+  }, null, 2)}\n`);
+}
+
 async function build() {
   const temp = await mkdtemp(join(tmpdir(), "niceeval-package-runtime-"));
   const outputRoot = join(temp, "dist");
@@ -338,6 +446,7 @@ async function build() {
     for (const [, source] of PUBLIC_ENTRIES) {
       await writeEsmFacade(outputRoot, source, publicValueExports(program, source));
     }
+    await writeRuntimeContractManifest(outputRoot);
 
     await rm(DIST, { recursive: true, force: true });
     await rename(outputRoot, DIST);

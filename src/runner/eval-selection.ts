@@ -16,6 +16,7 @@ export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
     ...(Object.keys(evalDef.metadata ?? {}).length > 0
       ? { metadata: Object.freeze({ ...evalDef.metadata }) }
       : {}),
+    ...(evalDef.origin === undefined ? {} : { origin: evalDef.origin }),
   });
 }
 

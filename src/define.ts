@@ -12,11 +12,12 @@ import type {
   SandboxAgent,
   SandboxAgentDef,
   ScoreEvalInput,
+  RemoteEvalInput,
   ScoreTestContext,
   TestContext,
   JsonValue,
 } from "./types.ts";
-import { brandEvalDefinition, brandExperimentDefinition } from "./types.ts";
+import { brandEvalDefinition, brandExperimentDefinition, brandRemoteEvalReference } from "./types.ts";
 import { t } from "./i18n/index.ts";
 import {
   customProviderSandbox,
@@ -120,6 +121,30 @@ export function defineScoreEval(
   const result = brandEvalDefinition({ ...normalizeEvalFields(def), evaluationKind: "points", test: def.test });
   definedScoreEvals.add(result);
   return result;
+}
+
+/**
+ * Declare one Eval supplied by an installed package from a consumer-owned Eval file.
+ * The returned value is intentionally lazy: discovery performs package/lock/owner
+ * validation before importing the upstream module.
+ */
+export function defineRemoteEval(def: RemoteEvalInput) {
+  if (typeof def.package !== "string" || def.package.trim().length === 0) {
+    throw new Error("defineRemoteEval requires a non-empty package dependency.");
+  }
+  const invalidPath = (value: string): boolean => value.length === 0 || value.startsWith("/") || value.endsWith("/") ||
+    value.includes("\\") || /[\u0000-\u001f\u007f]/.test(value) || value.split("/").some((part) => part === "." || part === ".." || part.length === 0);
+  if (def.root !== undefined && (typeof def.root !== "string" || invalidPath(def.root))) {
+    throw new Error("defineRemoteEval root must be a non-empty package-relative path when provided.");
+  }
+  if (typeof def.eval !== "string" || invalidPath(def.eval)) {
+    throw new Error("defineRemoteEval eval must be a non-empty relative Eval id.");
+  }
+  return brandRemoteEvalReference({
+    package: def.package,
+    ...(def.root === undefined ? {} : { root: def.root }),
+    eval: def.eval,
+  });
 }
 
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */

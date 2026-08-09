@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { freshImportModule } from "./fresh-import.ts";
 import { t } from "./i18n/index.ts";
+import { decodeConfigEvalRoots } from "./runner/eval-roots.ts";
 import type { Config } from "./runner/types.ts";
 
 export async function loadConfigFile(
@@ -35,5 +36,5 @@ export async function loadConfigFile(
     }
   }
   if (!mod.default) throw new Error(t("cli.config.noDefault"));
-  return mod.default;
+  return decodeConfigEvalRoots(mod.default);
 }

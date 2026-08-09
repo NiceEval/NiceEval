@@ -6,7 +6,7 @@
 // 命名约定:Experiment / Run / Eval 是纯数据,不带 Handle 后缀;
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
-import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity, Verdict } from "../types.ts";
+import type { DiagnosticRecord, EvalDefinitionOrigin, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity, Verdict } from "../types.ts";
 import type { CommandExitEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptIdentity, AttemptLocator } from "./locator.ts";
@@ -69,6 +69,8 @@ export interface RunMeta {
   sandboxBuilds?: SandboxBuildRecord[];
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(publish 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
+  /** Current definition provenance index; attempts retain the compatible inline truth. */
+  definitionOrigins?: globalThis.Record<string, EvalDefinitionOrigin>;
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
 }
@@ -175,6 +177,8 @@ export interface Run {
   dir: string;
   /** 写入时刻该实验已知的 eval 并集(可选);publish 自动补记,writer.run() 也可声明。 */
   knownEvalIds?: string[];
+  /** Current discovery provenance index; attempt-inline origins remain authoritative. */
+  definitionOrigins?: globalThis.Record<string, EvalDefinitionOrigin>;
 }
 
 /** 一个实验的全部历史:同一 experiment id 的历次快照归在一起。 */

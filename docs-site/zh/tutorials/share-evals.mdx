@@ -1,0 +1,94 @@
+---
+title: "共享评估：用 defineRemoteEval 引用外部题目"
+sidebarTitle: "共享评估"
+description: "在消费项目的 Eval 文件中显式引用已安装 package 的一道 Eval，并继续使用原有 Experiment 选择方式。"
+---
+
+共享 Eval 不会因为安装了一个 package 就自动出现在项目里。消费方为每一道要使用的外部题目写一个普通 Eval 文件，
+Experiment 仍按原来的 `evals` selector 选择它。
+
+## 安装发布方 package
+
+发布方可以是普通 NiceEval 项目，不需要额外的共享 manifest：
+
+```text
+terminal-bench/
+├─ package.json
+├─ evals/terminal-bench/hello-world/eval.ts
+└─ fixtures/
+```
+
+消费方把它作为直接依赖安装，并提交对应的 lockfile：
+
+```bash
+pnpm add terminal-bench
+```
+
+package 的运行期 dependencies、Eval 文件、Fixture 和 Sandbox 构建输入必须实际包含在发布内容中。可以用
+`npm pack --dry-run` 检查 tarball 内容。
+
+## 写一个远程 Eval 文件
+
+```typescript
+// evals/terminal-bench/hello-world.eval.ts
+import { defineRemoteEval } from "niceeval";
+
+export default defineRemoteEval({
+  package: "terminal-bench",
+  root: "evals/terminal-bench",
+  eval: "hello-world",
+});
+```
+
+文件路径形成消费项目内的 Eval ID：这里是 `terminal-bench/hello-world`。`eval` 必须是上游 package 中已经存在的精确
+ID，不能写 glob、前缀，也不能一次导入整个目录。
+
+`defineRemoteEval` 只创建惰性引用。NiceEval 会在运行前检查直接依赖、lockfile、真实安装路径和 package owner，再导入
+上游题目。单纯安装 `terminal-bench` 而没有这个文件，不会增加任何 Eval。
+
+## 像以前一样选择 Eval
+
+Experiment 不需要 `remoteEvals` 字段或第二套选择器：
+
+```typescript
+import { defineExperiment } from "niceeval";
+
+export default defineExperiment({
+  agent: myAgent,
+  evals: ["smoke", "terminal-bench/hello-world"],
+});
+```
+
+原有的 `"*"`、ID 前缀和 descriptor 谓词仍然适用。远程题目进入同一个 Eval catalog，但必须先通过消费项目的
+`defineRemoteEval` 文件显式登记。
+
+```bash
+niceeval list
+niceeval exp --eval terminal-bench/hello-world
+```
+
+`list` 只展示本地 Eval 与已登记的远程引用；不会扫描所有 dependency 来猜测哪些目录可能是 Eval。
+
+## ownership 与可复现
+
+- 上游 package 拥有题目、断言、Fixture、Sandbox 和题目模块。
+- 消费项目拥有引用文件路径形成的项目内 ID，以及 Experiment 的 agent、model、attempts、flags、预算和选择范围。
+- package manager 与 lockfile 拥有版本、Git commit、tarball integrity 和传递依赖选择。
+- NiceEval 持久化安装 identity、源码、模块依赖和 definition/execution provenance。
+
+消费方不能对远程题目做 `patch`、`override` 或任意 alias。需要修改题目时复制为本地 Eval，或等待上游发布新版本。
+package identity 变化时，当前契约会让引用它的题目整体失去跨 Run carry eligibility；逐题跨版本 transfer 以后再设计。
+
+Yarn Plug'n'Play 因无法提供可核验的 node-modules owner tree，当前不支持；lock 或安装身份无法证明时，NiceEval 会返回
+结构化 `eval-root.*` 诊断，而不是静默运行。
+
+## 发布检查
+
+发布方应确认：
+
+- `package.json` 的运行期依赖写在 `dependencies`；
+- tarball 包含上游 Eval、Fixture 和 Sandbox 构建输入；
+- package 的 NiceEval 版本与消费方兼容；
+- 题目所需的所有外部资源都在 owner 边界内。
+
+NiceEval 不新增 `eval.lock`，也不建立第二套 package registry；消费项目的 package lock 是依赖身份的唯一真相。

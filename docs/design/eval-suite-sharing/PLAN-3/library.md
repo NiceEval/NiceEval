@@ -132,6 +132,8 @@ installed identity 从消费项目 lockfile 与实际安装位置只读投影；
 
 Record 区分本轮 `definitionOrigin` 与产生结果的 `executionOrigin`。
 carry 更新前者、保留后者，不能把旧结果伪装成由新 commit 执行。
+两者都完整内联在每条 Attempt；Run 级 `definitionOrigins` 只是当前发现集的索引。
+这样旧 schema-15 publish 即使不认识新 RunMeta 字段，也仍会通过 attempt 的开放字段保留定义与执行归属。
 
 ## 原生 NiceEval import
 
@@ -151,6 +153,10 @@ import { dockerImage } from "niceeval/sandbox";
 
 这项能力不是“任意 TypeScript 都能神奇装载”的承诺。
 实现必须保留外部 package 的 module type 与 tsconfig 语义，并用 ESM/CJS 安装矩阵验收；无法完备查明的动态依赖会禁用该 Eval 的携带，而不是静默漏进指纹。
+
+公开支持表只能写入真实 frozen-install 矩阵通过的组合。
+矩阵逐项核对 pnpm 9、npm lock v2/v3、Yarn v1 与 Yarn Berry node-modules linker。每个 manager 分别验证 registry、alias、Git、tarball、file 与 workspace；Yarn PnP 是明确负例。
+某格无法把安装树唯一映射到 lock selection 时稳定报 `eval-root.installation-unverifiable`，不能由 parser fixture 或“通常如此”替代真实安装证明。
 
 ## 不存在的 API
 

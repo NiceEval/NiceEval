@@ -121,6 +121,9 @@ export function manifestDeltas(
     ...planDelta(historical, current),
     ...faceDeltas("source", historical.source ?? {}, current.source ?? {}, shortHash),
     ...faceDeltas("data", historical.data ?? {}, current.data ?? {}, shortHash),
+    ...faceDeltas("dependency", historical.dependencies ?? {}, current.dependencies ?? {}, shortHash),
+    ...faceDeltas("runtime", historical.runtime ?? {}, current.runtime ?? {}, shortHash),
+    ...faceDeltas("transfer", historical.transfer ?? {}, current.transfer ?? {}, shortHash),
   ];
 }
 

@@ -43,6 +43,7 @@ import type {
 } from "../types.ts";
 import { FileRef } from "./deferred-file-content.ts";
 import { matchesJson } from "../shared/json-match.ts";
+import type { ExecutionInputTracker } from "../runner/execution-inputs.ts";
 
 /** 运行器在 test 跑完后填进来的「迟到结果」(diff / 脚本),供 finalize 用。 */
 export interface LateResult {
@@ -78,6 +79,8 @@ export interface ContextDeps {
   otel?: import("../o11y/otlp/turn-otel.ts").AgentOtelChannel;
   /** Eval definition directory; used to resolve host-side relative fixture paths. */
   evalBaseDir?: string;
+  /** Attempt-local immutable host-transfer tracker; absent only for embedded legacy callers. */
+  executionInputs?: ExecutionInputTracker;
   /** runner 绑定的作用域反馈(t.progress / t.diagnostic 与 adapter ctx 共用实现);
    *  省略时(测试直调)progress 退回 log、diagnostic 静默丢弃。 */
   feedback?: import("../types.ts").ScopedFeedback;
@@ -366,18 +369,30 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     readBytes: guardAsync((path) => deps.sandbox.readBytes(path)),
     writeBytes: guardAsync((path, content) => deps.sandbox.writeBytes(path, content)),
     pathExists: guardAsync((path) => deps.sandbox.pathExists(path)),
-    uploadFile: guardAsync((source, targetPath) =>
-      deps.sandbox.uploadFile(resolveEvalLocalPath(deps.evalBaseDir, source), targetPath),
-    ),
-    uploadDirectory: guardAsync((sourceDir, targetDir, opts) =>
-      deps.sandbox.uploadDirectory(resolveEvalLocalPath(deps.evalBaseDir, sourceDir), targetDir, opts),
-    ),
-    downloadFile: guardAsync((sourcePath, target) =>
-      deps.sandbox.downloadFile(sourcePath, resolveEvalLocalPath(deps.evalBaseDir, target)),
-    ),
-    downloadDirectory: guardAsync((sourceDir, targetDir, opts) =>
-      deps.sandbox.downloadDirectory(sourceDir, resolveEvalLocalPath(deps.evalBaseDir, targetDir), opts),
-    ),
+    uploadFile: guardAsync((source, targetPath) => {
+      const resolved = resolveEvalLocalPath(deps.evalBaseDir, source);
+      return deps.executionInputs === undefined
+        ? deps.sandbox.uploadFile(resolved, targetPath)
+        : deps.executionInputs.uploadFile(resolved, targetPath, (snapshot, target) =>
+          deps.sandbox.uploadFile(snapshot, target));
+    }),
+    uploadDirectory: guardAsync((sourceDir, targetDir, opts) => {
+      const resolved = resolveEvalLocalPath(deps.evalBaseDir, sourceDir);
+      return deps.executionInputs === undefined
+        ? deps.sandbox.uploadDirectory(resolved, targetDir, opts)
+        : deps.executionInputs.uploadDirectory(resolved, targetDir, opts, (snapshot, target, options) =>
+          deps.sandbox.uploadDirectory(snapshot, target, options));
+    }),
+    downloadFile: guardAsync(async (sourcePath, target) => {
+      const resolved = resolveEvalLocalPath(deps.evalBaseDir, target);
+      const owned = deps.executionInputs === undefined ? resolved : await deps.executionInputs.assertOwnedPath(resolved);
+      return deps.sandbox.downloadFile(sourcePath, owned);
+    }),
+    downloadDirectory: guardAsync(async (sourceDir, targetDir, opts) => {
+      const resolved = resolveEvalLocalPath(deps.evalBaseDir, targetDir);
+      const owned = deps.executionInputs === undefined ? resolved : await deps.executionInputs.assertOwnedPath(resolved);
+      return deps.sandbox.downloadDirectory(sourceDir, owned, opts);
+    }),
     ...sandboxAssertions,
   };
 

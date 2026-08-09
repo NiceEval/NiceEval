@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import { loadConfigFile } from "../load-config.ts";
-import { discoverEvals, discoverExperiments } from "./discover.ts";
+import { discoverExperiments, discoverProjectEvals } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import {
   fingerprintWithManifest,
@@ -25,6 +25,7 @@ import { resolveJudge } from "./judge-config.ts";
 import { compareFingerprints, type FingerprintDelta } from "./manifest.ts";
 import { experimentRunInfo } from "./attempt.ts";
 import { resolveRunTimeout } from "./timeout.ts";
+import { staticExecutionPlanDigest } from "./execution-inputs.ts";
 import {
   prepareRunSandboxes,
   type PreparedRunPair,
@@ -44,6 +45,7 @@ import type {
 } from "./types.ts";
 import type { JsonValue, LocalizedText } from "../types.ts";
 import {
+  FINGERPRINT_COVERAGE_VERSION,
   MANIFESTS_FILE,
   parseRunManifests,
   type EvalManifest,
@@ -77,7 +79,10 @@ export type AcceptFailureCode =
   | "eval-not-selected"
   | "planning-failed"
   | "pair-mismatch"
-  | "batch-mismatch";
+  | "batch-mismatch"
+  | "accept.transfer-plan-authorization-required"
+  | "accept.transfer-plan-selector-unused"
+  | "accept.transfer-proof-missing";
 
 export class AcceptError extends Error {
   constructor(
@@ -105,6 +110,8 @@ export interface AcceptLocatorOptions {
   /** 默认当前时刻；测试可固定。 */
   now?: () => string;
   producer?: Producer;
+  /** Exact current transfer-plan digest(s) explicitly authorized by the user. */
+  acceptTransfer?: readonly string[];
 }
 
 export interface AcceptPreparedAttemptOptions {
@@ -121,6 +128,7 @@ export interface AcceptPreparedAttemptOptions {
   name?: LocalizedText;
   now?: () => string;
   producer?: Producer;
+  acceptTransfer?: readonly string[];
 }
 
 export interface AcceptedAttempt {
@@ -148,6 +156,8 @@ export interface PreparedAcceptedAttempt {
   name?: LocalizedText;
   now?: () => string;
   producer?: Producer;
+  /** Selector(s) consumed by this locator; batch validation rejects extras. */
+  usedTransferSelectors?: readonly string[];
 }
 
 /**
@@ -160,7 +170,7 @@ export async function prepareAcceptLocator(options: AcceptLocatorOptions): Promi
   const source = resolveLocator(prior, options.locator);
 
   const config = options.config ?? await loadConfigFile(cwd);
-  const evals = options.evals ?? await discoverEvals(cwd);
+  const evals = options.evals ?? await discoverProjectEvals(cwd, config);
   const experiments = options.experiments ?? await discoverExperiments(cwd);
 
   return prepareAcceptTarget(source, {
@@ -172,6 +182,7 @@ export async function prepareAcceptLocator(options: AcceptLocatorOptions): Promi
       planExperimentPairs(experiment, [source.evalId], evals, config, options.planningServices),
     now: options.now,
     producer: options.producer,
+    acceptTransfer: options.acceptTransfer,
   });
 }
 
@@ -187,6 +198,7 @@ interface AcceptPrepareContext {
   sourceCache?: Map<string, Promise<string>>;
   now?: () => string;
   producer?: Producer;
+  acceptTransfer?: readonly string[];
 }
 
 /** 已知 config/evals/experiments 与 sandbox planning 来源时,单条 locator 的 discovery + 指纹重算。 */
@@ -264,6 +276,7 @@ async function prepareAcceptTarget(
     name: ctx.config.name,
     now: ctx.now,
     producer: ctx.producer,
+    acceptTransfer: ctx.acceptTransfer,
   });
 }
 
@@ -323,6 +336,7 @@ async function mapWithConcurrency<T, R>(
 /** 单 locator 兼容入口：prepare 后走同一份单 snapshot commit。 */
 export async function acceptLocator(options: AcceptLocatorOptions): Promise<AcceptedAttempt> {
   const prepared = await prepareAcceptLocator(options);
+  assertTransferSelectorsConsumed(options.acceptTransfer, [prepared]);
   const accepted = await writeAcceptedAttempts([prepared]);
   const first = accepted[0];
   if (first === undefined) throw new Error("acceptLocator committed no attempt.");
@@ -352,7 +366,7 @@ export async function acceptLocators(options: AcceptLocatorsOptions): Promise<re
   const recordRoot = resolve(options.recordRoot ?? join(cwd, ".niceeval"));
   const prior = await openRecord(recordRoot);
   const config = options.config ?? await loadConfigFile(cwd);
-  const evals = options.evals ?? await discoverEvals(cwd);
+  const evals = options.evals ?? await discoverProjectEvals(cwd, config);
   const experiments = options.experiments ?? await discoverExperiments(cwd);
 
   const sources = options.locators.map((locator) => resolveLocator(prior, locator));
@@ -390,9 +404,11 @@ export async function acceptLocators(options: AcceptLocatorsOptions): Promise<re
       sourceCache,
       now: options.now,
       producer: options.producer,
+      acceptTransfer: options.acceptTransfer,
     }),
   );
 
+  assertTransferSelectorsConsumed(options.acceptTransfer, prepared);
   return writeAcceptedAttempts(prepared);
 }
 
@@ -432,11 +448,26 @@ export async function prepareAcceptedAttempt(options: AcceptPreparedAttemptOptio
       ? comparison.deltas
       : comparison.diagnostic.observedDeltas ?? [];
   const differences = deltas.map(acceptedDifferenceOf);
+  const acceptedTransferPlan = validateTransferAcceptance({
+    sourceResult,
+    pair,
+    historicalManifest,
+    acceptTransfer: options.acceptTransfer,
+    sourceLocator,
+  });
+  const inheritedTransferPlan = sourceResult.executionInputs?.planDigest !== staticExecutionPlanDigest(pair.evalDef) &&
+    sourceResult.acceptedFrom?.acceptedExecutionPlanDigest === staticExecutionPlanDigest(pair.evalDef)
+    ? sourceResult.acceptedFrom.acceptedExecutionPlanDigest
+    : undefined;
+  const acceptedExecutionPlanDigest = acceptedTransferPlan ?? inheritedTransferPlan;
   const acceptedFrom: AcceptedResult = {
     locator: sourceLocator,
     fingerprint: oldFingerprint,
     acceptedFingerprint: options.currentFingerprint,
     differences,
+    ...(acceptedExecutionPlanDigest === undefined
+      ? {}
+      : { acceptedExecutionPlanDigest }),
   };
 
   return {
@@ -454,12 +485,14 @@ export async function prepareAcceptedAttempt(options: AcceptPreparedAttemptOptio
     ...(options.name === undefined ? {} : { name: options.name }),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.producer === undefined ? {} : { producer: options.producer }),
+    ...(acceptedTransferPlan === undefined ? {} : { usedTransferSelectors: [acceptedTransferPlan] }),
   };
 }
 
 /** 单条低层入口保持旧 API，内部也严格走 prepare → commit。 */
 export async function acceptPreparedAttempt(options: AcceptPreparedAttemptOptions): Promise<AcceptedAttempt> {
   const prepared = await prepareAcceptedAttempt(options);
+  assertTransferSelectorsConsumed(options.acceptTransfer, [prepared]);
   const accepted = await writeAcceptedAttempts([prepared]);
   const first = accepted[0];
   if (first === undefined) throw new Error("acceptPreparedAttempt committed no attempt.");
@@ -527,9 +560,11 @@ export async function writeAcceptedAttempts(
     // 否则跨 experiment 同名 eval 会互相覆盖对方的指纹输入清单。
     const manifests: globalThis.Record<string, EvalManifest> = {};
     const knownEvalIds = new Set<string>();
+    const definitionOrigins: globalThis.Record<string, import("./types.ts").EvalDefinitionOrigin> = {};
     for (const prepared of group) {
       manifests[prepared.source.evalId] = prepared.currentManifest;
       knownEvalIds.add(prepared.source.evalId);
+      definitionOrigins[prepared.source.evalId] = prepared.pair.evalDef.origin ?? ({ kind: "project" } as const);
       for (const evalId of prepared.knownEvalIds ?? []) knownEvalIds.add(evalId);
     }
     // prepare 阶段每条 locator 单独按「只选中自己那一题」重算指纹,但快照级 pair plan
@@ -544,6 +579,7 @@ export async function writeAcceptedAttempts(
       configHash: groupFirst.currentConfigHash,
       ...(experiment === undefined ? {} : { experiment }),
       ...(knownEvalIds.size === 0 ? {} : { knownEvalIds: [...knownEvalIds] }),
+      ...(Object.keys(definitionOrigins).length === 0 ? {} : { definitionOrigins }),
       manifests,
       ...(groupFirst.name === undefined ? {} : { name: groupFirst.name }),
     });
@@ -638,6 +674,8 @@ function acceptedResultFor(
     ...(prepared.currentExperiment === undefined ? {} : { experiment: prepared.currentExperiment }),
     fingerprint: prepared.currentFingerprint,
     configHash: prepared.currentConfigHash,
+    definitionOrigin: prepared.pair.evalDef.origin ?? ({ kind: "project" } as const),
+    executionOrigin: copied.executionOrigin ?? copied.definitionOrigin ?? ({ kind: "project" } as const),
     locator,
     locatorRunId,
     acceptedFrom: prepared.acceptedFrom,
@@ -733,4 +771,76 @@ function acceptedDifferenceOf(delta: FingerprintDelta): AcceptedDifference {
     ...(delta.from !== undefined ? { from: delta.from } : {}),
     ...(delta.to !== undefined ? { to: delta.to } : {}),
   };
+}
+
+/**
+ * An accept is a result carry, not a new execution.  A changed static host
+ * transfer plan therefore needs an explicit digest acknowledgement.  We never
+ * infer that acknowledgement from a broad source/fingerprint acceptance: it
+ * must name the current plan exactly, and old/incomplete evidence cannot be
+ * upgraded into proof by supplying a selector.
+ */
+function validateTransferAcceptance(input: {
+  sourceResult: EvalResult;
+  pair: PreparedRunPair;
+  historicalManifest: EvalManifest | undefined;
+  acceptTransfer: readonly string[] | undefined;
+  sourceLocator: AttemptLocator;
+}): string | undefined {
+  const currentPlan = input.pair.evalDef.moduleFacts?.transferPlan ?? [];
+  const currentLimitations = input.pair.evalDef.moduleFacts?.limitations ?? [];
+  const priorInputs = input.sourceResult.executionInputs;
+  const priorTransfers = priorInputs?.transfers ?? [];
+  const currentDigest = staticExecutionPlanDigest(input.pair.evalDef);
+  const hasTransferEvidence = currentPlan.length > 0 || priorTransfers.length > 0 || priorInputs !== undefined;
+  const hasDynamicTransfer = currentLimitations.some((limitation) => limitation.code === "dynamic-transfer") ||
+    priorInputs?.limitations.some((limitation) => limitation.code === "dynamic-transfer") === true;
+
+  if (input.acceptTransfer !== undefined && input.acceptTransfer.length > 0 &&
+    input.historicalManifest?.coverageVersion !== FINGERPRINT_COVERAGE_VERSION) {
+    throw new AcceptError(
+      "accept.transfer-proof-missing",
+      `Attempt "${input.sourceLocator}" predates complete dependency/runtime/transfer evidence; run it fresh instead of accepting it.`,
+    );
+  }
+
+  // Legacy records without any transfer evidence remain acceptable for Evals
+  // that have no transfer surface.  As soon as either side has one, missing
+  // inline evidence is an evidence gap rather than a selector-able change.
+  if (!hasTransferEvidence) return undefined;
+  if (hasDynamicTransfer || priorInputs === undefined || priorInputs.eligible !== true ||
+    input.historicalManifest?.coverageVersion !== FINGERPRINT_COVERAGE_VERSION) {
+    throw new AcceptError(
+      "accept.transfer-proof-missing",
+      `Attempt "${input.sourceLocator}" lacks a complete static transfer proof; run it fresh instead of accepting it.`,
+    );
+  }
+
+  if (priorInputs.planDigest === currentDigest) return undefined;
+  // An earlier explicit accept already re-anchored this exact historical
+  // execution plan to the current static plan.  Preserve that narrow audit
+  // decision when the accepted result itself is moved again; a later plan
+  // digest still falls through and requires a new selector.
+  if (input.sourceResult.acceptedFrom?.acceptedExecutionPlanDigest === currentDigest) return undefined;
+  if (input.acceptTransfer?.includes(currentDigest) !== true) {
+    throw new AcceptError(
+      "accept.transfer-plan-authorization-required",
+      `Transfer plan changed for "${input.sourceLocator}". Re-run with --accept-transfer ${currentDigest} to acknowledge the exact current plan.`,
+    );
+  }
+  return currentDigest;
+}
+
+function assertTransferSelectorsConsumed(
+  selectors: readonly string[] | undefined,
+  prepared: readonly PreparedAcceptedAttempt[],
+): void {
+  if (selectors === undefined || selectors.length === 0) return;
+  const used = new Set(prepared.flatMap((entry) => entry.usedTransferSelectors ?? []));
+  const unused = selectors.filter((selector) => !used.has(selector));
+  if (unused.length === 0) return;
+  throw new AcceptError(
+    "accept.transfer-plan-selector-unused",
+    `--accept-transfer did not match a changed static transfer plan: ${unused.join(", ")}.`,
+  );
 }

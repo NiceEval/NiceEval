@@ -43,6 +43,9 @@ Runner 按现有携带条件复用合格的历史 Attempt，不需要外部题�
 运行期本地上传由通用 Sandbox wrapper 写入 execution-input manifest。
 重复运行前重算静态 transfer plan；定义输入改变、路径逃出 owner、实际 transfer 与 plan 不一致或路径无法静态求值时保守重跑。
 
+静态计划外的动态 transfer 仍在 fresh Attempt 中从不可变 snapshot 发送，但该结果标记不可携带。
+静态计划内的 transfer 必须让 snapshot bytes 与 plan 相等，否则 Attempt 直接 errored，不把实际发送过另一份输入的结果缓存下来。
+
 外部项目不参与 run-level setup 或 teardown。
 每条 Eval 仍按自己的 Sandbox layer、Task 和 Assertion 生命周期运行。
 
@@ -61,6 +64,10 @@ package manager 选择新版本或 commit
 
 同一 Eval id 的 source、可达 dependency、runtime revision、Sandbox 或 transfer 输入改变时重跑。
 package version 或 Git commit 改变但上述逐 Eval 输入相同时可以继续携带；Record 仍保留旧 execution origin，不能把旧结果归到新 commit。
+
+coverage 0/1 的历史缺少 dependency、runtime 或 transfer 证明，升级到 coverage 2 时必须 fresh rerun，不能用 accept 越过未知输入面。
+同 coverage 下 transfer plan 改变时，普通 `niceeval accept` 拒绝；只有用户给出当前精确 `--accept-transfer <planDigest>` 才可重锚。
+授权摘要写入 `acceptedFrom.acceptedExecutionPlanDigest`，只认可这一版计划；下一次计划再变仍重新阻断。
 
 ## 修改共享题
 

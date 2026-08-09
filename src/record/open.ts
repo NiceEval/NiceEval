@@ -346,6 +346,7 @@ function makeSnapshotShell(dir: string, meta: RunMeta): Run {
     attempts: [],
     dir,
     ...(meta.knownEvalIds?.length ? { knownEvalIds: [...meta.knownEvalIds] } : {}),
+    ...(meta.definitionOrigins !== undefined ? { definitionOrigins: { ...meta.definitionOrigins } } : {}),
   };
 }
 

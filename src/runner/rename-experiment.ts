@@ -13,7 +13,7 @@ import { openRecord, withArtifactBase } from "../record/open.ts";
 import { createWriter } from "../record/writer.ts";
 import type { AttemptHandle, Producer, Record as ResultsRecord, Run } from "../record/types.ts";
 import type { EvalManifest } from "../record/manifest.ts";
-import { discoverEvals, discoverExperiments } from "./discover.ts";
+import { discoverExperiments, discoverProjectEvals } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import { fingerprintWithManifest, hashConfigIdentity } from "./fingerprint.ts";
 import { configIdentityForRun } from "./config-identity.ts";
@@ -169,7 +169,7 @@ export async function planExperimentRename(options: ExperimentRenameOptions): Pr
   const cwd = resolve(options.cwd);
   const recordRoot = resolve(options.recordRoot ?? join(cwd, ".niceeval"));
   const config = options.config ?? await loadConfigFile(cwd);
-  const evals = options.evals ?? await discoverEvals(cwd);
+  const evals = options.evals ?? await discoverProjectEvals(cwd, config);
   const experiments = options.experiments ?? await discoverExperiments(cwd);
   const record = options.record ?? await openRecord(recordRoot);
   const sourceExperiment = record.experiments.find((candidate) => candidate.id === oldId);

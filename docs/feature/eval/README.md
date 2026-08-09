@@ -132,6 +132,7 @@ API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测�
 
 ## 相关阅读
 
+- [共享 Eval](sharing.md) —— 在消费项目 Eval 文件中显式引用已安装 package 的题目，保留 package provenance 与执行 provenance。
 - [Library](library.md) —— API 全景、测试集从输入数组生成多条 eval契约与命名组织约定。
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
