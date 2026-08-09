@@ -338,8 +338,8 @@ export function App({
                 x
               </DialogClose>
             </div>
-            {/* 与直接打开 <pageId>/<key>.html 看到的是同一份 server-rendered 片段
-                (docs/engineering/testing/unit/reports.md 第 207 行),不是客户端重新渲染。 */}
+            {/* 与直接打开 <pageId>/<key>.html 看到的是同一份 server-rendered 片段，
+                不是客户端重新渲染。 */}
             <div className="flex-1 overflow-y-auto px-7 pb-7 pt-2">
               <ReportSlot html={dialogContent[locale] || dialogContent.en} />
             </div>

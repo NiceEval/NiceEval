@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "eval",
+  "areas": ["eval"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 10,
+  "harness": { "testkit": true },
+  "secrets": [],
+  "requires": { "runtimes": ["node>=22"] },
+  "paths": [
+    "e2e/eval/**",
+    "src/context/**",
+    "src/assertions/**",
+    "src/expect/**",
+    "src/agents/**",
+    "src/sandbox/**",
+    "src/runner/**",
+    "src/record/**"
+  ],
+  "artifacts": [".niceeval/**"]
+}

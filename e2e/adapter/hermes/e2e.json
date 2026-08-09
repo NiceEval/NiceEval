@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "adapter/hermes",
+  "areas": ["adapter", "sandbox"],
+  "lanes": ["main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 40,
+  "harness": { "testkit": true },
+  "secrets": ["BUB_API_KEY", "BUB_API_BASE"],
+  "requires": { "docker": true, "externalNetwork": true },
+  "paths": ["e2e/adapter/hermes/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [".niceeval/**", "junit.xml"]
+}

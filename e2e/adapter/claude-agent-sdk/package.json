@@ -1,0 +1,23 @@
+{
+  "name": "e2e-claude-agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "e2e": "vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/claude-agent-sdk'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.226"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "niceeval": "^0.4.6",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}

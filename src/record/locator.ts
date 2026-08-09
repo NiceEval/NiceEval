@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/unit/record.md
 // Attempt locator 的纯领域契约：编码只依赖持久化 Run 身份，索引忠实保留同一 locator 的
 // 全部候选；读取与写入分别在自己的边界解释多候选和碰撞。
 

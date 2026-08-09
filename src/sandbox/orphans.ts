@@ -38,8 +38,7 @@ export interface OrphanCandidate {
 }
 
 /** 孤儿三条件的裁决判据;默认走真实系统探测(`classifyRunIdentity`),测试注入窄判据以
- *  摆脱对当前进程真实启动时刻与 `ps` 可用性的依赖(见 docs/engineering/testing/unit/sandbox.md
- *  「孤儿核对与 prune」)。 */
+ *  摆脱对当前进程真实启动时刻与 `ps` 可用性的依赖。 */
 export type OrphanClassifier = (identity: RunIdentity) => "alive" | OrphanState;
 
 interface DockerContainerInfo {

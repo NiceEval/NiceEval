@@ -32,3 +32,11 @@ input.requested 事件缺少 request.id——LangGraph interrupt 必须带 id �
 `fromLangGraphEvents()` 且需要跨暂停复用同一个 `LangGraphStream` 实例实现 HITL resume 的
 adapter——`status` getter 的"持久化、不自动清零"语义在多轮场景下容易被想当然地当成"这一帧
 的状态"来读。修在 `e2e/adapter/langgraph/agents/langgraph.ts` 的 `drainStream`。
+
+## 2026-08-09 后续契约
+
+该修法针对已退役的自建 adapter：它跨 resume 复用同一 converter，且消费的
+shape 不是现行官方 Event envelope。当前公开
+`createLangGraphEventStream()` 明确规定一份官方 run 一个新实例；初始 run 与
+resume 的 `seq`、status、usage、dedupe 都不共享。旧条目仍保留为历史竞态证据，
+不再作为新 converter 的使用指导。

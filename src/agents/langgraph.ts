@@ -1,206 +1,160 @@
-// LangGraph 官方 event streaming 协议 → 标准 StreamEvent 的官方转换器。
+// LangGraph Agent Streaming Protocol → NiceEval standard StreamEvent.
 //
-// 定位:LangGraph 可以进程内运行,也可以部署在自建 HTTP 服务或 Agent Server 后——
-// 本文件只认协议帧本身,不绑定任何 transport,也不提供 langGraphAgent() 工厂
-// (契约见 docs/feature/adapters/sdk/langgraph/README.md)。会话操作属于应用 adapter:
-// `thread_id` 由 adapter 写回 `ctx.session.id`,`input.responses` 由 adapter 按应用协议
-// 翻译成 `Command(resume=...)`,都不进转换器。类型全部用结构化 *Like 声明(同
-// sdk-streams.ts 的先例),不依赖 LangGraph SDK 包。
-//
-// 用法(以 SSE transport 为例):
-//
-// ```typescript
-// import { sseJsonFrames, createLangGraphEventStream } from "niceeval/adapter";
-//
-// const frames = sseJsonFrames<LangGraphEventLike>(res.body);
-// const stream = createLangGraphEventStream();
-// for (;;) {
-//   const frame = await frames.next();
-//   if (frame === null) break;
-//   events.push(...stream.add(frame));   // 逐帧翻译;认不出的帧返回 []
-// }
-// events.push(...stream.end());          // 放出 seq 缺口后仍压着的乱序帧
-// return { status: stream.status ?? "completed", events, usage: stream.usage };
-// ```
+// The converter consumes the official protocol envelope itself. It is
+// transport-neutral and intentionally does not depend on @langchain/protocol at
+// runtime: callers can pass GraphRunStream ProtocolEvent values or decoded
+// Agent Protocol Event values unchanged.
 
-import type { InputRequest, JsonValue, StreamEvent, Usage } from "../types.ts";
+import type { JsonValue, StreamEvent, Usage } from "../types.ts";
 import { normalizeToolName } from "../o11y/tool-names.ts";
 
+/** Structural subset of the official protocol event params. */
+export interface LangGraphEventParamsLike {
+  namespace?: readonly string[];
+  timestamp?: string | number;
+  node?: string;
+  data?: unknown;
+}
+
 /**
- * `messages` channel 消息里的 content block(LangChain 标准 content blocks 的结构化子集,
- * 只声明转换器要读的字段)。`type: "text"` 读 `text`,`type: "reasoning"` 读 `reasoning`
- * (兼容放在 `text` 里的变体),`type: "tool_call"` 读 `id` / `name` / `args`。
+ * Structural subset of `@langchain/protocol` Event and LangGraph v3
+ * ProtocolEvent. Unknown methods and extension fields are ignored safely.
  */
+export interface LangGraphEventLike {
+  type: string;
+  event_id?: string;
+  seq?: number;
+  method?: string;
+  params?: LangGraphEventParamsLike;
+}
+
+/** Official content-block fields used by the messages channel. */
 export interface LangGraphContentBlockLike {
   type: string;
   text?: string;
   reasoning?: string;
-  id?: string;
-  name?: string;
-  args?: JsonValue;
-  [key: string]: JsonValue | undefined;
+  id?: string | null;
+  name?: string | null;
+  args?: unknown;
 }
 
-/**
- * LangGraph 事件流协议帧(只声明转换器要读的字段;真实协议帧直接喂进来即可)。
- * `channel` 是事件通道(messages / tools / input / lifecycle,其余通道无对应标准事件),
- * `event` 是通道内事件名,`namespace` 是 subgraph / subagent 层级(自外向内;缺省或空数组
- * = 根图),`seq` 是协议全序号(见 {@link createLangGraphEventStream} 的顺序恢复语义)。
- */
-export interface LangGraphEventLike {
-  /** 协议全序号。乱序到达按它恢复顺序;已消费过的 seq(重连补发)按重复丢弃。 */
-  seq?: number;
-  /** 事件通道:"messages" | "tools" | "input" | "lifecycle";其它通道(values / updates …)忽略。 */
-  channel?: string;
-  /**
-   * 通道内事件名:messages 的 "partial"(增量,忽略)与 "finish"(完整消息 + usage);
-   * tools 的 "started" / "finished" / "error";lifecycle 的 "completed" / "failed" / "interrupted"。
-   */
-  event?: string;
-  /** subgraph / subagent 层级(自外向内),如 `["research", "web"]`;段内 `:` 后缀(checkpoint id)不进展示名。 */
-  namespace?: readonly string[];
-  /** 通道载荷。 */
-  data?: globalThis.Record<string, JsonValue> | null;
-  [key: string]: JsonValue | readonly string[] | undefined | null;
-}
-
-/** {@link createLangGraphEventStream} 返回的流句柄。 */
 export interface LangGraphStream {
-  /**
-   * 逐帧喂协议事件,返回这一帧派生的标准事件。带 seq 且超前于当前水位的帧被暂存,
-   * 缺口补齐时按 seq 顺序一起放出;seq 落后于水位的帧视为重连补发的重复帧,丢弃。
-   */
+  /** Add one raw official event and return newly translated standard events. */
   add(event: LangGraphEventLike): StreamEvent[];
-  /** 流结束时调用一次:把 seq 缺口后仍暂存的乱序帧按 seq 升序放出(缺帧不再等)。 */
+  /** Flush a final sequence gap and terminate this one-run converter. */
   end(): StreamEvent[];
-  /** message finish 逐条累加的用量;协议没报 usage 时是 undefined(不编造数值)。 */
   readonly usage: Usage | undefined;
-  /**
-   * lifecycle 映射的 Turn 状态:completed / failed 原样,interrupted → "waiting"
-   * (HITL 停轮,adapter 据此挂起并等 `input.responses`)。没见过 lifecycle 帧时 undefined。
-   */
   readonly status: "completed" | "failed" | "waiting" | undefined;
-  /**
-   * 拒绝审批后续读前登记:该 tool call 的 tools/error 落成 `status: "rejected"`
-   * (人工拒绝)而不是 "failed"(执行故障)。
-   */
+  /** Mark a tool error in this run as a human rejection. */
   markRejected(toolCallId: string): void;
 }
 
-function isRecord(v: unknown): v is globalThis.Record<string, unknown> {
-  return typeof v === "object" && v !== null;
+function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function str(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** namespace 段的展示名:`node:checkpoint-id` 只留 node 名。 */
+function namespaceOf(event: LangGraphEventLike): string[] {
+  return Array.isArray(event.params?.namespace)
+    ? event.params.namespace.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+}
+
+function dataOf(event: LangGraphEventLike): globalThis.Record<string, unknown> {
+  return isRecord(event.params?.data) ? event.params.data : {};
+}
+
 function segmentName(segment: string): string {
-  const i = segment.indexOf(":");
-  return i > 0 ? segment.slice(0, i) : segment;
+  const separator = segment.indexOf(":");
+  return separator > 0 ? segment.slice(0, separator) : segment;
 }
 
 /**
- * LangGraph 官方事件流(messages / tools / input / lifecycle 四通道)→ 标准事件。
- *
- * - `messages` 的 finish 帧:text block → message、reasoning block → thinking、
- *   tool_call block → operation.started(与 tools/started 按 call ID 去重),usage 从
- *   消息的 usage_metadata 累加;partial(逐 token 增量)整个忽略。
- * - `tools` 的 started / finished / error → operation.started / operation.finished,按 tool call ID 配对;
- *   error 默认 "failed",经 {@link LangGraphStream.markRejected} 登记过的落 "rejected"。
- * - `input` 帧与 lifecycle 的 interrupted → input.requested(同一 interrupt 出现在两处时按
- *   id 去重);interrupt 载荷里的 HITL 请求形状(action_request / description / config.allow_*)
- *   映射成 InputRequest 的 action / input / display / options。
- * - `lifecycle`(根 namespace)映射 `status`:completed / failed / interrupted("waiting");
- *   failed 帧的错误信息补一条 error 事件。
- * - `namespace` 非空的帧翻译前先为每级未见过的层级补 operation.started(callId 是自外向内
- *   的路径,层级关系由路径前缀表达);该层级自己的 lifecycle completed / failed 闭合成
- *   operation.finished,根图 completed / failed 时把仍未闭合的层级按同状态一起闭合
- *   (interrupted 不闭合——层级还要 resume)。
- * - 帧带 `seq` 时按 seq 恢复协议定义的事件顺序(超前暂存、缺口补齐放出、落后当重复丢弃),
- *   流结束调 {@link LangGraphStream.end} 放出仍压着的乱序帧。
- *
- * 工具名多为应用域内自定义名(canonical 落 "unknown" 即可),只认通用别名基表,
- * 不 opt-in 裸动词别名(同 turnFromAiSdk 的裁决,见 src/o11y/tool-names.ts)。
+ * Translate one official LangGraph run. Create a fresh instance for every
+ * initial or resumed run: seq, lifecycle, usage and dedupe state are run-local.
  */
 export function createLangGraphEventStream(): LangGraphStream {
   let usage: Usage | undefined;
   let status: "completed" | "failed" | "waiting" | undefined;
+  let ended = false;
 
   const startedCallIds = new Set<string>();
   const resolvedCallIds = new Set<string>();
-  const rejected = new Set<string>();
+  const rejectedCallIds = new Set<string>();
   const requestedInputIds = new Set<string>();
-  // namespace 路径(join("/"))→ 打开 / 闭合状态。Set 保持插入序,闭合时按深度倒序。
   const openNamespaces = new Set<string>();
   const closedNamespaces = new Set<string>();
+  const messageRoles = new Map<string, "assistant" | "user">();
+  const messageBlocks = new Map<string, Map<string, globalThis.Record<string, unknown>>>();
+  const toolOutputDeltas = new Map<string, string>();
 
-  // seq 顺序恢复:以第一个带 seq 的帧为水位基准,超前的暂存,缺口补齐时连续放出。
   let nextSeq: number | undefined;
   const pendingBySeq = new Map<number, LangGraphEventLike>();
 
-  let synth = 0;
-  const synthCallId = (): string => `lg_${++synth}`;
+  const assertOpen = (operation: string): void => {
+    if (ended) throw new Error(`LangGraph event stream already ended; cannot ${operation}`);
+  };
 
   const addUsage = (raw: unknown): void => {
     if (!isRecord(raw)) return;
-    const num = (...keys: string[]): number => {
-      for (const k of keys) {
-        const v = raw[k];
-        if (typeof v === "number" && Number.isFinite(v)) return v;
+    const number = (...keys: string[]): number => {
+      for (const key of keys) {
+        const value = raw[key];
+        if (typeof value === "number" && Number.isFinite(value)) return value;
       }
       return 0;
     };
-    const rawInput = num("input_tokens", "inputTokens");
-    const output = num("output_tokens", "outputTokens");
-    if (rawInput === 0 && output === 0) return;
-    const details = isRecord(raw.input_token_details) ? raw.input_token_details : undefined;
-    const cacheRead = typeof details?.cache_read === "number" ? details.cache_read : 0;
-    const cacheCreation = typeof details?.cache_creation === "number" ? details.cache_creation : 0;
-    // LangChain usage_metadata 的 input_tokens 是含缓存读写的输入总量,落互斥桶前扣掉明细
-    // (docs/feature/adapters/sdk/langgraph/cost.md)
-    const input = Math.max(0, rawInput - cacheRead - cacheCreation);
-    // LangChain UsageMetadata.output_token_details.reasoning:推理模型经 LangGraph 透传时带回。
+    const rawInput = number("input_tokens", "inputTokens");
+    const output = number("output_tokens", "outputTokens");
+    const inputDetails = isRecord(raw.input_token_details) ? raw.input_token_details : undefined;
     const outputDetails = isRecord(raw.output_token_details) ? raw.output_token_details : undefined;
+    const cacheRead = typeof inputDetails?.cache_read === "number" ? inputDetails.cache_read : 0;
+    const cacheCreation = typeof inputDetails?.cache_creation === "number" ? inputDetails.cache_creation : 0;
     const reasoning = typeof outputDetails?.reasoning === "number" ? outputDetails.reasoning : 0;
     usage = {
-      inputTokens: (usage?.inputTokens ?? 0) + input,
+      inputTokens: (usage?.inputTokens ?? 0) + Math.max(0, rawInput - cacheRead - cacheCreation),
       outputTokens: (usage?.outputTokens ?? 0) + output,
-      ...(cacheRead || usage?.cacheReadTokens
+      ...(cacheRead > 0 || usage?.cacheReadTokens !== undefined
         ? { cacheReadTokens: (usage?.cacheReadTokens ?? 0) + cacheRead }
         : {}),
-      ...(cacheCreation || usage?.cacheCreationTokens
+      ...(cacheCreation > 0 || usage?.cacheCreationTokens !== undefined
         ? { cacheCreationTokens: (usage?.cacheCreationTokens ?? 0) + cacheCreation }
         : {}),
-      ...(reasoning || usage?.reasoningTokens
+      ...(reasoning > 0 || usage?.reasoningTokens !== undefined
         ? { reasoningTokens: (usage?.reasoningTokens ?? 0) + reasoning }
         : {}),
       requests: (usage?.requests ?? 0) + 1,
     };
   };
 
-  const emitCalled = (
+  const emitStarted = (
     events: StreamEvent[],
     callId: string,
     name: string,
     input: unknown,
   ): void => {
-    // messages 的 tool_call block 与 tools/started 描述同一次调用,按 call ID 只发一条。
     if (startedCallIds.has(callId)) return;
     startedCallIds.add(callId);
     events.push({
       type: "operation.started",
       operationId: callId,
-      operation: { kind: "tool", name, input: (input ?? null) as JsonValue, tool: normalizeToolName(name) },
+      operation: {
+        kind: "tool",
+        name,
+        input: (input ?? null) as JsonValue,
+        tool: normalizeToolName(name),
+      },
     });
   };
 
-  const emitResult = (
+  const emitFinished = (
     events: StreamEvent[],
     callId: string,
     output: unknown,
-    status_: "completed" | "failed" | "rejected",
+    terminalStatus: "completed" | "failed" | "rejected",
   ): void => {
     if (resolvedCallIds.has(callId)) return;
     resolvedCallIds.add(callId);
@@ -208,20 +162,18 @@ export function createLangGraphEventStream(): LangGraphStream {
       type: "operation.finished",
       operationId: callId,
       kind: "tool",
-      ...(output !== undefined ? { output: output as JsonValue } : {}),
-      status: status_,
+      ...(output === undefined ? {} : { output: output as JsonValue }),
+      status: terminalStatus,
     });
   };
 
-  /** interrupt / input 载荷 → input.requested(同一 interrupt id 只发一条)。 */
-  const emitInputRequested = (events: StreamEvent[], payload: globalThis.Record<string, unknown>): void => {
-    const id = str(payload.id) ?? str(payload.interrupt_id);
-    if (id) {
-      if (requestedInputIds.has(id)) return;
-      requestedInputIds.add(id);
-    }
-    // interrupt 的载荷在 value 上;input 通道也可能直接给结构化字段。
-    const value = "value" in payload ? payload.value : payload;
+  const emitInputRequested = (
+    events: StreamEvent[],
+    interruptId: string,
+    payload: unknown,
+  ): void => {
+    if (requestedInputIds.has(interruptId)) return;
+    requestedInputIds.add(interruptId);
     const request: {
       id?: string;
       prompt?: string;
@@ -229,24 +181,20 @@ export function createLangGraphEventStream(): LangGraphStream {
       action?: string;
       input?: JsonValue;
       options?: { id: string; label?: string }[];
-    } = {};
-    if (id) request.id = id;
-    if (typeof value === "string") {
-      request.prompt = value;
-    } else if (isRecord(value)) {
-      // HITL 请求形状(prebuilt HumanInterrupt):action_request / description / config.allow_*。
-      const actionRequest = isRecord(value.action_request) ? value.action_request : undefined;
-      if (actionRequest) {
-        const action = str(actionRequest.action);
-        if (action) request.action = action;
-        if (actionRequest.args !== undefined) request.input = actionRequest.args as JsonValue;
-      }
-      const display = str(value.description) ?? str(value.display);
-      if (display) request.display = display;
-      const prompt = str(value.prompt) ?? str(value.question);
-      if (prompt) request.prompt = prompt;
-      const config = isRecord(value.config) ? value.config : undefined;
-      if (config) {
+    } = { id: interruptId };
+    if (typeof payload === "string") {
+      request.prompt = payload;
+    } else if (isRecord(payload)) {
+      const actionRequest = isRecord(payload.action_request) ? payload.action_request : undefined;
+      const action = str(actionRequest?.action);
+      if (action !== undefined) request.action = action;
+      if (actionRequest?.args !== undefined) request.input = actionRequest.args as JsonValue;
+      const display = str(payload.description) ?? str(payload.display);
+      if (display !== undefined) request.display = display;
+      const prompt = str(payload.prompt) ?? str(payload.question);
+      if (prompt !== undefined) request.prompt = prompt;
+      const config = isRecord(payload.config) ? payload.config : undefined;
+      if (config !== undefined) {
         const options = (
           [
             ["allow_accept", "accept"],
@@ -256,132 +204,199 @@ export function createLangGraphEventStream(): LangGraphStream {
           ] as const
         )
           .filter(([flag]) => config[flag] === true)
-          .map(([, optionId]) => ({ id: optionId }));
-        if (options.length) request.options = options;
+          .map(([, id]) => ({ id }));
+        if (options.length > 0) request.options = options;
       }
-      // 认不出的结构化载荷原样携带,eval 仍可按参数匹配。
       if (
         request.action === undefined &&
+        request.input === undefined &&
         request.display === undefined &&
-        request.prompt === undefined &&
-        request.input === undefined
+        request.prompt === undefined
       ) {
-        request.input = value as JsonValue;
+        request.input = payload as JsonValue;
       }
+    } else if (payload !== undefined) {
+      request.input = payload as JsonValue;
     }
-    events.push({ type: "input.requested", request: request as InputRequest });
+    events.push({ type: "input.requested", request });
   };
 
-  const emitInterrupts = (events: StreamEvent[], data: globalThis.Record<string, unknown>): void => {
-    const interrupts = Array.isArray(data.interrupts)
-      ? data.interrupts
-      : data.interrupt !== undefined
-        ? [data.interrupt]
-        : [data];
-    for (const item of interrupts) {
-      if (isRecord(item)) emitInputRequested(events, item);
-      else if (typeof item === "string") emitInputRequested(events, { value: item });
-    }
-  };
-
-  /** 为 namespace 的每级未见过的前缀补 operation.started(层级由路径 callId 表达)。 */
-  const ensureNamespace = (events: StreamEvent[], ns: readonly string[]): void => {
-    for (let i = 1; i <= ns.length; i++) {
-      const key = ns.slice(0, i).join("/");
-      if (openNamespaces.has(key) || closedNamespaces.has(key)) continue;
-      openNamespaces.add(key);
+  const ensureNamespace = (events: StreamEvent[], namespace: readonly string[]): void => {
+    for (let index = 1; index <= namespace.length; index += 1) {
+      const path = namespace.slice(0, index).join("/");
+      if (openNamespaces.has(path) || closedNamespaces.has(path)) continue;
+      openNamespaces.add(path);
       events.push({
         type: "operation.started",
-        operationId: key,
-        operation: { kind: "subagent", name: segmentName(ns[i - 1]!) },
+        operationId: path,
+        operation: { kind: "subagent", name: segmentName(namespace[index - 1]!) },
       });
     }
   };
 
   const closeNamespace = (
     events: StreamEvent[],
-    key: string,
-    status_: "completed" | "failed",
-    output?: unknown,
+    path: string,
+    terminalStatus: "completed" | "failed",
   ): void => {
-    if (!openNamespaces.has(key)) return;
-    // 先闭合仍打开的更深层级(按深度倒序),再闭合自己——called/completed 嵌套配对。
+    if (!openNamespaces.has(path)) return;
     const descendants = [...openNamespaces]
-      .filter((k) => k.startsWith(`${key}/`))
-      .sort((a, b) => b.split("/").length - a.split("/").length);
-    for (const child of descendants) {
-      openNamespaces.delete(child);
-      closedNamespaces.add(child);
-      events.push({ type: "operation.finished", operationId: child, kind: "subagent", status: status_ });
+      .filter((candidate) => candidate.startsWith(`${path}/`))
+      .sort((left, right) => right.split("/").length - left.split("/").length);
+    for (const descendant of descendants) {
+      openNamespaces.delete(descendant);
+      closedNamespaces.add(descendant);
+      events.push({
+        type: "operation.finished",
+        operationId: descendant,
+        kind: "subagent",
+        status: terminalStatus,
+      });
     }
-    openNamespaces.delete(key);
-    closedNamespaces.add(key);
+    openNamespaces.delete(path);
+    closedNamespaces.add(path);
     events.push({
       type: "operation.finished",
-      operationId: key,
+      operationId: path,
       kind: "subagent",
-      ...(output !== undefined ? { output: output as JsonValue } : {}),
-      status: status_,
+      status: terminalStatus,
     });
   };
 
-  const closeAllOpen = (events: StreamEvent[], status_: "completed" | "failed"): void => {
-    const roots = [...openNamespaces].sort((a, b) => b.split("/").length - a.split("/").length);
-    for (const key of roots) {
-      if (!openNamespaces.has(key)) continue;
-      closeNamespace(events, key, status_);
+  const closeAllNamespaces = (events: StreamEvent[], terminalStatus: "completed" | "failed"): void => {
+    for (const path of [...openNamespaces].sort(
+      (left, right) => right.split("/").length - left.split("/").length,
+    )) {
+      if (openNamespaces.has(path)) closeNamespace(events, path, terminalStatus);
     }
   };
 
-  const handleMessages = (events: StreamEvent[], frame: LangGraphEventLike): void => {
-    // 逐 token 增量帧整个忽略:finish 帧带完整 content blocks(同 createClaudeSdkEventStream
-    // 忽略 stream_event 的先例)。
-    if (frame.event === "partial" || frame.event === "delta") return;
-    const data = isRecord(frame.data) ? frame.data : {};
-    const message = isRecord(data.message) ? data.message : data;
-    const role = str(message.role) ?? "assistant";
-    if (role !== "assistant" && role !== "user") return;
+  const messageKey = (event: LangGraphEventLike, namespace: readonly string[]): string =>
+    `${namespace.join("/")}\u0000${event.params?.node ?? ""}`;
 
-    const content = message.content;
-    if (typeof content === "string") {
-      if (content) events.push({ type: "message", role, text: content });
-    } else if (Array.isArray(content)) {
-      // 按 block 原始顺序落事件,不重排(events.md 不变量 1)。
-      for (const block of content) {
-        if (!isRecord(block)) continue;
-        if (block.type === "text" && typeof block.text === "string" && block.text) {
-          events.push({ type: "message", role, text: block.text });
-        } else if (block.type === "reasoning") {
-          const text = str(block.reasoning) ?? str(block.text);
-          if (text) events.push({ type: "thinking", text });
-        } else if (block.type === "tool_call" && role === "assistant") {
-          const name = str(block.name) ?? "unknown";
-          emitCalled(events, str(block.id) ?? synthCallId(), name, block.args);
+  const blockKey = (index: unknown): string | undefined =>
+    typeof index === "string" || typeof index === "number" ? String(index) : undefined;
+
+  const emitContentBlock = (
+    events: StreamEvent[],
+    role: "assistant" | "user",
+    block: globalThis.Record<string, unknown>,
+  ): void => {
+    if (block.type === "text" && typeof block.text === "string" && block.text.length > 0) {
+      events.push({ type: "message", role, text: block.text });
+      return;
+    }
+    if (block.type === "reasoning") {
+      const reasoning = str(block.reasoning) ?? str(block.text);
+      if (reasoning !== undefined) events.push({ type: "thinking", text: reasoning });
+      return;
+    }
+    if (block.type === "tool_call" && role === "assistant") {
+      const callId = str(block.id);
+      const name = str(block.name);
+      if (callId !== undefined && name !== undefined) emitStarted(events, callId, name, block.args);
+    }
+  };
+
+  const handleMessages = (
+    events: StreamEvent[],
+    event: LangGraphEventLike,
+    namespace: readonly string[],
+  ): void => {
+    const data = dataOf(event);
+    const kind = str(data.event);
+    const key = messageKey(event, namespace);
+    switch (kind) {
+      case "message-start": {
+        const role = data.role === "human" ? "user" : data.role === "ai" ? "assistant" : undefined;
+        if (role !== undefined) messageRoles.set(key, role);
+        messageBlocks.set(key, new Map());
+        break;
+      }
+      case "content-block-start": {
+        const index = blockKey(data.index);
+        if (index !== undefined && isRecord(data.content)) {
+          const blocks = messageBlocks.get(key) ?? new Map();
+          blocks.set(index, { ...data.content });
+          messageBlocks.set(key, blocks);
         }
+        break;
       }
+      case "content-block-delta": {
+        const index = blockKey(data.index);
+        if (index === undefined || !isRecord(data.delta)) break;
+        const blocks = messageBlocks.get(key) ?? new Map();
+        const block = blocks.get(index) ?? {};
+        if (data.delta.type === "text-delta" && typeof data.delta.text === "string") {
+          block.text = `${typeof block.text === "string" ? block.text : ""}${data.delta.text}`;
+        } else if (data.delta.type === "reasoning-delta" && typeof data.delta.reasoning === "string") {
+          block.reasoning = `${typeof block.reasoning === "string" ? block.reasoning : ""}${data.delta.reasoning}`;
+        } else if (data.delta.type === "block-delta" && isRecord(data.delta.fields)) {
+          Object.assign(block, data.delta.fields);
+        } else if (data.delta.type === "data-delta" && typeof data.delta.data === "string") {
+          block.base64 = `${typeof block.base64 === "string" ? block.base64 : ""}${data.delta.data}`;
+        }
+        blocks.set(index, block);
+        messageBlocks.set(key, blocks);
+        break;
+      }
+      case "content-block-finish": {
+        const index = blockKey(data.index);
+        const accumulated = index === undefined ? undefined : messageBlocks.get(key)?.get(index);
+        const finalized = isRecord(data.content) ? data.content : accumulated;
+        const role = messageRoles.get(key);
+        if (finalized !== undefined && role !== undefined) emitContentBlock(events, role, finalized);
+        if (index !== undefined) messageBlocks.get(key)?.delete(index);
+        break;
+      }
+      case "message-finish":
+        addUsage(data.usage);
+        messageRoles.delete(key);
+        messageBlocks.delete(key);
+        break;
+      case "error": {
+        const message = str(data.message);
+        if (message !== undefined) events.push({ type: "error", message });
+        messageRoles.delete(key);
+        messageBlocks.delete(key);
+        break;
+      }
+      default:
+        break;
     }
-    // usage 在 message finish 上(usage_metadata;兼容 usage / data.usage 变体)。
-    addUsage(message.usage_metadata ?? message.usage ?? data.usage);
   };
 
-  const handleTools = (events: StreamEvent[], frame: LangGraphEventLike): void => {
-    const data = isRecord(frame.data) ? frame.data : {};
-    const explicitId = str(data.id) ?? str(data.tool_call_id) ?? str(data.call_id);
-    switch (frame.event) {
-      case "started": {
-        const name = str(data.name) ?? "unknown";
-        emitCalled(events, explicitId ?? synthCallId(), name, data.input ?? data.args);
+  const handleTools = (events: StreamEvent[], event: LangGraphEventLike): void => {
+    const data = dataOf(event);
+    const kind = str(data.event);
+    const callId = str(data.tool_call_id);
+    if (callId === undefined) return;
+    switch (kind) {
+      case "tool-started": {
+        const name = str(data.tool_name);
+        if (name !== undefined) emitStarted(events, callId, name, data.input);
         break;
       }
-      case "finished": {
-        const callId = explicitId ?? synthCallId();
-        emitResult(events, callId, data.output ?? data.result, "completed");
+      case "tool-output-delta":
+        if (typeof data.delta === "string") {
+          toolOutputDeltas.set(callId, `${toolOutputDeltas.get(callId) ?? ""}${data.delta}`);
+        }
+        break;
+      case "tool-finished": {
+        const output = data.output ?? toolOutputDeltas.get(callId);
+        toolOutputDeltas.delete(callId);
+        emitFinished(events, callId, output, "completed");
         break;
       }
-      case "error": {
-        const callId = explicitId ?? synthCallId();
-        const message = str(data.error) ?? (isRecord(data.error) ? str(data.error.message) : undefined) ?? str(data.message);
-        emitResult(events, callId, message, rejected.has(callId) ? "rejected" : "failed");
+      case "tool-error": {
+        toolOutputDeltas.delete(callId);
+        const rejected = rejectedCallIds.has(callId);
+        emitFinished(
+          events,
+          callId,
+          rejected ? undefined : str(data.message),
+          rejected ? "rejected" : "failed",
+        );
         break;
       }
       default:
@@ -391,75 +406,58 @@ export function createLangGraphEventStream(): LangGraphStream {
 
   const handleLifecycle = (
     events: StreamEvent[],
-    frame: LangGraphEventLike,
-    ns: readonly string[],
+    event: LangGraphEventLike,
+    namespace: readonly string[],
   ): void => {
-    const data = isRecord(frame.data) ? frame.data : {};
-    if (ns.length > 0) {
-      // subgraph 生命周期:闭合对应 subagent 层级。interrupted 不闭合(层级还要 resume),
-      // 但停轮请求与状态照常上浮——整条 run 一起停。
-      if (frame.event === "completed" || frame.event === "failed") {
-        closeNamespace(
-          events,
-          ns.join("/"),
-          frame.event,
-          data.output ?? data.result,
-        );
-      } else if (frame.event === "interrupted") {
-        status = "waiting";
-        emitInterrupts(events, data);
-      }
+    const data = dataOf(event);
+    const lifecycle = str(data.event);
+    if (namespace.length > 0) {
+      const path = namespace.join("/");
+      if (lifecycle === "completed" || lifecycle === "failed") closeNamespace(events, path, lifecycle);
+      else if (lifecycle === "interrupted") status = "waiting";
       return;
     }
-    switch (frame.event) {
-      case "completed": {
-        status = "completed";
-        closeAllOpen(events, "completed");
-        break;
-      }
-      case "failed": {
-        status = "failed";
-        const message =
-          str(data.error) ??
-          (isRecord(data.error) ? str(data.error.message) : undefined) ??
-          str(data.message);
-        if (message) events.push({ type: "error", message });
-        closeAllOpen(events, "failed");
-        break;
-      }
-      case "interrupted": {
-        status = "waiting";
-        emitInterrupts(events, data);
-        break;
-      }
-      default:
-        break;
+    if (lifecycle === "completed") {
+      status = "completed";
+      closeAllNamespaces(events, "completed");
+    } else if (lifecycle === "failed") {
+      status = "failed";
+      const message = str(data.error);
+      if (message !== undefined) events.push({ type: "error", message });
+      closeAllNamespaces(events, "failed");
+    } else if (lifecycle === "interrupted") {
+      status = "waiting";
     }
   };
 
-  const translate = (frame: LangGraphEventLike): StreamEvent[] => {
+  const translate = (event: LangGraphEventLike): StreamEvent[] => {
     const events: StreamEvent[] = [];
-    const ns = Array.isArray(frame.namespace)
-      ? frame.namespace.filter((s): s is string => typeof s === "string" && s.length > 0)
-      : [];
-    ensureNamespace(events, ns);
-    switch (frame.channel) {
+    if (event.type !== "event") return events;
+    const namespace = namespaceOf(event);
+    switch (event.method) {
       case "messages":
-        handleMessages(events, frame);
+        ensureNamespace(events, namespace);
+        handleMessages(events, event, namespace);
         break;
       case "tools":
-        handleTools(events, frame);
+        ensureNamespace(events, namespace);
+        handleTools(events, event);
         break;
-      case "input": {
-        const data = isRecord(frame.data) ? frame.data : {};
-        emitInputRequested(events, data);
+      case "input.requested": {
+        ensureNamespace(events, namespace);
+        const data = dataOf(event);
+        const interruptId = str(data.interrupt_id);
+        if (interruptId !== undefined) emitInputRequested(events, interruptId, data.payload);
         break;
       }
       case "lifecycle":
-        handleLifecycle(events, frame, ns);
+        ensureNamespace(events, namespace);
+        handleLifecycle(events, event, namespace);
         break;
-      // values / updates / debug 等其它通道:无对应 StreamEvent。
       default:
+        // values, updates, checkpoints, tasks and extensions have no standard
+        // NiceEval event, including no inferred namespace operation. Their seq
+        // still advances in add().
         break;
     }
     return events;
@@ -473,35 +471,34 @@ export function createLangGraphEventStream(): LangGraphStream {
       return status;
     },
     markRejected(toolCallId) {
-      rejected.add(toolCallId);
+      assertOpen("mark a rejected tool call");
+      rejectedCallIds.add(toolCallId);
     },
-    add(frame) {
-      const seq = typeof frame.seq === "number" && Number.isFinite(frame.seq) ? frame.seq : undefined;
-      if (seq === undefined) return translate(frame);
+    add(event) {
+      assertOpen("add an event");
+      const seq = Number.isSafeInteger(event.seq) && (event.seq ?? -1) >= 0 ? event.seq : undefined;
+      if (seq === undefined) return translate(event);
       if (nextSeq === undefined) nextSeq = seq;
-      if (seq < nextSeq) return []; // 重连补发的旧帧:已消费,丢弃
-      if (seq > nextSeq) {
-        pendingBySeq.set(seq, frame); // 超前:暂存等缺口补齐
-        return [];
-      }
-      const events = translate(frame);
-      nextSeq += 1;
-      while (pendingBySeq.has(nextSeq)) {
-        const next = pendingBySeq.get(nextSeq)!;
+      if (seq < nextSeq || pendingBySeq.has(seq)) return [];
+      pendingBySeq.set(seq, event);
+      const events: StreamEvent[] = [];
+      while (nextSeq !== undefined) {
+        const next = pendingBySeq.get(nextSeq);
+        if (next === undefined) break;
         pendingBySeq.delete(nextSeq);
-        events.push(...translate(next));
         nextSeq += 1;
+        events.push(...translate(next));
       }
       return events;
     },
     end() {
+      if (ended) return [];
+      ended = true;
       const events: StreamEvent[] = [];
-      const remaining = [...pendingBySeq.entries()].sort(([a], [b]) => a - b);
-      pendingBySeq.clear();
-      for (const [seq, frame] of remaining) {
-        events.push(...translate(frame));
-        if (nextSeq === undefined || seq >= nextSeq) nextSeq = seq + 1;
+      for (const [, event] of [...pendingBySeq.entries()].sort(([left], [right]) => left - right)) {
+        events.push(...translate(event));
       }
+      pendingBySeq.clear();
       return events;
     },
   };

@@ -1,0 +1,12 @@
+# 这个仓库不是 niceeval 根 workspace 的成员,也不属于 e2e/ 的 workspace——空 `packages: []`
+# 让 pnpm 把这里当独立项目安装依赖,不再往上层目录找 workspace root(见
+# docs/engineering/testing/e2e/README.md §2.1「不加入 niceeval 根 workspace」)。
+packages: []
+allowBuilds:
+  # dockerode(niceeval 的 docker sandbox 可选 peer dep)带来的传递依赖:本仓库只经本机
+  # unix socket 跟 Docker daemon 说话,用不到 ssh2 的 SSH 传输,原生构建脚本不需要跑
+  # (与 e2e/adapter/claude-code 等同名决策保持一致)。
+  cpu-features: false
+  esbuild: true
+  protobufjs: false
+  ssh2: false

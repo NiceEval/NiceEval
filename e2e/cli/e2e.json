@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "cli",
+  "areas": ["cli"],
+  "lanes": ["pr", "main", "nightly", "release"],
+  "executor": { "kind": "host" },
+  "command": ["pnpm", "exec", "vitest", "run"],
+  "timeoutMinutes": 15,
+  "harness": { "testkit": true },
+  "secrets": [],
+  "paths": ["e2e/cli/**", "package.json", "pnpm-lock.yaml", "e2e/scripts/**"],
+  "artifacts": [
+    ".niceeval/**",
+    "junit/**"
+  ]
+}

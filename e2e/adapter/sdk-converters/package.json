@@ -1,0 +1,36 @@
+{
+  "name": "e2e-adapter-sdk-converters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline deterministic E2E owner for NiceEval public SDK converters",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "e2e": "tsc --noEmit && vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e --repo adapter/sdk-converters'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.226",
+    "@anthropic-ai/sdk": "0.116.0",
+    "@earendil-works/pi-agent-core": "0.82.1",
+    "@earendil-works/pi-ai": "0.82.1",
+    "@langchain/core": "1.2.5",
+    "@langchain/langgraph": "1.4.8",
+    "@langchain/protocol": "0.0.18",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@openai/codex-sdk": "0.147.0",
+    "ai": "7.0.30",
+    "niceeval": "0.4.6",
+    "openai": "6.49.0",
+    "typebox": "1.1.38",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.0",
+    "typescript": "5.7.2",
+    "vitest": "4.1.9"
+  }
+}

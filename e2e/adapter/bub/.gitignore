@@ -1,0 +1,4 @@
+node_modules/
+.niceeval/
+logs/
+junit/

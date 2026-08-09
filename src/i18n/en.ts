@@ -456,7 +456,7 @@ export const en = {
   "judge.apiKeyMissing": "judge is missing an API key: set NICEEVAL_JUDGE_KEY, or point judge.apiKeyEnv at another environment variable.",
   "judge.httpError": "judge HTTP {{status}}: {{body}}",
   "judge.probeFailed": "judge precheck failed: {{endpoint}} ({{model}}): {{error}}",
-  "judge.probeTimeout": "judge precheck failed: {{endpoint}} ({{model}}) timed out {{attempts}} times ({{seconds}}s each) — the endpoint accepts connections but never answers; first check whether other traffic on the same account is saturating the gateway's concurrency, then verify the judge baseUrl (NICEEVAL_JUDGE_BASE)",
+  "judge.probeTimeout": "judge precheck failed: {{endpoint}} ({{model}}) timed out {{attempts}} times ({{seconds}}s each) — the endpoint accepts connections but never answers; first check whether other traffic on the same account is saturating the gateway's concurrency, then verify judge.baseUrl",
   "judge.probeMissingKey": "judge model {{model}} is missing an API key; configure {{envHint}}",
   "live.more": "… {{hidden}} more ({{running}} running · {{waiting}} waiting · {{done}} done)",
   "live.running": "  Running {{totalRuns}} attempts ({{evals}} evals × {{configs}} configs, concurrency {{concurrency}})       {{completed}}/{{total}} done",
