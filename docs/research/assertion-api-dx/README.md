@@ -1,27 +1,30 @@
 # 评估断言 API、语法与作者 DX
 
-本研究横向观察评估软件怎样让作者表达“什么算成功”。
+本目录一份文件对应一个产品。
+每份独立指南都包含安装、最小可运行示例、完整断言或评分 API、失败语义、扩展方式、作者 DX 与 NiceEval 取舍。
+本页只负责导航与横向判断，不替代各产品指南。
+
 重点是调用点、判定层级、证据与失败反馈，不比较支持的模型、托管报表或价格。
-它只提供带日期的设计输入，不构成 NiceEval 目标契约。
+这些材料只提供带日期的设计输入，不构成 NiceEval 目标契约。
 
 ## 观察范围
 
 观察日期是 2026-08-09。
 
-| 对象 | 观察快照 | 一手材料 |
+| 独立指南 | 观察快照 | 一手材料 |
 |---|---|---|
-| Eve | `bd93f55481b3048d0273dd041b423e73fb9248cf`，包版本 `0.31.3` 后 3 commits | [源码](https://github.com/vercel/eve/tree/bd93f55481b3048d0273dd041b423e73fb9248cf/packages/eve/src/evals) 与 [Eval 文档](https://github.com/vercel/eve/tree/bd93f55481b3048d0273dd041b423e73fb9248cf/docs/evals) |
-| smevals | `0067c0da2f28f534f9daf1ef4c37181450ddfa28`，PyPI `0.2.0` | [仓库](https://github.com/prime-radiant-inc/smevals/tree/0067c0da2f28f534f9daf1ef4c37181450ddfa28) 与 [PyPI](https://pypi.org/project/smevals/0.2.0/) |
-| Ori Eval | `0.5.1+efbb19e`，构建于 2026-08-08 | [发布文章](https://openrouter.ai/blog/announcements/ori-eval/)、[Eval 指南](https://openrouter.ai/docs/guides/ori/eval) 与 [release manifest](https://github.com/OpenRouterLabs/ori-releases/blob/main/manifest.json) |
-| promptfoo | 2026-08-09 的滚动文档 | [Assertions & Metrics](https://www.promptfoo.dev/docs/configuration/expected-outputs/) |
-| Inspect AI | 2026-08-09 的滚动文档 | [Scorers](https://inspect.aisi.org.uk/scorers.html) |
-| Braintrust AutoEvals | 2026-08-09 的 `main` 文档 | [AutoEvals](https://github.com/braintrustdata/autoevals) 与 [Scorer catalog](https://github.com/braintrustdata/autoevals/blob/main/SCORERS.md) |
-| DeepEval | 2026-08-09 的滚动文档 | [Metrics introduction](https://deepeval.com/docs/metrics-introduction) |
-| Pydantic Evals | 2026-08-09 的滚动文档 | [Evals](https://pydantic.dev/docs/ai/evals/evals/) 与 [Built-in evaluators](https://pydantic.dev/docs/ai/evals/evaluators/built-in/) |
-| OpenAI Graders | 2026-08-09 的 API reference | [Graders](https://developers.openai.com/api/reference/resources/graders) |
-| LangSmith | 2026-08-09 的滚动文档 | [Evaluation concepts](https://docs.langchain.com/langsmith/evaluation-concepts) |
-| Ragas | 2026-08-09 的滚动文档 | [Available metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/) |
-| Arize Phoenix | 2026-08-09 的滚动文档 | [Evaluation](https://docs.arize.com/phoenix/evaluation/) |
+| [Eve](eve.md) | `bd93f55481b3048d0273dd041b423e73fb9248cf`，包版本 `0.31.3` 后 3 commits | [源码](https://github.com/vercel/eve/tree/bd93f55481b3048d0273dd041b423e73fb9248cf/packages/eve/src/evals) 与 [Eval 文档](https://github.com/vercel/eve/tree/bd93f55481b3048d0273dd041b423e73fb9248cf/docs/evals) |
+| [smevals](smevals.md) | `0067c0da2f28f534f9daf1ef4c37181450ddfa28`，PyPI `0.2.0` | [仓库](https://github.com/prime-radiant-inc/smevals/tree/0067c0da2f28f534f9daf1ef4c37181450ddfa28) 与 [PyPI](https://pypi.org/project/smevals/0.2.0/) |
+| [Ori Eval](ori-eval.md) | `0.5.1+efbb19e`，构建于 2026-08-08 | [发布文章](https://openrouter.ai/blog/announcements/ori-eval/)、[Eval 指南](https://openrouter.ai/docs/guides/ori/eval) 与 [release manifest](https://github.com/OpenRouterLabs/ori-releases/blob/main/manifest.json) |
+| [promptfoo](promptfoo.md) | 指南内固定的 npm 与源码快照 | [Assertions & Metrics](https://www.promptfoo.dev/docs/configuration/expected-outputs/) |
+| [Inspect AI](inspect-ai.md) | 指南内固定的 PyPI 与源码快照 | [Scorers](https://inspect.aisi.org.uk/scorers.html) |
+| [Braintrust AutoEvals](braintrust-autoevals.md) | 指南内固定的包与源码快照 | [AutoEvals](https://github.com/braintrustdata/autoevals) 与 [Scorer catalog](https://github.com/braintrustdata/autoevals/blob/main/SCORERS.md) |
+| [DeepEval](deepeval.md) | 指南内固定的 PyPI 与源码快照 | [Metrics introduction](https://deepeval.com/docs/metrics-introduction) |
+| [Pydantic Evals](pydantic-evals.md) | 指南内固定的包与源码快照 | [Evals](https://ai.pydantic.dev/evals/) |
+| [OpenAI Graders](openai-graders.md) | 2026-08-09 的官方 API 文档 | [Graders](https://platform.openai.com/docs/guides/graders) |
+| [LangSmith](langsmith.md) | 指南内固定的 SDK 与文档快照 | [Evaluation concepts](https://docs.langchain.com/langsmith/evaluation-concepts) |
+| [Ragas](ragas.md) | 指南内固定的 PyPI 与源码快照 | [Available metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/) |
+| [Arize Phoenix](arize-phoenix.md) | 指南内固定的 PyPI 与源码快照 | [Evaluation](https://arize.com/docs/phoenix/evaluation/) |
 
 `smeval` 这个名字有歧义。
 本研究所指的是 Simon Willison 创建、Prime Radiant 维护的 `smevals`。
@@ -48,17 +51,17 @@ NiceEval 的作者面同时承担前两层，并把结果折叠进题内计分�
 
 | 产品 | 作者起点 | 最醒目的语法选择 | 主要 DX 收益 | 主要边界 |
 |---|---|---|---|---|
-| Eve | `t`、session、turn | scope receiver + chainable handle | 领域事实短，任意值才走 `t.check` | 没有 Sandbox diff 与证据完整度 |
-| Ori Eval | `run` | Jest 风格 `to*` 方法 | 普通 Bun test，行为、成本、耗时同面 | 工具断言面较窄，平台与 harness 绑定较深 |
-| smevals | `grader.yaml` | ordered checks + executable checker | 文件协议小，任意语言可扩展，便于 regrade | 内置 matcher 极少，脚本数量增长快 |
-| promptfoo | YAML `assert` | `type` + `value` + `threshold` + `weight` | 类型广，批量数据与组合门槛紧凑 | 字符串 DSL 与配置嵌套会隐藏类型错误 |
-| Inspect AI | `@scorer` | `Score(value, answer, explanation, metadata)` | `unscored` 与证据字段明确 | 自定义行为检查需要作者读 `TaskState` |
-| Braintrust | scorer function | `(input, output, expected) -> Score` | scorer 是可独立调试的小单元 | 标准结果不表达控制流或证据完整度 |
-| DeepEval | metric object | `measure()` + `score/reason/threshold` | metric 可复用，理由与门槛就近 | 运行轨迹要先映射成 test case 或 trace |
-| Pydantic Evals | `Evaluator` | typed context -> value or reason | 类型清楚，快检查与 Judge 可分层 | 主要是 Python code-first 作者面 |
-| OpenAI Graders | JSON object | discriminated `type` + template strings | 内置类型与组合公式适合平台配置 | 不是运行 scope API，模板字段靠运行时求值 |
-| LangSmith / Phoenix | trace evaluator | trace mapping -> feedback / annotation | 线上与离线共用观测事实 | 强依赖 tracing 平台的数据模型 |
-| Ragas | metric catalog | dataset + metrics | RAG 与 Agent 指标涉及范围广 | 更像研究指标库，不是行为断言 DSL |
+| [Eve](eve.md) | `t`、session、turn | scope receiver + chainable handle | 领域事实短，任意值才走 `t.check` | 没有 Sandbox diff 与证据完整度 |
+| [Ori Eval](ori-eval.md) | `run` | Jest 风格 `to*` 方法 | 普通 Bun test，行为、成本、耗时同面 | 工具断言面较窄，平台与 harness 绑定较深 |
+| [smevals](smevals.md) | `grader.yaml` | ordered checks + executable checker | 文件协议小，任意语言可扩展，便于 regrade | 内置 matcher 极少，脚本数量增长快 |
+| [promptfoo](promptfoo.md) | YAML `assert` | `type` + `value` + `threshold` + `weight` | 类型广，批量数据与组合门槛紧凑 | 字符串 DSL 与配置嵌套会隐藏类型错误 |
+| [Inspect AI](inspect-ai.md) | `@scorer` | `Score(value, answer, explanation, metadata)` | `unscored` 与证据字段明确 | 自定义行为检查需要作者读 `TaskState` |
+| [Braintrust](braintrust-autoevals.md) | scorer function | `(input, output, expected) -> Score` | scorer 是可独立调试的小单元 | 标准结果不表达控制流或证据完整度 |
+| [DeepEval](deepeval.md) | metric object | `measure()` + `score/reason/threshold` | metric 可复用，理由与门槛就近 | 运行轨迹要先映射成 test case 或 trace |
+| [Pydantic Evals](pydantic-evals.md) | `Evaluator` | typed context -> value or reason | 类型清楚，快检查与 Judge 可分层 | 主要是 Python code-first 作者面 |
+| [OpenAI Graders](openai-graders.md) | JSON object | discriminated `type` + template strings | 内置类型与组合公式适合平台配置 | 不是运行 scope API，模板字段靠运行时求值 |
+| [LangSmith](langsmith.md) / [Phoenix](arize-phoenix.md) | trace evaluator | trace mapping -> feedback / annotation | 线上与离线共用观测事实 | 强依赖 tracing 平台的数据模型 |
+| [Ragas](ragas.md) | metric catalog | dataset + metrics | RAG 与 Agent 指标涉及范围广 | 更像研究指标库，不是行为断言 DSL |
 
 ## Eve：scope-first 的领域断言
 
@@ -219,7 +222,7 @@ await judge.autoEvals({
 公开指南展示的是工具是否调用、是否完成、文本提及、成本与耗时，没有 Eve 那种 matcher object 或 typed event escape hatch。
 Ori 的候选模型目录、baseline 和报告体验很完整，但它们属于实验编排，不应被误算成断言语言能力。
 
-更完整的产品分层与 NiceEval 映射见 [Ori Eval 研究](../ori-eval.md)。
+完整 API 与可运行示例见 [Ori Eval 独立指南](ori-eval.md)。
 
 ## promptfoo：声明式 matcher catalog 与组合门槛
 
