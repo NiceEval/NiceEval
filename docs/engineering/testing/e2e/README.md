@@ -13,7 +13,8 @@ signal、Sandbox 或下一次消费者。E2E 按流程范围分为 Journey 与�
 
 - 自己的 `package.json` 与签入 lockfile；
 - NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
-- `e2e.json` 的 `harness.testkit: true`；根 runner clean-build 当前 checkout 的 Testkit，并只在副本中注入目录依赖；
+- `e2e.json` 的 `harness.testkit: true`；根 runner 把当前 checkout 的 Testkit
+  直接编译到 invocation-local scratch snapshot，并只在副本中注入该目录依赖；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 `reports/`、agent、服务或 Docker Compose；
 - 原生 Vitest / Playwright 测试；
 - 只描述运行条件的 `e2e.json`。

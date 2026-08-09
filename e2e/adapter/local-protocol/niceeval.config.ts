@@ -10,5 +10,4 @@ export default defineConfig({
   // 本 Repo 不测 live 模型；默认 attempt 上限留给 hang 之外的场景足够裕度。
   // hang 场景由 experiments/timeout.ts 用更短的 experiment.timeoutMs 压过。
   timeoutMs: 30_000,
-  maxConcurrency: 1,
 });

@@ -1,7 +1,7 @@
 # Public SDK converter deterministic E2E owner
 
-`adapter/sdk-converters` is the offline, model-free owner for three public SDK
-converters. It does not cover Pi or LangGraph.
+`adapter/sdk-converters` is the offline, model-free owner for eight public SDK
+converter outcomes.
 
 It is a standalone scenario repository.
 
@@ -14,7 +14,7 @@ Its `pr`, `main`, `nightly`, and `release` lanes require Node 22+. They use no
 secret and no external network.
 
 Each owner has one fixture, one Eval, one Experiment, and one test file. The
-three Vitest files retain default file parallelism.
+eight Vitest files retain default file parallelism.
 
 Each test uses `withProjectCopy` for an isolated project, result, and JUnit
 root.
@@ -30,6 +30,11 @@ never inspect candidate source or a private result layout.
 | `turnFromAiSdk` | `fixtures/turn-from-ai-sdk.ts` | `turn-from-ai-sdk` | `test/turn-from-ai-sdk.test.ts` |
 | `createClaudeSdkEventStream` | `fixtures/claude-sdk-stream.ts` | `claude-sdk-stream` | `test/claude-sdk-stream.test.ts` |
 | `createCodexThreadEventStream` | `fixtures/codex-thread-stream.ts` | `codex-thread-stream` | `test/codex-thread-stream.test.ts` |
+| `createPiAgentEventStream` | `fixtures/pi-agent-subscribe.ts` | `pi-agent-subscribe` | `test/pi-agent-subscribe.test.ts` |
+| `createLangGraphEventStream` core | `fixtures/langgraph-core.ts` | `langgraph-core` | `test/langgraph-core.test.ts` |
+| `createLangGraphEventStream` HITL | `fixtures/langgraph-hitl.ts` | `langgraph-hitl` | `test/langgraph-hitl.test.ts` |
+| `turnFromChatCompletion` | `fixtures/openai-chat-completion.ts` | `openai-chat-completion` | `test/openai-chat-completion.test.ts` |
+| `turnFromResponses` | `fixtures/openai-responses.ts` | `openai-responses` | `test/openai-responses.test.ts` |
 
 Every Journey runs this command:
 
@@ -170,6 +175,113 @@ Changing `command_execution` or `file_change` kills the canonical identities.
 Corrupting usage or thread ID kills exact readback.
 
 Removing `turn.failed` kills the failed-status and terminal-error assertions.
+
+<a id="pi-agent-subscribe-deterministic"></a>
+
+## Pi Agent subscribe deterministic
+
+Provenance is exact `@earendil-works/pi-agent-core@0.82.1` and
+`@earendil-works/pi-ai@0.82.1`.
+
+The fixture constructs the real `Agent`. It subscribes before `prompt()`.
+
+Each exact callback object enters `createPiAgentEventStream()` directly. The
+fixture waits for idle and unsubscribes in `finally`.
+
+Its deterministic provider seam returns pi-ai's real
+`AssistantMessageEventStream`. It never constructs an `AgentEvent` array.
+
+The successful run proves native tool start/result pairing and assistant text.
+It also proves session capture and mutually exclusive usage.
+
+A second run proves the converter exposes the upstream terminal error and
+failed status.
+
+Removing `agent.subscribe()`, changing the native call ID, or omitting the
+terminal error kills a distinct Eval assertion.
+
+<a id="langgraph-core-deterministic"></a>
+
+## LangGraph core deterministic
+
+Provenance is exact `@langchain/langgraph@1.4.8`,
+`@langchain/core@1.2.5`, and `@langchain/protocol@0.0.18`.
+
+A real `StateGraph` runs through `streamEvents(..., { version: "v3" })`.
+Every raw runtime `ProtocolEvent` enters a fresh converter unchanged.
+
+The owner checks that the runtime emits lifecycle events and completes.
+
+A separate `Event[]` owns the fine-grained messages and tools channels. Its
+elements are checked by `@langchain/protocol`.
+
+The no-model graph does not naturally emit those channels. The test never
+claims that its runtime emitted the separate deterministic facts.
+
+The Eval proves message and tool input/output pairing. It also proves lifecycle
+status and mutually exclusive usage buckets.
+
+Methods without a standard mapping emit no standard event. Their sequence still
+advances.
+
+A namespaced `values` frame proves that this path infers no ghost subagent.
+
+<a id="langgraph-hitl-deterministic"></a>
+
+## LangGraph HITL deterministic
+
+The owner runs a real interrupting graph with `MemorySaver`. It resumes the
+graph through the official `Command` API and the same thread ID.
+
+Each upstream run gets a new converter. Sequence, lifecycle, usage, and dedupe
+state are run-local.
+
+Canonical input, tool, and lifecycle frames are separate typed
+`@langchain/protocol` values. The runtime receipt proves the real
+interrupt/resume boundary.
+
+The owner does not imply that the runtime emitted every canonical Agent
+Protocol method.
+
+The first Turn is waiting with a pending tool and input request. Approved and
+rejected sessions resume the same call ID.
+
+Rejection calls `markRejected()` before the raw `tool-error`. It produces no
+tool output and never duplicates the start event.
+
+<a id="openai-chat-completion-deterministic"></a>
+
+## OpenAI Chat Completion deterministic
+
+Provenance is exact `openai@6.49.0`.
+
+The official client uses an injected deterministic `fetch`. It performs
+exactly one `chat.completions.create()` call.
+
+The complete returned value enters `turnFromChatCompletion()` directly. The
+fixture uses no cast or field projection.
+
+The response covers current `function` and `custom` tool-call variants. It
+also covers assistant text and all supported usage buckets.
+
+Unknown future tool-call variants are ignored safely. Deprecated message-level
+`function_call` is not part of the contract.
+
+<a id="openai-responses-deterministic"></a>
+
+## OpenAI Responses deterministic
+
+The same official client makes exactly one `responses.create()` call. It uses
+an injected deterministic `fetch`.
+
+Its complete returned `Response` enters `turnFromResponses()` directly. The
+fixture uses no cast or projection.
+
+The Eval proves `output_text`, `function_call`, and call ID/input preservation.
+It also proves mutually exclusive usage.
+
+Unknown output item types are ignored safely. Responses evidence therefore
+remains partial instead of making an unsupported exhaustive-negative claim.
 
 ## Local verification
 

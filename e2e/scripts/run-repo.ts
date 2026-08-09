@@ -5,8 +5,8 @@
 //
 // Harness pre-flight (prepare stage): scenario source package.json/lockfile
 // must not contain @niceeval/testkit, `workspace:` or `file:` references; a
-// repo declaring harness.testkit: true receives the clean-built checkout
-// directory, while an undeclared repo must not import it. Injection adds an
+// repo declaring harness.testkit: true receives the invocation-local immutable
+// snapshot, while an undeclared repo must not import it. Injection adds an
 // absolute `file:` directory devDependency only inside the isolated copy.
 // After install the lockfile must hold exactly one directory resolution and
 // the installed package must live in that copy's pnpm virtual store, never as
@@ -25,6 +25,7 @@ import {
   injectTestkitDirectory,
   scanForTestkitImports,
   verifyInstalledTestkit,
+  verifyTestkitSnapshot,
   verifyTestkitDirectoryResolution,
   type TestkitPackage,
 } from "./testkit.ts";
@@ -61,7 +62,7 @@ function candidateTarballFileName(sha256: string): string {
   return `niceeval-candidate-${sha256}.tgz`;
 }
 
-async function materializeCandidateArtifact(
+export async function materializeCandidateArtifact(
   artifactRoot: string,
   candidate: CandidateTarball,
 ): Promise<string> {
@@ -164,7 +165,7 @@ function verifyAllInjections(
 
   return {
     ok: true,
-    testkitDetail: `workspace testkit (@niceeval/testkit@${testkit.version}) has one directory resolution; isolated realpath verified at ${installedVerdict.realPath}`,
+    testkitDetail: `Testkit snapshot (@niceeval/testkit@${testkit.version}) has one directory resolution; isolated realpath verified at ${installedVerdict.realPath}`,
     testkitResolvedPath: relative(copyDir, installedVerdict.installedPath),
   };
 }
@@ -220,6 +221,8 @@ export interface RunRepoOptions {
   copyId?: string;
   /** Digest of the fixed takeover source snapshot that produced this copy. */
   sourceSnapshotDigest?: string;
+  /** Retain this isolated repo copy for explicit local diagnosis. */
+  keepWorkdir?: boolean;
 }
 
 function withInvocationId(env: NodeJS.ProcessEnv, invocationId: string): NodeJS.ProcessEnv {
@@ -242,8 +245,9 @@ function nextFailureStage(stages: readonly StageReceipt[]): StageName {
 /**
  * Run one discovered repo in an external temp copy under scratchRoot/runs/.
  * Artifacts + receipt land under independent artifactRoot (or runLabel) and
- * the working copy is always removed. A `testRuns` value above one is an
- * explicit takeover observation in the same installed copy, never retry.
+ * the working copy is removed unless explicit local diagnosis retains it. A
+ * `testRuns` value above one is an explicit takeover observation in the same
+ * installed copy, never retry.
  */
 export async function runRepo(
   repo: DiscoveredRepo,
@@ -354,6 +358,7 @@ export async function runRepo(
             } else {
               await pointAtCandidateTarball(copyDir, durableCandidatePath);
               if (consumesTestkit) {
+                await verifyTestkitSnapshot(testkit as TestkitPackage);
                 await injectTestkitDirectory(copyDir, testkit as TestkitPackage);
                 testkitInjected = true;
               }
@@ -394,6 +399,9 @@ export async function runRepo(
                   let injectionOk = false;
                   let injectionDetail: string;
                   try {
+                    if (testkitInjected && testkit !== undefined) {
+                      await verifyTestkitSnapshot(testkit);
+                    }
                     if (!existsSync(join(copyDir, "pnpm-lock.yaml"))) {
                       injectionOk = false;
                       injectionDetail = "could not read isolated copy's pnpm-lock.yaml: file missing";
@@ -558,16 +566,32 @@ export async function runRepo(
       }
     }
 
-    // Unconditional working-copy cleanup; failure must not mask earlier outcomes.
+    // Working-copy disposition never changes process/resource cleanup. Explicit
+    // local retention keeps the installed copy; otherwise removal is mandatory.
     if (copyCreated || existsSync(copyDir)) {
       let cleanupOk = true;
-      let cleanupDetail = `removed ${copyDir}`;
-      try {
-        await rm(copyDir, { recursive: true, force: true });
-      } catch (error) {
-        cleanupOk = false;
-        cleanupDetail = `cleanup failed for ${copyDir}: ${(error as Error).message}`;
-        console.error(`[e2e] ${cleanupDetail}`);
+      let cleanupDetail: string;
+      if (options.keepWorkdir === true) {
+        cleanupDetail = `retained ${copyDir} because --keep-workdir was requested`;
+      } else {
+        cleanupDetail = `removed ${copyDir}`;
+        try {
+          await rm(copyDir, { recursive: true, force: true });
+        } catch (error) {
+          cleanupOk = false;
+          cleanupDetail = `cleanup failed for ${copyDir}: ${(error as Error).message}`;
+          console.error(`[e2e] ${cleanupDetail}`);
+        }
+      }
+      if (testkit !== undefined) {
+        try {
+          await verifyTestkitSnapshot(testkit);
+          cleanupDetail += `; Testkit snapshot sha256:${testkit.digest} unchanged`;
+        } catch (error) {
+          cleanupOk = false;
+          cleanupDetail += `; ${(error as Error).message}`;
+          console.error(`[e2e] ${cleanupDetail}`);
+        }
       }
       stages.push({
         stage: "cleanup",
@@ -588,6 +612,7 @@ export async function runRepo(
           version: testkit.version,
           sourcePath: testkit.sourcePath,
           resolvedPath: testkitResolvedPath,
+          digest: testkit.digest,
         }
       : undefined;
   const receipt: RepoReceipt = {

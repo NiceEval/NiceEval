@@ -17,6 +17,10 @@
 | `turnFromAiSdk` | `adapter/sdk-converters` | host、无外部网络、无密钥 | AI SDK 结果里的工具配对、审批终态与互斥 usage | [SDK converters · AI SDK](sdk-converters.md#turnfromaisdk-deterministic) |
 | `createClaudeSdkEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | Claude SDK 原生帧的 tool-use 配对、canonical tool、session、usage 与拒绝终态 | [SDK converters · Claude](sdk-converters.md#claude-sdk-stream-deterministic) |
 | `createCodexThreadEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | Codex SDK 原生帧的 shell / file 归一、thread、usage 与终局 | [SDK converters · Codex](sdk-converters.md#codex-thread-stream-deterministic) |
+| `createPiAgentEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | 真实 `Agent.subscribe()` 回调的工具配对、session、usage 与终局错误 | [SDK converters · Pi](sdk-converters.md#pi-agent-subscribe-deterministic) |
+| `createLangGraphEventStream` | `adapter/sdk-converters` | host、无外部网络、无密钥 | 真实 v3 runtime 收据，以及官方 typed Event 的 message / tool / HITL / lifecycle / seq | [SDK converters · LangGraph core](sdk-converters.md#langgraph-core-deterministic) / [HITL](sdk-converters.md#langgraph-hitl-deterministic) |
+| `turnFromChatCompletion` | `adapter/sdk-converters` | host、无外部网络、无密钥 | 官方 OpenAI 客户端完整返回值的 function / custom tool、message 与 usage | [SDK converters · Chat](sdk-converters.md#openai-chat-completion-deterministic) |
+| `turnFromResponses` | `adapter/sdk-converters` | host、无外部网络、无密钥 | 官方 OpenAI 客户端完整 Response 的 output、function call 与 usage | [SDK converters · Responses](sdk-converters.md#openai-responses-deterministic) |
 
 这个 Repo 不是独立官方 Adapter。
 它用签入的 UI Message Stream HTTP fixture 稳定制造成功与故障输入，证明 NiceEval 自己拥有的 transport 和错误处理。
@@ -68,6 +72,7 @@
 |---|---|---|---|---|
 | Claude Agent SDK | `adapter/claude-agent-sdk` | host + external network | `createClaudeSdkEventStream` | [claude-agent-sdk.md](claude-agent-sdk.md) |
 | Codex SDK | `adapter/codex-sdk` | host + external network | `createCodexThreadEventStream` | [codex-sdk.md](codex-sdk.md) |
+| OpenAI Chat Completions / Responses | `adapter/openai-compat` | host + external network | `turnFromChatCompletion` / `turnFromResponses` | [openai-compat.md](openai-compat.md) |
 
 这里证明的是「锁定 SDK 的真实原生帧仍能被候选 converter 消费」，不是「NiceEval 提供了完整 factory」。产品语义仍由上面的
 确定性 Repo 拥有；consumer glue 一旦需要复制协议映射，该 live Repo 就不准入。
@@ -81,9 +86,9 @@
 | `turnFromAiSdk` | covered | `adapter/sdk-converters` 确定性，并由 `aiSdkAgent` live 路径真实 exercise |
 | `createClaudeSdkEventStream` | covered | `adapter/sdk-converters` 确定性 + `adapter/claude-agent-sdk` live compatibility |
 | `createCodexThreadEventStream` | covered | `adapter/sdk-converters` 确定性 + `adapter/codex-sdk` live compatibility |
-| `createPiAgentEventStream` | unproven | 当前没有真实 `agent.subscribe()` 收据；不按 `PiAgentEventLike` 反写 fixture |
-| `createLangGraphEventStream` | unproven | 当前 converter shape 与现行 LangGraph Event Streaming 协议疑似不一致，且示例未消费该入口；需另行先接真实 SDK 再修产品契约 |
-| `turnFromChatCompletion` / `turnFromResponses` | outside Direct-Agent scope / unproven | 结果转换器，不是 Direct Agent；本轮不借 transport glue 宣称 live |
+| `createPiAgentEventStream` | covered | `adapter/sdk-converters` 以真实 `Agent.subscribe()` 回调完成确定性 owner；上游无独立 live transport owner |
+| `createLangGraphEventStream` | covered | `adapter/sdk-converters` 以真实 LangGraph v3 runtime + 独立官方 typed Event 完成确定性 owner；当前 runtime 与规范帧的差异显式保留 |
+| `turnFromChatCompletion` / `turnFromResponses` | covered | `adapter/sdk-converters` 确定性 + `adapter/openai-compat` 官方 SDK / provider live compatibility；两者仍是 converter，不冒充完整 Agent factory |
 | `claudeCodeAgent` | covered | `adapter/claude-code` live |
 | `codexAgent` | covered | `adapter/codex-cli` live |
 | `bubAgent` | covered | `adapter/bub` live |

@@ -4,7 +4,7 @@
   "areas": ["adapter"],
   "lanes": ["pr", "main", "nightly", "release"],
   "executor": { "kind": "host" },
-  "command": ["pnpm", "exec", "vitest", "run"],
+  "command": ["pnpm", "run", "e2e"],
   "timeoutMinutes": 12,
   "harness": { "testkit": true },
   "secrets": [],

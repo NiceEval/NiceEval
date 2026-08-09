@@ -7,8 +7,10 @@ Testkit 不维护独立 Unit 套件。CLI、Runner、Report、Record、Package �
 进程、文件系统、artifact staging 与资源生命周期原语；同一原语不再配一套 fixture 自测。类型与构建错误由 `typecheck` 和 clean build 阻断，
 运行错误由最先使用它的真实场景收据或资源终态阻断。
 
-Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后，把 `packages/testkit` 作为本地目录依赖只注入场景的隔离副本；
-它不先变成 tarball，也不获得发布 artifact、digest 或独立重新执行承诺。场景源不声明 workspace 或本地路径，避免绕开根 runner。
+Testkit 的源码和身份都跟随当前 checkout。根 runner 直接把源码编译到本次
+invocation 的 scratch snapshot，再把该 snapshot 作为本地目录依赖只注入场景
+隔离副本。它不先变成 tarball，也不获得发布 artifact 或独立重新执行承诺。
+场景源不声明 workspace 或本地路径，避免绕开根 runner。
 
 ## 项目与身份
 
@@ -21,7 +23,11 @@ Testkit 的源码和身份都跟随当前 checkout。根 runner clean-build 后�
 若未来要对外提供测试库，应作为新产品重新设计，不复用本内部包的假公开面。
 
 Testkit 与根 E2E harness 统一使用 Node 22，不维护独立的 Node 兼容矩阵。内部包同时提供 ESM、CJS 与对应类型入口；
-构建必须先删除 `dist/` 再完整重建，避免增量残留进入场景。Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环。
+构建必须直接输出到新的 staging package，再在同一 scratch filesystem 原子
+发布；不得读取、删除或写入共享 `packages/testkit/dist`。runner 校验 package
+metadata/exports，并在 install 前、install 后和副本 cleanup 后核对 snapshot
+SHA-256。这个 digest 只证明本次临时目录没有被改写，不是发布或 replay 身份。
+Testkit 不依赖 NiceEval、根 runner 或 scenario，保持 bootstrap 无环。
 
 ## 准入边界
 
@@ -275,13 +281,13 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 ## 构建与采用门禁
 
 1. `pnpm --filter @niceeval/testkit typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行，Testkit 不设独立 Unit 命令。
-2. 每次根 runner invocation 只在确有 `harness.testkit: true` 消费者时 clean-build 当前 Testkit 一次；不 pack、不上传。
-3. runner 只在隔离副本中加入指向 `packages/testkit` 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
+2. 每次根 runner invocation 只在确有 `harness.testkit: true` 消费者时，把当前 Testkit 编译成 scratch snapshot 一次；不 pack、不上传。
+3. runner 只在隔离副本中加入指向该 scratch snapshot 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
    resolution，安装后的包名与版本正确，realpath 位于副本自己的 virtual store，而不是 checkout 源目录。
 4. NiceEval candidate tgz 不得包含 `packages/testkit/**`，任何 dependency 字段也不得声明 `@niceeval/testkit`。
 5. 场景以 `e2e.json` 的 `harness.testkit: true` 声明消费意图；场景源 `package.json` / lockfile 不包含 Testkit、`workspace:`
    或预先签入的本地目录引用。
-6. receipt 只保存 Testkit version、checkout 相对 source path 与副本内 installed realpath；这些字段只供诊断。
+6. receipt 只保存 Testkit version、checkout 相对 source path、snapshot digest 与副本内 installed realpath；这些字段只供诊断。
    exact replay 只描述保留的 NiceEval candidate 字节，不把当前 checkout 的 Testkit 伪装成可独立重新执行的 artifact。
 7. Testkit、根 workspace/lock 或注入契约变化时，plan 使 path 优化 fail-open，选中该 lane 全集。未来若缓存 Testkit 构建，
    cache key 必须来自源码与构建输入，不能用 version 或 pnpm store 命中代替当前 checkout 身份。

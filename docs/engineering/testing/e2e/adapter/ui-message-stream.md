@@ -25,11 +25,45 @@ AI SDK 公共 `UIMessageChunk` 类型约束的 approval stream 证明 NiceEval �
 正常 SSE 是三个负面场景的 control。
 它先证明相同 candidate、fixture、transport 与 Adapter 接线能够成功，避免把宿主运行条件或安装错误误判成故障处理正确。
 
+<a id="transport-owner"></a>
+
+### Transport owner
+
+`test/transport.test.ts` 只拥有完整 SSE 成功及其公开 execution 文案。
+
+<a id="approval-owner"></a>
+
+### Approval owner
+
+`test/approval.test.ts` 只拥有 pending → approve / deny 的同 call 生命周期。
+
+<a id="disconnect-owner"></a>
+
+### Disconnect owner
+
+`test/disconnect.test.ts` 只拥有半截 SSE 被对端断开的公开失败结果。
+
+<a id="timeout-owner"></a>
+
+### Timeout owner
+
+`test/timeout.test.ts` 只拥有挂起 body 触发 attempt timeout 的结果。
+
+<a id="http-error-owner"></a>
+
+### HTTP error owner
+
+`test/http-error.test.ts` 只拥有 HTTP 500 的公开失败与可行动诊断。
+
 ## 仓库验收
 
 - UI Message Stream 协议帧不带 token 计数，`uiMessageStreamAgent` 对此如实声明 usage `unavailable`。
 - approval fixture 的每个 outbound chunk 都满足锁定 AI SDK 导出的 `UIMessageChunk`；它不复制 reducer，也不伪造 provider 决策。
-- 原生验收脚本列全正常 SSE、approval、断流、timeout 与 HTTP 错误 Eval ID；逐 Eval 经公开 readback 核对 verdict 与失败阶段，防止少发现或少运行后假绿。
+- 五个 owner 文件各自使用私有项目副本、独立 `.niceeval` / JUnit namespace 与
+  `127.0.0.1:0` 动态 fixture。readiness 是含实际 base URL/port 的机器 JSON；
+  dispose 后测试真实重绑该端口，证明资源释放。
+- Vitest 保留默认文件级并行；不使用共享 `beforeAll`、固定端口、mutex、文件顺序或
+  `maxConcurrency: 1`。
 - **CLI 读回**：`show` 默认报告列出本仓库全部协议 Eval 与 verdict；正常 SSE 与 approval attempt 的 `show --execution` 分别显示 fixture 文案，以及 completed / rejected 工具生命周期。
 - **OTel**：本地 fixture 不接 OTel，执行树显示 timing unavailable；事件流断言照常通过。
 

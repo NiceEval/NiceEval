@@ -46,7 +46,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - `plan --json` 只输出 Repo、host executor、能力和分片，不包含产品断言；
 - 本地默认顺序是 plan → pack NiceEval candidate → run；
 - 默认入口只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
-- `run` 在选中 Testkit consumer 时 clean-build 当前 workspace Testkit 一次；
+- `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 无 Repo 被选择或 manifest 非法时不 pack、不 build；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
 - matrix run 消费 candidate artifact 与当前 checkout，不再下载第二份 Testkit artifact；
@@ -60,7 +60,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 
 Candidate 就是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。NiceEval 不能改用 workspace link：link 会绕过
 `files`、打包生命周期、bin / exports 完整性和仓库外 dependency resolution，可能让源码树能跑而实际安装包失败。Testkit 没有这些发布承诺，
-所以直接采用 checkout 目录。
+所以采用本次 scratch 中由 checkout 源码构建的目录 snapshot。
 
 `run --artifact-root` 让 CI 指定独立于临时工作副本的证据根；runner 删除副本后保留其中的 `summary.json`、Repo receipt 与声明附件。
 原生测试参数在 `--` 后原样且只传一次。
@@ -72,7 +72,8 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 
 新增、接管或实质修改确定性 owner 时，必须使用根入口 `pnpm e2e takeover --candidate ... --repo <id> -- --run <file> -t <title>`。
 它拒绝没有显式 candidate、Repo 或原生 target 参数的调用；不是把普通 `run` 重复五次冒充可靠性门。
-接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit clean build（如需要）与场景源 snapshot，再保留以下可审查 receipt：
+接管入口先固定 candidate digest、checkout commit/dirty 标记、一次 Testkit scratch
+snapshot（如需要）与场景源 snapshot，再保留以下可审查 receipt：
 
 1. 同一 candidate 与 checkout Testkit 在三个全新 Repo 副本中各运行目标 owner 一次；
 2. 另一个**同一已安装副本**连续运行目标 owner 两次；它只 install 一次，两个 native test command 各有新的 `NICEEVAL_E2E_INVOCATION_ID`，不能因 `stageArtifacts` 的 `collision:error` namespace 假红；
@@ -95,15 +96,17 @@ summary 写入按相对路径、字节数和 SHA-256 排序所得的文件清单
 
 ### Testkit 构建与注入
 
-`pnpm e2e --repo <id>` 在选中 `harness.testkit: true` Repo 后，自动删除当前 checkout 的 Testkit `dist/` 并完整构建，
+`pnpm e2e --repo <id>` 在选中 `harness.testkit: true` Repo 后，直接把当前
+checkout 的 Testkit 源码编译到新的 scratch staging package，并在同一 filesystem
+发布成 invocation-local snapshot。它不读取、删除或写入共享 checkout `dist/`；
 每次 invocation 只做一次。Testkit 没有 CLI artifact 参数，也不参与 candidate 的发布信任链。
 
-- runner 校验 workspace package 名为 `@niceeval/testkit` 且保持 private，并确认 clean build 产出了 ESM、CJS 与类型入口。
-- 注入只在隔离副本的 devDependencies 中新增指向 `packages/testkit` 绝对目录的 `file:`，不写源 Repo。未声明
+- runner 校验 workspace package 名为 `@niceeval/testkit` 且保持 private，并确认 snapshot 产出了 ESM、CJS、类型与全部 exports 入口。
+- 注入只在隔离副本的 devDependencies 中新增指向 snapshot 绝对目录的 `file:`，不写源 Repo。未声明
   `harness.testkit: true` 却 import Testkit，或声明了但没有注入，都在 test 前失败。
 - 安装后要求副本 lockfile 只有一个 Testkit directory resolution，再核对实际安装包名与 realpath 位于副本 virtual store。
   不一致属于 harness failure（infra），不静默链接回 checkout source 或安装其它版本继续跑测试。
-- receipt 只保存 version、checkout 相对 source path 与副本内 installed realpath，全部仅供诊断。durable artifact 与 exact replay
+- runner 在 install 前后及副本 cleanup 后核对 snapshot digest；任何 mutation 都是 infra。receipt 只保存 version、checkout 相对 source path、snapshot digest 与副本内 installed realpath，全部仅供诊断。durable artifact 与 exact replay
   只属于 NiceEval candidate；重跑时 Testkit 始终来自当时所在 checkout。
 
 功能 Repo 与 Adapter Repo 永远是不同的 matrix cell。`--repo report` 只复制并运行 Report 功能 Repo，不会挑一个
@@ -144,7 +147,19 @@ runner 等待 child `close`，再确认该 owned group 已消失；若 leader �
 第二次 signal 立即 KILL 已拥有组。SIGKILL 不可捕获，因此不承诺其后的 receipt 或 cleanup。
 runner 只承诺自己 detached group 内无 orphan。
 container、Sandbox 或场景另开 session 仍由所属 Repo 的资源 receipt 负责。`cancelled` 永不改报为 regression。
-`--keep-workdir` 仅供显式本地诊断。
+
+`--keep-workdir` 仅供显式本地诊断。它必须出现在根参数的 `--` 之前；分隔符
+之后的同名参数原样交给 Vitest。使用后，无论 pass、regression、infra 或首次
+signal cancellation，runner 都保留包含场景副本与 Testkit snapshot 的 scratch
+tree，并在 summary 写绝对路径。它不跳过进程、server 或 container cleanup。
+
+只要子进程变量集合里存在 `CI`，runner 就在 plan、pack、建目录或启动进程前拒绝
+`--keep-workdir`。`--help` / `-h` 在分隔符前优先返回 0，并且不做上述副作用；
+分隔符后的 help 仍属于原生测试参数。默认 flow 的 staging candidate 始终删除，
+run 会在此之前把相同 digest 的 candidate 复制到 durable artifact root。
+
+summary 用封闭 disposition 表示 scratch：`not-created`、`removed`、`retained` 或
+`remove-failed`。保留不改变原本的结果分类；删除失败仍是 infra。
 
 根 runner 先完成 scratch cleanup，再写最终 summary。scratch cleanup 失败是 `infra` 并使命令非零。
 若已经有 artifact root，discover、build 或其它根异常也尽力写入该终态。
@@ -152,7 +167,7 @@ container、Sandbox 或场景另开 session 仍由所属 Repo 的资源 receipt 
 已有 regression 或 cancelled 仍是主分类，runner cleanup 失败附在终态字段中。
 
 每次安装核对 NiceEval candidate 字节身份，并核对 Testkit 来自当前 checkout 的目录 resolution 与副本内安装路径。
-Testkit 以 typecheck、clean build 和真实产品场景中的使用结果验收；它不保留独立 Unit，也不获得第二份 artifact 身份。
+Testkit 以 typecheck、scratch snapshot build 和真实产品场景中的使用结果验收；它不保留独立 Unit，也不获得第二份 artifact 身份。
 
 阶段收据保存产生结果的进程本身的 exit / signal。验证不得用 `command | head`、`command | tail` 后读取管道末端退出码；
 需要裁剪控制台输出时，先把 producer 的完整 stdout / stderr 与退出状态落入 artifact，再只裁剪展示副本。Repo 启动的 view、mock、
@@ -178,7 +193,7 @@ Repo manifest 声明了白名单外的名称时，在注入前失败，不动态
 ```text
 prepare job
   ├─ e2e plan --lane <lane> --json
-  ├─ Testkit typecheck / clean build
+  ├─ Testkit typecheck / scratch snapshot build
   └─ pack candidate.tgz + sha256，上传 artifact
              │
              ▼

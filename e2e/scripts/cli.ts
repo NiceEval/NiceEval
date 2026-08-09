@@ -3,8 +3,8 @@
 // pack/install/secret imports; run is loaded only when it is requested.
 //
 // Default local order (docs/engineering/testing/e2e/execution.md): plan →
-// pack the NiceEval candidate → run. The run command clean-builds the
-// workspace Testkit once when a selected repo declares it. Nothing is built
+// pack the NiceEval candidate → run. The run command builds one
+// invocation-local Testkit snapshot when a selected repo declares it. Nothing is built
 // or packed when the plan selects zero repos or fails.
 
 import { fileURLToPath } from "node:url";
@@ -30,14 +30,50 @@ export function splitNativeArgs(argv: readonly string[]): { selectionArgs: reado
   return { selectionArgs: argv.slice(0, separator), nativeArgs: argv.slice(separator + 1) };
 }
 
+function rootArgs(argv: readonly string[]): readonly string[] {
+  const separator = argv.indexOf("--");
+  return separator < 0 ? argv : argv.slice(0, separator);
+}
+
+function hasRootFlag(argv: readonly string[], flag: string): boolean {
+  return rootArgs(argv).includes(flag);
+}
+
+function removeRootFlag(argv: readonly string[], flag: string): string[] {
+  const separator = argv.indexOf("--");
+  const before = (separator < 0 ? argv : argv.slice(0, separator)).filter((arg) => arg !== flag);
+  return separator < 0 ? [...before] : [...before, "--", ...argv.slice(separator + 1)];
+}
+
+function printHelp(): void {
+  console.log(`Usage: pnpm e2e [command] [options] [-- native-test-args]
+
+Commands:
+  plan             Resolve and print selected scenario repositories
+  pack             Pack one NiceEval candidate tarball
+  run              Run an existing candidate tarball
+  takeover         Run the deterministic owner reliability matrix
+  verify-release   Verify a release candidate
+
+Root run options:
+  --repo <id>          Select a repository (repeatable)
+  --lane <lane>        Select a manifest lane
+  --keep-workdir       Retain the isolated scratch tree for local diagnosis
+  --help, -h           Print this help without planning, packing, or running
+
+Arguments after -- are passed unchanged to the repository's native test command.`);
+}
+
 export function buildDefaultRunArgs(
   candidatePath: string,
   plannedRepoIds: readonly string[],
   nativeArgs: readonly string[],
+  keepWorkdir = false,
 ): string[] {
   return [
     "--candidate",
     candidatePath,
+    ...(keepWorkdir ? ["--keep-workdir"] : []),
     ...plannedRepoIds.flatMap((id) => ["--repo", id]),
     ...(nativeArgs.length === 0 ? [] : ["--", ...nativeArgs]),
   ];
@@ -60,11 +96,12 @@ export async function executeDefault(
   argv: readonly string[],
   dependencies: DefaultFlowDependencies,
 ): Promise<boolean> {
-  const { selectionArgs, nativeArgs } = splitNativeArgs(argv);
+  const keepWorkdir = hasRootFlag(argv, "--keep-workdir");
+  const { selectionArgs, nativeArgs } = splitNativeArgs(removeRootFlag(argv, "--keep-workdir"));
   const selected = await dependencies.plan(selectionArgs);
   if (selected.length === 0) return false;
   const candidate = await dependencies.pack(dependencies.candidatePath);
-  await dependencies.run(buildDefaultRunArgs(candidate.path, selected.map((entry) => entry.id), nativeArgs));
+  await dependencies.run(buildDefaultRunArgs(candidate.path, selected.map((entry) => entry.id), nativeArgs, keepWorkdir));
   return true;
 }
 
@@ -158,6 +195,13 @@ class RootSignalLifecycle {
 }
 
 async function dispatch(argv: readonly string[], execution: E2EExecutionControl): Promise<void> {
+  if (hasRootFlag(argv, "--help") || hasRootFlag(argv, "-h")) {
+    printHelp();
+    return;
+  }
+  if (hasRootFlag(argv, "--keep-workdir") && process.env.CI !== undefined) {
+    throw new Error("--keep-workdir is local-only and is rejected whenever CI is set");
+  }
   const [command, ...rest] = argv;
 
   if (command === "plan") {

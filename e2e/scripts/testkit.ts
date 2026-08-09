@@ -1,13 +1,15 @@
 // Workspace Testkit build, isolated directory injection and verification.
 //
 // Testkit is private harness code from the same checkout, not a release
-// artifact. The runner clean-builds packages/testkit once per invocation and
-// injects its absolute directory as a `file:` devDependency only into each
-// isolated scenario copy. pnpm must materialize that directory in the copy's
-// virtual store; a symlink back to the checkout is rejected.
+// artifact. Every root invocation compiles an immutable package snapshot
+// inside its own scratch tree and injects that absolute directory as a `file:`
+// devDependency only into each isolated scenario copy. The shared checkout
+// dist is never read, removed, or written. pnpm must materialize the snapshot
+// in the copy's virtual store; a symlink back to it is rejected.
 
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 
@@ -21,36 +23,96 @@ import {
 } from "./owned-process.ts";
 
 export interface TestkitPackage {
-  /** Absolute packages/testkit directory in the current checkout. */
+  /** Absolute immutable package snapshot inside this invocation's scratch tree. */
   path: string;
   /** Stable checkout-relative diagnostic; never used as package identity. */
   sourcePath: "packages/testkit";
   name: "@niceeval/testkit";
   version: string;
+  /** Ordered path/content identity used to detect mutation by package managers or tests. */
+  digest: string;
 }
 
 export interface TestkitBuildDependencies {
-  /** Runs the Testkit clean build inside packages/testkit; returns exit code. */
-  buildTestkit?: (pkgDir: string) => Promise<number>;
+  /** Compiles Testkit source into the supplied staging package; returns exit code. */
+  buildTestkit?: (sourceDir: string, stagingDir: string) => Promise<number>;
 }
 
-async function buildTestkitSource(pkgDir: string, control: E2EExecutionControl): Promise<number> {
-  const result = await control.supervisor.run(["pnpm", "build"], {
-    cwd: pkgDir,
-    env: process.env,
-    output: "inherit",
-    timeoutMs: 30 * 60_000,
-    abortSignal: control.abortSignal,
-  });
-  if (result.cancelled || isExecutionCancelled(control)) {
-    throw new E2EExecutionCancelledError("workspace Testkit build cancelled");
+async function buildTestkitSource(
+  sourceDir: string,
+  stagingDir: string,
+  control: E2EExecutionControl,
+): Promise<number> {
+  const builds = [
+    ["pnpm", "exec", "tsc6", "-p", join(sourceDir, "tsconfig.esm.json"), "--outDir", join(stagingDir, "dist", "esm")],
+    ["pnpm", "exec", "tsc6", "-p", join(sourceDir, "tsconfig.cjs.json"), "--outDir", join(stagingDir, "dist", "cjs")],
+  ] as const;
+  for (const command of builds) {
+    const result = await control.supervisor.run(command, {
+      cwd: sourceDir,
+      env: process.env,
+      output: "inherit",
+      timeoutMs: 30 * 60_000,
+      abortSignal: control.abortSignal,
+    });
+    if (result.cancelled || isExecutionCancelled(control)) {
+      throw new E2EExecutionCancelledError("workspace Testkit snapshot build cancelled");
+    }
+    if (!hasSuccessfulOwnedProcessResult(result)) return 1;
   }
-  return hasSuccessfulOwnedProcessResult(result) ? 0 : 1;
+  return 0;
 }
 
-/** Clean-build and validate the private workspace Testkit once. */
+async function fingerprintDirectory(root: string): Promise<string> {
+  const digest = createHash("sha256");
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      const stat = await lstat(path);
+      if (stat.isSymbolicLink()) throw new Error(`Testkit snapshot contains a symlink: ${path}`);
+      if (stat.isDirectory()) {
+        await walk(path);
+        continue;
+      }
+      if (!stat.isFile()) throw new Error(`Testkit snapshot contains a special file: ${path}`);
+      const bytes = await readFile(path);
+      digest.update(`${relative(root, path).split(sep).join("/")}\0${bytes.byteLength}\0`);
+      digest.update(bytes);
+      digest.update("\n");
+    }
+  };
+  await walk(root);
+  return digest.digest("hex");
+}
+
+/** Fail if an allegedly immutable invocation-local Testkit snapshot changed. */
+export async function verifyTestkitSnapshot(testkit: TestkitPackage): Promise<void> {
+  const actual = await fingerprintDirectory(testkit.path);
+  if (actual !== testkit.digest) {
+    throw new Error(
+      `Testkit snapshot mutated: expected sha256:${testkit.digest}, got sha256:${actual} at ${testkit.path}`,
+    );
+  }
+}
+
+function packageEntries(pkg: Record<string, unknown>): string[] {
+  const entries = [pkg.main, pkg.module, pkg.types];
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") entries.push(value);
+    else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      for (const nested of Object.values(value)) collect(nested);
+    }
+  };
+  collect(pkg.exports);
+  return entries.filter((entry): entry is string => typeof entry === "string");
+}
+
+/** Build and validate one invocation-local private Testkit package snapshot. */
 export async function buildTestkitPackage(
   repoRoot: string,
+  scratchRoot: string,
   dependencies: TestkitBuildDependencies = {},
   execution: E2EExecutionControl | undefined = undefined,
 ): Promise<TestkitPackage> {
@@ -62,14 +124,7 @@ export async function buildTestkitPackage(
     throw new Error(`no packages/testkit/package.json under ${repoRoot} — cannot build the workspace Testkit`);
   }
 
-  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
-    name?: unknown;
-    version?: unknown;
-    private?: unknown;
-    main?: unknown;
-    module?: unknown;
-    types?: unknown;
-  };
+  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as Record<string, unknown>;
   if (pkg.name !== "@niceeval/testkit") {
     throw new Error(
       `packages/testkit/package.json name must be "@niceeval/testkit", got ${JSON.stringify(pkg.name)}`,
@@ -82,29 +137,46 @@ export async function buildTestkitPackage(
     throw new Error("packages/testkit/package.json must declare a non-empty version for diagnostics");
   }
 
-  throwIfExecutionCancelled(control);
-  await rm(join(pkgDir, "dist"), { recursive: true, force: true });
-  const buildCode = dependencies.buildTestkit === undefined
-    ? await buildTestkitSource(pkgDir, control)
-    : await dependencies.buildTestkit(pkgDir);
-  throwIfExecutionCancelled(control);
-  if (buildCode !== 0) {
-    throw new Error(`Testkit clean build failed (exit ${buildCode}) in ${pkgDir}`);
-  }
-
-  for (const field of ["main", "module", "types"] as const) {
-    const entry = pkg[field];
-    if (typeof entry !== "string" || !existsSync(resolve(pkgDir, entry))) {
-      throw new Error(`Testkit clean build did not produce package.json ${field} entry ${JSON.stringify(entry)}`);
+  const snapshotRoot = resolve(scratchRoot, "testkit");
+  const stagingDir = resolve(scratchRoot, `.testkit-staging-${randomUUID()}`);
+  const snapshotDir = join(snapshotRoot, "package");
+  await mkdir(stagingDir, { recursive: true });
+  try {
+    await Promise.all([
+      copyFile(pkgJsonPath, join(stagingDir, "package.json")),
+      copyFile(join(pkgDir, "README.md"), join(stagingDir, "README.md")),
+    ]);
+    throwIfExecutionCancelled(control);
+    const buildCode = dependencies.buildTestkit === undefined
+      ? await buildTestkitSource(pkgDir, stagingDir, control)
+      : await dependencies.buildTestkit(pkgDir, stagingDir);
+    throwIfExecutionCancelled(control);
+    if (buildCode !== 0) {
+      throw new Error(`Testkit snapshot build failed (exit ${buildCode}) from ${pkgDir}`);
     }
-  }
+    await mkdir(join(stagingDir, "dist", "cjs"), { recursive: true });
+    await writeFile(join(stagingDir, "dist", "cjs", "package.json"), '{"type":"commonjs"}\n', "utf8");
 
-  return {
-    path: pkgDir,
-    sourcePath: "packages/testkit",
-    name: "@niceeval/testkit",
-    version: pkg.version,
-  };
+    for (const entry of packageEntries(pkg)) {
+      if (!entry.startsWith("./") || !existsSync(resolve(stagingDir, entry))) {
+        throw new Error(`Testkit snapshot did not produce package entry ${JSON.stringify(entry)}`);
+      }
+    }
+
+    await mkdir(snapshotRoot, { recursive: true });
+    await rename(stagingDir, snapshotDir);
+    const digest = await fingerprintDirectory(snapshotDir);
+    return {
+      path: snapshotDir,
+      sourcePath: "packages/testkit",
+      name: "@niceeval/testkit",
+      version: pkg.version as string,
+      digest,
+    };
+  } catch (error) {
+    await rm(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 const PACKAGE_DEP_FIELDS = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"] as const;

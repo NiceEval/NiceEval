@@ -98,7 +98,7 @@ export interface RepoReceipt {
   detail: string;
   /** The candidate tarball identity retained for this run, when materialized. */
   candidate: CandidateReceipt;
-  /** Present when the checkout-local Testkit directory was injected. */
+  /** Present when the checkout-sourced Testkit snapshot was injected. */
   testkit?: TestkitReceipt;
 }
 
@@ -122,6 +122,8 @@ export interface TestkitReceipt {
   sourcePath: "packages/testkit";
   /** Copy-relative installed path recorded before cleanup. */
   resolvedPath: string;
+  /** Immutable invocation-local snapshot identity verified before and after use. */
+  digest: string;
 }
 
 export function commandFailedCapture(capture: CommandCapture): boolean {

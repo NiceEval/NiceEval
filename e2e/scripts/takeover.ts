@@ -463,7 +463,7 @@ export async function runTakeover(
     await copyRepoIsolated(repo.dir, sourceSnapshotDir);
     checkout = { ...checkoutState, sourceSnapshot: await fingerprintSourceSnapshot(sourceSnapshotDir) };
     if (repo.manifest.harness?.testkit === true) {
-      testkit = await buildTestkitPackage(root, {}, execution);
+      testkit = await buildTestkitPackage(root, scratchRoot, {}, execution);
     }
 
     for (let index = 1; index <= 3 && !isExecutionCancelled(execution); index += 1) {

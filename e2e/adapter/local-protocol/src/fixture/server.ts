@@ -7,7 +7,8 @@
 import type { UIMessageChunk } from "ai";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { FIXTURE_BASE_URL, FIXTURE_HOST, FIXTURE_PORT } from "./address.ts";
+
+const FIXTURE_HOST = "127.0.0.1";
 
 type Mode = "ok" | "approval" | "disconnect" | "hang" | "error";
 
@@ -153,7 +154,7 @@ const server = createServer((req, res) => {
   void (async () => {
     try {
       const method = req.method ?? "GET";
-      const url = new URL(req.url ?? "/", FIXTURE_BASE_URL);
+      const url = new URL(req.url ?? "/", `http://${FIXTURE_HOST}`);
 
       if (method === "OPTIONS") {
         res.writeHead(204, {
@@ -220,12 +221,18 @@ const server = createServer((req, res) => {
   })();
 });
 
-server.listen(FIXTURE_PORT, FIXTURE_HOST, () => {
-  process.stdout.write(`local-protocol fixture listening on ${FIXTURE_BASE_URL}\n`);
+server.listen(0, FIXTURE_HOST, () => {
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("local-protocol fixture did not receive a TCP address");
+  }
+  const baseUrl = `http://${FIXTURE_HOST}:${address.port}`;
+  process.stdout.write(`NICEEVAL_E2E_READY ${JSON.stringify({ baseUrl, port: address.port })}\n`);
 });
 
 function shutdown(): void {
   server.close(() => process.exit(0));
+  server.closeAllConnections();
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

@@ -34,9 +34,13 @@ experiments/
 test/
 ```
 
-场景源 `package.json` 和签入 lockfile 不声明 `@niceeval/testkit`；`e2e.json` 的 `harness.testkit: true`
-是消费意图的唯一真源。根 runner clean-build 当前 checkout 的 workspace Testkit，再只在隔离副本中注入 `file:` 目录依赖；
-场景源本身不使用 workspace link。
+场景源 `package.json` 和签入 lockfile 不声明 `@niceeval/testkit`。`e2e.json` 的
+`harness.testkit: true` 是消费意图的唯一真源。
+
+根 runner 把当前 checkout 的 workspace Testkit 编译到 invocation-local scratch
+snapshot。它只在隔离副本中注入 `file:` 目录依赖；场景源本身不使用 workspace
+link。
+
 直接进入场景执行 `pnpm test` 不是正式入口；它必须非零退出并引导用户在根目录运行
 `pnpm e2e --repo <id>`。manifest `command` 直接调用原生 Vitest / Playwright 命令，仅由完成 candidate 与 Testkit 注入的根 runner 执行。
 
@@ -180,7 +184,8 @@ Docker 是 Repo 的 backend / sandbox 依赖，不属于 executor 类型。host 
 - 需要写的测试使用独立结果根 / 项目副本；只有运行世界也不同，才为 Journey 增加独立 Repo；
 - 短命控制文件位于 `withTempDir()` 创建的系统临时目录，每条 case 一份；需收集的 `.niceeval` / JUnit / trace 仍位于隔离 Repo 内；
 - Docker container、network、volume 名带 run ID，不使用全局固定名；
-- 本地 `--keep-workdir` 是显式诊断选项，CI 永远收 artifact 后删除隔离副本；
+- 本地 `--keep-workdir` 是显式诊断选项，保留 scratch 副本但不保留活进程；
+  `CI` 变量存在时在任何运行副作用前拒绝，CI 永远收 artifact 后删除隔离副本；
 - secret 只进子进程变量集合，摘要和 artifact 统一脱敏，不写进 fixture、manifest 或命令行。
 
 未声明的敏感名变量不会进入 preflight、install 或 test。敏感名包含 token、key、secret、password、credential、auth、jwt 与数据库连接名。

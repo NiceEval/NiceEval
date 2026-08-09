@@ -14,9 +14,10 @@
 // code. Non-host executors are rejected as unsupported.
 //
 // When selected repos declare `harness.testkit: true`, this invocation
-// clean-builds packages/testkit once and injects that checkout directory only
-// into isolated copies. Testkit is private harness code, not a durable or
-// replayable tarball. Repos that do not declare it must not import it.
+// compiles packages/testkit once into an invocation-local immutable snapshot
+// and injects that snapshot only into isolated copies. Testkit is private
+// harness code, not a durable or replayable tarball. Repos that do not declare
+// it must not import it.
 //
 // This script must never hardcode SDK names, ports, or expected eval/verdict
 // counts, and must never parse a repo's .niceeval/ for pass/fail.
@@ -32,7 +33,7 @@ import { readCandidateTarball } from "./injection.ts";
 import { buildTestkitPackage } from "./testkit.ts";
 import { selectRepos } from "./plan.ts";
 import { LANES, type Lane } from "./manifest.ts";
-import { appendNativeArgs, runRepo, type RepoRunResult } from "./run-repo.ts";
+import { appendNativeArgs, materializeCandidateArtifact, runRepo, type RepoRunResult } from "./run-repo.ts";
 import type { Category } from "./receipt.ts";
 import {
   createUnmanagedExecutionControl,
@@ -56,6 +57,7 @@ interface Cli {
   candidatePath: string;
   artifactRoot: string | undefined;
   nativeArgs: string[];
+  keepWorkdir: boolean;
 }
 
 function splitNativeArgs(argv: readonly string[]): { optionArgs: readonly string[]; nativeArgs: string[] } {
@@ -75,6 +77,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
       capability: { type: "string" },
       "artifact-root": { type: "string" },
       "diff-path": { type: "string", multiple: true },
+      "keep-workdir": { type: "boolean", default: false },
     },
     allowPositionals: false,
     strict: true,
@@ -103,6 +106,7 @@ export function parseRunCli(argv: readonly string[]): Cli {
       ? resolve(values["artifact-root"])
       : undefined,
     nativeArgs,
+    keepWorkdir: values["keep-workdir"] === true,
   };
 }
 
@@ -136,13 +140,14 @@ export interface RunSummary {
 export interface RunnerTerminalSummary {
   category: "pass" | "infra" | "cancelled";
   detail: string;
-  scratchCleanup: {
-    attempted: boolean;
-    ok: boolean;
-    path?: string;
-    detail: string;
-  };
+  scratchDisposition: ScratchDisposition;
 }
+
+export type ScratchDisposition =
+  | { kind: "not-created"; ok: true; detail: string }
+  | { kind: "removed"; ok: true; path: string; detail: string }
+  | { kind: "retained"; ok: true; path: string; detail: string }
+  | { kind: "remove-failed"; ok: false; path: string; detail: string };
 
 /** Narrow injection seam for one-shot fault smoke; production uses fs.rm. */
 export interface RunDependencies {
@@ -165,7 +170,7 @@ export function buildSummary(
   runner: RunnerTerminalSummary = {
     category: "pass",
     detail: "root orchestrator completed",
-    scratchCleanup: { attempted: false, ok: true, detail: "scratch cleanup not yet attempted" },
+    scratchDisposition: { kind: "not-created", ok: true, detail: "scratch root not created" },
   },
 ): RunSummary {
   const summaryPath = join(artifactRoot, "summary.json");
@@ -213,7 +218,7 @@ function printSummary(summary: RunSummary): void {
     `\n${summary.passed} passed, ${summary.regression} regression, ${summary.infra} infra, ${summary.configuration} configuration, ${summary.cancelled} cancelled (of ${summary.total} selected)`,
   );
   console.log(`overall=${summary.category}  runner=${summary.runner.category}  ${summary.runner.detail}`);
-  console.log(`runner scratch cleanup: ${summary.runner.scratchCleanup.ok ? "ok" : "failed"}; ${summary.runner.scratchCleanup.detail}`);
+  console.log(`runner scratch: ${summary.runner.scratchDisposition.kind}; ${summary.runner.scratchDisposition.detail}`);
   console.log(`[e2e] durable artifactRoot retained (not deleted): ${summary.artifactRoot}`);
 }
 
@@ -226,21 +231,26 @@ export async function main(
   execution: E2EExecutionControl = createUnmanagedExecutionControl(),
   dependencies: RunDependencies = {},
 ): Promise<void> {
-  // Ephemeral working copies only — always deleted.
+  // Scratch working copies are deleted unless local --keep-workdir retains them.
   let scratchRoot: string | undefined;
   // Durable artifacts + receipts — never deleted by this runner.
   let artifactRoot: string | undefined;
   const results: RepoRunResult[] = [];
   let runnerFailure: string | undefined;
   let cancelled = false;
-  let scratchCleanup: RunnerTerminalSummary["scratchCleanup"] = {
-    attempted: false,
+  let keepWorkdir = false;
+  let scratchDisposition: ScratchDisposition = {
+    kind: "not-created",
     ok: true,
     detail: "no scratch root was created",
   };
 
   try {
     const cli = parseRunCli(argv);
+    keepWorkdir = cli.keepWorkdir;
+    if (keepWorkdir && process.env.CI !== undefined) {
+      throw new Error("--keep-workdir is local-only and is rejected whenever CI is set");
+    }
     if (isExecutionCancelled(execution)) {
       throw new Error("run cancelled before candidate validation");
     }
@@ -252,6 +262,7 @@ export async function main(
     console.log(`[e2e] artifact root (durable):  ${artifactRoot}`);
     console.log(`[e2e] candidate tarball: ${candidate.path}`);
     console.log(`[e2e] candidate fingerprint: ${candidate.integrity} (sha256:${candidate.sha256})`);
+    candidate.path = await materializeCandidateArtifact(artifactRoot, candidate);
 
     const { repos, errors } = discoverAllRepos(e2eRootDir());
     if (errors.length > 0) {
@@ -263,10 +274,10 @@ export async function main(
       console.log("[e2e] no repos matched the selection — nothing to run.");
     } else {
       const testkit = selected.some((repo) => repo.manifest.harness?.testkit === true)
-        ? await buildTestkitPackage(repoRootDir(), {}, execution)
+        ? await buildTestkitPackage(repoRootDir(), scratchRoot, {}, execution)
         : undefined;
       if (testkit !== undefined) {
-        console.log(`[e2e] workspace testkit: ${testkit.path} (@niceeval/testkit@${testkit.version})`);
+        console.log(`[e2e] Testkit snapshot: ${testkit.path} (@niceeval/testkit@${testkit.version})`);
       }
 
       const allSecretNames = new Set<string>();
@@ -283,7 +294,7 @@ export async function main(
           allSecretNames,
           cli.nativeArgs,
           testkit,
-          { execution },
+          { execution, keepWorkdir: cli.keepWorkdir },
         );
         console.log(`[e2e] ${repo.manifest.id}: artifactDir=${result.artifactDir}`);
         console.log(`[e2e] ${repo.manifest.id}: receiptPath=${result.receiptPath}`);
@@ -298,29 +309,38 @@ export async function main(
   } finally {
     // Only the ephemeral scratch tree is removed. artifactRoot is retained.
     if (scratchRoot !== undefined) {
-      scratchCleanup = { attempted: true, ok: true, path: scratchRoot, detail: `removed ${scratchRoot}` };
-      try {
-        const removeScratch = dependencies.removeScratch ?? ((path: string) => rm(path, { recursive: true, force: true }));
-        await removeScratch(scratchRoot);
-      } catch (error) {
-        scratchCleanup = {
-          attempted: true,
-          ok: false,
+      if (keepWorkdir) {
+        scratchDisposition = {
+          kind: "retained",
+          ok: true,
           path: scratchRoot,
-          detail: `scratch cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          detail: `retained ${scratchRoot} because --keep-workdir was requested`,
         };
-        console.error(`[e2e] ${scratchCleanup.detail}`);
+      } else {
+        scratchDisposition = { kind: "removed", ok: true, path: scratchRoot, detail: `removed ${scratchRoot}` };
+        try {
+          const removeScratch = dependencies.removeScratch ?? ((path: string) => rm(path, { recursive: true, force: true }));
+          await removeScratch(scratchRoot);
+        } catch (error) {
+          scratchDisposition = {
+            kind: "remove-failed",
+            ok: false,
+            path: scratchRoot,
+            detail: `scratch cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          };
+          console.error(`[e2e] ${scratchDisposition.detail}`);
+        }
       }
     }
 
     cancelled ||= isExecutionCancelled(execution);
     const runner: RunnerTerminalSummary = {
-      category: cancelled ? "cancelled" : runnerFailure !== undefined || !scratchCleanup.ok ? "infra" : "pass",
+      category: cancelled ? "cancelled" : runnerFailure !== undefined || !scratchDisposition.ok ? "infra" : "pass",
       detail:
         cancelled
-          ? `${runnerFailure ?? "root cancellation requested"}${scratchCleanup.ok ? "" : `; ${scratchCleanup.detail}`}`
-          : runnerFailure ?? (scratchCleanup.ok ? "root orchestrator completed" : scratchCleanup.detail),
-      scratchCleanup,
+          ? `${runnerFailure ?? "root cancellation requested"}${scratchDisposition.ok ? "" : `; ${scratchDisposition.detail}`}`
+          : runnerFailure ?? (scratchDisposition.ok ? "root orchestrator completed" : scratchDisposition.detail),
+      scratchDisposition,
     };
     if (artifactRoot !== undefined) {
       const summary = buildSummary(artifactRoot, results, runner);
