@@ -4,9 +4,12 @@
  它由 `e2e/report/` 仓库承担（group `report`）。
 适配器仓库不复制格式知识，读结果只走公开 Record 读取面。
 
-仓库使用真实 Agent 与真实模型产生结果——真实优先没有例外。
-稳定性来自断言对象：只对这次运行的输出做确定性断言（文件集合、字段形状、口径一致性、渲染结构与排版），不断言模型输出质量。
-一次真实运行产出的证据被下面全部验收组共用，断言条数不增加模型成本。
+仓库使用安装后的 candidate 与签入的 Eval / Experiment 完整运行产生结果。普通消息和固定输出可以使用确定性 Direct Agent；
+只有文件、diff、shell、timing 或资源生命周期需要时才使用 Sandbox 或对应 backend。稳定性来自固定输入与公开 expected，
+不要求外部模型提供可重复文案。一次真实运行产出的冻结证据可被下面的只读验收组共用。
+
+`.niceeval` 必须在每次 Repo invocation 中由这次完整运行现场生成，不签入、下载或从 Adapter / Record fixture 预置。
+一个 Eval 无法制造某条 show / view 分支时，在本 Repo 增加另一条专用 Eval；不把所有展示状态写入同一个 Eval。
 
 ## 验收计划
 
@@ -43,7 +46,10 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
   - `--grep` 必须是合法 JS 正则、只与 `--execution` 组合、与 `--expand` 互斥； `--expand` 要求范围恰好一个 attempt，句柄未命中报实际范围。
   - `--report` 文件缺失、默认导出不是 `defineReport` 返回的定义值、`--page` 未命中列出可用页 id；显式 `@<locator> --report` 遇到缺失 attempt 参数化页时指引解决路径，不静默回退内建详情。
   - view 的 `--record` / `--run` 互斥与不存在路径直说。
-- **证据切面**：项目配置自定义报告且不含 attempt page 时，不带 `--report` 的 `show @<locator>` 仍显示官方诊断首页；显式 `@<locator> --report <file>` 才进入该报告的 attempt page。`--source` / `--execution` / `--timing` / `--diff` 在真实证据上工作；`--timing` 的有界诊断树与 `--timing=full` 全量展开按契约取样；落盘无 phases 时如实显示 unavailable，不猜。
+- **证据切面**：
+  - 项目配置自定义报告且不含 attempt page 时，不带 `--report` 的 `show @<locator>` 仍显示官方诊断首页；显式 `@<locator> --report <file>` 才进入该报告的 attempt page。
+  - `--source` / `--execution` / `--timing` / `--diff` 在真实证据上工作；`--timing` 的有界诊断树与 `--timing=full` 全量展开按契约取样；落盘无 phases 时如实显示 unavailable，不猜。
+  - `--source` 的 Eval 把断言拆在入口与嵌套断言模块中。运行后修改这些源码，再用旧 locator 读取；展示必须保留运行时捕获的文件树、caller 位置与内容，不回读当前磁盘文件。这条 Journey 同时守住 source location 捕获与 Eval source snapshot 的公开结果。
 - **Sample warnings**：局部补跑、过旧、不可读 Run 形成结构化 warning 且两宿主一致；单个坏 Run 不阻塞其余；零可读结果时 `show` 非零退出、`view` 不启动 server。
 - **Run diagnostics**：真实 Run 的实验域 diagnostic 在两个宿主都按 experiment → Run 的出处呈现；直接传入的 Run[] 的自定义报告同样可见，出处、时效、level、message、command 与 count 不被合并或改写。
 - **导出与 server**：`view --out` 导出站与本地 server 对同一路径逐字节一致；收窄对页面 Sample 与 `artifact/` 证据树同步生效；`attempt/<locator>.html` 无 JavaScript 完整可读；`o11y.json` 永不出站。
@@ -55,7 +61,7 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
 show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真实输出断言 [Reports](../../../feature/reports/README.md) 声明的呈现行为：
 
 - **零配置用户切片**：从公开 CLI 验收多 `--exp` 对照、`--stats`、`--usage`、attempt 首页 facts、`--grep` 命中/空结果，以及 `--source` 对全通过断言的收纳和对失败断言的展开。
-  预期来自本仓库签入的 Eval、公开 Record fixture 与真实运行证据，不 import show renderer、报告原语或数据源生成答案。
+  预期来自本仓库签入的 Eval / Experiment 与本轮完整运行生成的 evidence，不 import show renderer、报告原语或数据源生成答案。旧 Record 兼容性 fixture 只归 Record Repo，不作为 show 的常规 producer。
 
 - **结构**：区块存在与相对顺序、默认展开 / 折叠（原生 `<details>` 的 `open` 标记）、计数、expected / received 文本、失败断言的默认可见性、locator 链接与下钻命令。空证据位的组件零输出，不留空占位。
 - `runDiagnostics` 的摘要恒可见且暴露最高严重度、web 默认折叠、text 不折叠、单诊断 Run 不摆空壳层级、三张内建 scope-input page 均紧邻 `sampleWarnings` 放置。

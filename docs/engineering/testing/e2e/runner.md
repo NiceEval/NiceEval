@@ -11,6 +11,7 @@
 | --- | --- | --- | --- | --- |
 | [`#runner-carry-partial-reuse`](#runner-carry-partial-reuse) | 改变一个 Eval 只重新派发其 identity，未改变的 Eval 继续携带 | Journey E2E | `e2e/runner/test/carry-partial-reuse.test.ts` | PR |
 | [`#runner-history-dedup`](#runner-history-dedup) | 强制重跑追加历史 identity，carry 不复制已有 attempt | Journey E2E | `e2e/runner/test/history-dedup.test.ts` | PR |
+| [`#runner-accept-reanchor`](#runner-accept-reanchor) | 用户审阅变更后 accept 旧结果，新结果重锚并可继续 carry，且保留审计 provenance | Journey E2E | `e2e/runner/test/accept-reanchor.test.ts` | PR |
 
 ## 验收命题
 
@@ -21,6 +22,16 @@
 ### runner-history-dedup
 
 同一 Eval 的两次 `--rerun all` 必须形成两条不同历史 identity。之后默认 carry 的公开结果可报告复用，但 `show --history` 仍只显示那两条既有 attempt，不能把旧结果复制成第三条 history attempt。
+
+### runner-accept-reanchor
+
+在私有项目副本中完整运行初始 Experiment 并从公开 history 取得 locator；随后修改 Eval 入口或被导入源码模块。Human 与 JSON
+`--dry` 都必须把旧 verdict、差异原因、locator 与可执行的 `niceeval accept @<locator>` 关联起来。执行 accept 后再次 dry，结果应
+变为 carried、没有新 Agent dispatch；新 locator 的公开读回保留原 verdict / evidence，并暴露指回旧 locator 与差异摘要的
+`acceptedFrom` 审计关系。
+
+本 Journey 不签入 `.niceeval`、不手写 manifest，也不从 accept 中段开始。不同资格、差异或错误分支需要独立输入时，可以在
+Runner Repo 增加专用 Eval；完整 fingerprint 等价类仍不在 E2E 重复穷举。
 
 ## 边界
 

@@ -1,14 +1,15 @@
 # 真实场景 Repo
 
 场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
-CLI、Runner、Record、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+Eval、CLI、Runner、Record、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
 第二套 Behavior / World 语义。
 
 ## 目录形状
 
 ```text
 e2e/
-├── cli/                            # ┐
+├── eval/                           # ┐ Eval、Context、Assertions
+├── cli/                            # │
 ├── runner/                         # │ 功能场景 Repo
 ├── record/                         # │ 公开 Record API / 格式 owner
 ├── report/                         # │ 子功能与 Journey 用测试文件命名
@@ -54,7 +55,7 @@ test/
 | Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
 | 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
 | 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
-| 测试范围 | CLI、Runner、Record、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
+| 测试范围 | Eval、CLI、Runner、Record、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
 绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
@@ -77,6 +78,7 @@ interface E2ERepoManifest {
   schemaVersion: 1;
   id: string;
   areas: readonly (
+    | "eval"
     | "cli"
     | "report"
     | "record"
@@ -92,7 +94,6 @@ interface E2ERepoManifest {
   timeoutMinutes: number;
   harness?: {
     testkit?: boolean;
-    adapterAssertions?: boolean;
   };
   secrets: readonly string[];
   requires?: {
@@ -116,15 +117,11 @@ manifest 不含测试标题、expected、page matrix、历史 bug 或 contract a
 
 1. 从待测 checkout pack 一份 NiceEval candidate tgz；
 2. 若选中 Repo 声明 `harness.testkit: true`，删除当前 workspace Testkit 的 `dist/` 并完整构建一次；
-3. 把每个选中 Repo 复制到新的临时目录；声明 `harness.adapterAssertions: true` 的 Adapter Repo 还必须签入
-   `evals/assertion-profile.ts`，runner 只在该副本中把 checkout 的共享断言契约复制成普通 Eval 源码；
+3. 把每个选中 Repo 复制到新的临时目录；
 4. 只在副本中把 `niceeval` 指向 candidate，并新增指向 `packages/testkit` 的绝对 `file:` devDependency；
 5. 安装后核对 NiceEval executable 与 candidate integrity；Testkit 只核对实际包名、唯一 directory resolution，以及
    realpath 位于副本自己的 pnpm virtual store；
 6. 把 candidate digest、Testkit version/source/installed realpath（诊断）、Repo ID、artifact 路径和 candidate 复现命令写入摘要。
-
-`adapterAssertions` 不创建一条脱离 Adapter 的测试 lane。它让同一笔 live Adapter 运行发现共享 Eval，并用叶子 Repo 的
-profile 驱动真实对话、工具与 Sandbox；所以一次调用同时验证公开 Assertion 契约和该 Adapter 的事件归一兼容性。
 
 场景 Repo 禁止 workspace link、相邻源码相对 import、直接执行根仓库 `src/` 或修改 `node_modules/niceeval`。
 否则测试通过只说明工作树能自洽，不能说明发布包可消费。
@@ -164,6 +161,10 @@ Executor 回答测试进程在哪里运行：
 - 不 import 候选内部类型给测试手写 expected。
 
 测试可以从公开 history 取得动态 locator，因为 locator 是上一步用户获得的结果；它随后必须被另一条公开命令真正消费。
+
+功能 Repo 的 `.niceeval` 只来自本次 invocation 中安装后 candidate 的完整 Experiment 运行。不得签入、下载或从另一个 Repo
+复制结果作为常规测试输入；公开旧格式兼容性本身是契约时，才由 Record Repo 拥有最小版本 fixture。只读 case 可以共享本轮
+冻结 evidence；修改 Eval、config、结果或执行 accept 的 case 必须在私有项目副本中先完成自己的初始运行。
 
 ## 隔离规则
 

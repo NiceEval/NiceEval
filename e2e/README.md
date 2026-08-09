@@ -8,6 +8,7 @@
 
 ```text
 e2e/
+├── eval/                   # Eval、Context 与公开 Assertion 契约
 ├── cli/                    # argv、机器输出、失败分类与缓存
 ├── runner/                 # carry、history 与确定性调度
 ├── package/                # ESM、CJS、exports 与外部 cwd
@@ -21,6 +22,9 @@ e2e/
 ```
 
 目录结构本身不决定测试身份；`e2e.json.id` 才是稳定 Repo id。`adapter/` 只是物理 collection，不提供共享依赖或共享结果根。
+
+功能 Repo 签入自己的 Eval / Experiment，并在每次 invocation 中完整运行生成 `.niceeval` 后再做公开读回；不签入或跨 Repo
+复制预生成结果。某个 case 需要另一种 verdict、事件、source 或 Sandbox evidence 时，直接在所属 Repo 增加专用 Eval。
 
 ## 根入口
 

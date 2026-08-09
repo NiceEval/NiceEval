@@ -49,13 +49,14 @@ niceeval 的测试体系采用“真实用户 Journey + 原生结果断言”。
 | Unit | E2E 无法稳定区分的确定性风险 | 有证据的例外 |
 
 `Journey` 是 E2E 体裁，不是第三层。Testkit 与根 E2E runner 是测试执行所需的普通代码，不另建一种测试身份；runner 的行为由
-真实场景执行和 CI 收据验收，不再维护 `test/unit/e2e-runner/` 模拟套件。另一条轴只回答产品域：CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
+真实场景执行和 CI 收据验收，不再维护 `test/unit/e2e-runner/` 模拟套件。另一条轴只回答产品域：Eval、CLI、Report、Package、Runner、Adapter、Sandbox / Lifecycle。
 
 ## 风险边界
 
 | 风险 | 默认主 owner | 允许的 Unit 例外 |
 |---|---|---|
 | 公共 Library API、公开 Record 格式 | 安装后 package API 的单边界 E2E | E2E 无法穷举的非法输入或算法矩阵 |
+| Eval、Context 与公开 Assertion 契约 | Eval 场景 Repo | 无法由真实 Eval 稳定区分的纯算法矩阵 |
 | 选择、聚合、归一、schema | 对应用户结果的 Journey 或单边界 E2E | 具名错误算法的最小等价类 |
 | 安装、exports、外部 cwd、CJS / ESM | Package 场景 Repo | 无 |
 | argv、pipe、PTY、exit、机器输出 | CLI 场景 Repo | 无法由真实 PTY 稳定制造的纯布局算法 |
@@ -161,7 +162,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 - [本地与 CI](../../roadmap/testing/e2e/execution.md) —— host / Docker、lane、Actions、release 与 artifact；
 - [测试跟改率](churn.md) —— 用历史读数识别绑定实现细节的测试；
 - [`unit/<feature>.md`](unit/README.md#feature-测试文档) —— Unit 例外类别、Fixture 与矩阵 owner；
-- [`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
+- [Eval](e2e/eval.md)、[`e2e/adapter/`](e2e/adapter/README.md)、[CLI](e2e/cli.md)、[Record](e2e/README.md)、[Report](e2e/report.md) —— 各域的长期结果 owner。
 
 历史缺陷的现象、根因与反直觉修法只留在 [`memory/`](../../../memory/INDEX.md)。
 正式测试义务只由本目录的 owner 文档与对应产品契约定义。

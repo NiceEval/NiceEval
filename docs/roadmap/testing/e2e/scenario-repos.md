@@ -1,14 +1,15 @@
 # 真实场景 Repo
 
 场景 Repo 是测试的真实用户项目和隔离单位，但分成两套互不复用的消费项目。功能 Repo 验收 NiceEval 自己拥有的
-CLI、Runner、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
+Eval、CLI、Runner、Report、Package 与 Lifecycle；Adapter Repo 验收某个真实 SDK / CLI 的协议兼容性。两套 Repo 都不承载
 第二套 Behavior / World 语义。
 
 ## 目录形状
 
 ```text
 e2e/
-├── cli/                            # ┐
+├── eval/                           # ┐ Eval、Context、Assertions
+├── cli/                            # │
 ├── runner/                         # │ 功能场景 Repo
 ├── report/                         # │ 子功能与 Journey 用测试文件命名
 ├── package/                        # │
@@ -50,7 +51,7 @@ test/
 | Agent / backend | Repo 内签入的确定性 fixture | 对应真实 SDK、CLI、provider 或该协议的本地故障端 |
 | 依赖图 | NiceEval candidate 与功能所需的最小依赖 | NiceEval candidate 加该 adapter 的精确上游依赖 |
 | 结果根 | 该功能 Repo 的隔离结果 | 每个 `adapter/<id>` 自己的隔离结果 |
-| 测试范围 | CLI、Runner、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
+| 测试范围 | Eval、CLI、Runner、Report、Package、Lifecycle 和功能 Journey | 最小运行路径加 adapter 特有的事件、usage、session、工具身份或故障 |
 
 功能测试不能为了“更真实”改去 `adapter/ai-sdk` 或 `adapter/codex-cli` 运行；那会把功能回归与上游网络、凭据和版本漂移
 绑在一起。Adapter 测试也不能因为会调用 `exp` / `show` 就接管 CLI 或 Report 的通用矩阵；这些命令只是读回协议证据的手段。
@@ -73,6 +74,7 @@ interface E2ERepoManifest {
   schemaVersion: 1;
   id: string;
   areas: readonly (
+    | "eval"
     | "cli"
     | "report"
     | "package"
@@ -149,6 +151,10 @@ Executor 回答测试进程在哪里运行：
 
 测试可以从公开 history 取得动态 locator，因为 locator 是上一步用户获得的结果；它随后必须被另一条公开命令真正消费。
 
+功能 Repo 的 `.niceeval` 只来自本次 invocation 中安装后 candidate 的完整 Experiment 运行。不得签入、下载或从另一个 Repo
+复制结果作为常规测试输入；公开旧格式兼容性本身是契约时，才由 Record Repo 拥有最小版本 fixture。只读 case 可以共享本轮
+冻结 evidence；修改 Eval、config、结果或执行 accept 的 case 必须在私有项目副本中先完成自己的初始运行。
+
 ## 隔离规则
 
 - 根 runner 每个 Repo、每次重试都创建新副本；
@@ -162,8 +168,8 @@ Executor 回答测试进程在哪里运行：
 ## Adapter Repo
 
 Adapter collection 的拆分单位是“用户实际选择的公开 adapter 入口”，不是测试文件类型。
-每个 adapter Repo 的一次运行包含共享 Assertion 契约与本地协议 Eval。根 runner 把共享契约复制进隔离副本，叶子 Repo 只提供真实工具名、提示词与 marker；
-MCP、HITL、Skill、Plugin、Subagent 等能力仍归对应 Adapter 的本地 Eval。运行内容至少包括：
+每个 adapter Repo 只签入并运行该上游协议所需的本地 Eval；MCP、HITL、Skill、Plugin、Subagent 等能力归能真实产生这些事件的
+对应 Adapter。公开 Assertion 的完整契约由功能 Repo 验收，根 runner 不向 Adapter 副本注入产品 Eval。运行内容至少包括：
 
 - 一个明确要求零工具的正常消息往返，并以负断言证明没有工具调用；
 - 一个该 adapter 独有能力，例如工具、session、MCP、usage 或 sandbox；

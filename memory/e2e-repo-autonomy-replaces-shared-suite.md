@@ -33,5 +33,18 @@
 - MCP、HITL、Skill、Plugin、Subagent 等协议特有能力仍由叶子 Repo 的本地 Eval 拥有，根 runner 不理解这些领域 expected。
 
 所以 2026-07-13 对“中央 verifier 越过公开读面”“共享应用/进程/结果读取”“根仓理解领域 expected”的否决继续有效；
-只推翻“任何 Eval 源码都不得在 Adapter Repo 间共享”这一条。当前定稿契约见
-`docs/engineering/testing/e2e/adapter/README.md#共享断言契约`。
+只推翻“任何 Eval 源码都不得在 Adapter Repo 间共享”这一条。这是 2026-08-08 的阶段性裁决，随后由下一节再次翻案。
+
+## 2026-08-09 再次翻案：按产品能力自造真实 evidence，不做 Adapter 乘法
+
+用户取消“每个 Adapter 都运行共享 Assertion 契约”的方案。完整 Assertion、Context、Show / View、Runner dry / accept 等能力
+各自由功能场景 Repo 拥有：Repo 签入为自身 case 设计的 Eval / Experiment，每次 invocation 真实完整运行并现场生成 `.niceeval`，
+再经公开命令或 API 验收。缺少某种 verdict、事件、source 或 Sandbox evidence 时，直接在该功能 Repo 增加专用 Eval。
+
+Adapter Repo 回到单一职责：只跑足以证明真实 SDK / CLI / provider 协议兼容性的本地 Eval。它可以调用 Assertion 判定协议事实，
+也可以用 `show --execution` / `--timing` 读回，但不拥有 Assertion 或 Report 的完整矩阵。根 runner 不再注入共享产品 Eval，
+也不增加 `adapterAssertions` manifest 能力。
+
+`.niceeval` 不作为签入 fixture、下载缓存或跨 Repo evidence 使用。只读 case 可共享本次完整运行后冻结的 evidence；修改 Eval、
+config、结果或执行 accept 的 case 使用私有副本并先完成自己的初始运行。现行定稿契约见
+`docs/engineering/testing/e2e/README.md#功能-repo-自己生产证据`。

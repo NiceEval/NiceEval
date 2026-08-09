@@ -7,7 +7,6 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 
 | 协议行为 | Eval 断言（只读事件流） |
 | --- | --- |
-| 共享断言契约 | 普通对话以 `usedNoTools` / `notCalledTool` 证明零工具；真实 shell 调用分别在 turn、session 与 `t` scope 求值；coding 任务枚举 `ToolMatch` 的 input / count / output / status 与 Sandbox 正反断言 |
 | coding 任务工具轨 | 真实任务下 `codex exec --json` 的结构化 stdout 归一出命令与文件工具事件，优先按显式 call ID 配对 |
 | Skills | 同时安装 status report / release note / decoy 三个互斥 Skill；两条正调各自证明只读取目标 `SKILL.md`、采用目标独有 marker 且未读取其它 Skill。Codex 没有原生 Skill 工具，两条路径都以 `notEvent("skill.loaded")` 守住“不伪造加载事件”的反例 |
 | MCP | stdio 与远程 HTTP 两种形态的 `[mcp_servers.<name>]` 都能被调用；反例断言未挂载的 server `notCalledTool` |
@@ -18,9 +17,8 @@ Repo ID 是 `adapter/codex-cli`；manifest 声明 `areas: ["adapter", "sandbox"]
 
 ## 仓库验收
 
-- `e2e.json` 声明 `harness.adapterAssertions: true`；`evals/assertion-profile.ts` 只保存 Codex CLI 的真实提示词、canonical 工具名和 marker。根 runner 在隔离副本中把共享源码复制为 `evals/assertion-contract.eval.ts`。
-- profile 的 coding 任务按 codex 的真实归一形状设计：apply_patch 新增 → `file_write`、apply_patch 修改 → `file_edit`、命令执行 → `shell`。提示词显式禁止用 shell 写文件，避免 codex 图省事用一条命令顶掉文件工具。
-- `baseline` Experiment 一次选中全部 `assertion-contract/*` 与原生 `coding-task` / `session` / `usage`；原生验收脚本的 `EXPECTED_EVALS` 同时列全共享契约 ID 与 Codex CLI 特有 Eval ID。
+- coding 任务按 Codex 的真实归一形状设计：apply_patch 新增 → `file_write`、apply_patch 修改 → `file_edit`、命令执行 → `shell`。提示词显式禁止用 shell 写文件，避免 Codex 用一条命令顶掉文件工具。
+- `baseline` Experiment 选中本仓库的 `coding-task` / `session` / `usage`；原生验收脚本列全 Codex CLI 协议 Eval ID。
 - `skill` Experiment 把三个 Skill 一起装进同一个 agent。status report 与 release note 两条 Eval 各自要求只读取目标文件；decoy 只作为反选哨兵，任一正调读到它都会判红。
 - `show --page attempts` 逐条核验两类 ID，防止少发现/少运行后假绿。
 - **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现命令与文件工具调用节点，节点带 span 时间注释。
