@@ -9,3 +9,4 @@ export * from "./json.ts";
 export * from "./observation.ts";
 export * from "./receipt.ts";
 export * from "./transformed-evidence.ts";
+export * from "./verdict.ts";
