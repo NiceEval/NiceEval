@@ -4,7 +4,7 @@ sidebarTitle: "概览"
 description: "理解 NiceEval、Adapter 和 Sandbox Provider 如何配合，用统一 API 评估任意 AI Agent。"
 ---
 
-[NiceEval](https://niceeval.com/) 的核心设计是把“评测逻辑”与“如何连接被测对象”分开。[NiceEval](https://niceeval.com/) 负责发现、调度、评分和报告；Adapter 负责调用被测系统；Sandbox Provider 负责隔离文件系统。
+[NiceEval](https://niceeval.com/) 的核心设计是把“评测逻辑”与“如何连接被测对象”分开。[NiceEval](https://niceeval.com/) 负责发现、调度、评分和报告。Adapter 负责调用被测系统。Sandbox Provider 负责隔离文件系统。
 
 ## 四层架构
 
@@ -44,7 +44,7 @@ Subject under test / Sandbox Provider
 ## Adapter
 
 <Note>
-  `Agent` 是 [NiceEval](https://niceeval.com/) 看到的抽象；`Adapter` 是你写的具体实现。[NiceEval](https://niceeval.com/) 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
+  `Agent` 是 [NiceEval](https://niceeval.com/) 看到的抽象。`Adapter` 是你写的具体实现。[NiceEval](https://niceeval.com/) 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
 </Note>
 
 这条边界让 [NiceEval](https://niceeval.com/) 保持通用。评估自己的 AI Agent、Claude Code、Codex

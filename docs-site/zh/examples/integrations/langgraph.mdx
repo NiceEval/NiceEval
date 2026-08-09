@@ -8,12 +8,12 @@ description: "一个纯 Python LangGraph + LangSmith OTel 导出的应用，接�
 
 对比对象：
 
-- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。
+- **before**：[`origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。
 
-**接入方式**：手写帧映射——server.py 的自定义 JSON 帧逐帧翻成标准事件（`tool-input` →
-`operation.started`、`tool-output` → `operation.finished`、`text-delta` 累积成 `message`、
-`tool-approval-request` → 停轮 + `input.requested`），HITL 停轮现场的存取走 `ctx.session`。
+**接入方式**：手写帧映射。server.py 的自定义 JSON 帧逐帧翻成标准事件。
+`tool-input` 映射为 `operation.started`，`tool-output` 映射为 `operation.finished`，`text-delta` 累积成 `message`。
+`tool-approval-request` 会停轮并产生 `input.requested`。HITL 停轮现场通过 `ctx.session` 存取。
 被测应用是 Python，评估用例侧是另起的独立 TS 项目，应用侧 `src/backend/*.py` 逐字节未变。
 要 OTel 瀑布图见 `tier2/`，feature A/B 见 `tier3/`。
 

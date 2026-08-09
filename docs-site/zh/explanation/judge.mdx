@@ -21,7 +21,7 @@ t.judge.autoevals.closedQA("自定义评分标准描述", { on: t.reply });
 - **`factuality(reference, opts?)`** —— 输出和你给的参考文本之间的事实一致性。
 - **`summarizes(source, opts?)`** —— 输出是否忠实摘要了某个源文档。
 
-`{ on }` 指定被评的值，默认值按接收者决定（见下文）；`{ model }` 单次覆盖裁判模型。
+`{ on }` 指定被评的值，默认值按接收者决定（见下文）。`{ model }` 单次覆盖裁判模型。
 
 ## judge 挂在哪：`t`、`session`、`turn`
 
@@ -33,7 +33,7 @@ session.judge.autoevals.closedQA("...")  // (t.newSession() 的返回值)默认�
 turn.judge.autoevals.closedQA("...")     // (t.send() 的返回值)默认只评这一轮的 turn.message
 ```
 
-`t.judge` / `session.judge` 是 session 级，适合评整段对话的回答质量或跨轮一致性；`turn.judge` 是 turn 级，只看这一轮的消息——多轮评估用例里不同轮次需要不同评分标准时用它：
+`t.judge` / `session.judge` 是 session 级，适合评整段对话的回答质量或跨轮一致性。`turn.judge` 是 turn 级，只看这一轮的消息——多轮评估用例里不同轮次需要不同评分标准时用它：
 
 ```ts
 const turn1 = await t.send("这张图里有什么?");          // 第一轮:看图
@@ -107,7 +107,7 @@ defineConfig({
 | 端点 | `judge.baseUrl` → `https://api.openai.com/v1` |
 | key | `judge.apiKeyEnv` 指定的环境变量 → `NICEEVAL_JUDGE_KEY` |
 
-接自己的网关或 OpenAI 兼容代理时把地址显式写进 `judge.baseUrl`——NiceEval 不去环境里翻 `OPENAI_BASE_URL` 这类变量猜端点。key 同理只读一个名字：`judge.apiKeyEnv` 指定的那个，或默认的 `NICEEVAL_JUDGE_KEY`；judge 有自己的凭据，不会借用被测应用或某个 agent 的 key。
+接自己的网关或 OpenAI 兼容代理时把地址显式写进 `judge.baseUrl`——NiceEval 不去环境里翻 `OPENAI_BASE_URL` 这类变量猜端点。key 同理只读一个名字：`judge.apiKeyEnv` 指定的那个，或默认的 `NICEEVAL_JUDGE_KEY`。judge 有自己的凭据，不会借用被测应用或某个 agent 的 key。
 
 每次判分调用最多等 3 分钟：网关到点还没回，这条断言按超时记 `unavailable`，不会无限挂住整次运行。网关慢但确实能用时，在同一份配置里给它更长预算：
 
@@ -135,7 +135,7 @@ t.judge.autoevals.closedQA("语气是否礼貌?").atLeast(0.7); // soft + 阈值
 t.judge.autoevals.closedQA("语气是否礼貌?").gate();       // 提升为 gate → 低于阈值立刻失败
 ```
 
-不调 `.atLeast()` 也不调 `.gate()` 时，裸的 judge 调用纯粹记一个质量分——会显示在 eval 的分数徽章上，但单独永远不会让运行失败。这是 judge 合理的默认值：一个概率模型在给另一个概率模型的输出打分，把每次没打满分都当硬失败会让整套 eval 变得脆弱、动不动就红。只有当被评的属性真的是硬底线时（比如"回复不能编造账户信息"），才用 `.gate()`。
+不调 `.atLeast()` 也不调 `.gate()` 时，不链分数阈值或门槛的 judge 调用纯粹记一个质量分——会显示在 eval 的分数徽章上，但单独永远不会让运行失败。这是 judge 合理的默认值：一个概率模型在给另一个概率模型的输出打分，把每次没打满分都当硬失败会让整套 eval 变得脆弱、动不动就红。只有当被评的属性真的是硬底线时（比如"回复不能编造账户信息"），才用 `.gate()`。
 
 ## 相关阅读
 

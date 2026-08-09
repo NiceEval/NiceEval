@@ -48,9 +48,9 @@ pnpm exec niceeval view                      # 在网页中浏览
 
 ## 为什么有了 DeepEval、LangFuse、BrainTrust 还需要 NiceEval
 
-NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「构建 Input 与 Expected Output」的模式，并不适合真实的 Agent 评估——现在的 Agent 要在多轮对话、多 agent 协作、工具调用、Skill 加载等细粒度场景下被检查，NiceEval 就是为这类场景设计的：断言直接落在工具调用、消息内容、结构化输出和用量上，而不是要求你先手工准备一份 golden 测试集。
+NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「构建 Input 与 Expected Output」的模式，并不适合真实的 Agent 评估。现在的 Agent 要在多轮对话、多 agent 协作、工具调用、Skill 加载等细粒度场景下被检查，NiceEval 就是为这类场景设计的：断言直接落在工具调用、消息内容、结构化输出和用量上，而不是要求你先手工准备一份 golden 测试集。
 
-像 LangFuse、BrainTrust 这类工具更偏 tracing 和监控，对「写评估用例、跑评估用例、看结果」这条路径来说太重；NiceEval 从一开始就针对这条路径做了友好的开发体验。两者也不冲突：NiceEval 能与 LangFuse、BrainTrust 共存——可以用它们做 tracing，或者把评估结果上传到两者。
+像 LangFuse、BrainTrust 这类工具更偏 tracing 和监控，对「写评估用例、跑评估用例、看结果」这条路径来说太重。NiceEval 从一开始就针对这条路径做了友好的开发体验。两者也不冲突：NiceEval 能与 LangFuse、BrainTrust 共存——可以用它们做 tracing，或者把评估结果上传到两者。
 
 ## 你可以评什么
 
@@ -85,7 +85,7 @@ NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「�
 | 评估用例 | 一个测试用例：写在 `evals/*.eval.ts` 里，描述测什么。 |
 | Experiment | 可签入的运行配置：决定连哪个 Adapter、什么 model、什么 flags。 |
 | Adapter | 连接被测系统的适配层：实现一个 `send`，把返回翻译成标准事件流。 |
-| Sandbox | 需要隔离工作区的 coding agent 才用得到；直连 Web Agent 不需要。 |
+| Sandbox | 需要隔离工作区的 coding agent 才用得到。直连 Web Agent 不需要。 |
 | Tier | 接入 Adapter 的三档投入：Tier 1 只接 send，Tier 2 加 OTel 换调用瀑布图，Tier 3 侵入改造做 feature A/B。 |
 
 完整术语表见[架构概览](/zh/explanation/overview)。

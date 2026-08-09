@@ -23,7 +23,7 @@ description: "一个可运行的 AI SDK v6 Web Agent 评测项目，覆盖自写
 | Experiment | 每个文件固定一个模型，同组比较 DeepSeek 与 GPT |
 | 可观测 | 应用继续上报 Langfuse，同时把本轮 OTLP 数据发给 NiceEval |
 
-Adapter 只负责连接和翻译。URL 与模型属于 Experiment；评估用例只描述交互与好结果。这个分层让同一批评估用例可以复用到不同模型和部署实例。
+Adapter 只负责连接和翻译。URL 与模型属于 Experiment。评估用例只描述交互与好结果。这个分层让同一批评估用例可以复用到不同模型和部署实例。
 
 ## 目录
 

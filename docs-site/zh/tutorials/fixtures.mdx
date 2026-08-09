@@ -124,7 +124,7 @@ t.check(result, commandSucceeded());
 
 ## 用 experiment 做对照组
 
-不要把 Agent 名、插件名或 URL 放进位置参数。Experiment 选择 Agent 并固定运行配置；CLI 的评估用例位置参数只过滤评估用例 ID。
+不要把 Agent 名、插件名或 URL 放进位置参数。Experiment 选择 Agent 并固定运行配置。CLI 的评估用例位置参数只过滤评估用例 ID。
 
 ```bash
 pnpm exec niceeval exp compare
@@ -133,7 +133,7 @@ pnpm exec niceeval exp compare api-validation
 
 典型 A/B：
 
-- `experiments/baseline.ts`：裸 agent。
+- `experiments/baseline.ts`：不加额外配置的 agent。
 - `experiments/with-skill.ts`：同一 agent + setup hook 注入 `CLAUDE.md`。
 - 两组使用同一批评估用例、同一模型、同一 attempts 和预算。
 

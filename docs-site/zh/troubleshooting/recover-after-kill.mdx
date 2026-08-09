@@ -39,9 +39,9 @@ f31b9a02  docker    pid 4242@mbp dead  2026-07-20 14:02   orphan
 niceeval sandbox prune
 ```
 
-- `orphan` 表示属主进程已确认死亡，可以安全销毁；正在跑的运行的实例不会出现在列表里。
+- `orphan` 表示属主进程已确认死亡，可以安全销毁。正在跑的运行的实例不会出现在列表里。
 - 多容器题目（Compose）的伴随容器和网络跟随主实例整组列出、整组销毁，不需要再手工 `docker rm` 收尾。
-- 从别的机器创建、无法核对的实例标为 `unverified`，默认不动；确认后用 `niceeval sandbox prune --force`。
+- 从别的机器创建、无法核对的实例标为 `unverified`，默认不动。确认后用 `niceeval sandbox prune --force`。
 - Vercel Sandbox 无法按元数据核对，到 Provider 的保留期限后自动回收，不需要处理。
 - `--keep-sandbox` 留存的现场不受 `prune` 影响，仍用 `niceeval sandbox stop` 管理。
 
@@ -54,7 +54,7 @@ niceeval exp compare/bub-e2b --teardown
 ```
 
 - 只执行选中实验的 `teardown`，不跑任何评估、不跑 `setup`。
-- 随时可以执行，不依赖上次运行留下的记录；`teardown` 自身要能容忍重复执行。
+- 随时可以执行，不依赖上次运行留下的记录。`teardown` 自身要能容忍重复执行。
 - 强杀后原进程的内存已经丢失，`teardown` 里要从容器名、pid 文件或幂等的关停脚本这类持久信息找回要关的资源，不要依赖 `setup` 存在内存里的对象。
 
 ## 预防：让下一次强杀无害

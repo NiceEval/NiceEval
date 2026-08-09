@@ -24,7 +24,7 @@ await publish(latestRunSample(record), output, {
 });
 ```
 
-运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`publish` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
+运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`publish` 在创建目录前检查所有待发布文件。任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 默认不发布。需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
 
 ## 构建命令就是导出命令
 
@@ -79,7 +79,7 @@ export default defineReport({
 规则只有几条:
 
 - `tag` 支持 `meta`、`link`、`script`、`style` 四种,按声明顺序渲染进每一页的 `<head>`。SEO meta、favicon、字体、JSON-LD 都走这里。
-- `attrs` 的值写 `true` 输出裸属性(`async`、`defer`),写字符串输出 `key="value"`。靠 `data-*` 属性配置的第三方脚本(评论、埋点)直接把属性抄进来。
+- `attrs` 的值写 `true` 输出无值属性(`async`、`defer`),写字符串输出 `key="value"`。靠 `data-*` 属性配置的第三方脚本(评论、埋点)直接把属性抄进来。
 - `src` / `href` 写 `https://` 外链时原样保留;写 `./favicon.svg` 这类相对路径时,文件会自动复制进导出站的 `assets/` 并改好引用。
 - 脚本会原样发布并在读者浏览器里执行,别在里面嵌密钥。
 
@@ -140,7 +140,7 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-日常循环是:本地跑评估用例，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新 Run；要发布其它选择策略，在脚本里替换 `latestRunSample(record)`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
+日常循环是:本地跑评估用例，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新 Run。要发布其它选择策略，在脚本里替换 `latestRunSample(record)`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
 
 ## 发布的是选中的证据
 

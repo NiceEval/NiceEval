@@ -12,7 +12,9 @@ description: "一个 Claude Agent SDK 助手后端，接入 NiceEval 前后的�
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) —— 同一个应用接入 NiceEval 之后的样子。
 
 **接入方式**：官方转换器——Claude Agent SDK 原生 `SDKMessage` → 标准事件的映射是
-`createClaudeSdkEventStream`（`"niceeval/adapter"` 导出）的事，adapter 只剩传输粘合与
+`createClaudeSdkEventStream`（`"niceeval/adapter"` 导出）的事。
+
+adapter 只剩传输粘合与
 HITL 停轮判定（`calculate` 经官方 `canUseTool` 回调门控）。应用由你自己按它的方式启动
 （`pnpm start`），评估用例不代管进程。应用侧 `src/backend/*` 逐字节未变。
 

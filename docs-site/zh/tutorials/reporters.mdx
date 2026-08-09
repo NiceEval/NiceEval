@@ -4,12 +4,12 @@ sidebarTitle: "Reporter 上报"
 description: "用内置 reporters 把评估用例结果送到 Braintrust 实验、JUnit XML 或自定义目的地。"
 ---
 
-[NiceEval](https://niceeval.com/) 自己跑、自己判分；Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter；`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
+[NiceEval](https://niceeval.com/) 自己跑、自己判分。Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter。`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
 
 挂载位置有两个：
 
 - `niceeval.config.ts` 的 `reporters`：观测整次运行的每个评估用例。共享目的地（比如一个 Braintrust 实验）通常写在这里。
-- 单个评估用例的 `reporters`：实例只观测引用它的评估用例。多个评估用例引用同一个实例时合并观测，结果落进同一个目的地；已经写在 config 里的实例在评估用例上再列一遍也不会重复上报。
+- 单个评估用例的 `reporters`：实例只观测引用它的评估用例。多个评估用例引用同一个实例时合并观测，结果落进同一个目的地。已经写在 config 里的实例在评估用例上再列一遍也不会重复上报。
 
 ## Braintrust
 
@@ -39,13 +39,13 @@ export default defineEval({
 });
 ```
 
-前置条件：安装 `braintrust` 包（`npm install braintrust`，它是可选依赖，不装不影响其它功能），并设置 `BRAINTRUST_API_KEY`；需要在代码里显式传 key 时用 `apiKey` 参数。运行结束后终端会打印 experiment URL。
+前置条件：安装 `braintrust` 包（`npm install braintrust`，它是可选依赖，不装不影响其它功能），并设置 `BRAINTRUST_API_KEY`。需要在代码里显式传 key 时用 `apiKey` 参数。运行结束后终端会打印 experiment URL。
 
 ### 上报口径
 
-- 每个 attempt 是 Braintrust 里的一行；`attempts: 3` 会产生三行，靠 metadata 里的 `attempt` 区分。
-- soft 断言按名字记为 score；gate 断言记在 `gate:` 前缀下。这样在 Braintrust 的实验对比里，gate 回归和 soft 分数回归用同一套 diff 看。
-- metrics 带开始/结束时间、token 用量和估算成本；缺的数据不写，不补零。
+- 每个 attempt 是 Braintrust 里的一行。`attempts: 3` 会产生三行，靠 metadata 里的 `attempt` 区分。
+- soft 断言按名字记为 score。gate 断言记在 `gate:` 前缀下。这样在 Braintrust 的实验对比里，gate 回归和 soft 分数回归用同一套 diff 看。
+- metrics 带开始/结束时间、token 用量和估算成本。缺的数据不写，不补零。
 - metadata 带 `agent`、`model`、`experiment`、`flags`、`verdict` 和失败断言明细，方便在 Braintrust 里按维度过滤。
 
 ### 配置项
@@ -84,7 +84,7 @@ export default defineEval({
 
 ## JUnit 与 Json
 
-`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里；临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 把完整 `InvocationSummary` 落成一个 JSON 文件，喂下游脚本或 dashboard。CI 场景的完整接法见[CI 集成](./ci-integration)。
+`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里。临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 把完整 `InvocationSummary` 落成一个 JSON 文件，喂下游脚本或 dashboard。CI 场景的完整接法见[CI 集成](./ci-integration)。
 
 ## 自定义 reporter
 

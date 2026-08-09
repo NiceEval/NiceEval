@@ -10,10 +10,10 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
 
 <CardGroup cols={2}>
   <Card title="npx niceeval exp [path] [id-prefix]" icon="flask">
-    按 experiment id 路径运行；每个配置的 `evals` 决定覆盖哪些评估用例。
+    按 experiment id 路径运行。每个配置的 `evals` 决定覆盖哪些评估用例。
   </Card>
   <Card title="npx niceeval init" icon="wand-magic-sparkles">
-    创建空的 `evals/` 目录和最小的 `niceeval.config.ts`；不生成示例评估用例文件。同时写入/刷新 niceeval 指引区块——项目已有 `AGENTS.md` 就写那份，只有 `CLAUDE.md` 就写进 `CLAUDE.md`，都没有则新建 `AGENTS.md`（见[Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)）。
+    创建空的 `evals/` 目录和最小的 `niceeval.config.ts`。不生成示例评估用例文件。同时写入/刷新 niceeval 指引区块——项目已有 `AGENTS.md` 就写那份，只有 `CLAUDE.md` 就写进 `CLAUDE.md`，都没有则新建 `AGENTS.md`（见[Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)）。
   </Card>
   <Card title="npx niceeval list" icon="list">
     发现并打印所有评估用例，不运行。
@@ -22,10 +22,10 @@ description: "NiceEval CLI 参考：exp、show、view、init、list 和 clean �
     删除 `.niceeval/` 下历史快照 artifacts。
   </Card>
   <Card title="npx niceeval show [id-prefix | @locator]" icon="terminal">
-    在终端读取结果；用 `@<locator>` 或评估用例 ID 前缀下钻断言、评估用例源码、执行事件流、diff 和历史。
+    在终端读取结果。用 `@<locator>` 或评估用例 ID 前缀下钻断言、评估用例源码、执行事件流、diff 和历史。
   </Card>
   <Card title="npx niceeval view" icon="eye">
-    打开网页结果查看器，读默认报告并交互浏览评估用例源码、执行事件流与 diff；默认范围与 `show` 相同。跨 run 时间轴（`--history`）是 `show` 专用的终端能力。
+    打开网页结果查看器，读默认报告并交互浏览评估用例源码、执行事件流与 diff。默认范围与 `show` 相同。跨 run 时间轴（`--history`）是 `show` 专用的终端能力。
   </Card>
 </CardGroup>
 
@@ -63,10 +63,10 @@ npx niceeval exp models weather
 ```
 
 <Note>
-  评估用例过滤参数只出现在 experiment 选择之后。裸 `npx niceeval weather` 不会运行；请使用 `npx niceeval exp local weather` 或 `npx niceeval exp compare weather`。
+  评估用例过滤参数只出现在 experiment 选择之后。只写 `npx niceeval weather` 不会运行。请使用 `npx niceeval exp local weather` 或 `npx niceeval exp compare weather`。
 </Note>
 
-第一个位置参数只解释为 experiment id、目录路径或文件名前缀；尾随位置参数按评估用例 id 前缀继续收窄。
+第一个位置参数只解释为 experiment id、目录路径或文件名前缀。尾随位置参数按评估用例 id 前缀继续收窄。
 
 ### `npx niceeval exp list [experiment-prefix]`
 
@@ -78,11 +78,18 @@ npx niceeval exp list compare/codex
 npx niceeval exp list --json
 ```
 
-默认输出每个配置的 `experimentId`、描述、agent、model、attempts、选中的 eval 数和 labels；`--json` 输出单个 `niceeval.experiments` 文档，并在每项附上完整的 `selectedEvalIds`。
+默认输出每个配置的 `experimentId`、描述、agent、model、attempts、选中的 eval 数和 labels。`--json` 输出单个 `niceeval.experiments` 文档，并在每项附上完整的 `selectedEvalIds`。
 
 ## 常用 flags
 
-下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级 provider 兜底：请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，使用 `niceeval/sandbox` 的 `dockerImageSandbox({ image })`、`dockerComposeSandbox({ file, workspaceService })`、`dockerfileSandbox({ context })`、`vercelSandbox({ snapshotId })`、`e2bSandbox({ template })` 或 `localSandbox()`。
+下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag，也没有项目级默认 provider。请在 Eval 或 Experiment 上声明 template-bearing `SandboxLayer`，并从 `niceeval/sandbox` 导入下列工厂之一：
+
+- `dockerImageSandbox({ image })`
+- `dockerComposeSandbox({ file, workspaceService })`
+- `dockerfileSandbox({ context })`
+- `vercelSandbox({ snapshotId })`
+- `e2bSandbox({ template })`
+- `localSandbox()`
 
 {/* GENERATED:BEGIN cli-flags */}
 
@@ -154,7 +161,7 @@ npx niceeval exp compare-models weather-tool
 
 运行命名 experiment，用矩阵比较 agents、models 或 flags。第二个参数开始是评估用例 ID 前缀过滤。
 
-`show` 与 `view` 是顶层命令，应写成 `npx niceeval show`、`npx niceeval view`。误写成 `npx niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令；仓库确实存在同名 experiment 时仍按合法 id 执行。
+`show` 与 `view` 是顶层命令，应写成 `npx niceeval show`、`npx niceeval view`。误写成 `npx niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令。仓库确实存在同名 experiment 时仍按合法 id 执行。
 
 ## 两种输出：人读文本与 `--json`
 
@@ -167,15 +174,15 @@ npx niceeval exp compare
 # --json = 机器面：stdout 上单一有序的 NDJSON 事件流，coding agent、CI adapter、脚本共用
 npx niceeval exp compare --json
 
-# CI 门禁:退出码 + JUnit；需要 JSON 汇总时运行后用 show --json 重定向
+# CI 门禁:退出码 + JUnit。需要 JSON 汇总时运行后用 show --json 重定向
 npx niceeval exp compare --strict --junit .niceeval/junit.xml
 ```
 
-两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)；AI 反馈闭环的完整用法（读事件流、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)；CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
+两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)。AI 反馈闭环的完整用法（读事件流、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)。CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
 
 ## `session list` / `session show`
 
-每次 `niceeval exp …` 调度会在 `.niceeval/sessions/` 留下一份可查询的调度 Session；查询本身只读，不加载配置、不发现源码、不启动运行时：
+每次 `niceeval exp …` 调度会在 `.niceeval/sessions/` 留下一份可查询的调度 Session。查询本身只读，不加载配置、不发现源码、不启动运行时：
 
 ```bash
 npx niceeval session list
@@ -183,7 +190,7 @@ npx niceeval session list --all --json
 npx niceeval session show <sessionId>
 ```
 
-默认只列出心跳仍有效的活动 Session；`--all` 追加已封口记录，并把超过 30 秒没有心跳的记录单列为 `expired`。`--json` 输出单个 `niceeval.sessions`（或 `niceeval.session`）文档，不是 `exp --json` 的事件流。
+默认只列出心跳仍有效的活动 Session。`--all` 追加已封口记录，并把超过 30 秒没有心跳的记录单列为 `expired`。`--json` 输出单个 `niceeval.sessions`（或 `niceeval.session`）文档，不是 `exp --json` 的事件流。
 
 ## `view`
 
@@ -191,7 +198,7 @@ npx niceeval session show <sessionId>
 npx niceeval view
 ```
 
-打开本地记录查看器。它和 `show` 共用同一份默认报告和同一套默认选择——对每个 experiment、每个评估用例，取历次运行里最新的判定；每个 experiment 的集合来自 Run `selectedEvalIds`。默认报告直接比较当前 Sample。评估用例 ID 前缀、`--exp`、`--record` 对两者的收窄一致。
+打开本地记录查看器。它和 `show` 共用同一份默认报告和同一套默认选择——对每个 experiment、每个评估用例，取历次运行里最新的判定。每个 experiment 的集合来自 Run `selectedEvalIds`。默认报告直接比较当前 Sample。评估用例 ID 前缀、`--exp`、`--record` 对两者的收窄一致。
 
 ## `show [id-prefix...]`
 
@@ -206,37 +213,37 @@ npx niceeval show fixtures/button --diff
 npx niceeval show weather/brooklyn --history
 ```
 
-`show` 是终端结果入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。位置参数选「看哪些评估用例」（ID 前缀）或直接用 `@<locator>` 精确选一个 attempt；不带位置参数时直接比较当前 Scope，`--exp` 按 experiment id 路径收窄。
+`show` 是终端结果入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。位置参数选「看哪些评估用例」（ID 前缀）或直接用 `@<locator>` 精确选一个 attempt。不带位置参数时直接比较当前 Scope，`--exp` 按 experiment id 路径收窄。
 
-`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`——范围含多个 attempt 时按 experiment id、eval id、attempt 序逐 attempt 分节。`--record <目录>` 指定记录根，`--history` 查看跨 Run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义（每个 `--exp` 必须恰好解析到一个 experiment，顺序即对照条件顺序）。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
+`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）。`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`——范围含多个 attempt 时按 experiment id、eval id、attempt 序逐 attempt 分节。`--record <目录>` 指定记录根，`--history` 查看跨 Run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义（每个 `--exp` 必须恰好解析到一个 experiment，顺序即对照条件顺序）。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
 
-`--execution` 的卡片正文是有界预览：每个内容段（消息正文；工具卡的 input 与 result 各算一段）最多显示前 3 行，每段另有 1 KiB（UTF-8 字节）兜底防单行超长。有折叠的卡片在卡尾报被折的行数与字符数，并自带该卡片的展开句柄，整行就是可复制的完整命令：
+`--execution` 的卡片正文是有界预览：每个内容段（消息正文。工具卡的 input 与 result 各算一段）最多显示前 3 行，每段另有 1 KiB（UTF-8 字节）上限防止单行过长。有折叠的卡片在卡尾报被折的行数与字符数，并自带该卡片的展开句柄，整行就是可复制的完整命令：
 
 ```text
     (+3055 lines · 263161 chars · niceeval show @1k2m9qrs --execution --expand t2.c3)
 ```
 
-`--expand <handle>` 只与 `--execution` 组合、要求范围恰好命中一个 attempt，单独输出该卡片的完整落盘内容。句柄 `t<轮次>.c<轮内卡序>`（agent 事件卡）或 `cmd<n>`（失败 Sandbox 命令卡）从截断提示里抄，不自己数。落盘时已过 256 KiB 单值上限的内容展开后如实标注 `truncated` 与原始字节数。`--grep` 命中的卡片同样受预览预算，尾巴照带句柄；`--json` 恒输出完整值、从不截断，与 `--expand` 互斥。
+`--expand <handle>` 只与 `--execution` 组合、要求范围恰好命中一个 attempt，单独输出该卡片的完整落盘内容。句柄 `t<轮次>.c<轮内卡序>`（agent 事件卡）或 `cmd<n>`（失败 Sandbox 命令卡）从截断提示里抄，不自己数。落盘时已过 256 KiB 单值上限的内容展开后如实标注 `truncated` 与原始字节数。`--grep` 命中的卡片同样受预览预算，尾巴照带句柄。`--json` 恒输出完整值、从不截断，与 `--expand` 互斥。
 
 ## `--early-exit` 与 `--strict`
 
 `--early-exit` 默认关闭：`--attempts` > 1 时默认把每次 attempt 都跑完，给出真实通过率——这是 NiceEval 衡量 agent 稳不稳的核心指标，默认不该被无声截断。只想知道"这题能不能过"、不在乎完整分布时，显式加 `--early-exit`：某个评估用例的一次 attempt 通过后，自动停止该评估用例剩余的 attempts（省钱）。实验文件里写了 `earlyExit: true` 时，用 `--no-early-exit` 强制关掉它。
 
-`--strict` 不是"更严格地报错"，而是改变软阈值断言的判定：`.atLeast(n)` 这类软阈值（`soft` severity）平时失败不会把整条评估用例判为 `failed`（只是记一条不达标的断言），加了 `--strict` 之后，软阈值没达标也会让整条评估用例的 verdict 计为 `failed`。CI 中推荐加上，避免"断言分数不够但评估用例显示通过"的情况被放过。
+`--strict` 不是"更严格地报错"，而是改变软阈值断言的判定。`.atLeast(n)` 这类软阈值（`soft` severity）平时失败不会把整条评估用例判为 `failed`（只是记一条不达标的断言），加了 `--strict` 之后，软阈值没达标也会让整条评估用例的 verdict 计为 `failed`。CI 中推荐加上，避免"断言分数不够但评估用例显示通过"的情况被放过。
 
 ## 环境变量只放凭据
 
 跑几次、超时、并发、预算、judge 模型和端点、界面语言——这些都是配置，只从 CLI flag、`experiments/` 下的 experiment 文件和 `niceeval.config.ts` 读。优先级从高到低：CLI flag > experiment > `niceeval.config.ts` > 内置默认值。没有对应的环境变量，同一个值不会有第三条来路。
 
-环境变量留给凭据（API key、provider token）和终端环境（`NO_COLOR`、系统 locale）。每个 agent / sandbox / judge 只认自己那一个变量名，不会在环境里翻找其它 key；启动时自动加载 cwd 下的 `.env`（不覆盖已经存在的环境变量）。完整清单和迁移对照见[配置与环境变量](/zh/tutorials/configuration)。
+环境变量留给凭据（API key、provider token）和终端环境（`NO_COLOR`、系统 locale）。每个 agent / sandbox / judge 只认自己那一个变量名，不会在环境里翻找其它 key。启动时自动加载 cwd 下的 `.env`（不覆盖已经存在的环境变量）。完整清单和迁移对照见[配置与环境变量](/zh/tutorials/configuration)。
 
 ## 退出码
 
 | 退出码 | 含义 |
 |---|---|
 | `0` | 全部评估用例通过（或 `list`、`init`、`clean` 等命令正常完成）。 |
-| `1` | 存在 `failed` / `errored` 的评估用例；或命令用法错误（如 `exp` 没匹配到任何实验、传了不支持的 flag 组合）。 |
-| `2` | 运行时崩溃（未捕获异常），CLI 顶层兜底捕获后退出。 |
+| `1` | 存在 `failed` / `errored` 的评估用例。或命令用法错误（如 `exp` 没匹配到任何实验、传了不支持的 flag 组合）。 |
+| `2` | 运行时崩溃（未捕获异常），CLI 顶层捕获后退出。 |
 | `130` | 收到中断信号（Ctrl-C / SIGTERM）后退出。 |
 
 需要 CI 把软阈值失败也当失败处理时，同时使用 `--strict`（见上）。

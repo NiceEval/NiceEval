@@ -1,5 +1,5 @@
 /**
- * docs/ 正文的可读性检查:句长、段长与禁词库。
+ * docs/ 与 docs-site/zh/ 正文的可读性检查:句长、段长与禁词库。
  *
  * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json。
  *
@@ -38,8 +38,10 @@ export interface BannedTerm {
 }
 
 interface WritingRules {
+  proseRoots: string[];
   sentenceLength: { max: number };
   paragraphLength: { max: number };
+  siteBannedTerms: string[];
   bannedTerms: BannedTerm[];
 }
 
@@ -260,6 +262,59 @@ export function proseText(text: string): string {
 export const proseLength = (text: string): number => text.replace(/\s+/g, "").length;
 
 /**
+ * MDX 里的 frontmatter 元数据、代码、组件标签与生成区块不是作者手写正文。把它们替换成空行而不是
+ * 删行，这样 lint 打出的行号仍然对得上原文件。组件容器里的 Markdown 子节点仍会被检查：
+ * 只跳过以 `<` 开头的标签行，不跳过整个 `<Accordion>` 区间。
+ */
+export function readableProseLines(file: string, lines: string[]): string[] {
+  const isMdx = file.endsWith(".mdx");
+  let inFrontmatter = false;
+  let inFence = false;
+  let inGenerated = false;
+  let inJsxOpening = false;
+
+  return lines.map((raw, index) => {
+    const line = raw.trim();
+    if (isMdx && index === 0 && line === "---") {
+      inFrontmatter = true;
+      return "";
+    }
+    if (inFrontmatter) {
+      if (line === "---") inFrontmatter = false;
+      return "";
+    }
+    if (line.startsWith("```")) {
+      inFence = !inFence;
+      return "";
+    }
+    if (inFence) return "";
+    if (line.includes("GENERATED:BEGIN")) {
+      inGenerated = true;
+      return "";
+    }
+    if (inGenerated) {
+      if (line.includes("GENERATED:END")) inGenerated = false;
+      return "";
+    }
+    if (inJsxOpening) {
+      if (line.endsWith(">")) inJsxOpening = false;
+      return "";
+    }
+    if (isMdx && line.startsWith("<")) {
+      if (!line.endsWith(">")) inJsxOpening = true;
+      return "";
+    }
+    if (
+      isMdx &&
+      (line.startsWith("{/*") || line.startsWith("import ") || line.startsWith("export "))
+    ) {
+      return "";
+    }
+    return raw;
+  });
+}
+
+/**
  * 只有句末标点算断句。分号、破折号、顿号串起来的分句仍算同一句:
  * 长难句正是这么长起来的,把它们算作断句等于让这条规则放过要治的对象。
  */
@@ -298,9 +353,15 @@ function countTermHits(prose: string, re: RegExp, allowIn?: string[]): number {
   return count;
 }
 
-/** 手写禁词 + 概念表首选裁决自动生成的那批,正文与图共用同一份。 */
-function bannedMatchers(rules: WritingRules): Array<BannedTerm & { re: RegExp }> {
-  return [...rules.bannedTerms, ...synonymBans(parseConcepts())].map((t) => ({
+/** docs/ 用全部禁词；公开站只用 JSON 明确标成通用的禁词。概念表的首选裁决两边都遵守。 */
+function bannedMatchers(
+  rules: WritingRules,
+  target: "docs" | "docs-site" = "docs",
+): Array<BannedTerm & { re: RegExp }> {
+  const siteTerms = new Set(rules.siteBannedTerms);
+  const handwritten =
+    target === "docs" ? rules.bannedTerms : rules.bannedTerms.filter((term) => siteTerms.has(term.term));
+  return [...handwritten, ...synonymBans(parseConcepts())].map((t) => ({
     ...t,
     re: termMatcher(t.term),
   }));
@@ -309,57 +370,55 @@ function bannedMatchers(rules: WritingRules): Array<BannedTerm & { re: RegExp }>
 export function lintDocsWriting(): LintReport {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
   const concepts = parseConcepts();
-  const matchers = bannedMatchers(rules);
 
   const hits: Hit[] = [];
 
-  for (const file of walkDocs("docs")) {
-    const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
+  for (const root of rules.proseRoots) {
+    const target = root.startsWith("docs-site/") ? "docs-site" : "docs";
+    const matchers = bannedMatchers(rules, target);
+    for (const file of walkDocs(root, [".md", ".mdx"])) {
+      const sourceLines = readFileSync(join(ROOT, file), "utf8").split("\n");
+      const lines = readableProseLines(file, sourceLines);
 
-    for (const block of proseBlocks(lines)) {
-      const text = proseText(block.text);
-      if (proseLength(text) > rules.paragraphLength.max) {
-        hits.push({
-          file,
-          line: block.line,
-          rule: "paragraphLength",
-          message: `一段 ${proseLength(text)} 字,超出 ${rules.paragraphLength.max} 字——一段只说一件事,罗列改用列表或表格`,
-        });
-      }
-      for (const [order, sentence] of splitSentences(text).entries()) {
-        if (proseLength(sentence) <= rules.sentenceLength.max) continue;
-        hits.push({
-          file,
-          line: block.line,
-          rule: "sentenceLength",
-          message: `第 ${order + 1} 句 ${proseLength(sentence)} 字,超出 ${rules.sentenceLength.max} 字——拆成两句,或把并列内容改写成列表 / 表格`,
-        });
-      }
-    }
-
-    let inFence = false;
-    for (const [index, raw] of lines.entries()) {
-      if (raw.trimStart().startsWith("```")) {
-        inFence = !inFence;
-        continue;
-      }
-      if (inFence) continue;
-      const lineNumber = index + 1;
-
-      const prose = stripInlineCode(raw);
-      for (const term of matchers) {
-        if (term.exempt?.some((prefix) => file.startsWith(prefix))) continue;
-        const count = countTermHits(prose, term.re, term.allowIn);
-        if (count === 0) continue;
-        for (let occurrence = 1; occurrence <= count; occurrence += 1) {
+      for (const block of proseBlocks(lines)) {
+        const text = proseText(block.text);
+        if (proseLength(text) > rules.paragraphLength.max) {
           hits.push({
             file,
-            line: lineNumber,
-            rule: term.term,
-            message:
-              `禁用写法「${term.term}」(本行第 ${occurrence}/${count} 处)——` +
-              `改用${term.use};${term.why}`,
+            line: block.line,
+            rule: "paragraphLength",
+            message: `一段 ${proseLength(text)} 字,超出 ${rules.paragraphLength.max} 字——一段只说一件事,罗列改用列表或表格`,
           });
+        }
+        for (const [order, sentence] of splitSentences(text).entries()) {
+          if (proseLength(sentence) <= rules.sentenceLength.max) continue;
+          hits.push({
+            file,
+            line: block.line,
+            rule: "sentenceLength",
+            message: `第 ${order + 1} 句 ${proseLength(sentence)} 字,超出 ${rules.sentenceLength.max} 字——拆成两句,或把并列内容改写成列表 / 表格`,
+          });
+        }
+      }
+
+      for (const [index, raw] of lines.entries()) {
+        if (raw === "") continue;
+        const lineNumber = index + 1;
+        const prose = stripInlineCode(raw);
+        for (const term of matchers) {
+          if (term.exempt?.some((prefix) => file.startsWith(prefix))) continue;
+          const count = countTermHits(prose, term.re, term.allowIn);
+          if (count === 0) continue;
+          for (let occurrence = 1; occurrence <= count; occurrence += 1) {
+            hits.push({
+              file,
+              line: lineNumber,
+              rule: term.term,
+              message:
+                `禁用写法「${term.term}」(本行第 ${occurrence}/${count} 处)——` +
+                `改用${term.use};${term.why}`,
+            });
+          }
         }
       }
     }
@@ -442,7 +501,7 @@ export function svgTexts(svg: string): SvgText[] {
  */
 export function lintSvgTerms(): Hit[] {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
-  const matchers = bannedMatchers(rules);
+  const matchers = bannedMatchers(rules, "docs");
   const corpus = termCorpus();
   const hits: Hit[] = [];
 
@@ -507,6 +566,15 @@ export function validateRules(): string[] {
         problems.push(`「${label}」的 allowIn 里「${word}」不含这个词——写错了就豁免不掉`);
       }
     }
+  }
+  const siteSeen = new Set<string>();
+  for (const term of rules.siteBannedTerms ?? []) {
+    if (siteSeen.has(term)) problems.push(`siteBannedTerms 里「${term}」重复登记`);
+    siteSeen.add(term);
+    if (!seen.has(term)) problems.push(`siteBannedTerms 里「${term}」没有对应的 bannedTerms 条目`);
+  }
+  if (!rules.proseRoots?.includes("docs") || !rules.proseRoots?.includes("docs-site/zh")) {
+    problems.push("proseRoots 必须同时包含 docs 与 docs-site/zh");
   }
   for (const { key } of LENGTH_RULES) {
     const max = (rules as unknown as Record<string, { max?: number }>)[key]?.max;

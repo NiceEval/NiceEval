@@ -45,7 +45,7 @@ npx niceeval exp local fixtures/button --attempts 10
 ```
 
 <Note>
-  没有对应的 CLI flag，也没有项目级 provider 兜底。Eval 与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
+  没有对应的 CLI flag，也没有项目级默认 provider。Eval 与 Experiment 都没贡献 template-bearing layer 时，link planning 会在创建任何 Sandbox 前失败。
 </Note>
 
 云端跑 coding agent 时，可以直接使用 NiceEval 已发布的 E2B 公共模板，避免每个 Attempt 安装 CLI：
@@ -62,9 +62,9 @@ export default defineExperiment({
 });
 ```
 
-Claude Code 用 `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`，Bub 用 `NICEEVAL_BUB_E2B_TEMPLATE`。常量的值是完整、版本钉死的引用，版本跟着模板里那个 Agent 的版本走，你不用跟踪它。添加系统包、二进制或模型缓存的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+Claude Code 用 `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`，Bub 用 `NICEEVAL_BUB_E2B_TEMPLATE`。常量的值是完整、版本固定的引用，版本跟着模板里那个 Agent 的版本走，你不用跟踪它。添加系统包、二进制或模型缓存的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
-内置 agent 从 `niceeval/adapter` 导出的是工厂函数。需要配置鉴权、代理、MCP 或 GitHub skill 时，把这些写进工厂参数；模型仍然写在 experiment 的 `model` 字段，sandbox provider 仍然写在 `sandbox` 字段：
+内置 agent 从 `niceeval/adapter` 导出的是工厂函数。需要配置鉴权、代理、MCP 或 GitHub skill 时，把这些写进工厂参数。模型仍然写在 experiment 的 `model` 字段，sandbox provider 仍然写在 `sandbox` 字段：
 
 ```ts
 import { defineExperiment } from "niceeval";
@@ -102,7 +102,7 @@ export default defineExperiment({
 
 ```text
 createSandbox
-  → sandbox spec 的 .setup() 钩子?    # 环境准备（按实验装东西）；没挂就跳过
+  → sandbox spec 的 .setup() 钩子?    # 环境准备（按实验装东西）。没挂就跳过
   → eval 的 setup?                   # 这条 eval 的 Fixture（如果定义了）
   → adapter.setup?                   # 装 CLI / 写 agent 配置
   → test(t): uploadDirectory(...)     # 写入这条 eval 的起始文件
@@ -184,7 +184,7 @@ export default defineSandboxAgent({
 
 `setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
 
-- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合安装 CLI、运行 Turn、读取 transcript；不要逐 token 或逐 JSONL frame 调用。
+- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合安装 CLI、运行 Turn、读取 transcript。不要逐 token 或逐 JSONL frame 调用。
 - `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` 保存协议退化、transcript 缺失和清理问题。它会进入终端永久事件和 `result.json`。
 - 无法继续运行时抛出异常，runner 会把 Attempt 标为 `errored`，并保存发生阶段、错误码、message、cause 和 stack。
 
@@ -198,7 +198,9 @@ export default defineSandboxAgent({
     Inspect: niceeval show @12h8m4k1
 ```
 
-运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段；`--timing` 给有界诊断时间树（排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool、收尾），可直接看出错误或超时发生在哪一层、之前的时间花在哪里。树超过 80 个细节节点时会保留失败、慢点和首尾样本并提示省略数量；需要逐节点审计时使用 `--timing=full`。`--execution` 则以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
+运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段。`--timing` 给有界诊断时间树（排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool、收尾），可直接看出错误或超时发生在哪一层、之前的时间花在哪里。
+
+树超过 80 个细节节点时会保留失败、慢点和首尾样本并提示省略数量。需要逐节点审计时使用 `--timing=full`。`--execution` 则以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
 
 ## `ctx.model` 与 `ctx.flags`
 

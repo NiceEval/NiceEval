@@ -1,7 +1,7 @@
 ---
 title: "人工介入（HITL）：停轮、回答、继续"
 sidebarTitle: "HITL"
-description: "什么是 Human-in-the-loop，Claude Code / Codex / AI SDK 应用里它长什么样；NiceEval 如何把它变成可评的路径——waiting 停轮、input.requested 说明在等什么、t.respond 替人回答后同一轮继续。"
+description: "什么是 Human-in-the-loop，Claude Code / Codex / AI SDK 应用里它长什么样。NiceEval 如何把它变成可评的路径——waiting 停轮、input.requested 说明在等什么、t.respond 替人回答后同一轮继续。"
 ---
 
 import { HitlHandshake } from '/snippets/diagram-hitl-handshake.jsx';
@@ -45,9 +45,9 @@ await t.respond({ request: req, optionId: "approve" });  // ③ 替人回答,发
 t.calledTool("send_email", { status: "completed" });
 ```
 
-- `t.parked()` 断言这一轮确实以 waiting 停下；反过来 `t.succeeded()` 在 waiting 轮上会失败——停轮是显式状态，不会被当成"跑完了"。
+- `t.parked()` 断言这一轮确实以 waiting 停下。反过来 `t.succeeded()` 在 waiting 轮上会失败——停轮是显式状态，不会被当成"跑完了"。
 - `t.requireInputRequest(filter)` 从待处理请求里精确取一个（按 `id` / `prompt` / `action` / `optionIds` 等字段匹配），匹配到 0 个或超过 1 个都会抛，多个请求并停时靠它消歧。
-- `t.respond(...)` 回答并发出下一轮；同类请求要给同一个答案时（比如逐个批准一批改动），`t.respondAll(optionId)` 一次处理完。
+- `t.respond(...)` 回答并发出下一轮。同类请求要给同一个答案时（比如逐个批准一批改动），`t.respondAll(optionId)` 一次处理完。
 
 批准和拒绝是同一扇门的两个分支，各写一条评估用例才算评完：批准后该发生的发生了，拒绝后该发生的没发生。逐个 API 的完整用法见 [Drive](/zh/explanation/drive#人工介入-hitl)。
 
@@ -55,13 +55,13 @@ t.calledTool("send_email", { status: "completed" });
 
 HITL 对 Adapter 的全部要求就三件事——前两件发生在停下的那一轮，第三件发生在回答到达的下一轮：
 
-1. **停轮时如实返回 `status: "waiting"`**，不要把挂起报成 `"completed"`，否则 `parked()` 失效、`succeeded()` 假通过；
-2. **每个待回答的问题吐一条 `input.requested`**，`id` 稳定、字段尽量填全——评估侧的检查和对位全靠它们；
+1. **停轮时如实返回 `status: "waiting"`**，不要把挂起报成 `"completed"`，否则 `parked()` 失效、`succeeded()` 假通过。
+2. **每个待回答的问题吐一条 `input.requested`**，`id` 稳定、字段尽量填全——评估侧的检查和对位全靠它们。
 3. **下一次 `send` 先交裁决、再续跑**：从 `input.responses` 按 `requestId` 把裁决交回应用（不要按顺序猜），然后接着上一轮挂起的地方继续，而不是重发请求。
 
-"挂起的现场"（比如读了一半的 SSE 流）存在本会话线的 `ctx.session` 上——Adapter 用 `createSessionSlot<Pending>()` 声明私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮 `ctx.session.take(slot)` 取回，取到即清除。怎么和流式驱动拼起来，见[写 send](/zh/tutorials/write-send#第五步：hitl) 第五步的完整骨架。
+"挂起的现场"（比如读了一半的 SSE 流）存在本会话线的 `ctx.session` 上。Adapter 用 `createSessionSlot<Pending>()` 声明私有 slot，停轮时 `ctx.session.set(slot, pending)`，回答轮 `ctx.session.take(slot)` 取回，取到即清除。怎么和流式驱动拼起来，见[写 send](/zh/tutorials/write-send#第五步：hitl) 第五步的完整骨架。
 
-和 [NiceEval](https://niceeval.com/) 的其它能力一样，HITL 没有布尔声明：**做到了就是有**。send 返回过 `"waiting"` 并吐了 `input.requested`，`t.respond` 就能工作；没做到，eval 会在第一个 `parked()` 或 `requireInputRequest()` 上明确失败，而不是静默假通过。能力如何从构造中来，见 [Adapter](/zh/explanation/adapter#能力从哪来：构造证明，不是问卷)。
+和 [NiceEval](https://niceeval.com/) 的其它能力一样，HITL 没有布尔声明：**做到了就是有**。send 返回过 `"waiting"` 并吐了 `input.requested`，`t.respond` 就能工作。没做到，eval 会在第一个 `parked()` 或 `requireInputRequest()` 上明确失败，而不是静默假通过。能力如何从构造中来，见 [Adapter](/zh/explanation/adapter#能力从哪来：构造证明，不是问卷)。
 
 ## 拒绝不是故障
 

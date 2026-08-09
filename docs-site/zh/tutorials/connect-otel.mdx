@@ -1,7 +1,7 @@
 ---
 title: "OTel 接入"
 sidebarTitle: "OTel 接入"
-description: "把应用已有的 OTel span 发送给 NiceEval，在 niceeval view 中查看每轮调用瀑布图；评估用例断言仍以 Send 返回的事件和用量为准。"
+description: "把应用已有的 OTel span 发送给 NiceEval，在 niceeval view 中查看每轮调用瀑布图。评估用例断言仍以 Send 返回的事件和用量为准。"
 ---
 
 import { OtelCollect } from '/snippets/diagram-otel-collect.jsx';
@@ -10,7 +10,7 @@ OTel 接入**不改变断言的数据来源**。`t.calledTool`、`t.maxTokens` �
 
 OTel span 用于生成 **`niceeval view` 中的调用瀑布图**。瀑布图按轮显示模型调用、工具执行、耗时和 token，帮助定位评估用例失败或轮次变慢的具体步骤。
 
-如果你的应用已经在发 OTel trace——AI SDK 的 telemetry、LangGraph 的 LangSmith 导出、OpenLLMetry / OpenInference 自动埋点，或自己按 GenAI 语义埋的点——那瀑布图的数据你已经在生产了：让应用把 span 也发给 [NiceEval](https://niceeval.com/) 一份即可，应用代码一行不改，仍是无侵入（见 [Tier](/zh/explanation/tier)）。
+如果你的应用已经在发 OTel trace。AI SDK 的 telemetry、LangGraph 的 LangSmith 导出、OpenLLMetry / OpenInference 自动埋点，或自己按 GenAI 语义埋的点。那瀑布图的数据你已经在生产了：让应用把 span 也发给 [NiceEval](https://niceeval.com/) 一份即可，应用代码一行不改，仍是无侵入（见 [Tier](/zh/explanation/tier)）。
 
 ## 原理（一段话）
 
@@ -51,7 +51,7 @@ export default defineAgent({
 
 **2. 向应用提供端点。** [NiceEval](https://niceeval.com/) 的接收端点属于**启动期配置，不从 `send` 传递**。标准 OTel SDK 只在进程启动时读取一次 `OTEL_*` 环境变量。按部署形态选择配置方式：
 
-- **你自己长驻的服务（最常见）**：用**固定端口模式**，在 `niceeval.config.ts` 里钉住接收端口——写了这个配置就等于打开了 OTel 接入：
+- **你自己长驻的服务（最常见）**：用**固定端口模式**，在 `niceeval.config.ts` 里固定接收端口——写了这个配置就等于打开了 OTel 接入：
 
   ```ts
   // niceeval.config.ts
@@ -60,7 +60,7 @@ export default defineAgent({
   });
   ```
 
-  服务启动时一次性配 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces`，之后跑多少次评估用例都不用改。代价：端口共享意味着同一台机器同时只能跑一个 niceeval 进程；OTel Collector 扇出场景同理指向这个固定端点。`port` 被其它进程占用时 [NiceEval](https://niceeval.com/) 会直接报错提示换一个空闲端口，不会静默失败。
+  服务启动时一次性配 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces`，之后跑多少次评估用例都不用改。代价：端口共享意味着同一台机器同时只能跑一个 niceeval 进程。OTel Collector 多路转发场景同理指向这个固定端点。`port` 被其它进程占用时 [NiceEval](https://niceeval.com/) 会直接报错提示换一个空闲端口，不会静默失败。
 
   报给应用的接收端 hostname 默认是 `127.0.0.1`。只有应用已经能通过受控隧道或其它可达路由访问宿主 receiver 时，才用 `host` 报出那个地址，例如 `telemetry: { host: "otel.internal", port: 4318 }`。Docker Sandbox Agent 默认在同一个 Sandbox 内启动 receiver，不依赖容器回连宿主。这两个字段是 [NiceEval](https://niceeval.com/) 里配置 OTLP 接收的唯一入口，不读环境变量。
 
@@ -70,7 +70,7 @@ export default defineAgent({
 
 <Tabs>
   <Tab title="AI SDK">
-    推荐官方 OTel 集成（`@ai-sdk/otel`，产标准 GenAI 语义）；老的 `experimental_telemetry`（`ai.*`）也能画：
+    推荐官方 OTel 集成（`@ai-sdk/otel`，产标准 GenAI 语义）。老的 `experimental_telemetry`（`ai.*`）也能画：
 
     ```ts
     import { generateText } from "ai";
@@ -94,7 +94,7 @@ export default defineAgent({
     node server.js   # 端点值按「向应用提供端点」一节选择：注入的 env 或固定端口
     ```
 
-    `LANGSMITH_OTEL_ONLY` 表示只发 OTLP、不发 LangSmith 云端；需要双发时移除该变量。**Python** 版 `langsmith` SDK 会在 import 时自动注册 OTel hook。**JS** 版（`langsmith@0.7.x`）还需要显式调用 `langsmith/experimental/otel/setup` 导出的 `initializeOTEL()`，否则只输出警告，不产生 span。三个环境变量保持不变。Python 后端示例见 [`examples/zh/origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph)，完整评测项目见 [`examples/zh/tier1/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph)。
+    `LANGSMITH_OTEL_ONLY` 表示只发 OTLP、不发 LangSmith 云端。需要双发时移除该变量。**Python** 版 `langsmith` SDK 会在 import 时自动注册 OTel hook。**JS** 版（`langsmith@0.7.x`）还需要显式调用 `langsmith/experimental/otel/setup` 导出的 `initializeOTEL()`，否则只输出警告，不产生 span。三个环境变量保持不变。Python 后端示例见 [`examples/zh/origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph)，完整评测项目见 [`examples/zh/tier1/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph)。
   </Tab>
   <Tab title="OpenLLMetry">
     ```ts
@@ -123,7 +123,7 @@ export default defineAgent({
 并行跑多条评估用例时，同一个接收器会同时收到多条会话的 span，[NiceEval](https://niceeval.com/) 按两条路把它们归到各自的轮：
 
 - **traceparent（推荐，并发安全）**：`send` 发请求时把 `ctx.telemetry.headers`（W3C trace context，每轮一个新 `traceparent`）spread 进请求头。应用的埋点支持 context 传播的话（标准 OTel HTTP 服务端埋点都支持），本轮 span 自动挂到 [NiceEval](https://niceeval.com/) 给的 trace 下，按 traceId 精确归属。
-- **时间窗口（兜底）**：应用不传播 trace context 时，按 send 前后的时间窗归属。窗口只在串行下可靠，所以这种情况 [NiceEval](https://niceeval.com/) 会把这个 agent 的轮次串行执行并在日志里提示，不会静默混流；一旦确认 traceparent 生效，自动恢复并发。
+- **时间窗口（回退方案）**：应用不传播 trace context 时，按 send 前后的时间窗归属。窗口只在串行下可靠，所以这种情况 [NiceEval](https://niceeval.com/) 会把这个 agent 的轮次串行执行并在日志里提示，不会静默混流。一旦确认 traceparent 生效，自动恢复并发。
 
 应用侧要及时导出：瀑布图在意的是"这一轮的 span 及时到齐"，用 `SimpleSpanProcessor`（或每轮 flush）——`BatchSpanProcessor` 的缓冲会让 span 跨轮迟到，瀑布图偶发缺尾巴多半是它。
 
@@ -149,7 +149,7 @@ export const provider = new NodeTracerProvider({
 provider.register();
 ```
 
-不方便改应用代码的话，OTel Collector 扇出——应用只发给 collector，collector 配两个 exporter（你的后端 + [NiceEval](https://niceeval.com/) 的固定端点）。代价是多运维一个组件。
+不方便改应用代码的话，OTel Collector 多路转发——应用只发给 collector，collector 配两个 exporter（你的后端 + [NiceEval](https://niceeval.com/) 的固定端点）。代价是多运维一个组件。
 
 ## 用语义映射控制瀑布图内容
 
@@ -162,17 +162,17 @@ provider.register();
 | `gen_ai.operation.name: "invoke_agent"` / `"create_agent"` | 按**子 agent** 着色分类 |
 | 属性 `call_id` = 你 send 事件里的 `operationId` | 该工具 span 自动补上真实入参/出参（`io.input` / `io.output`，从 send 返回的事件按 `operationId` join 过来——很多埋点默认不采内容，这条路不受影响） |
 | span 状态 = error | 红色标错 |
-| 什么都没给（归一成 `other`） | 时间线还在；大 trace（>150 span）时按内部噪声折叠掉 |
+| 什么都没给（归一成 `other`） | 时间线还在。大 trace（>150 span）时按内部噪声折叠掉 |
 | 其余属性 | 原样保留，view 里点开下钻 |
 
-应用直接按 GenAI semconv 埋点（上文「自己埋的 gen_ai」tab）时这一切自动成立；主流格式（AI SDK、LangSmith、OpenLLMetry / OpenInference）的常见形状也在通用兜底的识别范围内。
+应用直接按 GenAI semconv 埋点（上文「自己埋的 gen_ai」tab）时这一切自动成立。主流格式（AI SDK、LangSmith、OpenLLMetry / OpenInference）的常见形状也在通用回退机制的识别范围内。
 
 ### 私有埋点：自己写映射
 
-埋点是应用私有形状、通用兜底认不出时，两条路：
+埋点是应用私有形状、通用回退机制认不出时，两条路：
 
 - **改埋点（推荐）**：在应用侧给 span 补一个 `gen_ai.operation.name` 属性——一行改动，你自己的观测后端也同样受益。
-- **写 `spanMapper`**：不方便动应用时，在 agent 上声明一个纯函数，渲染前把私有 span 翻成上表的语义。`tagSpan`（把判定写回 span，原有属性只增不改）和 `heuristicTag`（通用兜底判定）都从 `niceeval/adapter` 导出：
+- **写 `spanMapper`**：不方便动应用时，在 agent 上声明一个纯函数，渲染前把私有 span 翻成上表的语义。`tagSpan`（把判定写回 span，原有属性只增不改）和 `heuristicTag`（通用回退判定）都从 `niceeval/adapter` 导出：
 
 ```ts
 import { completeEvidenceCoverage, defineAgent, tagSpan, heuristicTag } from "niceeval/adapter";
@@ -199,13 +199,13 @@ export default defineAgent({
 });
 ```
 
-`niceeval/adapter` 导出的 `mapCodexSpans` 是一个可参考的 `spanMapper` 实现。`spanMapper` 只影响观测展示；映射错误会导致瀑布图分类或着色不准确，不影响断言。
+`niceeval/adapter` 导出的 `mapCodexSpans` 是一个可参考的 `spanMapper` 实现。`spanMapper` 只影响观测展示。映射错误会导致瀑布图分类或着色不准确，不影响断言。
 
 ## 边界
 
-- **断言数据全部来自 `send`**。工具调用需要映射进 `events`（使用内置转换器或手写映射，见[编写 Send](/zh/tutorials/write-send)）；用量需要包含在 `send` 返回值中。Span 中存在但 `events` 中缺失的数据不会参与断言。
+- **断言数据全部来自 `send`**。工具调用需要映射进 `events`（使用内置转换器或手写映射，见[编写 Send](/zh/tutorials/write-send)）。用量需要包含在 `send` 返回值中。Span 中存在但 `events` 中缺失的数据不会参与断言。
 - **多轮会话、HITL 不归 span 管**。span 没有"等人输入"语义，会话续接也是应用协议的事——这两样照常在 `send` 里做（会话续接见[写 send](/zh/tutorials/write-send)，HITL 概念见 [HITL](/zh/explanation/hitl)）。
-- **收不到 span 会有提示**。整个 run 0 span 通常是端点没接上（env 没注入、服务没重启），[NiceEval](https://niceeval.com/) 会在日志里提示；瀑布图为空，断言照常判。
+- **收不到 span 会有提示**。整个 run 0 span 通常是端点没接上（env 没注入、服务没重启），[NiceEval](https://niceeval.com/) 会在日志里提示。瀑布图为空，断言照常判。
 
 ## 相关阅读
 

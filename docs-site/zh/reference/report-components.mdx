@@ -55,7 +55,7 @@ interface PageDefinition<P = void, I = Sample> {
 宿主只执行当前请求的 page render。
 
 外壳字段只有 `title`、`theme`、`dimensionPins`、`head` 与 `pages`。
-页脚和页头链接用普通组件组合；组件脚本样式随自定义 renderer 声明。
+页脚和页头链接用普通组件组合。组件脚本样式随自定义 renderer 声明。
 
 ## Calculation
 
@@ -87,7 +87,7 @@ percentile(0.95);
 ```
 
 省略题内或跨题 reducer 时使用 `mean`。
-`null` 不参与 reducer；空集合保持 `null`。
+`null` 不参与 reducer。空集合保持 `null`。
 
 官方 Calculation 和用户 Calculation 使用相同的 `rollup()`。
 常用官方值包括 `passRate`、`costUSD` 与 `durationMs`。
@@ -188,7 +188,7 @@ toSampleNotices(sample);
 <ExperimentTable input={sample} />
 ```
 
-`ExperimentTable` 按 Experiment → Eval → Attempt 展开；
+`ExperimentTable` 按 Experiment → Eval → Attempt 展开。
 网页面点击 Attempt 会打开现有详情 modal。
 
 默认实验比较直接使用：
@@ -245,7 +245,7 @@ toSampleNotices(sample);
 
 `logo.src` 使用浏览器可读取的图片 URL。
 `description` 与 `links[].label` 支持 `LocalizedText`。
-`show` 输出介绍与链接文字，但省略纯视觉 Logo；`view` 显示完整品牌标题区。
+`show` 输出介绍与链接文字，但省略纯视觉 Logo。`view` 显示完整品牌标题区。
 
 ## 表格
 
@@ -293,14 +293,14 @@ toSampleNotices(sample);
 />
 ```
 
-省略 `pointTarget` 时，行级 `refs` 恰好一个的点链到该 Attempt 详情；多个 `refs` 的点不带链接。
+省略 `pointTarget` 时，行级 `refs` 恰好一个的点链到该 Attempt 详情。多个 `refs` 的点不带链接。
 报告里没有目标页时点也不带链接，不会出现假链接。
 
 `Line` 用于时间或有序数值，`Bars` 用于排行和堆叠，
 `Area` 用于累计量或区间。
 需要混合 mark 时使用 `ComposedChart`，每条 series 显式绑定字段和轴。
 
-横向排行榜直接使用官方 `Bars`：
+横向排行图直接使用官方 `Bars`：
 
 ```tsx
 <Bars
@@ -314,7 +314,7 @@ toSampleNotices(sample);
 ```
 
 `sort` 与 `limit` 只改变显示顺序和可见行，不重新聚合。
-`layout="horizontal"` 在网页面使用横向排行条；
+`layout="horizontal"` 在网页面使用横向排行条。
 text 面恒用横向条，保留分类标签、格式化终值与覆盖率。
 
 ## Attempt 与 Experiment 详情

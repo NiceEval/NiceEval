@@ -175,7 +175,7 @@ export const changedLines = rollup(
 
 ## 显示实体列表
 
-Sample 已经提供物化后的 `attempts`：
+Sample 已经提供展开后的 `attempts`：
 
 ```tsx
 export default defineReport((sample) => {
@@ -266,7 +266,7 @@ export default defineReport({
 
 `pages` 的数组顺序就是导航顺序。
 宿主只执行当前请求的 page。
-`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻；`standardExperimentPage` 同样可以放进来，散点上的实验点就能点开实验详情。
+`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻。`standardExperimentPage` 同样可以放进来，散点上的实验点就能点开实验详情。
 
 ## 自定义 Attempt 详情
 
@@ -344,7 +344,7 @@ const ConfusionMatrix = defineRenderer({
 两个 renderer 都只接已经计算好的普通值。
 自定义计算继续写普通函数，不需要注册协议。
 
-## 钉住某个值的颜色
+## 固定某个值的颜色
 
 在报告外壳的 `dimensionPins` 中按分组字段和完整值固定视觉身份。
 例如可以让同一个 Agent 在每一页都使用同一组颜色、线型和符号。

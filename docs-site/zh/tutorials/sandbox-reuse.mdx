@@ -1,7 +1,7 @@
 ---
 title: "复用 Sandbox：一批评估共用环境，公共准备只付一次"
 sidebarTitle: "复用 Sandbox"
-description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs；准备代码做不到幂等重放时改用并发，不要复用。"
+description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs。准备代码做不到幂等重放时改用并发，不要复用。"
 ---
 
 import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
@@ -12,16 +12,16 @@ import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
 每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
 
 <Warning>
-  题间 reset 不是整台 Sandbox 归零。NiceEval 只按分类账恢复 `workdir`；`/opt`、`$HOME`、`/tmp` 等 workdir 外状态、全局安装、包缓存和后台进程会保留。大型持久 build/cache 由作者负责选择容量上限、阈值告警、清理或轮换策略；无法安全继续时还要有退休 Sandbox 的策略。
+  题间 reset 不是整台 Sandbox 归零。NiceEval 只按分类账恢复 `workdir`。`/opt`、`$HOME`、`/tmp` 等 workdir 外状态、全局安装、包缓存和后台进程会保留。大型持久 build/cache 由作者负责选择容量上限、阈值告警、清理或轮换策略。无法安全继续时还要有退休 Sandbox 的策略。
 </Warning>
 
 先说清代价，再说怎么开：
 
 - **复用运行的结果照常进缓存。** pair 具备稳定 carry identity 时，终态结果指纹匹配就直接
-  沿用，不创建 Sandbox；未沿用的 Attempt 才在本次的共用 Sandbox 中执行。直接 command /
+  沿用，不创建 Sandbox。未沿用的 Attempt 才在本次的共用 Sandbox 中执行。直接 command /
   lifecycle callback 是 opaque，会明确禁用 carry。`--rerun` 仍可要求相应 Attempt 真实重跑。
 - **中断不等于外部状态回滚。** 只在跨 Attempt 状态能回到最后一个终态提交边界时，续跑才是
-  同一条实验轨迹；否则应换干净 cohort 从头重建。
+  同一条实验轨迹。否则应换干净 cohort 从头重建。
 - **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
   评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
 - 与 `--keep-sandbox`、`localSandbox()` 互斥。
@@ -56,7 +56,7 @@ export default defineExperiment({
 
 ## 多开终端时 Sandbox 不共享
 
-Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池；NiceEval 不把运行中的 Sandbox handle 交给另一个进程。
+Sandbox 复用只发生在一次 Invocation 里。两个终端同时跑一个实验时，两边有各自的 Run 和 Sandbox 池。NiceEval 不把运行中的 Sandbox handle 交给另一个进程。
 
 如果 Sandbox 只保留自己的临时状态，两边可以同时跑不同评估用例。两边都会在 Sandbox `setup()` 恢复同一 checkpoint，并在 `teardown()` 回存时，再给实验声明稳定的非密 key：
 
@@ -71,9 +71,9 @@ export default defineExperiment({
 });
 ```
 
-NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox；对方完成后先重新判断结果沿用，已经齐了就直接结束。
+NiceEval 会在创建 Sandbox 前独占这个 key，到 Sandbox `teardown`、Provider finalizer 和实验 `teardown` 后才释放。等待方不创建 Sandbox。对方完成后先重新判断结果沿用，已经齐了就直接结束。
 
-key 会进入结果的配置身份；换 key 表示换了状态 cohort，旧结果不会混入。这个租约只协调共享同一 `.niceeval` 记录根的进程；不同机器或工作副本需要外部分布式互斥。
+key 会进入结果的配置身份。换 key 表示换了状态 cohort，旧结果不会混入。这个租约只协调共享同一 `.niceeval` 记录根的进程。不同机器或工作副本需要外部分布式互斥。
 
 ## 生命周期：谁跑几次
 
@@ -87,11 +87,11 @@ key 会进入结果的配置身份；换 key 表示换了状态 cohort，旧结�
 <SandboxLanes />
 
 每条 Attempt 结束后，NiceEval 对 `workdir` 执行 `git reset --hard` + `git clean`
-回到重置点，再开始下一条。这个 reset 只管 `workdir`；`/opt`、`$HOME`、`/tmp`、
+回到重置点，再开始下一条。这个 reset 只管 `workdir`。`/opt`、`$HOME`、`/tmp`、
 全局安装、包缓存和后台进程不会因此消失。它们要么由评估用例的 `teardown` 自己收，
 要么就是作者明确留给下一条用的持久状态。
 
-大型持久 build/cache 不能只依赖「一直增长」。作者应明确容量上限和达到上限前的阈值；
+大型持久 build/cache 不能只依赖「一直增长」。作者应明确容量上限和达到上限前的阈值。
 正常大小和命中情况用 `facts` 记录，达到风险阈值才用 `diagnostic` 告警，并提供清理、
 轮换或退休 Sandbox 的策略。
 
@@ -136,7 +136,7 @@ npm install          # 调和到 package.json/lockfile 声明的状态，本身�
 - **`postSetup` 脚本必须幂等**。它每条 Attempt 都在残留的 `$HOME` 上重跑，
   往全局配置登记 hook 的脚本，重跑一遍要收敛到同一份配置。开复用前先拿两三道题
   压一条 Sandbox 泳道跑一轮——第二题起才是真正的判据。
-- **插件数据放哪**。插件安装目录每条 Attempt 都被重装覆盖；插件运行时要留到下一题的数据，
+- **插件数据放哪**。插件安装目录每条 Attempt 都被重装覆盖。插件运行时要留到下一题的数据，
   只能写在安装目录之外。留下的数据会不会污染下一题，是你的实验设计要回答的问题。
 
 收敛不等于省钱：插件安装每条 Attempt 照付，复用省的是 Sandbox 创建和 Sandbox 级
@@ -159,7 +159,7 @@ npx niceeval exp smoke memory/commit0 --dry
 # 2. 声明了 sandboxReuse 的实验，快速过一遍
 npx niceeval exp smoke memory/commit0
 
-# 3. 某道题挂了，换一个不声明复用的实验单独重跑，拿现场
+# 3. 某道题失败，换一个不声明复用的实验单独重跑，拿现场
 npx niceeval exp baseline memory/commit0/tool-first --keep-sandbox
 
 # 4. 修完，用不声明复用的实验验证，出可采信的结果

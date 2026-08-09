@@ -7,17 +7,18 @@ import {
   parseConcepts,
   proseBlocks,
   proseText,
+  readableProseLines,
   splitSentences,
   svgTexts,
   synonymBans,
   validateRules,
 } from "../../scripts/docs-writing-lint.js";
 
-// docs/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
+// docs/ 与 docs-site/zh/ 的可读性规矩(句长、段长、禁用写法)由 docs/writing-rules.json 声明,
 // 规矩本身写在 docs/README.md「写给人读」与 docs/concepts.md「禁用写法」。
 // 规则与命中位置住在 scripts/docs-writing-lint.ts,判对错只有这一处入口——
 // 契约再准确,读不动的段落等于没写,而「以后再顺手改」在没有守护时等于不改。
-describe("docs 可读性守护", () => {
+describe("文档可读性守护", () => {
   it("docs/writing-rules.json 的每条禁词都带 use 与 why", () => {
     // 没有理由的禁词会被下一个人当成洁癖绕过,所以三个字段一个都不能空。
     expect(validateRules()).toEqual([]);
@@ -55,6 +56,27 @@ describe("docs 可读性守护", () => {
       "- 列表乙",
     ]);
     expect(blocks.map((b) => b.text)).toEqual(["正文甲。", "列表甲", "列表乙"]);
+  });
+
+  it("MDX 只检查读者看到的手写正文", () => {
+    const lines = readableProseLines("docs-site/zh/example.mdx", [
+      "---",
+      'title: "标题"',
+      "---",
+      "组件前正文。",
+      "<Demo",
+      '  title="这是组件属性"',
+      "/>",
+      "组件后正文。",
+      "{/* GENERATED:BEGIN fields */}",
+      "生成内容。",
+      "{/* GENERATED:END fields */}",
+      "```ts",
+      "const generated = true;",
+      "```",
+    ]);
+
+    expect(lines.filter(Boolean)).toEqual(["组件前正文。", "组件后正文。"]);
   });
 
   it("概念表按表头认列,不按位置——表格加一列不会让词条静默错位", () => {

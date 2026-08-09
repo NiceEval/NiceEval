@@ -18,7 +18,7 @@ export default defineExperiment({
 });
 ```
 
-`agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂；运行器不会单独保存一个 `agentConfig` 字段。
+`agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂。运行器不会单独保存一个 `agentConfig` 字段。
 
 ## 评估不同的 System Prompt 对于 Agent 的影响
 使用 flag 机制，配置不同的 Flag，设置两个实验，对比不同 Prompt 的区别。两格之间**只差一个变量**（这里是 `flags.promptVariant`），其余字段逐字相同——差别越少，分数差能归因到的东西越明确：
@@ -64,7 +64,7 @@ export default defineExperiment({
 两格写成同一个 `flags`（或模型对比里两格钉同一个 `model`，包括两格都写成同一个环境变量默认值）是最常见的失误：跑得完、报告也出得来，但两列数字比的是同一套配置，看不出任何东西。
 
 
-`model` 会作为 `ctx.model` 传给 Adapter；如果你的 Agent 支持模型选择，自己构建请求
+`model` 会作为 `ctx.model` 传给 Adapter。如果你的 Agent 支持模型选择，自己构建请求
 
 `flags` 会作为 `ctx.flags` 传给 Adapter，也会作为 `t.flags` 出现在评估用例里。
 
@@ -88,7 +88,7 @@ async send(input, ctx) {
 
 ## 编写一组实验
 
-一个实验文件是一格配置。要比较多个模型、agent 或 flag 取值，就写多个文件；目录只负责 id：
+一个实验文件是一格配置。要比较多个模型、agent 或 flag 取值，就写多个文件。目录只负责 id：
 
 ```text
 experiments/
@@ -115,18 +115,18 @@ npx niceeval exp prompts/concise
 
 | 字段 | 用途 |
 |---|---|
-| `agent` | 选择并配置 adapter；必填 |
+| `agent` | 选择并配置 adapter。必填 |
 | `model` | 单个模型名，经 `ctx.model` 透传 |
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
 | `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
 | `attempts` | 每个评估用例 × 配置最多跑几次 |
-| `earlyExit` | 多次运行里通过一次就提前停止；默认关，`attempts` 默认跑满测完整通过率 |
+| `earlyExit` | 多次运行里通过一次就提前停止。默认关，`attempts` 默认跑满测完整通过率 |
 | `evals` | `"*"`、id 前缀数组，或遍历只读 eval 描述并返回 boolean 的函数 |
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
-| `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key；只协调状态，不提供存储 |
-| `sandbox` | 一条 `SandboxLayer`；具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
+| `sharedState` | 跨 Invocation 共享 checkpoint 的独占 key。只协调状态，不提供存储 |
+| `sandbox` | 一条 `SandboxLayer`。具体 factory 一次声明 provider 原生 template，并可链 `.prepare()` / `.setup()` / `.teardown()` |
 | `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
 | `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
 
@@ -158,11 +158,11 @@ $ pnpm exec niceeval exp compare/codex--nowledge
 
 记录一样不少：`niceeval show` 的 `facts:` 行会列出这条 Attempt 连的地址，报告也能按它分组。复用进来的结果带的是它当初那一轮的地址，不会被这一轮的新 URL 顶替。
 
-服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**谁写下这个值**——你在实验里声明的是条件，写 `flags`；跑起来才知道的是观测，用 `ctx.fact()`。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
+服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**谁写下这个值**——你在实验里声明的是条件，写 `flags`。跑起来才知道的是观测，用 `ctx.fact()`。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
 
 ## 启动 Experiment 共享服务
 
-有些资源是「一个实验一份、所有 Attempt 共用」的：一条到内网记忆服务的隧道、一个实验专用的 mock server、一个 license 租约。这类资源写进一对实验级 Hook `setup` / `teardown`：整场至多各跑一次。`setup` 在这个实验第一个要派发的 Attempt 前执行；`teardown` 在全部 Attempt 收尾后执行（运行被中断也执行），当且仅当 `setup` 的时点已经走到才触发——`setup` 抛错同样要走到 `teardown`，收尾代码要对可能未赋值的变量做防御。上一次的结果全部被复用、这个实验一个 Attempt 都不需要真正运行时，`setup` 和 `teardown` 都不会执行：
+有些资源是「一个实验一份、所有 Attempt 共用」的：一条到内网记忆服务的隧道、一个实验专用的 mock server、一个 license 租约。这类资源写进一对实验级 Hook `setup` / `teardown`：整场至多各跑一次。`setup` 在这个实验第一个要派发的 Attempt 前执行。`teardown` 在全部 Attempt 收尾后执行（运行被中断也执行），当且仅当 `setup` 的时点已经走到才触发——`setup` 抛错同样要走到 `teardown`，收尾代码要对可能未赋值的变量做防御。上一次的结果全部被复用、这个实验一个 Attempt 都不需要真正运行时，`setup` 和 `teardown` 都不会执行：
 
 ```ts
 // setup 拿到的地址、密钥放模块变量：teardown 和同文件里的 agent（每个 Attempt 都会执行、晚于 setup）直接读它。
@@ -182,11 +182,11 @@ export default defineExperiment({
 });
 ```
 
-`setup` 在跑的时候，终端的 `ACTIVE` 区会显示一行 `experiment setup · <实验 id>`，`ctx.progress(...)` 的消息就更新在这一行末尾；等它的 Attempt 计入排队数，这不是卡住。在 CI 或 agent 输出里，`setup` / `teardown` 的开始和结束各追加一行。
+`setup` 在跑的时候，终端的 `ACTIVE` 区会显示一行 `experiment setup · <实验 id>`，`ctx.progress(...)` 的消息就更新在这一行末尾。等它的 Attempt 计入排队数，这不是卡住。在 CI 或 agent 输出里，`setup` / `teardown` 的开始和结束各追加一行。
 
-`setup` 抛错时，这个实验的每条 Attempt 都记为 `errored`（错误码 `experiment-setup-failed`）、逐条进报告；同一批的其它实验照常跑——环境起不来不该伪装成绿，也不该连坐别人。
+`setup` 抛错时，这个实验的每条 Attempt 都记为 `errored`（错误码 `experiment-setup-failed`）、逐条进报告。同一批的其它实验照常跑——环境起不来不该伪装成绿，也不该连坐别人。
 
-`teardown` 里资源释放是必达底线：用 `try/finally` 包住，不管前面的观测代码是否出错都要执行。观测类动作（health probe、指标上报）只是 best-effort——给它自己的短超时、失败不要拦住释放，并在 `ctx.signal.aborted` 时直接跳过；中断路径上，一次可能挂起的观测不该挡在「拆隧道、退租约」前面：
+`teardown` 里资源释放是必达底线：用 `try/finally` 包住，不管前面的观测代码是否出错都要执行。观测类动作（health 检查、指标上报）只是 best-effort——给它自己的短超时、失败不要拦住释放，并在 `ctx.signal.aborted` 时直接跳过。中断路径上，一次可能挂起的观测不该挡在「拆隧道、退租约」前面：
 
 ```ts
 async teardown(ctx) {
@@ -214,7 +214,7 @@ export default defineExperiment({
 });
 ```
 
-固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot；`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot。`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
 Hook 的执行时机、多 Hook 顺序和失败语义见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
@@ -257,14 +257,14 @@ export default defineExperiment({
 });
 ```
 
-一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里；每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物；agent 怎么连自己、评估用例的任务夹具各在 agent 定义与 `EvalDef` 里，不进实验文件。
+一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里。每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物。agent 怎么连自己、评估用例的Fixture各在 agent 定义与 `EvalDef` 里，不进实验文件。
 
 ### 多个实验共享同一套生命周期代码
 
 对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 sandbox Hook。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
 
 ```ts
-// experiments/shared/nowledge.ts —— 启停一份代码；实例、坐标每实验一份
+// experiments/shared/nowledge.ts —— 启停一份代码。实例、坐标每实验一份
 import type { ExperimentHookContext } from "niceeval";
 import type { SandboxHook } from "niceeval/sandbox";
 
@@ -317,8 +317,8 @@ export default defineExperiment({
 
 两条纪律保证多个实验并发跑同一套代码不互相踩踏：
 
-- **工厂在 import 期只创建闭包，不做 I/O、不读配置**——实验文件在 `niceeval exp` 的发现阶段就会被 import，import 抛错会连累同批无关实验；所有硬失败留给 `setup`。
-- **运行时坐标活在工厂闭包里，不放模块级单例**——同批并行的两个实验各持一份，互不覆写；坐标在 `setup` 之后才存在。
+- **工厂在 import 期只创建闭包，不做 I/O、不读配置**——实验文件在 `niceeval exp` 的发现阶段就会被 import，import 抛错会连累同批无关实验。所有硬失败留给 `setup`。
+- **运行时坐标活在工厂闭包里，不放模块级单例**——同批并行的两个实验各持一份，互不覆写。坐标在 `setup` 之后才存在。
 
 服务起多份太贵、必须让同批实验共享一份实例时，用「首进启动、末出关停」的引用计数代替按实验各建一份：
 
@@ -332,7 +332,7 @@ export const sharedNowledge = {
   async setup() {
     refs += 1;
     starting ??= startNowledge().then((s) => { service = s; });
-    await starting; // 并发实验等同一个启动；启动失败各自抛错
+    await starting; // 并发实验等同一个启动。启动失败各自抛错
   },
   async teardown() {
     refs -= 1;
@@ -379,6 +379,6 @@ export default defineExperiment({
 });
 ```
 
-没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中 Eval。重复 template 用普通 TypeScript helper 共享；同一个 Experiment 仍能覆盖全部 Eval，link planning 会逐条把 Eval layer 与 Experiment layer 配对。
+没有 profile registry，也没有按 source kind 登记的 materializer 表。每个 factory 同时拥有支持声明与实现，physical planning 会在创建任何 Sandbox 前校验所有选中 Eval。重复 template 用普通 TypeScript 辅助函数 共享。同一个 Experiment 仍能覆盖全部 Eval，link planning 会逐条把 Eval layer 与 Experiment layer 配对。
 
 跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。

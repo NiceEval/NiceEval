@@ -31,7 +31,7 @@ description: "NiceEval 的断言词汇——值断言、作用域断言、项目
   <Tab title="gate">
     gate 是硬性要求。一旦失败，整个评估用例立刻判为 `failed`——不管其它断言表现如何。适合必须为真的事实：“调用了正确的工具”“输出解析为合法 JSON”“没有 shell 命令报错”。
 
-    `niceeval/expect` 里大多数匹配器（`includes`、`equals`、`matches`、`satisfies`）默认 gate；`t.succeeded()`、`t.calledTool()` 这类作用域断言也默认 gate。
+    `niceeval/expect` 里大多数匹配器（`includes`、`equals`、`matches`、`satisfies`）默认 gate。`t.succeeded()`、`t.calledTool()` 这类作用域断言也默认 gate。
   </Tab>
   <Tab title="soft">
     soft 是带数值阈值的质量分。分数低于阈值时，评估用例变成 `passed` 而不是 `failed`——是质量回归的信号，但不算硬性破坏。soft 失败只在 `--strict` 下才算数。
@@ -61,7 +61,7 @@ t.maxTokens(80_000).atLeast(0.7);                 // 降为 soft 并带阈值
 否则                                               → passed
 ```
 
-`errored` 压过一切，因为执行证据已经不可信；`failed` 压过 `skipped`，避免 `t.skip()` 掩盖此前记录的硬失败。
+`errored` 压过一切，因为执行证据已经不可信。`failed` 压过 `skipped`，避免 `t.skip()` 掩盖此前记录的硬失败。
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
@@ -179,9 +179,9 @@ t.check(await t.sandbox.runCommand("npm", ["run", "build"]), commandSucceeded())
 t.sandbox.noFailedShellCommands();
 ```
 
-`t.sandbox.diff` 是可查询对象：`t.sandbox.diff.get("src/Button.tsx")` 返回文件改动后的内容；`t.sandbox.diff.isEmpty()` 检查有没有文件变化；`t.sandbox.diff.matches(re)` 和 `t.sandbox.notInDiff(re)` 对完整 diff 文本跑正则。
+`t.sandbox.diff` 是可查询对象：`t.sandbox.diff.get("src/Button.tsx")` 返回文件改动后的内容。`t.sandbox.diff.isEmpty()` 检查有没有文件变化。`t.sandbox.diff.matches(re)` 和 `t.sandbox.notInDiff(re)` 对完整 diff 文本跑正则。
 
-作用域断言到处遵守同一条规则：**接收者决定作用域，不是断言名字决定作用域。** `t.*` 聚合这次 eval run 的全部轮次（含 `t.newSession()` 开的额外 session）；`session.*`（`t.newSession()` 的返回值）只看这一条 session；`turn.*`（`t.send()` 的返回值）只看这一轮自己。同一套词汇，不同接收者——各接收者是什么见 [Drive](/zh/explanation/drive)。
+作用域断言到处遵守同一条规则：**接收者决定作用域，不是断言名字决定作用域。** `t.*` 聚合这次 eval run 的全部轮次（含 `t.newSession()` 开的额外 session）。`session.*`（`t.newSession()` 的返回值）只看这一条 session。`turn.*`（`t.send()` 的返回值）只看这一轮自己。同一套词汇，不同接收者——各接收者是什么见 [Drive](/zh/explanation/drive)。
 
 ## 3. 项目测试断言（Sandbox 型评估用例）
 
@@ -211,7 +211,7 @@ t.check(t.usage.outputTokens, satisfies((n) => n < 10_000, "not verbose"));
 ```
 
 `t.usage` 在 `test(t)` 里随处可用，暴露 `{ inputTokens, outputTokens, cacheReadTokens?, … }`。
-Sandbox Agent 的 token 数由 Adapter 从 transcript 里提取；Direct Agent 直接在 `Turn.usage` 里返回。
+Sandbox Agent 的 token 数由 Adapter 从 transcript 里提取。Direct Agent 直接在 `Turn.usage` 里返回。
 
 ## 自定义 Assertion
 

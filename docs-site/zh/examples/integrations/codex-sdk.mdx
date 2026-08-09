@@ -12,10 +12,11 @@ description: "一个 Codex SDK（目录里的编码 agent）后端，接入 Nice
 - **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。
 
 **接入方式**：官方转换器——codex 原生 `ThreadEvent` → 标准事件的映射是
-`createCodexThreadEventStream`（`"niceeval/adapter"` 导出）的事：消息文本、工具项
-（`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `operation.started` / `operation.finished`）和
-`turn.completed` 的 usage 全部来自这条流，adapter 只剩传输粘合。没有 HITL
-（Codex SDK 不支持）。评估用例测的是真实编码任务（在工作目录里写文件、跑命令），断言
+`createCodexThreadEventStream`（`"niceeval/adapter"` 导出）的事。消息文本直接来自这条流。
+`command_execution` / `mcp_tool_call` / `file_change` 工具项会配对成 `operation.started` / `operation.finished`。
+`turn.completed` 提供 usage，adapter 只剩传输粘合。
+
+Codex SDK 不支持 HITL。评估用例测的是真实编码任务（在工作目录里写文件、跑命令），断言
 直接读磁盘验证。应用由你自己启动（`pnpm start`），评估用例不代管进程。应用侧
 `src/backend/*` 逐字节未变。要 OTel 瀑布图见 `tier2/`，feature A/B 见 `tier3/`。
 

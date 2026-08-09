@@ -20,7 +20,7 @@ import { TierLadder } from '/snippets/diagram-tier-ladder.jsx';
 
 ## Tier 2：send + OTel
 
-还是同一个 `send`、同一套事件映射，只是让应用把 OTel span 也发给 [NiceEval](https://niceeval.com/) 一份。应用已埋点（AI SDK telemetry、LangGraph、OpenLLMetry / OpenInference、自埋 gen_ai）就零改动；没埋点补的是一段通用 OTel 初始化——这属于可观测性建设，不是为评估用例定制的改造。
+还是同一个 `send`、同一套事件映射，只是让应用把 OTel span 也发给 [NiceEval](https://niceeval.com/) 一份。应用已埋点（AI SDK telemetry、LangGraph、OpenLLMetry / OpenInference、自埋 gen_ai）就零改动。没埋点补的是一段通用 OTel 初始化——这属于可观测性建设，不是为评估用例定制的改造。
 
 这一档买到的是**观测**：`niceeval view` 的调用瀑布图——应用内部每次模型调用、每次工具执行、各自的耗时与 token，按轮铺成时间线。断言不受影响：span 只进瀑布图，不进事件流、不喂断言。走法见[OTel 接入](/zh/tutorials/connect-otel)。
 
@@ -36,7 +36,7 @@ import { TierLadder } from '/snippets/diagram-tier-ladder.jsx';
 
 ## 怎么升级
 
-三级递进不互斥：先用 Tier 1 跑通基线和模型对比；要调用瀑布图，升 Tier 2；要对照应用内部变体，再升 Tier 3。每次升级都只是给 Adapter 或应用加东西，experiment 侧怎么组织对比见[实验](/zh/explanation/experiment)。
+三级递进不互斥：先用 Tier 1 跑通基线和模型对比。要调用瀑布图，升 Tier 2。要对照应用内部变体，再升 Tier 3。每次升级都只是给 Adapter 或应用加东西，experiment 侧怎么组织对比见[实验](/zh/explanation/experiment)。
 
 ## 相关阅读
 
